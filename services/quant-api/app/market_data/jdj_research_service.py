@@ -304,7 +304,6 @@ def _validated_segment_partitions(
         result = loaded.results[frequency]
         if (
             not isinstance(result, MarketSeriesResult)
-            or result.resolved_contract_segments != segments
             or any(not isinstance(bar, CanonicalBar) for bar in result.bars)
             or any(
                 previous.bar_end >= current.bar_end
@@ -320,6 +319,12 @@ def _validated_segment_partitions(
         )
         if any(not group for group in grouped):
             raise ActualDominantResearchSegmentIdentityError()
+        if not _segments_are_exact_window_projection(
+            result.resolved_contract_segments,
+            segments,
+            result.bars,
+        ):
+            raise ActualDominantResearchSegmentIdentityError()
         partitions.append(grouped)
     if any(
         {bar.trading_day for bar in bars_1m}
@@ -332,6 +337,52 @@ def _validated_segment_partitions(
     ):
         raise ActualDominantResearchSegmentIdentityError()
     return partitions[0], partitions[1]
+
+
+def _segments_are_exact_window_projection(
+    projected: tuple[ResolvedContractSegment, ...],
+    true_segments: tuple[ResolvedContractSegment, ...],
+    bars: tuple[CanonicalBar, ...],
+) -> bool:
+    if type(projected) is not tuple or len(projected) != len(true_segments):
+        return False
+    grouped_bars = tuple(
+        tuple(
+            bar
+            for bar in bars
+            if (
+                segment.start_trading_day
+                <= bar.trading_day
+                <= segment.end_trading_day
+            )
+        )
+        for segment in true_segments
+    )
+    if sum(len(group) for group in grouped_bars) != len(bars):
+        return False
+    for clipped, true_segment, bars in zip(
+        projected,
+        true_segments,
+        grouped_bars,
+        strict=True,
+    ):
+        if (
+            not isinstance(clipped, ResolvedContractSegment)
+            or not bars
+            or clipped.contract != true_segment.contract
+            or not (
+                true_segment.start_trading_day
+                <= clipped.start_trading_day
+                <= clipped.end_trading_day
+                <= true_segment.end_trading_day
+            )
+            or clipped.start_trading_day
+            != min(bar.trading_day for bar in bars)
+            or clipped.end_trading_day
+            != max(bar.trading_day for bar in bars)
+        ):
+            return False
+    return True
 
 
 def _reducer_for_candidate(candidate_id: str) -> _JdjReducer:

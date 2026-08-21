@@ -16,7 +16,7 @@ flowchart TB
       WEB["Market Web"]
       API["Market API"]
       CLI["guiyi data update/refresh/audit"]
-      RCLI["guiyi research<br/>calibration / lifecycle / n-structure / candidate-validation / robustness / futures-mirror"]
+      RCLI["guiyi research<br/>calibration / lifecycle / n-structure / jdj-1m / candidate-validation / robustness / futures-mirror"]
       ALERTAPI["Alert API"]
       ERAPI["Execution Review API"]
     end
@@ -37,9 +37,12 @@ flowchart TB
       ADR["ActualDominantResearchSegmentLoader<br/>true rank1 segment prefix"]
       SL["SuBing Lifecycle V2<br/>research-only snapshot / Shadow"]
       NS["N Structure V1<br/>5m causal Swing / N / Structure"]
+      JC["JDJ Context<br/>N 5m strict-before → 1m"]
+      J3["JDJ 1m three Candidates<br/>causal reducers / immutable events"]
       SCR["SubingCalibrationResearchService"]
       SCV["SuBing Candidate Report<br/>source-specific"]
       NCV["N Candidate Report<br/>source-specific"]
+      JCV["JDJ Candidate Reports<br/>three source-specific baselines"]
       MCR["MultiCandidateRobustnessService<br/>temporal / active60 / relationship"]
       MFM["MainForceMirrorFuturesResearchService<br/>historical-only Shadow"]
     end
@@ -74,6 +77,10 @@ flowchart TB
     RCLI --> SCR --> MQ
     RCLI --> SL --> ADR --> MQ
     RCLI --> NS --> ADR
+    RCLI --> JC --> ADR
+    JC --> NS
+    JC --> J3 --> JCV
+    RCLI --> JCV
     RCLI --> SCV --> SL
     RCLI --> NCV --> NS
     RCLI --> MCR
@@ -154,6 +161,15 @@ flowchart TB
   目前只是 Historical/research-only 结构与 Candidate producer；已形成 deterministic jm
   retrospective/rolling evidence，prospective OOS 仍 pending，不代表效果、promotion、
   release 或 Runtime 能力。
+  JDJ 1m 与 SuBing/N 保持独立 source semantics：它在同一个
+  `ActualDominantResearchSegmentLoader` 的 1m/5m true rank1 segment prefix 内，将 existing N 5m
+  snapshot/pivot 以 previous-1m-boundary strict-before 投影到 1m context，再运行 Trend Follow、
+  Trend Reentry 6、Key-Level Breakout 三个纯 reducer。三个 source-specific Candidate 只输出 immutable
+  trigger facts 与 trigger-close 后 3/5/8/20 Bar descriptive outcomes；Candidate Validation 复用同一
+  10-fold/prospective scheduler。其 frozen RQData calendar evidence 只验证 JDJ temporal freeze，
+  不向 Market/Runtime/Alert 提供 Calendar 或 `has_night_session`。三份 `jm` baseline 已形成，
+  prospective OOS 从 2026-08-24 开始且仍 pending；无 ranking、winner、promotion、DB/Canonical/Redis、
+  Alert、Runtime 或订单路径。
   `MultiCandidateRobustnessService` 在两条 frozen Candidate 之上增加薄的只读组合层：
   temporal 仅投影既有 10-fold Candidate Validation，cross-symbol 保留冻结 active60 的完整
   120-cell 矩阵，event relationship 仅比较 same symbol + same physical contract + same rank1

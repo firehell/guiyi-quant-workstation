@@ -386,7 +386,8 @@ result=null
 
 No 2026-08-21/history backfill。
 
-Calendar validator read-only proves via existing Instrument/TradingCalendar：
+Calendar validator read-only proves via exact RQData evidence frozen in
+`jdj_candidate_validation_v1` plus existing Instrument/TradingCalendar cross-check：
 
 ```text
 2026-08-21 trading
@@ -394,7 +395,10 @@ Calendar validator read-only proves via existing Instrument/TradingCalendar：
 2026-08-24 trading
 ```
 
-Missing/conflict → stable error；do not alter dates/calendar。
+Catalog 2026-08-21..23 must exist and match；2026-08-24 may be absent until its
+TradingSession is provider-ready, but must match if present。Evidence missing/drift or Catalog
+missing/conflict → stable error；do not alter dates/calendar。The evidence is research-only and
+must never supply Market/Runtime/Alert `has_night_session` or relax current-day metadata atomicity。
 
 ## 18. Exception boundary
 

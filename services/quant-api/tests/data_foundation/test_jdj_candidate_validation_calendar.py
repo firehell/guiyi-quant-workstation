@@ -6,7 +6,11 @@ import pytest
 from sqlalchemy import create_engine, delete, select
 from sqlalchemy.orm import Session
 
+import app.market_data.jdj_candidate_validation_calendar as calendar_module
 from app.db.base import Base
+from app.market_data.jdj_candidate_validation_policy import (
+    JdjCandidateValidationProtocolError,
+)
 from app.market_data.jdj_candidate_validation_calendar import (
     JdjProspectiveCalendarError,
     assert_jdj_prospective_calendar,
@@ -82,7 +86,63 @@ def test_exact_jm_calendar_is_read_only_and_accepted(session: Session) -> None:
     assert not session.deleted
 
 
-@pytest.mark.parametrize("missing_day", [item[0] for item in _EXPECTED])
+def test_frozen_provider_evidence_allows_future_catalog_day_to_be_pending(
+    session: Session,
+) -> None:
+    session.execute(
+        delete(TradingCalendar).where(
+            TradingCalendar.trade_date == date(2026, 8, 24)
+        )
+    )
+    session.commit()
+
+    before = tuple(
+        session.execute(
+            select(
+                TradingCalendar.trade_date,
+                TradingCalendar.is_trading_day,
+            ).order_by(TradingCalendar.trade_date)
+        ).all()
+    )
+
+    assert assert_jdj_prospective_calendar(session) is None
+
+    after = tuple(
+        session.execute(
+            select(
+                TradingCalendar.trade_date,
+                TradingCalendar.is_trading_day,
+            ).order_by(TradingCalendar.trade_date)
+        ).all()
+    )
+    assert after == before == _EXPECTED[:3]
+    assert not session.new
+    assert not session.dirty
+    assert not session.deleted
+
+
+def test_invalid_protocol_evidence_maps_to_stable_calendar_error(
+    session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def invalid_protocol() -> None:
+        raise JdjCandidateValidationProtocolError()
+
+    monkeypatch.setattr(
+        calendar_module,
+        "load_jdj_candidate_validation_protocol",
+        invalid_protocol,
+    )
+
+    with pytest.raises(
+        JdjProspectiveCalendarError,
+        match="^JDJ_PROSPECTIVE_CALENDAR_INVALID$",
+    ) as captured:
+        assert_jdj_prospective_calendar(session)
+    assert captured.value.__cause__ is None
+
+
+@pytest.mark.parametrize("missing_day", [item[0] for item in _EXPECTED[:3]])
 def test_missing_required_calendar_day_fails_closed(
     session: Session,
     missing_day: date,

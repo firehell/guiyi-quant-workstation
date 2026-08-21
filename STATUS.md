@@ -38,7 +38,7 @@
   Market display identity 的修复。SuBing 的历史 cutoff
   仍为 strict cursor，任何 Factor/Lifecycle Historical Bar 都必须满足 `bar_end <= cutoff`；
   `MarketDataService`、Factor/Signal/Lifecycle 公式、Alert Rule/Scope 与 Event 语义未放宽。
-- 主力照妖镜 V0、主力照妖镜·期货 V1、SuBing Lifecycle V2 与 N Structure V1 都只属于
+- 主力照妖镜 V0、主力照妖镜·期货 V1、SuBing Lifecycle V2、N Structure V1 与 JDJ 1m Candidate V1 都只属于
   observation/research 面；不进入订单路径，也不因已有代码或 retrospective evidence 自动晋升。
 
 ## 当前研究证据
@@ -51,6 +51,20 @@
   `reports/research/candidate_validation/n_structure_5m_candidate_v1/jm-retrospective-baseline-freeze-2026-08-20.json`，
   SHA256=`12fed018751ae54d5bfd2d24897cc077c513560ac1377935e5fddd14a36a3fc6`。
   prospective OOS 从 `2026-08-21` 开始，当前为 `pending`。
+- JDJ 1m 三条 exact Candidate baseline 均冻结于 `jm / through=2026-08-21`，retrospective
+  为 `2023-01-01..2026-08-20`，10-fold rolling 已形成，prospective 首日固定为
+  `2026-08-24` 且当前为 `pending`：
+  - Trend Follow：
+    `reports/research/candidate_validation/jdj_trend_follow_1m_candidate_v1/jm-retrospective-baseline-freeze-2026-08-21.json`，
+    SHA256=`63a9f3021ae30eab777d838c39493f1ef195c07edc49f5471cbbb2de98621fef`；
+  - Trend Reentry 6：
+    `reports/research/candidate_validation/jdj_trend_reentry_6_1m_candidate_v1/jm-retrospective-baseline-freeze-2026-08-21.json`，
+    SHA256=`63f9dfdd29eabfa2c7b44fbe24aa31198dddffae60fab856e9d1b2684cb35bea`；
+  - Key-Level Breakout：
+    `reports/research/candidate_validation/jdj_key_level_breakout_1m_candidate_v1/jm-retrospective-baseline-freeze-2026-08-21.json`，
+    SHA256=`6e06b894bb05a0de2c857be0143cdd44d0b7479b33ad712a0db88197bbdcab10`。
+  三份 evidence 均为 `research_only=true / readonly=true`，horizons 固定为 `3/5/8/20`；
+  不包含 decision、fill、order、PnL 或自动 ranking/promotion。
 - Multi-Candidate Robustness V1 evidence：
   `reports/research/candidate_robustness/multi_candidate_robustness_v1/anchor-jm-active60-retrospective-freeze-2026-08-20.json`，
   SHA256=`6aaa624d13eb3492232eeff44b919efb704bd2018ab9e35503678ffc2c17f433`。
@@ -70,7 +84,8 @@
   smoke 只证明无未来 Bar，不替代自然 Live evidence。
 - v1.6.5 API/Web/Market Runtime root 的下一次自然 18:05 盘后业务证据待观察；2026-08-18 的既有自然成功
   证据保留，但不冒充新 root 的自然运行。不得人工触发、回填或补证。
-- SuBing 与 N 的 prospective OOS 继续按各自 exact protocol 独立累积，当前均为 `pending`。
+- SuBing、N 与 JDJ 三条 Candidate 的 prospective OOS 继续按各自 exact protocol 独立累积，
+  当前均为 `pending`；不得用 retrospective 或 embargo 日回填。
 - Execution Review Gate D 继续 `disabled / not activated`。
 
 ## 事实源与边界

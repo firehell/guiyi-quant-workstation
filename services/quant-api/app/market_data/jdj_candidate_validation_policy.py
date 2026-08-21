@@ -80,7 +80,18 @@ _EXPECTED_PROTOCOL: dict[str, Any] = {
         "first_test_since": "2024-01-01",
         "last_test_through": "2026-06-30",
     },
-    "prospective_oos": {"first_trading_day": "2026-08-24"},
+    "prospective_oos": {
+        "first_trading_day": "2026-08-24",
+        "calendar_evidence": {
+            "provider": "rqdata",
+            "method": "get_trading_dates",
+            "captured_on": "2026-08-21",
+            "exchange_code": "DCE",
+            "query_since": "2026-08-21",
+            "query_through": "2026-08-24",
+            "returned_trading_days": ["2026-08-21", "2026-08-24"],
+        },
+    },
     "baseline_request_through": "2026-08-21",
     "horizons_bars": [3, 5, 8, 20],
     "automatic_ranking": False,
@@ -93,6 +104,13 @@ _EMBARGO_TRADING_DAYS = (date(2026, 8, 21),)
 _FIRST_TEST_SINCE = date(2024, 1, 1)
 _LAST_TEST_THROUGH = date(2026, 6, 30)
 _PROSPECTIVE_FIRST_TRADING_DAY = date(2026, 8, 24)
+_CALENDAR_EVIDENCE_CAPTURED_ON = date(2026, 8, 21)
+_CALENDAR_EVIDENCE_QUERY_SINCE = date(2026, 8, 21)
+_CALENDAR_EVIDENCE_QUERY_THROUGH = date(2026, 8, 24)
+_CALENDAR_EVIDENCE_TRADING_DAYS = (
+    date(2026, 8, 21),
+    date(2026, 8, 24),
+)
 _BASELINE_REQUEST_THROUGH = date(2026, 8, 21)
 _HORIZONS = (3, 5, 8, 20)
 
@@ -151,6 +169,36 @@ class JdjCandidateRef:
 
 
 @dataclass(frozen=True, slots=True)
+class JdjProspectiveCalendarEvidence:
+    provider: str
+    method: str
+    captured_on: date
+    exchange_code: str
+    query_since: date
+    query_through: date
+    returned_trading_days: tuple[date, ...]
+
+    def __post_init__(self) -> None:
+        if (
+            type(self.provider) is not str
+            or self.provider != "rqdata"
+            or type(self.method) is not str
+            or self.method != "get_trading_dates"
+            or type(self.captured_on) is not date
+            or self.captured_on != _CALENDAR_EVIDENCE_CAPTURED_ON
+            or type(self.exchange_code) is not str
+            or self.exchange_code != "DCE"
+            or type(self.query_since) is not date
+            or self.query_since != _CALENDAR_EVIDENCE_QUERY_SINCE
+            or type(self.query_through) is not date
+            or self.query_through != _CALENDAR_EVIDENCE_QUERY_THROUGH
+            or type(self.returned_trading_days) is not tuple
+            or self.returned_trading_days != _CALENDAR_EVIDENCE_TRADING_DAYS
+        ):
+            raise JdjCandidateValidationProtocolError()
+
+
+@dataclass(frozen=True, slots=True)
 class JdjCandidateValidationProtocol:
     schema_version: int
     protocol_id: str
@@ -167,6 +215,7 @@ class JdjCandidateValidationProtocol:
     first_test_since: date
     last_test_through: date
     prospective_oos_first_trading_day: date
+    prospective_calendar_evidence: JdjProspectiveCalendarEvidence
     baseline_request_through: date
     horizons_bars: tuple[int, ...]
     automatic_ranking: bool
@@ -208,6 +257,10 @@ class JdjCandidateValidationProtocol:
             or type(self.prospective_oos_first_trading_day) is not date
             or self.prospective_oos_first_trading_day
             != _PROSPECTIVE_FIRST_TRADING_DAY
+            or not isinstance(
+                self.prospective_calendar_evidence,
+                JdjProspectiveCalendarEvidence,
+            )
             or type(self.baseline_request_through) is not date
             or self.baseline_request_through != _BASELINE_REQUEST_THROUGH
             or self.horizons_bars != _HORIZONS
@@ -299,6 +352,28 @@ def load_jdj_candidate_validation_protocol() -> JdjCandidateValidationProtocol:
         ),
         prospective_oos_first_trading_day=date.fromisoformat(
             payload["prospective_oos"]["first_trading_day"]
+        ),
+        prospective_calendar_evidence=JdjProspectiveCalendarEvidence(
+            provider=payload["prospective_oos"]["calendar_evidence"]["provider"],
+            method=payload["prospective_oos"]["calendar_evidence"]["method"],
+            captured_on=date.fromisoformat(
+                payload["prospective_oos"]["calendar_evidence"]["captured_on"]
+            ),
+            exchange_code=payload["prospective_oos"]["calendar_evidence"][
+                "exchange_code"
+            ],
+            query_since=date.fromisoformat(
+                payload["prospective_oos"]["calendar_evidence"]["query_since"]
+            ),
+            query_through=date.fromisoformat(
+                payload["prospective_oos"]["calendar_evidence"]["query_through"]
+            ),
+            returned_trading_days=tuple(
+                date.fromisoformat(value)
+                for value in payload["prospective_oos"]["calendar_evidence"][
+                    "returned_trading_days"
+                ]
+            ),
         ),
         baseline_request_through=date.fromisoformat(
             payload["baseline_request_through"]

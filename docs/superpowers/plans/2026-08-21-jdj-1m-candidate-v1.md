@@ -28,7 +28,9 @@
 - Candidate identity 三条独立；禁止合并为一个 `jdj_1m_candidate_v1`。
 - outcome reference=`trigger bar completed close`；horizon=`3/5/8/20 subsequent 1m bars`；trigger bar 不进入 future MFE/MAE；same-day/contract/segment/request-through。
 - freeze 固定：`2026-08-21T09:34:00+08:00`；retrospective=`2023-01-01..2026-08-20`；embargo=`2026-08-21`；prospective first=`2026-08-24`；baseline through=`2026-08-21`。
-- `2026-08-24` 必须通过 existing Instrument/TradingCalendar read-only 验证为 `jm` freeze 后首个 eligible trading day；失败即阻塞，不动态换日期。
+- `2026-08-24` 必须通过 protocol 内 exact RQData `get_trading_dates` freeze evidence 与 existing
+  Instrument/TradingCalendar read-only cross-check 验证；Catalog 21..23 必须匹配，24 可暂缺但存在时
+  必须匹配。失败即阻塞，不动态换日期，不向 Runtime/Alert 提供 Calendar 或 night-session facts。
 - 不做 active60 Robustness V2、parameter sweep、winner/rank/KEEP/DROP/PROMOTE。
 - 不新增 Web/API、DB、Redis、worker、Alert、PushPlus、Execution Review、order/account/position/cost/PnL。
 - 不触及 `main`、tag、release、Runtime；task→develop 不授权外部 mutation。
@@ -494,8 +496,11 @@ UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache uv run --offline --project service
 - [ ] **Step 3: Write RED baseline-call test**: one retrospective through 2026-08-20 + 20 rolling source calls; no prospective source call at baseline through 2026-08-21.
 - [ ] **Step 4: Implement exact candidate/protocol pairing**; wrong cross-pair fails before source call.
 - [ ] **Step 5: Implement validation source exception policy**; only `JdjSourceUnavailableError` and `JdjContextError` convert to shared `CandidateValidationSourceError`; programming errors propagate.
-- [ ] **Step 6: Write RED calendar facts test** using isolated/fake session rows for `jm` Instrument and TradingCalendar.
-- [ ] **Step 7: Implement read-only `assert_jdj_prospective_calendar`** to prove 2026-08-21 trading, 22/23 non-eligible, 24 trading; missing/duplicate/conflicting facts fail stable error and never alter the frozen date.
+- [ ] **Step 6: Write RED calendar facts/evidence tests** using exact protocol RQData evidence and isolated/fake session rows for `jm` Instrument and TradingCalendar.
+- [ ] **Step 7: Implement read-only `assert_jdj_prospective_calendar`** to prove 2026-08-21 trading,
+  22/23 non-eligible and 24 trading；Catalog 21..23 are required，24 may be absent until provider Session
+  readiness but must match if present。Missing/drift/duplicate/conflicting evidence or Catalog facts fail stable
+  error and never alter the frozen date or metadata tables.
 - [ ] **Step 8: Implement structural-only quality flags**: `PROSPECTIVE_OOS_PENDING`, `ROLLING_FOLD_WITHOUT_EVENT`, `HORIZON_WITHOUT_SAMPLE`.
 - [ ] **Step 9: Run GREEN + OOS Review C0/I0**.
 
@@ -569,6 +574,12 @@ UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache uv run --offline --project service
 - 人工 Gate：Evidence Review C0/I0；不得 main/tag/Runtime promotion
 
 **Files:** create three exact baseline JSON; update STATUS/PROJECT_SOURCE/ARCHITECTURE; TESTING only if evidence command text itself needs correction.
+
+**Calendar remediation prerequisite:** perform one explicitly authorized read-only RQData
+`get_trading_dates(2026-08-21, 2026-08-24)` probe。Only exact returned trading days
+`[2026-08-21, 2026-08-24]` may be frozen into the existing protocol。This probe does not authorize
+Catalog/Canonical/Runtime writes；the Runtime current-day metadata transaction and
+`NEXT_TRADING_SESSION_NOT_READY` behavior remain unchanged.
 
 - [ ] **Step 1: Create clean evidence worktree and record exact develop SHA**.
 - [ ] **Step 2: Rerun Task 9 verification fresh**; any failure blocks evidence.

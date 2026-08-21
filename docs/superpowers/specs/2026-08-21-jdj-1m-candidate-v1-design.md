@@ -843,7 +843,15 @@ embargo_trading_days = [2026-08-21]
 prospective_first_eligible_trading_day = 2026-08-24
 ```
 
-2026-08-24 必须由仓库 existing TradingSession / exchange calendar 验证为 freeze 后首个 eligible trading day；若验证失败，实施 fail-closed 并重新走设计 Gate，不得动态挑日期。
+2026-08-24 必须由冻结在 `jdj_candidate_validation_v1` protocol 内的 RQData
+`get_trading_dates(2026-08-21, 2026-08-24)` evidence 验证为 freeze 后首个 eligible
+trading day。该 evidence 的 exact 返回只允许为 `2026-08-21, 2026-08-24`；Catalog
+必须已有并匹配 2026-08-21..23，2026-08-24 行可在下一交易日 Session 发布前暂缺，若已存在则
+必须为 trading。任一 evidence/Catalog 冲突均 fail-closed 并重新走设计 Gate，不得动态挑日期。
+
+该 evidence 只服务 JDJ temporal freeze，不是第二套 active Calendar；Market、Runtime、Alert 与
+MarketDataService 仍只认八表 Catalog。不得由它写入或推断 `TradingCalendar.has_night_session`，也不得
+放宽 `synchronize_current_day` 对下一交易日 Session 的原子提交 Gate。
 
 Rolling 必须复用现有 Candidate Validation 10-fold schedule：
 

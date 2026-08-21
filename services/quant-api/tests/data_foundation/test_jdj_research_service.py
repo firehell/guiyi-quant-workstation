@@ -524,6 +524,63 @@ def test_frequency_segment_identity_mismatch_is_a_typed_source_failure() -> None
         )
 
 
+def test_window_clipped_segments_preserve_true_segment_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    true_segment = ResolvedContractSegment(
+        "JM2701",
+        _SEGMENT_START,
+        date(2026, 8, 24),
+    )
+    clipped_segment = ResolvedContractSegment(
+        "JM2701",
+        _SEGMENT_START,
+        _DAY,
+    )
+    bars_1m = (
+        _bar(0, minutes=1, trading_day=_SEGMENT_START),
+        _bar(1, minutes=1),
+    )
+    bars_5m = (
+        _bar(0, minutes=5, trading_day=_SEGMENT_START),
+        _bar(1, minutes=5),
+    )
+    loaded = ActualDominantResearchSeries(
+        results=MappingProxyType(
+            {
+                BarFrequency.M1: _market_result(bars_1m, clipped_segment),
+                BarFrequency.M5: _market_result(bars_5m, clipped_segment),
+            }
+        ),
+        segments=(true_segment,),
+    )
+    context_calls: list[dict[str, object]] = []
+
+    def capture_contexts(
+        bars_1m: tuple[CanonicalBar, ...],
+        bars_5m: tuple[CanonicalBar, ...],
+        **kwargs: object,
+    ) -> tuple[()]:
+        context_calls.append(
+            {"bars_1m": bars_1m, "bars_5m": bars_5m, **kwargs}
+        )
+        return ()
+
+    monkeypatch.setattr(
+        research_module,
+        "build_jdj_context_series",
+        capture_contexts,
+    )
+
+    result = _service(_RecordingLoader(loaded)).run(
+        JdjResearchRequest(_DAY, _DAY, "jm", _CANDIDATE)
+    )
+
+    assert result.segment_count == 1
+    assert context_calls[0]["segment_start_trading_day"] == _SEGMENT_START
+    assert context_calls[0]["segment_end_trading_day"] == date(2026, 8, 24)
+
+
 def test_m1_m5_trading_day_coverage_mismatch_is_a_typed_source_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

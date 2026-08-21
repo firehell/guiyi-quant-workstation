@@ -1,0 +1,880 @@
+{
+  "candidate_id": "jdj_trend_reentry_6_1m_candidate_v1",
+  "command": "research.candidate-validation",
+  "formula_version": "jdj_1m_v1",
+  "policy_id": "jdj_1m_policy_v1",
+  "prospective_oos": {
+    "first_trading_day": "2026-08-24",
+    "result": null,
+    "status": "pending",
+    "through": "2026-08-21"
+  },
+  "protocol_id": "jdj_candidate_validation_v1",
+  "quality_flags": [
+    "PROSPECTIVE_OOS_PENDING"
+  ],
+  "readonly": true,
+  "research_only": true,
+  "retrospective": {
+    "evaluable_bar_count": 297224,
+    "horizon_summary": {
+      "20": {
+        "median_directional_return_bps": "-2.769315978953198559955690944",
+        "median_mae_bps": "-27.53737214791502753737214792",
+        "median_mfe_bps": "25.43810062182023742227247032",
+        "sample_count": 1695
+      },
+      "3": {
+        "median_directional_return_bps": "0",
+        "median_mae_bps": "-11.27183958624323117880191124",
+        "median_mfe_bps": "9.175032742920198470851259805",
+        "sample_count": 1794
+      },
+      "5": {
+        "median_directional_return_bps": "0",
+        "median_mae_bps": "-13.89274798555154209502639622",
+        "median_mfe_bps": "12.37113402061855670103092784",
+        "sample_count": 1785
+      },
+      "8": {
+        "median_directional_return_bps": "-2.473418248112665027101763144",
+        "median_mae_bps": "-17.84520094261512005604738552",
+        "median_mfe_bps": "16.08170252296457809922073603",
+        "sample_count": 1772
+      }
+    },
+    "products": [
+      "jm"
+    ],
+    "segment_count": 12,
+    "since": "2023-01-01",
+    "through": "2026-08-20",
+    "trigger_count_long": 882,
+    "trigger_count_short": 928,
+    "window_id": "retrospective",
+    "window_kind": "retrospective"
+  },
+  "rolling_folds": [
+    {
+      "fold_id": "fold_01",
+      "reference": {
+        "evaluable_bar_count": 81808,
+        "horizon_summary": {
+          "20": {
+            "median_directional_return_bps": "-6.119128466327108092812676855",
+            "median_mae_bps": "-32.21812335926650164616153506",
+            "median_mfe_bps": "24.97335531013545917110536954",
+            "sample_count": 444
+          },
+          "3": {
+            "median_directional_return_bps": "0",
+            "median_mae_bps": "-11.24859392575928008998875141",
+            "median_mfe_bps": "9.868421052631578947368421053",
+            "sample_count": 467
+          },
+          "5": {
+            "median_directional_return_bps": "0",
+            "median_mae_bps": "-16.04278074866310160427807487",
+            "median_mfe_bps": "13.08900523560209424083769634",
+            "sample_count": 463
+          },
+          "8": {
+            "median_directional_return_bps": "-2.794857462269424259362772499",
+            "median_mae_bps": "-19.34235976789168278529980658",
+            "median_mfe_bps": "16.57916551533572810168554849",
+            "sample_count": 461
+          }
+        },
+        "products": [
+          "jm"
+        ],
+        "segment_count": 4,
+        "since": "2023-01-01",
+        "through": "2023-12-31",
+        "trigger_count_long": 262,
+        "trigger_count_short": 209,
+        "window_id": "fold_01_reference",
+        "window_kind": "rolling_reference"
+      },
+      "test": {
+        "evaluable_bar_count": 19540,
+        "horizon_summary": {
+          "20": {
+            "median_directional_return_bps": "2.964719833975689297361399348",
+            "median_mae_bps": "-25.17482517482517482517482517",
+            "median_mfe_bps": "34.92433061699650756693830035",
+            "sample_count": 113
+          },
+          "3": {
+            "median_directional_return_bps": "0",
+            "median_mae_bps": "-10.58761249338274219163578613",
+            "median_mfe_bps": "11.67201634082287715202801284",
+            "sample_count": 119
+          },
+          "5": {
+            "median_directional_return_bps": "0",
+            "median_mae_bps": "-13.23451561672842773954473266",
+            "median_mfe_bps": "17.46216530849825378346915017",
+            "sample_count": 119
+          },
+          "8": {
+            "median_directional_return_bps": "0",
+            "median_mae_bps": "-16.87763713080168776371308017",
+            "median_mfe_bps": "19.12568306010928961748633880",
+            "sample_count": 117
+          }
+        },
+        "products": [
+          "jm"
+        ],
+        "segment_count": 1,
+        "since": "2024-01-01",
+        "through": "2024-03-31",
+        "trigger_count_long": 20,
+        "trigger_count_short": 100,
+        "window_id": "fold_01_test",
+        "window_kind": "rolling_test"
+      }
+    },
+    {
+      "fold_id": "fold_02",
+      "reference": {
+        "evaluable_bar_count": 81467,
+        "horizon_summary": {
+          "20": {
+            "median_directional_return_bps": "-3.106554830692761727244485865",
+            "median_mae_bps": "-32.19198127011998829382499268",
+            "median_mfe_bps": "28.67794665901921422426154287",
+            "sample_count": 441
+          },
+          "3": {
+            "median_directional_return_bps": "0",
+            "median_mae_bps": "-11.64822364589400116482236459",
+            "median_mfe_bps": "11.27395715896279594137542277",
+            "sample_count": 459
+          },
+          "5": {
+            "median_directional_return_bps": "0",
+            "median_mae_bps": "-16.35151182972503882342194208",
+            "median_mfe_bps": "14.83314998166483314998166483",
+            "sample_count": 456
+          },
+          "8": {
+            "median_directional_return_bps": "-2.794857462269424259362772499",
+            "median_mae_bps": "-19.61883408071748878923766816",
+            "median_mfe_bps": "18.31501831501831501831501832",
+            "sample_count": 453
+          }
+        },
+        "products": [
+          "jm"
+        ],
+        "segment_count": 4,
+        "since": "2023-04-01",
+        "through": "2024-03-31",
+        "trigger_count_long": 224,
+        "trigger_count_short": 239,
+        "window_id": "fold_02_reference",
+        "window_kind": "rolling_reference"
+      },
+      "test": {
+        "evaluable_bar_count": 19762,
+        "horizon_summary": {
+          "20": {
+            "median_directional_return_bps": "-2.923976608187134502923976608",
+            "median_mae_bps": "-27.65486725663716814159292035",
+            "median_mfe_bps": "25.46689303904923599320882852",
+            "sample_count": 143
+          },
+          "3": {
+            "median_directional_return_bps": "-2.857142857142857142857142857",
+            "median_mae_bps": "-11.91540065534703604408698242",
+            "median_mfe_bps": "8.568980291345329905741216795",
+            "sample_count": 149
+          },
+          "5": {
+            "median_directional_return_bps": "-2.754062241806664830625172129",
+            "median_mae_bps": "-14.28163381890888317623536133",
+            "median_mfe_bps": "12.05182283820427839710756252",
+            "sample_count": 149
+          },
+          "8": {
+            "median_directional_return_bps": "-2.824060999717593900028240610",
+            "median_mae_bps": "-18.07773425730641759566134378",
+            "median_mfe_bps": "15.16990291262135922330097087",
+            "sample_count": 149
+          }
+        },
+        "products": [
+          "jm"
+        ],
+        "segment_count": 2,
+        "since": "2024-04-01",
+        "through": "2024-06-30",
+        "trigger_count_long": 62,
+        "trigger_count_short": 88,
+        "window_id": "fold_02_test",
+        "window_kind": "rolling_test"
+      }
+    },
+    {
+      "fold_id": "fold_03",
+      "reference": {
+        "evaluable_bar_count": 81467,
+        "horizon_summary": {
+          "20": {
+            "median_directional_return_bps": "-2.591639165954729524976473515",
+            "median_mae_bps": "-29.18019945108850417360059262",
+            "median_mfe_bps": "27.44019246824123444686293832",
+            "sample_count": 480
+          },
+          "3": {
+            "median_directional_return_bps": "0",
+            "median_mae_bps": "-11.34751773049645390070921986",
+            "median_mfe_bps": "10.69900142653352353780313837",
+            "sample_count": 499
+          },
+          "5": {
+            "median_directional_return_bps": "0",
+            "median_mae_bps": "-15.01531968427246717935190634",
+            "median_mfe_bps": "13.85762342118389663984437598",
+            "sample_count": 498
+          },
+          "8": {
+            "median_directional_return_bps": "-2.433896277343946649135743243",
+            "median_mae_bps": "-18.64369811720807687929432886",
+            "median_mfe_bps": "16.83360952486743939843896998",
+            "sample_count": 496
+          }
+        },
+        "products": [
+          "jm"
+        ],
+        "segment_count": 4,
+        "since": "2023-07-01",
+        "through": "2024-06-30",
+        "trigger_count_long": 250,
+        "trigger_count_short": 253,
+        "window_id": "fold_03_reference",
+        "window_kind": "rolling_reference"
+      },
+      "test": {
+        "evaluable_bar_count": 21705,
+        "horizon_summary": {
+          "20": {
+            "median_directional_return_bps": "0",
+            "median_mae_bps": "-32.32758620689655172413793103",
+            "median_mfe_bps": "25.14367816091954022988505747",
+            "sample_count": 191
+          },
+          "3": {
+            "median_directional_return_bps": "0",
+            "median_mae_bps": "-11.08647450110864745011086475",
+            "median_mfe_bps": "10.69518716577540106951871658",
+            "sample_count": 205
+          },
+          "5": {
+            "median_directional_return_bps": "0",
+            "median_mae_bps": "-14.64665743407026507312535456",
+            "median_mfe_bps": "12.93218752089881629104527520",
+            "sample_count": 204
+          },
+          "8": {
+            "median_directional_return_bps": "-3.575362035765380576005268578",
+            "median_mae_bps": "-19.47103734534221066885209026",
+            "median_mfe_bps": "15.31606794764689501531606794",
+            "sample_count": 202
+          }
+        },
+        "products": [
+          "jm"
+        ],
+        "segment_count": 2,
+        "since": "2024-07-01",
+        "through": "2024-09-30",
+        "trigger_count_long": 121,
+        "trigger_count_short": 86,
+        "window_id": "fold_03_test",
+        "window_kind": "rolling_test"
+      }
+    },
+    {
+      "fold_id": "fold_04",
+      "reference": {
+        "evaluable_bar_count": 81348,
+        "horizon_summary": {
+          "20": {
+            "median_directional_return_bps": "0",
+            "median_mae_bps": "-28.98981158765503813427136111",
+            "median_mfe_bps": "27.58704664493948924010053100",
+            "sample_count": 558
+          },
+          "3": {
+            "median_directional_return_bps": "0",
+            "median_mae_bps": "-11.29093121923359351627729881",
+            "median_mfe_bps": "10.47805389173360572371010912",
+            "sample_count": 590
+          },
+          "5": {
+            "median_directional_return_bps": "-2.326663564448580735225686366",
+            "median_mae_bps": "-15.03759398496240601503759398",
+            "median_mfe_bps": "13.01659616010413276928083306",
+            "sample_count": 589
+          },
+          "8": {
+            "median_directional_return_bps": "-2.848191398461976644830532612",
+            "median_mae_bps": "-19.44894651539708265802269044",
+            "median_mfe_bps": "16.14465611882466903454956409",
+            "sample_count": 585
+          }
+        },
+        "products": [
+          "jm"
+        ],
+        "segment_count": 4,
+        "since": "2023-10-01",
+        "through": "2024-09-30",
+        "trigger_count_long": 289,
+        "trigger_count_short": 306,
+        "window_id": "fold_04_reference",
+        "window_kind": "rolling_reference"
+      },
+      "test": {
+        "evaluable_bar_count": 20682,
+        "horizon_summary": {
+          "20": {
+            "median_directional_return_bps": "-8.665511265164644714038128250",
+            "median_mae_bps": "-28.12374447569304941743672157",
+            "median_mfe_bps": "19.68503937007874015748031496",
+            "sample_count": 107
+          },
+          "3": {
+            "median_directional_return_bps": "-3.711269947129037598628600014",
+            "median_mae_bps": "-11.51332138999277656159914114",
+            "median_mfe_bps": "8.61145841212493344427190629",
+            "sample_count": 116
+          },
+          "5": {
+            "median_directional_return_bps": "-4.323396810443442567794899401",
+            "median_mae_bps": "-14.83136743475497516900788628",
+            "median_mfe_bps": "11.51764543072235754043224110",
+            "sample_count": 116
+          },
+          "8": {
+            "median_directional_return_bps": "-5.869276609240581358133202605",
+            "median_mae_bps": "-17.43680488412961915707414367",
+            "median_mfe_bps": "13.08615609315402334368555628",
+            "sample_count": 114
+          }
+        },
+        "products": [
+          "jm"
+        ],
+        "segment_count": 2,
+        "since": "2024-10-01",
+        "through": "2024-12-31",
+        "trigger_count_long": 30,
+        "trigger_count_short": 86,
+        "window_id": "fold_04_test",
+        "window_kind": "rolling_test"
+      }
+    },
+    {
+      "fold_id": "fold_05",
+      "reference": {
+        "evaluable_bar_count": 81689,
+        "horizon_summary": {
+          "20": {
+            "median_directional_return_bps": "-2.844938363308374980912424912",
+            "median_mae_bps": "-28.18046844599497166313546446",
+            "median_mfe_bps": "25.63221756693847516931717500",
+            "sample_count": 554
+          },
+          "3": {
+            "median_directional_return_bps": "0",
+            "median_mae_bps": "-11.27819548872180451127819549",
+            "median_mfe_bps": "10.66098081023454157782515991",
+            "sample_count": 589
+          },
+          "5": {
+            "median_directional_return_bps": "-2.726294320864327464516551015",
+            "median_mae_bps": "-14.55631833206203915586066616",
+            "median_mfe_bps": "12.84522045599295121621220271",
+            "sample_count": 588
+          },
+          "8": {
+            "median_directional_return_bps": "-2.963853895530914164454537126",
+            "median_mae_bps": "-18.36267333548758728240864324",
+            "median_mfe_bps": "15.80760264165935787587799192",
+            "sample_count": 582
+          }
+        },
+        "products": [
+          "jm"
+        ],
+        "segment_count": 4,
+        "since": "2024-01-01",
+        "through": "2024-12-31",
+        "trigger_count_long": 233,
+        "trigger_count_short": 360,
+        "window_id": "fold_05_reference",
+        "window_kind": "rolling_reference"
+      },
+      "test": {
+        "evaluable_bar_count": 19199,
+        "horizon_summary": {
+          "20": {
+            "median_directional_return_bps": "-5.030181086519114688128772636",
+            "median_mae_bps": "-26.70226969292389853137516689",
+            "median_mfe_bps": "17.06484641638225255972696246",
+            "sample_count": 101
+          },
+          "3": {
+            "median_directional_return_bps": "-2.133105802047781569965870307",
+            "median_mae_bps": "-9.15331999504003163655496684",
+            "median_mfe_bps": "8.54518304326078781439738296",
+            "sample_count": 104
+          },
+          "5": {
+            "median_directional_return_bps": "-4.453388462401938190815647368",
+            "median_mae_bps": "-13.72684243054613424983795354",
+            "median_mfe_bps": "9.22349918760048658902792783",
+            "sample_count": 104
+          },
+          "8": {
+            "median_directional_return_bps": "-4.440497335701598579040852575",
+            "median_mae_bps": "-17.62891141472014103129131776",
+            "median_mfe_bps": "9.818360333824251350024545901",
+            "sample_count": 103
+          }
+        },
+        "products": [
+          "jm"
+        ],
+        "segment_count": 1,
+        "since": "2025-01-01",
+        "through": "2025-03-31",
+        "trigger_count_long": 39,
+        "trigger_count_short": 65,
+        "window_id": "fold_05_test",
+        "window_kind": "rolling_test"
+      }
+    },
+    {
+      "fold_id": "fold_06",
+      "reference": {
+        "evaluable_bar_count": 81348,
+        "horizon_summary": {
+          "20": {
+            "median_directional_return_bps": "-3.534432640980920670154854394",
+            "median_mae_bps": "-27.91964798248598171428698692",
+            "median_mfe_bps": "22.31935717290894174806474955",
+            "sample_count": 542
+          },
+          "3": {
+            "median_directional_return_bps": "-2.757865144653677623818523651",
+            "median_mae_bps": "-11.18099253147203275132269344",
+            "median_mfe_bps": "8.938601495373100222596145395",
+            "sample_count": 574
+          },
+          "5": {
+            "median_directional_return_bps": "-2.995805871779508687837028161",
+            "median_mae_bps": "-14.47178002894356005788712012",
+            "median_mfe_bps": "11.69590643274853801169590643",
+            "sample_count": 573
+          },
+          "8": {
+            "median_directional_return_bps": "-3.659582992325721900615741912",
+            "median_mae_bps": "-18.02359309451125012757011484",
+            "median_mfe_bps": "13.74007582528241915953326786",
+            "sample_count": 568
+          }
+        },
+        "products": [
+          "jm"
+        ],
+        "segment_count": 4,
+        "since": "2024-04-01",
+        "through": "2025-03-31",
+        "trigger_count_long": 252,
+        "trigger_count_short": 325,
+        "window_id": "fold_06_reference",
+        "window_kind": "rolling_reference"
+      },
+      "test": {
+        "evaluable_bar_count": 20103,
+        "horizon_summary": {
+          "20": {
+            "median_directional_return_bps": "0",
+            "median_mae_bps": "-25.38071065989847715736040609",
+            "median_mfe_bps": "19.73684210526315789473684211",
+            "sample_count": 115
+          },
+          "3": {
+            "median_directional_return_bps": "0",
+            "median_mae_bps": "-11.32502831257078142695356738",
+            "median_mfe_bps": "10.41666666666666666666666667",
+            "sample_count": 123
+          },
+          "5": {
+            "median_directional_return_bps": "-5.19617203176941470231833783",
+            "median_mae_bps": "-12.67431703864341435498930755",
+            "median_mfe_bps": "11.48442925057422146252871108",
+            "sample_count": 122
+          },
+          "8": {
+            "median_directional_return_bps": "-5.367686527106816961889425658",
+            "median_mae_bps": "-17.27115716753022452504317789",
+            "median_mfe_bps": "15.64129301355578727841501564",
+            "sample_count": 121
+          }
+        },
+        "products": [
+          "jm"
+        ],
+        "segment_count": 2,
+        "since": "2025-04-01",
+        "through": "2025-06-30",
+        "trigger_count_long": 49,
+        "trigger_count_short": 76,
+        "window_id": "fold_06_test",
+        "window_kind": "rolling_test"
+      }
+    },
+    {
+      "fold_id": "fold_07",
+      "reference": {
+        "evaluable_bar_count": 81689,
+        "horizon_summary": {
+          "20": {
+            "median_directional_return_bps": "-3.929375610635777605677816521",
+            "median_mae_bps": "-27.47528276004865802210316536",
+            "median_mfe_bps": "21.76281140475513877048403902",
+            "sample_count": 514
+          },
+          "3": {
+            "median_directional_return_bps": "0",
+            "median_mae_bps": "-10.92697177016544680986551726",
+            "median_mfe_bps": "9.09740576002131900590203768",
+            "sample_count": 548
+          },
+          "5": {
+            "median_directional_return_bps": "-3.477813231278809326291506728",
+            "median_mae_bps": "-14.04167614170361383386064926",
+            "median_mfe_bps": "11.48442925057422146252871108",
+            "sample_count": 546
+          },
+          "8": {
+            "median_directional_return_bps": "-4.426780000595724267455112960",
+            "median_mae_bps": "-17.87710300646931410249752118",
+            "median_mfe_bps": "13.36303955876374324630790228",
+            "sample_count": 540
+          }
+        },
+        "products": [
+          "jm"
+        ],
+        "segment_count": 4,
+        "since": "2024-07-01",
+        "through": "2025-06-30",
+        "trigger_count_long": 239,
+        "trigger_count_short": 313,
+        "window_id": "fold_07_reference",
+        "window_kind": "rolling_reference"
+      },
+      "test": {
+        "evaluable_bar_count": 22506,
+        "horizon_summary": {
+          "20": {
+            "median_directional_return_bps": "5.241649472978421112771191355",
+            "median_mae_bps": "-29.61220896380944363771562458",
+            "median_mfe_bps": "44.41089305336327716104746602",
+            "sample_count": 138
+          },
+          "3": {
+            "median_directional_return_bps": "-4.038772213247172859450726979",
+            "median_mae_bps": "-13.11762133799737647573240052",
+            "median_mfe_bps": "11.84834123222748815165876777",
+            "sample_count": 147
+          },
+          "5": {
+            "median_directional_return_bps": "0",
+            "median_mae_bps": "-16.67145332085715079813598422",
+            "median_mfe_bps": "16.65394394096655275147143350",
+            "sample_count": 146
+          },
+          "8": {
+            "median_directional_return_bps": "0",
+            "median_mae_bps": "-17.87842669845053635280095352",
+            "median_mfe_bps": "25.18891687657430730478589421",
+            "sample_count": 145
+          }
+        },
+        "products": [
+          "jm"
+        ],
+        "segment_count": 2,
+        "since": "2025-07-01",
+        "through": "2025-09-30",
+        "trigger_count_long": 87,
+        "trigger_count_short": 61,
+        "window_id": "fold_07_test",
+        "window_kind": "rolling_test"
+      }
+    },
+    {
+      "fold_id": "fold_08",
+      "reference": {
+        "evaluable_bar_count": 82490,
+        "horizon_summary": {
+          "20": {
+            "median_directional_return_bps": "0",
+            "median_mae_bps": "-27.11251694532309082693176683",
+            "median_mfe_bps": "23.41920374707259953161592506",
+            "sample_count": 461
+          },
+          "3": {
+            "median_directional_return_bps": "0",
+            "median_mae_bps": "-11.84834123222748815165876777",
+            "median_mfe_bps": "9.09740576002131900590203768",
+            "sample_count": 490
+          },
+          "5": {
+            "median_directional_return_bps": "-4.003280189708685242976510938",
+            "median_mae_bps": "-14.52451975208110947500770000",
+            "median_mfe_bps": "12.08459214501510574018126888",
+            "sample_count": 488
+          },
+          "8": {
+            "median_directional_return_bps": "-4.363001745200698080279232112",
+            "median_mae_bps": "-17.62891141472014103129131776",
+            "median_mfe_bps": "15.64129301355578727841501564",
+            "sample_count": 483
+          }
+        },
+        "products": [
+          "jm"
+        ],
+        "segment_count": 4,
+        "since": "2024-10-01",
+        "through": "2025-09-30",
+        "trigger_count_long": 205,
+        "trigger_count_short": 288,
+        "window_id": "fold_08_reference",
+        "window_kind": "rolling_reference"
+      },
+      "test": {
+        "evaluable_bar_count": 20341,
+        "horizon_summary": {
+          "20": {
+            "median_directional_return_bps": "0",
+            "median_mae_bps": "-24.86531288852051388313302942",
+            "median_mfe_bps": "26.98535080956052428681572860",
+            "sample_count": 97
+          },
+          "3": {
+            "median_directional_return_bps": "-4.169424843618320228516119342",
+            "median_mae_bps": "-12.97297843128968328915819909",
+            "median_mfe_bps": "8.639387846191280152023370755",
+            "sample_count": 102
+          },
+          "5": {
+            "median_directional_return_bps": "0",
+            "median_mae_bps": "-15.76044129235618597320724980",
+            "median_mfe_bps": "11.95695496213630928656835393",
+            "sample_count": 101
+          },
+          "8": {
+            "median_directional_return_bps": "0",
+            "median_mae_bps": "-17.63290065296531600279981080",
+            "median_mfe_bps": "16.59145117048524661461451542",
+            "sample_count": 100
+          }
+        },
+        "products": [
+          "jm"
+        ],
+        "segment_count": 2,
+        "since": "2025-10-01",
+        "through": "2025-12-31",
+        "trigger_count_long": 40,
+        "trigger_count_short": 63,
+        "window_id": "fold_08_test",
+        "window_kind": "rolling_test"
+      }
+    },
+    {
+      "fold_id": "fold_09",
+      "reference": {
+        "evaluable_bar_count": 82149,
+        "horizon_summary": {
+          "20": {
+            "median_directional_return_bps": "0",
+            "median_mae_bps": "-26.79767753461366681554265297",
+            "median_mfe_bps": "25.44529262086513994910941476",
+            "sample_count": 451
+          },
+          "3": {
+            "median_directional_return_bps": "-3.967564354665150476233651998",
+            "median_mae_bps": "-12.31401042489338177223187490",
+            "median_mfe_bps": "9.02323528884937364539519857",
+            "sample_count": 476
+          },
+          "5": {
+            "median_directional_return_bps": "0",
+            "median_mae_bps": "-14.11100658513640639698965193",
+            "median_mfe_bps": "12.16051884880421564653425213",
+            "sample_count": 473
+          },
+          "8": {
+            "median_directional_return_bps": "-4.120313143798928718582612279",
+            "median_mae_bps": "-17.67565178965974370304904993",
+            "median_mfe_bps": "16.44736842105263157894736842",
+            "sample_count": 469
+          }
+        },
+        "products": [
+          "jm"
+        ],
+        "segment_count": 4,
+        "since": "2025-01-01",
+        "through": "2025-12-31",
+        "trigger_count_long": 215,
+        "trigger_count_short": 265,
+        "window_id": "fold_09_reference",
+        "window_kind": "rolling_reference"
+      },
+      "test": {
+        "evaluable_bar_count": 18858,
+        "horizon_summary": {
+          "20": {
+            "median_directional_return_bps": "-4.480286738351254480286738351",
+            "median_mae_bps": "-25.22068095838587641866330391",
+            "median_mfe_bps": "29.73661852166525063721325404",
+            "sample_count": 85
+          },
+          "3": {
+            "median_directional_return_bps": "-4.060089321965083231831100284",
+            "median_mae_bps": "-9.103322712790168411470186618",
+            "median_mfe_bps": "8.877052818464269862405681314",
+            "sample_count": 95
+          },
+          "5": {
+            "median_directional_return_bps": "0",
+            "median_mae_bps": "-15.12625057293530424974347100",
+            "median_mfe_bps": "13.39028512551786128369833639",
+            "sample_count": 94
+          },
+          "8": {
+            "median_directional_return_bps": "0",
+            "median_mae_bps": "-17.68346941539599303684075672",
+            "median_mfe_bps": "18.24731710341630556953060077",
+            "sample_count": 94
+          }
+        },
+        "products": [
+          "jm"
+        ],
+        "segment_count": 1,
+        "since": "2026-01-01",
+        "through": "2026-03-31",
+        "trigger_count_long": 62,
+        "trigger_count_short": 35,
+        "window_id": "fold_09_test",
+        "window_kind": "rolling_test"
+      }
+    },
+    {
+      "fold_id": "fold_10",
+      "reference": {
+        "evaluable_bar_count": 81808,
+        "horizon_summary": {
+          "20": {
+            "median_directional_return_bps": "0",
+            "median_mae_bps": "-26.49006622516556291390728477",
+            "median_mfe_bps": "29.79737783075089392133492253",
+            "sample_count": 435
+          },
+          "3": {
+            "median_directional_return_bps": "-3.987240829346092503987240829",
+            "median_mae_bps": "-12.38645747316267547481420314",
+            "median_mfe_bps": "10.01001001001001001001001001",
+            "sample_count": 467
+          },
+          "5": {
+            "median_directional_return_bps": "0",
+            "median_mae_bps": "-15.75630252100840336134453782",
+            "median_mfe_bps": "12.91989664082687338501291990",
+            "sample_count": 463
+          },
+          "8": {
+            "median_directional_return_bps": "0",
+            "median_mae_bps": "-17.71089174751647579524530977",
+            "median_mfe_bps": "17.83613659242837267698989922",
+            "sample_count": 460
+          }
+        },
+        "products": [
+          "jm"
+        ],
+        "segment_count": 4,
+        "since": "2025-04-01",
+        "through": "2026-03-31",
+        "trigger_count_long": 238,
+        "trigger_count_short": 235,
+        "window_id": "fold_10_reference",
+        "window_kind": "rolling_reference"
+      },
+      "test": {
+        "evaluable_bar_count": 20103,
+        "horizon_summary": {
+          "20": {
+            "median_directional_return_bps": "3.943278943278943278943278943",
+            "median_mae_bps": "-19.65126477069225277558186124",
+            "median_mfe_bps": "23.47975349511484405562546006",
+            "sample_count": 104
+          },
+          "3": {
+            "median_directional_return_bps": "0",
+            "median_mae_bps": "-8.051529790660225442834138486",
+            "median_mfe_bps": "7.952286282306163021868787276",
+            "sample_count": 109
+          },
+          "5": {
+            "median_directional_return_bps": "0",
+            "median_mae_bps": "-9.267840593141797961075069509",
+            "median_mfe_bps": "11.70960187353629976580796253",
+            "sample_count": 109
+          },
+          "8": {
+            "median_directional_return_bps": "0",
+            "median_mae_bps": "-11.91662198755211993588928374",
+            "median_mfe_bps": "13.50875453662417379763873540",
+            "sample_count": 108
+          }
+        },
+        "products": [
+          "jm"
+        ],
+        "segment_count": 2,
+        "since": "2026-04-01",
+        "through": "2026-06-30",
+        "trigger_count_long": 64,
+        "trigger_count_short": 46,
+        "window_id": "fold_10_test",
+        "window_kind": "rolling_test"
+      }
+    }
+  ],
+  "rolling_stability": {
+    "event_count_max": 207,
+    "event_count_median": "118",
+    "event_count_min": 97,
+    "fold_count": 10,
+    "folds_with_events": 10
+  },
+  "schema_version": 1,
+  "source_event_kind": "jdj_trend_reentry_6_triggered",
+  "status": "ok",
+  "symbol": "jm"
+}
