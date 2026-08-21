@@ -44,6 +44,7 @@ flowchart TB
       NCV["N Candidate Report<br/>source-specific"]
       JCV["JDJ Candidate Reports<br/>three source-specific baselines"]
       MCR["MultiCandidateRobustnessService<br/>temporal / active60 / relationship"]
+      JAR["JDJActive60RobustnessService<br/>180-cell yearly / symbol-balanced sector"]
       MFM["MainForceMirrorV2Service / ResearchService<br/>60m historical confirmed observation"]
       MMS["pinned immutable<br/>main_force_member_rank_v1 snapshot"]
     end
@@ -82,6 +83,8 @@ flowchart TB
     JC --> NS
     JC --> J3 --> JCV
     RCLI --> JCV
+    RCLI --> JAR
+    J3 --> JAR
     RCLI --> SCV --> SL
     RCLI --> NCV --> NS
     RCLI --> MCR
@@ -172,6 +175,13 @@ flowchart TB
   不向 Market/Runtime/Alert 提供 Calendar 或 `has_night_session`。三份 `jm` baseline 已形成，
   prospective OOS 从 2026-08-24 开始且仍 pending；无 ranking、winner、promotion、DB/Canonical/Redis、
   Alert、Runtime 或订单路径。
+  `JDJActive60RobustnessService` 由 exact
+  `guiyi research candidate-robustness --protocol jdj_active60_robustness_v1` 调用，只对冻结的
+  `2023-01-01..2026-08-20` retrospective 串行复算 active60。每个 symbol 只经
+  `ActualDominantResearchSegmentLoader` 共享读取一次 1m/5m source，三个既有 reducer 共用 context；
+  yearly facts 不重读行情，sector 只做 symbol-balanced 汇总。输出固定保留 `3 × 60 = 180` cells，
+  不消费 `2026-08-21` embargo 或 `2026-08-24+` prospective OOS，不做 active60 pooled performance、
+  score/rank/KEEP/DROP/PROMOTE，不写 DB/Canonical/Redis，也不进入 Alert、Runtime 或订单路径。
   `MultiCandidateRobustnessService` 在两条 frozen Candidate 之上增加薄的只读组合层：
   temporal 仅投影既有 10-fold Candidate Validation，cross-symbol 保留冻结 active60 的完整
   120-cell 矩阵，event relationship 仅比较 same symbol + same physical contract + same rank1
