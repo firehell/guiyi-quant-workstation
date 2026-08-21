@@ -2694,7 +2694,6 @@ def test_jdj_robustness_renderer_preserves_exact_matrix_and_decimal_strings() ->
     assert tuple(payload) == (
         "schema_version",
         "command",
-        "status",
         "protocol_id",
         "frozen_at",
         "research_only",

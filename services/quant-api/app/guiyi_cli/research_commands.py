@@ -396,7 +396,6 @@ def _jdj_active60_robustness_payload(
     return {
         "schema_version": report.schema_version,
         "command": report.command,
-        "status": "ok",
         "protocol_id": report.protocol_id,
         "frozen_at": report.frozen_at.isoformat(),
         "research_only": report.research_only,

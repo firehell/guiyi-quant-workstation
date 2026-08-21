@@ -348,8 +348,26 @@ def main(
     print_json(payload, stdout)
     return (
         0
-        if payload.get("status")
-        in {"passed", "planned", "published", "noop", "ok", "ready", "skipped", "accepted"}
+        if (
+            payload.get("status")
+            in {
+                "passed",
+                "planned",
+                "published",
+                "noop",
+                "ok",
+                "ready",
+                "skipped",
+                "accepted",
+            }
+            or (
+                isinstance(
+                    research_request,
+                    JdjActive60RobustnessRequest,
+                )
+                and "status" not in payload
+            )
+        )
         else 1
     )
 
