@@ -7,6 +7,7 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 from enum import StrEnum
 import re
+from typing import TypeAlias
 
 from .domain import normalize_contract_for_symbol
 from .jdj_context import JdjContextError
@@ -302,6 +303,13 @@ class JdjKeyLevelBreakoutTriggerEvent:
         )
         object.__setattr__(self, "first_break_at", first_break_at)
         object.__setattr__(self, "retest_at", retest_at)
+
+
+JdjTriggerEvent: TypeAlias = (
+    JdjTrendFollowTriggerEvent
+    | JdjTrendReentryTriggerEvent
+    | JdjKeyLevelBreakoutTriggerEvent
+)
 
 
 def _canonical_trend_follow_event_id(
