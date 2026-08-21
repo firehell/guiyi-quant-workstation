@@ -142,7 +142,7 @@ test('schedules one bounded refresh only for an older companion at a common 5m b
   }), false)
 })
 
-test('SuBing observation composable preserves current dominant identity after extraction', async () => {
+test('SuBing observation composable preserves current dominant identity without owning chart bars', async () => {
   const selectedOverlay = ref<'subing' | 'htdy' | 'none'>('subing')
   const symbol = ref('ag')
   const frequency = ref<'5m' | '15m' | '1d'>('5m')
@@ -154,19 +154,15 @@ test('SuBing observation composable preserves current dominant identity after ex
     actual_contract: 'AG2601',
     dominant_mapping_date: '2026-01-12',
   }])
-  const replacements: BarData[][] = []
   const controller = useSubingObservation({
     selectedOverlay,
     symbol,
     frequency,
     dominants,
     selectedDominant: computed(() => dominants.value[0]),
-    followLatest: ref(true),
     fetchSnapshot: async () => normalizeSubingResearch(readyPayload),
     fetchDominants: async () => ({ items: dominants.value }),
     refreshSeries: async () => true,
-    visibleBars: () => [bar('2026-01-12T01:30:00Z', '2026-01-12')],
-    replaceChartBars: (items) => replacements.push(items),
   })
 
   await controller.refresh()
@@ -174,7 +170,6 @@ test('SuBing observation composable preserves current dominant identity after ex
   assert.equal(controller.subing.value?.actual_contract, 'AG2601')
   assert.equal(controller.subingError.value, false)
   assert.equal(controller.subingLoading.value, false)
-  assert.equal(replacements.length, 1)
   controller.dispose()
 })
 

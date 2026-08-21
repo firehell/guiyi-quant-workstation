@@ -171,15 +171,13 @@ export function visibleMainIndicatorsForOverlay(
   return []
 }
 
+/** Research overlays do not own the Market display dataset identity. */
 export function resolveEffectiveSeriesIdentity(input: {
   overlay: ResearchOverlayId
   userSeriesKind: SeriesKind
   userContract?: string
   dominantContract?: string
 }): { seriesKind: SeriesKind; contract?: string } {
-  if (input.overlay === 'subing') {
-    return { seriesKind: 'contract', contract: input.dominantContract }
-  }
   return {
     seriesKind: input.userSeriesKind,
     contract: input.userSeriesKind === 'contract' ? input.userContract : undefined,

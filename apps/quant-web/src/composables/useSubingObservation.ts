@@ -1,6 +1,5 @@
 import { computed, ref, type ComputedRef, type Ref } from 'vue'
 import type {
-  BarData,
   DominantContractItem,
   MarketFrequency,
   ResearchOverlayId,
@@ -20,15 +19,12 @@ interface Dependencies {
   frequency: Ref<MarketFrequency>
   dominants: Ref<DominantContractItem[]>
   selectedDominant: ComputedRef<DominantContractItem | undefined>
-  followLatest: Ref<boolean>
   fetchSnapshot: (params: {
     symbol: string
     frequency: '5m' | '15m' | '1d'
   }) => Promise<SubingResearchResponse>
   fetchDominants: () => Promise<{ items: DominantContractItem[] }>
   refreshSeries: () => Promise<boolean>
-  visibleBars: () => BarData[]
-  replaceChartBars: (bars: BarData[], preserveViewport?: boolean) => void
   scheduleTimeout?: (callback: () => void, delayMs: number) => unknown
   clearTimeout?: (handle: unknown) => void
 }
@@ -54,7 +50,6 @@ export function useSubingObservation(dependencies: Dependencies) {
     subingError.value = false
     subingLoading.value = dependencies.selectedOverlay.value === 'subing'
       && subingSupported.value
-    dependencies.replaceChartBars(dependencies.visibleBars())
   }
 
   async function refresh(allowDelayedRefresh = true): Promise<void> {
@@ -82,14 +77,13 @@ export function useSubingObservation(dependencies: Dependencies) {
       if (!isCurrent(requestGeneration, requestedSymbol, requestedFrequency)) return
       if (!isSnapshotForDominant(snapshot, expectedDominant)) {
         subing.value = null
-        replaceVisibleBars()
         const refreshedDominants = await dependencies.fetchDominants()
         if (!isCurrent(requestGeneration, requestedSymbol, requestedFrequency)) return
         dependencies.dominants.value = refreshedDominants.items
         const refreshedExpected = dependencies.selectedDominant.value
         if (!refreshedExpected) throw new Error('dominant metadata unavailable')
         if (!await dependencies.refreshSeries()) {
-          throw new Error('dominant contract series reload failed')
+          throw new Error('display series reload failed')
         }
         if (!isCurrent(requestGeneration, requestedSymbol, requestedFrequency)) return
         snapshot = await dependencies.fetchSnapshot({
@@ -102,7 +96,6 @@ export function useSubingObservation(dependencies: Dependencies) {
         }
       }
       subing.value = snapshot
-      replaceVisibleBars()
       if (allowDelayedRefresh && shouldScheduleSubingCompanionRefresh(snapshot)) {
         refreshTimer = scheduleTimeout(() => {
           refreshTimer = null
@@ -114,7 +107,6 @@ export function useSubingObservation(dependencies: Dependencies) {
       if (requestGeneration !== generation) return
       subing.value = null
       subingError.value = true
-      replaceVisibleBars()
     } finally {
       if (requestGeneration === generation) subingLoading.value = false
     }
@@ -129,13 +121,6 @@ export function useSubingObservation(dependencies: Dependencies) {
       && dependencies.selectedOverlay.value === 'subing'
       && dependencies.symbol.value === requestedSymbol
       && dependencies.frequency.value === requestedFrequency
-  }
-
-  function replaceVisibleBars(): void {
-    dependencies.replaceChartBars(
-      dependencies.visibleBars(),
-      !dependencies.followLatest.value,
-    )
   }
 
   function clearRefreshTimer(): void {

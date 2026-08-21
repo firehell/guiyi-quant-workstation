@@ -267,6 +267,7 @@ function subing(overrides = {}) {
 
 async function mockWorkspace(page, researchResponse, options = {}) {
   const marketRequests = options.marketRequests || []
+  const researchRequests = options.researchRequests || []
   const subingRequests = options.subingRequests || []
   const dominantRequests = options.dominantRequests || []
   let dominantResponseIndex = 0
@@ -284,7 +285,10 @@ async function mockWorkspace(page, researchResponse, options = {}) {
       dominantResponseIndex += 1
       return route.fulfill({ json: response })
     }
-    if (url.pathname.endsWith('/research/product')) return route.fulfill(researchResponse)
+    if (url.pathname.endsWith('/research/product')) {
+      researchRequests.push(Object.fromEntries(url.searchParams))
+      return route.fulfill(researchResponse)
+    }
     if (url.pathname.endsWith('/research/subing')) {
       subingRequests.push(Object.fromEntries(url.searchParams))
       if (options.subingDelayMs) await new Promise((resolve) => setTimeout(resolve, options.subingDelayMs))
@@ -326,22 +330,32 @@ async function mockAlertMarkerSurface(page) {
   })
 }
 
-test('SuBing owns the current dominant segment while preserving the user series identity', async ({ page }) => {
+test('SuBing keeps the Market display identity separate from current-dominant research', async ({ page }) => {
   const marketRequests = []
+  const researchRequests = []
   const subingRequests = []
-  await mockWorkspace(page, { json: research() }, { marketRequests, subingRequests })
+  await mockWorkspace(page, { json: research() }, { marketRequests, researchRequests, subingRequests })
   await page.goto('/market/chart?symbol=ag&series_kind=continuous&frequency=5m')
 
   const overlay = page.getByRole('group', { name: 'Overlay' })
   await expect(overlay.getByRole('button')).toHaveText(['无', '苏冰', '火天大有'])
-  await expect(page.locator('.product-workspace__kline')).toHaveAttribute('data-visible-start-trading-day', '2026-01-12')
+  await expect(page.getByText('120 bars', { exact: true })).toBeVisible()
+  await expect(page.locator('.product-workspace__kline')).toHaveAttribute('data-visible-start-trading-day', '2026-01-01')
   await expect(page.locator('.product-workspace__kline')).toHaveAttribute('data-visible-main-indicators', 'ema_21')
-  expect(marketRequests.some((request) => request.series_kind === 'contract' && request.contract === 'AG2601')).toBe(true)
+  await expect(page.getByRole('button', { name: '主连', exact: true })).toBeVisible()
+  await expect(page.locator('.toolbar__subing-basis')).toHaveText('苏冰计算 AG2601')
+  expect(marketRequests.some((request) => request.series_kind === 'continuous' && !request.contract)).toBe(true)
   expect(subingRequests).toEqual([{ symbol: 'ag', frequency: '5m' }])
+  await expect.poll(() => researchRequests.length).toBe(1)
+  expect(researchRequests).toEqual([{ symbol: 'ag', series_kind: 'continuous' }])
   await expect(page).toHaveURL(/series_kind=continuous/)
 
+  const marketRequestCount = marketRequests.length
   await overlay.getByRole('button', { name: '无', exact: true }).click()
-  await expect.poll(() => marketRequests.at(-1)?.series_kind).toBe('continuous')
+  await page.waitForTimeout(100)
+  expect(marketRequests).toHaveLength(marketRequestCount)
+  expect(researchRequests).toHaveLength(1)
+  await expect(page.getByText('120 bars', { exact: true })).toBeVisible()
   await expect(page).toHaveURL(/series_kind=continuous/)
 })
 
@@ -371,16 +385,19 @@ test('shared EMA switches persist across SuBing and HTDY while none hides every 
   await expect(kline).toHaveAttribute('data-visible-main-indicators', 'ema_10,ema_21,ema_60')
 })
 
-test('SuBing clips old same-contract bars and renders the requested primary Signal', async ({ page }) => {
+test('SuBing keeps the full Market display history and renders the requested primary Signal', async ({ page }) => {
   await mockWorkspace(page, { json: research() })
   await page.setViewportSize({ width: 1680, height: 1000 })
   await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=5m')
 
-  await expect(page.getByText('109 bars', { exact: true })).toBeVisible()
+  await expect(page.getByText('120 bars', { exact: true })).toBeVisible()
+  await expect(page.locator('.product-workspace__kline')).toHaveAttribute('data-visible-start-trading-day', '2026-01-01')
   await expect(page.locator('.subing-strip')).toContainText('5m · 当前不匹配')
   await expect(page.getByText('苏冰研究明细', { exact: true })).toBeVisible()
   await expect(page.getByText('当前合约', { exact: true })).toBeVisible()
   await expect(page.getByText('段起始', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: '真实主力', exact: true })).toBeVisible()
+  await expect(page.locator('.toolbar__subing-basis')).toHaveText('苏冰计算 AG2601')
   await expect(page.locator('body')).not.toContainText('买入')
   await expect(page.locator('body')).not.toContainText('卖出')
   await expect(page.locator('body')).not.toContainText('formal signal')
@@ -476,7 +493,7 @@ test('lifecycle markers keep Alert counts independent and clear stale research s
   await overlay.getByRole('button', { name: '苏冰', exact: true }).click()
   await expect(shell).toHaveAttribute('data-research-marker-count', '0')
   await expect(shell).toHaveAttribute('data-rendered-research-marker-count', '0')
-  await expect(page.getByText('苏冰 Factor 快照不可用；K 线保留当前合约行情', { exact: true })).toBeVisible()
+  await expect(page.getByText('苏冰 Factor 快照不可用；K 线保留当前展示行情', { exact: true })).toBeVisible()
   await expect(shell).toHaveAttribute('data-rendered-research-marker-count', '0')
   await expect(page.getByTestId('subing-lifecycle-panel')).toHaveCount(0)
 })
@@ -564,13 +581,14 @@ test('SuBing 15m non-match keeps the requested primary and creates no resolved s
   await expect(page.getByText('Resolved Signal')).toHaveCount(0)
 })
 
-test('SuBing keeps the visible chart empty until the segment snapshot resolves', async ({ page }) => {
+test('SuBing keeps Market display bars visible while the segment snapshot resolves', async ({ page }) => {
   await mockWorkspace(page, { json: research() }, { subingDelayMs: 700 })
   await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=5m')
 
-  await expect(page.getByText('0 bars', { exact: true })).toBeVisible()
-  await expect(page.locator('.product-workspace__kline')).toHaveAttribute('data-visible-start-trading-day', '')
-  await expect(page.getByText('109 bars', { exact: true })).toBeVisible()
+  await expect(page.getByText('120 bars', { exact: true })).toBeVisible()
+  await expect(page.locator('.product-workspace__kline')).toHaveAttribute('data-visible-start-trading-day', '2026-01-01')
+  await expect(page.locator('.subing-strip')).toContainText('苏冰 Factor 快照加载中')
+  await expect(page.getByText('120 bars', { exact: true })).toBeVisible()
 })
 
 test('SuBing keeps unsupported 30m explicit and does not request a snapshot', async ({ page }) => {
@@ -594,7 +612,7 @@ test('SuBing keeps unsupported 30m explicit and does not request a snapshot', as
   expect(subingRequests).toEqual([])
 })
 
-test('SuBing refreshes dominant metadata once before accepting a rollover snapshot', async ({ page }) => {
+test('SuBing refreshes dominant metadata without changing the Market display identity', async ({ page }) => {
   const marketRequests = []
   const subingRequests = []
   const dominantRequests = []
@@ -614,13 +632,14 @@ test('SuBing refreshes dominant metadata once before accepting a rollover snapsh
   await page.goto('/market/chart?symbol=ag&series_kind=continuous&frequency=5m')
 
   await expect.poll(() => subingRequests.length).toBe(1)
-  await expect(page.getByText('0 bars', { exact: true })).toBeVisible()
+  await expect(page.getByText('120 bars', { exact: true })).toBeVisible()
   await expect.poll(() => dominantRequests.length).toBe(2)
   await expect.poll(() => subingRequests.length).toBe(2)
-  await expect.poll(() => marketRequests.at(-1)?.contract).toBe('AG2602')
-  await expect(page.getByText('109 bars', { exact: true })).toBeVisible()
-  await expect(page.locator('.toolbar__dominant')).toHaveText('当前主力 AG2602')
-  expect(marketRequests[0]?.contract).toBe('AG2601')
+  await expect.poll(() => marketRequests.length).toBeGreaterThanOrEqual(2)
+  expect(marketRequests.every((request) => request.series_kind === 'continuous' && !request.contract)).toBe(true)
+  await expect(page.getByText('120 bars', { exact: true })).toBeVisible()
+  await expect(page.locator('.toolbar__subing-basis')).toHaveText('苏冰计算 AG2602')
+  await expect(page).toHaveURL(/series_kind=continuous/)
   expect(dominantRequests).toHaveLength(2)
 })
 
@@ -637,7 +656,7 @@ test('SuBing fails closed after one dominant refresh still mismatches the snapsh
   await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=5m')
 
   await expect.poll(() => subingRequests.length).toBe(2)
-  await expect(page.getByText('苏冰 Factor 快照不可用；K 线保留当前合约行情', { exact: true })).toBeVisible()
+  await expect(page.getByText('苏冰 Factor 快照不可用；K 线保留当前展示行情', { exact: true })).toBeVisible()
   await expect(page.getByText('120 bars', { exact: true })).toBeVisible()
   await page.waitForTimeout(700)
   expect(subingRequests).toHaveLength(2)
@@ -658,7 +677,7 @@ test('SuBing performs exactly one delayed refresh for an older companion at the 
   expect(subingRequests).toHaveLength(2)
 })
 
-test('SuBing refreshes the snapshot after a completed primary Live bar without exposing old segment rows', async ({ page }) => {
+test('SuBing refreshes the snapshot after a completed primary Live bar without clipping display history', async ({ page }) => {
   const subingRequests = []
   let marketSocket
   await page.routeWebSocket('**/api/v1/market/ws**', (socket) => {
@@ -678,7 +697,7 @@ test('SuBing refreshes the snapshot after a completed primary Live bar without e
   }))
 
   await expect.poll(() => subingRequests.length).toBe(2)
-  await expect(page.locator('.product-workspace__kline')).toHaveAttribute('data-visible-start-trading-day', '2026-01-12')
+  await expect(page.locator('.product-workspace__kline')).toHaveAttribute('data-visible-start-trading-day', '2026-01-01')
 })
 
 test('shows one identity-matched research snapshot without crowding desktop Kline', async ({ page }) => {
@@ -713,7 +732,7 @@ test('keeps Kline usable when research is unavailable and does not invent missin
   await mockWorkspace(page, { json: research(null) })
   await page.setViewportSize({ width: 1280, height: 900 })
   await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=15m')
-  await expect(page.getByText('109 bars')).toBeVisible()
+  await expect(page.getByText('120 bars')).toBeVisible()
   await page.getByRole('button', { name: '研究', exact: true }).click()
   await expect(page.getByText('OI 暂无可用数据')).toBeVisible()
 })
@@ -722,7 +741,7 @@ test('research endpoint failure leaves the Kline readable', async ({ page }) => 
   await mockWorkspace(page, { status: 409, contentType: 'application/json', body: JSON.stringify({ detail: { code: 'QUERY_WINDOW_EMPTY' } }) })
   await page.setViewportSize({ width: 1280, height: 900 })
   await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=15m')
-  await expect(page.getByText('109 bars')).toBeVisible()
+  await expect(page.getByText('120 bars')).toBeVisible()
   await expect(page.locator('.product-workspace__sidebar').getByText('研究数据暂不可用', { exact: true })).toBeVisible()
 })
 

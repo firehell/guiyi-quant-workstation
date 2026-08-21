@@ -67,13 +67,27 @@ test('research overlay defaults to SuBing and exposes exactly one overlay indica
   assert.deepEqual(visibleMainIndicatorsForOverlay('none', ['ema_10', 'ema_60']), [])
 })
 
-test('SuBing resolves current dominant without replacing the user Market series preference', () => {
+test('research overlays never replace the user Market display series identity', () => {
   assert.deepEqual(resolveEffectiveSeriesIdentity({
     overlay: 'subing',
     userSeriesKind: 'continuous',
     userContract: undefined,
     dominantContract: 'JM2609',
-  }), { seriesKind: 'contract', contract: 'JM2609' })
+  }), { seriesKind: 'continuous', contract: undefined })
+
+  assert.deepEqual(resolveEffectiveSeriesIdentity({
+    overlay: 'subing',
+    userSeriesKind: 'actual_dominant',
+    userContract: undefined,
+    dominantContract: 'JM2609',
+  }), { seriesKind: 'actual_dominant', contract: undefined })
+
+  assert.deepEqual(resolveEffectiveSeriesIdentity({
+    overlay: 'subing',
+    userSeriesKind: 'contract',
+    userContract: 'JM2605',
+    dominantContract: 'JM2609',
+  }), { seriesKind: 'contract', contract: 'JM2605' })
 
   assert.deepEqual(resolveEffectiveSeriesIdentity({
     overlay: 'htdy',
