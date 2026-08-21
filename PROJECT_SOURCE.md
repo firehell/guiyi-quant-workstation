@@ -62,8 +62,8 @@ update|refresh|audit|after-market`、只读 `guiyi research subing-calibration`�
 status|live|alert|alert-canary`；其中 `alert-canary --audience owner|htdy_observers` 是独立真实通知 Gate。
 这些命令都不能由普通只读测试授权。
 `research n-structure` 只读取 Historical Canonical，经共享行情入口生成 research-only 观察；它不写数据、
-不进入 Runtime，不证明效果，也不授权 candidate promotion。N Structure V1 的唯一长期业务语义见
-`docs/superpowers/specs/2026-08-20-n-structure-v1-design.md`；历史 Plan/Task 只从 Git history 追溯。
+不进入 Runtime，不证明效果，也不授权 candidate promotion。N Structure V1 的长期业务语义由本节、
+`docs/ARCHITECTURE.md`、exact policy 与对应测试共同定义；历史 Plan/Task 只从 Git history 追溯。
 `research candidate-robustness` 只比较已冻结的 SuBing/N exact Candidate research facts：复用各自
 Candidate Validation 生成 anchor temporal dossier，在冻结 active60 上保留完整 120-cell 矩阵，
 并且只在 same symbol + same physical contract + same rank1 segment 内比较 `jm` 双向 causal

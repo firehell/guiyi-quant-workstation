@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import ast
 import hashlib
+import json
+import re
 import subprocess
+import tomllib
 from pathlib import Path
 
 
@@ -192,20 +196,51 @@ def test_public_websocket_route_matches_market_api_contract() -> None:
     assert "location /ws/" not in nginx
 
 
-def test_release_candidate_versions_are_consistently_1_6_4() -> None:
-    pyproject = (ROOT / "services/quant-api/pyproject.toml").read_text(encoding="utf-8")
-    lock = (ROOT / "services/quant-api/uv.lock").read_text(encoding="utf-8")
-    api = (ROOT / "services/quant-api/app/main.py").read_text(encoding="utf-8")
-    version_module = (ROOT / "services/quant-api/app/version.py").read_text(
-        encoding="utf-8"
+def test_release_versions_are_consistent() -> None:
+    pyproject = tomllib.loads(
+        (ROOT / "services/quant-api/pyproject.toml").read_text(encoding="utf-8")
     )
-    web = (ROOT / "apps/quant-web/package.json").read_text(encoding="utf-8")
+    lock = tomllib.loads(
+        (ROOT / "services/quant-api/uv.lock").read_text(encoding="utf-8")
+    )
+    api = (ROOT / "services/quant-api/app/main.py").read_text(encoding="utf-8")
+    version_module = ast.parse(
+        (ROOT / "services/quant-api/app/version.py").read_text(encoding="utf-8")
+    )
+    web = json.loads(
+        (ROOT / "apps/quant-web/package.json").read_text(encoding="utf-8")
+    )
 
-    assert 'version = "1.6.4"' in pyproject
-    assert 'name = "quant-api"\nversion = "1.6.4"\nsource = { editable = "." }' in lock
-    assert 'APP_VERSION = "1.6.4"' in version_module
+    lock_packages = [
+        package
+        for package in lock["package"]
+        if package["name"] == "quant-api"
+        and package.get("source") == {"editable": "."}
+    ]
+    app_version_assignments = [
+        node.value.value
+        for node in version_module.body
+        if isinstance(node, ast.Assign)
+        and any(
+            isinstance(target, ast.Name) and target.id == "APP_VERSION"
+            for target in node.targets
+        )
+        and isinstance(node.value, ast.Constant)
+        and isinstance(node.value.value, str)
+    ]
+
+    assert len(lock_packages) == 1
+    assert len(app_version_assignments) == 1
+    versions = {
+        pyproject["project"]["version"],
+        lock_packages[0]["version"],
+        app_version_assignments[0],
+        web["version"],
+    }
+
+    assert len(versions) == 1
+    assert re.fullmatch(r"\d+\.\d+\.\d+", versions.pop())
     assert "version=APP_VERSION" in api
-    assert '"version": "1.6.4"' in web
     assert '"version": APP_VERSION' in api
 
 

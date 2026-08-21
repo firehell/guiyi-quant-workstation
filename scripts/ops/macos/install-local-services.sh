@@ -79,12 +79,6 @@ fi
 base_labels=(com.guiyi.quant-api com.guiyi.quant-web com.guiyi.quant-log-rotate)
 market_runtime_labels=(com.guiyi.quant-live com.guiyi.quant-after-market)
 alert_runtime_labels=(com.guiyi.quant-alert)
-retired_labels=(
-  com.guiyi.quant-web-recovery
-  com.guiyi.quant-worker-signals
-  com.guiyi.quant-worker-signals-recovery
-  com.guiyi.quant-api-recovery-single
-)
 render_labels=("${base_labels[@]}" "${market_runtime_labels[@]}" "${alert_runtime_labels[@]}")
 load_labels=("${base_labels[@]}")
 
@@ -167,22 +161,6 @@ reload_launch_agent() {
     sleep 1
   done
   printf '[install-local-services] ERROR: launchd reload failed label=%s\n' "$label" >&2
-  return 1
-}
-
-retire_launch_agent() {
-  local label="$1"
-  local attempt
-
-  launchctl bootout "gui/$UID/$label" >/dev/null 2>&1 || true
-  for attempt in 1 2 3 4 5; do
-    if ! launchctl print "gui/$UID/$label" >/dev/null 2>&1; then
-      rm -f "$AGENT_DIR/${label}.plist"
-      return 0
-    fi
-    sleep 1
-  done
-  printf '[install-local-services] ERROR: retired launchd bootout timed out label=%s\n' "$label" >&2
   return 1
 }
 
@@ -274,12 +252,6 @@ discard_runtime_activation_marker_backup() {
     activation_marker_backup=""
   fi
 }
-
-if [[ "$MODE" != "--confirm-alert-runtime" ]]; then
-  for label in "${retired_labels[@]}"; do
-    retire_launch_agent "$label"
-  done
-fi
 
 prepare_runtime_activation_marker
 

@@ -142,7 +142,7 @@ flowchart TB
   Completed N、break/band raw facts 和 BULL/BEAR/RANGE Structure。N 的公开
   `evaluate_n_structure_segment()` 对每个 true segment 单次生成 exact Swing/Pattern/Structure；
   Pattern public interface 拒绝 non-reducer trace，Research 不重跑 prefix 或线性查找每个 Completed N。
-  N 的长期业务语义只看 `docs/superpowers/specs/2026-08-20-n-structure-v1-design.md`。两者结果都仅由
+  N 的长期业务语义由 `PROJECT_SOURCE.md`、本架构说明、exact policy 与对应测试共同定义。两者结果都仅由
   read-only CLI 输出 stdout JSON。Lifecycle 无独立 DB/Redis persistence、worker/queue 或
   notification path；`AlertRuntime` 仍只消费 V1 `resolved_signal`，不依赖 Lifecycle
   evaluator 或 snapshot。
