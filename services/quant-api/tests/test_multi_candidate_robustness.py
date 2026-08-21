@@ -8,7 +8,7 @@ from types import MappingProxyType
 
 import pytest
 
-from app.guiyi_cli.research_commands import _multi_candidate_robustness_payload
+from app.guiyi_cli.research_payloads import _multi_candidate_robustness_payload
 from app.research.robustness.multi_candidate_robustness import (
     CandidateRelationshipSummary,
     CandidateSymbolRobustness,

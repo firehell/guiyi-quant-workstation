@@ -34,10 +34,10 @@ from app.guiyi_cli.output import (
     print_json,
 )
 from app.guiyi_cli.research_parser import add_research_commands
-from app.guiyi_cli.research_commands import (
+from app.guiyi_cli.research_commands import run_research_command
+from app.guiyi_cli.research_requests import (
     ResearchRequest,
     build_research_request,
-    run_research_command,
 )
 from app.market_data.composition import (
     build_member_rank_snapshot_builder,

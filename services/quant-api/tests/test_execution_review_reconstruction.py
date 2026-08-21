@@ -9,11 +9,9 @@ from sqlalchemy.orm import Session
 
 from app.alerts.models import AlertEvent, AlertRule
 from app.db.base import Base
+from app.execution_review.errors import ExecutionReviewDomainError
 from app.execution_review.models import TradeDecision, TradeEpisode, TradeExecution
-from app.execution_review.service import (
-    ExecutionReviewDomainError,
-    ExecutionReviewService,
-)
+from app.execution_review.reconstruction import EventReconstructionService
 from app.market_data.domain import BarFrequency, CanonicalBar
 from app.market_data.market_data_service import (
     DominantContractSegmentSummary,
@@ -62,9 +60,7 @@ class _MarketData:
         frequency: BarFrequency,
         trading_day: date,
     ) -> tuple[CanonicalBar, ...]:
-        self.calls.append(
-            ("bars", (symbol, contract, frequency, trading_day))
-        )
+        self.calls.append(("bars", (symbol, contract, frequency, trading_day)))
         if self.error is not None:
             raise self.error
         return self.bars.get((frequency, trading_day), ())
@@ -101,9 +97,7 @@ def test_signal_reconstruction_uses_event_identity_and_strict_cutoff(
         EVENT_END - timedelta(minutes=10),
     )
     assert all(
-        call[1][1] == "JM2609"
-        for call in market_data.calls
-        if call[0] == "bars"
+        call[1][1] == "JM2609" for call in market_data.calls if call[0] == "bars"
     )
     assert _db_row_count(session) == 0
 
@@ -228,11 +222,12 @@ def test_reconstruction_unknown_market_error_is_503_and_writes_nothing(
     assert _db_row_count(session) == 0
 
 
-def _service(session: Session, market_data: _MarketData) -> ExecutionReviewService:
-    return ExecutionReviewService(
+def _service(
+    session: Session,
+    market_data: _MarketData,
+) -> EventReconstructionService:
+    return EventReconstructionService(
         session,
-        multipliers={},
-        clock=lambda: EVENT_END,
         market_data=market_data,
     )
 

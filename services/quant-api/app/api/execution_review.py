@@ -11,7 +11,11 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.execution_review.composition import build_execution_review_service
+from app.execution_review.composition import (
+    build_execution_review_query_service,
+    build_execution_review_reconstruction_service,
+    build_execution_review_service,
+)
 from app.execution_review.contracts import (
     ExecutionReviewContractError,
 )
@@ -22,6 +26,9 @@ from app.execution_review.models import (
     TradeReview,
 )
 from app.execution_review.pnl import PositionState
+from app.execution_review.queries import ExecutionReviewQueryService
+from app.execution_review.reconstruction import EventReconstructionService
+from app.execution_review.errors import ExecutionReviewDomainError
 from app.market_data.domain import CanonicalBar
 from app.execution_review.service import (
     DecisionUpdateCommand,
@@ -31,7 +38,6 @@ from app.execution_review.service import (
     ExecutedResult,
     ExecutionCommand,
     ExecutionResult,
-    ExecutionReviewDomainError,
     ExecutionReviewService,
     ExecutionUpdateCommand,
     NotExecutedCommand,
@@ -94,7 +100,7 @@ def list_items(
     session: Session = Depends(get_db),
 ) -> ReviewItemsResponse:
     items = _domain_call(
-        lambda: _service(session).list_items(
+        lambda: _query_service(session).list_items(
             state=state,
             symbol=symbol,
             direction=direction,
@@ -127,7 +133,7 @@ def event_states(
     session: Session = Depends(get_db),
 ) -> EventStatesResponse:
     states = _domain_call(
-        lambda: _service(session).event_states(tuple(event_ids))
+        lambda: _query_service(session).event_states(tuple(event_ids))
     )
     return EventStatesResponse(
         items=[
@@ -147,7 +153,7 @@ def episode_detail(
     episode_id: int,
     session: Session = Depends(get_db),
 ) -> EpisodeDetailResponse:
-    detail = _domain_call(lambda: _service(session).episode_detail(episode_id))
+    detail = _domain_call(lambda: _query_service(session).episode_detail(episode_id))
     return EpisodeDetailResponse(
         episode=_episode_out(detail.episode),
         origin_event=EventContextOut(
@@ -159,9 +165,7 @@ def episode_detail(
             frequency=detail.origin_event.frequency,
             bar_end=_utc_timestamp(detail.origin_event.bar_end),
             result_codes=list(detail.origin_event.result_codes),
-            lower_tf_confirmation=(
-                detail.origin_event.lower_tf_confirmation
-            ),
+            lower_tf_confirmation=(detail.origin_event.lower_tf_confirmation),
             detected_at=_utc_timestamp(detail.origin_event.detected_at),
             notification_attempted_at=_utc_timestamp(
                 detail.origin_event.notification_attempted_at
@@ -184,7 +188,10 @@ def event_reconstruction(
     session: Session = Depends(get_db),
 ) -> EventReconstructionResponse:
     result = _domain_call(
-        lambda: _service(session).reconstruct_event(event_id, mode=mode)
+        lambda: _reconstruction_service(session).reconstruct_event(
+            event_id,
+            mode=mode,
+        )
     )
     return EventReconstructionResponse(
         status=result.status,
@@ -239,7 +246,7 @@ def stats(
     session: Session = Depends(get_db),
 ) -> ExecutionReviewStatsResponse:
     result = _domain_call(
-        lambda: _service(session).stats(
+        lambda: _query_service(session).stats(
             trading_day_from=trading_day_from,
             trading_day_to=trading_day_to,
             symbol=symbol,
@@ -254,9 +261,7 @@ def stats(
             pending_events=result.opportunities.pending_events,
             executed_decisions=result.opportunities.executed_decisions,
             not_executed_decisions=result.opportunities.not_executed_decisions,
-            decision_completion_rate=(
-                result.opportunities.decision_completion_rate
-            ),
+            decision_completion_rate=(result.opportunities.decision_completion_rate),
             execution_rate=result.opportunities.execution_rate,
             primary_reason_counts=result.opportunities.primary_reason_counts,
         ),
@@ -495,6 +500,16 @@ def _service(session: Session) -> ExecutionReviewService:
     return build_execution_review_service(session)
 
 
+def _query_service(session: Session) -> ExecutionReviewQueryService:
+    return build_execution_review_query_service(session)
+
+
+def _reconstruction_service(
+    session: Session,
+) -> EventReconstructionService:
+    return build_execution_review_reconstruction_service(session)
+
+
 def _domain_call(call: Callable[[], _T]) -> _T:
     try:
         return call()
@@ -628,9 +643,7 @@ def _correction_response(
         decision=_decision_out(result.decision),
         episode=_episode_out(result.episode) if result.episode is not None else None,
         execution=(
-            _execution_out(result.execution)
-            if result.execution is not None
-            else None
+            _execution_out(result.execution) if result.execution is not None else None
         ),
         position=(
             _position_out(result.position) if result.position is not None else None

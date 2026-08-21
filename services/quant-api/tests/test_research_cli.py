@@ -14,11 +14,9 @@ from app.research import composition as research_composition
 from app.guiyi_cli.main import build_parser
 from app.guiyi_cli.main import main
 from app.guiyi_cli.data_parser import CliUsageError
-from app.guiyi_cli.research_commands import (
-    _optional_decimal,
-    build_research_request,
-    run_research_command,
-)
+from app.guiyi_cli.research_commands import run_research_command
+from app.guiyi_cli.research_payloads import _optional_decimal
+from app.guiyi_cli.research_requests import build_research_request
 from app.research.subing.candidate_validation import (
     CandidateValidationReport,
     CandidateWindowKind,
