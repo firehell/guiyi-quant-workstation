@@ -332,13 +332,12 @@ Alert Application Domain 仍只有 `alert_rules` 与 `alert_events` 两张表。
 - exact HTDY Rule + Scope + audience + transport 持续边界为
   `htdy_original_15m × jm × htdy_observers × pushplus-wechat-topic`；SuBing 固定为
   `subing_entry_signal_v1 × jm × owner × pushplus-wechat`，不得从历史 canary 推导 release 或 switch；
-- v1.6.4 Alert Runtime promotion/switch 已完成；v1.6.5 Git release/tag 已完成；后续 Alert Runtime switch
+- v1.6.5 main/release/tag 与 exact-tag Alert Runtime promotion/switch：均已完成；后续版本或再次 switch
   仍是新的独立 Gate。
 
 这些 Gate 不能相互授权，失败或重试也需要新的明确请求。代码、fixture、render-only 或 mock 通过只证明
-实现，不证明未来发布或 Runtime Gate 已授权。当前 Alert instance 为 `v1.6.4` exact Runtime，PushPlus
-transport 已按两条精确 `jm` 边界启用；各服务的部署身份以 `STATUS.md` 为准；自然 HTDY Topic Event 与
-自然 SuBing owner Event 验收仍 pending。
+实现，不证明未来发布或 Runtime Gate 已授权。当前 production 为 `v1.6.5` exact Runtime，PushPlus
+transport 已按两条精确 `jm` 边界启用；自然 HTDY Topic Event 与自然 SuBing owner Event 验收仍 pending。
 
 ## OpenSpec
 

@@ -9,12 +9,13 @@
 - 当前正式 release 为
   `v1.6.5@b0be6364580b4ed509cfe76573b4085c3b5a7924`；annotated tag object 为
   `0ab86e64f01f6e0f0b423c6cf1b86be4791a6360`，message=`Release v1.6.5`。
-- Runtime promotion 处于部分完成状态。2026-08-21 首次切换已将 API/Web/Live/after-market 切至 clean/detached
-  `/Volumes/扩展盘/guiyi-quant-runtime-v1.6.5@b0be6364580b4ed509cfe76573b4085c3b5a7924`；
-  API=`200 / 1.6.5 / readonly`、Web=`200`、Runtime health=`ok / readonly`，after-market 当前未运行属于
-  定时服务的正常空闲状态。Alert 首次切换被 `alert notification config not ready` fail-closed 阻止，故仍运行
-  clean/detached `v1.6.4@d85ab7d6f6ca5f64cdcf68611d808a072776edef`；新 API plist 的通知配置路径为空，
-  与旧 Alert plist 的路径不一致。未重试、未发送通知、未修改 Git 外配置；整体 status 因此为 `failed`。
+- production Runtime 为 clean/detached
+  `/Volumes/扩展盘/guiyi-quant-runtime-v1.6.5@b0be6364580b4ed509cfe76573b4085c3b5a7924`。
+  2026-08-21 最终只读读回：API/Web/Live/after-market/Alert 五个 label 的 root 与 loaded commit
+  均匹配；Market/Alert marker enabled；API=`200 / 1.6.5 / readonly`、Web=`200`、
+  Runtime health=`ok / readonly`、PushPlus config=`ready`、overall=`passed`；Market dominants=`60`。
+  after-market 当前未运行属于定时服务的正常空闲状态。Alert 的首次 fail-closed 后，已修复 Git 外配置引用并以
+  新的一次性授权完成 switch；未发送 canary 或人工通知。
 
 ## 当前产品与 Runtime 面
 
@@ -26,7 +27,7 @@
   精确清单和边界见 `PROJECT_SOURCE.md`。
 - Market Runtime V1 已启用，只处理与 active 60 一致的 `operational_products.txt`：Live 观察当日
   rank1 completed 1m；盘后在 18:05 及最多一次一小时后 retry 更新同一范围。
-- Alert Runtime V2 的旧 v1.6.4 实例仍在运行，Code Registry 只含 `htdy_original_15m` 与
+- Alert Runtime V2 已启用，Code Registry 只含 `htdy_original_15m` 与
   `subing_entry_signal_v1`。production 两条 Rule Scope 均精确为 `jm`；HTDY 每个自然 Event
   最多向 `htdy_observers` Topic 发起一次 PushPlus 请求，SuBing 最多向不带 Topic 的 owner 发起一次。
   无逐人状态、retry、queue、replay、backfill、fallback 或订单路径。
@@ -69,8 +70,6 @@
   smoke 只证明无未来 Bar，不替代自然 Live evidence。
 - v1.6.5 API/Web/Market Runtime root 的下一次自然 18:05 盘后业务证据待观察；2026-08-18 的既有自然成功
   证据保留，但不冒充新 root 的自然运行。不得人工触发、回填或补证。
-- Alert v1.6.5 切换仍待 Git 外 private notification config 由 operator 修复为 `0700` parent / `0600` file 后，
-  以新的、范围明确的单次 Alert Runtime switch 意图执行；本次失败不能复用为重试授权。
 - SuBing 与 N 的 prospective OOS 继续按各自 exact protocol 独立累积，当前均为 `pending`。
 - Execution Review Gate D 继续 `disabled / not activated`。
 
@@ -83,4 +82,4 @@
   `CHANGELOG.md`、Git tag、commit 与 Git history 追溯。
 - 代码、测试、retrospective evidence、健康绿灯或历史授权都不授予新的 migration、数据写入、
   Scope 变化、真实通知、release/tag、Runtime switch/promotion 或订单能力。
-- 最小下一步：由 operator 修复 Git 外 Alert notification config 的安全路径与权限后，明确授权一次 v1.6.5 Alert Runtime switch。
+- 最小下一步：等待并只读记录 v1.6.5 Runtime 的下一次自然 18:05 盘后结果；在自然时点之前不人工补证。

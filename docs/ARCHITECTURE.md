@@ -254,7 +254,7 @@ htdy_original_15m × 该 Rule 显式 scope_products × htdy_observers × pushplu
 subing_entry_signal_v1 × 该 Rule 显式 scope_products × owner × pushplus-wechat
 ```
 
-当前 deployed Alert exact-tag `v1.6.4` instance 的两条 Rule 各自 `scope_products=jm`，PushPlus 持续边界
+当前 deployed Alert exact-tag `v1.6.5` instance 的两条 Rule 各自 `scope_products=jm`，PushPlus 持续边界
 精确为上述 HTDY Topic 与 SuBing owner。已批准 Topic 可在人工核对的 `1..4` 人边界内增加成员；超过
 4 人、未知成员或更换 Topic 必须重新授权。未来第三条 Rule 不继承授权；production
 migration、后续 release/tag、再次 Runtime switch、Scope/audience/transport 变更、真实 canary/send、
