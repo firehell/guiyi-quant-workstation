@@ -359,7 +359,7 @@ openspec validate --specs --strict --no-interactive
 openspec list --json
 ```
 
-已归档 change 只保留历史意图；当前行为合同只看 `openspec/specs/`。
+已完成 change 只从 Git history 追溯；当前行为合同只看 `openspec/specs/`。
 
 ## Data Foundation 只读验证
 
