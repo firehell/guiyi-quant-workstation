@@ -79,7 +79,7 @@ formula_version = jdj_1m_v1
 source_kind     = jdj_1m
 ```
 
-Candidate：
+Candidate / source-event pairs：
 
 ```text
 jdj_trend_follow_1m_candidate_v1
@@ -110,7 +110,7 @@ Identity/date/horizon drift = `FORMULA_OR_CANDIDATE_DRIFT`。
 
 ## 5. Exact policy must mechanically freeze formula semantics
 
-`data/research_policies/jdj_1m_policy_v1.json` 不能只保存 period/timeframe；必须 exact nested freeze：
+`data/research_policies/jdj_1m_policy_v1.json` 必须 exact nested freeze：
 
 ```text
 trend_context:
@@ -336,16 +336,7 @@ JdjTriggerEvent: TypeAlias = (
 )
 ```
 
-Task 7 defines in dedicated file `jdj_candidate_validation_calendar.py`：
-
-```python
-class JdjProspectiveCalendarError(ValueError):
-    code = "JDJ_PROSPECTIVE_CALENDAR_INVALID"
-
-def assert_jdj_prospective_calendar(session: Session) -> None: ...
-```
-
-Task 8 composition consumes that exact function before exposing JDJ Candidate Validation。
+Task 7 dedicated file `jdj_candidate_validation_calendar.py` defines `JdjProspectiveCalendarError(ValueError)` with public code `JDJ_PROSPECTIVE_CALENDAR_INVALID` and the exact public function signature `assert_jdj_prospective_calendar(session: Session) -> None`. Task 8 composition consumes that exact function before exposing JDJ Candidate Validation。
 
 ## 15. Immutable events
 
