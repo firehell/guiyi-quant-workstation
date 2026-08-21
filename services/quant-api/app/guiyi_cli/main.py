@@ -40,6 +40,7 @@ from app.guiyi_cli.research_commands import (
     run_research_command,
 )
 from app.market_data.composition import (
+    build_member_rank_snapshot_builder,
     build_historical_data_manager,
     build_jdj_candidate_validation_service,
     build_jdj_research_service,
@@ -71,6 +72,7 @@ ResearchServiceFactory = Callable[[Any], Any]
 JdjCandidateValidationServiceFactory = Callable[[Any, str], Any]
 RollReconcilerFactory = Callable[[Any], Any]
 RollMarkerState = Callable[[], str]
+MemberRankSnapshotBuilderFactory = Callable[[Any], Any]
 
 logger = logging.getLogger(__name__)
 
@@ -139,6 +141,9 @@ def main(
     *,
     session_factory: SessionFactory = SessionLocal,
     manager_factory: ManagerFactory = build_historical_data_manager,
+    member_rank_snapshot_builder_factory: MemberRankSnapshotBuilderFactory = (
+        build_member_rank_snapshot_builder
+    ),
     after_market_factory: AfterMarketFactory = build_after_market_updater,
     live_service_factory: LiveServiceFactory = build_live_market_service,
     alert_runtime_factory: AlertRuntimeFactory = build_alert_runtime,
@@ -215,6 +220,7 @@ def main(
                 args,
                 session_factory,
                 manager_factory,
+                member_rank_snapshot_builder_factory,
                 after_market_factory,
                 execution_review_roll_marker_state,
                 roll_reconciler_factory,
@@ -328,7 +334,7 @@ def main(
     return (
         0
         if payload.get("status")
-        in {"passed", "planned", "noop", "ok", "ready", "skipped", "accepted"}
+        in {"passed", "planned", "published", "noop", "ok", "ready", "skipped", "accepted"}
         else 1
     )
 
@@ -337,11 +343,16 @@ def _run_data(
     args: argparse.Namespace,
     session_factory: SessionFactory,
     manager_factory: ManagerFactory,
+    member_rank_snapshot_builder_factory: MemberRankSnapshotBuilderFactory,
     after_market_factory: AfterMarketFactory,
     execution_review_roll_marker_state: RollMarkerState,
     roll_reconciler_factory: RollReconcilerFactory,
 ) -> dict[str, object]:
     """在 DB 会话内执行 data 子命令并返回 as_payload 字典。"""
+    if args.data_command == "member-rank":
+        with session_factory() as session:
+            builder = member_rank_snapshot_builder_factory(session)
+            return builder.snapshot(build_request(args)).as_payload()
     if args.data_command == "after-market":
         with session_factory() as session:
             manager = manager_factory(session)

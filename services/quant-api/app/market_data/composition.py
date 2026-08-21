@@ -14,9 +14,11 @@ import os
 from pathlib import Path
 from typing import cast
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.env import PROJECT_ROOT
+from app.models import Contract
 from app.market_data.catalog import MarketCatalog
 from app.market_data.candidate_validation_policy import (
     load_candidate_manifest,
@@ -114,6 +116,74 @@ def canonical_root() -> Path:
     configured = os.getenv("GUIYI_CANONICAL_DATA_ROOT")
     root = Path(configured) if configured else PROJECT_ROOT / "data/parquet/canonical"
     return root.resolve()
+
+
+def research_data_root() -> Path:
+    """Resolve the explicit Git-external research-data root without creating it."""
+    configured = os.getenv("GUIYI_RESEARCH_DATA_ROOT")
+    if not configured:
+        from app.market_data.member_rank_snapshot_builder import (
+            MemberRankSnapshotBuildError,
+        )
+
+        raise MemberRankSnapshotBuildError("MEMBER_SNAPSHOT_ROOT_UNCONFIGURED")
+    return Path(configured).resolve()
+
+
+class _CatalogMemberRankPlanningSource:
+    """Expose existing Catalog rank-1 and trading-calendar facts to the builder."""
+
+    def __init__(self, catalog: MarketCatalog) -> None:
+        self._catalog = catalog
+
+    def rank1_map(self, symbol: str, since, through):
+        return self._catalog.main_map(symbol, since, through)
+
+    def trading_days(self, symbol: str, since, through):
+        return self._catalog.trading_days(symbol, since, through)
+
+
+class _CatalogMemberRankVerifiers:
+    """Read-only Calendar/Contract facts required by the pinned Task 1 reader."""
+
+    def __init__(self, session: Session, catalog: MarketCatalog) -> None:
+        self._session = session
+        self._catalog = catalog
+
+    def is_trading_day(self, symbol: str, trade_date) -> bool:
+        return self._catalog.trading_days(symbol, trade_date, trade_date) == (trade_date,)
+
+    def is_contract_valid(self, physical_contract: str, trade_date) -> bool:
+        return self._session.scalar(
+            select(Contract.contract_code).where(
+                Contract.contract_code == physical_contract,
+                Contract.listed_date.is_not(None),
+                Contract.listed_date <= trade_date,
+                Contract.expired_date.is_not(None),
+                Contract.expired_date > trade_date,
+            )
+        ) is not None
+
+
+def build_member_rank_snapshot_builder(session: Session):
+    """Compose a snapshot builder with lazy RQData construction only on apply."""
+    from app.market_data.member_rank_snapshot_builder import MemberRankSnapshotBuilder
+    from app.market_data.rqdata_adapter import RQDataClient, RQDataMemberRankProvider
+
+    catalog = MarketCatalog(session, canonical_root())
+    verifiers = _CatalogMemberRankVerifiers(session, catalog)
+
+    def provider_factory() -> RQDataMemberRankProvider:
+        client = RQDataClient()
+        return RQDataMemberRankProvider(client, client_version=client.client_version)
+
+    return MemberRankSnapshotBuilder(
+        research_data_root(),
+        rank1_source=_CatalogMemberRankPlanningSource(catalog),
+        trading_calendar=verifiers,
+        contract_validity=verifiers,
+        provider_factory=provider_factory,
+    )
 
 
 def build_historical_data_manager(session: Session) -> HistoricalDataManager:

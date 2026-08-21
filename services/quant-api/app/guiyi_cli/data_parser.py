@@ -26,7 +26,7 @@ class JsonArgumentParser(argparse.ArgumentParser):
 def add_data_commands(
     commands: argparse._SubParsersAction[Any],
 ) -> None:
-    """注册 data 下的 update、refresh、audit、after-market 子解析器。"""
+    """注册 data 下的维护与不可变席位快照子解析器。"""
     update = commands.add_parser("update")
     selector = update.add_mutually_exclusive_group(required=True)
     selector.add_argument("--symbol")
@@ -48,3 +48,14 @@ def add_data_commands(
     audit.add_argument("--through")
 
     commands.add_parser("after-market")
+
+    member_rank = commands.add_parser("member-rank")
+    member_rank_commands = member_rank.add_subparsers(
+        dest="member_rank_command", required=True
+    )
+    snapshot = member_rank_commands.add_parser("snapshot")
+    snapshot.add_argument("--dataset-id", required=True)
+    snapshot.add_argument("--products", nargs="+", required=True)
+    snapshot.add_argument("--since", required=True)
+    snapshot.add_argument("--through", required=True)
+    snapshot.add_argument("--apply", action="store_true")

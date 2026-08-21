@@ -10,6 +10,7 @@ from app.guiyi_cli.main import CliUsageError, build_parser, main
 from app.guiyi_cli.output import exception_error_payload
 from app.market_data.after_market import AfterMarketResult
 from app.market_data.historical_data_manager import MaintenanceResult
+from app.market_data.member_rank_snapshot_builder import MemberRankSnapshotResult
 
 
 class FakeManager:
@@ -29,7 +30,14 @@ class FakeManager:
         return MaintenanceResult("refresh", "planned", request.through, 1, 0, 0, 0, 0)
 
 
-def _run(args, manager, *, after_market_factory=None, live_service_factory=None):
+def _run(
+    args,
+    manager,
+    *,
+    after_market_factory=None,
+    live_service_factory=None,
+    member_rank_snapshot_builder_factory=None,
+):
     stdout = io.StringIO()
     stderr = io.StringIO()
     code = main(
@@ -37,6 +45,7 @@ def _run(args, manager, *, after_market_factory=None, live_service_factory=None)
         manager_factory=lambda _session: manager,
         after_market_factory=after_market_factory,
         live_service_factory=live_service_factory,
+        member_rank_snapshot_builder_factory=member_rank_snapshot_builder_factory,
         session_factory=lambda: _NullContext(),
         stdout=stdout,
         stderr=stderr,
@@ -66,7 +75,42 @@ def test_data_parser_exposes_only_active_user_commands() -> None:
         "refresh",
         "audit",
         "after-market",
+        "member-rank",
     }
+
+
+def test_member_rank_snapshot_defaults_to_plan_and_uses_shared_json_exit_path() -> None:
+    manager = FakeManager()
+    calls = []
+
+    class Builder:
+        def snapshot(self, request):
+            calls.append(request)
+            return MemberRankSnapshotResult(
+                status="planned",
+                dataset_id=request.dataset_id,
+                products=request.products,
+                contract_count=1,
+                provider_calls=0,
+                partition_count=0,
+            )
+
+    code, payload = _run(
+        [
+            "data", "member-rank", "snapshot", "--dataset-id", "mfm-member-20260821",
+            "--products", "jm", "ag", "cu", "m", "--since", "2026-08-20",
+            "--through", "2026-08-20",
+        ],
+        manager,
+        member_rank_snapshot_builder_factory=lambda _session: Builder(),
+    )
+
+    assert code == 0
+    assert payload["status"] == "planned"
+    assert payload["provider_calls"] == 0
+    assert payload["readonly"] is True
+    assert calls[0].apply is False
+    assert manager.calls == []
 
 
 def test_after_market_is_a_dedicated_apply_free_cli_entrypoint() -> None:

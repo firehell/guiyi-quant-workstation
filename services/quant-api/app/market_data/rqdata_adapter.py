@@ -23,6 +23,11 @@ from app.market_data.domain import BarFrequency, CanonicalBar, DatasetKey, Datas
 from app.market_data.errors import InfrastructureError
 from app.market_data.historical_data_manager import BarBatch, BarFetchRequest
 from app.market_data.metadata import MetadataSnapshot
+from app.market_data.member_rank_snapshot import MemberRankRow
+from app.market_data.member_rank_snapshot_builder import (
+    MemberRankFetch,
+    MemberRankSnapshotBuildError,
+)
 from app.market_data.session_clock import SHANGHAI
 from app.models import Contract, Instrument, MainContractMap, TradingCalendar
 
@@ -379,6 +384,24 @@ class RQDataClient:
             market="cn",
         )
 
+    def member_rank(
+        self, order_book_id: str, start: date, end: date, rank_by: str
+    ):
+        """Fetch exact-contract member ranks; only apply paths construct this client."""
+        return self.api.futures.get_member_rank(
+            order_book_id,
+            start_date=start,
+            end_date=end,
+            rank_by=rank_by,
+        )
+
+    @property
+    def client_version(self) -> str:
+        """Installed client version only; never probes the provider."""
+        value = getattr(self.api, "__version__", "unknown")
+        return str(value).strip() or "unknown"
+
+
     def is_future_data_ready(self, trading_day: date) -> bool:
         """确认日线与分钟线均已由 RQData 标记为可用。"""
         categories = ("future_daybar", "future_minbar")
@@ -606,6 +629,164 @@ class RQDataClient:
             starts,
             current_day_only=True,
         )
+
+
+class RQDataMemberRankProvider:
+    """Thin normalized boundary around RQData ``get_member_rank``."""
+
+    def __init__(self, client: Any, *, client_version: str | None = None) -> None:
+        self._client = client
+        self.client_version = (
+            str(client_version).strip()
+            if client_version is not None
+            else str(getattr(client, "client_version", "unknown")).strip()
+        ) or "unknown"
+
+    def fetch(self, request: MemberRankFetch) -> tuple[MemberRankRow, ...]:
+        try:
+            frame = self._client.member_rank(
+                request.physical_contract,
+                request.since,
+                request.through,
+                request.rank_by,
+            )
+        except MemberRankSnapshotBuildError:
+            raise
+        except Exception:
+            raise MemberRankSnapshotBuildError("RQDATA_MEMBER_RANK_UNAVAILABLE") from None
+        if not isinstance(frame, pd.DataFrame):
+            raise MemberRankSnapshotBuildError("RQDATA_MEMBER_RANK_RESPONSE_INVALID")
+        if frame.empty:
+            raise MemberRankSnapshotBuildError("RQDATA_MEMBER_RANK_EMPTY")
+        records = _member_rank_records(frame)
+        try:
+            rows = tuple(_member_rank_row(record, request) for record in records)
+        except MemberRankSnapshotBuildError:
+            raise
+        except Exception:
+            raise MemberRankSnapshotBuildError(
+                "RQDATA_MEMBER_RANK_RESPONSE_INVALID"
+            ) from None
+        if not rows:
+            raise MemberRankSnapshotBuildError("RQDATA_MEMBER_RANK_EMPTY")
+        keys = {(row.trade_date, row.rank) for row in rows}
+        if len(keys) != len(rows):
+            raise MemberRankSnapshotBuildError("RQDATA_MEMBER_RANK_DUPLICATE")
+        return rows
+
+
+def _member_rank_records(frame: pd.DataFrame) -> tuple[dict[str, Any], ...]:
+    """Retain Date/MultiIndex identity before resolving documented field aliases."""
+    try:
+        values = (
+            frame.reset_index()
+            if not isinstance(frame.index, pd.RangeIndex)
+            else frame.copy()
+        )
+        return tuple(values.to_dict("records"))
+    except Exception:
+        raise MemberRankSnapshotBuildError("RQDATA_MEMBER_RANK_RESPONSE_INVALID") from None
+
+
+def _member_rank_row(
+    row: dict[str, Any], request: MemberRankFetch
+) -> MemberRankRow:
+    rank = _member_rank_int(row, "rank", "position", "rank_no")
+    member_name = _member_rank_text(
+        row, "member_name", "member", "member_id", "member_name_cn"
+    )
+    value = _member_rank_decimal(row, *_member_rank_value_fields(request.rank_by))
+    change = _member_rank_decimal(
+        row, *_member_rank_change_fields(request.rank_by)
+    )
+    trade_date = _member_rank_date(row, request)
+    if not request.since <= trade_date <= request.through:
+        raise MemberRankSnapshotBuildError("RQDATA_MEMBER_RANK_DATE_INVALID")
+    if value < 0:
+        raise MemberRankSnapshotBuildError("RQDATA_MEMBER_RANK_VALUE_INVALID")
+    return MemberRankRow(
+        physical_contract=request.physical_contract.strip().upper(),
+        trade_date=trade_date,
+        rank_by=request.rank_by,
+        rank=rank,
+        member_name=member_name,
+        value=value,
+        change=change,
+    )
+
+
+def _member_rank_value_fields(rank_by: str) -> tuple[str, ...]:
+    return {
+        "volume": ("volume", "value", "member_volume"),
+        "long": ("long_position", "long", "value", "position"),
+        "short": ("short_position", "short", "value", "position"),
+    }.get(rank_by, ())
+
+
+def _member_rank_change_fields(rank_by: str) -> tuple[str, ...]:
+    return {
+        "volume": ("volume_change", "change", "member_volume_change"),
+        "long": ("long_position_change", "long_change", "change", "position_change"),
+        "short": ("short_position_change", "short_change", "change", "position_change"),
+    }.get(rank_by, ())
+
+
+def _member_rank_field(row: dict[str, Any], fields: tuple[str, ...]) -> Any:
+    for field in fields:
+        if field in row and row[field] is not None and not pd.isna(row[field]):
+            return row[field]
+    raise MemberRankSnapshotBuildError("RQDATA_MEMBER_RANK_RESPONSE_INVALID")
+
+
+def _member_rank_text(row: dict[str, Any], *fields: str) -> str:
+    value = _member_rank_field(row, fields)
+    if not isinstance(value, str) or not value.strip():
+        raise MemberRankSnapshotBuildError("RQDATA_MEMBER_RANK_RESPONSE_INVALID")
+    return value.strip()
+
+
+def _member_rank_int(row: dict[str, Any], *fields: str) -> int:
+    value = _member_rank_field(row, fields)
+    if isinstance(value, bool):
+        raise MemberRankSnapshotBuildError("RQDATA_MEMBER_RANK_RESPONSE_INVALID")
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError, OverflowError):
+        raise MemberRankSnapshotBuildError("RQDATA_MEMBER_RANK_RESPONSE_INVALID") from None
+    if parsed < 1 or str(value).strip() not in {str(parsed), f"{parsed}.0"}:
+        raise MemberRankSnapshotBuildError("RQDATA_MEMBER_RANK_RESPONSE_INVALID")
+    return parsed
+
+
+def _member_rank_decimal(row: dict[str, Any], *fields: str) -> Decimal:
+    value = _member_rank_field(row, fields)
+    try:
+        parsed = Decimal(str(value))
+    except (InvalidOperation, ValueError):
+        raise MemberRankSnapshotBuildError("RQDATA_MEMBER_RANK_RESPONSE_INVALID") from None
+    if not parsed.is_finite():
+        raise MemberRankSnapshotBuildError("RQDATA_MEMBER_RANK_NONFINITE")
+    return parsed
+
+
+def _member_rank_date(row: dict[str, Any], request: MemberRankFetch) -> date:
+    value = next(
+        (
+            row[field]
+            for field in ("trading_date", "trade_date", "date", "level_0", "index")
+            if field in row and row[field] is not None and not pd.isna(row[field])
+        ),
+        request.since if request.since == request.through else None,
+    )
+    if value is None:
+        raise MemberRankSnapshotBuildError("RQDATA_MEMBER_RANK_DATE_INVALID")
+    try:
+        parsed = pd.Timestamp(value)
+    except (TypeError, ValueError):
+        raise MemberRankSnapshotBuildError("RQDATA_MEMBER_RANK_DATE_INVALID") from None
+    if pd.isna(parsed):
+        raise MemberRankSnapshotBuildError("RQDATA_MEMBER_RANK_DATE_INVALID")
+    return parsed.date()
 
 
 def _records(value: Any) -> tuple[dict[str, Any], ...]:
