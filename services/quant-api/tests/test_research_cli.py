@@ -10,7 +10,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.market_data import composition as market_data_composition
+from app.research import composition as research_composition
 from app.guiyi_cli.main import build_parser
 from app.guiyi_cli.main import main
 from app.guiyi_cli.data_parser import CliUsageError
@@ -1762,13 +1762,13 @@ def test_candidate_composition_reuses_the_lifecycle_research_builder(
         return lifecycle
 
     monkeypatch.setattr(
-        market_data_composition,
+        research_composition,
         "build_subing_lifecycle_research_service",
         build_lifecycle,
     )
     session = object()
 
-    service = market_data_composition.build_subing_candidate_validation_service(
+    service = research_composition.build_subing_candidate_validation_service(
         session  # type: ignore[arg-type]
     )
 
@@ -1784,23 +1784,25 @@ def test_jdj_research_composition_reuses_one_mds_and_no_write_factory(
     calls: list[tuple[str, object]] = []
 
     monkeypatch.setattr(
-        market_data_composition,
+        research_composition,
         "build_market_data_service",
         lambda session: calls.append(("market_data", session)) or market_data,
     )
     monkeypatch.setattr(
-        market_data_composition,
+        research_composition,
         "build_historical_data_manager",
         lambda _session: pytest.fail("must not construct data manager"),
+        raising=False,
     )
     monkeypatch.setattr(
-        market_data_composition,
+        research_composition,
         "build_live_market_service",
         lambda _session: pytest.fail("must not construct live/Redis service"),
+        raising=False,
     )
     session = object()
 
-    service = market_data_composition.build_jdj_research_service(
+    service = research_composition.build_jdj_research_service(
         session  # type: ignore[arg-type]
     )
 
@@ -1816,18 +1818,18 @@ def test_jdj_validation_composition_checks_calendar_first_and_reuses_one_mds(
     order: list[tuple[str, object]] = []
 
     monkeypatch.setattr(
-        market_data_composition,
+        research_composition,
         "assert_jdj_prospective_calendar",
         lambda session: order.append(("calendar", session)),
     )
     monkeypatch.setattr(
-        market_data_composition,
+        research_composition,
         "build_market_data_service",
         lambda session: order.append(("market_data", session)) or market_data,
     )
     session = object()
 
-    service = market_data_composition.build_jdj_candidate_validation_service(
+    service = research_composition.build_jdj_candidate_validation_service(
         session,  # type: ignore[arg-type]
         _JDJ_CANDIDATES[1],
     )
@@ -2399,18 +2401,18 @@ def test_mirror_composition_reuses_one_market_and_v2_service_identity(
         )
 
     monkeypatch.setattr(
-        market_data_composition,
+        research_composition,
         "build_main_force_mirror_v2_service",
         build_task5_service,
     )
     monkeypatch.setattr(
-        market_data_composition,
+        research_composition,
         "build_market_data_service",
         reject_duplicate_market_data,
     )
     session = object()
 
-    service = market_data_composition.build_main_force_mirror_v2_research_service(
+    service = research_composition.build_main_force_mirror_v2_research_service(
         session  # type: ignore[arg-type]
     )
 
@@ -2609,90 +2611,90 @@ def test_candidate_robustness_payload_contains_no_selection_or_profit_keys() -> 
 def test_robustness_composition_reuses_one_mds_and_frozen_active60(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    protocol = market_data_composition.load_multi_candidate_robustness_protocol()
+    protocol = research_composition.load_multi_candidate_robustness_protocol()
     market_data = object()
     build_calls: list[object] = []
     source_calls: list[tuple[str, object, tuple[str, ...]]] = []
 
     monkeypatch.setattr(
-        market_data_composition,
+        research_composition,
         "build_market_data_service",
         lambda session: build_calls.append(session) or market_data,
     )
     monkeypatch.setattr(
-        market_data_composition,
+        research_composition,
         "load_active_products",
         lambda: protocol.cross_symbol_products,
     )
     monkeypatch.setattr(
-        market_data_composition,
+        research_composition,
         "load_accepted_subing_calibration",
-        lambda _path: object(),
+        lambda: object(),
     )
     monkeypatch.setattr(
-        market_data_composition,
+        research_composition,
         "load_subing_lifecycle_policy",
-        lambda _path: object(),
+        lambda: object(),
     )
     monkeypatch.setattr(
-        market_data_composition,
+        research_composition,
         "load_n_structure_policy",
         lambda: object(),
     )
     subing = object()
     n_structure = object()
     monkeypatch.setattr(
-        market_data_composition,
+        research_composition,
         "SubingLifecycleResearchService",
         lambda mds, *, products, calibration, policy: (
             source_calls.append(("subing", mds, products)) or subing
         ),
     )
     monkeypatch.setattr(
-        market_data_composition,
+        research_composition,
         "ActualDominantResearchSegmentLoader",
         lambda mds: SimpleNamespace(market_data=mds),
     )
     monkeypatch.setattr(
-        market_data_composition,
+        research_composition,
         "NStructureResearchService",
         lambda loader, *, products, policy: (
             source_calls.append(("n", loader.market_data, products)) or n_structure
         ),
     )
     monkeypatch.setattr(
-        market_data_composition,
+        research_composition,
         "SubingCandidateValidationService",
         lambda source, *, manifest, protocol: SimpleNamespace(source=source),
     )
     monkeypatch.setattr(
-        market_data_composition,
+        research_composition,
         "NStructureCandidateValidationService",
         lambda source, *, manifest, protocol: SimpleNamespace(source=source),
     )
     monkeypatch.setattr(
-        market_data_composition,
+        research_composition,
         "load_candidate_manifest",
-        lambda _path: object(),
+        lambda: object(),
     )
     monkeypatch.setattr(
-        market_data_composition,
+        research_composition,
         "load_candidate_validation_protocol",
-        lambda _path: object(),
+        lambda: object(),
     )
     monkeypatch.setattr(
-        market_data_composition,
+        research_composition,
         "load_n_candidate_manifest",
-        lambda _path: object(),
+        lambda: object(),
     )
     monkeypatch.setattr(
-        market_data_composition,
+        research_composition,
         "load_n_candidate_validation_protocol",
-        lambda _path: object(),
+        lambda: object(),
     )
 
     session = object()
-    service = market_data_composition.build_multi_candidate_robustness_service(
+    service = research_composition.build_multi_candidate_robustness_service(
         session  # type: ignore[arg-type]
     )
 

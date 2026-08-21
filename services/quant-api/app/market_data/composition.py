@@ -1,4 +1,4 @@
-"""市场数据子系统组装入口（数据核心 V2 依赖注入）。
+"""Market/Data/Runtime dependency composition（数据核心 V2 依赖注入）。
 
 本模块将 Catalog、Parquet Store、RQData 适配器与维护管道拼成可运行对象：
 - ``build_market_data_service``：只读查询路径（API/CLI 使用）；
@@ -20,10 +20,6 @@ from sqlalchemy.orm import Session
 from app.core.env import PROJECT_ROOT
 from app.models import Contract
 from app.market_data.catalog import MarketCatalog
-from app.market_data.candidate_validation_policy import (
-    load_candidate_manifest,
-    load_candidate_validation_protocol,
-)
 from app.market_data.live_market import (
     RQDataLiveProvider,
     LiveMarketService,
@@ -39,9 +35,6 @@ from app.market_data.main_force_mirror_v2_service import (
     MainForceMirrorV2Error,
     MainForceMirrorV2Service,
 )
-from app.market_data.main_force_mirror_v2_research_service import (
-    MainForceMirrorV2ResearchService,
-)
 from app.market_data.member_rank_snapshot import (
     MemberRankSnapshotError,
     MemberRankSnapshotRepository,
@@ -51,44 +44,10 @@ from app.market_data.market_research_service import MarketResearchService
 from app.market_data.actual_dominant_research import (
     ActualDominantResearchSegmentLoader,
 )
-from app.market_data.jdj_candidate_validation_calendar import (
-    assert_jdj_prospective_calendar,
-)
-from app.market_data.jdj_candidate_validation_policy import (
-    load_jdj_candidate_manifest,
-    load_jdj_candidate_validation_protocol,
-)
-from app.market_data.jdj_candidate_validation_service import (
-    JdjCandidateValidationService,
-)
-from app.market_data.jdj_policy import load_jdj_policy
-from app.market_data.jdj_research_service import JdjResearchService
-from app.market_data.n_structure_policy import load_n_structure_policy
-from app.market_data.n_structure_research_service import NStructureResearchService
-from app.market_data.multi_candidate_robustness_policy import (
-    load_multi_candidate_robustness_protocol,
-)
-from app.market_data.multi_candidate_robustness_service import (
-    MultiCandidateRobustnessService,
-)
-from app.market_data.n_candidate_validation_policy import (
-    load_n_candidate_manifest,
-    load_n_candidate_validation_protocol,
-)
-from app.market_data.n_candidate_validation_service import (
-    NStructureCandidateValidationService,
-)
 from app.market_data.subing_calibration import load_accepted_subing_calibration
-from app.market_data.subing_calibration_service import SubingCalibrationResearchService
-from app.market_data.subing_candidate_validation_service import (
-    SubingCandidateValidationService,
-)
 from app.market_data.subing_lifecycle_policy import (
     SubingLifecyclePolicyError,
     load_subing_lifecycle_policy,
-)
-from app.market_data.subing_lifecycle_research_service import (
-    SubingLifecycleResearchService,
 )
 from app.market_data.subing_read_service import SubingReadService
 from app.market_data.operational_universe import load_active_products
@@ -104,18 +63,6 @@ _SUBING_CALIBRATION = (
 )
 _SUBING_LIFECYCLE_POLICY = (
     PROJECT_ROOT / "data/research_policies/subing_lifecycle_v2_research_v1.json"
-)
-_CANDIDATE_MANIFEST = (
-    PROJECT_ROOT / "data/research_candidates/subing_lifecycle_v2_candidate_v1.json"
-)
-_CANDIDATE_VALIDATION_PROTOCOL = (
-    PROJECT_ROOT / "data/research_protocols/candidate_validation_v1.json"
-)
-_N_CANDIDATE_MANIFEST = (
-    PROJECT_ROOT / "data/research_candidates/n_structure_5m_candidate_v1.json"
-)
-_N_CANDIDATE_VALIDATION_PROTOCOL = (
-    PROJECT_ROOT / "data/research_protocols/n_structure_validation_v1.json"
 )
 
 
@@ -297,17 +244,6 @@ def build_market_research_service(session: Session) -> MarketResearchService:
     return MarketResearchService(build_market_data_service(session))
 
 
-def build_main_force_mirror_v2_research_service(
-    session: Session,
-) -> MainForceMirrorV2ResearchService:
-    """Compose retrospective V2 around the exact API service identities."""
-    mirror_service = build_main_force_mirror_v2_service(session)
-    return MainForceMirrorV2ResearchService(
-        market_data=mirror_service.market_data,
-        mirror_service=mirror_service,
-    )
-
-
 def build_market_radar_service(session: Session) -> MarketRadarService:
     """构造完整 active 60 的只读 Radar，不注入 provider、Redis 或写入能力。"""
     from app.market_data.coverage_source import DatabaseCoverageSource
@@ -354,129 +290,6 @@ def build_subing_read_service(session: Session) -> SubingReadService:
             _PRODUCT_STARTS,
             history_floor_path=_HISTORY_FLOOR,
         ),
-    )
-
-
-def build_subing_calibration_research_service(
-    session: Session,
-) -> SubingCalibrationResearchService:
-    """Construct historical-only SuBing Calibration over MarketDataService."""
-    return SubingCalibrationResearchService(
-        market_data=build_market_data_service(session),
-        products=load_active_products(),
-    )
-
-
-def build_subing_lifecycle_research_service(
-    session: Session,
-) -> SubingLifecycleResearchService:
-    """Construct historical-only lifecycle research over MarketDataService."""
-    return SubingLifecycleResearchService(
-        build_market_data_service(session),
-        products=load_active_products(),
-        calibration=load_accepted_subing_calibration(_SUBING_CALIBRATION),
-        policy=load_subing_lifecycle_policy(_SUBING_LIFECYCLE_POLICY),
-    )
-
-
-def build_n_structure_research_service(
-    session: Session,
-) -> NStructureResearchService:
-    """Compose read-only N research over the shared segment loader."""
-    return NStructureResearchService(
-        ActualDominantResearchSegmentLoader(build_market_data_service(session)),
-        products=load_active_products(),
-        policy=load_n_structure_policy(),
-    )
-
-
-def build_jdj_research_service(session: Session) -> JdjResearchService:
-    """Compose exact read-only JDJ research over one shared MDS."""
-    market_data = build_market_data_service(session)
-    return JdjResearchService(
-        ActualDominantResearchSegmentLoader(market_data),
-        products=load_active_products(),
-        jdj_policy=load_jdj_policy(),
-        n_policy=load_n_structure_policy(),
-    )
-
-
-def build_jdj_candidate_validation_service(
-    session: Session,
-    candidate_id: str,
-) -> JdjCandidateValidationService:
-    """Compose exact JDJ validation only after the frozen calendar gate."""
-    assert_jdj_prospective_calendar(session)
-    return JdjCandidateValidationService(
-        build_jdj_research_service(session),
-        manifest=load_jdj_candidate_manifest(candidate_id),
-        protocol=load_jdj_candidate_validation_protocol(),
-    )
-
-
-def build_subing_candidate_validation_service(
-    session: Session,
-) -> SubingCandidateValidationService:
-    """Compose Candidate validation around the single Lifecycle research path."""
-    return SubingCandidateValidationService(
-        build_subing_lifecycle_research_service(session),
-        manifest=load_candidate_manifest(_CANDIDATE_MANIFEST),
-        protocol=load_candidate_validation_protocol(_CANDIDATE_VALIDATION_PROTOCOL),
-    )
-
-
-def build_n_candidate_validation_service(
-    session: Session,
-) -> NStructureCandidateValidationService:
-    """Compose N Candidate validation over the MDS-only N research path."""
-    return NStructureCandidateValidationService(
-        build_n_structure_research_service(session),
-        manifest=load_n_candidate_manifest(_N_CANDIDATE_MANIFEST),
-        protocol=load_n_candidate_validation_protocol(_N_CANDIDATE_VALIDATION_PROTOCOL),
-    )
-
-
-def build_multi_candidate_robustness_service(
-    session: Session,
-) -> MultiCandidateRobustnessService:
-    """Compose the exact read-only robustness dossier over one shared MDS."""
-    protocol = load_multi_candidate_robustness_protocol()
-    active_products = load_active_products()
-    if active_products != protocol.cross_symbol_products:
-        from app.market_data.multi_candidate_robustness_service import (
-            MultiCandidateActiveUniverseDriftError,
-        )
-
-        raise MultiCandidateActiveUniverseDriftError()
-    market_data = build_market_data_service(session)
-    subing = SubingLifecycleResearchService(
-        market_data,
-        products=protocol.cross_symbol_products,
-        calibration=load_accepted_subing_calibration(_SUBING_CALIBRATION),
-        policy=load_subing_lifecycle_policy(_SUBING_LIFECYCLE_POLICY),
-    )
-    n_structure = NStructureResearchService(
-        ActualDominantResearchSegmentLoader(market_data),
-        products=protocol.cross_symbol_products,
-        policy=load_n_structure_policy(),
-    )
-    return MultiCandidateRobustnessService(
-        protocol,
-        subing_research=subing,
-        n_research=n_structure,
-        subing_validation=SubingCandidateValidationService(
-            subing,
-            manifest=load_candidate_manifest(_CANDIDATE_MANIFEST),
-            protocol=load_candidate_validation_protocol(_CANDIDATE_VALIDATION_PROTOCOL),
-        ),
-        n_validation=NStructureCandidateValidationService(
-            n_structure,
-            manifest=load_n_candidate_manifest(_N_CANDIDATE_MANIFEST),
-            protocol=load_n_candidate_validation_protocol(
-                _N_CANDIDATE_VALIDATION_PROTOCOL
-            ),
-        ),
-        current_active_products=active_products,
     )
 
 

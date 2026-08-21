@@ -42,16 +42,7 @@ from app.guiyi_cli.research_commands import (
 from app.market_data.composition import (
     build_member_rank_snapshot_builder,
     build_historical_data_manager,
-    build_jdj_candidate_validation_service,
-    build_jdj_research_service,
     build_live_market_service,
-    build_main_force_mirror_v2_research_service,
-    build_multi_candidate_robustness_service,
-    build_n_candidate_validation_service,
-    build_n_structure_research_service,
-    build_subing_candidate_validation_service,
-    build_subing_calibration_research_service,
-    build_subing_lifecycle_research_service,
 )
 from app.market_data.after_market import build_after_market_updater
 from app.market_data.candidate_validation_schedule import (
@@ -60,6 +51,17 @@ from app.market_data.candidate_validation_schedule import (
 )
 from app.market_data.historical_data_manager import HistoricalDataManager
 from app.market_data.product_retirement import ProductRetiredError
+from app.research.composition import (
+    build_jdj_candidate_validation_service,
+    build_jdj_research_service,
+    build_main_force_mirror_v2_research_service,
+    build_multi_candidate_robustness_service,
+    build_n_candidate_validation_service,
+    build_n_structure_research_service,
+    build_subing_calibration_research_service,
+    build_subing_candidate_validation_service,
+    build_subing_lifecycle_research_service,
+)
 from app.services.runtime_health import build_runtime_health
 
 SessionFactory = Callable[[], AbstractContextManager[Any]]

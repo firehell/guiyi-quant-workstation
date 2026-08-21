@@ -40,7 +40,8 @@ uv run --offline --project services/quant-api ruff check \
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
 MYPYPATH=services/quant-api:packages/quant-core \
   uv run --offline --project services/quant-api mypy --explicit-package-bases --ignore-missing-imports \
-  services/quant-api/app/market_data services/quant-api/app/guiyi_cli services/quant-api/app/alerts \
+  services/quant-api/app/market_data services/quant-api/app/research services/quant-api/app/guiyi_cli \
+  services/quant-api/app/alerts \
   services/quant-api/app/execution_review \
   services/quant-api/app/services/runtime_health.py \
   services/quant-api/app/api/market.py services/quant-api/app/api/market_live.py \

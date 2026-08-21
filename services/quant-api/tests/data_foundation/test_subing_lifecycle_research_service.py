@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.market_data import composition
+from app.research import composition
 from app.market_data.domain import (
     ActualDominantTradingDayQuery,
     BarFrequency,
@@ -1131,9 +1131,9 @@ def test_composition_builder_constructs_only_historical_read_dependencies(
     monkeypatch.setattr(composition, "build_market_data_service", lambda _session: market_data)
     monkeypatch.setattr(composition, "load_active_products", lambda: ("jm",))
     monkeypatch.setattr(
-        composition, "load_accepted_subing_calibration", lambda _path: calibration
+        composition, "load_accepted_subing_calibration", lambda: calibration
     )
-    monkeypatch.setattr(composition, "load_subing_lifecycle_policy", lambda _path: policy)
+    monkeypatch.setattr(composition, "load_subing_lifecycle_policy", lambda: policy)
     monkeypatch.setattr(
         composition,
         "SubingLifecycleResearchService",
@@ -1146,6 +1146,7 @@ def test_composition_builder_constructs_only_historical_read_dependencies(
         composition,
         "build_market_read_service",
         lambda _session: pytest.fail("MarketRead/Redis must not be constructed"),
+        raising=False,
     )
 
     composition.build_subing_lifecycle_research_service(object())

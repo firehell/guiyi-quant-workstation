@@ -5,7 +5,7 @@ from decimal import Decimal
 
 import pytest
 
-from app.market_data import composition
+from app.research import composition
 from app.market_data.domain import (
     ActualDominantTradingDayQuery,
     BarFrequency,
@@ -699,6 +699,7 @@ def test_composition_builder_constructs_only_market_data_calibration_dependencie
         composition,
         "build_market_read_service",
         lambda session: pytest.fail("MarketReadService must not be constructed"),
+        raising=False,
     )
 
     service = composition.build_subing_calibration_research_service(object())
