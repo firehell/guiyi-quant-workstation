@@ -53,56 +53,31 @@ pnpm --dir apps/quant-web build
 Runtime `DATABASE_URL` 物理身份不同的 `GUIYI_ISOLATED_MIGRATION_DATABASE_URL`。测试 guard 会以
 数据库名和 OID 双重拒绝 production/Runtime 库；禁止为了让测试运行而放宽该校验。
 
-## 主力照妖镜 Observation V0
+## 主力照妖镜 V2
 
 ```bash
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
 uv run --offline --project services/quant-api pytest -q \
-  services/quant-api/tests/test_main_force_mirror.py \
-  services/quant-api/tests/test_indicator_registry_v1.py
-
-pnpm --dir apps/quant-web test
-pnpm --dir apps/quant-web exec playwright test e2e/main-force-mirror.spec.mjs
-pnpm --dir apps/quant-web build
-```
-
-这些命令验证 frozen designed-v0、Python/Web deterministic parity、“小心”的 HHV5/BARSLAST
-rising-edge 边界，以及同一副图内默认 MACD 的 Tab 切换。它们不授权公式调整、Alert/Runtime 接入、
-Canonical/DB 写入、通知或订单行为。
-
-## 主力照妖镜·期货 V1
-
-```bash
-UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
-PYTHONPATH=services/quant-api:packages/quant-core \
-uv run --offline --project services/quant-api pytest -q \
-  services/quant-api/tests/test_main_force_mirror_futures.py \
-  services/quant-api/tests/test_main_force_mirror.py \
+  services/quant-api/tests/test_main_force_mirror_v2.py \
   services/quant-api/tests/test_indicator_registry_v1.py \
-  services/quant-api/tests/data_foundation/test_main_force_mirror_futures_research_service.py \
+  services/quant-api/tests/data_foundation/test_member_rank_snapshot.py \
+  services/quant-api/tests/data_foundation/test_member_rank_snapshot_builder.py \
+  services/quant-api/tests/data_foundation/test_main_force_mirror_v2_service.py \
+  services/quant-api/tests/data_foundation/test_main_force_mirror_v2_research_service.py \
+  services/quant-api/tests/data_foundation/test_market_api.py \
+  services/quant-api/tests/data_foundation/test_cli.py \
   services/quant-api/tests/test_research_cli.py
 
 pnpm --dir apps/quant-web test
-
-pnpm --dir apps/quant-web exec playwright test \
-  e2e/main-force-mirror.spec.mjs \
-  e2e/main-force-mirror-futures.spec.mjs \
-  e2e/market-runtime.spec.mjs \
-  e2e/market-research.spec.mjs \
-  e2e/alert-v1.spec.mjs
-
 pnpm --dir apps/quant-web build
+pnpm --dir apps/quant-web exec playwright test -c playwright.config.mjs
 ```
 
-这些命令验证 V0 runtime 精确源码 hash、独立 `.pyi` 静态 facade、V1 exact identity、60m physical-contract segment reset、readiness、五状态、
-双向警戒、conflict/latch/re-arm、Python/Web 单一 golden parity、动态 marker/hover、合法 5m/15m Alert
-在 MACD/V0 切换中的保留行为与 historical-only Shadow
-CLI，包括 `(long+short)*1000/caution_ready` 的 6 位 half-away 事件率、conflict 不计事件、零分母 JSON
-`null`，以及不可执行的 `("jm", "ag", "cu", "m", "sc")` 代表参数 tuple。它们不执行真实 Shadow 代表
-矩阵。真实 A→B resolved segments 还会验证 Pane 只取最右侧当前 block、B 第 10/21/31 根 readiness、
-两端 Hover 的 B 合约身份与 marker 不继承。Futures V1 仅支持 60m，persistent Alert markers 仅支持 actual-dominant 5m/15m，因此两者按各自合法
-identity 独立验证，不用生产测试注入伪造重叠状态；这些测试也不授权 Canonical/DB 写入、
-Alert/notification、Runtime、订单、release 或策略晋升。
+这些命令验证唯一 `main_force_mirror_v2` identity、因果 60m exact-contract 压力、
+T-1 member context、不可变 snapshot 身份/覆盖/fail-closed、只读 retrospective CLI，以及 Web
+`MACD | 主力照妖镜 V2` 副图。真实 member snapshot 和 retrospective matrix 不由测试执行；
+这些绿灯也不授权 RQData/Canonical/DB 写入、Live/Alert/notification、Runtime、订单、
+release 或策略晋升，`auto_order=false`。
 
 ## Execution Review V1
 

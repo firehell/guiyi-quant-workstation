@@ -5,26 +5,6 @@ from .htdy_strict import BOOLEAN_FIELDS as HTDY_STRICT_BOOLEAN_FIELDS
 from .htdy_strict import NUMERIC_FIELDS as HTDY_STRICT_NUMERIC_FIELDS
 from .htdy_strict import compute_strict_fields
 from .macd import macd_series
-from .main_force_mirror import (
-    MainForceMirrorResult,
-    MainForceMirrorState,
-    classify_main_force_mirror_state,
-    compute_main_force_mirror,
-)
-from .main_force_mirror_futures import (
-    DEFAULT_PARAMETERS as MAIN_FORCE_MIRROR_FUTURES_DEFAULT_PARAMETERS,
-)
-from .main_force_mirror_futures import (
-    MainForceMirrorFuturesCaution,
-    MainForceMirrorFuturesLatchState,
-    MainForceMirrorFuturesLatchStep,
-    MainForceMirrorFuturesResult,
-    MainForceMirrorFuturesState,
-    classify_main_force_mirror_futures_state,
-    compute_main_force_mirror_futures,
-    is_main_force_mirror_futures_candidate,
-    step_main_force_mirror_futures_latch,
-)
 from .main_force_mirror_v2 import (
     DEFAULT_PARAMETERS as MAIN_FORCE_MIRROR_V2_DEFAULT_PARAMETERS,
 )
@@ -88,15 +68,7 @@ __all__ = [
     "IndicatorSeries",
     "IndicatorStatus",
     "MacdSeries",
-    "MainForceMirrorResult",
-    "MainForceMirrorState",
-    "MAIN_FORCE_MIRROR_FUTURES_DEFAULT_PARAMETERS",
     "MAIN_FORCE_MIRROR_V2_DEFAULT_PARAMETERS",
-    "MainForceMirrorFuturesCaution",
-    "MainForceMirrorFuturesLatchState",
-    "MainForceMirrorFuturesLatchStep",
-    "MainForceMirrorFuturesResult",
-    "MainForceMirrorFuturesState",
     "MainForceMirrorV2Caution",
     "MainForceMirrorV2Point",
     "MainForceMirrorV2Result",
@@ -107,10 +79,6 @@ __all__ = [
     "SeedPolicy",
     "atr_series",
     "build_indicator_definition",
-    "classify_main_force_mirror_state",
-    "classify_main_force_mirror_futures_state",
-    "compute_main_force_mirror",
-    "compute_main_force_mirror_futures",
     "compute_main_force_mirror_v2",
     "compute_member_rank_observation",
     "definition_to_metadata",
@@ -121,7 +89,6 @@ __all__ = [
     "get_formal_policy",
     "get_indicator",
     "indicator_registry",
-    "is_main_force_mirror_futures_candidate",
     "is_main_force_mirror_v2_candidate",
     "macd_series",
     "parameters_hash",
@@ -135,7 +102,6 @@ __all__ = [
     "require_realtime_repainting_observation_policy",
     "require_formal_policy",
     "resolve_indicator_code",
-    "step_main_force_mirror_futures_latch",
     "validate_definition_capabilities",
     "xma",
 ]

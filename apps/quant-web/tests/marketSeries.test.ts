@@ -86,7 +86,7 @@ describe('market historical series', () => {
     assert.throws(
       () => mergeInitialPage(response),
       (error: unknown) => error instanceof MarketSeriesPhysicalIdentityError
-        && error.code === 'MFM_FUTURES_V1_SEGMENT_CONFLICT',
+        && error.code === 'MARKET_SERIES_SEGMENT_CONFLICT',
     )
   })
 

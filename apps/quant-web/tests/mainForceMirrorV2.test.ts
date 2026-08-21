@@ -268,9 +268,8 @@ describe('main force mirror v2 presentation', () => {
     assert.match(model.markers[0].text, /追空小心 —｜席位不可用/)
   })
 
-  it('normalizes every legacy secondary-pane identity deterministically', () => {
-    assert.equal(normalizeSecondaryPanelPreference('main_force_mirror_futures'), 'main_force_mirror_v2')
-    assert.equal(normalizeSecondaryPanelPreference('main_force_mirror_v0'), 'macd')
+  it('keeps only the active V2 secondary pane and defaults every other value to MACD', () => {
+    assert.equal(normalizeSecondaryPanelPreference('main_force_mirror_v2'), 'main_force_mirror_v2')
     assert.equal(normalizeSecondaryPanelPreference('unknown'), 'macd')
     assert.equal(normalizeSecondaryPanelPreference(null), 'macd')
   })

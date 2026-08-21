@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from types import MappingProxyType
 
-from .main_force_mirror_futures import DEFAULT_PARAMETERS as MFM_FUTURES_PARAMETERS
 from .main_force_mirror_v2 import DEFAULT_PARAMETERS as MFM_V2_PARAMETERS
 from .models import IndicatorDefinition, build_indicator_definition
 
@@ -110,89 +109,6 @@ _REGISTRY: dict[str, IndicatorDefinition] = {
         formal_policy_id="web_atr_wilder_sma_seed_v1",
         seed_policy=None,
         smoothing_policy="wilder_sma_seed",
-        histogram_scale=None,
-    ),
-    "main_force_mirror_v0": build_indicator_definition(
-        indicator_code="main_force_mirror_v0",
-        indicator_version="designed-v0",
-        display_name="主力照妖镜（观察）",
-        display_type="subpane",
-        input_fields=("open", "high", "low", "close", "volume"),
-        supported_intervals=_ALL_INTERVALS,
-        default_parameters={
-            "volume_window": 20,
-            "flow_ema_period": 5,
-            "range_window": 20,
-            "caution_high_window": 5,
-            "caution_quiet_window": 10,
-            "flow_clip": 3.0,
-            "score_scale": 50.0,
-            "exit_lure_scale": 0.35,
-            "caution_level": 50.0,
-        },
-        lookback_bars=21,
-        warmup_bars=20,
-        calculation_source="guiyi_quant.indicators.main_force_mirror.compute_main_force_mirror",
-        closed_bar_only=True,
-        confirmed_only=True,
-        status="observation_only",
-        repainting_risk="none",
-        repainting_notes=(
-            "Causal OHLCV observation proxy. Six coloured states are designed labels, not measured fund flow. "
-            "The caution event reproduces the provided BARSLAST/HHV formula and is not an alert or trade signal."
-        ),
-        web_capable=True,
-        backtest_capable=False,
-        live_capable=False,
-        alert_capable=False,
-        default_visible=False,
-        default_color="#22c55e",
-        output_schema="signal_state",
-        formal_policy_id="main_force_mirror_observation_v0",
-        seed_policy=None,
-        smoothing_policy=None,
-        histogram_scale=None,
-    ),
-    "main_force_mirror_futures_v1": build_indicator_definition(
-        indicator_code="main_force_mirror_futures_v1",
-        indicator_version="futures-research-v1",
-        display_name="主力照妖镜·期货 V1",
-        display_type="subpane",
-        input_fields=(
-            "open",
-            "high",
-            "low",
-            "close",
-            "volume",
-            "open_interest",
-            "physical_contract",
-        ),
-        supported_intervals=("60m",),
-        default_parameters=dict(MFM_FUTURES_PARAMETERS),
-        lookback_bars=31,
-        warmup_bars=30,
-        calculation_source=(
-            "guiyi_quant.indicators.main_force_mirror_futures."
-            "compute_main_force_mirror_futures"
-        ),
-        closed_bar_only=True,
-        confirmed_only=True,
-        status="observation_only",
-        repainting_risk="none",
-        repainting_notes=(
-            "Causal 60m futures directional position-pressure proxy; not measured fund flow, "
-            "participant identity, an Alert, or a trading instruction."
-        ),
-        web_capable=True,
-        backtest_capable=False,
-        live_capable=False,
-        alert_capable=False,
-        default_visible=False,
-        default_color="#22c55e",
-        output_schema="signal_state",
-        formal_policy_id="main_force_mirror_futures_observation_v1",
-        seed_policy=None,
-        smoothing_policy=None,
         histogram_scale=None,
     ),
     "main_force_mirror_v2": build_indicator_definition(

@@ -58,9 +58,15 @@ RQData
 当前用户接口为 Market Web、`/trade-records`、`/api/v1/market/*`、`/api/alerts/*`、`/api/execution-review/*`，以及 `guiyi data
 update|refresh|audit|after-market`、只读 `guiyi research subing-calibration`、`guiyi research subing-lifecycle`、
 `guiyi research n-structure`、`guiyi research candidate-validation`、`guiyi research candidate-robustness`、
-`guiyi research main-force-mirror-futures` 和 `guiyi runtime
+`guiyi research main-force-mirror-v2` 和 `guiyi runtime
 status|live|alert|alert-canary`；其中 `alert-canary --audience owner|htdy_observers` 是独立真实通知 Gate。
 这些命令都不能由普通只读测试授权。
+`main_force_mirror_v2` 是主力照妖镜唯一 active identity，仅作为
+`60m + contract|actual_dominant` Historical confirmed observation。行情仅经
+`MarketDataService`，席位上下文仅经钉住的不可变 `main_force_member_rank_v1`
+snapshot；Web 底部副图只有 `MACD | 主力照妖镜 V2`。V0/V1 已退役，仅由 Git
+history 追溯。真实 member snapshot 与 retrospective matrix 尚未执行；本研究面不读
+Live、不进入 Alert/notification/Runtime 或订单路径，`auto_order=false`。
 `research n-structure` 只读取 Historical Canonical，经共享行情入口生成 research-only 观察；它不写数据、
 不进入 Runtime，不证明效果，也不授权 candidate promotion。N Structure V1 的长期业务语义由本节、
 `docs/ARCHITECTURE.md`、exact policy 与对应测试共同定义；历史 Plan/Task 只从 Git history 追溯。

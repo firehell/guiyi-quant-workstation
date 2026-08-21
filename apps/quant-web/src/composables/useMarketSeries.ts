@@ -31,10 +31,10 @@ export interface MergedMarketPage {
 }
 
 export class MarketSeriesPhysicalIdentityError extends Error {
-  readonly code = 'MFM_FUTURES_V1_SEGMENT_CONFLICT'
+  readonly code = 'MARKET_SERIES_SEGMENT_CONFLICT'
 
   constructor() {
-    super('MFM_FUTURES_V1_SEGMENT_CONFLICT')
+    super('MARKET_SERIES_SEGMENT_CONFLICT')
     this.name = 'MarketSeriesPhysicalIdentityError'
   }
 }

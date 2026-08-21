@@ -173,7 +173,6 @@ def test_research_parser_exposes_only_the_seven_readonly_commands() -> None:
         "subing-lifecycle",
     }
     assert "main-force-mirror-v2" in command_action.choices
-    assert "main-force-mirror-futures" not in command_action.choices
 
 
 _JDJ_CANDIDATES = (

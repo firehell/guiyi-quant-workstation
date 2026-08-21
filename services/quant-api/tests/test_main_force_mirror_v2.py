@@ -7,12 +7,8 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from types import MappingProxyType
 
-import numpy as np
 import pytest
 
-from guiyi_quant.indicators.main_force_mirror_futures import (
-    compute_main_force_mirror_futures,
-)
 from guiyi_quant.indicators.main_force_mirror_v2 import (
     DEFAULT_PARAMETERS,
     FORMAL_POLICY_ID,
@@ -28,9 +24,6 @@ from guiyi_quant.indicators.main_force_mirror_v2 import (
 
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
-_V1_GOLDEN_PATH = (
-    _REPO_ROOT / "tests" / "fixtures" / "main_force_mirror_futures_v1_golden.json"
-)
 _V2_GOLDEN_PATH = (
     _REPO_ROOT / "tests" / "fixtures" / "main_force_mirror_v2_golden.json"
 )
@@ -56,31 +49,6 @@ def _bar_inputs(bars: list[dict[str, object]]) -> dict[str, list[object]]:
         "volume": [bar["volume"] for bar in bars],
         "open_interest": [bar["open_interest"] for bar in bars],
     }
-
-
-def _v1_inputs(bars: list[dict[str, object]]) -> dict[str, list[object]]:
-    return {
-        "datetimes": [bar["time"] for bar in bars],
-        "physical_contract": [bar["physical_contract"] for bar in bars],
-        "open_": [bar["open"] for bar in bars],
-        "high": [bar["high"] for bar in bars],
-        "low": [bar["low"] for bar in bars],
-        "close": [bar["close"] for bar in bars],
-        "volume": [bar["volume"] for bar in bars],
-        "open_interest": [bar["open_interest"] for bar in bars],
-    }
-
-
-def _optional_number(value: object) -> float | None:
-    if isinstance(value, (float, np.floating)) and np.isnan(value):
-        return None
-    return float(value) if isinstance(value, (float, np.floating)) else value  # type: ignore[return-value]
-
-
-def _v2_reason(v1_reason: object) -> str | None:
-    if v1_reason is None:
-        return None
-    return str(v1_reason).replace("MFM_FUTURES_V1_", "MFM_V2_")
 
 
 def _make_inputs(count: int, contract: str = "AG2601") -> dict[str, list[object]]:
@@ -219,46 +187,8 @@ def test_v2_invalid_identity_and_order_breaks_reset_every_state(
     assert first_ready_after_break.caution_ready is False
 
 
-def test_v2_caution_is_pointwise_equal_to_frozen_v1_before_retirement() -> None:
-    fixture = _load_json(_V1_GOLDEN_PATH)
-    datasets = [fixture["bars"], fixture["raw_threshold_case"]["bars"]]  # type: ignore[index]
-
-    for bars in datasets:
-        old = compute_main_force_mirror_futures(**_v1_inputs(bars))
-        new = compute_main_force_mirror_v2(**_bar_inputs(bars))
-
-        assert tuple(point.caution_ready for point in new.points) == tuple(
-            bool(value) for value in old.caution_ready
-        )
-        assert tuple(point.long_caution_score for point in new.points) == tuple(
-            _optional_number(value) for value in old.long_caution_score
-        )
-        assert tuple(point.short_caution_score for point in new.points) == tuple(
-            _optional_number(value) for value in old.short_caution_score
-        )
-        assert tuple(point.caution for point in new.points) == tuple(old.caution)
-        assert tuple(point.caution_reason_codes for point in new.points) == tuple(
-            old.caution_reason_codes
-        )
-        assert tuple(point.caution_conflict for point in new.points) == tuple(
-            value == "MFM_FUTURES_V1_CAUTION_DIRECTION_CONFLICT"
-            for value in old.caution_availability_reason
-        )
-        expected_reasons = []
-        for index, point in enumerate(new.points):
-            source = (
-                old.reason[index]
-                if not bool(old.state_ready[index])
-                else old.caution_availability_reason[index]
-            )
-            expected_reasons.append(_v2_reason(source))
-            assert point.pressure_ready is bool(old.state_ready[index])
-            assert point.pressure_state == old.state[index]
-            assert point.instant_pressure == _optional_number(old.signed_score[index])
-        assert tuple(point.unavailable_reason for point in new.points) == tuple(
-            expected_reasons
-        )
-
+def test_v2_frozen_caution_points_and_break_are_stable() -> None:
+    fixture = _load_json(_V2_GOLDEN_PATH)
     primary = compute_main_force_mirror_v2(**_bar_inputs(fixture["bars"]))  # type: ignore[arg-type]
     assert [
         index

@@ -50,44 +50,6 @@ _POLICIES: dict[str, FormalPolicy] = {
         blocked_consumers=("formal_strategy_signal_until_validated", FORMAL_BACKTEST_CONSUMER),
         notes="Web/Market MACD display compatibility policy; not strategy-validated.",
     ),
-    "main_force_mirror_observation_v0": FormalPolicy(
-        policy_id="main_force_mirror_observation_v0",
-        indicator_family="MAIN_FORCE_MIRROR",
-        seed_policy=None,
-        smoothing_policy=None,
-        histogram_scale=None,
-        lookback="volume20_flowEMA5_range20_cautionHHV5_BARSLAST10",
-        confirmed_only=True,
-        frozen_legacy=False,
-        allowed_consumers=("Web_manual_observation",),
-        blocked_consumers=(FORMAL_BACKTEST_CONSUMER, "live", "alert", "notification"),
-        notes=(
-            "Designed causal OHLCV observation only. Six coloured states are a proxy, not measured fund flow; "
-            "the caution event mirrors the provided HHV/BARSLAST formula."
-        ),
-    ),
-    "main_force_mirror_futures_observation_v1": FormalPolicy(
-        policy_id="main_force_mirror_futures_observation_v1",
-        indicator_family="MAIN_FORCE_MIRROR_FUTURES",
-        seed_policy=None,
-        smoothing_policy=None,
-        histogram_scale=None,
-        lookback="60m_state21_caution31_physical_contract_segment",
-        confirmed_only=True,
-        frozen_legacy=False,
-        allowed_consumers=("Web_manual_observation",),
-        blocked_consumers=(
-            FORMAL_BACKTEST_CONSUMER,
-            "live",
-            "alert",
-            "notification",
-            "auto_order",
-        ),
-        notes=(
-            "60m Web-only directional position-pressure observation proxy. "
-            "Not measured fund flow, participant identity, an Alert, or a trade signal."
-        ),
-    ),
     "main_force_mirror_observation_v2": FormalPolicy(
         policy_id="main_force_mirror_observation_v2",
         indicator_family="MAIN_FORCE_MIRROR_V2",

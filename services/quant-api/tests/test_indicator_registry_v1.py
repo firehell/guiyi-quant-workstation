@@ -81,7 +81,7 @@ def test_registry_uses_per_indicator_frequency_contracts() -> None:
     assert {
         code: definition.supported_intervals
         for code, definition in indicator_registry.items()
-        if code not in {"main_force_mirror_futures_v1", "main_force_mirror_v2"}
+        if code != "main_force_mirror_v2"
     } == {
         code: expected
         for code in (
@@ -90,14 +90,26 @@ def test_registry_uses_per_indicator_frequency_contracts() -> None:
             "ema60",
             "macd",
             "atr",
-            "main_force_mirror_v0",
             "huotian_dayou_original_v0",
             "huotian_dayou_strict_v1",
         )
     }
-    assert indicator_registry["main_force_mirror_futures_v1"].supported_intervals == (
-        "60m",
-    )
+    assert indicator_registry["main_force_mirror_v2"].supported_intervals == ("60m",)
+
+
+def test_main_force_mirror_registry_exposes_only_v2() -> None:
+    """Catches a legacy mirror remaining callable after V2 becomes active."""
+    from guiyi_quant.indicators import formal_policy_registry, indicator_registry
+
+    mirror_codes = {
+        code for code in indicator_registry if code.startswith("main_force_mirror")
+    }
+    assert mirror_codes == {"main_force_mirror_v2"}
+    assert {
+        policy_id
+        for policy_id, policy in formal_policy_registry.items()
+        if policy.indicator_family.startswith("MAIN_FORCE_MIRROR")
+    } == {"main_force_mirror_observation_v2"}
 
 
 def test_strategy_candidate_cannot_enable_live_or_alert() -> None:
@@ -403,64 +415,6 @@ def test_kernel_output_hashes_unchanged_for_ema_macd_atr() -> None:
     assert [point.value for point in ema.points] == [point.value for point in ema_again.points]
     assert [point.value for point in macd.histogram.points] == [point.value for point in macd_again.histogram.points]
     assert [point.value for point in atr.points] == [point.value for point in atr_again.points]
-
-
-def test_main_force_mirror_futures_registry_and_policy_are_web_only() -> None:
-    from guiyi_quant.indicators import (
-        get_indicator,
-        parameters_hash,
-        require_formal_policy,
-    )
-    from guiyi_quant.indicators.main_force_mirror_futures import DEFAULT_PARAMETERS
-
-    definition = get_indicator("main_force_mirror_futures_v1")
-    assert definition.indicator_version == "futures-research-v1"
-    assert definition.display_name == "主力照妖镜·期货 V1"
-    assert definition.display_type == "subpane"
-    assert definition.input_fields == (
-        "open",
-        "high",
-        "low",
-        "close",
-        "volume",
-        "open_interest",
-        "physical_contract",
-    )
-    assert definition.supported_intervals == ("60m",)
-    assert definition.lookback_bars == 31
-    assert definition.warmup_bars == 30
-    assert definition.status == "observation_only"
-    assert definition.web_capable is True
-    assert definition.backtest_capable is False
-    assert definition.live_capable is False
-    assert definition.alert_capable is False
-    assert definition.default_visible is False
-    assert definition.output_schema == "signal_state"
-    assert definition.formal_policy_id == "main_force_mirror_futures_observation_v1"
-    assert definition.default_parameters == dict(DEFAULT_PARAMETERS)
-    assert parameters_hash(definition.default_parameters) == "f7fd0c9bce0b08d1"
-    assert "directional position-pressure proxy" in definition.repainting_notes
-    assert "not measured fund flow" in definition.repainting_notes
-
-    policy = require_formal_policy(
-        definition.formal_policy_id,
-        consumer="Web_manual_observation",
-    )
-    assert policy.indicator_family == "MAIN_FORCE_MIRROR_FUTURES"
-    assert policy.confirmed_only is True
-    assert policy.allowed_consumers == ("Web_manual_observation",)
-    assert policy.blocked_consumers == (
-        "formal_backtest",
-        "live",
-        "alert",
-        "notification",
-        "auto_order",
-    )
-    for consumer in policy.blocked_consumers:
-        with pytest.raises(ValueError, match="FORMAL_POLICY_CONSUMER_BLOCKED"):
-            require_formal_policy(policy.policy_id, consumer=consumer)
-    with pytest.raises(ValueError, match="FORMAL_POLICY_CONSUMER_NOT_ALLOWED"):
-        require_formal_policy(policy.policy_id, consumer="unknown_consumer")
 
 
 def test_main_force_mirror_v2_registry_and_policy_are_web_manual_observation_only() -> None:

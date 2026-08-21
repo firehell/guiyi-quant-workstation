@@ -73,6 +73,5 @@ export function buildMainForceMirrorV2RenderModel(
 }
 
 export function normalizeSecondaryPanelPreference(value: unknown): SecondaryPanelId {
-  if (value === 'main_force_mirror_futures') return 'main_force_mirror_v2'
   return value === 'main_force_mirror_v2' ? value : 'macd'
 }
