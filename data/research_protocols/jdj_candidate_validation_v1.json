@@ -31,7 +31,16 @@
     "last_test_through": "2026-06-30"
   },
   "prospective_oos": {
-    "first_trading_day": "2026-08-24"
+    "first_trading_day": "2026-08-24",
+    "calendar_evidence": {
+      "provider": "rqdata",
+      "method": "get_trading_dates",
+      "captured_on": "2026-08-21",
+      "exchange_code": "DCE",
+      "query_since": "2026-08-21",
+      "query_through": "2026-08-24",
+      "returned_trading_days": ["2026-08-21", "2026-08-24"]
+    }
   },
   "baseline_request_through": "2026-08-21",
   "horizons_bars": [3, 5, 8, 20],

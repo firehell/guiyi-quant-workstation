@@ -9,6 +9,11 @@ from sqlalchemy.orm import Session
 
 from app.models import Instrument, TradingCalendar
 
+from .jdj_candidate_validation_policy import (
+    JdjCandidateValidationProtocolError,
+    load_jdj_candidate_validation_protocol,
+)
+
 
 _EXPECTED_CALENDAR = {
     date(2026, 8, 21): True,
@@ -28,6 +33,13 @@ class JdjProspectiveCalendarError(ValueError):
 def assert_jdj_prospective_calendar(session: Session) -> None:
     """Assert the exact jm embargo/weekend/first-OOS calendar facts."""
 
+    try:
+        evidence = (
+            load_jdj_candidate_validation_protocol().prospective_calendar_evidence
+        )
+    except JdjCandidateValidationProtocolError:
+        raise JdjProspectiveCalendarError() from None
+
     instruments = session.scalars(
         select(Instrument).where(
             Instrument.symbol == "jm",
@@ -37,7 +49,10 @@ def assert_jdj_prospective_calendar(session: Session) -> None:
     if len(instruments) != 1:
         raise JdjProspectiveCalendarError()
     exchange_code = instruments[0].exchange_code
-    if type(exchange_code) is not str or not exchange_code:
+    if (
+        type(exchange_code) is not str
+        or exchange_code != evidence.exchange_code
+    ):
         raise JdjProspectiveCalendarError()
 
     calendars = session.scalars(
@@ -46,9 +61,6 @@ def assert_jdj_prospective_calendar(session: Session) -> None:
             TradingCalendar.trade_date.in_(tuple(_EXPECTED_CALENDAR)),
         )
     ).all()
-    if len(calendars) != len(_EXPECTED_CALENDAR):
-        raise JdjProspectiveCalendarError()
-
     observed: dict[date, bool] = {}
     for row in calendars:
         if (
@@ -58,5 +70,13 @@ def assert_jdj_prospective_calendar(session: Session) -> None:
         ):
             raise JdjProspectiveCalendarError()
         observed[row.trade_date] = row.is_trading_day
-    if observed != _EXPECTED_CALENDAR:
+    required_catalog = {
+        trade_date: is_trading_day
+        for trade_date, is_trading_day in _EXPECTED_CALENDAR.items()
+        if trade_date < evidence.query_through
+    }
+    if any(observed.get(day) != value for day, value in required_catalog.items()):
+        raise JdjProspectiveCalendarError()
+    future_value = observed.get(evidence.query_through)
+    if future_value is not None and future_value is not True:
         raise JdjProspectiveCalendarError()
