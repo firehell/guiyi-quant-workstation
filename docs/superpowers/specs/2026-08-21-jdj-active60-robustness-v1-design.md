@@ -109,7 +109,7 @@ automatic_ranking = false
 automatic_promotion = false
 ```
 
-`cross_symbol_products` 与 `sector_groups` 在 protocol JSON 内冻结。实现时当前 active60 / taxonomy 必须与 protocol 精确一致；发生漂移时阻塞本 protocol，而不是静默改写历史研究定义。
+`cross_symbol_products` 与 `sector_groups` 在 protocol JSON 内冻结。`sector_groups` 的机械形状固定为 `sector -> ordered symbols`：sector key 使用当前 taxonomy 的固定允许值，symbol 只出现一次，各组并集精确等于 `cross_symbol_products`，组内顺序继承 `cross_symbol_products`。实现时当前 active60 / taxonomy 必须与 protocol 逐品种精确一致；发生漂移时阻塞本 protocol，而不是静默改写历史研究定义。
 
 ## 5. 时间边界与 OOS 隔离
 
@@ -149,6 +149,8 @@ observed_since
 observed_through
 ```
 
+其中 `observed_since/observed_through` 精确定义为：validated loaded 1m bars 与 `common_retrospective` 相交后的最小/最大 `trading_day`；shared loader 为恢复 rank1 segment 而读取的窗口外 warm-up bars 不进入这两个字段。
+
 规则：
 
 - shared loader / MarketDataService 能建立合法 1m+5m actual-dominant source，则 `available`；
@@ -173,7 +175,7 @@ Phase 7 固定执行模型：
 
 ```text
 for symbol in active60:
-    load 1m + 5m once
+    call shared loader once for 1m + 5m
     build shared JDJ context once
     run Trend Follow reducer
     run Trend Reentry 6 reducer
@@ -181,7 +183,9 @@ for symbol in active60:
     build price-only outcomes
 ```
 
-不得执行 `3 candidates × 60 symbols` 的重复完整历史加载，更不得为年度统计重新读行情。
+这里的“加载一次”精确指每个 `symbol + full retrospective window` 只调用一次 `ActualDominantResearchSegmentLoader.load(... frequencies=(1m,5m) ...)`；该 shared loader 内部既有的 probe/full MDS 查询语义保持不变，不要求把底层 MarketDataService 物理查询压缩成一次。
+
+不得为三个 Candidate 分别重复调用 shared loader，更不得为年度统计重新读行情。
 
 V1 默认串行执行；不新增 multiprocessing、async worker、queue 或 cache layer。只有真实运行证明串行不可接受时，未来才能单独立项有限并发。
 
@@ -235,6 +239,8 @@ event_rate_per_1000_evaluable
 
 horizon_summary[3|5|8|20]
 ```
+
+`event_rate_per_1000_evaluable = event_count * 1000 / evaluable_bar_count`；当 `evaluable_bar_count=0` 时该值必须为 `null`。
 
 每个 horizon 固定：
 
@@ -427,7 +433,7 @@ Phase 7 不做：
 
 `auto_order=false` 始终成立。
 
-## 17. 计划文件规模约束
+## 17. 实现文件规模约束
 
 实现应优先控制为以下最小新增面：
 
@@ -462,7 +468,7 @@ PROJECT_SOURCE.md / docs/ARCHITECTURE.md / STATUS.md（仅在实现事实成立�
 3. **180-cell completeness**：三个 Candidate × frozen active60 全部出现；
 4. **no-event ≠ unavailable**：合法 source + 0 event 仍为 available；
 5. **no-sample ≠ zero**：无 horizon sample 时 rate/median 为 null；
-6. **single-load**：同 symbol 的 full retrospective 只做一次 1m+5m source load，三个 reducer 共用；
+6. **single-load**：同 symbol 的 full retrospective 只调用一次 shared loader，三个 reducer 共用；
 7. **yearly no-reload**：年度统计不额外访问行情；
 8. **symbol-balanced sector**：复制某 symbol 的 event 数不能给它增加 sector 权重；
 9. **old robustness immutable**：现有 `multi_candidate_robustness_v1` protocol/report/evidence contract 不被修改；
@@ -477,7 +483,7 @@ PROJECT_SOURCE.md / docs/ARCHITECTURE.md / STATUS.md（仅在实现事实成立�
 - retrospective 精确为 `2023-01-01..2026-08-20`；
 - embargo/prospective 数据零消费；
 - frozen active60 / taxonomy identity 无漂移；
-- 同 symbol 一次加载 1m+5m，三个 reducer 共享 context；
+- 同 symbol 一次 shared-loader 调用读取 1m+5m，三个 reducer 共享 context；
 - existing JDJ research parity 通过；
 - exact 180 cells 完整；
 - single-symbol、yearly、sector 三层轻量 facts 可复算；
