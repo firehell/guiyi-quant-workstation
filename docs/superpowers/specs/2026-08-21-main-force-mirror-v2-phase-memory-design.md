@@ -43,13 +43,7 @@ MarketDataService
 → existing guiyi research main-force-mirror-v2
 ```
 
-Member 继续复用：
-
-```text
-main_force_member_rank_v1
-MemberRankSnapshotRepository
-existing snapshot builder
-```
+Member 继续复用现有 `main_force_member_rank_v1` / `MemberRankSnapshotRepository`，但本轮 pressure-only 研究不依赖真实 member snapshot。
 
 本任务不新增：
 
@@ -81,6 +75,7 @@ Web Phase Marker
 Live Phase
 Alert / PushPlus
 新的 member 3d/5d 指标体系
+member-sequence 全历史分层
 member 增量 cache/archive
 自动 snapshot refresh
 通用 phase framework
@@ -91,7 +86,7 @@ member 增量 cache/archive
 
 **设计目标：可以。**
 
-本轮只修改现有 V2 research service、现有 research CLI serializer/parser 和对应测试；不新增持久状态或运行服务。若结果无价值，删除 sequence facts/cohorts 和 `--forensic` 即可回到当前 V2，不涉及 migration、数据回滚或 Runtime 清理。
+本轮只修改现有 V2 research service、现有 research CLI serializer/parser 和对应测试；不新增持久状态或运行服务。若结果无价值，删除 sequence facts/summaries 和 `--forensic` 即可回到当前 V2，不涉及 migration、数据回滚或 Runtime 清理。
 
 ## 2. 本轮唯一目标
 
@@ -253,18 +248,37 @@ accumulated_negative_to_positive
 
 这些 cohort 是 retrospective diagnostic 名称，不是市场事实标签或交易信号。
 
-## 7. 复用现有 Outcome 研究
+## 7. 复用现有 Outcome 研究，但不污染现有 cohort 排名
 
-Sequence cohort 直接复用现有 `MainForceMirrorV2ResearchService` 的 outcome machinery：
+Sequence cohort 复用现有 `MainForceMirrorV2ResearchService` 的 outcome machinery：
 
 ```text
 forward horizons = 1 / 3 / 5 / 10 根 60m Bar
 same physical contract only
 ```
 
-继续输出：
+Sequence 是“原强方向发生退潮/接管后的反转观察”，因此方向语义固定锚定**原 build side**：
 
 ```text
+long_build... cohort  → original_side = long
+short_build... cohort → original_side = short
+positive_to_negative  → original_side = long
+negative_to_positive  → original_side = short
+```
+
+Sequence summary 以 warning/reversal 语义读取：`median_reversal_return` / reversal hit rate 是主要诊断；不得把它解释为正式 short/long 信号。
+
+为了不改变现有 `COHORTS`、`top_bottom_spreads` 和 member sensitivity 的含义，sequence 不加入现有全局 `COHORTS`。结果新增两个独立 research-only summary：
+
+```text
+sequence_pooled
+sequence_yearly
+```
+
+每个 exact sequence cohort 继续输出：
+
+```text
+1 / 3 / 5 / 10
 sample_count
 median_directional_return
 median_reversal_return
@@ -273,15 +287,7 @@ median_mfe
 median_mae
 ```
 
-继续按：
-
-```text
-product
-year
-state/cohort
-```
-
-组织；pooled 只能作为摘要，不得覆盖单品种/年份异质性。
+单次 request 只针对一个 symbol，因此不再建设重复的 `sequence_by_product`；active60 比较由现有 CLI 对 60 个 symbol 重复调用完成，不新增 cross-symbol service 或 batch framework。
 
 不新增 Sharpe、PnL、收益曲线、交易成本或 backtest engine。
 
@@ -293,7 +299,7 @@ state/cohort
 guiyi research main-force-mirror-v2 ... --forensic
 ```
 
-默认不带 `--forensic` 时，保持当前 compact summary，仅增加 sequence cohort summary。
+默认不带 `--forensic` 时，保持当前 compact summary，并增加 `sequence_pooled / sequence_yearly`。
 
 带 `--forensic` 时，额外返回请求窗口内逐 Bar：
 
@@ -321,7 +327,7 @@ Forensic 只是 stdout JSON；不保存 report、不写 DB/Canonical/Redis。
 
 JM 2026-03 高位案例通过该模式人工解释，不允许在代码中硬编码日期、JM 或预期标签。
 
-## 9. Member：当前只复用，不扩展
+## 9. Member：当前只复用，不扩展、不作为本轮 Gate
 
 为了遵守“能复用就不建新模块”，本轮**不新增**：
 
@@ -331,6 +337,7 @@ member_bias_5d
 member_bias_turn
 新的 member history reducer
 新的 snapshot cache/archive
+sequence × member 全历史 cohort
 ```
 
 Sequence fact 只引用当前已经计算好的：
@@ -341,7 +348,7 @@ member.relation_to_accumulated
 
 Member unavailable 不阻断 pressure-only sequence cohort。
 
-真实 `jm/ag/cu/m` member snapshot 若需要补建，只使用仓库已有 `MemberRankSnapshotBuilder`，属于独立受控外部数据操作；不在本轮代码实现里修改 builder/repository。
+当前 `STATUS.md` 明确真实 member snapshot 尚未执行，因此本轮代码与 pressure-only evidence 不以 snapshot 为前置条件。若 Stage A 证明 sequence 本身有长期价值，再单独评估是否值得执行已有 `MemberRankSnapshotBuilder` 并增加 member-sequence 分层；届时重新回答五个问题并取得真实数据写入 Gate。
 
 ## 10. 60m-only 因果与 Prefix Invariance
 
@@ -373,7 +380,7 @@ JM 2026-03 案例只回答：
 3. 后续最早哪根出现 `short_build`；
 4. accumulated pressure 何时开始下降、何时反号；
 5. exact 2-step/3-step sequence 在什么时点形成；
-6. 当时已有 member relation 是什么（若 snapshot 可用）。
+6. 当时已有 member relation 是什么（若当前 snapshot 可用）。
 
 不得要求：
 
@@ -383,9 +390,7 @@ JM 2026-03 案例只回答：
 “为了匹配截图调参数”
 ```
 
-## 12. 全历史验证顺序
-
-### Stage A — Pressure-only
+## 12. 本轮真实验证：只做 Stage A Pressure-only
 
 不需要任何新数据写入，直接使用本地 Historical Canonical：
 
@@ -394,30 +399,20 @@ active 60
 × actual_dominant
 × 60m
 × existing V2
-× sequence cohorts
+× exact sequence cohorts
 ```
 
 先看：
 
 ```text
-count
+sample count
 product/year stability
 long/short symmetry
 形成时间
-1/3/5/10-bar outcome
+1/3/5/10-bar reversal outcome
 ```
 
-### Stage B — Member-enriched（可选 Gate）
-
-仅在用户明确授权真实 member snapshot build 后，对已有 admitted：
-
-```text
-jm / ag / cu / m
-```
-
-叠加 existing `member_relation_to_accumulated` 分层。
-
-没有 snapshot 时 Stage A 仍完整成立，不允许为了 member 阻塞 pressure-only 研究。
+不创建 batch service、report database 或新调度器。稳定重复执行需要时，可使用 Codex App + CLI automation 调用现有命令并保存临时本地分析结果；任何 Git-tracked evidence 必须另行明确决定。
 
 ## 13. Go / Stop Gate
 
@@ -438,13 +433,12 @@ STOP
 不实现 CLIMAX / UNWIND / TAKEOVER
 不改 Web
 不接 Alert
+不扩 member history
 ```
-
-Member 只作为附加解释，不能成为是否进入 Phase 的必要前置。
 
 ## 14. 明确延迟到下一任务
 
-即使 Stage A/B 看起来有效，本计划也**不实现**：
+即使 Stage A 看起来有效，本计划也**不实现**：
 
 ```text
 NORMAL / CLIMAX / UNWIND / TAKEOVER active reducer
@@ -452,6 +446,8 @@ Phase parameters/policy/hash
 Web Phase panel/marker
 API Phase schema
 Live/Alert/PushPlus
+member-sequence 全历史分层
+真实 member snapshot build
 prospective OOS Phase candidate
 ```
 
@@ -500,10 +496,11 @@ main / tag / release
 5. exact 2-step/3-step cohorts long/short 对称；
 6. prefix invariance 通过；
 7. sequence outcome 不跨 physical contract；
-8. `--forensic` 只增加 stdout 明细，不写任何数据；
-9. member unavailable 不阻断 pressure-only；
-10. 没有 Phase 正式标签、阈值或 active semantic drift；
-11. 相关 V2 tests、research CLI tests、Ruff、Mypy、secret scan、`git diff --check` 通过。
+8. sequence summaries 不进入现有 `top_bottom_spreads` / member sensitivity；
+9. `--forensic` 只增加 stdout 明细，不写任何数据；
+10. member unavailable 不阻断 pressure-only；
+11. 没有 Phase 正式标签、阈值或 active semantic drift；
+12. 相关 V2 tests、research CLI tests、Ruff、Mypy、secret scan、`git diff --check` 通过。
 
 研究验收与代码验收分离。测试通过只表示 research capability 正确，不表示 Phase 值得产品化。
 
