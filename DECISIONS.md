@@ -1,6 +1,6 @@
 # 架构决策记录
 
-更新时间：2026-08-20
+更新时间：2026-08-21
 
 本文件只保留当前有效、长期影响代码或数据语义的决策。历史过程由 Git 与 OpenSpec archive 追溯。
 
@@ -27,7 +27,7 @@
 | Market Runtime V1 授权 | 明确启用一次本地 Market Runtime V1 后，允许 `operational_products.txt` 中 active 60 的 Live 观察和每日 18:05 + 一次 1h retry 的盘后更新持续运行 | 范围变化必须显式修改同一配置；不授权 main/tag/release、其他 DB mutation、真实外部通知或订单 |
 | Alert V2 应用 | 独立 Application Domain 的 Code Registry 只含 `htdy_original_15m` 与 `subing_entry_signal_v1`；两张应用表记录 Scope 与不可变 Event | 不修改八表 Catalog/Canonical/rank1；SuBing seed Scope 为空；不恢复 Signal/Review/Strategy，不 replay/backfill/retry/outbox/queue，不建订单路径 |
 | Alert V2 评估语义 | HTDY 保持 event-cutoff；SuBing 只复用 Factor/accepted Calibration/FormalPolicy/`SubingReadService` resolver，stale identity fail-closed，final Session Bar 只使用共享 arrival grace，5m/15m 同边界使用 TradingSession bucket | 不复制 SuBing 公式/resolver，不建 `snapshot_at`/cutoff/replay 语义；current trading day 只由 `MarketPhaseResolver + operational products` 唯一解析，不可用时 fail-closed |
-| Alert Runtime V2 授权 | production v1.6.4 持续边界为 `htdy_original_15m × 该 Rule 显式 scope_products × htdy_observers × pushplus-wechat-topic` 与 `subing_entry_signal_v1 × 该 Rule 显式 scope_products × owner × pushplus-wechat`；当前两条 Scope 均精确为 `jm` | 已批准 Topic 可在人工核对的 `1..4` 人边界内增加成员，超过 4 人、未知成员或换 Topic 须重新授权；未来第三条 Rule、production migration、后续 release/tag、再次 Runtime switch、Scope/transport 变化、真实 canary/send 与 rollback 互不授权 |
+| Alert Runtime V2 授权 | 已部署 Alert v1.6.5 的持续边界为 `htdy_original_15m × 该 Rule 显式 scope_products × htdy_observers × pushplus-wechat-topic` 与 `subing_entry_signal_v1 × 该 Rule 显式 scope_products × owner × pushplus-wechat`；当前两条 Scope 均精确为 `jm` | 已批准 Topic 可在人工核对的 `1..4` 人边界内增加成员，超过 4 人、未知成员或换 Topic 须重新授权；未来第三条 Rule、production migration、后续 release/tag、再次 Runtime switch、Scope/transport 变化、真实 canary/send 与 rollback 互不授权 |
 | Alert active 通知架构 | develop 为 `AlertEvent commit → AlertNotificationDispatcher → NotificationTransport → PushPlus SDK`；HTDY 每 Event 一次 Topic 请求，SuBing 一次 owner 请求；Git 外配置为 0700/0600，只含消息 token 与 Topic code | shortCode 仅表示 provider 接受；Topic 成员由 PushPlus 外部管理并人工核对；无 Open API、callback、逐人 DB 状态、retry/queue/replay/backfill/outbox/failover；替换 provider 只新增 adapter 并切换 composition，不改业务 Rule |
 | Execution Review V1 | 只从不可变 `subing_entry_signal_v1` Event 记录人工 Decision、真实手工 Execution、单品种 OPEN Episode 与结构化 Review | 独立四表 Application Domain；不恢复旧 Review Center，不连接账户、不自动反手、不创建订单；历史重建只经 MarketDataService |
 | Execution Review multiplier | 采用 trusted-partial reference：只跟踪具有正式官方证据且可机器复算的值，reference=evidence⊆active 60 | completeness 不阻断 Decision/Execution/Review；缺失只令人民币估算 unavailable，realized points/拓扑仍可用；Episode 创建时 snapshot，后续 reference 扩大不重写历史；60/60 是独立 reference-data 目标而非 v1.4 release Gate |

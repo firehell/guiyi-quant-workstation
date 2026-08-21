@@ -1,6 +1,6 @@
 # 测试与验证入口
 
-更新时间：2026-08-20
+更新时间：2026-08-21
 
 所有写入测试必须使用 `tmp_path`、临时 Canonical root 和隔离数据库；测试 URL 不得指向 Runtime 或
 生产数据库。真实数据、Runtime switch 和通知不属于测试命令的隐含权限。
@@ -332,11 +332,11 @@ Alert Application Domain 仍只有 `alert_rules` 与 `alert_events` 两张表。
 - exact HTDY Rule + Scope + audience + transport 持续边界为
   `htdy_original_15m × jm × htdy_observers × pushplus-wechat-topic`；SuBing 固定为
   `subing_entry_signal_v1 × jm × owner × pushplus-wechat`，不得从历史 canary 推导 release 或 switch；
-- v1.6.4 main/release/tag 与 exact-tag Alert Runtime promotion/switch：均已完成；后续版本或再次 switch
+- v1.6.5 main/release/tag 与 exact-tag Alert Runtime promotion/switch：均已完成；后续版本或再次 switch
   仍是新的独立 Gate。
 
 这些 Gate 不能相互授权，失败或重试也需要新的明确请求。代码、fixture、render-only 或 mock 通过只证明
-实现，不证明未来发布或 Runtime Gate 已授权。当前 production 为 `v1.6.4` exact Runtime，PushPlus
+实现，不证明未来发布或 Runtime Gate 已授权。当前 production 为 `v1.6.5` exact Runtime，PushPlus
 transport 已按两条精确 `jm` 边界启用；自然 HTDY Topic Event 与自然 SuBing owner Event 验收仍 pending。
 
 ## OpenSpec
