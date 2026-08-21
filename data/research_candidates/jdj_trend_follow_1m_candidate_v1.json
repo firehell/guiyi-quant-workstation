@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "candidate_id": "jdj_trend_follow_1m_candidate_v1",
+  "source_kind": "jdj_1m",
+  "policy_id": "jdj_1m_policy_v1",
+  "formula_version": "jdj_1m_v1",
+  "research_only": true
+}
