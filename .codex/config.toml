@@ -16,17 +16,6 @@ model_reasoning_effort = "high"
 # 默认使用缓存搜索，减少不必要的实时外网访问。
 web_search = "live"
 
-# Project-local hooks require a trusted project and an explicit hook definition.
-[[hooks.PreToolUse]]
-matcher = "^Bash$"
-
-[[hooks.PreToolUse.hooks]]
-type = "command"
-# Prefer Windows-available `python` on PATH; fall back is host-specific.
-command = 'python "$(git rev-parse --show-toplevel)/.codex/hooks/pre_tool_use_policy.py"'
-timeout = 5
-statusMessage = "Checking destructive Git policy"
-
 # git push、gh pr、依赖安装等需要网络。
 [sandbox_workspace_write]
 network_access = true

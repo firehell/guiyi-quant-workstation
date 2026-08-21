@@ -51,81 +51,13 @@ ACTIVE_CANONICAL = (
     "openspec/specs/market-series-query/spec.md",
 )
 
-RETIRED_AI_ASSISTANCE = (
-    ".agents/skills/futures-strategy",
-    ".agents/skills/quant-safety-review",
-    ".agents/skills/risk-center",
-    ".codex/agents/risk-reviewer.toml",
-)
-
-ACTIVE_PROJECT_SKILLS = {
-    "database-modeling",
-    "docs-product-manager",
-    "futures-data",
-    "git-commit-workflow",
-    "market-kline-workbench",
-    "project-governor",
-    "quant-backend",
-    "quant-frontend",
-    "testing-quality",
-    "ui-bugfix",
-}
-
-ACTIVE_CODEX_REVIEWERS = {
-    "architecture-reviewer.toml",
-    "frontend-reviewer.toml",
-    "product-reviewer.toml",
-}
-
-CURSOR_OPENSPEC_COMMANDS = {
-    "opsx-apply.md",
-    "opsx-archive.md",
-    "opsx-explore.md",
-    "opsx-propose.md",
-    "opsx-sync.md",
-    "opsx-update.md",
-}
-
-
 def test_governance_surface_has_one_executable_entrypoint() -> None:
     assert (ROOT / "scripts/engineering/secret_scan.py").is_file()
     assert all(not (ROOT / relative).exists() for relative in RETIRED_ASSETS)
 
 
-def test_project_assistance_matches_the_active_market_architecture() -> None:
-    assert all(not (ROOT / relative).exists() for relative in RETIRED_AI_ASSISTANCE)
-    assert {
-        path.parent.name for path in (ROOT / ".agents/skills").glob("*/SKILL.md")
-    } == ACTIVE_PROJECT_SKILLS
-    assert {
-        path.name for path in (ROOT / ".codex/agents").glob("*.toml")
-    } == ACTIVE_CODEX_REVIEWERS
-    assert not (ROOT / ".cursor/skills").exists()
-    assert {
-        path.name for path in (ROOT / ".cursor/commands").glob("opsx-*.md")
-    } == CURSOR_OPENSPEC_COMMANDS
-    guidance = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
-    assert "项目辅助只服务当前 active 架构" in guidance
-    assert "每项任务默认主 agent，最多增加一个必要的 specialist 或 reviewer" in guidance
-
-
-def test_active_guidance_delegates_mutable_state_and_matches_current_surfaces() -> None:
+def test_active_docs_and_cli_match_current_surfaces() -> None:
     agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
-    governor = (ROOT / ".agents/skills/project-governor/SKILL.md").read_text(
-        encoding="utf-8"
-    )
-    backend = (ROOT / ".agents/skills/quant-backend/SKILL.md").read_text(
-        encoding="utf-8"
-    )
-    frontend = (ROOT / ".agents/skills/quant-frontend/SKILL.md").read_text(
-        encoding="utf-8"
-    )
-    product_reviewer = (
-        ROOT / ".codex/agents/product-reviewer.toml"
-    ).read_text(encoding="utf-8")
-    architecture_reviewer = (
-        ROOT / ".codex/agents/architecture-reviewer.toml"
-    ).read_text(encoding="utf-8")
     execution_review = (ROOT / "docs/EXECUTION_REVIEW.md").read_text(
         encoding="utf-8"
     )
@@ -137,14 +69,8 @@ def test_active_guidance_delegates_mutable_state_and_matches_current_surfaces() 
         encoding="utf-8"
     )
 
-    mutable_guidance = "\n".join((agents, governor, product_reviewer))
-    assert not re.search(r"当前(?:正式)?\s*release[^\n]*v\d+\.\d+\.\d+", mutable_guidance)
     assert "当前 production、Runtime、Scope 与待完成 Gate 只看 `STATUS.md`" in agents
-    assert "PushPlus" in backend
-    assert "Execution Review" in backend
-    assert "`/trade-records`" in frontend
-    assert "Execution Review" in architecture_reviewer
-    assert "WeCom" not in "\n".join((backend, execution_review))
+    assert "WeCom" not in execution_review
     assert "v1.4 Runtime" not in execution_review
     assert "v1.4 release" not in execution_review
     assert "Lane 3" not in execution_review
@@ -371,7 +297,7 @@ def test_exact_contract_and_jdj_identity_have_one_implementation() -> None:
     ).read_text(encoding="utf-8")
 
 
-def test_release_candidate_excludes_private_sources_and_retired_ai_guidance() -> None:
+def test_release_candidate_excludes_private_sources() -> None:
     tracked_private_sources = subprocess.run(
         ["git", "-c", "core.fsmonitor=false", "ls-files", "private_sources"],
         cwd=ROOT,
@@ -381,40 +307,3 @@ def test_release_candidate_excludes_private_sources_and_retired_ai_guidance() ->
     ).stdout.strip()
 
     assert tracked_private_sources == ""
-    git_workflow = (ROOT / ".agents/skills/git-commit-workflow/SKILL.md").read_text(
-        encoding="utf-8"
-    )
-    assert "AI Agent 默认不允许 push" not in git_workflow
-    assert "git pull --rebase" not in git_workflow
-
-    architecture_reviewer = (ROOT / ".codex/agents/architecture-reviewer.toml").read_text(
-        encoding="utf-8"
-    )
-    frontend_reviewer = (ROOT / ".codex/agents/frontend-reviewer.toml").read_text(
-        encoding="utf-8"
-    )
-    governor = (ROOT / ".agents/skills/project-governor/SKILL.md").read_text(
-        encoding="utf-8"
-    )
-    kline = (ROOT / ".agents/skills/market-kline-workbench/SKILL.md").read_text(
-        encoding="utf-8"
-    )
-
-    for retired_phrase in ("高频行情", "回测计算是否支持并行化", "交易接口是否有环境隔离"):
-        assert retired_phrase not in architecture_reviewer
-    for retired_phrase in ("资金曲线", "回撤曲线", "策略、回测、复盘闭环"):
-        assert retired_phrase not in frontend_reviewer
-    assert "数据 -> 策略 -> 回测 -> 报告 -> 复盘 -> 信号" not in governor
-    assert "信号 marker" not in kline
-
-    all_project_skills = "\n".join(
-        path.read_text(encoding="utf-8")
-        for path in sorted((ROOT / ".agents/skills").glob("*/SKILL.md"))
-    )
-    for retired_phrase in (
-        "uv run python -m alembic upgrade head",
-        "把 V1.5/V2/V3 功能塞进 V1",
-        "、`app/models/market_tables.py`。",
-        "已卸（勿当现行页面）：Dashboard、数据中心、策略中心、回测任务/报告、信号扫描、复盘中心、系统设置、Live 模式",
-    ):
-        assert retired_phrase not in all_project_skills

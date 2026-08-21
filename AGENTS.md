@@ -17,7 +17,7 @@ Review 的四张表都是独立 Application Domain，不属于 Market Catalog，
 
 ## 项目辅助范围
 
-项目辅助只服务当前 active 架构；已经退役的策略、回测、Signal/Review、账户与风控子系统不保留项目级 skill、reviewer、command 或 task template。每项任务默认主 agent，最多增加一个必要的 specialist 或 reviewer；不得把多个辅助角色串成固定流程。未来重新引入策略、回测或风险计算，必须先以新任务新合同定义其业务边界，再按需恢复辅助说明。
+项目辅助只保留直接服务当前 active 领域的六个 skill：数据建模、期货数据、Market K 线工作台、后端、前端与 UI bugfix。不保留重复 `AGENTS.md` / `docs/DEVELOPMENT.md` / `TESTING.md` / `STATUS.md` 的 workflow、governor、docs skill、项目 Reviewer 或 OpenSpec/Cursor command wrapper。OpenSpec 在仓库中只保留 active specs 与 CLI validation；已完成过程只从 Git history 追溯。未来重新引入策略、回测或风险计算，必须先以新任务新合同定义其业务边界，再按需恢复直接有价值的辅助说明。
 
 ## 个人开发工作流
 
