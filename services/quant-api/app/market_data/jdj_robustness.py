@@ -133,33 +133,41 @@ class JdjActive60RobustnessProtocol:
 
     def __post_init__(self) -> None:
         sectors = dict(self.sector_groups)
-        if (
-            type(self.schema_version) is not int
-            or self.schema_version != 1
-            or self.protocol_id != _PROTOCOL_ID
-            or self.research_only is not True
-            or self.readonly is not True
-            or self.frozen_at != _FROZEN_AT
-            or self.candidate_ids != _CANDIDATES
-            or self.source_policy != "jdj_1m_policy_v1"
-            or self.source_validation_protocol
-            != "jdj_candidate_validation_v1"
-            or self.common_since != _COMMON_SINCE
-            or self.common_through != _COMMON_THROUGH
-            or self.embargo_trading_days != _EMBARGO_TRADING_DAYS
-            or self.prospective_first_trading_day
-            != _PROSPECTIVE_FIRST_TRADING_DAY
-            or self.prospective_consumed is not False
-            or self.horizons_bars != _HORIZONS
-            or self.cross_symbol_products != _PRODUCTS
-            or tuple(sectors.items()) != tuple(_SECTOR_GROUPS.items())
-            or self.parameter_perturbation is not False
-            or self.relationship_analysis is not False
-            or self.automatic_ranking is not False
-            or self.automatic_promotion is not False
-        ):
-            raise JdjActive60RobustnessProtocolError()
         object.__setattr__(self, "sector_groups", MappingProxyType(sectors))
+        require_exact_jdj_active60_robustness_protocol(self)
+
+
+def require_exact_jdj_active60_robustness_protocol(
+    value: object,
+) -> JdjActive60RobustnessProtocol:
+    if not isinstance(value, JdjActive60RobustnessProtocol):
+        raise JdjActive60RobustnessProtocolError()
+    if (
+        type(value.schema_version) is not int
+        or value.schema_version != 1
+        or value.protocol_id != _PROTOCOL_ID
+        or value.research_only is not True
+        or value.readonly is not True
+        or value.frozen_at != _FROZEN_AT
+        or value.candidate_ids != _CANDIDATES
+        or value.source_policy != "jdj_1m_policy_v1"
+        or value.source_validation_protocol != "jdj_candidate_validation_v1"
+        or value.common_since != _COMMON_SINCE
+        or value.common_through != _COMMON_THROUGH
+        or value.embargo_trading_days != _EMBARGO_TRADING_DAYS
+        or value.prospective_first_trading_day
+        != _PROSPECTIVE_FIRST_TRADING_DAY
+        or value.prospective_consumed is not False
+        or value.horizons_bars != _HORIZONS
+        or value.cross_symbol_products != _PRODUCTS
+        or tuple(value.sector_groups.items()) != tuple(_SECTOR_GROUPS.items())
+        or value.parameter_perturbation is not False
+        or value.relationship_analysis is not False
+        or value.automatic_ranking is not False
+        or value.automatic_promotion is not False
+    ):
+        raise JdjActive60RobustnessProtocolError()
+    return value
 
 
 @dataclass(frozen=True, slots=True)
