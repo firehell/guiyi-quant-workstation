@@ -26,6 +26,7 @@ from app.market_data.jdj_events import (
     _canonical_trend_follow_event_id,
 )
 from app.market_data.jdj_policy import load_jdj_policy
+from app.market_data.jdj_research import JdjEventOutcomeRecord
 from app.market_data.jdj_research import JdjResearchRequest
 from app.market_data.jdj_research import JdjSourceUnavailableError
 from app.market_data.jdj_research_service import JdjResearchService
@@ -242,6 +243,107 @@ def _service(loader: _RecordingLoader) -> JdjResearchService:
         jdj_policy=load_jdj_policy(),
         n_policy=load_n_structure_policy(),
     )
+
+
+def test_run_batch_loads_once_for_three_exact_candidates(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    loader = _RecordingLoader(_loaded_series())
+    context_calls = 0
+
+    def empty_contexts(*args: object, **kwargs: object) -> tuple[()]:
+        nonlocal context_calls
+        context_calls += 1
+        return ()
+
+    monkeypatch.setattr(
+        research_module,
+        "build_jdj_context_series",
+        empty_contexts,
+    )
+    service = _service(loader)
+
+    result = service.run_batch(
+        symbol="jm",
+        since=_SEGMENT_START,
+        through=_DAY,
+    )
+
+    assert loader.calls == [
+        {
+            "symbol": "jm",
+            "frequencies": (BarFrequency.M1, BarFrequency.M5),
+            "since": _SEGMENT_START,
+            "through": _DAY,
+        }
+    ]
+    assert context_calls == 1
+    assert result.symbol == "jm"
+    assert result.observed_since == _SEGMENT_START
+    assert result.observed_through == _DAY
+    assert tuple(item.result.candidate_id for item in result.candidates) == (
+        "jdj_trend_follow_1m_candidate_v1",
+        "jdj_trend_reentry_6_1m_candidate_v1",
+        "jdj_key_level_breakout_1m_candidate_v1",
+    )
+
+
+def test_run_batch_has_exact_parity_with_each_existing_candidate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bars = _trend_follow_bars(23)
+    contexts = _trend_follow_contexts(bars)
+    loader = _RecordingLoader(_loaded_with_1m_bars(bars))
+    monkeypatch.setattr(
+        research_module,
+        "build_jdj_context_series",
+        lambda *args, **kwargs: contexts,
+    )
+    service = _service(loader)
+    candidate_ids = (
+        "jdj_trend_follow_1m_candidate_v1",
+        "jdj_trend_reentry_6_1m_candidate_v1",
+        "jdj_key_level_breakout_1m_candidate_v1",
+    )
+    existing = {
+        candidate_id: service.run(
+            JdjResearchRequest(_DAY, _DAY, "jm", candidate_id)
+        )
+        for candidate_id in candidate_ids
+    }
+
+    batch = service.run_batch(symbol="jm", since=_DAY, through=_DAY)
+
+    assert tuple(item.result.candidate_id for item in batch.candidates) == (
+        candidate_ids
+    )
+    for item in batch.candidates:
+        previous = existing[item.result.candidate_id]
+        assert item.result.events == previous.events
+        assert item.result.trigger_count_long == previous.trigger_count_long
+        assert item.result.trigger_count_short == previous.trigger_count_short
+        assert item.result.evaluable_bar_count == previous.evaluable_bar_count
+        for horizon in (3, 5, 8, 20):
+            assert (
+                item.result.horizon_summary[horizon]
+                == previous.horizon_summary[horizon]
+            )
+        assert tuple(record.event_id for record in item.event_outcomes) == tuple(
+            event.event_id for event in previous.events
+        )
+        assert all(
+            tuple(record.outcomes) == (3, 5, 8, 20)
+            for record in item.event_outcomes
+        )
+
+
+def test_event_outcome_record_requires_exact_horizon_keys() -> None:
+    with pytest.raises(JdjContextError, match="^JDJ_CONTEXT_INVALID$"):
+        JdjEventOutcomeRecord(
+            event_id="event-1",
+            trading_day=_DAY,
+            outcomes={3: None, 5: None, 8: None},
+        )
 
 
 def test_constructor_rejects_scalar_product_scope() -> None:
