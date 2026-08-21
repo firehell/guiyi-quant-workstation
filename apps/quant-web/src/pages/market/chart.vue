@@ -28,10 +28,7 @@ import type {
   ResearchOverlayId,
   SeriesKind,
 } from '@/types/market'
-import {
-  filterBarsToSubingSegment,
-  MARKET_FREQUENCIES,
-} from '@/types/market'
+import { MARKET_FREQUENCIES } from '@/types/market'
 import { lifecycleSnapshotToMarkers } from '@/utils/subingLifecycleMarkers'
 import { buildKlineDerivedData } from '@/utils/klineViewModel'
 import {
@@ -108,14 +105,9 @@ const {
   frequency,
   dominants,
   selectedDominant,
-  followLatest,
   fetchSnapshot: getSubingResearch,
   fetchDominants: getMarketDominants,
   refreshSeries: () => refreshSeries(),
-  visibleBars: () => visibleBars.value,
-  replaceChartBars: (nextBars, preserveViewport) => {
-    chart.value?.replaceBars(nextBars, preserveViewport)
-  },
 })
 const {
   htdyRule,
@@ -144,21 +136,13 @@ let metadataReady = false
 let synchronizingSymbol = false
 let researchGeneration = 0
 
-const loading = computed(() => loadingInitial.value
-  || loadingBefore.value
-  || (selectedOverlay.value === 'subing' && subingSupported.value && subingLoading.value))
+const loading = computed(() => loadingInitial.value || loadingBefore.value)
 const visibleMainIndicators = computed(() => {
   if (selectedOverlay.value === 'subing' && !subingSupported.value) return []
   return visibleMainIndicatorsForOverlay(selectedOverlay.value, optionalEmaIndicators.value)
 })
 const effectiveIdentity = computed(() => currentIdentity())
-const visibleBars = computed(() => {
-  if (selectedOverlay.value !== 'subing') return bars.value
-  if (!subingSupported.value) return bars.value
-  if (subingError.value) return bars.value
-  const segmentStart = subing.value?.segment_start_trading_day
-  return segmentStart ? filterBarsToSubingSegment(bars.value, segmentStart) : []
-})
+const visibleBars = computed(() => bars.value)
 const visibleStartTradingDay = computed(() => visibleBars.value[0]?.trading_day || '')
 const lifecycleMarkers = computed(() => {
   if (subingLoading.value || subingError.value) return []
@@ -166,12 +150,7 @@ const lifecycleMarkers = computed(() => {
     ? lifecycleSnapshotToMarkers(subing.value.lifecycle)
     : []
 })
-const canLoadEarlier = computed(() => {
-  if (selectedOverlay.value !== 'subing' || !subingSupported.value) return hasMoreBefore.value
-  const segmentStart = subing.value?.segment_start_trading_day
-  const visibleStart = visibleStartTradingDay.value
-  return !!segmentStart && !!visibleStart && visibleStart > segmentStart && hasMoreBefore.value
-})
+const canLoadEarlier = computed(() => hasMoreBefore.value)
 const isLiveDisplay = computed(() => !!marketState.value?.live_eligible
   && !!marketState.value.live_available
   && !liveUnavailable.value)
@@ -240,10 +219,9 @@ watch([contract, seriesKind, frequency], async () => {
   void refreshSubing()
 })
 
-watch(selectedOverlay, async () => {
+watch(selectedOverlay, () => {
   if (!metadataReady || synchronizingSymbol) return
   resetSubingSnapshot()
-  await refreshSeries()
   void refreshSubing()
 })
 
@@ -251,7 +229,7 @@ watch([symbol, seriesKind, contract], () => {
   if (metadataReady) void syncPersistentAlertMarkers(currentAlertMarkerIdentity(), [], 'replace')
 })
 
-watch([frequency, selectedOverlay], () => {
+watch(frequency, () => {
   if (metadataReady) void syncPersistentAlertMarkers(currentAlertMarkerIdentity(), [], 'replace')
 })
 
@@ -264,10 +242,6 @@ watch([symbol, seriesKind, contract], () => {
   if (metadataReady && !synchronizingSymbol) void refreshResearch()
 })
 
-watch(selectedOverlay, () => {
-  if (metadataReady && !synchronizingSymbol) void refreshResearch()
-})
-
 watch([symbol, seriesKind, frequency, researchSidebarOpen, watchlist], persistWorkspacePreferences, { deep: true })
 
 watch(frequency, (period) => {
@@ -276,13 +250,9 @@ watch(frequency, (period) => {
 })
 
 watch(mutation, (nextMutation) => {
-  const rendered = selectedOverlay.value === 'subing' ? visibleBars.value : bars.value
-  void syncPersistentAlertMarkers(currentAlertMarkerIdentity(), rendered, nextMutation.kind)
-  if (selectedOverlay.value === 'subing') {
-    if (nextMutation.kind === 'live' && subingSupported.value) void refreshSubing()
-    chart.value?.replaceBars(rendered, nextMutation.kind !== 'replace' || !followLatest.value)
-    if (nextMutation.kind === 'live' && followLatest.value) chart.value?.scrollToLatest()
-    return
+  void syncPersistentAlertMarkers(currentAlertMarkerIdentity(), bars.value, nextMutation.kind)
+  if (nextMutation.kind === 'live' && selectedOverlay.value === 'subing' && subingSupported.value) {
+    void refreshSubing()
   }
   if (!chart.value) return
   if (nextMutation.kind === 'replace') {
@@ -332,11 +302,6 @@ function currentAlertMarkerIdentity() {
 async function refreshSeries() {
   if (!symbol.value) {
     clearSeries()
-    return false
-  }
-  if (selectedOverlay.value === 'subing' && !selectedDominant.value?.actual_contract) {
-    clearSeries()
-    error.value = '苏冰观察需要当前主力合约，等待主力映射'
     return false
   }
   const requested = currentIdentity()
@@ -389,11 +354,6 @@ async function refreshResearch() {
 }
 
 async function loadEarlierBars() {
-  if (selectedOverlay.value === 'subing' && subingSupported.value) {
-    const segmentStart = subing.value?.segment_start_trading_day
-    const visibleStart = visibleStartTradingDay.value
-    if (!segmentStart || !visibleStart || visibleStart <= segmentStart) return
-  }
   try {
     await loadMoreBefore()
   } catch {

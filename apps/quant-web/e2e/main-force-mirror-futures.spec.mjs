@@ -14,6 +14,18 @@ async function recordCanvasText(page) {
   })
 }
 
+async function useNoOverlayPreferences(page) {
+  await page.addInitScript(() => {
+    window.localStorage.setItem('guiyi.market.chart.preferences.v3', JSON.stringify({
+      version: 3,
+      selectedOverlay: 'none',
+      optionalEmaIndicators: [],
+      period: null,
+      realtimeFollow: false,
+    }))
+  })
+}
+
 function bars(count = 96) {
   return Array.from({ length: count }, (_, index) => {
     const barEnd = new Date(Date.UTC(2026, 0, 1, 1 + index)).toISOString()
@@ -71,6 +83,7 @@ const rolloverSegments = [
 ]
 
 async function mockChartMarketApi(page, requests, items = bars(), resolvedContractSegments = null) {
+  const tradingDays = items.map((item) => item.trading_day).sort()
   await page.route('**/api/v1/market/**', async (route) => {
     const url = new URL(route.request().url())
     requests.push(url)
@@ -91,8 +104,8 @@ async function mockChartMarketApi(page, requests, items = bars(), resolvedContra
         page: { has_more_before: false, next_before: null },
         resolved_contract_segments: resolvedContractSegments ?? [{
           contract: 'AG2601',
-          start_trading_day: items[0].trading_day,
-          end_trading_day: items.at(-1).trading_day,
+          start_trading_day: tradingDays[0],
+          end_trading_day: tradingDays.at(-1),
         }],
       } })
       return
@@ -137,15 +150,7 @@ async function secondaryPaneBounds(shell) {
 
 test('futures mirror tab is identity-gated, ordered, and local to the existing chart data', async ({ page }) => {
   const requests = []
-  await page.addInitScript(() => {
-    window.localStorage.setItem('guiyi.market.chart.preferences.v3', JSON.stringify({
-      version: 3,
-      selectedOverlay: 'none',
-      optionalEmaIndicators: [],
-      period: null,
-      realtimeFollow: false,
-    }))
-  })
+  await useNoOverlayPreferences(page)
   await mockChartMarketApi(page, requests)
 
   await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=60m')
@@ -188,6 +193,7 @@ test('futures mirror tab is identity-gated, ordered, and local to the existing c
 
 test('futures mirror renders signed scores and stays local across pane switches', async ({ page }) => {
   const requests = []
+  await useNoOverlayPreferences(page)
   await recordCanvasText(page)
   const fixtureBars = futuresFixture.bars.map((bar) => ({
     bar_end: bar.time,
@@ -222,6 +228,7 @@ test('futures mirror renders signed scores and stays local across pane switches'
 
 test('three-tab pane keeps rendered V1 content and controls within each required desktop viewport', async ({ page }) => {
   const requests = []
+  await useNoOverlayPreferences(page)
   const fixtureBars = futuresFixture.bars.map((bar) => ({
     bar_end: bar.time, trading_day: bar.time.slice(0, 10), open: bar.open, high: bar.high, low: bar.low,
     close: bar.close, volume: bar.volume, turnover: null, open_interest: bar.open_interest,
@@ -266,15 +273,7 @@ test('three-tab pane keeps rendered V1 content and controls within each required
 test('actual-dominant rollover resets B readiness identity and caution markers', async ({ page, context }) => {
   async function openRolloverPage(target, contractBCount) {
     const requests = []
-    await target.addInitScript(() => {
-      window.localStorage.setItem('guiyi.market.chart.preferences.v3', JSON.stringify({
-        version: 3,
-        selectedOverlay: 'none',
-        optionalEmaIndicators: [],
-        period: null,
-        realtimeFollow: false,
-      }))
-    })
+    await useNoOverlayPreferences(target)
     await mockChartMarketApi(target, requests, rolloverBars(contractBCount), rolloverSegments)
     await target.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=60m')
     await expect(target.getByText(`${40 + contractBCount} bars`)).toBeVisible()

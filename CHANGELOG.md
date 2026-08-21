@@ -2,6 +2,21 @@
 
 本文件记录正式产品版本；开发过程与逐品种执行流水从 Git history 追溯。
 
+## [1.6.5] - 2026-08-21
+
+- 修复 SuBing research overlay 侵占 Market K 线展示身份的问题：切换 overlay 不再强制
+  `contract/current rank1`、截断基础 bars 或收紧向前分页；用户选择的 `continuous | contract |
+  actual_dominant`、合约与周期持续由 Market 查询链决定。SuBing 仍只作为与当前展示并列的研究快照，
+  不可用或加载中不会清空已验证的 Market display series。
+- 纳入 JDJ 1m research-only Candidate V1：冻结 exact policy、三条独立候选 reducer 与 Validation
+  protocol；所有输入仍仅经 `MarketDataService`，不读 Live、不写 DB/Canonical/Redis、不进入 Alert、
+  Runtime、订单或自动晋升路径。
+- 纳入 Multi-Candidate Robustness V1 的冻结 active60 historical evidence；它保留 typed-unavailable
+  cells 和同 symbol / physical contract / rank1 segment 的因果边界，不生成 ranking、winner、收益或
+  可交易结论。
+- 本版不新增 migration、Canonical/生产 DB 写入、Scope 扩大、历史 Event 补发、真实通知重试或订单能力，
+  `auto_order=false` 不变。
+
 ## [1.6.4] - 2026-08-20
 
 - 修复 SuBing current snapshot 在 `Canonical edge < now` 时错误把 wall clock 作为 strict Historical
