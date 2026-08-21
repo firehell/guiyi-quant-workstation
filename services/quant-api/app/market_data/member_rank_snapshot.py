@@ -215,8 +215,8 @@ class MemberRankSnapshotRepository:
             raise MemberRankSnapshotError("MEMBER_SNAPSHOT_DESCRIPTOR_MISSING")
         try:
             payload = json.loads(descriptor_path.read_text(encoding="utf-8"))
-        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-            raise MemberRankSnapshotError("MEMBER_SNAPSHOT_DESCRIPTOR_INVALID") from exc
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            raise MemberRankSnapshotError("MEMBER_SNAPSHOT_DESCRIPTOR_INVALID") from None
         descriptor = _parse_descriptor(payload, expected_dataset_id=dataset_id)
         for partition in descriptor.partitions:
             self._partition_path(partition)
@@ -239,8 +239,8 @@ class MemberRankSnapshotRepository:
             raise MemberRankSnapshotError("MEMBER_SNAPSHOT_PARTITION_MISSING")
         try:
             table = pq.ParquetFile(path).read()
-        except (OSError, pa.ArrowException) as exc:
-            raise MemberRankSnapshotError("MEMBER_SNAPSHOT_PARQUET_INVALID") from exc
+        except (OSError, pa.ArrowException):
+            raise MemberRankSnapshotError("MEMBER_SNAPSHOT_PARQUET_INVALID") from None
         if not table.schema.equals(MEMBER_RANK_SCHEMA, check_metadata=True):
             raise MemberRankSnapshotError("MEMBER_SNAPSHOT_PARQUET_SCHEMA_MISMATCH")
         if table.num_rows != partition.row_count:
@@ -296,7 +296,10 @@ def _parse_descriptor(
     }
     if not isinstance(value, dict) or set(value) != expected_fields:
         raise MemberRankSnapshotError("MEMBER_SNAPSHOT_DESCRIPTOR_INVALID")
-    if value["schema_version"] != MEMBER_RANK_SCHEMA_VERSION:
+    if (
+        type(value["schema_version"]) is not int
+        or value["schema_version"] != MEMBER_RANK_SCHEMA_VERSION
+    ):
         raise MemberRankSnapshotError("MEMBER_SNAPSHOT_SCHEMA_VERSION_INVALID")
     if value["dataset_id"] != expected_dataset_id:
         raise MemberRankSnapshotError("MEMBER_SNAPSHOT_DATASET_ID_MISMATCH")

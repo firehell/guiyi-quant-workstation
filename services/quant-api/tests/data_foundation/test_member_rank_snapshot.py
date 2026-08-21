@@ -4,6 +4,7 @@ import json
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
+import traceback
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -168,6 +169,49 @@ def test_repository_rejects_descriptor_path_escape(tmp_path: Path) -> None:
 
     with pytest.raises(MemberRankSnapshotError, match="MEMBER_SNAPSHOT_ROOT_ESCAPE"):
         _repository(tmp_path, "broken")
+
+
+def test_repository_rejects_boolean_descriptor_schema_version(tmp_path: Path) -> None:
+    write_snapshot(tmp_path, "snapshot")
+    descriptor_path = tmp_path / "main_force_member_rank_v1" / "snapshot" / "snapshot.json"
+    descriptor = json.loads(descriptor_path.read_text())
+    descriptor["schema_version"] = True
+    descriptor_path.write_text(json.dumps(descriptor))
+
+    with pytest.raises(MemberRankSnapshotError, match="MEMBER_SNAPSHOT_SCHEMA_VERSION_INVALID"):
+        _repository(tmp_path)
+
+
+def test_descriptor_read_failure_does_not_retain_underlying_path(tmp_path: Path) -> None:
+    snapshot_root = write_descriptor(
+        tmp_path,
+        "snapshot",
+        relative_uri=f"contract={_CONTRACT}/year=2026/member_rank.parquet",
+    )
+    (snapshot_root / "snapshot.json").write_text("{")
+
+    with pytest.raises(MemberRankSnapshotError, match="MEMBER_SNAPSHOT_DESCRIPTOR_INVALID") as info:
+        _repository(tmp_path)
+
+    assert info.value.__cause__ is None
+    assert str(tmp_path) not in "".join(traceback.format_exception(info.value))
+
+
+def test_parquet_read_failure_does_not_retain_underlying_path(tmp_path: Path) -> None:
+    snapshot_root = write_descriptor(
+        tmp_path,
+        "snapshot",
+        relative_uri=f"contract={_CONTRACT}/year=2026/member_rank.parquet",
+    )
+    path = snapshot_root / f"contract={_CONTRACT}/year=2026/member_rank.parquet"
+    path.parent.mkdir(parents=True)
+    path.write_bytes(b"not parquet")
+
+    with pytest.raises(MemberRankSnapshotError, match="MEMBER_SNAPSHOT_PARQUET_INVALID") as info:
+        _repository(tmp_path).day(_CONTRACT, _DAY)
+
+    assert info.value.__cause__ is None
+    assert str(tmp_path) not in "".join(traceback.format_exception(info.value))
 
 
 def test_day_requires_three_complete_top20_rank_sets(tmp_path: Path) -> None:
