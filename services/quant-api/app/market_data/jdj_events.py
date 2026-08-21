@@ -17,6 +17,12 @@ _JDJ_TREND_FOLLOW_CANDIDATE_ID = "jdj_trend_follow_1m_candidate_v1"
 _JDJ_TREND_FOLLOW_SOURCE_EVENT_KIND = "jdj_trend_follow_triggered"
 _JDJ_TREND_REENTRY_CANDIDATE_ID = "jdj_trend_reentry_6_1m_candidate_v1"
 _JDJ_TREND_REENTRY_SOURCE_EVENT_KIND = "jdj_trend_reentry_6_triggered"
+_JDJ_KEY_LEVEL_BREAKOUT_CANDIDATE_ID = (
+    "jdj_key_level_breakout_1m_candidate_v1"
+)
+_JDJ_KEY_LEVEL_BREAKOUT_SOURCE_EVENT_KIND = (
+    "jdj_key_level_breakout_triggered"
+)
 _SYMBOL_PATTERN = re.compile(r"[a-z]+\Z")
 
 
@@ -190,6 +196,114 @@ class JdjTrendReentryTriggerEvent:
         object.__setattr__(self, "reaction_at", reaction_at)
 
 
+@dataclass(frozen=True, slots=True)
+class JdjKeyLevelBreakoutTriggerEvent:
+    event_id: str
+    source_kind: str
+    setup_kind: JdjSetupKind
+    candidate_id: str
+    source_event_kind: str
+    direction: JdjDirection
+    symbol: str
+    contract: str
+    segment_start_trading_day: date
+    trading_day: date
+    observed_at: datetime
+    segment_bar_index: int
+    trend_snapshot_observed_at: datetime
+    trend_epoch: int
+    key_level_pivot_id: str
+    key_level_price: Decimal
+    key_level_confirmed_at: datetime
+    first_break_at: datetime
+    retest_at: datetime
+    trigger_level: Decimal
+    observation_close: Decimal
+
+    def __post_init__(self) -> None:
+        if (
+            type(self.event_id) is not str
+            or self.source_kind != _JDJ_SOURCE_KIND
+            or self.setup_kind is not JdjSetupKind.KEY_LEVEL_BREAKOUT
+            or self.candidate_id != _JDJ_KEY_LEVEL_BREAKOUT_CANDIDATE_ID
+            or self.source_event_kind
+            != _JDJ_KEY_LEVEL_BREAKOUT_SOURCE_EVENT_KIND
+            or not isinstance(self.direction, JdjDirection)
+            or not _valid_symbol(self.symbol)
+            or normalize_contract_for_symbol(self.symbol, self.contract)
+            != self.contract
+            or type(self.segment_start_trading_day) is not date
+            or type(self.trading_day) is not date
+            or self.trading_day < self.segment_start_trading_day
+            or not _aware_datetime(self.observed_at)
+            or type(self.segment_bar_index) is not int
+            or self.segment_bar_index <= 0
+            or not _aware_datetime(self.trend_snapshot_observed_at)
+            or type(self.trend_epoch) is not int
+            or self.trend_epoch < 0
+            or type(self.key_level_pivot_id) is not str
+            or not self.key_level_pivot_id
+            or "|" in self.key_level_pivot_id
+            or not _finite_decimal(self.key_level_price)
+            or self.key_level_price <= 0
+            or not _aware_datetime(self.key_level_confirmed_at)
+            or not _valid_key_level_pivot_identity(
+                self.key_level_pivot_id,
+                direction=self.direction,
+                contract=self.contract,
+                segment_start_trading_day=(
+                    self.segment_start_trading_day
+                ),
+                trend_epoch=self.trend_epoch,
+                confirmed_at=self.key_level_confirmed_at,
+            )
+            or not _aware_datetime(self.first_break_at)
+            or not _aware_datetime(self.retest_at)
+            or not _finite_decimal(self.trigger_level)
+            or not _finite_decimal(self.observation_close)
+        ):
+            raise JdjContextError()
+
+        observed_at = self.observed_at.astimezone(UTC)
+        snapshot_at = self.trend_snapshot_observed_at.astimezone(UTC)
+        confirmed_at = self.key_level_confirmed_at.astimezone(UTC)
+        first_break_at = self.first_break_at.astimezone(UTC)
+        retest_at = self.retest_at.astimezone(UTC)
+        if (
+            confirmed_at >= first_break_at
+            or snapshot_at >= retest_at
+            or first_break_at >= retest_at
+            or retest_at >= observed_at
+            or self.event_id
+            != _canonical_key_level_breakout_event_id(
+                candidate_id=self.candidate_id,
+                symbol=self.symbol,
+                contract=self.contract,
+                segment_start_trading_day=self.segment_start_trading_day,
+                direction=self.direction,
+                trend_epoch=self.trend_epoch,
+                key_level_pivot_id=self.key_level_pivot_id,
+                key_level_price=self.key_level_price,
+                key_level_confirmed_at=confirmed_at,
+                first_break_at=first_break_at,
+                retest_at=retest_at,
+                observed_at=observed_at,
+                trigger_level=self.trigger_level,
+            )
+        ):
+            raise JdjContextError()
+
+        object.__setattr__(self, "observed_at", observed_at)
+        object.__setattr__(self, "trend_snapshot_observed_at", snapshot_at)
+        object.__setattr__(
+            self,
+            "key_level_confirmed_at",
+            confirmed_at,
+        )
+        object.__setattr__(self, "first_break_at", first_break_at)
+        object.__setattr__(self, "retest_at", retest_at)
+
+
 def _canonical_trend_follow_event_id(
     *,
     candidate_id: str,
@@ -246,6 +360,41 @@ def _canonical_trend_reentry_event_id(
     )
 
 
+def _canonical_key_level_breakout_event_id(
+    *,
+    candidate_id: str,
+    symbol: str,
+    contract: str,
+    segment_start_trading_day: date,
+    direction: JdjDirection,
+    trend_epoch: int,
+    key_level_pivot_id: str,
+    key_level_price: Decimal,
+    key_level_confirmed_at: datetime,
+    first_break_at: datetime,
+    retest_at: datetime,
+    observed_at: datetime,
+    trigger_level: Decimal,
+) -> str:
+    return "|".join(
+        (
+            candidate_id,
+            symbol,
+            contract,
+            segment_start_trading_day.isoformat(),
+            direction.value,
+            str(trend_epoch),
+            key_level_pivot_id,
+            _decimal_identity(key_level_price),
+            key_level_confirmed_at.astimezone(UTC).isoformat(),
+            first_break_at.astimezone(UTC).isoformat(),
+            retest_at.astimezone(UTC).isoformat(),
+            observed_at.astimezone(UTC).isoformat(),
+            _decimal_identity(trigger_level),
+        )
+    )
+
+
 def _decimal_identity(value: Decimal) -> str:
     return format(value.normalize(), "f")
 
@@ -267,3 +416,33 @@ def _aware_datetime(value: object) -> bool:
 
 def _finite_decimal(value: object) -> bool:
     return isinstance(value, Decimal) and value.is_finite()
+
+
+def _valid_key_level_pivot_identity(
+    value: str,
+    *,
+    direction: JdjDirection,
+    contract: str,
+    segment_start_trading_day: date,
+    trend_epoch: int,
+    confirmed_at: datetime,
+) -> bool:
+    parts = value.split(":", 5)
+    if len(parts) != 6:
+        return False
+    expected_kind = (
+        "high" if direction is JdjDirection.LONG else "low"
+    )
+    if parts[:5] != [
+        contract,
+        segment_start_trading_day.isoformat(),
+        "5m",
+        str(trend_epoch),
+        expected_kind,
+    ]:
+        return False
+    try:
+        pivot_at = datetime.fromisoformat(parts[5])
+    except ValueError:
+        return False
+    return _aware_datetime(pivot_at) and pivot_at < confirmed_at
