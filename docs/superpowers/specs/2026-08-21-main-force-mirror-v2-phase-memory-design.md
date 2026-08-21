@@ -1,718 +1,526 @@
-# 主力照妖镜 V2 Phase Memory 设计
+# 主力照妖镜 V2 Phase Memory Research 设计
 
-状态：DIRECTION_APPROVED / SPEC_REVIEW_PENDING
+状态：DESIGN_APPROVED / IMPLEMENTATION_PLAN_READY
 
 日期：2026-08-21
 
-阶段属性：historical-only / observation-only / 60m-only / no promotion
+阶段属性：historical-only / observation-only / research-only / 60m-only / no promotion
 
-## 1. 背景与问题
+## 1. 开始编码前的五问 Review
 
-当前 active identity `main_force_mirror_v2` 已完成 60m 期货主力压力观察：
+本设计先按个人量化项目的五个问题重新审查，不以“技术上能做”为实施理由。
 
-```text
-Canonical confirmed 60m OHLCV + open_interest
-→ instant pressure 五状态
-→ accumulated pressure EMA5
-→ frozen “小心” caution
+### 1.1 未来一年真的会用吗？
 
-T-1 exact physical-contract Top20 member snapshot
-→ member direction / strength / relation
-```
+**判断：有条件地会。**
 
-现有 V2 能回答“当前 Bar 正在发生什么”，例如：
+主力照妖镜已经是 Market Web 的 active research observation。用户实际会持续遇到“单根 60m 压力很强，但后续很快反转”的解释问题；如果系统只能给逐 Bar 五状态，仍需要人工把连续 Bar 拼成故事。
 
-```text
-long_build
-short_build
-short_cover
-long_liquidation
-turnover
-```
+但“Phase 标签”本身是否值得长期保留尚未被历史证据证明，因此当前只批准最小 research/forensic 能力，不批准 active Phase 产品化。
 
-但在典型快速拉升见顶段中，逐 Bar 事实可能依次表现为：
+### 1.2 不做会不会影响四项价值？
 
-```text
-强 long_build
-→ long_liquidation
-→ short_build
-```
+当前问题至少影响三项：
 
-当前模型不会把这个序列归纳为“多头压力高潮 → 多头退潮 → 空头接管”。用户仍需人工把多个 Bar、累计压力、价格位置与席位变化拼接成阶段判断。
+1. **减少盯盘时间**：逐根解释 `long_build → long_liquidation → short_build` 需要人工回看；
+2. **提高执行一致性**：同一序列容易被不同时间点主观解释为“继续强势”或“已经退潮”；
+3. **增加复盘证据**：现有结果保存了单点压力，但没有保存“当时已经可见的状态迁移事实”。
 
-本设计增加一个 **causal Phase Memory 研究层**，专门回答：
+对“提高发现机会概率”的价值目前只是间接假设，不作为实施理由。
 
-> 最近发生过什么，以及当前状态相对最近的强势阶段发生了什么变化？
+因此当前 research-only 工作满足项目价值门槛；如果 retrospective 结果不能证明前述三项中的至少一项得到实质改善，则停止，不进入 Phase 产品化。
 
-它不是“出货预测器”，不回看未来确认顶部，不修改现有 V2 即时压力、累计压力、“小心”或席位公式。
+### 1.3 能不能直接复用现有 MarketDataService / Research / Member Snapshot？
 
-## 2. 已批准约束
+**能。结论：不建新产品模块。**
 
-1. 周期严格只做 `60m`。
-2. 不引入 15m / 5m / 1m 作为输入、确认、辅助 Gate 或 forensic 子结构。
-3. 不构造任何 60m + 低周期多周期模型。
-4. 现有 V2 五状态、instant pressure、EMA5 accumulated pressure、“小心”公式和 member relation 首轮全部保持不变。
-5. Phase Memory 首先是 historical research / forensic，不直接进入 Web active semantics、Alert、notification、Runtime 或 Execution Review。
-6. 任何阶段标签都只能使用当前 Bar 及其之前的 60m Historical confirmed facts；禁止未来函数、后验回标和重绘。
-7. 用户指定的 JM 高位快速拉升案例只作为解释性 Golden Behavior Case，不作为必须拟合成功的参数目标。
-8. `auto_order=false` 始终成立。
-
-## 3. 明确不做
+直接复用：
 
 ```text
-15m/5m/1m phase confirmation
-跨周期共振
-修改 MarketDataService / Canonical / MainContractMap
-新增 Market Catalog 表
-API 请求时实时调用 RQData
-Live phase
-Alert / PushPlus
-Signal / Strategy promotion
-回测撮合、PnL、成本、仓位
-自动搜索“最优出货参数”
-把会员席位解释为确定主力账户
-真实资金净流入/流出金额
+MarketDataService
+→ existing MainForceMirrorV2Service
+→ existing MainForceMirrorV2ResearchService
+→ existing guiyi research main-force-mirror-v2
 ```
 
-## 4. 数据与长期记忆原则
-
-### 4.1 60m 市场事实
-
-价格、成交量、持仓量继续只从：
-
-```text
-Canonical Historical
-→ MarketDataService
-→ exact physical-contract calculation block
-```
-
-读取。
-
-Phase Memory 不直接读取 Parquet，不复制 rank1 resolver，不跨 physical contract 继承状态。
-
-### 4.2 Member 数据
-
-Member 历史继续采用现有：
+Member 继续复用：
 
 ```text
 main_force_member_rank_v1
+MemberRankSnapshotRepository
+existing snapshot builder
 ```
 
-不可变研究快照。
-
-第一阶段不新增第二套 raw archive、Catalog、SQLite 或 member cache 子系统。第一次真实 retrospective 所需席位数据通过现有 exact-contract RQData snapshot builder 在一次明确 Gate 下构建；快照发布后，重复研究全部只读本地 pinned dataset。
-
-长期形态：
+本任务不新增：
 
 ```text
-RQData（外部唯一来源）
-→ 一次受控 snapshot build
-→ immutable local member snapshot
-→ 后续反复本地研究
+新的 Application Domain
+新的 DB 表
+新的 Catalog
+新的 API endpoint
+新的 Web 页面/Pane
+新的 CLI command
+新的 snapshot 格式
+新的 provider seam
+新的 scheduler/cache/checkpoint
 ```
 
-如果未来 provider 请求量或重复 snapshot 构建成本成为真实问题，再单独设计增量复用；本任务不提前建设。
+### 1.4 哪些是真实复杂度，哪些只是“以后可能需要”？
 
-## 5. 四层解释模型
+**真实业务复杂度只有一项：60m 状态序列的 causal memory。**
+
+已观察到的实际问题是：当前 V2 能正确描述每根 60m Bar，却不能直接回答“最近的强方向是否已经发生减仓或反向建仓”。这需要最小的前序状态记忆。
+
+以下全部属于“以后可能需要”，本任务延迟设计：
 
 ```text
-Layer 1  Instant Pressure
-当前这一根 60m Bar 在做什么？
-
-Layer 2  Accumulated Pressure
-当前方向压力最近是否持续、衰减或反转？
-
-Layer 3  Phase Memory
-最近是否出现过强压力？之后是否出现退潮或反方向接管？
-
-Layer 4  Member Context
-更慢一级的 T-1 席位结构是否同向、背离或发生转折？
+15m / 5m / 1m 辅助确认
+跨周期模型
+CLIMAX / UNWIND / TAKEOVER 正式阈值
+Web Phase Marker
+Live Phase
+Alert / PushPlus
+新的 member 3d/5d 指标体系
+member 增量 cache/archive
+自动 snapshot refresh
+通用 phase framework
+策略/回测/订单
 ```
 
-后续价格结果只用于 retrospective evaluation，不允许反向修改当时 Phase。
+### 1.5 半年后一个人还能快速理解、修改和删除吗？
 
-## 6. Stage B 的 exact forensic facts
+**设计目标：可以。**
 
-Stage B 只产生可复算 research facts，不产生正式 `CLIMAX / UNWIND / TAKEOVER` 标签。
+本轮只修改现有 V2 research service、现有 research CLI serializer/parser 和对应测试；不新增持久状态或运行服务。若结果无价值，删除 sequence facts/cohorts 和 `--forensic` 即可回到当前 V2，不涉及 migration、数据回滚或 Runtime 清理。
 
-### 6.1 Side-relative pressure
+## 2. 本轮唯一目标
 
-对每个 point 和方向 `side ∈ {long, short}` 定义：
+本轮不实现“Phase 模型”。只回答一个问题：
+
+> 在严格 60m、只看当时已知信息的条件下，保存最小状态迁移事实，是否能稳定解释当前 V2 逐 Bar 压力无法直接表达的“强方向退潮 / 反方向接管”现象？
+
+因此本轮交付物是：
 
 ```text
-side_sign(long)  = +1
-side_sign(short) = -1
-
-side_instant = max(side_sign * instant_pressure, 0)
-side_accumulated = max(side_sign * accumulated_pressure, 0)
+existing V2 points
+→ causal 60m sequence facts
+→ exact transition cohorts
+→ existing 1/3/5/10-bar retrospective summaries
+→ optional forensic JSON for one requested window
 ```
 
-如果对应 pressure/accumulated 尚未 ready，则相关 research fact 为 unavailable，不补零。
+**没有正式 Phase label，没有新参数 policy，没有 Web 展示。**
 
-### 6.2 固定 diagnostic windows
+## 3. 周期和身份边界
 
-Stage B 允许且只允许以下 trailing 60m windows：
+固定：
 
 ```text
-W = 3 / 5 / 10 / 20 bars
+frequency   = 60m only
+series_kind = actual_dominant | contract
+bar_source  = Historical confirmed Canonical only
+identity    = existing main_force_mirror_v2
+status      = research_only / readonly
 ```
 
-这些只是 retrospective sensitivity grid，不是正式 Phase 参数。
-
-对每个 W、每个 side 计算：
+严格禁止：
 
 ```text
-peak_instant_W
-bars_since_peak_instant_W
-peak_accumulated_W
-
-accumulated_ratio_to_peak_W =
-  current_side_accumulated / peak_accumulated_W
-
-decay_from_peak_W = 1 - accumulated_ratio_to_peak_W
+15m / 5m / 1m / 30m / 1d / 1w
+continuous
+Redis Live
+未确认 Bar
+跨 physical contract memory
 ```
 
-规则：
+不新增 `phase_indicator_code`、`phase_policy_id` 或其他 active identity。
 
-- peak 只在当前点及之前 W 根、同一 calculation block 内计算；
-- `peak_accumulated_W <= 0` 时 ratio/decay unavailable；
-- 当前 accumulated 已反向时 `side_accumulated=0`，因此 `decay_from_peak_W=1`；
-- 不 clamp decay，不用未来数据。
+## 4. 复用现有 V2，不修改 Kernel 语义
 
-### 6.3 价格位置 facts
-
-继续复用 V2 已计算的 ATR14 与 HHV/LLV20 语义：
+本任务不得修改：
 
 ```text
-long_distance_from_extreme_atr = (HHV20(high) - close) / ATR14
-short_distance_from_extreme_atr = (close - LLV20(low)) / ATR14
+packages/quant-core/guiyi_quant/indicators/main_force_mirror_v2.py
 ```
 
-同时保留现有：
+因此以下全部冻结：
 
 ```text
-range_position
-price_impulse
-volume_ratio
-delta_oi
-oi_impulse
+instant pressure 五状态
+instant pressure 公式
+EMA5 accumulated pressure
+caution score / >=70 threshold
+caution conflict / latch
+member direction / strength / relation
+parameters_hash
 ```
 
-### 6.4 状态序列 facts
+Phase Memory Research 只消费 `MainForceMirrorV2Point` 已有字段。
 
-在同 calculation block 内精确输出：
+## 5. 最小 Sequence Fact
 
-```text
-previous_pressure_state
-state_transition = previous_state -> current_state
-recent_state_sequence_3
-recent_state_sequence_5
+在 existing `main_force_mirror_v2_research_service.py` 内增加一个纯 research dataclass：
+
+```python
+MainForceMirrorV2SequenceFact
 ```
 
-以及相对 remembered side 的连续计数：
-
-```text
-same_side_build_streak
-same_side_liquidation_streak
-opposite_build_streak
-```
-
-多头 remembered side：
-
-```text
-same_side_build        = long_build
-same_side_liquidation  = long_liquidation
-opposite_build         = short_build
-```
-
-空头完全镜像：
-
-```text
-same_side_build        = short_build
-same_side_liquidation  = short_cover
-opposite_build         = long_build
-```
-
-这些 streak 只描述连续状态，不直接产生阶段结论。
-
-### 6.5 calculation block
-
-Phase research 与 V2 同样严格按 physical contract block：
-
-- 合法换月立即清空；
-- invalid Bar 结束 block；
-- timestamp 冲突结束 block；
-- 不跨旧主力合约继承任何 peak、sequence 或 streak。
-
-## 7. Member History exact research facts
-
-现有单日字段继续保留：
-
-```text
-change_bias
-member_strength
-position_skew
-top5_volume_share
-```
-
-仅对当前 Bar 可见的 T-1 或更早 member days 计算：
-
-```text
-member_bias_3d = mean(latest 3 available change_bias values ending at current member_trade_date)
-member_bias_5d = mean(latest 5 available change_bias values ending at current member_trade_date)
-member_bias_delta = current change_bias - immediately previous available change_bias
-```
-
-要求完整 3/5 个历史 member day；不足时对应字段 unavailable，不缩短窗口。
-
-`member_bias_turn` 只采用零轴穿越，不新增阈值：
-
-```text
-previous member_bias_3d >= 0 and current member_bias_3d < 0
-→ long_to_short
-
-previous member_bias_3d <= 0 and current member_bias_3d > 0
-→ short_to_long
-
-otherwise
-→ none
-```
-
-原则：
-
-1. member history 不融合进 instant pressure；
-2. Stage B 不把 member turn 作为 Phase Gate；
-3. member unavailable 时 pressure-only research 仍可执行；
-4. member facts 只对 admitted products `jm/ag/cu/m` 研究；其他 active products明确 unavailable，不降级到产品汇总排名。
-
-## 8. 目标最小阶段模型
-
-只有 Stage B evidence 足够支持时，Stage C 才允许冻结：
-
-```text
-NORMAL
-CLIMAX
-UNWIND
-TAKEOVER
-```
-
-并独立携带：
-
-```text
-side = long | short | neutral
-```
-
-人类解释示例：
-
-```text
-LONG + CLIMAX
-→ 多头压力高潮
-
-LONG + UNWIND
-→ 多头退潮 / 高位派发观察
-
-SHORT + TAKEOVER
-→ 空头接管
-```
-
-对称地：
-
-```text
-SHORT + CLIMAX
-→ 空头压力高潮
-
-SHORT + UNWIND
-→ 空头退潮 / 低位回补观察
-
-LONG + TAKEOVER
-→ 多头接管
-```
-
-“派发观察”只能是 `UNWIND` 的人类解释，不作为可验证真实资金出货事实。
-
-## 9. 因果状态机原则
-
-候选结构：
-
-```text
-NORMAL
-  ↓
-CLIMAX
-  ↓
-UNWIND
-  ↓
-TAKEOVER
-```
-
-允许：
-
-```text
-CLIMAX → NORMAL      # 原趋势继续，无退潮成立
-UNWIND → NORMAL      # 退潮失败，原方向重新建立
-TAKEOVER → NORMAL    # 新方向接管结束
-```
-
-禁止：
-
-- 用未来 1/3/5/10 根价格结果把早先 Bar 回标为 CLIMAX 或 UNWIND；
-- 当前 Bar 尚无证据时预先标记“出货”；
-- 因为后续大跌就强制要求顶部附近出现某个阶段标签。
-
-## 10. “小心”与 Phase 完全分离
-
-现有 frozen caution 继续回答：
-
-> 当前方向是否拥挤、追涨/追空是否需要警戒？
-
-Phase Memory 回答：
-
-> 最近强方向是否已经出现退潮或反方向接管？
-
-因此：
-
-```text
-caution != phase
-CLIMAX != caution
-CLIMAX != 出货
-UNWIND ≈ 退潮 / 派发观察
-TAKEOVER ≈ 反方向接管
-```
-
-Phase 不修改 caution score，不修改 `>=70` candidate threshold，不消费或重置现有 caution latch。
-
-## 11. 60m-only forensic protocol
-
-### 11.1 Case A：JM Golden Behavior Case
-
-对用户指定的 2026-03 高位快速拉升区间，输出逐 Bar dossier：
+每个 fact 对齐一个当前 `pressure_ready` point，只保存已经存在或由相邻历史点直接推导的字段：
 
 ```text
 bar_end
+trading_day
 physical_contract
-OHLCV / OI
+previous_state
+current_state
+state_transition
+previous_instant_pressure
+current_instant_pressure
+previous_accumulated_pressure
+current_accumulated_pressure
+accumulated_delta
+accumulated_sign_flip
+state_sequence_3
+state_sequence_5
+range_position
+caution
+member_relation_to_accumulated
+```
+
+不新增 ATR、价格结构、摆动点、N 字、VWAP、订单流或其他指标。
+
+### 5.1 `state_transition`
+
+格式固定：
+
+```text
+<previous_state>-><current_state>
+```
+
+只有当前点和上一根**同 physical-contract、连续 pressure-ready** 点都存在时才有值，否则为 `None`。
+
+### 5.2 `accumulated_delta`
+
+只有前后两根都 `accumulated_ready` 时：
+
+```text
+current_accumulated_pressure - previous_accumulated_pressure
+```
+
+否则为 `None`。
+
+### 5.3 `accumulated_sign_flip`
+
+只允许：
+
+```text
+positive_to_negative
+negative_to_positive
+None
+```
+
+零值不猜方向，不触发 sign flip。
+
+### 5.4 `state_sequence_3/5`
+
+只包含当前 physical-contract calculation block 内连续 `pressure_ready` 状态；不足长度时返回实际已有 prefix，不向前跨换月或 invalid gap 补齐。
+
+## 6. exact Transition Cohorts
+
+本轮不使用 `CLIMAX / UNWIND / TAKEOVER` 作为代码语义，只统计以下 exact observed sequence：
+
+```text
+long_build_to_long_liquidation
+long_build_to_short_build
+long_build_to_long_liquidation_to_short_build
+
+short_build_to_short_cover
+short_build_to_long_build
+short_build_to_short_cover_to_long_build
+
+accumulated_positive_to_negative
+accumulated_negative_to_positive
+```
+
+定义要求：
+
+1. 两步 cohort 必须是相邻、同 physical-contract、连续 pressure-ready Bar；
+2. 三步 cohort 必须是三个连续、同 physical-contract、pressure-ready Bar；
+3. 不允许在中间跳过 turnover 或其他状态；
+4. 不允许跨换月；
+5. long / short 规则严格镜像；
+6. 不设置 strength、百分比衰减、ATR 距离等新阈值。
+
+这些 cohort 是 retrospective diagnostic 名称，不是市场事实标签或交易信号。
+
+## 7. 复用现有 Outcome 研究
+
+Sequence cohort 直接复用现有 `MainForceMirrorV2ResearchService` 的 outcome machinery：
+
+```text
+forward horizons = 1 / 3 / 5 / 10 根 60m Bar
+same physical contract only
+```
+
+继续输出：
+
+```text
+sample_count
+median_directional_return
+median_reversal_return
+hit_rate
+median_mfe
+median_mae
+```
+
+继续按：
+
+```text
+product
+year
+state/cohort
+```
+
+组织；pooled 只能作为摘要，不得覆盖单品种/年份异质性。
+
+不新增 Sharpe、PnL、收益曲线、交易成本或 backtest engine。
+
+## 8. Forensic 模式：复用现有 CLI
+
+不新增 CLI command，只给现有命令增加一个布尔开关：
+
+```text
+guiyi research main-force-mirror-v2 ... --forensic
+```
+
+默认不带 `--forensic` 时，保持当前 compact summary，仅增加 sequence cohort summary。
+
+带 `--forensic` 时，额外返回请求窗口内逐 Bar：
+
+```text
+bar_end
+trading_day
+physical_contract
 pressure_state
 instant_pressure
 accumulated_pressure
-price_impulse
-volume_ratio
-delta_oi
-oi_impulse
 range_position
-caution / scores / reasons
-member T-1 facts（若可用）
-Stage B forensic facts
+caution
+long_caution_score
+short_caution_score
+caution_reason_codes
+member_status
+member_trade_date
+member_direction
+member_strength
+member_relation_to_accumulated
+sequence_fact
 ```
 
-必须回答：
+Forensic 只是 stdout JSON；不保存 report、不写 DB/Canonical/Redis。
 
-1. 为什么强拉升 Bar 是 `long_build`；
-2. 最早哪一根 60m Bar 的 accumulated pressure 开始衰减；
-3. 最早哪一根出现 `long_liquidation`；
-4. 最早哪一根出现 `short_build`；
-5. accumulated pressure 何时反号；
-6. member context 当时是同向、背离还是发生 3d bias turn；
-7. 哪些 candidate grid 能在不看未来价格的情况下形成合理阶段解释。
+JM 2026-03 高位案例通过该模式人工解释，不允许在代码中硬编码日期、JM 或预期标签。
 
-该 case 只用于解释和回归，不允许为了让它命中特定结果而单独调参。
+## 9. Member：当前只复用，不扩展
 
-### 11.2 Pressure-only matrix
+为了遵守“能复用就不建新模块”，本轮**不新增**：
 
-范围：
+```text
+member_bias_3d
+member_bias_5d
+member_bias_turn
+新的 member history reducer
+新的 snapshot cache/archive
+```
+
+Sequence fact 只引用当前已经计算好的：
+
+```text
+member.relation_to_accumulated
+```
+
+Member unavailable 不阻断 pressure-only sequence cohort。
+
+真实 `jm/ag/cu/m` member snapshot 若需要补建，只使用仓库已有 `MemberRankSnapshotBuilder`，属于独立受控外部数据操作；不在本轮代码实现里修改 builder/repository。
+
+## 10. 60m-only 因果与 Prefix Invariance
+
+Sequence fact 必须满足：
+
+```text
+facts(points[0:t])[-1]
+==
+facts(points[0:N])[t-1]
+```
+
+对所有公开 sequence 字段成立。
+
+禁止：
+
+- 使用未来 1/3/5/10 根结果创建或修改 sequence fact；
+- 因为后续大跌，把前面某根重新命名为“出货”；
+- 在完整历史输入时得到与 prefix 重算不同的当前 sequence；
+- 使用低周期辅助确认。
+
+Forward outcome 只用于 retrospective evaluation，与 sequence fact 生成完全单向隔离。
+
+## 11. JM Golden Behavior Case 的正确定位
+
+JM 2026-03 案例只回答：
+
+1. 强拉升 Bar 当时为什么是 `long_build`；
+2. 后续最早哪根出现 `long_liquidation`；
+3. 后续最早哪根出现 `short_build`；
+4. accumulated pressure 何时开始下降、何时反号；
+5. exact 2-step/3-step sequence 在什么时点形成；
+6. 当时已有 member relation 是什么（若 snapshot 可用）。
+
+不得要求：
+
+```text
+“顶部必须标出货”
+“必须在最高点预警”
+“为了匹配截图调参数”
+```
+
+## 12. 全历史验证顺序
+
+### Stage A — Pressure-only
+
+不需要任何新数据写入，直接使用本地 Historical Canonical：
 
 ```text
 active 60
-× 60m actual_dominant
-× Historical confirmed
+× actual_dominant
+× 60m
+× existing V2
+× sequence cohorts
 ```
 
-使用本地 Canonical，完整保留各 W 的：
+先看：
 
 ```text
-peak / decay
-state transitions
-streaks
-price distance from 20-bar extreme
+count
+product/year stability
+long/short symmetry
+形成时间
+1/3/5/10-bar outcome
 ```
 
-### 11.3 Member-context matrix
+### Stage B — Member-enriched（可选 Gate）
 
-范围只限：
+仅在用户明确授权真实 member snapshot build 后，对已有 admitted：
 
 ```text
 jm / ag / cu / m
 ```
 
-叠加：
+叠加 existing `member_relation_to_accumulated` 分层。
+
+没有 snapshot 时 Stage A 仍完整成立，不允许为了 member 阻塞 pressure-only 研究。
+
+## 13. Go / Stop Gate
+
+完成 Stage A 后必须先做价值判断，不能自动进入 Phase 实现。
+
+只有同时满足以下条件，才允许新开独立设计冻结 Phase：
+
+1. exact sequence 在多个品种、多个年份重复出现，而不是只解释 JM 单例；
+2. sequence 的形成时点明显早于主要后验走势结束，具有人工观察价值；
+3. long / short 镜像没有明显结构性失衡；
+4. 输出能实质减少逐 Bar 人工拼接，或明显增强复盘证据；
+5. 规则仍能保持少量、可解释、可删除。
+
+任一核心条件不满足：
 
 ```text
-member aligned / divergent / unavailable
-member_bias_3d / 5d
-member_bias_turn
+STOP
+不实现 CLIMAX / UNWIND / TAKEOVER
+不改 Web
+不接 Alert
 ```
 
-member layer不得决定 pressure-only cell 是否成立。
+Member 只作为附加解释，不能成为是否进入 Phase 的必要前置。
 
-## 12. Stage B candidate grid
+## 14. 明确延迟到下一任务
 
-Stage B 允许比较候选定义，但不得选择单品种最优参数。
-
-固定 grid：
+即使 Stage A/B 看起来有效，本计划也**不实现**：
 
 ```text
-climax instant-pressure threshold:
-60 / 70 / 80 / 90
-
-decay_from_peak threshold:
-0.25 / 0.50 / 0.75 / 1.00
-
-transition horizon after candidate climax:
-1 / 2 / 3 / 5 bars
-
-opposite-build persistence:
-1 / 2 / 3 bars
+NORMAL / CLIMAX / UNWIND / TAKEOVER active reducer
+Phase parameters/policy/hash
+Web Phase panel/marker
+API Phase schema
+Live/Alert/PushPlus
+prospective OOS Phase candidate
 ```
 
-候选模板只允许：
+这些必须在 evidence review 后重新回答五个问题，并形成新的 Design/Plan。
+
+## 15. 允许修改 / 禁止修改
+
+本轮允许修改：
 
 ```text
-candidate_climax
-= side_instant reaches selected threshold
-  within same physical-contract block
-
-candidate_unwind
-= prior candidate_climax exists within selected transition horizon
-  AND decay_from_peak_W reaches selected threshold
-  AND [same_side_liquidation OR failed pressure extension]
-
-candidate_takeover
-= prior candidate_climax/unwind exists
-  AND opposite_build_streak reaches selected persistence
-  AND accumulated pressure is neutralized or reversed
+services/quant-api/app/market_data/main_force_mirror_v2_research_service.py
+services/quant-api/app/guiyi_cli/research_parser.py
+services/quant-api/app/guiyi_cli/research_commands.py
+services/quant-api/tests/data_foundation/test_main_force_mirror_v2_research_service.py
+services/quant-api/tests/test_research_cli.py
+TESTING.md
 ```
 
-其中 `failed pressure extension` 在 Stage B 只使用已定义 facts 表达：当前 `side_instant` 未超过对应 W 的历史 `peak_instant_W`，且 `decay_from_peak_W > 0`；不看未来高低点。
+必要时可更新本 Design、Plan、Task Contract。
 
-Stage B 必须保留全部 grid cells 与样本数，不能只输出 winner。
-
-## 13. Retrospective evaluation
-
-复用现有 V2 research infrastructure，不新增 backtest engine。
-
-固定 forward horizons 仍为：
+本轮禁止修改：
 
 ```text
-1 / 3 / 5 / 10 根 60m Bar
+packages/quant-core/guiyi_quant/indicators/main_force_mirror_v2.py
+services/quant-api/app/market_data/main_force_mirror_v2_service.py
+services/quant-api/app/market_data/member_rank_snapshot.py
+services/quant-api/app/market_data/member_rank_snapshot_builder.py
+services/quant-api/app/api/*
+apps/quant-web/*
+Alert / Execution Review / Runtime
+Data Foundation / Catalog / Canonical / MainContractMap
+STATUS.md
+main / tag / release
 ```
 
-且不得跨 physical contract。
+如果实现发现必须突破上述边界，停止并重新设计，不得顺手扩范围。
 
-比较 cohort：
+## 16. 验收
+
+代码验收：
+
+1. 现有 V2 Kernel / API / Web 行为零变化；
+2. `--frequency` 仍只有 `60m`；
+3. default research CLI 保持 read-only；
+4. sequence facts 不跨 physical contract / invalid gap；
+5. exact 2-step/3-step cohorts long/short 对称；
+6. prefix invariance 通过；
+7. sequence outcome 不跨 physical contract；
+8. `--forensic` 只增加 stdout 明细，不写任何数据；
+9. member unavailable 不阻断 pressure-only；
+10. 没有 Phase 正式标签、阈值或 active semantic drift；
+11. 相关 V2 tests、research CLI tests、Ruff、Mypy、secret scan、`git diff --check` 通过。
+
+研究验收与代码验收分离。测试通过只表示 research capability 正确，不表示 Phase 值得产品化。
+
+## 17. 最终边界
+
+当前唯一允许的结论是：
+
+> 已获得一个最小、60m-only、causal、可删除的 V2 sequence forensic/research 能力，用现有 V2 压力事实检验“状态记忆是否有长期价值”。
+
+不得声明：
 
 ```text
-candidate_climax
-candidate_climax_then_decay
-candidate_climax_then_liquidation
-candidate_climax_then_opposite_build
-candidate_unwind
-candidate_takeover
-
-以上 cohort
-× member aligned / divergent / turn / unavailable
+已经识别真实主力出货
+Phase 有效
+策略有效
+可交易
+可进入 Alert/Runtime
 ```
 
-输出至少按：
-
-```text
-product
-year
-long / short side
-parameter-grid cell
-```
-
-分层。
-
-pooled 只作为摘要，不能掩盖品种和年份异质性。
-
-评价重点不是“哪组赚钱最多”，而是：
-
-1. cohort 是否稳定表达同一种市场行为；
-2. 发生时间是否足够早而不是完全后验；
-3. long / short 是否近似对称；
-4. 是否只在极少数单品种有效；
-5. 参数邻域是否稳定，还是只有一个尖锐最优点；
-6. member history 是否增加解释力，还是只增加复杂度。
-
-## 14. Stage C 阈值冻结规则
-
-Stage B grid 不是正式参数。
-
-只有完成 forensic matrix 后，Stage C 才能选择最小必要规则。冻结必须满足：
-
-1. 使用统一跨品种规则，不按 JM 单独优化；
-2. long / short 对称；
-3. 参数邻域稳定，不选择孤立最优 cell；
-4. 参数进入独立 Phase policy hash；
-5. 后续修改产生新版本或新 hash；
-6. 阈值数量保持最少，避免组合爆炸；
-7. 如果 Stage B 不能形成稳定规则，则结论为“不冻结 Phase”，保留现有 V2，不为了功能存在而强行实现。
-
-## 15. Prefix invariance / 防未来函数
-
-Stage C reducer 必须通过逐 prefix 重算验证：
-
-```text
-compute(bars[0:t])[-1]
-==
-compute(bars[0:N])[t]
-```
-
-对以下字段逐点成立：
-
-```text
-phase
-phase_side
-phase_reason_codes
-phase_memory
-```
-
-并增加：
-
-- exact physical-contract reset test；
-- invalid-Bar reset test；
-- long/short mirror test；
-- pagination/page-boundary recomputation parity。
-
-如果未来完整序列改变历史 Phase，则任务直接阻塞，不允许进入 Web。
-
-## 16. Web 设计边界
-
-Stage C 规则冻结并通过独立 Review 前，不修改 active Web 阶段语义。
-
-研究通过后，Web 最终只增加少量阶段变化 Marker，不恢复 V0“每根柱子都写进场/拉高/出货”的模式。
-
-目标信息层级：
-
-```text
-当前阶段：多头退潮观察
-即时：多头减仓 -72
-累计：+41 → +17 → -3
-席位 T-1：多头结构转弱
-```
-
-图形保持：
-
-```text
-柱 = instant pressure
-线 = accumulated pressure
-Marker = frozen caution
-Marker = CLIMAX / UNWIND / TAKEOVER transition
-```
-
-不显示资金净流入比例、胜率、未来反转概率或交易指令。
-
-非 60m 永远明确 unsupported，不做 fallback。
-
-## 17. 分阶段实施顺序
-
-### Stage A — 真实数据准备
-
-目标：获得可重复使用的真实 member retrospective snapshot。
-
-- 只使用现有 snapshot builder；
-- 先 dry-run；
-- 用户明确 Gate 后才允许真实 RQData 请求与研究数据写入；
-- 发布 immutable dataset 后固定 dataset_id；
-- 不触碰 Canonical / DB / Runtime。
-
-### Stage B — Forensic research
-
-目标：新增 research-only 60m facts、candidate grid 与 dossier/matrix 输出。
-
-- 不改 active V2 Web；
-- 不改 caution；
-- 不产生正式 Phase；
-- 先完成 JM dossier；
-- 再跑 active60 pressure-only matrix；
-- member context 只跑 jm/ag/cu/m；
-- 保存全部 grid cells，不生成自动 winner。
-
-### Stage C — Freeze Phase policy
-
-只有 Stage B evidence 足够清晰时才进入。
-
-- 冻结 `NORMAL / CLIMAX / UNWIND / TAKEOVER` reducer；
-- 冻结最少数阈值；
-- 建立 policy identity / parameters hash；
-- 运行 prefix invariance、long/short symmetry、contract/reset 测试；
-- 独立 Review。
-
-### Stage D — Web observation
-
-只有 Stage C Review 通过后：
-
-- additive API fields；
-- Web 中文阶段语义与少量 Marker；
-- 仍只支持 60m Historical confirmed；
-- 不进入 Alert / Runtime / notification。
-
-## 18. 验收标准
-
-### Stage A
-
-- member snapshot exact physical contract；
-- pinned immutable dataset；
-- `jm/ag/cu/m` 质量 Gate 通过或明确 fail-closed；
-- 不新增第二套 member 存储架构；
-- 不写 Canonical/DB。
-
-### Stage B
-
-- 所有 forensic facts 只由 60m confirmed Historical 输入得到；
-- JM dossier 可解释 peak → decay → liquidation/opposite-build 的真实发生顺序；
-- active60 pressure-only matrix 完整保留 unavailable cells 与全部 parameter-grid cells；
-- member matrix 不把缺席位品种伪造成 neutral；
-- 不输出正式 Phase、策略有效性或交易结论。
-
-### Stage C
-
-- reducer long/short 对称；
-- prefix invariance 逐点通过；
-- 换月/reset 不继承旧阶段；
-- 阈值最小化且统一跨品种；
-- JM 不是唯一支持案例；
-- 不因 retrospective 后续走势回标早期 Phase；
-- 证据不足时允许明确结论“不冻结 Phase”。
-
-### Stage D
-
-- Web 只展示已冻结 causal Phase；
-- 非 60m 明确 unsupported；
-- 不存在任何低周期隐式输入；
-- caution 与 Phase 独立；
-- 不修改 Alert/Runtime/订单能力。
-
-## 19. Gate 与最终边界
-
-本设计涉及主力压力/阶段公式、真实 RQData member 数据和未来 Web 可信口径，因此后续属于 Lane 3。
-
-默认：
-
-```text
-Sol + 高推理
-新会话
-Plan-only
-独立 Review
-人工 Gate
-```
-
-其中：
-
-- 真实 RQData snapshot build / research-data write：单独真实写入 Gate；
-- Phase policy 冻结：Plan 批准 + 独立 Review；
-- 代码合入 develop 不授权 release/main/tag；
-- Web observation 合入 develop 不授权 Runtime promotion；
-- 任何未来 Alert/notification/Signal 化必须另立任务。
-
-最终研究目标不是证明“顶部一定能抓到”，而是：
-
-> 在当时已经可见的 60m 数据下，系统能否以稳定、可解释、跨品种且不偷看未来的方式，识别强方向从高潮到退潮再到反方向接管的过程。
+`auto_order=false` 始终成立。
