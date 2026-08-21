@@ -68,9 +68,20 @@ def _market_result(
     )
 
 
-def _trend_follow_bars(count: int) -> tuple[CanonicalBar, ...]:
+def _trend_follow_bars(
+    count: int,
+    *,
+    trading_day: date = _DAY,
+) -> tuple[CanonicalBar, ...]:
     bars: list[CanonicalBar] = []
-    start = datetime(2026, 8, 20, 1, 0, tzinfo=UTC)
+    start = datetime(
+        trading_day.year,
+        trading_day.month,
+        trading_day.day,
+        1,
+        0,
+        tzinfo=UTC,
+    )
     for index in range(count):
         if index == 0:
             high, low, close = (Decimal("101"), Decimal("99"), Decimal("100"))
@@ -84,7 +95,7 @@ def _trend_follow_bars(count: int) -> tuple[CanonicalBar, ...]:
         bars.append(
             CanonicalBar(
                 bar_end=start + timedelta(minutes=index),
-                trading_day=_DAY,
+                trading_day=trading_day,
                 open=close,
                 high=high,
                 low=low,
@@ -100,21 +111,32 @@ def _trend_follow_bars(count: int) -> tuple[CanonicalBar, ...]:
 def _trend_follow_contexts(
     bars: tuple[CanonicalBar, ...],
 ) -> tuple[JdjBarContext, ...]:
+    active_day: date | None = None
     snapshot_at = bars[0].bar_end
-    return tuple(
-        JdjBarContext(
-            bar=bar,
-            ema20=Decimal("100"),
-            trend_kind=(
-                NStructureKind.UNDEFINED if index == 0 else NStructureKind.BULL
-            ),
-            trend_snapshot_observed_at=None if index == 0 else snapshot_at,
-            trend_epoch=None if index == 0 else 0,
-            eligible_high_pivot=None,
-            eligible_low_pivot=None,
+    contexts: list[JdjBarContext] = []
+    for bar in bars:
+        if bar.trading_day != active_day:
+            active_day = bar.trading_day
+            snapshot_at = bar.bar_end
+            trend_kind = NStructureKind.UNDEFINED
+            trend_snapshot_observed_at = None
+            trend_epoch = None
+        else:
+            trend_kind = NStructureKind.BULL
+            trend_snapshot_observed_at = snapshot_at
+            trend_epoch = 0
+        contexts.append(
+            JdjBarContext(
+                bar=bar,
+                ema20=Decimal("100"),
+                trend_kind=trend_kind,
+                trend_snapshot_observed_at=trend_snapshot_observed_at,
+                trend_epoch=trend_epoch,
+                eligible_high_pivot=None,
+                eligible_low_pivot=None,
+            )
         )
-        for index, bar in enumerate(bars)
-    )
+    return tuple(contexts)
 
 
 def _loaded_with_1m_bars(
@@ -291,9 +313,19 @@ def test_run_batch_loads_once_for_three_exact_candidates(
 def test_run_batch_has_exact_parity_with_each_existing_candidate(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    bars = _trend_follow_bars(23)
+    bars = (
+        *_trend_follow_bars(23, trading_day=_SEGMENT_START),
+        *_trend_follow_bars(23),
+    )
+    segment = ResolvedContractSegment("JM2701", _SEGMENT_START, _DAY)
+    bars_5m = (
+        _trend_follow_bars(1, trading_day=_SEGMENT_START)[0],
+        _trend_follow_bars(1)[0],
+    )
     contexts = _trend_follow_contexts(bars)
-    loader = _RecordingLoader(_loaded_with_1m_bars(bars))
+    loader = _RecordingLoader(
+        _loaded_for_segment(bars, bars_5m, segment)
+    )
     monkeypatch.setattr(
         research_module,
         "build_jdj_context_series",
@@ -307,16 +339,33 @@ def test_run_batch_has_exact_parity_with_each_existing_candidate(
     )
     existing = {
         candidate_id: service.run(
-            JdjResearchRequest(_DAY, _DAY, "jm", candidate_id)
+            JdjResearchRequest(
+                _SEGMENT_START,
+                _DAY,
+                "jm",
+                candidate_id,
+            )
         )
         for candidate_id in candidate_ids
     }
 
-    batch = service.run_batch(symbol="jm", since=_DAY, through=_DAY)
+    batch = service.run_batch(
+        symbol="jm",
+        since=_SEGMENT_START,
+        through=_DAY,
+    )
 
+    assert all(
+        call["since"] == _SEGMENT_START and call["through"] == _DAY
+        for call in loader.calls
+    )
     assert tuple(item.result.candidate_id for item in batch.candidates) == (
         candidate_ids
     )
+    assert tuple(
+        event.trading_day for event in existing[_CANDIDATE].events
+    ) == (_SEGMENT_START, _DAY)
+    assert existing[_CANDIDATE].horizon_summary[20].sample_count == 2
     for item in batch.candidates:
         previous = existing[item.result.candidate_id]
         assert item.result.events == previous.events
