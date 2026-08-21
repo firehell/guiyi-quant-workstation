@@ -16,6 +16,7 @@ import {
   setAlertProductEnabled,
 } from '@/api/alerts'
 import { useMarketSeries } from '@/composables/useMarketSeries'
+import { useMainForceMirrorV2 } from '@/composables/useMainForceMirrorV2'
 import { usePersistentAlertMarkers } from '@/composables/usePersistentAlertMarkers'
 import { useProductAlertScope } from '@/composables/useProductAlertScope'
 import { useProductCurrentAlertEvents } from '@/composables/useProductCurrentAlertEvents'
@@ -31,6 +32,10 @@ import type {
 import { MARKET_FREQUENCIES } from '@/types/market'
 import { lifecycleSnapshotToMarkers } from '@/utils/subingLifecycleMarkers'
 import { buildKlineDerivedData } from '@/utils/klineViewModel'
+import {
+  normalizeSecondaryPanelPreference,
+  type SecondaryPanelId,
+} from '@/utils/mainForceMirrorV2Presentation'
 import {
   loadMainChartPreferences,
   normalizeOptionalEmaIndicators,
@@ -70,6 +75,7 @@ const contract = ref(String(route.query.contract || '').toUpperCase())
 const seriesKind = ref<SeriesKind>(resolveInitialSeriesKind())
 const frequency = ref<MarketFrequency>(resolveInitialFrequency())
 const followLatest = ref(true)
+const selectedSecondaryPanel = ref<SecondaryPanelId>(normalizeSecondaryPanelPreference(undefined))
 const selectedDominant = computed(() => dominants.value.find((item) => item.product === symbol.value))
 const {
   bars,
@@ -86,6 +92,7 @@ const {
   loadMoreBefore,
   dispose,
 } = useMarketSeries()
+const mirror = useMainForceMirrorV2()
 const {
   markers: persistentAlertMarkers,
   sync: syncPersistentAlertMarkers,
@@ -137,6 +144,14 @@ let synchronizingSymbol = false
 let researchGeneration = 0
 
 const loading = computed(() => loadingInitial.value || loadingBefore.value)
+const mainForceMirrorV2DisplayError = computed(() => {
+  if (selectedSecondaryPanel.value !== 'main_force_mirror_v2') return null
+  if (frequency.value !== '60m') return 'MFM_V2_UNSUPPORTED_FREQUENCY'
+  if (effectiveIdentity.value.seriesKind !== 'actual_dominant' && effectiveIdentity.value.seriesKind !== 'contract') {
+    return 'MFM_V2_UNSUPPORTED_SERIES_KIND'
+  }
+  return mirror.error.value
+})
 const visibleMainIndicators = computed(() => {
   if (selectedOverlay.value === 'subing' && !subingSupported.value) return []
   return visibleMainIndicatorsForOverlay(selectedOverlay.value, optionalEmaIndicators.value)
@@ -272,6 +287,7 @@ onUnmounted(() => {
   disposeSubingObservation()
   disposeProductAlertScope()
   disposeProductCurrentAlertEvents()
+  mirror.clear()
   dispose()
   disposePersistentAlertMarkers()
 })
@@ -300,6 +316,7 @@ function currentAlertMarkerIdentity() {
 }
 
 async function refreshSeries() {
+  mirror.clear()
   if (!symbol.value) {
     clearSeries()
     return false
@@ -321,6 +338,9 @@ async function refreshSeries() {
       series_kind: seriesKind.value,
       frequency: requested.frequency,
     } })
+    if (selectedSecondaryPanel.value === 'main_force_mirror_v2') {
+      await mirror.replace(requested)
+    }
     return true
   } catch {
     if (!isCurrentIdentity(requested)) return false
@@ -356,10 +376,22 @@ async function refreshResearch() {
 async function loadEarlierBars() {
   try {
     await loadMoreBefore()
+    if (selectedSecondaryPanel.value === 'main_force_mirror_v2') {
+      await mirror.loadMoreBefore()
+    }
   } catch {
     error.value = '读取更早历史失败：数据集、月分区或主力映射不完整'
     message.error(error.value)
   }
+}
+
+async function updateSecondaryPanel(value: SecondaryPanelId) {
+  selectedSecondaryPanel.value = value
+  if (value === 'macd') {
+    mirror.clear()
+    return
+  }
+  await mirror.replace(currentIdentity())
 }
 
 function isCurrentIdentity(candidate: ReturnType<typeof currentIdentity>) {
@@ -527,8 +559,15 @@ function normalizeSymbol(value: unknown): string | null {
               :visible-main-indicators="visibleMainIndicators"
               :alert-markers="persistentAlertMarkers"
               :research-markers="lifecycleMarkers"
+              :secondary-panel="selectedSecondaryPanel"
+              :main-force-mirror-v2-points="mirror.points.value"
+              :main-force-mirror-v2-member-dataset="mirror.memberDataset.value"
+              :main-force-mirror-v2-loading="mirror.loading.value"
+              :main-force-mirror-v2-error="mainForceMirrorV2DisplayError"
+              :main-force-mirror-v2-canonical-end="mirror.canonicalEnd.value"
               @need-more-before="loadEarlierBars"
               @follow-latest-change="followLatest = $event"
+              @secondary-panel-change="updateSecondaryPanel"
             />
           </div>
           <div class="product-workspace__sidebar-wrap">

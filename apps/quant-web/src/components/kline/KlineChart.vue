@@ -16,28 +16,29 @@ import {
   type UTCTimestamp,
 } from 'lightweight-charts'
 import KlineHoverLegend from '@/components/kline/KlineHoverLegend.vue'
-import type { BarData, HoverKlineContext, KlineMarker, MainIndicatorId, SeriesKind } from '@/types/market'
+import type {
+  BarData,
+  HoverKlineContext,
+  KlineMarker,
+  MainForceMirrorV2MemberDataset,
+  MainForceMirrorV2Point,
+  MainIndicatorId,
+  SeriesKind,
+} from '@/types/market'
 import { resolveChartTheme } from '@/styles/chartTheme'
 import { formatChartAxisTimeInShanghai, formatChartTimeInShanghai } from '@/utils/barTime'
 import { normalizeBarSeries } from '@/utils/barSeries'
 import {
   buildKlineDerivedData,
-  buildMainForceFuturesRenderModel,
   resolveKlineHoverContext,
-  resolveMainForceFuturesAvailability,
-  resolveMainForceFuturesWindowAvailability,
   type KlineValuePoint,
-  type MainForceFuturesAvailability,
 } from '@/utils/klineViewModel'
 import { mergeKlineMarkers } from '@/utils/alertMarkers'
 import {
-  calculateMainForceMirror,
-  type MainForceMirrorState,
-} from '@/utils/mainForceMirror'
-import {
-  calculateMainForceMirrorFutures,
-  type MainForceMirrorFuturesResult,
-} from '@/utils/mainForceMirrorFutures'
+  buildMainForceMirrorV2RenderModel,
+  MAIN_FORCE_MEMBER_RELATION_LABELS,
+  type SecondaryPanelId,
+} from '@/utils/mainForceMirrorV2Presentation'
 
 const props = withDefaults(defineProps<{
   bars: BarData[]
@@ -48,6 +49,12 @@ const props = withDefaults(defineProps<{
   visibleMainIndicators?: MainIndicatorId[]
   alertMarkers?: KlineMarker[]
   researchMarkers?: KlineMarker[]
+  secondaryPanel: SecondaryPanelId
+  mainForceMirrorV2Points?: MainForceMirrorV2Point[]
+  mainForceMirrorV2MemberDataset?: MainForceMirrorV2MemberDataset | null
+  mainForceMirrorV2Loading?: boolean
+  mainForceMirrorV2Error?: string | null
+  mainForceMirrorV2CanonicalEnd?: string | null
 }>(), {
   loading: false,
   error: null,
@@ -55,12 +62,18 @@ const props = withDefaults(defineProps<{
   visibleMainIndicators: () => [],
   alertMarkers: () => [],
   researchMarkers: () => [],
+  mainForceMirrorV2Points: () => [],
+  mainForceMirrorV2MemberDataset: null,
+  mainForceMirrorV2Loading: false,
+  mainForceMirrorV2Error: null,
+  mainForceMirrorV2CanonicalEnd: null,
 })
 
 const emit = defineEmits<{
   'need-more-before': []
   'follow-latest-change': [followLatest: boolean]
   'crosshair-change': [context: HoverKlineContext | null]
+  'secondary-panel-change': [panel: SecondaryPanelId]
 }>()
 
 const container = ref<HTMLElement>()
@@ -70,11 +83,9 @@ let volume: ISeriesApi<'Histogram'> | null = null
 let macdHistogram: ISeriesApi<'Histogram'> | null = null
 let macdDif: ISeriesApi<'Line'> | null = null
 let macdDea: ISeriesApi<'Line'> | null = null
-let mainForceV0Histogram: ISeriesApi<'Histogram'> | null = null
-let mainForceV0Caution: ISeriesApi<'Histogram'> | null = null
-let mainForceV0Markers: ISeriesMarkersPluginApi<Time> | null = null
-let mainForceFuturesHistogram: ISeriesApi<'Histogram'> | null = null
-let mainForceFuturesMarkers: ISeriesMarkersPluginApi<Time> | null = null
+let mainForceV2Histogram: ISeriesApi<'Histogram'> | null = null
+let mainForceV2Accumulated: ISeriesApi<'Line'> | null = null
+let mainForceV2Markers: ISeriesMarkersPluginApi<Time> | null = null
 let htdyZk1: ISeriesApi<'Line'> | null = null
 let htdyZd1: ISeriesApi<'Line'> | null = null
 let htdyZd2: ISeriesApi<'Line'> | null = null
@@ -89,27 +100,13 @@ const hoverContext = ref<HoverKlineContext | null>(null)
 const secondaryPanelTop = ref<number | null>(null)
 const renderedResearchMarkerCount = ref(0)
 let derivedData = buildKlineDerivedData([], [])
-let mainForceFuturesResult: MainForceMirrorFuturesResult | null = null
-const mainForceFuturesAvailability = ref<MainForceFuturesAvailability>(resolveMainForceFuturesAvailability({ period: props.period, seriesKind: props.seriesKind }, null, null))
 
 type EmaIndicatorId = 'ema_10' | 'ema_21' | 'ema_60'
-type SecondaryPanelId = 'macd' | 'main_force_mirror_futures' | 'main_force_mirror_v0'
 const EMA_INDICATORS: EmaIndicatorId[] = ['ema_10', 'ema_21', 'ema_60']
-const selectedSecondaryPanel = ref<SecondaryPanelId>('macd')
 const SECONDARY_PANEL_TABS: Array<{ id: SecondaryPanelId; label: string }> = [
   { id: 'macd', label: 'MACD' },
-  { id: 'main_force_mirror_futures', label: '主力照妖镜' },
-  { id: 'main_force_mirror_v0', label: '原型V0' },
+  { id: 'main_force_mirror_v2', label: '主力照妖镜 V2' },
 ]
-const MAIN_FORCE_COLORS: Record<MainForceMirrorState, string> = {
-  entry: '#ef4444',
-  wash: '#22c55e',
-  pull_up: '#3b82f6',
-  distribute: '#eab308',
-  exit: '#06b6d4',
-  lure: '#f97316',
-}
-const CAUTION_COLOR = '#22c55e'
 
 onMounted(async () => {
   await nextTick()
@@ -158,16 +155,20 @@ onMounted(async () => {
   macdHistogram = chart.addSeries(HistogramSeries, { base: 0, lastValueVisible: false }, 2)
   macdDif = chart.addSeries(LineSeries, { color: theme.macdDif, lineWidth: 1, lastValueVisible: false }, 2)
   macdDea = chart.addSeries(LineSeries, { color: theme.macdDea, lineWidth: 1, lastValueVisible: false }, 2)
-  mainForceV0Histogram = chart.addSeries(HistogramSeries, { base: 0, lastValueVisible: false, priceLineVisible: false }, 2)
-  mainForceV0Caution = chart.addSeries(HistogramSeries, { base: 0, lastValueVisible: false, priceLineVisible: false }, 2)
-  mainForceV0Markers = createSeriesMarkers(mainForceV0Caution)
-  mainForceFuturesHistogram = chart.addSeries(HistogramSeries, {
+  mainForceV2Histogram = chart.addSeries(HistogramSeries, {
     base: 0,
     lastValueVisible: false,
     priceLineVisible: false,
     autoscaleInfoProvider: () => ({ priceRange: { minValue: -105, maxValue: 105 } }),
   }, 2)
-  mainForceFuturesMarkers = createSeriesMarkers(mainForceFuturesHistogram)
+  mainForceV2Accumulated = chart.addSeries(LineSeries, {
+    color: theme.macdDea,
+    lineWidth: 2,
+    lastValueVisible: false,
+    priceLineVisible: false,
+    autoscaleInfoProvider: () => ({ priceRange: { minValue: -105, maxValue: 105 } }),
+  }, 2)
+  mainForceV2Markers = createSeriesMarkers(mainForceV2Accumulated)
   chart.priceScale('right', 1).applyOptions({ scaleMargins: { top: 0.15, bottom: 0.05 } })
   chart.priceScale('right', 2).applyOptions({ scaleMargins: { top: 0.15, bottom: 0.1 } })
   chart.timeScale().subscribeVisibleLogicalRangeChange(onVisibleLogicalRangeChange)
@@ -190,13 +191,6 @@ watch(() => props.period, () => {
   chart?.applyOptions({ timeScale: { timeVisible: !isDaily() } })
 })
 
-watch([() => props.period, () => props.seriesKind], () => {
-  if (selectedSecondaryPanel.value === 'main_force_mirror_futures' && !isMainForceFuturesSupported()) {
-    selectedSecondaryPanel.value = 'macd'
-  }
-  refreshMainForceFuturesAvailability()
-})
-
 watch(() => props.visibleMainIndicators, () => {
   renderDerivedSeries()
 }, { deep: true })
@@ -209,9 +203,13 @@ watch(() => props.researchMarkers, () => {
   renderDerivedSeries()
 }, { deep: true })
 
-watch(selectedSecondaryPanel, () => {
+watch(() => props.secondaryPanel, () => {
   renderDerivedSeries()
 })
+
+watch(() => props.mainForceMirrorV2Points, () => {
+  renderDerivedSeries()
+}, { deep: true })
 
 function barValues(bars: BarData[]) {
   return bars.map((bar) => ({
@@ -244,7 +242,6 @@ function replaceBars(bars: BarData[], preserveViewport = false): void {
   requestAnimationFrame(() => {
     const range = chart?.timeScale().getVisibleLogicalRange()
     isNearLeftBoundary = !!range && range.from <= 20
-    refreshMainForceFuturesAvailability(range)
     paginationArmed = true
     syncSecondaryPanelTop()
   })
@@ -264,7 +261,6 @@ function prependBars(bars: BarData[]): void {
       to: visibleRange.to + prependedCount,
     })
   }
-  refreshMainForceFuturesAvailability(chart.timeScale().getVisibleLogicalRange())
 }
 
 function updateBar(bar: BarData): void {
@@ -274,7 +270,6 @@ function updateBar(bar: BarData): void {
   renderedBars = normalizeBarSeries(renderedBars)
   // Live updates rebuild only series data; viewport ownership remains with the user/follow state.
   renderAllSeries()
-  refreshMainForceFuturesAvailability(chart?.timeScale().getVisibleLogicalRange() ?? null)
 }
 
 function scrollToLatest(): void {
@@ -287,7 +282,6 @@ function scrollToLatest(): void {
 
 function onVisibleLogicalRangeChange(range: LogicalRange | null) {
   if (!range || !renderedBars.length) return
-  refreshMainForceFuturesAvailability(range)
   const isFollowing = range.to >= renderedBars.length - 3
   if (isFollowing !== followLatest) {
     followLatest = isFollowing
@@ -313,7 +307,7 @@ function onCrosshairMove(param: MouseEventParams<Time>) {
   }
   const bar = renderedBars.find((item) => sameChartTime(chartTime(item), param.time!))
   const nextContext = bar
-    ? resolveKlineHoverContext(renderedBars, derivedData, props.visibleMainIndicators, bar.time, mainForceFuturesResult, mainForceFuturesSupport())
+    ? resolveKlineHoverContext(renderedBars, derivedData, props.visibleMainIndicators, bar.time, props.mainForceMirrorV2Points)
     : null
   hoverContext.value = nextContext
   emit('crosshair-change', nextContext)
@@ -328,7 +322,7 @@ function renderAllSeries(): void {
 
 function renderDerivedSeries(): void {
   renderedResearchMarkerCount.value = 0
-  if (!chart || !macdHistogram || !macdDif || !macdDea || !mainForceV0Histogram || !mainForceV0Caution || !mainForceFuturesHistogram) return
+  if (!chart || !macdHistogram || !macdDif || !macdDea || !mainForceV2Histogram || !mainForceV2Accumulated) return
   derivedData = buildKlineDerivedData(renderedBars, props.visibleMainIndicators)
   const theme = resolveChartTheme()
 
@@ -336,27 +330,19 @@ function renderDerivedSeries(): void {
     emaLines[indicator]?.setData(chartValues(derivedData.ema[indicator]))
   })
 
-  if (selectedSecondaryPanel.value === 'macd') {
+  if (props.secondaryPanel === 'macd') {
     macdDif.setData(chartValues(derivedData.macd.dif))
     macdDea.setData(chartValues(derivedData.macd.dea))
     macdHistogram.setData(chartValues(derivedData.macd.histogram).map((point) => ({
       ...point,
       color: point.value >= 0 ? theme.volumeUp : theme.volumeDown,
     })))
-    clearMainForceV0()
-    clearMainForceFutures()
-  } else if (selectedSecondaryPanel.value === 'main_force_mirror_v0') {
-    macdDif.setData([])
-    macdDea.setData([])
-    macdHistogram.setData([])
-    clearMainForceFutures()
-    renderMainForceV0()
+    clearMainForceMirrorV2()
   } else {
     macdDif.setData([])
     macdDea.setData([])
     macdHistogram.setData([])
-    clearMainForceV0()
-    renderMainForceFutures()
+    renderMainForceMirrorV2()
   }
 
   htdyZk1?.setData(chartValues(derivedData.htdy?.zk1))
@@ -370,64 +356,26 @@ function renderDerivedSeries(): void {
   htdyMarkers?.setMarkers(renderedMarkers)
 }
 
-function clearMainForceV0() {
-  mainForceV0Histogram?.setData([])
-  mainForceV0Caution?.setData([])
-  mainForceV0Markers?.setMarkers([])
+function clearMainForceMirrorV2() {
+  mainForceV2Histogram?.setData([])
+  mainForceV2Accumulated?.setData([])
+  mainForceV2Markers?.setMarkers([])
 }
 
-function clearMainForceFutures() {
-  const model = buildMainForceFuturesRenderModel(null)
-  mainForceFuturesHistogram?.setData(model.histogram)
-  mainForceFuturesMarkers?.setMarkers([])
-  mainForceFuturesResult = null
-  mainForceFuturesAvailability.value = resolveMainForceFuturesAvailability(mainForceFuturesSupport(), null, null)
-}
-
-function renderMainForceV0() {
-  if (!mainForceV0Histogram || !mainForceV0Caution) return
-  const observation = calculateMainForceMirror(renderedBars)
-  mainForceV0Histogram.setData(observation.points.flatMap((point, index) => {
-    if (point.value === null || point.state === null || !renderedBars[index]) return []
-    return [{
-      time: chartTime(renderedBars[index]),
-      value: point.value,
-      color: MAIN_FORCE_COLORS[point.state],
-    }]
-  }))
-  mainForceV0Caution.setData(observation.points.flatMap((point, index) => {
-    if (point.cautionLevel === null || !renderedBars[index]) return []
-    return [{
-      time: chartTime(renderedBars[index]),
-      value: point.cautionLevel,
-      color: CAUTION_COLOR,
-    }]
-  }))
-  mainForceV0Markers?.setMarkers(observation.points.flatMap((point, index) => {
-    if (!point.caution || !renderedBars[index]) return []
-    return [{
-      time: chartTime(renderedBars[index]),
-      position: 'aboveBar' as const,
-      shape: 'arrowUp' as const,
-      color: CAUTION_COLOR,
-      text: '小心',
-      size: 1.5,
-    }]
-  }))
-}
-
-function renderMainForceFutures() {
-  if (!mainForceFuturesHistogram || !isMainForceFuturesSupported()) return
-  mainForceFuturesResult = calculateMainForceMirrorFutures(renderedBars)
-  refreshMainForceFuturesAvailability()
-  const model = buildMainForceFuturesRenderModel(mainForceFuturesResult)
+function renderMainForceMirrorV2() {
+  if (!mainForceV2Histogram || !mainForceV2Accumulated) return
+  const model = buildMainForceMirrorV2RenderModel(props.mainForceMirrorV2Points)
   const theme = resolveChartTheme()
   const barsByTime = new Map(renderedBars.map((bar) => [bar.time, bar]))
   const histogram = model.histogram.flatMap((point) => {
     const bar = barsByTime.get(point.time)
     return bar ? [{ time: chartTime(bar), value: point.value, color: theme[point.colorKey] }] : []
   })
-  mainForceFuturesHistogram.setData(histogram)
+  mainForceV2Histogram.setData(histogram)
+  mainForceV2Accumulated.setData(model.accumulated.flatMap((point) => {
+    const bar = barsByTime.get(point.time)
+    return bar ? [{ time: chartTime(bar), value: point.value }] : []
+  }))
   const markers = model.markers.flatMap((marker) => {
     const bar = barsByTime.get(marker.time)
     return bar ? [{
@@ -435,24 +383,7 @@ function renderMainForceFutures() {
       color: marker.tone === 'up' ? theme.up : theme.down, text: marker.text, size: 1.5,
     }] : []
   })
-  mainForceFuturesMarkers?.setMarkers(markers)
-}
-
-function isMainForceFuturesSupported() {
-  const support = mainForceFuturesSupport()
-  return support.period === '60m' && (support.seriesKind === 'actual_dominant' || support.seriesKind === 'contract')
-}
-
-function mainForceFuturesSupport() {
-  return { period: props.period, seriesKind: props.seriesKind }
-}
-
-function refreshMainForceFuturesAvailability(range: LogicalRange | null = chart?.timeScale().getVisibleLogicalRange() ?? null) {
-  mainForceFuturesAvailability.value = resolveMainForceFuturesWindowAvailability(
-    mainForceFuturesSupport(),
-    mainForceFuturesResult?.points ?? [],
-    range,
-  )
+  mainForceV2Markers?.setMarkers(markers)
 }
 
 function chartValues(points: KlineValuePoint[] | undefined): Array<{ time: Time; value: number }> {
@@ -536,13 +467,13 @@ defineExpose({
     :data-alert-marker-count="alertMarkers.length"
     :data-research-marker-count="researchMarkers.length"
     :data-rendered-research-marker-count="renderedResearchMarkerCount"
-    :data-secondary-panel="selectedSecondaryPanel"
+    :data-secondary-panel="secondaryPanel"
   >
     <div ref="container" class="chart" />
     <KlineHoverLegend
       :context="hoverContext"
-      :show-macd="selectedSecondaryPanel === 'macd'"
-      :show-main-force-futures="selectedSecondaryPanel === 'main_force_mirror_futures'"
+      :show-macd="secondaryPanel === 'macd'"
+      :show-main-force-mirror-v2="secondaryPanel === 'main_force_mirror_v2'"
     />
     <div
       class="secondary-panel-header"
@@ -556,27 +487,22 @@ defineExpose({
         :key="item.id"
         type="button"
         class="secondary-panel-tab"
-        :class="{ 'secondary-panel-tab--active': selectedSecondaryPanel === item.id }"
+        :class="{ 'secondary-panel-tab--active': secondaryPanel === item.id }"
         role="tab"
-        :aria-selected="selectedSecondaryPanel === item.id"
-        :disabled="item.id === 'main_force_mirror_futures' && !isMainForceFuturesSupported()"
-        @click="selectedSecondaryPanel = item.id"
+        :aria-selected="secondaryPanel === item.id"
+        @click="emit('secondary-panel-change', item.id)"
       >{{ item.label }}</button>
-      <div v-if="selectedSecondaryPanel === 'main_force_mirror_v0'" class="main-force-legend" aria-label="主力照妖镜原型图例">
-        <span><i class="mirror-dot mirror-dot--entry" />进场</span>
-        <span><i class="mirror-dot mirror-dot--wash" />洗盘</span>
-        <span><i class="mirror-dot mirror-dot--pull" />拉高</span>
-        <span><i class="mirror-dot mirror-dot--distribute" />出货</span>
-        <span><i class="mirror-dot mirror-dot--exit" />退场</span>
-        <span><i class="mirror-dot mirror-dot--lure" />诱多</span>
-        <span class="main-force-legend__note">小心＝HHV5/BARSLAST10 结构警戒，非实测资金流</span>
-      </div>
-      <div v-if="selectedSecondaryPanel === 'main_force_mirror_futures'" class="main-force-legend" aria-label="期货主力照妖镜图例">
-        <span class="main-force-legend__note">70 = 风险证据评分阈值，不是资金流比例或概率</span>
-        <span data-testid="main-force-futures-pane-status">{{ mainForceFuturesAvailability.kind }} · {{ mainForceFuturesAvailability.reason || 'READY' }}</span>
-      </div>
-      <div v-else-if="!isMainForceFuturesSupported()" class="main-force-legend" data-testid="main-force-futures-pane-status">
-        <span>unsupported · {{ mainForceFuturesAvailability.reason }}</span>
+      <div v-if="secondaryPanel === 'main_force_mirror_v2'" class="main-force-legend" aria-label="主力照妖镜 V2 图例">
+        <span class="main-force-legend__note">瞬时压力柱 · 累积压力 EMA5 · 方向持仓压力代理，非实测资金流</span>
+        <span v-if="mainForceMirrorV2Loading">读取 V2…</span>
+        <span v-else-if="mainForceMirrorV2Error" data-testid="main-force-v2-pane-error">{{ mainForceMirrorV2Error }}</span>
+        <template v-else-if="mainForceMirrorV2Points.length">
+          <span>{{ MAIN_FORCE_MEMBER_RELATION_LABELS[mainForceMirrorV2Points.at(-1)!.relation_to_caution] }}</span>
+          <span>席位日期 {{ mainForceMirrorV2Points.at(-1)!.member_trade_date || '—' }}</span>
+          <span v-if="mainForceMirrorV2MemberDataset">席位数据 {{ mainForceMirrorV2MemberDataset.status }}</span>
+          <span v-if="mainForceMirrorV2CanonicalEnd">历史确认截至 {{ mainForceMirrorV2CanonicalEnd }}</span>
+        </template>
+        <span v-else>当前窗口无可用 V2 观察点</span>
       </div>
     </div>
     <div
@@ -605,13 +531,6 @@ defineExpose({
 .main-force-legend { display: flex; align-items: center; gap: 7px; min-width: 0; color: var(--gy-text-muted); font-size: var(--gy-font-size-xs); }
 .main-force-legend span { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; }
 .main-force-legend__note { overflow: hidden; max-width: 340px; text-overflow: ellipsis; }
-.mirror-dot { width: 7px; height: 7px; border-radius: 50%; }
-.mirror-dot--entry { background: #ef4444; }
-.mirror-dot--wash { background: #22c55e; }
-.mirror-dot--pull { background: #3b82f6; }
-.mirror-dot--distribute { background: #eab308; }
-.mirror-dot--exit { background: #06b6d4; }
-.mirror-dot--lure { background: #f97316; }
 .htdy-legend { position: absolute; z-index: 2; top: 52px; right: 72px; display: flex; gap: 12px; align-items: center; padding: 5px 9px; border: 1px solid var(--gy-border); border-radius: var(--gy-radius-sm); background: rgba(255, 255, 255, .9); color: var(--gy-text-secondary); font-size: var(--gy-font-size-xs); pointer-events: none; box-shadow: var(--gy-shadow-sm); }
 .htdy-legend span { display: inline-flex; gap: 5px; align-items: center; white-space: nowrap; }
 .htdy-legend__line { display: inline-block; width: 18px; border-top: 2px solid; }

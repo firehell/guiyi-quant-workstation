@@ -92,18 +92,18 @@ export type MainForceMemberRelation =
   | 'unavailable'
 
 export interface MainForceMirrorV2Identity {
-  seriesKind: Extract<SeriesKind, 'actual_dominant' | 'contract'>
+  seriesKind: SeriesKind
   symbol: string
   contract?: string
-  frequency: '60m'
+  frequency: MarketFrequency
   limit?: number
 }
 
 export interface MainForceMirrorV2PageRequest {
-  series_kind: MainForceMirrorV2Identity['seriesKind']
+  series_kind: SeriesKind
   symbol: string
   contract?: string
-  frequency: '60m'
+  frequency: MarketFrequency
   before: string | null
   limit?: number
 }
@@ -816,32 +816,28 @@ export interface HoverKlineContext {
   bar: BarData
   mainIndicators?: MainIndicatorValue[]
   macd?: { dif?: number | null; dea?: number | null; histogram?: number | null } | null
-  mainForceFutures?: MainForceFuturesHoverDetails | null
+  mainForceMirrorV2?: MainForceMirrorV2HoverDetails | null
   atr?: number | null
   marker?: KlineMarker | null
   cursorPrice?: number | null
 }
 
-export interface MainForceFuturesHoverDetails {
-  physicalContract: string | null
-  valid: boolean
-  stateReady: boolean
-  cautionReady: boolean
-  ready: boolean
-  pointReason: string | null
-  cautionAvailabilityReason: string | null
-  state: string | null
-  strength: number | null
-  priceImpulse: number | null
-  clv: number | null
-  volumeRatio: number | null
-  deltaOi: number | null
-  oiImpulse: number | null
-  rangePosition: number | null
+export interface MainForceMirrorV2HoverDetails {
+  physicalContract: string
+  state: MainForceMirrorV2State | null
+  instantPressure: number | null
+  accumulatedPressure: number | null
+  caution: MainForceMirrorV2Caution | null
   longScore: number | null
   shortScore: number | null
-  caution: string | null
-  reasonCodes: string[]
-  availabilityKind: 'unsupported' | 'input_unavailable' | 'derived_unavailable' | 'state_warmup' | 'caution_warmup' | 'conflict' | 'ready'
-  availabilityReason: string | null
+  memberStatus: 'ready' | 'unavailable'
+  memberTradeDate: string | null
+  memberDirection: 'long' | 'short' | 'neutral' | null
+  memberChangeBias: number | null
+  memberStrength: number | null
+  positionSkew: number | null
+  top5VolumeShare: number | null
+  relationToAccumulated: MainForceMemberRelation
+  relationToCaution: MainForceMemberRelation
+  unavailableReason: string | null
 }

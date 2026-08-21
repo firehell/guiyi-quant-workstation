@@ -9,6 +9,10 @@ import type {
   MainForceMirrorV2PageWireResponse,
 } from '../src/types/market.ts'
 import { normalizeMainForceMirrorV2Page } from '../src/types/market.ts'
+import {
+  buildMainForceMirrorV2RenderModel,
+  normalizeSecondaryPanelPreference,
+} from '../src/utils/mainForceMirrorV2Presentation.ts'
 
 function identity(symbol = 'jm'): MainForceMirrorV2Identity {
   return {
@@ -208,6 +212,67 @@ describe('main force mirror v2 HTTP normalization', () => {
     for (const [name, mutate] of malformed) {
       assert.throws(() => normalizeMainForceMirrorV2Page(malformedPage(mutate)), undefined, name)
     }
+  })
+})
+
+describe('main force mirror v2 presentation', () => {
+  it('projects instant bars, accumulated EMA5 and caution labels without recomputing server values', () => {
+    const first = normalizeMainForceMirrorV2Page(mirrorPage({
+      points: [wirePoint('2026-08-21T02:00:00Z', {
+        instant_pressure: 36.2,
+        accumulated_pressure: 18.7,
+        caution: null,
+        long_caution_score: null,
+      })],
+    })).points[0]
+    const second = normalizeMainForceMirrorV2Page(mirrorPage({
+      points: [wirePoint('2026-08-21T03:00:00Z', {
+        instant_pressure: null,
+        accumulated_pressure: null,
+        caution: 'long_chase_caution',
+        long_caution_score: 70,
+        relation_to_caution: 'strong_aligned',
+      })],
+    })).points[0]
+
+    const model = buildMainForceMirrorV2RenderModel([first, second])
+
+    assert.deepEqual(model.histogram[0].value, 36.2)
+    assert.deepEqual(model.accumulated[0].value, 18.7)
+    assert.equal(model.markers[0].text, '追多小心 70｜席位强同向')
+    assert.equal(model.latest, second)
+    assert.deepEqual(model.autoscale, { minValue: -105, maxValue: 105 })
+  })
+
+  it('keeps a caution marker and explicit relation when member data is unavailable', () => {
+    const point = normalizeMainForceMirrorV2Page(mirrorPage({
+      points: [wirePoint('2026-08-21T03:00:00Z', {
+        caution: 'short_chase_caution',
+        short_caution_score: null,
+        member_status: 'unavailable',
+        member_trade_date: null,
+        member_direction: null,
+        member_change_bias: null,
+        member_strength: null,
+        position_skew: null,
+        top5_volume_share: null,
+        relation_to_accumulated: 'unavailable',
+        relation_to_caution: 'unavailable',
+        unavailable_reason: 'MFM_MEMBER_SNAPSHOT_MISSING',
+      })],
+    })).points[0]
+
+    const model = buildMainForceMirrorV2RenderModel([point])
+
+    assert.equal(model.markers.length, 1)
+    assert.match(model.markers[0].text, /追空小心 —｜席位不可用/)
+  })
+
+  it('normalizes every legacy secondary-pane identity deterministically', () => {
+    assert.equal(normalizeSecondaryPanelPreference('main_force_mirror_futures'), 'main_force_mirror_v2')
+    assert.equal(normalizeSecondaryPanelPreference('main_force_mirror_v0'), 'macd')
+    assert.equal(normalizeSecondaryPanelPreference('unknown'), 'macd')
+    assert.equal(normalizeSecondaryPanelPreference(null), 'macd')
   })
 })
 
