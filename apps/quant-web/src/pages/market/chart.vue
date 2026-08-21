@@ -229,7 +229,7 @@ watch([symbol, seriesKind, contract], () => {
   if (metadataReady) void syncPersistentAlertMarkers(currentAlertMarkerIdentity(), [], 'replace')
 })
 
-watch([frequency, selectedOverlay], () => {
+watch(frequency, () => {
   if (metadataReady) void syncPersistentAlertMarkers(currentAlertMarkerIdentity(), [], 'replace')
 })
 
