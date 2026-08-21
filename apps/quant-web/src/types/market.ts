@@ -245,20 +245,156 @@ function normalizeMainForceMirrorV2Number(value: number | null): number | null {
 
 function hasMainForceMirrorV2PageShape(value: unknown): value is MainForceMirrorV2PageWireResponse {
   if (!isMainForceMirrorV2Record(value)) return false
-  const memberDataset = value.member_dataset
-  return isMainForceMirrorV2Record(value.request)
-    && isMainForceMirrorV2Record(value.indicator)
-    && isMainForceMirrorV2Record(memberDataset)
-    && (memberDataset.coverage === null || isMainForceMirrorV2Record(memberDataset.coverage))
+  return hasMainForceMirrorV2Request(value.request)
+    && hasMainForceMirrorV2Indicator(value.indicator)
+    && hasMainForceMirrorV2MemberDataset(value.member_dataset)
     && Array.isArray(value.points)
-    && value.points.every(isMainForceMirrorV2Record)
-    && isMainForceMirrorV2Record(value.page)
+    && value.points.every(hasMainForceMirrorV2PointShape)
+    && hasMainForceMirrorV2PageMeta(value.page)
     && Array.isArray(value.resolved_contract_segments)
-    && value.resolved_contract_segments.every(isMainForceMirrorV2Record)
+    && value.resolved_contract_segments.every(hasMainForceMirrorV2ResolvedContractSegment)
 }
 
 function isMainForceMirrorV2Record(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function hasMainForceMirrorV2Request(value: unknown): boolean {
+  if (!isMainForceMirrorV2Record(value)) return false
+  const seriesKind = value.series_kind
+  return (seriesKind === 'actual_dominant' || seriesKind === 'contract')
+    && isMainForceMirrorV2NonEmptyString(value.symbol)
+    && (seriesKind === 'actual_dominant'
+      ? value.contract === null
+      : isMainForceMirrorV2NonEmptyString(value.contract))
+    && value.frequency === '60m'
+    && isMainForceMirrorV2NullableInstant(value.before)
+    && isMainForceMirrorV2Integer(value.limit)
+    && value.limit >= 1
+    && value.limit <= 2000
+}
+
+function hasMainForceMirrorV2Indicator(value: unknown): boolean {
+  if (!isMainForceMirrorV2Record(value)) return false
+  return value.indicator_code === 'main_force_mirror_v2'
+    && value.indicator_version === 'futures-member-research-v2'
+    && value.formal_policy_id === 'main_force_mirror_observation_v2'
+    && isMainForceMirrorV2NonEmptyString(value.parameters_hash)
+    && value.interpretation === 'directional_position_pressure_proxy_not_measured_fund_flow'
+    && value.observation_only === true
+    && value.historical_only === true
+    && value.auto_order === false
+}
+
+function hasMainForceMirrorV2MemberDataset(value: unknown): boolean {
+  if (!isMainForceMirrorV2Record(value)) return false
+  return (value.status === 'ready' || value.status === 'unavailable')
+    && isMainForceMirrorV2NullableString(value.dataset_id)
+    && isMainForceMirrorV2NullableInteger(value.schema_version)
+    && typeof value.admitted_product === 'boolean'
+    && hasMainForceMirrorV2Coverage(value.coverage)
+}
+
+function hasMainForceMirrorV2Coverage(value: unknown): boolean {
+  if (value === null) return true
+  return isMainForceMirrorV2Record(value)
+    && isMainForceMirrorV2Date(value.start)
+    && isMainForceMirrorV2Date(value.end)
+    && value.start <= value.end
+}
+
+function hasMainForceMirrorV2PageMeta(value: unknown): boolean {
+  return isMainForceMirrorV2Record(value)
+    && typeof value.has_more_before === 'boolean'
+    && isMainForceMirrorV2NullableInstant(value.next_before)
+}
+
+function hasMainForceMirrorV2ResolvedContractSegment(value: unknown): boolean {
+  return isMainForceMirrorV2Record(value)
+    && isMainForceMirrorV2NonEmptyString(value.contract)
+    && isMainForceMirrorV2Date(value.start_trading_day)
+    && isMainForceMirrorV2Date(value.end_trading_day)
+    && value.start_trading_day <= value.end_trading_day
+}
+
+function hasMainForceMirrorV2PointShape(value: unknown): boolean {
+  if (!isMainForceMirrorV2Record(value)) return false
+  return isMainForceMirrorV2Instant(value.bar_end)
+    && isMainForceMirrorV2Date(value.trading_day)
+    && isMainForceMirrorV2NonEmptyString(value.physical_contract)
+    && typeof value.pressure_ready === 'boolean'
+    && isMainForceMirrorV2NullableEnum(value.pressure_state, MAIN_FORCE_MIRROR_V2_STATES)
+    && typeof value.accumulated_ready === 'boolean'
+    && typeof value.caution_ready === 'boolean'
+    && isMainForceMirrorV2NullableEnum(value.caution, MAIN_FORCE_MIRROR_V2_CAUTIONS)
+    && typeof value.caution_conflict === 'boolean'
+    && isMainForceMirrorV2ReasonCodes(value.caution_reason_codes)
+    && (value.member_status === 'ready' || value.member_status === 'unavailable')
+    && isMainForceMirrorV2NullableDate(value.member_trade_date)
+    && isMainForceMirrorV2NullableEnum(value.member_direction, MAIN_FORCE_MIRROR_V2_MEMBER_DIRECTIONS)
+    && isMainForceMirrorV2NullableEnum(value.relation_to_accumulated, MAIN_FORCE_MIRROR_V2_MEMBER_RELATIONS, false)
+    && isMainForceMirrorV2NullableEnum(value.relation_to_caution, MAIN_FORCE_MIRROR_V2_MEMBER_RELATIONS, false)
+    && isMainForceMirrorV2NullableString(value.unavailable_reason)
+}
+
+const MAIN_FORCE_MIRROR_V2_STATES = new Set([
+  'long_build', 'short_build', 'short_cover', 'long_liquidation', 'turnover',
+])
+const MAIN_FORCE_MIRROR_V2_CAUTIONS = new Set(['long_chase_caution', 'short_chase_caution'])
+const MAIN_FORCE_MIRROR_V2_MEMBER_DIRECTIONS = new Set(['long', 'short', 'neutral'])
+const MAIN_FORCE_MIRROR_V2_MEMBER_RELATIONS = new Set([
+  'strong_aligned', 'aligned', 'divergent', 'neutral', 'unavailable',
+])
+
+function isMainForceMirrorV2NullableEnum(
+  value: unknown,
+  allowed: Set<string>,
+  nullable = true,
+): boolean {
+  return (nullable && value === null) || (typeof value === 'string' && allowed.has(value))
+}
+
+function isMainForceMirrorV2ReasonCodes(value: unknown): boolean {
+  return Array.isArray(value) && value.every(isMainForceMirrorV2NonEmptyString)
+}
+
+function isMainForceMirrorV2NullableString(value: unknown): boolean {
+  return value === null || isMainForceMirrorV2NonEmptyString(value)
+}
+
+function isMainForceMirrorV2NonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0 && value.trim() === value
+}
+
+function isMainForceMirrorV2NullableInteger(value: unknown): boolean {
+  return value === null || isMainForceMirrorV2Integer(value)
+}
+
+function isMainForceMirrorV2Integer(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value)
+}
+
+function isMainForceMirrorV2NullableDate(value: unknown): boolean {
+  return value === null || isMainForceMirrorV2Date(value)
+}
+
+function isMainForceMirrorV2Date(value: unknown): value is string {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
+  const timestamp = Date.parse(`${value}T00:00:00Z`)
+  return Number.isFinite(timestamp) && new Date(timestamp).toISOString().slice(0, 10) === value
+}
+
+function isMainForceMirrorV2NullableInstant(value: unknown): boolean {
+  return value === null || isMainForceMirrorV2Instant(value)
+}
+
+function isMainForceMirrorV2Instant(value: unknown): value is string {
+  if (
+    typeof value !== 'string'
+    || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(value)
+  ) return false
+  const date = value.slice(0, 10)
+  return isMainForceMirrorV2Date(date) && Number.isFinite(Date.parse(value))
 }
 
 /** Read-only Product Research snapshot; nullable backend metrics stay nullable in the browser. */

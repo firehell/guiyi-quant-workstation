@@ -97,6 +97,18 @@ function normalizedPage(overrides: Partial<MainForceMirrorV2PageWireResponse> = 
   return normalizeMainForceMirrorV2Page(mirrorPage(overrides))
 }
 
+type UnknownRecord = Record<string, unknown>
+
+function malformedPage(mutate: (page: UnknownRecord) => void): MainForceMirrorV2PageWireResponse {
+  const page = mirrorPage() as unknown as UnknownRecord
+  mutate(page)
+  return page as unknown as MainForceMirrorV2PageWireResponse
+}
+
+function nested(page: UnknownRecord, key: string): UnknownRecord {
+  return page[key] as UnknownRecord
+}
+
 function deferred<T>() {
   let resolve!: (value: T) => void
   let reject!: (reason?: unknown) => void
@@ -150,6 +162,52 @@ describe('main force mirror v2 HTTP normalization', () => {
       ...mirrorPage(),
       page: null as never,
     }))
+  })
+
+  it('rejects every malformed non-numeric Task 5 nested response field', () => {
+    const malformed: Array<[string, (page: UnknownRecord) => void]> = [
+      ['page cursor fields', (page) => {
+        const value = nested(page, 'page')
+        value.has_more_before = 'yes'
+        value.next_before = 1
+      }],
+      ['request series kind', (page) => { nested(page, 'request').series_kind = 'continuous' }],
+      ['request symbol', (page) => { nested(page, 'request').symbol = 1 }],
+      ['request contract', (page) => { nested(page, 'request').contract = 1 }],
+      ['request frequency', (page) => { nested(page, 'request').frequency = '15m' }],
+      ['request before', (page) => { nested(page, 'request').before = 1 }],
+      ['request limit', (page) => { nested(page, 'request').limit = 1.5 }],
+      ['indicator identity', (page) => { nested(page, 'indicator').indicator_code = 'other' }],
+      ['indicator version', (page) => { nested(page, 'indicator').indicator_version = 'other' }],
+      ['indicator policy', (page) => { nested(page, 'indicator').formal_policy_id = 'other' }],
+      ['indicator hash', (page) => { nested(page, 'indicator').parameters_hash = 1 }],
+      ['indicator interpretation', (page) => { nested(page, 'indicator').interpretation = 'other' }],
+      ['indicator observation flag', (page) => { nested(page, 'indicator').observation_only = false }],
+      ['indicator historical flag', (page) => { nested(page, 'indicator').historical_only = false }],
+      ['indicator order flag', (page) => { nested(page, 'indicator').auto_order = true }],
+      ['member dataset status', (page) => { nested(page, 'member_dataset').status = 'other' }],
+      ['member dataset id', (page) => { nested(page, 'member_dataset').dataset_id = 1 }],
+      ['member dataset schema', (page) => { nested(page, 'member_dataset').schema_version = 1.5 }],
+      ['member dataset admission', (page) => { nested(page, 'member_dataset').admitted_product = 'yes' }],
+      ['member dataset coverage', (page) => { nested(nested(page, 'member_dataset'), 'coverage').start = 1 }],
+      ['resolved contract segment', (page) => { (page.resolved_contract_segments as UnknownRecord[])[0].contract = '' }],
+      ['point timestamp', (page) => { (page.points as UnknownRecord[])[0].bar_end = '2026-08-20' }],
+      ['point trading day', (page) => { (page.points as UnknownRecord[])[0].trading_day = 1 }],
+      ['point contract', (page) => { (page.points as UnknownRecord[])[0].physical_contract = '' }],
+      ['point readiness', (page) => { (page.points as UnknownRecord[])[0].pressure_ready = 'yes' }],
+      ['point pressure state', (page) => { (page.points as UnknownRecord[])[0].pressure_state = 'other' }],
+      ['point caution state', (page) => { (page.points as UnknownRecord[])[0].caution = 'other' }],
+      ['point reason codes', (page) => { (page.points as UnknownRecord[])[0].caution_reason_codes = [1] }],
+      ['point member status', (page) => { (page.points as UnknownRecord[])[0].member_status = 'other' }],
+      ['point member date', (page) => { (page.points as UnknownRecord[])[0].member_trade_date = 'not-a-date' }],
+      ['point member direction', (page) => { (page.points as UnknownRecord[])[0].member_direction = 'other' }],
+      ['point relations', (page) => { (page.points as UnknownRecord[])[0].relation_to_accumulated = 'other' }],
+      ['point unavailable reason', (page) => { (page.points as UnknownRecord[])[0].unavailable_reason = 1 }],
+    ]
+
+    for (const [name, mutate] of malformed) {
+      assert.throws(() => normalizeMainForceMirrorV2Page(malformedPage(mutate)), undefined, name)
+    }
   })
 })
 
@@ -273,6 +331,31 @@ describe('main force mirror v2 page state', () => {
           : normalizeMainForceMirrorV2Page(mirrorPage({
               request: { ...mirrorPage().request, symbol: 'ag' },
               points: [wirePoint('2026-08-20T02:30:00Z', { instant_pressure: Infinity })],
+            }))
+      },
+    })
+
+    await mirror.replace(identity())
+    await mirror.replace(identity('ag'))
+
+    assert.deepEqual(mirror.points.value, [])
+    assert.equal(mirror.memberDataset.value, null)
+    assert.equal(mirror.canonicalEnd.value, null)
+    assert.equal(mirror.error.value, '主力照妖镜 V2 暂不可用')
+  })
+
+  it('clears V2 state when a non-null malformed page cursor response arrives', async () => {
+    let calls = 0
+    const mirror = useMainForceMirrorV2({
+      fetchPage: async () => {
+        calls += 1
+        return calls === 1
+          ? normalizedPage()
+          : normalizeMainForceMirrorV2Page(malformedPage((page) => {
+              nested(page, 'request').symbol = 'ag'
+              const pageMeta = nested(page, 'page')
+              pageMeta.has_more_before = 'yes'
+              pageMeta.next_before = 1
             }))
       },
     })
