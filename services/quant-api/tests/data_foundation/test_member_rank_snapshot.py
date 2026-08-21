@@ -182,6 +182,30 @@ def test_repository_rejects_boolean_descriptor_schema_version(tmp_path: Path) ->
         _repository(tmp_path)
 
 
+@pytest.mark.parametrize(
+    ("admitted_products", "physical_contracts"),
+    (
+        (("sc",), ("SC2609",)),
+        (("ag",), ("JM2609",)),
+    ),
+)
+def test_repository_rejects_forged_admission_or_contract_product_ownership(
+    tmp_path: Path,
+    admitted_products: tuple[str, ...],
+    physical_contracts: tuple[str, ...],
+) -> None:
+    write_descriptor(
+        tmp_path,
+        "snapshot",
+        relative_uri="contract=forged/year=2026/member_rank.parquet",
+        admitted_products=admitted_products,
+        physical_contracts=physical_contracts,
+    )
+
+    with pytest.raises(MemberRankSnapshotError, match="MEMBER_SNAPSHOT_DESCRIPTOR_INVALID"):
+        _repository(tmp_path)
+
+
 def test_descriptor_read_failure_does_not_retain_underlying_path(tmp_path: Path) -> None:
     snapshot_root = write_descriptor(
         tmp_path,

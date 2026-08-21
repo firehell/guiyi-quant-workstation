@@ -10,12 +10,14 @@ import pytest
 
 from app.guiyi_cli.main import CliUsageError, build_parser, main
 from app.guiyi_cli.output import exception_error_payload
+from app.market_data.composition import research_data_root
 from app.market_data.after_market import AfterMarketResult
 from app.market_data.historical_data_manager import MaintenanceResult
 from app.market_data.catalog import MainMapFact
 from app.market_data.member_rank_snapshot import MemberRankRow
 from app.market_data.member_rank_snapshot_builder import (
     MemberRankFetch,
+    MemberRankSnapshotBuildError,
     MemberRankSnapshotBuilder,
     MemberRankSnapshotResult,
 )
@@ -144,6 +146,37 @@ def test_member_rank_cli_real_builder_dry_run_never_constructs_provider(tmp_path
     assert payload["readonly"] is True
     assert factory_calls == 0
     assert not (tmp_path / "main_force_member_rank_v1").exists()
+
+
+@pytest.mark.parametrize("root_value", (None, "", "   "))
+def test_member_rank_builder_root_rejects_missing_empty_or_whitespace_before_path_resolution(
+    monkeypatch: pytest.MonkeyPatch,
+    root_value: str | None,
+) -> None:
+    if root_value is None:
+        monkeypatch.delenv("GUIYI_RESEARCH_DATA_ROOT", raising=False)
+    else:
+        monkeypatch.setenv("GUIYI_RESEARCH_DATA_ROOT", root_value)
+
+    with pytest.raises(
+        MemberRankSnapshotBuildError,
+        match="MEMBER_SNAPSHOT_ROOT_UNCONFIGURED",
+    ):
+        research_data_root()
+
+
+def test_member_rank_cli_reports_blank_research_root_without_resolving_worktree(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GUIYI_RESEARCH_DATA_ROOT", " \t ")
+    code, payload = _run(
+        _member_rank_arguments(),
+        FakeManager(),
+        member_rank_snapshot_builder_factory=lambda _session: research_data_root(),
+    )
+
+    assert code == 1
+    assert payload["error"]["code"] == "MEMBER_SNAPSHOT_ROOT_UNCONFIGURED"
 
 
 def test_member_rank_cli_published_uses_shared_success_exit_path(tmp_path: Path) -> None:

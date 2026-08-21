@@ -165,6 +165,7 @@ class MemberRankObservation:
     relation_to_accumulated: MemberRankRelation
     relation_to_caution: MemberRankRelation
     unavailable_reason: str | None
+    raw_strength: Decimal | None = None
 
     @classmethod
     def unavailable(
@@ -184,6 +185,7 @@ class MemberRankObservation:
             relation_to_accumulated="unavailable",
             relation_to_caution="unavailable",
             unavailable_reason=reason,
+            raw_strength=None,
         )
 
 
@@ -314,6 +316,7 @@ def compute_member_rank_observation(
         ),
         relation_to_caution=_relation_to_caution(direction, change_bias, strength, caution),
         unavailable_reason=None,
+        raw_strength=strength,
     )
 
 

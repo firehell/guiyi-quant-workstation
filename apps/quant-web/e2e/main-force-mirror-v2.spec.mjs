@@ -226,6 +226,11 @@ test('Market renders only MACD and parent-owned historical Main Force Mirror V2'
   await expect.poll(() => page.evaluate(() => window.__GUIYI_E2E_CANVAS_TEXT__)).toEqual(
     expect.arrayContaining(['追多小心 70｜席位强同向', '追空小心 74｜席位不可用']),
   )
+  const chartBox = await page.locator('.chart').boundingBox()
+  expect(chartBox).not.toBeNull()
+  await page.mouse.move(chartBox.x + chartBox.width * 0.833, chartBox.y + chartBox.height * 0.25)
+  await expect(page.getByTestId('mfm-v2-hover-position-skew')).toHaveText('持仓偏斜 0.4')
+  await expect(page.getByTestId('mfm-v2-hover-top5-share')).toHaveText('Top5 成交占比 0.5')
 
   await page.setViewportSize({ width: 900, height: 900 })
   await expect(page.getByText('席位数据 ready', { exact: true })).toBeVisible()

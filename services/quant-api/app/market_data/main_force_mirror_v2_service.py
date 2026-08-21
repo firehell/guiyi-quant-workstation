@@ -195,6 +195,23 @@ class MainForceMirrorV2Service:
                 ) from None
             segments = loaded.segments
             contracts = _contracts_for_bars(full.bars, segments)
+            target_contracts = _contracts_for_bars(
+                target.bars,
+                target.resolved_contract_segments,
+            )
+            full_contract_by_end = {
+                bar.bar_end: contract
+                for bar, contract in zip(full.bars, contracts, strict=True)
+            }
+            if any(
+                full_contract_by_end.get(bar.bar_end) != target_contract
+                for bar, target_contract in zip(
+                    target.bars,
+                    target_contracts,
+                    strict=True,
+                )
+            ):
+                raise MainForceMirrorV2Error("MFM_V2_MARKET_IDENTITY_CONFLICT")
             return full, contracts
 
         if request.contract is None:

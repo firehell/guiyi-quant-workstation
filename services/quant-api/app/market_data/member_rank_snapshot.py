@@ -16,6 +16,7 @@ import pyarrow.parquet as pq
 
 
 RANK_BY_VALUES = ("volume", "long", "short")
+MEMBER_RANK_ADMITTED_PRODUCTS = ("jm", "ag", "cu", "m")
 MEMBER_RANK_SCHEMA_VERSION = 1
 MEMBER_RANK_SCHEMA = pa.schema(
     [
@@ -312,6 +313,20 @@ def _parse_descriptor(
     partitions_value = value["partitions"]
     if not isinstance(partitions_value, list) or not partitions_value:
         raise MemberRankSnapshotError("MEMBER_SNAPSHOT_DESCRIPTOR_INVALID")
+    requested_products = _products_field(value["requested_products"])
+    admitted_products = _products_field(value["admitted_products"])
+    physical_contracts = _contracts_field(value["physical_contracts"])
+    allowed = frozenset(MEMBER_RANK_ADMITTED_PRODUCTS)
+    if (
+        not set(requested_products).issubset(allowed)
+        or not set(admitted_products).issubset(allowed)
+        or not set(requested_products).issubset(admitted_products)
+        or any(
+            _normalized_contract(contract)[1] not in requested_products
+            for contract in physical_contracts
+        )
+    ):
+        raise MemberRankSnapshotError("MEMBER_SNAPSHOT_DESCRIPTOR_INVALID")
     return MemberRankSnapshotDescriptor(
         schema_version=MEMBER_RANK_SCHEMA_VERSION,
         dataset_id=expected_dataset_id,
@@ -320,9 +335,9 @@ def _parse_descriptor(
         created_at=_instant_field(value["created_at"]),
         requested_since=requested_since,
         requested_through=requested_through,
-        requested_products=_products_field(value["requested_products"]),
-        admitted_products=_products_field(value["admitted_products"]),
-        physical_contracts=_contracts_field(value["physical_contracts"]),
+        requested_products=requested_products,
+        admitted_products=admitted_products,
+        physical_contracts=physical_contracts,
         partitions=tuple(_partition_descriptor(item) for item in partitions_value),
     )
 
@@ -415,6 +430,11 @@ def _normalized_contract(value: object) -> tuple[str, str]:
     if match is None or not 1 <= int(contract[-2:]) <= 12:
         raise MemberRankSnapshotError("MEMBER_PHYSICAL_CONTRACT_INVALID")
     return contract, match.group(1).lower()
+
+
+def member_rank_contract_product(value: object) -> str:
+    """Return the product owned by one validated physical-contract identity."""
+    return _normalized_contract(value)[1]
 
 
 def _normalized_symbol(value: object) -> str:

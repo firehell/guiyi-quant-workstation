@@ -9,7 +9,9 @@ import pytest
 
 from guiyi_quant.indicators.main_force_mirror_v2 import (
     MainForceMirrorV2Point,
+    MemberRankDailyInput,
     MemberRankObservation,
+    compute_member_rank_observation,
 )
 
 from app.market_data.domain import (
@@ -20,6 +22,7 @@ from app.market_data.domain import (
     SeriesKind,
 )
 from app.market_data.main_force_mirror_v2_research_service import (
+    MainForceMirrorV2ResearchError,
     MainForceMirrorV2ResearchRequest,
     MainForceMirrorV2ResearchService,
 )
@@ -182,7 +185,16 @@ class _MirrorService:
 
     def query_page(self, request: object) -> MainForceMirrorV2PageResult:
         return MainForceMirrorV2PageResult(
-            request_identity=MappingProxyType({"fixture": True}),
+            request_identity=MappingProxyType(
+                {
+                    "series_kind": request.series_kind.value,
+                    "symbol": request.symbol,
+                    "contract": request.contract,
+                    "frequency": request.frequency.value,
+                    "before": request.before.isoformat() if request.before else None,
+                    "limit": request.limit,
+                }
+            ),
             indicator_code="main_force_mirror_v2",
             indicator_version="futures-member-research-v2",
             formal_policy_id="main_force_mirror_observation_v2",
@@ -258,6 +270,74 @@ def test_research_uses_only_fixed_global_member_strength_sensitivity() -> None:
     assert result.sensitivity[Decimal("2.0")].pooled[5].sample_count == 1
     assert result.sensitivity[Decimal("2.5")].pooled[5].sample_count == 1
     assert set(result.sensitivity[Decimal("2.0")].by_product) == {"jm"}
+
+
+def test_research_uses_raw_decimal_member_strength_at_threshold_boundaries() -> None:
+    member = compute_member_rank_observation(
+        MemberRankDailyInput(
+            member_trade_date=date(2025, 11, 28),
+            long_total=Decimal("500"),
+            short_total=Decimal("500"),
+            long_change_total=Decimal("19.999996"),
+            short_change_total=Decimal("0"),
+            top5_volume_total=Decimal("50"),
+            top20_volume_total=Decimal("100"),
+        ),
+        (Decimal("0.01"),) * 20,
+        accumulated_pressure=8.0,
+        caution="long_chase_caution",
+    )
+    assert member.strength == 2.0
+    assert member.raw_strength == Decimal("1.9999996")
+    assert member.relation_to_caution == "aligned"
+    points = (replace(_POINTS[0], member=member), *_POINTS[1:])
+    result = MainForceMirrorV2ResearchService(
+        market_data=_MarketData(),
+        mirror_service=_MirrorService(points=points),
+    ).run(_request())
+
+    assert result.pooled["member_strong_aligned"][5].sample_count == 0
+    assert result.sensitivity[Decimal("2.0")].pooled[5].sample_count == 0
+
+
+def test_research_rejects_points_swapped_from_authoritative_market_segments() -> None:
+    swapped = tuple(
+        replace(
+            point,
+            physical_contract="JM2701" if point.physical_contract == "JM2609" else "JM2609",
+        )
+        for point in _POINTS
+    )
+
+    with pytest.raises(
+        MainForceMirrorV2ResearchError,
+        match="MFM_V2_RESEARCH_IDENTITY_CONFLICT",
+    ):
+        MainForceMirrorV2ResearchService(
+            market_data=_MarketData(),
+            mirror_service=_MirrorService(points=swapped),
+        ).run(_request())
+
+
+def test_research_rejects_page_request_identity_drift() -> None:
+    class _DriftedMirror(_MirrorService):
+        def query_page(self, request: object) -> MainForceMirrorV2PageResult:
+            page = super().query_page(request)
+            return replace(
+                page,
+                request_identity=MappingProxyType(
+                    {**page.request_identity, "symbol": "ag"}
+                ),
+            )
+
+    with pytest.raises(
+        MainForceMirrorV2ResearchError,
+        match="MFM_V2_RESEARCH_IDENTITY_CONFLICT",
+    ):
+        MainForceMirrorV2ResearchService(
+            market_data=_MarketData(),
+            mirror_service=_DriftedMirror(),
+        ).run(_request())
 
 
 def test_research_labels_retrospective_and_reports_explicit_denominators() -> None:

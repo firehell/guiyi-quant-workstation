@@ -20,17 +20,18 @@ import pyarrow.parquet as pq
 from app.market_data.catalog import MainMapFact
 from app.market_data.member_rank_snapshot import (
     MEMBER_RANK_SCHEMA,
+    MEMBER_RANK_ADMITTED_PRODUCTS,
     RANK_BY_VALUES,
     ContractValidityVerifier,
     MemberRankRow,
     MemberRankSnapshotError,
     MemberRankSnapshotRepository,
     TradingCalendarVerifier,
+    member_rank_contract_product,
 )
 
 
 _DATASET_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*\Z")
-_ADMITTED_PRODUCTS = ("jm", "ag", "cu", "m")
 
 
 class MemberRankSnapshotBuildError(RuntimeError):
@@ -223,13 +224,18 @@ class MemberRankSnapshotBuilder:
             values = self._rank1_source.rank1_map(product, since, through)
         except Exception as exc:
             raise MemberRankSnapshotBuildError("MEMBER_SNAPSHOT_MAIN_MAP_MISSING") from exc
-        if any(
-            fact.symbol != product
-            or not isinstance(fact.trade_date, date)
-            or not isinstance(fact.contract, str)
-            or not fact.contract.strip()
-            for fact in values
-        ):
+        try:
+            invalid = any(
+                fact.symbol != product
+                or not isinstance(fact.trade_date, date)
+                or not isinstance(fact.contract, str)
+                or not fact.contract.strip()
+                or member_rank_contract_product(fact.contract) != product
+                for fact in values
+            )
+        except MemberRankSnapshotError:
+            invalid = True
+        if invalid:
             raise MemberRankSnapshotBuildError("MEMBER_SNAPSHOT_MAIN_MAP_INVALID")
         return values
 
@@ -334,7 +340,7 @@ def _validate_request(request: MemberRankSnapshotRequest) -> None:
         or len(set(request.products)) != len(request.products)
     ):
         raise MemberRankSnapshotBuildError("MEMBER_SNAPSHOT_PRODUCTS_INVALID")
-    if any(product not in _ADMITTED_PRODUCTS for product in request.products):
+    if any(product not in MEMBER_RANK_ADMITTED_PRODUCTS for product in request.products):
         raise MemberRankSnapshotBuildError("MEMBER_SNAPSHOT_PRODUCT_NOT_ADMITTED")
     if (
         not isinstance(request.since, date)

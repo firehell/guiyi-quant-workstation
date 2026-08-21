@@ -691,6 +691,10 @@ def _member_rank_records(frame: pd.DataFrame) -> tuple[dict[str, Any], ...]:
 def _member_rank_row(
     row: dict[str, Any], request: MemberRankFetch
 ) -> MemberRankRow:
+    requested_contract = request.physical_contract.strip().upper()
+    returned_contract = _member_rank_text(row, "commodity_id").upper()
+    if returned_contract != requested_contract:
+        raise MemberRankSnapshotBuildError("RQDATA_MEMBER_RANK_COMMODITY_INVALID")
     rank = _member_rank_int(row, "rank", "position", "rank_no")
     member_name = _member_rank_text(
         row, "member_name", "member", "member_id", "member_name_cn"
@@ -705,7 +709,7 @@ def _member_rank_row(
     if value < 0:
         raise MemberRankSnapshotBuildError("RQDATA_MEMBER_RANK_VALUE_INVALID")
     return MemberRankRow(
-        physical_contract=request.physical_contract.strip().upper(),
+        physical_contract=returned_contract,
         trade_date=trade_date,
         rank_by=request.rank_by,
         rank=rank,
@@ -716,19 +720,11 @@ def _member_rank_row(
 
 
 def _member_rank_value_fields(rank_by: str) -> tuple[str, ...]:
-    return {
-        "volume": ("volume", "value", "member_volume"),
-        "long": ("long_position", "long", "value", "position"),
-        "short": ("short_position", "short", "value", "position"),
-    }.get(rank_by, ())
+    return ("volume",) if rank_by in {"volume", "long", "short"} else ()
 
 
 def _member_rank_change_fields(rank_by: str) -> tuple[str, ...]:
-    return {
-        "volume": ("volume_change", "change", "member_volume_change"),
-        "long": ("long_position_change", "long_change", "change", "position_change"),
-        "short": ("short_position_change", "short_change", "change", "position_change"),
-    }.get(rank_by, ())
+    return ("volume_change",) if rank_by in {"volume", "long", "short"} else ()
 
 
 def _member_rank_field(row: dict[str, Any], fields: tuple[str, ...]) -> Any:
@@ -776,7 +772,7 @@ def _member_rank_date(row: dict[str, Any], request: MemberRankFetch) -> date:
             for field in ("trading_date", "trade_date", "date", "level_0", "index")
             if field in row and row[field] is not None and not pd.isna(row[field])
         ),
-        request.since if request.since == request.through else None,
+        None,
     )
     if value is None:
         raise MemberRankSnapshotBuildError("RQDATA_MEMBER_RANK_DATE_INVALID")

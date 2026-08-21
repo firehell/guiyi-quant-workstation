@@ -129,7 +129,7 @@ def canonical_root() -> Path:
 def research_data_root() -> Path:
     """Resolve the explicit Git-external research-data root without creating it."""
     configured = os.getenv("GUIYI_RESEARCH_DATA_ROOT")
-    if not configured:
+    if configured is None or not configured.strip():
         from app.market_data.member_rank_snapshot_builder import (
             MemberRankSnapshotBuildError,
         )

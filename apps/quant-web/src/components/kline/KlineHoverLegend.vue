@@ -37,6 +37,8 @@ defineProps<{
       <span>席位日期 {{ context.mainForceMirrorV2.memberTradeDate || '—' }}</span>
       <span>席位方向 {{ context.mainForceMirrorV2.memberDirection || '—' }}</span>
       <span>席位强度 {{ formatKlineHoverValue(context.mainForceMirrorV2.memberStrength) }}</span>
+      <span data-testid="mfm-v2-hover-position-skew">持仓偏斜 {{ formatKlineHoverValue(context.mainForceMirrorV2.positionSkew) }}</span>
+      <span data-testid="mfm-v2-hover-top5-share">Top5 成交占比 {{ formatKlineHoverValue(context.mainForceMirrorV2.top5VolumeShare) }}</span>
       <span>{{ MAIN_FORCE_MEMBER_RELATION_LABELS[context.mainForceMirrorV2.relationToAccumulated] }}</span>
       <span>警戒关系 {{ MAIN_FORCE_MEMBER_RELATION_LABELS[context.mainForceMirrorV2.relationToCaution] }}</span>
       <span>不可用原因 {{ context.mainForceMirrorV2.unavailableReason || '—' }}</span>

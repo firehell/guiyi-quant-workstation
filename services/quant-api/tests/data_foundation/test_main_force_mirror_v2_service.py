@@ -376,6 +376,27 @@ def test_no_member_configuration_preserves_core_pressure_as_dataset_unavailable(
     assert result.member_dataset.dataset_id is None
 
 
+def test_no_member_configuration_still_rejects_target_loader_contract_mismatch() -> None:
+    bars = tuple(_bar(index) for index in range(31))
+    target_segment = (ResolvedContractSegment("JM2701", _DAY, _DAY),)
+    loader_segment = (ResolvedContractSegment("JM2609", _DAY, _DAY),)
+    target = _page((bars[-1],), target_segment)
+    loader = _Loader(
+        ActualDominantResearchSeries(
+            {BarFrequency.H1: _series(bars, loader_segment)},
+            loader_segment,
+        )
+    )
+
+    with pytest.raises(
+        MainForceMirrorV2Error,
+        match="MFM_V2_MARKET_IDENTITY_CONFLICT",
+    ):
+        _service(_MarketData(target), loader).query_page(
+            SeriesPageQuery("actual_dominant", "jm", "60m", limit=1)
+        )
+
+
 def test_missing_current_contract_day_is_not_filled_from_available_baseline() -> None:
     prior = tuple(
         _member_day("JM2609", date(2026, 7, day), change=1)

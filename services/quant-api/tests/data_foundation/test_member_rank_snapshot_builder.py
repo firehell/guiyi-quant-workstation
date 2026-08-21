@@ -176,6 +176,20 @@ def test_plan_splits_rank1_contract_change_into_exact_six_fetches(tmp_path: Path
     ]
 
 
+def test_plan_rejects_rank1_contract_owned_by_another_product(tmp_path: Path) -> None:
+    with pytest.raises(
+        MemberRankSnapshotBuildError,
+        match="MEMBER_SNAPSHOT_MAIN_MAP_INVALID",
+    ):
+        _builder(
+            tmp_path,
+            facts=(
+                MainMapFact("jm", _DAY, "AG2609"),
+                MainMapFact("jm", _NEXT_DAY, "AG2609"),
+            ),
+        ).plan(_request())
+
+
 def test_snapshot_rejects_unadmitted_product_including_sc(tmp_path: Path) -> None:
     request = MemberRankSnapshotRequest(
         dataset_id="mfm-member-20260821",
@@ -284,6 +298,58 @@ def test_rqdata_provider_normalizes_each_supported_member_rank_shape(rank_by: st
     assert all(isinstance(row.value, Decimal) for row in rows)
 
 
+@pytest.mark.parametrize(
+    ("frame", "code"),
+    (
+        (
+            pd.DataFrame(
+                {
+                    "rank": [1],
+                    "member_name": ["member-1"],
+                    "volume": [10],
+                    "volume_change": [1],
+                    "commodity_id": ["JM2701"],
+                },
+                index=pd.Index([_DAY], name="trade_date"),
+            ),
+            "RQDATA_MEMBER_RANK_COMMODITY_INVALID",
+        ),
+        (
+            pd.DataFrame(
+                {
+                    "rank": [1],
+                    "member_name": ["member-1"],
+                    "volume": [10],
+                    "volume_change": [1],
+                    "commodity_id": ["JM2609"],
+                }
+            ),
+            "RQDATA_MEMBER_RANK_DATE_INVALID",
+        ),
+        (
+            pd.DataFrame(
+                {
+                    "rank": [1],
+                    "member_name": ["member-1"],
+                    "volume": [10],
+                    "volume_change": [1],
+                },
+                index=pd.Index([_DAY], name="trade_date"),
+            ),
+            "RQDATA_MEMBER_RANK_RESPONSE_INVALID",
+        ),
+    ),
+)
+def test_rqdata_provider_requires_returned_contract_and_explicit_trading_date(
+    frame: pd.DataFrame,
+    code: str,
+) -> None:
+    with pytest.raises(MemberRankSnapshotBuildError, match=code):
+        RQDataMemberRankProvider(_FrameClient(frame), client_version="fake-1").fetch(
+            MemberRankFetch("jm", "JM2609", _DAY, _DAY, "volume")
+        )
+
+
 def test_rqdata_provider_rejects_empty_duplicate_nonfinite_and_provider_failures() -> None:
     request = MemberRankFetch("jm", "JM2609", _DAY, _DAY, "volume")
     for frame, code in (
@@ -314,18 +380,13 @@ class _BrokenClient:
 def _rank_frame(
     rank_by: str, *, duplicate_rank: bool = False, nonfinite: bool = False
 ) -> pd.DataFrame:
-    value_column = {"volume": "volume", "long": "long_position", "short": "short_position"}[rank_by]
-    change_column = {
-        "volume": "volume_change",
-        "long": "long_position_change",
-        "short": "short_position_change",
-    }[rank_by]
     records = [
         {
             "rank": rank,
             "member_name": f"member-{rank}",
-            value_column: rank,
-            change_column: float("inf") if nonfinite and rank == 1 else rank - 10,
+            "volume": rank,
+            "volume_change": float("inf") if nonfinite and rank == 1 else rank - 10,
+            "commodity_id": "JM2609",
         }
         for rank in range(1, 21)
     ]

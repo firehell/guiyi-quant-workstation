@@ -23,7 +23,9 @@ from .domain import (
     normalize_contract_for_symbol,
 )
 from .main_force_mirror_v2_service import (
+    MainForceMirrorV2Error,
     MainForceMirrorV2PageResult,
+    _contracts_for_bars,
 )
 
 
@@ -221,7 +223,12 @@ class MainForceMirrorV2ResearchService:
         )
         if not bars:
             raise MainForceMirrorV2ResearchError("MFM_V2_RESEARCH_MARKET_UNAVAILABLE")
-        page_identity, points = self._query_points(request, bars)
+        market_contracts = self._market_contracts(request, bars, market)
+        page_identity, points = self._query_points(
+            request,
+            bars,
+            market_contracts,
+        )
         observations = _observations(request.symbol, points)
         pooled = _summarize_cohorts(observations, bars, points)
         yearly = _yearly(observations, bars, points)
@@ -293,22 +300,47 @@ class MainForceMirrorV2ResearchService:
         self,
         request: MainForceMirrorV2ResearchRequest,
         bars: tuple[CanonicalBar, ...],
+        market_contracts: tuple[str, ...],
     ) -> tuple[MainForceMirrorV2PageResult, tuple[MainForceMirrorV2Point, ...]]:
         wanted = {bar.bar_end for bar in bars}
         points_by_end: dict[datetime, MainForceMirrorV2Point] = {}
         before = bars[-1].bar_end + timedelta(microseconds=1)
         identity: MainForceMirrorV2PageResult | None = None
         while True:
-            page = self.mirror_service.query_page(
-                SeriesPageQuery(
-                    series_kind=request.series_kind,
-                    symbol=request.symbol,
-                    contract=request.contract,
-                    frequency=request.frequency,
-                    before=before,
-                    limit=2000,
-                )
+            page_request = SeriesPageQuery(
+                series_kind=request.series_kind,
+                symbol=request.symbol,
+                contract=request.contract,
+                frequency=request.frequency,
+                before=before,
+                limit=2000,
             )
+            page = self.mirror_service.query_page(page_request)
+            if dict(page.request_identity) != _page_request_identity(page_request):
+                raise MainForceMirrorV2ResearchError(
+                    "MFM_V2_RESEARCH_IDENTITY_CONFLICT"
+                )
+            if request.series_kind is SeriesKind.ACTUAL_DOMINANT:
+                try:
+                    page_contracts = _contracts_for_bars(
+                        page.points,  # type: ignore[arg-type]
+                        page.resolved_contract_segments,
+                    )
+                except MainForceMirrorV2Error:
+                    raise MainForceMirrorV2ResearchError(
+                        "MFM_V2_RESEARCH_IDENTITY_CONFLICT"
+                    ) from None
+                if any(
+                    point.physical_contract != contract
+                    for point, contract in zip(
+                        page.points,
+                        page_contracts,
+                        strict=True,
+                    )
+                ):
+                    raise MainForceMirrorV2ResearchError(
+                        "MFM_V2_RESEARCH_IDENTITY_CONFLICT"
+                    )
             if identity is None:
                 identity = page
             elif (
@@ -336,16 +368,37 @@ class MainForceMirrorV2ResearchService:
             before = page.next_before
         assert identity is not None
         points = tuple(points_by_end[bar.bar_end] for bar in bars)
-        for bar, point in zip(bars, points, strict=True):
+        for bar, point, market_contract in zip(
+            bars,
+            points,
+            market_contracts,
+            strict=True,
+        ):
             if (
                 point.bar_end != bar.bar_end
                 or point.trading_day != bar.trading_day
-                or point.physical_contract is None
+                or point.physical_contract != market_contract
             ):
                 raise MainForceMirrorV2ResearchError(
                     "MFM_V2_RESEARCH_IDENTITY_CONFLICT"
                 )
         return identity, points
+
+    @staticmethod
+    def _market_contracts(
+        request: MainForceMirrorV2ResearchRequest,
+        bars: tuple[CanonicalBar, ...],
+        market: MarketSeriesResult,
+    ) -> tuple[str, ...]:
+        if request.series_kind is SeriesKind.CONTRACT:
+            assert request.contract is not None
+            return (request.contract,) * len(bars)
+        try:
+            return _contracts_for_bars(bars, market.resolved_contract_segments)
+        except MainForceMirrorV2Error:
+            raise MainForceMirrorV2ResearchError(
+                "MFM_V2_RESEARCH_IDENTITY_CONFLICT"
+            ) from None
 
 
 def _observations(
@@ -406,7 +459,7 @@ def _observations(
                 relation == "aligned"
                 and member is not None
                 and member.strength is not None
-                and Decimal(str(member.strength)) >= Decimal("2.0")
+                and _raw_member_strength(member) >= Decimal("2.0")
             ):
                 observations.append(
                     _Observation(
@@ -707,7 +760,7 @@ def _sensitivity(
             and point.member.direction
             == ("long" if direction > 0 else "short")
             and point.member.strength is not None
-            and Decimal(str(point.member.strength)) >= threshold
+            and _raw_member_strength(point.member) >= threshold
         )
         summaries = MappingProxyType(
             {
@@ -729,6 +782,24 @@ def _median(values: tuple[Decimal, ...]) -> Decimal:
     if len(ordered) % 2:
         return ordered[midpoint]
     return (ordered[midpoint - 1] + ordered[midpoint]) / Decimal(2)
+
+
+def _raw_member_strength(member: object) -> Decimal:
+    raw = getattr(member, "raw_strength", None)
+    if isinstance(raw, Decimal):
+        return raw
+    return Decimal(str(getattr(member, "strength")))
+
+
+def _page_request_identity(request: SeriesPageQuery) -> dict[str, object]:
+    return {
+        "series_kind": request.series_kind.value,
+        "symbol": request.symbol,
+        "contract": request.contract,
+        "frequency": request.frequency.value,
+        "before": request.before.isoformat() if request.before else None,
+        "limit": request.limit,
+    }
 
 
 def _is_warning_cohort(cohort: str) -> bool:
