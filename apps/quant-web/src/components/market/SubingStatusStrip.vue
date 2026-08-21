@@ -77,7 +77,7 @@ function confirmedTime(value: string) {
     苏冰 Factor 快照加载中
   </NAlert>
   <NAlert v-else-if="error || !snapshot" type="warning" :show-icon="false" class="subing-strip">
-    苏冰 Factor 快照不可用；K 线保留当前合约行情
+    苏冰 Factor 快照不可用；K 线保留当前展示行情
   </NAlert>
   <NAlert v-else-if="!ready" type="warning" :show-icon="false" class="subing-strip">
     <div class="subing-strip__row">
