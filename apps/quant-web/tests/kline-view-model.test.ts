@@ -1,14 +1,10 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import type { BarData } from '../src/types/market.ts'
-import type { MainForceMirrorFuturesPoint, MainForceMirrorFuturesResult } from '../src/utils/mainForceMirrorFutures.ts'
+import type { BarData, MainForceMirrorV2Point } from '../src/types/market.ts'
 import {
   buildKlineDerivedData,
-  buildMainForceFuturesRenderModel,
   formatKlineHoverValue,
   resolveKlineHoverContext,
-  resolveMainForceFuturesAvailability,
-  resolveMainForceFuturesWindowAvailability,
 } from '../src/utils/klineViewModel.ts'
 
 const bars: BarData[] = Array.from({ length: 100 }, (_, index) => {
@@ -77,193 +73,67 @@ test('missing hover values render as unavailable instead of a fabricated zero', 
   assert.equal(formatKlineHoverValue(0), '0')
 })
 
-test('crosshair projects the timestamp-aligned futures mirror observation without inventing missing values', () => {
+test('crosshair projects the exact timestamp-aligned V2 observation without inventing missing values', () => {
   const result = buildKlineDerivedData(bars, [])
   const target = bars[79]
-  const point: MainForceMirrorFuturesPoint = {
-    time: target.time,
+  const point: MainForceMirrorV2Point = {
+    bar_end: target.time,
+    trading_day: target.trading_day!,
     physical_contract: 'AG2601',
-    valid: true,
-    state_ready: true,
+    pressure_ready: true,
+    pressure_state: 'long_build',
+    instant_pressure: 82,
+    accumulated_ready: true,
+    accumulated_pressure: 61,
     caution_ready: true,
-    ready: true,
-    reason: null,
-    caution_availability_reason: null,
-    state: 'long_build',
-    signed_score: 82,
-    strength: 82,
+    caution: 'long_chase_caution',
+    caution_conflict: false,
+    long_caution_score: 70,
+    short_caution_score: 10,
+    caution_reason_codes: ['LONG_BUILD_STREAK'],
     price_impulse: 0.23,
     clv: null,
     volume_ratio: 1.4,
     delta_oi: 41,
     oi_impulse: 0.18,
-    direction: 0.56,
     range_position: 0.79,
-    long_open_pressure: 82,
-    short_open_pressure: 12,
-    long_caution_score: 70,
-    short_caution_score: 10,
-    caution: 'long_chase_caution',
-    caution_reason_codes: ['LONG_BUILD_STREAK'],
+    member_status: 'ready',
+    member_trade_date: '2026-03-20',
+    member_direction: 'long',
+    member_change_bias: 0.24,
+    member_strength: 1.4,
+    position_skew: 0.3,
+    top5_volume_share: 0.42,
+    relation_to_accumulated: 'strong_aligned',
+    relation_to_caution: 'aligned',
+    unavailable_reason: null,
   }
-  const futures: MainForceMirrorFuturesResult = {
-    points: [point],
-    metadata: {} as MainForceMirrorFuturesResult['metadata'],
-  }
 
-  const hover = resolveKlineHoverContext(bars, result, [], target.time, futures)
+  const hover = resolveKlineHoverContext(bars, result, [], target.time, [point])
 
-  assert.ok(hover?.mainForceFutures)
-  assert.equal(hover.mainForceFutures.physicalContract, 'AG2601')
-  assert.equal(hover.mainForceFutures.state, 'long_build')
-  assert.equal(hover.mainForceFutures.strength, 82)
-  assert.equal(hover.mainForceFutures.priceImpulse, 0.23)
-  assert.equal(hover.mainForceFutures.volumeRatio, 1.4)
-  assert.equal(hover.mainForceFutures.deltaOi, 41)
-  assert.equal(hover.mainForceFutures.oiImpulse, 0.18)
-  assert.equal(hover.mainForceFutures.rangePosition, 0.79)
-  assert.equal(hover.mainForceFutures.longScore, 70)
-  assert.equal(hover.mainForceFutures.shortScore, 10)
-  assert.deepEqual(hover.mainForceFutures.reasonCodes, ['LONG_BUILD_STREAK'])
-  assert.equal(formatKlineHoverValue(hover.mainForceFutures.clv), '—')
+  assert.ok(hover?.mainForceMirrorV2)
+  assert.equal(hover.mainForceMirrorV2.physicalContract, 'AG2601')
+  assert.equal(hover.mainForceMirrorV2.state, 'long_build')
+  assert.equal(hover.mainForceMirrorV2.instantPressure, 82)
+  assert.equal(hover.mainForceMirrorV2.accumulatedPressure, 61)
+  assert.equal(hover.mainForceMirrorV2.memberTradeDate, '2026-03-20')
+  assert.equal(hover.mainForceMirrorV2.memberStrength, 1.4)
+  assert.equal(hover.mainForceMirrorV2.relationToAccumulated, 'strong_aligned')
+  assert.equal(hover.mainForceMirrorV2.unavailableReason, null)
 })
 
-test('futures availability prioritizes support and stable reasons over readiness booleans', () => {
-  const supported = { period: '60m', seriesKind: 'contract' as const }
-  const frequencyUnsupported = resolveMainForceFuturesAvailability({ period: '15m', seriesKind: 'continuous' }, null, null)
-  assert.equal(frequencyUnsupported.reason, 'MFM_FUTURES_V1_FREQUENCY_UNSUPPORTED')
-  const unsupported = resolveMainForceFuturesAvailability({ period: '60m', seriesKind: 'continuous' }, null, null)
-  assert.equal(unsupported.kind, 'unsupported')
-  assert.equal(unsupported.reason, 'MFM_FUTURES_V1_SERIES_UNSUPPORTED')
+test('crosshair returns no V2 hover object when the server has no exact bar_end match', () => {
+  const result = buildKlineDerivedData(bars, [])
+  const target = bars[79]
+  const unmatched = {
+    bar_end: bars[78].time,
+  } as MainForceMirrorV2Point
 
-  const oiUnavailable = resolveMainForceFuturesAvailability(supported, futuresPoint({
-    valid: false,
-    reason: 'MFM_FUTURES_V1_OPEN_INTEREST_UNAVAILABLE',
-  }), null)
-  assert.equal(oiUnavailable.kind, 'input_unavailable')
-  assert.equal(oiUnavailable.reason, 'MFM_FUTURES_V1_OPEN_INTEREST_UNAVAILABLE')
+  const hover = resolveKlineHoverContext(bars, result, [], target.time, [unmatched])
 
-  const stateWarmup = resolveMainForceFuturesAvailability(supported, futuresPoint({ state_ready: false, reason: 'MFM_FUTURES_V1_WARMUP' }), null)
-  assert.equal(stateWarmup.kind, 'state_warmup')
-
-  const cautionWarmup = resolveMainForceFuturesAvailability(supported, futuresPoint({ state_ready: true, caution_ready: false, reason: null, caution_availability_reason: 'MFM_FUTURES_V1_CAUTION_WARMUP' }), null)
-  assert.equal(cautionWarmup.kind, 'caution_warmup')
-
-  const derivedUnavailable = resolveMainForceFuturesAvailability(supported, futuresPoint({ state_ready: false, reason: 'MFM_FUTURES_V1_ATR_INVALID' }), null)
-  assert.equal(derivedUnavailable.kind, 'derived_unavailable')
-  assert.equal(derivedUnavailable.reason, 'MFM_FUTURES_V1_ATR_INVALID')
-
-  const conflict = resolveMainForceFuturesAvailability(supported, futuresPoint({ caution_availability_reason: 'MFM_FUTURES_V1_CAUTION_DIRECTION_CONFLICT' }), null)
-  assert.equal(conflict.kind, 'conflict')
-
-  const ready = resolveMainForceFuturesAvailability(supported, futuresPoint(), null)
-  assert.equal(ready.kind, 'ready')
+  assert.ok(hover)
+  assert.equal(hover.mainForceMirrorV2, null)
 })
-
-test('futures pane availability is derived from the visible logical window, not the loaded tail', () => {
-  const supported = { period: '60m', seriesKind: 'actual_dominant' as const }
-  const points = [
-    futuresPoint({ state_ready: false, caution_ready: false, ready: false, reason: 'MFM_FUTURES_V1_WARMUP' }),
-    futuresPoint({ state_ready: false, caution_ready: false, ready: false, reason: 'MFM_FUTURES_V1_WARMUP' }),
-    futuresPoint(),
-  ]
-  const warmup = resolveMainForceFuturesWindowAvailability(supported, points, { from: 0, to: 1.9 })
-  assert.deepEqual(warmup, { kind: 'state_warmup', reason: 'MFM_FUTURES_V1_WARMUP' })
-  const ready = resolveMainForceFuturesWindowAvailability(supported, points, { from: 2, to: 2.1 })
-  assert.deepEqual(ready, { kind: 'ready', reason: null })
-
-  const mixed = resolveMainForceFuturesWindowAvailability(supported, [
-    futuresPoint({ valid: false, state_ready: false, reason: 'MFM_FUTURES_V1_WARMUP' }),
-    futuresPoint({ valid: false, state_ready: false, reason: 'MFM_FUTURES_V1_PHYSICAL_CONTRACT_MISSING' }),
-    futuresPoint({ valid: false, state_ready: false, reason: 'MFM_FUTURES_V1_OPEN_INTEREST_UNAVAILABLE' }),
-    futuresPoint({ valid: false, state_ready: false, reason: 'MFM_FUTURES_V1_SEGMENT_CONFLICT' }),
-  ], { from: 0, to: 3 })
-  assert.deepEqual(mixed, { kind: 'input_unavailable', reason: 'MFM_FUTURES_V1_SEGMENT_CONFLICT' })
-  const physicalBeforeWarmup = resolveMainForceFuturesWindowAvailability(supported, [
-    futuresPoint({ valid: false, state_ready: false, reason: 'MFM_FUTURES_V1_WARMUP' }),
-    futuresPoint({ valid: false, state_ready: false, reason: 'MFM_FUTURES_V1_PHYSICAL_CONTRACT_MISSING' }),
-  ], { from: 0, to: 1 })
-  assert.deepEqual(physicalBeforeWarmup, { kind: 'input_unavailable', reason: 'MFM_FUTURES_V1_PHYSICAL_CONTRACT_MISSING' })
-})
-
-test('futures pane availability follows the rightmost physical-contract block after rollover', () => {
-  const supported = { period: '60m', seriesKind: 'actual_dominant' as const }
-  const contractAReady = futuresPoint({ physical_contract: 'AG2601' })
-
-  for (const [name, rightmost, expected] of [
-    [
-      'B state warmup',
-      futuresPoint({
-        physical_contract: 'AG2602', state_ready: false, caution_ready: false, ready: false,
-        state: null, reason: 'MFM_FUTURES_V1_WARMUP',
-      }),
-      { kind: 'state_warmup', reason: 'MFM_FUTURES_V1_WARMUP' },
-    ],
-    [
-      'B input unavailable',
-      futuresPoint({
-        physical_contract: 'AG2602', valid: false, state_ready: false, caution_ready: false, ready: false,
-        state: null, reason: 'MFM_FUTURES_V1_OPEN_INTEREST_UNAVAILABLE',
-      }),
-      { kind: 'input_unavailable', reason: 'MFM_FUTURES_V1_OPEN_INTEREST_UNAVAILABLE' },
-    ],
-    [
-      'B caution warmup',
-      futuresPoint({
-        physical_contract: 'AG2602', caution_ready: false, ready: false,
-        caution_availability_reason: 'MFM_FUTURES_V1_CAUTION_WARMUP',
-      }),
-      { kind: 'caution_warmup', reason: 'MFM_FUTURES_V1_CAUTION_WARMUP' },
-    ],
-    [
-      'B ready',
-      futuresPoint({ physical_contract: 'AG2602' }),
-      { kind: 'ready', reason: null },
-    ],
-    [
-      'B conflict',
-      futuresPoint({
-        physical_contract: 'AG2602', caution: null,
-        caution_availability_reason: 'MFM_FUTURES_V1_CAUTION_DIRECTION_CONFLICT',
-      }),
-      { kind: 'conflict', reason: 'MFM_FUTURES_V1_CAUTION_DIRECTION_CONFLICT' },
-    ],
-  ] as const) {
-    assert.deepEqual(
-      resolveMainForceFuturesWindowAvailability(supported, [contractAReady, rightmost], { from: 0, to: 1 }),
-      expected,
-      name,
-    )
-  }
-})
-
-test('futures render model keeps signed scores separate from bilateral caution markers and clears as an empty model', () => {
-  const long = futuresPoint({ time: 'long', signed_score: 100, state: 'long_build', caution: 'long_chase_caution', long_caution_score: 70 })
-  const short = futuresPoint({ time: 'short', signed_score: -80, state: 'short_build', caution: 'short_chase_caution', short_caution_score: 75 })
-  const conflict = futuresPoint({ time: 'conflict', signed_score: 76, state: 'long_build', caution: null, caution_availability_reason: 'MFM_FUTURES_V1_CAUTION_DIRECTION_CONFLICT' })
-  const model = buildMainForceFuturesRenderModel({ points: [long, short, conflict], metadata: {} as MainForceMirrorFuturesResult['metadata'] })
-
-  assert.deepEqual(model.autoscale, { minValue: -105, maxValue: 105 })
-  assert.deepEqual(model.histogram.map((point) => point.value), [100, -80, 76])
-  assert.equal(model.histogram.some((point) => Math.abs(point.value) === 92), false)
-  assert.deepEqual(model.markers, [
-    { time: 'long', position: 'aboveBar', shape: 'arrowDown', tone: 'up', text: '追多小心 70' },
-    { time: 'short', position: 'belowBar', shape: 'arrowUp', tone: 'down', text: '追空小心 75' },
-  ])
-  assert.deepEqual(buildMainForceFuturesRenderModel(null), {
-    histogram: [], markers: [], autoscale: { minValue: -105, maxValue: 105 },
-  })
-})
-
-function futuresPoint(overrides: Partial<MainForceMirrorFuturesPoint> = {}): MainForceMirrorFuturesPoint {
-  return {
-    time: 'point', physical_contract: 'AG2601', valid: true, state_ready: true, caution_ready: true, ready: true,
-    reason: null, caution_availability_reason: null, state: 'long_build', signed_score: 80, strength: 80,
-    price_impulse: 0.2, clv: 0.1, volume_ratio: 1.2, delta_oi: 10, oi_impulse: 0.3, direction: 0.2,
-    range_position: 0.8, long_open_pressure: 1, short_open_pressure: 0, long_caution_score: 60,
-    short_caution_score: 10, caution: null, caution_reason_codes: [], ...overrides,
-  }
-}
 
 function makeDeterministicHtdyBars(seed: number, length = 100): BarData[] {
   let state = seed >>> 0

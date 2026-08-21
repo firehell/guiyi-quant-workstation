@@ -29,11 +29,13 @@ from app.market_data.candidate_validation import (
     summarize_rolling_stability,
 )
 from app.market_data.domain import BarFrequency, SeriesKind
-from app.market_data.main_force_mirror_futures_research_service import (
-    MainForceMirrorFuturesHorizonSummary,
-    MainForceMirrorFuturesResearchRequest,
-    MainForceMirrorFuturesResearchResult,
-    MainForceMirrorFuturesResearchService,
+from app.market_data.main_force_mirror_v2_research_service import (
+    MainForceMirrorV2GroupSpread,
+    MainForceMirrorV2HorizonSummary,
+    MainForceMirrorV2ResearchRequest,
+    MainForceMirrorV2ResearchResult,
+    MainForceMirrorV2ResearchService,
+    MainForceMirrorV2SensitivitySummary,
 )
 from app.market_data.jdj_events import (
     JdjDirection,
@@ -165,11 +167,12 @@ def test_research_parser_exposes_only_the_seven_readonly_commands() -> None:
         "candidate-robustness",
         "candidate-validation",
         "jdj-1m",
-        "main-force-mirror-futures",
+        "main-force-mirror-v2",
         "n-structure",
         "subing-calibration",
         "subing-lifecycle",
     }
+    assert "main-force-mirror-v2" in command_action.choices
 
 
 _JDJ_CANDIDATES = (
@@ -2126,7 +2129,7 @@ def _mirror_arguments(
 ) -> list[str]:
     arguments = [
         "research",
-        "main-force-mirror-futures",
+        "main-force-mirror-v2",
         "--symbol",
         "jm",
         "--series-kind",
@@ -2144,43 +2147,65 @@ def _mirror_arguments(
 
 
 class _FakeMirrorResearchService:
-    def __init__(self, result: MainForceMirrorFuturesResearchResult) -> None:
+    def __init__(self, result: MainForceMirrorV2ResearchResult) -> None:
         self.result = result
-        self.requests: list[MainForceMirrorFuturesResearchRequest] = []
+        self.requests: list[MainForceMirrorV2ResearchRequest] = []
 
     def run(
         self,
-        request: MainForceMirrorFuturesResearchRequest,
-    ) -> MainForceMirrorFuturesResearchResult:
+        request: MainForceMirrorV2ResearchRequest,
+    ) -> MainForceMirrorV2ResearchResult:
         self.requests.append(request)
         return self.result
 
 
-def _mirror_result() -> MainForceMirrorFuturesResearchResult:
-    return MainForceMirrorFuturesResearchResult(
+def _mirror_result() -> MainForceMirrorV2ResearchResult:
+    summary = MainForceMirrorV2HorizonSummary(
+        horizon_bars=5,
+        sample_count=2,
+        median_directional_return=Decimal("0.1"),
+        median_reversal_return=Decimal("-0.1"),
+        hit_rate=Decimal("1"),
+        median_mfe=Decimal("0.12"),
+        median_mae=Decimal("0.02"),
+    )
+    spread = MainForceMirrorV2GroupSpread(
+        horizon_bars=5,
+        top_group="member_strong_aligned",
+        bottom_group="member_divergent",
+        directional_return_spread=Decimal("0.15"),
+        top_sample_count=2,
+        bottom_sample_count=1,
+    )
+    return MainForceMirrorV2ResearchResult(
+        indicator_code="main_force_mirror_v2",
+        indicator_version="futures-member-research-v2",
+        parameters_hash="fixture-parameters",
+        research_protocol="main_force_mirror_v2_retrospective_v1",
+        evaluation_classification="retrospective_walk_forward_diagnostic",
+        requested_since=date(2023, 1, 1),
+        requested_through=date(2026, 8, 18),
+        prospective_oos_starts_after=date(2026, 8, 20),
+        member_dataset_id="fixture-member-v1",
         products=("jm",),
-        bars_valid_count=120,
-        bars_state_ready_count=100,
-        bars_caution_ready_count=90,
-        event_count_long=2,
-        event_count_short=1,
-        conflict_count=1,
-        events_per_1000_caution_ready_bars=33.333333,
-        missing_oi_count=3,
-        segment_reset_count=2,
-        timestamp_invalid_count=1,
-        state_distribution={"long_build": 40, "turnover": 60},
-        reason_code_distribution={"LONG_UPPER_EXTREME": 2},
-        score_distribution=(70, 85, 100),
-        horizon_summary={
-            horizon: MainForceMirrorFuturesHorizonSummary(
-                horizon_bars=horizon,
-                sample_count=1 if horizon < 10 else 0,
-                reversal_returns=(0.1,) if horizon < 10 else (),
-                warning_mfe=(0.2,) if horizon < 10 else (),
-                warning_mae=(0.05,) if horizon < 10 else (),
+        member_coverage=Decimal("0.75"),
+        caution_ready_bars=40,
+        caution_events=2,
+        caution_events_per_1000_ready_bars=Decimal("50"),
+        yearly={
+            2026: {"jm": {"long_build": {"instant_pressure": {5: summary}}}}
+        },
+        by_product={
+            "jm": {"long_build": {"instant_pressure": {5: summary}}}
+        },
+        pooled={"instant_pressure": {5: summary}},
+        top_bottom_spreads={5: spread},
+        sensitivity={
+            Decimal("2.0"): MainForceMirrorV2SensitivitySummary(
+                member_strength_threshold=Decimal("2.0"),
+                by_product={"jm": {5: summary}},
+                pooled={5: summary},
             )
-            for horizon in (1, 3, 5, 10)
         },
     )
 
@@ -2189,7 +2214,7 @@ def test_mirror_request_parses_exact_actual_dominant_and_contract_modes() -> Non
     dominant = _request(_mirror_arguments())
     contract = _request(_mirror_arguments(series_kind="contract", contract="jm2609"))
 
-    assert dominant == MainForceMirrorFuturesResearchRequest(
+    assert dominant == MainForceMirrorV2ResearchRequest(
         symbol="jm",
         series_kind=SeriesKind.ACTUAL_DOMINANT,
         contract=None,
@@ -2197,7 +2222,7 @@ def test_mirror_request_parses_exact_actual_dominant_and_contract_modes() -> Non
         since=date(2023, 1, 1),
         through=date(2026, 8, 18),
     )
-    assert contract == MainForceMirrorFuturesResearchRequest(
+    assert contract == MainForceMirrorV2ResearchRequest(
         symbol="jm",
         series_kind=SeriesKind.CONTRACT,
         contract="JM2609",
@@ -2224,7 +2249,7 @@ def test_invalid_mirror_identity_exits_two_before_any_service_construction(
     code = main(
         arguments,
         session_factory=lambda: nullcontext(object()),
-        main_force_mirror_futures_research_service_factory=lambda session: calls.append(
+        main_force_mirror_v2_research_service_factory=lambda session: calls.append(
             session
         ),
         stdout=stdout,
@@ -2235,7 +2260,7 @@ def test_invalid_mirror_identity_exits_two_before_any_service_construction(
     assert stdout.getvalue() == ""
     assert json.loads(stderr.getvalue()) == {
         "schema_version": 1,
-        "command": "research.main-force-mirror-futures",
+        "command": "research.main-force-mirror-v2",
         "status": "error",
         "readonly": True,
         "error": {"code": "CLI_ARGUMENT_INVALID", "type": "CliUsageError"},
@@ -2259,7 +2284,7 @@ def test_mirror_cli_uses_dedicated_factory_and_stable_readonly_json() -> None:
         candidate_validation_service_factory=lambda _session: unrelated_calls.append(
             "candidate"
         ),
-        main_force_mirror_futures_research_service_factory=lambda _session: service,
+        main_force_mirror_v2_research_service_factory=lambda _session: service,
         stdout=stdout,
         stderr=stderr,
     )
@@ -2268,7 +2293,7 @@ def test_mirror_cli_uses_dedicated_factory_and_stable_readonly_json() -> None:
     assert stderr.getvalue() == ""
     assert unrelated_calls == []
     assert service.requests == [
-        MainForceMirrorFuturesResearchRequest(
+        MainForceMirrorV2ResearchRequest(
             symbol="jm",
             series_kind=SeriesKind.ACTUAL_DOMINANT,
             contract=None,
@@ -2278,84 +2303,57 @@ def test_mirror_cli_uses_dedicated_factory_and_stable_readonly_json() -> None:
         )
     ]
     payload = json.loads(stdout.getvalue())
-    assert set(payload) == {
-        "schema_version",
-        "command",
-        "status",
-        "readonly",
-        "symbol",
-        "series_kind",
-        "contract",
-        "frequency",
-        "since",
-        "through",
-        "products",
-        "bars_valid_count",
-        "bars_state_ready_count",
-        "bars_caution_ready_count",
-        "event_count_long",
-        "event_count_short",
-        "conflict_count",
-        "events_per_1000_caution_ready_bars",
-        "missing_oi_count",
-        "segment_reset_count",
-        "timestamp_invalid_count",
-        "state_distribution",
-        "reason_code_distribution",
-        "score_distribution",
-        "horizon_summary",
-    }
-    assert payload["command"] == "research.main-force-mirror-futures"
+    assert payload["command"] == "research.main-force-mirror-v2"
     assert payload["status"] == "ok"
     assert payload["readonly"] is True
+    assert payload["research_only"] is True
     assert payload["series_kind"] == "actual_dominant"
     assert payload["contract"] is None
-    assert payload["events_per_1000_caution_ready_bars"] == 33.333333
-    assert payload["score_distribution"] == [70, 85, 100]
-    assert payload["horizon_summary"] == {
-        "1": {
-            "horizon_bars": 1,
-            "sample_count": 1,
-            "reversal_returns": [0.1],
-            "warning_mfe": [0.2],
-            "warning_mae": [0.05],
-        },
-        "3": {
-            "horizon_bars": 3,
-            "sample_count": 1,
-            "reversal_returns": [0.1],
-            "warning_mfe": [0.2],
-            "warning_mae": [0.05],
-        },
-        "5": {
-            "horizon_bars": 5,
-            "sample_count": 1,
-            "reversal_returns": [0.1],
-            "warning_mfe": [0.2],
-            "warning_mae": [0.05],
-        },
-        "10": {
-            "horizon_bars": 10,
-            "sample_count": 0,
-            "reversal_returns": [],
-            "warning_mfe": [],
-            "warning_mae": [],
-        },
+    assert payload["research_protocol"] == "main_force_mirror_v2_retrospective_v1"
+    assert payload["evaluation_classification"] == (
+        "retrospective_walk_forward_diagnostic"
+    )
+    assert payload["member_coverage"] == "0.75"
+    assert payload["caution_events_per_1000_ready_bars"] == "50"
+    assert payload["yearly"] == {
+        "2026": {
+            "jm": {
+                "long_build": {
+                    "instant_pressure": {
+                        "5": {
+                            "horizon_bars": 5,
+                            "sample_count": 2,
+                            "median_directional_return": "0.1",
+                            "median_reversal_return": "-0.1",
+                            "hit_rate": "1",
+                            "median_mfe": "0.12",
+                            "median_mae": "0.02",
+                        }
+                    }
+                }
+            }
+        }
     }
+    assert payload["sensitivity"]["2.0"]["member_strength_threshold"] == "2.0"
     rendered = stdout.getvalue().lower()
-    for forbidden in ("promotion", "recommendation", "profitability"):
+    for forbidden in (
+        "promotion",
+        "recommendation",
+        "profitability",
+        "sharpe",
+        "equity",
+    ):
         assert forbidden not in rendered
 
 
 def test_mirror_cli_renders_undefined_event_rate_as_json_null() -> None:
     result = replace(
         _mirror_result(),
-        bars_caution_ready_count=0,
-        event_count_long=0,
-        event_count_short=0,
-        events_per_1000_caution_ready_bars=None,
+        caution_ready_bars=0,
+        caution_events=0,
+        caution_events_per_1000_ready_bars=None,
     )
-    request = MainForceMirrorFuturesResearchRequest(
+    request = MainForceMirrorV2ResearchRequest(
         symbol="jm",
         series_kind=SeriesKind.ACTUAL_DOMINANT,
         contract=None,
@@ -2366,39 +2364,59 @@ def test_mirror_cli_renders_undefined_event_rate_as_json_null() -> None:
 
     payload = run_research_command(request, _FakeMirrorResearchService(result))
 
-    assert payload["events_per_1000_caution_ready_bars"] is None
+    assert payload["caution_events_per_1000_ready_bars"] is None
 
 
-def test_mirror_composition_wraps_only_the_market_data_service(
+def test_mirror_composition_reuses_one_market_and_v2_service_identity(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     market_data = type(
         "MarketDataReader",
         (),
         {
+            "query_page": lambda self, request: request,
             "query_actual_dominant_trading_days": lambda self, request: request,
             "query_contract_trading_days": lambda self, request: request,
         },
     )()
     sessions: list[object] = []
+    task5_service = type(
+        "Task5Service",
+        (),
+        {
+            "market_data": market_data,
+            "query_page": lambda self, request: request,
+        },
+    )()
 
-    def build_market_data(session: object) -> object:
+    def build_task5_service(session: object) -> object:
         sessions.append(session)
-        return market_data
+        return task5_service
+
+    def reject_duplicate_market_data(_session: object) -> object:
+        raise AssertionError(
+            "research composition must reuse the Task 5 service"
+        )
 
     monkeypatch.setattr(
         market_data_composition,
+        "build_main_force_mirror_v2_service",
+        build_task5_service,
+    )
+    monkeypatch.setattr(
+        market_data_composition,
         "build_market_data_service",
-        build_market_data,
+        reject_duplicate_market_data,
     )
     session = object()
 
-    service = market_data_composition.build_main_force_mirror_futures_research_service(
+    service = market_data_composition.build_main_force_mirror_v2_research_service(
         session  # type: ignore[arg-type]
     )
 
-    assert isinstance(service, MainForceMirrorFuturesResearchService)
-    assert service._market_data is market_data
+    assert isinstance(service, MainForceMirrorV2ResearchService)
+    assert service.mirror_service is task5_service
+    assert service.market_data is task5_service.market_data
     assert sessions == [session]
 
 

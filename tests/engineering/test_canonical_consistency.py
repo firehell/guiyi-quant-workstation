@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import ast
-import hashlib
 import json
 import re
 import subprocess
@@ -12,10 +11,6 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
-
-MAIN_FORCE_MIRROR_V0_SOURCE_SHA256 = (
-    "0f5b10db28d485c000846d721010efd3f1042aa7e4dae90fa479946539b5f503"
-)
 
 RETIRED_ASSETS = (
     "Makefile",
@@ -186,7 +181,7 @@ def test_current_architecture_facts_are_explicit() -> None:
 
     assert "MarketDataService" in architecture
     assert "HistoricalDataManager" in architecture
-    assert "MainForceMirrorFuturesResearchService" in architecture
+    assert "MainForceMirrorV2Service" in architecture
     assert "RQData" in architecture
     assert "auto_order=false" in project
     assert "active 60" in status
@@ -206,24 +201,6 @@ def test_futures_mirror_production_sources_have_no_test_only_injection() -> None
     ).read_text(encoding="utf-8")
 
     assert "__GUIYI_TEST_ALERT_MARKERS__" not in chart
-
-
-def test_futures_mirror_shadow_uses_a_static_kernel_dependency() -> None:
-    service = (
-        ROOT
-        / "services/quant-api/app/market_data/main_force_mirror_futures_research_service.py"
-    ).read_text(encoding="utf-8")
-
-    assert "import importlib" not in service
-    assert "_load_main_force_mirror_futures_kernel" not in service
-
-
-def test_main_force_mirror_v0_runtime_source_is_frozen() -> None:
-    source = (
-        ROOT / "packages/quant-core/guiyi_quant/indicators/main_force_mirror.py"
-    ).read_bytes()
-
-    assert hashlib.sha256(source).hexdigest() == MAIN_FORCE_MIRROR_V0_SOURCE_SHA256
 
 
 def test_retired_application_surfaces_are_not_restored() -> None:

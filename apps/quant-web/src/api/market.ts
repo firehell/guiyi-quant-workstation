@@ -3,6 +3,9 @@ import type {
   DominantContractListResponse,
   MarketBarsPageRequest,
   MarketBarsPageResponse,
+  MainForceMirrorV2PageRequest,
+  MainForceMirrorV2PageResponse,
+  MainForceMirrorV2PageWireResponse,
   MarketReadState,
   MarketFrequency,
   MarketRadarResponse,
@@ -11,7 +14,10 @@ import type {
   SubingFrequency,
   SubingResearchResponse,
 } from '@/types/market'
-import { normalizeSubingResearch } from '@/types/market'
+import {
+  normalizeMainForceMirrorV2Page,
+  normalizeSubingResearch,
+} from '@/types/market'
 
 export function getMarketDominants() {
   return request.get<never, DominantContractListResponse>('/market/dominants')
@@ -43,6 +49,13 @@ export function getSubingResearch(params: { symbol: string; frequency: SubingFre
       frequency: params.frequency,
     },
   }).then(normalizeSubingResearch)
+}
+
+export function getMainForceMirrorV2Page(params: MainForceMirrorV2PageRequest) {
+  return request.get<never, MainForceMirrorV2PageWireResponse>(
+    '/market/research/main-force-mirror',
+    { params },
+  ).then(normalizeMainForceMirrorV2Page) as Promise<MainForceMirrorV2PageResponse>
 }
 
 /** FastAPI serializes Decimal as strings; convert only at the display HTTP boundary. */

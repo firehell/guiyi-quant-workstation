@@ -28,10 +28,12 @@ from app.market_data.jdj_candidate_validation import (
     JdjRollingCandidateFold,
 )
 from app.market_data.jdj_events import JdjTriggerEvent
-from app.market_data.main_force_mirror_futures_research_service import (
-    MainForceMirrorFuturesHorizonSummary,
-    MainForceMirrorFuturesResearchRequest,
-    MainForceMirrorFuturesResearchResult,
+from app.market_data.main_force_mirror_v2_research_service import (
+    MainForceMirrorV2GroupSpread,
+    MainForceMirrorV2HorizonSummary,
+    MainForceMirrorV2ResearchRequest,
+    MainForceMirrorV2ResearchResult,
+    MainForceMirrorV2SensitivitySummary,
 )
 from app.market_data.multi_candidate_robustness import (
     CommonPriceHorizonSummary,
@@ -99,11 +101,11 @@ class _CandidateValidationService(Protocol):
     ): ...
 
 
-class _MainForceMirrorFuturesResearchService(Protocol):
+class _MainForceMirrorV2ResearchService(Protocol):
     def run(
         self,
-        request: MainForceMirrorFuturesResearchRequest,
-    ) -> MainForceMirrorFuturesResearchResult: ...
+        request: MainForceMirrorV2ResearchRequest,
+    ) -> MainForceMirrorV2ResearchResult: ...
 
 
 class _MultiCandidateRobustnessService(Protocol):
@@ -117,7 +119,7 @@ ResearchRequest: TypeAlias = (
     | LifecycleResearchRequest
     | JdjResearchRequest
     | CandidateValidationRequest
-    | MainForceMirrorFuturesResearchRequest
+    | MainForceMirrorV2ResearchRequest
     | NStructureResearchRequest
     | MultiCandidateRobustnessRequest
 )
@@ -127,8 +129,8 @@ def build_research_request(args: argparse.Namespace) -> ResearchRequest:
     """Convert CLI strings into one immutable research request."""
     if args.research_command == "candidate-robustness":
         return MultiCandidateRobustnessRequest(protocol_id=args.protocol)
-    if args.research_command == "main-force-mirror-futures":
-        return MainForceMirrorFuturesResearchRequest(
+    if args.research_command == "main-force-mirror-v2":
+        return MainForceMirrorV2ResearchRequest(
             symbol=args.symbol,
             series_kind=SeriesKind(args.series_kind),
             contract=args.contract,
@@ -192,9 +194,9 @@ def run_research_command(
     if isinstance(request, MultiCandidateRobustnessRequest):
         robustness_service = cast(_MultiCandidateRobustnessService, service)
         return _multi_candidate_robustness_payload(robustness_service.run(request))
-    if isinstance(request, MainForceMirrorFuturesResearchRequest):
-        mirror_service = cast(_MainForceMirrorFuturesResearchService, service)
-        return _main_force_mirror_futures_payload(
+    if isinstance(request, MainForceMirrorV2ResearchRequest):
+        mirror_service = cast(_MainForceMirrorV2ResearchService, service)
+        return _main_force_mirror_v2_payload(
             request,
             mirror_service.run(request),
         )
@@ -286,40 +288,48 @@ def _jdj_json_value(value: object) -> object:
     return value
 
 
-def _main_force_mirror_futures_payload(
-    request: MainForceMirrorFuturesResearchRequest,
-    result: MainForceMirrorFuturesResearchResult,
+def _main_force_mirror_v2_payload(
+    request: MainForceMirrorV2ResearchRequest,
+    result: MainForceMirrorV2ResearchResult,
 ) -> dict[str, object]:
     return {
         "schema_version": 1,
-        "command": "research.main-force-mirror-futures",
+        "command": "research.main-force-mirror-v2",
         "status": "ok",
         "readonly": True,
+        "research_only": True,
         "symbol": request.symbol,
         "series_kind": request.series_kind.value,
         "contract": request.contract,
         "frequency": request.frequency.value,
         "since": request.since.isoformat(),
         "through": request.through.isoformat(),
-        "products": list(result.products),
-        "bars_valid_count": result.bars_valid_count,
-        "bars_state_ready_count": result.bars_state_ready_count,
-        "bars_caution_ready_count": result.bars_caution_ready_count,
-        "event_count_long": result.event_count_long,
-        "event_count_short": result.event_count_short,
-        "conflict_count": result.conflict_count,
-        "events_per_1000_caution_ready_bars": (
-            result.events_per_1000_caution_ready_bars
+        "indicator_code": result.indicator_code,
+        "indicator_version": result.indicator_version,
+        "parameters_hash": result.parameters_hash,
+        "research_protocol": result.research_protocol,
+        "evaluation_classification": result.evaluation_classification,
+        "prospective_oos_starts_after": (
+            result.prospective_oos_starts_after.isoformat()
         ),
-        "missing_oi_count": result.missing_oi_count,
-        "segment_reset_count": result.segment_reset_count,
-        "timestamp_invalid_count": result.timestamp_invalid_count,
-        "state_distribution": dict(result.state_distribution),
-        "reason_code_distribution": dict(result.reason_code_distribution),
-        "score_distribution": list(result.score_distribution),
-        "horizon_summary": {
-            str(horizon): _main_force_mirror_futures_horizon_payload(summary)
-            for horizon, summary in result.horizon_summary.items()
+        "member_dataset_id": result.member_dataset_id,
+        "products": list(result.products),
+        "member_coverage": _optional_decimal(result.member_coverage),
+        "caution_ready_bars": result.caution_ready_bars,
+        "caution_events": result.caution_events,
+        "caution_events_per_1000_ready_bars": _optional_decimal(
+            result.caution_events_per_1000_ready_bars
+        ),
+        "yearly": _main_force_mirror_v2_summary_tree(result.yearly),
+        "by_product": _main_force_mirror_v2_summary_tree(result.by_product),
+        "pooled": _main_force_mirror_v2_summary_tree(result.pooled),
+        "top_bottom_spreads": {
+            str(horizon): _main_force_mirror_v2_spread_payload(spread)
+            for horizon, spread in result.top_bottom_spreads.items()
+        },
+        "sensitivity": {
+            str(threshold): _main_force_mirror_v2_sensitivity_payload(summary)
+            for threshold, summary in result.sensitivity.items()
         },
     }
 
@@ -471,15 +481,59 @@ def _relationship_payload(value: object) -> dict[str, object]:
     return payload
 
 
-def _main_force_mirror_futures_horizon_payload(
-    summary: MainForceMirrorFuturesHorizonSummary,
+def _main_force_mirror_v2_horizon_payload(
+    summary: MainForceMirrorV2HorizonSummary,
 ) -> dict[str, object]:
     return {
         "horizon_bars": summary.horizon_bars,
         "sample_count": summary.sample_count,
-        "reversal_returns": list(summary.reversal_returns),
-        "warning_mfe": list(summary.warning_mfe),
-        "warning_mae": list(summary.warning_mae),
+        "median_directional_return": _optional_decimal(
+            summary.median_directional_return
+        ),
+        "median_reversal_return": _optional_decimal(
+            summary.median_reversal_return
+        ),
+        "hit_rate": _optional_decimal(summary.hit_rate),
+        "median_mfe": _optional_decimal(summary.median_mfe),
+        "median_mae": _optional_decimal(summary.median_mae),
+    }
+
+
+def _main_force_mirror_v2_summary_tree(value: object) -> object:
+    if isinstance(value, MainForceMirrorV2HorizonSummary):
+        return _main_force_mirror_v2_horizon_payload(value)
+    if isinstance(value, Mapping):
+        return {
+            str(key): _main_force_mirror_v2_summary_tree(item)
+            for key, item in value.items()
+        }
+    raise TypeError("main force mirror V2 summary tree is invalid")
+
+
+def _main_force_mirror_v2_spread_payload(
+    spread: MainForceMirrorV2GroupSpread,
+) -> dict[str, object]:
+    return {
+        "horizon_bars": spread.horizon_bars,
+        "top_group": spread.top_group,
+        "bottom_group": spread.bottom_group,
+        "directional_return_spread": _optional_decimal(
+            spread.directional_return_spread
+        ),
+        "top_sample_count": spread.top_sample_count,
+        "bottom_sample_count": spread.bottom_sample_count,
+    }
+
+
+def _main_force_mirror_v2_sensitivity_payload(
+    summary: MainForceMirrorV2SensitivitySummary,
+) -> dict[str, object]:
+    return {
+        "member_strength_threshold": _optional_decimal(
+            summary.member_strength_threshold
+        ),
+        "by_product": _main_force_mirror_v2_summary_tree(summary.by_product),
+        "pooled": _main_force_mirror_v2_summary_tree(summary.pooled),
     }
 
 

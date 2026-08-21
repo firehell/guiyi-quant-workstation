@@ -38,7 +38,12 @@
   Market display identity 的修复。SuBing 的历史 cutoff
   仍为 strict cursor，任何 Factor/Lifecycle Historical Bar 都必须满足 `bar_end <= cutoff`；
   `MarketDataService`、Factor/Signal/Lifecycle 公式、Alert Rule/Scope 与 Event 语义未放宽。
-- 主力照妖镜 V0、主力照妖镜·期货 V1、SuBing Lifecycle V2、N Structure V1 与 JDJ 1m Candidate V1 都只属于
+- 主力照妖镜唯一 active identity 为 `main_force_mirror_v2`：仅支持 `60m +
+  contract|actual_dominant` Historical confirmed observation，并只读钉住的不可变
+  `main_force_member_rank_v1` snapshot。Web 底部副图只保留 `MACD | 主力照妖镜 V2`；
+  V0/V1 已退役，仅可从 Git history 追溯。真实 member snapshot 与 retrospective matrix 未执行，
+  Live/Alert/notification 仍不接入，`auto_order=false`。
+- SuBing Lifecycle V2、N Structure V1 与 JDJ 1m Candidate V1 仍只属于
   observation/research 面；不进入订单路径，也不因已有代码或 retrospective evidence 自动晋升。
 
 ## 当前研究证据

@@ -14,9 +14,11 @@ import os
 from pathlib import Path
 from typing import cast
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.env import PROJECT_ROOT
+from app.models import Contract
 from app.market_data.catalog import MarketCatalog
 from app.market_data.candidate_validation_policy import (
     load_candidate_manifest,
@@ -33,11 +35,19 @@ from app.market_data.market_read_service import MarketReadService
 from app.market_data.market_phase import MarketPhaseResolver
 from app.market_data.operational_universe import load_operational_products
 from app.market_data.market_data_service import MarketDataService
+from app.market_data.main_force_mirror_v2_service import (
+    MainForceMirrorV2Error,
+    MainForceMirrorV2Service,
+)
+from app.market_data.main_force_mirror_v2_research_service import (
+    MainForceMirrorV2ResearchService,
+)
+from app.market_data.member_rank_snapshot import (
+    MemberRankSnapshotError,
+    MemberRankSnapshotRepository,
+)
 from app.market_data.market_radar import MarketRadarService
 from app.market_data.market_research_service import MarketResearchService
-from app.market_data.main_force_mirror_futures_research_service import (
-    MainForceMirrorFuturesResearchService,
-)
 from app.market_data.actual_dominant_research import (
     ActualDominantResearchSegmentLoader,
 )
@@ -116,6 +126,74 @@ def canonical_root() -> Path:
     return root.resolve()
 
 
+def research_data_root() -> Path:
+    """Resolve the explicit Git-external research-data root without creating it."""
+    configured = os.getenv("GUIYI_RESEARCH_DATA_ROOT")
+    if configured is None or not configured.strip():
+        from app.market_data.member_rank_snapshot_builder import (
+            MemberRankSnapshotBuildError,
+        )
+
+        raise MemberRankSnapshotBuildError("MEMBER_SNAPSHOT_ROOT_UNCONFIGURED")
+    return Path(configured).resolve()
+
+
+class _CatalogMemberRankPlanningSource:
+    """Expose existing Catalog rank-1 and trading-calendar facts to the builder."""
+
+    def __init__(self, catalog: MarketCatalog) -> None:
+        self._catalog = catalog
+
+    def rank1_map(self, symbol: str, since, through):
+        return self._catalog.main_map(symbol, since, through)
+
+    def trading_days(self, symbol: str, since, through):
+        return self._catalog.trading_days(symbol, since, through)
+
+
+class _CatalogMemberRankVerifiers:
+    """Read-only Calendar/Contract facts required by the pinned Task 1 reader."""
+
+    def __init__(self, session: Session, catalog: MarketCatalog) -> None:
+        self._session = session
+        self._catalog = catalog
+
+    def is_trading_day(self, symbol: str, trade_date) -> bool:
+        return self._catalog.trading_days(symbol, trade_date, trade_date) == (trade_date,)
+
+    def is_contract_valid(self, physical_contract: str, trade_date) -> bool:
+        return self._session.scalar(
+            select(Contract.contract_code).where(
+                Contract.contract_code == physical_contract,
+                Contract.listed_date.is_not(None),
+                Contract.listed_date <= trade_date,
+                Contract.expired_date.is_not(None),
+                Contract.expired_date > trade_date,
+            )
+        ) is not None
+
+
+def build_member_rank_snapshot_builder(session: Session):
+    """Compose a snapshot builder with lazy RQData construction only on apply."""
+    from app.market_data.member_rank_snapshot_builder import MemberRankSnapshotBuilder
+    from app.market_data.rqdata_adapter import RQDataClient, RQDataMemberRankProvider
+
+    catalog = MarketCatalog(session, canonical_root())
+    verifiers = _CatalogMemberRankVerifiers(session, catalog)
+
+    def provider_factory() -> RQDataMemberRankProvider:
+        client = RQDataClient()
+        return RQDataMemberRankProvider(client, client_version=client.client_version)
+
+    return MemberRankSnapshotBuilder(
+        research_data_root(),
+        rank1_source=_CatalogMemberRankPlanningSource(catalog),
+        trading_calendar=verifiers,
+        contract_validity=verifiers,
+        provider_factory=provider_factory,
+    )
+
+
 def build_historical_data_manager(session: Session) -> HistoricalDataManager:
     """构造历史数据维护管理器：含 RQData provider、元数据同步与 session 边界校验 store。"""
     from app.market_data.coverage_source import DatabaseCoverageSource
@@ -163,16 +241,71 @@ def build_market_data_service(session: Session) -> MarketDataService:
     return MarketDataService(MarketCatalog(session, root), CanonicalMonthlyStore(root))
 
 
+def member_rank_repository_from_env(
+    session: Session | None,
+) -> MemberRankSnapshotRepository | None:
+    """Resolve only an exact configured member snapshot; never discover latest."""
+    root_value = os.getenv("GUIYI_RESEARCH_DATA_ROOT")
+    dataset_id = os.getenv("GUIYI_MAIN_FORCE_MEMBER_RANK_DATASET_ID")
+    if root_value is None and dataset_id is None:
+        return None
+    if (
+        root_value is None
+        or dataset_id is None
+        or not root_value.strip()
+        or not dataset_id.strip()
+    ):
+        raise MainForceMirrorV2Error(
+            "MFM_V2_MEMBER_DATASET_IDENTITY_CONFLICT"
+        )
+    try:
+        if session is None:
+            return MemberRankSnapshotRepository(Path(root_value), dataset_id)
+        catalog = MarketCatalog(session, canonical_root())
+        verifiers = _CatalogMemberRankVerifiers(session, catalog)
+        return MemberRankSnapshotRepository(
+            Path(root_value),
+            dataset_id,
+            trading_calendar=verifiers,
+            contract_validity=verifiers,
+        )
+    except MemberRankSnapshotError:
+        raise MainForceMirrorV2Error("MFM_V2_MEMBER_DATASET_INVALID") from None
+
+
+def build_main_force_mirror_v2_service(
+    session: Session,
+) -> MainForceMirrorV2Service:
+    """Compose the historical-only V2 page service without write dependencies."""
+    from app.market_data.coverage_source import DatabaseCoverageSource
+
+    market_data = build_market_data_service(session)
+    return MainForceMirrorV2Service(
+        market_data=market_data,
+        segment_loader=ActualDominantResearchSegmentLoader(market_data),
+        coverage=DatabaseCoverageSource(
+            session,
+            _PRODUCT_STARTS,
+            history_floor_path=_HISTORY_FLOOR,
+        ),
+        member_repository=member_rank_repository_from_env(session),
+    )
+
+
 def build_market_research_service(session: Session) -> MarketResearchService:
     """构造 Product Workspace 的只读研究服务。"""
     return MarketResearchService(build_market_data_service(session))
 
 
-def build_main_force_mirror_futures_research_service(
+def build_main_force_mirror_v2_research_service(
     session: Session,
-) -> MainForceMirrorFuturesResearchService:
-    """Compose read-only Futures Mirror Shadow over MarketDataService only."""
-    return MainForceMirrorFuturesResearchService(build_market_data_service(session))
+) -> MainForceMirrorV2ResearchService:
+    """Compose retrospective V2 around the exact API service identities."""
+    mirror_service = build_main_force_mirror_v2_service(session)
+    return MainForceMirrorV2ResearchService(
+        market_data=mirror_service.market_data,
+        mirror_service=mirror_service,
+    )
 
 
 def build_market_radar_service(session: Session) -> MarketRadarService:

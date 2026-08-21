@@ -16,7 +16,7 @@ flowchart TB
       WEB["Market Web"]
       API["Market API"]
       CLI["guiyi data update/refresh/audit"]
-      RCLI["guiyi research<br/>calibration / lifecycle / n-structure / jdj-1m / candidate-validation / robustness / futures-mirror"]
+      RCLI["guiyi research<br/>calibration / lifecycle / n-structure / jdj-1m / candidate-validation / robustness / mirror-v2"]
       ALERTAPI["Alert API"]
       ERAPI["Execution Review API"]
     end
@@ -44,7 +44,8 @@ flowchart TB
       NCV["N Candidate Report<br/>source-specific"]
       JCV["JDJ Candidate Reports<br/>three source-specific baselines"]
       MCR["MultiCandidateRobustnessService<br/>temporal / active60 / relationship"]
-      MFM["MainForceMirrorFuturesResearchService<br/>historical-only Shadow"]
+      MFM["MainForceMirrorV2Service / ResearchService<br/>60m historical confirmed observation"]
+      MMS["pinned immutable<br/>main_force_member_rank_v1 snapshot"]
     end
     subgraph AlertApp["Alert Application Domain"]
       AS["AlertService / Scope / Event"]
@@ -89,6 +90,7 @@ flowchart TB
     SL --> MCR
     NS --> MCR
     RCLI --> MFM --> MQ
+    MMS --> MFM
     WEB --> ALERTAPI --> AS
     WEB --> ERAPI --> ERS
     ERS --> ER4 --> EPG
@@ -177,10 +179,15 @@ flowchart TB
   Candidate/公式/参数，不做一对一 greedy matching、score、winner、rank 或 promotion，不进入
   DB/Canonical/Redis、Alert、Runtime 或订单路径。两条 Candidate 的 prospective OOS 仍由各自
   exact Protocol 独立累积。
-  `MainForceMirrorFuturesResearchService` 仅通过 `MarketDataService` 的
+  `MainForceMirrorV2Service` 与 `MainForceMirrorV2ResearchService` 仅通过 `MarketDataService` 的
   `ActualDominantTradingDayQuery` / `ContractTradingDayQuery` 读取 60m Historical Canonical，
-  把每根 Bar 绑定到唯一物理合约后调用 Python Indicator Kernel；结果只由只读 CLI
-  输出 stdout JSON，不读 Redis/provider，不写 DB/Canonical，不进入 Alert、Runtime 或订单路径。
+  把每根 Bar 绑定到唯一物理合约，并只读钉住的不可变
+  `main_force_member_rank_v1` snapshot 后调用 Python Indicator Kernel。唯一 active identity 为
+  `main_force_mirror_v2`，表面仅为 `60m + contract|actual_dominant` Historical confirmed observation；
+  Web 底部副图只有 `MACD | 主力照妖镜 V2`。V0/V1 已退役，仅从 Git history 追溯。
+  结果只由只读 CLI 输出 stdout JSON，不读 Redis/provider，不写 DB/Canonical，不进入
+  Live/Alert/notification/Runtime 或订单路径，`auto_order=false`。真实 member snapshot 与
+  retrospective matrix 本次未执行。
 - 基础设施按外部责任分为 `DatabaseCoverageSource` 与 `RQDataMarketAdapter`，共用稳定的
   `InfrastructureError`；不再维护一个混合 DB coverage、provider 调用与数据标准化的巨型模块。
 - active 60 的展示名称与一级研究板块由 `data/universe/product_sectors.csv` 统一提供，
