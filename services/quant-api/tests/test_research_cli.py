@@ -106,6 +106,10 @@ from app.research.candidate_convergence.five_candidate_dossier import (
 from app.research.candidate_convergence.five_candidate_dossier_service import (
     FiveCandidateResearchDossierService,
 )
+from app.research.candidate_convergence.five_candidate_relationships import (
+    FiveCandidateRelationshipRequest,
+    FiveCandidateRelationshipSourceError,
+)
 
 
 def _arguments(
@@ -162,7 +166,7 @@ def _lifecycle_arguments() -> list[str]:
     ]
 
 
-def test_research_parser_exposes_only_the_eight_readonly_commands() -> None:
+def test_research_parser_exposes_only_the_nine_readonly_commands() -> None:
     parser = build_parser()
     domain_action = next(
         action for action in parser._actions if action.dest == "domain"
@@ -176,6 +180,7 @@ def test_research_parser_exposes_only_the_eight_readonly_commands() -> None:
 
     assert set(command_action.choices) == {
         "candidate-dossier",
+        "candidate-relationships",
         "candidate-robustness",
         "candidate-validation",
         "jdj-1m",
@@ -2892,6 +2897,7 @@ def test_candidate_dossier_parser_builds_exact_request() -> None:
     (
         ("--since", "2023-01-01"),
         ("--through", "2026-08-20"),
+        ("--window", "2023-01-01..2026-08-20"),
         ("--symbol", "jm"),
         ("--candidate", "subing_lifecycle_v2_candidate_v1"),
         ("--products", "jm"),
@@ -3156,4 +3162,194 @@ def test_candidate_dossier_source_error_is_stable_and_redacted() -> None:
     assert "/private/tmp/source.json" not in stderr.getvalue()
     assert '"source":"secret"' not in stderr.getvalue()
     assert "a" * 64 not in stderr.getvalue()
+    assert "Traceback" not in stderr.getvalue()
+
+
+def test_candidate_relationships_parser_builds_exact_request() -> None:
+    args = build_parser().parse_args(
+        [
+            "research",
+            "candidate-relationships",
+            "--protocol",
+            "five_candidate_relationship_topology_v1",
+        ]
+    )
+
+    assert build_research_request(args) == FiveCandidateRelationshipRequest(
+        "five_candidate_relationship_topology_v1"
+    )
+
+
+@pytest.mark.parametrize(
+    "extra_arguments",
+    (
+        ("--since", "2023-01-01"),
+        ("--through", "2026-08-20"),
+        ("--symbol", "jm"),
+        ("--candidate", "jdj_trend_follow_1m_candidate_v1"),
+        ("--products", "jm"),
+        ("--threshold", "1"),
+        ("--score", "1"),
+        ("--rank", "1"),
+    ),
+)
+def test_candidate_relationships_parser_rejects_out_of_contract_flags(
+    extra_arguments: tuple[str, str],
+) -> None:
+    with pytest.raises(CliUsageError):
+        build_parser().parse_args(
+            [
+                "research",
+                "candidate-relationships",
+                "--protocol",
+                "five_candidate_relationship_topology_v1",
+                *extra_arguments,
+            ]
+        )
+
+
+def test_candidate_relationships_parser_rejects_unknown_protocol() -> None:
+    with pytest.raises(CliUsageError):
+        build_parser().parse_args(
+            [
+                "research",
+                "candidate-relationships",
+                "--protocol",
+                "five_candidate_relationship_topology_v2",
+            ]
+        )
+
+
+class _CountingSessionContext:
+    def __init__(self, session: object) -> None:
+        self.session = session
+        self.entries = 0
+
+    def __enter__(self) -> object:
+        self.entries += 1
+        return self.session
+
+    def __exit__(self, *_args: object) -> None:
+        return None
+
+
+class _FakeFiveCandidateRelationshipService:
+    def __init__(self, report=None, error: Exception | None = None) -> None:
+        self.report = report
+        self.error = error
+        self.requests: list[FiveCandidateRelationshipRequest] = []
+
+    def run(self, request: FiveCandidateRelationshipRequest):
+        self.requests.append(request)
+        if self.error is not None:
+            raise self.error
+        return self.report
+
+
+def _minimal_relationship_report():
+    return SimpleNamespace(
+        schema_version=1,
+        command=(
+            "guiyi research candidate-relationships "
+            "--protocol five_candidate_relationship_topology_v1"
+        ),
+        status="ok",
+        protocol_id="five_candidate_relationship_topology_v1",
+        frozen_at=datetime.fromisoformat("2026-08-22T14:01:54+08:00"),
+        research_only=True,
+        readonly=True,
+        prospective_consumed=False,
+        candidate_order=(),
+        pair_order=(),
+        relationship_catalog=(),
+        existing_relationship_references=(),
+        n_jdj_dependency_results=(),
+        jdj_exact_overlap_results=(),
+        quality_flags=(),
+        safety={},
+    )
+
+
+def test_candidate_relationships_cli_enters_exactly_one_session_context() -> None:
+    session = object()
+    context = _CountingSessionContext(session)
+    service = _FakeFiveCandidateRelationshipService(
+        _minimal_relationship_report()
+    )
+    factory_sessions: list[object] = []
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+
+    def relationship_factory(received_session: object):
+        factory_sessions.append(received_session)
+        return service
+
+    code = main(
+        [
+            "research",
+            "candidate-relationships",
+            "--protocol",
+            "five_candidate_relationship_topology_v1",
+        ],
+        session_factory=lambda: context,
+        candidate_relationship_service_factory=relationship_factory,
+        stdout=stdout,
+        stderr=stderr,
+    )
+
+    assert code == 0
+    assert stderr.getvalue() == ""
+    assert context.entries == 1
+    assert factory_sessions == [session]
+    assert service.requests == [
+        FiveCandidateRelationshipRequest(
+            "five_candidate_relationship_topology_v1"
+        )
+    ]
+    assert json.loads(stdout.getvalue())["command"] == (
+        "guiyi research candidate-relationships "
+        "--protocol five_candidate_relationship_topology_v1"
+    )
+
+
+def test_candidate_relationships_source_error_is_stable_and_redacted() -> None:
+    error = FiveCandidateRelationshipSourceError()
+    error.args = (
+        "/private/tmp/relationship-source.json "
+        '{"source":"secret relationship content"} '
+        + "b" * 64,
+    )
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+
+    code = main(
+        [
+            "research",
+            "candidate-relationships",
+            "--protocol",
+            "five_candidate_relationship_topology_v1",
+        ],
+        session_factory=lambda: _CountingSessionContext(object()),
+        candidate_relationship_service_factory=lambda _session: (
+            _FakeFiveCandidateRelationshipService(error=error)
+        ),
+        stdout=stdout,
+        stderr=stderr,
+    )
+
+    assert code == 1
+    assert stdout.getvalue() == ""
+    assert json.loads(stderr.getvalue()) == {
+        "schema_version": 1,
+        "command": "research.candidate-relationships",
+        "status": "error",
+        "readonly": True,
+        "error": {
+            "code": "FIVE_CANDIDATE_RELATIONSHIP_SOURCE_INVALID",
+            "type": "FiveCandidateRelationshipSourceError",
+        },
+    }
+    assert "/private/tmp/relationship-source.json" not in stderr.getvalue()
+    assert "secret relationship content" not in stderr.getvalue()
+    assert "b" * 64 not in stderr.getvalue()
     assert "Traceback" not in stderr.getvalue()

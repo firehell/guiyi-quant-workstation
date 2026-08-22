@@ -67,6 +67,17 @@ from app.research.candidate_convergence.five_candidate_dossier import (
 from app.research.candidate_convergence.five_candidate_dossier_service import (
     FiveCandidateResearchDossierService,
 )
+from app.research.candidate_convergence.artifact_source import (
+    verify_json_artifact,
+)
+from app.research.candidate_convergence.five_candidate_relationships import (
+    FiveCandidateRelationshipSourceError,
+    load_five_candidate_relationship_protocol,
+)
+from app.research.candidate_convergence.five_candidate_relationships_service import (
+    FiveCandidateRelationshipService,
+)
+from app.core.env import PROJECT_ROOT
 
 
 def build_subing_calibration_research_service(
@@ -83,6 +94,30 @@ def build_five_candidate_dossier_service() -> FiveCandidateResearchDossierServic
     """Compose the artifact-only five-candidate dossier without Runtime state."""
     return FiveCandidateResearchDossierService(
         load_five_candidate_dossier_protocol()
+    )
+
+
+def build_five_candidate_relationship_service(
+    session: Session,
+) -> FiveCandidateRelationshipService:
+    """Compose exact Phase 8B source verification and one JDJ service."""
+    protocol = load_five_candidate_relationship_protocol()
+    dossier_source = verify_json_artifact(
+        protocol.dossier_source,
+        PROJECT_ROOT,
+        FiveCandidateRelationshipSourceError,
+    )
+    subing_n_source = verify_json_artifact(
+        protocol.subing_n_source,
+        PROJECT_ROOT,
+        FiveCandidateRelationshipSourceError,
+    )
+    jdj_research = build_jdj_research_service(session)
+    return FiveCandidateRelationshipService(
+        protocol,
+        jdj_research=jdj_research,
+        dossier_source=dossier_source,
+        subing_n_source=subing_n_source,
     )
 
 

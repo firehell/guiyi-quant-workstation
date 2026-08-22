@@ -53,6 +53,7 @@ from app.market_data.historical_data_manager import HistoricalDataManager
 from app.market_data.product_retirement import ProductRetiredError
 from app.research.composition import (
     build_five_candidate_dossier_service,
+    build_five_candidate_relationship_service,
     build_jdj_active60_robustness_service,
     build_jdj_candidate_validation_service,
     build_jdj_research_service,
@@ -69,6 +70,9 @@ from app.research.robustness.jdj_robustness import (
 )
 from app.research.candidate_convergence.five_candidate_dossier import (
     FiveCandidateDossierRequest,
+)
+from app.research.candidate_convergence.five_candidate_relationships import (
+    FiveCandidateRelationshipRequest,
 )
 from app.services.runtime_health import build_runtime_health
 
@@ -194,6 +198,9 @@ def main(
     candidate_dossier_service_factory: ArtifactResearchServiceFactory = (
         build_five_candidate_dossier_service
     ),
+    candidate_relationship_service_factory: ResearchServiceFactory = (
+        build_five_candidate_relationship_service
+    ),
     execution_review_roll_marker_state: RollMarkerState = (
         _execution_review_roll_marker_state
     ),
@@ -305,6 +312,11 @@ def main(
                         service = main_force_mirror_v2_research_service_factory(
                             session
                         )
+                    elif isinstance(
+                        research_request,
+                        FiveCandidateRelationshipRequest,
+                    ):
+                        service = candidate_relationship_service_factory(session)
                     elif args.research_command == "subing-calibration":
                         service = research_service_factory(session)
                     else:

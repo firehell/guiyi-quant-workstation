@@ -10,6 +10,11 @@ from pathlib import Path
 import pytest
 
 from app.core.env import PROJECT_ROOT
+from app.guiyi_cli import research_payloads
+from app.research import composition
+from app.research.candidate_convergence.artifact_source import (
+    verify_json_artifact,
+)
 from app.research.candidate_convergence.five_candidate_relationships import (
     CandidateDependencyResult,
     DependencyRole,
@@ -19,6 +24,7 @@ from app.research.candidate_convergence.five_candidate_relationships import (
     FiveCandidateRelationshipReport,
     FiveCandidateRelationshipReportError,
     FiveCandidateRelationshipRequest,
+    FiveCandidateRelationshipSourceError,
     JdjExactOverlapResult,
     RelationshipCatalogEntry,
     RelationshipKind,
@@ -1253,3 +1259,169 @@ def test_overlap_projection_does_not_downgrade_batch_or_event_corruption() -> No
         _dependency_service(
             _DependencyRunner({PRODUCTS[0]: duplicate})
         ).project_jdj_exact_overlaps()
+
+
+def _verified_relationship_sources():
+    protocol = load_five_candidate_relationship_protocol()
+    return (
+        verify_json_artifact(
+            protocol.dossier_source,
+            PROJECT_ROOT,
+            FiveCandidateRelationshipSourceError,
+        ),
+        verify_json_artifact(
+            protocol.subing_n_source,
+            PROJECT_ROOT,
+            FiveCandidateRelationshipSourceError,
+        ),
+    )
+
+
+def test_relationship_service_builds_complete_report_from_verified_sources() -> None:
+    protocol = load_five_candidate_relationship_protocol()
+    dossier_source, subing_n_source = _verified_relationship_sources()
+    service = FiveCandidateRelationshipService(
+        protocol,
+        jdj_research=_DependencyRunner(),
+        dossier_source=dossier_source,
+        subing_n_source=subing_n_source,
+    )
+
+    report = service.run(
+        FiveCandidateRelationshipRequest(protocol.protocol_id)
+    )
+
+    assert report.command == (
+        "guiyi research candidate-relationships "
+        "--protocol five_candidate_relationship_topology_v1"
+    )
+    assert len(report.relationship_catalog) == 10
+    assert len(report.n_jdj_dependency_results) == 180
+    assert len(report.jdj_exact_overlap_results) == 180
+
+
+def test_relationship_payload_is_exact_compact_and_deterministic() -> None:
+    payload = research_payloads._five_candidate_relationship_payload(_report())
+    first = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    second = json.dumps(
+        research_payloads._five_candidate_relationship_payload(_report()),
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+
+    def keys(value: object) -> set[str]:
+        if isinstance(value, dict):
+            return set(value).union(
+                *(keys(item) for item in value.values())
+            )
+        if isinstance(value, list):
+            return set().union(*(keys(item) for item in value), set())
+        return set()
+
+    forbidden = {
+        "score",
+        "rank",
+        "winner",
+        "best",
+        "keep",
+        "drop",
+        "iterate",
+        "promote",
+        "combined_return",
+        "overlap_return",
+        "expected_profit",
+        "pnl",
+    }
+    assert first == second
+    assert payload["command"] == (
+        "guiyi research candidate-relationships "
+        "--protocol five_candidate_relationship_topology_v1"
+    )
+    assert len(payload["relationship_catalog"]) == 10
+    assert len(payload["n_jdj_dependency_results"]) == 180
+    assert len(payload["jdj_exact_overlap_results"]) == 180
+    assert keys(payload).isdisjoint(forbidden)
+    assert "events" not in keys(payload)
+    assert "event_outcomes" not in keys(payload)
+    assert "cross_symbol_results" not in keys(payload)
+    assert "relationships" not in keys(payload)
+
+
+def test_relationship_composition_uses_exact_builder_order(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    protocol = load_five_candidate_relationship_protocol()
+    calls: list[object] = []
+    original_verify = verify_json_artifact
+    runner = _DependencyRunner()
+    session = object()
+    built_service = object()
+
+    def load_protocol():
+        calls.append("load-protocol")
+        return protocol
+
+    def verify_source(ref, project_root, error_type):
+        calls.append(("verify", ref.artifact_id))
+        return original_verify(ref, project_root, error_type)
+
+    def build_jdj(received_session):
+        calls.append(("build-jdj", received_session))
+        return runner
+
+    def forbidden(*_args: object, **_kwargs: object) -> None:
+        pytest.fail("relationship builder must not call other research builders")
+
+    def build_relationship(
+        received_protocol,
+        *,
+        jdj_research,
+        dossier_source,
+        subing_n_source,
+    ):
+        calls.append("build-relationship")
+        assert received_protocol is protocol
+        assert jdj_research is runner
+        assert dossier_source.ref is protocol.dossier_source
+        assert subing_n_source.ref is protocol.subing_n_source
+        return built_service
+
+    monkeypatch.setattr(
+        composition,
+        "load_five_candidate_relationship_protocol",
+        load_protocol,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        composition,
+        "verify_json_artifact",
+        verify_source,
+        raising=False,
+    )
+    monkeypatch.setattr(composition, "build_jdj_research_service", build_jdj)
+    monkeypatch.setattr(
+        composition,
+        "FiveCandidateRelationshipService",
+        build_relationship,
+    )
+    monkeypatch.setattr(
+        composition,
+        "build_n_structure_research_service",
+        forbidden,
+    )
+    monkeypatch.setattr(
+        composition,
+        "build_multi_candidate_robustness_service",
+        forbidden,
+    )
+
+    service = composition.build_five_candidate_relationship_service(session)
+
+    assert calls == [
+        "load-protocol",
+        ("verify", "five_candidate_research_dossier_v1"),
+        ("verify", "multi_candidate_robustness_v1"),
+        ("build-jdj", session),
+        "build-relationship",
+    ]
+    assert service is built_service

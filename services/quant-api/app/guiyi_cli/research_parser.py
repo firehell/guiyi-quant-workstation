@@ -89,6 +89,13 @@ def add_research_commands(
         required=True,
     )
 
+    relationships = commands.add_parser("candidate-relationships")
+    relationships.add_argument(
+        "--protocol",
+        choices=("five_candidate_relationship_topology_v1",),
+        required=True,
+    )
+
     mirror = commands.add_parser("main-force-mirror-v2")
     mirror.add_argument("--symbol", required=True)
     mirror.add_argument(

@@ -72,6 +72,9 @@ from app.research.candidate_convergence.five_candidate_dossier import (
     CandidateDossier,
     FiveCandidateResearchDossier,
 )
+from app.research.candidate_convergence.five_candidate_relationships import (
+    FiveCandidateRelationshipReport,
+)
 
 
 def _calibration_payload(
@@ -282,6 +285,84 @@ def _five_candidate_dossier_payload(
                 ),
             }
             for pair in report.comparability_pairs
+        ],
+        "quality_flags": list(report.quality_flags),
+        "safety": dict(report.safety),
+    }
+
+
+def _five_candidate_relationship_payload(
+    report: FiveCandidateRelationshipReport,
+) -> dict[str, object]:
+    return {
+        "schema_version": report.schema_version,
+        "command": report.command,
+        "status": report.status,
+        "protocol_id": report.protocol_id,
+        "frozen_at": report.frozen_at.isoformat(),
+        "research_only": report.research_only,
+        "readonly": report.readonly,
+        "prospective_consumed": report.prospective_consumed,
+        "candidate_order": list(report.candidate_order),
+        "pair_order": [list(pair) for pair in report.pair_order],
+        "relationship_catalog": [
+            {
+                "left_candidate_id": entry.left_candidate_id,
+                "right_candidate_id": entry.right_candidate_id,
+                "relation_kind": entry.relation_kind.value,
+            }
+            for entry in report.relationship_catalog
+        ],
+        "existing_relationship_references": [
+            {
+                "left_candidate_id": reference.left_candidate_id,
+                "right_candidate_id": reference.right_candidate_id,
+                "relation_kind": reference.relation_kind.value,
+                "source_artifact_id": reference.source.artifact_id,
+                "recompute": reference.recompute,
+            }
+            for reference in report.existing_relationship_references
+        ],
+        "n_jdj_dependency_results": [
+            {
+                "candidate_id": row.candidate_id,
+                "symbol": row.symbol,
+                "dependency_role": row.dependency_role.value,
+                "status": row.status,
+                "reason_code": row.reason_code,
+                "event_count": row.event_count,
+                "events_with_trend_snapshot_lineage": (
+                    row.events_with_trend_snapshot_lineage
+                ),
+                "events_with_exact_pivot_lineage": (
+                    row.events_with_exact_pivot_lineage
+                ),
+            }
+            for row in report.n_jdj_dependency_results
+        ],
+        "jdj_exact_overlap_results": [
+            {
+                "left_candidate_id": row.left_candidate_id,
+                "right_candidate_id": row.right_candidate_id,
+                "symbol": row.symbol,
+                "status": row.status,
+                "reason_code": row.reason_code,
+                "left_event_count": row.left_event_count,
+                "right_event_count": row.right_event_count,
+                "exact_same_boundary_same_direction_count": (
+                    row.exact_same_boundary_same_direction_count
+                ),
+                "exact_same_boundary_opposite_direction_count": (
+                    row.exact_same_boundary_opposite_direction_count
+                ),
+                "left_events_with_same_direction_match": (
+                    row.left_events_with_same_direction_match
+                ),
+                "right_events_with_same_direction_match": (
+                    row.right_events_with_same_direction_match
+                ),
+            }
+            for row in report.jdj_exact_overlap_results
         ],
         "quality_flags": list(report.quality_flags),
         "safety": dict(report.safety),
