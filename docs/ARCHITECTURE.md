@@ -37,6 +37,7 @@ flowchart TB
     subgraph Domain[领域与内核]
       DK[DatasetKey / SeriesQuery / CanonicalBar]
       TS[TradingCalendar / TradingSession / MainContractMap]
+      SK[Shared SuBing Kernel / Application Domain<br/>Factor / Signal / Lifecycle]
       IK[Indicator Kernel]
       AE[Alert Evaluators / Event]
       ERD[Decision / Episode / Execution / Review]
@@ -80,13 +81,14 @@ flowchart TB
     MRS --> MDS
     SR --> MDS
     SR --> MR
-    SR --> SUB
+    SR --> SK
     LIVE --> RQ
     LIVE --> RD
     AM --> HM
 
     ADR --> MDS
     SUB --> ADR
+    SUB --> SK
     NS --> ADR
     JDJ --> ADR
     JDJ --> NS
@@ -94,7 +96,8 @@ flowchart TB
     CONV --> NS
     CONV --> JDJ
     MFM --> MDS
-    Research --> IK
+    MFM --> IK
+    SK --> IK
 
     ALERT --> MR
     ALERT --> SR
@@ -128,6 +131,9 @@ flowchart TB
 `app.research.composition` 只组装离线 read-only Research。CLI 的 parser、request、command、payload
 分别拥有解析、合同、调度和 JSON 投影职责；它们不反向进入 Market/Runtime/Alert composition。
 
+- Shared SuBing Kernel/Application Domain 位于 `app.market_data` 的 Factor、Signal、Lifecycle 与 Policy
+  模块，不属于 offline `app.research`。Runtime `SubingReadService` 与 offline SuBing Research 都依赖该
+  shared domain；两者互不依赖，Market/Runtime/Alert 因而不 import `app.research`。
 - `ActualDominantResearchSegmentLoader` 通过 `MarketDataService` 读取 true rank1 physical-contract
   segment prefix，是 SuBing/N/JDJ Historical source 的共享入口。
 - SuBing 与 N 保持独立 reducer；JDJ 只把 N 5m facts 以 strict-before 边界投影到 1m context。
@@ -181,8 +187,9 @@ flowchart LR
 - Mutation、query/read-model 与 reconstruction 分开组装；Execution Review 故障不反向影响 AlertEvent
   或 notification。
 - Episode 固定 physical contract 与 direction；价格、成本、仓位、points 和 multiplier 使用 `Decimal`。
-- roll Gate 每次 mutation 都重新读取。`disabled/invalid` 返回 `ROLL_RECONCILIATION_REQUIRED` 且不调用
-  reconciler、不创建 `DOMINANT_ROLL`；只有 `enabled` 才允许 reconcile。
+- HTTP request-scoped composition 每请求读取一次 roll Gate，再把 callback 注入 mutation service。
+  missing/`disabled`/`invalid` 注入 fail-closed callback，返回 `ROLL_RECONCILIATION_REQUIRED` 且不调用
+  reconciler、不创建 `DOMINANT_ROLL`；只有 `enabled` 注入真实 reconciler。`record_executed` 不重复读 marker。
 - Reconstruction 只经 `MarketDataService`；unavailable 不阻断人工 Decision/Execution/Review。
 
 ## Web B1 模块

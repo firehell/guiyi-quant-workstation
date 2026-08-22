@@ -74,6 +74,64 @@ UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache uv run --offline --project service
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache uv run --offline --project services/quant-api guiyi research main-force-mirror-v2 --symbol jm --series-kind actual_dominant --frequency 60m --since 2026-03-10 --through 2026-03-30 --forensic
 ```
 
+## MFM sequence forensic active60 read-only evidence Gate
+
+```bash
+set -eu
+tmp_dir="$(mktemp -d /private/tmp/guiyi-mfm-v2-sequence-forensic.XXXXXX)"
+test -n "$tmp_dir"
+test ! -L "$tmp_dir"
+case "$(cd "$tmp_dir" && pwd -P)" in
+  /private/tmp/guiyi-mfm-v2-sequence-forensic.*) ;;
+  *) exit 1 ;;
+esac
+while IFS= read -r symbol || [ -n "$symbol" ]; do
+  [ -z "$symbol" ] && continue
+  case "$symbol" in
+    *[!a-z0-9_]*) exit 1 ;;
+  esac
+done < data/universe/active_products.txt
+duplicate_symbol="$(awk 'NF { print }' data/universe/active_products.txt | sort | uniq -d | head -n 1)"
+test -z "$duplicate_symbol"
+while IFS= read -r symbol || [ -n "$symbol" ]; do
+  [ -z "$symbol" ] && continue
+  command_status=0
+  UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache uv run --offline --project services/quant-api guiyi research main-force-mirror-v2 --symbol "$symbol" --series-kind actual_dominant --frequency 60m --since 2023-01-01 --through 2026-08-20 >"$tmp_dir/$symbol.json" 2>"$tmp_dir/$symbol.stderr" || command_status=$?
+  printf '%s\n' "$command_status" >"$tmp_dir/$symbol.status"
+done < data/universe/active_products.txt
+printf '%s\n' "$tmp_dir"
+```
+
+## MFM sequence forensic OS-temp fail-closed cleanup
+
+```bash
+set -eu
+test ! -L "$tmp_dir"
+real_dir="$(cd "$tmp_dir" && pwd -P)"
+case "$real_dir" in
+  /private/tmp/guiyi-mfm-v2-sequence-forensic.*) ;;
+  *) exit 1 ;;
+esac
+unexpected_node="$(find "$real_dir" -mindepth 1 -maxdepth 1 ! -type f -print -quit)"
+test -z "$unexpected_node"
+unexpected_name="$(find "$real_dir" -mindepth 1 -maxdepth 1 -type f ! \( -name '*.json' -o -name '*.stderr' -o -name '*.status' \) -print -quit)"
+test -z "$unexpected_name"
+active_count="$(awk 'NF { count += 1 } END { print count + 0 }' data/universe/active_products.txt)"
+file_count="$(find "$real_dir" -mindepth 1 -maxdepth 1 -type f | wc -l | tr -d ' ')"
+test "$file_count" -eq "$((active_count * 3))"
+while IFS= read -r symbol || [ -n "$symbol" ]; do
+  [ -z "$symbol" ] && continue
+  rg -qx "$symbol" data/universe/active_products.txt
+  test -f "$real_dir/$symbol.json"
+  test ! -L "$real_dir/$symbol.json"
+  test -f "$real_dir/$symbol.stderr"
+  test ! -L "$real_dir/$symbol.stderr"
+  test -f "$real_dir/$symbol.status"
+  test ! -L "$real_dir/$symbol.status"
+done < data/universe/active_products.txt
+rm -rf -- "$real_dir"
+```
+
 ## Web
 
 ```bash

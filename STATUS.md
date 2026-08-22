@@ -20,8 +20,9 @@
 
 - `develop` 已准备代码版本 `v1.7.0`：版本身份、canonical/README/TESTING、Web B1 使用说明、
   Research/Execution Review/Runtime seam 与测试治理已进入本地 release-candidate 变更。
-- 当前状态为 `CODE_TEST_COMPLETE_RELEASE_PENDING`。本地 health/version、engineering、定向 backend、
-  Research CLI、Web unit/build、Ruff、Mypy、OpenSpec、secret/diff 验证已通过；尚未创建 main merge、tag、release，也未
+- 当前状态为 `CODE_COMPLETE_FULL_VERIFICATION_REVIEW_PENDING`。前一轮本地 health/version、
+  engineering、定向 backend、Research CLI、Web unit/build、Ruff、Mypy、OpenSpec、secret/diff 验证
+  已通过；独立审查修正后仍须 fresh full verification 与 independent review。尚未创建 main merge、tag、release，也未
   push、部署或切换 Runtime；production 继续保持 `v1.6.5`。
 - 本 candidate 不含 migration、Canonical/production DB/Redis 写入、Scope/transport 变化、通知
   retry/replay/backfill、Runtime promotion/switch 或订单能力，`auto_order=false` 不变。
@@ -36,9 +37,9 @@
 - Alert Runtime V2 已启用：Code Registry 只含 `htdy_original_15m` 与
   `subing_entry_signal_v1`。HTDY 每 Event 最多向 Topic 发起一次请求，SuBing 每 Event 最多向 owner
   发起一次请求；无逐人状态、retry、queue、replay、backfill、fallback 或订单路径。
-- Execution Review V1 是独立 Application Domain。roll Gate 为 `disabled/invalid` 时，
-  `record_executed` 返回 `ROLL_RECONCILIATION_REQUIRED` 且不得创建 `DOMINANT_ROLL`；只有
-  `enabled` 才允许 reconcile。
+- Execution Review V1 是独立 Application Domain。HTTP request-scoped composition 每请求读取一次
+  roll Gate 并注入 callback；missing/`disabled`/`invalid` 时 callback 返回
+  `ROLL_RECONCILIATION_REQUIRED` 且不得创建 `DOMINANT_ROLL`，只有 `enabled` 注入真实 reconciler。
 - Market Web 的 B1 流程已进入 `develop`：首页为“需要处理 → 优先检查 → 全市场研究”，详情页使用
   “当前检查栏”；正式 Event、研究观察和 Research-only 事实保持分层，不产生综合分或交易推荐。
 
@@ -62,13 +63,39 @@
 - 所有 evidence 都只是可复算 research facts：不生成盈利、有效性、可交易、Alert Rule、release 或
   Runtime-ready 结论；不写 Canonical/DB/Redis，不消费 prospective OOS，`auto_order=false`。
 
-Exact protocol、window、hash、count 和 artifact identity 由对应 policy、report 与测试保存，不在本文件
-复制。
+已冻结 evidence 的 exact protocol、window、hash、count 和 artifact identity 由对应 policy、report 与
+测试保存，不在本文件复制；下方只保留唯一尚未执行的 MFM Gate 完整执行合同。
+
+### MFM sequence forensic 真实 evidence Gate
+
+该 Gate 必须按以下顺序完整执行，不能拆分、缩窗或静默丢弃 unavailable：
+
+1. 先只读运行 `jm / actual_dominant / 60m / 2026-03-10..2026-03-30 / --forensic`，核对 peak、首次
+   decay/liquidation/opposite-build/accumulated-reversal 的 evidence Bar、causal delay 与 physical-contract
+   continuity；member context 不可用时只记录 unavailable，不补取或猜测。
+2. 再由仓库外层 shell loop 逐行读取 `data/universe/active_products.txt`，对完整 active60 运行
+   `actual_dominant / 60m / 2023-01-01..2026-08-20`。只允许 OS temp 输出，不新增 repository batch
+   module/script；typed-unavailable 必须显式保留，命令失败也必须保留 stderr/status，不能跳过品种。
+3. 只比较 `balanced / fast / slow / loose / strict` 五个预定义 profile。每 profile 检查 sample count，
+   以及 `1/3/5/10` Bar 的 `median_reversal_return / hit_rate / median_mfe / median_mae`；同时检查 yearly、
+   long/short symmetry、product concentration、cross-year drift 与从 peak 到 later evidence 的 causal delay。
+   禁止选择 best profile，禁止 ranking、PnL、Sharpe、winner 或按品种调参。
+4. sequence facts 不稳定、因果证据过晚、样本过稀或产品特化到不能实质减少人工拼接/改善复盘
+   evidence 时必须 `STOP`；只有存在跨产品、跨年度、跨方向的小而稳定区域才允许
+   `ALLOW_PHASE_FREEZE_DESIGN`。最终结论只能是这两者之一。
+5. `ALLOW_PHASE_FREEZE_DESIGN` 只授权未来 Lane 3 正式 Phase 的设计，不授权实现、Web/API、
+   Alert/notification、Runtime、release、策略晋升或订单。
+6. 临时目录只有在 real path 精确匹配 `/private/tmp/guiyi-mfm-v2-sequence-forensic.*`、无 symlink/子目录/
+   device/socket、文件名与 active60 对应且只含 `.json/.stderr/.status` 后才可删除；任一检查失败必须
+   fail-closed 并保留 exact directory 供检查，禁止删除 broad root、glob 或 unresolved variable。
+
+Exact 命令见 `TESTING.md`。该协议只定义未来 read-only Gate，不构成本轮执行授权。
 
 ## 待完成 Gate
 
-- v1.7.0 candidate 只达到 `CODE_TEST_COMPLETE_RELEASE_PENDING`；main/tag/release 与 Runtime
-  promotion/switch 仍需各自新的明确执行意图。
+- v1.7.0 candidate 只达到 `CODE_COMPLETE_FULL_VERIFICATION_REVIEW_PENDING`；fresh full verification
+  与 independent review 通过后，才允许进入彼此独立的 main/tag/release 与 Runtime promotion/switch
+  Gates；这些外部操作仍需各自新的明确执行意图。
 - MFM 60m sequence forensic 的真实 JM + active60 Historical read-only evidence Gate `pending`；本次不
   运行、不生成临时 evidence、不输出 Phase Gate 结论。
 - 自然 HTDY Topic Event 与自然 SuBing owner Event 的 production 验收 `pending`；不得用 synthetic
@@ -87,5 +114,6 @@ Exact protocol、window、hash、count 和 artifact identity 由对应 policy、
   `docs/ARCHITECTURE.md`；命令看 `TESTING.md`。
 - 已完成 spec/plan/task 与逐次 release/promotion 流水只从 Git history、`CHANGELOG.md`、tag 和 commit
   追溯，不作为 active surface。
-- 最小下一步：提交 v1.7.0 release candidate 准备变更；不执行 push、release/tag、Runtime、通知、
-  DB/data 或真实 research evidence。
+- 最小下一步：在当前 exact candidate 上运行 fresh full verification 并完成 independent review；两者
+  都通过后才进入独立 release Gates。当前不执行 push、release/tag、Runtime、通知、DB/data 或真实
+  research evidence。

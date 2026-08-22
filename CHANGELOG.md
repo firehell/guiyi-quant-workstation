@@ -7,8 +7,9 @@
 - 收敛 Runtime seam：离线 Research 组装从 Market/Alert/Runtime 依赖方向中移出，Research CLI 拆为
   parser/request/command/payload 边界，`app.runtime_entry` 成为 Live、Alert、after-market 的唯一内部
   进程入口；Execution Review 读写/查询/reconstruction composition 继续独立。
-- 严格化 Execution Review roll Gate：marker 为 `disabled` 或 `invalid` 时，`record_executed` 返回
-  `ROLL_RECONCILIATION_REQUIRED` 且不创建 `DOMINANT_ROLL`；只有精确 `enabled` 才允许 reconcile。
+- 严格化 Execution Review roll Gate：HTTP request-scoped composition 每请求读取一次 marker 并注入
+  callback；missing、`disabled` 或 `invalid` 注入返回 `ROLL_RECONCILIATION_REQUIRED` 的 fail-closed
+  callback 且不创建 `DOMINANT_ROLL`，只有精确 `enabled` 才注入真实 reconciler。
 - Research 实现去重并收口测试治理：共享 exact identity/JSON contract 与 price outcome，拆分
   `tests/research`、`tests/execution_review`，完成 Five-Candidate Phase 8 dossier/relationship topology、
   JDJ active60 robustness 与 MFM 60m sequence forensic 代码；MFM 的真实 read-only evidence Gate 仍未执行，

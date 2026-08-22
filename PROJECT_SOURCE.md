@@ -105,8 +105,9 @@ Episode、真实手工 Execution timeline 与结构化 Review。一个品种最�
 Multiplier 采用 trusted-partial 官方 evidence；缺失值不阻断 Decision/Execution/Review，只使人民币估算
 unavailable。Episode 创建时 snapshot，reference 扩大不自动改写历史。
 
-roll reconcile 默认关闭。Gate 为 `disabled` 或 `invalid` 时，`record_executed` 必须返回
-`ROLL_RECONCILIATION_REQUIRED` 且不创建 `DOMINANT_ROLL`；只有精确 `enabled` 才允许 reconcile。
+roll reconcile 默认关闭。HTTP request-scoped composition 每请求读取一次 Gate 并注入 callback；marker
+missing、`disabled` 或 `invalid` 时 callback 必须返回 `ROLL_RECONCILIATION_REQUIRED` 且不创建
+`DOMINANT_ROLL`，只有精确 `enabled` 才注入真实 reconciler。`record_executed` 不自行重复读取 marker。
 完整业务语义见 `docs/EXECUTION_REVIEW.md`。
 
 ## 外部操作边界

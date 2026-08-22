@@ -25,7 +25,7 @@ exact protocol/window/hash/count 只看 policy、report 与测试；历史过程
 | 主力照妖镜 | active observation 与 sequence forensic 分层；forensic 只使用预定义全局 profile | 不按品种调参、不选 best profile；没有真实 read-only evidence Gate 就不冻结正式 Phase |
 | Alert | Event 先提交，通知最多一次；两条 Rule 复用既有 evaluator/read model | 保留故障隔离与因果 cutoff；无 retry/replay/backfill/outbox/queue/逐人状态或订单路径 |
 | Execution Review | 只从 eligible immutable Event 记录人工 Decision、Execution、Episode 与 Review | 不恢复旧 Review Center、不连接账户、不自动反手；Historical reconstruction 只经 `MarketDataService` |
-| Execution Review roll | roll reconcile 默认关闭且逐次读取严格 Gate | `disabled/invalid` 必须返回 `ROLL_RECONCILIATION_REQUIRED` 且无 `DOMINANT_ROLL`；只有 `enabled` 可 reconcile |
+| Execution Review roll | roll reconcile 默认关闭；request-scoped composition 每请求读取一次 Gate 后注入 callback | missing/`disabled`/`invalid` 注入 fail-closed callback，只有 `enabled` 注入真实 reconciler；`record_executed` 不重复读取 marker |
 | Multiplier | 使用 trusted-partial 官方 evidence，Episode 创建时 snapshot | completeness 不阻断工作流；缺失只令人民币估算 unavailable，reference 扩大不改写历史 |
 | Web B1 | 首页只用 D1 Radar 做“优先检查”，详情页按“当前检查栏”验证 | 减少遍历但不建立 Opportunity domain、综合分或推荐；`degraded` fail-closed，正式 Event/研究观察/Research-only 分层 |
 | Runtime 入口 | `guiyi` 是用户 CLI，`app.runtime_entry` 只服务受监督进程 | 避免第二套业务入口；手工进程调用不能冒充自然 Runtime evidence |
