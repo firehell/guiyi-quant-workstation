@@ -6,7 +6,7 @@ from collections import defaultdict
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal, ROUND_CEILING, ROUND_HALF_UP
 from types import MappingProxyType
 from typing import Final, Literal, Protocol, TypeAlias
 
@@ -47,6 +47,76 @@ SENSITIVITY_THRESHOLDS = tuple(
     Decimal(value) for value in ("0.5", "1.0", "1.5", "2.0", "2.5")
 )
 KNOWN_RETROSPECTIVE_END: Final = date(2026, 8, 20)
+
+SequenceSide = Literal["long", "short", "neutral"]
+SequencePeakSide = Literal["long", "short"]
+SequenceProfileId = Literal["balanced", "fast", "slow", "loose", "strict"]
+
+
+@dataclass(frozen=True, slots=True)
+class MainForceMirrorV2SequenceProfile:
+    profile_id: SequenceProfileId
+    peak_window: int
+    peak_quantile: Decimal
+    decay_threshold: Decimal
+    transition_window: int
+
+
+SEQUENCE_PROFILES = (
+    MainForceMirrorV2SequenceProfile(
+        "balanced", 10, Decimal("0.90"), Decimal("0.40"), 2
+    ),
+    MainForceMirrorV2SequenceProfile(
+        "fast", 5, Decimal("0.90"), Decimal("0.40"), 1
+    ),
+    MainForceMirrorV2SequenceProfile(
+        "slow", 20, Decimal("0.90"), Decimal("0.40"), 3
+    ),
+    MainForceMirrorV2SequenceProfile(
+        "loose", 10, Decimal("0.85"), Decimal("0.25"), 2
+    ),
+    MainForceMirrorV2SequenceProfile(
+        "strict", 10, Decimal("0.95"), Decimal("0.55"), 2
+    ),
+)
+
+
+@dataclass(frozen=True, slots=True)
+class MainForceMirrorV2SequenceFact:
+    index: int
+    current_side: SequenceSide
+    pressure_state: str | None
+    instant_pressure: float | None
+    accumulated_pressure: float | None
+    active_peak_index: int | None
+    active_peak_side: SequencePeakSide | None
+    active_peak_instant_pressure: float | None
+    active_peak_accumulated_pressure: float | None
+    bars_since_active_peak: int | None
+    decay_ratio: Decimal | None
+    installed_peak_index: int | None
+    installed_peak_side: SequencePeakSide | None
+    installed_peak_instant_pressure: float | None
+    installed_peak_accumulated_pressure: float | None
+    peak_seen: bool
+    decay_seen: bool
+    liquidation_seen: bool
+    opposite_build_seen: bool
+    accumulated_reversal_seen: bool
+    state_transition: str | None
+
+
+@dataclass(slots=True)
+class _ActiveSequencePeak:
+    index: int
+    side: SequencePeakSide
+    instant_pressure: float
+    accumulated_pressure: float | None
+    accumulated: Decimal | None
+    decay_emitted: bool = False
+    liquidation_emitted: bool = False
+    opposite_build_emitted: bool = False
+    reversal_emitted: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -399,6 +469,233 @@ class MainForceMirrorV2ResearchService:
             raise MainForceMirrorV2ResearchError(
                 "MFM_V2_RESEARCH_IDENTITY_CONFLICT"
             ) from None
+
+
+def _nearest_rank(values: tuple[Decimal, ...], quantile: Decimal) -> Decimal:
+    if not values:
+        raise ValueError("sequence percentile requires values")
+    if quantile <= 0 or quantile > 1:
+        raise ValueError("sequence percentile must be in (0, 1]")
+    ordered = sorted(values)
+    rank = int(
+        (quantile * Decimal(len(ordered))).to_integral_value(
+            rounding=ROUND_CEILING
+        )
+    )
+    return ordered[max(1, rank) - 1]
+
+
+def _finite_decimal(value: float | None) -> Decimal | None:
+    if value is None:
+        return None
+    converted = Decimal(str(value))
+    return converted if converted.is_finite() else None
+
+
+def _sequence_side(value: Decimal | None) -> SequenceSide:
+    if value is None or value == 0:
+        return "neutral"
+    return "long" if value > 0 else "short"
+
+
+def _derive_sequence_facts(
+    points: tuple[MainForceMirrorV2Point, ...],
+    profile: MainForceMirrorV2SequenceProfile,
+) -> tuple[MainForceMirrorV2SequenceFact, ...]:
+    if not isinstance(profile, MainForceMirrorV2SequenceProfile):
+        raise TypeError("profile must be MainForceMirrorV2SequenceProfile")
+
+    facts: list[MainForceMirrorV2SequenceFact] = []
+    prior_pressures: list[Decimal] = []
+    active_peak: _ActiveSequencePeak | None = None
+    block_contract: str | None = None
+    previous_bar_end: datetime | None = None
+    previous_state: str | None = None
+
+    for index, point in enumerate(points):
+        instant = _finite_decimal(point.instant_pressure)
+        current_side = _sequence_side(instant)
+        valid_pressure = (
+            point.physical_contract is not None
+            and point.pressure_ready
+            and instant is not None
+        )
+        boundary = valid_pressure and (
+            block_contract != point.physical_contract
+            or (
+                previous_bar_end is not None
+                and point.bar_end <= previous_bar_end
+            )
+        )
+        if boundary or not valid_pressure:
+            prior_pressures.clear()
+            active_peak = None
+            previous_state = None
+            block_contract = point.physical_contract if valid_pressure else None
+
+        accumulated = (
+            _finite_decimal(point.accumulated_pressure)
+            if point.accumulated_ready
+            else None
+        )
+        accumulated_value = (
+            point.accumulated_pressure if accumulated is not None else None
+        )
+        active_context: _ActiveSequencePeak | None = None
+        decay_ratio: Decimal | None = None
+        decay_seen = False
+        liquidation_seen = False
+        opposite_build_seen = False
+        accumulated_reversal_seen = False
+        state_transition = (
+            f"{previous_state}->{point.pressure_state}"
+            if valid_pressure
+            and previous_state is not None
+            and point.pressure_state is not None
+            else None
+        )
+
+        if valid_pressure and active_peak is not None:
+            age = index - active_peak.index
+            if age <= profile.transition_window:
+                active_context = active_peak
+                peak_accumulated = active_peak.accumulated
+                peak_accumulated_ready = peak_accumulated is not None and (
+                    (active_peak.side == "long" and peak_accumulated > 0)
+                    or (active_peak.side == "short" and peak_accumulated < 0)
+                )
+                if (
+                    peak_accumulated_ready
+                    and peak_accumulated is not None
+                    and accumulated is not None
+                ):
+                    if active_peak.side == "long":
+                        decay_ratio = (
+                            peak_accumulated - accumulated
+                        ) / abs(peak_accumulated)
+                        reversed_accumulated = accumulated < 0
+                    else:
+                        decay_ratio = (
+                            abs(peak_accumulated) - abs(accumulated)
+                        ) / abs(peak_accumulated)
+                        reversed_accumulated = accumulated > 0
+                    if (
+                        not active_peak.decay_emitted
+                        and decay_ratio >= profile.decay_threshold
+                    ):
+                        decay_seen = True
+                        active_peak.decay_emitted = True
+                    if not active_peak.reversal_emitted and reversed_accumulated:
+                        accumulated_reversal_seen = True
+                        active_peak.reversal_emitted = True
+
+                liquidation_state = (
+                    "long_liquidation"
+                    if active_peak.side == "long"
+                    else "short_cover"
+                )
+                opposite_build_state = (
+                    "short_build"
+                    if active_peak.side == "long"
+                    else "long_build"
+                )
+                if (
+                    not active_peak.liquidation_emitted
+                    and point.pressure_state == liquidation_state
+                ):
+                    liquidation_seen = True
+                    active_peak.liquidation_emitted = True
+                if (
+                    not active_peak.opposite_build_emitted
+                    and point.pressure_state == opposite_build_state
+                ):
+                    opposite_build_seen = True
+                    active_peak.opposite_build_emitted = True
+            else:
+                active_peak = None
+
+        installed_peak: _ActiveSequencePeak | None = None
+        if (
+            valid_pressure
+            and instant is not None
+            and instant != 0
+            and point.pressure_state in {"long_build", "short_build"}
+            and len(prior_pressures) >= profile.peak_window
+        ):
+            baseline = tuple(prior_pressures[-profile.peak_window :])
+            if abs(instant) >= _nearest_rank(baseline, profile.peak_quantile):
+                installed_peak = _ActiveSequencePeak(
+                    index=index,
+                    side="long" if point.pressure_state == "long_build" else "short",
+                    instant_pressure=float(instant),
+                    accumulated_pressure=accumulated_value,
+                    accumulated=accumulated,
+                )
+                active_peak = installed_peak
+
+        facts.append(
+            MainForceMirrorV2SequenceFact(
+                index=index,
+                current_side=current_side,
+                pressure_state=point.pressure_state,
+                instant_pressure=point.instant_pressure,
+                accumulated_pressure=accumulated_value,
+                active_peak_index=(
+                    active_context.index if active_context is not None else None
+                ),
+                active_peak_side=(
+                    active_context.side if active_context is not None else None
+                ),
+                active_peak_instant_pressure=(
+                    active_context.instant_pressure
+                    if active_context is not None
+                    else None
+                ),
+                active_peak_accumulated_pressure=(
+                    active_context.accumulated_pressure
+                    if active_context is not None
+                    else None
+                ),
+                bars_since_active_peak=(
+                    index - active_context.index
+                    if active_context is not None
+                    else None
+                ),
+                decay_ratio=decay_ratio,
+                installed_peak_index=(
+                    installed_peak.index if installed_peak is not None else None
+                ),
+                installed_peak_side=(
+                    installed_peak.side if installed_peak is not None else None
+                ),
+                installed_peak_instant_pressure=(
+                    installed_peak.instant_pressure
+                    if installed_peak is not None
+                    else None
+                ),
+                installed_peak_accumulated_pressure=(
+                    installed_peak.accumulated_pressure
+                    if installed_peak is not None
+                    else None
+                ),
+                peak_seen=installed_peak is not None,
+                decay_seen=decay_seen,
+                liquidation_seen=liquidation_seen,
+                opposite_build_seen=opposite_build_seen,
+                accumulated_reversal_seen=accumulated_reversal_seen,
+                state_transition=state_transition,
+            )
+        )
+
+        if valid_pressure and instant is not None:
+            prior_pressures.append(abs(instant))
+            if len(prior_pressures) > profile.peak_window:
+                del prior_pressures[:-profile.peak_window]
+            block_contract = point.physical_contract
+            previous_state = point.pressure_state
+        previous_bar_end = point.bar_end
+
+    return tuple(facts)
 
 
 def _observations(
