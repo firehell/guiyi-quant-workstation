@@ -89,8 +89,9 @@
   只组装 `5` 份 Candidate dossier、`7` 份已冻结 source artifact 与 `10` 个显式
   comparability pair；保留 SuBing `2023-01-01..2026-08-18`、N
   `2023-01-01..2026-08-19` 与三条 JDJ `2023-01-01..2026-08-20` 的 source-specific
-  retrospective window，不改写为 five-Candidate common window。`300` 个 source cells 完整保留为
-  `245` available / `55` typed unavailable；不新算 metric 或 relationship，不消费
+  retrospective window，不改写为 five-Candidate common window。完整保留
+  `300-cell inventory/count invariants`：`300` source cells = `245` available + `55` typed
+  unavailable；详细 matrices 按 dossier 合同省略。不新算 metric 或 relationship，不消费
   prospective OOS。Phase 8B 明确尚未完成。
 - 以上证据都只是可复算的 retrospective/rolling research facts：不生成自动排名、winner、
   KEEP/DROP/PROMOTE、盈利、有效性、可交易、Alert Rule、release 或 Runtime-ready 结论；

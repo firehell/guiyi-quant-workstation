@@ -58,7 +58,7 @@ RQData
 当前用户接口为 Market Web、`/trade-records`、`/api/v1/market/*`、`/api/alerts/*`、`/api/execution-review/*`，以及 `guiyi data
 update|refresh|audit|after-market`、只读 `guiyi research subing-calibration`、`guiyi research subing-lifecycle`、
 `guiyi research n-structure`、`guiyi research jdj-1m`、`guiyi research candidate-validation`、`guiyi research candidate-robustness`、
-`guiyi research main-force-mirror-v2` 和 `guiyi runtime
+`guiyi research candidate-dossier`、`guiyi research main-force-mirror-v2` 和 `guiyi runtime
 status|live|alert|alert-canary`；其中 `alert-canary --audience owner|htdy_observers` 是独立真实通知 Gate。
 这些命令都不能由普通只读测试授权。
 `main_force_mirror_v2` 是主力照妖镜唯一 active identity，仅作为

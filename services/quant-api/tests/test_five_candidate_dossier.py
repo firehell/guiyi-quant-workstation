@@ -354,6 +354,38 @@ def test_dossier_has_exact_inventory(
     assert len(report.comparability_pairs) == 10
 
 
+def test_report_rejects_reversed_source_artifact_order(
+    service: FiveCandidateResearchDossierService,
+) -> None:
+    report = service.run(
+        FiveCandidateDossierRequest("five_candidate_research_dossier_v1")
+    )
+
+    with pytest.raises(FiveCandidateDossierReportError) as raised:
+        replace(report, source_artifacts=tuple(reversed(report.source_artifacts)))
+
+    assert str(raised.value) == "FIVE_CANDIDATE_DOSSIER_REPORT_INVALID"
+
+
+def test_report_maps_malformed_top_level_dossier_to_report_error(
+    service: FiveCandidateResearchDossierService,
+) -> None:
+    report = service.run(
+        FiveCandidateDossierRequest("five_candidate_research_dossier_v1")
+    )
+
+    with pytest.raises(FiveCandidateDossierReportError) as raised:
+        replace(
+            report,
+            candidate_dossiers=(
+                object(),  # type: ignore[arg-type]
+                *report.candidate_dossiers[1:],
+            ),
+        )
+
+    assert str(raised.value) == "FIVE_CANDIDATE_DOSSIER_REPORT_INVALID"
+
+
 def test_comparability_pairs_have_exact_order_status_and_reasons(
     service: FiveCandidateResearchDossierService,
 ) -> None:
@@ -890,6 +922,35 @@ def test_valid_sha_inventory_drift_fails_closed(tmp_path: Path) -> None:
         service.run(
             FiveCandidateDossierRequest("five_candidate_research_dossier_v1")
         )
+
+
+def test_valid_sha_jdj_yearly_horizon_sample_drift_fails_closed(
+    tmp_path: Path,
+) -> None:
+    def decrement_yearly_sample(payload: dict[str, object]) -> None:
+        rows = payload["cross_symbol_results"]
+        assert isinstance(rows, list)
+        row = next(
+            item
+            for item in rows
+            if item["candidate_id"] == CANDIDATES[2]
+            and item["symbol"] == "a"
+        )
+        summary = row["yearly"]["2023"]["horizon_summary"]["3"]
+        summary["sample_count"] -= 1
+
+    service = _service_with_mutated_source(
+        tmp_path,
+        6,
+        decrement_yearly_sample,
+    )
+
+    with pytest.raises(FiveCandidateDossierSourceError) as raised:
+        service.run(
+            FiveCandidateDossierRequest("five_candidate_research_dossier_v1")
+        )
+
+    assert str(raised.value) == "FIVE_CANDIDATE_DOSSIER_SOURCE_INVALID"
 
 
 def test_candidate_dossier_rejects_summary_that_disagrees_with_rows(

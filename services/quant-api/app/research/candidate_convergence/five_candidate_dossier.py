@@ -418,6 +418,7 @@ class CandidateCrossSymbolEvidence:
             _freeze_yearly_evidence(
                 self.candidate_id,
                 self.event_count,
+                horizons,
                 self.yearly,
             ),
         )
@@ -716,8 +717,9 @@ class FiveCandidateResearchDossier:
             or self.readonly is not True
             or self.prospective_consumed is not False
             or tuple(self.candidate_order) != _CANDIDATES
-            or len(artifacts) != 7
-            or any(not isinstance(value, SourceArtifactRef) for value in artifacts)
+            or artifacts
+            != tuple(SourceArtifactRef(*values) for values in _SOURCE_ARTIFACTS)
+            or any(not isinstance(item, CandidateDossier) for item in dossiers)
             or tuple(item.identity.candidate_id for item in dossiers) != _CANDIDATES
             or any(not isinstance(item, MetricComparability) for item in metric_catalog)
             or tuple(item.metric_id for item in metric_catalog)
@@ -855,6 +857,7 @@ def _expected_robustness_artifact(candidate_id: str) -> str:
 def _freeze_yearly_evidence(
     candidate_id: str,
     event_count: int,
+    horizon_summary: Mapping[int, CandidateHorizonEvidence],
     value: object | None,
 ) -> object | None:
     if candidate_id in _CANDIDATES[:2]:
@@ -869,6 +872,7 @@ def _freeze_yearly_evidence(
     if set(yearly) != set(expected_years):
         raise FiveCandidateDossierReportError()
     total_event_count = 0
+    total_sample_count_by_horizon = dict.fromkeys(expected_horizons, 0)
     for year in expected_years:
         item = yearly[year]
         if not isinstance(item, Mapping):
@@ -901,17 +905,22 @@ def _freeze_yearly_evidence(
             }:
                 raise FiveCandidateDossierReportError()
             sample_count = summary.pop("sample_count")
-            CandidateHorizonEvidence(
+            projected_summary = CandidateHorizonEvidence(
                 sample_count=sample_count,  # type: ignore[arg-type]
                 numeric_metrics=summary,  # type: ignore[arg-type]
             )
-            if sample_count > year_event_count:  # type: ignore[operator]
+            if projected_summary.sample_count > year_event_count:
                 raise FiveCandidateDossierReportError()
-            year_sample_counts.append(sample_count)  # type: ignore[arg-type]
+            year_sample_counts.append(projected_summary.sample_count)
+            total_sample_count_by_horizon[horizon] += projected_summary.sample_count
         if year_event_count == 0 and any(year_sample_counts):
             raise FiveCandidateDossierReportError()
         total_event_count += year_event_count
-    if total_event_count != event_count:
+    if total_event_count != event_count or any(
+        total_sample_count_by_horizon[horizon]
+        != horizon_summary[horizon].sample_count
+        for horizon in expected_horizons
+    ):
         raise FiveCandidateDossierReportError()
     return _deep_freeze(yearly)
 
