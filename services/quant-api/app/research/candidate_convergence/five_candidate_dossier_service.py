@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from datetime import date
 from pathlib import Path
 from types import MappingProxyType
@@ -307,7 +307,7 @@ class FiveCandidateResearchDossierService:
             horizons_bars=identity_values[4],
         )
         rows = tuple(
-            _project_cross_symbol(row, candidate_id)
+            _project_cross_symbol(_mapping(row), candidate_id)
             for row in _list(robustness_payload["cross_symbol_results"])
             if _mapping(row).get("candidate_id") == candidate_id
         )
@@ -583,12 +583,15 @@ def _validate_temporal_dossier(
         for field, expected_value in expected.items()
     ):
         raise FiveCandidateDossierSourceError()
+    retrospective_event_count = value.get("retrospective_event_count")
+    rolling_fold_count = value.get("rolling_fold_count")
+    folds_with_events = value.get("folds_with_events")
     if (
-        not isinstance(value.get("retrospective_event_count"), int)
-        or not isinstance(value.get("rolling_fold_count"), int)
-        or not isinstance(value.get("folds_with_events"), int)
-        or value["rolling_fold_count"] != 10
-        or value["folds_with_events"] > value["rolling_fold_count"]
+        not isinstance(retrospective_event_count, int)
+        or not isinstance(rolling_fold_count, int)
+        or not isinstance(folds_with_events, int)
+        or rolling_fold_count != 10
+        or folds_with_events > rolling_fold_count
     ):
         raise FiveCandidateDossierSourceError()
     _project_horizons(value["horizon_summary"], candidate_id)
@@ -862,5 +865,5 @@ def _date(value: object) -> date:
         raise FiveCandidateDossierSourceError() from None
 
 
-def _ordered_unique(values: object) -> tuple[str, ...]:
-    return tuple(dict.fromkeys(values))  # type: ignore[arg-type]
+def _ordered_unique(values: Iterable[str]) -> tuple[str, ...]:
+    return tuple(dict.fromkeys(values))

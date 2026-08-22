@@ -9,7 +9,7 @@ import hashlib
 import json
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any
+from typing import Any, cast
 
 from app.core.env import PROJECT_ROOT
 from app.market_data.exact_json_contract import load_exact_json
@@ -922,7 +922,8 @@ def _deep_freeze(value: object) -> object:
             {str(key): _deep_freeze(item) for key, item in value.items()}
         )
     if type(value) in {list, tuple}:
-        return tuple(_deep_freeze(item) for item in value)
+        items = cast(list[object] | tuple[object, ...], value)
+        return tuple(_deep_freeze(item) for item in items)
     return value
 
 
@@ -940,20 +941,25 @@ def _freeze_existing_relationship_reference(
     window = reference["common_retrospective"]
     flags = reference["metric_compatibility_flags"]
     relationships = reference["relationships"]
+    if type(flags) not in {list, tuple} or type(relationships) not in {list, tuple}:
+        raise FiveCandidateDossierReportError()
+    typed_flags = cast(list[object] | tuple[object, ...], flags)
+    typed_relationships = cast(
+        list[object] | tuple[object, ...],
+        relationships,
+    )
     if (
         reference["protocol_id"] != "multi_candidate_robustness_v1"
         or not isinstance(window, Mapping)
         or dict(window) != {"since": "2023-01-01", "through": "2026-08-18"}
-        or type(flags) not in {list, tuple}
-        or tuple(flags)
+        or tuple(typed_flags)
         != ("EVALUABLE_UNIT_DIFFERS", "HORIZON_SEMANTICS_DIFFERS")
-        or type(relationships) not in {list, tuple}
         or tuple(
             (
                 item.get("source_candidate_id"),
                 item.get("target_candidate_id"),
             )
-            for item in relationships
+            for item in typed_relationships
             if isinstance(item, Mapping)
         )
         != ((_CANDIDATES[0], _CANDIDATES[1]), (_CANDIDATES[1], _CANDIDATES[0]))
@@ -967,7 +973,7 @@ def _freeze_existing_relationship_reference(
     if any(
         not isinstance(item, Mapping)
         or not required_proximity_keys.issubset(item)
-        for item in relationships
+        for item in typed_relationships
     ):
         raise FiveCandidateDossierReportError()
     if _relationship_reference_sha256(reference) != _EXACT_RELATIONSHIP_REFERENCE_SHA256:
