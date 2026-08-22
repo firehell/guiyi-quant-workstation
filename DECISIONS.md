@@ -20,6 +20,7 @@
 | 查询 | MarketDataService 是唯一历史行情入口 | 消费者不得 glob、自选文件、自判主力或跨频回退 |
 | 研究读模型 | 新研究功能只通过 `MarketDataService` 消费历史行情；可由 Canonical 与现有 Catalog 推导的市场事实按需计算 | 不得直接读 Parquet、复制 resolver 或为派生市场事实扩展 Catalog；明确设计的应用事实可进入独立 Application Domain |
 | Five-Candidate dossier | Phase 8A 只组装七份已冻结 artifact，保留 SuBing、N 与三条 JDJ 的 source-specific window；不建立 five-Candidate common window | comparability 与 relationship 是两个不同事实；十个 pair 只记录显式 comparability，仅 SuBing/N 投影已有 relationship reference，其他 pair 不新算 relationship |
+| Five-Candidate relationship topology | Phase 8B 分别以 `2023-01-01..2026-08-19` 验证 N→JDJ structural dependency，以 `2023-01-01..2026-08-20` 冻结 JDJ exact same-boundary overlap；不建立 common window | N dependency 不是独立信号确认；JDJ overlap 不扩为 proximity/lead-lag/future outcome；SuBing↔JDJ 保持 undefined，不产生排名或晋升 |
 | 增量 | `--since` 是检查下界，`--through` 是固定水位 | 已发布 Parquet + Catalog 是唯一自然续传水位；同 T 完整重跑零请求零写入 |
 | 修复 | `refresh` 重建指定品种/日期范围内相交月份的完整数据族 | 不接受精确计划文件或逐行裁决 |
 | 额度 | 明确的 provider quota 耗尽立即停止本轮 | 保留已发布月，未完成月不发布；下次同命令从首个缺失目标续传 |

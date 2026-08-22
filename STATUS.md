@@ -92,7 +92,16 @@
   retrospective window，不改写为 five-Candidate common window。完整保留
   `300-cell inventory/count invariants`：`300` source cells = `245` available + `55` typed
   unavailable；详细 matrices 按 dossier 合同省略。不新算 metric 或 relationship，不消费
-  prospective OOS。Phase 8B 明确尚未完成。
+  prospective OOS。
+- Phase 8B Five-Candidate relationship-topology evidence 已冻结：
+  `reports/research/candidate_relationships/five_candidate_relationship_topology_v1/five-candidate-relationship-topology-freeze-2026-08-22.json`，
+  SHA256=`b5c467d9f82ed23f55660b3475da0d3ed23855d782bc4a612c5b0615c6b4eb78`。两次 exact
+  CLI stdout byte-identical；完整保留 `10` 条 relationship catalog、`180` 条 N→JDJ dependency
+  identity 与 `180` 条 JDJ exact-overlap identity。N→JDJ 只读窗口固定为
+  `2023-01-01..2026-08-19`，JDJ overlap 只读窗口固定为
+  `2023-01-01..2026-08-20`；二者不合并为 common window。available dependency lineage
+  全部完整，SuBing↔JDJ 三组关系仍为 `UNDEFINED_CROSS_TIMEFRAME`；不含数值 proximity、
+  overlap-conditioned future outcome 或自动 decision/ranking/promotion，`prospective_consumed=false`。
 - 以上证据都只是可复算的 retrospective/rolling research facts：不生成自动排名、winner、
   KEEP/DROP/PROMOTE、盈利、有效性、可交易、Alert Rule、release 或 Runtime-ready 结论；
   不写 Canonical/DB/Redis，不回填 prospective OOS。
@@ -108,8 +117,6 @@
   证据保留，但不冒充新 root 的自然运行。不得人工触发、回填或补证。
 - SuBing、N 与 JDJ 三条 Candidate 的 prospective OOS 继续按各自 exact protocol 独立累积，
   当前均为 `pending`；不得用 retrospective 或 embargo 日回填。
-- Phase 8B relationship-topology 研究仍为 `incomplete`；Phase 8A artifact freeze 不自动启动或
-  完成 Phase 8B。
 - Execution Review Gate D 继续 `disabled / not activated`。
 
 ## 事实源与边界

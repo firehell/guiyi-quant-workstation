@@ -58,7 +58,7 @@ RQData
 当前用户接口为 Market Web、`/trade-records`、`/api/v1/market/*`、`/api/alerts/*`、`/api/execution-review/*`，以及 `guiyi data
 update|refresh|audit|after-market`、只读 `guiyi research subing-calibration`、`guiyi research subing-lifecycle`、
 `guiyi research n-structure`、`guiyi research jdj-1m`、`guiyi research candidate-validation`、`guiyi research candidate-robustness`、
-`guiyi research candidate-dossier`、`guiyi research main-force-mirror-v2` 和 `guiyi runtime
+`guiyi research candidate-dossier`、`guiyi research candidate-relationships`、`guiyi research main-force-mirror-v2` 和 `guiyi runtime
 status|live|alert|alert-canary`；其中 `alert-canary --audience owner|htdy_observers` 是独立真实通知 Gate。
 这些命令都不能由普通只读测试授权。
 `main_force_mirror_v2` 是主力照妖镜唯一 active identity，仅作为
@@ -101,6 +101,16 @@ not comparable，N/JDJ 的 pair metric 尚未定义，JDJ 内部为 same-family 
 comparability 不等于 relationship，该 dossier 不为其他 pair 新建 relationship evidence；不写
 DB/Canonical/Redis，不进入 Alert/Runtime/订单路径，也不产生 Candidate 优劣、有效性、
 盈利、可交易或可晋升结论。
+Phase 8B exact 入口
+`guiyi research candidate-relationships --protocol five_candidate_relationship_topology_v1`
+通过既有 `MarketDataService -> ActualDominantResearchSegmentLoader -> JdjResearchService`
+只读复算两个互不混用的 Historical window：N→JDJ structural dependency 固定为
+`2023-01-01..2026-08-19`，只验证三条 JDJ 对 strict-before N context 的完整 lineage，不能解释为
+独立信号确认；JDJ 三组 pair 固定以 `2023-01-01..2026-08-20` 研究 exact same-boundary overlap，
+不引入 proximity、lead/lag 或 overlap-conditioned future outcome。输出完整保留 `10` 条 catalog、
+`180` 条 dependency 与 `180` 条 overlap identity；SuBing/N 只引用既有 frozen relationship，
+SuBing/JDJ 仍为 undefined。该命令不消费 prospective OOS，不写 DB/Canonical/Redis，不进入
+Alert/Runtime/订单路径，也不形成 Candidate 优劣、有效性、盈利、可交易或可晋升结论。
 Market Runtime 的 Live 与盘后更新共用
 `operational_products.txt`；当前目标与 active 60 完全一致。Live 只观察
 当日 rank1 completed 1m，盘后最多在 18:05 和一次一小时后 retry 更新相同范围，Live 永不提升为

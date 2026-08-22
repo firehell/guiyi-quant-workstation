@@ -16,7 +16,7 @@ flowchart TB
       WEB["Market Web"]
       API["Market API"]
       CLI["guiyi data update/refresh/audit"]
-      RCLI["guiyi research<br/>calibration / lifecycle / n-structure / jdj-1m / candidate-validation / robustness / candidate-dossier / mirror-v2"]
+      RCLI["guiyi research<br/>calibration / lifecycle / n-structure / jdj-1m / candidate-validation / robustness / candidate-dossier / candidate-relationships / mirror-v2"]
       ALERTAPI["Alert API"]
       ERAPI["Execution Review API"]
     end
@@ -47,6 +47,10 @@ flowchart TB
       JAR["JDJActive60RobustnessService<br/>180-cell yearly / symbol-balanced sector"]
       FA7["7 pinned immutable research artifacts<br/>5 baselines + 2 robustness"]
       FCD["FiveCandidateResearchDossierService<br/>artifact-only / 5 dossiers / 10 pair statuses"]
+      FA8["pinned Phase 8A dossier + SuBing/N relationship artifacts"]
+      NDW["N→JDJ dependency<br/>2023-01-01..2026-08-19"]
+      JOW["JDJ exact overlap<br/>2023-01-01..2026-08-20"]
+      FCR["FiveCandidateRelationshipService<br/>10 catalog / 180 dependency / 180 overlap"]
       MFM["MainForceMirrorV2Service / ResearchService<br/>60m historical confirmed observation"]
       MMS["pinned immutable<br/>main_force_member_rank_v1 snapshot"]
     end
@@ -96,6 +100,10 @@ flowchart TB
     NS --> MCR
     FA7 --> FCD
     RCLI --> FCD
+    FA8 --> FCR
+    J3 --> NDW --> FCR
+    J3 --> JOW --> FCR
+    RCLI --> FCR
     RCLI --> MFM --> MQ
     MMS --> MFM
     WEB --> ALERTAPI --> AS
@@ -198,6 +206,13 @@ flowchart TB
   Candidate 各自的 source window 与十个 pair 的显式 comparability status，仅投影既有
   SuBing/N relationship reference；不把 comparability 写成 relationship，不新算 metric/relationship，
   不消费 prospective OOS，也不进入 DB/Canonical/Redis、Alert、Runtime 或订单路径。
+  `FiveCandidateRelationshipService` 先校验钉住的 Phase 8A dossier 与既有 SuBing/N relationship
+  artifact，再通过同一个 `JdjResearchService` 分别执行两个不能互相代替的 Historical read-only run：
+  `2023-01-01..2026-08-19` 只验证 N→JDJ strict-before lineage，
+  `2023-01-01..2026-08-20` 只计算三组 JDJ exact same-boundary overlap。前者不是独立信号确认，
+  后者不扩为 proximity/lead-lag 或 future outcome；SuBing↔JDJ 保持 undefined。完整输出固定为
+  `10` 条 catalog、`180` 条 dependency 与 `180` 条 overlap identity，不消费 prospective OOS，
+  不写 DB/Canonical/Redis，也不进入 Alert、Runtime 或订单路径。
   `MainForceMirrorV2Service` 与 `MainForceMirrorV2ResearchService` 仅通过 `MarketDataService` 的
   `ActualDominantTradingDayQuery` / `ContractTradingDayQuery` 读取 60m Historical Canonical，
   把每根 Bar 绑定到唯一物理合约，并只读钉住的不可变

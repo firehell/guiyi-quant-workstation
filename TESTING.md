@@ -319,6 +319,24 @@ UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
 不读 `MarketDataService`，不写 DB/Canonical/Redis，不发送通知，不进入 Alert/Runtime/订单路径，
 不消费 prospective OOS，也不形成 Candidate 优劣、有效性、盈利、可交易或可晋升结论。
 
+## Five-Candidate Relationship Topology V1（Phase 8B / Historical read-only）
+
+exact relationship topology 生成命令固定为：
+
+```bash
+UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
+  uv run --offline --project services/quant-api guiyi research candidate-relationships \
+  --protocol five_candidate_relationship_topology_v1
+```
+
+该命令只通过既有 Historical gateway 分别复算 N→JDJ
+`2023-01-01..2026-08-19` 与 JDJ exact-overlap `2023-01-01..2026-08-20`，
+并向 stdout 输出 deterministic JSON。正式 evidence freeze 要求同一输入连续两遍 stdout byte-identical，
+完整保留 `10` 条 relationship catalog、`180` 条 dependency 和 `180` 条 overlap identity。
+命令不消费 prospective OOS，不写 DB/Canonical/Redis，不发送通知，不进入 Alert/Runtime/订单路径，
+不计算 proximity 或 overlap-conditioned future outcome，也不形成 Candidate 排名、有效性、盈利、
+可交易或可晋升结论。
+
 ## Alert V2
 
 ### 无副作用单元、集成与工程验证
