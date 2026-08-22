@@ -111,6 +111,32 @@ _BASELINE_IDENTITIES = {
         date(2026, 8, 24),
     ),
 }
+_TEMPORAL_IDENTITIES = {
+    _CANDIDATES[0]: {
+        "anchor_symbol": "jm",
+        "candidate_protocol_id": "candidate_validation_v1",
+        "source_kind": "subing_lifecycle",
+        "event_unit": "entry_confirmed",
+        "retrospective_since": "2023-01-01",
+        "retrospective_through": "2026-08-18",
+        "prospective_status": "pending",
+        "prospective_first_trading_day": "2026-08-20",
+        "prospective_through": "2026-08-19",
+        "horizon_semantics": "same_trading_day_only",
+    },
+    _CANDIDATES[1]: {
+        "anchor_symbol": "jm",
+        "candidate_protocol_id": "n_structure_validation_v1",
+        "source_kind": "n_structure",
+        "event_unit": "n_completed",
+        "retrospective_since": "2023-01-01",
+        "retrospective_through": "2026-08-19",
+        "prospective_status": "pending",
+        "prospective_first_trading_day": "2026-08-21",
+        "prospective_through": "2026-08-20",
+        "horizon_semantics": "same_rank1_segment",
+    },
+}
 
 
 class FiveCandidateResearchDossierService:
@@ -333,6 +359,22 @@ def _validated_robustness_source(
         for candidate_id in candidate_ids
         for symbol in _PRODUCTS
     )
+    status_inventory = tuple(
+        (
+            candidate_id,
+            sum(
+                _mapping(row).get("status") == "available"
+                for row in rows
+                if _mapping(row).get("candidate_id") == candidate_id
+            ),
+            sum(
+                _mapping(row).get("status") == "unavailable"
+                for row in rows
+                if _mapping(row).get("candidate_id") == candidate_id
+            ),
+        )
+        for candidate_id in candidate_ids
+    )
     if (
         artifact.ref.artifact_id != protocol_id
         or payload.get("schema_version") != 1
@@ -344,21 +386,31 @@ def _validated_robustness_source(
             for row in rows
         )
         != expected_order
+        or status_inventory
+        != tuple((candidate_id, 49, 11) for candidate_id in candidate_ids)
     ):
         raise FiveCandidateDossierSourceError()
     if protocol_id == "multi_candidate_robustness_v1":
+        temporal_dossiers = tuple(
+            _mapping(value) for value in _list(payload["temporal_dossiers"])
+        )
         if (
             payload.get("status") != "ok"
             or len(rows) != 120
             or _mapping(payload["common_retrospective"])
             != {"since": "2023-01-01", "through": "2026-08-18"}
             or tuple(
-                _mapping(value).get("candidate_id")
-                for value in _list(payload["temporal_dossiers"])
+                value.get("candidate_id") for value in temporal_dossiers
             )
             != candidate_ids
         ):
             raise FiveCandidateDossierSourceError()
+        for value, candidate_id in zip(
+            temporal_dossiers,
+            candidate_ids,
+            strict=True,
+        ):
+            _validate_temporal_dossier(value, candidate_id)
     else:
         if (
             len(rows) != 180
@@ -384,6 +436,28 @@ def _validated_robustness_source(
         _project_cross_symbol(_mapping(row), _string(_mapping(row)["candidate_id"]))
     _string_tuple(payload["quality_flags"])
     return artifact
+
+
+def _validate_temporal_dossier(
+    value: Mapping[str, object],
+    candidate_id: str,
+) -> None:
+    expected = _TEMPORAL_IDENTITIES[candidate_id]
+    if value.get("candidate_id") != candidate_id or any(
+        value.get(field) != expected_value
+        for field, expected_value in expected.items()
+    ):
+        raise FiveCandidateDossierSourceError()
+    if (
+        not isinstance(value.get("retrospective_event_count"), int)
+        or not isinstance(value.get("rolling_fold_count"), int)
+        or not isinstance(value.get("folds_with_events"), int)
+        or value["rolling_fold_count"] != 10
+        or value["folds_with_events"] > value["rolling_fold_count"]
+    ):
+        raise FiveCandidateDossierSourceError()
+    _project_horizons(value["horizon_summary"], candidate_id)
+    _string_tuple(value["source_quality_flags"])
 
 
 def _project_baseline(
@@ -491,12 +565,12 @@ def _project_robustness(
         for row in rows
         if row.yearly is not None
     )
-    window = _BASELINE_IDENTITIES[candidate_id]
+    common_retrospective = _mapping(payload["common_retrospective"])
     return CandidateRobustnessEvidence(
         artifact_id=source.ref.artifact_id,
         robustness_protocol_id=_string(payload["protocol_id"]),
-        retrospective_since=window[3],
-        retrospective_through=window[4],
+        retrospective_since=_date(common_retrospective["since"]),
+        retrospective_through=_date(common_retrospective["through"]),
         matrix_cell_count=len(rows),
         available_symbol_count=len(available),
         unavailable_symbol_count=len(unavailable),

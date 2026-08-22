@@ -266,6 +266,19 @@ def test_dossier_has_exact_inventory(
     assert report.comparability_pairs == ()
 
 
+def test_n_robustness_window_comes_from_robustness_source(
+    service: FiveCandidateResearchDossierService,
+) -> None:
+    report = service.run(
+        FiveCandidateDossierRequest("five_candidate_research_dossier_v1")
+    )
+    n_dossier = report.candidate_dossiers[1]
+
+    assert n_dossier.baseline.retrospective_through.isoformat() == "2026-08-19"
+    assert n_dossier.robustness.retrospective_since.isoformat() == "2023-01-01"
+    assert n_dossier.robustness.retrospective_through.isoformat() == "2026-08-18"
+
+
 def _horizon(
     sample_count: int,
     metric: str | None,
@@ -351,6 +364,93 @@ def test_horizon_evidence_rejects_numeric_metrics_for_zero_sample() -> None:
         _horizon(0, "0")
 
 
+def test_unavailable_reason_is_candidate_specific() -> None:
+    with pytest.raises(FiveCandidateDossierReportError):
+        _cross_symbol(
+            candidate_id=CANDIDATES[2],
+            status="unavailable",
+            reason_code="MULTI_CANDIDATE_SOURCE_UNAVAILABLE",
+            evaluable_count=None,
+            event_count=None,
+            event_rate_per_1000_evaluable=None,
+            horizon_summary=None,
+            sector="black",
+        )
+
+
+def test_zero_event_rejects_positive_horizon_sample() -> None:
+    with pytest.raises(FiveCandidateDossierReportError):
+        _cross_symbol(
+            horizon_summary=MappingProxyType(
+                {3: _horizon(1, "0"), 5: _horizon(0, None), 8: _horizon(0, None)}
+            )
+        )
+
+
+def _jdj_yearly(
+    *,
+    zero_sample_metric: str | None = None,
+    zero_event_positive_sample: bool = False,
+) -> MappingProxyType:
+    yearly: dict[str, object] = {}
+    for year in (2023, 2024, 2025, 2026):
+        event_count = 0
+        horizons: dict[str, object] = {}
+        for horizon in (3, 5, 8, 20):
+            sample_count = (
+                1
+                if zero_event_positive_sample and year == 2023 and horizon == 3
+                else 0
+            )
+            metric = (
+                zero_sample_metric
+                if year == 2023 and horizon == 3 and sample_count == 0
+                else "0"
+                if sample_count > 0
+                else None
+            )
+            horizons[str(horizon)] = {
+                "sample_count": sample_count,
+                "historical_positive_outcome_rate": metric,
+                "median_directional_return_bps": metric,
+            }
+        yearly[str(year)] = {
+            "event_count": event_count,
+            "horizon_summary": horizons,
+        }
+    return MappingProxyType(yearly)
+
+
+@pytest.mark.parametrize(
+    "yearly",
+    [
+        _jdj_yearly(zero_sample_metric="0"),
+        _jdj_yearly(zero_event_positive_sample=True),
+    ],
+    ids=("zero-sample-numeric-metric", "zero-event-positive-sample"),
+)
+def test_jdj_yearly_evidence_rejects_missingness_hybrid(
+    yearly: MappingProxyType,
+) -> None:
+    horizons = MappingProxyType(
+        {horizon: _horizon(1, "0") for horizon in (3, 5, 8, 20)}
+    )
+
+    with pytest.raises(FiveCandidateDossierReportError):
+        CandidateCrossSymbolEvidence(
+            candidate_id=CANDIDATES[2],
+            symbol="jm",
+            status="available",
+            reason_code=None,
+            evaluable_count=10,
+            event_count=1,
+            event_rate_per_1000_evaluable="100",
+            horizon_summary=horizons,
+            sector="black",
+            yearly=yearly,
+        )
+
+
 def test_service_projects_verified_json_without_runtime_construction(
     monkeypatch: pytest.MonkeyPatch,
     service: FiveCandidateResearchDossierService,
@@ -418,6 +518,92 @@ def _service_with_mutated_source(
     )
     object.__setattr__(protocol, "source_artifacts", tuple(refs))
     return FiveCandidateResearchDossierService(protocol, project_root=tmp_path)
+
+
+def _make_unavailable_row_available(payload: dict[str, object]) -> None:
+    rows = payload["cross_symbol_results"]
+    assert isinstance(rows, list)
+    unavailable = next(
+        row
+        for row in rows
+        if row["candidate_id"] == CANDIDATES[0]
+        and row["status"] == "unavailable"
+    )
+    available = next(
+        row
+        for row in rows
+        if row["candidate_id"] == CANDIDATES[0]
+        and row["status"] == "available"
+    )
+    symbol = unavailable["symbol"]
+    unavailable.clear()
+    unavailable.update(deepcopy(available))
+    unavailable["symbol"] = symbol
+
+
+def test_valid_sha_inventory_drift_fails_closed(tmp_path: Path) -> None:
+    service = _service_with_mutated_source(
+        tmp_path,
+        5,
+        _make_unavailable_row_available,
+    )
+
+    with pytest.raises(FiveCandidateDossierSourceError):
+        service.run(
+            FiveCandidateDossierRequest("five_candidate_research_dossier_v1")
+        )
+
+
+def test_candidate_dossier_rejects_summary_that_disagrees_with_rows(
+    service: FiveCandidateResearchDossierService,
+) -> None:
+    report = service.run(
+        FiveCandidateDossierRequest("five_candidate_research_dossier_v1")
+    )
+    dossier = report.candidate_dossiers[0]
+    changed_summary = replace(
+        dossier.robustness,
+        available_symbol_count=50,
+        unavailable_symbol_count=10,
+        unavailable_reason_counts=MappingProxyType(
+            {"MULTI_CANDIDATE_SOURCE_UNAVAILABLE": 10}
+        ),
+    )
+
+    with pytest.raises(FiveCandidateDossierReportError):
+        replace(dossier, robustness=changed_summary)
+
+
+@pytest.mark.parametrize(
+    ("field", "changed"),
+    [
+        ("candidate_protocol_id", "changed"),
+        ("event_unit", "changed"),
+        ("source_kind", "changed"),
+        ("retrospective_since", "2023-01-02"),
+        ("retrospective_through", "2026-08-17"),
+        ("prospective_first_trading_day", "2026-08-21"),
+        ("prospective_through", "2026-08-18"),
+        ("prospective_status", "evaluated"),
+        ("horizon_semantics", "changed"),
+    ],
+)
+def test_valid_sha_temporal_dossier_semantic_drift_fails_closed(
+    tmp_path: Path,
+    field: str,
+    changed: str,
+) -> None:
+    def mutate(payload: dict[str, object]) -> None:
+        temporal = payload["temporal_dossiers"]
+        assert isinstance(temporal, list)
+        temporal[0][field] = changed
+
+    service = _service_with_mutated_source(tmp_path, 5, mutate)
+
+    with pytest.raises(FiveCandidateDossierSourceError):
+        service.run(
+            FiveCandidateDossierRequest("five_candidate_research_dossier_v1")
+        )
 
 
 @pytest.mark.parametrize(

@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+from collections import Counter
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
-from collections.abc import Mapping
 from types import MappingProxyType
 from typing import Any
 
@@ -213,12 +214,13 @@ class CandidateCrossSymbolEvidence:
         ):
             raise FiveCandidateDossierReportError()
         if self.status == "unavailable":
+            expected_reason = (
+                "MULTI_CANDIDATE_SOURCE_UNAVAILABLE"
+                if self.candidate_id in _CANDIDATES[:2]
+                else "JDJ_SOURCE_UNAVAILABLE"
+            )
             if (
-                self.reason_code
-                not in {
-                    "MULTI_CANDIDATE_SOURCE_UNAVAILABLE",
-                    "JDJ_SOURCE_UNAVAILABLE",
-                }
+                self.reason_code != expected_reason
                 or self.evaluable_count is not None
                 or self.event_count is not None
                 or self.event_rate_per_1000_evaluable is not None
@@ -244,8 +246,21 @@ class CandidateCrossSymbolEvidence:
             for value in horizons.values()
         ):
             raise FiveCandidateDossierReportError()
+        assert self.event_count is not None
+        if self.event_count == 0 and any(
+            value.sample_count != 0 for value in horizons.values()
+        ):
+            raise FiveCandidateDossierReportError()
         object.__setattr__(self, "horizon_summary", MappingProxyType(horizons))
-        object.__setattr__(self, "yearly", _deep_freeze(self.yearly))
+        object.__setattr__(
+            self,
+            "yearly",
+            _freeze_yearly_evidence(
+                self.candidate_id,
+                self.event_count,
+                self.yearly,
+            ),
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -375,8 +390,7 @@ class CandidateRobustnessEvidence:
         )
         allowed_windows = (
             {
-                _RETROSPECTIVE_WINDOWS[_CANDIDATES[0]],
-                _RETROSPECTIVE_WINDOWS[_CANDIDATES[1]],
+                (date(2023, 1, 1), date(2026, 8, 18)),
             }
             if self.artifact_id == "multi_candidate_robustness_v1"
             else {
@@ -451,6 +465,20 @@ class CandidateDossier:
     evidence_references: CandidateEvidenceReferences
 
     def __post_init__(self) -> None:
+        rows = tuple(self.evidence_references.cross_symbol)
+        available = tuple(row for row in rows if row.status == "available")
+        unavailable = tuple(row for row in rows if row.status == "unavailable")
+        reason_counts = Counter(
+            row.reason_code for row in unavailable if row.reason_code is not None
+        )
+        zero_samples = {
+            horizon: sum(
+                row.horizon_summary[horizon].sample_count == 0
+                for row in available
+                if row.horizon_summary is not None
+            )
+            for horizon in self.identity.horizons_bars
+        }
         if (
             not isinstance(self.identity, CandidateIdentityEvidence)
             or not isinstance(self.baseline, CandidateBaselineEvidence)
@@ -461,8 +489,17 @@ class CandidateDossier:
             != _expected_robustness_artifact(self.identity.candidate_id)
             or any(
                 row.candidate_id != self.identity.candidate_id
-                for row in self.evidence_references.cross_symbol
+                for row in rows
             )
+            or self.robustness.matrix_cell_count != len(rows)
+            or self.robustness.available_symbol_count != len(available)
+            or self.robustness.unavailable_symbol_count != len(unavailable)
+            or dict(self.robustness.unavailable_reason_counts)
+            != dict(reason_counts)
+            or self.robustness.zero_event_symbol_count
+            != sum(row.event_count == 0 for row in available)
+            or dict(self.robustness.zero_sample_symbol_count_by_horizon)
+            != zero_samples
         ):
             raise FiveCandidateDossierReportError()
 
@@ -631,8 +668,72 @@ def _expected_robustness_artifact(candidate_id: str) -> str:
     raise FiveCandidateDossierReportError()
 
 
+def _freeze_yearly_evidence(
+    candidate_id: str,
+    event_count: int,
+    value: object | None,
+) -> object | None:
+    if candidate_id in _CANDIDATES[:2]:
+        if value is not None:
+            raise FiveCandidateDossierReportError()
+        return None
+    if not isinstance(value, Mapping):
+        raise FiveCandidateDossierReportError()
+    yearly = dict(value)
+    expected_years = ("2023", "2024", "2025", "2026")
+    expected_horizons = SOURCE_SEMANTICS[candidate_id][4]
+    if set(yearly) != set(expected_years):
+        raise FiveCandidateDossierReportError()
+    total_event_count = 0
+    for year in expected_years:
+        item = yearly[year]
+        if not isinstance(item, Mapping):
+            raise FiveCandidateDossierReportError()
+        year_evidence = dict(item)
+        if set(year_evidence) != {"event_count", "horizon_summary"}:
+            raise FiveCandidateDossierReportError()
+        year_event_count = year_evidence["event_count"]
+        horizons = year_evidence["horizon_summary"]
+        if not _nonnegative_int(year_event_count) or not isinstance(
+            horizons,
+            Mapping,
+        ):
+            raise FiveCandidateDossierReportError()
+        horizon_values = dict(horizons)
+        if set(horizon_values) != {
+            str(horizon) for horizon in expected_horizons
+        }:
+            raise FiveCandidateDossierReportError()
+        year_sample_counts: list[int] = []
+        for horizon in expected_horizons:
+            raw_summary = horizon_values[str(horizon)]
+            if not isinstance(raw_summary, Mapping):
+                raise FiveCandidateDossierReportError()
+            summary = dict(raw_summary)
+            if set(summary) != {
+                "sample_count",
+                "historical_positive_outcome_rate",
+                "median_directional_return_bps",
+            }:
+                raise FiveCandidateDossierReportError()
+            sample_count = summary.pop("sample_count")
+            CandidateHorizonEvidence(
+                sample_count=sample_count,  # type: ignore[arg-type]
+                numeric_metrics=summary,  # type: ignore[arg-type]
+            )
+            if sample_count > year_event_count:  # type: ignore[operator]
+                raise FiveCandidateDossierReportError()
+            year_sample_counts.append(sample_count)  # type: ignore[arg-type]
+        if year_event_count == 0 and any(year_sample_counts):
+            raise FiveCandidateDossierReportError()
+        total_event_count += year_event_count
+    if total_event_count != event_count:
+        raise FiveCandidateDossierReportError()
+    return _deep_freeze(yearly)
+
+
 def _deep_freeze(value: object) -> object:
-    if type(value) is dict:
+    if isinstance(value, Mapping):
         return MappingProxyType(
             {str(key): _deep_freeze(item) for key, item in value.items()}
         )
