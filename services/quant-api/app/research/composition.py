@@ -61,6 +61,12 @@ from app.market_data.subing_lifecycle_policy import load_subing_lifecycle_policy
 from app.research.subing.subing_lifecycle_research_service import (
     SubingLifecycleResearchService,
 )
+from app.research.candidate_convergence.five_candidate_dossier import (
+    load_five_candidate_dossier_protocol,
+)
+from app.research.candidate_convergence.five_candidate_dossier_service import (
+    FiveCandidateResearchDossierService,
+)
 
 
 def build_subing_calibration_research_service(
@@ -70,6 +76,13 @@ def build_subing_calibration_research_service(
     return SubingCalibrationResearchService(
         market_data=build_market_data_service(session),
         products=load_active_products(),
+    )
+
+
+def build_five_candidate_dossier_service() -> FiveCandidateResearchDossierService:
+    """Compose the artifact-only five-candidate dossier without Runtime state."""
+    return FiveCandidateResearchDossierService(
+        load_five_candidate_dossier_protocol()
     )
 
 

@@ -29,6 +29,7 @@ from app.research.candidate_convergence.five_candidate_dossier import (
 from app.research.candidate_convergence.five_candidate_dossier_service import (
     FiveCandidateResearchDossierService,
 )
+from app.research import composition
 
 
 CANDIDATES = (
@@ -139,6 +140,18 @@ def test_dossier_protocol_is_exact() -> None:
     assert protocol.automatic_scoring is False
     assert protocol.automatic_ranking is False
     assert protocol.automatic_promotion is False
+
+
+def test_artifact_only_composition_builds_dossier_service_without_session() -> None:
+    assert hasattr(composition, "build_five_candidate_dossier_service")
+    service = composition.build_five_candidate_dossier_service()
+
+    report = service.run(
+        FiveCandidateDossierRequest("five_candidate_research_dossier_v1")
+    )
+
+    assert isinstance(service, FiveCandidateResearchDossierService)
+    assert report.candidate_order == CANDIDATES
 
 
 def _write_mutated_protocol(tmp_path: Path, mutator) -> Path:

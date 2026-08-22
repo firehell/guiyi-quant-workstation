@@ -67,6 +67,10 @@ from app.research.subing.subing_lifecycle_research_service import (
     LifecycleResearchRequest,
     SubingLifecycleResearchResult,
 )
+from app.research.candidate_convergence.five_candidate_dossier import (
+    CandidateDossier,
+    FiveCandidateResearchDossier,
+)
 
 
 def _calibration_payload(
@@ -220,6 +224,138 @@ def _multi_candidate_robustness_payload(
         "metric_compatibility_flags": list(report.metric_compatibility_flags),
         "quality_flags": list(report.quality_flags),
     }
+
+
+def _five_candidate_dossier_payload(
+    report: FiveCandidateResearchDossier,
+) -> dict[str, object]:
+    return {
+        "schema_version": report.schema_version,
+        "command": "research.candidate-dossier",
+        "status": report.status,
+        "protocol_id": report.protocol_id,
+        "frozen_at": report.frozen_at.isoformat(),
+        "research_only": report.research_only,
+        "readonly": report.readonly,
+        "prospective_consumed": report.prospective_consumed,
+        "candidate_order": list(report.candidate_order),
+        "source_artifacts": [
+            {"artifact_id": artifact.artifact_id}
+            for artifact in report.source_artifacts
+        ],
+        "candidate_dossiers": [
+            _candidate_dossier_payload(dossier)
+            for dossier in report.candidate_dossiers
+        ],
+        "metric_catalog": [
+            {
+                "metric_id": metric.metric_id,
+                "candidate_ids": list(metric.candidate_ids),
+                "status": metric.status.value,
+                "reason_codes": list(metric.reason_codes),
+            }
+            for metric in report.metric_catalog
+        ],
+        "comparability_pairs": [
+            {
+                "left_candidate_id": pair.left_candidate_id,
+                "right_candidate_id": pair.right_candidate_id,
+                "status": pair.status.value,
+                "reason_codes": list(pair.reason_codes),
+                "existing_relationship_reference": _dossier_value_payload(
+                    pair.existing_relationship_reference
+                ),
+            }
+            for pair in report.comparability_pairs
+        ],
+        "quality_flags": list(report.quality_flags),
+        "safety": dict(report.safety),
+    }
+
+
+def _candidate_dossier_payload(value: CandidateDossier) -> dict[str, object]:
+    identity = value.identity
+    baseline = value.baseline
+    prospective = baseline.prospective
+    robustness = value.robustness
+    return {
+        "candidate_id": identity.candidate_id,
+        "identity": {
+            "source_kind": identity.source_kind,
+            "policy_id": identity.policy_id,
+            "formula_version": identity.formula_version,
+            "source_event_kind": identity.source_event_kind,
+            "source_timeframes": list(identity.source_timeframes),
+            "evaluable_unit": identity.evaluable_unit,
+            "horizon_semantics": identity.horizon_semantics,
+            "horizons_bars": list(identity.horizons_bars),
+        },
+        "baseline": {
+            "artifact_id": baseline.artifact_id,
+            "symbol": baseline.symbol,
+            "validation_protocol_id": baseline.validation_protocol_id,
+            "baseline_request_through": baseline.baseline_request_through.isoformat(),
+            "retrospective": {
+                "since": baseline.retrospective_since.isoformat(),
+                "through": baseline.retrospective_through.isoformat(),
+                "event_count": baseline.retrospective_event_count,
+                "evaluable_count": baseline.evaluable_count,
+            },
+            "rolling": {
+                "fold_count": baseline.rolling_fold_count,
+                "folds_with_events": baseline.folds_with_events,
+            },
+            "prospective": {
+                "first_trading_day": prospective.first_trading_day.isoformat(),
+                "through": prospective.through.isoformat(),
+                "status": prospective.status,
+                "consumed": prospective.consumed,
+                "embargo_trading_days": [
+                    day.isoformat() for day in prospective.embargo_trading_days
+                ],
+            },
+            "quality_flags": list(baseline.quality_flags),
+        },
+        "robustness": {
+            "artifact_id": robustness.artifact_id,
+            "protocol_id": robustness.robustness_protocol_id,
+            "retrospective": {
+                "since": robustness.retrospective_since.isoformat(),
+                "through": robustness.retrospective_through.isoformat(),
+            },
+            "matrix_cell_count": robustness.matrix_cell_count,
+            "available_symbol_count": robustness.available_symbol_count,
+            "unavailable_symbol_count": robustness.unavailable_symbol_count,
+            "unavailable_reason_counts": dict(
+                robustness.unavailable_reason_counts
+            ),
+            "zero_event_symbol_count": robustness.zero_event_symbol_count,
+            "zero_sample_symbol_count_by_horizon": {
+                str(horizon): count
+                for horizon, count in (
+                    robustness.zero_sample_symbol_count_by_horizon.items()
+                )
+            },
+            "quality_flags": list(robustness.quality_flags),
+        },
+    }
+
+
+def _dossier_value_payload(value: object) -> object:
+    if isinstance(value, Decimal):
+        return _optional_decimal(value)
+    if isinstance(value, (date, datetime)):
+        return value.isoformat()
+    if isinstance(value, Enum):
+        return value.value
+    if isinstance(value, Mapping):
+        return {
+            str(key): _dossier_value_payload(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, (tuple, list)):
+        return [_dossier_value_payload(item) for item in value]
+    return value
 
 
 def _jdj_active60_robustness_payload(

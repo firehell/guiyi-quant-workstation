@@ -82,6 +82,13 @@ def add_research_commands(
         required=True,
     )
 
+    dossier = commands.add_parser("candidate-dossier")
+    dossier.add_argument(
+        "--protocol",
+        choices=("five_candidate_research_dossier_v1",),
+        required=True,
+    )
+
     mirror = commands.add_parser("main-force-mirror-v2")
     mirror.add_argument("--symbol", required=True)
     mirror.add_argument(

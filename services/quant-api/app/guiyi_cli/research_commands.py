@@ -7,6 +7,7 @@ from typing import Protocol, cast
 from app.guiyi_cli.research_payloads import (
     _calibration_payload,
     _candidate_payload,
+    _five_candidate_dossier_payload,
     _jdj_active60_robustness_payload,
     _jdj_candidate_payload,
     _jdj_research_payload,
@@ -53,6 +54,10 @@ from app.research.subing.subing_calibration_service import (
 from app.research.subing.subing_lifecycle_research_service import (
     LifecycleResearchRequest,
     SubingLifecycleResearchResult,
+)
+from app.research.candidate_convergence.five_candidate_dossier import (
+    FiveCandidateDossierRequest,
+    FiveCandidateResearchDossier,
 )
 
 
@@ -104,11 +109,20 @@ class _JdjActive60RobustnessService(Protocol):
     ) -> JdjActive60RobustnessReport: ...
 
 
+class _FiveCandidateDossierService(Protocol):
+    def run(
+        self, request: FiveCandidateDossierRequest
+    ) -> FiveCandidateResearchDossier: ...
+
+
 def run_research_command(
     request: ResearchRequest,
     service: object,
 ) -> dict[str, object]:
     """Run one Historical-only research command and render its JSON schema."""
+    if isinstance(request, FiveCandidateDossierRequest):
+        dossier_service = cast(_FiveCandidateDossierService, service)
+        return _five_candidate_dossier_payload(dossier_service.run(request))
     if isinstance(request, JdjActive60RobustnessRequest):
         jdj_robustness_service = cast(_JdjActive60RobustnessService, service)
         return _jdj_active60_robustness_payload(

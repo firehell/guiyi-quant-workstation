@@ -33,6 +33,9 @@ from app.research.subing.subing_calibration_service import (
 from app.research.subing.subing_lifecycle_research_service import (
     LifecycleResearchRequest,
 )
+from app.research.candidate_convergence.five_candidate_dossier import (
+    FiveCandidateDossierRequest,
+)
 
 
 ResearchRequest: TypeAlias = (
@@ -44,11 +47,14 @@ ResearchRequest: TypeAlias = (
     | NStructureResearchRequest
     | MultiCandidateRobustnessRequest
     | JdjActive60RobustnessRequest
+    | FiveCandidateDossierRequest
 )
 
 
 def build_research_request(args: argparse.Namespace) -> ResearchRequest:
     """Convert CLI strings into one immutable research request."""
+    if args.research_command == "candidate-dossier":
+        return FiveCandidateDossierRequest(protocol_id=args.protocol)
     if args.research_command == "candidate-robustness":
         if args.protocol == "jdj_active60_robustness_v1":
             return JdjActive60RobustnessRequest(protocol_id=args.protocol)

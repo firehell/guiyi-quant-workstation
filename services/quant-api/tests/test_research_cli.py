@@ -6,6 +6,7 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 import io
 import json
+from types import MappingProxyType
 from types import SimpleNamespace
 
 import pytest
@@ -91,6 +92,16 @@ from app.research.subing.subing_lifecycle_research_service import (
 from app.research.subing.subing_candidate_validation_service import (
     CandidateValidationRequest,
 )
+from app.research.candidate_convergence.artifact_source import (
+    FiveCandidateDossierSourceError,
+)
+from app.research.candidate_convergence.five_candidate_dossier import (
+    FiveCandidateDossierRequest,
+    load_five_candidate_dossier_protocol,
+)
+from app.research.candidate_convergence.five_candidate_dossier_service import (
+    FiveCandidateResearchDossierService,
+)
 
 
 def _arguments(
@@ -147,7 +158,7 @@ def _lifecycle_arguments() -> list[str]:
     ]
 
 
-def test_research_parser_exposes_only_the_seven_readonly_commands() -> None:
+def test_research_parser_exposes_only_the_eight_readonly_commands() -> None:
     parser = build_parser()
     domain_action = next(
         action for action in parser._actions if action.dest == "domain"
@@ -160,6 +171,7 @@ def test_research_parser_exposes_only_the_seven_readonly_commands() -> None:
     )
 
     assert set(command_action.choices) == {
+        "candidate-dossier",
         "candidate-robustness",
         "candidate-validation",
         "jdj-1m",
@@ -2732,3 +2744,213 @@ def test_candidate_robustness_cli_dispatches_readonly_deterministic_json() -> No
     assert payload["readonly"] is payload["research_only"] is True
     assert payload["cross_symbol_results"][0]["event_rate_per_1000_evaluable"] == "500"
     assert payload["relationships"][0]["signed_distance_median"] == "1"
+
+
+def test_candidate_dossier_parser_builds_exact_request() -> None:
+    args = build_parser().parse_args(
+        [
+            "research",
+            "candidate-dossier",
+            "--protocol",
+            "five_candidate_research_dossier_v1",
+        ]
+    )
+
+    request = build_research_request(args)
+
+    assert request == FiveCandidateDossierRequest(
+        "five_candidate_research_dossier_v1"
+    )
+
+
+@pytest.mark.parametrize(
+    "extra_arguments",
+    (
+        ("--since", "2023-01-01"),
+        ("--through", "2026-08-20"),
+        ("--symbol", "jm"),
+        ("--candidate", "subing_lifecycle_v2_candidate_v1"),
+        ("--products", "jm"),
+        ("--threshold", "1"),
+        ("--score", "1"),
+        ("--rank", "1"),
+    ),
+)
+def test_candidate_dossier_parser_rejects_out_of_contract_flags(
+    extra_arguments: tuple[str, str],
+) -> None:
+    with pytest.raises(CliUsageError):
+        build_parser().parse_args(
+            [
+                "research",
+                "candidate-dossier",
+                "--protocol",
+                "five_candidate_research_dossier_v1",
+                *extra_arguments,
+            ]
+        )
+
+
+def test_candidate_dossier_parser_rejects_unknown_protocol() -> None:
+    with pytest.raises(CliUsageError):
+        build_parser().parse_args(
+            [
+                "research",
+                "candidate-dossier",
+                "--protocol",
+                "five_candidate_research_dossier_v2",
+            ]
+        )
+
+
+def _five_candidate_dossier_report():
+    return FiveCandidateResearchDossierService(
+        load_five_candidate_dossier_protocol()
+    ).run(FiveCandidateDossierRequest("five_candidate_research_dossier_v1"))
+
+
+class _FakeFiveCandidateDossierService:
+    def __init__(self, report=None, error: Exception | None = None) -> None:
+        self.report = report
+        self.error = error
+        self.requests: list[FiveCandidateDossierRequest] = []
+
+    def run(self, request: FiveCandidateDossierRequest):
+        self.requests.append(request)
+        if self.error is not None:
+            raise self.error
+        return self.report
+
+
+def test_candidate_dossier_cli_never_enters_session_context() -> None:
+    service = _FakeFiveCandidateDossierService(_five_candidate_dossier_report())
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+
+    def fail_session_factory():
+        pytest.fail("candidate-dossier must not construct a Session")
+
+    code = main(
+        [
+            "research",
+            "candidate-dossier",
+            "--protocol",
+            "five_candidate_research_dossier_v1",
+        ],
+        session_factory=fail_session_factory,
+        candidate_dossier_service_factory=lambda: service,
+        stdout=stdout,
+        stderr=stderr,
+    )
+
+    assert code == 0
+    assert stderr.getvalue() == ""
+    assert service.requests == [
+        FiveCandidateDossierRequest("five_candidate_research_dossier_v1")
+    ]
+    assert json.loads(stdout.getvalue())["command"] == "research.candidate-dossier"
+
+
+def _contains_matrix_sized_list(value: object) -> bool:
+    if isinstance(value, dict):
+        return any(_contains_matrix_sized_list(item) for item in value.values())
+    if isinstance(value, list):
+        return len(value) in {60, 120, 180, 300} or any(
+            _contains_matrix_sized_list(item) for item in value
+        )
+    return False
+
+
+def test_candidate_dossier_payload_is_compact_ordered_and_byte_deterministic() -> None:
+    report = _five_candidate_dossier_report()
+    first_relationship = dict(
+        report.comparability_pairs[0].existing_relationship_reference or {}
+    )
+    relationships = list(first_relationship["relationships"])
+    first_row = dict(relationships[0])
+    first_row["signed_distance_median"] = Decimal("-0.000")
+    relationships[0] = MappingProxyType(first_row)
+    first_relationship["relationships"] = tuple(relationships)
+    object.__setattr__(
+        report.comparability_pairs[0],
+        "existing_relationship_reference",
+        MappingProxyType(first_relationship),
+    )
+    service = _FakeFiveCandidateDossierService(report)
+    request = FiveCandidateDossierRequest("five_candidate_research_dossier_v1")
+
+    first = run_research_command(request, service)
+    second = run_research_command(request, service)
+    first_bytes = json.dumps(first, separators=(",", ":"), ensure_ascii=False)
+    second_bytes = json.dumps(second, separators=(",", ":"), ensure_ascii=False)
+
+    assert first_bytes == second_bytes
+    assert first["candidate_order"] == list(report.candidate_order)
+    assert first["source_artifacts"] == [
+        {"artifact_id": artifact.artifact_id}
+        for artifact in report.source_artifacts
+    ]
+    assert [
+        dossier["candidate_id"] for dossier in first["candidate_dossiers"]
+    ] == list(report.candidate_order)
+    assert [
+        (pair["left_candidate_id"], pair["right_candidate_id"])
+        for pair in first["comparability_pairs"]
+    ] == [
+        (pair.left_candidate_id, pair.right_candidate_id)
+        for pair in report.comparability_pairs
+    ]
+    assert (
+        first["comparability_pairs"][0]["existing_relationship_reference"]
+        ["relationships"][0]["signed_distance_median"]
+        == "0"
+    )
+    assert not _contains_matrix_sized_list(first)
+    assert "cross_symbol" not in first_bytes
+    assert "expected_sha256" not in first_bytes
+    assert '"path"' not in first_bytes
+    assert "evidence_summaries" not in first_bytes
+    assert len(first_bytes.encode("utf-8")) < 50_000
+
+
+def test_candidate_dossier_source_error_is_stable_and_redacted() -> None:
+    error = FiveCandidateDossierSourceError()
+    error.args = (
+        "/private/tmp/source.json "
+        '{"source":"secret"} '
+        + "a" * 64,
+    )
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+
+    code = main(
+        [
+            "research",
+            "candidate-dossier",
+            "--protocol",
+            "five_candidate_research_dossier_v1",
+        ],
+        session_factory=lambda: pytest.fail("Session construction is forbidden"),
+        candidate_dossier_service_factory=lambda: (
+            _FakeFiveCandidateDossierService(error=error)
+        ),
+        stdout=stdout,
+        stderr=stderr,
+    )
+
+    assert code == 1
+    assert stdout.getvalue() == ""
+    assert json.loads(stderr.getvalue()) == {
+        "schema_version": 1,
+        "command": "research.candidate-dossier",
+        "status": "error",
+        "readonly": True,
+        "error": {
+            "code": "FIVE_CANDIDATE_DOSSIER_SOURCE_INVALID",
+            "type": "FiveCandidateDossierSourceError",
+        },
+    }
+    assert "/private/tmp/source.json" not in stderr.getvalue()
+    assert '"source":"secret"' not in stderr.getvalue()
+    assert "a" * 64 not in stderr.getvalue()
+    assert "Traceback" not in stderr.getvalue()
