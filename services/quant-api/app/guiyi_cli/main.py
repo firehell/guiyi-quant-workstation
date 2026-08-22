@@ -10,9 +10,6 @@ from __future__ import annotations
 import argparse
 from collections.abc import Callable, Sequence
 from contextlib import AbstractContextManager
-import logging
-from pathlib import Path
-import stat
 import sys
 from typing import Any, TextIO
 
@@ -20,8 +17,10 @@ from app.db.session import SessionLocal
 from app.alerts.composition import build_alert_runtime
 from app.alerts.notification import ALERT_AUDIENCES
 from app.alerts.notification_composition import build_notification_sender_from_env
-from app.core.env import PROJECT_ROOT
 from app.execution_review.composition import build_execution_review_roll_reconciler
+from app.execution_review.roll_gate import (
+    execution_review_roll_marker_state as read_execution_review_roll_gate,
+)
 from app.guiyi_cli.data_commands import build_request, run_data_command
 from app.guiyi_cli.data_parser import (
     CliUsageError,
@@ -52,6 +51,9 @@ from app.research.common.candidate_validation_schedule import (
 from app.market_data.historical_data_manager import HistoricalDataManager
 from app.market_data.product_retirement import ProductRetiredError
 from app.research.composition import (
+    build_five_candidate_dossier_service,
+    build_five_candidate_relationship_service,
+    build_jdj_active60_robustness_service,
     build_jdj_candidate_validation_service,
     build_jdj_research_service,
     build_main_force_mirror_v2_research_service,
@@ -62,7 +64,17 @@ from app.research.composition import (
     build_subing_candidate_validation_service,
     build_subing_lifecycle_research_service,
 )
+from app.research.robustness.jdj_robustness import (
+    JdjActive60RobustnessRequest,
+)
+from app.research.candidate_convergence.five_candidate_dossier import (
+    FiveCandidateDossierRequest,
+)
+from app.research.candidate_convergence.five_candidate_relationships import (
+    FiveCandidateRelationshipRequest,
+)
 from app.services.runtime_health import build_runtime_health
+from app.runtime_entry import run_after_market, run_alert, run_live
 
 SessionFactory = Callable[[], AbstractContextManager[Any]]
 ManagerFactory = Callable[[Any], HistoricalDataManager]
@@ -71,13 +83,11 @@ LiveServiceFactory = Callable[[Any], Any]
 AlertRuntimeFactory = Callable[[], Any]
 AlertCanarySenderFactory = Callable[[], Any]
 ResearchServiceFactory = Callable[[Any], Any]
+ArtifactResearchServiceFactory = Callable[[], Any]
 JdjCandidateValidationServiceFactory = Callable[[Any, str], Any]
 RollReconcilerFactory = Callable[[Any], Any]
 RollMarkerState = Callable[[], str]
 MemberRankSnapshotBuilderFactory = Callable[[Any], Any]
-
-logger = logging.getLogger(__name__)
-
 
 def _execution_is_readonly(args: argparse.Namespace) -> bool:
     if args.domain == "research":
@@ -95,23 +105,6 @@ def _parse_error_is_readonly(raw: Sequence[str]) -> bool:
         and raw[0] == "runtime"
         and raw[1] in {"live", "alert", "alert-canary"}
     )
-
-
-def _execution_review_roll_marker_state(
-    project_root: Path = PROJECT_ROOT,
-) -> str:
-    marker = project_root / ".run/execution-review-roll-enabled"
-    try:
-        metadata = marker.lstat()
-        if not stat.S_ISREG(metadata.st_mode):
-            return "invalid"
-        if stat.S_IMODE(metadata.st_mode) != 0o600:
-            return "invalid"
-        return "enabled" if marker.read_bytes() == b"enabled\n" else "invalid"
-    except FileNotFoundError:
-        return "disabled"
-    except OSError:
-        return "invalid"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -179,8 +172,17 @@ def main(
     multi_candidate_robustness_service_factory: ResearchServiceFactory = (
         build_multi_candidate_robustness_service
     ),
+    jdj_active60_robustness_service_factory: ResearchServiceFactory = (
+        build_jdj_active60_robustness_service
+    ),
+    candidate_dossier_service_factory: ArtifactResearchServiceFactory = (
+        build_five_candidate_dossier_service
+    ),
+    candidate_relationship_service_factory: ResearchServiceFactory = (
+        build_five_candidate_relationship_service
+    ),
     execution_review_roll_marker_state: RollMarkerState = (
-        _execution_review_roll_marker_state
+        read_execution_review_roll_gate
     ),
     roll_reconciler_factory: RollReconcilerFactory = (
         build_execution_review_roll_reconciler
@@ -229,53 +231,80 @@ def main(
             )
         elif args.domain == "research":
             assert research_request is not None
-            with session_factory() as session:
-                if args.research_command == "subing-lifecycle":
-                    service = lifecycle_research_service_factory(session)
-                elif args.research_command == "candidate-robustness":
-                    service = multi_candidate_robustness_service_factory(session)
-                elif args.research_command == "n-structure":
-                    service = n_structure_research_service_factory(session)
-                elif args.research_command == "jdj-1m":
-                    service = jdj_research_service_factory(session)
-                elif args.research_command == "candidate-validation":
-                    if not isinstance(research_request, CandidateValidationRequest):
-                        raise ValueError("CLI_CANDIDATE_REQUEST_INVALID")
-                    if (
-                        research_request.candidate_id
-                        == "subing_lifecycle_v2_candidate_v1"
-                    ):
-                        service = candidate_validation_service_factory(session)
-                    elif research_request.candidate_id == "n_structure_5m_candidate_v1":
-                        service = n_candidate_validation_service_factory(session)
-                    elif research_request.candidate_id in {
-                        "jdj_trend_follow_1m_candidate_v1",
-                        "jdj_trend_reentry_6_1m_candidate_v1",
-                        "jdj_key_level_breakout_1m_candidate_v1",
-                    }:
-                        if (
-                            research_request.protocol_id
-                            != "jdj_candidate_validation_v1"
-                        ):
-                            raise CandidateValidationIdentityError()
-                        service = jdj_candidate_validation_service_factory(
-                            session,
-                            research_request.candidate_id,
-                        )
-                    else:
-                        raise ValueError("CLI_CANDIDATE_ID_INVALID")
-                elif args.research_command == "main-force-mirror-v2":
-                    service = main_force_mirror_v2_research_service_factory(
-                        session
-                    )
-                elif args.research_command == "subing-calibration":
-                    service = research_service_factory(session)
-                else:
-                    raise ValueError("CLI_RESEARCH_COMMAND_INVALID")
+            if isinstance(research_request, FiveCandidateDossierRequest):
+                service = candidate_dossier_service_factory()
                 payload = run_research_command(
                     research_request,
                     service,
                 )
+            else:
+                with session_factory() as session:
+                    if args.research_command == "subing-lifecycle":
+                        service = lifecycle_research_service_factory(session)
+                    elif args.research_command == "candidate-robustness":
+                        if isinstance(
+                            research_request,
+                            JdjActive60RobustnessRequest,
+                        ):
+                            service = jdj_active60_robustness_service_factory(
+                                session
+                            )
+                        else:
+                            service = multi_candidate_robustness_service_factory(
+                                session
+                            )
+                    elif args.research_command == "n-structure":
+                        service = n_structure_research_service_factory(session)
+                    elif args.research_command == "jdj-1m":
+                        service = jdj_research_service_factory(session)
+                    elif args.research_command == "candidate-validation":
+                        if not isinstance(
+                            research_request, CandidateValidationRequest
+                        ):
+                            raise ValueError("CLI_CANDIDATE_REQUEST_INVALID")
+                        if (
+                            research_request.candidate_id
+                            == "subing_lifecycle_v2_candidate_v1"
+                        ):
+                            service = candidate_validation_service_factory(session)
+                        elif (
+                            research_request.candidate_id
+                            == "n_structure_5m_candidate_v1"
+                        ):
+                            service = n_candidate_validation_service_factory(session)
+                        elif research_request.candidate_id in {
+                            "jdj_trend_follow_1m_candidate_v1",
+                            "jdj_trend_reentry_6_1m_candidate_v1",
+                            "jdj_key_level_breakout_1m_candidate_v1",
+                        }:
+                            if (
+                                research_request.protocol_id
+                                != "jdj_candidate_validation_v1"
+                            ):
+                                raise CandidateValidationIdentityError()
+                            service = jdj_candidate_validation_service_factory(
+                                session,
+                                research_request.candidate_id,
+                            )
+                        else:
+                            raise ValueError("CLI_CANDIDATE_ID_INVALID")
+                    elif args.research_command == "main-force-mirror-v2":
+                        service = main_force_mirror_v2_research_service_factory(
+                            session
+                        )
+                    elif isinstance(
+                        research_request,
+                        FiveCandidateRelationshipRequest,
+                    ):
+                        service = candidate_relationship_service_factory(session)
+                    elif args.research_command == "subing-calibration":
+                        service = research_service_factory(session)
+                    else:
+                        raise ValueError("CLI_RESEARCH_COMMAND_INVALID")
+                    payload = run_research_command(
+                        research_request,
+                        service,
+                    )
         elif args.runtime_command == "status":
             # runtime status：只读聚合健康，与 HTTP /api/runtime/health 同源
             with session_factory() as session:
@@ -288,23 +317,12 @@ def main(
                     "runtime": health,
                 }
         elif args.runtime_command == "live":
-            # 前台阻塞循环由 launchd/终端托管；Python 不 daemonize 或启动 worker。
-            with session_factory() as session:
-                live_service_factory(session).run_forever()
-            payload = {
-                "schema_version": 1,
-                "command": "runtime.live",
-                "status": "ok",
-                "foreground": True,
-            }
+            payload = run_live(
+                session_factory=session_factory,
+                live_service_factory=live_service_factory,
+            )
         elif args.runtime_command == "alert":
-            alert_runtime_factory().run_forever()
-            payload = {
-                "schema_version": 1,
-                "command": "runtime.alert",
-                "status": "ok",
-                "foreground": True,
-            }
+            payload = run_alert(alert_runtime_factory=alert_runtime_factory)
         elif args.runtime_command == "alert-canary":
             acceptance = alert_canary_sender_factory().send_canary(args.audience)
             reference = acceptance.reference
@@ -335,8 +353,26 @@ def main(
     print_json(payload, stdout)
     return (
         0
-        if payload.get("status")
-        in {"passed", "planned", "published", "noop", "ok", "ready", "skipped", "accepted"}
+        if (
+            payload.get("status")
+            in {
+                "passed",
+                "planned",
+                "published",
+                "noop",
+                "ok",
+                "ready",
+                "skipped",
+                "accepted",
+            }
+            or (
+                isinstance(
+                    research_request,
+                    JdjActive60RobustnessRequest,
+                )
+                and "status" not in payload
+            )
+        )
         else 1
     )
 
@@ -356,20 +392,13 @@ def _run_data(
             builder = member_rank_snapshot_builder_factory(session)
             return builder.snapshot(build_request(args)).as_payload()
     if args.data_command == "after-market":
-        with session_factory() as session:
-            manager = manager_factory(session)
-            market_result = after_market_factory(manager).run()
-        payload = market_result.as_payload()
-        if (
-            market_result.status == "passed"
-            and execution_review_roll_marker_state() == "enabled"
-        ):
-            try:
-                with session_factory() as followup_session:
-                    roll_reconciler_factory(followup_session).reconcile_open_episodes()
-            except Exception:  # noqa: BLE001 - isolated best-effort follow-up
-                logger.warning("EXECUTION_REVIEW_ROLL_FOLLOWUP_FAILED")
-        return payload
+        return run_after_market(
+            session_factory=session_factory,
+            manager_factory=manager_factory,
+            after_market_factory=after_market_factory,
+            roll_marker_state=execution_review_roll_marker_state,
+            roll_reconciler_factory=roll_reconciler_factory,
+        )
     with session_factory() as session:
         manager = manager_factory(session)
         return run_data_command(args, manager).as_payload()

@@ -12,9 +12,12 @@ description: 当任务涉及 Market K线工作台、Lightweight Charts、指标�
 
 ## V1 布局
 
+- 首页：先看“需要处理”，再从 `0..3` 个“优先检查”进入品种详情；Radar `degraded` 时 fail-closed，
+  不输出优先检查。
 - 左侧：60 品种池、合约/真实主力/主连与周期选择。
 - 中间：K 线主图、现有 Indicator Registry overlay、成交量与 MACD。
-- 右侧：行情状态、覆盖区间、resolved contracts 与数据 freshness。
+- 右侧“当前检查栏”：固定按 `现在 → 市场背景 → 当前观察 → 位置/参与 → 提醒 → 更多研究`
+  验证，正式 Event、研究观察与 Research-only 事实不得互相替代。
 - 底部：按当前 Workspace 设计承载只读指标值与研究信息，不恢复已退役交易/信号表面。
 
 ## 组件建议

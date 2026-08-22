@@ -137,9 +137,9 @@ uv run --project services/quant-api pytest -q \
   services/quant-api/tests/data_foundation/test_member_rank_snapshot.py \
   services/quant-api/tests/data_foundation/test_member_rank_snapshot_builder.py \
   services/quant-api/tests/data_foundation/test_main_force_mirror_v2_service.py \
-  services/quant-api/tests/data_foundation/test_main_force_mirror_v2_research_service.py \
+  services/quant-api/tests/research/test_main_force_mirror_v2_research_service.py \
   services/quant-api/tests/data_foundation/test_market_api.py \
-  services/quant-api/tests/test_research_cli.py
+  services/quant-api/tests/research/test_research_cli_mirror_robustness.py
 
 pnpm --dir apps/quant-web test
 pnpm --dir apps/quant-web build

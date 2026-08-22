@@ -13,7 +13,7 @@ approvals_reviewer = "auto_review"
 # 默认推理强度；具体 Terra / Sol 仍按每个任务选择。
 model_reasoning_effort = "high"
 
-# 默认使用缓存搜索，减少不必要的实时外网访问。
+# web搜索
 web_search = "live"
 
 # git push、gh pr、依赖安装等需要网络。

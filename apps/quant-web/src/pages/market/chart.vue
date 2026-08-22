@@ -1,12 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { NAlert, NButton, NCard, NDrawer, NDrawerContent, NSpin, NTag, useMessage } from 'naive-ui'
-import ProductResearchSidebar from '@/components/market/ProductResearchSidebar.vue'
-import PriceVolumeOiPanel from '@/components/market/PriceVolumeOiPanel.vue'
+import { NAlert, NButton, NDrawer, NDrawerContent, NSpin, NTag, useMessage } from 'naive-ui'
+import ProductCheckSidebar from '@/components/market/ProductCheckSidebar.vue'
 import ProductWorkspaceToolbar from '@/components/market/ProductWorkspaceToolbar.vue'
-import SubingStatusStrip from '@/components/market/SubingStatusStrip.vue'
 import KlineChart from '@/components/kline/KlineChart.vue'
+import { getEventStates } from '@/api/executionReview'
 import { getMarketDominants, getProductResearch, getSubingResearch } from '@/api/market'
 import {
   getAlertRuntimeStatus,
@@ -29,6 +28,7 @@ import type {
   ResearchOverlayId,
   SeriesKind,
 } from '@/types/market'
+import type { EventState } from '@/types/executionReview'
 import { MARKET_FREQUENCIES } from '@/types/market'
 import { lifecycleSnapshotToMarkers } from '@/utils/subingLifecycleMarkers'
 import { buildKlineDerivedData } from '@/utils/klineViewModel'
@@ -70,6 +70,7 @@ const optionalEmaIndicators = ref<OptionalEmaIndicatorId[]>([
 const research = ref<ProductResearchResponse | null>(null)
 const researchLoading = ref(false)
 const researchError = ref(false)
+const currentEventStates = ref<Record<number, EventState>>({})
 const symbol = ref(resolveInitialSymbol())
 const contract = ref(String(route.query.contract || '').toUpperCase())
 const seriesKind = ref<SeriesKind>(resolveInitialSeriesKind())
@@ -141,6 +142,7 @@ const {
 let metadataReady = false
 let synchronizingSymbol = false
 let researchGeneration = 0
+let currentEventStateGeneration = 0
 let canonicalReplacementGeneration = 0
 let canonicalPendingGeneration: number | null = null
 let acceptedCanonical: { generation: number; identity: ReturnType<typeof currentIdentity> } | null = null
@@ -262,6 +264,10 @@ watch([symbol, seriesKind, contract], () => {
 
 watch([symbol, seriesKind, frequency, researchSidebarOpen, watchlist], persistWorkspacePreferences, { deep: true })
 
+watch([currentEventsStatus, currentEvents], () => {
+  void refreshCurrentEventStates()
+}, { deep: true })
+
 watch(frequency, (period) => {
   const current = loadMainChartPreferences()
   saveMainChartPreferences({ ...current, period })
@@ -290,6 +296,7 @@ onUnmounted(() => {
   disposeSubingObservation()
   disposeProductAlertScope()
   disposeProductCurrentAlertEvents()
+  currentEventStateGeneration += 1
   mirror.clear()
   dispose()
   disposePersistentAlertMarkers()
@@ -381,6 +388,21 @@ async function refreshResearch() {
     researchError.value = true
   } finally {
     if (requestGeneration === researchGeneration) researchLoading.value = false
+  }
+}
+
+async function refreshCurrentEventStates() {
+  const generation = ++currentEventStateGeneration
+  if (currentEventsStatus.value !== 'ready' || currentEvents.value.length === 0) {
+    currentEventStates.value = {}
+    return
+  }
+  try {
+    const response = await getEventStates(currentEvents.value.map((item) => item.id))
+    if (generation !== currentEventStateGeneration) return
+    currentEventStates.value = Object.fromEntries(response.items.map((item) => [item.event_id, item]))
+  } catch {
+    if (generation === currentEventStateGeneration) currentEventStates.value = {}
   }
 }
 
@@ -479,6 +501,19 @@ function openResearchDrawer() {
   researchDrawerOpen.value = true
 }
 
+function openFormalEvent(event: import('@/types/market').AlertEvent, state: EventState | null) {
+  if (!state) return
+  const useEpisode = state.state === 'open' || state.state === 'pending_review'
+  void router.push({
+    name: 'trade-records',
+    query: {
+      state: state.state,
+      event_id: useEpisode ? undefined : String(event.id),
+      episode_id: useEpisode && state.episode_id ? String(state.episode_id) : undefined,
+    },
+  })
+}
+
 async function toggleFullscreen() {
   if (!workspaceElement.value) return
   try {
@@ -551,24 +586,18 @@ function normalizeSymbol(value: unknown): string | null {
 
     <NSpin :show="metadataLoading">
       <NAlert v-if="error" type="error" :show-icon="true">{{ error }}</NAlert>
-      <NCard size="small" :bordered="false" class="identity-card">
-        <div class="identity-row">
-          <strong>{{ symbol.toUpperCase() }} {{ selectedDominant?.product_name }}</strong>
-          <NTag>{{ effectiveIdentity.seriesKind }}</NTag>
-          <NTag>{{ frequency }}</NTag>
-          <span>{{ visibleBars.length }} bars</span>
-          <span v-if="canonicalCoverage">{{ canonicalCoverage.start }} → {{ canonicalCoverage.end }}</span>
-          <NTag v-if="canLoadEarlier" type="info">可继续向前加载</NTag>
-          <NTag
-            data-testid="market-display-state"
-            :type="isLiveDisplay ? 'success' : (isPostCloseDisplay ? 'warning' : 'default')"
-          >{{ displayStateLabel }}</NTag>
-          <NTag data-testid="market-phase">{{ phaseLabel }}</NTag>
-          <span v-if="isLiveDisplay && marketState?.live_contract">当前 Live 主力合约 {{ marketState.live_contract }}</span>
-          <NTag v-if="afterMarketFailed" type="warning">最近盘后更新失败</NTag>
-          <NButton v-if="!followLatest" size="small" secondary @click="chart?.scrollToLatest()">回到最新</NButton>
-        </div>
-      </NCard>
+      <div class="product-status-strip" data-testid="product-status-strip">
+        <strong>{{ effectiveIdentity.contract || selectedDominant?.actual_contract || symbol.toUpperCase() }}</strong>
+        <NTag
+          data-testid="market-display-state"
+          :type="isLiveDisplay ? 'success' : (isPostCloseDisplay ? 'warning' : 'default')"
+        >{{ displayStateLabel }}</NTag>
+        <span data-testid="market-phase">{{ phaseLabel }}</span>
+        <NTag v-if="afterMarketFailed" type="warning">最近盘后更新失败</NTag>
+        <span v-else class="product-status-strip__ok">数据正常</span>
+        <span class="product-status-strip__bars">{{ visibleBars.length }} bars</span>
+        <NButton v-if="!followLatest" size="small" secondary @click="chart?.scrollToLatest()">回到最新</NButton>
+      </div>
       <div ref="workspaceElement" class="product-workspace">
         <div class="product-workspace__main" :class="{ 'product-workspace__main--sidebar-closed': !researchSidebarOpen }">
           <div
@@ -576,13 +605,6 @@ function normalizeSymbol(value: unknown): string | null {
             :data-visible-start-trading-day="visibleStartTradingDay"
             :data-visible-main-indicators="visibleMainIndicators.join(',')"
           >
-            <SubingStatusStrip
-              v-if="selectedOverlay === 'subing'"
-              :snapshot="subing"
-              :loading="subingLoading || metadataLoading"
-              :error="subingError"
-              :supported="subingSupported"
-            />
             <KlineChart
               ref="chart"
               :bars="visibleBars"
@@ -605,8 +627,7 @@ function normalizeSymbol(value: unknown): string | null {
             />
           </div>
           <div class="product-workspace__sidebar-wrap">
-            <ProductResearchSidebar
-              class="product-workspace__sidebar"
+            <ProductCheckSidebar
               :dominant="selectedDominant"
               :series-kind="effectiveIdentity.seriesKind"
               :frequency="frequency"
@@ -614,6 +635,7 @@ function normalizeSymbol(value: unknown): string | null {
               :live="isLiveDisplay"
               :phase="phaseLabel"
               :has-more-before="canLoadEarlier"
+              :canonical-coverage="canonicalCoverage"
               :watchlisted="watchlisted"
               :research="research"
               :research-loading="researchLoading"
@@ -630,26 +652,20 @@ function normalizeSymbol(value: unknown): string | null {
               :current-events-loading="currentEventsLoading"
               :current-events-status="currentEventsStatus"
               :current-events="currentEvents"
+              :current-event-states="currentEventStates"
               :htdy-observation="latestHtdyObservation"
               @toggle-watchlist="toggleWatchlist"
               @toggle-alert="toggleAlert"
+              @open-formal-event="openFormalEvent"
             />
           </div>
         </div>
       </div>
-      <PriceVolumeOiPanel
-        v-if="research"
-        class="product-workspace__research-panel"
-        :daily="research.recent_daily"
-      />
-      <NAlert v-else-if="researchError" type="warning" :show-icon="false" class="product-workspace__research-panel">
-        研究数据暂不可用；K 线仍使用既有 Canonical / Live 读取链路。
-      </NAlert>
     </NSpin>
 
     <NDrawer v-model:show="researchDrawerOpen" :width="320" placement="right">
-      <NDrawerContent title="研究" closable>
-        <ProductResearchSidebar
+      <NDrawerContent title="检查" closable>
+        <ProductCheckSidebar
           :dominant="selectedDominant"
           :series-kind="effectiveIdentity.seriesKind"
           :frequency="frequency"
@@ -657,6 +673,7 @@ function normalizeSymbol(value: unknown): string | null {
           :live="isLiveDisplay"
           :phase="phaseLabel"
           :has-more-before="canLoadEarlier"
+          :canonical-coverage="canonicalCoverage"
           :watchlisted="watchlisted"
           :research="research"
           :research-loading="researchLoading"
@@ -673,9 +690,11 @@ function normalizeSymbol(value: unknown): string | null {
           :current-events-loading="currentEventsLoading"
           :current-events-status="currentEventsStatus"
           :current-events="currentEvents"
+          :current-event-states="currentEventStates"
           :htdy-observation="latestHtdyObservation"
           @toggle-watchlist="toggleWatchlist"
           @toggle-alert="toggleAlert"
+          @open-formal-event="openFormalEvent"
         />
       </NDrawerContent>
     </NDrawer>
@@ -684,8 +703,10 @@ function normalizeSymbol(value: unknown): string | null {
 
 <style scoped>
 .chart-page { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
-.identity-card { background: var(--gy-bg-panel); }
-.identity-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.product-status-strip { display: flex; align-items: center; gap: 9px; min-width: 0; padding: 8px 12px; border: 1px solid var(--gy-border); border-radius: var(--gy-radius-md); background: var(--gy-bg-panel); color: var(--gy-text-secondary); font-size: var(--gy-font-size-sm); flex-wrap: wrap; }
+.product-status-strip strong { color: var(--gy-text-primary); font-family: var(--gy-font-mono); }
+.product-status-strip__ok { color: var(--gy-status-success); }
+.product-status-strip__bars { margin-left: auto; color: var(--gy-text-muted); }
 .product-workspace { min-width: 0; }
 .product-workspace__main { display: grid; grid-template-columns: minmax(0, 1fr) 296px; gap: 12px; align-items: stretch; }
 .product-workspace__main--sidebar-closed { grid-template-columns: minmax(0, 1fr); }
@@ -694,7 +715,6 @@ function normalizeSymbol(value: unknown): string | null {
 /* 侧栏与左侧 K 线列（含副图）等高：wrap 随 grid 行高拉伸，侧栏绝对填充并内部滚动 */
 .product-workspace__sidebar-wrap { position: relative; min-width: 0; min-height: 0; }
 .product-workspace__sidebar-wrap > .product-workspace__sidebar { position: absolute; inset: 0; overflow-y: auto; }
-.product-workspace__research-panel { margin-top: 12px; }
 .product-workspace:fullscreen { display: grid; place-items: stretch; padding: 16px; background: var(--gy-bg-app); }
 .product-workspace:fullscreen .product-workspace__main { grid-template-columns: minmax(0, 1fr); height: 100%; }
 .product-workspace:fullscreen .product-workspace__kline { min-height: 100%; }

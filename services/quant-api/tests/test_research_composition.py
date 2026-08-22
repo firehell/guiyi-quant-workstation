@@ -12,72 +12,119 @@ from app.market_data import composition as market_data_composition
 from app.research import composition as research_composition
 
 
-_RESEARCH_BUILDERS = (
-    "build_subing_calibration_research_service",
-    "build_subing_lifecycle_research_service",
-    "build_subing_candidate_validation_service",
-    "build_n_structure_research_service",
-    "build_n_candidate_validation_service",
-    "build_jdj_research_service",
-    "build_jdj_candidate_validation_service",
-    "build_multi_candidate_robustness_service",
-    "build_main_force_mirror_v2_research_service",
-)
-
-_RESEARCH_IMPLEMENTATION_MODULES = (
-    "app.research.common.candidate_validation_schedule",
-    "app.research.subing.subing_calibration_service",
-    "app.research.subing.subing_lifecycle_research_service",
-    "app.research.subing.candidate_validation",
-    "app.research.subing.candidate_validation_policy",
-    "app.research.subing.subing_candidate_validation_service",
-    "app.research.n_structure.n_structure_policy",
-    "app.research.n_structure.n_structure_swing",
-    "app.research.n_structure.n_structure_pattern",
-    "app.research.n_structure.n_structure_state",
-    "app.research.n_structure.n_structure_segment",
-    "app.research.n_structure.n_structure_research_service",
-    "app.research.n_structure.n_candidate_validation",
-    "app.research.n_structure.n_candidate_validation_policy",
-    "app.research.n_structure.n_candidate_validation_service",
-    "app.research.jdj.jdj_policy",
-    "app.research.jdj.jdj_context",
-    "app.research.jdj.jdj_events",
-    "app.research.jdj.jdj_trend_follow",
-    "app.research.jdj.jdj_trend_reentry",
-    "app.research.jdj.jdj_key_level_breakout",
-    "app.research.jdj.jdj_research",
-    "app.research.jdj.jdj_research_service",
-    "app.research.jdj.jdj_candidate_validation",
-    "app.research.jdj.jdj_candidate_validation_calendar",
-    "app.research.jdj.jdj_candidate_validation_policy",
-    "app.research.jdj.jdj_candidate_validation_service",
-    "app.research.main_force.main_force_mirror_v2_research_service",
-    "app.research.robustness.multi_candidate_robustness",
-    "app.research.robustness.multi_candidate_events",
-    "app.research.robustness.multi_candidate_robustness_policy",
-    "app.research.robustness.multi_candidate_robustness_service",
-)
+_QUANT_API_ROOT = Path(__file__).resolve().parents[1]
+_APP_ROOT = _QUANT_API_ROOT / "app"
+_RESEARCH_ROOT = _APP_ROOT / "research"
+_RESEARCH_COMPOSITION_PATH = _RESEARCH_ROOT / "composition.py"
 
 _RUNTIME_BOUNDARY_PATHS = (
-    Path("services/quant-api/app/alerts"),
-    Path("services/quant-api/app/market_data"),
-    Path("services/quant-api/app/api/market.py"),
-    Path("services/quant-api/app/api/market_live.py"),
+    _APP_ROOT / "alerts",
+    _APP_ROOT / "market_data",
+    _APP_ROOT / "api",
+    _APP_ROOT / "runtime_entry.py",
 )
+
+
+def _local_research_builders() -> tuple[str, ...]:
+    tree = ast.parse(
+        _RESEARCH_COMPOSITION_PATH.read_text(encoding="utf-8"),
+        filename=str(_RESEARCH_COMPOSITION_PATH),
+    )
+    return tuple(
+        node.name
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name.startswith("build_")
+    )
+
+
+def _research_implementation_modules() -> tuple[str, ...]:
+    return tuple(
+        "app." + ".".join(path.relative_to(_APP_ROOT).with_suffix("").parts)
+        for path in sorted(_RESEARCH_ROOT.rglob("*.py"))
+        if path.name not in {"__init__.py", "composition.py"}
+    )
+
+
+def _assert_no_offline_research_imports(path: Path) -> None:
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    imported_modules: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            imported_modules.extend(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            relative_name = "." * node.level + (node.module or "")
+            if node.level:
+                module_parts = path.relative_to(_QUANT_API_ROOT).with_suffix("").parts
+                module = importlib.util.resolve_name(
+                    relative_name,
+                    ".".join(module_parts[:-1]),
+                )
+            else:
+                module = relative_name
+            imported_modules.append(module)
+            imported_modules.extend(
+                f"{module}.{alias.name}"
+                for alias in node.names
+                if alias.name != "*"
+            )
+    assert not any(
+        module == "app.research" or module.startswith("app.research.")
+        for module in imported_modules
+    ), path
 
 
 def test_offline_research_builders_have_one_composition_entrypoint() -> None:
     research_composition = importlib.import_module("app.research.composition")
-    assert all(hasattr(research_composition, name) for name in _RESEARCH_BUILDERS)
-    assert not any(hasattr(market_data_composition, name) for name in _RESEARCH_BUILDERS)
+    builders = _local_research_builders()
+    assert builders
+    assert all(hasattr(research_composition, name) for name in builders)
+    assert not any(hasattr(market_data_composition, name) for name in builders)
 
 
 def test_offline_research_implementation_has_one_physical_package() -> None:
-    for module in _RESEARCH_IMPLEMENTATION_MODULES:
+    modules = _research_implementation_modules()
+    assert modules
+    for module in modules:
         assert importlib.util.find_spec(module) is not None, module
-        old_module = f"app.market_data.{module.rsplit('.', 1)[-1]}"
-        assert importlib.util.find_spec(old_module) is None, old_module
+
+
+@pytest.mark.parametrize(
+    "statement",
+    (
+        "from app.research import composition",
+        "import app.research.composition",
+    ),
+)
+def test_runtime_dependency_guard_rejects_both_import_syntaxes(
+    tmp_path: Path,
+    statement: str,
+) -> None:
+    source = tmp_path / "runtime_boundary.py"
+    source.write_text(statement, encoding="utf-8")
+
+    with pytest.raises(AssertionError):
+        _assert_no_offline_research_imports(source)
+
+
+def test_runtime_dependency_guard_resolves_relative_imports(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app_root = tmp_path / "app"
+    source = app_root / "market_data" / "runtime_boundary.py"
+    source.parent.mkdir(parents=True)
+    monkeypatch.setitem(
+        _assert_no_offline_research_imports.__globals__,
+        "_QUANT_API_ROOT",
+        tmp_path,
+    )
+
+    source.write_text("from .domain import BarFrequency", encoding="utf-8")
+    _assert_no_offline_research_imports(source)
+
+    source.write_text("from ..research import composition", encoding="utf-8")
+    with pytest.raises(AssertionError):
+        _assert_no_offline_research_imports(source)
 
 
 def test_runtime_market_and_alert_do_not_import_offline_research() -> None:
@@ -87,16 +134,7 @@ def test_runtime_market_and_alert_do_not_import_offline_research() -> None:
             boundary.rglob("*.py") if boundary.is_dir() else (boundary,)
         )
     for path in source_paths:
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        imports = (
-            node.module
-            for node in ast.walk(tree)
-            if isinstance(node, ast.ImportFrom) and node.module is not None
-        )
-        assert not any(
-            module == "app.research" or module.startswith("app.research.")
-            for module in imports
-        ), path
+        _assert_no_offline_research_imports(path)
 
 
 def _fail_dependency(name: str):
@@ -388,6 +426,40 @@ def test_jdj_candidate_builder_checks_calendar_before_reusing_research(
         is result
     )
     assert order == [("calendar", session), ("research", session)]
+
+
+def test_jdj_active60_robustness_builder_reuses_existing_jdj_research(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    protocol = object()
+    jdj_research = object()
+    session = object()
+    constructor_calls: list[tuple[object, object]] = []
+    expected = object()
+    monkeypatch.setattr(
+        research_composition,
+        "load_jdj_active60_robustness_protocol",
+        lambda: protocol,
+    )
+    monkeypatch.setattr(
+        research_composition,
+        "build_jdj_research_service",
+        lambda value: jdj_research if value is session else None,
+    )
+    monkeypatch.setattr(
+        research_composition,
+        "JdjActive60RobustnessService",
+        lambda value, *, jdj_research: (
+            constructor_calls.append((value, jdj_research)) or expected
+        ),
+    )
+
+    service = research_composition.build_jdj_active60_robustness_service(
+        session  # type: ignore[arg-type]
+    )
+
+    assert service is expected
+    assert constructor_calls == [(protocol, jdj_research)]
 
 
 def test_main_force_research_reuses_web_v2_service_identity(

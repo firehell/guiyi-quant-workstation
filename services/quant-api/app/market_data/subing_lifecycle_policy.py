@@ -7,7 +7,7 @@ from typing import Any
 from app.core.env import PROJECT_ROOT
 
 from .domain import BarFrequency
-from .exact_json_contract import load_exact_json
+from app.core.exact_json_contract import load_exact_json
 
 
 _SUBING_LIFECYCLE_POLICY_PATH = (

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import importlib
 import json
 import re
 import subprocess
@@ -54,6 +55,21 @@ ACTIVE_CANONICAL = (
 def test_governance_surface_has_one_executable_entrypoint() -> None:
     assert (ROOT / "scripts/engineering/secret_scan.py").is_file()
     assert all(not (ROOT / relative).exists() for relative in RETIRED_ASSETS)
+    retired_active_docs = subprocess.run(
+        [
+            "git",
+            "-c",
+            "core.fsmonitor=false",
+            "ls-files",
+            "docs/superpowers",
+            "docs/tasks",
+        ],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    assert retired_active_docs == ""
 
 
 def test_active_docs_and_cli_match_current_surfaces() -> None:
@@ -65,6 +81,7 @@ def test_active_docs_and_cli_match_current_surfaces() -> None:
     backend_readme = (ROOT / "services/quant-api/README.md").read_text(
         encoding="utf-8"
     )
+    project_source = (ROOT / "PROJECT_SOURCE.md").read_text(encoding="utf-8")
     core_readme = (ROOT / "packages/quant-core/README.md").read_text(
         encoding="utf-8"
     )
@@ -75,16 +92,23 @@ def test_active_docs_and_cli_match_current_surfaces() -> None:
     assert "v1.4 release" not in execution_review
     assert "Lane 3" not in execution_review
     assert "G9 cleanup" not in development
-    for command in (
-        "subing-calibration",
-        "subing-lifecycle",
-        "n-structure",
-        "jdj-1m",
-        "candidate-validation",
-        "candidate-robustness",
-        "main-force-mirror-v2",
-    ):
-        assert command in backend_readme
+    research_parser = importlib.import_module("app.guiyi_cli.research_parser")
+    cli_main = importlib.import_module("app.guiyi_cli.main")
+    parser = cli_main.build_parser()
+    domain_action = next(
+        action for action in parser._actions if action.dest == "domain"
+    )
+    research_subparser = domain_action.choices["research"]
+    command_action = next(
+        action
+        for action in research_subparser._actions
+        if action.dest == "research_command"
+    )
+    expected_commands = set(research_parser.RESEARCH_COMMAND_NAMES)
+    assert set(command_action.choices) == expected_commands
+    command_pattern = re.compile(r"`guiyi research ([a-z0-9-]+)(?:\s|`)")
+    assert set(command_pattern.findall(backend_readme)) == expected_commands
+    assert set(command_pattern.findall(project_source)) == expected_commands
     assert "当前 Web 仅 Market" not in core_readme
 
 
@@ -194,8 +218,7 @@ def test_release_versions_are_consistent() -> None:
         web["version"],
     }
 
-    assert len(versions) == 1
-    assert re.fullmatch(r"\d+\.\d+\.\d+", versions.pop())
+    assert versions == {"1.7.0"}
     assert "version=APP_VERSION" in api
     assert '"version": APP_VERSION' in api
 
@@ -206,9 +229,10 @@ def test_isolated_postgresql_tests_are_separate_from_the_local_baseline() -> Non
     )
     testing = (ROOT / "TESTING.md").read_text(encoding="utf-8")
     service_tree = ast.parse(
-        (ROOT / "services/quant-api/tests/test_execution_review_service.py").read_text(
-            encoding="utf-8"
-        )
+        (
+            ROOT
+            / "services/quant-api/tests/execution_review/test_isolated_postgresql_concurrency.py"
+        ).read_text(encoding="utf-8")
     )
     migration_tree = ast.parse(
         (
@@ -266,7 +290,7 @@ def test_exact_contract_and_jdj_identity_have_one_implementation() -> None:
     market_data = ROOT / "services/quant-api/app/market_data"
     research = ROOT / "services/quant-api/app/research"
     jdj_context = research / "jdj/jdj_context.py"
-    exact_contract = market_data / "exact_json_contract.py"
+    exact_contract = ROOT / "services/quant-api/app/core/exact_json_contract.py"
     assert exact_contract.is_file()
     exact_source = exact_contract.read_text(encoding="utf-8")
     for function in (

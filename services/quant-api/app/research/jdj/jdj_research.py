@@ -16,7 +16,10 @@ from .jdj_events import (
     JdjTrendReentryTriggerEvent,
     JdjTriggerEvent,
 )
-from app.market_data.price_outcome import PriceHorizonEvaluation
+from app.market_data.price_outcome import (
+    PriceDirectionalOutcome,
+    PriceHorizonEvaluation,
+)
 
 
 JDJ_CANDIDATE_SOURCE_EVENT_KINDS: Final[Mapping[str, str]] = MappingProxyType(
@@ -149,6 +152,98 @@ class JdjResearchResult:
                 {horizon: summary[horizon] for horizon in _HORIZONS}
             ),
         )
+
+
+@dataclass(frozen=True, slots=True)
+class JdjEventOutcomeRecord:
+    event_id: str
+    trading_day: date
+    outcomes: Mapping[int, PriceDirectionalOutcome | None]
+
+    def __post_init__(self) -> None:
+        outcomes = dict(self.outcomes)
+        if (
+            type(self.event_id) is not str
+            or not self.event_id
+            or type(self.trading_day) is not date
+            or set(outcomes) != set(_HORIZONS)
+            or any(
+                outcome is not None
+                and (
+                    not isinstance(outcome, PriceDirectionalOutcome)
+                    or outcome.horizon != horizon
+                )
+                for horizon, outcome in outcomes.items()
+            )
+        ):
+            raise JdjContextError()
+        object.__setattr__(
+            self,
+            "outcomes",
+            MappingProxyType(
+                {horizon: outcomes[horizon] for horizon in _HORIZONS}
+            ),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class JdjDetailedCandidateResult:
+    result: JdjResearchResult
+    event_outcomes: tuple[JdjEventOutcomeRecord, ...]
+
+    def __post_init__(self) -> None:
+        if (
+            not isinstance(self.result, JdjResearchResult)
+            or type(self.event_outcomes) is not tuple
+            or len(self.event_outcomes) != len(self.result.events)
+            or any(
+                not isinstance(record, JdjEventOutcomeRecord)
+                or record.event_id != event.event_id
+                or record.trading_day != event.trading_day
+                for event, record in zip(
+                    self.result.events,
+                    self.event_outcomes,
+                    strict=True,
+                )
+            )
+        ):
+            raise JdjContextError()
+
+
+@dataclass(frozen=True, slots=True)
+class JdjBatchResearchResult:
+    symbol: str
+    observed_since: date
+    observed_through: date
+    candidates: tuple[JdjDetailedCandidateResult, ...]
+
+    def __post_init__(self) -> None:
+        expected_candidates = tuple(JDJ_CANDIDATE_SOURCE_EVENT_KINDS)
+        if (
+            type(self.symbol) is not str
+            or not self.symbol
+            or not self.symbol.isascii()
+            or not self.symbol.isalpha()
+            or self.symbol != self.symbol.lower()
+            or type(self.observed_since) is not date
+            or type(self.observed_through) is not date
+            or self.observed_since > self.observed_through
+            or type(self.candidates) is not tuple
+            or any(
+                not isinstance(candidate, JdjDetailedCandidateResult)
+                for candidate in self.candidates
+            )
+            or tuple(
+                candidate.result.candidate_id
+                for candidate in self.candidates
+            )
+            != expected_candidates
+            or any(
+                candidate.result.products != (self.symbol,)
+                for candidate in self.candidates
+            )
+        ):
+            raise JdjContextError()
 
 
 def _valid_horizon_evaluation(value: object) -> bool:

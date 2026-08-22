@@ -1,6 +1,6 @@
 # Execution Review V1
 
-更新时间：2026-08-21
+更新时间：2026-08-22
 
 本文是 Execution Review 的长期业务 canonical。旧 Review Center、Signal/Strategy 应用和回测子系统仍已退役；本域只记录自然产生的苏冰机会、人工决策、真实手工执行过程与结构化复盘，不连接账户、不创建订单，`auto_order=false`。
 
@@ -19,7 +19,11 @@
 - origin Signal 先形成 Decision，再触发真实 OPEN，且 `OPEN.trigger_decision_id` 指向该 origin Decision；同方向、同合约的后续 formal Signal 先形成新的 Decision，再触发 ADD，且 `ADD.trigger_decision_id` 指向该 later Decision。人工记录的 ADD/REDUCE/CLOSE 不由 Signal 触发，`trigger_decision_id = NULL`。仓位拓扑、加权平均成本和 realized points 由后端 `Decimal` 计算，客户端不重算。
 - `DOMINANT_ROLL` 仅是对已 OPEN Episode 的系统估算结束：使用旧合约最后一个可验证的 completed Canonical 1m reference，不伪造真实 CLOSE；后续真实 CLOSE 通过完整时间线纠错替换该估算语义。
 - 自动 roll reconcile 默认关闭，只能通过独立 Gate 激活；它不是 `AfterMarketUpdater` 内部职责，
-  不 replay/backfill 历史。当前激活状态只看 `STATUS.md`。
+  不 replay/backfill 历史。HTTP request-scoped composition 在每个请求组装
+  `ExecutionReviewService` 时读取一次 Gate，再注入 enabled reconciler 或 fail-closed callback；marker
+  missing、`disabled` 或 `invalid` 时 callback 返回 `ROLL_RECONCILIATION_REQUIRED`，且不得创建
+  `DOMINANT_ROLL`，只有精确为 `enabled` 才注入真实 reconciler。`record_executed` 只调用本请求已注入
+  的 callback，不在方法内部重复读取 marker。当前激活状态只看 `STATUS.md`。
 
 ## 行情重建与未来函数边界
 

@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "protocol_id": "jdj_active60_robustness_v1",
+  "research_only": true,
+  "readonly": true,
+  "frozen_at": "2026-08-21T20:34:00+08:00",
+  "candidate_ids": [
+    "jdj_trend_follow_1m_candidate_v1",
+    "jdj_trend_reentry_6_1m_candidate_v1",
+    "jdj_key_level_breakout_1m_candidate_v1"
+  ],
+  "source_policy": "jdj_1m_policy_v1",
+  "source_validation_protocol": "jdj_candidate_validation_v1",
+  "common_retrospective": {
+    "since": "2023-01-01",
+    "through": "2026-08-20"
+  },
+  "embargo_trading_days": ["2026-08-21"],
+  "prospective_oos": {
+    "first_trading_day": "2026-08-24"
+  },
+  "prospective_consumed": false,
+  "horizons_bars": [3, 5, 8, 20],
+  "cross_symbol_products": [
+    "a", "ag", "al", "ao", "ap", "au", "b", "bu", "bz", "c",
+    "cf", "cj", "cu", "eb", "ec", "eg", "fg", "fu", "hc", "i",
+    "j", "jd", "jm", "l", "lc", "lh", "m", "ma", "ni", "oi",
+    "p", "pb", "pd", "pf", "pg", "pk", "pl", "pp", "pr", "ps",
+    "pt", "px", "rb", "rm", "rs", "ru", "sa", "sc", "sf", "sh",
+    "si", "sm", "sn", "sr", "ss", "ta", "ur", "v", "y", "zn"
+  ],
+  "sector_groups": {
+    "agriculture": [
+      "a", "ap", "b", "c", "cf", "cj", "jd", "lh", "m", "oi",
+      "p", "pk", "rm", "rs", "sr", "y"
+    ],
+    "precious": ["ag", "au", "pd", "pt"],
+    "nonferrous": ["al", "ao", "cu", "ni", "pb", "sn", "zn"],
+    "energy": ["bu", "fu", "pg", "sc"],
+    "chemical": [
+      "bz", "eb", "eg", "l", "ma", "pf", "pl", "pp", "pr", "px",
+      "ru", "sh", "ta", "ur", "v"
+    ],
+    "other": ["ec"],
+    "building": ["fg", "sa"],
+    "steel": ["hc", "rb", "ss"],
+    "black": ["i", "j", "jm", "sf", "sm"],
+    "new_energy": ["lc", "ps", "si"]
+  },
+  "parameter_perturbation": false,
+  "relationship_analysis": false,
+  "automatic_ranking": false,
+  "automatic_promotion": false
+}

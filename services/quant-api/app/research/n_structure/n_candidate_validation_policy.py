@@ -7,7 +7,7 @@ from typing import Any
 
 from app.core.env import PROJECT_ROOT
 
-from app.market_data.exact_json_contract import load_exact_json as _load_exact
+from app.core.exact_json_contract import load_exact_json as _load_exact
 from app.research.n_structure.n_structure_policy import NStructurePolicyError, load_n_structure_policy
 
 

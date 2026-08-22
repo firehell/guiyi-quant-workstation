@@ -6,33 +6,16 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 import io
 import json
-from types import SimpleNamespace
 
 import pytest
 
 from app.guiyi_cli.main import build_parser
 from app.guiyi_cli.main import main
 from app.guiyi_cli.data_parser import CliUsageError
+from app.guiyi_cli import research_parser
 from app.guiyi_cli.research_commands import run_research_command
 from app.guiyi_cli.research_payloads import _optional_decimal
-from app.guiyi_cli.research_requests import build_research_request
-from app.research.subing.candidate_validation import (
-    CandidateValidationReport,
-    CandidateWindowKind,
-    ProspectiveOosResult,
-    ProspectiveOosStatus,
-    RollingCandidateFold,
-    project_lifecycle_window,
-    summarize_rolling_stability,
-)
-from app.market_data.domain import BarFrequency, SeriesKind
-from app.research.main_force.main_force_mirror_v2_research_service import (
-    MainForceMirrorV2GroupSpread,
-    MainForceMirrorV2HorizonSummary,
-    MainForceMirrorV2ResearchRequest,
-    MainForceMirrorV2ResearchResult,
-    MainForceMirrorV2SensitivitySummary,
-)
+from app.market_data.domain import BarFrequency
 from app.research.jdj.jdj_events import (
     JdjDirection,
     JdjSetupKind,
@@ -52,14 +35,8 @@ from app.research.jdj.jdj_candidate_validation import (
 from app.research.robustness.multi_candidate_robustness_policy import (
     MultiCandidateRobustnessRequest,
 )
-from app.research.n_structure.n_candidate_validation import (
-    NCandidateWindowKind,
-    NProspectiveOosResult,
-    NProspectiveOosStatus,
-    NRollingCandidateFold,
-    NStructureCandidateValidationReport,
-    project_n_structure_window,
-    summarize_n_rolling_stability,
+from app.research.robustness.jdj_robustness import (
+    JdjActive60RobustnessRequest,
 )
 from app.research.n_structure.n_structure_research_service import (
     NStructureSegmentIdentityError,
@@ -76,8 +53,6 @@ from app.research.subing.subing_calibration_service import (
 )
 from app.market_data.subing_calibration import (
     CalibrationReport,
-    HorizonEvaluation,
-    ThresholdEvaluation,
 )
 from app.research.subing.subing_lifecycle_research_service import (
     LifecycleResearchRequest,
@@ -86,32 +61,14 @@ from app.research.subing.subing_lifecycle_research_service import (
 from app.research.subing.subing_candidate_validation_service import (
     CandidateValidationRequest,
 )
-
-
-def _arguments(
-    *,
-    phase: str = "slope",
-    mode: str = "discovery",
-    frequency: str = "5m",
-) -> list[str]:
-    return [
-        "research",
-        "subing-calibration",
-        "--phase",
-        phase,
-        "--mode",
-        mode,
-        "--frequency",
-        frequency,
-        "--since",
-        "2026-01-01",
-        "--through",
-        "2026-03-31",
-    ]
-
-
-def _request(arguments: list[str]):
-    return build_research_request(build_parser().parse_args(arguments))
+from research.research_cli_fixtures import (
+    _FakeResearchService,
+    _arguments,
+    _discovery_report,
+    _evaluation,
+    _horizon,
+    _request,
+)
 
 
 @pytest.mark.parametrize(
@@ -142,28 +99,19 @@ def _lifecycle_arguments() -> list[str]:
     ]
 
 
-def test_research_parser_exposes_only_the_seven_readonly_commands() -> None:
+def test_research_parser_exposes_only_the_nine_readonly_commands() -> None:
     parser = build_parser()
     domain_action = next(
         action for action in parser._actions if action.dest == "domain"
     )
-    research_parser = domain_action.choices["research"]
+    research_subparser = domain_action.choices["research"]
     command_action = next(
         action
-        for action in research_parser._actions
+        for action in research_subparser._actions
         if action.dest == "research_command"
     )
 
-    assert set(command_action.choices) == {
-        "candidate-robustness",
-        "candidate-validation",
-        "jdj-1m",
-        "main-force-mirror-v2",
-        "n-structure",
-        "subing-calibration",
-        "subing-lifecycle",
-    }
-    assert "main-force-mirror-v2" in command_action.choices
+    assert tuple(command_action.choices) == research_parser.RESEARCH_COMMAND_NAMES
 
 
 _JDJ_CANDIDATES = (
@@ -352,12 +300,8 @@ def test_jdj_source_cli_uses_only_dedicated_readonly_factory() -> None:
         manager_factory=lambda _session: unrelated_calls.append("manager"),
         live_service_factory=lambda _session: unrelated_calls.append("live"),
         alert_runtime_factory=lambda: unrelated_calls.append("alert"),
-        alert_canary_sender_factory=lambda: unrelated_calls.append(
-            "notification"
-        ),
-        research_service_factory=lambda _session: unrelated_calls.append(
-            "calibration"
-        ),
+        alert_canary_sender_factory=lambda: unrelated_calls.append("notification"),
+        research_service_factory=lambda _session: unrelated_calls.append("calibration"),
         lifecycle_research_service_factory=lambda _session: unrelated_calls.append(
             "lifecycle"
         ),
@@ -473,9 +417,12 @@ def test_jdj_candidate_renderer_precedes_generic_candidate_fallback() -> None:
         "8",
         "20",
     )
-    assert payload["retrospective"]["horizon_summary"]["20"][
-        "median_directional_return_bps"
-    ] == "1.2500"
+    assert (
+        payload["retrospective"]["horizon_summary"]["20"][
+            "median_directional_return_bps"
+        ]
+        == "1.2500"
+    )
     assert payload["prospective_oos"] == {
         "status": "pending",
         "first_trading_day": "2026-08-24",
@@ -564,19 +511,35 @@ def test_jdj_candidate_cross_pair_reaches_identity_error_before_source_run() -> 
     }
 
 
-def test_candidate_robustness_parser_accepts_only_exact_protocol() -> None:
+@pytest.mark.parametrize(
+    ("protocol_id", "expected"),
+    (
+        (
+            "multi_candidate_robustness_v1",
+            MultiCandidateRobustnessRequest(
+                protocol_id="multi_candidate_robustness_v1"
+            ),
+        ),
+        (
+            "jdj_active60_robustness_v1",
+            JdjActive60RobustnessRequest(protocol_id="jdj_active60_robustness_v1"),
+        ),
+    ),
+)
+def test_candidate_robustness_parser_builds_concrete_protocol_request(
+    protocol_id: str,
+    expected: MultiCandidateRobustnessRequest | JdjActive60RobustnessRequest,
+) -> None:
     request = _request(
         [
             "research",
             "candidate-robustness",
             "--protocol",
-            "multi_candidate_robustness_v1",
+            protocol_id,
         ]
     )
 
-    assert request == MultiCandidateRobustnessRequest(
-        protocol_id="multi_candidate_robustness_v1"
-    )
+    assert request == expected
 
 
 @pytest.mark.parametrize(
@@ -590,6 +553,26 @@ def test_candidate_robustness_parser_rejects_runtime_selection_flags(flag: str) 
                 "candidate-robustness",
                 "--protocol",
                 "multi_candidate_robustness_v1",
+                flag,
+                "value",
+            ]
+        )
+
+
+@pytest.mark.parametrize(
+    "flag",
+    ("--since", "--through", "--symbols", "--threshold", "--score", "--rank"),
+)
+def test_jdj_active60_robustness_parser_rejects_runtime_selection_flags(
+    flag: str,
+) -> None:
+    with pytest.raises(CliUsageError):
+        build_parser().parse_args(
+            [
+                "research",
+                "candidate-robustness",
+                "--protocol",
+                "jdj_active60_robustness_v1",
                 flag,
                 "value",
             ]
@@ -1003,37 +986,6 @@ def test_invalid_frequency_exits_two_before_service_construction() -> None:
     assert calls == []
 
 
-def _horizon(*, sample_count: int = 2) -> HorizonEvaluation:
-    return HorizonEvaluation(
-        sample_count=sample_count,
-        ema21_sample_count=sample_count,
-        median_directional_return_bps=Decimal("12.3400"),
-        median_mfe_bps=Decimal("18.500"),
-        median_mae_bps=Decimal("-3.250"),
-        ema21_failure_rate=Decimal("0.1250"),
-    )
-
-
-def _evaluation(threshold: str, *, sample_count: int = 2) -> ThresholdEvaluation:
-    return ThresholdEvaluation(
-        threshold=Decimal(threshold),
-        sample_count=sample_count,
-        horizons={3: _horizon(sample_count=sample_count)},
-    )
-
-
-def _discovery_report(
-    *, sample_count: int, product_counts: dict[str, int]
-) -> CalibrationReport:
-    candidates = (Decimal("1.2300"), Decimal("2.500"), Decimal("4"))
-    return CalibrationReport(
-        sample_count=sample_count,
-        product_sample_counts=product_counts,
-        candidate_thresholds=candidates,
-        candidate_evaluations=tuple(_evaluation(str(value)) for value in candidates),
-    )
-
-
 def _validation_report(
     *, sample_count: int, product_counts: dict[str, int]
 ) -> CalibrationReport:
@@ -1042,16 +994,6 @@ def _validation_report(
         product_sample_counts=product_counts,
         threshold_evaluation=_evaluation("2.7500", sample_count=sample_count),
     )
-
-
-class _FakeResearchService:
-    def __init__(self, result: CalibrationResearchResult) -> None:
-        self.result = result
-        self.requests = []
-
-    def run(self, request):
-        self.requests.append(request)
-        return self.result
 
 
 class _FakeLifecycleResearchService:
@@ -1460,8 +1402,6 @@ def test_zero_band_outputs_both_named_cohorts(mode: str) -> None:
         assert payload["cohorts"]["B"]["threshold_evaluation"]["threshold"] == "2.7500"
 
 
-
-
 def test_research_execution_error_is_redacted_and_always_readonly() -> None:
     class ResearchReadError(RuntimeError):
         code = "RESEARCH_READ_FAILED"
@@ -1512,953 +1452,3 @@ def test_research_service_construction_error_is_always_readonly() -> None:
             "type": "ResearchConstructionError",
         },
     }
-
-
-def _candidate_arguments(*, through: str = "2026-08-19") -> list[str]:
-    return [
-        "research",
-        "candidate-validation",
-        "--candidate",
-        "subing_lifecycle_v2_candidate_v1",
-        "--protocol",
-        "candidate_validation_v1",
-        "--symbol",
-        "jm",
-        "--through",
-        through,
-    ]
-
-
-def _candidate_source() -> SubingLifecycleResearchResult:
-    return SubingLifecycleResearchResult(
-        products=("jm",),
-        segment_count=2,
-        evaluable_boundary_count=10,
-        funnel_counts={
-            "DATA_READY": 10,
-            "DIRECTION_CONTEXT_ALIGNED": 6,
-            "SETUP_ARMED": 4,
-            "TRIGGER_OBSERVED": 3,
-            "ENTRY_CONFIRMED": 2,
-        },
-        funnel_count_units={
-            "DATA_READY": "boundary_occupancy",
-            "DIRECTION_CONTEXT_ALIGNED": "boundary_occupancy",
-            "SETUP_ARMED": "boundary_event",
-            "TRIGGER_OBSERVED": "boundary_event",
-            "ENTRY_CONFIRMED": "boundary_event",
-        },
-        confirmation_source_counts={
-            "FORMAL_V1": 1,
-            "MOMENTUM_HOLD": 1,
-            "PIVOT_BREAK_HOLD": 0,
-            "PIVOT_RETEST_REBREAK": 0,
-        },
-        v1_v2_overlap_counts={"V1_AND_V2": 1, "V2_ONLY": 1, "V1_ONLY": 0},
-        v2_to_v1_lead_bars=(2, 5),
-        confirmed_trading_day_span_counts={"SAME_DAY": 1, "CROSS_DAY": 1},
-        risk_reason_counts={"ANCHOR_EMA21_BREACH": 1},
-        recovery_reason_counts={"ANCHOR_RECOVERY_CONFIRMED": 1},
-        close_reason_counts={"ANCHOR_TREND_BROKEN": 1},
-        horizon_summary={3: _horizon(), 5: _horizon(), 8: _horizon()},
-    )
-
-
-def _candidate_report() -> CandidateValidationReport:
-    source = _candidate_source()
-    retrospective = project_lifecycle_window(
-        window_id="retrospective",
-        window_kind=CandidateWindowKind.RETROSPECTIVE,
-        since=date(2023, 1, 1),
-        through=date(2026, 8, 18),
-        source=source,
-    )
-    fold = RollingCandidateFold(
-        fold_id="fold_01",
-        reference=project_lifecycle_window(
-            window_id="fold_01_reference",
-            window_kind=CandidateWindowKind.ROLLING_REFERENCE,
-            since=date(2023, 1, 1),
-            through=date(2023, 12, 31),
-            source=source,
-        ),
-        test=project_lifecycle_window(
-            window_id="fold_01_test",
-            window_kind=CandidateWindowKind.ROLLING_TEST,
-            since=date(2024, 1, 1),
-            through=date(2024, 3, 31),
-            source=source,
-        ),
-    )
-    folds = (fold,)
-    return CandidateValidationReport(
-        schema_version=1,
-        candidate_id="subing_lifecycle_v2_candidate_v1",
-        policy_id="subing_lifecycle_v2_research_v1",
-        formula_version="subing_lifecycle_v2",
-        protocol_id="candidate_validation_v1",
-        research_only=True,
-        symbol="jm",
-        retrospective=retrospective,
-        rolling_folds=folds,
-        rolling_stability=summarize_rolling_stability(folds),
-        prospective_oos=ProspectiveOosResult(
-            status=ProspectiveOosStatus.PENDING,
-            first_trading_day=date(2026, 8, 20),
-            through=date(2026, 8, 19),
-            result=None,
-        ),
-        quality_flags=("PROSPECTIVE_OOS_PENDING",),
-    )
-
-
-class _FakeCandidateValidationService:
-    def __init__(self, report: CandidateValidationReport) -> None:
-        self.report = report
-        self.requests: list[CandidateValidationRequest] = []
-
-    def run(self, request: CandidateValidationRequest) -> CandidateValidationReport:
-        self.requests.append(request)
-        return self.report
-
-
-class _FakeNCandidateValidationService:
-    def __init__(self, report: NStructureCandidateValidationReport) -> None:
-        self.report = report
-        self.requests: list[CandidateValidationRequest] = []
-
-    def run(
-        self,
-        request: CandidateValidationRequest,
-    ) -> NStructureCandidateValidationReport:
-        self.requests.append(request)
-        return self.report
-
-
-def test_candidate_parser_uses_exact_frozen_choices() -> None:
-    request = _request(_candidate_arguments(through="2026-08-17"))
-
-    assert request == CandidateValidationRequest(
-        candidate_id="subing_lifecycle_v2_candidate_v1",
-        protocol_id="candidate_validation_v1",
-        symbol="jm",
-        through=date(2026, 8, 17),
-    )
-    with pytest.raises(CliUsageError):
-        build_parser().parse_args(
-            [
-                *_candidate_arguments(),
-                "--candidate",
-                "other_candidate",
-            ]
-        )
-
-
-def test_candidate_cli_dispatches_explicit_service_and_serializes_report() -> None:
-    service = _FakeCandidateValidationService(_candidate_report())
-    calibration_calls: list[object] = []
-    lifecycle_calls: list[object] = []
-    stdout = io.StringIO()
-    stderr = io.StringIO()
-
-    code = main(
-        _candidate_arguments(),
-        session_factory=lambda: nullcontext(object()),
-        research_service_factory=lambda session: calibration_calls.append(session),
-        lifecycle_research_service_factory=lambda session: lifecycle_calls.append(
-            session
-        ),
-        candidate_validation_service_factory=lambda _session: service,
-        stdout=stdout,
-        stderr=stderr,
-    )
-
-    assert code == 0
-    assert stderr.getvalue() == ""
-    assert calibration_calls == []
-    assert lifecycle_calls == []
-    assert service.requests == [
-        CandidateValidationRequest(
-            candidate_id="subing_lifecycle_v2_candidate_v1",
-            protocol_id="candidate_validation_v1",
-            symbol="jm",
-            through=date(2026, 8, 19),
-        )
-    ]
-    payload = json.loads(stdout.getvalue())
-    assert set(payload) == {
-        "schema_version",
-        "command",
-        "status",
-        "readonly",
-        "candidate_id",
-        "policy_id",
-        "formula_version",
-        "protocol_id",
-        "research_only",
-        "symbol",
-        "retrospective",
-        "rolling_folds",
-        "rolling_stability",
-        "prospective_oos",
-        "quality_flags",
-    }
-    assert payload["command"] == "research.candidate-validation"
-    assert payload["readonly"] is True
-    assert payload["research_only"] is True
-    assert payload["retrospective"]["window_kind"] == "retrospective"
-    assert payload["rolling_folds"][0]["fold_id"] == "fold_01"
-    assert payload["rolling_stability"] == {
-        "fold_count": 1,
-        "folds_with_entries": 1,
-        "entry_count_min": 2,
-        "entry_count_max": 2,
-        "entry_count_median": "2",
-    }
-    assert payload["prospective_oos"] == {
-        "status": "pending",
-        "first_trading_day": "2026-08-20",
-        "through": "2026-08-19",
-        "result": None,
-    }
-    assert (
-        payload["retrospective"]["horizon_summary"]["3"][
-            "median_directional_return_bps"
-        ]
-        == "12.3400"
-    )
-
-
-
-
-
-
-
-
-
-
-def _n_candidate_arguments(
-    *,
-    candidate: str = "n_structure_5m_candidate_v1",
-    protocol: str = "n_structure_validation_v1",
-    through: str = "2026-08-20",
-) -> list[str]:
-    return [
-        "research",
-        "candidate-validation",
-        "--candidate",
-        candidate,
-        "--protocol",
-        protocol,
-        "--symbol",
-        "jm",
-        "--through",
-        through,
-    ]
-
-
-def _n_candidate_horizon() -> PriceHorizonEvaluation:
-    return PriceHorizonEvaluation(
-        3,
-        Decimal("1.2"),
-        Decimal("2.3"),
-        Decimal("-0.4"),
-    )
-
-
-def _n_candidate_source() -> NStructureResearchResult:
-    return NStructureResearchResult(
-        products=("jm",),
-        segment_count=2,
-        evaluable_bar_count=10,
-        confirmed_pivot_count=4,
-        ambiguous_outside_reset_count=1,
-        incomplete_attempt_replaced_count=2,
-        completed_n_counts={"up": 2, "down": 1},
-        n_break_counts={"n2_origin_broken": 1, "origin_broken": 1},
-        range_band_reentry_count=2,
-        structure_established_counts={"bull": 1, "bear": 1, "range": 1},
-        structure_break_counts={"bull": 1, "bear": 0},
-        horizon_summary={
-            3: _n_candidate_horizon(),
-            5: _n_candidate_horizon(),
-            8: _n_candidate_horizon(),
-        },
-    )
-
-
-def _n_candidate_report() -> NStructureCandidateValidationReport:
-    source = _n_candidate_source()
-    retrospective = project_n_structure_window(
-        window_id="retrospective",
-        window_kind=NCandidateWindowKind.RETROSPECTIVE,
-        since=date(2023, 1, 1),
-        through=date(2026, 8, 19),
-        source=source,
-    )
-    fold = NRollingCandidateFold(
-        fold_id="fold_01",
-        reference=project_n_structure_window(
-            window_id="fold_01_reference",
-            window_kind=NCandidateWindowKind.ROLLING_REFERENCE,
-            since=date(2023, 1, 1),
-            through=date(2023, 12, 31),
-            source=source,
-        ),
-        test=project_n_structure_window(
-            window_id="fold_01_test",
-            window_kind=NCandidateWindowKind.ROLLING_TEST,
-            since=date(2024, 1, 1),
-            through=date(2024, 3, 31),
-            source=source,
-        ),
-    )
-    folds = (fold,)
-    return NStructureCandidateValidationReport(
-        schema_version=1,
-        candidate_id="n_structure_5m_candidate_v1",
-        policy_id="n_structure_5m_v1",
-        formula_version="n_structure_v1",
-        protocol_id="n_structure_validation_v1",
-        research_only=True,
-        symbol="jm",
-        retrospective=retrospective,
-        rolling_folds=folds,
-        rolling_stability=summarize_n_rolling_stability(folds),
-        prospective_oos=NProspectiveOosResult(
-            status=NProspectiveOosStatus.PENDING,
-            first_trading_day=date(2026, 8, 21),
-            through=date(2026, 8, 20),
-            result=None,
-        ),
-        quality_flags=("PROSPECTIVE_OOS_PENDING",),
-    )
-
-
-def test_candidate_parser_accepts_exactly_five_candidate_and_three_protocol_ids() -> None:
-    request = _request(_n_candidate_arguments())
-
-    assert request == CandidateValidationRequest(
-        candidate_id="n_structure_5m_candidate_v1",
-        protocol_id="n_structure_validation_v1",
-        symbol="jm",
-        through=date(2026, 8, 20),
-    )
-    cross_pair = _request(_n_candidate_arguments(protocol="candidate_validation_v1"))
-    assert cross_pair.protocol_id == "candidate_validation_v1"
-    for candidate_id in _JDJ_CANDIDATES:
-        request = _request(
-            [
-                "research",
-                "candidate-validation",
-                "--candidate",
-                candidate_id,
-                "--protocol",
-                "jdj_candidate_validation_v1",
-                "--symbol",
-                "jm",
-                "--through",
-                "2026-08-21",
-            ]
-        )
-        assert request.candidate_id == candidate_id
-        assert request.protocol_id == "jdj_candidate_validation_v1"
-    for arguments in (
-        _n_candidate_arguments(candidate="other_candidate"),
-        _n_candidate_arguments(protocol="other_protocol"),
-    ):
-        with pytest.raises(CliUsageError):
-            build_parser().parse_args(arguments)
-
-
-def test_n_candidate_cli_uses_explicit_n_service_and_source_specific_payload() -> None:
-    n_service = _FakeNCandidateValidationService(_n_candidate_report())
-    subing_calls: list[object] = []
-    stdout = io.StringIO()
-    stderr = io.StringIO()
-
-    code = main(
-        _n_candidate_arguments(),
-        session_factory=lambda: nullcontext(object()),
-        candidate_validation_service_factory=lambda session: subing_calls.append(
-            session
-        ),
-        n_candidate_validation_service_factory=lambda _session: n_service,
-        stdout=stdout,
-        stderr=stderr,
-    )
-
-    assert code == 0
-    assert stderr.getvalue() == ""
-    assert subing_calls == []
-    assert n_service.requests == [
-        CandidateValidationRequest(
-            candidate_id="n_structure_5m_candidate_v1",
-            protocol_id="n_structure_validation_v1",
-            symbol="jm",
-            through=date(2026, 8, 20),
-        )
-    ]
-    payload = json.loads(stdout.getvalue())
-    assert payload["retrospective"] == {
-        "window_id": "retrospective",
-        "window_kind": "retrospective",
-        "since": "2023-01-01",
-        "through": "2026-08-19",
-        "products": ["jm"],
-        "segment_count": 2,
-        "evaluable_bar_count": 10,
-        "confirmed_pivot_count": 4,
-        "ambiguous_outside_reset_count": 1,
-        "incomplete_attempt_replaced_count": 2,
-        "completed_n_counts": {"up": 2, "down": 1},
-        "n_break_counts": {"n2_origin_broken": 1, "origin_broken": 1},
-        "range_band_reentry_count": 2,
-        "structure_established_counts": {"bull": 1, "bear": 1, "range": 1},
-        "structure_break_counts": {"bull": 1, "bear": 0},
-        "horizon_summary": {
-            "3": {
-                "sample_count": 3,
-                "median_directional_return_bps": "1.2",
-                "median_mfe_bps": "2.3",
-                "median_mae_bps": "-0.4",
-            },
-            "5": {
-                "sample_count": 3,
-                "median_directional_return_bps": "1.2",
-                "median_mfe_bps": "2.3",
-                "median_mae_bps": "-0.4",
-            },
-            "8": {
-                "sample_count": 3,
-                "median_directional_return_bps": "1.2",
-                "median_mfe_bps": "2.3",
-                "median_mae_bps": "-0.4",
-            },
-        },
-    }
-    assert payload["rolling_stability"] == {
-        "fold_count": 1,
-        "folds_with_completed_n": 1,
-        "completed_n_min": 3,
-        "completed_n_max": 3,
-        "completed_n_median": "3",
-    }
-    assert payload["prospective_oos"] == {
-        "status": "pending",
-        "first_trading_day": "2026-08-21",
-        "through": "2026-08-20",
-        "result": None,
-    }
-
-
-
-
-def _mirror_arguments(
-    *,
-    series_kind: str = "actual_dominant",
-    contract: str | None = None,
-) -> list[str]:
-    arguments = [
-        "research",
-        "main-force-mirror-v2",
-        "--symbol",
-        "jm",
-        "--series-kind",
-        series_kind,
-        "--frequency",
-        "60m",
-        "--since",
-        "2023-01-01",
-        "--through",
-        "2026-08-18",
-    ]
-    if contract is not None:
-        arguments.extend(("--contract", contract))
-    return arguments
-
-
-class _FakeMirrorResearchService:
-    def __init__(self, result: MainForceMirrorV2ResearchResult) -> None:
-        self.result = result
-        self.requests: list[MainForceMirrorV2ResearchRequest] = []
-
-    def run(
-        self,
-        request: MainForceMirrorV2ResearchRequest,
-    ) -> MainForceMirrorV2ResearchResult:
-        self.requests.append(request)
-        return self.result
-
-
-def _mirror_result() -> MainForceMirrorV2ResearchResult:
-    summary = MainForceMirrorV2HorizonSummary(
-        horizon_bars=5,
-        sample_count=2,
-        median_directional_return=Decimal("0.1"),
-        median_reversal_return=Decimal("-0.1"),
-        hit_rate=Decimal("1"),
-        median_mfe=Decimal("0.12"),
-        median_mae=Decimal("0.02"),
-    )
-    spread = MainForceMirrorV2GroupSpread(
-        horizon_bars=5,
-        top_group="member_strong_aligned",
-        bottom_group="member_divergent",
-        directional_return_spread=Decimal("0.15"),
-        top_sample_count=2,
-        bottom_sample_count=1,
-    )
-    return MainForceMirrorV2ResearchResult(
-        indicator_code="main_force_mirror_v2",
-        indicator_version="futures-member-research-v2",
-        parameters_hash="fixture-parameters",
-        research_protocol="main_force_mirror_v2_retrospective_v1",
-        evaluation_classification="retrospective_walk_forward_diagnostic",
-        requested_since=date(2023, 1, 1),
-        requested_through=date(2026, 8, 18),
-        prospective_oos_starts_after=date(2026, 8, 20),
-        member_dataset_id="fixture-member-v1",
-        products=("jm",),
-        member_coverage=Decimal("0.75"),
-        caution_ready_bars=40,
-        caution_events=2,
-        caution_events_per_1000_ready_bars=Decimal("50"),
-        yearly={
-            2026: {"jm": {"long_build": {"instant_pressure": {5: summary}}}}
-        },
-        by_product={
-            "jm": {"long_build": {"instant_pressure": {5: summary}}}
-        },
-        pooled={"instant_pressure": {5: summary}},
-        top_bottom_spreads={5: spread},
-        sensitivity={
-            Decimal("2.0"): MainForceMirrorV2SensitivitySummary(
-                member_strength_threshold=Decimal("2.0"),
-                by_product={"jm": {5: summary}},
-                pooled={5: summary},
-            )
-        },
-    )
-
-
-def test_mirror_request_parses_exact_actual_dominant_and_contract_modes() -> None:
-    dominant = _request(_mirror_arguments())
-    contract = _request(_mirror_arguments(series_kind="contract", contract="jm2609"))
-
-    assert dominant == MainForceMirrorV2ResearchRequest(
-        symbol="jm",
-        series_kind=SeriesKind.ACTUAL_DOMINANT,
-        contract=None,
-        frequency=BarFrequency.H1,
-        since=date(2023, 1, 1),
-        through=date(2026, 8, 18),
-    )
-    assert contract == MainForceMirrorV2ResearchRequest(
-        symbol="jm",
-        series_kind=SeriesKind.CONTRACT,
-        contract="JM2609",
-        frequency=BarFrequency.H1,
-        since=date(2023, 1, 1),
-        through=date(2026, 8, 18),
-    )
-
-
-@pytest.mark.parametrize(
-    "arguments",
-    (
-        _mirror_arguments(series_kind="contract"),
-        _mirror_arguments(contract="JM2609"),
-    ),
-)
-def test_invalid_mirror_identity_exits_two_before_any_service_construction(
-    arguments: list[str],
-) -> None:
-    calls: list[object] = []
-    stdout = io.StringIO()
-    stderr = io.StringIO()
-
-    code = main(
-        arguments,
-        session_factory=lambda: nullcontext(object()),
-        main_force_mirror_v2_research_service_factory=lambda session: calls.append(
-            session
-        ),
-        stdout=stdout,
-        stderr=stderr,
-    )
-
-    assert code == 2
-    assert stdout.getvalue() == ""
-    assert json.loads(stderr.getvalue()) == {
-        "schema_version": 1,
-        "command": "research.main-force-mirror-v2",
-        "status": "error",
-        "readonly": True,
-        "error": {"code": "CLI_ARGUMENT_INVALID", "type": "CliUsageError"},
-    }
-    assert calls == []
-
-
-def test_mirror_cli_uses_dedicated_factory_and_stable_readonly_json() -> None:
-    service = _FakeMirrorResearchService(_mirror_result())
-    unrelated_calls: list[str] = []
-    stdout = io.StringIO()
-    stderr = io.StringIO()
-
-    code = main(
-        _mirror_arguments(),
-        session_factory=lambda: nullcontext(object()),
-        research_service_factory=lambda _session: unrelated_calls.append("calibration"),
-        lifecycle_research_service_factory=lambda _session: unrelated_calls.append(
-            "lifecycle"
-        ),
-        candidate_validation_service_factory=lambda _session: unrelated_calls.append(
-            "candidate"
-        ),
-        main_force_mirror_v2_research_service_factory=lambda _session: service,
-        stdout=stdout,
-        stderr=stderr,
-    )
-
-    assert code == 0
-    assert stderr.getvalue() == ""
-    assert unrelated_calls == []
-    assert service.requests == [
-        MainForceMirrorV2ResearchRequest(
-            symbol="jm",
-            series_kind=SeriesKind.ACTUAL_DOMINANT,
-            contract=None,
-            frequency=BarFrequency.H1,
-            since=date(2023, 1, 1),
-            through=date(2026, 8, 18),
-        )
-    ]
-    payload = json.loads(stdout.getvalue())
-    assert payload["command"] == "research.main-force-mirror-v2"
-    assert payload["status"] == "ok"
-    assert payload["readonly"] is True
-    assert payload["research_only"] is True
-    assert payload["series_kind"] == "actual_dominant"
-    assert payload["contract"] is None
-    assert payload["research_protocol"] == "main_force_mirror_v2_retrospective_v1"
-    assert payload["evaluation_classification"] == (
-        "retrospective_walk_forward_diagnostic"
-    )
-    assert payload["member_coverage"] == "0.75"
-    assert payload["caution_events_per_1000_ready_bars"] == "50"
-    assert payload["yearly"] == {
-        "2026": {
-            "jm": {
-                "long_build": {
-                    "instant_pressure": {
-                        "5": {
-                            "horizon_bars": 5,
-                            "sample_count": 2,
-                            "median_directional_return": "0.1",
-                            "median_reversal_return": "-0.1",
-                            "hit_rate": "1",
-                            "median_mfe": "0.12",
-                            "median_mae": "0.02",
-                        }
-                    }
-                }
-            }
-        }
-    }
-    assert payload["sensitivity"]["2.0"]["member_strength_threshold"] == "2.0"
-    rendered = stdout.getvalue().lower()
-    for forbidden in (
-        "promotion",
-        "recommendation",
-        "profitability",
-        "sharpe",
-        "equity",
-    ):
-        assert forbidden not in rendered
-
-
-def test_mirror_cli_renders_undefined_event_rate_as_json_null() -> None:
-    result = replace(
-        _mirror_result(),
-        caution_ready_bars=0,
-        caution_events=0,
-        caution_events_per_1000_ready_bars=None,
-    )
-    request = MainForceMirrorV2ResearchRequest(
-        symbol="jm",
-        series_kind=SeriesKind.ACTUAL_DOMINANT,
-        contract=None,
-        frequency=BarFrequency.H1,
-        since=date(2023, 1, 1),
-        through=date(2026, 8, 18),
-    )
-
-    payload = run_research_command(request, _FakeMirrorResearchService(result))
-
-    assert payload["caution_events_per_1000_ready_bars"] is None
-
-
-
-
-def _robustness_report() -> SimpleNamespace:
-    horizon = SimpleNamespace(
-        sample_count=2,
-        median_directional_return_bps=Decimal("1.25"),
-        median_mfe_bps=Decimal("2.5"),
-        median_mae_bps=Decimal("-0.5"),
-    )
-    temporal = SimpleNamespace(
-        candidate_id="subing_lifecycle_v2_candidate_v1",
-        candidate_protocol_id="candidate_validation_v1",
-        source_kind="subing_lifecycle",
-        anchor_symbol="jm",
-        retrospective_since=date(2023, 1, 1),
-        retrospective_through=date(2026, 8, 18),
-        event_unit="entry_confirmed",
-        retrospective_event_count=11,
-        rolling_fold_count=10,
-        folds_with_events=9,
-        test_event_count_min=0,
-        test_event_count_median=Decimal("4.5"),
-        test_event_count_max=9,
-        prospective_status="pending",
-        prospective_first_trading_day=date(2026, 8, 20),
-        prospective_through=date(2026, 8, 19),
-        horizon_semantics="same_trading_day_only",
-        horizon_summary={3: horizon, 5: horizon, 8: horizon},
-        source_quality_flags=("PROSPECTIVE_OOS_PENDING",),
-    )
-    row = SimpleNamespace(
-        candidate_id="subing_lifecycle_v2_candidate_v1",
-        source_kind="subing_lifecycle",
-        symbol="jm",
-        status=SimpleNamespace(value="available"),
-        reason_code=None,
-        event_count=1,
-        evaluable_count=2,
-        evaluable_unit="5m_ready_boundary",
-        event_rate_per_1000_evaluable=Decimal("500"),
-        horizon_semantics="same_trading_day_only",
-        horizon_summary={3: horizon, 5: horizon, 8: horizon},
-    )
-    sign = SimpleNamespace(
-        symbols_with_samples=1,
-        positive_median_return_symbols=1,
-        zero_median_return_symbols=0,
-        negative_median_return_symbols=0,
-    )
-    summary = SimpleNamespace(
-        candidate_id="subing_lifecycle_v2_candidate_v1",
-        product_count=60,
-        available_product_count=60,
-        unavailable_product_count=0,
-        symbols_with_events=1,
-        symbols_without_events=59,
-        event_rate_available_count=60,
-        event_rate_min=Decimal("0"),
-        event_rate_median=Decimal("0"),
-        event_rate_max=Decimal("500"),
-        horizon_sign_summary={3: sign, 5: sign, 8: sign},
-    )
-    relationship = SimpleNamespace(
-        source_candidate_id="subing_lifecycle_v2_candidate_v1",
-        target_candidate_id="n_structure_5m_candidate_v1",
-        source_event_count=1,
-        target_event_count=1,
-        exact_same_direction_count=0,
-        exact_opposite_direction_count=0,
-        within_3_same_direction_source_count=1,
-        within_5_same_direction_source_count=1,
-        within_8_same_direction_source_count=1,
-        nearest_match_count_within_8=1,
-        signed_distance_min=1,
-        signed_distance_median=Decimal("1"),
-        signed_distance_max=1,
-        target_earlier_count=0,
-        target_same_boundary_count=0,
-        target_later_count=1,
-        same_trading_day_count=1,
-        cross_trading_day_count=0,
-    )
-    return SimpleNamespace(
-        schema_version=1,
-        protocol_id="multi_candidate_robustness_v1",
-        frozen_at=datetime.fromisoformat("2026-08-20T21:33:00+08:00"),
-        readonly=True,
-        research_only=True,
-        anchor_symbol="jm",
-        common_since=date(2023, 1, 1),
-        common_through=date(2026, 8, 18),
-        temporal_dossiers=(temporal,),
-        cross_symbol_results=(row,),
-        cross_symbol_summaries=(summary,),
-        relationships=(relationship,),
-        metric_compatibility_flags=("EVALUABLE_UNIT_DIFFERS",),
-        quality_flags=("SYMBOL_WITHOUT_EVENT",),
-    )
-
-
-class _FakeRobustnessService:
-    def __init__(self) -> None:
-        self.requests: list[object] = []
-
-    def run(self, request: object) -> SimpleNamespace:
-        self.requests.append(request)
-        return _robustness_report()
-
-
-def _calibration_contract_payload() -> dict[str, object]:
-    request = _request([*_arguments(), "--symbol", "jm"])
-    report = _discovery_report(sample_count=1, product_counts={"jm": 1})
-    return run_research_command(
-        request,
-        _FakeResearchService(CalibrationResearchResult(("jm",), report, {})),
-    )
-
-
-def _subing_candidate_contract_payload() -> dict[str, object]:
-    return run_research_command(
-        CandidateValidationRequest(
-            candidate_id="subing_lifecycle_v2_candidate_v1",
-            protocol_id="candidate_validation_v1",
-            symbol="jm",
-            through=date(2026, 8, 19),
-        ),
-        _FakeCandidateValidationService(_candidate_report()),
-    )
-
-
-def _n_candidate_contract_payload() -> dict[str, object]:
-    return run_research_command(
-        CandidateValidationRequest(
-            candidate_id="n_structure_5m_candidate_v1",
-            protocol_id="n_structure_validation_v1",
-            symbol="jm",
-            through=date(2026, 8, 20),
-        ),
-        _FakeNCandidateValidationService(_n_candidate_report()),
-    )
-
-
-def _robustness_contract_payload() -> dict[str, object]:
-    return run_research_command(
-        MultiCandidateRobustnessRequest("multi_candidate_robustness_v1"),
-        _FakeRobustnessService(),
-    )
-
-
-def _payload_keys(value: object) -> set[str]:
-    if isinstance(value, dict):
-        return {str(key).lower() for key in value} | set().union(
-            *(_payload_keys(item) for item in value.values())
-        )
-    if isinstance(value, list):
-        return set().union(*(_payload_keys(item) for item in value))
-    return set()
-
-
-@pytest.mark.parametrize(
-    "payload_factory",
-    (
-        _calibration_contract_payload,
-        _subing_candidate_contract_payload,
-        _n_candidate_contract_payload,
-        _robustness_contract_payload,
-    ),
-)
-def test_research_payloads_exclude_automatic_promotion_profit_and_ranking_fields(
-    payload_factory,
-) -> None:
-    forbidden = {
-        "approved",
-        "best",
-        "better_candidate",
-        "account_return",
-        "drop",
-        "expected_profit",
-        "keep",
-        "pass_strategy",
-        "performance",
-        "profitability",
-        "promote",
-        "rank",
-        "score",
-        "trade",
-        "winner",
-    }
-
-    assert _payload_keys(payload_factory()).isdisjoint(forbidden)
-
-
-def test_robustness_renderer_uses_canonical_fields_and_is_byte_deterministic() -> None:
-    encoded_once = json.dumps(
-        _robustness_contract_payload(),
-        sort_keys=True,
-        separators=(",", ":"),
-    )
-    encoded_twice = json.dumps(
-        _robustness_contract_payload(),
-        sort_keys=True,
-        separators=(",", ":"),
-    )
-
-    assert encoded_once == encoded_twice
-    payload = _robustness_contract_payload()
-    assert payload["cross_symbol_summaries"][0]["symbols_with_events"] == 1
-    assert payload["cross_symbol_summaries"][0]["symbols_without_events"] == 59
-    assert (
-        payload["cross_symbol_summaries"][0]["horizon_sign_summary"]["3"]
-        ["symbols_with_samples"]
-        == 1
-    )
-
-
-def test_candidate_robustness_cli_dispatches_readonly_deterministic_json() -> None:
-    service = _FakeRobustnessService()
-    stdout = io.StringIO()
-    stderr = io.StringIO()
-    code = main(
-        [
-            "research",
-            "candidate-robustness",
-            "--protocol",
-            "multi_candidate_robustness_v1",
-        ],
-        session_factory=lambda: nullcontext(object()),
-        multi_candidate_robustness_service_factory=lambda _session: service,
-        stdout=stdout,
-        stderr=stderr,
-    )
-
-    assert code == 0
-    assert stderr.getvalue() == ""
-    assert service.requests == [
-        MultiCandidateRobustnessRequest("multi_candidate_robustness_v1")
-    ]
-    payload = json.loads(stdout.getvalue())
-    direct_payload = run_research_command(
-        MultiCandidateRobustnessRequest("multi_candidate_robustness_v1"),
-        _FakeRobustnessService(),
-    )
-    assert tuple(direct_payload) == (
-        "schema_version",
-        "command",
-        "status",
-        "readonly",
-        "research_only",
-        "protocol_id",
-        "frozen_at",
-        "anchor_symbol",
-        "common_retrospective",
-        "temporal_dossiers",
-        "cross_symbol_results",
-        "cross_symbol_summaries",
-        "relationships",
-        "metric_compatibility_flags",
-        "quality_flags",
-    )
-    assert payload["command"] == "research.candidate-robustness"
-    assert payload["readonly"] is payload["research_only"] is True
-    assert payload["cross_symbol_results"][0]["event_rate_per_1000_evaluable"] == "500"
-    assert payload["relationships"][0]["signed_distance_median"] == "1"

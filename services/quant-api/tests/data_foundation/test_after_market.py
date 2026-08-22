@@ -9,10 +9,7 @@ import pytest
 
 from app.market_data.after_market import AfterMarketUpdater, public_after_market_status
 from app.market_data.after_market import AfterMarketResult
-from app.guiyi_cli.main import (
-    _execution_review_roll_marker_state,
-    main as guiyi_main,
-)
+from app.guiyi_cli.main import main as guiyi_main
 from app.market_data.errors import InfrastructureError
 from app.market_data.historical_data_manager import MaintenanceResult
 from app.market_data.operational_universe import load_active_products
@@ -26,7 +23,7 @@ _ACTIVE_CONTRACTS = {symbol: f"{symbol.upper()}2601" for symbol in _ACTIVE_PRODU
 def _restore_after_market_logger_state():
     loggers = tuple(
         logging.getLogger(name)
-        for name in ("app.market_data.after_market", "app.guiyi_cli.main")
+        for name in ("app.market_data.after_market", "app.runtime_entry")
     )
     disabled_states = tuple(logger.disabled for logger in loggers)
     for logger in loggers:
@@ -284,7 +281,7 @@ def test_after_market_reconcile_exception_preserves_passed_result(
             raise RuntimeError("private database detail")
 
     stdout = io.StringIO()
-    caplog.set_level(logging.WARNING, logger="app.guiyi_cli.main")
+    caplog.set_level(logging.WARNING, logger="app.runtime_entry")
     code = guiyi_main(
         ["data", "after-market"],
         session_factory=sessions,
@@ -333,21 +330,6 @@ class _TrackedSessionContext:
     def __exit__(self, _exc_type, _exc, _traceback):
         self.events.append(f"exit:{self.name}")
         return False
-
-
-def test_execution_review_roll_marker_reader_is_exact_and_default_off(tmp_path) -> None:
-    assert _execution_review_roll_marker_state(tmp_path) == "disabled"
-    marker = tmp_path / ".run/execution-review-roll-enabled"
-    marker.parent.mkdir()
-    marker.write_bytes(b"enabled\n")
-    marker.chmod(0o600)
-    assert _execution_review_roll_marker_state(tmp_path) == "enabled"
-
-    marker.write_bytes(b"enabled")
-    assert _execution_review_roll_marker_state(tmp_path) == "invalid"
-    marker.write_bytes(b"enabled\n")
-    marker.chmod(0o644)
-    assert _execution_review_roll_marker_state(tmp_path) == "invalid"
 
 
 def test_skips_non_trading_day_without_ready_update_or_retry(tmp_path) -> None:

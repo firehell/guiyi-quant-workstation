@@ -23,6 +23,7 @@ from app.research.jdj.jdj_candidate_validation import (
 )
 from app.research.jdj.jdj_events import JdjTriggerEvent
 from app.research.main_force.main_force_mirror_v2_research_service import (
+    MainForceMirrorV2ForensicPoint,
     MainForceMirrorV2GroupSpread,
     MainForceMirrorV2HorizonSummary,
     MainForceMirrorV2ResearchRequest,
@@ -33,6 +34,13 @@ from app.research.robustness.multi_candidate_robustness import (
     CommonPriceHorizonSummary,
     CrossSymbolCandidateSummary,
     MultiCandidateRobustnessReport,
+)
+from app.research.robustness.jdj_robustness import (
+    JdjActive60RobustnessReport,
+    JdjRobustnessHorizonSummary,
+    JdjRobustnessSectorSummary,
+    JdjRobustnessSymbolResult,
+    JdjRobustnessYearSummary,
 )
 from app.research.n_structure.n_structure_research_service import (
     NStructureResearchRequest,
@@ -59,6 +67,13 @@ from app.research.subing.subing_calibration_service import (
 from app.research.subing.subing_lifecycle_research_service import (
     LifecycleResearchRequest,
     SubingLifecycleResearchResult,
+)
+from app.research.candidate_convergence.five_candidate_dossier import (
+    CandidateDossier,
+    FiveCandidateResearchDossier,
+)
+from app.research.candidate_convergence.five_candidate_relationships import (
+    FiveCandidateRelationshipReport,
 )
 
 
@@ -139,7 +154,7 @@ def _main_force_mirror_v2_payload(
     request: MainForceMirrorV2ResearchRequest,
     result: MainForceMirrorV2ResearchResult,
 ) -> dict[str, object]:
-    return {
+    payload: dict[str, object] = {
         "schema_version": 1,
         "command": "research.main-force-mirror-v2",
         "status": "ok",
@@ -179,6 +194,20 @@ def _main_force_mirror_v2_payload(
             for threshold, summary in result.sensitivity.items()
         },
     }
+    payload["sequence_profiles"] = {
+        profile_id: {
+            "yearly": _main_force_mirror_v2_summary_tree(summary.yearly),
+            "by_side": _main_force_mirror_v2_summary_tree(summary.by_side),
+            "pooled": _main_force_mirror_v2_summary_tree(summary.pooled),
+        }
+        for profile_id, summary in result.sequence_profiles.items()
+    }
+    if request.forensic:
+        payload["forensic_points"] = [
+            _main_force_mirror_v2_forensic_point_payload(item)
+            for item in result.forensic_points or ()
+        ]
+    return payload
 
 
 def _multi_candidate_robustness_payload(
@@ -212,6 +241,378 @@ def _multi_candidate_robustness_payload(
         ],
         "metric_compatibility_flags": list(report.metric_compatibility_flags),
         "quality_flags": list(report.quality_flags),
+    }
+
+
+def _five_candidate_dossier_payload(
+    report: FiveCandidateResearchDossier,
+) -> dict[str, object]:
+    return {
+        "schema_version": report.schema_version,
+        "command": report.command,
+        "status": report.status,
+        "protocol_id": report.protocol_id,
+        "frozen_at": report.frozen_at.isoformat(),
+        "research_only": report.research_only,
+        "readonly": report.readonly,
+        "prospective_consumed": report.prospective_consumed,
+        "candidate_order": list(report.candidate_order),
+        "source_artifacts": [
+            {"artifact_id": artifact.artifact_id}
+            for artifact in report.source_artifacts
+        ],
+        "candidate_dossiers": [
+            _candidate_dossier_payload(dossier)
+            for dossier in report.candidate_dossiers
+        ],
+        "metric_catalog": [
+            {
+                "metric_id": metric.metric_id,
+                "candidate_ids": list(metric.candidate_ids),
+                "status": metric.status.value,
+                "reason_codes": list(metric.reason_codes),
+            }
+            for metric in report.metric_catalog
+        ],
+        "comparability_pairs": [
+            {
+                "left_candidate_id": pair.left_candidate_id,
+                "right_candidate_id": pair.right_candidate_id,
+                "status": pair.status.value,
+                "reason_codes": list(pair.reason_codes),
+                "existing_relationship_reference": _dossier_value_payload(
+                    pair.existing_relationship_reference
+                ),
+            }
+            for pair in report.comparability_pairs
+        ],
+        "quality_flags": list(report.quality_flags),
+        "safety": dict(report.safety),
+    }
+
+
+def _five_candidate_relationship_payload(
+    report: FiveCandidateRelationshipReport,
+) -> dict[str, object]:
+    return {
+        "schema_version": report.schema_version,
+        "command": report.command,
+        "status": report.status,
+        "protocol_id": report.protocol_id,
+        "frozen_at": report.frozen_at.isoformat(),
+        "research_only": report.research_only,
+        "readonly": report.readonly,
+        "prospective_consumed": report.prospective_consumed,
+        "candidate_order": list(report.candidate_order),
+        "pair_order": [list(pair) for pair in report.pair_order],
+        "relationship_catalog": [
+            {
+                "left_candidate_id": entry.left_candidate_id,
+                "right_candidate_id": entry.right_candidate_id,
+                "relation_kind": entry.relation_kind.value,
+            }
+            for entry in report.relationship_catalog
+        ],
+        "existing_relationship_references": [
+            {
+                "left_candidate_id": reference.left_candidate_id,
+                "right_candidate_id": reference.right_candidate_id,
+                "relation_kind": reference.relation_kind.value,
+                "source_artifact_id": reference.source.artifact_id,
+                "recompute": reference.recompute,
+            }
+            for reference in report.existing_relationship_references
+        ],
+        "n_jdj_dependency_results": [
+            {
+                "candidate_id": row.candidate_id,
+                "symbol": row.symbol,
+                "dependency_role": row.dependency_role.value,
+                "status": row.status,
+                "reason_code": row.reason_code,
+                "event_count": row.event_count,
+                "events_with_trend_snapshot_lineage": (
+                    row.events_with_trend_snapshot_lineage
+                ),
+                "events_with_exact_pivot_lineage": (
+                    row.events_with_exact_pivot_lineage
+                ),
+            }
+            for row in report.n_jdj_dependency_results
+        ],
+        "jdj_exact_overlap_results": [
+            {
+                "left_candidate_id": row.left_candidate_id,
+                "right_candidate_id": row.right_candidate_id,
+                "symbol": row.symbol,
+                "status": row.status,
+                "reason_code": row.reason_code,
+                "left_event_count": row.left_event_count,
+                "right_event_count": row.right_event_count,
+                "exact_same_boundary_same_direction_count": (
+                    row.exact_same_boundary_same_direction_count
+                ),
+                "exact_same_boundary_opposite_direction_count": (
+                    row.exact_same_boundary_opposite_direction_count
+                ),
+                "left_events_with_same_direction_match": (
+                    row.left_events_with_same_direction_match
+                ),
+                "right_events_with_same_direction_match": (
+                    row.right_events_with_same_direction_match
+                ),
+            }
+            for row in report.jdj_exact_overlap_results
+        ],
+        "quality_flags": list(report.quality_flags),
+        "safety": dict(report.safety),
+    }
+
+
+def _candidate_dossier_payload(value: CandidateDossier) -> dict[str, object]:
+    identity = value.identity
+    baseline = value.baseline
+    prospective = baseline.prospective
+    robustness = value.robustness
+    evidence = value.evidence_references
+    return {
+        "candidate_id": identity.candidate_id,
+        "identity": {
+            "source_kind": identity.source_kind,
+            "policy_id": identity.policy_id,
+            "formula_version": identity.formula_version,
+            "source_event_kind": identity.source_event_kind,
+            "source_timeframes": list(identity.source_timeframes),
+            "evaluable_unit": identity.evaluable_unit,
+            "horizon_semantics": identity.horizon_semantics,
+            "horizons_bars": list(identity.horizons_bars),
+        },
+        "baseline": {
+            "artifact_id": baseline.artifact_id,
+            "symbol": baseline.symbol,
+            "validation_protocol_id": baseline.validation_protocol_id,
+            "baseline_request_through": baseline.baseline_request_through.isoformat(),
+            "retrospective": {
+                "since": baseline.retrospective_since.isoformat(),
+                "through": baseline.retrospective_through.isoformat(),
+                "event_count": baseline.retrospective_event_count,
+                "evaluable_count": baseline.evaluable_count,
+            },
+            "rolling": {
+                "fold_count": baseline.rolling_fold_count,
+                "folds_with_events": baseline.folds_with_events,
+            },
+            "prospective": {
+                "first_trading_day": prospective.first_trading_day.isoformat(),
+                "through": prospective.through.isoformat(),
+                "status": prospective.status,
+                "consumed": prospective.consumed,
+                "embargo_trading_days": [
+                    day.isoformat() for day in prospective.embargo_trading_days
+                ],
+            },
+            "quality_flags": list(baseline.quality_flags),
+        },
+        "robustness": {
+            "artifact_id": robustness.artifact_id,
+            "protocol_id": robustness.robustness_protocol_id,
+            "retrospective": {
+                "since": robustness.retrospective_since.isoformat(),
+                "through": robustness.retrospective_through.isoformat(),
+            },
+            "matrix_cell_count": robustness.matrix_cell_count,
+            "available_symbol_count": robustness.available_symbol_count,
+            "unavailable_symbol_count": robustness.unavailable_symbol_count,
+            "unavailable_reason_counts": dict(
+                robustness.unavailable_reason_counts
+            ),
+            "zero_event_symbol_count": robustness.zero_event_symbol_count,
+            "zero_sample_symbol_count_by_horizon": {
+                str(horizon): count
+                for horizon, count in (
+                    robustness.zero_sample_symbol_count_by_horizon.items()
+                )
+            },
+            "sector_evidence": _dossier_value_payload(
+                robustness.sector_evidence
+            ),
+            "yearly_evidence": _dossier_value_payload(
+                robustness.yearly_evidence
+            ),
+            "quality_flags": list(robustness.quality_flags),
+        },
+        "evidence_references": {
+            "temporal": _dossier_value_payload(evidence.temporal),
+            "cross_symbol": {
+                "artifact_id": robustness.artifact_id,
+                "matrix_cell_count": robustness.matrix_cell_count,
+                "omitted": True,
+            },
+            "sector": _dossier_value_payload(evidence.sector),
+            "yearly": _dossier_value_payload(evidence.yearly),
+            "horizon": _dossier_value_payload(evidence.horizon),
+            "quality": list(evidence.quality),
+        },
+    }
+
+
+def _dossier_value_payload(value: object) -> object:
+    if isinstance(value, Decimal):
+        return _optional_decimal(value)
+    if isinstance(value, (date, datetime)):
+        return value.isoformat()
+    if isinstance(value, Enum):
+        return value.value
+    if isinstance(value, Mapping):
+        return {
+            str(key): _dossier_value_payload(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, (tuple, list)):
+        return [_dossier_value_payload(item) for item in value]
+    return value
+
+
+def _jdj_active60_robustness_payload(
+    report: JdjActive60RobustnessReport,
+) -> dict[str, object]:
+    return {
+        "schema_version": report.schema_version,
+        "command": report.command,
+        "protocol_id": report.protocol_id,
+        "frozen_at": report.frozen_at.isoformat(),
+        "research_only": report.research_only,
+        "readonly": report.readonly,
+        "common_retrospective": {
+            "since": report.common_since.isoformat(),
+            "through": report.common_through.isoformat(),
+        },
+        "embargo_trading_days": [
+            value.isoformat() for value in report.embargo_trading_days
+        ],
+        "prospective_oos": {
+            "first_trading_day": (
+                report.prospective_first_trading_day.isoformat()
+            ),
+        },
+        "prospective_consumed": report.prospective_consumed,
+        "candidate_ids": list(report.candidate_ids),
+        "cross_symbol_results": [
+            _jdj_robustness_symbol_payload(value)
+            for value in report.cross_symbol_results
+        ],
+        "sector_summaries": [
+            _jdj_robustness_sector_payload(value)
+            for value in report.sector_summaries
+        ],
+        "quality_flags": list(report.quality_flags),
+    }
+
+
+def _jdj_robustness_symbol_payload(
+    value: JdjRobustnessSymbolResult,
+) -> dict[str, object]:
+    return {
+        "candidate_id": value.candidate_id,
+        "symbol": value.symbol,
+        "sector": value.sector,
+        "status": value.status.value,
+        "reason_code": value.reason_code,
+        "observed_since": (
+            value.observed_since.isoformat()
+            if value.observed_since is not None
+            else None
+        ),
+        "observed_through": (
+            value.observed_through.isoformat()
+            if value.observed_through is not None
+            else None
+        ),
+        "evaluable_bar_count": value.evaluable_bar_count,
+        "event_count": value.event_count,
+        "long_event_count": value.long_event_count,
+        "short_event_count": value.short_event_count,
+        "event_rate_per_1000_evaluable": _optional_decimal(
+            value.event_rate_per_1000_evaluable
+        ),
+        "horizon_summary": _jdj_robustness_horizons_payload(
+            value.horizon_summary
+        ),
+        "yearly": _jdj_robustness_yearly_payload(value.yearly),
+    }
+
+
+def _jdj_robustness_horizons_payload(
+    values: Mapping[int, JdjRobustnessHorizonSummary] | None,
+) -> dict[str, object] | None:
+    if values is None:
+        return None
+    return {
+        str(horizon): {
+            "sample_count": value.sample_count,
+            "historical_positive_outcome_rate": _optional_decimal(
+                value.historical_positive_outcome_rate
+            ),
+            "median_directional_return_bps": _optional_decimal(
+                value.median_directional_return_bps
+            ),
+            "median_mfe_bps": _optional_decimal(value.median_mfe_bps),
+            "median_mae_bps": _optional_decimal(value.median_mae_bps),
+        }
+        for horizon, value in values.items()
+    }
+
+
+def _jdj_robustness_yearly_payload(
+    values: Mapping[int, JdjRobustnessYearSummary] | None,
+) -> dict[str, object] | None:
+    if values is None:
+        return None
+    return {
+        str(year): {
+            "event_count": value.event_count,
+            "horizon_summary": {
+                str(horizon): {
+                    "sample_count": value.horizon_sample_count[horizon],
+                    "historical_positive_outcome_rate": _optional_decimal(
+                        value.horizon_positive_outcome_rate[horizon]
+                    ),
+                    "median_directional_return_bps": _optional_decimal(
+                        value.horizon_median_directional_return_bps[horizon]
+                    ),
+                }
+                for horizon in value.horizon_sample_count
+            },
+        }
+        for year, value in values.items()
+    }
+
+
+def _jdj_robustness_sector_payload(
+    value: JdjRobustnessSectorSummary,
+) -> dict[str, object]:
+    return {
+        "candidate_id": value.candidate_id,
+        "sector": value.sector,
+        "symbol_count": value.symbol_count,
+        "available_symbol_count": value.available_symbol_count,
+        "symbols_with_events": value.symbols_with_events,
+        "horizon_summary": {
+            str(horizon): {
+                "symbols_with_samples": summary.symbols_with_samples,
+                "positive_median_symbol_count": (
+                    summary.positive_median_symbol_count
+                ),
+                "zero_median_symbol_count": summary.zero_median_symbol_count,
+                "negative_median_symbol_count": (
+                    summary.negative_median_symbol_count
+                ),
+                "median_of_symbol_median_return_bps": _optional_decimal(
+                    summary.median_of_symbol_median_return_bps
+                ),
+            }
+            for horizon, summary in value.horizon_summary.items()
+        },
     }
 
 
@@ -326,6 +727,71 @@ def _relationship_payload(value: object) -> dict[str, object]:
         value.signed_distance_median  # type: ignore[attr-defined]
     )
     return payload
+
+
+def _main_force_mirror_v2_forensic_point_payload(
+    item: MainForceMirrorV2ForensicPoint,
+) -> dict[str, object]:
+    point = item.point
+    sequence = item.sequence
+    member = point.member
+    member_ready = member is not None and member.status == "ready"
+    return {
+        "bar_end": point.bar_end.isoformat(),
+        "trading_day": point.trading_day.isoformat(),
+        "physical_contract": point.physical_contract,
+        "pressure_state": point.pressure_state,
+        "instant_pressure": point.instant_pressure,
+        "accumulated_pressure": point.accumulated_pressure,
+        "price_impulse": point.price_impulse,
+        "volume_ratio": point.volume_ratio,
+        "delta_oi": point.delta_oi,
+        "oi_impulse": point.oi_impulse,
+        "range_position": point.range_position,
+        "caution": point.caution,
+        "long_caution_score": point.long_caution_score,
+        "short_caution_score": point.short_caution_score,
+        "caution_reason_codes": list(point.caution_reason_codes),
+        "member_status": member.status if member is not None else "unavailable",
+        "member_relation_to_accumulated": (
+            member.relation_to_accumulated
+            if member_ready and member is not None
+            else "unavailable"
+        ),
+        "member_relation_to_caution": (
+            member.relation_to_caution
+            if member_ready and member is not None
+            else "unavailable"
+        ),
+        "sequence": {
+            "profile_id": "balanced",
+            "current_side": sequence.current_side,
+            "active_peak_index": sequence.active_peak_index,
+            "active_peak_side": sequence.active_peak_side,
+            "active_peak_instant_pressure": (
+                sequence.active_peak_instant_pressure
+            ),
+            "active_peak_accumulated_pressure": (
+                sequence.active_peak_accumulated_pressure
+            ),
+            "bars_since_active_peak": sequence.bars_since_active_peak,
+            "decay_ratio": _optional_decimal(sequence.decay_ratio),
+            "installed_peak_index": sequence.installed_peak_index,
+            "installed_peak_side": sequence.installed_peak_side,
+            "installed_peak_instant_pressure": (
+                sequence.installed_peak_instant_pressure
+            ),
+            "installed_peak_accumulated_pressure": (
+                sequence.installed_peak_accumulated_pressure
+            ),
+            "peak_seen": sequence.peak_seen,
+            "decay_seen": sequence.decay_seen,
+            "liquidation_seen": sequence.liquidation_seen,
+            "opposite_build_seen": sequence.opposite_build_seen,
+            "accumulated_reversal_seen": sequence.accumulated_reversal_seen,
+            "state_transition": sequence.state_transition,
+        },
+    }
 
 
 def _main_force_mirror_v2_horizon_payload(

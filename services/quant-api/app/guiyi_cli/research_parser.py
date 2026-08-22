@@ -6,6 +6,19 @@ import argparse
 from typing import Any
 
 
+RESEARCH_COMMAND_NAMES = (
+    "subing-calibration",
+    "subing-lifecycle",
+    "n-structure",
+    "jdj-1m",
+    "candidate-validation",
+    "candidate-robustness",
+    "candidate-dossier",
+    "candidate-relationships",
+    "main-force-mirror-v2",
+)
+
+
 def add_research_commands(
     commands: argparse._SubParsersAction[Any],
 ) -> None:
@@ -75,7 +88,24 @@ def add_research_commands(
     robustness = commands.add_parser("candidate-robustness")
     robustness.add_argument(
         "--protocol",
-        choices=("multi_candidate_robustness_v1",),
+        choices=(
+            "multi_candidate_robustness_v1",
+            "jdj_active60_robustness_v1",
+        ),
+        required=True,
+    )
+
+    dossier = commands.add_parser("candidate-dossier")
+    dossier.add_argument(
+        "--protocol",
+        choices=("five_candidate_research_dossier_v1",),
+        required=True,
+    )
+
+    relationships = commands.add_parser("candidate-relationships")
+    relationships.add_argument(
+        "--protocol",
+        choices=("five_candidate_relationship_topology_v1",),
         required=True,
     )
 
@@ -90,3 +120,7 @@ def add_research_commands(
     mirror.add_argument("--frequency", choices=("60m",), required=True)
     mirror.add_argument("--since", required=True)
     mirror.add_argument("--through", required=True)
+    mirror.add_argument("--forensic", action="store_true")
+
+    if tuple(commands.choices) != RESEARCH_COMMAND_NAMES:
+        raise RuntimeError("CLI_RESEARCH_COMMAND_REGISTRY_INVALID")
