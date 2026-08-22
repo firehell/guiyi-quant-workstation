@@ -32,6 +32,23 @@ test('only enabled EMA is derived while MACD is always available', () => {
   assert.equal(result.macd.dea.length, result.macd.histogram.length)
 })
 
+test('JDJ EMA20 is derived and hovered only while its overlay is visible', () => {
+  const visible = buildKlineDerivedData(bars, ['ema_20' as never])
+  const hidden = buildKlineDerivedData(bars, [])
+  const target = bars[79]
+  const hover = resolveKlineHoverContext(
+    bars,
+    visible,
+    ['ema_20' as never],
+    target.time,
+  )
+
+  assert.equal((visible.ema as any).ema_20?.length, 81)
+  assert.equal((hidden.ema as any).ema_20, undefined)
+  assert.equal(hover?.mainIndicators?.[0]?.id, 'ema_20')
+  assert.equal(hover?.mainIndicators?.[0]?.displayName, 'EMA20')
+})
+
 test('HTDY is only derived when its observation overlay is explicitly visible', () => {
   const htdyBars = makeDeterministicHtdyBars(2)
   const hidden = buildKlineDerivedData(htdyBars, ['ema_21'])

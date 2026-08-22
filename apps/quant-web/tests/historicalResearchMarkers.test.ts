@@ -3,6 +3,7 @@ import test from 'node:test'
 import type {
   AlertEvent,
   BarData,
+  JdjHistoricalResponse,
   SubingHistoricalSignalResponse,
 } from '../src/types/market.ts'
 import { useHistoricalResearchMarkers } from '../src/composables/useHistoricalResearchMarkers.ts'
@@ -95,8 +96,15 @@ function nResponse(
   return { request, events }
 }
 
-test('research overlay capability registry exposes the causal N overlay without a JDJ placeholder', () => {
-  assert.deepEqual(RESEARCH_OVERLAY_DEFINITIONS.map((item) => item.id), ['none', 'subing', 'n_structure', 'htdy'])
+function jdjResponse(
+  request: JdjHistoricalResponse['request'],
+  events: JdjHistoricalResponse['events'],
+): JdjHistoricalResponse {
+  return { request, events }
+}
+
+test('research overlay capability registry exposes N and JDJ at their exact identities', () => {
+  assert.deepEqual(RESEARCH_OVERLAY_DEFINITIONS.map((item) => item.id), ['none', 'subing', 'n_structure', 'jdj', 'htdy'])
   assert.deepEqual(researchOverlayCapability('subing', 'actual_dominant', '5m'), {
     supported: true,
     definition: RESEARCH_OVERLAY_DEFINITIONS[1],
@@ -108,7 +116,153 @@ test('research overlay capability registry exposes the causal N overlay without 
   assert.equal(RESEARCH_OVERLAY_DEFINITIONS[2].label, 'N字')
   assert.equal(RESEARCH_OVERLAY_DEFINITIONS[2].historicalSource, 'n_structure')
   assert.deepEqual(RESEARCH_OVERLAY_DEFINITIONS[2].mainIndicators, [])
-  assert.equal(RESEARCH_OVERLAY_DEFINITIONS.some((item) => item.id === ('jdj' as never)), false)
+  assert.equal(researchOverlayCapability('jdj' as never, 'actual_dominant', '1m').supported, true)
+  assert.equal(researchOverlayCapability('jdj' as never, 'actual_dominant', '5m').supported, false)
+  assert.equal(researchOverlayCapability('jdj' as never, 'continuous', '1m').supported, false)
+  assert.equal(RESEARCH_OVERLAY_DEFINITIONS[3].label, '日进斗金')
+  assert.equal(RESEARCH_OVERLAY_DEFINITIONS[3].historicalSource, 'jdj')
+  assert.deepEqual(RESEARCH_OVERLAY_DEFINITIONS[3].mainIndicators, ['ema_20'])
+})
+
+test('JDJ markers keep three candidate identities and use only causal observed_at', async () => {
+  const markerModule = await import('../src/utils/historicalResearchMarkers.ts')
+  const mapper = (markerModule as unknown as {
+    jdjHistoricalEventToMarker?: (event: Record<string, unknown>) => {
+      time: string
+      label: string
+      tooltip: string
+      position: string
+    }
+  }).jdjHistoricalEventToMarker
+  assert.equal(typeof mapper, 'function')
+
+  const cases = [
+    ['jdj_trend_follow_1m_candidate_v1', 'long', '跟随多', 'belowBar'],
+    ['jdj_trend_follow_1m_candidate_v1', 'short', '跟随空', 'aboveBar'],
+    ['jdj_trend_reentry_6_1m_candidate_v1', 'long', '再入多', 'belowBar'],
+    ['jdj_trend_reentry_6_1m_candidate_v1', 'short', '再入空', 'aboveBar'],
+    ['jdj_key_level_breakout_1m_candidate_v1', 'long', '突破多', 'belowBar'],
+    ['jdj_key_level_breakout_1m_candidate_v1', 'short', '突破空', 'aboveBar'],
+  ] as const
+  cases.forEach(([candidateId, direction, label, position]) => {
+    const marker = mapper!({
+      event_id: `${candidateId}|${direction}|1`,
+      candidate_id: candidateId,
+      source_event_kind: 'source-kind',
+      observed_at: '2026-08-03T02:15:00Z',
+      reaction_at: '2026-08-03T01:05:00Z',
+      reclaim_at: '2026-08-03T01:10:00Z',
+      retest_at: '2026-08-03T01:15:00Z',
+      trading_day: '2026-08-03',
+      contract: 'JM2609',
+      segment_start_trading_day: '2026-08-03',
+      direction,
+      trigger_level: '101.5',
+    })
+
+    assert.equal(marker.time, '2026-08-03T02:15:00Z')
+    assert.equal(marker.label, label)
+    assert.equal(marker.position, position)
+    assert.match(marker.tooltip, new RegExp(candidateId))
+  })
+})
+
+test('historical loader discards stale N and JDJ responses after rapid overlay switches', async () => {
+  const nStructure = deferred<ReturnType<typeof nResponse>>()
+  const jdj = deferred<JdjHistoricalResponse>()
+  const subing = deferred<SubingHistoricalSignalResponse>()
+  let jdjRequests = 0
+  const controller = useHistoricalResearchMarkers({
+    fetchSubing: () => subing.promise,
+    fetchNStructure: () => nStructure.promise,
+    fetchJdj: () => {
+      jdjRequests += 1
+      return jdj.promise
+    },
+  } as never)
+  const coverage = { start: canonicalBars[0].time, end: canonicalBars[1].time }
+
+  const nSync = controller.sync(
+    { overlay: 'n_structure', seriesKind: 'actual_dominant', symbol: 'jm', frequency: '5m' },
+    canonicalBars, coverage, 'replace',
+  )
+  const jdjSync = controller.sync(
+    { overlay: 'jdj' as never, seriesKind: 'actual_dominant', symbol: 'jm', frequency: '1m' },
+    canonicalBars, coverage, 'replace',
+  )
+  const subingSync = controller.sync(
+    { overlay: 'subing', seriesKind: 'actual_dominant', symbol: 'jm', frequency: '5m' },
+    canonicalBars, coverage, 'replace',
+  )
+  subing.resolve(response('jm', '5m', canonicalBars[1].time))
+  await subingSync
+  jdj.resolve({
+    request: { series_kind: 'actual_dominant', symbol: 'jm', frequency: '1m', since: '2026-08-03', through: '2026-08-03' },
+    events: [],
+  })
+  nStructure.resolve(nResponse({
+    series_kind: 'actual_dominant', symbol: 'jm', frequency: '5m', since: '2026-08-03', through: '2026-08-03',
+  }, []))
+  await Promise.all([nSync, jdjSync])
+
+  assert.equal(jdjRequests, 1)
+  assert.deepEqual(controller.markers.value.map((marker) => marker.label), ['买入信号'])
+})
+
+test('JDJ prepend reuses the shared window loader and deduplicates candidate event ids', async () => {
+  let call = 0
+  const later = {
+    event_id: 'jdj-follow-later',
+    candidate_id: 'jdj_trend_follow_1m_candidate_v1' as const,
+    source_event_kind: 'jdj_trend_follow_triggered',
+    observed_at: canonicalBars[1].time,
+    trading_day: '2026-08-03',
+    contract: 'JM2609',
+    segment_start_trading_day: '2026-08-03',
+    direction: 'long' as const,
+    trigger_level: '101.5',
+  }
+  const earlierBar = {
+    ...canonicalBars[0],
+    time: '2026-08-02T01:05:00Z',
+    trading_day: '2026-08-02',
+  }
+  const controller = useHistoricalResearchMarkers({
+    fetchSubing: async () => { throw new Error('wrong source') },
+    fetchNStructure: async () => { throw new Error('wrong source') },
+    fetchJdj: async (request) => {
+      call += 1
+      return jdjResponse(request, call === 1 ? [later] : [{
+        ...later,
+        event_id: 'jdj-reentry-earlier',
+        candidate_id: 'jdj_trend_reentry_6_1m_candidate_v1',
+        source_event_kind: 'jdj_trend_reentry_6_triggered',
+        observed_at: earlierBar.time,
+        trading_day: '2026-08-02',
+        segment_start_trading_day: '2026-08-02',
+        direction: 'short',
+      }, later])
+    },
+  })
+  const identity = {
+    overlay: 'jdj' as const,
+    seriesKind: 'actual_dominant' as const,
+    symbol: 'jm',
+    frequency: '1m' as const,
+  }
+
+  await controller.sync(identity, canonicalBars, {
+    start: canonicalBars[0].time,
+    end: canonicalBars[1].time,
+  }, 'replace')
+  await controller.sync(identity, [earlierBar, ...canonicalBars], {
+    start: earlierBar.time,
+    end: canonicalBars[1].time,
+  }, 'prepend')
+
+  assert.equal(call, 2)
+  assert.deepEqual(controller.markers.value.map((marker) => marker.label), ['再入空', '跟随多'])
+  assert.equal(new Set(controller.markers.value.map((marker) => marker.id)).size, 2)
 })
 
 test('historical loader discards stale response after full overlay identity changes', async () => {

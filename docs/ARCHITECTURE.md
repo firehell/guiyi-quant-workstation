@@ -1,6 +1,6 @@
 # 归一量化系统架构
 
-更新时间：2026-08-22
+更新时间：2026-08-23
 
 本文只描述模块、职责与允许的依赖方向。产品边界见 `PROJECT_SOURCE.md`；当前 release、Runtime、
 evidence 与 pending Gate 见 `STATUS.md`；exact protocol/window/hash/count 见 policy、report 与测试。
@@ -33,6 +33,7 @@ flowchart TB
       JDJ[JDJ Research]
       CONV[Candidate Validation / Robustness / Dossier / Relationships]
       MFM[MainForceMirrorV2Service / ResearchService]
+      HRO[Historical Overlay HTTP Projection]
     end
     subgraph Domain[领域与内核]
       DK[DatasetKey / SeriesQuery / CanonicalBar]
@@ -58,6 +59,7 @@ flowchart TB
     API --> SR
     API --> ALERT
     API --> ER
+    API --> HRO
     CLI --> HM
     CLI --> MDS
     CLI --> ADR
@@ -97,6 +99,9 @@ flowchart TB
     CONV --> JDJ
     MFM --> MDS
     MFM --> IK
+    HRO --> SUB
+    HRO --> NS
+    HRO --> JDJ
     SK --> IK
 
     ALERT --> MR
@@ -109,8 +114,9 @@ flowchart TB
     ER --> MDS
 ```
 
-依赖只能从接入层指向应用层，再指向 domain/infra。Market、Runtime 与 Alert 不得导入离线
-`app.research`；Research 可以依赖 Market Historical gateway，但不能成为 Runtime 组装依赖。
+依赖只能从接入层指向应用层或只读 Research，再指向 domain/infra。Market、Runtime 与 Alert 不得导入
+离线 `app.research`；`app.main` 可以挂载 Research-owned 的只读 Historical Overlay router。Research 可以
+依赖 Market Historical gateway，但不能成为 Market/Runtime/Alert 组装依赖。
 
 ## Market Data 模块
 
@@ -131,6 +137,11 @@ flowchart TB
 `app.research.composition` 只组装离线 read-only Research。CLI 的 parser、request、command、payload
 分别拥有解析、合同、调度和 JSON 投影职责；它们不反向进入 Market/Runtime/Alert composition。
 
+`app.research.historical_overlay_api` 是 Research-owned 的 source-specific 只读 HTTP projection，由
+`app.main` 直接挂载。它只接受 confirmed Canonical 窗口，并分别调用既有 SuBing、N Structure、JDJ
+service；三个 endpoint 保留独立 response model，不新增统一 Strategy adapter，也不写 DB、Canonical、
+Redis 或 AlertEvent。
+
 - Shared SuBing Kernel/Application Domain 位于 `app.market_data` 的 Factor、Signal、Lifecycle 与 Policy
   模块，不属于 offline `app.research`。Runtime `SubingReadService` 与 offline SuBing Research 都依赖该
   shared domain；两者互不依赖，Market/Runtime/Alert 因而不 import `app.research`。
@@ -146,7 +157,8 @@ flowchart TB
 - `MainForceMirrorV2Service` 读取 confirmed 60m Market facts；ResearchService 在 same-contract block 内
   生成 strict-prior、prefix-invariant sequence forensic。事件归属实际 evidence Bar，不回标 peak；
   accumulated 或时间身份不可用时重置/fail-closed，不跨换月传播 memory。
-- Research 输出只到 stdout JSON 或显式 artifact seam；不写 DB/Canonical/Redis，不进入 Alert、Runtime、
+- Research 输出只到 source-specific 只读 HTTP projection、stdout JSON 或显式 artifact seam；不写
+  DB/Canonical/Redis，不进入 Alert、Runtime、
   Execution Review 或订单。任何 retrospective/rolling/robustness evidence 都不能自动晋升 Candidate、
   选择 winner、形成盈利结论或消费 prospective OOS。
 
@@ -207,6 +219,12 @@ flowchart LR
 `ProductCheckSidebar` 固定按“现在 → 市场背景 → 当前观察 → 位置/参与 → 提醒 → 更多研究”读取既有
 API facts。正式 Event、研究观察与 Research-only facts 保持视觉/语义分层；Web 不计算核心指标、
 不自判主力，也不建立 Opportunity score、winner 或交易建议。
+
+主图 Overlay capability 只声明 series kind、frequency、默认主图线与 historical source。SuBing/N/JDJ
+第一版仅支持 `actual_dominant`，事件请求窗口截断到 `canonicalCoverage.end`；replace/prepend 复用同一
+loader，Live mutation 不触发历史重算，generation 与 full identity 丢弃快速切换后的旧响应。SuBing
+marker 使用 resolved `bar_end`，N/JDJ 使用 source `observed_at`，禁止回标早期结构点。JDJ EMA20 只走
+现有 EMA derived-data/hover/render 展示链路，不在浏览器计算 Candidate。
 
 ## 基础设施与运维方向
 

@@ -79,6 +79,14 @@ export const RESEARCH_OVERLAY_DEFINITIONS: readonly ResearchOverlayDefinition[] 
     historicalSource: 'n_structure',
   },
   {
+    id: 'jdj',
+    label: '日进斗金',
+    supportedSeriesKinds: ['actual_dominant'],
+    supportedFrequencies: ['1m'],
+    mainIndicators: ['ema_20'],
+    historicalSource: 'jdj',
+  },
+  {
     id: 'htdy',
     label: '火天大有',
     supportedSeriesKinds: ['continuous', 'actual_dominant', 'contract'],
@@ -118,6 +126,19 @@ export const MAIN_INDICATOR_DEFINITIONS: MainIndicatorDefinition[] = [
     defaultVisible: false,
     parameters: { period: 10 },
     lookbackBars: 10,
+    alertCapable: false,
+    available: true,
+  },
+  {
+    id: 'ema_20',
+    name: 'ema20',
+    displayName: 'EMA20',
+    pane: 'main',
+    renderer: 'line',
+    capability: 'standard_overlay',
+    defaultVisible: false,
+    parameters: { period: 20 },
+    lookbackBars: 20,
     alertCapable: false,
     available: true,
   },
@@ -223,6 +244,7 @@ export function visibleMainIndicatorsForOverlay(
     'ema_21',
     ...(optional.includes('ema_60') ? ['ema_60' as const] : []),
   ]
+  if (definition?.id === 'jdj') return [...definition.mainIndicators]
   if (definition?.id === 'htdy') return [...optional, ...definition.mainIndicators]
   return []
 }
@@ -334,7 +356,7 @@ function browserStorage(): Storage | null {
 }
 
 function normalizeResearchOverlay(value: unknown): ResearchOverlayId {
-  return value === 'none' || value === 'n_structure' || value === 'htdy'
+  return value === 'none' || value === 'n_structure' || value === 'jdj' || value === 'htdy'
     ? value
     : 'subing'
 }

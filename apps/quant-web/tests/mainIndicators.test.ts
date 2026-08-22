@@ -63,6 +63,7 @@ test('research overlay defaults to SuBing and exposes exactly one overlay indica
   assert.deepEqual(normalizeOptionalEmaIndicators(['ema_60', 'ema_21', 'ema_10', 'ema_60', 'htdy']), ['ema_10', 'ema_60'])
   assert.deepEqual(visibleMainIndicatorsForOverlay('subing', []), ['ema_21'])
   assert.deepEqual(visibleMainIndicatorsForOverlay('subing', ['ema_10', 'ema_60']), ['ema_10', 'ema_21', 'ema_60'])
+  assert.deepEqual(visibleMainIndicatorsForOverlay('jdj' as never, ['ema_10', 'ema_60']), ['ema_20'])
   assert.deepEqual(visibleMainIndicatorsForOverlay('htdy', ['ema_10', 'ema_60']), ['ema_10', 'ema_60', 'htdy'])
   assert.deepEqual(visibleMainIndicatorsForOverlay('none', ['ema_10', 'ema_60']), [])
 })
@@ -208,6 +209,26 @@ test('preference v3 preserves the N overlay without a schema version change', ()
 
   assert.equal(loadMainChartPreferences(storage).selectedOverlay, 'n_structure')
   assert.equal(JSON.parse(values.get(MAIN_CHART_PREFERENCES_KEY)!).version, 3)
+})
+
+test('preference v3 preserves the JDJ overlay without adding candidate settings', () => {
+  const values = new Map<string, string>()
+  const storage = {
+    getItem: (key: string) => values.get(key) || null,
+    setItem: (key: string, value: string) => values.set(key, value),
+  }
+
+  saveMainChartPreferences({
+    version: 3,
+    selectedOverlay: 'jdj' as never,
+    optionalEmaIndicators: [],
+    period: '1m',
+    realtimeFollow: false,
+  }, storage)
+
+  const loaded = loadMainChartPreferences(storage)
+  assert.equal(loaded.selectedOverlay, 'jdj')
+  assert.equal(JSON.parse(values.get(MAIN_CHART_PREFERENCES_KEY)!).candidate, undefined)
 })
 
 test('preference loading falls back when accessing browser localStorage throws', () => {

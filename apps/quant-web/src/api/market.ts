@@ -1,6 +1,8 @@
 import request from './request'
 import type {
   DominantContractListResponse,
+  JdjHistoricalRequest,
+  JdjHistoricalResponse,
   MarketBarsPageRequest,
   MarketBarsPageResponse,
   MainForceMirrorV2PageRequest,
@@ -65,6 +67,13 @@ export function getSubingHistoricalSignals(params: SubingHistoricalSignalRequest
 export function getNStructureHistoricalEvents(params: NStructureHistoricalRequest) {
   return request.get<never, NStructureHistoricalResponse>(
     '/market/research/n-structure/history',
+    { params },
+  )
+}
+
+export function getJdjHistoricalEvents(params: JdjHistoricalRequest) {
+  return request.get<never, JdjHistoricalResponse>(
+    '/market/research/jdj/history',
     { params },
   )
 }

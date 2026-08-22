@@ -2,7 +2,7 @@ import type { BarData, HoverKlineContext, KlineMarker, MainForceMirrorV2Point, M
 import { calculateEMA, calculateHuoTianDaYou, calculateMACD } from './indicators.ts'
 import { MAIN_INDICATOR_DEFINITIONS } from './mainIndicators.ts'
 
-type EmaIndicatorId = 'ema_10' | 'ema_21' | 'ema_60'
+type EmaIndicatorId = 'ema_10' | 'ema_20' | 'ema_21' | 'ema_60'
 
 export interface KlineValuePoint {
   time: string
@@ -34,6 +34,7 @@ export function formatKlineHoverValue(value: number | null | undefined): string 
 
 const EMA_PERIODS: Record<EmaIndicatorId, number> = {
   ema_10: 10,
+  ema_20: 20,
   ema_21: 21,
   ema_60: 60,
 }

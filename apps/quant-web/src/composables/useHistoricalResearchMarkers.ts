@@ -1,6 +1,8 @@
 import { ref } from 'vue'
 import type {
   BarData,
+  JdjHistoricalRequest,
+  JdjHistoricalResponse,
   KlineMarker,
   MarketBarsPageResponse,
   MarketFrequency,
@@ -13,6 +15,7 @@ import type {
 } from '../types/market.ts'
 import {
   historicalResearchEventToMarker,
+  jdjHistoricalEventToMarker,
   nStructureHistoricalEventToMarker,
 } from '../utils/historicalResearchMarkers.ts'
 import { researchOverlayCapability } from '../utils/mainIndicators.ts'
@@ -32,6 +35,9 @@ interface Dependencies {
   fetchNStructure: (
     request: NStructureHistoricalRequest,
   ) => Promise<NStructureHistoricalResponse>
+  fetchJdj: (
+    request: JdjHistoricalRequest,
+  ) => Promise<JdjHistoricalResponse>
 }
 
 export function useHistoricalResearchMarkers(dependencies: Dependencies) {
@@ -61,7 +67,7 @@ export function useHistoricalResearchMarkers(dependencies: Dependencies) {
     const historicalSource = capability.definition.historicalSource
     if (
       !capability.supported
-      || (historicalSource !== 'subing' && historicalSource !== 'n_structure')
+      || !['subing', 'n_structure', 'jdj'].includes(historicalSource)
     ) {
       reset(identity)
       return
@@ -84,7 +90,9 @@ export function useHistoricalResearchMarkers(dependencies: Dependencies) {
     try {
       const loaded = historicalSource === 'subing'
         ? await loadSubing(dependencies, identity, range.since, through)
-        : await loadNStructure(dependencies, identity, range.since, through)
+        : historicalSource === 'n_structure'
+          ? await loadNStructure(dependencies, identity, range.since, through)
+          : await loadJdj(dependencies, identity, range.since, through)
       if (
         requestGeneration !== generation
         || identityKey(identity) !== identityKey(activeIdentity)
@@ -215,6 +223,29 @@ async function loadNStructure(
   return response.events.map((event) => ({
     eventId: event.event_id,
     marker: nStructureHistoricalEventToMarker(event),
+  }))
+}
+
+async function loadJdj(
+  dependencies: Dependencies,
+  identity: HistoricalResearchMarkerIdentity,
+  since: string,
+  through: string,
+): Promise<LoadedHistoricalEvent[]> {
+  const request: JdjHistoricalRequest = {
+    series_kind: 'actual_dominant',
+    symbol: identity.symbol,
+    frequency: '1m',
+    since,
+    through,
+  }
+  const response = await dependencies.fetchJdj(request)
+  if (!matchesRequest(response, request)) {
+    throw new Error('HISTORICAL_RESEARCH_IDENTITY_MISMATCH')
+  }
+  return response.events.map((event) => ({
+    eventId: event.event_id,
+    marker: jdjHistoricalEventToMarker(event),
   }))
 }
 
