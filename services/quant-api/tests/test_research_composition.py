@@ -47,17 +47,26 @@ def _research_implementation_modules() -> tuple[str, ...]:
 
 def _assert_no_offline_research_imports(path: Path) -> None:
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-    imported_modules = [
-        node.module
-        for node in ast.walk(tree)
-        if isinstance(node, ast.ImportFrom) and node.module is not None
-    ]
-    imported_modules.extend(
-        alias.name
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Import)
-        for alias in node.names
-    )
+    imported_modules: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            imported_modules.extend(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            relative_name = "." * node.level + (node.module or "")
+            if node.level:
+                module_parts = path.relative_to(_QUANT_API_ROOT).with_suffix("").parts
+                module = importlib.util.resolve_name(
+                    relative_name,
+                    ".".join(module_parts[:-1]),
+                )
+            else:
+                module = relative_name
+            imported_modules.append(module)
+            imported_modules.extend(
+                f"{module}.{alias.name}"
+                for alias in node.names
+                if alias.name != "*"
+            )
     assert not any(
         module == "app.research" or module.startswith("app.research.")
         for module in imported_modules
@@ -93,6 +102,27 @@ def test_runtime_dependency_guard_rejects_both_import_syntaxes(
     source = tmp_path / "runtime_boundary.py"
     source.write_text(statement, encoding="utf-8")
 
+    with pytest.raises(AssertionError):
+        _assert_no_offline_research_imports(source)
+
+
+def test_runtime_dependency_guard_resolves_relative_imports(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app_root = tmp_path / "app"
+    source = app_root / "market_data" / "runtime_boundary.py"
+    source.parent.mkdir(parents=True)
+    monkeypatch.setitem(
+        _assert_no_offline_research_imports.__globals__,
+        "_QUANT_API_ROOT",
+        tmp_path,
+    )
+
+    source.write_text("from .domain import BarFrequency", encoding="utf-8")
+    _assert_no_offline_research_imports(source)
+
+    source.write_text("from ..research import composition", encoding="utf-8")
     with pytest.raises(AssertionError):
         _assert_no_offline_research_imports(source)
 
