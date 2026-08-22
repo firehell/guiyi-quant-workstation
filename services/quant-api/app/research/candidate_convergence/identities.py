@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 from datetime import date
 from types import MappingProxyType
 from typing import Final
@@ -78,54 +79,66 @@ CANDIDATE_EVENT_KINDS: Final[Mapping[str, str]] = MappingProxyType(
     }
 )
 
+
+@dataclass(frozen=True, slots=True)
+class CandidateBaselineIdentity:
+    protocol_id: str
+    policy_id: str
+    formula_version: str
+    retrospective_since: date
+    retrospective_through: date
+    prospective_through: date
+    first_trading_day: date
+
+
 CANDIDATE_BASELINE_IDENTITIES: Final[
-    Mapping[str, tuple[str, str, str, date, date, date, date]]
+    Mapping[str, CandidateBaselineIdentity]
 ] = MappingProxyType(
     {
-        FIVE_CANDIDATE_ORDER[0]: (
-            "candidate_validation_v1",
-            "subing_lifecycle_v2_research_v1",
-            "subing_lifecycle_v2",
-            date(2023, 1, 1),
-            date(2026, 8, 18),
-            date(2026, 8, 19),
-            date(2026, 8, 20),
+        FIVE_CANDIDATE_ORDER[0]: CandidateBaselineIdentity(
+            protocol_id="candidate_validation_v1",
+            policy_id="subing_lifecycle_v2_research_v1",
+            formula_version="subing_lifecycle_v2",
+            retrospective_since=date(2023, 1, 1),
+            retrospective_through=date(2026, 8, 18),
+            prospective_through=date(2026, 8, 19),
+            first_trading_day=date(2026, 8, 20),
         ),
-        FIVE_CANDIDATE_ORDER[1]: (
-            "n_structure_validation_v1",
-            "n_structure_5m_v1",
-            "n_structure_v1",
-            date(2023, 1, 1),
-            date(2026, 8, 19),
-            date(2026, 8, 20),
-            date(2026, 8, 21),
+        FIVE_CANDIDATE_ORDER[1]: CandidateBaselineIdentity(
+            protocol_id="n_structure_validation_v1",
+            policy_id="n_structure_5m_v1",
+            formula_version="n_structure_v1",
+            retrospective_since=date(2023, 1, 1),
+            retrospective_through=date(2026, 8, 19),
+            prospective_through=date(2026, 8, 20),
+            first_trading_day=date(2026, 8, 21),
         ),
-        FIVE_CANDIDATE_ORDER[2]: (
-            "jdj_candidate_validation_v1",
-            "jdj_1m_policy_v1",
-            "jdj_1m_v1",
-            date(2023, 1, 1),
-            date(2026, 8, 20),
-            date(2026, 8, 21),
-            date(2026, 8, 24),
+        FIVE_CANDIDATE_ORDER[2]: CandidateBaselineIdentity(
+            protocol_id="jdj_candidate_validation_v1",
+            policy_id="jdj_1m_policy_v1",
+            formula_version="jdj_1m_v1",
+            retrospective_since=date(2023, 1, 1),
+            retrospective_through=date(2026, 8, 20),
+            prospective_through=date(2026, 8, 21),
+            first_trading_day=date(2026, 8, 24),
         ),
-        FIVE_CANDIDATE_ORDER[3]: (
-            "jdj_candidate_validation_v1",
-            "jdj_1m_policy_v1",
-            "jdj_1m_v1",
-            date(2023, 1, 1),
-            date(2026, 8, 20),
-            date(2026, 8, 21),
-            date(2026, 8, 24),
+        FIVE_CANDIDATE_ORDER[3]: CandidateBaselineIdentity(
+            protocol_id="jdj_candidate_validation_v1",
+            policy_id="jdj_1m_policy_v1",
+            formula_version="jdj_1m_v1",
+            retrospective_since=date(2023, 1, 1),
+            retrospective_through=date(2026, 8, 20),
+            prospective_through=date(2026, 8, 21),
+            first_trading_day=date(2026, 8, 24),
         ),
-        FIVE_CANDIDATE_ORDER[4]: (
-            "jdj_candidate_validation_v1",
-            "jdj_1m_policy_v1",
-            "jdj_1m_v1",
-            date(2023, 1, 1),
-            date(2026, 8, 20),
-            date(2026, 8, 21),
-            date(2026, 8, 24),
+        FIVE_CANDIDATE_ORDER[4]: CandidateBaselineIdentity(
+            protocol_id="jdj_candidate_validation_v1",
+            policy_id="jdj_1m_policy_v1",
+            formula_version="jdj_1m_v1",
+            retrospective_since=date(2023, 1, 1),
+            retrospective_through=date(2026, 8, 20),
+            prospective_through=date(2026, 8, 21),
+            first_trading_day=date(2026, 8, 24),
         ),
     }
 )

@@ -91,13 +91,15 @@ def test_candidate_convergence_mappings_are_deeply_immutable() -> None:
     }
     assert isinstance(identities.CANDIDATE_BASELINE_IDENTITIES, MappingProxyType)
     assert identities.CANDIDATE_BASELINE_IDENTITIES[CANDIDATES[0]] == (
-        "candidate_validation_v1",
-        "subing_lifecycle_v2_research_v1",
-        "subing_lifecycle_v2",
-        date(2023, 1, 1),
-        date(2026, 8, 18),
-        date(2026, 8, 19),
-        date(2026, 8, 20),
+        identities.CandidateBaselineIdentity(
+            protocol_id="candidate_validation_v1",
+            policy_id="subing_lifecycle_v2_research_v1",
+            formula_version="subing_lifecycle_v2",
+            retrospective_since=date(2023, 1, 1),
+            retrospective_through=date(2026, 8, 18),
+            prospective_through=date(2026, 8, 19),
+            first_trading_day=date(2026, 8, 20),
+        )
     )
     with pytest.raises(TypeError):
         identities.CANDIDATE_EVENT_KINDS[CANDIDATES[0]] = "changed"

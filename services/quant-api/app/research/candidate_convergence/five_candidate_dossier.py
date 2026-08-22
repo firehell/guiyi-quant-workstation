@@ -477,8 +477,9 @@ class CandidateBaselineEvidence:
         baseline_identity = CANDIDATE_BASELINE_IDENTITIES.get(
             self.artifact_id
         )
-        window = (
-            None if baseline_identity is None else baseline_identity[3:5]
+        window = None if baseline_identity is None else (
+            baseline_identity.retrospective_since,
+            baseline_identity.retrospective_through,
         )
         flags = tuple(self.quality_flags)
         if (
@@ -536,7 +537,14 @@ class CandidateRobustnessEvidence:
             }
             if self.artifact_id == "multi_candidate_robustness_v1"
             else {
-                CANDIDATE_BASELINE_IDENTITIES[_CANDIDATES[2]][3:5],
+                (
+                    CANDIDATE_BASELINE_IDENTITIES[
+                        _CANDIDATES[2]
+                    ].retrospective_since,
+                    CANDIDATE_BASELINE_IDENTITIES[
+                        _CANDIDATES[2]
+                    ].retrospective_through,
+                ),
             }
             if self.artifact_id == "jdj_active60_robustness_v1"
             else set()

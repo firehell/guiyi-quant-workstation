@@ -208,6 +208,7 @@ def test_roll_gate_reader_accepts_only_exact_private_enabled_marker(tmp_path: Pa
     assert execution_review_roll_marker_state(tmp_path) == "disabled"
     marker = tmp_path / ".run/execution-review-roll-enabled"
     marker.parent.mkdir()
+    marker.parent.chmod(0o700)
     marker.write_bytes(b"enabled\n")
     marker.chmod(0o600)
     assert execution_review_roll_marker_state(tmp_path) == "enabled"
@@ -217,6 +218,60 @@ def test_roll_gate_reader_accepts_only_exact_private_enabled_marker(tmp_path: Pa
     marker.write_bytes(b"enabled\n")
     marker.chmod(0o644)
     assert execution_review_roll_marker_state(tmp_path) == "invalid"
+
+
+def test_roll_gate_reader_rejects_unsafe_parent_owner_and_symlink(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.execution_review import roll_gate
+
+    marker = tmp_path / ".run/execution-review-roll-enabled"
+    marker.parent.mkdir(mode=0o700)
+    marker.write_bytes(b"enabled\n")
+    marker.chmod(0o600)
+
+    marker.parent.chmod(0o755)
+    assert roll_gate.execution_review_roll_marker_state(tmp_path) == "invalid"
+    marker.parent.chmod(0o700)
+
+    monkeypatch.setattr(roll_gate.os, "getuid", lambda: marker.stat().st_uid + 1)
+    assert roll_gate.execution_review_roll_marker_state(tmp_path) == "invalid"
+    monkeypatch.undo()
+
+    target = tmp_path / "enabled-target"
+    marker.replace(target)
+    marker.symlink_to(target)
+    assert roll_gate.execution_review_roll_marker_state(tmp_path) == "invalid"
+
+
+def test_roll_gate_reader_rejects_inode_replacement_during_open(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.execution_review import roll_gate
+
+    marker = tmp_path / ".run/execution-review-roll-enabled"
+    marker.parent.mkdir(mode=0o700)
+    marker.write_bytes(b"enabled\n")
+    marker.chmod(0o600)
+    replacement = tmp_path / "replacement"
+    replacement.write_bytes(b"enabled\n")
+    replacement.chmod(0o600)
+    real_open = roll_gate.os.open
+
+    def replace_then_open(
+        path: Path | str,
+        flags: int,
+        *,
+        dir_fd: int | None = None,
+    ) -> int:
+        if path == "execution-review-roll-enabled":
+            replacement.replace(marker)
+        return real_open(path, flags, dir_fd=dir_fd)
+
+    monkeypatch.setattr(roll_gate.os, "open", replace_then_open)
+    assert roll_gate.execution_review_roll_marker_state(tmp_path) == "invalid"
 
 
 @pytest.mark.parametrize("gate_state", ("disabled", "invalid"))

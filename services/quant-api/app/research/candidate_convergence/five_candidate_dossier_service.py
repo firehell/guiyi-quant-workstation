@@ -284,14 +284,14 @@ def _validated_baseline(
         or payload.get("readonly") is not True
         or payload.get("candidate_id") != candidate_id
         or payload.get("symbol") != "jm"
-        or payload.get("protocol_id") != identity[0]
-        or payload.get("policy_id") != identity[1]
-        or payload.get("formula_version") != identity[2]
+        or payload.get("protocol_id") != identity.protocol_id
+        or payload.get("policy_id") != identity.policy_id
+        or payload.get("formula_version") != identity.formula_version
         or payload.get("source_event_kind") != expected_source_event
-        or _date(retrospective["since"]) != identity[3]
-        or _date(retrospective["through"]) != identity[4]
-        or _date(prospective["through"]) != identity[5]
-        or _date(prospective["first_trading_day"]) != identity[6]
+        or _date(retrospective["since"]) != identity.retrospective_since
+        or _date(retrospective["through"]) != identity.retrospective_through
+        or _date(prospective["through"]) != identity.prospective_through
+        or _date(prospective["first_trading_day"]) != identity.first_trading_day
         or prospective.get("status") != "pending"
         or prospective.get("result") is not None
         or rolling.get("fold_count") != 10
