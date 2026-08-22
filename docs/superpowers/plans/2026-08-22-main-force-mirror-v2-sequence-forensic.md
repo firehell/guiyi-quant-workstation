@@ -26,6 +26,14 @@
 - 实现从当前 `develop` 创建独立 task branch/worktree；不得修改 main/runtime worktree。
 - 完成后只允许 task → `develop`；不得 release main/tag、Runtime promotion 或真实写入。
 
+## Execution Alignment
+
+- 原始代码基线为 `e8b6152665d3ff27c470ecc6c56840c7da254897`，原计划起点为 `91baeecb028a537b79e69d6726e274c015ddbe79`，实际执行起点为 `fef886ac77b97136a0d222f5751ee63289ef2991`。
+- SequenceFact 使用双事实模型：`active_peak_*` 属于进入当前 Bar 时的旧 peak，`installed_peak_*` 属于当前 Bar 评价完旧 peak 后新安装的 build peak。
+- 同一 Bar 同时是旧 peak 事件和新 peak candidate 时，同时保留旧方向 event cohort 与新方向 `peak_only` cohort。本节覆盖本文中任何旧的单 `side/peak_index` 表达。
+- Task 2 的 evidence-Bar 测试必须断言手算 outcome 值，不得只断言 sample count。
+- Task 5 使用 fail-closed 评审，不新造数值门槛；临时目录只能在验证路径和内容边界后清理。
+
 ---
 
 ## File Map
@@ -39,6 +47,9 @@
 - `services/quant-api/tests/data_foundation/test_main_force_mirror_v2_research_service.py`
 - `services/quant-api/tests/test_research_cli.py`
 - `TESTING.md`
+- `docs/superpowers/specs/2026-08-22-main-force-mirror-v2-sequence-forensic-design.md`
+- `docs/superpowers/plans/2026-08-22-main-force-mirror-v2-sequence-forensic.md`
+- `docs/tasks/TASK-MFM-V2-SEQUENCE-FORENSIC-20260822.md`
 
 **Must remain untouched:**
 
@@ -169,23 +180,26 @@ def test_sequence_long_peak_emits_later_events_on_evidence_bars() -> None:
     profile = next(item for item in SEQUENCE_PROFILES if item.profile_id == "balanced")
     facts = _derive_sequence_facts(_long_sequence_points(), profile)
 
-    assert facts[21].side == "long"
+    assert facts[21].installed_peak_side == "long"
     assert facts[21].peak_seen is True
     assert facts[21].decay_seen is False
     assert facts[21].liquidation_seen is False
-    assert facts[22].peak_index == 21
+    assert facts[22].active_peak_index == 21
     assert facts[22].decay_seen is True
     assert facts[22].liquidation_seen is True
-    assert facts[23].peak_index == 21
+    assert facts[23].active_peak_index == 21
     assert facts[23].opposite_build_seen is True
     assert facts[23].accumulated_reversal_seen is True
+    assert facts[23].installed_peak_index == 23
+    assert facts[23].installed_peak_side == "short"
+    assert facts[23].peak_seen is True
 
 
 def test_sequence_short_side_is_exact_sign_state_mirror() -> None:
     profile = next(item for item in SEQUENCE_PROFILES if item.profile_id == "balanced")
     facts = _derive_sequence_facts(_short_sequence_points(), profile)
 
-    assert facts[21].side == "short"
+    assert facts[21].installed_peak_side == "short"
     assert facts[21].peak_seen is True
     assert facts[22].decay_seen is True
     assert facts[22].liquidation_seen is True
@@ -199,13 +213,9 @@ def test_sequence_short_side_is_exact_sign_state_mirror() -> None:
 def test_sequence_event_types_emit_only_first_occurrence_for_one_peak() -> None:
     profile = next(item for item in SEQUENCE_PROFILES if item.profile_id == "slow")
     points = (
-        *_long_sequence_points(),
-        _sequence_point(
-            24,
-            state="short_build",
-            instant=-50.0,
-            accumulated=-20.0,
-        ),
+        *_long_sequence_points()[:23],
+        _sequence_point(23, state="short_build", instant=-1.0, accumulated=-10.0),
+        _sequence_point(24, state="short_build", instant=-1.0, accumulated=-20.0),
     )
     facts = _derive_sequence_facts(points, profile)
 
@@ -225,10 +235,46 @@ def test_sequence_memory_resets_at_physical_contract_change() -> None:
     facts = _derive_sequence_facts(points, profile)
 
     assert facts[21].peak_seen is True
-    assert facts[22].peak_index is None
+    assert facts[22].active_peak_index is None
     assert facts[22].decay_seen is False
     assert facts[22].liquidation_seen is False
     assert facts[23].opposite_build_seen is False
+
+
+def test_sequence_requires_full_strict_prior_window() -> None:
+    profile = next(item for item in SEQUENCE_PROFILES if item.profile_id == "balanced")
+    points = tuple(
+        _sequence_point(index, state="long_build", instant=100.0, accumulated=80.0)
+        for index in range(11)
+    )
+    facts = _derive_sequence_facts(points, profile)
+
+    assert all(not fact.peak_seen for fact in facts[:10])
+    assert facts[10].installed_peak_index == 10
+
+
+def test_sequence_resets_on_non_monotonic_time() -> None:
+    profile = next(item for item in SEQUENCE_PROFILES if item.profile_id == "balanced")
+    points = list(_long_sequence_points())
+    points[22] = replace(points[22], bar_end=points[21].bar_end)
+    facts = _derive_sequence_facts(tuple(points), profile)
+
+    assert facts[22].active_peak_index is None
+    assert facts[22].liquidation_seen is False
+
+
+def test_sequence_accumulated_unavailable_keeps_state_events_only() -> None:
+    profile = next(item for item in SEQUENCE_PROFILES if item.profile_id == "balanced")
+    points = list(_long_sequence_points())
+    points[22] = replace(
+        points[22], accumulated_ready=False, accumulated_pressure=None
+    )
+    facts = _derive_sequence_facts(tuple(points), profile)
+
+    assert facts[22].active_peak_index == 21
+    assert facts[22].liquidation_seen is True
+    assert facts[22].decay_seen is False
+    assert facts[22].accumulated_reversal_seen is False
 ```
 
 - [ ] **Step 5: Write failing prefix-invariance test for all five profiles**
@@ -286,14 +332,20 @@ SEQUENCE_PROFILES = (
 @dataclass(frozen=True, slots=True)
 class MainForceMirrorV2SequenceFact:
     index: int
-    side: SequenceSide
+    current_side: SequenceSide
     pressure_state: str | None
     instant_pressure: float | None
     accumulated_pressure: float | None
-    peak_index: int | None
-    peak_pressure: float | None
-    bars_since_peak: int | None
+    active_peak_index: int | None
+    active_peak_side: Literal["long", "short"] | None
+    active_peak_instant_pressure: float | None
+    active_peak_accumulated_pressure: float | None
+    bars_since_active_peak: int | None
     decay_ratio: Decimal | None
+    installed_peak_index: int | None
+    installed_peak_side: Literal["long", "short"] | None
+    installed_peak_instant_pressure: float | None
+    installed_peak_accumulated_pressure: float | None
     peak_seen: bool
     decay_seen: bool
     liquidation_seen: bool
@@ -351,13 +403,13 @@ The current point is never in its own baseline. `short_cover` / `long_liquidatio
 Use this fixed order for each current point:
 
 ```text
-A. reset on contract change or pressure_ready=false
+A. reset on missing/changed contract, pressure_ready=false, missing/non-finite instant pressure, or non-increasing bar_end
 B. derive immediate previous_state -> current_state transition inside the block
 C. if an older active peak exists and age <= transition_window, evaluate decay/liquidation/opposite/reversal
 D. event booleans are true only for the first occurrence of each type
 E. if active peak age > transition_window, expire it
 F. after C–E, evaluate whether current point is a new long_build/short_build peak candidate and install it for subsequent bars
-G. append immutable MainForceMirrorV2SequenceFact
+G. append immutable MainForceMirrorV2SequenceFact with both active_peak_* and installed_peak_* contexts
 ```
 
 Side/state mapping is exact:
@@ -369,7 +421,7 @@ opposite_build_state = {"long": "short_build", "short": "long_build"}
 
 Long decay uses `(peak - current) / abs(peak)`; short decay uses `(abs(peak) - abs(current)) / abs(peak)`. Convert exposed accumulated floats with `Decimal(str(value))`. If current accumulated crosses the peak side’s zero boundary, `accumulated_reversal_seen` emits once. Do not clip `decay_ratio`.
 
-If current `short_build`/`long_build` point is both an event for the old peak and a candidate for the opposite new peak, its fact reports the old peak event; the new peak only becomes memory for the next point.
+If current `short_build`/`long_build` point is both an event for the old peak and a candidate for the opposite new peak, its fact reports the old peak through `active_peak_*` and the new peak through `installed_peak_*`. Task 2 must emit both observations from this Bar.
 
 - [ ] **Step 10: Run sequence tests, then the whole research-service test file**
 
@@ -480,10 +532,11 @@ def test_sequence_warning_horizon_starts_from_causal_evidence_bar() -> None:
 
     assert balanced.yearly[2026]["jm"]["long"]["peak_then_liquidation"][1].sample_count == 1
     assert balanced.by_side["long"]["peak_then_liquidation"][1].sample_count == 1
+    assert balanced.by_side["long"]["peak_then_liquidation"][1].median_reversal_return == Decimal("0.052632")
     assert balanced.by_side["short"]["peak_then_liquidation"][1].sample_count == 0
 ```
 
-This fixture has peak index 21 and liquidation index 22; the horizon-1 target must therefore be index 23, proving no backfill to the peak.
+This fixture has peak index 21 and liquidation index 22; the horizon-1 target must therefore be index 23. Its hand-calculated rounded reversal return is `0.052632`, which differs from the `0.05` produced by an illegal backfill to the peak. Extend the fixture with at least ten same-contract follow-up Bars so horizons 1/3/5/10 are all exercised.
 
 - [ ] **Step 3: Write failing cross-roll summary test**
 
@@ -548,11 +601,21 @@ def _sequence_observations(
 ) -> tuple[_Observation, ...]:
     observations: list[_Observation] = []
     for fact in facts:
-        if fact.side not in {"long", "short"}:
+        if fact.peak_seen and fact.installed_peak_side is not None:
+            observations.append(
+                _Observation(
+                    fact.index,
+                    product,
+                    points[fact.index].trading_day.year,
+                    fact.installed_peak_side,
+                    "peak_only",
+                    1 if fact.installed_peak_side == "long" else -1,
+                )
+            )
+        if fact.active_peak_side is None:
             continue
-        direction = 1 if fact.side == "long" else -1
+        direction = 1 if fact.active_peak_side == "long" else -1
         events = (
-            (fact.peak_seen, "peak_only"),
             (fact.decay_seen, "peak_then_decay"),
             (fact.liquidation_seen, "peak_then_liquidation"),
             (fact.opposite_build_seen, "peak_then_opposite_build"),
@@ -568,7 +631,7 @@ def _sequence_observations(
                         fact.index,
                         product,
                         points[fact.index].trading_day.year,
-                        fact.side,
+                        fact.active_peak_side,
                         cohort,
                         direction,
                     )
@@ -782,14 +845,20 @@ def _mirror_forensic_fixture() -> MainForceMirrorV2ForensicPoint:
     )
     fact = MainForceMirrorV2SequenceFact(
         index=0,
-        side="long",
+        current_side="long",
         pressure_state="long_build",
         instant_pressure=95.0,
         accumulated_pressure=70.0,
-        peak_index=0,
-        peak_pressure=95.0,
-        bars_since_peak=0,
+        active_peak_index=None,
+        active_peak_side=None,
+        active_peak_instant_pressure=None,
+        active_peak_accumulated_pressure=None,
+        bars_since_active_peak=None,
         decay_ratio=None,
+        installed_peak_index=0,
+        installed_peak_side="long",
+        installed_peak_instant_pressure=95.0,
+        installed_peak_accumulated_pressure=70.0,
         peak_seen=True,
         decay_seen=False,
         liquidation_seen=False,
@@ -1035,6 +1104,9 @@ future horizon leaked into SequenceFact? must be no
 memory crosses physical contract? must be no
 long/short asymmetry? must be no
 same peak repeats event cohorts? must be no
+same Bar old event and new peak both retained? must be yes
+non-monotonic time resets memory? must be yes
+accumulated unavailable fabricates decay/reversal? must be no
 existing V2/caution/member semantics changed? must be no
 best-profile/product tuning added? must be no
 new unnecessary subsystem added? must be no
@@ -1113,9 +1185,15 @@ Return `ALLOW_PHASE_FREEZE_DESIGN` only if a small cross-product/cross-year/cros
 
 - [ ] **Step 5: Remove temp outputs**
 
-```bash
-rm -rf "$tmp_dir"
+Before cleanup, resolve the directory and require all of these checks:
+
+```text
+real path matches /private/tmp/guiyi-mfm-v2-sequence-forensic.*
+the directory contains only expected per-symbol .json/.stderr/.status files
+no symlink, directory, device, socket, or unexpected filename is present
 ```
+
+If any check fails, stop and retain the directory for inspection. Only after the checks pass may the exact generated directory be removed; never target a broad root, glob, or unresolved variable.
 
 No report is committed unless the user separately requests a versioned research artifact and its exact contract.
 
