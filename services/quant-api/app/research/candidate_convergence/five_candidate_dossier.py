@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from collections import Counter
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, fields, is_dataclass
 from datetime import date, datetime
+from enum import StrEnum
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any
@@ -81,6 +82,41 @@ _PAIR_ORDER = (
     (_CANDIDATES[2], _CANDIDATES[3]),
     (_CANDIDATES[2], _CANDIDATES[4]),
     (_CANDIDATES[3], _CANDIDATES[4]),
+)
+_FORBIDDEN_KEYS = {
+    "score",
+    "rank",
+    "winner",
+    "best",
+    "keep",
+    "drop",
+    "iterate",
+    "promote",
+    "approved",
+    "expected_profit",
+    "profitability",
+    "pnl",
+}
+_SHARED_METRIC_IDS = (
+    "evidence_availability",
+    "zero_event_inventory",
+    "zero_sample_inventory",
+    "rolling_fold_coverage",
+    "prospective_status",
+)
+_JDJ_METRIC_IDS = (
+    "event_rate",
+    "long_short_event_count",
+    "source_outcome_horizon_3",
+    "source_outcome_horizon_5",
+    "source_outcome_horizon_8",
+    "source_outcome_horizon_20",
+    "yearly_evidence",
+    "symbol_balanced_sector_evidence",
+)
+_SOURCE_HORIZON_METRIC_IDS = (
+    "subing_source_outcome_horizons_3_5_8",
+    "n_source_outcome_horizons_3_5_8",
 )
 SOURCE_SEMANTICS = {
     "subing_lifecycle_v2_candidate_v1": (
@@ -171,6 +207,125 @@ class FiveCandidateDossierReportError(ValueError):
 
     def __init__(self) -> None:
         super().__init__(self.code)
+
+
+class ComparabilityStatus(StrEnum):
+    SUPPORTED_EXISTING = "SUPPORTED_EXISTING"
+    SUPPORTED_SAME_FAMILY = "SUPPORTED_SAME_FAMILY"
+    NOT_YET_DEFINED = "NOT_YET_DEFINED"
+    NOT_COMPARABLE = "NOT_COMPARABLE"
+
+
+_METRIC_SPEC = {
+    **{
+        metric_id: (_CANDIDATES, ComparabilityStatus.SUPPORTED_EXISTING, ())
+        for metric_id in _SHARED_METRIC_IDS
+    },
+    **{
+        metric_id: (_CANDIDATES[2:], ComparabilityStatus.SUPPORTED_SAME_FAMILY, ())
+        for metric_id in _JDJ_METRIC_IDS
+    },
+    _SOURCE_HORIZON_METRIC_IDS[0]: (
+        (_CANDIDATES[0],),
+        ComparabilityStatus.NOT_COMPARABLE,
+        ("EVALUABLE_UNIT_DIFFERS", "HORIZON_SEMANTICS_DIFFERS"),
+    ),
+    _SOURCE_HORIZON_METRIC_IDS[1]: (
+        (_CANDIDATES[1],),
+        ComparabilityStatus.NOT_COMPARABLE,
+        ("EVALUABLE_UNIT_DIFFERS", "HORIZON_SEMANTICS_DIFFERS"),
+    ),
+}
+_PAIR_SPEC = {
+    _PAIR_ORDER[0]: (
+        ComparabilityStatus.SUPPORTED_EXISTING,
+        (
+            "EXISTING_RELATIONSHIP_REFERENCE_ONLY",
+            "EVALUABLE_UNIT_DIFFERS",
+            "HORIZON_SEMANTICS_DIFFERS",
+        ),
+    ),
+    **{
+        pair: (
+            ComparabilityStatus.NOT_COMPARABLE,
+            ("CROSS_TIMEFRAME_ALIGNMENT_UNDEFINED",),
+        )
+        for pair in _PAIR_ORDER[1:4]
+    },
+    **{
+        pair: (
+            ComparabilityStatus.NOT_YET_DEFINED,
+            (
+                "STRUCTURAL_CONTEXT_DEPENDENCY_ONLY",
+                "PAIR_METRIC_NOT_YET_DEFINED",
+            ),
+        )
+        for pair in _PAIR_ORDER[4:7]
+    },
+    **{
+        pair: (
+            ComparabilityStatus.SUPPORTED_SAME_FAMILY,
+            ("SAME_FAMILY_SOURCE_SEMANTICS",),
+        )
+        for pair in _PAIR_ORDER[7:]
+    },
+}
+
+
+@dataclass(frozen=True, slots=True)
+class MetricComparability:
+    metric_id: str
+    candidate_ids: tuple[str, ...]
+    status: ComparabilityStatus
+    reason_codes: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        candidates = tuple(self.candidate_ids)
+        reasons = tuple(self.reason_codes)
+        expected = _METRIC_SPEC.get(self.metric_id)
+        if (
+            expected is None
+            or type(self.status) is not ComparabilityStatus
+            or (candidates, self.status, reasons) != expected
+        ):
+            raise FiveCandidateDossierReportError()
+        object.__setattr__(self, "candidate_ids", candidates)
+        object.__setattr__(self, "reason_codes", reasons)
+
+
+@dataclass(frozen=True, slots=True)
+class ComparabilityPair:
+    left_candidate_id: str
+    right_candidate_id: str
+    status: ComparabilityStatus
+    reason_codes: tuple[str, ...]
+    existing_relationship_reference: Mapping[str, object] | None
+
+    def __post_init__(self) -> None:
+        identity = (self.left_candidate_id, self.right_candidate_id)
+        reasons = tuple(self.reason_codes)
+        expected = _PAIR_SPEC.get(identity)
+        has_reference = self.existing_relationship_reference is not None
+        if (
+            expected is None
+            or type(self.status) is not ComparabilityStatus
+            or (self.status, reasons) != expected
+            or has_reference != (identity == _PAIR_ORDER[0])
+            or (
+                self.existing_relationship_reference is not None
+                and not isinstance(self.existing_relationship_reference, Mapping)
+            )
+        ):
+            raise FiveCandidateDossierReportError()
+        reference = (
+            _freeze_existing_relationship_reference(
+                self.existing_relationship_reference
+            )
+            if self.existing_relationship_reference is not None
+            else None
+        )
+        object.__setattr__(self, "reason_codes", reasons)
+        object.__setattr__(self, "existing_relationship_reference", reference)
 
 
 @dataclass(frozen=True, slots=True)
@@ -520,8 +675,8 @@ class FiveCandidateResearchDossier:
     candidate_order: tuple[str, ...]
     source_artifacts: tuple[SourceArtifactRef, ...]
     candidate_dossiers: tuple[CandidateDossier, ...]
-    metric_catalog: tuple[object, ...]
-    comparability_pairs: tuple[object, ...]
+    metric_catalog: tuple[MetricComparability, ...]
+    comparability_pairs: tuple[ComparabilityPair, ...]
     quality_flags: tuple[str, ...]
     safety: Mapping[str, bool]
 
@@ -547,8 +702,15 @@ class FiveCandidateResearchDossier:
             or len(artifacts) != 7
             or any(not isinstance(value, SourceArtifactRef) for value in artifacts)
             or tuple(item.identity.candidate_id for item in dossiers) != _CANDIDATES
-            or metric_catalog
-            or comparability_pairs
+            or any(not isinstance(item, MetricComparability) for item in metric_catalog)
+            or tuple(item.metric_id for item in metric_catalog)
+            != (*_SHARED_METRIC_IDS, *_JDJ_METRIC_IDS, *_SOURCE_HORIZON_METRIC_IDS)
+            or any(not isinstance(item, ComparabilityPair) for item in comparability_pairs)
+            or tuple(
+                (item.left_candidate_id, item.right_candidate_id)
+                for item in comparability_pairs
+            )
+            != _PAIR_ORDER
             or any(type(flag) is not str or not flag for flag in flags)
             or len(set(flags)) != len(flags)
             or set(safety)
@@ -570,6 +732,8 @@ class FiveCandidateResearchDossier:
         object.__setattr__(self, "comparability_pairs", comparability_pairs)
         object.__setattr__(self, "quality_flags", flags)
         object.__setattr__(self, "safety", MappingProxyType(safety))
+        if _contains_forbidden_key(self):
+            raise FiveCandidateDossierReportError()
 
 
 @dataclass(frozen=True, slots=True)
@@ -743,6 +907,72 @@ def _deep_freeze(value: object) -> object:
     if type(value) is list:
         return tuple(_deep_freeze(item) for item in value)
     return value
+
+
+def _freeze_existing_relationship_reference(
+    value: Mapping[str, object],
+) -> Mapping[str, object]:
+    reference = dict(value)
+    if set(reference) != {
+        "protocol_id",
+        "common_retrospective",
+        "metric_compatibility_flags",
+        "relationships",
+    }:
+        raise FiveCandidateDossierReportError()
+    window = reference["common_retrospective"]
+    flags = reference["metric_compatibility_flags"]
+    relationships = reference["relationships"]
+    if (
+        reference["protocol_id"] != "multi_candidate_robustness_v1"
+        or not isinstance(window, Mapping)
+        or dict(window) != {"since": "2023-01-01", "through": "2026-08-18"}
+        or type(flags) not in {list, tuple}
+        or tuple(flags)
+        != ("EVALUABLE_UNIT_DIFFERS", "HORIZON_SEMANTICS_DIFFERS")
+        or type(relationships) not in {list, tuple}
+        or tuple(
+            (
+                item.get("source_candidate_id"),
+                item.get("target_candidate_id"),
+            )
+            for item in relationships
+            if isinstance(item, Mapping)
+        )
+        != ((_CANDIDATES[0], _CANDIDATES[1]), (_CANDIDATES[1], _CANDIDATES[0]))
+    ):
+        raise FiveCandidateDossierReportError()
+    required_proximity_keys = {
+        "within_3_same_direction_source_count",
+        "within_5_same_direction_source_count",
+        "within_8_same_direction_source_count",
+    }
+    if any(
+        not isinstance(item, Mapping)
+        or not required_proximity_keys.issubset(item)
+        for item in relationships
+    ):
+        raise FiveCandidateDossierReportError()
+    frozen = _deep_freeze(reference)
+    assert isinstance(frozen, Mapping)
+    return frozen
+
+
+def _contains_forbidden_key(value: object) -> bool:
+    if isinstance(value, Mapping):
+        return any(
+            (type(key) is str and key.casefold() in _FORBIDDEN_KEYS)
+            or _contains_forbidden_key(item)
+            for key, item in value.items()
+        )
+    if is_dataclass(value) and not isinstance(value, type):
+        return any(
+            _contains_forbidden_key(getattr(value, field.name))
+            for field in fields(value)
+        )
+    if isinstance(value, (list, tuple)):
+        return any(_contains_forbidden_key(item) for item in value)
+    return False
 
 
 def _nonnegative_int(value: object) -> bool:

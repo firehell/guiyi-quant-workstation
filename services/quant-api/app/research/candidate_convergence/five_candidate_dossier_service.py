@@ -21,11 +21,14 @@ from app.research.candidate_convergence.five_candidate_dossier import (
     CandidateIdentityEvidence,
     CandidateProspectiveEvidence,
     CandidateRobustnessEvidence,
+    ComparabilityPair,
+    ComparabilityStatus,
     FiveCandidateDossierProtocol,
     FiveCandidateDossierProtocolError,
     FiveCandidateDossierReportError,
     FiveCandidateDossierRequest,
     FiveCandidateResearchDossier,
+    MetricComparability,
     SOURCE_SEMANTICS,
 )
 
@@ -36,6 +39,18 @@ _CANDIDATES = (
     "jdj_trend_follow_1m_candidate_v1",
     "jdj_trend_reentry_6_1m_candidate_v1",
     "jdj_key_level_breakout_1m_candidate_v1",
+)
+_PAIR_ORDER = (
+    (_CANDIDATES[0], _CANDIDATES[1]),
+    (_CANDIDATES[0], _CANDIDATES[2]),
+    (_CANDIDATES[0], _CANDIDATES[3]),
+    (_CANDIDATES[0], _CANDIDATES[4]),
+    (_CANDIDATES[1], _CANDIDATES[2]),
+    (_CANDIDATES[1], _CANDIDATES[3]),
+    (_CANDIDATES[1], _CANDIDATES[4]),
+    (_CANDIDATES[2], _CANDIDATES[3]),
+    (_CANDIDATES[2], _CANDIDATES[4]),
+    (_CANDIDATES[3], _CANDIDATES[4]),
 )
 _PRODUCTS = (
     "a", "ag", "al", "ao", "ap", "au", "b", "bu", "bz", "c",
@@ -137,6 +152,23 @@ _TEMPORAL_IDENTITIES = {
         "horizon_semantics": "same_rank1_segment",
     },
 }
+_SHARED_METRIC_IDS = (
+    "evidence_availability",
+    "zero_event_inventory",
+    "zero_sample_inventory",
+    "rolling_fold_coverage",
+    "prospective_status",
+)
+_JDJ_METRIC_IDS = (
+    "event_rate",
+    "long_short_event_count",
+    "source_outcome_horizon_3",
+    "source_outcome_horizon_5",
+    "source_outcome_horizon_8",
+    "source_outcome_horizon_20",
+    "yearly_evidence",
+    "symbol_balanced_sector_evidence",
+)
 
 
 class FiveCandidateResearchDossierService:
@@ -185,6 +217,9 @@ class FiveCandidateResearchDossierService:
                 )
                 for candidate_id in _CANDIDATES
             )
+            relationship_reference = _project_relationship_reference(multi)
+            metric_catalog = _metric_catalog()
+            comparability_pairs = _comparability_pairs(relationship_reference)
         except (KeyError, TypeError, ValueError, FiveCandidateDossierReportError):
             raise FiveCandidateDossierSourceError() from None
 
@@ -208,8 +243,8 @@ class FiveCandidateResearchDossierService:
             candidate_order=_CANDIDATES,
             source_artifacts=tuple(item.ref for item in verified),
             candidate_dossiers=dossiers,
-            metric_catalog=(),
-            comparability_pairs=(),
+            metric_catalog=metric_catalog,
+            comparability_pairs=comparability_pairs,
             quality_flags=quality_flags,
             safety=MappingProxyType(
                 {
@@ -403,6 +438,16 @@ def _validated_robustness_source(
                 value.get("candidate_id") for value in temporal_dossiers
             )
             != candidate_ids
+            or tuple(_list(payload["metric_compatibility_flags"]))
+            != ("EVALUABLE_UNIT_DIFFERS", "HORIZON_SEMANTICS_DIFFERS")
+            or tuple(
+                (
+                    _mapping(value).get("source_candidate_id"),
+                    _mapping(value).get("target_candidate_id"),
+                )
+                for value in _list(payload["relationships"])
+            )
+            != ((candidate_ids[0], candidate_ids[1]), (candidate_ids[1], candidate_ids[0]))
         ):
             raise FiveCandidateDossierSourceError()
         for value, candidate_id in zip(
@@ -436,6 +481,96 @@ def _validated_robustness_source(
         _project_cross_symbol(_mapping(row), _string(_mapping(row)["candidate_id"]))
     _string_tuple(payload["quality_flags"])
     return artifact
+
+
+def _metric_catalog() -> tuple[MetricComparability, ...]:
+    return (
+        *(
+            MetricComparability(
+                metric_id=metric_id,
+                candidate_ids=_CANDIDATES,
+                status=ComparabilityStatus.SUPPORTED_EXISTING,
+                reason_codes=(),
+            )
+            for metric_id in _SHARED_METRIC_IDS
+        ),
+        *(
+            MetricComparability(
+                metric_id=metric_id,
+                candidate_ids=_CANDIDATES[2:],
+                status=ComparabilityStatus.SUPPORTED_SAME_FAMILY,
+                reason_codes=(),
+            )
+            for metric_id in _JDJ_METRIC_IDS
+        ),
+        MetricComparability(
+            metric_id="subing_source_outcome_horizons_3_5_8",
+            candidate_ids=(_CANDIDATES[0],),
+            status=ComparabilityStatus.NOT_COMPARABLE,
+            reason_codes=("EVALUABLE_UNIT_DIFFERS", "HORIZON_SEMANTICS_DIFFERS"),
+        ),
+        MetricComparability(
+            metric_id="n_source_outcome_horizons_3_5_8",
+            candidate_ids=(_CANDIDATES[1],),
+            status=ComparabilityStatus.NOT_COMPARABLE,
+            reason_codes=("EVALUABLE_UNIT_DIFFERS", "HORIZON_SEMANTICS_DIFFERS"),
+        ),
+    )
+
+
+def _comparability_pairs(
+    relationship_reference: Mapping[str, object],
+) -> tuple[ComparabilityPair, ...]:
+    statuses = (
+        ComparabilityStatus.SUPPORTED_EXISTING,
+        *(ComparabilityStatus.NOT_COMPARABLE for _ in range(3)),
+        *(ComparabilityStatus.NOT_YET_DEFINED for _ in range(3)),
+        *(ComparabilityStatus.SUPPORTED_SAME_FAMILY for _ in range(3)),
+    )
+    reasons = (
+        (
+            "EXISTING_RELATIONSHIP_REFERENCE_ONLY",
+            "EVALUABLE_UNIT_DIFFERS",
+            "HORIZON_SEMANTICS_DIFFERS",
+        ),
+        *(("CROSS_TIMEFRAME_ALIGNMENT_UNDEFINED",) for _ in range(3)),
+        *(
+            (
+                "STRUCTURAL_CONTEXT_DEPENDENCY_ONLY",
+                "PAIR_METRIC_NOT_YET_DEFINED",
+            )
+            for _ in range(3)
+        ),
+        *(("SAME_FAMILY_SOURCE_SEMANTICS",) for _ in range(3)),
+    )
+    return tuple(
+        ComparabilityPair(
+            left_candidate_id=left,
+            right_candidate_id=right,
+            status=status,
+            reason_codes=reason_codes,
+            existing_relationship_reference=(
+                relationship_reference if index == 0 else None
+            ),
+        )
+        for index, ((left, right), status, reason_codes) in enumerate(
+            zip(_PAIR_ORDER, statuses, reasons, strict=True)
+        )
+    )
+
+
+def _project_relationship_reference(
+    source: VerifiedJsonArtifact,
+) -> Mapping[str, object]:
+    payload = source.payload
+    return MappingProxyType(
+        {
+            "protocol_id": payload["protocol_id"],
+            "common_retrospective": payload["common_retrospective"],
+            "metric_compatibility_flags": payload["metric_compatibility_flags"],
+            "relationships": payload["relationships"],
+        }
+    )
 
 
 def _validate_temporal_dossier(
