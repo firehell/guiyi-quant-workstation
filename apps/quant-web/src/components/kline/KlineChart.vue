@@ -308,7 +308,14 @@ function onCrosshairMove(param: MouseEventParams<Time>) {
   }
   const bar = renderedBars.find((item) => sameChartTime(chartTime(item), param.time!))
   const nextContext = bar
-    ? resolveKlineHoverContext(renderedBars, derivedData, props.visibleMainIndicators, bar.time, props.mainForceMirrorV2Points)
+    ? resolveKlineHoverContext(
+      renderedBars,
+      derivedData,
+      props.visibleMainIndicators,
+      bar.time,
+      props.mainForceMirrorV2Points,
+      mergedDisplayMarkers(),
+    )
     : null
   hoverContext.value = nextContext
   emit('crosshair-change', nextContext)
@@ -350,11 +357,15 @@ function renderDerivedSeries(): void {
   htdyZd1?.setData(chartValues(derivedData.htdy?.zd1))
   htdyZd2?.setData(chartValues(derivedData.htdy?.zd2))
   renderedResearchMarkerCount.value = chartMarkers(props.researchMarkers).length
-  const renderedMarkers = chartMarkers(mergeKlineMarkers(
+  const renderedMarkers = chartMarkers(mergedDisplayMarkers())
+  htdyMarkers?.setMarkers(renderedMarkers)
+}
+
+function mergedDisplayMarkers(): KlineMarker[] {
+  return mergeKlineMarkers(
     mergeKlineMarkers(derivedData.htdy?.markers ?? [], props.alertMarkers),
     props.researchMarkers,
-  ))
-  htdyMarkers?.setMarkers(renderedMarkers)
+  )
 }
 
 function clearMainForceMirrorV2() {

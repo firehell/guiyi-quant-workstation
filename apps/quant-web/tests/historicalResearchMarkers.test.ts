@@ -164,6 +164,7 @@ test('JDJ markers keep three candidate identities and use only causal observed_a
     assert.equal(marker.label, label)
     assert.equal(marker.position, position)
     assert.match(marker.tooltip, new RegExp(candidateId))
+    assert.match(marker.tooltip, /事件时间 2026-08-03T02:15:00Z/)
   })
 })
 

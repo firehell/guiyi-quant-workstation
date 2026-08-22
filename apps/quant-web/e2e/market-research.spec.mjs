@@ -271,11 +271,43 @@ async function mockWorkspace(page, researchResponse, options = {}) {
   const marketRequests = options.marketRequests || []
   const researchRequests = options.researchRequests || []
   const subingRequests = options.subingRequests || []
+  const nHistoricalRequests = options.nHistoricalRequests || []
+  const jdjHistoricalRequests = options.jdjHistoricalRequests || []
   const dominantRequests = options.dominantRequests || []
   let dominantResponseIndex = 0
   let subingResponseIndex = 0
   await page.route('**/api/v1/market/**', async (route) => {
     const url = new URL(route.request().url())
+    if (url.pathname.endsWith('/research/n-structure/history')) {
+      const request = Object.fromEntries(url.searchParams)
+      nHistoricalRequests.push(request)
+      return route.fulfill({ json: {
+        request,
+        events: options.nHistoricalEvents || [{
+          event_id: 'n-structure-up-1', observed_at: options.historicalEventTime,
+          trading_day: options.historicalEventTime?.slice(0, 10), contract: 'AG2601',
+          segment_start_trading_day: options.historicalEventTime?.slice(0, 10), direction: 'up',
+        }],
+      } })
+    }
+    if (url.pathname.endsWith('/research/subing/history')) {
+      const request = Object.fromEntries(url.searchParams)
+      return route.fulfill({ json: { request, events: [] } })
+    }
+    if (url.pathname.endsWith('/research/jdj/history')) {
+      const request = Object.fromEntries(url.searchParams)
+      jdjHistoricalRequests.push(request)
+      return route.fulfill({ json: {
+        request,
+        events: options.jdjHistoricalEvents || [{
+          event_id: 'jdj-follow-long-1', candidate_id: 'jdj_trend_follow_1m_candidate_v1',
+          source_event_kind: 'jdj_trend_follow_triggered', observed_at: options.historicalEventTime,
+          trading_day: options.historicalEventTime?.slice(0, 10), contract: 'AG2601',
+          segment_start_trading_day: options.historicalEventTime?.slice(0, 10), direction: 'long',
+          trigger_level: '219.5',
+        }],
+      } })
+    }
     if (url.pathname.endsWith('/dominants')) {
       dominantRequests.push(Object.fromEntries(url.searchParams))
       if (dominantResponseIndex > 0 && options.dominantsRefreshDelayMs) {
@@ -321,7 +353,7 @@ async function mockWorkspace(page, researchResponse, options = {}) {
       return route.fulfill({ json: {
         request: { series_kind: request.series_kind, symbol: 'ag', contract: request.contract || null, frequency: request.frequency, before: null, limit: 1200 },
         bars,
-        canonical_coverage: null,
+        canonical_coverage: options.canonicalCoverage || null,
         page: options.pageMeta || { has_more_before: false, next_before: null },
         resolved_contract_segments: resolvedContractSegments,
       } })
@@ -397,10 +429,10 @@ test('SuBing keeps the Market display identity separate from current-dominant re
   await page.goto('/market/chart?symbol=ag&series_kind=continuous&frequency=5m')
 
   const overlay = page.getByRole('group', { name: 'Overlay' })
-  await expect(overlay.getByRole('button')).toHaveText(['无', '苏冰', '火天大有'])
+  await expect(overlay.getByRole('button')).toHaveText(['无', '苏冰', 'N字', '日进斗金', '火天大有'])
   await expect(page.getByText('120 bars', { exact: true })).toBeVisible()
   await expect(page.locator('.product-workspace__kline')).toHaveAttribute('data-visible-start-trading-day', '2026-01-01')
-  await expect(page.locator('.product-workspace__kline')).toHaveAttribute('data-visible-main-indicators', 'ema_21')
+  await expect(page.locator('.product-workspace__kline')).toHaveAttribute('data-visible-main-indicators', '')
   await expect(page.getByRole('button', { name: '主连', exact: true })).toBeVisible()
   await expect(page.locator('.toolbar__subing-basis')).toHaveText('苏冰计算 AG2601')
   expect(marketRequests.some((request) => request.series_kind === 'continuous' && !request.contract)).toBe(true)
@@ -416,6 +448,52 @@ test('SuBing keeps the Market display identity separate from current-dominant re
   expect(researchRequests).toHaveLength(1)
   await expect(page.getByText('120 bars', { exact: true })).toBeVisible()
   await expect(page).toHaveURL(/series_kind=continuous/)
+})
+
+test('N and JDJ overlays request causal history, switch markers, and expose JDJ EMA20 detail', async ({ page }) => {
+  const bars = Array.from({ length: 120 }, (_, index) => bar(index))
+  const historicalEventTime = bars.at(-1).bar_end
+  const nHistoricalRequests = []
+  const jdjHistoricalRequests = []
+  await mockAlertMarkerSurface(page)
+  await mockWorkspace(page, { json: research() }, {
+    bars,
+    historicalEventTime,
+    canonicalCoverage: { start: bars[0].bar_end, end: historicalEventTime },
+    nHistoricalRequests,
+    jdjHistoricalRequests,
+  })
+  await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=5m')
+
+  const overlay = page.getByRole('group', { name: 'Overlay' })
+  const shell = page.getByTestId('kline-shell')
+  await expect(page.getByText('120 bars', { exact: true })).toBeVisible()
+  await overlay.getByRole('button', { name: 'N字', exact: true }).click()
+  await expect.poll(() => nHistoricalRequests.length).toBe(1)
+  await expect(shell).toHaveAttribute('data-research-marker-count', '1')
+  await expect(page.locator('.product-workspace__kline')).toHaveAttribute('data-visible-main-indicators', '')
+
+  await page.getByRole('group', { name: '周期' }).getByRole('button', { name: '1m', exact: true }).click()
+  await expect(shell).toHaveAttribute('data-research-marker-count', '0')
+  await overlay.getByRole('button', { name: '日进斗金', exact: true }).click()
+  await expect.poll(() => jdjHistoricalRequests.length).toBe(1)
+  await expect(shell).toHaveAttribute('data-research-marker-count', '1')
+  await expect(shell).toHaveAttribute('data-rendered-research-marker-count', '1')
+  await expect(page.locator('.product-workspace__kline')).toHaveAttribute('data-visible-main-indicators', 'ema_20')
+
+  const chartBox = await page.locator('.chart').boundingBox()
+  expect(chartBox).not.toBeNull()
+  const markerDetail = page.getByTestId('kline-hover-marker')
+  for (let x = chartBox.width - 220; x <= chartBox.width - 40; x += 4) {
+    await page.mouse.move(chartBox.x + x, chartBox.y + 180)
+    if (await markerDetail.count()) break
+  }
+  await expect(markerDetail).toContainText('jdj_trend_follow_1m_candidate_v1')
+  await expect(markerDetail).toContainText(`事件时间 ${historicalEventTime}`)
+  await expect(markerDetail).toContainText('触发位 219.5')
+
+  expect(nHistoricalRequests[0]).toMatchObject({ series_kind: 'actual_dominant', symbol: 'ag', frequency: '5m' })
+  expect(jdjHistoricalRequests[0]).toMatchObject({ series_kind: 'actual_dominant', symbol: 'ag', frequency: '1m' })
 })
 
 test('shared EMA switches persist across SuBing and HTDY while none hides every overlay', async ({ page }) => {

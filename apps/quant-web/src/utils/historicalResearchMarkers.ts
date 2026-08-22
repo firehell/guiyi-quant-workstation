@@ -31,7 +31,7 @@ export function jdjHistoricalEventToMarker(
     id: `historical:${event.event_id}`,
     time: event.observed_at,
     label,
-    tooltip: `历史因果重放 · JDJ · ${event.candidate_id} · ${event.contract} · 1m · ${label} · 触发位 ${event.trigger_level} · 非成交回测`,
+    tooltip: `历史因果重放 · JDJ · ${event.candidate_id} · ${event.contract} · 1m · ${label} · 事件时间 ${event.observed_at} · 触发位 ${event.trigger_level} · 非成交回测`,
     tone: long ? 'up' : 'down',
     position: long ? 'belowBar' : 'aboveBar',
     shape: long ? 'arrowUp' : 'arrowDown',

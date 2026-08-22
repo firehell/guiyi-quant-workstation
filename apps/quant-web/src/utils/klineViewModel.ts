@@ -107,6 +107,7 @@ export function resolveKlineHoverContext(
   visibleMainIndicators: MainIndicatorId[],
   time: string,
   mainForceMirrorV2Points: MainForceMirrorV2Point[] = [],
+  markers: KlineMarker[] = [],
 ): HoverKlineContext | null {
   const bar = bars.find((item) => item.time === time)
   if (!bar) return null
@@ -123,7 +124,17 @@ export function resolveKlineHoverContext(
       histogram: pointValue(derived.macd.histogram, time),
     },
     mainForceMirrorV2: toMainForceMirrorV2Hover(mainForceMirrorV2Points, time),
+    marker: markers.find((marker) => sameMarkerTime(marker.time, time)) ?? null,
   }
+}
+
+function sameMarkerTime(left: string, right: string): boolean {
+  const leftTimestamp = Date.parse(left)
+  const rightTimestamp = Date.parse(right)
+  if (Number.isFinite(leftTimestamp) && Number.isFinite(rightTimestamp)) {
+    return leftTimestamp === rightTimestamp
+  }
+  return left === right
 }
 
 function toMainForceMirrorV2Hover(points: MainForceMirrorV2Point[], time: string) {

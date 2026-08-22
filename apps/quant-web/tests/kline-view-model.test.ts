@@ -84,6 +84,24 @@ test('crosshair context keeps OHLCV OI EMA and MACD on the hovered bar timestamp
   assert.notEqual(hover.macd?.histogram, null)
 })
 
+test('crosshair exposes the exact marker tooltip at its evidence bar', () => {
+  const result = buildKlineDerivedData(bars, [])
+  const target = bars[79]
+  const marker = {
+    id: 'historical:jdj-1',
+    time: target.time,
+    label: '跟随多',
+    tooltip: 'JDJ candidate detail',
+    tone: 'up' as const,
+    position: 'belowBar' as const,
+    shape: 'arrowUp' as const,
+  }
+
+  const hover = resolveKlineHoverContext(bars, result, [], target.time, [], [marker])
+
+  assert.deepEqual(hover?.marker, marker)
+})
+
 test('missing hover values render as unavailable instead of a fabricated zero', () => {
   assert.equal(formatKlineHoverValue(undefined), '—')
   assert.equal(formatKlineHoverValue(null), '—')
