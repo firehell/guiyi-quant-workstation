@@ -419,7 +419,7 @@ liquidation_state = {"long": "long_liquidation", "short": "short_cover"}
 opposite_build_state = {"long": "short_build", "short": "long_build"}
 ```
 
-Long decay uses `(peak - current) / abs(peak)`; short decay uses `(abs(peak) - abs(current)) / abs(peak)`. Convert exposed accumulated floats with `Decimal(str(value))`. If current accumulated crosses the peak side’s zero boundary, `accumulated_reversal_seen` emits once. Do not clip `decay_ratio`.
+Decay first projects current accumulated pressure onto the peak direction, then uses `(abs(peak) - direction * current) / abs(peak)`, where long direction is `+1` and short direction is `-1`. This preserves exact long/short symmetry even after crossing zero; do not take `abs(current)`. Convert exposed accumulated floats with `Decimal(str(value))`. If the projected current accumulated crosses below zero, `accumulated_reversal_seen` emits once. Do not clip `decay_ratio`.
 
 If current `short_build`/`long_build` point is both an event for the old peak and a candidate for the opposite new peak, its fact reports the old peak through `active_peak_*` and the new peak through `installed_peak_*`. Task 2 must emit both observations from this Bar.
 

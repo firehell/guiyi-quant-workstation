@@ -648,6 +648,44 @@ def test_sequence_short_side_is_exact_sign_state_mirror() -> None:
     assert facts[23].installed_peak_side == "long"
 
 
+def test_sequence_cross_zero_decay_is_exact_long_short_mirror() -> None:
+    long_points = list(_long_sequence_points())
+    long_points[22] = replace(long_points[22], accumulated_pressure=70.0)
+    long_points[23] = replace(long_points[23], accumulated_pressure=-40.0)
+    mirror_state = {
+        "long_build": "short_build",
+        "long_liquidation": "short_cover",
+        "short_build": "long_build",
+    }
+    short_points = tuple(
+        replace(
+            point,
+            pressure_state=mirror_state[str(point.pressure_state)],  # type: ignore[arg-type]
+            instant_pressure=(
+                None if point.instant_pressure is None else -point.instant_pressure
+            ),
+            accumulated_pressure=(
+                None
+                if point.accumulated_pressure is None
+                else -point.accumulated_pressure
+            ),
+        )
+        for point in long_points
+    )
+
+    long_fact = _derive_sequence_facts(
+        tuple(long_points), _sequence_profile("strict")
+    )[23]
+    short_fact = _derive_sequence_facts(
+        short_points, _sequence_profile("strict")
+    )[23]
+
+    assert long_fact.decay_ratio == Decimal("1.5")
+    assert short_fact.decay_ratio == Decimal("1.5")
+    assert long_fact.decay_seen is True
+    assert short_fact.decay_seen is True
+
+
 def test_sequence_event_types_emit_only_first_occurrence_for_one_peak() -> None:
     points = (
         *_long_sequence_points()[:23],

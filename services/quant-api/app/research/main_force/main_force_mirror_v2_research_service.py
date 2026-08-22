@@ -610,16 +610,14 @@ def _derive_sequence_facts(
                     and peak_accumulated is not None
                     and accumulated is not None
                 ):
-                    if active_peak.side == "long":
-                        decay_ratio = (
-                            peak_accumulated - accumulated
-                        ) / abs(peak_accumulated)
-                        reversed_accumulated = accumulated < 0
-                    else:
-                        decay_ratio = (
-                            abs(peak_accumulated) - abs(accumulated)
-                        ) / abs(peak_accumulated)
-                        reversed_accumulated = accumulated > 0
+                    direction = Decimal(
+                        1 if active_peak.side == "long" else -1
+                    )
+                    projected_accumulated = accumulated * direction
+                    decay_ratio = (
+                        abs(peak_accumulated) - projected_accumulated
+                    ) / abs(peak_accumulated)
+                    reversed_accumulated = projected_accumulated < 0
                     if (
                         not active_peak.decay_emitted
                         and decay_ratio >= profile.decay_threshold

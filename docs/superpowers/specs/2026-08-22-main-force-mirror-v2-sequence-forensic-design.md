@@ -248,21 +248,18 @@ peak_then_accumulated_reversal
 
 ### 7.1 Decay
 
-Long peak：
+Long / short 统一先投影到 peak 方向：
 
 ```text
-decay_ratio = (peak_accumulated - current_accumulated) / abs(peak_accumulated)
+direction = +1 for long, -1 for short
+projected_current = direction * current_accumulated
+decay_ratio = (abs(peak_accumulated) - projected_current) / abs(peak_accumulated)
 ```
 
-仅在 `peak_accumulated > 0` 且 current accumulated 可用时计算。
-
-Short peak 镜像：
-
-```text
-decay_ratio = (abs(peak_accumulated) - abs(current_accumulated)) / abs(peak_accumulated)
-```
-
-当前 accumulated 已反号时 `accumulated_reversal_seen=true`；decay ratio 允许大于 1，不 clip。
+仅在 peak accumulated 与 peak side 同号且 current accumulated 可用时计算。穿越零轴后
+long `+80 -> -40` 与 short `-80 -> +40` 都得到 `decay_ratio = 1.5`，保持严格镜像；
+不得对 current 先取绝对值。`projected_current < 0` 时
+`accumulated_reversal_seen=true`；decay ratio 允许大于 1，不 clip。
 
 ### 7.2 Liquidation / opposite build
 
