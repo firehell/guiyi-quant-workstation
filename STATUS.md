@@ -76,6 +76,13 @@
   exact protocol 为 `multi_candidate_robustness_v1`，冻结于 `2026-08-20T21:33:00+08:00`；
   active60 矩阵完整保留 `2 × 60 = 120` cells（`98` available、`22` typed unavailable），
   `jm` 双向关系只在 same symbol + same physical contract + same rank1 segment 内比较。
+- JDJ Active60 Robustness V1 evidence：
+  `reports/research/candidate_robustness/jdj_active60_robustness_v1/active60-retrospective-freeze-2026-08-21.json`。
+  exact protocol 为 `jdj_active60_robustness_v1`，只读窗口为 `2023-01-01..2026-08-20`；
+  `3 × 60 = 180` cells 完整，其中 `147` available、`33` typed unavailable
+  （`11` 个品种 × 三条 Candidate，reason=`JDJ_SOURCE_UNAVAILABLE`）。两次未改输入的只读复算
+  parsed JSON 语义相等；prospective 首日仍为 `2026-08-24` 且当前 `pending`、未消费。
+  该 evidence 不生成 score/rank/KEEP/DROP/PROMOTE，不改变 Alert、Runtime 或订单边界。
 - 以上证据都只是可复算的 retrospective/rolling research facts：不生成自动排名、winner、
   KEEP/DROP/PROMOTE、盈利、有效性、可交易、Alert Rule、release 或 Runtime-ready 结论；
   不写 Canonical/DB/Redis，不回填 prospective OOS。

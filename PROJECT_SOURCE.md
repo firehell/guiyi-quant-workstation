@@ -81,6 +81,14 @@ Candidate Validation 生成 anchor temporal dossier，在冻结 active60 上保�
 并且只在 same symbol + same physical contract + same rank1 segment 内比较 `jm` 双向 causal
 event relationship。它不改变 Candidate/公式/参数，不做自动排名或晋升，不写
 DB/Canonical/Redis，不进入 Alert/Runtime/订单路径，也不形成盈利、有效性或交易结论。
+同一 CLI 的 exact Phase 7 入口为
+`guiyi research candidate-robustness --protocol jdj_active60_robustness_v1`：它只按冻结的
+`2023-01-01..2026-08-20` retrospective 从 `MarketDataService ->
+ActualDominantResearchSegmentLoader` 读取 Historical Canonical，以单品种一次共享 1m/5m source
+复算三条冻结 JDJ Candidate，形成完整 `3 × 60 = 180` 个品种、年度和 symbol-balanced 板块事实。
+该 protocol 不消费 `2026-08-21` embargo 或 `2026-08-24+` prospective OOS，不接受运行时窗口、
+品种、阈值、score 或 rank；只输出一份版本化 stdout JSON evidence，不写 DB/Canonical/Redis，
+不进入 Alert/Runtime/订单路径，也不产生 ranking、KEEP/DROP/PROMOTE 或效果结论。
 Market Runtime 的 Live 与盘后更新共用
 `operational_products.txt`；当前目标与 active 60 完全一致。Live 只观察
 当日 rank1 completed 1m，盘后最多在 18:05 和一次一小时后 retry 更新相同范围，Live 永不提升为

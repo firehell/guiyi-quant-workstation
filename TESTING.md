@@ -279,6 +279,15 @@ UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
 Canonical 窗口，不写 DB/Canonical/Redis，不发送通知，也不形成 rank、winner、promotion、release、
 Runtime 或盈利结论。
 
+JDJ active60 robustness 只读复算命令固定为：
+
+```bash
+uv run --offline --project services/quant-api guiyi research candidate-robustness \
+  --protocol jdj_active60_robustness_v1
+```
+
+该命令只按 exact protocol 读取 Historical Canonical；不接受运行时窗口、品种、阈值、score 或 rank。
+
 ## Alert V2
 
 ### 无副作用单元、集成与工程验证
