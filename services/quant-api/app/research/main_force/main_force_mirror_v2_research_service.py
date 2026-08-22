@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from decimal import Decimal, ROUND_CEILING, ROUND_HALF_UP
 from types import MappingProxyType
@@ -42,6 +42,13 @@ COHORTS = (
     "caution_member_aligned",
     "caution_member_strong_aligned",
     "caution_member_divergent",
+)
+SEQUENCE_COHORTS = (
+    "peak_only",
+    "peak_then_decay",
+    "peak_then_liquidation",
+    "peak_then_opposite_build",
+    "peak_then_accumulated_reversal",
 )
 SENSITIVITY_THRESHOLDS = tuple(
     Decimal(value) for value in ("0.5", "1.0", "1.5", "2.0", "2.5")
@@ -190,6 +197,14 @@ class MainForceMirrorV2SensitivitySummary:
     pooled: Mapping[int, MainForceMirrorV2HorizonSummary]
 
 
+@dataclass(frozen=True, slots=True)
+class MainForceMirrorV2SequenceProfileSummary:
+    profile_id: SequenceProfileId
+    yearly: YearlyMap
+    by_side: Mapping[str, CohortMap]
+    pooled: CohortMap
+
+
 HorizonMap: TypeAlias = Mapping[int, MainForceMirrorV2HorizonSummary]
 CohortMap: TypeAlias = Mapping[str, HorizonMap]
 StateMap: TypeAlias = Mapping[str, CohortMap]
@@ -220,6 +235,9 @@ class MainForceMirrorV2ResearchResult:
     pooled: CohortMap
     top_bottom_spreads: Mapping[int, MainForceMirrorV2GroupSpread]
     sensitivity: Mapping[Decimal, MainForceMirrorV2SensitivitySummary]
+    sequence_profiles: Mapping[
+        str, MainForceMirrorV2SequenceProfileSummary
+    ] = field(default_factory=lambda: MappingProxyType({}))
 
 
 class MainForceMirrorV2ResearchError(RuntimeError):
@@ -303,6 +321,9 @@ class MainForceMirrorV2ResearchService:
         pooled = _summarize_cohorts(observations, bars, points)
         yearly = _yearly(observations, bars, points)
         by_product = _by_product(observations, bars, points)
+        sequence_profiles = _sequence_profile_summaries(
+            request.symbol, bars, points
+        )
         caution_ready_bars = sum(point.caution_ready for point in points)
         caution_events = sum(point.caution is not None for point in points)
         member_ready = sum(
@@ -341,6 +362,7 @@ class MainForceMirrorV2ResearchService:
             pooled=pooled,
             top_bottom_spreads=_top_bottom_spreads(observations, bars, points),
             sensitivity=_sensitivity(request.symbol, bars, points),
+            sequence_profiles=sequence_profiles,
         )
 
     def _query_market(
@@ -698,6 +720,52 @@ def _derive_sequence_facts(
     return tuple(facts)
 
 
+def _sequence_observations(
+    product: str,
+    points: tuple[MainForceMirrorV2Point, ...],
+    facts: tuple[MainForceMirrorV2SequenceFact, ...],
+) -> tuple[_Observation, ...]:
+    observations: list[_Observation] = []
+    for fact in facts:
+        point = points[fact.index]
+        if fact.peak_seen and fact.installed_peak_side is not None:
+            observations.append(
+                _Observation(
+                    fact.index,
+                    product,
+                    point.trading_day.year,
+                    fact.installed_peak_side,
+                    "peak_only",
+                    1 if fact.installed_peak_side == "long" else -1,
+                )
+            )
+        if fact.active_peak_side is None:
+            continue
+        direction = 1 if fact.active_peak_side == "long" else -1
+        events = (
+            (fact.decay_seen, "peak_then_decay"),
+            (fact.liquidation_seen, "peak_then_liquidation"),
+            (fact.opposite_build_seen, "peak_then_opposite_build"),
+            (
+                fact.accumulated_reversal_seen,
+                "peak_then_accumulated_reversal",
+            ),
+        )
+        observations.extend(
+            _Observation(
+                fact.index,
+                product,
+                point.trading_day.year,
+                fact.active_peak_side,
+                cohort,
+                direction,
+            )
+            for active, cohort in events
+            if active
+        )
+    return tuple(observations)
+
+
 def _observations(
     product: str,
     points: tuple[MainForceMirrorV2Point, ...],
@@ -910,6 +978,15 @@ def _summarize_cohorts(
     bars: tuple[CanonicalBar, ...],
     points: tuple[MainForceMirrorV2Point, ...],
 ) -> CohortMap:
+    return _summarize_selected_cohorts(observations, COHORTS, bars, points)
+
+
+def _summarize_selected_cohorts(
+    observations: tuple[_Observation, ...],
+    cohorts: tuple[str, ...],
+    bars: tuple[CanonicalBar, ...],
+    points: tuple[MainForceMirrorV2Point, ...],
+) -> CohortMap:
     return MappingProxyType(
         {
             cohort: MappingProxyType(
@@ -923,9 +1000,77 @@ def _summarize_cohorts(
                     for horizon in HORIZONS
                 }
             )
-            for cohort in COHORTS
+            for cohort in cohorts
         }
     )
+
+
+def _yearly_selected(
+    observations: tuple[_Observation, ...],
+    bars: tuple[CanonicalBar, ...],
+    points: tuple[MainForceMirrorV2Point, ...],
+) -> YearlyMap:
+    grouped: dict[int, dict[str, dict[str, list[_Observation]]]] = defaultdict(
+        lambda: defaultdict(lambda: defaultdict(list))
+    )
+    for item in observations:
+        grouped[item.year][item.product][item.state].append(item)
+    return MappingProxyType(
+        {
+            year: MappingProxyType(
+                {
+                    product: MappingProxyType(
+                        {
+                            state: _summarize_selected_cohorts(
+                                tuple(items), SEQUENCE_COHORTS, bars, points
+                            )
+                            for state, items in sorted(states.items())
+                        }
+                    )
+                    for product, states in sorted(products.items())
+                }
+            )
+            for year, products in sorted(grouped.items())
+        }
+    )
+
+
+def _sequence_by_side(
+    observations: tuple[_Observation, ...],
+    bars: tuple[CanonicalBar, ...],
+    points: tuple[MainForceMirrorV2Point, ...],
+) -> Mapping[str, CohortMap]:
+    return MappingProxyType(
+        {
+            side: _summarize_selected_cohorts(
+                tuple(item for item in observations if item.state == side),
+                SEQUENCE_COHORTS,
+                bars,
+                points,
+            )
+            for side in ("long", "short")
+        }
+    )
+
+
+def _sequence_profile_summaries(
+    product: str,
+    bars: tuple[CanonicalBar, ...],
+    points: tuple[MainForceMirrorV2Point, ...],
+) -> Mapping[str, MainForceMirrorV2SequenceProfileSummary]:
+    result: dict[str, MainForceMirrorV2SequenceProfileSummary] = {}
+    for profile in SEQUENCE_PROFILES:
+        facts = _derive_sequence_facts(points, profile)
+        observations = _sequence_observations(product, points, facts)
+        result[profile.profile_id] = MainForceMirrorV2SequenceProfileSummary(
+            profile_id=profile.profile_id,
+            yearly=_yearly_selected(observations, bars, points),
+            by_side=_sequence_by_side(observations, bars, points),
+            pooled=_summarize_selected_cohorts(
+                observations, SEQUENCE_COHORTS, bars, points
+            ),
+        )
+    return MappingProxyType(result)
 
 
 def _yearly(
@@ -1100,7 +1245,11 @@ def _page_request_identity(request: SeriesPageQuery) -> dict[str, object]:
 
 
 def _is_warning_cohort(cohort: str) -> bool:
-    return cohort == "all_caution" or cohort.startswith("caution_member_")
+    return (
+        cohort == "all_caution"
+        or cohort.startswith("caution_member_")
+        or cohort in SEQUENCE_COHORTS
+    )
 
 
 def _ratio(numerator: int, denominator: int) -> Decimal | None:

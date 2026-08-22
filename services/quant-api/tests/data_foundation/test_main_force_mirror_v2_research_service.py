@@ -507,7 +507,7 @@ def _sequence_point(
     pressure_ready: bool = True,
     accumulated_ready: bool = True,
 ) -> MainForceMirrorV2Point:
-    moment = datetime(2026, 2, 1, 7, tzinfo=UTC) + timedelta(hours=index)
+    moment = datetime(2026, 2, 1, 7, tzinfo=UTC) + timedelta(days=index)
     return replace(
         _POINTS[0],
         bar_end=moment,
@@ -751,6 +751,134 @@ def test_sequence_derivation_is_prefix_invariant(
 
     for end in range(1, len(points) + 1):
         assert _derive_sequence_facts(points[:end], profile)[-1] == full[end - 1]
+
+
+def _sequence_evaluation_points() -> tuple[MainForceMirrorV2Point, ...]:
+    points = [
+        replace(point, pressure_state="turnover") if index < 21 else point
+        for index, point in enumerate(_long_sequence_points())
+    ]
+    points.extend(
+        _sequence_point(
+            index,
+            state="turnover",
+            instant=-10.0,
+            accumulated=-15.0,
+        )
+        for index in range(24, 34)
+    )
+    return tuple(points)
+
+
+def _sequence_bar(point: MainForceMirrorV2Point, index: int) -> CanonicalBar:
+    close = Decimal(100 if index <= 21 else 100 - 5 * (index - 21))
+    return CanonicalBar(
+        bar_end=point.bar_end,
+        trading_day=point.trading_day,
+        open=close,
+        high=close + Decimal(1),
+        low=close - Decimal(1),
+        close=close,
+        volume=Decimal(100),
+        turnover=None,
+        open_interest=Decimal(1000),
+    )
+
+
+def _sequence_research_result(*, roll_before_event: bool = False):
+    points = _sequence_evaluation_points()
+    if roll_before_event:
+        points = tuple(
+            replace(point, physical_contract="JM2701") if index >= 22 else point
+            for index, point in enumerate(points)
+        )
+    bars = tuple(_sequence_bar(point, index) for index, point in enumerate(points))
+    if roll_before_event:
+        segments = (
+            ResolvedContractSegment(
+                "JM2609", points[0].trading_day, points[21].trading_day
+            ),
+            ResolvedContractSegment(
+                "JM2701", points[22].trading_day, points[-1].trading_day
+            ),
+        )
+    else:
+        segments = (
+            ResolvedContractSegment(
+                "JM2609", points[0].trading_day, points[-1].trading_day
+            ),
+        )
+    request = MainForceMirrorV2ResearchRequest(
+        symbol="jm",
+        series_kind=SeriesKind.ACTUAL_DOMINANT,
+        contract=None,
+        frequency=BarFrequency.H1,
+        since=points[0].trading_day,
+        through=points[-1].trading_day,
+    )
+    return MainForceMirrorV2ResearchService(
+        market_data=_MarketData(bars=bars, segments=segments),
+        mirror_service=_MirrorService(points=points, segments=segments),
+    ).run(request)
+
+
+def test_research_adds_exact_five_sequence_profiles_without_old_regression() -> None:
+    result = _sequence_research_result()
+
+    assert tuple(result.sequence_profiles) == (
+        "balanced",
+        "fast",
+        "slow",
+        "loose",
+        "strict",
+    )
+    assert result.pooled["all_caution"][5].sample_count == 0
+    assert not hasattr(result, "best_profile")
+
+
+def test_sequence_warning_horizon_starts_from_causal_evidence_bar() -> None:
+    balanced = _sequence_research_result().sequence_profiles["balanced"]
+    liquidation = balanced.by_side["long"]["peak_then_liquidation"][1]
+
+    assert liquidation.sample_count == 1
+    assert liquidation.median_reversal_return == Decimal("0.052632")
+    assert balanced.yearly[2026]["jm"]["long"][
+        "peak_then_liquidation"
+    ][1] == liquidation
+    assert balanced.by_side["short"]["peak_then_liquidation"][1].sample_count == 0
+
+
+def test_sequence_overlap_emits_old_event_and_new_peak_observations() -> None:
+    balanced = _sequence_research_result().sequence_profiles["balanced"]
+
+    assert balanced.by_side["long"]["peak_then_opposite_build"][1].sample_count == 1
+    assert balanced.by_side["long"][
+        "peak_then_accumulated_reversal"
+    ][1].sample_count == 1
+    assert balanced.by_side["short"]["peak_only"][1].sample_count == 1
+
+
+def test_sequence_summaries_cover_all_fixed_horizons() -> None:
+    balanced = _sequence_research_result().sequence_profiles["balanced"]
+
+    assert {
+        horizon: balanced.by_side["long"]["peak_then_liquidation"][
+            horizon
+        ].sample_count
+        for horizon in (1, 3, 5, 10)
+    } == {1: 1, 3: 1, 5: 1, 10: 1}
+
+
+def test_sequence_summary_does_not_join_peak_and_event_across_roll() -> None:
+    balanced = _sequence_research_result(roll_before_event=True).sequence_profiles[
+        "balanced"
+    ]
+
+    assert balanced.by_side["long"]["peak_only"][1].sample_count == 0
+    assert balanced.by_side["long"]["peak_then_liquidation"][1].sample_count == 0
+    assert balanced.by_side["long"][
+        "peak_then_opposite_build"
+    ][1].sample_count == 0
 
 
 def _directional_fixture_result():
