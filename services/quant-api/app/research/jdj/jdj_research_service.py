@@ -33,6 +33,9 @@ from .jdj_events import (
 )
 from .jdj_research import (
     JDJ_CANDIDATE_SOURCE_EVENT_KINDS,
+    JdjBatchResearchResult,
+    JdjDetailedCandidateResult,
+    JdjEventOutcomeRecord,
     JdjResearchRequest,
     JdjResearchResult,
     JdjSourceUnavailableError,
@@ -120,73 +123,159 @@ class JdjResearchService:
         if not isinstance(request, JdjResearchRequest):
             raise TypeError("request must be JdjResearchRequest")
         products = self._selected_products(request.symbol)
-        segment_count = 0
-        evaluable_bar_count = 0
-        events: list[JdjTriggerEvent] = []
-        outcomes: dict[int, list[PriceDirectionalOutcome]] = {
-            horizon: [] for horizon in _HORIZONS
-        }
-
+        detailed_results: list[JdjDetailedCandidateResult] = []
         for product in products:
-            try:
-                loaded = self._segment_loader.load(
-                    symbol=product,
-                    frequencies=(BarFrequency.M1, BarFrequency.M5),
-                    since=request.since,
-                    through=request.through,
-                )
-                bars_1m_by_segment, bars_5m_by_segment = (
-                    _validated_segment_partitions(
-                        loaded,
-                        symbol=product,
-                        through=request.through,
-                    )
-                )
-            except (
-                MarketDataError,
-                ActualDominantResearchSegmentIdentityError,
-            ):
-                raise JdjSourceUnavailableError() from None
-            for segment, bars_1m, bars_5m in zip(
-                loaded.segments,
-                bars_1m_by_segment,
-                bars_5m_by_segment,
-                strict=True,
-            ):
-                contexts = build_jdj_context_series(
-                    bars_1m,
-                    bars_5m,
-                    contract=segment.contract,
-                    segment_start_trading_day=segment.start_trading_day,
-                    segment_end_trading_day=segment.end_trading_day,
-                    jdj_policy=self._jdj_policy,
-                    n_policy=self._n_policy,
-                )
-                reducer = _reducer_for_candidate(request.candidate_id)
-                trace = reducer(
+            detailed, _, _ = self._load_and_evaluate(
+                symbol=product,
+                since=request.since,
+                through=request.through,
+                candidate_ids=(request.candidate_id,),
+            )
+            detailed_results.append(detailed[0])
+        return _combine_candidate_results(
+            detailed_results,
+            candidate_id=request.candidate_id,
+            products=products,
+        )
+
+    def run_batch(
+        self,
+        *,
+        symbol: str,
+        since: date,
+        through: date,
+    ) -> JdjBatchResearchResult:
+        request = JdjResearchRequest(
+            since=since,
+            through=through,
+            symbol=symbol,
+            candidate_id=_TREND_FOLLOW,
+        )
+        selected = self._selected_products(request.symbol)
+        detailed, observed_since, observed_through = self._load_and_evaluate(
+            symbol=selected[0],
+            since=request.since,
+            through=request.through,
+            candidate_ids=tuple(JDJ_CANDIDATE_SOURCE_EVENT_KINDS),
+        )
+        if observed_since is None or observed_through is None:
+            raise JdjSourceUnavailableError()
+        return JdjBatchResearchResult(
+            symbol=selected[0],
+            observed_since=observed_since,
+            observed_through=observed_through,
+            candidates=detailed,
+        )
+
+    def _load_and_evaluate(
+        self,
+        *,
+        symbol: str,
+        since: date,
+        through: date,
+        candidate_ids: tuple[str, ...],
+    ) -> tuple[
+        tuple[JdjDetailedCandidateResult, ...],
+        date | None,
+        date | None,
+    ]:
+        try:
+            loaded = self._segment_loader.load(
+                symbol=symbol,
+                frequencies=(BarFrequency.M1, BarFrequency.M5),
+                since=since,
+                through=through,
+            )
+            return self._evaluate_loaded_series(
+                loaded,
+                symbol=symbol,
+                since=since,
+                through=through,
+                candidate_ids=candidate_ids,
+            )
+        except (
+            MarketDataError,
+            ActualDominantResearchSegmentIdentityError,
+        ):
+            raise JdjSourceUnavailableError() from None
+
+    def _evaluate_loaded_series(
+        self,
+        loaded: ActualDominantResearchSeries,
+        *,
+        symbol: str,
+        since: date,
+        through: date,
+        candidate_ids: tuple[str, ...],
+    ) -> tuple[
+        tuple[JdjDetailedCandidateResult, ...],
+        date | None,
+        date | None,
+    ]:
+        if (
+            not candidate_ids
+            or len(set(candidate_ids)) != len(candidate_ids)
+            or any(
+                candidate_id not in JDJ_CANDIDATE_SOURCE_EVENT_KINDS
+                for candidate_id in candidate_ids
+            )
+        ):
+            raise JdjContextError()
+        bars_1m_by_segment, bars_5m_by_segment = (
+            _validated_segment_partitions(
+                loaded,
+                symbol=symbol,
+                through=through,
+            )
+        )
+        event_records: dict[
+            str,
+            list[tuple[JdjTriggerEvent, JdjEventOutcomeRecord]],
+        ] = {candidate_id: [] for candidate_id in candidate_ids}
+        evaluable_bar_count = 0
+        observed_days: list[date] = []
+
+        for segment, bars_1m, bars_5m in zip(
+            loaded.segments,
+            bars_1m_by_segment,
+            bars_5m_by_segment,
+            strict=True,
+        ):
+            contexts = build_jdj_context_series(
+                bars_1m,
+                bars_5m,
+                contract=segment.contract,
+                segment_start_trading_day=segment.start_trading_day,
+                segment_end_trading_day=segment.end_trading_day,
+                jdj_policy=self._jdj_policy,
+                n_policy=self._n_policy,
+            )
+            requested_bars = tuple(
+                bar for bar in bars_1m if since <= bar.trading_day <= through
+            )
+            evaluable_bar_count += len(requested_bars)
+            observed_days.extend(bar.trading_day for bar in requested_bars)
+
+            for candidate_id in candidate_ids:
+                trace = _reducer_for_candidate(candidate_id)(
                     contexts,
-                    symbol=product,
+                    symbol=symbol,
                     contract=segment.contract,
                     segment_start_trading_day=segment.start_trading_day,
                 )
+                source_event_kind = JDJ_CANDIDATE_SOURCE_EVENT_KINDS[
+                    candidate_id
+                ]
                 for event in trace.events:
                     _validate_event_alignment(
                         event,
-                        candidate_id=request.candidate_id,
-                        source_event_kind=(
-                            JDJ_CANDIDATE_SOURCE_EVENT_KINDS[
-                                request.candidate_id
-                            ]
-                        ),
-                        symbol=product,
+                        candidate_id=candidate_id,
+                        source_event_kind=source_event_kind,
+                        symbol=symbol,
                         segment=segment,
                         bars_1m=bars_1m,
                     )
-                    if not (
-                        request.since
-                        <= event.trading_day
-                        <= request.through
-                    ):
+                    if not since <= event.trading_day <= through:
                         continue
                     direction = (
                         PriceDirection.LONG
@@ -200,38 +289,31 @@ class JdjResearchService:
                         horizons=_HORIZONS,
                         same_trading_day_only=True,
                     )
-                    for horizon, outcome in projected.items():
-                        if outcome is not None:
-                            outcomes[horizon].append(outcome)
-                    events.append(event)
-                segment_count += 1
-                evaluable_bar_count += sum(
-                    request.since <= bar.trading_day <= request.through
-                    for bar in bars_1m
-                )
+                    event_records[candidate_id].append(
+                        (
+                            event,
+                            JdjEventOutcomeRecord(
+                                event_id=event.event_id,
+                                trading_day=event.trading_day,
+                                outcomes=projected,
+                            ),
+                        )
+                    )
 
-        events.sort(key=_event_order_key)
-        if len({event.event_id for event in events}) != len(events):
-            raise JdjContextError()
-        return JdjResearchResult(
-            candidate_id=request.candidate_id,
-            source_event_kind=JDJ_CANDIDATE_SOURCE_EVENT_KINDS[
-                request.candidate_id
-            ],
-            products=products,
-            segment_count=segment_count,
-            evaluable_bar_count=evaluable_bar_count,
-            trigger_count_long=sum(
-                event.direction is JdjDirection.LONG for event in events
-            ),
-            trigger_count_short=sum(
-                event.direction is JdjDirection.SHORT for event in events
-            ),
-            horizon_summary={
-                horizon: _evaluate_horizon(outcomes[horizon])
-                for horizon in _HORIZONS
-            },
-            events=tuple(events),
+        detailed = tuple(
+            _build_detailed_candidate_result(
+                event_records[candidate_id],
+                candidate_id=candidate_id,
+                products=(symbol,),
+                segment_count=len(loaded.segments),
+                evaluable_bar_count=evaluable_bar_count,
+            )
+            for candidate_id in candidate_ids
+        )
+        return (
+            detailed,
+            min(observed_days) if observed_days else None,
+            max(observed_days) if observed_days else None,
         )
 
     def _selected_products(self, symbol: str | None) -> tuple[str, ...]:
@@ -429,6 +511,89 @@ def _validate_event_alignment(
         or event.observation_close != bar.close
     ):
         raise JdjContextError()
+
+
+def _build_detailed_candidate_result(
+    event_records: Sequence[
+        tuple[JdjTriggerEvent, JdjEventOutcomeRecord]
+    ],
+    *,
+    candidate_id: str,
+    products: tuple[str, ...],
+    segment_count: int,
+    evaluable_bar_count: int,
+) -> JdjDetailedCandidateResult:
+    ordered = tuple(
+        sorted(event_records, key=lambda item: _event_order_key(item[0]))
+    )
+    events = tuple(event for event, _ in ordered)
+    if len({event.event_id for event in events}) != len(events):
+        raise JdjContextError()
+    outcomes = {
+        horizon: tuple(
+            outcome
+            for _, record in ordered
+            if (outcome := record.outcomes[horizon]) is not None
+        )
+        for horizon in _HORIZONS
+    }
+    return JdjDetailedCandidateResult(
+        result=JdjResearchResult(
+            candidate_id=candidate_id,
+            source_event_kind=JDJ_CANDIDATE_SOURCE_EVENT_KINDS[candidate_id],
+            products=products,
+            segment_count=segment_count,
+            evaluable_bar_count=evaluable_bar_count,
+            trigger_count_long=sum(
+                event.direction is JdjDirection.LONG for event in events
+            ),
+            trigger_count_short=sum(
+                event.direction is JdjDirection.SHORT for event in events
+            ),
+            horizon_summary={
+                horizon: _evaluate_horizon(outcomes[horizon])
+                for horizon in _HORIZONS
+            },
+            events=events,
+        ),
+        event_outcomes=tuple(record for _, record in ordered),
+    )
+
+
+def _combine_candidate_results(
+    detailed_results: Sequence[JdjDetailedCandidateResult],
+    *,
+    candidate_id: str,
+    products: tuple[str, ...],
+) -> JdjResearchResult:
+    if (
+        not detailed_results
+        or any(
+            detail.result.candidate_id != candidate_id
+            for detail in detailed_results
+        )
+    ):
+        raise JdjContextError()
+    combined = _build_detailed_candidate_result(
+        tuple(
+            pair
+            for detail in detailed_results
+            for pair in zip(
+                detail.result.events,
+                detail.event_outcomes,
+                strict=True,
+            )
+        ),
+        candidate_id=candidate_id,
+        products=products,
+        segment_count=sum(
+            detail.result.segment_count for detail in detailed_results
+        ),
+        evaluable_bar_count=sum(
+            detail.result.evaluable_bar_count for detail in detailed_results
+        ),
+    )
+    return combined.result
 
 
 def _evaluate_horizon(

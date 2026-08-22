@@ -21,6 +21,9 @@ from app.research.n_structure.n_structure_research_service import (
 from app.research.robustness.multi_candidate_robustness_policy import (
     MultiCandidateRobustnessRequest,
 )
+from app.research.robustness.jdj_robustness import (
+    JdjActive60RobustnessRequest,
+)
 from app.research.subing.subing_calibration_service import (
     CalibrationMode,
     CalibrationPhase,
@@ -40,12 +43,15 @@ ResearchRequest: TypeAlias = (
     | MainForceMirrorV2ResearchRequest
     | NStructureResearchRequest
     | MultiCandidateRobustnessRequest
+    | JdjActive60RobustnessRequest
 )
 
 
 def build_research_request(args: argparse.Namespace) -> ResearchRequest:
     """Convert CLI strings into one immutable research request."""
     if args.research_command == "candidate-robustness":
+        if args.protocol == "jdj_active60_robustness_v1":
+            return JdjActive60RobustnessRequest(protocol_id=args.protocol)
         return MultiCandidateRobustnessRequest(protocol_id=args.protocol)
     if args.research_command == "main-force-mirror-v2":
         return MainForceMirrorV2ResearchRequest(

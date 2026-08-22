@@ -52,6 +52,7 @@ from app.research.common.candidate_validation_schedule import (
 from app.market_data.historical_data_manager import HistoricalDataManager
 from app.market_data.product_retirement import ProductRetiredError
 from app.research.composition import (
+    build_jdj_active60_robustness_service,
     build_jdj_candidate_validation_service,
     build_jdj_research_service,
     build_main_force_mirror_v2_research_service,
@@ -61,6 +62,9 @@ from app.research.composition import (
     build_subing_calibration_research_service,
     build_subing_candidate_validation_service,
     build_subing_lifecycle_research_service,
+)
+from app.research.robustness.jdj_robustness import (
+    JdjActive60RobustnessRequest,
 )
 from app.services.runtime_health import build_runtime_health
 
@@ -179,6 +183,9 @@ def main(
     multi_candidate_robustness_service_factory: ResearchServiceFactory = (
         build_multi_candidate_robustness_service
     ),
+    jdj_active60_robustness_service_factory: ResearchServiceFactory = (
+        build_jdj_active60_robustness_service
+    ),
     execution_review_roll_marker_state: RollMarkerState = (
         _execution_review_roll_marker_state
     ),
@@ -233,7 +240,17 @@ def main(
                 if args.research_command == "subing-lifecycle":
                     service = lifecycle_research_service_factory(session)
                 elif args.research_command == "candidate-robustness":
-                    service = multi_candidate_robustness_service_factory(session)
+                    if isinstance(
+                        research_request,
+                        JdjActive60RobustnessRequest,
+                    ):
+                        service = jdj_active60_robustness_service_factory(
+                            session
+                        )
+                    else:
+                        service = multi_candidate_robustness_service_factory(
+                            session
+                        )
                 elif args.research_command == "n-structure":
                     service = n_structure_research_service_factory(session)
                 elif args.research_command == "jdj-1m":
@@ -335,8 +352,26 @@ def main(
     print_json(payload, stdout)
     return (
         0
-        if payload.get("status")
-        in {"passed", "planned", "published", "noop", "ok", "ready", "skipped", "accepted"}
+        if (
+            payload.get("status")
+            in {
+                "passed",
+                "planned",
+                "published",
+                "noop",
+                "ok",
+                "ready",
+                "skipped",
+                "accepted",
+            }
+            or (
+                isinstance(
+                    research_request,
+                    JdjActive60RobustnessRequest,
+                )
+                and "status" not in payload
+            )
+        )
         else 1
     )
 

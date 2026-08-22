@@ -7,6 +7,7 @@ from typing import Protocol, cast
 from app.guiyi_cli.research_payloads import (
     _calibration_payload,
     _candidate_payload,
+    _jdj_active60_robustness_payload,
     _jdj_candidate_payload,
     _jdj_research_payload,
     _lifecycle_payload,
@@ -39,6 +40,10 @@ from app.research.robustness.multi_candidate_robustness import (
 )
 from app.research.robustness.multi_candidate_robustness_policy import (
     MultiCandidateRobustnessRequest,
+)
+from app.research.robustness.jdj_robustness import (
+    JdjActive60RobustnessReport,
+    JdjActive60RobustnessRequest,
 )
 from app.research.subing.candidate_validation import CandidateValidationReport
 from app.research.subing.subing_calibration_service import (
@@ -93,11 +98,22 @@ class _MultiCandidateRobustnessService(Protocol):
     ) -> MultiCandidateRobustnessReport: ...
 
 
+class _JdjActive60RobustnessService(Protocol):
+    def run(
+        self, request: JdjActive60RobustnessRequest
+    ) -> JdjActive60RobustnessReport: ...
+
+
 def run_research_command(
     request: ResearchRequest,
     service: object,
 ) -> dict[str, object]:
     """Run one Historical-only research command and render its JSON schema."""
+    if isinstance(request, JdjActive60RobustnessRequest):
+        jdj_robustness_service = cast(_JdjActive60RobustnessService, service)
+        return _jdj_active60_robustness_payload(
+            jdj_robustness_service.run(request)
+        )
     if isinstance(request, MultiCandidateRobustnessRequest):
         robustness_service = cast(_MultiCandidateRobustnessService, service)
         return _multi_candidate_robustness_payload(robustness_service.run(request))

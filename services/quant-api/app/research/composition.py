@@ -36,6 +36,12 @@ from app.research.robustness.multi_candidate_robustness_policy import (
 from app.research.robustness.multi_candidate_robustness_service import (
     MultiCandidateRobustnessService,
 )
+from app.research.robustness.jdj_robustness import (
+    load_jdj_active60_robustness_protocol,
+)
+from app.research.robustness.jdj_robustness_service import (
+    JdjActive60RobustnessService,
+)
 from app.research.n_structure.n_candidate_validation_policy import (
     load_n_candidate_manifest,
     load_n_candidate_validation_protocol,
@@ -111,6 +117,16 @@ def build_jdj_candidate_validation_service(
         build_jdj_research_service(session),
         manifest=load_jdj_candidate_manifest(candidate_id),
         protocol=load_jdj_candidate_validation_protocol(),
+    )
+
+
+def build_jdj_active60_robustness_service(
+    session: Session,
+) -> JdjActive60RobustnessService:
+    """Compose exact Phase 7 robustness over the existing JDJ research path."""
+    return JdjActive60RobustnessService(
+        load_jdj_active60_robustness_protocol(),
+        jdj_research=build_jdj_research_service(session),
     )
 
 
