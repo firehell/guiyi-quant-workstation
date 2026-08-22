@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import replace
-from datetime import date, datetime
+from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 import json
 from pathlib import Path
 
@@ -22,7 +23,29 @@ from app.research.candidate_convergence.five_candidate_relationships import (
     RelationshipKind,
     load_five_candidate_relationship_protocol,
 )
-from app.research.jdj.jdj_research import JDJ_CANDIDATE_SOURCE_EVENT_KINDS
+from app.research.candidate_convergence.five_candidate_relationships_service import (
+    FiveCandidateRelationshipService,
+)
+from app.research.jdj.jdj_context import JdjContextError
+from app.research.jdj.jdj_events import (
+    JdjDirection,
+    JdjKeyLevelBreakoutTriggerEvent,
+    JdjSetupKind,
+    JdjTrendFollowTriggerEvent,
+    JdjTrendReentryTriggerEvent,
+    _canonical_key_level_breakout_event_id,
+    _canonical_trend_follow_event_id,
+    _canonical_trend_reentry_event_id,
+)
+from app.research.jdj.jdj_research import (
+    JDJ_CANDIDATE_SOURCE_EVENT_KINDS,
+    JdjBatchResearchResult,
+    JdjDetailedCandidateResult,
+    JdjEventOutcomeRecord,
+    JdjResearchResult,
+    JdjSourceUnavailableError,
+)
+from app.market_data.price_outcome import PriceHorizonEvaluation
 
 
 CANDIDATES = (
@@ -448,3 +471,305 @@ def test_available_overlap_rows_accept_closed_zero_and_positive_matches() -> Non
 
     assert zero_match.exact_same_boundary_same_direction_count == 0
     assert positive_match.exact_same_boundary_same_direction_count == 2
+
+
+def _source_events(
+    symbol: str,
+) -> tuple[
+    JdjTrendFollowTriggerEvent,
+    JdjTrendReentryTriggerEvent,
+    JdjKeyLevelBreakoutTriggerEvent,
+]:
+    contract = f"{symbol.upper()}2701"
+    segment_start = date(2023, 1, 1)
+    trading_day = date(2026, 8, 19)
+    observed_at = datetime(2026, 8, 19, 1, 20, tzinfo=UTC)
+    trend_follow_reaction = observed_at - timedelta(minutes=1)
+    trend_reentry_excursion = observed_at - timedelta(minutes=6)
+    trend_reentry_reclaimed = observed_at - timedelta(minutes=3)
+    trend_reentry_reaction = observed_at - timedelta(minutes=2)
+    pivot_at = observed_at - timedelta(minutes=20)
+    pivot_confirmed_at = observed_at - timedelta(minutes=15)
+    first_break_at = observed_at - timedelta(minutes=10)
+    retest_at = observed_at - timedelta(minutes=5)
+    trigger_level = Decimal("100")
+    pivot_id = ":".join(
+        (
+            contract,
+            segment_start.isoformat(),
+            "5m",
+            "1",
+            "high",
+            pivot_at.isoformat(),
+        )
+    )
+    return (
+        JdjTrendFollowTriggerEvent(
+            event_id=_canonical_trend_follow_event_id(
+                candidate_id=TF,
+                symbol=symbol,
+                contract=contract,
+                segment_start_trading_day=segment_start,
+                direction=JdjDirection.LONG,
+                reaction_at=trend_follow_reaction,
+                observed_at=observed_at,
+                trigger_level=trigger_level,
+            ),
+            source_kind="jdj_1m",
+            setup_kind=JdjSetupKind.TREND_FOLLOW,
+            candidate_id=TF,
+            source_event_kind=JDJ_CANDIDATE_SOURCE_EVENT_KINDS[TF],
+            direction=JdjDirection.LONG,
+            symbol=symbol,
+            contract=contract,
+            segment_start_trading_day=segment_start,
+            trading_day=trading_day,
+            observed_at=observed_at,
+            segment_bar_index=20,
+            trend_snapshot_observed_at=observed_at - timedelta(minutes=2),
+            reaction_at=trend_follow_reaction,
+            ema20_at_reaction=Decimal("99"),
+            trigger_level=trigger_level,
+            observation_close=Decimal("101"),
+        ),
+        JdjTrendReentryTriggerEvent(
+            event_id=_canonical_trend_reentry_event_id(
+                candidate_id=R6,
+                symbol=symbol,
+                contract=contract,
+                segment_start_trading_day=segment_start,
+                direction=JdjDirection.LONG,
+                excursion_started_at=trend_reentry_excursion,
+                excursion_extreme=Decimal("95"),
+                reclaimed_at=trend_reentry_reclaimed,
+                reaction_at=trend_reentry_reaction,
+                observed_at=observed_at,
+                trigger_level=trigger_level,
+            ),
+            source_kind="jdj_1m",
+            setup_kind=JdjSetupKind.TREND_REENTRY_6,
+            candidate_id=R6,
+            source_event_kind=JDJ_CANDIDATE_SOURCE_EVENT_KINDS[R6],
+            direction=JdjDirection.LONG,
+            symbol=symbol,
+            contract=contract,
+            segment_start_trading_day=segment_start,
+            trading_day=trading_day,
+            observed_at=observed_at,
+            segment_bar_index=20,
+            trend_snapshot_observed_at=observed_at - timedelta(minutes=4),
+            excursion_started_at=trend_reentry_excursion,
+            excursion_extreme=Decimal("95"),
+            reclaimed_at=trend_reentry_reclaimed,
+            reaction_at=trend_reentry_reaction,
+            trigger_level=trigger_level,
+            observation_close=Decimal("101"),
+        ),
+        JdjKeyLevelBreakoutTriggerEvent(
+            event_id=_canonical_key_level_breakout_event_id(
+                candidate_id=KLB,
+                symbol=symbol,
+                contract=contract,
+                segment_start_trading_day=segment_start,
+                direction=JdjDirection.LONG,
+                trend_epoch=1,
+                key_level_pivot_id=pivot_id,
+                key_level_price=trigger_level,
+                key_level_confirmed_at=pivot_confirmed_at,
+                first_break_at=first_break_at,
+                retest_at=retest_at,
+                observed_at=observed_at,
+                trigger_level=trigger_level,
+            ),
+            source_kind="jdj_1m",
+            setup_kind=JdjSetupKind.KEY_LEVEL_BREAKOUT,
+            candidate_id=KLB,
+            source_event_kind=JDJ_CANDIDATE_SOURCE_EVENT_KINDS[KLB],
+            direction=JdjDirection.LONG,
+            symbol=symbol,
+            contract=contract,
+            segment_start_trading_day=segment_start,
+            trading_day=trading_day,
+            observed_at=observed_at,
+            segment_bar_index=20,
+            trend_snapshot_observed_at=observed_at - timedelta(minutes=14),
+            trend_epoch=1,
+            key_level_pivot_id=pivot_id,
+            key_level_price=trigger_level,
+            key_level_confirmed_at=pivot_confirmed_at,
+            first_break_at=first_break_at,
+            retest_at=retest_at,
+            trigger_level=trigger_level,
+            observation_close=Decimal("101"),
+        ),
+    )
+
+
+def _batch(symbol: str) -> JdjBatchResearchResult:
+    zero = PriceHorizonEvaluation(0, None, None, None)
+    details = []
+    for candidate_id, event in zip(
+        JDJ_CANDIDATES,
+        _source_events(symbol),
+        strict=True,
+    ):
+        details.append(
+            JdjDetailedCandidateResult(
+                result=JdjResearchResult(
+                    candidate_id=candidate_id,
+                    source_event_kind=JDJ_CANDIDATE_SOURCE_EVENT_KINDS[
+                        candidate_id
+                    ],
+                    products=(symbol,),
+                    segment_count=1,
+                    evaluable_bar_count=100,
+                    trigger_count_long=1,
+                    trigger_count_short=0,
+                    horizon_summary={
+                        horizon: zero for horizon in (3, 5, 8, 20)
+                    },
+                    events=(event,),
+                ),
+                event_outcomes=(
+                    JdjEventOutcomeRecord(
+                        event_id=event.event_id,
+                        trading_day=event.trading_day,
+                        outcomes={
+                            horizon: None for horizon in (3, 5, 8, 20)
+                        },
+                    ),
+                ),
+            )
+        )
+    return JdjBatchResearchResult(
+        symbol=symbol,
+        observed_since=date(2023, 1, 1),
+        observed_through=date(2026, 8, 19),
+        candidates=tuple(details),
+    )
+
+
+class _DependencyRunner:
+    def __init__(
+        self,
+        results: dict[str, JdjBatchResearchResult | Exception] | None = None,
+    ) -> None:
+        self.results = results or {}
+        self.calls: list[tuple[str, date, date]] = []
+
+    def run_batch(
+        self,
+        *,
+        symbol: str,
+        since: date,
+        through: date,
+    ) -> JdjBatchResearchResult:
+        self.calls.append((symbol, since, through))
+        result = self.results.get(symbol)
+        if isinstance(result, Exception):
+            raise result
+        return result or _batch(symbol)
+
+
+def _dependency_service(
+    runner: _DependencyRunner,
+) -> FiveCandidateRelationshipService:
+    return FiveCandidateRelationshipService(
+        load_five_candidate_relationship_protocol(),
+        jdj_research=runner,
+    )
+
+
+def test_dependency_projection_calls_each_symbol_once_for_exact_n_safe_window() -> None:
+    runner = _DependencyRunner()
+
+    rows = _dependency_service(runner).project_n_jdj_dependencies()
+
+    assert runner.calls == [
+        (symbol, date(2023, 1, 1), date(2026, 8, 19))
+        for symbol in PRODUCTS
+    ]
+    assert len(rows) == 180
+    assert tuple((row.candidate_id, row.symbol) for row in rows) == tuple(
+        (candidate_id, symbol)
+        for candidate_id in JDJ_CANDIDATES
+        for symbol in PRODUCTS
+    )
+
+
+def test_dependency_projection_counts_only_immutable_event_lineage() -> None:
+    rows = _dependency_service(_DependencyRunner()).project_n_jdj_dependencies()
+    tf, r6, klb = (row for row in rows if row.symbol == PRODUCTS[0])
+
+    assert tf.event_count == 1
+    assert tf.events_with_trend_snapshot_lineage == tf.event_count
+    assert tf.events_with_exact_pivot_lineage is None
+    assert r6.event_count == 1
+    assert r6.events_with_trend_snapshot_lineage == r6.event_count
+    assert r6.events_with_exact_pivot_lineage is None
+    assert klb.event_count == 1
+    assert klb.events_with_trend_snapshot_lineage == klb.event_count
+    assert klb.events_with_exact_pivot_lineage == klb.event_count
+
+
+def test_dependency_projection_retains_three_typed_unavailable_rows() -> None:
+    runner = _DependencyRunner({"ag": JdjSourceUnavailableError()})
+
+    rows = _dependency_service(runner).project_n_jdj_dependencies()
+
+    unavailable = tuple(row for row in rows if row.symbol == "ag")
+    assert tuple(row.candidate_id for row in unavailable) == JDJ_CANDIDATES
+    assert all(
+        row.status == "unavailable"
+        and row.reason_code == "JDJ_SOURCE_UNAVAILABLE"
+        and row.event_count is None
+        and row.events_with_trend_snapshot_lineage is None
+        and row.events_with_exact_pivot_lineage is None
+        for row in unavailable
+    )
+    assert len(rows) == 180
+
+
+@pytest.mark.parametrize(
+    "failure",
+    (JdjContextError(), RuntimeError("runner corruption")),
+)
+def test_dependency_projection_does_not_downgrade_non_source_failures(
+    failure: Exception,
+) -> None:
+    runner = _DependencyRunner({PRODUCTS[0]: failure})
+
+    with pytest.raises(type(failure)) as captured:
+        _dependency_service(runner).project_n_jdj_dependencies()
+
+    assert captured.value is failure
+
+
+def test_dependency_projection_rejects_wrong_batch_identity_and_order() -> None:
+    wrong_symbol = _DependencyRunner({PRODUCTS[0]: _batch(PRODUCTS[1])})
+    with pytest.raises(JdjContextError, match="^JDJ_CONTEXT_INVALID$"):
+        _dependency_service(wrong_symbol).project_n_jdj_dependencies()
+
+    reordered = _batch(PRODUCTS[0])
+    object.__setattr__(reordered, "candidates", tuple(reversed(reordered.candidates)))
+    with pytest.raises(JdjContextError, match="^JDJ_CONTEXT_INVALID$"):
+        _dependency_service(
+            _DependencyRunner({PRODUCTS[0]: reordered})
+        ).project_n_jdj_dependencies()
+
+
+def test_dependency_projection_rejects_product_or_lineage_corruption() -> None:
+    wrong_product = _batch(PRODUCTS[0])
+    object.__setattr__(wrong_product.candidates[0].result, "products", ("ag",))
+    with pytest.raises(JdjContextError, match="^JDJ_CONTEXT_INVALID$"):
+        _dependency_service(
+            _DependencyRunner({PRODUCTS[0]: wrong_product})
+        ).project_n_jdj_dependencies()
+
+    missing_lineage = _batch(PRODUCTS[0])
+    event = missing_lineage.candidates[0].result.events[0]
+    object.__setattr__(event, "trend_snapshot_observed_at", None)
+    with pytest.raises(JdjContextError, match="^JDJ_CONTEXT_INVALID$"):
+        _dependency_service(
+            _DependencyRunner({PRODUCTS[0]: missing_lineage})
+        ).project_n_jdj_dependencies()
