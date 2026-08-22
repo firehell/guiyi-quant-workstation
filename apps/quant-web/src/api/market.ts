@@ -12,6 +12,8 @@ import type {
   ProductResearchResponse,
   SeriesKind,
   SubingFrequency,
+  SubingHistoricalSignalRequest,
+  SubingHistoricalSignalResponse,
   SubingResearchResponse,
 } from '@/types/market'
 import {
@@ -49,6 +51,13 @@ export function getSubingResearch(params: { symbol: string; frequency: SubingFre
       frequency: params.frequency,
     },
   }).then(normalizeSubingResearch)
+}
+
+export function getSubingHistoricalSignals(params: SubingHistoricalSignalRequest) {
+  return request.get<never, SubingHistoricalSignalResponse>(
+    '/market/research/subing/history',
+    { params },
+  )
 }
 
 export function getMainForceMirrorV2Page(params: MainForceMirrorV2PageRequest) {

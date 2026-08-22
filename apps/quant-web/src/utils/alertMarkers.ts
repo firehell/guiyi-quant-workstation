@@ -1,10 +1,12 @@
 import type { AlertEvent, KlineMarker, MarketFrequency, SeriesKind } from '../types/market.ts'
 import {
+  ALERT_RULE_CODES,
   ALERT_RULE_PRESENTATIONS,
   alertDirectionalTone,
   alertResultLabel,
   getAlertRulePresentation,
 } from './alertRules.ts'
+import { subingMarkerDedupeKey } from './historicalResearchMarkers.ts'
 
 export function isPersistentAlertIdentity(
   seriesKind: SeriesKind,
@@ -31,6 +33,7 @@ export function alertEventsToMarkers(events: AlertEvent[]): KlineMarker[] {
       if (label === '提醒记录') return []
       return [{
         id: `alert:${event.rule_code}:${event.symbol}:${event.bar_end}`,
+        dedupeKey: subingEventDedupeKey(event),
         time: event.bar_end,
         label,
         tooltip: `持久 AlertEvent · ${event.contract} · ${label}`,
@@ -39,6 +42,21 @@ export function alertEventsToMarkers(events: AlertEvent[]): KlineMarker[] {
         shape: 'square' as const,
       }]
     })
+}
+
+function subingEventDedupeKey(event: AlertEvent): string | undefined {
+  if (
+    event.rule_code !== ALERT_RULE_CODES.SUBING
+    || (event.frequency !== '5m' && event.frequency !== '15m')
+    || event.result_codes.length !== 1
+  ) return undefined
+  const direction = event.result_codes[0]
+  return subingMarkerDedupeKey(
+    event.symbol,
+    event.bar_end,
+    event.frequency,
+    direction,
+  )
 }
 
 function markerTone(
@@ -59,7 +77,15 @@ export function mergeKlineMarkers(
 ): KlineMarker[] {
   const merged = new Map<string, { marker: KlineMarker; sourceOrder: number }>()
   for (const [sourceOrder, markers] of [currentObservationMarkers, persistentAlertMarkers].entries()) {
-    for (const marker of markers) merged.set(marker.id, { marker, sourceOrder })
+    for (const marker of markers) {
+      const key = marker.dedupeKey ?? marker.id
+      const existing = merged.get(key)
+      const existingPriority = existing ? persistentPriority(existing.marker) : -1
+      const nextPriority = persistentPriority(marker)
+      if (!existing || nextPriority >= existingPriority) {
+        merged.set(key, { marker, sourceOrder })
+      }
+    }
   }
   return [...merged.values()]
     .sort((left, right) => {
@@ -69,4 +95,8 @@ export function mergeKlineMarkers(
         || left.marker.id.localeCompare(right.marker.id)
     })
     .map(({ marker }) => marker)
+}
+
+function persistentPriority(marker: KlineMarker): number {
+  return marker.id.startsWith('alert:') ? 1 : 0
 }

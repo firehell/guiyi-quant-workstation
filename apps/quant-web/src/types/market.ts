@@ -3,6 +3,15 @@ export type MarketFrequency = (typeof MARKET_FREQUENCIES)[number]
 export type SeriesKind = 'continuous' | 'actual_dominant' | 'contract'
 export type ResearchOverlayId = 'none' | 'subing' | 'htdy'
 
+export interface ResearchOverlayDefinition {
+  id: ResearchOverlayId
+  label: string
+  supportedSeriesKinds: readonly SeriesKind[]
+  supportedFrequencies: readonly MarketFrequency[]
+  mainIndicators: readonly MainIndicatorId[]
+  historicalSource: 'none' | 'local' | 'subing'
+}
+
 export interface DominantContractItem {
   product: string
   product_name: string
@@ -748,12 +757,37 @@ export type MarketWsMessage =
 
 export interface KlineMarker {
   id: string
+  dedupeKey?: string
   time: string
   label: string
   tooltip?: string
   tone: 'up' | 'down' | 'htdy' | 'neutral'
   position: 'aboveBar' | 'belowBar' | 'inBar'
   shape: 'circle' | 'square' | 'arrowUp' | 'arrowDown'
+}
+
+export interface SubingHistoricalSignalRequest {
+  series_kind: 'actual_dominant'
+  symbol: string
+  frequency: '5m' | '15m'
+  since: string
+  through: string
+}
+
+export interface SubingHistoricalSignalEvent {
+  event_id: string
+  bar_end: string
+  trading_day: string
+  contract: string
+  segment_start_trading_day: string
+  direction: 'buy' | 'sell'
+  trigger_timeframe: '5m' | '15m'
+  lower_tf_confirmation: boolean
+}
+
+export interface SubingHistoricalSignalResponse {
+  request: SubingHistoricalSignalRequest
+  events: SubingHistoricalSignalEvent[]
 }
 
 /** Alert V2 `AlertEventOut`：只读展示 DTO，方向语义见 result_codes。 */

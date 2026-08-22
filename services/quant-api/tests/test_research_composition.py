@@ -16,7 +16,6 @@ _QUANT_API_ROOT = Path(__file__).resolve().parents[1]
 _APP_ROOT = _QUANT_API_ROOT / "app"
 _RESEARCH_ROOT = _APP_ROOT / "research"
 _RESEARCH_COMPOSITION_PATH = _RESEARCH_ROOT / "composition.py"
-
 _RUNTIME_BOUNDARY_PATHS = (
     _APP_ROOT / "alerts",
     _APP_ROOT / "market_data",
@@ -46,6 +45,10 @@ def _research_implementation_modules() -> tuple[str, ...]:
 
 
 def _assert_no_offline_research_imports(path: Path) -> None:
+    assert not _offline_research_imports(path), path
+
+
+def _offline_research_imports(path: Path) -> tuple[str, ...]:
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     imported_modules: list[str] = []
     for node in ast.walk(tree):
@@ -67,10 +70,13 @@ def _assert_no_offline_research_imports(path: Path) -> None:
                 for alias in node.names
                 if alias.name != "*"
             )
-    assert not any(
-        module == "app.research" or module.startswith("app.research.")
+    return tuple(
+        module
         for module in imported_modules
-    ), path
+        if (
+            module == "app.research" or module.startswith("app.research.")
+        )
+    )
 
 
 def test_offline_research_builders_have_one_composition_entrypoint() -> None:
