@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from contextlib import nullcontext
 from dataclasses import replace
-from datetime import date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 import io
 import json
@@ -10,16 +10,13 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.market_data import composition as market_data_composition
 from app.guiyi_cli.main import build_parser
 from app.guiyi_cli.main import main
 from app.guiyi_cli.data_parser import CliUsageError
-from app.guiyi_cli.research_commands import (
-    _optional_decimal,
-    build_research_request,
-    run_research_command,
-)
-from app.market_data.candidate_validation import (
+from app.guiyi_cli.research_commands import run_research_command
+from app.guiyi_cli.research_payloads import _optional_decimal
+from app.guiyi_cli.research_requests import build_research_request
+from app.research.subing.candidate_validation import (
     CandidateValidationReport,
     CandidateWindowKind,
     ProspectiveOosResult,
@@ -29,16 +26,33 @@ from app.market_data.candidate_validation import (
     summarize_rolling_stability,
 )
 from app.market_data.domain import BarFrequency, SeriesKind
-from app.market_data.main_force_mirror_futures_research_service import (
-    MainForceMirrorFuturesHorizonSummary,
-    MainForceMirrorFuturesResearchRequest,
-    MainForceMirrorFuturesResearchResult,
-    MainForceMirrorFuturesResearchService,
+from app.research.main_force.main_force_mirror_v2_research_service import (
+    MainForceMirrorV2GroupSpread,
+    MainForceMirrorV2HorizonSummary,
+    MainForceMirrorV2ResearchRequest,
+    MainForceMirrorV2ResearchResult,
+    MainForceMirrorV2SensitivitySummary,
 )
-from app.market_data.multi_candidate_robustness_policy import (
+from app.research.jdj.jdj_events import (
+    JdjDirection,
+    JdjSetupKind,
+    JdjTrendFollowTriggerEvent,
+    _canonical_trend_follow_event_id,
+)
+from app.research.jdj.jdj_research import JdjResearchRequest, JdjResearchResult
+from app.research.jdj.jdj_candidate_validation import (
+    JdjCandidateValidationReport,
+    JdjCandidateWindowKind,
+    JdjProspectiveOosResult,
+    JdjProspectiveOosStatus,
+    JdjRollingCandidateFold,
+    project_jdj_window,
+    summarize_jdj_rolling_stability,
+)
+from app.research.robustness.multi_candidate_robustness_policy import (
     MultiCandidateRobustnessRequest,
 )
-from app.market_data.n_candidate_validation import (
+from app.research.n_structure.n_candidate_validation import (
     NCandidateWindowKind,
     NProspectiveOosResult,
     NProspectiveOosStatus,
@@ -47,14 +61,14 @@ from app.market_data.n_candidate_validation import (
     project_n_structure_window,
     summarize_n_rolling_stability,
 )
-from app.market_data.n_structure_research_service import (
+from app.research.n_structure.n_structure_research_service import (
     NStructureSegmentIdentityError,
     NStructureResearchRequest,
     NStructureResearchResult,
     NStructureSourceUnavailableError,
 )
 from app.market_data.price_outcome import PriceHorizonEvaluation
-from app.market_data.subing_calibration_service import (
+from app.research.subing.subing_calibration_service import (
     CalibrationMode,
     CalibrationPhase,
     SlopeThresholds,
@@ -65,13 +79,12 @@ from app.market_data.subing_calibration import (
     HorizonEvaluation,
     ThresholdEvaluation,
 )
-from app.market_data.subing_lifecycle_research_service import (
+from app.research.subing.subing_lifecycle_research_service import (
     LifecycleResearchRequest,
     SubingLifecycleResearchResult,
 )
-from app.market_data.subing_candidate_validation_service import (
+from app.research.subing.subing_candidate_validation_service import (
     CandidateValidationRequest,
-    SubingCandidateValidationService,
 )
 
 
@@ -129,7 +142,7 @@ def _lifecycle_arguments() -> list[str]:
     ]
 
 
-def test_research_parser_exposes_only_the_six_readonly_commands() -> None:
+def test_research_parser_exposes_only_the_seven_readonly_commands() -> None:
     parser = build_parser()
     domain_action = next(
         action for action in parser._actions if action.dest == "domain"
@@ -144,10 +157,410 @@ def test_research_parser_exposes_only_the_six_readonly_commands() -> None:
     assert set(command_action.choices) == {
         "candidate-robustness",
         "candidate-validation",
-        "main-force-mirror-futures",
+        "jdj-1m",
+        "main-force-mirror-v2",
         "n-structure",
         "subing-calibration",
         "subing-lifecycle",
+    }
+    assert "main-force-mirror-v2" in command_action.choices
+
+
+_JDJ_CANDIDATES = (
+    "jdj_trend_follow_1m_candidate_v1",
+    "jdj_trend_reentry_6_1m_candidate_v1",
+    "jdj_key_level_breakout_1m_candidate_v1",
+)
+
+
+def _jdj_arguments(
+    *,
+    candidate: str = _JDJ_CANDIDATES[0],
+) -> list[str]:
+    return [
+        "research",
+        "jdj-1m",
+        "--candidate",
+        candidate,
+        "--symbol",
+        " JM ",
+        "--since",
+        "2026-01-01",
+        "--through",
+        "2026-03-31",
+    ]
+
+
+@pytest.mark.parametrize("candidate_id", _JDJ_CANDIDATES)
+def test_jdj_parser_builds_exact_frozen_request(candidate_id: str) -> None:
+    request = _request(_jdj_arguments(candidate=candidate_id))
+
+    assert request == JdjResearchRequest(
+        since=date(2026, 1, 1),
+        through=date(2026, 3, 31),
+        symbol="jm",
+        candidate_id=candidate_id,
+    )
+
+
+@pytest.mark.parametrize(
+    "flag",
+    (
+        "--ema-period",
+        "--volume-multiple",
+        "--timeout-bars",
+        "--trend-method",
+        "--key-level-distance",
+    ),
+)
+def test_jdj_parser_rejects_runtime_formula_flags(flag: str) -> None:
+    with pytest.raises(CliUsageError):
+        build_parser().parse_args([*_jdj_arguments(), flag, "1"])
+
+
+def test_jdj_parser_rejects_non_candidate_identity() -> None:
+    with pytest.raises(CliUsageError):
+        build_parser().parse_args(_jdj_arguments(candidate="other_candidate"))
+
+
+def _jdj_horizon() -> PriceHorizonEvaluation:
+    return PriceHorizonEvaluation(
+        1,
+        Decimal("1.2500"),
+        Decimal("2.500"),
+        Decimal("-0.750"),
+    )
+
+
+def _jdj_event() -> JdjTrendFollowTriggerEvent:
+    segment_start = date(2026, 1, 1)
+    reaction_at = datetime(2026, 1, 5, 1, 1, tzinfo=UTC)
+    observed_at = reaction_at + timedelta(minutes=1)
+    trigger_level = Decimal("105.00")
+    return JdjTrendFollowTriggerEvent(
+        event_id=_canonical_trend_follow_event_id(
+            candidate_id=_JDJ_CANDIDATES[0],
+            symbol="jm",
+            contract="JM2605",
+            segment_start_trading_day=segment_start,
+            direction=JdjDirection.LONG,
+            reaction_at=reaction_at,
+            observed_at=observed_at,
+            trigger_level=trigger_level,
+        ),
+        source_kind="jdj_1m",
+        setup_kind=JdjSetupKind.TREND_FOLLOW,
+        candidate_id=_JDJ_CANDIDATES[0],
+        source_event_kind="jdj_trend_follow_triggered",
+        direction=JdjDirection.LONG,
+        symbol="jm",
+        contract="JM2605",
+        segment_start_trading_day=segment_start,
+        trading_day=date(2026, 1, 5),
+        observed_at=observed_at,
+        segment_bar_index=2,
+        trend_snapshot_observed_at=reaction_at - timedelta(minutes=1),
+        reaction_at=reaction_at,
+        ema20_at_reaction=Decimal("100.00"),
+        trigger_level=trigger_level,
+        observation_close=Decimal("106.00"),
+    )
+
+
+def _jdj_result(*, events: bool = True) -> JdjResearchResult:
+    event_values = (_jdj_event(),) if events else ()
+    return JdjResearchResult(
+        candidate_id=_JDJ_CANDIDATES[0],
+        source_event_kind="jdj_trend_follow_triggered",
+        products=("jm",),
+        segment_count=1,
+        evaluable_bar_count=100,
+        trigger_count_long=len(event_values),
+        trigger_count_short=0,
+        horizon_summary={
+            3: _jdj_horizon(),
+            5: _jdj_horizon(),
+            8: _jdj_horizon(),
+            20: _jdj_horizon(),
+        },
+        events=event_values,
+    )
+
+
+class _FakeJdjResearchService:
+    def __init__(self, result: JdjResearchResult) -> None:
+        self.result = result
+        self.requests: list[JdjResearchRequest] = []
+
+    def run(self, request: JdjResearchRequest) -> JdjResearchResult:
+        self.requests.append(request)
+        return self.result
+
+
+def test_jdj_source_renderer_is_readonly_deterministic_and_decimal_safe() -> None:
+    request = _request(_jdj_arguments())
+    payload = run_research_command(
+        request,
+        _FakeJdjResearchService(_jdj_result()),
+    )
+
+    assert payload["command"] == "research.jdj-1m"
+    assert payload["readonly"] is True
+    assert payload["research_only"] is True
+    assert payload["policy_id"] == "jdj_1m_policy_v1"
+    assert payload["formula_version"] == "jdj_1m_v1"
+    assert tuple(payload["horizon_summary"]) == ("3", "5", "8", "20")
+    assert payload["horizon_summary"]["20"] == {
+        "sample_count": 1,
+        "median_directional_return_bps": "1.2500",
+        "median_mfe_bps": "2.500",
+        "median_mae_bps": "-0.750",
+    }
+    assert payload["events"] == [
+        {
+            "event_id": _jdj_event().event_id,
+            "source_kind": "jdj_1m",
+            "setup_kind": "trend_follow",
+            "candidate_id": _JDJ_CANDIDATES[0],
+            "source_event_kind": "jdj_trend_follow_triggered",
+            "direction": "long",
+            "symbol": "jm",
+            "contract": "JM2605",
+            "segment_start_trading_day": "2026-01-01",
+            "trading_day": "2026-01-05",
+            "observed_at": "2026-01-05T01:02:00+00:00",
+            "segment_bar_index": 2,
+            "trend_snapshot_observed_at": "2026-01-05T01:00:00+00:00",
+            "reaction_at": "2026-01-05T01:01:00+00:00",
+            "ema20_at_reaction": "100.00",
+            "trigger_level": "105.00",
+            "observation_close": "106.00",
+        }
+    ]
+    json.dumps(payload)
+
+
+def test_jdj_source_cli_uses_only_dedicated_readonly_factory() -> None:
+    service = _FakeJdjResearchService(_jdj_result())
+    unrelated_calls: list[str] = []
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+
+    code = main(
+        _jdj_arguments(),
+        session_factory=lambda: nullcontext(object()),
+        manager_factory=lambda _session: unrelated_calls.append("manager"),
+        live_service_factory=lambda _session: unrelated_calls.append("live"),
+        alert_runtime_factory=lambda: unrelated_calls.append("alert"),
+        alert_canary_sender_factory=lambda: unrelated_calls.append(
+            "notification"
+        ),
+        research_service_factory=lambda _session: unrelated_calls.append(
+            "calibration"
+        ),
+        lifecycle_research_service_factory=lambda _session: unrelated_calls.append(
+            "lifecycle"
+        ),
+        candidate_validation_service_factory=lambda _session: unrelated_calls.append(
+            "subing_candidate"
+        ),
+        n_candidate_validation_service_factory=lambda _session: unrelated_calls.append(
+            "n_candidate"
+        ),
+        jdj_research_service_factory=lambda _session: service,
+        stdout=stdout,
+        stderr=stderr,
+    )
+
+    assert code == 0
+    assert stderr.getvalue() == ""
+    assert unrelated_calls == []
+    assert service.requests == [_request(_jdj_arguments())]
+    assert json.loads(stdout.getvalue())["command"] == "research.jdj-1m"
+
+
+def _jdj_candidate_report() -> JdjCandidateValidationReport:
+    source = _jdj_result(events=False)
+    retrospective = project_jdj_window(
+        window_id="retrospective",
+        window_kind=JdjCandidateWindowKind.RETROSPECTIVE,
+        since=date(2023, 1, 1),
+        through=date(2026, 8, 20),
+        source=source,
+    )
+    fold = JdjRollingCandidateFold(
+        fold_id="fold_01",
+        reference=project_jdj_window(
+            window_id="fold_01_reference",
+            window_kind=JdjCandidateWindowKind.ROLLING_REFERENCE,
+            since=date(2023, 1, 1),
+            through=date(2023, 12, 31),
+            source=source,
+        ),
+        test=project_jdj_window(
+            window_id="fold_01_test",
+            window_kind=JdjCandidateWindowKind.ROLLING_TEST,
+            since=date(2024, 1, 1),
+            through=date(2024, 3, 31),
+            source=source,
+        ),
+    )
+    folds = (fold,)
+    return JdjCandidateValidationReport(
+        schema_version=1,
+        candidate_id=_JDJ_CANDIDATES[0],
+        source_event_kind="jdj_trend_follow_triggered",
+        policy_id="jdj_1m_policy_v1",
+        formula_version="jdj_1m_v1",
+        protocol_id="jdj_candidate_validation_v1",
+        research_only=True,
+        symbol="jm",
+        retrospective=retrospective,
+        rolling_folds=folds,
+        rolling_stability=summarize_jdj_rolling_stability(folds),
+        prospective_oos=JdjProspectiveOosResult(
+            status=JdjProspectiveOosStatus.PENDING,
+            first_trading_day=date(2026, 8, 24),
+            through=date(2026, 8, 21),
+            result=None,
+        ),
+        quality_flags=(
+            "PROSPECTIVE_OOS_PENDING",
+            "ROLLING_FOLD_WITHOUT_EVENT",
+        ),
+    )
+
+
+class _FakeJdjCandidateValidationService:
+    def __init__(self, report: JdjCandidateValidationReport) -> None:
+        self.report = report
+        self.requests: list[CandidateValidationRequest] = []
+
+    def run(
+        self,
+        request: CandidateValidationRequest,
+    ) -> JdjCandidateValidationReport:
+        self.requests.append(request)
+        return self.report
+
+
+def test_jdj_candidate_renderer_precedes_generic_candidate_fallback() -> None:
+    request = CandidateValidationRequest(
+        candidate_id=_JDJ_CANDIDATES[0],
+        protocol_id="jdj_candidate_validation_v1",
+        symbol="jm",
+        through=date(2026, 8, 21),
+    )
+    payload = run_research_command(
+        request,
+        _FakeJdjCandidateValidationService(_jdj_candidate_report()),
+    )
+
+    assert payload["command"] == "research.candidate-validation"
+    assert payload["readonly"] is True
+    assert payload["research_only"] is True
+    assert payload["source_event_kind"] == "jdj_trend_follow_triggered"
+    assert payload["rolling_stability"] == {
+        "fold_count": 1,
+        "folds_with_events": 0,
+        "event_count_min": 0,
+        "event_count_max": 0,
+        "event_count_median": "0",
+    }
+    assert tuple(payload["retrospective"]["horizon_summary"]) == (
+        "3",
+        "5",
+        "8",
+        "20",
+    )
+    assert payload["retrospective"]["horizon_summary"]["20"][
+        "median_directional_return_bps"
+    ] == "1.2500"
+    assert payload["prospective_oos"] == {
+        "status": "pending",
+        "first_trading_day": "2026-08-24",
+        "through": "2026-08-21",
+        "result": None,
+    }
+    json.dumps(payload)
+
+
+def test_jdj_candidate_cli_routes_all_exact_ids_to_typed_factory() -> None:
+    for candidate_id in _JDJ_CANDIDATES:
+        report = _jdj_candidate_report()
+        if candidate_id != _JDJ_CANDIDATES[0]:
+            report = replace(
+                report,
+                candidate_id=candidate_id,
+                source_event_kind={
+                    _JDJ_CANDIDATES[1]: "jdj_trend_reentry_6_triggered",
+                    _JDJ_CANDIDATES[2]: "jdj_key_level_breakout_triggered",
+                }[candidate_id],
+            )
+        service = _FakeJdjCandidateValidationService(report)
+        factory_calls: list[tuple[object, str]] = []
+        stdout = io.StringIO()
+
+        code = main(
+            [
+                "research",
+                "candidate-validation",
+                "--candidate",
+                candidate_id,
+                "--protocol",
+                "jdj_candidate_validation_v1",
+                "--symbol",
+                "jm",
+                "--through",
+                "2026-08-21",
+            ],
+            session_factory=lambda: nullcontext(object()),
+            jdj_candidate_validation_service_factory=(
+                lambda session, selected: (
+                    factory_calls.append((session, selected)) or service
+                )
+            ),
+            stdout=stdout,
+            stderr=io.StringIO(),
+        )
+
+        assert code == 0
+        assert len(factory_calls) == 1
+        assert factory_calls[0][1] == candidate_id
+        assert service.requests[0].candidate_id == candidate_id
+        assert json.loads(stdout.getvalue())["candidate_id"] == candidate_id
+
+
+def test_jdj_candidate_cross_pair_reaches_identity_error_before_source_run() -> None:
+    factory_calls: list[tuple[object, str]] = []
+    stderr = io.StringIO()
+
+    code = main(
+        [
+            "research",
+            "candidate-validation",
+            "--candidate",
+            _JDJ_CANDIDATES[0],
+            "--protocol",
+            "candidate_validation_v1",
+            "--symbol",
+            "jm",
+            "--through",
+            "2026-08-21",
+        ],
+        session_factory=lambda: nullcontext(object()),
+        jdj_candidate_validation_service_factory=lambda session, candidate: (
+            factory_calls.append((session, candidate))
+        ),
+        stdout=io.StringIO(),
+        stderr=stderr,
+    )
+
+    assert code == 1
+    assert factory_calls == []
+    assert json.loads(stderr.getvalue())["error"] == {
+        "code": "CANDIDATE_VALIDATION_IDENTITY_MISMATCH",
+        "type": "CandidateValidationIdentityError",
     }
 
 
@@ -1047,19 +1460,6 @@ def test_zero_band_outputs_both_named_cohorts(mode: str) -> None:
         assert payload["cohorts"]["B"]["threshold_evaluation"]["threshold"] == "2.7500"
 
 
-def test_research_payload_contains_no_selection_approval_or_trade_claims() -> None:
-    report = _discovery_report(sample_count=1, product_counts={"jm": 1})
-    service = _FakeResearchService(CalibrationResearchResult(("jm",), report, {}))
-
-    code, payload = _run_research(
-        [*_arguments(), "--symbol", "jm"],
-        service,
-    )
-
-    assert code == 0
-    rendered = json.dumps(payload, sort_keys=True).lower()
-    for forbidden in ("best", "approved", "trade", "performance"):
-        assert forbidden not in rendered
 
 
 def test_research_execution_error_is_redacted_and_always_readonly() -> None:
@@ -1329,63 +1729,12 @@ def test_candidate_cli_dispatches_explicit_service_and_serializes_report() -> No
     )
 
 
-def test_candidate_composition_reuses_the_lifecycle_research_builder(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    lifecycle = object()
-    sessions: list[object] = []
-
-    def build_lifecycle(session: object) -> object:
-        sessions.append(session)
-        return lifecycle
-
-    monkeypatch.setattr(
-        market_data_composition,
-        "build_subing_lifecycle_research_service",
-        build_lifecycle,
-    )
-    session = object()
-
-    service = market_data_composition.build_subing_candidate_validation_service(
-        session  # type: ignore[arg-type]
-    )
-
-    assert isinstance(service, SubingCandidateValidationService)
-    assert service._lifecycle_research is lifecycle
-    assert sessions == [session]
 
 
-def test_candidate_payload_contains_no_automatic_decision_or_profit_fields() -> None:
-    service = _FakeCandidateValidationService(_candidate_report())
-    stdout = io.StringIO()
-    code = main(
-        _candidate_arguments(),
-        session_factory=lambda: nullcontext(object()),
-        candidate_validation_service_factory=lambda _session: service,
-        stdout=stdout,
-        stderr=io.StringIO(),
-    )
 
-    assert code == 0
-    payload = json.loads(stdout.getvalue())
 
-    def keys(value: object) -> set[str]:
-        if isinstance(value, dict):
-            return set(value) | set().union(*(keys(item) for item in value.values()))
-        if isinstance(value, list):
-            return set().union(*(keys(item) for item in value))
-        return set()
 
-    assert keys(payload).isdisjoint(
-        {
-            "keep",
-            "drop",
-            "promote",
-            "pass_strategy",
-            "expected_profit",
-            "account_return",
-        }
-    )
+
 
 
 def _n_candidate_arguments(
@@ -1486,7 +1835,7 @@ def _n_candidate_report() -> NStructureCandidateValidationReport:
     )
 
 
-def test_candidate_parser_accepts_exactly_two_candidate_and_protocol_ids() -> None:
+def test_candidate_parser_accepts_exactly_five_candidate_and_three_protocol_ids() -> None:
     request = _request(_n_candidate_arguments())
 
     assert request == CandidateValidationRequest(
@@ -1497,6 +1846,23 @@ def test_candidate_parser_accepts_exactly_two_candidate_and_protocol_ids() -> No
     )
     cross_pair = _request(_n_candidate_arguments(protocol="candidate_validation_v1"))
     assert cross_pair.protocol_id == "candidate_validation_v1"
+    for candidate_id in _JDJ_CANDIDATES:
+        request = _request(
+            [
+                "research",
+                "candidate-validation",
+                "--candidate",
+                candidate_id,
+                "--protocol",
+                "jdj_candidate_validation_v1",
+                "--symbol",
+                "jm",
+                "--through",
+                "2026-08-21",
+            ]
+        )
+        assert request.candidate_id == candidate_id
+        assert request.protocol_id == "jdj_candidate_validation_v1"
     for arguments in (
         _n_candidate_arguments(candidate="other_candidate"),
         _n_candidate_arguments(protocol="other_protocol"),
@@ -1586,39 +1952,6 @@ def test_n_candidate_cli_uses_explicit_n_service_and_source_specific_payload() -
     }
 
 
-def test_n_candidate_payload_contains_no_decision_profit_or_promotion_fields() -> None:
-    service = _FakeNCandidateValidationService(_n_candidate_report())
-    stdout = io.StringIO()
-
-    code = main(
-        _n_candidate_arguments(),
-        session_factory=lambda: nullcontext(object()),
-        n_candidate_validation_service_factory=lambda _session: service,
-        stdout=stdout,
-        stderr=io.StringIO(),
-    )
-
-    assert code == 0
-    payload = json.loads(stdout.getvalue())
-
-    def keys(value: object) -> set[str]:
-        if isinstance(value, dict):
-            return set(value) | set().union(*(keys(item) for item in value.values()))
-        if isinstance(value, list):
-            return set().union(*(keys(item) for item in value))
-        return set()
-
-    assert keys(payload).isdisjoint(
-        {
-            "keep",
-            "drop",
-            "promote",
-            "pass_strategy",
-            "profitability",
-            "expected_profit",
-            "account_return",
-        }
-    )
 
 
 def _mirror_arguments(
@@ -1628,7 +1961,7 @@ def _mirror_arguments(
 ) -> list[str]:
     arguments = [
         "research",
-        "main-force-mirror-futures",
+        "main-force-mirror-v2",
         "--symbol",
         "jm",
         "--series-kind",
@@ -1646,43 +1979,65 @@ def _mirror_arguments(
 
 
 class _FakeMirrorResearchService:
-    def __init__(self, result: MainForceMirrorFuturesResearchResult) -> None:
+    def __init__(self, result: MainForceMirrorV2ResearchResult) -> None:
         self.result = result
-        self.requests: list[MainForceMirrorFuturesResearchRequest] = []
+        self.requests: list[MainForceMirrorV2ResearchRequest] = []
 
     def run(
         self,
-        request: MainForceMirrorFuturesResearchRequest,
-    ) -> MainForceMirrorFuturesResearchResult:
+        request: MainForceMirrorV2ResearchRequest,
+    ) -> MainForceMirrorV2ResearchResult:
         self.requests.append(request)
         return self.result
 
 
-def _mirror_result() -> MainForceMirrorFuturesResearchResult:
-    return MainForceMirrorFuturesResearchResult(
+def _mirror_result() -> MainForceMirrorV2ResearchResult:
+    summary = MainForceMirrorV2HorizonSummary(
+        horizon_bars=5,
+        sample_count=2,
+        median_directional_return=Decimal("0.1"),
+        median_reversal_return=Decimal("-0.1"),
+        hit_rate=Decimal("1"),
+        median_mfe=Decimal("0.12"),
+        median_mae=Decimal("0.02"),
+    )
+    spread = MainForceMirrorV2GroupSpread(
+        horizon_bars=5,
+        top_group="member_strong_aligned",
+        bottom_group="member_divergent",
+        directional_return_spread=Decimal("0.15"),
+        top_sample_count=2,
+        bottom_sample_count=1,
+    )
+    return MainForceMirrorV2ResearchResult(
+        indicator_code="main_force_mirror_v2",
+        indicator_version="futures-member-research-v2",
+        parameters_hash="fixture-parameters",
+        research_protocol="main_force_mirror_v2_retrospective_v1",
+        evaluation_classification="retrospective_walk_forward_diagnostic",
+        requested_since=date(2023, 1, 1),
+        requested_through=date(2026, 8, 18),
+        prospective_oos_starts_after=date(2026, 8, 20),
+        member_dataset_id="fixture-member-v1",
         products=("jm",),
-        bars_valid_count=120,
-        bars_state_ready_count=100,
-        bars_caution_ready_count=90,
-        event_count_long=2,
-        event_count_short=1,
-        conflict_count=1,
-        events_per_1000_caution_ready_bars=33.333333,
-        missing_oi_count=3,
-        segment_reset_count=2,
-        timestamp_invalid_count=1,
-        state_distribution={"long_build": 40, "turnover": 60},
-        reason_code_distribution={"LONG_UPPER_EXTREME": 2},
-        score_distribution=(70, 85, 100),
-        horizon_summary={
-            horizon: MainForceMirrorFuturesHorizonSummary(
-                horizon_bars=horizon,
-                sample_count=1 if horizon < 10 else 0,
-                reversal_returns=(0.1,) if horizon < 10 else (),
-                warning_mfe=(0.2,) if horizon < 10 else (),
-                warning_mae=(0.05,) if horizon < 10 else (),
+        member_coverage=Decimal("0.75"),
+        caution_ready_bars=40,
+        caution_events=2,
+        caution_events_per_1000_ready_bars=Decimal("50"),
+        yearly={
+            2026: {"jm": {"long_build": {"instant_pressure": {5: summary}}}}
+        },
+        by_product={
+            "jm": {"long_build": {"instant_pressure": {5: summary}}}
+        },
+        pooled={"instant_pressure": {5: summary}},
+        top_bottom_spreads={5: spread},
+        sensitivity={
+            Decimal("2.0"): MainForceMirrorV2SensitivitySummary(
+                member_strength_threshold=Decimal("2.0"),
+                by_product={"jm": {5: summary}},
+                pooled={5: summary},
             )
-            for horizon in (1, 3, 5, 10)
         },
     )
 
@@ -1691,7 +2046,7 @@ def test_mirror_request_parses_exact_actual_dominant_and_contract_modes() -> Non
     dominant = _request(_mirror_arguments())
     contract = _request(_mirror_arguments(series_kind="contract", contract="jm2609"))
 
-    assert dominant == MainForceMirrorFuturesResearchRequest(
+    assert dominant == MainForceMirrorV2ResearchRequest(
         symbol="jm",
         series_kind=SeriesKind.ACTUAL_DOMINANT,
         contract=None,
@@ -1699,7 +2054,7 @@ def test_mirror_request_parses_exact_actual_dominant_and_contract_modes() -> Non
         since=date(2023, 1, 1),
         through=date(2026, 8, 18),
     )
-    assert contract == MainForceMirrorFuturesResearchRequest(
+    assert contract == MainForceMirrorV2ResearchRequest(
         symbol="jm",
         series_kind=SeriesKind.CONTRACT,
         contract="JM2609",
@@ -1726,7 +2081,7 @@ def test_invalid_mirror_identity_exits_two_before_any_service_construction(
     code = main(
         arguments,
         session_factory=lambda: nullcontext(object()),
-        main_force_mirror_futures_research_service_factory=lambda session: calls.append(
+        main_force_mirror_v2_research_service_factory=lambda session: calls.append(
             session
         ),
         stdout=stdout,
@@ -1737,7 +2092,7 @@ def test_invalid_mirror_identity_exits_two_before_any_service_construction(
     assert stdout.getvalue() == ""
     assert json.loads(stderr.getvalue()) == {
         "schema_version": 1,
-        "command": "research.main-force-mirror-futures",
+        "command": "research.main-force-mirror-v2",
         "status": "error",
         "readonly": True,
         "error": {"code": "CLI_ARGUMENT_INVALID", "type": "CliUsageError"},
@@ -1761,7 +2116,7 @@ def test_mirror_cli_uses_dedicated_factory_and_stable_readonly_json() -> None:
         candidate_validation_service_factory=lambda _session: unrelated_calls.append(
             "candidate"
         ),
-        main_force_mirror_futures_research_service_factory=lambda _session: service,
+        main_force_mirror_v2_research_service_factory=lambda _session: service,
         stdout=stdout,
         stderr=stderr,
     )
@@ -1770,7 +2125,7 @@ def test_mirror_cli_uses_dedicated_factory_and_stable_readonly_json() -> None:
     assert stderr.getvalue() == ""
     assert unrelated_calls == []
     assert service.requests == [
-        MainForceMirrorFuturesResearchRequest(
+        MainForceMirrorV2ResearchRequest(
             symbol="jm",
             series_kind=SeriesKind.ACTUAL_DOMINANT,
             contract=None,
@@ -1780,84 +2135,57 @@ def test_mirror_cli_uses_dedicated_factory_and_stable_readonly_json() -> None:
         )
     ]
     payload = json.loads(stdout.getvalue())
-    assert set(payload) == {
-        "schema_version",
-        "command",
-        "status",
-        "readonly",
-        "symbol",
-        "series_kind",
-        "contract",
-        "frequency",
-        "since",
-        "through",
-        "products",
-        "bars_valid_count",
-        "bars_state_ready_count",
-        "bars_caution_ready_count",
-        "event_count_long",
-        "event_count_short",
-        "conflict_count",
-        "events_per_1000_caution_ready_bars",
-        "missing_oi_count",
-        "segment_reset_count",
-        "timestamp_invalid_count",
-        "state_distribution",
-        "reason_code_distribution",
-        "score_distribution",
-        "horizon_summary",
-    }
-    assert payload["command"] == "research.main-force-mirror-futures"
+    assert payload["command"] == "research.main-force-mirror-v2"
     assert payload["status"] == "ok"
     assert payload["readonly"] is True
+    assert payload["research_only"] is True
     assert payload["series_kind"] == "actual_dominant"
     assert payload["contract"] is None
-    assert payload["events_per_1000_caution_ready_bars"] == 33.333333
-    assert payload["score_distribution"] == [70, 85, 100]
-    assert payload["horizon_summary"] == {
-        "1": {
-            "horizon_bars": 1,
-            "sample_count": 1,
-            "reversal_returns": [0.1],
-            "warning_mfe": [0.2],
-            "warning_mae": [0.05],
-        },
-        "3": {
-            "horizon_bars": 3,
-            "sample_count": 1,
-            "reversal_returns": [0.1],
-            "warning_mfe": [0.2],
-            "warning_mae": [0.05],
-        },
-        "5": {
-            "horizon_bars": 5,
-            "sample_count": 1,
-            "reversal_returns": [0.1],
-            "warning_mfe": [0.2],
-            "warning_mae": [0.05],
-        },
-        "10": {
-            "horizon_bars": 10,
-            "sample_count": 0,
-            "reversal_returns": [],
-            "warning_mfe": [],
-            "warning_mae": [],
-        },
+    assert payload["research_protocol"] == "main_force_mirror_v2_retrospective_v1"
+    assert payload["evaluation_classification"] == (
+        "retrospective_walk_forward_diagnostic"
+    )
+    assert payload["member_coverage"] == "0.75"
+    assert payload["caution_events_per_1000_ready_bars"] == "50"
+    assert payload["yearly"] == {
+        "2026": {
+            "jm": {
+                "long_build": {
+                    "instant_pressure": {
+                        "5": {
+                            "horizon_bars": 5,
+                            "sample_count": 2,
+                            "median_directional_return": "0.1",
+                            "median_reversal_return": "-0.1",
+                            "hit_rate": "1",
+                            "median_mfe": "0.12",
+                            "median_mae": "0.02",
+                        }
+                    }
+                }
+            }
+        }
     }
+    assert payload["sensitivity"]["2.0"]["member_strength_threshold"] == "2.0"
     rendered = stdout.getvalue().lower()
-    for forbidden in ("promotion", "recommendation", "profitability"):
+    for forbidden in (
+        "promotion",
+        "recommendation",
+        "profitability",
+        "sharpe",
+        "equity",
+    ):
         assert forbidden not in rendered
 
 
 def test_mirror_cli_renders_undefined_event_rate_as_json_null() -> None:
     result = replace(
         _mirror_result(),
-        bars_caution_ready_count=0,
-        event_count_long=0,
-        event_count_short=0,
-        events_per_1000_caution_ready_bars=None,
+        caution_ready_bars=0,
+        caution_events=0,
+        caution_events_per_1000_ready_bars=None,
     )
-    request = MainForceMirrorFuturesResearchRequest(
+    request = MainForceMirrorV2ResearchRequest(
         symbol="jm",
         series_kind=SeriesKind.ACTUAL_DOMINANT,
         contract=None,
@@ -1868,40 +2196,9 @@ def test_mirror_cli_renders_undefined_event_rate_as_json_null() -> None:
 
     payload = run_research_command(request, _FakeMirrorResearchService(result))
 
-    assert payload["events_per_1000_caution_ready_bars"] is None
+    assert payload["caution_events_per_1000_ready_bars"] is None
 
 
-def test_mirror_composition_wraps_only_the_market_data_service(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    market_data = type(
-        "MarketDataReader",
-        (),
-        {
-            "query_actual_dominant_trading_days": lambda self, request: request,
-            "query_contract_trading_days": lambda self, request: request,
-        },
-    )()
-    sessions: list[object] = []
-
-    def build_market_data(session: object) -> object:
-        sessions.append(session)
-        return market_data
-
-    monkeypatch.setattr(
-        market_data_composition,
-        "build_market_data_service",
-        build_market_data,
-    )
-    session = object()
-
-    service = market_data_composition.build_main_force_mirror_futures_research_service(
-        session  # type: ignore[arg-type]
-    )
-
-    assert isinstance(service, MainForceMirrorFuturesResearchService)
-    assert service._market_data is market_data
-    assert sessions == [session]
 
 
 def _robustness_report() -> SimpleNamespace:
@@ -2011,6 +2308,112 @@ class _FakeRobustnessService:
         return _robustness_report()
 
 
+def _calibration_contract_payload() -> dict[str, object]:
+    request = _request([*_arguments(), "--symbol", "jm"])
+    report = _discovery_report(sample_count=1, product_counts={"jm": 1})
+    return run_research_command(
+        request,
+        _FakeResearchService(CalibrationResearchResult(("jm",), report, {})),
+    )
+
+
+def _subing_candidate_contract_payload() -> dict[str, object]:
+    return run_research_command(
+        CandidateValidationRequest(
+            candidate_id="subing_lifecycle_v2_candidate_v1",
+            protocol_id="candidate_validation_v1",
+            symbol="jm",
+            through=date(2026, 8, 19),
+        ),
+        _FakeCandidateValidationService(_candidate_report()),
+    )
+
+
+def _n_candidate_contract_payload() -> dict[str, object]:
+    return run_research_command(
+        CandidateValidationRequest(
+            candidate_id="n_structure_5m_candidate_v1",
+            protocol_id="n_structure_validation_v1",
+            symbol="jm",
+            through=date(2026, 8, 20),
+        ),
+        _FakeNCandidateValidationService(_n_candidate_report()),
+    )
+
+
+def _robustness_contract_payload() -> dict[str, object]:
+    return run_research_command(
+        MultiCandidateRobustnessRequest("multi_candidate_robustness_v1"),
+        _FakeRobustnessService(),
+    )
+
+
+def _payload_keys(value: object) -> set[str]:
+    if isinstance(value, dict):
+        return {str(key).lower() for key in value} | set().union(
+            *(_payload_keys(item) for item in value.values())
+        )
+    if isinstance(value, list):
+        return set().union(*(_payload_keys(item) for item in value))
+    return set()
+
+
+@pytest.mark.parametrize(
+    "payload_factory",
+    (
+        _calibration_contract_payload,
+        _subing_candidate_contract_payload,
+        _n_candidate_contract_payload,
+        _robustness_contract_payload,
+    ),
+)
+def test_research_payloads_exclude_automatic_promotion_profit_and_ranking_fields(
+    payload_factory,
+) -> None:
+    forbidden = {
+        "approved",
+        "best",
+        "better_candidate",
+        "account_return",
+        "drop",
+        "expected_profit",
+        "keep",
+        "pass_strategy",
+        "performance",
+        "profitability",
+        "promote",
+        "rank",
+        "score",
+        "trade",
+        "winner",
+    }
+
+    assert _payload_keys(payload_factory()).isdisjoint(forbidden)
+
+
+def test_robustness_renderer_uses_canonical_fields_and_is_byte_deterministic() -> None:
+    encoded_once = json.dumps(
+        _robustness_contract_payload(),
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    encoded_twice = json.dumps(
+        _robustness_contract_payload(),
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+
+    assert encoded_once == encoded_twice
+    payload = _robustness_contract_payload()
+    assert payload["cross_symbol_summaries"][0]["symbols_with_events"] == 1
+    assert payload["cross_symbol_summaries"][0]["symbols_without_events"] == 59
+    assert (
+        payload["cross_symbol_summaries"][0]["horizon_sign_summary"]["3"]
+        ["symbols_with_samples"]
+        == 1
+    )
+
+
 def test_candidate_robustness_cli_dispatches_readonly_deterministic_json() -> None:
     service = _FakeRobustnessService()
     stdout = io.StringIO()
@@ -2059,131 +2462,3 @@ def test_candidate_robustness_cli_dispatches_readonly_deterministic_json() -> No
     assert payload["readonly"] is payload["research_only"] is True
     assert payload["cross_symbol_results"][0]["event_rate_per_1000_evaluable"] == "500"
     assert payload["relationships"][0]["signed_distance_median"] == "1"
-
-
-def test_candidate_robustness_payload_contains_no_selection_or_profit_keys() -> None:
-    payload = run_research_command(
-        MultiCandidateRobustnessRequest("multi_candidate_robustness_v1"),
-        _FakeRobustnessService(),
-    )
-    forbidden = {
-        "score",
-        "rank",
-        "winner",
-        "better_candidate",
-        "keep",
-        "drop",
-        "promote",
-        "profitability",
-        "expected_profit",
-    }
-
-    def keys(value: object) -> set[str]:
-        if isinstance(value, dict):
-            return {str(key).lower() for key in value} | set().union(
-                *(keys(item) for item in value.values())
-            )
-        if isinstance(value, list):
-            return set().union(*(keys(item) for item in value))
-        return set()
-
-    assert keys(payload).isdisjoint(forbidden)
-
-
-def test_robustness_composition_reuses_one_mds_and_frozen_active60(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    protocol = market_data_composition.load_multi_candidate_robustness_protocol()
-    market_data = object()
-    build_calls: list[object] = []
-    source_calls: list[tuple[str, object, tuple[str, ...]]] = []
-
-    monkeypatch.setattr(
-        market_data_composition,
-        "build_market_data_service",
-        lambda session: build_calls.append(session) or market_data,
-    )
-    monkeypatch.setattr(
-        market_data_composition,
-        "load_active_products",
-        lambda: protocol.cross_symbol_products,
-    )
-    monkeypatch.setattr(
-        market_data_composition,
-        "load_accepted_subing_calibration",
-        lambda _path: object(),
-    )
-    monkeypatch.setattr(
-        market_data_composition,
-        "load_subing_lifecycle_policy",
-        lambda _path: object(),
-    )
-    monkeypatch.setattr(
-        market_data_composition,
-        "load_n_structure_policy",
-        lambda: object(),
-    )
-    subing = object()
-    n_structure = object()
-    monkeypatch.setattr(
-        market_data_composition,
-        "SubingLifecycleResearchService",
-        lambda mds, *, products, calibration, policy: (
-            source_calls.append(("subing", mds, products)) or subing
-        ),
-    )
-    monkeypatch.setattr(
-        market_data_composition,
-        "ActualDominantResearchSegmentLoader",
-        lambda mds: SimpleNamespace(market_data=mds),
-    )
-    monkeypatch.setattr(
-        market_data_composition,
-        "NStructureResearchService",
-        lambda loader, *, products, policy: (
-            source_calls.append(("n", loader.market_data, products)) or n_structure
-        ),
-    )
-    monkeypatch.setattr(
-        market_data_composition,
-        "SubingCandidateValidationService",
-        lambda source, *, manifest, protocol: SimpleNamespace(source=source),
-    )
-    monkeypatch.setattr(
-        market_data_composition,
-        "NStructureCandidateValidationService",
-        lambda source, *, manifest, protocol: SimpleNamespace(source=source),
-    )
-    monkeypatch.setattr(
-        market_data_composition,
-        "load_candidate_manifest",
-        lambda _path: object(),
-    )
-    monkeypatch.setattr(
-        market_data_composition,
-        "load_candidate_validation_protocol",
-        lambda _path: object(),
-    )
-    monkeypatch.setattr(
-        market_data_composition,
-        "load_n_candidate_manifest",
-        lambda _path: object(),
-    )
-    monkeypatch.setattr(
-        market_data_composition,
-        "load_n_candidate_validation_protocol",
-        lambda _path: object(),
-    )
-
-    session = object()
-    service = market_data_composition.build_multi_candidate_robustness_service(
-        session  # type: ignore[arg-type]
-    )
-
-    assert build_calls == [session]
-    assert source_calls == [
-        ("subing", market_data, protocol.cross_symbol_products),
-        ("n", market_data, protocol.cross_symbol_products),
-    ]
-    assert service._subing is subing
-    assert service._n is n_structure

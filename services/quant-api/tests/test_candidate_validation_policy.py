@@ -8,7 +8,7 @@ from typing import Any, Callable
 
 import pytest
 
-from app.market_data.candidate_validation_policy import (
+from app.research.subing.candidate_validation_policy import (
     CandidateManifestError,
     CandidateValidationProtocolError,
     load_candidate_manifest,

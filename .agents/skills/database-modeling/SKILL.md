@@ -28,7 +28,9 @@ description: 当任务涉及归一量化 PostgreSQL 表结构、SQLAlchemy 模�
 
 ## 已退出、不得复活为 active 表组
 
-旧 Profile/Binding、data_quality_reports 主读路径、signal/review/strategy/backtest/live 业务表均已退役或非 active migration asset。恢复只能走新任务新合同，不以旧表为兼容入口。
+旧 Profile/Binding、data_quality_reports 主读路径、旧 signal/review/strategy/backtest/live 业务表均已退役或
+非 active migration asset。Alert 两表与 Execution Review 四张 `trade_*` 表是独立 Application Domain，
+不属于八表 Catalog，也不是旧 Review 的恢复；其他恢复只能走新任务新合同。
 
 ## 输出
 

@@ -34,18 +34,39 @@ def add_research_commands(
     n_structure.add_argument("--through", required=True)
     n_structure.add_argument("--symbol")
 
+    jdj = commands.add_parser("jdj-1m")
+    jdj.add_argument(
+        "--candidate",
+        choices=(
+            "jdj_trend_follow_1m_candidate_v1",
+            "jdj_trend_reentry_6_1m_candidate_v1",
+            "jdj_key_level_breakout_1m_candidate_v1",
+        ),
+        required=True,
+    )
+    jdj.add_argument("--symbol", required=True)
+    jdj.add_argument("--since", required=True)
+    jdj.add_argument("--through", required=True)
+
     candidate = commands.add_parser("candidate-validation")
     candidate.add_argument(
         "--candidate",
         choices=(
             "subing_lifecycle_v2_candidate_v1",
             "n_structure_5m_candidate_v1",
+            "jdj_trend_follow_1m_candidate_v1",
+            "jdj_trend_reentry_6_1m_candidate_v1",
+            "jdj_key_level_breakout_1m_candidate_v1",
         ),
         required=True,
     )
     candidate.add_argument(
         "--protocol",
-        choices=("candidate_validation_v1", "n_structure_validation_v1"),
+        choices=(
+            "candidate_validation_v1",
+            "n_structure_validation_v1",
+            "jdj_candidate_validation_v1",
+        ),
         required=True,
     )
     candidate.add_argument("--symbol", required=True)
@@ -58,7 +79,7 @@ def add_research_commands(
         required=True,
     )
 
-    mirror = commands.add_parser("main-force-mirror-futures")
+    mirror = commands.add_parser("main-force-mirror-v2")
     mirror.add_argument("--symbol", required=True)
     mirror.add_argument(
         "--series-kind",

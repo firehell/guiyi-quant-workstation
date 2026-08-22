@@ -56,13 +56,16 @@ test('persistent Alert V2 markers stay exact-frequency and actual-dominant only'
     ] } })
     if (url.pathname.endsWith('/bars/page')) {
       activeFrequency = url.searchParams.get('frequency')
+      const seriesKind = url.searchParams.get('series_kind')
       const marketBars = barsByFrequency[activeFrequency]
       return route.fulfill({ json: {
-        request: { series_kind: url.searchParams.get('series_kind'), symbol: 'ag', contract: null, frequency: activeFrequency, before: null, limit: 1200 },
+        request: { series_kind: seriesKind, symbol: 'ag', contract: null, frequency: activeFrequency, before: null, limit: 1200 },
         bars: marketBars,
         canonical_coverage: null,
         page: { has_more_before: false, next_before: null },
-        resolved_contract_segments: [],
+        resolved_contract_segments: seriesKind === 'actual_dominant'
+          ? [{ contract: 'AG2610', start_trading_day: '2026-08-13', end_trading_day: '2026-08-13' }]
+          : [],
       } })
     }
     if (url.pathname.endsWith('/state')) return route.fulfill({ json: {
@@ -71,6 +74,7 @@ test('persistent Alert V2 markers stay exact-frequency and actual-dominant only'
       live_contract: null, canonical_end: barsByFrequency[activeFrequency]?.at(-1)?.bar_end ?? null, after_market: {},
     } })
     if (url.pathname.endsWith('/research/product')) return route.fulfill({ status: 409, json: { detail: { code: 'QUERY_WINDOW_EMPTY' } } })
+    if (url.pathname.endsWith('/research/main-force-mirror')) return route.fulfill({ status: 400, json: { detail: { code: 'MFM_V2_UNSUPPORTED_FREQUENCY' } } })
     return route.abort()
   })
   await page.route('**/api/runtime/health', (route) => route.fulfill({ json: {
@@ -122,12 +126,7 @@ test('persistent Alert V2 markers stay exact-frequency and actual-dominant only'
     .toEqual(['htdy_original_15m', 'subing_entry_signal_v1'])
 
   const tabs = page.getByTestId('secondary-panel-tabs')
-  await page.evaluate(() => { window.__GUIYI_E2E_CANVAS_TEXT__ = [] })
-  await tabs.getByRole('tab', { name: '原型V0' }).click()
-  await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-alert-marker-count', '2')
-  await expect.poll(() => page.evaluate(() => window.__GUIYI_E2E_CANVAS_TEXT__)).toEqual(
-    expect.arrayContaining(['卖出观察', '买入信号']),
-  )
+  await expect(tabs.getByRole('tab')).toHaveText(['MACD', '主力照妖镜 V2'])
   await page.evaluate(() => { window.__GUIYI_E2E_CANVAS_TEXT__ = [] })
   await tabs.getByRole('tab', { name: 'MACD' }).click()
   await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-alert-marker-count', '2')

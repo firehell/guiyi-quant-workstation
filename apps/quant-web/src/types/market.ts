@@ -77,6 +77,326 @@ export interface MarketBarsPageResponse {
   resolved_contract_segments: ResolvedContractSegment[]
 }
 
+export type MainForceMirrorV2State =
+  | 'long_build'
+  | 'short_build'
+  | 'short_cover'
+  | 'long_liquidation'
+  | 'turnover'
+export type MainForceMirrorV2Caution = 'long_chase_caution' | 'short_chase_caution'
+export type MainForceMemberRelation =
+  | 'strong_aligned'
+  | 'aligned'
+  | 'divergent'
+  | 'neutral'
+  | 'unavailable'
+
+export interface MainForceMirrorV2Identity {
+  seriesKind: SeriesKind
+  symbol: string
+  contract?: string
+  frequency: MarketFrequency
+  limit?: number
+}
+
+export interface MainForceMirrorV2PageRequest {
+  series_kind: SeriesKind
+  symbol: string
+  contract?: string
+  frequency: MarketFrequency
+  before: string | null
+  limit?: number
+}
+
+export interface MainForceMirrorV2RequestIdentity {
+  series_kind: MainForceMirrorV2Identity['seriesKind']
+  symbol: string
+  contract: string | null
+  frequency: '60m'
+  before: string | null
+  limit: number
+}
+
+export interface MainForceMirrorV2Indicator {
+  indicator_code: 'main_force_mirror_v2'
+  indicator_version: 'futures-member-research-v2'
+  formal_policy_id: 'main_force_mirror_observation_v2'
+  parameters_hash: string
+  interpretation: 'directional_position_pressure_proxy_not_measured_fund_flow'
+  observation_only: true
+  historical_only: true
+  auto_order: false
+}
+
+export interface MainForceMirrorV2MemberDataset {
+  status: 'ready' | 'unavailable'
+  dataset_id: string | null
+  schema_version: number | null
+  admitted_product: boolean
+  coverage: { start: string; end: string } | null
+}
+
+export interface MainForceMirrorV2Point {
+  bar_end: string
+  trading_day: string
+  physical_contract: string
+  pressure_ready: boolean
+  pressure_state: MainForceMirrorV2State | null
+  instant_pressure: number | null
+  accumulated_ready: boolean
+  accumulated_pressure: number | null
+  caution_ready: boolean
+  caution: MainForceMirrorV2Caution | null
+  caution_conflict: boolean
+  long_caution_score: number | null
+  short_caution_score: number | null
+  caution_reason_codes: string[]
+  price_impulse: number | null
+  clv: number | null
+  volume_ratio: number | null
+  delta_oi: number | null
+  oi_impulse: number | null
+  range_position: number | null
+  member_status: 'ready' | 'unavailable'
+  member_trade_date: string | null
+  member_direction: 'long' | 'short' | 'neutral' | null
+  member_change_bias: number | null
+  member_strength: number | null
+  position_skew: number | null
+  top5_volume_share: number | null
+  relation_to_accumulated: MainForceMemberRelation
+  relation_to_caution: MainForceMemberRelation
+  unavailable_reason: string | null
+}
+
+/** The Task 5 Pydantic contract serializes all public V2 numerics as JSON numbers. */
+type MainForceMirrorV2WirePoint = MainForceMirrorV2Point
+
+export interface MainForceMirrorV2PageWireResponse {
+  request: MainForceMirrorV2RequestIdentity
+  indicator: MainForceMirrorV2Indicator
+  member_dataset: MainForceMirrorV2MemberDataset
+  points: MainForceMirrorV2WirePoint[]
+  page: MarketPageMeta
+  resolved_contract_segments: ResolvedContractSegment[]
+}
+
+export interface MainForceMirrorV2PageResponse {
+  request: MainForceMirrorV2RequestIdentity
+  indicator: MainForceMirrorV2Indicator
+  member_dataset: MainForceMirrorV2MemberDataset
+  points: MainForceMirrorV2Point[]
+  page: MarketPageMeta
+  resolved_contract_segments: ResolvedContractSegment[]
+}
+
+/** The sole V2 HTTP boundary: validate finite JSON numerics and return detached DTO copies. */
+export function normalizeMainForceMirrorV2Page(
+  payload: MainForceMirrorV2PageWireResponse,
+): MainForceMirrorV2PageResponse {
+  if (!hasMainForceMirrorV2PageShape(payload)) {
+    throw new Error('MAIN_FORCE_MIRROR_V2_INVALID_RESPONSE')
+  }
+  return {
+    ...payload,
+    request: { ...payload.request },
+    indicator: { ...payload.indicator },
+    member_dataset: {
+      ...payload.member_dataset,
+      coverage: payload.member_dataset.coverage ? { ...payload.member_dataset.coverage } : null,
+    },
+    points: payload.points.map(normalizeMainForceMirrorV2Point),
+    page: { ...payload.page },
+    resolved_contract_segments: payload.resolved_contract_segments.map((segment) => ({ ...segment })),
+  }
+}
+
+function normalizeMainForceMirrorV2Point(point: MainForceMirrorV2WirePoint): MainForceMirrorV2Point {
+  if (!Array.isArray(point.caution_reason_codes)) {
+    throw new Error('MAIN_FORCE_MIRROR_V2_INVALID_RESPONSE')
+  }
+  return {
+    ...point,
+    instant_pressure: normalizeMainForceMirrorV2Number(point.instant_pressure),
+    accumulated_pressure: normalizeMainForceMirrorV2Number(point.accumulated_pressure),
+    long_caution_score: normalizeMainForceMirrorV2Number(point.long_caution_score),
+    short_caution_score: normalizeMainForceMirrorV2Number(point.short_caution_score),
+    price_impulse: normalizeMainForceMirrorV2Number(point.price_impulse),
+    clv: normalizeMainForceMirrorV2Number(point.clv),
+    volume_ratio: normalizeMainForceMirrorV2Number(point.volume_ratio),
+    delta_oi: normalizeMainForceMirrorV2Number(point.delta_oi),
+    oi_impulse: normalizeMainForceMirrorV2Number(point.oi_impulse),
+    range_position: normalizeMainForceMirrorV2Number(point.range_position),
+    member_change_bias: normalizeMainForceMirrorV2Number(point.member_change_bias),
+    member_strength: normalizeMainForceMirrorV2Number(point.member_strength),
+    position_skew: normalizeMainForceMirrorV2Number(point.position_skew),
+    top5_volume_share: normalizeMainForceMirrorV2Number(point.top5_volume_share),
+    caution_reason_codes: [...point.caution_reason_codes],
+  }
+}
+
+function normalizeMainForceMirrorV2Number(value: number | null): number | null {
+  if (value === null) return null
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw new Error('MAIN_FORCE_MIRROR_V2_INVALID_RESPONSE')
+  }
+  return Object.is(value, -0) ? 0 : value
+}
+
+function hasMainForceMirrorV2PageShape(value: unknown): value is MainForceMirrorV2PageWireResponse {
+  if (!isMainForceMirrorV2Record(value)) return false
+  return hasMainForceMirrorV2Request(value.request)
+    && hasMainForceMirrorV2Indicator(value.indicator)
+    && hasMainForceMirrorV2MemberDataset(value.member_dataset)
+    && Array.isArray(value.points)
+    && value.points.every(hasMainForceMirrorV2PointShape)
+    && hasMainForceMirrorV2PageMeta(value.page)
+    && Array.isArray(value.resolved_contract_segments)
+    && value.resolved_contract_segments.every(hasMainForceMirrorV2ResolvedContractSegment)
+}
+
+function isMainForceMirrorV2Record(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function hasMainForceMirrorV2Request(value: unknown): boolean {
+  if (!isMainForceMirrorV2Record(value)) return false
+  const seriesKind = value.series_kind
+  return (seriesKind === 'actual_dominant' || seriesKind === 'contract')
+    && isMainForceMirrorV2NonEmptyString(value.symbol)
+    && (seriesKind === 'actual_dominant'
+      ? value.contract === null
+      : isMainForceMirrorV2NonEmptyString(value.contract))
+    && value.frequency === '60m'
+    && isMainForceMirrorV2NullableInstant(value.before)
+    && isMainForceMirrorV2Integer(value.limit)
+    && value.limit >= 1
+    && value.limit <= 2000
+}
+
+function hasMainForceMirrorV2Indicator(value: unknown): boolean {
+  if (!isMainForceMirrorV2Record(value)) return false
+  return value.indicator_code === 'main_force_mirror_v2'
+    && value.indicator_version === 'futures-member-research-v2'
+    && value.formal_policy_id === 'main_force_mirror_observation_v2'
+    && isMainForceMirrorV2NonEmptyString(value.parameters_hash)
+    && value.interpretation === 'directional_position_pressure_proxy_not_measured_fund_flow'
+    && value.observation_only === true
+    && value.historical_only === true
+    && value.auto_order === false
+}
+
+function hasMainForceMirrorV2MemberDataset(value: unknown): boolean {
+  if (!isMainForceMirrorV2Record(value)) return false
+  return (value.status === 'ready' || value.status === 'unavailable')
+    && isMainForceMirrorV2NullableString(value.dataset_id)
+    && isMainForceMirrorV2NullableInteger(value.schema_version)
+    && typeof value.admitted_product === 'boolean'
+    && hasMainForceMirrorV2Coverage(value.coverage)
+}
+
+function hasMainForceMirrorV2Coverage(value: unknown): boolean {
+  if (value === null) return true
+  return isMainForceMirrorV2Record(value)
+    && isMainForceMirrorV2Date(value.start)
+    && isMainForceMirrorV2Date(value.end)
+    && value.start <= value.end
+}
+
+function hasMainForceMirrorV2PageMeta(value: unknown): boolean {
+  return isMainForceMirrorV2Record(value)
+    && typeof value.has_more_before === 'boolean'
+    && isMainForceMirrorV2NullableInstant(value.next_before)
+}
+
+function hasMainForceMirrorV2ResolvedContractSegment(value: unknown): boolean {
+  return isMainForceMirrorV2Record(value)
+    && isMainForceMirrorV2NonEmptyString(value.contract)
+    && isMainForceMirrorV2Date(value.start_trading_day)
+    && isMainForceMirrorV2Date(value.end_trading_day)
+    && value.start_trading_day <= value.end_trading_day
+}
+
+function hasMainForceMirrorV2PointShape(value: unknown): boolean {
+  if (!isMainForceMirrorV2Record(value)) return false
+  return isMainForceMirrorV2Instant(value.bar_end)
+    && isMainForceMirrorV2Date(value.trading_day)
+    && isMainForceMirrorV2NonEmptyString(value.physical_contract)
+    && typeof value.pressure_ready === 'boolean'
+    && isMainForceMirrorV2NullableEnum(value.pressure_state, MAIN_FORCE_MIRROR_V2_STATES)
+    && typeof value.accumulated_ready === 'boolean'
+    && typeof value.caution_ready === 'boolean'
+    && isMainForceMirrorV2NullableEnum(value.caution, MAIN_FORCE_MIRROR_V2_CAUTIONS)
+    && typeof value.caution_conflict === 'boolean'
+    && isMainForceMirrorV2ReasonCodes(value.caution_reason_codes)
+    && (value.member_status === 'ready' || value.member_status === 'unavailable')
+    && isMainForceMirrorV2NullableDate(value.member_trade_date)
+    && isMainForceMirrorV2NullableEnum(value.member_direction, MAIN_FORCE_MIRROR_V2_MEMBER_DIRECTIONS)
+    && isMainForceMirrorV2NullableEnum(value.relation_to_accumulated, MAIN_FORCE_MIRROR_V2_MEMBER_RELATIONS, false)
+    && isMainForceMirrorV2NullableEnum(value.relation_to_caution, MAIN_FORCE_MIRROR_V2_MEMBER_RELATIONS, false)
+    && isMainForceMirrorV2NullableString(value.unavailable_reason)
+}
+
+const MAIN_FORCE_MIRROR_V2_STATES = new Set([
+  'long_build', 'short_build', 'short_cover', 'long_liquidation', 'turnover',
+])
+const MAIN_FORCE_MIRROR_V2_CAUTIONS = new Set(['long_chase_caution', 'short_chase_caution'])
+const MAIN_FORCE_MIRROR_V2_MEMBER_DIRECTIONS = new Set(['long', 'short', 'neutral'])
+const MAIN_FORCE_MIRROR_V2_MEMBER_RELATIONS = new Set([
+  'strong_aligned', 'aligned', 'divergent', 'neutral', 'unavailable',
+])
+
+function isMainForceMirrorV2NullableEnum(
+  value: unknown,
+  allowed: Set<string>,
+  nullable = true,
+): boolean {
+  return (nullable && value === null) || (typeof value === 'string' && allowed.has(value))
+}
+
+function isMainForceMirrorV2ReasonCodes(value: unknown): boolean {
+  return Array.isArray(value) && value.every(isMainForceMirrorV2NonEmptyString)
+}
+
+function isMainForceMirrorV2NullableString(value: unknown): boolean {
+  return value === null || isMainForceMirrorV2NonEmptyString(value)
+}
+
+function isMainForceMirrorV2NonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0 && value.trim() === value
+}
+
+function isMainForceMirrorV2NullableInteger(value: unknown): boolean {
+  return value === null || isMainForceMirrorV2Integer(value)
+}
+
+function isMainForceMirrorV2Integer(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value)
+}
+
+function isMainForceMirrorV2NullableDate(value: unknown): boolean {
+  return value === null || isMainForceMirrorV2Date(value)
+}
+
+function isMainForceMirrorV2Date(value: unknown): value is string {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
+  const timestamp = Date.parse(`${value}T00:00:00Z`)
+  return Number.isFinite(timestamp) && new Date(timestamp).toISOString().slice(0, 10) === value
+}
+
+function isMainForceMirrorV2NullableInstant(value: unknown): boolean {
+  return value === null || isMainForceMirrorV2Instant(value)
+}
+
+function isMainForceMirrorV2Instant(value: unknown): value is string {
+  if (
+    typeof value !== 'string'
+    || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(value)
+  ) return false
+  const date = value.slice(0, 10)
+  return isMainForceMirrorV2Date(date) && Number.isFinite(Date.parse(value))
+}
+
 /** Read-only Product Research snapshot; nullable backend metrics stay nullable in the browser. */
 export interface ProductResearchResponse {
   symbol: string
@@ -496,32 +816,28 @@ export interface HoverKlineContext {
   bar: BarData
   mainIndicators?: MainIndicatorValue[]
   macd?: { dif?: number | null; dea?: number | null; histogram?: number | null } | null
-  mainForceFutures?: MainForceFuturesHoverDetails | null
+  mainForceMirrorV2?: MainForceMirrorV2HoverDetails | null
   atr?: number | null
   marker?: KlineMarker | null
   cursorPrice?: number | null
 }
 
-export interface MainForceFuturesHoverDetails {
-  physicalContract: string | null
-  valid: boolean
-  stateReady: boolean
-  cautionReady: boolean
-  ready: boolean
-  pointReason: string | null
-  cautionAvailabilityReason: string | null
-  state: string | null
-  strength: number | null
-  priceImpulse: number | null
-  clv: number | null
-  volumeRatio: number | null
-  deltaOi: number | null
-  oiImpulse: number | null
-  rangePosition: number | null
+export interface MainForceMirrorV2HoverDetails {
+  physicalContract: string
+  state: MainForceMirrorV2State | null
+  instantPressure: number | null
+  accumulatedPressure: number | null
+  caution: MainForceMirrorV2Caution | null
   longScore: number | null
   shortScore: number | null
-  caution: string | null
-  reasonCodes: string[]
-  availabilityKind: 'unsupported' | 'input_unavailable' | 'derived_unavailable' | 'state_warmup' | 'caution_warmup' | 'conflict' | 'ready'
-  availabilityReason: string | null
+  memberStatus: 'ready' | 'unavailable'
+  memberTradeDate: string | null
+  memberDirection: 'long' | 'short' | 'neutral' | null
+  memberChangeBias: number | null
+  memberStrength: number | null
+  positionSkew: number | null
+  top5VolumeShare: number | null
+  relationToAccumulated: MainForceMemberRelation
+  relationToCaution: MainForceMemberRelation
+  unavailableReason: string | null
 }

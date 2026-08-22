@@ -1,6 +1,6 @@
 # 归一量化工作站
 
-本地、单用户的国内期货量化研究工作站。当前 Git release 与 production Runtime 均为 `v1.6.4`；develop 可继续包含尚未发布的研究变更，
+本地、单用户的国内期货量化研究工作站。当前 Git release 与 production Runtime 均为 `v1.6.5`；
 数据库 migration 与 Alert Scope 的实际状态以 `STATUS.md` 为准。当前可执行代码面包括 Market Web、
 Canonical 历史行情、Market API、data CLI、Runtime 只读状态、Alert V2、当前交易日 Formal Signal、
 Product 双 Rule Scope/今日记录、Execution Review V1，以及苏冰 Factor/Calibration/Signal 研究观察。项目不实现自动交易或
@@ -81,8 +81,8 @@ uv run --project services/quant-api guiyi runtime status
 # SuBing Calibration 只读研究入口；实际运行需显式 phase/mode/frequency/window
 uv run --project services/quant-api guiyi research subing-calibration --help
 
-# 期货主力照妖镜 60m Historical-only Shadow；只输出 stdout JSON
-uv run --project services/quant-api guiyi research main-force-mirror-futures --help
+# 主力照妖镜 V2 60m Historical-only retrospective；只输出 stdout JSON
+uv run --project services/quant-api guiyi research main-force-mirror-v2 --help
 ```
 
 `update/refresh` 只有显式 `--apply` 才进入写入路径；参数本身不授权正式数据或生产环境 mutation。
@@ -93,9 +93,13 @@ uv run --project services/quant-api guiyi research main-force-mirror-futures --h
 Calibration 是 Git-tracked 的 slope-only 文件
 `data/research_policies/subing_calibration_intraday_v1.json`。
 
-`guiyi research main-force-mirror-futures` 只通过 `MarketDataService` 读取 `60m +
-contract|actual_dominant` Historical Canonical，输出可删除的 Shadow 统计。它不读 Live，不写
-PostgreSQL、Canonical Parquet 或 Redis，也不授权 Alert、Runtime、策略晋升或订单。
+`guiyi research main-force-mirror-v2` 只通过 `MarketDataService` 读取 `60m +
+contract|actual_dominant` Historical Canonical，并只读钉住的不可变
+`main_force_member_rank_v1` snapshot，输出可重算的 retrospective JSON。唯一 active identity 是
+`main_force_mirror_v2`；Web 底部副图只有 `MACD | 主力照妖镜 V2`，V0/V1 只从 Git history
+追溯。它不读 Live，不写 PostgreSQL、Canonical Parquet 或 Redis，也不授权
+Alert、notification、Runtime、策略晋升或订单；`auto_order=false`。真实 member snapshot 与
+retrospective matrix 本次未执行。
 
 ## 安全边界
 

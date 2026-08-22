@@ -3,9 +3,9 @@ from __future__ import annotations
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
-from app.market_data import n_structure_segment as segment_module
+from app.research.n_structure import n_structure_segment as segment_module
 from app.market_data.domain import CanonicalBar
-from app.market_data.n_structure_policy import load_n_structure_policy
+from app.research.n_structure.n_structure_policy import load_n_structure_policy
 
 
 _CONTRACT = "JM2701"

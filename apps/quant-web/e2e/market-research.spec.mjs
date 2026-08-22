@@ -74,7 +74,7 @@ async function mockMarketHomepage(page, currentFormalResponse) {
   await page.route('**/api/v1/market/research/radar', (route) => route.fulfill({ json: radar() }))
 }
 
-test('Market homepage shows only current formal signals above Radar', async ({ page }) => {
+test('Market homepage shows the current formal signals above Radar', async ({ page }) => {
   await mockMarketHomepage(page, {
     status: 'ready',
     trading_day: '2026-08-15',
@@ -91,7 +91,7 @@ test('Market homepage shows only current formal signals above Radar', async ({ p
   await expect(formal).toContainText('JM2609')
   await expect(formal).toContainText('5m · 10:25 确认')
   await expect(formal).toContainText('5m 同向确认')
-  await expect(formal).not.toContainText('火天大有')
+  await expect(formal).toContainText('火天大有')
   await expect(page.getByText('Market Radar', { exact: true })).toBeVisible()
   expect(await page.locator('[data-testid="market-formal-signals"], .radar-summary').evaluateAll((nodes) => (
     Boolean(nodes[0]?.compareDocumentPosition(nodes[1]) & Node.DOCUMENT_POSITION_FOLLOWING)
@@ -306,7 +306,23 @@ async function mockWorkspace(page, researchResponse, options = {}) {
     if (url.pathname.endsWith('/bars/page')) {
       const request = Object.fromEntries(url.searchParams)
       marketRequests.push(request)
-      return route.fulfill({ json: { request: { series_kind: request.series_kind, symbol: 'ag', contract: request.contract || null, frequency: request.frequency, before: null, limit: 1200 }, bars: options.bars || Array.from({ length: 120 }, (_, index) => bar(index)), canonical_coverage: null, page: options.pageMeta || { has_more_before: false, next_before: null }, resolved_contract_segments: [] } })
+      const bars = options.bars || Array.from({ length: 120 }, (_, index) => bar(index))
+      const resolvedContractSegments = options.resolvedContractSegments || (
+        request.series_kind === 'actual_dominant' && bars.length > 0
+          ? [{
+              contract: options.resolvedContract || 'AG2601',
+              start_trading_day: bars[0].trading_day,
+              end_trading_day: bars.at(-1).trading_day,
+            }]
+          : []
+      )
+      return route.fulfill({ json: {
+        request: { series_kind: request.series_kind, symbol: 'ag', contract: request.contract || null, frequency: request.frequency, before: null, limit: 1200 },
+        bars,
+        canonical_coverage: null,
+        page: options.pageMeta || { has_more_before: false, next_before: null },
+        resolved_contract_segments: resolvedContractSegments,
+      } })
     }
     return route.abort()
   })

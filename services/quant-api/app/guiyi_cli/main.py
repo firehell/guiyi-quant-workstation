@@ -34,26 +34,34 @@ from app.guiyi_cli.output import (
     print_json,
 )
 from app.guiyi_cli.research_parser import add_research_commands
-from app.guiyi_cli.research_commands import (
+from app.guiyi_cli.research_commands import run_research_command
+from app.guiyi_cli.research_requests import (
     ResearchRequest,
     build_research_request,
-    run_research_command,
 )
 from app.market_data.composition import (
+    build_member_rank_snapshot_builder,
     build_historical_data_manager,
     build_live_market_service,
-    build_main_force_mirror_futures_research_service,
+)
+from app.market_data.after_market import build_after_market_updater
+from app.research.common.candidate_validation_schedule import (
+    CandidateValidationIdentityError,
+    CandidateValidationRequest,
+)
+from app.market_data.historical_data_manager import HistoricalDataManager
+from app.market_data.product_retirement import ProductRetiredError
+from app.research.composition import (
+    build_jdj_candidate_validation_service,
+    build_jdj_research_service,
+    build_main_force_mirror_v2_research_service,
     build_multi_candidate_robustness_service,
     build_n_candidate_validation_service,
     build_n_structure_research_service,
-    build_subing_candidate_validation_service,
     build_subing_calibration_research_service,
+    build_subing_candidate_validation_service,
     build_subing_lifecycle_research_service,
 )
-from app.market_data.after_market import build_after_market_updater
-from app.market_data.candidate_validation_schedule import CandidateValidationRequest
-from app.market_data.historical_data_manager import HistoricalDataManager
-from app.market_data.product_retirement import ProductRetiredError
 from app.services.runtime_health import build_runtime_health
 
 SessionFactory = Callable[[], AbstractContextManager[Any]]
@@ -63,8 +71,10 @@ LiveServiceFactory = Callable[[Any], Any]
 AlertRuntimeFactory = Callable[[], Any]
 AlertCanarySenderFactory = Callable[[], Any]
 ResearchServiceFactory = Callable[[Any], Any]
+JdjCandidateValidationServiceFactory = Callable[[Any, str], Any]
 RollReconcilerFactory = Callable[[Any], Any]
 RollMarkerState = Callable[[], str]
+MemberRankSnapshotBuilderFactory = Callable[[Any], Any]
 
 logger = logging.getLogger(__name__)
 
@@ -133,6 +143,9 @@ def main(
     *,
     session_factory: SessionFactory = SessionLocal,
     manager_factory: ManagerFactory = build_historical_data_manager,
+    member_rank_snapshot_builder_factory: MemberRankSnapshotBuilderFactory = (
+        build_member_rank_snapshot_builder
+    ),
     after_market_factory: AfterMarketFactory = build_after_market_updater,
     live_service_factory: LiveServiceFactory = build_live_market_service,
     alert_runtime_factory: AlertRuntimeFactory = build_alert_runtime,
@@ -151,12 +164,18 @@ def main(
     n_candidate_validation_service_factory: ResearchServiceFactory = (
         build_n_candidate_validation_service
     ),
-    main_force_mirror_futures_research_service_factory: ResearchServiceFactory = (
-        build_main_force_mirror_futures_research_service
+    main_force_mirror_v2_research_service_factory: ResearchServiceFactory = (
+        build_main_force_mirror_v2_research_service
     ),
     n_structure_research_service_factory: ResearchServiceFactory = (
         build_n_structure_research_service
     ),
+    jdj_research_service_factory: ResearchServiceFactory = (
+        build_jdj_research_service
+    ),
+    jdj_candidate_validation_service_factory: (
+        JdjCandidateValidationServiceFactory
+    ) = build_jdj_candidate_validation_service,
     multi_candidate_robustness_service_factory: ResearchServiceFactory = (
         build_multi_candidate_robustness_service
     ),
@@ -203,6 +222,7 @@ def main(
                 args,
                 session_factory,
                 manager_factory,
+                member_rank_snapshot_builder_factory,
                 after_market_factory,
                 execution_review_roll_marker_state,
                 roll_reconciler_factory,
@@ -211,11 +231,13 @@ def main(
             assert research_request is not None
             with session_factory() as session:
                 if args.research_command == "subing-lifecycle":
-                    service_factory = lifecycle_research_service_factory
+                    service = lifecycle_research_service_factory(session)
                 elif args.research_command == "candidate-robustness":
-                    service_factory = multi_candidate_robustness_service_factory
+                    service = multi_candidate_robustness_service_factory(session)
                 elif args.research_command == "n-structure":
-                    service_factory = n_structure_research_service_factory
+                    service = n_structure_research_service_factory(session)
+                elif args.research_command == "jdj-1m":
+                    service = jdj_research_service_factory(session)
                 elif args.research_command == "candidate-validation":
                     if not isinstance(research_request, CandidateValidationRequest):
                         raise ValueError("CLI_CANDIDATE_REQUEST_INVALID")
@@ -223,20 +245,36 @@ def main(
                         research_request.candidate_id
                         == "subing_lifecycle_v2_candidate_v1"
                     ):
-                        service_factory = candidate_validation_service_factory
+                        service = candidate_validation_service_factory(session)
                     elif research_request.candidate_id == "n_structure_5m_candidate_v1":
-                        service_factory = n_candidate_validation_service_factory
+                        service = n_candidate_validation_service_factory(session)
+                    elif research_request.candidate_id in {
+                        "jdj_trend_follow_1m_candidate_v1",
+                        "jdj_trend_reentry_6_1m_candidate_v1",
+                        "jdj_key_level_breakout_1m_candidate_v1",
+                    }:
+                        if (
+                            research_request.protocol_id
+                            != "jdj_candidate_validation_v1"
+                        ):
+                            raise CandidateValidationIdentityError()
+                        service = jdj_candidate_validation_service_factory(
+                            session,
+                            research_request.candidate_id,
+                        )
                     else:
                         raise ValueError("CLI_CANDIDATE_ID_INVALID")
-                elif args.research_command == "main-force-mirror-futures":
-                    service_factory = main_force_mirror_futures_research_service_factory
+                elif args.research_command == "main-force-mirror-v2":
+                    service = main_force_mirror_v2_research_service_factory(
+                        session
+                    )
                 elif args.research_command == "subing-calibration":
-                    service_factory = research_service_factory
+                    service = research_service_factory(session)
                 else:
                     raise ValueError("CLI_RESEARCH_COMMAND_INVALID")
                 payload = run_research_command(
                     research_request,
-                    service_factory(session),
+                    service,
                 )
         elif args.runtime_command == "status":
             # runtime status：只读聚合健康，与 HTTP /api/runtime/health 同源
@@ -298,7 +336,7 @@ def main(
     return (
         0
         if payload.get("status")
-        in {"passed", "planned", "noop", "ok", "ready", "skipped", "accepted"}
+        in {"passed", "planned", "published", "noop", "ok", "ready", "skipped", "accepted"}
         else 1
     )
 
@@ -307,11 +345,16 @@ def _run_data(
     args: argparse.Namespace,
     session_factory: SessionFactory,
     manager_factory: ManagerFactory,
+    member_rank_snapshot_builder_factory: MemberRankSnapshotBuilderFactory,
     after_market_factory: AfterMarketFactory,
     execution_review_roll_marker_state: RollMarkerState,
     roll_reconciler_factory: RollReconcilerFactory,
 ) -> dict[str, object]:
     """在 DB 会话内执行 data 子命令并返回 as_payload 字典。"""
+    if args.data_command == "member-rank":
+        with session_factory() as session:
+            builder = member_rank_snapshot_builder_factory(session)
+            return builder.snapshot(build_request(args)).as_payload()
     if args.data_command == "after-market":
         with session_factory() as session:
             manager = manager_factory(session)

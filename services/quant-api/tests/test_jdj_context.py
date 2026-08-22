@@ -8,21 +8,21 @@ import pytest
 
 from guiyi_quant.indicators import ema_series
 
-import app.market_data.jdj_context as context_module
+import app.research.jdj.jdj_context as context_module
 from app.market_data.domain import CanonicalBar
-from app.market_data.jdj_context import (
+from app.research.jdj.jdj_context import (
     JdjBarContext,
     JdjContextError,
     build_jdj_context_series,
 )
-from app.market_data.jdj_policy import load_jdj_policy
-from app.market_data.n_structure_policy import load_n_structure_policy
-from app.market_data.n_structure_segment import NStructureSegmentTrace
-from app.market_data.n_structure_state import (
+from app.research.jdj.jdj_policy import load_jdj_policy
+from app.research.n_structure.n_structure_policy import load_n_structure_policy
+from app.research.n_structure.n_structure_segment import NStructureSegmentTrace
+from app.research.n_structure.n_structure_state import (
     NStructureKind,
     NStructureTrace,
 )
-from app.market_data.n_structure_swing import NSwingPivotKind
+from app.research.n_structure.n_structure_swing import NSwingPivotKind
 
 
 _CONTRACT = "JM2701"

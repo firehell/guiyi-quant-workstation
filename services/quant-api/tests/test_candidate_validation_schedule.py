@@ -5,7 +5,7 @@ from datetime import date, datetime
 
 import pytest
 
-from app.market_data.candidate_validation_schedule import (
+from app.research.common.candidate_validation_schedule import (
     CandidateValidationIdentityError,
     CandidateValidationRequest,
     CandidateValidationSourceError,

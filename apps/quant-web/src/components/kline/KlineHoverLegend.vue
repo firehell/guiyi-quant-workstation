@@ -1,18 +1,12 @@
 <script setup lang="ts">
 import type { HoverKlineContext } from '@/types/market'
 import { formatKlineHoverValue } from '@/utils/klineViewModel'
-
-function futuresAvailabilityLabel(kind: NonNullable<HoverKlineContext['mainForceFutures']>['availabilityKind']): string {
-  return {
-    unsupported: '不支持的身份', input_unavailable: '输入不可用', derived_unavailable: '派生输入不可用',
-    state_warmup: '状态预热', caution_warmup: '小心预热', conflict: '方向冲突', ready: '就绪',
-  }[kind]
-}
+import { MAIN_FORCE_MEMBER_RELATION_LABELS } from '@/utils/mainForceMirrorV2Presentation'
 
 defineProps<{
   context: HoverKlineContext | null
   showMacd: boolean
-  showMainForceFutures: boolean
+  showMainForceMirrorV2: boolean
 }>()
 </script>
 
@@ -33,23 +27,21 @@ defineProps<{
       <span>DEA {{ formatKlineHoverValue(context.macd?.dea) }}</span>
       <span>HIST {{ formatKlineHoverValue(context.macd?.histogram) }}</span>
     </template>
-    <template v-if="showMainForceFutures && context.mainForceFutures">
-      <span data-testid="mfm-hover-contract">合约 {{ context.mainForceFutures.physicalContract || '—' }}</span>
-      <span>状态 {{ context.mainForceFutures.state || '—' }}</span>
-      <span data-testid="mfm-hover-state-ready">state_ready {{ context.mainForceFutures.stateReady ? 'true' : 'false' }}</span>
-      <span data-testid="mfm-hover-caution-ready">caution_ready {{ context.mainForceFutures.cautionReady ? 'true' : 'false' }}</span>
-      <span data-testid="mfm-hover-availability">可用性 {{ futuresAvailabilityLabel(context.mainForceFutures.availabilityKind) }}</span>
-      <span>强度 {{ formatKlineHoverValue(context.mainForceFutures.strength) }}</span>
-      <span data-testid="mfm-hover-price-impulse">价冲 {{ formatKlineHoverValue(context.mainForceFutures.priceImpulse) }}</span>
-      <span>CLV {{ formatKlineHoverValue(context.mainForceFutures.clv) }}</span>
-      <span>量比 {{ formatKlineHoverValue(context.mainForceFutures.volumeRatio) }}</span>
-      <span>ΔOI {{ formatKlineHoverValue(context.mainForceFutures.deltaOi) }}</span>
-      <span>OI冲 {{ formatKlineHoverValue(context.mainForceFutures.oiImpulse) }}</span>
-      <span>区间 {{ formatKlineHoverValue(context.mainForceFutures.rangePosition) }}</span>
-      <span data-testid="mfm-hover-long-score">多分 {{ formatKlineHoverValue(context.mainForceFutures.longScore) }}</span>
-      <span>空分 {{ formatKlineHoverValue(context.mainForceFutures.shortScore) }}</span>
-      <span>原因 {{ context.mainForceFutures.reasonCodes.join('、') || '—' }}</span>
-      <span data-testid="mfm-hover-availability-reason">不可用原因 {{ context.mainForceFutures.availabilityReason || '—' }}</span>
+    <template v-if="showMainForceMirrorV2 && context.mainForceMirrorV2">
+      <span data-testid="mfm-v2-hover-contract">合约 {{ context.mainForceMirrorV2.physicalContract }}</span>
+      <span>状态 {{ context.mainForceMirrorV2.state || '—' }}</span>
+      <span>瞬时 {{ formatKlineHoverValue(context.mainForceMirrorV2.instantPressure) }}</span>
+      <span>累积 EMA5 {{ formatKlineHoverValue(context.mainForceMirrorV2.accumulatedPressure) }}</span>
+      <span>多分 {{ formatKlineHoverValue(context.mainForceMirrorV2.longScore) }}</span>
+      <span>空分 {{ formatKlineHoverValue(context.mainForceMirrorV2.shortScore) }}</span>
+      <span>席位日期 {{ context.mainForceMirrorV2.memberTradeDate || '—' }}</span>
+      <span>席位方向 {{ context.mainForceMirrorV2.memberDirection || '—' }}</span>
+      <span>席位强度 {{ formatKlineHoverValue(context.mainForceMirrorV2.memberStrength) }}</span>
+      <span data-testid="mfm-v2-hover-position-skew">持仓偏斜 {{ formatKlineHoverValue(context.mainForceMirrorV2.positionSkew) }}</span>
+      <span data-testid="mfm-v2-hover-top5-share">Top5 成交占比 {{ formatKlineHoverValue(context.mainForceMirrorV2.top5VolumeShare) }}</span>
+      <span>{{ MAIN_FORCE_MEMBER_RELATION_LABELS[context.mainForceMirrorV2.relationToAccumulated] }}</span>
+      <span>警戒关系 {{ MAIN_FORCE_MEMBER_RELATION_LABELS[context.mainForceMirrorV2.relationToCaution] }}</span>
+      <span>不可用原因 {{ context.mainForceMirrorV2.unavailableReason || '—' }}</span>
     </template>
   </div>
 </template>

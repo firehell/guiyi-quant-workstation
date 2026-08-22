@@ -257,6 +257,7 @@ def isolated_migration_context(
         engine.dispose()
 
 
+@pytest.mark.isolated_postgresql
 def test_upgrade_preserves_market_and_alert_signatures_and_adds_only_four_tables(
     isolated_migration_context: tuple[Config, Engine],
 ) -> None:
@@ -388,6 +389,7 @@ def test_upgrade_preserves_market_and_alert_signatures_and_adds_only_four_tables
             )
 
 
+@pytest.mark.isolated_postgresql
 def test_migration_command_preserves_application_logger_disabled_state(
     isolated_migration_context: tuple[Config, Engine],
 ) -> None:
@@ -400,6 +402,7 @@ def test_migration_command_preserves_application_logger_disabled_state(
     assert after == before
 
 
+@pytest.mark.isolated_postgresql
 def test_postgres_enforces_sequence_episode_lifecycle_and_unique_constraints(
     isolated_migration_context: tuple[Config, Engine],
 ) -> None:

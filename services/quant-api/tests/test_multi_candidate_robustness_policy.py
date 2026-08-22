@@ -9,7 +9,7 @@ from typing import Any, Iterator
 
 import pytest
 
-from app.market_data.multi_candidate_robustness_policy import (
+from app.research.robustness.multi_candidate_robustness_policy import (
     MultiCandidateRobustnessProtocolError,
     load_multi_candidate_robustness_protocol,
 )

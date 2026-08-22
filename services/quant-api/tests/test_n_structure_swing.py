@@ -7,7 +7,7 @@ from decimal import Decimal
 import pytest
 
 from app.market_data.domain import BarFrequency, CanonicalBar
-from app.market_data.n_structure_swing import (
+from app.research.n_structure.n_structure_swing import (
     NSwingLeg,
     NSwingPivot,
     NSwingPivotKind,

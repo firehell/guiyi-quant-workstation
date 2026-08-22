@@ -1,6 +1,6 @@
 # 测试与验证入口
 
-更新时间：2026-08-20
+更新时间：2026-08-21
 
 所有写入测试必须使用 `tmp_path`、临时 Canonical root 和隔离数据库；测试 URL 不得指向 Runtime 或
 生产数据库。真实数据、Runtime switch 和通知不属于测试命令的隐含权限。
@@ -30,7 +30,8 @@ Secret scan 默认只扫描 `git ls-files`，只报告文件、行号和规则�
 
 ```bash
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
-  uv run --offline --project services/quant-api pytest -q services/quant-api/tests
+  uv run --offline --project services/quant-api \
+  pytest -q -m "not isolated_postgresql" services/quant-api/tests
 
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
 uv run --offline --project services/quant-api ruff check \
@@ -39,7 +40,8 @@ uv run --offline --project services/quant-api ruff check \
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
 MYPYPATH=services/quant-api:packages/quant-core \
   uv run --offline --project services/quant-api mypy --explicit-package-bases --ignore-missing-imports \
-  services/quant-api/app/market_data services/quant-api/app/guiyi_cli services/quant-api/app/alerts \
+  services/quant-api/app/market_data services/quant-api/app/research services/quant-api/app/guiyi_cli \
+  services/quant-api/app/alerts \
   services/quant-api/app/execution_review \
   services/quant-api/app/services/runtime_health.py \
   services/quant-api/app/api/market.py services/quant-api/app/api/market_live.py \
@@ -53,56 +55,38 @@ pnpm --dir apps/quant-web build
 Runtime `DATABASE_URL` 物理身份不同的 `GUIYI_ISOLATED_MIGRATION_DATABASE_URL`。测试 guard 会以
 数据库名和 OID 双重拒绝 production/Runtime 库；禁止为了让测试运行而放宽该校验。
 
-## 主力照妖镜 Observation V0
-
 ```bash
+GUIYI_ISOLATED_MIGRATION_DATABASE_URL='<isolated-postgresql-url>' \
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
-uv run --offline --project services/quant-api pytest -q \
-  services/quant-api/tests/test_main_force_mirror.py \
-  services/quant-api/tests/test_indicator_registry_v1.py
-
-pnpm --dir apps/quant-web test
-pnpm --dir apps/quant-web exec playwright test e2e/main-force-mirror.spec.mjs
-pnpm --dir apps/quant-web build
+  uv run --offline --project services/quant-api \
+  pytest -q -m isolated_postgresql services/quant-api/tests
 ```
 
-这些命令验证 frozen designed-v0、Python/Web deterministic parity、“小心”的 HHV5/BARSLAST
-rising-edge 边界，以及同一副图内默认 MACD 的 Tab 切换。它们不授权公式调整、Alert/Runtime 接入、
-Canonical/DB 写入、通知或订单行为。
-
-## 主力照妖镜·期货 V1
+## 主力照妖镜 V2
 
 ```bash
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
-PYTHONPATH=services/quant-api:packages/quant-core \
 uv run --offline --project services/quant-api pytest -q \
-  services/quant-api/tests/test_main_force_mirror_futures.py \
-  services/quant-api/tests/test_main_force_mirror.py \
+  services/quant-api/tests/test_main_force_mirror_v2.py \
   services/quant-api/tests/test_indicator_registry_v1.py \
-  services/quant-api/tests/data_foundation/test_main_force_mirror_futures_research_service.py \
+  services/quant-api/tests/data_foundation/test_member_rank_snapshot.py \
+  services/quant-api/tests/data_foundation/test_member_rank_snapshot_builder.py \
+  services/quant-api/tests/data_foundation/test_main_force_mirror_v2_service.py \
+  services/quant-api/tests/data_foundation/test_main_force_mirror_v2_research_service.py \
+  services/quant-api/tests/data_foundation/test_market_api.py \
+  services/quant-api/tests/data_foundation/test_cli.py \
   services/quant-api/tests/test_research_cli.py
 
 pnpm --dir apps/quant-web test
-
-pnpm --dir apps/quant-web exec playwright test \
-  e2e/main-force-mirror.spec.mjs \
-  e2e/main-force-mirror-futures.spec.mjs \
-  e2e/market-runtime.spec.mjs \
-  e2e/market-research.spec.mjs \
-  e2e/alert-v1.spec.mjs
-
 pnpm --dir apps/quant-web build
+pnpm --dir apps/quant-web exec playwright test -c playwright.config.mjs
 ```
 
-这些命令验证 V0 runtime 精确源码 hash、独立 `.pyi` 静态 facade、V1 exact identity、60m physical-contract segment reset、readiness、五状态、
-双向警戒、conflict/latch/re-arm、Python/Web 单一 golden parity、动态 marker/hover、合法 5m/15m Alert
-在 MACD/V0 切换中的保留行为与 historical-only Shadow
-CLI，包括 `(long+short)*1000/caution_ready` 的 6 位 half-away 事件率、conflict 不计事件、零分母 JSON
-`null`，以及不可执行的 `("jm", "ag", "cu", "m", "sc")` 代表参数 tuple。它们不执行真实 Shadow 代表
-矩阵。真实 A→B resolved segments 还会验证 Pane 只取最右侧当前 block、B 第 10/21/31 根 readiness、
-两端 Hover 的 B 合约身份与 marker 不继承。Futures V1 仅支持 60m，persistent Alert markers 仅支持 actual-dominant 5m/15m，因此两者按各自合法
-identity 独立验证，不用生产测试注入伪造重叠状态；这些测试也不授权 Canonical/DB 写入、
-Alert/notification、Runtime、订单、release 或策略晋升。
+这些命令验证唯一 `main_force_mirror_v2` identity、因果 60m exact-contract 压力、
+T-1 member context、不可变 snapshot 身份/覆盖/fail-closed、只读 retrospective CLI，以及 Web
+`MACD | 主力照妖镜 V2` 副图。真实 member snapshot 和 retrospective matrix 不由测试执行；
+这些绿灯也不授权 RQData/Canonical/DB 写入、Live/Alert/notification、Runtime、订单、
+release 或策略晋升，`auto_order=false`。
 
 ## Execution Review V1
 
@@ -110,14 +94,14 @@ Alert/notification、Runtime、订单、release 或策略晋升。
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
 PYTHONPATH=services/quant-api:packages/quant-core \
   uv run --offline --project services/quant-api pytest -q \
+  -m "not isolated_postgresql" \
   services/quant-api/tests/test_execution_review_contracts.py \
   services/quant-api/tests/test_execution_review_pnl.py \
   services/quant-api/tests/test_execution_review_models.py \
   services/quant-api/tests/test_execution_review_service.py \
   services/quant-api/tests/test_execution_review_api.py \
   services/quant-api/tests/test_execution_review_reconstruction.py \
-  services/quant-api/tests/test_execution_review_reconciler.py \
-  services/quant-api/tests/alembic/test_execution_review_v1_migration.py
+  services/quant-api/tests/test_execution_review_reconciler.py
 
 pnpm --dir apps/quant-web test
 pnpm --dir apps/quant-web exec playwright test e2e/execution-review.spec.mjs
@@ -193,13 +177,42 @@ intraday Calibration 仅由 Git-tracked slope-only artifact 提供，zero-distan
 Shadow，只输出 stdout JSON。测试只验证命令、分段因果与报告合同，不运行真实当前市场观察，
 也不表示正式回测、策略有效或可晋升。
 
-`guiyi research candidate-validation` 只接受两组 Git-tracked exact Candidate/Protocol pair：
-SuBing 由 `SubingLifecycleResearchService`、N 由 `NStructureResearchService` 分别产生
-source-specific report，只共享 rolling/prospective schedule。两条链都只输出 stdout JSON，
+`guiyi research candidate-validation` 只接受五个 Git-tracked exact Candidate 与三个
+exact Protocol：SuBing 由 `SubingLifecycleResearchService`、N 由
+`NStructureResearchService`、三个 JDJ Candidate 由 `JdjResearchService` 分别产生
+source-specific report，只共享 rolling/prospective schedule。三条链都只输出 stdout JSON，
 保持 `research_only=true` 与 `readonly=true`；测试使用 fake source 验证合同和时间边界，
 不运行真实 Candidate report，也不授权 Candidate 晋升、Alert/Runtime 接入、
 DB/Canonical/Redis 写入、通知或订单。N 的 retrospective 截止 `2026-08-19`，
-`2026-08-20` 只是 embargo，prospective 首日是 `2026-08-21`。
+`2026-08-20` 只是 embargo，prospective 首日是 `2026-08-21`；JDJ 的 retrospective
+截止 `2026-08-20`，`2026-08-21` 是 embargo，prospective 首日是 `2026-08-24`。
+
+## JDJ 1m Research & Candidate V1
+
+```bash
+UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
+  uv run --offline --project services/quant-api pytest -q \
+  services/quant-api/tests/test_jdj_policy.py \
+  services/quant-api/tests/test_jdj_candidate_validation_policy.py \
+  services/quant-api/tests/test_jdj_context.py \
+  services/quant-api/tests/test_jdj_trend_follow.py \
+  services/quant-api/tests/test_jdj_trend_reentry.py \
+  services/quant-api/tests/test_jdj_key_level_breakout.py \
+  services/quant-api/tests/test_jdj_research.py \
+  services/quant-api/tests/data_foundation/test_jdj_research_service.py \
+  services/quant-api/tests/test_jdj_candidate_validation.py \
+  services/quant-api/tests/data_foundation/test_jdj_candidate_validation_service.py \
+  services/quant-api/tests/data_foundation/test_jdj_candidate_validation_calendar.py \
+  services/quant-api/tests/test_price_outcome.py \
+  services/quant-api/tests/test_research_cli.py
+```
+
+该命令验证 exact Policy/Manifest/Protocol、EMA20 parity、5m N strict-before context、
+三个 causal reducer、M1/M5 actual-dominant segment source、3/5/8/20 outcome、共享
+10-fold schedule、calendar freeze 与 readonly CLI。测试只使用 fixture、fake source、
+临时目录或隔离数据库，不运行真实 `jm` research/evidence，不写入
+DB/Canonical/Redis，也不授权 evidence 生成、Candidate promotion、main/tag/release、
+Runtime/Alert/通知、订单或任何盈利结论。
 
 ## N Structure V1（Historical / research-only）
 
@@ -332,11 +345,11 @@ Alert Application Domain 仍只有 `alert_rules` 与 `alert_events` 两张表。
 - exact HTDY Rule + Scope + audience + transport 持续边界为
   `htdy_original_15m × jm × htdy_observers × pushplus-wechat-topic`；SuBing 固定为
   `subing_entry_signal_v1 × jm × owner × pushplus-wechat`，不得从历史 canary 推导 release 或 switch；
-- v1.6.4 main/release/tag 与 exact-tag Alert Runtime promotion/switch：均已完成；后续版本或再次 switch
+- v1.6.5 main/release/tag 与 exact-tag Alert Runtime promotion/switch：均已完成；后续版本或再次 switch
   仍是新的独立 Gate。
 
 这些 Gate 不能相互授权，失败或重试也需要新的明确请求。代码、fixture、render-only 或 mock 通过只证明
-实现，不证明未来发布或 Runtime Gate 已授权。当前 production 为 `v1.6.4` exact Runtime，PushPlus
+实现，不证明未来发布或 Runtime Gate 已授权。当前 production 为 `v1.6.5` exact Runtime，PushPlus
 transport 已按两条精确 `jm` 边界启用；自然 HTDY Topic Event 与自然 SuBing owner Event 验收仍 pending。
 
 ## OpenSpec
@@ -346,7 +359,7 @@ openspec validate --specs --strict --no-interactive
 openspec list --json
 ```
 
-已归档 change 只保留历史意图；当前行为合同只看 `openspec/specs/`。
+已完成 change 只从 Git history 追溯；当前行为合同只看 `openspec/specs/`。
 
 ## Data Foundation 只读验证
 

@@ -11,9 +11,9 @@ from typing import Any
 
 import pytest
 
-import app.market_data.jdj_policy as jdj_policy_module
-import app.market_data.jdj_candidate_validation_policy as policy_module
-from app.market_data.jdj_candidate_validation_policy import (
+import app.research.jdj.jdj_policy as jdj_policy_module
+import app.research.jdj.jdj_candidate_validation_policy as policy_module
+from app.research.jdj.jdj_candidate_validation_policy import (
     JdjCandidateManifest,
     JdjCandidateManifestError,
     JdjCandidateRef,
@@ -73,7 +73,18 @@ def _protocol_payload() -> dict[str, Any]:
             "first_test_since": "2024-01-01",
             "last_test_through": "2026-06-30",
         },
-        "prospective_oos": {"first_trading_day": "2026-08-24"},
+        "prospective_oos": {
+            "first_trading_day": "2026-08-24",
+            "calendar_evidence": {
+                "provider": "rqdata",
+                "method": "get_trading_dates",
+                "captured_on": "2026-08-21",
+                "exchange_code": "DCE",
+                "query_since": "2026-08-21",
+                "query_through": "2026-08-24",
+                "returned_trading_days": ["2026-08-21", "2026-08-24"],
+            },
+        },
         "baseline_request_through": "2026-08-21",
         "horizons_bars": [3, 5, 8, 20],
         "automatic_ranking": False,
@@ -239,6 +250,17 @@ def test_protocol_freezes_candidate_event_pairs_dates_and_safety_flags() -> None
     assert protocol.first_test_since == date(2024, 1, 1)
     assert protocol.last_test_through == date(2026, 6, 30)
     assert protocol.prospective_oos_first_trading_day == date(2026, 8, 24)
+    evidence = protocol.prospective_calendar_evidence
+    assert evidence.provider == "rqdata"
+    assert evidence.method == "get_trading_dates"
+    assert evidence.captured_on == date(2026, 8, 21)
+    assert evidence.exchange_code == "DCE"
+    assert evidence.query_since == date(2026, 8, 21)
+    assert evidence.query_through == date(2026, 8, 24)
+    assert evidence.returned_trading_days == (
+        date(2026, 8, 21),
+        date(2026, 8, 24),
+    )
     assert protocol.baseline_request_through == date(2026, 8, 21)
     assert protocol.horizons_bars == (3, 5, 8, 20)
     assert protocol.automatic_ranking is False
@@ -255,6 +277,8 @@ def test_candidate_protocol_types_are_frozen_and_validate_direct_construction() 
         protocol.candidates = ()  # type: ignore[misc]
     with pytest.raises(FrozenInstanceError):
         protocol.candidates[0].source_event_kind = "changed"  # type: ignore[misc]
+    with pytest.raises(FrozenInstanceError):
+        protocol.prospective_calendar_evidence.provider = "changed"  # type: ignore[misc]
     with pytest.raises(JdjCandidateManifestError):
         JdjCandidateManifest(
             schema_version=True,

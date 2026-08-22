@@ -16,6 +16,7 @@ import {
   setAlertProductEnabled,
 } from '@/api/alerts'
 import { useMarketSeries } from '@/composables/useMarketSeries'
+import { useMainForceMirrorV2 } from '@/composables/useMainForceMirrorV2'
 import { usePersistentAlertMarkers } from '@/composables/usePersistentAlertMarkers'
 import { useProductAlertScope } from '@/composables/useProductAlertScope'
 import { useProductCurrentAlertEvents } from '@/composables/useProductCurrentAlertEvents'
@@ -31,6 +32,10 @@ import type {
 import { MARKET_FREQUENCIES } from '@/types/market'
 import { lifecycleSnapshotToMarkers } from '@/utils/subingLifecycleMarkers'
 import { buildKlineDerivedData } from '@/utils/klineViewModel'
+import {
+  normalizeSecondaryPanelPreference,
+  type SecondaryPanelId,
+} from '@/utils/mainForceMirrorV2Presentation'
 import {
   loadMainChartPreferences,
   normalizeOptionalEmaIndicators,
@@ -70,6 +75,7 @@ const contract = ref(String(route.query.contract || '').toUpperCase())
 const seriesKind = ref<SeriesKind>(resolveInitialSeriesKind())
 const frequency = ref<MarketFrequency>(resolveInitialFrequency())
 const followLatest = ref(true)
+const selectedSecondaryPanel = ref<SecondaryPanelId>(normalizeSecondaryPanelPreference(undefined))
 const selectedDominant = computed(() => dominants.value.find((item) => item.product === symbol.value))
 const {
   bars,
@@ -86,6 +92,7 @@ const {
   loadMoreBefore,
   dispose,
 } = useMarketSeries()
+const mirror = useMainForceMirrorV2()
 const {
   markers: persistentAlertMarkers,
   sync: syncPersistentAlertMarkers,
@@ -110,8 +117,7 @@ const {
   refreshSeries: () => refreshSeries(),
 })
 const {
-  htdyRule,
-  subingRule,
+  alertRules,
   alertRuntimeStatus,
   alertLoading,
   savingRuleCodes,
@@ -135,8 +141,20 @@ const {
 let metadataReady = false
 let synchronizingSymbol = false
 let researchGeneration = 0
+let canonicalReplacementGeneration = 0
+let canonicalPendingGeneration: number | null = null
+let acceptedCanonical: { generation: number; identity: ReturnType<typeof currentIdentity> } | null = null
+let mirrorRequestedCanonicalGeneration: number | null = null
 
 const loading = computed(() => loadingInitial.value || loadingBefore.value)
+const mainForceMirrorV2DisplayError = computed(() => {
+  if (selectedSecondaryPanel.value !== 'main_force_mirror_v2') return null
+  if (frequency.value !== '60m') return 'MFM_V2_UNSUPPORTED_FREQUENCY'
+  if (effectiveIdentity.value.seriesKind !== 'actual_dominant' && effectiveIdentity.value.seriesKind !== 'contract') {
+    return 'MFM_V2_UNSUPPORTED_SERIES_KIND'
+  }
+  return mirror.error.value
+})
 const visibleMainIndicators = computed(() => {
   if (selectedOverlay.value === 'subing' && !subingSupported.value) return []
   return visibleMainIndicatorsForOverlay(selectedOverlay.value, optionalEmaIndicators.value)
@@ -272,6 +290,7 @@ onUnmounted(() => {
   disposeSubingObservation()
   disposeProductAlertScope()
   disposeProductCurrentAlertEvents()
+  mirror.clear()
   dispose()
   disposePersistentAlertMarkers()
 })
@@ -300,13 +319,20 @@ function currentAlertMarkerIdentity() {
 }
 
 async function refreshSeries() {
+  const replacementGeneration = ++canonicalReplacementGeneration
+  canonicalPendingGeneration = replacementGeneration
+  acceptedCanonical = null
+  mirrorRequestedCanonicalGeneration = null
+  mirror.clear()
   if (!symbol.value) {
     clearSeries()
+    settleFailedCanonicalReplacement(replacementGeneration)
     return false
   }
   const requested = currentIdentity()
   if (requested.seriesKind === 'contract' && !requested.contract) {
     clearSeries()
+    settleFailedCanonicalReplacement(replacementGeneration)
     error.value = '指定真实合约时 contract 必填'
     return false
   }
@@ -314,16 +340,21 @@ async function refreshSeries() {
   followLatest.value = true
   try {
     await replaceSeries(requested)
-    if (!isCurrentIdentity(requested)) return false
+    if (replacementGeneration !== canonicalReplacementGeneration || !isCurrentIdentity(requested)) return false
     await router.replace({ query: {
       symbol: requested.symbol,
       contract: contract.value || undefined,
       series_kind: seriesKind.value,
       frequency: requested.frequency,
     } })
+    if (replacementGeneration !== canonicalReplacementGeneration || !isCurrentIdentity(requested)) return false
+    canonicalPendingGeneration = null
+    acceptedCanonical = { generation: replacementGeneration, identity: { ...requested } }
+    await requestMirrorForAcceptedCanonical()
     return true
   } catch {
-    if (!isCurrentIdentity(requested)) return false
+    if (replacementGeneration !== canonicalReplacementGeneration || !isCurrentIdentity(requested)) return false
+    settleFailedCanonicalReplacement(replacementGeneration)
     error.value = '读取失败：数据集、月分区或主力映射不完整'
     message.error(error.value)
     return false
@@ -356,10 +387,45 @@ async function refreshResearch() {
 async function loadEarlierBars() {
   try {
     await loadMoreBefore()
+    if (selectedSecondaryPanel.value === 'main_force_mirror_v2'
+      && canonicalPendingGeneration === null
+      && acceptedCanonical
+      && isCurrentIdentity(acceptedCanonical.identity)) {
+      await mirror.loadMoreBefore()
+    }
   } catch {
     error.value = '读取更早历史失败：数据集、月分区或主力映射不完整'
     message.error(error.value)
   }
+}
+
+async function updateSecondaryPanel(value: SecondaryPanelId) {
+  selectedSecondaryPanel.value = value
+  if (value === 'macd') {
+    mirrorRequestedCanonicalGeneration = null
+    mirror.clear()
+    return
+  }
+  await requestMirrorForAcceptedCanonical()
+}
+
+async function requestMirrorForAcceptedCanonical() {
+  const accepted = acceptedCanonical
+  if (selectedSecondaryPanel.value !== 'main_force_mirror_v2'
+    || canonicalPendingGeneration !== null
+    || !accepted
+    || !isCurrentIdentity(accepted.identity)
+    || mirrorRequestedCanonicalGeneration === accepted.generation) return
+  mirrorRequestedCanonicalGeneration = accepted.generation
+  await mirror.replace(accepted.identity)
+}
+
+function settleFailedCanonicalReplacement(generation: number) {
+  if (generation !== canonicalReplacementGeneration) return
+  canonicalPendingGeneration = null
+  acceptedCanonical = null
+  mirrorRequestedCanonicalGeneration = null
+  mirror.clear()
 }
 
 function isCurrentIdentity(candidate: ReturnType<typeof currentIdentity>) {
@@ -527,8 +593,15 @@ function normalizeSymbol(value: unknown): string | null {
               :visible-main-indicators="visibleMainIndicators"
               :alert-markers="persistentAlertMarkers"
               :research-markers="lifecycleMarkers"
+              :secondary-panel="selectedSecondaryPanel"
+              :main-force-mirror-v2-points="mirror.points.value"
+              :main-force-mirror-v2-member-dataset="mirror.memberDataset.value"
+              :main-force-mirror-v2-loading="mirror.loading.value"
+              :main-force-mirror-v2-error="mainForceMirrorV2DisplayError"
+              :main-force-mirror-v2-canonical-end="mirror.canonicalEnd.value"
               @need-more-before="loadEarlierBars"
               @follow-latest-change="followLatest = $event"
+              @secondary-panel-change="updateSecondaryPanel"
             />
           </div>
           <div class="product-workspace__sidebar-wrap">
@@ -550,8 +623,7 @@ function normalizeSymbol(value: unknown): string | null {
               :subing-loading="subingLoading || metadataLoading"
               :subing-error="subingError"
               :subing-supported="subingSupported"
-              :htdy-rule="htdyRule"
-              :subing-rule="subingRule"
+              :alert-rules="alertRules"
               :alert-runtime-status="alertRuntimeStatus"
               :alert-loading="alertLoading"
               :saving-rule-codes="savingRuleCodes"
@@ -594,8 +666,7 @@ function normalizeSymbol(value: unknown): string | null {
           :subing-loading="subingLoading || metadataLoading"
           :subing-error="subingError"
           :subing-supported="subingSupported"
-          :htdy-rule="htdyRule"
-          :subing-rule="subingRule"
+          :alert-rules="alertRules"
           :alert-runtime-status="alertRuntimeStatus"
           :alert-loading="alertLoading"
           :saving-rule-codes="savingRuleCodes"

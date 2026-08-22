@@ -32,8 +32,7 @@ const props = defineProps<{
   subingLoading: boolean
   subingError: boolean
   subingSupported: boolean
-  htdyRule: ProductAlertRuleState | null
-  subingRule: ProductAlertRuleState | null
+  alertRules: ProductAlertRuleState[]
   alertRuntimeStatus: AlertRuntimeStatus | null
   alertLoading: boolean
   savingRuleCodes: Set<string>
@@ -97,8 +96,7 @@ function htdyObservationTime(value: string) {
     <NDivider />
     <section class="research-sidebar__section"><h3>提醒开关</h3></section>
     <ProductAlertRules
-      :htdy-rule="htdyRule"
-      :subing-rule="subingRule"
+      :rules="alertRules"
       :runtime-status="alertRuntimeStatus"
       :loading="alertLoading"
       :saving-rule-codes="savingRuleCodes"
@@ -117,6 +115,7 @@ function htdyObservationTime(value: string) {
       :loading="currentEventsLoading"
       :status="currentEventsStatus"
       :items="currentEvents"
+      :rules="alertRules"
     />
     <NDivider />
     <section class="research-sidebar__section"><h3>研究明细</h3></section>

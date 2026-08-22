@@ -16,7 +16,7 @@ from app.db.base import Base
 from app.db.session import get_db
 from app.execution_review.contracts import ExecutionReviewContractError
 from app.main import app
-from app.execution_review.service import ExecutionReviewDomainError
+from app.execution_review.errors import ExecutionReviewDomainError
 
 
 BAR_END = datetime(2026, 8, 15, 1, 0, tzinfo=UTC)
@@ -285,7 +285,11 @@ def test_reconstruction_route_defaults_to_signal_and_serializes_canonical_bars(
                 bars_15m=(),
             )
 
-    monkeypatch.setattr(execution_review_api, "_service", lambda _session: FakeService())
+    monkeypatch.setattr(
+        execution_review_api,
+        "_reconstruction_service",
+        lambda _session: FakeService(),
+    )
 
     response = client.get("/api/execution-review/events/17/reconstruction")
 
@@ -368,11 +372,13 @@ def test_reconstruction_unavailable_is_http_200(
                 bars_15m=(),
             )
 
-    monkeypatch.setattr(execution_review_api, "_service", lambda _session: FakeService())
-
-    response = client.get(
-        "/api/execution-review/events/17/reconstruction?mode=full"
+    monkeypatch.setattr(
+        execution_review_api,
+        "_reconstruction_service",
+        lambda _session: FakeService(),
     )
+
+    response = client.get("/api/execution-review/events/17/reconstruction?mode=full")
 
     assert response.status_code == 200
     assert response.json()["status"] == "UNAVAILABLE"
@@ -426,9 +432,7 @@ def test_event_states_require_bounded_ids_and_fail_closed(
         second_id,
         first_id,
     ]
-    assert unrequested_id not in {
-        row["event_id"] for row in bounded.json()["items"]
-    }
+    assert unrequested_id not in {row["event_id"] for row in bounded.json()["items"]}
     assert missing_event.status_code == 404
     assert missing_event.json() == {
         "detail": {"code": "EXECUTION_REVIEW_EVENT_NOT_FOUND"}
@@ -623,9 +627,7 @@ def test_request_contract_rejects_client_owned_fields_with_stable_code(
     response = client.request(method, path, json=body)
 
     assert response.status_code == 422
-    assert response.json() == {
-        "detail": {"code": "INVALID_EXECUTION_REVIEW_REQUEST"}
-    }
+    assert response.json() == {"detail": {"code": "INVALID_EXECUTION_REVIEW_REQUEST"}}
 
 
 def test_execution_review_domain_errors_use_stable_envelope(
@@ -651,13 +653,9 @@ def test_execution_review_domain_errors_use_stable_envelope(
     missing = client.get("/api/execution-review/episodes/999")
 
     assert opposite.status_code == 409
-    assert opposite.json() == {
-        "detail": {"code": "ROLL_RECONCILIATION_REQUIRED"}
-    }
+    assert opposite.json() == {"detail": {"code": "ROLL_RECONCILIATION_REQUIRED"}}
     assert missing.status_code == 404
-    assert missing.json() == {
-        "detail": {"code": "TRADE_EPISODE_NOT_FOUND"}
-    }
+    assert missing.json() == {"detail": {"code": "TRADE_EPISODE_NOT_FOUND"}}
 
 
 @pytest.mark.parametrize(
@@ -708,7 +706,7 @@ def test_unknown_persistence_failure_uses_redacted_503_envelope(
 
     monkeypatch.setattr(
         execution_review_api,
-        "_service",
+        "_query_service",
         lambda _: FailingService(),
     )
 
@@ -718,9 +716,7 @@ def test_unknown_persistence_failure_uses_redacted_503_envelope(
     )
 
     assert response.status_code == 503
-    assert response.json() == {
-        "detail": {"code": "EXECUTION_REVIEW_PERSIST_FAILED"}
-    }
+    assert response.json() == {"detail": {"code": "EXECUTION_REVIEW_PERSIST_FAILED"}}
 
 
 def test_multiplier_reference_failure_uses_redacted_503_envelope(
@@ -734,7 +730,7 @@ def test_multiplier_reference_failure_uses_redacted_503_envelope(
 
     monkeypatch.setattr(
         execution_review_api,
-        "build_execution_review_service",
+        "build_execution_review_query_service",
         fail_builder,
     )
 
@@ -743,9 +739,7 @@ def test_multiplier_reference_failure_uses_redacted_503_envelope(
     )
 
     assert response.status_code == 503
-    assert response.json() == {
-        "detail": {"code": "EXECUTION_REVIEW_PERSIST_FAILED"}
-    }
+    assert response.json() == {"detail": {"code": "EXECUTION_REVIEW_PERSIST_FAILED"}}
 
 
 def _seed_event(
@@ -760,9 +754,7 @@ def _seed_event(
     frequency: str = "15m",
 ) -> int:
     with factory() as session:
-        rule = session.query(AlertRule).filter_by(
-            rule_code=rule_code
-        ).one_or_none()
+        rule = session.query(AlertRule).filter_by(rule_code=rule_code).one_or_none()
         if rule is None:
             rule = AlertRule(
                 rule_code=rule_code,

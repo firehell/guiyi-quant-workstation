@@ -29,6 +29,8 @@ from app.execution_review.models import (
     TradeExecution,
     TradeReview,
 )
+from app.execution_review.errors import ExecutionReviewDomainError
+from app.execution_review.queries import ExecutionReviewQueryService
 from app.execution_review.reconciler import RollReconcileResult
 from app.execution_review.service import (
     ExecutedCommand,
@@ -36,7 +38,6 @@ from app.execution_review.service import (
     DispositionCorrectionCommand,
     ExecutionCommand,
     ExecutionUpdateCommand,
-    ExecutionReviewDomainError,
     ExecutionReviewService,
     NotExecutedCommand,
     ReviewCommand,
@@ -137,8 +138,7 @@ def test_duplicate_processed_event_does_not_call_defensive_reconcile(
         multipliers={"jm": Decimal("60")},
         clock=lambda: SERVER_NOW,
         reconcile_symbol=lambda symbol: (
-            calls.append(symbol)
-            or RollReconcileResult("NOOP", symbol)
+            calls.append(symbol) or RollReconcileResult("NOOP", symbol)
         ),
     )
 
@@ -158,8 +158,7 @@ def test_record_executed_without_open_episode_does_not_call_reconciler(
         multipliers={"jm": Decimal("60")},
         clock=lambda: SERVER_NOW,
         reconcile_symbol=lambda symbol: (
-            calls.append(symbol)
-            or RollReconcileResult("NOOP", symbol)
+            calls.append(symbol) or RollReconcileResult("NOOP", symbol)
         ),
     )
 
@@ -388,7 +387,9 @@ def test_executed_creates_decision_episode_and_open_atomically(
 def test_executed_time_contract_is_fail_closed(session: Session) -> None:
     event = _event(session)
 
-    with pytest.raises(ExecutionReviewDomainError, match="^EXECUTION_TIME_BEFORE_SIGNAL$"):
+    with pytest.raises(
+        ExecutionReviewDomainError, match="^EXECUTION_TIME_BEFORE_SIGNAL$"
+    ):
         _service(session).record_executed(
             event.id,
             _executed(executed_at=BAR_END - timedelta(seconds=1)),
@@ -1125,7 +1126,9 @@ def test_correct_origin_executed_to_not_executed_requires_sole_open(
         ),
     )
 
-    with pytest.raises(ExecutionReviewDomainError, match="^DECISION_CORRECTION_CONFLICT$"):
+    with pytest.raises(
+        ExecutionReviewDomainError, match="^DECISION_CORRECTION_CONFLICT$"
+    ):
         service.correct_disposition(
             opened.decision.id,
             DispositionCorrectionCommand(
@@ -1425,7 +1428,7 @@ def test_read_models_classify_pending_open_pending_review_and_done(
     items = tuple(
         item
         for state in ("pending_decision", "open", "pending_review", "done")
-        for item in service.list_items(state=state)
+        for item in _query_service(session).list_items(state=state)
     )
     assert {(item.item_kind, item.state, item.event_id) for item in items} == {
         ("decision", "pending_decision", pending.id),
@@ -1434,8 +1437,10 @@ def test_read_models_classify_pending_open_pending_review_and_done(
         ("episode", "pending_review", pending_review.decision.alert_event_id),
         ("episode", "done", done.decision.alert_event_id),
     }
-    done_items = service.list_items(state="done")
-    assert {(item.item_kind, item.decision_id, item.episode_id) for item in done_items} == {
+    done_items = _query_service(session).list_items(state="done")
+    assert {
+        (item.item_kind, item.decision_id, item.episode_id) for item in done_items
+    } == {
         ("decision", not_decision.id, None),
         ("episode", done.decision.id, done.episode.id),
     }
@@ -1448,7 +1453,7 @@ def test_read_models_classify_pending_open_pending_review_and_done(
     )
     event_states = {
         row.event_id: row.state
-        for row in service.event_states(requested_event_ids)
+        for row in _query_service(session).event_states(requested_event_ids)
     }
     assert event_states == {
         pending.id: "pending_decision",
@@ -1458,38 +1463,50 @@ def test_read_models_classify_pending_open_pending_review_and_done(
         done.decision.alert_event_id: "done",
     }
 
-    assert [item.event_id for item in service.list_items(
-        state="pending_decision",
-        symbol=" P ",
-        direction="SHORT",
-        frequency="15m",
-        start_trading_day=date(2099, 1, 1),
-        end_trading_day=date(2099, 1, 2),
-    )] == [pending.id]
-    assert [item.episode_id for item in service.list_items(
-        state="open",
-        symbol="o",
-        direction="SHORT",
-        frequency="15m",
-        start_trading_day=date(2099, 1, 1),
-        end_trading_day=date(2099, 1, 2),
-    )] == [open_result.episode.id]
-    assert [item.episode_id for item in service.list_items(
-        state="pending_review",
-        symbol="r",
-        direction="SHORT",
-        frequency="15m",
-        start_trading_day=date(2099, 1, 1),
-        end_trading_day=date(2099, 1, 2),
-    )] == [pending_review.episode.id]
-    assert [item.episode_id for item in service.list_items(
-        state="done",
-        symbol="d",
-        direction="SHORT",
-        frequency="15m",
-        start_trading_day=date(2026, 8, 15),
-        end_trading_day=date(2026, 8, 15),
-    )] == [done.episode.id]
+    assert [
+        item.event_id
+        for item in _query_service(session).list_items(
+            state="pending_decision",
+            symbol=" P ",
+            direction="SHORT",
+            frequency="15m",
+            start_trading_day=date(2099, 1, 1),
+            end_trading_day=date(2099, 1, 2),
+        )
+    ] == [pending.id]
+    assert [
+        item.episode_id
+        for item in _query_service(session).list_items(
+            state="open",
+            symbol="o",
+            direction="SHORT",
+            frequency="15m",
+            start_trading_day=date(2099, 1, 1),
+            end_trading_day=date(2099, 1, 2),
+        )
+    ] == [open_result.episode.id]
+    assert [
+        item.episode_id
+        for item in _query_service(session).list_items(
+            state="pending_review",
+            symbol="r",
+            direction="SHORT",
+            frequency="15m",
+            start_trading_day=date(2099, 1, 1),
+            end_trading_day=date(2099, 1, 2),
+        )
+    ] == [pending_review.episode.id]
+    assert [
+        item.episode_id
+        for item in _query_service(session).list_items(
+            state="done",
+            symbol="d",
+            direction="SHORT",
+            frequency="15m",
+            start_trading_day=date(2026, 8, 15),
+            end_trading_day=date(2026, 8, 15),
+        )
+    ] == [done.episode.id]
 
 
 def test_event_states_are_bounded_ordered_and_deduplicated(
@@ -1509,7 +1526,7 @@ def test_event_states_are_bounded_ordered_and_deduplicated(
         bar_end=BAR_END + timedelta(minutes=2),
     )
 
-    states = _service(session).event_states((second.id, first.id, second.id))
+    states = _query_service(session).event_states((second.id, first.id, second.id))
 
     assert [row.event_id for row in states] == [second.id, first.id]
     assert unrequested.id not in {row.event_id for row in states}
@@ -1522,7 +1539,7 @@ def test_event_states_missing_id_fails_the_batch(session: Session) -> None:
         ExecutionReviewDomainError,
         match="^EXECUTION_REVIEW_EVENT_NOT_FOUND$",
     ) as captured:
-        _service(session).event_states((event.id, event.id + 1000))
+        _query_service(session).event_states((event.id, event.id + 1000))
 
     assert captured.value.status_code == 404
 
@@ -1542,7 +1559,7 @@ def test_event_states_reject_ineligible_or_invalid_direction(
     event = _event(session, **event_changes)
 
     with pytest.raises(ExecutionReviewDomainError, match=f"^{code}$") as captured:
-        _service(session).event_states((event.id,))
+        _query_service(session).event_states((event.id,))
 
     assert captured.value.status_code == 422
 
@@ -1560,12 +1577,12 @@ def test_done_items_use_alert_trading_day_not_bar_end_natural_date(
         NotExecutedCommand(primary_reason="TOO_LATE"),
     )
 
-    matching = _service(session).list_items(
+    matching = _query_service(session).list_items(
         state="done",
         start_trading_day=date(2026, 8, 15),
         end_trading_day=date(2026, 8, 15),
     )
-    natural_date = _service(session).list_items(
+    natural_date = _query_service(session).list_items(
         state="done",
         start_trading_day=date(2026, 8, 14),
         end_trading_day=date(2026, 8, 14),
@@ -1576,14 +1593,14 @@ def test_done_items_use_alert_trading_day_not_bar_end_natural_date(
 
 
 def test_zero_stats_denominators_are_undefined(session: Session) -> None:
-    empty = _service(session).stats()
+    empty = _query_service(session).stats()
 
     assert empty.opportunities.eligible_events == 0
     assert empty.opportunities.decision_completion_rate is None
     assert empty.opportunities.execution_rate is None
 
     _event(session)
-    pending = _service(session).stats()
+    pending = _query_service(session).stats()
 
     assert pending.opportunities.eligible_events == 1
     assert pending.opportunities.processed_events == 0
@@ -1653,7 +1670,7 @@ def test_episode_detail_returns_origin_event_and_only_trigger_decisions_in_order
         ),
     )
 
-    detail = service.episode_detail(opened.episode.id)
+    detail = _query_service(session).episode_detail(opened.episode.id)
 
     assert detail.origin_event.id == origin_event.id
     assert detail.origin_event.rule_code == "subing_entry_signal_v1"
@@ -1697,7 +1714,7 @@ def test_read_path_database_failure_is_stable_and_redacted(
         ExecutionReviewDomainError,
         match="^EXECUTION_REVIEW_PERSIST_FAILED$",
     ) as captured:
-        _service(session).list_items(state="done")
+        _query_service(session).list_items(state="done")
 
     assert captured.value.status_code == 503
     assert "sensitive" not in str(captured.value).lower()
@@ -1796,7 +1813,7 @@ def test_stats_separate_opportunities_from_episode_states(session: Session) -> N
     )
     service.submit_review(old_done.episode.id, _review_command())
 
-    stats = service.stats(
+    stats = _query_service(session).stats(
         trading_day_from=date(2026, 8, 15),
         trading_day_to=date(2026, 8, 15),
     )
@@ -1818,7 +1835,7 @@ def test_stats_separate_opportunities_from_episode_states(session: Session) -> N
     assert stats.review_issue_top.psychology == {"HESITATION": 1}
     assert open_result.episode.id != done.episode.id
 
-    filtered = service.stats(
+    filtered = _query_service(session).stats(
         trading_day_from=date(2026, 8, 15),
         trading_day_to=date(2026, 8, 15),
         symbol="o",
@@ -1833,6 +1850,7 @@ def test_stats_separate_opportunities_from_episode_states(session: Session) -> N
     assert filtered.review_issue_top.entry == {}
 
 
+@pytest.mark.isolated_postgresql
 def test_postgresql_open_episode_race_rolls_back_loser_without_automatic_add(
     postgres_engine: Engine,
 ) -> None:
@@ -1853,9 +1871,7 @@ def test_postgresql_open_episode_race_rolls_back_loser_without_automatic_add(
         assert _count(check, TradeEpisode) == 1
         assert _count(check, TradeExecution) == 1
         loser_id = next(
-            event_id
-            for event_id, code in results
-            if code == "OPEN_EPISODE_CONFLICT"
+            event_id for event_id, code in results if code == "OPEN_EPISODE_CONFLICT"
         )
         resubmitted = _service(check).record_executed(
             loser_id,
@@ -1882,6 +1898,7 @@ def test_postgresql_open_episode_race_rolls_back_loser_without_automatic_add(
         ),
     ],
 )
+@pytest.mark.isolated_postgresql
 def test_postgresql_open_race_reclassifies_winner_business_facts(
     postgres_engine: Engine,
     second_changes: dict[str, object],
@@ -1909,6 +1926,7 @@ def test_postgresql_open_race_reclassifies_winner_business_facts(
         assert _count(check, TradeExecution) == 1
 
 
+@pytest.mark.isolated_postgresql
 def test_postgresql_disposition_correction_open_race_reclassifies_winner(
     postgres_engine: Engine,
 ) -> None:
@@ -1977,6 +1995,7 @@ def test_postgresql_disposition_correction_open_race_reclassifies_winner(
         assert _count(check, TradeExecution) == 1
 
 
+@pytest.mark.isolated_postgresql
 def test_postgresql_episode_lock_serializes_concurrent_manual_appends(
     postgres_engine: Engine,
 ) -> None:
@@ -2016,6 +2035,7 @@ def test_postgresql_episode_lock_serializes_concurrent_manual_appends(
         assert [row.sequence_no for row in rows] == [1, 2, 3]
 
 
+@pytest.mark.isolated_postgresql
 def test_postgresql_decision_update_serializes_with_disposition_correction(
     postgres_engine: Engine,
 ) -> None:
@@ -2096,6 +2116,7 @@ def test_postgresql_decision_update_serializes_with_disposition_correction(
         assert decision.stop_basis is None
 
 
+@pytest.mark.isolated_postgresql
 @pytest.mark.parametrize("correction_kind", ["execution", "timeline"])
 def test_postgresql_causal_corrections_serialize_decision_and_execution(
     postgres_engine: Engine,
@@ -2195,7 +2216,10 @@ def test_postgresql_causal_corrections_serialize_decision_and_execution(
     with ThreadPoolExecutor(max_workers=2) as executor:
         execution_future = executor.submit(correct_execution)
         decision_future = executor.submit(correct_decision)
-        results = (execution_future.result(timeout=15), decision_future.result(timeout=15))
+        results = (
+            execution_future.result(timeout=15),
+            decision_future.result(timeout=15),
+        )
 
     assert sorted(results) == ["DECISION_AFTER_EXECUTION", "updated"]
     with factory() as check:
@@ -2206,6 +2230,7 @@ def test_postgresql_causal_corrections_serialize_decision_and_execution(
         assert _utc(decision.decided_at) <= _utc(execution.executed_at)
 
 
+@pytest.mark.isolated_postgresql
 def test_postgresql_event_states_uses_one_consistent_statement_snapshot(
     postgres_engine: Engine,
 ) -> None:
@@ -2244,7 +2269,7 @@ def test_postgresql_event_states_uses_one_consistent_statement_snapshot(
                 return state.invoke_statement()  # type: ignore[attr-defined]
 
             try:
-                states = _service(local_session).event_states((event_id,))
+                states = _query_service(local_session).event_states((event_id,))
                 return states[0].state
             except ExecutionReviewDomainError as exc:
                 return exc.code
@@ -2269,6 +2294,7 @@ def test_postgresql_event_states_uses_one_consistent_statement_snapshot(
     assert state == "pending_decision"
 
 
+@pytest.mark.isolated_postgresql
 @pytest.mark.parametrize("read_kind", ["items", "stats"])
 def test_postgresql_read_models_do_not_mix_disposition_correction_snapshots(
     postgres_engine: Engine,
@@ -2316,9 +2342,9 @@ def test_postgresql_read_models_do_not_mix_disposition_correction_snapshots(
             if read_kind == "items":
                 return tuple(
                     (item.item_kind, item.state)
-                    for item in _service(local_session).list_items(state="done")
+                    for item in _query_service(local_session).list_items(state="done")
                 )
-            stats = _service(local_session).stats()
+            stats = _query_service(local_session).stats()
             return (
                 stats.opportunities.not_executed_decisions,
                 stats.episode_states.open_episodes,
@@ -2353,6 +2379,7 @@ def test_postgresql_read_models_do_not_mix_disposition_correction_snapshots(
         assert observed == (1, 0)
 
 
+@pytest.mark.isolated_postgresql
 def test_postgresql_episode_detail_uses_one_statement_snapshot(
     postgres_engine: Engine,
 ) -> None:
@@ -2401,7 +2428,7 @@ def test_postgresql_episode_detail_uses_one_statement_snapshot(
                     return result
                 return state.invoke_statement()  # type: ignore[attr-defined]
 
-            detail = _service(local_session).episode_detail(episode_id)
+            detail = _query_service(local_session).episode_detail(episode_id)
             return (
                 sum(row.quantity for row in detail.executions),
                 detail.position.remaining_quantity,
@@ -2448,9 +2475,7 @@ def test_integrity_error_whitelist_maps_only_approved_constraints(
     constraint_name: str,
     code: str,
 ) -> None:
-    mapped = ExecutionReviewService._integrity_error(
-        _integrity_error(constraint_name)
-    )
+    mapped = ExecutionReviewService._integrity_error(_integrity_error(constraint_name))
 
     assert mapped.code == code
     assert mapped.status_code == 409
@@ -2472,6 +2497,13 @@ def _service(session: Session, *, now: datetime = SERVER_NOW) -> ExecutionReview
         session,
         multipliers={"jm": Decimal("60")},
         clock=lambda: now,
+    )
+
+
+def _query_service(session: Session) -> ExecutionReviewQueryService:
+    return ExecutionReviewQueryService(
+        session,
+        multipliers={"jm": Decimal("60")},
     )
 
 
@@ -2513,9 +2545,7 @@ def _event(session: Session, **changes: object) -> AlertEvent:
     notification_attempted_at = changes.pop("notification_attempted_at", None)
     if changes:
         raise AssertionError(f"unknown event changes: {changes}")
-    rule = session.scalar(
-        select(AlertRule).where(AlertRule.rule_code == rule_code)
-    )
+    rule = session.scalar(select(AlertRule).where(AlertRule.rule_code == rule_code))
     if rule is None:
         rule = AlertRule(
             rule_code=rule_code,

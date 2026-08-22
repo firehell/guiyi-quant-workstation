@@ -6,9 +6,9 @@ from decimal import Decimal
 
 import pytest
 
-from app.market_data import n_structure_state as state_module
+from app.research.n_structure import n_structure_state as state_module
 from app.market_data.domain import BarFrequency, CanonicalBar
-from app.market_data.n_structure_pattern import (
+from app.research.n_structure.n_structure_pattern import (
     CompletedNPattern,
     NBreakKind,
     NPatternTrace,
@@ -16,17 +16,17 @@ from app.market_data.n_structure_pattern import (
     NRangeBandRole,
     evaluate_n_patterns,
 )
-from app.market_data.n_structure_policy import (
+from app.research.n_structure.n_structure_policy import (
     NStructurePolicy,
     load_n_structure_policy,
 )
-from app.market_data.n_structure_state import (
+from app.research.n_structure.n_structure_state import (
     NStructureKind,
     NStructureTrace,
     NStructureTransitionReason,
     evaluate_n_market_structure,
 )
-from app.market_data.n_structure_swing import (
+from app.research.n_structure.n_structure_swing import (
     NStructureSeriesError,
     NSwingPivot,
     NSwingPivotKind,

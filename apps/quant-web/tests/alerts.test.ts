@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { describe, it } from 'node:test'
 
 import { alertRuntimeLabel, isCurrentAlertMutation } from '../src/utils/alertControl.ts'
+import { ALERT_RULE_CODES, ALERT_RULE_PRESENTATIONS } from '../src/utils/alertRules.ts'
 import {
   alertEventsToMarkers,
   isPersistentAlertIdentity,
@@ -88,10 +89,13 @@ describe('Product Alert server-side scope', () => {
   it('renders the two fixed registry rows and a shared Runtime status only once', () => {
     assert.equal(existsSync(rulesPath), true)
     const rulesSource = read('../src/components/market/ProductAlertRules.vue')
-    assert.match(rulesSource, /火天大有 · 15m/)
-    assert.match(rulesSource, /苏冰入场信号/)
+    assert.deepEqual(ALERT_RULE_PRESENTATIONS.map((item) => item.ruleCode), [
+      ALERT_RULE_CODES.HTDY,
+      ALERT_RULE_CODES.SUBING,
+    ])
+    assert.match(rulesSource, /rule\.display_name/)
+    assert.match(rulesSource, /rule\.input_frequencies\.join\('\/'\)/)
     assert.equal((rulesSource.match(/Alert Runtime/g) || []).length, 1)
-    assert.doesNotMatch(rulesSource, /5m.*NSwitch|NSwitch.*5m/)
     assert.match(rulesSource, /不可用/)
   })
 
@@ -150,8 +154,8 @@ describe('Product Alert server-side scope', () => {
     await controller.refresh()
     await controller.toggle('subing_entry_signal_v1', true)
 
-    assert.equal(controller.subingRule.value?.enabled_for_product, true)
-    assert.equal(controller.htdyRule.value?.enabled_for_product, true)
+    assert.equal(controller.alertRules.value.find((rule) => rule.rule_code === ALERT_RULE_CODES.SUBING)?.enabled_for_product, true)
+    assert.equal(controller.alertRules.value.find((rule) => rule.rule_code === ALERT_RULE_CODES.HTDY)?.enabled_for_product, true)
     controller.dispose()
   })
 
@@ -193,7 +197,7 @@ describe('Product Alert server-side scope', () => {
     await controller.refresh()
     resolveUpdate!(subingRule(true))
     await pending
-    assert.equal(controller.subingRule.value?.enabled_for_product, false)
+    assert.equal(controller.alertRules.value.find((rule) => rule.rule_code === ALERT_RULE_CODES.SUBING)?.enabled_for_product, false)
     controller.dispose()
   })
 

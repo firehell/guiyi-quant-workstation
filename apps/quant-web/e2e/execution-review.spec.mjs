@@ -744,11 +744,12 @@ test('stats keep their date range across tabs while active queues remain date-un
   expect(latestStatsRequest).toContain('trading_day_to=2026-08-15')
 
   for (const state of ['pending_decision', 'open', 'pending_review']) {
+    await expect.poll(() => store.requests.some((value) => value.includes(`/items?state=${state}`))).toBe(true)
     const request = store.requests.find((value) => value.includes(`/items?state=${state}`))
-    expect(request).toBeTruthy()
     expect(request).not.toContain('start_trading_day')
     expect(request).not.toContain('end_trading_day')
   }
+  await expect.poll(() => store.requests.some((value) => value.includes('/items?state=done'))).toBe(true)
   const doneRequest = store.requests.find((value) => value.includes('/items?state=done'))
   expect(doneRequest).toContain('start_trading_day=2026-08-01')
   expect(doneRequest).toContain('end_trading_day=2026-08-15')

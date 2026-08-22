@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 from app.alerts.evaluators import AlertEvaluation, AlertEvaluator
 from app.alerts.models import AlertRule
 from app.alerts.notification import AlertNotificationMessage, AlertNotificationSender
-from app.alerts.registry import get_alert_rule_definition
+from app.alerts.registry import HTDY_RULE, SUBING_RULE, get_alert_rule_definition
 from app.alerts.service import AlertEventCreate, AlertService
 from app.market_data.aggregation import SessionWindow, bucket_window_for_bar
 from app.market_data.domain import (
@@ -48,8 +48,6 @@ _LOGGER = logging.getLogger(__name__)
 _PATTERN = "live:bar:*:*"
 _HEARTBEAT_INTERVAL = timedelta(seconds=10)
 _HEARTBEAT_TTL_SECONDS = 30
-_HTDY_RULE_CODE = "htdy_original_15m"
-_SUBING_RULE_CODE = "subing_entry_signal_v1"
 
 
 class AlertMessageSource(Protocol):
@@ -234,9 +232,9 @@ class AlertRuntime:
         event_bar: CanonicalBar,
         processing_now: datetime,
     ) -> _RuleResult | None:
-        if rule_code == _HTDY_RULE_CODE:
+        if rule_code == HTDY_RULE.rule_code:
             return self._evaluate_htdy(session, symbol=symbol, event_bar=event_bar)
-        if rule_code == _SUBING_RULE_CODE:
+        if rule_code == SUBING_RULE.rule_code:
             return self._evaluate_subing(
                 session,
                 symbol=symbol,

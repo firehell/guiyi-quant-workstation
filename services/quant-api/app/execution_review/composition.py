@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import UTC, datetime
+from decimal import Decimal
 from pathlib import Path
 
 from sqlalchemy.orm import Session, sessionmaker
@@ -12,6 +13,8 @@ from app.execution_review.contracts import load_product_trade_multipliers
 from app.execution_review.reconciler import (
     ExecutionReviewRollReconciler,
 )
+from app.execution_review.queries import ExecutionReviewQueryService
+from app.execution_review.reconstruction import EventReconstructionService
 from app.execution_review.service import (
     DefensiveReconcileResult,
     ExecutionReviewService,
@@ -20,8 +23,7 @@ from app.market_data.composition import build_market_data_service
 
 
 _MULTIPLIER_PATH = (
-    Path(__file__).resolve().parents[4]
-    / "data/reference/product_trade_multipliers.csv"
+    Path(__file__).resolve().parents[4] / "data/reference/product_trade_multipliers.csv"
 )
 
 
@@ -54,8 +56,26 @@ def build_execution_review_service(
 
     return ExecutionReviewService(
         session,
-        multipliers=load_product_trade_multipliers(_MULTIPLIER_PATH),
+        multipliers=_multipliers(),
         clock=clock or (lambda: datetime.now(UTC)),
-        market_data=build_market_data_service(session),
         reconcile_symbol=reconcile_symbol,
     )
+
+
+def build_execution_review_query_service(
+    session: Session,
+) -> ExecutionReviewQueryService:
+    return ExecutionReviewQueryService(session, multipliers=_multipliers())
+
+
+def build_execution_review_reconstruction_service(
+    session: Session,
+) -> EventReconstructionService:
+    return EventReconstructionService(
+        session,
+        market_data=build_market_data_service(session),
+    )
+
+
+def _multipliers() -> dict[str, Decimal]:
+    return load_product_trade_multipliers(_MULTIPLIER_PATH)

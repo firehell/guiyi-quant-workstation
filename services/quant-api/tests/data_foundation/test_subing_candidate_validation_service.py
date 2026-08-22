@@ -6,22 +6,22 @@ from decimal import Decimal
 
 import pytest
 
-from app.market_data import candidate_validation_schedule as shared_schedule
-from app.market_data import subing_candidate_validation_service as service_module
-from app.market_data.candidate_validation import ProspectiveOosStatus
-from app.market_data.candidate_validation_policy import (
+from app.research.common import candidate_validation_schedule as shared_schedule
+from app.research.subing import subing_candidate_validation_service as service_module
+from app.research.subing.candidate_validation import ProspectiveOosStatus
+from app.research.subing.candidate_validation_policy import (
     load_candidate_manifest,
     load_candidate_validation_protocol,
 )
 from app.market_data.subing_calibration import HorizonEvaluation
-from app.market_data.subing_candidate_validation_service import (
+from app.research.subing.subing_candidate_validation_service import (
     CandidateValidationIdentityError,
     CandidateValidationRequest,
     CandidateValidationSourceError,
     CandidateValidationWindowError,
     SubingCandidateValidationService,
 )
-from app.market_data.subing_lifecycle_research_service import (
+from app.research.subing.subing_lifecycle_research_service import (
     LifecycleResearchRequest,
     SubingLifecycleResearchResult,
 )
@@ -115,18 +115,6 @@ def _request(*, through: date = date(2026, 8, 19)) -> CandidateValidationRequest
     )
 
 
-def test_service_reexports_shared_request_and_stable_errors() -> None:
-    assert CandidateValidationRequest is shared_schedule.CandidateValidationRequest
-    assert (
-        CandidateValidationIdentityError
-        is shared_schedule.CandidateValidationIdentityError
-    )
-    assert (
-        CandidateValidationWindowError is shared_schedule.CandidateValidationWindowError
-    )
-    assert (
-        CandidateValidationSourceError is shared_schedule.CandidateValidationSourceError
-    )
 
 
 def test_service_delegates_rolling_and_prospective_date_math(

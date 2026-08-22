@@ -41,6 +41,9 @@ packages = ["app"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
+markers = [
+  "isolated_postgresql: requires GUIYI_ISOLATED_MIGRATION_DATABASE_URL for a non-Runtime isolated PostgreSQL database",
+]
 
 [tool.uv]
 # RQData 3.5.2+ documents pandas 3 support, but its wheel metadata still caps pandas below 3.

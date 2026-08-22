@@ -16,7 +16,7 @@ flowchart TB
       WEB["Market Web"]
       API["Market API"]
       CLI["guiyi data update/refresh/audit"]
-      RCLI["guiyi research<br/>calibration / lifecycle / n-structure / candidate-validation / robustness / futures-mirror"]
+      RCLI["guiyi research<br/>calibration / lifecycle / n-structure / jdj-1m / candidate-validation / robustness / mirror-v2"]
       ALERTAPI["Alert API"]
       ERAPI["Execution Review API"]
     end
@@ -37,11 +37,15 @@ flowchart TB
       ADR["ActualDominantResearchSegmentLoader<br/>true rank1 segment prefix"]
       SL["SuBing Lifecycle V2<br/>research-only snapshot / Shadow"]
       NS["N Structure V1<br/>5m causal Swing / N / Structure"]
+      JC["JDJ Context<br/>N 5m strict-before → 1m"]
+      J3["JDJ 1m three Candidates<br/>causal reducers / immutable events"]
       SCR["SubingCalibrationResearchService"]
       SCV["SuBing Candidate Report<br/>source-specific"]
       NCV["N Candidate Report<br/>source-specific"]
+      JCV["JDJ Candidate Reports<br/>three source-specific baselines"]
       MCR["MultiCandidateRobustnessService<br/>temporal / active60 / relationship"]
-      MFM["MainForceMirrorFuturesResearchService<br/>historical-only Shadow"]
+      MFM["MainForceMirrorV2Service / ResearchService<br/>60m historical confirmed observation"]
+      MMS["pinned immutable<br/>main_force_member_rank_v1 snapshot"]
     end
     subgraph AlertApp["Alert Application Domain"]
       AS["AlertService / Scope / Event"]
@@ -74,6 +78,10 @@ flowchart TB
     RCLI --> SCR --> MQ
     RCLI --> SL --> ADR --> MQ
     RCLI --> NS --> ADR
+    RCLI --> JC --> ADR
+    JC --> NS
+    JC --> J3 --> JCV
+    RCLI --> JCV
     RCLI --> SCV --> SL
     RCLI --> NCV --> NS
     RCLI --> MCR
@@ -82,6 +90,7 @@ flowchart TB
     SL --> MCR
     NS --> MCR
     RCLI --> MFM --> MQ
+    MMS --> MFM
     WEB --> ALERTAPI --> AS
     WEB --> ERAPI --> ERS
     ERS --> ER4 --> EPG
@@ -154,6 +163,15 @@ flowchart TB
   目前只是 Historical/research-only 结构与 Candidate producer；已形成 deterministic jm
   retrospective/rolling evidence，prospective OOS 仍 pending，不代表效果、promotion、
   release 或 Runtime 能力。
+  JDJ 1m 与 SuBing/N 保持独立 source semantics：它在同一个
+  `ActualDominantResearchSegmentLoader` 的 1m/5m true rank1 segment prefix 内，将 existing N 5m
+  snapshot/pivot 以 previous-1m-boundary strict-before 投影到 1m context，再运行 Trend Follow、
+  Trend Reentry 6、Key-Level Breakout 三个纯 reducer。三个 source-specific Candidate 只输出 immutable
+  trigger facts 与 trigger-close 后 3/5/8/20 Bar descriptive outcomes；Candidate Validation 复用同一
+  10-fold/prospective scheduler。其 frozen RQData calendar evidence 只验证 JDJ temporal freeze，
+  不向 Market/Runtime/Alert 提供 Calendar 或 `has_night_session`。三份 `jm` baseline 已形成，
+  prospective OOS 从 2026-08-24 开始且仍 pending；无 ranking、winner、promotion、DB/Canonical/Redis、
+  Alert、Runtime 或订单路径。
   `MultiCandidateRobustnessService` 在两条 frozen Candidate 之上增加薄的只读组合层：
   temporal 仅投影既有 10-fold Candidate Validation，cross-symbol 保留冻结 active60 的完整
   120-cell 矩阵，event relationship 仅比较 same symbol + same physical contract + same rank1
@@ -161,10 +179,15 @@ flowchart TB
   Candidate/公式/参数，不做一对一 greedy matching、score、winner、rank 或 promotion，不进入
   DB/Canonical/Redis、Alert、Runtime 或订单路径。两条 Candidate 的 prospective OOS 仍由各自
   exact Protocol 独立累积。
-  `MainForceMirrorFuturesResearchService` 仅通过 `MarketDataService` 的
+  `MainForceMirrorV2Service` 与 `MainForceMirrorV2ResearchService` 仅通过 `MarketDataService` 的
   `ActualDominantTradingDayQuery` / `ContractTradingDayQuery` 读取 60m Historical Canonical，
-  把每根 Bar 绑定到唯一物理合约后调用 Python Indicator Kernel；结果只由只读 CLI
-  输出 stdout JSON，不读 Redis/provider，不写 DB/Canonical，不进入 Alert、Runtime 或订单路径。
+  把每根 Bar 绑定到唯一物理合约，并只读钉住的不可变
+  `main_force_member_rank_v1` snapshot 后调用 Python Indicator Kernel。唯一 active identity 为
+  `main_force_mirror_v2`，表面仅为 `60m + contract|actual_dominant` Historical confirmed observation；
+  Web 底部副图只有 `MACD | 主力照妖镜 V2`。V0/V1 已退役，仅从 Git history 追溯。
+  结果只由只读 CLI 输出 stdout JSON，不读 Redis/provider，不写 DB/Canonical，不进入
+  Live/Alert/notification/Runtime 或订单路径，`auto_order=false`。真实 member snapshot 与
+  retrospective matrix 本次未执行。
 - 基础设施按外部责任分为 `DatabaseCoverageSource` 与 `RQDataMarketAdapter`，共用稳定的
   `InfrastructureError`；不再维护一个混合 DB coverage、provider 调用与数据标准化的巨型模块。
 - active 60 的展示名称与一级研究板块由 `data/universe/product_sectors.csv` 统一提供，
@@ -254,7 +277,7 @@ htdy_original_15m × 该 Rule 显式 scope_products × htdy_observers × pushplu
 subing_entry_signal_v1 × 该 Rule 显式 scope_products × owner × pushplus-wechat
 ```
 
-当前 production exact-tag `v1.6.4` instance 的两条 Rule 各自 `scope_products=jm`，PushPlus 持续边界
+当前 deployed Alert exact-tag `v1.6.5` instance 的两条 Rule 各自 `scope_products=jm`，PushPlus 持续边界
 精确为上述 HTDY Topic 与 SuBing owner。已批准 Topic 可在人工核对的 `1..4` 人边界内增加成员；超过
 4 人、未知成员或更换 Topic 必须重新授权。未来第三条 Rule 不继承授权；production
 migration、后续 release/tag、再次 Runtime switch、Scope/audience/transport 变更、真实 canary/send、
