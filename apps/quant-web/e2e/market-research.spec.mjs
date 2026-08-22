@@ -32,7 +32,7 @@ function radarItem(overrides = {}) {
     symbol: 'jm', product_name: '焦煤', sector: 'black', price_change_1d: 0.012,
     price_change_5d: 0.032, volume_ratio20: 1.4, oi_change_1d: 0.021,
     atr14_percentile252: 0.72, position20: 0.84, turnover: 12_000,
-    reason_codes: ['price_move_up', 'oi_increase'],
+    reason_codes: ['ema21_up', 'price_move_up', 'oi_increase'],
     ...overrides,
   }
 }
@@ -92,8 +92,8 @@ test('Market homepage shows the current formal signals above Radar', async ({ pa
   await expect(formal).toContainText('5m · 10:25 确认')
   await expect(formal).toContainText('5m 同向确认')
   await expect(formal).toContainText('火天大有')
-  await expect(page.getByText('Market Radar', { exact: true })).toBeVisible()
-  expect(await page.locator('[data-testid="market-formal-signals"], .radar-summary').evaluateAll((nodes) => (
+  await expect(page.getByTestId('market-focus')).toBeVisible()
+  expect(await page.locator('[data-testid="market-formal-signals"], [data-testid="market-focus"]').evaluateAll((nodes) => (
     Boolean(nodes[0]?.compareDocumentPosition(nodes[1]) & Node.DOCUMENT_POSITION_FOLLOWING)
   ))).toBe(true)
 })
@@ -119,10 +119,10 @@ test('Market homepage keeps formal decisions ahead of Radar at a 980-like viewpo
 
   const formal = page.getByTestId('market-formal-signals')
   await expect(formal).toContainText('只显示当前交易日的正式信号')
-  await expect(page.getByText('值得关注，但尚未形成正式信号', { exact: true })).toBeVisible()
+  await expect(page.getByTestId('market-focus')).toBeVisible()
   await expect(formal.locator('.market-formal-signals__card')).toHaveCount(2)
   expect(await formal.locator('.market-formal-signals__card').evaluateAll((cards) => cards[1].getBoundingClientRect().top > cards[0].getBoundingClientRect().top)).toBe(true)
-  expect(await page.locator('[data-testid="market-formal-signals"], .market-attention').evaluateAll((nodes) => (
+  expect(await page.locator('[data-testid="market-formal-signals"], [data-testid="market-focus"]').evaluateAll((nodes) => (
     Boolean(nodes[0]?.compareDocumentPosition(nodes[1]) & Node.DOCUMENT_POSITION_FOLLOWING)
   ))).toBe(true)
 })
@@ -174,7 +174,7 @@ test('Market homepage keeps Radar visible when formal signals are unavailable', 
   const formal = page.getByTestId('market-formal-signals')
   await expect(formal.getByText('暂不可用', { exact: true })).toBeVisible()
   await expect(formal).toContainText('正式信号暂不可用')
-  await expect(page.getByText('Market Radar', { exact: true })).toBeVisible()
+  await expect(page.getByTestId('market-focus')).toBeVisible()
 })
 
 test('Market homepage shows Radar skeletons while the initial snapshot is pending', async ({ page }) => {
@@ -188,7 +188,7 @@ test('Market homepage shows Radar skeletons while the initial snapshot is pendin
   await page.goto('/market')
 
   await expect(page.getByTestId('market-radar-skeleton')).toBeVisible()
-  await expect(page.getByText('Market Radar', { exact: true })).toBeVisible()
+  await expect(page.getByTestId('market-focus')).toBeVisible()
   await expect(page.getByTestId('market-radar-skeleton')).toHaveCount(0)
 })
 
@@ -204,14 +204,14 @@ test('manual Radar refresh keeps the last snapshot on failure and updates on ret
     return route.fulfill({ json: radar({ expected_as_of: asOf, target_as_of: asOf, data_as_of: asOf }) })
   })
   await page.goto('/market')
-  await expect(page.getByText('当前数据日期 2026-08-14', { exact: true })).toBeVisible()
+  await expect(page.getByTestId('market-focus')).toContainText('基于 2026-08-14 完整日线')
 
   await page.getByRole('button', { name: '刷新 Radar' }).click()
   await expect(page.getByRole('alert').filter({ hasText: 'Radar 刷新失败' })).toBeVisible()
-  await expect(page.getByText('当前数据日期 2026-08-14', { exact: true })).toBeVisible()
+  await expect(page.getByTestId('market-focus')).toContainText('基于 2026-08-14 完整日线')
 
   await page.getByRole('button', { name: '重试' }).click()
-  await expect(page.getByText('当前数据日期 2026-08-15', { exact: true })).toBeVisible()
+  await expect(page.getByTestId('market-focus')).toContainText('基于 2026-08-15 完整日线')
   await expect(page.getByRole('alert').filter({ hasText: 'Radar 刷新失败' })).toHaveCount(0)
 })
 
@@ -230,6 +230,8 @@ test('sector tabs preserve backend order and combine sector with watchlist filte
     sector_summary: [sectorSummary('black', 0.008), sectorSummary('agriculture', -0.004)],
   }) }))
   await page.goto('/market')
+
+  await page.getByText('展开全市场研究', { exact: true }).click()
 
   const tabs = page.getByRole('tablist', { name: '按板块筛选' }).getByRole('tab')
   await expect(tabs).toHaveText(['黑色系 0.8%', '农产品 -0.4%'])
