@@ -103,18 +103,19 @@ function toggleOptionalEma(value: OptionalEmaIndicatorId) {
         @click="emit('update:selected-overlay', item.value)"
       >{{ item.label }}</NButton>
     </NButtonGroup>
-    <NButtonGroup size="small" class="toolbar__ema" aria-label="EMA">
-      <NButton
-        v-for="item in optionalEmaOptions"
-        :key="item.value"
-        :type="optionalEmaIndicators.includes(item.value) ? 'primary' : 'default'"
-        :aria-pressed="optionalEmaIndicators.includes(item.value)"
-        @click="toggleOptionalEma(item.value)"
-      >{{ item.label }}</NButton>
-    </NButtonGroup>
     <NPopover trigger="click" placement="bottom-end">
-      <template #trigger><NButton size="small" tertiary>高级</NButton></template>
-      <div class="toolbar__advanced">
+      <template #trigger><NButton size="small" tertiary>图表设置</NButton></template>
+      <div class="toolbar__settings">
+        <span>EMA</span>
+        <NButtonGroup size="small" aria-label="EMA">
+          <NButton
+            v-for="item in optionalEmaOptions"
+            :key="item.value"
+            :type="optionalEmaIndicators.includes(item.value) ? 'primary' : 'default'"
+            :aria-pressed="optionalEmaIndicators.includes(item.value)"
+            @click="toggleOptionalEma(item.value)"
+          >{{ item.label }}</NButton>
+        </NButtonGroup>
         <span>指定真实合约</span>
         <NInput
           :value="contract"
@@ -128,7 +129,7 @@ function toggleOptionalEma(value: OptionalEmaIndicatorId) {
       </div>
     </NPopover>
     <div class="toolbar__spacer" />
-    <NButton size="small" secondary class="toolbar__research" @click="emit('open-research')">研究</NButton>
+    <NButton size="small" secondary class="toolbar__research" @click="emit('open-research')">检查</NButton>
     <NButton size="small" secondary @click="emit('toggle-fullscreen')">
       {{ fullscreen ? '退出全屏' : '全屏' }}
     </NButton>
@@ -138,10 +139,10 @@ function toggleOptionalEma(value: OptionalEmaIndicatorId) {
 <style scoped>
 .product-workspace-toolbar { display: flex; align-items: center; gap: 8px; min-width: 0; flex-wrap: wrap; }
 .toolbar__symbol { width: 184px; }
-.toolbar__series, .toolbar__periods, .toolbar__overlay, .toolbar__ema, .toolbar__subing-basis { white-space: nowrap; }
+.toolbar__series, .toolbar__periods, .toolbar__overlay, .toolbar__subing-basis { white-space: nowrap; }
 .toolbar__spacer { flex: 1 1 8px; }
-.toolbar__advanced { display: grid; gap: 8px; width: 196px; padding: 4px; }
-.toolbar__advanced > span { color: var(--gy-text-muted); font-size: var(--gy-font-size-sm); }
+.toolbar__settings { display: grid; gap: 8px; width: 196px; padding: 4px; }
+.toolbar__settings > span { color: var(--gy-text-muted); font-size: var(--gy-font-size-sm); }
 
 @media (max-width: 860px) {
   .toolbar__back { display: none; }

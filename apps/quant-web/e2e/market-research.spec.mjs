@@ -304,7 +304,7 @@ async function mockWorkspace(page, researchResponse, options = {}) {
       }
       return route.fulfill({ json: response })
     }
-    if (url.pathname.endsWith('/state')) return route.fulfill({ json: { symbol: 'ag', series_kind: url.searchParams.get('series_kind'), frequency: url.searchParams.get('frequency'), operational: true, phase: options.live ? 'TRADING' : 'CLOSED', trading_day: '2026-08-11', live_eligible: !!options.live, live_available: !!options.live, live_contract: options.live ? 'AG2601' : null, canonical_end: null, after_market: {} } })
+    if (url.pathname.endsWith('/state')) return route.fulfill({ json: { symbol: 'ag', series_kind: url.searchParams.get('series_kind'), frequency: url.searchParams.get('frequency'), operational: true, phase: options.live ? 'TRADING' : 'CLOSED', trading_day: '2026-08-11', live_eligible: !!options.live, live_available: !!options.live, live_contract: options.live ? 'AG2601' : null, canonical_end: null, after_market: options.afterMarket || {} } })
     if (url.pathname.endsWith('/bars/page')) {
       const request = Object.fromEntries(url.searchParams)
       marketRequests.push(request)
@@ -389,9 +389,17 @@ test('SuBing keeps the Market display identity separate from current-dominant re
 test('shared EMA switches persist across SuBing and HTDY while none hides every overlay', async ({ page }) => {
   await mockWorkspace(page, { json: research() })
   await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=15m')
+
+  await expect(page.getByRole('button', { name: '图表设置', exact: true })).toBeVisible()
+  await expect(page.getByRole('group', { name: 'EMA' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '高级', exact: true })).toHaveCount(0)
+  await page.getByRole('button', { name: '图表设置', exact: true }).click()
   const ema = page.getByRole('group', { name: 'EMA' })
   const ema10 = ema.getByRole('button', { name: 'EMA10', exact: true })
   const ema60 = ema.getByRole('button', { name: 'EMA60', exact: true })
+  await expect(ema10).toBeVisible()
+  await expect(ema60).toBeVisible()
+  await expect(page.getByText('指定真实合约', { exact: true })).toBeVisible()
   const kline = page.locator('.product-workspace__kline')
   const overlay = page.getByRole('group', { name: 'Overlay' })
 
@@ -672,9 +680,11 @@ test('SuBing keeps unsupported 30m explicit and does not request a snapshot', as
   await expect(page.getByText('苏冰当前周期不可用，仅支持 5m / 15m / 1d', { exact: true })).toBeVisible()
   await expect(page.getByText('120 bars', { exact: true })).toBeVisible()
   await expect(page.locator('.product-workspace__kline')).toHaveAttribute('data-visible-main-indicators', '')
-  await expect(page.getByText('可继续向前加载', { exact: true })).toBeVisible()
+  await openMoreResearch(page)
+  await expect(page.getByText('可继续向左加载', { exact: true })).toBeVisible()
   expect(subingRequests).toEqual([])
 
+  await page.getByRole('button', { name: '图表设置', exact: true }).click()
   const ema = page.getByRole('group', { name: 'EMA' })
   await ema.getByRole('button', { name: 'EMA10', exact: true }).click()
   await ema.getByRole('button', { name: 'EMA60', exact: true }).click()
@@ -775,6 +785,10 @@ test('shows one identity-matched research snapshot without crowding desktop Klin
   await page.setViewportSize({ width: 1680, height: 1000 })
   await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=15m')
 
+  await expect(page.getByTestId('product-status-strip')).toContainText('Historical')
+  await expect(page.getByTestId('product-status-strip')).toContainText('已收盘')
+  await expect(page.getByTestId('product-status-strip')).toContainText('数据正常')
+  await expect(page.getByText('Price / Volume / OI', { exact: true })).toHaveCount(0)
   await expect(page.getByTestId('product-check-background')).toContainText('日线')
   await expect(page.getByTestId('product-check-background')).toContainText('上行')
   await expect(page.getByTestId('product-check-participation')).toContainText('20日位置')
@@ -783,13 +797,24 @@ test('shows one identity-matched research snapshot without crowding desktop Klin
   await expect(page.locator('.product-workspace__sidebar')).toBeVisible()
 })
 
+test('status strip surfaces after-market failure instead of a normal-data claim', async ({ page }) => {
+  await mockWorkspace(page, { json: research() }, {
+    afterMarket: { last_failure: { code: 'UPDATE_FAILED' } },
+  })
+  await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=15m')
+
+  const status = page.getByTestId('product-status-strip')
+  await expect(status).toContainText('最近盘后更新失败')
+  await expect(status).not.toContainText('数据正常')
+})
+
 test('research control toggles the inline sidebar instead of opening a duplicate drawer at 1280px', async ({ page }) => {
   await mockWorkspace(page, { json: research() })
   await page.setViewportSize({ width: 1280, height: 900 })
   await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=15m')
 
   const sidebar = page.locator('.product-workspace__sidebar')
-  const researchControl = page.getByRole('button', { name: '研究', exact: true })
+  const researchControl = page.getByRole('button', { name: '检查', exact: true })
   await expect(sidebar).toBeVisible()
   await researchControl.click()
   await expect(sidebar).toBeHidden()

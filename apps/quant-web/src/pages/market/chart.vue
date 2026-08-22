@@ -1,9 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { NAlert, NButton, NCard, NDrawer, NDrawerContent, NSpin, NTag, useMessage } from 'naive-ui'
+import { NAlert, NButton, NDrawer, NDrawerContent, NSpin, NTag, useMessage } from 'naive-ui'
 import ProductCheckSidebar from '@/components/market/ProductCheckSidebar.vue'
-import PriceVolumeOiPanel from '@/components/market/PriceVolumeOiPanel.vue'
 import ProductWorkspaceToolbar from '@/components/market/ProductWorkspaceToolbar.vue'
 import KlineChart from '@/components/kline/KlineChart.vue'
 import { getEventStates } from '@/api/executionReview'
@@ -587,24 +586,18 @@ function normalizeSymbol(value: unknown): string | null {
 
     <NSpin :show="metadataLoading">
       <NAlert v-if="error" type="error" :show-icon="true">{{ error }}</NAlert>
-      <NCard size="small" :bordered="false" class="identity-card">
-        <div class="identity-row">
-          <strong>{{ symbol.toUpperCase() }} {{ selectedDominant?.product_name }}</strong>
-          <NTag>{{ effectiveIdentity.seriesKind }}</NTag>
-          <NTag>{{ frequency }}</NTag>
-          <span>{{ visibleBars.length }} bars</span>
-          <span v-if="canonicalCoverage">{{ canonicalCoverage.start }} → {{ canonicalCoverage.end }}</span>
-          <NTag v-if="canLoadEarlier" type="info">可继续向前加载</NTag>
-          <NTag
-            data-testid="market-display-state"
-            :type="isLiveDisplay ? 'success' : (isPostCloseDisplay ? 'warning' : 'default')"
-          >{{ displayStateLabel }}</NTag>
-          <NTag data-testid="market-phase">{{ phaseLabel }}</NTag>
-          <span v-if="isLiveDisplay && marketState?.live_contract">当前 Live 主力合约 {{ marketState.live_contract }}</span>
-          <NTag v-if="afterMarketFailed" type="warning">最近盘后更新失败</NTag>
-          <NButton v-if="!followLatest" size="small" secondary @click="chart?.scrollToLatest()">回到最新</NButton>
-        </div>
-      </NCard>
+      <div class="product-status-strip" data-testid="product-status-strip">
+        <strong>{{ effectiveIdentity.contract || selectedDominant?.actual_contract || symbol.toUpperCase() }}</strong>
+        <NTag
+          data-testid="market-display-state"
+          :type="isLiveDisplay ? 'success' : (isPostCloseDisplay ? 'warning' : 'default')"
+        >{{ displayStateLabel }}</NTag>
+        <span data-testid="market-phase">{{ phaseLabel }}</span>
+        <NTag v-if="afterMarketFailed" type="warning">最近盘后更新失败</NTag>
+        <span v-else class="product-status-strip__ok">数据正常</span>
+        <span class="product-status-strip__bars">{{ visibleBars.length }} bars</span>
+        <NButton v-if="!followLatest" size="small" secondary @click="chart?.scrollToLatest()">回到最新</NButton>
+      </div>
       <div ref="workspaceElement" class="product-workspace">
         <div class="product-workspace__main" :class="{ 'product-workspace__main--sidebar-closed': !researchSidebarOpen }">
           <div
@@ -642,6 +635,7 @@ function normalizeSymbol(value: unknown): string | null {
               :live="isLiveDisplay"
               :phase="phaseLabel"
               :has-more-before="canLoadEarlier"
+              :canonical-coverage="canonicalCoverage"
               :watchlisted="watchlisted"
               :research="research"
               :research-loading="researchLoading"
@@ -667,18 +661,10 @@ function normalizeSymbol(value: unknown): string | null {
           </div>
         </div>
       </div>
-      <PriceVolumeOiPanel
-        v-if="research"
-        class="product-workspace__research-panel"
-        :daily="research.recent_daily"
-      />
-      <NAlert v-else-if="researchError" type="warning" :show-icon="false" class="product-workspace__research-panel">
-        研究数据暂不可用；K 线仍使用既有 Canonical / Live 读取链路。
-      </NAlert>
     </NSpin>
 
     <NDrawer v-model:show="researchDrawerOpen" :width="320" placement="right">
-      <NDrawerContent title="研究" closable>
+      <NDrawerContent title="检查" closable>
         <ProductCheckSidebar
           :dominant="selectedDominant"
           :series-kind="effectiveIdentity.seriesKind"
@@ -687,6 +673,7 @@ function normalizeSymbol(value: unknown): string | null {
           :live="isLiveDisplay"
           :phase="phaseLabel"
           :has-more-before="canLoadEarlier"
+          :canonical-coverage="canonicalCoverage"
           :watchlisted="watchlisted"
           :research="research"
           :research-loading="researchLoading"
@@ -716,8 +703,10 @@ function normalizeSymbol(value: unknown): string | null {
 
 <style scoped>
 .chart-page { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
-.identity-card { background: var(--gy-bg-panel); }
-.identity-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.product-status-strip { display: flex; align-items: center; gap: 9px; min-width: 0; padding: 8px 12px; border: 1px solid var(--gy-border); border-radius: var(--gy-radius-md); background: var(--gy-bg-panel); color: var(--gy-text-secondary); font-size: var(--gy-font-size-sm); flex-wrap: wrap; }
+.product-status-strip strong { color: var(--gy-text-primary); font-family: var(--gy-font-mono); }
+.product-status-strip__ok { color: var(--gy-status-success); }
+.product-status-strip__bars { margin-left: auto; color: var(--gy-text-muted); }
 .product-workspace { min-width: 0; }
 .product-workspace__main { display: grid; grid-template-columns: minmax(0, 1fr) 296px; gap: 12px; align-items: stretch; }
 .product-workspace__main--sidebar-closed { grid-template-columns: minmax(0, 1fr); }
@@ -726,7 +715,6 @@ function normalizeSymbol(value: unknown): string | null {
 /* 侧栏与左侧 K 线列（含副图）等高：wrap 随 grid 行高拉伸，侧栏绝对填充并内部滚动 */
 .product-workspace__sidebar-wrap { position: relative; min-width: 0; min-height: 0; }
 .product-workspace__sidebar-wrap > .product-workspace__sidebar { position: absolute; inset: 0; overflow-y: auto; }
-.product-workspace__research-panel { margin-top: 12px; }
 .product-workspace:fullscreen { display: grid; place-items: stretch; padding: 16px; background: var(--gy-bg-app); }
 .product-workspace:fullscreen .product-workspace__main { grid-template-columns: minmax(0, 1fr); height: 100%; }
 .product-workspace:fullscreen .product-workspace__kline { min-height: 100%; }

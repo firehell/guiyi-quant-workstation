@@ -300,7 +300,7 @@ test('switches series and period from the workspace shell, opens research on com
   await page.getByRole('button', { name: 'D', exact: true }).click()
   await expect.poll(() => requests.filter((url) => url.pathname.endsWith('/bars/page')).at(-1)?.searchParams.get('frequency')).toBe('1d')
 
-  await page.getByRole('button', { name: '研究', exact: true }).click()
+  await page.getByRole('button', { name: '检查', exact: true }).click()
   const drawer = page.getByRole('dialog')
   await expect(drawer.getByText('品种上下文', { exact: true })).toBeVisible()
   await drawer.getByRole('button', { name: '加入自选', exact: true }).click()

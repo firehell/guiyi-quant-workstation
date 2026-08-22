@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { NButton, NTag } from 'naive-ui'
 import PriceVolumeOiPanel from '@/components/market/PriceVolumeOiPanel.vue'
 import ProductAlertRules from '@/components/market/ProductAlertRules.vue'
@@ -31,6 +31,7 @@ const props = defineProps<{
   live: boolean
   phase: string
   hasMoreBefore: boolean
+  canonicalCoverage: { start: string; end: string } | null
   watchlisted: boolean
   research: ProductResearchResponse | null
   researchLoading: boolean
@@ -58,6 +59,7 @@ const emit = defineEmits<{
 }>()
 
 const formalEvent = computed(() => summarizeFormalEvent(props.currentEvents, props.currentEventStates))
+const moreOpen = ref(false)
 const background = computed(() => props.research
   ? summarizeMarketBackground(props.research.daily_trend, props.research.weekly_trend)
   : null)
@@ -121,6 +123,10 @@ function observationTime(value: string) {
   return new Intl.DateTimeFormat('zh-CN', {
     timeZone: 'Asia/Shanghai', hour: '2-digit', minute: '2-digit', hour12: false,
   }).format(date)
+}
+
+function updateMoreOpen(event: Event) {
+  moreOpen.value = (event.currentTarget as HTMLDetailsElement).open
 }
 </script>
 
@@ -217,9 +223,13 @@ function observationTime(value: string) {
       />
     </section>
 
-    <details class="product-check-sidebar__more" data-testid="product-check-more">
+    <details
+      class="product-check-sidebar__more"
+      data-testid="product-check-more"
+      @toggle="updateMoreOpen"
+    >
       <summary>6. 更多研究</summary>
-      <div class="product-check-sidebar__more-content">
+      <div v-if="moreOpen" class="product-check-sidebar__more-content">
         <SubingResearchSection
           v-if="selectedOverlay === 'subing'"
           :snapshot="subing"
@@ -244,6 +254,7 @@ function observationTime(value: string) {
             <div><dt>映射日</dt><dd>{{ dominant?.dominant_mapping_date || '--' }}</dd></div>
             <div><dt>数据状态</dt><dd>{{ live ? 'Live' : 'Historical' }}</dd></div>
             <div><dt>市场状态</dt><dd>{{ phase }}</dd></div>
+            <div><dt>Canonical 覆盖</dt><dd>{{ canonicalCoverage ? `${canonicalCoverage.start} → ${canonicalCoverage.end}` : '—' }}</dd></div>
             <div><dt>历史边界</dt><dd>{{ hasMoreBefore ? '可继续向左加载' : '已到当前可读边界' }}</dd></div>
           </dl>
         </section>

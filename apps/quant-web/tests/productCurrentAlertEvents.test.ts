@@ -11,9 +11,8 @@ import {
 } from '../src/utils/alertRules.ts'
 
 const todayEventsSource = readFileSync(new URL('../src/components/market/ProductTodayAlertEvents.vue', import.meta.url), 'utf-8')
-const formalSignalSource = readFileSync(new URL('../src/components/market/ProductFormalSignalCard.vue', import.meta.url), 'utf-8')
 const chartSource = readFileSync(new URL('../src/pages/market/chart.vue', import.meta.url), 'utf-8')
-const sidebarSource = readFileSync(new URL('../src/components/market/ProductResearchSidebar.vue', import.meta.url), 'utf-8')
+const sidebarSource = readFileSync(new URL('../src/components/market/ProductCheckSidebar.vue', import.meta.url), 'utf-8')
 
 test('drops a stale response after the product symbol changes', async () => {
   const symbol = ref('ag')
@@ -118,15 +117,16 @@ test('derives the sidebar HTDY observation from the latest existing HTDY marker'
   )
   assert.match(chartSource, /htdy\?\.markers\.at\(-1\) \?\? null/)
   assert.doesNotMatch(chartSource, /htdyVisible && visibleBars\.length > 0/)
-  assert.match(sidebarSource, /htdyObservation: import\('@\/types\/market'\)\.KlineMarker \| null/)
+  assert.match(sidebarSource, /htdyObservation: KlineMarker \| null/)
   assert.match(sidebarSource, /v-if="htdyObservation"/)
-  assert.match(sidebarSource, /htdyObservation\.label/)
+  assert.match(sidebarSource, /htdyObservationLabel\(htdyObservation\)/)
 })
 
-test('keeps the primary signal card restricted to resolved MATCHED signals', () => {
-  assert.match(formalSignalSource, /resolved_signal/)
-  assert.doesNotMatch(formalSignalSource, /primary_signal/)
-  assert.match(formalSignalSource, /5m 同向确认/)
+test('keeps the current formal section sourced from recorded AlertEvents', () => {
+  assert.match(sidebarSource, /summarizeFormalEvent\(props\.currentEvents, props\.currentEventStates\)/)
+  assert.match(sidebarSource, /data-testid="product-check-now"/)
+  assert.match(sidebarSource, /v-else-if="formalEvent"/)
+  assert.match(sidebarSource, /今日正式提醒记录/)
 })
 
 function event(id: number): AlertEvent {
