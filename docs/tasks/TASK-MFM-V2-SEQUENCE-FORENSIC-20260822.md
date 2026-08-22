@@ -1,8 +1,14 @@
 # TASK-MFM-V2-SEQUENCE-FORENSIC-20260822
 
-状态：READY_FOR_CODEX_PLAN_REVIEW
+状态：READY_FOR_IMPLEMENTATION
 
 日期：2026-08-22
+
+原始代码基线：`e8b6152665d3ff27c470ecc6c56840c7da254897`
+
+原计划起点：`91baeecb028a537b79e69d6726e274c015ddbe79`
+
+实际执行起点：`fef886ac77b97136a0d222f5751ee63289ef2991`
 
 设计：`docs/superpowers/specs/2026-08-22-main-force-mirror-v2-sequence-forensic-design.md`
 
@@ -74,6 +80,9 @@ services/quant-api/app/guiyi_cli/research_payloads.py
 services/quant-api/tests/data_foundation/test_main_force_mirror_v2_research_service.py
 services/quant-api/tests/test_research_cli.py
 TESTING.md
+docs/superpowers/specs/2026-08-22-main-force-mirror-v2-sequence-forensic-design.md
+docs/superpowers/plans/2026-08-22-main-force-mirror-v2-sequence-forensic.md
+docs/tasks/TASK-MFM-V2-SEQUENCE-FORENSIC-20260822.md
 ```
 
 任何需要突破白名单的实现应立即停止并报告，不得顺手重构。
@@ -126,6 +135,9 @@ strict-prior peak baseline
 long/short mirror
 first-occurrence decay/liquidation/opposite/reversal
 same-contract reset
+time-order/unavailable reset
+accumulated-unavailable fail-closed
+same-Bar old-event + new-peak dual facts
 prefix invariance for every profile
 ```
 
@@ -138,6 +150,7 @@ prefix invariance for every profile
 ```text
 reuse _Observation/_outcome/_summary
 sequence warning event time = evidence bar, not peak bar
+same-Bar overlap emits both old-event and new peak_only observations
 pooled + yearly/product/side summary
 5 profiles all retained
 no best profile

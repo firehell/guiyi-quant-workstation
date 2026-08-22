@@ -1,10 +1,14 @@
 # 主力照妖镜 V2 60m Sequence Forensic 设计
 
-状态：DESIGN_APPROVED / PLAN_READY
+状态：DESIGN_APPROVED / READY_FOR_IMPLEMENTATION
 
 日期：2026-08-22
 
-代码基线：`develop@e8b615e0453f00128ea4f2a385aca8699a958744`
+原始代码基线：`develop@e8b6152665d3ff27c470ecc6c56840c7da254897`
+
+原计划起点：`develop@91baeecb028a537b79e69d6726e274c015ddbe79`
+
+实际执行起点：`develop@fef886ac77b97136a0d222f5751ee63289ef2991`
 
 阶段属性：historical-only / research-only / 60m-only / no promotion
 
@@ -130,14 +134,20 @@ auto_order    = false
 @dataclass(frozen=True, slots=True)
 class MainForceMirrorV2SequenceFact:
     index: int
-    side: Literal["long", "short", "neutral"]
+    current_side: Literal["long", "short", "neutral"]
     pressure_state: str | None
     instant_pressure: float | None
     accumulated_pressure: float | None
-    peak_index: int | None
-    peak_pressure: float | None
-    bars_since_peak: int | None
+    active_peak_index: int | None
+    active_peak_side: Literal["long", "short"] | None
+    active_peak_instant_pressure: float | None
+    active_peak_accumulated_pressure: float | None
+    bars_since_active_peak: int | None
     decay_ratio: Decimal | None
+    installed_peak_index: int | None
+    installed_peak_side: Literal["long", "short"] | None
+    installed_peak_instant_pressure: float | None
+    installed_peak_accumulated_pressure: float | None
     peak_seen: bool
     decay_seen: bool
     liquidation_seen: bool
@@ -146,7 +156,7 @@ class MainForceMirrorV2SequenceFact:
     state_transition: str | None
 ```
 
-`side` 在存在 active peak 时表示 peak side；无 active peak 时按当前非零 instant pressure 的符号给出 long/short，否则 neutral。它不是 API/Kernel 事实，不得被 Web 或其他 consumer import。
+`current_side` 只表示当前 instant pressure 的符号。`active_peak_*` 是进入当前 Bar 时依然活跃、用于评价后续事件的旧 peak；`installed_peak_*` 是当前 Bar 在评价旧 peak 之后新安装的 build peak。`peak_seen` 等价于当前 Bar 安装了新 peak。该 fact 不是 API/Kernel 事实，不得被 Web 或其他 active consumer import。
 
 ### 5.1 Same physical-contract only
 
@@ -157,7 +167,8 @@ Sequence fact 只在连续同一 `physical_contract` 的 ready points 内回看�
 - physical contract 改变；
 - `pressure_ready=false`；
 - 时间顺序异常；
-- accumulated pressure 不可用时只允许 pressure-state fact，不伪造 decay/reversal。
+- instant pressure 缺失或非有限；
+- accumulated pressure 不可用时不清除 pressure-state memory，但只允许 pressure-state/liquidation/opposite-build fact，不伪造 decay/reversal。
 
 不得跨换月连接峰值和后续状态。
 
@@ -185,7 +196,7 @@ negative pressure = instant/accumulated < 0
 
 ### 5.3 First occurrence only
 
-同一个 active peak 对 `decay_seen / liquidation_seen / opposite_build_seen / accumulated_reversal_seen` 每类最多产生一次事件。后续 Bar 仍可保留 `peak_index / bars_since_peak / decay_ratio` 作为 forensic context，但不得重复生成同一 cohort 事件。
+同一个 active peak 对 `decay_seen / liquidation_seen / opposite_build_seen / accumulated_reversal_seen` 每类最多产生一次事件。后续 Bar 仍可保留 `active_peak_index / bars_since_active_peak / decay_ratio` 作为 forensic context，但不得重复生成同一 cohort 事件。
 
 ## 6. 五个预定义 Research Profiles
 
@@ -233,25 +244,22 @@ peak_then_accumulated_reversal
 
 后四项都必须在事件实际发生的当前 Bar 才命中，不能回标 peak Bar。
 
-如果当前 Bar 既是前一个 peak 的 causal sequence event，又满足反方向的新 build peak candidate，处理顺序固定为：先记录前一个 peak 的当前事件，再把当前 Bar 安装为后续 Bar 使用的新 active peak；不得让新 peak 覆盖当前 Bar 对旧 peak 的证据。
+如果当前 Bar 既是前一个 peak 的 causal sequence event，又满足反方向的新 build peak candidate，处理顺序固定为：先把旧 peak 保存在 `active_peak_*` 并记录当前事件，再把当前 Bar 保存在 `installed_peak_*` 并安装为后续 Bar 的 active peak。同一 Bar 必须同时形成旧方向 sequence-event observation 和新方向 `peak_only` observation，不得丢失任一 cohort。
 
 ### 7.1 Decay
 
-Long peak：
+Long / short 统一先投影到 peak 方向：
 
 ```text
-decay_ratio = (peak_accumulated - current_accumulated) / abs(peak_accumulated)
+direction = +1 for long, -1 for short
+projected_current = direction * current_accumulated
+decay_ratio = (abs(peak_accumulated) - projected_current) / abs(peak_accumulated)
 ```
 
-仅在 `peak_accumulated > 0` 且 current accumulated 可用时计算。
-
-Short peak 镜像：
-
-```text
-decay_ratio = (abs(peak_accumulated) - abs(current_accumulated)) / abs(peak_accumulated)
-```
-
-当前 accumulated 已反号时 `accumulated_reversal_seen=true`；decay ratio 允许大于 1，不 clip。
+仅在 peak accumulated 与 peak side 同号且 current accumulated 可用时计算。穿越零轴后
+long `+80 -> -40` 与 short `-80 -> +40` 都得到 `decay_ratio = 1.5`，保持严格镜像；
+不得对 current 先取绝对值。`projected_current < 0` 时
+`accumulated_reversal_seen=true`；decay ratio 允许大于 1，不 clip。
 
 ### 7.2 Liquidation / opposite build
 
@@ -375,6 +383,9 @@ services/quant-api/app/guiyi_cli/research_payloads.py
 services/quant-api/tests/data_foundation/test_main_force_mirror_v2_research_service.py
 services/quant-api/tests/test_research_cli.py
 TESTING.md（仅补充 --forensic 合同）
+docs/superpowers/specs/2026-08-22-main-force-mirror-v2-sequence-forensic-design.md
+docs/superpowers/plans/2026-08-22-main-force-mirror-v2-sequence-forensic.md
+docs/tasks/TASK-MFM-V2-SEQUENCE-FORENSIC-20260822.md
 ```
 
 禁止修改：
@@ -412,12 +423,15 @@ STATUS.md / PROJECT_SOURCE.md / DECISIONS.md
 3. long/short mirror tests；
 4. contract switch reset tests；
 5. prefix invariance tests；
-6. no future outcome leaks into sequence facts；
-7. 同一 peak 的每类 sequence event 只首次产生一次；
-8. `--forensic` 只改变 stdout detail，不改变 market/V2 calculation；
-9. V2 Kernel golden/Registry/Service tests保持通过；
-10. 无新 module/package/service/endpoint/migration；
-11. 无 RQData/Canonical/DB/Redis 写入。
+6. physical-contract、pressure unavailable 和时间非严格递增全部 reset；
+7. accumulated unavailable 时不伪造 decay/reversal；
+8. 同 Bar 旧 peak event + 新 peak installation 双事实不丢样；
+9. no future outcome leaks into sequence facts；
+10. 同一 peak 的每类 sequence event 只首次产生一次；
+11. `--forensic` 只改变 stdout detail，不改变 market/V2 calculation；
+12. V2 Kernel golden/Registry/Service tests保持通过；
+13. 无新 module/package/service/endpoint/migration；
+14. 无 RQData/Canonical/DB/Redis 写入。
 
 研究 Gate：
 

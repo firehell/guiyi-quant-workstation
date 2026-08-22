@@ -82,6 +82,23 @@ pnpm --dir apps/quant-web build
 pnpm --dir apps/quant-web exec playwright test -c playwright.config.mjs
 ```
 
+JM 60m sequence forensic 只读 dossier：
+
+```bash
+UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
+uv run --offline --project services/quant-api guiyi research main-force-mirror-v2 \
+  --symbol jm \
+  --series-kind actual_dominant \
+  --frequency 60m \
+  --since 2026-03-10 \
+  --through 2026-03-30 \
+  --forensic
+```
+
+该命令只读 Historical confirmed 并把 JSON 写到 stdout；不调用 RQData，不写
+Canonical、PostgreSQL、Redis 或 research-data-root。`--forensic` 只增加 balanced
+profile 的逐 Bar 诊断，不改变 MarketData/V2 计算身份。
+
 这些命令验证唯一 `main_force_mirror_v2` identity、因果 60m exact-contract 压力、
 T-1 member context、不可变 snapshot 身份/覆盖/fail-closed、只读 retrospective CLI，以及 Web
 `MACD | 主力照妖镜 V2` 副图。真实 member snapshot 和 retrospective matrix 不由测试执行；

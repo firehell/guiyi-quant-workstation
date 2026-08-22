@@ -25,6 +25,9 @@ from app.research.main_force.main_force_mirror_v2_research_service import (
     MainForceMirrorV2ResearchError,
     MainForceMirrorV2ResearchRequest,
     MainForceMirrorV2ResearchService,
+    MainForceMirrorV2SequenceProfile,
+    SEQUENCE_PROFILES,
+    _derive_sequence_facts,
 )
 from app.market_data.main_force_mirror_v2_service import (
     MainForceMirrorV2PageResult,
@@ -492,6 +495,467 @@ def test_research_hit_rate_uses_raw_micro_returns_before_public_rounding() -> No
     assert summary.sample_count == 2
     assert summary.median_directional_return == Decimal("0")
     assert summary.hit_rate == Decimal("0.5")
+
+
+def _sequence_point(
+    index: int,
+    *,
+    state: str,
+    instant: float | None,
+    accumulated: float | None,
+    contract: str | None = "JM2609",
+    pressure_ready: bool = True,
+    accumulated_ready: bool = True,
+) -> MainForceMirrorV2Point:
+    moment = datetime(2026, 2, 1, 7, tzinfo=UTC) + timedelta(days=index)
+    return replace(
+        _POINTS[0],
+        bar_end=moment,
+        trading_day=moment.date(),
+        physical_contract=contract,
+        pressure_ready=pressure_ready,
+        pressure_state=state,  # type: ignore[arg-type]
+        instant_pressure=instant,
+        accumulated_ready=accumulated_ready,
+        accumulated_pressure=accumulated,
+        caution=None,
+        caution_conflict=False,
+        long_caution_score=0.0,
+        short_caution_score=0.0,
+        caution_reason_codes=(),
+        unavailable_reason=None,
+    )
+
+
+def _long_sequence_points() -> tuple[MainForceMirrorV2Point, ...]:
+    prior = tuple(
+        _sequence_point(
+            index,
+            state="long_build",
+            instant=10.0 + index,
+            accumulated=8.0 + index,
+        )
+        for index in range(21)
+    )
+    return (
+        *prior,
+        _sequence_point(21, state="long_build", instant=100.0, accumulated=80.0),
+        _sequence_point(
+            22,
+            state="long_liquidation",
+            instant=-60.0,
+            accumulated=30.0,
+        ),
+        _sequence_point(23, state="short_build", instant=-70.0, accumulated=-10.0),
+    )
+
+
+def _short_sequence_points() -> tuple[MainForceMirrorV2Point, ...]:
+    mirror_state = {
+        "long_build": "short_build",
+        "long_liquidation": "short_cover",
+        "short_build": "long_build",
+    }
+    return tuple(
+        replace(
+            point,
+            pressure_state=mirror_state[str(point.pressure_state)],  # type: ignore[arg-type]
+            instant_pressure=(
+                None
+                if point.instant_pressure is None
+                else -point.instant_pressure
+            ),
+            accumulated_pressure=(
+                None
+                if point.accumulated_pressure is None
+                else -point.accumulated_pressure
+            ),
+        )
+        for point in _long_sequence_points()
+    )
+
+
+def _sequence_profile(profile_id: str) -> MainForceMirrorV2SequenceProfile:
+    return next(
+        profile for profile in SEQUENCE_PROFILES if profile.profile_id == profile_id
+    )
+
+
+def test_sequence_profiles_are_exact_small_global_set() -> None:
+    assert [
+        (
+            profile.profile_id,
+            profile.peak_window,
+            profile.peak_quantile,
+            profile.decay_threshold,
+            profile.transition_window,
+        )
+        for profile in SEQUENCE_PROFILES
+    ] == [
+        ("balanced", 10, Decimal("0.90"), Decimal("0.40"), 2),
+        ("fast", 5, Decimal("0.90"), Decimal("0.40"), 1),
+        ("slow", 20, Decimal("0.90"), Decimal("0.40"), 3),
+        ("loose", 10, Decimal("0.85"), Decimal("0.25"), 2),
+        ("strict", 10, Decimal("0.95"), Decimal("0.55"), 2),
+    ]
+
+
+def test_sequence_long_peak_emits_later_events_on_evidence_bars() -> None:
+    facts = _derive_sequence_facts(
+        _long_sequence_points(), _sequence_profile("balanced")
+    )
+
+    assert facts[21].installed_peak_side == "long"
+    assert facts[21].peak_seen is True
+    assert facts[21].decay_seen is False
+    assert facts[21].liquidation_seen is False
+    assert facts[22].active_peak_index == 21
+    assert facts[22].active_peak_side == "long"
+    assert facts[22].decay_ratio == Decimal("0.625")
+    assert facts[22].decay_seen is True
+    assert facts[22].liquidation_seen is True
+    assert facts[23].active_peak_index == 21
+    assert facts[23].opposite_build_seen is True
+    assert facts[23].accumulated_reversal_seen is True
+
+
+def test_sequence_overlap_retains_old_event_and_new_peak_installation() -> None:
+    facts = _derive_sequence_facts(
+        _long_sequence_points(), _sequence_profile("balanced")
+    )
+
+    assert facts[23].active_peak_index == 21
+    assert facts[23].active_peak_side == "long"
+    assert facts[23].opposite_build_seen is True
+    assert facts[23].installed_peak_index == 23
+    assert facts[23].installed_peak_side == "short"
+    assert facts[23].peak_seen is True
+
+
+def test_sequence_short_side_is_exact_sign_state_mirror() -> None:
+    facts = _derive_sequence_facts(
+        _short_sequence_points(), _sequence_profile("balanced")
+    )
+
+    assert facts[21].installed_peak_side == "short"
+    assert facts[21].peak_seen is True
+    assert facts[22].active_peak_side == "short"
+    assert facts[22].decay_ratio == Decimal("0.625")
+    assert facts[22].decay_seen is True
+    assert facts[22].liquidation_seen is True
+    assert facts[23].opposite_build_seen is True
+    assert facts[23].accumulated_reversal_seen is True
+    assert facts[23].installed_peak_side == "long"
+
+
+def test_sequence_cross_zero_decay_is_exact_long_short_mirror() -> None:
+    long_points = list(_long_sequence_points())
+    long_points[22] = replace(long_points[22], accumulated_pressure=70.0)
+    long_points[23] = replace(long_points[23], accumulated_pressure=-40.0)
+    mirror_state = {
+        "long_build": "short_build",
+        "long_liquidation": "short_cover",
+        "short_build": "long_build",
+    }
+    short_points = tuple(
+        replace(
+            point,
+            pressure_state=mirror_state[str(point.pressure_state)],  # type: ignore[arg-type]
+            instant_pressure=(
+                None if point.instant_pressure is None else -point.instant_pressure
+            ),
+            accumulated_pressure=(
+                None
+                if point.accumulated_pressure is None
+                else -point.accumulated_pressure
+            ),
+        )
+        for point in long_points
+    )
+
+    long_fact = _derive_sequence_facts(
+        tuple(long_points), _sequence_profile("strict")
+    )[23]
+    short_fact = _derive_sequence_facts(
+        short_points, _sequence_profile("strict")
+    )[23]
+
+    assert long_fact.decay_ratio == Decimal("1.5")
+    assert short_fact.decay_ratio == Decimal("1.5")
+    assert long_fact.decay_seen is True
+    assert short_fact.decay_seen is True
+
+
+def test_sequence_event_types_emit_only_first_occurrence_for_one_peak() -> None:
+    points = (
+        *_long_sequence_points()[:23],
+        _sequence_point(23, state="short_build", instant=-1.0, accumulated=-10.0),
+        _sequence_point(24, state="short_build", instant=-1.0, accumulated=-20.0),
+    )
+    facts = _derive_sequence_facts(points, _sequence_profile("slow"))
+
+    assert facts[22].decay_seen is True
+    assert facts[22].liquidation_seen is True
+    assert facts[23].active_peak_index == 21
+    assert facts[23].opposite_build_seen is True
+    assert facts[23].accumulated_reversal_seen is True
+    assert facts[23].peak_seen is False
+    assert facts[24].active_peak_index == 21
+    assert facts[24].decay_seen is False
+    assert facts[24].opposite_build_seen is False
+    assert facts[24].accumulated_reversal_seen is False
+
+
+def test_sequence_requires_full_strict_prior_window() -> None:
+    points = tuple(
+        _sequence_point(
+            index,
+            state="long_build",
+            instant=100.0,
+            accumulated=80.0,
+        )
+        for index in range(11)
+    )
+    facts = _derive_sequence_facts(points, _sequence_profile("balanced"))
+
+    assert all(not fact.peak_seen for fact in facts[:10])
+    assert facts[10].installed_peak_index == 10
+
+
+def test_sequence_memory_resets_at_physical_contract_change() -> None:
+    points = tuple(
+        replace(point, physical_contract="JM2701") if index >= 22 else point
+        for index, point in enumerate(_long_sequence_points())
+    )
+    facts = _derive_sequence_facts(points, _sequence_profile("balanced"))
+
+    assert facts[21].peak_seen is True
+    assert facts[22].active_peak_index is None
+    assert facts[22].decay_seen is False
+    assert facts[22].liquidation_seen is False
+    assert facts[23].opposite_build_seen is False
+
+
+def test_sequence_memory_resets_on_non_monotonic_time() -> None:
+    points = list(_long_sequence_points())
+    points[22] = replace(points[22], bar_end=points[21].bar_end)
+    facts = _derive_sequence_facts(tuple(points), _sequence_profile("balanced"))
+
+    assert facts[22].active_peak_index is None
+    assert facts[22].liquidation_seen is False
+
+
+def test_sequence_pressure_unavailable_resets_memory() -> None:
+    points = list(_long_sequence_points())
+    points[22] = replace(points[22], pressure_ready=False)
+    facts = _derive_sequence_facts(tuple(points), _sequence_profile("balanced"))
+
+    assert facts[22].active_peak_index is None
+    assert facts[22].liquidation_seen is False
+
+
+def test_sequence_accumulated_unavailable_keeps_state_events_only() -> None:
+    points = list(_long_sequence_points())
+    points[22] = replace(
+        points[22], accumulated_ready=False, accumulated_pressure=None
+    )
+    facts = _derive_sequence_facts(tuple(points), _sequence_profile("balanced"))
+
+    assert facts[22].active_peak_index == 21
+    assert facts[22].liquidation_seen is True
+    assert facts[22].decay_ratio is None
+    assert facts[22].decay_seen is False
+    assert facts[22].accumulated_reversal_seen is False
+
+
+def test_sequence_zero_peak_accumulated_does_not_fabricate_decay() -> None:
+    points = list(_long_sequence_points())
+    points[21] = replace(points[21], accumulated_pressure=0.0)
+    facts = _derive_sequence_facts(tuple(points), _sequence_profile("balanced"))
+
+    assert facts[22].active_peak_index == 21
+    assert facts[22].liquidation_seen is True
+    assert facts[22].decay_ratio is None
+    assert facts[22].decay_seen is False
+    assert facts[23].accumulated_reversal_seen is False
+
+
+@pytest.mark.parametrize("profile", SEQUENCE_PROFILES)
+def test_sequence_derivation_is_prefix_invariant(
+    profile: MainForceMirrorV2SequenceProfile,
+) -> None:
+    points = _long_sequence_points()
+    full = _derive_sequence_facts(points, profile)
+
+    for end in range(1, len(points) + 1):
+        assert _derive_sequence_facts(points[:end], profile)[-1] == full[end - 1]
+
+
+def _sequence_evaluation_points() -> tuple[MainForceMirrorV2Point, ...]:
+    points = [
+        replace(point, pressure_state="turnover") if index < 21 else point
+        for index, point in enumerate(_long_sequence_points())
+    ]
+    points.extend(
+        _sequence_point(
+            index,
+            state="turnover",
+            instant=-10.0,
+            accumulated=-15.0,
+        )
+        for index in range(24, 34)
+    )
+    return tuple(points)
+
+
+def _sequence_bar(point: MainForceMirrorV2Point, index: int) -> CanonicalBar:
+    close = Decimal(100 if index <= 21 else 100 - 5 * (index - 21))
+    return CanonicalBar(
+        bar_end=point.bar_end,
+        trading_day=point.trading_day,
+        open=close,
+        high=close + Decimal(1),
+        low=close - Decimal(1),
+        close=close,
+        volume=Decimal(100),
+        turnover=None,
+        open_interest=Decimal(1000),
+    )
+
+
+def _sequence_research_result(*, roll_before_event: bool = False):
+    points = _sequence_evaluation_points()
+    if roll_before_event:
+        points = tuple(
+            replace(point, physical_contract="JM2701") if index >= 22 else point
+            for index, point in enumerate(points)
+        )
+    bars = tuple(_sequence_bar(point, index) for index, point in enumerate(points))
+    if roll_before_event:
+        segments = (
+            ResolvedContractSegment(
+                "JM2609", points[0].trading_day, points[21].trading_day
+            ),
+            ResolvedContractSegment(
+                "JM2701", points[22].trading_day, points[-1].trading_day
+            ),
+        )
+    else:
+        segments = (
+            ResolvedContractSegment(
+                "JM2609", points[0].trading_day, points[-1].trading_day
+            ),
+        )
+    request = MainForceMirrorV2ResearchRequest(
+        symbol="jm",
+        series_kind=SeriesKind.ACTUAL_DOMINANT,
+        contract=None,
+        frequency=BarFrequency.H1,
+        since=points[0].trading_day,
+        through=points[-1].trading_day,
+    )
+    return MainForceMirrorV2ResearchService(
+        market_data=_MarketData(bars=bars, segments=segments),
+        mirror_service=_MirrorService(points=points, segments=segments),
+    ).run(request)
+
+
+def test_research_adds_exact_five_sequence_profiles_without_old_regression() -> None:
+    result = _sequence_research_result()
+
+    assert tuple(result.sequence_profiles) == (
+        "balanced",
+        "fast",
+        "slow",
+        "loose",
+        "strict",
+    )
+    assert result.pooled["all_caution"][5].sample_count == 0
+    assert not hasattr(result, "best_profile")
+
+
+def test_sequence_warning_horizon_starts_from_causal_evidence_bar() -> None:
+    balanced = _sequence_research_result().sequence_profiles["balanced"]
+    liquidation = balanced.by_side["long"]["peak_then_liquidation"][1]
+
+    assert liquidation.sample_count == 1
+    assert liquidation.median_reversal_return == Decimal("0.052632")
+    assert balanced.yearly[2026]["jm"]["long"][
+        "peak_then_liquidation"
+    ][1] == liquidation
+    assert balanced.by_side["short"]["peak_then_liquidation"][1].sample_count == 0
+
+
+def test_sequence_overlap_emits_old_event_and_new_peak_observations() -> None:
+    balanced = _sequence_research_result().sequence_profiles["balanced"]
+
+    assert balanced.by_side["long"]["peak_then_opposite_build"][1].sample_count == 1
+    assert balanced.by_side["long"][
+        "peak_then_accumulated_reversal"
+    ][1].sample_count == 1
+    assert balanced.by_side["short"]["peak_only"][1].sample_count == 1
+
+
+def test_sequence_summaries_cover_all_fixed_horizons() -> None:
+    balanced = _sequence_research_result().sequence_profiles["balanced"]
+
+    assert {
+        horizon: balanced.by_side["long"]["peak_then_liquidation"][
+            horizon
+        ].sample_count
+        for horizon in (1, 3, 5, 10)
+    } == {1: 1, 3: 1, 5: 1, 10: 1}
+
+
+def test_sequence_summary_does_not_join_peak_and_event_across_roll() -> None:
+    balanced = _sequence_research_result(roll_before_event=True).sequence_profiles[
+        "balanced"
+    ]
+
+    assert balanced.by_side["long"]["peak_only"][1].sample_count == 0
+    assert balanced.by_side["long"]["peak_then_liquidation"][1].sample_count == 0
+    assert balanced.by_side["long"][
+        "peak_then_opposite_build"
+    ][1].sample_count == 0
+
+
+class _RecordingMarketData(_MarketData):
+    def __init__(self) -> None:
+        super().__init__()
+        self.requests: list[object] = []
+
+    def query_actual_dominant_trading_days(
+        self, request: object
+    ) -> MarketSeriesResult:
+        self.requests.append(request)
+        return super().query_actual_dominant_trading_days(request)
+
+
+class _RecordingMirrorService(_MirrorService):
+    def __init__(self) -> None:
+        super().__init__()
+        self.requests: list[object] = []
+
+    def query_page(self, request: object) -> MainForceMirrorV2PageResult:
+        self.requests.append(request)
+        return super().query_page(request)
+
+
+def test_forensic_flag_does_not_change_market_or_v2_query_identity() -> None:
+    normal_market = _RecordingMarketData()
+    normal_mirror = _RecordingMirrorService()
+    forensic_market = _RecordingMarketData()
+    forensic_mirror = _RecordingMirrorService()
+
+    MainForceMirrorV2ResearchService(
+        market_data=normal_market, mirror_service=normal_mirror
+    ).run(_request())
+    MainForceMirrorV2ResearchService(
+        market_data=forensic_market, mirror_service=forensic_mirror
+    ).run(replace(_request(), forensic=True))
+
+    assert forensic_market.requests == normal_market.requests
+    assert forensic_mirror.requests == normal_mirror.requests
 
 
 def _directional_fixture_result():

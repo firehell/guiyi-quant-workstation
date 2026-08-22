@@ -23,6 +23,7 @@ from app.research.jdj.jdj_candidate_validation import (
 )
 from app.research.jdj.jdj_events import JdjTriggerEvent
 from app.research.main_force.main_force_mirror_v2_research_service import (
+    MainForceMirrorV2ForensicPoint,
     MainForceMirrorV2GroupSpread,
     MainForceMirrorV2HorizonSummary,
     MainForceMirrorV2ResearchRequest,
@@ -150,7 +151,7 @@ def _main_force_mirror_v2_payload(
     request: MainForceMirrorV2ResearchRequest,
     result: MainForceMirrorV2ResearchResult,
 ) -> dict[str, object]:
-    return {
+    payload: dict[str, object] = {
         "schema_version": 1,
         "command": "research.main-force-mirror-v2",
         "status": "ok",
@@ -190,6 +191,20 @@ def _main_force_mirror_v2_payload(
             for threshold, summary in result.sensitivity.items()
         },
     }
+    payload["sequence_profiles"] = {
+        profile_id: {
+            "yearly": _main_force_mirror_v2_summary_tree(summary.yearly),
+            "by_side": _main_force_mirror_v2_summary_tree(summary.by_side),
+            "pooled": _main_force_mirror_v2_summary_tree(summary.pooled),
+        }
+        for profile_id, summary in result.sequence_profiles.items()
+    }
+    if request.forensic:
+        payload["forensic_points"] = [
+            _main_force_mirror_v2_forensic_point_payload(item)
+            for item in result.forensic_points or ()
+        ]
+    return payload
 
 
 def _multi_candidate_robustness_payload(
@@ -631,6 +646,71 @@ def _relationship_payload(value: object) -> dict[str, object]:
         value.signed_distance_median  # type: ignore[attr-defined]
     )
     return payload
+
+
+def _main_force_mirror_v2_forensic_point_payload(
+    item: MainForceMirrorV2ForensicPoint,
+) -> dict[str, object]:
+    point = item.point
+    sequence = item.sequence
+    member = point.member
+    member_ready = member is not None and member.status == "ready"
+    return {
+        "bar_end": point.bar_end.isoformat(),
+        "trading_day": point.trading_day.isoformat(),
+        "physical_contract": point.physical_contract,
+        "pressure_state": point.pressure_state,
+        "instant_pressure": point.instant_pressure,
+        "accumulated_pressure": point.accumulated_pressure,
+        "price_impulse": point.price_impulse,
+        "volume_ratio": point.volume_ratio,
+        "delta_oi": point.delta_oi,
+        "oi_impulse": point.oi_impulse,
+        "range_position": point.range_position,
+        "caution": point.caution,
+        "long_caution_score": point.long_caution_score,
+        "short_caution_score": point.short_caution_score,
+        "caution_reason_codes": list(point.caution_reason_codes),
+        "member_status": member.status if member is not None else "unavailable",
+        "member_relation_to_accumulated": (
+            member.relation_to_accumulated
+            if member_ready and member is not None
+            else "unavailable"
+        ),
+        "member_relation_to_caution": (
+            member.relation_to_caution
+            if member_ready and member is not None
+            else "unavailable"
+        ),
+        "sequence": {
+            "profile_id": "balanced",
+            "current_side": sequence.current_side,
+            "active_peak_index": sequence.active_peak_index,
+            "active_peak_side": sequence.active_peak_side,
+            "active_peak_instant_pressure": (
+                sequence.active_peak_instant_pressure
+            ),
+            "active_peak_accumulated_pressure": (
+                sequence.active_peak_accumulated_pressure
+            ),
+            "bars_since_active_peak": sequence.bars_since_active_peak,
+            "decay_ratio": _optional_decimal(sequence.decay_ratio),
+            "installed_peak_index": sequence.installed_peak_index,
+            "installed_peak_side": sequence.installed_peak_side,
+            "installed_peak_instant_pressure": (
+                sequence.installed_peak_instant_pressure
+            ),
+            "installed_peak_accumulated_pressure": (
+                sequence.installed_peak_accumulated_pressure
+            ),
+            "peak_seen": sequence.peak_seen,
+            "decay_seen": sequence.decay_seen,
+            "liquidation_seen": sequence.liquidation_seen,
+            "opposite_build_seen": sequence.opposite_build_seen,
+            "accumulated_reversal_seen": sequence.accumulated_reversal_seen,
+            "state_transition": sequence.state_transition,
+        },
+    }
 
 
 def _main_force_mirror_v2_horizon_payload(

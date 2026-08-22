@@ -67,6 +67,7 @@ def build_research_request(args: argparse.Namespace) -> ResearchRequest:
             frequency=BarFrequency(args.frequency),
             since=_day(args.since),
             through=_day(args.through),
+            forensic=args.forensic,
         )
     if args.research_command == "candidate-validation":
         return CandidateValidationRequest(
