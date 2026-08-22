@@ -11,6 +11,10 @@ from app.research.candidate_convergence.five_candidate_relationships import (
     DependencyRole,
     FiveCandidateRelationshipProtocol,
     FiveCandidateRelationshipProtocolError,
+    JdjExactOverlapResult,
+)
+from app.research.candidate_convergence.jdj_exact_overlap import (
+    summarize_exact_jdj_overlap,
 )
 from app.research.jdj.jdj_context import JdjContextError
 from app.research.jdj.jdj_events import JdjKeyLevelBreakoutTriggerEvent
@@ -105,35 +109,105 @@ class FiveCandidateRelationshipService:
             for symbol in protocol.cross_symbol_products
         )
 
+    def project_jdj_exact_overlaps(
+        self,
+    ) -> tuple[JdjExactOverlapResult, ...]:
+        protocol = replace(self._protocol)
+        rows_by_identity: dict[
+            tuple[str, str, str],
+            JdjExactOverlapResult,
+        ] = {}
+        for symbol in protocol.cross_symbol_products:
+            try:
+                batch = self._jdj_research.run_batch(
+                    symbol=symbol,
+                    since=protocol.jdj_overlap_since,
+                    through=protocol.jdj_overlap_through,
+                )
+            except JdjSourceUnavailableError:
+                for left_candidate_id, right_candidate_id in (
+                    protocol.jdj_overlap_pair_order
+                ):
+                    rows_by_identity[
+                        left_candidate_id,
+                        right_candidate_id,
+                        symbol,
+                    ] = _unavailable_overlap_row(
+                        left_candidate_id=left_candidate_id,
+                        right_candidate_id=right_candidate_id,
+                        symbol=symbol,
+                    )
+                continue
+
+            validated_results = _validate_batch(
+                protocol,
+                batch,
+                symbol=symbol,
+                since=protocol.jdj_overlap_since,
+                through=protocol.jdj_overlap_through,
+            )
+            results_by_candidate = {
+                result.candidate_id: result for result in validated_results
+            }
+            for left_candidate_id, right_candidate_id in (
+                protocol.jdj_overlap_pair_order
+            ):
+                rows_by_identity[
+                    left_candidate_id,
+                    right_candidate_id,
+                    symbol,
+                ] = summarize_exact_jdj_overlap(
+                    results_by_candidate[left_candidate_id],
+                    results_by_candidate[right_candidate_id],
+                    symbol=symbol,
+                )
+
+        return tuple(
+            rows_by_identity[left_candidate_id, right_candidate_id, symbol]
+            for left_candidate_id, right_candidate_id in (
+                protocol.jdj_overlap_pair_order
+            )
+            for symbol in protocol.cross_symbol_products
+        )
+
 
 def _validate_batch(
     protocol: FiveCandidateRelationshipProtocol,
     batch: object,
     *,
     symbol: str,
+    since: date | None = None,
+    through: date | None = None,
 ) -> tuple[JdjResearchResult, ...]:
+    if not isinstance(batch, JdjBatchResearchResult):
+        raise JdjContextError()
+    validated_batch = replace(batch)
+    requested_since = since if since is not None else protocol.n_jdj_since
+    requested_through = (
+        through if through is not None else protocol.n_jdj_through
+    )
     if (
-        not isinstance(batch, JdjBatchResearchResult)
-        or batch.symbol != symbol
+        validated_batch.symbol != symbol
         or not (
-            protocol.n_jdj_since
-            <= batch.observed_since
-            <= batch.observed_through
-            <= protocol.n_jdj_through
+            requested_since
+            <= validated_batch.observed_since
+            <= validated_batch.observed_through
+            <= requested_through
         )
         or tuple(
-            detailed.result.candidate_id for detailed in batch.candidates
+            detailed.result.candidate_id
+            for detailed in validated_batch.candidates
         )
         != protocol.n_jdj_candidate_order
         or any(
             detailed.result.products != (symbol,)
-            for detailed in batch.candidates
+            for detailed in validated_batch.candidates
         )
     ):
         raise JdjContextError()
 
     validated_results: list[JdjResearchResult] = []
-    for detailed in batch.candidates:
+    for detailed in validated_batch.candidates:
         result = detailed.result
         validated_result = replace(result)
         validated_events = tuple(
@@ -142,12 +216,12 @@ def _validate_batch(
         validated_result = replace(validated_result, events=validated_events)
         if any(
             not (
-                batch.observed_since
+                validated_batch.observed_since
                 <= event.trading_day
-                <= batch.observed_through
-                and protocol.n_jdj_since
+                <= validated_batch.observed_through
+                and requested_since
                 <= event.trading_day
-                <= protocol.n_jdj_through
+                <= requested_through
             )
             for event in validated_result.events
         ):
@@ -171,4 +245,25 @@ def _unavailable_row(
         event_count=None,
         events_with_trend_snapshot_lineage=None,
         events_with_exact_pivot_lineage=None,
+    )
+
+
+def _unavailable_overlap_row(
+    *,
+    left_candidate_id: str,
+    right_candidate_id: str,
+    symbol: str,
+) -> JdjExactOverlapResult:
+    return JdjExactOverlapResult(
+        left_candidate_id=left_candidate_id,
+        right_candidate_id=right_candidate_id,
+        symbol=symbol,
+        status="unavailable",
+        reason_code=JdjSourceUnavailableError.code,
+        left_event_count=None,
+        right_event_count=None,
+        exact_same_boundary_same_direction_count=None,
+        exact_same_boundary_opposite_direction_count=None,
+        left_events_with_same_direction_match=None,
+        right_events_with_same_direction_match=None,
     )

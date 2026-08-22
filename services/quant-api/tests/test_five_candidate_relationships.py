@@ -27,6 +27,9 @@ from app.research.candidate_convergence.five_candidate_relationships import (
 from app.research.candidate_convergence.five_candidate_relationships_service import (
     FiveCandidateRelationshipService,
 )
+from app.research.candidate_convergence.jdj_exact_overlap import (
+    summarize_exact_jdj_overlap,
+)
 from app.research.jdj.jdj_context import JdjContextError
 from app.research.jdj.jdj_events import (
     JdjDirection,
@@ -46,7 +49,10 @@ from app.research.jdj.jdj_research import (
     JdjResearchResult,
     JdjSourceUnavailableError,
 )
-from app.market_data.price_outcome import PriceHorizonEvaluation
+from app.market_data.price_outcome import (
+    PriceDirectionalOutcome,
+    PriceHorizonEvaluation,
+)
 
 
 CANDIDATES = (
@@ -883,3 +889,367 @@ def test_dependency_projection_rejects_events_outside_batch_or_protocol_window(
         _dependency_service(
             _DependencyRunner({PRODUCTS[0]: batch})
         ).project_n_jdj_dependencies()
+
+
+def _result_with_events(
+    result: JdjResearchResult,
+    events: tuple[
+        JdjTrendFollowTriggerEvent
+        | JdjTrendReentryTriggerEvent
+        | JdjKeyLevelBreakoutTriggerEvent,
+        ...,
+    ],
+) -> JdjResearchResult:
+    ordered = tuple(
+        sorted(
+            events,
+            key=lambda event: (
+                event.observed_at,
+                event.segment_bar_index,
+                event.event_id,
+            ),
+        )
+    )
+    return replace(
+        result,
+        trigger_count_long=sum(
+            event.direction is JdjDirection.LONG for event in ordered
+        ),
+        trigger_count_short=sum(
+            event.direction is JdjDirection.SHORT for event in ordered
+        ),
+        events=ordered,
+    )
+
+
+def _reentry_variant(
+    event: JdjTrendReentryTriggerEvent,
+    *,
+    direction: JdjDirection | None = None,
+    contract: str | None = None,
+    segment_start_trading_day: date | None = None,
+    trading_day: date | None = None,
+    segment_bar_index: int | None = None,
+    observed_at: datetime | None = None,
+    excursion_extreme: Decimal | None = None,
+) -> JdjTrendReentryTriggerEvent:
+    next_direction = direction or event.direction
+    next_contract = contract or event.contract
+    next_segment_start = (
+        segment_start_trading_day or event.segment_start_trading_day
+    )
+    next_observed_at = observed_at or event.observed_at
+    next_excursion_extreme = excursion_extreme or event.excursion_extreme
+    return replace(
+        event,
+        event_id=_canonical_trend_reentry_event_id(
+            candidate_id=event.candidate_id,
+            symbol=event.symbol,
+            contract=next_contract,
+            segment_start_trading_day=next_segment_start,
+            direction=next_direction,
+            excursion_started_at=event.excursion_started_at,
+            excursion_extreme=next_excursion_extreme,
+            reclaimed_at=event.reclaimed_at,
+            reaction_at=event.reaction_at,
+            observed_at=next_observed_at,
+            trigger_level=event.trigger_level,
+        ),
+        direction=next_direction,
+        contract=next_contract,
+        segment_start_trading_day=next_segment_start,
+        trading_day=trading_day or event.trading_day,
+        segment_bar_index=(
+            segment_bar_index
+            if segment_bar_index is not None
+            else event.segment_bar_index
+        ),
+        observed_at=next_observed_at,
+        excursion_extreme=next_excursion_extreme,
+    )
+
+
+def _trend_follow_variant(
+    event: JdjTrendFollowTriggerEvent,
+    *,
+    trigger_level: Decimal,
+) -> JdjTrendFollowTriggerEvent:
+    return replace(
+        event,
+        event_id=_canonical_trend_follow_event_id(
+            candidate_id=event.candidate_id,
+            symbol=event.symbol,
+            contract=event.contract,
+            segment_start_trading_day=event.segment_start_trading_day,
+            direction=event.direction,
+            reaction_at=event.reaction_at,
+            observed_at=event.observed_at,
+            trigger_level=trigger_level,
+        ),
+        trigger_level=trigger_level,
+    )
+
+
+@pytest.mark.parametrize(
+    "boundary_change",
+    (
+        {"contract": "A2702"},
+        {"segment_start_trading_day": date(2023, 1, 2)},
+        {"trading_day": date(2026, 8, 20)},
+        {"segment_bar_index": 21},
+        {"observed_at": datetime(2026, 8, 19, 1, 21, tzinfo=UTC)},
+    ),
+    ids=(
+        "contract",
+        "segment-start-trading-day",
+        "trading-day",
+        "segment-bar-index",
+        "observed-at",
+    ),
+)
+def test_exact_overlap_requires_full_boundary_key(
+    boundary_change: dict[str, object],
+) -> None:
+    batch = _batch(PRODUCTS[0])
+    left = batch.candidates[0].result
+    right = batch.candidates[1].result
+    changed = _reentry_variant(right.events[0], **boundary_change)
+
+    exact = summarize_exact_jdj_overlap(left, right, symbol=PRODUCTS[0])
+    drifted = summarize_exact_jdj_overlap(
+        left,
+        _result_with_events(right, (changed,)),
+        symbol=PRODUCTS[0],
+    )
+
+    assert exact.exact_same_boundary_same_direction_count == 1
+    assert exact.exact_same_boundary_opposite_direction_count == 0
+    assert drifted.exact_same_boundary_same_direction_count == 0
+    assert drifted.exact_same_boundary_opposite_direction_count == 0
+
+
+def test_exact_overlap_splits_same_and_opposite_direction_counts() -> None:
+    batch = _batch(PRODUCTS[0])
+    left = batch.candidates[0].result
+    right = batch.candidates[1].result
+    opposite = _reentry_variant(
+        right.events[0],
+        direction=JdjDirection.SHORT,
+    )
+
+    same = summarize_exact_jdj_overlap(left, right, symbol=PRODUCTS[0])
+    different = summarize_exact_jdj_overlap(
+        left,
+        _result_with_events(right, (opposite,)),
+        symbol=PRODUCTS[0],
+    )
+
+    assert (
+        same.exact_same_boundary_same_direction_count,
+        same.exact_same_boundary_opposite_direction_count,
+    ) == (1, 0)
+    assert (
+        different.exact_same_boundary_same_direction_count,
+        different.exact_same_boundary_opposite_direction_count,
+    ) == (0, 1)
+    assert different.left_events_with_same_direction_match == 0
+    assert different.right_events_with_same_direction_match == 0
+
+
+def test_exact_overlap_counts_unique_matched_events_not_cartesian_multiplicity() -> None:
+    batch = _batch(PRODUCTS[0])
+    left = batch.candidates[0].result
+    right = batch.candidates[1].result
+    left_first = left.events[0]
+    right_first = right.events[0]
+    left_events = (
+        left_first,
+        _trend_follow_variant(left_first, trigger_level=Decimal("102")),
+    )
+    right_events = (
+        right_first,
+        _reentry_variant(right_first, excursion_extreme=Decimal("94")),
+        _reentry_variant(right_first, excursion_extreme=Decimal("93")),
+    )
+
+    result = summarize_exact_jdj_overlap(
+        _result_with_events(left, left_events),
+        _result_with_events(right, right_events),
+        symbol=PRODUCTS[0],
+    )
+
+    assert result.exact_same_boundary_same_direction_count == 6
+    assert result.left_events_with_same_direction_match == 2
+    assert result.right_events_with_same_direction_match == 3
+
+
+def test_exact_overlap_rejects_duplicate_event_ids_and_event_drift() -> None:
+    batch = _batch(PRODUCTS[0])
+    left = batch.candidates[0].result
+    right = batch.candidates[1].result
+    duplicate = replace(left)
+    object.__setattr__(duplicate, "events", (left.events[0], left.events[0]))
+    object.__setattr__(duplicate, "trigger_count_long", 2)
+
+    with pytest.raises(JdjContextError, match="^JDJ_CONTEXT_INVALID$"):
+        summarize_exact_jdj_overlap(duplicate, right, symbol=PRODUCTS[0])
+
+    drifted = replace(right)
+    object.__setattr__(
+        drifted.events[0],
+        "observed_at",
+        drifted.events[0].observed_at + timedelta(minutes=1),
+    )
+    with pytest.raises(JdjContextError, match="^JDJ_CONTEXT_INVALID$"):
+        summarize_exact_jdj_overlap(left, drifted, symbol=PRODUCTS[0])
+
+
+def _batch_with_outcome_value(
+    batch: JdjBatchResearchResult,
+    value: Decimal,
+) -> JdjBatchResearchResult:
+    candidates = tuple(
+        replace(
+            detailed,
+            event_outcomes=tuple(
+                replace(
+                    record,
+                    outcomes={
+                        horizon: PriceDirectionalOutcome(
+                            horizon=horizon,
+                            directional_return_bps=value,
+                            mfe_bps=value,
+                            mae_bps=-value,
+                        )
+                        for horizon in (3, 5, 8, 20)
+                    },
+                )
+                for record in detailed.event_outcomes
+            ),
+        )
+        for detailed in batch.candidates
+    )
+    return replace(batch, candidates=candidates)
+
+
+def test_overlap_projection_ignores_event_outcomes_completely() -> None:
+    symbol = PRODUCTS[0]
+    positive = _batch_with_outcome_value(_batch(symbol), Decimal("10"))
+    negative = _batch_with_outcome_value(_batch(symbol), Decimal("-10"))
+
+    positive_rows = _dependency_service(
+        _DependencyRunner({symbol: positive})
+    ).project_jdj_exact_overlaps()
+    negative_rows = _dependency_service(
+        _DependencyRunner({symbol: negative})
+    ).project_jdj_exact_overlaps()
+
+    assert positive_rows == negative_rows
+
+
+def test_overlap_projection_uses_a_separate_exact_jdj_window() -> None:
+    runner = _DependencyRunner()
+    service = _dependency_service(runner)
+
+    service.project_n_jdj_dependencies()
+    rows = service.project_jdj_exact_overlaps()
+
+    assert runner.calls == [
+        *(
+            (symbol, date(2023, 1, 1), date(2026, 8, 19))
+            for symbol in PRODUCTS
+        ),
+        *(
+            (symbol, date(2023, 1, 1), date(2026, 8, 20))
+            for symbol in PRODUCTS
+        ),
+    ]
+    assert len(rows) == 180
+    assert tuple(
+        (row.left_candidate_id, row.right_candidate_id, row.symbol)
+        for row in rows
+    ) == tuple(
+        (left, right, symbol)
+        for left, right in JDJ_PAIRS
+        for symbol in PRODUCTS
+    )
+
+
+def test_overlap_projection_retains_three_typed_unavailable_rows() -> None:
+    runner = _DependencyRunner({"ag": JdjSourceUnavailableError()})
+
+    rows = _dependency_service(runner).project_jdj_exact_overlaps()
+
+    unavailable = tuple(row for row in rows if row.symbol == "ag")
+    assert tuple(
+        (row.left_candidate_id, row.right_candidate_id)
+        for row in unavailable
+    ) == JDJ_PAIRS
+    assert all(
+        row.status == "unavailable"
+        and row.reason_code == "JDJ_SOURCE_UNAVAILABLE"
+        and row.left_event_count is None
+        and row.right_event_count is None
+        and row.exact_same_boundary_same_direction_count is None
+        and row.exact_same_boundary_opposite_direction_count is None
+        and row.left_events_with_same_direction_match is None
+        and row.right_events_with_same_direction_match is None
+        for row in unavailable
+    )
+    assert len(rows) == 180
+
+
+@pytest.mark.parametrize(
+    ("field", "drifted_value"),
+    (
+        ("cross_symbol_products", PRODUCTS[:-1]),
+        ("jdj_overlap_through", date(2026, 8, 21)),
+        ("jdj_overlap_future_outcomes", True),
+        ("jdj_overlap_pair_order", tuple(reversed(JDJ_PAIRS))),
+    ),
+)
+def test_overlap_projection_revalidates_complete_protocol_before_runner_calls(
+    field: str,
+    drifted_value: object,
+) -> None:
+    protocol = load_five_candidate_relationship_protocol()
+    runner = _DependencyRunner()
+    service = _dependency_service(runner, protocol=protocol)
+    object.__setattr__(protocol, field, drifted_value)
+
+    with pytest.raises(
+        FiveCandidateRelationshipProtocolError,
+        match="^FIVE_CANDIDATE_RELATIONSHIP_PROTOCOL_INVALID$",
+    ):
+        service.project_jdj_exact_overlaps()
+
+    assert runner.calls == []
+
+
+def test_overlap_projection_does_not_downgrade_batch_or_event_corruption() -> None:
+    invalid_window = _batch(PRODUCTS[0])
+    object.__setattr__(invalid_window, "observed_through", None)
+    with pytest.raises(JdjContextError, match="^JDJ_CONTEXT_INVALID$"):
+        _dependency_service(
+            _DependencyRunner({PRODUCTS[0]: invalid_window})
+        ).project_jdj_exact_overlaps()
+
+    wrong_order = _batch(PRODUCTS[0])
+    object.__setattr__(
+        wrong_order,
+        "candidates",
+        tuple(reversed(wrong_order.candidates)),
+    )
+    with pytest.raises(JdjContextError, match="^JDJ_CONTEXT_INVALID$"):
+        _dependency_service(
+            _DependencyRunner({PRODUCTS[0]: wrong_order})
+        ).project_jdj_exact_overlaps()
+
+    duplicate = _batch(PRODUCTS[0])
+    result = duplicate.candidates[0].result
+    object.__setattr__(result, "events", (result.events[0], result.events[0]))
+    object.__setattr__(result, "trigger_count_long", 2)
+    with pytest.raises(JdjContextError, match="^JDJ_CONTEXT_INVALID$"):
+        _dependency_service(
+            _DependencyRunner({PRODUCTS[0]: duplicate})
+        ).project_jdj_exact_overlaps()
