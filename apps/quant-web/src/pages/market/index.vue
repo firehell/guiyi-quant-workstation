@@ -7,6 +7,7 @@ import MarketDetailTable from '@/components/market/MarketDetailTable.vue'
 import MarketScatter from '@/components/market/MarketScatter.vue'
 import MarketSummaryStrip from '@/components/market/MarketSummaryStrip.vue'
 import MarketFormalSignals from '@/components/market/MarketFormalSignals.vue'
+import MarketFocusList from '@/components/market/MarketFocusList.vue'
 import MarketRadarSkeleton from '@/components/market/MarketRadarSkeleton.vue'
 import { getMarketRadar } from '@/api/market'
 import { getEventStates } from '@/api/executionReview'
@@ -140,9 +141,15 @@ onMounted(() => {
       </div>
       <template v-if="radar">
         <NAlert v-if="freshnessIssue" type="warning" :title="freshnessIssue" />
-        <MarketSummaryStrip :radar="radar" />
-        <div class="market-radar-page__discovery"><MarketScatter :items="radar.items" @open="openChart" /><MarketAttentionList :items="radar.attention" @open="openChart" /></div>
-        <MarketDetailTable :items="radar.items" :sectors="radar.sector_summary" :watchlist="preferences.watchlist" @open="openChart" @toggle-watchlist="toggleWatchlist" />
+        <MarketFocusList :radar="radar" @open="openChart" />
+        <details class="market-radar-page__research" data-testid="market-full-research">
+          <summary>展开全市场研究</summary>
+          <div class="market-radar-page__research-content">
+            <MarketSummaryStrip :radar="radar" />
+            <div class="market-radar-page__discovery"><MarketScatter :items="radar.items" @open="openChart" /><MarketAttentionList :items="radar.attention" @open="openChart" /></div>
+            <MarketDetailTable :items="radar.items" :sectors="radar.sector_summary" :watchlist="preferences.watchlist" @open="openChart" @toggle-watchlist="toggleWatchlist" />
+          </div>
+        </details>
       </template>
     </template>
   </div>
@@ -155,6 +162,9 @@ onMounted(() => {
 .market-radar-page__intro p { margin: 0; color: var(--gy-text-muted); }
 .market-radar-page__error { display: flex; align-items: center; gap: 10px; }
 .market-radar-page__error :deep(.n-alert) { min-width: 0; flex: 1; }
+.market-radar-page__research { min-width: 0; border: .5px solid var(--gy-border); border-radius: var(--gy-radius-lg); background: var(--gy-bg-panel); }
+.market-radar-page__research > summary { padding: 14px 16px; color: var(--gy-accent); font-weight: 500; cursor: pointer; }
+.market-radar-page__research-content { display: flex; flex-direction: column; gap: 16px; padding: 0 16px 16px; }
 .market-radar-page__discovery { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(320px, .9fr); gap: 16px; }
 @media (max-width: 980px) { .market-radar-page__discovery { grid-template-columns: 1fr; } }
 </style>
