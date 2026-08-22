@@ -1,6 +1,6 @@
 # 当前状态
 
-更新时间：2026-08-21
+更新时间：2026-08-22
 
 ## 当前身份
 
@@ -83,6 +83,15 @@
   （`11` 个品种 × 三条 Candidate，reason=`JDJ_SOURCE_UNAVAILABLE`）。两次未改输入的只读复算
   parsed JSON 语义相等；prospective 首日仍为 `2026-08-24` 且当前 `pending`、未消费。
   该 evidence 不生成 score/rank/KEEP/DROP/PROMOTE，不改变 Alert、Runtime 或订单边界。
+- Phase 8A artifact-only Five-Candidate dossier evidence 已冻结：
+  `reports/research/candidate_dossier/five_candidate_research_dossier_v1/five-candidate-retrospective-evidence-freeze-2026-08-22.json`，
+  SHA256=`632c7b88bc3dfaf15d9640f32d014b9af0665376959e10c73101956cdc81ee99`。该 artifact
+  只组装 `5` 份 Candidate dossier、`7` 份已冻结 source artifact 与 `10` 个显式
+  comparability pair；保留 SuBing `2023-01-01..2026-08-18`、N
+  `2023-01-01..2026-08-19` 与三条 JDJ `2023-01-01..2026-08-20` 的 source-specific
+  retrospective window，不改写为 five-Candidate common window。`300` 个 source cells 完整保留为
+  `245` available / `55` typed unavailable；不新算 metric 或 relationship，不消费
+  prospective OOS。Phase 8B 明确尚未完成。
 - 以上证据都只是可复算的 retrospective/rolling research facts：不生成自动排名、winner、
   KEEP/DROP/PROMOTE、盈利、有效性、可交易、Alert Rule、release 或 Runtime-ready 结论；
   不写 Canonical/DB/Redis，不回填 prospective OOS。
@@ -98,6 +107,8 @@
   证据保留，但不冒充新 root 的自然运行。不得人工触发、回填或补证。
 - SuBing、N 与 JDJ 三条 Candidate 的 prospective OOS 继续按各自 exact protocol 独立累积，
   当前均为 `pending`；不得用 retrospective 或 embargo 日回填。
+- Phase 8B relationship-topology 研究仍为 `incomplete`；Phase 8A artifact freeze 不自动启动或
+  完成 Phase 8B。
 - Execution Review Gate D 继续 `disabled / not activated`。
 
 ## 事实源与边界

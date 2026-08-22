@@ -1,6 +1,6 @@
 # 归一量化系统架构
 
-更新时间：2026-08-21
+更新时间：2026-08-22
 
 ## 系统定位
 
@@ -16,7 +16,7 @@ flowchart TB
       WEB["Market Web"]
       API["Market API"]
       CLI["guiyi data update/refresh/audit"]
-      RCLI["guiyi research<br/>calibration / lifecycle / n-structure / jdj-1m / candidate-validation / robustness / mirror-v2"]
+      RCLI["guiyi research<br/>calibration / lifecycle / n-structure / jdj-1m / candidate-validation / robustness / candidate-dossier / mirror-v2"]
       ALERTAPI["Alert API"]
       ERAPI["Execution Review API"]
     end
@@ -45,6 +45,8 @@ flowchart TB
       JCV["JDJ Candidate Reports<br/>three source-specific baselines"]
       MCR["MultiCandidateRobustnessService<br/>temporal / active60 / relationship"]
       JAR["JDJActive60RobustnessService<br/>180-cell yearly / symbol-balanced sector"]
+      FA7["7 pinned immutable research artifacts<br/>5 baselines + 2 robustness"]
+      FCD["FiveCandidateResearchDossierService<br/>artifact-only / 5 dossiers / 10 pair statuses"]
       MFM["MainForceMirrorV2Service / ResearchService<br/>60m historical confirmed observation"]
       MMS["pinned immutable<br/>main_force_member_rank_v1 snapshot"]
     end
@@ -92,6 +94,8 @@ flowchart TB
     NCV --> MCR
     SL --> MCR
     NS --> MCR
+    FA7 --> FCD
+    RCLI --> FCD
     RCLI --> MFM --> MQ
     MMS --> MFM
     WEB --> ALERTAPI --> AS
@@ -189,6 +193,11 @@ flowchart TB
   Candidate/公式/参数，不做一对一 greedy matching、score、winner、rank 或 promotion，不进入
   DB/Canonical/Redis、Alert、Runtime 或订单路径。两条 Candidate 的 prospective OOS 仍由各自
   exact Protocol 独立累积。
+  `FiveCandidateResearchDossierService` 是 artifact-only 组装节点：只校验并投影七份钉住的
+  Git-tracked immutable research artifact，不连接 `MarketDataService`，不读行情。它保留五条
+  Candidate 各自的 source window 与十个 pair 的显式 comparability status，仅投影既有
+  SuBing/N relationship reference；不把 comparability 写成 relationship，不新算 metric/relationship，
+  不消费 prospective OOS，也不进入 DB/Canonical/Redis、Alert、Runtime 或订单路径。
   `MainForceMirrorV2Service` 与 `MainForceMirrorV2ResearchService` 仅通过 `MarketDataService` 的
   `ActualDominantTradingDayQuery` / `ContractTradingDayQuery` 读取 60m Historical Canonical，
   把每根 Bar 绑定到唯一物理合约，并只读钉住的不可变

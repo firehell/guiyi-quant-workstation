@@ -1,6 +1,6 @@
 # 归一量化项目事实源
 
-更新时间：2026-08-21
+更新时间：2026-08-22
 
 ## 定位与边界
 
@@ -89,6 +89,18 @@ ActualDominantResearchSegmentLoader` 读取 Historical Canonical，以单品种�
 该 protocol 不消费 `2026-08-21` embargo 或 `2026-08-24+` prospective OOS，不接受运行时窗口、
 品种、阈值、score 或 rank；只输出一份版本化 stdout JSON evidence，不写 DB/Canonical/Redis，
 不进入 Alert/Runtime/订单路径，也不产生 ranking、KEEP/DROP/PROMOTE 或效果结论。
+Phase 8A exact 入口
+`guiyi research candidate-dossier --protocol five_candidate_research_dossier_v1` 只读组装七份
+Git-tracked immutable source artifact：五份 source-specific Candidate baseline 与两份既有
+robustness evidence。它不读 `MarketDataService`，不重算行情、Candidate、metric 或
+relationship。五条 Candidate 保留各自 retrospective window：SuBing
+`2023-01-01..2026-08-18`、N `2023-01-01..2026-08-19`、三条 JDJ
+`2023-01-01..2026-08-20`；不建立 common five-Candidate window。十个 pair 只投影显式
+comparability status：SuBing/N 复用已有 relationship reference，SuBing/JDJ 为 cross-timeframe
+not comparable，N/JDJ 的 pair metric 尚未定义，JDJ 内部为 same-family comparable。
+comparability 不等于 relationship，该 dossier 不为其他 pair 新建 relationship evidence；不写
+DB/Canonical/Redis，不进入 Alert/Runtime/订单路径，也不产生 Candidate 优劣、有效性、
+盈利、可交易或可晋升结论。
 Market Runtime 的 Live 与盘后更新共用
 `operational_products.txt`；当前目标与 active 60 完全一致。Live 只观察
 当日 rank1 completed 1m，盘后最多在 18:05 和一次一小时后 retry 更新相同范围，Live 永不提升为

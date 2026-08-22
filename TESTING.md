@@ -1,6 +1,6 @@
 # 测试与验证入口
 
-更新时间：2026-08-21
+更新时间：2026-08-22
 
 所有写入测试必须使用 `tmp_path`、临时 Canonical root 和隔离数据库；测试 URL 不得指向 Runtime 或
 生产数据库。真实数据、Runtime switch 和通知不属于测试命令的隐含权限。
@@ -287,6 +287,20 @@ uv run --offline --project services/quant-api guiyi research candidate-robustnes
 ```
 
 该命令只按 exact protocol 读取 Historical Canonical；不接受运行时窗口、品种、阈值、score 或 rank。
+
+## Five-Candidate Research Dossier V1（Phase 8A / artifact-only）
+
+exact dossier 生成命令固定为：
+
+```bash
+UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
+  uv run --offline --project services/quant-api guiyi research candidate-dossier \
+  --protocol five_candidate_research_dossier_v1
+```
+
+该命令只读七份钉住的 Git-tracked research artifact，只向 stdout 输出 deterministic JSON；
+不读 `MarketDataService`，不写 DB/Canonical/Redis，不发送通知，不进入 Alert/Runtime/订单路径，
+不消费 prospective OOS，也不形成 Candidate 优劣、有效性、盈利、可交易或可晋升结论。
 
 ## Alert V2
 
