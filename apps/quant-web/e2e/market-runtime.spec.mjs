@@ -232,7 +232,7 @@ test('shows a post-close snapshot until the canonical edge takes it over', async
   await mockMarketApi(page, requests, controls)
 
   await page.goto('/market/chart?symbol=jm&series_kind=actual_dominant&frequency=15m')
-  await expect(page.locator('.identity-row strong')).toHaveText('JM 焦煤')
+  await expect(page.getByTestId('product-status-strip').locator('strong')).toHaveText('JM2601')
   await expect(page.getByTestId('market-display-state')).toHaveText('Historical')
   await expect.poll(() => page.evaluate(() => window.__marketSockets.some((socket) => !socket.closed && socket.url.includes('symbol=jm')))).toBe(true)
 
@@ -274,7 +274,7 @@ test('does not leak a stale symbol websocket message after switching the display
 
   await page.locator('.toolbar__symbol').click()
   await page.getByText('JM 焦煤', { exact: true }).click()
-  await expect(page.locator('.identity-row strong')).toHaveText('JM 焦煤')
+  await expect(page.getByTestId('product-status-strip').locator('strong')).toHaveText('JM2601')
   await expect.poll(() => page.evaluate(() => window.__marketSockets.filter((socket) => socket.url.includes('/api/v1/market/ws') && !socket.closed).length)).toBe(0)
   await page.evaluate(() => {
     window.__marketSockets.find((socket) => socket.url.includes('/api/v1/market/ws')).serverSend({ type: 'bar', bar: {
@@ -302,7 +302,7 @@ test('switches series and period from the workspace shell, opens research on com
 
   await page.getByRole('button', { name: '检查', exact: true }).click()
   const drawer = page.getByRole('dialog')
-  await expect(drawer.getByText('品种上下文', { exact: true })).toBeVisible()
+  await expect(drawer.getByText('当前检查栏', { exact: true })).toBeVisible()
   await drawer.getByRole('button', { name: '加入自选', exact: true }).click()
   await expect(drawer.getByRole('button', { name: '已自选', exact: true })).toBeVisible()
   await expect.poll(() => page.evaluate(() => JSON.parse(window.localStorage.getItem('guiyi.market.workspace.preferences.v1')).watchlist)).toEqual(['ag'])

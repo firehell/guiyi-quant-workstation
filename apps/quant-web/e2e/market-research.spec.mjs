@@ -63,7 +63,7 @@ function formalSignal() {
   }
 }
 
-async function mockMarketHomepage(page, currentFormalResponse) {
+async function mockMarketHomepage(page, currentFormalResponse, radarResponse = radar()) {
   await page.route('**/api/alerts/formal-signals/current', (route) => route.fulfill({ json: currentFormalResponse }))
   await page.route('**/api/execution-review/event-states**', (route) => {
     const ids = new URL(route.request().url()).searchParams.getAll('event_ids').map(Number)
@@ -71,7 +71,7 @@ async function mockMarketHomepage(page, currentFormalResponse) {
       event_id: id, state: 'pending_decision', decision_id: null, episode_id: null,
     })) } })
   })
-  await page.route('**/api/v1/market/research/radar', (route) => route.fulfill({ json: radar() }))
+  await page.route('**/api/v1/market/research/radar', (route) => route.fulfill({ json: radarResponse }))
 }
 
 test('Market homepage shows the current formal signals above Radar', async ({ page }) => {
@@ -356,6 +356,38 @@ async function openMoreResearch(page) {
   if (!(await more.getAttribute('open'))) await more.locator('summary').click()
   return more
 }
+
+test('B1 journey narrows AG on the homepage before opening its verification view', async ({ page }) => {
+  const ag = radarItem({ symbol: 'ag', product_name: '白银', sector: 'precious' })
+  await mockWorkspace(page, { json: research() })
+  await mockAlertMarkerSurface(page)
+  await mockMarketHomepage(page, {
+    status: 'ready', trading_day: '2026-08-15', items: [],
+  }, radar({
+    items: [ag],
+    attention: [ag],
+    sector_summary: [sectorSummary('precious', 0.012)],
+  }))
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto('/market')
+
+  await expect(page.getByTestId('market-formal-signals')).toBeVisible()
+  await expect(page.getByTestId('market-focus')).toBeVisible()
+  expect(await page.locator('[data-testid="market-formal-signals"], [data-testid="market-focus"]').evaluateAll((nodes) => (
+    Boolean(nodes[0]?.compareDocumentPosition(nodes[1]) & Node.DOCUMENT_POSITION_FOLLOWING)
+  ))).toBe(true)
+  const focus = page.getByTestId('market-focus')
+  await expect(focus).toContainText('AG 白银')
+  await expect(page.getByTestId('market-full-research')).not.toHaveAttribute('open')
+  await focus.getByRole('button', { name: '检查详情', exact: true }).click()
+
+  await expect(page).toHaveURL(/\/market\/chart\?symbol=ag/)
+  await expect(page.getByTestId('product-check-now')).toBeVisible()
+  await expect(page.getByTestId('product-check-background')).toBeVisible()
+  await expect(page.getByTestId('product-check-observation')).toBeVisible()
+  await expect(page.getByTestId('product-check-participation')).toBeVisible()
+  await expect(page.getByTestId('product-check-more')).not.toHaveAttribute('open')
+})
 
 test('SuBing keeps the Market display identity separate from current-dominant research', async ({ page }) => {
   const marketRequests = []
@@ -821,6 +853,27 @@ test('research control toggles the inline sidebar instead of opening a duplicate
   await expect(page.getByRole('dialog')).toHaveCount(0)
   await researchControl.click()
   await expect(sidebar).toBeVisible()
+})
+
+test('Product Workspace stays inside desktop widths and exposes the Check drawer at 1024', async ({ page }) => {
+  await mockWorkspace(page, { json: research() })
+  await mockAlertMarkerSurface(page)
+  await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=15m')
+
+  for (const viewport of [
+    { width: 1440, height: 900 },
+    { width: 1280, height: 720 },
+    { width: 1024, height: 768 },
+  ]) {
+    await page.setViewportSize(viewport)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  }
+
+  await page.getByRole('button', { name: '检查', exact: true }).click()
+  const drawer = page.getByRole('dialog')
+  await expect(drawer).toContainText('检查')
+  await expect(drawer.getByTestId('product-check-now')).toBeVisible()
+  await expect(drawer.getByTestId('product-check-more')).not.toHaveAttribute('open')
 })
 
 test('keeps Kline usable when research is unavailable and does not invent missing OI', async ({ page }) => {

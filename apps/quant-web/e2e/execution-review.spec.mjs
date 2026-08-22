@@ -842,5 +842,5 @@ test('MarketFormalSignals stays visible with a safe action when review state is 
   const formal = page.getByTestId('market-formal-signals')
   await expect(formal).toContainText('JM 焦煤 · 买入信号')
   await expect(formal.getByRole('button', { name: '查看 →' })).toBeVisible()
-  await expect(page.getByText('Market Radar', { exact: true })).toBeVisible()
+  await expect(page.getByTestId('market-focus')).toBeVisible()
 })
