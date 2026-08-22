@@ -21,6 +21,7 @@
 - 不调用 RQData、不执行 member snapshot `--apply`、不写 research-data-root。
 - 不输出正式 `CLIMAX / UNWIND / TAKEOVER` Phase，不输出 best profile/winner/PnL/Sharpe。
 - sequence facts 必须 same physical-contract、strict-prior、prefix invariant，并且同一 peak 的每种后续事件只记录首次 occurrence。
+- peak candidate 第一轮只允许 `long_build` / `short_build`，不让 liquidation/cover Bar 抢占旧 peak memory。
 - `auto_order=false` 不变。
 - 实现从当前 `develop` 创建独立 task branch/worktree；不得修改 main/runtime worktree。
 - 完成后只允许 task → `develop`；不得 release main/tag、Runtime promotion 或真实写入。
@@ -316,7 +317,7 @@ class _ActiveSequencePeak:
     reversal_emitted: bool = False
 ```
 
-- [ ] **Step 8: Implement nearest-rank strict-prior threshold**
+- [ ] **Step 8: Implement nearest-rank strict-prior build-peak threshold**
 
 ```python
 def _nearest_rank(values: tuple[Decimal, ...], quantile: Decimal) -> Decimal:
@@ -338,12 +339,12 @@ A current point is a peak candidate only when all are true:
 ```text
 pressure_ready
 instant_pressure is finite and non-zero
-pressure_state != turnover
+pressure_state in {long_build, short_build}
 there are exactly profile.peak_window prior ready points in the same block
 abs(current instant pressure) >= nearest-rank(abs(prior instant pressure), q)
 ```
 
-The current point is never in its own baseline.
+The current point is never in its own baseline. `short_cover` / `long_liquidation` can be later sequence evidence but never install a new peak in this first-round design.
 
 - [ ] **Step 9: Implement `_derive_sequence_facts` as one forward scan**
 
@@ -355,7 +356,7 @@ B. derive immediate previous_state -> current_state transition inside the block
 C. if an older active peak exists and age <= transition_window, evaluate decay/liquidation/opposite/reversal
 D. event booleans are true only for the first occurrence of each type
 E. if active peak age > transition_window, expire it
-F. after C–E, evaluate whether current point is a new peak candidate and install it for subsequent bars
+F. after C–E, evaluate whether current point is a new long_build/short_build peak candidate and install it for subsequent bars
 G. append immutable MainForceMirrorV2SequenceFact
 ```
 
@@ -368,7 +369,7 @@ opposite_build_state = {"long": "short_build", "short": "long_build"}
 
 Long decay uses `(peak - current) / abs(peak)`; short decay uses `(abs(peak) - abs(current)) / abs(peak)`. Convert exposed accumulated floats with `Decimal(str(value))`. If current accumulated crosses the peak side’s zero boundary, `accumulated_reversal_seen` emits once. Do not clip `decay_ratio`.
 
-If current point is both an event for the old peak and a candidate for the opposite new peak, its fact reports the old peak event; the new peak only becomes memory for the next point.
+If current `short_build`/`long_build` point is both an event for the old peak and a candidate for the opposite new peak, its fact reports the old peak event; the new peak only becomes memory for the next point.
 
 - [ ] **Step 10: Run sequence tests, then the whole research-service test file**
 
@@ -1122,12 +1123,13 @@ No report is committed unless the user separately requests a versioned research 
 
 ## Plan Self-Review
 
-- Spec coverage: 60m-only, same-contract memory, nearest-rank strict-prior peak, five fixed profiles, first-occurrence events, causal timing, prefix invariance, additive CLI, no member writes, no formal Phase and deletion boundary are all covered.
+- Spec coverage: 60m-only, same-contract memory, nearest-rank strict-prior **build peak**、five fixed profiles、first-occurrence events、causal timing、prefix invariance、additive CLI、no member writes、no formal Phase and deletion boundary are all covered.
 - YAGNI: no new module/service/repository/API/protocol/cache/batch orchestrator; active60 batching stays an external loop.
 - Type consistency: profile/fact/summary/forensic DTOs are defined once in the existing research service and reused by tests/payload.
 - Future-leak boundary: Task 1 derives only current/prior points; Task 2 alone uses forward horizons. Prefix equality is tested for every profile.
 - Scope boundary: Kernel/Web/API service/member snapshot remain untouched.
 - No undefined helper/function appears in the test steps; all synthetic helpers referenced by later tests are defined in earlier steps.
+- The build-only peak constraint prevents liquidation/cover Bars from preempting the original peak sequence being diagnosed.
 - No implementation placeholder remains.
 
 ## Execution Handoff
