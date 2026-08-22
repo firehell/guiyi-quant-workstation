@@ -4,27 +4,29 @@
 
 **Goal:** Freeze a deterministic five-Candidate evidence dossier, then freeze a relationship topology that distinguishes existing SuBing↔N event relationships, N→JDJ structural dependencies, exact JDJ↔JDJ same-boundary overlap, and undefined SuBing↔JDJ cross-timeframe relations without ranking Candidates or consuming prospective OOS.
 
-**Architecture:** Phase 8A is artifact-only composition over seven Git-tracked frozen JSON artifacts and must execute before any DB Session is opened. Phase 8B is a separate Historical read-only recomputation using the existing `JdjResearchService`: one exact window through `2026-08-19` for N→JDJ dependency and a separate exact window through `2026-08-20` for JDJ overlap. The two phases share only small exact contract/artifact helpers and deterministic JSON rendering; they do not create a general research platform or persistence layer.
+**Architecture:** Phase 8A is artifact-only composition over seven Git-tracked frozen JSON artifacts and must execute before any DB Session is opened. Phase 8B is a separate Historical read-only recomputation using the existing `JdjResearchService`: one exact window through `2026-08-19` for N→JDJ dependency and a separate exact window through `2026-08-20` for JDJ overlap. The two phases share only bounded artifact verification and deterministic rendering; they do not create a general research platform or persistence layer.
 
-**Tech Stack:** Python 3.12, dataclasses / `Decimal`, repository-standard SQLAlchemy Session only for Phase 8B composition, existing `MarketDataService → ActualDominantResearchSegmentLoader → JdjResearchService`, pytest, Ruff, Mypy, existing `guiyi research` CLI JSON renderer.
+**Tech Stack:** Python 3.12, dataclasses, `Decimal`, existing SQLAlchemy Session pattern for Phase 8B only, `MarketDataService → ActualDominantResearchSegmentLoader → JdjResearchService`, pytest, Ruff, Mypy, existing `guiyi research` CLI JSON renderer.
 
 **Spec:** `docs/superpowers/specs/2026-08-22-five-candidate-evidence-convergence-relationship-topology-design.md`
 
 ## Global Constraints
 
-- Implement against the latest `develop`; before every execution segment re-read `STATUS.md`, `AGENTS.md`, `docs/DEVELOPMENT.md`, `PROJECT_SOURCE.md`, `DECISIONS.md`, the spec above, and task-related source/tests.
-- Exact Candidate order: `subing_lifecycle_v2_candidate_v1`, `n_structure_5m_candidate_v1`, `jdj_trend_follow_1m_candidate_v1`, `jdj_trend_reentry_6_1m_candidate_v1`, `jdj_key_level_breakout_1m_candidate_v1`.
-- Never invent a Five-Candidate common retrospective window.
-- Phase 8A reads only seven frozen repository artifacts; it must create zero DB Sessions and zero MarketDataService / Candidate / robustness runners.
-- Phase 8B N→JDJ dependency source window is exactly `2023-01-01..2026-08-19`; do not read `2026-08-20` and filter it away afterward.
-- Phase 8B JDJ↔JDJ overlap source window is exactly `2023-01-01..2026-08-20`.
-- Do not consume JDJ `2026-08-21` embargo or `2026-08-24+` prospective OOS; do not backfill or mutate any Candidate prospective result.
-- No new Candidate, formula, parameter, parameter sweep, automatic score/rank/winner, KEEP/DROP/ITERATE/PROMOTE, or overlap-conditioned future outcome.
+- Start each execution segment from the latest `develop`; re-read `STATUS.md`, `AGENTS.md`, `docs/DEVELOPMENT.md`, `PROJECT_SOURCE.md`, `DECISIONS.md`, this plan, the spec, and task-related source/tests.
+- Exact Candidate order is: `subing_lifecycle_v2_candidate_v1`, `n_structure_5m_candidate_v1`, `jdj_trend_follow_1m_candidate_v1`, `jdj_trend_reentry_6_1m_candidate_v1`, `jdj_key_level_breakout_1m_candidate_v1`.
+- Never create a Five-Candidate common retrospective window.
+- Phase 8A reads only seven frozen repository artifacts and creates zero DB Sessions, zero MarketDataService objects, zero Candidate runners and zero robustness runners.
+- Phase 8B N→JDJ dependency window is exactly `2023-01-01..2026-08-19`.
+- Phase 8B JDJ↔JDJ exact-overlap window is exactly `2023-01-01..2026-08-20`.
+- Never read N `2026-08-20` for N→JDJ dependency and filter it away later.
+- Never consume JDJ `2026-08-21` embargo or `2026-08-24+` prospective OOS.
+- Do not mutate or backfill any Candidate prospective evidence.
+- No new Candidate, formula, parameter, parameter sweep, score, rank, winner, KEEP, DROP, ITERATE, PROMOTE or overlap-conditioned future outcome.
 - No backtest/fill/order/position/cost/equity/PnL subsystem.
 - No Alert/Scope/Execution Review/Runtime changes; no DB/Canonical/Redis writes; no main/tag/release/Runtime promotion; `auto_order=false` remains fixed.
-- `unavailable`, available zero-event, and zero-sample are distinct states and must never be collapsed.
-- All tracked Phase 8 evidence is exact CLI stdout generated after tests pass; never hand-edit evidence JSON.
-- Task 5 is a mandatory checkpoint: Phase 8B starts only after Phase 8A is integrated to an updated `develop` and a new task worktree/session is created.
+- Keep `unavailable`, available zero-event and zero-sample as three distinct states.
+- Tracked Phase 8 evidence must be exact CLI stdout generated only after the required verification passes; never hand-edit evidence JSON.
+- Task 5 is a hard checkpoint. Phase 8B starts only after Tasks 1–5 are integrated to `develop` and a new Phase 8B worktree/session is created from updated `develop`.
 
 ---
 
@@ -34,28 +36,32 @@
 
 - `data/research_protocols/five_candidate_research_dossier_v1.json` — exact Phase 8A protocol.
 - `data/research_protocols/five_candidate_relationship_topology_v1.json` — exact Phase 8B protocol, created only after Task 5 evidence SHA is known.
-- `services/quant-api/app/research/candidate_convergence/__init__.py` — package marker only.
-- `services/quant-api/app/research/candidate_convergence/artifact_source.py` — bounded repo-relative artifact path + SHA256 + UTF-8/JSON-object verifier shared by 8A/8B.
-- `services/quant-api/app/research/candidate_convergence/five_candidate_dossier.py` — 8A protocol/request/report/value contracts and invariants.
-- `services/quant-api/app/research/candidate_convergence/five_candidate_dossier_service.py` — pure seven-artifact projection.
-- `services/quant-api/app/research/candidate_convergence/five_candidate_relationships.py` — 8B protocol/request/report/value contracts and invariants.
-- `services/quant-api/app/research/candidate_convergence/jdj_exact_overlap.py` — pure exact-boundary pair reducer; no proximity/future outcome.
-- `services/quant-api/app/research/candidate_convergence/five_candidate_relationships_service.py` — 8B orchestration over two separate JDJ batch windows plus existing frozen relationship reference.
-- `services/quant-api/tests/test_five_candidate_dossier.py` — 8A protocol/report/artifact/service tests.
-- `services/quant-api/tests/test_five_candidate_relationships.py` — 8B protocol/report/dependency/overlap tests.
-- `reports/research/candidate_dossier/five_candidate_research_dossier_v1/five-candidate-retrospective-evidence-freeze-2026-08-22.json` — Task 5 exact evidence.
-- `reports/research/candidate_relationships/five_candidate_relationship_topology_v1/five-candidate-relationship-topology-freeze-2026-08-22.json` — Task 10 exact evidence.
+- `services/quant-api/app/research/candidate_convergence/__init__.py` — package marker.
+- `services/quant-api/app/research/candidate_convergence/artifact_source.py` — repo-relative path, SHA256, UTF-8 and JSON-object verifier shared by 8A/8B.
+- `services/quant-api/app/research/candidate_convergence/five_candidate_dossier.py` — 8A protocol/request/report contracts and invariants.
+- `services/quant-api/app/research/candidate_convergence/five_candidate_dossier_service.py` — pure seven-artifact composition.
+- `services/quant-api/app/research/candidate_convergence/five_candidate_relationships.py` — 8B protocol/request/report contracts and invariants.
+- `services/quant-api/app/research/candidate_convergence/jdj_exact_overlap.py` — exact-boundary JDJ pair reducer with no proximity/future outcome.
+- `services/quant-api/app/research/candidate_convergence/five_candidate_relationships_service.py` — 8B orchestration over two separate JDJ batch windows plus existing frozen SuBing/N relationship reference.
+- `services/quant-api/tests/test_five_candidate_dossier.py` — 8A protocol/artifact/report/service tests.
+- `services/quant-api/tests/test_five_candidate_relationships.py` — 8B protocol/dependency/overlap/report tests.
+- `reports/research/candidate_dossier/five_candidate_research_dossier_v1/five-candidate-retrospective-evidence-freeze-2026-08-22.json` — Task 5 evidence.
+- `reports/research/candidate_relationships/five_candidate_relationship_topology_v1/five-candidate-relationship-topology-freeze-2026-08-22.json` — Task 10 evidence.
 
 ### Existing files modified
 
-- `services/quant-api/app/research/composition.py` — one no-Session dossier builder and one Session-based relationship builder.
-- `services/quant-api/app/guiyi_cli/research_parser.py` — `candidate-dossier` and `candidate-relationships` exact protocol parsers.
-- `services/quant-api/app/guiyi_cli/research_requests.py` — add the two immutable request types to `ResearchRequest` and build them.
-- `services/quant-api/app/guiyi_cli/research_commands.py` — typed dispatch for the two new report types.
-- `services/quant-api/app/guiyi_cli/research_payloads.py` — deterministic payload renderers.
-- `services/quant-api/app/guiyi_cli/main.py` — branch `candidate-dossier` before `session_factory()`; keep `candidate-relationships` inside the Historical read-only Session path.
-- `services/quant-api/tests/test_research_cli.py` — parser/dispatch/no-Session/session-based/redaction/determinism contracts.
-- `STATUS.md`, `PROJECT_SOURCE.md`, `DECISIONS.md`, `docs/ARCHITECTURE.md`, `TESTING.md` — Task 5/10 canonical closeout only after exact evidence exists.
+- `services/quant-api/app/research/composition.py`
+- `services/quant-api/app/guiyi_cli/research_parser.py`
+- `services/quant-api/app/guiyi_cli/research_requests.py`
+- `services/quant-api/app/guiyi_cli/research_commands.py`
+- `services/quant-api/app/guiyi_cli/research_payloads.py`
+- `services/quant-api/app/guiyi_cli/main.py`
+- `services/quant-api/tests/test_research_cli.py`
+- `STATUS.md`
+- `PROJECT_SOURCE.md`
+- `DECISIONS.md`
+- `docs/ARCHITECTURE.md`
+- `TESTING.md`
 
 ---
 
@@ -63,7 +69,7 @@
 
 ## Task 1: Freeze Dossier Protocol and Artifact Integrity
 
-**Lane:** Lane 1, Sol, high reasoning, Plan-then-execute.
+**Lane:** Lane 1 / Sol / high reasoning / Plan-then-execute.
 
 **Files:**
 - Create: `data/research_protocols/five_candidate_research_dossier_v1.json`
@@ -73,11 +79,12 @@
 - Create: `services/quant-api/tests/test_five_candidate_dossier.py`
 
 **Interfaces:**
-- Produces `SourceArtifactRef`, `VerifiedJsonArtifact`, `verify_json_artifact`, `FiveCandidateDossierProtocol`, `FiveCandidateDossierRequest`, `load_five_candidate_dossier_protocol`.
+- Produce `SourceArtifactRef`, `VerifiedJsonArtifact`, `verify_json_artifact`, `FiveCandidateDossierProtocol`, `FiveCandidateDossierRequest`, `load_five_candidate_dossier_protocol`.
 - Stable errors: `FIVE_CANDIDATE_DOSSIER_PROTOCOL_INVALID`, `FIVE_CANDIDATE_DOSSIER_SOURCE_INVALID`.
-- Consumes `PROJECT_ROOT`, `load_exact_json`, and the seven frozen source identities in the spec.
 
-- [ ] **Step 1: Write RED tests for exact protocol values and ordering**
+- [ ] **Step 1: Write RED exact-protocol tests**
+
+Add one test that asserts candidate order, seven artifact refs, ten pair refs, all safety booleans, `research_only=true`, `readonly=true` and `prospective_consumed=false`.
 
 ```python
 CANDIDATES = (
@@ -89,76 +96,28 @@ CANDIDATES = (
 )
 
 
-def test_dossier_protocol_is_exact_and_readonly() -> None:
+def test_dossier_protocol_is_exact() -> None:
     protocol = load_five_candidate_dossier_protocol()
     assert protocol.protocol_id == "five_candidate_research_dossier_v1"
     assert protocol.candidate_order == CANDIDATES
     assert len(protocol.source_artifacts) == 7
     assert len(protocol.comparability_pair_order) == 10
+    assert protocol.research_only is True
+    assert protocol.readonly is True
     assert protocol.prospective_consumed is False
     assert protocol.new_metric_calculation is False
     assert protocol.new_relationship_calculation is False
+    assert protocol.parameter_perturbation is False
     assert protocol.automatic_scoring is False
     assert protocol.automatic_ranking is False
     assert protocol.automatic_promotion is False
 ```
 
-- [ ] **Step 2: Write RED mutation tests with concrete mutations**
+- [ ] **Step 2: Write RED protocol drift tests**
 
-Create a helper that writes a mutated protocol object, then add six independent tests:
+Load the exact protocol JSON with `json.loads`, copy it, then independently test these mutations: extra top-level field, candidate order swap, pair order swap, absolute artifact path, `../` path escape, invalid SHA string. Each case must raise `FiveCandidateDossierProtocolError`.
 
-```python
-def _write_protocol(tmp_path: Path, payload: dict[str, object], name: str) -> Path:
-    path = tmp_path / name
-    path.write_text(json.dumps(payload), encoding="utf-8")
-    return path
-
-
-def test_protocol_rejects_extra_field(tmp_path: Path) -> None:
-    payload = deepcopy(_protocol_payload())
-    payload["threshold"] = 1
-    with pytest.raises(FiveCandidateDossierProtocolError):
-        load_five_candidate_dossier_protocol(_write_protocol(tmp_path, payload, "extra.json"))
-
-
-def test_protocol_rejects_candidate_order_drift(tmp_path: Path) -> None:
-    payload = deepcopy(_protocol_payload())
-    payload["candidate_order"][0:2] = reversed(payload["candidate_order"][0:2])
-    with pytest.raises(FiveCandidateDossierProtocolError):
-        load_five_candidate_dossier_protocol(_write_protocol(tmp_path, payload, "candidate-order.json"))
-
-
-def test_protocol_rejects_pair_order_drift(tmp_path: Path) -> None:
-    payload = deepcopy(_protocol_payload())
-    payload["comparability_pair_order"][0:2] = reversed(payload["comparability_pair_order"][0:2])
-    with pytest.raises(FiveCandidateDossierProtocolError):
-        load_five_candidate_dossier_protocol(_write_protocol(tmp_path, payload, "pair-order.json"))
-
-
-def test_protocol_rejects_absolute_source_path(tmp_path: Path) -> None:
-    payload = deepcopy(_protocol_payload())
-    payload["source_artifacts"][0]["path"] = "/tmp/source.json"
-    with pytest.raises(FiveCandidateDossierProtocolError):
-        load_five_candidate_dossier_protocol(_write_protocol(tmp_path, payload, "absolute.json"))
-
-
-def test_protocol_rejects_source_path_escape(tmp_path: Path) -> None:
-    payload = deepcopy(_protocol_payload())
-    payload["source_artifacts"][0]["path"] = "../source.json"
-    with pytest.raises(FiveCandidateDossierProtocolError):
-        load_five_candidate_dossier_protocol(_write_protocol(tmp_path, payload, "escape.json"))
-
-
-def test_protocol_rejects_invalid_sha(tmp_path: Path) -> None:
-    payload = deepcopy(_protocol_payload())
-    payload["source_artifacts"][0]["expected_sha256"] = "not-a-sha256"
-    with pytest.raises(FiveCandidateDossierProtocolError):
-        load_five_candidate_dossier_protocol(_write_protocol(tmp_path, payload, "sha.json"))
-```
-
-The committed helper must type/narrow the loaded JSON object before indexed mutation so Mypy passes; do not use unchecked `Any` to bypass the contract.
-
-- [ ] **Step 3: Run the RED tests**
+- [ ] **Step 3: Run RED tests**
 
 ```bash
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
@@ -168,7 +127,7 @@ UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
 
 Expected: import/collection failure because the new package/contracts do not exist.
 
-- [ ] **Step 4: Implement bounded artifact value objects**
+- [ ] **Step 4: Implement immutable artifact refs**
 
 ```python
 @dataclass(frozen=True, slots=True)
@@ -185,11 +144,11 @@ class VerifiedJsonArtifact:
     payload: Mapping[str, object]
 ```
 
-`SourceArtifactRef.__post_init__` must require a non-empty ASCII-safe `artifact_id`, a relative POSIX path with no empty/`.`/`..` components, and exactly 64 lowercase hexadecimal SHA characters.
+`SourceArtifactRef.__post_init__` must reject empty IDs, absolute paths, empty/`.`/`..` path components, non-ASCII path/control characters and any SHA that is not exactly 64 lowercase hex characters.
 
 - [ ] **Step 5: Implement bounded artifact verification**
 
-Use this exact algorithm in `verify_json_artifact`:
+Use this algorithm in `verify_json_artifact`:
 
 ```python
 root = project_root.resolve()
@@ -203,26 +162,29 @@ try:
     raw = resolved.read_bytes()
     if hashlib.sha256(raw).hexdigest() != ref.expected_sha256:
         raise error_type()
-    decoded = raw.decode("utf-8", errors="strict")
-    payload = json.loads(decoded)
+    payload = json.loads(raw.decode("utf-8", errors="strict"))
     if type(payload) is not dict:
         raise error_type()
 except (OSError, UnicodeDecodeError, json.JSONDecodeError):
     raise error_type() from None
-return VerifiedJsonArtifact(ref, ref.expected_sha256, MappingProxyType(dict(payload)))
+return VerifiedJsonArtifact(
+    ref=ref,
+    verified_sha256=ref.expected_sha256,
+    payload=MappingProxyType(dict(payload)),
+)
 ```
 
-Do not include the resolved path, source JSON, or SHA mismatch values in the public exception string.
+Public exceptions must not contain resolved paths, source JSON or mismatched hashes.
 
-- [ ] **Step 6: Implement exact dossier protocol loader**
+- [ ] **Step 6: Implement the exact dossier protocol loader**
 
-Use `load_exact_json()` for the protocol itself. `FiveCandidateDossierProtocol.__post_init__()` must re-check all exact values and ordering so direct construction cannot bypass the file loader. The seven refs must be copied exactly from the approved spec, using repository-relative paths only.
+Use existing `load_exact_json` for the protocol file. `FiveCandidateDossierProtocol.__post_init__` must repeat the exact identity/order/value validation so direct construction cannot bypass the loader. Copy the seven repository-relative paths and SHA256 values exactly from the approved spec.
 
 - [ ] **Step 7: Add real-source verification test**
 
-Load all seven current tracked artifacts through `verify_json_artifact` and assert `verified_sha256 == ref.expected_sha256`. Patch/fail if DB/MDS/source service constructors are called; Task 1 must be pure filesystem verification only.
+Load all seven tracked source artifacts through `verify_json_artifact` and assert each verified SHA equals its expected SHA. The test must not open a DB Session or construct MDS/Candidate/robustness services.
 
-- [ ] **Step 8: Run Task 1 tests and static checks**
+- [ ] **Step 8: Run GREEN tests and Ruff**
 
 ```bash
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
@@ -257,18 +219,17 @@ git commit -m "feat(research): freeze five-candidate dossier protocol"
 - Modify: `services/quant-api/tests/test_five_candidate_dossier.py`
 
 **Interfaces:**
-- Consumes Task 1 `FiveCandidateDossierProtocol` and `VerifiedJsonArtifact`.
-- Produces `CandidateDossier`, `CandidateBaselineEvidence`, `CandidateRobustnessEvidence`, `MetricComparability`, `ComparabilityPair`, `FiveCandidateResearchDossier`, `FiveCandidateResearchDossierService.run`.
+- Consume Task 1 protocol/artifact types.
+- Produce `CandidateBaselineEvidence`, `CandidateRobustnessEvidence`, `CandidateDossier`, `FiveCandidateResearchDossier`, `FiveCandidateResearchDossierService`.
 - Stable report error: `FIVE_CANDIDATE_DOSSIER_REPORT_INVALID`.
 
-- [ ] **Step 1: Write RED report-shape tests**
+- [ ] **Step 1: Write RED report inventory test**
 
 ```python
-def test_dossier_has_exact_candidate_and_source_inventory(service: FiveCandidateResearchDossierService) -> None:
+def test_dossier_has_exact_inventory(service: FiveCandidateResearchDossierService) -> None:
     report = service.run(FiveCandidateDossierRequest("five_candidate_research_dossier_v1"))
-    assert report.candidate_order == CANDIDATES
-    assert len(report.source_artifacts) == 7
     assert len(report.candidate_dossiers) == 5
+    assert len(report.source_artifacts) == 7
     assert sum(item.robustness.matrix_cell_count for item in report.candidate_dossiers) == 300
     assert sum(item.robustness.available_symbol_count for item in report.candidate_dossiers) == 245
     assert sum(item.robustness.unavailable_symbol_count for item in report.candidate_dossiers) == 55
@@ -276,34 +237,23 @@ def test_dossier_has_exact_candidate_and_source_inventory(service: FiveCandidate
 
 - [ ] **Step 2: Write RED missingness tests**
 
-Create small source fixtures and assert:
+Use fixture artifacts to verify:
 
-```python
-assert unavailable_row["status"] == "unavailable"
-assert unavailable_row["reason_code"] == "JDJ_SOURCE_UNAVAILABLE"
-assert unavailable_row["event_count"] is None
-
-assert zero_event_row["status"] == "available"
-assert zero_event_row["reason_code"] is None
-assert zero_event_row["event_count"] == 0
-
-assert zero_sample_horizon["sample_count"] == 0
-assert zero_sample_horizon["median_directional_return_bps"] is None
+```text
+unavailable → typed reason + event/count/metric fields null
+available zero-event → status available + event_count 0
+zero-sample horizon → sample_count 0 + numeric metrics null
 ```
 
-Also construct illegal hybrids and require `FiveCandidateDossierSourceError` or `FiveCandidateDossierReportError`:
-
-- unavailable + numeric event count;
-- sample_count zero + numeric median;
-- available + unavailable reason code.
+Also verify illegal hybrids fail closed: unavailable with numeric event count; zero-sample with numeric median; available row with unavailable reason code.
 
 - [ ] **Step 3: Run RED tests**
 
-Use the Task 1 pytest command. Expected: missing report/service types.
+Run Task 1 pytest command. Expected: missing report/service types.
 
-- [ ] **Step 4: Implement frozen report contracts and source semantics**
+- [ ] **Step 4: Implement source-specific identity constants**
 
-Hard-bind the five source semantics in one immutable constant. Exact values:
+Use one immutable source-semantics mapping with these exact values:
 
 ```python
 SOURCE_SEMANTICS = {
@@ -315,43 +265,38 @@ SOURCE_SEMANTICS = {
 }
 ```
 
-The report must store each source's actual retrospective dates. It must never calculate or serialize a five-Candidate intersection window.
+- [ ] **Step 5: Implement the pure service**
 
-- [ ] **Step 5: Implement pure seven-artifact projection**
+Exact public interfaces:
 
-Constructor and run signatures are exact:
+```text
+FiveCandidateResearchDossierService.__init__(
+    protocol: FiveCandidateDossierProtocol,
+    *,
+    project_root: Path = PROJECT_ROOT,
+)
 
-```python
-class FiveCandidateResearchDossierService:
-    def __init__(
-        self,
-        protocol: FiveCandidateDossierProtocol,
-        *,
-        project_root: Path = PROJECT_ROOT,
-    ) -> None:
-        self._protocol = protocol
-        self._project_root = project_root
-
-    def run(self, request: FiveCandidateDossierRequest) -> FiveCandidateResearchDossier:
-        ...
+FiveCandidateResearchDossierService.run(
+    request: FiveCandidateDossierRequest,
+) -> FiveCandidateResearchDossier
 ```
 
-In repository code, replace the final body marker with concrete code that:
+`run` must perform these six operations in order:
 
-1. exact-validates request/protocol identity;
-2. verifies seven artifacts once each;
-3. validates each artifact's candidate/protocol/window/order identity;
-4. projects baseline counts/status/window data;
-5. projects robustness availability/zero-event/zero-sample/sector/yearly inventory;
-6. returns immutable report rows in protocol order.
+1. validate request/protocol identity;
+2. verify seven artifacts exactly once;
+3. validate candidate/protocol/window/order identity of each artifact;
+4. project baseline identity/count/status/window facts;
+5. project robustness availability/unavailable/zero-event/zero-sample/sector/yearly inventory without recomputing metrics;
+6. return immutable report rows in protocol order.
 
-The committed Python file must contain no placeholder body.
+The service constructor and run path must have no `Session`, MDS, provider, Redis, Candidate service or robustness service dependency.
 
 - [ ] **Step 6: Add semantic-drift tests independent of SHA drift**
 
-For each fixture, rewrite the JSON and recompute its fixture SHA so hash verification succeeds, then mutate exactly one semantic field: candidate ID, protocol ID, retrospective through, cross-symbol row count, row order. Each case must raise `FIVE_CANDIDATE_DOSSIER_SOURCE_INVALID` and return no partial report.
+For each fixture, mutate one semantic field and recompute that fixture SHA so hash verification passes. Cover wrong candidate ID, wrong protocol ID, wrong retrospective through date, wrong cross-symbol row count and row-order drift. Every case must raise `FIVE_CANDIDATE_DOSSIER_SOURCE_INVALID` and return no partial dossier.
 
-- [ ] **Step 7: Run Task 2 tests**
+- [ ] **Step 7: Run Task 2 tests and commit**
 
 ```bash
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
@@ -363,8 +308,6 @@ UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
 
 Expected: PASS.
 
-- [ ] **Step 8: Commit Task 2**
-
 ```bash
 git add services/quant-api/app/research/candidate_convergence \
   services/quant-api/tests/test_five_candidate_dossier.py
@@ -373,7 +316,7 @@ git commit -m "feat(research): compose five-candidate dossier"
 
 ---
 
-## Task 3: Freeze Metric Comparability and Existing Relationship Projection
+## Task 3: Freeze Comparability Catalog and Existing SuBing↔N Relationship Reference
 
 **Files:**
 - Modify: `services/quant-api/app/research/candidate_convergence/five_candidate_dossier.py`
@@ -381,9 +324,9 @@ git commit -m "feat(research): compose five-candidate dossier"
 - Modify: `services/quant-api/tests/test_five_candidate_dossier.py`
 
 **Interfaces:**
-- Produces exact `ComparabilityStatus` enum, ten `ComparabilityPair` rows, `MetricComparability` catalog, and read-only projection of existing SuBing↔N relationship facts.
+- Produce `ComparabilityStatus`, `MetricComparability`, exact ten `ComparabilityPair` rows and projection of existing SuBing↔N relationship facts.
 
-- [ ] **Step 1: Write RED exact pair tests**
+- [ ] **Step 1: Write RED exact pair-status test**
 
 ```python
 EXPECTED_PAIR_STATUS = {
@@ -400,21 +343,17 @@ EXPECTED_PAIR_STATUS = {
 }
 ```
 
-Assert 10 unique unordered pairs, no self-pairs, canonical pair order and no reversed duplicates.
+Assert exactly 10 unique unordered pairs, no self-pair and no reversed duplicate.
 
-- [ ] **Step 2: Write RED metric-catalog tests**
+- [ ] **Step 2: Write RED metric-catalog test**
 
-Assert:
+Verify five-Candidate shared metrics are evidence-completeness metrics only; JDJ-only event-rate/long-short/3-5-8-20/yearly/sector metrics list exactly the three JDJ candidates; SuBing/N horizon metrics carry `EVALUABLE_UNIT_DIFFERS` and `HORIZON_SEMANTICS_DIFFERS`.
 
-- five-Candidate shared metrics are evidence completeness/availability/zero-event/zero-sample/rolling/prospective status only;
-- JDJ event-rate, long/short, 3/5/8/20 source outcome, yearly, sector metrics list exactly the three JDJ Candidate IDs;
-- SuBing/N same-named horizon metrics carry both `EVALUABLE_UNIT_DIFFERS` and `HORIZON_SEMANTICS_DIFFERS`.
+- [ ] **Step 3: Write RED existing relationship projection test**
 
-- [ ] **Step 3: Write RED existing-relationship projection test**
+Use a multi-candidate robustness fixture with both directional SuBing↔N relationship rows. Assert the dossier copies the existing relationship values and existing source window exactly. Patch the existing relationship summarizer to raise if called so this test proves 8A performs no relationship recomputation.
 
-Feed a frozen robustness fixture with both directional SuBing↔N relationship rows. Assert output values and source window are copied exactly; patch `summarize_candidate_relationship` to fail if called so the test proves no relationship recomputation occurs in 8A.
-
-- [ ] **Step 4: Implement exact comparability enum and value objects**
+- [ ] **Step 4: Implement exact comparability enum and pair contract**
 
 ```python
 class ComparabilityStatus(StrEnum):
@@ -424,11 +363,11 @@ class ComparabilityStatus(StrEnum):
     NOT_COMPARABLE = "NOT_COMPARABLE"
 ```
 
-`ComparabilityPair` fields: `left_candidate_id`, `right_candidate_id`, `status`, `reason_codes`, `existing_relationship_reference`. Do not add numeric pair score/performance fields.
+`ComparabilityPair` contains only left/right Candidate IDs, status, reason codes and optional existing-relationship reference. Do not add numeric pair score/performance fields.
 
-- [ ] **Step 5: Add recursive automatic-decision-field test**
+- [ ] **Step 5: Add forbidden decision-key test**
 
-Collect keys recursively and assert disjointness from:
+Recursively collect report keys and assert they do not contain:
 
 ```python
 FORBIDDEN_KEYS = {
@@ -439,7 +378,7 @@ FORBIDDEN_KEYS = {
 
 - [ ] **Step 6: Run Task 3 tests and commit**
 
-Run the Task 2 test command. Expected: PASS.
+Run the Task 2 pytest command. Expected: PASS.
 
 ```bash
 git add services/quant-api/app/research/candidate_convergence \
@@ -463,7 +402,7 @@ git commit -m "feat(research): freeze candidate comparability catalog"
 
 **Interfaces:**
 - Command: `guiyi research candidate-dossier --protocol five_candidate_research_dossier_v1`.
-- Builder: `build_five_candidate_dossier_service() -> FiveCandidateResearchDossierService`, with no Session argument.
+- Builder: `build_five_candidate_dossier_service() -> FiveCandidateResearchDossierService` with no Session argument.
 
 - [ ] **Step 1: Write RED parser/request test**
 
@@ -477,28 +416,13 @@ def test_candidate_dossier_parser_builds_exact_request() -> None:
     assert request == FiveCandidateDossierRequest("five_candidate_research_dossier_v1")
 ```
 
-- [ ] **Step 2: Write RED invalid-argument tests**
+- [ ] **Step 2: Write RED invalid-flag tests**
 
-For each of `--since`, `--through`, `--symbol`, `--candidate`, `--products`, `--threshold`, `--score`, `--rank`, invoke the parser with the exact dossier command plus that flag/value and assert CLI argument failure. Unknown protocol must also fail at parse/request time.
+For each of `--since`, `--through`, `--symbol`, `--candidate`, `--products`, `--threshold`, `--score`, `--rank`, invoke the exact dossier command with the extra flag/value and require CLI argument failure. Unknown protocol must also fail.
 
-- [ ] **Step 3: Write RED zero-Session dispatch test**
+- [ ] **Step 3: Write RED no-Session dispatch test**
 
-```python
-def test_candidate_dossier_does_not_open_session() -> None:
-    def forbidden_session() -> AbstractContextManager[object]:
-        pytest.fail("candidate-dossier must not create a DB Session")
-
-    code = main(
-        ["research", "candidate-dossier", "--protocol", "five_candidate_research_dossier_v1"],
-        session_factory=forbidden_session,
-        candidate_dossier_service_factory=lambda: FakeDossierService(_report()),
-        stdout=stdout,
-        stderr=stderr,
-    )
-    assert code == 0
-```
-
-Use the test file's existing context-manager typing pattern so the helper type-checks.
+Create a local fake dossier service whose `run` returns a valid report fixture. Pass a `session_factory` function that calls `pytest.fail` immediately. Invoke the dossier CLI and assert exit code 0. This test proves the dossier branch executes before Session creation.
 
 - [ ] **Step 4: Run RED CLI tests**
 
@@ -513,11 +437,11 @@ Expected: parser/request/factory/dispatch failures.
 
 - [ ] **Step 5: Add parser/request/typed command support**
 
-`research_parser.py` adds a `candidate-dossier` parser with only one required exact `--protocol` choice. `research_requests.py` adds `FiveCandidateDossierRequest` to `ResearchRequest`. `research_commands.py` adds typed dispatch before the existing robustness/request branches.
+`research_parser.py` adds only the exact required `--protocol`. `research_requests.py` adds `FiveCandidateDossierRequest` to `ResearchRequest`. `research_commands.py` adds typed dossier dispatch before the existing robustness branches.
 
-- [ ] **Step 6: Refactor `main()` before Session creation**
+- [ ] **Step 6: Change `main()` so only dossier bypasses Session creation**
 
-Required concrete flow:
+Preserve the existing Session-backed `elif` chain. Wrap it like this:
 
 ```python
 elif args.domain == "research":
@@ -527,35 +451,23 @@ elif args.domain == "research":
         payload = run_research_command(research_request, service)
     else:
         with session_factory() as session:
-            service = _build_existing_session_backed_research_service(
-                args,
-                research_request,
-                session,
-                lifecycle_research_service_factory=lifecycle_research_service_factory,
-                candidate_validation_service_factory=candidate_validation_service_factory,
-                n_candidate_validation_service_factory=n_candidate_validation_service_factory,
-                main_force_mirror_v2_research_service_factory=main_force_mirror_v2_research_service_factory,
-                n_structure_research_service_factory=n_structure_research_service_factory,
-                jdj_research_service_factory=jdj_research_service_factory,
-                jdj_candidate_validation_service_factory=jdj_candidate_validation_service_factory,
-                multi_candidate_robustness_service_factory=multi_candidate_robustness_service_factory,
-                jdj_active60_robustness_service_factory=jdj_active60_robustness_service_factory,
-                research_service_factory=research_service_factory,
-            )
+            # Keep the existing research-command service selection here.
+            # Do not change existing service identity or order except to add Phase 8B later.
+            service = select_existing_research_service_inside_this_block
             payload = run_research_command(research_request, service)
 ```
 
-If extracting `_build_existing_session_backed_research_service` would create an unnecessary broad refactor, preserve the existing `elif` chain verbatim inside the `with session_factory()` block instead. The invariant under test is that only the dossier branch bypasses Session creation.
+The repository implementation must preserve the current concrete `elif` branches instead of introducing the descriptive `select_existing_research_service_inside_this_block` name. This plan intentionally requires no new helper abstraction for the existing dispatch.
 
 - [ ] **Step 7: Implement deterministic dossier payload**
 
-Render exact protocol/Candidate/artifact/pair order. Reuse the existing Decimal-to-string helper; Decimal zero must serialize as `"0"`. Do not include full 120/180 source matrices.
+Render exact protocol/Candidate/artifact/pair order, reuse the existing Decimal-to-string helper, render Decimal zero as `"0"`, and omit full 120/180 source matrices.
 
-- [ ] **Step 8: Add redacted-error test**
+- [ ] **Step 8: Add redacted error test**
 
-Force `FiveCandidateDossierSourceError`; assert stderr contains the stable public error code and `readonly=true`, and does not contain an absolute path, source JSON, source SHA, or traceback.
+Force `FiveCandidateDossierSourceError`; stderr must contain only the public error shape/code with `readonly=true` and must not contain absolute paths, source JSON, source SHA or traceback.
 
-- [ ] **Step 9: Run CLI + regression tests and commit**
+- [ ] **Step 9: Run CLI regressions and commit**
 
 ```bash
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
@@ -579,7 +491,7 @@ git commit -m "feat(research): expose five-candidate dossier CLI"
 
 ---
 
-## Task 5: Freeze Phase 8A Evidence and Close Canonical Boundary
+## Task 5: Freeze Phase 8A Evidence and Close 8A Canonical Boundary
 
 **Files:**
 - Create: `reports/research/candidate_dossier/five_candidate_research_dossier_v1/five-candidate-retrospective-evidence-freeze-2026-08-22.json`
@@ -588,8 +500,6 @@ git commit -m "feat(research): expose five-candidate dossier CLI"
 - Modify: `DECISIONS.md`
 - Modify: `docs/ARCHITECTURE.md`
 - Modify: `TESTING.md`
-
-**Produces:** exact Phase 8A artifact path/SHA consumed by Task 6.
 
 - [ ] **Step 1: Run focused Phase 8A/source regressions**
 
@@ -605,7 +515,9 @@ UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
   services/quant-api/tests/test_research_cli.py
 ```
 
-- [ ] **Step 2: Run native backend/static checks**
+Expected: PASS.
+
+- [ ] **Step 2: Run repository-native backend/static checks**
 
 ```bash
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
@@ -629,9 +541,9 @@ python3 scripts/engineering/secret_scan.py --json
 git diff --check
 ```
 
-Any failure blocks evidence generation and closeout.
+Any failure blocks evidence generation.
 
-- [ ] **Step 3: Generate dossier twice and require byte equality**
+- [ ] **Step 3: Generate dossier twice and compare bytes**
 
 ```bash
 mkdir -p /private/tmp/guiyi-phase8
@@ -650,24 +562,11 @@ cmp /private/tmp/guiyi-phase8/dossier-1.json /private/tmp/guiyi-phase8/dossier-2
 
 Expected: exit 0.
 
-- [ ] **Step 4: Verify parsed invariants with an explicit checker**
+- [ ] **Step 4: Verify parsed invariants**
 
-Create a one-off local checker or add a test helper that asserts:
+Assert five Candidates, seven source artifacts, ten comparability pairs, `prospective_consumed=false`, source cells `300`, available `245`, unavailable `55`, and no forbidden automatic-decision keys.
 
-```python
-payload = json.loads(Path("/private/tmp/guiyi-phase8/dossier-1.json").read_text())
-assert len(payload["candidate_order"]) == 5
-assert len(payload["source_artifacts"]) == 7
-assert len(payload["comparability_pairs"]) == 10
-assert payload["prospective_consumed"] is False
-assert sum(item["robustness"]["matrix_cell_count"] for item in payload["candidate_dossiers"]) == 300
-assert sum(item["robustness"]["available_symbol_count"] for item in payload["candidate_dossiers"]) == 245
-assert sum(item["robustness"]["unavailable_symbol_count"] for item in payload["candidate_dossiers"]) == 55
-```
-
-Recursively collect report keys and reject automatic-decision keys. Check keys/enum decision values rather than arbitrary substrings in artifact paths.
-
-- [ ] **Step 5: Copy exact stdout as tracked evidence and calculate SHA256**
+- [ ] **Step 5: Track exact stdout and compute SHA256**
 
 ```bash
 mkdir -p reports/research/candidate_dossier/five_candidate_research_dossier_v1
@@ -677,15 +576,15 @@ sha256sum \
   reports/research/candidate_dossier/five_candidate_research_dossier_v1/five-candidate-retrospective-evidence-freeze-2026-08-22.json
 ```
 
-Preserve the exact SHA in the completion report; Task 6 must copy it verbatim into the 8B protocol.
+Record the exact SHA in the completion report and `STATUS.md`. Task 6 must freeze the same SHA verbatim.
 
 - [ ] **Step 6: Update canonical docs narrowly**
 
-- `STATUS.md`: add Phase 8A evidence path/SHA and explicitly state Phase 8B not complete; prospective statuses remain truthful.
-- `PROJECT_SOURCE.md`: record artifact-only dossier boundary, source-specific windows and no-ranking semantics.
-- `DECISIONS.md`: record no Five-Candidate common window and comparability/relationship separation.
+- `STATUS.md`: Phase 8A evidence path/SHA; Phase 8B explicitly not complete; all prospective states unchanged.
+- `PROJECT_SOURCE.md`: artifact-only dossier boundary, source-specific windows, no ranking.
+- `DECISIONS.md`: no Five-Candidate common window; comparability and relationship are distinct concepts.
 - `docs/ARCHITECTURE.md`: add an artifact-only `FiveCandidateResearchDossierService` node with no MDS edge.
-- `TESTING.md`: add the exact `candidate-dossier` verification command and no-side-effect statement.
+- `TESTING.md`: add exact `candidate-dossier` verification command and no-side-effect statement.
 
 - [ ] **Step 7: Run docs checks and commit**
 
@@ -703,34 +602,34 @@ git commit -m "docs(research): freeze five-candidate dossier evidence"
 
 ### Mandatory Segment A Gate
 
-Open an independent review of the complete Phase 8A diff. Fix Critical/Important findings and rerun affected checks. After acceptance, integrate Phase 8A into `develop`, verify the Task 1–5 commits are in `develop`, clean the merged task worktree/branch, then start Phase 8B in a new session/worktree from updated `develop`.
+Run an independent review over Tasks 1–5. Fix Critical/Important findings and rerun affected verification. After acceptance, integrate the Phase 8A branch to `develop`, verify the commits and artifact in `develop`, clean the task worktree/branch, then start Segment B from updated `develop` in a new session/worktree.
 
 ---
 
 # Execution Segment B — Phase 8B
 
-## Task 6: Freeze Relationship Topology Protocol and Contracts
+## Task 6: Freeze Relationship Topology Protocol and Report Contracts
 
-**Lane:** Lane 1, Sol/high because this task freezes causality/embargo boundaries. New session; independent review required before final integration.
+**Lane:** Lane 1 / Sol / high reasoning / new session / Plan-then-execute.
 
 **Files:**
 - Create: `data/research_protocols/five_candidate_relationship_topology_v1.json`
 - Create: `services/quant-api/app/research/candidate_convergence/five_candidate_relationships.py`
 - Create: `services/quant-api/tests/test_five_candidate_relationships.py`
-- Modify: `services/quant-api/app/research/candidate_convergence/artifact_source.py` only if a narrowly typed shared verifier addition is required.
+- Modify: `services/quant-api/app/research/candidate_convergence/artifact_source.py` only if a narrowly typed verifier extension is actually needed.
 
 **Interfaces:**
-- Produces `RelationshipKind`, `DependencyRole`, `FiveCandidateRelationshipProtocol`, `FiveCandidateRelationshipRequest`, dependency/overlap/report VOs, exact loader.
+- Produce `RelationshipKind`, `DependencyRole`, `FiveCandidateRelationshipProtocol`, `FiveCandidateRelationshipRequest`, dependency/overlap/report VOs and exact loader.
 - Stable errors: `FIVE_CANDIDATE_RELATIONSHIP_PROTOCOL_INVALID`, `FIVE_CANDIDATE_RELATIONSHIP_SOURCE_INVALID`, `FIVE_CANDIDATE_RELATIONSHIP_REPORT_INVALID`.
 
-- [ ] **Step 1: Read and hash the integrated Phase 8A artifact**
+- [ ] **Step 1: Verify integrated 8A artifact identity**
 
 ```bash
 sha256sum \
   reports/research/candidate_dossier/five_candidate_research_dossier_v1/five-candidate-retrospective-evidence-freeze-2026-08-22.json
 ```
 
-Compare with `STATUS.md`. If they differ, stop; do not create 8B protocol against drifted 8A evidence.
+Compare with `STATUS.md`. Any mismatch blocks Task 6.
 
 - [ ] **Step 2: Write RED exact-window/safety tests**
 
@@ -747,19 +646,9 @@ def test_relationship_protocol_has_exact_windows() -> None:
     assert protocol.prospective_consumed is False
 ```
 
-- [ ] **Step 3: Write RED drift tests**
+- [ ] **Step 3: Write RED protocol-drift tests**
 
-Write separate tests that mutate:
-
-- N→JDJ through to `2026-08-20`;
-- JDJ overlap through to `2026-08-21`;
-- either proximity from null to `1`;
-- `future_outcomes` to true;
-- pair order;
-- Phase 8A dossier SHA;
-- SuBing↔JDJ `recompute` to true.
-
-Each must fail before any JDJ source runner is invoked.
+Independently mutate N→JDJ through to `2026-08-20`, JDJ overlap through to `2026-08-21`, either proximity to numeric `1`, `future_outcomes` to true, pair order, Task 5 dossier SHA, and SuBing↔JDJ recompute to true. Every case must fail before the JDJ runner is invoked.
 
 - [ ] **Step 4: Run RED tests**
 
@@ -786,24 +675,24 @@ class DependencyRole(StrEnum):
     TREND_AND_PIVOT_SOURCE = "trend_and_pivot_source"
 ```
 
-- [ ] **Step 6: Implement exact protocol with real Task 5 SHA**
+- [ ] **Step 6: Implement exact protocol using real 8A SHA**
 
-The committed protocol must contain the actual SHA from Step 1, not a template value. It also freezes the known SuBing/N robustness path/SHA from the approved spec and the exact 10 pair order.
+The committed 8B protocol must contain the actual Task 5 dossier SHA, the existing SuBing/N robustness path/SHA from the approved spec, exact Candidate/pair order, exact windows and all disabled safety flags. No placeholder hash is permitted.
 
-- [ ] **Step 7: Add report invariants**
+- [ ] **Step 7: Implement report invariants**
 
-`FiveCandidateRelationshipReport.__post_init__` must require:
+Require exactly:
 
 ```text
 10 relationship catalog pairs
-180 dependency rows = 3 JDJ × 60 symbols
+180 dependency rows = 3 JDJ candidates × 60 symbols
 180 overlap rows = 3 unordered JDJ pairs × 60 symbols
 candidate-major/symbol order for dependency rows
 pair-major/symbol order for overlap rows
 typed unavailable rows with all metric fields null
 ```
 
-- [ ] **Step 8: Run Task 6 tests/static checks and commit**
+- [ ] **Step 8: Run GREEN tests/Ruff and commit**
 
 ```bash
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
@@ -834,24 +723,16 @@ git commit -m "feat(research): freeze candidate relationship topology protocol"
 - Modify: `services/quant-api/tests/test_five_candidate_relationships.py`
 
 **Interfaces:**
-- Consumes `JdjResearchService.run_batch(symbol, since, through)` and exact JDJ event types.
-- Produces 180 `CandidateDependencyResult` rows.
+- Consume `JdjResearchService.run_batch(symbol, since, through)` and exact JDJ event types.
+- Produce 180 `CandidateDependencyResult` rows.
 
 - [ ] **Step 1: Write RED runner-window test**
 
-Fake runner records calls. Dependency projection must call exactly:
-
-```python
-expected_calls = {
-    (symbol, date(2023, 1, 1), date(2026, 8, 19))
-    for symbol in PRODUCTS
-}
-assert set(fake.calls) == expected_calls
-```
+Fake runner records calls. Dependency projection must call each active60 symbol exactly once with `since=2023-01-01`, `through=2026-08-19`.
 
 - [ ] **Step 2: Write RED lineage-completeness tests**
 
-For valid batches assert:
+For available rows require:
 
 ```python
 assert tf.events_with_trend_snapshot_lineage == tf.event_count
@@ -862,19 +743,19 @@ assert klb.events_with_trend_snapshot_lineage == klb.event_count
 assert klb.events_with_exact_pivot_lineage == klb.event_count
 ```
 
-Construct a fake boundary object missing one required lineage field and assert report construction/service validation fails rather than reporting a lower lineage percentage.
+Also create a deliberately invalid boundary object missing required lineage and require execution/report validation failure rather than a degraded ratio.
 
 - [ ] **Step 3: Write RED unavailable-row test**
 
-When `run_batch` raises `JdjSourceUnavailableError` for one symbol, require three dependency rows for that symbol with `status=unavailable`, `reason_code=JDJ_SOURCE_UNAVAILABLE`, and all lineage/count metrics null.
+When `JdjSourceUnavailableError` occurs for one symbol, retain three dependency identity rows for that symbol with `status=unavailable`, `reason_code=JDJ_SOURCE_UNAVAILABLE` and all lineage/count metrics null.
 
 - [ ] **Step 4: Run RED tests**
 
-Use the Task 6 pytest command. Expected: missing service/projection failures.
+Use Task 6 pytest command. Expected: missing service/projection failures.
 
-- [ ] **Step 5: Implement dependency service branch**
+- [ ] **Step 5: Implement dependency projection**
 
-For every active60 symbol call the runner once for the N-safe window. Dependency role is exact:
+For each symbol call the runner once for the exact N-safe window. Dependency role is exact:
 
 ```python
 if candidate_id == "jdj_key_level_breakout_1m_candidate_v1":
@@ -885,9 +766,9 @@ else:
 
 Count lineage only from immutable JDJ events. Do not call `NStructureResearchService.completion_events()` and do not join N completion events by time.
 
-- [ ] **Step 6: Enforce source identity**
+- [ ] **Step 6: Enforce source identity and error boundary**
 
-Require batch symbol, Candidate order, result products and event identity to satisfy existing JDJ contracts. Only `JdjSourceUnavailableError` maps to typed unavailable. `JdjContextError` or invalid event identity fails the whole execution.
+Require batch symbol, Candidate order, products and event identity to satisfy existing JDJ contracts. Only `JdjSourceUnavailableError` maps to typed unavailable. `JdjContextError` or invalid event identity fails the whole execution.
 
 - [ ] **Step 7: Run Task 7 regressions and commit**
 
@@ -918,24 +799,24 @@ git commit -m "feat(research): project N-to-JDJ dependency evidence"
 - Modify: `services/quant-api/tests/test_five_candidate_relationships.py`
 
 **Interfaces:**
-- Produces `summarize_exact_jdj_overlap(left, right, *, symbol) -> JdjExactOverlapResult`.
+- Produce `summarize_exact_jdj_overlap(left, right, *, symbol) -> JdjExactOverlapResult`.
 - The reducer must not inspect `event_outcomes`.
 
-- [ ] **Step 1: Write RED exact-key tests**
+- [ ] **Step 1: Write RED exact-boundary-key tests**
 
-Create event pairs differing one identity field at a time: `contract`, `segment_start_trading_day`, `trading_day`, `segment_bar_index`, `observed_at`. Only full-key equality counts.
+Create event pairs differing one field at a time: contract, segment start trading day, trading day, segment bar index, observed_at. Only full identity equality may count as overlap.
 
 - [ ] **Step 2: Write RED direction tests**
 
-Same boundary/same direction increments only `exact_same_boundary_same_direction_count`; same boundary/opposite direction increments only `exact_same_boundary_opposite_direction_count`.
+Same boundary + same direction increments only `exact_same_boundary_same_direction_count`. Same boundary + opposite direction increments only `exact_same_boundary_opposite_direction_count`.
 
-- [ ] **Step 3: Write RED matched-event uniqueness test**
+- [ ] **Step 3: Write RED unique matched-event tests**
 
-Use multiple events at distinct boundaries and assert `left_events_with_same_direction_match` / `right_events_with_same_direction_match` count matched event IDs, not Cartesian pair multiplicity. Duplicate event IDs must fail input validation.
+Verify `left_events_with_same_direction_match` and `right_events_with_same_direction_match` count unique matched source event IDs rather than Cartesian match multiplicity. Duplicate event IDs must fail validation.
 
 - [ ] **Step 4: Write RED no-future-outcome test**
 
-Build two `JdjDetailedCandidateResult` sets with identical `result.events` but different `event_outcomes`. Assert the overlap result is equal. This proves future outcomes are not consumed.
+Build two detailed Candidate inputs with identical event streams but different `event_outcomes`; overlap reports must compare equal. This is the mechanical proof that future outcomes are ignored.
 
 - [ ] **Step 5: Run RED tests**
 
@@ -955,15 +836,15 @@ def _boundary(event: JdjTriggerEvent) -> tuple[object, ...]:
     )
 ```
 
-Index right events by boundary+direction; count exact same/opposite direction matches and unique left/right same-direction matched IDs. The function signature must have no proximity/horizon parameter. Do not import `PriceDirectionalOutcome`.
+Index right events by boundary and direction; count exact same/opposite direction matches and unique same-direction matched event IDs. The public function accepts no proximity, horizon or outcome argument. Do not import `PriceDirectionalOutcome`.
 
 - [ ] **Step 7: Add separate overlap-window service test**
 
-Assert overlap orchestration calls every symbol with exactly `2023-01-01..2026-08-20`. Assert the fake runner call list also contains the Task 7 `2023-01-01..2026-08-19` calls as a separate run family rather than reusing a later window and filtering.
+Assert overlap orchestration calls each active60 symbol with exactly `2023-01-01..2026-08-20`. Assert these calls are separate from the Task 7 `2023-01-01..2026-08-19` dependency calls rather than a later-window reuse/filter.
 
 - [ ] **Step 8: Assert exact 180 overlap rows**
 
-Pair order is `(TF,R6)`, `(TF,KLB)`, `(R6,KLB)`; symbol order is active60. Source unavailable retains all three pair rows for the symbol.
+Pair order is `(TF,R6)`, `(TF,KLB)`, `(R6,KLB)`; symbol order is active60. Source unavailable retains all three pair rows for that symbol.
 
 - [ ] **Step 9: Run Task 8 regressions and commit**
 
@@ -1003,15 +884,15 @@ git commit -m "feat(research): add exact JDJ candidate overlap"
 
 - [ ] **Step 1: Write RED parser/request tests**
 
-Exact protocol only. Add invalid flag cases for `--since`, `--through`, `--symbol`, `--candidate`, `--products`, `--threshold`, `--score`, `--rank`.
+Accept only the exact protocol. Add invalid flag cases for `--since`, `--through`, `--symbol`, `--candidate`, `--products`, `--threshold`, `--score`, `--rank`.
 
 - [ ] **Step 2: Write RED Session-backed CLI test**
 
-Use a counting context manager and fake relationship factory. Assert the command enters exactly one Session context. This intentionally contrasts with the Task 4 zero-Session dossier test.
+Use a counting context manager and fake relationship service factory; assert one Session context entry. Keep the Task 4 no-Session dossier test passing in the same file.
 
-- [ ] **Step 3: Write RED composition-source test**
+- [ ] **Step 3: Write RED composition source test**
 
-Patch `build_jdj_research_service(session)` to return a sentinel runner. Assert `build_five_candidate_relationship_service(session)` passes that sentinel to the service. Patch `build_n_structure_research_service` and `build_multi_candidate_robustness_service` to fail if invoked; Phase 8B must not create duplicate N or robustness recomputation paths.
+Patch `build_jdj_research_service(session)` to return a sentinel runner and assert that sentinel is injected. Patch `build_n_structure_research_service` and `build_multi_candidate_robustness_service` to fail if called so no duplicate N/robustness recomputation path can appear.
 
 - [ ] **Step 4: Run RED CLI tests**
 
@@ -1026,25 +907,25 @@ Expected: parser/factory/dispatch failures.
 
 - [ ] **Step 5: Implement relationship composition**
 
-The builder performs exactly these steps in order:
+Builder order is exact:
 
-1. load exact `five_candidate_relationship_topology_v1` protocol;
+1. load `five_candidate_relationship_topology_v1`;
 2. verify Task 5 dossier artifact path/SHA;
 3. verify existing SuBing/N robustness artifact path/SHA;
-4. build one `JdjResearchService(session)`;
-5. return `FiveCandidateRelationshipService(protocol, jdj_research=runner, dossier_source=verified_dossier, existing_relationship_source=verified_robustness)`.
+4. build exactly one `JdjResearchService(session)`;
+5. construct `FiveCandidateRelationshipService` with those verified sources and runner.
 
 - [ ] **Step 6: Add parser/request/command dispatch**
 
-Add `FiveCandidateRelationshipRequest` to `ResearchRequest`; dispatch it inside the existing Session-backed research path. Do not move `candidate-dossier` back under Session creation.
+Add `FiveCandidateRelationshipRequest` to `ResearchRequest` and dispatch inside the existing Session-backed research path. Do not move `candidate-dossier` under Session creation.
 
 - [ ] **Step 7: Implement deterministic relationship payload**
 
-Render exact 10 catalog pairs, 180 dependency rows, 180 overlap rows and typed unavailable rows. Do not serialize source event details, full prior robustness matrices, or future outcomes.
+Render exact 10 catalog pairs, 180 dependency rows, 180 overlap rows and typed unavailable rows. Do not serialize source-event details, full prior robustness matrices or future outcomes.
 
-- [ ] **Step 8: Add forbidden-field and redaction tests**
+- [ ] **Step 8: Add forbidden-key and redaction tests**
 
-Reject keys: `score`, `rank`, `winner`, `best`, `keep`, `drop`, `iterate`, `promote`, `combined_return`, `overlap_return`, `expected_profit`, `pnl`. Protocol/source/context errors must use the existing redacted CLI error JSON and must not expose source paths/content/traceback.
+Reject report keys: `score`, `rank`, `winner`, `best`, `keep`, `drop`, `iterate`, `promote`, `combined_return`, `overlap_return`, `expected_profit`, `pnl`. Protocol/source/context errors must use existing redacted CLI JSON without source path/content/traceback leakage.
 
 - [ ] **Step 9: Run Task 9 regressions and commit**
 
@@ -1084,7 +965,7 @@ git commit -m "feat(research): expose candidate relationship topology CLI"
 - Modify: `docs/ARCHITECTURE.md`
 - Modify: `TESTING.md`
 
-- [ ] **Step 1: Run complete Phase 8 focused regressions**
+- [ ] **Step 1: Run complete focused Phase 8 regressions**
 
 ```bash
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
@@ -1108,7 +989,7 @@ UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
 
 Expected: PASS.
 
-- [ ] **Step 2: Run native full backend/static/engineering checks**
+- [ ] **Step 2: Run full backend/static/engineering checks**
 
 ```bash
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
@@ -1135,9 +1016,9 @@ python3 scripts/engineering/secret_scan.py --json
 git diff --check
 ```
 
-Any failure blocks evidence/canonical closeout.
+Any failure blocks evidence generation.
 
-- [ ] **Step 3: Generate relationship evidence twice and require byte equality**
+- [ ] **Step 3: Generate relationship evidence twice and compare bytes**
 
 ```bash
 mkdir -p /private/tmp/guiyi-phase8
@@ -1159,21 +1040,22 @@ Expected: exit 0.
 
 - [ ] **Step 4: Verify exact topology invariants**
 
-Use parsed JSON assertions:
+Assert:
 
-```python
-payload = json.loads(Path("/private/tmp/guiyi-phase8/relationships-1.json").read_text())
-assert len(payload["relationship_catalog"]) == 10
-assert len(payload["n_jdj_dependency_results"]) == 180
-assert len(payload["jdj_exact_overlap_results"]) == 180
-assert payload["prospective_consumed"] is False
-assert payload["analysis_windows"]["n_jdj"] == {"since": "2023-01-01", "through": "2026-08-19"}
-assert payload["analysis_windows"]["jdj_overlap"] == {"since": "2023-01-01", "through": "2026-08-20"}
+```text
+relationship_catalog count = 10
+n_jdj_dependency_results count = 180
+jdj_exact_overlap_results count = 180
+prospective_consumed = false
+N→JDJ window = 2023-01-01..2026-08-19
+JDJ overlap window = 2023-01-01..2026-08-20
+all SuBing↔JDJ rows = UNDEFINED_CROSS_TIMEFRAME
+no numeric proximity for N→JDJ or JDJ overlap
+all available dependency rows satisfy exact lineage-count equality
+no overlap-conditioned future outcome field exists
 ```
 
-Also assert all SuBing↔JDJ catalog rows use `UNDEFINED_CROSS_TIMEFRAME`, no N→JDJ/JDJ-overlap numeric proximity value exists, and every available dependency row satisfies the required lineage count equality.
-
-- [ ] **Step 5: Copy exact stdout as tracked evidence and compute SHA**
+- [ ] **Step 5: Track exact stdout and compute SHA256**
 
 ```bash
 mkdir -p reports/research/candidate_relationships/five_candidate_relationship_topology_v1
@@ -1185,22 +1067,22 @@ sha256sum \
 
 - [ ] **Step 6: Update canonical docs to close Phase 8 only**
 
-- `STATUS.md`: record both Phase 8A/8B artifact paths/SHA and exact boundaries; keep all prospective OOS states truthful.
-- `PROJECT_SOURCE.md`: add Candidate convergence + relationship topology as read-only research surfaces.
-- `DECISIONS.md`: record no common five-Candidate window; N→JDJ dependency is not independent signal confirmation; JDJ overlap V1 is exact-boundary only; SuBing↔JDJ remains undefined.
-- `docs/ARCHITECTURE.md`: show the Phase 8A artifact-only node and Phase 8B JDJ source node with separate 8/19 and 8/20 windows.
-- `TESTING.md`: add exact Phase 8A/8B commands and no-side-effect/no-promotion statement.
+- `STATUS.md`: both Phase 8A/8B artifact paths/SHA and exact boundaries; keep prospective OOS states truthful.
+- `PROJECT_SOURCE.md`: Candidate convergence + relationship topology as read-only research surfaces.
+- `DECISIONS.md`: no common five-Candidate window; N→JDJ dependency is not independent signal confirmation; JDJ overlap V1 is exact-boundary only; SuBing↔JDJ remains undefined.
+- `docs/ARCHITECTURE.md`: Phase 8A artifact-only node and Phase 8B JDJ source node with separate `through=2026-08-19` and `through=2026-08-20` paths.
+- `TESTING.md`: exact Phase 8A/8B commands and no-side-effect/no-promotion statement.
 
-- [ ] **Step 7: Run final docs/secret/diff checks**
+- [ ] **Step 7: Run final docs checks**
 
 ```bash
 python3 scripts/engineering/secret_scan.py --json
 git diff --check
 ```
 
-- [ ] **Step 8: Open independent Sol/high review before integration**
+- [ ] **Step 8: Open independent Sol/high review**
 
-Review the complete Phase 8B branch diff for:
+Review the complete Segment B diff for:
 
 1. N embargo/future leakage;
 2. accidental `event_outcomes` use in overlap;
@@ -1210,7 +1092,7 @@ Review the complete Phase 8B branch diff for:
 6. automatic ranking/promotion/trading claims;
 7. DB/Canonical/Redis/Alert/Runtime side effects.
 
-Critical/Important findings must be fixed and affected checks rerun.
+Critical/Important findings must be fixed and affected verification rerun.
 
 - [ ] **Step 9: Commit Task 10**
 
@@ -1223,7 +1105,7 @@ git commit -m "docs(research): freeze phase 8 relationship topology evidence"
 
 - [ ] **Step 10: Integrate to `develop` and clean workspace**
 
-After all tests and independent review pass, integrate the Phase 8B task branch into `develop` using the repository's current ordinary development flow. Confirm Task 6–10 commits are in `develop`, then delete the merged temporary worktree/branch. Do not touch `main`, create a tag, release, switch Runtime, send notifications, or perform real data/DB mutation.
+After all tests and independent review pass, integrate Segment B to `develop`, confirm Tasks 6–10 are in `develop`, then delete the merged temporary worktree/branch. Do not touch `main`, create a tag, release, switch Runtime, send notifications, or perform real data/DB mutation.
 
 ---
 
@@ -1254,7 +1136,7 @@ updated develop
   → cleanup Phase 8B task worktree/branch
 ```
 
-PR is optional under the current repository workflow. Neither segment may touch `main`, tag or Runtime. Release approval and Runtime promotion remain separate future Gates.
+PR is optional under current repository workflow. Neither segment may touch `main`, tag or Runtime. Release approval and Runtime promotion remain separate future Gates.
 
 # Task Contract Summary
 
@@ -1270,7 +1152,7 @@ Every Task ends with:
 7. completion output containing modification summary, tests, risks and unresolved items.
 ```
 
-Task 5 and Task 10 evidence completion reports must additionally include exact artifact SHA256. Evidence does not grant Candidate promotion or release authority.
+Task 5 and Task 10 completion reports must additionally include exact evidence SHA256. Evidence does not grant Candidate promotion or release authority.
 
 # Final Acceptance
 
