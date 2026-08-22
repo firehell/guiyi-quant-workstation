@@ -2848,7 +2848,10 @@ def test_candidate_dossier_cli_never_enters_session_context() -> None:
     assert service.requests == [
         FiveCandidateDossierRequest("five_candidate_research_dossier_v1")
     ]
-    assert json.loads(stdout.getvalue())["command"] == "research.candidate-dossier"
+    assert json.loads(stdout.getvalue())["command"] == (
+        "guiyi research candidate-dossier "
+        "--protocol five_candidate_research_dossier_v1"
+    )
 
 
 def _contains_matrix_sized_list(value: object) -> bool:
@@ -2885,6 +2888,10 @@ def test_candidate_dossier_payload_is_compact_ordered_and_byte_deterministic() -
     second_bytes = json.dumps(second, separators=(",", ":"), ensure_ascii=False)
 
     assert first_bytes == second_bytes
+    assert first["command"] == (
+        "guiyi research candidate-dossier "
+        "--protocol five_candidate_research_dossier_v1"
+    )
     assert first["candidate_order"] == list(report.candidate_order)
     assert first["source_artifacts"] == [
         {"artifact_id": artifact.artifact_id}
@@ -2906,11 +2913,83 @@ def test_candidate_dossier_payload_is_compact_ordered_and_byte_deterministic() -
         == "0"
     )
     assert not _contains_matrix_sized_list(first)
-    assert "cross_symbol" not in first_bytes
     assert "expected_sha256" not in first_bytes
     assert '"path"' not in first_bytes
-    assert "evidence_summaries" not in first_bytes
-    assert len(first_bytes.encode("utf-8")) < 50_000
+
+
+def test_candidate_dossier_payload_preserves_required_non_matrix_evidence() -> None:
+    report = _five_candidate_dossier_report()
+    payload = run_research_command(
+        FiveCandidateDossierRequest("five_candidate_research_dossier_v1"),
+        _FakeFiveCandidateDossierService(report),
+    )
+    dossier = payload["candidate_dossiers"][2]
+
+    assert tuple(dossier) == (
+        "candidate_id",
+        "identity",
+        "baseline",
+        "robustness",
+        "evidence_references",
+    )
+    assert tuple(dossier["robustness"]) == (
+        "artifact_id",
+        "protocol_id",
+        "retrospective",
+        "matrix_cell_count",
+        "available_symbol_count",
+        "unavailable_symbol_count",
+        "unavailable_reason_counts",
+        "zero_event_symbol_count",
+        "zero_sample_symbol_count_by_horizon",
+        "sector_evidence",
+        "yearly_evidence",
+        "quality_flags",
+    )
+    assert len(dossier["robustness"]["sector_evidence"]) == 10
+    assert dossier["robustness"]["sector_evidence"][0]["sector"] == (
+        "agriculture"
+    )
+    assert dossier["robustness"]["sector_evidence"][0]["candidate_id"] == (
+        "jdj_trend_follow_1m_candidate_v1"
+    )
+    assert len(dossier["robustness"]["yearly_evidence"]) == 49
+    assert dossier["robustness"]["yearly_evidence"][0]["symbol"] == "a"
+    assert dossier["robustness"]["yearly_evidence"][0]["yearly"]["2023"][
+        "event_count"
+    ] == 1843
+
+    references = dossier["evidence_references"]
+    assert tuple(references) == (
+        "temporal",
+        "cross_symbol",
+        "sector",
+        "yearly",
+        "horizon",
+        "quality",
+    )
+    assert references["temporal"]["window_id"] == "retrospective"
+    assert references["temporal"]["evaluable_bar_count"] == 297224
+    assert references["cross_symbol"] == {
+        "artifact_id": "jdj_active60_robustness_v1",
+        "matrix_cell_count": 60,
+        "omitted": True,
+    }
+    assert len(references["sector"]) == 10
+    assert len(references["yearly"]) == 49
+    assert tuple(references["horizon"]) == ("20", "3", "5", "8")
+    assert references["horizon"]["3"] == {
+        "median_directional_return_bps": "0",
+        "median_mae_bps": "-11.08442675923552062198930752",
+        "median_mfe_bps": "9.025270758122743682310469315",
+        "sample_count": 7534,
+    }
+    assert references["quality"] == [
+        "PROSPECTIVE_OOS_PENDING",
+        "SOURCE_UNAVAILABLE_PRESENT",
+        "SHORT_HISTORY_PRESENT",
+    ]
+    assert not _contains_matrix_sized_list(payload)
 
 
 def test_candidate_dossier_source_error_is_stable_and_redacted() -> None:

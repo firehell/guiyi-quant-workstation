@@ -231,7 +231,7 @@ def _five_candidate_dossier_payload(
 ) -> dict[str, object]:
     return {
         "schema_version": report.schema_version,
-        "command": "research.candidate-dossier",
+        "command": report.command,
         "status": report.status,
         "protocol_id": report.protocol_id,
         "frozen_at": report.frozen_at.isoformat(),
@@ -278,6 +278,7 @@ def _candidate_dossier_payload(value: CandidateDossier) -> dict[str, object]:
     baseline = value.baseline
     prospective = baseline.prospective
     robustness = value.robustness
+    evidence = value.evidence_references
     return {
         "candidate_id": identity.candidate_id,
         "identity": {
@@ -336,7 +337,25 @@ def _candidate_dossier_payload(value: CandidateDossier) -> dict[str, object]:
                     robustness.zero_sample_symbol_count_by_horizon.items()
                 )
             },
+            "sector_evidence": _dossier_value_payload(
+                robustness.sector_evidence
+            ),
+            "yearly_evidence": _dossier_value_payload(
+                robustness.yearly_evidence
+            ),
             "quality_flags": list(robustness.quality_flags),
+        },
+        "evidence_references": {
+            "temporal": _dossier_value_payload(evidence.temporal),
+            "cross_symbol": {
+                "artifact_id": robustness.artifact_id,
+                "matrix_cell_count": robustness.matrix_cell_count,
+                "omitted": True,
+            },
+            "sector": _dossier_value_payload(evidence.sector),
+            "yearly": _dossier_value_payload(evidence.yearly),
+            "horizon": _dossier_value_payload(evidence.horizon),
+            "quality": list(evidence.quality),
         },
     }
 
