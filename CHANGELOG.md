@@ -2,6 +2,24 @@
 
 本文件记录正式产品版本；开发过程与逐品种执行流水从 Git history 追溯。
 
+## [1.7.0] - 2026-08-22
+
+- 收敛 Runtime seam：离线 Research 组装从 Market/Alert/Runtime 依赖方向中移出，Research CLI 拆为
+  parser/request/command/payload 边界，`app.runtime_entry` 成为 Live、Alert、after-market 的唯一内部
+  进程入口；Execution Review 读写/查询/reconstruction composition 继续独立。
+- 严格化 Execution Review roll Gate：marker 为 `disabled` 或 `invalid` 时，`record_executed` 返回
+  `ROLL_RECONCILIATION_REQUIRED` 且不创建 `DOMINANT_ROLL`；只有精确 `enabled` 才允许 reconcile。
+- Research 实现去重并收口测试治理：共享 exact identity/JSON contract 与 price outcome，拆分
+  `tests/research`、`tests/execution_review`，完成 Five-Candidate Phase 8 dossier/relationship topology、
+  JDJ active60 robustness 与 MFM 60m sequence forensic 代码；MFM 的真实 read-only evidence Gate 仍未执行，
+  不产生 Phase 冻结或晋升结论。
+- 完成 Market Web B1 决策漏斗：首页“需要处理 → 优先检查 0..3 → 全市场研究”，详情页固定使用
+  “当前检查栏”验证顺序；保持 degraded fail-closed、正式 Event/研究观察/Research-only 分层，
+  不增加评分、推荐或交易语义。
+- 本版不新增 migration，不写或修改 Canonical、production DB、Redis，不扩大 Rule Scope，不新增通知
+  retry/replay/backfill，不执行 release/tag、Runtime promotion/switch，也不增加订单能力；
+  `auto_order=false` 不变。
+
 ## [1.6.5] - 2026-08-21
 
 - 修复 SuBing research overlay 侵占 Market K 线展示身份的问题：切换 overlay 不再强制

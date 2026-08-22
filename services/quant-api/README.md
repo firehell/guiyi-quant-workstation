@@ -16,6 +16,8 @@
   `guiyi research main-force-mirror-v2`、
   `guiyi runtime status|live|alert`；
   `guiyi runtime alert-canary` 是真实通知 Gate。
+- `app.runtime_entry` 是 launchd/运维脚本的内部进程入口，只接受 `live | alert | after-market`；
+  普通用户仍使用 `guiyi`，不得手工运行 `runtime_entry` 冒充自然 Runtime 证据。
 
 ## Unmounted / retired
 
@@ -33,7 +35,11 @@ Execution Review 不是旧 Review Center 的兼容入口。
 ```bash
 uv sync --project services/quant-api --locked
 uv run --project services/quant-api guiyi --help
-uv run --project services/quant-api pytest -q services/quant-api/tests
+uv run --project services/quant-api pytest -q -m "not isolated_postgresql" services/quant-api/tests
+uv run --project services/quant-api pytest -q services/quant-api/tests/research
+uv run --project services/quant-api pytest -q services/quant-api/tests/execution_review
+uv run --project services/quant-api pytest -q services/quant-api/tests/test_runtime_entry.py
 ```
 
-边界见 `STATUS.md`、`AGENTS.md`、`TESTING.md`。
+稳定接口边界见 `PROJECT_SOURCE.md`，当前 release/Runtime/Gate 见 `STATUS.md`，工程规则与命令分别见
+`AGENTS.md`、`TESTING.md`。

@@ -55,6 +55,21 @@ ACTIVE_CANONICAL = (
 def test_governance_surface_has_one_executable_entrypoint() -> None:
     assert (ROOT / "scripts/engineering/secret_scan.py").is_file()
     assert all(not (ROOT / relative).exists() for relative in RETIRED_ASSETS)
+    retired_active_docs = subprocess.run(
+        [
+            "git",
+            "-c",
+            "core.fsmonitor=false",
+            "ls-files",
+            "docs/superpowers",
+            "docs/tasks",
+        ],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    assert retired_active_docs == ""
 
 
 def test_active_docs_and_cli_match_current_surfaces() -> None:
@@ -203,8 +218,7 @@ def test_release_versions_are_consistent() -> None:
         web["version"],
     }
 
-    assert len(versions) == 1
-    assert re.fullmatch(r"\d+\.\d+\.\d+", versions.pop())
+    assert versions == {"1.7.0"}
     assert "version=APP_VERSION" in api
     assert '"version": APP_VERSION' in api
 

@@ -1,7 +1,7 @@
 # 归一量化工作站
 
-本地、单用户的国内期货量化研究工作站。当前 Git release 与 production Runtime 均为 `v1.6.5`；
-数据库 migration 与 Alert Scope 的实际状态以 `STATUS.md` 为准。当前可执行代码面包括 Market Web、
+本地、单用户的国内期货量化研究工作站。本代码版本为 `v1.7.0`；正式 release、production Runtime、
+数据库 migration 与 Alert Scope 的实际状态只以 `STATUS.md` 为准。当前可执行代码面包括 Market Web、
 Canonical 历史行情、Market API、data CLI、Runtime 只读状态、Alert V2、当前交易日 Formal Signal、
 Product 双 Rule Scope/今日记录、Execution Review V1，以及苏冰 Factor/Calibration/Signal 研究观察。项目不实现自动交易或
 自动下单，`auto_order=false`。
@@ -99,7 +99,7 @@ contract|actual_dominant` Historical Canonical，并只读钉住的不可变
 `main_force_mirror_v2`；Web 底部副图只有 `MACD | 主力照妖镜 V2`，V0/V1 只从 Git history
 追溯。它不读 Live，不写 PostgreSQL、Canonical Parquet 或 Redis，也不授权
 Alert、notification、Runtime、策略晋升或订单；`auto_order=false`。真实 member snapshot 与
-retrospective matrix 本次未执行。
+retrospective evidence 的当前状态只看 `STATUS.md`。
 
 ## 安全边界
 

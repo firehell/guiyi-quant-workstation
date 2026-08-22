@@ -2,42 +2,32 @@
 
 更新时间：2026-08-22
 
-本文件只保留当前有效、长期影响代码或数据语义的决策。历史过程只从 Git history 追溯。
+本文件只记录长期决策、理由与不可破坏边界。版本、部署、evidence 和 Gate 状态只看 `STATUS.md`；
+exact protocol/window/hash/count 只看 policy、report 与测试；历史过程只从 Git history 追溯。
 
-| 主题 | 决策 | 边界 |
+| 主题 | 长期决策 | 理由与不可破坏边界 |
 |---|---|---|
-| 产品 | 本地、单用户国内期货研究工作站 | 不做自动交易、SaaS、多用户或无人值守下单 |
-| 外部操作 | 正式数据/DB/Runtime/live/通知/release 只接受范围明确的一次性执行意图 | dry-run 不授权 mutation；仅已明确启用的 Market Runtime V1 与精确 activation 的 Alert Runtime V2 Rule Scope 各自拥有互不继承的有界持续授权 |
-| 数据源 | RQData 是唯一外部行情事实源 | 不建多 provider seam、插件或逐行多源裁决 |
-| 历史存储 | 只长期保存一套 Canonical Parquet | staging 临时；PostgreSQL 不存 Bar |
-| 数据身份 | `DatasetKey=(kind,symbol,series_or_contract,frequency)` | provider、schema 与来源属性不进入 identity |
-| 主力数据 | 物理保存真实合约 Canonical，actual_dominant 查询时拼接 | 不长期保存重复的主力拼接 Parquet |
-| 周期 | Provider 基础周期为 `1m/1d`；`1w` 由完整同源 `1d` 聚合，`5m/15m/30m/60m` 由 Canonical `1m` 聚合 | 派生周期只读同 Dataset Canonical，不调 RQData |
-| 分区 | 每 Dataset 每自然月一个 `part.parquet` | 只发布完整、可读的月；不保留 overlay/data version |
-| 质量 | 固定执行 schema、identity、OHLCV、session/frequency、coverage、physical 六项校验 | 失败保留最后有效月；不建立第二套缺口状态 |
-| Market Catalog | Data Foundation / Market Catalog 精确保留八张 active 数据表 | 不保留合约参数、内容摘要、运行历史或通用 lineage；明确设计的非 Market Foundation Application Domain 表不计入八表 |
-| Data Foundation Frozen | 新功能不得修改 `DatasetKey`、八表 Catalog、Canonical 语义或每 Dataset 每自然月一个 `part.parquet` 的月分区模型 | 如需改变基础合同，必须先作为独立架构决策；不得借新功能重构 |
-| 查询 | MarketDataService 是唯一历史行情入口 | 消费者不得 glob、自选文件、自判主力或跨频回退 |
-| 研究读模型 | 新研究功能只通过 `MarketDataService` 消费历史行情；可由 Canonical 与现有 Catalog 推导的市场事实按需计算 | 不得直接读 Parquet、复制 resolver 或为派生市场事实扩展 Catalog；明确设计的应用事实可进入独立 Application Domain |
-| Five-Candidate dossier | Phase 8A 只组装七份已冻结 artifact，保留 SuBing、N 与三条 JDJ 的 source-specific window；不建立 five-Candidate common window | comparability 与 relationship 是两个不同事实；十个 pair 只记录显式 comparability，仅 SuBing/N 投影已有 relationship reference，其他 pair 不新算 relationship |
-| Five-Candidate relationship topology | Phase 8B 分别以 `2023-01-01..2026-08-19` 验证 N→JDJ structural dependency，以 `2023-01-01..2026-08-20` 冻结 JDJ exact same-boundary overlap；不建立 common window | N dependency 不是独立信号确认；JDJ overlap 不扩为 proximity/lead-lag/future outcome；SuBing↔JDJ 保持 undefined，不产生排名或晋升 |
-| 增量 | `--since` 是检查下界，`--through` 是固定水位 | 已发布 Parquet + Catalog 是唯一自然续传水位；同 T 完整重跑零请求零写入 |
-| 修复 | `refresh` 重建指定品种/日期范围内相交月份的完整数据族 | 不接受精确计划文件或逐行裁决 |
-| 额度 | 明确的 provider quota 耗尽立即停止本轮 | 保留已发布月，未完成月不发布；下次同命令从首个缺失目标续传 |
-| live | historical Canonical 与 Redis Live Observation 分离 | 仅 `operational_products` 当日 rank1 completed 1m；未确认 bar 不进正式历史资产，Live 不进 Parquet/DB |
-| 模块长期性 | 新增模块前必须确认个人使用是否值得长期维护 | 无明确肯定答案时不创建模块 |
-| Market Runtime V1 授权 | 明确启用一次本地 Market Runtime V1 后，允许 `operational_products.txt` 中 active 60 的 Live 观察和每日 18:05 + 一次 1h retry 的盘后更新持续运行 | 范围变化必须显式修改同一配置；不授权 main/tag/release、其他 DB mutation、真实外部通知或订单 |
-| Alert V2 应用 | 独立 Application Domain 的 Code Registry 只含 `htdy_original_15m` 与 `subing_entry_signal_v1`；两张应用表记录 Scope 与不可变 Event | 不修改八表 Catalog/Canonical/rank1；SuBing seed Scope 为空；不恢复 Signal/Review/Strategy，不 replay/backfill/retry/outbox/queue，不建订单路径 |
-| Alert V2 评估语义 | HTDY 保持 event-cutoff；SuBing 只复用 Factor/accepted Calibration/FormalPolicy/`SubingReadService` resolver，stale identity fail-closed，final Session Bar 只使用共享 arrival grace，5m/15m 同边界使用 TradingSession bucket | 不复制 SuBing 公式/resolver，不建 `snapshot_at`/cutoff/replay 语义；current trading day 只由 `MarketPhaseResolver + operational products` 唯一解析，不可用时 fail-closed |
-| Alert Runtime V2 授权 | 已部署 Alert v1.6.5 的持续边界为 `htdy_original_15m × 该 Rule 显式 scope_products × htdy_observers × pushplus-wechat-topic` 与 `subing_entry_signal_v1 × 该 Rule 显式 scope_products × owner × pushplus-wechat`；当前两条 Scope 均精确为 `jm` | 已批准 Topic 可在人工核对的 `1..4` 人边界内增加成员，超过 4 人、未知成员或换 Topic 须重新授权；未来第三条 Rule、production migration、后续 release/tag、再次 Runtime switch、Scope/transport 变化、真实 canary/send 与 rollback 互不授权 |
-| Alert active 通知架构 | develop 为 `AlertEvent commit → AlertNotificationDispatcher → NotificationTransport → PushPlus SDK`；HTDY 每 Event 一次 Topic 请求，SuBing 一次 owner 请求；Git 外配置为 0700/0600，只含消息 token 与 Topic code | shortCode 仅表示 provider 接受；Topic 成员由 PushPlus 外部管理并人工核对；无 Open API、callback、逐人 DB 状态、retry/queue/replay/backfill/outbox/failover；替换 provider 只新增 adapter 并切换 composition，不改业务 Rule |
-| Execution Review V1 | 只从不可变 `subing_entry_signal_v1` Event 记录人工 Decision、真实手工 Execution、单品种 OPEN Episode 与结构化 Review | 独立四表 Application Domain；不恢复旧 Review Center，不连接账户、不自动反手、不创建订单；历史重建只经 MarketDataService |
-| Execution Review multiplier | 采用 trusted-partial reference：只跟踪具有正式官方证据且可机器复算的值，reference=evidence⊆active 60 | completeness 不阻断 Decision/Execution/Review；缺失只令人民币估算 unavailable，realized points/拓扑仍可用；Episode 创建时 snapshot，后续 reference 扩大不重写历史；60/60 是独立 reference-data 目标而非 v1.4 release Gate |
-| 开发态部署拓扑 | 功能开发期可让本地 launchd 临时直接运行主 `develop` 工作区；最终验收重新创建绑定精确提交的独立 Runtime worktree | 不热更新；每次重载需新的一次性意图；develop 证据不等于 promotion 或最终 Runtime 证据 |
-| 工程验证 | `TESTING.md` 的项目原生命令是唯一验证入口；工程脚本只保留无依赖的 `secret_scan.py` | 不保留自验证治理框架、重复流程文档、废弃构建包装或可选 CI 双轨 |
-| 运维拓扑 | Mac launchd → FRPC → 腾讯云 FRPS/Nginx 是唯一 active 链；local/tunnel/public 分段检查均只读 | 不保留并行 PID 管理器或远端应用副本；安装、重载与云端配置应用仍是独立 Gate |
-| 交易安全 | `auto_order=false` 始终成立 | 任何研究结果、展示或通知都不是交易指令 |
-| active universe | 60 品种；退役含股指 `ic/if/ih/im`、纸浆 `sp`、玉米淀粉 `cs`、丁二烯橡胶 `br`、20号胶 `nr`、低硫燃料油 `lu` | 退役码精确硬拦截；生产清退另需单次意图 |
-| 品种展示 taxonomy | `product_sectors.csv` 覆盖 active 60 的展示名称与板块，由 Market API 在 dominants 中返回 | Web 只保留板块标签，不复制品种名称/板块映射；未知板块只降级到 `other` |
-
-active 数据、查询与退役硬拒绝合同见 `openspec/specs/`；当前实施与外部操作状态见 `STATUS.md`。
+| 产品 | 本地、单用户国内期货研究工作站 | 个人研究闭环优先于平台化；不做自动交易、SaaS、多用户或无人值守下单，`auto_order=false` |
+| 外部操作 | 真实数据/DB/Runtime/live/通知/release 只接受范围明确的一次性执行意图 | mutation 风险不能由代码、测试、dry-run、历史授权或 health 绿灯推导；Market 与 Alert 的有界持续授权互不继承 |
+| 数据源 | RQData 是唯一外部行情事实源 | 避免多源逐行裁决与不可复算漂移；不建 provider 插件 seam |
+| 历史存储 | 只长期保存一套 Canonical Parquet，PostgreSQL 不存 Bar | Canonical 是可治理事实，Catalog 只保存轻量身份、coverage、质量与映射 |
+| 数据身份 | `DatasetKey=(kind,symbol,series_or_contract,frequency)` | provider/schema 属于来源与校验属性，不进入业务 identity |
+| 主力数据 | 物理保存真实合约，`actual_dominant` 查询时按 rank1 有效区间拼接 | 避免重复的主力拼接资产；mapping 缺失或冲突必须 fail-closed |
+| 周期 | Provider 基础周期为 `1m/1d`；派生周期只从同源 Canonical 基础周期聚合 | 保持单一可复算口径；禁止消费者跨频回退或重新聚合 |
+| 分区与质量 | 每 Dataset 每自然月一个 `part.parquet`，硬校验通过后原子发布 | 失败时保留最后有效月；不建第二套缺口、版本或逐行裁决状态 |
+| Market Catalog | Data Foundation 精确保留八表；明确设计的应用事实进入独立 Application Domain | 防止 Catalog 变成重型仓库；Alert/Execution Review 表不得冒充 Market 表 |
+| Historical 查询 | `MarketDataService` 是唯一入口 | consumer 不得 glob、自选 active、自判主力或绕过 coverage/quality |
+| Live | Redis Live 永远只是 Observation | 未确认或盘中事实不得提升为 Canonical，也不得替代 Historical evidence |
+| 研究读模型 | 派生市场事实按需计算，不为可复算事实新增 Catalog 表或第二套 resolver | 保持模块深而少；Research 只能向 Historical gateway 依赖，Runtime/Market/Alert 不反向依赖离线 Research |
+| Research 因果性 | segment、contract、trading-day、strict-before 与 event evidence-bar 是硬边界 | 任一身份不完整即 fail-closed；未来 Bar、跨换月 memory 和 same-bar 回标都会污染复算 |
+| Candidate/OOS | source-specific retrospective、embargo、prospective OOS 分离 | 不建立伪 common window，不用 retrospective 回填 OOS；evidence 不自动形成 rank、winner、promotion、盈利或可交易结论 |
+| Candidate convergence | dossier 只组装冻结事实；comparability 不等于 relationship；dependency/overlap 不外推 | 避免把不同 timeframe、event unit 与 outcome 语义强行统一；exact count/window 留在 protocol/report/tests |
+| 主力照妖镜 | active observation 与 sequence forensic 分层；forensic 只使用预定义全局 profile | 不按品种调参、不选 best profile；没有真实 read-only evidence Gate 就不冻结正式 Phase |
+| Alert | Event 先提交，通知最多一次；两条 Rule 复用既有 evaluator/read model | 保留故障隔离与因果 cutoff；无 retry/replay/backfill/outbox/queue/逐人状态或订单路径 |
+| Execution Review | 只从 eligible immutable Event 记录人工 Decision、Execution、Episode 与 Review | 不恢复旧 Review Center、不连接账户、不自动反手；Historical reconstruction 只经 `MarketDataService` |
+| Execution Review roll | roll reconcile 默认关闭且逐次读取严格 Gate | `disabled/invalid` 必须返回 `ROLL_RECONCILIATION_REQUIRED` 且无 `DOMINANT_ROLL`；只有 `enabled` 可 reconcile |
+| Multiplier | 使用 trusted-partial 官方 evidence，Episode 创建时 snapshot | completeness 不阻断工作流；缺失只令人民币估算 unavailable，reference 扩大不改写历史 |
+| Web B1 | 首页只用 D1 Radar 做“优先检查”，详情页按“当前检查栏”验证 | 减少遍历但不建立 Opportunity domain、综合分或推荐；`degraded` fail-closed，正式 Event/研究观察/Research-only 分层 |
+| Runtime 入口 | `guiyi` 是用户 CLI，`app.runtime_entry` 只服务受监督进程 | 避免第二套业务入口；手工进程调用不能冒充自然 Runtime evidence |
+| 工程验证 | `TESTING.md` 只保留项目原生命令；工程脚本只保留无依赖 secret scan | 不维护自验证治理框架、重复流程文档、active task/plan 目录或可选 CI 双轨 |
+| 运维拓扑 | Mac launchd → FRPC → FRPS/Nginx 是唯一 active 链 | 本地/隧道/公网分段只读检查；不保留并行 PID 管理器或远端应用副本 |
