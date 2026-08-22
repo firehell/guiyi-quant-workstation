@@ -14,6 +14,7 @@ from app.research.candidate_convergence.five_candidate_relationships import (
     CandidateDependencyResult,
     DependencyRole,
     ExistingRelationshipReference,
+    FiveCandidateRelationshipProtocol,
     FiveCandidateRelationshipProtocolError,
     FiveCandidateRelationshipReport,
     FiveCandidateRelationshipReportError,
@@ -673,9 +674,11 @@ class _DependencyRunner:
 
 def _dependency_service(
     runner: _DependencyRunner,
+    *,
+    protocol: FiveCandidateRelationshipProtocol | None = None,
 ) -> FiveCandidateRelationshipService:
     return FiveCandidateRelationshipService(
-        load_five_candidate_relationship_protocol(),
+        protocol or load_five_candidate_relationship_protocol(),
         jdj_research=runner,
     )
 
@@ -695,6 +698,32 @@ def test_dependency_projection_calls_each_symbol_once_for_exact_n_safe_window() 
         for candidate_id in JDJ_CANDIDATES
         for symbol in PRODUCTS
     )
+
+
+@pytest.mark.parametrize(
+    ("field", "drifted_value"),
+    (
+        ("cross_symbol_products", PRODUCTS[:-1]),
+        ("n_jdj_through", date(2026, 8, 20)),
+        ("prospective_consumed", True),
+    ),
+)
+def test_dependency_projection_revalidates_exact_protocol_before_runner_calls(
+    field: str,
+    drifted_value: object,
+) -> None:
+    protocol = load_five_candidate_relationship_protocol()
+    runner = _DependencyRunner()
+    service = _dependency_service(runner, protocol=protocol)
+    object.__setattr__(protocol, field, drifted_value)
+
+    with pytest.raises(
+        FiveCandidateRelationshipProtocolError,
+        match="^FIVE_CANDIDATE_RELATIONSHIP_PROTOCOL_INVALID$",
+    ):
+        service.project_n_jdj_dependencies()
+
+    assert runner.calls == []
 
 
 def test_dependency_projection_counts_only_immutable_event_lineage() -> None:
@@ -772,4 +801,85 @@ def test_dependency_projection_rejects_product_or_lineage_corruption() -> None:
     with pytest.raises(JdjContextError, match="^JDJ_CONTEXT_INVALID$"):
         _dependency_service(
             _DependencyRunner({PRODUCTS[0]: missing_lineage})
+        ).project_n_jdj_dependencies()
+
+
+def _later_trend_follow_event(
+    event: JdjTrendFollowTriggerEvent,
+) -> JdjTrendFollowTriggerEvent:
+    observed_at = event.observed_at + timedelta(minutes=2)
+    reaction_at = event.reaction_at + timedelta(minutes=2)
+    return replace(
+        event,
+        event_id=_canonical_trend_follow_event_id(
+            candidate_id=event.candidate_id,
+            symbol=event.symbol,
+            contract=event.contract,
+            segment_start_trading_day=event.segment_start_trading_day,
+            direction=event.direction,
+            reaction_at=reaction_at,
+            observed_at=observed_at,
+            trigger_level=event.trigger_level,
+        ),
+        observed_at=observed_at,
+        segment_bar_index=event.segment_bar_index + 2,
+        trend_snapshot_observed_at=(
+            event.trend_snapshot_observed_at + timedelta(minutes=2)
+        ),
+        reaction_at=reaction_at,
+    )
+
+
+@pytest.mark.parametrize(
+    "corruption",
+    ("duplicate_identity", "wrong_order", "trigger_count", "event_type"),
+)
+def test_dependency_projection_revalidates_jdj_result_event_set(
+    corruption: str,
+) -> None:
+    batch = _batch(PRODUCTS[0])
+    result = batch.candidates[0].result
+    first = result.events[0]
+
+    if corruption == "duplicate_identity":
+        object.__setattr__(result, "events", (first, first))
+        object.__setattr__(result, "trigger_count_long", 2)
+    elif corruption == "wrong_order":
+        later = _later_trend_follow_event(first)
+        object.__setattr__(result, "events", (later, first))
+        object.__setattr__(result, "trigger_count_long", 2)
+    elif corruption == "trigger_count":
+        object.__setattr__(result, "trigger_count_long", 2)
+    else:
+        object.__setattr__(
+            result,
+            "events",
+            batch.candidates[1].result.events,
+        )
+
+    with pytest.raises(JdjContextError, match="^JDJ_CONTEXT_INVALID$"):
+        _dependency_service(
+            _DependencyRunner({PRODUCTS[0]: batch})
+        ).project_n_jdj_dependencies()
+
+
+@pytest.mark.parametrize(
+    ("observed_since", "event_trading_day"),
+    (
+        (date(2023, 1, 2), date(2023, 1, 1)),
+        (date(2023, 1, 1), date(2026, 8, 20)),
+    ),
+)
+def test_dependency_projection_rejects_events_outside_batch_or_protocol_window(
+    observed_since: date,
+    event_trading_day: date,
+) -> None:
+    batch = _batch(PRODUCTS[0])
+    object.__setattr__(batch, "observed_since", observed_since)
+    event = batch.candidates[0].result.events[0]
+    object.__setattr__(event, "trading_day", event_trading_day)
+
+    with pytest.raises(JdjContextError, match="^JDJ_CONTEXT_INVALID$"):
+        _dependency_service(
+            _DependencyRunner({PRODUCTS[0]: batch})
         ).project_n_jdj_dependencies()

@@ -13,24 +13,15 @@ from app.research.candidate_convergence.five_candidate_relationships import (
     FiveCandidateRelationshipProtocolError,
 )
 from app.research.jdj.jdj_context import JdjContextError
-from app.research.jdj.jdj_events import (
-    JdjKeyLevelBreakoutTriggerEvent,
-    JdjTrendFollowTriggerEvent,
-    JdjTrendReentryTriggerEvent,
-)
+from app.research.jdj.jdj_events import JdjKeyLevelBreakoutTriggerEvent
 from app.research.jdj.jdj_research import (
-    JDJ_CANDIDATE_SOURCE_EVENT_KINDS,
     JdjBatchResearchResult,
+    JdjResearchResult,
     JdjSourceUnavailableError,
 )
 
 
 _KEY_LEVEL_BREAKOUT = "jdj_key_level_breakout_1m_candidate_v1"
-_EVENT_TYPES = {
-    "jdj_trend_follow_1m_candidate_v1": JdjTrendFollowTriggerEvent,
-    "jdj_trend_reentry_6_1m_candidate_v1": JdjTrendReentryTriggerEvent,
-    _KEY_LEVEL_BREAKOUT: JdjKeyLevelBreakoutTriggerEvent,
-}
 
 
 class _JdjBatchRunner(Protocol):
@@ -58,7 +49,7 @@ class FiveCandidateRelationshipService:
     def project_n_jdj_dependencies(
         self,
     ) -> tuple[CandidateDependencyResult, ...]:
-        protocol = self._protocol
+        protocol = replace(self._protocol)
         rows_by_identity: dict[tuple[str, str], CandidateDependencyResult] = {}
         for symbol in protocol.cross_symbol_products:
             try:
@@ -76,13 +67,13 @@ class FiveCandidateRelationshipService:
                     )
                 continue
 
-            _validate_batch(protocol, batch, symbol=symbol)
-            for detailed, (candidate_id, role) in zip(
-                batch.candidates,
+            validated_results = _validate_batch(protocol, batch, symbol=symbol)
+            for result, (candidate_id, role) in zip(
+                validated_results,
                 protocol.n_jdj_dependency_roles,
                 strict=True,
             ):
-                events = detailed.result.events
+                events = result.events
                 rows_by_identity[candidate_id, symbol] = CandidateDependencyResult(
                     candidate_id=candidate_id,
                     symbol=symbol,
@@ -120,7 +111,7 @@ def _validate_batch(
     batch: object,
     *,
     symbol: str,
-) -> None:
+) -> tuple[JdjResearchResult, ...]:
     if (
         not isinstance(batch, JdjBatchResearchResult)
         or batch.symbol != symbol
@@ -141,26 +132,28 @@ def _validate_batch(
     ):
         raise JdjContextError()
 
+    validated_results: list[JdjResearchResult] = []
     for detailed in batch.candidates:
         result = detailed.result
-        expected_type = _EVENT_TYPES[result.candidate_id]
-        expected_event_kind = JDJ_CANDIDATE_SOURCE_EVENT_KINDS[
-            result.candidate_id
-        ]
-        if (
-            result.source_event_kind != expected_event_kind
-            or type(result.events) is not tuple
-            or any(
-                not isinstance(event, expected_type)
-                or event.candidate_id != result.candidate_id
-                or event.source_event_kind != expected_event_kind
-                or event.symbol != symbol
-                for event in result.events
+        validated_result = replace(result)
+        validated_events = tuple(
+            replace(event) for event in validated_result.events
+        )
+        validated_result = replace(validated_result, events=validated_events)
+        if any(
+            not (
+                batch.observed_since
+                <= event.trading_day
+                <= batch.observed_through
+                and protocol.n_jdj_since
+                <= event.trading_day
+                <= protocol.n_jdj_through
             )
+            for event in validated_result.events
         ):
             raise JdjContextError()
-        for event in result.events:
-            replace(event)
+        validated_results.append(validated_result)
+    return tuple(validated_results)
 
 
 def _unavailable_row(
