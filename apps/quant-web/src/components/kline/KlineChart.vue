@@ -101,8 +101,8 @@ const secondaryPanelTop = ref<number | null>(null)
 const renderedResearchMarkerCount = ref(0)
 let derivedData = buildKlineDerivedData([], [])
 
-type EmaIndicatorId = 'ema_10' | 'ema_21' | 'ema_60'
-const EMA_INDICATORS: EmaIndicatorId[] = ['ema_10', 'ema_21', 'ema_60']
+type EmaIndicatorId = 'ema_10' | 'ema_20' | 'ema_21' | 'ema_60'
+const EMA_INDICATORS: EmaIndicatorId[] = ['ema_10', 'ema_20', 'ema_21', 'ema_60']
 const SECONDARY_PANEL_TABS: Array<{ id: SecondaryPanelId; label: string }> = [
   { id: 'macd', label: 'MACD' },
   { id: 'main_force_mirror_v2', label: '主力照妖镜 V2' },
@@ -143,6 +143,7 @@ onMounted(async () => {
     wickDownColor: theme.down,
   }, 0)
   emaLines.ema_10 = chart.addSeries(LineSeries, { color: theme.ema10, lineWidth: 1, lastValueVisible: false }, 0)
+  emaLines.ema_20 = chart.addSeries(LineSeries, { color: theme.ema20, lineWidth: 2, lastValueVisible: false }, 0)
   emaLines.ema_21 = chart.addSeries(LineSeries, { color: theme.ema21, lineWidth: 2, lastValueVisible: false }, 0)
   emaLines.ema_60 = chart.addSeries(LineSeries, { color: theme.ema60, lineWidth: 1, lastValueVisible: false }, 0)
   htdyZk1 = chart.addSeries(LineSeries, { color: theme.htdyZk1, lineWidth: 2, lineStyle: 0, lastValueVisible: false }, 0)
@@ -307,7 +308,14 @@ function onCrosshairMove(param: MouseEventParams<Time>) {
   }
   const bar = renderedBars.find((item) => sameChartTime(chartTime(item), param.time!))
   const nextContext = bar
-    ? resolveKlineHoverContext(renderedBars, derivedData, props.visibleMainIndicators, bar.time, props.mainForceMirrorV2Points)
+    ? resolveKlineHoverContext(
+      renderedBars,
+      derivedData,
+      props.visibleMainIndicators,
+      bar.time,
+      props.mainForceMirrorV2Points,
+      mergedDisplayMarkers(),
+    )
     : null
   hoverContext.value = nextContext
   emit('crosshair-change', nextContext)
@@ -349,11 +357,15 @@ function renderDerivedSeries(): void {
   htdyZd1?.setData(chartValues(derivedData.htdy?.zd1))
   htdyZd2?.setData(chartValues(derivedData.htdy?.zd2))
   renderedResearchMarkerCount.value = chartMarkers(props.researchMarkers).length
-  const renderedMarkers = chartMarkers(mergeKlineMarkers(
+  const renderedMarkers = chartMarkers(mergedDisplayMarkers())
+  htdyMarkers?.setMarkers(renderedMarkers)
+}
+
+function mergedDisplayMarkers(): KlineMarker[] {
+  return mergeKlineMarkers(
     mergeKlineMarkers(derivedData.htdy?.markers ?? [], props.alertMarkers),
     props.researchMarkers,
-  ))
-  htdyMarkers?.setMarkers(renderedMarkers)
+  )
 }
 
 function clearMainForceMirrorV2() {

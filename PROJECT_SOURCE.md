@@ -1,6 +1,6 @@
 # 归一量化项目事实源
 
-更新时间：2026-08-22
+更新时间：2026-08-23
 
 ## 稳定产品边界
 
@@ -60,6 +60,12 @@ Review 的四张 `trade_*` 表属于各自 Application Domain，不改变八表�
 `app.runtime_entry` 仅是受监督 Runtime 的内部进程入口；它不是第二套用户 CLI，也不能由手工运行产生
 自然 Runtime evidence。
 
+Market K 线的 Historical Research Overlay 只通过三个 source-specific 只读接口按需复算 confirmed
+Canonical facts：`/api/v1/market/research/subing/history`、`/api/v1/market/research/n-structure/history`
+与 `/api/v1/market/research/jdj/history`。三者只支持 `actual_dominant`，分别固定为 SuBing `5m/15m`、
+N Structure `5m`、JDJ `1m`；各自保留独立 DTO、Policy、reducer 与 event identity，不建立统一 Strategy
+adapter，不创建 AlertEvent 或持久化派生结果。
+
 ## 研究边界
 
 - SuBing、N Structure、JDJ 与主力照妖镜各自保留 source-specific Policy、时间粒度、因果 reducer 和
@@ -76,8 +82,15 @@ Review 的四张 `trade_*` 表属于各自 Application Domain，不改变八表�
 - `main_force_mirror_v2` 仅支持 `60m + contract|actual_dominant` Historical confirmed observation，
   只读不可变 member-rank snapshot。sequence forensic 保持 same-contract、strict-prior、prefix-invariant，
   只输出预定义 profile 的事实，不选择 best profile，也不冻结正式 Phase。
-- 所有 Research 只输出 stdout JSON 或显式版本化 artifact；不写 DB/Canonical/Redis，不进入
+- Research 只输出 source-specific 只读 HTTP projection、stdout JSON 或显式版本化 artifact；不写
+  DB/Canonical/Redis，不进入
   Alert/notification/Runtime/Execution Review/订单路径。
+
+Historical Overlay 的事件只能落在当时可知的 evidence Bar：SuBing 使用 resolved `bar_end`，N 与 JDJ
+使用 source event `observed_at`，不得回标 pivot/reaction/reclaim/first-break/retest。Web 只统一 capability、
+confirmed Canonical 请求窗口、generation/full-identity 防旧响应、event-id 去重与 marker 渲染；不复制公式。
+顶部固定为“无｜苏冰｜N字｜日进斗金｜火天大有”，JDJ 的 EMA20 只复用已有 EMA 展示算法，不参与浏览器
+策略计算，也不增加 Candidate 开关或持久化设置。
 
 Exact protocol、window、hash、row/cell count 与 artifact identity 只保存在对应 policy、report 和测试中；
 当前 evidence 与 pending Gate 只看 `STATUS.md`。

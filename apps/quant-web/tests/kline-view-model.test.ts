@@ -32,6 +32,23 @@ test('only enabled EMA is derived while MACD is always available', () => {
   assert.equal(result.macd.dea.length, result.macd.histogram.length)
 })
 
+test('JDJ EMA20 is derived and hovered only while its overlay is visible', () => {
+  const visible = buildKlineDerivedData(bars, ['ema_20' as never])
+  const hidden = buildKlineDerivedData(bars, [])
+  const target = bars[79]
+  const hover = resolveKlineHoverContext(
+    bars,
+    visible,
+    ['ema_20' as never],
+    target.time,
+  )
+
+  assert.equal((visible.ema as any).ema_20?.length, 81)
+  assert.equal((hidden.ema as any).ema_20, undefined)
+  assert.equal(hover?.mainIndicators?.[0]?.id, 'ema_20')
+  assert.equal(hover?.mainIndicators?.[0]?.displayName, 'EMA20')
+})
+
 test('HTDY is only derived when its observation overlay is explicitly visible', () => {
   const htdyBars = makeDeterministicHtdyBars(2)
   const hidden = buildKlineDerivedData(htdyBars, ['ema_21'])
@@ -65,6 +82,24 @@ test('crosshair context keeps OHLCV OI EMA and MACD on the hovered bar timestamp
   assert.notEqual(hover.macd?.dif, null)
   assert.notEqual(hover.macd?.dea, null)
   assert.notEqual(hover.macd?.histogram, null)
+})
+
+test('crosshair exposes the exact marker tooltip at its evidence bar', () => {
+  const result = buildKlineDerivedData(bars, [])
+  const target = bars[79]
+  const marker = {
+    id: 'historical:jdj-1',
+    time: target.time,
+    label: '跟随多',
+    tooltip: 'JDJ candidate detail',
+    tone: 'up' as const,
+    position: 'belowBar' as const,
+    shape: 'arrowUp' as const,
+  }
+
+  const hover = resolveKlineHoverContext(bars, result, [], target.time, [], [marker])
+
+  assert.deepEqual(hover?.marker, marker)
 })
 
 test('missing hover values render as unavailable instead of a fabricated zero', () => {

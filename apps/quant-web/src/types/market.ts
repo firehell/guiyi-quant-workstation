@@ -1,7 +1,7 @@
 export const MARKET_FREQUENCIES = ['1m', '5m', '15m', '30m', '60m', '1d', '1w'] as const
 export type MarketFrequency = (typeof MARKET_FREQUENCIES)[number]
 export type SeriesKind = 'continuous' | 'actual_dominant' | 'contract'
-export type ResearchOverlayId = 'none' | 'subing' | 'htdy'
+export type ResearchOverlayId = 'none' | 'subing' | 'n_structure' | 'jdj' | 'htdy'
 
 export interface ResearchOverlayDefinition {
   id: ResearchOverlayId
@@ -9,7 +9,7 @@ export interface ResearchOverlayDefinition {
   supportedSeriesKinds: readonly SeriesKind[]
   supportedFrequencies: readonly MarketFrequency[]
   mainIndicators: readonly MainIndicatorId[]
-  historicalSource: 'none' | 'local' | 'subing'
+  historicalSource: 'none' | 'local' | 'subing' | 'n_structure' | 'jdj'
 }
 
 export interface DominantContractItem {
@@ -790,6 +790,56 @@ export interface SubingHistoricalSignalResponse {
   events: SubingHistoricalSignalEvent[]
 }
 
+export interface NStructureHistoricalRequest {
+  series_kind: 'actual_dominant'
+  symbol: string
+  frequency: '5m'
+  since: string
+  through: string
+}
+
+export interface NStructureHistoricalEvent {
+  event_id: string
+  observed_at: string
+  trading_day: string
+  contract: string
+  segment_start_trading_day: string
+  direction: 'up' | 'down'
+}
+
+export interface NStructureHistoricalResponse {
+  request: NStructureHistoricalRequest
+  events: NStructureHistoricalEvent[]
+}
+
+export interface JdjHistoricalRequest {
+  series_kind: 'actual_dominant'
+  symbol: string
+  frequency: '1m'
+  since: string
+  through: string
+}
+
+export interface JdjHistoricalEvent {
+  event_id: string
+  candidate_id:
+    | 'jdj_trend_follow_1m_candidate_v1'
+    | 'jdj_trend_reentry_6_1m_candidate_v1'
+    | 'jdj_key_level_breakout_1m_candidate_v1'
+  source_event_kind: string
+  observed_at: string
+  trading_day: string
+  contract: string
+  segment_start_trading_day: string
+  direction: 'long' | 'short'
+  trigger_level: string
+}
+
+export interface JdjHistoricalResponse {
+  request: JdjHistoricalRequest
+  events: JdjHistoricalEvent[]
+}
+
 /** Alert V2 `AlertEventOut`：只读展示 DTO，方向语义见 result_codes。 */
 export interface AlertEvent {
   id: number
@@ -815,7 +865,7 @@ export interface ChartOverlay {
 }
 
 export type IndicatorPanelType = 'macd' | 'atr' | 'volume_ratio' | 'signal_score'
-export type MainIndicatorId = 'ema_10' | 'ema_21' | 'ema_60' | 'htdy'
+export type MainIndicatorId = 'ema_10' | 'ema_20' | 'ema_21' | 'ema_60' | 'htdy'
 export type OptionalEmaIndicatorId = 'ema_10' | 'ema_60'
 
 export interface MainIndicatorDefinition {

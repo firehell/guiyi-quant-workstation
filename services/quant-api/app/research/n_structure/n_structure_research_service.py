@@ -331,9 +331,9 @@ class NStructureResearchService:
             accumulator.completed_n_counts[pattern.direction.value] += 1
             index = bar_index.get(pattern.completed_at)
             if index is None:
-                raise ValueError("N completion is not aligned with its source bar")
+                raise NStructureSegmentIdentityError()
             if bars[index].close != pattern.completion_bar_close:
-                raise ValueError("N completion entry is not aligned with its bar")
+                raise NStructureSegmentIdentityError()
             accumulator.completion_events.append(
                 NStructureCompletionResearchEvent(
                     event_id=pattern.n_id,
@@ -420,7 +420,7 @@ def _in_requested_window(
 ) -> bool:
     trading_day = days_by_time.get(timestamp)
     if trading_day is None:
-        raise ValueError("N fact is not aligned with its source bar")
+        raise NStructureSegmentIdentityError()
     return since <= trading_day <= through
 
 

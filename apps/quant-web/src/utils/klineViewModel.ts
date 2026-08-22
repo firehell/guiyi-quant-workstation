@@ -2,7 +2,7 @@ import type { BarData, HoverKlineContext, KlineMarker, MainForceMirrorV2Point, M
 import { calculateEMA, calculateHuoTianDaYou, calculateMACD } from './indicators.ts'
 import { MAIN_INDICATOR_DEFINITIONS } from './mainIndicators.ts'
 
-type EmaIndicatorId = 'ema_10' | 'ema_21' | 'ema_60'
+type EmaIndicatorId = 'ema_10' | 'ema_20' | 'ema_21' | 'ema_60'
 
 export interface KlineValuePoint {
   time: string
@@ -34,6 +34,7 @@ export function formatKlineHoverValue(value: number | null | undefined): string 
 
 const EMA_PERIODS: Record<EmaIndicatorId, number> = {
   ema_10: 10,
+  ema_20: 20,
   ema_21: 21,
   ema_60: 60,
 }
@@ -106,6 +107,7 @@ export function resolveKlineHoverContext(
   visibleMainIndicators: MainIndicatorId[],
   time: string,
   mainForceMirrorV2Points: MainForceMirrorV2Point[] = [],
+  markers: KlineMarker[] = [],
 ): HoverKlineContext | null {
   const bar = bars.find((item) => item.time === time)
   if (!bar) return null
@@ -122,7 +124,17 @@ export function resolveKlineHoverContext(
       histogram: pointValue(derived.macd.histogram, time),
     },
     mainForceMirrorV2: toMainForceMirrorV2Hover(mainForceMirrorV2Points, time),
+    marker: markers.find((marker) => sameMarkerTime(marker.time, time)) ?? null,
   }
+}
+
+function sameMarkerTime(left: string, right: string): boolean {
+  const leftTimestamp = Date.parse(left)
+  const rightTimestamp = Date.parse(right)
+  if (Number.isFinite(leftTimestamp) && Number.isFinite(rightTimestamp)) {
+    return leftTimestamp === rightTimestamp
+  }
+  return left === right
 }
 
 function toMainForceMirrorV2Hover(points: MainForceMirrorV2Point[], time: string) {
