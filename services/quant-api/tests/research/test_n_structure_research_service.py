@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from types import MappingProxyType
@@ -404,6 +405,53 @@ def test_completion_event_prefix_is_invariant_to_future_same_segment_suffix() ->
     )
 
     assert tuple(event for event in extended if event.trading_day <= date(2026, 8, 20)) == prefix
+
+
+def test_misaligned_reducer_fact_maps_to_segment_identity_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bars = _bars()
+    trace = evaluate_n_structure_segment(
+        bars,
+        contract="JM2701",
+        segment_start_trading_day=date(2026, 8, 18),
+        segment_end_trading_day=date(2026, 8, 20),
+        policy=load_n_structure_policy(),
+    )
+    pattern = trace.patterns.patterns[0]
+    misaligned_pattern = replace(
+        pattern,
+        completed_at=pattern.completed_at + timedelta(seconds=1),
+    )
+    misaligned_trace = replace(
+        trace,
+        patterns=replace(
+            trace.patterns,
+            patterns=(misaligned_pattern, *trace.patterns.patterns[1:]),
+        ),
+    )
+    monkeypatch.setattr(
+        research_module,
+        "evaluate_n_structure_segment",
+        lambda *args, **kwargs: misaligned_trace,
+    )
+    service = NStructureResearchService(
+        _FakeSegmentLoader(bars),
+        products=("jm",),
+        policy=load_n_structure_policy(),
+    )
+
+    with pytest.raises(
+        NStructureSegmentIdentityError,
+        match="^N_STRUCTURE_SEGMENT_IDENTITY_INVALID$",
+    ):
+        service.completion_events(
+            NStructureResearchRequest(
+                date(2026, 8, 18),
+                date(2026, 8, 20),
+                "jm",
+            )
+        )
 
 
 def test_rank1_segment_change_resets_the_real_n_producer_chain() -> None:

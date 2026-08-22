@@ -317,6 +317,10 @@ def test_n_structure_historical_overlay_projects_observed_at_without_backpaintin
         ("contract", "5m"),
         ("actual_dominant", "1m"),
         ("actual_dominant", "15m"),
+        ("actual_dominant", "30m"),
+        ("actual_dominant", "60m"),
+        ("actual_dominant", "1d"),
+        ("actual_dominant", "1w"),
     ),
 )
 def test_n_structure_historical_overlay_rejects_unsupported_identity_before_builder(
@@ -337,6 +341,41 @@ def test_n_structure_historical_overlay_rejects_unsupported_identity_before_buil
             "frequency": frequency,
             "since": "2026-08-03",
             "through": "2026-08-04",
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json() == {
+        "detail": {"code": "INVALID_N_STRUCTURE_HISTORICAL_REQUEST"}
+    }
+
+
+@pytest.mark.parametrize(
+    "params",
+    (
+        {"symbol": "jm1"},
+        {"symbol": "中"},
+        {"since": "2026-08-05", "through": "2026-08-04"},
+    ),
+)
+def test_n_structure_historical_overlay_rejects_invalid_symbol_or_window_before_builder(
+    monkeypatch: pytest.MonkeyPatch,
+    params: dict[str, str],
+) -> None:
+    monkeypatch.setattr(
+        "app.research.historical_overlay_api.build_n_structure_research_service",
+        lambda _session: pytest.fail("invalid request must not execute service"),
+    )
+
+    response = TestClient(app).get(
+        "/api/v1/market/research/n-structure/history",
+        params={
+            "series_kind": "actual_dominant",
+            "symbol": "jm",
+            "frequency": "5m",
+            "since": "2026-08-03",
+            "through": "2026-08-04",
+            **params,
         },
     )
 
