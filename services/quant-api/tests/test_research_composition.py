@@ -45,6 +45,25 @@ def _research_implementation_modules() -> tuple[str, ...]:
     )
 
 
+def _assert_no_offline_research_imports(path: Path) -> None:
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    imported_modules = [
+        node.module
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom) and node.module is not None
+    ]
+    imported_modules.extend(
+        alias.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Import)
+        for alias in node.names
+    )
+    assert not any(
+        module == "app.research" or module.startswith("app.research.")
+        for module in imported_modules
+    ), path
+
+
 def test_offline_research_builders_have_one_composition_entrypoint() -> None:
     research_composition = importlib.import_module("app.research.composition")
     builders = _local_research_builders()
@@ -58,8 +77,24 @@ def test_offline_research_implementation_has_one_physical_package() -> None:
     assert modules
     for module in modules:
         assert importlib.util.find_spec(module) is not None, module
-        old_module = f"app.market_data.{module.rsplit('.', 1)[-1]}"
-        assert importlib.util.find_spec(old_module) is None, old_module
+
+
+@pytest.mark.parametrize(
+    "statement",
+    (
+        "from app.research import composition",
+        "import app.research.composition",
+    ),
+)
+def test_runtime_dependency_guard_rejects_both_import_syntaxes(
+    tmp_path: Path,
+    statement: str,
+) -> None:
+    source = tmp_path / "runtime_boundary.py"
+    source.write_text(statement, encoding="utf-8")
+
+    with pytest.raises(AssertionError):
+        _assert_no_offline_research_imports(source)
 
 
 def test_runtime_market_and_alert_do_not_import_offline_research() -> None:
@@ -69,16 +104,7 @@ def test_runtime_market_and_alert_do_not_import_offline_research() -> None:
             boundary.rglob("*.py") if boundary.is_dir() else (boundary,)
         )
     for path in source_paths:
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        imports = (
-            node.module
-            for node in ast.walk(tree)
-            if isinstance(node, ast.ImportFrom) and node.module is not None
-        )
-        assert not any(
-            module == "app.research" or module.startswith("app.research.")
-            for module in imports
-        ), path
+        _assert_no_offline_research_imports(path)
 
 
 def _fail_dependency(name: str):

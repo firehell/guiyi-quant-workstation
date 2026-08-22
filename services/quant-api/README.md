@@ -9,7 +9,11 @@
 - `/api/execution-review`：苏冰 Event 的人工 Decision、Episode/Execution timeline、Review、reconstruction 与 lightweight stats。
 - `/api/runtime`：DB、Redis、Live、after-market 与 Alert 的只读 Runtime 状态。
 - CLI：`guiyi data update|refresh|audit|after-market`、
-  只读 `guiyi research subing-calibration|subing-lifecycle|n-structure|jdj-1m|candidate-validation|candidate-robustness|candidate-dossier|candidate-relationships|main-force-mirror-v2`、
+  只读 `guiyi research subing-calibration`、`guiyi research subing-lifecycle`、
+  `guiyi research n-structure`、`guiyi research jdj-1m`、
+  `guiyi research candidate-validation`、`guiyi research candidate-robustness`、
+  `guiyi research candidate-dossier`、`guiyi research candidate-relationships`、
+  `guiyi research main-force-mirror-v2`、
   `guiyi runtime status|live|alert`；
   `guiyi runtime alert-canary` 是真实通知 Gate。
 

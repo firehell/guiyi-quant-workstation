@@ -72,10 +72,13 @@ uv run --offline --project services/quant-api pytest -q \
   services/quant-api/tests/data_foundation/test_member_rank_snapshot.py \
   services/quant-api/tests/data_foundation/test_member_rank_snapshot_builder.py \
   services/quant-api/tests/data_foundation/test_main_force_mirror_v2_service.py \
-  services/quant-api/tests/data_foundation/test_main_force_mirror_v2_research_service.py \
+  services/quant-api/tests/research/test_main_force_mirror_v2_research_service.py \
   services/quant-api/tests/data_foundation/test_market_api.py \
   services/quant-api/tests/data_foundation/test_cli.py \
-  services/quant-api/tests/test_research_cli.py
+  services/quant-api/tests/research/test_research_cli_parser_requests.py \
+  services/quant-api/tests/research/test_research_cli_candidate.py \
+  services/quant-api/tests/research/test_research_cli_convergence.py \
+  services/quant-api/tests/research/test_research_cli_mirror_robustness.py
 
 pnpm --dir apps/quant-web test
 pnpm --dir apps/quant-web build
@@ -115,7 +118,9 @@ PYTHONPATH=services/quant-api:packages/quant-core \
   services/quant-api/tests/test_execution_review_contracts.py \
   services/quant-api/tests/test_execution_review_pnl.py \
   services/quant-api/tests/test_execution_review_models.py \
-  services/quant-api/tests/test_execution_review_service.py \
+  services/quant-api/tests/execution_review/test_mutations.py \
+  services/quant-api/tests/execution_review/test_corrections_reviews.py \
+  services/quant-api/tests/execution_review/test_queries.py \
   services/quant-api/tests/test_execution_review_api.py \
   services/quant-api/tests/test_execution_review_reconstruction.py \
   services/quant-api/tests/test_execution_review_reconciler.py
@@ -140,12 +145,17 @@ UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
   services/quant-api/tests/test_candidate_validation_policy.py \
   services/quant-api/tests/test_candidate_validation.py \
   services/quant-api/tests/test_subing_structure.py \
-  services/quant-api/tests/test_subing_lifecycle.py \
+  services/quant-api/tests/research/test_subing_lifecycle_contracts.py \
+  services/quant-api/tests/research/test_subing_lifecycle_transitions.py \
+  services/quant-api/tests/research/test_subing_lifecycle_causality.py \
   services/quant-api/tests/test_subing_calibration.py \
-  services/quant-api/tests/data_foundation/test_subing_lifecycle_research_service.py \
-  services/quant-api/tests/data_foundation/test_subing_candidate_validation_service.py \
-  services/quant-api/tests/data_foundation/test_subing_calibration_service.py \
-  services/quant-api/tests/test_research_cli.py \
+  services/quant-api/tests/research/test_subing_lifecycle_research_service.py \
+  services/quant-api/tests/research/test_subing_candidate_validation_service.py \
+  services/quant-api/tests/research/test_subing_calibration_service.py \
+  services/quant-api/tests/research/test_research_cli_parser_requests.py \
+  services/quant-api/tests/research/test_research_cli_candidate.py \
+  services/quant-api/tests/research/test_research_cli_convergence.py \
+  services/quant-api/tests/research/test_research_cli_mirror_robustness.py \
   services/quant-api/tests/test_indicator_kernel_v1c_macd_atr.py \
   services/quant-api/tests/test_indicator_registry_v1.py \
   services/quant-api/tests/test_subing_research.py \
@@ -216,12 +226,15 @@ UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
   services/quant-api/tests/test_jdj_trend_reentry.py \
   services/quant-api/tests/test_jdj_key_level_breakout.py \
   services/quant-api/tests/test_jdj_research.py \
-  services/quant-api/tests/data_foundation/test_jdj_research_service.py \
+  services/quant-api/tests/research/test_jdj_research_service.py \
   services/quant-api/tests/test_jdj_candidate_validation.py \
-  services/quant-api/tests/data_foundation/test_jdj_candidate_validation_service.py \
-  services/quant-api/tests/data_foundation/test_jdj_candidate_validation_calendar.py \
+  services/quant-api/tests/research/test_jdj_candidate_validation_service.py \
+  services/quant-api/tests/research/test_jdj_candidate_validation_calendar.py \
   services/quant-api/tests/test_price_outcome.py \
-  services/quant-api/tests/test_research_cli.py
+  services/quant-api/tests/research/test_research_cli_parser_requests.py \
+  services/quant-api/tests/research/test_research_cli_candidate.py \
+  services/quant-api/tests/research/test_research_cli_convergence.py \
+  services/quant-api/tests/research/test_research_cli_mirror_robustness.py
 ```
 
 该命令验证 exact Policy/Manifest/Protocol、EMA20 parity、5m N strict-before context、
@@ -245,12 +258,15 @@ UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
   services/quant-api/tests/test_n_structure_segment.py \
   services/quant-api/tests/data_foundation/test_actual_dominant_research.py \
   services/quant-api/tests/test_price_outcome.py \
-  services/quant-api/tests/data_foundation/test_n_structure_research_service.py \
+  services/quant-api/tests/research/test_n_structure_research_service.py \
   services/quant-api/tests/test_candidate_validation_schedule.py \
   services/quant-api/tests/test_n_candidate_validation_policy.py \
   services/quant-api/tests/test_n_candidate_validation.py \
-  services/quant-api/tests/data_foundation/test_n_candidate_validation_service.py \
-  services/quant-api/tests/test_research_cli.py
+  services/quant-api/tests/research/test_n_candidate_validation_service.py \
+  services/quant-api/tests/research/test_research_cli_parser_requests.py \
+  services/quant-api/tests/research/test_research_cli_candidate.py \
+  services/quant-api/tests/research/test_research_cli_convergence.py \
+  services/quant-api/tests/research/test_research_cli_mirror_robustness.py
 ```
 
 ### 上游 SuBing zero-regression
@@ -260,16 +276,21 @@ UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
   uv run --offline --project services/quant-api pytest -q \
   services/quant-api/tests/test_subing_lifecycle_policy.py \
   services/quant-api/tests/test_subing_structure.py \
-  services/quant-api/tests/test_subing_lifecycle.py \
+  services/quant-api/tests/research/test_subing_lifecycle_contracts.py \
+  services/quant-api/tests/research/test_subing_lifecycle_transitions.py \
+  services/quant-api/tests/research/test_subing_lifecycle_causality.py \
   services/quant-api/tests/test_subing_calibration.py \
   services/quant-api/tests/test_subing_research.py \
   services/quant-api/tests/data_foundation/test_subing_read_service.py \
-  services/quant-api/tests/data_foundation/test_subing_lifecycle_research_service.py \
-  services/quant-api/tests/data_foundation/test_subing_calibration_service.py \
+  services/quant-api/tests/research/test_subing_lifecycle_research_service.py \
+  services/quant-api/tests/research/test_subing_calibration_service.py \
   services/quant-api/tests/test_candidate_validation_policy.py \
   services/quant-api/tests/test_candidate_validation.py \
-  services/quant-api/tests/data_foundation/test_subing_candidate_validation_service.py \
-  services/quant-api/tests/test_research_cli.py
+  services/quant-api/tests/research/test_subing_candidate_validation_service.py \
+  services/quant-api/tests/research/test_research_cli_parser_requests.py \
+  services/quant-api/tests/research/test_research_cli_candidate.py \
+  services/quant-api/tests/research/test_research_cli_convergence.py \
+  services/quant-api/tests/research/test_research_cli_mirror_robustness.py
 ```
 
 这两组命令验证 `MarketDataService → ActualDominantResearchSegmentLoader →
@@ -286,8 +307,11 @@ UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
   services/quant-api/tests/test_multi_candidate_robustness_policy.py \
   services/quant-api/tests/test_multi_candidate_events.py \
   services/quant-api/tests/test_multi_candidate_robustness.py \
-  services/quant-api/tests/data_foundation/test_multi_candidate_robustness_service.py \
-  services/quant-api/tests/test_research_cli.py
+  services/quant-api/tests/research/test_multi_candidate_robustness_service.py \
+  services/quant-api/tests/research/test_research_cli_parser_requests.py \
+  services/quant-api/tests/research/test_research_cli_candidate.py \
+  services/quant-api/tests/research/test_research_cli_convergence.py \
+  services/quant-api/tests/research/test_research_cli_mirror_robustness.py
 ```
 
 该命令验证两个 frozen Candidate 的 exact Protocol、既有 causal event seam、`jm` 双向

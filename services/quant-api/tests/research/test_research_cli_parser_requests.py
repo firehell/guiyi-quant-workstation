@@ -15,7 +15,6 @@ from app.guiyi_cli.data_parser import CliUsageError
 from app.guiyi_cli import research_parser
 from app.guiyi_cli.research_commands import run_research_command
 from app.guiyi_cli.research_payloads import _optional_decimal
-from app.guiyi_cli.research_requests import build_research_request
 from app.market_data.domain import BarFrequency
 from app.research.jdj.jdj_events import (
     JdjDirection,
@@ -54,8 +53,6 @@ from app.research.subing.subing_calibration_service import (
 )
 from app.market_data.subing_calibration import (
     CalibrationReport,
-    HorizonEvaluation,
-    ThresholdEvaluation,
 )
 from app.research.subing.subing_lifecycle_research_service import (
     LifecycleResearchRequest,
@@ -64,32 +61,14 @@ from app.research.subing.subing_lifecycle_research_service import (
 from app.research.subing.subing_candidate_validation_service import (
     CandidateValidationRequest,
 )
-
-
-def _arguments(
-    *,
-    phase: str = "slope",
-    mode: str = "discovery",
-    frequency: str = "5m",
-) -> list[str]:
-    return [
-        "research",
-        "subing-calibration",
-        "--phase",
-        phase,
-        "--mode",
-        mode,
-        "--frequency",
-        frequency,
-        "--since",
-        "2026-01-01",
-        "--through",
-        "2026-03-31",
-    ]
-
-
-def _request(arguments: list[str]):
-    return build_research_request(build_parser().parse_args(arguments))
+from research.research_cli_fixtures import (
+    _FakeResearchService,
+    _arguments,
+    _discovery_report,
+    _evaluation,
+    _horizon,
+    _request,
+)
 
 
 @pytest.mark.parametrize(
@@ -1007,37 +986,6 @@ def test_invalid_frequency_exits_two_before_service_construction() -> None:
     assert calls == []
 
 
-def _horizon(*, sample_count: int = 2) -> HorizonEvaluation:
-    return HorizonEvaluation(
-        sample_count=sample_count,
-        ema21_sample_count=sample_count,
-        median_directional_return_bps=Decimal("12.3400"),
-        median_mfe_bps=Decimal("18.500"),
-        median_mae_bps=Decimal("-3.250"),
-        ema21_failure_rate=Decimal("0.1250"),
-    )
-
-
-def _evaluation(threshold: str, *, sample_count: int = 2) -> ThresholdEvaluation:
-    return ThresholdEvaluation(
-        threshold=Decimal(threshold),
-        sample_count=sample_count,
-        horizons={3: _horizon(sample_count=sample_count)},
-    )
-
-
-def _discovery_report(
-    *, sample_count: int, product_counts: dict[str, int]
-) -> CalibrationReport:
-    candidates = (Decimal("1.2300"), Decimal("2.500"), Decimal("4"))
-    return CalibrationReport(
-        sample_count=sample_count,
-        product_sample_counts=product_counts,
-        candidate_thresholds=candidates,
-        candidate_evaluations=tuple(_evaluation(str(value)) for value in candidates),
-    )
-
-
 def _validation_report(
     *, sample_count: int, product_counts: dict[str, int]
 ) -> CalibrationReport:
@@ -1046,16 +994,6 @@ def _validation_report(
         product_sample_counts=product_counts,
         threshold_evaluation=_evaluation("2.7500", sample_count=sample_count),
     )
-
-
-class _FakeResearchService:
-    def __init__(self, result: CalibrationResearchResult) -> None:
-        self.result = result
-        self.requests = []
-
-    def run(self, request):
-        self.requests.append(request)
-        return self.result
 
 
 class _FakeLifecycleResearchService:

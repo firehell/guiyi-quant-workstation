@@ -78,9 +78,22 @@ def test_active_docs_and_cli_match_current_surfaces() -> None:
     assert "Lane 3" not in execution_review
     assert "G9 cleanup" not in development
     research_parser = importlib.import_module("app.guiyi_cli.research_parser")
-    for command in research_parser.RESEARCH_COMMAND_NAMES:
-        assert command in backend_readme
-        assert command in project_source
+    cli_main = importlib.import_module("app.guiyi_cli.main")
+    parser = cli_main.build_parser()
+    domain_action = next(
+        action for action in parser._actions if action.dest == "domain"
+    )
+    research_subparser = domain_action.choices["research"]
+    command_action = next(
+        action
+        for action in research_subparser._actions
+        if action.dest == "research_command"
+    )
+    expected_commands = set(research_parser.RESEARCH_COMMAND_NAMES)
+    assert set(command_action.choices) == expected_commands
+    command_pattern = re.compile(r"`guiyi research ([a-z0-9-]+)(?:\s|`)")
+    assert set(command_pattern.findall(backend_readme)) == expected_commands
+    assert set(command_pattern.findall(project_source)) == expected_commands
     assert "当前 Web 仅 Market" not in core_readme
 
 
