@@ -137,14 +137,16 @@ class MainForceMirrorV2SequenceFact:
     peak_index: int | None
     peak_pressure: float | None
     bars_since_peak: int | None
-    decay_ratio: float | None
+    decay_ratio: Decimal | None
+    peak_seen: bool
+    decay_seen: bool
     liquidation_seen: bool
     opposite_build_seen: bool
     accumulated_reversal_seen: bool
     state_transition: str | None
 ```
 
-它不是 API/Kernel 事实，不得被 Web 或其他 consumer import。
+`side` 在存在 active peak 时表示 peak side；无 active peak 时按当前非零 instant pressure 的符号给出 long/short，否则 neutral。它不是 API/Kernel 事实，不得被 Web 或其他 consumer import。
 
 ### 5.1 Same physical-contract only
 
@@ -181,6 +183,10 @@ negative pressure = instant/accumulated < 0
 
 不允许只针对 JM 顶部写单边规则。
 
+### 5.3 First occurrence only
+
+同一个 active peak 对 `decay_seen / liquidation_seen / opposite_build_seen / accumulated_reversal_seen` 每类最多产生一次事件。后续 Bar 仍可保留 `peak_index / bars_since_peak / decay_ratio` 作为 forensic context，但不得重复生成同一 cohort 事件。
+
 ## 6. 五个预定义 Research Profiles
 
 不做笛卡尔积网格，不做最优参数搜索。只冻结 5 个简单 profile，用来判断结论是否对“更快/更慢/更宽松/更严格”扰动稳定：
@@ -202,6 +208,17 @@ negative pressure = instant/accumulated < 0
 
 Peak candidate 使用同 block、strict-prior rolling percentile。当前 Bar 不进入自己的 percentile baseline；prior ready 样本不足 `peak_window` 时该 Bar 不能成为 peak candidate。
 
+Percentile 固定采用 **nearest-rank**，避免插值策略和额外依赖：
+
+```text
+ordered = sort(abs(prior ready instant pressure))
+rank = ceil(q * N)
+threshold = ordered[max(1, rank) - 1]
+peak_candidate = abs(current instant pressure) >= threshold
+```
+
+`turnover` 不允许成为 peak candidate；非零的其他四种 pressure state 都允许，因为本轮研究的是 directional pressure climax，而不是预先假设只有 build 才可能形成高潮。
+
 ## 7. Candidate Sequence Events
 
 本轮只研究事件事实，不发布正式 Phase：
@@ -215,6 +232,8 @@ peak_then_accumulated_reversal
 ```
 
 后四项都必须在事件实际发生的当前 Bar 才命中，不能回标 peak Bar。
+
+如果当前 Bar 既是前一个 peak 的 causal sequence event，又满足反方向的新 peak candidate，处理顺序固定为：先记录前一个 peak 的当前事件，再把当前 Bar 安装为后续 Bar 使用的新 active peak；不得让新 peak 覆盖当前 Bar 对旧 peak 的证据。
 
 ### 7.1 Decay
 
@@ -248,7 +267,7 @@ short peak:
   long_build       → opposite_build_seen
 ```
 
-状态必须发生在 profile 的 `transition_window` 内；超过窗口则该 profile 不命中。
+状态必须发生在 profile 的 `transition_window` 内；超过窗口则该 profile 不命中，active peak memory 过期。
 
 ## 8. Retrospective Outcome
 
@@ -271,6 +290,8 @@ peak_then_accumulated_reversal
 ```
 
 每个 profile 输出这些 cohort 的 summary。输出继续按 product/year 分层，并新增 side=`long|short` 维度；pooled 只作摘要。
+
+`peak_only` 的 observation time 是 peak Bar；其余 sequence cohort 的 observation time 都是对应 evidence 首次实际出现的 Bar。这样 future horizon 从“当时已经知道该事实”的时点开始，禁止从 peak Bar 回测后验事件。
 
 评价优先级：
 
@@ -332,6 +353,8 @@ derive(points[0:N], profile)[t]
 ```text
 peak identity
 decay_ratio
+peak_seen
+decay_seen
 liquidation_seen
 opposite_build_seen
 accumulated_reversal_seen
@@ -390,10 +413,11 @@ STATUS.md / PROJECT_SOURCE.md / DECISIONS.md
 4. contract switch reset tests；
 5. prefix invariance tests；
 6. no future outcome leaks into sequence facts；
-7. `--forensic` 只改变 stdout detail，不改变 market/V2 calculation；
-8. V2 Kernel golden/Registry/Service tests保持通过；
-9. 无新 module/package/service/endpoint/migration；
-10. 无 RQData/Canonical/DB/Redis 写入。
+7. 同一 peak 的每类 sequence event 只首次产生一次；
+8. `--forensic` 只改变 stdout detail，不改变 market/V2 calculation；
+9. V2 Kernel golden/Registry/Service tests保持通过；
+10. 无新 module/package/service/endpoint/migration；
+11. 无 RQData/Canonical/DB/Redis 写入。
 
 研究 Gate：
 
