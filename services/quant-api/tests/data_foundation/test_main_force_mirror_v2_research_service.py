@@ -881,6 +881,45 @@ def test_sequence_summary_does_not_join_peak_and_event_across_roll() -> None:
     ][1].sample_count == 0
 
 
+class _RecordingMarketData(_MarketData):
+    def __init__(self) -> None:
+        super().__init__()
+        self.requests: list[object] = []
+
+    def query_actual_dominant_trading_days(
+        self, request: object
+    ) -> MarketSeriesResult:
+        self.requests.append(request)
+        return super().query_actual_dominant_trading_days(request)
+
+
+class _RecordingMirrorService(_MirrorService):
+    def __init__(self) -> None:
+        super().__init__()
+        self.requests: list[object] = []
+
+    def query_page(self, request: object) -> MainForceMirrorV2PageResult:
+        self.requests.append(request)
+        return super().query_page(request)
+
+
+def test_forensic_flag_does_not_change_market_or_v2_query_identity() -> None:
+    normal_market = _RecordingMarketData()
+    normal_mirror = _RecordingMirrorService()
+    forensic_market = _RecordingMarketData()
+    forensic_mirror = _RecordingMirrorService()
+
+    MainForceMirrorV2ResearchService(
+        market_data=normal_market, mirror_service=normal_mirror
+    ).run(_request())
+    MainForceMirrorV2ResearchService(
+        market_data=forensic_market, mirror_service=forensic_mirror
+    ).run(replace(_request(), forensic=True))
+
+    assert forensic_market.requests == normal_market.requests
+    assert forensic_mirror.requests == normal_mirror.requests
+
+
 def _directional_fixture_result():
     first_day = date(2026, 2, 2)
     second_day = date(2026, 2, 3)

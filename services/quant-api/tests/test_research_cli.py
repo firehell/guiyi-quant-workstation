@@ -26,11 +26,15 @@ from app.research.subing.candidate_validation import (
     summarize_rolling_stability,
 )
 from app.market_data.domain import BarFrequency, SeriesKind
+from guiyi_quant.indicators.main_force_mirror_v2 import MainForceMirrorV2Point
 from app.research.main_force.main_force_mirror_v2_research_service import (
+    MainForceMirrorV2ForensicPoint,
     MainForceMirrorV2GroupSpread,
     MainForceMirrorV2HorizonSummary,
     MainForceMirrorV2ResearchRequest,
     MainForceMirrorV2ResearchResult,
+    MainForceMirrorV2SequenceFact,
+    MainForceMirrorV2SequenceProfileSummary,
     MainForceMirrorV2SensitivitySummary,
 )
 from app.research.jdj.jdj_events import (
@@ -2001,6 +2005,7 @@ def _mirror_arguments(
     *,
     series_kind: str = "actual_dominant",
     contract: str | None = None,
+    forensic: bool = False,
 ) -> list[str]:
     arguments = [
         "research",
@@ -2018,6 +2023,8 @@ def _mirror_arguments(
     ]
     if contract is not None:
         arguments.extend(("--contract", contract))
+    if forensic:
+        arguments.append("--forensic")
     return arguments
 
 
@@ -2052,6 +2059,15 @@ def _mirror_result() -> MainForceMirrorV2ResearchResult:
         top_sample_count=2,
         bottom_sample_count=1,
     )
+    empty_profiles = {
+        profile_id: MainForceMirrorV2SequenceProfileSummary(
+            profile_id=profile_id,  # type: ignore[arg-type]
+            yearly={},
+            by_side={"long": {}, "short": {}},
+            pooled={},
+        )
+        for profile_id in ("balanced", "fast", "slow", "loose", "strict")
+    }
     return MainForceMirrorV2ResearchResult(
         indicator_code="main_force_mirror_v2",
         indicator_version="futures-member-research-v2",
@@ -2082,7 +2098,115 @@ def _mirror_result() -> MainForceMirrorV2ResearchResult:
                 pooled={5: summary},
             )
         },
+        sequence_profiles=empty_profiles,
+        forensic_points=None,
     )
+
+
+def _mirror_forensic_fixture() -> MainForceMirrorV2ForensicPoint:
+    point = MainForceMirrorV2Point(
+        bar_end=datetime(2026, 3, 23, 7, tzinfo=UTC),
+        trading_day=date(2026, 3, 23),
+        physical_contract="JM2609",
+        pressure_ready=True,
+        pressure_state="short_build",
+        instant_pressure=-95.0,
+        accumulated_ready=True,
+        accumulated_pressure=-70.0,
+        caution_ready=True,
+        caution="long_chase_caution",
+        caution_conflict=False,
+        long_caution_score=70.0,
+        short_caution_score=0.0,
+        caution_reason_codes=("LONG_UPPER_EXTREME",),
+        member=None,
+        unavailable_reason=None,
+        price_impulse=-2.0,
+        clv=0.2,
+        volume_ratio=2.1,
+        delta_oi=1000.0,
+        oi_impulse=2.5,
+        range_position=0.05,
+    )
+    fact = MainForceMirrorV2SequenceFact(
+        index=0,
+        current_side="short",
+        pressure_state="short_build",
+        instant_pressure=-95.0,
+        accumulated_pressure=-70.0,
+        active_peak_index=10,
+        active_peak_side="long",
+        active_peak_instant_pressure=100.0,
+        active_peak_accumulated_pressure=80.0,
+        bars_since_active_peak=2,
+        decay_ratio=Decimal("1.875"),
+        installed_peak_index=12,
+        installed_peak_side="short",
+        installed_peak_instant_pressure=-95.0,
+        installed_peak_accumulated_pressure=-70.0,
+        peak_seen=True,
+        decay_seen=True,
+        liquidation_seen=False,
+        opposite_build_seen=True,
+        accumulated_reversal_seen=True,
+        state_transition="long_liquidation->short_build",
+    )
+    return MainForceMirrorV2ForensicPoint(point=point, sequence=fact)
+
+
+def test_mirror_forensic_flag_is_explicit_and_defaults_off() -> None:
+    normal = _request(_mirror_arguments())
+    forensic = _request(_mirror_arguments(forensic=True))
+
+    assert normal.forensic is False
+    assert forensic.forensic is True
+
+
+def test_mirror_request_rejects_non_boolean_forensic() -> None:
+    with pytest.raises(ValueError, match="forensic must be boolean"):
+        MainForceMirrorV2ResearchRequest(
+            symbol="jm",
+            series_kind=SeriesKind.ACTUAL_DOMINANT,
+            contract=None,
+            frequency=BarFrequency.H1,
+            since=date(2023, 1, 1),
+            through=date(2026, 8, 18),
+            forensic="yes",  # type: ignore[arg-type]
+        )
+
+
+def test_mirror_default_payload_adds_profiles_without_forensic_points() -> None:
+    request = _request(_mirror_arguments())
+    payload = run_research_command(
+        request, _FakeMirrorResearchService(_mirror_result())
+    )
+
+    assert tuple(payload["sequence_profiles"]) == (
+        "balanced",
+        "fast",
+        "slow",
+        "loose",
+        "strict",
+    )
+    assert "forensic_points" not in payload
+
+
+def test_mirror_forensic_payload_is_balanced_readonly_dual_fact_detail() -> None:
+    request = _request(_mirror_arguments(forensic=True))
+    result = replace(
+        _mirror_result(), forensic_points=(_mirror_forensic_fixture(),)
+    )
+    payload = run_research_command(request, _FakeMirrorResearchService(result))
+
+    assert len(payload["forensic_points"]) == 1
+    rendered = payload["forensic_points"][0]
+    assert rendered["physical_contract"] == "JM2609"
+    assert rendered["pressure_state"] == "short_build"
+    assert rendered["sequence"]["profile_id"] == "balanced"
+    assert rendered["sequence"]["active_peak_side"] == "long"
+    assert rendered["sequence"]["installed_peak_side"] == "short"
+    assert rendered["sequence"]["peak_seen"] is True
+    assert rendered["member_status"] == "unavailable"
 
 
 def test_mirror_request_parses_exact_actual_dominant_and_contract_modes() -> None:

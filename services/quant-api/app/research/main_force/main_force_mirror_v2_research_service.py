@@ -113,6 +113,12 @@ class MainForceMirrorV2SequenceFact:
     state_transition: str | None
 
 
+@dataclass(frozen=True, slots=True)
+class MainForceMirrorV2ForensicPoint:
+    point: MainForceMirrorV2Point
+    sequence: MainForceMirrorV2SequenceFact
+
+
 @dataclass(slots=True)
 class _ActiveSequencePeak:
     index: int
@@ -134,6 +140,7 @@ class MainForceMirrorV2ResearchRequest:
     frequency: BarFrequency
     since: date
     through: date
+    forensic: bool = False
 
     def __post_init__(self) -> None:
         if not isinstance(self.symbol, str) or not self.symbol.strip():
@@ -163,6 +170,8 @@ class MainForceMirrorV2ResearchRequest:
             or self.since > self.through
         ):
             raise ValueError("trading-day window is invalid")
+        if type(self.forensic) is not bool:
+            raise ValueError("forensic must be boolean")
         object.__setattr__(self, "symbol", symbol)
         object.__setattr__(self, "series_kind", series_kind)
         object.__setattr__(self, "contract", contract)
@@ -238,6 +247,7 @@ class MainForceMirrorV2ResearchResult:
     sequence_profiles: Mapping[
         str, MainForceMirrorV2SequenceProfileSummary
     ] = field(default_factory=lambda: MappingProxyType({}))
+    forensic_points: tuple[MainForceMirrorV2ForensicPoint, ...] | None = None
 
 
 class MainForceMirrorV2ResearchError(RuntimeError):
@@ -321,8 +331,16 @@ class MainForceMirrorV2ResearchService:
         pooled = _summarize_cohorts(observations, bars, points)
         yearly = _yearly(observations, bars, points)
         by_product = _by_product(observations, bars, points)
-        sequence_profiles = _sequence_profile_summaries(
+        sequence_profiles, balanced_facts = _sequence_profile_summaries(
             request.symbol, bars, points
+        )
+        forensic_points = (
+            tuple(
+                MainForceMirrorV2ForensicPoint(point=point, sequence=fact)
+                for point, fact in zip(points, balanced_facts, strict=True)
+            )
+            if request.forensic
+            else None
         )
         caution_ready_bars = sum(point.caution_ready for point in points)
         caution_events = sum(point.caution is not None for point in points)
@@ -363,6 +381,7 @@ class MainForceMirrorV2ResearchService:
             top_bottom_spreads=_top_bottom_spreads(observations, bars, points),
             sensitivity=_sensitivity(request.symbol, bars, points),
             sequence_profiles=sequence_profiles,
+            forensic_points=forensic_points,
         )
 
     def _query_market(
@@ -1057,10 +1076,16 @@ def _sequence_profile_summaries(
     product: str,
     bars: tuple[CanonicalBar, ...],
     points: tuple[MainForceMirrorV2Point, ...],
-) -> Mapping[str, MainForceMirrorV2SequenceProfileSummary]:
+) -> tuple[
+    Mapping[str, MainForceMirrorV2SequenceProfileSummary],
+    tuple[MainForceMirrorV2SequenceFact, ...],
+]:
     result: dict[str, MainForceMirrorV2SequenceProfileSummary] = {}
+    balanced_facts: tuple[MainForceMirrorV2SequenceFact, ...] = ()
     for profile in SEQUENCE_PROFILES:
         facts = _derive_sequence_facts(points, profile)
+        if profile.profile_id == "balanced":
+            balanced_facts = facts
         observations = _sequence_observations(product, points, facts)
         result[profile.profile_id] = MainForceMirrorV2SequenceProfileSummary(
             profile_id=profile.profile_id,
@@ -1070,7 +1095,7 @@ def _sequence_profile_summaries(
                 observations, SEQUENCE_COHORTS, bars, points
             ),
         )
-    return MappingProxyType(result)
+    return MappingProxyType(result), balanced_facts
 
 
 def _yearly(

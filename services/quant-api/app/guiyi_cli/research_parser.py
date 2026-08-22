@@ -93,3 +93,4 @@ def add_research_commands(
     mirror.add_argument("--frequency", choices=("60m",), required=True)
     mirror.add_argument("--since", required=True)
     mirror.add_argument("--through", required=True)
+    mirror.add_argument("--forensic", action="store_true")
