@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import replace
-from datetime import date
+from datetime import date, datetime
 import json
 from pathlib import Path
 
@@ -22,14 +22,15 @@ from app.research.candidate_convergence.five_candidate_relationships import (
     RelationshipKind,
     load_five_candidate_relationship_protocol,
 )
+from app.research.jdj.jdj_research import JDJ_CANDIDATE_SOURCE_EVENT_KINDS
 
 
 CANDIDATES = (
-    "subing_entry_signal_v1",
-    "n_pattern_v1",
-    "jdj_interaction_candidate_v1",
-    "r6_trend_level_v1",
-    "klb_trend_level_v1",
+    "subing_lifecycle_v2_candidate_v1",
+    "n_structure_5m_candidate_v1",
+    "jdj_trend_follow_1m_candidate_v1",
+    "jdj_trend_reentry_6_1m_candidate_v1",
+    "jdj_key_level_breakout_1m_candidate_v1",
 )
 SUBING, N, TF, R6, KLB = CANDIDATES
 JDJ_CANDIDATES = (TF, R6, KLB)
@@ -70,6 +71,39 @@ PROTOCOL_PATH = (
     PROJECT_ROOT
     / "data/research_protocols/five_candidate_relationship_topology_v1.json"
 )
+DOSSIER_PATH = (
+    PROJECT_ROOT
+    / "reports/research/candidate_dossier/"
+    "five_candidate_research_dossier_v1/"
+    "five-candidate-retrospective-evidence-freeze-2026-08-22.json"
+)
+
+
+def test_relationship_protocol_uses_frozen_candidate_ids() -> None:
+    dossier = json.loads(DOSSIER_PATH.read_text(encoding="utf-8"))
+    protocol = load_five_candidate_relationship_protocol()
+
+    assert tuple(dossier["candidate_order"]) == CANDIDATES
+    assert tuple(JDJ_CANDIDATE_SOURCE_EVENT_KINDS) == JDJ_CANDIDATES
+    assert protocol.candidate_order == CANDIDATES
+
+
+def test_relationship_protocol_rejects_equivalent_nonliteral_frozen_at() -> None:
+    protocol = load_five_candidate_relationship_protocol()
+
+    with pytest.raises(FiveCandidateRelationshipProtocolError):
+        replace(
+            protocol,
+            frozen_at=datetime.fromisoformat("2026-08-22T06:01:54+00:00"),
+        )
+
+
+def test_relationship_report_rejects_equivalent_nonliteral_frozen_at() -> None:
+    with pytest.raises(FiveCandidateRelationshipReportError):
+        replace(
+            _report(),
+            frozen_at=datetime.fromisoformat("2026-08-22T06:01:54+00:00"),
+        )
 
 
 def test_relationship_protocol_has_exact_windows() -> None:
@@ -369,3 +403,48 @@ def test_available_rows_require_complete_lineage_and_metrics() -> None:
         replace(dependency, events_with_exact_pivot_lineage=0)
     with pytest.raises(FiveCandidateRelationshipReportError):
         replace(overlap, left_events_with_same_direction_match=None)
+
+
+@pytest.mark.parametrize(
+    ("same_direction_count", "left_unique_count", "right_unique_count"),
+    (
+        (1, 0, 0),
+        (1, 0, 1),
+        (1, 1, 0),
+        (2, 1, 1),
+    ),
+)
+def test_available_overlap_rows_require_same_direction_match_closure(
+    same_direction_count: int,
+    left_unique_count: int,
+    right_unique_count: int,
+) -> None:
+    overlap = _overlap_rows()[0]
+
+    with pytest.raises(FiveCandidateRelationshipReportError):
+        replace(
+            overlap,
+            exact_same_boundary_same_direction_count=same_direction_count,
+            left_events_with_same_direction_match=left_unique_count,
+            right_events_with_same_direction_match=right_unique_count,
+        )
+
+
+def test_available_overlap_rows_accept_closed_zero_and_positive_matches() -> None:
+    overlap = _overlap_rows()[0]
+
+    zero_match = replace(
+        overlap,
+        exact_same_boundary_same_direction_count=0,
+        left_events_with_same_direction_match=0,
+        right_events_with_same_direction_match=0,
+    )
+    positive_match = replace(
+        overlap,
+        exact_same_boundary_same_direction_count=2,
+        left_events_with_same_direction_match=1,
+        right_events_with_same_direction_match=2,
+    )
+
+    assert zero_match.exact_same_boundary_same_direction_count == 0
+    assert positive_match.exact_same_boundary_same_direction_count == 2

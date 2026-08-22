@@ -5,73 +5,73 @@
   "research_only": true,
   "readonly": true,
   "candidate_order": [
-    "subing_entry_signal_v1",
-    "n_pattern_v1",
-    "jdj_interaction_candidate_v1",
-    "r6_trend_level_v1",
-    "klb_trend_level_v1"
+    "subing_lifecycle_v2_candidate_v1",
+    "n_structure_5m_candidate_v1",
+    "jdj_trend_follow_1m_candidate_v1",
+    "jdj_trend_reentry_6_1m_candidate_v1",
+    "jdj_key_level_breakout_1m_candidate_v1"
   ],
   "pair_order": [
-    ["subing_entry_signal_v1", "n_pattern_v1"],
-    ["n_pattern_v1", "jdj_interaction_candidate_v1"],
-    ["n_pattern_v1", "r6_trend_level_v1"],
-    ["n_pattern_v1", "klb_trend_level_v1"],
-    ["jdj_interaction_candidate_v1", "r6_trend_level_v1"],
-    ["jdj_interaction_candidate_v1", "klb_trend_level_v1"],
-    ["r6_trend_level_v1", "klb_trend_level_v1"],
-    ["subing_entry_signal_v1", "jdj_interaction_candidate_v1"],
-    ["subing_entry_signal_v1", "r6_trend_level_v1"],
-    ["subing_entry_signal_v1", "klb_trend_level_v1"]
+    ["subing_lifecycle_v2_candidate_v1", "n_structure_5m_candidate_v1"],
+    ["n_structure_5m_candidate_v1", "jdj_trend_follow_1m_candidate_v1"],
+    ["n_structure_5m_candidate_v1", "jdj_trend_reentry_6_1m_candidate_v1"],
+    ["n_structure_5m_candidate_v1", "jdj_key_level_breakout_1m_candidate_v1"],
+    ["jdj_trend_follow_1m_candidate_v1", "jdj_trend_reentry_6_1m_candidate_v1"],
+    ["jdj_trend_follow_1m_candidate_v1", "jdj_key_level_breakout_1m_candidate_v1"],
+    ["jdj_trend_reentry_6_1m_candidate_v1", "jdj_key_level_breakout_1m_candidate_v1"],
+    ["subing_lifecycle_v2_candidate_v1", "jdj_trend_follow_1m_candidate_v1"],
+    ["subing_lifecycle_v2_candidate_v1", "jdj_trend_reentry_6_1m_candidate_v1"],
+    ["subing_lifecycle_v2_candidate_v1", "jdj_key_level_breakout_1m_candidate_v1"]
   ],
   "relationship_catalog": [
     {
-      "left_candidate_id": "subing_entry_signal_v1",
-      "right_candidate_id": "n_pattern_v1",
+      "left_candidate_id": "subing_lifecycle_v2_candidate_v1",
+      "right_candidate_id": "n_structure_5m_candidate_v1",
       "relation_kind": "EXISTING_EVENT_RELATIONSHIP"
     },
     {
-      "left_candidate_id": "n_pattern_v1",
-      "right_candidate_id": "jdj_interaction_candidate_v1",
+      "left_candidate_id": "n_structure_5m_candidate_v1",
+      "right_candidate_id": "jdj_trend_follow_1m_candidate_v1",
       "relation_kind": "STRUCTURAL_CONTEXT_DEPENDENCY"
     },
     {
-      "left_candidate_id": "n_pattern_v1",
-      "right_candidate_id": "r6_trend_level_v1",
+      "left_candidate_id": "n_structure_5m_candidate_v1",
+      "right_candidate_id": "jdj_trend_reentry_6_1m_candidate_v1",
       "relation_kind": "STRUCTURAL_CONTEXT_DEPENDENCY"
     },
     {
-      "left_candidate_id": "n_pattern_v1",
-      "right_candidate_id": "klb_trend_level_v1",
+      "left_candidate_id": "n_structure_5m_candidate_v1",
+      "right_candidate_id": "jdj_key_level_breakout_1m_candidate_v1",
       "relation_kind": "STRUCTURAL_CONTEXT_DEPENDENCY"
     },
     {
-      "left_candidate_id": "jdj_interaction_candidate_v1",
-      "right_candidate_id": "r6_trend_level_v1",
+      "left_candidate_id": "jdj_trend_follow_1m_candidate_v1",
+      "right_candidate_id": "jdj_trend_reentry_6_1m_candidate_v1",
       "relation_kind": "EXACT_SAME_BOUNDARY_OVERLAP"
     },
     {
-      "left_candidate_id": "jdj_interaction_candidate_v1",
-      "right_candidate_id": "klb_trend_level_v1",
+      "left_candidate_id": "jdj_trend_follow_1m_candidate_v1",
+      "right_candidate_id": "jdj_key_level_breakout_1m_candidate_v1",
       "relation_kind": "EXACT_SAME_BOUNDARY_OVERLAP"
     },
     {
-      "left_candidate_id": "r6_trend_level_v1",
-      "right_candidate_id": "klb_trend_level_v1",
+      "left_candidate_id": "jdj_trend_reentry_6_1m_candidate_v1",
+      "right_candidate_id": "jdj_key_level_breakout_1m_candidate_v1",
       "relation_kind": "EXACT_SAME_BOUNDARY_OVERLAP"
     },
     {
-      "left_candidate_id": "subing_entry_signal_v1",
-      "right_candidate_id": "jdj_interaction_candidate_v1",
+      "left_candidate_id": "subing_lifecycle_v2_candidate_v1",
+      "right_candidate_id": "jdj_trend_follow_1m_candidate_v1",
       "relation_kind": "UNDEFINED_CROSS_TIMEFRAME"
     },
     {
-      "left_candidate_id": "subing_entry_signal_v1",
-      "right_candidate_id": "r6_trend_level_v1",
+      "left_candidate_id": "subing_lifecycle_v2_candidate_v1",
+      "right_candidate_id": "jdj_trend_reentry_6_1m_candidate_v1",
       "relation_kind": "UNDEFINED_CROSS_TIMEFRAME"
     },
     {
-      "left_candidate_id": "subing_entry_signal_v1",
-      "right_candidate_id": "klb_trend_level_v1",
+      "left_candidate_id": "subing_lifecycle_v2_candidate_v1",
+      "right_candidate_id": "jdj_key_level_breakout_1m_candidate_v1",
       "relation_kind": "UNDEFINED_CROSS_TIMEFRAME"
     }
   ],
@@ -103,21 +103,21 @@
       "since": "2023-01-01",
       "through": "2026-08-19",
       "candidates": [
-        "jdj_interaction_candidate_v1",
-        "r6_trend_level_v1",
-        "klb_trend_level_v1"
+        "jdj_trend_follow_1m_candidate_v1",
+        "jdj_trend_reentry_6_1m_candidate_v1",
+        "jdj_key_level_breakout_1m_candidate_v1"
       ],
       "dependency_roles": [
         {
-          "candidate_id": "jdj_interaction_candidate_v1",
+          "candidate_id": "jdj_trend_follow_1m_candidate_v1",
           "role": "trend_filter"
         },
         {
-          "candidate_id": "r6_trend_level_v1",
+          "candidate_id": "jdj_trend_reentry_6_1m_candidate_v1",
           "role": "trend_filter"
         },
         {
-          "candidate_id": "klb_trend_level_v1",
+          "candidate_id": "jdj_key_level_breakout_1m_candidate_v1",
           "role": "trend_and_pivot_source"
         }
       ],
@@ -129,9 +129,9 @@
       "since": "2023-01-01",
       "through": "2026-08-20",
       "pairs": [
-        ["jdj_interaction_candidate_v1", "r6_trend_level_v1"],
-        ["jdj_interaction_candidate_v1", "klb_trend_level_v1"],
-        ["r6_trend_level_v1", "klb_trend_level_v1"]
+        ["jdj_trend_follow_1m_candidate_v1", "jdj_trend_reentry_6_1m_candidate_v1"],
+        ["jdj_trend_follow_1m_candidate_v1", "jdj_key_level_breakout_1m_candidate_v1"],
+        ["jdj_trend_reentry_6_1m_candidate_v1", "jdj_key_level_breakout_1m_candidate_v1"]
       ],
       "proximity": null,
       "future_outcomes": false
@@ -139,9 +139,9 @@
     "subing_jdj": {
       "relation_kind": "UNDEFINED_CROSS_TIMEFRAME",
       "pairs": [
-        ["subing_entry_signal_v1", "jdj_interaction_candidate_v1"],
-        ["subing_entry_signal_v1", "r6_trend_level_v1"],
-        ["subing_entry_signal_v1", "klb_trend_level_v1"]
+        ["subing_lifecycle_v2_candidate_v1", "jdj_trend_follow_1m_candidate_v1"],
+        ["subing_lifecycle_v2_candidate_v1", "jdj_trend_reentry_6_1m_candidate_v1"],
+        ["subing_lifecycle_v2_candidate_v1", "jdj_key_level_breakout_1m_candidate_v1"]
       ],
       "recompute": false
     }

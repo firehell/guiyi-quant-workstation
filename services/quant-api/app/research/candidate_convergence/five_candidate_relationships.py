@@ -22,14 +22,13 @@ _PROTOCOL_PATH = (
     / "data/research_protocols/five_candidate_relationship_topology_v1.json"
 )
 _FROZEN_AT_TEXT = "2026-08-22T14:01:54+08:00"
-_FROZEN_AT = datetime.fromisoformat(_FROZEN_AT_TEXT)
 
 RELATIONSHIP_CANDIDATES = (
-    "subing_entry_signal_v1",
-    "n_pattern_v1",
-    "jdj_interaction_candidate_v1",
-    "r6_trend_level_v1",
-    "klb_trend_level_v1",
+    "subing_lifecycle_v2_candidate_v1",
+    "n_structure_5m_candidate_v1",
+    "jdj_trend_follow_1m_candidate_v1",
+    "jdj_trend_reentry_6_1m_candidate_v1",
+    "jdj_key_level_breakout_1m_candidate_v1",
 )
 _SUBING, _N, _TF, _R6, _KLB = RELATIONSHIP_CANDIDATES
 RELATIONSHIP_JDJ_CANDIDATES = (_TF, _R6, _KLB)
@@ -242,7 +241,8 @@ class FiveCandidateRelationshipProtocol:
             type(self.schema_version) is not int
             or self.schema_version != 1
             or self.protocol_id != _PROTOCOL_ID
-            or self.frozen_at != _FROZEN_AT
+            or type(self.frozen_at) is not datetime
+            or self.frozen_at.isoformat() != _FROZEN_AT_TEXT
             or self.research_only is not True
             or self.readonly is not True
             or self.candidate_order != RELATIONSHIP_CANDIDATES
@@ -425,6 +425,9 @@ class JdjExactOverlapResult:
             or self.exact_same_boundary_same_direction_count
             < self.right_events_with_same_direction_match
             or self.exact_same_boundary_same_direction_count
+            > self.left_events_with_same_direction_match
+            * self.right_events_with_same_direction_match
+            or self.exact_same_boundary_same_direction_count
             + self.exact_same_boundary_opposite_direction_count
             > self.left_event_count * self.right_event_count
         ):
@@ -485,7 +488,8 @@ class FiveCandidateRelationshipReport:
             )
             or self.status != "ok"
             or self.protocol_id != _PROTOCOL_ID
-            or self.frozen_at != _FROZEN_AT
+            or type(self.frozen_at) is not datetime
+            or self.frozen_at.isoformat() != _FROZEN_AT_TEXT
             or self.research_only is not True
             or self.readonly is not True
             or self.prospective_consumed is not False
