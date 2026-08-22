@@ -379,6 +379,42 @@ def test_setup_opposite_close_invalidates_and_prevents_pivot_reuse() -> None:
     ]
 
 
+def test_range_creation_bar_immediately_consumes_close_with_exact_boundaries() -> None:
+    pivots = (
+        _pivot("high", pivot_index=0, confirmed_index=1, price="12"),
+        _pivot("low", pivot_index=1, confirmed_index=2, price="8"),
+        _pivot("high", pivot_index=2, confirmed_index=3, price="11"),
+        _pivot("low", pivot_index=3, confirmed_index=4, price="9"),
+    )
+    cases = (
+        ("long", "7.9", None, "setup_invalidated"),
+        ("long", "8", "setup", "range_confirmed"),
+        ("long", "12", "setup", "range_confirmed"),
+        ("long", "12.1", "breakout", "range_breakout"),
+        ("short", "12.1", None, "setup_invalidated"),
+        ("short", "12", "setup", "range_confirmed"),
+        ("short", "8", "setup", "range_confirmed"),
+        ("short", "7.9", "breakout", "range_breakout"),
+    )
+
+    for direction, close, expected_stage, expected_reason in cases:
+        bars = tuple(
+            _focus_bar(
+                index,
+                high="13",
+                low="7",
+                close=close if index == 4 else "10",
+            )
+            for index in range(5)
+        )
+        result = replay_lifecycle(direction, bars, pivots)
+
+        assert (result.state.stage if result.state is not None else None) == expected_stage
+        assert result.transitions[-1].reason == expected_reason
+        if expected_reason != "range_confirmed":
+            assert result.transitions[-1].transition_at == bars[4].bar.bar_end
+
+
 def test_breakout_requires_close_and_counts_only_three_later_bars() -> None:
     closes = ("10", "10", "10", "10", "10", "12", "12.1", "12.2", "12.3", "12.4")
     bars = tuple(
@@ -658,6 +694,7 @@ def test_5m_trigger_must_be_later_than_reference_confirmation() -> None:
 
     assert result.state is not None
     assert result.state.stage == "ready"
+    assert result.state.entry_reference == Decimal("15")
 
 
 def test_5m_rebreak_below_2x_volume_does_not_confirm() -> None:
@@ -887,6 +924,172 @@ def test_future_bars_never_rewrite_prior_transition_prefixes() -> None:
         assert prefix.transitions == expected
 
     assert replay_lifecycle("long", bars, pivots).state == full.state
+
+
+def test_raw_15m_5m_replay_preserves_every_transition_under_all_cutoffs() -> None:
+    raw_fifteen, raw_five = _running_intraday_pages()
+    fifteen = tuple(FocusBar(bar, BarFrequency.M15, "JM2609") for bar in raw_fifteen)
+    five = tuple(FocusBar(bar, BarFrequency.M5, "JM2609") for bar in raw_five)
+    cutoffs = tuple(
+        sorted({item.bar.bar_end for item in fifteen} | {item.bar.bar_end for item in five})
+    )
+    full = replay_trend_focus("long", fifteen, five, observed_at=cutoffs[-1])
+
+    assert full.state is not None and full.state.stage == "running"
+    assert {item.stage for item in full.transitions} >= {
+        "setup",
+        "breakout",
+        "retest",
+        "ready",
+        "running",
+    }
+    for cutoff in cutoffs:
+        prefix = replay_trend_focus(
+            "long",
+            tuple(item for item in fifteen if item.bar.bar_end <= cutoff),
+            tuple(item for item in five if item.bar.bar_end <= cutoff),
+            observed_at=cutoff,
+        )
+        expected = tuple(
+            item for item in full.transitions if item.transition_at <= cutoff
+        )
+        assert prefix.transitions == expected
+
+
+def test_outside_reset_swing_facts_are_prefix_invariant() -> None:
+    bars = tuple(
+        _focus_bar(index, high=high, low=low)
+        for index, (high, low) in enumerate(
+            (("10", "8"), ("12", "9"), ("13", "10"), ("14", "7"), ("13", "8"), ("12", "7"), ("13", "8"))
+        )
+    )
+    full = reduce_swings(bars, observed_at=bars[-1].bar.bar_end)
+
+    assert full.epoch == 1
+    for cutoff_index, cutoff_bar in enumerate(bars, start=1):
+        prefix = reduce_swings(
+            bars[:cutoff_index], observed_at=cutoff_bar.bar.bar_end
+        )
+        assert prefix.pivots == tuple(
+            pivot for pivot in full.pivots if pivot.confirmed_at <= cutoff_bar.bar.bar_end
+        )
+
+
+def test_short_running_weakening_and_recovery_are_price_axis_mirrors() -> None:
+    long_bars, long_pivots = _long_retest_fixture()
+    continuation = tuple(
+        _focus_bar(
+            index,
+            high="15",
+            low="9",
+            close={15: "10.5", 20: "14.1"}.get(index, "13"),
+        )
+        for index in range(14, 21)
+    )
+    long_bars += continuation
+    long_pivots += (
+        _pivot("low", pivot_index=16, confirmed_index=17, price="10"),
+        _pivot("high", pivot_index=18, confirmed_index=19, price="14"),
+    )
+    long_five_bars, long_five_pivots = _five_minute_entry_fixture()
+    short_bars = tuple(
+        FocusBar(
+            CanonicalBar(
+                bar_end=item.bar.bar_end,
+                trading_day=item.bar.trading_day,
+                open=Decimal("30") - item.bar.open,
+                high=Decimal("30") - item.bar.low,
+                low=Decimal("30") - item.bar.high,
+                close=Decimal("30") - item.bar.close,
+                volume=item.bar.volume,
+                turnover=None,
+                open_interest=None,
+            ),
+            item.frequency,
+            item.physical_contract,
+        )
+        for item in long_bars
+    )
+    short_pivots = tuple(
+        replace(
+            pivot,
+            kind="low" if pivot.kind == "high" else "high",
+            price=Decimal("30") - pivot.price,
+        )
+        for pivot in long_pivots
+    )
+    short_five_bars = tuple(
+        FocusBar(
+            CanonicalBar(
+                bar_end=item.bar.bar_end,
+                trading_day=item.bar.trading_day,
+                open=Decimal("30") - item.bar.open,
+                high=Decimal("30") - item.bar.low,
+                low=Decimal("30") - item.bar.high,
+                close=Decimal("30") - item.bar.close,
+                volume=item.bar.volume,
+                turnover=None,
+                open_interest=None,
+            ),
+            item.frequency,
+            item.physical_contract,
+        )
+        for item in long_five_bars
+    )
+    short_five_pivots = tuple(
+        replace(
+            pivot,
+            kind="low" if pivot.kind == "high" else "high",
+            price=Decimal("30") - pivot.price,
+        )
+        for pivot in long_five_pivots
+    )
+
+    weakened = replay_lifecycle(
+        "short",
+        short_bars[:16],
+        short_pivots,
+        bars_5m=short_five_bars,
+        pivots_5m=short_five_pivots,
+    )
+    awaiting_rebreak = replay_lifecycle(
+        "short",
+        short_bars[:20],
+        short_pivots,
+        bars_5m=short_five_bars,
+        pivots_5m=short_five_pivots,
+    )
+    recovered = replay_lifecycle(
+        "short",
+        short_bars,
+        short_pivots,
+        bars_5m=short_five_bars,
+        pivots_5m=short_five_pivots,
+    )
+
+    assert weakened.state is not None and weakened.state.stage == "weakening"
+    assert awaiting_rebreak.state is not None
+    assert awaiting_rebreak.state.stage == "weakening"
+    assert awaiting_rebreak.state.recovery_reference == Decimal("16")
+    assert recovered.state is not None and recovered.state.stage == "running"
+    assert recovered.transitions[-1].reason == "trend_recovered"
+
+
+def test_physical_contract_replay_is_recomputed_without_lifecycle_inheritance() -> None:
+    raw_fifteen, raw_five = _running_intraday_pages()
+    bars_a = tuple(FocusBar(bar, BarFrequency.M15, "JM2609") for bar in raw_fifteen)
+    five_a = tuple(FocusBar(bar, BarFrequency.M5, "JM2609") for bar in raw_five)
+    bars_b = tuple(replace(item, physical_contract="JM2701") for item in bars_a)
+    five_b = tuple(replace(item, physical_contract="JM2701") for item in five_a)
+    observed_at = max(bars_a[-1].bar.bar_end, five_a[-1].bar.bar_end)
+
+    result_a = replay_trend_focus("long", bars_a, five_a, observed_at=observed_at)
+    result_b = replay_trend_focus("long", bars_b, five_b, observed_at=observed_at)
+
+    assert result_a.state is not None and result_b.state is not None
+    assert result_a.state.physical_contract == "JM2609"
+    assert result_b.state.physical_contract == "JM2701"
+    assert result_a.transitions == result_b.transitions
 
 
 def test_outside_epoch_prevents_old_and_new_pivots_from_forming_one_range() -> None:
@@ -1241,6 +1444,37 @@ def test_live_contract_mismatch_is_not_replaced_by_stale_historical() -> None:
 
     assert result.long_opportunities == ()
     assert result.unavailable[0].code == "LIVE_CONTRACT_MISMATCH"
+
+
+def test_invalid_dominant_isolated_to_one_symbol_and_other_symbol_still_builds() -> None:
+    radar = _radar_snapshot()
+    jm = radar.items[0]
+    rb = replace(jm, symbol="rb", product_name="螺纹钢")
+    radar = replace(radar, active_count=2, participant_count=2, items=(jm, rb))
+    dominants = {
+        "jm": replace(_dominants()["jm"], actual_contract="RB2609"),
+        "rb": DominantContractSummary(
+            symbol="rb",
+            product_name="螺纹钢",
+            sector="black",
+            exchange="SHFE",
+            actual_contract="RB2609",
+            dominant_mapping_date=date(2026, 1, 23),
+        ),
+    }
+
+    result = build_market_trend_focus_snapshot(
+        radar_snapshot=radar,
+        market_data=_FakeMarketData(_snapshot_pages()),
+        market_read=_FakeMarketRead(),
+        dominants=dominants,
+        now=datetime(2026, 1, 24, tzinfo=UTC),
+    )
+
+    assert tuple(item.symbol for item in result.long_opportunities) == ("rb",)
+    assert len(result.unavailable) == 1
+    assert result.unavailable[0].symbol == "jm"
+    assert result.unavailable[0].code == "PHYSICAL_CONTRACT_UNAVAILABLE"
 
 
 def test_opportunity_sort_is_stage_specific_then_exact_tuple_and_caps_at_ten() -> None:

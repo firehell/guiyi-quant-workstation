@@ -11,9 +11,11 @@ from typing import Literal, Protocol
 from app.market_data.domain import (
     BarFrequency,
     CanonicalBar,
+    ContractError,
     MarketSeriesPageResult,
     SeriesKind,
     SeriesPageQuery,
+    normalize_contract_for_symbol,
 )
 from app.market_data.market_data_service import DominantContractSummary, MarketDataError
 from app.market_data.market_radar import MarketRadarSnapshot, RadarItem
@@ -433,7 +435,6 @@ def replay_lifecycle(
                 else:
                     state = replace(state, latest_swing_low=pivot)
 
-        created_now = False
         if state is None:
             trend_range = _latest_converging_range(known_pivots, eligible_after=eligible_after)
             if trend_range is not None:
@@ -449,8 +450,7 @@ def replay_lifecycle(
                 transitions.append(
                     TrendTransition("setup", trend_range.created_at, "range_confirmed")
                 )
-                created_now = True
-        if state is None or created_now:
+        if state is None:
             continue
 
         close = bar.bar.close
@@ -765,9 +765,11 @@ def _advance_five_minute_entry(
         ),
         None,
     )
-    if reference is None or previous is None or bar.bar.bar_end <= reference.confirmed_at:
+    if reference is None:
         return state
     state = replace(state, entry_reference=reference.price)
+    if previous is None or bar.bar.bar_end <= reference.confirmed_at:
+        return state
     price_confirmed = (
         bar.bar.close > reference.price
         if direction == "long"
@@ -864,7 +866,14 @@ def build_market_trend_focus_snapshot(
             dominant = dominants.get(radar_item.symbol)
             if dominant is None:
                 raise _SnapshotSymbolError("PHYSICAL_CONTRACT_UNAVAILABLE")
-            contract = dominant.actual_contract
+            contract = normalize_contract_for_symbol(
+                radar_item.symbol, dominant.actual_contract
+            )
+            if (
+                dominant.symbol.strip().lower() != radar_item.symbol.strip().lower()
+                or contract is None
+            ):
+                raise _SnapshotSymbolError("PHYSICAL_CONTRACT_UNAVAILABLE")
             hourly = _contract_focus_bars(
                 symbol=radar_item.symbol,
                 contract=contract,
@@ -917,7 +926,7 @@ def build_market_trend_focus_snapshot(
         except _SnapshotSymbolError as exc:
             unavailable.append(TrendFocusUnavailable(radar_item.symbol, exc.code))
             continue
-        except (MarketDataError, TrendFocusInputError):
+        except (ContractError, MarketDataError, TrendFocusInputError):
             unavailable.append(
                 TrendFocusUnavailable(radar_item.symbol, "BAR_IDENTITY_UNAVAILABLE")
             )
