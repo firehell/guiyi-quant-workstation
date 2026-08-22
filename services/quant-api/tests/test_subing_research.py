@@ -21,6 +21,7 @@ from app.market_data.subing_research import (
     calculate_subing_factor,
     calculate_subing_factor_series,
     evaluate_subing_signal,
+    resolve_subing_matched_signal,
     resolve_same_boundary_subing_signals,
 )
 from guiyi_quant.indicators import (
@@ -718,6 +719,46 @@ def test_same_boundary_same_direction_prefers_15m_once() -> None:
     assert resolved.trigger_timeframe is BarFrequency.M15
     assert resolved.lower_tf_confirmation is True
     assert resolved.resolution is SubingSignalResolution.HIGHER_TIMEFRAME_WINS
+
+
+def test_shared_matched_signal_resolver_preserves_higher_timeframe_winner() -> None:
+    """Catches current and Historical paths drifting into different 15m winners."""
+    bar_end = datetime(2026, 8, 3, 6, tzinfo=UTC)
+
+    resolved = resolve_subing_matched_signal(
+        _signal_factor(timeframe=BarFrequency.M5, bar_end=bar_end),
+        _signal_factor(timeframe=BarFrequency.M15, bar_end=bar_end),
+        calibration=_accepted_calibration(),
+    )
+
+    assert resolved is not None
+    assert resolved.status is SubingSignalStatus.MATCHED
+    assert resolved.direction is SubingDirection.LONG
+    assert resolved.trigger_timeframe is BarFrequency.M15
+    assert resolved.lower_tf_confirmation is True
+    assert resolved.resolution is SubingSignalResolution.HIGHER_TIMEFRAME_WINS
+
+
+def test_shared_matched_signal_resolver_emits_nothing_on_direction_conflict() -> None:
+    """Catches either consumer emitting one side of an opposed Factor pair."""
+    bar_end = datetime(2026, 8, 3, 6, tzinfo=UTC)
+    long_m5 = _signal_factor(timeframe=BarFrequency.M5, bar_end=bar_end)
+    short_m15 = _signal_factor(
+        timeframe=BarFrequency.M15,
+        price_side=PriceSide.BELOW,
+        slope5=Decimal("-2"),
+        slope10=Decimal("-1"),
+        cross=MacdCross.DEAD,
+        bar_end=bar_end,
+    )
+
+    resolved = resolve_subing_matched_signal(
+        long_m5,
+        short_m15,
+        calibration=_accepted_calibration(),
+    )
+
+    assert resolved is None
 
 
 def test_same_boundary_opposite_matched_directions_fail_closed() -> None:

@@ -10,6 +10,7 @@ import {
 } from 'naive-ui'
 import type { DominantContractItem, MarketFrequency, OptionalEmaIndicatorId, ResearchOverlayId, SeriesKind } from '@/types/market'
 import { MARKET_FREQUENCIES } from '@/types/market'
+import { RESEARCH_OVERLAY_DEFINITIONS } from '@/utils/mainIndicators'
 
 const props = defineProps<{
   symbol: string
@@ -39,11 +40,8 @@ const symbolOptions = computed(() => props.dominants.map((item) => ({
   value: item.product,
 })))
 const currentDominant = computed(() => props.dominants.find((item) => item.product === props.symbol)?.actual_contract)
-const overlayOptions: Array<{ label: string; value: ResearchOverlayId }> = [
-  { label: '无', value: 'none' },
-  { label: '苏冰', value: 'subing' },
-  { label: '火天大有', value: 'htdy' },
-]
+const overlayOptions: Array<{ label: string; value: ResearchOverlayId }> = RESEARCH_OVERLAY_DEFINITIONS
+  .map((definition) => ({ label: definition.label, value: definition.id }))
 const optionalEmaOptions: Array<{ label: string; value: OptionalEmaIndicatorId }> = [
   { label: 'EMA10', value: 'ema_10' },
   { label: 'EMA60', value: 'ema_60' },

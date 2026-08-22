@@ -18,6 +18,7 @@ from app.api.alerts import router as alerts_router
 from app.api.execution_review import router as execution_review_router
 from app.api.market import router as market_router
 from app.api.market_live import router as market_live_router
+from app.api.market_research_overlays import router as market_research_overlays_router
 from app.api.runtime import router as runtime_router
 from app.middleware.request_timing import RequestTimingMiddleware
 from app.version import APP_VERSION
@@ -60,6 +61,7 @@ app.add_middleware(
 # Market + Alert + Execution Review + Runtime 运维面；旧 Review Center 仍未挂载
 app.include_router(market_router)
 app.include_router(market_live_router)
+app.include_router(market_research_overlays_router)
 app.include_router(alerts_router)
 app.include_router(execution_review_router)
 app.include_router(runtime_router)

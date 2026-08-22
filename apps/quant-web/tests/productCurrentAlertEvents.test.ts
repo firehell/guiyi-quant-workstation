@@ -109,10 +109,15 @@ test('keeps an unknown combined current event fail-closed', () => {
 })
 
 test('derives the sidebar HTDY observation from the latest existing HTDY marker', () => {
-  assert.match(chartSource, /if \(!htdyVisible\.value\) return null/)
+  assert.match(
+    chartSource,
+    /if \(!htdyVisible\.value \|\| !overlayCapability\.value\.supported\) return null/,
+  )
   assert.match(chartSource, /buildKlineDerivedData\(visibleBars\.value, \['htdy'\]\)/)
   assert.ok(
-    chartSource.indexOf('if (!htdyVisible.value) return null')
+    chartSource.indexOf(
+      'if (!htdyVisible.value || !overlayCapability.value.supported) return null',
+    )
       < chartSource.indexOf("buildKlineDerivedData(visibleBars.value, ['htdy'])"),
   )
   assert.match(chartSource, /htdy\?\.markers\.at\(-1\) \?\? null/)
