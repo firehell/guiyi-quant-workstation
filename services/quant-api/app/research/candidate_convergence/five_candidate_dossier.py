@@ -465,6 +465,13 @@ class CandidateDossier:
     evidence_references: CandidateEvidenceReferences
 
     def __post_init__(self) -> None:
+        if (
+            not isinstance(self.identity, CandidateIdentityEvidence)
+            or not isinstance(self.baseline, CandidateBaselineEvidence)
+            or not isinstance(self.robustness, CandidateRobustnessEvidence)
+            or not isinstance(self.evidence_references, CandidateEvidenceReferences)
+        ):
+            raise FiveCandidateDossierReportError()
         rows = tuple(self.evidence_references.cross_symbol)
         available = tuple(row for row in rows if row.status == "available")
         unavailable = tuple(row for row in rows if row.status == "unavailable")
@@ -480,11 +487,7 @@ class CandidateDossier:
             for horizon in self.identity.horizons_bars
         }
         if (
-            not isinstance(self.identity, CandidateIdentityEvidence)
-            or not isinstance(self.baseline, CandidateBaselineEvidence)
-            or not isinstance(self.robustness, CandidateRobustnessEvidence)
-            or not isinstance(self.evidence_references, CandidateEvidenceReferences)
-            or self.identity.candidate_id != self.baseline.artifact_id
+            self.identity.candidate_id != self.baseline.artifact_id
             or self.robustness.artifact_id
             != _expected_robustness_artifact(self.identity.candidate_id)
             or any(

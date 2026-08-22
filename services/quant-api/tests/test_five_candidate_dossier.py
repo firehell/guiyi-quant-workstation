@@ -18,6 +18,7 @@ from app.research.candidate_convergence.artifact_source import (
 )
 from app.research.candidate_convergence.five_candidate_dossier import (
     CandidateCrossSymbolEvidence,
+    CandidateDossier,
     CandidateHorizonEvidence,
     FiveCandidateDossierReportError,
     FiveCandidateDossierProtocolError,
@@ -572,6 +573,18 @@ def test_candidate_dossier_rejects_summary_that_disagrees_with_rows(
 
     with pytest.raises(FiveCandidateDossierReportError):
         replace(dossier, robustness=changed_summary)
+
+
+def test_candidate_dossier_maps_malformed_groups_to_report_error() -> None:
+    with pytest.raises(FiveCandidateDossierReportError) as raised:
+        CandidateDossier(
+            identity=object(),  # type: ignore[arg-type]
+            baseline=object(),  # type: ignore[arg-type]
+            robustness=object(),  # type: ignore[arg-type]
+            evidence_references=object(),  # type: ignore[arg-type]
+        )
+
+    assert str(raised.value) == "FIVE_CANDIDATE_DOSSIER_REPORT_INVALID"
 
 
 @pytest.mark.parametrize(
