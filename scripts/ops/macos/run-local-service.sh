@@ -35,15 +35,15 @@ case "$SERVICE" in
     ;;
   live)
     [[ -x "$PYTHON_BIN" ]] || { printf '[run-local-service] runtime python unavailable: %s\n' "$PYTHON_BIN" >&2; exit 78; }
-    exec "$PYTHON_BIN" -m app.guiyi_cli.main runtime live
+    exec "$PYTHON_BIN" -m app.runtime_entry live
     ;;
   alert)
     [[ -x "$PYTHON_BIN" ]] || { printf '[run-local-service] runtime python unavailable: %s\n' "$PYTHON_BIN" >&2; exit 78; }
-    exec "$PYTHON_BIN" -m app.guiyi_cli.main runtime alert
+    exec "$PYTHON_BIN" -m app.runtime_entry alert
     ;;
   after-market)
     [[ -x "$PYTHON_BIN" ]] || { printf '[run-local-service] runtime python unavailable: %s\n' "$PYTHON_BIN" >&2; exit 78; }
-    exec "$PYTHON_BIN" -m app.guiyi_cli.main data after-market
+    exec "$PYTHON_BIN" -m app.runtime_entry after-market
     ;;
   web)
     [[ -f "$PROJECT_ROOT/apps/quant-web/dist/index.html" ]] || { printf '[run-local-service] frontend dist missing; run pnpm --dir apps/quant-web build\n' >&2; exit 2; }

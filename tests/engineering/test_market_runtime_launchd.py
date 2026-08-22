@@ -109,6 +109,34 @@ def test_runtime_service_entrypoint_treats_retired_workers_as_unknown(tmp_path: 
         assert result.stderr == f"[run-local-service] unknown service: {service}\n"
 
 
+def test_runtime_services_launch_the_thin_internal_module(tmp_path: Path) -> None:
+    """The real launcher must not route Runtime through the full public CLI graph."""
+    repo = _copy_launchd_fixture(tmp_path / "repo")
+    python = repo / "services/quant-api/.venv/bin/python"
+    python.parent.mkdir(parents=True)
+    python.write_text('#!/bin/sh\nprintf \'%s\\n\' "$*"\n', encoding="utf-8")
+    python.chmod(0o700)
+    environment = {
+        **os.environ,
+        "HOME": str(tmp_path / "home"),
+        "GUIYI_PROJECT_ROOT": str(repo),
+        "GUIYI_RUNTIME_ENV": str(tmp_path / "missing.env"),
+        "POSTGRES_PASSWORD": "test-only",
+    }
+
+    for service in ("live", "alert", "after-market"):
+        result = subprocess.run(
+            [str(repo / "scripts/ops/macos/run-local-service.sh"), service],
+            cwd=repo,
+            env=environment,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0, result.stderr
+        assert result.stdout.strip() == f"-m app.runtime_entry {service}"
+
+
 def test_local_status_is_read_only_and_accepts_idle_after_market(tmp_path: Path) -> None:
     repo, home, fake_bin, calls = _status_fixture(tmp_path)
 

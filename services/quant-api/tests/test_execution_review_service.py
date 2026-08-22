@@ -30,6 +30,7 @@ from app.execution_review.models import (
     TradeReview,
 )
 from app.execution_review.errors import ExecutionReviewDomainError
+from app.execution_review import composition as execution_review_composition
 from app.execution_review.queries import ExecutionReviewQueryService
 from app.execution_review.reconciler import RollReconcileResult
 from app.execution_review.service import (
@@ -244,6 +245,104 @@ def test_defensive_reconcile_reloads_closed_old_contract_before_new_event(
     old_episode = session.get(TradeEpisode, old.episode.id)
     assert old_episode is not None
     assert old_episode.close_reason == "DOMINANT_ROLL"
+
+
+def test_roll_gate_reader_accepts_only_exact_private_enabled_marker(tmp_path: Path) -> None:
+    from app.execution_review.roll_gate import execution_review_roll_marker_state
+
+    assert execution_review_roll_marker_state(tmp_path) == "disabled"
+    marker = tmp_path / ".run/execution-review-roll-enabled"
+    marker.parent.mkdir()
+    marker.write_bytes(b"enabled\n")
+    marker.chmod(0o600)
+    assert execution_review_roll_marker_state(tmp_path) == "enabled"
+
+    marker.write_bytes(b"disabled\n")
+    assert execution_review_roll_marker_state(tmp_path) == "invalid"
+    marker.write_bytes(b"enabled\n")
+    marker.chmod(0o644)
+    assert execution_review_roll_marker_state(tmp_path) == "invalid"
+
+
+@pytest.mark.parametrize("gate_state", ("disabled", "invalid"))
+def test_composition_roll_gate_blocks_defensive_reconcile_without_market_data(
+    session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+    gate_state: str,
+) -> None:
+    _service(session).record_executed(_event(session).id, _executed())
+    later = _event(session, bar_end=BAR_END + timedelta(minutes=10))
+
+    def fail_dependency(*_args: object, **_kwargs: object) -> object:
+        pytest.fail("roll market data and reconciler must not be constructed")
+
+    monkeypatch.setattr(
+        execution_review_composition,
+        "build_market_data_service",
+        fail_dependency,
+    )
+    monkeypatch.setattr(
+        execution_review_composition,
+        "ExecutionReviewRollReconciler",
+        fail_dependency,
+    )
+    service = execution_review_composition.build_execution_review_service(
+        session,
+        clock=lambda: SERVER_NOW,
+        execution_review_roll_marker_state=lambda: gate_state,
+    )
+
+    with pytest.raises(
+        ExecutionReviewDomainError,
+        match="^ROLL_RECONCILIATION_REQUIRED$",
+    ):
+        service.record_executed(
+            later.id,
+            _executed(executed_at=BAR_END + timedelta(minutes=13)),
+        )
+
+
+def test_composition_enabled_roll_gate_preserves_defensive_reconcile(
+    session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _service(session).record_executed(_event(session).id, _executed())
+    later = _event(session, bar_end=BAR_END + timedelta(minutes=10))
+    events: list[object] = []
+    market_data = object()
+
+    class Reconciler:
+        def __init__(self, reconcile_session: Session, *, market_data: object) -> None:
+            events.extend((reconcile_session, market_data))
+
+        def reconcile_symbol(self, symbol: str) -> RollReconcileResult:
+            events.append(symbol)
+            return RollReconcileResult("NOOP", symbol)
+
+    monkeypatch.setattr(
+        execution_review_composition,
+        "build_market_data_service",
+        lambda _session: market_data,
+    )
+    monkeypatch.setattr(
+        execution_review_composition,
+        "ExecutionReviewRollReconciler",
+        Reconciler,
+    )
+    service = execution_review_composition.build_execution_review_service(
+        session,
+        clock=lambda: SERVER_NOW,
+        reconcile_session_factory=lambda: Session(session.get_bind()),
+        execution_review_roll_marker_state=lambda: "enabled",
+    )
+
+    result = service.record_executed(
+        later.id,
+        _executed(executed_at=BAR_END + timedelta(minutes=13)),
+    )
+
+    assert result.execution.execution_type == "ADD"
+    assert events[1:] == [market_data, "jm"]
 
 
 def test_not_executed_uses_explicit_decided_at_and_allows_late_first_view(

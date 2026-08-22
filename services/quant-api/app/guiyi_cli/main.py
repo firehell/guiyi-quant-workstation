@@ -10,9 +10,6 @@ from __future__ import annotations
 import argparse
 from collections.abc import Callable, Sequence
 from contextlib import AbstractContextManager
-import logging
-from pathlib import Path
-import stat
 import sys
 from typing import Any, TextIO
 
@@ -20,8 +17,10 @@ from app.db.session import SessionLocal
 from app.alerts.composition import build_alert_runtime
 from app.alerts.notification import ALERT_AUDIENCES
 from app.alerts.notification_composition import build_notification_sender_from_env
-from app.core.env import PROJECT_ROOT
 from app.execution_review.composition import build_execution_review_roll_reconciler
+from app.execution_review.roll_gate import (
+    execution_review_roll_marker_state as read_execution_review_roll_gate,
+)
 from app.guiyi_cli.data_commands import build_request, run_data_command
 from app.guiyi_cli.data_parser import (
     CliUsageError,
@@ -75,6 +74,7 @@ from app.research.candidate_convergence.five_candidate_relationships import (
     FiveCandidateRelationshipRequest,
 )
 from app.services.runtime_health import build_runtime_health
+from app.runtime_entry import run_after_market, run_alert, run_live
 
 SessionFactory = Callable[[], AbstractContextManager[Any]]
 ManagerFactory = Callable[[Any], HistoricalDataManager]
@@ -88,9 +88,6 @@ JdjCandidateValidationServiceFactory = Callable[[Any, str], Any]
 RollReconcilerFactory = Callable[[Any], Any]
 RollMarkerState = Callable[[], str]
 MemberRankSnapshotBuilderFactory = Callable[[Any], Any]
-
-logger = logging.getLogger(__name__)
-
 
 def _execution_is_readonly(args: argparse.Namespace) -> bool:
     if args.domain == "research":
@@ -108,23 +105,6 @@ def _parse_error_is_readonly(raw: Sequence[str]) -> bool:
         and raw[0] == "runtime"
         and raw[1] in {"live", "alert", "alert-canary"}
     )
-
-
-def _execution_review_roll_marker_state(
-    project_root: Path = PROJECT_ROOT,
-) -> str:
-    marker = project_root / ".run/execution-review-roll-enabled"
-    try:
-        metadata = marker.lstat()
-        if not stat.S_ISREG(metadata.st_mode):
-            return "invalid"
-        if stat.S_IMODE(metadata.st_mode) != 0o600:
-            return "invalid"
-        return "enabled" if marker.read_bytes() == b"enabled\n" else "invalid"
-    except FileNotFoundError:
-        return "disabled"
-    except OSError:
-        return "invalid"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -202,7 +182,7 @@ def main(
         build_five_candidate_relationship_service
     ),
     execution_review_roll_marker_state: RollMarkerState = (
-        _execution_review_roll_marker_state
+        read_execution_review_roll_gate
     ),
     roll_reconciler_factory: RollReconcilerFactory = (
         build_execution_review_roll_reconciler
@@ -337,23 +317,12 @@ def main(
                     "runtime": health,
                 }
         elif args.runtime_command == "live":
-            # 前台阻塞循环由 launchd/终端托管；Python 不 daemonize 或启动 worker。
-            with session_factory() as session:
-                live_service_factory(session).run_forever()
-            payload = {
-                "schema_version": 1,
-                "command": "runtime.live",
-                "status": "ok",
-                "foreground": True,
-            }
+            payload = run_live(
+                session_factory=session_factory,
+                live_service_factory=live_service_factory,
+            )
         elif args.runtime_command == "alert":
-            alert_runtime_factory().run_forever()
-            payload = {
-                "schema_version": 1,
-                "command": "runtime.alert",
-                "status": "ok",
-                "foreground": True,
-            }
+            payload = run_alert(alert_runtime_factory=alert_runtime_factory)
         elif args.runtime_command == "alert-canary":
             acceptance = alert_canary_sender_factory().send_canary(args.audience)
             reference = acceptance.reference
@@ -423,20 +392,13 @@ def _run_data(
             builder = member_rank_snapshot_builder_factory(session)
             return builder.snapshot(build_request(args)).as_payload()
     if args.data_command == "after-market":
-        with session_factory() as session:
-            manager = manager_factory(session)
-            market_result = after_market_factory(manager).run()
-        payload = market_result.as_payload()
-        if (
-            market_result.status == "passed"
-            and execution_review_roll_marker_state() == "enabled"
-        ):
-            try:
-                with session_factory() as followup_session:
-                    roll_reconciler_factory(followup_session).reconcile_open_episodes()
-            except Exception:  # noqa: BLE001 - isolated best-effort follow-up
-                logger.warning("EXECUTION_REVIEW_ROLL_FOLLOWUP_FAILED")
-        return payload
+        return run_after_market(
+            session_factory=session_factory,
+            manager_factory=manager_factory,
+            after_market_factory=after_market_factory,
+            roll_marker_state=execution_review_roll_marker_state,
+            roll_reconciler_factory=roll_reconciler_factory,
+        )
     with session_factory() as session:
         manager = manager_factory(session)
         return run_data_command(args, manager).as_payload()

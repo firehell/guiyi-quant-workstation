@@ -12,7 +12,9 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.execution_review.contracts import load_product_trade_multipliers
 from app.execution_review.reconciler import (
     ExecutionReviewRollReconciler,
+    RollReconcileResult,
 )
+from app.execution_review.roll_gate import execution_review_roll_marker_state as read_roll_gate
 from app.execution_review.queries import ExecutionReviewQueryService
 from app.execution_review.reconstruction import EventReconstructionService
 from app.execution_review.service import (
@@ -41,18 +43,29 @@ def build_execution_review_service(
     *,
     clock: Callable[[], datetime] | None = None,
     reconcile_session_factory: Callable[[], Session] | None = None,
+    execution_review_roll_marker_state: Callable[[], str] = read_roll_gate,
 ) -> ExecutionReviewService:
-    active_reconcile_session_factory = reconcile_session_factory or sessionmaker(
-        bind=session.get_bind(),
-        autoflush=False,
-        autocommit=False,
-    )
+    if execution_review_roll_marker_state() == "enabled":
+        active_reconcile_session_factory = reconcile_session_factory or sessionmaker(
+            bind=session.get_bind(),
+            autoflush=False,
+            autocommit=False,
+        )
 
-    def reconcile_symbol(symbol: str) -> DefensiveReconcileResult:
-        with active_reconcile_session_factory() as reconcile_session:
-            return build_execution_review_roll_reconciler(
-                reconcile_session
-            ).reconcile_symbol(symbol)
+        def reconcile_symbol(symbol: str) -> DefensiveReconcileResult:
+            with active_reconcile_session_factory() as reconcile_session:
+                return build_execution_review_roll_reconciler(
+                    reconcile_session
+                ).reconcile_symbol(symbol)
+
+    else:
+
+        def reconcile_symbol(symbol: str) -> DefensiveReconcileResult:
+            return RollReconcileResult(
+                "ROLL_RECONCILIATION_REQUIRED",
+                symbol,
+                reason="ROLL_GATE_NOT_ENABLED",
+            )
 
     return ExecutionReviewService(
         session,
