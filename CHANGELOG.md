@@ -18,8 +18,9 @@
   “当前检查栏”验证顺序；保持 degraded fail-closed、正式 Event/研究观察/Research-only 分层，
   不增加评分、推荐或交易语义。
 - 本版不新增 migration，不写或修改 Canonical、production DB、Redis，不扩大 Rule Scope，不新增通知
-  retry/replay/backfill，不执行 release/tag、Runtime promotion/switch，也不增加订单能力；
-  `auto_order=false` 不变。
+  retry/replay/backfill，也不增加订单能力，`auto_order=false` 不变。release PR `#197` 已合入 main，
+  annotated `v1.7.0` tag 与 production Runtime 均精确绑定
+  `4fe0644694ab9f534c61e0d48eae3f01a74fc7c0`；切换未运行 after-market、canary 或人工通知。
 
 ## [1.6.5] - 2026-08-21
 

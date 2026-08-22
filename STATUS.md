@@ -5,27 +5,31 @@
 ## 正式 release 与 production Runtime
 
 - 当前正式 release 为
-  `v1.6.5@b0be6364580b4ed509cfe76573b4085c3b5a7924`；annotated tag object 为
-  `0ab86e64f01f6e0f0b423c6cf1b86be4791a6360`，message=`Release v1.6.5`。
+  `v1.7.0@4fe0644694ab9f534c61e0d48eae3f01a74fc7c0`；annotated tag object 为
+  `a0c86db0f1d016923340f7372a97ad8052d7b1f7`，message=`Release v1.7.0`。
 - production Runtime 为 clean/detached
-  `/Volumes/扩展盘/guiyi-quant-runtime-v1.6.5@b0be6364580b4ed509cfe76573b4085c3b5a7924`。
-- 2026-08-21 最终只读读回：API/Web/Live/after-market/Alert 五个 label 的 root 与 loaded commit
-  均匹配；Market/Alert marker enabled；API=`200 / 1.6.5 / readonly`、Web=`200`、Runtime
-  health=`ok / readonly`、PushPlus config=`ready`、overall=`passed`、Market dominants=`60`。
-  after-market 已加载但当前未运行属于定时服务正常空闲；该 switch 未发送 canary 或人工通知。
+  `/Volumes/扩展盘/guiyi-quant-runtime-v1.7.0@4fe0644694ab9f534c61e0d48eae3f01a74fc7c0`；旧
+  `v1.6.5` Runtime worktree 已在无 plist/launchctl/process 引用且 clean/detached 后通过
+  `git worktree remove` 删除，`v1.6.5` tag 保留。
+- 2026-08-22 最终只读读回：API/Web/Live/after-market/Alert 五个 label 的 root 与 loaded commit
+  均匹配；Market/Alert marker enabled；API=`200 / 1.7.0 / readonly`、Web=`200`、Runtime
+  health=`ok / readonly`、PushPlus config=`ready`、overall=`passed`、operational=`60`。
+  after-market 已加载但当前未运行，fresh Runtime 状态为 `pending`，等待下一次自然调度；该 switch
+  未运行 after-market、canary 或人工通知。
 - production migration 为 head `20260815_0039`。Alert 两条 Rule Scope 均精确为 `jm`；Execution
-  Review roll marker 为 `disabled / not activated`。
+  Review roll marker 为 `disabled / not activated`；AlertEvent 与 notification-attempt count 均保持为 `8`。
+- 本机 API/Web 与 FRPC 只读检查通过。ECS FRPS/Nginx 与公网 HTTPS 本轮没有可用执行入口，且
+  `PUBLIC_BASE_URL` 未配置，因此保持 `not verified`，不得由本机 FRPC 健康推导为公网验收通过。
 
-## v1.7.0 release candidate
+## v1.7.0 release closeout
 
-- `develop` 已准备代码版本 `v1.7.0`：版本身份、canonical/README/TESTING、Web B1 使用说明、
-  Research/Execution Review/Runtime seam 与测试治理已进入本地 release-candidate 变更。
-- 当前状态为 `CODE_COMPLETE_FULL_VERIFICATION_REVIEW_PENDING`。前一轮本地 health/version、
-  engineering、定向 backend、Research CLI、Web unit/build、Ruff、Mypy、OpenSpec、secret/diff 验证
-  已通过；独立审查修正后仍须 fresh full verification 与 independent review。尚未创建 main merge、tag、release，也未
-  push、部署或切换 Runtime；production 继续保持 `v1.6.5`。
-- 本 candidate 不含 migration、Canonical/production DB/Redis 写入、Scope/transport 变化、通知
-  retry/replay/backfill、Runtime promotion/switch 或订单能力，`auto_order=false` 不变。
+- release PR `#197` 已合入 main；release commit、annotated tag peeled commit 与 Runtime checkout
+  精确一致。最终 Standards/Spec review 均为 `C0/I0/M0`。
+- exact candidate 验证为 backend `2703 passed / 3 skipped / 16 deselected`、isolated PostgreSQL
+  `16 passed`、engineering `58 passed`、Web unit `208 passed / 1 skipped`、Playwright `74 passed`，
+  Ruff、Mypy、Web build、OpenSpec、secret scan 与 launchd render 均通过。
+- 本 release 不含 migration、Canonical/production DB/Redis 写入、Scope/transport 变化、通知
+  retry/replay/backfill 或订单能力，`auto_order=false` 不变。
 
 ## 当前 Runtime 与产品面
 
@@ -40,7 +44,7 @@
 - Execution Review V1 是独立 Application Domain。HTTP request-scoped composition 每请求读取一次
   roll Gate 并注入 callback；missing/`disabled`/`invalid` 时 callback 返回
   `ROLL_RECONCILIATION_REQUIRED` 且不得创建 `DOMINANT_ROLL`，只有 `enabled` 注入真实 reconciler。
-- Market Web 的 B1 流程已进入 `develop`：首页为“需要处理 → 优先检查 → 全市场研究”，详情页使用
+- Market Web 的 B1 流程已进入 production：首页为“需要处理 → 优先检查 → 全市场研究”，详情页使用
   “当前检查栏”；正式 Event、研究观察和 Research-only 事实保持分层，不产生综合分或交易推荐。
 
 ## 当前 research evidence
@@ -93,15 +97,12 @@ Exact 命令见 `TESTING.md`。该协议只定义未来 read-only Gate，不构�
 
 ## 待完成 Gate
 
-- v1.7.0 candidate 只达到 `CODE_COMPLETE_FULL_VERIFICATION_REVIEW_PENDING`；fresh full verification
-  与 independent review 通过后，才允许进入彼此独立的 main/tag/release 与 Runtime promotion/switch
-  Gates；这些外部操作仍需各自新的明确执行意图。
 - MFM 60m sequence forensic 的真实 JM + active60 Historical read-only evidence Gate `pending`；本次不
   运行、不生成临时 evidence、不输出 Phase Gate 结论。
 - 自然 HTDY Topic Event 与自然 SuBing owner Event 的 production 验收 `pending`；不得用 synthetic
   Event、manual send、replay、backfill 或 retry 补证，历史 canary 不重复。
 - SuBing 自然 Live seam 仍需真实时点观察；Canonical-only HTTP smoke 不替代自然 Live evidence。
-- v1.6.5 API/Web/Market Runtime root 的下一次自然 18:05 盘后业务证据待观察；不得人工触发、回填或
+- v1.7.0 API/Web/Market Runtime root 的下一次自然 18:05 盘后业务证据待观察；不得人工触发、回填或
   用旧 root evidence 补证。
 - SuBing、N 与 JDJ Candidate 的 prospective OOS 继续按各自 exact protocol 独立累积，当前均
   `pending`。
@@ -114,6 +115,5 @@ Exact 命令见 `TESTING.md`。该协议只定义未来 read-only Gate，不构�
   `docs/ARCHITECTURE.md`；命令看 `TESTING.md`。
 - 已完成 spec/plan/task 与逐次 release/promotion 流水只从 Git history、`CHANGELOG.md`、tag 和 commit
   追溯，不作为 active surface。
-- 最小下一步：在当前 exact candidate 上运行 fresh full verification 并完成 independent review；两者
-  都通过后才进入独立 release Gates。当前不执行 push、release/tag、Runtime、通知、DB/data 或真实
-  research evidence。
+- 最小下一步：等待 v1.7.0 下一次自然 18:05 盘后运行与自然 Alert/Live 时点，只做读回；不人工触发、
+  补发或用历史 evidence 替代。
