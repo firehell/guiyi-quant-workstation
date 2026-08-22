@@ -217,7 +217,7 @@ threshold = ordered[max(1, rank) - 1]
 peak_candidate = abs(current instant pressure) >= threshold
 ```
 
-`turnover` 不允许成为 peak candidate；非零的其他四种 pressure state 都允许，因为本轮研究的是 directional pressure climax，而不是预先假设只有 build 才可能形成高潮。
+Peak candidate 第一轮只允许 `long_build` / `short_build`。`turnover`、`short_cover`、`long_liquidation` 不安装新的 active peak：这样既保持“强建仓压力高潮”的研究语义，也避免在“旧方向 liquidation → 新方向 build”过程中用 liquidation Bar 抢占旧 peak memory。若未来证据表明 short-cover/long-liquidation climax 本身值得独立研究，再另开设计，不在本轮提前扩张。
 
 ## 7. Candidate Sequence Events
 
@@ -233,7 +233,7 @@ peak_then_accumulated_reversal
 
 后四项都必须在事件实际发生的当前 Bar 才命中，不能回标 peak Bar。
 
-如果当前 Bar 既是前一个 peak 的 causal sequence event，又满足反方向的新 peak candidate，处理顺序固定为：先记录前一个 peak 的当前事件，再把当前 Bar 安装为后续 Bar 使用的新 active peak；不得让新 peak 覆盖当前 Bar 对旧 peak 的证据。
+如果当前 Bar 既是前一个 peak 的 causal sequence event，又满足反方向的新 build peak candidate，处理顺序固定为：先记录前一个 peak 的当前事件，再把当前 Bar 安装为后续 Bar 使用的新 active peak；不得让新 peak 覆盖当前 Bar 对旧 peak 的证据。
 
 ### 7.1 Decay
 
