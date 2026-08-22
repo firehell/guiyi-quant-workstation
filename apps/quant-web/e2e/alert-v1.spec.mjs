@@ -104,12 +104,14 @@ test('persistent Alert V2 markers stay exact-frequency and actual-dominant only'
   await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=30m')
   const sidebar = page.locator('.product-workspace__sidebar')
   await expect(sidebar).toBeVisible()
-  await expect(sidebar.getByTestId('product-formal-signal')).toBeVisible()
+  await expect(sidebar.getByTestId('product-check-now')).toBeVisible()
   await expect(sidebar.getByTestId('product-alert-rules')).toBeVisible()
-  await expect(sidebar.getByTestId('product-today-alert-events')).toBeVisible()
-  expect(await sidebar.locator('[data-testid="product-formal-signal"], [data-testid="product-alert-rules"], [data-testid="product-today-alert-events"]').evaluateAll((nodes) => (
+  await expect(sidebar.getByTestId('product-check-more')).not.toHaveAttribute('open')
+  expect(await sidebar.locator('[data-testid="product-check-now"], [data-testid="product-check-alerts"], [data-testid="product-check-more"]').evaluateAll((nodes) => (
     nodes.every((node, index) => index === 0 || Boolean(nodes[index - 1].compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING))
   ))).toBe(true)
+  await sidebar.getByTestId('product-check-more').locator('summary').click()
+  await expect(sidebar.getByTestId('product-today-alert-events')).toBeVisible()
   await page.getByRole('group', { name: 'Overlay' }).getByRole('button', { name: '无', exact: true }).click()
   await page.getByRole('button', { name: '真实主力', exact: true }).click()
   await page.getByRole('button', { name: '5m', exact: true }).click()

@@ -2,11 +2,11 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { NAlert, NButton, NCard, NDrawer, NDrawerContent, NSpin, NTag, useMessage } from 'naive-ui'
-import ProductResearchSidebar from '@/components/market/ProductResearchSidebar.vue'
+import ProductCheckSidebar from '@/components/market/ProductCheckSidebar.vue'
 import PriceVolumeOiPanel from '@/components/market/PriceVolumeOiPanel.vue'
 import ProductWorkspaceToolbar from '@/components/market/ProductWorkspaceToolbar.vue'
-import SubingStatusStrip from '@/components/market/SubingStatusStrip.vue'
 import KlineChart from '@/components/kline/KlineChart.vue'
+import { getEventStates } from '@/api/executionReview'
 import { getMarketDominants, getProductResearch, getSubingResearch } from '@/api/market'
 import {
   getAlertRuntimeStatus,
@@ -29,6 +29,7 @@ import type {
   ResearchOverlayId,
   SeriesKind,
 } from '@/types/market'
+import type { EventState } from '@/types/executionReview'
 import { MARKET_FREQUENCIES } from '@/types/market'
 import { lifecycleSnapshotToMarkers } from '@/utils/subingLifecycleMarkers'
 import { buildKlineDerivedData } from '@/utils/klineViewModel'
@@ -70,6 +71,7 @@ const optionalEmaIndicators = ref<OptionalEmaIndicatorId[]>([
 const research = ref<ProductResearchResponse | null>(null)
 const researchLoading = ref(false)
 const researchError = ref(false)
+const currentEventStates = ref<Record<number, EventState>>({})
 const symbol = ref(resolveInitialSymbol())
 const contract = ref(String(route.query.contract || '').toUpperCase())
 const seriesKind = ref<SeriesKind>(resolveInitialSeriesKind())
@@ -141,6 +143,7 @@ const {
 let metadataReady = false
 let synchronizingSymbol = false
 let researchGeneration = 0
+let currentEventStateGeneration = 0
 let canonicalReplacementGeneration = 0
 let canonicalPendingGeneration: number | null = null
 let acceptedCanonical: { generation: number; identity: ReturnType<typeof currentIdentity> } | null = null
@@ -262,6 +265,10 @@ watch([symbol, seriesKind, contract], () => {
 
 watch([symbol, seriesKind, frequency, researchSidebarOpen, watchlist], persistWorkspacePreferences, { deep: true })
 
+watch([currentEventsStatus, currentEvents], () => {
+  void refreshCurrentEventStates()
+}, { deep: true })
+
 watch(frequency, (period) => {
   const current = loadMainChartPreferences()
   saveMainChartPreferences({ ...current, period })
@@ -290,6 +297,7 @@ onUnmounted(() => {
   disposeSubingObservation()
   disposeProductAlertScope()
   disposeProductCurrentAlertEvents()
+  currentEventStateGeneration += 1
   mirror.clear()
   dispose()
   disposePersistentAlertMarkers()
@@ -381,6 +389,21 @@ async function refreshResearch() {
     researchError.value = true
   } finally {
     if (requestGeneration === researchGeneration) researchLoading.value = false
+  }
+}
+
+async function refreshCurrentEventStates() {
+  const generation = ++currentEventStateGeneration
+  if (currentEventsStatus.value !== 'ready' || currentEvents.value.length === 0) {
+    currentEventStates.value = {}
+    return
+  }
+  try {
+    const response = await getEventStates(currentEvents.value.map((item) => item.id))
+    if (generation !== currentEventStateGeneration) return
+    currentEventStates.value = Object.fromEntries(response.items.map((item) => [item.event_id, item]))
+  } catch {
+    if (generation === currentEventStateGeneration) currentEventStates.value = {}
   }
 }
 
@@ -477,6 +500,19 @@ function openResearchDrawer() {
     return
   }
   researchDrawerOpen.value = true
+}
+
+function openFormalEvent(event: import('@/types/market').AlertEvent, state: EventState | null) {
+  if (!state) return
+  const useEpisode = state.state === 'open' || state.state === 'pending_review'
+  void router.push({
+    name: 'trade-records',
+    query: {
+      state: state.state,
+      event_id: useEpisode ? undefined : String(event.id),
+      episode_id: useEpisode && state.episode_id ? String(state.episode_id) : undefined,
+    },
+  })
 }
 
 async function toggleFullscreen() {
@@ -576,13 +612,6 @@ function normalizeSymbol(value: unknown): string | null {
             :data-visible-start-trading-day="visibleStartTradingDay"
             :data-visible-main-indicators="visibleMainIndicators.join(',')"
           >
-            <SubingStatusStrip
-              v-if="selectedOverlay === 'subing'"
-              :snapshot="subing"
-              :loading="subingLoading || metadataLoading"
-              :error="subingError"
-              :supported="subingSupported"
-            />
             <KlineChart
               ref="chart"
               :bars="visibleBars"
@@ -605,8 +634,7 @@ function normalizeSymbol(value: unknown): string | null {
             />
           </div>
           <div class="product-workspace__sidebar-wrap">
-            <ProductResearchSidebar
-              class="product-workspace__sidebar"
+            <ProductCheckSidebar
               :dominant="selectedDominant"
               :series-kind="effectiveIdentity.seriesKind"
               :frequency="frequency"
@@ -630,9 +658,11 @@ function normalizeSymbol(value: unknown): string | null {
               :current-events-loading="currentEventsLoading"
               :current-events-status="currentEventsStatus"
               :current-events="currentEvents"
+              :current-event-states="currentEventStates"
               :htdy-observation="latestHtdyObservation"
               @toggle-watchlist="toggleWatchlist"
               @toggle-alert="toggleAlert"
+              @open-formal-event="openFormalEvent"
             />
           </div>
         </div>
@@ -649,7 +679,7 @@ function normalizeSymbol(value: unknown): string | null {
 
     <NDrawer v-model:show="researchDrawerOpen" :width="320" placement="right">
       <NDrawerContent title="研究" closable>
-        <ProductResearchSidebar
+        <ProductCheckSidebar
           :dominant="selectedDominant"
           :series-kind="effectiveIdentity.seriesKind"
           :frequency="frequency"
@@ -673,9 +703,11 @@ function normalizeSymbol(value: unknown): string | null {
           :current-events-loading="currentEventsLoading"
           :current-events-status="currentEventsStatus"
           :current-events="currentEvents"
+          :current-event-states="currentEventStates"
           :htdy-observation="latestHtdyObservation"
           @toggle-watchlist="toggleWatchlist"
           @toggle-alert="toggleAlert"
+          @open-formal-event="openFormalEvent"
         />
       </NDrawerContent>
     </NDrawer>
