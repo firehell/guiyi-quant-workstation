@@ -56,7 +56,7 @@ Market Web
 ### 2.3 事件只画在 evidence Bar，不回标
 
 - SuBing：画在最终 resolved signal 的 `bar_end`。
-- N：画在 `CompletedNPattern.completed_at`。
+- N：画在 `CompletedNPattern.completed_at` 对应的 source event `observed_at`。
 - JDJ：画在 Candidate event 的 `observed_at`。
 
 不得把事件回画到 pivot、reaction、reclaim、first-break、retest 等更早位置。完整序列与任意历史 prefix
@@ -127,7 +127,7 @@ through=<YYYY-MM-DD>
 ```
 
 三个 endpoint 使用独立 response model，不建立统一“策略事件”后端 DTO；Web 在展示边界把各自事件映射为
-`KlineMarker`。
+`KlineMarker`。每个 response 回显规范化后的 request identity，便于 Web 做 full-identity 校验。
 
 ### 3.1 SuBing Historical Formal Signal
 
@@ -158,9 +158,16 @@ event_id
 bar_end
 trading_day
 contract
+segment_start_trading_day
 direction = buy | sell
 trigger_timeframe
 lower_tf_confirmation
+```
+
+Historical `event_id` 必须稳定且只由 source identity 组成，建议：
+
+```text
+subing_entry_signal_v1|symbol|contract|segment_start_trading_day|bar_end|trigger_timeframe|direction
 ```
 
 Historical replay 不创建 `AlertEvent`，也不冒充自然 Runtime Event。
@@ -169,18 +176,19 @@ Historical replay 不创建 `AlertEvent`，也不冒充自然 Runtime Event。
 
 直接复用现有 `NStructureResearchService.completion_events()` / causal reducer，不重写 N 结构。
 
-第一版只投影 completed-N：
+第一版只投影现有 `NStructureCompletionResearchEvent` 已有字段：
 
 ```text
-n_id
-completed_at
+event_id
+observed_at
 trading_day
 contract
+segment_start_trading_day
 direction = up | down
-completion_level
 ```
 
-不在本任务增加 N1/N2 区间带、结构状态、range reentry、break event 或买卖 Alert。
+不为主图额外扩充 N source event contract；不在本任务增加 N1/N2 区间带、结构状态、range reentry、
+break event 或买卖 Alert。
 
 ### 3.3 JDJ
 
@@ -192,7 +200,7 @@ jdj_trend_reentry_6_1m_candidate_v1
 jdj_key_level_breakout_1m_candidate_v1
 ```
 
-返回最小字段：
+返回 source event 已有的最小字段：
 
 ```text
 event_id
@@ -201,6 +209,7 @@ source_event_kind
 observed_at
 trading_day
 contract
+segment_start_trading_day
 direction = long | short
 trigger_level
 ```
@@ -246,8 +255,10 @@ EMA20 复用现有 `calculateEMA()`，并进入现有 EMA derived-data/hover/ren
 新增一个 Web composable，例如 `useHistoricalResearchMarkers()`，只负责：
 
 - 按 Overlay capability 判断是否需要请求；
-- 从当前 K 线 `trading_day` 得到 `since/through`；
-- replace 时加载整个当前窗口；prepend 时加载新增更早窗口；
+- 只使用 confirmed Canonical 覆盖范围计算请求窗口：从当前可见 bars 与 `canonicalCoverage.end` 交集得到
+  `since/through`，不得把 Redis Live-only 尾部日期传给 Historical API；
+- 当前可见窗口与 confirmed Canonical 无交集时返回空 Historical markers，不视为 source failure；
+- replace 时加载整个当前 confirmed 窗口；prepend 时加载新增更早窗口；
 - 用 generation + full identity 丢弃切品种/周期/Overlay 后的旧响应；
 - 按 source event id 去重；
 - source-specific mapper 转换为 `KlineMarker`；
@@ -275,7 +286,7 @@ JDJ:    跟随多 / 跟随空
 `KlineMarker` 增加可选 `dedupeKey`，只用于展示合并：
 
 ```text
-subing:<symbol>:<bar_end>:<resolved-frequency>:<direction>
+subing_entry_signal_v1:<symbol>:<bar_end>:<resolved-frequency>:<direction>
 ```
 
 SuBing Historical replay 和 persisted `AlertEvent` 生成同一个 `dedupeKey`。合并顺序让 persisted AlertEvent
@@ -331,10 +342,10 @@ Web：
 1. SuBing Historical resolver 与当前 Runtime/`SubingReadService` 共享同一个 pure resolution function。
 2. SuBing 同一 15m boundary 最多生成一个 resolved event，并正确保留 higher-timeframe wins、direction conflict
    与 lower-TF confirmation 语义。
-3. N marker 时间严格等于 `completed_at`。
-4. JDJ marker 时间严格等于 `observed_at`。
+3. N marker 时间严格等于 source event `observed_at`（即 completed-N 的 `completed_at`）。
+4. JDJ marker 时间严格等于 Candidate `observed_at`。
 5. 三个来源都有 prefix-invariance / no-backpaint 测试。
-6. 所有 Historical 事件携带 source 对应 physical contract identity。
+6. 所有 Historical 事件携带 source 对应 physical contract 与 segment identity。
 7. unsupported series/frequency 明确 fail-closed。
 
 ### Web
