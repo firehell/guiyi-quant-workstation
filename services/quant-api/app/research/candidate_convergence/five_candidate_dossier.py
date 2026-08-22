@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
+from collections.abc import Mapping
+from types import MappingProxyType
 from typing import Any
 
 from app.core.env import PROJECT_ROOT
@@ -79,6 +81,57 @@ _PAIR_ORDER = (
     (_CANDIDATES[2], _CANDIDATES[4]),
     (_CANDIDATES[3], _CANDIDATES[4]),
 )
+SOURCE_SEMANTICS = {
+    "subing_lifecycle_v2_candidate_v1": (
+        "subing_lifecycle",
+        ("5m", "15m"),
+        "5m_ready_boundary",
+        "same_trading_day_only",
+        (3, 5, 8),
+    ),
+    "n_structure_5m_candidate_v1": (
+        "n_structure",
+        ("5m",),
+        "5m_canonical_bar",
+        "same_rank1_segment",
+        (3, 5, 8),
+    ),
+    "jdj_trend_follow_1m_candidate_v1": (
+        "jdj_1m",
+        ("1m", "5m_strict_before_context"),
+        "1m_canonical_bar",
+        "same_trading_day_physical_contract_rank1_segment",
+        (3, 5, 8, 20),
+    ),
+    "jdj_trend_reentry_6_1m_candidate_v1": (
+        "jdj_1m",
+        ("1m", "5m_strict_before_context"),
+        "1m_canonical_bar",
+        "same_trading_day_physical_contract_rank1_segment",
+        (3, 5, 8, 20),
+    ),
+    "jdj_key_level_breakout_1m_candidate_v1": (
+        "jdj_1m",
+        ("1m", "5m_strict_before_context"),
+        "1m_canonical_bar",
+        "same_trading_day_physical_contract_rank1_segment",
+        (3, 5, 8, 20),
+    ),
+}
+_SOURCE_EVENT_KINDS = {
+    _CANDIDATES[0]: "entry_confirmed",
+    _CANDIDATES[1]: "n_completed",
+    _CANDIDATES[2]: "jdj_trend_follow_triggered",
+    _CANDIDATES[3]: "jdj_trend_reentry_6_triggered",
+    _CANDIDATES[4]: "jdj_key_level_breakout_triggered",
+}
+_RETROSPECTIVE_WINDOWS = {
+    _CANDIDATES[0]: (date(2023, 1, 1), date(2026, 8, 18)),
+    _CANDIDATES[1]: (date(2023, 1, 1), date(2026, 8, 19)),
+    _CANDIDATES[2]: (date(2023, 1, 1), date(2026, 8, 20)),
+    _CANDIDATES[3]: (date(2023, 1, 1), date(2026, 8, 20)),
+    _CANDIDATES[4]: (date(2023, 1, 1), date(2026, 8, 20)),
+}
 _EXPECTED: dict[str, Any] = {
     "schema_version": 1,
     "protocol_id": "five_candidate_research_dossier_v1",
@@ -110,6 +163,373 @@ class FiveCandidateDossierProtocolError(ValueError):
 
     def __init__(self) -> None:
         super().__init__(self.code)
+
+
+class FiveCandidateDossierReportError(ValueError):
+    code = "FIVE_CANDIDATE_DOSSIER_REPORT_INVALID"
+
+    def __init__(self) -> None:
+        super().__init__(self.code)
+
+
+@dataclass(frozen=True, slots=True)
+class CandidateHorizonEvidence:
+    sample_count: int
+    numeric_metrics: Mapping[str, str | None]
+
+    def __post_init__(self) -> None:
+        metrics = dict(self.numeric_metrics)
+        if (
+            not _nonnegative_int(self.sample_count)
+            or not metrics
+            or any(type(key) is not str or not key for key in metrics)
+            or any(value is not None and type(value) is not str for value in metrics.values())
+            or (self.sample_count == 0 and any(value is not None for value in metrics.values()))
+            or (self.sample_count > 0 and any(value is None for value in metrics.values()))
+        ):
+            raise FiveCandidateDossierReportError()
+        object.__setattr__(self, "numeric_metrics", MappingProxyType(metrics))
+
+
+@dataclass(frozen=True, slots=True)
+class CandidateCrossSymbolEvidence:
+    candidate_id: str
+    symbol: str
+    status: str
+    reason_code: str | None
+    evaluable_count: int | None
+    event_count: int | None
+    event_rate_per_1000_evaluable: str | None
+    horizon_summary: Mapping[int, CandidateHorizonEvidence] | None
+    sector: str | None
+    yearly: object | None
+
+    def __post_init__(self) -> None:
+        if (
+            self.candidate_id not in _CANDIDATES
+            or not _symbol(self.symbol)
+            or self.status not in {"available", "unavailable"}
+            or (self.sector is not None and (type(self.sector) is not str or not self.sector))
+        ):
+            raise FiveCandidateDossierReportError()
+        if self.status == "unavailable":
+            if (
+                self.reason_code
+                not in {
+                    "MULTI_CANDIDATE_SOURCE_UNAVAILABLE",
+                    "JDJ_SOURCE_UNAVAILABLE",
+                }
+                or self.evaluable_count is not None
+                or self.event_count is not None
+                or self.event_rate_per_1000_evaluable is not None
+                or self.horizon_summary is not None
+                or self.yearly is not None
+            ):
+                raise FiveCandidateDossierReportError()
+            return
+        if (
+            self.reason_code is not None
+            or not _nonnegative_int(self.evaluable_count)
+            or not _nonnegative_int(self.event_count)
+            or (
+                self.event_rate_per_1000_evaluable is not None
+                and type(self.event_rate_per_1000_evaluable) is not str
+            )
+        ):
+            raise FiveCandidateDossierReportError()
+        horizons = dict(self.horizon_summary or {})
+        expected_horizons = SOURCE_SEMANTICS[self.candidate_id][4]
+        if tuple(horizons) != expected_horizons or any(
+            not isinstance(value, CandidateHorizonEvidence)
+            for value in horizons.values()
+        ):
+            raise FiveCandidateDossierReportError()
+        object.__setattr__(self, "horizon_summary", MappingProxyType(horizons))
+        object.__setattr__(self, "yearly", _deep_freeze(self.yearly))
+
+
+@dataclass(frozen=True, slots=True)
+class CandidateIdentityEvidence:
+    candidate_id: str
+    source_kind: str
+    policy_id: str
+    formula_version: str
+    source_event_kind: str
+    source_timeframes: tuple[str, ...]
+    evaluable_unit: str
+    horizon_semantics: str
+    horizons_bars: tuple[int, ...]
+
+    def __post_init__(self) -> None:
+        semantics = SOURCE_SEMANTICS.get(self.candidate_id)
+        if (
+            semantics is None
+            or (
+                self.source_kind,
+                tuple(self.source_timeframes),
+                self.evaluable_unit,
+                self.horizon_semantics,
+                tuple(self.horizons_bars),
+            )
+            != semantics
+            or self.source_event_kind != _SOURCE_EVENT_KINDS[self.candidate_id]
+            or type(self.policy_id) is not str
+            or not self.policy_id
+            or type(self.formula_version) is not str
+            or not self.formula_version
+        ):
+            raise FiveCandidateDossierReportError()
+        object.__setattr__(self, "source_timeframes", tuple(self.source_timeframes))
+        object.__setattr__(self, "horizons_bars", tuple(self.horizons_bars))
+
+
+@dataclass(frozen=True, slots=True)
+class CandidateProspectiveEvidence:
+    first_trading_day: date
+    through: date
+    status: str
+    consumed: bool
+    embargo_trading_days: tuple[date, ...]
+
+    def __post_init__(self) -> None:
+        embargo = tuple(self.embargo_trading_days)
+        if (
+            type(self.first_trading_day) is not date
+            or type(self.through) is not date
+            or self.through >= self.first_trading_day
+            or self.status not in {"pending", "evaluated"}
+            or self.consumed is not False
+            or any(type(value) is not date for value in embargo)
+            or tuple(sorted(set(embargo))) != embargo
+        ):
+            raise FiveCandidateDossierReportError()
+        object.__setattr__(self, "embargo_trading_days", embargo)
+
+
+@dataclass(frozen=True, slots=True)
+class CandidateBaselineEvidence:
+    artifact_id: str
+    symbol: str
+    validation_protocol_id: str
+    baseline_request_through: date
+    retrospective_since: date
+    retrospective_through: date
+    retrospective_event_count: int
+    evaluable_count: int
+    rolling_fold_count: int
+    folds_with_events: int
+    prospective: CandidateProspectiveEvidence
+    quality_flags: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        window = _RETROSPECTIVE_WINDOWS.get(self.artifact_id)
+        flags = tuple(self.quality_flags)
+        if (
+            window is None
+            or self.symbol != "jm"
+            or type(self.validation_protocol_id) is not str
+            or not self.validation_protocol_id
+            or type(self.baseline_request_through) is not date
+            or (self.retrospective_since, self.retrospective_through) != window
+            or not _nonnegative_int(self.retrospective_event_count)
+            or not _nonnegative_int(self.evaluable_count)
+            or not _positive_int(self.rolling_fold_count)
+            or not _nonnegative_int(self.folds_with_events)
+            or self.folds_with_events > self.rolling_fold_count
+            or not isinstance(self.prospective, CandidateProspectiveEvidence)
+            or any(type(flag) is not str or not flag for flag in flags)
+            or len(set(flags)) != len(flags)
+        ):
+            raise FiveCandidateDossierReportError()
+        object.__setattr__(self, "quality_flags", flags)
+
+
+@dataclass(frozen=True, slots=True)
+class CandidateRobustnessEvidence:
+    artifact_id: str
+    robustness_protocol_id: str
+    retrospective_since: date
+    retrospective_through: date
+    matrix_cell_count: int
+    available_symbol_count: int
+    unavailable_symbol_count: int
+    unavailable_reason_counts: Mapping[str, int]
+    zero_event_symbol_count: int
+    zero_sample_symbol_count_by_horizon: Mapping[int, int]
+    sector_evidence: tuple[object, ...]
+    yearly_evidence: tuple[object, ...]
+    quality_flags: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        reason_counts = dict(self.unavailable_reason_counts)
+        zero_samples = dict(self.zero_sample_symbol_count_by_horizon)
+        sectors = tuple(_deep_freeze(value) for value in self.sector_evidence)
+        yearly = tuple(_deep_freeze(value) for value in self.yearly_evidence)
+        flags = tuple(self.quality_flags)
+        expected_horizons = (
+            (3, 5, 8)
+            if self.artifact_id == "multi_candidate_robustness_v1"
+            else (3, 5, 8, 20)
+            if self.artifact_id == "jdj_active60_robustness_v1"
+            else ()
+        )
+        allowed_windows = (
+            {
+                _RETROSPECTIVE_WINDOWS[_CANDIDATES[0]],
+                _RETROSPECTIVE_WINDOWS[_CANDIDATES[1]],
+            }
+            if self.artifact_id == "multi_candidate_robustness_v1"
+            else {
+                _RETROSPECTIVE_WINDOWS[_CANDIDATES[2]],
+            }
+            if self.artifact_id == "jdj_active60_robustness_v1"
+            else set()
+        )
+        if (
+            not expected_horizons
+            or type(self.robustness_protocol_id) is not str
+            or not self.robustness_protocol_id
+            or (self.retrospective_since, self.retrospective_through)
+            not in allowed_windows
+            or self.matrix_cell_count != 60
+            or not _nonnegative_int(self.available_symbol_count)
+            or not _nonnegative_int(self.unavailable_symbol_count)
+            or self.available_symbol_count + self.unavailable_symbol_count != 60
+            or any(type(key) is not str or not key for key in reason_counts)
+            or any(not _positive_int(value) for value in reason_counts.values())
+            or sum(reason_counts.values()) != self.unavailable_symbol_count
+            or not _nonnegative_int(self.zero_event_symbol_count)
+            or self.zero_event_symbol_count > self.available_symbol_count
+            or tuple(zero_samples) != expected_horizons
+            or any(
+                not _nonnegative_int(value) or value > self.available_symbol_count
+                for value in zero_samples.values()
+            )
+            or any(type(flag) is not str or not flag for flag in flags)
+            or len(set(flags)) != len(flags)
+        ):
+            raise FiveCandidateDossierReportError()
+        object.__setattr__(self, "unavailable_reason_counts", MappingProxyType(reason_counts))
+        object.__setattr__(self, "zero_sample_symbol_count_by_horizon", MappingProxyType(zero_samples))
+        object.__setattr__(self, "sector_evidence", sectors)
+        object.__setattr__(self, "yearly_evidence", yearly)
+        object.__setattr__(self, "quality_flags", flags)
+
+
+@dataclass(frozen=True, slots=True)
+class CandidateEvidenceReferences:
+    temporal: object
+    cross_symbol: tuple[CandidateCrossSymbolEvidence, ...]
+    sector: tuple[object, ...]
+    yearly: tuple[object, ...]
+    horizon: object
+    quality: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        rows = tuple(self.cross_symbol)
+        flags = tuple(self.quality)
+        if (
+            len(rows) != 60
+            or any(not isinstance(row, CandidateCrossSymbolEvidence) for row in rows)
+            or any(type(flag) is not str or not flag for flag in flags)
+            or len(set(flags)) != len(flags)
+        ):
+            raise FiveCandidateDossierReportError()
+        object.__setattr__(self, "temporal", _deep_freeze(self.temporal))
+        object.__setattr__(self, "cross_symbol", rows)
+        object.__setattr__(self, "sector", tuple(_deep_freeze(value) for value in self.sector))
+        object.__setattr__(self, "yearly", tuple(_deep_freeze(value) for value in self.yearly))
+        object.__setattr__(self, "horizon", _deep_freeze(self.horizon))
+        object.__setattr__(self, "quality", flags)
+
+
+@dataclass(frozen=True, slots=True)
+class CandidateDossier:
+    identity: CandidateIdentityEvidence
+    baseline: CandidateBaselineEvidence
+    robustness: CandidateRobustnessEvidence
+    evidence_references: CandidateEvidenceReferences
+
+    def __post_init__(self) -> None:
+        if (
+            not isinstance(self.identity, CandidateIdentityEvidence)
+            or not isinstance(self.baseline, CandidateBaselineEvidence)
+            or not isinstance(self.robustness, CandidateRobustnessEvidence)
+            or not isinstance(self.evidence_references, CandidateEvidenceReferences)
+            or self.identity.candidate_id != self.baseline.artifact_id
+            or self.robustness.artifact_id
+            != _expected_robustness_artifact(self.identity.candidate_id)
+            or any(
+                row.candidate_id != self.identity.candidate_id
+                for row in self.evidence_references.cross_symbol
+            )
+        ):
+            raise FiveCandidateDossierReportError()
+
+
+@dataclass(frozen=True, slots=True)
+class FiveCandidateResearchDossier:
+    schema_version: int
+    command: str
+    status: str
+    protocol_id: str
+    frozen_at: datetime
+    research_only: bool
+    readonly: bool
+    prospective_consumed: bool
+    candidate_order: tuple[str, ...]
+    source_artifacts: tuple[SourceArtifactRef, ...]
+    candidate_dossiers: tuple[CandidateDossier, ...]
+    metric_catalog: tuple[object, ...]
+    comparability_pairs: tuple[object, ...]
+    quality_flags: tuple[str, ...]
+    safety: Mapping[str, bool]
+
+    def __post_init__(self) -> None:
+        artifacts = tuple(self.source_artifacts)
+        dossiers = tuple(self.candidate_dossiers)
+        metric_catalog = tuple(self.metric_catalog)
+        comparability_pairs = tuple(self.comparability_pairs)
+        flags = tuple(self.quality_flags)
+        safety = dict(self.safety)
+        if (
+            type(self.schema_version) is not int
+            or self.schema_version != 1
+            or self.command
+            != "guiyi research candidate-dossier --protocol five_candidate_research_dossier_v1"
+            or self.status != "ok"
+            or self.protocol_id != "five_candidate_research_dossier_v1"
+            or type(self.frozen_at) is not datetime
+            or self.research_only is not True
+            or self.readonly is not True
+            or self.prospective_consumed is not False
+            or tuple(self.candidate_order) != _CANDIDATES
+            or len(artifacts) != 7
+            or any(not isinstance(value, SourceArtifactRef) for value in artifacts)
+            or tuple(item.identity.candidate_id for item in dossiers) != _CANDIDATES
+            or metric_catalog
+            or comparability_pairs
+            or any(type(flag) is not str or not flag for flag in flags)
+            or len(set(flags)) != len(flags)
+            or set(safety)
+            != {
+                "new_metric_calculation",
+                "new_relationship_calculation",
+                "parameter_perturbation",
+                "automatic_scoring",
+                "automatic_ranking",
+                "automatic_promotion",
+            }
+            or any(value is not False for value in safety.values())
+        ):
+            raise FiveCandidateDossierReportError()
+        object.__setattr__(self, "candidate_order", tuple(self.candidate_order))
+        object.__setattr__(self, "source_artifacts", artifacts)
+        object.__setattr__(self, "candidate_dossiers", dossiers)
+        object.__setattr__(self, "metric_catalog", metric_catalog)
+        object.__setattr__(self, "comparability_pairs", comparability_pairs)
+        object.__setattr__(self, "quality_flags", flags)
+        object.__setattr__(self, "safety", MappingProxyType(safety))
 
 
 @dataclass(frozen=True, slots=True)
@@ -200,4 +620,40 @@ def load_five_candidate_dossier_protocol(
         automatic_scoring=payload["automatic_scoring"],
         automatic_ranking=payload["automatic_ranking"],
         automatic_promotion=payload["automatic_promotion"],
+    )
+
+
+def _expected_robustness_artifact(candidate_id: str) -> str:
+    if candidate_id in _CANDIDATES[:2]:
+        return "multi_candidate_robustness_v1"
+    if candidate_id in _CANDIDATES[2:]:
+        return "jdj_active60_robustness_v1"
+    raise FiveCandidateDossierReportError()
+
+
+def _deep_freeze(value: object) -> object:
+    if type(value) is dict:
+        return MappingProxyType(
+            {str(key): _deep_freeze(item) for key, item in value.items()}
+        )
+    if type(value) is list:
+        return tuple(_deep_freeze(item) for item in value)
+    return value
+
+
+def _nonnegative_int(value: object) -> bool:
+    return type(value) is int and value >= 0
+
+
+def _positive_int(value: object) -> bool:
+    return type(value) is int and value > 0
+
+
+def _symbol(value: object) -> bool:
+    return (
+        type(value) is str
+        and bool(value)
+        and value.isascii()
+        and value.isalpha()
+        and value == value.lower()
     )
