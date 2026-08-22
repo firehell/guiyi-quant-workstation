@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime
-from statistics import median
 from types import MappingProxyType
 from typing import Protocol
 
@@ -29,6 +28,7 @@ from app.market_data.price_outcome import (
     PriceDirectionalOutcome,
     PriceHorizonEvaluation,
     build_price_outcomes_at,
+    summarize_price_outcomes,
 )
 
 
@@ -263,7 +263,9 @@ class NStructureResearchService:
             ),
             horizon_summary=MappingProxyType(
                 {
-                    horizon: _evaluate_horizon(accumulator.outcomes[horizon])
+                    horizon: summarize_price_outcomes(
+                        accumulator.outcomes[horizon]
+                    )
                     for horizon in _HORIZONS
                 }
             ),
@@ -437,19 +439,4 @@ def _aware_datetime(value: object) -> bool:
         isinstance(value, datetime)
         and value.tzinfo is not None
         and value.utcoffset() is not None
-    )
-
-
-def _evaluate_horizon(
-    outcomes: Sequence[PriceDirectionalOutcome],
-) -> PriceHorizonEvaluation:
-    if not outcomes:
-        return PriceHorizonEvaluation(0, None, None, None)
-    return PriceHorizonEvaluation(
-        sample_count=len(outcomes),
-        median_directional_return_bps=median(
-            outcome.directional_return_bps for outcome in outcomes
-        ),
-        median_mfe_bps=median(outcome.mfe_bps for outcome in outcomes),
-        median_mae_bps=median(outcome.mae_bps for outcome in outcomes),
     )

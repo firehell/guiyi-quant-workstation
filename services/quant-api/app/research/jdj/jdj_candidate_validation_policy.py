@@ -8,7 +8,7 @@ from typing import Any, Mapping
 
 from app.core.env import PROJECT_ROOT
 
-from app.market_data.exact_json_contract import (
+from app.core.exact_json_contract import (
     load_exact_json as _load_exact,
     matches_exact_json as _matches_exact,
 )

@@ -7,7 +7,7 @@ from typing import Any, Mapping
 from app.core.env import PROJECT_ROOT
 
 from app.market_data.domain import BarFrequency
-from app.market_data.exact_json_contract import (
+from app.core.exact_json_contract import (
     freeze_json,
     load_exact_json,
     matches_exact_frozen,

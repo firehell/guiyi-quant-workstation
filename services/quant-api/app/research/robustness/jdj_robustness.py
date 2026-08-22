@@ -11,7 +11,7 @@ from typing import Any, Never, TypeGuard
 
 from app.core.env import PROJECT_ROOT  # type: ignore[import-untyped]
 
-from app.market_data.exact_json_contract import load_exact_json
+from app.core.exact_json_contract import load_exact_json
 from app.research.jdj.jdj_candidate_validation_policy import (
     JdjCandidateValidationProtocolError,
     load_jdj_candidate_validation_protocol,

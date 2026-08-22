@@ -31,101 +31,22 @@ from app.research.candidate_convergence.five_candidate_dossier import (
     MetricComparability,
     SOURCE_SEMANTICS,
 )
+from app.research.candidate_convergence.identities import (
+    ACTIVE60_PRODUCTS,
+    ACTIVE60_SECTORS,
+    CANDIDATE_BASELINE_IDENTITIES,
+    CANDIDATE_EVENT_KINDS,
+    DOSSIER_PAIR_ORDER,
+    FIVE_CANDIDATE_ORDER,
+)
 
 
-_CANDIDATES = (
-    "subing_lifecycle_v2_candidate_v1",
-    "n_structure_5m_candidate_v1",
-    "jdj_trend_follow_1m_candidate_v1",
-    "jdj_trend_reentry_6_1m_candidate_v1",
-    "jdj_key_level_breakout_1m_candidate_v1",
-)
-_PAIR_ORDER = (
-    (_CANDIDATES[0], _CANDIDATES[1]),
-    (_CANDIDATES[0], _CANDIDATES[2]),
-    (_CANDIDATES[0], _CANDIDATES[3]),
-    (_CANDIDATES[0], _CANDIDATES[4]),
-    (_CANDIDATES[1], _CANDIDATES[2]),
-    (_CANDIDATES[1], _CANDIDATES[3]),
-    (_CANDIDATES[1], _CANDIDATES[4]),
-    (_CANDIDATES[2], _CANDIDATES[3]),
-    (_CANDIDATES[2], _CANDIDATES[4]),
-    (_CANDIDATES[3], _CANDIDATES[4]),
-)
-_PRODUCTS = (
-    "a", "ag", "al", "ao", "ap", "au", "b", "bu", "bz", "c",
-    "cf", "cj", "cu", "eb", "ec", "eg", "fg", "fu", "hc", "i",
-    "j", "jd", "jm", "l", "lc", "lh", "m", "ma", "ni", "oi",
-    "p", "pb", "pd", "pf", "pg", "pk", "pl", "pp", "pr", "ps",
-    "pt", "px", "rb", "rm", "rs", "ru", "sa", "sc", "sf", "sh",
-    "si", "sm", "sn", "sr", "ss", "ta", "ur", "v", "y", "zn",
-)
-_SECTORS = (
-    "agriculture",
-    "precious",
-    "nonferrous",
-    "energy",
-    "chemical",
-    "other",
-    "building",
-    "steel",
-    "black",
-    "new_energy",
-)
-_EVENT_KINDS = {
-    _CANDIDATES[0]: "entry_confirmed",
-    _CANDIDATES[1]: "n_completed",
-    _CANDIDATES[2]: "jdj_trend_follow_triggered",
-    _CANDIDATES[3]: "jdj_trend_reentry_6_triggered",
-    _CANDIDATES[4]: "jdj_key_level_breakout_triggered",
-}
-_BASELINE_IDENTITIES = {
-    _CANDIDATES[0]: (
-        "candidate_validation_v1",
-        "subing_lifecycle_v2_research_v1",
-        "subing_lifecycle_v2",
-        date(2023, 1, 1),
-        date(2026, 8, 18),
-        date(2026, 8, 19),
-        date(2026, 8, 20),
-    ),
-    _CANDIDATES[1]: (
-        "n_structure_validation_v1",
-        "n_structure_5m_v1",
-        "n_structure_v1",
-        date(2023, 1, 1),
-        date(2026, 8, 19),
-        date(2026, 8, 20),
-        date(2026, 8, 21),
-    ),
-    _CANDIDATES[2]: (
-        "jdj_candidate_validation_v1",
-        "jdj_1m_policy_v1",
-        "jdj_1m_v1",
-        date(2023, 1, 1),
-        date(2026, 8, 20),
-        date(2026, 8, 21),
-        date(2026, 8, 24),
-    ),
-    _CANDIDATES[3]: (
-        "jdj_candidate_validation_v1",
-        "jdj_1m_policy_v1",
-        "jdj_1m_v1",
-        date(2023, 1, 1),
-        date(2026, 8, 20),
-        date(2026, 8, 21),
-        date(2026, 8, 24),
-    ),
-    _CANDIDATES[4]: (
-        "jdj_candidate_validation_v1",
-        "jdj_1m_policy_v1",
-        "jdj_1m_v1",
-        date(2023, 1, 1),
-        date(2026, 8, 20),
-        date(2026, 8, 21),
-        date(2026, 8, 24),
-    ),
-}
+_CANDIDATES = FIVE_CANDIDATE_ORDER
+_PAIR_ORDER = DOSSIER_PAIR_ORDER
+_PRODUCTS = ACTIVE60_PRODUCTS
+_SECTORS = ACTIVE60_SECTORS
+_EVENT_KINDS = CANDIDATE_EVENT_KINDS
+_BASELINE_IDENTITIES = CANDIDATE_BASELINE_IDENTITIES
 _TEMPORAL_IDENTITIES = {
     _CANDIDATES[0]: {
         "anchor_symbol": "jm",

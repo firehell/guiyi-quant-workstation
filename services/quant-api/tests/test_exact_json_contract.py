@@ -13,7 +13,7 @@ class ExactContractError(ValueError):
 
 
 def _contract_module():
-    module_name = "app.market_data.exact_json_contract"
+    module_name = "app.core.exact_json_contract"
     assert importlib.util.find_spec(module_name) is not None
     return importlib.import_module(module_name)
 

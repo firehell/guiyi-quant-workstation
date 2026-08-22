@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from datetime import date
-from statistics import median
 from typing import Protocol
 
 from app.market_data.actual_dominant_research import (
@@ -52,9 +51,8 @@ from app.research.n_structure.n_structure_policy import (
 from app.market_data.market_data_service import MarketDataError
 from app.market_data.price_outcome import (
     PriceDirection,
-    PriceDirectionalOutcome,
-    PriceHorizonEvaluation,
     build_price_outcomes_at,
+    summarize_price_outcomes,
 )
 
 
@@ -551,7 +549,7 @@ def _build_detailed_candidate_result(
                 event.direction is JdjDirection.SHORT for event in events
             ),
             horizon_summary={
-                horizon: _evaluate_horizon(outcomes[horizon])
+                horizon: summarize_price_outcomes(outcomes[horizon])
                 for horizon in _HORIZONS
             },
             events=events,
@@ -594,21 +592,6 @@ def _combine_candidate_results(
         ),
     )
     return combined.result
-
-
-def _evaluate_horizon(
-    outcomes: Sequence[PriceDirectionalOutcome],
-) -> PriceHorizonEvaluation:
-    if not outcomes:
-        return PriceHorizonEvaluation(0, None, None, None)
-    return PriceHorizonEvaluation(
-        sample_count=len(outcomes),
-        median_directional_return_bps=median(
-            outcome.directional_return_bps for outcome in outcomes
-        ),
-        median_mfe_bps=median(outcome.mfe_bps for outcome in outcomes),
-        median_mae_bps=median(outcome.mae_bps for outcome in outcomes),
-    )
 
 
 def _event_order_key(event: JdjTriggerEvent) -> tuple[object, ...]:

@@ -26,6 +26,7 @@ from app.research.candidate_convergence.five_candidate_relationships import (
 from app.research.candidate_convergence.jdj_exact_overlap import (
     summarize_exact_jdj_overlap,
 )
+from app.research.candidate_convergence.identities import FIVE_CANDIDATE_ORDER
 from app.research.jdj.jdj_context import JdjContextError
 from app.research.jdj.jdj_events import JdjKeyLevelBreakoutTriggerEvent
 from app.research.jdj.jdj_research import (
@@ -35,7 +36,7 @@ from app.research.jdj.jdj_research import (
 )
 
 
-_KEY_LEVEL_BREAKOUT = "jdj_key_level_breakout_1m_candidate_v1"
+_KEY_LEVEL_BREAKOUT = FIVE_CANDIDATE_ORDER[4]
 
 
 class _JdjBatchRunner(Protocol):

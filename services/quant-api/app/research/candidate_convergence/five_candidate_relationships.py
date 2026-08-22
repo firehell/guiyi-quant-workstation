@@ -9,11 +9,12 @@ from types import MappingProxyType
 from typing import Any
 
 from app.core.env import PROJECT_ROOT
-from app.market_data.exact_json_contract import load_exact_json
+from app.core.exact_json_contract import load_exact_json
 from app.research.candidate_convergence.artifact_source import (
     FiveCandidateDossierSourceError,
     SourceArtifactRef,
 )
+from app.research.candidate_convergence import identities
 
 
 _PROTOCOL_ID = "five_candidate_relationship_topology_v1"
@@ -23,37 +24,13 @@ _PROTOCOL_PATH = (
 )
 _FROZEN_AT_TEXT = "2026-08-22T14:01:54+08:00"
 
-RELATIONSHIP_CANDIDATES = (
-    "subing_lifecycle_v2_candidate_v1",
-    "n_structure_5m_candidate_v1",
-    "jdj_trend_follow_1m_candidate_v1",
-    "jdj_trend_reentry_6_1m_candidate_v1",
-    "jdj_key_level_breakout_1m_candidate_v1",
-)
+RELATIONSHIP_CANDIDATES = identities.FIVE_CANDIDATE_ORDER
 _SUBING, _N, _TF, _R6, _KLB = RELATIONSHIP_CANDIDATES
-RELATIONSHIP_JDJ_CANDIDATES = (_TF, _R6, _KLB)
-RELATIONSHIP_PRODUCTS = (
-    "a", "ag", "al", "ao", "ap", "au", "b", "bu", "bz", "c",
-    "cf", "cj", "cu", "eb", "ec", "eg", "fg", "fu", "hc", "i",
-    "j", "jd", "jm", "l", "lc", "lh", "m", "ma", "ni", "oi",
-    "p", "pb", "pd", "pf", "pg", "pk", "pl", "pp", "pr", "ps",
-    "pt", "px", "rb", "rm", "rs", "ru", "sa", "sc", "sf", "sh",
-    "si", "sm", "sn", "sr", "ss", "ta", "ur", "v", "y", "zn",
-)
-RELATIONSHIP_PAIR_ORDER = (
-    (_SUBING, _N),
-    (_N, _TF),
-    (_N, _R6),
-    (_N, _KLB),
-    (_TF, _R6),
-    (_TF, _KLB),
-    (_R6, _KLB),
-    (_SUBING, _TF),
-    (_SUBING, _R6),
-    (_SUBING, _KLB),
-)
-RELATIONSHIP_JDJ_PAIRS = ((_TF, _R6), (_TF, _KLB), (_R6, _KLB))
-_SUBING_JDJ_PAIRS = ((_SUBING, _TF), (_SUBING, _R6), (_SUBING, _KLB))
+RELATIONSHIP_JDJ_CANDIDATES = identities.JDJ_CANDIDATE_ORDER
+RELATIONSHIP_PRODUCTS = identities.ACTIVE60_PRODUCTS
+RELATIONSHIP_PAIR_ORDER = identities.RELATIONSHIP_PAIR_ORDER
+RELATIONSHIP_JDJ_PAIRS = identities.JDJ_RELATIONSHIP_PAIR_ORDER
+_SUBING_JDJ_PAIRS = identities.SUBING_JDJ_PAIR_ORDER
 _N_JDJ_SINCE = date(2023, 1, 1)
 _N_JDJ_THROUGH = date(2026, 8, 19)
 _JDJ_OVERLAP_SINCE = date(2023, 1, 1)

@@ -6,6 +6,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from decimal import Decimal
 from enum import StrEnum
+from statistics import median
 
 from .domain import CanonicalBar
 
@@ -36,6 +37,21 @@ class PriceHorizonEvaluation:
     median_directional_return_bps: Decimal | None
     median_mfe_bps: Decimal | None
     median_mae_bps: Decimal | None
+
+
+def summarize_price_outcomes(
+    outcomes: Sequence[PriceDirectionalOutcome],
+) -> PriceHorizonEvaluation:
+    if not outcomes:
+        return PriceHorizonEvaluation(0, None, None, None)
+    return PriceHorizonEvaluation(
+        sample_count=len(outcomes),
+        median_directional_return_bps=median(
+            outcome.directional_return_bps for outcome in outcomes
+        ),
+        median_mfe_bps=median(outcome.mfe_bps for outcome in outcomes),
+        median_mae_bps=median(outcome.mae_bps for outcome in outcomes),
+    )
 
 
 def build_price_outcomes_at(

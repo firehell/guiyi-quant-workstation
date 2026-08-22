@@ -12,23 +12,23 @@ from types import MappingProxyType
 from typing import Any, cast
 
 from app.core.env import PROJECT_ROOT
-from app.market_data.exact_json_contract import load_exact_json
+from app.core.exact_json_contract import load_exact_json
 from app.research.candidate_convergence.artifact_source import (
     FiveCandidateDossierSourceError,
     SourceArtifactRef,
+)
+from app.research.candidate_convergence.identities import (
+    CANDIDATE_BASELINE_IDENTITIES,
+    CANDIDATE_EVENT_KINDS,
+    DOSSIER_PAIR_ORDER,
+    FIVE_CANDIDATE_ORDER,
 )
 
 
 _PROTOCOL_PATH = (
     PROJECT_ROOT / "data/research_protocols/five_candidate_research_dossier_v1.json"
 )
-_CANDIDATES = (
-    "subing_lifecycle_v2_candidate_v1",
-    "n_structure_5m_candidate_v1",
-    "jdj_trend_follow_1m_candidate_v1",
-    "jdj_trend_reentry_6_1m_candidate_v1",
-    "jdj_key_level_breakout_1m_candidate_v1",
-)
+_CANDIDATES = FIVE_CANDIDATE_ORDER
 _SOURCE_ARTIFACTS = (
     (
         "subing_lifecycle_v2_candidate_v1",
@@ -73,18 +73,7 @@ _SOURCE_ARTIFACTS = (
         "f6078a5bc9d3071cb6f0366982dc709cf95087b5ec8b1872b72d1fd4b7790d87",
     ),
 )
-_PAIR_ORDER = (
-    (_CANDIDATES[0], _CANDIDATES[1]),
-    (_CANDIDATES[0], _CANDIDATES[2]),
-    (_CANDIDATES[0], _CANDIDATES[3]),
-    (_CANDIDATES[0], _CANDIDATES[4]),
-    (_CANDIDATES[1], _CANDIDATES[2]),
-    (_CANDIDATES[1], _CANDIDATES[3]),
-    (_CANDIDATES[1], _CANDIDATES[4]),
-    (_CANDIDATES[2], _CANDIDATES[3]),
-    (_CANDIDATES[2], _CANDIDATES[4]),
-    (_CANDIDATES[3], _CANDIDATES[4]),
-)
+_PAIR_ORDER = DOSSIER_PAIR_ORDER
 _FORBIDDEN_KEYS = {
     "score",
     "rank",
@@ -124,35 +113,35 @@ _EXACT_RELATIONSHIP_REFERENCE_SHA256 = (
     "08e2ea2b56de0b6c9e987762484856bfabed84fb94392e983efad460c7abdf6c"
 )
 SOURCE_SEMANTICS = {
-    "subing_lifecycle_v2_candidate_v1": (
+    _CANDIDATES[0]: (
         "subing_lifecycle",
         ("5m", "15m"),
         "5m_ready_boundary",
         "same_trading_day_only",
         (3, 5, 8),
     ),
-    "n_structure_5m_candidate_v1": (
+    _CANDIDATES[1]: (
         "n_structure",
         ("5m",),
         "5m_canonical_bar",
         "same_rank1_segment",
         (3, 5, 8),
     ),
-    "jdj_trend_follow_1m_candidate_v1": (
+    _CANDIDATES[2]: (
         "jdj_1m",
         ("1m", "5m_strict_before_context"),
         "1m_canonical_bar",
         "same_trading_day_physical_contract_rank1_segment",
         (3, 5, 8, 20),
     ),
-    "jdj_trend_reentry_6_1m_candidate_v1": (
+    _CANDIDATES[3]: (
         "jdj_1m",
         ("1m", "5m_strict_before_context"),
         "1m_canonical_bar",
         "same_trading_day_physical_contract_rank1_segment",
         (3, 5, 8, 20),
     ),
-    "jdj_key_level_breakout_1m_candidate_v1": (
+    _CANDIDATES[4]: (
         "jdj_1m",
         ("1m", "5m_strict_before_context"),
         "1m_canonical_bar",
@@ -160,20 +149,7 @@ SOURCE_SEMANTICS = {
         (3, 5, 8, 20),
     ),
 }
-_SOURCE_EVENT_KINDS = {
-    _CANDIDATES[0]: "entry_confirmed",
-    _CANDIDATES[1]: "n_completed",
-    _CANDIDATES[2]: "jdj_trend_follow_triggered",
-    _CANDIDATES[3]: "jdj_trend_reentry_6_triggered",
-    _CANDIDATES[4]: "jdj_key_level_breakout_triggered",
-}
-_RETROSPECTIVE_WINDOWS = {
-    _CANDIDATES[0]: (date(2023, 1, 1), date(2026, 8, 18)),
-    _CANDIDATES[1]: (date(2023, 1, 1), date(2026, 8, 19)),
-    _CANDIDATES[2]: (date(2023, 1, 1), date(2026, 8, 20)),
-    _CANDIDATES[3]: (date(2023, 1, 1), date(2026, 8, 20)),
-    _CANDIDATES[4]: (date(2023, 1, 1), date(2026, 8, 20)),
-}
+_SOURCE_EVENT_KINDS = CANDIDATE_EVENT_KINDS
 _EXPECTED: dict[str, Any] = {
     "schema_version": 1,
     "protocol_id": "five_candidate_research_dossier_v1",
@@ -498,7 +474,12 @@ class CandidateBaselineEvidence:
     quality_flags: tuple[str, ...]
 
     def __post_init__(self) -> None:
-        window = _RETROSPECTIVE_WINDOWS.get(self.artifact_id)
+        baseline_identity = CANDIDATE_BASELINE_IDENTITIES.get(
+            self.artifact_id
+        )
+        window = (
+            None if baseline_identity is None else baseline_identity[3:5]
+        )
         flags = tuple(self.quality_flags)
         if (
             window is None
@@ -555,7 +536,7 @@ class CandidateRobustnessEvidence:
             }
             if self.artifact_id == "multi_candidate_robustness_v1"
             else {
-                _RETROSPECTIVE_WINDOWS[_CANDIDATES[2]],
+                CANDIDATE_BASELINE_IDENTITIES[_CANDIDATES[2]][3:5],
             }
             if self.artifact_id == "jdj_active60_robustness_v1"
             else set()

@@ -7,7 +7,7 @@ from typing import Any
 
 from app.core.env import PROJECT_ROOT
 
-from app.market_data.exact_json_contract import load_exact_json as _load_exact
+from app.core.exact_json_contract import load_exact_json as _load_exact
 from app.market_data.subing_lifecycle_policy import (
     SubingLifecyclePolicyError,
     load_subing_lifecycle_policy,

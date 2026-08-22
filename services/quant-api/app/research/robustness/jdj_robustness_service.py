@@ -28,7 +28,10 @@ from .jdj_robustness import (
     JdjRobustnessYearSummary,
     require_exact_jdj_active60_robustness_protocol,
 )
-from app.market_data.price_outcome import PriceDirectionalOutcome
+from app.market_data.price_outcome import (
+    PriceDirectionalOutcome,
+    summarize_price_outcomes,
+)
 
 
 _YEARS = (2023, 2024, 2025, 2026)
@@ -138,11 +141,11 @@ class JdjActive60RobustnessService:
 def summarize_jdj_robustness_horizon(
     outcomes: Sequence[PriceDirectionalOutcome],
 ) -> JdjRobustnessHorizonSummary:
-    if not outcomes:
+    summary = summarize_price_outcomes(outcomes)
+    if summary.sample_count == 0:
         return JdjRobustnessHorizonSummary(0, None, None, None, None)
-    sample_count = len(outcomes)
     return JdjRobustnessHorizonSummary(
-        sample_count=sample_count,
+        sample_count=summary.sample_count,
         historical_positive_outcome_rate=(
             Decimal(
                 sum(
@@ -150,13 +153,11 @@ def summarize_jdj_robustness_horizon(
                     for outcome in outcomes
                 )
             )
-            / Decimal(sample_count)
+            / Decimal(summary.sample_count)
         ),
-        median_directional_return_bps=median(
-            outcome.directional_return_bps for outcome in outcomes
-        ),
-        median_mfe_bps=median(outcome.mfe_bps for outcome in outcomes),
-        median_mae_bps=median(outcome.mae_bps for outcome in outcomes),
+        median_directional_return_bps=summary.median_directional_return_bps,
+        median_mfe_bps=summary.median_mfe_bps,
+        median_mae_bps=summary.median_mae_bps,
     )
 
 

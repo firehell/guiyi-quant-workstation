@@ -8,8 +8,11 @@ import pytest
 from app.market_data.domain import CanonicalBar
 from app.market_data.price_outcome import (
     PriceDirection,
+    PriceDirectionalOutcome,
+    PriceHorizonEvaluation,
     PriceOutcomeError,
     build_price_outcomes_at,
+    summarize_price_outcomes,
 )
 
 
@@ -142,3 +145,36 @@ def test_nonpositive_entry_close_fails_closed_in_outcome_domain(
     assert str(captured.value) == "PRICE_OUTCOME_ENTRY_INVALID"
     assert captured.value.code == "PRICE_OUTCOME_ENTRY_INVALID"
     assert captured.value.__cause__ is None
+
+
+def test_price_outcome_summary_preserves_empty_identity() -> None:
+    assert summarize_price_outcomes(()) == PriceHorizonEvaluation(
+        0,
+        None,
+        None,
+        None,
+    )
+
+
+def test_price_outcome_summary_uses_exact_decimal_medians() -> None:
+    outcomes = (
+        PriceDirectionalOutcome(
+            horizon=3,
+            directional_return_bps=Decimal("-1"),
+            mfe_bps=Decimal("2"),
+            mae_bps=Decimal("-5"),
+        ),
+        PriceDirectionalOutcome(
+            horizon=3,
+            directional_return_bps=Decimal("4"),
+            mfe_bps=Decimal("8"),
+            mae_bps=Decimal("-2"),
+        ),
+    )
+
+    assert summarize_price_outcomes(outcomes) == PriceHorizonEvaluation(
+        sample_count=2,
+        median_directional_return_bps=Decimal("1.5"),
+        median_mfe_bps=Decimal("5"),
+        median_mae_bps=Decimal("-3.5"),
+    )
