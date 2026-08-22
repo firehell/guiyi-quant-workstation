@@ -11,6 +11,10 @@ import pytest
 
 from app.core.env import PROJECT_ROOT
 from app.guiyi_cli import research_payloads
+from app.market_data.operational_universe import (
+    ActiveUniverseError,
+    load_active_products as load_active_products_oracle,
+)
 from app.research import composition
 from app.research.candidate_convergence.artifact_source import (
     verify_json_artifact,
@@ -1351,6 +1355,7 @@ def test_relationship_composition_uses_exact_builder_order(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     protocol = load_five_candidate_relationship_protocol()
+    active_products = load_active_products_oracle()
     calls: list[object] = []
     original_verify = verify_json_artifact
     runner = _DependencyRunner()
@@ -1360,6 +1365,10 @@ def test_relationship_composition_uses_exact_builder_order(
     def load_protocol():
         calls.append("load-protocol")
         return protocol
+
+    def load_active_products():
+        calls.append("load-active-products")
+        return active_products
 
     def verify_source(ref, project_root, error_type):
         calls.append(("verify", ref.artifact_id))
@@ -1394,6 +1403,11 @@ def test_relationship_composition_uses_exact_builder_order(
     )
     monkeypatch.setattr(
         composition,
+        "load_active_products",
+        load_active_products,
+    )
+    monkeypatch.setattr(
+        composition,
         "verify_json_artifact",
         verify_source,
         raising=False,
@@ -1419,9 +1433,97 @@ def test_relationship_composition_uses_exact_builder_order(
 
     assert calls == [
         "load-protocol",
+        "load-active-products",
         ("verify", "five_candidate_research_dossier_v1"),
         ("verify", "multi_candidate_robustness_v1"),
         ("build-jdj", session),
         "build-relationship",
     ]
     assert service is built_service
+
+
+@pytest.mark.parametrize("drift_kind", ("add", "delete", "replace", "reorder"))
+def test_relationship_composition_rejects_active_universe_drift_before_io(
+    monkeypatch: pytest.MonkeyPatch,
+    drift_kind: str,
+) -> None:
+    protocol = load_five_candidate_relationship_protocol()
+    active_products = load_active_products_oracle()
+    if drift_kind == "add":
+        drifted_products = (*active_products, "not-active")
+    elif drift_kind == "delete":
+        drifted_products = active_products[:-1]
+    elif drift_kind == "replace":
+        drifted_products = (*active_products[:-1], "not-active")
+    else:
+        drifted_products = (
+            active_products[1],
+            active_products[0],
+            *active_products[2:],
+        )
+    calls: list[str] = []
+
+    def load_protocol():
+        calls.append("load-protocol")
+        return protocol
+
+    def load_active_products():
+        calls.append("load-active-products")
+        return drifted_products
+
+    def forbidden(*_args: object, **_kwargs: object) -> None:
+        pytest.fail("universe drift must fail before artifact or JDJ construction")
+
+    monkeypatch.setattr(
+        composition,
+        "load_five_candidate_relationship_protocol",
+        load_protocol,
+    )
+    monkeypatch.setattr(
+        composition,
+        "load_active_products",
+        load_active_products,
+    )
+    monkeypatch.setattr(composition, "verify_json_artifact", forbidden)
+    monkeypatch.setattr(composition, "build_jdj_research_service", forbidden)
+    monkeypatch.setattr(composition, "FiveCandidateRelationshipService", forbidden)
+
+    with pytest.raises(
+        FiveCandidateRelationshipProtocolError,
+        match="^FIVE_CANDIDATE_RELATIONSHIP_PROTOCOL_INVALID$",
+    ):
+        composition.build_five_candidate_relationship_service(object())
+
+    assert calls == ["load-protocol", "load-active-products"]
+
+
+def test_relationship_composition_converts_invalid_active_universe_before_io(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    protocol = load_five_candidate_relationship_protocol()
+
+    def invalid_active_products() -> tuple[str, ...]:
+        raise ActiveUniverseError()
+
+    def forbidden(*_args: object, **_kwargs: object) -> None:
+        pytest.fail("invalid active universe must fail before artifact or JDJ construction")
+
+    monkeypatch.setattr(
+        composition,
+        "load_five_candidate_relationship_protocol",
+        lambda: protocol,
+    )
+    monkeypatch.setattr(
+        composition,
+        "load_active_products",
+        invalid_active_products,
+    )
+    monkeypatch.setattr(composition, "verify_json_artifact", forbidden)
+    monkeypatch.setattr(composition, "build_jdj_research_service", forbidden)
+    monkeypatch.setattr(composition, "FiveCandidateRelationshipService", forbidden)
+
+    with pytest.raises(
+        FiveCandidateRelationshipProtocolError,
+        match="^FIVE_CANDIDATE_RELATIONSHIP_PROTOCOL_INVALID$",
+    ):
+        composition.build_five_candidate_relationship_service(object())

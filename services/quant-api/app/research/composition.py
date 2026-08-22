@@ -51,7 +51,7 @@ from app.research.n_structure.n_candidate_validation_service import (
 )
 from app.research.n_structure.n_structure_policy import load_n_structure_policy
 from app.research.n_structure.n_structure_research_service import NStructureResearchService
-from app.market_data.operational_universe import load_active_products
+from app.market_data.operational_universe import ActiveUniverseError, load_active_products
 from app.market_data.subing_calibration import load_accepted_subing_calibration
 from app.research.subing.subing_calibration_service import SubingCalibrationResearchService
 from app.research.subing.subing_candidate_validation_service import (
@@ -71,6 +71,7 @@ from app.research.candidate_convergence.artifact_source import (
     verify_json_artifact,
 )
 from app.research.candidate_convergence.five_candidate_relationships import (
+    FiveCandidateRelationshipProtocolError,
     FiveCandidateRelationshipSourceError,
     load_five_candidate_relationship_protocol,
 )
@@ -102,6 +103,12 @@ def build_five_candidate_relationship_service(
 ) -> FiveCandidateRelationshipService:
     """Compose exact Phase 8B source verification and one JDJ service."""
     protocol = load_five_candidate_relationship_protocol()
+    try:
+        active_products = load_active_products()
+    except ActiveUniverseError:
+        raise FiveCandidateRelationshipProtocolError() from None
+    if active_products != protocol.cross_symbol_products:
+        raise FiveCandidateRelationshipProtocolError()
     dossier_source = verify_json_artifact(
         protocol.dossier_source,
         PROJECT_ROOT,
