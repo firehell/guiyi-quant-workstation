@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import importlib
 import json
 import re
 import subprocess
@@ -65,6 +66,7 @@ def test_active_docs_and_cli_match_current_surfaces() -> None:
     backend_readme = (ROOT / "services/quant-api/README.md").read_text(
         encoding="utf-8"
     )
+    project_source = (ROOT / "PROJECT_SOURCE.md").read_text(encoding="utf-8")
     core_readme = (ROOT / "packages/quant-core/README.md").read_text(
         encoding="utf-8"
     )
@@ -75,16 +77,10 @@ def test_active_docs_and_cli_match_current_surfaces() -> None:
     assert "v1.4 release" not in execution_review
     assert "Lane 3" not in execution_review
     assert "G9 cleanup" not in development
-    for command in (
-        "subing-calibration",
-        "subing-lifecycle",
-        "n-structure",
-        "jdj-1m",
-        "candidate-validation",
-        "candidate-robustness",
-        "main-force-mirror-v2",
-    ):
+    research_parser = importlib.import_module("app.guiyi_cli.research_parser")
+    for command in research_parser.RESEARCH_COMMAND_NAMES:
         assert command in backend_readme
+        assert command in project_source
     assert "当前 Web 仅 Market" not in core_readme
 
 
@@ -206,9 +202,10 @@ def test_isolated_postgresql_tests_are_separate_from_the_local_baseline() -> Non
     )
     testing = (ROOT / "TESTING.md").read_text(encoding="utf-8")
     service_tree = ast.parse(
-        (ROOT / "services/quant-api/tests/test_execution_review_service.py").read_text(
-            encoding="utf-8"
-        )
+        (
+            ROOT
+            / "services/quant-api/tests/execution_review/test_isolated_postgresql_concurrency.py"
+        ).read_text(encoding="utf-8")
     )
     migration_tree = ast.parse(
         (
@@ -266,7 +263,7 @@ def test_exact_contract_and_jdj_identity_have_one_implementation() -> None:
     market_data = ROOT / "services/quant-api/app/market_data"
     research = ROOT / "services/quant-api/app/research"
     jdj_context = research / "jdj/jdj_context.py"
-    exact_contract = market_data / "exact_json_contract.py"
+    exact_contract = ROOT / "services/quant-api/app/core/exact_json_contract.py"
     assert exact_contract.is_file()
     exact_source = exact_contract.read_text(encoding="utf-8")
     for function in (

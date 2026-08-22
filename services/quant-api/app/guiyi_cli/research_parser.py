@@ -6,6 +6,19 @@ import argparse
 from typing import Any
 
 
+RESEARCH_COMMAND_NAMES = (
+    "subing-calibration",
+    "subing-lifecycle",
+    "n-structure",
+    "jdj-1m",
+    "candidate-validation",
+    "candidate-robustness",
+    "candidate-dossier",
+    "candidate-relationships",
+    "main-force-mirror-v2",
+)
+
+
 def add_research_commands(
     commands: argparse._SubParsersAction[Any],
 ) -> None:
@@ -108,3 +121,6 @@ def add_research_commands(
     mirror.add_argument("--since", required=True)
     mirror.add_argument("--through", required=True)
     mirror.add_argument("--forensic", action="store_true")
+
+    if tuple(commands.choices) != RESEARCH_COMMAND_NAMES:
+        raise RuntimeError("CLI_RESEARCH_COMMAND_REGISTRY_INVALID")
