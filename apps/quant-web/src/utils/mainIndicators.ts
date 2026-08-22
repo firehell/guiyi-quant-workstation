@@ -71,6 +71,14 @@ export const RESEARCH_OVERLAY_DEFINITIONS: readonly ResearchOverlayDefinition[] 
     historicalSource: 'subing',
   },
   {
+    id: 'n_structure',
+    label: 'N字',
+    supportedSeriesKinds: ['actual_dominant'],
+    supportedFrequencies: ['5m'],
+    mainIndicators: [],
+    historicalSource: 'n_structure',
+  },
+  {
     id: 'htdy',
     label: '火天大有',
     supportedSeriesKinds: ['continuous', 'actual_dominant', 'contract'],
@@ -326,5 +334,7 @@ function browserStorage(): Storage | null {
 }
 
 function normalizeResearchOverlay(value: unknown): ResearchOverlayId {
-  return value === 'none' || value === 'htdy' ? value : 'subing'
+  return value === 'none' || value === 'n_structure' || value === 'htdy'
+    ? value
+    : 'subing'
 }

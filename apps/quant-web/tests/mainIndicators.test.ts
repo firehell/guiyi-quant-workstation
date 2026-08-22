@@ -191,6 +191,25 @@ test('preference v3 saves and loads optional EMAs with chart UI preferences', ()
   assert.deepEqual(loadMainChartPreferences(storage), defaultMainChartPreferences())
 })
 
+test('preference v3 preserves the N overlay without a schema version change', () => {
+  const values = new Map<string, string>()
+  const storage = {
+    getItem: (key: string) => values.get(key) || null,
+    setItem: (key: string, value: string) => values.set(key, value),
+  }
+
+  saveMainChartPreferences({
+    version: 3,
+    selectedOverlay: 'n_structure',
+    optionalEmaIndicators: [],
+    period: '5m',
+    realtimeFollow: false,
+  }, storage)
+
+  assert.equal(loadMainChartPreferences(storage).selectedOverlay, 'n_structure')
+  assert.equal(JSON.parse(values.get(MAIN_CHART_PREFERENCES_KEY)!).version, 3)
+})
+
 test('preference loading falls back when accessing browser localStorage throws', () => {
   const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window')
   Object.defineProperty(globalThis, 'window', {

@@ -19,6 +19,7 @@ from app.api.execution_review import router as execution_review_router
 from app.api.market import router as market_router
 from app.api.market_live import router as market_live_router
 from app.api.market_research_overlays import router as market_research_overlays_router
+from app.research.historical_overlay_api import router as research_historical_overlay_router
 from app.api.runtime import router as runtime_router
 from app.middleware.request_timing import RequestTimingMiddleware
 from app.version import APP_VERSION
@@ -62,6 +63,7 @@ app.add_middleware(
 app.include_router(market_router)
 app.include_router(market_live_router)
 app.include_router(market_research_overlays_router)
+app.include_router(research_historical_overlay_router)
 app.include_router(alerts_router)
 app.include_router(execution_review_router)
 app.include_router(runtime_router)

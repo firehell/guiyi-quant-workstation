@@ -9,6 +9,7 @@ import { getEventStates } from '@/api/executionReview'
 import {
   getMarketDominants,
   getProductResearch,
+  getNStructureHistoricalEvents,
   getSubingHistoricalSignals,
   getSubingResearch,
 } from '@/api/market'
@@ -113,7 +114,10 @@ const {
   error: historicalResearchError,
   sync: syncHistoricalResearchMarkers,
   dispose: disposeHistoricalResearchMarkers,
-} = useHistoricalResearchMarkers({ fetchSubing: getSubingHistoricalSignals })
+} = useHistoricalResearchMarkers({
+  fetchSubing: getSubingHistoricalSignals,
+  fetchNStructure: getNStructureHistoricalEvents,
+})
 const {
   subing,
   subingLoading,

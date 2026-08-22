@@ -75,15 +75,39 @@ function deferred<T>() {
   return { promise, resolve }
 }
 
-test('research overlay capability registry stays display-only and adds no N or JDJ placeholder', () => {
-  assert.deepEqual(RESEARCH_OVERLAY_DEFINITIONS.map((item) => item.id), ['none', 'subing', 'htdy'])
+function nResponse(
+  request: {
+    series_kind: 'actual_dominant'
+    symbol: string
+    frequency: '5m'
+    since: string
+    through: string
+  },
+  events: Array<{
+    event_id: string
+    observed_at: string
+    trading_day: string
+    contract: string
+    segment_start_trading_day: string
+    direction: 'up' | 'down'
+  }>,
+) {
+  return { request, events }
+}
+
+test('research overlay capability registry exposes the causal N overlay without a JDJ placeholder', () => {
+  assert.deepEqual(RESEARCH_OVERLAY_DEFINITIONS.map((item) => item.id), ['none', 'subing', 'n_structure', 'htdy'])
   assert.deepEqual(researchOverlayCapability('subing', 'actual_dominant', '5m'), {
     supported: true,
     definition: RESEARCH_OVERLAY_DEFINITIONS[1],
   })
   assert.equal(researchOverlayCapability('subing', 'continuous', '5m').supported, false)
   assert.equal(researchOverlayCapability('subing', 'actual_dominant', '1m').supported, false)
-  assert.equal(RESEARCH_OVERLAY_DEFINITIONS.some((item) => item.id === ('n_structure' as never)), false)
+  assert.equal(researchOverlayCapability('n_structure' as never, 'actual_dominant', '5m').supported, true)
+  assert.equal(researchOverlayCapability('n_structure' as never, 'actual_dominant', '15m').supported, false)
+  assert.equal(RESEARCH_OVERLAY_DEFINITIONS[2].label, 'N字')
+  assert.equal(RESEARCH_OVERLAY_DEFINITIONS[2].historicalSource, 'n_structure')
+  assert.deepEqual(RESEARCH_OVERLAY_DEFINITIONS[2].mainIndicators, [])
   assert.equal(RESEARCH_OVERLAY_DEFINITIONS.some((item) => item.id === ('jdj' as never)), false)
 })
 
@@ -114,6 +138,117 @@ test('historical loader discards stale response after full overlay identity chan
 
   assert.equal(controller.markers.value.length, 1)
   assert.match(controller.markers.value[0].id, /\|ag\|/)
+})
+
+test('N marker uses the causal observed_at instead of an earlier pivot timestamp', async () => {
+  const markerModule = await import('../src/utils/historicalResearchMarkers.ts')
+  const mapper = (markerModule as unknown as {
+    nStructureHistoricalEventToMarker?: (event: Record<string, unknown>) => {
+      time: string
+      label: string
+      position: string
+    }
+  }).nStructureHistoricalEventToMarker
+  assert.equal(typeof mapper, 'function')
+
+  const marker = mapper!({
+    event_id: 'n-up-1',
+    observed_at: '2026-08-03T02:15:00Z',
+    pivot_at: '2026-08-03T01:05:00Z',
+    trading_day: '2026-08-03',
+    contract: 'JM2609',
+    segment_start_trading_day: '2026-08-03',
+    direction: 'up',
+  })
+
+  assert.equal(marker.time, '2026-08-03T02:15:00Z')
+  assert.equal(marker.label, 'N↑完成')
+  assert.equal(marker.position, 'belowBar')
+})
+
+test('historical loader discards stale SuBing response after switching to N', async () => {
+  const subing = deferred<SubingHistoricalSignalResponse>()
+  const nStructure = deferred<ReturnType<typeof nResponse>>()
+  const controller = useHistoricalResearchMarkers({
+    fetchSubing: () => subing.promise,
+    fetchNStructure: () => nStructure.promise,
+  } as never)
+  const coverage = { start: canonicalBars[0].time, end: canonicalBars[1].time }
+
+  const oldSync = controller.sync(
+    { overlay: 'subing', seriesKind: 'actual_dominant', symbol: 'jm', frequency: '5m' },
+    canonicalBars,
+    coverage,
+    'replace',
+  )
+  const newSync = controller.sync(
+    { overlay: 'n_structure', seriesKind: 'actual_dominant', symbol: 'jm', frequency: '5m' },
+    canonicalBars,
+    coverage,
+    'replace',
+  )
+  nStructure.resolve(nResponse({
+    series_kind: 'actual_dominant', symbol: 'jm', frequency: '5m',
+    since: '2026-08-03', through: '2026-08-03',
+  }, [{
+    event_id: 'n-up-1', observed_at: canonicalBars[1].time,
+    trading_day: '2026-08-03', contract: 'JM2609',
+    segment_start_trading_day: '2026-08-03', direction: 'up',
+  }]))
+  await newSync
+  subing.resolve(response('jm', '5m', canonicalBars[0].time))
+  await oldSync
+
+  assert.deepEqual(controller.markers.value.map((marker) => marker.label), ['N↑完成'])
+  assert.equal(controller.markers.value[0].time, canonicalBars[1].time)
+})
+
+test('N prepend deduplicates event ids and preserves the confirmed marker window', async () => {
+  let call = 0
+  const laterEvent = {
+    event_id: 'n-up-later', observed_at: canonicalBars[1].time,
+    trading_day: '2026-08-03', contract: 'JM2609',
+    segment_start_trading_day: '2026-08-03', direction: 'up' as const,
+  }
+  const earlier = {
+    ...canonicalBars[0],
+    time: '2026-08-02T01:05:00Z',
+    trading_day: '2026-08-02',
+  }
+  const controller = useHistoricalResearchMarkers({
+    fetchSubing: async () => { throw new Error('wrong source') },
+    fetchNStructure: async (request: Parameters<typeof nResponse>[0]) => {
+      call += 1
+      return nResponse(request, call === 1 ? [laterEvent] : [{
+        event_id: 'n-down-earlier', observed_at: earlier.time,
+        trading_day: '2026-08-02', contract: 'JM2609',
+        segment_start_trading_day: '2026-08-02', direction: 'down',
+      }, laterEvent])
+    },
+  } as never)
+  const identity = {
+    overlay: 'n_structure' as const,
+    seriesKind: 'actual_dominant' as const,
+    symbol: 'jm',
+    frequency: '5m' as const,
+  }
+
+  await controller.sync(
+    identity,
+    canonicalBars,
+    { start: canonicalBars[0].time, end: canonicalBars[1].time },
+    'replace',
+  )
+  await controller.sync(
+    identity,
+    [earlier, ...canonicalBars],
+    { start: earlier.time, end: canonicalBars[1].time },
+    'prepend',
+  )
+
+  assert.equal(call, 2)
+  assert.deepEqual(controller.markers.value.map((marker) => marker.label), ['N↓完成', 'N↑完成'])
+  assert.equal(new Set(controller.markers.value.map((marker) => marker.id)).size, 2)
 })
 
 test('historical loader clips requests to canonical coverage and ignores live-only mutations', async () => {

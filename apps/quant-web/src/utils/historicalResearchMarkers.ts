@@ -1,5 +1,6 @@
 import type {
   KlineMarker,
+  NStructureHistoricalEvent,
   SubingHistoricalSignalEvent,
 } from '../types/market.ts'
 import { ALERT_RULE_CODES } from './alertRules.ts'
@@ -34,5 +35,21 @@ export function historicalResearchEventToMarker(
     tone: buy ? 'up' : 'down',
     position: buy ? 'belowBar' : 'aboveBar',
     shape: buy ? 'arrowUp' : 'arrowDown',
+  }
+}
+
+export function nStructureHistoricalEventToMarker(
+  event: NStructureHistoricalEvent,
+): KlineMarker {
+  const up = event.direction === 'up'
+  const label = up ? 'N↑完成' : 'N↓完成'
+  return {
+    id: `historical:${event.event_id}`,
+    time: event.observed_at,
+    label,
+    tooltip: `历史因果重放 · N Structure · ${event.contract} · 5m · ${label} · 非成交回测`,
+    tone: up ? 'up' : 'down',
+    position: up ? 'belowBar' : 'aboveBar',
+    shape: up ? 'arrowUp' : 'arrowDown',
   }
 }
