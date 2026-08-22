@@ -5,6 +5,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass, fields, is_dataclass
 from datetime import date, datetime
 from enum import StrEnum
+import hashlib
+import json
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any
@@ -117,6 +119,9 @@ _JDJ_METRIC_IDS = (
 _SOURCE_HORIZON_METRIC_IDS = (
     "subing_source_outcome_horizons_3_5_8",
     "n_source_outcome_horizons_3_5_8",
+)
+_EXACT_RELATIONSHIP_REFERENCE_SHA256 = (
+    "08e2ea2b56de0b6c9e987762484856bfabed84fb94392e983efad460c7abdf6c"
 )
 SOURCE_SEMANTICS = {
     "subing_lifecycle_v2_candidate_v1": (
@@ -687,6 +692,18 @@ class FiveCandidateResearchDossier:
         comparability_pairs = tuple(self.comparability_pairs)
         flags = tuple(self.quality_flags)
         safety = dict(self.safety)
+        if any(not isinstance(item, ComparabilityPair) for item in comparability_pairs):
+            raise FiveCandidateDossierReportError()
+        comparability_pairs = tuple(
+            ComparabilityPair(
+                left_candidate_id=item.left_candidate_id,
+                right_candidate_id=item.right_candidate_id,
+                status=item.status,
+                reason_codes=item.reason_codes,
+                existing_relationship_reference=item.existing_relationship_reference,
+            )
+            for item in comparability_pairs
+        )
         if (
             type(self.schema_version) is not int
             or self.schema_version != 1
@@ -904,7 +921,7 @@ def _deep_freeze(value: object) -> object:
         return MappingProxyType(
             {str(key): _deep_freeze(item) for key, item in value.items()}
         )
-    if type(value) is list:
+    if type(value) in {list, tuple}:
         return tuple(_deep_freeze(item) for item in value)
     return value
 
@@ -953,9 +970,34 @@ def _freeze_existing_relationship_reference(
         for item in relationships
     ):
         raise FiveCandidateDossierReportError()
+    if _relationship_reference_sha256(reference) != _EXACT_RELATIONSHIP_REFERENCE_SHA256:
+        raise FiveCandidateDossierReportError()
     frozen = _deep_freeze(reference)
     assert isinstance(frozen, Mapping)
     return frozen
+
+
+def _relationship_reference_sha256(value: object) -> str:
+    try:
+        canonical = json.dumps(
+            _json_compatible(value),
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ).encode("utf-8")
+    except (TypeError, ValueError):
+        raise FiveCandidateDossierReportError() from None
+    return hashlib.sha256(canonical).hexdigest()
+
+
+def _json_compatible(value: object) -> object:
+    if isinstance(value, Mapping):
+        if any(type(key) is not str for key in value):
+            raise FiveCandidateDossierReportError()
+        return {key: _json_compatible(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_compatible(item) for item in value]
+    return value
 
 
 def _contains_forbidden_key(value: object) -> bool:

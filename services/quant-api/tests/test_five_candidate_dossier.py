@@ -450,6 +450,86 @@ def test_existing_subing_n_relationship_is_projected_without_recomputation(
         reference["protocol_id"] = "changed"  # type: ignore[index]
 
 
+def _mutable_relationship_reference(report) -> dict[str, object]:
+    reference = report.comparability_pairs[0].existing_relationship_reference
+    assert reference is not None
+    return {
+        "protocol_id": reference["protocol_id"],
+        "common_retrospective": dict(reference["common_retrospective"]),
+        "metric_compatibility_flags": tuple(reference["metric_compatibility_flags"]),
+        "relationships": tuple(dict(item) for item in reference["relationships"]),
+    }
+
+
+def test_comparability_pair_rejects_mutated_existing_relationship_value(
+    service: FiveCandidateResearchDossierService,
+) -> None:
+    report = service.run(
+        FiveCandidateDossierRequest("five_candidate_research_dossier_v1")
+    )
+    changed_reference = _mutable_relationship_reference(report)
+    relationships = changed_reference["relationships"]
+    assert isinstance(relationships, tuple)
+    relationships[0]["within_3_same_direction_source_count"] = 999999
+
+    with pytest.raises(FiveCandidateDossierReportError):
+        replace(
+            report.comparability_pairs[0],
+            existing_relationship_reference=changed_reference,
+        )
+
+
+def test_complete_report_rejects_mutated_existing_relationship_value(
+    service: FiveCandidateResearchDossierService,
+) -> None:
+    report = service.run(
+        FiveCandidateDossierRequest("five_candidate_research_dossier_v1")
+    )
+    changed_reference = _mutable_relationship_reference(report)
+    relationships = changed_reference["relationships"]
+    assert isinstance(relationships, tuple)
+    relationships[0]["within_3_same_direction_source_count"] = 999999
+    bypassed_pair = replace(report.comparability_pairs[0])
+    object.__setattr__(
+        bypassed_pair,
+        "existing_relationship_reference",
+        changed_reference,
+    )
+
+    with pytest.raises(FiveCandidateDossierReportError):
+        replace(
+            report,
+            comparability_pairs=(
+                bypassed_pair,
+                *report.comparability_pairs[1:],
+            ),
+        )
+
+
+def test_tuple_relationship_mappings_are_recursively_frozen_before_retention(
+    service: FiveCandidateResearchDossierService,
+) -> None:
+    report = service.run(
+        FiveCandidateDossierRequest("five_candidate_research_dossier_v1")
+    )
+    tuple_reference = _mutable_relationship_reference(report)
+    tuple_pair = replace(
+        report.comparability_pairs[0],
+        existing_relationship_reference=tuple_reference,
+    )
+    tuple_report = replace(
+        report,
+        comparability_pairs=(tuple_pair, *report.comparability_pairs[1:]),
+    )
+    retained_relationship = tuple_report.comparability_pairs[
+        0
+    ].existing_relationship_reference["relationships"][0]
+
+    with pytest.raises(TypeError):
+        retained_relationship["PnL"] = 1
+    assert isinstance(retained_relationship, MappingProxyType)
+
+
 @pytest.mark.parametrize(
     "forbidden_key",
     (
