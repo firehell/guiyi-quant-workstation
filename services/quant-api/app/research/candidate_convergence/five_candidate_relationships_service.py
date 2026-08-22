@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping
 from dataclasses import replace
 from datetime import date
-from typing import Protocol
+from typing import Protocol, cast
 
 from app.research.candidate_convergence.artifact_source import (
     VerifiedJsonArtifact,
@@ -80,9 +81,9 @@ class FiveCandidateRelationshipService:
         )
         dependency_rows = self.project_n_jdj_dependencies()
         overlap_rows = self.project_jdj_exact_overlaps()
-        has_unavailable = any(
-            row.status == "unavailable"
-            for row in (*dependency_rows, *overlap_rows)
+        has_unavailable = (
+            any(row.status == "unavailable" for row in dependency_rows)
+            or any(row.status == "unavailable" for row in overlap_rows)
         )
         return FiveCandidateRelationshipReport(
             schema_version=1,
@@ -379,10 +380,15 @@ def _validate_verified_sources(
             and dossier.get("research_only") is True
             and dossier.get("readonly") is True
             and dossier.get("prospective_consumed") is False
-            and tuple(dossier["candidate_order"])
+            and tuple(cast(Iterable[object], dossier["candidate_order"]))
             == protocol.candidate_order
         )
-        relationships = tuple(subing_n["relationships"])
+        relationships = tuple(
+            cast(
+                Iterable[Mapping[str, object]],
+                subing_n["relationships"],
+            )
+        )
         subing_n_identity_valid = (
             subing_n.get("schema_version") == 1
             and subing_n.get("command") == "research.candidate-robustness"
