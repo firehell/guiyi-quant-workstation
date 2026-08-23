@@ -807,20 +807,23 @@ class MainForceMirrorDiagnosticModelFoldSection:
     evaluate_short_count: int
     evaluate_product_count: int
     bootstrap_valid_count: int
-    score_auc: Decimal
-    ridge_auc: Decimal
-    current_tree_auc: Decimal
-    full_tree_auc: Decimal
-    ridge_score_delta: Decimal
-    ridge_score_ci_lower: Decimal
-    full_tree_ridge_delta: Decimal
-    full_tree_ridge_ci_lower: Decimal
-    full_tree_current_tree_delta: Decimal
-    full_tree_current_tree_ci_lower: Decimal
-    long_auc: Decimal
-    short_auc: Decimal
-    long_point_delta: Decimal
-    short_point_delta: Decimal
+    score_auc: Decimal | None
+    ridge_auc: Decimal | None
+    current_tree_auc: Decimal | None
+    full_tree_auc: Decimal | None
+    ridge_score_delta: Decimal | None
+    ridge_score_ci_lower: Decimal | None
+    full_tree_ridge_delta: Decimal | None
+    full_tree_ridge_ci_lower: Decimal | None
+    full_tree_current_tree_delta: Decimal | None
+    full_tree_current_tree_ci_lower: Decimal | None
+    long_auc: Decimal | None
+    short_auc: Decimal | None
+    long_point_delta: Decimal | None
+    short_point_delta: Decimal | None
+    model_unavailable_reason: MainForceMirrorDiagnosticUnavailableReason | None = None
+    long_unavailable_reason: MainForceMirrorDiagnosticUnavailableReason | None = None
+    short_unavailable_reason: MainForceMirrorDiagnosticUnavailableReason | None = None
 
     def __post_init__(self) -> None:
         counts = (
@@ -835,24 +838,53 @@ class MainForceMirrorDiagnosticModelFoldSection:
             self.evaluate_product_count,
             self.bootstrap_valid_count,
         )
-        aucs = (
+        core_aucs = (
             self.score_auc,
             self.ridge_auc,
             self.current_tree_auc,
             self.full_tree_auc,
-            self.long_auc,
-            self.short_auc,
         )
-        deltas = (
+        core_deltas = (
             self.ridge_score_delta,
             self.ridge_score_ci_lower,
             self.full_tree_ridge_delta,
             self.full_tree_ridge_ci_lower,
             self.full_tree_current_tree_delta,
             self.full_tree_current_tree_ci_lower,
-            self.long_point_delta,
-            self.short_point_delta,
         )
+        core_metrics = (*core_aucs, *core_deltas)
+        try:
+            model_reason = (
+                None
+                if self.model_unavailable_reason is None
+                else MainForceMirrorDiagnosticUnavailableReason(
+                    self.model_unavailable_reason
+                )
+            )
+            long_reason = (
+                None
+                if self.long_unavailable_reason is None
+                else MainForceMirrorDiagnosticUnavailableReason(
+                    self.long_unavailable_reason
+                )
+            )
+            short_reason = (
+                None
+                if self.short_unavailable_reason is None
+                else MainForceMirrorDiagnosticUnavailableReason(
+                    self.short_unavailable_reason
+                )
+            )
+        except (TypeError, ValueError):
+            _raise_report_invalid()
+        model_reasons = {
+            MainForceMirrorDiagnosticUnavailableReason.SPLIT_CLASS_UNAVAILABLE,
+            MainForceMirrorDiagnosticUnavailableReason.MODEL_CONVERGENCE_FAILED,
+        }
+        side_reasons = {
+            MainForceMirrorDiagnosticUnavailableReason.SPLIT_CLASS_UNAVAILABLE,
+            MainForceMirrorDiagnosticUnavailableReason.MODEL_CONVERGENCE_FAILED,
+        }
         if (
             self.fold not in (1, 2)
             or any(not _nonnegative_int(value) for value in counts)
@@ -863,10 +895,37 @@ class MainForceMirrorDiagnosticModelFoldSection:
             != self.evaluate_binary_count
             or self.evaluate_product_count > 60
             or self.bootstrap_valid_count > 2000
-            or any(not _rate(value) for value in aucs)
-            or any(not _finite_decimal(value) for value in deltas)
+            or (
+                model_reason is None
+                and (
+                    any(not _rate(value) for value in core_aucs)
+                    or any(not _finite_decimal(value) for value in core_deltas)
+                )
+            )
+            or (
+                model_reason is not None
+                and (
+                    model_reason not in model_reasons
+                    or any(value is not None for value in core_metrics)
+                )
+            )
+            or not _valid_optional_side_metrics(
+                self.long_auc,
+                self.long_point_delta,
+                long_reason,
+                side_reasons,
+            )
+            or not _valid_optional_side_metrics(
+                self.short_auc,
+                self.short_point_delta,
+                short_reason,
+                side_reasons,
+            )
         ):
             _raise_report_invalid()
+        object.__setattr__(self, "model_unavailable_reason", model_reason)
+        object.__setattr__(self, "long_unavailable_reason", long_reason)
+        object.__setattr__(self, "short_unavailable_reason", short_reason)
 
 
 @dataclass(frozen=True, slots=True)
@@ -877,6 +936,7 @@ class MainForceMirrorDiagnosticModelBreakdown:
     ridge_auc: Decimal | None
     current_tree_auc: Decimal | None
     full_tree_auc: Decimal | None
+    unavailable_reason: MainForceMirrorDiagnosticUnavailableReason | None = None
 
     def __post_init__(self) -> None:
         metrics = (
@@ -885,19 +945,50 @@ class MainForceMirrorDiagnosticModelBreakdown:
             self.current_tree_auc,
             self.full_tree_auc,
         )
+        try:
+            reason = (
+                None
+                if self.unavailable_reason is None
+                else MainForceMirrorDiagnosticUnavailableReason(
+                    self.unavailable_reason
+                )
+            )
+        except (TypeError, ValueError):
+            _raise_report_invalid()
         if (
             not isinstance(self.key, MainForceMirrorDiagnosticBreakdownKey)
             or not _nonnegative_int(self.sample_count)
             or (
                 self.sample_count == 0
-                and any(metric is not None for metric in metrics)
+                and (
+                    reason is not None
+                    or any(metric is not None for metric in metrics)
+                )
             )
             or (
                 self.sample_count > 0
-                and any(not _rate(metric) for metric in metrics)
+                and (
+                    (
+                        reason is None
+                        and any(not _rate(metric) for metric in metrics)
+                    )
+                    or (
+                        reason
+                        not in {
+                            MainForceMirrorDiagnosticUnavailableReason.SPLIT_CLASS_UNAVAILABLE,
+                            MainForceMirrorDiagnosticUnavailableReason.MODEL_CONVERGENCE_FAILED,
+                        }
+                        and reason is not None
+                    )
+                    or (
+                        reason is not None
+                        and any(metric is not None for metric in metrics)
+                    )
+                )
             )
         ):
             _raise_report_invalid()
+        object.__setattr__(self, "unavailable_reason", reason)
 
 
 @dataclass(frozen=True, slots=True)
@@ -1236,6 +1327,21 @@ def _nonnegative_decimal(value: object) -> bool:
 
 def _rate(value: object) -> bool:
     return _finite_decimal(value) and Decimal(0) <= value <= Decimal(1)
+
+
+def _valid_optional_side_metrics(
+    auc: object,
+    point_delta: object,
+    reason: MainForceMirrorDiagnosticUnavailableReason | None,
+    allowed_reasons: set[MainForceMirrorDiagnosticUnavailableReason],
+) -> bool:
+    if reason is None:
+        return _rate(auc) and _finite_decimal(point_delta)
+    return (
+        reason in allowed_reasons
+        and auc is None
+        and point_delta is None
+    )
 
 
 def _quality_flag(value: object) -> bool:

@@ -998,6 +998,82 @@ def test_report_count_limits_accept_protocol_boundary_and_reject_overflow() -> N
         )
 
 
+def test_model_fold_contract_represents_normal_unavailability_without_fake_auc() -> None:
+    """Catches encoding model failure or a one-class side as a fabricated zero AUC."""
+    domain = _domain()
+    fold = _model(domain).folds[0]
+    core_fields = {
+        "score_auc": None,
+        "ridge_auc": None,
+        "current_tree_auc": None,
+        "full_tree_auc": None,
+        "ridge_score_delta": None,
+        "ridge_score_ci_lower": None,
+        "full_tree_ridge_delta": None,
+        "full_tree_ridge_ci_lower": None,
+        "full_tree_current_tree_delta": None,
+        "full_tree_current_tree_ci_lower": None,
+    }
+
+    convergence = replace(
+        fold,
+        **core_fields,
+        model_unavailable_reason=(
+            domain.MainForceMirrorDiagnosticUnavailableReason.MODEL_CONVERGENCE_FAILED
+        ),
+    )
+    assert convergence.full_tree_auc is None
+
+    insufficient = replace(
+        fold,
+        **core_fields,
+        model_unavailable_reason=(
+            domain.MainForceMirrorDiagnosticUnavailableReason.SPLIT_CLASS_UNAVAILABLE
+        ),
+    )
+    assert insufficient.score_auc is None
+
+    one_class_long = replace(
+        fold,
+        evaluate_long_count=0,
+        evaluate_short_count=fold.evaluate_binary_count,
+        long_auc=None,
+        long_point_delta=None,
+        long_unavailable_reason=(
+            domain.MainForceMirrorDiagnosticUnavailableReason.SPLIT_CLASS_UNAVAILABLE
+        ),
+    )
+    assert one_class_long.long_auc is None
+    assert one_class_long.short_auc == fold.short_auc
+
+    with pytest.raises(domain.MainForceMirrorDiagnosticReportError):
+        replace(fold, model_unavailable_reason="UNKNOWN_FAILURE")
+    with pytest.raises(domain.MainForceMirrorDiagnosticReportError):
+        replace(
+            fold,
+            score_auc=None,
+            model_unavailable_reason=(
+                domain.MainForceMirrorDiagnosticUnavailableReason.MODEL_CONVERGENCE_FAILED
+            ),
+        )
+    with pytest.raises(domain.MainForceMirrorDiagnosticReportError):
+        replace(
+            one_class_long,
+            long_auc=Decimal("0"),
+        )
+
+    one_class_breakdown = replace(
+        _zero_model_breakdowns(domain)[0],
+        sample_count=5,
+        unavailable_reason=(
+            domain.MainForceMirrorDiagnosticUnavailableReason.SPLIT_CLASS_UNAVAILABLE
+        ),
+    )
+    assert one_class_breakdown.score_auc is None
+    with pytest.raises(domain.MainForceMirrorDiagnosticReportError):
+        replace(one_class_breakdown, score_auc=Decimal("0"))
+
+
 def test_report_rejects_hidden_unknown_failures_nonfinite_rates_and_partial_sections() -> None:
     domain = _domain()
     rows = [_unavailable_row(domain, symbol) for symbol in PRODUCTS]

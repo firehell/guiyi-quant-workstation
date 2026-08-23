@@ -294,6 +294,10 @@ class MainForceMirrorV2AuditTraceItem:
     rearm_reasons: tuple[MainForceMirrorV2RearmReason, ...]
     reset_boundary: MainForceMirrorV2ResetBoundary | None
     unavailable_reason: str | None
+    prior_high_max: float | None = None
+    prior_low_min: float | None = None
+    upper_wick_ratio: float | None = None
+    lower_wick_ratio: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -308,6 +312,10 @@ class _CautionEvidence:
     short_score: float
     reason_codes: tuple[str, ...]
     components: MainForceMirrorV2CautionComponents
+    prior_high_max: float
+    prior_low_min: float
+    upper_wick_ratio: float
+    lower_wick_ratio: float
 
 
 @dataclass(frozen=True, slots=True)
@@ -1104,6 +1112,10 @@ def _apply_block(
                     prior_short_open_pressure_max=float(
                         np.max(raw_short_pressures[prior_slice])
                     ),
+                    prior_high_max=evidence.prior_high_max,
+                    prior_low_min=evidence.prior_low_min,
+                    upper_wick_ratio=evidence.upper_wick_ratio,
+                    lower_wick_ratio=evidence.lower_wick_ratio,
                     long_score=evidence.long_score,
                     short_score=evidence.short_score,
                     components=evidence.components,
@@ -1240,6 +1252,10 @@ def _evaluate_caution(
             short_open_pressure_divergence=short_open_pressure_divergence,
             short_low_price_absorption=short_low_price_absorption,
         ),
+        float(prior_high),
+        float(prior_low),
+        float(upper_wick_ratio),
+        float(lower_wick_ratio),
     )
 
 

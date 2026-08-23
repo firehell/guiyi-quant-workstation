@@ -145,6 +145,10 @@ def test_audit_preserves_golden_result_and_unrounded_caution_evidence() -> None:
     assert item.short_open_pressure == 0.0
     assert item.prior_long_open_pressure_max == pytest.approx(0.32822859363205464)
     assert item.prior_short_open_pressure_max == pytest.approx(0.35883807715390914)
+    assert item.prior_high_max == 124.0
+    assert item.prior_low_min == 117.0
+    assert item.upper_wick_ratio == pytest.approx(50.0 / 122.0)
+    assert item.lower_wick_ratio == pytest.approx(22.0 / 122.0)
     assert item.long_score == 70.0
     assert item.short_score == 45.0
     assert item.long_candidate is True
