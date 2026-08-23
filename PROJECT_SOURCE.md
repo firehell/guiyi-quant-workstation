@@ -8,8 +8,12 @@
 人工观察提醒和 Execution Review。它不做自动交易、实盘下单、账户/委托/持仓管理、SaaS、多用户、
 高频/Tick 平台或 AI 自动晋升；所有页面、信号、通知和研究结论始终是观察事实，`auto_order=false`。
 
-当前产品不包含 backtest 子系统，也不恢复旧 Signal/Review/Strategy Web、HTTP、worker 或 queue。
-Alert 与 Execution Review 是两个独立 Application Domain，不属于 Market Data Foundation。
+当前产品包含一个独立的 local-only、research-only RQAlpha Plus Web 工作台：它只运行 Git
+注册策略、只读外部米筐 Bundle、只写仓库外文件系统 artifact，并且不挂载到主 API。它不是旧
+backtest/Signal/Review/Strategy Web·HTTP·worker·queue 的恢复，也不是未来基于
+Canonical/MarketDataService 的正式 Candidate/OOS 验证体系。当前工作台仅为仓库实现与自动化验证状态；
+sidecar 未加载、未 release、未进入 Runtime，真实 RQAlpha smoke 仍是独立人工 Gate。Alert 与
+Execution Review 是两个独立 Application Domain，不属于 Market Data Foundation。
 
 ## 稳定数据边界
 
@@ -41,9 +45,12 @@ Review 的四张 `trade_*` 表属于各自 Application Domain，不改变八表�
 
 ## 稳定产品接口
 
-用户界面为 Market Web 与 `/trade-records`。HTTP 面为 `/api/v1/market/*`、`/api/alerts/*`、
-`/api/execution-review/*` 和只读 Runtime health/status。统一 CLI 为 `guiyi data`、`guiyi research`
-与 `guiyi runtime`；真实通知 canary 是独立外部 Gate。
+用户界面为 Market Web、`/trade-records` 与只在浏览器 hostname 精确为
+`localhost|127.0.0.1` 时开放的 `/backtests`。主 HTTP 面为 `/api/v1/market/*`、
+`/api/alerts/*`、`/api/execution-review/*` 和只读 Runtime health/status。RQAlpha 工作台只由固定
+`127.0.0.1:8011` 的独立 app 提供 `/api/v1/backtests` 六路由，不进入主 API 或统一 CLI。统一 CLI
+仍为 `guiyi data`、`guiyi research` 与 `guiyi runtime`；真实通知 canary 与真实 RQAlpha smoke
+都是彼此独立的外部 Gate。
 
 只读 Research 命令精确为：
 
@@ -78,6 +85,9 @@ Market 首页“优先检查”只消费 `/api/v1/market/research/trend-focus` �
 
 ## 研究边界
 
+- RQAlpha 工作台不读 Canonical/MarketDataService，不把 Bundle 宣称为归一量化数据事实。它只保存
+  `research_only=true / formal_evidence=false / promotion_eligible=false` 的本机 RQAlpha 结果，
+  不消费、回填或证明 prospective OOS，不产生 Candidate 晋升、策略有效性或可交易结论。
 - SuBing、N Structure、JDJ 与主力照妖镜各自保留 source-specific Policy、时间粒度、因果 reducer 和
   Candidate/OOS 语义；不得为了统一展示建立 Strategy/Opportunity adapter 或修改既有公式。
 - Historical Research 只通过 `MarketDataService -> ActualDominantResearchSegmentLoader` 或对应
@@ -142,7 +152,8 @@ missing、`disabled` 或 `invalid` 时 callback 必须返回 `ROLL_RECONCILIATIO
 ## 外部操作边界
 
 普通源码、测试、文档和 `develop` commit/push 是开发行为。真实 RQData、正式 Canonical、生产 DB、
-Runtime/live、真实通知、release/tag、Scope/transport 变化必须在执行前取得范围明确的一次性意图；
+Runtime/live、真实通知、release/tag、Scope/transport 变化，以及加载 sidecar 并运行真实 RQAlpha
+smoke，必须在执行前取得范围明确的一次性意图；
 dry-run、代码、测试、health、历史 evidence 或既有授权都不能转换为新的 mutation 权限。
 
 Market Runtime 与 Alert Runtime 的持续授权彼此独立，只覆盖各自被明确启用的有界范围；不授权订单、

@@ -6,6 +6,11 @@ Canonical 历史行情、Market API、data CLI、Runtime 只读状态、Alert V2
 Product 双 Rule Scope/今日记录、Execution Review V1，以及苏冰 Factor/Calibration/Signal 研究观察。项目不实现自动交易或
 自动下单，`auto_order=false`。
 
+仓库另包含 `/backtests` + 独立 loopback local app 的 RQAlpha Plus 研究工作台实现。它只读
+外部 Bundle、只写独立研究 artifact，不进入 Canonical/MarketDataService、DB/Redis、Alert、
+Execution Review、Runtime、Candidate/OOS 或真实订单路径。该实现未包含在当前 `v1.7.0` release/
+production Runtime，sidecar 也未加载；真实 RQAlpha smoke 仍需新的当次单次执行意图。
+
 ## 快速导航
 
 | 用途 | 文件 |
@@ -17,6 +22,7 @@ Product 双 Rule Scope/今日记录、Execution Review V1，以及苏冰 Factor/
 | 分层架构 | `docs/ARCHITECTURE.md` |
 | Canonical 数据合同 | `docs/DATA_CENTER.md` |
 | Execution Review 业务合同 | `docs/EXECUTION_REVIEW.md` |
+| RQAlpha 研究工作台合同 | `openspec/specs/rqalpha-research-backtest-workbench/spec.md` |
 | 行为规范 | `openspec/specs/` |
 | 测试入口 | `TESTING.md` |
 | 运维拓扑与只读检查 | `deploy/README.md` |
@@ -34,6 +40,14 @@ RQData
 ```
 
 active universe 固定 60 品种，正式周期只有 `1m/5m/15m/30m/60m/1d/1w`。
+
+## RQAlpha 本机研究工作台
+
+`/backtests` 仅在 `localhost|127.0.0.1` 浏览器中开放，并只能请求
+`http://127.0.0.1:8011/api/v1/backtests`。Local app 只接受 Git 注册策略，不接受上传、
+任意 Python/路径、shell 或原始 config；同一 runs root 最多一个 running task。当前可执行的
+fake/local-app/full 验证命令与单独真实 smoke Gate 见 `TESTING.md`，Git 外占位配置见
+`.env.example`。不得为使工作台可用而运行 `rqsdk update-data`、`download-data` 或修改 Bundle。
 
 ## 本地状态与开发
 

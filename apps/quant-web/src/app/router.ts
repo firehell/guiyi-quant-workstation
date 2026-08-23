@@ -1,6 +1,6 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 
-/** 应用路由表：Market 与人工 Execution Review；meta.title 供侧边栏与面包屑使用 */
+/** 应用路由表：Market、人工 Execution Review 与本机研究回测；meta.title 供导航使用 */
 const routes: RouteRecordRaw[] = [
   {
     path: '/',
@@ -24,6 +24,12 @@ const routes: RouteRecordRaw[] = [
         name: 'trade-records',
         component: () => import('@/pages/trade-records/index.vue'),
         meta: { title: '交易记录', icon: 'review' },
+      },
+      {
+        path: 'backtests',
+        name: 'backtests',
+        component: () => import('@/pages/backtests/index.vue'),
+        meta: { title: 'RQAlpha 回测', icon: 'backtest' },
       },
       {
         path: ':pathMatch(.*)*',

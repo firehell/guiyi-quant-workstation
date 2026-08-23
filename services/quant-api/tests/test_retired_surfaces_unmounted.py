@@ -22,6 +22,7 @@ RETIRED_GET_PATHS = [
     "/api/v1/data/coverage",
     "/api/v1/market/bars/canonical",
     "/api/v1/market/coverage/canonical",
+    "/api/v1/backtests/health",
 ]
 
 RETIRED_MODULES = [
@@ -67,6 +68,15 @@ def test_retained_ops_surfaces_still_present() -> None:
     assert any("/market/" in path or path.endswith("/market") for path in paths)
     assert any(path.startswith("/api/runtime") or "/runtime/" in path for path in paths)
     assert "/api/symbols" not in paths
+    assert not any(path.startswith("/api/v1/backtests") for path in paths)
+
+
+def test_main_api_has_no_backtest_endpoint_callable() -> None:
+    endpoint_modules = {
+        route.endpoint.__module__ for route in app.routes if hasattr(route, "endpoint")
+    }
+
+    assert not any(module.startswith("app.backtest") for module in endpoint_modules)
 
 
 def test_data_center_http_and_legacy_symbols_compat_are_unmounted() -> None:
