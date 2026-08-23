@@ -256,10 +256,18 @@ def _fold_segments_for_day(value: date) -> tuple[tuple[int, str], ...]:
 def _validate_fold_outcomes(
     episode: MainForceMirrorDiagnosticLabelEpisode,
 ) -> None:
-    outcomes = tuple(episode.fold_outcomes)
+    if type(episode.fold_outcomes) is not tuple:
+        raise ValueError("MFM_DIAGNOSTIC_ANALYSIS_INVALID")
+    outcomes = episode.fold_outcomes
     if (
         any(
             not isinstance(item, MainForceMirrorDiagnosticFoldLabelOutcome)
+            for item in outcomes
+        )
+        or any(
+            type(item.fold) is not int
+            or item.fold not in (1, 2)
+            or type(item.segment) is not str
             for item in outcomes
         )
         or tuple((item.fold, item.segment) for item in outcomes)
@@ -270,7 +278,10 @@ def _validate_fold_outcomes(
     if (
         type(physical_binary) is not int
         and physical_binary is not None
-    ) or physical_binary not in (None, 0, 1):
+    ) or physical_binary not in (None, 0, 1) or (
+        episode.first_touch_offset is not None
+        and type(episode.first_touch_offset) is not int
+    ):
         raise ValueError("MFM_DIAGNOSTIC_ANALYSIS_INVALID")
     expected_physical_outcome = (
         MainForceMirrorDiagnosticLabelOutcome.FAVORABLE_FIRST
@@ -350,6 +361,33 @@ def _sequence_fact_matches_point(
     )
 
 
+def _validate_sequence_fact_structure(
+    fact: MainForceMirrorV2SequenceFact,
+    expected_index: int,
+) -> None:
+    active_index = fact.active_peak_index
+    installed_index = fact.installed_peak_index
+    bars_since = fact.bars_since_active_peak
+    if (
+        type(fact.index) is not int
+        or fact.index != expected_index
+        or (active_index is not None and type(active_index) is not int)
+        or (installed_index is not None and type(installed_index) is not int)
+        or (bars_since is not None and type(bars_since) is not int)
+        or (
+            active_index is not None
+            and (
+                not 0 <= active_index < fact.index
+                or bars_since != fact.index - active_index
+                or bars_since <= 0
+            )
+        )
+        or (active_index is None and bars_since is not None)
+        or (installed_index is not None and installed_index != fact.index)
+    ):
+        raise ValueError("MFM_DIAGNOSTIC_ANALYSIS_INVALID")
+
+
 def _validate_active_peak_reference(
     product: MainForceMirrorDiagnosticProductInput,
     facts: tuple[MainForceMirrorV2SequenceFact, ...],
@@ -397,6 +435,7 @@ def _validate_feature_identity(
     ):
         raise ValueError("MFM_DIAGNOSTIC_ANALYSIS_INVALID")
     index = episode.anchor_index
+    _validate_sequence_fact_structure(balanced_sequence, index)
     bar = product.bars[index]
     point = product.points[index]
     trace = product.trace[index]
@@ -648,6 +687,7 @@ def build_main_force_mirror_fold_datasets(
         or any(
             not isinstance(item, MainForceMirrorDiagnosticSequenceFactSet)
             or item.profile_id != "balanced"
+            or type(item.facts) is not tuple
             for item in fact_sets
         )
         or any(
@@ -671,6 +711,7 @@ def build_main_force_mirror_fold_datasets(
             len(facts_by_symbol[symbol]) != len(product.points)
             or any(
                 not isinstance(fact, MainForceMirrorV2SequenceFact)
+                or type(fact.index) is not int
                 or fact.index != index
                 for index, fact in enumerate(facts_by_symbol[symbol])
             )
@@ -678,6 +719,9 @@ def build_main_force_mirror_fold_datasets(
         )
     ):
         raise ValueError("MFM_DIAGNOSTIC_ANALYSIS_INVALID")
+    for symbol in product_by_symbol:
+        for index, fact in enumerate(facts_by_symbol[symbol]):
+            _validate_sequence_fact_structure(fact, index)
     samples: dict[tuple[int, str], list[MainForceMirrorDiagnosticModelSample]] = {
         (fold, segment): []
         for fold in (1, 2)
@@ -1105,12 +1149,11 @@ def bootstrap_main_force_mirror_auc_deltas(
 def audit_main_force_mirror_member_feasibility(
     observations: tuple[MainForceMirrorDiagnosticMemberObservation, ...],
 ) -> MainForceMirrorDiagnosticMemberFeasibilityResult:
-    values = tuple(observations)
-    if any(
-        not isinstance(item, MainForceMirrorDiagnosticMemberObservation)
-        for item in values
-    ):
+    if type(observations) is not tuple:
         raise ValueError("MFM_DIAGNOSTIC_ANALYSIS_INVALID")
+    values = observations
+    for item in values:
+        _validate_member_observation_structure(item)
     grouped: dict[
         tuple[str, str, date], list[MainForceMirrorDiagnosticMemberObservation]
     ] = {}
@@ -1155,6 +1198,7 @@ def audit_main_force_mirror_member_feasibility(
                 item.observed_dataset_id != item.expected_dataset_id
                 or item.observed_symbol != item.symbol
                 or item.observed_physical_contract != item.physical_contract
+                or type(item.observed_rank) is not int
                 or item.observed_rank != 1
             )
             causal_invalid = (
@@ -1195,6 +1239,39 @@ def audit_main_force_mirror_member_feasibility(
         ),
         unavailable=tuple(unavailable),
     )
+
+
+def _validate_member_observation_structure(item: object) -> None:
+    if not isinstance(item, MainForceMirrorDiagnosticMemberObservation):
+        raise ValueError("MFM_DIAGNOSTIC_ANALYSIS_INVALID")
+    observed_strings = (
+        item.observed_dataset_id,
+        item.observed_symbol,
+        item.observed_physical_contract,
+    )
+    if (
+        type(item.symbol) is not str
+        or not item.symbol
+        or type(item.physical_contract) is not str
+        or not item.physical_contract
+        or type(item.anchor_trading_day) is not date
+        or type(item.anchor_bar_end) is not datetime
+        or item.anchor_bar_end.tzinfo is None
+        or type(item.expected_prior_trading_day) is not date
+        or type(item.expected_dataset_id) is not str
+        or not item.expected_dataset_id
+        or type(item.available) is not bool
+        or any(value is not None and type(value) is not str for value in observed_strings)
+        or (
+            item.observed_trade_date is not None
+            and type(item.observed_trade_date) is not date
+        )
+        or (
+            item.observed_rank is not None
+            and type(item.observed_rank) not in (int, bool)
+        )
+    ):
+        raise ValueError("MFM_DIAGNOSTIC_ANALYSIS_INVALID")
 
 
 def evaluate_main_force_mirror_diagnostic_gate(
@@ -1384,6 +1461,13 @@ def run_main_force_mirror_model_diagnostics(
 
     if (
         not isinstance(datasets, MainForceMirrorDiagnosticFoldDatasets)
+        or type(datasets.folds) is not tuple
+        or len(datasets.folds) != 2
+        or any(
+            not isinstance(item, MainForceMirrorDiagnosticFoldDataset)
+            for item in datasets.folds
+        )
+        or any(type(item.fold) is not int for item in datasets.folds)
         or tuple(item.fold for item in datasets.folds) != (1, 2)
     ):
         raise ValueError("MFM_DIAGNOSTIC_ANALYSIS_INVALID")
@@ -1406,8 +1490,16 @@ def _run_model_fold(
     fold_data: MainForceMirrorDiagnosticFoldDataset,
     window: tuple[date, date, date, date],
 ) -> tuple[MainForceMirrorDiagnosticModelFoldSection, _EvaluatedFold]:
-    fit_samples = tuple(fold_data.fit)
-    evaluate_samples = tuple(fold_data.evaluate)
+    if (
+        not isinstance(fold_data, MainForceMirrorDiagnosticFoldDataset)
+        or type(fold_data.fold) is not int
+        or fold_data.fold not in (1, 2)
+        or type(fold_data.fit) is not tuple
+        or type(fold_data.evaluate) is not tuple
+    ):
+        raise ValueError("MFM_DIAGNOSTIC_ANALYSIS_INVALID")
+    fit_samples = fold_data.fit
+    evaluate_samples = fold_data.evaluate
     if any(
         not isinstance(sample, MainForceMirrorDiagnosticModelSample)
         for sample in (*fit_samples, *evaluate_samples)
@@ -1425,7 +1517,15 @@ def _run_model_fold(
         raise ValueError("MFM_DIAGNOSTIC_ANALYSIS_INVALID")
     for sample in (*fit_samples, *evaluate_samples):
         if (
-            sample.target not in (0, 1)
+            type(sample.symbol) is not str
+            or not sample.symbol
+            or type(sample.physical_contract) is not str
+            or not sample.physical_contract
+            or type(sample.anchor_trading_day) is not date
+            or not isinstance(sample.side, MainForceMirrorDiagnosticSide)
+            or type(sample.target) is not int
+            or sample.target not in (0, 1)
+            or type(sample.features) is not tuple
             or len(sample.features) != 33
             or any(not isfinite(value) for value in sample.features)
         ):

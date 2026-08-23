@@ -452,6 +452,7 @@ def test_feature_builder_rejects_corrupt_strict_prior_fact_identity(
         "episode_symbol",
         "episode_index",
         "malformed_episode_index",
+        "bool_episode_index",
         "episode_day",
         "episode_contract",
         "episode_side",
@@ -459,8 +460,17 @@ def test_feature_builder_rejects_corrupt_strict_prior_fact_identity(
         "trace_identity",
         "bar_identity",
         "active_peak_reference",
+        "bool_fact_index",
+        "bool_active_peak_index",
+        "bool_bars_since_active_peak",
+        "bool_installed_peak_index",
         "missing_fold",
+        "fold_outcomes_none",
+        "fold_outcomes_list",
         "malformed_outcome",
+        "bool_fold",
+        "bool_fold_target",
+        "bool_first_touch",
         "bad_fold",
         "bad_segment_date",
         "bad_outcome_target",
@@ -476,6 +486,8 @@ def test_fold_dataset_rejects_episode_fact_and_fold_identity_drift(kind: str) ->
         episode = replace(episode, anchor_index=1)
     elif kind == "malformed_episode_index":
         episode = replace(episode, anchor_index="2")
+    elif kind == "bool_episode_index":
+        episode = replace(episode, anchor_index=True)
     elif kind == "episode_day":
         episode = replace(episode, anchor_trading_day=date(2025, 6, 3))
     elif kind == "episode_contract":
@@ -503,12 +515,55 @@ def test_fold_dataset_rejects_episode_fact_and_fold_identity_drift(kind: str) ->
             trading_day=date(2025, 6, 3),
         )
         product = replace(product, bars=tuple(bars))
-    elif kind == "active_peak_reference":
+    elif kind in {
+        "active_peak_reference",
+        "bool_fact_index",
+        "bool_active_peak_index",
+        "bool_bars_since_active_peak",
+        "bool_installed_peak_index",
+    }:
         pass
     elif kind == "missing_fold":
         episode = replace(episode, fold_outcomes=episode.fold_outcomes[:1])
+    elif kind == "fold_outcomes_none":
+        episode = replace(episode, fold_outcomes=None)
+    elif kind == "fold_outcomes_list":
+        episode = replace(episode, fold_outcomes=list(episode.fold_outcomes))
     elif kind == "malformed_outcome":
         episode = replace(episode, fold_outcomes=(object(),))
+    elif kind == "bool_fold":
+        episode = replace(
+            episode,
+            fold_outcomes=(
+                replace(episode.fold_outcomes[0], fold=True),
+                episode.fold_outcomes[1],
+            ),
+        )
+    elif kind == "bool_fold_target":
+        episode = replace(
+            episode,
+            binary_target=True,
+            fold_outcomes=(
+                replace(episode.fold_outcomes[0], binary_target=True),
+                replace(episode.fold_outcomes[1], binary_target=True),
+            ),
+        )
+    elif kind == "bool_first_touch":
+        episode = replace(
+            episode,
+            outcome=MainForceMirrorDiagnosticLabelOutcome.TIMEOUT,
+            first_touch_offset=True,
+            binary_target=None,
+            fold_outcomes=tuple(
+                replace(
+                    outcome,
+                    outcome=MainForceMirrorDiagnosticLabelOutcome.TIMEOUT,
+                    binary_target=None,
+                    eligible=False,
+                )
+                for outcome in episode.fold_outcomes
+            ),
+        )
     elif kind == "bad_fold":
         episode = replace(
             episode,
@@ -544,6 +599,24 @@ def test_fold_dataset_rejects_episode_fact_and_fold_identity_drift(kind: str) ->
     if kind == "active_peak_reference":
         facts = list(fact_set.facts)
         facts[0] = replace(facts[0], installed_peak_side="short")
+        fact_set = replace(fact_set, facts=tuple(facts))
+    elif kind == "bool_fact_index":
+        facts = list(fact_set.facts)
+        facts[0] = replace(facts[0], index=False)
+        fact_set = replace(fact_set, facts=tuple(facts))
+    elif kind == "bool_active_peak_index":
+        facts = list(fact_set.facts)
+        facts[2] = replace(
+            facts[2], active_peak_index=True, bars_since_active_peak=1
+        )
+        fact_set = replace(fact_set, facts=tuple(facts))
+    elif kind == "bool_bars_since_active_peak":
+        facts = list(fact_set.facts)
+        facts[2] = replace(facts[2], bars_since_active_peak=True)
+        fact_set = replace(fact_set, facts=tuple(facts))
+    elif kind == "bool_installed_peak_index":
+        facts = list(fact_set.facts)
+        facts[0] = replace(facts[0], installed_peak_index=False)
         fact_set = replace(fact_set, facts=tuple(facts))
 
     with pytest.raises(ValueError, match="MFM_DIAGNOSTIC_ANALYSIS_INVALID"):
@@ -816,6 +889,53 @@ def test_member_feasibility_rejects_conflicting_earliest_timestamp_ties_in_any_o
     for observations in ((available, unavailable), (unavailable, available)):
         with pytest.raises(ValueError, match="MFM_DIAGNOSTIC_ANALYSIS_INVALID"):
             models.audit_main_force_mirror_member_feasibility(observations)
+
+
+def test_member_feasibility_treats_boolean_rank_as_identity_violation() -> None:
+    """Catches True comparing equal to the exact rank1 identity."""
+    models = _models()
+
+    result = models.audit_main_force_mirror_member_feasibility(
+        (_member_observation(models, observed_rank=True),)
+    )
+
+    assert result.section.eligible_count == 0
+    assert result.section.identity_violation_count == 1
+    assert result.unavailable[0].reason.value == "MEMBER_IDENTITY_CONFLICT"
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (
+        ("observed_dataset_id", b"pinned-v1"),
+        ("observed_trade_date", datetime(2025, 5, 30, tzinfo=UTC)),
+        ("observed_symbol", b"jm"),
+        ("observed_physical_contract", b"JM2609"),
+        ("observed_rank", "1"),
+    ),
+)
+def test_member_feasibility_rejects_malformed_observed_identity_field_types(
+    field: str,
+    value: object,
+) -> None:
+    """Catches malformed identity field types being counted as normal mismatches."""
+    models = _models()
+
+    with pytest.raises(ValueError, match="MFM_DIAGNOSTIC_ANALYSIS_INVALID"):
+        models.audit_main_force_mirror_member_feasibility(
+            (_member_observation(models, **{field: value}),)
+        )
+
+
+@pytest.mark.parametrize("container", (None, [], object()))
+def test_member_feasibility_rejects_malformed_observation_containers(
+    container: object,
+) -> None:
+    """Catches tuple coercion or raw TypeError for malformed observation input."""
+    models = _models()
+
+    with pytest.raises(ValueError, match="MFM_DIAGNOSTIC_ANALYSIS_INVALID"):
+        models.audit_main_force_mirror_member_feasibility(container)
 
 
 def _passing_gate_inputs():
@@ -1321,3 +1441,28 @@ def test_model_diagnostic_rejects_non_sample_input_with_stable_analysis_error() 
 
     with pytest.raises(ValueError, match="MFM_DIAGNOSTIC_ANALYSIS_INVALID"):
         models.run_main_force_mirror_model_diagnostics(datasets)
+
+
+@pytest.mark.parametrize("kind", ("bool_fold", "bool_target"))
+def test_model_diagnostic_rejects_boolean_structural_integers(kind: str) -> None:
+    """Catches Python bool values passing exact fold/target integer identity."""
+    models = _models()
+    fit = tuple(
+        _model_sample(models, index, index % 2, date(2024, 6, 2))
+        for index in range(100)
+    )
+    if kind == "bool_target":
+        fit = (replace(fit[0], target=True), *fit[1:])
+    folds = (
+        models.MainForceMirrorDiagnosticFoldDataset(
+            True if kind == "bool_fold" else 1,
+            fit,
+            (),
+        ),
+        models.MainForceMirrorDiagnosticFoldDataset(2, (), ()),
+    )
+
+    with pytest.raises(ValueError, match="MFM_DIAGNOSTIC_ANALYSIS_INVALID"):
+        models.run_main_force_mirror_model_diagnostics(
+            models.MainForceMirrorDiagnosticFoldDatasets(folds, ())
+        )
