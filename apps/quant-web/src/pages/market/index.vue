@@ -9,11 +9,16 @@ import MarketSummaryStrip from '@/components/market/MarketSummaryStrip.vue'
 import MarketFormalSignals from '@/components/market/MarketFormalSignals.vue'
 import MarketFocusList from '@/components/market/MarketFocusList.vue'
 import MarketRadarSkeleton from '@/components/market/MarketRadarSkeleton.vue'
-import { getMarketRadar } from '@/api/market'
+import { getMarketRadar, getMarketTrendFocus } from '@/api/market'
 import { getEventStates } from '@/api/executionReview'
 import type { CurrentFormalSignalItem } from '@/api/alerts'
 import type { EventState } from '@/types/executionReview'
-import type { MarketRadarItem, MarketRadarResponse } from '@/types/market'
+import type {
+  MarketRadarItem,
+  MarketRadarResponse,
+  MarketTrendFocusItem,
+  MarketTrendFocusResponse,
+} from '@/types/market'
 import { useCurrentFormalSignals } from '@/composables/useCurrentFormalSignals'
 import {
   loadMarketWorkspacePreferences,
@@ -25,6 +30,8 @@ const router = useRouter()
 const loading = ref(false)
 const error = ref(false)
 const radar = ref<MarketRadarResponse | null>(null)
+const trendFocus = ref<MarketTrendFocusResponse | null>(null)
+const trendFocusError = ref(false)
 const {
   loading: formalLoading,
   status: formalStatus,
@@ -44,7 +51,7 @@ const freshnessIssue = computed(() => {
   return `Radar 数据不完整：${parts.join('；') || radar.value.freshness_message}`
 })
 
-function openChart(item: MarketRadarItem) {
+function openChart(item: MarketRadarItem | MarketTrendFocusItem) {
   const frequency = preferences.value.frequency
   void router.push({
     name: 'market-chart',
@@ -99,10 +106,16 @@ async function refreshRadar() {
   if (loading.value) return
   loading.value = true
   error.value = false
+  trendFocusError.value = false
   try {
-    radar.value = await getMarketRadar()
-  } catch {
-    error.value = true
+    const [radarResult, trendFocusResult] = await Promise.allSettled([
+      getMarketRadar(),
+      getMarketTrendFocus(),
+    ])
+    if (radarResult.status === 'fulfilled') radar.value = radarResult.value
+    else error.value = true
+    if (trendFocusResult.status === 'fulfilled') trendFocus.value = trendFocusResult.value
+    else trendFocusError.value = true
   } finally {
     loading.value = false
   }
@@ -139,9 +152,14 @@ onMounted(() => {
         </NAlert>
         <NButton size="small" :loading="loading" :disabled="loading" @click="refreshRadar">重试</NButton>
       </div>
+      <MarketFocusList
+        :snapshot="trendFocus"
+        :loading="loading && !trendFocus"
+        :stale="trendFocusError && Boolean(trendFocus)"
+        @open="openChart"
+      />
       <template v-if="radar">
         <NAlert v-if="freshnessIssue" type="warning" :title="freshnessIssue" />
-        <MarketFocusList :radar="radar" @open="openChart" />
         <details class="market-radar-page__research" data-testid="market-full-research">
           <summary>展开全市场研究</summary>
           <div class="market-radar-page__research-content">

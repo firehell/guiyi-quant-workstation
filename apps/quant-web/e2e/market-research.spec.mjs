@@ -55,6 +55,29 @@ function radar(overrides = {}) {
   }
 }
 
+function trendFocusItem(symbol, overrides = {}) {
+  return {
+    symbol, product_name: symbol.toUpperCase(), sector: 'black', physical_contract: `${symbol.toUpperCase()}2701`,
+    direction: 'long', stage: 'ready', hot_conditions: ['price_move_up', 'volume_expansion'], hot_count: 2,
+    price_change_1d: '0.0234', volume_ratio20: '1.75', atr14_percentile252: '0.81',
+    daily_volume_support: true, hourly_state: 'continuation', hourly_volume_support: false,
+    range_upper: '101.25', range_lower: '96.5', confirmation_count: 3, retest_held: true,
+    rebreak_reference: '103.5', ready_invalidation: '99.25', volume_confirmed: true,
+    five_minute_confirmed: false, entry_confirmed_at: null, latest_swing_high: '103.5',
+    latest_swing_low: '99.25', next_level: '104.75', invalidation_level: '101.25',
+    last_transition_at: '2026-08-23T02:30:00Z',
+    ...overrides,
+  }
+}
+
+function trendFocus(overrides = {}) {
+  return {
+    status: 'ready', observed_at: '2026-08-23T03:00:00Z', long_opportunities: [],
+    short_opportunities: [], running_trends: [], weakening_trends: [], unavailable: [],
+    ...overrides,
+  }
+}
+
 function formalSignal() {
   return {
     id: 17, rule_code: 'subing_entry_signal_v1', display_name: '苏冰', symbol: 'jm', product_name: '焦煤',
@@ -63,7 +86,12 @@ function formalSignal() {
   }
 }
 
-async function mockMarketHomepage(page, currentFormalResponse, radarResponse = radar()) {
+async function mockMarketHomepage(
+  page,
+  currentFormalResponse,
+  radarResponse = radar(),
+  trendFocusResponse = trendFocus(),
+) {
   await page.route('**/api/alerts/formal-signals/current', (route) => route.fulfill({ json: currentFormalResponse }))
   await page.route('**/api/execution-review/event-states**', (route) => {
     const ids = new URL(route.request().url()).searchParams.getAll('event_ids').map(Number)
@@ -72,7 +100,101 @@ async function mockMarketHomepage(page, currentFormalResponse, radarResponse = r
     })) } })
   })
   await page.route('**/api/v1/market/research/radar', (route) => route.fulfill({ json: radarResponse }))
+  await page.route('**/api/v1/market/research/trend-focus', (route) => route.fulfill({ json: trendFocusResponse }))
 }
+
+test('Trend Focus renders four backend groups, expands after three, and opens Product Workspace', async ({ page }) => {
+  await mockMarketHomepage(
+    page,
+    { status: 'ready', trading_day: '2026-08-15', items: [] },
+    radar(),
+    trendFocus({
+      long_opportunities: [
+        trendFocusItem('jm'),
+        trendFocusItem('rb', { stage: 'retest' }),
+        trendFocusItem('cu', { stage: 'breakout', volume_confirmed: false }),
+        trendFocusItem('al', { stage: 'setup', five_minute_confirmed: true }),
+      ],
+      short_opportunities: [trendFocusItem('ag', { direction: 'short', stage: 'setup' })],
+      running_trends: [trendFocusItem('au', { stage: 'running', five_minute_confirmed: true })],
+      weakening_trends: [trendFocusItem('i', { direction: 'short', stage: 'weakening', hourly_state: 'pullback' })],
+    }),
+  )
+  await page.goto('/market')
+
+  const focus = page.getByTestId('market-focus')
+  await expect(focus.getByTestId('market-focus-group-long')).toContainText('多头 4')
+  await expect(focus.getByTestId('market-focus-group-short')).toContainText('空头 1')
+  await expect(focus.getByTestId('market-focus-group-running')).toContainText('运行 1')
+  await expect(focus.getByTestId('market-focus-group-weakening')).toContainText('转弱 1')
+  await expect(focus.getByTestId('market-focus-group-long').getByTestId('market-focus-card')).toHaveCount(3)
+  await focus.getByTestId('market-focus-group-long').getByRole('button', { name: '查看更多 1' }).click()
+  await expect(focus.getByTestId('market-focus-group-long').getByTestId('market-focus-card')).toHaveCount(4)
+  await expect(focus).toContainText('就绪')
+  await expect(focus).toContainText('60m 延续')
+  await expect(focus).toContainText('15m 量能已确认')
+  await expect(focus).toContainText('5m 未确认')
+  await expect(focus).toContainText('下一条件')
+  await expect(focus).toContainText('104.75')
+  await expect(focus).toContainText('失效条件')
+  await expect(focus).toContainText('101.25')
+  await expect(focus).not.toContainText('综合分')
+  await expect(focus).not.toContainText('推荐交易')
+  await expect(focus).not.toContainText('Open Interest')
+
+  await focus.getByTestId('market-focus-group-long').getByRole('button', { name: '检查 JM' }).click()
+  await expect(page).toHaveURL(/\/market\/chart\?symbol=jm&series_kind=actual_dominant&frequency=15m/)
+})
+
+test('Trend Focus degraded response fails closed without hiding other Market research', async ({ page }) => {
+  await mockMarketHomepage(
+    page,
+    { status: 'ready', trading_day: '2026-08-15', items: [] },
+    radar(),
+    trendFocus({
+      status: 'degraded',
+      unavailable: [{ symbol: null, code: 'RADAR_DEGRADED' }],
+    }),
+  )
+  await page.goto('/market')
+
+  await expect(page.getByTestId('market-focus')).toContainText('Trend Focus 暂不可用')
+  await expect(page.getByTestId('market-focus')).toContainText('RADAR_DEGRADED')
+  await expect(page.getByTestId('market-full-research')).toBeVisible()
+})
+
+test('initial Trend Focus failure is unavailable without blocking Radar', async ({ page }) => {
+  await page.route('**/api/alerts/formal-signals/current', (route) => route.fulfill({
+    json: { status: 'ready', trading_day: '2026-08-15', items: [] },
+  }))
+  await page.route('**/api/v1/market/research/radar', (route) => route.fulfill({ json: radar() }))
+  await page.route('**/api/v1/market/research/trend-focus', (route) => route.fulfill({ status: 503 }))
+  await page.goto('/market')
+
+  await expect(page.getByTestId('market-focus')).toContainText('Trend Focus 暂不可用')
+  await expect(page.getByTestId('market-full-research')).toBeVisible()
+})
+
+test('unified Radar refresh retains and labels the previous Trend Focus snapshot on failure', async ({ page }) => {
+  let trendAttempt = 0
+  await page.route('**/api/alerts/formal-signals/current', (route) => route.fulfill({
+    json: { status: 'ready', trading_day: '2026-08-15', items: [] },
+  }))
+  await page.route('**/api/v1/market/research/radar', (route) => route.fulfill({ json: radar() }))
+  await page.route('**/api/v1/market/research/trend-focus', (route) => {
+    trendAttempt += 1
+    if (trendAttempt === 2) return route.fulfill({ status: 503 })
+    return route.fulfill({ json: trendFocus({ long_opportunities: [trendFocusItem('jm')] }) })
+  })
+  await page.goto('/market')
+  await expect(page.getByTestId('market-focus')).toContainText('JM')
+
+  await page.getByRole('button', { name: '刷新 Radar' }).click()
+
+  await expect.poll(() => trendAttempt).toBe(2)
+  await expect(page.getByTestId('market-focus')).toContainText('上一份')
+  await expect(page.getByTestId('market-focus')).toContainText('JM')
+})
 
 test('Market homepage shows the current formal signals above Radar', async ({ page }) => {
   await mockMarketHomepage(page, {
@@ -203,15 +325,18 @@ test('manual Radar refresh keeps the last snapshot on failure and updates on ret
     const asOf = attempt === 1 ? '2026-08-14' : '2026-08-15'
     return route.fulfill({ json: radar({ expected_as_of: asOf, target_as_of: asOf, data_as_of: asOf }) })
   })
+  await page.route('**/api/v1/market/research/trend-focus', (route) => route.fulfill({ json: trendFocus() }))
   await page.goto('/market')
-  await expect(page.getByTestId('market-focus')).toContainText('基于 2026-08-14 完整日线')
+  await page.getByText('展开全市场研究', { exact: true }).click()
+  const summary = page.locator('.radar-summary')
+  await expect(summary).toContainText('当前数据日期 2026-08-14')
 
   await page.getByRole('button', { name: '刷新 Radar' }).click()
   await expect(page.getByRole('alert').filter({ hasText: 'Radar 刷新失败' })).toBeVisible()
-  await expect(page.getByTestId('market-focus')).toContainText('基于 2026-08-14 完整日线')
+  await expect(summary).toContainText('当前数据日期 2026-08-14')
 
   await page.getByRole('button', { name: '重试' }).click()
-  await expect(page.getByTestId('market-focus')).toContainText('基于 2026-08-15 完整日线')
+  await expect(summary).toContainText('当前数据日期 2026-08-15')
   await expect(page.getByRole('alert').filter({ hasText: 'Radar 刷新失败' })).toHaveCount(0)
 })
 
@@ -399,6 +524,8 @@ test('B1 journey narrows AG on the homepage before opening its verification view
     items: [ag],
     attention: [ag],
     sector_summary: [sectorSummary('precious', 0.012)],
+  }), trendFocus({
+    long_opportunities: [trendFocusItem('ag', { product_name: '白银' })],
   }))
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.goto('/market')
@@ -411,7 +538,7 @@ test('B1 journey narrows AG on the homepage before opening its verification view
   const focus = page.getByTestId('market-focus')
   await expect(focus).toContainText('AG 白银')
   await expect(page.getByTestId('market-full-research')).not.toHaveAttribute('open')
-  await focus.getByRole('button', { name: '检查详情', exact: true }).click()
+  await focus.getByRole('button', { name: '检查 AG', exact: true }).click()
 
   await expect(page).toHaveURL(/\/market\/chart\?symbol=ag/)
   await expect(page.getByTestId('product-check-now')).toBeVisible()

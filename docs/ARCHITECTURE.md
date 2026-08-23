@@ -20,6 +20,7 @@ flowchart TB
       MDS[MarketDataService]
       MR[MarketReadService]
       MRS[MarketResearchService]
+      MTF[MarketTrendFocus read model]
       SR[SubingReadService]
       LIVE[LiveMarketService]
       AM[AfterMarketUpdater]
@@ -56,6 +57,7 @@ flowchart TB
     WEB --> API
     API --> MR
     API --> MRS
+    API --> MTF
     API --> SR
     API --> ALERT
     API --> ER
@@ -81,6 +83,8 @@ flowchart TB
     MR --> MDS
     MR --> RD
     MRS --> MDS
+    MTF --> MDS
+    MTF --> MR
     SR --> MDS
     SR --> MR
     SR --> SK
@@ -127,6 +131,9 @@ flowchart TB
 - `MarketReadService` 只在展示边界组合 Historical 与 Redis Live Overlay，不选择 Canonical 文件，
   不修改 Historical facts。
 - `MarketResearchService` 只从 `MarketDataService` 组装 Web research read model，不读 Redis。
+- `MarketTrendFocus` 是按请求重算的 Market read model：复用 Radar、`MarketDataService`、
+  `MarketReadService` 与当前 rank1 physical contract，输出四组首页观察事实；不依赖离线
+  `app.research`，不持久化，也不进入 Alert/Runtime/订单。
 - `LiveMarketService` 只写 Redis completed-bar observation；`AfterMarketUpdater` 只调用
   `HistoricalDataManager`。Live 永不写入 Parquet/PostgreSQL，也不提升为 Canonical。
 - `app.runtime_entry` 只负责启动 `live | alert | after-market` 受监督进程；业务参数与用户操作仍通过
@@ -208,14 +215,21 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-    RADAR[Market Radar D1] --> FOCUS[MarketFocusList 0..3]
+    RADAR[Market Radar] --> TF[Trend Focus read model]
+    MDS[MarketDataService] --> TF
+    MR[MarketReadService] --> TF
+    TF --> API[GET /market/research/trend-focus]
+    API --> FOCUS[MarketFocusList four groups]
     FOCUS --> CHART[Product Workspace]
     CHART --> CHECK[ProductCheckSidebar]
     ALERT[Formal AlertEvent] --> CHECK
     ER[Execution Review state] --> CHECK
 ```
 
-首页 `MarketFocusList` 只做确定性 D1 view projection；Radar `degraded` 时输出空 Focus。详情页
+首页 `MarketFocusList` 只投影后端 Trend Focus 的多头/空头新机会与运行/转弱趋势，每组默认三项并可
+展开到后端最多十项；Web 不再自行选品。后端 read model 使用 completed-bar、current physical-contract
+边界，Radar `degraded` 时返回 HTTP 200 的 degraded 空四组；刷新失败只在明确标注“上一份”时保留上次
+成功快照。详情页
 `ProductCheckSidebar` 固定按“现在 → 市场背景 → 当前观察 → 位置/参与 → 提醒 → 更多研究”读取既有
 API facts。正式 Event、研究观察与 Research-only facts 保持视觉/语义分层；Web 不计算核心指标、
 不自判主力，也不建立 Opportunity score、winner 或交易建议。

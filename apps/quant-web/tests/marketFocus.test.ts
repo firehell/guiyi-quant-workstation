@@ -1,79 +1,104 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { selectMarketFocus } from '../src/utils/marketFocus.ts'
-import type { MarketRadarItem } from '../src/types/market.ts'
+import {
+  normalizeMarketTrendFocus,
+  type MarketTrendFocusWireItem,
+  type MarketTrendFocusWireResponse,
+} from '../src/types/market.ts'
 
 function item(
   symbol: string,
-  reasonCodes: string[],
-  overrides: Partial<MarketRadarItem> = {},
-): MarketRadarItem {
+  overrides: Partial<MarketTrendFocusWireItem> = {},
+): MarketTrendFocusWireItem {
   return {
     symbol,
     product_name: symbol.toUpperCase(),
     sector: 'black',
-    price_change_1d: 0.01,
-    price_change_5d: 0.02,
-    volume_ratio20: 1.2,
-    oi_change_1d: 0.01,
-    atr14_percentile252: 0.5,
-    position20: 0.5,
-    turnover: 1000,
-    reason_codes: reasonCodes,
+    physical_contract: `${symbol.toUpperCase()}2701`,
+    direction: 'long',
+    stage: 'ready',
+    hot_conditions: ['price_move_up', 'volume_expansion'],
+    hot_count: 2,
+    price_change_1d: '0.0234',
+    volume_ratio20: '1.75',
+    atr14_percentile252: '0.81',
+    daily_volume_support: true,
+    hourly_state: 'continuation',
+    hourly_volume_support: false,
+    range_upper: '101.25',
+    range_lower: '96.5',
+    confirmation_count: 3,
+    retest_held: true,
+    rebreak_reference: '103.5',
+    ready_invalidation: '99.25',
+    volume_confirmed: true,
+    five_minute_confirmed: false,
+    entry_confirmed_at: null,
+    latest_swing_high: '103.5',
+    latest_swing_low: '99.25',
+    next_level: '104.75',
+    invalidation_level: '101.25',
+    last_transition_at: '2026-08-23T02:30:00Z',
     ...overrides,
   }
 }
 
-test('focus requires EMA direction plus at least one participation fact', () => {
-  assert.deepEqual(selectMarketFocus([
-    item('a', ['ema21_up']),
-    item('b', ['ema21_up', 'near_20d_high']),
-    item('c', ['ema21_up', 'high_volatility']),
-    item('d', ['ema21_up', 'oi_increase']),
-    item('e', ['ema21_down', 'price_move_down']),
-  ]).map((entry) => [entry.item.symbol, entry.direction]), [
-    ['d', 'long'],
-    ['e', 'short'],
+test('Trend Focus normalizes Decimal strings in every backend group at the HTTP boundary', () => {
+  const payload: MarketTrendFocusWireResponse = {
+    status: 'ready',
+    observed_at: '2026-08-23T03:00:00Z',
+    long_opportunities: [item('jm')],
+    short_opportunities: [item('ag', { direction: 'short', stage: 'setup' })],
+    running_trends: [item('au', { stage: 'running', five_minute_confirmed: true })],
+    weakening_trends: [item('rb', { direction: 'short', stage: 'weakening' })],
+    unavailable: [{ symbol: 'cu', code: 'HOURLY_HISTORY_INSUFFICIENT' }],
+  }
+
+  const result = normalizeMarketTrendFocus(payload)
+
+  assert.deepEqual([
+    result.long_opportunities.length,
+    result.short_opportunities.length,
+    result.running_trends.length,
+    result.weakening_trends.length,
+  ], [1, 1, 1, 1])
+  assert.equal(result.long_opportunities[0].price_change_1d, 0.0234)
+  assert.equal(result.short_opportunities[0].range_lower, 96.5)
+  assert.equal(result.running_trends[0].rebreak_reference, 103.5)
+  assert.equal(result.weakening_trends[0].invalidation_level, 101.25)
+  assert.equal(result.long_opportunities[0].stage, 'ready')
+  assert.equal(result.running_trends[0].five_minute_confirmed, true)
+  assert.deepEqual(result.unavailable, [
+    { symbol: 'cu', code: 'HOURLY_HISTORY_INSUFFICIENT' },
   ])
 })
 
-test('focus uses transparent tuple ordering and caps output at three', () => {
-  const result = selectMarketFocus([
-    item('a', ['ema21_up', 'price_move_up'], { turnover: 5000 }),
-    item('b', ['ema21_up', 'price_move_up', 'volume_expansion'], { turnover: 1000 }),
-    item('c', ['ema21_down', 'price_move_down', 'oi_increase'], { turnover: 900 }),
-    item('d', ['ema21_up', 'price_move_up', 'volume_expansion', 'oi_increase'], { turnover: 100 }),
-  ])
+test('Trend Focus preserves null optional levels while normalizing required levels', () => {
+  const payload: MarketTrendFocusWireResponse = {
+    status: 'ready',
+    observed_at: '2026-08-23T03:00:00Z',
+    long_opportunities: [item('jm', {
+      price_change_1d: null,
+      volume_ratio20: null,
+      atr14_percentile252: null,
+      rebreak_reference: null,
+      ready_invalidation: null,
+      latest_swing_high: null,
+      latest_swing_low: null,
+      next_level: null,
+      invalidation_level: null,
+    })],
+    short_opportunities: [],
+    running_trends: [],
+    weakening_trends: [],
+    unavailable: [],
+  }
 
-  assert.deepEqual(result.map((entry) => entry.item.symbol), ['d', 'c', 'b'])
-})
+  const [result] = normalizeMarketTrendFocus(payload).long_opportunities
 
-test('focus projects one risk with oi decrease before high volatility', () => {
-  const [result] = selectMarketFocus([
-    item('a', ['ema21_up', 'price_move_up', 'oi_decrease', 'high_volatility']),
-  ])
-
-  assert.equal(result.riskLabel, '减仓推动')
-})
-
-test('focus breaks an otherwise equal tie by turnover then symbol without mutating input', () => {
-  const reasonCodes = ['ema21_up', 'price_move_up']
-  const items = [
-    item('c', [...reasonCodes], { turnover: null }),
-    item('b', [...reasonCodes], { turnover: 2000 }),
-    item('a', [...reasonCodes], { turnover: 2000 }),
-  ]
-  const originalItems = [...items]
-  const originalReasons = items.map((entry) => [...entry.reason_codes])
-
-  assert.deepEqual(selectMarketFocus(items).map((entry) => entry.item.symbol), ['a', 'b', 'c'])
-  assert.deepEqual(items, originalItems)
-  assert.deepEqual(items.map((entry) => entry.reason_codes), originalReasons)
-})
-
-test('focus permits zero qualified items', () => {
-  assert.deepEqual(selectMarketFocus([
-    item('a', ['near_20d_low', 'oi_decrease']),
-    item('b', ['ema21_down', 'high_volatility']),
-  ]), [])
+  assert.equal(result.range_upper, 101.25)
+  assert.equal(result.range_lower, 96.5)
+  assert.equal(result.next_level, null)
+  assert.equal(result.invalidation_level, null)
+  assert.equal(result.latest_swing_high, null)
 })

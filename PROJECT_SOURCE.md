@@ -66,6 +66,10 @@ Canonical facts：`/api/v1/market/research/subing/history`、`/api/v1/market/res
 N Structure `5m`、JDJ `1m`；各自保留独立 DTO、Policy、reducer 与 event identity，不建立统一 Strategy
 adapter，不创建 AlertEvent 或持久化派生结果。
 
+Market 首页“优先检查”只消费 `/api/v1/market/research/trend-focus` 的当前只读快照。该 read model
+按请求从 Radar、`MarketDataService`、`MarketReadService` 与当前 rank1 physical contract 重算，输出
+多/空新机会及运行/转弱趋势；不持久化、不接 Alert/Runtime/订单，也不生成综合分或交易推荐。
+
 ## 研究边界
 
 - SuBing、N Structure、JDJ 与主力照妖镜各自保留 source-specific Policy、时间粒度、因果 reducer 和
