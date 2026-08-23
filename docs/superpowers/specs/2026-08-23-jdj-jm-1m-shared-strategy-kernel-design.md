@@ -1,13 +1,17 @@
-# 日进斗金 JM 1m Shared Strategy Kernel 设计
+# 日进斗金 JM 1m 轻量策略设计
 
 更新时间：2026-08-23
 状态：Review 后正式 Strategy Spec；授权后续代码实现，不授权真实 RQAlpha 回测、Runtime、通知、main/tag 或任何正式数据写入
 
-## 1. 目标与 V1 完整性定义
+## 1. 架构原则
 
-本 Spec 将现有 `jdj_1m_v1` 从“只读 Candidate Research”扩展为第一套完整、可复算、可由多个消费者复用的交易策略语义，同时保持已经冻结的 JDJ/N Candidate 因果公式不变。
+> **先写业务逻辑，重复真实出现后再抽象；先满足个人研究闭环，不为未来多人、分布式、通用策略平台预建设。**
 
-第一版只落地：
+本项目是本地、单用户、个人开发维护的量化研究工作站。除通知最多涉及 owner + 三位朋友外，本策略相关能力只服务个人研究。因此 V1 不建设通用 Strategy Framework、插件系统、策略数据库、动态 Profile API、队列、Portfolio Engine 或提前的 Streaming Framework。
+
+## 2. V1 目标
+
+第一版只实现：
 
 ```text
 strategy_id = jdj_intraday_futures_v1
@@ -18,132 +22,15 @@ execution   = 1m
 trend       = 5m
 ```
 
-这里的“完整策略”严格指：对当前已经工程化的三类 JDJ Entry Setup，完整覆盖 Candidate → Entry Authorization → 仓位 → 部分止盈 → 最多两次盈利加仓 → 保护位 → 日风险 → Exit → Attribution 的交易生命周期。
+“完整策略”仅指：在现有三类 JDJ Candidate Entry 之上，补齐一笔交易从授权开仓、仓位、部分止盈、最多两次盈利加仓、保护位、日风险到退出的完整生命周期，并可在历史主力合约主图上做 deterministic reference replay。
 
-V1 **不等于**把《股票日内交易入门》中的 VWAP、ABC、三角形、盘整区间、Trap、Camarilla 等全部 Entry 战法同时实现。那些战法以后只能以新的、可单独验证的 setup 进入同一个 Kernel。
+V1 不把《股票日内交易入门》中的 VWAP、ABC、三角形、盘整突破、Trap、Camarilla 等其他 Entry 战法一次性塞入策略。
 
-同一套 Strategy Kernel 最终服务三个消费者：
+## 3. 事实来源与不改动边界
 
-1. 现有 JDJ Candidate Research；
-2. Canonical `actual_dominant` Historical Strategy Replay / Market 主图；
-3. RQAlpha Plus local-only、research-only 回测 adapter。
+### 3.1 Entry Setup 继续复用当前仓库实现
 
-本阶段不证明策略盈利、有效、可交易、OOS-ready 或可晋升。
-
-## 2. Review 后的关键修正
-
-正式实现必须遵守以下修正：
-
-1. N/JDJ 公式迁移不能依赖 old/new 不同 dataclass 类型的直接 equality；先冻结 golden projection，再 `git mv` 纯模块并对 golden 逐字段复算。
-2. Shared Candidate Kernel 当前是 batch 语义；RQAlpha adapter 之前必须增加 streaming evaluator，并证明 streaming 输出与 batch 输出逐事件一致。禁止每根 1m Bar 从 segment 起点全量重算的 O(n²) 实现。
-3. V1 取消 Bar 内 hard-stop/target 的猜测性精确成交。管理类 REDUCE/EXIT 只在 completed 1m Bar 后确认并在下一可执行 Bar 处理。Entry/Add 因为需要在成交前维持最低 R:R，使用 decision 时已知的 admissible price 作为**仅下一根 1m Bar 有效的限价 intent**；这可以映射到 RQAlpha 公共 `LimitOrder`，而不假设不存在的原生 stop-order。
-4. 原作者规则与 JM 工程适配分层：策略理念参数进入 `JdjStrategyPolicy`，JM/1m 的确定性适配进入 `JdjStrategyProfile`。
-5. 每笔交易必须有 `episode_id`；所有 ADD/REDUCE/EXIT 和 source event 去重属于同一 Trade Episode。
-6. RQAlpha 主力映射不得直接查询 `MainContractMap` 自行选主力；必须复用 `MarketDataService` / `ActualDominantResearchSegmentLoader` 已验证的 actual_dominant identity，再导出只含身份的 schedule。
-7. Entry 在 decision close 通过 R:R 并不代表下一 Bar 任意价格都合法；必须计算 admissible entry bound，并用限价 intent 阻止追价。
-8. “当日亏损达到 1%”原始资料只明确停止继续交易，没有明确必须立即强平。V1 若选择平掉现有仓位，必须明确标记为 JM 工程适配，不能冒充原作者原文。
-9. 日内不隔夜与 `next_bar` 组合必须有 session-aware terminal guard；不能等最终 Bar 完成后才下平仓决定。
-
-## 3. 事实来源分域
-
-### 3.1 Entry Setup 事实源
-
-Entry Setup 只看仓库已经冻结的：
-
-- `data/research_policies/jdj_1m_policy_v1.json`；
-- 当前 JDJ/N pure reducers 与 event identity；
-- 对应 Candidate validation / robustness evidence。
-
-《股票日内交易入门》不得用来静默改写现有 Candidate 的 EMA、N、strict-before、trigger 或 event identity。
-
-### 3.2 Trade Management 原始依据
-
-交易管理以用户提供的《股票日内交易入门》为主要原始依据。本 Spec 只采用文件中能够明确机械化的规则：
-
-- 书页 28～33：开仓前明确止损与潜在盈利，作者一般只做盈亏比高于 2:1 的交易；
-- 书页 34～37：单笔 planned risk 不超过账户总资金 1%，仓位由风险约束与资金约束共同决定；
-- 书页 134～140：亏损仓禁止加仓；已有盈利并完成部分止盈后，前两次有效回到 20MA 的机会可以各增加当前持仓约 1/4，第三、第四次不再增加；加仓后提高保护位；
-- 书页 141～143：当日亏损超过 0.5% 暂停 15 分钟，达到 1% 后停止当天继续交易。
-
-文件中的仓位示例包含第一次目标减 200/500、第二次目标再减 200、保留 100，但它是示例，不足以证明“每一笔都固定 40%/40%/20%”。因此 V1 的 40% 首次减仓只属于 profile engineering adaptation。
-
-### 3.3 JM V1 工程适配
-
-以下规则是为了把人工体系变成一个确定、可复算的焦煤 1m 研究策略，不宣称为作者唯一原始参数：
-
-- `base_risk_fraction=0.5%`；
-- Historical Reference Replay 起始权益固定为 1,000,000 元，仅用于决定参考手数和日风险状态；
-- 首次结构目标完成后 reference reduce 40%；
-- structural stop / target 使用 completed-Bar 触发；
-- Entry/Add 使用 one-bar admissible limit；
-- daily 1% 达到后 V1 选择退出剩余仓位；
-- session terminal guard；
-- Historical Replay 的 cost/margin assumptions。
-
-## 4. 架构与依赖方向
-
-采用方案 B，但保持个人项目所需的最小边界：
-
-```text
-MarketDataService Canonical Bars                  RQAlpha Bundle Bars
-             │                                           │
-             └────────── normalized CanonicalBar value ──┘
-                                  │
-                         Shared N/JDJ Kernel
-                                  │
-                    Candidate + Strategy Decisions
-                    ┌─────────────┼─────────────┐
-                    ▼             ▼             ▼
-               Research      Historical      RQAlpha
-                             Reference Replay Adapter
-                                  │
-                                  ▼
-                              Market Web
-```
-
-`CanonicalBar` 在 Kernel 中仅作为已经存在的不可变 OHLCV/domain value shape 使用，不代表 Kernel 可以读取 Canonical 存储。V1 不创建第二套 `JdjMarketBar` DTO。RQAlpha adapter 只能把 Bundle Bar 转成内存中的 `CanonicalBar` value；不得从 Canonical 文件/DB读取价格。
-
-硬约束：
-
-- 不建立通用 `StrategyBase`、插件框架、Portfolio Engine、参数优化平台或自动晋升系统；
-- 不复制 JDJ/N 公式到 Web 或 RQAlpha strategy file；
-- `app.strategy_kernel` 不依赖 FastAPI、SQLAlchemy、RQAlpha、Redis、Alert、Execution Review 或 Runtime；
-- Research 可以依赖 Strategy Kernel，Strategy Kernel 不得反向依赖 `app.research.*`；
-- RQAlpha adapter 只负责 Bundle facts、order/fill translation 和 strategy state 回灌。
-
-## 5. 模块边界
-
-目标代码边界：
-
-```text
-services/quant-api/app/strategy_kernel/
-├── n_structure/
-│   ├── n_structure_policy.py
-│   ├── n_structure_pattern.py
-│   ├── n_structure_swing.py
-│   ├── n_structure_state.py
-│   └── n_structure_segment.py
-└── jdj/
-    ├── jdj_policy.py
-    ├── jdj_context.py
-    ├── jdj_events.py
-    ├── jdj_trend_follow.py
-    ├── jdj_trend_reentry.py
-    ├── jdj_key_level_breakout.py
-    ├── strategy_policy.py
-    ├── strategy_profile.py
-    ├── target.py
-    ├── risk.py
-    ├── execution.py
-    ├── engine.py
-    └── streaming.py
-```
-
-只下沉 pure causal N/JDJ modules。Candidate validation、Research request/outcome、robustness、dossier、CLI、HTTP projection 继续位于 `app.research`。最终不得保留第二份公式实现或长期 compatibility shim。
-
-## 6. 现有 Candidate 语义必须原样保持
-
-V1 Entry 只启用：
+V1 只使用现有：
 
 ```text
 jdj_trend_follow_1m_candidate_v1
@@ -151,526 +38,428 @@ jdj_trend_reentry_6_1m_candidate_v1
 jdj_key_level_breakout_1m_candidate_v1
 ```
 
-必须保持：
+以下语义不得改变：
 
 - source timeframe=`1m`；trend context=`5m`；
-- EMA20 的现有 SMA seed、rounding、close input；
+- EMA20 当前 seed / rounding / close input；
 - 5m N Structure strict-before；
 - same trading day / same physical contract / same rank1 segment；
 - previous-bar dynamic trigger，equal 不算 breach；
-- Trend Follow reaction/invalidation；
-- Trend Reentry 6 excursion/reclaim/first-reaction；
-- Key Level first-break 不追、retest、same-pivot single episode；
-- event id、candidate id、source event kind、direction、`observed_at`、trigger level 与现有计数。
+- Trend Follow / Trend Reentry 6 / Key Level Breakout 当前 reducer 语义；
+- Candidate event id、direction、`observed_at`、trigger level。
 
-重构和 streaming evaluator 均必须对相同输入得到同一 golden projection。
+**V1 不迁移 `app/research/n_structure/**` 或 `app/research/jdj/**`。** 现有 JDJ/N Research 仍是 Entry 公式唯一实现。新的完整交易模块直接消费已有 Candidate event/context，不复制公式。
 
-## 7. Policy 与 Profile
+### 3.2 交易管理原始依据
 
-### 7.1 Strategy Policy：交易理念不可按品种调参
+本 Spec 只采用《股票日内交易入门》中能够确定机械化的规则：
 
-`data/strategy_policies/jdj_intraday_futures_v1.json` 至少冻结：
+- 书页 28～33：入场前明确止损和潜在盈利，通常只做盈亏比高于 2:1 的交易；
+- 书页 34～37：单笔 planned risk 不超过账户总资金 1%，仓位受风险和资金共同限制；
+- 书页 134～140：亏损仓禁止加仓；已有盈利并完成部分止盈后，前两次有效回到 20MA 的机会可各增加当前持仓约 1/4，第三、第四次不再加；
+- 书页 141～143：当日亏损超过 0.5% 暂停 15 分钟，达到 1% 后停止当天继续交易。
 
-```text
-policy_id                         = jdj_intraday_futures_v1
-candidate_policy_id               = jdj_1m_policy_v1
-minimum_reward_risk               = 2.0
-max_planned_trade_risk_fraction   = 0.01
-require_profit_before_add         = true
-require_partial_profit_before_add = true
-add_fraction_of_current_qty       = 0.25
-max_add_count                     = 2
-losing_position_add_forbidden     = true
-daily_pause_drawdown_fraction     = 0.005
-daily_pause_minutes               = 15
-daily_stop_drawdown_fraction      = 0.01
-```
+书中 500 股先减 200、再减 200、保留 100 是示例，不足以证明所有交易都固定 40%/40%/20%。因此 V1 只把第一次 40% 减仓作为焦煤工程适配。
 
-这些字段不能在 Web 或按品种 profile 中被覆盖。
+## 4. 最小架构
 
-### 7.2 JM 1m Profile：工程适配可版本化
-
-`data/strategy_profiles/jdj_jm_1m_v1.json`：
+不新增 `app.strategy_kernel`。只新增一个窄模块：
 
 ```text
-profile_id                         = jdj_jm_1m_v1
-symbol                             = jm
-series_kind                        = actual_dominant
-execution_frequency                = 1m
-trend_context_frequency            = 5m
-base_risk_fraction                 = 0.005
-first_profit_take_fraction         = 0.40
-reference_stop_buffer_ticks        = 0
-terminal_flatten_lead_bars         = 1
-no_new_entry_lead_bars             = 1
-opening_profit_giveback_guard      = disabled
-historical_reference_start_equity  = 1000000
-historical_reference_cost_model    = excluded
-historical_reference_margin_check  = disabled
-entry_limit_valid_bars              = 1
+services/quant-api/app/research/jdj_strategy/
+├── __init__.py
+├── contract.py   # 一个配置文件的 exact contract + DTO
+├── engine.py     # 交易生命周期与状态机
+├── replay.py     # deterministic reference fills
+└── service.py    # actual_dominant orchestration
 ```
 
-`reference_stop_buffer_ticks=0` 是 Review 后的收敛：仓库当前没有版本化历史 tick-size contract 可保证跨历史时期正确，V1 不用“当前 tick”回填旧历史。真实 RQAlpha 运行可以使用 Bundle instrument facts，但不得借此改变 Shared structural stop。
-
-未来 5m/15m/其他周期必须新增 versioned profile，不允许自动按倍率缩放 1m 参数。
-
-## 8. Historical 数据合同
-
-Historical Replay 使用：
+依赖方向：
 
 ```text
-MarketDataService
-→ ActualDominantResearchSegmentLoader
-→ validated physical-contract rank1 segments
-→ Shared Strategy Kernel
+现有 N/JDJ Research reducers
+          ↓ Candidate events / contexts
+app.research.jdj_strategy.engine
+          ↓
+reference replay / API / Web
 ```
 
-要求：
+硬约束：
 
-- 不直接查询 `main_contract_map` 自行挑主力；
-- 不使用 continuous 代替 actual_dominant；
-- 不跨 physical contract 传播 EMA、N、Candidate、Episode、Daily Risk；
-- loader identity/coverage 异常 fail-closed；
-- API `since` 可以位于 segment 中间，但计算必须从 loader 提供的真实 segment start warm up；只抑制 requested `since` 之前的输出，不能从 `since` 冷启动 EMA/N；
-- Replay 不写 Canonical、DB 或 Redis。
+- `jdj_strategy` 不重新计算第二套 EMA/N/JDJ Entry；
+- 不创建 StrategyBase、plugin、optimizer、Portfolio、scheduler；
+- 不创建数据库表或 migration；
+- 不接 Alert、PushPlus、Execution Review、Runtime；
+- 不修改现有 Candidate Research 的输出语义。
 
-## 9. Candidate → Entry Authorization
+未来 RQAlpha 真正接入时，如果现有 batch reducer 无法直接复用，再针对实际重复点抽取最小 streaming primitive；本阶段不预建。
+
+## 5. 单一配置合同
+
+第一版只维护一个 Git 跟踪文件：
 
 ```text
-Candidate
-→ same-bar conflict resolution
-→ structural stop
-→ known target
-→ signal-time R:R
-→ admissible fill bound
-→ daily/session gate
-→ reference quantity
-→ one-bar ENTRY_LIMIT_INTENT
-→ fill or expire
+data/strategy_profiles/jdj_v1.json
 ```
 
-### 9.1 冲突
-
-- 同方向多个 Setup：只产生一个 intent；归因优先级固定 `key_level_breakout > trend_reentry_6 > trend_follow`，其余作为 supporting setups；该顺序只用于 attribution，不代表强弱排名。
-- 同一 decision Bar 同时 LONG/SHORT：拒绝，`AMBIGUOUS_DIRECTION`。
-
-### 9.2 Structural Stop
-
-Stop 只使用 decision time 已知事实，V1 不加历史 tick buffer：
-
-- Trend Follow：reaction Bar adverse extreme；
-- Trend Reentry 6：frozen excursion extreme；
-- Key Level Breakout：frozen key level。
-
-这些是 JM V1 的 execution mapping，不修改 Candidate 本身。
-
-### 9.3 Target
-
-Decision time 可用 target candidates 只有：
-
-1. 同 physical segment、已 confirmed 的 favorable 5m N pivots；
-2. 当前 trading day 截至 decision Bar 已知的 favorable 1m session high/low。
-
-选择离 entry reference 最近的 favorable known level 作为 `target_1`。没有 forward level：`TARGET_UNAVAILABLE`。
-
-V1 不用未来 pivot、不预测目标、不实现第二个固定 target。
-
-### 9.4 R:R 与 one-bar admissible limit
-
-Signal-time `entry_reference = Candidate.observation_close`。
-
-```text
-planned_risk   = abs(entry_reference - stop)
-planned_reward = abs(target_1 - entry_reference)
-reward_risk    = planned_reward / planned_risk
-```
-
-`reward_risk < 2` 拒绝。
-
-令 `r=minimum_reward_risk`：
-
-```text
-admissible_boundary = (target_1 + r * stop) / (1 + r)
-LONG  : limit_price = admissible_boundary，且 limit_price > stop
-SHORT : limit_price = admissible_boundary，且 limit_price < stop
-```
-
-Intent 在 decision Bar 完成后产生，只对**紧随其后的一个 1m Bar**有效：
-
-- LONG：若 next open <= limit，reference fill=next open；否则只有 next low <= limit 才可 reference fill=limit；否则该 Bar 结束后 intent expire；
-- SHORT：若 next open >= limit，reference fill=next open；否则只有 next high >= limit 才可 reference fill=limit；否则 expire；
-- 不允许第二、第三根 Bar 延迟追单；过期 reason=`ENTRY_LIMIT_EXPIRED`。
-
-该模型只对 Entry/Add 使用 next-Bar OHLC 来投影一个事先已经存在的限价单，不属于未来函数；RQAlpha adapter 用 `LimitOrder` 映射，并在下一次 `handle_bar` 时撤销仍未成交的 intent。
-
-Reference quantity 按限价 boundary 这个最不利允许成交价计算，因此任何合法更优成交都不会因 gap 静默突破 planned risk cap。
-
-## 10. Instrument / Account Facts
-
-Kernel 只消费：
-
-```text
-InstrumentExecutionFacts(
-    contract_multiplier,
-    price_tick | None,
-    estimated_round_trip_cost,
-    available_cash,
-    margin_required_per_contract | None,
-)
-```
-
-- Historical Replay：起始权益固定 1,000,000；contract multiplier 优先来自项目 Catalog/已验证 reference；V1 reference cost 排除、reference margin check 关闭，并在输出标记 `reference_execution=true`。主图不冒充真实撮合/PnL。
-- RQAlpha：使用 Bundle/instrument/account 的 multiplier、费用、保证金和 available cash，不继承 Historical reference assumptions。
-- 任一 consumer 不能猜 multiplier。
-
-基础 planned quantity：
-
-```text
-risk_cash = account_equity × base_risk_fraction
-per_contract_risk = abs(admissible_boundary - stop) × contract_multiplier
-                    + estimated_round_trip_cost
-qty_by_risk = floor(risk_cash / per_contract_risk)
-```
-
-若 consumer 提供受信任 margin facts，再取 `min(qty_by_risk, qty_by_margin)`；Historical reference replay 不做虚假的历史保证金精确模拟。
-
-整个 Episode 任一新 action 前都重算 planned worst-case risk，不能超过 `account_equity × 1%`。
-
-## 11. Trade Episode 与 Position Management
-
-每次实际 ENTRY fill 创建唯一 `episode_id`，至少保存：
-
-```text
-episode_id
-initial_source_event_ids
-primary_setup
-supporting_setups
-direction
-contract
-trading_day
-segment_start_trading_day
-initial_entry
-current_qty
-weighted_average_cost
-protective_stop
-target_1
-add_count
-partial_profit_taken
-realized_pnl
-consumed_source_event_ids
-```
-
-未成交/过期限价 intent 不创建 Trade Episode。同一 source event 不能重复产生 action。
-
-### 11.1 首次部分止盈
-
-V1 target management：
-
-- LONG completed 1m close >= `target_1`；SHORT <= `target_1` 时产生 `REDUCE_INTENT`；
-- 下一可执行 same-segment Bar 以 next-bar market/reference-open 处理；
-- `take_qty=floor(current_qty×0.40)`；0 手则不制造 action；
-- 实际 fill 后才置 `partial_profit_taken=true`；
-- 保护位提高到当前 weighted average cost；
-- `target_1` 只执行一次。
-
-40% 是 JM V1 确定性适配。书中第二目标减仓示例暂不机械化为通用 target_2。
-
-### 11.2 盈利加仓
-
-ADD 必须由新的、未消费的同方向 `jdj_trend_follow_1m_candidate_v1` **完整 trigger event**驱动，不使用“只碰 EMA20 就加仓”的第二套公式。
-
-同时要求：
-
-- `partial_profit_taken=true`；
-- Episode realized PnL > 0；
-- `add_count < 2`；
-- `add_qty=floor(current_qty×0.25) >= 1`；
-- one-bar admissible limit、Episode risk、margin gates 重新通过。
-
-ADD fill 后：`add_count += 1`，保护位提高到 post-fill weighted average cost。第三次及以后不加；亏损/摊低成本加仓永久禁止。
-
-### 11.3 Exit
-
-V1 completed-bar exit decision：
-
-- LONG close <= protective stop / SHORT close >= protective stop；
-- LONG close <= EMA20 / SHORT close >= EMA20；
-- strict-prior 5m N trend 不再支持当前方向；
-- daily stop；
-- session terminal guard；
-- segment identity 即将切换且仍有仓位。
-
-除 session terminal guard 外，completed-Bar Exit 在下一可执行 same-segment Bar 以 market/reference-open 处理。V1 不声称模拟书中盘中 hard-stop 的精确触发价。
-
-## 12. Daily Risk
-
-每个 `trading_day` 记录 `start_equity`。V1 使用 completed-Bar mark-to-market equity：
-
-```text
-drawdown = max(0, (start_equity - current_equity) / start_equity)
-```
-
-- `drawdown > 0.5%`：禁止 Entry/Add **15 个后续 completed in-session 1m Bars**；用 Bar 计数而非 wall-clock，休市不消耗暂停时长；已有仓位继续被管理。
-- `drawdown >= 1%`：原作者语义为停止当天继续交易；JM V1 额外采用保守适配 `DAILY_STOP_EXIT`，产生退出 intent 并在下一可执行 Bar 处理，同时本 trading day 永久禁止 Entry/Add。
-- 新 trading day 重置 pause/stop；不跨主力 segment 传播。
-
-美股 opening-profit 40% giveback guard 在 JM V1 中 disabled。
-
-## 13. Session Terminal Guard
-
-因为普通 EXIT 走 next-Bar execution，不能等 trading day 最后一根 Bar 完成后再决定日内清仓。
-
-Profile：
-
-```text
-terminal_flatten_lead_bars = 1
-no_new_entry_lead_bars     = 1
-```
-
-规则：
-
-- 当当前 completed Bar 之后只剩 1 根本 trading_day、same-segment 可执行 Bar 时，禁止新 Entry/Add；
-- 有持仓则产生 `SESSION_FLATTEN` intent，在最终可执行 Bar open 完成 reference close；
-- 中间休市间隔不是 trading-day terminal；
-- terminal identity 不可解析时 fail-closed，不允许“可能隔夜”。
-
-RQAlpha adapter 不能自行猜 15:00；运行前 identity schedule 必须携带该 trading day terminal identity。
-
-## 14. Historical Reference Replay Fill Model
-
-主图是 `Historical Strategy Replay`，不是历史真实成交、不是 RQAlpha fill。
-
-- ENTRY/ADD：第 9.4 节 one-bar admissible limit reference model；最多只活一根 1m Bar；
-- REDUCE/普通 EXIT：completed-Bar decision 后下一根 same-day/same-segment Bar open；
-- decision 后无合法 Bar：intent 取消并记录 typed reason；
-- stop/target 管理不使用 Bar high/low 猜先后顺序；不存在 `INTRABAR_ORDER_AMBIGUOUS`；
-- session terminal flatten 按第 13 节提前一 Bar 决策；
-- Entry/Add 对 next-Bar high/low 的使用只用于复现事先存在的单个 LimitOrder 是否可成交，不用于同 Bar 反推策略 decision。
-
-Reference 输出保存 `decision_at`、`effective_bar_end`、`reference_fill_price`、`fill_basis`、contract/segment identity 与 `reference_execution=true`。
-
-## 15. Streaming Parity Gate
-
-Historical Research/Replay 可以批量评估，但 RQAlpha `handle_bar` 是流式消费。进入 RQAlpha adapter 前必须实现 `JdjStreamingEvaluator`：
-
-```text
-push(completed_1m_bar, optional_newly_completed_5m_bar)
-→ zero or more Candidate/Strategy decisions
-```
-
-要求：
-
-- EMA20 state、N swing/pattern/structure state、JDJ setup armed state 在同一 physical segment 内持续；
-- trading day 只重置 JDJ day-scoped/Execution state，不得错误重置 N/EMA segment state；
-- physical segment change 全量 reset；
-- strict-before 与 batch 完全一致；同一 boundary 新完成的 5m fact **只能从下一根 1m decision 开始可见**；
-- 同一 frozen segment 逐 Bar push 的 Candidate projection 与 batch reducers 逐事件一致；
-- 禁止每个 Bar 从 segment start 重算全历史作为正式实现。
-
-Streaming parity 未通过时，RQAlpha adapter Gate=`BLOCKED`。
-
-## 16. RQAlpha Identity Schedule 与 Adapter
-
-RQAlpha Bundle 提供价格、Bar、撮合、费用、保证金和模拟账户。归一量化只提供经过现有 Historical read path 验证的非价格 identity schedule。
-
-运行前生成：
+结构只分“核心交易规则”和“当前落地 Profile”，工程上不再维护两套 JSON/loader：
 
 ```json
 {
   "schema_version": 1,
   "strategy_id": "jdj_intraday_futures_v1",
-  "profile_id": "jdj_jm_1m_v1",
-  "symbol": "jm",
-  "series_kind": "actual_dominant",
-  "mapping_source": "MarketDataService/ActualDominantResearchSegmentLoader",
-  "trading_day_start": "YYYY-MM-DD",
-  "trading_day_end": "YYYY-MM-DD",
-  "days": {
-    "YYYY-MM-DD": {
-      "contract": "JMxxxx",
-      "terminal_bar_end": "<offset-aware ISO datetime>"
+  "core_rules": {
+    "minimum_reward_risk": "2.0",
+    "max_planned_trade_risk_fraction": "0.01",
+    "require_profit_before_add": true,
+    "require_partial_profit_before_add": true,
+    "add_fraction_of_current_qty": "0.25",
+    "max_add_count": 2,
+    "losing_position_add_forbidden": true,
+    "daily_pause_drawdown_fraction": "0.005",
+    "daily_pause_bars": 15,
+    "daily_stop_drawdown_fraction": "0.01"
+  },
+  "profiles": {
+    "jdj_jm_1m_v1": {
+      "symbol": "jm",
+      "series_kind": "actual_dominant",
+      "execution_frequency": "1m",
+      "trend_context_frequency": "5m",
+      "base_risk_fraction": "0.005",
+      "first_profit_take_fraction": "0.40",
+      "historical_reference_start_equity": "1000000",
+      "entry_limit_valid_bars": 1,
+      "terminal_flatten_lead_bars": 1
     }
   }
 }
 ```
 
-run metadata 另存 artifact creation time / repository commit；不把 nondeterministic timestamp 混入 schedule semantic identity。
+`contract.py` 使用现有 `exact_json_contract` 模式 fail-closed。V1 没有管理页面，也没有 profile discovery API。
+
+核心规则不能通过 Web 或按品种参数覆盖。未来第二个周期真实出现时，再在同一文件新增 versioned profile；不自动按倍率缩放 1m 参数。
+
+## 6. Candidate → Entry Authorization
+
+Candidate 不自动成交：
+
+```text
+Candidate
+→ 同 Bar 冲突处理
+→ structural stop
+→ 已知 target
+→ R:R >= 2
+→ admissible entry boundary
+→ 日风险 / session gate
+→ reference quantity
+→ one-bar Entry Intent
+→ fill 或 expire
+```
+
+### 6.1 同 Bar 冲突
+
+- 同方向多个 Setup：只允许一个 intent；归因固定 `key_level_breakout > trend_reentry_6 > trend_follow`，其余作为 supporting setups；只用于 attribution，不代表策略排名。
+- 同 Bar LONG/SHORT 同时出现：拒绝，`AMBIGUOUS_DIRECTION`。
+
+### 6.2 Structural Stop
+
+只使用 decision time 已知事实，V1 不额外加历史 tick buffer：
+
+- Trend Follow：reaction Bar adverse extreme；
+- Trend Reentry 6：event 中 frozen excursion extreme；
+- Key Level Breakout：event 中 frozen key level。
+
+Trend Follow 的 reaction Bar high/low 从当前 physical segment 的已有 1m bars 按 `reaction_at` 查找；找不到即 fail-closed。
+
+### 6.3 Target
+
+只允许 decision time 已知的 favorable level：
+
+1. 同 physical segment、已 confirmed 的 favorable 5m N pivot；
+2. 当前 trading day 截至 decision Bar 已知的 favorable 1m session high/low。
+
+取距离 entry reference 最近的 favorable level 为 `target_1`。没有 target 则拒绝：`TARGET_UNAVAILABLE`。
+
+### 6.4 R:R 与 one-bar limit
+
+`entry_reference = Candidate.observation_close`。
+
+```text
+risk   = abs(entry_reference - stop)
+reward = abs(target_1 - entry_reference)
+R:R    = reward / risk
+```
+
+R:R < 2 拒绝。
+
+为了避免下一根 Bar gap 后追价破坏 2:1，令 `r=2`：
+
+```text
+admissible_boundary = (target_1 + r * stop) / (1 + r)
+```
+
+- LONG：最多买到 `admissible_boundary`；
+- SHORT：最低卖到 `admissible_boundary`；
+- intent 只对紧随其后的一个 1m Bar 有效，之后过期。
+
+Historical reference fill：
+
+- LONG：next open <= limit 时按 open；否则 next low <= limit 时按 limit；否则过期；
+- SHORT 对称；
+- next-Bar high/low 只用于判断一个已经存在的 Limit Intent 是否能成交，不用于反推同 Bar 策略决策。
+
+## 7. 参考仓位与 TradeEpisode
+
+Historical Replay 不是完整账户模拟，只为了主图和交易生命周期提供确定参考。
+
+固定：
+
+```text
+reference_start_equity = 1,000,000
+reference_cost         = excluded
+reference_margin       = not simulated
+```
+
+合约乘数必须来自项目现有受信任 Catalog/reference，不能在策略代码硬编码 `JM=60`。
+
+基础手数：
+
+```text
+risk_cash = equity × 0.5%
+per_contract_risk = abs(admissible_boundary - stop) × contract_multiplier
+qty = floor(risk_cash / per_contract_risk)
+```
+
+`qty < 1` 不交易。任一新增仓动作的 planned worst-case risk 不得超过 equity × 1%。
+
+每次实际 Entry fill 创建一个最小 `TradeEpisode`：
+
+```text
+episode_id
+source_event_ids
+consumed_source_event_ids
+primary_setup / supporting_setups
+direction
+contract / trading_day / segment_start_trading_day
+quantity / weighted_average_cost
+protective_stop / target_1
+partial_profit_taken
+add_count
+realized_pnl
+```
+
+未成交 intent 不创建 Episode；同一个 source event 不可重复消费。
+
+## 8. 持仓管理
+
+### 8.1 第一次部分止盈
+
+- LONG completed 1m close >= target_1；SHORT 对称；
+- 产生 Reduce decision，在下一合法 same-segment Bar open 做 reference fill；
+- `take_qty=floor(current_qty × 0.40)`；0 手不制造假减仓；
+- 实际减仓后 `partial_profit_taken=true`；
+- protective stop 提高到当前 weighted average cost；
+- `target_1` 只执行一次。
+
+### 8.2 盈利加仓
+
+不另造“碰 EMA20 就加仓”的第二套公式。ADD 必须由新的、未消费的同方向 `jdj_trend_follow_1m_candidate_v1` 完整 trigger event 驱动，并同时满足：
+
+- 已实际部分止盈；
+- Episode realized PnL > 0；
+- `add_count < 2`；
+- `add_qty=floor(current_qty × 0.25) >= 1`；
+- one-bar limit 与 1% episode risk gate 再次通过。
+
+ADD fill 后提高 protective stop 到 post-fill weighted average cost。第三次及以后禁止；亏损摊平永久禁止。
+
+### 8.3 Exit
+
+completed-Bar Exit 条件：
+
+- LONG close <= protective stop / SHORT 对称；
+- LONG close <= EMA20 / SHORT 对称；
+- strict-prior 5m N trend 不再支持当前方向；
+- daily stop；
+- session terminal guard；
+- physical segment 即将切换且仍有仓位。
+
+普通 Exit 在下一合法 same-segment Bar open reference fill。V1 不模拟盘中 hard-stop 精确成交价。
+
+## 9. 日风险与日内平仓
+
+每个 trading day 从 reference equity 记录 `start_equity`，当前 equity 使用 reference realized + current-close mark-to-market，不计历史手续费/保证金。
+
+- drawdown > 0.5%：禁止新 Entry/Add 15 个后续 in-session 1m bars；已有仓位仍正常管理；
+- drawdown >= 1%：原始体系明确停止当天继续交易；JM V1 额外采用保守适配，产生退出 decision，并永久禁止当天 Entry/Add；
+- 新 trading day 重置 daily pause/stop；
+- 不跨 physical contract segment 传播 Episode 或 daily-risk 状态。
+
+日内不隔夜：使用现有 TradingSession resolver，不硬编码 15:00。当当前 completed Bar 之后只剩最后一个本 trading day 可执行 1m Bar 时：
+
+- 不再新开仓或加仓；
+- 有仓位则生成 `SESSION_FLATTEN`，在最终 Bar open 完成 reference close；
+- 中间休市不是 terminal。
+
+## 10. Historical 数据合同
+
+历史回放只走：
+
+```text
+MarketDataService
+→ ActualDominantResearchSegmentLoader
+→ validated physical-contract rank1 segments
+→ existing JDJ/N Research
+→ jdj_strategy engine/replay
+```
 
 要求：
 
-- schedule 由现有 `MarketDataService` / `ActualDominantResearchSegmentLoader` 解析结果生成，不直接查表自行选主力；terminal identity 复用现有 TradingSession resolver；
-- 只要求实际 trading-day coverage 的日期，非交易日不创建伪 row；
-- schedule 不含 OHLCV、Canonical file path、DB URL 或凭据；
-- identity schedule 在 local sidecar parent process 生成，child RQAlpha runner 不获得 DB/Redis credentials；
-- Bundle 当前 contract 与 schedule identity 不一致时拒绝 action；
-- coverage 缺失/冲突 fail-closed：`DOMINANT_SCHEDULE_INCOMPLETE`；
-- RQAlpha adapter 把 Bundle Bar 转为内存 domain Bar，送入已通过 parity 的 streaming evaluator；不得复制 EMA/N/JDJ 公式；
-- 回测固定 `frequency=1m`、`matching_type=next_bar`、`signal=false`；
-- Entry/Add 以 admissible boundary 提交 `LimitOrder`，仅保留到紧随其后的下一次 `handle_bar`；若此时仍 open，则 `cancel_order`，不得延迟追单；
-- REDUCE/EXIT 使用 completed-Bar decision 的 market close action，由 `next_bar` matcher 在后续 Bar 处理；
-- V1 不假设不存在的原生 stop order；
-- 结果继续 `research_only=true`、`formal_evidence=false`、`promotion_eligible=false`。
+- `actual_dominant` only；
+- 不自行直接查 `MainContractMap` 选择主力；
+- 不使用 continuous 替代真实主力；
+- API `since` 位于 segment 中间时，仍从 loader 提供的真实 segment start warm up，只抑制 `since` 前输出；
+- segment coverage/identity 异常 fail-closed；
+- Replay 不写 Canonical、DB、Redis。
 
-当前 `services/quant-api/app/backtest/` 不存在时，RQAlpha adapter implementation 必须等待 Workbench Plan 先实现，不能顺手另建第二套工作台。
+## 11. API 与 Web
 
-## 17. Strategy Events 与 Attribution
-
-Kernel 至少输出：
+第一版只有一个新 API，不做 Profile 管理接口：
 
 ```text
-ENTRY_INTENT
-ENTRY
-ADD_INTENT
-ADD
-REDUCE
-EXIT
-REJECTED_CANDIDATE
-DAILY_PAUSE
-DAILY_STOP
+GET /api/v1/market/research/jdj-strategy/history
+    ?series_kind=actual_dominant
+    &symbol=jm
+    &frequency=1m
+    &since=YYYY-MM-DD
+    &through=YYYY-MM-DD
 ```
 
-Action Event 至少包含：
+仅 `jm + actual_dominant + 1m` 接受；其他品种/周期返回 `422 JDJ_STRATEGY_PROFILE_UNAVAILABLE`。
+
+Market 主图新增独立 overlay：`日进斗金策略`，与现有 JDJ Candidate overlay 分开。
+
+Marker：
 
 ```text
-event_id
-episode_id | null
-profile_id
-strategy_version
-source_event_ids
-primary_setup
-supporting_setups
-direction
-contract
-trading_day
-segment_start_trading_day
-decision_at
-effective_bar_end
-price | null
-qty
-position_qty_after
-stop_price
-target_price
-planned_risk_fraction
-reward_risk
-reason
-reference_execution
-fill_basis
+▲ / ▼ Entry
+＋     Add
+－     Reduce
+×      Exit
 ```
 
-RQAlpha completed episode attribution另保存 gross/cost/net PnL、return_R、MFE_R、MAE_R、holding_bars；Historical主图不重新发明 RQAlpha PnL 计算器。
+Hover 最小展示：setup、contract、decision/effective time、qty、stop、target、R:R、reason，并明确“参考回放”。未成交 intent 不画成交 marker。
 
-## 18. Market Web 与周期切换
+Web 不计算任何 EMA/N/R:R/仓位/PnL 逻辑；直接扩展当前 `useHistoricalResearchMarkers` / `historicalResearchMarkers` 路径，不再新建第二套 marker composable。
 
-新增独立 overlay：`日进斗金策略`，与现有 JDJ Candidate Overlay 分开。
+## 12. 后续周期和 RQAlpha
 
-V1 capability：
+### 12.1 切换周期
 
-- `jm + actual_dominant + 1m`：支持 `jdj_jm_1m_v1`；
-- 其他 symbol/frequency：明确“该品种/周期尚未验证”，清除旧 marker；
-- 未来只有后端 Profile Registry 声明 accepted profile 后才开放对应周期；
-- Web 不计算 EMA、N、R:R、stop、仓位或 PnL。
+未来真实需要 `5m/15m/...` 时：
 
-Marker：ENTRY `▲/▼`、ADD `＋`、REDUCE `－`、EXIT `×`。未成交的 Entry/Add intent 默认不画主图成交 marker，只可在 debug/hover evidence 中追溯。
+1. 先研究并冻结该周期参数；
+2. 在 `jdj_v1.json` 新增 versioned profile；
+3. 后端和 Web 显式开放该周期。
 
-## 19. Stable Fail-Closed Codes
+没有 profile 时显示“该品种/周期尚未验证”。不做动态插件和自动倍率转换。
 
-至少包括：
+### 12.2 RQAlpha
+
+RQAlpha Adapter **不属于本轮实现 Plan**。原因：当前 RQAlpha Workbench 代码尚未存在，提前建设 streaming/adapter 是 YAGNI。
+
+Workbench 真正落地后另开独立 Lane 3 小任务：
+
+```text
+现有 JDJ/N Entry 公式
++ jdj_strategy.engine 交易管理
+→ thin RQAlpha adapter
+```
+
+只有届时实际发现 batch reducer 无法满足 `handle_bar`，才抽取最小 streaming state，并做 batch/streaming parity；不提前迁移整个 N/JDJ Research。
+
+## 13. 最小 Fail-Closed
+
+V1 只需要稳定区分：
 
 ```text
 JDJ_STRATEGY_PROFILE_UNAVAILABLE
 JDJ_STRATEGY_CONTEXT_INVALID
-JDJ_STRATEGY_INSTRUMENT_SPEC_UNAVAILABLE
 JDJ_STRATEGY_TARGET_UNAVAILABLE
 JDJ_STRATEGY_REWARD_RISK_TOO_LOW
-JDJ_STRATEGY_ENTRY_LIMIT_EXPIRED
 JDJ_STRATEGY_POSITION_SIZE_ZERO
-JDJ_STRATEGY_RISK_LIMIT_EXCEEDED
 JDJ_STRATEGY_SEGMENT_IDENTITY_INVALID
 JDJ_STRATEGY_SESSION_IDENTITY_INVALID
-JDJ_STRATEGY_STREAMING_PARITY_REQUIRED
-DOMINANT_SCHEDULE_INCOMPLETE
 ```
 
-source unavailable、future fact、identity drift、unsupported profile 都不得静默降级。
+不为第一版建设大而全的错误码体系。
 
-## 20. 测试与验收
-
-### 20.1 Golden Formula Parity
-
-迁移前先把 current N/JDJ output 投影为 primitive golden facts；迁移后比较 projection，禁止比较 old/new 不同 class identity：
-
-- N pivot/snapshot ids、epoch、kind、time、price；
-- JDJ event/count/id/candidate/source kind/direction/observed_at/trigger level；
-- ambiguous/invalidated/expired counts；
-- strict-before、day reset、physical-segment boundary。
-
-### 20.2 Execution
+## 14. 测试与验收
 
 必须覆盖：
 
+### Existing Candidate protection
+
+- 现有 N/JDJ reducer/Research tests 全部继续通过；
+- 新模块不得改写现有 Candidate event identity；
+- strict-before、same-contract、same-segment 不变。
+
+### Strategy engine
+
 - R:R <2 / target unavailable reject；
-- admissible limit boundary；
-- better-open fill / intrabar limit fill / one-Bar expiry；
-- 0.5% base risk、1% planned Episode cap；
+- one-bar limit：better open / limit touch / expire；
+- 0.5% base risk、1% episode cap；
 - Episode/source-event 去重；
-- 40% reference first reduce；
-- Add 必须来自新的完整 Trend Follow trigger；
-- first/second add、third reject、losing add reject；
+- 40% first reduce；
+- first/second profitable add、third reject、losing add reject；
 - protective stop move；
-- 0.5% pause=15 completed in-session 1m bars；
-- 1% stop + JM V1 exit adaptation；
+- 0.5% daily pause、15 in-session bars、1% daily stop；
 - terminal guard；
 - no intrabar stop/target favorable assumption。
 
-### 20.3 Historical Replay
+### Historical Replay/API
 
-证明：actual_dominant only、segment warm-up、no cross-contract state、decision-before-intent、limit intent only one next Bar、prefix invariant、event id stable、unsupported profile fail-closed。
+- actual_dominant only；
+- segment warm-up；
+- no cross-contract state；
+- prefix-invariant / stable event ids；
+- unsupported symbol/frequency fail-closed；
+- reference execution 标识清楚。
 
-### 20.4 Streaming
+### Web
 
-对同一 frozen physical segment：batch vs streaming Candidate output逐事件一致；同-boundary 5m fact 延后一根 1m 才可见；跨 trading day 不错误重置 EMA/N；segment change 必须 reset。
+- Candidate / Strategy overlay 分开；
+- `jm/1m` 正常显示；
+- unsupported period 清除旧 marker 并显示 unavailable；
+- prepend 去重、stale response 不泄漏。
 
-### 20.5 RQAlpha Fake Adapter
-
-真实 Bundle smoke 前至少证明：identity schedule 完整性、next_bar、one-Bar LimitOrder 生命周期、cancel unfilled、no signal mode、Bundle-only prices、no duplicated formulas、research-only metadata、unsupported/missing schedule fail-closed。
-
-## 21. Canonical Closeout
-
-实现收口时按实际完成范围更新：
-
-- `PROJECT_SOURCE.md`：区分 Candidate Research、Historical Strategy Replay、local RQAlpha backtest；
-- `AGENTS.md`：收窄“无策略/回测入口”的绝对表述，继续禁止真实订单和自动晋升；
-- `docs/ARCHITECTURE.md`：增加 Shared Kernel 单向依赖；
-- `DECISIONS.md`：记录“公式唯一 Shared Kernel”与 reference/RQAlpha fill 分层；
-- `docs/RQALPHA_RESEARCH_BACKTEST.md`：只允许 validated dominant/session identity schedule bridge，仍禁止 Canonical OHLCV 进入 runner；
-- `TESTING.md`：增加 parity/replay/streaming/Web/fake adapter 命令。
-
-`STATUS.md` 不在普通实现提交中提前宣布 Ready。
-
-## 22. 禁止范围
+## 15. 禁止范围
 
 V1 不做：
 
-- 苏冰、HTDY 或其他策略适配；
-- JDJ 书中其他 Entry setup；
-- 参数优化、网格/Bayesian search；
+- N/JDJ 目录迁移或通用 Shared Strategy Kernel 平台；
+- 预建 streaming evaluator；
+- RQAlpha adapter；
+- profile discovery/管理页面；
+- 第二套 marker composable；
+- 苏冰、HTDY、其他 JDJ Entry setup；
 - 其他品种或周期；
-- Portfolio/multi-product allocation；
-- OOS 自动消费、Candidate 自动晋升/淘汰；
+- 参数搜索、自动优化、Portfolio；
+- OOS 自动消费、Candidate 自动晋升；
 - Alert、PushPlus、Execution Review、Runtime；
-- main/tag/release、真实订单、真实账户。
+- main/tag/release、真实订单或真实账户。
 
-## 23. 完成定义
+## 16. 完成定义
 
-只有同时满足以下条件才可声明本 Spec 实现完成：
+本轮只有同时满足以下条件才可声明完成：
 
-1. N/JDJ 公式只有一个 active Shared Kernel definition；
-2. frozen Candidate golden parity 全通过；
-3. `jdj_jm_1m_v1` Episode/entry-limit/risk/add/reduce/exit/session/daily-risk lifecycle 自动化通过；
-4. JM actual_dominant Historical Reference Replay 可独立显示在主图；
-5. unsupported profile 明确 unavailable；
-6. streaming evaluator 与 batch parity 通过；
-7. 在 RQAlpha Workbench prerequisite 已存在时，adapter 才可使用同一 streaming Kernel 与 validated identity schedule；
-8. 无 Canonical/DB/Redis/Alert/Runtime 写入；
-9. 未获得单独执行意图前不运行真实 RQAlpha Bundle smoke；
-10. 所有结果保持 research-only，不产生正式 OOS、promotion 或交易结论。
+1. 现有 JDJ/N Candidate 代码不搬迁、不复制，原测试全部通过；
+2. `app/research/jdj_strategy/` 完成 JM 1m 交易生命周期；
+3. `jdj_v1.json` 是唯一新增策略配置文件；
+4. JM `actual_dominant` Historical Reference Replay 可由一个只读 API 返回；
+5. Market 主图可独立显示“日进斗金策略”；
+6. unsupported 品种/周期明确 unavailable；
+7. 无 DB/Canonical/Redis/Alert/Runtime 写入；
+8. 没有提前建设 RQAlpha/streaming/通用策略平台；
+9. 所有结果保持 research-only，不产生正式 OOS、promotion 或交易结论。
