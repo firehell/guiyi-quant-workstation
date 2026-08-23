@@ -359,10 +359,9 @@ class MainForceMirrorDiagnosticService:
             except MainForceMirrorV2Error:
                 raise MainForceMirrorDiagnosticSourceError() from None
             page = diagnostic.page
-            if (
-                dict(page.request_identity) != _page_request_identity(page_request)
-                or len(page.points) != len(diagnostic.audit_trace)
-            ):
+            _validate_page_shape(diagnostic, page_request)
+            _validate_member_dataset_state(page.member_dataset)
+            if dict(page.request_identity) != _page_request_identity(page_request):
                 raise MainForceMirrorDiagnosticSourceError()
             _validate_page_cursor(page, page_request)
             current_identity = {
@@ -535,6 +534,15 @@ def _validate_market_result(
     result: MarketSeriesResult,
     request: ActualDominantTradingDayQuery,
 ) -> tuple[tuple[CanonicalBar, ...], tuple[str, ...]]:
+    requested_window = result.requested_trading_day_window
+    if (
+        type(requested_window) is not tuple
+        or len(requested_window) != 2
+        or type(requested_window[0]) is not date
+        or type(requested_window[1]) is not date
+        or requested_window != (request.since, request.through)
+    ):
+        raise MainForceMirrorDiagnosticSourceError()
     identity = result.request_identity
     if type(identity) is not dict or set(identity) != {
         "series_kind",
@@ -625,6 +633,67 @@ def _validate_page_cursor(
                 or page.next_before >= before  # type: ignore[operator]
             )
         )
+    ):
+        raise MainForceMirrorDiagnosticSourceError()
+
+
+def _validate_page_shape(
+    diagnostic: MainForceMirrorV2DiagnosticPageResult,
+    request: SeriesPageQuery,
+) -> None:
+    page = diagnostic.page
+    points = page.points
+    trace = diagnostic.audit_trace
+    segments = page.resolved_contract_segments
+    if (
+        type(points) is not tuple
+        or not points
+        or len(points) > request.limit
+        or any(type(point) is not MainForceMirrorV2Point for point in points)
+        or type(trace) is not tuple
+        or len(trace) != len(points)
+        or any(type(item) is not MainForceMirrorV2AuditTraceItem for item in trace)
+        or type(segments) is not tuple
+        or any(type(item) is not ResolvedContractSegment for item in segments)
+    ):
+        raise MainForceMirrorDiagnosticSourceError()
+
+
+def _validate_member_dataset_state(state: MemberDatasetState) -> None:
+    if type(state) is not MemberDatasetState:
+        raise MainForceMirrorDiagnosticSourceError()
+    coverage = state.coverage
+    if (
+        type(state.status) is not str
+        or state.status not in {"ready", "unavailable"}
+        or type(state.admitted_product) is not bool
+        or (
+            coverage is not None
+            and (
+                type(coverage) is not tuple
+                or len(coverage) != 2
+                or type(coverage[0]) is not date
+                or type(coverage[1]) is not date
+                or coverage[0] > coverage[1]
+            )
+        )
+    ):
+        raise MainForceMirrorDiagnosticSourceError()
+    if state.status == "unavailable":
+        if (
+            state.dataset_id is not None
+            or state.schema_version is not None
+            or state.admitted_product is not False
+            or coverage is not None
+        ):
+            raise MainForceMirrorDiagnosticSourceError()
+        return
+    if (
+        type(state.dataset_id) is not str
+        or not state.dataset_id
+        or state.dataset_id != state.dataset_id.strip()
+        or type(state.schema_version) is not int
+        or state.schema_version < 1
     ):
         raise MainForceMirrorDiagnosticSourceError()
 

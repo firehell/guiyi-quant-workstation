@@ -167,6 +167,7 @@ class _MarketData:
                     end_trading_day=bar.trading_day,
                 ),
             ),
+            requested_trading_day_window=(request.since, request.through),
         )
 
 
@@ -208,6 +209,13 @@ class _MirrorService:
             point = replace(point, physical_contract="ZZ2609")
         points = (point,)
         trace = computed.trace
+        segments = (
+            ResolvedContractSegment(
+                contract=contract,
+                start_trading_day=bar.trading_day,
+                end_trading_day=bar.trading_day,
+            ),
+        )
         has_more_before = False
         next_before = None
         if self.drift in {"coverage", "cursor"}:
@@ -243,6 +251,98 @@ class _MirrorService:
                 trace[0],
                 replace(trace[0], bar_end=older.bar_end),
             )
+        elif self.drift == "oversized_page":
+            points = tuple(
+                replace(
+                    point,
+                    bar_end=point.bar_end - timedelta(microseconds=2000 - index),
+                )
+                for index in range(2001)
+            )
+            trace = tuple(
+                replace(trace[0], bar_end=item.bar_end) for item in points
+            )
+        elif self.drift == "points_not_tuple":
+            points = list(points)  # type: ignore[assignment]
+        elif self.drift == "points_tuple_subclass":
+            points = type("PointTuple", (tuple,), {})(points)
+        elif self.drift == "point_item_invalid":
+            points = (object(),)  # type: ignore[assignment]
+        elif self.drift == "trace_not_tuple":
+            trace = list(trace)  # type: ignore[assignment]
+        elif self.drift == "trace_tuple_subclass":
+            trace = type("TraceTuple", (tuple,), {})(trace)
+        elif self.drift == "trace_item_invalid":
+            trace = (object(),)  # type: ignore[assignment]
+        elif self.drift == "segments_not_tuple":
+            segments = list(segments)  # type: ignore[assignment]
+        elif self.drift == "segment_item_invalid":
+            segments = (object(),)  # type: ignore[assignment]
+        member_state = MemberDatasetState(
+            "unavailable", None, None, False, None
+        )
+        if self.drift == "member_not_exact":
+            member_state = object()  # type: ignore[assignment]
+        elif self.drift == "member_bad_status":
+            member_state = MemberDatasetState(  # type: ignore[arg-type]
+                "broken", None, None, False, None
+            )
+        elif self.drift == "member_unavailable_dataset":
+            member_state = MemberDatasetState(
+                "unavailable", "member-v1", None, False, None
+            )
+        elif self.drift == "member_unavailable_schema":
+            member_state = MemberDatasetState(
+                "unavailable", None, 1, False, None
+            )
+        elif self.drift == "member_unavailable_admitted":
+            member_state = MemberDatasetState(
+                "unavailable", None, None, True, None
+            )
+        elif self.drift == "member_unavailable_coverage":
+            member_state = MemberDatasetState(
+                "unavailable",
+                None,
+                None,
+                False,
+                (date(2026, 3, 1), date(2026, 3, 31)),
+            )
+        elif self.drift == "member_ready_missing_id":
+            member_state = MemberDatasetState("ready", None, 1, True, None)
+        elif self.drift == "member_ready_blank_id":
+            member_state = MemberDatasetState("ready", " ", 1, True, None)
+        elif self.drift == "member_ready_bool_version":
+            member_state = MemberDatasetState("ready", "member-v1", True, True, None)
+        elif self.drift == "member_ready_zero_version":
+            member_state = MemberDatasetState("ready", "member-v1", 0, True, None)
+        elif self.drift == "member_admitted_not_bool":
+            member_state = MemberDatasetState(  # type: ignore[arg-type]
+                "ready", "member-v1", 1, 1, None
+            )
+        elif self.drift == "member_coverage_not_tuple":
+            member_state = MemberDatasetState(  # type: ignore[arg-type]
+                "ready",
+                "member-v1",
+                1,
+                True,
+                [date(2026, 3, 1), date(2026, 3, 31)],
+            )
+        elif self.drift == "member_coverage_datetime":
+            member_state = MemberDatasetState(  # type: ignore[arg-type]
+                "ready",
+                "member-v1",
+                1,
+                True,
+                (datetime(2026, 3, 1, tzinfo=UTC), date(2026, 3, 31)),
+            )
+        elif self.drift == "member_coverage_reversed":
+            member_state = MemberDatasetState(
+                "ready",
+                "member-v1",
+                1,
+                True,
+                (date(2026, 3, 31), date(2026, 3, 1)),
+            )
         return MainForceMirrorV2DiagnosticPageResult(
             page=MainForceMirrorV2PageResult(
                 request_identity=identity,
@@ -251,18 +351,10 @@ class _MirrorService:
                 formal_policy_id=computed.result.formal_policy_id,
                 parameters_hash=parameters_hash,
                 points=points,
-                member_dataset=MemberDatasetState(
-                    "unavailable", None, None, False, None
-                ),
+                member_dataset=member_state,
                 has_more_before=has_more_before,
                 next_before=next_before,
-                resolved_contract_segments=(
-                    ResolvedContractSegment(
-                        contract=contract,
-                        start_trading_day=bar.trading_day,
-                        end_trading_day=bar.trading_day,
-                    ),
-                ),
+                resolved_contract_segments=segments,
             ),
             audit_trace=trace,
         )
@@ -433,6 +525,10 @@ def test_market_request_identity_drift_is_error_without_report_gate() -> None:
         "noncanonical_bar",
         "out_of_window_bar",
         "coverage_mismatch",
+        "missing_trading_day_window",
+        "narrow_trading_day_window",
+        "trading_day_window_not_tuple",
+        "trading_day_window_datetime",
     ),
 )
 def test_successful_market_result_must_match_exact_canonical_contract(
@@ -485,6 +581,29 @@ def test_successful_market_result_must_match_exact_canonical_contract(
             if mutation == "coverage_mismatch":
                 shifted = result.bars[0].bar_end + timedelta(hours=1)
                 return replace(result, coverage=(shifted, shifted))
+            if mutation == "missing_trading_day_window":
+                return replace(result, requested_trading_day_window=None)
+            if mutation == "narrow_trading_day_window":
+                return replace(
+                    result,
+                    requested_trading_day_window=(
+                        date(2026, 3, 10),
+                        date(2026, 3, 30),
+                    ),
+                )
+            if mutation == "trading_day_window_not_tuple":
+                return replace(
+                    result,
+                    requested_trading_day_window=[request.since, request.through],  # type: ignore[arg-type]
+                )
+            if mutation == "trading_day_window_datetime":
+                return replace(
+                    result,
+                    requested_trading_day_window=(
+                        datetime(2023, 1, 1, tzinfo=UTC),  # type: ignore[arg-type]
+                        request.through,
+                    ),
+                )
             raise AssertionError(mutation)
 
     module = _service_module()
@@ -527,6 +646,67 @@ def test_page_alignment_cursor_coverage_and_cross_product_identity_fail_closed(
     ),
 )
 def test_every_page_cursor_shape_is_validated_before_target_complete_break(
+    drift: str,
+) -> None:
+    module = _service_module()
+
+    with pytest.raises(
+        module.MainForceMirrorDiagnosticSourceError,
+        match="MFM_DIAGNOSTIC_SOURCE_IDENTITY_INVALID",
+    ):
+        _service(_MarketData(), _MirrorService(drift=drift)).run(
+            MainForceMirrorDiagnosticRequest(PROTOCOL_ID)
+        )
+
+
+@pytest.mark.parametrize(
+    "drift",
+    (
+        "oversized_page",
+        "points_not_tuple",
+        "points_tuple_subclass",
+        "point_item_invalid",
+        "trace_not_tuple",
+        "trace_tuple_subclass",
+        "trace_item_invalid",
+        "segments_not_tuple",
+        "segment_item_invalid",
+    ),
+)
+def test_every_page_requires_exact_bounded_diagnostic_shape(
+    drift: str,
+) -> None:
+    module = _service_module()
+
+    with pytest.raises(
+        module.MainForceMirrorDiagnosticSourceError,
+        match="MFM_DIAGNOSTIC_SOURCE_IDENTITY_INVALID",
+    ):
+        _service(_MarketData(), _MirrorService(drift=drift)).run(
+            MainForceMirrorDiagnosticRequest(PROTOCOL_ID)
+        )
+
+
+@pytest.mark.parametrize(
+    "drift",
+    (
+        "member_not_exact",
+        "member_bad_status",
+        "member_unavailable_dataset",
+        "member_unavailable_schema",
+        "member_unavailable_admitted",
+        "member_unavailable_coverage",
+        "member_ready_missing_id",
+        "member_ready_blank_id",
+        "member_ready_bool_version",
+        "member_ready_zero_version",
+        "member_admitted_not_bool",
+        "member_coverage_not_tuple",
+        "member_coverage_datetime",
+        "member_coverage_reversed",
+    ),
+)
+def test_invalid_member_dataset_state_fails_without_episode_bypass(
     drift: str,
 ) -> None:
     module = _service_module()
