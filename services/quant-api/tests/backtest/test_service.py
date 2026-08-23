@@ -12,6 +12,7 @@ from typing import Any
 
 import pytest
 
+from app.backtest import artifact_store as artifact_store_module
 from app.backtest.artifact_store import ActiveLockOwnership, ArtifactStore, RunPaths
 from app.backtest.config import BacktestSettings
 from app.backtest.contracts import BacktestRunRequest, RunStatus
@@ -343,6 +344,56 @@ def test_missing_runs_root_stays_degraded_and_start_does_not_create_it(
     assert after["status"] == "degraded"
     assert after["runs_root_available"] is False
     assert not store.runs_root.exists()
+    assert runner.started == []
+
+
+def test_non_directory_runs_root_stays_degraded_without_spawn(tmp_path: Path) -> None:
+    service, store, runner = _service(tmp_path)
+    store.runs_root.rmdir()
+    store.runs_root.write_text("not a directory", encoding="utf-8")
+
+    before = service.health()
+    with pytest.raises(BacktestError) as caught:
+        service.start_run(_request())
+    after = service.health()
+
+    assert str(caught.value) == "BACKTEST_LOCAL_UNAVAILABLE"
+    assert before["status"] == "degraded"
+    assert after["status"] == "degraded"
+    assert store.runs_root.read_text(encoding="utf-8") == "not a directory"
+    assert runner.started == []
+
+
+def test_permission_denied_runs_root_stays_degraded_without_spawn(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service, store, runner = _service(tmp_path)
+    real_open = artifact_store_module.os.open
+
+    def deny_runs_root(
+        path: Any,
+        flags: int,
+        mode: int = 0o777,
+        *,
+        dir_fd: int | None = None,
+    ) -> int:
+        if path == store.runs_root.name:
+            raise PermissionError(13, "permission denied", str(store.runs_root))
+        return real_open(path, flags, mode, dir_fd=dir_fd)
+
+    monkeypatch.setattr(artifact_store_module.os, "open", deny_runs_root)
+
+    before = service.health()
+    with pytest.raises(BacktestError) as caught:
+        service.start_run(_request())
+    after = service.health()
+
+    assert str(caught.value) == "BACKTEST_LOCAL_UNAVAILABLE"
+    assert str(store.runs_root) not in str(caught.value)
+    assert before["status"] == "degraded"
+    assert after["status"] == "degraded"
+    assert store.runs_root.is_dir()
     assert runner.started == []
 
 

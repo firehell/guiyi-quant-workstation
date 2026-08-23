@@ -143,7 +143,7 @@ class ArtifactStore:
         with ExitStack() as stack:
             try:
                 stack.enter_context(self._locked_root())
-            except FileNotFoundError as exc:
+            except OSError as exc:
                 raise BacktestError(
                     BacktestHttpErrorCode.BACKTEST_LOCAL_UNAVAILABLE
                 ) from exc

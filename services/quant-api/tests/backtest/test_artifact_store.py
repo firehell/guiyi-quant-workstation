@@ -1327,6 +1327,47 @@ def test_launch_serialization_keeps_missing_runs_root_unavailable(
     assert not store.runs_root.exists()
 
 
+def test_launch_serialization_normalizes_non_directory_runs_root(
+    store: ArtifactStore,
+) -> None:
+    store.runs_root.write_text("not a directory", encoding="utf-8")
+
+    with pytest.raises(BacktestError) as caught:
+        with store.serialize_launch():
+            pytest.fail("non-directory runs root must not be opened")
+
+    assert str(caught.value) == "BACKTEST_LOCAL_UNAVAILABLE"
+    assert store.runs_root.read_text(encoding="utf-8") == "not a directory"
+
+
+def test_launch_serialization_normalizes_permission_error_without_path(
+    store: ArtifactStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store.runs_root.mkdir()
+    real_open = artifact_store_module.os.open
+
+    def deny_runs_root(
+        path: Any,
+        flags: int,
+        mode: int = 0o777,
+        *,
+        dir_fd: int | None = None,
+    ) -> int:
+        if path == store.runs_root.name:
+            raise PermissionError(13, "permission denied", str(store.runs_root))
+        return real_open(path, flags, mode, dir_fd=dir_fd)
+
+    monkeypatch.setattr(artifact_store_module.os, "open", deny_runs_root)
+
+    with pytest.raises(BacktestError) as caught:
+        with store.serialize_launch():
+            pytest.fail("permission-denied runs root must not be opened")
+
+    assert str(caught.value) == "BACKTEST_LOCAL_UNAVAILABLE"
+    assert str(store.runs_root) not in str(caught.value)
+
+
 def test_monitor_ownership_keeps_missing_pid_busy_without_calling_pid_checker(
     store: ArtifactStore,
     strategy_file: Path,
