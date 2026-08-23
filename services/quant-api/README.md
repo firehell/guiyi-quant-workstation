@@ -13,7 +13,7 @@
   `guiyi research n-structure`、`guiyi research jdj-1m`、
   `guiyi research candidate-validation`、`guiyi research candidate-robustness`、
   `guiyi research candidate-dossier`、`guiyi research candidate-relationships`、
-  `guiyi research main-force-mirror-v2`、
+  `guiyi research main-force-mirror-v2`、`guiyi research main-force-mirror-diagnostic`、
   `guiyi runtime status|live|alert`；
   `guiyi runtime alert-canary` 是真实通知 Gate。
 - `app.runtime_entry` 是 launchd/运维脚本的内部进程入口，只接受 `live | alert | after-market`；

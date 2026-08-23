@@ -1,6 +1,6 @@
 # 个人开发与本地验证
 
-更新时间：2026-08-15
+更新时间：2026-08-23
 
 本文定义仓库日常开发与外部副作用边界的唯一流程入口；产品、数据、策略、信号和 Runtime 语义仍由
 `PROJECT_SOURCE.md`、`DECISIONS.md` 及对应 deep canonical 定义。当前可执行产品面以 `STATUS.md` 为准；Execution Review 语义以 `docs/EXECUTION_REVIEW.md` 为准。
@@ -34,7 +34,11 @@ develop
   且保留 deep canonical 的业务约束。
 - tracked 内容发生变化时运行适用的 secret scan；输出不得包含命中的秘密值。
 
-当前仓库没有 backtest API/Web/worker/queue/CLI，也没有 `guiyi runtime plan` 或 active 旧 scheduler component。
+当前仓库有一个外部 local-only、research-only RQAlpha 工作台：`/backtests` 只请求固定
+`127.0.0.1:8011` 独立 app，该 app 不挂载主 API，不连接 PostgreSQL/Redis/Canonical/Alert/
+Execution Review/Runtime，也没有 worker、queue、scheduler 或 `guiyi` 回测 CLI。它未加载、未
+release、未进入 Runtime，行为合同只看 `openspec/specs/rqalpha-research-backtest-workbench/spec.md`。
+仓库也没有 `guiyi runtime plan` 或 active 旧 scheduler component。
 Market Runtime V1 的 `runtime live`、`data after-market` 与运行健康只读状态已实现；代码和 launchd 模板默认关闭，当前本机是否启用及部署根仅以 `STATUS.md` 为准。
 Alert V2 的 Application Domain、API 与独立 `runtime alert` 代码面，以及 Execution Review 的四表
 Application Domain、API 和 `/trade-records`，都不恢复已退役的旧 Signal/Review/Strategy 链。production migration、release/tag、Runtime
@@ -44,8 +48,15 @@ promotion/switch、Scope/owner/transport 变更、真实 canary/send 与 rollbac
 唯一 active 运维链为 Mac launchd → FRPC → 腾讯云 FRPS/Nginx；本地状态只使用
 `scripts/ops/macos/local-services-status.sh`，分段只读检查与配置导航见 `deploy/README.md`。仓库不保留
 并行 PID 管理器、远端 API/Web 副本或会隐式执行 migration 的聚合启动器。
-不要用旧测试、脚本、evidence 或 Git-history 路径恢复兼容入口；未来回测重建必须单独立项并从
-Canonical/MarketDataService 合同开始。
+不要用旧测试、脚本、evidence 或 Git-history 路径恢复兼容入口；未来正式 Candidate/OOS
+回测体系必须单独立项并从 Canonical/MarketDataService 合同开始，不得把外部 RQAlpha artifact
+直接晋升为正式 evidence。
+
+RQAlpha 日常开发验证只运行 `TESTING.md` 中的 fake runner、TestClient local-app、完整 backtest
+测试与 route-intercepted browser 测试：不启动端口 `8011`，不导入本机 RQAlpha，不访问真实 Bundle，
+不写仓库外正式 results root。加载 sidecar 并运行真实 smoke 只能在当次对精确本机、Bundle、
+策略/窗口与 runs root 取得新的范围明确单次执行意图后执行；成功、失败或重试都不得复用该意图。
+真实 smoke 严禁运行 `rqsdk update-data`、`download-data` 或任何 Bundle mutation。
 
 任何必需检查失败时，明确报告失败，不宣称任务完成。CI 如存在，只是补充结果，不是本地开发、
 commit 或 push 的前置授权。
@@ -112,6 +123,8 @@ Scope/owner/transport 变更、真实 canary/send 和 rollback 都必须分别�
 - 正式历史数据继续遵守 DatasetKey、精确八表 Market Catalog、MainContractMap、coverage/可读性和
   MarketDataService 边界；Historical Canonical 与 Live Observation 分离。
 - 策略、回测和正式历史信号禁止未来函数、泄漏和未记录重绘；交易相关计算使用 `Decimal`。
+- RQAlpha 工作台中的 Order/Trade 只是 simulation-only artifact，不连接账户、真实订单、Alert、
+  Execution Review 或 Runtime；其结果不替代 Canonical/OOS 正式 evidence。
 - 旧 Signal/Review/Strategy 应用链已经退役；Alert V2 两表与 Execution Review 四表是不同的独立
   Application Domain，均不属于且不改变八表 Market Catalog，不得恢复旧事件表、RQ worker 或历史补发路径。
 - HTDY 继续使用 event-cutoff；SuBing 只复用 Factor/accepted Calibration/FormalPolicy/
