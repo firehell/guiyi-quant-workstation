@@ -468,6 +468,7 @@ def test_feature_builder_rejects_corrupt_strict_prior_fact_identity(
         "fold_outcomes_none",
         "fold_outcomes_list",
         "malformed_outcome",
+        "subclass_outcome",
         "bool_fold",
         "bool_fold_target",
         "bool_first_touch",
@@ -531,6 +532,26 @@ def test_fold_dataset_rejects_episode_fact_and_fold_identity_drift(kind: str) ->
         episode = replace(episode, fold_outcomes=list(episode.fold_outcomes))
     elif kind == "malformed_outcome":
         episode = replace(episode, fold_outcomes=(object(),))
+    elif kind == "subclass_outcome":
+        outcome_type = type(
+            "FoldOutcomeSubclass",
+            (MainForceMirrorDiagnosticFoldLabelOutcome,),
+            {},
+        )
+        first = episode.fold_outcomes[0]
+        episode = replace(
+            episode,
+            fold_outcomes=(
+                outcome_type(
+                    first.fold,
+                    first.segment,
+                    first.outcome,
+                    first.binary_target,
+                    first.eligible,
+                ),
+                episode.fold_outcomes[1],
+            ),
+        )
     elif kind == "bool_fold":
         episode = replace(
             episode,
@@ -1301,7 +1322,7 @@ def _model_sample(models, index: int, target: int, day: date):
             else MainForceMirrorDiagnosticSide.SHORT
         ),
         target=target,
-        features=tuple(values),
+        features=tuple(float(value) for value in values),
     )
 
 
@@ -1466,3 +1487,58 @@ def test_model_diagnostic_rejects_boolean_structural_integers(kind: str) -> None
         models.run_main_force_mirror_model_diagnostics(
             models.MainForceMirrorDiagnosticFoldDatasets(folds, ())
         )
+
+
+@pytest.mark.parametrize(
+    "kind",
+    (
+        "datetime_day",
+        "string_day",
+        "integer_symbol",
+        "bytes_contract",
+        "string_side",
+        "list_features",
+        "string_feature",
+        "object_feature",
+        "bool_feature",
+    ),
+)
+def test_model_diagnostic_rejects_malformed_sample_before_native_operations(
+    kind: str,
+) -> None:
+    """Catches date comparison, NumPy, or isfinite seeing malformed sample fields."""
+    models = _models()
+    sample = _model_sample(models, 0, 0, date(2024, 6, 2))
+    if kind == "datetime_day":
+        sample = replace(
+            sample,
+            anchor_trading_day=datetime(2024, 6, 2, tzinfo=UTC),
+        )
+    elif kind == "string_day":
+        sample = replace(sample, anchor_trading_day="2024-06-02")
+    elif kind == "integer_symbol":
+        sample = replace(sample, symbol=1)
+    elif kind == "bytes_contract":
+        sample = replace(sample, physical_contract=b"JM2609")
+    elif kind == "string_side":
+        sample = replace(sample, side="long")
+    elif kind == "list_features":
+        sample = replace(sample, features=list(sample.features))
+    else:
+        values = list(sample.features)
+        values[0] = {
+            "string_feature": "0.0",
+            "object_feature": object(),
+            "bool_feature": False,
+        }[kind]
+        sample = replace(sample, features=tuple(values))
+    datasets = models.MainForceMirrorDiagnosticFoldDatasets(
+        (
+            models.MainForceMirrorDiagnosticFoldDataset(1, (sample,), ()),
+            models.MainForceMirrorDiagnosticFoldDataset(2, (), ()),
+        ),
+        (),
+    )
+
+    with pytest.raises(ValueError, match="MFM_DIAGNOSTIC_ANALYSIS_INVALID"):
+        models.run_main_force_mirror_model_diagnostics(datasets)

@@ -261,7 +261,7 @@ def _validate_fold_outcomes(
     outcomes = episode.fold_outcomes
     if (
         any(
-            not isinstance(item, MainForceMirrorDiagnosticFoldLabelOutcome)
+            type(item) is not MainForceMirrorDiagnosticFoldLabelOutcome
             for item in outcomes
         )
         or any(
@@ -1486,6 +1486,28 @@ def run_main_force_mirror_model_diagnostics(
     )
 
 
+def _validate_model_sample_structure(sample: object) -> None:
+    if type(sample) is not MainForceMirrorDiagnosticModelSample:
+        raise ValueError("MFM_DIAGNOSTIC_ANALYSIS_INVALID")
+    typed_sample = cast(MainForceMirrorDiagnosticModelSample, sample)
+    if (
+        type(typed_sample.symbol) is not str
+        or not typed_sample.symbol
+        or type(typed_sample.physical_contract) is not str
+        or not typed_sample.physical_contract
+        or type(typed_sample.anchor_trading_day) is not date
+        or type(typed_sample.side) is not MainForceMirrorDiagnosticSide
+        or type(typed_sample.target) is not int
+        or typed_sample.target not in (0, 1)
+        or type(typed_sample.features) is not tuple
+        or len(typed_sample.features) != 33
+        or any(type(value) is not float for value in typed_sample.features)
+    ):
+        raise ValueError("MFM_DIAGNOSTIC_ANALYSIS_INVALID")
+    if any(not isfinite(value) for value in typed_sample.features):
+        raise ValueError("MFM_DIAGNOSTIC_ANALYSIS_INVALID")
+
+
 def _run_model_fold(
     fold_data: MainForceMirrorDiagnosticFoldDataset,
     window: tuple[date, date, date, date],
@@ -1500,36 +1522,16 @@ def _run_model_fold(
         raise ValueError("MFM_DIAGNOSTIC_ANALYSIS_INVALID")
     fit_samples = fold_data.fit
     evaluate_samples = fold_data.evaluate
+    for sample in (*fit_samples, *evaluate_samples):
+        _validate_model_sample_structure(sample)
     if any(
-        not isinstance(sample, MainForceMirrorDiagnosticModelSample)
-        for sample in (*fit_samples, *evaluate_samples)
-    ):
-        raise ValueError("MFM_DIAGNOSTIC_ANALYSIS_INVALID")
-    if any(
-        not isinstance(sample.anchor_trading_day, date)
-        or not window[0] <= sample.anchor_trading_day <= window[1]
+        not window[0] <= sample.anchor_trading_day <= window[1]
         for sample in fit_samples
     ) or any(
-        not isinstance(sample.anchor_trading_day, date)
-        or not window[2] <= sample.anchor_trading_day <= window[3]
+        not window[2] <= sample.anchor_trading_day <= window[3]
         for sample in evaluate_samples
     ):
         raise ValueError("MFM_DIAGNOSTIC_ANALYSIS_INVALID")
-    for sample in (*fit_samples, *evaluate_samples):
-        if (
-            type(sample.symbol) is not str
-            or not sample.symbol
-            or type(sample.physical_contract) is not str
-            or not sample.physical_contract
-            or type(sample.anchor_trading_day) is not date
-            or not isinstance(sample.side, MainForceMirrorDiagnosticSide)
-            or type(sample.target) is not int
-            or sample.target not in (0, 1)
-            or type(sample.features) is not tuple
-            or len(sample.features) != 33
-            or any(not isfinite(value) for value in sample.features)
-        ):
-            raise ValueError("MFM_DIAGNOSTIC_ANALYSIS_INVALID")
     fit_x = np.asarray([item.features for item in fit_samples], dtype=float)
     fit_y = np.asarray([item.target for item in fit_samples], dtype=float)
     evaluate_x = np.asarray([item.features for item in evaluate_samples], dtype=float)
