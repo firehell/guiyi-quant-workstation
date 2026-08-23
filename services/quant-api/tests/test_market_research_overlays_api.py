@@ -25,7 +25,14 @@ from app.research.n_structure.n_structure_research_service import (
     NStructureSourceUnavailableError,
 )
 from app.research.jdj.jdj_context import JdjContextError
+from app.research.jdj.jdj_events import JdjDirection
 from app.research.jdj.jdj_research import JdjSourceUnavailableError
+from app.research.jdj_strategy.engine import JdjAction, JdjActionKind
+from app.research.jdj_strategy.service import (
+    JdjStrategyContextInvalidError,
+    JdjStrategySegmentIdentityError,
+    JdjStrategySessionIdentityError,
+)
 
 
 def test_subing_historical_overlay_route_exposes_exact_read_only_query_contract() -> None:
@@ -640,4 +647,217 @@ def test_jdj_historical_overlay_maps_source_and_request_failures(
     )
 
     assert response.status_code == status_code
+    assert response.json() == {"detail": {"code": expected_code}}
+
+
+def test_jdj_strategy_history_route_exposes_exact_read_only_query_contract() -> None:
+    path = "/api/v1/market/research/jdj-strategy/history"
+
+    assert path in app.openapi()["paths"]
+    operation = app.openapi()["paths"][path]["get"]
+    assert [parameter["name"] for parameter in operation["parameters"]] == [
+        "series_kind",
+        "symbol",
+        "frequency",
+        "since",
+        "through",
+    ]
+
+
+class _JdjStrategyService:
+    def __init__(self, failure: Exception | None = None) -> None:
+        self.failure = failure
+
+    def history(self, request: object) -> SimpleNamespace:
+        if self.failure is not None:
+            raise self.failure
+        return SimpleNamespace(
+            request=request,
+            reference_execution=True,
+            actions=(
+                JdjAction(
+                    event_id="jdj-action-entry-1",
+                    episode_id="jdj-episode-1",
+                    kind=JdjActionKind.ENTRY,
+                    source_event_ids=("candidate-1", "candidate-2"),
+                    primary_setup="key_level_breakout",
+                    supporting_setups=("trend_follow",),
+                    direction=JdjDirection.LONG,
+                    contract="JM2701",
+                    trading_day=date(2026, 8, 3),
+                    segment_start_trading_day=date(2026, 8, 1),
+                    decision_at=datetime(2026, 8, 3, 2, 15, tzinfo=UTC),
+                    effective_bar_end=datetime(2026, 8, 3, 2, 16, tzinfo=UTC),
+                    reference_price=Decimal("101.5"),
+                    quantity=8,
+                    position_quantity_after=8,
+                    stop_price=Decimal("99.5"),
+                    target_price=Decimal("106"),
+                    reward_risk=Decimal("2.25"),
+                    reason="ENTRY_FILLED",
+                    fill_basis="limit_touch",
+                ),
+                JdjAction(
+                    event_id="jdj-action-rejected-1",
+                    episode_id=None,
+                    kind=JdjActionKind.REJECTED,
+                    source_event_ids=("candidate-3",),
+                    primary_setup="trend_follow",
+                    supporting_setups=(),
+                    direction=JdjDirection.SHORT,
+                    contract="JM2701",
+                    trading_day=date(2026, 8, 3),
+                    segment_start_trading_day=date(2026, 8, 1),
+                    decision_at=datetime(2026, 8, 3, 2, 20, tzinfo=UTC),
+                    effective_bar_end=None,
+                    reference_price=None,
+                    quantity=0,
+                    position_quantity_after=8,
+                    stop_price=Decimal("103"),
+                    target_price=None,
+                    reward_risk=None,
+                    reason="OPEN_EPISODE_EVENT_REJECTED",
+                    fill_basis=None,
+                ),
+            ),
+        )
+
+
+def test_jdj_strategy_history_returns_complete_reference_actions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.research.historical_overlay_api.build_jdj_strategy_replay_service",
+        lambda _session: _JdjStrategyService(),
+        raising=False,
+    )
+
+    response = TestClient(app).get(
+        "/api/v1/market/research/jdj-strategy/history",
+        params={
+            "series_kind": "actual_dominant",
+            "symbol": "JM",
+            "frequency": "1m",
+            "since": "2026-08-03",
+            "through": "2026-08-04",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["request"] == {
+        "series_kind": "actual_dominant",
+        "symbol": "jm",
+        "frequency": "1m",
+        "since": "2026-08-03",
+        "through": "2026-08-04",
+    }
+    assert payload["reference_execution"] is True
+    assert [action["kind"] for action in payload["actions"]] == [
+        "entry",
+        "rejected",
+    ]
+    assert payload["actions"][0] == {
+        "event_id": "jdj-action-entry-1",
+        "episode_id": "jdj-episode-1",
+        "kind": "entry",
+        "source_event_ids": ["candidate-1", "candidate-2"],
+        "primary_setup": "key_level_breakout",
+        "supporting_setups": ["trend_follow"],
+        "direction": "long",
+        "contract": "JM2701",
+        "trading_day": "2026-08-03",
+        "segment_start_trading_day": "2026-08-01",
+        "decision_at": "2026-08-03T02:15:00Z",
+        "effective_bar_end": "2026-08-03T02:16:00Z",
+        "reference_price": "101.5",
+        "quantity": 8,
+        "position_quantity_after": 8,
+        "stop_price": "99.5",
+        "target_price": "106",
+        "reward_risk": "2.25",
+        "reason": "ENTRY_FILLED",
+        "fill_basis": "limit_touch",
+    }
+    assert payload["actions"][1]["effective_bar_end"] is None
+    assert payload["actions"][1]["reference_price"] is None
+
+
+@pytest.mark.parametrize(
+    ("series_kind", "symbol", "frequency"),
+    (
+        ("actual_dominant", "jm", "5m"),
+        ("actual_dominant", "rb", "1m"),
+        ("continuous", "jm", "1m"),
+    ),
+)
+def test_jdj_strategy_history_rejects_unfrozen_profile_before_builder(
+    monkeypatch: pytest.MonkeyPatch,
+    series_kind: str,
+    symbol: str,
+    frequency: str,
+) -> None:
+    monkeypatch.setattr(
+        "app.research.historical_overlay_api.build_jdj_strategy_replay_service",
+        lambda _session: pytest.fail("invalid profile must not build service"),
+        raising=False,
+    )
+
+    response = TestClient(app).get(
+        "/api/v1/market/research/jdj-strategy/history",
+        params={
+            "series_kind": series_kind,
+            "symbol": symbol,
+            "frequency": frequency,
+            "since": "2026-08-03",
+            "through": "2026-08-04",
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json() == {
+        "detail": {"code": "JDJ_STRATEGY_PROFILE_UNAVAILABLE"}
+    }
+
+
+@pytest.mark.parametrize(
+    ("failure", "expected_code"),
+    (
+        (
+            JdjStrategyContextInvalidError(),
+            "JDJ_STRATEGY_CONTEXT_INVALID",
+        ),
+        (
+            JdjStrategySegmentIdentityError(),
+            "JDJ_STRATEGY_SEGMENT_IDENTITY_INVALID",
+        ),
+        (
+            JdjStrategySessionIdentityError(),
+            "JDJ_STRATEGY_SESSION_IDENTITY_INVALID",
+        ),
+    ),
+)
+def test_jdj_strategy_history_maps_assembly_failures_to_typed_409(
+    monkeypatch: pytest.MonkeyPatch,
+    failure: Exception,
+    expected_code: str,
+) -> None:
+    monkeypatch.setattr(
+        "app.research.historical_overlay_api.build_jdj_strategy_replay_service",
+        lambda _session: _JdjStrategyService(failure),
+        raising=False,
+    )
+
+    response = TestClient(app).get(
+        "/api/v1/market/research/jdj-strategy/history",
+        params={
+            "series_kind": "actual_dominant",
+            "symbol": "jm",
+            "frequency": "1m",
+            "since": "2026-08-03",
+            "through": "2026-08-04",
+        },
+    )
+
+    assert response.status_code == 409
     assert response.json() == {"detail": {"code": expected_code}}
