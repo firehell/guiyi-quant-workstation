@@ -41,12 +41,14 @@ export interface BacktestClient {
   listRuns(limit?: number): Promise<BacktestRunSummary[]>
   getRun(runId: string): Promise<BacktestRunDetail>
   artifactUrl(runId: string, kind: ArtifactKind): string
+  downloadArtifact(runId: string, kind: ArtifactKind): Promise<Blob>
 }
 
 export interface BacktestClientOptions {
   baseURL?: string
   adapter?: AxiosAdapter
   hostname?: string
+  fetcher?: typeof fetch
 }
 
 export class BacktestClientError extends Error {
@@ -106,6 +108,7 @@ export function createBacktestClient(options: BacktestClientOptions = {}): Backt
   const configured = options.baseURL ?? import.meta.env?.VITE_BACKTEST_API_BASE_URL
   const baseURL = resolveBacktestApiBaseUrl(configured)
   const hostname = options.hostname ?? browserHostname()
+  const fetcher = options.fetcher ?? globalThis.fetch.bind(globalThis)
   const instance: AxiosInstance = axios.create({
     baseURL,
     timeout: 30_000,
@@ -133,6 +136,25 @@ export function createBacktestClient(options: BacktestClientOptions = {}): Backt
     listRuns: (limit = 20) => get<BacktestRunSummary[]>('/runs', { params: { limit } }),
     getRun: (runId) => get<BacktestRunDetail>(`/runs/${encodeURIComponent(runId)}`),
     artifactUrl: (runId, kind) => artifactUrl(baseURL, runId, kind),
+    downloadArtifact: async (runId, kind) => {
+      const localFailure = requireLocalBrowser()
+      if (localFailure) return localFailure
+      const response = await fetcher(artifactUrl(baseURL, runId, kind))
+      if (!response.ok) {
+        const data = await readResponseJson(response)
+        const code = readSafeErrorCode({ response: { data } }) ?? 'BACKTEST_ARTIFACT_NOT_FOUND'
+        throw new BacktestClientError(code)
+      }
+      return response.blob()
+    },
+  }
+}
+
+async function readResponseJson(response: Response): Promise<unknown> {
+  try {
+    return await response.json()
+  } catch {
+    return null
   }
 }
 

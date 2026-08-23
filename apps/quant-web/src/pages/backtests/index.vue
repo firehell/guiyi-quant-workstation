@@ -109,9 +109,7 @@ async function downloadArtifact(kind: ArtifactKind) {
   downloadingKind.value = kind
   pageError.value = null
   try {
-    const response = await fetch(backtestClient.artifactUrl(run.run_id, kind))
-    if (!response.ok) throw new Error('artifact unavailable')
-    const blobUrl = URL.createObjectURL(await response.blob())
+    const blobUrl = URL.createObjectURL(await backtestClient.downloadArtifact(run.run_id, kind))
     window.setTimeout(() => URL.revokeObjectURL(blobUrl), 0)
     const anchor = document.createElement('a')
     anchor.href = blobUrl
@@ -183,7 +181,22 @@ onUnmounted(() => poller.dispose())
     </NAlert>
 
     <template v-else-if="capability?.kind === 'ready'">
-      <NAlert v-if="pageError" type="error" :bordered="false" class="backtests-page__error">
+      <NAlert
+        v-if="capability.health?.busy"
+        data-testid="backtest-busy"
+        type="warning"
+        :bordered="false"
+        class="backtests-page__error"
+      >
+        已有任务运行中；可继续查看现有任务，完成前不能启动新回测。
+      </NAlert>
+      <NAlert
+        v-if="pageError"
+        data-testid="backtest-page-error"
+        type="error"
+        :bordered="false"
+        class="backtests-page__error"
+      >
         {{ pageError.message }}
       </NAlert>
       <div class="backtests-page__top">

@@ -108,6 +108,7 @@ describe('dedicated local backtest HTTP client', () => {
 
   it('makes zero HTTP calls when the browser hostname is remote', async () => {
     let requests = 0
+    let downloads = 0
     const adapter: AxiosAdapter = async (config) => {
       requests += 1
       return response(config, {})
@@ -115,12 +116,21 @@ describe('dedicated local backtest HTTP client', () => {
     const client = createBacktestClient({
       hostname: '192.168.1.20',
       adapter,
+      fetcher: async () => {
+        downloads += 1
+        return new Response()
+      },
     })
 
     await assert.rejects(client.health(), { message: 'BACKTEST_LOCAL_UNAVAILABLE' })
     await assert.rejects(client.startRun(form), { message: 'BACKTEST_LOCAL_UNAVAILABLE' })
+    await assert.rejects(
+      client.downloadArtifact(RUN_ID, 'stdout_log'),
+      { message: 'BACKTEST_LOCAL_UNAVAILABLE' },
+    )
 
     assert.equal(requests, 0)
+    assert.equal(downloads, 0)
   })
 
   it('serializes every financial field and declared decimal parameter as the original JSON string', () => {
@@ -240,6 +250,31 @@ describe('dedicated local backtest HTTP client', () => {
         { message: 'BACKTEST_ARTIFACT_NOT_FOUND' },
       )
     }
+  })
+
+  it('downloads fixed artifacts and preserves approved non-2xx detail codes', async () => {
+    const urls: string[] = []
+    const client = createBacktestClient({
+      fetcher: async (input) => {
+        urls.push(String(input))
+        return urls.length === 1
+          ? new Response('stdout', { status: 200 })
+          : new Response(
+              JSON.stringify({ detail: { code: 'BACKTEST_ARTIFACT_NOT_FOUND', message: '/secret' } }),
+              { status: 404, headers: { 'content-type': 'application/json' } },
+            )
+      },
+    })
+
+    assert.equal(await (await client.downloadArtifact(RUN_ID, 'stdout_log')).text(), 'stdout')
+    await assert.rejects(
+      client.downloadArtifact(RUN_ID, 'stderr_log'),
+      { name: 'BacktestClientError', message: 'BACKTEST_ARTIFACT_NOT_FOUND' },
+    )
+    assert.deepEqual(urls, [
+      `${DEFAULT_BACKTEST_API_BASE_URL}/runs/${RUN_ID}/artifacts/stdout_log`,
+      `${DEFAULT_BACKTEST_API_BASE_URL}/runs/${RUN_ID}/artifacts/stderr_log`,
+    ])
   })
 
   it('keeps nullable stored requested_config separate from a normalized outbound request', async () => {

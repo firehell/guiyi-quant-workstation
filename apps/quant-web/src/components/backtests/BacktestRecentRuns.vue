@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { NEmpty, NTag } from 'naive-ui'
+import { backtestRunStatusLabel, backtestRunStatusTagType } from '@/utils/backtestPresentation'
 import type { BacktestRunSummary } from '@/types/backtest'
 
 defineProps<{
@@ -11,13 +12,6 @@ const emit = defineEmits<{
   select: [run: BacktestRunSummary]
 }>()
 
-const STATUS_LABELS = {
-  running: '运行中',
-  succeeded: '已成功',
-  failed: '失败',
-  timed_out: '已超时',
-  interrupted: '已中断',
-} as const
 </script>
 
 <template>
@@ -34,8 +28,8 @@ const STATUS_LABELS = {
         @click="emit('select', run)"
       >
         <span><strong>{{ run.strategy_name }}</strong><small>{{ run.started_at }}</small></span>
-        <NTag size="small" :type="run.status === 'succeeded' ? 'success' : run.status === 'running' ? 'info' : 'error'">
-          {{ STATUS_LABELS[run.status] }}
+        <NTag size="small" :type="backtestRunStatusTagType(run.status)">
+          {{ backtestRunStatusLabel(run.status) }}
         </NTag>
       </button>
     </div>

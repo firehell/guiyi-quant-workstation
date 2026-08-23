@@ -126,33 +126,43 @@ function parameterLabel(name: string) {
         <NSelect
           v-model:value="form.strategyId"
           data-testid="backtest-strategy"
+          role="combobox"
+          aria-label="策略"
           :options="strategies.map(({ id, name }) => ({ label: name, value: id }))"
         />
       </NFormItem>
       <NFormItem label="频率">
-        <NSelect v-model:value="form.frequency" data-testid="backtest-frequency" :options="frequencyOptions" />
+        <NSelect
+          v-model:value="form.frequency"
+          data-testid="backtest-frequency"
+          role="combobox"
+          aria-label="频率"
+          :options="frequencyOptions"
+        />
       </NFormItem>
       <NFormItem label="开始日期">
-        <input v-model="form.startDate" data-testid="backtest-start-date" class="gy-native-input" type="date">
+        <input v-model="form.startDate" data-testid="backtest-start-date" aria-label="开始日期" class="gy-native-input" type="date">
       </NFormItem>
       <NFormItem label="结束日期">
-        <input v-model="form.endDate" data-testid="backtest-end-date" class="gy-native-input" type="date">
+        <input v-model="form.endDate" data-testid="backtest-end-date" aria-label="结束日期" class="gy-native-input" type="date">
       </NFormItem>
       <NFormItem label="期货初始资金">
-        <input v-model="form.futureCash" class="gy-native-input" inputmode="decimal">
+        <input v-model="form.futureCash" aria-label="期货初始资金" class="gy-native-input" inputmode="decimal">
       </NFormItem>
       <NFormItem label="撮合方式">
-        <NSelect v-model:value="form.matchingType" :options="matchingOptions" />
+        <NSelect v-model:value="form.matchingType" role="combobox" aria-label="撮合方式" :options="matchingOptions" />
       </NFormItem>
       <NFormItem label="保证金倍数">
-        <input v-model="form.marginMultiplier" class="gy-native-input" inputmode="decimal">
+        <input v-model="form.marginMultiplier" aria-label="保证金倍数" class="gy-native-input" inputmode="decimal">
       </NFormItem>
       <NFormItem label="期货手续费倍数">
-        <input v-model="form.futuresCommissionMultiplier" class="gy-native-input" inputmode="decimal">
+        <input v-model="form.futuresCommissionMultiplier" aria-label="期货手续费倍数" class="gy-native-input" inputmode="decimal">
       </NFormItem>
       <NFormItem label="滑点模型">
         <NSelect
           v-model:value="form.slippageModel"
+          role="combobox"
+          aria-label="滑点模型"
           :options="[
             { label: 'PriceRatioSlippage', value: 'PriceRatioSlippage' },
             { label: 'TickSizeSlippage', value: 'TickSizeSlippage' },
@@ -160,24 +170,26 @@ function parameterLabel(name: string) {
         />
       </NFormItem>
       <NFormItem label="滑点">
-        <input v-model="form.slippage" class="gy-native-input" inputmode="decimal">
+        <input v-model="form.slippage" aria-label="滑点" class="gy-native-input" inputmode="decimal">
       </NFormItem>
 
       <NFormItem
         v-for="descriptor in selectedStrategy?.parameters ?? []"
         :key="descriptor.name"
         :label="parameterLabel(descriptor.name)"
+        :show-label="descriptor.type !== 'boolean'"
       >
         <NCheckbox
           v-if="descriptor.type === 'boolean'"
           :checked="parameterValue(descriptor) === true"
+          :label="parameterLabel(descriptor.name)"
           @update:checked="updateParameter(descriptor, $event)"
-        >
-          {{ parameterValue(descriptor) ? '是' : '否' }}
-        </NCheckbox>
+        />
         <NSelect
           v-else-if="descriptor.type === 'enum'"
           :value="parameterValue(descriptor) as string"
+          role="combobox"
+          :aria-label="parameterLabel(descriptor.name)"
           :options="descriptor.options.map((value) => ({ label: value, value }))"
           @update:value="updateParameter(descriptor, $event)"
         />
@@ -185,6 +197,7 @@ function parameterLabel(name: string) {
           v-else
           :value="parameterValue(descriptor)"
           class="gy-native-input"
+          :aria-label="parameterLabel(descriptor.name)"
           :inputmode="descriptor.type === 'integer' ? 'numeric' : 'decimal'"
           :type="descriptor.type === 'integer' ? 'number' : 'text'"
           @input="updateParameter(descriptor, descriptor.type === 'integer' ? $event : inputValue($event))"

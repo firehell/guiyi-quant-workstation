@@ -34,9 +34,14 @@ export async function probeBacktestCapability(
 
   try {
     const health = await probe()
-    const canStart = health.status === 'ready' && !health.busy
+    const infrastructureAvailable = health.runner.available
+      && health.bundle_available
+      && health.runs_root_available
+      && health.registry_available
+    const canObserve = infrastructureAvailable && (health.status === 'ready' || health.busy)
+    const canStart = infrastructureAvailable && health.status === 'ready' && !health.busy
     return {
-      kind: canStart ? 'ready' : 'local_unavailable',
+      kind: canObserve ? 'ready' : 'local_unavailable',
       showMenu: true,
       canStart,
       health,
@@ -200,6 +205,7 @@ function safeHealthError(health: BacktestHealth): BacktestSafeError {
 function healthErrorCode(health: BacktestHealth): BacktestHttpErrorCode {
   if (!health.registry_available) return 'REGISTRY_INVALID'
   if (!health.bundle_available) return 'BUNDLE_UNAVAILABLE'
+  if (!health.runs_root_available) return 'BACKTEST_LOCAL_UNAVAILABLE'
   if (!health.runner.available) return 'RUNNER_UNAVAILABLE'
   return health.busy ? 'BACKTEST_ALREADY_RUNNING' : 'BACKTEST_LOCAL_UNAVAILABLE'
 }

@@ -56,9 +56,9 @@ not counted as RED. The runnable RED used only the allowed test Web server on
 ## Final GREEN evidence
 
 ```text
-focused Task 7 Playwright: 5 passed
-full Web unit tests: 245 passed, 1 skipped, 0 failed
-full Playwright: 84 passed, 0 failed
+focused Task 7 Playwright: 7 passed
+full Web unit tests: 250 passed, 1 skipped, 0 failed
+full Playwright: 86 passed, 0 failed
 vue-tsc project build: exit 0
 Vite production build: passed
 production bundle topology: charting vendor static imports are acyclic
@@ -108,7 +108,56 @@ sidecar was started.
   dashboard, comparisons, trade/position pages, and interactive equity chart
   remain absent.
 
-No remaining Critical, Important, or Minor Task 7 finding was identified.
+After the review repair below, the final two-axis self-review identified no
+remaining Critical, Important, or Minor Task 7 finding.
+
+## Review repair — observation-complete states
+
+The first Task 7 review was not approved. Its six findings were repaired with a
+second RED→GREEN cycle:
+
+- `degraded + busy=true` now remains observable when runner, bundle, runs root,
+  and registry are available. It loads strategies and recent/detail state,
+  polls a running task to terminal, shows “已有任务运行中”, and rejects new
+  starts. Any unavailable dependency still fails closed.
+- `failed`, `timed_out`, and `interrupted` details expose fixed stdout/stderr
+  downloads even when `result=null`; succeeded runs continue to follow server
+  artifact availability for every result artifact.
+- Detail now shows running/terminal duration plus terminal failure and exit
+  codes. Recent and detail status labels/tag types use one shared presentation
+  utility.
+- Artifact fetches moved behind the Task 6 local-only client. Approved non-2xx
+  `detail.code` values are preserved in `BacktestClientError`; unknown artifact
+  failures safely map to `BACKTEST_ARTIFACT_NOT_FOUND` rather than being
+  mislabeled as sidecar unavailability.
+- Every fixed and registry-driven form control now has a stable accessible name,
+  exercised through Playwright role/label locators.
+
+Repair RED evidence:
+
+```text
+focused pure: 26 tests, 22 passed, 4 failed
+- busy capability returned local_unavailable
+- shared presentation module missing
+- downloadArtifact missing in remote-zero-request and non-2xx tests
+
+focused Playwright: 3 expected Task 7 failures
+- strategy combobox had no accessible name/role
+- degraded busy page hid the form and observable runs
+- terminal failure omitted duration/failure fields/fixed log downloads
+```
+
+Repair GREEN evidence:
+
+```text
+focused pure: 29 passed
+focused Task 7 Playwright: 7 passed
+full Web unit: 250 passed, 1 skipped
+full Playwright: 86 passed
+vue-tsc/build/topology/diff: passed
+```
+
+The repair commit message is `fix: complete backtest observation states`.
 
 ## Gates
 

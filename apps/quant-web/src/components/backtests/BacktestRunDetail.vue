@@ -1,6 +1,13 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { NButton, NEmpty, NTag } from 'naive-ui'
+import {
+  backtestRunStatusLabel,
+  backtestRunStatusTagType,
+  formatBacktestDuration,
+  isBacktestFailureStatus,
+  visibleBacktestArtifacts,
+} from '@/utils/backtestPresentation'
 import type { ArtifactKind, BacktestRunDetail } from '@/types/backtest'
 
 const props = defineProps<{
@@ -13,13 +20,6 @@ const emit = defineEmits<{
   download: [kind: ArtifactKind]
 }>()
 
-const STATUS_LABELS = {
-  running: '运行中',
-  succeeded: '已成功',
-  failed: '失败',
-  timed_out: '已超时',
-  interrupted: '已中断',
-} as const
 const ARTIFACT_LABELS: Record<ArtifactKind, string> = {
   report_zip: '下载 report.zip',
   result_pickle: '下载 result.pkl',
@@ -30,10 +30,7 @@ const ARTIFACT_LABELS: Record<ArtifactKind, string> = {
 }
 
 const availableArtifacts = computed(() => {
-  if (!props.run?.result) return []
-  return (Object.entries(props.run.result.artifacts) as [ArtifactKind, boolean][])
-    .filter(([, available]) => available)
-    .map(([kind]) => kind)
+  return props.run ? visibleBacktestArtifacts(props.run) : []
 })
 
 function percent(value: string) {
@@ -62,10 +59,18 @@ function configJson(run: BacktestRunDetail, effective: boolean) {
           <strong>{{ run.strategy_name }}</strong>
           <small class="gy-number">{{ run.run_id }}</small>
         </div>
-        <NTag :type="run.status === 'succeeded' ? 'success' : run.status === 'running' ? 'info' : 'error'">
-          {{ STATUS_LABELS[run.status] }}
+        <NTag :type="backtestRunStatusTagType(run.status)">
+          {{ backtestRunStatusLabel(run.status) }}
         </NTag>
       </header>
+
+      <div class="run-detail__metadata" data-testid="backtest-run-metadata">
+        <article><span>耗时</span><strong>{{ formatBacktestDuration(run) }}</strong></article>
+        <template v-if="isBacktestFailureStatus(run.status)">
+          <article><span>失败代码</span><strong>{{ run.failure_code ?? '—' }}</strong></article>
+          <article><span>退出码</span><strong>{{ run.exit_code ?? '—' }}</strong></article>
+        </template>
+      </div>
 
       <div v-if="run.result" class="run-detail__summary" data-testid="backtest-summary">
         <article><span>总收益</span><strong>{{ percent(run.result.summary.total_returns) }}</strong></article>
@@ -124,6 +129,10 @@ h4 { margin: 0 0 6px; font-size: var(--gy-font-size-base); }
 .run-detail__header { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
 .run-detail__header div { display: grid; }
 .run-detail__header small { color: var(--gy-text-muted); }
+.run-detail__metadata { display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 14px; }
+.run-detail__metadata article { display: flex; gap: 6px; }
+.run-detail__metadata span { color: var(--gy-text-muted); }
+.run-detail__metadata strong { font-family: var(--gy-font-mono); }
 .run-detail__summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-bottom: 16px; }
 .run-detail__summary article { display: grid; gap: 4px; padding: 10px; background: var(--gy-bg-panel-strong); border-radius: var(--gy-radius-md); }
 .run-detail__summary span { color: var(--gy-text-muted); font-size: var(--gy-font-size-sm); }

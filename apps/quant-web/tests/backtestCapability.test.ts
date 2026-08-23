@@ -162,17 +162,33 @@ describe('local-only browser capability', () => {
 
   it('allows starts only for a ready non-busy local sidecar', async () => {
     const ready = await probeBacktestCapability('127.0.0.1', async () => health())
-    const busy = await probeBacktestCapability('127.0.0.1', async () => health({ busy: true }))
+    const busy = await probeBacktestCapability(
+      '127.0.0.1',
+      async () => health({ status: 'degraded', busy: true }),
+    )
     const degraded = await probeBacktestCapability(
       '127.0.0.1',
       async () => health({ status: 'degraded', bundle_available: false }),
+    )
+    const inconsistentReady = await probeBacktestCapability(
+      '127.0.0.1',
+      async () => health({ bundle_available: false }),
     )
 
     assert.equal(ready.kind, 'ready')
     assert.equal(ready.showMenu, true)
     assert.equal(ready.canStart, true)
+    assert.equal(busy.kind, 'ready')
+    assert.equal(busy.showMenu, true)
     assert.equal(busy.canStart, false)
+    assert.deepEqual(busy.error, {
+      code: 'BACKTEST_ALREADY_RUNNING',
+      message: '已有回测正在运行，请等待完成后再试。',
+    })
+    assert.equal(degraded.kind, 'local_unavailable')
     assert.equal(degraded.canStart, false)
+    assert.equal(inconsistentReady.kind, 'local_unavailable')
+    assert.equal(inconsistentReady.canStart, false)
   })
 })
 

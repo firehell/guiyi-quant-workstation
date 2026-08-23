@@ -187,6 +187,14 @@ async function mockBacktestApi(page, options = {}) {
     }
     if (method === 'GET' && path.includes(`/runs/${RUN_ID}/artifacts/`)) {
       const kind = path.split('/').at(-1)
+      const errorCode = options.artifactErrors?.[kind]
+      if (errorCode) {
+        return route.fulfill({
+          status: 404,
+          headers: corsHeaders,
+          json: { detail: { code: errorCode, message: '/configured/secret must not render' } },
+        })
+      }
       if (kind === 'equity_png') {
         return route.fulfill({ headers: { ...corsHeaders, 'content-type': 'image/png' }, body: PNG_1PX })
       }
@@ -221,6 +229,20 @@ test('local ready page renders the registered form, recent terminal detail, and 
   await expect(page.getByText('阈值')).toBeVisible()
   await expect(page.getByText('仅做多')).toBeVisible()
   await expect(page.getByText('回测合约')).toBeVisible()
+  await expect(page.getByRole('combobox', { name: '策略' })).toBeVisible()
+  await expect(page.getByRole('combobox', { name: '频率' })).toBeVisible()
+  await expect(page.getByLabel('开始日期')).toBeVisible()
+  await expect(page.getByLabel('结束日期')).toBeVisible()
+  await expect(page.getByRole('textbox', { name: '期货初始资金' })).toBeVisible()
+  await expect(page.getByRole('combobox', { name: '撮合方式' })).toBeVisible()
+  await expect(page.getByRole('textbox', { name: '保证金倍数' })).toBeVisible()
+  await expect(page.getByRole('textbox', { name: '期货手续费倍数' })).toBeVisible()
+  await expect(page.getByRole('combobox', { name: '滑点模型' })).toBeVisible()
+  await expect(page.getByRole('textbox', { name: '滑点' })).toBeVisible()
+  await expect(page.getByRole('spinbutton', { name: '回看周期' })).toBeVisible()
+  await expect(page.getByRole('textbox', { name: '阈值' })).toBeVisible()
+  await expect(page.getByRole('checkbox', { name: '仅做多' })).toBeVisible()
+  await expect(page.getByRole('combobox', { name: '回测合约' })).toBeVisible()
 
   await expect(page.getByTestId('recent-runs')).toContainText('期货回测链路示例')
   await expect(page.getByTestId('backtest-run-detail')).toContainText('已成功')
@@ -263,6 +285,50 @@ test('local ready form submits only declared values and polls running to termina
   await expect.poll(() => store.detailCalls).toBe(2)
   await expect(page.getByTestId('backtest-run-detail')).toContainText('已成功')
   expect(store.postBodies).toEqual([requestedConfig()])
+})
+
+test('degraded busy health remains observable, blocks submit, and polls the running run to terminal', async ({ page }) => {
+  const store = await mockBacktestApi(page, {
+    healthResponses: [readyHealth({ status: 'degraded', busy: true })],
+    runs: [runSummary('running')],
+    detailResponses: [runDetail('running'), runDetail('succeeded')],
+  })
+
+  await page.goto('/backtests')
+
+  await expect(page.getByTestId('backtest-form')).toBeVisible()
+  await expect(page.getByTestId('backtest-busy')).toContainText('已有任务运行中')
+  await expect(page.getByRole('button', { name: '启动研究回测' })).toBeDisabled()
+  await expect(page.getByTestId('backtest-run-detail')).toContainText('运行中')
+  await expect.poll(() => store.detailCalls).toBe(2)
+  await expect(page.getByTestId('backtest-run-detail')).toContainText('已成功')
+  expect(store.postBodies).toEqual([])
+})
+
+test('terminal failure without result shows duration, failure fields, fixed logs, and safe 404 error', async ({ page }) => {
+  await mockBacktestApi(page, {
+    runs: [runSummary('failed', { exit_code: 2, failure_code: 'RUNNER_EXITED' })],
+    detailResponses: [runDetail('failed', { exit_code: 2, failure_code: 'RUNNER_EXITED' })],
+    artifactErrors: { stderr_log: 'BACKTEST_ARTIFACT_NOT_FOUND' },
+  })
+
+  await page.goto('/backtests')
+
+  const detail = page.getByTestId('backtest-run-detail')
+  await expect(detail).toContainText('耗时')
+  await expect(detail).toContainText('7 秒')
+  await expect(detail).toContainText('RUNNER_EXITED')
+  await expect(detail).toContainText('退出码')
+  await expect(detail).toContainText('2')
+  await expect(page.getByTestId('artifact-download-stdout_log')).toBeVisible()
+  await expect(page.getByTestId('artifact-download-stderr_log')).toBeVisible()
+  await expect(page.getByTestId('artifact-download-report_zip')).toHaveCount(0)
+  await expect(page.getByTestId('artifact-download-result_pickle')).toHaveCount(0)
+  await expect(page.getByTestId('artifact-download-equity_png')).toHaveCount(0)
+
+  await page.getByTestId('artifact-download-stderr_log').click()
+  await expect(page.getByTestId('backtest-page-error')).toContainText('该回测产物不可用。')
+  await expect(page.getByTestId('backtest-page-error')).not.toContainText('本机回测服务不可用')
 })
 
 test('local unavailable retains navigation and gives configuration, start, and retry guidance', async ({ page }) => {
