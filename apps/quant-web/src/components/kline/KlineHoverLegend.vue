@@ -22,6 +22,9 @@ defineProps<{
     <span v-for="indicator in context.mainIndicators" :key="indicator.id">
       {{ indicator.displayName }} {{ formatKlineHoverValue(indicator.value) }}
     </span>
+    <span v-if="context.marker?.tooltip" data-testid="kline-hover-marker">
+      {{ context.marker.tooltip }}
+    </span>
     <template v-if="showMacd">
       <span>DIF {{ formatKlineHoverValue(context.macd?.dif) }}</span>
       <span>DEA {{ formatKlineHoverValue(context.macd?.dea) }}</span>

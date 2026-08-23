@@ -128,9 +128,16 @@ class SubingSignalEvaluation:
 
 
 class _CalibrationView(Protocol):
-    calibration_id: str | None
-    accepted_timeframes: frozenset[BarFrequency]
-    slope_flat_threshold_bps_per_bar: Mapping[BarFrequency, Decimal]
+    @property
+    def calibration_id(self) -> str | None: ...
+
+    @property
+    def accepted_timeframes(self) -> frozenset[BarFrequency]: ...
+
+    @property
+    def slope_flat_threshold_bps_per_bar(
+        self,
+    ) -> Mapping[BarFrequency, Decimal]: ...
 
 
 _INTRADAY_TIMEFRAMES = frozenset({BarFrequency.M5, BarFrequency.M15})
@@ -406,6 +413,57 @@ def resolve_same_boundary_subing_signals(
     if m5.status is SubingSignalStatus.MATCHED:
         return m5
     return m15
+
+
+def resolve_subing_matched_signal(
+    primary: SubingFactorResult,
+    companion: SubingFactorResult | None,
+    *,
+    calibration: _CalibrationView,
+) -> SubingSignalEvaluation | None:
+    """Resolve one confirmed Factor pair without I/O or persistence."""
+
+    primary_signal = evaluate_subing_signal(
+        primary,
+        companion=companion,
+        calibration=calibration,
+    )
+    if not _same_ready_boundary(primary, companion):
+        return (
+            primary_signal
+            if primary_signal.status is SubingSignalStatus.MATCHED
+            else None
+        )
+    assert companion is not None
+    reciprocal = evaluate_subing_signal(
+        companion,
+        companion=primary,
+        calibration=calibration,
+    )
+    if (
+        primary_signal.status is SubingSignalStatus.MATCHED
+        and reciprocal.status is SubingSignalStatus.MATCHED
+    ):
+        return resolve_same_boundary_subing_signals(primary_signal, reciprocal)
+    if primary_signal.status is SubingSignalStatus.MATCHED:
+        return primary_signal
+    if reciprocal.status is SubingSignalStatus.MATCHED:
+        return reciprocal
+    return None
+
+
+def _same_ready_boundary(
+    primary: SubingFactorResult,
+    companion: SubingFactorResult | None,
+) -> bool:
+    return (
+        primary.status is SubingFactorStatus.READY
+        and primary.snapshot is not None
+        and companion is not None
+        and companion.status is SubingFactorStatus.READY
+        and companion.snapshot is not None
+        and primary.snapshot.bar_end == companion.snapshot.bar_end
+    )
 
 
 def _ready_signal_snapshot(

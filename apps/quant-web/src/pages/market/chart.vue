@@ -6,7 +6,14 @@ import ProductCheckSidebar from '@/components/market/ProductCheckSidebar.vue'
 import ProductWorkspaceToolbar from '@/components/market/ProductWorkspaceToolbar.vue'
 import KlineChart from '@/components/kline/KlineChart.vue'
 import { getEventStates } from '@/api/executionReview'
-import { getMarketDominants, getProductResearch, getSubingResearch } from '@/api/market'
+import {
+  getMarketDominants,
+  getJdjHistoricalEvents,
+  getProductResearch,
+  getNStructureHistoricalEvents,
+  getSubingHistoricalSignals,
+  getSubingResearch,
+} from '@/api/market'
 import {
   getAlertRuntimeStatus,
   getAlertEvents,
@@ -17,6 +24,7 @@ import {
 import { useMarketSeries } from '@/composables/useMarketSeries'
 import { useMainForceMirrorV2 } from '@/composables/useMainForceMirrorV2'
 import { usePersistentAlertMarkers } from '@/composables/usePersistentAlertMarkers'
+import { useHistoricalResearchMarkers } from '@/composables/useHistoricalResearchMarkers'
 import { useProductAlertScope } from '@/composables/useProductAlertScope'
 import { useProductCurrentAlertEvents } from '@/composables/useProductCurrentAlertEvents'
 import { useSubingObservation } from '@/composables/useSubingObservation'
@@ -31,6 +39,7 @@ import type {
 import type { EventState } from '@/types/executionReview'
 import { MARKET_FREQUENCIES } from '@/types/market'
 import { lifecycleSnapshotToMarkers } from '@/utils/subingLifecycleMarkers'
+import { mergeKlineMarkers } from '@/utils/alertMarkers'
 import { buildKlineDerivedData } from '@/utils/klineViewModel'
 import {
   normalizeSecondaryPanelPreference,
@@ -40,6 +49,7 @@ import {
   loadMainChartPreferences,
   normalizeOptionalEmaIndicators,
   resolveEffectiveSeriesIdentity,
+  researchOverlayCapability,
   saveMainChartPreferences,
   visibleMainIndicatorsForOverlay,
 } from '@/utils/mainIndicators'
@@ -100,6 +110,17 @@ const {
   dispose: disposePersistentAlertMarkers,
 } = usePersistentAlertMarkers({ fetchEvents: getAlertEvents })
 const {
+  markers: historicalResearchMarkers,
+  loading: historicalResearchLoading,
+  error: historicalResearchError,
+  sync: syncHistoricalResearchMarkers,
+  dispose: disposeHistoricalResearchMarkers,
+} = useHistoricalResearchMarkers({
+  fetchSubing: getSubingHistoricalSignals,
+  fetchNStructure: getNStructureHistoricalEvents,
+  fetchJdj: getJdjHistoricalEvents,
+})
+const {
   subing,
   subingLoading,
   subingError,
@@ -158,18 +179,27 @@ const mainForceMirrorV2DisplayError = computed(() => {
   return mirror.error.value
 })
 const visibleMainIndicators = computed(() => {
-  if (selectedOverlay.value === 'subing' && !subingSupported.value) return []
+  if (!overlayCapability.value.supported) return []
   return visibleMainIndicatorsForOverlay(selectedOverlay.value, optionalEmaIndicators.value)
 })
 const effectiveIdentity = computed(() => currentIdentity())
+const overlayCapability = computed(() => researchOverlayCapability(
+  selectedOverlay.value,
+  effectiveIdentity.value.seriesKind,
+  frequency.value,
+))
 const visibleBars = computed(() => bars.value)
 const visibleStartTradingDay = computed(() => visibleBars.value[0]?.trading_day || '')
 const lifecycleMarkers = computed(() => {
-  if (subingLoading.value || subingError.value) return []
+  if (!overlayCapability.value.supported || subingLoading.value || subingError.value) return []
   return selectedOverlay.value === 'subing' && subing.value
     ? lifecycleSnapshotToMarkers(subing.value.lifecycle)
     : []
 })
+const researchMarkers = computed(() => mergeKlineMarkers(
+  lifecycleMarkers.value,
+  historicalResearchMarkers.value,
+))
 const canLoadEarlier = computed(() => hasMoreBefore.value)
 const isLiveDisplay = computed(() => !!marketState.value?.live_eligible
   && !!marketState.value.live_available
@@ -194,7 +224,7 @@ const afterMarketFailed = computed(() => {
 const watchlisted = computed(() => watchlist.value.includes(symbol.value))
 const htdyVisible = computed(() => selectedOverlay.value === 'htdy')
 const latestHtdyObservation = computed(() => {
-  if (!htdyVisible.value) return null
+  if (!htdyVisible.value || !overlayCapability.value.supported) return null
   return buildKlineDerivedData(visibleBars.value, ['htdy']).htdy?.markers.at(-1) ?? null
 })
 
@@ -243,6 +273,12 @@ watch(selectedOverlay, () => {
   if (!metadataReady || synchronizingSymbol) return
   resetSubingSnapshot()
   void refreshSubing()
+  void syncHistoricalResearchMarkers(
+    currentHistoricalMarkerIdentity(),
+    visibleBars.value,
+    canonicalCoverage.value,
+    'replace',
+  )
 })
 
 watch([symbol, seriesKind, contract], () => {
@@ -275,6 +311,12 @@ watch(frequency, (period) => {
 
 watch(mutation, (nextMutation) => {
   void syncPersistentAlertMarkers(currentAlertMarkerIdentity(), bars.value, nextMutation.kind)
+  void syncHistoricalResearchMarkers(
+    currentHistoricalMarkerIdentity(),
+    bars.value,
+    canonicalCoverage.value,
+    nextMutation.kind,
+  )
   if (nextMutation.kind === 'live' && selectedOverlay.value === 'subing' && subingSupported.value) {
     void refreshSubing()
   }
@@ -300,6 +342,7 @@ onUnmounted(() => {
   mirror.clear()
   dispose()
   disposePersistentAlertMarkers()
+  disposeHistoricalResearchMarkers()
 })
 
 function currentIdentity() {
@@ -320,6 +363,15 @@ function currentIdentity() {
 function currentAlertMarkerIdentity() {
   return {
     seriesKind: seriesKind.value,
+    symbol: symbol.value,
+    frequency: frequency.value,
+  }
+}
+
+function currentHistoricalMarkerIdentity() {
+  return {
+    overlay: selectedOverlay.value,
+    seriesKind: effectiveIdentity.value.seriesKind,
     symbol: symbol.value,
     frequency: frequency.value,
   }
@@ -586,6 +638,16 @@ function normalizeSymbol(value: unknown): string | null {
 
     <NSpin :show="metadataLoading">
       <NAlert v-if="error" type="error" :show-icon="true">{{ error }}</NAlert>
+      <NAlert
+        v-if="selectedOverlay !== 'none' && !overlayCapability.supported"
+        type="warning"
+        :show-icon="true"
+      >当前序列或周期不支持该 Overlay；K 线保持原选择，不自动切换。</NAlert>
+      <NAlert
+        v-else-if="historicalResearchError"
+        type="warning"
+        :show-icon="true"
+      >历史因果重放暂不可用；Canonical K 线仍可正常查看。</NAlert>
       <div class="product-status-strip" data-testid="product-status-strip">
         <strong>{{ effectiveIdentity.contract || selectedDominant?.actual_contract || symbol.toUpperCase() }}</strong>
         <NTag
@@ -614,13 +676,14 @@ function normalizeSymbol(value: unknown): string | null {
               :series-kind="effectiveIdentity.seriesKind"
               :visible-main-indicators="visibleMainIndicators"
               :alert-markers="persistentAlertMarkers"
-              :research-markers="lifecycleMarkers"
+              :research-markers="researchMarkers"
               :secondary-panel="selectedSecondaryPanel"
               :main-force-mirror-v2-points="mirror.points.value"
               :main-force-mirror-v2-member-dataset="mirror.memberDataset.value"
               :main-force-mirror-v2-loading="mirror.loading.value"
               :main-force-mirror-v2-error="mainForceMirrorV2DisplayError"
               :main-force-mirror-v2-canonical-end="mirror.canonicalEnd.value"
+              :data-historical-research-loading="historicalResearchLoading"
               @need-more-before="loadEarlierBars"
               @follow-latest-change="followLatest = $event"
               @secondary-panel-change="updateSecondaryPanel"

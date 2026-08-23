@@ -36,10 +36,9 @@ from app.market_data.subing_research import (
     SubingFactorResult,
     SubingFactorStatus,
     SubingSignalEvaluation,
-    SubingSignalStatus,
     calculate_subing_factor_series,
     evaluate_subing_signal,
-    resolve_same_boundary_subing_signals,
+    resolve_subing_matched_signal,
 )
 
 
@@ -336,10 +335,10 @@ class SubingReadService:
             companion=companion,
             calibration=cast(_SignalCalibrationView, self._calibration),
         )
-        resolved_signal = self._resolve_matched_signal(
+        resolved_signal = resolve_subing_matched_signal(
             primary,
             companion,
-            primary_signal,
+            calibration=cast(_SignalCalibrationView, self._calibration),
         )
 
         return SubingReadSnapshot(
@@ -480,35 +479,6 @@ class SubingReadService:
             live_observation="available",
             live_reason=None,
         )
-
-    def _resolve_matched_signal(
-        self,
-        primary: SubingFactorResult,
-        companion: SubingFactorResult | None,
-        primary_signal: SubingSignalEvaluation,
-    ) -> SubingSignalEvaluation | None:
-        if not _same_ready_boundary(primary, companion):
-            return (
-                primary_signal
-                if primary_signal.status is SubingSignalStatus.MATCHED
-                else None
-            )
-        assert companion is not None
-        reciprocal = evaluate_subing_signal(
-            companion,
-            companion=primary,
-            calibration=cast(_SignalCalibrationView, self._calibration),
-        )
-        if (
-            primary_signal.status is SubingSignalStatus.MATCHED
-            and reciprocal.status is SubingSignalStatus.MATCHED
-        ):
-            return resolve_same_boundary_subing_signals(primary_signal, reciprocal)
-        if primary_signal.status is SubingSignalStatus.MATCHED:
-            return primary_signal
-        if reciprocal.status is SubingSignalStatus.MATCHED:
-            return reciprocal
-        return None
 
     def _latest_dominant(self, symbol: str) -> DominantContractSummary:
         for dominant in self._market_data.list_latest_dominants():
@@ -890,20 +860,6 @@ def _identity(
         frequency=frequency,
         limit=300,
         contract=contract,
-    )
-
-
-def _same_ready_boundary(
-    primary: SubingFactorResult,
-    companion: SubingFactorResult | None,
-) -> bool:
-    return (
-        primary.status is SubingFactorStatus.READY
-        and primary.snapshot is not None
-        and companion is not None
-        and companion.status is SubingFactorStatus.READY
-        and companion.snapshot is not None
-        and primary.snapshot.bar_end == companion.snapshot.bar_end
     )
 
 

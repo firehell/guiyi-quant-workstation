@@ -1530,6 +1530,10 @@ def test_same_boundary_opposite_matches_fail_closed_without_overwriting_primary(
         "app.market_data.subing_read_service.evaluate_subing_signal",
         opposite_evaluations,
     )
+    monkeypatch.setattr(
+        "app.market_data.subing_research.evaluate_subing_signal",
+        opposite_evaluations,
+    )
     result = _service_with_calibration(
         {
             frequency: (_bar(boundary, _SEGMENT_START, Decimal("100")),),

@@ -3,7 +3,9 @@ import type {
   MainIndicatorId,
   OptionalEmaIndicatorId,
   ResearchOverlayId,
+  ResearchOverlayDefinition,
   SeriesKind,
+  MarketFrequency,
 } from '@/types/market'
 
 /** 主图指标偏好 localStorage 键 */
@@ -51,6 +53,67 @@ interface LegacyV2MainChartPreferences {
 
 const OPTIONAL_EMA_INDICATORS: OptionalEmaIndicatorId[] = ['ema_10', 'ema_60']
 
+export const RESEARCH_OVERLAY_DEFINITIONS: readonly ResearchOverlayDefinition[] = [
+  {
+    id: 'none',
+    label: '无',
+    supportedSeriesKinds: ['continuous', 'actual_dominant', 'contract'],
+    supportedFrequencies: ['1m', '5m', '15m', '30m', '60m', '1d', '1w'],
+    mainIndicators: [],
+    historicalSource: 'none',
+  },
+  {
+    id: 'subing',
+    label: '苏冰',
+    supportedSeriesKinds: ['actual_dominant'],
+    supportedFrequencies: ['5m', '15m'],
+    mainIndicators: ['ema_21'],
+    historicalSource: 'subing',
+  },
+  {
+    id: 'n_structure',
+    label: 'N字',
+    supportedSeriesKinds: ['actual_dominant'],
+    supportedFrequencies: ['5m'],
+    mainIndicators: [],
+    historicalSource: 'n_structure',
+  },
+  {
+    id: 'jdj',
+    label: '日进斗金',
+    supportedSeriesKinds: ['actual_dominant'],
+    supportedFrequencies: ['1m'],
+    mainIndicators: ['ema_20'],
+    historicalSource: 'jdj',
+  },
+  {
+    id: 'htdy',
+    label: '火天大有',
+    supportedSeriesKinds: ['continuous', 'actual_dominant', 'contract'],
+    supportedFrequencies: ['15m'],
+    mainIndicators: ['htdy'],
+    historicalSource: 'local',
+  },
+]
+
+const overlayDefinitionsById = new Map(
+  RESEARCH_OVERLAY_DEFINITIONS.map((definition) => [definition.id, definition]),
+)
+
+export function researchOverlayCapability(
+  overlay: ResearchOverlayId,
+  seriesKind: SeriesKind,
+  frequency: MarketFrequency,
+): { supported: boolean; definition: ResearchOverlayDefinition } {
+  const definition = overlayDefinitionsById.get(overlay)
+    ?? overlayDefinitionsById.get('subing')!
+  return {
+    definition,
+    supported: definition.supportedSeriesKinds.includes(seriesKind)
+      && definition.supportedFrequencies.includes(frequency),
+  }
+}
+
 /** 主图可叠加指标定义表（EMA、火天大有等） */
 export const MAIN_INDICATOR_DEFINITIONS: MainIndicatorDefinition[] = [
   {
@@ -63,6 +126,19 @@ export const MAIN_INDICATOR_DEFINITIONS: MainIndicatorDefinition[] = [
     defaultVisible: false,
     parameters: { period: 10 },
     lookbackBars: 10,
+    alertCapable: false,
+    available: true,
+  },
+  {
+    id: 'ema_20',
+    name: 'ema20',
+    displayName: 'EMA20',
+    pane: 'main',
+    renderer: 'line',
+    capability: 'standard_overlay',
+    defaultVisible: false,
+    parameters: { period: 20 },
+    lookbackBars: 20,
     alertCapable: false,
     available: true,
   },
@@ -162,12 +238,14 @@ export function visibleMainIndicatorsForOverlay(
   optionalEmaIndicators: OptionalEmaIndicatorId[] = [],
 ): MainIndicatorId[] {
   const optional = normalizeOptionalEmaIndicators(optionalEmaIndicators)
-  if (overlay === 'subing') return [
+  const definition = overlayDefinitionsById.get(overlay)
+  if (definition?.id === 'subing') return [
     ...(optional.includes('ema_10') ? ['ema_10' as const] : []),
     'ema_21',
     ...(optional.includes('ema_60') ? ['ema_60' as const] : []),
   ]
-  if (overlay === 'htdy') return [...optional, 'htdy']
+  if (definition?.id === 'jdj') return [...definition.mainIndicators]
+  if (definition?.id === 'htdy') return [...optional, ...definition.mainIndicators]
   return []
 }
 
@@ -278,5 +356,7 @@ function browserStorage(): Storage | null {
 }
 
 function normalizeResearchOverlay(value: unknown): ResearchOverlayId {
-  return value === 'none' || value === 'htdy' ? value : 'subing'
+  return value === 'none' || value === 'n_structure' || value === 'jdj' || value === 'htdy'
+    ? value
+    : 'subing'
 }

@@ -1,6 +1,8 @@
 import request from './request'
 import type {
   DominantContractListResponse,
+  JdjHistoricalRequest,
+  JdjHistoricalResponse,
   MarketBarsPageRequest,
   MarketBarsPageResponse,
   MainForceMirrorV2PageRequest,
@@ -9,13 +11,20 @@ import type {
   MarketReadState,
   MarketFrequency,
   MarketRadarResponse,
+  NStructureHistoricalRequest,
+  NStructureHistoricalResponse,
+  MarketTrendFocusResponse,
+  MarketTrendFocusWireResponse,
   ProductResearchResponse,
   SeriesKind,
   SubingFrequency,
+  SubingHistoricalSignalRequest,
+  SubingHistoricalSignalResponse,
   SubingResearchResponse,
 } from '@/types/market'
 import {
   normalizeMainForceMirrorV2Page,
+  normalizeMarketTrendFocus,
   normalizeSubingResearch,
 } from '@/types/market'
 
@@ -26,6 +35,11 @@ export function getMarketDominants() {
 export function getMarketRadar() {
   return request.get<never, MarketRadarResponse>('/market/research/radar')
     .then(normalizeMarketRadar)
+}
+
+export function getMarketTrendFocus() {
+  return request.get<never, MarketTrendFocusWireResponse>('/market/research/trend-focus')
+    .then(normalizeMarketTrendFocus) as Promise<MarketTrendFocusResponse>
 }
 
 export function getProductResearch(params: {
@@ -49,6 +63,27 @@ export function getSubingResearch(params: { symbol: string; frequency: SubingFre
       frequency: params.frequency,
     },
   }).then(normalizeSubingResearch)
+}
+
+export function getSubingHistoricalSignals(params: SubingHistoricalSignalRequest) {
+  return request.get<never, SubingHistoricalSignalResponse>(
+    '/market/research/subing/history',
+    { params },
+  )
+}
+
+export function getNStructureHistoricalEvents(params: NStructureHistoricalRequest) {
+  return request.get<never, NStructureHistoricalResponse>(
+    '/market/research/n-structure/history',
+    { params },
+  )
+}
+
+export function getJdjHistoricalEvents(params: JdjHistoricalRequest) {
+  return request.get<never, JdjHistoricalResponse>(
+    '/market/research/jdj/history',
+    { params },
+  )
 }
 
 export function getMainForceMirrorV2Page(params: MainForceMirrorV2PageRequest) {

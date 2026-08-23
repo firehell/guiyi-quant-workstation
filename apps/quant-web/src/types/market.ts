@@ -1,7 +1,16 @@
 export const MARKET_FREQUENCIES = ['1m', '5m', '15m', '30m', '60m', '1d', '1w'] as const
 export type MarketFrequency = (typeof MARKET_FREQUENCIES)[number]
 export type SeriesKind = 'continuous' | 'actual_dominant' | 'contract'
-export type ResearchOverlayId = 'none' | 'subing' | 'htdy'
+export type ResearchOverlayId = 'none' | 'subing' | 'n_structure' | 'jdj' | 'htdy'
+
+export interface ResearchOverlayDefinition {
+  id: ResearchOverlayId
+  label: string
+  supportedSeriesKinds: readonly SeriesKind[]
+  supportedFrequencies: readonly MarketFrequency[]
+  mainIndicators: readonly MainIndicatorId[]
+  historicalSource: 'none' | 'local' | 'subing' | 'n_structure' | 'jdj'
+}
 
 export interface DominantContractItem {
   product: string
@@ -717,6 +726,97 @@ export interface MarketRadarResponse {
   sector_summary: MarketRadarSectorSummary[]
 }
 
+export type MarketTrendFocusDirection = 'long' | 'short'
+export type MarketTrendFocusStage = 'setup' | 'breakout' | 'retest' | 'ready' | 'running' | 'weakening'
+export type MarketTrendFocusHourlyState = 'continuation' | 'pullback' | 'reversal_block'
+
+interface MarketTrendFocusItemBase<TDecimal> {
+  symbol: string
+  product_name: string
+  sector: string
+  physical_contract: string
+  direction: MarketTrendFocusDirection
+  stage: MarketTrendFocusStage
+  hot_conditions: string[]
+  hot_count: number
+  price_change_1d: TDecimal | null
+  volume_ratio20: TDecimal | null
+  atr14_percentile252: TDecimal | null
+  daily_volume_support: boolean
+  hourly_state: MarketTrendFocusHourlyState
+  hourly_volume_support: boolean
+  range_upper: TDecimal
+  range_lower: TDecimal
+  confirmation_count: number
+  retest_held: boolean
+  rebreak_reference: TDecimal | null
+  ready_invalidation: TDecimal | null
+  volume_confirmed: boolean
+  five_minute_confirmed: boolean
+  entry_confirmed_at: string | null
+  latest_swing_high: TDecimal | null
+  latest_swing_low: TDecimal | null
+  next_level: TDecimal | null
+  invalidation_level: TDecimal | null
+  last_transition_at: string
+}
+
+export type MarketTrendFocusWireItem = MarketTrendFocusItemBase<number | string>
+export type MarketTrendFocusItem = MarketTrendFocusItemBase<number>
+
+export interface MarketTrendFocusUnavailable {
+  symbol: string | null
+  code: string
+}
+
+interface MarketTrendFocusResponseBase<TItem> {
+  status: 'ready' | 'degraded'
+  observed_at: string
+  long_opportunities: TItem[]
+  short_opportunities: TItem[]
+  running_trends: TItem[]
+  weakening_trends: TItem[]
+  unavailable: MarketTrendFocusUnavailable[]
+}
+
+export type MarketTrendFocusWireResponse = MarketTrendFocusResponseBase<MarketTrendFocusWireItem>
+export type MarketTrendFocusResponse = MarketTrendFocusResponseBase<MarketTrendFocusItem>
+
+export function normalizeMarketTrendFocus(
+  payload: MarketTrendFocusWireResponse,
+): MarketTrendFocusResponse {
+  return {
+    ...payload,
+    long_opportunities: payload.long_opportunities.map(normalizeMarketTrendFocusItem),
+    short_opportunities: payload.short_opportunities.map(normalizeMarketTrendFocusItem),
+    running_trends: payload.running_trends.map(normalizeMarketTrendFocusItem),
+    weakening_trends: payload.weakening_trends.map(normalizeMarketTrendFocusItem),
+  }
+}
+
+function normalizeMarketTrendFocusItem(
+  item: MarketTrendFocusWireItem,
+): MarketTrendFocusItem {
+  return {
+    ...item,
+    price_change_1d: normalizeTrendFocusDecimal(item.price_change_1d),
+    volume_ratio20: normalizeTrendFocusDecimal(item.volume_ratio20),
+    atr14_percentile252: normalizeTrendFocusDecimal(item.atr14_percentile252),
+    range_upper: Number(item.range_upper),
+    range_lower: Number(item.range_lower),
+    rebreak_reference: normalizeTrendFocusDecimal(item.rebreak_reference),
+    ready_invalidation: normalizeTrendFocusDecimal(item.ready_invalidation),
+    latest_swing_high: normalizeTrendFocusDecimal(item.latest_swing_high),
+    latest_swing_low: normalizeTrendFocusDecimal(item.latest_swing_low),
+    next_level: normalizeTrendFocusDecimal(item.next_level),
+    invalidation_level: normalizeTrendFocusDecimal(item.invalidation_level),
+  }
+}
+
+function normalizeTrendFocusDecimal(value: number | string | null): number | null {
+  return value === null ? null : Number(value)
+}
+
 /** 后端 `/market/state` 与 WebSocket `state` 事件的只读展示状态。 */
 export interface MarketReadState {
   symbol: string
@@ -748,12 +848,87 @@ export type MarketWsMessage =
 
 export interface KlineMarker {
   id: string
+  dedupeKey?: string
   time: string
   label: string
   tooltip?: string
   tone: 'up' | 'down' | 'htdy' | 'neutral'
   position: 'aboveBar' | 'belowBar' | 'inBar'
   shape: 'circle' | 'square' | 'arrowUp' | 'arrowDown'
+}
+
+export interface SubingHistoricalSignalRequest {
+  series_kind: 'actual_dominant'
+  symbol: string
+  frequency: '5m' | '15m'
+  since: string
+  through: string
+}
+
+export interface SubingHistoricalSignalEvent {
+  event_id: string
+  bar_end: string
+  trading_day: string
+  contract: string
+  segment_start_trading_day: string
+  direction: 'buy' | 'sell'
+  trigger_timeframe: '5m' | '15m'
+  lower_tf_confirmation: boolean
+}
+
+export interface SubingHistoricalSignalResponse {
+  request: SubingHistoricalSignalRequest
+  events: SubingHistoricalSignalEvent[]
+}
+
+export interface NStructureHistoricalRequest {
+  series_kind: 'actual_dominant'
+  symbol: string
+  frequency: '5m'
+  since: string
+  through: string
+}
+
+export interface NStructureHistoricalEvent {
+  event_id: string
+  observed_at: string
+  trading_day: string
+  contract: string
+  segment_start_trading_day: string
+  direction: 'up' | 'down'
+}
+
+export interface NStructureHistoricalResponse {
+  request: NStructureHistoricalRequest
+  events: NStructureHistoricalEvent[]
+}
+
+export interface JdjHistoricalRequest {
+  series_kind: 'actual_dominant'
+  symbol: string
+  frequency: '1m'
+  since: string
+  through: string
+}
+
+export interface JdjHistoricalEvent {
+  event_id: string
+  candidate_id:
+    | 'jdj_trend_follow_1m_candidate_v1'
+    | 'jdj_trend_reentry_6_1m_candidate_v1'
+    | 'jdj_key_level_breakout_1m_candidate_v1'
+  source_event_kind: string
+  observed_at: string
+  trading_day: string
+  contract: string
+  segment_start_trading_day: string
+  direction: 'long' | 'short'
+  trigger_level: string
+}
+
+export interface JdjHistoricalResponse {
+  request: JdjHistoricalRequest
+  events: JdjHistoricalEvent[]
 }
 
 /** Alert V2 `AlertEventOut`：只读展示 DTO，方向语义见 result_codes。 */
@@ -781,7 +956,7 @@ export interface ChartOverlay {
 }
 
 export type IndicatorPanelType = 'macd' | 'atr' | 'volume_ratio' | 'signal_score'
-export type MainIndicatorId = 'ema_10' | 'ema_21' | 'ema_60' | 'htdy'
+export type MainIndicatorId = 'ema_10' | 'ema_20' | 'ema_21' | 'ema_60' | 'htdy'
 export type OptionalEmaIndicatorId = 'ema_10' | 'ema_60'
 
 export interface MainIndicatorDefinition {
