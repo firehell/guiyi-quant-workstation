@@ -16,9 +16,15 @@ from app.db.session import get_db
 from app.market_data.composition import (
     build_main_force_mirror_v2_service,
     build_market_data_service,
+    build_market_read_service,
     build_market_radar_service,
     build_market_research_service,
     build_subing_read_service,
+)
+from app.market_data.market_trend_focus import (
+    TrendFocusItem,
+    TrendFocusUnavailable,
+    build_market_trend_focus_snapshot,
 )
 from app.market_data.domain import (
     BarFrequency,
@@ -55,6 +61,9 @@ from app.schemas.market import (
     MarketRadarResponse,
     MarketRadarSectorOut,
     MarketRadarSummaryOut,
+    MarketTrendFocusItemOut,
+    MarketTrendFocusResponse,
+    MarketTrendFocusUnavailableOut,
     ProductResearchResponse,
     SubingConditionOut,
     SubingFactorResultOut,
@@ -514,6 +523,79 @@ def market_radar(session: Session = Depends(get_db)) -> MarketRadarResponse:
             for item in snapshot.sector_summary
         ],
     )
+
+
+@router.get("/research/trend-focus", response_model=MarketTrendFocusResponse)
+def market_trend_focus(
+    session: Session = Depends(get_db),
+) -> MarketTrendFocusResponse:
+    """返回 active universe 的只读 Trend Focus 当前快照。"""
+    market_data = build_market_data_service(session)
+    snapshot = build_market_trend_focus_snapshot(
+        radar_snapshot=build_market_radar_service(session).snapshot(),
+        market_data=market_data,
+        market_read=build_market_read_service(session),
+        dominants={
+            item.symbol: item for item in market_data.list_latest_dominants()
+        },
+        now=datetime.now(UTC),
+    )
+    return MarketTrendFocusResponse(
+        status=snapshot.status,
+        observed_at=snapshot.observed_at,
+        long_opportunities=[
+            _trend_focus_item(item) for item in snapshot.long_opportunities
+        ],
+        short_opportunities=[
+            _trend_focus_item(item) for item in snapshot.short_opportunities
+        ],
+        running_trends=[_trend_focus_item(item) for item in snapshot.running_trends],
+        weakening_trends=[
+            _trend_focus_item(item) for item in snapshot.weakening_trends
+        ],
+        unavailable=[
+            _trend_focus_unavailable(item) for item in snapshot.unavailable
+        ],
+    )
+
+
+def _trend_focus_item(item: TrendFocusItem) -> MarketTrendFocusItemOut:
+    return MarketTrendFocusItemOut(
+        symbol=item.symbol,
+        product_name=item.product_name,
+        sector=item.sector,
+        physical_contract=item.physical_contract,
+        direction=item.direction,
+        stage=item.stage,
+        hot_conditions=list(item.hot_conditions),
+        hot_count=item.hot_count,
+        price_change_1d=item.price_change_1d,
+        volume_ratio20=item.volume_ratio20,
+        atr14_percentile252=item.atr14_percentile252,
+        daily_volume_support=item.daily_volume_support,
+        hourly_state=item.hourly_state,
+        hourly_volume_support=item.hourly_volume_support,
+        range_upper=item.range_upper,
+        range_lower=item.range_lower,
+        confirmation_count=item.confirmation_count,
+        retest_held=item.retest_held,
+        rebreak_reference=item.rebreak_reference,
+        ready_invalidation=item.ready_invalidation,
+        volume_confirmed=item.volume_confirmed,
+        five_minute_confirmed=item.five_minute_confirmed,
+        entry_confirmed_at=item.entry_confirmed_at,
+        latest_swing_high=item.latest_swing_high,
+        latest_swing_low=item.latest_swing_low,
+        next_level=item.next_level,
+        invalidation_level=item.invalidation_level,
+        last_transition_at=item.last_transition_at,
+    )
+
+
+def _trend_focus_unavailable(
+    item: TrendFocusUnavailable,
+) -> MarketTrendFocusUnavailableOut:
+    return MarketTrendFocusUnavailableOut(symbol=item.symbol, code=item.code)
 
 
 def _radar_item(item) -> MarketRadarItemOut:

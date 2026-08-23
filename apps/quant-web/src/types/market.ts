@@ -726,6 +726,97 @@ export interface MarketRadarResponse {
   sector_summary: MarketRadarSectorSummary[]
 }
 
+export type MarketTrendFocusDirection = 'long' | 'short'
+export type MarketTrendFocusStage = 'setup' | 'breakout' | 'retest' | 'ready' | 'running' | 'weakening'
+export type MarketTrendFocusHourlyState = 'continuation' | 'pullback' | 'reversal_block'
+
+interface MarketTrendFocusItemBase<TDecimal> {
+  symbol: string
+  product_name: string
+  sector: string
+  physical_contract: string
+  direction: MarketTrendFocusDirection
+  stage: MarketTrendFocusStage
+  hot_conditions: string[]
+  hot_count: number
+  price_change_1d: TDecimal | null
+  volume_ratio20: TDecimal | null
+  atr14_percentile252: TDecimal | null
+  daily_volume_support: boolean
+  hourly_state: MarketTrendFocusHourlyState
+  hourly_volume_support: boolean
+  range_upper: TDecimal
+  range_lower: TDecimal
+  confirmation_count: number
+  retest_held: boolean
+  rebreak_reference: TDecimal | null
+  ready_invalidation: TDecimal | null
+  volume_confirmed: boolean
+  five_minute_confirmed: boolean
+  entry_confirmed_at: string | null
+  latest_swing_high: TDecimal | null
+  latest_swing_low: TDecimal | null
+  next_level: TDecimal | null
+  invalidation_level: TDecimal | null
+  last_transition_at: string
+}
+
+export type MarketTrendFocusWireItem = MarketTrendFocusItemBase<number | string>
+export type MarketTrendFocusItem = MarketTrendFocusItemBase<number>
+
+export interface MarketTrendFocusUnavailable {
+  symbol: string | null
+  code: string
+}
+
+interface MarketTrendFocusResponseBase<TItem> {
+  status: 'ready' | 'degraded'
+  observed_at: string
+  long_opportunities: TItem[]
+  short_opportunities: TItem[]
+  running_trends: TItem[]
+  weakening_trends: TItem[]
+  unavailable: MarketTrendFocusUnavailable[]
+}
+
+export type MarketTrendFocusWireResponse = MarketTrendFocusResponseBase<MarketTrendFocusWireItem>
+export type MarketTrendFocusResponse = MarketTrendFocusResponseBase<MarketTrendFocusItem>
+
+export function normalizeMarketTrendFocus(
+  payload: MarketTrendFocusWireResponse,
+): MarketTrendFocusResponse {
+  return {
+    ...payload,
+    long_opportunities: payload.long_opportunities.map(normalizeMarketTrendFocusItem),
+    short_opportunities: payload.short_opportunities.map(normalizeMarketTrendFocusItem),
+    running_trends: payload.running_trends.map(normalizeMarketTrendFocusItem),
+    weakening_trends: payload.weakening_trends.map(normalizeMarketTrendFocusItem),
+  }
+}
+
+function normalizeMarketTrendFocusItem(
+  item: MarketTrendFocusWireItem,
+): MarketTrendFocusItem {
+  return {
+    ...item,
+    price_change_1d: normalizeTrendFocusDecimal(item.price_change_1d),
+    volume_ratio20: normalizeTrendFocusDecimal(item.volume_ratio20),
+    atr14_percentile252: normalizeTrendFocusDecimal(item.atr14_percentile252),
+    range_upper: Number(item.range_upper),
+    range_lower: Number(item.range_lower),
+    rebreak_reference: normalizeTrendFocusDecimal(item.rebreak_reference),
+    ready_invalidation: normalizeTrendFocusDecimal(item.ready_invalidation),
+    latest_swing_high: normalizeTrendFocusDecimal(item.latest_swing_high),
+    latest_swing_low: normalizeTrendFocusDecimal(item.latest_swing_low),
+    next_level: normalizeTrendFocusDecimal(item.next_level),
+    invalidation_level: normalizeTrendFocusDecimal(item.invalidation_level),
+  }
+}
+
+function normalizeTrendFocusDecimal(value: number | string | null): number | null {
+  return value === null ? null : Number(value)
+}
+
 /** 后端 `/market/state` 与 WebSocket `state` 事件的只读展示状态。 */
 export interface MarketReadState {
   symbol: string

@@ -1,6 +1,6 @@
 # 归一量化项目事实源
 
-更新时间：2026-08-22
+更新时间：2026-08-23
 
 ## 稳定产品边界
 
@@ -59,6 +59,10 @@ Review 的四张 `trade_*` 表属于各自 Application Domain，不改变八表�
 
 `app.runtime_entry` 仅是受监督 Runtime 的内部进程入口；它不是第二套用户 CLI，也不能由手工运行产生
 自然 Runtime evidence。
+
+Market 首页“优先检查”只消费 `/api/v1/market/research/trend-focus` 的当前只读快照。该 read model
+按请求从 Radar、`MarketDataService`、`MarketReadService` 与当前 rank1 physical contract 重算，输出
+多/空新机会及运行/转弱趋势；不持久化、不接 Alert/Runtime/订单，也不生成综合分或交易推荐。
 
 ## 研究边界
 
