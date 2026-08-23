@@ -1,25 +1,34 @@
 # 当前状态
 
-更新时间：2026-08-23
+更新时间：2026-08-24
 
 ## 正式 release 与 production Runtime
 
-- 当前正式 release 为
-  `v1.7.0@4fe0644694ab9f534c61e0d48eae3f01a74fc7c0`；annotated tag object 为
-  `a0c86db0f1d016923340f7372a97ad8052d7b1f7`，message=`Release v1.7.0`。
-- production Runtime 为 clean/detached
-  `/Volumes/扩展盘/guiyi-quant-runtime-v1.7.0@4fe0644694ab9f534c61e0d48eae3f01a74fc7c0`；旧
-  `v1.6.5` Runtime worktree 已在无 plist/launchctl/process 引用且 clean/detached 后通过
-  `git worktree remove` 删除，`v1.6.5` tag 保留。
-- 2026-08-22 最终只读读回：API/Web/Live/after-market/Alert 五个 label 的 root 与 loaded commit
-  均匹配；Market/Alert marker enabled；API=`200 / 1.7.0 / readonly`、Web=`200`、Runtime
-  health=`ok / readonly`、PushPlus config=`ready`、overall=`passed`、operational=`60`。
-  after-market 已加载但当前未运行，fresh Runtime 状态为 `pending`，等待下一次自然调度；该 switch
-  未运行 after-market、canary 或人工通知。
-- production migration 为 head `20260815_0039`。Alert 两条 Rule Scope 均精确为 `jm`；Execution
-  Review roll marker 为 `disabled / not activated`；AlertEvent 与 notification-attempt count 均保持为 `8`。
-- 本机 API/Web 与 FRPC 只读检查通过。ECS FRPS/Nginx 与公网 HTTPS 本轮没有可用执行入口，且
-  `PUBLIC_BASE_URL` 未配置，因此保持 `not verified`，不得由本机 FRPC 健康推导为公网验收通过。
+- 已发布的正式 tag 为
+  `v1.8.0@8fac0a5f22951715711680b554a635d76166af24`；annotated tag object 为
+  `93806bad4def9b265fcee56265d4c25077cf04c8`，message=`Release v1.8.0`。
+- 2026-08-24 已将本机五个 launchd label 切到 clean/detached
+  `/Volumes/扩展盘/guiyi-quant-runtime-v1.8.0@8fac0a5f22951715711680b554a635d76166af24`。
+  API、Live 与 Alert 已从该根运行；after-market 未手工触发。Web 因新 worktree 缺少 Git 忽略的
+  `node_modules` 与 `dist` 而退出，当前只读读回为 API=`200`、Web=`000`、Runtime health=`ok / readonly`、
+  overall=`failed`。因此 v1.8.0 尚未达到 `RUNTIME_READY`，不得把 tag 已发布表述为 Runtime 验收通过。
+- 旧 `v1.7.0` Runtime worktree 保留为 clean/detached rollback 资产，但当前没有 label 指向它；未执行
+  回滚、after-market、canary、人工通知、真实 RQAlpha smoke、migration、Canonical/production DB/Redis
+  写入或 Alert Scope/transport 变更。恢复 Web 需要先在 v1.8.0 Runtime 根按 lockfile 准备前端依赖并 build，
+  再取得新的单次、仅限该 Web 重启的执行意图。
+- Market/Alert marker 继续 enabled；Alert notification channel 仍为 pushplus 且 config=`ready`、
+  audience_count=`2`，Execution Review roll 仍为 `disabled`。ECS FRPS/Nginx 与公网 HTTPS 本轮没有可用执行
+  入口，且 `PUBLIC_BASE_URL` 未配置，因此保持 `not verified`，不得由本机或 tunnel 读回推导为公网验收通过。
+
+## v1.8.0 release closeout
+
+- release preparation commit `91246004cb4c2c8d72cf8729edca8a99b3e6982b` 已合入 `develop`；main release
+  integration 与 tag peeled commit 均为 `8fac0a5f22951715711680b554a635d76166af24`，并已完成远端读回。
+- exact candidate 验证为 backend `3409 passed / 3 skipped / 16 deselected`、engineering `62 passed`、Web
+  unit `255 passed / 1 skipped`、Playwright `93 passed / 1 skipped`；Ruff、Mypy、Web build、OpenSpec、
+  secret scan、launchd render/lint 均通过。
+- 本 release 不含 migration、Canonical/production DB/Redis 写入、Scope/transport 变化、通知
+  retry/replay/backfill 或订单能力，`auto_order=false` 不变。
 
 ## v1.7.0 release closeout
 
@@ -34,8 +43,7 @@
 ## Market Trend Focus V1 develop release candidate
 
 - Market Trend Focus V1 implementation exact head `b4330123d8483ebdd42583d1816ac15cf99b61db`
-  已合入 `develop`；当前正式 release 与 production Runtime 仍为
-  `v1.7.0@4fe0644694ab9f534c61e0d48eae3f01a74fc7c0`，不包含该实现。
+  已随 v1.8.0 release 合入；它仍是只读 Market research surface，不接 Alert、Runtime 或订单。
 - 2026-08-23 Lane 3 exact-head 验证为 Trend Focus/API `77 passed`、backend
   `2808 passed / 3 skipped / 16 deselected`、Web unit `221 passed / 1 skipped`、B1 Playwright
   `48 passed`；Ruff、Mypy、Web build、OpenSpec 与 secret scan 均通过。真实 active60 只读快照为
@@ -43,9 +51,7 @@
   且全部为 `HOURLY_HISTORY_INSUFFICIENT`、long/short opportunity=`1/0`、
   setup/breakout/retest/ready=`1/0/0/0`、running/weakening=`10/11`；六个 completed 15m cutoff
   共 `192` 次 prefix 比较，`0 mismatch`，无 future/same-boundary/cross-contract identity 冲突。
-- 本次形成 `develop` release candidate；Trend Focus 仍是只读 Market research surface，不接
-  Alert、Runtime 或订单。下一受控 Gate 为 prospective shadow，当前未启用；本状态不授权
-  main/tag/release、Runtime promotion/switch、真实通知或任何正式数据写入。
+- prospective shadow 仍是下一受控 Gate，当前未启用；本状态不授权真实通知或任何正式数据写入。
 
 ## 当前 Runtime 与产品面
 

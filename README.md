@@ -62,6 +62,17 @@ fake/local-app/full 验证命令与单独真实 smoke Gate 见 `TESTING.md`，Gi
 
 当前本机 launchd 的实际部署根只以 `STATUS.md` 为准。开发期可临时直接运行主 `develop` 工作区，但修改源码不等于已部署：Web 重载前必须运行 `pnpm --dir apps/quant-web build`，API/Live 也需要重载才会采用新代码。
 
+新建的 detached Runtime worktree 不携带 Git 忽略的 `.venv`、`node_modules` 或 `dist`。在任何
+`--confirm-*` 前，先在目标 Runtime 根按 lockfile 完成依赖准备并构建 Web：
+
+```bash
+UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache uv sync --project services/quant-api --locked
+pnpm --dir apps/quant-web install --frozen-lockfile
+pnpm --dir apps/quant-web build
+```
+
+随后先运行 `--render-only`；依赖准备和 render 通过不构成 Runtime switch 授权。
+
 重载会改变 Runtime 状态，只在用户对当次目标和服务面给出明确执行意图后进行，不把 `--confirm-*` 当作日常无条件命令。功能收口后重新创建绑定精确提交的独立 Runtime worktree，再进行最终自然时点验收。
 
 唯一 active 运维链是 Mac launchd → FRPC → 腾讯云 FRPS/Nginx；local/tunnel/public 三段只读检查及
