@@ -12,7 +12,7 @@ from typing import Any
 import pytest
 
 from app.backtest import runner_entry
-from app.backtest.result_projection import project_result
+from app.backtest.result_projection import ResultProjectionError, project_result
 
 
 class _Portfolio:
@@ -49,7 +49,8 @@ def _effective_config(run_root: Path) -> dict[str, Any]:
             "start_date": "2026-01-05",
             "end_date": "2026-01-06",
             "frequency": "1d",
-            "accounts": {"future": "1000000"},
+            "accounts": {"FUTURE": "1000000"},
+            "margin_multiplier": "1",
             "data_bundle_path": str(run_root.parent.parent / "bundle"),
             "auto_update_bundle": False,
             "rqdatac_uri": "disabled",
@@ -58,11 +59,13 @@ def _effective_config(run_root: Path) -> dict[str, Any]:
             "sys_simulation": {
                 "enabled": True,
                 "matching_type": "current_bar",
-                "margin_multiplier": "1",
-                "commission_multiplier": "1",
                 "slippage_model": "PriceRatioSlippage",
                 "slippage": "0",
                 "signal": False,
+            },
+            "sys_transaction_cost": {
+                "enabled": True,
+                "futures_commission_multiplier": "1",
             },
             "sys_analyser": {
                 "enabled": True,
@@ -74,8 +77,8 @@ def _effective_config(run_root: Path) -> dict[str, Any]:
             },
             "sys_progress": {"enabled": True, "show": False},
             "ams": {"enabled": False},
+            "incremental": {"enabled": False},
         },
-        "incremental": {"enabled": False},
     }
 
 
@@ -143,9 +146,17 @@ def test_runner_entry_calls_run_file_and_atomically_writes_result(
     rqalpha = ModuleType("rqalpha")
 
     def run_file(strategy_file_path: str, config: dict[str, Any]) -> dict[str, Any]:
-        observed["strategy_file_path"] = strategy_file_path
+        observed["strategy_source"] = Path(strategy_file_path).read_text("utf-8")
         observed["config"] = config
-        observed["params_env"] = os.environ.get("GUIYI_BACKTEST_STRATEGY_PARAMS_FILE")
+        assert type(config["base"]["accounts"]["FUTURE"]) is float
+        assert type(config["base"]["margin_multiplier"]) is float
+        assert type(config["mod"]["sys_simulation"]["slippage"]) is float
+        assert (
+            type(config["mod"]["sys_transaction_cost"]["futures_commission_multiplier"])
+            is float
+        )
+        params_path = os.environ["GUIYI_BACKTEST_STRATEGY_PARAMS_FILE"]
+        observed["params"] = json.loads(Path(params_path).read_text("utf-8"))
         return _raw_result()
 
     rqalpha.run_file = run_file  # type: ignore[attr-defined]
@@ -153,9 +164,9 @@ def test_runner_entry_calls_run_file_and_atomically_writes_result(
     real_replace = runner_entry.os.replace
     replacements: list[tuple[Path | str, Path | str]] = []
 
-    def observe_replace(source: Path | str, target: Path | str) -> None:
+    def observe_replace(source: Path | str, target: Path | str, **kwargs: Any) -> None:
         replacements.append((source, target))
-        real_replace(source, target)
+        real_replace(source, target, **kwargs)
 
     monkeypatch.setattr(runner_entry.os, "replace", observe_replace)
 
@@ -163,11 +174,29 @@ def test_runner_entry_calls_run_file_and_atomically_writes_result(
 
     assert exit_code == 0
     assert observed == {
-        "strategy_file_path": str(root / "strategy.py"),
-        "config": _effective_config(root),
-        "params_env": str(root / "strategy_params.json"),
+        "strategy_source": "def init(context): pass\n",
+        "config": {
+            **_effective_config(root),
+            "base": {
+                **_effective_config(root)["base"],
+                "accounts": {"FUTURE": 1000000.0},
+                "margin_multiplier": 1.0,
+            },
+            "mod": {
+                **_effective_config(root)["mod"],
+                "sys_simulation": {
+                    **_effective_config(root)["mod"]["sys_simulation"],
+                    "slippage": 0.0,
+                },
+                "sys_transaction_cost": {
+                    "enabled": True,
+                    "futures_commission_multiplier": 1.0,
+                },
+            },
+        },
+        "params": {"quantity": 1},
     }
-    assert replacements[-1][1] == root / "result.json"
+    assert Path(replacements[-1][1]).name == "result.json"
     assert json.loads((root / "result.json").read_text("utf-8"))["trade_count"] == "2"
     assert not list(root.glob(".result.json.*.tmp"))
 
@@ -205,7 +234,7 @@ def test_runner_entry_probe_emits_version_json(
             "RUNNER_CONFIG_INVALID",
         ),
         (
-            lambda config: config["incremental"].__setitem__("enabled", True),
+            lambda config: config["mod"]["incremental"].__setitem__("enabled", True),
             "RUNNER_CONFIG_INVALID",
         ),
     ],
@@ -245,6 +274,42 @@ def test_runner_entry_rejects_incomplete_rqalpha_result_without_partial_json(
     assert not (root / "result.json").exists()
 
 
+def test_runner_entry_rejects_nonpositive_or_nonfinite_native_engine_numbers(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    root = _run_root(tmp_path)
+    record = json.loads((root / "run.json").read_text("utf-8"))
+    record["effective_config"]["base"]["margin_multiplier"] = "-1"
+    (root / "run.json").write_text(json.dumps(record), "utf-8")
+    rqalpha = ModuleType("rqalpha")
+    rqalpha.run_file = lambda *_args, **_kwargs: _raw_result()  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "rqalpha", rqalpha)
+
+    exit_code = runner_entry.main(["--run-root", str(root)])
+
+    assert exit_code == 2
+    assert capsys.readouterr().err.strip() == "RUNNER_CONFIG_INVALID"
+    assert not (root / "result.json").exists()
+
+
+def test_runner_entry_returns_safe_config_error_for_wrong_path_type(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    root = _run_root(tmp_path)
+    record = json.loads((root / "run.json").read_text("utf-8"))
+    record["effective_config"]["base"]["data_bundle_path"] = {"secret": "x"}
+    (root / "run.json").write_text(json.dumps(record), "utf-8")
+
+    exit_code = runner_entry.main(["--run-root", str(root)])
+
+    assert exit_code == 2
+    assert capsys.readouterr().err.strip() == "RUNNER_CONFIG_INVALID"
+    assert not (root / "result.json").exists()
+
+
 def test_runner_entry_rejects_relative_or_symlinked_run_root(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
@@ -256,3 +321,101 @@ def test_runner_entry_rejects_relative_or_symlinked_run_root(
     for unsafe in (Path("relative-run"), alias):
         assert runner_entry.main(["--run-root", str(unsafe)]) == 2
         assert capsys.readouterr().err.strip() == "RUNNER_CONFIG_INVALID"
+
+
+def test_runner_entry_uses_opened_json_instead_of_a_replaced_directory_entry(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = _run_root(tmp_path)
+    outside = tmp_path / "outside-run.json"
+    unsafe_config = _effective_config(root)
+    unsafe_config["base"]["auto_update_bundle"] = True
+    outside.write_text(json.dumps({"effective_config": unsafe_config}), "utf-8")
+    real_read_text = Path.read_text
+    swapped = False
+
+    def swap_on_path_read(path: Path, *args: Any, **kwargs: Any) -> str:
+        nonlocal swapped
+        if path == root / "run.json" and not swapped:
+            swapped = True
+            path.unlink()
+            path.symlink_to(outside)
+        return real_read_text(path, *args, **kwargs)
+
+    rqalpha = ModuleType("rqalpha")
+    rqalpha.run_file = lambda *_args, **_kwargs: _raw_result()  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "rqalpha", rqalpha)
+    monkeypatch.setattr(Path, "read_text", swap_on_path_read)
+
+    exit_code = runner_entry.main(["--run-root", str(root)])
+
+    assert exit_code == 0
+    assert swapped is False
+
+
+def test_runner_entry_rejects_oversized_json_before_parsing(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    root = _run_root(tmp_path)
+    with (root / "run.json").open("a", encoding="utf-8") as handle:
+        handle.write(" " * 1_100_000)
+
+    exit_code = runner_entry.main(["--run-root", str(root)])
+
+    assert exit_code == 2
+    assert capsys.readouterr().err.strip() == "RUNNER_CONFIG_INVALID"
+
+
+def test_runner_entry_binds_strategy_identity_and_rejects_mid_run_replacement(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    root = _run_root(tmp_path)
+    original_source = (root / "strategy.py").read_text("utf-8")
+    attacker = tmp_path / "attacker.py"
+    attacker.write_text("raise RuntimeError('attacker ran')\n", "utf-8")
+    observed_source: list[str] = []
+    rqalpha = ModuleType("rqalpha")
+
+    def replace_then_read(
+        strategy_file_path: str, _config: dict[str, Any]
+    ) -> dict[str, Any]:
+        (root / "strategy.py").unlink()
+        (root / "strategy.py").symlink_to(attacker)
+        observed_source.append(Path(strategy_file_path).read_text("utf-8"))
+        return _raw_result()
+
+    rqalpha.run_file = replace_then_read  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "rqalpha", rqalpha)
+
+    exit_code = runner_entry.main(["--run-root", str(root)])
+
+    assert exit_code == 2
+    assert capsys.readouterr().err.strip() == "RUNNER_CONFIG_INVALID"
+    assert observed_source == [original_source]
+    assert not (root / "result.json").exists()
+
+
+@pytest.mark.parametrize(
+    ("portfolio", "trades"),
+    [
+        ([{"date": "2026-01-05-extra", "unit_net_value": "1"}], []),
+        ([{"date": "2026-01-05", "unit_net_value": "1"}], {"trade": 1}),
+        ([{"date": "2026-01-05"}], []),
+    ],
+)
+def test_project_result_rejects_malformed_equity_and_trade_shapes(
+    tmp_path: Path,
+    portfolio: object,
+    trades: object,
+) -> None:
+    root = _run_root(tmp_path)
+    raw = _raw_result()
+    raw["sys_analyser"]["portfolio"] = portfolio
+    raw["sys_analyser"]["trades"] = trades
+
+    with pytest.raises(ResultProjectionError, match="^RUNNER_RESULT_INVALID$"):
+        project_result(raw, root)

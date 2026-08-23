@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import signal
 import subprocess
 import sys
 import time
@@ -138,7 +139,8 @@ def test_build_rqalpha_config_forces_complete_safe_configuration(
             "start_date": "2026-01-05",
             "end_date": "2026-01-06",
             "frequency": "1d",
-            "accounts": {"future": "1000000"},
+            "accounts": {"FUTURE": "1000000"},
+            "margin_multiplier": "1",
             "data_bundle_path": str(settings.bundle_path),
             "auto_update_bundle": False,
             "rqdatac_uri": "disabled",
@@ -147,11 +149,13 @@ def test_build_rqalpha_config_forces_complete_safe_configuration(
             "sys_simulation": {
                 "enabled": True,
                 "matching_type": "current_bar",
-                "margin_multiplier": "1",
-                "commission_multiplier": "1",
                 "slippage_model": "PriceRatioSlippage",
                 "slippage": "0",
                 "signal": False,
+            },
+            "sys_transaction_cost": {
+                "enabled": True,
+                "futures_commission_multiplier": "1",
             },
             "sys_analyser": {
                 "enabled": True,
@@ -163,8 +167,8 @@ def test_build_rqalpha_config_forces_complete_safe_configuration(
             },
             "sys_progress": {"enabled": True, "show": False},
             "ams": {"enabled": False},
+            "incremental": {"enabled": False},
         },
-        "incremental": {"enabled": False},
     }
 
 
@@ -291,6 +295,43 @@ def test_monitor_terminates_then_kills_a_timed_out_runner(
     assert result.exit_code is not None
 
 
+def test_timeout_terminates_then_kills_the_owned_process_group_and_drains_pipes(
+    settings: BacktestSettings,
+    run_paths: RunPaths,
+    validated_request: ValidatedBacktestRequest,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _fake_runner(monkeypatch)
+    monkeypatch.setattr(runner_module, "_TERMINATE_GRACE_SECONDS", 0.05)
+    monkeypatch.setattr(runner_module, "_PIPE_DRAIN_SECONDS", 0.2, raising=False)
+    settings = BacktestSettings(
+        python_executable=settings.python_executable,
+        bundle_path=settings.bundle_path,
+        runs_root=settings.runs_root,
+        timeout_seconds=1,
+        cors_origins=settings.cors_origins,
+    )
+    _prepare_run(settings, run_paths, validated_request, mode="descendant_timeout")
+    signals: list[tuple[int, int]] = []
+    real_killpg = os.killpg
+
+    def observe_killpg(process_group: int, sent_signal: int) -> None:
+        signals.append((process_group, sent_signal))
+        real_killpg(process_group, sent_signal)
+
+    monkeypatch.setattr(runner_module.os, "killpg", observe_killpg)
+    started = time.monotonic()
+
+    handle = SubprocessRunner(settings).start(validated_request, run_paths)
+    result = handle.monitor()
+
+    assert time.monotonic() - started < 3
+    assert result.outcome is RunStatus.TIMED_OUT
+    assert signals == [(handle.pid, signal.SIGTERM), (handle.pid, signal.SIGKILL)]
+    with pytest.raises(ProcessLookupError):
+        os.killpg(handle.pid, 0)
+
+
 def test_streamed_logs_are_redacted_and_exclude_parent_secrets(
     settings: BacktestSettings,
     run_paths: RunPaths,
@@ -320,6 +361,29 @@ def test_streamed_logs_are_redacted_and_exclude_parent_secrets(
     assert "parent-rqdata-user" not in combined
     assert "[REDACTED]" in combined
     assert '"SENSITIVE_ENV_PRESENT": false' in combined
+
+
+def test_chunked_redaction_handles_escaped_quotes_boundaries_and_long_lines(
+    settings: BacktestSettings,
+    run_paths: RunPaths,
+    validated_request: ValidatedBacktestRequest,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _fake_runner(monkeypatch)
+    monkeypatch.setattr(runner_module, "_LOG_CHUNK_BYTES", 7, raising=False)
+    _prepare_run(settings, run_paths, validated_request, mode="redaction_chunks")
+
+    result = SubprocessRunner(settings).start(validated_request, run_paths).monitor()
+
+    assert result.outcome is RunStatus.SUCCEEDED
+    stdout = run_paths.stdout_log.read_text("utf-8")
+    stderr = run_paths.stderr_log.read_text("utf-8")
+    assert "def-sensitive-suffix" not in stdout
+    assert "x" * 128 not in stderr
+    assert "prefix" in stdout and "tail" in stdout
+    assert "[REDACTED]" in stdout
+    assert "[REDACTED]" in stderr
+    assert len(stderr) < 256
 
 
 def test_start_rejects_run_record_without_exact_effective_config(

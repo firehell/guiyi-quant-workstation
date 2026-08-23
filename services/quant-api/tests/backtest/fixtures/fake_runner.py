@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import signal
+import subprocess
 import sys
 import time
 
@@ -14,6 +15,23 @@ import time
 def _read_mode(run_root: Path) -> str:
     payload = json.loads((run_root / "strategy_params.json").read_text("utf-8"))
     return str(payload.get("fake_mode", "success"))
+
+
+def _validate_safe_json_config(run_root: Path) -> None:
+    record = json.loads((run_root / "run.json").read_text("utf-8"))
+    config = record["effective_config"]
+    assert set(config) == {"base", "mod"}
+    assert config["base"]["accounts"] == {"FUTURE": "1000000"}
+    assert config["base"]["margin_multiplier"] == "1"
+    assert config["base"]["auto_update_bundle"] is False
+    assert config["base"]["rqdatac_uri"] == "disabled"
+    assert config["mod"]["sys_transaction_cost"] == {
+        "enabled": True,
+        "futures_commission_multiplier": "1",
+    }
+    assert config["mod"]["incremental"] == {"enabled": False}
+    assert config["mod"]["sys_simulation"]["signal"] is False
+    assert config["mod"]["ams"] == {"enabled": False}
 
 
 def _write_result(run_root: Path) -> None:
@@ -89,6 +107,7 @@ def main() -> int:
 
     run_root = args.run_root
     assert run_root is not None
+    _validate_safe_json_config(run_root)
     mode = _read_mode(run_root)
     if mode == "failure":
         print("fake strategy failure", file=sys.stderr)
@@ -104,6 +123,23 @@ def main() -> int:
     if mode == "ignore_terminate":
         signal.signal(signal.SIGTERM, lambda *_args: None)
         time.sleep(30)
+        return 0
+    if mode == "descendant_timeout":
+        child = subprocess.Popen(
+            [
+                sys.executable,
+                "-c",
+                (
+                    "import signal,time;"
+                    "signal.signal(signal.SIGTERM, signal.SIG_IGN);"
+                    "time.sleep(5)"
+                ),
+            ],
+            stdin=subprocess.DEVNULL,
+        )
+        (run_root / "fake-descendant.pid").write_text(str(child.pid), "utf-8")
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        time.sleep(5)
         return 0
     if mode == "redaction":
         print('token="stdout-secret" password=stdout-password')
@@ -138,6 +174,9 @@ def main() -> int:
                 }
             )
         )
+    if mode == "redaction_chunks":
+        os.write(1, b'prefix {"api_key":"abc\\"def-sensitive-suffix"} tail\n')
+        os.write(2, b"password=" + (b"x" * 100_000) + b" end\n")
     _write_result(run_root)
     return 0
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+import codecs
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal, InvalidOperation
@@ -10,9 +11,11 @@ import json
 import os
 from pathlib import Path
 import re
+import signal
 import stat
 import subprocess
 import threading
+import time
 from typing import Any, BinaryIO, NoReturn
 
 from app.backtest.artifact_store import RunPaths
@@ -25,6 +28,9 @@ from app.backtest.registry import ValidatedBacktestRequest
 _RUNNER_ENTRY_PATH = Path(__file__).with_name("runner_entry.py")
 _QUANT_API_ROOT = Path(__file__).resolve().parents[2]
 _TERMINATE_GRACE_SECONDS = 2.0
+_PIPE_DRAIN_SECONDS = 1.0
+_LOG_CHUNK_BYTES = 4096
+_LOG_CARRY_CHARS = 4096
 _INHERITED_ENV_ALLOWLIST = frozenset(
     {
         "HOME",
@@ -53,10 +59,10 @@ _SENSITIVE_ENV_MARKERS = (
     "PUSHPLUS",
     "LICENSE",
 )
-_SENSITIVE_ASSIGNMENT = re.compile(
-    r"(?i)((?:\"|')?\b(?:password|passwd|secret|token|api[_-]?key|access[_-]?key|"
+_SENSITIVE_PREFIX = re.compile(
+    r"(?i)(?P<label>(?:\"|')?\b(?:password|passwd|secret|token|api[_-]?key|access[_-]?key|"
     r"private[_-]?key|license|database_url|redis_url|rqdata(?:c)?[_-]?\w*)\b"
-    r"(?:\"|')?\s*[=:]\s*)(?:\"[^\"\r\n]*\"|'[^'\r\n]*'|[^\s,;}]+)"
+    r"(?:\"|')?\s*[=:]\s*)(?P<quote>[\"']?)"
 )
 _URL_CREDENTIALS = re.compile(r"(?i)([a-z][a-z0-9+.-]*://)[^\s/@:]+:[^\s/@]+@")
 _BEARER = re.compile(r"(?i)(\bBearer\s+)[A-Za-z0-9._~+/=-]+")
@@ -136,7 +142,8 @@ def build_rqalpha_config(
             "start_date": config["start_date"],
             "end_date": config["end_date"],
             "frequency": config["frequency"],
-            "accounts": {"future": config["future_cash"]},
+            "accounts": {"FUTURE": config["future_cash"]},
+            "margin_multiplier": config["margin_multiplier"],
             "data_bundle_path": str(settings.bundle_path),
             "auto_update_bundle": False,
             "rqdatac_uri": "disabled",
@@ -145,11 +152,15 @@ def build_rqalpha_config(
             "sys_simulation": {
                 "enabled": True,
                 "matching_type": config["matching_type"],
-                "margin_multiplier": config["margin_multiplier"],
-                "commission_multiplier": config["futures_commission_multiplier"],
                 "slippage_model": config["slippage_model"],
                 "slippage": config["slippage"],
                 "signal": False,
+            },
+            "sys_transaction_cost": {
+                "enabled": True,
+                "futures_commission_multiplier": config[
+                    "futures_commission_multiplier"
+                ],
             },
             "sys_analyser": {
                 "enabled": True,
@@ -161,8 +172,8 @@ def build_rqalpha_config(
             },
             "sys_progress": {"enabled": True, "show": False},
             "ams": {"enabled": False},
+            "incremental": {"enabled": False},
         },
-        "incremental": {"enabled": False},
     }
 
 
@@ -189,23 +200,93 @@ def _parent_secrets() -> tuple[str, ...]:
         if (
             value
             and len(value) >= 4
+            and len(value) <= _LOG_CARRY_CHARS
             and any(marker in upper for marker in _SENSITIVE_ENV_MARKERS)
         ):
             values.add(value)
     return tuple(sorted(values, key=len, reverse=True))
 
 
-class _LogRedactor:
+class _StreamingLogRedactor:
     def __init__(self) -> None:
         self._exact_secrets = _parent_secrets()
+        self._decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+        self._pending = ""
+        self._sensitive_quote: str | None = None
+        self._sensitive_unquoted = False
+        self._escaped = False
 
-    def redact(self, text: str) -> str:
+    def _redact_general(self, text: str) -> str:
         sanitized = text
         for secret in self._exact_secrets:
             sanitized = sanitized.replace(secret, "[REDACTED]")
         sanitized = _URL_CREDENTIALS.sub(r"\1[REDACTED]@", sanitized)
-        sanitized = _BEARER.sub(r"\1[REDACTED]", sanitized)
-        return _SENSITIVE_ASSIGNMENT.sub(r"\1[REDACTED]", sanitized)
+        return _BEARER.sub(r"\1[REDACTED]", sanitized)
+
+    def feed(self, raw: bytes, *, final: bool = False) -> bytes:
+        self._pending += self._decoder.decode(raw, final=final)
+        output: list[str] = []
+        while self._pending:
+            if self._sensitive_quote is not None:
+                if not self._consume_quoted_value(output):
+                    break
+                continue
+            if self._sensitive_unquoted:
+                if not self._consume_unquoted_value(output):
+                    break
+                continue
+
+            match = _SENSITIVE_PREFIX.search(self._pending)
+            if match is not None:
+                output.append(self._redact_general(self._pending[: match.start()]))
+                output.append(match.group("label"))
+                quote = match.group("quote")
+                if quote:
+                    output.append(quote)
+                    self._sensitive_quote = quote
+                else:
+                    self._sensitive_unquoted = True
+                output.append("[REDACTED]")
+                self._pending = self._pending[match.end() :]
+                continue
+
+            if final:
+                output.append(self._redact_general(self._pending))
+                self._pending = ""
+            elif len(self._pending) > _LOG_CARRY_CHARS:
+                emit_length = len(self._pending) - _LOG_CARRY_CHARS
+                output.append(self._redact_general(self._pending[:emit_length]))
+                self._pending = self._pending[emit_length:]
+            else:
+                break
+        return "".join(output).encode("utf-8")
+
+    def _consume_quoted_value(self, output: list[str]) -> bool:
+        assert self._sensitive_quote is not None
+        for index, character in enumerate(self._pending):
+            if self._escaped:
+                self._escaped = False
+                continue
+            if character == "\\":
+                self._escaped = True
+                continue
+            if character == self._sensitive_quote:
+                output.append(character)
+                self._pending = self._pending[index + 1 :]
+                self._sensitive_quote = None
+                return True
+        self._pending = ""
+        return False
+
+    def _consume_unquoted_value(self, output: list[str]) -> bool:
+        for index, character in enumerate(self._pending):
+            if character.isspace() or character in ",;}":
+                output.append(character)
+                self._pending = self._pending[index + 1 :]
+                self._sensitive_unquoted = False
+                return True
+        self._pending = ""
+        return False
 
 
 def _open_log(path: Path) -> BinaryIO:
@@ -246,11 +327,15 @@ def _read_json_regular(path: Path) -> object:
             os.close(descriptor)
 
 
-def _drain_stream(source: BinaryIO, target: BinaryIO, redactor: _LogRedactor) -> None:
+def _drain_stream(
+    source: BinaryIO,
+    target: BinaryIO,
+    redactor: _StreamingLogRedactor,
+) -> None:
     try:
-        while raw_line := source.readline():
-            sanitized = redactor.redact(raw_line.decode("utf-8", errors="replace"))
-            target.write(sanitized.encode("utf-8"))
+        while raw_chunk := source.read(_LOG_CHUNK_BYTES):
+            target.write(redactor.feed(raw_chunk))
+        target.write(redactor.feed(b"", final=True))
     finally:
         source.close()
         target.close()
@@ -360,14 +445,10 @@ class RunningProcess:
                 exit_code = self._process.wait(timeout=self._timeout_seconds)
             except subprocess.TimeoutExpired:
                 timed_out = True
-                self._process.terminate()
-                try:
-                    exit_code = self._process.wait(timeout=_TERMINATE_GRACE_SECONDS)
-                except subprocess.TimeoutExpired:
-                    self._process.kill()
-                    exit_code = self._process.wait()
+                exit_code = self._terminate_owned_process_group()
+            drain_deadline = time.monotonic() + _PIPE_DRAIN_SECONDS
             for thread in self._drain_threads:
-                thread.join()
+                thread.join(timeout=max(0.0, drain_deadline - time.monotonic()))
             if timed_out:
                 result = MonitorResult(
                     exit_code=exit_code,
@@ -394,6 +475,46 @@ class RunningProcess:
                 )
             self._monitor_result = result
             return result
+
+    def _terminate_owned_process_group(self) -> int:
+        process_group = self._process.pid
+        own_process_group = os.getpgrp()
+        try:
+            observed_process_group = os.getpgid(self._process.pid)
+        except ProcessLookupError:
+            return self._process.wait()
+        if (
+            process_group <= 1
+            or process_group == own_process_group
+            or observed_process_group != process_group
+        ):
+            self._process.terminate()
+            try:
+                return self._process.wait(timeout=_TERMINATE_GRACE_SECONDS)
+            except subprocess.TimeoutExpired:
+                self._process.kill()
+                return self._process.wait()
+
+        os.killpg(process_group, signal.SIGTERM)
+        deadline = time.monotonic() + _TERMINATE_GRACE_SECONDS
+        try:
+            exit_code = self._process.wait(timeout=_TERMINATE_GRACE_SECONDS)
+        except subprocess.TimeoutExpired:
+            exit_code = None
+        remaining = deadline - time.monotonic()
+        if remaining > 0:
+            threading.Event().wait(remaining)
+        try:
+            os.killpg(process_group, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        if exit_code is not None:
+            return exit_code
+        try:
+            return self._process.wait(timeout=_TERMINATE_GRACE_SECONDS)
+        except subprocess.TimeoutExpired:
+            self._process.kill()
+            return self._process.wait()
 
 
 class SubprocessRunner:
@@ -510,16 +631,15 @@ class SubprocessRunner:
             stdout_target.close()
             stderr_target.close()
             raise BacktestError(BacktestHttpErrorCode.RUNNER_UNAVAILABLE)
-        redactor = _LogRedactor()
         threads = (
             threading.Thread(
                 target=_drain_stream,
-                args=(process.stdout, stdout_target, redactor),
+                args=(process.stdout, stdout_target, _StreamingLogRedactor()),
                 daemon=True,
             ),
             threading.Thread(
                 target=_drain_stream,
-                args=(process.stderr, stderr_target, redactor),
+                args=(process.stderr, stderr_target, _StreamingLogRedactor()),
                 daemon=True,
             ),
         )

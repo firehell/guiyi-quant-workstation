@@ -47,7 +47,9 @@ def _decimal_string(value: object) -> str:
 
 
 def _date_string(value: object) -> str:
-    if isinstance(value, datetime):
+    if isinstance(value, str):
+        rendered = value
+    elif isinstance(value, datetime):
         rendered = value.date().isoformat()
     elif isinstance(value, date):
         rendered = value.isoformat()
@@ -55,7 +57,7 @@ def _date_string(value: object) -> str:
         date_method = getattr(value, "date", None)
         if callable(date_method):
             return _date_string(date_method())
-        rendered = str(value)[:10]
+        rendered = str(value)
     try:
         parsed = date.fromisoformat(rendered)
     except ValueError:
@@ -107,6 +109,33 @@ def _project_equity(portfolio: object) -> list[dict[str, str]]:
     return projected
 
 
+def _trade_count(trades: object) -> int:
+    if isinstance(trades, Mapping) or isinstance(trades, (str, bytes, bytearray)):
+        _invalid()
+    iterrows = getattr(trades, "iterrows", None)
+    columns = getattr(trades, "columns", None)
+    if callable(iterrows) and columns is not None:
+        try:
+            count = len(trades)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            _invalid()
+    elif isinstance(trades, Sequence):
+        count = len(trades)
+    else:
+        column_names = getattr(trades, "column_names", None)
+        row_count = getattr(trades, "num_rows", None)
+        if not isinstance(column_names, Sequence) or isinstance(
+            column_names, (str, bytes, bytearray)
+        ):
+            _invalid()
+        if isinstance(row_count, bool) or not isinstance(row_count, int):
+            _invalid()
+        count = row_count
+    if isinstance(count, bool) or count < 0:
+        _invalid()
+    return count
+
+
 def _regular_file(path: Path) -> bool:
     try:
         return stat.S_ISREG(path.lstat().st_mode)
@@ -147,14 +176,7 @@ def project_result(result: object, run_root: Path) -> dict[str, Any]:
         _invalid()
     portfolio = analyser.get("portfolio")
     trades = analyser.get("trades")
-    if trades is None or isinstance(trades, (str, bytes, bytearray)):
-        _invalid()
-    try:
-        trade_count = len(trades)  # type: ignore[arg-type]
-    except (TypeError, ValueError):
-        _invalid()
-    if isinstance(trade_count, bool) or trade_count < 0:
-        _invalid()
+    trade_count = _trade_count(trades)
 
     root = Path(run_root)
     return {
