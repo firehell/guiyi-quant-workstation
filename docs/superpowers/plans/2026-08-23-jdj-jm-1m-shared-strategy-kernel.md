@@ -159,7 +159,7 @@ services/quant-api/tests/backtest/test_jdj_rqalpha_adapter.py
 - Create: `services/quant-api/tests/strategy_kernel/fixtures.py`
 - Create: `services/quant-api/tests/strategy_kernel/test_n_structure_golden_parity.py`
 - Create: `services/quant-api/tests/strategy_kernel/test_jdj_golden_parity.py`
-- Read only: current N/JDJ tests and exact policies
+- Read: current `services/quant-api/tests/test_n_structure_*`, `test_jdj_*` and exact policies
 
 **Interfaces:** Produces immutable primitive expected projections used after module moves. Does not change production imports or formulas.
 
@@ -255,7 +255,16 @@ git commit -m "test(strategy): freeze N and JDJ candidate golden facts"
 
 ### Task 1: Move the Pure N Structure Kernel Without Semantic Change
 
-**Files:** Move five pure N modules; update all imports; test golden + current N/JDJ consumers.
+**Files:**
+- Move: `services/quant-api/app/research/n_structure/n_structure_policy.py`
+- Move: `services/quant-api/app/research/n_structure/n_structure_pattern.py`
+- Move: `services/quant-api/app/research/n_structure/n_structure_swing.py`
+- Move: `services/quant-api/app/research/n_structure/n_structure_state.py`
+- Move: `services/quant-api/app/research/n_structure/n_structure_segment.py`
+- Create: `services/quant-api/app/strategy_kernel/n_structure/__init__.py`
+- Modify: all importers returned by Task 0 `rg`
+- Test: `services/quant-api/tests/strategy_kernel/test_n_structure_golden_parity.py`
+- Test: existing N Research/segment and JDJ context tests
 
 **Interfaces:** unchanged `NStructurePolicy`, `NSwingPivot`, `NStructureKind`, `NStructureSnapshot`, `NStructureSegmentTrace`, `evaluate_n_structure_segment` under `app.strategy_kernel.n_structure`.
 
@@ -292,7 +301,17 @@ git commit -m "refactor(strategy): move pure N structure kernel"
 
 ### Task 2: Move the Pure JDJ Candidate Kernel and Keep Golden Identity
 
-**Files:** Move six JDJ pure modules; modify Research/validation/robustness/convergence/overlay/CLI/tests.
+**Files:**
+- Move: `services/quant-api/app/research/jdj/jdj_policy.py`
+- Move: `services/quant-api/app/research/jdj/jdj_context.py`
+- Move: `services/quant-api/app/research/jdj/jdj_events.py`
+- Move: `services/quant-api/app/research/jdj/jdj_trend_follow.py`
+- Move: `services/quant-api/app/research/jdj/jdj_trend_reentry.py`
+- Move: `services/quant-api/app/research/jdj/jdj_key_level_breakout.py`
+- Create: `services/quant-api/app/strategy_kernel/jdj/__init__.py`
+- Modify: all JDJ Research/validation/robustness/convergence/overlay/CLI/test importers returned by Task 0 `rg`
+- Test: `services/quant-api/tests/strategy_kernel/test_jdj_golden_parity.py`
+- Test: current JDJ direct reducer/Research tests
 
 **Interfaces:** unchanged Candidate dataclasses and `reduce_jdj_trend_follow`, `reduce_jdj_trend_reentry_6`, `reduce_jdj_key_level_breakout` under `app.strategy_kernel.jdj`.
 
@@ -661,7 +680,15 @@ git commit -m "feat(research): add JDJ JM reference replay"
 
 ### Task 6: Add Separate `日进斗金策略` Market Overlay
 
-**Files:** Web paths listed in File Structure.
+**Files:**
+- Create: `apps/quant-web/src/composables/useHistoricalStrategyMarkers.ts`
+- Create: `apps/quant-web/src/utils/historicalStrategyMarkers.ts`
+- Create: `apps/quant-web/tests/historicalStrategyMarkers.test.ts`
+- Modify: `apps/quant-web/src/api/market.ts`
+- Modify: `apps/quant-web/src/types/market.ts`
+- Modify: `apps/quant-web/src/utils/mainIndicators.ts`
+- Modify: `apps/quant-web/src/pages/market/chart.vue`
+- Modify: `apps/quant-web/e2e/market-research.spec.mjs`
 
 **Interfaces:** overlay id `jdj_strategy`, distinct from current Candidate overlay.
 
@@ -691,15 +718,50 @@ git commit -m "feat(web): show JDJ JM strategy replay"
 
 **Files:**
 - Create: `services/quant-api/app/strategy_kernel/jdj/streaming.py`
+- Modify: `services/quant-api/app/strategy_kernel/n_structure/n_structure_swing.py` only if a reusable single-step swing reducer is required
+- Modify: `services/quant-api/app/strategy_kernel/n_structure/n_structure_pattern.py` only if a reusable single-step pattern reducer is required
+- Modify: `services/quant-api/app/strategy_kernel/n_structure/n_structure_state.py` only if a reusable single-step structure reducer is required
+- Modify: `services/quant-api/app/strategy_kernel/jdj/jdj_context.py` only to share exact incremental EMA/context projection state
+- Modify: the three JDJ reducers only to extract the same single-step transition used by batch and streaming
 - Test: `services/quant-api/tests/strategy_kernel/test_jdj_streaming_parity.py`
-- Modify shared N/JDJ modules only to extract reusable state transitions; formula outputs must remain golden-identical.
 
-**Interfaces:** one explicit stateful evaluator for one physical segment. Exact method names may follow the refactor, but it must accept completed 1m/5m facts incrementally and emit the same Candidate primitive projection as batch.
+**Interfaces:**
+
+```python
+@dataclass(slots=True)
+class JdjStreamingEvaluator:
+    @classmethod
+    def create(
+        cls,
+        *,
+        contract: str,
+        segment_start_trading_day: date,
+        segment_end_trading_day: date,
+        jdj_policy: JdjPolicy,
+        n_policy: NStructurePolicy,
+    ) -> "JdjStreamingEvaluator": ...
+
+    def push(
+        self,
+        bar_1m: CanonicalBar,
+        *,
+        newly_completed_5m_bars: tuple[CanonicalBar, ...] = (),
+    ) -> tuple[JdjTriggerEvent, ...]: ...
+```
+
+`push` 的顺序语义固定：
+
+1. 使用调用前已经 committed 的 5m/N state 和当前 `bar_1m` 更新 EMA/JDJ 1m context；
+2. 生成当前 1m Candidate events；
+3. **之后**才按时间顺序吸收 `newly_completed_5m_bars`，使这些 5m facts 只能影响下一次 `push`；
+4. `newly_completed_5m_bars` 必须同 contract/segment、严格递增，且其 `bar_end <= bar_1m.bar_end`；identity/order 失败即 `JDJ_CONTEXT_INVALID`。
+
+每个 physical segment 创建一个新 evaluator；不提供跨 segment 的隐式 `reset` API。
 
 - [ ] **Step 1: Write RED stream-vs-batch tests** for each Task 0 frozen segment.
-- [ ] **Step 2: Add a same-boundary strict-before test**: a newly completed 5m fact with end equal to the current 1m boundary cannot affect the current 1m decision; it becomes visible only for the next 1m decision.
-- [ ] **Step 3: Add a two-trading-day same-contract test**: EMA/N segment state survives trading-day change while JDJ day-scoped/Execution state resets.
-- [ ] **Step 4: Add segment-reset test**: no prior contract state after reset.
+- [ ] **Step 2: Add exact same-boundary strict-before test**: a 5m Bar supplied in `newly_completed_5m_bars` on the current call cannot affect events returned by that call; it can first affect the next `push`.
+- [ ] **Step 3: Add two-trading-day same-contract test**: EMA/N segment state survives trading-day change while JDJ day-scoped/Execution state resets.
+- [ ] **Step 4: Add segment-isolation test**: instantiate a second evaluator for a new physical contract and prove no previous state exists.
 - [ ] **Step 5: Run RED**
 
 ```bash
@@ -708,7 +770,7 @@ UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache uv run --offline --project service
 
 - [ ] **Step 6: Extract pure single-step transitions from existing batch loops** and make batch + streaming call the same transitions. Do not maintain two formulas.
 - [ ] **Step 7: Preserve exact EMA seed/rounding and N/JDJ state**; no per-Bar full-prefix recomputation.
-- [ ] **Step 8: Add a regression guard against O(n²) fallback** using a spy/counter/code-boundary assertion that streaming `push` does not call the full batch segment evaluator on every Bar.
+- [ ] **Step 8: Add regression guard against O(n²) fallback** using a spy/counter that fails if `JdjStreamingEvaluator.push()` calls full `evaluate_n_structure_segment()` for each 1m input after initialization.
 - [ ] **Step 9: Run golden + streaming + Research tests**
 
 ```bash
@@ -745,7 +807,7 @@ Expected: exit 0. If absent, stop. Implement the approved RQAlpha Workbench Plan
 - Create: `services/quant-api/app/backtest/strategies/jdj_rqalpha_adapter.py`
 - Create: `services/quant-api/app/backtest/strategies/jdj_intraday_futures_v1.py`
 - Modify: `services/quant-api/app/backtest/strategies/registry.json`
-- Modify existing result normalization only for JDJ attribution
+- Modify: existing Workbench run/result normalization files only for JDJ attribution fields
 - Test: `services/quant-api/tests/backtest/test_jdj_execution_identity_schedule.py`
 - Test: `services/quant-api/tests/backtest/test_jdj_rqalpha_adapter.py`
 
@@ -772,8 +834,8 @@ Expected: exit 0. If absent, stop. Implement the approved RQAlpha Workbench Plan
 
 - [ ] **Step 1: Write RED schedule tests** using fake validated loader/session resolver, not raw MainContractMap rows. Require day→contract + terminal identity, deterministic ordering and fail-closed coverage; non-trading days are absent, not errors.
 - [ ] **Step 2: Implement schedule generation in sidecar parent process**. Parent may use existing read paths; child receives JSON only, no DB/Redis credentials or Canonical OHLCV.
-- [ ] **Step 3: Write RED fake-RQAlpha stream tests**: Bundle Bar → in-memory domain Bar → shared streaming evaluator; schedule contract match required; `frequency=1m`, `matching_type=next_bar`, `signal=false`; child cannot load Canonical/DB.
-- [ ] **Step 4: Write RED one-Bar LimitOrder lifecycle tests**: ENTRY/ADD submits limit at admissible boundary after decision; if still open at the very next `handle_bar`, call `cancel_order`; never leave the order into a second following Bar. Fill callback creates/updates Episode using actual RQAlpha price/time.
+- [ ] **Step 3: Write RED fake-RQAlpha stream tests**: Bundle Bar → in-memory domain Bar → `JdjStreamingEvaluator.push()`; schedule contract match required; `frequency=1m`, `matching_type=next_bar`, `signal=false`; child cannot load Canonical/DB.
+- [ ] **Step 4: Write RED one-Bar LimitOrder lifecycle tests**: ENTRY/ADD submits limit at admissible boundary after decision; at the next `handle_bar`, first consume any RQAlpha fill callback/state, then call `cancel_order` only if the order remains open. Never leave it into a second following Bar. Actual fill creates/updates Episode using engine price/time.
 - [ ] **Step 5: Write RED management-order tests**: completed-Bar REDUCE/EXIT submits market close action for `next_bar`; no synthetic stop order; no close beyond current simulated position.
 - [ ] **Step 6: Implement session terminal guard from schedule**; no hardcoded 15:00.
 - [ ] **Step 7: Register strategy/profile without exposing policy-frozen fields as arbitrary Web parameters**.
