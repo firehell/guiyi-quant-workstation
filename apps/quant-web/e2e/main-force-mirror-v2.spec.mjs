@@ -219,10 +219,19 @@ test('Market renders only MACD and parent-owned historical Main Force Mirror V2'
   await tabs.getByRole('tab', { name: '主力照妖镜 V2' }).click()
   await expect.poll(() => mirrorRequests.length).toBe(1)
   await expect(shell).toHaveAttribute('data-secondary-panel', 'main_force_mirror_v2')
-  await expect(page.getByText('席位强同向', { exact: true })).toBeVisible()
-  await expect(page.getByText('席位日期 2026-08-20', { exact: true })).toBeVisible()
-  await expect(page.getByText('席位数据 ready', { exact: true })).toBeVisible()
-  await expect(page.getByText(/历史确认截至 2026-08-21T11:00:00\.000Z/)).toBeVisible()
+  const legend = page.getByLabel('主力照妖镜 V2 图例')
+  await expect(legend.getByTestId('mfm-v2-legend-long-build')).toHaveText('红：多头增仓')
+  await expect(legend.getByTestId('mfm-v2-legend-short-build')).toHaveText('绿：空头增仓')
+  await expect(legend.getByTestId('mfm-v2-legend-short-cover')).toHaveText('橙：空头减仓')
+  await expect(legend.getByTestId('mfm-v2-legend-long-liquidation')).toHaveText('蓝：多头减仓')
+  await expect(legend.getByTestId('mfm-v2-legend-turnover')).toHaveText('灰：换手')
+  await expect(legend.getByTestId('mfm-v2-legend-accumulated')).toHaveText('橙线：累积压力 EMA5')
+  await expect(legend.getByTestId('mfm-v2-legend-long-build').locator('i')).toHaveCSS('background-color', 'rgb(220, 38, 38)')
+  await expect(legend.getByTestId('mfm-v2-legend-short-build').locator('i')).toHaveCSS('background-color', 'rgb(22, 163, 74)')
+  await expect(legend.getByTestId('mfm-v2-legend-short-cover').locator('i')).toHaveCSS('background-color', 'rgb(245, 158, 11)')
+  await expect(legend.getByTestId('mfm-v2-legend-long-liquidation').locator('i')).toHaveCSS('background-color', 'rgb(2, 132, 199)')
+  await expect(legend.getByTestId('mfm-v2-legend-turnover').locator('i')).toHaveCSS('background-color', 'rgb(91, 113, 143)')
+  await expect(legend.getByTestId('mfm-v2-legend-accumulated').locator('i')).toHaveCSS('border-top-color', 'rgb(245, 158, 11)')
   await expect.poll(() => page.evaluate(() => window.__GUIYI_E2E_CANVAS_TEXT__)).toEqual(
     expect.arrayContaining(['追多小心 70｜席位强同向', '追空小心 74｜席位不可用']),
   )
@@ -233,8 +242,8 @@ test('Market renders only MACD and parent-owned historical Main Force Mirror V2'
   await expect(page.getByTestId('mfm-v2-hover-top5-share')).toHaveText('Top5 成交占比 0.5')
 
   await page.setViewportSize({ width: 900, height: 900 })
-  await expect(page.getByText('席位数据 ready', { exact: true })).toBeVisible()
-  await expect(page.getByText(/历史确认截至 2026-08-21T11:00:00\.000Z/)).toBeVisible()
+  await expect(legend.getByTestId('mfm-v2-legend-long-build')).toBeVisible()
+  await expect(legend.getByTestId('mfm-v2-legend-accumulated')).toBeVisible()
 
   await tabs.getByRole('tab', { name: 'MACD' }).click()
   await expect.poll(() => mirrorRequests.length).toBe(1)
@@ -261,7 +270,7 @@ test('V2 selection waits for the current Canonical generation before making exac
 
   race.releaseCanonical()
   await expect.poll(() => race.mirrorRequests.length).toBe(1)
-  await expect(page.getByText('席位数据 ready', { exact: true })).toBeVisible()
+  await expect(page.getByText('读取 V2…', { exact: true })).toHaveCount(0)
   await page.waitForTimeout(100)
   expect(race.mirrorRequests).toHaveLength(1)
 })

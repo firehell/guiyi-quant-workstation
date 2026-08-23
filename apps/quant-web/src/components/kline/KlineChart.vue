@@ -36,7 +36,6 @@ import {
 import { mergeKlineMarkers } from '@/utils/alertMarkers'
 import {
   buildMainForceMirrorV2RenderModel,
-  MAIN_FORCE_MEMBER_RELATION_LABELS,
   type SecondaryPanelId,
 } from '@/utils/mainForceMirrorV2Presentation'
 
@@ -505,16 +504,15 @@ defineExpose({
         @click="emit('secondary-panel-change', item.id)"
       >{{ item.label }}</button>
       <div v-if="secondaryPanel === 'main_force_mirror_v2'" class="main-force-legend" aria-label="主力照妖镜 V2 图例">
-        <span class="main-force-legend__note">瞬时压力柱 · 累积压力 EMA5 · 方向持仓压力代理，非实测资金流</span>
+        <span data-testid="mfm-v2-legend-long-build"><i class="main-force-legend__swatch main-force-legend__swatch--long-build" aria-hidden="true" />红：多头增仓</span>
+        <span data-testid="mfm-v2-legend-short-build"><i class="main-force-legend__swatch main-force-legend__swatch--short-build" aria-hidden="true" />绿：空头增仓</span>
+        <span data-testid="mfm-v2-legend-short-cover"><i class="main-force-legend__swatch main-force-legend__swatch--short-cover" aria-hidden="true" />橙：空头减仓</span>
+        <span data-testid="mfm-v2-legend-long-liquidation"><i class="main-force-legend__swatch main-force-legend__swatch--long-liquidation" aria-hidden="true" />蓝：多头减仓</span>
+        <span data-testid="mfm-v2-legend-turnover"><i class="main-force-legend__swatch main-force-legend__swatch--turnover" aria-hidden="true" />灰：换手</span>
+        <span data-testid="mfm-v2-legend-accumulated"><i class="main-force-legend__line" aria-hidden="true" />橙线：累积压力 EMA5</span>
         <span v-if="mainForceMirrorV2Loading">读取 V2…</span>
         <span v-else-if="mainForceMirrorV2Error" data-testid="main-force-v2-pane-error">{{ mainForceMirrorV2Error }}</span>
-        <template v-else-if="mainForceMirrorV2Points.length">
-          <span>{{ MAIN_FORCE_MEMBER_RELATION_LABELS[mainForceMirrorV2Points.at(-1)!.relation_to_caution] }}</span>
-          <span>席位日期 {{ mainForceMirrorV2Points.at(-1)!.member_trade_date || '—' }}</span>
-          <span v-if="mainForceMirrorV2MemberDataset">席位数据 {{ mainForceMirrorV2MemberDataset.status }}</span>
-          <span v-if="mainForceMirrorV2CanonicalEnd">历史确认截至 {{ mainForceMirrorV2CanonicalEnd }}</span>
-        </template>
-        <span v-else>当前窗口无可用 V2 观察点</span>
+        <span v-else-if="!mainForceMirrorV2Points.length">当前窗口无可用 V2 观察点</span>
       </div>
     </div>
     <div
@@ -542,7 +540,13 @@ defineExpose({
 .secondary-panel-tab--active { border-bottom-color: var(--gy-accent); color: var(--gy-text-primary); font-weight: 600; }
 .main-force-legend { display: flex; align-items: center; gap: 7px; min-width: 0; color: var(--gy-text-muted); font-size: var(--gy-font-size-xs); }
 .main-force-legend span { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; }
-.main-force-legend__note { overflow: hidden; max-width: 340px; text-overflow: ellipsis; }
+.main-force-legend__swatch { width: 9px; height: 9px; border-radius: 2px; }
+.main-force-legend__swatch--long-build { background: var(--gy-up); }
+.main-force-legend__swatch--short-build { background: var(--gy-down); }
+.main-force-legend__swatch--short-cover { background: var(--gy-chart-ema); }
+.main-force-legend__swatch--long-liquidation { background: var(--gy-chart-macd-dif); }
+.main-force-legend__swatch--turnover { background: var(--gy-text-muted); }
+.main-force-legend__line { width: 14px; border-top: 2px solid var(--gy-chart-macd-dea); }
 .htdy-legend { position: absolute; z-index: 2; top: 52px; right: 72px; display: flex; gap: 12px; align-items: center; padding: 5px 9px; border: 1px solid var(--gy-border); border-radius: var(--gy-radius-sm); background: rgba(255, 255, 255, .9); color: var(--gy-text-secondary); font-size: var(--gy-font-size-xs); pointer-events: none; box-shadow: var(--gy-shadow-sm); }
 .htdy-legend span { display: inline-flex; gap: 5px; align-items: center; white-space: nowrap; }
 .htdy-legend__line { display: inline-block; width: 18px; border-top: 2px solid; }
@@ -555,6 +559,5 @@ defineExpose({
 @media (max-width: 980px) {
   .secondary-panel-header { right: 10px; flex-wrap: wrap; max-width: none; }
   .main-force-legend { flex: 1 1 100%; flex-wrap: wrap; gap: 3px 9px; padding: 2px 6px; background: color-mix(in srgb, var(--gy-bg-panel) 92%, transparent); }
-  .main-force-legend__note { display: none; }
 }
 </style>
