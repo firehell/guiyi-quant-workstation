@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import importlib
 from dataclasses import replace
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 import pytest
@@ -194,6 +194,57 @@ def test_early_touch_does_not_shorten_embargo_and_offset_11_can_anchor() -> None
     assert result.section.long_sample_count == 2
     assert result.section.short_sample_count == 2
     assert result.section.duplicated_side_sample_count == 2
+
+
+def test_scoped_labels_and_funnel_reuse_pre_window_embargo_but_count_only_scope() -> None:
+    """Catches slicing away causal latch/embargo history for a named view."""
+    analysis = _analysis()
+    bars, points = _fixture(
+        count=28,
+        cautions={1: "long_chase_caution", 5: "long_chase_caution"},
+        start=datetime(2026, 3, 9, 22, tzinfo=UTC),
+    )
+    product = _input(bars, points)
+    scope = (datetime(2026, 3, 10).date(), datetime(2026, 3, 10).date())
+
+    labels = analysis.audit_main_force_mirror_labels(
+        (product,),
+        trading_day_scope=scope,
+    )
+    funnel = analysis.audit_main_force_mirror_funnel(
+        (product,),
+        labels,
+        trading_day_scope=scope,
+    )
+
+    assert tuple(episode.anchor_index for episode in labels.episodes) == (5,)
+    assert labels.episodes[0].kept is False
+    assert labels.section.raw_sample_count == 1
+    assert labels.section.sample_count == 0
+    assert labels.section.overlap_suppressed_count == 1
+    assert funnel.evaluable_bar_count == 24
+    assert funnel.caution_episode_count == 1
+    assert funnel.raw_episode_anchor_count == 1
+    assert funnel.kept_episode_anchor_count == 0
+
+
+def test_scoped_label_horizon_can_use_later_bars_from_same_full_input() -> None:
+    """Catches truncating a named-view label horizon at the view end date."""
+    analysis = _analysis()
+    bars, points = _fixture(
+        count=38,
+        cautions={25: "long_chase_caution"},
+        start=datetime(2026, 3, 9, 22, tzinfo=UTC),
+    )
+
+    result = analysis.audit_main_force_mirror_labels(
+        (_input(bars, points),),
+        trading_day_scope=(date(2026, 3, 10), date(2026, 3, 10)),
+    )
+
+    assert len(result.episodes) == 1
+    assert result.episodes[0].anchor_index == 25
+    assert result.episodes[0].outcome.value == "timeout"
 
 
 def test_embargo_lock_is_scoped_to_contiguous_physical_block_not_contract_string() -> None:
@@ -697,6 +748,27 @@ def test_sequence_audit_preserves_same_bar_old_event_and_new_peak_for_all_profil
         long_row.prefix_invariance.checked_prefix_count
         + short_row.prefix_invariance.checked_prefix_count
     )
+
+
+def test_scoped_sequence_uses_pre_window_state_but_counts_only_in_window_facts() -> None:
+    """Catches re-deriving a named-view sequence from a sliced input."""
+    analysis = _analysis()
+    product = _sequence_product()
+
+    result = analysis.audit_main_force_mirror_sequences(
+        (product,),
+        trading_day_scope=(date(2025, 1, 3), date(2025, 1, 3)),
+    )
+
+    balanced = result.section.profiles[0]
+    transitions = {
+        (item.from_state.value, item.to_state.value): item.count
+        for item in balanced.breakdowns[0].transitions
+    }
+    assert transitions[("peak", "idle")] == 1
+    assert balanced.breakdowns[0].raw_episode_count == 0
+    assert balanced.breakdowns[0].events == ()
+    assert len(result.fact_sets[0].facts) == 10
 
 
 def test_sequence_prefix_invariance_is_compared_and_reported_for_every_profile() -> None:

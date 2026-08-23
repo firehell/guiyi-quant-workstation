@@ -82,7 +82,8 @@
   `ALLOW_PHASE_FREEZE_DESIGN` 结论，更不得冻结正式 Phase、接入 Web/Alert/Runtime 或晋升。
 - Main Force Mirror Diagnostic Phase A 的 CLI、composition、显式 payload 与端到端只读边界已
   `CODE_COMPLETE / TEST_COMPLETE`；协议仍是 `main_force_mirror_diagnostic_phase_a_v1`，底层
-  indicator identity 仍是未修改的 `main_force_mirror_v2`。真实 JM named view 与 active60 diagnostic
+  indicator identity 仍是未修改的 `main_force_mirror_v2`。JM named view payload 会从同一 full causal
+  input 输出 scoped label/sequence/funnel 或 typed unavailable，不运行独立 model/member/Gate。真实 JM named view 与 active60 diagnostic
   evidence 未运行，因此 empirical final Gate 仍为 `pending`；本轮未生成 evidence artifact，不得
   复用历史 sequence `STOP`/`REJECT` 或宣称 release、Runtime-ready。
 - 所有 evidence 都只是可复算 research facts：不生成盈利、有效性、可交易、Alert Rule、release 或

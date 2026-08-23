@@ -12,12 +12,14 @@ from app.market_data.domain import (
     BarFrequency,
     CanonicalBar,
     MarketSeriesResult,
+    ResolvedContractSegment,
     SeriesKind,
     SeriesPageQuery,
 )
 from app.market_data.main_force_mirror_v2_service import (
     MainForceMirrorV2DiagnosticPageResult,
     MainForceMirrorV2Error,
+    MainForceMirrorV2PageResult,
     MemberDatasetState,
     _contracts_for_bars,
 )
@@ -25,8 +27,11 @@ from app.market_data.errors import InfrastructureError
 from app.market_data.market_data_service import MarketDataError
 from app.research.main_force.main_force_mirror_diagnostic import (
     MainForceMirrorDiagnosticAvailableProductRow,
+    MainForceMirrorDiagnosticFunnelSection,
+    MainForceMirrorDiagnosticLabelSection,
     MainForceMirrorDiagnosticProductRow,
     MainForceMirrorDiagnosticReport,
+    MainForceMirrorDiagnosticSequenceSection,
     MainForceMirrorDiagnosticStatus,
     MainForceMirrorDiagnosticUnavailableProductRow,
     MainForceMirrorDiagnosticUnavailableReason,
@@ -67,6 +72,26 @@ class MainForceMirrorDiagnosticSourceError(RuntimeError):
 
 
 @dataclass(frozen=True, slots=True)
+class MainForceMirrorDiagnosticNamedViewAvailable:
+    status: MainForceMirrorDiagnosticStatus
+    symbol: str
+    since: date
+    through: date
+    label: MainForceMirrorDiagnosticLabelSection
+    sequence: MainForceMirrorDiagnosticSequenceSection
+    funnel: MainForceMirrorDiagnosticFunnelSection
+
+
+@dataclass(frozen=True, slots=True)
+class MainForceMirrorDiagnosticNamedViewUnavailable:
+    status: MainForceMirrorDiagnosticStatus
+    symbol: str
+    since: date
+    through: date
+    reason_code: MainForceMirrorDiagnosticUnavailableReason
+
+
+@dataclass(frozen=True, slots=True)
 class MainForceMirrorDiagnosticResult:
     protocol: MainForceMirrorDiagnosticProtocol
     source_mode: str
@@ -83,6 +108,10 @@ class MainForceMirrorDiagnosticResult:
     indicator_version: str
     formal_policy_id: str
     parameters_hash: str
+    jm_named_view: (
+        MainForceMirrorDiagnosticNamedViewAvailable
+        | MainForceMirrorDiagnosticNamedViewUnavailable
+    )
     report: MainForceMirrorDiagnosticReport
 
 
@@ -150,59 +179,37 @@ class MainForceMirrorDiagnosticService:
         )
         if request.protocol_id != protocol.protocol_id:
             raise MainForceMirrorDiagnosticSourceError()
+        canonical_v2_identity = _default_v2_identity()
 
         inputs: list[MainForceMirrorDiagnosticProductInput] = []
         product_rows: list[MainForceMirrorDiagnosticProductRow] = []
-        source_identity: tuple[str, str, str, str] | None = None
         member_states: dict[str, MemberDatasetState] = {}
+        jm_input: MainForceMirrorDiagnosticProductInput | None = None
         for symbol in protocol.products:
+            market_request = ActualDominantTradingDayQuery(
+                symbol=symbol,
+                frequency=BarFrequency.H1,
+                since=protocol.active60_since,
+                through=protocol.active60_through,
+            )
             try:
                 market = self._market_data.query_actual_dominant_trading_days(
-                    ActualDominantTradingDayQuery(
-                        symbol=symbol,
-                        frequency=BarFrequency.H1,
-                        since=protocol.active60_since,
-                        through=protocol.active60_through,
-                    )
+                    market_request
                 )
             except MarketDataError as exc:
                 if str(exc) not in _MARKET_SOURCE_UNAVAILABLE_CODES:
                     raise MainForceMirrorDiagnosticSourceError() from None
                 product_rows.append(_source_unavailable_row(symbol))
                 continue
-            if (
-                market.request_identity.get("series_kind")
-                != SeriesKind.ACTUAL_DOMINANT.value
-                or market.request_identity.get("symbol") != symbol
-                or market.request_identity.get("frequency") != BarFrequency.H1.value
-            ):
-                raise MainForceMirrorDiagnosticSourceError()
-            bars = tuple(
-                bar
-                for bar in market.bars
-                if protocol.active60_since
-                <= bar.trading_day
-                <= protocol.active60_through
+            bars, contracts = _validate_market_result(
+                market,
+                market_request,
             )
-            if not bars:
-                product_rows.append(_source_unavailable_row(symbol))
-                continue
-            try:
-                contracts = _contracts_for_bars(
-                    bars,
-                    market.resolved_contract_segments,
-                )
-            except MainForceMirrorV2Error:
-                raise MainForceMirrorDiagnosticSourceError() from None
-            if any(
-                previous.bar_end >= current.bar_end
-                for previous, current in zip(bars, bars[1:])
-            ):
-                raise MainForceMirrorDiagnosticSourceError()
             page_identity, points, trace, member_state = self._query_product_pages(
                 symbol=symbol,
                 bars=bars,
                 contracts=contracts,
+                expected_identity=canonical_v2_identity,
             )
             current_identity = (
                 page_identity["indicator_code"],
@@ -210,18 +217,17 @@ class MainForceMirrorDiagnosticService:
                 page_identity["formal_policy_id"],
                 page_identity["parameters_hash"],
             )
-            if source_identity is None:
-                source_identity = current_identity
-            elif current_identity != source_identity:
+            if current_identity != canonical_v2_identity:
                 raise MainForceMirrorDiagnosticSourceError()
-            inputs.append(
-                MainForceMirrorDiagnosticProductInput(
-                    symbol=symbol,
-                    bars=bars,
-                    points=points,
-                    trace=trace,
-                )
+            product_input = MainForceMirrorDiagnosticProductInput(
+                symbol=symbol,
+                bars=bars,
+                points=points,
+                trace=trace,
             )
+            inputs.append(product_input)
+            if symbol == "jm":
+                jm_input = product_input
             member_states[symbol] = member_state
             product_rows.append(
                 MainForceMirrorDiagnosticAvailableProductRow(
@@ -234,8 +240,6 @@ class MainForceMirrorDiagnosticService:
                 )
             )
 
-        if source_identity is None:
-            source_identity = _default_v2_identity()
         product_inputs = tuple(inputs)
         labels = audit_main_force_mirror_labels(product_inputs)
         sequence = audit_main_force_mirror_sequences(product_inputs)
@@ -252,6 +256,7 @@ class MainForceMirrorDiagnosticService:
         member = audit_main_force_mirror_member_feasibility(
             self._member_observations(labels, member_states)
         )
+        jm_named_view = _build_jm_named_view(protocol, jm_input)
         unavailable_count = sum(
             type(row) is MainForceMirrorDiagnosticUnavailableProductRow
             for row in product_rows
@@ -313,10 +318,11 @@ class MainForceMirrorDiagnosticService:
             known_retrospective_through=protocol.known_retrospective_through,
             prospective_begins_after=protocol.prospective_begins_after,
             prospective_consumed=protocol.prospective_consumed,
-            indicator_code=source_identity[0],
-            indicator_version=source_identity[1],
-            formal_policy_id=source_identity[2],
-            parameters_hash=source_identity[3],
+            indicator_code=canonical_v2_identity[0],
+            indicator_version=canonical_v2_identity[1],
+            formal_policy_id=canonical_v2_identity[2],
+            parameters_hash=canonical_v2_identity[3],
+            jm_named_view=jm_named_view,
             report=report,
         )
 
@@ -326,6 +332,7 @@ class MainForceMirrorDiagnosticService:
         symbol: str,
         bars: tuple[CanonicalBar, ...],
         contracts: tuple[str, ...],
+        expected_identity: tuple[str, str, str, str],
     ) -> tuple[
         Mapping[str, str],
         tuple[MainForceMirrorV2Point, ...],
@@ -357,12 +364,15 @@ class MainForceMirrorDiagnosticService:
                 or len(page.points) != len(diagnostic.audit_trace)
             ):
                 raise MainForceMirrorDiagnosticSourceError()
+            _validate_page_cursor(page, page_request)
             current_identity = {
                 "indicator_code": page.indicator_code,
                 "indicator_version": page.indicator_version,
                 "formal_policy_id": page.formal_policy_id,
                 "parameters_hash": page.parameters_hash,
             }
+            if tuple(current_identity.values()) != expected_identity:
+                raise MainForceMirrorDiagnosticSourceError()
             if identity is None:
                 identity = current_identity
                 member_state = page.member_dataset
@@ -473,6 +483,150 @@ class MainForceMirrorDiagnosticService:
                 )
             )
         return tuple(observations)
+
+
+def _build_jm_named_view(
+    protocol: MainForceMirrorDiagnosticProtocol,
+    product: MainForceMirrorDiagnosticProductInput | None,
+) -> (
+    MainForceMirrorDiagnosticNamedViewAvailable
+    | MainForceMirrorDiagnosticNamedViewUnavailable
+):
+    if product is None or not any(
+        protocol.jm_since <= bar.trading_day <= protocol.jm_through
+        for bar in product.bars
+    ):
+        return MainForceMirrorDiagnosticNamedViewUnavailable(
+            status=MainForceMirrorDiagnosticStatus.UNAVAILABLE,
+            symbol="jm",
+            since=protocol.jm_since,
+            through=protocol.jm_through,
+            reason_code=(
+                MainForceMirrorDiagnosticUnavailableReason.MARKET_SOURCE_UNAVAILABLE
+            ),
+        )
+    scope = (protocol.jm_since, protocol.jm_through)
+    products = (product,)
+    labels = audit_main_force_mirror_labels(
+        products,
+        trading_day_scope=scope,
+    )
+    sequence = audit_main_force_mirror_sequences(
+        products,
+        trading_day_scope=scope,
+    )
+    funnel = audit_main_force_mirror_funnel(
+        products,
+        labels,
+        trading_day_scope=scope,
+    )
+    return MainForceMirrorDiagnosticNamedViewAvailable(
+        status=MainForceMirrorDiagnosticStatus.AVAILABLE,
+        symbol="jm",
+        since=protocol.jm_since,
+        through=protocol.jm_through,
+        label=labels.section,
+        sequence=sequence.section,
+        funnel=funnel,
+    )
+
+
+def _validate_market_result(
+    result: MarketSeriesResult,
+    request: ActualDominantTradingDayQuery,
+) -> tuple[tuple[CanonicalBar, ...], tuple[str, ...]]:
+    identity = result.request_identity
+    if type(identity) is not dict or set(identity) != {
+        "series_kind",
+        "symbol",
+        "contract",
+        "frequency",
+        "start",
+        "end",
+    }:
+        raise MainForceMirrorDiagnosticSourceError()
+    if (
+        identity["series_kind"] != SeriesKind.ACTUAL_DOMINANT.value
+        or identity["symbol"] != request.symbol
+        or identity["contract"] is not None
+        or identity["frequency"] != request.frequency.value
+        or type(identity["start"]) is not str
+        or type(identity["end"]) is not str
+    ):
+        raise MainForceMirrorDiagnosticSourceError()
+    try:
+        start = datetime.fromisoformat(identity["start"])
+        end = datetime.fromisoformat(identity["end"])
+    except ValueError:
+        raise MainForceMirrorDiagnosticSourceError() from None
+    if (
+        start.tzinfo is None
+        or start.utcoffset() is None
+        or end.tzinfo is None
+        or end.utcoffset() is None
+        or start >= end
+    ):
+        raise MainForceMirrorDiagnosticSourceError()
+    bars = result.bars
+    if (
+        type(bars) is not tuple
+        or not bars
+        or any(type(bar) is not CanonicalBar for bar in bars)
+        or any(
+            previous.bar_end >= current.bar_end
+            for previous, current in zip(bars, bars[1:])
+        )
+        or any(
+            not request.since <= bar.trading_day <= request.through
+            or not start < bar.bar_end <= end
+            for bar in bars
+        )
+        or type(result.coverage) is not tuple
+        or result.coverage != (bars[0].bar_end, bars[-1].bar_end)
+        or type(result.resolved_contract_segments) is not tuple
+        or any(
+            type(segment) is not ResolvedContractSegment
+            for segment in result.resolved_contract_segments
+        )
+    ):
+        raise MainForceMirrorDiagnosticSourceError()
+    try:
+        contracts = _contracts_for_bars(
+            bars,
+            result.resolved_contract_segments,
+        )
+    except (MainForceMirrorV2Error, AttributeError, TypeError):
+        raise MainForceMirrorDiagnosticSourceError() from None
+    return bars, contracts
+
+
+def _validate_page_cursor(
+    page: MainForceMirrorV2PageResult,
+    request: SeriesPageQuery,
+) -> None:
+    points = page.points
+    before = request.before
+    if (
+        type(points) is not tuple
+        or not points
+        or any(type(point) is not MainForceMirrorV2Point for point in points)
+        or any(
+            previous.bar_end >= current.bar_end
+            for previous, current in zip(points, points[1:])
+        )
+        or before is None
+        or any(point.bar_end >= before for point in points)
+        or type(page.has_more_before) is not bool
+        or page.has_more_before is not (page.next_before is not None)
+        or (
+            page.has_more_before
+            and (
+                page.next_before != points[0].bar_end
+                or page.next_before >= before  # type: ignore[operator]
+            )
+        )
+    ):
+        raise MainForceMirrorDiagnosticSourceError()
 
 
 def _source_unavailable_row(

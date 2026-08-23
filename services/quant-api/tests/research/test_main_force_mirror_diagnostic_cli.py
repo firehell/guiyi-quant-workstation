@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from contextlib import nullcontext
 from dataclasses import replace
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
+from enum import StrEnum
 import importlib
 import io
 import json
@@ -114,8 +115,8 @@ def _service_module():
 
 def _bar() -> CanonicalBar:
     return CanonicalBar(
-        bar_end=datetime(2023, 1, 1, 1, tzinfo=UTC),
-        trading_day=date(2023, 1, 1),
+        bar_end=datetime(2026, 3, 10, 1, tzinfo=UTC),
+        trading_day=date(2026, 3, 10),
         open=Decimal("100"),
         high=Decimal("101"),
         low=Decimal("99"),
@@ -152,9 +153,10 @@ class _MarketData:
             request_identity={
                 "series_kind": "actual_dominant",
                 "symbol": request.symbol,
+                "contract": None,
                 "frequency": "60m",
-                "since": request.since.isoformat(),
-                "through": request.through.isoformat(),
+                "start": "2022-12-31T20:00:00+00:00",
+                "end": "2026-08-18T08:00:00+00:00",
             },
             bars=(bar,),
             coverage=(bar.bar_end, bar.bar_end),
@@ -216,11 +218,36 @@ class _MirrorService:
         parameters_hash = computed.result.parameters_hash
         if self.drift == "cross_product" and request.symbol == "ag":
             parameters_hash = "drifted-parameters"
+        indicator_version = computed.result.indicator_version
+        if self.drift == "wrong_v3":
+            indicator_version = "3"
+        if self.drift == "terminal_next_without_more":
+            next_before = point.bar_end
+        elif self.drift == "terminal_more_without_next":
+            has_more_before = True
+            next_before = None
+        elif self.drift == "terminal_wrong_next":
+            has_more_before = True
+            next_before = point.bar_end - timedelta(microseconds=1)
+        elif self.drift == "point_not_before":
+            shifted = replace(point, bar_end=request.before)
+            points = (point, shifted)
+            trace = (trace[0], replace(trace[0], bar_end=request.before))
+        elif self.drift == "descending_page":
+            older = replace(
+                point,
+                bar_end=point.bar_end - timedelta(hours=1),
+            )
+            points = (point, older)
+            trace = (
+                trace[0],
+                replace(trace[0], bar_end=older.bar_end),
+            )
         return MainForceMirrorV2DiagnosticPageResult(
             page=MainForceMirrorV2PageResult(
                 request_identity=identity,
                 indicator_code=computed.result.indicator_code,
-                indicator_version=computed.result.indicator_version,
+                indicator_version=indicator_version,
                 formal_policy_id=computed.result.formal_policy_id,
                 parameters_hash=parameters_hash,
                 points=points,
@@ -395,6 +422,83 @@ def test_market_request_identity_drift_is_error_without_report_gate() -> None:
 
 
 @pytest.mark.parametrize(
+    "mutation",
+    (
+        "extra_identity_key",
+        "wrong_contract",
+        "invalid_start",
+        "unordered_window",
+        "empty_bars",
+        "bars_not_tuple",
+        "noncanonical_bar",
+        "out_of_window_bar",
+        "coverage_mismatch",
+    ),
+)
+def test_successful_market_result_must_match_exact_canonical_contract(
+    mutation: str,
+) -> None:
+    class _InvalidMarketResult(_MarketData):
+        def query_actual_dominant_trading_days(
+            self,
+            request: ActualDominantTradingDayQuery,
+        ) -> MarketSeriesResult:
+            result = super().query_actual_dominant_trading_days(request)
+            if mutation == "extra_identity_key":
+                return replace(
+                    result,
+                    request_identity={**result.request_identity, "extra": "drift"},
+                )
+            if mutation == "wrong_contract":
+                return replace(
+                    result,
+                    request_identity={**result.request_identity, "contract": "JM2609"},
+                )
+            if mutation == "invalid_start":
+                return replace(
+                    result,
+                    request_identity={**result.request_identity, "start": "2023-01-01"},
+                )
+            if mutation == "unordered_window":
+                return replace(
+                    result,
+                    request_identity={
+                        **result.request_identity,
+                        "start": "2026-08-18T08:00:00+00:00",
+                        "end": "2022-12-31T20:00:00+00:00",
+                    },
+                )
+            if mutation == "empty_bars":
+                return replace(
+                    result,
+                    bars=(),
+                    coverage=None,
+                    resolved_contract_segments=(),
+                )
+            if mutation == "bars_not_tuple":
+                return replace(result, bars=list(result.bars))  # type: ignore[arg-type]
+            if mutation == "noncanonical_bar":
+                return replace(result, bars=(object(),))  # type: ignore[arg-type]
+            if mutation == "out_of_window_bar":
+                outside = replace(result.bars[0], trading_day=date(2026, 8, 19))
+                return replace(result, bars=(outside,), coverage=(outside.bar_end, outside.bar_end))
+            if mutation == "coverage_mismatch":
+                shifted = result.bars[0].bar_end + timedelta(hours=1)
+                return replace(result, coverage=(shifted, shifted))
+            raise AssertionError(mutation)
+
+    module = _service_module()
+
+    with pytest.raises(
+        module.MainForceMirrorDiagnosticSourceError,
+        match="MFM_DIAGNOSTIC_SOURCE_IDENTITY_INVALID",
+    ):
+        _service(_InvalidMarketResult(), _MirrorService()).run(
+            MainForceMirrorDiagnosticRequest(PROTOCOL_ID)
+        )
+
+
+@pytest.mark.parametrize(
     "drift",
     ("point_contract", "coverage", "cursor", "cross_product"),
 )
@@ -410,6 +514,105 @@ def test_page_alignment_cursor_coverage_and_cross_product_identity_fail_closed(
         _service(_MarketData(), _MirrorService(drift=drift)).run(
             MainForceMirrorDiagnosticRequest(PROTOCOL_ID)
         )
+
+
+@pytest.mark.parametrize(
+    "drift",
+    (
+        "terminal_next_without_more",
+        "terminal_more_without_next",
+        "terminal_wrong_next",
+        "point_not_before",
+        "descending_page",
+    ),
+)
+def test_every_page_cursor_shape_is_validated_before_target_complete_break(
+    drift: str,
+) -> None:
+    module = _service_module()
+
+    with pytest.raises(
+        module.MainForceMirrorDiagnosticSourceError,
+        match="MFM_DIAGNOSTIC_SOURCE_IDENTITY_INVALID",
+    ):
+        _service(_MarketData(), _MirrorService(drift=drift)).run(
+            MainForceMirrorDiagnosticRequest(PROTOCOL_ID)
+        )
+
+
+def test_consistent_noncanonical_v2_identity_is_rejected_without_gate() -> None:
+    module = _service_module()
+
+    with pytest.raises(
+        module.MainForceMirrorDiagnosticSourceError,
+        match="MFM_DIAGNOSTIC_SOURCE_IDENTITY_INVALID",
+    ):
+        _service(_MarketData(), _MirrorService(drift="wrong_v3")).run(
+            MainForceMirrorDiagnosticRequest(PROTOCOL_ID)
+        )
+
+
+def test_jm_named_view_reuses_same_full_input_without_second_source_read() -> None:
+    module = _service_module()
+    market_data = _MarketData()
+    mirror = _MirrorService()
+
+    result = _service(market_data, mirror).run(
+        MainForceMirrorDiagnosticRequest(PROTOCOL_ID)
+    )
+
+    view = result.jm_named_view
+    assert type(view) is module.MainForceMirrorDiagnosticNamedViewAvailable
+    assert view.status is MainForceMirrorDiagnosticStatus.AVAILABLE
+    assert view.symbol == "jm"
+    assert view.since == date(2026, 3, 10)
+    assert view.through == date(2026, 3, 30)
+    assert view.label.raw_sample_count == 0
+    assert len(view.sequence.profiles) == 5
+    assert view.funnel.evaluable_bar_count == 0
+    assert sum(request.symbol == "jm" for request in market_data.calls) == 1
+    assert sum(request.symbol == "jm" for request in mirror.calls) == 1
+
+
+def test_jm_named_view_is_explicitly_typed_unavailable_with_no_second_read() -> None:
+    module = _service_module()
+    market_data = _MarketData(unavailable_symbol="jm")
+    mirror = _MirrorService()
+
+    result = _service(market_data, mirror).run(
+        MainForceMirrorDiagnosticRequest(PROTOCOL_ID)
+    )
+
+    view = result.jm_named_view
+    assert type(view) is module.MainForceMirrorDiagnosticNamedViewUnavailable
+    assert view.status is MainForceMirrorDiagnosticStatus.UNAVAILABLE
+    assert view.symbol == "jm"
+    assert view.since == date(2026, 3, 10)
+    assert view.through == date(2026, 3, 30)
+    assert view.reason_code is (
+        MainForceMirrorDiagnosticUnavailableReason.MARKET_SOURCE_UNAVAILABLE
+    )
+    assert sum(request.symbol == "jm" for request in market_data.calls) == 1
+    assert all(request.symbol != "jm" for request in mirror.calls)
+
+
+def test_jm_named_view_unavailable_payload_has_reason_and_no_fake_sections() -> None:
+    result = _service(
+        _MarketData(unavailable_symbol="jm"),
+        _MirrorService(),
+    ).run(MainForceMirrorDiagnosticRequest(PROTOCOL_ID))
+
+    payload = run_research_command(
+        MainForceMirrorDiagnosticRequest(PROTOCOL_ID),
+        _FakeDiagnosticService(result),
+    )
+
+    assert payload["jm_named_view"] == {
+        "status": "unavailable",
+        "symbol": "jm",
+        "window": {"since": "2026-03-10", "through": "2026-03-30"},
+        "reason_code": "MARKET_SOURCE_UNAVAILABLE",
+    }
 
 
 def test_missing_previous_trading_day_is_typed_member_unavailable() -> None:
@@ -523,6 +726,24 @@ def test_diagnostic_payload_is_explicit_and_excludes_internal_inputs(
         "known_retrospective_through": "2026-08-20",
         "prospective": {"begins_after": "2026-08-20", "consumed": False},
     }
+    view_payload = payload["jm_named_view"]
+    assert tuple(view_payload) == (
+        "status",
+        "symbol",
+        "window",
+        "label",
+        "sequence",
+        "funnel",
+    )
+    assert view_payload["status"] == "available"
+    assert view_payload["symbol"] == "jm"
+    assert view_payload["window"] == {
+        "since": "2026-03-10",
+        "through": "2026-03-30",
+    }
+    assert view_payload["label"]["raw_sample_count"] == 0
+    assert len(view_payload["sequence"]["profiles"]) == 5
+    assert view_payload["funnel"]["evaluable_bar_count"] == 0
     assert payload["v2_identity"]["indicator_code"] == "main_force_mirror_v2"
     assert len(payload["product_rows"]) == 60
     assert tuple(payload) == (
@@ -536,6 +757,7 @@ def test_diagnostic_payload_is_explicit_and_excludes_internal_inputs(
         "evaluation_classification",
         "source",
         "windows",
+        "jm_named_view",
         "v2_identity",
         "validation",
         "product_rows",
@@ -571,6 +793,27 @@ def test_diagnostic_json_value_is_canonical(value: object, expected: str) -> Non
 def test_diagnostic_json_value_rejects_nonfinite_decimal(value: Decimal) -> None:
     with pytest.raises(ValueError, match="MFM_DIAGNOSTIC_REPORT_INVALID"):
         research_payloads._main_force_mirror_diagnostic_json_value(value)
+
+
+def test_diagnostic_json_value_preserves_high_precision_decimal_exactly() -> None:
+    value = Decimal("12345678901234567890.1234567890123456789000")
+
+    rendered = research_payloads._main_force_mirror_diagnostic_json_value(value)
+
+    assert rendered == "12345678901234567890.1234567890123456789"
+    assert type(rendered) is str
+
+
+def test_diagnostic_json_value_converts_strenum_to_plain_string() -> None:
+    class _Value(StrEnum):
+        ITEM = "item"
+
+    rendered = research_payloads._main_force_mirror_diagnostic_json_value(
+        _Value.ITEM
+    )
+
+    assert rendered == "item"
+    assert type(rendered) is str
 
 
 def test_diagnostic_cli_uses_only_dedicated_factory_and_is_byte_deterministic(

@@ -93,8 +93,10 @@ Market 首页“优先检查”只消费 `/api/v1/market/research/trend-focus` �
   只读不可变 member-rank snapshot。sequence forensic 保持 same-contract、strict-prior、prefix-invariant，
   只输出预定义 profile 的事实，不选择 best profile，也不冻结正式 Phase。
 - `main_force_mirror_diagnostic_phase_a_v1` 只消费 frozen active60 `2023-01-01..2026-08-18`；
-  JM `2026-03-10..2026-03-30` 是同一输入内的固定 named view。它只输出 label/sequence/funnel、
-  deterministic model ceiling、member feasibility 与 `STOP|ALLOW_PHASE_FREEZE_DESIGN` research Gate，
+  JM `2026-03-10..2026-03-30` 是同一 full causal input 内的固定 named view，单独输出 scoped
+  label/sequence/funnel 或 typed unavailable，但不单独训练 model、计算 member feasibility 或形成 Gate。
+  active60 整体只输出 label/sequence/funnel、deterministic model ceiling、member feasibility 与
+  `STOP|ALLOW_PHASE_FREEZE_DESIGN` research Gate，
   不消费 `2026-08-19..20` 或 prospective 数据，不产生 PnL、rank、recommendation 或 promotion。
 - Research 只输出 source-specific 只读 HTTP projection、stdout JSON 或显式版本化 artifact；不写
   DB/Canonical/Redis，不进入

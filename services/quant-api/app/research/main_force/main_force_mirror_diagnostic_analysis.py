@@ -146,10 +146,13 @@ class _SequenceSample:
 
 def audit_main_force_mirror_sequences(
     products: tuple[MainForceMirrorDiagnosticProductInput, ...],
+    *,
+    trading_day_scope: tuple[date, date] | None = None,
 ) -> MainForceMirrorDiagnosticSequenceAuditResult:
     """Audit all frozen strict-prior sequence profiles without selecting one."""
 
     inputs = tuple(products)
+    scope = _normalize_trading_day_scope(trading_day_scope)
     if len({item.symbol for item in inputs}) != len(inputs):
         _raise_analysis_invalid()
     fact_sets: list[MainForceMirrorDiagnosticSequenceFactSet] = []
@@ -168,10 +171,21 @@ def audit_main_force_mirror_sequences(
                 MainForceMirrorDiagnosticSequenceFactSet(
                     symbol=item.symbol,
                     profile_id=profile.profile_id,
-                    facts=facts,
+                    facts=tuple(
+                        fact
+                        for bar, fact in zip(item.bars, facts, strict=True)
+                        if _trading_day_in_scope(bar.trading_day, scope)
+                    ),
                 )
             )
-        sections.append(_sequence_profile_section(profile.profile_id, profile_facts, profile))
+        sections.append(
+            _sequence_profile_section(
+                profile.profile_id,
+                profile_facts,
+                profile,
+                scope,
+            )
+        )
     fact_sets.sort(
         key=lambda item: (
             tuple(profile.profile_id for profile in SEQUENCE_PROFILES).index(
@@ -192,6 +206,7 @@ def _sequence_profile_section(
         tuple[MainForceMirrorDiagnosticProductInput, tuple[MainForceMirrorV2SequenceFact, ...]]
     ],
     profile: object,
+    trading_day_scope: tuple[date, date] | None,
 ) -> MainForceMirrorDiagnosticSequenceProfileSection:
     keys = _expected_breakdown_keys()
     counts = {key: _new_sequence_counts() for key in keys}
@@ -211,6 +226,10 @@ def _sequence_profile_section(
         previous_state: MainForceMirrorDiagnosticSequenceState | None = None
         previous_side = MainForceMirrorDiagnosticSide.LONG
         for index, (fact, state) in enumerate(zip(facts, states, strict=True)):
+            counted = _trading_day_in_scope(
+                item.bars[index].trading_day,
+                trading_day_scope,
+            )
             if index == 0 or block_ids[index] != block_ids[index - 1]:
                 previous_state = None
                 previous_side = MainForceMirrorDiagnosticSide.LONG
@@ -246,42 +265,47 @@ def _sequence_profile_section(
                     item.bars[index].trading_day,
                     active_side,
                 )
-            if previous_state is not None and state is not previous_state:
+            if counted and previous_state is not None and state is not previous_state:
                 for key in dimension_keys:
                     transitions[key][(previous_state, state)] += 1
             previous_state = state
             active_events = _sequence_events(fact)
             dual = fact.peak_seen and len(active_events) > 1
-            for event_kind in active_events:
-                event_keys = (
-                    installed_keys
-                    if event_kind is MainForceMirrorDiagnosticSequenceEvent.PEAK
-                    and installed_keys is not None
-                    else active_keys
-                )
-                for key in event_keys:
-                    event_counts = events[key][event_kind]
-                    event_counts[0] += 1
-                    event_counts[1] += 1
-                    event_counts[2] += int(dual)
+            if counted:
+                for event_kind in active_events:
+                    event_keys = (
+                        installed_keys
+                        if event_kind is MainForceMirrorDiagnosticSequenceEvent.PEAK
+                        and installed_keys is not None
+                        else active_keys
+                    )
+                    for key in event_keys:
+                        event_counts = events[key][event_kind]
+                        event_counts[0] += 1
+                        event_counts[1] += 1
+                        event_counts[2] += int(dual)
+                if (
+                    fact.installed_peak_index is not None
+                    and fact.installed_peak_side is not None
+                ):
+                    assert installed_keys is not None
+                    for key in installed_keys:
+                        counts[key]["raw_episode_count"] += 1
+                        counts[key]["kept_episode_count"] += 1
+                    prefix = _derive_sequence_facts(
+                        item.points[: index + 1],  # type: ignore[arg-type]
+                        profile,  # type: ignore[arg-type]
+                    )
+                    matches = bool(prefix and prefix[-1] == fact)
+                    for key in installed_keys:
+                        prefixes[key][0] += 1
+                        prefixes[key][1] += int(matches)
+                        prefixes[key][2] += int(not matches)
             if (
-                fact.installed_peak_index is not None
-                and fact.installed_peak_side is not None
+                not counted
+                or not fact.decay_seen
+                or fact.active_peak_side is None
             ):
-                assert installed_keys is not None
-                for key in installed_keys:
-                    counts[key]["raw_episode_count"] += 1
-                    counts[key]["kept_episode_count"] += 1
-                prefix = _derive_sequence_facts(
-                    item.points[: index + 1],  # type: ignore[arg-type]
-                    profile,  # type: ignore[arg-type]
-                )
-                matches = bool(prefix and prefix[-1] == fact)
-                for key in installed_keys:
-                    prefixes[key][0] += 1
-                    prefixes[key][1] += int(matches)
-                    prefixes[key][2] += int(not matches)
-            if not fact.decay_seen or fact.active_peak_side is None:
                 continue
             if fact.active_peak_index is None or fact.bars_since_active_peak is None:
                 _raise_analysis_invalid()
@@ -291,9 +315,14 @@ def _sequence_profile_section(
                 if fact.active_peak_side == "long"
                 else MainForceMirrorDiagnosticSide.SHORT
             )
+            attribution_day = (
+                item.bars[index].trading_day
+                if trading_day_scope is not None
+                else item.bars[peak_index].trading_day
+            )
             peak_keys = _bar_keys(
                 item.symbol,
-                item.bars[peak_index].trading_day,
+                attribution_day,
                 peak_side,
             )
             for key in peak_keys:
@@ -306,7 +335,7 @@ def _sequence_profile_section(
                 continue
             sample = _SequenceSample(
                 symbol=item.symbol,
-                trading_day=item.bars[peak_index].trading_day,
+                trading_day=attribution_day,
                 side=peak_side,
                 delay=fact.bars_since_active_peak,
                 h3_reversal=h3,
@@ -505,18 +534,47 @@ def _median_decimal(values: tuple[Decimal, ...]) -> Decimal:
     return (ordered[midpoint - 1] + ordered[midpoint]) / Decimal(2)
 
 
+def _normalize_trading_day_scope(
+    value: tuple[date, date] | None,
+) -> tuple[date, date] | None:
+    if value is None:
+        return None
+    if (
+        type(value) is not tuple
+        or len(value) != 2
+        or type(value[0]) is not date
+        or type(value[1]) is not date
+        or value[0] > value[1]
+    ):
+        _raise_analysis_invalid()
+    return value
+
+
+def _trading_day_in_scope(
+    trading_day: date,
+    scope: tuple[date, date] | None,
+) -> bool:
+    return scope is None or scope[0] <= trading_day <= scope[1]
+
+
 def audit_main_force_mirror_funnel(
     products: tuple[MainForceMirrorDiagnosticProductInput, ...],
     labels: MainForceMirrorDiagnosticLabelAuditResult,
+    *,
+    trading_day_scope: tuple[date, date] | None = None,
 ) -> MainForceMirrorDiagnosticFunnelSection:
     """Explain the frozen unrounded score-to-latch path and sampling funnel."""
 
     inputs = tuple(products)
+    scope = _normalize_trading_day_scope(trading_day_scope)
     if not isinstance(labels, MainForceMirrorDiagnosticLabelAuditResult):
         _raise_analysis_invalid()
     if labels.inputs != inputs:
         _raise_analysis_invalid()
-    if labels != audit_main_force_mirror_labels(inputs):
+    if labels != audit_main_force_mirror_labels(
+        inputs,
+        trading_day_scope=scope,
+    ):
         _raise_analysis_invalid()
     counters = {key: _new_funnel_counts() for key in _expected_breakdown_keys()}
     for item in inputs:
@@ -527,6 +585,7 @@ def audit_main_force_mirror_funnel(
         for index, (bar, point, trace) in enumerate(
             zip(item.bars, item.points, item.trace, strict=True)
         ):
+            counted = _trading_day_in_scope(bar.trading_day, scope)
             if not point.caution_ready:
                 if (
                     trace.long_candidate not in (None, False)
@@ -548,7 +607,7 @@ def audit_main_force_mirror_funnel(
             ):
                 _raise_analysis_invalid()
             side = _funnel_side(trace, long_high, short_high)
-            keys = _bar_keys(item.symbol, bar.trading_day, side)
+            keys = _bar_keys(item.symbol, bar.trading_day, side) if counted else ()
             for key in keys:
                 counters[key]["caution_ready_bar_count"] += 1
             if not long_high and not short_high:
@@ -602,7 +661,7 @@ def audit_main_force_mirror_funnel(
                         counters[key]["armed_candidate_count"] += 1
                     else:
                         counters[key]["unarmed_candidate_suppressed_count"] += 1
-                if trace.trigger == expected_trigger:
+                if counted and trace.trigger == expected_trigger:
                     actual_anchors.add(index)
                     for key in keys:
                         counters[key][f"{candidate_side.value}_caution_count"] += 1
@@ -662,17 +721,20 @@ def audit_main_force_mirror_funnel(
 
 def audit_main_force_mirror_labels(
     products: tuple[MainForceMirrorDiagnosticProductInput, ...],
+    *,
+    trading_day_scope: tuple[date, date] | None = None,
 ) -> MainForceMirrorDiagnosticLabelAuditResult:
     """Build frozen 10-Bar first-touch labels without reading external state."""
 
     inputs = tuple(products)
+    scope = _normalize_trading_day_scope(trading_day_scope)
     if len({item.symbol for item in inputs}) != len(inputs):
         _raise_analysis_invalid()
     episodes: list[MainForceMirrorDiagnosticLabelEpisode] = []
     unavailable: list[tuple[str, MainForceMirrorDiagnosticUnavailableReason]] = []
     for item in inputs:
         _validate_product_input(item)
-        audited = _label_product(item)
+        audited = _label_product(item, scope)
         if audited is None:
             unavailable.append(
                 (
@@ -720,6 +782,7 @@ def _validate_product_input(value: MainForceMirrorDiagnosticProductInput) -> Non
 
 def _label_product(
     value: MainForceMirrorDiagnosticProductInput,
+    trading_day_scope: tuple[date, date] | None,
 ) -> tuple[MainForceMirrorDiagnosticLabelEpisode, ...] | None:
     block_ids = _physical_block_ids(value)
     raw_indices = tuple(
@@ -727,6 +790,10 @@ def _label_product(
         for index, point in enumerate(value.points)
         if point.caution in ("long_chase_caution", "short_chase_caution")
         and not point.caution_conflict
+        and (
+            trading_day_scope is None
+            or value.bars[index].trading_day <= trading_day_scope[1]
+        )
     )
     last_kept_by_block: dict[int, int] = {}
     result: list[MainForceMirrorDiagnosticLabelEpisode] = []
@@ -766,29 +833,30 @@ def _label_product(
                 binary = 1
             elif outcome is MainForceMirrorDiagnosticLabelOutcome.FAVORABLE_FIRST:
                 binary = 0
-        result.append(
-            MainForceMirrorDiagnosticLabelEpisode(
-                symbol=value.symbol,
-                anchor_index=index,
-                anchor_trading_day=point.trading_day,
-                physical_contract=contract,
-                side=side,
-                kept=kept,
-                lower_barrier=lower,
-                upper_barrier=upper,
-                legacy_outcome=legacy,
-                outcome=outcome,
-                first_touch_offset=first_touch,
-                binary_target=binary,
-                fold_outcomes=_fold_label_outcomes(
-                    value,
-                    index,
-                    kept,
-                    outcome,
-                    binary,
-                ),
+        if _trading_day_in_scope(point.trading_day, trading_day_scope):
+            result.append(
+                MainForceMirrorDiagnosticLabelEpisode(
+                    symbol=value.symbol,
+                    anchor_index=index,
+                    anchor_trading_day=point.trading_day,
+                    physical_contract=contract,
+                    side=side,
+                    kept=kept,
+                    lower_barrier=lower,
+                    upper_barrier=upper,
+                    legacy_outcome=legacy,
+                    outcome=outcome,
+                    first_touch_offset=first_touch,
+                    binary_target=binary,
+                    fold_outcomes=_fold_label_outcomes(
+                        value,
+                        index,
+                        kept,
+                        outcome,
+                        binary,
+                    ),
+                )
             )
-        )
     return tuple(result)
 
 

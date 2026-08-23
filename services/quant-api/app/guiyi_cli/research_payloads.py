@@ -51,6 +51,8 @@ from app.research.main_force.main_force_mirror_diagnostic import (
     MainForceMirrorDiagnosticUnavailableProductRow,
 )
 from app.research.main_force.main_force_mirror_diagnostic_service import (
+    MainForceMirrorDiagnosticNamedViewAvailable,
+    MainForceMirrorDiagnosticNamedViewUnavailable,
     MainForceMirrorDiagnosticResult,
 )
 from app.research.robustness.multi_candidate_robustness import (
@@ -268,6 +270,9 @@ def _main_force_mirror_diagnostic_payload(
                 "consumed": result.prospective_consumed,
             },
         },
+        "jm_named_view": _main_force_mirror_diagnostic_named_view(
+            result.jm_named_view
+        ),
         "v2_identity": {
             "indicator_code": result.indicator_code,
             "indicator_version": result.indicator_version,
@@ -302,6 +307,32 @@ def _main_force_mirror_diagnostic_payload(
         "gate": report.gate.value,
         "gate_reasons": [item.value for item in report.gate_reasons],
     }
+
+
+def _main_force_mirror_diagnostic_named_view(
+    value: (
+        MainForceMirrorDiagnosticNamedViewAvailable
+        | MainForceMirrorDiagnosticNamedViewUnavailable
+    ),
+) -> dict[str, object]:
+    common: dict[str, object] = {
+        "status": value.status.value,
+        "symbol": value.symbol,
+        "window": {
+            "since": value.since.isoformat(),
+            "through": value.through.isoformat(),
+        },
+    }
+    if type(value) is MainForceMirrorDiagnosticNamedViewUnavailable:
+        return {**common, "reason_code": value.reason_code.value}
+    if type(value) is MainForceMirrorDiagnosticNamedViewAvailable:
+        return {
+            **common,
+            "label": _main_force_mirror_diagnostic_label(value.label),
+            "sequence": _main_force_mirror_diagnostic_sequence(value.sequence),
+            "funnel": _main_force_mirror_diagnostic_funnel(value.funnel),
+        }
+    raise MainForceMirrorDiagnosticReportError()
 
 
 def _main_force_mirror_diagnostic_product_row(
@@ -669,6 +700,8 @@ def _main_force_mirror_diagnostic_member(
 
 
 def _main_force_mirror_diagnostic_json_value(value: object) -> object:
+    if isinstance(value, Enum):
+        return _main_force_mirror_diagnostic_json_value(value.value)
     if value is None or isinstance(value, (str, int, bool)):
         return value
     if isinstance(value, Decimal):
@@ -676,13 +709,12 @@ def _main_force_mirror_diagnostic_json_value(value: object) -> object:
             raise MainForceMirrorDiagnosticReportError()
         if value == 0:
             return "0"
-        return format(value.normalize(), "f")
+        rendered = format(value, "f")
+        return rendered.rstrip("0").rstrip(".") if "." in rendered else rendered
     if isinstance(value, datetime):
         return value.isoformat()
     if type(value) is date:
         return value.isoformat()
-    if isinstance(value, Enum):
-        return value.value
     if isinstance(value, tuple):
         return [_main_force_mirror_diagnostic_json_value(item) for item in value]
     if isinstance(value, Mapping):
