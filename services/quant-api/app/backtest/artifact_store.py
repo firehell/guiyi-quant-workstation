@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator, Mapping
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import errno
@@ -87,6 +87,13 @@ class ActiveLock:
 class _OpenedLock:
     lock: ActiveLock
     descriptor: int
+    device: int
+    inode: int
+
+
+@dataclass(frozen=True, slots=True)
+class _LockSnapshot:
+    lock: ActiveLock
     device: int
     inode: int
 
@@ -285,12 +292,20 @@ class ArtifactStore:
         filename = _ARTIFACT_NAMES.get(kind)
         if filename is None:
             self._artifact_not_found()
-        try:
-            with self._open_runs_root() as root_descriptor:
-                with self._open_run(root_descriptor, run_id) as run_descriptor:
-                    descriptor = self._open_regular_at(run_descriptor, filename)
-        except (FileNotFoundError, OSError, ValueError):
-            self._artifact_not_found()
+        with ExitStack() as stack:
+            try:
+                root_descriptor = stack.enter_context(self._open_runs_root())
+            except FileNotFoundError as exc:
+                raise BacktestError(
+                    BacktestHttpErrorCode.BACKTEST_RUN_NOT_FOUND
+                ) from exc
+            run_descriptor = stack.enter_context(
+                self._open_run(root_descriptor, run_id)
+            )
+            try:
+                descriptor = self._open_regular_at(run_descriptor, filename)
+            except (FileNotFoundError, OSError, ValueError):
+                self._artifact_not_found()
         try:
             return cast(BinaryIO, os.fdopen(descriptor, mode="rb"))
         except Exception:
@@ -302,27 +317,33 @@ class ArtifactStore:
         """Yield an anonymous temporary ZIP stream and close it after use."""
 
         with tempfile.TemporaryFile(mode="w+b") as temporary:
-            try:
-                with self._open_runs_root() as root_descriptor:
-                    with self._open_run(root_descriptor, run_id) as run_descriptor:
-                        with self._open_directory_at(
-                            run_descriptor,
-                            "report",
-                        ) as report_descriptor:
-                            with ZipFile(
-                                temporary,
-                                mode="w",
-                                compression=ZIP_DEFLATED,
-                            ) as archive:
-                                count = self._zip_directory(
-                                    archive,
-                                    report_descriptor,
-                                    PurePosixPath("report"),
-                                )
-            except BacktestError:
-                raise
-            except (FileNotFoundError, OSError, ValueError):
-                self._artifact_not_found()
+            with ExitStack() as stack:
+                try:
+                    root_descriptor = stack.enter_context(self._open_runs_root())
+                except FileNotFoundError as exc:
+                    raise BacktestError(
+                        BacktestHttpErrorCode.BACKTEST_RUN_NOT_FOUND
+                    ) from exc
+                run_descriptor = stack.enter_context(
+                    self._open_run(root_descriptor, run_id)
+                )
+                try:
+                    with self._open_directory_at(
+                        run_descriptor,
+                        "report",
+                    ) as report_descriptor:
+                        with ZipFile(
+                            temporary,
+                            mode="w",
+                            compression=ZIP_DEFLATED,
+                        ) as archive:
+                            count = self._zip_directory(
+                                archive,
+                                report_descriptor,
+                                PurePosixPath("report"),
+                            )
+                except (FileNotFoundError, OSError, ValueError):
+                    self._artifact_not_found()
             if count == 0:
                 self._artifact_not_found()
             temporary.seek(0)
@@ -359,8 +380,13 @@ class ArtifactStore:
                 raise BacktestError(
                     BacktestHttpErrorCode.BACKTEST_ALREADY_RUNNING
                 ) from exc
-            identity = os.fstat(descriptor)
+            identity: os.stat_result | None = None
             try:
+                try:
+                    identity = os.fstat(descriptor)
+                except Exception:
+                    identity = os.stat(descriptor)
+                    raise
                 with os.fdopen(descriptor, mode="wb") as handle:
                     handle.write(data)
                     handle.flush()
@@ -370,7 +396,8 @@ class ArtifactStore:
                     os.close(descriptor)
                 except OSError:
                     pass
-                self._unlink_if_identity(root_descriptor, identity)
+                if identity is not None:
+                    self._unlink_if_identity(root_descriptor, identity)
                 raise
         return lock
 
@@ -406,24 +433,52 @@ class ArtifactStore:
     ) -> ActiveLock | None:
         """Keep live PIDs busy and fail closed on damaged run identity."""
 
-        try:
-            with self._locked_root() as root_descriptor:
-                opened = self._open_lock_at(root_descriptor)
-                if opened is None:
-                    return None
+        with ExitStack() as stack:
+            try:
+                root_descriptor = stack.enter_context(self._locked_root())
+            except FileNotFoundError:
+                return None
+            opened = self._open_lock_at(root_descriptor)
+            if opened is None:
+                return None
+            try:
+                snapshot = _LockSnapshot(
+                    lock=opened.lock,
+                    device=opened.device,
+                    inode=opened.inode,
+                )
+            finally:
+                os.close(opened.descriptor)
+
+        checker = pid_exists or self._pid_exists
+        pid_is_alive = checker(snapshot.lock.pid)
+
+        with ExitStack() as stack:
+            try:
+                root_descriptor = stack.enter_context(self._locked_root())
+            except FileNotFoundError:
+                return None
+            opened = self._open_lock_at(root_descriptor)
+            if opened is None:
+                return None
+            try:
+                if not self._lock_matches_snapshot(opened, snapshot):
+                    return opened.lock
+                if pid_is_alive:
+                    return opened.lock
                 try:
-                    checker = pid_exists or self._pid_exists
-                    if checker(opened.lock.pid):
-                        return opened.lock
                     with self._open_run(
                         root_descriptor,
                         opened.lock.run_id,
                     ) as run_descriptor:
-                        run = self._read_json_at(
-                            run_descriptor,
-                            "run.json",
-                            invalid_code="BACKTEST_RUN_RECORD_INVALID",
-                        )
+                        try:
+                            run = self._read_json_at(
+                                run_descriptor,
+                                "run.json",
+                                invalid_code="BACKTEST_RUN_RECORD_INVALID",
+                            )
+                        except (FileNotFoundError, OSError, ValueError) as exc:
+                            raise ValueError("BACKTEST_RUN_RECORD_INVALID") from exc
                         status = self._validated_reconcile_status(run, opened.lock)
                         if status is RunStatus.RUNNING:
                             updated = {
@@ -437,13 +492,13 @@ class ArtifactStore:
                                 "run.json",
                                 updated,
                             )
-                    if not self._unlink_if_opened_lock(root_descriptor, opened):
-                        raise ValueError("BACKTEST_LOCK_INVALID")
-                    return None
-                finally:
-                    os.close(opened.descriptor)
-        except FileNotFoundError:
-            return None
+                except BacktestError as exc:
+                    raise ValueError("BACKTEST_RUN_RECORD_INVALID") from exc
+                if not self._unlink_if_opened_lock(root_descriptor, opened):
+                    raise ValueError("BACKTEST_LOCK_INVALID")
+                return None
+            finally:
+                os.close(opened.descriptor)
 
     @contextmanager
     def _locked_root(self, *, create: bool = False) -> Iterator[int]:
@@ -535,8 +590,10 @@ class ArtifactStore:
             raise BacktestError(BacktestHttpErrorCode.BACKTEST_RUN_NOT_FOUND) from exc
         try:
             cls._require_directory_descriptor(descriptor)
-        except ValueError as exc:
+        except Exception as exc:
             os.close(descriptor)
+            if not isinstance(exc, ValueError):
+                raise
             raise BacktestError(BacktestHttpErrorCode.BACKTEST_RUN_NOT_FOUND) from exc
         try:
             yield descriptor
@@ -551,10 +608,13 @@ class ArtifactStore:
             if exc.errno == errno.ELOOP:
                 raise ValueError("BACKTEST_PATH_INVALID") from exc
             raise
-        metadata = os.fstat(descriptor)
-        if not stat.S_ISREG(metadata.st_mode):
+        try:
+            metadata = os.fstat(descriptor)
+            if not stat.S_ISREG(metadata.st_mode):
+                raise ValueError("BACKTEST_PATH_INVALID")
+        except Exception:
             os.close(descriptor)
-            raise ValueError("BACKTEST_PATH_INVALID")
+            raise
         return descriptor
 
     @staticmethod
@@ -776,6 +836,17 @@ class ArtifactStore:
             return False
         os.unlink("active.lock", dir_fd=root_descriptor)
         return True
+
+    @staticmethod
+    def _lock_matches_snapshot(
+        opened: _OpenedLock,
+        snapshot: _LockSnapshot,
+    ) -> bool:
+        return (
+            opened.lock == snapshot.lock
+            and opened.device == snapshot.device
+            and opened.inode == snapshot.inode
+        )
 
     @staticmethod
     def _validated_reconcile_status(

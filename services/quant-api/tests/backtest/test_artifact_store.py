@@ -427,6 +427,57 @@ def test_resolved_artifact_handle_remains_bound_when_path_is_replaced(
         assert artifact.read() == b"trusted-png"
 
 
+def test_missing_run_is_reported_consistently_for_all_artifact_kinds(
+    store: ArtifactStore,
+) -> None:
+    for kind in ("equity_png", "stdout_log"):
+        with pytest.raises(BacktestError, match="^BACKTEST_RUN_NOT_FOUND$"):
+            store.resolve_artifact(RUN_ID, kind)
+
+    with pytest.raises(BacktestError, match="^BACKTEST_RUN_NOT_FOUND$"):
+        with store.temporary_report_zip(RUN_ID):
+            pytest.fail("a missing run must not yield a report archive")
+
+
+def test_resolve_artifact_closes_descriptor_when_fstat_fails(
+    store: ArtifactStore,
+    strategy_file: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _create_run(store, strategy_file)
+    store.run_paths(RUN_ID).equity_png.write_bytes(b"png")
+    real_open = artifact_store_module.os.open
+    real_fstat = artifact_store_module.os.fstat
+    artifact_descriptors: list[int] = []
+
+    def record_artifact_open(
+        path: str | bytes | Path,
+        flags: int,
+        mode: int = 0o777,
+        *,
+        dir_fd: int | None = None,
+    ) -> int:
+        descriptor = real_open(path, flags, mode, dir_fd=dir_fd)
+        if path == "equity.png":
+            artifact_descriptors.append(descriptor)
+        return descriptor
+
+    def fail_artifact_fstat(descriptor: int) -> Any:
+        if descriptor in artifact_descriptors:
+            raise OSError("injected artifact fstat failure")
+        return real_fstat(descriptor)
+
+    monkeypatch.setattr(artifact_store_module.os, "open", record_artifact_open)
+    monkeypatch.setattr(artifact_store_module.os, "fstat", fail_artifact_fstat)
+
+    with pytest.raises(BacktestError, match="^BACKTEST_ARTIFACT_NOT_FOUND$"):
+        store.resolve_artifact(RUN_ID, "equity_png")
+
+    assert len(artifact_descriptors) == 1
+    with pytest.raises(OSError):
+        real_fstat(artifact_descriptors[0])
+
+
 def test_temporary_report_zip_contains_report_tree_and_is_always_cleaned_up(
     store: ArtifactStore,
     strategy_file: Path,
@@ -539,6 +590,119 @@ def test_acquire_lock_uses_exclusive_creation_and_preserves_first_owner(
     }
 
 
+def test_acquire_lock_fstat_failure_closes_and_removes_created_lock(
+    store: ArtifactStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    real_open = artifact_store_module.os.open
+    real_fstat = artifact_store_module.os.fstat
+    lock_descriptors: list[int] = []
+
+    def record_lock_open(
+        path: str | bytes | Path,
+        flags: int,
+        mode: int = 0o777,
+        *,
+        dir_fd: int | None = None,
+    ) -> int:
+        descriptor = real_open(path, flags, mode, dir_fd=dir_fd)
+        if path == "active.lock":
+            lock_descriptors.append(descriptor)
+        return descriptor
+
+    def fail_lock_fstat(descriptor: int) -> Any:
+        if descriptor in lock_descriptors:
+            raise OSError("injected lock fstat failure")
+        return real_fstat(descriptor)
+
+    monkeypatch.setattr(artifact_store_module.os, "open", record_lock_open)
+    monkeypatch.setattr(artifact_store_module.os, "fstat", fail_lock_fstat)
+
+    with pytest.raises(OSError, match="injected lock fstat failure"):
+        store.acquire_lock(RUN_ID, pid=1234, started_at=STARTED_AT)
+
+    assert len(lock_descriptors) == 1
+    with pytest.raises(OSError):
+        real_fstat(lock_descriptors[0])
+    assert not store.lock_path.exists()
+
+
+def test_acquire_lock_fdopen_failure_closes_and_removes_created_lock(
+    store: ArtifactStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    real_open = artifact_store_module.os.open
+    real_fdopen = artifact_store_module.os.fdopen
+    real_fstat = artifact_store_module.os.fstat
+    lock_descriptors: list[int] = []
+
+    def record_lock_open(
+        path: str | bytes | Path,
+        flags: int,
+        mode: int = 0o777,
+        *,
+        dir_fd: int | None = None,
+    ) -> int:
+        descriptor = real_open(path, flags, mode, dir_fd=dir_fd)
+        if path == "active.lock":
+            lock_descriptors.append(descriptor)
+        return descriptor
+
+    def fail_lock_fdopen(descriptor: int, *args: Any, **kwargs: Any) -> IO[Any]:
+        if descriptor in lock_descriptors:
+            raise OSError("injected lock fdopen failure")
+        return real_fdopen(descriptor, *args, **kwargs)
+
+    monkeypatch.setattr(artifact_store_module.os, "open", record_lock_open)
+    monkeypatch.setattr(artifact_store_module.os, "fdopen", fail_lock_fdopen)
+
+    with pytest.raises(OSError, match="injected lock fdopen failure"):
+        store.acquire_lock(RUN_ID, pid=1234, started_at=STARTED_AT)
+
+    assert len(lock_descriptors) == 1
+    with pytest.raises(OSError):
+        real_fstat(lock_descriptors[0])
+    assert not store.lock_path.exists()
+
+
+def test_open_run_closes_descriptor_when_directory_fstat_fails(
+    store: ArtifactStore,
+    strategy_file: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _create_run(store, strategy_file)
+    real_open = artifact_store_module.os.open
+    real_fstat = artifact_store_module.os.fstat
+    run_descriptors: list[int] = []
+
+    def record_run_open(
+        path: str | bytes | Path,
+        flags: int,
+        mode: int = 0o777,
+        *,
+        dir_fd: int | None = None,
+    ) -> int:
+        descriptor = real_open(path, flags, mode, dir_fd=dir_fd)
+        if path == RUN_ID:
+            run_descriptors.append(descriptor)
+        return descriptor
+
+    def fail_run_fstat(descriptor: int) -> Any:
+        if descriptor in run_descriptors:
+            raise OSError("injected run fstat failure")
+        return real_fstat(descriptor)
+
+    monkeypatch.setattr(artifact_store_module.os, "open", record_run_open)
+    monkeypatch.setattr(artifact_store_module.os, "fstat", fail_run_fstat)
+
+    with pytest.raises(OSError, match="injected run fstat failure"):
+        store.read_run(RUN_ID)
+
+    assert len(run_descriptors) == 1
+    with pytest.raises(OSError):
+        real_fstat(run_descriptors[0])
+
+
 def test_release_lock_only_removes_matching_run(store: ArtifactStore) -> None:
     store.acquire_lock(RUN_ID, pid=1234, started_at=STARTED_AT)
 
@@ -649,6 +813,61 @@ def test_reconcile_stale_lock_keeps_pid_alive_busy(
     assert store.lock_path.exists()
 
 
+def test_reconcile_checks_pid_without_holding_directory_lock(
+    store: ArtifactStore,
+    strategy_file: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _create_run(store, strategy_file)
+    expected_lock = store.acquire_lock(RUN_ID, pid=1234, started_at=STARTED_AT)
+    real_flock = artifact_store_module.fcntl.flock
+    directory_lock_held = False
+    checker_observed_lock_state: list[bool] = []
+
+    def track_flock(descriptor: int, operation: int) -> Any:
+        nonlocal directory_lock_held
+        result = real_flock(descriptor, operation)
+        if operation == artifact_store_module.fcntl.LOCK_EX:
+            directory_lock_held = True
+        elif operation == artifact_store_module.fcntl.LOCK_UN:
+            directory_lock_held = False
+        return result
+
+    def pid_exists(_pid: int) -> bool:
+        checker_observed_lock_state.append(directory_lock_held)
+        return True
+
+    monkeypatch.setattr(artifact_store_module.fcntl, "flock", track_flock)
+
+    assert store.reconcile_stale_lock(pid_exists=pid_exists) == expected_lock
+    assert checker_observed_lock_state == [False]
+
+
+def test_reconcile_revalidates_lock_after_pid_check(
+    store: ArtifactStore,
+    strategy_file: Path,
+) -> None:
+    _create_run(store, strategy_file)
+    store.acquire_lock(RUN_ID, pid=1234, started_at=STARTED_AT)
+    replacement = {
+        "run_id": "replacement-run",
+        "pid": 5678,
+        "started_at": STARTED_AT,
+    }
+
+    def replace_owner(_pid: int) -> bool:
+        store.lock_path.unlink()
+        store.lock_path.write_text(json.dumps(replacement), encoding="utf-8")
+        return False
+
+    reconciled = store.reconcile_stale_lock(pid_exists=replace_owner)
+
+    assert reconciled is not None
+    assert reconciled.run_id == "replacement-run"
+    assert store.read_run(RUN_ID)["status"] == "running"
+    assert json.loads(store.lock_path.read_text(encoding="utf-8")) == replacement
+
+
 def test_reconcile_missing_pid_marks_running_run_interrupted_and_unlocks(
     store: ArtifactStore,
     strategy_file: Path,
@@ -687,6 +906,26 @@ def test_reconcile_damaged_run_identity_fails_closed_and_keeps_lock(
         json.dumps(damaged_record),
         encoding="utf-8",
     )
+    expected_lock = store.acquire_lock(RUN_ID, pid=1234, started_at=STARTED_AT)
+
+    with pytest.raises(ValueError, match="^BACKTEST_RUN_RECORD_INVALID$"):
+        store.reconcile_stale_lock(pid_exists=lambda _pid: False)
+
+    assert store.read_lock() == expected_lock
+
+
+@pytest.mark.parametrize("damage", ["missing", "invalid-utf8"])
+def test_reconcile_unreadable_run_record_fails_closed_and_keeps_lock(
+    store: ArtifactStore,
+    strategy_file: Path,
+    damage: str,
+) -> None:
+    _create_run(store, strategy_file)
+    run_json = store.run_paths(RUN_ID).run_json
+    if damage == "missing":
+        run_json.unlink()
+    else:
+        run_json.write_bytes(b"\xff")
     expected_lock = store.acquire_lock(RUN_ID, pid=1234, started_at=STARTED_AT)
 
     with pytest.raises(ValueError, match="^BACKTEST_RUN_RECORD_INVALID$"):
