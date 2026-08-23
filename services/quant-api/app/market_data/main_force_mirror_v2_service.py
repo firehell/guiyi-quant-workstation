@@ -9,10 +9,12 @@ from decimal import Decimal
 from typing import Literal, Protocol, TypedDict
 
 from guiyi_quant.indicators.main_force_mirror_v2 import (
+    MainForceMirrorV2AuditTraceItem,
     MainForceMirrorV2Point,
     MemberRankDailyInput,
     MemberRankObservation,
     compute_main_force_mirror_v2,
+    compute_main_force_mirror_v2_with_audit,
     compute_member_rank_observation,
 )
 
@@ -72,6 +74,12 @@ class MainForceMirrorV2PageResult:
     resolved_contract_segments: tuple[ResolvedContractSegment, ...]
 
 
+@dataclass(frozen=True, slots=True)
+class MainForceMirrorV2DiagnosticPageResult:
+    page: MainForceMirrorV2PageResult
+    audit_trace: tuple[MainForceMirrorV2AuditTraceItem, ...]
+
+
 class _MarketDataReader(Protocol):
     def query_page(self, request: SeriesPageQuery) -> MarketSeriesPageResult: ...
 
@@ -118,6 +126,22 @@ class MainForceMirrorV2Service:
         self.member_repository = member_repository
 
     def query_page(self, request: SeriesPageQuery) -> MainForceMirrorV2PageResult:
+        return self._query_page(request, include_audit=False).page
+
+    def query_diagnostic_page(
+        self,
+        request: SeriesPageQuery,
+    ) -> MainForceMirrorV2DiagnosticPageResult:
+        """Return the exact historical page plus research-only V2 audit trace."""
+
+        return self._query_page(request, include_audit=True)
+
+    def _query_page(
+        self,
+        request: SeriesPageQuery,
+        *,
+        include_audit: bool,
+    ) -> MainForceMirrorV2DiagnosticPageResult:
         validate_main_force_mirror_v2_request(request)
         try:
             target = self.market_data.query_page(request)
@@ -133,9 +157,21 @@ class MainForceMirrorV2Service:
                 contracts,
                 core.points,
             )
-            observation = compute_main_force_mirror_v2(
-                **_bar_inputs(full.bars, contracts),
-                member_inputs=member_inputs,
+            audit = (
+                compute_main_force_mirror_v2_with_audit(
+                    **_bar_inputs(full.bars, contracts),
+                    member_inputs=member_inputs,
+                )
+                if include_audit
+                else None
+            )
+            observation = (
+                audit.result
+                if audit is not None
+                else compute_main_force_mirror_v2(
+                    **_bar_inputs(full.bars, contracts),
+                    member_inputs=member_inputs,
+                )
             )
         except MainForceMirrorV2Error:
             raise
@@ -160,17 +196,36 @@ class MainForceMirrorV2Service:
         ):
             raise MainForceMirrorV2Error("MFM_V2_MARKET_IDENTITY_CONFLICT")
 
-        return MainForceMirrorV2PageResult(
-            request_identity=target.request_identity,
-            indicator_code=observation.indicator_code,
-            indicator_version=observation.indicator_version,
-            formal_policy_id=observation.formal_policy_id,
-            parameters_hash=observation.parameters_hash,
-            points=points,
-            member_dataset=self._member_dataset_state(request.symbol),
-            has_more_before=target.has_more_before,
-            next_before=target.next_before,
-            resolved_contract_segments=target.resolved_contract_segments,
+        trace: tuple[MainForceMirrorV2AuditTraceItem, ...] = ()
+        if audit is not None:
+            trace_by_end = {item.bar_end: item for item in audit.trace}
+            if len(trace_by_end) != len(audit.trace):
+                raise MainForceMirrorV2Error("MFM_V2_MARKET_IDENTITY_CONFLICT")
+            try:
+                trace = tuple(trace_by_end[bar.bar_end] for bar in target.bars)
+            except KeyError:
+                raise MainForceMirrorV2Error(
+                    "MFM_V2_MARKET_IDENTITY_CONFLICT"
+                ) from None
+            if tuple(item.bar_end for item in trace) != tuple(
+                bar.bar_end for bar in target.bars
+            ):
+                raise MainForceMirrorV2Error("MFM_V2_MARKET_IDENTITY_CONFLICT")
+
+        return MainForceMirrorV2DiagnosticPageResult(
+            page=MainForceMirrorV2PageResult(
+                request_identity=target.request_identity,
+                indicator_code=observation.indicator_code,
+                indicator_version=observation.indicator_version,
+                formal_policy_id=observation.formal_policy_id,
+                parameters_hash=observation.parameters_hash,
+                points=points,
+                member_dataset=self._member_dataset_state(request.symbol),
+                has_more_before=target.has_more_before,
+                next_before=target.next_before,
+                resolved_contract_segments=target.resolved_contract_segments,
+            ),
+            audit_trace=trace,
         )
 
     def _full_calculation_prefix(

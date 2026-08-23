@@ -355,6 +355,37 @@ def test_service_computes_latch_from_true_segment_start_before_exact_page_slice(
     assert result.points[0].caution is None
 
 
+def test_diagnostic_page_slices_audit_from_the_same_validated_full_prefix() -> None:
+    """Catches page-only audit calculation or bypassed actual-dominant identity."""
+    full_bars = _latch_bars()
+    segment = (ResolvedContractSegment("JM2609", _DAY, _DAY),)
+    target = _page((full_bars[-1],), segment)
+    calculation = _series(full_bars, segment)
+    loader = _Loader(
+        ActualDominantResearchSeries({BarFrequency.H1: calculation}, segment)
+    )
+    request = SeriesPageQuery("actual_dominant", "jm", "60m", limit=1)
+
+    result = _service(_MarketData(target), loader).query_diagnostic_page(request)
+
+    assert len(result.page.points) == 1
+    assert len(result.audit_trace) == 1
+    assert result.audit_trace[0].bar_end == result.page.points[0].bar_end
+    assert result.audit_trace[0].physical_contract == "JM2609"
+    assert result.audit_trace[0].long_score == 70.0
+    assert result.audit_trace[0].long_candidate is True
+    assert result.audit_trace[0].long_disarmed_suppressed is True
+    assert result.page.points[0].caution is None
+    assert loader.requests == [
+        {
+            "symbol": "jm",
+            "frequencies": (BarFrequency.H1,),
+            "since": _DAY,
+            "through": _DAY,
+        }
+    ]
+
+
 def test_no_member_configuration_preserves_core_pressure_as_dataset_unavailable() -> None:
     bars = tuple(_bar(index) for index in range(31))
     segment = (ResolvedContractSegment("JM2609", _DAY, _DAY),)
