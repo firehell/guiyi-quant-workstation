@@ -113,7 +113,7 @@ class MainForceMirrorDiagnosticLabelEpisode:
 
 @dataclass(frozen=True, slots=True)
 class MainForceMirrorDiagnosticLabelAuditResult:
-    input_symbols: tuple[str, ...]
+    inputs: tuple[MainForceMirrorDiagnosticProductInput, ...]
     section: MainForceMirrorDiagnosticLabelSection
     episodes: tuple[MainForceMirrorDiagnosticLabelEpisode, ...]
     unavailable_products: tuple[
@@ -217,19 +217,13 @@ def _sequence_profile_section(
             side = _sequence_fact_side(fact, previous_side)
             previous_side = side
             dimension_keys = _bar_keys(item.symbol, item.bars[index].trading_day, side)
-            if previous_state is not None and state is not previous_state:
-                for key in dimension_keys:
-                    transitions[key][(previous_state, state)] += 1
-            previous_state = state
-            active_events = _sequence_events(fact)
-            dual = fact.peak_seen and len(active_events) > 1
-            for event_kind in active_events:
-                for key in dimension_keys:
-                    event_counts = events[key][event_kind]
-                    event_counts[0] += 1
-                    event_counts[1] += 1
-                    event_counts[2] += int(dual)
-            if fact.installed_peak_index is not None and fact.installed_peak_side is not None:
+            installed_keys: (
+                tuple[MainForceMirrorDiagnosticBreakdownKey, ...] | None
+            ) = None
+            if (
+                fact.installed_peak_index is not None
+                and fact.installed_peak_side is not None
+            ):
                 installed_side = (
                     MainForceMirrorDiagnosticSide.LONG
                     if fact.installed_peak_side == "long"
@@ -240,6 +234,41 @@ def _sequence_profile_section(
                     item.bars[index].trading_day,
                     installed_side,
                 )
+            active_keys = dimension_keys
+            if fact.active_peak_side is not None:
+                active_side = (
+                    MainForceMirrorDiagnosticSide.LONG
+                    if fact.active_peak_side == "long"
+                    else MainForceMirrorDiagnosticSide.SHORT
+                )
+                active_keys = _bar_keys(
+                    item.symbol,
+                    item.bars[index].trading_day,
+                    active_side,
+                )
+            if previous_state is not None and state is not previous_state:
+                for key in dimension_keys:
+                    transitions[key][(previous_state, state)] += 1
+            previous_state = state
+            active_events = _sequence_events(fact)
+            dual = fact.peak_seen and len(active_events) > 1
+            for event_kind in active_events:
+                event_keys = (
+                    installed_keys
+                    if event_kind is MainForceMirrorDiagnosticSequenceEvent.PEAK
+                    and installed_keys is not None
+                    else active_keys
+                )
+                for key in event_keys:
+                    event_counts = events[key][event_kind]
+                    event_counts[0] += 1
+                    event_counts[1] += 1
+                    event_counts[2] += int(dual)
+            if (
+                fact.installed_peak_index is not None
+                and fact.installed_peak_side is not None
+            ):
+                assert installed_keys is not None
                 for key in installed_keys:
                     counts[key]["raw_episode_count"] += 1
                     counts[key]["kept_episode_count"] += 1
@@ -248,7 +277,7 @@ def _sequence_profile_section(
                     profile,  # type: ignore[arg-type]
                 )
                 matches = bool(prefix and prefix[-1] == fact)
-                for key in dimension_keys:
+                for key in installed_keys:
                     prefixes[key][0] += 1
                     prefixes[key][1] += int(matches)
                     prefixes[key][2] += int(not matches)
@@ -485,7 +514,7 @@ def audit_main_force_mirror_funnel(
     inputs = tuple(products)
     if not isinstance(labels, MainForceMirrorDiagnosticLabelAuditResult):
         _raise_analysis_invalid()
-    if labels.input_symbols != tuple(item.symbol for item in inputs):
+    if labels.inputs != inputs:
         _raise_analysis_invalid()
     if labels != audit_main_force_mirror_labels(inputs):
         _raise_analysis_invalid()
@@ -655,7 +684,7 @@ def audit_main_force_mirror_labels(
             episodes.extend(audited)
     section = _label_section(tuple(episodes))
     return MainForceMirrorDiagnosticLabelAuditResult(
-        input_symbols=tuple(item.symbol for item in inputs),
+        inputs=inputs,
         section=section,
         episodes=tuple(episodes),
         unavailable_products=tuple(unavailable),

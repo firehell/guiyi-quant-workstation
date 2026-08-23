@@ -549,6 +549,43 @@ def test_funnel_requires_exact_label_input_symbol_order() -> None:
         match="MFM_DIAGNOSTIC_ANALYSIS_INVALID",
     ):
         analysis.audit_main_force_mirror_funnel((ag, jm), labels)
+    with pytest.raises(
+        analysis.MainForceMirrorDiagnosticAnalysisError,
+        match="MFM_DIAGNOSTIC_ANALYSIS_INVALID",
+    ):
+        analysis.audit_main_force_mirror_funnel((jm,), labels)
+
+
+@pytest.mark.parametrize("drift", ("contract", "bar", "trace"))
+def test_funnel_binds_labels_to_exact_no_caution_product_inputs(drift: str) -> None:
+    """Catches equal empty derived labels hiding exact source DTO drift."""
+    analysis = _analysis()
+    bars, points = _fixture(count=12)
+    traces = tuple(_trace(point) for point in points)
+    original = _input(bars, points, traces)
+    labels = analysis.audit_main_force_mirror_labels((original,))
+    if drift == "contract":
+        changed_points = tuple(
+            replace(point, physical_contract="JM2701") for point in points
+        )
+        changed_traces = tuple(
+            replace(trace, physical_contract="JM2701") for trace in traces
+        )
+        changed = _input(bars, changed_points, changed_traces)
+    elif drift == "bar":
+        changed_bars = list(bars)
+        changed_bars[5] = replace(changed_bars[5], volume=Decimal("101"))
+        changed = _input(tuple(changed_bars), points, traces)
+    else:
+        changed_traces = list(traces)
+        changed_traces[5] = replace(changed_traces[5], atr14=11.0)
+        changed = _input(bars, points, tuple(changed_traces))
+
+    with pytest.raises(
+        analysis.MainForceMirrorDiagnosticAnalysisError,
+        match="MFM_DIAGNOSTIC_ANALYSIS_INVALID",
+    ):
+        analysis.audit_main_force_mirror_funnel((changed,), labels)
 
 
 def _sequence_product(*, roll_before_evidence: bool = False):
@@ -637,6 +674,29 @@ def test_sequence_audit_preserves_same_bar_old_event_and_new_peak_for_all_profil
     assert event_counts["peak"].overlap_count == 1
     assert event_counts["opposite_build"].overlap_count == 1
     assert event_counts["accumulated_reversal"].overlap_count == 1
+    side_rows = {
+        row.key.side: row
+        for row in result.section.profiles[0].breakdowns
+        if row.key.side is not None
+    }
+    long_row = side_rows[MainForceMirrorDiagnosticSide.LONG]
+    short_row = side_rows[MainForceMirrorDiagnosticSide.SHORT]
+    long_events = {item.event_kind.value: item for item in long_row.events}
+    short_events = {item.event_kind.value: item for item in short_row.events}
+    assert short_events["peak"].raw_count == 1
+    assert "opposite_build" not in short_events
+    assert "accumulated_reversal" not in short_events
+    assert long_events["opposite_build"].raw_count == 1
+    assert long_events["accumulated_reversal"].raw_count == 1
+    assert short_row.prefix_invariance.checked_prefix_count == 1
+    assert event_counts["peak"].raw_count == (
+        long_events["peak"].raw_count + short_events["peak"].raw_count
+    )
+    global_prefix = result.section.profiles[0].breakdowns[0].prefix_invariance
+    assert global_prefix.checked_prefix_count == (
+        long_row.prefix_invariance.checked_prefix_count
+        + short_row.prefix_invariance.checked_prefix_count
+    )
 
 
 def test_sequence_prefix_invariance_is_compared_and_reported_for_every_profile() -> None:
