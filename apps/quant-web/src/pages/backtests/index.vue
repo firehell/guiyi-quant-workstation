@@ -242,9 +242,9 @@ onUnmounted(() => {
       <NButton data-testid="retry-backtest-capability" size="small" type="warning" @click="loadCapability">重试检查</NButton>
     </NAlert>
 
-    <template v-else-if="capability?.kind === 'ready'">
+    <template v-if="capability?.kind === 'ready' || selectedRun">
       <NAlert
-        v-if="capability.health?.busy"
+        v-if="capability?.health?.busy"
         data-testid="backtest-busy"
         type="warning"
         :bordered="false"

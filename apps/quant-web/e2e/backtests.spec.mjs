@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test'
 
 const API_BASE = 'http://127.0.0.1:8011/api/v1/backtests'
 const RUN_ID = '019d2345-67ab-7def-8123-456789abcdef'
+const SECOND_RUN_ID = '019d2345-67ab-7def-8123-456789abcdee'
 const PNG_1PX = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Z4WQAAAAASUVORK5CYII=',
   'base64',
@@ -133,15 +134,21 @@ function runDetail(status = 'succeeded', overrides = {}) {
 }
 
 async function mockBacktestApi(page, options = {}) {
+  const detailResponsesByRunId = {
+    [RUN_ID]: [...(options.detailResponses || [runDetail()])],
+    ...(options.detailResponsesByRunId || {}),
+  }
   const store = {
     requests: [],
     postBodies: [],
     healthCalls: 0,
     runCalls: 0,
+    completedRunCalls: 0,
     detailCalls: 0,
+    detailCallsByRunId: {},
     healthResponses: [...(options.healthResponses || [readyHealth()])],
     runResponses: [...(options.runResponses || [options.runs || []])],
-    detailResponses: [...(options.detailResponses || [runDetail()])],
+    detailResponsesByRunId,
   }
 
   await page.route(`${API_BASE}/**`, async (route) => {
@@ -161,8 +168,9 @@ async function mockBacktestApi(page, options = {}) {
 
     store.requests.push(`${method} ${url.pathname}${url.search}`)
     if (method === 'GET' && path.endsWith('/health')) {
-      const response = store.healthResponses[Math.min(store.healthCalls, store.healthResponses.length - 1)]
+      let response = store.healthResponses[Math.min(store.healthCalls, store.healthResponses.length - 1)]
       store.healthCalls += 1
+      response = await resolveRouteResponse(response)
       if (response instanceof Error) {
         return route.fulfill({
           status: 503,
@@ -176,17 +184,28 @@ async function mockBacktestApi(page, options = {}) {
       return route.fulfill({ headers: corsHeaders, json: [strategy()] })
     }
     if (method === 'GET' && path.endsWith('/runs')) {
-      const response = store.runResponses[Math.min(store.runCalls, store.runResponses.length - 1)]
+      let response = store.runResponses[Math.min(store.runCalls, store.runResponses.length - 1)]
       store.runCalls += 1
+      response = await resolveRouteResponse(response)
+      store.completedRunCalls += 1
       return route.fulfill({ headers: corsHeaders, json: response })
     }
     if (method === 'POST' && path.endsWith('/runs')) {
       store.postBodies.push(request.postDataJSON())
       return route.fulfill({ status: 202, headers: corsHeaders, json: options.startResponse || runSummary('running') })
     }
-    if (method === 'GET' && path.endsWith(`/runs/${RUN_ID}`)) {
-      const response = store.detailResponses[Math.min(store.detailCalls, store.detailResponses.length - 1)]
+    const detailMatch = method === 'GET' ? path.match(/\/runs\/([^/]+)$/) : null
+    if (detailMatch) {
+      const runId = decodeURIComponent(detailMatch[1])
+      const responses = store.detailResponsesByRunId[runId]
+      if (!responses) {
+        return route.fulfill({ status: 404, headers: corsHeaders, json: { detail: { code: 'BACKTEST_RUN_NOT_FOUND' } } })
+      }
+      const calls = store.detailCallsByRunId[runId] || 0
+      let response = responses[Math.min(calls, responses.length - 1)]
       store.detailCalls += 1
+      store.detailCallsByRunId[runId] = calls + 1
+      response = await resolveRouteResponse(response)
       return route.fulfill({ headers: corsHeaders, json: response })
     }
     if (method === 'GET' && path.includes(`/runs/${RUN_ID}/artifacts/`)) {
@@ -211,6 +230,16 @@ async function mockBacktestApi(page, options = {}) {
   })
 
   return store
+}
+
+function deferredResponse() {
+  let resolve
+  const promise = new Promise((next) => { resolve = next })
+  return { promise, resolve }
+}
+
+async function resolveRouteResponse(response) {
+  return typeof response === 'function' ? response() : response
 }
 
 test('local ready page renders the registered form, recent terminal detail, and fixed artifacts', async ({ page }) => {
@@ -344,6 +373,88 @@ test('an initial busy run refreshes ready capability and restores launch only af
   await expect(page.getByTestId('backtest-busy')).toHaveCount(0)
   await expect(page.getByTestId('backtest-run-detail')).toContainText('已成功')
   await expect(startButton).toBeEnabled()
+})
+
+test('a failed terminal health probe keeps launch closed while retaining completed detail and retry guidance', async ({ page }) => {
+  const store = await mockBacktestApi(page, {
+    healthResponses: [readyHealth(), new Error('secret local service failure')],
+    runResponses: [[]],
+    detailResponses: [runDetail('running'), runDetail('succeeded')],
+  })
+
+  await page.goto('/backtests')
+  await page.getByTestId('backtest-start-date').fill('2026-01-01')
+  await page.getByTestId('backtest-end-date').fill('2026-01-31')
+  const startButton = page.getByRole('button', { name: '启动研究回测' })
+  await startButton.click()
+
+  await expect(page.getByTestId('backtest-run-detail')).toContainText('运行中')
+  await expect.poll(() => store.healthCalls).toBe(2)
+  await expect(page.getByTestId('backtest-unavailable')).toContainText('本机回测服务不可用')
+  await expect(page.getByTestId('retry-backtest-capability')).toBeVisible()
+  await expect(page.getByTestId('backtest-run-detail')).toContainText('已成功')
+  await expect(startButton).toBeDisabled()
+  await startButton.click({ force: true })
+
+  expect(store.postBodies).toHaveLength(1)
+  expect(store.runCalls).toBe(1)
+  expect(store.detailCalls).toBe(2)
+  await expect(page.getByTestId('backtests-page')).not.toContainText('secret local service failure')
+})
+
+test('a deferred terminal refresh cannot overwrite a newer run and unmount clears its poll timer', async ({ page }) => {
+  const delayedRuns = deferredResponse()
+  const firstRunning = runSummary('running', { strategy_name: '第一个回测' })
+  const firstTerminal = runSummary('succeeded', { strategy_name: '第一个回测' })
+  const secondRunning = runSummary('running', {
+    run_id: SECOND_RUN_ID,
+    strategy_name: '第二个回测',
+    started_at: '2026-08-23T01:00:01Z',
+  })
+  const store = await mockBacktestApi(page, {
+    healthResponses: [
+      readyHealth(),
+      readyHealth({ status: 'degraded', busy: true }),
+    ],
+    runResponses: [
+      [firstRunning, secondRunning],
+      () => delayedRuns.promise,
+    ],
+    detailResponses: [
+      runDetail('running', { strategy_name: '第一个回测' }),
+      runDetail('succeeded', { strategy_name: '第一个回测' }),
+      runDetail('succeeded', { strategy_name: '第一个回测' }),
+    ],
+    detailResponsesByRunId: {
+      [SECOND_RUN_ID]: [runDetail('running', {
+        run_id: SECOND_RUN_ID,
+        strategy_name: '第二个回测',
+        started_at: '2026-08-23T01:00:01Z',
+      })],
+    },
+  })
+
+  await page.goto('/backtests')
+  await expect(page.getByTestId('backtest-run-detail')).toContainText('运行中')
+  await expect.poll(() => store.healthCalls).toBe(2)
+  await expect.poll(() => store.runCalls).toBe(2)
+  await expect.poll(() => store.detailCallsByRunId[RUN_ID]).toBe(3)
+
+  await page.getByRole('button', { name: /第二个回测/ }).click()
+  await expect(page.getByTestId('backtest-run-detail')).toContainText(SECOND_RUN_ID)
+  await expect(page.getByTestId('backtest-run-detail')).toContainText('运行中')
+  await expect.poll(() => store.detailCallsByRunId[SECOND_RUN_ID]).toBe(1)
+
+  delayedRuns.resolve([firstTerminal, secondRunning])
+  await expect.poll(() => store.completedRunCalls).toBe(2)
+  await expect(page.getByTestId('backtest-run-detail')).toContainText(SECOND_RUN_ID)
+  await expect(page.getByTestId('backtest-run-detail')).not.toContainText(RUN_ID)
+  await expect(page.getByTestId('backtest-busy')).toHaveCount(0)
+
+  const secondRunCalls = store.detailCallsByRunId[SECOND_RUN_ID]
+  await page.goto('/route-used-to-unmount-backtests')
+  await page.waitForTimeout(2200)
+  expect(store.detailCallsByRunId[SECOND_RUN_ID]).toBe(secondRunCalls)
 })
 
 test('degraded busy health remains observable, blocks submit, and polls the running run to terminal', async ({ page }) => {

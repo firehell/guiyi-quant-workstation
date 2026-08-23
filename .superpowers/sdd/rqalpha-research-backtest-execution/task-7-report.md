@@ -56,9 +56,9 @@ not counted as RED. The runnable RED used only the allowed test Web server on
 ## Final GREEN evidence
 
 ```text
-focused Task 7 Playwright: 9 passed
+focused Task 7 Playwright: 11 passed
 full Web unit tests: 250 passed, 1 skipped, 0 failed
-full Playwright: 88 passed, 0 failed
+full Playwright: 90 passed, 0 failed
 vue-tsc project build: exit 0
 Vite production build: passed
 production bundle topology: charting vendor static imports are acyclic
@@ -194,6 +194,45 @@ vue-tsc/build/topology/diff: passed
 ```
 
 The repair v2 commit message is `fix: synchronize backtest launch capability`.
+
+## Review repair v3 — lifecycle failure races
+
+The final lifecycle evidence gap was closed with two deterministic browser
+regressions:
+
+- A terminal run followed by a failed health probe remains fail-closed: launch
+  stays disabled, even a forced click issues no second POST, and the safe
+  unavailable/retry guidance is shown without discarding the completed detail.
+- A deferred terminal list refresh cannot overwrite a newly selected run or
+  apply its stale busy capability. Resolving that old response after navigation
+  leaves the newer detail selected, and unmount leaves no polling timer or
+  follow-up request behind.
+
+Repair v3 RED evidence against the v2 implementation:
+
+```text
+focused Playwright: 11 tests, 10 passed, 1 failed
+- terminal health failure showed safe unavailable guidance but hid the already
+  completed run detail
+```
+
+The existing lifecycle generation guard already passed the deferred-response
+race test. The production repair therefore only keeps the observation workspace
+visible when a selected run exists during local unavailability; an initial
+unavailable page still exposes no form, and `effectiveCanStart` remains false.
+
+Repair v3 GREEN evidence:
+
+```text
+focused Task 7 Playwright: 11 passed
+full Web unit: 250 passed, 1 skipped
+full Playwright: 90 passed
+vue-tsc/build/topology/diff: passed
+```
+
+Because the RED exposed a user-visible production defect rather than a
+test-only evidence gap, the repair v3 commit message is
+`fix: preserve backtest lifecycle observations`.
 
 ## Gates
 
