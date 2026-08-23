@@ -74,13 +74,21 @@ artifact not found MUST 映射为 HTTP 404，invalid request MUST 映射为 HTTP
 HTTP 409。请求携带 Origin 时必须与精确 allowlist 一致；无 Origin 的本机 CLI 读写 MAY 通过
 同一 Host/JSON 边界。
 
+Trusted Host allowlist SHALL 精确为 `127.0.0.1|localhost|testserver`。`127.0.0.1|localhost` 是本机
+HTTP Host；`testserver` 只是 factory-created FastAPI app 的 TestClient harness 兼容 Host，MUST NOT
+成为 uvicorn bind host、CORS origin、Web capability hostname、LAN/公网授权或 production 访问面。
+
 #### Scenario: 忙状态仍可观察
 - **WHEN** 存在活跃 run 且其余依赖可读
 - **THEN** health 返回 `degraded + busy=true`，列表、详情、artifact 与轮询仍可读，新建 run 返回 HTTP 409
 
 #### Scenario: 非 JSON mutation
-- **WHEN** 任一 mutation 请求不是 `application/json`、Host 不是 loopback，或请求携带了不在精确 allowlist 的 Origin
+- **WHEN** 任一 mutation 请求不是 `application/json`、Host 不是 `127.0.0.1|localhost|testserver`，或请求携带了不在精确 allowlist 的 Origin
 - **THEN** 请求在调用 service 之前被拒绝且不产生副作用
+
+#### Scenario: TestClient 使用 testserver Host
+- **WHEN** 自动化通过 factory-created app 和 TestClient 发送 `Host: testserver`
+- **THEN** TrustedHost 允许该 harness 请求，但不因此启动端口、放宽 Origin 或授权任何远程 Host
 
 ### Requirement: 精确 DTO 与 Decimal 边界
 Run request SHALL 只允许 `strategy_id`、ISO `start_date/end_date`、`frequency=1d|1m`、
@@ -246,17 +254,28 @@ RQAlpha 内部 Order/Trade 只是 simulation-only 回测事实；工作台 MUST 
 route interception，MUST NOT 启动 `127.0.0.1:8011`、导入本机真实 RQAlpha、访问真实 Bundle
 或写入仓库外正式 run 根。
 
-真实 RQAlpha smoke 是独立外部 Gate：执行前 MUST 取得当次、范围明确的单次执行意图，
-并且该意图只授权紧随其后的一次精确 smoke 尝试。Smoke MUST 在启动前确认 Bundle
-只读，记录关键 Bundle 文件前后 mtime/size，只运行已注册的短窗口示例策略，只写一个
-独立研究 run 目录，并核对 report/pickle/PNG/result 完整与 DB/Redis/Canonical/Alert/
-notification/Runtime/真实订单零副作用。Smoke 中 MUST NOT 执行 `rqsdk update-data`、
-`download-data` 或任何 Bundle mutation。成功或失败都消耗本次意图；重试需要新的单次意图。
+真实 RQAlpha smoke 的环境变量存在性、可执行文件、路径类型/包含关系、Bundle 只读内容与
+端口占用等 preflight MAY 在没有执行意图时只读运行。Preflight MUST NOT 创建目录/文件、启动或
+终止进程、运行策略、修改 Bundle 或触发其他外部 mutation，并且 preflight/dry-run 结果
+MUST NOT 转化、复用或推导为真实 smoke 授权。
+
+紧随 preflight 后的第一个外部 mutation—包括创建 OS-temp 验收文件、`mkdir`/写入 runs root、启动
+sidecar/runner 或发起真实 run—之前 MUST 取得新的、当次范围明确的单次执行意图。
+该意图只授权紧随其后的一次精确 smoke 尝试。Smoke MUST 记录全部或明确关键 Bundle 文件
+前后 mtime/size，只运行已注册的短窗口示例策略，只创建一个独立研究 runs root 与一个
+run 目录，有界轮询到终态，并机器校验 report/pickle/PNG/result、强制安全配置与
+DB/Redis/Canonical/Alert/notification/Execution Review/Runtime/真实订单零副作用。Smoke 中
+MUST NOT 执行 `rqsdk update-data`、`download-data` 或任何 Bundle mutation。成功或失败都消耗
+本次意图；重试需要新的单次意图。
 
 #### Scenario: 只通过 fake 自动化
 - **WHEN** focused、local-app、full backend/Web/browser 测试均通过
 - **THEN** 只能声明仓库行为验证通过，不能声明真实 RQAlpha、Bundle、本机加载、release 或 Runtime-ready 通过
 
-#### Scenario: 无新单次意图的 smoke 或重试
-- **WHEN** 操作者未对本次精确本机、Bundle、策略/窗口与结果根给出新的单次执行意图
-- **THEN** 必须停在验证命令和只读检查之前，不得启动 sidecar 或真实 runner
+#### Scenario: 无授权的只读 preflight
+- **WHEN** 尚未取得新的单次执行意图
+- **THEN** 操作者仍可运行无副作用的环境/路径/Bundle/端口只读 preflight，但不得进入任何首次或重试 mutation
+
+#### Scenario: 无新单次意图的 smoke 首次 mutation 或重试
+- **WHEN** 操作者未对本次精确本机、Bundle、外部 Python、策略/窗口与 runs root 给出新的单次执行意图
+- **THEN** 必须在创建 OS-temp/runs root、启动 sidecar/runner、发起 run 或任何其他外部 mutation 前停止

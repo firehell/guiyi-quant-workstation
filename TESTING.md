@@ -40,28 +40,321 @@ runs root。
 
 ## RQAlpha 本机真实 smoke（独立单次外部 Gate）
 
-以下命令只是 Gate 的可执行入口，本文档、仓库代码、自动化通过、既有 Runtime 授权或
-dry-run 都不授权执行。执行前必须取得新的、当次单次且范围明确的执行意图，其中精确
-识别本机、Bundle、外部 Python、已注册策略/短窗口与 runs root。成功、失败或中止都消耗该
-意图；重试必须取得新意图。Smoke 前、中、后都禁止运行 `rqsdk update-data`、
-`download-data` 或任何 Bundle mutation。
-
-在授权后，先对精确 Bundle 文件生成只读 `mtime + size` 前置快照，再使用已校验的 Git 外
-变量启动唯一 sidecar：
+下面的 preflight 只读：不创建文件/目录、不启停进程、不运行策略，因此无需外部执行
+意图。它只验证当前环境，不能转换、复用或推导为后续 smoke 授权。命令不输出环境
+变量值、Bundle/runs 内部路径或 runner 版本：
 
 ```bash
+set -eu
+: "${GUIYI_BACKTEST_PYTHON_EXECUTABLE:?}"
+: "${GUIYI_BACKTEST_BUNDLE_PATH:?}"
+: "${GUIYI_BACKTEST_RUNS_ROOT:?}"
+: "${GUIYI_BACKTEST_CORS_ORIGINS:?}"
+command -v curl >/dev/null
+command -v jq >/dev/null
+command -v cmp >/dev/null
+command -v find >/dev/null
+command -v sort >/dev/null
+command -v stat >/dev/null
+command -v unzip >/dev/null
 test -x "$GUIYI_BACKTEST_PYTHON_EXECUTABLE"
 test -d "$GUIYI_BACKTEST_BUNDLE_PATH"
-test -d "$GUIYI_BACKTEST_RUNS_ROOT"
-test "$GUIYI_BACKTEST_BUNDLE_PATH" != "$GUIYI_BACKTEST_RUNS_ROOT"
-UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache uv run --offline --project services/quant-api python -m app.backtest.local_app
+test -r "$GUIYI_BACKTEST_BUNDLE_PATH"
+case "$GUIYI_BACKTEST_PYTHON_EXECUTABLE:$GUIYI_BACKTEST_BUNDLE_PATH:$GUIYI_BACKTEST_RUNS_ROOT" in
+  /*:/*:/*) ;;
+  *) exit 1 ;;
+esac
+
+task8_repo_root="$(git rev-parse --show-toplevel)"
+task8_sidecar_python="$task8_repo_root/services/quant-api/.venv/bin/python"
+task8_registry="$task8_repo_root/services/quant-api/app/backtest/strategies/registry.json"
+task8_bundle_root="$(cd "$GUIYI_BACKTEST_BUNDLE_PATH" && pwd -P)"
+task8_runs_parent_input="$(dirname -- "$GUIYI_BACKTEST_RUNS_ROOT")"
+task8_runs_name="$(basename -- "$GUIYI_BACKTEST_RUNS_ROOT")"
+case "$task8_runs_name" in ''|.|..) exit 1 ;; esac
+test -x "$task8_sidecar_python"
+test -d "$task8_runs_parent_input"
+test -w "$task8_runs_parent_input"
+task8_runs_parent="$(cd "$task8_runs_parent_input" && pwd -P)"
+task8_runs_root="$task8_runs_parent/$task8_runs_name"
+test ! -e "$task8_runs_root"
+case "$task8_runs_root/" in "$task8_bundle_root/"*) exit 1 ;; esac
+case "$task8_bundle_root/" in "$task8_runs_root/"*) exit 1 ;; esac
+jq -e '
+  .schema_version == 1 and
+  any(.strategies[];
+    .id == "example_future_smoke_v1" and .enabled == true and
+    (.supported_frequencies | index("1d") != null) and
+    any(.parameters[]; .name == "order_book_id" and .default == "IF1606")
+  )
+' "$task8_registry" >/dev/null
+if /usr/sbin/lsof -nP -iTCP:8011 -sTCP:LISTEN >/dev/null 2>&1; then
+  exit 1
+fi
 ```
 
-只通过本机 `/backtests` 选择 `example_future_smoke_v1` 并运行授权的短窗口。完成后必须停止
-sidecar，核对只新增一个 run 目录、`report/result.pkl/equity.png/result.json` 完整，Bundle
-关键文件的前后 `mtime + size` 不变，并确认 DB/Redis/Canonical/Alert/notification/
-Execution Review/Runtime/真实订单零副作用。真实 smoke 通过仍不表示 release、Runtime-ready、策略
-有效、OOS 通过或 Candidate 可晋升。
+以下是一次完整的、非交互且有界的真实 smoke。只能在操作者针对当次精确本机、
+Bundle、外部 Python、`example_future_smoke_v1 + IF1606 + 2016-06-01..03`
+与唯一且不存在的外部 runs root 给出**新的、范围明确的单次执行意图后**运行。
+`mktemp` 是本序列第一个外部 mutation；若尚未获得该意图，必须在它之前停止。成功、
+失败、中止都消耗该意图，重试需要新意图。本序列不包含也禁止运行 `rqsdk update-data`、
+`download-data` 或任何 Bundle mutation：
+
+```bash
+set -euo pipefail
+: "${GUIYI_BACKTEST_PYTHON_EXECUTABLE:?}"
+: "${GUIYI_BACKTEST_BUNDLE_PATH:?}"
+: "${GUIYI_BACKTEST_RUNS_ROOT:?}"
+: "${GUIYI_BACKTEST_CORS_ORIGINS:?}"
+
+task8_repo_root="$(git rev-parse --show-toplevel)"
+task8_sidecar_python="$task8_repo_root/services/quant-api/.venv/bin/python"
+task8_registry="$task8_repo_root/services/quant-api/app/backtest/strategies/registry.json"
+task8_external_python="$GUIYI_BACKTEST_PYTHON_EXECUTABLE"
+task8_bundle_root="$(cd "$GUIYI_BACKTEST_BUNDLE_PATH" && pwd -P)"
+task8_runs_parent_input="$(dirname -- "$GUIYI_BACKTEST_RUNS_ROOT")"
+task8_runs_name="$(basename -- "$GUIYI_BACKTEST_RUNS_ROOT")"
+case "$task8_runs_name" in ''|.|..) exit 1 ;; esac
+task8_runs_parent="$(cd "$task8_runs_parent_input" && pwd -P)"
+task8_runs_root="$task8_runs_parent/$task8_runs_name"
+test -x "$task8_external_python"
+test -x "$task8_sidecar_python"
+test -d "$task8_bundle_root"
+test -r "$task8_bundle_root"
+test -w "$task8_runs_parent"
+test ! -e "$task8_runs_root"
+case "$task8_runs_root/" in "$task8_bundle_root/"*) exit 1 ;; esac
+case "$task8_bundle_root/" in "$task8_runs_root/"*) exit 1 ;; esac
+if /usr/sbin/lsof -nP -iTCP:8011 -sTCP:LISTEN >/dev/null 2>&1; then
+  exit 1
+fi
+jq -e '
+  .schema_version == 1 and
+  any(.strategies[];
+    .id == "example_future_smoke_v1" and .enabled == true and
+    (.supported_frequencies | index("1d") != null) and
+    any(.parameters[]; .name == "order_book_id" and .default == "IF1606")
+  )
+' "$task8_registry" >/dev/null
+
+task8_tmp_dir="$(mktemp -d /private/tmp/guiyi-rqalpha-smoke.XXXXXX)"
+test ! -L "$task8_tmp_dir"
+case "$(cd "$task8_tmp_dir" && pwd -P)" in
+  /private/tmp/guiyi-rqalpha-smoke.*) ;;
+  *) exit 1 ;;
+esac
+task8_sidecar_pid=""
+task8_runner_pid=""
+task8_run_id=""
+task8_stop_runner() {
+  if test -n "$task8_runner_pid" && test -n "$task8_run_id" \
+      && test -f "$task8_runs_root/active.lock" \
+      && jq -e --arg task8_run_id "$task8_run_id" \
+        --argjson task8_runner_pid "$task8_runner_pid" \
+        '.run_id == $task8_run_id and .pid == $task8_runner_pid' \
+        "$task8_runs_root/active.lock" >/dev/null 2>&1 \
+      && kill -0 "$task8_runner_pid" 2>/dev/null; then
+    task8_runner_pgid="$(ps -o pgid= -p "$task8_runner_pid" 2>/dev/null | tr -d ' ' || true)"
+    if test "$task8_runner_pgid" = "$task8_runner_pid"; then
+      kill -TERM "-$task8_runner_pid" 2>/dev/null || true
+      task8_runner_stop_attempt=0
+      while kill -0 -- "-$task8_runner_pid" 2>/dev/null \
+          && test "$task8_runner_stop_attempt" -lt 20; do
+        task8_runner_stop_attempt=$((task8_runner_stop_attempt + 1))
+        sleep 0.25
+      done
+      if kill -0 -- "-$task8_runner_pid" 2>/dev/null; then
+        kill -KILL "-$task8_runner_pid" 2>/dev/null || true
+      fi
+    fi
+  fi
+  task8_runner_pid=""
+}
+task8_stop_sidecar() {
+  if test -n "$task8_sidecar_pid" && kill -0 "$task8_sidecar_pid" 2>/dev/null; then
+    kill "$task8_sidecar_pid" 2>/dev/null || true
+    task8_stop_attempt=0
+    while kill -0 "$task8_sidecar_pid" 2>/dev/null && test "$task8_stop_attempt" -lt 20; do
+      task8_stop_attempt=$((task8_stop_attempt + 1))
+      sleep 0.25
+    done
+    if kill -0 "$task8_sidecar_pid" 2>/dev/null; then
+      kill -9 "$task8_sidecar_pid" 2>/dev/null || true
+    fi
+  fi
+  if test -n "$task8_sidecar_pid"; then
+    wait "$task8_sidecar_pid" 2>/dev/null || true
+    task8_sidecar_pid=""
+  fi
+}
+task8_cleanup() {
+  task8_stop_runner
+  task8_stop_sidecar
+}
+trap 'task8_cleanup' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+find "$task8_bundle_root" -xdev -type f -exec stat -f '%N|%z|%m' {} + \
+  | LC_ALL=C sort >"$task8_tmp_dir/bundle.before"
+test -s "$task8_tmp_dir/bundle.before"
+mkdir -m 700 "$task8_runs_root"
+export GUIYI_BACKTEST_RUNS_ROOT="$task8_runs_root"
+
+jq -n '{
+  strategy_id: "example_future_smoke_v1",
+  start_date: "2016-06-01",
+  end_date: "2016-06-03",
+  frequency: "1d",
+  future_cash: "1000000",
+  matching_type: "current_bar",
+  margin_multiplier: "1",
+  futures_commission_multiplier: "1",
+  slippage_model: "PriceRatioSlippage",
+  slippage: "0",
+  parameters: {order_book_id: "IF1606", quantity: 1}
+}' >"$task8_tmp_dir/request.json"
+
+(
+  cd "$task8_repo_root/services/quant-api"
+  exec "$task8_sidecar_python" -m app.backtest.local_app
+) >"$task8_tmp_dir/sidecar.stdout.log" 2>"$task8_tmp_dir/sidecar.stderr.log" &
+task8_sidecar_pid=$!
+
+task8_health_ready=0
+task8_health_attempt=0
+while test "$task8_health_attempt" -lt 30; do
+  task8_health_attempt=$((task8_health_attempt + 1))
+  if curl --noproxy '*' -fsS --connect-timeout 1 --max-time 3 \
+      -o "$task8_tmp_dir/health.json" \
+      http://127.0.0.1:8011/api/v1/backtests/health \
+      && jq -e '
+        .status == "ready" and .busy == false and
+        .runner.available == true and .bundle_available == true and
+        .runs_root_available == true and .registry_available == true and
+        .research_only == true and .formal_evidence == false and
+        .promotion_eligible == false and .error == null
+      ' "$task8_tmp_dir/health.json" >/dev/null; then
+    task8_health_ready=1
+    break
+  fi
+  kill -0 "$task8_sidecar_pid" 2>/dev/null
+  sleep 1
+done
+test "$task8_health_ready" -eq 1
+
+curl --noproxy '*' -fsS --connect-timeout 2 --max-time 10 \
+  -H 'Content-Type: application/json' \
+  --data-binary @"$task8_tmp_dir/request.json" \
+  -o "$task8_tmp_dir/start.json" \
+  http://127.0.0.1:8011/api/v1/backtests/runs
+task8_run_id="$(jq -er '.run_id' "$task8_tmp_dir/start.json")"
+jq -e '.run_id | test("^[0-9]{8}T[0-9]{12}Z-[0-9a-f]{16}$")' \
+  "$task8_tmp_dir/start.json" >/dev/null
+task8_run_dir="$task8_runs_root/$task8_run_id"
+if test -f "$task8_runs_root/active.lock" \
+    && test ! -L "$task8_runs_root/active.lock"; then
+  task8_runner_pid="$(jq -er --arg task8_run_id "$task8_run_id" '
+    select(.run_id == $task8_run_id) | .pid | select(type == "number" and . > 1)
+  ' "$task8_runs_root/active.lock")"
+  task8_runner_pgid="$(ps -o pgid= -p "$task8_runner_pid" | tr -d ' ')"
+  test "$task8_runner_pgid" = "$task8_runner_pid"
+fi
+
+task8_terminal=0
+task8_poll_attempt=0
+while test "$task8_poll_attempt" -lt 180; do
+  task8_poll_attempt=$((task8_poll_attempt + 1))
+  curl --noproxy '*' -fsS --connect-timeout 2 --max-time 5 \
+    -o "$task8_tmp_dir/detail.json" \
+    "http://127.0.0.1:8011/api/v1/backtests/runs/$task8_run_id"
+  task8_status="$(jq -er '.status' "$task8_tmp_dir/detail.json")"
+  case "$task8_status" in
+    running) sleep 1 ;;
+    succeeded|failed|timed_out|interrupted) task8_terminal=1; break ;;
+    *) exit 1 ;;
+  esac
+done
+test "$task8_terminal" -eq 1
+
+jq -e --arg task8_run_id "$task8_run_id" --arg task8_run_dir "$task8_run_dir" '
+  .run_id == $task8_run_id and .status == "succeeded" and
+  .exit_code == 0 and .failure_code == null and
+  .research_only == true and .formal_evidence == false and
+  .promotion_eligible == false and
+  .strategy_id == "example_future_smoke_v1" and
+  .requested_config == {
+    strategy_id: "example_future_smoke_v1",
+    start_date: "2016-06-01", end_date: "2016-06-03", frequency: "1d",
+    future_cash: "1000000", matching_type: "current_bar",
+    margin_multiplier: "1", futures_commission_multiplier: "1",
+    slippage_model: "PriceRatioSlippage", slippage: "0",
+    parameters: {order_book_id: "IF1606", quantity: 1}
+  } and
+  .effective_parameters == {order_book_id: "IF1606", quantity: 1} and
+  .effective_config.base.start_date == "2016-06-01" and
+  .effective_config.base.end_date == "2016-06-03" and
+  .effective_config.base.frequency == "1d" and
+  .effective_config.base.accounts.FUTURE == "1000000" and
+  .effective_config.base.auto_update_bundle == false and
+  .effective_config.base.rqdatac_uri == "disabled" and
+  .effective_config.mod.sys_simulation.enabled == true and
+  .effective_config.mod.sys_simulation.signal == false and
+  .effective_config.mod.sys_transaction_cost.enabled == true and
+  .effective_config.mod.sys_analyser.enabled == true and
+  .effective_config.mod.sys_analyser.output_file == ($task8_run_dir + "/result.pkl") and
+  .effective_config.mod.sys_analyser.report_save_path == ($task8_run_dir + "/report") and
+  .effective_config.mod.sys_analyser.plot_save_file == ($task8_run_dir + "/equity.png") and
+  .effective_config.mod.ams.enabled == false and
+  .effective_config.mod.incremental.enabled == false and
+  .result != null and (.result.trade_count | type) == "string" and
+  .result.artifacts == {
+    report_zip: true, result_pickle: true, equity_png: true,
+    stdout_log: true, stderr_log: true, run_json: true
+  }
+' "$task8_tmp_dir/detail.json" >/dev/null
+
+curl --noproxy '*' -fsS --connect-timeout 2 --max-time 10 \
+  -o "$task8_tmp_dir/runs.json" \
+  'http://127.0.0.1:8011/api/v1/backtests/runs?limit=100'
+jq -e --arg task8_run_id "$task8_run_id" '
+  length == 1 and .[0].run_id == $task8_run_id and .[0].status == "succeeded"
+' "$task8_tmp_dir/runs.json" >/dev/null
+
+test -d "$task8_run_dir"
+test ! -L "$task8_run_dir"
+for task8_required_file in \
+  run.json result.json result.pkl equity.png stdout.log stderr.log strategy.py strategy_params.json; do
+  test -f "$task8_run_dir/$task8_required_file"
+  test ! -L "$task8_run_dir/$task8_required_file"
+done
+test -d "$task8_run_dir/report"
+test ! -L "$task8_run_dir/report"
+test -n "$(find "$task8_run_dir/report" -type f -print -quit)"
+test ! -e "$task8_runs_root/active.lock"
+task8_run_count="$(find "$task8_runs_root" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')"
+test "$task8_run_count" -eq 1
+
+curl --noproxy '*' -fsS --connect-timeout 2 --max-time 10 \
+  -o "$task8_tmp_dir/report.zip" \
+  "http://127.0.0.1:8011/api/v1/backtests/runs/$task8_run_id/artifacts/report_zip"
+test -s "$task8_tmp_dir/report.zip"
+unzip -tq "$task8_tmp_dir/report.zip" >/dev/null
+
+task8_stop_sidecar
+task8_runner_pid=""
+find "$task8_bundle_root" -xdev -type f -exec stat -f '%N|%z|%m' {} + \
+  | LC_ALL=C sort >"$task8_tmp_dir/bundle.after"
+cmp -s "$task8_tmp_dir/bundle.before" "$task8_tmp_dir/bundle.after"
+printf '%s\n' "RQALPHA_SMOKE_SUCCEEDED run_id=$task8_run_id"
+```
+
+该命令只读 Bundle，仅在授权的唯一 runs root 下产生一个 run，并通过强制
+`auto_update_bundle=false` / `rqdatac_uri=disabled` / simulation-only / `signal=false` /
+`ams=false` / `incremental=false` 配置将数据更新、真实订单与外部 application/runtime 路径
+保持关闭。外部 runs root 与 `/private/tmp/guiyi-rqalpha-smoke.*` 验收目录保留作当次证据，
+清理属于另一次精确外部操作，不在本 smoke 授权内。真实 smoke 通过仍不表示 release、
+Runtime-ready、策略有效、OOS 通过或 Candidate 可晋升。
 
 ## 工程、版本与文档一致性
 
