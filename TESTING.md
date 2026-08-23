@@ -148,13 +148,64 @@ esac
 task8_sidecar_pid=""
 task8_runner_pid=""
 task8_run_id=""
+task8_post_inflight=0
+task8_post_response_received=0
+task8_post_http_status=""
+task8_post_identity_captured=0
+task8_cleanup_safe=1
 task8_cleanup_fail() {
+  task8_cleanup_safe=0
   printf '%s\n' "FAIL: $1; smoke evidence and runs root retained" >&2
   return 1
 }
+task8_confirm_runner_absent() {
+  if test "$task8_post_inflight" -eq 0 \
+      && test "$task8_post_identity_captured" -eq 0; then
+    return 0
+  fi
+  if test "$task8_post_response_received" -ne 1; then
+    return 1
+  fi
+  task8_root_node_count="$(find "$task8_runs_root" -mindepth 1 -maxdepth 1 \
+    -print | wc -l | tr -d ' ')" || return 1
+  if test "$task8_root_node_count" -eq 0; then
+    if test "$task8_post_http_status" != "202"; then
+      return 0
+    fi
+    return 1
+  fi
+  task8_run_node_count="$(find "$task8_runs_root" -mindepth 1 -maxdepth 1 \
+    -type d ! -type l -print | wc -l | tr -d ' ')" || return 1
+  if test "$task8_root_node_count" -ne 1 || test "$task8_run_node_count" -ne 1; then
+    return 1
+  fi
+  task8_observed_run_dir="$(find "$task8_runs_root" -mindepth 1 -maxdepth 1 \
+    -type d ! -type l -print -quit)" || return 1
+  task8_observed_run_id="$(basename -- "$task8_observed_run_dir")"
+  if ! printf '%s\n' "$task8_observed_run_id" \
+      | rg -q '^[0-9]{8}T[0-9]{12}Z-[0-9a-f]{16}$' \
+      || test ! -f "$task8_observed_run_dir/run.json" \
+      || test -L "$task8_observed_run_dir/run.json" \
+      || ! jq -e --arg task8_observed_run_id "$task8_observed_run_id" '
+        .run_id == $task8_observed_run_id and
+        (.status | IN("succeeded", "failed", "timed_out", "interrupted")) and
+        (.finished_at | type == "string" and length > 0)
+      ' "$task8_observed_run_dir/run.json" >/dev/null 2>&1; then
+    return 1
+  fi
+  if test -n "$task8_run_id" && test "$task8_run_id" != "$task8_observed_run_id"; then
+    return 1
+  fi
+  task8_run_id="$task8_observed_run_id"
+  task8_run_dir="$task8_observed_run_dir"
+  return 0
+}
 task8_stop_runner() {
   if test ! -e "$task8_runs_root"; then
-    if test -n "$task8_runner_pid" && kill -0 "$task8_runner_pid" 2>/dev/null; then
+    if test "$task8_post_inflight" -eq 1 \
+        || test "$task8_post_identity_captured" -eq 1 \
+        || { test -n "$task8_runner_pid" \
+          && kill -0 "$task8_runner_pid" 2>/dev/null; }; then
       task8_cleanup_fail BACKTEST_SMOKE_CLEANUP_ROOT_MISSING
       return 1
     fi
@@ -168,17 +219,55 @@ task8_stop_runner() {
   fi
 
   task8_lock_node_count="$(find "$task8_runs_root" -mindepth 1 -maxdepth 1 \
-    -name active.lock -print | wc -l | tr -d ' ')"
+    -name active.lock -print | wc -l | tr -d ' ')" || {
+    task8_cleanup_fail BACKTEST_SMOKE_CLEANUP_LOCK_SCAN_FAILED
+    return 1
+  }
+  if test "$task8_post_inflight" -eq 1 && test -z "$task8_runner_pid" \
+      && test "$task8_lock_node_count" -eq 0; then
+    task8_launch_wait_attempt=0
+    while test "$task8_launch_wait_attempt" -lt 20 \
+        && test "$task8_lock_node_count" -eq 0; do
+      if task8_confirm_runner_absent; then
+        task8_post_inflight=0
+        task8_runner_pid=""
+        return 0
+      fi
+      task8_launch_wait_attempt=$((task8_launch_wait_attempt + 1))
+      sleep 0.25
+      task8_lock_node_count="$(find "$task8_runs_root" -mindepth 1 -maxdepth 1 \
+        -name active.lock -print | wc -l | tr -d ' ')" || {
+        task8_cleanup_fail BACKTEST_SMOKE_CLEANUP_LOCK_SCAN_FAILED
+        return 1
+      }
+    done
+    if test "$task8_lock_node_count" -eq 0; then
+      if task8_confirm_runner_absent; then
+        task8_post_inflight=0
+        task8_runner_pid=""
+        return 0
+      fi
+      task8_cleanup_fail BACKTEST_SMOKE_CLEANUP_LAUNCH_IDENTITY_UNRESOLVED
+      return 1
+    fi
+  fi
   if test "$task8_lock_node_count" -eq 0; then
     if test -n "$task8_runner_pid" && kill -0 "$task8_runner_pid" 2>/dev/null; then
       task8_cleanup_fail BACKTEST_SMOKE_CLEANUP_LIVE_PID_WITHOUT_LOCK
       return 1
     fi
-    task8_runner_pid=""
-    return 0
+    if task8_confirm_runner_absent; then
+      task8_runner_pid=""
+      return 0
+    fi
+    task8_cleanup_fail BACKTEST_SMOKE_CLEANUP_RUNNER_ABSENCE_UNPROVEN
+    return 1
   fi
   task8_regular_lock_count="$(find "$task8_runs_root" -mindepth 1 -maxdepth 1 \
-    -name active.lock -type f ! -type l -print | wc -l | tr -d ' ')"
+    -name active.lock -type f ! -type l -print | wc -l | tr -d ' ')" || {
+    task8_cleanup_fail BACKTEST_SMOKE_CLEANUP_LOCK_SCAN_FAILED
+    return 1
+  }
   if test "$task8_lock_node_count" -ne 1 || test "$task8_regular_lock_count" -ne 1 \
       || test -L "$task8_runs_root/active.lock"; then
     task8_cleanup_fail BACKTEST_SMOKE_CLEANUP_LOCK_IDENTITY_INVALID
@@ -234,11 +323,15 @@ task8_stop_runner() {
     | tr -d ' ' || true)"
   task8_self_pgid="$(ps -o pgid= -p $$ 2>/dev/null | tr -d ' ' || true)"
   task8_runner_command="$(ps -ww -o command= -p "$task8_runner_pid" 2>/dev/null || true)"
-  task8_expected_runner_command="$task8_external_python $task8_runner_entry --run-root $task8_run_dir"
+  task8_expected_runner_suffix=" $task8_runner_entry --run-root $task8_run_dir"
+  case "$task8_runner_command" in
+    *"$task8_expected_runner_suffix") task8_runner_command_matches=1 ;;
+    *) task8_runner_command_matches=0 ;;
+  esac
   if test "$task8_runner_pid" -eq $$ || test "$task8_runner_pid" -eq "$PPID" \
       || test -z "$task8_runner_pgid" || test "$task8_runner_pgid" != "$task8_runner_pid" \
       || test "$task8_runner_pgid" = "$task8_self_pgid" \
-      || test "$task8_runner_command" != "$task8_expected_runner_command"; then
+      || test "$task8_runner_command_matches" -ne 1; then
     task8_cleanup_fail BACKTEST_SMOKE_CLEANUP_PROCESS_IDENTITY_INVALID
     return 1
   fi
@@ -292,8 +385,13 @@ task8_cleanup() {
   task8_original_status="$1"
   task8_cleanup_status=0
   task8_stop_runner || task8_cleanup_status=1
-  task8_stop_sidecar || task8_cleanup_status=1
-  if test "$task8_cleanup_status" -ne 0; then
+  if test "$task8_cleanup_status" -eq 0 && test "$task8_cleanup_safe" -eq 1; then
+    task8_stop_sidecar || task8_cleanup_status=1
+  else
+    printf '%s\n' \
+      'FAIL: BACKTEST_SMOKE_CLEANUP_UNSAFE; sidecar and evidence retained' >&2
+  fi
+  if test "$task8_cleanup_status" -ne 0 || test "$task8_cleanup_safe" -ne 1; then
     printf '%s\n' 'FAIL: BACKTEST_SMOKE_CLEANUP_INCOMPLETE; evidence retained' >&2
     return 1
   fi
@@ -351,11 +449,21 @@ while test "$task8_health_attempt" -lt 30; do
 done
 test "$task8_health_ready" -eq 1
 
-curl --noproxy '*' -fsS --connect-timeout 2 --max-time 10 \
+task8_post_inflight=1
+task8_post_curl_status=0
+task8_post_http_status="$(curl --noproxy '*' -sS --connect-timeout 2 --max-time 10 \
   -H 'Content-Type: application/json' \
   --data-binary @"$task8_tmp_dir/request.json" \
   -o "$task8_tmp_dir/start.json" \
-  http://127.0.0.1:8011/api/v1/backtests/runs
+  -w '%{http_code}' \
+  http://127.0.0.1:8011/api/v1/backtests/runs)" || task8_post_curl_status=$?
+if test "$task8_post_curl_status" -ne 0; then
+  exit "$task8_post_curl_status"
+fi
+task8_post_response_received=1
+if test "$task8_post_http_status" != "202"; then
+  exit 1
+fi
 task8_run_id="$(jq -er '.run_id' "$task8_tmp_dir/start.json")"
 jq -e '.run_id | test("^[0-9]{8}T[0-9]{12}Z-[0-9a-f]{16}$")' \
   "$task8_tmp_dir/start.json" >/dev/null
@@ -368,6 +476,8 @@ if test -f "$task8_runs_root/active.lock" \
   task8_runner_pgid="$(ps -o pgid= -p "$task8_runner_pid" | tr -d ' ')"
   test "$task8_runner_pgid" = "$task8_runner_pid"
 fi
+task8_post_identity_captured=1
+task8_post_inflight=0
 
 task8_terminal=0
 task8_poll_attempt=0
@@ -463,7 +573,10 @@ printf '%s\n' "RQALPHA_SMOKE_SUCCEEDED run_id=$task8_run_id"
 保持关闭。EXIT trap 总是先清理 runner、再停 sidecar；即使 POST 后尚未赋值
 `task8_run_id/task8_runner_pid`，也只从本次新建且原先为空的 runs root 中恢复唯一
 regular non-symlink lock，并在发送信号前交叉校验 lock/run/process-group 身份。任一身份
-无法唯一确认时只输出 `FAIL` 诊断，不向未确认 PID 发送信号。外部 runs root 与
+无法唯一确认时只输出 `FAIL` 诊断，不向未确认 PID 发送信号。POST transport
+尚在 inflight 且 lock 尚未出现时，cleanup 会有界等待；窗口结束后仍不能用终态
+`run.json` 或明确的非 202 空根证明 runner 不存在时，必须保留 sidecar 由它继续拥有/
+回收可能的子进程，且整次 smoke 以非零失败，绝不声称成功。外部 runs root 与
 `/private/tmp/guiyi-rqalpha-smoke.*` 验收目录保留作当次证据，
 清理属于另一次精确外部操作，不在本 smoke 授权内。真实 smoke 通过仍不表示 release、
 Runtime-ready、策略有效、OOS 通过或 Candidate 可晋升。
