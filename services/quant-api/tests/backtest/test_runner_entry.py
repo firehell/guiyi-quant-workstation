@@ -294,6 +294,39 @@ def test_runner_entry_rejects_nonpositive_or_nonfinite_native_engine_numbers(
     assert not (root / "result.json").exists()
 
 
+@pytest.mark.parametrize(
+    "field_path",
+    (
+        ("base", "accounts", "FUTURE"),
+        ("base", "margin_multiplier"),
+        ("mod", "sys_transaction_cost", "futures_commission_multiplier"),
+        ("mod", "sys_simulation", "slippage"),
+    ),
+)
+def test_runner_entry_rejects_decimal_values_that_underflow_native_engine_fields(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    field_path: tuple[str, ...],
+) -> None:
+    root = _run_root(tmp_path)
+    record = json.loads((root / "run.json").read_text("utf-8"))
+    target = record["effective_config"]
+    for field in field_path[:-1]:
+        target = target[field]
+    target[field_path[-1]] = "1e-10000"
+    (root / "run.json").write_text(json.dumps(record), "utf-8")
+    rqalpha = ModuleType("rqalpha")
+    rqalpha.run_file = lambda *_args, **_kwargs: _raw_result()  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "rqalpha", rqalpha)
+
+    exit_code = runner_entry.main(["--run-root", str(root)])
+
+    assert exit_code == 2
+    assert capsys.readouterr().err.strip() == "RUNNER_CONFIG_INVALID"
+    assert not (root / "result.json").exists()
+
+
 def test_runner_entry_returns_safe_config_error_for_wrong_path_type(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],

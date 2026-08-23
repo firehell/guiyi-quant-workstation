@@ -332,6 +332,45 @@ def test_timeout_terminates_then_kills_the_owned_process_group_and_drains_pipes(
         os.killpg(handle.pid, 0)
 
 
+def test_timeout_uses_group_identity_captured_before_a_late_leader_lookup(
+    settings: BacktestSettings,
+    run_paths: RunPaths,
+    validated_request: ValidatedBacktestRequest,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _fake_runner(monkeypatch)
+    monkeypatch.setattr(runner_module, "_TERMINATE_GRACE_SECONDS", 0.05)
+    monkeypatch.setattr(runner_module, "_PIPE_DRAIN_SECONDS", 0.2, raising=False)
+    settings = BacktestSettings(
+        python_executable=settings.python_executable,
+        bundle_path=settings.bundle_path,
+        runs_root=settings.runs_root,
+        timeout_seconds=1,
+        cors_origins=settings.cors_origins,
+    )
+    _prepare_run(settings, run_paths, validated_request, mode="descendant_timeout")
+    start_returned = False
+    real_getpgid = os.getpgid
+
+    def leader_identity(process_id: int) -> int:
+        if start_returned:
+            raise ProcessLookupError
+        return real_getpgid(process_id)
+
+    monkeypatch.setattr(runner_module.os, "getpgid", leader_identity)
+    started = time.monotonic()
+
+    handle = SubprocessRunner(settings).start(validated_request, run_paths)
+    start_returned = True
+    result = handle.monitor()
+
+    assert time.monotonic() - started < 3
+    assert result.outcome is RunStatus.TIMED_OUT
+    assert all(not thread.is_alive() for thread in handle._drain_threads)
+    with pytest.raises(ProcessLookupError):
+        os.killpg(handle.pid, 0)
+
+
 def test_streamed_logs_are_redacted_and_exclude_parent_secrets(
     settings: BacktestSettings,
     run_paths: RunPaths,
@@ -384,6 +423,28 @@ def test_chunked_redaction_handles_escaped_quotes_boundaries_and_long_lines(
     assert "[REDACTED]" in stdout
     assert "[REDACTED]" in stderr
     assert len(stderr) < 256
+
+
+def test_exact_maximum_length_secret_is_redacted_before_emit_boundary(
+    settings: BacktestSettings,
+    run_paths: RunPaths,
+    validated_request: ValidatedBacktestRequest,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _fake_runner(monkeypatch)
+    secret = "q" * 4096
+    monkeypatch.setenv("API_TOKEN", secret)
+    monkeypatch.setattr(runner_module, "_LOG_CHUNK_BYTES", 4097, raising=False)
+    _prepare_run(
+        settings, run_paths, validated_request, mode="redaction_exact_boundary"
+    )
+
+    result = SubprocessRunner(settings).start(validated_request, run_paths).monitor()
+
+    stdout = run_paths.stdout_log.read_text("utf-8")
+    assert result.outcome is RunStatus.SUCCEEDED
+    assert secret not in stdout
+    assert stdout == "[REDACTED]!"
 
 
 def test_start_rejects_run_record_without_exact_effective_config(

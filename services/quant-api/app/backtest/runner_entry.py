@@ -89,14 +89,19 @@ def _decimal_string(value: object, *, positive: bool) -> None:
         _invalid()
 
 
-def _native_number(value: object) -> float:
+def _native_number(value: object, *, positive: bool) -> float:
     if not isinstance(value, str):
         _invalid()
     try:
-        native = float(Decimal(value))
+        parsed = Decimal(value)
+        native = float(parsed)
     except (InvalidOperation, OverflowError, ValueError):
         _invalid()
-    if not math.isfinite(native):
+    if (
+        not math.isfinite(native)
+        or (native <= 0 if positive else native < 0)
+        or (parsed != 0 and native == 0)
+    ):
         _invalid()
     return native
 
@@ -279,19 +284,22 @@ def _validate_config(config: object, run_root: Path) -> dict[str, Any]:
     return {
         "base": {
             **dict(base),
-            "accounts": {"FUTURE": _native_number(accounts["FUTURE"])},
-            "margin_multiplier": _native_number(base["margin_multiplier"]),
+            "accounts": {"FUTURE": _native_number(accounts["FUTURE"], positive=True)},
+            "margin_multiplier": _native_number(
+                base["margin_multiplier"], positive=True
+            ),
         },
         "mod": {
             **dict(modules),
             "sys_simulation": {
                 **dict(simulation),
-                "slippage": _native_number(simulation["slippage"]),
+                "slippage": _native_number(simulation["slippage"], positive=False),
             },
             "sys_transaction_cost": {
                 **dict(transaction_cost),
                 "futures_commission_multiplier": _native_number(
-                    transaction_cost["futures_commission_multiplier"]
+                    transaction_cost["futures_commission_multiplier"],
+                    positive=False,
                 ),
             },
         },

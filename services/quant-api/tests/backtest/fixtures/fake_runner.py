@@ -177,6 +177,8 @@ def main() -> int:
     if mode == "redaction_chunks":
         os.write(1, b'prefix {"api_key":"abc\\"def-sensitive-suffix"} tail\n')
         os.write(2, b"password=" + (b"x" * 100_000) + b" end\n")
+    if mode == "redaction_exact_boundary":
+        os.write(1, (b"q" * 4096) + b"!")
     _write_result(run_root)
     return 0
 

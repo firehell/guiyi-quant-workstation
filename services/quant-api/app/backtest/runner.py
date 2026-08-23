@@ -11,6 +11,7 @@ import json
 import os
 from pathlib import Path
 import re
+import select
 import signal
 import stat
 import subprocess
@@ -254,8 +255,11 @@ class _StreamingLogRedactor:
                 output.append(self._redact_general(self._pending))
                 self._pending = ""
             elif len(self._pending) > _LOG_CARRY_CHARS:
+                self._pending = self._redact_general(self._pending)
+                if len(self._pending) <= _LOG_CARRY_CHARS:
+                    continue
                 emit_length = len(self._pending) - _LOG_CARRY_CHARS
-                output.append(self._redact_general(self._pending[:emit_length]))
+                output.append(self._pending[:emit_length])
                 self._pending = self._pending[emit_length:]
             else:
                 break
@@ -331,10 +335,20 @@ def _drain_stream(
     source: BinaryIO,
     target: BinaryIO,
     redactor: _StreamingLogRedactor,
+    stop: threading.Event,
 ) -> None:
     try:
-        while raw_chunk := source.read(_LOG_CHUNK_BYTES):
+        descriptor = source.fileno()
+        while not stop.is_set():
+            readable, _, _ = select.select((descriptor,), (), (), 0.05)
+            if not readable:
+                continue
+            raw_chunk = os.read(descriptor, _LOG_CHUNK_BYTES)
+            if not raw_chunk:
+                break
             target.write(redactor.feed(raw_chunk))
+        target.write(redactor.feed(b"", final=True))
+    except OSError:
         target.write(redactor.feed(b"", final=True))
     finally:
         source.close()
@@ -424,11 +438,15 @@ class RunningProcess:
         paths: RunPaths,
         timeout_seconds: int,
         drain_threads: tuple[threading.Thread, threading.Thread],
+        drain_stop: threading.Event,
+        owned_process_group: int,
     ) -> None:
         self._process = process
         self._paths = paths
         self._timeout_seconds = timeout_seconds
         self._drain_threads = drain_threads
+        self._drain_stop = drain_stop
+        self._owned_process_group = owned_process_group
         self._monitor_lock = threading.Lock()
         self._monitor_result: MonitorResult | None = None
 
@@ -449,6 +467,11 @@ class RunningProcess:
             drain_deadline = time.monotonic() + _PIPE_DRAIN_SECONDS
             for thread in self._drain_threads:
                 thread.join(timeout=max(0.0, drain_deadline - time.monotonic()))
+            if any(thread.is_alive() for thread in self._drain_threads):
+                self._drain_stop.set()
+                stop_deadline = time.monotonic() + 0.1
+                for thread in self._drain_threads:
+                    thread.join(timeout=max(0.0, stop_deadline - time.monotonic()))
             if timed_out:
                 result = MonitorResult(
                     exit_code=exit_code,
@@ -477,25 +500,10 @@ class RunningProcess:
             return result
 
     def _terminate_owned_process_group(self) -> int:
-        process_group = self._process.pid
-        own_process_group = os.getpgrp()
         try:
-            observed_process_group = os.getpgid(self._process.pid)
+            os.killpg(self._owned_process_group, signal.SIGTERM)
         except ProcessLookupError:
             return self._process.wait()
-        if (
-            process_group <= 1
-            or process_group == own_process_group
-            or observed_process_group != process_group
-        ):
-            self._process.terminate()
-            try:
-                return self._process.wait(timeout=_TERMINATE_GRACE_SECONDS)
-            except subprocess.TimeoutExpired:
-                self._process.kill()
-                return self._process.wait()
-
-        os.killpg(process_group, signal.SIGTERM)
         deadline = time.monotonic() + _TERMINATE_GRACE_SECONDS
         try:
             exit_code = self._process.wait(timeout=_TERMINATE_GRACE_SECONDS)
@@ -505,7 +513,7 @@ class RunningProcess:
         if remaining > 0:
             threading.Event().wait(remaining)
         try:
-            os.killpg(process_group, signal.SIGKILL)
+            os.killpg(self._owned_process_group, signal.SIGKILL)
         except ProcessLookupError:
             pass
         if exit_code is not None:
@@ -626,26 +634,70 @@ class SubprocessRunner:
             stdout_target.close()
             stderr_target.close()
             raise BacktestError(BacktestHttpErrorCode.RUNNER_UNAVAILABLE) from exc
+        try:
+            owned_process_group = os.getpgid(process.pid)
+            owned_session = os.getsid(process.pid)
+            if (
+                process.pid <= 1
+                or owned_process_group != process.pid
+                or owned_session != process.pid
+                or owned_process_group == os.getpgrp()
+            ):
+                raise ProcessLookupError
+        except OSError as exc:
+            try:
+                process.kill()
+            except OSError:
+                pass
+            try:
+                process.wait(timeout=_TERMINATE_GRACE_SECONDS)
+            except subprocess.TimeoutExpired:
+                pass
+            if process.stdout is not None:
+                process.stdout.close()
+            if process.stderr is not None:
+                process.stderr.close()
+            stdout_target.close()
+            stderr_target.close()
+            raise BacktestError(BacktestHttpErrorCode.RUNNER_UNAVAILABLE) from exc
         if process.stdout is None or process.stderr is None:
             process.kill()
             stdout_target.close()
             stderr_target.close()
             raise BacktestError(BacktestHttpErrorCode.RUNNER_UNAVAILABLE)
+        drain_stop = threading.Event()
         threads = (
             threading.Thread(
                 target=_drain_stream,
-                args=(process.stdout, stdout_target, _StreamingLogRedactor()),
+                args=(
+                    process.stdout,
+                    stdout_target,
+                    _StreamingLogRedactor(),
+                    drain_stop,
+                ),
                 daemon=True,
             ),
             threading.Thread(
                 target=_drain_stream,
-                args=(process.stderr, stderr_target, _StreamingLogRedactor()),
+                args=(
+                    process.stderr,
+                    stderr_target,
+                    _StreamingLogRedactor(),
+                    drain_stop,
+                ),
                 daemon=True,
             ),
         )
         for thread in threads:
             thread.start()
-        return RunningProcess(process, paths, self.settings.timeout_seconds, threads)
+        return RunningProcess(
+            process,
+            paths,
+            self.settings.timeout_seconds,
+            threads,
+            drain_stop,
+            owned_process_group,
+        )
 
 
 __all__ = [
