@@ -65,7 +65,9 @@ _SENSITIVE_PREFIX = re.compile(
     r"private[_-]?key|license|database_url|redis_url|rqdata(?:c)?[_-]?\w*)\b"
     r"(?:\"|')?\s*[=:]\s*)(?P<quote>[\"']?)"
 )
-_URL_SECRET_PREFIX = re.compile(r"(?i)(?P<scheme>\b[a-z][a-z0-9+.-]*://)[^\s/@:]+:")
+_URL_SCHEME_PREFIX = re.compile(r"(?i)(?P<scheme>\b[a-z][a-z0-9+.-]*://)")
+_URL_AUTHORITY_TERMINATORS = frozenset("/?#")
+_URL_AUTHORITY_MAX_CHARS = 4096
 _BEARER_PREFIX = re.compile(r"(?i)(?P<label>\bBearer\s+)")
 _BEARER_TOKEN_CHARACTERS = frozenset(
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._~+/=-"
@@ -218,7 +220,8 @@ class _StreamingLogRedactor:
         self._pending = ""
         self._sensitive_quote: str | None = None
         self._sensitive_unquoted = False
-        self._url_secret = False
+        self._url_authority_mode: str | None = None
+        self._url_authority_buffer = ""
         self._bearer_secret = False
         self._escaped = False
 
@@ -240,8 +243,8 @@ class _StreamingLogRedactor:
                 if not self._consume_unquoted_value(output):
                     break
                 continue
-            if self._url_secret:
-                if not self._consume_url_secret(output):
+            if self._url_authority_mode is not None:
+                if not self._consume_url_authority(output, final=final):
                     break
                 continue
             if self._bearer_secret:
@@ -254,7 +257,7 @@ class _StreamingLogRedactor:
                 for priority, (kind, pattern) in enumerate(
                     (
                         ("sensitive", _SENSITIVE_PREFIX),
-                        ("url", _URL_SECRET_PREFIX),
+                        ("url", _URL_SCHEME_PREFIX),
                         ("bearer", _BEARER_PREFIX),
                     )
                 )
@@ -273,7 +276,10 @@ class _StreamingLogRedactor:
                         self._sensitive_unquoted = True
                 elif kind == "url":
                     output.append(match.group("scheme"))
-                    self._url_secret = True
+                    self._url_authority_mode = "candidate"
+                    self._url_authority_buffer = ""
+                    self._pending = self._pending[match.end() :]
+                    continue
                 else:
                     output.append(match.group("label"))
                     self._bearer_secret = True
@@ -322,15 +328,61 @@ class _StreamingLogRedactor:
         self._pending = ""
         return False
 
-    def _consume_url_secret(self, output: list[str]) -> bool:
-        for index, character in enumerate(self._pending):
-            if character == "@" or character.isspace():
+    def _consume_url_authority(self, output: list[str], *, final: bool) -> bool:
+        while self._pending:
+            character = self._pending[0]
+            self._pending = self._pending[1:]
+            terminator = character in _URL_AUTHORITY_TERMINATORS or character.isspace()
+            if self._url_authority_mode == "candidate":
+                if character == "@":
+                    output.append("[REDACTED]@")
+                    self._url_authority_buffer = ""
+                    self._url_authority_mode = "host"
+                elif terminator:
+                    output.append(self._redact_general(self._url_authority_buffer))
+                    output.append(character)
+                    self._reset_url_authority()
+                    return True
+                else:
+                    self._url_authority_buffer += character
+                    if len(self._url_authority_buffer) > _URL_AUTHORITY_MAX_CHARS:
+                        output.append("[REDACTED]")
+                        self._url_authority_buffer = ""
+                        self._url_authority_mode = "overflow_candidate"
+            elif self._url_authority_mode == "host":
+                if terminator:
+                    output.append(self._redact_general(self._url_authority_buffer))
+                    output.append(character)
+                    self._reset_url_authority()
+                    return True
+                self._url_authority_buffer += character
+                if len(self._url_authority_buffer) > _URL_AUTHORITY_MAX_CHARS:
+                    output.append("[REDACTED]")
+                    self._url_authority_buffer = ""
+                    self._url_authority_mode = "overflow_host"
+            elif self._url_authority_mode == "overflow_candidate":
+                if character == "@":
+                    output.append("@")
+                    self._url_authority_mode = "host"
+                elif terminator:
+                    output.append(character)
+                    self._reset_url_authority()
+                    return True
+            elif self._url_authority_mode == "overflow_host" and terminator:
                 output.append(character)
-                self._pending = self._pending[index + 1 :]
-                self._url_secret = False
+                self._reset_url_authority()
                 return True
-        self._pending = ""
+
+        if final:
+            if self._url_authority_mode in {"candidate", "host"}:
+                output.append(self._redact_general(self._url_authority_buffer))
+            self._reset_url_authority()
+            return True
         return False
+
+    def _reset_url_authority(self) -> None:
+        self._url_authority_mode = None
+        self._url_authority_buffer = ""
 
     def _consume_bearer_secret(self, output: list[str]) -> bool:
         for index, character in enumerate(self._pending):

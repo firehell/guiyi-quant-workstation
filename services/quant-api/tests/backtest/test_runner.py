@@ -470,6 +470,15 @@ def test_long_url_and_bearer_secrets_are_discarded_across_many_chunks(
     assert stderr == "Authorization: Bearer [REDACTED] done\n"
 
 
+def test_nonsecret_url_authorities_with_ports_are_preserved_across_chunks() -> None:
+    raw = b"https://example.com:8443/path?q=1 redis://127.0.0.1:6379/0\n"
+    redactor = runner_module._StreamingLogRedactor()
+    chunks = [redactor.feed(raw[index : index + 3]) for index in range(0, len(raw), 3)]
+    chunks.append(redactor.feed(b"", final=True))
+
+    assert b"".join(chunks) == raw
+
+
 @pytest.mark.parametrize(
     ("mode", "expected_outcome", "expected_failure"),
     (
