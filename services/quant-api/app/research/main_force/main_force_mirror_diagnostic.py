@@ -233,6 +233,10 @@ class MainForceMirrorDiagnosticLabelBreakdown:
     raw_sample_count: int
     kept_sample_count: int
     overlap_suppressed_count: int
+    long_sample_count: int
+    short_sample_count: int
+    duplicated_side_sample_count: int
+    binary_evaluable_count: int
     legacy_long_only_count: int
     legacy_short_only_count: int
     legacy_both_count: int
@@ -244,6 +248,7 @@ class MainForceMirrorDiagnosticLabelBreakdown:
     censored_horizon_count: int
     censored_contract_change_count: int
     censored_input_gap_count: int
+    split_boundary_censored_count: int
 
     def __post_init__(self) -> None:
         counts = tuple(
@@ -256,6 +261,12 @@ class MainForceMirrorDiagnosticLabelBreakdown:
             or any(not _nonnegative_int(value) for value in counts)
             or self.kept_sample_count + self.overlap_suppressed_count
             != self.raw_sample_count
+            or self.long_sample_count
+            + self.short_sample_count
+            - self.duplicated_side_sample_count
+            != self.kept_sample_count
+            or self.binary_evaluable_count
+            != self.adverse_first_count + self.favorable_first_count
             or self.legacy_long_only_count
             + self.legacy_short_only_count
             + self.legacy_both_count
@@ -268,6 +279,7 @@ class MainForceMirrorDiagnosticLabelBreakdown:
             + self.censored_horizon_count
             + self.censored_contract_change_count
             + self.censored_input_gap_count
+            + self.split_boundary_censored_count
             != self.kept_sample_count
         ):
             _raise_report_invalid()
@@ -281,6 +293,7 @@ class MainForceMirrorDiagnosticLabelSection:
     long_sample_count: int
     short_sample_count: int
     duplicated_side_sample_count: int
+    binary_evaluable_count: int
     legacy_long_only_count: int
     legacy_short_only_count: int
     legacy_both_count: int
@@ -292,6 +305,7 @@ class MainForceMirrorDiagnosticLabelSection:
     censored_horizon_count: int
     censored_contract_change_count: int
     censored_input_gap_count: int
+    split_boundary_censored_count: int
     resolved_coverage: Decimal
     ambiguous_rate: Decimal
     breakdowns: tuple[MainForceMirrorDiagnosticLabelBreakdown, ...]
@@ -304,6 +318,7 @@ class MainForceMirrorDiagnosticLabelSection:
             self.long_sample_count,
             self.short_sample_count,
             self.duplicated_side_sample_count,
+            self.binary_evaluable_count,
             self.legacy_long_only_count,
             self.legacy_short_only_count,
             self.legacy_both_count,
@@ -315,10 +330,19 @@ class MainForceMirrorDiagnosticLabelSection:
             self.censored_horizon_count,
             self.censored_contract_change_count,
             self.censored_input_gap_count,
+            self.split_boundary_censored_count,
         )
         breakdowns = _require_breakdowns(
             self.breakdowns,
             MainForceMirrorDiagnosticLabelBreakdown,
+        )
+        _require_partition_conservation(
+            breakdowns,
+            tuple(
+                field
+                for field in MainForceMirrorDiagnosticLabelBreakdown.__dataclass_fields__
+                if field != "key"
+            ),
         )
         global_breakdown = breakdowns[0]
         expected_resolved = (
@@ -348,11 +372,14 @@ class MainForceMirrorDiagnosticLabelSection:
             + self.censored_horizon_count
             + self.censored_contract_change_count
             + self.censored_input_gap_count
+            + self.split_boundary_censored_count
             != self.sample_count
             or self.long_sample_count
             + self.short_sample_count
             - self.duplicated_side_sample_count
             != self.sample_count
+            or self.binary_evaluable_count
+            != self.adverse_first_count + self.favorable_first_count
             or self.resolved_coverage != expected_resolved
             or self.ambiguous_rate != expected_ambiguous
             or not _rate(expected_resolved)
@@ -361,6 +388,10 @@ class MainForceMirrorDiagnosticLabelSection:
                 global_breakdown.raw_sample_count,
                 global_breakdown.kept_sample_count,
                 global_breakdown.overlap_suppressed_count,
+                global_breakdown.long_sample_count,
+                global_breakdown.short_sample_count,
+                global_breakdown.duplicated_side_sample_count,
+                global_breakdown.binary_evaluable_count,
                 global_breakdown.legacy_long_only_count,
                 global_breakdown.legacy_short_only_count,
                 global_breakdown.legacy_both_count,
@@ -372,11 +403,16 @@ class MainForceMirrorDiagnosticLabelSection:
                 global_breakdown.censored_horizon_count,
                 global_breakdown.censored_contract_change_count,
                 global_breakdown.censored_input_gap_count,
+                global_breakdown.split_boundary_censored_count,
             )
             != (
                 self.raw_sample_count,
                 self.sample_count,
                 self.overlap_suppressed_count,
+                self.long_sample_count,
+                self.short_sample_count,
+                self.duplicated_side_sample_count,
+                self.binary_evaluable_count,
                 self.legacy_long_only_count,
                 self.legacy_short_only_count,
                 self.legacy_both_count,
@@ -388,6 +424,7 @@ class MainForceMirrorDiagnosticLabelSection:
                 self.censored_horizon_count,
                 self.censored_contract_change_count,
                 self.censored_input_gap_count,
+                self.split_boundary_censored_count,
             )
         ):
             _raise_report_invalid()
@@ -458,6 +495,9 @@ class MainForceMirrorDiagnosticSequenceBreakdown:
     raw_episode_count: int
     kept_episode_count: int
     overlap_suppressed_count: int
+    first_evidence_count: int
+    delay_sample_count: int
+    delay_bars_total: int
     transitions: tuple[MainForceMirrorDiagnosticSequenceTransitionCount, ...]
     events: tuple[MainForceMirrorDiagnosticSequenceEventCount, ...]
     prefix_invariance: MainForceMirrorDiagnosticPrefixInvariance
@@ -472,8 +512,14 @@ class MainForceMirrorDiagnosticSequenceBreakdown:
             or not _nonnegative_int(self.raw_episode_count)
             or not _nonnegative_int(self.kept_episode_count)
             or not _nonnegative_int(self.overlap_suppressed_count)
+            or not _nonnegative_int(self.first_evidence_count)
+            or not _nonnegative_int(self.delay_sample_count)
+            or not _nonnegative_int(self.delay_bars_total)
             or self.kept_episode_count + self.overlap_suppressed_count
             != self.raw_episode_count
+            or self.first_evidence_count > self.kept_episode_count
+            or self.delay_sample_count > self.first_evidence_count
+            or (self.delay_sample_count == 0 and self.delay_bars_total != 0)
             or any(
                 not isinstance(item, MainForceMirrorDiagnosticSequenceTransitionCount)
                 for item in transitions
@@ -533,6 +579,18 @@ class MainForceMirrorDiagnosticSequenceProfileSection:
             self.breakdowns,
             MainForceMirrorDiagnosticSequenceBreakdown,
         )
+        _require_partition_conservation(
+            breakdowns,
+            (
+                "raw_episode_count",
+                "kept_episode_count",
+                "overlap_suppressed_count",
+                "first_evidence_count",
+                "delay_sample_count",
+                "delay_bars_total",
+            ),
+        )
+        _require_sequence_nested_conservation(breakdowns)
         if (
             self.profile_id not in _PROFILES
             or any(not _nonnegative_int(value) for value in counts)
@@ -582,6 +640,7 @@ class MainForceMirrorDiagnosticSequenceSection:
 class MainForceMirrorDiagnosticScoreLatchBreakdown:
     key: MainForceMirrorDiagnosticBreakdownKey
     caution_ready_bar_count: int
+    binary_evaluable_count: int
     score_not_candidate_count: int
     long_only_candidate_count: int
     short_only_candidate_count: int
@@ -592,6 +651,9 @@ class MainForceMirrorDiagnosticScoreLatchBreakdown:
     long_caution_count: int
     short_caution_count: int
     caution_count: int
+    raw_episode_anchor_count: int
+    kept_episode_anchor_count: int
+    overlap_suppressed_anchor_count: int
     long_rearm_count: int
     short_rearm_count: int
 
@@ -619,6 +681,11 @@ class MainForceMirrorDiagnosticScoreLatchBreakdown:
             or self.long_caution_count + self.short_caution_count
             != self.caution_count
             or self.caution_count != self.armed_candidate_count
+            or self.binary_evaluable_count > self.caution_ready_bar_count
+            or self.kept_episode_anchor_count
+            + self.overlap_suppressed_anchor_count
+            != self.raw_episode_anchor_count
+            or self.kept_episode_anchor_count != self.caution_count
             or self.long_rearm_count > self.caution_ready_bar_count
             or self.short_rearm_count > self.caution_ready_bar_count
         ):
@@ -628,27 +695,43 @@ class MainForceMirrorDiagnosticScoreLatchBreakdown:
 @dataclass(frozen=True, slots=True)
 class MainForceMirrorDiagnosticFunnelSection:
     evaluable_bar_count: int
+    binary_evaluable_count: int
     high_score_bar_count: int
     conflict_bar_count: int
     armed_bar_count: int
     caution_episode_count: int
     latched_episode_count: int
     suppression_count: int
+    raw_episode_anchor_count: int
+    kept_episode_anchor_count: int
+    overlap_suppressed_anchor_count: int
     breakdowns: tuple[MainForceMirrorDiagnosticScoreLatchBreakdown, ...]
 
     def __post_init__(self) -> None:
         counts = (
             self.evaluable_bar_count,
+            self.binary_evaluable_count,
             self.high_score_bar_count,
             self.conflict_bar_count,
             self.armed_bar_count,
             self.caution_episode_count,
             self.latched_episode_count,
             self.suppression_count,
+            self.raw_episode_anchor_count,
+            self.kept_episode_anchor_count,
+            self.overlap_suppressed_anchor_count,
         )
         breakdowns = _require_breakdowns(
             self.breakdowns,
             MainForceMirrorDiagnosticScoreLatchBreakdown,
+        )
+        _require_partition_conservation(
+            breakdowns,
+            tuple(
+                field
+                for field in MainForceMirrorDiagnosticScoreLatchBreakdown.__dataclass_fields__
+                if field != "key"
+            ),
         )
         global_breakdown = breakdowns[0]
         if (
@@ -656,21 +739,34 @@ class MainForceMirrorDiagnosticFunnelSection:
             or any(value > self.evaluable_bar_count for value in counts[1:])
             or self.latched_episode_count > self.caution_episode_count
             or self.latched_episode_count != self.caution_episode_count
+            or self.binary_evaluable_count > self.evaluable_bar_count
+            or self.kept_episode_anchor_count
+            + self.overlap_suppressed_anchor_count
+            != self.raw_episode_anchor_count
+            or self.kept_episode_anchor_count != self.caution_episode_count
             or (
                 global_breakdown.caution_ready_bar_count,
+                global_breakdown.binary_evaluable_count,
                 global_breakdown.high_score_unique_bar_count,
                 global_breakdown.dual_candidate_conflict_count,
                 global_breakdown.armed_candidate_count,
                 global_breakdown.caution_count,
                 global_breakdown.unarmed_candidate_suppressed_count,
+                global_breakdown.raw_episode_anchor_count,
+                global_breakdown.kept_episode_anchor_count,
+                global_breakdown.overlap_suppressed_anchor_count,
             )
             != (
                 self.evaluable_bar_count,
+                self.binary_evaluable_count,
                 self.high_score_bar_count,
                 self.conflict_bar_count,
                 self.armed_bar_count,
                 self.caution_episode_count,
                 self.suppression_count,
+                self.raw_episode_anchor_count,
+                self.kept_episode_anchor_count,
+                self.overlap_suppressed_anchor_count,
             )
         ):
             _raise_report_invalid()
@@ -798,6 +894,7 @@ class MainForceMirrorDiagnosticModelSection:
             self.breakdowns,
             MainForceMirrorDiagnosticModelBreakdown,
         )
+        _require_partition_conservation(breakdowns, ("sample_count",))
         if (
             len(folds) != 2
             or any(
@@ -991,6 +1088,117 @@ def _require_breakdowns(
     ):
         _raise_report_invalid()
     return items
+
+
+def _partition_rows(
+    items: tuple[object, ...],
+    scope: MainForceMirrorDiagnosticBreakdownScope,
+) -> tuple[object, ...]:
+    return tuple(
+        item
+        for item in items
+        if getattr(getattr(item, "key", None), "scope", None) is scope
+    )
+
+
+def _require_partition_conservation(
+    items: tuple[object, ...],
+    fields: tuple[str, ...],
+) -> None:
+    global_item = items[0]
+    for scope in (
+        MainForceMirrorDiagnosticBreakdownScope.PRODUCT,
+        MainForceMirrorDiagnosticBreakdownScope.YEAR,
+        MainForceMirrorDiagnosticBreakdownScope.SIDE,
+    ):
+        partition = _partition_rows(items, scope)
+        if any(
+            getattr(global_item, field)
+            != sum(getattr(item, field) for item in partition)
+            for field in fields
+        ):
+            _raise_report_invalid()
+
+
+def _transition_totals(
+    items: tuple[object, ...],
+) -> dict[
+    tuple[
+        MainForceMirrorDiagnosticSequenceState,
+        MainForceMirrorDiagnosticSequenceState,
+    ],
+    int,
+]:
+    totals: dict[
+        tuple[
+            MainForceMirrorDiagnosticSequenceState,
+            MainForceMirrorDiagnosticSequenceState,
+        ],
+        int,
+    ] = {}
+    for item in items:
+        for transition in getattr(item, "transitions"):
+            key = (transition.from_state, transition.to_state)
+            totals[key] = totals.get(key, 0) + transition.count
+    return {key: count for key, count in totals.items() if count != 0}
+
+
+def _event_totals(
+    items: tuple[object, ...],
+) -> dict[MainForceMirrorDiagnosticSequenceEvent, tuple[int, int, int]]:
+    totals: dict[MainForceMirrorDiagnosticSequenceEvent, tuple[int, int, int]] = {}
+    for item in items:
+        for event in getattr(item, "events"):
+            previous = totals.get(event.event_kind, (0, 0, 0))
+            totals[event.event_kind] = (
+                previous[0] + event.raw_count,
+                previous[1] + event.kept_count,
+                previous[2] + event.overlap_count,
+            )
+    return {
+        key: counts
+        for key, counts in totals.items()
+        if counts != (0, 0, 0)
+    }
+
+
+def _prefix_totals(items: tuple[object, ...]) -> tuple[int, int, int]:
+    return (
+        sum(
+            getattr(item, "prefix_invariance").checked_prefix_count
+            for item in items
+        ),
+        sum(
+            getattr(item, "prefix_invariance").matching_prefix_count
+            for item in items
+        ),
+        sum(
+            getattr(item, "prefix_invariance").mismatch_count
+            for item in items
+        ),
+    )
+
+
+def _require_sequence_nested_conservation(
+    items: tuple[MainForceMirrorDiagnosticSequenceBreakdown, ...],
+) -> None:
+    global_items: tuple[object, ...] = (items[0],)
+    global_transitions = _transition_totals(global_items)
+    global_events = _event_totals(global_items)
+    global_prefix = _prefix_totals(global_items)
+    object_items: tuple[object, ...] = items
+    for scope in (
+        MainForceMirrorDiagnosticBreakdownScope.PRODUCT,
+        MainForceMirrorDiagnosticBreakdownScope.YEAR,
+        MainForceMirrorDiagnosticBreakdownScope.SIDE,
+    ):
+        partition = _partition_rows(object_items, scope)
+        if (
+            _transition_totals(partition) != global_transitions
+            or _event_totals(partition) != global_events
+            or _prefix_totals(partition) != global_prefix
+        ):
+            _raise_report_invalid()
 
 
 def _nonnegative_int(value: object) -> bool:

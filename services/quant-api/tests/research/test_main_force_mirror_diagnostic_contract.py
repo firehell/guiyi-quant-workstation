@@ -301,6 +301,10 @@ def _zero_label_breakdowns(domain):
             raw_sample_count=0,
             kept_sample_count=0,
             overlap_suppressed_count=0,
+            long_sample_count=0,
+            short_sample_count=0,
+            duplicated_side_sample_count=0,
+            binary_evaluable_count=0,
             legacy_long_only_count=0,
             legacy_short_only_count=0,
             legacy_both_count=0,
@@ -312,6 +316,7 @@ def _zero_label_breakdowns(domain):
             censored_horizon_count=0,
             censored_contract_change_count=0,
             censored_input_gap_count=0,
+            split_boundary_censored_count=0,
         )
         for key in _breakdown_keys(domain)
     )
@@ -325,6 +330,7 @@ def _zero_label(domain):
         long_sample_count=0,
         short_sample_count=0,
         duplicated_side_sample_count=0,
+        binary_evaluable_count=0,
         legacy_long_only_count=0,
         legacy_short_only_count=0,
         legacy_both_count=0,
@@ -336,6 +342,7 @@ def _zero_label(domain):
         censored_horizon_count=0,
         censored_contract_change_count=0,
         censored_input_gap_count=0,
+        split_boundary_censored_count=0,
         resolved_coverage=Decimal("0"),
         ambiguous_rate=Decimal("0"),
         breakdowns=_zero_label_breakdowns(domain),
@@ -349,6 +356,9 @@ def _zero_sequence_breakdowns(domain):
             raw_episode_count=0,
             kept_episode_count=0,
             overlap_suppressed_count=0,
+            first_evidence_count=0,
+            delay_sample_count=0,
+            delay_bars_total=0,
             transitions=(),
             events=(),
             prefix_invariance=domain.MainForceMirrorDiagnosticPrefixInvariance(
@@ -389,6 +399,7 @@ def _zero_funnel_breakdowns(domain):
         domain.MainForceMirrorDiagnosticScoreLatchBreakdown(
             key=key,
             caution_ready_bar_count=0,
+            binary_evaluable_count=0,
             score_not_candidate_count=0,
             long_only_candidate_count=0,
             short_only_candidate_count=0,
@@ -399,6 +410,9 @@ def _zero_funnel_breakdowns(domain):
             long_caution_count=0,
             short_caution_count=0,
             caution_count=0,
+            raw_episode_anchor_count=0,
+            kept_episode_anchor_count=0,
+            overlap_suppressed_anchor_count=0,
             long_rearm_count=0,
             short_rearm_count=0,
         )
@@ -409,12 +423,16 @@ def _zero_funnel_breakdowns(domain):
 def _zero_funnel(domain):
     return domain.MainForceMirrorDiagnosticFunnelSection(
         evaluable_bar_count=0,
+        binary_evaluable_count=0,
         high_score_bar_count=0,
         conflict_bar_count=0,
         armed_bar_count=0,
         caution_episode_count=0,
         latched_episode_count=0,
         suppression_count=0,
+        raw_episode_anchor_count=0,
+        kept_episode_anchor_count=0,
+        overlap_suppressed_anchor_count=0,
         breakdowns=_zero_funnel_breakdowns(domain),
     )
 
@@ -431,6 +449,13 @@ def _zero_model_breakdowns(domain):
         )
         for key in _breakdown_keys(domain)
     )
+
+
+def _consistent_partitions(breakdowns, global_item):
+    rows = list(breakdowns)
+    for index in (0, 1, 61, 65):
+        rows[index] = replace(global_item, key=rows[index].key)
+    return tuple(rows)
 
 
 def _model(domain):
@@ -600,6 +625,9 @@ def test_nested_audit_contract_expresses_required_breakdowns_and_conservation() 
         raw_sample_count=5,
         kept_sample_count=4,
         overlap_suppressed_count=1,
+        long_sample_count=2,
+        short_sample_count=2,
+        binary_evaluable_count=2,
         legacy_long_only_count=1,
         legacy_short_only_count=1,
         legacy_both_count=1,
@@ -607,7 +635,7 @@ def test_nested_audit_contract_expresses_required_breakdowns_and_conservation() 
         adverse_first_count=1,
         favorable_first_count=1,
         ambiguous_count=1,
-        censored_horizon_count=1,
+        split_boundary_censored_count=1,
     )
     label = replace(
         label,
@@ -616,6 +644,7 @@ def test_nested_audit_contract_expresses_required_breakdowns_and_conservation() 
         overlap_suppressed_count=1,
         long_sample_count=2,
         short_sample_count=2,
+        binary_evaluable_count=2,
         legacy_long_only_count=1,
         legacy_short_only_count=1,
         legacy_both_count=1,
@@ -623,16 +652,16 @@ def test_nested_audit_contract_expresses_required_breakdowns_and_conservation() 
         adverse_first_count=1,
         favorable_first_count=1,
         ambiguous_count=1,
-        censored_horizon_count=1,
+        split_boundary_censored_count=1,
         resolved_coverage=Decimal("0.5"),
         ambiguous_rate=Decimal("0.25"),
-        breakdowns=(label_global, *label.breakdowns[1:]),
+        breakdowns=_consistent_partitions(label.breakdowns, label_global),
     )
     assert tuple(key.scope.value for key in _breakdown_keys(domain)[-4:]) == (
         "side", "side", "fold", "fold"
     )
     assert label.breakdowns[0].legacy_both_count == 1
-    assert label.breakdowns[0].censored_horizon_count == 1
+    assert label.breakdowns[0].split_boundary_censored_count == 1
 
     sequence = _zero_sequence(domain)
     prefix = domain.MainForceMirrorDiagnosticPrefixInvariance(
@@ -655,6 +684,9 @@ def test_nested_audit_contract_expresses_required_breakdowns_and_conservation() 
         sequence.profiles[0].breakdowns[0],
         raw_episode_count=1,
         kept_episode_count=1,
+        first_evidence_count=1,
+        delay_sample_count=1,
+        delay_bars_total=1,
         transitions=(transition,),
         events=(event,),
         prefix_invariance=prefix,
@@ -671,7 +703,10 @@ def test_nested_audit_contract_expresses_required_breakdowns_and_conservation() 
         h5_reversal_hit_rate=Decimal("0.6"),
         yearly_median_reversal_min=Decimal("0"),
         side_median_reversal_min=Decimal("0"),
-        breakdowns=(global_sequence, *sequence.profiles[0].breakdowns[1:]),
+        breakdowns=_consistent_partitions(
+            sequence.profiles[0].breakdowns,
+            global_sequence,
+        ),
     )
     sequence = replace(sequence, profiles=(balanced, *sequence.profiles[1:]))
     assert sequence.profiles[0].breakdowns[0].transitions == (transition,)
@@ -682,6 +717,7 @@ def test_nested_audit_contract_expresses_required_breakdowns_and_conservation() 
     global_funnel = replace(
         funnel.breakdowns[0],
         caution_ready_bar_count=5,
+        binary_evaluable_count=2,
         score_not_candidate_count=2,
         long_only_candidate_count=1,
         short_only_candidate_count=1,
@@ -691,22 +727,41 @@ def test_nested_audit_contract_expresses_required_breakdowns_and_conservation() 
         unarmed_candidate_suppressed_count=1,
         long_caution_count=1,
         caution_count=1,
+        raw_episode_anchor_count=2,
+        kept_episode_anchor_count=1,
+        overlap_suppressed_anchor_count=1,
     )
     funnel = replace(
         funnel,
         evaluable_bar_count=5,
+        binary_evaluable_count=2,
         high_score_bar_count=3,
         conflict_bar_count=1,
         armed_bar_count=1,
         caution_episode_count=1,
         latched_episode_count=1,
         suppression_count=1,
-        breakdowns=(global_funnel, *funnel.breakdowns[1:]),
+        raw_episode_anchor_count=2,
+        kept_episode_anchor_count=1,
+        overlap_suppressed_anchor_count=1,
+        breakdowns=_consistent_partitions(funnel.breakdowns, global_funnel),
     )
     assert funnel.breakdowns[0].caution_ready_bar_count == 5
     assert funnel.breakdowns[0].high_score_unique_bar_count == 3
 
     model = _model(domain)
+    global_model = replace(
+        model.breakdowns[0],
+        sample_count=1,
+        score_auc=Decimal("0.5"),
+        ridge_auc=Decimal("0.5"),
+        current_tree_auc=Decimal("0.5"),
+        full_tree_auc=Decimal("0.5"),
+    )
+    model = replace(
+        model,
+        breakdowns=_consistent_partitions(model.breakdowns, global_model),
+    )
     assert tuple(item.key.scope.value for item in model.breakdowns[-2:]) == (
         "fold", "fold"
     )
@@ -717,6 +772,26 @@ def test_nested_audit_contract_expresses_required_breakdowns_and_conservation() 
         replace(prefix, mismatch_count=1)
     with pytest.raises(domain.MainForceMirrorDiagnosticReportError):
         replace(global_funnel, high_score_unique_bar_count=2)
+    with pytest.raises(domain.MainForceMirrorDiagnosticReportError):
+        replace(
+            label,
+            breakdowns=(label_global, *_zero_label_breakdowns(domain)[1:]),
+        )
+    with pytest.raises(domain.MainForceMirrorDiagnosticReportError):
+        replace(
+            balanced,
+            breakdowns=(global_sequence, *_zero_sequence_breakdowns(domain)[1:]),
+        )
+    with pytest.raises(domain.MainForceMirrorDiagnosticReportError):
+        replace(
+            funnel,
+            breakdowns=(global_funnel, *_zero_funnel_breakdowns(domain)[1:]),
+        )
+    with pytest.raises(domain.MainForceMirrorDiagnosticReportError):
+        replace(
+            model,
+            breakdowns=(global_model, *_zero_model_breakdowns(domain)[1:]),
+        )
 
 
 def test_gate_reasons_are_required_only_for_stop() -> None:
@@ -801,7 +876,10 @@ def test_report_count_limits_accept_protocol_boundary_and_reject_overflow() -> N
         h5_reversal_hit_rate=Decimal("0"),
         yearly_median_reversal_min=Decimal("0"),
         side_median_reversal_min=Decimal("0"),
-        breakdowns=(global_breakdown, *sequence.profiles[0].breakdowns[1:]),
+        breakdowns=_consistent_partitions(
+            sequence.profiles[0].breakdowns,
+            global_breakdown,
+        ),
     )
     assert profile.product_count == 60
     with pytest.raises(domain.MainForceMirrorDiagnosticReportError):
