@@ -8,14 +8,17 @@ from datetime import date
 from decimal import Decimal, InvalidOperation
 import importlib.metadata
 import importlib
+import fcntl
 import json
 import math
 import os
 from pathlib import Path
 import platform
 import secrets
+import select
 import stat
 import sys
+import threading
 from typing import Any, NoReturn
 
 _projection = importlib.import_module(
@@ -27,6 +30,7 @@ project_result = _projection.project_result
 
 _PARAMS_ENV = "GUIYI_BACKTEST_STRATEGY_PARAMS_FILE"
 _BASE_KEYS = {
+    "run_type",
     "start_date",
     "end_date",
     "frequency",
@@ -62,6 +66,8 @@ _DIRECTORY_FLAGS = (
 _READ_FILE_FLAGS = (
     os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
 )
+_LAUNCH_MESSAGE = b"GO\n"
+_LAUNCH_TIMEOUT_SECONDS = 15.0
 
 
 class RunnerConfigError(ValueError):
@@ -263,6 +269,7 @@ def _validate_config(config: object, run_root: Path) -> dict[str, Any]:
         _invalid()
 
     forced_values = (
+        base["run_type"] == "b",
         base["auto_update_bundle"] is False,
         base["rqdatac_uri"] == "disabled",
         simulation["enabled"] is True,
@@ -304,6 +311,108 @@ def _validate_config(config: object, run_root: Path) -> dict[str, Any]:
             },
         },
     }
+
+
+def _read_strategy_source(descriptor: int) -> str:
+    try:
+        os.lseek(descriptor, 0, os.SEEK_SET)
+        chunks: list[bytes] = []
+        total = 0
+        while True:
+            chunk = os.read(descriptor, min(65_536, _MAX_JSON_BYTES + 1 - total))
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > _MAX_JSON_BYTES:
+                _invalid()
+            chunks.append(chunk)
+        os.lseek(descriptor, 0, os.SEEK_SET)
+        return b"".join(chunks).decode("utf-8")
+    except (OSError, UnicodeError):
+        _invalid()
+
+
+def _write_neutralized_strategy(source: str) -> Path:
+    path = Path.cwd() / "strategy.py"
+    try:
+        descriptor = os.open(
+            path,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
+            0o600,
+        )
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            handle.write(source)
+            if source and not source.endswith("\n"):
+                handle.write("\n")
+            handle.write("\n__config__ = {}\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        return path
+    except OSError:
+        _invalid()
+
+
+def _await_launch_authorization(
+    launch_fd: int,
+    *,
+    root: Path,
+    record: Mapping[str, Any],
+) -> tuple[threading.Event, threading.Thread]:
+    try:
+        readable, _, _ = select.select((launch_fd,), (), (), _LAUNCH_TIMEOUT_SECONDS)
+        if not readable or os.read(launch_fd, len(_LAUNCH_MESSAGE)) != _LAUNCH_MESSAGE:
+            raise RunnerConfigError
+        run_id = record.get("run_id")
+        started_at = record.get("started_at")
+        if run_id != root.name or not isinstance(started_at, str) or not started_at:
+            raise RunnerConfigError
+        parent_descriptor = _open_run_root(root.parent)
+        try:
+            lock_descriptor = _open_regular_at(parent_descriptor, "active.lock")
+            try:
+                lock = _load_json_descriptor(lock_descriptor)
+                if not isinstance(lock, Mapping) or dict(lock) != {
+                    "run_id": run_id,
+                    "pid": os.getpid(),
+                    "started_at": started_at,
+                }:
+                    raise RunnerConfigError
+                try:
+                    fcntl.flock(lock_descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError:
+                    pass
+                else:
+                    fcntl.flock(lock_descriptor, fcntl.LOCK_UN)
+                    raise RunnerConfigError
+            finally:
+                os.close(lock_descriptor)
+        finally:
+            os.close(parent_descriptor)
+    except (OSError, ValueError):
+        raise RunnerConfigError from None
+
+    stop = threading.Event()
+
+    def watch_parent() -> None:
+        while not stop.is_set():
+            try:
+                readable, _, _ = select.select((launch_fd,), (), (), 0.1)
+                if not readable:
+                    continue
+                if not stop.is_set():
+                    os._exit(3)
+            except OSError:
+                if not stop.is_set():
+                    os._exit(3)
+                return
+
+    watcher = threading.Thread(
+        target=watch_parent,
+        name="backtest-parent-watchdog",
+        daemon=True,
+    )
+    watcher.start()
+    return stop, watcher
 
 
 def _version(module: object, distribution: str) -> str:
@@ -379,11 +488,15 @@ def _write_json_atomic(
             pass
 
 
-def _execute(raw_root: str) -> int:
+def _execute(raw_root: str, launch_fd: int) -> int:
     root_descriptor: int | None = None
     strategy_descriptor: int | None = None
     params_descriptor: int | None = None
     run_descriptor: int | None = None
+    launch_stop: threading.Event | None = None
+    launch_watcher: threading.Thread | None = None
+    launch_attempted = False
+    launch_authorized = False
     try:
         root = _run_root(raw_root)
         root_descriptor = _open_run_root(root)
@@ -410,10 +523,24 @@ def _execute(raw_root: str) -> int:
         if not isinstance(record, Mapping) or "effective_config" not in record:
             _invalid()
         config = _validate_config(record["effective_config"], root)
-        strategy_path = _descriptor_path(strategy_descriptor)
+        launch_attempted = True
+        launch_stop, launch_watcher = _await_launch_authorization(
+            launch_fd,
+            root=root,
+            record=record,
+        )
+        launch_authorized = True
+        strategy_path = str(
+            _write_neutralized_strategy(_read_strategy_source(strategy_descriptor))
+        )
         params_path = _descriptor_path(params_descriptor)
     except RunnerConfigError:
-        print("RUNNER_CONFIG_INVALID", file=sys.stderr)
+        print(
+            "RUNNER_LAUNCH_NOT_AUTHORIZED"
+            if launch_attempted and not launch_authorized
+            else "RUNNER_CONFIG_INVALID",
+            file=sys.stderr,
+        )
         for descriptor in (
             run_descriptor,
             params_descriptor,
@@ -422,6 +549,10 @@ def _execute(raw_root: str) -> int:
         ):
             if descriptor is not None:
                 os.close(descriptor)
+        try:
+            os.close(launch_fd)
+        except OSError:
+            pass
         return 2
 
     os.environ[_PARAMS_ENV] = params_path
@@ -456,6 +587,14 @@ def _execute(raw_root: str) -> int:
         else:
             return_code = 0
     finally:
+        if launch_stop is not None:
+            launch_stop.set()
+        if launch_watcher is not None:
+            launch_watcher.join(timeout=0.2)
+        try:
+            os.close(launch_fd)
+        except OSError:
+            pass
         for descriptor in (
             run_descriptor,
             params_descriptor,
@@ -472,10 +611,13 @@ def main(argv: list[str] | None = None) -> int:
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--probe", action="store_true")
     group.add_argument("--run-root")
+    parser.add_argument("--launch-fd", type=int)
     args = parser.parse_args(argv)
     if args.probe:
         return _probe()
-    return _execute(args.run_root)
+    if args.launch_fd is None or args.launch_fd < 0:
+        parser.error("--launch-fd is required with --run-root")
+    return _execute(args.run_root, args.launch_fd)
 
 
 if __name__ == "__main__":  # pragma: no cover - subprocess entrypoint

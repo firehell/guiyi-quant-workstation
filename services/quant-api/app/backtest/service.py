@@ -149,6 +149,11 @@ class BacktestService:
                             "effective_parameters": dict(validated.parameters),
                         },
                     )
+                    self.store.acquire_lock(
+                        run_id,
+                        pid=os.getpid(),
+                        started_at=started_at,
+                    )
                     process = self.runner.start(validated, paths)
                 except Exception as exc:
                     failure_code = (
@@ -158,16 +163,22 @@ class BacktestService:
                         else RunFailureCode.STRATEGY_EXECUTION_FAILED
                     )
                     self._write_start_failure(run_id, failure_code)
+                    self.store.release_lock(run_id)
                     raise
 
                 try:
-                    self.store.acquire_lock(
+                    self.store.transfer_lock_pid(
                         run_id,
-                        pid=process.pid,
+                        expected_pid=os.getpid(),
+                        child_pid=process.pid,
                         started_at=started_at,
                     )
                 except Exception as lock_error:
-                    self._cleanup_unlocked_start(run_id, process, lock_error)
+                    self._cleanup_locked_start_without_ownership(
+                        run_id,
+                        process,
+                        lock_error,
+                    )
                     raise AssertionError("unreachable")
                 try:
                     ownership = self.store.acquire_monitor_ownership(run_id)
@@ -186,6 +197,7 @@ class BacktestService:
                     daemon=True,
                 )
                 try:
+                    process.authorize_launch()
                     monitor.start()
                 except Exception as start_error:
                     self._cleanup_monitor_start_failure(

@@ -7,6 +7,7 @@ import {
   DEFAULT_BACKTEST_API_BASE_URL,
   artifactUrl,
   createBacktestClient,
+  createConfiguredBacktestClient,
   mapBacktestError,
   resolveBacktestApiBaseUrl,
   serializeBacktestRunRequest,
@@ -129,6 +130,35 @@ describe('dedicated local backtest HTTP client', () => {
       { message: 'BACKTEST_LOCAL_UNAVAILABLE' },
     )
 
+    assert.equal(requests, 0)
+    assert.equal(downloads, 0)
+  })
+
+  it('turns an invalid build-time URL into a permanent local-unavailable client without import failure', async () => {
+    let requests = 0
+    let downloads = 0
+    const client = createConfiguredBacktestClient('https://attacker.example/api', {
+      hostname: 'localhost',
+      adapter: async (config) => {
+        requests += 1
+        return response(config, {})
+      },
+      fetcher: async () => {
+        downloads += 1
+        return new Response()
+      },
+    })
+
+    await assert.rejects(client.health(), { message: 'BACKTEST_LOCAL_UNAVAILABLE' })
+    await assert.rejects(client.startRun(form), { message: 'BACKTEST_LOCAL_UNAVAILABLE' })
+    await assert.rejects(
+      client.downloadArtifact(RUN_ID, 'stdout_log'),
+      { message: 'BACKTEST_LOCAL_UNAVAILABLE' },
+    )
+    assert.throws(
+      () => client.artifactUrl(RUN_ID, 'equity_png'),
+      { message: 'BACKTEST_LOCAL_UNAVAILABLE' },
+    )
     assert.equal(requests, 0)
     assert.equal(downloads, 0)
   })

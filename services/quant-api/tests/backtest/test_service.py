@@ -139,8 +139,16 @@ class _FakeProcess:
     pid: int = field(default_factory=os.getpid)
     terminated: bool = False
     terminate_error: Exception | None = None
+    authorized: bool = False
+    authorize_error: Exception | None = None
+
+    def authorize_launch(self) -> None:
+        if self.authorize_error is not None:
+            raise self.authorize_error
+        self.authorized = True
 
     def monitor(self) -> MonitorResult:
+        assert self.authorized
         if self.wait_before_monitor is not None:
             assert self.wait_before_monitor.wait(timeout=2)
         if self.monitor_error is not None:
@@ -181,6 +189,7 @@ class _FakeRunner:
         start_entered: threading.Event | None = None,
         allow_start: threading.Event | None = None,
         terminate_error: Exception | None = None,
+        authorize_error: Exception | None = None,
     ) -> None:
         self.settings = settings
         self.result = result or MonitorResult(0, RunStatus.SUCCEEDED, None)
@@ -191,6 +200,7 @@ class _FakeRunner:
         self.start_entered = start_entered
         self.allow_start = allow_start
         self.terminate_error = terminate_error
+        self.authorize_error = authorize_error
         self.started: list[_FakeProcess] = []
         self.start_error: Exception | None = None
         self.probe_result = RunnerProbe(
@@ -225,6 +235,7 @@ class _FakeRunner:
             monitor_error=self.monitor_error,
             pid=self.process_pid if self.process_pid is not None else os.getpid(),
             terminate_error=self.terminate_error,
+            authorize_error=self.authorize_error,
         )
         self.started.append(process)
         return process
@@ -688,6 +699,72 @@ def test_cross_instance_conflict_is_busy_before_second_runner_spawn(
     assert second_runner.started == []
 
 
+def test_launch_reservation_exists_before_spawn_and_authorization_follows_monitor_ownership(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service, store, runner = _service(tmp_path)
+    events: list[str] = []
+    real_start = runner.start
+    real_ownership = store.acquire_monitor_ownership
+    real_thread_start = threading.Thread.start
+    real_authorize = _FakeProcess.authorize_launch
+
+    def observe_start(*args: Any, **kwargs: Any) -> _FakeProcess:
+        lock = store.read_lock()
+        assert lock is not None
+        assert lock.pid == os.getpid()
+        events.append("spawn")
+        return real_start(*args, **kwargs)
+
+    def observe_ownership(run_id: str) -> ActiveLockOwnership:
+        events.append("ownership")
+        return real_ownership(run_id)
+
+    def observe_monitor_start(thread: threading.Thread) -> None:
+        if thread.name.startswith("backtest-monitor-"):
+            events.append("monitor")
+        real_thread_start(thread)
+
+    def observe_authorize(process: _FakeProcess) -> None:
+        events.append("authorize")
+        real_authorize(process)
+
+    monkeypatch.setattr(runner, "start", observe_start)
+    monkeypatch.setattr(store, "acquire_monitor_ownership", observe_ownership)
+    monkeypatch.setattr(service_module.threading.Thread, "start", observe_monitor_start)
+    monkeypatch.setattr(_FakeProcess, "authorize_launch", observe_authorize)
+
+    started = service.start_run(_request())
+    _wait_terminal(service, started["run_id"])
+
+    assert events[:4] == ["spawn", "ownership", "authorize", "monitor"]
+
+
+def test_launch_authorization_failure_terminates_child_and_retains_no_reservation(
+    tmp_path: Path,
+) -> None:
+    settings = _settings(tmp_path)
+    runner = _FakeRunner(
+        settings,
+        authorize_error=RuntimeError("injected authorization failure"),
+    )
+    store = ArtifactStore(settings)
+    service = BacktestService(
+        registry=_registry(tmp_path),
+        store=store,
+        runner=runner,
+        repository_commit=REPOSITORY_COMMIT,
+    )
+
+    with pytest.raises(RuntimeError, match="injected authorization failure"):
+        service.start_run(_request())
+
+    assert runner.started[0].terminated is True
+    assert store.read_lock() is None
+    assert store.list_runs()[0]["status"] == "failed"
+
+
 def test_spawn_failure_marks_failed_and_leaves_logs_without_lock(
     tmp_path: Path,
 ) -> None:
@@ -705,7 +782,7 @@ def test_spawn_failure_marks_failed_and_leaves_logs_without_lock(
     assert store.read_lock() is None
 
 
-def test_lock_failure_after_spawn_terminates_only_new_child_and_marks_failed(
+def test_launch_reservation_failure_prevents_spawn_and_marks_failed(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -719,8 +796,7 @@ def test_lock_failure_after_spawn_terminates_only_new_child_and_marks_failed(
     with pytest.raises(BacktestError, match="^BACKTEST_ALREADY_RUNNING$"):
         service.start_run(_request())
 
-    assert len(runner.started) == 1
-    assert runner.started[0].terminated is True
+    assert runner.started == []
     assert store.list_runs()[0]["status"] == "failed"
     assert store.read_lock() is None
 

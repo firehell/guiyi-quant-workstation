@@ -92,6 +92,7 @@ def main() -> int:
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--probe", action="store_true")
     group.add_argument("--run-root", type=Path)
+    parser.add_argument("--launch-fd", type=int)
     args = parser.parse_args()
     if args.probe:
         print(
@@ -105,6 +106,8 @@ def main() -> int:
         )
         return 0
 
+    if args.launch_fd is None or os.read(args.launch_fd, 3) != b"GO\n":
+        return 2
     run_root = args.run_root
     assert run_root is not None
     _validate_safe_json_config(run_root)

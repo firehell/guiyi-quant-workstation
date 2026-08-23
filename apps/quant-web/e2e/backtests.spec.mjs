@@ -519,6 +519,25 @@ test('local unavailable retains navigation and gives configuration, start, and r
   expect(store.healthCalls).toBe(2)
 })
 
+test('invalid build-time backtest URL leaves MainLayout alive and makes zero sidecar probes', async ({ page }) => {
+  test.skip(process.env.EXPECT_INVALID_BACKTEST_CONFIG !== '1')
+  const loopbackRequests = []
+  await page.route(`${API_BASE}/**`, async (route) => {
+    loopbackRequests.push(route.request().url())
+    await route.abort()
+  })
+
+  await page.goto('/backtests')
+
+  await expect(page.getByRole('menuitem', { name: 'Market 工作台' })).toBeVisible()
+  await expect(page.getByRole('menuitem', { name: 'RQAlpha 回测' })).toBeVisible()
+  await expect(page.getByTestId('backtest-unavailable')).toContainText(
+    'VITE_BACKTEST_API_BASE_URL',
+  )
+  await expect(page.getByTestId('backtest-form')).toHaveCount(0)
+  expect(loopbackRequests).toEqual([])
+})
+
 test('non-loopback host hides navigation and direct route fails closed with zero sidecar requests', async ({ page }, testInfo) => {
   const localOrigin = new URL(testInfo.project.use.baseURL).origin
   const remoteOrigin = localOrigin.replace('127.0.0.1', '192.0.2.10')

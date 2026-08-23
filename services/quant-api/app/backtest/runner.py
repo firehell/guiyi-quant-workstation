@@ -15,6 +15,7 @@ import select
 import signal
 import stat
 import subprocess
+import tempfile
 import threading
 import time
 from typing import Any, BinaryIO, NoReturn
@@ -30,6 +31,7 @@ _RUNNER_ENTRY_PATH = Path(__file__).with_name("runner_entry.py")
 _QUANT_API_ROOT = Path(__file__).resolve().parents[2]
 _TERMINATE_GRACE_SECONDS = 2.0
 _PIPE_DRAIN_SECONDS = 1.0
+_LAUNCH_MESSAGE = b"GO\n"
 _LOG_CHUNK_BYTES = 4096
 _LOG_CARRY_CHARS = 4096
 _INHERITED_ENV_ALLOWLIST = frozenset(
@@ -145,6 +147,7 @@ def build_rqalpha_config(
         raise ValueError("BACKTEST_REQUEST_CONFIG_INVALID")
     return {
         "base": {
+            "run_type": "b",
             "start_date": config["start_date"],
             "end_date": config["end_date"],
             "frequency": config["frequency"],
@@ -183,11 +186,13 @@ def build_rqalpha_config(
     }
 
 
-def _safe_environment(params_path: Path) -> dict[str, str]:
+def _safe_environment(
+    params_path: Path, *, isolated_home: Path | None = None
+) -> dict[str, str]:
     environment = {
         name: value
         for name in _INHERITED_ENV_ALLOWLIST
-        if (value := os.environ.get(name)) is not None
+        if name != "HOME" and (value := os.environ.get(name)) is not None
     }
     environment.update(
         {
@@ -196,6 +201,15 @@ def _safe_environment(params_path: Path) -> dict[str, str]:
             "PYTHONUNBUFFERED": "1",
         }
     )
+    if isolated_home is not None:
+        environment.update(
+            {
+                "HOME": str(isolated_home),
+                "XDG_CONFIG_HOME": str(isolated_home / "config"),
+                "XDG_CACHE_HOME": str(isolated_home / "cache"),
+                "XDG_DATA_HOME": str(isolated_home / "data"),
+            }
+        )
     return environment
 
 
@@ -559,6 +573,8 @@ class RunningProcess:
         drain_threads: tuple[threading.Thread, threading.Thread],
         drain_stop: threading.Event,
         owned_process_group: int,
+        launch_writer: int,
+        isolated_workdir: tempfile.TemporaryDirectory[str],
     ) -> None:
         self._process = process
         self._paths = paths
@@ -566,12 +582,33 @@ class RunningProcess:
         self._drain_threads = drain_threads
         self._drain_stop = drain_stop
         self._owned_process_group = owned_process_group
+        self._launch_writer = launch_writer
+        self._isolated_workdir = isolated_workdir
+        self._launch_authorized = False
         self._monitor_lock = threading.Lock()
         self._monitor_result: MonitorResult | None = None
 
     @property
     def pid(self) -> int:
         return self._process.pid
+
+    @property
+    def is_waiting_for_launch(self) -> bool:
+        return not self._launch_authorized and self._process.poll() is None
+
+    def authorize_launch(self) -> None:
+        """Release the child only after the service owns its matching active lock."""
+
+        with self._monitor_lock:
+            if self._launch_authorized:
+                raise RuntimeError("BACKTEST_LAUNCH_ALREADY_AUTHORIZED")
+            if self._process.poll() is not None:
+                raise BacktestError(BacktestHttpErrorCode.RUNNER_UNAVAILABLE)
+            try:
+                os.write(self._launch_writer, _LAUNCH_MESSAGE)
+            except OSError as exc:
+                raise BacktestError(BacktestHttpErrorCode.RUNNER_UNAVAILABLE) from exc
+            self._launch_authorized = True
 
     def monitor(self) -> MonitorResult:
         with self._monitor_lock:
@@ -584,6 +621,7 @@ class RunningProcess:
                 timed_out = True
                 exit_code = self._terminate_owned_process_group()
             self._finish_drains()
+            self._cleanup_launch_resources()
             if timed_out:
                 result = MonitorResult(
                     exit_code=exit_code,
@@ -618,9 +656,11 @@ class RunningProcess:
             if self._monitor_result is not None:
                 return self._monitor_result
             try:
+                self._close_launch_writer()
                 exit_code = self._terminate_owned_process_group()
             finally:
                 self._finish_drains()
+                self._cleanup_launch_resources()
             result = MonitorResult(
                 exit_code=exit_code,
                 outcome=RunStatus.FAILED,
@@ -628,6 +668,19 @@ class RunningProcess:
             )
             self._monitor_result = result
             return result
+
+    def _close_launch_writer(self) -> None:
+        if self._launch_writer < 0:
+            return
+        try:
+            os.close(self._launch_writer)
+        except OSError:
+            pass
+        self._launch_writer = -1
+
+    def _cleanup_launch_resources(self) -> None:
+        self._close_launch_writer()
+        self._isolated_workdir.cleanup()
 
     def _finish_drains(self) -> None:
         drain_deadline = time.monotonic() + _PIPE_DRAIN_SECONDS
@@ -765,25 +818,58 @@ class SubprocessRunner:
         except Exception:
             stdout_target.close()
             raise
+        isolated_workdir: tempfile.TemporaryDirectory[str] | None = None
+        launch_reader = -1
+        launch_writer = -1
+        try:
+            isolated_workdir = tempfile.TemporaryDirectory(
+                prefix="guiyi-backtest-runner."
+            )
+            isolated_root = Path(isolated_workdir.name).resolve()
+            for name in ("config", "cache", "data"):
+                (isolated_root / name).mkdir(mode=0o700)
+            launch_reader, launch_writer = os.pipe()
+            command.extend(("--launch-fd", str(launch_reader)))
+        except Exception:
+            if launch_reader >= 0:
+                os.close(launch_reader)
+            if launch_writer >= 0:
+                os.close(launch_writer)
+            if isolated_workdir is not None:
+                isolated_workdir.cleanup()
+            stdout_target.close()
+            stderr_target.close()
+            raise
         try:
             process = subprocess.Popen(
                 command,
-                cwd=str(_QUANT_API_ROOT),
-                env=_safe_environment(paths.strategy_params_json),
+                cwd=str(isolated_root),
+                env=_safe_environment(
+                    paths.strategy_params_json,
+                    isolated_home=isolated_root,
+                ),
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 shell=False,
                 close_fds=True,
+                pass_fds=(launch_reader,),
                 start_new_session=True,
             )
         except OSError as exc:
+            os.close(launch_reader)
+            os.close(launch_writer)
+            isolated_workdir.cleanup()
             stdout_target.close()
             stderr_target.close()
             raise BacktestError(BacktestHttpErrorCode.RUNNER_UNAVAILABLE) from exc
+        assert isolated_workdir is not None
+        os.close(launch_reader)
         owned_process_group = process.pid
         if process.stdout is None or process.stderr is None:
             _kill_started_process_group(process, owned_process_group)
+            os.close(launch_writer)
+            isolated_workdir.cleanup()
             stdout_target.close()
             stderr_target.close()
             raise BacktestError(BacktestHttpErrorCode.RUNNER_UNAVAILABLE)
@@ -815,6 +901,8 @@ class SubprocessRunner:
                 thread.start()
         except RuntimeError as exc:
             _kill_started_process_group(process, owned_process_group)
+            os.close(launch_writer)
+            isolated_workdir.cleanup()
             drain_stop.set()
             for thread in threads:
                 if thread.ident is not None:
@@ -831,6 +919,8 @@ class SubprocessRunner:
             threads,
             drain_stop,
             owned_process_group,
+            launch_writer,
+            isolated_workdir,
         )
 
 

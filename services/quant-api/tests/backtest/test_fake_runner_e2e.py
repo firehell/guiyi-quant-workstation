@@ -61,6 +61,7 @@ def test_fake_subprocess_end_to_end_publishes_complete_research_artifacts(
 from __future__ import annotations
 import argparse
 import json
+import os
 from pathlib import Path
 import sys
 
@@ -68,12 +69,16 @@ parser = argparse.ArgumentParser()
 group = parser.add_mutually_exclusive_group(required=True)
 group.add_argument("--probe", action="store_true")
 group.add_argument("--run-root", type=Path)
+parser.add_argument("--launch-fd", type=int)
 args = parser.parse_args()
 if args.probe:
     print(json.dumps({"rqalpha_version": "fake-rqalpha-e2e", "rqsdk_version": "fake-rqsdk-e2e", "python_version": "fake-python-e2e"}))
     raise SystemExit(0)
 root = args.run_root
+assert args.launch_fd is not None
+assert os.read(args.launch_fd, 3) == b"GO\\n"
 record = json.loads((root / "run.json").read_text("utf-8"))
+assert record["effective_config"]["base"]["run_type"] == "b"
 assert record["effective_config"]["base"]["auto_update_bundle"] is False
 (root / "result.pkl").write_bytes(b"fake-pickle")
 (root / "equity.png").write_bytes(b"fake-png")

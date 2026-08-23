@@ -70,13 +70,30 @@ case "$GUIYI_BACKTEST_PYTHON_EXECUTABLE:$GUIYI_BACKTEST_BUNDLE_PATH:$GUIYI_BACKT
 esac
 
 task8_repo_root="$(git rev-parse --show-toplevel)"
-task8_sidecar_python="$task8_repo_root/services/quant-api/.venv/bin/python"
+task8_repository_commit="$(git rev-parse HEAD)"
+task8_sidecar_python="$(realpath \
+  "$task8_repo_root/services/quant-api/.venv/bin/python")"
 task8_registry="$task8_repo_root/services/quant-api/app/backtest/strategies/registry.json"
+task8_strategy_rel="services/quant-api/app/backtest/strategies/example_future_smoke_v1.py"
+task8_strategy_source="$task8_repo_root/$task8_strategy_rel"
+task8_formal_snapshot_script="$task8_repo_root/scripts/engineering/backtest_formal_surface_snapshot.py"
 task8_bundle_root="$(cd "$GUIYI_BACKTEST_BUNDLE_PATH" && pwd -P)"
 task8_runs_parent_input="$(dirname -- "$GUIYI_BACKTEST_RUNS_ROOT")"
 task8_runs_name="$(basename -- "$GUIYI_BACKTEST_RUNS_ROOT")"
 case "$task8_runs_name" in ''|.|..) exit 1 ;; esac
 test -x "$task8_sidecar_python"
+test -f "$task8_strategy_source"
+test -f "$task8_formal_snapshot_script"
+git -C "$task8_repo_root" diff --quiet -- "$task8_strategy_rel"
+git -C "$task8_repo_root" diff --cached --quiet -- "$task8_strategy_rel"
+git -C "$task8_repo_root" cat-file -e \
+  "$task8_repository_commit:$task8_strategy_rel"
+task8_expected_strategy_sha256="$(
+  git -C "$task8_repo_root" show \
+    "$task8_repository_commit:$task8_strategy_rel" | shasum -a 256 | awk '{print $1}'
+)"
+test "$(shasum -a 256 "$task8_strategy_source" | awk '{print $1}')" \
+  = "$task8_expected_strategy_sha256"
 test -d "$task8_runs_parent_input"
 test -w "$task8_runs_parent_input"
 task8_runs_parent="$(cd "$task8_runs_parent_input" && pwd -P)"
@@ -112,8 +129,13 @@ set -euo pipefail
 : "${GUIYI_BACKTEST_CORS_ORIGINS:?}"
 
 task8_repo_root="$(git rev-parse --show-toplevel)"
-task8_sidecar_python="$task8_repo_root/services/quant-api/.venv/bin/python"
+task8_repository_commit="$(git rev-parse HEAD)"
+task8_sidecar_python="$(realpath \
+  "$task8_repo_root/services/quant-api/.venv/bin/python")"
 task8_registry="$task8_repo_root/services/quant-api/app/backtest/strategies/registry.json"
+task8_strategy_rel="services/quant-api/app/backtest/strategies/example_future_smoke_v1.py"
+task8_strategy_source="$task8_repo_root/$task8_strategy_rel"
+task8_formal_snapshot_script="$task8_repo_root/scripts/engineering/backtest_formal_surface_snapshot.py"
 task8_external_python="$(realpath "$GUIYI_BACKTEST_PYTHON_EXECUTABLE")"
 task8_runner_entry="$(realpath \
   "$task8_repo_root/services/quant-api/app/backtest/runner_entry.py")"
@@ -125,6 +147,18 @@ task8_runs_parent="$(cd "$task8_runs_parent_input" && pwd -P)"
 task8_runs_root="$task8_runs_parent/$task8_runs_name"
 test -x "$task8_external_python"
 test -x "$task8_sidecar_python"
+test -f "$task8_strategy_source"
+test -f "$task8_formal_snapshot_script"
+git -C "$task8_repo_root" diff --quiet -- "$task8_strategy_rel"
+git -C "$task8_repo_root" diff --cached --quiet -- "$task8_strategy_rel"
+git -C "$task8_repo_root" cat-file -e \
+  "$task8_repository_commit:$task8_strategy_rel"
+task8_expected_strategy_sha256="$(
+  git -C "$task8_repo_root" show \
+    "$task8_repository_commit:$task8_strategy_rel" | shasum -a 256 | awk '{print $1}'
+)"
+test "$(shasum -a 256 "$task8_strategy_source" | awk '{print $1}')" \
+  = "$task8_expected_strategy_sha256"
 test -d "$task8_bundle_root"
 test -r "$task8_bundle_root"
 test -w "$task8_runs_parent"
@@ -150,6 +184,12 @@ case "$(cd "$task8_tmp_dir" && pwd -P)" in
   *) exit 1 ;;
 esac
 task8_sidecar_pid=""
+task8_sidecar_identity_captured=0
+task8_sidecar_executable=""
+task8_sidecar_command=""
+task8_sidecar_cwd=""
+task8_sidecar_started=""
+task8_sidecar_pgid=""
 task8_runner_pid=""
 task8_run_id=""
 task8_post_inflight=0
@@ -161,6 +201,89 @@ task8_cleanup_fail() {
   task8_cleanup_safe=0
   printf '%s\n' "FAIL: $1; smoke evidence and runs root retained" >&2
   return 1
+}
+task8_read_sidecar_identity() {
+  task8_observed_sidecar_executable="$(/usr/sbin/lsof -a -p "$task8_sidecar_pid" \
+    -d txt -Fn 2>/dev/null | awk '
+      /^n/ && !found {sub(/^n/, ""); executable=$0; found=1}
+      END {if (found) print executable}
+    ')" || return 1
+  task8_observed_sidecar_executable="$(
+    realpath "$task8_observed_sidecar_executable" 2>/dev/null
+  )" || return 1
+  task8_observed_sidecar_command="$(
+    /bin/ps -ww -p "$task8_sidecar_pid" -o command= 2>/dev/null
+  )" || return 1
+  task8_observed_sidecar_cwd="$(/usr/sbin/lsof -a -p "$task8_sidecar_pid" \
+    -d cwd -Fn 2>/dev/null | awk '
+      /^n/ && !found {sub(/^n/, ""); cwd=$0; found=1}
+      END {if (found) print cwd}
+    ')" || return 1
+  task8_observed_sidecar_cwd="$(
+    realpath "$task8_observed_sidecar_cwd" 2>/dev/null
+  )" || return 1
+  task8_observed_sidecar_started="$(
+    /bin/ps -ww -p "$task8_sidecar_pid" -o lstart= 2>/dev/null
+  )" || return 1
+  task8_observed_sidecar_pgid="$(
+    /bin/ps -ww -p "$task8_sidecar_pid" -o pgid= 2>/dev/null | tr -d ' '
+  )" || return 1
+  test -n "$task8_observed_sidecar_executable"
+  test -n "$task8_observed_sidecar_command"
+  test -n "$task8_observed_sidecar_cwd"
+  test -n "$task8_observed_sidecar_started"
+  test -n "$task8_observed_sidecar_pgid"
+}
+task8_capture_sidecar_identity() {
+  task8_capture_attempt=0
+  while test "$task8_capture_attempt" -lt 20; do
+    task8_capture_attempt=$((task8_capture_attempt + 1))
+    if kill -0 "$task8_sidecar_pid" 2>/dev/null \
+        && task8_read_sidecar_identity \
+        && test "$task8_observed_sidecar_executable" = "$task8_sidecar_python" \
+        && test "$task8_observed_sidecar_command" \
+          = "$task8_sidecar_python -m app.backtest.local_app" \
+        && test "$task8_observed_sidecar_cwd" \
+          = "$task8_repo_root/services/quant-api"; then
+      task8_sidecar_executable="$task8_observed_sidecar_executable"
+      task8_sidecar_command="$task8_observed_sidecar_command"
+      task8_sidecar_cwd="$task8_observed_sidecar_cwd"
+      task8_sidecar_started="$task8_observed_sidecar_started"
+      task8_sidecar_pgid="$task8_observed_sidecar_pgid"
+      task8_sidecar_identity_captured=1
+      return 0
+    fi
+    sleep 0.1
+  done
+  task8_cleanup_fail BACKTEST_SMOKE_SIDECAR_IDENTITY_UNRESOLVED
+}
+task8_verify_sidecar_identity() {
+  if test "$task8_sidecar_identity_captured" -ne 1 \
+      || ! kill -0 "$task8_sidecar_pid" 2>/dev/null \
+      || ! task8_read_sidecar_identity \
+      || test "$task8_observed_sidecar_executable" != "$task8_sidecar_executable" \
+      || test "$task8_observed_sidecar_command" != "$task8_sidecar_command" \
+      || test "$task8_observed_sidecar_cwd" != "$task8_sidecar_cwd" \
+      || test "$task8_observed_sidecar_started" != "$task8_sidecar_started" \
+      || test "$task8_observed_sidecar_pgid" != "$task8_sidecar_pgid"; then
+    task8_cleanup_fail BACKTEST_SMOKE_SIDECAR_IDENTITY_CHANGED
+    return 1
+  fi
+}
+task8_formal_snapshot() {
+  task8_formal_output="$1"
+  if ! PYTHONPATH="$task8_repo_root/services/quant-api" \
+      UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
+      uv run --offline --project "$task8_repo_root/services/quant-api" \
+      python "$task8_formal_snapshot_script" >"$task8_formal_output"; then
+    printf '%s\n' 'NOT_VERIFIED: formal surface snapshot unavailable' >&2
+    return 1
+  fi
+  jq -e '.schema_version == 1 and .status == "VERIFIED"' \
+    "$task8_formal_output" >/dev/null || {
+      printf '%s\n' 'NOT_VERIFIED: formal surface snapshot invalid' >&2
+      return 1
+    }
 }
 task8_confirm_runner_absent() {
   if test "$task8_post_inflight" -eq 0 \
@@ -339,7 +462,13 @@ task8_stop_runner() {
   task8_run_dir="$(realpath "$task8_run_dir" 2>/dev/null || true)"
   task8_runner_command="$(/bin/ps -ww -p "$task8_runner_pid" \
     -o command= 2>/dev/null || true)"
-  task8_expected_runner_command="$task8_runner_executable $task8_runner_entry --run-root $task8_run_dir"
+  task8_expected_runner_prefix="$task8_runner_executable $task8_runner_entry --run-root $task8_run_dir --launch-fd "
+  task8_runner_launch_fd="${task8_runner_command#"$task8_expected_runner_prefix"}"
+  if ! printf '%s\n' "$task8_runner_launch_fd" | rg -q '^[0-9]+$'; then
+    task8_cleanup_fail BACKTEST_SMOKE_CLEANUP_PROCESS_IDENTITY_INVALID
+    return 1
+  fi
+  task8_expected_runner_command="$task8_expected_runner_prefix$task8_runner_launch_fd"
   if test "$task8_runner_pid" -eq $$ || test "$task8_runner_pid" -eq "$PPID" \
       || test -z "$task8_runner_pgid" || test "$task8_runner_pgid" != "$task8_runner_pid" \
       || test "$task8_runner_pgid" = "$task8_self_pgid" \
@@ -380,14 +509,32 @@ task8_stop_runner() {
 }
 task8_stop_sidecar() {
   if test -n "$task8_sidecar_pid" && kill -0 "$task8_sidecar_pid" 2>/dev/null; then
-    kill "$task8_sidecar_pid" 2>/dev/null || true
+    task8_verify_sidecar_identity || return 1
+    kill -TERM "$task8_sidecar_pid" 2>/dev/null || {
+      task8_cleanup_fail BACKTEST_SMOKE_SIDECAR_TERM_FAILED
+      return 1
+    }
     task8_stop_attempt=0
     while kill -0 "$task8_sidecar_pid" 2>/dev/null && test "$task8_stop_attempt" -lt 20; do
       task8_stop_attempt=$((task8_stop_attempt + 1))
       sleep 0.25
     done
     if kill -0 "$task8_sidecar_pid" 2>/dev/null; then
-      kill -9 "$task8_sidecar_pid" 2>/dev/null || true
+      task8_verify_sidecar_identity || return 1
+      kill -KILL "$task8_sidecar_pid" 2>/dev/null || {
+        task8_cleanup_fail BACKTEST_SMOKE_SIDECAR_KILL_FAILED
+        return 1
+      }
+      task8_stop_attempt=0
+      while kill -0 "$task8_sidecar_pid" 2>/dev/null \
+          && test "$task8_stop_attempt" -lt 20; do
+        task8_stop_attempt=$((task8_stop_attempt + 1))
+        sleep 0.25
+      done
+    fi
+    if kill -0 "$task8_sidecar_pid" 2>/dev/null; then
+      task8_cleanup_fail BACKTEST_SMOKE_SIDECAR_STILL_LIVE
+      return 1
     fi
   fi
   if test -n "$task8_sidecar_pid"; then
@@ -418,6 +565,7 @@ trap 'exit 143' TERM
 find "$task8_bundle_root" -xdev -type f -exec stat -f '%N|%z|%m' {} + \
   | LC_ALL=C sort >"$task8_tmp_dir/bundle.before"
 test -s "$task8_tmp_dir/bundle.before"
+task8_formal_snapshot "$task8_tmp_dir/formal.before.json"
 mkdir -m 700 "$task8_runs_root"
 task8_runs_root="$(realpath "$task8_runs_root")"
 export GUIYI_BACKTEST_RUNS_ROOT="$task8_runs_root"
@@ -441,6 +589,7 @@ jq -n '{
   exec "$task8_sidecar_python" -m app.backtest.local_app
 ) >"$task8_tmp_dir/sidecar.stdout.log" 2>"$task8_tmp_dir/sidecar.stderr.log" &
 task8_sidecar_pid=$!
+task8_capture_sidecar_identity
 
 task8_health_ready=0
 task8_health_attempt=0
@@ -510,11 +659,15 @@ while test "$task8_poll_attempt" -lt 180; do
 done
 test "$task8_terminal" -eq 1
 
-jq -e --arg task8_run_id "$task8_run_id" --arg task8_run_dir "$task8_run_dir" '
+jq -e --arg task8_run_id "$task8_run_id" --arg task8_run_dir "$task8_run_dir" \
+  --arg task8_repository_commit "$task8_repository_commit" \
+  --arg task8_expected_strategy_sha256 "$task8_expected_strategy_sha256" '
   .run_id == $task8_run_id and .status == "succeeded" and
   .exit_code == 0 and .failure_code == null and
   .research_only == true and .formal_evidence == false and
   .promotion_eligible == false and
+  .repository_commit == $task8_repository_commit and
+  .strategy_sha256 == $task8_expected_strategy_sha256 and
   .strategy_id == "example_future_smoke_v1" and
   .requested_config == {
     strategy_id: "example_future_smoke_v1",
@@ -528,6 +681,7 @@ jq -e --arg task8_run_id "$task8_run_id" --arg task8_run_dir "$task8_run_dir" '
   .effective_config.base.start_date == "2016-06-01" and
   .effective_config.base.end_date == "2016-06-03" and
   .effective_config.base.frequency == "1d" and
+  .effective_config.base.run_type == "b" and
   .effective_config.base.accounts.FUTURE == "1000000" and
   .effective_config.base.auto_update_bundle == false and
   .effective_config.base.rqdatac_uri == "disabled" and
@@ -565,6 +719,9 @@ test -d "$task8_run_dir/report"
 test ! -L "$task8_run_dir/report"
 test -n "$(find "$task8_run_dir/report" -type f -print -quit)"
 test ! -e "$task8_runs_root/active.lock"
+test "$(shasum -a 256 "$task8_run_dir/strategy.py" | awk '{print $1}')" \
+  = "$task8_expected_strategy_sha256"
+cmp -s "$task8_strategy_source" "$task8_run_dir/strategy.py"
 task8_run_count="$(find "$task8_runs_root" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')"
 test "$task8_run_count" -eq 1
 
@@ -576,6 +733,9 @@ unzip -tq "$task8_tmp_dir/report.zip" >/dev/null
 
 task8_stop_runner
 task8_stop_sidecar
+task8_formal_snapshot "$task8_tmp_dir/formal.after.json"
+cmp -s "$task8_tmp_dir/formal.before.json" \
+  "$task8_tmp_dir/formal.after.json"
 find "$task8_bundle_root" -xdev -type f -exec stat -f '%N|%z|%m' {} + \
   | LC_ALL=C sort >"$task8_tmp_dir/bundle.after"
 cmp -s "$task8_tmp_dir/bundle.before" "$task8_tmp_dir/bundle.after"
@@ -589,8 +749,8 @@ printf '%s\n' "RQALPHA_SMOKE_SUCCEEDED run_id=$task8_run_id"
 `task8_run_id/task8_runner_pid`，也只从本次新建且原先为空的 runs root 中恢复唯一
 regular non-symlink lock，并在发送信号前交叉校验 lock/run/process-group 身份。
 runner executable 必须等于规范化后的 configured external Python，`ps` 的完整 command
-必须精确等于 `<python> <runner_entry> --run-root <run_root>`；不接受 suffix 匹配、任意
-prefix 或额外参数。任一身份
+必须精确等于 `<python> <runner_entry> --run-root <run_root> --launch-fd <digits>`；
+launch fd 必须是纯数字，不接受 suffix 匹配、任意 prefix 或额外参数。任一身份
 无法唯一确认时只输出 `FAIL` 诊断，不向未确认 PID 发送信号。POST transport
 尚在 inflight 且 lock 尚未出现时，cleanup 会有界等待；窗口结束后仍不能用终态
 `run.json` 或明确的非 202 空根证明 runner 不存在时，必须保留 sidecar 由它继续拥有/

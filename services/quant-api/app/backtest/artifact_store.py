@@ -472,6 +472,65 @@ class ArtifactStore:
         except FileNotFoundError:
             return None
 
+    def transfer_lock_pid(
+        self,
+        run_id: str,
+        *,
+        expected_pid: int,
+        child_pid: int,
+        started_at: str,
+    ) -> ActiveLock:
+        """Transfer the exact launch reservation to the newly spawned child PID."""
+
+        self._validate_run_id(run_id)
+        if expected_pid <= 0 or child_pid <= 0 or not started_at:
+            raise ValueError("BACKTEST_LOCK_INVALID")
+        with self._locked_root() as root_descriptor:
+            opened = self._open_lock_at(root_descriptor)
+            expected = ActiveLock(run_id, expected_pid, started_at)
+            if opened is None or opened.lock != expected:
+                if opened is not None:
+                    os.close(opened.descriptor)
+                raise ValueError("BACKTEST_LOCK_INVALID")
+            transferred = ActiveLock(run_id, child_pid, started_at)
+            writable_descriptor: int | None = None
+            try:
+                writable_descriptor = os.open(
+                    "active.lock",
+                    os.O_RDWR
+                    | getattr(os, "O_NOFOLLOW", 0)
+                    | getattr(os, "O_CLOEXEC", 0),
+                    dir_fd=root_descriptor,
+                )
+                metadata = os.fstat(writable_descriptor)
+                if (
+                    not stat.S_ISREG(metadata.st_mode)
+                    or (metadata.st_dev, metadata.st_ino)
+                    != (opened.device, opened.inode)
+                ):
+                    raise ValueError("BACKTEST_LOCK_INVALID")
+                data = self._json_bytes(
+                    {
+                        "run_id": run_id,
+                        "pid": child_pid,
+                        "started_at": started_at,
+                    }
+                )
+                os.ftruncate(writable_descriptor, 0)
+                os.lseek(writable_descriptor, 0, os.SEEK_SET)
+                remaining = memoryview(data)
+                while remaining:
+                    written = os.write(writable_descriptor, remaining)
+                    if written <= 0:
+                        raise OSError("BACKTEST_LOCK_WRITE_FAILED")
+                    remaining = remaining[written:]
+                os.fsync(writable_descriptor)
+            finally:
+                if writable_descriptor is not None:
+                    os.close(writable_descriptor)
+                os.close(opened.descriptor)
+            return transferred
+
     def acquire_monitor_ownership(self, run_id: str) -> ActiveLockOwnership:
         """Hold an advisory flock on this run's existing ``active.lock``."""
 

@@ -150,6 +150,30 @@ export function createBacktestClient(options: BacktestClientOptions = {}): Backt
   }
 }
 
+export function createConfiguredBacktestClient(
+  configured: string | undefined,
+  options: Omit<BacktestClientOptions, 'baseURL'> = {},
+): BacktestClient {
+  try {
+    return createBacktestClient({ ...options, baseURL: configured })
+  } catch {
+    const unavailable = () => Promise.reject(
+      new BacktestClientError('BACKTEST_LOCAL_UNAVAILABLE'),
+    )
+    return {
+      health: unavailable,
+      listStrategies: unavailable,
+      startRun: unavailable,
+      listRuns: unavailable,
+      getRun: unavailable,
+      artifactUrl: () => {
+        throw new BacktestClientError('BACKTEST_LOCAL_UNAVAILABLE')
+      },
+      downloadArtifact: unavailable,
+    }
+  }
+}
+
 async function readResponseJson(response: Response): Promise<unknown> {
   try {
     return await response.json()
@@ -185,4 +209,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
 }
 
-export const backtestClient = createBacktestClient()
+export const backtestClient = createConfiguredBacktestClient(
+  import.meta.env?.VITE_BACKTEST_API_BASE_URL,
+)

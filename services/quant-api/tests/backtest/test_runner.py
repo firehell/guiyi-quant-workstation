@@ -34,6 +34,9 @@ _SAFE_ENV_NAMES = {
     "GUIYI_BACKTEST_STRATEGY_PARAMS_FILE",
     "PYTHONPATH",
     "PYTHONUNBUFFERED",
+    "XDG_CACHE_HOME",
+    "XDG_CONFIG_HOME",
+    "XDG_DATA_HOME",
 }
 
 
@@ -127,6 +130,16 @@ def _fake_runner(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(runner_module, "_RUNNER_ENTRY_PATH", _FAKE_ENTRY)
 
 
+def _start_authorized(
+    settings: BacktestSettings,
+    request: ValidatedBacktestRequest,
+    paths: RunPaths,
+):
+    handle = SubprocessRunner(settings).start(request, paths)
+    handle.authorize_launch()
+    return handle
+
+
 def test_build_rqalpha_config_forces_complete_safe_configuration(
     settings: BacktestSettings,
     run_paths: RunPaths,
@@ -136,6 +149,7 @@ def test_build_rqalpha_config_forces_complete_safe_configuration(
 
     assert config == {
         "base": {
+            "run_type": "b",
             "start_date": "2026-01-05",
             "end_date": "2026-01-06",
             "frequency": "1d",
@@ -209,19 +223,28 @@ def test_start_uses_fixed_argv_cwd_shell_false_and_environment_allowlist(
     monkeypatch.setattr(runner_module.subprocess, "Popen", observe_popen)
 
     handle = SubprocessRunner(settings).start(validated_request, run_paths)
+    handle.authorize_launch()
     result = handle.monitor()
 
     assert result.outcome is RunStatus.SUCCEEDED
+    kwargs = observed["kwargs"]
     assert observed["args"] == (
         [
             str(settings.python_executable),
             str(_FAKE_ENTRY),
             "--run-root",
             str(run_paths.root),
+            "--launch-fd",
+            str(kwargs["pass_fds"][0]),
         ],
     )
-    kwargs = observed["kwargs"]
-    assert kwargs["cwd"] == str(Path(runner_module.__file__).resolve().parents[2])
+    isolated_home = Path(kwargs["cwd"])
+    assert isolated_home != Path(runner_module.__file__).resolve().parents[2]
+    assert kwargs["env"]["HOME"] == str(isolated_home)
+    assert kwargs["env"]["XDG_CONFIG_HOME"] == str(isolated_home / "config")
+    assert kwargs["env"]["XDG_CACHE_HOME"] == str(isolated_home / "cache")
+    assert kwargs["env"]["XDG_DATA_HOME"] == str(isolated_home / "data")
+    assert len(kwargs["pass_fds"]) == 1
     assert kwargs["shell"] is False
     assert set(kwargs["env"]) <= _SAFE_ENV_NAMES
     assert kwargs["env"]["GUIYI_BACKTEST_STRATEGY_PARAMS_FILE"] == str(
@@ -233,6 +256,42 @@ def test_start_uses_fixed_argv_cwd_shell_false_and_environment_allowlist(
         "PUSHPLUS_TOKEN",
         "RQDATA_USERNAME",
     } & set(kwargs["env"])
+    assert not isolated_home.exists()
+
+
+def test_started_child_waits_for_explicit_launch_authorization(
+    settings: BacktestSettings,
+    run_paths: RunPaths,
+    validated_request: ValidatedBacktestRequest,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _fake_runner(monkeypatch)
+    _prepare_run(settings, run_paths, validated_request, mode="success")
+
+    handle = SubprocessRunner(settings).start(validated_request, run_paths)
+    time.sleep(0.05)
+
+    assert handle.is_waiting_for_launch is True
+    assert not run_paths.result_json.exists()
+
+    handle.authorize_launch()
+    assert handle.monitor().outcome is RunStatus.SUCCEEDED
+
+
+def test_cancelled_launch_never_enters_fake_engine(
+    settings: BacktestSettings,
+    run_paths: RunPaths,
+    validated_request: ValidatedBacktestRequest,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _fake_runner(monkeypatch)
+    _prepare_run(settings, run_paths, validated_request, mode="success")
+
+    handle = SubprocessRunner(settings).start(validated_request, run_paths)
+    result = handle.terminate_owned()
+
+    assert result.outcome is RunStatus.FAILED
+    assert not run_paths.result_json.exists()
 
 
 @pytest.mark.parametrize(
@@ -262,7 +321,7 @@ def test_monitor_classifies_terminal_outcome(
     _fake_runner(monkeypatch)
     _prepare_run(settings, run_paths, validated_request, mode=mode)
 
-    result = SubprocessRunner(settings).start(validated_request, run_paths).monitor()
+    result = _start_authorized(settings, validated_request, run_paths).monitor()
 
     assert result.outcome is outcome
     assert result.exit_code == exit_code
@@ -287,7 +346,7 @@ def test_monitor_terminates_then_kills_a_timed_out_runner(
     _prepare_run(settings, run_paths, validated_request, mode="ignore_terminate")
     started = time.monotonic()
 
-    result = SubprocessRunner(settings).start(validated_request, run_paths).monitor()
+    result = _start_authorized(settings, validated_request, run_paths).monitor()
 
     assert time.monotonic() - started < 3
     assert result.outcome is RunStatus.TIMED_OUT
@@ -322,7 +381,7 @@ def test_timeout_terminates_then_kills_the_owned_process_group_and_drains_pipes(
     monkeypatch.setattr(runner_module.os, "killpg", observe_killpg)
     started = time.monotonic()
 
-    handle = SubprocessRunner(settings).start(validated_request, run_paths)
+    handle = _start_authorized(settings, validated_request, run_paths)
     result = handle.monitor()
 
     assert time.monotonic() - started < 3
@@ -360,7 +419,7 @@ def test_timeout_uses_group_identity_captured_before_a_late_leader_lookup(
     monkeypatch.setattr(runner_module.os, "getpgid", leader_identity)
     started = time.monotonic()
 
-    handle = SubprocessRunner(settings).start(validated_request, run_paths)
+    handle = _start_authorized(settings, validated_request, run_paths)
     start_returned = True
     result = handle.monitor()
 
@@ -384,7 +443,7 @@ def test_streamed_logs_are_redacted_and_exclude_parent_secrets(
     monkeypatch.setenv("RQDATA_USERNAME", "parent-rqdata-user")
     _prepare_run(settings, run_paths, validated_request, mode="redaction")
 
-    result = SubprocessRunner(settings).start(validated_request, run_paths).monitor()
+    result = _start_authorized(settings, validated_request, run_paths).monitor()
 
     assert result.outcome is RunStatus.SUCCEEDED
     combined = run_paths.stdout_log.read_text("utf-8") + run_paths.stderr_log.read_text(
@@ -412,7 +471,7 @@ def test_chunked_redaction_handles_escaped_quotes_boundaries_and_long_lines(
     monkeypatch.setattr(runner_module, "_LOG_CHUNK_BYTES", 7, raising=False)
     _prepare_run(settings, run_paths, validated_request, mode="redaction_chunks")
 
-    result = SubprocessRunner(settings).start(validated_request, run_paths).monitor()
+    result = _start_authorized(settings, validated_request, run_paths).monitor()
 
     assert result.outcome is RunStatus.SUCCEEDED
     stdout = run_paths.stdout_log.read_text("utf-8")
@@ -439,7 +498,7 @@ def test_exact_maximum_length_secret_is_redacted_before_emit_boundary(
         settings, run_paths, validated_request, mode="redaction_exact_boundary"
     )
 
-    result = SubprocessRunner(settings).start(validated_request, run_paths).monitor()
+    result = _start_authorized(settings, validated_request, run_paths).monitor()
 
     stdout = run_paths.stdout_log.read_text("utf-8")
     assert result.outcome is RunStatus.SUCCEEDED
@@ -459,7 +518,7 @@ def test_long_url_and_bearer_secrets_are_discarded_across_many_chunks(
         settings, run_paths, validated_request, mode="redaction_long_credentials"
     )
 
-    result = SubprocessRunner(settings).start(validated_request, run_paths).monitor()
+    result = _start_authorized(settings, validated_request, run_paths).monitor()
 
     stdout = run_paths.stdout_log.read_text("utf-8")
     stderr = run_paths.stderr_log.read_text("utf-8")
@@ -537,7 +596,7 @@ def test_fast_exit_is_classified_without_post_popen_identity_queries(
     monkeypatch.setattr(runner_module.os, "getpgid", exited_child_identity)
     monkeypatch.setattr(runner_module.os, "getsid", exited_child_identity)
 
-    handle = SubprocessRunner(settings).start(validated_request, run_paths)
+    handle = _start_authorized(settings, validated_request, run_paths)
     result = handle.monitor()
 
     assert result.outcome is expected_outcome
@@ -677,7 +736,7 @@ def test_safe_environment_does_not_inherit_arbitrary_names(
 
     monkeypatch.setattr(runner_module.subprocess, "Popen", observe_popen)
 
-    result = SubprocessRunner(settings).start(validated_request, run_paths).monitor()
+    result = _start_authorized(settings, validated_request, run_paths).monitor()
 
     assert result.outcome is RunStatus.SUCCEEDED
     assert "GUIYI_UNRELATED_VALUE" not in captured

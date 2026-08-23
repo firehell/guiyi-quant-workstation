@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from decimal import Decimal
+import fcntl
 import json
 import os
 from pathlib import Path
@@ -46,6 +47,7 @@ def _raw_result() -> dict[str, Any]:
 def _effective_config(run_root: Path) -> dict[str, Any]:
     return {
         "base": {
+            "run_type": "b",
             "start_date": "2026-01-05",
             "end_date": "2026-01-06",
             "frequency": "1d",
@@ -89,12 +91,56 @@ def _run_root(tmp_path: Path) -> Path:
     (root / "strategy.py").write_text("def init(context): pass\n", "utf-8")
     (root / "strategy_params.json").write_text(json.dumps({"quantity": 1}), "utf-8")
     (root / "run.json").write_text(
-        json.dumps({"effective_config": _effective_config(root)}), "utf-8"
+        json.dumps(
+            {
+                "run_id": root.name,
+                "started_at": "2026-08-23T01:02:03+00:00",
+                "effective_config": _effective_config(root),
+            }
+        ),
+        "utf-8",
     )
     (root.parent.parent / "bundle").mkdir()
     (root / "stdout.log").write_text("", "utf-8")
     (root / "stderr.log").write_text("", "utf-8")
     return root
+
+
+def _run_entry(root: Path, *, raw_root: Path | None = None) -> int:
+    lock_path = root.parent / "active.lock"
+    lock_path.write_text(
+        json.dumps(
+            {
+                "run_id": root.name,
+                "pid": os.getpid(),
+                "started_at": "2026-08-23T01:02:03+00:00",
+            }
+        ),
+        "utf-8",
+    )
+    lock_descriptor = os.open(lock_path, os.O_RDONLY)
+    fcntl.flock(lock_descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    read_fd, write_fd = os.pipe()
+    os.write(write_fd, b"GO\n")
+    isolated = root.parent.parent / f"runner-home-{root.name}"
+    isolated.mkdir(exist_ok=True)
+    previous = Path.cwd()
+    try:
+        os.chdir(isolated)
+        return runner_entry.main(
+            [
+                "--run-root",
+                str(raw_root if raw_root is not None else root),
+                "--launch-fd",
+                str(read_fd),
+            ]
+        )
+    finally:
+        os.chdir(previous)
+        os.close(write_fd)
+        fcntl.flock(lock_descriptor, fcntl.LOCK_UN)
+        os.close(lock_descriptor)
+        lock_path.unlink(missing_ok=True)
 
 
 def test_project_result_uses_fixed_summary_equity_and_decimal_strings(
@@ -170,11 +216,11 @@ def test_runner_entry_calls_run_file_and_atomically_writes_result(
 
     monkeypatch.setattr(runner_entry.os, "replace", observe_replace)
 
-    exit_code = runner_entry.main(["--run-root", str(root)])
+    exit_code = _run_entry(root)
 
     assert exit_code == 0
     assert observed == {
-        "strategy_source": "def init(context): pass\n",
+        "strategy_source": "def init(context): pass\n\n__config__ = {}\n",
         "config": {
             **_effective_config(root),
             "base": {
@@ -199,6 +245,70 @@ def test_runner_entry_calls_run_file_and_atomically_writes_result(
     assert Path(replacements[-1][1]).name == "result.json"
     assert json.loads((root / "result.json").read_text("utf-8"))["trade_count"] == "2"
     assert not list(root.glob(".result.json.*.tmp"))
+
+
+def test_runner_entry_neutralizes_strategy_config_before_rqalpha_resolution(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = _run_root(tmp_path)
+    (root / "strategy.py").write_text(
+        "__config__ = {\n"
+        "  'base': {'run_type': 'r', 'auto_update_bundle': True, "
+        "'rqdatac_uri': 'attacker'},\n"
+        "  'mod': {'ams': {'enabled': True}, 'incremental': {'enabled': True}, "
+        "'sys_simulation': {'signal': True}, "
+        "'sys_analyser': {'output_file': '/tmp/attacker.pkl'}}\n"
+        "}\n"
+        "def init(context): pass\n",
+        "utf-8",
+    )
+    (root / "result.pkl").write_bytes(b"pickle")
+    (root / "equity.png").write_bytes(b"png")
+    (root / "report" / "summary.csv").write_text("x", "utf-8")
+    observed: dict[str, Any] = {}
+    rqalpha = ModuleType("rqalpha")
+
+    def run_file(strategy_file_path: str, config: dict[str, Any]) -> dict[str, Any]:
+        scope: dict[str, Any] = {}
+        source = Path(strategy_file_path).read_text("utf-8")
+        exec(compile(source, strategy_file_path, "exec"), scope)
+        observed["strategy_config"] = scope.get("__config__")
+        observed["config"] = config
+        return _raw_result()
+
+    rqalpha.run_file = run_file  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "rqalpha", rqalpha)
+
+    assert _run_entry(root) == 0
+    assert observed["strategy_config"] == {}
+    assert observed["config"]["base"]["run_type"] == "b"
+    assert observed["config"]["base"]["auto_update_bundle"] is False
+    assert observed["config"]["base"]["rqdatac_uri"] == "disabled"
+    assert observed["config"]["mod"]["ams"]["enabled"] is False
+    assert observed["config"]["mod"]["incremental"]["enabled"] is False
+    assert observed["config"]["mod"]["sys_simulation"]["signal"] is False
+    assert observed["config"]["mod"]["sys_analyser"]["output_file"] == str(
+        root / "result.pkl"
+    )
+
+
+def test_runner_entry_rejects_launch_pipe_eof_before_engine_import(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    root = _run_root(tmp_path)
+    read_fd, write_fd = os.pipe()
+    os.close(write_fd)
+    exit_code = runner_entry.main(
+        ["--run-root", str(root), "--launch-fd", str(read_fd)]
+    )
+
+    assert exit_code == 2
+    with pytest.raises(OSError):
+        os.fstat(read_fd)
+    assert capsys.readouterr().err.strip() == "RUNNER_LAUNCH_NOT_AUTHORIZED"
+    assert "rqalpha" not in sys.modules
 
 
 def test_runner_entry_probe_emits_version_json(
@@ -250,7 +360,7 @@ def test_runner_entry_fails_closed_when_forced_config_is_weakened(
     mutator(record["effective_config"])
     (root / "run.json").write_text(json.dumps(record), "utf-8")
 
-    exit_code = runner_entry.main(["--run-root", str(root)])
+    exit_code = _run_entry(root)
 
     assert exit_code == 2
     assert capsys.readouterr().err.strip() == expected_stderr
@@ -267,7 +377,7 @@ def test_runner_entry_rejects_incomplete_rqalpha_result_without_partial_json(
     rqalpha.run_file = lambda *_args, **_kwargs: {"sys_analyser": {}}  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "rqalpha", rqalpha)
 
-    exit_code = runner_entry.main(["--run-root", str(root)])
+    exit_code = _run_entry(root)
 
     assert exit_code == 3
     assert capsys.readouterr().err.strip() == "RUNNER_RESULT_INVALID"
@@ -287,7 +397,7 @@ def test_runner_entry_rejects_nonpositive_or_nonfinite_native_engine_numbers(
     rqalpha.run_file = lambda *_args, **_kwargs: _raw_result()  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "rqalpha", rqalpha)
 
-    exit_code = runner_entry.main(["--run-root", str(root)])
+    exit_code = _run_entry(root)
 
     assert exit_code == 2
     assert capsys.readouterr().err.strip() == "RUNNER_CONFIG_INVALID"
@@ -320,7 +430,7 @@ def test_runner_entry_rejects_decimal_values_that_underflow_native_engine_fields
     rqalpha.run_file = lambda *_args, **_kwargs: _raw_result()  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "rqalpha", rqalpha)
 
-    exit_code = runner_entry.main(["--run-root", str(root)])
+    exit_code = _run_entry(root)
 
     assert exit_code == 2
     assert capsys.readouterr().err.strip() == "RUNNER_CONFIG_INVALID"
@@ -336,7 +446,7 @@ def test_runner_entry_returns_safe_config_error_for_wrong_path_type(
     record["effective_config"]["base"]["data_bundle_path"] = {"secret": "x"}
     (root / "run.json").write_text(json.dumps(record), "utf-8")
 
-    exit_code = runner_entry.main(["--run-root", str(root)])
+    exit_code = _run_entry(root)
 
     assert exit_code == 2
     assert capsys.readouterr().err.strip() == "RUNNER_CONFIG_INVALID"
@@ -352,7 +462,7 @@ def test_runner_entry_rejects_relative_or_symlinked_run_root(
     alias.symlink_to(root, target_is_directory=True)
 
     for unsafe in (Path("relative-run"), alias):
-        assert runner_entry.main(["--run-root", str(unsafe)]) == 2
+        assert _run_entry(root, raw_root=unsafe) == 2
         assert capsys.readouterr().err.strip() == "RUNNER_CONFIG_INVALID"
 
 
@@ -381,7 +491,7 @@ def test_runner_entry_uses_opened_json_instead_of_a_replaced_directory_entry(
     monkeypatch.setitem(sys.modules, "rqalpha", rqalpha)
     monkeypatch.setattr(Path, "read_text", swap_on_path_read)
 
-    exit_code = runner_entry.main(["--run-root", str(root)])
+    exit_code = _run_entry(root)
 
     assert exit_code == 0
     assert swapped is False
@@ -395,7 +505,7 @@ def test_runner_entry_rejects_oversized_json_before_parsing(
     with (root / "run.json").open("a", encoding="utf-8") as handle:
         handle.write(" " * 1_100_000)
 
-    exit_code = runner_entry.main(["--run-root", str(root)])
+    exit_code = _run_entry(root)
 
     assert exit_code == 2
     assert capsys.readouterr().err.strip() == "RUNNER_CONFIG_INVALID"
@@ -424,11 +534,11 @@ def test_runner_entry_binds_strategy_identity_and_rejects_mid_run_replacement(
     rqalpha.run_file = replace_then_read  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "rqalpha", rqalpha)
 
-    exit_code = runner_entry.main(["--run-root", str(root)])
+    exit_code = _run_entry(root)
 
     assert exit_code == 2
     assert capsys.readouterr().err.strip() == "RUNNER_CONFIG_INVALID"
-    assert observed_source == [original_source]
+    assert observed_source == [original_source + "\n__config__ = {}\n"]
     assert not (root / "result.json").exists()
 
 

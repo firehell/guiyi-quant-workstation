@@ -130,7 +130,11 @@ Run 状态 SHALL 精确为 `running|succeeded|failed|timed_out|interrupted`；�
 queued、retrying、cancelling 或 partial-success 状态，也不提供 queue、retry、cancel 或断点续跑。
 终态 failure code SHALL 只使用 `RUNNER_UNAVAILABLE|STRATEGY_EXECUTION_FAILED|RUN_TIMED_OUT|
 RUN_INTERRUPTED|RESULT_INCOMPLETE`；成功 run 必须完整产生必需 result/analyser artifacts。
-一次启动 MUST 原子创建 `active.lock`，其内容精确为 `run_id`、`pid`、`started_at`。
+一次启动 MUST 在 spawn 前原子创建 `active.lock` launch reservation，其内容
+精确为 `run_id`、父进程 `pid`、`started_at`。Spawn 后只能将同一 inode 上的匹配
+reservation 转移为 child PID；子进程必须等待父进程明确握手，并在进入
+RQAlpha 前自行验证匹配 `active.lock` 已由 monitor 持有 ownership。握手超时、取消、
+父进程提前结束、lock 或 ownership 不匹配时，子进程 MUST 在导入 RQAlpha 前结束。
 Runs root 级串行化、exclusive creation 与 monitor ownership MUST 使同一 runs root 的多线程/多 Local
 app 实例共同遵守“最多一个 running”。
 
@@ -149,16 +153,21 @@ PID 仍存活，必须保持 busy 且不接管/结束该进程；仅当 PID 已�
 - **THEN** 服务只终止该次启动所有的进程组，在宽限后必要时 kill，最终记录 `timed_out + RUN_TIMED_OUT`
 
 ### Requirement: 固定 runner 边界与强制配置
-Runner SHALL 使用配置的绝对 Python 可执行文件、固定 `runner_entry.py`、固定 argv/cwd、
+Runner SHALL 使用配置的绝对 Python 可执行文件、固定 `runner_entry.py`、固定 argv、
+one-run OS 隔离 cwd/HOME/XDG config roots、
 `shell=False` 和新进程组。子进程环境 SHALL 只继承运行所需的最小 allowlist，MUST NOT
 继承 DB、Redis、RQData/RQDATAC、PushPlus、token、password、license 或其他项目凭据；stdout/stderr
 MUST 在写盘前脱敏。
 
-Runner entry MUST 经官方 `rqalpha.run_file(strategy_file_path, config)` 执行策略，且 MUST 二次
-校验以下不可覆盖配置：
+Runner entry MUST 在导入 RQAlpha 前用 descriptor 读取登记策略，将其写入隔离 cwd
+的一次性执行副本，并在文件末尾强制 `__config__ = {}`，从而中和策略声明或运行时
+改写的 RQAlpha config。用户 HOME 和项目 cwd 中的 RQAlpha config MUST 因隔离而不可见。
+Runner entry 必须先完整验证最终传入 `run_file` 的精确 config allowlist，再经官方
+`rqalpha.run_file(strategy_file_path, config)` 执行策略。强制且不可覆盖配置包括：
 
 ```text
 base.data_bundle_path = configured absolute bundle path
+base.run_type = BACKTEST (run_file short value `b`)
 base.auto_update_bundle = false
 base.rqdatac_uri = disabled
 base.accounts = FUTURE only
@@ -232,6 +241,8 @@ terminal、replacement、route 离开或 component unmount MUST 停止旧轮询�
 
 在 LAN、公网、别名、IPv6 loopback 或任何其他 hostname 上，Web MUST 隐藏菜单、直达页
 fail-closed、发出零次 loopback 请求且不提供提交或 artifact 能力。
+非法 `VITE_BACKTEST_API_BASE_URL` MUST NOT 在 module import 时抛异常或影响 MainLayout/Market；
+本机页面 SHALL 收敛为永久 unavailable 并显示配置指引，远程页面仍隐藏且零 probe。
 
 #### Scenario: 公网 Web 访问回测直达路由
 - **WHEN** 浏览器在非 `localhost|127.0.0.1` hostname 打开 `/backtests`
@@ -261,10 +272,16 @@ MUST NOT 转化、复用或推导为真实 smoke 授权。
 
 紧随 preflight 后的第一个外部 mutation—包括创建 OS-temp 验收文件、`mkdir`/写入 runs root、启动
 sidecar/runner 或发起真实 run—之前 MUST 取得新的、当次范围明确的单次执行意图。
-该意图只授权紧随其后的一次精确 smoke 尝试。Smoke MUST 记录全部或明确关键 Bundle 文件
-前后 mtime/size，只运行已注册的短窗口示例策略，只创建一个独立研究 runs root 与一个
-run 目录，有界轮询到终态，并机器校验 report/pickle/PNG/result、强制安全配置与
-DB/Redis/Canonical/Alert/notification/Execution Review/Runtime/真实订单零副作用。Smoke 中
+该意图只授权紧随其后的一次精确 smoke 尝试。Smoke MUST 将当前 repository commit、
+注册策略在该 commit 的 SHA-256、工作树策略源文件与 run snapshot 三者精确交叉校验；
+任一对不一致必须失败。Smoke MUST 记录全部或明确关键 Bundle 文件前后 mtime/size，
+只运行已注册的短窗口示例策略，只创建一个独立研究 runs root 与一个 run 目录，
+有界轮询到终态，并机器校验 report/pickle/PNG/result 与强制安全配置。
+Sidecar 启动后 MUST 捕获 executable、完整 argv、cwd、PID 和启动身份，每次 TERM/KILL
+前必须精确重验；无法证明时保留现场并失败。Smoke 还 MUST 在前后用只读方式分别
+快照并比较 DB/Redis/Canonical/Alert/notification/Execution Review/Runtime/真实订单正式面；
+任一正式面无法读取、快照无法比较或发现变化时，必须记为 `NOT_VERIFIED`、整体失败并
+不声称零副作用。Smoke 中
 MUST NOT 执行 `rqsdk update-data`、`download-data` 或任何 Bundle mutation。成功或失败都消耗
 本次意图；重试需要新的单次意图。
 
