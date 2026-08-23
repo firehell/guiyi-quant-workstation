@@ -1,6 +1,6 @@
 # 当前状态
 
-更新时间：2026-08-22
+更新时间：2026-08-23
 
 ## 正式 release 与 production Runtime
 
@@ -30,6 +30,22 @@
   Ruff、Mypy、Web build、OpenSpec、secret scan 与 launchd render 均通过。
 - 本 release 不含 migration、Canonical/production DB/Redis 写入、Scope/transport 变化、通知
   retry/replay/backfill 或订单能力，`auto_order=false` 不变。
+
+## Market Trend Focus V1 develop release candidate
+
+- Market Trend Focus V1 implementation exact head `b4330123d8483ebdd42583d1816ac15cf99b61db`
+  已合入 `develop`；当前正式 release 与 production Runtime 仍为
+  `v1.7.0@4fe0644694ab9f534c61e0d48eae3f01a74fc7c0`，不包含该实现。
+- 2026-08-23 Lane 3 exact-head 验证为 Trend Focus/API `77 passed`、backend
+  `2808 passed / 3 skipped / 16 deselected`、Web unit `221 passed / 1 skipped`、B1 Playwright
+  `48 passed`；Ruff、Mypy、Web build、OpenSpec 与 secret scan 均通过。真实 active60 只读快照为
+  Radar `ready/current / 60 active / 60 participant`、结构可评估 `32`、typed unavailable `11`
+  且全部为 `HOURLY_HISTORY_INSUFFICIENT`、long/short opportunity=`1/0`、
+  setup/breakout/retest/ready=`1/0/0/0`、running/weakening=`10/11`；六个 completed 15m cutoff
+  共 `192` 次 prefix 比较，`0 mismatch`，无 future/same-boundary/cross-contract identity 冲突。
+- 本次形成 `develop` release candidate；Trend Focus 仍是只读 Market research surface，不接
+  Alert、Runtime 或订单。下一受控 Gate 为 prospective shadow，当前未启用；本状态不授权
+  main/tag/release、Runtime promotion/switch、真实通知或任何正式数据写入。
 
 ## 当前 Runtime 与产品面
 
