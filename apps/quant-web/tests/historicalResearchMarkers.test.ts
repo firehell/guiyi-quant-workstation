@@ -270,6 +270,39 @@ test('JDJ strategy shared loader clears unsupported identity, reloads, prepends 
   assert.equal(calls, 4)
 })
 
+test('JDJ strategy loader preserves typed profile unavailable without relabeling generic failures', async () => {
+  const identity = {
+    overlay: 'jdj_strategy' as const,
+    seriesKind: 'actual_dominant' as const,
+    symbol: 'ag',
+    frequency: '1m' as const,
+  }
+  const coverage = { start: canonicalBars[0].time, end: canonicalBars[1].time }
+  const dependencies = (failure: unknown) => ({
+    fetchSubing: async () => { throw new Error('wrong source') },
+    fetchNStructure: async () => { throw new Error('wrong source') },
+    fetchJdj: async () => { throw new Error('wrong source') },
+    fetchJdjStrategy: async () => { throw failure },
+  })
+
+  const profileUnavailable = useHistoricalResearchMarkers(dependencies({
+    response: {
+      status: 422,
+      data: { detail: { code: 'JDJ_STRATEGY_PROFILE_UNAVAILABLE' } },
+    },
+  }) as never)
+  await profileUnavailable.sync(identity, canonicalBars, coverage, 'replace')
+  assert.equal(profileUnavailable.error.value, 'JDJ_STRATEGY_PROFILE_UNAVAILABLE')
+  assert.deepEqual(profileUnavailable.markers.value, [])
+
+  const serverFailure = useHistoricalResearchMarkers(dependencies({
+    response: { status: 503, data: { detail: 'unavailable' } },
+  }) as never)
+  await serverFailure.sync(identity, canonicalBars, coverage, 'replace')
+  assert.equal(serverFailure.error.value, 'HISTORICAL_RESEARCH_UNAVAILABLE')
+  assert.deepEqual(serverFailure.markers.value, [])
+})
+
 test('JDJ markers keep three candidate identities and use only causal observed_at', async () => {
   const markerModule = await import('../src/utils/historicalResearchMarkers.ts')
   const mapper = (markerModule as unknown as {

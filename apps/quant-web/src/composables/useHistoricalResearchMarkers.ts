@@ -111,11 +111,16 @@ export function useHistoricalResearchMarkers(dependencies: Dependencies) {
       if (loadedSince === null || range.since < loadedSince) {
         loadedSince = range.since
       }
-    } catch {
+    } catch (caught) {
       if (
         requestGeneration === generation
         && identityKey(identity) === identityKey(activeIdentity)
-      ) error.value = 'HISTORICAL_RESEARCH_UNAVAILABLE'
+      ) {
+        error.value = identity.overlay === 'jdj_strategy'
+          && isJdjStrategyProfileUnavailable(caught)
+          ? 'JDJ_STRATEGY_PROFILE_UNAVAILABLE'
+          : 'HISTORICAL_RESEARCH_UNAVAILABLE'
+      }
     } finally {
       if (requestGeneration === generation) loading.value = false
     }
@@ -141,6 +146,18 @@ export function useHistoricalResearchMarkers(dependencies: Dependencies) {
   }
 
   return { markers, loading, error, sync, dispose }
+}
+
+function isJdjStrategyProfileUnavailable(caught: unknown): boolean {
+  if (typeof caught !== 'object' || caught === null) return false
+  const response = (caught as {
+    response?: { status?: unknown; data?: { detail?: unknown } }
+  }).response
+  if (response?.status !== 422) return false
+  const detail = response.data?.detail
+  return typeof detail === 'object'
+    && detail !== null
+    && (detail as { code?: unknown }).code === 'JDJ_STRATEGY_PROFILE_UNAVAILABLE'
 }
 
 function confirmedRange(

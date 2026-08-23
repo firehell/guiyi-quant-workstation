@@ -448,6 +448,12 @@ async function mockWorkspace(page, researchResponse, options = {}) {
           json: { detail: { code: options.jdjStrategyErrorCode } },
         })
       }
+      if (options.jdjStrategyHttpStatus) {
+        return route.fulfill({
+          status: options.jdjStrategyHttpStatus,
+          json: { detail: 'unavailable' },
+        })
+      }
       return route.fulfill({ json: {
         request,
         reference_execution: true,
@@ -756,6 +762,23 @@ test('JDJ Strategy fails closed for AG profile unavailability', async ({ page })
   })
   await expect(shell).toHaveAttribute('data-research-marker-count', '0')
   await expect(shell).toHaveAttribute('data-rendered-research-marker-count', '0')
+  await expect(page.getByText('该品种/周期尚未验证；Canonical K 线仍可正常查看。', { exact: true })).toBeVisible()
+})
+
+test('JDJ Strategy keeps generic server failures distinct from profile unavailability', async ({ page }) => {
+  const bars = Array.from({ length: 120 }, (_, index) => bar(index))
+  await mockAlertMarkerSurface(page)
+  await mockWorkspace(page, { json: research() }, {
+    bars,
+    historicalEventTime: bars.at(-1).bar_end,
+    canonicalCoverage: { start: bars[0].bar_end, end: bars.at(-1).bar_end },
+    jdjStrategyHttpStatus: 503,
+  })
+  await page.goto('/market/chart?symbol=jm&series_kind=actual_dominant&frequency=1m')
+
+  await page.getByRole('group', { name: 'Overlay' })
+    .getByRole('button', { name: '日进斗金策略', exact: true }).click()
+
   await expect(page.getByText('历史因果重放暂不可用；Canonical K 线仍可正常查看。', { exact: true })).toBeVisible()
 })
 

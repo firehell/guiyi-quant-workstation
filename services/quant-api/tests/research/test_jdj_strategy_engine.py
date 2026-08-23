@@ -933,6 +933,52 @@ def test_drawdown_pause_blocks_exactly_fifteen_subsequent_present_bars() -> None
     assert any(action.decision_at == bars[21].bar_end for action in result.actions)
 
 
+def test_exit_gap_pause_rejects_same_bar_candidate_without_shifting_fifteen_bar_window() -> None:
+    bars = tuple(_bar(i) for i in range(6)) + (
+        _bar(6, open_=94, high=95, low=94, close=94),
+    ) + tuple(_bar(i) for i in range(7, 25))
+    contexts = tuple(
+        _context(
+            bar,
+            trend=NStructureKind.RANGE if index == 5 else NStructureKind.BULL,
+            fact_boundary=bars[index - 1].bar_end if index > 0 else None,
+            first_of_day=index == 0,
+        )
+        for index, bar in enumerate(bars)
+    )
+    entry = _key_level(bars, 3, key_level_price=95)
+    trigger_bar_candidate = _trend_follow(bars, 6, reaction_index=5)
+    paused_candidates = tuple(
+        _trend_follow(bars, index, reaction_index=index - 1)
+        for index in range(7, 22)
+    )
+    resume = _key_level(bars, 22, key_level_price=95)
+
+    result = _run(
+        bars,
+        (entry, trigger_bar_candidate, *paused_candidates, resume),
+        contexts=contexts,
+    )
+
+    pauses = _actions(result, "daily_pause")
+    assert len(pauses) == 1
+    assert pauses[0].decision_at == bars[6].bar_end
+    rejected = [
+        action
+        for action in _actions(result, "rejected")
+        if action.reason == "DAILY_PAUSE_ACTIVE"
+    ]
+    assert [action.decision_at for action in rejected] == [
+        bars[index].bar_end for index in range(6, 22)
+    ]
+    entries = _actions(result, "entry")
+    assert len(entries) == 2
+    assert entries[0].effective_bar_end == bars[4].bar_end
+    assert entries[1].decision_at == bars[22].bar_end
+    assert entries[1].effective_bar_end == bars[23].bar_end
+    assert not _actions(result, "add")
+
+
 def test_one_percent_drawdown_stops_day_and_conservatively_exits() -> None:
     bars = tuple(_bar(i) for i in range(4)) + (
         _bar(4, open_=100, high=101, low=99, close=100),

@@ -364,7 +364,11 @@ function browserStorage(): Storage | null {
 }
 
 function normalizeResearchOverlay(value: unknown): ResearchOverlayId {
-  return value === 'none' || value === 'n_structure' || value === 'jdj' || value === 'htdy'
+  return value === 'none'
+    || value === 'n_structure'
+    || value === 'jdj'
+    || value === 'jdj_strategy'
+    || value === 'htdy'
     ? value
     : 'subing'
 }

@@ -169,6 +169,7 @@ def run_jdj_reference_segment(
             )
 
         pause_active = pause_remaining > 0
+        pause_triggered_now = False
         current_equity = _marked_equity(
             cash_equity,
             episode,
@@ -217,7 +218,7 @@ def run_jdj_reference_segment(
                     episode=risk_episode,
                 )
             )
-            pause_active = False
+            pause_triggered_now = True
 
         terminal_guard = _terminal_guard(
             index,
@@ -266,6 +267,8 @@ def run_jdj_reference_segment(
                     episode,
                     "RISK_ACTION_PRECEDENCE" if take_quantity > 0 else "OPEN_EPISODE_EVENT_REJECTED",
                 )
+            elif pause_triggered_now or pause_active:
+                _reject_all(bar_events, actions, episode, "DAILY_PAUSE_ACTIVE")
             else:
                 pending = _consider_adds(
                     bar_events,
@@ -278,7 +281,7 @@ def run_jdj_reference_segment(
                 )
         elif daily_stop_triggered:
             _reject_all(bar_events, actions, None, "DAILY_STOP_ACTIVE")
-        elif pause_active:
+        elif pause_triggered_now or pause_active:
             _reject_all(bar_events, actions, None, "DAILY_PAUSE_ACTIVE")
         elif bar_events:
             pending = _consider_entry(
