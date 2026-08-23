@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 from enum import StrEnum
-from typing import Never, TypeGuard, TypeAlias
+from typing import Never, TypeGuard, TypeAlias, TypeVar
 
 
 _PROTOCOL_ID = "main_force_mirror_diagnostic_phase_a_v1"
@@ -76,6 +76,76 @@ class MainForceMirrorDiagnosticGateReason(StrEnum):
     MODEL_UNAVAILABLE = "MODEL_UNAVAILABLE"
 
 
+class MainForceMirrorDiagnosticBreakdownScope(StrEnum):
+    GLOBAL = "global"
+    PRODUCT = "product"
+    YEAR = "year"
+    SIDE = "side"
+    FOLD = "fold"
+
+
+class MainForceMirrorDiagnosticSide(StrEnum):
+    LONG = "long"
+    SHORT = "short"
+
+
+class MainForceMirrorDiagnosticSequenceState(StrEnum):
+    IDLE = "idle"
+    BUILD = "build"
+    PEAK = "peak"
+    DECAY = "decay"
+    LIQUIDATION = "liquidation"
+    OPPOSITE_BUILD = "opposite_build"
+    ACCUMULATED_REVERSAL = "accumulated_reversal"
+
+
+class MainForceMirrorDiagnosticSequenceEvent(StrEnum):
+    PEAK = "peak"
+    DECAY = "decay"
+    LIQUIDATION = "liquidation"
+    OPPOSITE_BUILD = "opposite_build"
+    ACCUMULATED_REVERSAL = "accumulated_reversal"
+
+
+@dataclass(frozen=True, slots=True)
+class MainForceMirrorDiagnosticBreakdownKey:
+    scope: MainForceMirrorDiagnosticBreakdownScope
+    product: str | None = None
+    year: int | None = None
+    side: MainForceMirrorDiagnosticSide | None = None
+    fold: int | None = None
+
+    def __post_init__(self) -> None:
+        try:
+            scope = MainForceMirrorDiagnosticBreakdownScope(self.scope)
+            side = None if self.side is None else MainForceMirrorDiagnosticSide(self.side)
+        except (TypeError, ValueError):
+            _raise_report_invalid()
+        dimensions = (self.product, self.year, side, self.fold)
+        if scope is MainForceMirrorDiagnosticBreakdownScope.GLOBAL:
+            valid = all(value is None for value in dimensions)
+        elif scope is MainForceMirrorDiagnosticBreakdownScope.PRODUCT:
+            valid = self.product in _PRODUCTS and all(
+                value is None for value in dimensions[1:]
+            )
+        elif scope is MainForceMirrorDiagnosticBreakdownScope.YEAR:
+            valid = self.year in (2023, 2024, 2025, 2026) and (
+                self.product is None and side is None and self.fold is None
+            )
+        elif scope is MainForceMirrorDiagnosticBreakdownScope.SIDE:
+            valid = side is not None and (
+                self.product is None and self.year is None and self.fold is None
+            )
+        else:
+            valid = self.fold in (1, 2) and (
+                self.product is None and self.year is None and side is None
+            )
+        if not valid:
+            _raise_report_invalid()
+        object.__setattr__(self, "scope", scope)
+        object.__setattr__(self, "side", side)
+
+
 @dataclass(frozen=True, slots=True)
 class MainForceMirrorDiagnosticValidationMetadata:
     source_mode: str
@@ -98,6 +168,8 @@ class MainForceMirrorDiagnosticValidationMetadata:
             or self.prospective_consumed is not False
             or not _nonnegative_int(self.available_product_count)
             or not _nonnegative_int(self.unavailable_product_count)
+            or self.available_product_count > 60
+            or self.unavailable_product_count > 60
             or self.available_product_count + self.unavailable_product_count != 60
             or self.unknown_failure_count != 0
             or type(self.unknown_failure_count) is not int
@@ -156,44 +228,274 @@ MainForceMirrorDiagnosticProductRow: TypeAlias = (
 
 
 @dataclass(frozen=True, slots=True)
-class MainForceMirrorDiagnosticLabelSection:
-    sample_count: int
-    long_sample_count: int
-    short_sample_count: int
-    duplicated_side_sample_count: int
+class MainForceMirrorDiagnosticLabelBreakdown:
+    key: MainForceMirrorDiagnosticBreakdownKey
+    raw_sample_count: int
+    kept_sample_count: int
+    overlap_suppressed_count: int
+    legacy_long_only_count: int
+    legacy_short_only_count: int
+    legacy_both_count: int
+    legacy_neither_count: int
     adverse_first_count: int
     favorable_first_count: int
     ambiguous_count: int
     timeout_count: int
-    resolved_coverage: Decimal
-    ambiguous_rate: Decimal
+    censored_horizon_count: int
+    censored_contract_change_count: int
+    censored_input_gap_count: int
 
     def __post_init__(self) -> None:
-        counts = (
-            self.sample_count,
-            self.long_sample_count,
-            self.short_sample_count,
-            self.duplicated_side_sample_count,
-            self.adverse_first_count,
-            self.favorable_first_count,
-            self.ambiguous_count,
-            self.timeout_count,
+        counts = tuple(
+            getattr(self, field)
+            for field in self.__dataclass_fields__
+            if field != "key"
         )
         if (
-            any(not _nonnegative_int(value) for value in counts)
+            not isinstance(self.key, MainForceMirrorDiagnosticBreakdownKey)
+            or any(not _nonnegative_int(value) for value in counts)
+            or self.kept_sample_count + self.overlap_suppressed_count
+            != self.raw_sample_count
+            or self.legacy_long_only_count
+            + self.legacy_short_only_count
+            + self.legacy_both_count
+            + self.legacy_neither_count
+            != self.raw_sample_count
             or self.adverse_first_count
             + self.favorable_first_count
             + self.ambiguous_count
             + self.timeout_count
+            + self.censored_horizon_count
+            + self.censored_contract_change_count
+            + self.censored_input_gap_count
+            != self.kept_sample_count
+        ):
+            _raise_report_invalid()
+
+
+@dataclass(frozen=True, slots=True)
+class MainForceMirrorDiagnosticLabelSection:
+    raw_sample_count: int
+    sample_count: int
+    overlap_suppressed_count: int
+    long_sample_count: int
+    short_sample_count: int
+    duplicated_side_sample_count: int
+    legacy_long_only_count: int
+    legacy_short_only_count: int
+    legacy_both_count: int
+    legacy_neither_count: int
+    adverse_first_count: int
+    favorable_first_count: int
+    ambiguous_count: int
+    timeout_count: int
+    censored_horizon_count: int
+    censored_contract_change_count: int
+    censored_input_gap_count: int
+    resolved_coverage: Decimal
+    ambiguous_rate: Decimal
+    breakdowns: tuple[MainForceMirrorDiagnosticLabelBreakdown, ...]
+
+    def __post_init__(self) -> None:
+        counts = (
+            self.raw_sample_count,
+            self.sample_count,
+            self.overlap_suppressed_count,
+            self.long_sample_count,
+            self.short_sample_count,
+            self.duplicated_side_sample_count,
+            self.legacy_long_only_count,
+            self.legacy_short_only_count,
+            self.legacy_both_count,
+            self.legacy_neither_count,
+            self.adverse_first_count,
+            self.favorable_first_count,
+            self.ambiguous_count,
+            self.timeout_count,
+            self.censored_horizon_count,
+            self.censored_contract_change_count,
+            self.censored_input_gap_count,
+        )
+        breakdowns = _require_breakdowns(
+            self.breakdowns,
+            MainForceMirrorDiagnosticLabelBreakdown,
+        )
+        global_breakdown = breakdowns[0]
+        expected_resolved = (
+            Decimal(0)
+            if self.sample_count == 0
+            else Decimal(self.adverse_first_count + self.favorable_first_count)
+            / Decimal(self.sample_count)
+        )
+        expected_ambiguous = (
+            Decimal(0)
+            if self.sample_count == 0
+            else Decimal(self.ambiguous_count) / Decimal(self.sample_count)
+        )
+        if (
+            any(not _nonnegative_int(value) for value in counts)
+            or self.sample_count + self.overlap_suppressed_count
+            != self.raw_sample_count
+            or self.legacy_long_only_count
+            + self.legacy_short_only_count
+            + self.legacy_both_count
+            + self.legacy_neither_count
+            != self.raw_sample_count
+            or self.adverse_first_count
+            + self.favorable_first_count
+            + self.ambiguous_count
+            + self.timeout_count
+            + self.censored_horizon_count
+            + self.censored_contract_change_count
+            + self.censored_input_gap_count
             != self.sample_count
             or self.long_sample_count
             + self.short_sample_count
             - self.duplicated_side_sample_count
             != self.sample_count
-            or not _rate(self.resolved_coverage)
-            or not _rate(self.ambiguous_rate)
+            or self.resolved_coverage != expected_resolved
+            or self.ambiguous_rate != expected_ambiguous
+            or not _rate(expected_resolved)
+            or not _rate(expected_ambiguous)
+            or (
+                global_breakdown.raw_sample_count,
+                global_breakdown.kept_sample_count,
+                global_breakdown.overlap_suppressed_count,
+                global_breakdown.legacy_long_only_count,
+                global_breakdown.legacy_short_only_count,
+                global_breakdown.legacy_both_count,
+                global_breakdown.legacy_neither_count,
+                global_breakdown.adverse_first_count,
+                global_breakdown.favorable_first_count,
+                global_breakdown.ambiguous_count,
+                global_breakdown.timeout_count,
+                global_breakdown.censored_horizon_count,
+                global_breakdown.censored_contract_change_count,
+                global_breakdown.censored_input_gap_count,
+            )
+            != (
+                self.raw_sample_count,
+                self.sample_count,
+                self.overlap_suppressed_count,
+                self.legacy_long_only_count,
+                self.legacy_short_only_count,
+                self.legacy_both_count,
+                self.legacy_neither_count,
+                self.adverse_first_count,
+                self.favorable_first_count,
+                self.ambiguous_count,
+                self.timeout_count,
+                self.censored_horizon_count,
+                self.censored_contract_change_count,
+                self.censored_input_gap_count,
+            )
         ):
             _raise_report_invalid()
+        object.__setattr__(self, "breakdowns", breakdowns)
+
+
+@dataclass(frozen=True, slots=True)
+class MainForceMirrorDiagnosticSequenceTransitionCount:
+    from_state: MainForceMirrorDiagnosticSequenceState
+    to_state: MainForceMirrorDiagnosticSequenceState
+    count: int
+
+    def __post_init__(self) -> None:
+        try:
+            source = MainForceMirrorDiagnosticSequenceState(self.from_state)
+            target = MainForceMirrorDiagnosticSequenceState(self.to_state)
+        except (TypeError, ValueError):
+            _raise_report_invalid()
+        if source is target or not _nonnegative_int(self.count):
+            _raise_report_invalid()
+        object.__setattr__(self, "from_state", source)
+        object.__setattr__(self, "to_state", target)
+
+
+@dataclass(frozen=True, slots=True)
+class MainForceMirrorDiagnosticSequenceEventCount:
+    event_kind: MainForceMirrorDiagnosticSequenceEvent
+    raw_count: int
+    kept_count: int
+    overlap_count: int
+
+    def __post_init__(self) -> None:
+        try:
+            event_kind = MainForceMirrorDiagnosticSequenceEvent(self.event_kind)
+        except (TypeError, ValueError):
+            _raise_report_invalid()
+        if (
+            not _nonnegative_int(self.raw_count)
+            or not _nonnegative_int(self.kept_count)
+            or not _nonnegative_int(self.overlap_count)
+            or self.overlap_count > self.kept_count
+            or self.kept_count > self.raw_count
+        ):
+            _raise_report_invalid()
+        object.__setattr__(self, "event_kind", event_kind)
+
+
+@dataclass(frozen=True, slots=True)
+class MainForceMirrorDiagnosticPrefixInvariance:
+    checked_prefix_count: int
+    matching_prefix_count: int
+    mismatch_count: int
+
+    def __post_init__(self) -> None:
+        if (
+            not _nonnegative_int(self.checked_prefix_count)
+            or not _nonnegative_int(self.matching_prefix_count)
+            or not _nonnegative_int(self.mismatch_count)
+            or self.matching_prefix_count + self.mismatch_count
+            != self.checked_prefix_count
+        ):
+            _raise_report_invalid()
+
+
+@dataclass(frozen=True, slots=True)
+class MainForceMirrorDiagnosticSequenceBreakdown:
+    key: MainForceMirrorDiagnosticBreakdownKey
+    raw_episode_count: int
+    kept_episode_count: int
+    overlap_suppressed_count: int
+    transitions: tuple[MainForceMirrorDiagnosticSequenceTransitionCount, ...]
+    events: tuple[MainForceMirrorDiagnosticSequenceEventCount, ...]
+    prefix_invariance: MainForceMirrorDiagnosticPrefixInvariance
+
+    def __post_init__(self) -> None:
+        transitions = tuple(self.transitions)
+        events = tuple(self.events)
+        transition_keys = tuple((item.from_state, item.to_state) for item in transitions)
+        event_keys = tuple(item.event_kind for item in events)
+        if (
+            not isinstance(self.key, MainForceMirrorDiagnosticBreakdownKey)
+            or not _nonnegative_int(self.raw_episode_count)
+            or not _nonnegative_int(self.kept_episode_count)
+            or not _nonnegative_int(self.overlap_suppressed_count)
+            or self.kept_episode_count + self.overlap_suppressed_count
+            != self.raw_episode_count
+            or any(
+                not isinstance(item, MainForceMirrorDiagnosticSequenceTransitionCount)
+                for item in transitions
+            )
+            or len(set(transition_keys)) != len(transition_keys)
+            or any(
+                not isinstance(item, MainForceMirrorDiagnosticSequenceEventCount)
+                for item in events
+            )
+            or len(set(event_keys)) != len(event_keys)
+            or tuple(
+                event for event in MainForceMirrorDiagnosticSequenceEvent if event in event_keys
+            )
+            != event_keys
+            or not isinstance(
+                self.prefix_invariance,
+                MainForceMirrorDiagnosticPrefixInvariance,
+            )
+        ):
+            _raise_report_invalid()
+        object.__setattr__(self, "transitions", transitions)
+        object.__setattr__(self, "events", events)
 
 
 @dataclass(frozen=True, slots=True)
@@ -210,6 +512,7 @@ class MainForceMirrorDiagnosticSequenceProfileSection:
     h5_reversal_hit_rate: Decimal | None
     yearly_median_reversal_min: Decimal | None
     side_median_reversal_min: Decimal | None
+    breakdowns: tuple[MainForceMirrorDiagnosticSequenceBreakdown, ...]
 
     def __post_init__(self) -> None:
         counts = (
@@ -226,19 +529,26 @@ class MainForceMirrorDiagnosticSequenceProfileSection:
             self.yearly_median_reversal_min,
             self.side_median_reversal_min,
         )
+        breakdowns = _require_breakdowns(
+            self.breakdowns,
+            MainForceMirrorDiagnosticSequenceBreakdown,
+        )
         if (
             self.profile_id not in _PROFILES
             or any(not _nonnegative_int(value) for value in counts)
             or self.long_sample_count + self.short_sample_count
             != self.peak_then_decay_sample_count
+            or self.product_count > 60
+            or self.year_count > 4
             or not _rate(self.top_product_share)
+            or breakdowns[0].kept_episode_count
+            != self.peak_then_decay_sample_count
         ):
             _raise_report_invalid()
         if self.peak_then_decay_sample_count == 0:
             if any(value is not None for value in metrics):
                 _raise_report_invalid()
-            return
-        if (
+        elif (
             self.product_count == 0
             or self.year_count == 0
             or not _nonnegative_decimal(self.median_delay_bars)
@@ -248,6 +558,7 @@ class MainForceMirrorDiagnosticSequenceProfileSection:
             or not _finite_decimal(self.side_median_reversal_min)
         ):
             _raise_report_invalid()
+        object.__setattr__(self, "breakdowns", breakdowns)
 
 
 @dataclass(frozen=True, slots=True)
@@ -268,6 +579,53 @@ class MainForceMirrorDiagnosticSequenceSection:
 
 
 @dataclass(frozen=True, slots=True)
+class MainForceMirrorDiagnosticScoreLatchBreakdown:
+    key: MainForceMirrorDiagnosticBreakdownKey
+    caution_ready_bar_count: int
+    score_not_candidate_count: int
+    long_only_candidate_count: int
+    short_only_candidate_count: int
+    dual_candidate_conflict_count: int
+    high_score_unique_bar_count: int
+    armed_candidate_count: int
+    unarmed_candidate_suppressed_count: int
+    long_caution_count: int
+    short_caution_count: int
+    caution_count: int
+    long_rearm_count: int
+    short_rearm_count: int
+
+    def __post_init__(self) -> None:
+        counts = tuple(
+            getattr(self, field)
+            for field in self.__dataclass_fields__
+            if field != "key"
+        )
+        single_candidate_count = (
+            self.long_only_candidate_count + self.short_only_candidate_count
+        )
+        if (
+            not isinstance(self.key, MainForceMirrorDiagnosticBreakdownKey)
+            or any(not _nonnegative_int(value) for value in counts)
+            or self.score_not_candidate_count
+            + single_candidate_count
+            + self.dual_candidate_conflict_count
+            != self.caution_ready_bar_count
+            or single_candidate_count + self.dual_candidate_conflict_count
+            != self.high_score_unique_bar_count
+            or self.armed_candidate_count
+            + self.unarmed_candidate_suppressed_count
+            != single_candidate_count
+            or self.long_caution_count + self.short_caution_count
+            != self.caution_count
+            or self.caution_count != self.armed_candidate_count
+            or self.long_rearm_count > self.caution_ready_bar_count
+            or self.short_rearm_count > self.caution_ready_bar_count
+        ):
+            _raise_report_invalid()
+
+
+@dataclass(frozen=True, slots=True)
 class MainForceMirrorDiagnosticFunnelSection:
     evaluable_bar_count: int
     high_score_bar_count: int
@@ -276,6 +634,7 @@ class MainForceMirrorDiagnosticFunnelSection:
     caution_episode_count: int
     latched_episode_count: int
     suppression_count: int
+    breakdowns: tuple[MainForceMirrorDiagnosticScoreLatchBreakdown, ...]
 
     def __post_init__(self) -> None:
         counts = (
@@ -287,12 +646,35 @@ class MainForceMirrorDiagnosticFunnelSection:
             self.latched_episode_count,
             self.suppression_count,
         )
+        breakdowns = _require_breakdowns(
+            self.breakdowns,
+            MainForceMirrorDiagnosticScoreLatchBreakdown,
+        )
+        global_breakdown = breakdowns[0]
         if (
             any(not _nonnegative_int(value) for value in counts)
             or any(value > self.evaluable_bar_count for value in counts[1:])
             or self.latched_episode_count > self.caution_episode_count
+            or self.latched_episode_count != self.caution_episode_count
+            or (
+                global_breakdown.caution_ready_bar_count,
+                global_breakdown.high_score_unique_bar_count,
+                global_breakdown.dual_candidate_conflict_count,
+                global_breakdown.armed_candidate_count,
+                global_breakdown.caution_count,
+                global_breakdown.unarmed_candidate_suppressed_count,
+            )
+            != (
+                self.evaluable_bar_count,
+                self.high_score_bar_count,
+                self.conflict_bar_count,
+                self.armed_bar_count,
+                self.caution_episode_count,
+                self.suppression_count,
+            )
         ):
             _raise_report_invalid()
+        object.__setattr__(self, "breakdowns", breakdowns)
 
 
 @dataclass(frozen=True, slots=True)
@@ -366,6 +748,8 @@ class MainForceMirrorDiagnosticModelFoldSection:
             != self.evaluate_binary_count
             or self.evaluate_long_count + self.evaluate_short_count
             != self.evaluate_binary_count
+            or self.evaluate_product_count > 60
+            or self.bootstrap_valid_count > 2000
             or any(not _rate(value) for value in aucs)
             or any(not _finite_decimal(value) for value in deltas)
         ):
@@ -373,11 +757,47 @@ class MainForceMirrorDiagnosticModelFoldSection:
 
 
 @dataclass(frozen=True, slots=True)
+class MainForceMirrorDiagnosticModelBreakdown:
+    key: MainForceMirrorDiagnosticBreakdownKey
+    sample_count: int
+    score_auc: Decimal | None
+    ridge_auc: Decimal | None
+    current_tree_auc: Decimal | None
+    full_tree_auc: Decimal | None
+
+    def __post_init__(self) -> None:
+        metrics = (
+            self.score_auc,
+            self.ridge_auc,
+            self.current_tree_auc,
+            self.full_tree_auc,
+        )
+        if (
+            not isinstance(self.key, MainForceMirrorDiagnosticBreakdownKey)
+            or not _nonnegative_int(self.sample_count)
+            or (
+                self.sample_count == 0
+                and any(metric is not None for metric in metrics)
+            )
+            or (
+                self.sample_count > 0
+                and any(not _rate(metric) for metric in metrics)
+            )
+        ):
+            _raise_report_invalid()
+
+
+@dataclass(frozen=True, slots=True)
 class MainForceMirrorDiagnosticModelSection:
     folds: tuple[MainForceMirrorDiagnosticModelFoldSection, ...]
+    breakdowns: tuple[MainForceMirrorDiagnosticModelBreakdown, ...]
 
     def __post_init__(self) -> None:
         folds = tuple(self.folds)
+        breakdowns = _require_breakdowns(
+            self.breakdowns,
+            MainForceMirrorDiagnosticModelBreakdown,
+        )
         if (
             len(folds) != 2
             or any(
@@ -398,6 +818,7 @@ class MainForceMirrorDiagnosticModelSection:
         ):
             _raise_report_invalid()
         object.__setattr__(self, "folds", folds)
+        object.__setattr__(self, "breakdowns", breakdowns)
 
 
 @dataclass(frozen=True, slots=True)
@@ -418,10 +839,18 @@ class MainForceMirrorDiagnosticMemberSection:
             self.causal_violation_count,
             self.identity_violation_count,
         )
+        if any(not _nonnegative_int(value) for value in counts):
+            _raise_report_invalid()
+        expected_coverage = (
+            Decimal(0)
+            if self.unique_earliest_count == 0
+            else Decimal(self.eligible_count) / Decimal(self.unique_earliest_count)
+        )
         if (
-            any(not _nonnegative_int(value) for value in counts)
-            or self.unique_earliest_count > self.eligible_count
-            or not _rate(self.t_minus_1_coverage)
+            self.eligible_count > self.unique_earliest_count
+            or self.t_minus_1_coverage != expected_coverage
+            or not _rate(expected_coverage)
+            or self.product_count > 60
             or self.member_model_present is not False
         ):
             _raise_report_invalid()
@@ -487,7 +916,11 @@ class MainForceMirrorDiagnosticReport:
             or len(set(flags)) != len(flags)
             or reasons != expected_reasons
             or len(set(reasons)) != len(reasons)
-            or not reasons
+            or (gate is MainForceMirrorDiagnosticGate.STOP and not reasons)
+            or (
+                gate is MainForceMirrorDiagnosticGate.ALLOW_PHASE_FREEZE_DESIGN
+                and bool(reasons)
+            )
             or (
                 (self.validation.unavailable_product_count > 0)
                 != ("SOURCE_UNAVAILABLE_PRESENT" in flags)
@@ -505,6 +938,59 @@ class MainForceMirrorDiagnosticReport:
         object.__setattr__(self, "quality_flags", flags)
         object.__setattr__(self, "gate", gate)
         object.__setattr__(self, "gate_reasons", reasons)
+
+
+_BreakdownT = TypeVar("_BreakdownT")
+
+
+def _expected_breakdown_keys() -> tuple[MainForceMirrorDiagnosticBreakdownKey, ...]:
+    return (
+        MainForceMirrorDiagnosticBreakdownKey(
+            scope=MainForceMirrorDiagnosticBreakdownScope.GLOBAL,
+        ),
+        *(
+            MainForceMirrorDiagnosticBreakdownKey(
+                scope=MainForceMirrorDiagnosticBreakdownScope.PRODUCT,
+                product=product,
+            )
+            for product in _PRODUCTS
+        ),
+        *(
+            MainForceMirrorDiagnosticBreakdownKey(
+                scope=MainForceMirrorDiagnosticBreakdownScope.YEAR,
+                year=year,
+            )
+            for year in (2023, 2024, 2025, 2026)
+        ),
+        *(
+            MainForceMirrorDiagnosticBreakdownKey(
+                scope=MainForceMirrorDiagnosticBreakdownScope.SIDE,
+                side=side,
+            )
+            for side in MainForceMirrorDiagnosticSide
+        ),
+        *(
+            MainForceMirrorDiagnosticBreakdownKey(
+                scope=MainForceMirrorDiagnosticBreakdownScope.FOLD,
+                fold=fold,
+            )
+            for fold in (1, 2)
+        ),
+    )
+
+
+def _require_breakdowns(
+    value: tuple[_BreakdownT, ...],
+    item_type: type[_BreakdownT],
+) -> tuple[_BreakdownT, ...]:
+    items = tuple(value)
+    if (
+        any(not isinstance(item, item_type) for item in items)
+        or tuple(getattr(item, "key", None) for item in items)
+        != _expected_breakdown_keys()
+    ):
+        _raise_report_invalid()
+    return items
 
 
 def _nonnegative_int(value: object) -> bool:

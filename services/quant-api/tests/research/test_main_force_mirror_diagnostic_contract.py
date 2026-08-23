@@ -255,18 +255,109 @@ def test_active_universe_order_or_source_bytes_drift_has_stable_error(
         policy.load_main_force_mirror_diagnostic_protocol()
 
 
+def _breakdown_keys(domain):
+    return (
+        domain.MainForceMirrorDiagnosticBreakdownKey(
+            scope=domain.MainForceMirrorDiagnosticBreakdownScope.GLOBAL,
+        ),
+        *(
+            domain.MainForceMirrorDiagnosticBreakdownKey(
+                scope=domain.MainForceMirrorDiagnosticBreakdownScope.PRODUCT,
+                product=symbol,
+            )
+            for symbol in PRODUCTS
+        ),
+        *(
+            domain.MainForceMirrorDiagnosticBreakdownKey(
+                scope=domain.MainForceMirrorDiagnosticBreakdownScope.YEAR,
+                year=year,
+            )
+            for year in (2023, 2024, 2025, 2026)
+        ),
+        *(
+            domain.MainForceMirrorDiagnosticBreakdownKey(
+                scope=domain.MainForceMirrorDiagnosticBreakdownScope.SIDE,
+                side=side,
+            )
+            for side in (
+                domain.MainForceMirrorDiagnosticSide.LONG,
+                domain.MainForceMirrorDiagnosticSide.SHORT,
+            )
+        ),
+        *(
+            domain.MainForceMirrorDiagnosticBreakdownKey(
+                scope=domain.MainForceMirrorDiagnosticBreakdownScope.FOLD,
+                fold=fold,
+            )
+            for fold in (1, 2)
+        ),
+    )
+
+
+def _zero_label_breakdowns(domain):
+    return tuple(
+        domain.MainForceMirrorDiagnosticLabelBreakdown(
+            key=key,
+            raw_sample_count=0,
+            kept_sample_count=0,
+            overlap_suppressed_count=0,
+            legacy_long_only_count=0,
+            legacy_short_only_count=0,
+            legacy_both_count=0,
+            legacy_neither_count=0,
+            adverse_first_count=0,
+            favorable_first_count=0,
+            ambiguous_count=0,
+            timeout_count=0,
+            censored_horizon_count=0,
+            censored_contract_change_count=0,
+            censored_input_gap_count=0,
+        )
+        for key in _breakdown_keys(domain)
+    )
+
+
 def _zero_label(domain):
     return domain.MainForceMirrorDiagnosticLabelSection(
+        raw_sample_count=0,
         sample_count=0,
+        overlap_suppressed_count=0,
         long_sample_count=0,
         short_sample_count=0,
         duplicated_side_sample_count=0,
+        legacy_long_only_count=0,
+        legacy_short_only_count=0,
+        legacy_both_count=0,
+        legacy_neither_count=0,
         adverse_first_count=0,
         favorable_first_count=0,
         ambiguous_count=0,
         timeout_count=0,
+        censored_horizon_count=0,
+        censored_contract_change_count=0,
+        censored_input_gap_count=0,
         resolved_coverage=Decimal("0"),
         ambiguous_rate=Decimal("0"),
+        breakdowns=_zero_label_breakdowns(domain),
+    )
+
+
+def _zero_sequence_breakdowns(domain):
+    return tuple(
+        domain.MainForceMirrorDiagnosticSequenceBreakdown(
+            key=key,
+            raw_episode_count=0,
+            kept_episode_count=0,
+            overlap_suppressed_count=0,
+            transitions=(),
+            events=(),
+            prefix_invariance=domain.MainForceMirrorDiagnosticPrefixInvariance(
+                checked_prefix_count=0,
+                matching_prefix_count=0,
+                mismatch_count=0,
+            ),
+        )
+        for key in _breakdown_keys(domain)
     )
 
 
@@ -286,9 +377,32 @@ def _zero_sequence(domain):
                 h5_reversal_hit_rate=None,
                 yearly_median_reversal_min=None,
                 side_median_reversal_min=None,
+                breakdowns=_zero_sequence_breakdowns(domain),
             )
             for profile_id in PROFILES
         )
+    )
+
+
+def _zero_funnel_breakdowns(domain):
+    return tuple(
+        domain.MainForceMirrorDiagnosticScoreLatchBreakdown(
+            key=key,
+            caution_ready_bar_count=0,
+            score_not_candidate_count=0,
+            long_only_candidate_count=0,
+            short_only_candidate_count=0,
+            dual_candidate_conflict_count=0,
+            high_score_unique_bar_count=0,
+            armed_candidate_count=0,
+            unarmed_candidate_suppressed_count=0,
+            long_caution_count=0,
+            short_caution_count=0,
+            caution_count=0,
+            long_rearm_count=0,
+            short_rearm_count=0,
+        )
+        for key in _breakdown_keys(domain)
     )
 
 
@@ -301,6 +415,21 @@ def _zero_funnel(domain):
         caution_episode_count=0,
         latched_episode_count=0,
         suppression_count=0,
+        breakdowns=_zero_funnel_breakdowns(domain),
+    )
+
+
+def _zero_model_breakdowns(domain):
+    return tuple(
+        domain.MainForceMirrorDiagnosticModelBreakdown(
+            key=key,
+            sample_count=0,
+            score_auc=None,
+            ridge_auc=None,
+            current_tree_auc=None,
+            full_tree_auc=None,
+        )
+        for key in _breakdown_keys(domain)
     )
 
 
@@ -344,7 +473,10 @@ def _model(domain):
                 short_point_delta=Decimal("0.01"),
             )
         )
-    return domain.MainForceMirrorDiagnosticModelSection(folds=tuple(folds))
+    return domain.MainForceMirrorDiagnosticModelSection(
+        folds=tuple(folds),
+        breakdowns=_zero_model_breakdowns(domain),
+    )
 
 
 def _member(domain):
@@ -457,6 +589,239 @@ def test_report_rows_are_typed_complete_ordered_and_immutable() -> None:
             symbol="a",
             status=domain.MainForceMirrorDiagnosticStatus.UNAVAILABLE,
             reason_code="UNKNOWN_FAILURE",
+        )
+
+
+def test_nested_audit_contract_expresses_required_breakdowns_and_conservation() -> None:
+    domain = _domain()
+    label = _zero_label(domain)
+    label_global = replace(
+        label.breakdowns[0],
+        raw_sample_count=5,
+        kept_sample_count=4,
+        overlap_suppressed_count=1,
+        legacy_long_only_count=1,
+        legacy_short_only_count=1,
+        legacy_both_count=1,
+        legacy_neither_count=2,
+        adverse_first_count=1,
+        favorable_first_count=1,
+        ambiguous_count=1,
+        censored_horizon_count=1,
+    )
+    label = replace(
+        label,
+        raw_sample_count=5,
+        sample_count=4,
+        overlap_suppressed_count=1,
+        long_sample_count=2,
+        short_sample_count=2,
+        legacy_long_only_count=1,
+        legacy_short_only_count=1,
+        legacy_both_count=1,
+        legacy_neither_count=2,
+        adverse_first_count=1,
+        favorable_first_count=1,
+        ambiguous_count=1,
+        censored_horizon_count=1,
+        resolved_coverage=Decimal("0.5"),
+        ambiguous_rate=Decimal("0.25"),
+        breakdowns=(label_global, *label.breakdowns[1:]),
+    )
+    assert tuple(key.scope.value for key in _breakdown_keys(domain)[-4:]) == (
+        "side", "side", "fold", "fold"
+    )
+    assert label.breakdowns[0].legacy_both_count == 1
+    assert label.breakdowns[0].censored_horizon_count == 1
+
+    sequence = _zero_sequence(domain)
+    prefix = domain.MainForceMirrorDiagnosticPrefixInvariance(
+        checked_prefix_count=1,
+        matching_prefix_count=1,
+        mismatch_count=0,
+    )
+    transition = domain.MainForceMirrorDiagnosticSequenceTransitionCount(
+        from_state=domain.MainForceMirrorDiagnosticSequenceState.BUILD,
+        to_state=domain.MainForceMirrorDiagnosticSequenceState.PEAK,
+        count=1,
+    )
+    event = domain.MainForceMirrorDiagnosticSequenceEventCount(
+        event_kind=domain.MainForceMirrorDiagnosticSequenceEvent.PEAK,
+        raw_count=1,
+        kept_count=1,
+        overlap_count=0,
+    )
+    global_sequence = replace(
+        sequence.profiles[0].breakdowns[0],
+        raw_episode_count=1,
+        kept_episode_count=1,
+        transitions=(transition,),
+        events=(event,),
+        prefix_invariance=prefix,
+    )
+    balanced = replace(
+        sequence.profiles[0],
+        peak_then_decay_sample_count=1,
+        long_sample_count=1,
+        product_count=1,
+        year_count=1,
+        top_product_share=Decimal("1"),
+        median_delay_bars=Decimal("1"),
+        h3_reversal_hit_rate=Decimal("0.6"),
+        h5_reversal_hit_rate=Decimal("0.6"),
+        yearly_median_reversal_min=Decimal("0"),
+        side_median_reversal_min=Decimal("0"),
+        breakdowns=(global_sequence, *sequence.profiles[0].breakdowns[1:]),
+    )
+    sequence = replace(sequence, profiles=(balanced, *sequence.profiles[1:]))
+    assert sequence.profiles[0].breakdowns[0].transitions == (transition,)
+    assert sequence.profiles[0].breakdowns[0].events == (event,)
+    assert sequence.profiles[0].breakdowns[0].prefix_invariance == prefix
+
+    funnel = _zero_funnel(domain)
+    global_funnel = replace(
+        funnel.breakdowns[0],
+        caution_ready_bar_count=5,
+        score_not_candidate_count=2,
+        long_only_candidate_count=1,
+        short_only_candidate_count=1,
+        dual_candidate_conflict_count=1,
+        high_score_unique_bar_count=3,
+        armed_candidate_count=1,
+        unarmed_candidate_suppressed_count=1,
+        long_caution_count=1,
+        caution_count=1,
+    )
+    funnel = replace(
+        funnel,
+        evaluable_bar_count=5,
+        high_score_bar_count=3,
+        conflict_bar_count=1,
+        armed_bar_count=1,
+        caution_episode_count=1,
+        latched_episode_count=1,
+        suppression_count=1,
+        breakdowns=(global_funnel, *funnel.breakdowns[1:]),
+    )
+    assert funnel.breakdowns[0].caution_ready_bar_count == 5
+    assert funnel.breakdowns[0].high_score_unique_bar_count == 3
+
+    model = _model(domain)
+    assert tuple(item.key.scope.value for item in model.breakdowns[-2:]) == (
+        "fold", "fold"
+    )
+
+    with pytest.raises(domain.MainForceMirrorDiagnosticReportError):
+        replace(label_global, kept_sample_count=5)
+    with pytest.raises(domain.MainForceMirrorDiagnosticReportError):
+        replace(prefix, mismatch_count=1)
+    with pytest.raises(domain.MainForceMirrorDiagnosticReportError):
+        replace(global_funnel, high_score_unique_bar_count=2)
+
+
+def test_gate_reasons_are_required_only_for_stop() -> None:
+    domain = _domain()
+    report = _report(domain, [_available_row(domain, symbol) for symbol in PRODUCTS])
+
+    with pytest.raises(domain.MainForceMirrorDiagnosticReportError):
+        replace(report, gate_reasons=())
+
+    allowed = replace(
+        report,
+        gate=domain.MainForceMirrorDiagnosticGate.ALLOW_PHASE_FREEZE_DESIGN,
+        gate_reasons=(),
+    )
+    assert allowed.gate is domain.MainForceMirrorDiagnosticGate.ALLOW_PHASE_FREEZE_DESIGN
+    assert allowed.gate_reasons == ()
+
+    with pytest.raises(domain.MainForceMirrorDiagnosticReportError):
+        replace(
+            allowed,
+            gate_reasons=(
+                domain.MainForceMirrorDiagnosticGateReason.SAMPLE_FLOOR_FAILED,
+            ),
+        )
+
+
+def test_member_coverage_uses_unique_earliest_as_denominator() -> None:
+    domain = _domain()
+    member = domain.MainForceMirrorDiagnosticMemberSection(
+        unique_earliest_count=10,
+        eligible_count=8,
+        t_minus_1_coverage=Decimal("0.8"),
+        product_count=5,
+        causal_violation_count=0,
+        identity_violation_count=0,
+        member_model_present=False,
+    )
+    assert member.eligible_count <= member.unique_earliest_count
+
+    with pytest.raises(domain.MainForceMirrorDiagnosticReportError):
+        replace(member, eligible_count=11, t_minus_1_coverage=Decimal("1.1"))
+    with pytest.raises(domain.MainForceMirrorDiagnosticReportError):
+        replace(member, t_minus_1_coverage=Decimal("0.7"))
+    with pytest.raises(domain.MainForceMirrorDiagnosticReportError):
+        replace(_member(domain), t_minus_1_coverage=Decimal("0.1"))
+    with pytest.raises(domain.MainForceMirrorDiagnosticReportError):
+        replace(
+            _member(domain),
+            eligible_count=1,
+            t_minus_1_coverage=Decimal("1"),
+        )
+
+
+def test_report_count_limits_accept_protocol_boundary_and_reject_overflow() -> None:
+    domain = _domain()
+    fold = _model(domain).folds[0]
+    assert replace(
+        fold,
+        bootstrap_valid_count=2000,
+        evaluate_product_count=60,
+    ).bootstrap_valid_count == 2000
+    with pytest.raises(domain.MainForceMirrorDiagnosticReportError):
+        replace(fold, bootstrap_valid_count=2001)
+    with pytest.raises(domain.MainForceMirrorDiagnosticReportError):
+        replace(fold, evaluate_product_count=61)
+
+    sequence = _zero_sequence(domain)
+    global_breakdown = replace(
+        sequence.profiles[0].breakdowns[0],
+        raw_episode_count=1,
+        kept_episode_count=1,
+    )
+    profile = replace(
+        sequence.profiles[0],
+        peak_then_decay_sample_count=1,
+        long_sample_count=1,
+        product_count=60,
+        year_count=4,
+        top_product_share=Decimal("1"),
+        median_delay_bars=Decimal("0"),
+        h3_reversal_hit_rate=Decimal("0"),
+        h5_reversal_hit_rate=Decimal("0"),
+        yearly_median_reversal_min=Decimal("0"),
+        side_median_reversal_min=Decimal("0"),
+        breakdowns=(global_breakdown, *sequence.profiles[0].breakdowns[1:]),
+    )
+    assert profile.product_count == 60
+    with pytest.raises(domain.MainForceMirrorDiagnosticReportError):
+        replace(profile, product_count=61)
+
+    member = replace(_member(domain), product_count=60)
+    assert member.product_count == 60
+    with pytest.raises(domain.MainForceMirrorDiagnosticReportError):
+        replace(member, product_count=61)
+
+    validation = _report(
+        domain,
+        [_available_row(domain, symbol) for symbol in PRODUCTS],
+    ).validation
+    assert validation.available_product_count == 60
+    with pytest.raises(domain.MainForceMirrorDiagnosticReportError):
+        replace(
+            validation,
+            available_product_count=61,
+            unavailable_product_count=0,
         )
 
 
