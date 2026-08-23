@@ -1,115 +1,49 @@
-# 日进斗金 JM 1m Shared Strategy Kernel Implementation Plan
+# 日进斗金 JM 1m 轻量策略 Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 在不改变现有 N/JDJ Candidate 因果语义的前提下，建立唯一 Shared Strategy Kernel，完成 `jdj_jm_1m_v1` 的 reference execution lifecycle、actual_dominant Historical Strategy Replay、Market 主图展示、batch/streaming parity，并在 RQAlpha Workbench 已存在后接入同一 Kernel。
+**Goal:** 不迁移现有 N/JDJ Research 公式、不预建通用策略平台，用最小新增代码完成 `jdj_jm_1m_v1` 的完整交易生命周期、JM actual_dominant Historical Reference Replay 和 Market 主图展示。
 
-**Architecture:** `app.strategy_kernel` 是公式与策略状态唯一来源；`app.research`、Historical Replay、Web 和 RQAlpha 都只是消费者。Historical Replay 使用 Canonical actual_dominant physical segments；RQAlpha 使用 Bundle price/fill，并在 child runner 启动前接收由现有 Market/Catalog read path 导出的非价格 identity schedule。
+**Architecture:** 现有 `app.research.jdj` / `app.research.n_structure` 继续作为 Entry 公式唯一来源；新增窄模块 `app.research.jdj_strategy` 消费已有 Candidate event/context，负责交易管理和 reference replay。当前 Plan 不实现 RQAlpha adapter 或 streaming framework。
 
-**Tech Stack:** Python 3.13、FastAPI、Pydantic、`Decimal`、`MarketDataService` / `ActualDominantResearchSegmentLoader`、existing TradingSession resolver、Vue 3、TypeScript、Lightweight Charts、RQAlpha Plus local-only workbench。
+**Tech Stack:** Python 3.13、FastAPI/Pydantic、`Decimal`、现有 `MarketDataService` / `ActualDominantResearchSegmentLoader` / TradingSession resolver、Vue 3/TypeScript/Lightweight Charts。
 
 **Spec:** `docs/superpowers/specs/2026-08-23-jdj-jm-1m-shared-strategy-kernel-design.md`
 
 ## Global Constraints
 
-- Lane 3；策略公式、主力 identity、回测成交时序与风险语义均按可信口径处理。
-- V1 唯一 accepted profile：`jdj_jm_1m_v1`；`jm / actual_dominant / 1m / 5m context`。
-- 现有 N/JDJ Candidate 的 primitive golden projection 必须逐项不变；不得用“测试数量相同”代替 identity parity。
-- 所有金融语义使用 `Decimal`；手数使用 `int`。
-- 不建设 StrategyBase/plugin/optimizer/Portfolio 平台，不实现其他品种/周期/策略。
-- Historical Replay 只读 Canonical/Catalog；不得写 DB、Canonical、Redis。
-- RQAlpha child runner 不获得 Canonical OHLCV、DB URL 或项目凭据；只得到 Bundle、strategy/profile 和非价格 identity schedule。
-- Entry/Add 使用 decision 时已知的 admissible boundary 形成只对下一根 1m Bar 有效的 Limit Intent；普通 REDUCE/EXIT 使用 completed-Bar decision + next-Bar market/reference-open。不得实现猜测性 intrabar stop/target。
-- 不接 Alert、PushPlus、Execution Review、Runtime 或真实订单账户。
-- 本 Plan 不授权真实 RQAlpha Bundle smoke；真实回测另行 Gate。
-- 不发布 main/tag，不做 Runtime promotion。
+> **先写业务逻辑，重复真实出现后再抽象；先满足个人研究闭环，不为未来多人、分布式、通用策略平台预建设。**
 
-## Execution Phases
-
-本 Plan 分两阶段，Codex 不得在一次会话中无条件跑到底：
-
-```text
-Phase A（当前可实现）
-Task 0–7
-Shared Kernel → Reference Replay → Web → Streaming parity
-        ↓
-独立 Review Gate
-
-Phase B（有前置条件）
-RQAlpha Workbench 已按其独立 Plan 存在于 develop
-        ↓
-Task 8 RQAlpha adapter
-        ↓
-Task 9 canonical closeout / full verification
-```
-
-如果 `services/quant-api/app/backtest/` 在 Task 8 开始时不存在，必须停止 Phase B；不能在本 Plan 中顺手重建工作台。
+- 本任务为 Lane 3：交易公式、风险、成交时序、主力 identity 均按可信口径处理。
+- V1 只支持 `jm / actual_dominant / 1m / 5m context`。
+- 现有 N/JDJ reducer、policy、event identity 不迁移、不复制、不修改公式。
+- 所有价格、资金、风险、PnL 使用 `Decimal`；手数使用 `int`。
+- 不创建 `app.strategy_kernel`、StrategyBase、plugin、optimizer、Portfolio、queue、scheduler。
+- 不预建 streaming evaluator，不实现 RQAlpha adapter。
+- 不创建数据库表/migration，不写 Canonical/Redis，不接 Alert/PushPlus/Execution Review/Runtime。
+- 不执行真实 RQAlpha Bundle，不发布 main/tag，不做 Runtime promotion。
 
 ---
 
 ## File Structure
 
-### Shared formula and strategy kernel
-
-Create:
+### Create
 
 ```text
-services/quant-api/app/strategy_kernel/__init__.py
-services/quant-api/app/strategy_kernel/n_structure/__init__.py
-services/quant-api/app/strategy_kernel/jdj/__init__.py
-services/quant-api/app/strategy_kernel/jdj/strategy_policy.py
-services/quant-api/app/strategy_kernel/jdj/strategy_profile.py
-services/quant-api/app/strategy_kernel/jdj/target.py
-services/quant-api/app/strategy_kernel/jdj/risk.py
-services/quant-api/app/strategy_kernel/jdj/execution.py
-services/quant-api/app/strategy_kernel/jdj/engine.py
-services/quant-api/app/strategy_kernel/jdj/streaming.py
-```
+data/strategy_profiles/jdj_v1.json
 
-Move with history (`git mv`), do not copy as parallel implementations:
-
-```text
-app/research/n_structure/n_structure_policy.py     → app/strategy_kernel/n_structure/
-app/research/n_structure/n_structure_pattern.py    → app/strategy_kernel/n_structure/
-app/research/n_structure/n_structure_swing.py      → app/strategy_kernel/n_structure/
-app/research/n_structure/n_structure_state.py      → app/strategy_kernel/n_structure/
-app/research/n_structure/n_structure_segment.py    → app/strategy_kernel/n_structure/
-
-app/research/jdj/jdj_policy.py                     → app/strategy_kernel/jdj/
-app/research/jdj/jdj_context.py                    → app/strategy_kernel/jdj/
-app/research/jdj/jdj_events.py                     → app/strategy_kernel/jdj/
-app/research/jdj/jdj_trend_follow.py               → app/strategy_kernel/jdj/
-app/research/jdj/jdj_trend_reentry.py              → app/strategy_kernel/jdj/
-app/research/jdj/jdj_key_level_breakout.py         → app/strategy_kernel/jdj/
-```
-
-Create contracts:
-
-```text
-data/strategy_policies/jdj_intraday_futures_v1.json
-data/strategy_profiles/jdj_jm_1m_v1.json
-```
-
-### Reference replay
-
-Create:
-
-```text
 services/quant-api/app/research/jdj_strategy/__init__.py
-services/quant-api/app/research/jdj_strategy/models.py
+services/quant-api/app/research/jdj_strategy/contract.py
+services/quant-api/app/research/jdj_strategy/engine.py
 services/quant-api/app/research/jdj_strategy/replay.py
 services/quant-api/app/research/jdj_strategy/service.py
-services/quant-api/tests/strategy_kernel/__init__.py
-services/quant-api/tests/strategy_kernel/fixtures.py
-services/quant-api/tests/strategy_kernel/test_n_structure_golden_parity.py
-services/quant-api/tests/strategy_kernel/test_jdj_golden_parity.py
-services/quant-api/tests/strategy_kernel/test_jdj_strategy_contract.py
-services/quant-api/tests/strategy_kernel/test_jdj_strategy_execution.py
-services/quant-api/tests/strategy_kernel/test_jdj_streaming_parity.py
+
+services/quant-api/tests/research/test_jdj_strategy_contract.py
+services/quant-api/tests/research/test_jdj_strategy_engine.py
 services/quant-api/tests/research/test_jdj_strategy_replay_service.py
 ```
 
-Modify:
+### Modify backend
 
 ```text
 services/quant-api/app/research/composition.py
@@ -118,255 +52,45 @@ services/quant-api/app/schemas/research_overlays.py
 services/quant-api/tests/test_market_research_overlays_api.py
 ```
 
-### Web
-
-Create:
-
-```text
-apps/quant-web/src/composables/useHistoricalStrategyMarkers.ts
-apps/quant-web/src/utils/historicalStrategyMarkers.ts
-apps/quant-web/tests/historicalStrategyMarkers.test.ts
-```
-
-Modify:
+### Modify Web only; do not create a second marker pipeline
 
 ```text
 apps/quant-web/src/api/market.ts
 apps/quant-web/src/types/market.ts
 apps/quant-web/src/utils/mainIndicators.ts
+apps/quant-web/src/utils/historicalResearchMarkers.ts
+apps/quant-web/src/composables/useHistoricalResearchMarkers.ts
 apps/quant-web/src/pages/market/chart.vue
+apps/quant-web/tests/historicalResearchMarkers.test.ts
 apps/quant-web/e2e/market-research.spec.mjs
 ```
 
-### RQAlpha adapter, only in Phase B
-
-Create/modify only after Workbench prerequisite passes:
+### Explicitly do not create in this Plan
 
 ```text
-services/quant-api/app/backtest/execution_identity_schedule.py
-services/quant-api/app/backtest/strategies/jdj_rqalpha_adapter.py
-services/quant-api/app/backtest/strategies/jdj_intraday_futures_v1.py
-services/quant-api/app/backtest/strategies/registry.json
-services/quant-api/tests/backtest/test_jdj_execution_identity_schedule.py
-services/quant-api/tests/backtest/test_jdj_rqalpha_adapter.py
+services/quant-api/app/strategy_kernel/**
+services/quant-api/app/backtest/** JDJ adapter
+profile discovery API
+new strategy DB tables
+new Web strategy management pages
 ```
 
 ---
 
-### Task 0: Freeze Current Golden Candidate Semantics Before Refactoring
+## Task 1: Freeze One JDJ V1 Contract Without Moving Existing Formulas
 
 **Files:**
-- Create: `services/quant-api/tests/strategy_kernel/fixtures.py`
-- Create: `services/quant-api/tests/strategy_kernel/test_n_structure_golden_parity.py`
-- Create: `services/quant-api/tests/strategy_kernel/test_jdj_golden_parity.py`
-- Read: current `services/quant-api/tests/test_n_structure_*`, `test_jdj_*` and exact policies
-
-**Interfaces:** Produces immutable primitive expected projections used after module moves. Does not change production imports or formulas.
-
-- [ ] **Step 1: Inventory every production import that will move**
-
-```bash
-rg 'app\.research\.(n_structure\.n_structure_|jdj\.jdj_(policy|context|events|trend_follow|trend_reentry|key_level_breakout))' \
-  services/quant-api/app services/quant-api/tests
-```
-
-Keep the output in Codex task notes as the migration checklist.
-
-- [ ] **Step 2: Create deterministic test-only fixture builders**
-
-Copy only small `_bar`/context construction helpers needed from current tests into `tests/strategy_kernel/fixtures.py`. Do not import one test module from another.
-
-- [ ] **Step 3: Freeze N primitives**
-
-```python
-def project_n_trace(trace):
-    return {
-        "pivots": [
-            (
-                p.pivot_id,
-                p.epoch,
-                p.kind.value,
-                p.pivot_time.isoformat(),
-                p.confirmed_at.isoformat(),
-                str(p.price),
-                p.contract,
-                p.segment_start_trading_day.isoformat(),
-            )
-            for p in trace.swings.pivots
-        ],
-        "snapshots": [
-            (s.epoch, s.kind.value, s.observed_at.isoformat())
-            for s in trace.structures.snapshots
-        ],
-    }
-```
-
-Use existing outside-reset, same-epoch pivot and normal trend scenarios. Run once on current code and paste the literal primitive results into expected constants.
-
-- [ ] **Step 4: Freeze JDJ primitives**
-
-```python
-def project_jdj_trace(trace):
-    return {
-        "events": [
-            (
-                e.event_id,
-                e.candidate_id,
-                e.source_event_kind,
-                e.direction.value,
-                e.observed_at.isoformat(),
-                str(e.trigger_level),
-                e.contract,
-                e.trading_day.isoformat(),
-            )
-            for e in trace.events
-        ],
-        "ambiguous": trace.ambiguous_count,
-        "invalidated": trace.invalidated_count,
-        "expired_no_retest": getattr(trace, "expired_no_retest_count", None),
-        "expired_context_lost": getattr(trace, "expired_context_lost_count", None),
-    }
-```
-
-Freeze literal expectations for Trend Follow success/ambiguity, Reentry success/failed reaction and Key Level success/failed retest.
-
-- [ ] **Step 5: Verify baseline**
-
-```bash
-UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache uv run --offline --project services/quant-api pytest -q \
-  services/quant-api/tests/strategy_kernel/test_n_structure_golden_parity.py \
-  services/quant-api/tests/strategy_kernel/test_jdj_golden_parity.py \
-  services/quant-api/tests/test_jdj_context.py \
-  services/quant-api/tests/test_jdj_trend_follow.py \
-  services/quant-api/tests/test_jdj_trend_reentry.py \
-  services/quant-api/tests/test_jdj_key_level_breakout.py
-```
-
-Expected: PASS before production moves.
-
-- [ ] **Step 6: Commit**
-
-```bash
-git add services/quant-api/tests/strategy_kernel
-git commit -m "test(strategy): freeze N and JDJ candidate golden facts"
-```
-
----
-
-### Task 1: Move the Pure N Structure Kernel Without Semantic Change
-
-**Files:**
-- Move: `services/quant-api/app/research/n_structure/n_structure_policy.py`
-- Move: `services/quant-api/app/research/n_structure/n_structure_pattern.py`
-- Move: `services/quant-api/app/research/n_structure/n_structure_swing.py`
-- Move: `services/quant-api/app/research/n_structure/n_structure_state.py`
-- Move: `services/quant-api/app/research/n_structure/n_structure_segment.py`
-- Create: `services/quant-api/app/strategy_kernel/n_structure/__init__.py`
-- Modify: all importers returned by Task 0 `rg`
-- Test: `services/quant-api/tests/strategy_kernel/test_n_structure_golden_parity.py`
-- Test: existing N Research/segment and JDJ context tests
-
-**Interfaces:** unchanged `NStructurePolicy`, `NSwingPivot`, `NStructureKind`, `NStructureSnapshot`, `NStructureSegmentTrace`, `evaluate_n_structure_segment` under `app.strategy_kernel.n_structure`.
-
-- [ ] **Step 1: `git mv` the five exact modules**; do not copy parallel definitions.
-- [ ] **Step 2: Fix internal imports** to `app.strategy_kernel.n_structure`; keep `CanonicalBar` as normalized value shape.
-- [ ] **Step 3: Update all Research/CLI/test consumers** so `research → strategy_kernel` only.
-- [ ] **Step 4: Verify old imports are gone**
-
-```bash
-rg 'app\.research\.n_structure\.n_structure_(policy|pattern|swing|state|segment)' services/quant-api/app services/quant-api/tests
-```
-
-Expected: no active import references.
-
-- [ ] **Step 5: Run parity/current tests**
-
-```bash
-UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache uv run --offline --project services/quant-api pytest -q \
-  services/quant-api/tests/strategy_kernel/test_n_structure_golden_parity.py \
-  services/quant-api/tests/test_n_structure_segment.py \
-  services/quant-api/tests/research/test_n_structure_research_service.py \
-  services/quant-api/tests/research/test_n_candidate_validation_service.py \
-  services/quant-api/tests/test_jdj_context.py
-```
-
-- [ ] **Step 6: Commit**
-
-```bash
-git add services/quant-api/app/strategy_kernel services/quant-api/app/research services/quant-api/app/guiyi_cli services/quant-api/tests
-git commit -m "refactor(strategy): move pure N structure kernel"
-```
-
----
-
-### Task 2: Move the Pure JDJ Candidate Kernel and Keep Golden Identity
-
-**Files:**
-- Move: `services/quant-api/app/research/jdj/jdj_policy.py`
-- Move: `services/quant-api/app/research/jdj/jdj_context.py`
-- Move: `services/quant-api/app/research/jdj/jdj_events.py`
-- Move: `services/quant-api/app/research/jdj/jdj_trend_follow.py`
-- Move: `services/quant-api/app/research/jdj/jdj_trend_reentry.py`
-- Move: `services/quant-api/app/research/jdj/jdj_key_level_breakout.py`
-- Create: `services/quant-api/app/strategy_kernel/jdj/__init__.py`
-- Modify: all JDJ Research/validation/robustness/convergence/overlay/CLI/test importers returned by Task 0 `rg`
-- Test: `services/quant-api/tests/strategy_kernel/test_jdj_golden_parity.py`
-- Test: current JDJ direct reducer/Research tests
-
-**Interfaces:** unchanged Candidate dataclasses and `reduce_jdj_trend_follow`, `reduce_jdj_trend_reentry_6`, `reduce_jdj_key_level_breakout` under `app.strategy_kernel.jdj`.
-
-- [ ] **Step 1: `git mv` the six exact modules**; no event-id/policy/dataclass/formula edits.
-- [ ] **Step 2: Update internal imports** to Shared N/JDJ paths; kernel must not import `app.research`.
-- [ ] **Step 3: Update all consumers**, including robustness/convergence, to the moved event classes.
-- [ ] **Step 4: Verify old imports are gone**
-
-```bash
-rg 'app\.research\.jdj\.jdj_(policy|context|events|trend_follow|trend_reentry|key_level_breakout)' services/quant-api/app services/quant-api/tests
-```
-
-- [ ] **Step 5: Run JDJ golden/direct/research tests**
-
-```bash
-UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache uv run --offline --project services/quant-api pytest -q \
-  services/quant-api/tests/strategy_kernel/test_jdj_golden_parity.py \
-  services/quant-api/tests/test_jdj_context.py \
-  services/quant-api/tests/test_jdj_trend_follow.py \
-  services/quant-api/tests/test_jdj_trend_reentry.py \
-  services/quant-api/tests/test_jdj_key_level_breakout.py \
-  services/quant-api/tests/research/test_jdj_research_service.py \
-  services/quant-api/tests/research/test_jdj_candidate_validation_service.py \
-  services/quant-api/tests/research/test_jdj_candidate_validation_calendar.py \
-  services/quant-api/tests/research/test_jdj_robustness_service.py \
-  services/quant-api/tests/test_market_research_overlays_api.py
-```
-
-- [ ] **Step 6: Commit**
-
-```bash
-git add services/quant-api/app/strategy_kernel services/quant-api/app/research services/quant-api/app/guiyi_cli services/quant-api/tests
-git commit -m "refactor(strategy): move pure JDJ candidate kernel"
-```
-
----
-
-### Task 3: Freeze Strategy Policy/Profile and Entry Authorization
-
-**Files:**
-- Create: `data/strategy_policies/jdj_intraday_futures_v1.json`
-- Create: `data/strategy_profiles/jdj_jm_1m_v1.json`
-- Create: `services/quant-api/app/strategy_kernel/jdj/strategy_policy.py`
-- Create: `services/quant-api/app/strategy_kernel/jdj/strategy_profile.py`
-- Create: `services/quant-api/app/strategy_kernel/jdj/target.py`
-- Create: `services/quant-api/app/strategy_kernel/jdj/risk.py`
-- Test: `services/quant-api/tests/strategy_kernel/test_jdj_strategy_contract.py`
+- Create: `data/strategy_profiles/jdj_v1.json`
+- Create: `services/quant-api/app/research/jdj_strategy/__init__.py`
+- Create: `services/quant-api/app/research/jdj_strategy/contract.py`
+- Create: `services/quant-api/tests/research/test_jdj_strategy_contract.py`
+- Read-only regression targets: current JDJ/N policy/reducer tests
 
 **Interfaces:**
 
 ```python
 @dataclass(frozen=True, slots=True)
-class JdjStrategyPolicy:
-    policy_id: str
-    candidate_policy_id: str
+class JdjCoreRules:
     minimum_reward_risk: Decimal
     max_planned_trade_risk_fraction: Decimal
     require_profit_before_add: bool
@@ -375,7 +99,7 @@ class JdjStrategyPolicy:
     max_add_count: int
     losing_position_add_forbidden: bool
     daily_pause_drawdown_fraction: Decimal
-    daily_pause_minutes: int
+    daily_pause_bars: int
     daily_stop_drawdown_fraction: Decimal
 
 @dataclass(frozen=True, slots=True)
@@ -387,517 +111,380 @@ class JdjStrategyProfile:
     trend_context_frequency: BarFrequency
     base_risk_fraction: Decimal
     first_profit_take_fraction: Decimal
-    reference_stop_buffer_ticks: int
-    terminal_flatten_lead_bars: int
-    no_new_entry_lead_bars: int
-    opening_profit_giveback_guard: bool
     historical_reference_start_equity: Decimal
-    historical_reference_cost_model: str
-    historical_reference_margin_check: bool
     entry_limit_valid_bars: int
+    terminal_flatten_lead_bars: int
 
 @dataclass(frozen=True, slots=True)
-class InstrumentExecutionFacts:
-    contract_multiplier: Decimal
-    price_tick: Decimal | None
-    estimated_round_trip_cost: Decimal
-    available_cash: Decimal
-    margin_required_per_contract: Decimal | None
+class JdjV1Config:
+    strategy_id: str
+    core: JdjCoreRules
+    profile: JdjStrategyProfile
 
-@dataclass(frozen=True, slots=True)
-class EntryAuthorization:
-    allowed: bool
-    reason: str | None
-    stop_price: Decimal | None
-    target_price: Decimal | None
-    reward_risk: Decimal | None
-    admissible_price_bound: Decimal | None
-    quantity: int
+
+def load_jdj_v1_config(profile_id: str = "jdj_jm_1m_v1") -> JdjV1Config: ...
 ```
 
-Functions:
-
-```text
-load_jdj_strategy_policy()
-load_jdj_strategy_profile(profile_id)
-resolve_candidate_conflict(events)
-resolve_structural_stop(selection, context)
-resolve_target_price(direction, entry_reference, known_levels)
-admissible_entry_boundary(stop, target, minimum_reward_risk)
-calculate_reference_quantity(equity, admissible_boundary, stop, instrument, profile)
-authorize_entry(...)
-```
-
-- [ ] **Step 1: Write RED exact-contract tests**
-
-Assert policy-vs-profile separation exactly. Require profile fields `historical_reference_start_equity=1000000` and `entry_limit_valid_bars=1`. Unknown/missing/extra/drifted JSON fails closed.
-
-- [ ] **Step 2: Write RED conflict/target/stop tests**
-
-```text
-same-direction key-level + reentry + trend-follow → one selection, primary=key-level
-LONG + SHORT → AMBIGUOUS_DIRECTION
-no favorable known target → TARGET_UNAVAILABLE
-structural stop on wrong side → context invalid
-```
-
-- [ ] **Step 3: Write RED R:R/boundary tests**
-
-```python
-boundary = (target + Decimal("2") * stop) / Decimal("3")
-```
-
-Verify LONG/SHORT symmetry and exact Decimal R:R=2 at the boundary.
-
-- [ ] **Step 4: Write RED sizing tests**
-
-Use concrete equity, 0.5% base risk and multiplier fixture. Quantity uses boundary as worst allowed price. Missing/non-positive multiplier fails closed. Trusted margin facts constrain quantity only when provided.
-
-- [ ] **Step 5: Run RED**
-
-```bash
-UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache uv run --offline --project services/quant-api pytest -q services/quant-api/tests/strategy_kernel/test_jdj_strategy_contract.py
-```
-
-- [ ] **Step 6: Implement exact JSON loaders using `app.core.exact_json_contract`**; no policy defaults.
-- [ ] **Step 7: Implement conflict/stop/target/boundary/sizing with Decimal only**.
-- [ ] **Step 8: Run green and commit**
-
-```bash
-UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache uv run --offline --project services/quant-api pytest -q services/quant-api/tests/strategy_kernel/test_jdj_strategy_contract.py
-git add data/strategy_policies data/strategy_profiles services/quant-api/app/strategy_kernel/jdj services/quant-api/tests/strategy_kernel
-git commit -m "feat(strategy): freeze JDJ JM 1m strategy contract"
-```
-
----
-
-### Task 4: Implement TradeEpisode, One-Bar Entry/Add Limits, Management and Daily/Session Risk
-
-**Files:**
-- Create: `services/quant-api/app/strategy_kernel/jdj/execution.py`
-- Create: `services/quant-api/app/strategy_kernel/jdj/engine.py`
-- Create: `services/quant-api/app/research/jdj_strategy/models.py`
-- Create: `services/quant-api/app/research/jdj_strategy/replay.py`
-- Test: `services/quant-api/tests/strategy_kernel/test_jdj_strategy_execution.py`
-
-**Interfaces:**
-
-```python
-class JdjActionKind(StrEnum):
-    ENTRY_INTENT = "entry_intent"
-    ENTRY = "entry"
-    ADD_INTENT = "add_intent"
-    ADD = "add"
-    REDUCE = "reduce"
-    EXIT = "exit"
-    REJECTED_CANDIDATE = "rejected_candidate"
-    DAILY_PAUSE = "daily_pause"
-    DAILY_STOP = "daily_stop"
-
-@dataclass(frozen=True, slots=True)
-class PendingLimitIntent:
-    source_event_ids: tuple[str, ...]
-    direction: JdjDirection
-    limit_price: Decimal
-    quantity: int
-    decision_at: datetime
-    valid_bars_remaining: int
-    action_kind: JdjActionKind
-
-@dataclass(frozen=True, slots=True)
-class TradeEpisode:
-    episode_id: str
-    initial_source_event_ids: tuple[str, ...]
-    consumed_source_event_ids: frozenset[str]
-    primary_setup: str
-    supporting_setups: tuple[str, ...]
-    direction: JdjDirection
-    contract: str
-    trading_day: date
-    segment_start_trading_day: date
-    quantity: int
-    weighted_average_cost: Decimal
-    protective_stop: Decimal
-    target_1: Decimal
-    add_count: int
-    partial_profit_taken: bool
-    realized_pnl: Decimal
-
-@dataclass(frozen=True, slots=True)
-class JdjStrategyState:
-    trading_day: date
-    start_equity: Decimal
-    pending_limit: PendingLimitIntent | None
-    episode: TradeEpisode | None
-    pause_bars_remaining: int
-    stopped_for_day: bool
-
-@dataclass(frozen=True, slots=True)
-class JdjStrategyFrame:
-    context: JdjBarContext
-    candidate_events: tuple[JdjTriggerEvent, ...]
-    account_equity: Decimal
-    instrument: InstrumentExecutionFacts
-    bars_remaining_in_trading_day: int
-```
-
-- [ ] **Step 1: Write RED one-Bar limit reference tests**
-
-For LONG intent at limit 100:
-
-```text
-next open 99  → fill 99, fill_basis=better_open
-next open 101 and low 99.5 → fill 100, fill_basis=limit_touch
-next low 100.5 → no fill; after that one Bar intent expires
-```
-
-SHORT symmetric. No Episode exists until actual reference fill. Intent never survives into a second following Bar.
-
-- [ ] **Step 2: Write RED Episode/source-id tests**
-
-Filled ENTRY creates deterministic `episode_id`; all source ids are consumed. Re-presenting the same source event cannot create another Entry/Add.
-
-- [ ] **Step 3: Write RED completed-Bar partial-profit tests**
-
-```text
-LONG close < target → no reduce
-LONG close >= target → REDUCE decision
-next same-segment open → reference reduce
-10 lots × 0.40 → 4 reduced, 6 remain
-2 lots × 0.40 → floor=0, no fake reduce, partial_profit_taken=false
-```
-
-No Bar-high target fill.
-
-- [ ] **Step 4: Write RED profitable-add tests**
-
-ADD source must be a new full `jdj_trend_follow_1m_candidate_v1` event after profitable partial exit. First/second add accepted subject to one-Bar limit/risk; third, losing Episode, repeated source id rejected. `floor(current_qty×0.25)` only.
-
-- [ ] **Step 5: Write RED completed-Bar exit tests**
-
-Close crossing protective stop/EMA or losing strict-prior 5m trend creates EXIT decision; next legal Bar market/reference-open. No intrabar stop assertion.
-
-- [ ] **Step 6: Write RED daily-risk tests**
-
-With `start_equity=100000`:
-
-```text
-99499 → DAILY_PAUSE
-pause consumes exactly 15 subsequent in-session 1m frames
-99000 → DAILY_STOP + JM V1 EXIT decision + stopped_for_day=true
-new trading day → reset pause/stop
-```
-
-- [ ] **Step 7: Write RED session-terminal tests**
-
-`bars_remaining_in_trading_day=1` forbids new Entry/Add. Existing Episode emits `SESSION_FLATTEN` so the final legal Bar open can close. Intermediate breaks never flatten.
-
-- [ ] **Step 8: Run RED**
-
-```bash
-UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache uv run --offline --project services/quant-api pytest -q services/quant-api/tests/strategy_kernel/test_jdj_strategy_execution.py
-```
-
-- [ ] **Step 9: Implement immutable reducer/reference execution**
-
-Every action records episode/source ids, decision/effective bar, contract/segment, qty/post-qty, stop/target, R:R, risk, reason and fill basis. High/low is permitted only to determine whether the already-existing next-Bar limit intent could fill; never to infer a same-Bar stop/target order.
-
-- [ ] **Step 10: Run green and commit**
-
-```bash
-UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache uv run --offline --project services/quant-api pytest -q \
-  services/quant-api/tests/strategy_kernel/test_jdj_strategy_contract.py \
-  services/quant-api/tests/strategy_kernel/test_jdj_strategy_execution.py \
-  services/quant-api/tests/strategy_kernel/test_jdj_golden_parity.py
-git add services/quant-api/app/strategy_kernel/jdj services/quant-api/app/research/jdj_strategy services/quant-api/tests/strategy_kernel
-git commit -m "feat(strategy): add JDJ trade episode execution"
-```
-
----
-
-### Task 5: Add JM actual_dominant Historical Reference Replay API
-
-**Files:**
-- Create: `services/quant-api/app/research/jdj_strategy/service.py`
-- Modify: `services/quant-api/app/research/composition.py`
-- Modify: `services/quant-api/app/research/historical_overlay_api.py`
-- Modify: `services/quant-api/app/schemas/research_overlays.py`
-- Test: `services/quant-api/tests/research/test_jdj_strategy_replay_service.py`
-- Modify: `services/quant-api/tests/test_market_research_overlays_api.py`
-
-**Interfaces:**
-
-```text
-GET /api/v1/market/research/jdj-strategy/profiles?symbol=jm
-GET /api/v1/market/research/jdj-strategy/history?series_kind=actual_dominant&symbol=jm&frequency=1m&since=YYYY-MM-DD&through=YYYY-MM-DD
-```
-
-- [ ] **Step 1: Write RED two-segment tests**
-
-Assert contract/segment on every action, no state crossing segment boundary and deterministic event/episode ids.
-
-- [ ] **Step 2: Write RED warm-up/prefix tests**
-
-Request `since` mid-segment. Compute from true segment start but suppress pre-`since` outputs. Same prefix inside a longer `through` must be identical.
-
-- [ ] **Step 3: Write RED terminal-session tests using existing TradingSession resolver**
-
-Missing/ambiguous terminal identity → `JDJ_STRATEGY_SESSION_IDENTITY_INVALID`; no hardcoded 15:00.
-
-- [ ] **Step 4: Write RED reference-account tests**
-
-Profile supplies `historical_reference_start_equity=1000000`, cost model excluded, margin check disabled. Multiplier comes from trusted Catalog/reference source. Response marks `reference_execution=true`; it must not label reference cost/margin/PnL as real or RQAlpha facts.
-
-- [ ] **Step 5: Write RED API capability tests**
-
-```text
-jm + actual_dominant + 1m → accepted
-jm + actual_dominant + 5m → 422 JDJ_STRATEGY_PROFILE_UNAVAILABLE
-rb + actual_dominant + 1m → 422 JDJ_STRATEGY_PROFILE_UNAVAILABLE
-continuous → 422 invalid request
-segment/session unavailable → typed 409
-```
-
-- [ ] **Step 6: Implement service**
-
-Use `ActualDominantResearchSegmentLoader`; do not query `MainContractMap` directly. Construct bars-remaining identity from validated session/bar coverage. Reference multiplier is sourced, not hardcoded in strategy code.
-
-- [ ] **Step 7: Add DTOs and routes**
-
-Expose action/episode/profile identity, primary/supporting setup, contract/segment, direction, decision/effective bar, reference price, qty/post-qty, stop, target, R:R, reason, fill basis and `reference_execution=true`. Existing Candidate `/jdj/history` remains unchanged.
-
-- [ ] **Step 8: Run tests and commit**
-
-```bash
-UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache uv run --offline --project services/quant-api pytest -q \
-  services/quant-api/tests/research/test_jdj_strategy_replay_service.py \
-  services/quant-api/tests/test_market_research_overlays_api.py
-git add services/quant-api/app/research/jdj_strategy services/quant-api/app/research/composition.py services/quant-api/app/research/historical_overlay_api.py services/quant-api/app/schemas/research_overlays.py services/quant-api/tests
-git commit -m "feat(research): add JDJ JM reference replay"
-```
-
----
-
-### Task 6: Add Separate `日进斗金策略` Market Overlay
-
-**Files:**
-- Create: `apps/quant-web/src/composables/useHistoricalStrategyMarkers.ts`
-- Create: `apps/quant-web/src/utils/historicalStrategyMarkers.ts`
-- Create: `apps/quant-web/tests/historicalStrategyMarkers.test.ts`
-- Modify: `apps/quant-web/src/api/market.ts`
-- Modify: `apps/quant-web/src/types/market.ts`
-- Modify: `apps/quant-web/src/utils/mainIndicators.ts`
-- Modify: `apps/quant-web/src/pages/market/chart.vue`
-- Modify: `apps/quant-web/e2e/market-research.spec.mjs`
-
-**Interfaces:** overlay id `jdj_strategy`, distinct from current Candidate overlay.
-
-- [ ] **Step 1: Write RED marker tests**: ENTRY `▲/▼`, ADD `＋`, REDUCE `－`, EXIT `×`; hover includes episode/setup/supporting setup/contract/decision/effective bar/qty/stop/target/R:R/reason/“参考回放”。Unfilled intents do not render as fills.
-- [ ] **Step 2: Write RED capability/identity tests**: `jm/actual_dominant/1m` loads; switching to unsupported period clears immediately; switching back reloads; prepend dedupes; stale response ignored.
-- [ ] **Step 3: Implement API/types/marker utility** with no strategy formula in TypeScript.
-- [ ] **Step 4: Implement independent `useHistoricalStrategyMarkers`**, reusing generation/full-identity stale protection but separate state.
-- [ ] **Step 5: Wire `chart.vue` minimally**; do not calculate strategy in the large component.
-- [ ] **Step 6: Run Web checks**
-
-```bash
-pnpm --dir apps/quant-web test
-pnpm --dir apps/quant-web exec playwright test -c playwright.config.mjs apps/quant-web/e2e/market-research.spec.mjs
-pnpm --dir apps/quant-web build
-```
-
-- [ ] **Step 7: Commit**
-
-```bash
-git add apps/quant-web
-git commit -m "feat(web): show JDJ JM strategy replay"
-```
-
----
-
-### Task 7: Add Streaming Evaluator and Prove Batch/Streaming Parity
-
-**Files:**
-- Create: `services/quant-api/app/strategy_kernel/jdj/streaming.py`
-- Modify: `services/quant-api/app/strategy_kernel/n_structure/n_structure_swing.py` only if a reusable single-step swing reducer is required
-- Modify: `services/quant-api/app/strategy_kernel/n_structure/n_structure_pattern.py` only if a reusable single-step pattern reducer is required
-- Modify: `services/quant-api/app/strategy_kernel/n_structure/n_structure_state.py` only if a reusable single-step structure reducer is required
-- Modify: `services/quant-api/app/strategy_kernel/jdj/jdj_context.py` only to share exact incremental EMA/context projection state
-- Modify: the three JDJ reducers only to extract the same single-step transition used by batch and streaming
-- Test: `services/quant-api/tests/strategy_kernel/test_jdj_streaming_parity.py`
-
-**Interfaces:**
-
-```python
-@dataclass(slots=True)
-class JdjStreamingEvaluator:
-    @classmethod
-    def create(
-        cls,
-        *,
-        contract: str,
-        segment_start_trading_day: date,
-        segment_end_trading_day: date,
-        jdj_policy: JdjPolicy,
-        n_policy: NStructurePolicy,
-    ) -> "JdjStreamingEvaluator": ...
-
-    def push(
-        self,
-        bar_1m: CanonicalBar,
-        *,
-        newly_completed_5m_bars: tuple[CanonicalBar, ...] = (),
-    ) -> tuple[JdjTriggerEvent, ...]: ...
-```
-
-`push` 的顺序语义固定：
-
-1. 使用调用前已经 committed 的 5m/N state 和当前 `bar_1m` 更新 EMA/JDJ 1m context；
-2. 生成当前 1m Candidate events；
-3. **之后**才按时间顺序吸收 `newly_completed_5m_bars`，使这些 5m facts 只能影响下一次 `push`；
-4. `newly_completed_5m_bars` 必须同 contract/segment、严格递增，且其 `bar_end <= bar_1m.bar_end`；identity/order 失败即 `JDJ_CONTEXT_INVALID`。
-
-每个 physical segment 创建一个新 evaluator；不提供跨 segment 的隐式 `reset` API。
-
-- [ ] **Step 1: Write RED stream-vs-batch tests** for each Task 0 frozen segment.
-- [ ] **Step 2: Add exact same-boundary strict-before test**: a 5m Bar supplied in `newly_completed_5m_bars` on the current call cannot affect events returned by that call; it can first affect the next `push`.
-- [ ] **Step 3: Add two-trading-day same-contract test**: EMA/N segment state survives trading-day change while JDJ day-scoped/Execution state resets.
-- [ ] **Step 4: Add segment-isolation test**: instantiate a second evaluator for a new physical contract and prove no previous state exists.
-- [ ] **Step 5: Run RED**
-
-```bash
-UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache uv run --offline --project services/quant-api pytest -q services/quant-api/tests/strategy_kernel/test_jdj_streaming_parity.py
-```
-
-- [ ] **Step 6: Extract pure single-step transitions from existing batch loops** and make batch + streaming call the same transitions. Do not maintain two formulas.
-- [ ] **Step 7: Preserve exact EMA seed/rounding and N/JDJ state**; no per-Bar full-prefix recomputation.
-- [ ] **Step 8: Add regression guard against O(n²) fallback** using a spy/counter that fails if `JdjStreamingEvaluator.push()` calls full `evaluate_n_structure_segment()` for each 1m input after initialization.
-- [ ] **Step 9: Run golden + streaming + Research tests**
-
-```bash
-UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache uv run --offline --project services/quant-api pytest -q \
-  services/quant-api/tests/strategy_kernel/test_n_structure_golden_parity.py \
-  services/quant-api/tests/strategy_kernel/test_jdj_golden_parity.py \
-  services/quant-api/tests/strategy_kernel/test_jdj_streaming_parity.py \
-  services/quant-api/tests/research/test_jdj_research_service.py
-```
-
-- [ ] **Step 10: Commit and stop for Phase A independent Review**
-
-```bash
-git add services/quant-api/app/strategy_kernel services/quant-api/tests/strategy_kernel
-git commit -m "feat(strategy): add JDJ streaming parity evaluator"
-```
-
-Reviewer checks future/same-boundary leakage, day-vs-segment reset, EMA rounding drift and formula duplication before Phase B.
-
----
-
-### Task 8: Phase B — Integrate the Same Kernel Into RQAlpha Workbench
-
-**Prerequisite Gate:**
-
-```bash
-test -d services/quant-api/app/backtest
-```
-
-Expected: exit 0. If absent, stop. Implement the approved RQAlpha Workbench Plan separately, integrate it to `develop`, then start Task 8 in a fresh branch/worktree.
-
-**Files:**
-- Create: `services/quant-api/app/backtest/execution_identity_schedule.py`
-- Create: `services/quant-api/app/backtest/strategies/jdj_rqalpha_adapter.py`
-- Create: `services/quant-api/app/backtest/strategies/jdj_intraday_futures_v1.py`
-- Modify: `services/quant-api/app/backtest/strategies/registry.json`
-- Modify: existing Workbench run/result normalization files only for JDJ attribution fields
-- Test: `services/quant-api/tests/backtest/test_jdj_execution_identity_schedule.py`
-- Test: `services/quant-api/tests/backtest/test_jdj_rqalpha_adapter.py`
-
-**Interfaces:** schedule semantic payload:
+- [ ] **Step 1: Write the exact JSON fixture** with the Spec values and no additional knobs.
 
 ```json
 {
   "schema_version": 1,
   "strategy_id": "jdj_intraday_futures_v1",
-  "profile_id": "jdj_jm_1m_v1",
-  "symbol": "jm",
-  "series_kind": "actual_dominant",
-  "mapping_source": "MarketDataService/ActualDominantResearchSegmentLoader",
-  "trading_day_start": "2026-08-01",
-  "trading_day_end": "2026-08-20",
-  "days": {
-    "2026-08-20": {
-      "contract": "JM2609",
-      "terminal_bar_end": "2026-08-20T15:00:00+08:00"
+  "core_rules": {
+    "minimum_reward_risk": "2.0",
+    "max_planned_trade_risk_fraction": "0.01",
+    "require_profit_before_add": true,
+    "require_partial_profit_before_add": true,
+    "add_fraction_of_current_qty": "0.25",
+    "max_add_count": 2,
+    "losing_position_add_forbidden": true,
+    "daily_pause_drawdown_fraction": "0.005",
+    "daily_pause_bars": 15,
+    "daily_stop_drawdown_fraction": "0.01"
+  },
+  "profiles": {
+    "jdj_jm_1m_v1": {
+      "symbol": "jm",
+      "series_kind": "actual_dominant",
+      "execution_frequency": "1m",
+      "trend_context_frequency": "5m",
+      "base_risk_fraction": "0.005",
+      "first_profit_take_fraction": "0.40",
+      "historical_reference_start_equity": "1000000",
+      "entry_limit_valid_bars": 1,
+      "terminal_flatten_lead_bars": 1
     }
   }
 }
 ```
 
-- [ ] **Step 1: Write RED schedule tests** using fake validated loader/session resolver, not raw MainContractMap rows. Require day→contract + terminal identity, deterministic ordering and fail-closed coverage; non-trading days are absent, not errors.
-- [ ] **Step 2: Implement schedule generation in sidecar parent process**. Parent may use existing read paths; child receives JSON only, no DB/Redis credentials or Canonical OHLCV.
-- [ ] **Step 3: Write RED fake-RQAlpha stream tests**: Bundle Bar → in-memory domain Bar → `JdjStreamingEvaluator.push()`; schedule contract match required; `frequency=1m`, `matching_type=next_bar`, `signal=false`; child cannot load Canonical/DB.
-- [ ] **Step 4: Write RED one-Bar LimitOrder lifecycle tests**: ENTRY/ADD submits limit at admissible boundary after decision; at the next `handle_bar`, first consume any RQAlpha fill callback/state, then call `cancel_order` only if the order remains open. Never leave it into a second following Bar. Actual fill creates/updates Episode using engine price/time.
-- [ ] **Step 5: Write RED management-order tests**: completed-Bar REDUCE/EXIT submits market close action for `next_bar`; no synthetic stop order; no close beyond current simulated position.
-- [ ] **Step 6: Implement session terminal guard from schedule**; no hardcoded 15:00.
-- [ ] **Step 7: Register strategy/profile without exposing policy-frozen fields as arbitrary Web parameters**.
-- [ ] **Step 8: Add attribution using RQAlpha fill/account facts**, not a duplicate PnL calculator.
-- [ ] **Step 9: Run fake tests only**
+- [ ] **Step 2: Write RED exact-contract tests**: accepted profile loads exact Decimals; unknown profile、missing/extra/drifted field fail closed.
+
+- [ ] **Step 3: Run RED**
+
+```bash
+UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache uv run --offline --project services/quant-api pytest -q services/quant-api/tests/research/test_jdj_strategy_contract.py
+```
+
+- [ ] **Step 4: Implement `contract.py` using `app.core.exact_json_contract`**. Do not create separate policy/profile loaders.
+
+- [ ] **Step 5: Run contract + existing Candidate regressions**
 
 ```bash
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache uv run --offline --project services/quant-api pytest -q \
-  services/quant-api/tests/backtest/test_jdj_execution_identity_schedule.py \
-  services/quant-api/tests/backtest/test_jdj_rqalpha_adapter.py
+  services/quant-api/tests/research/test_jdj_strategy_contract.py \
+  services/quant-api/tests/test_jdj_context.py \
+  services/quant-api/tests/test_jdj_trend_follow.py \
+  services/quant-api/tests/test_jdj_trend_reentry.py \
+  services/quant-api/tests/test_jdj_key_level_breakout.py \
+  services/quant-api/tests/research/test_jdj_research_service.py
 ```
 
-- [ ] **Step 10: Commit**
+Expected: all existing JDJ Candidate tests stay green; no production JDJ/N file moved.
+
+- [ ] **Step 6: Commit**
 
 ```bash
-git add services/quant-api/app/backtest services/quant-api/tests/backtest
-git commit -m "feat(backtest): adapt shared JDJ JM strategy to RQAlpha"
+git add data/strategy_profiles/jdj_v1.json services/quant-api/app/research/jdj_strategy services/quant-api/tests/research/test_jdj_strategy_contract.py
+git commit -m "feat(strategy): define lean JDJ JM 1m contract"
 ```
 
 ---
 
-### Task 9: Canonical Closeout and Full Verification
+## Task 2: Implement the Complete JDJ JM 1m Trade Engine and Reference Fill Model
 
 **Files:**
-- Modify: `PROJECT_SOURCE.md`
-- Modify: `AGENTS.md`
-- Modify: `docs/ARCHITECTURE.md`
-- Modify: `DECISIONS.md`
-- Modify: `docs/RQALPHA_RESEARCH_BACKTEST.md` only if Task 8 exists
-- Modify: `TESTING.md`
-- Do not update `STATUS.md` unless a separate status action records an exact develop RC.
+- Create: `services/quant-api/app/research/jdj_strategy/engine.py`
+- Create: `services/quant-api/app/research/jdj_strategy/replay.py`
+- Create: `services/quant-api/tests/research/test_jdj_strategy_engine.py`
 
-- [ ] **Step 1: Update distinct identities**: Candidate Research / Historical Reference Strategy Replay / RQAlpha Backtest only if Task 8 completed. All remain research-only.
-- [ ] **Step 2: Document one-way dependencies and reference-vs-RQAlpha execution semantics**.
-- [ ] **Step 3: Narrow RQAlpha data boundary only if adapter exists**: parent may generate validated dominant/session identity schedule; child still receives no Canonical OHLCV/DB credentials.
-- [ ] **Step 4: Add exact strategy verification commands to `TESTING.md`**, excluding real Bundle smoke.
-- [ ] **Step 5: Run targeted backend tests**
+**Consumes existing types:**
+
+```text
+app.research.jdj.jdj_context.JdjBarContext
+app.research.jdj.jdj_events.JdjTriggerEvent / JdjDirection / JdjSetupKind
+CanonicalBar
+```
+
+Do not copy their formulas.
+
+**Public result contracts in `engine.py`:**
+
+```python
+class JdjActionKind(StrEnum):
+    ENTRY = "entry"
+    ADD = "add"
+    REDUCE = "reduce"
+    EXIT = "exit"
+    DAILY_PAUSE = "daily_pause"
+    DAILY_STOP = "daily_stop"
+    REJECTED = "rejected"
+
+@dataclass(frozen=True, slots=True)
+class JdjAction:
+    event_id: str
+    episode_id: str | None
+    kind: JdjActionKind
+    source_event_ids: tuple[str, ...]
+    primary_setup: str | None
+    supporting_setups: tuple[str, ...]
+    direction: JdjDirection | None
+    contract: str
+    trading_day: date
+    segment_start_trading_day: date
+    decision_at: datetime
+    effective_bar_end: datetime | None
+    reference_price: Decimal | None
+    quantity: int
+    position_quantity_after: int
+    stop_price: Decimal | None
+    target_price: Decimal | None
+    reward_risk: Decimal | None
+    reason: str
+    fill_basis: str | None
+
+@dataclass(frozen=True, slots=True)
+class JdjReferenceReplay:
+    actions: tuple[JdjAction, ...]
+```
+
+**Main function in `replay.py`:**
+
+```python
+def run_jdj_reference_segment(
+    *,
+    bars_1m: Sequence[CanonicalBar],
+    contexts: Sequence[JdjBarContext],
+    candidate_events: Sequence[JdjTriggerEvent],
+    contract_multiplier: Decimal,
+    terminal_bar_end_by_day: Mapping[date, datetime],
+    config: JdjV1Config,
+) -> JdjReferenceReplay: ...
+```
+
+- [ ] **Step 1: Write RED conflict/stop/target/R:R tests**
+
+Require:
+
+```text
+same direction multiple setups → one entry; primary key-level > reentry > trend-follow
+LONG + SHORT same decision bar → AMBIGUOUS_DIRECTION
+no known favorable target → rejected
+R:R < 2 → rejected
+Trend Follow stop resolves reaction-bar adverse extreme
+Reentry stop uses excursion_extreme
+Key Level stop uses key_level_price
+```
+
+Known target uses only already-confirmed favorable N pivot or current-day known session high/low.
+
+- [ ] **Step 2: Write RED one-Bar Entry limit tests**
+
+For LONG limit 100:
+
+```text
+next open 99 → fill 99 / better_open
+next open 101, next low 99.5 → fill 100 / limit_touch
+next low 100.5 → no fill, intent expires
+```
+
+SHORT symmetric. No fill may be deferred to a second Bar.
+
+- [ ] **Step 3: Write RED reference sizing/Episode tests**
+
+Use trusted multiplier fixture, reference start equity 1,000,000 and base risk 0.5%. Quantity is calculated from the admissible worst price; planned episode risk >1% rejects. Actual Entry creates deterministic `episode_id`; unfilled intent creates none; consumed source id cannot be reused.
+
+- [ ] **Step 4: Write RED partial-profit/add tests**
+
+```text
+completed close reaches target_1 → reduce decision → next legal open fill
+10 lots × 40% → reduce 4
+floor result 0 → no fake reduce
+no actual profitable partial exit → no add
+new full Trend Follow event + profitable episode → add 25%
+first/second add allowed subject to risk
+third / losing / repeated-source add rejected
+successful reduce/add → protective stop moves to weighted average cost
+```
+
+- [ ] **Step 5: Write RED exit/daily/session tests**
+
+```text
+close crosses protective stop / EMA or 5m trend lost → next-Bar EXIT
+no intrabar hard-stop fill
+>0.5% drawdown → 15 subsequent in-session bars pause
+>=1% → DAILY_STOP + JM V1 conservative exit
+terminal lead=1 → no new entry/add; existing position flattens at final legal Bar open
+intermediate session break != terminal
+```
+
+- [ ] **Step 6: Run RED**
+
+```bash
+UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache uv run --offline --project services/quant-api pytest -q services/quant-api/tests/research/test_jdj_strategy_engine.py
+```
+
+- [ ] **Step 7: Implement the minimal engine/replay** in these two files. Keep helper functions private unless another real consumer needs them.
+
+- [ ] **Step 8: Run engine + existing Candidate regressions**
 
 ```bash
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache uv run --offline --project services/quant-api pytest -q \
-  services/quant-api/tests/strategy_kernel \
-  services/quant-api/tests/research/test_n_structure_research_service.py \
-  services/quant-api/tests/research/test_n_candidate_validation_service.py \
-  services/quant-api/tests/research/test_jdj_research_service.py \
-  services/quant-api/tests/research/test_jdj_candidate_validation_service.py \
-  services/quant-api/tests/research/test_jdj_candidate_validation_calendar.py \
-  services/quant-api/tests/research/test_jdj_robustness_service.py \
-  services/quant-api/tests/research/test_jdj_strategy_replay_service.py \
-  services/quant-api/tests/test_market_research_overlays_api.py
+  services/quant-api/tests/research/test_jdj_strategy_contract.py \
+  services/quant-api/tests/research/test_jdj_strategy_engine.py \
+  services/quant-api/tests/test_jdj_context.py \
+  services/quant-api/tests/test_jdj_trend_follow.py \
+  services/quant-api/tests/test_jdj_trend_reentry.py \
+  services/quant-api/tests/test_jdj_key_level_breakout.py
 ```
 
-If Task 8 completed, append both fake backtest tests.
-
-- [ ] **Step 6: Run backend baseline, Ruff, Mypy**
+- [ ] **Step 9: Commit**
 
 ```bash
-UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache uv run --offline --project services/quant-api pytest -q -m "not isolated_postgresql" services/quant-api/tests
-UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache uv run --offline --project services/quant-api ruff check services/quant-api/app services/quant-api/tests packages/quant-core/guiyi_quant tests/engineering
-UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache MYPYPATH=services/quant-api:packages/quant-core uv run --offline --project services/quant-api mypy --explicit-package-bases --ignore-missing-imports services/quant-api/app/strategy_kernel services/quant-api/app/research services/quant-api/app/market_data
+git add services/quant-api/app/research/jdj_strategy services/quant-api/tests/research/test_jdj_strategy_engine.py
+git commit -m "feat(strategy): implement JDJ JM reference lifecycle"
 ```
 
-- [ ] **Step 7: Run Web verification**
+---
+
+## Task 3: Add JM actual_dominant Historical Replay Service and One Read-Only API
+
+**Files:**
+- Create: `services/quant-api/app/research/jdj_strategy/service.py`
+- Create: `services/quant-api/tests/research/test_jdj_strategy_replay_service.py`
+- Modify: `services/quant-api/app/research/composition.py`
+- Modify: `services/quant-api/app/research/historical_overlay_api.py`
+- Modify: `services/quant-api/app/schemas/research_overlays.py`
+- Modify: `services/quant-api/tests/test_market_research_overlays_api.py`
+
+**Endpoint:**
+
+```text
+GET /api/v1/market/research/jdj-strategy/history
+    ?series_kind=actual_dominant
+    &symbol=jm
+    &frequency=1m
+    &since=YYYY-MM-DD
+    &through=YYYY-MM-DD
+```
+
+No profile discovery endpoint.
+
+- [ ] **Step 1: Write RED service tests** using `ActualDominantResearchSegmentLoader` fixtures with at least two physical JM segments.
+
+Require:
+
+```text
+only actual_dominant accepted
+no state crosses contract segment
+API since mid-segment still warms from true segment start
+same prefix inside longer through stays identical
+contract/segment identity on every action
+reference_execution=true
+```
+
+- [ ] **Step 2: Write RED session/multiplier failure tests**
+
+Use existing TradingSession resolver for terminal identity; never hardcode 15:00. Missing session or trusted multiplier fails closed. Do not simulate historical margin or commission.
+
+- [ ] **Step 3: Write RED API validation tests**
+
+```text
+jm + actual_dominant + 1m → 200
+jm + 5m → 422 JDJ_STRATEGY_PROFILE_UNAVAILABLE
+rb + 1m → 422 JDJ_STRATEGY_PROFILE_UNAVAILABLE
+continuous → 422
+segment/session/source failure → typed 409
+```
+
+- [ ] **Step 4: Implement `JdjStrategyReplayService`**
+
+For each validated physical segment:
+
+1. load 1m + 5m through existing loader;
+2. call existing `build_jdj_context_series`;
+3. call the existing three reducers;
+4. combine Candidate events without changing their identity;
+5. call `run_jdj_reference_segment`;
+6. suppress actions before requested `since` only at output projection.
+
+Do not query raw `MainContractMap` directly.
+
+- [ ] **Step 5: Add only the required Pydantic DTOs and route**. Existing `/jdj/history` Candidate API stays separate.
+
+- [ ] **Step 6: Run service/API tests**
+
+```bash
+UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache uv run --offline --project services/quant-api pytest -q \
+  services/quant-api/tests/research/test_jdj_strategy_replay_service.py \
+  services/quant-api/tests/test_market_research_overlays_api.py \
+  services/quant-api/tests/research/test_jdj_research_service.py
+```
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add services/quant-api/app/research/jdj_strategy services/quant-api/app/research/composition.py services/quant-api/app/research/historical_overlay_api.py services/quant-api/app/schemas/research_overlays.py services/quant-api/tests
+git commit -m "feat(research): expose JDJ JM reference replay"
+```
+
+---
+
+## Task 4: Extend the Existing Market Marker Pipeline and Close the Documentation
+
+**Files Web:**
+- Modify: `apps/quant-web/src/api/market.ts`
+- Modify: `apps/quant-web/src/types/market.ts`
+- Modify: `apps/quant-web/src/utils/mainIndicators.ts`
+- Modify: `apps/quant-web/src/utils/historicalResearchMarkers.ts`
+- Modify: `apps/quant-web/src/composables/useHistoricalResearchMarkers.ts`
+- Modify: `apps/quant-web/src/pages/market/chart.vue`
+- Modify: `apps/quant-web/tests/historicalResearchMarkers.test.ts`
+- Modify: `apps/quant-web/e2e/market-research.spec.mjs`
+
+**Files docs after behavior is verified:**
+- Modify: `AGENTS.md` only to replace factual statements that become false; preserve the personal-quant architecture principle.
+- Modify: `PROJECT_SOURCE.md` only where the new research-only strategy replay changes current capability facts.
+- Modify: `TESTING.md` with the exact new test commands.
+- Do not update `STATUS.md` unless a separate status task records an explicit develop RC.
+- Do not touch `docs/RQALPHA_RESEARCH_BACKTEST.md`; RQAlpha adapter is not implemented in this Plan.
+
+- [ ] **Step 1: Extend existing marker unit tests**
+
+Add `jdj_strategy` mapping to the current marker utility:
+
+```text
+LONG ENTRY  → ▲
+SHORT ENTRY → ▼
+ADD         → ＋
+REDUCE      → －
+EXIT        → ×
+```
+
+Hover includes setup/supporting setup/contract/decision/effective time/qty/stop/target/R:R/reason and “参考回放”. Unfilled intents are not rendered as fills.
+
+- [ ] **Step 2: Extend existing composable tests**
+
+Reuse `useHistoricalResearchMarkers`; do not create `useHistoricalStrategyMarkers`.
+
+Require:
+
+```text
+jm / actual_dominant / 1m → loads strategy history
+switch to unsupported 5m → immediately clears strategy markers and shows unavailable
+switch back 1m → reload without duplicates
+prepend older data → dedupe by event id
+stale response after identity change → ignored
+```
+
+- [ ] **Step 3: Implement Web projection minimally**
+
+Add `日进斗金策略` as a distinct overlay from existing JDJ Candidate. No EMA/N/R:R/position/PnL calculation in TypeScript.
+
+- [ ] **Step 4: Extend Playwright coverage** for Candidate/Strategy separation and `1m → 5m → 1m` stale-marker safety.
+
+- [ ] **Step 5: Run Web checks**
 
 ```bash
 pnpm --dir apps/quant-web test
@@ -905,71 +492,97 @@ pnpm --dir apps/quant-web exec playwright test -c playwright.config.mjs apps/qua
 pnpm --dir apps/quant-web build
 ```
 
-- [ ] **Step 8: Run engineering checks**
+- [ ] **Step 6: Run targeted backend regression**
 
 ```bash
-python3 scripts/engineering/secret_scan.py --json
-git diff --check
-git status --short
+UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache uv run --offline --project services/quant-api pytest -q \
+  services/quant-api/tests/research/test_jdj_strategy_contract.py \
+  services/quant-api/tests/research/test_jdj_strategy_engine.py \
+  services/quant-api/tests/research/test_jdj_strategy_replay_service.py \
+  services/quant-api/tests/test_jdj_context.py \
+  services/quant-api/tests/test_jdj_trend_follow.py \
+  services/quant-api/tests/test_jdj_trend_reentry.py \
+  services/quant-api/tests/test_jdj_key_level_breakout.py \
+  services/quant-api/tests/research/test_jdj_research_service.py \
+  services/quant-api/tests/research/test_jdj_candidate_validation_service.py \
+  services/quant-api/tests/research/test_jdj_robustness_service.py \
+  services/quant-api/tests/test_market_research_overlays_api.py
 ```
 
-- [ ] **Step 9: Independent whole-branch Review** must inspect:
+- [ ] **Step 7: Run Ruff/Mypy and engineering checks**
+
+```bash
+UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache uv run --offline --project services/quant-api ruff check services/quant-api/app/research/jdj_strategy services/quant-api/tests/research/test_jdj_strategy_*.py
+UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache MYPYPATH=services/quant-api:packages/quant-core uv run --offline --project services/quant-api mypy --explicit-package-bases --ignore-missing-imports services/quant-api/app/research/jdj_strategy
+python3 scripts/engineering/secret_scan.py --json
+git diff --check
+```
+
+- [ ] **Step 8: Update only the canonical statements made false by the implementation**, add testing commands, then run `git diff --check` again.
+
+- [ ] **Step 9: Independent Lane 3 Review before integration**
+
+Reviewer checks only high-value correctness risks:
 
 ```text
 future/same-boundary leakage
-batch/streaming drift
-day-vs-segment reset
+Candidate formula duplication or drift
 cross-contract Episode leakage
-float use in financial semantics
-admissible-limit R:R violation
-limit-order expiry drift
-intrabar stop/target reintroduction
+non-Decimal financial calculations
+R:R / one-Bar limit violation
+favorable intrabar stop/target assumptions
 session-terminal leakage
-direct MainContractMap self-selection
-Canonical OHLCV in RQAlpha child
-duplicated strategy formulas
-unsupported-period fallback
-parameter-search/promotion scope creep
+raw MainContractMap self-selection
+unsupported-period silent fallback
+scope creep into RQAlpha/streaming/optimization/Runtime
 ```
 
-- [ ] **Step 10: Commit canonical closeout**
+- [ ] **Step 10: Commit final Web/docs closeout**
 
 ```bash
-git add PROJECT_SOURCE.md AGENTS.md docs/ARCHITECTURE.md DECISIONS.md TESTING.md
-if test -d services/quant-api/app/backtest; then git add docs/RQALPHA_RESEARCH_BACKTEST.md; fi
-git commit -m "docs: define shared JDJ strategy boundaries"
+git add apps/quant-web AGENTS.md PROJECT_SOURCE.md TESTING.md
+git commit -m "feat(web): show JDJ JM reference strategy"
 ```
 
 ---
+
+## Follow-up Explicitly Deferred
+
+This Plan stops after Historical Replay + Market Web.
+
+Only after the separately approved RQAlpha Workbench is actually implemented should a new Lane 3 task be opened for:
+
+```text
+existing JDJ/N Entry semantics
++ app.research.jdj_strategy trade management
+→ thin RQAlpha adapter
+```
+
+At that time first test whether the existing logic can be reused directly. Only if a real batch/streaming duplication appears, extract the smallest shared state transition and add parity tests. Do not prebuild a general streaming or strategy framework.
 
 ## Integration and Gates
 
 ```text
 fresh develop
-→ Lane 3 task worktree/branch
-→ Tasks 0–7
-→ Phase A independent Review
-→ user reviews exact diff/results
-→ integrate Phase A to develop
-
-RQAlpha Workbench prerequisite absent
-→ STOP Phase B
-
-Workbench later integrated to develop
-→ fresh Task 8 branch/worktree
-→ fake adapter tests
-→ Task 9 verification + independent Review
-→ user decides integration develop
+→ Lane 3 task branch/worktree
+→ Task 1
+→ Task 2
+→ Task 3
+→ Task 4
+→ independent Review
+→ user reviews exact diff/test results
+→ user decides whether to integrate develop
 ```
 
-Allowed: repository code/tests/docs and deterministic read-only fixtures.
+Allowed by this Plan: repository code/tests/docs and deterministic read-only Historical replay.
 
 Not authorized:
 
 ```text
-real RQAlpha Bundle smoke
-parameter sweep
-JM profitability conclusion
+real RQAlpha Bundle run
+RQAlpha adapter / streaming framework
+parameter sweep / optimizer
+other products / periods
 prospective OOS consumption
 main/tag/release
 Runtime promotion/switch
@@ -977,5 +590,3 @@ Alert/PushPlus
 Canonical/DB/Redis writes
 real orders
 ```
-
-第一笔真实 JM RQAlpha run 是实现后的独立 Gate；首先验证 contract identity、batch/streaming causality、LimitOrder 生命周期、management next-bar execution、risk/episode behavior 和 costs，不用于选参数或宣称盈利。
