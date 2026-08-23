@@ -25,6 +25,7 @@ from app.research.main_force.main_force_mirror_diagnostic import (
 from app.research.main_force.main_force_mirror_diagnostic_analysis import (
     MainForceMirrorDiagnosticFoldLabelOutcome,
     MainForceMirrorDiagnosticLabelEpisode,
+    MainForceMirrorDiagnosticLabelOutcome,
     MainForceMirrorDiagnosticLegacyOutcome,
     MainForceMirrorDiagnosticProductInput,
     MainForceMirrorDiagnosticLabelAuditResult,
@@ -149,9 +150,34 @@ def _product_and_episode(
         upper_wick_ratio=0.3,
         lower_wick_ratio=0.2,
     )
+    bars = tuple(
+        replace(bar, bar_end=bar.bar_end - timedelta(hours=offset))
+        for offset in (2, 1, 0)
+    )
+    points = tuple(
+        replace(
+            point,
+            bar_end=current.bar_end,
+            caution=None if index < 2 else point.caution,
+            caution_reason_codes=() if index < 2 else point.caution_reason_codes,
+            instant_pressure=80.0 if index == 0 else point.instant_pressure,
+            accumulated_pressure=(
+                60.0 if index == 0 else point.accumulated_pressure
+            ),
+        )
+        for index, current in enumerate(bars)
+    )
+    traces = tuple(
+        replace(
+            trace,
+            bar_end=current.bar_end,
+            trigger=None if index < 2 else trace.trigger,
+        )
+        for index, current in enumerate(bars)
+    )
     episode = MainForceMirrorDiagnosticLabelEpisode(
         symbol="jm",
-        anchor_index=0,
+        anchor_index=2,
         anchor_trading_day=bar.trading_day,
         physical_contract="JM2609",
         side=side,
@@ -159,21 +185,34 @@ def _product_and_episode(
         lower_barrier=Decimal("99"),
         upper_barrier=Decimal("109"),
         legacy_outcome=MainForceMirrorDiagnosticLegacyOutcome.LONG_ONLY,
-        outcome=None,
+        outcome=MainForceMirrorDiagnosticLabelOutcome.ADVERSE_FIRST,
         first_touch_offset=1,
         binary_target=1,
         fold_outcomes=(
-            MainForceMirrorDiagnosticFoldLabelOutcome(1, "evaluate", None, 1, True),
+            MainForceMirrorDiagnosticFoldLabelOutcome(
+                1,
+                "evaluate",
+                MainForceMirrorDiagnosticLabelOutcome.ADVERSE_FIRST,
+                1,
+                True,
+            ),
+            MainForceMirrorDiagnosticFoldLabelOutcome(
+                2,
+                "fit",
+                MainForceMirrorDiagnosticLabelOutcome.ADVERSE_FIRST,
+                1,
+                True,
+            ),
         ),
     )
     return MainForceMirrorDiagnosticProductInput(
-        symbol="jm", bars=(bar,), points=(point,), trace=(trace,)
+        symbol="jm", bars=bars, points=points, trace=traces
     ), episode
 
 
 def _sequence(**changes: object) -> MainForceMirrorV2SequenceFact:
     value = MainForceMirrorV2SequenceFact(
-        index=0,
+        index=2,
         current_side="long",
         pressure_state="long_build",
         instant_pressure=40.0,
@@ -184,7 +223,7 @@ def _sequence(**changes: object) -> MainForceMirrorV2SequenceFact:
         active_peak_accumulated_pressure=60.0,
         bars_since_active_peak=2,
         decay_ratio=Decimal("0.25"),
-        installed_peak_index=0,
+        installed_peak_index=2,
         installed_peak_side="short",
         installed_peak_instant_pressure=-999.0,
         installed_peak_accumulated_pressure=-999.0,
@@ -196,6 +235,56 @@ def _sequence(**changes: object) -> MainForceMirrorV2SequenceFact:
         state_transition="long_build->short_build",
     )
     return replace(value, **changes)
+
+
+def _balanced_fact_set(
+    anchor: MainForceMirrorV2SequenceFact,
+) -> MainForceMirrorDiagnosticSequenceFactSet:
+    prior = (
+        _sequence(
+            index=0,
+            instant_pressure=80.0,
+            accumulated_pressure=60.0,
+            active_peak_index=None,
+            active_peak_side=None,
+            active_peak_instant_pressure=None,
+            active_peak_accumulated_pressure=None,
+            bars_since_active_peak=None,
+            decay_ratio=None,
+            installed_peak_index=0,
+            installed_peak_side="long",
+            installed_peak_instant_pressure=80.0,
+            installed_peak_accumulated_pressure=60.0,
+            peak_seen=True,
+            decay_seen=False,
+            liquidation_seen=False,
+            opposite_build_seen=False,
+            accumulated_reversal_seen=False,
+            state_transition=None,
+        ),
+        _sequence(
+            index=1,
+            active_peak_index=None,
+            active_peak_side=None,
+            active_peak_instant_pressure=None,
+            active_peak_accumulated_pressure=None,
+            bars_since_active_peak=None,
+            decay_ratio=None,
+            installed_peak_index=None,
+            installed_peak_side=None,
+            installed_peak_instant_pressure=None,
+            installed_peak_accumulated_pressure=None,
+            peak_seen=False,
+            decay_seen=False,
+            liquidation_seen=False,
+            opposite_build_seen=False,
+            accumulated_reversal_seen=False,
+            state_transition=None,
+        ),
+    )
+    return MainForceMirrorDiagnosticSequenceFactSet(
+        symbol="jm", profile_id="balanced", facts=(*prior, anchor)
+    )
 
 
 def test_feature_vector_has_exact_frozen_names_order_and_active_peak_values() -> None:
@@ -272,21 +361,41 @@ def test_feature_vector_zero_fills_only_missing_active_peak_and_types_other_miss
     assert models.build_main_force_mirror_feature_row(
         invalid_product, invalid_episode, no_peak
     ) is None
+    labels = MainForceMirrorDiagnosticLabelAuditResult(
+        inputs=(invalid_product,),
+        section=object(),
+        episodes=(invalid_episode,),
+        unavailable_products=(),
+    )
+    unavailable = models.build_main_force_mirror_fold_datasets(
+        (invalid_product,), labels, (_balanced_fact_set(no_peak),)
+    )
+    assert len(unavailable.unavailable_episodes) == 1
+    assert unavailable.unavailable_episodes[0].reason.value == "FEATURE_UNAVAILABLE"
 
 
-def test_fold_dataset_uses_only_fold_outcomes_and_never_global_binary_target() -> None:
-    """Catches fit/evaluate leakage through the physical episode label."""
+def test_fold_dataset_uses_only_eligible_fold_outcomes() -> None:
+    """Catches admitting a fold-specific censored outcome into a model split."""
     models = _models()
     product, episode = _product_and_episode()
     episode = replace(
         episode,
-        binary_target=1,
+        outcome=MainForceMirrorDiagnosticLabelOutcome.FAVORABLE_FIRST,
+        binary_target=0,
         fold_outcomes=(
             MainForceMirrorDiagnosticFoldLabelOutcome(
-                1, "evaluate", None, 0, True
+                1,
+                "evaluate",
+                MainForceMirrorDiagnosticLabelOutcome.FAVORABLE_FIRST,
+                0,
+                True,
             ),
             MainForceMirrorDiagnosticFoldLabelOutcome(
-                2, "fit", None, None, False
+                2,
+                "fit",
+                MainForceMirrorDiagnosticLabelOutcome.SPLIT_BOUNDARY_CENSORED,
+                None,
+                False,
             ),
         ),
     )
@@ -296,9 +405,7 @@ def test_fold_dataset_uses_only_fold_outcomes_and_never_global_binary_target() -
         episodes=(episode,),
         unavailable_products=(),
     )
-    facts = MainForceMirrorDiagnosticSequenceFactSet(
-        symbol="jm", profile_id="balanced", facts=(_sequence(),)
-    )
+    facts = _balanced_fact_set(_sequence())
 
     result = models.build_main_force_mirror_fold_datasets(
         (product,), labels, (facts,)
@@ -310,6 +417,139 @@ def test_fold_dataset_uses_only_fold_outcomes_and_never_global_binary_target() -
     assert result.folds[0].evaluate[0].target == 0
     assert result.folds[1].fit == ()
     assert result.folds[1].evaluate == ()
+
+
+@pytest.mark.parametrize(
+    "changes",
+    (
+        {"active_peak_index": 2, "bars_since_active_peak": 0},
+        {"active_peak_index": 0, "bars_since_active_peak": 1},
+        {"active_peak_side": None},
+        {"current_side": "short"},
+        {"pressure_state": "short_build"},
+        {"instant_pressure": 41.0},
+        {"accumulated_pressure": 31.0},
+    ),
+)
+def test_feature_builder_rejects_corrupt_strict_prior_fact_identity(
+    changes: dict[str, object],
+) -> None:
+    """Catches treating a contradictory balanced fact as feature unavailability."""
+    models = _models()
+    product, episode = _product_and_episode()
+
+    with pytest.raises(ValueError, match="MFM_DIAGNOSTIC_ANALYSIS_INVALID"):
+        models.build_main_force_mirror_feature_row(
+            product,
+            episode,
+            _sequence(**changes),
+        )
+
+
+@pytest.mark.parametrize(
+    "kind",
+    (
+        "episode_symbol",
+        "episode_index",
+        "malformed_episode_index",
+        "episode_day",
+        "episode_contract",
+        "episode_side",
+        "point_identity",
+        "trace_identity",
+        "bar_identity",
+        "active_peak_reference",
+        "missing_fold",
+        "malformed_outcome",
+        "bad_fold",
+        "bad_segment_date",
+        "bad_outcome_target",
+    ),
+)
+def test_fold_dataset_rejects_episode_fact_and_fold_identity_drift(kind: str) -> None:
+    """Catches routing corrupted audit identity into FEATURE_UNAVAILABLE or KeyError."""
+    models = _models()
+    product, episode = _product_and_episode()
+    if kind == "episode_symbol":
+        episode = replace(episode, symbol="ag")
+    elif kind == "episode_index":
+        episode = replace(episode, anchor_index=1)
+    elif kind == "malformed_episode_index":
+        episode = replace(episode, anchor_index="2")
+    elif kind == "episode_day":
+        episode = replace(episode, anchor_trading_day=date(2025, 6, 3))
+    elif kind == "episode_contract":
+        episode = replace(episode, physical_contract="JM2701")
+    elif kind == "episode_side":
+        episode = replace(episode, side=MainForceMirrorDiagnosticSide.SHORT)
+    elif kind == "point_identity":
+        points = list(product.points)
+        points[episode.anchor_index] = replace(
+            points[episode.anchor_index],
+            bar_end=points[episode.anchor_index].bar_end + timedelta(minutes=1),
+        )
+        product = replace(product, points=tuple(points))
+    elif kind == "trace_identity":
+        traces = list(product.trace)
+        traces[episode.anchor_index] = replace(
+            traces[episode.anchor_index],
+            trading_day=date(2025, 6, 3),
+        )
+        product = replace(product, trace=tuple(traces))
+    elif kind == "bar_identity":
+        bars = list(product.bars)
+        bars[episode.anchor_index] = replace(
+            bars[episode.anchor_index],
+            trading_day=date(2025, 6, 3),
+        )
+        product = replace(product, bars=tuple(bars))
+    elif kind == "active_peak_reference":
+        pass
+    elif kind == "missing_fold":
+        episode = replace(episode, fold_outcomes=episode.fold_outcomes[:1])
+    elif kind == "malformed_outcome":
+        episode = replace(episode, fold_outcomes=(object(),))
+    elif kind == "bad_fold":
+        episode = replace(
+            episode,
+            fold_outcomes=(replace(episode.fold_outcomes[0], fold=3),),
+        )
+    elif kind == "bad_segment_date":
+        episode = replace(
+            episode,
+            fold_outcomes=(
+                replace(episode.fold_outcomes[0], segment="fit"),
+                episode.fold_outcomes[1],
+            ),
+        )
+    else:
+        episode = replace(
+            episode,
+            fold_outcomes=(
+                replace(
+                    episode.fold_outcomes[0],
+                    outcome=MainForceMirrorDiagnosticLabelOutcome.FAVORABLE_FIRST,
+                    binary_target=1,
+                ),
+                episode.fold_outcomes[1],
+            ),
+        )
+    labels = MainForceMirrorDiagnosticLabelAuditResult(
+        inputs=(product,),
+        section=object(),
+        episodes=(episode,),
+        unavailable_products=(),
+    )
+    fact_set = _balanced_fact_set(_sequence())
+    if kind == "active_peak_reference":
+        facts = list(fact_set.facts)
+        facts[0] = replace(facts[0], installed_peak_side="short")
+        fact_set = replace(fact_set, facts=tuple(facts))
+
+    with pytest.raises(ValueError, match="MFM_DIAGNOSTIC_ANALYSIS_INVALID"):
+        models.build_main_force_mirror_fold_datasets(
+            (product,), labels, (fact_set,)
+        )
 
 
 def test_ridge_uses_train_only_standardization_constant_std_and_exact_class_weights() -> None:
@@ -529,6 +769,53 @@ def test_member_feasibility_requires_pinned_symbol_contract_rank1_identity() -> 
     assert valid.section.eligible_count == 1
     assert valid.section.t_minus_1_coverage == Decimal("1")
     assert valid.section.product_count == 1
+
+
+def test_member_feasibility_is_order_invariant_and_collapses_exact_earliest_duplicates() -> None:
+    """Catches order-sensitive earliest selection or double-counting exact ties."""
+    models = _models()
+    earliest = _member_observation(models)
+    duplicate = replace(earliest)
+    later = replace(
+        earliest,
+        anchor_bar_end=earliest.anchor_bar_end + timedelta(hours=1),
+        available=False,
+        observed_dataset_id=None,
+        observed_trade_date=None,
+        observed_symbol=None,
+        observed_physical_contract=None,
+        observed_rank=None,
+    )
+
+    forward = models.audit_main_force_mirror_member_feasibility(
+        (earliest, duplicate, later)
+    )
+    reverse = models.audit_main_force_mirror_member_feasibility(
+        (later, duplicate, earliest)
+    )
+
+    assert forward == reverse
+    assert forward.section.unique_earliest_count == 1
+    assert forward.section.eligible_count == 1
+
+
+def test_member_feasibility_rejects_conflicting_earliest_timestamp_ties_in_any_order() -> None:
+    """Catches setdefault choosing one of two contradictory earliest snapshots."""
+    models = _models()
+    available = _member_observation(models)
+    unavailable = replace(
+        available,
+        available=False,
+        observed_dataset_id=None,
+        observed_trade_date=None,
+        observed_symbol=None,
+        observed_physical_contract=None,
+        observed_rank=None,
+    )
+
+    for observations in ((available, unavailable), (unavailable, available)):
+        with pytest.raises(ValueError, match="MFM_DIAGNOSTIC_ANALYSIS_INVALID"):
+            models.audit_main_force_mirror_member_feasibility(observations)
 
 
 def _passing_gate_inputs():
@@ -967,6 +1254,35 @@ def test_model_diagnostic_types_insufficient_cluster_bootstrap_without_fake_ci()
     assert result.section.folds[0].model_unavailable_reason.value == (
         "SPLIT_CLASS_UNAVAILABLE"
     )
+
+
+def test_one_class_fold_and_same_fold_breakdown_share_split_unavailability() -> None:
+    """Catches rewriting a split insufficiency as model convergence failure."""
+    models = _models()
+    fit = tuple(
+        _model_sample(models, index, index % 2, date(2024, 6, 2))
+        for index in range(200)
+    )
+    one_class = tuple(
+        _model_sample(models, index, 0, date(2025, 6, 2))
+        for index in range(100)
+    )
+    datasets = models.MainForceMirrorDiagnosticFoldDatasets(
+        (
+            models.MainForceMirrorDiagnosticFoldDataset(1, fit, one_class),
+            models.MainForceMirrorDiagnosticFoldDataset(2, (), ()),
+        ),
+        (),
+    )
+
+    result = models.run_main_force_mirror_model_diagnostics(datasets)
+    fold_section = result.section.folds[0]
+    fold_breakdown = next(
+        item for item in result.section.breakdowns if item.key.fold == 1
+    )
+
+    assert fold_section.model_unavailable_reason.value == "SPLIT_CLASS_UNAVAILABLE"
+    assert fold_breakdown.unavailable_reason == fold_section.model_unavailable_reason
 
 
 def test_model_diagnostic_rejects_samples_outside_the_fixed_fold_segment() -> None:

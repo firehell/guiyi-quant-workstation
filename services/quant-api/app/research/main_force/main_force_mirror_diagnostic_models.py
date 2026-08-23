@@ -29,10 +29,13 @@ from app.research.main_force.main_force_mirror_diagnostic import (
     _expected_breakdown_keys,
 )
 from app.research.main_force.main_force_mirror_diagnostic_analysis import (
+    MainForceMirrorDiagnosticFoldLabelOutcome,
     MainForceMirrorDiagnosticLabelAuditResult,
     MainForceMirrorDiagnosticLabelEpisode,
+    MainForceMirrorDiagnosticLabelOutcome,
     MainForceMirrorDiagnosticProductInput,
     MainForceMirrorDiagnosticSequenceFactSet,
+    _validate_product_input,
 )
 from app.research.main_force.main_force_mirror_v2_research_service import (
     MainForceMirrorV2SequenceFact,
@@ -81,6 +84,10 @@ SEQUENCE_FEATURE_NAMES = (
     "accumulated_reversal_seen",
 )
 FEATURE_NAMES = CURRENT_FEATURE_NAMES + SEQUENCE_FEATURE_NAMES
+_FOLD_WINDOWS = (
+    (date(2023, 1, 1), date(2024, 12, 31), date(2025, 1, 1), date(2025, 12, 31)),
+    (date(2023, 1, 1), date(2025, 12, 31), date(2026, 1, 1), date(2026, 8, 18)),
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -236,6 +243,214 @@ class _EvaluatedFold:
     unavailable_reason: MainForceMirrorDiagnosticUnavailableReason | None
 
 
+def _fold_segments_for_day(value: date) -> tuple[tuple[int, str], ...]:
+    result: list[tuple[int, str]] = []
+    for fold, window in enumerate(_FOLD_WINDOWS, 1):
+        if window[0] <= value <= window[1]:
+            result.append((fold, "fit"))
+        elif window[2] <= value <= window[3]:
+            result.append((fold, "evaluate"))
+    return tuple(result)
+
+
+def _validate_fold_outcomes(
+    episode: MainForceMirrorDiagnosticLabelEpisode,
+) -> None:
+    outcomes = tuple(episode.fold_outcomes)
+    if (
+        any(
+            not isinstance(item, MainForceMirrorDiagnosticFoldLabelOutcome)
+            for item in outcomes
+        )
+        or tuple((item.fold, item.segment) for item in outcomes)
+        != _fold_segments_for_day(episode.anchor_trading_day)
+    ):
+        raise ValueError("MFM_DIAGNOSTIC_ANALYSIS_INVALID")
+    physical_binary = episode.binary_target
+    if (
+        type(physical_binary) is not int
+        and physical_binary is not None
+    ) or physical_binary not in (None, 0, 1):
+        raise ValueError("MFM_DIAGNOSTIC_ANALYSIS_INVALID")
+    expected_physical_outcome = (
+        MainForceMirrorDiagnosticLabelOutcome.FAVORABLE_FIRST
+        if physical_binary == 0
+        else (
+            MainForceMirrorDiagnosticLabelOutcome.ADVERSE_FIRST
+            if physical_binary == 1
+            else None
+        )
+    )
+    if (
+        expected_physical_outcome is not None
+        and (
+            episode.outcome is not expected_physical_outcome
+            or type(episode.first_touch_offset) is not int
+            or not 1 <= episode.first_touch_offset <= 10
+        )
+    ) or (
+        expected_physical_outcome is None
+        and episode.outcome
+        in {
+            MainForceMirrorDiagnosticLabelOutcome.ADVERSE_FIRST,
+            MainForceMirrorDiagnosticLabelOutcome.FAVORABLE_FIRST,
+        }
+    ):
+        raise ValueError("MFM_DIAGNOSTIC_ANALYSIS_INVALID")
+    for outcome in outcomes:
+        binary = outcome.binary_target
+        if (
+            type(outcome.eligible) is not bool
+            or (type(binary) is not int and binary is not None)
+            or binary not in (None, 0, 1)
+            or (
+                outcome.outcome is not None
+                and not isinstance(
+                    outcome.outcome, MainForceMirrorDiagnosticLabelOutcome
+                )
+            )
+        ):
+            raise ValueError("MFM_DIAGNOSTIC_ANALYSIS_INVALID")
+        if outcome.outcome is MainForceMirrorDiagnosticLabelOutcome.SPLIT_BOUNDARY_CENSORED:
+            valid = binary is None and outcome.eligible is False
+        else:
+            valid = (
+                outcome.outcome is episode.outcome
+                and binary == physical_binary
+                and outcome.eligible is (binary in (0, 1))
+            )
+        if not valid:
+            raise ValueError("MFM_DIAGNOSTIC_ANALYSIS_INVALID")
+
+
+def _sequence_side(value: float | None) -> str:
+    converted = _number(value)
+    if converted is None or converted == 0:
+        return "neutral"
+    return "long" if converted > 0 else "short"
+
+
+def _sequence_fact_matches_point(
+    point: Any,
+    fact: MainForceMirrorV2SequenceFact,
+    index: int,
+) -> bool:
+    expected_accumulated = (
+        point.accumulated_pressure
+        if point.accumulated_ready
+        and _number(point.accumulated_pressure) is not None
+        else None
+    )
+    return bool(
+        fact.index == index
+        and fact.current_side == _sequence_side(point.instant_pressure)
+        and fact.pressure_state == point.pressure_state
+        and fact.instant_pressure == point.instant_pressure
+        and fact.accumulated_pressure == expected_accumulated
+    )
+
+
+def _validate_active_peak_reference(
+    product: MainForceMirrorDiagnosticProductInput,
+    facts: tuple[MainForceMirrorV2SequenceFact, ...],
+    anchor: MainForceMirrorV2SequenceFact,
+    physical_contract: str,
+) -> None:
+    active_index = anchor.active_peak_index
+    if active_index is None:
+        return
+    source = facts[active_index]
+    source_point = product.points[active_index]
+    if (
+        source_point.physical_contract != physical_contract
+        or not _sequence_fact_matches_point(source_point, source, active_index)
+        or source.installed_peak_index != active_index
+        or source.installed_peak_side != anchor.active_peak_side
+        or source.installed_peak_instant_pressure
+        != anchor.active_peak_instant_pressure
+        or source.installed_peak_accumulated_pressure
+        != anchor.active_peak_accumulated_pressure
+        or source.peak_seen is not True
+    ):
+        raise ValueError("MFM_DIAGNOSTIC_ANALYSIS_INVALID")
+
+
+def _validate_feature_identity(
+    product: MainForceMirrorDiagnosticProductInput,
+    episode: MainForceMirrorDiagnosticLabelEpisode,
+    balanced_sequence: MainForceMirrorV2SequenceFact,
+) -> None:
+    if (
+        not isinstance(product, MainForceMirrorDiagnosticProductInput)
+        or not isinstance(episode, MainForceMirrorDiagnosticLabelEpisode)
+        or not isinstance(balanced_sequence, MainForceMirrorV2SequenceFact)
+    ):
+        raise ValueError("MFM_DIAGNOSTIC_ANALYSIS_INVALID")
+    _validate_product_input(product)
+    if (
+        episode.symbol != product.symbol
+        or type(episode.anchor_index) is not int
+        or not 0 <= episode.anchor_index < len(product.bars)
+        or not isinstance(episode.anchor_trading_day, date)
+        or not isinstance(episode.side, MainForceMirrorDiagnosticSide)
+        or type(episode.kept) is not bool
+    ):
+        raise ValueError("MFM_DIAGNOSTIC_ANALYSIS_INVALID")
+    index = episode.anchor_index
+    bar = product.bars[index]
+    point = product.points[index]
+    trace = product.trace[index]
+    expected_caution = (
+        "long_chase_caution"
+        if episode.side is MainForceMirrorDiagnosticSide.LONG
+        else "short_chase_caution"
+    )
+    if (
+        bar.trading_day != episode.anchor_trading_day
+        or point.trading_day != episode.anchor_trading_day
+        or trace.trading_day != episode.anchor_trading_day
+        or point.physical_contract != episode.physical_contract
+        or trace.physical_contract != episode.physical_contract
+        or point.caution != expected_caution
+        or trace.trigger != expected_caution
+        or point.caution_conflict
+        or trace.conflict
+        or not _sequence_fact_matches_point(point, balanced_sequence, index)
+        or any(
+            type(value) is not bool
+            for value in (
+                balanced_sequence.peak_seen,
+                balanced_sequence.decay_seen,
+                balanced_sequence.liquidation_seen,
+                balanced_sequence.opposite_build_seen,
+                balanced_sequence.accumulated_reversal_seen,
+            )
+        )
+    ):
+        raise ValueError("MFM_DIAGNOSTIC_ANALYSIS_INVALID")
+    active_index = balanced_sequence.active_peak_index
+    active_identity = (
+        balanced_sequence.active_peak_side,
+        balanced_sequence.active_peak_instant_pressure,
+        balanced_sequence.active_peak_accumulated_pressure,
+        balanced_sequence.bars_since_active_peak,
+        balanced_sequence.decay_ratio,
+    )
+    if active_index is None:
+        if any(value is not None for value in active_identity):
+            raise ValueError("MFM_DIAGNOSTIC_ANALYSIS_INVALID")
+    elif (
+        type(active_index) is not int
+        or not 0 <= active_index < index
+        or balanced_sequence.active_peak_side not in ("long", "short")
+        or type(balanced_sequence.bars_since_active_peak) is not int
+        or balanced_sequence.bars_since_active_peak != index - active_index
+        or balanced_sequence.bars_since_active_peak <= 0
+    ):
+        raise ValueError("MFM_DIAGNOSTIC_ANALYSIS_INVALID")
+    _validate_fold_outcomes(episode)
+
+
 def build_main_force_mirror_feature_row(
     product: MainForceMirrorDiagnosticProductInput,
     episode: MainForceMirrorDiagnosticLabelEpisode,
@@ -243,29 +458,13 @@ def build_main_force_mirror_feature_row(
 ) -> MainForceMirrorDiagnosticFeatureRow | None:
     """Build the frozen 33-feature row; expected missing evidence stays typed."""
 
-    if (
-        not isinstance(product, MainForceMirrorDiagnosticProductInput)
-        or not isinstance(episode, MainForceMirrorDiagnosticLabelEpisode)
-        or not isinstance(balanced_sequence, MainForceMirrorV2SequenceFact)
-        or episode.symbol != product.symbol
-        or not episode.kept
-        or not 0 <= episode.anchor_index < len(product.bars)
-        or episode.anchor_index >= len(product.points)
-        or episode.anchor_index >= len(product.trace)
-        or balanced_sequence.index != episode.anchor_index
-    ):
-        return None
+    _validate_feature_identity(product, episode, balanced_sequence)
+    if not episode.kept:
+        raise ValueError("MFM_DIAGNOSTIC_ANALYSIS_INVALID")
     index = episode.anchor_index
     bar = product.bars[index]
     point = product.points[index]
     trace = product.trace[index]
-    if (
-        point.physical_contract != episode.physical_contract
-        or trace.physical_contract != episode.physical_contract
-        or bar.trading_day != episode.anchor_trading_day
-        or point.trading_day != episode.anchor_trading_day
-    ):
-        return None
     sign = 1.0 if episode.side is MainForceMirrorDiagnosticSide.LONG else -1.0
     is_long = sign > 0
     side_score = trace.long_score if is_long else trace.short_score
@@ -390,17 +589,6 @@ def build_main_force_mirror_feature_row(
         *states,
     )
     if balanced_sequence.active_peak_index is None:
-        if any(
-            value is not None
-            for value in (
-                balanced_sequence.active_peak_side,
-                balanced_sequence.active_peak_instant_pressure,
-                balanced_sequence.active_peak_accumulated_pressure,
-                balanced_sequence.bars_since_active_peak,
-                balanced_sequence.decay_ratio,
-            )
-        ):
-            return None
         sequence = (0.0,) * 10
     else:
         active_values = _numbers((
@@ -451,7 +639,22 @@ def build_main_force_mirror_fold_datasets(
 
     inputs = tuple(products)
     fact_sets = tuple(balanced_fact_sets)
-    if not isinstance(labels, MainForceMirrorDiagnosticLabelAuditResult):
+    if (
+        not isinstance(labels, MainForceMirrorDiagnosticLabelAuditResult)
+        or any(
+            not isinstance(item, MainForceMirrorDiagnosticProductInput)
+            for item in inputs
+        )
+        or any(
+            not isinstance(item, MainForceMirrorDiagnosticSequenceFactSet)
+            or item.profile_id != "balanced"
+            for item in fact_sets
+        )
+        or any(
+            not isinstance(item, MainForceMirrorDiagnosticLabelEpisode)
+            for item in labels.episodes
+        )
+    ):
         raise ValueError("MFM_DIAGNOSTIC_ANALYSIS_INVALID")
     if labels.inputs != inputs:
         raise ValueError("MFM_DIAGNOSTIC_ANALYSIS_INVALID")
@@ -459,7 +662,6 @@ def build_main_force_mirror_fold_datasets(
     facts_by_symbol = {
         item.symbol: item.facts
         for item in fact_sets
-        if item.profile_id == "balanced"
     }
     if (
         len(product_by_symbol) != len(inputs)
@@ -467,7 +669,11 @@ def build_main_force_mirror_fold_datasets(
         or set(facts_by_symbol) != set(product_by_symbol)
         or any(
             len(facts_by_symbol[symbol]) != len(product.points)
-            or any(fact.index != index for index, fact in enumerate(facts_by_symbol[symbol]))
+            or any(
+                not isinstance(fact, MainForceMirrorV2SequenceFact)
+                or fact.index != index
+                for index, fact in enumerate(facts_by_symbol[symbol])
+            )
             for symbol, product in product_by_symbol.items()
         )
     ):
@@ -479,15 +685,27 @@ def build_main_force_mirror_fold_datasets(
     }
     unavailable: list[MainForceMirrorDiagnosticFeatureUnavailable] = []
     for episode in labels.episodes:
+        product = product_by_symbol.get(episode.symbol)
+        if (
+            product is None
+            or type(episode.anchor_index) is not int
+            or not 0 <= episode.anchor_index < len(product.points)
+        ):
+            raise ValueError("MFM_DIAGNOSTIC_ANALYSIS_INVALID")
+        fact = facts_by_symbol[episode.symbol][episode.anchor_index]
+        _validate_feature_identity(product, episode, fact)
+        _validate_active_peak_reference(
+            product,
+            facts_by_symbol[episode.symbol],
+            fact,
+            episode.physical_contract,
+        )
         if not episode.kept:
             continue
-        product = product_by_symbol.get(episode.symbol)
-        if product is None or not 0 <= episode.anchor_index < len(product.points):
-            raise ValueError("MFM_DIAGNOSTIC_ANALYSIS_INVALID")
         row = build_main_force_mirror_feature_row(
             product,
             episode,
-            facts_by_symbol[episode.symbol][episode.anchor_index],
+            fact,
         )
         eligible_outcomes = tuple(item for item in episode.fold_outcomes if item.eligible)
         if row is None:
@@ -893,19 +1111,25 @@ def audit_main_force_mirror_member_feasibility(
         for item in values
     ):
         raise ValueError("MFM_DIAGNOSTIC_ANALYSIS_INVALID")
+    grouped: dict[
+        tuple[str, str, date], list[MainForceMirrorDiagnosticMemberObservation]
+    ] = {}
+    for item in values:
+        key = (item.symbol, item.physical_contract, item.anchor_trading_day)
+        grouped.setdefault(key, []).append(item)
     earliest: dict[
         tuple[str, str, date], MainForceMirrorDiagnosticMemberObservation
     ] = {}
-    for item in sorted(
-        values,
-        key=lambda value: (
-            value.anchor_bar_end,
-            value.symbol,
-            value.physical_contract,
-        ),
-    ):
-        key = (item.symbol, item.physical_contract, item.anchor_trading_day)
-        earliest.setdefault(key, item)
+    for key in sorted(grouped):
+        group = grouped[key]
+        earliest_end = min(item.anchor_bar_end for item in group)
+        tied = tuple(
+            item for item in group if item.anchor_bar_end == earliest_end
+        )
+        first = tied[0]
+        if any(item != first for item in tied[1:]):
+            raise ValueError("MFM_DIAGNOSTIC_ANALYSIS_INVALID")
+        earliest[key] = first
     eligible_products: set[str] = set()
     eligible_count = 0
     causal_violations = 0
@@ -1165,11 +1389,7 @@ def run_main_force_mirror_model_diagnostics(
         raise ValueError("MFM_DIAGNOSTIC_ANALYSIS_INVALID")
     fold_sections: list[MainForceMirrorDiagnosticModelFoldSection] = []
     evaluated: list[_EvaluatedFold] = []
-    windows = (
-        (date(2023, 1, 1), date(2024, 12, 31), date(2025, 1, 1), date(2025, 12, 31)),
-        (date(2023, 1, 1), date(2025, 12, 31), date(2026, 1, 1), date(2026, 8, 18)),
-    )
-    for fold_data, window in zip(datasets.folds, windows, strict=True):
+    for fold_data, window in zip(datasets.folds, _FOLD_WINDOWS, strict=True):
         section, evaluation = _run_model_fold(fold_data, window)
         fold_sections.append(section)
         evaluated.append(evaluation)
@@ -1455,6 +1675,19 @@ def _model_breakdowns(
             )
             continue
         if any(fold.predictions is None for _sample, fold, _index in selected):
+            unavailable_reasons = {
+                fold.unavailable_reason
+                for _sample, fold, _index in selected
+                if fold.predictions is None
+            }
+            if None in unavailable_reasons or not unavailable_reasons:
+                raise ValueError("MFM_DIAGNOSTIC_ANALYSIS_INVALID")
+            unavailable_reason = (
+                MainForceMirrorDiagnosticUnavailableReason.MODEL_CONVERGENCE_FAILED
+                if MainForceMirrorDiagnosticUnavailableReason.MODEL_CONVERGENCE_FAILED
+                in unavailable_reasons
+                else MainForceMirrorDiagnosticUnavailableReason.SPLIT_CLASS_UNAVAILABLE
+            )
             rows.append(
                 MainForceMirrorDiagnosticModelBreakdown(
                     key=key,
@@ -1463,9 +1696,7 @@ def _model_breakdowns(
                     ridge_auc=None,
                     current_tree_auc=None,
                     full_tree_auc=None,
-                    unavailable_reason=(
-                        MainForceMirrorDiagnosticUnavailableReason.MODEL_CONVERGENCE_FAILED
-                    ),
+                    unavailable_reason=unavailable_reason,
                 )
             )
             continue
