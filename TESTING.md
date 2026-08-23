@@ -52,12 +52,15 @@ set -eu
 : "${GUIYI_BACKTEST_CORS_ORIGINS:?}"
 command -v curl >/dev/null
 command -v jq >/dev/null
+command -v rg >/dev/null
 command -v cmp >/dev/null
 command -v find >/dev/null
 command -v sort >/dev/null
 command -v stat >/dev/null
+command -v awk >/dev/null
 command -v unzip >/dev/null
 command -v realpath >/dev/null
+test -x /usr/sbin/lsof
 test -x "$GUIYI_BACKTEST_PYTHON_EXECUTABLE"
 test -d "$GUIYI_BACKTEST_BUNDLE_PATH"
 test -r "$GUIYI_BACKTEST_BUNDLE_PATH"
@@ -112,7 +115,8 @@ task8_repo_root="$(git rev-parse --show-toplevel)"
 task8_sidecar_python="$task8_repo_root/services/quant-api/.venv/bin/python"
 task8_registry="$task8_repo_root/services/quant-api/app/backtest/strategies/registry.json"
 task8_external_python="$(realpath "$GUIYI_BACKTEST_PYTHON_EXECUTABLE")"
-task8_runner_entry="$task8_repo_root/services/quant-api/app/backtest/runner_entry.py"
+task8_runner_entry="$(realpath \
+  "$task8_repo_root/services/quant-api/app/backtest/runner_entry.py")"
 task8_bundle_root="$(cd "$GUIYI_BACKTEST_BUNDLE_PATH" && pwd -P)"
 task8_runs_parent_input="$(dirname -- "$GUIYI_BACKTEST_RUNS_ROOT")"
 task8_runs_name="$(basename -- "$GUIYI_BACKTEST_RUNS_ROOT")"
@@ -322,16 +326,26 @@ task8_stop_runner() {
   task8_runner_pgid="$(ps -o pgid= -p "$task8_runner_pid" 2>/dev/null \
     | tr -d ' ' || true)"
   task8_self_pgid="$(ps -o pgid= -p $$ 2>/dev/null | tr -d ' ' || true)"
-  task8_runner_command="$(ps -ww -o command= -p "$task8_runner_pid" 2>/dev/null || true)"
-  task8_expected_runner_suffix=" $task8_runner_entry --run-root $task8_run_dir"
-  case "$task8_runner_command" in
-    *"$task8_expected_runner_suffix") task8_runner_command_matches=1 ;;
-    *) task8_runner_command_matches=0 ;;
-  esac
+  task8_runner_executable="$(/usr/sbin/lsof -a -p "$task8_runner_pid" \
+    -d txt -Fn 2>/dev/null | awk '
+      /^n/ && !found {sub(/^n/, ""); executable=$0; found=1}
+      END {if (found) print executable}
+    ')" || true
+  if test -n "$task8_runner_executable"; then
+    task8_runner_executable="$(realpath "$task8_runner_executable" 2>/dev/null || true)"
+  else
+    task8_runner_executable=""
+  fi
+  task8_run_dir="$(realpath "$task8_run_dir" 2>/dev/null || true)"
+  task8_runner_command="$(/bin/ps -ww -p "$task8_runner_pid" \
+    -o command= 2>/dev/null || true)"
+  task8_expected_runner_command="$task8_runner_executable $task8_runner_entry --run-root $task8_run_dir"
   if test "$task8_runner_pid" -eq $$ || test "$task8_runner_pid" -eq "$PPID" \
       || test -z "$task8_runner_pgid" || test "$task8_runner_pgid" != "$task8_runner_pid" \
       || test "$task8_runner_pgid" = "$task8_self_pgid" \
-      || test "$task8_runner_command_matches" -ne 1; then
+      || test -z "$task8_runner_executable" \
+      || test "$task8_runner_executable" != "$task8_external_python" \
+      || test "$task8_runner_command" != "$task8_expected_runner_command"; then
     task8_cleanup_fail BACKTEST_SMOKE_CLEANUP_PROCESS_IDENTITY_INVALID
     return 1
   fi
@@ -405,6 +419,7 @@ find "$task8_bundle_root" -xdev -type f -exec stat -f '%N|%z|%m' {} + \
   | LC_ALL=C sort >"$task8_tmp_dir/bundle.before"
 test -s "$task8_tmp_dir/bundle.before"
 mkdir -m 700 "$task8_runs_root"
+task8_runs_root="$(realpath "$task8_runs_root")"
 export GUIYI_BACKTEST_RUNS_ROOT="$task8_runs_root"
 
 jq -n '{
@@ -572,7 +587,10 @@ printf '%s\n' "RQALPHA_SMOKE_SUCCEEDED run_id=$task8_run_id"
 `ams=false` / `incremental=false` 配置将数据更新、真实订单与外部 application/runtime 路径
 保持关闭。EXIT trap 总是先清理 runner、再停 sidecar；即使 POST 后尚未赋值
 `task8_run_id/task8_runner_pid`，也只从本次新建且原先为空的 runs root 中恢复唯一
-regular non-symlink lock，并在发送信号前交叉校验 lock/run/process-group 身份。任一身份
+regular non-symlink lock，并在发送信号前交叉校验 lock/run/process-group 身份。
+runner executable 必须等于规范化后的 configured external Python，`ps` 的完整 command
+必须精确等于 `<python> <runner_entry> --run-root <run_root>`；不接受 suffix 匹配、任意
+prefix 或额外参数。任一身份
 无法唯一确认时只输出 `FAIL` 诊断，不向未确认 PID 发送信号。POST transport
 尚在 inflight 且 lock 尚未出现时，cleanup 会有界等待；窗口结束后仍不能用终态
 `run.json` 或明确的非 202 空根证明 runner 不存在时，必须保留 sidecar 由它继续拥有/
