@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "strategies": [
+    {
+      "id": "example_future_smoke_v1",
+      "name": "期货回测链路示例",
+      "description": "只用于验证本机 RQAlpha 回测链路",
+      "enabled": true,
+      "entry_file": "example_future_smoke_v1.py",
+      "supported_frequencies": ["1d", "1m"],
+      "defaults": {
+        "future_cash": "1000000",
+        "matching_type": "current_bar",
+        "margin_multiplier": "1",
+        "futures_commission_multiplier": "1",
+        "slippage_model": "PriceRatioSlippage",
+        "slippage": "0"
+      },
+      "parameters": [
+        {
+          "name": "order_book_id",
+          "type": "enum",
+          "default": "IF1606",
+          "options": ["IF1606"]
+        },
+        {
+          "name": "quantity",
+          "type": "integer",
+          "default": 1,
+          "min": 1,
+          "max": 10
+        }
+      ]
+    }
+  ]
+}

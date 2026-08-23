@@ -1,6 +1,6 @@
 # 架构决策记录
 
-更新时间：2026-08-22
+更新时间：2026-08-23
 
 本文件只记录长期决策、理由与不可破坏边界。版本、部署、evidence 和 Gate 状态只看 `STATUS.md`；
 exact protocol/window/hash/count 只看 policy、report 与测试；历史过程只从 Git history 追溯。
@@ -23,6 +23,7 @@ exact protocol/window/hash/count 只看 policy、report 与测试；历史过程
 | Candidate/OOS | source-specific retrospective、embargo、prospective OOS 分离 | 不建立伪 common window，不用 retrospective 回填 OOS；evidence 不自动形成 rank、winner、promotion、盈利或可交易结论 |
 | Candidate convergence | dossier 只组装冻结事实；comparability 不等于 relationship；dependency/overlap 不外推 | 避免把不同 timeframe、event unit 与 outcome 语义强行统一；exact count/window 留在 protocol/report/tests |
 | 主力照妖镜 | active observation 与 sequence forensic 分层；forensic 只使用预定义全局 profile | 不按品种调参、不选 best profile；没有真实 read-only evidence Gate 就不冻结正式 Phase |
+| RQAlpha 研究工作台 | 只作为 loopback local app + 外部 Bundle/artifact 的 research-only 工具，不挂载主 API、不进入正式事实链 | 可用 Web 解决本机 RQAlpha 配置/执行/观察，同时避免暴露远程进程启动面；不恢复旧 backtest worker/DB，不替代未来 Canonical/MarketDataService + Candidate/OOS 正式验证体系；仓库验证不授权 sidecar 加载、真实 smoke、release 或 Runtime |
 | Alert | Event 先提交，通知最多一次；两条 Rule 复用既有 evaluator/read model | 保留故障隔离与因果 cutoff；无 retry/replay/backfill/outbox/queue/逐人状态或订单路径 |
 | Execution Review | 只从 eligible immutable Event 记录人工 Decision、Execution、Episode 与 Review | 不恢复旧 Review Center、不连接账户、不自动反手；Historical reconstruction 只经 `MarketDataService` |
 | Execution Review roll | roll reconcile 默认关闭；request-scoped composition 每请求读取一次 Gate 后注入 callback | missing/`disabled`/`invalid` 注入 fail-closed callback，只有 `enabled` 注入真实 reconciler；`record_executed` 不重复读取 marker |

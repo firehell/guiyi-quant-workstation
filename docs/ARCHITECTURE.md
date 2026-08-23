@@ -15,6 +15,13 @@ flowchart TB
       CLI[guiyi data / research / runtime]
       ENTRY[app.runtime_entry]
     end
+    subgraph LocalBacktest[本机外部 RQAlpha 研究工作台]
+      BTW[local browser /backtests]
+      BTA[loopback Backtest Local App<br/>127.0.0.1:8011]
+      BTR[one-shot RQAlpha Runner]
+      BUNDLE[external read-only Bundle]
+      BART[external filesystem artifacts]
+    end
     subgraph Application[应用层]
       HM[HistoricalDataManager]
       MDS[MarketDataService]
@@ -70,6 +77,10 @@ flowchart TB
     ENTRY --> LIVE
     ENTRY --> AM
     ENTRY --> ALERT
+    BTW --> BTA
+    BTA --> BTR
+    BTR --> BUNDLE
+    BTR --> BART
 
     HM --> DK
     HM --> TS
@@ -121,6 +132,8 @@ flowchart TB
 依赖只能从接入层指向应用层或只读 Research，再指向 domain/infra。Market、Runtime 与 Alert 不得导入
 离线 `app.research`；`app.main` 可以挂载 Research-owned 的只读 Historical Overlay router。Research 可以
 依赖 Market Historical gateway，但不能成为 Market/Runtime/Alert 组装依赖。
+RQAlpha 工作台是图中独立的本机外部链：它不经过主 `API`、`CLI`、Market/Research domain 或
+Runtime，也不向这些模块反向依赖。
 
 ## Market Data 模块
 
@@ -168,6 +181,41 @@ Redis 或 AlertEvent。
   DB/Canonical/Redis，不进入 Alert、Runtime、
   Execution Review 或订单。任何 retrospective/rolling/robustness evidence 都不能自动晋升 Candidate、
   选择 winner、形成盈利结论或消费 prospective OOS。
+
+## RQAlpha 本机研究工作台
+
+`apps/quant-web` 的 `/backtests` 只使用独立 client 请求精确 loopback URL，不复用主 API
+singleton 或 Vite 主 proxy。只有浏览器 hostname 为 `localhost|127.0.0.1` 时才探测；其他
+hostname 隐藏菜单、直达页 fail-closed 且不发送 loopback 请求。
+
+`app.backtest.local_app` 是位于 `services/quant-api` 代码库内但不挂载到 `app.main` 的独立
+FastAPI composition：
+
+```text
+/backtests browser
+-> dedicated loopback client
+-> app.backtest.local_app:8011
+-> registry + ArtifactStore + SubprocessRunner
+-> configured external Python / rqalpha.run_file
+-> read-only external Bundle + isolated runs root
+```
+
+- Local app 只提供六个 `/api/v1/backtests` 路由，只绑定 `127.0.0.1:8011`；它不进入
+  FRPC/FRPS/Nginx、launchd 或 production Runtime。
+- Registry 只接受 Git 跟踪并启用的相对 Python 策略；Web 不接受上传、任意路径、
+  代码、shell 或原始 RQAlpha config。
+- ArtifactStore 是唯一存储：`active.lock` 在同一 runs root 跨线程/跨实例限制一个
+  active run，run JSON 原子替换，文件与 report 只按 allowlist/no-follow 打开。
+- SubprocessRunner 只使用固定 executable/argv/cwd、`shell=False` 和最小环境 allowlist；
+  runner entry 强制关闭 Bundle auto-update、rqdatac URI、signal mode、AMS、incremental 与
+  progress 展示，并将 analyser 输出绑定到当前 run 目录。
+- 该链只记录 `research_only=true / formal_evidence=false / promotion_eligible=false`，不读写
+  PostgreSQL、Redis、Canonical、MarketDataService、Alert、Execution Review 或 Runtime。RQAlpha 内部
+  Order/Trade 只是 simulation artifact，不连接任何真实订单路径。
+
+精确六路由、DTO、状态机、runner config、artifact 与真实 smoke Gate 见
+`openspec/specs/rqalpha-research-backtest-workbench/spec.md`。本模块当前未加载、未 release、
+未进入 Runtime；仓库自动化通过不等于真实 RQAlpha smoke 通过。
 
 ## Alert 模块
 
@@ -244,6 +292,8 @@ marker 使用 resolved `bar_end`，N/JDJ 使用 source `observed_at`，禁止回
 
 - PostgreSQL 八表 Catalog、Alert 两表、Execution Review 四表是三个独立 persistence boundary。
 - Parquet 只保存 Canonical Bars；Redis 只保存 Live observation；PushPlus 只在 notification adapter 后。
+- RQAlpha Bundle 与 runs root 是仓库外、互不包含的本机路径；工作台只读 Bundle、只写
+  runs root，不将二者纳入归一量化正式 persistence 或 Runtime 托管。
 - Mac launchd 监督 API/Web/Live/after-market/Alert；FRPC/FRPS/Nginx 只做隧道与反代，不运行第二套应用。
 - 任何 activation、migration、数据写入、通知、release/tag 或 Runtime switch 的当前状态与授权不属于
   本架构文档，只看 `STATUS.md` 与当次用户执行意图。
