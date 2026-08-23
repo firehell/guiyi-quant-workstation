@@ -98,6 +98,35 @@ class _LockSnapshot:
     inode: int
 
 
+class ActiveLockOwnership:
+    """Opaque advisory ownership of the existing ``active.lock`` file."""
+
+    def __init__(self, store: ArtifactStore, opened: _OpenedLock) -> None:
+        self._store = store
+        self._opened = opened
+        self._release_lock = threading.Lock()
+        self._released = False
+
+    @property
+    def run_id(self) -> str:
+        return self._opened.lock.run_id
+
+    def release(self, *, keep_lock: bool) -> bool:
+        """Release the descriptor and optionally unlink its matching lock file."""
+
+        with self._release_lock:
+            if self._released:
+                return False
+            self._released = True
+        return self._store._release_monitor_ownership(self, keep_lock=keep_lock)
+
+    def __enter__(self) -> ActiveLockOwnership:
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        self.release(keep_lock=True)
+
+
 class ArtifactStore:
     """Concrete filesystem store using descriptor-relative, no-follow access."""
 
@@ -105,6 +134,14 @@ class ArtifactStore:
         self.runs_root = settings.runs_root.resolve(strict=False)
         self.lock_path = self.runs_root / "active.lock"
         self._thread_lock = threading.RLock()
+        self._root_state = threading.local()
+
+    @contextmanager
+    def serialize_launch(self) -> Iterator[None]:
+        """Serialize one reconcile-to-monitor-ownership launch transaction."""
+
+        with self._locked_root(create=True):
+            yield
 
     def run_paths(self, run_id: str) -> RunPaths:
         """Return the fixed child path contract for a validated run id."""
@@ -429,6 +466,21 @@ class ArtifactStore:
         except FileNotFoundError:
             return None
 
+    def acquire_monitor_ownership(self, run_id: str) -> ActiveLockOwnership:
+        """Hold an advisory flock on this run's existing ``active.lock``."""
+
+        self._validate_run_id(run_id)
+        with self._locked_root() as root_descriptor:
+            opened = self._open_lock_at(root_descriptor)
+            if opened is None or opened.lock.run_id != run_id:
+                if opened is not None:
+                    os.close(opened.descriptor)
+                raise ValueError("BACKTEST_LOCK_INVALID")
+            if not self._try_lock_ownership(opened.descriptor):
+                os.close(opened.descriptor)
+                raise BacktestError(BacktestHttpErrorCode.BACKTEST_ALREADY_RUNNING)
+            return ActiveLockOwnership(self, opened)
+
     def release_lock(self, run_id: str) -> bool:
         """Delete only the serialized, identity-matched lock for this owner."""
 
@@ -454,6 +506,10 @@ class ArtifactStore:
             opened = self._open_lock_at(root_descriptor)
             if opened is None:
                 return None
+            if not self._try_lock_ownership(opened.descriptor):
+                lock = opened.lock
+                os.close(opened.descriptor)
+                return lock
             try:
                 snapshot = _LockSnapshot(
                     lock=opened.lock,
@@ -474,6 +530,10 @@ class ArtifactStore:
             opened = self._open_lock_at(root_descriptor)
             if opened is None:
                 return None
+            if not self._try_lock_ownership(opened.descriptor):
+                lock = opened.lock
+                os.close(opened.descriptor)
+                return lock
             try:
                 if not self._lock_matches_snapshot(opened, snapshot):
                     return opened.lock
@@ -515,12 +575,18 @@ class ArtifactStore:
 
     @contextmanager
     def _locked_root(self, *, create: bool = False) -> Iterator[int]:
+        current = getattr(self._root_state, "descriptor", None)
+        if current is not None:
+            yield cast(int, current)
+            return
         with self._thread_lock:
             with self._open_runs_root(create=create) as root_descriptor:
                 fcntl.flock(root_descriptor, fcntl.LOCK_EX)
+                self._root_state.descriptor = root_descriptor
                 try:
                     yield root_descriptor
                 finally:
+                    del self._root_state.descriptor
                     fcntl.flock(root_descriptor, fcntl.LOCK_UN)
 
     @contextmanager
@@ -824,6 +890,51 @@ class ArtifactStore:
         finally:
             os.close(opened.descriptor)
 
+    def _release_monitor_ownership(
+        self,
+        ownership: ActiveLockOwnership,
+        *,
+        keep_lock: bool,
+    ) -> bool:
+        if ownership._store is not self:
+            raise ValueError("BACKTEST_LOCK_INVALID")
+        descriptor = ownership._opened.descriptor
+        removed = False
+        try:
+            if not keep_lock:
+                with self._locked_root() as root_descriptor:
+                    opened = self._open_lock_at(root_descriptor)
+                    if opened is not None:
+                        try:
+                            if (
+                                opened.lock == ownership._opened.lock
+                                and opened.device == ownership._opened.device
+                                and opened.inode == ownership._opened.inode
+                            ):
+                                removed = self._unlink_if_opened_lock(
+                                    root_descriptor,
+                                    opened,
+                                )
+                        finally:
+                            os.close(opened.descriptor)
+            return removed
+        finally:
+            try:
+                fcntl.flock(descriptor, fcntl.LOCK_UN)
+            finally:
+                os.close(descriptor)
+
+    @staticmethod
+    def _try_lock_ownership(descriptor: int) -> bool:
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return False
+        except Exception:
+            os.close(descriptor)
+            raise
+        return True
+
     @staticmethod
     def _unlink_if_opened_lock(root_descriptor: int, opened: _OpenedLock) -> bool:
         try:
@@ -896,4 +1007,4 @@ class ArtifactStore:
         raise BacktestError(BacktestHttpErrorCode.BACKTEST_ARTIFACT_NOT_FOUND)
 
 
-__all__ = ["ActiveLock", "ArtifactStore", "RunPaths"]
+__all__ = ["ActiveLock", "ActiveLockOwnership", "ArtifactStore", "RunPaths"]

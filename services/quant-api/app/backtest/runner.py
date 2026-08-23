@@ -583,14 +583,7 @@ class RunningProcess:
             except subprocess.TimeoutExpired:
                 timed_out = True
                 exit_code = self._terminate_owned_process_group()
-            drain_deadline = time.monotonic() + _PIPE_DRAIN_SECONDS
-            for thread in self._drain_threads:
-                thread.join(timeout=max(0.0, drain_deadline - time.monotonic()))
-            if any(thread.is_alive() for thread in self._drain_threads):
-                self._drain_stop.set()
-                stop_deadline = time.monotonic() + 0.1
-                for thread in self._drain_threads:
-                    thread.join(timeout=max(0.0, stop_deadline - time.monotonic()))
+            self._finish_drains()
             if timed_out:
                 result = MonitorResult(
                     exit_code=exit_code,
@@ -617,6 +610,34 @@ class RunningProcess:
                 )
             self._monitor_result = result
             return result
+
+    def terminate_owned(self) -> MonitorResult:
+        """Terminate and reap only this handle's captured child process group."""
+
+        with self._monitor_lock:
+            if self._monitor_result is not None:
+                return self._monitor_result
+            try:
+                exit_code = self._terminate_owned_process_group()
+            finally:
+                self._finish_drains()
+            result = MonitorResult(
+                exit_code=exit_code,
+                outcome=RunStatus.FAILED,
+                failure_code=RunFailureCode.STRATEGY_EXECUTION_FAILED,
+            )
+            self._monitor_result = result
+            return result
+
+    def _finish_drains(self) -> None:
+        drain_deadline = time.monotonic() + _PIPE_DRAIN_SECONDS
+        for thread in self._drain_threads:
+            thread.join(timeout=max(0.0, drain_deadline - time.monotonic()))
+        if any(thread.is_alive() for thread in self._drain_threads):
+            self._drain_stop.set()
+            stop_deadline = time.monotonic() + 0.1
+            for thread in self._drain_threads:
+                thread.join(timeout=max(0.0, stop_deadline - time.monotonic()))
 
     def _terminate_owned_process_group(self) -> int:
         if self._owned_process_group <= 1 or self._owned_process_group == os.getpgrp():

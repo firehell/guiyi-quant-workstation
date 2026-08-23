@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from builtins import ExceptionGroup
 from dataclasses import dataclass, field
 import json
 import os
@@ -11,12 +12,13 @@ from typing import Any
 
 import pytest
 
-from app.backtest.artifact_store import ArtifactStore, RunPaths
+from app.backtest.artifact_store import ActiveLockOwnership, ArtifactStore, RunPaths
 from app.backtest.config import BacktestSettings
 from app.backtest.contracts import BacktestRunRequest, RunStatus
 from app.backtest.errors import BacktestError, BacktestHttpErrorCode, RunFailureCode
 from app.backtest.registry import StrategyRegistry, ValidatedBacktestRequest
 from app.backtest.runner import MonitorResult, RunnerProbe, build_rqalpha_config
+from app.backtest import service as service_module
 from app.backtest.service import BacktestService
 
 
@@ -135,6 +137,7 @@ class _FakeProcess:
     wait_before_monitor: threading.Event | None = None
     pid: int = field(default_factory=os.getpid)
     terminated: bool = False
+    terminate_error: Exception | None = None
 
     def monitor(self) -> MonitorResult:
         if self.wait_before_monitor is not None:
@@ -153,9 +156,15 @@ class _FakeProcess:
             self.paths.stderr_log.write_text("fake strategy failure\n", "utf-8")
         return self.result
 
-    def _terminate_owned_process_group(self) -> int:
+    def terminate_owned(self) -> MonitorResult:
         self.terminated = True
-        return -9
+        if self.terminate_error is not None:
+            raise self.terminate_error
+        return MonitorResult(
+            -9,
+            RunStatus.FAILED,
+            RunFailureCode.STRATEGY_EXECUTION_FAILED,
+        )
 
 
 class _FakeRunner:
@@ -168,6 +177,9 @@ class _FakeRunner:
         wait_before_monitor: threading.Event | None = None,
         monitor_error: Exception | None = None,
         process_pid: int | None = None,
+        start_entered: threading.Event | None = None,
+        allow_start: threading.Event | None = None,
+        terminate_error: Exception | None = None,
     ) -> None:
         self.settings = settings
         self.result = result or MonitorResult(0, RunStatus.SUCCEEDED, None)
@@ -175,6 +187,9 @@ class _FakeRunner:
         self.wait_before_monitor = wait_before_monitor
         self.monitor_error = monitor_error
         self.process_pid = process_pid
+        self.start_entered = start_entered
+        self.allow_start = allow_start
+        self.terminate_error = terminate_error
         self.started: list[_FakeProcess] = []
         self.start_error: Exception | None = None
         self.probe_result = RunnerProbe(
@@ -197,6 +212,10 @@ class _FakeRunner:
     ) -> _FakeProcess:
         if self.start_error is not None:
             raise self.start_error
+        if self.start_entered is not None:
+            self.start_entered.set()
+        if self.allow_start is not None:
+            assert self.allow_start.wait(timeout=2)
         process = _FakeProcess(
             paths=paths,
             result=self.result,
@@ -204,6 +223,7 @@ class _FakeRunner:
             wait_before_monitor=self.wait_before_monitor,
             monitor_error=self.monitor_error,
             pid=self.process_pid if self.process_pid is not None else os.getpid(),
+            terminate_error=self.terminate_error,
         )
         self.started.append(process)
         return process
@@ -461,20 +481,25 @@ def test_terminal_record_is_written_before_owned_lock_is_released(
     service, store, _runner = _service(tmp_path)
     events: list[tuple[str, str]] = []
     real_update = store.update_run
-    real_release = store.release_lock
+    real_release = ActiveLockOwnership.release
 
     def observe_update(run_id: str, changes: dict[str, Any]) -> dict[str, Any]:
         if "status" in changes and changes["status"] != RunStatus.RUNNING:
             events.append(("update", str(changes["status"])))
         return real_update(run_id, changes)
 
-    def observe_release(run_id: str) -> bool:
-        events.append(("release", run_id))
-        assert store.read_run(run_id)["status"] == "succeeded"
-        return real_release(run_id)
+    def observe_release(
+        ownership: ActiveLockOwnership,
+        *,
+        keep_lock: bool,
+    ) -> bool:
+        events.append(("release", ownership.run_id))
+        assert keep_lock is False
+        assert store.read_run(ownership.run_id)["status"] == "succeeded"
+        return real_release(ownership, keep_lock=keep_lock)
 
     monkeypatch.setattr(store, "update_run", observe_update)
-    monkeypatch.setattr(store, "release_lock", observe_release)
+    monkeypatch.setattr(ActiveLockOwnership, "release", observe_release)
 
     started = service.start_run(_request())
     _wait_terminal(service, started["run_id"])
@@ -485,23 +510,31 @@ def test_terminal_record_is_written_before_owned_lock_is_released(
     ]
 
 
-def test_public_reconcile_does_not_interrupt_owned_pid_after_child_exit_before_write(
+def test_cross_instance_reconcile_does_not_interrupt_monitor_owned_missing_pid(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     settings = _settings(tmp_path)
     missing_pid = 2_147_483_647
     runner = _FakeRunner(settings, process_pid=missing_pid)
-    store = ArtifactStore(settings)
-    service = BacktestService(
-        registry=_registry(tmp_path),
-        store=store,
+    registry = _registry(tmp_path)
+    first_store = ArtifactStore(settings)
+    second_store = ArtifactStore(settings)
+    first_service = BacktestService(
+        registry=registry,
+        store=first_store,
         runner=runner,
+        repository_commit=REPOSITORY_COMMIT,
+    )
+    second_service = BacktestService(
+        registry=registry,
+        store=second_store,
+        runner=_FakeRunner(settings),
         repository_commit=REPOSITORY_COMMIT,
     )
     terminal_write_entered = threading.Event()
     allow_terminal_write = threading.Event()
-    real_update = store.update_run
+    real_update = first_store.update_run
 
     def pause_terminal_update(run_id: str, changes: dict[str, Any]) -> dict[str, Any]:
         if "status" in changes and changes["status"] == RunStatus.SUCCEEDED:
@@ -509,17 +542,80 @@ def test_public_reconcile_does_not_interrupt_owned_pid_after_child_exit_before_w
             assert allow_terminal_write.wait(timeout=2)
         return real_update(run_id, changes)
 
-    monkeypatch.setattr(store, "update_run", pause_terminal_update)
+    monkeypatch.setattr(first_store, "update_run", pause_terminal_update)
 
-    started = service.start_run(_request())
+    started = first_service.start_run(_request())
     assert terminal_write_entered.wait(timeout=2)
-    observed_while_monitor_owns_pid = service.get_run(started["run_id"])
+    observed_while_monitor_owns_pid = second_service.get_run(started["run_id"])
     allow_terminal_write.set()
-    terminal = _wait_terminal(service, started["run_id"])
+    terminal = _wait_terminal(first_service, started["run_id"])
 
     assert observed_while_monitor_owns_pid["status"] == "running"
     assert terminal["status"] == "succeeded"
-    assert store.read_lock() is None
+    assert first_store.read_lock() is None
+
+
+def test_cross_instance_conflict_is_busy_before_second_runner_spawn(
+    tmp_path: Path,
+) -> None:
+    settings = _settings(tmp_path)
+    registry = _registry(tmp_path)
+    first_start_entered = threading.Event()
+    allow_first_start = threading.Event()
+    second_start_entered = threading.Event()
+    monitor_gate = threading.Event()
+    first_runner = _FakeRunner(
+        settings,
+        start_entered=first_start_entered,
+        allow_start=allow_first_start,
+        wait_before_monitor=monitor_gate,
+    )
+    second_runner = _FakeRunner(
+        settings,
+        start_entered=second_start_entered,
+        wait_before_monitor=monitor_gate,
+    )
+    first_service = BacktestService(
+        registry=registry,
+        store=ArtifactStore(settings),
+        runner=first_runner,
+        repository_commit=REPOSITORY_COMMIT,
+    )
+    second_service = BacktestService(
+        registry=registry,
+        store=ArtifactStore(settings),
+        runner=second_runner,
+        repository_commit=REPOSITORY_COMMIT,
+    )
+    first_results: list[dict[str, Any]] = []
+    second_errors: list[BaseException] = []
+
+    def start_first() -> None:
+        first_results.append(first_service.start_run(_request()))
+
+    def start_second() -> None:
+        try:
+            second_service.start_run(_request())
+        except BaseException as exc:
+            second_errors.append(exc)
+
+    first_thread = threading.Thread(target=start_first)
+    second_thread = threading.Thread(target=start_second)
+    first_thread.start()
+    assert first_start_entered.wait(timeout=2)
+    second_thread.start()
+    second_spawned_before_first_owned = second_start_entered.wait(timeout=0.1)
+    allow_first_start.set()
+    first_thread.join(timeout=2)
+    second_thread.join(timeout=2)
+    monitor_gate.set()
+
+    assert second_spawned_before_first_owned is False
+    assert len(first_results) == 1
+    assert len(second_errors) == 1
+    assert isinstance(second_errors[0], BacktestError)
+    assert str(second_errors[0]) == "BACKTEST_ALREADY_RUNNING"
+    assert second_runner.started == []
 
 
 def test_spawn_failure_marks_failed_and_leaves_logs_without_lock(
@@ -557,6 +653,66 @@ def test_lock_failure_after_spawn_terminates_only_new_child_and_marks_failed(
     assert runner.started[0].terminated is True
     assert store.list_runs()[0]["status"] == "failed"
     assert store.read_lock() is None
+
+
+def test_monitor_ownership_acquire_failure_terminates_child_and_unlocks_failed_run(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service, store, runner = _service(tmp_path)
+
+    def fail_ownership(_run_id: str) -> None:
+        raise OSError("injected ownership acquire failure")
+
+    monkeypatch.setattr(store, "acquire_monitor_ownership", fail_ownership)
+
+    with pytest.raises(OSError, match="injected ownership acquire failure"):
+        service.start_run(_request())
+
+    assert len(runner.started) == 1
+    assert runner.started[0].terminated is True
+    record = store.list_runs()[0]
+    assert record["status"] == "failed"
+    assert record["failure_code"] == "STRATEGY_EXECUTION_FAILED"
+    assert store.read_lock() is None
+
+
+def test_thread_start_and_terminate_failure_records_failed_and_keeps_lock(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = _settings(tmp_path)
+    runner = _FakeRunner(
+        settings,
+        terminate_error=RuntimeError("injected terminate failure"),
+    )
+    store = ArtifactStore(settings)
+    service = BacktestService(
+        registry=_registry(tmp_path),
+        store=store,
+        runner=runner,
+        repository_commit=REPOSITORY_COMMIT,
+    )
+    real_thread_start = threading.Thread.start
+
+    def fail_monitor_start(thread: threading.Thread) -> None:
+        if thread.name.startswith("backtest-monitor-"):
+            raise RuntimeError("injected thread start failure")
+        real_thread_start(thread)
+
+    monkeypatch.setattr(service_module.threading.Thread, "start", fail_monitor_start)
+
+    with pytest.raises(ExceptionGroup) as captured:
+        service.start_run(_request())
+
+    messages = [str(error) for error in captured.value.exceptions]
+    assert any("injected thread start failure" in message for message in messages)
+    assert any("injected terminate failure" in message for message in messages)
+    record = store.list_runs()[0]
+    assert record["status"] == "failed"
+    assert record["failure_code"] == "STRATEGY_EXECUTION_FAILED"
+    assert store.read_lock() is not None
+    assert service.health()["busy"] is True
 
 
 def test_monitor_thread_exception_records_failure_but_keeps_live_pid_lock(
@@ -627,15 +783,23 @@ def test_every_public_operation_reconciles_before_access(
         calls.append("reconcile")
         return real_reconcile(**kwargs)
 
-    monkeypatch.setattr(store, "reconcile_stale_lock", observe_reconcile)
     started = service.start_run(_request())
     terminal = _wait_terminal(service, started["run_id"])
-    service.health()
-    service.list_strategies()
-    service.list_runs()
-    service.get_run(started["run_id"])
-    with service.open_artifact(started["run_id"], "equity_png") as artifact:
-        assert artifact.read() == b"fake-png"
-
-    assert len(calls) >= 7
     assert terminal["status"] == "succeeded"
+    monkeypatch.setattr(store, "reconcile_stale_lock", observe_reconcile)
+
+    operations = (
+        service.health,
+        service.list_strategies,
+        service.list_runs,
+        lambda: service.get_run(started["run_id"]),
+        lambda: service.open_artifact(started["run_id"], "equity_png"),
+    )
+    for operation in operations:
+        calls.clear()
+        operation()
+        assert calls == ["reconcile"]
+
+    calls.clear()
+    service.start_run(_request())
+    assert calls == ["reconcile"]

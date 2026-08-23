@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from builtins import ExceptionGroup
 from collections.abc import Mapping
 from contextlib import AbstractContextManager
 from datetime import datetime, timezone
@@ -11,9 +12,14 @@ import re
 import secrets
 import stat
 import threading
-from typing import Any, BinaryIO, cast
+from typing import Any, BinaryIO, NoReturn, cast
 
-from app.backtest.artifact_store import ActiveLock, ArtifactStore, RunPaths
+from app.backtest.artifact_store import (
+    ActiveLock,
+    ActiveLockOwnership,
+    ArtifactStore,
+    RunPaths,
+)
 from app.backtest.contracts import BacktestRunRequest, RunStatus
 from app.backtest.errors import BacktestError, BacktestHttpErrorCode, RunFailureCode
 from app.backtest.registry import (
@@ -55,8 +61,6 @@ class BacktestService:
         self.runner = runner
         self.repository_commit = repository_commit
         self._operation_lock = threading.RLock()
-        self._ownership_lock = threading.Lock()
-        self._owned_pids: set[int] = set()
 
     def health(self) -> dict[str, Any]:
         """Return readiness while treating every live lock as degraded/busy."""
@@ -110,89 +114,88 @@ class BacktestService:
         """Synchronously create/spawn/lock, then monitor the owned child in background."""
 
         with self._operation_lock:
-            active_lock = self._reconcile_stale_lock()
-            if active_lock is not None:
-                raise BacktestError(BacktestHttpErrorCode.BACKTEST_ALREADY_RUNNING)
-            self._require_start_readiness()
-            validated = self.registry.validate_request(request)
-            probe = self.runner.probe()
-            if not probe.available:
-                raise BacktestError(BacktestHttpErrorCode.RUNNER_UNAVAILABLE)
+            with self.store.serialize_launch():
+                active_lock = self._reconcile_stale_lock()
+                if active_lock is not None:
+                    raise BacktestError(BacktestHttpErrorCode.BACKTEST_ALREADY_RUNNING)
+                self._require_start_readiness()
+                validated = self.registry.validate_request(request)
+                probe = self.runner.probe()
+                if not probe.available:
+                    raise BacktestError(BacktestHttpErrorCode.RUNNER_UNAVAILABLE)
 
-            run_id = self._new_run_id()
-            started_at = self._now()
-            paths = self.store.run_paths(run_id)
-            record = self._initial_record(
-                request=request,
-                validated=validated,
-                probe=probe,
-                run_id=run_id,
-                started_at=started_at,
-            )
-            self.store.create_run(
-                run_id,
-                run_record=record,
-                strategy_file=validated.strategy_file,
-                strategy_params=validated.parameters,
-            )
-            try:
-                effective_config = self.runner.effective_config(validated, paths)
-                self.store.update_run(
-                    run_id,
-                    {
-                        "effective_config": effective_config,
-                        "effective_parameters": dict(validated.parameters),
-                    },
-                )
-                process = self.runner.start(validated, paths)
-            except Exception as exc:
-                failure_code = (
-                    RunFailureCode.RUNNER_UNAVAILABLE
-                    if isinstance(exc, BacktestError)
-                    and str(exc) == BacktestHttpErrorCode.RUNNER_UNAVAILABLE
-                    else RunFailureCode.STRATEGY_EXECUTION_FAILED
-                )
-                self._write_start_failure(run_id, failure_code)
-                raise
-
-            try:
-                self.store.acquire_lock(
-                    run_id,
-                    pid=process.pid,
+                run_id = self._new_run_id()
+                started_at = self._now()
+                paths = self.store.run_paths(run_id)
+                record = self._initial_record(
+                    request=request,
+                    validated=validated,
+                    probe=probe,
+                    run_id=run_id,
                     started_at=started_at,
                 )
-            except Exception:
-                self._stop_new_process(process)
-                self._write_start_failure(
+                self.store.create_run(
                     run_id,
-                    RunFailureCode.STRATEGY_EXECUTION_FAILED,
+                    run_record=record,
+                    strategy_file=validated.strategy_file,
+                    strategy_params=validated.parameters,
                 )
-                raise
-            self._mark_owned(process.pid)
-
-            monitor = threading.Thread(
-                target=self._monitor_owned_run,
-                args=(run_id, paths, process),
-                name=f"backtest-monitor-{run_id}",
-                daemon=True,
-            )
-            try:
-                monitor.start()
-            except Exception:
-                self._stop_new_process(process)
                 try:
-                    self._write_start_failure(
+                    effective_config = self.runner.effective_config(validated, paths)
+                    self.store.update_run(
                         run_id,
-                        RunFailureCode.STRATEGY_EXECUTION_FAILED,
+                        {
+                            "effective_config": effective_config,
+                            "effective_parameters": dict(validated.parameters),
+                        },
                     )
-                except Exception:
-                    pass
-                else:
-                    self.store.release_lock(run_id)
-                finally:
-                    self._unmark_owned(process.pid)
-                raise
-            return self.store.read_run(run_id)
+                    process = self.runner.start(validated, paths)
+                except Exception as exc:
+                    failure_code = (
+                        RunFailureCode.RUNNER_UNAVAILABLE
+                        if isinstance(exc, BacktestError)
+                        and str(exc) == BacktestHttpErrorCode.RUNNER_UNAVAILABLE
+                        else RunFailureCode.STRATEGY_EXECUTION_FAILED
+                    )
+                    self._write_start_failure(run_id, failure_code)
+                    raise
+
+                try:
+                    self.store.acquire_lock(
+                        run_id,
+                        pid=process.pid,
+                        started_at=started_at,
+                    )
+                except Exception as lock_error:
+                    self._cleanup_unlocked_start(run_id, process, lock_error)
+                    raise AssertionError("unreachable")
+                try:
+                    ownership = self.store.acquire_monitor_ownership(run_id)
+                except Exception as ownership_error:
+                    self._cleanup_locked_start_without_ownership(
+                        run_id,
+                        process,
+                        ownership_error,
+                    )
+                    raise AssertionError("unreachable")
+
+                monitor = threading.Thread(
+                    target=self._monitor_owned_run,
+                    args=(run_id, paths, process, ownership),
+                    name=f"backtest-monitor-{run_id}",
+                    daemon=True,
+                )
+                try:
+                    monitor.start()
+                except Exception as start_error:
+                    self._cleanup_monitor_start_failure(
+                        run_id,
+                        process,
+                        ownership,
+                        start_error,
+                    )
+                    raise AssertionError("unreachable")
+                return self.store.read_run(run_id)
 
     def list_runs(self, limit: int = 20) -> list[dict[str, Any]]:
         """Return recent authoritative run records after stale-lock reconciliation."""
@@ -250,6 +253,7 @@ class BacktestService:
         run_id: str,
         paths: RunPaths,
         process: RunningProcess,
+        ownership: ActiveLockOwnership,
     ) -> None:
         monitor_failed = False
         try:
@@ -283,43 +287,116 @@ class BacktestService:
         except Exception:
             # Preserve the live lock when terminal state could not be published.
             # A later public operation will reconcile it only after the PID is gone.
-            self._unmark_owned(process.pid)
+            self._release_ownership_safely(ownership, keep_lock=True)
             return
         if monitor_failed:
             # The monitor no longer proves the owned PID is gone. Keep the lock
             # so a live child cannot overlap a later run; stale reconciliation
             # releases it after the PID disappears.
-            self._unmark_owned(process.pid)
+            self._release_ownership_safely(ownership, keep_lock=True)
             return
         try:
-            self.store.release_lock(run_id)
+            ownership.release(keep_lock=False)
         except (BacktestError, OSError, RuntimeError, ValueError):
             pass
-        finally:
-            self._unmark_owned(process.pid)
+
+    def _cleanup_unlocked_start(
+        self,
+        run_id: str,
+        process: RunningProcess,
+        primary_error: Exception,
+    ) -> NoReturn:
+        errors: list[Exception] = [primary_error]
+        try:
+            process.terminate_owned()
+        except Exception as exc:
+            errors.append(exc)
+        try:
+            self._write_start_failure(
+                run_id,
+                RunFailureCode.STRATEGY_EXECUTION_FAILED,
+            )
+        except Exception as exc:
+            errors.append(exc)
+        self._raise_cleanup_errors(errors)
+
+    def _cleanup_monitor_start_failure(
+        self,
+        run_id: str,
+        process: RunningProcess,
+        ownership: ActiveLockOwnership,
+        primary_error: Exception,
+    ) -> NoReturn:
+        errors: list[Exception] = [primary_error]
+        terminated = False
+        terminal_written = False
+        try:
+            process.terminate_owned()
+            terminated = True
+        except Exception as exc:
+            errors.append(exc)
+        try:
+            self._write_start_failure(
+                run_id,
+                RunFailureCode.STRATEGY_EXECUTION_FAILED,
+            )
+            terminal_written = True
+        except Exception as exc:
+            errors.append(exc)
+        try:
+            ownership.release(keep_lock=not (terminated and terminal_written))
+        except Exception as exc:
+            errors.append(exc)
+        self._raise_cleanup_errors(errors)
+
+    def _cleanup_locked_start_without_ownership(
+        self,
+        run_id: str,
+        process: RunningProcess,
+        primary_error: Exception,
+    ) -> NoReturn:
+        errors: list[Exception] = [primary_error]
+        terminated = False
+        terminal_written = False
+        try:
+            process.terminate_owned()
+            terminated = True
+        except Exception as exc:
+            errors.append(exc)
+        try:
+            self._write_start_failure(
+                run_id,
+                RunFailureCode.STRATEGY_EXECUTION_FAILED,
+            )
+            terminal_written = True
+        except Exception as exc:
+            errors.append(exc)
+        if terminated and terminal_written:
+            try:
+                self.store.release_lock(run_id)
+            except Exception as exc:
+                errors.append(exc)
+        self._raise_cleanup_errors(errors)
+
+    @staticmethod
+    def _raise_cleanup_errors(errors: list[Exception]) -> NoReturn:
+        if len(errors) == 1:
+            raise errors[0]
+        raise ExceptionGroup("BACKTEST_START_CLEANUP_FAILED", errors)
+
+    @staticmethod
+    def _release_ownership_safely(
+        ownership: ActiveLockOwnership,
+        *,
+        keep_lock: bool,
+    ) -> None:
+        try:
+            ownership.release(keep_lock=keep_lock)
+        except (BacktestError, OSError, RuntimeError, ValueError):
+            pass
 
     def _reconcile_stale_lock(self) -> ActiveLock | None:
-        return self.store.reconcile_stale_lock(pid_exists=self._pid_is_active)
-
-    def _pid_is_active(self, pid: int) -> bool:
-        with self._ownership_lock:
-            if pid in self._owned_pids:
-                return True
-        try:
-            os.kill(pid, 0)
-        except ProcessLookupError:
-            return False
-        except PermissionError:
-            return True
-        return True
-
-    def _mark_owned(self, pid: int) -> None:
-        with self._ownership_lock:
-            self._owned_pids.add(pid)
-
-    def _unmark_owned(self, pid: int) -> None:
-        with self._ownership_lock:
-            self._owned_pids.discard(pid)
+        return self.store.reconcile_stale_lock()
 
     @staticmethod
     def _validated_monitor_result(result: MonitorResult) -> MonitorResult:
@@ -379,15 +456,6 @@ class BacktestService:
                 "failure_code": failure_code,
             },
         )
-
-    @staticmethod
-    def _stop_new_process(process: RunningProcess) -> None:
-        """Stop only the handle returned by this start attempt."""
-
-        terminate = getattr(process, "_terminate_owned_process_group", None)
-        if not callable(terminate):
-            raise RuntimeError("BACKTEST_STARTED_PROCESS_CLEANUP_UNAVAILABLE")
-        terminate()
 
     def _initial_record(
         self,

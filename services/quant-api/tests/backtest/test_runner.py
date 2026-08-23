@@ -584,6 +584,26 @@ def test_drain_start_failure_cleans_the_known_child_process_group(
     assert captured["process"].poll() is not None
 
 
+def test_public_terminate_owned_stops_reaps_and_memoizes_the_known_process_group(
+    settings: BacktestSettings,
+    run_paths: RunPaths,
+    validated_request: ValidatedBacktestRequest,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _fake_runner(monkeypatch)
+    _prepare_run(settings, run_paths, validated_request, mode="timeout")
+    handle = SubprocessRunner(settings).start(validated_request, run_paths)
+
+    terminated = handle.terminate_owned()
+
+    assert terminated.outcome is RunStatus.FAILED
+    assert terminated.failure_code is RunFailureCode.STRATEGY_EXECUTION_FAILED
+    assert terminated.exit_code is not None
+    assert handle.monitor() == terminated
+    with pytest.raises(ProcessLookupError):
+        os.killpg(handle.pid, 0)
+
+
 def test_start_rejects_run_record_without_exact_effective_config(
     settings: BacktestSettings,
     run_paths: RunPaths,

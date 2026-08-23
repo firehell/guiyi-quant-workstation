@@ -1263,3 +1263,136 @@ def test_reconcile_unreadable_run_record_fails_closed_and_keeps_lock(
         store.reconcile_stale_lock(pid_exists=lambda _pid: False)
 
     assert store.read_lock() == expected_lock
+
+
+def test_launch_serialization_blocks_another_store_instance(
+    store: ArtifactStore,
+) -> None:
+    other_store = ArtifactStore(
+        BacktestSettings(
+            python_executable=store.runs_root.parent / "python",
+            bundle_path=store.runs_root.parent / "bundle",
+            runs_root=store.runs_root,
+            timeout_seconds=3600,
+            cors_origins=("http://127.0.0.1:5173",),
+        )
+    )
+    first_entered = threading.Event()
+    release_first = threading.Event()
+    second_entered = threading.Event()
+    errors: list[BaseException] = []
+
+    def hold_first_launch() -> None:
+        try:
+            with store.serialize_launch():
+                first_entered.set()
+                assert release_first.wait(timeout=2)
+        except BaseException as exc:
+            errors.append(exc)
+
+    def enter_second_launch() -> None:
+        try:
+            with other_store.serialize_launch():
+                second_entered.set()
+        except BaseException as exc:
+            errors.append(exc)
+
+    first = threading.Thread(target=hold_first_launch)
+    second = threading.Thread(target=enter_second_launch)
+    first.start()
+    assert first_entered.wait(timeout=2)
+    second.start()
+
+    assert not second_entered.wait(timeout=0.1)
+    release_first.set()
+    first.join(timeout=2)
+    second.join(timeout=2)
+
+    assert not first.is_alive()
+    assert not second.is_alive()
+    assert second_entered.is_set()
+    assert errors == []
+
+
+def test_monitor_ownership_keeps_missing_pid_busy_without_calling_pid_checker(
+    store: ArtifactStore,
+    strategy_file: Path,
+) -> None:
+    _create_run(store, strategy_file)
+    expected = store.acquire_lock(RUN_ID, pid=2_147_483_647, started_at=STARTED_AT)
+    ownership = store.acquire_monitor_ownership(RUN_ID)
+    other_store = ArtifactStore(
+        BacktestSettings(
+            python_executable=store.runs_root.parent / "python",
+            bundle_path=store.runs_root.parent / "bundle",
+            runs_root=store.runs_root,
+            timeout_seconds=3600,
+            cors_origins=("http://127.0.0.1:5173",),
+        )
+    )
+    pid_checks: list[int] = []
+
+    try:
+        reconciled = other_store.reconcile_stale_lock(
+            pid_exists=lambda pid: pid_checks.append(pid) or False
+        )
+    finally:
+        ownership.release(keep_lock=True)
+
+    assert reconciled == expected
+    assert pid_checks == []
+    assert store.read_run(RUN_ID)["status"] == "running"
+    assert store.read_lock() == expected
+
+
+def test_monitor_ownership_unlinks_only_matching_active_lock_on_release(
+    store: ArtifactStore,
+    strategy_file: Path,
+) -> None:
+    _create_run(store, strategy_file)
+    store.acquire_lock(RUN_ID, pid=1234, started_at=STARTED_AT)
+    ownership = store.acquire_monitor_ownership(RUN_ID)
+
+    assert ownership.release(keep_lock=False) is True
+    assert store.read_lock() is None
+    assert ownership.release(keep_lock=False) is False
+
+
+def test_monitor_ownership_flock_failure_closes_opened_lock_descriptor(
+    store: ArtifactStore,
+    strategy_file: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _create_run(store, strategy_file)
+    store.acquire_lock(RUN_ID, pid=1234, started_at=STARTED_AT)
+    real_open = artifact_store_module.os.open
+    real_fstat = artifact_store_module.os.fstat
+    real_flock = artifact_store_module.fcntl.flock
+    opened_lock_descriptors: list[int] = []
+
+    def record_lock_open(
+        path: str | bytes | Path,
+        flags: int,
+        mode: int = 0o777,
+        *,
+        dir_fd: int | None = None,
+    ) -> int:
+        descriptor = real_open(path, flags, mode, dir_fd=dir_fd)
+        if path == "active.lock":
+            opened_lock_descriptors.append(descriptor)
+        return descriptor
+
+    def fail_ownership_flock(descriptor: int, operation: int) -> Any:
+        if operation & artifact_store_module.fcntl.LOCK_NB:
+            raise OSError("injected ownership flock failure")
+        return real_flock(descriptor, operation)
+
+    monkeypatch.setattr(artifact_store_module.os, "open", record_lock_open)
+    monkeypatch.setattr(artifact_store_module.fcntl, "flock", fail_ownership_flock)
+
+    with pytest.raises(OSError, match="injected ownership flock failure"):
+        store.acquire_monitor_ownership(RUN_ID)
+
+    assert len(opened_lock_descriptors) == 1
+    with pytest.raises(OSError):
+        real_fstat(opened_lock_descriptors[0])
