@@ -90,7 +90,9 @@
   Runtime-ready 结论；不写 Canonical/DB/Redis，不消费 prospective OOS，`auto_order=false`。
 
 已冻结 evidence 的 exact protocol、window、hash、count 和 artifact identity 由对应 policy、report 与
-测试保存，不在本文件复制；下方只保留唯一尚未执行的 MFM Gate 完整执行合同。
+测试保存，不在本文件复制；下方分别保留尚未执行的 MFM sequence forensic
+`2023-01-01..2026-08-20` 与 Diagnostic Phase A `2023-01-01..2026-08-18` 两项独立
+protocol/window Gate 边界，两者均不因代码或测试完成而视为已运行。
 
 ### MFM sequence forensic 真实 evidence Gate
 

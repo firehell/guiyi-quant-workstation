@@ -27,6 +27,9 @@ from app.market_data.member_rank_snapshot import (
     MemberRankRow,
     MemberRankSnapshotError,
 )
+from guiyi_quant.indicators.main_force_mirror_v2 import (
+    compute_main_force_mirror_v2_with_audit,
+)
 
 
 _DAY = date(2026, 8, 21)
@@ -153,6 +156,97 @@ class _MarketData:
         return self.contract_history
 
 
+class _PagedMarketData:
+    def __init__(
+        self,
+        bars: tuple[CanonicalBar, ...],
+        segments: tuple[ResolvedContractSegment, ...],
+    ) -> None:
+        self.bars = bars
+        self.segments = segments
+        self.page_requests: list[SeriesPageQuery] = []
+
+    def query_page(self, request: SeriesPageQuery) -> MarketSeriesPageResult:
+        self.page_requests.append(request)
+        candidates = tuple(
+            bar
+            for bar in self.bars
+            if request.before is None or bar.bar_end < request.before
+        )
+        bars = candidates[-request.limit :]
+        has_more_before = len(candidates) > len(bars)
+        return MarketSeriesPageResult(
+            request_identity={
+                "series_kind": request.series_kind.value,
+                "symbol": request.symbol,
+                "contract": request.contract,
+                "frequency": request.frequency.value,
+                "before": request.before.isoformat() if request.before else None,
+                "limit": request.limit,
+            },
+            bars=bars,
+            canonical_coverage=(bars[0].bar_end, bars[-1].bar_end),
+            has_more_before=has_more_before,
+            next_before=bars[0].bar_end if has_more_before else None,
+            resolved_contract_segments=self.segments,
+        )
+
+
+class _CausalPrefixLoader:
+    def __init__(
+        self,
+        bars: tuple[CanonicalBar, ...],
+        segments: tuple[ResolvedContractSegment, ...],
+    ) -> None:
+        self.bars = bars
+        self.segments = segments
+        self.requests: list[dict[str, object]] = []
+
+    def load(self, **kwargs) -> ActualDominantResearchSeries:
+        self.requests.append(kwargs)
+        bars = tuple(
+            bar
+            for bar in self.bars
+            if kwargs["since"] <= bar.trading_day <= kwargs["through"]
+        )
+        return ActualDominantResearchSeries(
+            {BarFrequency.H1: _series(bars, self.segments)},
+            self.segments,
+        )
+
+
+def _stateful_causal_bars(
+    *,
+    count: int,
+    history_floor: date,
+    bars_per_trading_day: int = 10,
+) -> tuple[CanonicalBar, ...]:
+    bars: list[CanonicalBar] = []
+    for index in range(count):
+        close = Decimal("100") + Decimal(index) / Decimal("100") + Decimal(
+            (index % 97) * 4
+        ) / Decimal("10")
+        open_ = close + Decimal((index % 5) - 2) / Decimal("4")
+        bars.append(
+            CanonicalBar(
+                datetime(2023, 1, 1, tzinfo=UTC)
+                + timedelta(
+                    days=index // bars_per_trading_day,
+                    hours=index % bars_per_trading_day,
+                ),
+                history_floor + timedelta(days=index // bars_per_trading_day),
+                open_,
+                max(open_, close) + Decimal(2 + index % 3),
+                min(open_, close) - Decimal(2 + index % 4) / Decimal("2"),
+                close,
+                Decimal(1000 + (index * 53) % 997),
+                None,
+                Decimal(5000 + (index * 37) % 701),
+            )
+        )
+    return tuple(bars)
+
+
 def _member_day(
     physical_contract: str,
     trade_date: date,
@@ -241,6 +335,102 @@ def test_service_rejects_unsupported_identity_before_reading_data() -> None:
         service.query_page(SeriesPageQuery("actual_dominant", "jm", "15m"))
 
 
+def test_actual_dominant_prefix_request_starts_at_authoritative_history_floor() -> None:
+    bar = _bar(0)
+    segment = (ResolvedContractSegment("JM2609", _DAY, _DAY),)
+    loader = _Loader(
+        ActualDominantResearchSeries(
+            {BarFrequency.H1: _series((bar,), segment)},
+            segment,
+        )
+    )
+    coverage = _Coverage()
+
+    _service(
+        _MarketData(_page((bar,), segment)),
+        loader,
+        coverage=coverage,
+    ).query_page(SeriesPageQuery("actual_dominant", "jm", "60m", limit=1))
+
+    assert loader.requests == [
+        {
+            "symbol": "jm",
+            "frequencies": (BarFrequency.H1,),
+            "since": coverage.history_floor,
+            "through": _DAY,
+        }
+    ]
+
+
+def test_actual_dominant_multi_page_points_and_audit_equal_one_shot_prefix() -> None:
+    """Catches ATR/EMA/pressure/sequence/latch resets at a page boundary."""
+    history_floor = date(2023, 1, 1)
+    bars = _stateful_causal_bars(
+        count=2105,
+        history_floor=history_floor,
+        bars_per_trading_day=1,
+    )
+    segment = (
+        ResolvedContractSegment(
+            "JM2609",
+            history_floor,
+            bars[-1].trading_day,
+        ),
+    )
+    market_data = _PagedMarketData(bars, segment)
+    loader = _CausalPrefixLoader(bars, segment)
+    coverage = _Coverage()
+    coverage.history_floor = history_floor
+    service = _service(
+        market_data,
+        loader,
+        coverage=coverage,
+    )
+
+    points_by_end = {}
+    trace_by_end = {}
+    before = bars[-1].bar_end + timedelta(microseconds=1)
+    while True:
+        result = service.query_diagnostic_page(
+            SeriesPageQuery(
+                SeriesKind.ACTUAL_DOMINANT,
+                "jm",
+                BarFrequency.H1,
+                before=before,
+                limit=2000,
+            )
+        )
+        points_by_end.update((point.bar_end, point) for point in result.page.points)
+        trace_by_end.update((item.bar_end, item) for item in result.audit_trace)
+        if not result.page.has_more_before:
+            break
+        assert result.page.next_before is not None
+        before = result.page.next_before
+
+    stitched_points = tuple(points_by_end[bar.bar_end] for bar in bars)
+    stitched_trace = tuple(trace_by_end[bar.bar_end] for bar in bars)
+    one_shot = compute_main_force_mirror_v2_with_audit(
+        bar_end=tuple(bar.bar_end for bar in bars),
+        trading_day=tuple(bar.trading_day for bar in bars),
+        physical_contract=("JM2609",) * len(bars),
+        open_=tuple(float(bar.open) for bar in bars),
+        high=tuple(float(bar.high) for bar in bars),
+        low=tuple(float(bar.low) for bar in bars),
+        close=tuple(float(bar.close) for bar in bars),
+        volume=tuple(float(bar.volume) for bar in bars),
+        open_interest=tuple(float(bar.open_interest) for bar in bars),
+    )
+
+    assert len(market_data.page_requests) == 2
+    assert stitched_points == one_shot.result.points
+    assert stitched_trace == one_shot.trace
+    assert tuple(
+        index
+        for index, item in enumerate(stitched_trace)
+        if item.reset_boundary == "series_start"
+    ) == (0,)
+
+
 def test_actual_dominant_roll_uses_new_contract_t_minus_one_and_cross_contract_baseline() -> None:
     older_days = tuple(date(2026, 7, day) for day in range(1, 21))
     prior = tuple(_member_day("JM2609", day, change=1) for day in older_days)
@@ -287,7 +477,7 @@ def test_actual_dominant_roll_uses_new_contract_t_minus_one_and_cross_contract_b
         {
             "symbol": "jm",
             "frequencies": (BarFrequency.H1,),
-            "since": _DAY,
+            "since": date(2010, 1, 4),
             "through": _DAY,
         }
     ]
@@ -380,7 +570,7 @@ def test_diagnostic_page_slices_audit_from_the_same_validated_full_prefix() -> N
         {
             "symbol": "jm",
             "frequencies": (BarFrequency.H1,),
-            "since": _DAY,
+            "since": date(2010, 1, 4),
             "through": _DAY,
         }
     ]

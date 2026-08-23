@@ -233,13 +233,12 @@ class MainForceMirrorV2Service:
         request: SeriesPageQuery,
         target: MarketSeriesPageResult,
     ) -> tuple[MarketSeriesResult, tuple[str, ...]]:
-        first_day = target.bars[0].trading_day
         last_day = target.bars[-1].trading_day
         if request.series_kind is SeriesKind.ACTUAL_DOMINANT:
             loaded = self.segment_loader.load(
                 symbol=request.symbol,
                 frequencies=(BarFrequency.H1,),
-                since=first_day,
+                since=self.coverage.history_floor,
                 through=last_day,
             )
             try:

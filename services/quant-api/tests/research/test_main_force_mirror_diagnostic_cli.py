@@ -15,14 +15,17 @@ from app.market_data.domain import (
     ActualDominantTradingDayQuery,
     BarFrequency,
     CanonicalBar,
+    MarketSeriesPageResult,
     MarketSeriesResult,
     ResolvedContractSegment,
     SeriesKind,
     SeriesPageQuery,
 )
+from app.market_data.actual_dominant_research import ActualDominantResearchSeries
 from app.market_data.main_force_mirror_v2_service import (
     MainForceMirrorV2DiagnosticPageResult,
     MainForceMirrorV2PageResult,
+    MainForceMirrorV2Service,
     MemberDatasetState,
 )
 from app.market_data.errors import InfrastructureError
@@ -752,6 +755,141 @@ def test_jm_named_view_reuses_same_full_input_without_second_source_read() -> No
     assert view.funnel.evaluable_bar_count == 0
     assert sum(request.symbol == "jm" for request in market_data.calls) == 1
     assert sum(request.symbol == "jm" for request in mirror.calls) == 1
+
+
+def test_diagnostic_real_multi_page_path_preserves_one_causal_v2_sequence() -> None:
+    """Catches diagnostic consumption of page-reset V2 points and audit traces."""
+    history_floor = date(2023, 1, 1)
+
+    def _diagnostic_bar(index: int) -> CanonicalBar:
+        close = (
+            Decimal("100")
+            + Decimal(index) / Decimal("100")
+            + Decimal((index * 7) % 37) / Decimal("10")
+        )
+        open_ = close + Decimal((index % 5) - 2) / Decimal("4")
+        return CanonicalBar(
+            bar_end=datetime(2023, 1, 1, tzinfo=UTC) + timedelta(days=index),
+            trading_day=history_floor + timedelta(days=index),
+            open=open_,
+            high=max(open_, close) + Decimal(2 + index % 3),
+            low=min(open_, close) - Decimal(2 + index % 4) / Decimal("2"),
+            close=close,
+            volume=Decimal(1000 + (index * 53) % 997),
+            turnover=None,
+            open_interest=Decimal(5000 + (index * 37) % 701),
+        )
+
+    bars = tuple(_diagnostic_bar(index) for index in range(2001))
+    segment = (
+        ResolvedContractSegment(
+            "JM2609",
+            history_floor,
+            bars[-1].trading_day,
+        ),
+    )
+
+    class _RealPagedMarketData:
+        def __init__(self) -> None:
+            self.calls: list[SeriesPageQuery] = []
+
+        def query_page(self, request: SeriesPageQuery) -> MarketSeriesPageResult:
+            self.calls.append(request)
+            candidates = tuple(
+                bar
+                for bar in bars
+                if request.before is None or bar.bar_end < request.before
+            )
+            page_bars = candidates[-request.limit :]
+            has_more_before = len(candidates) > len(page_bars)
+            return MarketSeriesPageResult(
+                request_identity={
+                    "series_kind": request.series_kind.value,
+                    "symbol": request.symbol,
+                    "contract": request.contract,
+                    "frequency": request.frequency.value,
+                    "before": (
+                        request.before.isoformat() if request.before else None
+                    ),
+                    "limit": request.limit,
+                },
+                bars=page_bars,
+                canonical_coverage=(
+                    page_bars[0].bar_end,
+                    page_bars[-1].bar_end,
+                ),
+                has_more_before=has_more_before,
+                next_before=(
+                    page_bars[0].bar_end if has_more_before else None
+                ),
+                resolved_contract_segments=segment,
+            )
+
+    class _RealPrefixLoader:
+        def __init__(self) -> None:
+            self.calls: list[dict[str, object]] = []
+
+        def load(self, **kwargs) -> ActualDominantResearchSeries:
+            self.calls.append(kwargs)
+            prefix = tuple(
+                bar
+                for bar in bars
+                if kwargs["since"] <= bar.trading_day <= kwargs["through"]
+            )
+            return ActualDominantResearchSeries(
+                {
+                    BarFrequency.H1: MarketSeriesResult(
+                        request_identity={},
+                        bars=prefix,
+                        coverage=(prefix[0].bar_end, prefix[-1].bar_end),
+                        resolved_contract_segments=segment,
+                    )
+                },
+                segment,
+            )
+
+    paged_market = _RealPagedMarketData()
+    prefix_loader = _RealPrefixLoader()
+    mirror = MainForceMirrorV2Service(
+        market_data=paged_market,
+        segment_loader=prefix_loader,
+        coverage=type("Coverage", (), {"history_floor": history_floor})(),
+        member_repository=None,
+    )
+    diagnostic = _service_module().MainForceMirrorDiagnosticService(
+        market_data=_MarketData(),
+        mirror_service=mirror,
+    )
+
+    _identity, points, trace, _member = diagnostic._query_product_pages(
+        symbol="jm",
+        bars=bars,
+        contracts=("JM2609",) * len(bars),
+        expected_identity=_service_module()._default_v2_identity(),
+    )
+    one_shot = compute_main_force_mirror_v2_with_audit(
+        bar_end=tuple(bar.bar_end for bar in bars),
+        trading_day=tuple(bar.trading_day for bar in bars),
+        physical_contract=("JM2609",) * len(bars),
+        open_=tuple(float(bar.open) for bar in bars),
+        high=tuple(float(bar.high) for bar in bars),
+        low=tuple(float(bar.low) for bar in bars),
+        close=tuple(float(bar.close) for bar in bars),
+        volume=tuple(float(bar.volume) for bar in bars),
+        open_interest=tuple(float(bar.open_interest) for bar in bars),
+    )
+
+    assert len(paged_market.calls) == 2
+    assert points == one_shot.result.points
+    assert trace == one_shot.trace
+    assert tuple(
+        index
+        for index, item in enumerate(trace)
+        if item.reset_boundary == "series_start"
+    ) == (0,)
+    assert {request["since"] for request in prefix_loader.calls} == {
+        history_floor
+    }
 
 
 def test_jm_named_view_is_explicitly_typed_unavailable_with_no_second_read() -> None:
