@@ -767,8 +767,13 @@ test('JDJ Strategy fails closed for AG profile unavailability', async ({ page })
 
 test('JDJ Strategy keeps generic server failures distinct from profile unavailability', async ({ page }) => {
   const bars = Array.from({ length: 120 }, (_, index) => bar(index))
-  await mockAlertMarkerSurface(page)
-  await mockWorkspace(page, { json: research() }, {
+  await mockAlertMarkerSurface(page, [], { symbol: 'jm', contract: 'JM2701' })
+  await mockWorkspace(page, { json: {
+    ...research(),
+    symbol: 'jm', product_name: '焦煤', sector: 'black', exchange: 'DCE', current_dominant: 'JM2701',
+  } }, {
+    symbol: 'jm',
+    resolvedContract: 'JM2701',
     bars,
     historicalEventTime: bars.at(-1).bar_end,
     canonicalCoverage: { start: bars[0].bar_end, end: bars.at(-1).bar_end },
