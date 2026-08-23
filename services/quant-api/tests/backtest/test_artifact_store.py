@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from datetime import datetime
 from pathlib import Path
+import threading
+from typing import IO, Any
 from zipfile import ZipFile
 
 import pytest
@@ -124,7 +126,7 @@ def test_update_run_is_atomic_and_preserves_existing_json_on_replace_failure(
 ) -> None:
     _create_run(store, strategy_file)
 
-    def fail_replace(source: Path, target: Path) -> None:
+    def fail_replace(source: Path | str, target: Path | str, **_kwargs: object) -> None:
         raise OSError("injected replace failure")
 
     monkeypatch.setattr(artifact_store_module.os, "replace", fail_replace)
@@ -241,6 +243,106 @@ def test_read_log_tail_caps_lines_and_bytes(
     assert len(store.read_log_tail(RUN_ID, "stdout").encode("utf-8")) == 65_536
 
 
+def test_read_log_tail_bounds_encoded_output_for_invalid_utf8(
+    store: ArtifactStore,
+    strategy_file: Path,
+) -> None:
+    _create_run(store, strategy_file)
+    store.run_paths(RUN_ID).stdout_log.write_bytes(b"\xff" * 65_536)
+
+    tail = store.read_log_tail(RUN_ID, "stdout")
+
+    assert len(tail.encode("utf-8")) <= 65_536
+    assert len(tail.splitlines()) <= 200
+
+
+def test_read_log_tail_bounds_output_when_byte_window_splits_utf8_character(
+    store: ArtifactStore,
+    strategy_file: Path,
+) -> None:
+    _create_run(store, strategy_file)
+    store.run_paths(RUN_ID).stdout_log.write_bytes(
+        b"prefix" + ("界" * 21_846).encode("utf-8")
+    )
+
+    tail = store.read_log_tail(RUN_ID, "stdout")
+
+    assert tail.endswith("界")
+    assert len(tail.encode("utf-8")) <= 65_536
+    assert len(tail.splitlines()) <= 200
+
+
+def test_read_log_tail_cannot_be_redirected_after_path_validation(
+    store: ArtifactStore,
+    strategy_file: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _create_run(store, strategy_file)
+    log = store.run_paths(RUN_ID).stdout_log
+    log.write_text("trusted", encoding="utf-8")
+    outside = tmp_path / "outside.log"
+    outside.write_text("escaped", encoding="utf-8")
+    original_open = Path.open
+    swapped = False
+
+    def swap_before_path_open(path: Path, *args: object, **kwargs: object) -> IO[Any]:
+        nonlocal swapped
+        if path == log and not swapped:
+            swapped = True
+            path.rename(path.with_name("stdout.original"))
+            path.symlink_to(outside)
+        return original_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", swap_before_path_open)
+
+    assert store.read_log_tail(RUN_ID, "stdout") == "trusted"
+
+
+def test_atomic_update_cannot_follow_run_directory_swapped_after_read(
+    store: ArtifactStore,
+    strategy_file: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _create_run(store, strategy_file)
+    run_root = store.run_paths(RUN_ID).root
+    outside = tmp_path / "outside-run"
+    outside.mkdir()
+    outside_record = {"run_id": "outside", "status": "protected"}
+    (outside / "run.json").write_text(json.dumps(outside_record), encoding="utf-8")
+    real_replace = artifact_store_module.os.replace
+    swapped = False
+
+    def swap_before_replace(
+        source: str | bytes | Path,
+        target: str | bytes | Path,
+        **kwargs: object,
+    ) -> None:
+        nonlocal swapped
+        if Path(target).name == "run.json" and not swapped:
+            swapped = True
+            run_root.rename(run_root.with_name(f"{RUN_ID}-original"))
+            run_root.symlink_to(outside, target_is_directory=True)
+        real_replace(source, target, **kwargs)
+
+    monkeypatch.setattr(artifact_store_module.os, "replace", swap_before_replace)
+
+    store.update_run(RUN_ID, {"status": RunStatus.SUCCEEDED})
+
+    assert (
+        json.loads((outside / "run.json").read_text(encoding="utf-8")) == outside_record
+    )
+    assert (
+        json.loads(
+            (run_root.with_name(f"{RUN_ID}-original") / "run.json").read_text(
+                encoding="utf-8"
+            )
+        )["status"]
+        == "succeeded"
+    )
+
+
 @pytest.mark.parametrize(
     ("stream", "max_lines", "max_bytes"),
     [
@@ -278,11 +380,16 @@ def test_resolve_artifact_accepts_only_fixed_available_files(
     paths.result_pickle.write_bytes(b"pickle bytes are download-only")
     paths.equity_png.write_bytes(b"png")
 
-    assert store.resolve_artifact(RUN_ID, "result_pickle") == paths.result_pickle
-    assert store.resolve_artifact(RUN_ID, "equity_png") == paths.equity_png
-    assert store.resolve_artifact(RUN_ID, "stdout_log") == paths.stdout_log
-    assert store.resolve_artifact(RUN_ID, "stderr_log") == paths.stderr_log
-    assert store.resolve_artifact(RUN_ID, "run_json") == paths.run_json
+    expected = {
+        "result_pickle": b"pickle bytes are download-only",
+        "equity_png": b"png",
+        "stdout_log": b"",
+        "stderr_log": b"",
+        "run_json": paths.run_json.read_bytes(),
+    }
+    for kind, content in expected.items():
+        with store.resolve_artifact(RUN_ID, kind) as artifact:
+            assert artifact.read() == content
 
     for kind in ("strategy.py", "result_json", "../../outside", "report_zip"):
         with pytest.raises(BacktestError, match="^BACKTEST_ARTIFACT_NOT_FOUND$"):
@@ -302,6 +409,24 @@ def test_resolve_artifact_rejects_symlink_even_when_target_is_inside_run(
         store.resolve_artifact(RUN_ID, "equity_png")
 
 
+def test_resolved_artifact_handle_remains_bound_when_path_is_replaced(
+    store: ArtifactStore,
+    strategy_file: Path,
+    tmp_path: Path,
+) -> None:
+    _create_run(store, strategy_file)
+    artifact_path = store.run_paths(RUN_ID).equity_png
+    artifact_path.write_bytes(b"trusted-png")
+    outside = tmp_path / "outside.png"
+    outside.write_bytes(b"escaped-png")
+
+    with store.resolve_artifact(RUN_ID, "equity_png") as artifact:
+        artifact_path.rename(artifact_path.with_name("equity.original.png"))
+        artifact_path.symlink_to(outside)
+
+        assert artifact.read() == b"trusted-png"
+
+
 def test_temporary_report_zip_contains_report_tree_and_is_always_cleaned_up(
     store: ArtifactStore,
     strategy_file: Path,
@@ -313,17 +438,32 @@ def test_temporary_report_zip_contains_report_tree_and_is_always_cleaned_up(
     (report / "trades" / "trades.csv").write_text("id\n1\n", encoding="utf-8")
 
     with pytest.raises(RuntimeError, match="consumer failed"):
-        with store.temporary_report_zip(RUN_ID) as zip_path:
-            assert zip_path.parent != store.runs_root
-            assert zip_path.is_file()
-            with ZipFile(zip_path) as archive:
+        with store.temporary_report_zip(RUN_ID) as zip_handle:
+            with ZipFile(zip_handle) as archive:
                 assert archive.namelist() == [
                     "report/summary.csv",
                     "report/trades/trades.csv",
                 ]
             raise RuntimeError("consumer failed")
 
-    assert not zip_path.exists()
+    assert zip_handle.closed
+
+
+def test_temporary_report_zip_preserves_consumer_value_error(
+    store: ArtifactStore,
+    strategy_file: Path,
+) -> None:
+    _create_run(store, strategy_file)
+    (store.run_paths(RUN_ID).report_dir / "summary.csv").write_text(
+        "summary",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="consumer rejected response"):
+        with store.temporary_report_zip(RUN_ID) as zip_handle:
+            raise ValueError("consumer rejected response")
+
+    assert zip_handle.closed
 
 
 def test_temporary_report_zip_rejects_symlinks_in_report_tree(
@@ -339,6 +479,48 @@ def test_temporary_report_zip_rejects_symlinks_in_report_tree(
     with pytest.raises(BacktestError, match="^BACKTEST_ARTIFACT_NOT_FOUND$"):
         with store.temporary_report_zip(RUN_ID):
             pytest.fail("unsafe report must not be yielded")
+
+
+def test_report_zip_reads_opened_file_not_replaced_path(
+    store: ArtifactStore,
+    strategy_file: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _create_run(store, strategy_file)
+    report_file = store.run_paths(RUN_ID).report_dir / "summary.csv"
+    report_file.write_bytes(b"trusted-report")
+    outside = tmp_path / "outside.csv"
+    outside.write_bytes(b"escaped-report")
+    original_write = ZipFile.write
+    swapped = False
+
+    def swap_before_zip_read(
+        archive: ZipFile,
+        filename: str | Path,
+        arcname: str | Path | None = None,
+        compress_type: int | None = None,
+        compresslevel: int | None = None,
+    ) -> None:
+        nonlocal swapped
+        path = Path(filename)
+        if path == report_file and not swapped:
+            swapped = True
+            path.rename(path.with_name("summary.original.csv"))
+            path.symlink_to(outside)
+        original_write(
+            archive,
+            filename,
+            arcname=arcname,
+            compress_type=compress_type,
+            compresslevel=compresslevel,
+        )
+
+    monkeypatch.setattr(ZipFile, "write", swap_before_zip_read)
+
+    with store.temporary_report_zip(RUN_ID) as zip_handle:
+        with ZipFile(zip_handle) as archive:
+            assert archive.read("report/summary.csv") == b"trusted-report"
 
 
 def test_acquire_lock_uses_exclusive_creation_and_preserves_first_owner(
@@ -364,6 +546,82 @@ def test_release_lock_only_removes_matching_run(store: ArtifactStore) -> None:
     assert store.lock_path.exists()
     assert store.release_lock(RUN_ID) is True
     assert not store.lock_path.exists()
+
+
+def test_release_lock_serializes_owner_check_and_unlink_across_store_instances(
+    store: ArtifactStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store.acquire_lock(RUN_ID, pid=1234, started_at=STARTED_AT)
+    other_store = ArtifactStore(
+        BacktestSettings(
+            python_executable=store.runs_root.parent / "python",
+            bundle_path=store.runs_root.parent / "bundle",
+            runs_root=store.runs_root,
+            timeout_seconds=3600,
+            cors_origins=("http://127.0.0.1:5173",),
+        )
+    )
+    old_release_paused = threading.Event()
+    allow_old_release = threading.Event()
+    replacement_entered = threading.Event()
+    replacement_done = threading.Event()
+    errors: list[BaseException] = []
+    releasing_thread_id: int | None = None
+    real_unlink = artifact_store_module.os.unlink
+    paused_once = False
+
+    def pause_before_owner_unlink(
+        path: str | bytes | Path,
+        *,
+        dir_fd: int | None = None,
+    ) -> None:
+        nonlocal paused_once
+        if (
+            threading.get_ident() == releasing_thread_id
+            and Path(path).name == "active.lock"
+            and not paused_once
+        ):
+            paused_once = True
+            old_release_paused.set()
+            assert allow_old_release.wait(timeout=5)
+        real_unlink(path, dir_fd=dir_fd)
+
+    monkeypatch.setattr(artifact_store_module.os, "unlink", pause_before_owner_unlink)
+
+    def release_old_owner() -> None:
+        nonlocal releasing_thread_id
+        releasing_thread_id = threading.get_ident()
+        try:
+            store.release_lock(RUN_ID)
+        except BaseException as exc:
+            errors.append(exc)
+
+    def replace_owner() -> None:
+        replacement_entered.set()
+        try:
+            other_store.release_lock(RUN_ID)
+            other_store.acquire_lock("new-owner", pid=5678, started_at=STARTED_AT)
+        except BaseException as exc:
+            errors.append(exc)
+        finally:
+            replacement_done.set()
+
+    old_thread = threading.Thread(target=release_old_owner)
+    replacement_thread = threading.Thread(target=replace_owner)
+    old_thread.start()
+    assert old_release_paused.wait(timeout=5)
+    replacement_thread.start()
+    assert replacement_entered.wait(timeout=5)
+    replacement_was_serialized = not replacement_done.wait(timeout=0.2)
+    allow_old_release.set()
+    old_thread.join(timeout=5)
+    replacement_thread.join(timeout=5)
+
+    assert replacement_was_serialized
+    assert errors == []
+    assert store.read_lock() is not None
+    assert store.read_lock().run_id == "new-owner"
 
 
 def test_read_lock_rejects_dangling_symlink_instead_of_treating_it_as_unlocked(
@@ -407,3 +665,31 @@ def test_reconcile_missing_pid_marks_running_run_interrupted_and_unlocks(
     assert run["finished_at"].endswith("+00:00")
     datetime.fromisoformat(run["finished_at"])
     assert not store.lock_path.exists()
+
+
+@pytest.mark.parametrize(
+    "damaged_record",
+    [
+        {},
+        {"run_id": "different-run", "status": "running", "started_at": STARTED_AT},
+        {"run_id": RUN_ID, "status": "unknown", "started_at": STARTED_AT},
+        {"run_id": RUN_ID, "started_at": STARTED_AT},
+        {"run_id": RUN_ID, "status": "running", "started_at": "different-time"},
+    ],
+)
+def test_reconcile_damaged_run_identity_fails_closed_and_keeps_lock(
+    store: ArtifactStore,
+    strategy_file: Path,
+    damaged_record: dict[str, object],
+) -> None:
+    _create_run(store, strategy_file)
+    store.run_paths(RUN_ID).run_json.write_text(
+        json.dumps(damaged_record),
+        encoding="utf-8",
+    )
+    expected_lock = store.acquire_lock(RUN_ID, pid=1234, started_at=STARTED_AT)
+
+    with pytest.raises(ValueError, match="^BACKTEST_RUN_RECORD_INVALID$"):
+        store.reconcile_stale_lock(pid_exists=lambda _pid: False)
+
+    assert store.read_lock() == expected_lock
