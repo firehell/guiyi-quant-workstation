@@ -513,7 +513,12 @@ async function mockWorkspace(page, researchResponse, options = {}) {
       }
       return route.fulfill({ json: response })
     }
-    if (url.pathname.endsWith('/state')) return route.fulfill({ json: { symbol: workspaceSymbol, series_kind: url.searchParams.get('series_kind'), frequency: url.searchParams.get('frequency'), operational: true, phase: options.live ? 'TRADING' : 'CLOSED', trading_day: '2026-08-11', live_eligible: !!options.live, live_available: !!options.live, live_contract: options.live ? workspaceContract : null, canonical_end: null, after_market: options.afterMarket || {} } })
+    if (url.pathname.endsWith('/state')) {
+      if (options.marketStateDelayMs) {
+        await new Promise((resolve) => setTimeout(resolve, options.marketStateDelayMs))
+      }
+      return route.fulfill({ json: { symbol: workspaceSymbol, series_kind: url.searchParams.get('series_kind'), frequency: url.searchParams.get('frequency'), operational: true, phase: options.live ? 'TRADING' : 'CLOSED', trading_day: '2026-08-11', live_eligible: !!options.live, live_available: !!options.live, live_contract: options.live ? workspaceContract : null, canonical_end: null, after_market: options.afterMarket || {} } })
+    }
     if (url.pathname.endsWith('/bars/page')) {
       const request = Object.fromEntries(url.searchParams)
       marketRequests.push(request)
@@ -767,6 +772,7 @@ test('JDJ Strategy fails closed for AG profile unavailability', async ({ page })
 
 test('JDJ Strategy keeps generic server failures distinct from profile unavailability', async ({ page }) => {
   const bars = Array.from({ length: 120 }, (_, index) => bar(index))
+  const jdjStrategyHistoricalRequests = []
   await mockAlertMarkerSurface(page, [], { symbol: 'jm', contract: 'JM2701' })
   await mockWorkspace(page, { json: {
     ...research(),
@@ -777,13 +783,16 @@ test('JDJ Strategy keeps generic server failures distinct from profile unavailab
     bars,
     historicalEventTime: bars.at(-1).bar_end,
     canonicalCoverage: { start: bars[0].bar_end, end: bars.at(-1).bar_end },
+    jdjStrategyHistoricalRequests,
     jdjStrategyHttpStatus: 503,
+    marketStateDelayMs: 400,
   })
   await page.goto('/market/chart?symbol=jm&series_kind=actual_dominant&frequency=1m')
 
   await page.getByRole('group', { name: 'Overlay' })
     .getByRole('button', { name: '日进斗金策略', exact: true }).click()
 
+  await expect.poll(() => jdjStrategyHistoricalRequests.length).toBe(1)
   await expect(page.getByText('历史因果重放暂不可用；Canonical K 线仍可正常查看。', { exact: true })).toBeVisible()
 })
 

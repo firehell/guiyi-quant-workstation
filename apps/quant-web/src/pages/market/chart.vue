@@ -272,7 +272,7 @@ watch([contract, seriesKind, frequency], async () => {
 })
 
 watch(selectedOverlay, () => {
-  if (!metadataReady || synchronizingSymbol) return
+  if (synchronizingSymbol) return
   resetSubingSnapshot()
   void refreshSubing()
   void syncHistoricalResearchMarkers(
