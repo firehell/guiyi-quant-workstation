@@ -2,6 +2,20 @@
 
 本文件记录正式产品版本；开发过程与逐品种执行流水从 Git history 追溯。
 
+## [1.8.0] - 2026-08-24
+
+- 纳入 local-only、research-only 的 RQAlpha Plus Web 工作台：浏览器仅在 loopback 使用独立 sidecar，
+  只读外部 Bundle、只写仓库外 artifact；不接主 API、Canonical、DB、Redis、Alert、Execution Review、
+  Runtime、Candidate/OOS 或订单。sidecar 不随本 release 加载，真实 smoke 仍是独立人工 Gate。
+- 纳入 JM `actual_dominant + 1m` 日进斗金参考策略 Historical replay 与 Market reference marker；
+  只复用既有 Candidate reducer 输出 deterministic reference action，不形成正式回测、交易指令、
+  Alert 或持久化结果。
+- 纳入 Market Historical Research Overlay、Trend Focus 只读读模型与 Main Force Mirror Diagnostic Phase A
+  的 CLI/composition/payload 边界；诊断的真实 JM/active60 evidence Gate 仍 pending，不产生策略、
+  Alert、Runtime 或晋升结论。
+- 本版不新增 migration，不写 Canonical、production DB 或 Redis，不扩大 Alert Scope/transport，不执行
+  通知 retry/replay/backfill，也不增加订单能力；`auto_order=false` 不变。
+
 ## [1.7.0] - 2026-08-22
 
 - 收敛 Runtime seam：离线 Research 组装从 Market/Alert/Runtime 依赖方向中移出，Research CLI 拆为

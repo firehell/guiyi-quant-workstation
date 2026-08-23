@@ -1,6 +1,6 @@
 # 归一量化工作站
 
-本地、单用户的国内期货量化研究工作站。本代码版本为 `v1.7.0`；正式 release、production Runtime、
+本地、单用户的国内期货量化研究工作站。本代码版本为 `v1.8.0`；正式 release、production Runtime、
 数据库 migration 与 Alert Scope 的实际状态只以 `STATUS.md` 为准。当前可执行代码面包括 Market Web、
 Canonical 历史行情、Market API、data CLI、Runtime 只读状态、Alert V2、当前交易日 Formal Signal、
 Product 双 Rule Scope/今日记录、Execution Review V1，以及苏冰 Factor/Calibration/Signal 研究观察。项目不实现自动交易或
@@ -8,8 +8,8 @@ Product 双 Rule Scope/今日记录、Execution Review V1，以及苏冰 Factor/
 
 仓库另包含 `/backtests` + 独立 loopback local app 的 RQAlpha Plus 研究工作台实现。它只读
 外部 Bundle、只写独立研究 artifact，不进入 Canonical/MarketDataService、DB/Redis、Alert、
-Execution Review、Runtime、Candidate/OOS 或真实订单路径。该实现未包含在当前 `v1.7.0` release/
-production Runtime，sidecar 也未加载；真实 RQAlpha smoke 仍需新的当次单次执行意图。
+Execution Review、Runtime、Candidate/OOS 或真实订单路径。该实现包含在 `v1.8.0` release 代码中，
+但 sidecar 仍未加载到 production Runtime；真实 RQAlpha smoke 仍需新的当次单次执行意图。
 
 ## 快速导航
 
