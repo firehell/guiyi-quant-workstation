@@ -15,6 +15,10 @@ Indicator Kernel（`guiyi_quant/indicators/`），旧 vn.py-compatible 策略研
 history 可追溯），当前不存在回测引擎、策略适配层或策略 HTTP/worker。Alert 的两张表与 Execution
 Review 的四张表都是独立 Application Domain，不属于 Market Catalog，不改变八表合同。
 
+## 个人量化架构原则
+
+> **先写业务逻辑，重复真实出现后再抽象；先满足个人研究闭环，不为未来多人、分布式、通用策略平台预建设。**
+
 ## 项目辅助范围
 
 项目辅助只保留直接服务当前 active 领域的六个 skill：数据建模、期货数据、Market K 线工作台、后端、前端与 UI bugfix。不保留重复 `AGENTS.md` / `docs/DEVELOPMENT.md` / `TESTING.md` / `STATUS.md` 的 workflow、governor、docs skill、项目 Reviewer 或 OpenSpec/Cursor command wrapper。OpenSpec 在仓库中只保留 active specs 与 CLI validation；已完成过程只从 Git history 追溯。未来重新引入策略、回测或风险计算，必须先以新任务新合同定义其业务边界，再按需恢复直接有价值的辅助说明。
