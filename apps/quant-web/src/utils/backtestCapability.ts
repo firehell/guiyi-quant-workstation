@@ -1,4 +1,5 @@
-import { mapBacktestError } from '../api/backtests.ts'
+import { isLocalBacktestHostname, mapBacktestError } from '../api/backtests.ts'
+export { isLocalBacktestHostname } from '../api/backtests.ts'
 import type {
   BacktestCapability,
   BacktestFormErrors,
@@ -16,11 +17,6 @@ export const BACKTEST_POLL_INTERVAL_MS = 2000
 
 const TERMINAL_STATUSES = new Set(['succeeded', 'failed', 'timed_out', 'interrupted'])
 const DECIMAL_PATTERN = /^-?(?:\d+(?:\.\d*)?|\.\d+)$/
-
-export function isLocalBacktestHostname(hostname: string) {
-  const normalized = hostname.toLowerCase()
-  return normalized === 'localhost' || normalized === '127.0.0.1'
-}
 
 export async function probeBacktestCapability(
   hostname: string,
@@ -170,6 +166,7 @@ export class BacktestPoller {
       const run = await this.fetchRun(runId)
       if (!this.isCurrent(generation)) return
       this.onUpdate(run)
+      if (!this.isCurrent(generation)) return
       if (TERMINAL_STATUSES.has(run.status)) {
         this.stop()
         return
@@ -263,9 +260,15 @@ function validateParameter(
 }
 
 function isIsoDate(value: string) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
-  const parsed = new Date(`${value}T00:00:00Z`)
-  return !Number.isNaN(parsed.valueOf()) && parsed.toISOString().slice(0, 10) === value
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
+  if (!match) return false
+  const year = Number(match[1])
+  const month = Number(match[2])
+  const day = Number(match[3])
+  if (year < 1 || year > 9999 || month < 1 || month > 12 || day < 1) return false
+  const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0)
+  const daysInMonth = [31, leapYear ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+  return day <= (daysInMonth[month - 1] ?? 0)
 }
 
 function isDecimalString(value: unknown): value is string {

@@ -276,6 +276,32 @@ describe('pure backtest form validation', () => {
       'parameters.arbitrary_python': '参数 arbitrary_python 未在策略注册表中。',
     })
   })
+
+  it('matches Python date ISO roundtrip rules from year 0001 through 9999', () => {
+    const invalidDates = [
+      '0000-01-01',
+      '1900-02-29',
+      '2026-02-29',
+      '2026-04-31',
+      '2026-13-01',
+      '10000-01-01',
+    ]
+    for (const startDate of invalidDates) {
+      assert.equal(
+        validateBacktestForm(validForm({ startDate }), strategy).dateRange,
+        '请输入有效的 ISO 日期。',
+      )
+    }
+
+    assert.deepEqual(
+      validateBacktestForm(validForm({ startDate: '0001-01-01', endDate: '9999-12-31' }), strategy),
+      {},
+    )
+    assert.deepEqual(
+      validateBacktestForm(validForm({ startDate: '2000-02-29', endDate: '2000-02-29' }), strategy),
+      {},
+    )
+  })
 })
 
 describe('BacktestPoller lifecycle', () => {
@@ -367,11 +393,35 @@ describe('BacktestPoller lifecycle', () => {
     poller.dispose()
     assert.equal(scheduler.pendingCount, 0)
   })
+
+  it('does not let terminal run A stop run B started synchronously by the update callback', async () => {
+    const scheduler = new ManualScheduler()
+    const updates: string[] = []
+    let poller: BacktestPoller
+    poller = new BacktestPoller(
+      async (runId) => runDetail(runId === 'run-a' ? 'succeeded' : 'running', runId),
+      (run) => {
+        updates.push(`${run.run_id}:${run.status}`)
+        if (run.run_id === 'run-a') poller.start('run-b')
+      },
+      { scheduler },
+    )
+
+    poller.start('run-a')
+    await flushPromises()
+
+    assert.deepEqual(updates, ['run-a:succeeded', 'run-b:running'])
+    assert.equal(poller.isPolling, true)
+    assert.equal(scheduler.pendingCount, 1)
+    assert.deepEqual(scheduler.delays(), [2000])
+
+    poller.dispose()
+  })
 })
 
-function runDetail(status: RunStatus): BacktestRunDetail {
+function runDetail(status: RunStatus, runId = RUN_ID): BacktestRunDetail {
   return {
-    run_id: RUN_ID,
+    run_id: runId,
     research_only: true,
     formal_evidence: false,
     promotion_eligible: false,

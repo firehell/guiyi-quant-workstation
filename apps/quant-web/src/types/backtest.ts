@@ -4,13 +4,15 @@ export type BacktestSlippageModel = 'PriceRatioSlippage' | 'TickSizeSlippage'
 export type BacktestParameterType = 'integer' | 'decimal' | 'boolean' | 'enum'
 export type BacktestParameterValue = number | string | boolean
 export type RunStatus = 'running' | 'succeeded' | 'failed' | 'timed_out' | 'interrupted'
-export type ArtifactKind =
-  | 'report_zip'
-  | 'result_pickle'
-  | 'equity_png'
-  | 'stdout_log'
-  | 'stderr_log'
-  | 'run_json'
+export const BACKTEST_ARTIFACT_KINDS = [
+  'report_zip',
+  'result_pickle',
+  'equity_png',
+  'stdout_log',
+  'stderr_log',
+  'run_json',
+] as const
+export type ArtifactKind = typeof BACKTEST_ARTIFACT_KINDS[number]
 
 export type BacktestHttpErrorCode =
   | 'BACKTEST_LOCAL_UNAVAILABLE'
@@ -42,18 +44,30 @@ export interface BacktestRunForm {
   parameters: Record<string, unknown>
 }
 
-export interface BacktestRunRequest {
+interface BacktestRunRequestIdentity {
   strategy_id: string
   start_date: string
   end_date: string
   frequency: BacktestFrequency
+  parameters: Record<string, unknown>
+}
+
+export interface BacktestNormalizedRunRequest extends BacktestRunRequestIdentity {
   future_cash: string
   matching_type: BacktestMatchingType
   margin_multiplier: string
   futures_commission_multiplier: string
   slippage_model: BacktestSlippageModel
   slippage: string
-  parameters: Record<string, unknown>
+}
+
+export interface BacktestStoredRunRequest extends BacktestRunRequestIdentity {
+  future_cash: string | null
+  matching_type: BacktestMatchingType | null
+  margin_multiplier: string | null
+  futures_commission_multiplier: string | null
+  slippage_model: BacktestSlippageModel | null
+  slippage: string | null
 }
 
 export interface BacktestParameterDescriptor {
@@ -115,7 +129,7 @@ export interface BacktestRunSummary {
   repository_commit: string
   bundle_path: string
   versions: BacktestVersions
-  requested_config: BacktestRunRequest
+  requested_config: BacktestStoredRunRequest
   effective_config: Record<string, unknown>
   effective_parameters: Record<string, BacktestParameterValue>
   status: RunStatus

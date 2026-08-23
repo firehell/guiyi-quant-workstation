@@ -1,4 +1,5 @@
 import axios, { type AxiosAdapter, type AxiosInstance } from 'axios'
+import { BACKTEST_ARTIFACT_KINDS } from '../types/backtest.ts'
 
 import type {
   ArtifactKind,
@@ -6,7 +7,7 @@ import type {
   BacktestHttpErrorCode,
   BacktestRunDetail,
   BacktestRunForm,
-  BacktestRunRequest,
+  BacktestNormalizedRunRequest,
   BacktestRunSummary,
   BacktestSafeError,
   BacktestStrategy,
@@ -14,6 +15,7 @@ import type {
 
 
 export const DEFAULT_BACKTEST_API_BASE_URL = 'http://127.0.0.1:8011/api/v1/backtests'
+const BACKTEST_BASE_URL_PATTERN = /^http:\/\/(?:localhost|127\.0\.0\.1):8011\/api\/v1\/backtests$/
 
 const SAFE_ERROR_MESSAGES: Record<BacktestHttpErrorCode, string> = {
   BACKTEST_LOCAL_UNAVAILABLE: '本机回测服务不可用，请检查本机配置并重试。',
@@ -30,6 +32,7 @@ const SAFE_ERROR_MESSAGES: Record<BacktestHttpErrorCode, string> = {
 const ERROR_CODES = new Set<BacktestHttpErrorCode>(
   Object.keys(SAFE_ERROR_MESSAGES) as BacktestHttpErrorCode[],
 )
+const ARTIFACT_KINDS: ReadonlySet<string> = new Set(BACKTEST_ARTIFACT_KINDS)
 
 export interface BacktestClient {
   health(): Promise<BacktestHealth>
@@ -46,13 +49,31 @@ export interface BacktestClientOptions {
   hostname?: string
 }
 
+export class BacktestClientError extends Error {
+  readonly code: BacktestHttpErrorCode
+
+  constructor(code: BacktestHttpErrorCode) {
+    super(code)
+    this.name = 'BacktestClientError'
+    this.code = code
+  }
+}
+
 export function resolveBacktestApiBaseUrl(configured?: string) {
   const value = configured?.trim() ?? ''
   if (!value) return DEFAULT_BACKTEST_API_BASE_URL
-  return value.replace(/\/+$/, '')
+  if (!BACKTEST_BASE_URL_PATTERN.test(value)) {
+    throw new BacktestClientError('BACKTEST_LOCAL_UNAVAILABLE')
+  }
+  return value
 }
 
-export function serializeBacktestRunRequest(form: BacktestRunForm): BacktestRunRequest {
+export function isLocalBacktestHostname(hostname: string) {
+  const normalized = hostname.toLowerCase()
+  return normalized === 'localhost' || normalized === '127.0.0.1'
+}
+
+export function serializeBacktestRunRequest(form: BacktestRunForm): BacktestNormalizedRunRequest {
   return {
     strategy_id: form.strategyId,
     start_date: form.startDate,
@@ -70,6 +91,9 @@ export function serializeBacktestRunRequest(form: BacktestRunForm): BacktestRunR
 
 export function artifactUrl(baseURL: string, runId: string, kind: ArtifactKind) {
   const base = resolveBacktestApiBaseUrl(baseURL)
+  if (!ARTIFACT_KINDS.has(kind)) {
+    throw new BacktestClientError('BACKTEST_ARTIFACT_NOT_FOUND')
+  }
   return `${base}/runs/${encodeURIComponent(runId)}/artifacts/${kind}`
 }
 
@@ -90,8 +114,8 @@ export function createBacktestClient(options: BacktestClientOptions = {}): Backt
   })
 
   function requireLocalBrowser() {
-    if (hostname !== undefined && !isExactLocalHostname(hostname)) {
-      return Promise.reject(new Error('BACKTEST_LOCAL_UNAVAILABLE'))
+    if (hostname !== undefined && !isLocalBacktestHostname(hostname)) {
+      return Promise.reject(new BacktestClientError('BACKTEST_LOCAL_UNAVAILABLE'))
     }
     return undefined
   }
@@ -112,11 +136,6 @@ export function createBacktestClient(options: BacktestClientOptions = {}): Backt
   }
 }
 
-function isExactLocalHostname(hostname: string) {
-  const normalized = hostname.toLowerCase()
-  return normalized === 'localhost' || normalized === '127.0.0.1'
-}
-
 function browserHostname() {
   if (typeof window === 'undefined') return undefined
   return window.location.hostname
@@ -124,6 +143,9 @@ function browserHostname() {
 
 function readSafeErrorCode(error: unknown): BacktestHttpErrorCode | undefined {
   if (!isRecord(error)) return undefined
+  if (typeof error.code === 'string' && ERROR_CODES.has(error.code as BacktestHttpErrorCode)) {
+    return error.code as BacktestHttpErrorCode
+  }
   const response = error.response
   if (!isRecord(response)) return undefined
   const data = response.data

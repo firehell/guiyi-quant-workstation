@@ -14,6 +14,7 @@ import {
 import type {
   BacktestHealth,
   BacktestRunForm,
+  BacktestStoredRunRequest,
   BacktestRunSummary,
 } from '../src/types/backtest.ts'
 
@@ -72,9 +73,54 @@ describe('dedicated local backtest HTTP client', () => {
     assert.equal(resolveBacktestApiBaseUrl(undefined), DEFAULT_BACKTEST_API_BASE_URL)
     assert.equal(resolveBacktestApiBaseUrl('  '), DEFAULT_BACKTEST_API_BASE_URL)
     assert.equal(
-      resolveBacktestApiBaseUrl('http://localhost:9011/custom/backtests///'),
-      'http://localhost:9011/custom/backtests',
+      resolveBacktestApiBaseUrl('  http://localhost:8011/api/v1/backtests  '),
+      'http://localhost:8011/api/v1/backtests',
     )
+  })
+
+  it('rejects every configured URL that is not the exact fixed loopback sidecar', () => {
+    const invalidUrls = [
+      'https://127.0.0.1:8011/api/v1/backtests',
+      'http://192.168.1.20:8011/api/v1/backtests',
+      'http://localhost.example.com:8011/api/v1/backtests',
+      'http://[::1]:8011/api/v1/backtests',
+      'http://localhost/api/v1/backtests',
+      'http://localhost:8000/api/v1/backtests',
+      'http://localhost:8011/api/v1/backtests/',
+      'http://localhost:8011/api/v1/backtests?target=remote',
+      'http://localhost:8011/api/v1/backtests#fragment',
+      'http://user:password@localhost:8011/api/v1/backtests',
+      'http://localhost:8011/api/v1/other/../backtests',
+      'not a URL',
+    ]
+
+    for (const configured of invalidUrls) {
+      assert.throws(
+        () => resolveBacktestApiBaseUrl(configured),
+        { message: 'BACKTEST_LOCAL_UNAVAILABLE' },
+      )
+      assert.throws(
+        () => createBacktestClient({ baseURL: configured }),
+        { message: 'BACKTEST_LOCAL_UNAVAILABLE' },
+      )
+    }
+  })
+
+  it('makes zero HTTP calls when the browser hostname is remote', async () => {
+    let requests = 0
+    const adapter: AxiosAdapter = async (config) => {
+      requests += 1
+      return response(config, {})
+    }
+    const client = createBacktestClient({
+      hostname: '192.168.1.20',
+      adapter,
+    })
+
+    await assert.rejects(client.health(), { message: 'BACKTEST_LOCAL_UNAVAILABLE' })
+    await assert.rejects(client.startRun(form), { message: 'BACKTEST_LOCAL_UNAVAILABLE' })
+
+    assert.equal(requests, 0)
   })
 
   it('serializes every financial field and declared decimal parameter as the original JSON string', () => {
@@ -105,7 +151,7 @@ describe('dedicated local backtest HTTP client', () => {
       return response(config, runningRun, 202)
     }
     const client = createBacktestClient({
-      baseURL: 'http://localhost:9011/api/v1/backtests/',
+      baseURL: 'http://localhost:8011/api/v1/backtests',
       adapter,
     })
 
@@ -113,7 +159,7 @@ describe('dedicated local backtest HTTP client', () => {
 
     assert.equal(created.run_id, RUN_ID)
     assert.equal(requests.length, 1)
-    assert.equal(requests[0]?.baseURL, 'http://localhost:9011/api/v1/backtests')
+    assert.equal(requests[0]?.baseURL, 'http://localhost:8011/api/v1/backtests')
     assert.equal(requests[0]?.url, '/runs')
     assert.equal(requests[0]?.method, 'post')
     assert.deepEqual(JSON.parse(String(requests[0]?.data)), serializeBacktestRunRequest(form))
@@ -170,17 +216,59 @@ describe('dedicated local backtest HTTP client', () => {
   it('builds encoded allowlisted artifact URLs from the independent base URL', () => {
     assert.equal(
       artifactUrl(
-        'http://127.0.0.1:8011/api/v1/backtests/',
+        'http://127.0.0.1:8011/api/v1/backtests',
         'run id/with slash',
         'report_zip',
       ),
       'http://127.0.0.1:8011/api/v1/backtests/runs/run%20id%2Fwith%20slash/artifacts/report_zip',
     )
-    const client = createBacktestClient({ baseURL: 'http://localhost:9011/api/v1/backtests' })
+    const client = createBacktestClient({ baseURL: 'http://localhost:8011/api/v1/backtests' })
     assert.equal(
       client.artifactUrl(RUN_ID, 'equity_png'),
-      `http://localhost:9011/api/v1/backtests/runs/${RUN_ID}/artifacts/equity_png`,
+      `http://localhost:8011/api/v1/backtests/runs/${RUN_ID}/artifacts/equity_png`,
     )
+  })
+
+  it('rejects non-allowlisted artifact kinds at runtime before producing a URL', () => {
+    for (const kind of ['../../secret', 'equity_png?download=secret', '', 'report']) {
+      assert.throws(
+        () => artifactUrl(
+          DEFAULT_BACKTEST_API_BASE_URL,
+          RUN_ID,
+          kind as Parameters<typeof artifactUrl>[2],
+        ),
+        { message: 'BACKTEST_ARTIFACT_NOT_FOUND' },
+      )
+    }
+  })
+
+  it('keeps nullable stored requested_config separate from a normalized outbound request', async () => {
+    const storedRequest: BacktestStoredRunRequest = {
+      strategy_id: 'example_future_smoke_v1',
+      start_date: '2026-01-05',
+      end_date: '2026-01-06',
+      frequency: '1d',
+      future_cash: null,
+      matching_type: null,
+      margin_multiplier: null,
+      futures_commission_multiplier: null,
+      slippage_model: null,
+      slippage: null,
+      parameters: { quantity: 2 },
+    }
+    const adapter: AxiosAdapter = async (config) => response(config, {
+      ...runningRun,
+      requested_config: storedRequest,
+    })
+    const client = createBacktestClient({ adapter })
+
+    const run = await client.getRun(RUN_ID)
+    const outbound = serializeBacktestRunRequest(form)
+
+    assert.deepEqual(run.requested_config, storedRequest)
+    assert.equal(outbound.future_cash, '1000000.00')
+    assert.equal(outbound.matching_type, 'next_bar')
+    assert.equal(outbound.slippage_model, 'PriceRatioSlippage')
   })
 })
 
