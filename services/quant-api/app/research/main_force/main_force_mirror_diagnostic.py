@@ -681,11 +681,11 @@ class MainForceMirrorDiagnosticScoreLatchBreakdown:
             or self.long_caution_count + self.short_caution_count
             != self.caution_count
             or self.caution_count != self.armed_candidate_count
+            or self.raw_episode_anchor_count != self.caution_count
             or self.binary_evaluable_count > self.caution_ready_bar_count
             or self.kept_episode_anchor_count
             + self.overlap_suppressed_anchor_count
             != self.raw_episode_anchor_count
-            or self.kept_episode_anchor_count != self.caution_count
             or self.long_rearm_count > self.caution_ready_bar_count
             or self.short_rearm_count > self.caution_ready_bar_count
         ):
@@ -739,11 +739,11 @@ class MainForceMirrorDiagnosticFunnelSection:
             or any(value > self.evaluable_bar_count for value in counts[1:])
             or self.latched_episode_count > self.caution_episode_count
             or self.latched_episode_count != self.caution_episode_count
+            or self.raw_episode_anchor_count != self.latched_episode_count
             or self.binary_evaluable_count > self.evaluable_bar_count
             or self.kept_episode_anchor_count
             + self.overlap_suppressed_anchor_count
             != self.raw_episode_anchor_count
-            or self.kept_episode_anchor_count != self.caution_episode_count
             or (
                 global_breakdown.caution_ready_bar_count,
                 global_breakdown.binary_evaluable_count,

@@ -437,6 +437,41 @@ def _zero_funnel(domain):
     )
 
 
+def test_funnel_contract_separates_latched_cautions_from_sampling_embargo() -> None:
+    """Catches equating kept sampling anchors with raw latched caution events."""
+    domain = _domain()
+    funnel = _zero_funnel(domain)
+    global_breakdown = replace(
+        funnel.breakdowns[0],
+        caution_ready_bar_count=2,
+        long_only_candidate_count=2,
+        high_score_unique_bar_count=2,
+        armed_candidate_count=2,
+        long_caution_count=2,
+        caution_count=2,
+        raw_episode_anchor_count=2,
+        kept_episode_anchor_count=1,
+        overlap_suppressed_anchor_count=1,
+    )
+
+    audited = replace(
+        funnel,
+        evaluable_bar_count=2,
+        high_score_bar_count=2,
+        armed_bar_count=2,
+        caution_episode_count=2,
+        latched_episode_count=2,
+        raw_episode_anchor_count=2,
+        kept_episode_anchor_count=1,
+        overlap_suppressed_anchor_count=1,
+        breakdowns=_consistent_partitions(funnel.breakdowns, global_breakdown),
+    )
+
+    assert audited.caution_episode_count == 2
+    assert audited.kept_episode_anchor_count == 1
+    assert audited.overlap_suppressed_anchor_count == 1
+
+
 def _zero_model_breakdowns(domain):
     return tuple(
         domain.MainForceMirrorDiagnosticModelBreakdown(
@@ -723,10 +758,11 @@ def test_nested_audit_contract_expresses_required_breakdowns_and_conservation() 
         short_only_candidate_count=1,
         dual_candidate_conflict_count=1,
         high_score_unique_bar_count=3,
-        armed_candidate_count=1,
-        unarmed_candidate_suppressed_count=1,
+        armed_candidate_count=2,
+        unarmed_candidate_suppressed_count=0,
         long_caution_count=1,
-        caution_count=1,
+        short_caution_count=1,
+        caution_count=2,
         raw_episode_anchor_count=2,
         kept_episode_anchor_count=1,
         overlap_suppressed_anchor_count=1,
@@ -737,10 +773,10 @@ def test_nested_audit_contract_expresses_required_breakdowns_and_conservation() 
         binary_evaluable_count=2,
         high_score_bar_count=3,
         conflict_bar_count=1,
-        armed_bar_count=1,
-        caution_episode_count=1,
-        latched_episode_count=1,
-        suppression_count=1,
+        armed_bar_count=2,
+        caution_episode_count=2,
+        latched_episode_count=2,
+        suppression_count=0,
         raw_episode_anchor_count=2,
         kept_episode_anchor_count=1,
         overlap_suppressed_anchor_count=1,
