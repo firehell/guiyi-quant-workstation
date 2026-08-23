@@ -393,11 +393,14 @@ function subing(overrides = {}) {
 }
 
 async function mockWorkspace(page, researchResponse, options = {}) {
+  const workspaceSymbol = options.symbol || 'ag'
+  const workspaceContract = options.resolvedContract || (workspaceSymbol === 'jm' ? 'JM2701' : 'AG2601')
   const marketRequests = options.marketRequests || []
   const researchRequests = options.researchRequests || []
   const subingRequests = options.subingRequests || []
   const nHistoricalRequests = options.nHistoricalRequests || []
   const jdjHistoricalRequests = options.jdjHistoricalRequests || []
+  const jdjStrategyHistoricalRequests = options.jdjStrategyHistoricalRequests || []
   const dominantRequests = options.dominantRequests || []
   let dominantResponseIndex = 0
   let subingResponseIndex = 0
@@ -410,7 +413,7 @@ async function mockWorkspace(page, researchResponse, options = {}) {
         request,
         events: options.nHistoricalEvents || [{
           event_id: 'n-structure-up-1', observed_at: options.historicalEventTime,
-          trading_day: options.historicalEventTime?.slice(0, 10), contract: 'AG2601',
+          trading_day: options.historicalEventTime?.slice(0, 10), contract: workspaceContract,
           segment_start_trading_day: options.historicalEventTime?.slice(0, 10), direction: 'up',
         }],
       } })
@@ -427,9 +430,51 @@ async function mockWorkspace(page, researchResponse, options = {}) {
         events: options.jdjHistoricalEvents || [{
           event_id: 'jdj-follow-long-1', candidate_id: 'jdj_trend_follow_1m_candidate_v1',
           source_event_kind: 'jdj_trend_follow_triggered', observed_at: options.historicalEventTime,
-          trading_day: options.historicalEventTime?.slice(0, 10), contract: 'AG2601',
+          trading_day: options.historicalEventTime?.slice(0, 10), contract: workspaceContract,
           segment_start_trading_day: options.historicalEventTime?.slice(0, 10), direction: 'long',
           trigger_level: '219.5',
+        }],
+      } })
+    }
+    if (url.pathname.endsWith('/research/jdj-strategy/history')) {
+      const request = Object.fromEntries(url.searchParams)
+      jdjStrategyHistoricalRequests.push(request)
+      if (jdjStrategyHistoricalRequests.length === 1 && options.jdjStrategyFirstDelayMs) {
+        await new Promise((resolve) => setTimeout(resolve, options.jdjStrategyFirstDelayMs))
+      }
+      if (options.jdjStrategyErrorCode) {
+        return route.fulfill({
+          status: 422,
+          json: { detail: { code: options.jdjStrategyErrorCode } },
+        })
+      }
+      if (options.jdjStrategyHttpStatus) {
+        return route.fulfill({
+          status: options.jdjStrategyHttpStatus,
+          json: { detail: 'unavailable' },
+        })
+      }
+      return route.fulfill({ json: {
+        request,
+        reference_execution: true,
+        actions: options.jdjStrategyHistoricalActions || [{
+          event_id: 'jdj-strategy-entry-long-1', episode_id: 'jdj-episode-1', kind: 'entry',
+          source_event_ids: ['jdj-follow-long-1'], primary_setup: 'trend_follow', supporting_setups: [],
+          direction: 'long', contract: workspaceContract, trading_day: options.historicalEventTime?.slice(0, 10),
+          segment_start_trading_day: options.historicalEventTime?.slice(0, 10),
+          decision_at: options.historicalEventTime, effective_bar_end: options.historicalEventTime,
+          reference_price: '219.5', quantity: 8, position_quantity_after: 8,
+          stop_price: '217.5', target_price: '224', reward_risk: '2.25',
+          reason: 'ENTRY_FILLED', fill_basis: 'limit_touch',
+        }, {
+          event_id: 'jdj-strategy-rejected-1', episode_id: null, kind: 'rejected',
+          source_event_ids: ['jdj-follow-short-2'], primary_setup: 'trend_follow', supporting_setups: [],
+          direction: 'short', contract: workspaceContract, trading_day: options.historicalEventTime?.slice(0, 10),
+          segment_start_trading_day: options.historicalEventTime?.slice(0, 10),
+          decision_at: options.historicalEventTime, effective_bar_end: null,
+          reference_price: null, quantity: 0, position_quantity_after: 8,
+          stop_price: '221.5', target_price: null, reward_risk: null,
+          reason: 'OPEN_EPISODE_EVENT_REJECTED', fill_basis: null,
         }],
       } })
     }
@@ -440,7 +485,14 @@ async function mockWorkspace(page, researchResponse, options = {}) {
       }
       const responses = options.dominantsResponses || []
       const response = responses[Math.min(dominantResponseIndex, responses.length - 1)]
-        || { items: [{ product: 'ag', product_name: '白银', sector: 'precious', exchange: 'SHFE', actual_contract: 'AG2601', dominant_mapping_date: '2026-01-12' }] }
+        || { items: [{
+          product: workspaceSymbol,
+          product_name: options.productName || (workspaceSymbol === 'jm' ? '焦煤' : '白银'),
+          sector: options.sector || (workspaceSymbol === 'jm' ? 'black' : 'precious'),
+          exchange: options.exchange || (workspaceSymbol === 'jm' ? 'DCE' : 'SHFE'),
+          actual_contract: workspaceContract,
+          dominant_mapping_date: '2026-01-12',
+        }] }
       dominantResponseIndex += 1
       return route.fulfill({ json: response })
     }
@@ -461,7 +513,7 @@ async function mockWorkspace(page, researchResponse, options = {}) {
       }
       return route.fulfill({ json: response })
     }
-    if (url.pathname.endsWith('/state')) return route.fulfill({ json: { symbol: 'ag', series_kind: url.searchParams.get('series_kind'), frequency: url.searchParams.get('frequency'), operational: true, phase: options.live ? 'TRADING' : 'CLOSED', trading_day: '2026-08-11', live_eligible: !!options.live, live_available: !!options.live, live_contract: options.live ? 'AG2601' : null, canonical_end: null, after_market: options.afterMarket || {} } })
+    if (url.pathname.endsWith('/state')) return route.fulfill({ json: { symbol: workspaceSymbol, series_kind: url.searchParams.get('series_kind'), frequency: url.searchParams.get('frequency'), operational: true, phase: options.live ? 'TRADING' : 'CLOSED', trading_day: '2026-08-11', live_eligible: !!options.live, live_available: !!options.live, live_contract: options.live ? workspaceContract : null, canonical_end: null, after_market: options.afterMarket || {} } })
     if (url.pathname.endsWith('/bars/page')) {
       const request = Object.fromEntries(url.searchParams)
       marketRequests.push(request)
@@ -469,14 +521,14 @@ async function mockWorkspace(page, researchResponse, options = {}) {
       const resolvedContractSegments = options.resolvedContractSegments || (
         request.series_kind === 'actual_dominant' && bars.length > 0
           ? [{
-              contract: options.resolvedContract || 'AG2601',
+              contract: workspaceContract,
               start_trading_day: bars[0].trading_day,
               end_trading_day: bars.at(-1).trading_day,
             }]
           : []
       )
       return route.fulfill({ json: {
-        request: { series_kind: request.series_kind, symbol: 'ag', contract: request.contract || null, frequency: request.frequency, before: null, limit: 1200 },
+        request: { series_kind: request.series_kind, symbol: workspaceSymbol, contract: request.contract || null, frequency: request.frequency, before: null, limit: 1200 },
         bars,
         canonical_coverage: options.canonicalCoverage || null,
         page: options.pageMeta || { has_more_before: false, next_before: null },
@@ -490,16 +542,18 @@ async function mockWorkspace(page, researchResponse, options = {}) {
   }))
 }
 
-async function mockAlertMarkerSurface(page, currentItems = []) {
+async function mockAlertMarkerSurface(page, currentItems = [], options = {}) {
+  const symbol = options.symbol || 'ag'
+  const contract = options.contract || (symbol === 'jm' ? 'JM2701' : 'AG2601')
   await page.route('**/api/runtime/health', (route) => route.fulfill({ json: {
     status: 'ok', components: { alert: { status: 'disabled' } },
   } }))
   await page.route('**/api/alerts/**', async (route) => {
     const url = new URL(route.request().url())
-    if (url.pathname.endsWith('/products/ag')) return route.fulfill({ json: { symbol: 'ag', rules: [] } })
+    if (url.pathname.endsWith(`/products/${symbol}`)) return route.fulfill({ json: { symbol, rules: [] } })
     if (url.pathname.endsWith('/current-events')) return route.fulfill({ json: { status: 'ready', trading_day: '2026-01-12', items: currentItems } })
     if (url.pathname.endsWith('/events')) return route.fulfill({ json: { items: [{
-      id: 101, rule_code: 'subing_entry_signal_v1', symbol: 'ag', contract: 'AG2601',
+      id: 101, rule_code: 'subing_entry_signal_v1', symbol, contract,
       trading_day: '2026-01-12', frequency: '5m', bar_end: '2026-01-12T02:20:00Z',
       result_codes: ['buy'], lower_tf_confirmation: false, detected_at: '2026-01-12T02:20:01Z',
       notification_attempted_at: null,
@@ -556,7 +610,7 @@ test('SuBing keeps the Market display identity separate from current-dominant re
   await page.goto('/market/chart?symbol=ag&series_kind=continuous&frequency=5m')
 
   const overlay = page.getByRole('group', { name: 'Overlay' })
-  await expect(overlay.getByRole('button')).toHaveText(['无', '苏冰', 'N字', '日进斗金', '火天大有'])
+  await expect(overlay.getByRole('button')).toHaveText(['无', '苏冰', 'N字', '日进斗金', '日进斗金策略', '火天大有'])
   await expect(page.getByText('120 bars', { exact: true })).toBeVisible()
   await expect(page.locator('.product-workspace__kline')).toHaveAttribute('data-visible-start-trading-day', '2026-01-01')
   await expect(page.locator('.product-workspace__kline')).toHaveAttribute('data-visible-main-indicators', '')
@@ -577,7 +631,7 @@ test('SuBing keeps the Market display identity separate from current-dominant re
   await expect(page).toHaveURL(/series_kind=continuous/)
 })
 
-test('N and JDJ overlays request causal history, switch markers, and expose JDJ EMA20 detail', async ({ page }) => {
+test('N and JDJ Candidate remain available for AG without implying strategy support', async ({ page }) => {
   const bars = Array.from({ length: 120 }, (_, index) => bar(index))
   const historicalEventTime = bars.at(-1).bar_end
   const nHistoricalRequests = []
@@ -621,6 +675,116 @@ test('N and JDJ overlays request causal history, switch markers, and expose JDJ 
 
   expect(nHistoricalRequests[0]).toMatchObject({ series_kind: 'actual_dominant', symbol: 'ag', frequency: '5m' })
   expect(jdjHistoricalRequests[0]).toMatchObject({ series_kind: 'actual_dominant', symbol: 'ag', frequency: '1m' })
+})
+
+test('JDJ Strategy uses JM contract identity and clears stale markers across 1m 5m 1m', async ({ page }) => {
+  const bars = Array.from({ length: 120 }, (_, index) => bar(index))
+  const historicalEventTime = bars.at(-1).bar_end
+  const marketRequests = []
+  const jdjStrategyHistoricalRequests = []
+  await mockAlertMarkerSurface(page, [], { symbol: 'jm', contract: 'JM2701' })
+  await mockWorkspace(page, { json: {
+    ...research(),
+    symbol: 'jm', product_name: '焦煤', sector: 'black', exchange: 'DCE', current_dominant: 'JM2701',
+  } }, {
+    symbol: 'jm',
+    resolvedContract: 'JM2701',
+    bars,
+    marketRequests,
+    historicalEventTime,
+    canonicalCoverage: { start: bars[0].bar_end, end: historicalEventTime },
+    jdjStrategyHistoricalRequests,
+    jdjStrategyFirstDelayMs: 400,
+  })
+  await page.goto('/market/chart?symbol=jm&series_kind=actual_dominant&frequency=1m')
+
+  const overlay = page.getByRole('group', { name: 'Overlay' })
+  const shell = page.getByTestId('kline-shell')
+  await expect(page.getByText('120 bars', { exact: true })).toBeVisible()
+  await expect(page.locator('.product-status-strip strong')).toHaveText('JM2701')
+  expect(marketRequests[0]).toMatchObject({
+    series_kind: 'actual_dominant', symbol: 'jm', frequency: '1m',
+  })
+
+  await overlay.getByRole('button', { name: '日进斗金策略', exact: true }).click()
+  await expect.poll(() => jdjStrategyHistoricalRequests.length).toBe(1)
+  await page.getByRole('group', { name: '周期' }).getByRole('button', { name: '5m', exact: true }).click()
+  await expect(shell).toHaveAttribute('data-research-marker-count', '0')
+  await expect(page.getByText('当前序列或周期不支持该 Overlay；K 线保持原选择，不自动切换。', { exact: true })).toBeVisible()
+  await page.waitForTimeout(450)
+  await expect(shell).toHaveAttribute('data-research-marker-count', '0')
+
+  await page.getByRole('group', { name: '周期' }).getByRole('button', { name: '1m', exact: true }).click()
+  await expect.poll(() => jdjStrategyHistoricalRequests.length).toBe(2)
+  await expect(shell).toHaveAttribute('data-research-marker-count', '1')
+  await expect(shell).toHaveAttribute('data-rendered-research-marker-count', '1')
+  await expect(page.locator('.product-workspace__kline')).toHaveAttribute('data-visible-main-indicators', '')
+
+  const chartBox = await page.locator('.chart').boundingBox()
+  expect(chartBox).not.toBeNull()
+  const markerDetail = page.getByTestId('kline-hover-marker')
+  for (let x = chartBox.width - 220; x <= chartBox.width - 40; x += 4) {
+    await page.mouse.move(chartBox.x + x, chartBox.y + 180)
+    if (await markerDetail.count() && (await markerDetail.textContent())?.includes('参考回放')) break
+  }
+  await expect(markerDetail).toContainText('参考回放')
+  await expect(markerDetail).toContainText('主设置 trend_follow')
+  await expect(markerDetail).toContainText('合约 JM2701')
+  await expect(markerDetail).toContainText('数量 8')
+  await expect(markerDetail).toContainText('R:R 2.25')
+  expect(jdjStrategyHistoricalRequests).toEqual([
+    { series_kind: 'actual_dominant', symbol: 'jm', frequency: '1m', since: '2026-01-01', through: '2026-04-30' },
+    { series_kind: 'actual_dominant', symbol: 'jm', frequency: '1m', since: '2026-01-01', through: '2026-04-30' },
+  ])
+})
+
+test('JDJ Strategy fails closed for AG profile unavailability', async ({ page }) => {
+  const bars = Array.from({ length: 120 }, (_, index) => bar(index))
+  const jdjStrategyHistoricalRequests = []
+  await mockAlertMarkerSurface(page)
+  await mockWorkspace(page, { json: research() }, {
+    bars,
+    historicalEventTime: bars.at(-1).bar_end,
+    canonicalCoverage: { start: bars[0].bar_end, end: bars.at(-1).bar_end },
+    jdjStrategyHistoricalRequests,
+    jdjStrategyErrorCode: 'JDJ_STRATEGY_PROFILE_UNAVAILABLE',
+  })
+  await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=1m')
+
+  const shell = page.getByTestId('kline-shell')
+  await expect(page.getByText('120 bars', { exact: true })).toBeVisible()
+  await page.getByRole('group', { name: 'Overlay' })
+    .getByRole('button', { name: '日进斗金策略', exact: true }).click()
+
+  await expect.poll(() => jdjStrategyHistoricalRequests.length).toBe(1)
+  expect(jdjStrategyHistoricalRequests[0]).toMatchObject({
+    series_kind: 'actual_dominant', symbol: 'ag', frequency: '1m',
+  })
+  await expect(shell).toHaveAttribute('data-research-marker-count', '0')
+  await expect(shell).toHaveAttribute('data-rendered-research-marker-count', '0')
+  await expect(page.getByText('该品种/周期尚未验证；Canonical K 线仍可正常查看。', { exact: true })).toBeVisible()
+})
+
+test('JDJ Strategy keeps generic server failures distinct from profile unavailability', async ({ page }) => {
+  const bars = Array.from({ length: 120 }, (_, index) => bar(index))
+  await mockAlertMarkerSurface(page, [], { symbol: 'jm', contract: 'JM2701' })
+  await mockWorkspace(page, { json: {
+    ...research(),
+    symbol: 'jm', product_name: '焦煤', sector: 'black', exchange: 'DCE', current_dominant: 'JM2701',
+  } }, {
+    symbol: 'jm',
+    resolvedContract: 'JM2701',
+    bars,
+    historicalEventTime: bars.at(-1).bar_end,
+    canonicalCoverage: { start: bars[0].bar_end, end: bars.at(-1).bar_end },
+    jdjStrategyHttpStatus: 503,
+  })
+  await page.goto('/market/chart?symbol=jm&series_kind=actual_dominant&frequency=1m')
+
+  await page.getByRole('group', { name: 'Overlay' })
+    .getByRole('button', { name: '日进斗金策略', exact: true }).click()
+
+  await expect(page.getByText('历史因果重放暂不可用；Canonical K 线仍可正常查看。', { exact: true })).toBeVisible()
 })
 
 test('shared EMA switches persist across SuBing and HTDY while none hides every overlay', async ({ page }) => {

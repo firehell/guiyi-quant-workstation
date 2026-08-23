@@ -231,6 +231,25 @@ test('preference v3 preserves the JDJ overlay without adding candidate settings'
   assert.equal(JSON.parse(values.get(MAIN_CHART_PREFERENCES_KEY)!).candidate, undefined)
 })
 
+test('preference v3 preserves the JDJ strategy overlay across save and load', () => {
+  const values = new Map<string, string>()
+  const storage = {
+    getItem: (key: string) => values.get(key) || null,
+    setItem: (key: string, value: string) => values.set(key, value),
+  }
+
+  saveMainChartPreferences({
+    version: 3,
+    selectedOverlay: 'jdj_strategy',
+    optionalEmaIndicators: [],
+    period: '1m',
+    realtimeFollow: false,
+  }, storage)
+
+  assert.equal(loadMainChartPreferences(storage).selectedOverlay, 'jdj_strategy')
+  assert.equal(JSON.parse(values.get(MAIN_CHART_PREFERENCES_KEY)!).selectedOverlay, 'jdj_strategy')
+})
+
 test('preference loading falls back when accessing browser localStorage throws', () => {
   const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window')
   Object.defineProperty(globalThis, 'window', {

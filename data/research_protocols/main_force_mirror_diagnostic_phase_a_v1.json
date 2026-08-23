@@ -1,0 +1,131 @@
+{
+  "schema_version": 1,
+  "protocol_id": "main_force_mirror_diagnostic_phase_a_v1",
+  "model_subprotocol": "mfm_v3_readonly_training_probe_v1",
+  "research_only": true,
+  "readonly": true,
+  "previous_missing_probe_result_inherited": false,
+  "source": {
+    "mode": "actual_dominant",
+    "frequency": "60m",
+    "confirmed_only": true
+  },
+  "windows": {
+    "jm_view": {"since": "2026-03-10", "through": "2026-03-30"},
+    "active60": {"since": "2023-01-01", "through": "2026-08-18"},
+    "known_retrospective_through": "2026-08-20",
+    "prospective": {"begins_after": "2026-08-20", "consumed": false}
+  },
+  "universe": {
+    "products": [
+      "a", "ag", "al", "ao", "ap", "au", "b", "bu", "bz", "c",
+      "cf", "cj", "cu", "eb", "ec", "eg", "fg", "fu", "hc", "i",
+      "j", "jd", "jm", "l", "lc", "lh", "m", "ma", "ni", "oi",
+      "p", "pb", "pd", "pf", "pg", "pk", "pl", "pp", "pr", "ps",
+      "pt", "px", "rb", "rm", "rs", "ru", "sa", "sc", "sf", "sh",
+      "si", "sm", "sn", "sr", "ss", "ta", "ur", "v", "y", "zn"
+    ],
+    "source_path": "data/universe/active_products.txt",
+    "source_sha256": "d2f7e8387fa9dd92b8720ed703de3a7bbc1ef79d0d75340b246783bab079fd1d"
+  },
+  "label": {"horizon_bars": 10, "barrier_atr_multiple": 1.0},
+  "sequence": {"profile_ids": ["balanced", "fast", "slow", "loose", "strict"]},
+  "models": {
+    "score_baseline": {"model_id": "score_baseline"},
+    "ridge_logistic": {
+      "model_id": "ridge_logistic",
+      "l2": 1.0,
+      "max_iterations": 100,
+      "logit_clip": [-35, 35],
+      "step_tolerance": 1e-8
+    },
+    "deterministic_cart": {
+      "model_id": "deterministic_depth_2_cart",
+      "depth": 2,
+      "train_quantiles": [0.25, 0.50, 0.75],
+      "min_leaf": 50,
+      "impurity": "weighted_gini",
+      "leaf_smoothing": "laplace"
+    }
+  },
+  "bootstrap": {"resamples": 2000, "seed": 20260823, "minimum_valid": 1900, "ci": 0.95},
+  "folds": [
+    {
+      "fit": {"since": "2023-01-01", "through": "2024-12-31"},
+      "evaluate": {"since": "2025-01-01", "through": "2025-12-31"}
+    },
+    {
+      "fit": {"since": "2023-01-01", "through": "2025-12-31"},
+      "evaluate": {"since": "2026-01-01", "through": "2026-08-18"}
+    }
+  ],
+  "sample_floors": {
+    "available_products": 48,
+    "fit_binary": 500,
+    "fit_each_class": 100,
+    "evaluate_binary": 200,
+    "evaluate_each_class": 50,
+    "evaluate_each_side": 50,
+    "evaluate_products": 20,
+    "resolved_coverage": 0.50,
+    "ambiguous_maximum": 0.15,
+    "unknown_failures": 0
+  },
+  "gate_thresholds": {
+    "sequence": {
+      "required_profiles": 3,
+      "balanced_required": true,
+      "peak_then_decay_pooled": 200,
+      "each_side": 50,
+      "products": 20,
+      "years": 3,
+      "top_product_share_maximum": 0.20,
+      "median_delay_maximum_bars": 2,
+      "h3_h5_reversal_hit_minimum": 0.55,
+      "yearly_side_median_minimum": 0
+    },
+    "model": {
+      "both_folds_required": true,
+      "ridge_score_delta": 0.02,
+      "ridge_score_ci_lower_strictly_positive": true,
+      "full_tree_ridge_delta": 0.02,
+      "full_tree_ridge_ci_lower_strictly_positive": true,
+      "full_tree_current_tree_delta": 0.01,
+      "full_tree_current_tree_ci_lower_strictly_positive": true,
+      "full_tree_auc": 0.60,
+      "supported_side_auc": 0.55,
+      "supported_side_point_delta_minimum": 0
+    },
+    "member_feasibility": {
+      "unique_earliest_key": ["symbol", "physical_contract", "anchor_trading_day"],
+      "t_minus_1_coverage": 0.80,
+      "products": 20,
+      "causal_violations": 0,
+      "identity_violations": 0,
+      "member_model": false
+    }
+  },
+  "gate": {
+    "normal_insufficiency": "STOP",
+    "corruption_behavior": "error_no_gate",
+    "allowed_values": ["STOP", "ALLOW_PHASE_FREEZE_DESIGN"]
+  },
+  "exclusions": {
+    "formula_change": false,
+    "threshold_change": false,
+    "profile_change": false,
+    "database_writes": false,
+    "data_writes": false,
+    "runtime_writes": false,
+    "alert_writes": false,
+    "rqdata_run": false,
+    "real_evidence_run": false,
+    "sklearn_dependency": false,
+    "scipy_dependency": false,
+    "new_dependency": false,
+    "trading_output": false,
+    "performance_output": false,
+    "ranking_output": false,
+    "promotion_output": false
+  }
+}

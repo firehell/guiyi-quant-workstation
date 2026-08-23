@@ -38,6 +38,17 @@ MainForceMirrorV2Caution = Literal[
     "long_chase_caution",
     "short_chase_caution",
 ]
+MainForceMirrorV2ResetBoundary = Literal[
+    "series_start",
+    "physical_contract_change",
+    "invalid_input",
+]
+MainForceMirrorV2RearmReason = Literal[
+    "long_range",
+    "long_build",
+    "short_range",
+    "short_build",
+]
 MemberRankDirection = Literal["long", "short", "neutral"]
 MemberRankRelation = Literal[
     "strong_aligned",
@@ -225,10 +236,86 @@ class MainForceMirrorV2Result:
 
 
 @dataclass(frozen=True, slots=True)
+class MainForceMirrorV2CautionComponents:
+    long_upper_extreme: bool
+    long_short_cover_dominated: bool
+    long_open_pressure_divergence: bool
+    long_high_volume_exhaustion: bool
+    short_lower_extreme: bool
+    short_long_liquidation_dominated: bool
+    short_open_pressure_divergence: bool
+    short_low_price_absorption: bool
+
+
+@dataclass(frozen=True, slots=True)
+class MainForceMirrorV2LatchSnapshot:
+    long_armed: bool
+    short_armed: bool
+    long_low_score_streak: int
+    short_low_score_streak: int
+    long_build_streak: int
+    short_build_streak: int
+
+
+@dataclass(frozen=True, slots=True)
+class MainForceMirrorV2AuditTraceItem:
+    bar_end: datetime
+    trading_day: date
+    physical_contract: str | None
+    atr14: float | None
+    volume_mean20: float | None
+    range_high20: float | None
+    range_low20: float | None
+    oi_baseline20: float | None
+    price_impulse: float | None
+    clv: float | None
+    direction: float | None
+    volume_ratio: float | None
+    delta_oi: float | None
+    oi_impulse: float | None
+    range_position: float | None
+    long_open_pressure: float | None
+    short_open_pressure: float | None
+    prior_long_open_pressure_max: float | None
+    prior_short_open_pressure_max: float | None
+    instant_pressure: float | None
+    accumulated_pressure: float | None
+    long_score: float | None
+    short_score: float | None
+    components: MainForceMirrorV2CautionComponents | None
+    long_candidate: bool | None
+    short_candidate: bool | None
+    conflict: bool
+    latch_before: MainForceMirrorV2LatchSnapshot
+    latch_after: MainForceMirrorV2LatchSnapshot
+    trigger: MainForceMirrorV2Caution | None
+    long_disarmed_suppressed: bool
+    short_disarmed_suppressed: bool
+    rearm_reasons: tuple[MainForceMirrorV2RearmReason, ...]
+    reset_boundary: MainForceMirrorV2ResetBoundary | None
+    unavailable_reason: str | None
+    prior_high_max: float | None = None
+    prior_low_min: float | None = None
+    upper_wick_ratio: float | None = None
+    lower_wick_ratio: float | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class MainForceMirrorV2AuditResult:
+    result: MainForceMirrorV2Result
+    trace: tuple[MainForceMirrorV2AuditTraceItem, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class _CautionEvidence:
     long_score: float
     short_score: float
     reason_codes: tuple[str, ...]
+    components: MainForceMirrorV2CautionComponents
+    prior_high_max: float
+    prior_low_min: float
+    upper_wick_ratio: float
+    lower_wick_ratio: float
 
 
 @dataclass(frozen=True, slots=True)
@@ -239,6 +326,18 @@ class _LatchState:
     short_low_score_streak: int = 0
     long_build_streak: int = 0
     short_build_streak: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class _LatchStep:
+    state: _LatchState
+    caution: MainForceMirrorV2Caution | None
+    conflict: bool
+    long_candidate: bool
+    short_candidate: bool
+    long_disarmed_suppressed: bool
+    short_disarmed_suppressed: bool
+    rearm_reasons: tuple[MainForceMirrorV2RearmReason, ...]
 
 
 def round_half_away_from_zero_binary64(value: float, digits: int) -> float:
@@ -416,6 +515,65 @@ def compute_main_force_mirror_v2(
 ) -> MainForceMirrorV2Result:
     """Compute aligned historical-only pressure points by calculation block."""
 
+    return _compute_main_force_mirror_v2(
+        bar_end=bar_end,
+        trading_day=trading_day,
+        physical_contract=physical_contract,
+        open_=open_,
+        high=high,
+        low=low,
+        close=close,
+        volume=volume,
+        open_interest=open_interest,
+        member_inputs=member_inputs,
+        include_audit=False,
+    ).result
+
+
+def compute_main_force_mirror_v2_with_audit(
+    bar_end: Sequence[Any],
+    trading_day: Sequence[Any],
+    physical_contract: Sequence[str | None],
+    open_: Sequence[float],
+    high: Sequence[float],
+    low: Sequence[float],
+    close: Sequence[float],
+    volume: Sequence[float],
+    open_interest: Sequence[float | None],
+    member_inputs: Sequence[MemberRankObservation | None] | None = None,
+) -> MainForceMirrorV2AuditResult:
+    """Compute the unchanged V2 result plus research-only calculation trace."""
+
+    return _compute_main_force_mirror_v2(
+        bar_end=bar_end,
+        trading_day=trading_day,
+        physical_contract=physical_contract,
+        open_=open_,
+        high=high,
+        low=low,
+        close=close,
+        volume=volume,
+        open_interest=open_interest,
+        member_inputs=member_inputs,
+        include_audit=True,
+    )
+
+
+def _compute_main_force_mirror_v2(
+    *,
+    bar_end: Sequence[Any],
+    trading_day: Sequence[Any],
+    physical_contract: Sequence[str | None],
+    open_: Sequence[float],
+    high: Sequence[float],
+    low: Sequence[float],
+    close: Sequence[float],
+    volume: Sequence[float],
+    open_interest: Sequence[float | None],
+    member_inputs: Sequence[MemberRankObservation | None] | None,
+    include_audit: bool,
+) -> MainForceMirrorV2AuditResult:
+
     raw_bar_end = _object_array(bar_end, name="bar_end")
     raw_trading_day = _object_array(trading_day, name="trading_day")
     raw_contracts = _object_array(physical_contract, name="physical_contract")
@@ -543,6 +701,51 @@ def compute_main_force_mirror_v2(
         )
         for index in range(count)
     ]
+    default_latch = _latch_snapshot(_LatchState())
+    trace = (
+        [
+            MainForceMirrorV2AuditTraceItem(
+                bar_end=normalized_bar_end[index],
+                trading_day=normalized_trading_day[index],
+                physical_contract=normalized_contracts[index],
+                atr14=None,
+                volume_mean20=None,
+                range_high20=None,
+                range_low20=None,
+                oi_baseline20=None,
+                price_impulse=None,
+                clv=None,
+                direction=None,
+                volume_ratio=None,
+                delta_oi=None,
+                oi_impulse=None,
+                range_position=None,
+                long_open_pressure=None,
+                short_open_pressure=None,
+                prior_long_open_pressure_max=None,
+                prior_short_open_pressure_max=None,
+                instant_pressure=None,
+                accumulated_pressure=None,
+                long_score=None,
+                short_score=None,
+                components=None,
+                long_candidate=None,
+                short_candidate=None,
+                conflict=False,
+                latch_before=default_latch,
+                latch_after=default_latch,
+                trigger=None,
+                long_disarmed_suppressed=False,
+                short_disarmed_suppressed=False,
+                rearm_reasons=(),
+                reset_boundary=None,
+                unavailable_reason=reasons[index],
+            )
+            for index in range(count)
+        ]
+        if include_audit
+        else None
+    )
     _apply_blocks(
         valid=valid,
         contracts=normalized_contracts,
@@ -553,6 +756,7 @@ def compute_main_force_mirror_v2(
         volume=volume_values,
         open_interest=oi_values,
         points=points,
+        trace=trace,
     )
 
     parameters_payload = json.dumps(
@@ -564,12 +768,21 @@ def compute_main_force_mirror_v2(
     parameters_hash = hashlib.sha256(parameters_payload.encode("utf-8")).hexdigest()[
         :16
     ]
-    return MainForceMirrorV2Result(
+    result = MainForceMirrorV2Result(
         indicator_code=INDICATOR_CODE,
         indicator_version=INDICATOR_VERSION,
         formal_policy_id=FORMAL_POLICY_ID,
         parameters_hash=parameters_hash,
         points=tuple(points),
+    )
+    if trace is not None:
+        trace = [
+            replace(item, unavailable_reason=points[index].unavailable_reason)
+            for index, item in enumerate(trace)
+        ]
+    return MainForceMirrorV2AuditResult(
+        result=result,
+        trace=() if trace is None else tuple(trace),
     )
 
 
@@ -584,10 +797,20 @@ def _apply_blocks(
     volume: np.ndarray,
     open_interest: np.ndarray,
     points: list[MainForceMirrorV2Point],
+    trace: list[MainForceMirrorV2AuditTraceItem] | None,
 ) -> None:
     index = 0
+    previous_latch = _LatchState()
     while index < len(valid):
         if not valid[index]:
+            if trace is not None:
+                trace[index] = replace(
+                    trace[index],
+                    latch_before=_latch_snapshot(previous_latch),
+                    latch_after=_latch_snapshot(_LatchState()),
+                    reset_boundary="invalid_input",
+                )
+            previous_latch = _LatchState()
             index += 1
             continue
         start = index
@@ -598,7 +821,13 @@ def _apply_blocks(
             and contracts[index + 1] == contract
         ):
             index += 1
-        _apply_block(
+        reset_boundary: MainForceMirrorV2ResetBoundary | None = None
+        latch_before_reset = previous_latch
+        if start == 0:
+            reset_boundary = "series_start"
+        elif valid[start - 1] and contracts[start - 1] != contract:
+            reset_boundary = "physical_contract_change"
+        previous_latch = _apply_block(
             start=start,
             end=index + 1,
             open_=open_,
@@ -608,6 +837,9 @@ def _apply_blocks(
             volume=volume,
             open_interest=open_interest,
             points=points,
+            trace=trace,
+            latch_before_reset=latch_before_reset,
+            reset_boundary=reset_boundary,
         )
         index += 1
 
@@ -623,7 +855,10 @@ def _apply_block(
     volume: np.ndarray,
     open_interest: np.ndarray,
     points: list[MainForceMirrorV2Point],
-) -> None:
+    trace: list[MainForceMirrorV2AuditTraceItem] | None,
+    latch_before_reset: _LatchState,
+    reset_boundary: MainForceMirrorV2ResetBoundary | None,
+) -> _LatchState:
     block_open = open_[start:end]
     block_high = high[start:end]
     block_low = low[start:end]
@@ -647,6 +882,14 @@ def _apply_block(
     for block_index in range(end - start):
         output_index = start + block_index
         point = points[output_index]
+        if trace is not None:
+            latch_before = latch_before_reset if block_index == 0 else latch
+            trace[output_index] = replace(
+                trace[output_index],
+                latch_before=_latch_snapshot(latch_before),
+                latch_after=_latch_snapshot(latch),
+                reset_boundary=(reset_boundary if block_index == 0 else None),
+            )
         if block_index < 20:
             points[output_index] = replace(point, unavailable_reason=_WARMUP)
             continue
@@ -762,6 +1005,27 @@ def _apply_block(
             )
             raw_accumulated = accumulated_previous
 
+        if trace is not None:
+            trace[output_index] = replace(
+                trace[output_index],
+                atr14=float(atr[block_index]),
+                volume_mean20=float(volume_mean[block_index]),
+                range_high20=float(range_high[block_index]),
+                range_low20=float(range_low[block_index]),
+                oi_baseline20=oi_denominator,
+                price_impulse=raw_price_impulse,
+                clv=raw_clv,
+                direction=raw_direction,
+                volume_ratio=raw_volume_ratio,
+                delta_oi=raw_delta_oi,
+                oi_impulse=raw_oi_impulse,
+                range_position=raw_range_position,
+                long_open_pressure=raw_long_pressure,
+                short_open_pressure=raw_short_pressure,
+                instant_pressure=raw_instant,
+                accumulated_pressure=raw_accumulated,
+            )
+
         digits = int(DEFAULT_PARAMETERS["round_digits"])
         point = replace(
             point,
@@ -812,13 +1076,17 @@ def _apply_block(
                 prior_long_open_pressures=raw_long_pressures[prior_slice],
                 prior_short_open_pressures=raw_short_pressures[prior_slice],
             )
-            latch, caution, conflict = _step_latch(
+            latch_before_step = latch
+            step = _step_latch(
                 latch,
                 long_score=evidence.long_score,
                 short_score=evidence.short_score,
                 position_state=raw_state,
                 range_position=raw_range_position,
             )
+            latch = step.state
+            caution = step.caution
+            conflict = step.conflict
             point = replace(
                 point,
                 caution_ready=True,
@@ -835,7 +1103,34 @@ def _apply_block(
                     _CAUTION_DIRECTION_CONFLICT if conflict else None
                 ),
             )
+            if trace is not None:
+                trace[output_index] = replace(
+                    trace[output_index],
+                    prior_long_open_pressure_max=float(
+                        np.max(raw_long_pressures[prior_slice])
+                    ),
+                    prior_short_open_pressure_max=float(
+                        np.max(raw_short_pressures[prior_slice])
+                    ),
+                    prior_high_max=evidence.prior_high_max,
+                    prior_low_min=evidence.prior_low_min,
+                    upper_wick_ratio=evidence.upper_wick_ratio,
+                    lower_wick_ratio=evidence.lower_wick_ratio,
+                    long_score=evidence.long_score,
+                    short_score=evidence.short_score,
+                    components=evidence.components,
+                    long_candidate=step.long_candidate,
+                    short_candidate=step.short_candidate,
+                    conflict=step.conflict,
+                    latch_before=_latch_snapshot(latch_before_step),
+                    latch_after=_latch_snapshot(latch),
+                    trigger=step.caution,
+                    long_disarmed_suppressed=step.long_disarmed_suppressed,
+                    short_disarmed_suppressed=step.short_disarmed_suppressed,
+                    rearm_reasons=step.rearm_reasons,
+                )
         points[output_index] = point
+    return latch
 
 
 def _evaluate_caution(
@@ -883,49 +1178,85 @@ def _evaluate_caution(
         0.0 if price_range == 0.0 else (min(open_, close) - low) / price_range
     )
 
-    if range_position >= _UPPER_LOCATION_THRESHOLD:
-        long_score += 30.0
-        reasons.append("LONG_UPPER_EXTREME")
-    if state == "short_cover" and oi_impulse <= -_LIQUIDATION_DOMINATED_OI_THRESHOLD:
-        long_score += 30.0
-        reasons.append("LONG_SHORT_COVER_DOMINATED")
-    if (
+    long_upper_extreme = bool(range_position >= _UPPER_LOCATION_THRESHOLD)
+    long_short_cover_dominated = bool(
+        state == "short_cover"
+        and oi_impulse <= -_LIQUIDATION_DOMINATED_OI_THRESHOLD
+    )
+    long_open_pressure_divergence = bool(
         high > prior_high
         and prior_long_pressure > 0.0
         and long_open_pressure <= _PRESSURE_CONFIRMATION_RATIO * prior_long_pressure
-    ):
-        long_score += 25.0
-        reasons.append("LONG_OPEN_PRESSURE_DIVERGENCE")
-    if volume_ratio >= _HIGH_VOLUME_THRESHOLD and (
-        clv <= _CLV_REJECTION_THRESHOLD
-        or upper_wick_ratio >= _WICK_REJECTION_THRESHOLD
-    ):
-        long_score += 15.0
-        reasons.append("LONG_HIGH_VOLUME_EXHAUSTION")
-
-    if range_position <= _LOWER_LOCATION_THRESHOLD:
-        short_score += 30.0
-        reasons.append("SHORT_LOWER_EXTREME")
-    if (
+    )
+    long_high_volume_exhaustion = bool(
+        volume_ratio >= _HIGH_VOLUME_THRESHOLD
+        and (
+            clv <= _CLV_REJECTION_THRESHOLD
+            or upper_wick_ratio >= _WICK_REJECTION_THRESHOLD
+        )
+    )
+    short_lower_extreme = bool(range_position <= _LOWER_LOCATION_THRESHOLD)
+    short_long_liquidation_dominated = bool(
         state == "long_liquidation"
         and oi_impulse <= -_LIQUIDATION_DOMINATED_OI_THRESHOLD
-    ):
-        short_score += 30.0
-        reasons.append("SHORT_LONG_LIQUIDATION_DOMINATED")
-    if (
+    )
+    short_open_pressure_divergence = bool(
         low < prior_low
         and prior_short_pressure > 0.0
         and short_open_pressure <= _PRESSURE_CONFIRMATION_RATIO * prior_short_pressure
-    ):
+    )
+    short_low_price_absorption = bool(
+        volume_ratio >= _HIGH_VOLUME_THRESHOLD
+        and (
+            clv >= -_CLV_REJECTION_THRESHOLD
+            or lower_wick_ratio >= _WICK_REJECTION_THRESHOLD
+        )
+    )
+
+    if long_upper_extreme:
+        long_score += 30.0
+        reasons.append("LONG_UPPER_EXTREME")
+    if long_short_cover_dominated:
+        long_score += 30.0
+        reasons.append("LONG_SHORT_COVER_DOMINATED")
+    if long_open_pressure_divergence:
+        long_score += 25.0
+        reasons.append("LONG_OPEN_PRESSURE_DIVERGENCE")
+    if long_high_volume_exhaustion:
+        long_score += 15.0
+        reasons.append("LONG_HIGH_VOLUME_EXHAUSTION")
+
+    if short_lower_extreme:
+        short_score += 30.0
+        reasons.append("SHORT_LOWER_EXTREME")
+    if short_long_liquidation_dominated:
+        short_score += 30.0
+        reasons.append("SHORT_LONG_LIQUIDATION_DOMINATED")
+    if short_open_pressure_divergence:
         short_score += 25.0
         reasons.append("SHORT_OPEN_PRESSURE_DIVERGENCE")
-    if volume_ratio >= _HIGH_VOLUME_THRESHOLD and (
-        clv >= -_CLV_REJECTION_THRESHOLD
-        or lower_wick_ratio >= _WICK_REJECTION_THRESHOLD
-    ):
+    if short_low_price_absorption:
         short_score += 15.0
         reasons.append("SHORT_LOW_PRICE_ABSORPTION")
-    return _CautionEvidence(long_score, short_score, tuple(reasons))
+    return _CautionEvidence(
+        long_score,
+        short_score,
+        tuple(reasons),
+        MainForceMirrorV2CautionComponents(
+            long_upper_extreme=long_upper_extreme,
+            long_short_cover_dominated=long_short_cover_dominated,
+            long_open_pressure_divergence=long_open_pressure_divergence,
+            long_high_volume_exhaustion=long_high_volume_exhaustion,
+            short_lower_extreme=short_lower_extreme,
+            short_long_liquidation_dominated=short_long_liquidation_dominated,
+            short_open_pressure_divergence=short_open_pressure_divergence,
+            short_low_price_absorption=short_low_price_absorption,
+        ),
+        float(prior_high),
+        float(prior_low),
+        float(upper_wick_ratio),
+        float(lower_wick_ratio),
+    )
 
 
 def _step_latch(
@@ -935,15 +1266,27 @@ def _step_latch(
     short_score: float,
     position_state: MainForceMirrorV2State,
     range_position: float,
-) -> tuple[_LatchState, MainForceMirrorV2Caution | None, bool]:
+) -> _LatchStep:
     long_candidate = is_main_force_mirror_v2_candidate(long_score)
     short_candidate = is_main_force_mirror_v2_candidate(short_score)
     if long_candidate and short_candidate:
-        return state, None, True
+        return _LatchStep(
+            state=state,
+            caution=None,
+            conflict=True,
+            long_candidate=True,
+            short_candidate=True,
+            long_disarmed_suppressed=False,
+            short_disarmed_suppressed=False,
+            rearm_reasons=(),
+        )
 
     long_triggered = state.long_armed and long_candidate
     short_triggered = state.short_armed and short_candidate
+    long_disarmed_suppressed = not state.long_armed and long_candidate
+    short_disarmed_suppressed = not state.short_armed and short_candidate
     caution: MainForceMirrorV2Caution | None = None
+    rearm_reasons: list[MainForceMirrorV2RearmReason] = []
     if long_triggered:
         caution = "long_chase_caution"
     elif short_triggered:
@@ -963,10 +1306,18 @@ def _step_latch(
             else 0
         )
         long_build = long_build + 1 if position_state == "long_build" else 0
-        if long_low >= int(DEFAULT_PARAMETERS["rearm_low_score_bars"]) and (
-            range_position < _LONG_REARM_RANGE_THRESHOLD
-            or long_build >= int(DEFAULT_PARAMETERS["rearm_build_bars"])
-        ):
+        long_low_ready = long_low >= int(
+            DEFAULT_PARAMETERS["rearm_low_score_bars"]
+        )
+        long_range_ready = range_position < _LONG_REARM_RANGE_THRESHOLD
+        long_build_ready = long_build >= int(
+            DEFAULT_PARAMETERS["rearm_build_bars"]
+        )
+        if long_low_ready and (long_range_ready or long_build_ready):
+            if long_range_ready:
+                rearm_reasons.append("long_range")
+            if long_build_ready:
+                rearm_reasons.append("long_build")
             long_armed, long_low, long_build = True, 0, 0
 
     short_armed = state.short_armed
@@ -983,14 +1334,22 @@ def _step_latch(
             else 0
         )
         short_build = short_build + 1 if position_state == "short_build" else 0
-        if short_low >= int(DEFAULT_PARAMETERS["rearm_low_score_bars"]) and (
-            range_position > _SHORT_REARM_RANGE_THRESHOLD
-            or short_build >= int(DEFAULT_PARAMETERS["rearm_build_bars"])
-        ):
+        short_low_ready = short_low >= int(
+            DEFAULT_PARAMETERS["rearm_low_score_bars"]
+        )
+        short_range_ready = range_position > _SHORT_REARM_RANGE_THRESHOLD
+        short_build_ready = short_build >= int(
+            DEFAULT_PARAMETERS["rearm_build_bars"]
+        )
+        if short_low_ready and (short_range_ready or short_build_ready):
+            if short_range_ready:
+                rearm_reasons.append("short_range")
+            if short_build_ready:
+                rearm_reasons.append("short_build")
             short_armed, short_low, short_build = True, 0, 0
 
-    return (
-        _LatchState(
+    return _LatchStep(
+        state=_LatchState(
             long_armed=long_armed,
             short_armed=short_armed,
             long_low_score_streak=long_low,
@@ -998,8 +1357,24 @@ def _step_latch(
             long_build_streak=long_build,
             short_build_streak=short_build,
         ),
-        caution,
-        False,
+        caution=caution,
+        conflict=False,
+        long_candidate=long_candidate,
+        short_candidate=short_candidate,
+        long_disarmed_suppressed=long_disarmed_suppressed,
+        short_disarmed_suppressed=short_disarmed_suppressed,
+        rearm_reasons=tuple(rearm_reasons),
+    )
+
+
+def _latch_snapshot(state: _LatchState) -> MainForceMirrorV2LatchSnapshot:
+    return MainForceMirrorV2LatchSnapshot(
+        long_armed=state.long_armed,
+        short_armed=state.short_armed,
+        long_low_score_streak=state.long_low_score_streak,
+        short_low_score_streak=state.short_low_score_streak,
+        long_build_streak=state.long_build_streak,
+        short_build_streak=state.short_build_streak,
     )
 
 

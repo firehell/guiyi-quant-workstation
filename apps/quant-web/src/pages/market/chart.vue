@@ -9,6 +9,7 @@ import { getEventStates } from '@/api/executionReview'
 import {
   getMarketDominants,
   getJdjHistoricalEvents,
+  getJdjStrategyHistoricalActions,
   getProductResearch,
   getNStructureHistoricalEvents,
   getSubingHistoricalSignals,
@@ -119,6 +120,7 @@ const {
   fetchSubing: getSubingHistoricalSignals,
   fetchNStructure: getNStructureHistoricalEvents,
   fetchJdj: getJdjHistoricalEvents,
+  fetchJdjStrategy: getJdjStrategyHistoricalActions,
 })
 const {
   subing,
@@ -647,7 +649,9 @@ function normalizeSymbol(value: unknown): string | null {
         v-else-if="historicalResearchError"
         type="warning"
         :show-icon="true"
-      >历史因果重放暂不可用；Canonical K 线仍可正常查看。</NAlert>
+      >{{ historicalResearchError === 'JDJ_STRATEGY_PROFILE_UNAVAILABLE'
+        ? '该品种/周期尚未验证；Canonical K 线仍可正常查看。'
+        : '历史因果重放暂不可用；Canonical K 线仍可正常查看。' }}</NAlert>
       <div class="product-status-strip" data-testid="product-status-strip">
         <strong>{{ effectiveIdentity.contract || selectedDominant?.actual_contract || symbol.toUpperCase() }}</strong>
         <NTag

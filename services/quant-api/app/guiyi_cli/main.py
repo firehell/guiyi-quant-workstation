@@ -57,6 +57,7 @@ from app.research.composition import (
     build_jdj_candidate_validation_service,
     build_jdj_research_service,
     build_main_force_mirror_v2_research_service,
+    build_main_force_mirror_diagnostic_service,
     build_multi_candidate_robustness_service,
     build_n_candidate_validation_service,
     build_n_structure_research_service,
@@ -72,6 +73,9 @@ from app.research.candidate_convergence.five_candidate_dossier import (
 )
 from app.research.candidate_convergence.five_candidate_relationships import (
     FiveCandidateRelationshipRequest,
+)
+from app.research.main_force.main_force_mirror_diagnostic_policy import (
+    MainForceMirrorDiagnosticRequest,
 )
 from app.services.runtime_health import build_runtime_health
 from app.runtime_entry import run_after_market, run_alert, run_live
@@ -159,6 +163,9 @@ def main(
     ),
     main_force_mirror_v2_research_service_factory: ResearchServiceFactory = (
         build_main_force_mirror_v2_research_service
+    ),
+    main_force_mirror_diagnostic_service_factory: ResearchServiceFactory = (
+        build_main_force_mirror_diagnostic_service
     ),
     n_structure_research_service_factory: ResearchServiceFactory = (
         build_n_structure_research_service
@@ -290,6 +297,13 @@ def main(
                             raise ValueError("CLI_CANDIDATE_ID_INVALID")
                     elif args.research_command == "main-force-mirror-v2":
                         service = main_force_mirror_v2_research_service_factory(
+                            session
+                        )
+                    elif isinstance(
+                        research_request,
+                        MainForceMirrorDiagnosticRequest,
+                    ):
+                        service = main_force_mirror_diagnostic_service_factory(
                             session
                         )
                     elif isinstance(

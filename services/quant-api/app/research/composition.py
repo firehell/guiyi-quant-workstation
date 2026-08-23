@@ -2,11 +2,22 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+from datetime import UTC, date, datetime
+from decimal import Decimal
+
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.market_data.actual_dominant_research import (
     ActualDominantResearchSegmentLoader,
 )
+from app.market_data.domain import CanonicalBar
+from app.market_data.session_clock import (
+    SessionClockError,
+    resolved_session_windows_for_trading_day,
+)
+from app.models import Contract, Instrument
 from app.research.subing.candidate_validation_policy import (
     load_candidate_manifest,
     load_candidate_validation_protocol,
@@ -25,10 +36,18 @@ from app.research.jdj.jdj_candidate_validation_policy import (
 from app.research.jdj.jdj_candidate_validation_service import (
     JdjCandidateValidationService,
 )
-from app.research.jdj.jdj_policy import load_jdj_policy
+from app.research.jdj.jdj_policy import JdjPolicyError, load_jdj_policy
 from app.research.jdj.jdj_research_service import JdjResearchService
+from app.research.jdj_strategy.service import (
+    JdjStrategyContextInvalidError,
+    JdjStrategyReplayService,
+    JdjStrategySessionIdentityError,
+)
 from app.research.main_force.main_force_mirror_v2_research_service import (
     MainForceMirrorV2ResearchService,
+)
+from app.research.main_force.main_force_mirror_diagnostic_service import (
+    MainForceMirrorDiagnosticService,
 )
 from app.research.robustness.multi_candidate_robustness_policy import (
     load_multi_candidate_robustness_protocol,
@@ -49,7 +68,10 @@ from app.research.n_structure.n_candidate_validation_policy import (
 from app.research.n_structure.n_candidate_validation_service import (
     NStructureCandidateValidationService,
 )
-from app.research.n_structure.n_structure_policy import load_n_structure_policy
+from app.research.n_structure.n_structure_policy import (
+    NStructurePolicyError,
+    load_n_structure_policy,
+)
 from app.research.n_structure.n_structure_research_service import NStructureResearchService
 from app.market_data.operational_universe import ActiveUniverseError, load_active_products
 from app.market_data.subing_calibration import load_accepted_subing_calibration
@@ -162,6 +184,105 @@ def build_jdj_research_service(session: Session) -> JdjResearchService:
     )
 
 
+def build_jdj_strategy_replay_service(
+    session: Session,
+) -> JdjStrategyReplayService:
+    """Compose JM replay with exact Catalog multiplier and Session facts."""
+
+    symbol = "jm"
+    exchange_codes = tuple(
+        session.scalars(
+            select(Instrument.exchange_code).where(
+                Instrument.symbol == symbol,
+                Instrument.is_active.is_(True),
+            )
+        )
+    )
+    if (
+        len(exchange_codes) != 1
+        or not isinstance(exchange_codes[0], str)
+        or not exchange_codes[0]
+    ):
+        raise JdjStrategyContextInvalidError()
+    exchange = exchange_codes[0]
+
+    def contract_multiplier_for_contract(
+        *,
+        symbol: str,
+        contract: str,
+    ) -> Decimal:
+        rows = tuple(
+            session.execute(
+                select(
+                    Contract.instrument_symbol,
+                    Contract.exchange_code,
+                    Contract.contract_multiplier,
+                ).where(Contract.contract_code == contract)
+            )
+        )
+        if len(rows) != 1:
+            raise JdjStrategyContextInvalidError()
+        owner, contract_exchange, multiplier = rows[0]
+        if (
+            symbol != "jm"
+            or owner != symbol
+            or contract_exchange != exchange
+            or isinstance(multiplier, bool)
+            or not isinstance(multiplier, int)
+            or multiplier <= 0
+        ):
+            raise JdjStrategyContextInvalidError()
+        return Decimal(multiplier)
+
+    def terminal_bar_ends_for_segment(
+        *,
+        symbol: str,
+        bars_1m: Sequence[CanonicalBar],
+    ) -> dict[date, datetime]:
+        if symbol != "jm" or not bars_1m:
+            raise JdjStrategySessionIdentityError()
+        terminals: dict[date, datetime] = {}
+        for trading_day in sorted({bar.trading_day for bar in bars_1m}):
+            try:
+                windows = resolved_session_windows_for_trading_day(
+                    session,
+                    exchange=exchange,
+                    symbol=symbol,
+                    trading_day=trading_day,
+                )
+            except SessionClockError:
+                raise JdjStrategySessionIdentityError() from None
+            if not windows:
+                raise JdjStrategySessionIdentityError()
+            terminal = max(item.window.end for item in windows)
+            if (
+                terminal.tzinfo is None
+                or terminal.astimezone(UTC)
+                not in {
+                    bar.bar_end
+                    for bar in bars_1m
+                    if bar.trading_day == trading_day
+                }
+            ):
+                raise JdjStrategySessionIdentityError()
+            terminals[trading_day] = terminal
+        return terminals
+
+    try:
+        jdj_policy = load_jdj_policy()
+        n_policy = load_n_structure_policy()
+    except (JdjPolicyError, NStructurePolicyError):
+        raise JdjStrategyContextInvalidError() from None
+    market_data = build_market_data_service(session)
+    return JdjStrategyReplayService(
+        ActualDominantResearchSegmentLoader(market_data),
+        jdj_policy=jdj_policy,
+        n_policy=n_policy,
+        contract_multiplier_for_contract=contract_multiplier_for_contract,
+        terminal_bar_ends_for_segment=terminal_bar_ends_for_segment,
+    )
+
+
 def build_jdj_candidate_validation_service(
     session: Session,
     candidate_id: str,
@@ -257,4 +378,16 @@ def build_main_force_mirror_v2_research_service(
     return MainForceMirrorV2ResearchService(
         market_data=mirror_service.market_data,
         mirror_service=mirror_service,
+    )
+
+
+def build_main_force_mirror_diagnostic_service(
+    session: Session,
+) -> MainForceMirrorDiagnosticService:
+    """Compose frozen Phase A over the existing V2/MDS historical readers."""
+    mirror_service = build_main_force_mirror_v2_service(session)
+    return MainForceMirrorDiagnosticService(
+        market_data=mirror_service.market_data,
+        mirror_service=mirror_service,
+        previous_trading_day=mirror_service.coverage.previous_trading_day,
     )

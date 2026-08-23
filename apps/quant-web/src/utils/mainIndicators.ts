@@ -87,6 +87,14 @@ export const RESEARCH_OVERLAY_DEFINITIONS: readonly ResearchOverlayDefinition[] 
     historicalSource: 'jdj',
   },
   {
+    id: 'jdj_strategy',
+    label: '日进斗金策略',
+    supportedSeriesKinds: ['actual_dominant'],
+    supportedFrequencies: ['1m'],
+    mainIndicators: [],
+    historicalSource: 'jdj_strategy',
+  },
+  {
     id: 'htdy',
     label: '火天大有',
     supportedSeriesKinds: ['continuous', 'actual_dominant', 'contract'],
@@ -356,7 +364,11 @@ function browserStorage(): Storage | null {
 }
 
 function normalizeResearchOverlay(value: unknown): ResearchOverlayId {
-  return value === 'none' || value === 'n_structure' || value === 'jdj' || value === 'htdy'
+  return value === 'none'
+    || value === 'n_structure'
+    || value === 'jdj'
+    || value === 'jdj_strategy'
+    || value === 'htdy'
     ? value
     : 'subing'
 }
