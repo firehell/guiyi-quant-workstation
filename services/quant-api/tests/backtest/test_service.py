@@ -327,6 +327,25 @@ def test_unwritable_runs_root_is_degraded_and_start_fails_closed(
         service.start_run(_request())
 
 
+def test_missing_runs_root_stays_degraded_and_start_does_not_create_it(
+    tmp_path: Path,
+) -> None:
+    service, store, runner = _service(tmp_path)
+    store.runs_root.rmdir()
+
+    before = service.health()
+    with pytest.raises(BacktestError, match="^BACKTEST_LOCAL_UNAVAILABLE$"):
+        service.start_run(_request())
+    after = service.health()
+
+    assert before["status"] == "degraded"
+    assert before["runs_root_available"] is False
+    assert after["status"] == "degraded"
+    assert after["runs_root_available"] is False
+    assert not store.runs_root.exists()
+    assert runner.started == []
+
+
 def test_start_persists_authoritative_lineage_configs_and_terminal_times(
     tmp_path: Path,
 ) -> None:

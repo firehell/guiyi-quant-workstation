@@ -1268,6 +1268,7 @@ def test_reconcile_unreadable_run_record_fails_closed_and_keeps_lock(
 def test_launch_serialization_blocks_another_store_instance(
     store: ArtifactStore,
 ) -> None:
+    store.runs_root.mkdir()
     other_store = ArtifactStore(
         BacktestSettings(
             python_executable=store.runs_root.parent / "python",
@@ -1312,6 +1313,18 @@ def test_launch_serialization_blocks_another_store_instance(
     assert not second.is_alive()
     assert second_entered.is_set()
     assert errors == []
+
+
+def test_launch_serialization_keeps_missing_runs_root_unavailable(
+    store: ArtifactStore,
+) -> None:
+    assert not store.runs_root.exists()
+
+    with pytest.raises(BacktestError, match="^BACKTEST_LOCAL_UNAVAILABLE$"):
+        with store.serialize_launch():
+            pytest.fail("missing runs root must not enter launch serialization")
+
+    assert not store.runs_root.exists()
 
 
 def test_monitor_ownership_keeps_missing_pid_busy_without_calling_pid_checker(

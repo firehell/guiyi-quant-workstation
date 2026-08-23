@@ -140,7 +140,13 @@ class ArtifactStore:
     def serialize_launch(self) -> Iterator[None]:
         """Serialize one reconcile-to-monitor-ownership launch transaction."""
 
-        with self._locked_root(create=True):
+        with ExitStack() as stack:
+            try:
+                stack.enter_context(self._locked_root())
+            except FileNotFoundError as exc:
+                raise BacktestError(
+                    BacktestHttpErrorCode.BACKTEST_LOCAL_UNAVAILABLE
+                ) from exc
             yield
 
     def run_paths(self, run_id: str) -> RunPaths:
