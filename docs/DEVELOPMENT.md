@@ -66,13 +66,14 @@ commit 或 push 的前置授权。
 ```text
 clean develop + 预期提交
 -> 受影响测试 / Ruff / Mypy / Web build
+-> 新 detached Runtime 根按 lockfile 准备 Python / Web 依赖与 Web dist
 -> 当次明确的部署请求
 -> render 并 lint launchd plist
 -> 只重载已授权的服务面
 -> 读回安装根和健康状态
 ```
 
-`--render-only` 是普通无副作用验证；`--confirm-load` 和 `--confirm-market-runtime` 会改变本机服务状态，属于受控外部操作。直接修改 `develop` 不会自动生效：Web 需要 build/重载，API/Live 需要重载。开发态运行不是 Ready、Runtime promotion 或最终验收；功能收口后仍需独立精确提交的 Runtime worktree。
+`--render-only` 是普通无副作用验证；`--confirm-load` 和 `--confirm-market-runtime` 会改变本机服务状态，属于受控外部操作。新 detached Runtime worktree 不含 Git 忽略的 `.venv`、`node_modules`、`dist`，必须在 render 前依照 `TESTING.md` 的 lockfile 命令完成依赖准备并 build。直接修改 `develop` 不会自动生效：Web 需要 build/重载，API/Live 需要重载。开发态运行不是 Ready、Runtime promotion 或最终验收；功能收口后仍需独立精确提交的 Runtime worktree。
 
 ## 普通仓库删除
 
