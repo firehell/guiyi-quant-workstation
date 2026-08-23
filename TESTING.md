@@ -57,6 +57,7 @@ command -v find >/dev/null
 command -v sort >/dev/null
 command -v stat >/dev/null
 command -v unzip >/dev/null
+command -v realpath >/dev/null
 test -x "$GUIYI_BACKTEST_PYTHON_EXECUTABLE"
 test -d "$GUIYI_BACKTEST_BUNDLE_PATH"
 test -r "$GUIYI_BACKTEST_BUNDLE_PATH"
@@ -110,7 +111,8 @@ set -euo pipefail
 task8_repo_root="$(git rev-parse --show-toplevel)"
 task8_sidecar_python="$task8_repo_root/services/quant-api/.venv/bin/python"
 task8_registry="$task8_repo_root/services/quant-api/app/backtest/strategies/registry.json"
-task8_external_python="$GUIYI_BACKTEST_PYTHON_EXECUTABLE"
+task8_external_python="$(realpath "$GUIYI_BACKTEST_PYTHON_EXECUTABLE")"
+task8_runner_entry="$task8_repo_root/services/quant-api/app/backtest/runner_entry.py"
 task8_bundle_root="$(cd "$GUIYI_BACKTEST_BUNDLE_PATH" && pwd -P)"
 task8_runs_parent_input="$(dirname -- "$GUIYI_BACKTEST_RUNS_ROOT")"
 task8_runs_name="$(basename -- "$GUIYI_BACKTEST_RUNS_ROOT")"
@@ -146,27 +148,126 @@ esac
 task8_sidecar_pid=""
 task8_runner_pid=""
 task8_run_id=""
+task8_cleanup_fail() {
+  printf '%s\n' "FAIL: $1; smoke evidence and runs root retained" >&2
+  return 1
+}
 task8_stop_runner() {
-  if test -n "$task8_runner_pid" && test -n "$task8_run_id" \
-      && test -f "$task8_runs_root/active.lock" \
-      && jq -e --arg task8_run_id "$task8_run_id" \
-        --argjson task8_runner_pid "$task8_runner_pid" \
-        '.run_id == $task8_run_id and .pid == $task8_runner_pid' \
-        "$task8_runs_root/active.lock" >/dev/null 2>&1 \
-      && kill -0 "$task8_runner_pid" 2>/dev/null; then
-    task8_runner_pgid="$(ps -o pgid= -p "$task8_runner_pid" 2>/dev/null | tr -d ' ' || true)"
-    if test "$task8_runner_pgid" = "$task8_runner_pid"; then
-      kill -TERM "-$task8_runner_pid" 2>/dev/null || true
-      task8_runner_stop_attempt=0
-      while kill -0 -- "-$task8_runner_pid" 2>/dev/null \
-          && test "$task8_runner_stop_attempt" -lt 20; do
-        task8_runner_stop_attempt=$((task8_runner_stop_attempt + 1))
-        sleep 0.25
-      done
-      if kill -0 -- "-$task8_runner_pid" 2>/dev/null; then
-        kill -KILL "-$task8_runner_pid" 2>/dev/null || true
-      fi
+  if test ! -e "$task8_runs_root"; then
+    if test -n "$task8_runner_pid" && kill -0 "$task8_runner_pid" 2>/dev/null; then
+      task8_cleanup_fail BACKTEST_SMOKE_CLEANUP_ROOT_MISSING
+      return 1
     fi
+    return 0
+  fi
+  if test ! -d "$task8_runs_root" || test -L "$task8_runs_root" \
+      || test "$(stat -f '%u' "$task8_runs_root")" != "$(id -u)" \
+      || test "$(stat -f '%Lp' "$task8_runs_root")" != "700"; then
+    task8_cleanup_fail BACKTEST_SMOKE_CLEANUP_ROOT_IDENTITY_INVALID
+    return 1
+  fi
+
+  task8_lock_node_count="$(find "$task8_runs_root" -mindepth 1 -maxdepth 1 \
+    -name active.lock -print | wc -l | tr -d ' ')"
+  if test "$task8_lock_node_count" -eq 0; then
+    if test -n "$task8_runner_pid" && kill -0 "$task8_runner_pid" 2>/dev/null; then
+      task8_cleanup_fail BACKTEST_SMOKE_CLEANUP_LIVE_PID_WITHOUT_LOCK
+      return 1
+    fi
+    task8_runner_pid=""
+    return 0
+  fi
+  task8_regular_lock_count="$(find "$task8_runs_root" -mindepth 1 -maxdepth 1 \
+    -name active.lock -type f ! -type l -print | wc -l | tr -d ' ')"
+  if test "$task8_lock_node_count" -ne 1 || test "$task8_regular_lock_count" -ne 1 \
+      || test -L "$task8_runs_root/active.lock"; then
+    task8_cleanup_fail BACKTEST_SMOKE_CLEANUP_LOCK_IDENTITY_INVALID
+    return 1
+  fi
+
+  task8_lock_fields="$(jq -er '
+    select(type == "object") |
+    select((keys | sort) == ["pid", "run_id", "started_at"]) |
+    select(.run_id | type == "string" and
+      test("^[0-9]{8}T[0-9]{12}Z-[0-9a-f]{16}$")) |
+    select(.pid | type == "number" and floor == . and . > 1) |
+    select(.started_at | type == "string" and
+      test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+\\+00:00$")) |
+    [.run_id, (.pid | tostring), .started_at] | @tsv
+  ' "$task8_runs_root/active.lock" 2>/dev/null)" || {
+    task8_cleanup_fail BACKTEST_SMOKE_CLEANUP_LOCK_PAYLOAD_INVALID
+    return 1
+  }
+  IFS=$'\t' read -r task8_lock_run_id task8_lock_pid task8_lock_started_at \
+    <<<"$task8_lock_fields"
+  if test -n "$task8_run_id" && test "$task8_run_id" != "$task8_lock_run_id"; then
+    task8_cleanup_fail BACKTEST_SMOKE_CLEANUP_ASSIGNED_RUN_MISMATCH
+    return 1
+  fi
+  if test -n "$task8_runner_pid" && test "$task8_runner_pid" != "$task8_lock_pid"; then
+    task8_cleanup_fail BACKTEST_SMOKE_CLEANUP_ASSIGNED_PID_MISMATCH
+    return 1
+  fi
+  task8_run_id="$task8_lock_run_id"
+  task8_runner_pid="$task8_lock_pid"
+  task8_run_dir="$task8_runs_root/$task8_run_id"
+
+  if test ! -d "$task8_run_dir" || test -L "$task8_run_dir" \
+      || test "$(stat -f '%u' "$task8_run_dir")" != "$(id -u)" \
+      || test ! -f "$task8_run_dir/run.json" \
+      || test -L "$task8_run_dir/run.json" \
+      || ! jq -e --arg task8_run_id "$task8_run_id" \
+        --arg task8_lock_started_at "$task8_lock_started_at" '
+          .run_id == $task8_run_id and
+          .started_at == $task8_lock_started_at and
+          (.status | IN("running", "succeeded", "failed", "timed_out", "interrupted"))
+        ' "$task8_run_dir/run.json" >/dev/null 2>&1; then
+    task8_cleanup_fail BACKTEST_SMOKE_CLEANUP_RUN_IDENTITY_INVALID
+    return 1
+  fi
+
+  if ! kill -0 "$task8_runner_pid" 2>/dev/null; then
+    task8_runner_pid=""
+    return 0
+  fi
+  task8_runner_pgid="$(ps -o pgid= -p "$task8_runner_pid" 2>/dev/null \
+    | tr -d ' ' || true)"
+  task8_self_pgid="$(ps -o pgid= -p $$ 2>/dev/null | tr -d ' ' || true)"
+  task8_runner_command="$(ps -ww -o command= -p "$task8_runner_pid" 2>/dev/null || true)"
+  task8_expected_runner_command="$task8_external_python $task8_runner_entry --run-root $task8_run_dir"
+  if test "$task8_runner_pid" -eq $$ || test "$task8_runner_pid" -eq "$PPID" \
+      || test -z "$task8_runner_pgid" || test "$task8_runner_pgid" != "$task8_runner_pid" \
+      || test "$task8_runner_pgid" = "$task8_self_pgid" \
+      || test "$task8_runner_command" != "$task8_expected_runner_command"; then
+    task8_cleanup_fail BACKTEST_SMOKE_CLEANUP_PROCESS_IDENTITY_INVALID
+    return 1
+  fi
+
+  kill -TERM -- "-$task8_runner_pid" 2>/dev/null || {
+    task8_cleanup_fail BACKTEST_SMOKE_CLEANUP_TERM_FAILED
+    return 1
+  }
+  task8_runner_stop_attempt=0
+  while kill -0 -- "-$task8_runner_pid" 2>/dev/null \
+      && test "$task8_runner_stop_attempt" -lt 20; do
+    task8_runner_stop_attempt=$((task8_runner_stop_attempt + 1))
+    sleep 0.25
+  done
+  if kill -0 -- "-$task8_runner_pid" 2>/dev/null; then
+    kill -KILL -- "-$task8_runner_pid" 2>/dev/null || {
+      task8_cleanup_fail BACKTEST_SMOKE_CLEANUP_KILL_FAILED
+      return 1
+    }
+    task8_runner_stop_attempt=0
+    while kill -0 -- "-$task8_runner_pid" 2>/dev/null \
+        && test "$task8_runner_stop_attempt" -lt 20; do
+      task8_runner_stop_attempt=$((task8_runner_stop_attempt + 1))
+      sleep 0.25
+    done
+  fi
+  if kill -0 -- "-$task8_runner_pid" 2>/dev/null; then
+    task8_cleanup_fail BACKTEST_SMOKE_CLEANUP_PROCESS_STILL_LIVE
+    return 1
   fi
   task8_runner_pid=""
 }
@@ -188,10 +289,17 @@ task8_stop_sidecar() {
   fi
 }
 task8_cleanup() {
-  task8_stop_runner
-  task8_stop_sidecar
+  task8_original_status="$1"
+  task8_cleanup_status=0
+  task8_stop_runner || task8_cleanup_status=1
+  task8_stop_sidecar || task8_cleanup_status=1
+  if test "$task8_cleanup_status" -ne 0; then
+    printf '%s\n' 'FAIL: BACKTEST_SMOKE_CLEANUP_INCOMPLETE; evidence retained' >&2
+    return 1
+  fi
+  return "$task8_original_status"
 }
-trap 'task8_cleanup' EXIT
+trap 'task8_exit_status=$?; trap - EXIT; task8_cleanup "$task8_exit_status"; exit $?' EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
@@ -341,8 +449,8 @@ curl --noproxy '*' -fsS --connect-timeout 2 --max-time 10 \
 test -s "$task8_tmp_dir/report.zip"
 unzip -tq "$task8_tmp_dir/report.zip" >/dev/null
 
+task8_stop_runner
 task8_stop_sidecar
-task8_runner_pid=""
 find "$task8_bundle_root" -xdev -type f -exec stat -f '%N|%z|%m' {} + \
   | LC_ALL=C sort >"$task8_tmp_dir/bundle.after"
 cmp -s "$task8_tmp_dir/bundle.before" "$task8_tmp_dir/bundle.after"
@@ -352,7 +460,11 @@ printf '%s\n' "RQALPHA_SMOKE_SUCCEEDED run_id=$task8_run_id"
 该命令只读 Bundle，仅在授权的唯一 runs root 下产生一个 run，并通过强制
 `auto_update_bundle=false` / `rqdatac_uri=disabled` / simulation-only / `signal=false` /
 `ams=false` / `incremental=false` 配置将数据更新、真实订单与外部 application/runtime 路径
-保持关闭。外部 runs root 与 `/private/tmp/guiyi-rqalpha-smoke.*` 验收目录保留作当次证据，
+保持关闭。EXIT trap 总是先清理 runner、再停 sidecar；即使 POST 后尚未赋值
+`task8_run_id/task8_runner_pid`，也只从本次新建且原先为空的 runs root 中恢复唯一
+regular non-symlink lock，并在发送信号前交叉校验 lock/run/process-group 身份。任一身份
+无法唯一确认时只输出 `FAIL` 诊断，不向未确认 PID 发送信号。外部 runs root 与
+`/private/tmp/guiyi-rqalpha-smoke.*` 验收目录保留作当次证据，
 清理属于另一次精确外部操作，不在本 smoke 授权内。真实 smoke 通过仍不表示 release、
 Runtime-ready、策略有效、OOS 通过或 Candidate 可晋升。
 
