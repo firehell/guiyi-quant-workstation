@@ -9,7 +9,10 @@ from decimal import Decimal, ROUND_FLOOR
 from hashlib import sha256
 
 from app.market_data.domain import CanonicalBar
-from app.research.jdj.jdj_context import JdjBarContext
+from app.research.jdj.jdj_context import (
+    JdjBarContext,
+    valid_context_fact_identity,
+)
 from app.research.jdj.jdj_events import (
     JdjDirection,
     JdjKeyLevelBreakoutTriggerEvent,
@@ -116,6 +119,7 @@ def run_jdj_reference_segment(
     actions: list[JdjAction] = []
     pending: _Pending | None = None
     episode: _Episode | None = None
+    last_closed_episode: _Episode | None = None
     cash_equity = config.profile.historical_reference_start_equity
     active_day: date | None = None
     day_start_equity = cash_equity
@@ -134,11 +138,13 @@ def run_jdj_reference_segment(
             pause_remaining = 0
             day_high = None
             day_low = None
+            last_closed_episode = None
 
         day_high = bar.high if day_high is None else max(day_high, bar.high)
         day_low = bar.low if day_low is None else min(day_low, bar.low)
 
         if pending is not None:
+            episode_before_fill = episode
             filled_actions, episode, cash_delta = _resolve_pending(
                 pending,
                 bar=bar,
@@ -148,6 +154,8 @@ def run_jdj_reference_segment(
             actions.extend(filled_actions)
             cash_equity += cash_delta
             pending = None
+            if episode_before_fill is not None and episode is None:
+                last_closed_episode = episode_before_fill
 
         bar_events = tuple(events_by_time.get(bar.bar_end, ()))
         for duplicate_id in sorted(duplicate_ids_by_time.get(bar.bar_end, ())):
@@ -175,12 +183,15 @@ def run_jdj_reference_segment(
         if drawdown >= config.core.daily_stop_drawdown_fraction:
             if not daily_stop_triggered:
                 daily_stop_triggered = True
+                risk_episode = episode or last_closed_episode
+                if risk_episode is None:
+                    raise JdjStrategyReplayError()
                 actions.append(
                     _daily_action(
                         JdjActionKind.DAILY_STOP,
                         reason="DAILY_DRAWDOWN_STOP",
                         bar=bar,
-                        episode=episode,
+                        episode=risk_episode,
                     )
                 )
             if episode is not None:
@@ -195,12 +206,15 @@ def run_jdj_reference_segment(
         ):
             daily_pause_triggered = True
             pause_remaining = config.core.daily_pause_bars
+            risk_episode = episode or last_closed_episode
+            if risk_episode is None:
+                raise JdjStrategyReplayError()
             actions.append(
                 _daily_action(
                     JdjActionKind.DAILY_PAUSE,
                     reason="DAILY_DRAWDOWN_PAUSE",
                     bar=bar,
-                    episode=episode,
+                    episode=risk_episode,
                 )
             )
             pause_active = False
@@ -333,6 +347,30 @@ def _validate_inputs(
             or event.contract != events[0].contract
         ):
             raise JdjStrategyReplayError()
+    segment_contract, segment_start = _context_segment_identity(contexts, events)
+    previous: JdjBarContext | None = None
+    for context in contexts:
+        if not valid_context_fact_identity(
+            context,
+            previous=previous,
+            contract=segment_contract,
+            segment_start_trading_day=segment_start,
+        ):
+            raise JdjStrategyReplayError()
+        previous = context
+
+
+def _context_segment_identity(
+    contexts: tuple[JdjBarContext, ...],
+    events: tuple[JdjTriggerEvent, ...],
+) -> tuple[str, date]:
+    if events:
+        return events[0].contract, events[0].segment_start_trading_day
+    for context in contexts:
+        pivot = context.eligible_high_pivot or context.eligible_low_pivot
+        if pivot is not None:
+            return pivot.contract, pivot.segment_start_trading_day
+    return "JM0000", date.min
 
 
 def _consider_entry(
@@ -469,13 +507,17 @@ def _consider_adds(
     if not fresh:
         _reject_all(events, actions, episode, "SOURCE_EVENT_ALREADY_CONSUMED")
         return None
-    candidate = fresh[0]
-    extras = tuple(event for event in events if event is not candidate)
-    if candidate.direction is not episode.direction or not isinstance(
-        candidate, JdjTrendFollowTriggerEvent
-    ):
+    add_candidates = tuple(
+        event
+        for event in fresh
+        if event.direction is episode.direction
+        and isinstance(event, JdjTrendFollowTriggerEvent)
+    )
+    if not add_candidates:
         _reject_all(events, actions, episode, "OPEN_EPISODE_EVENT_REJECTED")
         return None
+    candidate = min(add_candidates, key=lambda event: event.event_id)
+    extras = tuple(event for event in events if event is not candidate)
     if not episode.partial_profit_taken:
         _reject_all(events, actions, episode, "ADD_PARTIAL_PROFIT_REQUIRED")
         return None
@@ -670,6 +712,10 @@ def _action_from_pending(
             pending.decision_at.isoformat(),
             effective_bar_end.isoformat(),
             reason,
+            pending.episode_id or "episode-pending",
+            pending.contract,
+            pending.segment_start_trading_day.isoformat(),
+            pending.trading_day.isoformat(),
             *(event.event_id for event in pending.source_events),
         ),
         episode_id=episode.episode_id if episode is not None else pending.episode_id,
@@ -734,12 +780,19 @@ def _daily_action(
     *,
     reason: str,
     bar: CanonicalBar,
-    episode: _Episode | None,
+    episode: _Episode,
 ) -> JdjAction:
-    if episode is None:
-        raise JdjStrategyReplayError()
     return JdjAction(
-        event_id=_identity("action", kind.value, bar.bar_end.isoformat()),
+        event_id=_identity(
+            "action",
+            kind.value,
+            reason,
+            episode.episode_id,
+            episode.contract,
+            episode.segment_start_trading_day.isoformat(),
+            bar.trading_day.isoformat(),
+            bar.bar_end.isoformat(),
+        ),
         episode_id=episode.episode_id,
         kind=kind,
         source_event_ids=(),

@@ -67,12 +67,14 @@ def _pivot(
     price: str | int,
     *,
     confirmed_at: datetime,
+    contract: str = _CONTRACT,
+    segment_start: date = _SEGMENT_START,
 ) -> NSwingPivot:
     pivot_at = confirmed_at - timedelta(minutes=5)
     pivot_id = ":".join(
         (
-            _CONTRACT,
-            _SEGMENT_START.isoformat(),
+            contract,
+            segment_start.isoformat(),
             "5m",
             "0",
             kind.value,
@@ -87,8 +89,8 @@ def _pivot(
         pivot_time=pivot_at,
         confirmed_at=confirmed_at,
         price=Decimal(str(price)),
-        contract=_CONTRACT,
-        segment_start_trading_day=_SEGMENT_START,
+        contract=contract,
+        segment_start_trading_day=segment_start,
     )
 
 
@@ -99,8 +101,22 @@ def _context(
     trend: NStructureKind = NStructureKind.BULL,
     target: str | int | None = 110,
     direction: JdjDirection = JdjDirection.LONG,
+    fact_boundary: datetime | None = None,
+    first_of_day: bool = False,
+    contract: str = _CONTRACT,
+    segment_start: date = _SEGMENT_START,
 ) -> JdjBarContext:
-    snapshot_at = bar.bar_end - timedelta(minutes=1)
+    if first_of_day or bar.bar_end == _START:
+        return JdjBarContext(
+            bar=bar,
+            ema20=Decimal(str(ema20)) if ema20 is not None else None,
+            trend_kind=NStructureKind.UNDEFINED,
+            trend_snapshot_observed_at=None,
+            trend_epoch=None,
+            eligible_high_pivot=None,
+            eligible_low_pivot=None,
+        )
+    snapshot_at = fact_boundary or bar.bar_end - timedelta(minutes=1)
     pivot = (
         _pivot(
             NSwingPivotKind.HIGH
@@ -108,6 +124,8 @@ def _context(
             else NSwingPivotKind.LOW,
             target,
             confirmed_at=snapshot_at,
+            contract=contract,
+            segment_start=segment_start,
         )
         if target is not None
         else None
@@ -242,6 +260,8 @@ def _key_level(
     direction: JdjDirection = JdjDirection.LONG,
     key_level_price: str | int = 95,
     observation_close: str | int | None = None,
+    contract: str = _CONTRACT,
+    segment_start: date = _SEGMENT_START,
 ) -> JdjKeyLevelBreakoutTriggerEvent:
     observed = bars[observed_index]
     close = Decimal(
@@ -255,8 +275,8 @@ def _key_level(
     pivot_kind = "high" if direction is JdjDirection.LONG else "low"
     pivot_id = ":".join(
         (
-            _CONTRACT,
-            _SEGMENT_START.isoformat(),
+            contract,
+            segment_start.isoformat(),
             "5m",
             "0",
             pivot_kind,
@@ -269,8 +289,8 @@ def _key_level(
         (
             candidate_id,
             "jm",
-            _CONTRACT,
-            _SEGMENT_START.isoformat(),
+            contract,
+            segment_start.isoformat(),
             direction.value,
             "0",
             pivot_id,
@@ -290,8 +310,8 @@ def _key_level(
         source_event_kind="jdj_key_level_breakout_triggered",
         direction=direction,
         symbol="jm",
-        contract=_CONTRACT,
-        segment_start_trading_day=_SEGMENT_START,
+        contract=contract,
+        segment_start_trading_day=segment_start,
         trading_day=observed.trading_day,
         observed_at=observed.bar_end,
         segment_bar_index=observed_index + 1,
@@ -317,7 +337,28 @@ def _run(
     terminal_by_day: dict[date, datetime] | None = None,
 ):
     _, replay = _modules()
-    supplied_contexts = contexts or tuple(_context(bar) for bar in bars)
+    if contexts is None:
+        built_contexts: list[JdjBarContext] = []
+        previous: CanonicalBar | None = None
+        segment_contract = events[0].contract if events else _CONTRACT
+        segment_start = (
+            events[0].segment_start_trading_day if events else _SEGMENT_START
+        )
+        for bar in bars:
+            first_of_day = previous is None or previous.trading_day != bar.trading_day
+            built_contexts.append(
+                _context(
+                    bar,
+                    fact_boundary=previous.bar_end if not first_of_day else None,
+                    first_of_day=first_of_day,
+                    contract=segment_contract,
+                    segment_start=segment_start,
+                )
+            )
+            previous = bar
+        supplied_contexts = tuple(built_contexts)
+    else:
+        supplied_contexts = contexts
     return replay.run_jdj_reference_segment(
         bars_1m=bars,
         contexts=supplied_contexts,
@@ -407,7 +448,8 @@ def test_target_must_be_known_and_reward_risk_must_reach_two() -> None:
     assert _actions(low_rr, "rejected")[0].reward_risk == Decimal("1.6")
 
 
-def test_future_confirmed_pivot_cannot_authorize_an_entry() -> None:
+def test_future_confirmed_pivot_fails_closed() -> None:
+    _, replay = _modules()
     bars = tuple(_bar(i) for i in range(6))
     contexts = list(_context(bar, target=None) for bar in bars)
     decision = bars[3]
@@ -427,10 +469,69 @@ def test_future_confirmed_pivot_cannot_authorize_an_entry() -> None:
     )
     event = _key_level(bars, 3, key_level_price=95)
 
-    result = _run(bars, (event,), contexts=tuple(contexts))
+    with pytest.raises(replay.JdjStrategyReplayError):
+        _run(bars, (event,), contexts=tuple(contexts))
 
-    assert not _actions(result, "entry")
-    assert _actions(result, "rejected")[0].reason == "TARGET_UNAVAILABLE"
+
+@pytest.mark.parametrize("invalid_fact", ("same_boundary_pivot", "future_snapshot"))
+def test_context_causality_violations_fail_closed(invalid_fact: str) -> None:
+    _, replay = _modules()
+    bars = tuple(_bar(i) for i in range(6))
+    contexts = list(_context(bar, target=None) for bar in bars)
+    decision = bars[3]
+    pivot = (
+        _pivot(NSwingPivotKind.HIGH, 110, confirmed_at=decision.bar_end)
+        if invalid_fact == "same_boundary_pivot"
+        else None
+    )
+    contexts[3] = JdjBarContext(
+        bar=decision,
+        ema20=Decimal("90"),
+        trend_kind=NStructureKind.BULL,
+        trend_snapshot_observed_at=(
+            decision.bar_end + timedelta(minutes=1)
+            if invalid_fact == "future_snapshot"
+            else decision.bar_end - timedelta(minutes=1)
+        ),
+        trend_epoch=0,
+        eligible_high_pivot=pivot,
+        eligible_low_pivot=None,
+    )
+    event = _key_level(bars, 3, key_level_price=95)
+
+    with pytest.raises(replay.JdjStrategyReplayError):
+        _run(bars, (event,), contexts=tuple(contexts))
+
+
+@pytest.mark.parametrize("identity_drift", ("contract", "segment"))
+def test_cross_segment_context_facts_fail_closed(identity_drift: str) -> None:
+    _, replay = _modules()
+    bars = tuple(_bar(i) for i in range(6))
+    contexts = list(_context(bar, target=None) for bar in bars)
+    decision = bars[3]
+    contexts[3] = JdjBarContext(
+        bar=decision,
+        ema20=Decimal("90"),
+        trend_kind=NStructureKind.BULL,
+        trend_snapshot_observed_at=decision.bar_end - timedelta(minutes=1),
+        trend_epoch=0,
+        eligible_high_pivot=_pivot(
+            NSwingPivotKind.HIGH,
+            110,
+            confirmed_at=bars[2].bar_end,
+            contract="JM2705" if identity_drift == "contract" else _CONTRACT,
+            segment_start=(
+                date(2026, 8, 18)
+                if identity_drift == "segment"
+                else _SEGMENT_START
+            ),
+        ),
+        eligible_low_pivot=None,
+    )
+    event = _key_level(bars, 3, key_level_price=95)
+
+    with pytest.raises(replay.JdjStrategyReplayError):
+        _run(bars, (event,), contexts=tuple(contexts))
 
 
 @pytest.mark.parametrize(
@@ -554,6 +655,48 @@ def test_duplicate_source_is_consumed_only_once() -> None:
     assert _actions(result, "entry")[0].source_event_ids == (event.event_id,)
 
 
+def test_source_less_fill_action_ids_include_episode_segment_identity() -> None:
+    action_ids_by_identity: list[dict[str, str]] = []
+    for contract, segment_start in (
+        ("JM2701", _SEGMENT_START),
+        ("JM2705", date(2026, 8, 18)),
+    ):
+        bars = (
+            _bar(0),
+            _bar(1),
+            _bar(2),
+            _bar(3, close=100),
+            _bar(4, open_=100, high=101, low=99, close=100),
+            _bar(5, open_=110, high=111, low=109, close=110),
+            _bar(6, open_=110, high=111, low=109, close=110),
+            _bar(7, open_=101, high=102, low=100, close=101),
+            _bar(8, open_=101, high=102, low=100, close=101),
+        )
+        event = _key_level(
+            bars,
+            3,
+            key_level_price=95,
+            contract=contract,
+            segment_start=segment_start,
+        )
+
+        result = _run(bars, (event,), multiplier=Decimal("100"))
+
+        action_ids_by_identity.append(
+            {
+                kind: _actions(result, kind)[0].event_id
+                for kind in ("reduce", "exit")
+            }
+        )
+
+    for kind in ("reduce", "exit"):
+        first = action_ids_by_identity[0][kind]
+        second = action_ids_by_identity[1][kind]
+        assert first.startswith("jdj-action-")
+        assert second.startswith("jdj-action-")
+        assert first != second
+
+
 def test_first_target_close_reduces_forty_percent_at_next_open_and_moves_stop() -> None:
     bars = (
         _bar(0),
@@ -631,6 +774,50 @@ def test_two_fresh_profitable_trend_follow_events_add_twenty_five_percent() -> N
     assert all(action.stop_price is not None for action in adds)
     assert adds[0].stop_price == adds[0].reference_price * Decimal("1") / Decimal("7") + Decimal("600") / Decimal("7")
     assert adds[1].stop_price == adds[1].reference_price * Decimal("1") / Decimal("8") + adds[0].stop_price * Decimal("7") / Decimal("8")
+
+
+def test_mixed_same_bar_setup_selects_fresh_trend_follow_as_add_source() -> None:
+    bars = (
+        _bar(0),
+        _bar(1),
+        _bar(2),
+        _bar(3, close=100),
+        _bar(4, open_=100, high=101, low=99, close=100),
+        _bar(5, open_=110, high=111, low=109, close=110),
+        _bar(6, open_=112, high=113, low=111, close=112),
+        _bar(7, open_=105, high=106, low=104, close=105),
+        _bar(8, open_=102, high=106, low=102, close=105),
+        _bar(9),
+    )
+    entry = _key_level(bars, 3, key_level_price=95)
+    add_source = _trend_follow(
+        bars,
+        7,
+        reaction_index=6,
+        observation_close=105,
+    )
+    competing_setup = _key_level(
+        bars,
+        7,
+        key_level_price=95,
+        observation_close=105,
+    )
+
+    result = _run(
+        bars,
+        (entry, competing_setup, add_source),
+        multiplier=Decimal("100"),
+    )
+
+    add = _actions(result, "add")[0]
+    assert add.source_event_ids == (add_source.event_id,)
+    assert add.primary_setup == "trend_follow"
+    rejected = _actions(result, "rejected")
+    assert any(
+        action.source_event_ids == (competing_setup.event_id,)
+        and action.reason == "OPEN_EPISODE_EVENT_REJECTED"
+        for action in rejected
+    )
 
 
 def test_third_add_and_opposite_or_repeated_sources_are_rejected() -> None:
@@ -762,6 +949,116 @@ def test_one_percent_drawdown_stops_day_and_conservatively_exits() -> None:
     assert stop.decision_at == bars[5].bar_end
     assert exit_action.reason == "DAILY_STOP"
     assert exit_action.effective_bar_end == bars[6].bar_end
+
+
+@pytest.mark.parametrize(
+    ("gap_open", "daily_kind"),
+    (("94", "daily_pause"), ("89", "daily_stop")),
+)
+def test_next_open_exit_gap_can_trigger_flat_daily_risk_action(
+    gap_open: str,
+    daily_kind: str,
+) -> None:
+    bars = (
+        _bar(0),
+        _bar(1),
+        _bar(2),
+        _bar(3, close=100),
+        _bar(4, open_=100, high=101, low=99, close=100),
+        _bar(5, open_=100, high=101, low=99, close=100),
+        _bar(
+            6,
+            open_=gap_open,
+            high=Decimal(gap_open) + Decimal("1"),
+            low=gap_open,
+            close=gap_open,
+        ),
+        _bar(7),
+    )
+    contexts = tuple(
+        _context(
+            bar,
+            trend=(
+                NStructureKind.RANGE
+                if index == 5
+                else NStructureKind.BULL
+            ),
+            fact_boundary=bars[index - 1].bar_end if index > 0 else None,
+            first_of_day=index == 0,
+        )
+        for index, bar in enumerate(bars)
+    )
+    event = _key_level(bars, 3, key_level_price=95)
+
+    result = _run(bars, (event,), contexts=contexts)
+
+    exit_action = _actions(result, "exit")[0]
+    daily_action = _actions(result, daily_kind)[0]
+    assert exit_action.reason == "TREND_CONTEXT_LOST"
+    assert exit_action.effective_bar_end == bars[6].bar_end
+    assert daily_action.decision_at == bars[6].bar_end
+    assert daily_action.position_quantity_after == 0
+    assert daily_action.episode_id == exit_action.episode_id
+
+
+@pytest.mark.parametrize(
+    ("gap_open", "daily_kind"),
+    (("94", "daily_pause"), ("89", "daily_stop")),
+)
+def test_daily_action_ids_include_episode_segment_identity(
+    gap_open: str,
+    daily_kind: str,
+) -> None:
+    action_ids: list[str] = []
+    for contract, segment_start in (
+        ("JM2701", _SEGMENT_START),
+        ("JM2705", date(2026, 8, 18)),
+    ):
+        bars = (
+            _bar(0),
+            _bar(1),
+            _bar(2),
+            _bar(3, close=100),
+            _bar(4, open_=100, high=101, low=99, close=100),
+            _bar(5, open_=100, high=101, low=99, close=100),
+            _bar(
+                6,
+                open_=gap_open,
+                high=Decimal(gap_open) + Decimal("1"),
+                low=gap_open,
+                close=gap_open,
+            ),
+            _bar(7),
+        )
+        contexts = tuple(
+            _context(
+                bar,
+                trend=(
+                    NStructureKind.RANGE
+                    if index == 5
+                    else NStructureKind.BULL
+                ),
+                fact_boundary=bars[index - 1].bar_end if index > 0 else None,
+                first_of_day=index == 0,
+                contract=contract,
+                segment_start=segment_start,
+            )
+            for index, bar in enumerate(bars)
+        )
+        event = _key_level(
+            bars,
+            3,
+            key_level_price=95,
+            contract=contract,
+            segment_start=segment_start,
+        )
+
+        result = _run(bars, (event,), contexts=contexts)
+
+        action_ids.append(_actions(result, daily_kind)[0].event_id)
+
+    assert all(action_id.startswith("jdj-action-") for action_id in action_ids)
+    assert action_ids[0] != action_ids[1]
 
 
 def test_terminal_lead_blocks_entry_and_flattens_existing_position_at_final_open() -> None:
