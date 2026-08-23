@@ -139,10 +139,12 @@ def _input(
     bars: tuple[CanonicalBar, ...],
     points: tuple[MainForceMirrorV2Point, ...],
     traces: tuple[MainForceMirrorV2AuditTraceItem, ...] | None = None,
+    *,
+    symbol: str = "jm",
 ):
     analysis = _analysis()
     return analysis.MainForceMirrorDiagnosticProductInput(
-        symbol="jm",
+        symbol=symbol,
         bars=bars,
         points=points,
         trace=traces or tuple(_trace(point) for point in points),
@@ -192,6 +194,26 @@ def test_early_touch_does_not_shorten_embargo_and_offset_11_can_anchor() -> None
     assert result.section.long_sample_count == 2
     assert result.section.short_sample_count == 2
     assert result.section.duplicated_side_sample_count == 2
+
+
+def test_embargo_lock_is_scoped_to_contiguous_physical_block_not_contract_string() -> None:
+    """Catches an A-block lock reviving after an intervening B contract block."""
+    analysis = _analysis()
+    bars, points = _fixture(
+        count=15,
+        cautions={0: "long_chase_caution", 2: "long_chase_caution"},
+    )
+    points = tuple(
+        replace(point, physical_contract="JM2701") if index == 1 else point
+        for index, point in enumerate(points)
+    )
+
+    result = analysis.audit_main_force_mirror_labels((_input(bars, points),))
+
+    assert [episode.anchor_index for episode in result.episodes if episode.kept] == [0, 2]
+    assert result.section.raw_sample_count == 2
+    assert result.section.sample_count == 2
+    assert result.section.overlap_suppressed_count == 0
 
 
 def test_open_gap_has_priority_and_same_bar_dual_intrabar_touch_is_ambiguous() -> None:
@@ -267,7 +289,6 @@ def test_complete_untouched_horizon_is_timeout_and_legacy_neither() -> None:
         ("roll", "censored_contract_change"),
         ("input_gap", "censored_input_gap"),
         ("window_end", "censored_horizon"),
-        ("split", "split_boundary_censored"),
     ),
 )
 def test_incomplete_sampling_is_typed_without_shortening_or_filling(
@@ -276,11 +297,7 @@ def test_incomplete_sampling_is_typed_without_shortening_or_filling(
 ) -> None:
     """Catches turning a known sampling limitation into a timeout or binary label."""
     analysis = _analysis()
-    start = (
-        datetime(2024, 12, 31, 20, tzinfo=UTC)
-        if case == "split"
-        else datetime(2025, 1, 2, tzinfo=UTC)
-    )
+    start = datetime(2025, 1, 2, tzinfo=UTC)
     count = 6 if case == "window_end" else 11
     bars, points = _fixture(count=count, cautions={0: "long_chase_caution"}, start=start)
     if case == "roll":
@@ -299,8 +316,47 @@ def test_incomplete_sampling_is_typed_without_shortening_or_filling(
     assert result.episodes[0].outcome.value == expected
     assert result.episodes[0].binary_target is None
     assert result.section.binary_evaluable_count == 0
-    if case in {"roll", "input_gap", "window_end", "split"}:
-        assert result.section.legacy_neither_count == 1
+    assert result.section.legacy_neither_count == 1
+
+
+def test_split_is_fold_specific_and_does_not_replace_physical_outcome() -> None:
+    """Catches deleting a Fold2-fit sample at the Fold1 fit/evaluate boundary."""
+    analysis = _analysis()
+    bars, points = _fixture(
+        count=11,
+        cautions={0: "long_chase_caution"},
+        start=datetime(2024, 12, 31, 20, tzinfo=UTC),
+    )
+    bars = tuple(
+        replace(bar, open=Decimal("111"), high=Decimal("112"))
+        if index == 1
+        else bar
+        for index, bar in enumerate(bars)
+    )
+
+    result = analysis.audit_main_force_mirror_labels((_input(bars, points),))
+    episode = result.episodes[0]
+
+    assert episode.outcome.value == "favorable_first"
+    assert episode.binary_target == 0
+    assert [
+        (fold.fold, fold.segment, fold.outcome.value, fold.binary_target, fold.eligible)
+        for fold in episode.fold_outcomes
+    ] == [
+        (1, "fit", "split_boundary_censored", None, False),
+        (2, "fit", "favorable_first", 0, True),
+    ]
+    assert result.section.favorable_first_count == 1
+    assert result.section.split_boundary_censored_count == 0
+    fold_one, fold_two = result.section.breakdowns[-2:]
+    assert fold_one.split_boundary_censored_count == 1
+    assert fold_one.binary_evaluable_count == 0
+    assert fold_two.favorable_first_count == 1
+    assert fold_two.binary_evaluable_count == 1
+    funnel = analysis.audit_main_force_mirror_funnel((_input(bars, points),), result)
+    assert funnel.breakdowns[0].binary_evaluable_count == 1
+    assert funnel.breakdowns[-2].binary_evaluable_count == 0
+    assert funnel.breakdowns[-1].binary_evaluable_count == 1
 
 
 def test_known_roll_precedes_window_end_censor_in_a_truncated_horizon() -> None:
@@ -459,6 +515,42 @@ def test_score_latch_conservation_corruption_fails_closed(case: str) -> None:
         analysis.audit_main_force_mirror_funnel((product,), labels)
 
 
+def test_funnel_rejects_labels_from_a_different_physical_contract() -> None:
+    """Catches validating label identity by anchor index alone."""
+    analysis = _analysis()
+    bars, points = _fixture(count=12, cautions={0: "long_chase_caution"})
+    original = _input(bars, points)
+    labels = analysis.audit_main_force_mirror_labels((original,))
+    changed_points = tuple(
+        replace(point, physical_contract="JM2701") for point in points
+    )
+    changed_traces = tuple(
+        replace(_trace(point), physical_contract="JM2701") for point in changed_points
+    )
+    changed = _input(bars, changed_points, changed_traces)
+
+    with pytest.raises(
+        analysis.MainForceMirrorDiagnosticAnalysisError,
+        match="MFM_DIAGNOSTIC_ANALYSIS_INVALID",
+    ):
+        analysis.audit_main_force_mirror_funnel((changed,), labels)
+
+
+def test_funnel_requires_exact_label_input_symbol_order() -> None:
+    """Catches accepting the same anchor indices from a reordered product collection."""
+    analysis = _analysis()
+    bars, points = _fixture(count=12, cautions={0: "long_chase_caution"})
+    jm = _input(bars, points, symbol="jm")
+    ag = _input(bars, points, symbol="ag")
+    labels = analysis.audit_main_force_mirror_labels((jm, ag))
+
+    with pytest.raises(
+        analysis.MainForceMirrorDiagnosticAnalysisError,
+        match="MFM_DIAGNOSTIC_ANALYSIS_INVALID",
+    ):
+        analysis.audit_main_force_mirror_funnel((ag, jm), labels)
+
+
 def _sequence_product(*, roll_before_evidence: bool = False):
     count = 34
     bars, base_points = _fixture(count=count)
@@ -577,6 +669,42 @@ def test_sequence_roll_resets_old_episode_instead_of_joining_cross_contract() ->
         assert profile.breakdowns[0].first_evidence_count == 0
 
 
+@pytest.mark.parametrize(
+    ("boundary", "cross_boundary_transition"),
+    (
+        ("contract", ("peak", "idle")),
+        ("unavailable", ("peak", "idle")),
+        ("reset", ("peak", "decay")),
+    ),
+)
+def test_sequence_transition_and_side_fallback_reset_at_physical_block_boundary(
+    boundary: str,
+    cross_boundary_transition: tuple[str, str],
+) -> None:
+    """Catches joining states across contract, unavailable, or explicit reset boundaries."""
+    analysis = _analysis()
+    product = _sequence_product(roll_before_evidence=boundary == "contract")
+    if boundary == "unavailable":
+        points = list(product.points)
+        points[22] = _point(product.bars[22], ready=False)
+        traces = list(product.trace)
+        traces[22] = _trace(points[22])
+        product = _input(product.bars, tuple(points), tuple(traces))
+    elif boundary == "reset":
+        traces = list(product.trace)
+        traces[22] = replace(traces[22], reset_boundary="series_start")
+        product = _input(product.bars, product.points, tuple(traces))
+
+    result = analysis.audit_main_force_mirror_sequences((product,))
+
+    for profile in result.section.profiles:
+        transitions = {
+            (item.from_state.value, item.to_state.value): item.count
+            for item in profile.breakdowns[0].transitions
+        }
+        assert transitions.get(cross_boundary_transition, 0) == 0
+
+
 def test_sequence_nonmonotonic_input_fails_before_derivation() -> None:
     """Catches treating a nonmonotonic timestamp as a harmless sequence reset."""
     analysis = _analysis()
@@ -595,3 +723,62 @@ def test_sequence_nonmonotonic_input_fails_before_derivation() -> None:
         match="MFM_DIAGNOSTIC_ANALYSIS_INVALID",
     ):
         analysis.audit_main_force_mirror_sequences((corrupted,))
+
+
+def _many_installed_peaks_product(*, with_decay: bool):
+    count = 40 if with_decay else 33
+    bars, base_points = _fixture(count=count)
+    points: list[MainForceMirrorV2Point] = []
+    for index, base in enumerate(base_points):
+        if index < 20:
+            state, instant, accumulated = "turnover", 10.0, 10.0
+        elif index < 33:
+            state, instant, accumulated = "long_build", 100.0, 80.0
+        elif index == 33 and with_decay:
+            state, instant, accumulated = "long_liquidation", -60.0, 20.0
+        else:
+            state, instant, accumulated = "turnover", -10.0, 20.0
+        points.append(
+            replace(
+                base,
+                pressure_state=state,  # type: ignore[arg-type]
+                instant_pressure=instant,
+                accumulated_pressure=accumulated,
+            )
+        )
+    bars = tuple(
+        replace(
+            bar,
+            open=Decimal(100 - max(0, index - 33)),
+            high=Decimal(101 - max(0, index - 33)),
+            low=Decimal(99 - max(0, index - 33)),
+            close=Decimal(100 - max(0, index - 33)),
+        )
+        for index, bar in enumerate(bars)
+    )
+    return _input(bars, tuple(points))
+
+
+def test_sequence_denominator_retains_all_installed_peaks_not_only_decay_samples() -> None:
+    """Catches silently dropping replacement and no-decay installed-peak episodes."""
+    analysis = _analysis()
+
+    result = analysis.audit_main_force_mirror_sequences(
+        (_many_installed_peaks_product(with_decay=True),)
+    )
+    balanced = result.section.profiles[0]
+    global_row = balanced.breakdowns[0]
+
+    assert global_row.raw_episode_count == 13
+    assert global_row.kept_episode_count == 13
+    assert global_row.overlap_suppressed_count == 0
+    assert global_row.first_evidence_count == 1
+    assert global_row.delay_sample_count == 1
+    assert balanced.peak_then_decay_sample_count == 1
+
+    no_decay = analysis.audit_main_force_mirror_sequences(
+        (_many_installed_peaks_product(with_decay=False),)
+    ).section.profiles[0]
+    assert no_decay.breakdowns[0].raw_episode_count == 13
+    assert no_decay.breakdowns[0].first_evidence_count == 0
+    assert no_decay.peak_then_decay_sample_count == 0

@@ -47,9 +47,6 @@ _FOLD_WINDOWS = (
     (date(2023, 1, 1), date(2024, 12, 31), date(2025, 1, 1), date(2025, 12, 31)),
     (date(2023, 1, 1), date(2025, 12, 31), date(2026, 1, 1), date(2026, 8, 18)),
 )
-_SPLIT_BOUNDARIES = (date(2025, 1, 1), date(2026, 1, 1))
-
-
 class MainForceMirrorDiagnosticAnalysisError(ValueError):
     code = "MFM_DIAGNOSTIC_ANALYSIS_INVALID"
 
@@ -73,6 +70,15 @@ class MainForceMirrorDiagnosticLegacyOutcome(StrEnum):
     SHORT_ONLY = "short_only"
     BOTH = "both"
     NEITHER = "neither"
+
+
+@dataclass(frozen=True, slots=True)
+class MainForceMirrorDiagnosticFoldLabelOutcome:
+    fold: int
+    segment: str
+    outcome: MainForceMirrorDiagnosticLabelOutcome | None
+    binary_target: int | None
+    eligible: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -102,11 +108,12 @@ class MainForceMirrorDiagnosticLabelEpisode:
     outcome: MainForceMirrorDiagnosticLabelOutcome | None
     first_touch_offset: int | None
     binary_target: int | None
-    folds: tuple[int, ...]
+    fold_outcomes: tuple[MainForceMirrorDiagnosticFoldLabelOutcome, ...]
 
 
 @dataclass(frozen=True, slots=True)
 class MainForceMirrorDiagnosticLabelAuditResult:
+    input_symbols: tuple[str, ...]
     section: MainForceMirrorDiagnosticLabelSection
     episodes: tuple[MainForceMirrorDiagnosticLabelEpisode, ...]
     unavailable_products: tuple[
@@ -130,13 +137,11 @@ class MainForceMirrorDiagnosticSequenceAuditResult:
 @dataclass(frozen=True, slots=True)
 class _SequenceSample:
     symbol: str
-    index: int
     trading_day: date
     side: MainForceMirrorDiagnosticSide
     delay: int
     h3_reversal: Decimal
     h5_reversal: Decimal
-    folds: tuple[int, ...]
 
 
 def audit_main_force_mirror_sequences(
@@ -202,9 +207,13 @@ def _sequence_profile_section(
     samples: list[_SequenceSample] = []
     for item, facts in product_facts:
         states = tuple(_sequence_state(fact) for fact in facts)
+        block_ids = _physical_block_ids(item)
         previous_state: MainForceMirrorDiagnosticSequenceState | None = None
         previous_side = MainForceMirrorDiagnosticSide.LONG
         for index, (fact, state) in enumerate(zip(facts, states, strict=True)):
+            if index == 0 or block_ids[index] != block_ids[index - 1]:
+                previous_state = None
+                previous_side = MainForceMirrorDiagnosticSide.LONG
             side = _sequence_fact_side(fact, previous_side)
             previous_side = side
             dimension_keys = _bar_keys(item.symbol, item.bars[index].trading_day, side)
@@ -221,6 +230,19 @@ def _sequence_profile_section(
                     event_counts[1] += 1
                     event_counts[2] += int(dual)
             if fact.installed_peak_index is not None and fact.installed_peak_side is not None:
+                installed_side = (
+                    MainForceMirrorDiagnosticSide.LONG
+                    if fact.installed_peak_side == "long"
+                    else MainForceMirrorDiagnosticSide.SHORT
+                )
+                installed_keys = _bar_keys(
+                    item.symbol,
+                    item.bars[index].trading_day,
+                    installed_side,
+                )
+                for key in installed_keys:
+                    counts[key]["raw_episode_count"] += 1
+                    counts[key]["kept_episode_count"] += 1
                 prefix = _derive_sequence_facts(
                     item.points[: index + 1],  # type: ignore[arg-type]
                     profile,  # type: ignore[arg-type]
@@ -232,32 +254,36 @@ def _sequence_profile_section(
                     prefixes[key][2] += int(not matches)
             if not fact.decay_seen or fact.active_peak_side is None:
                 continue
+            if fact.active_peak_index is None or fact.bars_since_active_peak is None:
+                _raise_analysis_invalid()
+            peak_index = fact.active_peak_index
+            peak_side = (
+                MainForceMirrorDiagnosticSide.LONG
+                if fact.active_peak_side == "long"
+                else MainForceMirrorDiagnosticSide.SHORT
+            )
+            peak_keys = _bar_keys(
+                item.symbol,
+                item.bars[peak_index].trading_day,
+                peak_side,
+            )
+            for key in peak_keys:
+                counts[key]["first_evidence_count"] += 1
+                counts[key]["delay_sample_count"] += 1
+                counts[key]["delay_bars_total"] += fact.bars_since_active_peak
             h3 = _sequence_reversal(item, index, fact.active_peak_side, 3)
             h5 = _sequence_reversal(item, index, fact.active_peak_side, 5)
-            if h3 is None or h5 is None or fact.bars_since_active_peak is None:
+            if h3 is None or h5 is None:
                 continue
             sample = _SequenceSample(
                 symbol=item.symbol,
-                index=index,
-                trading_day=item.bars[index].trading_day,
-                side=(
-                    MainForceMirrorDiagnosticSide.LONG
-                    if fact.active_peak_side == "long"
-                    else MainForceMirrorDiagnosticSide.SHORT
-                ),
+                trading_day=item.bars[peak_index].trading_day,
+                side=peak_side,
                 delay=fact.bars_since_active_peak,
                 h3_reversal=h3,
                 h5_reversal=h5,
-                folds=_folds_for_day(item.bars[index].trading_day),
             )
             samples.append(sample)
-            for key in _sample_keys(sample):
-                sample_counts = counts[key]
-                sample_counts["raw_episode_count"] += 1
-                sample_counts["kept_episode_count"] += 1
-                sample_counts["first_evidence_count"] += 1
-                sample_counts["delay_sample_count"] += 1
-                sample_counts["delay_bars_total"] += sample.delay
     breakdowns = tuple(
         MainForceMirrorDiagnosticSequenceBreakdown(
             key=key,
@@ -360,25 +386,6 @@ def _new_sequence_counts() -> dict[str, int]:
     }
 
 
-def _sample_keys(sample: _SequenceSample) -> tuple[MainForceMirrorDiagnosticBreakdownKey, ...]:
-    placeholder = MainForceMirrorDiagnosticLabelEpisode(
-        symbol=sample.symbol,
-        anchor_index=sample.index,
-        anchor_trading_day=sample.trading_day,
-        physical_contract="placeholder",
-        side=sample.side,
-        kept=True,
-        lower_barrier=Decimal(1),
-        upper_barrier=Decimal(2),
-        legacy_outcome=MainForceMirrorDiagnosticLegacyOutcome.NEITHER,
-        outcome=MainForceMirrorDiagnosticLabelOutcome.TIMEOUT,
-        first_touch_offset=None,
-        binary_target=None,
-        folds=sample.folds,
-    )
-    return _episode_keys(placeholder)
-
-
 def _sequence_state(
     fact: MainForceMirrorV2SequenceFact,
 ) -> MainForceMirrorDiagnosticSequenceState:
@@ -477,6 +484,10 @@ def audit_main_force_mirror_funnel(
 
     inputs = tuple(products)
     if not isinstance(labels, MainForceMirrorDiagnosticLabelAuditResult):
+        _raise_analysis_invalid()
+    if labels.input_symbols != tuple(item.symbol for item in inputs):
+        _raise_analysis_invalid()
+    if labels != audit_main_force_mirror_labels(inputs):
         _raise_analysis_invalid()
     counters = {key: _new_funnel_counts() for key in _expected_breakdown_keys()}
     for item in inputs:
@@ -585,10 +596,18 @@ def audit_main_force_mirror_funnel(
             counters[key]["raw_episode_anchor_count"] += 1
             if episode.kept:
                 counters[key]["kept_episode_anchor_count"] += 1
-                if episode.binary_target is not None:
-                    counters[key]["binary_evaluable_count"] += 1
             else:
                 counters[key]["overlap_suppressed_anchor_count"] += 1
+        if not episode.kept:
+            continue
+        if episode.binary_target is not None:
+            for key in _nonfold_episode_keys(episode):
+                counters[key]["binary_evaluable_count"] += 1
+        for fold_outcome in episode.fold_outcomes:
+            if fold_outcome.binary_target is not None:
+                counters[_fold_key(fold_outcome.fold)][
+                    "binary_evaluable_count"
+                ] += 1
     breakdowns = tuple(
         MainForceMirrorDiagnosticScoreLatchBreakdown(key=key, **counters[key])
         for key in _expected_breakdown_keys()
@@ -636,6 +655,7 @@ def audit_main_force_mirror_labels(
             episodes.extend(audited)
     section = _label_section(tuple(episodes))
     return MainForceMirrorDiagnosticLabelAuditResult(
+        input_symbols=tuple(item.symbol for item in inputs),
         section=section,
         episodes=tuple(episodes),
         unavailable_products=tuple(unavailable),
@@ -672,13 +692,14 @@ def _validate_product_input(value: MainForceMirrorDiagnosticProductInput) -> Non
 def _label_product(
     value: MainForceMirrorDiagnosticProductInput,
 ) -> tuple[MainForceMirrorDiagnosticLabelEpisode, ...] | None:
+    block_ids = _physical_block_ids(value)
     raw_indices = tuple(
         index
         for index, point in enumerate(value.points)
         if point.caution in ("long_chase_caution", "short_chase_caution")
         and not point.caution_conflict
     )
-    last_kept_by_contract: dict[str, int] = {}
+    last_kept_by_block: dict[int, int] = {}
     result: list[MainForceMirrorDiagnosticLabelEpisode] = []
     for index in raw_indices:
         point = value.points[index]
@@ -699,10 +720,11 @@ def _label_product(
             if point.caution == "long_chase_caution"
             else MainForceMirrorDiagnosticSide.SHORT
         )
-        previous_kept = last_kept_by_contract.get(contract)
+        block_id = block_ids[index]
+        previous_kept = last_kept_by_block.get(block_id)
         kept = previous_kept is None or index - previous_kept > _HORIZON
         if kept:
-            last_kept_by_contract[contract] = index
+            last_kept_by_block[block_id] = index
         legacy = _legacy_outcome(value, index, contract, lower, upper)
         outcome: MainForceMirrorDiagnosticLabelOutcome | None = None
         first_touch: int | None = None
@@ -729,9 +751,42 @@ def _label_product(
                 outcome=outcome,
                 first_touch_offset=first_touch,
                 binary_target=binary,
-                folds=_folds_for_day(point.trading_day),
+                fold_outcomes=_fold_label_outcomes(
+                    value,
+                    index,
+                    kept,
+                    outcome,
+                    binary,
+                ),
             )
         )
+    return tuple(result)
+
+
+def _physical_block_ids(
+    value: MainForceMirrorDiagnosticProductInput,
+) -> tuple[int, ...]:
+    result: list[int] = []
+    block_id = -1
+    previous_contract: str | None = None
+    previous_unavailable = True
+    for point, trace in zip(value.points, value.trace, strict=True):
+        unavailable = (
+            point.physical_contract is None
+            or point.unavailable_reason is not None
+            or trace.unavailable_reason is not None
+            or trace.reset_boundary is not None
+        )
+        if (
+            not result
+            or point.physical_contract != previous_contract
+            or unavailable
+            or previous_unavailable
+        ):
+            block_id += 1
+        result.append(block_id)
+        previous_contract = point.physical_contract
+        previous_unavailable = unavailable
     return tuple(result)
 
 
@@ -743,10 +798,10 @@ def _first_touch_outcome(
     lower: Decimal,
     upper: Decimal,
 ) -> tuple[MainForceMirrorDiagnosticLabelOutcome, int | None]:
-    end = anchor_index + _HORIZON
-    anchor_day = value.bars[anchor_index].trading_day
-    available_future = range(anchor_index + 1, min(end, len(value.bars) - 1) + 1)
-    for index in available_future:
+    for offset in range(1, _HORIZON + 1):
+        index = anchor_index + offset
+        if index >= len(value.bars):
+            return MainForceMirrorDiagnosticLabelOutcome.CENSORED_HORIZON, None
         point = value.points[index]
         trace = value.trace[index]
         if point.physical_contract != contract:
@@ -760,15 +815,6 @@ def _first_touch_outcome(
             or not _valid_bar(value.bars[index])
         ):
             return MainForceMirrorDiagnosticLabelOutcome.CENSORED_INPUT_GAP, None
-        if _crosses_split(anchor_day, value.bars[index].trading_day):
-            return (
-                MainForceMirrorDiagnosticLabelOutcome.SPLIT_BOUNDARY_CENSORED,
-                None,
-            )
-    if end >= len(value.bars):
-        return MainForceMirrorDiagnosticLabelOutcome.CENSORED_HORIZON, None
-    future = range(anchor_index + 1, end + 1)
-    for offset, index in enumerate(future, 1):
         bar = value.bars[index]
         open_ = _decimal(bar.open)
         high = _decimal(bar.high)
@@ -800,6 +846,41 @@ def _first_touch_outcome(
     return MainForceMirrorDiagnosticLabelOutcome.TIMEOUT, None
 
 
+def _fold_label_outcomes(
+    value: MainForceMirrorDiagnosticProductInput,
+    anchor_index: int,
+    kept: bool,
+    physical_outcome: MainForceMirrorDiagnosticLabelOutcome | None,
+    physical_binary: int | None,
+) -> tuple[MainForceMirrorDiagnosticFoldLabelOutcome, ...]:
+    anchor_day = value.bars[anchor_index].trading_day
+    horizon_index = anchor_index + _HORIZON
+    result: list[MainForceMirrorDiagnosticFoldLabelOutcome] = []
+    for fold, segment, since, through in _fold_segments_for_day(anchor_day):
+        outcome: MainForceMirrorDiagnosticLabelOutcome | None
+        binary: int | None
+        crosses_segment = (
+            horizon_index < len(value.bars)
+            and not since <= value.bars[horizon_index].trading_day <= through
+        )
+        if kept and crosses_segment:
+            outcome = MainForceMirrorDiagnosticLabelOutcome.SPLIT_BOUNDARY_CENSORED
+            binary = None
+        else:
+            outcome = physical_outcome if kept else None
+            binary = physical_binary if kept else None
+        result.append(
+            MainForceMirrorDiagnosticFoldLabelOutcome(
+                fold=fold,
+                segment=segment,
+                outcome=outcome,
+                binary_target=binary,
+                eligible=binary is not None,
+            )
+        )
+    return tuple(result)
+
+
 def _legacy_outcome(
     value: MainForceMirrorDiagnosticProductInput,
     anchor_index: int,
@@ -810,7 +891,6 @@ def _legacy_outcome(
     lower_seen = False
     upper_seen = False
     end = min(len(value.bars), anchor_index + _HORIZON + 1)
-    anchor_day = value.bars[anchor_index].trading_day
     for index in range(anchor_index + 1, end):
         point = value.points[index]
         trace = value.trace[index]
@@ -820,7 +900,6 @@ def _legacy_outcome(
             or point.unavailable_reason is not None
             or trace.unavailable_reason is not None
             or not _valid_bar(bar)
-            or _crosses_split(anchor_day, bar.trading_day)
         ):
             break
         high = _decimal(bar.high)
@@ -857,10 +936,18 @@ def _label_section(
             counts["long_sample_count"] += 1
             counts["short_sample_count"] += 1
             counts["duplicated_side_sample_count"] += 1
+        for key in _nonfold_episode_keys(episode):
+            counts = counters[key]
             if episode.binary_target is not None:
                 counts["binary_evaluable_count"] += 1
             assert episode.outcome is not None
             counts[_OUTCOME_COUNT_FIELD[episode.outcome]] += 1
+        for fold_outcome in episode.fold_outcomes:
+            key = _fold_key(fold_outcome.fold)
+            if fold_outcome.binary_target is not None:
+                counters[key]["binary_evaluable_count"] += 1
+            assert fold_outcome.outcome is not None
+            counters[key][_OUTCOME_COUNT_FIELD[fold_outcome.outcome]] += 1
     breakdowns = tuple(
         MainForceMirrorDiagnosticLabelBreakdown(key=key, **counters[key])
         for key in _expected_breakdown_keys()
@@ -915,12 +1002,31 @@ def _episode_keys(
         (MainForceMirrorDiagnosticBreakdownScope.PRODUCT, episode.symbol),
         (MainForceMirrorDiagnosticBreakdownScope.YEAR, episode.anchor_trading_day.year),
         (MainForceMirrorDiagnosticBreakdownScope.SIDE, episode.side),
-        *((MainForceMirrorDiagnosticBreakdownScope.FOLD, fold) for fold in episode.folds),
+        *((MainForceMirrorDiagnosticBreakdownScope.FOLD, item.fold) for item in episode.fold_outcomes),
     )
     return tuple(
         key
         for key in _expected_breakdown_keys()
         if any(_key_matches(key, scope, value) for scope, value in wanted)
+    )
+
+
+def _nonfold_episode_keys(
+    episode: MainForceMirrorDiagnosticLabelEpisode,
+) -> tuple[MainForceMirrorDiagnosticBreakdownKey, ...]:
+    return tuple(
+        key
+        for key in _episode_keys(episode)
+        if key.scope is not MainForceMirrorDiagnosticBreakdownScope.FOLD
+    )
+
+
+def _fold_key(fold: int) -> MainForceMirrorDiagnosticBreakdownKey:
+    return next(
+        key
+        for key in _expected_breakdown_keys()
+        if key.scope is MainForceMirrorDiagnosticBreakdownScope.FOLD
+        and key.fold == fold
     )
 
 
@@ -976,7 +1082,16 @@ def _bar_keys(
         outcome=None,
         first_touch_offset=None,
         binary_target=None,
-        folds=_folds_for_day(trading_day),
+        fold_outcomes=tuple(
+            MainForceMirrorDiagnosticFoldLabelOutcome(
+                fold=fold,
+                segment=segment,
+                outcome=None,
+                binary_target=None,
+                eligible=False,
+            )
+            for fold, segment, _since, _through in _fold_segments_for_day(trading_day)
+        ),
     )
     return _episode_keys(placeholder)
 
@@ -1016,18 +1131,18 @@ _OUTCOME_COUNT_FIELD = {
 }
 
 
-def _folds_for_day(value: date) -> tuple[int, ...]:
-    result = []
+def _fold_segments_for_day(
+    value: date,
+) -> tuple[tuple[int, str, date, date], ...]:
+    result: list[tuple[int, str, date, date]] = []
     for fold, (fit_since, fit_through, evaluate_since, evaluate_through) in enumerate(
         _FOLD_WINDOWS, 1
     ):
-        if fit_since <= value <= fit_through or evaluate_since <= value <= evaluate_through:
-            result.append(fold)
+        if fit_since <= value <= fit_through:
+            result.append((fold, "fit", fit_since, fit_through))
+        elif evaluate_since <= value <= evaluate_through:
+            result.append((fold, "evaluate", evaluate_since, evaluate_through))
     return tuple(result)
-
-
-def _crosses_split(anchor: date, future: date) -> bool:
-    return any(anchor < boundary <= future for boundary in _SPLIT_BOUNDARIES)
 
 
 def _valid_bar(value: CanonicalBar) -> bool:

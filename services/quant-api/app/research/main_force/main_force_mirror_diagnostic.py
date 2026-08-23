@@ -256,6 +256,19 @@ class MainForceMirrorDiagnosticLabelBreakdown:
             for field in self.__dataclass_fields__
             if field != "key"
         )
+        physical_outcome_count = (
+            self.adverse_first_count
+            + self.favorable_first_count
+            + self.ambiguous_count
+            + self.timeout_count
+            + self.censored_horizon_count
+            + self.censored_contract_change_count
+            + self.censored_input_gap_count
+        )
+        is_fold = (
+            isinstance(self.key, MainForceMirrorDiagnosticBreakdownKey)
+            and self.key.scope is MainForceMirrorDiagnosticBreakdownScope.FOLD
+        )
         if (
             not isinstance(self.key, MainForceMirrorDiagnosticBreakdownKey)
             or any(not _nonnegative_int(value) for value in counts)
@@ -272,15 +285,15 @@ class MainForceMirrorDiagnosticLabelBreakdown:
             + self.legacy_both_count
             + self.legacy_neither_count
             != self.raw_sample_count
-            or self.adverse_first_count
-            + self.favorable_first_count
-            + self.ambiguous_count
-            + self.timeout_count
-            + self.censored_horizon_count
-            + self.censored_contract_change_count
-            + self.censored_input_gap_count
-            + self.split_boundary_censored_count
-            != self.kept_sample_count
+            or (
+                physical_outcome_count + self.split_boundary_censored_count
+                != self.kept_sample_count
+                if is_fold
+                else (
+                    physical_outcome_count != self.kept_sample_count
+                    or self.split_boundary_censored_count != 0
+                )
+            )
         ):
             _raise_report_invalid()
 
@@ -365,6 +378,7 @@ class MainForceMirrorDiagnosticLabelSection:
             + self.legacy_both_count
             + self.legacy_neither_count
             != self.raw_sample_count
+            or self.split_boundary_censored_count != 0
             or self.adverse_first_count
             + self.favorable_first_count
             + self.ambiguous_count
@@ -372,7 +386,6 @@ class MainForceMirrorDiagnosticLabelSection:
             + self.censored_horizon_count
             + self.censored_contract_change_count
             + self.censored_input_gap_count
-            + self.split_boundary_censored_count
             != self.sample_count
             or self.long_sample_count
             + self.short_sample_count
@@ -517,8 +530,10 @@ class MainForceMirrorDiagnosticSequenceBreakdown:
             or not _nonnegative_int(self.delay_bars_total)
             or self.kept_episode_count + self.overlap_suppressed_count
             != self.raw_episode_count
+            or self.raw_episode_count != self.kept_episode_count
+            or self.overlap_suppressed_count != 0
             or self.first_evidence_count > self.kept_episode_count
-            or self.delay_sample_count > self.first_evidence_count
+            or self.delay_sample_count != self.first_evidence_count
             or (self.delay_sample_count == 0 and self.delay_bars_total != 0)
             or any(
                 not isinstance(item, MainForceMirrorDiagnosticSequenceTransitionCount)
@@ -599,8 +614,10 @@ class MainForceMirrorDiagnosticSequenceProfileSection:
             or self.product_count > 60
             or self.year_count > 4
             or not _rate(self.top_product_share)
-            or breakdowns[0].kept_episode_count
-            != self.peak_then_decay_sample_count
+            or self.peak_then_decay_sample_count
+            > breakdowns[0].first_evidence_count
+            or breakdowns[0].first_evidence_count
+            > breakdowns[0].kept_episode_count
         ):
             _raise_report_invalid()
         if self.peak_then_decay_sample_count == 0:

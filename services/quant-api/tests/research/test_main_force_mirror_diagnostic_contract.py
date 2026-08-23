@@ -472,6 +472,63 @@ def test_funnel_contract_separates_latched_cautions_from_sampling_embargo() -> N
     assert audited.overlap_suppressed_anchor_count == 1
 
 
+def test_label_split_censor_is_legal_only_in_fold_breakdowns() -> None:
+    """Catches leaking a fold boundary into physical/global label outcomes."""
+    domain = _domain()
+    base = _zero_label_breakdowns(domain)
+    values = dict(
+        raw_sample_count=1,
+        kept_sample_count=1,
+        long_sample_count=1,
+        short_sample_count=1,
+        duplicated_side_sample_count=1,
+        legacy_neither_count=1,
+        split_boundary_censored_count=1,
+    )
+
+    with pytest.raises(domain.MainForceMirrorDiagnosticReportError):
+        replace(base[0], **values)
+
+    fold_one = replace(base[-2], **values)
+    assert fold_one.key.fold == 1
+    assert fold_one.split_boundary_censored_count == 1
+
+
+def test_sequence_contract_keeps_installed_peak_denominator_above_decay_samples() -> None:
+    """Catches replacing the installed-peak denominator with evaluable decays."""
+    domain = _domain()
+    sequence = _zero_sequence(domain)
+    global_row = replace(
+        sequence.profiles[0].breakdowns[0],
+        raw_episode_count=13,
+        kept_episode_count=13,
+        first_evidence_count=1,
+        delay_sample_count=1,
+        delay_bars_total=1,
+    )
+    balanced = replace(
+        sequence.profiles[0],
+        peak_then_decay_sample_count=1,
+        long_sample_count=1,
+        product_count=1,
+        year_count=1,
+        top_product_share=Decimal("1"),
+        median_delay_bars=Decimal("1"),
+        h3_reversal_hit_rate=Decimal("1"),
+        h5_reversal_hit_rate=Decimal("1"),
+        yearly_median_reversal_min=Decimal("0"),
+        side_median_reversal_min=Decimal("0"),
+        breakdowns=_consistent_partitions(
+            sequence.profiles[0].breakdowns,
+            global_row,
+        ),
+    )
+
+    assert balanced.breakdowns[0].raw_episode_count == 13
+    assert balanced.breakdowns[0].first_evidence_count == 1
+    assert balanced.peak_then_decay_sample_count == 1
+
+
 def _zero_model_breakdowns(domain):
     return tuple(
         domain.MainForceMirrorDiagnosticModelBreakdown(
@@ -670,7 +727,7 @@ def test_nested_audit_contract_expresses_required_breakdowns_and_conservation() 
         adverse_first_count=1,
         favorable_first_count=1,
         ambiguous_count=1,
-        split_boundary_censored_count=1,
+        timeout_count=1,
     )
     label = replace(
         label,
@@ -687,7 +744,7 @@ def test_nested_audit_contract_expresses_required_breakdowns_and_conservation() 
         adverse_first_count=1,
         favorable_first_count=1,
         ambiguous_count=1,
-        split_boundary_censored_count=1,
+        timeout_count=1,
         resolved_coverage=Decimal("0.5"),
         ambiguous_rate=Decimal("0.25"),
         breakdowns=_consistent_partitions(label.breakdowns, label_global),
@@ -696,7 +753,7 @@ def test_nested_audit_contract_expresses_required_breakdowns_and_conservation() 
         "side", "side", "fold", "fold"
     )
     assert label.breakdowns[0].legacy_both_count == 1
-    assert label.breakdowns[0].split_boundary_censored_count == 1
+    assert label.breakdowns[0].split_boundary_censored_count == 0
 
     sequence = _zero_sequence(domain)
     prefix = domain.MainForceMirrorDiagnosticPrefixInvariance(
@@ -899,6 +956,8 @@ def test_report_count_limits_accept_protocol_boundary_and_reject_overflow() -> N
         sequence.profiles[0].breakdowns[0],
         raw_episode_count=1,
         kept_episode_count=1,
+        first_evidence_count=1,
+        delay_sample_count=1,
     )
     profile = replace(
         sequence.profiles[0],
