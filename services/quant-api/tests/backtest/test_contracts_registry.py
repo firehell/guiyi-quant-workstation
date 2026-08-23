@@ -3,7 +3,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import sys
-from datetime import date
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
@@ -135,6 +135,28 @@ def test_request_rejects_reversed_dates_and_unknown_fields() -> None:
         _request(arbitrary_rqalpha_config={"base": {"auto_update_bundle": True}})
 
 
+@pytest.mark.parametrize("field", ["start_date", "end_date"])
+@pytest.mark.parametrize(
+    "value",
+    [
+        1_767_744_000,
+        date(2026, 1, 5),
+        datetime(2026, 1, 5),
+        datetime(2026, 1, 5, tzinfo=timezone.utc),
+        "2026-1-5",
+        "2026-01-05T00:00:00",
+        "2026-01-05T00:00:00+08:00",
+        " 2026-01-05 ",
+    ],
+)
+def test_request_dates_require_exact_iso_json_strings(
+    field: str,
+    value: object,
+) -> None:
+    with pytest.raises(ValidationError):
+        _request(**{field: value})
+
+
 @pytest.mark.parametrize(
     "overrides",
     [
@@ -183,6 +205,29 @@ def test_registry_requires_exact_integer_schema_version(
         StrategyRegistry.load(path, root)
 
 
+@pytest.mark.parametrize(
+    "malformation",
+    ["frequency_object", "matching_object", "slippage_model_object"],
+)
+def test_registry_malformed_json_shapes_fail_with_stable_error(
+    tmp_path: Path,
+    malformation: str,
+) -> None:
+    path, root = _write_registry(tmp_path, [_strategy()])
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    strategy = payload["strategies"][0]
+    if malformation == "frequency_object":
+        strategy["supported_frequencies"] = [{}]
+    elif malformation == "matching_object":
+        strategy["defaults"]["matching_type"] = {}
+    else:
+        strategy["defaults"]["slippage_model"] = []
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(RegistryError, match="^REGISTRY_INVALID$"):
+        StrategyRegistry.load(path, root)
+
+
 def test_registry_lists_only_enabled_and_disabled_cannot_resolve(
     tmp_path: Path,
 ) -> None:
@@ -195,6 +240,30 @@ def test_registry_lists_only_enabled_and_disabled_cannot_resolve(
     assert [item.id for item in registry.list_enabled()] == ["example"]
     with pytest.raises(StrategyNotFoundError, match="^STRATEGY_NOT_FOUND$"):
         registry.resolve_enabled("disabled")
+
+
+def test_registry_callers_cannot_mutate_validated_defaults(tmp_path: Path) -> None:
+    path, root = _write_registry(tmp_path, [_strategy()])
+    registry = StrategyRegistry.load(path, root)
+
+    for exposed in (registry.resolve_enabled("example"), registry.list_enabled()[0]):
+        try:
+            exposed.defaults["future_cash"] = "0"
+        except TypeError:
+            pass
+        assert registry.resolve_enabled("example").defaults["future_cash"] == "1000000"
+
+    validated = registry.validate_request(
+        BacktestRunRequest.model_validate(
+            {
+                "strategy_id": "example",
+                "start_date": "2026-01-05",
+                "end_date": "2026-01-09",
+                "frequency": "1d",
+            }
+        )
+    )
+    assert validated.config["future_cash"] == "1000000"
 
 
 @pytest.mark.parametrize("entry_file", ["../outside.py", "/tmp/outside.py", "note.txt"])
@@ -352,7 +421,11 @@ def test_registry_rejects_wrong_parameter_type_or_range(
     "descriptor",
     [
         {"name": "quantity", "type": "integer", "default": 0, "min": 1},
+        {"name": "quantity", "type": "integer", "default": 1, "min": None},
+        {"name": "quantity", "type": "integer", "default": 1, "max": None},
         {"name": "ratio", "type": "decimal", "default": 1.0},
+        {"name": "ratio", "type": "decimal", "default": "1", "min": None},
+        {"name": "ratio", "type": "decimal", "default": "1", "max": None},
         {"name": "flag", "type": "boolean", "default": "yes"},
         {"name": "symbol", "type": "enum", "default": "IF1606", "options": []},
         {"name": "symbol", "type": "path", "default": "/tmp/a.py"},

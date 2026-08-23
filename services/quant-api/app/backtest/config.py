@@ -36,10 +36,15 @@ def _cors_origins() -> tuple[str, ...]:
     if not origins or len(set(origins)) != len(origins):
         raise BacktestConfigError
     for origin in origins:
-        parsed = urlsplit(origin)
+        try:
+            parsed = urlsplit(origin)
+            hostname = parsed.hostname
+            port = parsed.port
+        except ValueError as exc:
+            raise BacktestConfigError from exc
         if (
             parsed.scheme != "http"
-            or parsed.hostname not in _LOOPBACK_HOSTS
+            or hostname not in _LOOPBACK_HOSTS
             or parsed.path
             or parsed.query
             or parsed.fragment
@@ -47,11 +52,8 @@ def _cors_origins() -> tuple[str, ...]:
             or parsed.password is not None
         ):
             raise BacktestConfigError
-        try:
-            if parsed.port is None:
-                raise BacktestConfigError
-        except ValueError as exc:
-            raise BacktestConfigError from exc
+        if port is None:
+            raise BacktestConfigError
     return origins
 
 

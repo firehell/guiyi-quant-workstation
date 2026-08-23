@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 from enum import StrEnum
+import re
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -18,6 +19,7 @@ MATCHING_TYPES_BY_FREQUENCY: dict[str, frozenset[str]] = {
     "1d": frozenset({"current_bar"}),
     "1m": frozenset({"current_bar", "next_bar"}),
 }
+_ISO_DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
 
 
 class RunStatus(StrEnum):
@@ -59,6 +61,13 @@ class BacktestRunRequest(BaseModel):
     slippage_model: SlippageModel | None = None
     slippage: Decimal | None = Field(default=None, ge=Decimal("0"), allow_inf_nan=False)
     parameters: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("start_date", "end_date", mode="before")
+    @classmethod
+    def dates_are_exact_iso_json_strings(cls, value: object) -> object:
+        if not isinstance(value, str) or _ISO_DATE.fullmatch(value) is None:
+            raise ValueError("date value must be an ISO date string")
+        return value
 
     @field_validator(
         "future_cash",

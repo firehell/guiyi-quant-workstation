@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import Decimal, InvalidOperation
 from enum import StrEnum
 from pathlib import Path, PurePath
@@ -37,6 +37,7 @@ _DECIMAL_CONFIG_KEYS = frozenset(
         "slippage",
     }
 )
+_MISSING = object()
 
 
 class ParameterType(StrEnum):
@@ -174,8 +175,12 @@ def _parameter_descriptor(payload: object) -> ParameterDescriptor:
         _strict_keys(
             payload, common | {key for key in ("min", "max") if key in payload}
         )
-        minimum = payload.get("min")
-        maximum = payload.get("max")
+        minimum_value = payload.get("min", _MISSING)
+        maximum_value = payload.get("max", _MISSING)
+        if minimum_value is None or maximum_value is None:
+            _fail()
+        minimum = None if minimum_value is _MISSING else minimum_value
+        maximum = None if maximum_value is _MISSING else maximum_value
         if (
             (
                 minimum is not None
@@ -199,13 +204,15 @@ def _parameter_descriptor(payload: object) -> ParameterDescriptor:
         _strict_keys(
             payload, common | {key for key in ("min", "max") if key in payload}
         )
-        minimum_value = payload.get("min")
-        maximum_value = payload.get("max")
+        minimum_value = payload.get("min", _MISSING)
+        maximum_value = payload.get("max", _MISSING)
+        if minimum_value is None or maximum_value is None:
+            _fail()
         minimum = (
-            _decimal_string(minimum_value)[1] if minimum_value is not None else None
+            None if minimum_value is _MISSING else _decimal_string(minimum_value)[1]
         )
         maximum = (
-            _decimal_string(maximum_value)[1] if maximum_value is not None else None
+            None if maximum_value is _MISSING else _decimal_string(maximum_value)[1]
         )
         if (
             minimum is not None
@@ -302,7 +309,9 @@ def _strategy(payload: object, strategy_root: Path) -> RegisteredStrategy:
     if (
         not isinstance(frequencies, list)
         or not frequencies
-        or not all(item in {"1d", "1m"} for item in frequencies)
+        or not all(
+            isinstance(item, str) and item in {"1d", "1m"} for item in frequencies
+        )
         or len(set(frequencies)) != len(frequencies)
     ):
         _fail()
@@ -319,7 +328,7 @@ def _strategy(payload: object, strategy_root: Path) -> RegisteredStrategy:
                 _fail()
             normalized_defaults[key] = normalized
         elif key == "matching_type":
-            if value not in {"current_bar", "next_bar"}:
+            if not isinstance(value, str) or value not in {"current_bar", "next_bar"}:
                 _fail()
             if any(
                 value == "next_bar" and frequency == "1d" for frequency in frequencies
@@ -327,7 +336,10 @@ def _strategy(payload: object, strategy_root: Path) -> RegisteredStrategy:
                 _fail()
             normalized_defaults[key] = value
         else:
-            if value not in {"PriceRatioSlippage", "TickSizeSlippage"}:
+            if not isinstance(value, str) or value not in {
+                "PriceRatioSlippage",
+                "TickSizeSlippage",
+            }:
                 _fail()
             normalized_defaults[key] = value
     raw_parameters = payload["parameters"]
@@ -374,19 +386,38 @@ class StrategyRegistry:
             or not isinstance(payload["strategies"], list)
         ):
             _fail()
-        strategies = tuple(_strategy(item, root) for item in payload["strategies"])
+        try:
+            strategies = tuple(_strategy(item, root) for item in payload["strategies"])
+        except RegistryError:
+            raise
+        except (
+            InvalidOperation,
+            KeyError,
+            OSError,
+            OverflowError,
+            RuntimeError,
+            TypeError,
+            ValueError,
+        ) as exc:
+            raise RegistryError from exc
         if len({item.id for item in strategies}) != len(strategies):
             _fail()
         return cls(strategies)
 
     def list_enabled(self) -> tuple[RegisteredStrategy, ...]:
-        return tuple(item for item in self._strategies if item.enabled)
+        return tuple(
+            self._defensive_copy(item) for item in self._strategies if item.enabled
+        )
 
     def resolve_enabled(self, strategy_id: str) -> RegisteredStrategy:
         strategy = self._by_id.get(strategy_id)
         if strategy is None or not strategy.enabled:
             raise StrategyNotFoundError
-        return strategy
+        return self._defensive_copy(strategy)
+
+    @staticmethod
+    def _defensive_copy(strategy: RegisteredStrategy) -> RegisteredStrategy:
+        return replace(strategy, defaults=dict(strategy.defaults))
 
     def validate_request(self, request: BacktestRunRequest) -> ValidatedBacktestRequest:
         strategy = self.resolve_enabled(request.strategy_id)

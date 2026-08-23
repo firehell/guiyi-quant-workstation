@@ -126,3 +126,15 @@ def test_settings_reject_non_loopback_cors_origins(
 
     with pytest.raises(BacktestConfigError, match="^BACKTEST_CONFIG_INVALID$"):
         BacktestSettings.from_env()
+
+
+@pytest.mark.parametrize("origin", ["http://[::1", "http://[not-ipv6]:5173"])
+def test_settings_malformed_cors_origins_fail_with_stable_error(
+    monkeypatch: pytest.MonkeyPatch,
+    origin: str,
+) -> None:
+    _set_required_env(monkeypatch)
+    monkeypatch.setenv("GUIYI_BACKTEST_CORS_ORIGINS", origin)
+
+    with pytest.raises(BacktestConfigError, match="^BACKTEST_CONFIG_INVALID$"):
+        BacktestSettings.from_env()
