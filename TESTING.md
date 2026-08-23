@@ -76,14 +76,12 @@ task8_sidecar_python="$(realpath \
 task8_registry="$task8_repo_root/services/quant-api/app/backtest/strategies/registry.json"
 task8_strategy_rel="services/quant-api/app/backtest/strategies/example_future_smoke_v1.py"
 task8_strategy_source="$task8_repo_root/$task8_strategy_rel"
-task8_formal_snapshot_script="$task8_repo_root/scripts/engineering/backtest_formal_surface_snapshot.py"
 task8_bundle_root="$(cd "$GUIYI_BACKTEST_BUNDLE_PATH" && pwd -P)"
 task8_runs_parent_input="$(dirname -- "$GUIYI_BACKTEST_RUNS_ROOT")"
 task8_runs_name="$(basename -- "$GUIYI_BACKTEST_RUNS_ROOT")"
 case "$task8_runs_name" in ''|.|..) exit 1 ;; esac
 test -x "$task8_sidecar_python"
 test -f "$task8_strategy_source"
-test -f "$task8_formal_snapshot_script"
 git -C "$task8_repo_root" diff --quiet -- "$task8_strategy_rel"
 git -C "$task8_repo_root" diff --cached --quiet -- "$task8_strategy_rel"
 git -C "$task8_repo_root" cat-file -e \
@@ -135,7 +133,6 @@ task8_sidecar_python="$(realpath \
 task8_registry="$task8_repo_root/services/quant-api/app/backtest/strategies/registry.json"
 task8_strategy_rel="services/quant-api/app/backtest/strategies/example_future_smoke_v1.py"
 task8_strategy_source="$task8_repo_root/$task8_strategy_rel"
-task8_formal_snapshot_script="$task8_repo_root/scripts/engineering/backtest_formal_surface_snapshot.py"
 task8_external_python="$(realpath "$GUIYI_BACKTEST_PYTHON_EXECUTABLE")"
 task8_runner_entry="$(realpath \
   "$task8_repo_root/services/quant-api/app/backtest/runner_entry.py")"
@@ -148,7 +145,6 @@ task8_runs_root="$task8_runs_parent/$task8_runs_name"
 test -x "$task8_external_python"
 test -x "$task8_sidecar_python"
 test -f "$task8_strategy_source"
-test -f "$task8_formal_snapshot_script"
 git -C "$task8_repo_root" diff --quiet -- "$task8_strategy_rel"
 git -C "$task8_repo_root" diff --cached --quiet -- "$task8_strategy_rel"
 git -C "$task8_repo_root" cat-file -e \
@@ -269,21 +265,6 @@ task8_verify_sidecar_identity() {
     task8_cleanup_fail BACKTEST_SMOKE_SIDECAR_IDENTITY_CHANGED
     return 1
   fi
-}
-task8_formal_snapshot() {
-  task8_formal_output="$1"
-  if ! PYTHONPATH="$task8_repo_root/services/quant-api" \
-      UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
-      uv run --offline --project "$task8_repo_root/services/quant-api" \
-      python "$task8_formal_snapshot_script" >"$task8_formal_output"; then
-    printf '%s\n' 'NOT_VERIFIED: formal surface snapshot unavailable' >&2
-    return 1
-  fi
-  jq -e '.schema_version == 1 and .status == "VERIFIED"' \
-    "$task8_formal_output" >/dev/null || {
-      printf '%s\n' 'NOT_VERIFIED: formal surface snapshot invalid' >&2
-      return 1
-    }
 }
 task8_confirm_runner_absent() {
   if test "$task8_post_inflight" -eq 0 \
@@ -565,7 +546,6 @@ trap 'exit 143' TERM
 find "$task8_bundle_root" -xdev -type f -exec stat -f '%N|%z|%m' {} + \
   | LC_ALL=C sort >"$task8_tmp_dir/bundle.before"
 test -s "$task8_tmp_dir/bundle.before"
-task8_formal_snapshot "$task8_tmp_dir/formal.before.json"
 mkdir -m 700 "$task8_runs_root"
 task8_runs_root="$(realpath "$task8_runs_root")"
 export GUIYI_BACKTEST_RUNS_ROOT="$task8_runs_root"
@@ -733,9 +713,6 @@ unzip -tq "$task8_tmp_dir/report.zip" >/dev/null
 
 task8_stop_runner
 task8_stop_sidecar
-task8_formal_snapshot "$task8_tmp_dir/formal.after.json"
-cmp -s "$task8_tmp_dir/formal.before.json" \
-  "$task8_tmp_dir/formal.after.json"
 find "$task8_bundle_root" -xdev -type f -exec stat -f '%N|%z|%m' {} + \
   | LC_ALL=C sort >"$task8_tmp_dir/bundle.after"
 cmp -s "$task8_tmp_dir/bundle.before" "$task8_tmp_dir/bundle.after"
@@ -758,6 +735,12 @@ launch fd 必须是纯数字，不接受 suffix 匹配、任意 prefix 或额外
 `/private/tmp/guiyi-rqalpha-smoke.*` 验收目录保留作当次证据，
 清理属于另一次精确外部操作，不在本 smoke 授权内。真实 smoke 通过仍不表示 release、
 Runtime-ready、策略有效、OOS 通过或 Candidate 可晋升。
+
+本 smoke 不连接或读取 DB、Redis、Canonical、Alert/notification、Execution Review、
+Runtime 或真实订单正式面，因此不声称对这些正式面完成了 live before/after
+验证。零依赖边界由 runner 环境 allowlist、固定 simulation-only config、Local app 隔离与
+import/dependency 自动化测试证明。如 smoke 日志或现场出现任一正式面访问或副作用迹象，
+本次只能记为 `NOT_VERIFIED` 并失败，不得声称零副作用。
 
 ## 工程、版本与文档一致性
 

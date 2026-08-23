@@ -278,10 +278,12 @@ sidecar/runner 或发起真实 run—之前 MUST 取得新的、当次范围明�
 只运行已注册的短窗口示例策略，只创建一个独立研究 runs root 与一个 run 目录，
 有界轮询到终态，并机器校验 report/pickle/PNG/result 与强制安全配置。
 Sidecar 启动后 MUST 捕获 executable、完整 argv、cwd、PID 和启动身份，每次 TERM/KILL
-前必须精确重验；无法证明时保留现场并失败。Smoke 还 MUST 在前后用只读方式分别
-快照并比较 DB/Redis/Canonical/Alert/notification/Execution Review/Runtime/真实订单正式面；
-任一正式面无法读取、快照无法比较或发现变化时，必须记为 `NOT_VERIFIED`、整体失败并
-不声称零副作用。Smoke 中
+前必须精确重验；无法证明时保留现场并失败。真实 smoke MUST NOT 为证明
+零副作用而连接或读取 DB、Redis、Canonical、Alert/notification、Execution Review、
+Runtime 或真实订单正式面，也 MUST NOT 声称已完成这些正式面的 live before/after
+验证。这些零依赖边界 SHALL 由 import/dependency/mount 检查、runner 环境 allowlist、
+simulation-only 强制配置和 fake 自动化测试证明。如 smoke 日志或现场出现任一正式面
+访问或副作用迹象，本次必须记为 `NOT_VERIFIED`并失败，不得声称零副作用。Smoke 中
 MUST NOT 执行 `rqsdk update-data`、`download-data` 或任何 Bundle mutation。成功或失败都消耗
 本次意图；重试需要新的单次意图。
 
