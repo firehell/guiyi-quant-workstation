@@ -179,6 +179,15 @@ def main() -> int:
         os.write(2, b"password=" + (b"x" * 100_000) + b" end\n")
     if mode == "redaction_exact_boundary":
         os.write(1, (b"q" * 4096) + b"!")
+    if mode == "redaction_long_credentials":
+        os.write(
+            1,
+            b"redis://long-user:" + (b"r" * 9000) + b"@127.0.0.1:6379/0 done\n",
+        )
+        os.write(
+            2,
+            b"Authorization: Bearer " + (b"b" * 9000) + b" done\n",
+        )
     _write_result(run_root)
     return 0
 

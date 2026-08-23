@@ -14,7 +14,7 @@ import pytest
 from app.backtest.artifact_store import RunPaths
 from app.backtest.config import BacktestSettings
 from app.backtest.contracts import RunStatus
-from app.backtest.errors import RunFailureCode
+from app.backtest.errors import BacktestError, BacktestHttpErrorCode, RunFailureCode
 from app.backtest.registry import RegisteredStrategy, ValidatedBacktestRequest
 from app.backtest import runner as runner_module
 from app.backtest.runner import SubprocessRunner, build_rqalpha_config
@@ -445,6 +445,105 @@ def test_exact_maximum_length_secret_is_redacted_before_emit_boundary(
     assert result.outcome is RunStatus.SUCCEEDED
     assert secret not in stdout
     assert stdout == "[REDACTED]!"
+
+
+def test_long_url_and_bearer_secrets_are_discarded_across_many_chunks(
+    settings: BacktestSettings,
+    run_paths: RunPaths,
+    validated_request: ValidatedBacktestRequest,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _fake_runner(monkeypatch)
+    monkeypatch.setattr(runner_module, "_LOG_CHUNK_BYTES", 7, raising=False)
+    _prepare_run(
+        settings, run_paths, validated_request, mode="redaction_long_credentials"
+    )
+
+    result = SubprocessRunner(settings).start(validated_request, run_paths).monitor()
+
+    stdout = run_paths.stdout_log.read_text("utf-8")
+    stderr = run_paths.stderr_log.read_text("utf-8")
+    assert result.outcome is RunStatus.SUCCEEDED
+    assert "r" * 128 not in stdout
+    assert "b" * 128 not in stderr
+    assert stdout == "redis://[REDACTED]@127.0.0.1:6379/0 done\n"
+    assert stderr == "Authorization: Bearer [REDACTED] done\n"
+
+
+@pytest.mark.parametrize(
+    ("mode", "expected_outcome", "expected_failure"),
+    (
+        ("success", RunStatus.SUCCEEDED, None),
+        (
+            "failure",
+            RunStatus.FAILED,
+            RunFailureCode.STRATEGY_EXECUTION_FAILED,
+        ),
+    ),
+)
+def test_fast_exit_is_classified_without_post_popen_identity_queries(
+    settings: BacktestSettings,
+    run_paths: RunPaths,
+    validated_request: ValidatedBacktestRequest,
+    monkeypatch: pytest.MonkeyPatch,
+    mode: str,
+    expected_outcome: RunStatus,
+    expected_failure: RunFailureCode | None,
+) -> None:
+    _fake_runner(monkeypatch)
+    _prepare_run(settings, run_paths, validated_request, mode=mode)
+
+    def exited_child_identity(_process_id: int) -> int:
+        raise ProcessLookupError
+
+    monkeypatch.setattr(runner_module.os, "getpgid", exited_child_identity)
+    monkeypatch.setattr(runner_module.os, "getsid", exited_child_identity)
+
+    handle = SubprocessRunner(settings).start(validated_request, run_paths)
+    result = handle.monitor()
+
+    assert result.outcome is expected_outcome
+    assert result.failure_code is expected_failure
+
+
+def test_drain_start_failure_cleans_the_known_child_process_group(
+    settings: BacktestSettings,
+    run_paths: RunPaths,
+    validated_request: ValidatedBacktestRequest,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _fake_runner(monkeypatch)
+    _prepare_run(settings, run_paths, validated_request, mode="timeout")
+    captured: dict[str, subprocess.Popen[bytes]] = {}
+    real_popen = subprocess.Popen
+    real_killpg = os.killpg
+
+    def observe_popen(*args: Any, **kwargs: Any) -> subprocess.Popen[bytes]:
+        process = real_popen(*args, **kwargs)
+        captured["process"] = process
+        return process
+
+    def fail_drain_start(_thread: object) -> None:
+        raise RuntimeError("fixture drain start failure")
+
+    monkeypatch.setattr(runner_module.subprocess, "Popen", observe_popen)
+    monkeypatch.setattr(runner_module.threading.Thread, "start", fail_drain_start)
+
+    try:
+        with pytest.raises(
+            BacktestError, match=f"^{BacktestHttpErrorCode.RUNNER_UNAVAILABLE}$"
+        ):
+            SubprocessRunner(settings).start(validated_request, run_paths)
+    finally:
+        process = captured["process"]
+        if process.poll() is None:
+            try:
+                real_killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            process.wait(timeout=1)
+
+    assert captured["process"].poll() is not None
 
 
 def test_start_rejects_run_record_without_exact_effective_config(

@@ -65,8 +65,11 @@ _SENSITIVE_PREFIX = re.compile(
     r"private[_-]?key|license|database_url|redis_url|rqdata(?:c)?[_-]?\w*)\b"
     r"(?:\"|')?\s*[=:]\s*)(?P<quote>[\"']?)"
 )
-_URL_CREDENTIALS = re.compile(r"(?i)([a-z][a-z0-9+.-]*://)[^\s/@:]+:[^\s/@]+@")
-_BEARER = re.compile(r"(?i)(\bBearer\s+)[A-Za-z0-9._~+/=-]+")
+_URL_SECRET_PREFIX = re.compile(r"(?i)(?P<scheme>\b[a-z][a-z0-9+.-]*://)[^\s/@:]+:")
+_BEARER_PREFIX = re.compile(r"(?i)(?P<label>\bBearer\s+)")
+_BEARER_TOKEN_CHARACTERS = frozenset(
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._~+/=-"
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -215,14 +218,15 @@ class _StreamingLogRedactor:
         self._pending = ""
         self._sensitive_quote: str | None = None
         self._sensitive_unquoted = False
+        self._url_secret = False
+        self._bearer_secret = False
         self._escaped = False
 
     def _redact_general(self, text: str) -> str:
         sanitized = text
         for secret in self._exact_secrets:
             sanitized = sanitized.replace(secret, "[REDACTED]")
-        sanitized = _URL_CREDENTIALS.sub(r"\1[REDACTED]@", sanitized)
-        return _BEARER.sub(r"\1[REDACTED]", sanitized)
+        return sanitized
 
     def feed(self, raw: bytes, *, final: bool = False) -> bytes:
         self._pending += self._decoder.decode(raw, final=final)
@@ -236,17 +240,43 @@ class _StreamingLogRedactor:
                 if not self._consume_unquoted_value(output):
                     break
                 continue
+            if self._url_secret:
+                if not self._consume_url_secret(output):
+                    break
+                continue
+            if self._bearer_secret:
+                if not self._consume_bearer_secret(output):
+                    break
+                continue
 
-            match = _SENSITIVE_PREFIX.search(self._pending)
-            if match is not None:
+            matches = tuple(
+                (match.start(), priority, kind, match)
+                for priority, (kind, pattern) in enumerate(
+                    (
+                        ("sensitive", _SENSITIVE_PREFIX),
+                        ("url", _URL_SECRET_PREFIX),
+                        ("bearer", _BEARER_PREFIX),
+                    )
+                )
+                if (match := pattern.search(self._pending)) is not None
+            )
+            if matches:
+                _, _, kind, match = min(matches, key=lambda candidate: candidate[:2])
                 output.append(self._redact_general(self._pending[: match.start()]))
-                output.append(match.group("label"))
-                quote = match.group("quote")
-                if quote:
-                    output.append(quote)
-                    self._sensitive_quote = quote
+                if kind == "sensitive":
+                    output.append(match.group("label"))
+                    quote = match.group("quote")
+                    if quote:
+                        output.append(quote)
+                        self._sensitive_quote = quote
+                    else:
+                        self._sensitive_unquoted = True
+                elif kind == "url":
+                    output.append(match.group("scheme"))
+                    self._url_secret = True
                 else:
-                    self._sensitive_unquoted = True
+                    output.append(match.group("label"))
+                    self._bearer_secret = True
                 output.append("[REDACTED]")
                 self._pending = self._pending[match.end() :]
                 continue
@@ -288,6 +318,26 @@ class _StreamingLogRedactor:
                 output.append(character)
                 self._pending = self._pending[index + 1 :]
                 self._sensitive_unquoted = False
+                return True
+        self._pending = ""
+        return False
+
+    def _consume_url_secret(self, output: list[str]) -> bool:
+        for index, character in enumerate(self._pending):
+            if character == "@" or character.isspace():
+                output.append(character)
+                self._pending = self._pending[index + 1 :]
+                self._url_secret = False
+                return True
+        self._pending = ""
+        return False
+
+    def _consume_bearer_secret(self, output: list[str]) -> bool:
+        for index, character in enumerate(self._pending):
+            if character not in _BEARER_TOKEN_CHARACTERS:
+                output.append(character)
+                self._pending = self._pending[index + 1 :]
+                self._bearer_secret = False
                 return True
         self._pending = ""
         return False
@@ -353,6 +403,23 @@ def _drain_stream(
     finally:
         source.close()
         target.close()
+
+
+def _kill_started_process_group(
+    process: subprocess.Popen[bytes], owned_process_group: int
+) -> None:
+    if owned_process_group > 1 and owned_process_group != os.getpgrp():
+        try:
+            os.killpg(owned_process_group, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+    else:
+        process.kill()
+    try:
+        process.wait(timeout=_TERMINATE_GRACE_SECONDS)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=_TERMINATE_GRACE_SECONDS)
 
 
 def _valid_result(path: Path) -> bool:
@@ -500,6 +567,13 @@ class RunningProcess:
             return result
 
     def _terminate_owned_process_group(self) -> int:
+        if self._owned_process_group <= 1 or self._owned_process_group == os.getpgrp():
+            self._process.terminate()
+            try:
+                return self._process.wait(timeout=_TERMINATE_GRACE_SECONDS)
+            except subprocess.TimeoutExpired:
+                self._process.kill()
+                return self._process.wait()
         try:
             os.killpg(self._owned_process_group, signal.SIGTERM)
         except ProcessLookupError:
@@ -634,34 +708,9 @@ class SubprocessRunner:
             stdout_target.close()
             stderr_target.close()
             raise BacktestError(BacktestHttpErrorCode.RUNNER_UNAVAILABLE) from exc
-        try:
-            owned_process_group = os.getpgid(process.pid)
-            owned_session = os.getsid(process.pid)
-            if (
-                process.pid <= 1
-                or owned_process_group != process.pid
-                or owned_session != process.pid
-                or owned_process_group == os.getpgrp()
-            ):
-                raise ProcessLookupError
-        except OSError as exc:
-            try:
-                process.kill()
-            except OSError:
-                pass
-            try:
-                process.wait(timeout=_TERMINATE_GRACE_SECONDS)
-            except subprocess.TimeoutExpired:
-                pass
-            if process.stdout is not None:
-                process.stdout.close()
-            if process.stderr is not None:
-                process.stderr.close()
-            stdout_target.close()
-            stderr_target.close()
-            raise BacktestError(BacktestHttpErrorCode.RUNNER_UNAVAILABLE) from exc
+        owned_process_group = process.pid
         if process.stdout is None or process.stderr is None:
-            process.kill()
+            _kill_started_process_group(process, owned_process_group)
             stdout_target.close()
             stderr_target.close()
             raise BacktestError(BacktestHttpErrorCode.RUNNER_UNAVAILABLE)
@@ -688,8 +737,20 @@ class SubprocessRunner:
                 daemon=True,
             ),
         )
-        for thread in threads:
-            thread.start()
+        try:
+            for thread in threads:
+                thread.start()
+        except RuntimeError as exc:
+            _kill_started_process_group(process, owned_process_group)
+            drain_stop.set()
+            for thread in threads:
+                if thread.ident is not None:
+                    thread.join(timeout=0.1)
+            process.stdout.close()
+            process.stderr.close()
+            stdout_target.close()
+            stderr_target.close()
+            raise BacktestError(BacktestHttpErrorCode.RUNNER_UNAVAILABLE) from exc
         return RunningProcess(
             process,
             paths,
