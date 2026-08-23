@@ -80,6 +80,11 @@
 - 主力照妖镜唯一 active identity 为 `main_force_mirror_v2`。60m sequence forensic 代码与 CLI 已完成，
   但真实 JM/active60 read-only evidence Gate 未执行；当前不得形成 `STOP` 或
   `ALLOW_PHASE_FREEZE_DESIGN` 结论，更不得冻结正式 Phase、接入 Web/Alert/Runtime 或晋升。
+- Main Force Mirror Diagnostic Phase A 的 CLI、composition、显式 payload 与端到端只读边界已
+  `CODE_COMPLETE / TEST_COMPLETE`；协议仍是 `main_force_mirror_diagnostic_phase_a_v1`，底层
+  indicator identity 仍是未修改的 `main_force_mirror_v2`。真实 JM named view 与 active60 diagnostic
+  evidence 未运行，因此 empirical final Gate 仍为 `pending`；本轮未生成 evidence artifact，不得
+  复用历史 sequence `STOP`/`REJECT` 或宣称 release、Runtime-ready。
 - 所有 evidence 都只是可复算 research facts：不生成盈利、有效性、可交易、Alert Rule、release 或
   Runtime-ready 结论；不写 Canonical/DB/Redis，不消费 prospective OOS，`auto_order=false`。
 
@@ -115,6 +120,8 @@ Exact 命令见 `TESTING.md`。该协议只定义未来 read-only Gate，不构�
 
 - MFM 60m sequence forensic 的真实 JM + active60 Historical read-only evidence Gate `pending`；本次不
   运行、不生成临时 evidence、不输出 Phase Gate 结论。
+- MFM Diagnostic Phase A 的真实 JM named view + frozen active60 Historical read-only diagnostic
+  evidence 及 empirical `STOP|ALLOW_PHASE_FREEZE_DESIGN` Gate `pending`；当前只有代码与测试证据。
 - 自然 HTDY Topic Event 与自然 SuBing owner Event 的 production 验收 `pending`；不得用 synthetic
   Event、manual send、replay、backfill 或 retry 补证，历史 canary 不重复。
 - SuBing 自然 Live seam 仍需真实时点观察；Canonical-only HTTP smoke 不替代自然 Live evidence。
@@ -131,5 +138,5 @@ Exact 命令见 `TESTING.md`。该协议只定义未来 read-only Gate，不构�
   `docs/ARCHITECTURE.md`；命令看 `TESTING.md`。
 - 已完成 spec/plan/task 与逐次 release/promotion 流水只从 Git history、`CHANGELOG.md`、tag 和 commit
   追溯，不作为 active surface。
-- 最小下一步：等待 v1.7.0 下一次自然 18:05 盘后运行与自然 Alert/Live 时点，只做读回；不人工触发、
-  补发或用历史 evidence 替代。
+- 最小下一步：完成 Diagnostic Phase A 分支独立 Review 与 controller integration；真实 evidence
+  命令仍需后续单独的明确读取意图，本轮不执行。

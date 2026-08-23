@@ -56,6 +56,12 @@ Review 的四张 `trade_*` 表属于各自 Application Domain，不改变八表�
 - `guiyi research candidate-dossier`
 - `guiyi research candidate-relationships`
 - `guiyi research main-force-mirror-v2`
+- `guiyi research main-force-mirror-diagnostic`
+
+`main-force-mirror-diagnostic` 仅接受冻结协议
+`main_force_mirror_diagnostic_phase_a_v1`，通过同一个 `MarketDataService` 与
+`main_force_mirror_v2` historical reader 形成 read-only retrospective diagnostic；它不替换
+`main-force-mirror-v2`，也不增加任意窗口、阈值、模型、member dataset 或输出路径覆盖面。
 
 `app.runtime_entry` 仅是受监督 Runtime 的内部进程入口；它不是第二套用户 CLI，也不能由手工运行产生
 自然 Runtime evidence。
@@ -86,6 +92,10 @@ Market 首页“优先检查”只消费 `/api/v1/market/research/trend-focus` �
 - `main_force_mirror_v2` 仅支持 `60m + contract|actual_dominant` Historical confirmed observation，
   只读不可变 member-rank snapshot。sequence forensic 保持 same-contract、strict-prior、prefix-invariant，
   只输出预定义 profile 的事实，不选择 best profile，也不冻结正式 Phase。
+- `main_force_mirror_diagnostic_phase_a_v1` 只消费 frozen active60 `2023-01-01..2026-08-18`；
+  JM `2026-03-10..2026-03-30` 是同一输入内的固定 named view。它只输出 label/sequence/funnel、
+  deterministic model ceiling、member feasibility 与 `STOP|ALLOW_PHASE_FREEZE_DESIGN` research Gate，
+  不消费 `2026-08-19..20` 或 prospective 数据，不产生 PnL、rank、recommendation 或 promotion。
 - Research 只输出 source-specific 只读 HTTP projection、stdout JSON 或显式版本化 artifact；不写
   DB/Canonical/Redis，不进入
   Alert/notification/Runtime/Execution Review/订单路径。

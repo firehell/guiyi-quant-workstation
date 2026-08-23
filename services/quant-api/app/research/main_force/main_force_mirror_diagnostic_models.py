@@ -185,7 +185,7 @@ class MainForceMirrorDiagnosticMemberObservation:
     physical_contract: str
     anchor_trading_day: date
     anchor_bar_end: datetime
-    expected_prior_trading_day: date
+    expected_prior_trading_day: date | None
     expected_dataset_id: str
     available: bool
     observed_dataset_id: str | None
@@ -202,8 +202,13 @@ class MainForceMirrorDiagnosticMemberObservation:
             or not isinstance(self.anchor_trading_day, date)
             or not isinstance(self.anchor_bar_end, datetime)
             or self.anchor_bar_end.tzinfo is None
-            or not isinstance(self.expected_prior_trading_day, date)
-            or self.expected_prior_trading_day >= self.anchor_trading_day
+            or (
+                self.expected_prior_trading_day is not None
+                and (
+                    type(self.expected_prior_trading_day) is not date
+                    or self.expected_prior_trading_day >= self.anchor_trading_day
+                )
+            )
             or not self.expected_dataset_id
             or type(self.available) is not bool
         ):
@@ -1180,7 +1185,9 @@ def audit_main_force_mirror_member_feasibility(
     unavailable: list[MainForceMirrorDiagnosticMemberUnavailable] = []
     for item in earliest.values():
         reason: MainForceMirrorDiagnosticUnavailableReason | None = None
-        if not item.available:
+        if item.expected_prior_trading_day is None:
+            reason = MainForceMirrorDiagnosticUnavailableReason.MEMBER_T_MINUS_1_UNAVAILABLE
+        elif not item.available:
             reason = MainForceMirrorDiagnosticUnavailableReason.MEMBER_DATASET_UNAVAILABLE
         elif any(
             value is None
@@ -1257,7 +1264,10 @@ def _validate_member_observation_structure(item: object) -> None:
         or type(item.anchor_trading_day) is not date
         or type(item.anchor_bar_end) is not datetime
         or item.anchor_bar_end.tzinfo is None
-        or type(item.expected_prior_trading_day) is not date
+        or (
+            item.expected_prior_trading_day is not None
+            and type(item.expected_prior_trading_day) is not date
+        )
         or type(item.expected_dataset_id) is not str
         or not item.expected_dataset_id
         or type(item.available) is not bool

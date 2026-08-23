@@ -15,6 +15,9 @@ from app.research.jdj.jdj_research import JdjResearchRequest
 from app.research.main_force.main_force_mirror_v2_research_service import (
     MainForceMirrorV2ResearchRequest,
 )
+from app.research.main_force.main_force_mirror_diagnostic_policy import (
+    MainForceMirrorDiagnosticRequest,
+)
 from app.research.n_structure.n_structure_research_service import (
     NStructureResearchRequest,
 )
@@ -47,6 +50,7 @@ ResearchRequest: TypeAlias = (
     | JdjResearchRequest
     | CandidateValidationRequest
     | MainForceMirrorV2ResearchRequest
+    | MainForceMirrorDiagnosticRequest
     | NStructureResearchRequest
     | MultiCandidateRobustnessRequest
     | JdjActive60RobustnessRequest
@@ -75,6 +79,8 @@ def build_research_request(args: argparse.Namespace) -> ResearchRequest:
             through=_day(args.through),
             forensic=args.forensic,
         )
+    if args.research_command == "main-force-mirror-diagnostic":
+        return MainForceMirrorDiagnosticRequest(protocol_id=args.protocol)
     if args.research_command == "candidate-validation":
         return CandidateValidationRequest(
             candidate_id=args.candidate,

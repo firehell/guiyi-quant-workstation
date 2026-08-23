@@ -30,6 +30,9 @@ from app.research.jdj.jdj_research_service import JdjResearchService
 from app.research.main_force.main_force_mirror_v2_research_service import (
     MainForceMirrorV2ResearchService,
 )
+from app.research.main_force.main_force_mirror_diagnostic_service import (
+    MainForceMirrorDiagnosticService,
+)
 from app.research.robustness.multi_candidate_robustness_policy import (
     load_multi_candidate_robustness_protocol,
 )
@@ -257,4 +260,16 @@ def build_main_force_mirror_v2_research_service(
     return MainForceMirrorV2ResearchService(
         market_data=mirror_service.market_data,
         mirror_service=mirror_service,
+    )
+
+
+def build_main_force_mirror_diagnostic_service(
+    session: Session,
+) -> MainForceMirrorDiagnosticService:
+    """Compose frozen Phase A over the existing V2/MDS historical readers."""
+    mirror_service = build_main_force_mirror_v2_service(session)
+    return MainForceMirrorDiagnosticService(
+        market_data=mirror_service.market_data,
+        mirror_service=mirror_service,
+        previous_trading_day=mirror_service.coverage.previous_trading_day,
     )

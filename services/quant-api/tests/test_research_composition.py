@@ -501,6 +501,56 @@ def test_main_force_research_reuses_web_v2_service_identity(
     }
 
 
+def test_main_force_diagnostic_reuses_one_v2_service_and_its_calendar(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    market_data = object()
+    previous_trading_day = object()
+    mirror_service = SimpleNamespace(
+        market_data=market_data,
+        coverage=SimpleNamespace(previous_trading_day=previous_trading_day),
+    )
+    captured: dict[str, object] = {}
+    result = object()
+    monkeypatch.setattr(
+        research_composition,
+        "build_main_force_mirror_v2_service",
+        lambda _session: mirror_service,
+    )
+    monkeypatch.setattr(
+        research_composition,
+        "build_market_data_service",
+        _fail_dependency("duplicate MarketDataService"),
+    )
+    monkeypatch.setattr(
+        research_composition,
+        "MainForceMirrorDiagnosticService",
+        lambda **kwargs: captured.update(kwargs) or result,
+    )
+    for name in (
+        "build_historical_data_manager",
+        "build_live_market_service",
+        "build_alert_runtime",
+        "build_notification_sender_from_env",
+    ):
+        monkeypatch.setattr(
+            research_composition,
+            name,
+            _fail_dependency(name),
+            raising=False,
+        )
+
+    assert (
+        research_composition.build_main_force_mirror_diagnostic_service(object())
+        is result
+    )
+    assert captured == {
+        "market_data": market_data,
+        "mirror_service": mirror_service,
+        "previous_trading_day": previous_trading_day,
+    }
+
+
 def test_robustness_builder_reuses_one_mds_and_frozen_active60(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

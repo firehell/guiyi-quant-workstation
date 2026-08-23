@@ -30,6 +30,29 @@ from app.research.main_force.main_force_mirror_v2_research_service import (
     MainForceMirrorV2ResearchResult,
     MainForceMirrorV2SensitivitySummary,
 )
+from app.research.main_force.main_force_mirror_diagnostic import (
+    MainForceMirrorDiagnosticAvailableProductRow,
+    MainForceMirrorDiagnosticBreakdownKey,
+    MainForceMirrorDiagnosticFunnelSection,
+    MainForceMirrorDiagnosticLabelBreakdown,
+    MainForceMirrorDiagnosticLabelSection,
+    MainForceMirrorDiagnosticMemberSection,
+    MainForceMirrorDiagnosticModelBreakdown,
+    MainForceMirrorDiagnosticModelFoldSection,
+    MainForceMirrorDiagnosticModelSection,
+    MainForceMirrorDiagnosticPrefixInvariance,
+    MainForceMirrorDiagnosticReportError,
+    MainForceMirrorDiagnosticScoreLatchBreakdown,
+    MainForceMirrorDiagnosticSequenceBreakdown,
+    MainForceMirrorDiagnosticSequenceEventCount,
+    MainForceMirrorDiagnosticSequenceProfileSection,
+    MainForceMirrorDiagnosticSequenceSection,
+    MainForceMirrorDiagnosticSequenceTransitionCount,
+    MainForceMirrorDiagnosticUnavailableProductRow,
+)
+from app.research.main_force.main_force_mirror_diagnostic_service import (
+    MainForceMirrorDiagnosticResult,
+)
 from app.research.robustness.multi_candidate_robustness import (
     CommonPriceHorizonSummary,
     CrossSymbolCandidateSummary,
@@ -208,6 +231,466 @@ def _main_force_mirror_v2_payload(
             for item in result.forensic_points or ()
         ]
     return payload
+
+
+def _main_force_mirror_diagnostic_payload(
+    result: MainForceMirrorDiagnosticResult,
+) -> dict[str, object]:
+    report = result.report
+    return {
+        "schema_version": report.schema_version,
+        "command": "research.main-force-mirror-diagnostic",
+        "status": "ok",
+        "protocol_id": report.protocol_id,
+        "model_subprotocol": report.model_subprotocol,
+        "readonly": report.readonly,
+        "research_only": report.research_only,
+        "evaluation_classification": "retrospective_historical_diagnostic",
+        "source": {
+            "series_kind": result.source_mode,
+            "frequency": result.frequency,
+            "confirmed_only": result.confirmed_only,
+        },
+        "windows": {
+            "active60": {
+                "since": result.requested_active_since.isoformat(),
+                "through": result.requested_active_through.isoformat(),
+            },
+            "jm_view": {
+                "since": result.jm_view_since.isoformat(),
+                "through": result.jm_view_through.isoformat(),
+            },
+            "known_retrospective_through": (
+                result.known_retrospective_through.isoformat()
+            ),
+            "prospective": {
+                "begins_after": result.prospective_begins_after.isoformat(),
+                "consumed": result.prospective_consumed,
+            },
+        },
+        "v2_identity": {
+            "indicator_code": result.indicator_code,
+            "indicator_version": result.indicator_version,
+            "formal_policy_id": result.formal_policy_id,
+            "parameters_hash": result.parameters_hash,
+        },
+        "validation": {
+            "source_mode": report.validation.source_mode,
+            "frequency": report.validation.frequency,
+            "confirmed_only": report.validation.confirmed_only,
+            "active_universe_sha256": report.validation.active_universe_sha256,
+            "known_retrospective_through": (
+                report.validation.known_retrospective_through.isoformat()
+            ),
+            "prospective_consumed": report.validation.prospective_consumed,
+            "available_product_count": report.validation.available_product_count,
+            "unavailable_product_count": (
+                report.validation.unavailable_product_count
+            ),
+            "unknown_failure_count": report.validation.unknown_failure_count,
+        },
+        "product_rows": [
+            _main_force_mirror_diagnostic_product_row(item)
+            for item in report.product_rows
+        ],
+        "label": _main_force_mirror_diagnostic_label(report.label),
+        "sequence": _main_force_mirror_diagnostic_sequence(report.sequence),
+        "funnel": _main_force_mirror_diagnostic_funnel(report.funnel),
+        "model": _main_force_mirror_diagnostic_model(report.model),
+        "member": _main_force_mirror_diagnostic_member(report.member),
+        "quality_flags": list(report.quality_flags),
+        "gate": report.gate.value,
+        "gate_reasons": [item.value for item in report.gate_reasons],
+    }
+
+
+def _main_force_mirror_diagnostic_product_row(
+    value: MainForceMirrorDiagnosticAvailableProductRow
+    | MainForceMirrorDiagnosticUnavailableProductRow,
+) -> dict[str, object]:
+    if type(value) is MainForceMirrorDiagnosticAvailableProductRow:
+        return {
+            "symbol": value.symbol,
+            "status": value.status.value,
+            "observed_since": value.observed_since.isoformat(),
+            "observed_through": value.observed_through.isoformat(),
+            "confirmed_bar_count": value.confirmed_bar_count,
+            "physical_contract_count": value.physical_contract_count,
+        }
+    if type(value) is MainForceMirrorDiagnosticUnavailableProductRow:
+        return {
+            "symbol": value.symbol,
+            "status": value.status.value,
+            "reason_code": value.reason_code.value,
+        }
+    raise MainForceMirrorDiagnosticReportError()
+
+
+def _main_force_mirror_diagnostic_breakdown_key(
+    value: MainForceMirrorDiagnosticBreakdownKey,
+) -> dict[str, object]:
+    return {
+        "scope": value.scope.value,
+        "product": value.product,
+        "year": value.year,
+        "side": None if value.side is None else value.side.value,
+        "fold": value.fold,
+    }
+
+
+def _main_force_mirror_diagnostic_label(
+    value: MainForceMirrorDiagnosticLabelSection,
+) -> dict[str, object]:
+    return {
+        "raw_sample_count": value.raw_sample_count,
+        "sample_count": value.sample_count,
+        "overlap_suppressed_count": value.overlap_suppressed_count,
+        "long_sample_count": value.long_sample_count,
+        "short_sample_count": value.short_sample_count,
+        "duplicated_side_sample_count": value.duplicated_side_sample_count,
+        "binary_evaluable_count": value.binary_evaluable_count,
+        "legacy_long_only_count": value.legacy_long_only_count,
+        "legacy_short_only_count": value.legacy_short_only_count,
+        "legacy_both_count": value.legacy_both_count,
+        "legacy_neither_count": value.legacy_neither_count,
+        "adverse_first_count": value.adverse_first_count,
+        "favorable_first_count": value.favorable_first_count,
+        "ambiguous_count": value.ambiguous_count,
+        "timeout_count": value.timeout_count,
+        "censored_horizon_count": value.censored_horizon_count,
+        "censored_contract_change_count": value.censored_contract_change_count,
+        "censored_input_gap_count": value.censored_input_gap_count,
+        "split_boundary_censored_count": value.split_boundary_censored_count,
+        "resolved_coverage": _main_force_mirror_diagnostic_json_value(
+            value.resolved_coverage
+        ),
+        "ambiguous_rate": _main_force_mirror_diagnostic_json_value(
+            value.ambiguous_rate
+        ),
+        "breakdowns": [
+            _main_force_mirror_diagnostic_label_breakdown(item)
+            for item in value.breakdowns
+        ],
+    }
+
+
+def _main_force_mirror_diagnostic_label_breakdown(
+    value: MainForceMirrorDiagnosticLabelBreakdown,
+) -> dict[str, object]:
+    return {
+        "key": _main_force_mirror_diagnostic_breakdown_key(value.key),
+        "raw_sample_count": value.raw_sample_count,
+        "kept_sample_count": value.kept_sample_count,
+        "overlap_suppressed_count": value.overlap_suppressed_count,
+        "long_sample_count": value.long_sample_count,
+        "short_sample_count": value.short_sample_count,
+        "duplicated_side_sample_count": value.duplicated_side_sample_count,
+        "binary_evaluable_count": value.binary_evaluable_count,
+        "legacy_long_only_count": value.legacy_long_only_count,
+        "legacy_short_only_count": value.legacy_short_only_count,
+        "legacy_both_count": value.legacy_both_count,
+        "legacy_neither_count": value.legacy_neither_count,
+        "adverse_first_count": value.adverse_first_count,
+        "favorable_first_count": value.favorable_first_count,
+        "ambiguous_count": value.ambiguous_count,
+        "timeout_count": value.timeout_count,
+        "censored_horizon_count": value.censored_horizon_count,
+        "censored_contract_change_count": value.censored_contract_change_count,
+        "censored_input_gap_count": value.censored_input_gap_count,
+        "split_boundary_censored_count": value.split_boundary_censored_count,
+    }
+
+
+def _main_force_mirror_diagnostic_sequence(
+    value: MainForceMirrorDiagnosticSequenceSection,
+) -> dict[str, object]:
+    return {
+        "profiles": [
+            _main_force_mirror_diagnostic_sequence_profile(item)
+            for item in value.profiles
+        ]
+    }
+
+
+def _main_force_mirror_diagnostic_sequence_profile(
+    value: MainForceMirrorDiagnosticSequenceProfileSection,
+) -> dict[str, object]:
+    return {
+        "profile_id": value.profile_id,
+        "peak_then_decay_sample_count": value.peak_then_decay_sample_count,
+        "long_sample_count": value.long_sample_count,
+        "short_sample_count": value.short_sample_count,
+        "product_count": value.product_count,
+        "year_count": value.year_count,
+        "top_product_share": _main_force_mirror_diagnostic_json_value(
+            value.top_product_share
+        ),
+        "median_delay_bars": _main_force_mirror_diagnostic_json_value(
+            value.median_delay_bars
+        ),
+        "h3_reversal_hit_rate": _main_force_mirror_diagnostic_json_value(
+            value.h3_reversal_hit_rate
+        ),
+        "h5_reversal_hit_rate": _main_force_mirror_diagnostic_json_value(
+            value.h5_reversal_hit_rate
+        ),
+        "yearly_median_reversal_min": _main_force_mirror_diagnostic_json_value(
+            value.yearly_median_reversal_min
+        ),
+        "side_median_reversal_min": _main_force_mirror_diagnostic_json_value(
+            value.side_median_reversal_min
+        ),
+        "breakdowns": [
+            _main_force_mirror_diagnostic_sequence_breakdown(item)
+            for item in value.breakdowns
+        ],
+    }
+
+
+def _main_force_mirror_diagnostic_sequence_breakdown(
+    value: MainForceMirrorDiagnosticSequenceBreakdown,
+) -> dict[str, object]:
+    return {
+        "key": _main_force_mirror_diagnostic_breakdown_key(value.key),
+        "raw_episode_count": value.raw_episode_count,
+        "kept_episode_count": value.kept_episode_count,
+        "overlap_suppressed_count": value.overlap_suppressed_count,
+        "first_evidence_count": value.first_evidence_count,
+        "delay_sample_count": value.delay_sample_count,
+        "delay_bars_total": value.delay_bars_total,
+        "transitions": [
+            _main_force_mirror_diagnostic_transition(item)
+            for item in value.transitions
+        ],
+        "events": [
+            _main_force_mirror_diagnostic_event(item) for item in value.events
+        ],
+        "prefix_invariance": _main_force_mirror_diagnostic_prefix(
+            value.prefix_invariance
+        ),
+    }
+
+
+def _main_force_mirror_diagnostic_transition(
+    value: MainForceMirrorDiagnosticSequenceTransitionCount,
+) -> dict[str, object]:
+    return {
+        "from_state": value.from_state.value,
+        "to_state": value.to_state.value,
+        "count": value.count,
+    }
+
+
+def _main_force_mirror_diagnostic_event(
+    value: MainForceMirrorDiagnosticSequenceEventCount,
+) -> dict[str, object]:
+    return {
+        "event_kind": value.event_kind.value,
+        "raw_count": value.raw_count,
+        "kept_count": value.kept_count,
+        "overlap_count": value.overlap_count,
+    }
+
+
+def _main_force_mirror_diagnostic_prefix(
+    value: MainForceMirrorDiagnosticPrefixInvariance,
+) -> dict[str, object]:
+    return {
+        "checked_prefix_count": value.checked_prefix_count,
+        "matching_prefix_count": value.matching_prefix_count,
+        "mismatch_count": value.mismatch_count,
+    }
+
+
+def _main_force_mirror_diagnostic_funnel(
+    value: MainForceMirrorDiagnosticFunnelSection,
+) -> dict[str, object]:
+    return {
+        "evaluable_bar_count": value.evaluable_bar_count,
+        "binary_evaluable_count": value.binary_evaluable_count,
+        "high_score_bar_count": value.high_score_bar_count,
+        "conflict_bar_count": value.conflict_bar_count,
+        "armed_bar_count": value.armed_bar_count,
+        "caution_episode_count": value.caution_episode_count,
+        "latched_episode_count": value.latched_episode_count,
+        "suppression_count": value.suppression_count,
+        "raw_episode_anchor_count": value.raw_episode_anchor_count,
+        "kept_episode_anchor_count": value.kept_episode_anchor_count,
+        "overlap_suppressed_anchor_count": value.overlap_suppressed_anchor_count,
+        "breakdowns": [
+            _main_force_mirror_diagnostic_funnel_breakdown(item)
+            for item in value.breakdowns
+        ],
+    }
+
+
+def _main_force_mirror_diagnostic_funnel_breakdown(
+    value: MainForceMirrorDiagnosticScoreLatchBreakdown,
+) -> dict[str, object]:
+    return {
+        "key": _main_force_mirror_diagnostic_breakdown_key(value.key),
+        "caution_ready_bar_count": value.caution_ready_bar_count,
+        "binary_evaluable_count": value.binary_evaluable_count,
+        "score_not_candidate_count": value.score_not_candidate_count,
+        "long_only_candidate_count": value.long_only_candidate_count,
+        "short_only_candidate_count": value.short_only_candidate_count,
+        "dual_candidate_conflict_count": value.dual_candidate_conflict_count,
+        "high_score_unique_bar_count": value.high_score_unique_bar_count,
+        "armed_candidate_count": value.armed_candidate_count,
+        "unarmed_candidate_suppressed_count": (
+            value.unarmed_candidate_suppressed_count
+        ),
+        "long_caution_count": value.long_caution_count,
+        "short_caution_count": value.short_caution_count,
+        "caution_count": value.caution_count,
+        "raw_episode_anchor_count": value.raw_episode_anchor_count,
+        "kept_episode_anchor_count": value.kept_episode_anchor_count,
+        "overlap_suppressed_anchor_count": value.overlap_suppressed_anchor_count,
+        "long_rearm_count": value.long_rearm_count,
+        "short_rearm_count": value.short_rearm_count,
+    }
+
+
+def _main_force_mirror_diagnostic_model(
+    value: MainForceMirrorDiagnosticModelSection,
+) -> dict[str, object]:
+    return {
+        "folds": [
+            _main_force_mirror_diagnostic_model_fold(item) for item in value.folds
+        ],
+        "breakdowns": [
+            _main_force_mirror_diagnostic_model_breakdown(item)
+            for item in value.breakdowns
+        ],
+    }
+
+
+def _main_force_mirror_diagnostic_model_fold(
+    value: MainForceMirrorDiagnosticModelFoldSection,
+) -> dict[str, object]:
+    return {
+        "fold": value.fold,
+        "fit_since": value.fit_since.isoformat(),
+        "fit_through": value.fit_through.isoformat(),
+        "evaluate_since": value.evaluate_since.isoformat(),
+        "evaluate_through": value.evaluate_through.isoformat(),
+        "fit_binary_count": value.fit_binary_count,
+        "fit_negative_count": value.fit_negative_count,
+        "fit_positive_count": value.fit_positive_count,
+        "evaluate_binary_count": value.evaluate_binary_count,
+        "evaluate_negative_count": value.evaluate_negative_count,
+        "evaluate_positive_count": value.evaluate_positive_count,
+        "evaluate_long_count": value.evaluate_long_count,
+        "evaluate_short_count": value.evaluate_short_count,
+        "evaluate_product_count": value.evaluate_product_count,
+        "bootstrap_valid_count": value.bootstrap_valid_count,
+        "score_auc": _main_force_mirror_diagnostic_json_value(value.score_auc),
+        "ridge_auc": _main_force_mirror_diagnostic_json_value(value.ridge_auc),
+        "current_tree_auc": _main_force_mirror_diagnostic_json_value(
+            value.current_tree_auc
+        ),
+        "full_tree_auc": _main_force_mirror_diagnostic_json_value(
+            value.full_tree_auc
+        ),
+        "ridge_score_delta": _main_force_mirror_diagnostic_json_value(
+            value.ridge_score_delta
+        ),
+        "ridge_score_ci_lower": _main_force_mirror_diagnostic_json_value(
+            value.ridge_score_ci_lower
+        ),
+        "full_tree_ridge_delta": _main_force_mirror_diagnostic_json_value(
+            value.full_tree_ridge_delta
+        ),
+        "full_tree_ridge_ci_lower": _main_force_mirror_diagnostic_json_value(
+            value.full_tree_ridge_ci_lower
+        ),
+        "full_tree_current_tree_delta": _main_force_mirror_diagnostic_json_value(
+            value.full_tree_current_tree_delta
+        ),
+        "full_tree_current_tree_ci_lower": (
+            _main_force_mirror_diagnostic_json_value(
+                value.full_tree_current_tree_ci_lower
+            )
+        ),
+        "long_auc": _main_force_mirror_diagnostic_json_value(value.long_auc),
+        "short_auc": _main_force_mirror_diagnostic_json_value(value.short_auc),
+        "long_point_delta": _main_force_mirror_diagnostic_json_value(
+            value.long_point_delta
+        ),
+        "short_point_delta": _main_force_mirror_diagnostic_json_value(
+            value.short_point_delta
+        ),
+        "model_unavailable_reason": _main_force_mirror_diagnostic_json_value(
+            value.model_unavailable_reason
+        ),
+        "long_unavailable_reason": _main_force_mirror_diagnostic_json_value(
+            value.long_unavailable_reason
+        ),
+        "short_unavailable_reason": _main_force_mirror_diagnostic_json_value(
+            value.short_unavailable_reason
+        ),
+    }
+
+
+def _main_force_mirror_diagnostic_model_breakdown(
+    value: MainForceMirrorDiagnosticModelBreakdown,
+) -> dict[str, object]:
+    return {
+        "key": _main_force_mirror_diagnostic_breakdown_key(value.key),
+        "sample_count": value.sample_count,
+        "score_auc": _main_force_mirror_diagnostic_json_value(value.score_auc),
+        "ridge_auc": _main_force_mirror_diagnostic_json_value(value.ridge_auc),
+        "current_tree_auc": _main_force_mirror_diagnostic_json_value(
+            value.current_tree_auc
+        ),
+        "full_tree_auc": _main_force_mirror_diagnostic_json_value(
+            value.full_tree_auc
+        ),
+        "unavailable_reason": _main_force_mirror_diagnostic_json_value(
+            value.unavailable_reason
+        ),
+    }
+
+
+def _main_force_mirror_diagnostic_member(
+    value: MainForceMirrorDiagnosticMemberSection,
+) -> dict[str, object]:
+    return {
+        "unique_earliest_count": value.unique_earliest_count,
+        "eligible_count": value.eligible_count,
+        "t_minus_1_coverage": _main_force_mirror_diagnostic_json_value(
+            value.t_minus_1_coverage
+        ),
+        "product_count": value.product_count,
+        "causal_violation_count": value.causal_violation_count,
+        "identity_violation_count": value.identity_violation_count,
+        "member_model_present": value.member_model_present,
+    }
+
+
+def _main_force_mirror_diagnostic_json_value(value: object) -> object:
+    if value is None or isinstance(value, (str, int, bool)):
+        return value
+    if isinstance(value, Decimal):
+        if not value.is_finite():
+            raise MainForceMirrorDiagnosticReportError()
+        if value == 0:
+            return "0"
+        return format(value.normalize(), "f")
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if type(value) is date:
+        return value.isoformat()
+    if isinstance(value, Enum):
+        return value.value
+    if isinstance(value, tuple):
+        return [_main_force_mirror_diagnostic_json_value(item) for item in value]
+    if isinstance(value, Mapping):
+        return {
+            str(key): _main_force_mirror_diagnostic_json_value(item)
+            for key, item in value.items()
+        }
+    raise MainForceMirrorDiagnosticReportError()
 
 
 def _multi_candidate_robustness_payload(
