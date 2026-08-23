@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
+import os
 from pathlib import Path
 import threading
 from typing import IO, Any
@@ -18,6 +19,39 @@ from app.backtest.errors import BacktestError, RunFailureCode
 
 RUN_ID = "20260823T010203-run001"
 STARTED_AT = "2026-08-23T01:02:03+00:00"
+
+
+class _CloseThenReuseHandle:
+    def __init__(
+        self,
+        handle: IO[Any],
+        descriptor: int,
+        replacement_path: Path,
+        real_open: Any,
+        reused_descriptors: list[int],
+    ) -> None:
+        self._handle = handle
+        self._descriptor = descriptor
+        self._replacement_path = replacement_path
+        self._real_open = real_open
+        self._reused_descriptors = reused_descriptors
+
+    def __enter__(self) -> IO[Any]:
+        return self._handle.__enter__()
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._handle, name)
+
+    def __exit__(self, *args: Any) -> Any:
+        result = self._handle.__exit__(*args)
+        replacement = self._real_open(
+            self._replacement_path,
+            os.O_RDWR | os.O_CREAT,
+            0o600,
+        )
+        self._reused_descriptors.append(replacement)
+        assert replacement == self._descriptor
+        return result
 
 
 @pytest.fixture
@@ -89,6 +123,43 @@ def test_create_run_uses_only_fixed_paths_and_snapshots_strategy_with_sha(
     assert json.loads(paths.strategy_params_json.read_text(encoding="utf-8")) == {
         "quantity": 1
     }
+
+
+def test_create_run_publishes_run_tree_under_root_lock(
+    store: ArtifactStore,
+    strategy_file: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    real_flock = artifact_store_module.fcntl.flock
+    real_mkdir = artifact_store_module.os.mkdir
+    root_lock_held = False
+    run_creation_lock_states: list[bool] = []
+
+    def track_flock(descriptor: int, operation: int) -> Any:
+        nonlocal root_lock_held
+        result = real_flock(descriptor, operation)
+        if operation == artifact_store_module.fcntl.LOCK_EX:
+            root_lock_held = True
+        elif operation == artifact_store_module.fcntl.LOCK_UN:
+            root_lock_held = False
+        return result
+
+    def observe_run_creation(
+        path: str | bytes | Path,
+        mode: int = 0o777,
+        *,
+        dir_fd: int | None = None,
+    ) -> None:
+        if path == RUN_ID:
+            run_creation_lock_states.append(root_lock_held)
+        real_mkdir(path, mode, dir_fd=dir_fd)
+
+    monkeypatch.setattr(artifact_store_module.fcntl, "flock", track_flock)
+    monkeypatch.setattr(artifact_store_module.os, "mkdir", observe_run_creation)
+
+    _create_run(store, strategy_file)
+
+    assert run_creation_lock_states == [True]
 
 
 @pytest.mark.parametrize(
@@ -170,6 +241,43 @@ def test_result_json_is_written_and_read_through_atomic_store_methods(
     store.write_result(RUN_ID, payload)
 
     assert store.read_result(RUN_ID) == payload
+
+
+def test_write_result_publishes_under_root_lock(
+    store: ArtifactStore,
+    strategy_file: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _create_run(store, strategy_file)
+    real_flock = artifact_store_module.fcntl.flock
+    real_replace = artifact_store_module.os.replace
+    root_lock_held = False
+    result_publish_lock_states: list[bool] = []
+
+    def track_flock(descriptor: int, operation: int) -> Any:
+        nonlocal root_lock_held
+        result = real_flock(descriptor, operation)
+        if operation == artifact_store_module.fcntl.LOCK_EX:
+            root_lock_held = True
+        elif operation == artifact_store_module.fcntl.LOCK_UN:
+            root_lock_held = False
+        return result
+
+    def observe_result_publish(
+        source: str | bytes | Path,
+        target: str | bytes | Path,
+        **kwargs: Any,
+    ) -> None:
+        if Path(target).name == "result.json":
+            result_publish_lock_states.append(root_lock_held)
+        real_replace(source, target, **kwargs)
+
+    monkeypatch.setattr(artifact_store_module.fcntl, "flock", track_flock)
+    monkeypatch.setattr(artifact_store_module.os, "replace", observe_result_publish)
+
+    store.write_result(RUN_ID, {"summary": {"total_returns": "0.1"}})
+
+    assert result_publish_lock_states == [True]
 
 
 def test_list_runs_is_newest_first_and_enforces_limit_bounds(
@@ -590,12 +698,13 @@ def test_acquire_lock_uses_exclusive_creation_and_preserves_first_owner(
     }
 
 
-def test_acquire_lock_fstat_failure_closes_and_removes_created_lock(
+def test_acquire_lock_all_metadata_failure_removes_created_lock(
     store: ArtifactStore,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     real_open = artifact_store_module.os.open
     real_fstat = artifact_store_module.os.fstat
+    real_stat = artifact_store_module.os.stat
     lock_descriptors: list[int] = []
 
     def record_lock_open(
@@ -612,13 +721,19 @@ def test_acquire_lock_fstat_failure_closes_and_removes_created_lock(
 
     def fail_lock_fstat(descriptor: int) -> Any:
         if descriptor in lock_descriptors:
-            raise OSError("injected lock fstat failure")
+            raise OSError("injected lock metadata failure")
         return real_fstat(descriptor)
+
+    def fail_lock_stat(path: Any, *args: Any, **kwargs: Any) -> Any:
+        if isinstance(path, int) and path in lock_descriptors:
+            raise OSError("injected lock metadata failure")
+        return real_stat(path, *args, **kwargs)
 
     monkeypatch.setattr(artifact_store_module.os, "open", record_lock_open)
     monkeypatch.setattr(artifact_store_module.os, "fstat", fail_lock_fstat)
+    monkeypatch.setattr(artifact_store_module.os, "stat", fail_lock_stat)
 
-    with pytest.raises(OSError, match="injected lock fstat failure"):
+    with pytest.raises(OSError, match="injected lock metadata failure"):
         store.acquire_lock(RUN_ID, pid=1234, started_at=STARTED_AT)
 
     assert len(lock_descriptors) == 1
@@ -663,6 +778,126 @@ def test_acquire_lock_fdopen_failure_closes_and_removes_created_lock(
     with pytest.raises(OSError):
         real_fstat(lock_descriptors[0])
     assert not store.lock_path.exists()
+
+
+def test_acquire_lock_does_not_close_descriptor_reused_after_fdopen_takeover(
+    store: ArtifactStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    real_open = artifact_store_module.os.open
+    real_fdopen = artifact_store_module.os.fdopen
+    real_fstat = artifact_store_module.os.fstat
+    real_fsync = artifact_store_module.os.fsync
+    real_close = artifact_store_module.os.close
+    lock_descriptors: list[int] = []
+    reused_descriptors: list[int] = []
+    replacement_path = store.runs_root.parent / "acquire-reused.fd"
+
+    def record_lock_open(
+        path: str | bytes | Path,
+        flags: int,
+        mode: int = 0o777,
+        *,
+        dir_fd: int | None = None,
+    ) -> int:
+        descriptor = real_open(path, flags, mode, dir_fd=dir_fd)
+        if path == "active.lock":
+            lock_descriptors.append(descriptor)
+        return descriptor
+
+    def wrap_lock_fdopen(descriptor: int, *args: Any, **kwargs: Any) -> Any:
+        handle = real_fdopen(descriptor, *args, **kwargs)
+        if descriptor not in lock_descriptors:
+            return handle
+        return _CloseThenReuseHandle(
+            handle,
+            descriptor,
+            replacement_path,
+            real_open,
+            reused_descriptors,
+        )
+
+    def fail_lock_fsync(descriptor: int) -> None:
+        if descriptor in lock_descriptors:
+            raise OSError("injected lock fsync failure")
+        real_fsync(descriptor)
+
+    monkeypatch.setattr(artifact_store_module.os, "open", record_lock_open)
+    monkeypatch.setattr(artifact_store_module.os, "fdopen", wrap_lock_fdopen)
+    monkeypatch.setattr(artifact_store_module.os, "fsync", fail_lock_fsync)
+
+    with pytest.raises(OSError, match="injected lock fsync failure"):
+        store.acquire_lock(RUN_ID, pid=1234, started_at=STARTED_AT)
+
+    assert reused_descriptors == lock_descriptors
+    try:
+        assert real_fstat(reused_descriptors[0]).st_size == 0
+    finally:
+        try:
+            real_close(reused_descriptors[0])
+        except OSError:
+            pass
+    assert not store.lock_path.exists()
+
+
+def test_exclusive_write_does_not_close_descriptor_reused_after_fdopen_takeover(
+    store: ArtifactStore,
+    strategy_file: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    real_open = artifact_store_module.os.open
+    real_fdopen = artifact_store_module.os.fdopen
+    real_fstat = artifact_store_module.os.fstat
+    real_fsync = artifact_store_module.os.fsync
+    real_close = artifact_store_module.os.close
+    write_descriptors: list[int] = []
+    reused_descriptors: list[int] = []
+    replacement_path = store.runs_root.parent / "write-reused.fd"
+
+    def record_write_open(
+        path: str | bytes | Path,
+        flags: int,
+        mode: int = 0o777,
+        *,
+        dir_fd: int | None = None,
+    ) -> int:
+        descriptor = real_open(path, flags, mode, dir_fd=dir_fd)
+        if path == "strategy.py":
+            write_descriptors.append(descriptor)
+        return descriptor
+
+    def wrap_write_fdopen(descriptor: int, *args: Any, **kwargs: Any) -> Any:
+        handle = real_fdopen(descriptor, *args, **kwargs)
+        if descriptor not in write_descriptors:
+            return handle
+        return _CloseThenReuseHandle(
+            handle,
+            descriptor,
+            replacement_path,
+            real_open,
+            reused_descriptors,
+        )
+
+    def fail_write_fsync(descriptor: int) -> None:
+        if descriptor in write_descriptors:
+            raise OSError("injected exclusive write fsync failure")
+        real_fsync(descriptor)
+
+    monkeypatch.setattr(artifact_store_module.os, "open", record_write_open)
+    monkeypatch.setattr(artifact_store_module.os, "fdopen", wrap_write_fdopen)
+    monkeypatch.setattr(artifact_store_module.os, "fsync", fail_write_fsync)
+
+    with pytest.raises(OSError, match="injected exclusive write fsync failure"):
+        _create_run(store, strategy_file)
+
+    assert reused_descriptors == write_descriptors
+    try:
+        assert real_fstat(reused_descriptors[0]).st_size == 0
+    finally:
+        try:
+            real_close(reused_descriptors[0])
+        except OSError:
+            pass
 
 
 def test_open_run_closes_descriptor_when_directory_fstat_fails(
@@ -884,6 +1119,102 @@ def test_reconcile_missing_pid_marks_running_run_interrupted_and_unlocks(
     assert run["finished_at"].endswith("+00:00")
     datetime.fromisoformat(run["finished_at"])
     assert not store.lock_path.exists()
+
+
+def test_update_run_and_reconcile_serialize_run_record_transitions(
+    store: ArtifactStore,
+    strategy_file: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _create_run(store, strategy_file)
+    store.acquire_lock(RUN_ID, pid=1234, started_at=STARTED_AT)
+    monitor_store = ArtifactStore(
+        BacktestSettings(
+            python_executable=store.runs_root.parent / "python",
+            bundle_path=store.runs_root.parent / "bundle",
+            runs_root=store.runs_root,
+            timeout_seconds=3600,
+            cors_origins=("http://127.0.0.1:5173",),
+        )
+    )
+    real_flock = artifact_store_module.fcntl.flock
+    real_replace = artifact_store_module.os.replace
+    reconcile_at_replace = threading.Event()
+    monitor_is_serialized_or_written = threading.Event()
+    errors: list[BaseException] = []
+    monitor_updates: list[dict[str, Any]] = []
+    reconcile_thread_id: int | None = None
+    monitor_thread_id: int | None = None
+
+    def coordinate_flock(descriptor: int, operation: int) -> Any:
+        if (
+            threading.get_ident() == monitor_thread_id
+            and operation == artifact_store_module.fcntl.LOCK_EX
+        ):
+            monitor_is_serialized_or_written.set()
+        return real_flock(descriptor, operation)
+
+    def coordinate_run_replace(
+        source: str | bytes | Path,
+        target: str | bytes | Path,
+        **kwargs: Any,
+    ) -> None:
+        if Path(target).name != "run.json":
+            real_replace(source, target, **kwargs)
+            return
+        current_thread = threading.get_ident()
+        if current_thread == reconcile_thread_id:
+            reconcile_at_replace.set()
+            assert monitor_is_serialized_or_written.wait(timeout=5)
+            real_replace(source, target, **kwargs)
+            return
+        real_replace(source, target, **kwargs)
+        if current_thread == monitor_thread_id:
+            monitor_is_serialized_or_written.set()
+
+    monkeypatch.setattr(artifact_store_module.fcntl, "flock", coordinate_flock)
+    monkeypatch.setattr(artifact_store_module.os, "replace", coordinate_run_replace)
+
+    def reconcile_dead_pid() -> None:
+        nonlocal reconcile_thread_id
+        reconcile_thread_id = threading.get_ident()
+        try:
+            store.reconcile_stale_lock(pid_exists=lambda _pid: False)
+        except BaseException as exc:
+            errors.append(exc)
+
+    def publish_success() -> None:
+        nonlocal monitor_thread_id
+        monitor_thread_id = threading.get_ident()
+        try:
+            monitor_updates.append(
+                monitor_store.update_run(
+                    RUN_ID,
+                    {
+                        "status": RunStatus.SUCCEEDED,
+                        "failure_code": None,
+                        "finished_at": "2026-08-23T01:03:03+00:00",
+                    },
+                )
+            )
+        except BaseException as exc:
+            errors.append(exc)
+
+    reconcile_thread = threading.Thread(target=reconcile_dead_pid)
+    reconcile_thread.start()
+    assert reconcile_at_replace.wait(timeout=5)
+    monitor_thread = threading.Thread(target=publish_success)
+    monitor_thread.start()
+    reconcile_thread.join(timeout=5)
+    monitor_thread.join(timeout=5)
+
+    assert not reconcile_thread.is_alive()
+    assert not monitor_thread.is_alive()
+    assert errors == []
+    assert monitor_updates[0]["status"] == "succeeded"
+    final_run = store.read_run(RUN_ID)
+    assert final_run["status"] == "succeeded"
+    assert final_run["failure_code"] is None
 
 
 @pytest.mark.parametrize(

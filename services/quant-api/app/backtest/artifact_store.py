@@ -142,7 +142,7 @@ class ArtifactStore:
         payload["run_id"] = run_id
         payload["strategy_sha256"] = strategy_sha256
 
-        with self._open_runs_root(create=True) as root_descriptor:
+        with self._locked_root(create=True) as root_descriptor:
             os.mkdir(run_id, mode=0o700, dir_fd=root_descriptor)
             with self._open_directory_at(root_descriptor, run_id) as run_descriptor:
                 os.mkdir("report", mode=0o700, dir_fd=run_descriptor)
@@ -179,25 +179,33 @@ class ArtifactStore:
     ) -> dict[str, Any]:
         """Merge and atomically replace the run record within one opened dir."""
 
-        with self._open_runs_root() as root_descriptor:
-            with self._open_run(root_descriptor, run_id) as run_descriptor:
-                current = self._read_json_at(
-                    run_descriptor,
-                    "run.json",
-                    invalid_code="BACKTEST_RUN_RECORD_INVALID",
-                )
-                if current.get("run_id") != run_id:
-                    raise ValueError("BACKTEST_RUN_RECORD_INVALID")
-                updated = {**current, **dict(changes)}
-                updated["run_id"] = run_id
-                updated["strategy_sha256"] = current.get("strategy_sha256")
-                self._write_json_atomic_at(run_descriptor, "run.json", updated)
-                return updated
+        with self._locked_root() as root_descriptor:
+            return self._update_run_at(root_descriptor, run_id, changes)
+
+    def _update_run_at(
+        self,
+        root_descriptor: int,
+        run_id: str,
+        changes: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        with self._open_run(root_descriptor, run_id) as run_descriptor:
+            current = self._read_json_at(
+                run_descriptor,
+                "run.json",
+                invalid_code="BACKTEST_RUN_RECORD_INVALID",
+            )
+            if current.get("run_id") != run_id:
+                raise ValueError("BACKTEST_RUN_RECORD_INVALID")
+            updated = {**current, **dict(changes)}
+            updated["run_id"] = run_id
+            updated["strategy_sha256"] = current.get("strategy_sha256")
+            self._write_json_atomic_at(run_descriptor, "run.json", updated)
+            return updated
 
     def write_result(self, run_id: str, result: Mapping[str, Any]) -> None:
         """Atomically publish result JSON inside the opened run directory."""
 
-        with self._open_runs_root() as root_descriptor:
+        with self._locked_root() as root_descriptor:
             with self._open_run(root_descriptor, run_id) as run_descriptor:
                 self._write_json_atomic_at(run_descriptor, "result.json", result)
 
@@ -369,35 +377,40 @@ class ArtifactStore:
         }
         data = self._json_bytes(payload)
         with self._locked_root(create=True) as root_descriptor:
-            try:
-                descriptor = os.open(
-                    "active.lock",
-                    _CREATE_FILE_FLAGS,
-                    0o600,
-                    dir_fd=root_descriptor,
-                )
-            except FileExistsError as exc:
-                raise BacktestError(
-                    BacktestHttpErrorCode.BACKTEST_ALREADY_RUNNING
-                ) from exc
-            identity: os.stat_result | None = None
+            created = False
+            raw_owned = False
             try:
                 try:
-                    identity = os.fstat(descriptor)
-                except Exception:
-                    identity = os.stat(descriptor)
-                    raise
-                with os.fdopen(descriptor, mode="wb") as handle:
+                    descriptor = os.open(
+                        "active.lock",
+                        _CREATE_FILE_FLAGS,
+                        0o600,
+                        dir_fd=root_descriptor,
+                    )
+                except FileExistsError as exc:
+                    raise BacktestError(
+                        BacktestHttpErrorCode.BACKTEST_ALREADY_RUNNING
+                    ) from exc
+                created = True
+                raw_owned = True
+                os.fstat(descriptor)
+                handle = os.fdopen(descriptor, mode="wb")
+                raw_owned = False
+                with handle:
                     handle.write(data)
                     handle.flush()
                     os.fsync(handle.fileno())
             except Exception:
-                try:
-                    os.close(descriptor)
-                except OSError:
-                    pass
-                if identity is not None:
-                    self._unlink_if_identity(root_descriptor, identity)
+                if raw_owned:
+                    try:
+                        os.close(descriptor)
+                    except OSError:
+                        pass
+                if created:
+                    try:
+                        os.unlink("active.lock", dir_fd=root_descriptor)
+                    except FileNotFoundError:
+                        pass
                 raise
         return lock
 
@@ -481,16 +494,16 @@ class ArtifactStore:
                             raise ValueError("BACKTEST_RUN_RECORD_INVALID") from exc
                         status = self._validated_reconcile_status(run, opened.lock)
                         if status is RunStatus.RUNNING:
-                            updated = {
-                                **run,
-                                "status": RunStatus.INTERRUPTED,
-                                "failure_code": RunFailureCode.RUN_INTERRUPTED,
-                                "finished_at": datetime.now(timezone.utc).isoformat(),
-                            }
-                            self._write_json_atomic_at(
-                                run_descriptor,
-                                "run.json",
-                                updated,
+                            self._update_run_at(
+                                root_descriptor,
+                                opened.lock.run_id,
+                                {
+                                    "status": RunStatus.INTERRUPTED,
+                                    "failure_code": RunFailureCode.RUN_INTERRUPTED,
+                                    "finished_at": datetime.now(
+                                        timezone.utc
+                                    ).isoformat(),
+                                },
                             )
                 except BacktestError as exc:
                     raise ValueError("BACKTEST_RUN_RECORD_INVALID") from exc
@@ -629,16 +642,20 @@ class ArtifactStore:
             0o600,
             dir_fd=parent_descriptor,
         )
+        raw_owned = True
         try:
-            with os.fdopen(descriptor, mode="wb") as handle:
+            handle = os.fdopen(descriptor, mode="wb")
+            raw_owned = False
+            with handle:
                 handle.write(content)
                 handle.flush()
                 os.fsync(handle.fileno())
         except Exception:
-            try:
-                os.close(descriptor)
-            except OSError:
-                pass
+            if raw_owned:
+                try:
+                    os.close(descriptor)
+                except OSError:
+                    pass
             raise
 
     @classmethod
@@ -818,21 +835,6 @@ class ArtifactStore:
         except FileNotFoundError:
             return False
         if (metadata.st_dev, metadata.st_ino) != (opened.device, opened.inode):
-            return False
-        os.unlink("active.lock", dir_fd=root_descriptor)
-        return True
-
-    @staticmethod
-    def _unlink_if_identity(root_descriptor: int, identity: os.stat_result) -> bool:
-        try:
-            metadata = os.stat(
-                "active.lock",
-                dir_fd=root_descriptor,
-                follow_symlinks=False,
-            )
-        except FileNotFoundError:
-            return False
-        if (metadata.st_dev, metadata.st_ino) != (identity.st_dev, identity.st_ino):
             return False
         os.unlink("active.lock", dir_fd=root_descriptor)
         return True
