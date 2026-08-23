@@ -1,6 +1,6 @@
 # 测试与验证命令
 
-更新时间：2026-08-22
+更新时间：2026-08-23
 
 ## 依赖
 
@@ -8,6 +8,60 @@
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache uv sync --project services/quant-api --locked
 pnpm --dir apps/quant-web install --frozen-lockfile
 ```
+
+## RQAlpha 研究工作台（无真实 RQAlpha 副作用）
+
+Fake runner 最小端到端：
+
+```bash
+UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache uv run --offline --project services/quant-api pytest -q services/quant-api/tests/backtest/test_fake_runner_e2e.py
+```
+
+Local app 六路由、DTO、CORS/Host/JSON 边界与脱敏错误（FastAPI TestClient，不绑定端口）：
+
+```bash
+UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache uv run --offline --project services/quant-api pytest -q services/quant-api/tests/backtest/test_local_api.py
+```
+
+完整工作台代码路径：
+
+```bash
+UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache uv run --offline --project services/quant-api pytest -q services/quant-api/tests/backtest
+UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache uv run --offline --project services/quant-api ruff check services/quant-api/app/backtest services/quant-api/tests/backtest
+UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache MYPYPATH=services/quant-api uv run --offline --project services/quant-api mypy --explicit-package-bases --ignore-missing-imports services/quant-api/app/backtest
+pnpm --dir apps/quant-web exec node --test tests/backtests.test.ts tests/backtestCapability.test.ts tests/backtestPresentation.test.ts
+pnpm --dir apps/quant-web exec playwright test -c playwright.config.mjs e2e/backtests.spec.mjs
+pnpm --dir apps/quant-web build
+```
+
+以上命令只使用临时目录、fake runner、TestClient 和 browser route interception；不启动
+`127.0.0.1:8011`，不导入本机真实 RQAlpha，不访问真实 Bundle，也不写仓库外正式
+runs root。
+
+## RQAlpha 本机真实 smoke（独立单次外部 Gate）
+
+以下命令只是 Gate 的可执行入口，本文档、仓库代码、自动化通过、既有 Runtime 授权或
+dry-run 都不授权执行。执行前必须取得新的、当次单次且范围明确的执行意图，其中精确
+识别本机、Bundle、外部 Python、已注册策略/短窗口与 runs root。成功、失败或中止都消耗该
+意图；重试必须取得新意图。Smoke 前、中、后都禁止运行 `rqsdk update-data`、
+`download-data` 或任何 Bundle mutation。
+
+在授权后，先对精确 Bundle 文件生成只读 `mtime + size` 前置快照，再使用已校验的 Git 外
+变量启动唯一 sidecar：
+
+```bash
+test -x "$GUIYI_BACKTEST_PYTHON_EXECUTABLE"
+test -d "$GUIYI_BACKTEST_BUNDLE_PATH"
+test -d "$GUIYI_BACKTEST_RUNS_ROOT"
+test "$GUIYI_BACKTEST_BUNDLE_PATH" != "$GUIYI_BACKTEST_RUNS_ROOT"
+UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache uv run --offline --project services/quant-api python -m app.backtest.local_app
+```
+
+只通过本机 `/backtests` 选择 `example_future_smoke_v1` 并运行授权的短窗口。完成后必须停止
+sidecar，核对只新增一个 run 目录、`report/result.pkl/equity.png/result.json` 完整，Bundle
+关键文件的前后 `mtime + size` 不变，并确认 DB/Redis/Canonical/Alert/notification/
+Execution Review/Runtime/真实订单零副作用。真实 smoke 通过仍不表示 release、Runtime-ready、策略
+有效、OOS 通过或 Candidate 可晋升。
 
 ## 工程、版本与文档一致性
 
@@ -34,7 +88,7 @@ GUIYI_ISOLATED_MIGRATION_DATABASE_URL='<isolated-postgresql-url>' UV_CACHE_DIR=/
 
 ```bash
 UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache uv run --offline --project services/quant-api ruff check services/quant-api/app services/quant-api/tests packages/quant-core/guiyi_quant tests/engineering
-UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache MYPYPATH=services/quant-api:packages/quant-core uv run --offline --project services/quant-api mypy --explicit-package-bases --ignore-missing-imports services/quant-api/app/market_data services/quant-api/app/research services/quant-api/app/guiyi_cli services/quant-api/app/alerts services/quant-api/app/execution_review services/quant-api/app/runtime_entry.py services/quant-api/app/services/runtime_health.py services/quant-api/app/api/market.py services/quant-api/app/api/market_live.py services/quant-api/app/api/alerts.py services/quant-api/app/api/execution_review.py
+UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache MYPYPATH=services/quant-api:packages/quant-core uv run --offline --project services/quant-api mypy --explicit-package-bases --ignore-missing-imports services/quant-api/app/backtest services/quant-api/app/market_data services/quant-api/app/research services/quant-api/app/guiyi_cli services/quant-api/app/alerts services/quant-api/app/execution_review services/quant-api/app/runtime_entry.py services/quant-api/app/services/runtime_health.py services/quant-api/app/api/market.py services/quant-api/app/api/market_live.py services/quant-api/app/api/alerts.py services/quant-api/app/api/execution_review.py
 ```
 
 ## Research split tests
