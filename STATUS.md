@@ -9,16 +9,16 @@
   `93806bad4def9b265fcee56265d4c25077cf04c8`，message=`Release v1.8.0`。
 - 2026-08-24 已将本机五个 launchd label 切到 clean/detached
   `/Volumes/扩展盘/guiyi-quant-runtime-v1.8.0@8fac0a5f22951715711680b554a635d76166af24`。
-  API、Live 与 Alert 已从该根运行；after-market 未手工触发。Web 因新 worktree 缺少 Git 忽略的
-  `node_modules` 与 `dist` 而退出，当前只读读回为 API=`200`、Web=`000`、Runtime health=`ok / readonly`、
-  overall=`failed`。因此 v1.8.0 尚未达到 `RUNTIME_READY`，不得把 tag 已发布表述为 Runtime 验收通过。
+  API、Web、Live 与 Alert 均从该根运行；after-market 未手工触发。补齐新 worktree 缺少的 Git 忽略
+  `node_modules` 与 `dist` 后，最新只读读回为 API=`200`、Web=`200`、Runtime health=`ok / readonly`、
+  overall=`passed`，本机 v1.8.0 Runtime 已达到 `RUNTIME_READY`。
 - 旧 `v1.7.0` Runtime worktree 保留为 clean/detached rollback 资产，但当前没有 label 指向它；未执行
   回滚、after-market、canary、人工通知、真实 RQAlpha smoke、migration、Canonical/production DB/Redis
-  写入或 Alert Scope/transport 变更。恢复 Web 需要先在 v1.8.0 Runtime 根按 lockfile 准备前端依赖并 build，
-  再取得新的单次、仅限该 Web 重启的执行意图。
+  写入或 Alert Scope/transport 变更。
 - Market/Alert marker 继续 enabled；Alert notification channel 仍为 pushplus 且 config=`ready`、
-  audience_count=`2`，Execution Review roll 仍为 `disabled`。ECS FRPS/Nginx 与公网 HTTPS 本轮没有可用执行
-  入口，且 `PUBLIC_BASE_URL` 未配置，因此保持 `not verified`，不得由本机或 tunnel 读回推导为公网验收通过。
+  audience_count=`2`，Execution Review roll 仍为 `disabled`。本机端口/HTTP 与 FRPC local tunnel 最新只读
+  验收均为 `passed`；ECS FRPS/Nginx 与公网 HTTPS 本轮没有可用执行入口，且 `PUBLIC_BASE_URL` 未配置，
+  因此保持 `not verified`，不得由本机或 tunnel 读回推导为公网验收通过。
 
 ## v1.8.0 release closeout
 
@@ -27,6 +27,8 @@
 - exact candidate 验证为 backend `3409 passed / 3 skipped / 16 deselected`、engineering `62 passed`、Web
   unit `255 passed / 1 skipped`、Playwright `93 passed / 1 skipped`；Ruff、Mypy、Web build、OpenSpec、
   secret scan、launchd render/lint 均通过。
+- Runtime 补齐前端 lockfile 依赖与 production build 后，仅重启 Web label；五个 label 的 exact root/commit
+  读回一致，local-services-status 与 local-tunnel-healthcheck 均为 `overall=passed`。
 - 本 release 不含 migration、Canonical/production DB/Redis 写入、Scope/transport 变化、通知
   retry/replay/backfill 或订单能力，`auto_order=false` 不变。
 
