@@ -104,7 +104,7 @@ function jdjResponse(
 }
 
 test('research overlay capability registry exposes N and JDJ at their exact identities', () => {
-  assert.deepEqual(RESEARCH_OVERLAY_DEFINITIONS.map((item) => item.id), ['none', 'subing', 'n_structure', 'jdj', 'htdy'])
+  assert.deepEqual(RESEARCH_OVERLAY_DEFINITIONS.map((item) => item.id), ['none', 'subing', 'n_structure', 'jdj', 'jdj_strategy', 'htdy'])
   assert.deepEqual(researchOverlayCapability('subing', 'actual_dominant', '5m'), {
     supported: true,
     definition: RESEARCH_OVERLAY_DEFINITIONS[1],
@@ -122,6 +122,152 @@ test('research overlay capability registry exposes N and JDJ at their exact iden
   assert.equal(RESEARCH_OVERLAY_DEFINITIONS[3].label, '日进斗金')
   assert.equal(RESEARCH_OVERLAY_DEFINITIONS[3].historicalSource, 'jdj')
   assert.deepEqual(RESEARCH_OVERLAY_DEFINITIONS[3].mainIndicators, ['ema_20'])
+  assert.equal(researchOverlayCapability('jdj_strategy' as never, 'actual_dominant', '1m').supported, true)
+  assert.equal(researchOverlayCapability('jdj_strategy' as never, 'actual_dominant', '5m').supported, false)
+  assert.equal(researchOverlayCapability('jdj_strategy' as never, 'continuous', '1m').supported, false)
+  assert.equal(RESEARCH_OVERLAY_DEFINITIONS[4].label, '日进斗金策略')
+  assert.equal(RESEARCH_OVERLAY_DEFINITIONS[4].historicalSource, 'jdj_strategy')
+  assert.deepEqual(RESEARCH_OVERLAY_DEFINITIONS[4].mainIndicators, [])
+})
+
+test('JDJ strategy markers project only reference fills with exact symbols and replay detail', async () => {
+  const markerModule = await import('../src/utils/historicalResearchMarkers.ts')
+  const mapper = (markerModule as unknown as {
+    jdjStrategyActionToMarker?: (action: Record<string, unknown>) => null | {
+      time: string
+      label: string
+      tooltip: string
+      position: string
+    }
+  }).jdjStrategyActionToMarker
+  assert.equal(typeof mapper, 'function')
+
+  const action = (kind: string, direction: string, overrides: Record<string, unknown> = {}) => ({
+    event_id: `strategy-${kind}-${direction}`,
+    episode_id: 'episode-1',
+    kind,
+    source_event_ids: ['candidate-1', 'candidate-2'],
+    primary_setup: 'key_level_breakout',
+    supporting_setups: ['trend_follow'],
+    direction,
+    contract: 'JM2701',
+    trading_day: '2026-08-03',
+    segment_start_trading_day: '2026-08-01',
+    decision_at: '2026-08-03T02:15:00Z',
+    effective_bar_end: '2026-08-03T02:16:00Z',
+    reference_price: '101.5',
+    quantity: 8,
+    position_quantity_after: 8,
+    stop_price: '99.5',
+    target_price: '106',
+    reward_risk: '2.25',
+    reason: 'ENTRY_FILLED',
+    fill_basis: 'limit_touch',
+    ...overrides,
+  })
+  const cases = [
+    ['entry', 'long', '▲', 'belowBar'],
+    ['entry', 'short', '▼', 'aboveBar'],
+    ['add', 'long', '＋', 'belowBar'],
+    ['reduce', 'long', '－', 'belowBar'],
+    ['exit', 'long', '×', 'belowBar'],
+  ] as const
+
+  for (const [kind, direction, label, position] of cases) {
+    const marker = mapper!(action(kind, direction))
+    assert.ok(marker)
+    assert.equal(marker.time, '2026-08-03T02:16:00Z')
+    assert.equal(marker.label, label)
+    assert.equal(marker.position, position)
+    assert.match(marker.tooltip, /参考回放/)
+    assert.match(marker.tooltip, /主设置 key_level_breakout/)
+    assert.match(marker.tooltip, /辅助设置 trend_follow/)
+    assert.match(marker.tooltip, /合约 JM2701/)
+    assert.match(marker.tooltip, /决策时间 2026-08-03T02:15:00Z/)
+    assert.match(marker.tooltip, /生效时间 2026-08-03T02:16:00Z/)
+    assert.match(marker.tooltip, /数量 8/)
+    assert.match(marker.tooltip, /止损 99.5/)
+    assert.match(marker.tooltip, /目标 106/)
+    assert.match(marker.tooltip, /R:R 2.25/)
+    assert.match(marker.tooltip, /原因 ENTRY_FILLED/)
+  }
+
+  assert.equal(mapper!(action('rejected', 'short', {
+    effective_bar_end: null,
+    reference_price: null,
+    quantity: 0,
+  })), null)
+  assert.equal(mapper!(action('entry', 'long', { effective_bar_end: null })), null)
+  assert.equal(mapper!(action('entry', 'long', { reference_price: null })), null)
+})
+
+test('JDJ strategy shared loader clears unsupported identity, reloads, prepends without duplicates, and ignores stale response', async () => {
+  const first = deferred<Record<string, unknown>>()
+  let calls = 0
+  const later = {
+    event_id: 'strategy-entry-later', episode_id: 'episode-1', kind: 'entry',
+    source_event_ids: ['candidate-1'], primary_setup: 'trend_follow', supporting_setups: [],
+    direction: 'long', contract: 'JM2701', trading_day: '2026-08-03',
+    segment_start_trading_day: '2026-08-01', decision_at: canonicalBars[0].time,
+    effective_bar_end: canonicalBars[1].time, reference_price: '101.5', quantity: 8,
+    position_quantity_after: 8, stop_price: '99.5', target_price: '105.5',
+    reward_risk: '2', reason: 'ENTRY_FILLED', fill_basis: 'limit_touch',
+  }
+  const earlierBar = {
+    ...canonicalBars[0],
+    time: '2026-08-02T01:05:00Z',
+    trading_day: '2026-08-02',
+  }
+  const earlier = {
+    ...later,
+    event_id: 'strategy-add-earlier', kind: 'add', trading_day: '2026-08-02',
+    decision_at: earlierBar.time, effective_bar_end: earlierBar.time, quantity: 2,
+    position_quantity_after: 10, reason: 'ADD_FILLED',
+  }
+  const controller = useHistoricalResearchMarkers({
+    fetchSubing: async () => { throw new Error('wrong source') },
+    fetchNStructure: async () => { throw new Error('wrong source') },
+    fetchJdj: async () => { throw new Error('wrong source') },
+    fetchJdjStrategy: async (request: Record<string, unknown>) => {
+      calls += 1
+      if (calls === 1) return first.promise
+      return { request, reference_execution: true, actions: calls === 3 ? [earlier, later] : [later] }
+    },
+  } as never)
+  const identity = {
+    overlay: 'jdj_strategy' as never,
+    seriesKind: 'actual_dominant' as const,
+    symbol: 'jm',
+    frequency: '1m' as const,
+  }
+  const coverage = { start: canonicalBars[0].time, end: canonicalBars[1].time }
+
+  const staleSync = controller.sync(identity, canonicalBars, coverage, 'replace')
+  await controller.sync({ ...identity, frequency: '5m' }, canonicalBars, coverage, 'replace')
+  assert.deepEqual(controller.markers.value, [])
+  assert.equal(researchOverlayCapability('jdj_strategy' as never, 'actual_dominant', '5m').supported, false)
+  first.resolve({
+    request: { series_kind: 'actual_dominant', symbol: 'jm', frequency: '1m', since: '2026-08-03', through: '2026-08-03' },
+    reference_execution: true,
+    actions: [later],
+  })
+  await staleSync
+  assert.deepEqual(controller.markers.value, [])
+
+  await controller.sync(identity, canonicalBars, coverage, 'replace')
+  assert.deepEqual(controller.markers.value.map((marker) => marker.label), ['▲'])
+  await controller.sync(identity, [earlierBar, ...canonicalBars], {
+    start: earlierBar.time,
+    end: canonicalBars[1].time,
+  }, 'prepend')
+  assert.deepEqual(controller.markers.value.map((marker) => marker.label), ['＋', '▲'])
+  assert.equal(new Set(controller.markers.value.map((marker) => marker.id)).size, 2)
+
+  await controller.sync({ ...identity, frequency: '5m' }, canonicalBars, coverage, 'replace')
+  assert.deepEqual(controller.markers.value, [])
+  await controller.sync(identity, canonicalBars, coverage, 'replace')
+  assert.deepEqual(controller.markers.value.map((marker) => marker.label), ['▲'])
+  assert.equal(calls, 4)
 })
 
 test('JDJ markers keep three candidate identities and use only causal observed_at', async () => {

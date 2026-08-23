@@ -8,7 +8,9 @@
 人工观察提醒和 Execution Review。它不做自动交易、实盘下单、账户/委托/持仓管理、SaaS、多用户、
 高频/Tick 平台或 AI 自动晋升；所有页面、信号、通知和研究结论始终是观察事实，`auto_order=false`。
 
-当前产品不包含 backtest 子系统，也不恢复旧 Signal/Review/Strategy Web、HTTP、worker 或 queue。
+当前产品不包含正式 backtest 子系统，也不恢复旧 Signal/Review/Strategy Web、HTTP、worker 或 queue。
+JM `actual_dominant + 1m` 日进斗金参考策略只提供 Historical research-only deterministic replay 与 Market marker；
+它不是正式回测、交易指令或 RQAlpha adapter。
 Alert 与 Execution Review 是两个独立 Application Domain，不属于 Market Data Foundation。
 
 ## 稳定数据边界
@@ -66,11 +68,13 @@ Review 的四张 `trade_*` 表属于各自 Application Domain，不改变八表�
 `app.runtime_entry` 仅是受监督 Runtime 的内部进程入口；它不是第二套用户 CLI，也不能由手工运行产生
 自然 Runtime evidence。
 
-Market K 线的 Historical Research Overlay 只通过三个 source-specific 只读接口按需复算 confirmed
+Market K 线的 Historical Research Overlay 通过四个只读接口按需复算 confirmed
 Canonical facts：`/api/v1/market/research/subing/history`、`/api/v1/market/research/n-structure/history`
-与 `/api/v1/market/research/jdj/history`。三者只支持 `actual_dominant`，分别固定为 SuBing `5m/15m`、
-N Structure `5m`、JDJ `1m`；各自保留独立 DTO、Policy、reducer 与 event identity，不建立统一 Strategy
-adapter，不创建 AlertEvent 或持久化派生结果。
+、`/api/v1/market/research/jdj/history` 与 `/api/v1/market/research/jdj-strategy/history`。前三个
+source-specific Candidate/Event 接口只支持 `actual_dominant`，分别固定为 SuBing `5m/15m`、
+N Structure `5m`、JDJ `1m`；日进斗金策略接口只支持 `jm + actual_dominant + 1m`，复用已有
+Candidate reducer 与窄的 `app.research.jdj_strategy` reference lifecycle，返回完整 action 与顶层
+`reference_execution=true`。这些接口不建立通用 Strategy adapter，不创建 AlertEvent 或持久化派生结果。
 
 Market 首页“优先检查”只消费 `/api/v1/market/research/trend-focus` 的当前只读快照。该 read model
 按请求从 Radar、`MarketDataService`、`MarketReadService` 与当前 rank1 physical contract 重算，输出
@@ -105,8 +109,11 @@ Market 首页“优先检查”只消费 `/api/v1/market/research/trend-focus` �
 Historical Overlay 的事件只能落在当时可知的 evidence Bar：SuBing 使用 resolved `bar_end`，N 与 JDJ
 使用 source event `observed_at`，不得回标 pivot/reaction/reclaim/first-break/retest。Web 只统一 capability、
 confirmed Canonical 请求窗口、generation/full-identity 防旧响应、event-id 去重与 marker 渲染；不复制公式。
-顶部固定为“无｜苏冰｜N字｜日进斗金｜火天大有”，JDJ 的 EMA20 只复用已有 EMA 展示算法，不参与浏览器
-策略计算，也不增加 Candidate 开关或持久化设置。
+日进斗金策略 marker 只投影具有非空 `effective_bar_end + reference_price` 的
+`ENTRY/ADD/REDUCE/EXIT` reference fill，不把 rejected/pause/stop intent 画成成交。顶部保持 single-select，
+固定为“无｜苏冰｜N字｜日进斗金｜日进斗金策略｜火天大有”；Candidate 与 Strategy 是两个独立 choice。
+JDJ Candidate 的 EMA20 只复用已有 EMA 展示算法；Strategy choice 不在 TypeScript 计算 EMA/N/R:R/仓位/PnL，
+也不增加 Candidate 开关或额外持久化设置。
 
 Exact protocol、window、hash、row/cell count 与 artifact identity 只保存在对应 policy、report 和测试中；
 当前 evidence 与 pending Gate 只看 `STATUS.md`。

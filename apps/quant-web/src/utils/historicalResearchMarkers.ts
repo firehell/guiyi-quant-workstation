@@ -1,5 +1,6 @@
 import type {
   JdjHistoricalEvent,
+  JdjStrategyHistoricalAction,
   KlineMarker,
   NStructureHistoricalEvent,
   SubingHistoricalSignalEvent,
@@ -21,6 +22,55 @@ const JDJ_MARKER_LABELS = {
   jdj_trend_reentry_6_1m_candidate_v1: { long: '再入多', short: '再入空' },
   jdj_key_level_breakout_1m_candidate_v1: { long: '突破多', short: '突破空' },
 } as const
+
+const JDJ_STRATEGY_FILL_KINDS = new Set(['entry', 'add', 'reduce', 'exit'])
+
+export function jdjStrategyActionToMarker(
+  action: JdjStrategyHistoricalAction,
+): KlineMarker | null {
+  if (
+    !JDJ_STRATEGY_FILL_KINDS.has(action.kind)
+    || action.effective_bar_end === null
+    || action.reference_price === null
+    || action.direction === null
+  ) return null
+
+  const long = action.direction === 'long'
+  const label = action.kind === 'entry'
+    ? long ? '▲' : '▼'
+    : action.kind === 'add'
+      ? '＋'
+      : action.kind === 'reduce'
+        ? '－'
+        : '×'
+  const shape = action.kind === 'entry'
+    ? long ? 'arrowUp' as const : 'arrowDown' as const
+    : action.kind === 'exit'
+      ? 'square' as const
+      : 'circle' as const
+  const value = (candidate: string | null) => candidate ?? '—'
+  return {
+    id: `historical:${action.event_id}`,
+    time: action.effective_bar_end,
+    label,
+    tooltip: [
+      '参考回放 · 日进斗金策略',
+      `主设置 ${value(action.primary_setup)}`,
+      `辅助设置 ${action.supporting_setups.join(', ') || '—'}`,
+      `合约 ${action.contract}`,
+      `决策时间 ${action.decision_at}`,
+      `生效时间 ${action.effective_bar_end}`,
+      `数量 ${action.quantity}`,
+      `止损 ${value(action.stop_price)}`,
+      `目标 ${value(action.target_price)}`,
+      `R:R ${value(action.reward_risk)}`,
+      `原因 ${action.reason}`,
+    ].join(' · '),
+    tone: long ? 'up' : 'down',
+    position: long ? 'belowBar' : 'aboveBar',
+    shape,
+  }
+}
 
 export function jdjHistoricalEventToMarker(
   event: JdjHistoricalEvent,

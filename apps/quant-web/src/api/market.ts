@@ -3,6 +3,8 @@ import type {
   DominantContractListResponse,
   JdjHistoricalRequest,
   JdjHistoricalResponse,
+  JdjStrategyHistoricalRequest,
+  JdjStrategyHistoricalResponse,
   MarketBarsPageRequest,
   MarketBarsPageResponse,
   MainForceMirrorV2PageRequest,
@@ -82,6 +84,13 @@ export function getNStructureHistoricalEvents(params: NStructureHistoricalReques
 export function getJdjHistoricalEvents(params: JdjHistoricalRequest) {
   return request.get<never, JdjHistoricalResponse>(
     '/market/research/jdj/history',
+    { params },
+  )
+}
+
+export function getJdjStrategyHistoricalActions(params: JdjStrategyHistoricalRequest) {
+  return request.get<never, JdjStrategyHistoricalResponse>(
+    '/market/research/jdj-strategy/history',
     { params },
   )
 }

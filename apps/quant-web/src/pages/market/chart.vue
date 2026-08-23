@@ -9,6 +9,7 @@ import { getEventStates } from '@/api/executionReview'
 import {
   getMarketDominants,
   getJdjHistoricalEvents,
+  getJdjStrategyHistoricalActions,
   getProductResearch,
   getNStructureHistoricalEvents,
   getSubingHistoricalSignals,
@@ -119,6 +120,7 @@ const {
   fetchSubing: getSubingHistoricalSignals,
   fetchNStructure: getNStructureHistoricalEvents,
   fetchJdj: getJdjHistoricalEvents,
+  fetchJdjStrategy: getJdjStrategyHistoricalActions,
 })
 const {
   subing,

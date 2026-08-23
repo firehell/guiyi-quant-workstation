@@ -398,6 +398,7 @@ async function mockWorkspace(page, researchResponse, options = {}) {
   const subingRequests = options.subingRequests || []
   const nHistoricalRequests = options.nHistoricalRequests || []
   const jdjHistoricalRequests = options.jdjHistoricalRequests || []
+  const jdjStrategyHistoricalRequests = options.jdjStrategyHistoricalRequests || []
   const dominantRequests = options.dominantRequests || []
   let dominantResponseIndex = 0
   let subingResponseIndex = 0
@@ -430,6 +431,36 @@ async function mockWorkspace(page, researchResponse, options = {}) {
           trading_day: options.historicalEventTime?.slice(0, 10), contract: 'AG2601',
           segment_start_trading_day: options.historicalEventTime?.slice(0, 10), direction: 'long',
           trigger_level: '219.5',
+        }],
+      } })
+    }
+    if (url.pathname.endsWith('/research/jdj-strategy/history')) {
+      const request = Object.fromEntries(url.searchParams)
+      jdjStrategyHistoricalRequests.push(request)
+      if (jdjStrategyHistoricalRequests.length === 1 && options.jdjStrategyFirstDelayMs) {
+        await new Promise((resolve) => setTimeout(resolve, options.jdjStrategyFirstDelayMs))
+      }
+      return route.fulfill({ json: {
+        request,
+        reference_execution: true,
+        actions: options.jdjStrategyHistoricalActions || [{
+          event_id: 'jdj-strategy-entry-long-1', episode_id: 'jdj-episode-1', kind: 'entry',
+          source_event_ids: ['jdj-follow-long-1'], primary_setup: 'trend_follow', supporting_setups: [],
+          direction: 'long', contract: 'JM2701', trading_day: options.historicalEventTime?.slice(0, 10),
+          segment_start_trading_day: options.historicalEventTime?.slice(0, 10),
+          decision_at: options.historicalEventTime, effective_bar_end: options.historicalEventTime,
+          reference_price: '219.5', quantity: 8, position_quantity_after: 8,
+          stop_price: '217.5', target_price: '224', reward_risk: '2.25',
+          reason: 'ENTRY_FILLED', fill_basis: 'limit_touch',
+        }, {
+          event_id: 'jdj-strategy-rejected-1', episode_id: null, kind: 'rejected',
+          source_event_ids: ['jdj-follow-short-2'], primary_setup: 'trend_follow', supporting_setups: [],
+          direction: 'short', contract: 'JM2701', trading_day: options.historicalEventTime?.slice(0, 10),
+          segment_start_trading_day: options.historicalEventTime?.slice(0, 10),
+          decision_at: options.historicalEventTime, effective_bar_end: null,
+          reference_price: null, quantity: 0, position_quantity_after: 8,
+          stop_price: '221.5', target_price: null, reward_risk: null,
+          reason: 'OPEN_EPISODE_EVENT_REJECTED', fill_basis: null,
         }],
       } })
     }
@@ -556,7 +587,7 @@ test('SuBing keeps the Market display identity separate from current-dominant re
   await page.goto('/market/chart?symbol=ag&series_kind=continuous&frequency=5m')
 
   const overlay = page.getByRole('group', { name: 'Overlay' })
-  await expect(overlay.getByRole('button')).toHaveText(['无', '苏冰', 'N字', '日进斗金', '火天大有'])
+  await expect(overlay.getByRole('button')).toHaveText(['无', '苏冰', 'N字', '日进斗金', '日进斗金策略', '火天大有'])
   await expect(page.getByText('120 bars', { exact: true })).toBeVisible()
   await expect(page.locator('.product-workspace__kline')).toHaveAttribute('data-visible-start-trading-day', '2026-01-01')
   await expect(page.locator('.product-workspace__kline')).toHaveAttribute('data-visible-main-indicators', '')
@@ -577,11 +608,12 @@ test('SuBing keeps the Market display identity separate from current-dominant re
   await expect(page).toHaveURL(/series_kind=continuous/)
 })
 
-test('N and JDJ overlays request causal history, switch markers, and expose JDJ EMA20 detail', async ({ page }) => {
+test('N, JDJ Candidate, and JDJ Strategy stay separate and clear stale strategy markers across 1m 5m 1m', async ({ page }) => {
   const bars = Array.from({ length: 120 }, (_, index) => bar(index))
   const historicalEventTime = bars.at(-1).bar_end
   const nHistoricalRequests = []
   const jdjHistoricalRequests = []
+  const jdjStrategyHistoricalRequests = []
   await mockAlertMarkerSurface(page)
   await mockWorkspace(page, { json: research() }, {
     bars,
@@ -589,6 +621,8 @@ test('N and JDJ overlays request causal history, switch markers, and expose JDJ 
     canonicalCoverage: { start: bars[0].bar_end, end: historicalEventTime },
     nHistoricalRequests,
     jdjHistoricalRequests,
+    jdjStrategyHistoricalRequests,
+    jdjStrategyFirstDelayMs: 400,
   })
   await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=5m')
 
@@ -621,6 +655,30 @@ test('N and JDJ overlays request causal history, switch markers, and expose JDJ 
 
   expect(nHistoricalRequests[0]).toMatchObject({ series_kind: 'actual_dominant', symbol: 'ag', frequency: '5m' })
   expect(jdjHistoricalRequests[0]).toMatchObject({ series_kind: 'actual_dominant', symbol: 'ag', frequency: '1m' })
+
+  await overlay.getByRole('button', { name: '日进斗金策略', exact: true }).click()
+  await expect.poll(() => jdjStrategyHistoricalRequests.length).toBe(1)
+  await page.getByRole('group', { name: '周期' }).getByRole('button', { name: '5m', exact: true }).click()
+  await expect(shell).toHaveAttribute('data-research-marker-count', '0')
+  await expect(page.getByText('当前序列或周期不支持该 Overlay；K 线保持原选择，不自动切换。', { exact: true })).toBeVisible()
+  await page.waitForTimeout(450)
+  await expect(shell).toHaveAttribute('data-research-marker-count', '0')
+
+  await page.getByRole('group', { name: '周期' }).getByRole('button', { name: '1m', exact: true }).click()
+  await expect.poll(() => jdjStrategyHistoricalRequests.length).toBe(2)
+  await expect(shell).toHaveAttribute('data-research-marker-count', '1')
+  await expect(shell).toHaveAttribute('data-rendered-research-marker-count', '1')
+  await expect(page.locator('.product-workspace__kline')).toHaveAttribute('data-visible-main-indicators', '')
+
+  for (let x = chartBox.width - 220; x <= chartBox.width - 40; x += 4) {
+    await page.mouse.move(chartBox.x + x, chartBox.y + 180)
+    if (await markerDetail.count() && (await markerDetail.textContent())?.includes('参考回放')) break
+  }
+  await expect(markerDetail).toContainText('参考回放')
+  await expect(markerDetail).toContainText('主设置 trend_follow')
+  await expect(markerDetail).toContainText('数量 8')
+  await expect(markerDetail).toContainText('R:R 2.25')
+  expect(jdjStrategyHistoricalRequests[1]).toMatchObject({ series_kind: 'actual_dominant', symbol: 'ag', frequency: '1m' })
 })
 
 test('shared EMA switches persist across SuBing and HTDY while none hides every overlay', async ({ page }) => {
