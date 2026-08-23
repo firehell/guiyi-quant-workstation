@@ -38,17 +38,23 @@ const selectedRunId = ref<string | null>(null)
 const selectedRun = ref<BacktestRunDetailValue | null>(null)
 const pageError = ref<BacktestSafeError | null>(null)
 const downloadingKind = ref<ArtifactKind | null>(null)
+let lifecycleGeneration = 0
 
 const poller = new BacktestPoller(
   (runId) => backtestClient.getRun(runId),
-  (run) => {
-    selectedRun.value = run
-    const index = runs.value.findIndex(({ run_id }) => run_id === run.run_id)
-    if (index >= 0) runs.value[index] = run
-    else runs.value.unshift(run)
-  },
+  (run) => handlePollUpdate(run),
   { onError: (error) => { pageError.value = error } },
 )
+
+const hasRunningRun = computed(() => (
+  selectedRun.value?.status === 'running'
+  || runs.value.some(({ status }) => status === 'running')
+))
+const effectiveCanStart = computed(() => (
+  capability.value?.canStart === true
+  && !hasRunningRun.value
+  && !submitting.value
+))
 
 const equityImageUrl = computed(() => {
   const run = selectedRun.value
@@ -58,11 +64,14 @@ const equityImageUrl = computed(() => {
 
 async function loadCapability() {
   if (!localBrowser) return
+  const generation = ++lifecycleGeneration
   loading.value = true
   pageError.value = null
   poller.stop()
-  capability.value = await probeBacktestCapability(hostname, () => backtestClient.health())
-  if (capability.value.kind !== 'ready') {
+  const nextCapability = await probeBacktestCapability(hostname, () => backtestClient.health())
+  if (generation !== lifecycleGeneration) return
+  capability.value = nextCapability
+  if (nextCapability.kind !== 'ready') {
     loading.value = false
     return
   }
@@ -71,17 +80,22 @@ async function loadCapability() {
       backtestClient.listStrategies(),
       backtestClient.listRuns(20),
     ])
+    if (generation !== lifecycleGeneration) return
     strategies.value = strategyRows
     runs.value = runRows
+    loading.value = false
     if (runRows[0]) selectRun(runRows[0])
   } catch (error) {
+    if (generation !== lifecycleGeneration) return
+    disableLaunchCapability()
     pageError.value = mapBacktestError(error)
   } finally {
-    loading.value = false
+    if (generation === lifecycleGeneration) loading.value = false
   }
 }
 
 function selectRun(run: BacktestRunSummary) {
+  lifecycleGeneration += 1
   pageError.value = null
   selectedRunId.value = run.run_id
   selectedRun.value = null
@@ -89,7 +103,7 @@ function selectRun(run: BacktestRunSummary) {
 }
 
 async function startRun(form: BacktestRunFormValue) {
-  if (!capability.value?.canStart || submitting.value) return
+  if (!effectiveCanStart.value) return
   submitting.value = true
   pageError.value = null
   try {
@@ -101,6 +115,51 @@ async function startRun(form: BacktestRunFormValue) {
   } finally {
     submitting.value = false
   }
+}
+
+function handlePollUpdate(run: BacktestRunDetailValue) {
+  selectedRun.value = run
+  const index = runs.value.findIndex(({ run_id }) => run_id === run.run_id)
+  if (index >= 0) runs.value[index] = run
+  else runs.value.unshift(run)
+  if (run.status === 'running') return
+  void refreshAfterTerminal(run.run_id, lifecycleGeneration)
+}
+
+async function refreshAfterTerminal(runId: string, generation: number) {
+  if (!isCurrentRunGeneration(runId, generation)) return
+  disableLaunchCapability()
+  const nextCapability = await probeBacktestCapability(hostname, () => backtestClient.health())
+  if (!isCurrentRunGeneration(runId, generation)) return
+  if (nextCapability.kind !== 'ready') {
+    capability.value = nextCapability
+    return
+  }
+
+  try {
+    const [runRows, runDetail] = await Promise.all([
+      backtestClient.listRuns(20),
+      backtestClient.getRun(runId),
+    ])
+    if (!isCurrentRunGeneration(runId, generation)) return
+    capability.value = nextCapability
+    runs.value = runRows
+    selectedRun.value = runDetail
+    if (runDetail.status === 'running') selectRun(runDetail)
+  } catch (error) {
+    if (!isCurrentRunGeneration(runId, generation)) return
+    capability.value = { ...nextCapability, canStart: false }
+    pageError.value = mapBacktestError(error)
+  }
+}
+
+function disableLaunchCapability() {
+  if (capability.value?.kind !== 'ready' || !capability.value.canStart) return
+  capability.value = { ...capability.value, canStart: false }
+}
+
+function isCurrentRunGeneration(runId: string, generation: number) {
+  return generation === lifecycleGeneration && selectedRunId.value === runId
 }
 
 async function downloadArtifact(kind: ArtifactKind) {
@@ -139,7 +198,10 @@ function artifactFilename(runId: string, kind: ArtifactKind) {
 }
 
 onMounted(() => { void loadCapability() })
-onUnmounted(() => poller.dispose())
+onUnmounted(() => {
+  lifecycleGeneration += 1
+  poller.dispose()
+})
 </script>
 
 <template>
@@ -202,7 +264,7 @@ onUnmounted(() => poller.dispose())
       <div class="backtests-page__top">
         <BacktestRunForm
           :strategies="strategies"
-          :can-start="capability.canStart"
+          :can-start="effectiveCanStart"
           :submitting="submitting"
           @start="startRun"
         />

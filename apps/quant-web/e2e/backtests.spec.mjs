@@ -137,8 +137,10 @@ async function mockBacktestApi(page, options = {}) {
     requests: [],
     postBodies: [],
     healthCalls: 0,
+    runCalls: 0,
     detailCalls: 0,
     healthResponses: [...(options.healthResponses || [readyHealth()])],
+    runResponses: [...(options.runResponses || [options.runs || []])],
     detailResponses: [...(options.detailResponses || [runDetail()])],
   }
 
@@ -174,7 +176,9 @@ async function mockBacktestApi(page, options = {}) {
       return route.fulfill({ headers: corsHeaders, json: [strategy()] })
     }
     if (method === 'GET' && path.endsWith('/runs')) {
-      return route.fulfill({ headers: corsHeaders, json: options.runs || [] })
+      const response = store.runResponses[Math.min(store.runCalls, store.runResponses.length - 1)]
+      store.runCalls += 1
+      return route.fulfill({ headers: corsHeaders, json: response })
     }
     if (method === 'POST' && path.endsWith('/runs')) {
       store.postBodies.push(request.postDataJSON())
@@ -282,9 +286,64 @@ test('local ready form submits only declared values and polls running to termina
   await page.getByTestId('start-backtest').click()
 
   await expect(page.getByTestId('backtest-run-detail')).toContainText('运行中')
-  await expect.poll(() => store.detailCalls).toBe(2)
+  await expect.poll(() => store.detailCalls).toBe(3)
   await expect(page.getByTestId('backtest-run-detail')).toContainText('已成功')
   expect(store.postBodies).toEqual([requestedConfig()])
+})
+
+test('a ready launch stays disabled without a second POST until terminal health and run refresh complete', async ({ page }) => {
+  const terminal = runSummary('succeeded')
+  const store = await mockBacktestApi(page, {
+    healthResponses: [readyHealth(), readyHealth()],
+    runResponses: [[], [terminal]],
+    detailResponses: [runDetail('running'), runDetail('succeeded'), runDetail('succeeded')],
+  })
+
+  await page.goto('/backtests')
+  await page.getByTestId('backtest-start-date').fill('2026-01-01')
+  await page.getByTestId('backtest-end-date').fill('2026-01-31')
+  const startButton = page.getByRole('button', { name: '启动研究回测' })
+  await startButton.click()
+
+  await expect(page.getByTestId('backtest-run-detail')).toContainText('运行中')
+  await expect(startButton).toBeDisabled()
+  await startButton.click({ force: true })
+  expect(store.postBodies).toHaveLength(1)
+
+  await expect.poll(() => store.healthCalls).toBe(2)
+  await expect.poll(() => store.runCalls).toBe(2)
+  await expect.poll(() => store.detailCalls).toBe(3)
+  await expect(page.getByTestId('backtest-run-detail')).toContainText('已成功')
+  await expect(startButton).toBeEnabled()
+  expect(store.postBodies).toEqual([requestedConfig()])
+})
+
+test('an initial busy run refreshes ready capability and restores launch only after terminal', async ({ page }) => {
+  const store = await mockBacktestApi(page, {
+    healthResponses: [
+      readyHealth({ status: 'degraded', busy: true }),
+      readyHealth(),
+    ],
+    runResponses: [
+      [runSummary('running')],
+      [runSummary('succeeded')],
+    ],
+    detailResponses: [runDetail('running'), runDetail('succeeded'), runDetail('succeeded')],
+  })
+
+  await page.goto('/backtests')
+
+  const startButton = page.getByRole('button', { name: '启动研究回测' })
+  await expect(page.getByTestId('backtest-busy')).toContainText('已有任务运行中')
+  await expect(startButton).toBeDisabled()
+  await expect(page.getByTestId('backtest-run-detail')).toContainText('运行中')
+
+  await expect.poll(() => store.healthCalls).toBe(2)
+  await expect.poll(() => store.runCalls).toBe(2)
+  await expect.poll(() => store.detailCalls).toBe(3)
+  await expect(page.getByTestId('backtest-busy')).toHaveCount(0)
+  await expect(page.getByTestId('backtest-run-detail')).toContainText('已成功')
+  await expect(startButton).toBeEnabled()
 })
 
 test('degraded busy health remains observable, blocks submit, and polls the running run to terminal', async ({ page }) => {
@@ -300,7 +359,7 @@ test('degraded busy health remains observable, blocks submit, and polls the runn
   await expect(page.getByTestId('backtest-busy')).toContainText('已有任务运行中')
   await expect(page.getByRole('button', { name: '启动研究回测' })).toBeDisabled()
   await expect(page.getByTestId('backtest-run-detail')).toContainText('运行中')
-  await expect.poll(() => store.detailCalls).toBe(2)
+  await expect.poll(() => store.detailCalls).toBe(3)
   await expect(page.getByTestId('backtest-run-detail')).toContainText('已成功')
   expect(store.postBodies).toEqual([])
 })

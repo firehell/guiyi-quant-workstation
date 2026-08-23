@@ -56,9 +56,9 @@ not counted as RED. The runnable RED used only the allowed test Web server on
 ## Final GREEN evidence
 
 ```text
-focused Task 7 Playwright: 7 passed
+focused Task 7 Playwright: 9 passed
 full Web unit tests: 250 passed, 1 skipped, 0 failed
-full Playwright: 86 passed, 0 failed
+full Playwright: 88 passed, 0 failed
 vue-tsc project build: exit 0
 Vite production build: passed
 production bundle topology: charting vendor static imports are acyclic
@@ -158,6 +158,42 @@ vue-tsc/build/topology/diff: passed
 ```
 
 The repair commit message is `fix: complete backtest observation states`.
+
+## Review repair v2 — launch capability lifecycle
+
+The remaining lifecycle finding was repaired with one page-owned launch state:
+
+- The effective launch condition is the probed capability, no selected or
+  recent `running` record, and no submit in progress. A `POST /runs` response
+  therefore keeps the button disabled for the entire running interval and a
+  forced second click cannot issue another POST.
+- Every polled terminal result first disables launch, then immediately probes
+  health and refreshes both the recent-run list and selected detail. Launch is
+  restored only after the refreshed health is ready and neither refreshed view
+  contains a running record. A failed probe remains fail-closed.
+- A page lifecycle generation and selected run id guard every asynchronous
+  terminal refresh. Selecting or loading a newer run invalidates the older
+  refresh before it can replace capability, list, or detail state; unmount also
+  invalidates in-flight refreshes.
+
+Repair v2 RED evidence:
+
+```text
+focused Playwright: 9 tests, 7 passed, 2 failed
+- ready POST returned running but the launch button became enabled
+- initial busy run reached terminal without a second health probe
+```
+
+Repair v2 GREEN evidence:
+
+```text
+focused Task 7 Playwright: 9 passed
+full Web unit: 250 passed, 1 skipped
+full Playwright: 88 passed
+vue-tsc/build/topology/diff: passed
+```
+
+The repair v2 commit message is `fix: synchronize backtest launch capability`.
 
 ## Gates
 
