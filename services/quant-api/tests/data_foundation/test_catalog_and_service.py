@@ -411,6 +411,7 @@ def test_continuous_and_contract_query_use_catalogued_physical_partitions(
         )
     )
     assert [bar.close for bar in result.bars] == [Decimal("200"), Decimal("201")]
+    assert result.requested_trading_day_window is None
 
 
 def test_query_reads_across_monthly_physical_partitions(session, tmp_path) -> None:
@@ -913,6 +914,10 @@ def test_contract_trading_day_query_clamps_to_exclusive_expiry_ceiling(
 
     assert result.bars == active_bars
     assert result.request_identity["end"] == "2025-01-07T07:00:00+00:00"
+    assert result.requested_trading_day_window == (
+        date(2025, 1, 6),
+        date(2025, 1, 7),
+    )
 
 
 def test_contract_trading_day_query_rejects_window_after_expiry(
@@ -1101,6 +1106,10 @@ def test_trading_day_query_includes_weekend_night_and_excludes_future_day(
     assert result.bars == (friday_night, monday_day)
     assert result.request_identity["start"] == "2025-01-03T13:00:00+00:00"
     assert result.request_identity["end"] == "2025-01-06T07:00:00+00:00"
+    assert result.requested_trading_day_window == (
+        date(2025, 1, 6),
+        date(2025, 1, 6),
+    )
 
 
 def test_actual_dominant_week_uses_last_trading_day_owner(session, tmp_path) -> None:

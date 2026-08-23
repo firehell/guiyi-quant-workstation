@@ -11,7 +11,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -121,14 +121,17 @@ class MarketDataService:
             since=request.since,
             through=request.through,
         )
-        return self.query(
-            SeriesQuery(
-                SeriesKind.ACTUAL_DOMINANT,
-                request.symbol,
-                request.frequency,
-                start,
-                end,
-            )
+        return replace(
+            self.query(
+                SeriesQuery(
+                    SeriesKind.ACTUAL_DOMINANT,
+                    request.symbol,
+                    request.frequency,
+                    start,
+                    end,
+                )
+            ),
+            requested_trading_day_window=(request.since, request.through),
         )
 
     def query_contract_trading_days(
@@ -157,15 +160,18 @@ class MarketDataService:
             since=since,
             through=through,
         )
-        return self.query(
-            SeriesQuery(
-                SeriesKind.CONTRACT,
-                request.symbol,
-                request.frequency,
-                start,
-                end,
-                contract=request.contract,
-            )
+        return replace(
+            self.query(
+                SeriesQuery(
+                    SeriesKind.CONTRACT,
+                    request.symbol,
+                    request.frequency,
+                    start,
+                    end,
+                    contract=request.contract,
+                )
+            ),
+            requested_trading_day_window=(since, through),
         )
 
     def _trading_day_window(

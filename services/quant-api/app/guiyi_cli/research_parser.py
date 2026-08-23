@@ -16,6 +16,7 @@ RESEARCH_COMMAND_NAMES = (
     "candidate-dossier",
     "candidate-relationships",
     "main-force-mirror-v2",
+    "main-force-mirror-diagnostic",
 )
 
 
@@ -121,6 +122,13 @@ def add_research_commands(
     mirror.add_argument("--since", required=True)
     mirror.add_argument("--through", required=True)
     mirror.add_argument("--forensic", action="store_true")
+
+    diagnostic = commands.add_parser("main-force-mirror-diagnostic")
+    diagnostic.add_argument(
+        "--protocol",
+        choices=("main_force_mirror_diagnostic_phase_a_v1",),
+        required=True,
+    )
 
     if tuple(commands.choices) != RESEARCH_COMMAND_NAMES:
         raise RuntimeError("CLI_RESEARCH_COMMAND_REGISTRY_INVALID")

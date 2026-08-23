@@ -507,6 +507,7 @@ class MarketSeriesResult:
     bars: tuple[CanonicalBar, ...]
     coverage: tuple[datetime, datetime] | None
     resolved_contract_segments: tuple[ResolvedContractSegment, ...]
+    requested_trading_day_window: tuple[date, date] | None = None
 
 
 @dataclass(frozen=True, slots=True)

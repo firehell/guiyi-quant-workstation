@@ -3,6 +3,8 @@ import type {
   BarData,
   JdjHistoricalRequest,
   JdjHistoricalResponse,
+  JdjStrategyHistoricalRequest,
+  JdjStrategyHistoricalResponse,
   KlineMarker,
   MarketBarsPageResponse,
   MarketFrequency,
@@ -16,6 +18,7 @@ import type {
 import {
   historicalResearchEventToMarker,
   jdjHistoricalEventToMarker,
+  jdjStrategyActionToMarker,
   nStructureHistoricalEventToMarker,
 } from '../utils/historicalResearchMarkers.ts'
 import { researchOverlayCapability } from '../utils/mainIndicators.ts'
@@ -38,6 +41,9 @@ interface Dependencies {
   fetchJdj: (
     request: JdjHistoricalRequest,
   ) => Promise<JdjHistoricalResponse>
+  fetchJdjStrategy: (
+    request: JdjStrategyHistoricalRequest,
+  ) => Promise<JdjStrategyHistoricalResponse>
 }
 
 export function useHistoricalResearchMarkers(dependencies: Dependencies) {
@@ -67,7 +73,7 @@ export function useHistoricalResearchMarkers(dependencies: Dependencies) {
     const historicalSource = capability.definition.historicalSource
     if (
       !capability.supported
-      || !['subing', 'n_structure', 'jdj'].includes(historicalSource)
+      || !['subing', 'n_structure', 'jdj', 'jdj_strategy'].includes(historicalSource)
     ) {
       reset(identity)
       return
@@ -92,7 +98,9 @@ export function useHistoricalResearchMarkers(dependencies: Dependencies) {
         ? await loadSubing(dependencies, identity, range.since, through)
         : historicalSource === 'n_structure'
           ? await loadNStructure(dependencies, identity, range.since, through)
-          : await loadJdj(dependencies, identity, range.since, through)
+          : historicalSource === 'jdj'
+            ? await loadJdj(dependencies, identity, range.since, through)
+            : await loadJdjStrategy(dependencies, identity, range.since, through)
       if (
         requestGeneration !== generation
         || identityKey(identity) !== identityKey(activeIdentity)
@@ -103,11 +111,16 @@ export function useHistoricalResearchMarkers(dependencies: Dependencies) {
       if (loadedSince === null || range.since < loadedSince) {
         loadedSince = range.since
       }
-    } catch {
+    } catch (caught) {
       if (
         requestGeneration === generation
         && identityKey(identity) === identityKey(activeIdentity)
-      ) error.value = 'HISTORICAL_RESEARCH_UNAVAILABLE'
+      ) {
+        error.value = identity.overlay === 'jdj_strategy'
+          && isJdjStrategyProfileUnavailable(caught)
+          ? 'JDJ_STRATEGY_PROFILE_UNAVAILABLE'
+          : 'HISTORICAL_RESEARCH_UNAVAILABLE'
+      }
     } finally {
       if (requestGeneration === generation) loading.value = false
     }
@@ -133,6 +146,18 @@ export function useHistoricalResearchMarkers(dependencies: Dependencies) {
   }
 
   return { markers, loading, error, sync, dispose }
+}
+
+function isJdjStrategyProfileUnavailable(caught: unknown): boolean {
+  if (typeof caught !== 'object' || caught === null) return false
+  const response = (caught as {
+    response?: { status?: unknown; data?: { detail?: unknown } }
+  }).response
+  if (response?.status !== 422) return false
+  const detail = response.data?.detail
+  return typeof detail === 'object'
+    && detail !== null
+    && (detail as { code?: unknown }).code === 'JDJ_STRATEGY_PROFILE_UNAVAILABLE'
 }
 
 function confirmedRange(
@@ -247,6 +272,29 @@ async function loadJdj(
     eventId: event.event_id,
     marker: jdjHistoricalEventToMarker(event),
   }))
+}
+
+async function loadJdjStrategy(
+  dependencies: Dependencies,
+  identity: HistoricalResearchMarkerIdentity,
+  since: string,
+  through: string,
+): Promise<LoadedHistoricalEvent[]> {
+  const request: JdjStrategyHistoricalRequest = {
+    series_kind: 'actual_dominant',
+    symbol: identity.symbol,
+    frequency: '1m',
+    since,
+    through,
+  }
+  const response = await dependencies.fetchJdjStrategy(request)
+  if (!response.reference_execution || !matchesRequest(response, request)) {
+    throw new Error('HISTORICAL_RESEARCH_IDENTITY_MISMATCH')
+  }
+  return response.actions.flatMap((action) => {
+    const marker = jdjStrategyActionToMarker(action)
+    return marker === null ? [] : [{ eventId: action.event_id, marker }]
+  })
 }
 
 function identityKey(identity: HistoricalResearchMarkerIdentity | null): string {
