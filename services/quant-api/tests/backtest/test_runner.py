@@ -480,6 +480,35 @@ def test_nonsecret_url_authorities_with_ports_are_preserved_across_chunks() -> N
 
 
 @pytest.mark.parametrize(
+    ("raw", "expected"),
+    (
+        (
+            b"https://example.com:8443",
+            b"https://example.com:8443",
+        ),
+        (
+            b"redis://user:secret@127.0.0.1:6379",
+            b"redis://[REDACTED]@127.0.0.1:6379",
+        ),
+        (
+            b"redis://user:" + (b"s" * 9000) + b"@127.0.0.1:6379",
+            b"redis://[REDACTED]@127.0.0.1:6379",
+        ),
+    ),
+)
+def test_url_authority_state_flushes_and_resets_at_exact_eof(
+    raw: bytes, expected: bytes
+) -> None:
+    redactor = runner_module._StreamingLogRedactor()
+    chunks = [redactor.feed(raw[index : index + 7]) for index in range(0, len(raw), 7)]
+    chunks.append(redactor.feed(b"", final=True))
+
+    assert b"".join(chunks) == expected
+    assert redactor._url_authority_mode is None
+    assert redactor._url_authority_buffer == ""
+
+
+@pytest.mark.parametrize(
     ("mode", "expected_outcome", "expected_failure"),
     (
         ("success", RunStatus.SUCCEEDED, None),

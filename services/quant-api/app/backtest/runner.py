@@ -234,7 +234,7 @@ class _StreamingLogRedactor:
     def feed(self, raw: bytes, *, final: bool = False) -> bytes:
         self._pending += self._decoder.decode(raw, final=final)
         output: list[str] = []
-        while self._pending:
+        while self._pending or (final and self._url_authority_mode is not None):
             if self._sensitive_quote is not None:
                 if not self._consume_quoted_value(output):
                     break
