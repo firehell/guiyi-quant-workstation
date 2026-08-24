@@ -51,4 +51,6 @@ def test_jm_reference_projection_matches_pre_active60_golden(monkeypatch):
     actual = fixture._service(fixture._Reader()).history(fixture._request())
     expected = json.loads(_GOLDEN.read_text(encoding="utf-8"))
 
+    expected_fields = [field.name for field in fields(JdjAction)]
+    assert all(list(item.keys()) == expected_fields for item in expected)
     assert [_project(action) for action in actual.actions] == expected
