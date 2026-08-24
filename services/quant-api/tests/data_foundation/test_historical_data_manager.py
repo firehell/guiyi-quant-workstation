@@ -1397,6 +1397,27 @@ def test_audit_observer_reports_each_product_and_known_metadata_gap_completion(
     ]
 
 
+def test_audit_observer_completed_finding_count_is_per_product_not_cumulative(
+    session, tmp_path
+) -> None:
+    daily_key = DatasetKey("continuous", "jm", "MAIN", "1d")
+    weekly_key = DatasetKey("continuous", "jm", "MAIN", "1w")
+    expected = (_daily(2, 100).bar_end,)
+    coverage = FakeCoverage(
+        {
+            daily_key.as_tuple(): expected,
+            weekly_key.as_tuple(): expected,
+        }
+    )
+    manager = _manager(session, tmp_path, coverage, FakeProvider({}))
+    events = []
+
+    result = manager.audit(AuditRequest(("jm",)), observer=events.append)
+
+    assert len(result.findings) == 2
+    assert [event.finding_count for event in events] == [None, 2]
+
+
 def test_audit_reports_calendar_metadata_failure(session, tmp_path) -> None:
     coverage = FakeCoverage({})
     coverage.latest_errors["jm"] = InfrastructureError("TRADING_CALENDAR_MISSING")

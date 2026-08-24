@@ -97,8 +97,11 @@ def _audit_progress_writer(stream: TextIO):
             "symbol": event.symbol,
             "finding_count": event.finding_count,
         }
+        line = json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n"
         try:
-            stream.write(json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n")
+            if stream.write(line) != len(line):
+                raise OSError("CLI_AUDIT_PROGRESS_SHORT_WRITE")
+            stream.flush()
         except Exception:  # noqa: BLE001 - progress must not affect the audit result
             disabled = True
 

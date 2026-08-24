@@ -125,6 +125,33 @@ class _FailingProgressStream:
         raise OSError("progress output unavailable")
 
 
+class _ShortWriteProgressStream:
+    def __init__(self) -> None:
+        self.lines: list[str] = []
+        self.flushes = 0
+
+    def write(self, value: str) -> int:
+        self.lines.append(value)
+        return len(value) - 1
+
+    def flush(self) -> None:
+        self.flushes += 1
+
+
+class _FlushFailingProgressStream:
+    def __init__(self) -> None:
+        self.lines: list[str] = []
+        self.flushes = 0
+
+    def write(self, value: str) -> int:
+        self.lines.append(value)
+        return len(value)
+
+    def flush(self) -> None:
+        self.flushes += 1
+        raise OSError("progress flush unavailable")
+
+
 def test_data_parser_exposes_only_active_user_commands() -> None:
     parser = build_parser()
     data_action = next(action for action in parser._actions if action.dest == "domain")
@@ -541,6 +568,46 @@ def test_audit_progress_output_failure_disables_later_writes() -> None:
     assert code == 0
     assert json.loads(stdout.getvalue())["status"] == "passed"
     assert stderr.writes == 1
+
+
+def test_audit_progress_short_write_disables_later_emissions() -> None:
+    stdout = io.StringIO()
+    stderr = _ShortWriteProgressStream()
+    manager = ProgressFakeManager()
+
+    code = main(
+        ["data", "audit", "--symbol", "jm", "--progress"],
+        manager_factory=lambda _session: manager,
+        session_factory=lambda: _NullContext(),
+        stdout=stdout,
+        stderr=stderr,
+    )
+
+    assert code == 0
+    assert json.loads(stdout.getvalue())["status"] == "passed"
+    assert [action for action, _request in manager.calls] == ["audit"]
+    assert len(stderr.lines) == 1
+    assert stderr.flushes == 0
+
+
+def test_audit_progress_flush_failure_disables_later_emissions() -> None:
+    stdout = io.StringIO()
+    stderr = _FlushFailingProgressStream()
+    manager = ProgressFakeManager()
+
+    code = main(
+        ["data", "audit", "--symbol", "jm", "--progress"],
+        manager_factory=lambda _session: manager,
+        session_factory=lambda: _NullContext(),
+        stdout=stdout,
+        stderr=stderr,
+    )
+
+    assert code == 0
+    assert json.loads(stdout.getvalue())["status"] == "passed"
+    assert [action for action, _request in manager.calls] == ["audit"]
+    assert len(stderr.lines) == 1
+    assert stderr.flushes == 1
 
 
 def test_audit_parses_fixed_through_boundary() -> None:
