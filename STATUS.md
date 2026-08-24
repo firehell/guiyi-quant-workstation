@@ -15,6 +15,8 @@
 - 旧 `v1.7.0` Runtime worktree 保留为 clean/detached rollback 资产，但当前没有 label 指向它；未执行
   回滚、after-market、canary、人工通知、真实 RQAlpha smoke、migration、Canonical/production DB/Redis
   写入或 Alert Scope/transport 变更。
+- RQAlpha research workbench 代码已包含在 `v1.8.0`，但本地 sidecar 仍未加载、未进入 Runtime；真实
+  RQAlpha smoke 继续 `pending`，不得由代码包含或其他 Runtime 验收推导为已完成。
 - Market/Alert marker 继续 enabled；Alert notification channel 仍为 pushplus 且 config=`ready`、
   audience_count=`2`，Execution Review roll 仍为 `disabled`。本机端口/HTTP 与 FRPC local tunnel 最新只读
   验收均为 `passed`；ECS FRPS/Nginx 与公网 HTTPS 本轮没有可用执行入口，且 `PUBLIC_BASE_URL` 未配置，
@@ -81,6 +83,9 @@
   `ROLL_RECONCILIATION_REQUIRED` 且不得创建 `DOMINANT_ROLL`，只有 `enabled` 注入真实 reconciler。
 - Market Web 的 B1 流程已进入 production：首页为“需要处理 → 优先检查 → 全市场研究”，详情页使用
   “当前检查栏”；正式 Event、研究观察和 Research-only 事实保持分层，不产生综合分或交易推荐。
+- 四系统全周期市场观察的设计与 implementation plan 已批准并持久化在
+  `docs/superpowers/specs/` 与 `docs/superpowers/plans/`；实施暂停在 No-Watch Reliability V1
+  可靠性层之后，不得提前记录其 Tasks 2–5 为完成。
 
 ## 当前 research evidence
 
@@ -147,7 +152,7 @@ Exact 命令见 `TESTING.md`。该协议只定义未来 read-only Gate，不构�
 - 自然 HTDY Topic Event 与自然 SuBing owner Event 的 production 验收 `pending`；不得用 synthetic
   Event、manual send、replay、backfill 或 retry 补证，历史 canary 不重复。
 - SuBing 自然 Live seam 仍需真实时点观察；Canonical-only HTTP smoke 不替代自然 Live evidence。
-- v1.7.0 API/Web/Market Runtime root 的下一次自然 18:05 盘后业务证据待观察；不得人工触发、回填或
+- 当前 v1.8.0 API/Web/Market Runtime root 的下一次自然 18:05 盘后业务证据待观察；不得人工触发、回填或
   用旧 root evidence 补证。
 - SuBing、N 与 JDJ Candidate 的 prospective OOS 继续按各自 exact protocol 独立累积，当前均
   `pending`。
@@ -160,5 +165,5 @@ Exact 命令见 `TESTING.md`。该协议只定义未来 read-only Gate，不构�
   `docs/ARCHITECTURE.md`；命令看 `TESTING.md`。
 - 已完成 spec/plan/task 与逐次 release/promotion 流水只从 Git history、`CHANGELOG.md`、tag 和 commit
   追溯，不作为 active surface。
-- 最小下一步：完成 Diagnostic Phase A 分支独立 Review 与 controller integration；真实 evidence
-  命令仍需后续单独的明确读取意图，本轮不执行。
+- 最小下一步：完成 No-Watch Reliability V1；不启动 Runtime、不发送通知、不执行数据写入。四系统观察
+  实施继续暂停在该可靠性层之后。

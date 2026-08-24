@@ -37,6 +37,52 @@ RETIRED_ASSETS = (
     "deploy/systemd/guiyi-quant.target",
 )
 
+
+def _is_allowed_governance_document(relative: str) -> bool:
+    parts = Path(relative).parts
+    return (
+        len(parts) == 4
+        and parts[:2] == ("docs", "superpowers")
+        and parts[2] in {"plans", "specs"}
+        and Path(parts[3]).suffix == ".md"
+    )
+
+
+def _tracked_governance_documents() -> tuple[str, ...]:
+    return tuple(
+        subprocess.run(
+            [
+                "git",
+                "-c",
+                "core.fsmonitor=false",
+                "ls-files",
+                "docs/superpowers",
+                "docs/tasks",
+            ],
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.splitlines()
+    )
+
+
+def test_governance_document_path_policy_is_narrow() -> None:
+    allowed = (
+        "docs/superpowers/plans/task-plan.md",
+        "docs/superpowers/specs/task-design.md",
+    )
+    rejected = (
+        "docs/tasks/task.md",
+        "docs/superpowers/notes/task.md",
+        "docs/superpowers/plans/archive/task-plan.md",
+        "docs/superpowers/specs/archive/task-design.md",
+        "docs/superpowers/plans/task-plan.txt",
+    )
+
+    assert all(_is_allowed_governance_document(relative) for relative in allowed)
+    assert all(not _is_allowed_governance_document(relative) for relative in rejected)
+
 ACTIVE_CANONICAL = (
     "AGENTS.md",
     "STATUS.md",
@@ -55,21 +101,12 @@ ACTIVE_CANONICAL = (
 def test_governance_surface_has_one_executable_entrypoint() -> None:
     assert (ROOT / "scripts/engineering/secret_scan.py").is_file()
     assert all(not (ROOT / relative).exists() for relative in RETIRED_ASSETS)
-    retired_active_docs = subprocess.run(
-        [
-            "git",
-            "-c",
-            "core.fsmonitor=false",
-            "ls-files",
-            "docs/superpowers",
-            "docs/tasks",
-        ],
-        cwd=ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout.strip()
-    assert retired_active_docs == ""
+    tracked_governance_docs = _tracked_governance_documents()
+    assert not any(relative.startswith("docs/tasks/") for relative in tracked_governance_docs)
+    assert all(
+        _is_allowed_governance_document(relative)
+        for relative in tracked_governance_docs
+    )
 
 
 def test_active_docs_and_cli_match_current_surfaces() -> None:
