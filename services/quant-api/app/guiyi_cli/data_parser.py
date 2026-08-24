@@ -46,6 +46,7 @@ def add_data_commands(
     selector.add_argument("--symbol")
     selector.add_argument("--universe", choices=("active",))
     audit.add_argument("--through")
+    audit.add_argument("--progress", action="store_true")
 
     commands.add_parser("after-market")
 

@@ -34,10 +34,11 @@ develop
   且保留 deep canonical 的业务约束。
 - tracked 内容发生变化时运行适用的 secret scan；输出不得包含命中的秘密值。
 
-当前仓库有一个外部 local-only、research-only RQAlpha 工作台：`/backtests` 只请求固定
+当前仓库有一个已包含在 v1.8.0 代码中的外部 local-only、research-only RQAlpha 工作台：`/backtests` 只请求固定
 `127.0.0.1:8011` 独立 app，该 app 不挂载主 API，不连接 PostgreSQL/Redis/Canonical/Alert/
 Execution Review/Runtime，也没有 worker、queue、scheduler 或 `guiyi` 回测 CLI。它未加载、未
-release、未进入 Runtime，行为合同只看 `openspec/specs/rqalpha-research-backtest-workbench/spec.md`。
+进入 Runtime，真实 smoke 仍为 `pending`；行为合同只看
+`openspec/specs/rqalpha-research-backtest-workbench/spec.md`。
 仓库也没有 `guiyi runtime plan` 或 active 旧 scheduler component。
 Market Runtime V1 的 `runtime live`、`data after-market` 与运行健康只读状态已实现；代码和 launchd 模板默认关闭，当前本机是否启用及部署根仅以 `STATUS.md` 为准。
 Alert V2 的 Application Domain、API 与独立 `runtime alert` 代码面，以及 Execution Review 的四表

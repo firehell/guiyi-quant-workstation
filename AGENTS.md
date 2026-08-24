@@ -12,7 +12,8 @@
 技术栈固定为 Vue 3/Vite/TypeScript/Naive UI、FastAPI/PostgreSQL/Redis 与
 RQData → Canonical Parquet → 八表 Catalog → MarketDataService；`quant-core` 仅保留
 Indicator Kernel（`guiyi_quant/indicators/`），旧 vn.py-compatible 策略研究包已退役（仅 Git
-history 可追溯）。当前与策略回放/回测相关的研究面包括 JM `actual_dominant + 1m` Historical 日进斗金参考策略回放 HTTP，
+history 可追溯）。当前与策略回放/回测相关的研究面包括当前 active universe 中单产品的
+`actual_dominant + 1m` Historical 日进斗金参考策略回放 HTTP，
 以及使用独立文件系统 artifact 的外部 RQAlpha 研究工作台；两者都不是基于
 Canonical/MarketDataService 的正式回测引擎、通用策略适配层、Candidate/OOS 体系或回测
 worker/queue/CLI。Alert 的两张表与 Execution
@@ -59,6 +60,11 @@ Review 的四张表都是独立 Application Domain，不属于 Market Catalog，
 
 该授权不覆盖 main/tag/release、其他生产 DB/数据变更、Runtime 版本切换、真实外部通知渠道或任何订单；`auto_order=false` 始终不变。没有上述明确启用请求时，render-only、健康读取和测试不构成启用授权。
 
+盘后 Runtime 的状态文件和只读 health 只是运行观察，不是 scheduler、monitor 或自动处置面；精确
+schema、预期交易日和超时语义见 `docs/DATA_CENTER.md`。只有受监督的自然盘后执行业务失败才可向
+owner 发起最多一次 PushPlus 请求；该运维通知不属于 Alert Rule/Application Domain，不用 Topic、
+`AlertEvent` 或 DB，不 retry/fallback。`missed/stuck` 只进入 health，不发送通知。
+
 ### Alert Runtime V2 的独立受限持续授权
 
 Alert 代码与 launchd 模板默认关闭。develop 的唯一 active 通知设计为 `pushplus`：
@@ -82,6 +88,11 @@ PushPlus SDK。无逐收件人 DB 状态、retry、queue、replay、backfill、f
 Rule、Scope、audience 或 transport 授权。当前 production、Runtime、Scope 与待完成 Gate 只看 `STATUS.md`，
 不得由本节、历史 canary、已有配置或既有 release 推断。
 
+Alert 运行观察只写无 TTL 的 Redis `alert:runtime-status` schema v1；missing 只表示
+`unobserved`。状态只允许固定公开失败分类，不保存 provider reference；状态写入失败必须
+fail-closed 使受监督进程退出/重启。该 Redis observation 不改变 `AlertEvent`、DB schema 或
+`notification_attempted_at` 的既有语义，provider accepted 也始终不等于微信送达。
+
 ## 工程与业务硬规则
 
 1. 外部输入在敏感操作前校验类型、格式、范围、允许值与关联字段；系统命令使用固定 executable 与离散参数，SQL 使用参数绑定或既有 ORM，输入派生路径规范化后必须仍在允许根目录内。
@@ -90,7 +101,8 @@ Rule、Scope、audience 或 transport 授权。当前 production、Runtime、Sco
 5. historical canonical 与 live observation 分离。RQData 先进入 staging，完成 schema/session/duplicate/OHLCV/coverage、identity、row-count 与物理可读性校验后才能发布；月分区以同文件系统临时文件原子替换 `part.parquet`，失败时保留最后有效 canonical。live 不得直接提升为正式历史 active。
 6. 映射、分区、coverage 或物理完整性异常必须显式失败，不得静默填充、缩短、替换或跨频回退；不得为此建立第二套缺口状态表。
 7. 策略研究与未来重建的回测禁止未来函数、泄漏和未记录重绘；所有交易相关价格、成本、仓位、资金、盈亏和费用使用 `Decimal`。HTDY original 观察边界见 `docs/INDICATOR_KERNEL.md`（盘中 realtime 应用路径与 Signal/Review 合同已退役，仅 Git history 可追溯）。
-8. 当前只有两条相互隔离的策略回放/回测相关 research-only 路径。JM 1m 日进斗金参考策略基于
+8. 当前只有两条相互隔离的策略回放/回测相关 research-only 路径。当前 active universe 中单产品的
+   `actual_dominant + 1m` 日进斗金参考策略基于
    Canonical/MarketDataService 做确定性 Historical replay，只输出 reference-only action 并只读展示
    reference fill，不进入 DB、Redis、Alert、Execution Review、Runtime 或订单路径。RQAlpha 工作台是
    local-only 外部工具：固定注册策略通过独立 loopback app 读取外部 Bundle，结果只写独立文件系统
@@ -113,7 +125,7 @@ DFD-01～DFD-07 与 active 60 品种闭环已经完成；当前长期行为规�
 ## 文档与交付
 
 - 事实变化时更新对应 canonical：阶段更新 `STATUS.md`；长期边界更新 `PROJECT_SOURCE.md`；长期决策更新 `DECISIONS.md`；命令更新 README/`TESTING.md`；Execution Review 业务语义更新 `docs/EXECUTION_REVIEW.md`，其他业务语义更新对应 deep canonical。
-- 临时分析和会话 Plan 不入仓库。已完成执行事实可以保留其历史 PR/hash/receipt 等描述，但这些描述不能成为未来执行条件。
+- 临时分析和会话 Plan 不入仓库。例外仅限用户明确批准、绑定具体仓库 Spec 的正式 design / implementation plan；这类审阅用合同可保存在 `docs/superpowers/specs/` 与 `docs/superpowers/plans/`，但不构成 active task governance、通用 workflow 或任何外部操作授权，当前状态仍只看 `STATUS.md`。已完成执行事实可以保留其历史 PR/hash/receipt 等描述，但这些描述不能成为未来执行条件。
 - 交付说明变更范围、实际验证命令与结果、剩余风险、未执行的受控外部操作和最小下一步；未运行的验证明确标记。
 
 ## 接手最小阅读

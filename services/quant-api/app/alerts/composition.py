@@ -8,7 +8,11 @@ from typing import Any
 
 from app.alerts.evaluators import HtdyOriginal15mEvaluator
 from app.alerts.notification_composition import build_notification_sender_from_env
-from app.alerts.runtime import AlertRuntime
+from app.alerts.runtime import (
+    AlertRuntime,
+    empty_alert_runtime_status,
+    validate_alert_runtime_status,
+)
 from app.core.env import PROJECT_ROOT
 from app.db.session import SessionLocal
 from app.market_data.composition import (
@@ -52,6 +56,31 @@ class RedisAlertHeartbeatStore:
         )
 
 
+class RedisAlertRuntimeStatusStore:
+    def __init__(self, redis: Any) -> None:
+        self._redis = redis
+
+    def read(self) -> dict[str, object]:
+        raw = self._redis.get("alert:runtime-status")
+        if raw is None:
+            return empty_alert_runtime_status()
+        if isinstance(raw, bytes):
+            raw = raw.decode("utf-8")
+        parsed = json.loads(raw)
+        if not isinstance(parsed, Mapping):
+            raise ValueError("ALERT_RUNTIME_STATUS_INVALID")
+        return validate_alert_runtime_status(parsed)
+
+    def write(self, payload: dict[str, object]) -> None:
+        normalized = validate_alert_runtime_status(payload)
+        persisted = self._redis.set(
+            "alert:runtime-status",
+            json.dumps(normalized, ensure_ascii=False, separators=(",", ":")),
+        )
+        if persisted is not True:
+            raise RuntimeError("ALERT_RUNTIME_STATUS_WRITE_FAILED")
+
+
 def build_alert_runtime() -> AlertRuntime:
     """构造已显式 activation 的 Alert Runtime；缺 Gate 时保持关闭。"""
     try:
@@ -74,4 +103,5 @@ def build_alert_runtime() -> AlertRuntime:
         taxonomy=taxonomy,
         message_source=RedisAlertMessageSource(redis),
         heartbeat_store=RedisAlertHeartbeatStore(redis),
+        runtime_status_store=RedisAlertRuntimeStatusStore(redis),
     )

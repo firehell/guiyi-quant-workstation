@@ -228,6 +228,12 @@ def test_create_event_normalizes_result_order_and_duplicate_identity_is_idempote
     assert created.frequency == "15m"
     assert created.result_codes == ["buy", "sell"]
     assert created.lower_tf_confirmation is False
+    assert created.detected_at == (BAR_END + timedelta(seconds=1)).replace(
+        tzinfo=None
+    )
+    assert created.notification_attempted_at == (
+        BAR_END + timedelta(seconds=2)
+    ).replace(tzinfo=None)
     assert duplicate is None
     assert len(session.scalars(select(AlertEvent)).all()) == 1
 

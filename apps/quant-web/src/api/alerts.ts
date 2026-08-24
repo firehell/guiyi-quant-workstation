@@ -1,5 +1,5 @@
 import request from './request'
-import type { AlertRuntimeStatus } from '@/utils/alertControl'
+import { getRuntimeHealth } from './runtime'
 import type { AlertEvent, MarketFrequency } from '@/types/market'
 
 export type { AlertRuntimeStatus } from '@/utils/alertControl'
@@ -41,14 +41,6 @@ export interface ProductCurrentAlertEventsResponse {
   items: AlertEvent[]
 }
 
-interface RuntimeHealthResponse {
-  components: {
-    alert: {
-      status: AlertRuntimeStatus
-    }
-  }
-}
-
 export function getProductAlerts(symbol: string) {
   return request.get<never, ProductAlertStateResponse>(`/api/alerts/products/${symbol}`)
 }
@@ -65,8 +57,7 @@ export function setAlertProductEnabled(
 }
 
 export function getAlertRuntimeStatus() {
-  return request.get<never, RuntimeHealthResponse>('/api/runtime/health')
-    .then((response) => response.components.alert.status)
+  return getRuntimeHealth().then((response) => response.components.alert.status)
 }
 
 export function getCurrentFormalSignals() {

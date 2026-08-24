@@ -15,10 +15,23 @@
 - 旧 `v1.7.0` Runtime worktree 保留为 clean/detached rollback 资产，但当前没有 label 指向它；未执行
   回滚、after-market、canary、人工通知、真实 RQAlpha smoke、migration、Canonical/production DB/Redis
   写入或 Alert Scope/transport 变更。
+- RQAlpha research workbench 代码已包含在 `v1.8.0`，但本地 sidecar 仍未加载、未进入 Runtime；真实
+  RQAlpha smoke 继续 `pending`，不得由代码包含或其他 Runtime 验收推导为已完成。
 - Market/Alert marker 继续 enabled；Alert notification channel 仍为 pushplus 且 config=`ready`、
   audience_count=`2`，Execution Review roll 仍为 `disabled`。本机端口/HTTP 与 FRPC local tunnel 最新只读
   验收均为 `passed`；ECS FRPS/Nginx 与公网 HTTPS 本轮没有可用执行入口，且 `PUBLIC_BASE_URL` 未配置，
   因此保持 `not verified`，不得由本机或 tunnel 读回推导为公网验收通过。
+
+## v1.8.1 release candidate
+
+- `develop` 已冻结 v1.8.1 版本面：API、Web、`uv.lock` 与一致性测试均为 `1.8.1`；本候选包含 JDJ
+  active60 Historical reference replay、No-Watch Reliability V1、SuBing Daily Watch V1 及其 5 个
+  Important 窄修复。
+- 发布范围仅为现有 API、Web、Live、after-market 与 Alert 五个 launchd label；不加载 RQAlpha sidecar，
+  不运行手工 after-market、真实通知、migration、Canonical/production DB/Redis 写入，也不改变 Alert
+  Scope/transport 或 Execution Review roll，`auto_order=false` 不变。
+- 本节仅记录 release candidate；在 main merge、annotated tag 远端读回、精确 tag Runtime switch 与主机
+  健康读回完成前，正式 release 和 production Runtime 仍为上文 `v1.8.0`。
 
 ## v1.8.0 release closeout
 
@@ -55,6 +68,17 @@
   共 `192` 次 prefix 比较，`0 mismatch`，无 future/same-boundary/cross-contract identity 冲突。
 - prospective shadow 仍是下一受控 Gate，当前未启用；本状态不授权真实通知或任何正式数据写入。
 
+## JDJ active60 1m reference replay develop candidate
+
+- pre-status implementation/plan exact head 为
+  `683c98a21bd70b2231cbf8975147bad358a73e77`。当前 active60 中单产品的
+  `actual_dominant + 1m` JDJ Historical reference replay 已完成实现，JM Golden exact parity 通过。
+- 固定 smoke window `2026-08-18..2026-08-20` 的唯一授权 retry 观察到 `60 ok / 0
+  typed_unavailable / 0 command_failed`，合计 `2004` 个 action；该数量只表示 reference replay
+  capability coverage，不构成排名、PnL 或策略有效性结论。
+- 该能力仍是 research-only，未消费 prospective OOS，未改变 Alert、Runtime、RQAlpha、Canonical、
+  data、DB、Redis 或 order 路径；main、release 与 production Runtime 状态均未改变。
+
 ## 当前 Runtime 与产品面
 
 - Data Foundation DFD-01～DFD-07 已完成，active 60 与 operational 60 一致。Historical 事实链为
@@ -70,6 +94,45 @@
   `ROLL_RECONCILIATION_REQUIRED` 且不得创建 `DOMINANT_ROLL`，只有 `enabled` 注入真实 reconciler。
 - Market Web 的 B1 流程已进入 production：首页为“需要处理 → 优先检查 → 全市场研究”，详情页使用
   “当前检查栏”；正式 Event、研究观察和 Research-only 事实保持分层，不产生综合分或交易推荐。
+- The prior Four-System Active60 All-Frequency Observation direction was withdrawn by the user before implementation and its active Spec/Plan were removed.
+
+## SuBing Daily Watch V1 develop integration
+
+- SuBing Daily Watch V1 已集成到 `develop`。2026-08-24 的窄修复补齐同 target 失败后 current
+  fail-closed、目录及原子文件 mutation/replace 前扩展盘 root 重验、snapshot
+  decision/reason/fact/price-side 语义校验，以及来自重构前实现的 5m/15m EMA/slope 独立 golden parity
+  覆盖；Task 0–9 的代码与 canonical 收口均在 develop。
+- 2026-08-24 fresh verification 为 focused backend `175 passed`、full non-isolated backend
+  `3659 passed / 3 skipped / 16 deselected`、engineering `63 passed`、Mypy
+  `154 source files / 0 issues`、Web unit `276 passed / 1 skipped`、full Playwright
+  `98 passed / 1 skipped`；Ruff、Web build、OpenSpec `6 passed`、secret scan `0 findings`、ops shell、
+  launchd plist lint 与 diff check 均通过。该 feature 不含 migration、schema 或 concurrency 变化，因此未运行
+  isolated PostgreSQL，也未连接 production DB。
+- 本 integration 未合入 main、未 release、未 Runtime-promoted；本任务未配置
+  `GUIYI_SUBING_OBSERVATION_ROOT`，未生成真实 `history/current/generation-status` 文件，也未运行或回填
+  真实盘后任务。首次自然 after-market evidence 继续 `pending`；production Alert Scope/transport、
+  prospective OOS 及其他既有 Gate 均未改变。
+
+## No-Watch Reliability V1 develop integration
+
+- No-Watch Reliability V1 已达到 `CODE_COMPLETE / TEST_COMPLETE` 并合入 develop：Alert 已有无 TTL Redis schema v1
+  processing/notification observation；盘后已有 schema v2 crash-visible `current_run`、18:20 expected-day
+  与 2h stuck health；Market 首页已有唯一完整 DTO 的 Runtime strip；data audit 已有默认
+  stdout 兼容的可选 stderr NDJSON progress。
+- 盘后 owner PushPlus 只针对受监督自然 execution failure、最多一次且无 retry；它与
+  Alert Rule/Application Domain 分离，不用 Topic、`AlertEvent` 或 DB。missed/stuck 只是 health，
+  provider accepted 不等于送达。
+- 整分支 final review 首轮发现 3 个 Important；在 reviewed implementation head
+  `eddd13f9999297a93286389a85805c27fc41264f` 修复后，唯一 scoped re-review 为 `APPROVED`，
+  Critical/Important/Minor 均为 `0 open`。
+- 最终验证为 backend non-isolated `3521 passed / 3 skipped / 16 deselected`、Ruff clean、Mypy
+  `150 files / 0 issues`、Web unit `264 passed / 1 skipped`、build passed、Playwright
+  `97 passed / 1 skipped`、OpenSpec `6 passed`、secret scan `0 findings` 与 diff check clean。
+- develop 首次 integration 的 local 与 remote readback 均为 reviewed implementation head
+  `eddd13f9999297a93286389a85805c27fc41264f`；该 SHA 不表示本次 `STATUS.md` 收口提交后的最终 remote head。
+- 当前正式 release 和 production Runtime 仍是上文 v1.8.0；No-Watch 未 release、未 Runtime switch，
+  且未执行真实 PushPlus、自然 HTDY/SuBing/after-market 新验收、真实 data audit、RQData、
+  Canonical/production DB/Redis 写入或 migration。
 
 ## 当前 research evidence
 
@@ -129,6 +192,8 @@ Exact 命令见 `TESTING.md`。该协议只定义未来 read-only Gate，不构�
 
 ## 待完成 Gate
 
+- No-Watch Reliability V1 尚未合入 main/release，也未 Runtime switch；main/release 与 Runtime promotion/switch
+  仍是两个独立人工 Gate，develop 集成不授权任何一项。
 - MFM 60m sequence forensic 的真实 JM + active60 Historical read-only evidence Gate `pending`；本次不
   运行、不生成临时 evidence、不输出 Phase Gate 结论。
 - MFM Diagnostic Phase A 的真实 JM named view + frozen active60 Historical read-only diagnostic
@@ -136,7 +201,7 @@ Exact 命令见 `TESTING.md`。该协议只定义未来 read-only Gate，不构�
 - 自然 HTDY Topic Event 与自然 SuBing owner Event 的 production 验收 `pending`；不得用 synthetic
   Event、manual send、replay、backfill 或 retry 补证，历史 canary 不重复。
 - SuBing 自然 Live seam 仍需真实时点观察；Canonical-only HTTP smoke 不替代自然 Live evidence。
-- v1.7.0 API/Web/Market Runtime root 的下一次自然 18:05 盘后业务证据待观察；不得人工触发、回填或
+- 当前 v1.8.0 API/Web/Market Runtime root 的下一次自然 18:05 盘后业务证据待观察；不得人工触发、回填或
   用旧 root evidence 补证。
 - SuBing、N 与 JDJ Candidate 的 prospective OOS 继续按各自 exact protocol 独立累积，当前均
   `pending`。
@@ -149,5 +214,3 @@ Exact 命令见 `TESTING.md`。该协议只定义未来 read-only Gate，不构�
   `docs/ARCHITECTURE.md`；命令看 `TESTING.md`。
 - 已完成 spec/plan/task 与逐次 release/promotion 流水只从 Git history、`CHANGELOG.md`、tag 和 commit
   追溯，不作为 active surface。
-- 最小下一步：完成 Diagnostic Phase A 分支独立 Review 与 controller integration；真实 evidence
-  命令仍需后续单独的明确读取意图，本轮不执行。

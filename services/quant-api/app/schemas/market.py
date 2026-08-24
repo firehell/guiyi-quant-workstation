@@ -431,3 +431,52 @@ class MarketTrendFocusResponse(BaseModel):
     running_trends: list[MarketTrendFocusItemOut]
     weakening_trends: list[MarketTrendFocusItemOut]
     unavailable: list[MarketTrendFocusUnavailableOut]
+
+
+class SubingDailyWatchCountsOut(BaseModel):
+    universe: int
+    long_watch: int
+    short_watch: int
+    excluded: int
+    unavailable: int
+
+
+class SubingDailyWatchTrendOut(BaseModel):
+    bar_end: datetime
+    trading_day: date
+    physical_contract: str
+    segment_start_trading_day: date
+    close: Decimal
+    ema21: Decimal
+    price_side: Literal["above", "below", "equal", "unavailable"]
+    slope_5_bps_per_bar: Decimal
+    slope_10_bps_per_bar: Decimal
+
+
+class SubingDailyWatchItemOut(BaseModel):
+    symbol: str
+    product_name: str
+    sector: str
+    decision: Literal["long_watch", "short_watch", "unavailable"]
+    reason_codes: list[str]
+    daily: SubingDailyWatchTrendOut | None
+    hourly: SubingDailyWatchTrendOut | None
+    unavailable_reasons: list[str]
+
+
+class SubingDailyWatchWebSnapshotOut(BaseModel):
+    source_trading_day: date
+    target_trading_day: date
+    generated_at: datetime
+    counts: SubingDailyWatchCountsOut
+    long_watch: list[SubingDailyWatchItemOut]
+    short_watch: list[SubingDailyWatchItemOut]
+    unavailable: list[SubingDailyWatchItemOut]
+
+
+class SubingDailyWatchCurrentResponse(BaseModel):
+    status: Literal["ready", "unavailable"]
+    expected_target_trading_day: date | None
+    latest_target_trading_day: date | None
+    error_code: str | None
+    snapshot: SubingDailyWatchWebSnapshotOut | None

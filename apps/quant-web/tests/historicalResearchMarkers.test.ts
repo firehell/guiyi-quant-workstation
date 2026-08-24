@@ -201,6 +201,61 @@ test('JDJ strategy markers project only reference fills with exact symbols and r
   assert.equal(mapper!(action('entry', 'long', { reference_price: null })), null)
 })
 
+test('JDJ strategy loader sends the current non-JM replay identity', async () => {
+  let capturedRequest: Record<string, unknown> | undefined
+  const controller = useHistoricalResearchMarkers({
+    fetchSubing: async () => { throw new Error('wrong source') },
+    fetchNStructure: async () => { throw new Error('wrong source') },
+    fetchJdj: async () => { throw new Error('wrong source') },
+    fetchJdjStrategy: async (request: Record<string, unknown>) => {
+      capturedRequest = request
+      return { request, reference_execution: true, actions: [] }
+    },
+  } as never)
+
+  await controller.sync({
+    overlay: 'jdj_strategy' as const,
+    seriesKind: 'actual_dominant' as const,
+    symbol: 'rb',
+    frequency: '1m' as const,
+  }, canonicalBars, {
+    start: canonicalBars[0].time,
+    end: canonicalBars[1].time,
+  }, 'replace')
+
+  assert.ok(capturedRequest)
+  assert.equal(capturedRequest.symbol, 'rb')
+  assert.equal(capturedRequest.series_kind, 'actual_dominant')
+  assert.equal(capturedRequest.frequency, '1m')
+  assert.equal(controller.error.value, null)
+})
+
+test('JDJ strategy loader rejects an rb request answered with jm identity', async () => {
+  const controller = useHistoricalResearchMarkers({
+    fetchSubing: async () => { throw new Error('wrong source') },
+    fetchNStructure: async () => { throw new Error('wrong source') },
+    fetchJdj: async () => { throw new Error('wrong source') },
+    fetchJdjStrategy: async (request: Record<string, unknown>) => ({
+      request: { ...request, symbol: 'jm' },
+      reference_execution: true,
+      actions: [],
+    }),
+  } as never)
+
+  await controller.sync({
+    overlay: 'jdj_strategy' as const,
+    seriesKind: 'actual_dominant' as const,
+    symbol: 'rb',
+    frequency: '1m' as const,
+  }, canonicalBars, {
+    start: canonicalBars[0].time,
+    end: canonicalBars[1].time,
+  }, 'replace')
+
+  assert.deepEqual(controller.markers.value, [])
+  assert.equal(controller.error.value, 'HISTORICAL_RESEARCH_UNAVAILABLE')
+})
+
 test('JDJ strategy shared loader clears unsupported identity, reloads, prepends without duplicates, and ignores stale response', async () => {
   const first = deferred<Record<string, unknown>>()
   let calls = 0

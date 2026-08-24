@@ -3,13 +3,21 @@ from __future__ import annotations
 import json
 import logging
 import io
+import os
 from datetime import date, datetime
 
 import pytest
 
+from app.alerts.notification import (
+    ALERT_AUDIENCE_OWNER,
+    NotificationDelivery,
+    NotificationTransportError,
+    ProviderAcceptance,
+)
 from app.market_data.after_market import AfterMarketUpdater, public_after_market_status
 from app.market_data.after_market import AfterMarketResult
 from app.guiyi_cli.main import main as guiyi_main
+from app.runtime_entry import main as runtime_main
 from app.market_data.errors import InfrastructureError
 from app.market_data.historical_data_manager import MaintenanceResult
 from app.market_data.operational_universe import load_active_products
@@ -122,6 +130,23 @@ class _LiveStore:
         self.cleaned.append(trading_day)
 
 
+class _RecordingTransport:
+    def __init__(
+        self,
+        deliveries: list[NotificationDelivery],
+        *,
+        error: Exception | None = None,
+    ) -> None:
+        self.deliveries = deliveries
+        self.error = error
+
+    def send(self, delivery: NotificationDelivery) -> ProviderAcceptance:
+        self.deliveries.append(delivery)
+        if self.error is not None:
+            raise self.error
+        return ProviderAcceptance("provider-reference-must-not-persist")
+
+
 def _result(status: str, *, stop_reason: str | None = None) -> MaintenanceResult:
     return MaintenanceResult(
         action="update",
@@ -143,11 +168,12 @@ def _updater(
     readiness: list[bool],
     results: list[MaintenanceResult],
     metadata_day: date | None = None,
+    notification_error: Exception | None = None,
 ):
     manager = _Manager(trading_day, results, metadata_day=metadata_day)
     rqdata = _RQData(readiness)
     sleeps: list[float] = []
-    notices: list[str] = []
+    notices: list[NotificationDelivery] = []
     live_store = _LiveStore()
     updater = AfterMarketUpdater(
         manager=manager,
@@ -155,7 +181,10 @@ def _updater(
         live_store=live_store,
         status_path=tmp_path / "after-market-status.json",
         sleep=sleeps.append,
-        notifier=notices.append,
+        notification_transport=_RecordingTransport(
+            notices,
+            error=notification_error,
+        ),
         now=lambda: datetime(2026, 8, 10, 17, 0),
     )
     return updater, manager, rqdata, sleeps, notices, live_store
@@ -163,6 +192,15 @@ def _updater(
 
 def _status(path):
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _notice_error_codes(notices: list[NotificationDelivery]) -> list[str]:
+    return [
+        line.removeprefix("error_code=")
+        for notice in notices
+        for line in notice.content.splitlines()
+        if line.startswith("error_code=")
+    ]
 
 
 @pytest.mark.parametrize("market_status", ("skipped", "failed"))
@@ -181,7 +219,7 @@ def test_after_market_followup_does_not_run_for_non_passed_result(
         ["data", "after-market"],
         session_factory=sessions,
         manager_factory=lambda session: events.append(f"manager:{session}") or object(),
-        after_market_factory=lambda _manager: Updater(),
+        after_market_factory=lambda _manager, **_kwargs: Updater(),
         execution_review_roll_marker_state=lambda: "enabled",
         roll_reconciler_factory=lambda _session: pytest.fail(
             "reconciler must not be built"
@@ -210,7 +248,7 @@ def test_after_market_passed_with_disabled_marker_uses_only_market_session(
         ["data", "after-market"],
         session_factory=sessions,
         manager_factory=lambda session: events.append(f"manager:{session}") or object(),
-        after_market_factory=lambda _manager: Updater(),
+        after_market_factory=lambda _manager, **_kwargs: Updater(),
         execution_review_roll_marker_state=lambda: marker_state,
         roll_reconciler_factory=lambda _session: pytest.fail(
             "reconciler must not be built"
@@ -241,7 +279,7 @@ def test_after_market_passed_with_enabled_marker_reconciles_in_new_session() -> 
         ["data", "after-market"],
         session_factory=sessions,
         manager_factory=lambda session: events.append(f"manager:{session}") or object(),
-        after_market_factory=lambda _manager: Updater(),
+        after_market_factory=lambda _manager, **_kwargs: Updater(),
         execution_review_roll_marker_state=lambda: events.append("marker") or "enabled",
         roll_reconciler_factory=lambda session: (
             events.append(f"reconciler:{session}") or Reconciler()
@@ -286,7 +324,7 @@ def test_after_market_reconcile_exception_preserves_passed_result(
         ["data", "after-market"],
         session_factory=sessions,
         manager_factory=lambda _session: object(),
-        after_market_factory=lambda _manager: Updater(),
+        after_market_factory=lambda _manager, **_kwargs: Updater(),
         execution_review_roll_marker_state=lambda: "enabled",
         roll_reconciler_factory=lambda _session: Reconciler(),
         stdout=stdout,
@@ -306,6 +344,56 @@ def test_after_market_reconcile_exception_preserves_passed_result(
     assert [record.message for record in caplog.records] == [
         "EXECUTION_REVIEW_ROLL_FOLLOWUP_FAILED"
     ]
+
+
+def test_public_manual_after_market_does_not_grant_failure_notification_capability() -> None:
+    capabilities: list[bool] = []
+
+    class Updater:
+        def run(self):
+            return AfterMarketResult("failed", date(2026, 8, 10), 1, "UPDATE_FAILED")
+
+    def factory(_manager, *, failure_notification: bool):
+        capabilities.append(failure_notification)
+        return Updater()
+
+    code = guiyi_main(
+        ["data", "after-market"],
+        session_factory=_TrackedSessionFactory([]),
+        manager_factory=lambda _session: object(),
+        after_market_factory=factory,
+        execution_review_roll_marker_state=lambda: "disabled",
+        stdout=io.StringIO(),
+        stderr=io.StringIO(),
+    )
+
+    assert code == 1
+    assert capabilities == [False]
+
+
+def test_supervised_runtime_after_market_grants_one_shot_failure_notification_capability() -> None:
+    capabilities: list[bool] = []
+
+    class Updater:
+        def run(self):
+            return AfterMarketResult("failed", date(2026, 8, 10), 1, "UPDATE_FAILED")
+
+    def factory(_manager, *, failure_notification: bool):
+        capabilities.append(failure_notification)
+        return Updater()
+
+    code = runtime_main(
+        ["after-market"],
+        session_factory=_TrackedSessionFactory([]),
+        manager_factory=lambda _session: object(),
+        after_market_factory=factory,
+        roll_marker_state=lambda: "disabled",
+        stdout=io.StringIO(),
+        stderr=io.StringIO(),
+    )
+
+    assert code == 1
+    assert capabilities == [True]
 
 
 class _TrackedSessionFactory:
@@ -397,6 +485,125 @@ def test_updates_once_when_first_attempt_is_ready(tmp_path) -> None:
     assert notices == []
 
 
+def test_schema_v2_persists_current_run_before_business_attempt_and_clears_on_finish(
+    tmp_path,
+) -> None:
+    status_path = tmp_path / "after-market-status.json"
+    updater, manager, _rqdata, _sleeps, _notices, _live_store = _updater(
+        tmp_path,
+        trading_day=date(2026, 8, 10),
+        readiness=[True],
+        results=[_result("passed")],
+    )
+    observed: list[dict[str, object]] = []
+    original = manager.coverage.latest_metadata_day
+
+    def observe_current_run(products: tuple[str, ...]) -> date:
+        observed.append(_status(status_path))
+        return original(products)
+
+    manager.coverage.latest_metadata_day = observe_current_run
+
+    updater.run()
+
+    assert observed == [
+        {
+            "schema_version": 2,
+            "current_run": {
+                "scheduled_date": "2026-08-10",
+                "started_at": "2026-08-10T17:00:00+08:00",
+                "products": list(_ACTIVE_PRODUCTS),
+            },
+            "last_run": None,
+            "last_successful_trading_day": None,
+            "last_failure": None,
+        }
+    ]
+    finalized = _status(status_path)
+    assert finalized["schema_version"] == 2
+    assert finalized["current_run"] is None
+    assert finalized["last_run"]["status"] == "passed"
+
+
+def test_new_current_run_preserves_previous_v2_failure_notification(tmp_path) -> None:
+    status_path = tmp_path / "after-market-status.json"
+    status_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 2,
+                "current_run": None,
+                "last_run": {
+                    "trading_day": "2026-08-09",
+                    "status": "failed",
+                    "attempts": 1,
+                    "started_at": "2026-08-09T18:05:00+08:00",
+                    "finished_at": "2026-08-09T18:06:00+08:00",
+                    "products": list(_ACTIVE_PRODUCTS),
+                    "error_code": "UPDATE_FAILED",
+                    "failure_notification": {
+                        "attempted_at": "2026-08-09T18:06:00+08:00",
+                        "state": "provider_accepted",
+                        "error_type": None,
+                    },
+                },
+                "last_successful_trading_day": "2026-08-08",
+                "last_failure": {
+                    "trading_day": "2026-08-09",
+                    "error_code": "UPDATE_FAILED",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    updater, manager, _rqdata, _sleeps, _notices, _live_store = _updater(
+        tmp_path,
+        trading_day=date(2026, 8, 7),
+        readiness=[],
+        results=[],
+    )
+    observed: list[dict[str, object]] = []
+    original = manager.coverage.latest_metadata_day
+
+    def observe(products: tuple[str, ...]) -> date:
+        observed.append(_status(status_path))
+        return original(products)
+
+    manager.coverage.latest_metadata_day = observe
+
+    updater.run()
+
+    assert observed[0]["last_run"]["failure_notification"] == {
+        "attempted_at": "2026-08-09T18:06:00+08:00",
+        "state": "provider_accepted",
+        "error_type": None,
+    }
+
+
+def test_every_status_write_uses_same_directory_atomic_replace(tmp_path, monkeypatch) -> None:
+    status_path = tmp_path / "after-market-status.json"
+    updater, *_ = _updater(
+        tmp_path,
+        trading_day=date(2026, 8, 10),
+        readiness=[True],
+        results=[_result("passed")],
+    )
+    replacements: list[tuple[object, object]] = []
+    real_replace = os.replace
+
+    def record_replace(source, target) -> None:
+        replacements.append((source, target))
+        assert os.fspath(source) != os.fspath(target)
+        assert os.path.dirname(os.fspath(source)) == os.path.dirname(os.fspath(target))
+        real_replace(source, target)
+
+    monkeypatch.setattr(os, "replace", record_replace)
+
+    updater.run()
+
+    assert len(replacements) == 2
+    assert all(os.fspath(target) == os.fspath(status_path) for _, target in replacements)
+
+
 def test_current_day_metadata_is_delegated_to_the_locked_update(tmp_path) -> None:
     updater, manager, _rqdata, _sleeps, _notices, _live_store = _updater(
         tmp_path,
@@ -427,7 +634,7 @@ def test_does_not_retry_when_rqdata_is_not_ready(tmp_path) -> None:
     assert rqdata.calls == [date(2026, 8, 10)]
     assert manager.calls == []
     assert sleeps == []
-    assert notices == ["RQDATA_NOT_READY"]
+    assert _notice_error_codes(notices) == ["RQDATA_NOT_READY"]
 
 
 def test_does_not_retry_after_provider_quota_failure(tmp_path) -> None:
@@ -446,7 +653,7 @@ def test_does_not_retry_after_provider_quota_failure(tmp_path) -> None:
     assert rqdata.calls == [date(2026, 8, 10)]
     assert len(manager.calls) == 1
     assert sleeps == []
-    assert notices == ["PROVIDER_QUOTA_EXHAUSTED"]
+    assert _notice_error_codes(notices) == ["PROVIDER_QUOTA_EXHAUSTED"]
 
 
 def test_records_final_failure_and_notifies_once(tmp_path) -> None:
@@ -466,11 +673,74 @@ def test_records_final_failure_and_notifies_once(tmp_path) -> None:
     assert result.error_code == "UPDATE_FAILED"
     assert len(manager.calls) == 1
     assert sleeps == []
-    assert notices == ["UPDATE_FAILED"]
+    assert _notice_error_codes(notices) == ["UPDATE_FAILED"]
     assert public_status["last_run"]["attempts"] == 1
     assert status["last_failure"] == {"trading_day": "2026-08-10", "error_code": "UPDATE_FAILED"}
     assert "exception" not in json.dumps(status).lower()
     assert "path" not in json.dumps(status).lower()
+
+
+def test_natural_failure_records_owner_provider_acceptance_without_delivery_claim(
+    tmp_path,
+) -> None:
+    updater, _manager, _rqdata, _sleeps, notices, _live_store = _updater(
+        tmp_path,
+        trading_day=date(2026, 8, 10),
+        readiness=[False],
+        results=[],
+    )
+
+    result = updater.run()
+    status = _status(tmp_path / "after-market-status.json")
+
+    assert result == AfterMarketResult(
+        "failed", date(2026, 8, 10), 1, "RQDATA_NOT_READY"
+    )
+    assert notices == [
+        NotificationDelivery(
+            audience=ALERT_AUDIENCE_OWNER,
+            title="归一量化 盘后运维失败",
+            content=(
+                "trading_day=2026-08-10\n"
+                "error_code=RQDATA_NOT_READY\n"
+                "attempts=1\n"
+                "系统运维提醒，非交易指令"
+            ),
+        )
+    ]
+    assert status["last_run"]["failure_notification"] == {
+        "attempted_at": "2026-08-10T17:00:00+08:00",
+        "state": "provider_accepted",
+        "error_type": None,
+    }
+    assert "provider-reference-must-not-persist" not in json.dumps(status)
+
+
+def test_notification_failure_is_recorded_once_without_changing_primary_failure(
+    tmp_path,
+) -> None:
+    updater, _manager, _rqdata, _sleeps, notices, _live_store = _updater(
+        tmp_path,
+        trading_day=date(2026, 8, 10),
+        readiness=[False],
+        results=[],
+        notification_error=NotificationTransportError(
+            "ALERT_NOTIFICATION_TRANSPORT_FAILED"
+        ),
+    )
+
+    result = updater.run()
+    status = _status(tmp_path / "after-market-status.json")
+
+    assert result.status == "failed"
+    assert result.error_code == "RQDATA_NOT_READY"
+    assert len(notices) == 1
+    assert status["last_run"]["status"] == "failed"
+    assert status["last_run"]["failure_notification"] == {
+        "attempted_at": "2026-08-10T17:00:00+08:00",
+        "state": "failed",
+        "error_type": "ALERT_NOTIFICATION_TRANSPORT_FAILED",
+    }
 
 
 def test_readiness_failure_logs_only_sanitized_diagnostics(tmp_path, caplog) -> None:
@@ -494,7 +764,7 @@ def test_readiness_failure_logs_only_sanitized_diagnostics(tmp_path, caplog) -> 
 
     assert result.error_code == "RQDATA_READY_CHECK_FAILED"
     assert result.attempts == 1
-    assert notices == ["RQDATA_READY_CHECK_FAILED"]
+    assert _notice_error_codes(notices) == ["RQDATA_READY_CHECK_FAILED"]
     assert [record.message for record in caplog.records] == [
         "after_market_attempt_failed stage=rqdata_readiness attempt=1 "
         "detail_code=RQDATA_READY_RESPONSE_INVALID exception_type=InfrastructureError",
@@ -520,7 +790,7 @@ def test_update_exception_logs_only_sanitized_stage_diagnostics(tmp_path, caplog
 
     assert result.error_code == "UPDATE_FAILED"
     assert result.attempts == 1
-    assert notices == ["UPDATE_FAILED"]
+    assert _notice_error_codes(notices) == ["UPDATE_FAILED"]
     assert [record.message for record in caplog.records] == [
         "after_market_attempt_failed stage=canonical_update attempt=1 "
         "detail_code=UNEXPECTED_UPDATE_EXCEPTION exception_type=RuntimeError",
@@ -559,7 +829,7 @@ def test_next_trading_session_not_ready_is_retried_with_stable_public_code(
         "NEXT_TRADING_SESSION_NOT_READY"
     )
     assert sleeps == [3600]
-    assert notices == ["NEXT_TRADING_SESSION_NOT_READY"]
+    assert _notice_error_codes(notices) == ["NEXT_TRADING_SESSION_NOT_READY"]
     assert [record.message for record in caplog.records] == [
         "after_market_attempt_failed stage=metadata_readiness attempt=1 "
         "detail_code=NEXT_TRADING_SESSION_NOT_READY exception_type=InfrastructureError",
@@ -611,7 +881,7 @@ def test_preserves_whitelisted_maintenance_stop_code_on_final_failure(tmp_path) 
         "trading_day": "2026-08-10",
         "error_code": "PROVIDER_QUOTA_EXHAUSTED",
     }
-    assert notices == ["PROVIDER_QUOTA_EXHAUSTED"]
+    assert _notice_error_codes(notices) == ["PROVIDER_QUOTA_EXHAUSTED"]
 
 
 def test_success_clears_previous_last_failure(tmp_path) -> None:
@@ -728,7 +998,7 @@ def test_cleanup_failure_does_not_retry_or_report_success(tmp_path) -> None:
     assert result.attempts == 1
     assert result.error_code == "UPDATE_FAILED"
     assert sleeps == []
-    assert notices == ["UPDATE_FAILED"]
+    assert _notice_error_codes(notices) == ["UPDATE_FAILED"]
     assert live_store.published == [{"trading_day": "2026-08-10"}]
     assert live_store.cleaned == []
     assert status["last_successful_trading_day"] is None
@@ -754,7 +1024,7 @@ def test_rank1_mismatch_is_a_stable_failure_without_live_cleanup(tmp_path) -> No
     assert result.attempts == 1
     assert result.error_code == "LIVE_DOMINANT_MISMATCH"
     assert sleeps == []
-    assert notices == ["LIVE_DOMINANT_MISMATCH"]
+    assert _notice_error_codes(notices) == ["LIVE_DOMINANT_MISMATCH"]
     assert live_store.published == [{"trading_day": "2026-08-10"}]
     assert live_store.cleaned == []
     assert status["last_failure"] == {
@@ -805,3 +1075,44 @@ def test_public_status_rejects_non_string_error_codes() -> None:
     )
 
     assert payload == {}
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    (
+        lambda payload: payload.update(last_successful_trading_day="invalid"),
+        lambda payload: payload.update(
+            last_failure={
+                "trading_day": "invalid",
+                "error_code": "UPDATE_FAILED",
+            }
+        ),
+        lambda payload: payload["last_run"].update(
+            failure_notification={
+                "attempted_at": "invalid",
+                "state": "provider_accepted",
+                "error_type": None,
+            }
+        ),
+    ),
+)
+def test_public_status_rejects_any_present_invalid_v2_public_field(mutate) -> None:
+    raw = {
+        "schema_version": 2,
+        "current_run": None,
+        "last_run": {
+            "trading_day": "2026-08-24",
+            "status": "passed",
+            "attempts": 1,
+            "started_at": "2026-08-24T18:05:00+08:00",
+            "finished_at": "2026-08-24T18:10:00+08:00",
+            "products": ["jm"],
+            "error_code": None,
+            "failure_notification": None,
+        },
+        "last_successful_trading_day": "2026-08-24",
+        "last_failure": None,
+    }
+    mutate(raw)
+
+    assert public_after_market_status(raw) == {}

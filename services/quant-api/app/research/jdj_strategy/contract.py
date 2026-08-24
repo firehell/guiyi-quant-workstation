@@ -12,9 +12,9 @@ from app.market_data.domain import BarFrequency
 
 
 JDJ_V1_PROFILE_PATH = PROJECT_ROOT / "data/strategy_profiles/jdj_v1.json"
-_DEFAULT_PROFILE_ID = "jdj_jm_1m_v1"
+_DEFAULT_PROFILE_ID = "jdj_active60_1m_v1"
 _EXPECTED_PAYLOAD: dict[str, Any] = {
-    "schema_version": 1,
+    "schema_version": 2,
     "strategy_id": "jdj_intraday_futures_v1",
     "core_rules": {
         "minimum_reward_risk": "2.0",
@@ -30,7 +30,7 @@ _EXPECTED_PAYLOAD: dict[str, Any] = {
     },
     "profiles": {
         _DEFAULT_PROFILE_ID: {
-            "symbol": "jm",
+            "product_scope_source": "active_products",
             "series_kind": "actual_dominant",
             "execution_frequency": "1m",
             "trend_context_frequency": "5m",
@@ -68,7 +68,7 @@ class JdjCoreRules:
 @dataclass(frozen=True, slots=True)
 class JdjStrategyProfile:
     profile_id: str
-    symbol: str
+    product_scope_source: str
     series_kind: str
     execution_frequency: BarFrequency
     trend_context_frequency: BarFrequency
@@ -127,7 +127,7 @@ def load_jdj_v1_config(profile_id: str = _DEFAULT_PROFILE_ID) -> JdjV1Config:
         ),
         profile=JdjStrategyProfile(
             profile_id=profile_id,
-            symbol=profile["symbol"],
+            product_scope_source=profile["product_scope_source"],
             series_kind=profile["series_kind"],
             execution_frequency=BarFrequency(profile["execution_frequency"]),
             trend_context_frequency=BarFrequency(profile["trend_context_frequency"]),

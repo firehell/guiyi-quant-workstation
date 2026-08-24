@@ -22,11 +22,13 @@ import type {
   SubingFrequency,
   SubingHistoricalSignalRequest,
   SubingHistoricalSignalResponse,
+  SubingDailyWatchCurrentWireResponse,
   SubingResearchResponse,
 } from '@/types/market'
 import {
   normalizeMainForceMirrorV2Page,
   normalizeMarketTrendFocus,
+  normalizeSubingDailyWatchCurrent,
   normalizeSubingResearch,
 } from '@/types/market'
 
@@ -42,6 +44,14 @@ export function getMarketRadar() {
 export function getMarketTrendFocus() {
   return request.get<never, MarketTrendFocusWireResponse>('/market/research/trend-focus')
     .then(normalizeMarketTrendFocus) as Promise<MarketTrendFocusResponse>
+}
+
+export function getSubingDailyWatchCurrent() {
+  return request
+    .get<never, SubingDailyWatchCurrentWireResponse>(
+      '/market/research/subing-daily-watch/current',
+    )
+    .then(normalizeSubingDailyWatchCurrent)
 }
 
 export function getProductResearch(params: {

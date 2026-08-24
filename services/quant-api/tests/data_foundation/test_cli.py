@@ -34,11 +34,37 @@ class FakeManager:
 
     def audit(self, request):
         self.calls.append(("audit", request))
+
         return MaintenanceResult("audit", "passed", None, 0, 0, 0, 0, 0)
 
     def refresh(self, request):
         self.calls.append(("refresh", request))
         return MaintenanceResult("refresh", "planned", request.through, 1, 0, 0, 0, 0)
+
+
+class ProgressFakeManager(FakeManager):
+    def audit(self, request, observer=None):
+        self.calls.append(("audit", request))
+        if observer is not None:
+            observer(
+                _ProgressEvent(
+                    state="started",
+                    completed=0,
+                    total=len(request.products),
+                    symbol=request.products[0].strip().lower(),
+                    finding_count=None,
+                )
+            )
+            observer(
+                _ProgressEvent(
+                    state="completed",
+                    completed=1,
+                    total=len(request.products),
+                    symbol=request.products[0].strip().lower(),
+                    finding_count=0,
+                )
+            )
+        return MaintenanceResult("audit", "passed", None, 0, 0, 0, 0, 0)
 
 
 def _run(
@@ -71,6 +97,59 @@ class _NullContext:
 
     def __exit__(self, *_args):
         return None
+
+
+class _ProgressEvent:
+    def __init__(
+        self,
+        *,
+        state: str,
+        completed: int,
+        total: int,
+        symbol: str,
+        finding_count: int | None,
+    ) -> None:
+        self.state = state
+        self.completed = completed
+        self.total = total
+        self.symbol = symbol
+        self.finding_count = finding_count
+
+
+class _FailingProgressStream:
+    def __init__(self) -> None:
+        self.writes = 0
+
+    def write(self, _value: str) -> int:
+        self.writes += 1
+        raise OSError("progress output unavailable")
+
+
+class _ShortWriteProgressStream:
+    def __init__(self) -> None:
+        self.lines: list[str] = []
+        self.flushes = 0
+
+    def write(self, value: str) -> int:
+        self.lines.append(value)
+        return len(value) - 1
+
+    def flush(self) -> None:
+        self.flushes += 1
+
+
+class _FlushFailingProgressStream:
+    def __init__(self) -> None:
+        self.lines: list[str] = []
+        self.flushes = 0
+
+    def write(self, value: str) -> int:
+        self.lines.append(value)
+        return len(value)
+
+    def flush(self) -> None:
+        self.flushes += 1
+        raise OSError("progress flush unavailable")
 
 
 def test_data_parser_exposes_only_active_user_commands() -> None:
@@ -292,7 +371,9 @@ def test_after_market_is_a_dedicated_apply_free_cli_entrypoint() -> None:
     code, payload = _run(
         ["data", "after-market"],
         manager,
-        after_market_factory=lambda supplied_manager: received.append(supplied_manager) or Updater(),
+        after_market_factory=lambda supplied_manager, **capability: (
+            received.append((supplied_manager, capability)) or Updater()
+        ),
     )
 
     assert code == 0
@@ -304,7 +385,7 @@ def test_after_market_is_a_dedicated_apply_free_cli_entrypoint() -> None:
         "attempts": 1,
         "error_code": None,
     }
-    assert received == [manager]
+    assert received == [(manager, {"failure_notification": False})]
     assert manager.calls == []
     with pytest.raises(CliUsageError):
         build_parser().parse_args(["data", "after-market", "--apply"])
@@ -327,7 +408,11 @@ def test_after_market_non_trading_day_skip_exits_successfully() -> None:
     code = main(
         ["data", "after-market"],
         manager_factory=lambda _session: manager,
-        after_market_factory=lambda _manager: Updater(),
+        after_market_factory=lambda _manager, **capability: (
+            Updater()
+            if capability == {"failure_notification": False}
+            else pytest.fail("manual CLI must disable failure notification")
+        ),
         session_factory=lambda: _NullContext(),
         stdout=stdout,
         stderr=stderr,
@@ -410,6 +495,119 @@ def test_audit_parses_single_active_symbol() -> None:
     assert code == 0 and payload["status"] == "passed"
     assert [action for action, _request in manager.calls] == ["audit"]
     assert manager.calls[0][1].products == ("jm",)
+
+
+def test_audit_without_progress_preserves_exact_stdout_and_empty_stderr() -> None:
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+
+    code = main(
+        ["data", "audit", "--symbol", "JM"],
+        manager_factory=lambda _session: FakeManager(),
+        session_factory=lambda: _NullContext(),
+        stdout=stdout,
+        stderr=stderr,
+    )
+
+    assert code == 0
+    assert stdout.getvalue() == (
+        '{\n'
+        '  "action": "audit",\n'
+        '  "applied": 0,\n'
+        '  "blocked": 0,\n'
+        '  "failed": 0,\n'
+        '  "failures": [],\n'
+        '  "finding_count": 0,\n'
+        '  "findings": [],\n'
+        '  "planned": 0,\n'
+        '  "provider_requests": 0,\n'
+        '  "schema_version": 1,\n'
+        '  "status": "passed",\n'
+        '  "stop_reason": null,\n'
+        '  "targets": [],\n'
+        '  "through": null\n'
+        '}\n'
+    )
+    assert stderr.getvalue() == ""
+
+
+def test_audit_progress_writes_compact_ndjson_to_stderr() -> None:
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+
+    code = main(
+        ["data", "audit", "--symbol", "JM", "--progress"],
+        manager_factory=lambda _session: ProgressFakeManager(),
+        session_factory=lambda: _NullContext(),
+        stdout=stdout,
+        stderr=stderr,
+    )
+
+    assert code == 0
+    assert json.loads(stdout.getvalue())["status"] == "passed"
+    assert stderr.getvalue() == (
+        '{"schema_version":1,"event":"data.audit.progress","state":"started",'
+        '"completed":0,"total":1,"symbol":"jm","finding_count":null}\n'
+        '{"schema_version":1,"event":"data.audit.progress","state":"completed",'
+        '"completed":1,"total":1,"symbol":"jm","finding_count":0}\n'
+    )
+
+
+def test_audit_progress_output_failure_disables_later_writes() -> None:
+    stdout = io.StringIO()
+    stderr = _FailingProgressStream()
+
+    code = main(
+        ["data", "audit", "--symbol", "jm", "--progress"],
+        manager_factory=lambda _session: ProgressFakeManager(),
+        session_factory=lambda: _NullContext(),
+        stdout=stdout,
+        stderr=stderr,
+    )
+
+    assert code == 0
+    assert json.loads(stdout.getvalue())["status"] == "passed"
+    assert stderr.writes == 1
+
+
+def test_audit_progress_short_write_disables_later_emissions() -> None:
+    stdout = io.StringIO()
+    stderr = _ShortWriteProgressStream()
+    manager = ProgressFakeManager()
+
+    code = main(
+        ["data", "audit", "--symbol", "jm", "--progress"],
+        manager_factory=lambda _session: manager,
+        session_factory=lambda: _NullContext(),
+        stdout=stdout,
+        stderr=stderr,
+    )
+
+    assert code == 0
+    assert json.loads(stdout.getvalue())["status"] == "passed"
+    assert [action for action, _request in manager.calls] == ["audit"]
+    assert len(stderr.lines) == 1
+    assert stderr.flushes == 0
+
+
+def test_audit_progress_flush_failure_disables_later_emissions() -> None:
+    stdout = io.StringIO()
+    stderr = _FlushFailingProgressStream()
+    manager = ProgressFakeManager()
+
+    code = main(
+        ["data", "audit", "--symbol", "jm", "--progress"],
+        manager_factory=lambda _session: manager,
+        session_factory=lambda: _NullContext(),
+        stdout=stdout,
+        stderr=stderr,
+    )
+
+    assert code == 0
+    assert json.loads(stdout.getvalue())["status"] == "passed"
+    assert [action for action, _request in manager.calls] == ["audit"]
+    assert len(stderr.lines) == 1
+    assert stderr.flushes == 1
 
 
 def test_audit_parses_fixed_through_boundary() -> None:

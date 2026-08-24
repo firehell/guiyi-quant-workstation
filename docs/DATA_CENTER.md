@@ -1,6 +1,6 @@
 # Canonical 数据基础
 
-更新时间：2026-08-12
+更新时间：2026-08-24
 
 ## 1. 唯一 active 数据语言
 
@@ -93,6 +93,28 @@ snapshot 生成 1d/1w。发布前先验证整组完整性，再按涉及的 1d �
 contract 的基础 provider `1m/1d` 和日线派生 `1w`，再由 1m 重建四个日内派生周期。它不接受 repair plan，
 也不产生额外进度或证据文件。
 
+### 盘后 Runtime 状态合同
+
+`.run/after-market-status.json` 写 schema v2，并兼容读取旧 schema v1。v2 在受监督自然盘后运行
+开始、任何 coverage/RQData/update 尝试之前写入
+`current_run={scheduled_date,started_at,products}`，只在 run 完成终态写入时清除。每次写入都在同目录创建
+临时文件后 `os.replace`；中途崩溃保留 `current_run`，不冒充已完成。`last_run.failure_notification`
+只允许 `{attempted_at,state=provider_accepted|failed,error_type}` 公开字段，不保存 provider reference。
+
+只读 Runtime health 从 `operational_products.txt` 对应的 `Instrument.exchange_code` 与权威
+`TradingCalendar` 唯一解析 expected trading day：上海时间 18:20 前只考虑先前交易日，18:20
+起当日可成为 expected day；交易所结果不唯一、产品/日历事实不完整或 chronology 无效时均
+fail-closed。从未产生过状态时，只有当日为交易日且上海时间已到 18:20、当日已 due 才是
+`degraded/missed`；周末/节假日和首次应执行时点前仍是 `pending`。已有状态时，最后成功日落后于
+expected day 才是 `degraded/missed`。`current_run` age 不超过 2h 为 `pending/running`，超过 2h 为
+`degraded/stuck`。
+
+盘后失败通知是与 Alert Rule/Application Domain 分离的运维能力。公共手工 `guiyi data after-market`
+不启用该能力；只有受监督自然执行的主业务失败才向 owner 发起最多一次 PushPlus 请求。
+通知使用固定脱敏内容，含 trading day、公开 error code、attempts 与“系统运维提醒，非交易指令”；
+不用 Topic、`AlertEvent`、DB、retry、replay 或 fallback。provider accepted 不等于送达；通知失败只记录
+`failure_notification=failed`，不改写或重试主 after-market 结果。`missed/stuck` 只是 health，不会发送。
+
 ## 5. 唯一查询入口
 
 ```text
@@ -127,7 +149,7 @@ coverage 和 resolved contract segments。
 ```bash
 guiyi data update (--symbol X | --universe active) [--since DATE] [--through DATE] [--apply]
 guiyi data refresh --symbol X --since DATE --through DATE [--apply]
-guiyi data audit (--symbol X | --universe active)
+guiyi data audit (--symbol X | --universe active) [--through DATE] [--progress]
 ```
 
 无 `--apply` 的 update/refresh 仅计划，零 RQData、零 PostgreSQL 写入、零 Parquet 写入；audit
@@ -136,6 +158,11 @@ Session、Calendar 与产品窗口元数据缺口分别归为 `metadata_session`
 `metadata_window`，但不会中断其余品种；主力映射、预期分区缺失与物理一致性问题分别归为
 `main_contract_map`、`partition`、`physical`。未知基础设施异常仍 fail-closed。已退役品种
 `br/cs/ic/if/ih/im/lu/nr/sp` 已完成一次性生产清退；系统只保留精确拒绝防护，不再公开重复删除入口。
+`--progress` 是 audit 专用 opt-in：最终 stdout JSON 与未传该参数时完全兼容；stderr 每品种输出
+started/completed 两条 compact NDJSON 进度记录，固定字段为 `schema_version=1`、
+`event=data.audit.progress`、`state`、`completed`、`total`、`symbol`、`finding_count`，started 的
+`finding_count=null`。该观察不接 provider，audit 的 `provider_requests=0`；若 stderr 首次 write/short
+write/flush 失败，立即禁用后续进度输出，审计异常和最终 stdout 结果均保持原语义。
 省略 `--through`
 时，update 在规划开始解析最新完整交易日，并将该值作为本轮固定水位；相同解析值的再次完整运行
 必须为 NOOP。真实 `--apply`、生产 schema migration 与正式数据删除/重建仍各自需要范围明确的

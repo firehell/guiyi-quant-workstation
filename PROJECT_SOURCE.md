@@ -1,6 +1,6 @@
 # 归一量化项目事实源
 
-更新时间：2026-08-23
+更新时间：2026-08-24
 
 ## 稳定产品边界
 
@@ -14,8 +14,9 @@ backtest/Signal/Review/Strategy Web·HTTP·worker·queue 的恢复，也不是�
 Canonical/MarketDataService 的正式 Candidate/OOS 验证体系。当前工作台仅为仓库实现与自动化验证状态；
 sidecar 未加载、未 release、未进入 Runtime，真实 RQAlpha smoke 仍是独立人工 Gate。
 
-JM `actual_dominant + 1m` 日进斗金参考策略是另一条独立的 Historical research-only deterministic
-replay：它通过主 API 输出 reference-only action，并在 Market 展示 reference fill marker；它不是正式
+当前 active universe 中单产品的 `actual_dominant + 1m` 日进斗金参考策略 replay 是另一条独立的 Historical
+research-only deterministic reference replay：它通过主 API 输出 reference-only action，并在 Market 展示
+reference fill marker；它不是正式
 回测、交易指令或 RQAlpha adapter，不进入 DB、Redis、Alert、Execution Review、Runtime 或订单路径。
 当前产品仍不包含基于 Canonical/MarketDataService 的正式 backtest 子系统，也不恢复旧
 Signal/Review/Strategy Web、HTTP、worker 或 queue。Alert 与
@@ -45,6 +46,8 @@ RQData
 - `MarketDataService` 是所有 Historical consumer 的唯一入口；consumer 不得 glob、自选 active、
   自判主力、绕过质量状态或跨频回退。
 - Redis Live 只承载当日 observation；不得写入或提升为 Canonical，也不得替代 Historical 事实。
+- `guiyi data audit --progress` 仅可选增加 stderr per-product NDJSON observation；默认 stdout 合同不变，
+  两种模式均为 provider-free 只读，输出失败不改变 audit 结果。
 
 Data Foundation / Market Catalog 精确为八表。Alert 的 `alert_rules` / `alert_events` 与 Execution
 Review 的四张 `trade_*` 表属于各自 Application Domain，不改变八表合同。
@@ -83,13 +86,23 @@ Market K 线的 Historical Research Overlay 通过四个只读接口按需复算
 Canonical facts：`/api/v1/market/research/subing/history`、`/api/v1/market/research/n-structure/history`
 、`/api/v1/market/research/jdj/history` 与 `/api/v1/market/research/jdj-strategy/history`。前三个
 source-specific Candidate/Event 接口只支持 `actual_dominant`，分别固定为 SuBing `5m/15m`、
-N Structure `5m`、JDJ `1m`；日进斗金策略接口只支持 `jm + actual_dominant + 1m`，复用已有
+N Structure `5m`、JDJ `1m`；日进斗金策略接口只支持当前 active universe 中单产品的
+`actual_dominant + 1m`，复用已有
 Candidate reducer 与窄的 `app.research.jdj_strategy` reference lifecycle，返回完整 action 与顶层
 `reference_execution=true`。这些接口不建立通用 Strategy adapter，不创建 AlertEvent 或持久化派生结果。
 
-Market 首页“优先检查”只消费 `/api/v1/market/research/trend-focus` 的当前只读快照。该 read model
-按请求从 Radar、`MarketDataService`、`MarketReadService` 与当前 rank1 physical contract 重算，输出
-多/空新机会及运行/转弱趋势；不持久化、不接 Alert/Runtime/订单，也不生成综合分或交易推荐。
+Market 首页“优先检查”只消费 `/api/v1/market/research/subing-daily-watch/current` 的当前目标日观察。
+SuBing Daily Watch 只在盘后任务通过后，分别以 D1 与 60m 的 close 相对 EMA21 方向及 EMA21
+slope_5/slope_10 同向正负判定单周期方向，并仅在双周期方向一致时纳入多/空观察；它在显式配置、
+已挂载的扩展盘根保存 active60 完整不可变 ledger，Web/API 只投影 current，不做排名、综合分或交易推荐。
+该观察不进入 Alert、DB、Redis、Canonical、Execution Review 或订单路径。既有 Trend Focus backend 保留为
+read-only code，但不再是首页 active product。
+
+Market 首页同页使用唯一完整 Runtime health DTO 展示 overall、Live、Alert 与盘后状态，不新增
+route/page。mount/手工刷新读 Formal + Runtime + Radar + Daily Watch，页面重新 visible 只刷 Formal +
+Runtime + Daily Watch；四源各自用 generation guard 拒绝旧响应覆盖新结果。Runtime 首次失败显示 unavailable，已有
+成功快照时保留并标记 stale；`disabled`、`unobserved`、provider accepted、missed 与 stuck 不得互相
+代替，provider accepted 不得表述为送达。
 
 ## 研究边界
 
@@ -145,6 +158,29 @@ fail-closed。5m/15m 同 boundary 继续服从 TradingSession bucket 与既有 r
 AlertEvent 先提交，随后最多调用一次 transport。HTDY 路由到 topic audience，SuBing 路由到 owner；
 provider 接受不等于微信最终送达。无 replay、backfill、retry、outbox、queue、逐人 fan-out、fallback
 或订单路径。Git 外配置只含 transport 所需秘密，权限异常时 fail-closed。
+
+Alert Runtime 额外在无 TTL Redis key `alert:runtime-status` 保存 schema v1 observation：最后已处理
+Bar、processing success/failure、Event、transport attempt、provider acceptance、notification failure 时点，以及两类
+公开 error type 和连续通知失败数。missing 是 `unobserved`；公开错误分类固定为
+`processing_failed` 以及 `notification_preparation_failed|notification_transport_failed|notification_acceptance_invalid`，
+不保存 provider reference 或异常正文。状态写入失败
+fail-closed 使受监督进程退出/重启；该 observation 不改变 `AlertEvent`、DB schema 和
+`notification_attempted_at` 语义。
+
+## 盘后 Runtime 观察稳定边界
+
+盘后状态文件写 schema v2 并兼容读 v1；受监督自然运行开始即原子写
+`current_run={scheduled_date,started_at,products}`，终态才清除。只读 health 按
+`operational_products.txt -> Instrument.exchange_code -> TradingCalendar` 唯一解析预期交易日：18:20
+前不把当日视为已应执行，18:20 起当日可成为 expected day；交易所事实不可用或不唯一时
+fail-closed。从未产生过状态时，只有当日为交易日且上海时间已到 18:20、当日已 due 才是
+missed；首次应执行前及周末/节假日仍是 pending。已有状态时，最后成功日落后于 expected day 才是
+missed。`current_run` 不超过 2h 为 running，超过 2h 为 stuck。
+
+盘后运维通知与 Alert Rule/Application Domain 分离：只有受监督自然 execution failure 向 owner
+发起最多一次 PushPlus 请求，不用 Topic、`AlertEvent`、DB、retry 或 fallback。provider accepted
+不等于送达；通知失败只记录在已失败的主 run，不改写或重试主业务结果。missed/stuck 只是
+health，没有独立 monitor 代为发送。精确状态文件合同见 `docs/DATA_CENTER.md`。
 
 ## Execution Review 稳定边界
 

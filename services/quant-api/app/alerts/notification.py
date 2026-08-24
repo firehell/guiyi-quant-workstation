@@ -37,10 +37,6 @@ class AlertNotificationMessage:
     lower_tf_confirmation: bool = False
 
 
-class AlertNotificationSender(Protocol):
-    def send(self, message: AlertNotificationMessage) -> None: ...
-
-
 class NotificationTransportError(RuntimeError):
     """Stable transport error that never includes provider-private data."""
 
@@ -63,6 +59,10 @@ class ProviderAcceptance:
     reference: str | None = field(default=None, repr=False)
 
 
+class AlertNotificationSender(Protocol):
+    def send(self, message: AlertNotificationMessage) -> ProviderAcceptance: ...
+
+
 class NotificationTransport(Protocol):
     def send(self, delivery: NotificationDelivery) -> ProviderAcceptance: ...
 
@@ -79,7 +79,7 @@ class AlertNotificationDispatcher:
         self._transport = transport
         self._clock = clock or (lambda: datetime.now(UTC))
 
-    def send(self, message: AlertNotificationMessage) -> None:
+    def send(self, message: AlertNotificationMessage) -> ProviderAcceptance:
         rendered = format_alert_message(message)
         definition = _notification_rule(message.rule_code)
         if definition == HTDY_RULE:
@@ -90,7 +90,9 @@ class AlertNotificationDispatcher:
             title = "归一量化 苏冰"
         else:
             raise ValueError("ALERT_NOTIFICATION_RULE_INVALID")
-        self._transport.send(NotificationDelivery(audience, title, rendered))
+        return self._transport.send(
+            NotificationDelivery(audience, title, rendered)
+        )
 
     def send_canary(self, audience: str) -> ProviderAcceptance:
         if audience not in ALERT_AUDIENCES:

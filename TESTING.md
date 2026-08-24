@@ -763,6 +763,26 @@ UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache uv run --offline --project service
 GUIYI_ISOLATED_MIGRATION_DATABASE_URL='<isolated-postgresql-url>' UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache uv run --offline --project services/quant-api pytest -q -m isolated_postgresql services/quant-api/tests
 ```
 
+## Data audit progress
+
+`guiyi data audit ... --progress` 仅额外向 stderr 写入 compact NDJSON 进度；默认 audit stdout JSON
+保持兼容，且两种模式都不请求 provider。使用以下离线测试验证 CLI、单品种 observer 时序与零 provider
+边界；不要将其替换为真实 audit：
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache uv run --offline --project services/quant-api pytest -q services/quant-api/tests/data_foundation/test_cli.py services/quant-api/tests/data_foundation
+```
+
+## No-Watch Reliability V1 candidate
+
+以下定向命令覆盖 canonical consistency、Alert observation、盘后状态/health 与 audit progress。完整收口
+还须继续运行本文现有的“后端基线与拆分目录”、“Ruff 与 Mypy”、“Web”和“OpenSpec”命令；
+这些命令只形成代码/测试证据，不代替自然 Runtime 或真实通知/data audit 验收。
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache uv run --offline --project services/quant-api pytest -q tests/engineering/test_canonical_consistency.py services/quant-api/tests/test_alert_runtime.py services/quant-api/tests/test_alert_service.py services/quant-api/tests/test_runtime_health.py services/quant-api/tests/data_foundation/test_after_market.py services/quant-api/tests/data_foundation/test_cli.py
+```
+
 ## Ruff 与 Mypy
 
 ```bash
@@ -886,15 +906,42 @@ done < data/universe/active_products.txt
 rm -rf -- "$real_dir"
 ```
 
-## JDJ JM 1m 参考策略回放
+## JDJ active60 单产品 1m research-only 参考策略回放验证
 
 ```bash
-UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache uv run --offline --project services/quant-api pytest -q services/quant-api/tests/research/test_jdj_strategy_contract.py services/quant-api/tests/research/test_jdj_strategy_engine.py services/quant-api/tests/research/test_jdj_strategy_replay_service.py services/quant-api/tests/test_jdj_context.py services/quant-api/tests/test_jdj_trend_follow.py services/quant-api/tests/test_jdj_trend_reentry.py services/quant-api/tests/test_jdj_key_level_breakout.py services/quant-api/tests/research/test_jdj_research_service.py services/quant-api/tests/research/test_jdj_candidate_validation_service.py services/quant-api/tests/research/test_jdj_robustness_service.py services/quant-api/tests/test_market_research_overlays_api.py
-UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache uv run --offline --project services/quant-api ruff check services/quant-api/app/research/jdj_strategy services/quant-api/tests/research/test_jdj_strategy_*.py
-UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache MYPYPATH=services/quant-api:packages/quant-core uv run --offline --project services/quant-api mypy --explicit-package-bases --ignore-missing-imports services/quant-api/app/research/jdj_strategy
+UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache uv run --offline --project services/quant-api pytest -q \
+  services/quant-api/tests/research/test_jdj_strategy_contract.py \
+  services/quant-api/tests/research/test_jdj_strategy_engine.py \
+  services/quant-api/tests/research/test_jdj_strategy_replay_service.py \
+  services/quant-api/tests/research/test_jdj_strategy_jm_parity.py \
+  services/quant-api/tests/test_research_composition.py \
+  services/quant-api/tests/test_market_research_overlays_api.py \
+  services/quant-api/tests/test_jdj_context.py \
+  services/quant-api/tests/test_jdj_trend_follow.py \
+  services/quant-api/tests/test_jdj_trend_reentry.py \
+  services/quant-api/tests/test_jdj_key_level_breakout.py \
+  services/quant-api/tests/research/test_jdj_research_service.py \
+  services/quant-api/tests/research/test_jdj_candidate_validation_service.py \
+  services/quant-api/tests/research/test_jdj_robustness_service.py
+UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache uv run --offline --project services/quant-api \
+  ruff check services/quant-api/app/research/jdj_strategy \
+  services/quant-api/app/research/composition.py \
+  services/quant-api/app/research/historical_overlay_api.py \
+  services/quant-api/tests/research/test_jdj_strategy_*.py \
+  services/quant-api/tests/test_research_composition.py \
+  services/quant-api/tests/test_market_research_overlays_api.py
+UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
+MYPYPATH=services/quant-api:packages/quant-core \
+uv run --offline --project services/quant-api mypy \
+  --explicit-package-bases --ignore-missing-imports \
+  services/quant-api/app/research/jdj_strategy \
+  services/quant-api/app/research/composition.py \
+  services/quant-api/app/research/historical_overlay_api.py
 pnpm --dir apps/quant-web test
-pnpm --dir apps/quant-web exec playwright test -c playwright.config.mjs apps/quant-web/e2e/market-research.spec.mjs
+pnpm --dir apps/quant-web exec playwright test \
+  -c playwright.config.mjs apps/quant-web/e2e/market-research.spec.mjs
 pnpm --dir apps/quant-web build
+python3 scripts/engineering/secret_scan.py
 ```
 
 ## Web

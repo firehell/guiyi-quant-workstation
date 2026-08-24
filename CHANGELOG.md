@@ -2,6 +2,22 @@
 
 本文件记录正式产品版本；开发过程与逐品种执行流水从 Git history 追溯。
 
+## [1.8.1] - 2026-08-24
+
+- 新增 active60 单产品 `actual_dominant + 1m` 日进斗金 Historical reference replay；保持 JM
+  pre-refactor golden exact parity、真实 rank1 segment identity 与 research-only action/fill 边界，不进入
+  DB、Redis、Alert、Execution Review、Runtime consumer 或订单路径。
+- 新增 SuBing Daily Watch V1：盘后成功后为 active60 生成下一交易日使用的不可变观察账本与 current-only
+  API，Market 首页以“苏冰今日观察”替换 Trend Focus，并提供一次性
+  `actual_dominant + 15m + subing` 图表入口；不改写全局图表偏好，盘中不重算。
+- Daily Watch Store 只允许经校验的扩展盘根；目录和原子文件 mutation/replace 前重复校验 mount，禁止
+  系统盘 fallback。同 target 失败使 current fail-closed，snapshot 严格校验 decision、reason、D1/H1
+  facts 与 price-side，并以重构前 5m/15m 六字段 golden 锁定 EMA21/slope exact parity。
+- 完成 No-Watch Reliability V1：Alert Runtime 与盘后任务写入 crash-visible 只读状态，Market 首页展示统一
+  Runtime strip，data audit 支持 opt-in stderr NDJSON progress；失败观察不新增 retry/replay/backfill。
+- 本版不新增 migration，不执行 Canonical、production DB/Redis 写入，不改变 Alert Rule Scope/transport，
+  不加载 RQAlpha sidecar，不运行手工 after-market 或真实通知，也不增加订单能力；`auto_order=false` 不变。
+
 ## [1.8.0] - 2026-08-24
 
 - 纳入 local-only、research-only 的 RQAlpha Plus Web 工作台：浏览器仅在 loopback 使用独立 sidecar，

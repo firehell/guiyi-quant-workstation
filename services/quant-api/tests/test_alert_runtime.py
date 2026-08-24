@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 import json
+from typing import cast
 
 import pytest
 from sqlalchemy import create_engine, select
@@ -13,9 +14,10 @@ from sqlalchemy.orm import Session
 from app.alerts.composition import RedisAlertHeartbeatStore
 from app.alerts.evaluators import AlertEvaluation
 from app.alerts.models import AlertEvent, AlertRule
-from app.alerts.notification import AlertNotificationMessage
+from app.alerts.notification import AlertNotificationMessage, ProviderAcceptance
 from app.alerts.runtime import (
     AlertRuntime,
+    AlertRuntimeStatusStore,
     _event_session_window,
     _parse_event,
     _subing_snapshot_now,
@@ -364,14 +366,22 @@ class FakeSubingRead:
 
 
 class FakeSender:
-    def __init__(self, error: Exception | None = None) -> None:
+    def __init__(
+        self,
+        error: Exception | None = None,
+        acceptance: ProviderAcceptance | None = ProviderAcceptance(
+            "private-provider-reference"
+        ),
+    ) -> None:
         self.error = error
+        self.acceptance = acceptance
         self.messages: list[AlertNotificationMessage] = []
 
-    def send(self, event: AlertNotificationMessage) -> None:
+    def send(self, event: AlertNotificationMessage) -> ProviderAcceptance:
         self.messages.append(event)
         if self.error is not None:
             raise self.error
+        return cast(ProviderAcceptance, self.acceptance)
 
 
 @dataclass(frozen=True, slots=True)
@@ -394,8 +404,13 @@ def _runtime(
     htdy_observations: tuple[str, ...] = ("buy",),
     htdy_error: Exception | None = None,
     sender_error: Exception | None = None,
+    sender_acceptance: ProviderAcceptance | None = ProviderAcceptance(
+        "private-provider-reference"
+    ),
     operational_products: tuple[str, ...] = ("jm",),
     clock: datetime | None = None,
+    runtime_status_store: AlertRuntimeStatusStore | None = None,
+    taxonomy: dict[str, ProductTaxonomyEntry] | None = None,
 ) -> RuntimeHarness:
     active_snapshot = subing_snapshot or _snapshot(
         frequency=BarFrequency.M5,
@@ -411,7 +426,7 @@ def _runtime(
     )
     subing_read = FakeSubingRead(active_snapshot, subing_error)
     htdy_evaluator = FakeHtdyEvaluator(htdy_observations, htdy_error)
-    sender = FakeSender(sender_error)
+    sender = FakeSender(sender_error, sender_acceptance)
     runtime = AlertRuntime(
         session_factory=lambda: nullcontext(session),
         market_read_factory=lambda _session: market_read,
@@ -419,8 +434,13 @@ def _runtime(
         htdy_evaluator=htdy_evaluator,
         sender=sender,
         operational_products=operational_products,
-        taxonomy={"jm": ProductTaxonomyEntry(name="焦煤", sector="coal")},
+        taxonomy=(
+            {"jm": ProductTaxonomyEntry(name="焦煤", sector="coal")}
+            if taxonomy is None
+            else taxonomy
+        ),
         clock=lambda: clock or event_end + timedelta(seconds=2),
+        runtime_status_store=runtime_status_store,
     )
     return RuntimeHarness(
         runtime,
@@ -1236,13 +1256,45 @@ class FakeHeartbeatStore:
         self.writes.append((payload, ttl_seconds))
 
 
+class RuntimeStatusRedis:
+    def __init__(self, payload: dict[str, object] | None = None) -> None:
+        self.values: dict[str, str] = {}
+        if payload is not None:
+            self.values["alert:runtime-status"] = json.dumps(payload)
+
+    def get(self, key: str) -> str | None:
+        return self.values.get(key)
+
+    def set(self, key: str, value: str) -> bool:
+        self.values[key] = value
+        return True
+
+
+def _runtime_status_payload(**overrides: object) -> dict[str, object]:
+    return {
+        "schema_version": 1,
+        "last_processed_bar_at": None,
+        "last_processing_success_at": None,
+        "last_processing_failure_at": None,
+        "processing_error_type": None,
+        "last_event_at": None,
+        "last_transport_attempt_at": None,
+        "last_provider_accepted_at": None,
+        "last_notification_failure_at": None,
+        "notification_error_type": None,
+        "consecutive_notification_failures": 0,
+        **overrides,
+    }
+
+
 def test_redis_heartbeat_store_sets_value_and_ttl_atomically() -> None:
     class FakeRedis:
         def __init__(self) -> None:
             self.calls = []
 
-        def set(self, *args, **kwargs):
+        def set(self, *args, **kwargs) -> bool:
             self.calls.append((args, kwargs))
+            return True
 
         def expire(self, *_args, **_kwargs):
             raise AssertionError("heartbeat TTL must be atomic with SET")
@@ -1255,6 +1307,417 @@ def test_redis_heartbeat_store_sets_value_and_ttl_atomically() -> None:
     assert redis.calls[0][0][0] == "alert:heartbeat"
     assert json.loads(redis.calls[0][0][1]) == {"available": True}
     assert redis.calls[0][1] == {"ex": 30}
+
+
+def test_redis_runtime_status_store_persists_schema_v1_without_ttl() -> None:
+    from app.alerts import composition
+
+    class FakeRedis:
+        def __init__(self) -> None:
+            self.calls = []
+
+        def set(self, *args, **kwargs) -> bool:
+            self.calls.append((args, kwargs))
+            return True
+
+    redis = FakeRedis()
+    payload = {
+        "schema_version": 1,
+        "last_processed_bar_at": "2026-08-14T00:00:00+00:00",
+        "last_processing_success_at": "2026-08-14T00:00:02+00:00",
+        "last_processing_failure_at": None,
+        "processing_error_type": None,
+        "last_event_at": "2026-08-14T00:00:02+00:00",
+        "last_transport_attempt_at": "2026-08-14T00:00:02+00:00",
+        "last_provider_accepted_at": "2026-08-14T00:00:02+00:00",
+        "last_notification_failure_at": None,
+        "notification_error_type": None,
+        "consecutive_notification_failures": 0,
+    }
+
+    composition.RedisAlertRuntimeStatusStore(redis).write(payload)
+
+    assert redis.calls == [
+        (("alert:runtime-status", json.dumps(payload, ensure_ascii=False, separators=(",", ":"))), {})
+    ]
+    assert "provider_reference" not in redis.calls[0][0][1]
+
+
+def test_redis_runtime_status_store_rejects_failed_set() -> None:
+    from app.alerts.composition import RedisAlertRuntimeStatusStore
+
+    class FailedRedis:
+        def set(self, *_args, **_kwargs) -> bool:
+            return False
+
+    with pytest.raises(
+        RuntimeError,
+        match="^ALERT_RUNTIME_STATUS_WRITE_FAILED$",
+    ):
+        RedisAlertRuntimeStatusStore(FailedRedis()).write(
+            {
+                "schema_version": 1,
+                "last_processed_bar_at": None,
+                "last_processing_success_at": None,
+                "last_processing_failure_at": None,
+                "processing_error_type": None,
+                "last_event_at": None,
+                "last_transport_attempt_at": None,
+                "last_provider_accepted_at": None,
+                "last_notification_failure_at": None,
+                "notification_error_type": None,
+                "consecutive_notification_failures": 0,
+            }
+        )
+
+
+@pytest.mark.parametrize(
+    "error_field",
+    ("processing_error_type", "notification_error_type"),
+)
+def test_redis_runtime_status_store_rejects_nonpublic_error_token(
+    error_field: str,
+) -> None:
+    from app.alerts.composition import RedisAlertRuntimeStatusStore
+
+    class RecordingRedis:
+        def __init__(self) -> None:
+            self.values: dict[str, str] = {}
+
+        def set(self, key: str, value: str) -> bool:
+            self.values[key] = value
+            return True
+
+    redis = RecordingRedis()
+
+    with pytest.raises(ValueError, match="^ALERT_RUNTIME_STATUS_INVALID$"):
+        RedisAlertRuntimeStatusStore(redis).write(
+            _runtime_status_payload(
+                **{error_field: "must_not_leak"}
+            )
+        )
+
+    assert redis.values == {}
+
+
+def test_runtime_status_write_failure_escapes_processing_boundary(
+    session: Session,
+) -> None:
+    from app.alerts.runtime import empty_alert_runtime_status
+
+    class FailingStatusStore:
+        def read(self) -> dict[str, object]:
+            return empty_alert_runtime_status()
+
+        def write(self, _payload: dict[str, object]) -> None:
+            raise RuntimeError("ALERT_RUNTIME_STATUS_WRITE_FAILED")
+
+    _seed_rule(session, "subing_entry_signal_v1")
+    _seed_market_facts(session)
+    harness = _runtime(
+        session,
+        runtime_status_store=FailingStatusStore(),
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="^ALERT_RUNTIME_STATUS_WRITE_FAILED$",
+    ):
+        harness.runtime.process_message("live:bar:jm:5m", _payload())
+
+    assert len(_event_rows(session)) == 1
+
+
+@pytest.mark.parametrize(
+    (
+        "failure_stage",
+        "taxonomy",
+        "sender_error",
+        "expected_sender_calls",
+    ),
+    (
+        ("preparation_failure", {}, None, 0),
+        ("transport_attempt", None, None, 0),
+        (
+            "transport_failure",
+            None,
+            RuntimeError("private transport detail"),
+            1,
+        ),
+        ("provider_acceptance", None, None, 1),
+    ),
+)
+def test_runtime_status_write_failure_escapes_each_notification_boundary(
+    session: Session,
+    failure_stage: str,
+    taxonomy: dict[str, ProductTaxonomyEntry] | None,
+    sender_error: Exception | None,
+    expected_sender_calls: int,
+) -> None:
+    from app.alerts.runtime import empty_alert_runtime_status
+
+    class BoundaryFailingStatusStore:
+        def __init__(self) -> None:
+            self.status = empty_alert_runtime_status()
+
+        def read(self) -> dict[str, object]:
+            return self.status
+
+        def write(self, payload: dict[str, object]) -> None:
+            if self._matches_failure_stage(payload):
+                raise RuntimeError("ALERT_RUNTIME_STATUS_WRITE_FAILED")
+            self.status = dict(payload)
+
+        def _matches_failure_stage(self, payload: dict[str, object]) -> bool:
+            if failure_stage == "preparation_failure":
+                return (
+                    payload["notification_error_type"]
+                    == "notification_preparation_failed"
+                    and payload["last_transport_attempt_at"] is None
+                )
+            if failure_stage == "transport_attempt":
+                return (
+                    payload["last_transport_attempt_at"] is not None
+                    and payload["last_provider_accepted_at"] is None
+                    and payload["last_notification_failure_at"] is None
+                )
+            if failure_stage == "transport_failure":
+                return (
+                    payload["last_transport_attempt_at"] is not None
+                    and payload["notification_error_type"]
+                    == "notification_transport_failed"
+                )
+            return payload["last_provider_accepted_at"] is not None
+
+    _seed_rule(session, "subing_entry_signal_v1")
+    _seed_market_facts(session)
+    harness = _runtime(
+        session,
+        taxonomy=taxonomy,
+        sender_error=sender_error,
+        runtime_status_store=BoundaryFailingStatusStore(),
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="^ALERT_RUNTIME_STATUS_WRITE_FAILED$",
+    ):
+        harness.runtime.process_message("live:bar:jm:5m", _payload())
+
+    assert len(_event_rows(session)) == 1
+    assert len(harness.sender.messages) == expected_sender_calls
+
+
+def test_runtime_status_records_processing_event_and_provider_acceptance(
+    session: Session,
+) -> None:
+    from app.alerts.composition import RedisAlertRuntimeStatusStore
+
+    _seed_rule(session, "subing_entry_signal_v1")
+    _seed_market_facts(session)
+    redis = RuntimeStatusRedis()
+    harness = _runtime(
+        session,
+        runtime_status_store=RedisAlertRuntimeStatusStore(redis),
+    )
+
+    harness.runtime.process_message("live:bar:jm:5m", _payload())
+
+    status = json.loads(redis.values["alert:runtime-status"])
+    observed_at = (ORDINARY_END + timedelta(seconds=2)).isoformat()
+    assert status == {
+        "schema_version": 1,
+        "last_processed_bar_at": ORDINARY_END.isoformat(),
+        "last_processing_success_at": observed_at,
+        "last_processing_failure_at": None,
+        "processing_error_type": None,
+        "last_event_at": observed_at,
+        "last_transport_attempt_at": observed_at,
+        "last_provider_accepted_at": observed_at,
+        "last_notification_failure_at": None,
+        "notification_error_type": None,
+        "consecutive_notification_failures": 0,
+    }
+    assert "private-provider-reference" not in redis.values["alert:runtime-status"]
+
+
+def test_missing_taxonomy_records_preparation_failure_without_transport_attempt(
+    session: Session,
+) -> None:
+    from app.alerts.composition import RedisAlertRuntimeStatusStore
+
+    _seed_rule(session, "subing_entry_signal_v1")
+    _seed_market_facts(session)
+    redis = RuntimeStatusRedis()
+    harness = _runtime(
+        session,
+        taxonomy={},
+        runtime_status_store=RedisAlertRuntimeStatusStore(redis),
+    )
+
+    harness.runtime.process_message("live:bar:jm:5m", _payload())
+
+    event = _event_rows(session)[0]
+    observed_at = ORDINARY_END + timedelta(seconds=2)
+    assert event.notification_attempted_at == observed_at.replace(tzinfo=None)
+    status = json.loads(redis.values["alert:runtime-status"])
+    assert status["last_event_at"] == observed_at.isoformat()
+    assert status["last_transport_attempt_at"] is None
+    assert status["last_provider_accepted_at"] is None
+    assert status["last_notification_failure_at"] == observed_at.isoformat()
+    assert status["notification_error_type"] == "notification_preparation_failed"
+    assert status["consecutive_notification_failures"] == 1
+
+
+def test_transport_failure_is_persisted_after_real_attempt(
+    session: Session,
+) -> None:
+    from app.alerts.composition import RedisAlertRuntimeStatusStore
+
+    _seed_rule(session, "subing_entry_signal_v1")
+    _seed_market_facts(session)
+    redis = RuntimeStatusRedis()
+    harness = _runtime(
+        session,
+        sender_error=RuntimeError("private provider failure"),
+        runtime_status_store=RedisAlertRuntimeStatusStore(redis),
+    )
+
+    harness.runtime.process_message("live:bar:jm:5m", _payload())
+
+    observed_at = (ORDINARY_END + timedelta(seconds=2)).isoformat()
+    status = json.loads(redis.values["alert:runtime-status"])
+    assert status["last_transport_attempt_at"] == observed_at
+    assert status["last_provider_accepted_at"] is None
+    assert status["last_notification_failure_at"] == observed_at
+    assert status["notification_error_type"] == "notification_transport_failed"
+    assert status["consecutive_notification_failures"] == 1
+    assert "private provider failure" not in redis.values["alert:runtime-status"]
+
+
+def test_missing_provider_acceptance_is_a_notification_failure(
+    session: Session,
+) -> None:
+    from app.alerts.composition import RedisAlertRuntimeStatusStore
+
+    _seed_rule(session, "subing_entry_signal_v1")
+    _seed_market_facts(session)
+    redis = RuntimeStatusRedis()
+    harness = _runtime(
+        session,
+        sender_acceptance=None,
+        runtime_status_store=RedisAlertRuntimeStatusStore(redis),
+    )
+
+    harness.runtime.process_message("live:bar:jm:5m", _payload())
+
+    status = json.loads(redis.values["alert:runtime-status"])
+    observed_at = (ORDINARY_END + timedelta(seconds=2)).isoformat()
+    assert status["last_transport_attempt_at"] == observed_at
+    assert status["last_provider_accepted_at"] is None
+    assert status["last_notification_failure_at"] == observed_at
+    assert status["notification_error_type"] == "notification_acceptance_invalid"
+
+
+def test_next_provider_acceptance_clears_notification_failure_state(
+    session: Session,
+) -> None:
+    from app.alerts.composition import RedisAlertRuntimeStatusStore
+
+    _seed_rule(session, "subing_entry_signal_v1")
+    _seed_market_facts(session)
+    redis = RuntimeStatusRedis(
+        _runtime_status_payload(
+            last_transport_attempt_at="2026-08-13T01:00:00+00:00",
+            last_provider_accepted_at="2026-08-13T01:00:00+00:00",
+            last_notification_failure_at="2026-08-13T01:01:00+00:00",
+            notification_error_type="notification_transport_failed",
+            consecutive_notification_failures=2,
+        )
+    )
+    harness = _runtime(
+        session,
+        runtime_status_store=RedisAlertRuntimeStatusStore(redis),
+    )
+
+    harness.runtime.process_message("live:bar:jm:5m", _payload())
+
+    status = json.loads(redis.values["alert:runtime-status"])
+    assert status["last_provider_accepted_at"] == (
+        ORDINARY_END + timedelta(seconds=2)
+    ).isoformat()
+    assert status["last_notification_failure_at"] is None
+    assert status["notification_error_type"] is None
+    assert status["consecutive_notification_failures"] == 0
+
+
+def test_processing_failure_after_success_persists_latest_failure(
+    session: Session,
+) -> None:
+    from app.alerts.composition import RedisAlertRuntimeStatusStore
+
+    _seed_rule(session, "htdy_original_15m")
+    redis = RuntimeStatusRedis(
+        _runtime_status_payload(
+            last_processed_bar_at="2026-08-13T01:00:00+00:00",
+            last_processing_success_at="2026-08-13T01:00:02+00:00",
+        )
+    )
+    harness = _runtime(
+        session,
+        event_end=BOUNDARY_END,
+        htdy_error=RuntimeError("private processing detail"),
+        runtime_status_store=RedisAlertRuntimeStatusStore(redis),
+    )
+
+    harness.runtime.process_message(
+        "live:bar:jm:15m",
+        _payload(bar_end=BOUNDARY_END),
+    )
+
+    observed_at = (BOUNDARY_END + timedelta(seconds=2)).isoformat()
+    status = json.loads(redis.values["alert:runtime-status"])
+    assert status["last_processed_bar_at"] == BOUNDARY_END.isoformat()
+    assert status["last_processing_success_at"] == "2026-08-13T01:00:02+00:00"
+    assert status["last_processing_failure_at"] == observed_at
+    assert status["processing_error_type"] == "processing_failed"
+    assert "private processing detail" not in redis.values["alert:runtime-status"]
+
+
+def test_fatal_session_failure_never_sends_queued_notification(
+    session: Session,
+) -> None:
+    from app.alerts.composition import RedisAlertRuntimeStatusStore
+
+    class FailingSessionContext:
+        def __enter__(self) -> Session:
+            return session
+
+        def __exit__(self, *_args: object) -> None:
+            raise RuntimeError("private database exit detail")
+
+    _seed_rule(session, "subing_entry_signal_v1")
+    _seed_market_facts(session)
+    redis = RuntimeStatusRedis()
+    harness = _runtime(
+        session,
+        runtime_status_store=RedisAlertRuntimeStatusStore(redis),
+    )
+    harness.runtime._session_factory = FailingSessionContext
+
+    harness.runtime.process_message("live:bar:jm:5m", _payload())
+
+    assert len(_event_rows(session)) == 1
+    assert harness.sender.messages == []
+    status = json.loads(redis.values["alert:runtime-status"])
+    assert status["last_processing_failure_at"] == (
+        ORDINARY_END + timedelta(seconds=2)
+    ).isoformat()
+    assert status["processing_error_type"] == "processing_failed"
+    assert status["last_transport_attempt_at"] is None
+    assert "private database exit detail" not in redis.values[
+        "alert:runtime-status"
+    ]
 
 
 def test_run_forever_uses_single_transport_and_fixed_heartbeat_contract(

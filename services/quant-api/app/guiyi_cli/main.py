@@ -82,7 +82,7 @@ from app.runtime_entry import run_after_market, run_alert, run_live
 
 SessionFactory = Callable[[], AbstractContextManager[Any]]
 ManagerFactory = Callable[[Any], HistoricalDataManager]
-AfterMarketFactory = Callable[[HistoricalDataManager], Any]
+AfterMarketFactory = Callable[..., Any]
 LiveServiceFactory = Callable[[Any], Any]
 AlertRuntimeFactory = Callable[[], Any]
 AlertCanarySenderFactory = Callable[[], Any]
@@ -235,6 +235,7 @@ def main(
                 after_market_factory,
                 execution_review_roll_marker_state,
                 roll_reconciler_factory,
+                stderr,
             )
         elif args.domain == "research":
             assert research_request is not None
@@ -399,6 +400,7 @@ def _run_data(
     after_market_factory: AfterMarketFactory,
     execution_review_roll_marker_state: RollMarkerState,
     roll_reconciler_factory: RollReconcilerFactory,
+    stderr: TextIO,
 ) -> dict[str, object]:
     """在 DB 会话内执行 data 子命令并返回 as_payload 字典。"""
     if args.data_command == "member-rank":
@@ -410,12 +412,13 @@ def _run_data(
             session_factory=session_factory,
             manager_factory=manager_factory,
             after_market_factory=after_market_factory,
+            failure_notification=False,
             roll_marker_state=execution_review_roll_marker_state,
             roll_reconciler_factory=roll_reconciler_factory,
         )
     with session_factory() as session:
         manager = manager_factory(session)
-        return run_data_command(args, manager).as_payload()
+        return run_data_command(args, manager, progress_stream=stderr).as_payload()
 
 
 def entrypoint() -> None:

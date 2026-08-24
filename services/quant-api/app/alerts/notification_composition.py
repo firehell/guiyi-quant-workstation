@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from app.alerts.notification import AlertNotificationDispatcher
+from app.alerts.notification import AlertNotificationDispatcher, NotificationTransport
 from app.alerts.notification_config import (
     NOTIFICATION_CONFIG_ENV,
     NotificationConfig,
@@ -24,14 +24,23 @@ def build_notification_sender_from_env(
     *,
     client: PushPlusClientProtocol | None = None,
 ) -> AlertNotificationDispatcher:
+    return AlertNotificationDispatcher(
+        build_notification_transport_from_env(client=client)
+    )
+
+
+def build_notification_transport_from_env(
+    *,
+    client: PushPlusClientProtocol | None = None,
+) -> NotificationTransport:
+    """Build the single PushPlus transport for Alert and owner-only operations."""
     config = _load_from_env()
     if config.transport != PUSHPLUS_TRANSPORT:
         raise NotificationConfigError()
-    transport = PushPlusTransport.from_config(
+    return PushPlusTransport.from_config(
         config.transport_config,
         client=client,
     )
-    return AlertNotificationDispatcher(transport)
 
 
 def notification_transport_status_from_env() -> dict[str, object]:

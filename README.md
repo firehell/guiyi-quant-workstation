@@ -1,6 +1,6 @@
 # 归一量化工作站
 
-本地、单用户的国内期货量化研究工作站。本代码版本为 `v1.8.0`；正式 release、production Runtime、
+本地、单用户的国内期货量化研究工作站。本代码版本为 `v1.8.1`；正式 release、production Runtime、
 数据库 migration 与 Alert Scope 的实际状态只以 `STATUS.md` 为准。当前可执行代码面包括 Market Web、
 Canonical 历史行情、Market API、data CLI、Runtime 只读状态、Alert V2、当前交易日 Formal Signal、
 Product 双 Rule Scope/今日记录、Execution Review V1，以及苏冰 Factor/Calibration/Signal 研究观察。项目不实现自动交易或
