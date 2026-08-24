@@ -60,6 +60,11 @@ Review 的四张表都是独立 Application Domain，不属于 Market Catalog，
 
 该授权不覆盖 main/tag/release、其他生产 DB/数据变更、Runtime 版本切换、真实外部通知渠道或任何订单；`auto_order=false` 始终不变。没有上述明确启用请求时，render-only、健康读取和测试不构成启用授权。
 
+盘后 Runtime 的状态文件和只读 health 只是运行观察，不是 scheduler、monitor 或自动处置面；精确
+schema、预期交易日和超时语义见 `docs/DATA_CENTER.md`。只有受监督的自然盘后执行业务失败才可向
+owner 发起最多一次 PushPlus 请求；该运维通知不属于 Alert Rule/Application Domain，不用 Topic、
+`AlertEvent` 或 DB，不 retry/fallback。`missed/stuck` 只进入 health，不发送通知。
+
 ### Alert Runtime V2 的独立受限持续授权
 
 Alert 代码与 launchd 模板默认关闭。develop 的唯一 active 通知设计为 `pushplus`：
@@ -82,6 +87,11 @@ PushPlus SDK。无逐收件人 DB 状态、retry、queue、replay、backfill、f
 始终由 operator 在 PushPlus 页面人工核对且不得超过 owner + 三位朋友；成员变化不修改代码，也不扩大
 Rule、Scope、audience 或 transport 授权。当前 production、Runtime、Scope 与待完成 Gate 只看 `STATUS.md`，
 不得由本节、历史 canary、已有配置或既有 release 推断。
+
+Alert 运行观察只写无 TTL 的 Redis `alert:runtime-status` schema v1；missing 只表示
+`unobserved`。状态只允许固定公开失败分类，不保存 provider reference；状态写入失败必须
+fail-closed 使受监督进程退出/重启。该 Redis observation 不改变 `AlertEvent`、DB schema 或
+`notification_attempted_at` 的既有语义，provider accepted 也始终不等于微信送达。
 
 ## 工程与业务硬规则
 

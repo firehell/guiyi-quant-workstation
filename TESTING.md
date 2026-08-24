@@ -773,6 +773,16 @@ GUIYI_ISOLATED_MIGRATION_DATABASE_URL='<isolated-postgresql-url>' UV_CACHE_DIR=/
 PYTHONPATH=services/quant-api:packages/quant-core UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache uv run --offline --project services/quant-api pytest -q services/quant-api/tests/data_foundation/test_cli.py services/quant-api/tests/data_foundation
 ```
 
+## No-Watch Reliability V1 candidate
+
+以下定向命令覆盖 canonical consistency、Alert observation、盘后状态/health 与 audit progress。完整收口
+还须继续运行本文现有的“后端基线与拆分目录”、“Ruff 与 Mypy”、“Web”和“OpenSpec”命令；
+这些命令只形成代码/测试证据，不代替自然 Runtime 或真实通知/data audit 验收。
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache uv run --offline --project services/quant-api pytest -q tests/engineering/test_canonical_consistency.py services/quant-api/tests/test_alert_runtime.py services/quant-api/tests/test_alert_service.py services/quant-api/tests/test_runtime_health.py services/quant-api/tests/data_foundation/test_after_market.py services/quant-api/tests/data_foundation/test_cli.py
+```
+
 ## Ruff 与 Mypy
 
 ```bash

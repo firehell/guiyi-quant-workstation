@@ -1,6 +1,6 @@
 # 架构决策记录
 
-更新时间：2026-08-23
+更新时间：2026-08-24
 
 本文件只记录长期决策、理由与不可破坏边界。版本、部署、evidence 和 Gate 状态只看 `STATUS.md`；
 exact protocol/window/hash/count 只看 policy、report 与测试；历史过程只从 Git history 追溯。
@@ -18,17 +18,21 @@ exact protocol/window/hash/count 只看 policy、report 与测试；历史过程
 | Market Catalog | Data Foundation 精确保留八表；明确设计的应用事实进入独立 Application Domain | 防止 Catalog 变成重型仓库；Alert/Execution Review 表不得冒充 Market 表 |
 | Historical 查询 | `MarketDataService` 是唯一入口 | consumer 不得 glob、自选 active、自判主力或绕过 coverage/quality |
 | Live | Redis Live 永远只是 Observation | 未确认或盘中事实不得提升为 Canonical，也不得替代 Historical evidence |
+| Runtime 观察 | 复用现有 Redis heartbeat/status 与盘后状态文件，由唯一只读 health DTO 对外投影 | 不建第二套 monitor/scheduler/DB；missing 是 unobserved，无效状态 fail-closed，health 不发送通知或改变 Runtime |
 | 研究读模型 | 派生市场事实按需计算，不为可复算事实新增 Catalog 表或第二套 resolver | 保持模块深而少；Research 只能向 Historical gateway 依赖，Runtime/Market/Alert 不反向依赖离线 Research |
 | Research 因果性 | segment、contract、trading-day、strict-before 与 event evidence-bar 是硬边界 | 任一身份不完整即 fail-closed；未来 Bar、跨换月 memory 和 same-bar 回标都会污染复算 |
 | Candidate/OOS | source-specific retrospective、embargo、prospective OOS 分离 | 不建立伪 common window，不用 retrospective 回填 OOS；evidence 不自动形成 rank、winner、promotion、盈利或可交易结论 |
 | Candidate convergence | dossier 只组装冻结事实；comparability 不等于 relationship；dependency/overlap 不外推 | 避免把不同 timeframe、event unit 与 outcome 语义强行统一；exact count/window 留在 protocol/report/tests |
 | 主力照妖镜 | active observation 与 sequence forensic 分层；forensic 只使用预定义全局 profile | 不按品种调参、不选 best profile；没有真实 read-only evidence Gate 就不冻结正式 Phase |
 | RQAlpha 研究工作台 | 只作为 loopback local app + 外部 Bundle/artifact 的 research-only 工具，不挂载主 API、不进入正式事实链 | 可用 Web 解决本机 RQAlpha 配置/执行/观察，同时避免暴露远程进程启动面；不恢复旧 backtest worker/DB，不替代未来 Canonical/MarketDataService + Candidate/OOS 正式验证体系；仓库验证不授权 sidecar 加载、真实 smoke、release 或 Runtime |
-| Alert | Event 先提交，通知最多一次；两条 Rule 复用既有 evaluator/read model | 保留故障隔离与因果 cutoff；无 retry/replay/backfill/outbox/queue/逐人状态或订单路径 |
+| Alert | Event 先提交，通知最多一次；两条 Rule 复用既有 evaluator/read model；无 TTL Redis schema v1 只记录 processing/notification observation | 保留故障隔离与因果 cutoff；missing 不得冒充成功，状态写失败即进程 fail-closed，不保存 provider reference；无 retry/replay/backfill/outbox/queue/逐人状态或订单路径，Event/DB 语义不变 |
+| 盘后可观察性 | 状态文件使用 schema v2 并兼容读 v1，自然运行开始即原子写 `current_run`；health 依 operational exchanges 的 `TradingCalendar` 判断预期日与超时 | 18:20 预期边界和 2h stuck 边界必须可检查；日历/跨交易所事实不可用时 fail-closed，不增独立 monitor |
+| 盘后运维通知 | 只对受监督自然盘后 execution failure 向 owner 发起最多一次 PushPlus 请求 | 与 Alert Rule/Application Domain 分离，不用 Topic/Event/DB/retry/fallback；provider accepted 不等于送达，missed/stuck 只是 health |
 | Execution Review | 只从 eligible immutable Event 记录人工 Decision、Execution、Episode 与 Review | 不恢复旧 Review Center、不连接账户、不自动反手；Historical reconstruction 只经 `MarketDataService` |
 | Execution Review roll | roll reconcile 默认关闭；request-scoped composition 每请求读取一次 Gate 后注入 callback | missing/`disabled`/`invalid` 注入 fail-closed callback，只有 `enabled` 注入真实 reconciler；`record_executed` 不重复读取 marker |
 | Multiplier | 使用 trusted-partial 官方 evidence，Episode 创建时 snapshot | completeness 不阻断工作流；缺失只令人民币估算 unavailable，reference 扩大不改写历史 |
-| Web B1 | 首页“优先检查”只投影后端 Trend Focus 当前只读快照，详情页仍按“当前检查栏”验证 | completed-bar 与 current physical-contract 规则留在 Market read model；Web 不自行选品，不建立持久化 Opportunity domain、综合分或推荐；`degraded` fail-closed，正式 Event/研究观察/Research-only 分层 |
+| Web B1 | 首页“优先检查”只投影后端 Trend Focus 当前只读快照，同页 Runtime strip 只投影唯一完整 health DTO，详情页仍按“当前检查栏”验证 | completed-bar 与 current physical-contract 规则留在 Market read model；Web 不自行选品，不建立持久化 Opportunity domain、综合分或推荐；四源刷新用 generation guard，Runtime 失败保留上次成功快照并标 stale；正式 Event/研究观察/Research-only 分层 |
+| Audit 进度 | `data audit --progress` 只向 stderr 输出 per-product compact NDJSON，默认 stdout 合同不变 | audit 仍是 provider-free 只读；进度输出首次失败后只禁用 observer，不改变审计结果或异常 |
 | Runtime 入口 | `guiyi` 是用户 CLI，`app.runtime_entry` 只服务受监督进程 | 避免第二套业务入口；手工进程调用不能冒充自然 Runtime evidence |
 | 工程验证 | `TESTING.md` 只保留项目原生命令；工程脚本只保留无依赖 secret scan；用户明确批准且绑定具体 Spec 的正式 design / implementation plan 可保存在 `docs/superpowers/specs/` 与 `docs/superpowers/plans/` | 不维护自验证治理框架、重复流程文档、active task/plan 目录或可选 CI 双轨；该狭窄例外只提供可审阅的设计合同，不构成 workflow、当前状态或外部操作授权 |
 | 运维拓扑 | Mac launchd → FRPC → FRPS/Nginx 是唯一 active 链 | 本地/隧道/公网分段只读检查；不保留并行 PID 管理器或远端应用副本 |

@@ -87,6 +87,22 @@
   `docs/superpowers/specs/` 与 `docs/superpowers/plans/`；实施暂停在 No-Watch Reliability V1
   可靠性层之后，不得提前记录其 Tasks 2–5 为完成。
 
+## No-Watch Reliability V1 develop candidate
+
+- feature branch candidate 已达到 `CODE_COMPLETE / TEST_COMPLETE`：Alert 已有无 TTL Redis schema v1
+  processing/notification observation；盘后已有 schema v2 crash-visible `current_run`、18:20 expected-day
+  与 2h stuck health；Market 首页已有唯一完整 DTO 的 Runtime strip；data audit 已有默认
+  stdout 兼容的可选 stderr NDJSON progress。各任务已完成定向测试和独立 review。
+- 盘后 owner PushPlus 只针对受监督自然 execution failure、最多一次且无 retry；它与
+  Alert Rule/Application Domain 分离，不用 Topic、`AlertEvent` 或 DB。missed/stuck 只是 health，
+  provider accepted 不等于送达。
+- 本 feature branch 的最终 Standards/plan-compliance review、完整验证、develop 合并/push 与
+  remote SHA 读回仍由本次 controller 完成，本状态不提前声称已集成。只有 develop 集成确认后，
+  Stage 2 四系统工程实施才可恢复；本任务不启动 Stage 2。
+- 当前正式 release 和 production Runtime 仍是上文 v1.8.0；No-Watch 未 release、未 Runtime switch，
+  且未执行真实 PushPlus、自然 HTDY/SuBing/after-market 新验收、真实 data audit、RQData、
+  Canonical/production DB/Redis 写入或 migration。
+
 ## 当前 research evidence
 
 - SuBing、N Structure 与三条 JDJ Candidate 的 retrospective baseline 已冻结；各自 prospective OOS
@@ -145,6 +161,8 @@ Exact 命令见 `TESTING.md`。该协议只定义未来 read-only Gate，不构�
 
 ## 待完成 Gate
 
+- No-Watch Reliability V1 的 branch final review/full verification/develop integration 与 remote SHA 读回待本次
+  controller 完成；其 release 和 Runtime switch 仍是独立人工 Gate。
 - MFM 60m sequence forensic 的真实 JM + active60 Historical read-only evidence Gate `pending`；本次不
   运行、不生成临时 evidence、不输出 Phase Gate 结论。
 - MFM Diagnostic Phase A 的真实 JM named view + frozen active60 Historical read-only diagnostic
@@ -165,5 +183,5 @@ Exact 命令见 `TESTING.md`。该协议只定义未来 read-only Gate，不构�
   `docs/ARCHITECTURE.md`；命令看 `TESTING.md`。
 - 已完成 spec/plan/task 与逐次 release/promotion 流水只从 Git history、`CHANGELOG.md`、tag 和 commit
   追溯，不作为 active surface。
-- 最小下一步：完成 No-Watch Reliability V1；不启动 Runtime、不发送通知、不执行数据写入。四系统观察
-  实施继续暂停在该可靠性层之后。
+- 最小下一步：完成 No-Watch branch final review/full verification 并集成、push/readback `develop`；
+  读回确认后四系统 Stage 2 工程实施可恢复，但本次不启动 Runtime、不发送通知、不执行数据写入。
