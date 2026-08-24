@@ -22,6 +22,17 @@
   验收均为 `passed`；ECS FRPS/Nginx 与公网 HTTPS 本轮没有可用执行入口，且 `PUBLIC_BASE_URL` 未配置，
   因此保持 `not verified`，不得由本机或 tunnel 读回推导为公网验收通过。
 
+## v1.8.1 release candidate
+
+- `develop` 已冻结 v1.8.1 版本面：API、Web、`uv.lock` 与一致性测试均为 `1.8.1`；本候选包含 JDJ
+  active60 Historical reference replay、No-Watch Reliability V1、SuBing Daily Watch V1 及其 5 个
+  Important 窄修复。
+- 发布范围仅为现有 API、Web、Live、after-market 与 Alert 五个 launchd label；不加载 RQAlpha sidecar，
+  不运行手工 after-market、真实通知、migration、Canonical/production DB/Redis 写入，也不改变 Alert
+  Scope/transport 或 Execution Review roll，`auto_order=false` 不变。
+- 本节仅记录 release candidate；在 main merge、annotated tag 远端读回、精确 tag Runtime switch 与主机
+  健康读回完成前，正式 release 和 production Runtime 仍为上文 `v1.8.0`。
+
 ## v1.8.0 release closeout
 
 - release preparation commit `91246004cb4c2c8d72cf8729edca8a99b3e6982b` 已合入 `develop`；main release
