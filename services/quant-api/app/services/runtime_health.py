@@ -242,7 +242,9 @@ def _collect_alert_health(
             "error_type": "alert_unavailable",
         }
     try:
-        runtime_status = _json_mapping(connection.get("alert:runtime-status"))
+        runtime_status = _runtime_status_mapping(
+            connection.get("alert:runtime-status")
+        )
         if runtime_status is not None:
             runtime_status = validate_alert_runtime_status(runtime_status)
     except Exception:  # noqa: BLE001 - public health stays sanitized
@@ -521,6 +523,15 @@ def _json_mapping(value: object) -> Mapping[str, Any] | None:
     except (TypeError, ValueError):
         return None
     return payload if isinstance(payload, Mapping) else None
+
+
+def _runtime_status_mapping(value: object) -> Mapping[str, Any] | None:
+    if value is None:
+        return None
+    payload = _json_mapping(value)
+    if payload is None:
+        raise ValueError("alert runtime status invalid")
+    return payload
 
 
 def _required_timestamp(value: object) -> datetime:

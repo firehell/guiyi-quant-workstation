@@ -1371,6 +1371,35 @@ def test_redis_runtime_status_store_rejects_failed_set() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    "error_field",
+    ("processing_error_type", "notification_error_type"),
+)
+def test_redis_runtime_status_store_rejects_nonpublic_error_token(
+    error_field: str,
+) -> None:
+    from app.alerts.composition import RedisAlertRuntimeStatusStore
+
+    class RecordingRedis:
+        def __init__(self) -> None:
+            self.values: dict[str, str] = {}
+
+        def set(self, key: str, value: str) -> bool:
+            self.values[key] = value
+            return True
+
+    redis = RecordingRedis()
+
+    with pytest.raises(ValueError, match="^ALERT_RUNTIME_STATUS_INVALID$"):
+        RedisAlertRuntimeStatusStore(redis).write(
+            _runtime_status_payload(
+                **{error_field: "token=must-not-leak"}
+            )
+        )
+
+    assert redis.values == {}
+
+
 def test_runtime_status_write_failure_escapes_processing_boundary(
     session: Session,
 ) -> None:
@@ -1397,6 +1426,85 @@ def test_runtime_status_write_failure_escapes_processing_boundary(
         harness.runtime.process_message("live:bar:jm:5m", _payload())
 
     assert len(_event_rows(session)) == 1
+
+
+@pytest.mark.parametrize(
+    (
+        "failure_stage",
+        "taxonomy",
+        "sender_error",
+        "expected_sender_calls",
+    ),
+    (
+        ("preparation_failure", {}, None, 0),
+        ("transport_attempt", None, None, 0),
+        (
+            "transport_failure",
+            None,
+            RuntimeError("private transport detail"),
+            1,
+        ),
+        ("provider_acceptance", None, None, 1),
+    ),
+)
+def test_runtime_status_write_failure_escapes_each_notification_boundary(
+    session: Session,
+    failure_stage: str,
+    taxonomy: dict[str, ProductTaxonomyEntry] | None,
+    sender_error: Exception | None,
+    expected_sender_calls: int,
+) -> None:
+    from app.alerts.runtime import empty_alert_runtime_status
+
+    class BoundaryFailingStatusStore:
+        def __init__(self) -> None:
+            self.status = empty_alert_runtime_status()
+
+        def read(self) -> dict[str, object]:
+            return self.status
+
+        def write(self, payload: dict[str, object]) -> None:
+            if self._matches_failure_stage(payload):
+                raise RuntimeError("ALERT_RUNTIME_STATUS_WRITE_FAILED")
+            self.status = dict(payload)
+
+        def _matches_failure_stage(self, payload: dict[str, object]) -> bool:
+            if failure_stage == "preparation_failure":
+                return (
+                    payload["notification_error_type"]
+                    == "ALERT_PRODUCT_NAME_UNAVAILABLE"
+                    and payload["last_transport_attempt_at"] is None
+                )
+            if failure_stage == "transport_attempt":
+                return (
+                    payload["last_transport_attempt_at"] is not None
+                    and payload["last_provider_accepted_at"] is None
+                    and payload["last_notification_failure_at"] is None
+                )
+            if failure_stage == "transport_failure":
+                return (
+                    payload["last_transport_attempt_at"] is not None
+                    and payload["notification_error_type"] == "RuntimeError"
+                )
+            return payload["last_provider_accepted_at"] is not None
+
+    _seed_rule(session, "subing_entry_signal_v1")
+    _seed_market_facts(session)
+    harness = _runtime(
+        session,
+        taxonomy=taxonomy,
+        sender_error=sender_error,
+        runtime_status_store=BoundaryFailingStatusStore(),
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="^ALERT_RUNTIME_STATUS_WRITE_FAILED$",
+    ):
+        harness.runtime.process_message("live:bar:jm:5m", _payload())
+
+    assert len(_event_rows(session)) == 1
+    assert len(harness.sender.messages) == expected_sender_calls
 
 
 def test_runtime_status_records_processing_event_and_provider_acceptance(
@@ -1573,6 +1681,42 @@ def test_processing_failure_after_success_persists_latest_failure(
     assert status["last_processing_failure_at"] == observed_at
     assert status["processing_error_type"] == "RuntimeError"
     assert "private processing detail" not in redis.values["alert:runtime-status"]
+
+
+def test_fatal_session_failure_never_sends_queued_notification(
+    session: Session,
+) -> None:
+    from app.alerts.composition import RedisAlertRuntimeStatusStore
+
+    class FailingSessionContext:
+        def __enter__(self) -> Session:
+            return session
+
+        def __exit__(self, *_args: object) -> None:
+            raise RuntimeError("private database exit detail")
+
+    _seed_rule(session, "subing_entry_signal_v1")
+    _seed_market_facts(session)
+    redis = RuntimeStatusRedis()
+    harness = _runtime(
+        session,
+        runtime_status_store=RedisAlertRuntimeStatusStore(redis),
+    )
+    harness.runtime._session_factory = FailingSessionContext
+
+    harness.runtime.process_message("live:bar:jm:5m", _payload())
+
+    assert len(_event_rows(session)) == 1
+    assert harness.sender.messages == []
+    status = json.loads(redis.values["alert:runtime-status"])
+    assert status["last_processing_failure_at"] == (
+        ORDINARY_END + timedelta(seconds=2)
+    ).isoformat()
+    assert status["processing_error_type"] == "RuntimeError"
+    assert status["last_transport_attempt_at"] is None
+    assert "private database exit detail" not in redis.values[
+        "alert:runtime-status"
+    ]
 
 
 def test_run_forever_uses_single_transport_and_fixed_heartbeat_contract(

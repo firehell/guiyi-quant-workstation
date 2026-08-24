@@ -151,6 +151,7 @@ class AlertRuntime:
         event_count = 0
         notification_preparation_failures: list[str] = []
         processing_error_type: str | None = None
+        fatal_processing_failure = False
         try:
             with self._session_factory() as session:
                 try:
@@ -234,6 +235,7 @@ class AlertRuntime:
                         session.rollback()
         except Exception as exc:  # noqa: BLE001 - DB/session failure must not send
             processing_error_type = type(exc).__name__
+            fatal_processing_failure = True
             _LOGGER.warning("ALERT_PROCESSING_FAILED")
 
         if event_count:
@@ -255,7 +257,7 @@ class AlertRuntime:
                 last_processing_failure_at=_iso_timestamp(processing_now),
                 processing_error_type=processing_error_type,
             )
-            if not messages:
+            if fatal_processing_failure or not messages:
                 return
 
         for message in messages:
@@ -520,12 +522,22 @@ def validate_alert_runtime_status(
             normalized[field] = _iso_timestamp(datetime.fromisoformat(value))
     for field in ("processing_error_type", "notification_error_type"):
         value = payload[field]
-        if value is not None and (not isinstance(value, str) or not value.strip()):
+        if value is not None and not _is_public_error_type(value):
             raise ValueError("ALERT_RUNTIME_STATUS_INVALID")
     count = payload["consecutive_notification_failures"]
     if type(count) is not int or count < 0:
         raise ValueError("ALERT_RUNTIME_STATUS_INVALID")
     return normalized
+
+
+def _is_public_error_type(value: object) -> bool:
+    return (
+        isinstance(value, str)
+        and 1 <= len(value) <= 128
+        and value.isascii()
+        and value[0].isalpha()
+        and all(character.isalnum() or character == "_" for character in value)
+    )
 
 
 def _iso_timestamp(value: datetime) -> str:

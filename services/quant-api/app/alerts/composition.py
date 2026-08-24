@@ -72,9 +72,10 @@ class RedisAlertRuntimeStatusStore:
         return validate_alert_runtime_status(parsed)
 
     def write(self, payload: dict[str, object]) -> None:
+        normalized = validate_alert_runtime_status(payload)
         persisted = self._redis.set(
             "alert:runtime-status",
-            json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
+            json.dumps(normalized, ensure_ascii=False, separators=(",", ":")),
         )
         if persisted is not True:
             raise RuntimeError("ALERT_RUNTIME_STATUS_WRITE_FAILED")

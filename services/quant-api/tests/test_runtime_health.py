@@ -4,6 +4,7 @@ from datetime import UTC, datetime, timedelta
 import json
 
 from fastapi.testclient import TestClient
+import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -340,6 +341,116 @@ def test_alert_health_derives_latest_processing_and_notification_outcomes() -> N
     assert failed_alert["notification_error_type"] == "NotificationTransportError"
     assert failed_alert["consecutive_notification_failures"] == 2
     assert "provider_reference" not in json.dumps(failed_alert)
+
+
+@pytest.mark.parametrize(
+    "invalid_status",
+    ("not-json", json.dumps([]), 17),
+)
+def test_alert_health_distinguishes_missing_from_invalid_runtime_status(
+    invalid_status: object,
+) -> None:
+    now = datetime(2026, 8, 14, 2, 45, tzinfo=UTC)
+    heartbeat = json.dumps(
+        {
+            "generated_at": now.isoformat(),
+            "available": True,
+            "enabled_rule_count": 2,
+            "scope_product_count": 1,
+        }
+    )
+    TestingSessionLocal = _session_factory()
+
+    with TestingSessionLocal() as session:
+        missing = build_runtime_health(
+            session,
+            redis_factory=lambda: FakeRedis(
+                values={"alert:heartbeat": heartbeat}
+            ),
+            now=now,
+            live_runtime_enabled=False,
+            alert_runtime_enabled=True,
+            notification_transport_configured=True,
+            after_market_status_path=None,
+        )
+        invalid = build_runtime_health(
+            session,
+            redis_factory=lambda: FakeRedis(
+                values={
+                    "alert:heartbeat": heartbeat,
+                    "alert:runtime-status": invalid_status,
+                }
+            ),
+            now=now,
+            live_runtime_enabled=False,
+            alert_runtime_enabled=True,
+            notification_transport_configured=True,
+            after_market_status_path=None,
+        )
+
+    missing_alert = missing["components"]["alert"]
+    assert missing_alert["status"] == "ok"
+    assert missing_alert["processing_state"] == "unobserved"
+    assert missing_alert["notification_state"] == "unobserved"
+    invalid_alert = invalid["components"]["alert"]
+    assert invalid_alert["status"] == "degraded"
+    assert invalid_alert["error_type"] == "alert_runtime_status_invalid"
+    assert invalid_alert["processing_state"] == "unobserved"
+    assert invalid_alert["notification_state"] == "unobserved"
+
+
+@pytest.mark.parametrize(
+    "error_field",
+    ("processing_error_type", "notification_error_type"),
+)
+def test_alert_health_rejects_nonpublic_error_token_without_exposing_it(
+    error_field: str,
+) -> None:
+    now = datetime(2026, 8, 14, 2, 45, tzinfo=UTC)
+    heartbeat = json.dumps(
+        {
+            "generated_at": now.isoformat(),
+            "available": True,
+            "enabled_rule_count": 2,
+            "scope_product_count": 1,
+        }
+    )
+    runtime_status: dict[str, object] = {
+        "schema_version": 1,
+        "last_processed_bar_at": now.isoformat(),
+        "last_processing_success_at": None,
+        "last_processing_failure_at": now.isoformat(),
+        "processing_error_type": "RuntimeError",
+        "last_event_at": now.isoformat(),
+        "last_transport_attempt_at": now.isoformat(),
+        "last_provider_accepted_at": None,
+        "last_notification_failure_at": now.isoformat(),
+        "notification_error_type": "NotificationTransportError",
+        "consecutive_notification_failures": 1,
+    }
+    runtime_status[error_field] = "token=must-not-leak"
+    TestingSessionLocal = _session_factory()
+
+    with TestingSessionLocal() as session:
+        health = build_runtime_health(
+            session,
+            redis_factory=lambda: FakeRedis(
+                values={
+                    "alert:heartbeat": heartbeat,
+                    "alert:runtime-status": json.dumps(runtime_status),
+                }
+            ),
+            now=now,
+            live_runtime_enabled=False,
+            alert_runtime_enabled=True,
+            notification_transport_configured=True,
+            after_market_status_path=None,
+        )
+
+    alert = health["components"]["alert"]
+    assert alert["status"] == "degraded"
+    assert alert["error_type"] == "alert_runtime_status_invalid"
+    assert "must-not-leak" not in json.dumps(alert)
 
 
 def test_alert_health_structural_transport_is_ready_from_process_environment(
@@ -726,7 +837,7 @@ def test_runtime_health_never_exposes_arbitrary_exception_messages() -> None:
 
 
 class FakeRedis:
-    def __init__(self, exc: Exception | None = None, values: dict[str, str | bytes] | None = None) -> None:
+    def __init__(self, exc: Exception | None = None, values: dict[str, object] | None = None) -> None:
         self.exc = exc
         self.values = values or {}
 
@@ -735,7 +846,7 @@ class FakeRedis:
             raise self.exc
         return True
 
-    def get(self, key: str) -> str | bytes | None:
+    def get(self, key: str) -> object:
         return self.values.get(key)
 
 
