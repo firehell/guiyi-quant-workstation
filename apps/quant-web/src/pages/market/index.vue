@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { NAlert, NButton } from 'naive-ui'
 import MarketAttentionList from '@/components/market/MarketAttentionList.vue'
@@ -9,7 +9,9 @@ import MarketSummaryStrip from '@/components/market/MarketSummaryStrip.vue'
 import MarketFormalSignals from '@/components/market/MarketFormalSignals.vue'
 import MarketFocusList from '@/components/market/MarketFocusList.vue'
 import MarketRadarSkeleton from '@/components/market/MarketRadarSkeleton.vue'
+import MarketRuntimeStatus from '@/components/market/MarketRuntimeStatus.vue'
 import { getMarketRadar, getMarketTrendFocus } from '@/api/market'
+import { getRuntimeHealth } from '@/api/runtime'
 import { getEventStates } from '@/api/executionReview'
 import type { CurrentFormalSignalItem } from '@/api/alerts'
 import type { EventState } from '@/types/executionReview'
@@ -20,6 +22,7 @@ import type {
   MarketTrendFocusResponse,
 } from '@/types/market'
 import { useCurrentFormalSignals } from '@/composables/useCurrentFormalSignals'
+import { useLatestResource } from '@/composables/useLatestResource'
 import {
   loadMarketWorkspacePreferences,
   saveMarketWorkspacePreferences,
@@ -27,18 +30,28 @@ import {
 } from '@/utils/marketWorkspacePreferences'
 
 const router = useRouter()
-const loading = ref(false)
-const error = ref(false)
-const radar = ref<MarketRadarResponse | null>(null)
-const trendFocus = ref<MarketTrendFocusResponse | null>(null)
-const trendFocusError = ref(false)
 const {
   loading: formalLoading,
   status: formalStatus,
   tradingDay: formalTradingDay,
   items: formalItems,
   refresh: refreshFormalSignals,
+  invalidate: invalidateFormalSignals,
 } = useCurrentFormalSignals()
+const runtimeState = useLatestResource({ fetch: getRuntimeHealth })
+const radarState = useLatestResource<MarketRadarResponse>({ fetch: getMarketRadar })
+const trendFocusState = useLatestResource<MarketTrendFocusResponse>({ fetch: getMarketTrendFocus })
+const runtime = runtimeState.data
+const radar = radarState.data
+const trendFocus = trendFocusState.data
+const error = radarState.failed
+const trendFocusError = trendFocusState.failed
+const loading = computed(() => (
+  formalLoading.value
+  || runtimeState.loading.value
+  || radarState.loading.value
+  || trendFocusState.loading.value
+))
 const preferences = ref(loadMarketWorkspacePreferences())
 const formalEventStates = ref<Record<number, EventState>>({})
 let formalStateGeneration = 0
@@ -102,28 +115,35 @@ function toggleWatchlist(symbol: string) {
   saveMarketWorkspacePreferences(preferences.value)
 }
 
-async function refreshRadar() {
-  if (loading.value) return
-  loading.value = true
-  error.value = false
-  trendFocusError.value = false
-  try {
-    const [radarResult, trendFocusResult] = await Promise.allSettled([
-      getMarketRadar(),
-      getMarketTrendFocus(),
-    ])
-    if (radarResult.status === 'fulfilled') radar.value = radarResult.value
-    else error.value = true
-    if (trendFocusResult.status === 'fulfilled') trendFocus.value = trendFocusResult.value
-    else trendFocusError.value = true
-  } finally {
-    loading.value = false
-  }
+async function refreshAll() {
+  await Promise.all([
+    refreshFormalSignals(),
+    runtimeState.refresh(),
+    radarState.refresh(),
+    trendFocusState.refresh(),
+  ])
+}
+
+async function refreshVisibleOperationalState() {
+  await Promise.all([refreshFormalSignals(), runtimeState.refresh()])
+}
+
+function handleVisibilityChange() {
+  if (document.visibilityState === 'visible') void refreshVisibleOperationalState()
 }
 
 onMounted(() => {
-  void refreshFormalSignals()
-  void refreshRadar()
+  document.addEventListener('visibilitychange', handleVisibilityChange)
+  void refreshAll()
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
+  invalidateFormalSignals()
+  runtimeState.invalidate()
+  radarState.invalidate()
+  trendFocusState.invalidate()
+  formalStateGeneration += 1
 })
 </script>
 
@@ -131,8 +151,13 @@ onMounted(() => {
   <div class="market-radar-page">
     <header class="market-radar-page__intro">
       <div><h1>期货市场发现</h1><p>基于最近完整交易日的 Canonical 日线研究快照；所有内容仅供人工观察。</p></div>
-      <NButton secondary size="small" :loading="loading" :disabled="loading" @click="refreshRadar">刷新 Radar</NButton>
+      <NButton secondary size="small" :loading="loading" :disabled="loading" @click="refreshAll">全部刷新</NButton>
     </header>
+    <MarketRuntimeStatus
+      :snapshot="runtime"
+      :loading="runtimeState.loading.value"
+      :stale="runtimeState.failed.value && Boolean(runtime)"
+    />
     <MarketFormalSignals
       :loading="formalLoading"
       :status="formalStatus"
@@ -141,7 +166,7 @@ onMounted(() => {
       :event-states="formalEventStates"
       @open="openFormalSignal"
     />
-    <MarketRadarSkeleton v-if="loading && !radar" />
+    <MarketRadarSkeleton v-if="radarState.loading.value && !radar" />
     <template v-else>
       <div v-if="error" class="market-radar-page__error">
         <NAlert
@@ -150,11 +175,10 @@ onMounted(() => {
         >
           {{ radar ? '已保留上一份成功快照；重试前请以其时点为准。' : '无法读取只读 Radar；不影响 Product Workspace。' }}
         </NAlert>
-        <NButton size="small" :loading="loading" :disabled="loading" @click="refreshRadar">重试</NButton>
       </div>
       <MarketFocusList
         :snapshot="trendFocus"
-        :loading="loading && !trendFocus"
+        :loading="trendFocusState.loading.value && !trendFocus"
         :stale="trendFocusError && Boolean(trendFocus)"
         @open="openChart"
       />

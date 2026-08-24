@@ -14,22 +14,31 @@ export function useCurrentFormalSignals(dependencies: CurrentFormalSignalsDepend
     const { getCurrentFormalSignals } = await import('../api/alerts.ts')
     return getCurrentFormalSignals()
   })
+  let generation = 0
 
   async function refresh() {
+    const requestGeneration = ++generation
     loading.value = true
     try {
       const response = await fetchCurrent()
+      if (requestGeneration !== generation) return
       status.value = response.status
       tradingDay.value = response.trading_day
       items.value = response.items
     } catch {
+      if (requestGeneration !== generation) return
       status.value = 'unavailable'
       tradingDay.value = null
       items.value = []
     } finally {
-      loading.value = false
+      if (requestGeneration === generation) loading.value = false
     }
   }
 
-  return { loading, status, tradingDay, items, refresh }
+  function invalidate() {
+    generation += 1
+    loading.value = false
+  }
+
+  return { loading, status, tradingDay, items, refresh, invalidate }
 }

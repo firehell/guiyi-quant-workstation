@@ -86,6 +86,44 @@ function formalSignal() {
   }
 }
 
+function runtimeHealth(overrides = {}) {
+  return {
+    status: 'ok', generated_at: '2026-08-24T10:15:00+00:00', readonly: true,
+    would_start_services: false, would_enqueue_jobs: false, would_send_notifications: false,
+    components: {
+      db: { status: 'ok', latency_ms: 1.2, error_type: null, error_message: null },
+      redis: { status: 'ok', latency_ms: 0.8, error_type: null, error_message: null },
+      live_market: {
+        status: 'ok', configured_enabled: true, operational_count: 60, subscribed_count: 60,
+        last_heartbeat_at: '2026-08-24T10:14:58+00:00', last_bar_at: '2026-08-24T10:14:00+00:00',
+        phase_counts: { closed: 60 }, error_type: null, error_message: null,
+      },
+      alert: {
+        status: 'ok', configured_enabled: true,
+        notification: { transport: 'pushplus', configured: true, audience_count: 2, would_send: false },
+        last_heartbeat_at: '2026-08-24T10:14:57+00:00', enabled_rule_count: 2, scope_product_count: 60,
+        processing_state: 'unobserved', notification_state: 'provider_accepted', last_processed_bar_at: null,
+        last_processing_success_at: null, last_processing_failure_at: null, processing_error_type: null,
+        last_event_at: '2026-08-24T10:00:01+00:00', last_transport_attempt_at: '2026-08-24T10:00:02+00:00',
+        last_provider_accepted_at: '2026-08-24T10:00:02+00:00', last_notification_failure_at: null,
+        notification_error_type: null, consecutive_notification_failures: 0, error_type: null,
+      },
+      after_market: {
+        status: 'ok', configured_enabled: true, run_state: 'completed', expected_trading_day: '2026-08-24',
+        current_run: null,
+        last_run: {
+          trading_day: '2026-08-24', status: 'passed', attempts: 1,
+          started_at: '2026-08-24T10:05:00+00:00', finished_at: '2026-08-24T10:10:00+00:00',
+          products: ['jm'], error_code: null,
+          failure_notification: { attempted_at: '2026-08-24T10:10:01+00:00', state: 'provider_accepted', error_type: null },
+        },
+        last_successful_trading_day: '2026-08-24', last_failure: null, error_type: null, error_message: null,
+      },
+    },
+    ...overrides,
+  }
+}
+
 async function mockMarketHomepage(
   page,
   currentFormalResponse,
@@ -99,9 +137,79 @@ async function mockMarketHomepage(
       event_id: id, state: 'pending_decision', decision_id: null, episode_id: null,
     })) } })
   })
+  await page.route('**/api/runtime/health', (route) => route.fulfill({ json: runtimeHealth() }))
   await page.route('**/api/v1/market/research/radar', (route) => route.fulfill({ json: radarResponse }))
   await page.route('**/api/v1/market/research/trend-focus', (route) => route.fulfill({ json: trendFocusResponse }))
 }
+
+test('Market homepage shows compact Runtime facts without implying provider delivery', async ({ page }) => {
+  await mockMarketHomepage(page, { status: 'ready', trading_day: '2026-08-15', items: [] })
+  await page.goto('/market')
+
+  const strip = page.getByTestId('market-runtime-status')
+  await expect(strip).toContainText('整体正常')
+  await expect(strip).toContainText('Live 正常')
+  await expect(strip).toContainText('未获自然验证')
+  await expect(strip).toContainText('服务商已接受（不代表送达）')
+  await expect(strip).toContainText('已完成')
+  await expect(strip).toContainText('2026-08-24 18:14')
+  await expect(strip).not.toContainText('综合分')
+  await expect(strip).not.toContainText('交易建议')
+})
+
+test('Market homepage refreshes four sources manually and only Formal plus Runtime on visibility', async ({ page }) => {
+  const counts = { formal: 0, runtime: 0, radar: 0, trend: 0 }
+  await page.route('**/api/alerts/formal-signals/current', (route) => {
+    counts.formal += 1
+    return route.fulfill({ json: { status: 'ready', trading_day: '2026-08-15', items: [] } })
+  })
+  await page.route('**/api/runtime/health', (route) => {
+    counts.runtime += 1
+    return route.fulfill({ json: runtimeHealth() })
+  })
+  await page.route('**/api/v1/market/research/radar', (route) => {
+    counts.radar += 1
+    return route.fulfill({ json: radar() })
+  })
+  await page.route('**/api/v1/market/research/trend-focus', (route) => {
+    counts.trend += 1
+    return route.fulfill({ json: trendFocus() })
+  })
+
+  await page.goto('/market')
+  await expect.poll(() => ({ ...counts })).toEqual({ formal: 1, runtime: 1, radar: 1, trend: 1 })
+
+  await page.getByRole('button', { name: '全部刷新' }).click()
+  await expect.poll(() => ({ ...counts })).toEqual({ formal: 2, runtime: 2, radar: 2, trend: 2 })
+
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))
+  await expect.poll(() => ({ ...counts })).toEqual({ formal: 3, runtime: 3, radar: 2, trend: 2 })
+})
+
+test('Market homepage marks first Runtime failure unavailable and retains a stale successful snapshot', async ({ page }) => {
+  let runtimeAttempt = 0
+  await page.route('**/api/alerts/formal-signals/current', (route) => route.fulfill({
+    json: { status: 'ready', trading_day: '2026-08-15', items: [] },
+  }))
+  await page.route('**/api/runtime/health', (route) => {
+    runtimeAttempt += 1
+    if (runtimeAttempt === 2) return route.fulfill({ json: runtimeHealth() })
+    return route.fulfill({ status: 503 })
+  })
+  await page.route('**/api/v1/market/research/radar', (route) => route.fulfill({ json: radar() }))
+  await page.route('**/api/v1/market/research/trend-focus', (route) => route.fulfill({ json: trendFocus() }))
+
+  await page.goto('/market')
+  const strip = page.getByTestId('market-runtime-status')
+  await expect(strip).toContainText('Runtime 状态暂不可用')
+
+  await page.getByRole('button', { name: '全部刷新' }).click()
+  await expect(strip).toContainText('整体正常')
+
+  await page.getByRole('button', { name: '全部刷新' }).click()
+  await expect(strip).toContainText('状态已过期')
+  await expect(strip).toContainText('整体正常')
+})
 
 test('Trend Focus renders four backend groups, expands after three, and opens Product Workspace', async ({ page }) => {
   await mockMarketHomepage(
@@ -189,7 +297,7 @@ test('unified Radar refresh retains and labels the previous Trend Focus snapshot
   await page.goto('/market')
   await expect(page.getByTestId('market-focus')).toContainText('JM')
 
-  await page.getByRole('button', { name: '刷新 Radar' }).click()
+  await page.getByRole('button', { name: '全部刷新' }).click()
 
   await expect.poll(() => trendAttempt).toBe(2)
   await expect(page.getByTestId('market-focus')).toContainText('上一份')
@@ -331,11 +439,11 @@ test('manual Radar refresh keeps the last snapshot on failure and updates on ret
   const summary = page.locator('.radar-summary')
   await expect(summary).toContainText('当前数据日期 2026-08-14')
 
-  await page.getByRole('button', { name: '刷新 Radar' }).click()
+  await page.getByRole('button', { name: '全部刷新' }).click()
   await expect(page.getByRole('alert').filter({ hasText: 'Radar 刷新失败' })).toBeVisible()
   await expect(summary).toContainText('当前数据日期 2026-08-14')
 
-  await page.getByRole('button', { name: '重试' }).click()
+  await page.getByRole('button', { name: '全部刷新' }).click()
   await expect(summary).toContainText('当前数据日期 2026-08-15')
   await expect(page.getByRole('alert').filter({ hasText: 'Radar 刷新失败' })).toHaveCount(0)
 })
