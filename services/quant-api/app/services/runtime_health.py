@@ -469,10 +469,21 @@ def _collect_after_market_health(
     if not public:
         error_type = (
             "after_market_current_run_invalid"
-            if raw.get("schema_version") == 2 and raw.get("current_run") is not None
+            if _raw_current_run_is_invalid(raw)
             else "after_market_status_invalid"
         )
         return {"status": RUNTIME_STATUS_DEGRADED, **base, "run_state": "degraded", "error_type": error_type}
+    if not _finalized_after_market_chronology_valid(
+        public,
+        now=now,
+        expected_day=expected_day,
+    ):
+        return {
+            "status": RUNTIME_STATUS_DEGRADED,
+            **base,
+            "run_state": "degraded",
+            "error_type": "after_market_status_invalid",
+        }
     current_run = public.get("current_run")
     if isinstance(current_run, Mapping):
         try:
@@ -540,11 +551,17 @@ def _collect_after_market_health(
             "last_failure": public["last_failure"],
             "error_type": "after_market_run_missed",
         }
-    status = RUNTIME_STATUS_UNKNOWN
-    run_state = "degraded"
-    if isinstance(last_run, Mapping):
-        status = RUNTIME_STATUS_FAILED if last_run["status"] == "failed" else RUNTIME_STATUS_OK
-        run_state = "failed" if last_run["status"] == "failed" else "completed"
+    if not isinstance(last_run, Mapping):
+        return {
+            "status": RUNTIME_STATUS_DEGRADED,
+            **base,
+            "run_state": "degraded",
+            "last_successful_trading_day": last_successful_day,
+            "last_failure": public["last_failure"],
+            "error_type": "after_market_status_invalid",
+        }
+    status = RUNTIME_STATUS_FAILED if last_run["status"] == "failed" else RUNTIME_STATUS_OK
+    run_state = "failed" if last_run["status"] == "failed" else "completed"
     return {
         "status": status,
         **base,
@@ -555,6 +572,68 @@ def _collect_after_market_health(
         "error_type": None,
         "error_message": None,
     }
+
+
+def _raw_current_run_is_invalid(raw: Mapping[str, object]) -> bool:
+    if raw.get("schema_version") != 2 or raw.get("current_run") is None:
+        return False
+    current_only = public_after_market_status(
+        {
+            "schema_version": 2,
+            "current_run": raw.get("current_run"),
+            "last_run": None,
+            "last_successful_trading_day": None,
+            "last_failure": None,
+        }
+    )
+    return not current_only
+
+
+def _finalized_after_market_chronology_valid(
+    public: Mapping[str, object],
+    *,
+    now: datetime,
+    expected_day: date | None,
+) -> bool:
+    local_today = now.astimezone(SHANGHAI).date()
+    latest_allowed_day = (
+        min(local_today, expected_day)
+        if expected_day is not None
+        else local_today
+    )
+    last_run = public.get("last_run")
+    try:
+        if isinstance(last_run, Mapping):
+            started_at = _required_timestamp(last_run.get("started_at"))
+            finished_at = _required_timestamp(last_run.get("finished_at"))
+            trading_day = date.fromisoformat(str(last_run.get("trading_day")))
+            if (
+                started_at > finished_at
+                or finished_at > now
+                or trading_day > latest_allowed_day
+            ):
+                return False
+            failure_notification = last_run.get("failure_notification")
+            if isinstance(failure_notification, Mapping):
+                attempted_at = _required_timestamp(
+                    failure_notification.get("attempted_at")
+                )
+                if attempted_at < finished_at or attempted_at > now:
+                    return False
+        last_successful_day = public.get("last_successful_trading_day")
+        if (
+            last_successful_day is not None
+            and date.fromisoformat(str(last_successful_day)) > latest_allowed_day
+        ):
+            return False
+        last_failure = public.get("last_failure")
+        if isinstance(last_failure, Mapping) and date.fromisoformat(
+            str(last_failure.get("trading_day"))
+        ) > latest_allowed_day:
+            return False
+    except (TypeError, ValueError):
+        return False
+    return True
 
 
 def _expected_after_market_day(

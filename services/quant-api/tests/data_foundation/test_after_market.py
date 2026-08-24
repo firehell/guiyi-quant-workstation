@@ -1075,3 +1075,44 @@ def test_public_status_rejects_non_string_error_codes() -> None:
     )
 
     assert payload == {}
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    (
+        lambda payload: payload.update(last_successful_trading_day="invalid"),
+        lambda payload: payload.update(
+            last_failure={
+                "trading_day": "invalid",
+                "error_code": "UPDATE_FAILED",
+            }
+        ),
+        lambda payload: payload["last_run"].update(
+            failure_notification={
+                "attempted_at": "invalid",
+                "state": "provider_accepted",
+                "error_type": None,
+            }
+        ),
+    ),
+)
+def test_public_status_rejects_any_present_invalid_v2_public_field(mutate) -> None:
+    raw = {
+        "schema_version": 2,
+        "current_run": None,
+        "last_run": {
+            "trading_day": "2026-08-24",
+            "status": "passed",
+            "attempts": 1,
+            "started_at": "2026-08-24T18:05:00+08:00",
+            "finished_at": "2026-08-24T18:10:00+08:00",
+            "products": ["jm"],
+            "error_code": None,
+            "failure_notification": None,
+        },
+        "last_successful_trading_day": "2026-08-24",
+        "last_failure": None,
+    }
+    mutate(raw)
+
+    assert public_after_market_status(raw) == {}

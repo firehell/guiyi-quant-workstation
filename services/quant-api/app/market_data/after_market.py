@@ -482,11 +482,20 @@ def public_after_market_status(value: object) -> dict[str, object]:
         if schema_version == 2
         else None
     )
-    if schema_version == 2 and value.get("current_run") is not None and current_run is None:
-        return {}
     last_run = _public_last_run(value.get("last_run"), schema_version=schema_version)
     last_success = _public_trading_day(value.get("last_successful_trading_day"))
     last_failure = _public_last_failure(value.get("last_failure"))
+    if (
+        (schema_version == 2 and _present_nonnull_invalid(value, "current_run", current_run))
+        or _present_nonnull_invalid(value, "last_run", last_run)
+        or _present_nonnull_invalid(
+            value,
+            "last_successful_trading_day",
+            last_success,
+        )
+        or _present_nonnull_invalid(value, "last_failure", last_failure)
+    ):
+        return {}
     if current_run is None and last_run is None and last_success is None and last_failure is None:
         return {}
     public: dict[str, object] = {
@@ -501,6 +510,14 @@ def public_after_market_status(value: object) -> dict[str, object]:
             **public,
         }
     return public
+
+
+def _present_nonnull_invalid(
+    value: Mapping[object, object],
+    field: str,
+    normalized: object,
+) -> bool:
+    return field in value and value.get(field) is not None and normalized is None
 
 
 def _public_last_run(
