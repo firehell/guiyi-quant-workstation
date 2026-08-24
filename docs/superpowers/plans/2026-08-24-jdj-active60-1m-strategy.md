@@ -1243,27 +1243,51 @@ Expected: task branch, clean worktree. Do not run from main/runtime worktrees.
 Run from repository root:
 
 ```bash
+{
+  jdj_xtrace_was_enabled=0
+  case "$-" in
+    *x*)
+      jdj_xtrace_was_enabled=1
+      set +x
+      ;;
+  esac
+} 2>/dev/null
+
 jdj_project_env_file="/Users/zhangzhao/Library/Application Support/GuiyiQuant/project.env"
 
-if ! test -f "$jdj_project_env_file" \
-  || ! test "$(stat -f '%u' "$jdj_project_env_file")" -eq "$(id -u)" \
-  || ! test "$(stat -f '%Lp' "$jdj_project_env_file")" = "600"; then
-  printf '{"status":"command_failed","code":"JDJ_STRATEGY_SMOKE_ENV_INVALID"}\n' >&2
-  exit 1
-fi
-
-set -a
-if ! source "$jdj_project_env_file"; then
-  set +a
-  printf '{"status":"command_failed","code":"JDJ_STRATEGY_SMOKE_ENV_INVALID"}\n' >&2
-  exit 1
-fi
-set +a
-
-test -n "${DATABASE_URL:-}" || {
+jdj_smoke_env_invalid() {
+  { set +x; } 2>/dev/null
   printf '{"status":"command_failed","code":"JDJ_STRATEGY_SMOKE_ENV_INVALID"}\n' >&2
   exit 1
 }
+
+if ! {
+  test -f "$jdj_project_env_file" \
+    && test "$(stat -f '%u' "$jdj_project_env_file")" -eq "$(id -u)" \
+    && test "$(stat -f '%Lp' "$jdj_project_env_file")" = "600"
+} >/dev/null 2>&1; then
+  jdj_smoke_env_invalid
+fi
+
+set -a
+jdj_source_status=0
+{
+  source "$jdj_project_env_file" || jdj_source_status=$?
+} >/dev/null 2>&1
+{ set +x; } 2>/dev/null
+set +a
+
+if ! test "$jdj_source_status" -eq 0 >/dev/null 2>&1; then
+  jdj_smoke_env_invalid
+fi
+
+if ! test -n "${DATABASE_URL:-}" >/dev/null 2>&1; then
+  jdj_smoke_env_invalid
+fi
+
+if test "$jdj_xtrace_was_enabled" -eq 1 >/dev/null 2>&1; then
+  set -x
+fi
 
 cd services/quant-api
 active_products_file="../../data/universe/active_products.txt"
@@ -1367,6 +1391,10 @@ Expected:
 - the secure external project env is sourced before any Python process imports
   `app.db.session`;
 - `DATABASE_URL` is present after sourcing;
+- all `stat`/`test` diagnostics and sourced-file stdout/stderr are suppressed;
+- any pre-existing xtrace is detected and disabled before the project env path
+  or values are handled, is forced off again immediately after sourcing, and is
+  restored only after every secure environment check passes;
 - any environment validation failure emits only
   `JDJ_STRATEGY_SMOKE_ENV_INVALID`, does not print config values, and aborts
   before processing a symbol;
