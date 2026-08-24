@@ -29,6 +29,7 @@ from app.market_data.subing_ema_trend import PriceSide, SubingEmaTrendSnapshot
 _SOURCE_DAY = date(2026, 8, 21)
 _TARGET_DAY = date(2026, 8, 24)
 _GENERATED_AT = datetime(2026, 8, 21, 18, 30, tzinfo=UTC)
+_STARTED_AT = datetime(2026, 8, 21, 18, 25, tzinfo=UTC)
 
 
 class _FakeMountInspector:
@@ -221,7 +222,7 @@ def test_publish_writes_canonical_snapshot_current_and_status(tmp_path: Path) ->
     store = SubingDailyWatchStore(tmp_path)
     snapshot = _snapshot()
 
-    result = store.publish(snapshot)
+    result = store.publish(snapshot, started_at=_STARTED_AT)
 
     history = tmp_path / "history" / "2026-08-24.json"
     current = tmp_path / "current.json"
@@ -268,7 +269,7 @@ def test_publish_writes_canonical_snapshot_current_and_status(tmp_path: Path) ->
             "error_code": None,
             "finished_at": "2026-08-21T18:30:00+00:00",
             "source_trading_day": "2026-08-21",
-            "started_at": "2026-08-21T18:30:00+00:00",
+            "started_at": "2026-08-21T18:25:00+00:00",
             "status": "passed",
             "target_trading_day": "2026-08-24",
         },
@@ -290,7 +291,7 @@ def test_publish_sets_private_modes_where_supported(tmp_path: Path) -> None:
     """Catches observation artifacts becoming group/world-readable."""
     store = SubingDailyWatchStore(tmp_path)
 
-    store.publish(_snapshot())
+    store.publish(_snapshot(), started_at=_STARTED_AT)
 
     assert stat.S_IMODE(tmp_path.stat().st_mode) == 0o700
     assert stat.S_IMODE((tmp_path / "history").stat().st_mode) == 0o700
@@ -316,7 +317,7 @@ def test_publish_expands_decimal_exponents_to_plain_strings(tmp_path: Path) -> N
         ),
     )
 
-    store.publish(exponential)
+    store.publish(exponential, started_at=_STARTED_AT)
 
     payload = json.loads((tmp_path / "current.json").read_bytes())
     assert payload["items"][0]["daily"]["close"] == "100"
@@ -327,11 +328,11 @@ def test_same_canonical_snapshot_is_idempotent(tmp_path: Path) -> None:
     """Catches a retry rewriting immutable history or reporting a new publish."""
     store = SubingDailyWatchStore(tmp_path)
     snapshot = _snapshot()
-    store.publish(snapshot)
+    store.publish(snapshot, started_at=_STARTED_AT)
     history = tmp_path / "history" / "2026-08-24.json"
     original_stat = history.stat()
 
-    result = store.publish(snapshot)
+    result = store.publish(snapshot, started_at=_STARTED_AT)
 
     assert result.status == "idempotent"
     assert history.stat().st_ino == original_stat.st_ino
@@ -345,7 +346,7 @@ def test_same_target_with_different_canonical_bytes_fails_closed(
     """Catches an immutable target being overwritten by a conflicting generation."""
     store = SubingDailyWatchStore(tmp_path)
     snapshot = _snapshot()
-    store.publish(snapshot)
+    store.publish(snapshot, started_at=_STARTED_AT)
     history = tmp_path / "history" / "2026-08-24.json"
     current = tmp_path / "current.json"
     original_history = history.read_bytes()
@@ -356,7 +357,7 @@ def test_same_target_with_different_canonical_bytes_fails_closed(
     )
 
     with pytest.raises(SubingDailyWatchStoreError) as raised:
-        store.publish(conflict)
+        store.publish(conflict, started_at=_STARTED_AT)
 
     assert raised.value.code == "SNAPSHOT_IDENTITY_CONFLICT"
     assert history.read_bytes() == original_history
@@ -369,7 +370,7 @@ def test_same_target_conflict_in_current_fails_before_recreating_missing_history
     """Catches a same-day current conflict being normalized by an overwrite."""
     store = SubingDailyWatchStore(tmp_path)
     snapshot = _snapshot()
-    store.publish(snapshot)
+    store.publish(snapshot, started_at=_STARTED_AT)
     history = tmp_path / "history" / "2026-08-24.json"
     history.unlink()
     original_current = (tmp_path / "current.json").read_bytes()
@@ -379,7 +380,7 @@ def test_same_target_conflict_in_current_fails_before_recreating_missing_history
     )
 
     with pytest.raises(SubingDailyWatchStoreError) as raised:
-        store.publish(conflict)
+        store.publish(conflict, started_at=_STARTED_AT)
 
     assert raised.value.code == "SNAPSHOT_IDENTITY_CONFLICT"
     assert not history.exists()
@@ -390,10 +391,13 @@ def test_target_older_than_current_fails_before_creating_history(tmp_path: Path)
     """Catches a delayed generation moving current backward or adding stale history."""
     store = SubingDailyWatchStore(tmp_path)
     newer = _snapshot(target=date(2026, 8, 25))
-    store.publish(newer)
+    store.publish(newer, started_at=_STARTED_AT)
 
     with pytest.raises(SubingDailyWatchStoreError) as raised:
-        store.publish(_snapshot(target=date(2026, 8, 24)))
+        store.publish(
+            _snapshot(target=date(2026, 8, 24)),
+            started_at=_STARTED_AT,
+        )
 
     assert raised.value.code == "CURRENT_TARGET_REGRESSION"
     assert not (tmp_path / "history" / "2026-08-24.json").exists()
@@ -407,12 +411,12 @@ def test_invalid_existing_snapshot_fails_closed(
 ) -> None:
     """Catches malformed current/history being treated as absent or replaceable."""
     store = SubingDailyWatchStore(tmp_path)
-    store.publish(_snapshot())
+    store.publish(_snapshot(), started_at=_STARTED_AT)
     invalid = tmp_path / artifact
     invalid.write_text("{}\n", encoding="utf-8")
 
     with pytest.raises(SubingDailyWatchStoreError) as raised:
-        store.publish(_snapshot())
+        store.publish(_snapshot(), started_at=_STARTED_AT)
 
     assert raised.value.code == "SNAPSHOT_INVALID"
     assert invalid.read_text(encoding="utf-8") == "{}\n"
@@ -439,7 +443,7 @@ def test_read_current_strictly_rejects_contract_drift(
 ) -> None:
     """Catches version, order, identity, or count drift entering the read path."""
     store = SubingDailyWatchStore(tmp_path)
-    store.publish(_snapshot())
+    store.publish(_snapshot(), started_at=_STARTED_AT)
     current = tmp_path / "current.json"
     payload = json.loads(current.read_bytes())
     assert callable(mutate)
@@ -462,7 +466,7 @@ def test_record_failure_preserves_last_success_without_touching_snapshot_files(
     """Catches a failed run erasing the last successful identity or current data."""
     store = SubingDailyWatchStore(tmp_path)
     snapshot = _snapshot()
-    store.publish(snapshot)
+    store.publish(snapshot, started_at=_STARTED_AT)
     current = tmp_path / "current.json"
     history = tmp_path / "history" / "2026-08-24.json"
     original_current = current.read_bytes()
@@ -500,7 +504,7 @@ def test_atomic_replace_failure_preserves_last_valid_files(
     """Catches a failed current replace destroying the last readable generation."""
     store = SubingDailyWatchStore(tmp_path)
     first = _snapshot()
-    store.publish(first)
+    store.publish(first, started_at=_STARTED_AT)
     current = tmp_path / "current.json"
     status_path = tmp_path / "generation-status.json"
     original_current = current.read_bytes()
@@ -518,10 +522,186 @@ def test_atomic_replace_failure_preserves_last_valid_files(
     )
 
     with pytest.raises(SubingDailyWatchStoreError) as raised:
-        store.publish(_snapshot(target=date(2026, 8, 25)))
+        store.publish(
+            _snapshot(target=date(2026, 8, 25)),
+            started_at=_STARTED_AT,
+        )
 
     assert raised.value.code == "OBSERVATION_ATOMIC_WRITE_FAILED"
     assert current.read_bytes() == original_current
     assert status_path.read_bytes() == original_status
     assert (tmp_path / "history" / "2026-08-25.json").exists()
     assert list(tmp_path.rglob("*.tmp")) == []
+
+
+@pytest.mark.parametrize(
+    "error_code",
+    [
+        "provider failed: secret-token",
+        "/Volumes/private/path",
+        "NEXT_TRADING_DAY_UNAVAILABLE\nexception detail",
+    ],
+)
+def test_record_failure_rejects_non_allowlisted_error_codes(
+    tmp_path: Path,
+    error_code: str,
+) -> None:
+    """Catches exception text, paths, or secrets entering generation status."""
+    store = SubingDailyWatchStore(tmp_path)
+
+    with pytest.raises(SubingDailyWatchStoreError) as raised:
+        store.record_failure(
+            source_trading_day=_SOURCE_DAY,
+            target_trading_day=_TARGET_DAY,
+            started_at=_STARTED_AT,
+            finished_at=_GENERATED_AT,
+            error_code=error_code,
+        )
+
+    assert raised.value.code == "SNAPSHOT_INVALID"
+    assert not (tmp_path / "generation-status.json").exists()
+
+
+def test_generation_status_parser_rejects_non_allowlisted_error_code(
+    tmp_path: Path,
+) -> None:
+    """Catches a pre-existing unsafe status string crossing the read boundary."""
+    store = SubingDailyWatchStore(tmp_path)
+    store.publish(_snapshot(), started_at=_STARTED_AT)
+    status_path = tmp_path / "generation-status.json"
+    payload = json.loads(status_path.read_bytes())
+    payload["last_run"]["status"] = "failed"
+    payload["last_run"]["error_code"] = "database password leaked"
+    status_path.write_text(
+        json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(SubingDailyWatchStoreError) as raised:
+        store.read_generation_status()
+
+    assert raised.value.code == "SNAPSHOT_INVALID"
+
+
+def test_failed_status_replace_prevents_new_current_from_being_served(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Catches a partially published target being exposed after status failure."""
+    store = SubingDailyWatchStore(tmp_path)
+    store.publish(_snapshot(), started_at=_STARTED_AT)
+    status_path = tmp_path / "generation-status.json"
+    real_replace = os.replace
+
+    def fail_status_replace(source: str | Path, target: str | Path) -> None:
+        if Path(target) == status_path:
+            raise OSError("targeted test failure")
+        real_replace(source, target)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            "app.market_data.subing_daily_watch_store.os.replace",
+            fail_status_replace,
+        )
+        with pytest.raises(SubingDailyWatchStoreError) as raised:
+            store.publish(
+                _snapshot(target=date(2026, 8, 25)),
+                started_at=_STARTED_AT,
+            )
+
+    assert raised.value.code == "OBSERVATION_ATOMIC_WRITE_FAILED"
+    with pytest.raises(SubingDailyWatchStoreError) as unreadable:
+        store.read_current()
+    assert unreadable.value.code == "SNAPSHOT_INVALID"
+
+
+def test_publish_persists_required_truthful_started_at(tmp_path: Path) -> None:
+    """Catches successful status fabricating start time from generated time."""
+    store = SubingDailyWatchStore(tmp_path)
+
+    store.publish(_snapshot(), started_at=_STARTED_AT)
+
+    status = store.read_generation_status()
+    assert status is not None
+    assert status["last_run"]["started_at"] == _STARTED_AT.isoformat()
+    assert status["last_run"]["finished_at"] == _GENERATED_AT.isoformat()
+
+
+@pytest.mark.parametrize(
+    "started_at",
+    [
+        datetime(2026, 8, 21, 18, 25),
+        datetime(2026, 8, 21, 18, 31, tzinfo=UTC),
+    ],
+)
+def test_publish_rejects_unaware_or_late_started_at_before_writes(
+    tmp_path: Path,
+    started_at: datetime,
+) -> None:
+    """Catches invalid run chronology entering status or snapshot files."""
+    store = SubingDailyWatchStore(tmp_path)
+
+    with pytest.raises(SubingDailyWatchStoreError) as raised:
+        store.publish(_snapshot(), started_at=started_at)
+
+    assert raised.value.code == "SNAPSHOT_INVALID"
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_malformed_decimal_is_mapped_to_typed_snapshot_invalid(
+    tmp_path: Path,
+) -> None:
+    """Catches decimal.InvalidOperation escaping the strict store boundary."""
+    store = SubingDailyWatchStore(tmp_path)
+    store.publish(_snapshot(), started_at=_STARTED_AT)
+    current = tmp_path / "current.json"
+    payload = json.loads(current.read_bytes())
+    payload["items"][0]["daily"]["close"] = "not-a-decimal"
+    current.write_text(
+        json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(SubingDailyWatchStoreError) as raised:
+        store.read_current()
+
+    assert raised.value.code == "SNAPSHOT_INVALID"
+
+
+def test_store_rejects_symlinked_root_before_chmod_or_write(tmp_path: Path) -> None:
+    """Catches root chmod/write escaping through an existing directory symlink."""
+    outside = tmp_path / "outside"
+    outside.mkdir(mode=0o755)
+    outside.chmod(0o755)
+    root = tmp_path / "store-link"
+    root.symlink_to(outside, target_is_directory=True)
+    store = SubingDailyWatchStore(root)
+
+    with pytest.raises(SubingDailyWatchStoreError) as raised:
+        store.publish(_snapshot(), started_at=_STARTED_AT)
+
+    assert raised.value.code == "OBSERVATION_ROOT_UNAVAILABLE"
+    assert stat.S_IMODE(outside.stat().st_mode) == 0o755
+    assert list(outside.iterdir()) == []
+
+
+def test_store_rejects_symlinked_history_before_chmod_or_write(
+    tmp_path: Path,
+) -> None:
+    """Catches history publication escaping through an existing symlink."""
+    root = tmp_path / "store"
+    root.mkdir(mode=0o700)
+    outside = tmp_path / "outside-history"
+    outside.mkdir(mode=0o755)
+    outside.chmod(0o755)
+    (root / "history").symlink_to(outside, target_is_directory=True)
+    store = SubingDailyWatchStore(root)
+
+    with pytest.raises(SubingDailyWatchStoreError) as raised:
+        store.publish(_snapshot(), started_at=_STARTED_AT)
+
+    assert raised.value.code == "OBSERVATION_ROOT_UNAVAILABLE"
+    assert stat.S_IMODE(outside.stat().st_mode) == 0o755
+    assert list(outside.iterdir()) == []

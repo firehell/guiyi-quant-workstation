@@ -6,7 +6,7 @@ import tempfile
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date, datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Literal, Protocol, cast
 
@@ -29,6 +29,19 @@ _SERIES_KIND = "actual_dominant"
 _FREQUENCIES = ["1d", "60m"]
 _EMA_PERIOD = 21
 _SLOPE_WINDOWS = [5, 10]
+_GENERATION_ERROR_CODES = frozenset(
+    {
+        "ACTIVE_OPERATIONAL_SCOPE_MISMATCH",
+        "NEXT_TRADING_DAY_UNAVAILABLE",
+        "OBSERVATION_ROOT_UNCONFIGURED",
+        "OBSERVATION_ROOT_UNAVAILABLE",
+        "OBSERVATION_ROOT_NOT_WRITABLE",
+        "SNAPSHOT_INVALID",
+        "SNAPSHOT_IDENTITY_CONFLICT",
+        "CURRENT_TARGET_REGRESSION",
+        "OBSERVATION_ATOMIC_WRITE_FAILED",
+    }
+)
 
 
 class SubingDailyWatchStoreError(RuntimeError):
@@ -67,7 +80,11 @@ class SubingDailyWatchStore:
     def publish(
         self,
         snapshot: SubingDailyWatchSnapshot,
+        *,
+        started_at: datetime,
     ) -> SubingDailyWatchPublishResult:
+        if not _is_aware(started_at) or started_at > snapshot.generated_at:
+            raise SubingDailyWatchStoreError("SNAPSHOT_INVALID")
         snapshot_bytes = _snapshot_bytes(snapshot)
         current_bytes = (
             _read_bytes(self._current) if self._current.exists() else None
@@ -105,7 +122,9 @@ class SubingDailyWatchStore:
             _atomic_write(self._current, snapshot_bytes)
         _atomic_write(
             self._generation_status,
-            _canonical_bytes(_passed_status_payload(snapshot)),
+            _canonical_bytes(
+                _passed_status_payload(snapshot, started_at=started_at)
+            ),
         )
         return SubingDailyWatchPublishResult(
             status=status,
@@ -115,7 +134,15 @@ class SubingDailyWatchStore:
     def read_current(self) -> SubingDailyWatchSnapshot | None:
         if not self._current.exists():
             return None
-        return _parse_snapshot_bytes(_read_bytes(self._current))
+        snapshot = _parse_snapshot_bytes(_read_bytes(self._current))
+        status = self.read_generation_status()
+        if (
+            status is None
+            or status.get("last_successful_target_trading_day")
+            != snapshot.target_trading_day.isoformat()
+        ):
+            raise SubingDailyWatchStoreError("SNAPSHOT_INVALID")
+        return snapshot
 
     def read_generation_status(self) -> Mapping[str, object] | None:
         if not self._generation_status.exists():
@@ -132,7 +159,8 @@ class SubingDailyWatchStore:
         error_code: str,
     ) -> None:
         if (
-            not error_code
+            not isinstance(error_code, str)
+            or error_code not in _GENERATION_ERROR_CODES
             or not _is_aware(started_at)
             or not _is_aware(finished_at)
             or finished_at < started_at
@@ -166,10 +194,24 @@ class SubingDailyWatchStore:
 
     def _ensure_directories(self) -> None:
         try:
+            if self._root.is_symlink() or self._history.is_symlink():
+                raise SubingDailyWatchStoreError(
+                    "OBSERVATION_ROOT_UNAVAILABLE"
+                )
             self._root.mkdir(parents=True, exist_ok=True, mode=0o700)
+            if self._root.is_symlink() or self._history.is_symlink():
+                raise SubingDailyWatchStoreError(
+                    "OBSERVATION_ROOT_UNAVAILABLE"
+                )
             self._root.chmod(0o700)
             self._history.mkdir(exist_ok=True, mode=0o700)
+            if self._history.is_symlink():
+                raise SubingDailyWatchStoreError(
+                    "OBSERVATION_ROOT_UNAVAILABLE"
+                )
             self._history.chmod(0o700)
+        except SubingDailyWatchStoreError:
+            raise
         except (OSError, NotImplementedError) as exc:
             raise SubingDailyWatchStoreError(
                 "OBSERVATION_ROOT_NOT_WRITABLE"
@@ -425,16 +467,20 @@ def _parse_trend(
     )
 
 
-def _passed_status_payload(snapshot: SubingDailyWatchSnapshot) -> dict[str, object]:
-    timestamp = snapshot.generated_at.isoformat()
+def _passed_status_payload(
+    snapshot: SubingDailyWatchSnapshot,
+    *,
+    started_at: datetime,
+) -> dict[str, object]:
+    finished_at = snapshot.generated_at.isoformat()
     return {
         "schema_version": _SCHEMA_VERSION,
         "projection_version": _PROJECTION_VERSION,
         "last_run": {
             "source_trading_day": snapshot.source_trading_day.isoformat(),
             "target_trading_day": snapshot.target_trading_day.isoformat(),
-            "started_at": timestamp,
-            "finished_at": timestamp,
+            "started_at": started_at.isoformat(),
+            "finished_at": finished_at,
             "status": "passed",
             "error_code": None,
         },
@@ -482,12 +528,17 @@ def _parse_generation_status(raw: bytes) -> Mapping[str, object]:
         error_code = last_run["error_code"]
         if (last_run["status"] == "passed" and error_code is not None) or (
             last_run["status"] == "failed"
-            and (not isinstance(error_code, str) or not error_code)
+            and error_code not in _GENERATION_ERROR_CODES
         ):
             raise ValueError
         successful = payload["last_successful_target_trading_day"]
         if successful is not None:
             _parse_date(successful)
+        if last_run["status"] == "passed" and (
+            last_run["target_trading_day"] is None
+            or successful != last_run["target_trading_day"]
+        ):
+            raise ValueError
         if _canonical_bytes(payload) != raw:
             raise ValueError
         return payload
@@ -559,7 +610,10 @@ def _parse_datetime(value: object) -> datetime:
 
 def _parse_decimal_string(value: object) -> Decimal:
     serialized = _string(value)
-    result = Decimal(serialized)
+    try:
+        result = Decimal(serialized)
+    except InvalidOperation as exc:
+        raise ValueError from exc
     if not result.is_finite() or _decimal_string(result) != serialized:
         raise ValueError
     return result
