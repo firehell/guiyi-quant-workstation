@@ -1,4 +1,4 @@
-"""Deterministic, research-only JDJ JM 1m reference replay."""
+"""Deterministic, research-only active-product JDJ 1m reference replay."""
 
 from __future__ import annotations
 

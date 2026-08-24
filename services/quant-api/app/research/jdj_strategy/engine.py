@@ -1,4 +1,4 @@
-"""Public immutable results for the JDJ JM 1m reference lifecycle."""
+"""Public immutable results for the active-product JDJ 1m reference lifecycle."""
 
 from __future__ import annotations
 

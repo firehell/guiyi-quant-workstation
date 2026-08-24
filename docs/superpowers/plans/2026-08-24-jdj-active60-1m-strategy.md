@@ -10,6 +10,15 @@
 
 **Spec:** `docs/superpowers/specs/2026-08-24-jdj-active60-1m-strategy-design.md`
 
+> **Historical non-template note:** This accepted plan records the one-off
+> execution and closeout of this feature. In particular, Tasks 8–9 preserve
+> the exact smoke recovery and Runtime-reference cleanup checks required by
+> this task's observed failure and local worktree topology. They are audit
+> history, not a reusable workflow or a mandatory template for later work.
+> Future tasks follow `AGENTS.md` and `docs/DEVELOPMENT.md`; they must add
+> comparable smoke or cleanup machinery only when their own accepted Spec and
+> concrete risk require it.
+
 ## Global Constraints
 
 - Lane 3. Use **Sol + high reasoning** in a new implementation session.
@@ -1222,6 +1231,11 @@ If reviewer says `要求修正后再集成` or `阻塞`, fix on the same task br
 
 ### Task 8: Run the Fixed-Window Active60 Read-Only Capability Smoke
 
+> **One-off historical Gate:** This fixed-window command and its environment
+> recovery are specific to the JDJ active60 implementation. Do not copy them
+> into a future task unless that task independently requires the same
+> read-only empirical Gate.
+
 **Files:** no repository files are created by the smoke.
 
 **Interfaces:**
@@ -1443,6 +1457,11 @@ If a code defect is exposed, return to the same task branch, fix it, rerun autom
 ---
 
 ### Task 9: Record Completion State, Re-Verify Docs, and Integrate Only After Review Approval
+
+> **One-off historical closeout:** The exhaustive worktree/launchd cleanup
+> checks below addressed this task's exact local topology. They do not replace
+> the repository's normal lightweight development flow and are not a template
+> for subsequent plans.
 
 **Files:**
 - Modify: `STATUS.md`
