@@ -1393,7 +1393,7 @@ def test_redis_runtime_status_store_rejects_nonpublic_error_token(
     with pytest.raises(ValueError, match="^ALERT_RUNTIME_STATUS_INVALID$"):
         RedisAlertRuntimeStatusStore(redis).write(
             _runtime_status_payload(
-                **{error_field: "token=must-not-leak"}
+                **{error_field: "must_not_leak"}
             )
         )
 
@@ -1472,7 +1472,7 @@ def test_runtime_status_write_failure_escapes_each_notification_boundary(
             if failure_stage == "preparation_failure":
                 return (
                     payload["notification_error_type"]
-                    == "ALERT_PRODUCT_NAME_UNAVAILABLE"
+                    == "notification_preparation_failed"
                     and payload["last_transport_attempt_at"] is None
                 )
             if failure_stage == "transport_attempt":
@@ -1484,7 +1484,8 @@ def test_runtime_status_write_failure_escapes_each_notification_boundary(
             if failure_stage == "transport_failure":
                 return (
                     payload["last_transport_attempt_at"] is not None
-                    and payload["notification_error_type"] == "RuntimeError"
+                    and payload["notification_error_type"]
+                    == "notification_transport_failed"
                 )
             return payload["last_provider_accepted_at"] is not None
 
@@ -1564,7 +1565,7 @@ def test_missing_taxonomy_records_preparation_failure_without_transport_attempt(
     assert status["last_transport_attempt_at"] is None
     assert status["last_provider_accepted_at"] is None
     assert status["last_notification_failure_at"] == observed_at.isoformat()
-    assert status["notification_error_type"] == "ALERT_PRODUCT_NAME_UNAVAILABLE"
+    assert status["notification_error_type"] == "notification_preparation_failed"
     assert status["consecutive_notification_failures"] == 1
 
 
@@ -1589,7 +1590,7 @@ def test_transport_failure_is_persisted_after_real_attempt(
     assert status["last_transport_attempt_at"] == observed_at
     assert status["last_provider_accepted_at"] is None
     assert status["last_notification_failure_at"] == observed_at
-    assert status["notification_error_type"] == "RuntimeError"
+    assert status["notification_error_type"] == "notification_transport_failed"
     assert status["consecutive_notification_failures"] == 1
     assert "private provider failure" not in redis.values["alert:runtime-status"]
 
@@ -1615,7 +1616,7 @@ def test_missing_provider_acceptance_is_a_notification_failure(
     assert status["last_transport_attempt_at"] == observed_at
     assert status["last_provider_accepted_at"] is None
     assert status["last_notification_failure_at"] == observed_at
-    assert status["notification_error_type"] == "RuntimeError"
+    assert status["notification_error_type"] == "notification_acceptance_invalid"
 
 
 def test_next_provider_acceptance_clears_notification_failure_state(
@@ -1630,7 +1631,7 @@ def test_next_provider_acceptance_clears_notification_failure_state(
             last_transport_attempt_at="2026-08-13T01:00:00+00:00",
             last_provider_accepted_at="2026-08-13T01:00:00+00:00",
             last_notification_failure_at="2026-08-13T01:01:00+00:00",
-            notification_error_type="NotificationTransportError",
+            notification_error_type="notification_transport_failed",
             consecutive_notification_failures=2,
         )
     )
@@ -1679,7 +1680,7 @@ def test_processing_failure_after_success_persists_latest_failure(
     assert status["last_processed_bar_at"] == BOUNDARY_END.isoformat()
     assert status["last_processing_success_at"] == "2026-08-13T01:00:02+00:00"
     assert status["last_processing_failure_at"] == observed_at
-    assert status["processing_error_type"] == "RuntimeError"
+    assert status["processing_error_type"] == "processing_failed"
     assert "private processing detail" not in redis.values["alert:runtime-status"]
 
 
@@ -1712,7 +1713,7 @@ def test_fatal_session_failure_never_sends_queued_notification(
     assert status["last_processing_failure_at"] == (
         ORDINARY_END + timedelta(seconds=2)
     ).isoformat()
-    assert status["processing_error_type"] == "RuntimeError"
+    assert status["processing_error_type"] == "processing_failed"
     assert status["last_transport_attempt_at"] is None
     assert "private database exit detail" not in redis.values[
         "alert:runtime-status"

@@ -288,12 +288,12 @@ def test_alert_health_derives_latest_processing_and_notification_outcomes() -> N
             "last_processed_bar_at": (now - timedelta(seconds=2)).isoformat(),
             "last_processing_success_at": (now - timedelta(minutes=2)).isoformat(),
             "last_processing_failure_at": (now - timedelta(minutes=1)).isoformat(),
-            "processing_error_type": "RuntimeError",
+            "processing_error_type": "processing_failed",
             "last_event_at": (now - timedelta(minutes=2)).isoformat(),
             "last_transport_attempt_at": (now - timedelta(minutes=1)).isoformat(),
             "last_provider_accepted_at": (now - timedelta(minutes=2)).isoformat(),
             "last_notification_failure_at": (now - timedelta(minutes=1)).isoformat(),
-            "notification_error_type": "NotificationTransportError",
+            "notification_error_type": "notification_transport_failed",
             "consecutive_notification_failures": 2,
         }
     )
@@ -337,8 +337,11 @@ def test_alert_health_derives_latest_processing_and_notification_outcomes() -> N
     assert failed_alert["status"] == "degraded"
     assert failed_alert["processing_state"] == "failed"
     assert failed_alert["notification_state"] == "failed"
-    assert failed_alert["processing_error_type"] == "RuntimeError"
-    assert failed_alert["notification_error_type"] == "NotificationTransportError"
+    assert failed_alert["processing_error_type"] == "processing_failed"
+    assert (
+        failed_alert["notification_error_type"]
+        == "notification_transport_failed"
+    )
     assert failed_alert["consecutive_notification_failures"] == 2
     assert "provider_reference" not in json.dumps(failed_alert)
 
@@ -420,15 +423,15 @@ def test_alert_health_rejects_nonpublic_error_token_without_exposing_it(
         "last_processed_bar_at": now.isoformat(),
         "last_processing_success_at": None,
         "last_processing_failure_at": now.isoformat(),
-        "processing_error_type": "RuntimeError",
+        "processing_error_type": "processing_failed",
         "last_event_at": now.isoformat(),
         "last_transport_attempt_at": now.isoformat(),
         "last_provider_accepted_at": None,
         "last_notification_failure_at": now.isoformat(),
-        "notification_error_type": "NotificationTransportError",
+        "notification_error_type": "notification_transport_failed",
         "consecutive_notification_failures": 1,
     }
-    runtime_status[error_field] = "token=must-not-leak"
+    runtime_status[error_field] = "must_not_leak"
     TestingSessionLocal = _session_factory()
 
     with TestingSessionLocal() as session:
@@ -450,7 +453,7 @@ def test_alert_health_rejects_nonpublic_error_token_without_exposing_it(
     alert = health["components"]["alert"]
     assert alert["status"] == "degraded"
     assert alert["error_type"] == "alert_runtime_status_invalid"
-    assert "must-not-leak" not in json.dumps(alert)
+    assert "must_not_leak" not in json.dumps(alert)
 
 
 def test_alert_health_structural_transport_is_ready_from_process_environment(

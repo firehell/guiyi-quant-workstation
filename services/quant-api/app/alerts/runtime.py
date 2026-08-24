@@ -52,6 +52,10 @@ _LOGGER = logging.getLogger(__name__)
 _PATTERN = "live:bar:*:*"
 _HEARTBEAT_INTERVAL = timedelta(seconds=10)
 _HEARTBEAT_TTL_SECONDS = 30
+PROCESSING_FAILURE = "processing_failed"
+NOTIFICATION_PREPARATION_FAILURE = "notification_preparation_failed"
+NOTIFICATION_TRANSPORT_FAILURE = "notification_transport_failed"
+NOTIFICATION_ACCEPTANCE_INVALID = "notification_acceptance_invalid"
 
 
 class AlertMessageSource(Protocol):
@@ -208,7 +212,7 @@ class AlertRuntime:
                             if taxonomy is None:
                                 _LOGGER.warning("ALERT_PRODUCT_NAME_UNAVAILABLE")
                                 notification_preparation_failures.append(
-                                    "ALERT_PRODUCT_NAME_UNAVAILABLE"
+                                    NOTIFICATION_PREPARATION_FAILURE
                                 )
                                 continue
                             messages.append(
@@ -225,16 +229,16 @@ class AlertRuntime:
                                     ),
                                 )
                             )
-                        except Exception as exc:  # noqa: BLE001 - isolate each fixed rule
+                        except Exception:  # noqa: BLE001 - isolate each fixed rule
                             if session.in_transaction():
                                 session.rollback()
-                            processing_error_type = processing_error_type or type(exc).__name__
+                            processing_error_type = PROCESSING_FAILURE
                             _LOGGER.warning("ALERT_RULE_PROCESSING_FAILED")
                 finally:
                     if session.in_transaction():
                         session.rollback()
-        except Exception as exc:  # noqa: BLE001 - DB/session failure must not send
-            processing_error_type = type(exc).__name__
+        except Exception:  # noqa: BLE001 - DB/session failure must not send
+            processing_error_type = PROCESSING_FAILURE
             fatal_processing_failure = True
             _LOGGER.warning("ALERT_PROCESSING_FAILED")
 
@@ -266,21 +270,26 @@ class AlertRuntime:
             )
             try:
                 acceptance = self._sender.send(message)
-                if not isinstance(acceptance, ProviderAcceptance):
-                    raise RuntimeError("ALERT_NOTIFICATION_ACCEPTANCE_INVALID")
-            except Exception as exc:  # noqa: BLE001 - committed Event is never retried
+            except Exception:  # noqa: BLE001 - committed Event is never retried
                 self._record_notification_failure(
                     at=processing_now,
-                    error_type=type(exc).__name__,
+                    error_type=NOTIFICATION_TRANSPORT_FAILURE,
                 )
                 _LOGGER.warning("ALERT_NOTIFICATION_FAILED")
-            else:
-                self._update_runtime_status(
-                    last_provider_accepted_at=_iso_timestamp(processing_now),
-                    last_notification_failure_at=None,
-                    notification_error_type=None,
-                    consecutive_notification_failures=0,
+                continue
+            if not isinstance(acceptance, ProviderAcceptance):
+                self._record_notification_failure(
+                    at=processing_now,
+                    error_type=NOTIFICATION_ACCEPTANCE_INVALID,
                 )
+                _LOGGER.warning("ALERT_NOTIFICATION_FAILED")
+                continue
+            self._update_runtime_status(
+                last_provider_accepted_at=_iso_timestamp(processing_now),
+                last_notification_failure_at=None,
+                notification_error_type=None,
+                consecutive_notification_failures=0,
+            )
 
     def _evaluate_rule(
         self,
@@ -488,6 +497,16 @@ _RUNTIME_STATUS_TIMESTAMP_FIELDS = _RUNTIME_STATUS_FIELDS - {
     "notification_error_type",
     "consecutive_notification_failures",
 }
+_RUNTIME_STATUS_ERROR_TYPES = {
+    "processing_error_type": frozenset({PROCESSING_FAILURE}),
+    "notification_error_type": frozenset(
+        {
+            NOTIFICATION_PREPARATION_FAILURE,
+            NOTIFICATION_TRANSPORT_FAILURE,
+            NOTIFICATION_ACCEPTANCE_INVALID,
+        }
+    ),
+}
 
 
 def empty_alert_runtime_status() -> dict[str, object]:
@@ -520,24 +539,16 @@ def validate_alert_runtime_status(
             if not isinstance(value, str):
                 raise ValueError("ALERT_RUNTIME_STATUS_INVALID")
             normalized[field] = _iso_timestamp(datetime.fromisoformat(value))
-    for field in ("processing_error_type", "notification_error_type"):
+    for field, allowed_values in _RUNTIME_STATUS_ERROR_TYPES.items():
         value = payload[field]
-        if value is not None and not _is_public_error_type(value):
+        if value is not None and (
+            not isinstance(value, str) or value not in allowed_values
+        ):
             raise ValueError("ALERT_RUNTIME_STATUS_INVALID")
     count = payload["consecutive_notification_failures"]
     if type(count) is not int or count < 0:
         raise ValueError("ALERT_RUNTIME_STATUS_INVALID")
     return normalized
-
-
-def _is_public_error_type(value: object) -> bool:
-    return (
-        isinstance(value, str)
-        and 1 <= len(value) <= 128
-        and value.isascii()
-        and value[0].isalpha()
-        and all(character.isalnum() or character == "_" for character in value)
-    )
 
 
 def _iso_timestamp(value: datetime) -> str:
