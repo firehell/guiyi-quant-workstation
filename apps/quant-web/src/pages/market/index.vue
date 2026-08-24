@@ -186,6 +186,12 @@ onBeforeUnmount(() => {
       :event-states="formalEventStates"
       @open="openFormalSignal"
     />
+    <SubingDailyWatch
+      :response="dailyWatch"
+      :loading="dailyWatchState.loading.value && !dailyWatch"
+      :request-failed="dailyWatchState.failed.value"
+      @open="openDailyWatch"
+    />
     <MarketRadarSkeleton v-if="radarState.loading.value && !radar" />
     <template v-else>
       <div v-if="error" class="market-radar-page__error">
@@ -196,12 +202,6 @@ onBeforeUnmount(() => {
           {{ radar ? '已保留上一份成功快照；重试前请以其时点为准。' : '无法读取只读 Radar；不影响 Product Workspace。' }}
         </NAlert>
       </div>
-      <SubingDailyWatch
-        :response="dailyWatch"
-        :loading="dailyWatchState.loading.value && !dailyWatch"
-        :request-failed="dailyWatchState.failed.value"
-        @open="openDailyWatch"
-      />
       <template v-if="radar">
         <NAlert v-if="freshnessIssue" type="warning" :title="freshnessIssue" />
         <details class="market-radar-page__research" data-testid="market-full-research">

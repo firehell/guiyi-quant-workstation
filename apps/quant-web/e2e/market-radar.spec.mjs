@@ -147,6 +147,36 @@ test('renders Daily Watch instead of Trend Focus, expands each direction indepen
   })
 })
 
+test('renders ready Daily Watch before a pending Radar request completes', async ({ page }) => {
+  let releaseRadar = () => {}
+  const radarGate = new Promise((resolve) => { releaseRadar = resolve })
+  await page.route('**/api/alerts/formal-signals/current', (route) => route.fulfill({
+    json: { status: 'ready', trading_day: '2026-08-24', items: [] },
+  }))
+  await page.route('**/api/runtime/health', (route) => route.fulfill({ json: runtimeHealth() }))
+  await page.route('**/api/v1/market/research/subing-daily-watch/current', (route) => route.fulfill({ json: dailyWatch() }))
+  await page.route('**/api/v1/market/research/radar', async (route) => {
+    await radarGate
+    return route.fulfill({ json: radar() })
+  })
+
+  try {
+    await page.goto('/market')
+    const watch = page.getByTestId('subing-daily-watch')
+    await expect(watch).toContainText('苏冰今日观察')
+    await expect(watch).toContainText('多头观察 7')
+    await expect(watch).toContainText('RB RB')
+    await expect(page.getByTestId('market-radar-skeleton')).toBeVisible()
+    await expect(page.getByTestId('market-full-research')).toHaveCount(0)
+  } finally {
+    releaseRadar()
+  }
+
+  await expect(page.getByTestId('market-radar-skeleton')).toHaveCount(0)
+  await expect(page.getByTestId('market-full-research')).toBeVisible()
+  await expect(page.getByTestId('subing-daily-watch')).toContainText('RB RB')
+})
+
 test('keeps unavailable items collapsed, explains stable reasons, and never makes them clickable', async ({ page }) => {
   await mockHomepage(page)
   await page.goto('/market')
