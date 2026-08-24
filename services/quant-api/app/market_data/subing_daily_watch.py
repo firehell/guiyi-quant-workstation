@@ -80,6 +80,11 @@ class SubingDailyWatchItem:
                     reason not in _UNAVAILABLE_REASON_CODES
                     for reason in self.unavailable_reasons
                 )
+                or not _unavailable_reasons_match_facts(
+                    self.unavailable_reasons,
+                    daily=self.daily,
+                    hourly=self.hourly,
+                )
             ):
                 raise SubingDailyWatchError("SNAPSHOT_INVALID")
         elif (
@@ -207,6 +212,15 @@ _UNAVAILABLE_REASON_CODES = frozenset(
     {
         "D1_HISTORY_INSUFFICIENT",
         "H1_HISTORY_INSUFFICIENT",
+        "SOURCE_TRADING_DAY_MISSING",
+        "DOMINANT_SEGMENT_UNAVAILABLE",
+        "DATA_IDENTITY_MISMATCH",
+        "PRODUCT_METADATA_UNAVAILABLE",
+    }
+)
+
+_FACTLESS_UNAVAILABLE_REASON_CODES = frozenset(
+    {
         "SOURCE_TRADING_DAY_MISSING",
         "DOMINANT_SEGMENT_UNAVAILABLE",
         "DATA_IDENTITY_MISMATCH",
@@ -594,6 +608,21 @@ def _price_side_matches_close(snapshot: SubingEmaTrendSnapshot) -> bool:
     if snapshot.close < snapshot.ema21:
         return snapshot.price_side is PriceSide.BELOW
     return snapshot.price_side is PriceSide.EQUAL
+
+
+def _unavailable_reasons_match_facts(
+    reasons: tuple[str, ...],
+    *,
+    daily: SubingEmaTrendSnapshot | None,
+    hourly: SubingEmaTrendSnapshot | None,
+) -> bool:
+    reason_set = frozenset(reasons)
+    if reason_set & _FACTLESS_UNAVAILABLE_REASON_CODES:
+        return daily is None and hourly is None
+    return (
+        (daily is None) == ("D1_HISTORY_INSUFFICIENT" in reason_set)
+        and (hourly is None) == ("H1_HISTORY_INSUFFICIENT" in reason_set)
+    )
 
 
 def _validate_loaded_identity(

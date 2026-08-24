@@ -88,10 +88,11 @@
 ## SuBing Daily Watch V1 develop integration
 
 - SuBing Daily Watch V1 已集成到 `develop`。2026-08-24 的窄修复补齐同 target 失败后 current
-  fail-closed、生成写入前扩展盘 root 重验、snapshot decision/reason/price-side 语义校验，以及来自重构前
-  实现的 5m/15m EMA/slope 独立 golden parity 覆盖；Task 0–9 的代码与 canonical 收口均在 develop。
-- 2026-08-24 fresh verification 为 focused backend `171 passed`、full non-isolated backend
-  `3655 passed / 3 skipped / 16 deselected`、engineering `63 passed`、Mypy
+  fail-closed、目录及原子文件 mutation/replace 前扩展盘 root 重验、snapshot
+  decision/reason/fact/price-side 语义校验，以及来自重构前实现的 5m/15m EMA/slope 独立 golden parity
+  覆盖；Task 0–9 的代码与 canonical 收口均在 develop。
+- 2026-08-24 fresh verification 为 focused backend `175 passed`、full non-isolated backend
+  `3659 passed / 3 skipped / 16 deselected`、engineering `63 passed`、Mypy
   `154 source files / 0 issues`、Web unit `276 passed / 1 skipped`、full Playwright
   `98 passed / 1 skipped`；Ruff、Web build、OpenSpec `6 passed`、secret scan `0 findings`、ops shell、
   launchd plist lint 与 diff check 均通过。该 feature 不含 migration、schema 或 concurrency 变化，因此未运行

@@ -111,7 +111,10 @@ def _snapshot() -> SubingDailyWatchSnapshot:
         else:
             decision = SubingDailyWatchDecision.UNAVAILABLE
             reason_codes = ()
-            unavailable_reasons = ("D1_HISTORY_INSUFFICIENT",)
+            unavailable_reasons = (
+                "D1_HISTORY_INSUFFICIENT",
+                "H1_HISTORY_INSUFFICIENT",
+            )
             daily = None
             hourly = None
         items.append(

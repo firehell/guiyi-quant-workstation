@@ -138,15 +138,24 @@ class SubingDailyWatchStore:
                 raise SubingDailyWatchStoreError("SNAPSHOT_IDENTITY_CONFLICT")
             status = "idempotent"
         else:
-            _atomic_write(history_path, snapshot_bytes)
+            _atomic_write(
+                history_path,
+                snapshot_bytes,
+                preflight=self._revalidate_root,
+            )
 
         if current_bytes != snapshot_bytes:
-            _atomic_write(self._current, snapshot_bytes)
+            _atomic_write(
+                self._current,
+                snapshot_bytes,
+                preflight=self._revalidate_root,
+            )
         _atomic_write(
             self._generation_status,
             _canonical_bytes(
                 _passed_status_payload(snapshot, started_at=started_at)
             ),
+            preflight=self._revalidate_root,
         )
         return SubingDailyWatchPublishResult(
             status=status,
@@ -220,7 +229,11 @@ class SubingDailyWatchStore:
             },
             "last_successful_target_trading_day": last_successful,
         }
-        _atomic_write(self._generation_status, _canonical_bytes(payload))
+        _atomic_write(
+            self._generation_status,
+            _canonical_bytes(payload),
+            preflight=self._revalidate_root,
+        )
 
     def _revalidate_root(self) -> None:
         if self._root_validator is None:
@@ -234,17 +247,21 @@ class SubingDailyWatchStore:
                 raise SubingDailyWatchStoreError(
                     "OBSERVATION_ROOT_UNAVAILABLE"
                 )
+            self._revalidate_root()
             self._root.mkdir(parents=True, exist_ok=True, mode=0o700)
             if self._root.is_symlink() or self._history.is_symlink():
                 raise SubingDailyWatchStoreError(
                     "OBSERVATION_ROOT_UNAVAILABLE"
                 )
+            self._revalidate_root()
             self._root.chmod(0o700)
+            self._revalidate_root()
             self._history.mkdir(exist_ok=True, mode=0o700)
             if self._history.is_symlink():
                 raise SubingDailyWatchStoreError(
                     "OBSERVATION_ROOT_UNAVAILABLE"
                 )
+            self._revalidate_root()
             self._history.chmod(0o700)
         except SubingDailyWatchStoreError:
             raise
@@ -683,10 +700,17 @@ def _read_bytes(path: Path) -> bytes:
         raise SubingDailyWatchStoreError("SNAPSHOT_INVALID") from exc
 
 
-def _atomic_write(target: Path, content: bytes) -> None:
+def _atomic_write(
+    target: Path,
+    content: bytes,
+    *,
+    preflight: Callable[[], None] | None = None,
+) -> None:
     temporary_path: Path | None = None
     descriptor = -1
     try:
+        if preflight is not None:
+            preflight()
         descriptor, temporary_name = tempfile.mkstemp(
             dir=target.parent,
             prefix=f".{target.name}.",
@@ -700,6 +724,8 @@ def _atomic_write(target: Path, content: bytes) -> None:
             temporary.write(content)
             temporary.flush()
             os.fsync(temporary.fileno())
+        if preflight is not None:
+            preflight()
         os.replace(temporary_path, target)
         temporary_path = None
     except (OSError, NotImplementedError) as exc:

@@ -249,6 +249,51 @@ def test_publish_revalidates_production_root_before_creating_directories(
     assert not root.exists()
 
 
+@pytest.mark.parametrize("fail_on_check", [2, 3])
+def test_publish_revalidates_root_at_each_mutation_boundary(
+    tmp_path: Path,
+    fail_on_check: int,
+) -> None:
+    """Catches mount loss after publish starts but before directories or files."""
+    root = tmp_path / "must-not-receive-artifacts"
+    checks = 0
+
+    def root_until_unmounted() -> Path:
+        nonlocal checks
+        checks += 1
+        if checks == fail_on_check:
+            raise SubingDailyWatchStoreError("OBSERVATION_ROOT_UNAVAILABLE")
+        return root
+
+    store = SubingDailyWatchStore(root, root_validator=root_until_unmounted)
+
+    with pytest.raises(SubingDailyWatchStoreError) as raised:
+        store.publish(_snapshot(), started_at=_STARTED_AT)
+
+    assert raised.value.code == "OBSERVATION_ROOT_UNAVAILABLE"
+    if root.exists():
+        assert list(root.rglob("*.json")) == []
+
+
+def test_atomic_write_revalidates_root_before_replace(tmp_path: Path) -> None:
+    """Catches mount loss after temp fsync but before final pathname replace."""
+    root = tmp_path / "must-not-publish-artifacts"
+
+    def reject_after_temp_creation() -> Path:
+        if root.exists() and tuple(root.rglob(".*.tmp")):
+            raise SubingDailyWatchStoreError("OBSERVATION_ROOT_UNAVAILABLE")
+        return root
+
+    store = SubingDailyWatchStore(root, root_validator=reject_after_temp_creation)
+
+    with pytest.raises(SubingDailyWatchStoreError) as raised:
+        store.publish(_snapshot(), started_at=_STARTED_AT)
+
+    assert raised.value.code == "OBSERVATION_ROOT_UNAVAILABLE"
+    assert list(root.rglob("*.json")) == []
+    assert list(root.rglob("*.tmp")) == []
+
+
 def _trend(
     timeframe: BarFrequency,
     *,
@@ -602,11 +647,21 @@ def test_read_current_strictly_rejects_contract_drift(
         lambda payload: payload["items"][1].update(
             unavailable_reasons=["UNKNOWN_UNAVAILABLE_REASON"]
         ),
+        lambda payload: (
+            payload["items"][0].update(
+                decision="unavailable",
+                reason_codes=[],
+                hourly=None,
+                unavailable_reasons=["D1_HISTORY_INSUFFICIENT"],
+            ),
+            payload["counts"].update(long_watch=0, unavailable=2),
+        ),
     ],
     ids=(
         "decision-disagrees-with-trends",
         "price-side-disagrees-with-close",
         "unavailable-reason-not-allowlisted",
+        "unavailable-reason-disagrees-with-present-fact",
     ),
 )
 def test_read_current_rejects_semantically_inconsistent_items(
