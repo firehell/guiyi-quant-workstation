@@ -1459,11 +1459,19 @@ preconditions hold:
 
 ```bash
 task_worktree_path="<EXACT_TASK_WORKTREE_PATH>"
+cleanup_controller_path="<EXACT_DEVELOP_WORKTREE_PATH>"
 task_branch=feature/jdj-active60-1m-strategy
+launch_agents_dir="/Users/zhangzhao/Library/LaunchAgents"
 
+test -d "$task_worktree_path"
+test ! -L "$task_worktree_path"
 test "$(git -C "$task_worktree_path" branch --show-current)" = "$task_branch"
 test -z "$(git -C "$task_worktree_path" status --porcelain)"
-git worktree list --porcelain
+test "$(git -C "$cleanup_controller_path" branch --show-current)" = develop
+test -z "$(git -C "$cleanup_controller_path" status --porcelain --untracked-files=no)"
+test "$(cd "$task_worktree_path" && pwd -P)" != \
+  "$(cd "$cleanup_controller_path" && pwd -P)"
+git -C "$cleanup_controller_path" worktree list --porcelain
 
 for label in \
   com.guiyi.quant-api \
@@ -1472,27 +1480,68 @@ for label in \
   com.guiyi.quant-after-market \
   com.guiyi.quant-alert
 do
-  if launchctl print "gui/$(id -u)/$label" 2>/dev/null \
-    | rg -F -q -- "$task_worktree_path"
+  installed_plist="$launch_agents_dir/$label.plist"
+  test -f "$installed_plist" || {
+    printf 'TASK_WORKTREE_PLIST_IDENTITY_UNRESOLVED label=%s reason=missing\n' \
+      "$label" >&2
+    exit 1
+  }
+  plist_root="$(
+    plutil -extract EnvironmentVariables.GUIYI_PROJECT_ROOT raw -o - \
+      "$installed_plist" 2>/dev/null
+  )" || {
+    printf 'TASK_WORKTREE_PLIST_IDENTITY_UNRESOLVED label=%s reason=unreadable\n' \
+      "$label" >&2
+    exit 1
+  }
+  test -n "$plist_root" || {
+    printf 'TASK_WORKTREE_PLIST_IDENTITY_UNRESOLVED label=%s reason=empty\n' \
+      "$label" >&2
+    exit 1
+  }
+  if test "$plist_root" = "$task_worktree_path"
   then
-    printf 'TASK_WORKTREE_RUNTIME_REFERENCE_PRESENT label=%s\n' "$label" >&2
+    printf 'TASK_WORKTREE_INSTALLED_PLIST_REFERENCE_PRESENT label=%s\n' \
+      "$label" >&2
+    exit 1
+  fi
+
+  if ! launch_output="$(launchctl print "gui/$(id -u)/$label" 2>/dev/null)"
+  then
+    printf 'TASK_WORKTREE_LAUNCH_IDENTITY_UNRESOLVED label=%s\n' "$label" >&2
+    exit 1
+  fi
+  if printf '%s\n' "$launch_output" | rg -F -q -- "$task_worktree_path"
+  then
+    printf 'TASK_WORKTREE_LOADED_RUNTIME_REFERENCE_PRESENT label=%s\n' \
+      "$label" >&2
     exit 1
   fi
 done
 
-git worktree remove "$task_worktree_path"
-git branch -d "$task_branch"
+git -C "$cleanup_controller_path" merge --ff-only origin/develop
+git -C "$cleanup_controller_path" worktree remove "$task_worktree_path"
+git -C "$cleanup_controller_path" branch -d "$task_branch"
 
 if git ls-remote --exit-code --heads origin "$task_branch" >/dev/null 2>&1
 then
-  git push origin --delete "$task_branch"
+  remote_branch_status=0
+else
+  remote_branch_status=$?
 fi
+case "$remote_branch_status" in
+  0) printf 'REMOTE_TASK_BRANCH_REMAINS branch=%s\n' "$task_branch" ;;
+  2) printf 'REMOTE_TASK_BRANCH_ABSENT branch=%s\n' "$task_branch" ;;
+  *) printf 'REMOTE_TASK_BRANCH_STATUS_UNRESOLVED branch=%s\n' "$task_branch" ;;
+esac
 ```
 
 Do not use `--force`, broad paths, unresolved variables, direct directory
 deletion, or any command that touches `main`, tags, release refs, or Runtime
-worktrees. If a launchd label references the task worktree, stop without
-removing anything.
+worktrees. If an installed plist or loaded launchd label cannot be read, or
+either references the task worktree, stop without removing anything. A remote
+task branch is status-only here: deleting a remote ref requires a new,
+single-use explicit intent and is not authorized by this plan.
 
 ---
 
