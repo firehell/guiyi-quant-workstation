@@ -1243,6 +1243,28 @@ Expected: task branch, clean worktree. Do not run from main/runtime worktrees.
 Run from repository root:
 
 ```bash
+jdj_project_env_file="/Users/zhangzhao/Library/Application Support/GuiyiQuant/project.env"
+
+if ! test -f "$jdj_project_env_file" \
+  || ! test "$(stat -f '%u' "$jdj_project_env_file")" -eq "$(id -u)" \
+  || ! test "$(stat -f '%Lp' "$jdj_project_env_file")" = "600"; then
+  printf '{"status":"command_failed","code":"JDJ_STRATEGY_SMOKE_ENV_INVALID"}\n' >&2
+  exit 1
+fi
+
+set -a
+if ! source "$jdj_project_env_file"; then
+  set +a
+  printf '{"status":"command_failed","code":"JDJ_STRATEGY_SMOKE_ENV_INVALID"}\n' >&2
+  exit 1
+fi
+set +a
+
+test -n "${DATABASE_URL:-}" || {
+  printf '{"status":"command_failed","code":"JDJ_STRATEGY_SMOKE_ENV_INVALID"}\n' >&2
+  exit 1
+}
+
 cd services/quant-api
 active_products_file="../../data/universe/active_products.txt"
 processed=0
@@ -1340,6 +1362,14 @@ cd ../..
 
 Expected:
 
+- the secure external project env exists, is owned by the invoking user, and has
+  exact mode `0600`;
+- the secure external project env is sourced before any Python process imports
+  `app.db.session`;
+- `DATABASE_URL` is present after sourcing;
+- any environment validation failure emits only
+  `JDJ_STRATEGY_SMOKE_ENV_INVALID`, does not print config values, and aborts
+  before processing a symbol;
 - exactly 60 result entries in active-universe order;
 - each entry is `ok` or a known typed Strategy unavailable code;
 - the shell reads `data/universe/active_products.txt` directly and starts one
@@ -1347,6 +1377,10 @@ Expected:
 - any active-universe or unexpected failure prints the current symbol and a
   non-zero status, then aborts rather than being swallowed;
 - no repository file changes.
+
+Attempt 1 failed closed at symbol `a` because the original plan omitted
+environment propagation. No repository change occurred. The user approved this
+amendment plus exactly one retry after independent Review.
 
 - [ ] **Step 3: Verify the smoke wrote nothing to the repository**
 
