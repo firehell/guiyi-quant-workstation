@@ -11,6 +11,7 @@ canonical 根目录由环境变量 ``GUIYI_CANONICAL_DATA_ROOT`` 或仓库默认
 from __future__ import annotations
 
 import os
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
 
@@ -52,6 +53,22 @@ from app.market_data.subing_lifecycle_policy import (
 from app.market_data.subing_read_service import SubingReadService
 from app.market_data.subing_historical_signal_service import (
     SubingHistoricalSignalService,
+)
+from app.market_data.subing_daily_watch import (
+    SubingDailyWatchBuilder,
+    SubingDailyWatchCurrentService,
+    SubingDailyWatchError,
+    SubingDailyWatchGenerator,
+    SubingDailyWatchProduct,
+)
+from app.market_data.subing_daily_watch_calendar import (
+    resolve_expected_daily_watch_day,
+    resolve_next_common_trading_day,
+)
+from app.market_data.subing_daily_watch_store import (
+    PathMountInspector,
+    SubingDailyWatchStore,
+    resolve_subing_observation_root,
 )
 from app.market_data.operational_universe import load_active_products
 from app.market_data.product_taxonomy import load_product_taxonomy
@@ -256,6 +273,75 @@ def build_subing_historical_signal_service(
         ActualDominantResearchSegmentLoader(market_data),
         products=load_active_products(),
         calibration=load_accepted_subing_calibration(_SUBING_CALIBRATION),
+    )
+
+
+def build_subing_daily_watch_generator(
+    session: Session,
+) -> SubingDailyWatchGenerator:
+    """Compose the active60 Daily Watch writer without starting a run."""
+    active = load_active_products()
+    operational = load_operational_products()
+    if (
+        len(active) != 60
+        or len(operational) != 60
+        or len(set(active)) != 60
+        or len(set(operational)) != 60
+        or set(active) != set(operational)
+    ):
+        raise SubingDailyWatchError("ACTIVE_OPERATIONAL_SCOPE_MISMATCH")
+
+    market_data = build_market_data_service(session)
+    dominants = market_data.list_latest_dominants()
+    metadata = {
+        item.symbol: SubingDailyWatchProduct(
+            symbol=item.symbol,
+            product_name=item.product_name,
+            sector=item.sector,
+        )
+        for item in dominants
+        if item.symbol in set(active)
+    }
+    store = SubingDailyWatchStore(
+        resolve_subing_observation_root(
+            environ=os.environ,
+            inspector=PathMountInspector(),
+        )
+    )
+    return SubingDailyWatchGenerator(
+        builder=SubingDailyWatchBuilder(
+            segment_loader=ActualDominantResearchSegmentLoader(market_data),
+            products=active,
+            product_metadata=metadata,
+        ),
+        store=store,
+        target_day=lambda source: resolve_next_common_trading_day(
+            session,
+            products=active,
+            source_trading_day=source,
+        ),
+        clock=lambda: datetime.now(UTC),
+    )
+
+
+def build_subing_daily_watch_current_service(
+    session: Session,
+) -> SubingDailyWatchCurrentService:
+    """Compose the current projection from Calendar and extension store only."""
+    products = load_operational_products()
+    return SubingDailyWatchCurrentService(
+        products=products,
+        expected_day=lambda now: resolve_expected_daily_watch_day(
+            session,
+            products=products,
+            now=now,
+        ),
+        store_factory=lambda: SubingDailyWatchStore(
+            resolve_subing_observation_root(
+                environ=os.environ,
+                inspector=PathMountInspector(),
+            )
+        ),
     )
 
 

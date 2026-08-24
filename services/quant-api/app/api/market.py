@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import cast
+from typing import Literal, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
@@ -19,6 +19,7 @@ from app.market_data.composition import (
     build_market_read_service,
     build_market_radar_service,
     build_market_research_service,
+    build_subing_daily_watch_current_service,
     build_subing_read_service,
 )
 from app.market_data.market_trend_focus import (
@@ -44,6 +45,11 @@ from app.market_data.subing_calibration import SubingCalibrationError
 from app.market_data.subing_lifecycle import SubingLifecycleSnapshot
 from app.market_data.subing_read_service import SubingReadRequest
 from app.market_data.subing_research import SubingFactorResult, SubingSignalEvaluation
+from app.market_data.subing_daily_watch import (
+    SubingDailyWatchItem,
+    SubingDailyWatchWebSnapshot,
+)
+from app.market_data.subing_ema_trend import SubingEmaTrendSnapshot
 from app.schemas.market import (
     ContractSegmentOut,
     CoverageOut,
@@ -66,6 +72,11 @@ from app.schemas.market import (
     MarketTrendFocusUnavailableOut,
     ProductResearchResponse,
     SubingConditionOut,
+    SubingDailyWatchCountsOut,
+    SubingDailyWatchCurrentResponse,
+    SubingDailyWatchItemOut,
+    SubingDailyWatchTrendOut,
+    SubingDailyWatchWebSnapshotOut,
     SubingFactorResultOut,
     SubingFactorSnapshotOut,
     SubingLifecyclePivotOut,
@@ -471,6 +482,30 @@ def subing_research(
     )
 
 
+@router.get(
+    "/research/subing-daily-watch/current",
+    response_model=SubingDailyWatchCurrentResponse,
+)
+def subing_daily_watch_current(
+    session: Session = Depends(get_db),
+) -> SubingDailyWatchCurrentResponse:
+    """Return the current validated Daily Watch projection only."""
+    result = build_subing_daily_watch_current_service(session).current(
+        datetime.now(UTC)
+    )
+    return SubingDailyWatchCurrentResponse(
+        status=result.status,
+        expected_target_trading_day=result.expected_target_trading_day,
+        latest_target_trading_day=result.latest_target_trading_day,
+        error_code=result.error_code,
+        snapshot=(
+            _subing_daily_watch_snapshot(result.snapshot)
+            if result.snapshot is not None
+            else None
+        ),
+    )
+
+
 @router.get("/research/radar", response_model=MarketRadarResponse)
 def market_radar(session: Session = Depends(get_db)) -> MarketRadarResponse:
     """返回完整 active universe 的只读 Radar；freshness 异常显式降级。"""
@@ -612,6 +647,68 @@ def _radar_item(item) -> MarketRadarItemOut:
         position20=metrics.position20,
         turnover=item.turnover,
         reason_codes=list(item.reason_codes),
+    )
+
+
+def _subing_daily_watch_snapshot(
+    snapshot: SubingDailyWatchWebSnapshot,
+) -> SubingDailyWatchWebSnapshotOut:
+    return SubingDailyWatchWebSnapshotOut(
+        source_trading_day=snapshot.source_trading_day,
+        target_trading_day=snapshot.target_trading_day,
+        generated_at=snapshot.generated_at,
+        counts=SubingDailyWatchCountsOut(**snapshot.counts),
+        long_watch=[_subing_daily_watch_item(item) for item in snapshot.long_watch],
+        short_watch=[
+            _subing_daily_watch_item(item) for item in snapshot.short_watch
+        ],
+        unavailable=[
+            _subing_daily_watch_item(item) for item in snapshot.unavailable
+        ],
+    )
+
+
+def _subing_daily_watch_item(
+    item: SubingDailyWatchItem,
+) -> SubingDailyWatchItemOut:
+    if item.decision.value == "excluded":
+        raise ValueError("excluded Daily Watch item cannot enter Web projection")
+    return SubingDailyWatchItemOut(
+        symbol=item.symbol,
+        product_name=item.product_name,
+        sector=item.sector,
+        decision=cast(
+            Literal["long_watch", "short_watch", "unavailable"],
+            item.decision.value,
+        ),
+        reason_codes=list(item.reason_codes),
+        daily=(
+            _subing_daily_watch_trend(item.daily)
+            if item.daily is not None
+            else None
+        ),
+        hourly=(
+            _subing_daily_watch_trend(item.hourly)
+            if item.hourly is not None
+            else None
+        ),
+        unavailable_reasons=list(item.unavailable_reasons),
+    )
+
+
+def _subing_daily_watch_trend(
+    trend: SubingEmaTrendSnapshot,
+) -> SubingDailyWatchTrendOut:
+    return SubingDailyWatchTrendOut(
+        bar_end=trend.bar_end,
+        trading_day=trend.trading_day,
+        physical_contract=trend.contract,
+        segment_start_trading_day=trend.segment_start_trading_day,
+        close=trend.close,
+        ema21=trend.ema21,
+        price_side=trend.price_side.value,
+        slope_5_bps_per_bar=trend.slope_5_bps_per_bar,
+        slope_10_bps_per_bar=trend.slope_10_bps_per_bar,
     )
 
 

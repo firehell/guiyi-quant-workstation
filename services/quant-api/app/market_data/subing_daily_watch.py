@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
 from enum import StrEnum
-from typing import Protocol
+from typing import Literal, Protocol
 
 from .actual_dominant_research import (
     ActualDominantResearchSegmentIdentityError,
@@ -104,6 +104,26 @@ class SubingDailyWatchSnapshot:
         }
 
 
+@dataclass(frozen=True, slots=True)
+class SubingDailyWatchWebSnapshot:
+    source_trading_day: date
+    target_trading_day: date
+    generated_at: datetime
+    counts: Mapping[str, int]
+    long_watch: tuple[SubingDailyWatchItem, ...]
+    short_watch: tuple[SubingDailyWatchItem, ...]
+    unavailable: tuple[SubingDailyWatchItem, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class SubingDailyWatchCurrentResult:
+    status: Literal["ready", "unavailable"]
+    expected_target_trading_day: date | None
+    latest_target_trading_day: date | None
+    error_code: str | None
+    snapshot: SubingDailyWatchWebSnapshot | None
+
+
 class _SegmentLoader(Protocol):
     def load(
         self,
@@ -113,6 +133,50 @@ class _SegmentLoader(Protocol):
         since: date,
         through: date,
     ) -> ActualDominantResearchSeries: ...
+
+
+class _PublishResult(Protocol):
+    @property
+    def status(self) -> Literal["published", "idempotent"]: ...
+
+    @property
+    def target_trading_day(self) -> date: ...
+
+
+class _DailyWatchStore(Protocol):
+    def publish(
+        self,
+        snapshot: SubingDailyWatchSnapshot,
+        *,
+        started_at: datetime,
+    ) -> _PublishResult: ...
+
+    def read_current(self) -> SubingDailyWatchSnapshot | None: ...
+
+    def record_failure(
+        self,
+        *,
+        source_trading_day: date,
+        target_trading_day: date | None,
+        started_at: datetime,
+        finished_at: datetime,
+        error_code: str,
+    ) -> None: ...
+
+
+_GENERATION_FAILURE_CODES = frozenset(
+    {
+        "ACTIVE_OPERATIONAL_SCOPE_MISMATCH",
+        "NEXT_TRADING_DAY_UNAVAILABLE",
+        "OBSERVATION_ROOT_UNCONFIGURED",
+        "OBSERVATION_ROOT_UNAVAILABLE",
+        "OBSERVATION_ROOT_NOT_WRITABLE",
+        "SNAPSHOT_INVALID",
+        "SNAPSHOT_IDENTITY_CONFLICT",
+        "CURRENT_TARGET_REGRESSION",
+        "OBSERVATION_ATOMIC_WRITE_FAILED",
+    }
+)
 
 
 def classify_daily_watch(
@@ -181,10 +245,47 @@ class SubingDailyWatchBuilder:
         target_trading_day: date,
         generated_at: datetime,
     ) -> SubingDailyWatchSnapshot:
-        items = tuple(
+        items = self._build_items(source_trading_day)
+        return self._snapshot(
+            source_trading_day=source_trading_day,
+            target_trading_day=target_trading_day,
+            generated_at=generated_at,
+            items=items,
+        )
+
+    def build_at_completion(
+        self,
+        *,
+        source_trading_day: date,
+        target_trading_day: date,
+        generated_at: Callable[[], datetime],
+    ) -> SubingDailyWatchSnapshot:
+        """Build the complete ledger before sampling its generation time."""
+        items = self._build_items(source_trading_day)
+        return self._snapshot(
+            source_trading_day=source_trading_day,
+            target_trading_day=target_trading_day,
+            generated_at=generated_at(),
+            items=items,
+        )
+
+    def _build_items(
+        self,
+        source_trading_day: date,
+    ) -> tuple[SubingDailyWatchItem, ...]:
+        return tuple(
             self._build_item(symbol, source_trading_day=source_trading_day)
             for symbol in self._products
         )
+
+    def _snapshot(
+        self,
+        *,
+        source_trading_day: date,
+        target_trading_day: date,
+        generated_at: datetime,
+        items: tuple[SubingDailyWatchItem, ...],
+    ) -> SubingDailyWatchSnapshot:
         if len(items) != self._expected_universe_size:
             raise SubingDailyWatchError("SNAPSHOT_INVALID")
         return SubingDailyWatchSnapshot(
@@ -288,6 +389,141 @@ class SubingDailyWatchBuilder:
         )
 
 
+class SubingDailyWatchGenerator:
+    def __init__(
+        self,
+        *,
+        builder: SubingDailyWatchBuilder,
+        store: _DailyWatchStore,
+        target_day: Callable[[date], date],
+        clock: Callable[[], datetime],
+    ) -> None:
+        self.builder = builder
+        self._store = store
+        self._target_day = target_day
+        self._clock = clock
+
+    def run(self, source_trading_day: date) -> _PublishResult:
+        started_at = self._clock()
+        target_trading_day: date | None = None
+        try:
+            target_trading_day = self._target_day(source_trading_day)
+            snapshot = self.builder.build_at_completion(
+                source_trading_day=source_trading_day,
+                target_trading_day=target_trading_day,
+                generated_at=self._clock,
+            )
+            return self._store.publish(snapshot, started_at=started_at)
+        except Exception as exc:
+            error_code = getattr(exc, "code", None)
+            if error_code in _GENERATION_FAILURE_CODES:
+                finished_at = self._clock()
+                try:
+                    self._store.record_failure(
+                        source_trading_day=source_trading_day,
+                        target_trading_day=target_trading_day,
+                        started_at=started_at,
+                        finished_at=finished_at,
+                        error_code=error_code,
+                    )
+                except Exception:
+                    pass
+            raise
+
+
+class SubingDailyWatchCurrentService:
+    def __init__(
+        self,
+        *,
+        products: tuple[str, ...],
+        store_factory: Callable[[], _DailyWatchStore],
+        expected_day: Callable[[datetime], date],
+    ) -> None:
+        self._products = products
+        self._store_factory = store_factory
+        self._expected_day = expected_day
+
+    def current(self, now: datetime) -> SubingDailyWatchCurrentResult:
+        from .subing_daily_watch_calendar import SubingDailyWatchCalendarError
+        from .subing_daily_watch_store import SubingDailyWatchStoreError
+
+        try:
+            expected = self._expected_day(now)
+        except SubingDailyWatchCalendarError:
+            return _current_unavailable(
+                "SUBING_DAILY_WATCH_EXPECTED_DAY_UNAVAILABLE"
+            )
+
+        try:
+            snapshot = self._store_factory().read_current()
+        except SubingDailyWatchStoreError as exc:
+            if exc.code in {
+                "OBSERVATION_ROOT_UNCONFIGURED",
+                "OBSERVATION_ROOT_UNAVAILABLE",
+                "OBSERVATION_ROOT_NOT_WRITABLE",
+            }:
+                return _current_unavailable(
+                    "SUBING_OBSERVATION_ROOT_UNAVAILABLE",
+                    expected=expected,
+                )
+            return _current_unavailable(
+                "SUBING_DAILY_WATCH_INVALID",
+                expected=expected,
+            )
+
+        if snapshot is None:
+            return _current_unavailable(
+                "SUBING_DAILY_WATCH_NOT_GENERATED",
+                expected=expected,
+            )
+        if (
+            len(snapshot.items) != 60
+            or len(self._products) != 60
+            or len(set(self._products)) != 60
+            or tuple(item.symbol for item in snapshot.items) != self._products
+        ):
+            return _current_unavailable(
+                "SUBING_DAILY_WATCH_INVALID",
+                expected=expected,
+                latest=snapshot.target_trading_day,
+            )
+        if snapshot.target_trading_day != expected:
+            return _current_unavailable(
+                "SUBING_DAILY_WATCH_STALE",
+                expected=expected,
+                latest=snapshot.target_trading_day,
+            )
+
+        projection = SubingDailyWatchWebSnapshot(
+            source_trading_day=snapshot.source_trading_day,
+            target_trading_day=snapshot.target_trading_day,
+            generated_at=snapshot.generated_at,
+            counts=snapshot.counts,
+            long_watch=tuple(
+                item
+                for item in snapshot.items
+                if item.decision is SubingDailyWatchDecision.LONG_WATCH
+            ),
+            short_watch=tuple(
+                item
+                for item in snapshot.items
+                if item.decision is SubingDailyWatchDecision.SHORT_WATCH
+            ),
+            unavailable=tuple(
+                item
+                for item in snapshot.items
+                if item.decision is SubingDailyWatchDecision.UNAVAILABLE
+            ),
+        )
+        return SubingDailyWatchCurrentResult(
+            status="ready",
+            expected_target_trading_day=expected,
+            latest_target_trading_day=snapshot.target_trading_day,
+            error_code=None,
+            snapshot=projection,
+        )
+
+
 def _trend_direction(snapshot: SubingEmaTrendSnapshot) -> str:
     if (
         snapshot.price_side is PriceSide.ABOVE
@@ -370,4 +606,19 @@ def _unavailable_item(
         daily=daily,
         hourly=hourly,
         unavailable_reasons=reasons,
+    )
+
+
+def _current_unavailable(
+    error_code: str,
+    *,
+    expected: date | None = None,
+    latest: date | None = None,
+) -> SubingDailyWatchCurrentResult:
+    return SubingDailyWatchCurrentResult(
+        status="unavailable",
+        expected_target_trading_day=expected,
+        latest_target_trading_day=latest,
+        error_code=error_code,
+        snapshot=None,
     )
