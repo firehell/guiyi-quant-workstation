@@ -218,13 +218,17 @@ def jdj_strategy_historical_actions(
             since=since,
             through=through,
         )
+        result = build_jdj_strategy_replay_service(session).history(request)
     except JdjStrategyProfileUnavailableError as exc:
         raise HTTPException(
             status_code=422,
             detail={"code": exc.code},
         ) from None
-    try:
-        result = build_jdj_strategy_replay_service(session).history(request)
+    except ActiveUniverseError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": exc.code},
+        ) from None
     except (
         JdjStrategyContextInvalidError,
         JdjStrategySegmentIdentityError,

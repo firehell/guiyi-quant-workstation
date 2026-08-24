@@ -682,33 +682,63 @@ test('N and JDJ Candidate remain available for AG without implying strategy supp
   expect(jdjHistoricalRequests[0]).toMatchObject({ series_kind: 'actual_dominant', symbol: 'ag', frequency: '1m' })
 })
 
-test('JDJ Strategy uses JM contract identity and clears stale markers across 1m 5m 1m', async ({ page }) => {
+test('JDJ Strategy uses current RB identity and clears stale markers across 1m 5m 1m', async ({ page }) => {
   const bars = Array.from({ length: 120 }, (_, index) => bar(index))
+  bars[bars.length - 1] = {
+    ...bars.at(-1),
+    bar_end: '2026-08-20T01:02:00Z',
+    trading_day: '2026-08-20',
+  }
   const historicalEventTime = bars.at(-1).bar_end
   const marketRequests = []
   const jdjStrategyHistoricalRequests = []
-  await mockAlertMarkerSurface(page, [], { symbol: 'jm', contract: 'JM2701' })
+  await mockAlertMarkerSurface(page, [], { symbol: 'rb', contract: 'RB2701' })
   await mockWorkspace(page, { json: {
     ...research(),
-    symbol: 'jm', product_name: '焦煤', sector: 'black', exchange: 'DCE', current_dominant: 'JM2701',
+    symbol: 'rb', product_name: '螺纹钢', sector: 'black', exchange: 'SHFE', current_dominant: 'RB2701',
   } }, {
-    symbol: 'jm',
-    resolvedContract: 'JM2701',
+    symbol: 'rb',
+    productName: '螺纹钢',
+    sector: 'black',
+    exchange: 'SHFE',
+    resolvedContract: 'RB2701',
     bars,
     marketRequests,
     historicalEventTime,
     canonicalCoverage: { start: bars[0].bar_end, end: historicalEventTime },
     jdjStrategyHistoricalRequests,
     jdjStrategyFirstDelayMs: 400,
+    jdjStrategyHistoricalActions: [{
+      event_id: 'jdj-strategy-rb-entry-1',
+      episode_id: 'jdj-rb-episode-1',
+      kind: 'entry',
+      source_event_ids: ['jdj-rb-follow-long-1'],
+      primary_setup: 'trend_follow',
+      supporting_setups: [],
+      direction: 'long',
+      contract: 'RB2701',
+      trading_day: '2026-08-20',
+      segment_start_trading_day: '2026-08-20',
+      decision_at: '2026-08-20T01:01:00Z',
+      effective_bar_end: '2026-08-20T01:02:00Z',
+      reference_price: '3200',
+      quantity: 1,
+      position_quantity_after: 1,
+      stop_price: '3180',
+      target_price: '3240',
+      reward_risk: '2',
+      reason: 'ENTRY_AUTHORIZED',
+      fill_basis: 'limit_touch',
+    }],
   })
-  await page.goto('/market/chart?symbol=jm&series_kind=actual_dominant&frequency=1m')
+  await page.goto('/market/chart?symbol=rb&series_kind=actual_dominant&frequency=1m')
 
   const overlay = page.getByRole('group', { name: 'Overlay' })
   const shell = page.getByTestId('kline-shell')
   await expect(page.getByText('120 bars', { exact: true })).toBeVisible()
-  await expect(page.locator('.product-status-strip strong')).toHaveText('JM2701')
+  await expect(page.locator('.product-status-strip strong')).toHaveText('RB2701')
   expect(marketRequests[0]).toMatchObject({
-    series_kind: 'actual_dominant', symbol: 'jm', frequency: '1m',
+    series_kind: 'actual_dominant', symbol: 'rb', frequency: '1m',
   })
 
   await overlay.getByRole('button', { name: '日进斗金策略', exact: true }).click()
@@ -734,12 +764,12 @@ test('JDJ Strategy uses JM contract identity and clears stale markers across 1m 
   }
   await expect(markerDetail).toContainText('参考回放')
   await expect(markerDetail).toContainText('主设置 trend_follow')
-  await expect(markerDetail).toContainText('合约 JM2701')
-  await expect(markerDetail).toContainText('数量 8')
-  await expect(markerDetail).toContainText('R:R 2.25')
+  await expect(markerDetail).toContainText('合约 RB2701')
+  await expect(markerDetail).toContainText('数量 1')
+  await expect(markerDetail).toContainText('R:R 2')
   expect(jdjStrategyHistoricalRequests).toEqual([
-    { series_kind: 'actual_dominant', symbol: 'jm', frequency: '1m', since: '2026-01-01', through: '2026-04-30' },
-    { series_kind: 'actual_dominant', symbol: 'jm', frequency: '1m', since: '2026-01-01', through: '2026-04-30' },
+    { series_kind: 'actual_dominant', symbol: 'rb', frequency: '1m', since: '2026-01-01', through: '2026-08-20' },
+    { series_kind: 'actual_dominant', symbol: 'rb', frequency: '1m', since: '2026-01-01', through: '2026-08-20' },
   ])
 })
 
