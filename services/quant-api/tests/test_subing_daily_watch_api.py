@@ -102,7 +102,11 @@ def _snapshot() -> SubingDailyWatchSnapshot:
             decision = SubingDailyWatchDecision.EXCLUDED
             reason_codes = ("D1_TREND_NEUTRAL",)
             unavailable_reasons = ()
-            daily = _trend(BarFrequency.D1)
+            daily = _trend(
+                BarFrequency.D1,
+                price_side=PriceSide.EQUAL,
+                close=Decimal("3478.2468"),
+            )
             hourly = _trend(BarFrequency.H1)
         else:
             decision = SubingDailyWatchDecision.UNAVAILABLE
@@ -457,6 +461,9 @@ def test_generator_composition_is_complete_and_creates_no_files(
 
     root = tmp_path / "observation-root"
     loader = object()
+    store = object()
+    captured_store: dict[str, object] = {}
+    root_resolutions: list[Path] = []
     products = _SYMBOLS
     dominants = tuple(
         SimpleNamespace(
@@ -481,9 +488,25 @@ def test_generator_composition_is_complete_and_creates_no_files(
         "app.market_data.composition.ActualDominantResearchSegmentLoader",
         lambda value: loader if value is market_data else pytest.fail("wrong MDS"),
     )
+    def resolve_root(**_kwargs: object) -> Path:
+        root_resolutions.append(root)
+        return root
+
+    def build_store(
+        value: Path,
+        *,
+        root_validator: object,
+    ) -> object:
+        captured_store.update(root=value, root_validator=root_validator)
+        return store
+
     monkeypatch.setattr(
         "app.market_data.composition.resolve_subing_observation_root",
-        lambda **_kwargs: root,
+        resolve_root,
+    )
+    monkeypatch.setattr(
+        "app.market_data.composition.SubingDailyWatchStore",
+        build_store,
     )
 
     generator = build_subing_daily_watch_generator(object())
@@ -491,6 +514,11 @@ def test_generator_composition_is_complete_and_creates_no_files(
     assert isinstance(generator, SubingDailyWatchGenerator)
     assert generator.builder._segment_loader is loader
     assert generator.builder._products == products
+    assert captured_store["root"] == root
+    root_validator = captured_store["root_validator"]
+    assert callable(root_validator)
+    assert root_validator() == root
+    assert root_resolutions == [root, root]
     assert not root.exists()
 
 

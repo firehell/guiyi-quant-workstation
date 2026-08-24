@@ -46,6 +46,42 @@ def _calculate(bars: tuple[CanonicalBar, ...]):
     )
 
 
+def _pre_refactor_golden_bars(
+    frequency: BarFrequency,
+) -> tuple[CanonicalBar, ...]:
+    start = datetime(2026, 8, 3, 1, tzinfo=UTC)
+    step = 5 if frequency is BarFrequency.M5 else 15
+    closes = (
+        [
+            Decimal("100.125")
+            + Decimal(index) * Decimal("0.73")
+            + Decimal(index % 4) * Decimal("0.11")
+            for index in range(48)
+        ]
+        if frequency is BarFrequency.M5
+        else [
+            Decimal("250.875")
+            - Decimal(index) * Decimal("0.61")
+            + Decimal(index % 5) * Decimal("0.07")
+            for index in range(48)
+        ]
+    )
+    return tuple(
+        CanonicalBar(
+            bar_end=start + timedelta(minutes=step * index),
+            trading_day=date(2026, 8, 3),
+            open=close,
+            high=close + Decimal("1"),
+            low=close - Decimal("1"),
+            close=close,
+            volume=Decimal("100") + Decimal(index),
+            turnover=None,
+            open_interest=None,
+        )
+        for index, close in enumerate(closes)
+    )
+
+
 def test_rising_ema_trend_is_ready_above_with_positive_slopes() -> None:
     """Catches reversed price-side or slope direction on a rising series."""
     bars = _bars_from_closes(
@@ -186,3 +222,72 @@ def test_existing_factor_and_frequency_neutral_trend_have_exact_ema_parity() -> 
         factor.snapshot.slope_10_bps_per_bar
         == trend.snapshot.slope_10_bps_per_bar
     )
+
+
+@pytest.mark.parametrize(
+    ("frequency", "expected"),
+    [
+        (
+            BarFrequency.M5,
+            (
+                Decimal("127.31271"),
+                PriceSide.ABOVE,
+                Decimal("0.7301415"),
+                Decimal("0.7302731818181818181818181818"),
+                Decimal("58.02041428197590688771069916"),
+                Decimal("58.88562894977286565845070983"),
+            ),
+        ),
+        (
+            BarFrequency.M15,
+            (
+                Decimal("228.438223"),
+                PriceSide.BELOW,
+                Decimal("-0.6133585"),
+                Decimal("-0.6107582969696969696969696970"),
+                Decimal("-26.70672491294420647077695257"),
+                Decimal("-26.41810766206838140590736725"),
+            ),
+        ),
+    ],
+)
+def test_m5_m15_factor_and_trend_match_pre_refactor_golden_values(
+    frequency: BarFrequency,
+    expected: tuple[Decimal, PriceSide, Decimal, Decimal, Decimal, Decimal],
+) -> None:
+    """Catches 5m/15m EMA facts drifting from the pre-seam implementation."""
+    bars = _pre_refactor_golden_bars(frequency)
+    factor = calculate_subing_factor(
+        bars,
+        timeframe=frequency,
+        contract="JM2609",
+        segment_start_trading_day=bars[0].trading_day,
+        latest_bar_source="canonical",
+    )
+    trend = calculate_subing_ema_trend(
+        bars,
+        timeframe=frequency,
+        contract="JM2609",
+        segment_start_trading_day=bars[0].trading_day,
+    )
+
+    assert factor.status is SubingFactorStatus.READY
+    assert factor.snapshot is not None
+    assert trend.status is SubingEmaTrendStatus.READY
+    assert trend.snapshot is not None
+    assert (
+        factor.snapshot.ema21,
+        factor.snapshot.price_side,
+        factor.snapshot.slope_5_raw,
+        factor.snapshot.slope_10_raw,
+        factor.snapshot.slope_5_bps_per_bar,
+        factor.snapshot.slope_10_bps_per_bar,
+    ) == expected
+    assert (
+        trend.snapshot.ema21,
+        trend.snapshot.price_side,
+        trend.snapshot.slope_5_raw,
+        trend.snapshot.slope_10_raw,
+        trend.snapshot.slope_5_bps_per_bar,
+        trend.snapshot.slope_10_bps_per_bar,
+    ) == expected

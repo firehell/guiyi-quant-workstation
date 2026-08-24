@@ -62,9 +62,25 @@ class SubingDailyWatchItem:
     def __post_init__(self) -> None:
         if not self.symbol:
             raise SubingDailyWatchError("SNAPSHOT_INVALID")
+        if any(
+            not _price_side_matches_close(trend)
+            for trend in (self.daily, self.hourly)
+            if trend is not None
+        ):
+            raise SubingDailyWatchError("SNAPSHOT_INVALID")
         has_complete_facts = self.daily is not None and self.hourly is not None
         if self.decision is SubingDailyWatchDecision.UNAVAILABLE:
-            if self.reason_codes or not self.unavailable_reasons:
+            if (
+                self.reason_codes
+                or not self.unavailable_reasons
+                or has_complete_facts
+                or len(set(self.unavailable_reasons))
+                != len(self.unavailable_reasons)
+                or any(
+                    reason not in _UNAVAILABLE_REASON_CODES
+                    for reason in self.unavailable_reasons
+                )
+            ):
                 raise SubingDailyWatchError("SNAPSHOT_INVALID")
         elif (
             not has_complete_facts
@@ -72,6 +88,15 @@ class SubingDailyWatchItem:
             or self.unavailable_reasons
         ):
             raise SubingDailyWatchError("SNAPSHOT_INVALID")
+        else:
+            assert self.daily is not None
+            assert self.hourly is not None
+            classification = classify_daily_watch(self.daily, self.hourly)
+            if (
+                self.decision is not classification.decision
+                or self.reason_codes != classification.reason_codes
+            ):
+                raise SubingDailyWatchError("SNAPSHOT_INVALID")
 
 
 @dataclass(frozen=True, slots=True)
@@ -175,6 +200,17 @@ _GENERATION_FAILURE_CODES = frozenset(
         "SNAPSHOT_IDENTITY_CONFLICT",
         "CURRENT_TARGET_REGRESSION",
         "OBSERVATION_ATOMIC_WRITE_FAILED",
+    }
+)
+
+_UNAVAILABLE_REASON_CODES = frozenset(
+    {
+        "D1_HISTORY_INSUFFICIENT",
+        "H1_HISTORY_INSUFFICIENT",
+        "SOURCE_TRADING_DAY_MISSING",
+        "DOMINANT_SEGMENT_UNAVAILABLE",
+        "DATA_IDENTITY_MISMATCH",
+        "PRODUCT_METADATA_UNAVAILABLE",
     }
 )
 
@@ -550,6 +586,14 @@ def _trend_direction(snapshot: SubingEmaTrendSnapshot) -> str:
     ):
         return "short"
     return "neutral"
+
+
+def _price_side_matches_close(snapshot: SubingEmaTrendSnapshot) -> bool:
+    if snapshot.close > snapshot.ema21:
+        return snapshot.price_side is PriceSide.ABOVE
+    if snapshot.close < snapshot.ema21:
+        return snapshot.price_side is PriceSide.BELOW
+    return snapshot.price_side is PriceSide.EQUAL
 
 
 def _validate_loaded_identity(

@@ -310,7 +310,13 @@ def build_subing_daily_watch_generator(
         for item in dominants
         if item.symbol in set(active)
     }
-    store = SubingDailyWatchStore(root)
+    store = SubingDailyWatchStore(
+        root,
+        root_validator=lambda: resolve_subing_observation_root(
+            environ=os.environ,
+            inspector=PathMountInspector(),
+        ),
+    )
     return SubingDailyWatchGenerator(
         builder=SubingDailyWatchBuilder(
             segment_loader=ActualDominantResearchSegmentLoader(market_data),

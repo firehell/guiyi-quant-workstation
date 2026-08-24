@@ -231,6 +231,24 @@ def test_root_policy_rejects_non_directory_or_unwritable_target(
     assert raised.value.code == "OBSERVATION_ROOT_UNAVAILABLE"
 
 
+def test_publish_revalidates_production_root_before_creating_directories(
+    tmp_path: Path,
+) -> None:
+    """Catches a volume disappearing between composition and publication."""
+    root = tmp_path / "must-not-be-created"
+
+    def reject_unmounted_root() -> Path:
+        raise SubingDailyWatchStoreError("OBSERVATION_ROOT_UNAVAILABLE")
+
+    store = SubingDailyWatchStore(root, root_validator=reject_unmounted_root)
+
+    with pytest.raises(SubingDailyWatchStoreError) as raised:
+        store.publish(_snapshot(), started_at=_STARTED_AT)
+
+    assert raised.value.code == "OBSERVATION_ROOT_UNAVAILABLE"
+    assert not root.exists()
+
+
 def _trend(
     timeframe: BarFrequency,
     *,
@@ -413,7 +431,10 @@ def test_publish_expands_decimal_exponents_to_plain_strings(tmp_path: Path) -> N
     exponential = replace(
         snapshot,
         items=(
-            replace(first, daily=replace(first.daily, close=Decimal("1E+2"))),
+            replace(
+                first,
+                daily=replace(first.daily, close=Decimal("1.025E+2")),
+            ),
             snapshot.items[1],
         ),
     )
@@ -421,7 +442,7 @@ def test_publish_expands_decimal_exponents_to_plain_strings(tmp_path: Path) -> N
     store.publish(exponential, started_at=_STARTED_AT)
 
     payload = json.loads((tmp_path / "current.json").read_bytes())
-    assert payload["items"][0]["daily"]["close"] == "100"
+    assert payload["items"][0]["daily"]["close"] == "102.5"
     assert store.read_current() == exponential
 
 
@@ -561,6 +582,57 @@ def test_read_current_strictly_rejects_contract_drift(
 
 
 @pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda payload: (
+            payload["items"][0].update(
+                decision="short_watch",
+                reason_codes=["D1_H1_SHORT_ALIGNED"],
+            ),
+            payload["counts"].update(long_watch=0, short_watch=1),
+        ),
+        lambda payload: (
+            payload["items"][0].update(
+                decision="excluded",
+                reason_codes=["D1_TREND_NEUTRAL"],
+            ),
+            payload["items"][0]["daily"].update(price_side="below"),
+            payload["counts"].update(long_watch=0, excluded=1),
+        ),
+        lambda payload: payload["items"][1].update(
+            unavailable_reasons=["UNKNOWN_UNAVAILABLE_REASON"]
+        ),
+    ],
+    ids=(
+        "decision-disagrees-with-trends",
+        "price-side-disagrees-with-close",
+        "unavailable-reason-not-allowlisted",
+    ),
+)
+def test_read_current_rejects_semantically_inconsistent_items(
+    tmp_path: Path,
+    mutate: object,
+) -> None:
+    """Catches canonical JSON whose decision or reasons contradict its facts."""
+    store = SubingDailyWatchStore(tmp_path)
+    store.publish(_snapshot(), started_at=_STARTED_AT)
+    current = tmp_path / "current.json"
+    payload = json.loads(current.read_bytes())
+    assert callable(mutate)
+    mutate(payload)
+    current.write_text(
+        json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(SubingDailyWatchStoreError) as raised:
+        store.read_current()
+
+    assert raised.value.code == "SNAPSHOT_INVALID"
+
+
+@pytest.mark.parametrize(
     ("artifact", "mutate"),
     [
         (
@@ -641,6 +713,28 @@ def test_record_failure_preserves_last_success_without_touching_snapshot_files(
     }
     assert current.read_bytes() == original_current
     assert history.read_bytes() == original_history
+
+
+def test_same_target_failure_invalidates_current_projection(tmp_path: Path) -> None:
+    """Catches a conflicting run exposing the preserved same-target current."""
+    store = SubingDailyWatchStore(tmp_path)
+    snapshot = _snapshot()
+    store.publish(snapshot, started_at=_STARTED_AT)
+
+    store.record_failure(
+        source_trading_day=_SOURCE_DAY,
+        target_trading_day=_TARGET_DAY,
+        started_at=_STARTED_AT,
+        finished_at=_GENERATED_AT + timedelta(minutes=1),
+        error_code="SNAPSHOT_IDENTITY_CONFLICT",
+    )
+
+    with pytest.raises(SubingDailyWatchStoreError) as raised:
+        store.read_current()
+
+    assert raised.value.code == "SNAPSHOT_INVALID"
+    assert (tmp_path / "current.json").exists()
+    assert (tmp_path / "history" / "2026-08-24.json").exists()
 
 
 def test_atomic_replace_failure_preserves_last_valid_files(

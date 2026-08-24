@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
@@ -86,8 +86,14 @@ class SubingDailyWatchPublishResult:
 
 
 class SubingDailyWatchStore:
-    def __init__(self, root: Path) -> None:
+    def __init__(
+        self,
+        root: Path,
+        *,
+        root_validator: Callable[[], Path] | None = None,
+    ) -> None:
         self._root = root
+        self._root_validator = root_validator
         self._history = root / "history"
         self._current = root / "current.json"
         self._generation_status = root / "generation-status.json"
@@ -98,6 +104,7 @@ class SubingDailyWatchStore:
         *,
         started_at: datetime,
     ) -> SubingDailyWatchPublishResult:
+        self._revalidate_root()
         if not _is_aware(started_at) or started_at > snapshot.generated_at:
             raise SubingDailyWatchStoreError("SNAPSHOT_INVALID")
         snapshot_bytes = _snapshot_bytes(snapshot)
@@ -151,10 +158,17 @@ class SubingDailyWatchStore:
             return None
         snapshot = _parse_snapshot_bytes(_read_bytes(self._current))
         status = self.read_generation_status()
+        last_run = status.get("last_run") if status is not None else None
         if (
             status is None
             or status.get("last_successful_target_trading_day")
             != snapshot.target_trading_day.isoformat()
+            or (
+                isinstance(last_run, Mapping)
+                and last_run.get("status") == "failed"
+                and last_run.get("target_trading_day")
+                == snapshot.target_trading_day.isoformat()
+            )
         ):
             raise SubingDailyWatchStoreError("SNAPSHOT_INVALID")
         return snapshot
@@ -173,6 +187,7 @@ class SubingDailyWatchStore:
         finished_at: datetime,
         error_code: str,
     ) -> None:
+        self._revalidate_root()
         if (
             not isinstance(error_code, str)
             or error_code not in _GENERATION_ERROR_CODES
@@ -206,6 +221,12 @@ class SubingDailyWatchStore:
             "last_successful_target_trading_day": last_successful,
         }
         _atomic_write(self._generation_status, _canonical_bytes(payload))
+
+    def _revalidate_root(self) -> None:
+        if self._root_validator is None:
+            return
+        if self._root_validator() != self._root:
+            raise SubingDailyWatchStoreError("OBSERVATION_ROOT_UNAVAILABLE")
 
     def _ensure_directories(self) -> None:
         try:
