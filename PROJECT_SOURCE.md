@@ -170,7 +170,9 @@ fail-closed 使受监督进程退出/重启；该 observation 不改变 `AlertEv
 `current_run={scheduled_date,started_at,products}`，终态才清除。只读 health 按
 `operational_products.txt -> Instrument.exchange_code -> TradingCalendar` 唯一解析预期交易日：18:20
 前不把当日视为已应执行，18:20 起当日可成为 expected day；交易所事实不可用或不唯一时
-fail-closed。应执行未执行/成功落后为 missed，`current_run` 不超过 2h 为 running，超过 2h 为 stuck。
+fail-closed。从未产生过状态时，只有当日为交易日且上海时间已到 18:20、当日已 due 才是
+missed；首次应执行前及周末/节假日仍是 pending。已有状态时，最后成功日落后于 expected day 才是
+missed。`current_run` 不超过 2h 为 running，超过 2h 为 stuck。
 
 盘后运维通知与 Alert Rule/Application Domain 分离：只有受监督自然 execution failure 向 owner
 发起最多一次 PushPlus 请求，不用 Topic、`AlertEvent`、DB、retry 或 fallback。provider accepted

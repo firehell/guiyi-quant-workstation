@@ -104,8 +104,9 @@ contract 的基础 provider `1m/1d` 和日线派生 `1w`，再由 1m 重建四�
 只读 Runtime health 从 `operational_products.txt` 对应的 `Instrument.exchange_code` 与权威
 `TradingCalendar` 唯一解析 expected trading day：上海时间 18:20 前只考虑先前交易日，18:20
 起当日可成为 expected day；交易所结果不唯一、产品/日历事实不完整或 chronology 无效时均
-fail-closed。第一个应执行时点前没有状态为 `pending`；应执行后没有 run，或最后成功日落后于
-expected day，为 `degraded/missed`。`current_run` age 不超过 2h 为 `pending/running`，超过 2h 为
+fail-closed。从未产生过状态时，只有当日为交易日且上海时间已到 18:20、当日已 due 才是
+`degraded/missed`；周末/节假日和首次应执行时点前仍是 `pending`。已有状态时，最后成功日落后于
+expected day 才是 `degraded/missed`。`current_run` age 不超过 2h 为 `pending/running`，超过 2h 为
 `degraded/stuck`。
 
 盘后失败通知是与 Alert Rule/Application Domain 分离的运维能力。公共手工 `guiyi data after-market`

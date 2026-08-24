@@ -18,7 +18,7 @@ exact protocol/window/hash/count 只看 policy、report 与测试；历史过程
 | Market Catalog | Data Foundation 精确保留八表；明确设计的应用事实进入独立 Application Domain | 防止 Catalog 变成重型仓库；Alert/Execution Review 表不得冒充 Market 表 |
 | Historical 查询 | `MarketDataService` 是唯一入口 | consumer 不得 glob、自选 active、自判主力或绕过 coverage/quality |
 | Live | Redis Live 永远只是 Observation | 未确认或盘中事实不得提升为 Canonical，也不得替代 Historical evidence |
-| Runtime 观察 | 复用现有 Redis heartbeat/status 与盘后状态文件，由唯一只读 health DTO 对外投影 | 不建第二套 monitor/scheduler/DB；missing 是 unobserved，无效状态 fail-closed，health 不发送通知或改变 Runtime |
+| Runtime 观察 | 复用现有 Redis heartbeat/status 与盘后状态文件，由唯一只读 health DTO 对外投影 | 不建第二套 monitor/scheduler/DB；只有 Alert persistent status missing 是 `unobserved`，Live heartbeat missing 按启用状态为 degraded/disabled，盘后 missing 按其 pending/missed 合同；无效状态 fail-closed，health 不发送通知或改变 Runtime，精确语义见对应 deep contract |
 | 研究读模型 | 派生市场事实按需计算，不为可复算事实新增 Catalog 表或第二套 resolver | 保持模块深而少；Research 只能向 Historical gateway 依赖，Runtime/Market/Alert 不反向依赖离线 Research |
 | Research 因果性 | segment、contract、trading-day、strict-before 与 event evidence-bar 是硬边界 | 任一身份不完整即 fail-closed；未来 Bar、跨换月 memory 和 same-bar 回标都会污染复算 |
 | Candidate/OOS | source-specific retrospective、embargo、prospective OOS 分离 | 不建立伪 common window，不用 retrospective 回填 OOS；evidence 不自动形成 rank、winner、promotion、盈利或可交易结论 |
