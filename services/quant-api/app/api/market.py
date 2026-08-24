@@ -35,6 +35,10 @@ from app.market_data.domain import (
     parse_rfc3339_instant,
 )
 from app.market_data.market_data_service import MarketDataError
+from app.market_data.operational_universe import (
+    ActiveUniverseError,
+    OperationalUniverseError,
+)
 from app.market_data.main_force_mirror_v2_service import (
     MainForceMirrorV2Error,
     MainForceMirrorV2PageResult,
@@ -490,9 +494,18 @@ def subing_daily_watch_current(
     session: Session = Depends(get_db),
 ) -> SubingDailyWatchCurrentResponse:
     """Return the current validated Daily Watch projection only."""
-    result = build_subing_daily_watch_current_service(session).current(
-        datetime.now(UTC)
-    )
+    try:
+        result = build_subing_daily_watch_current_service(session).current(
+            datetime.now(UTC)
+        )
+    except (ActiveUniverseError, OperationalUniverseError):
+        return SubingDailyWatchCurrentResponse(
+            status="unavailable",
+            expected_target_trading_day=None,
+            latest_target_trading_day=None,
+            error_code="SUBING_DAILY_WATCH_INVALID",
+            snapshot=None,
+        )
     return SubingDailyWatchCurrentResponse(
         status=result.status,
         expected_target_trading_day=result.expected_target_trading_day,

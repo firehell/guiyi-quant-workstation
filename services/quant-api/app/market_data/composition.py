@@ -30,7 +30,12 @@ from app.market_data.live_market import (
 from app.market_data.historical_data_manager import HistoricalDataManager
 from app.market_data.market_read_service import MarketReadService
 from app.market_data.market_phase import MarketPhaseResolver
-from app.market_data.operational_universe import load_operational_products
+from app.market_data.operational_universe import (
+    ActiveUniverseError,
+    OperationalUniverseError,
+    load_active_products,
+    load_operational_products,
+)
 from app.market_data.market_data_service import MarketDataService
 from app.market_data.main_force_mirror_v2_service import (
     MainForceMirrorV2Error,
@@ -70,7 +75,6 @@ from app.market_data.subing_daily_watch_store import (
     SubingDailyWatchStore,
     resolve_subing_observation_root,
 )
-from app.market_data.operational_universe import load_active_products
 from app.market_data.product_taxonomy import load_product_taxonomy
 from app.market_data.storage import CanonicalMonthlyStore
 from app.redis_connections import get_redis_connection
@@ -328,9 +332,15 @@ def build_subing_daily_watch_current_service(
     session: Session,
 ) -> SubingDailyWatchCurrentService:
     """Compose the current projection from Calendar and extension store only."""
-    products = load_operational_products()
+    try:
+        products = load_active_products()
+        operational_products = load_operational_products()
+    except (ActiveUniverseError, OperationalUniverseError):
+        products = ()
+        operational_products = ()
     return SubingDailyWatchCurrentService(
         products=products,
+        operational_products=operational_products,
         expected_day=lambda now: resolve_expected_daily_watch_day(
             session,
             products=products,

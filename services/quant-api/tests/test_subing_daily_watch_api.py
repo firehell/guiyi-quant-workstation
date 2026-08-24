@@ -30,6 +30,10 @@ from app.market_data.subing_daily_watch_store import (
     SubingDailyWatchStoreError,
 )
 from app.market_data.subing_ema_trend import PriceSide, SubingEmaTrendSnapshot
+from app.market_data.operational_universe import (
+    ActiveUniverseError,
+    OperationalUniverseError,
+)
 
 
 _SOURCE_DAY = date(2026, 8, 24)
@@ -161,9 +165,11 @@ def _current_service(
     *,
     expected_day=lambda _now: _TARGET_DAY,
     products: tuple[str, ...] = _SYMBOLS,
+    operational_products: tuple[str, ...] = _SYMBOLS,
 ) -> SubingDailyWatchCurrentService:
     return SubingDailyWatchCurrentService(
         products=products,
+        operational_products=operational_products,
         store_factory=store_factory,
         expected_day=expected_day,
     )
@@ -197,10 +203,7 @@ def test_current_service_rejects_matching_but_incomplete_universe() -> None:
     """Catches a partial configured ledger being accepted as current active60."""
     partial = replace(_snapshot(), items=_snapshot().items[:1])
 
-    result = _current_service(
-        lambda: _Store(partial),
-        products=("aa",),
-    ).current(_NOW)
+    result = _current_service(lambda: _Store(partial)).current(_NOW)
 
     assert result == SubingDailyWatchCurrentResult(
         status="unavailable",
@@ -211,6 +214,17 @@ def test_current_service_rejects_matching_but_incomplete_universe() -> None:
     )
 
 
+def test_current_service_rejects_invalid_configuration_before_missing_current() -> None:
+    """Catches invalid scope identity being mislabeled as not generated."""
+    result = _current_service(
+        lambda: _Store(None),
+        products=("aa",),
+    ).current(_NOW)
+
+    assert result.error_code == "SUBING_DAILY_WATCH_INVALID"
+    assert result.snapshot is None
+
+
 def test_current_service_validates_ledger_before_reporting_stale() -> None:
     """Catches a malformed old/current file being mislabeled as merely stale."""
     partial = replace(
@@ -219,10 +233,7 @@ def test_current_service_validates_ledger_before_reporting_stale() -> None:
         items=_snapshot().items[:1],
     )
 
-    result = _current_service(
-        lambda: _Store(partial),
-        products=("aa",),
-    ).current(_NOW)
+    result = _current_service(lambda: _Store(partial)).current(_NOW)
 
     assert result.error_code == "SUBING_DAILY_WATCH_INVALID"
     assert result.latest_target_trading_day == date(2026, 8, 26)
@@ -297,6 +308,33 @@ def test_current_service_returns_exact_typed_unavailable_without_stale_snapshot(
         error_code=error_code,
         snapshot=None,
     )
+
+
+def test_current_service_propagates_unknown_calendar_domain_code() -> None:
+    """Catches a new Calendar failure being silently relabeled as expected-day unavailable."""
+    error = SubingDailyWatchCalendarError("NEW_CALENDAR_FAILURE")
+    service = _current_service(
+        lambda: pytest.fail("store must not be read after Calendar failure"),
+        expected_day=lambda _now: (_ for _ in ()).throw(error),
+    )
+
+    with pytest.raises(SubingDailyWatchCalendarError) as raised:
+        service.current(_NOW)
+
+    assert raised.value is error
+
+
+def test_current_service_propagates_unknown_store_domain_code() -> None:
+    """Catches a new Store failure being silently relabeled as snapshot invalid."""
+    error = SubingDailyWatchStoreError("NEW_STORE_FAILURE")
+    service = _current_service(
+        lambda: (_ for _ in ()).throw(error),
+    )
+
+    with pytest.raises(SubingDailyWatchStoreError) as raised:
+        service.current(_NOW)
+
+    assert raised.value is error
 
 
 def test_builder_takes_generated_at_only_after_product_work() -> None:
@@ -469,6 +507,9 @@ def test_current_composition_reads_only_calendar_and_store(
 
     root = tmp_path / "missing-observation-root"
     monkeypatch.setattr(
+        "app.market_data.composition.load_active_products", lambda: _SYMBOLS
+    )
+    monkeypatch.setattr(
         "app.market_data.composition.load_operational_products", lambda: _SYMBOLS
     )
     monkeypatch.setattr(
@@ -497,6 +538,133 @@ def test_current_composition_reads_only_calendar_and_store(
     assert result.status == "unavailable"
     assert result.error_code == "SUBING_DAILY_WATCH_NOT_GENERATED"
     assert not root.exists()
+
+
+def test_current_composition_uses_active_order_when_operational_order_differs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Catches set-equal operational order invalidating an active-ordered ledger."""
+    from app.market_data.composition import build_subing_daily_watch_current_service
+
+    monkeypatch.setattr(
+        "app.market_data.composition.load_active_products", lambda: _SYMBOLS
+    )
+    monkeypatch.setattr(
+        "app.market_data.composition.load_operational_products",
+        lambda: _SYMBOLS[::-1],
+    )
+    monkeypatch.setattr(
+        "app.market_data.composition.resolve_expected_daily_watch_day",
+        lambda _session, *, products, now: (
+            _TARGET_DAY
+            if products == _SYMBOLS and now == _NOW
+            else pytest.fail("Calendar must use active order")
+        ),
+    )
+    root = Path("/Volumes/Fake/subing-daily-watch")
+    store = _Store(_snapshot())
+    monkeypatch.setattr(
+        "app.market_data.composition.resolve_subing_observation_root",
+        lambda **_kwargs: root,
+    )
+    monkeypatch.setattr(
+        "app.market_data.composition.SubingDailyWatchStore",
+        lambda value: store if value == root else pytest.fail("wrong store root"),
+    )
+    monkeypatch.setattr(
+        "app.market_data.composition.build_market_data_service",
+        lambda _session: pytest.fail("current read initialized MarketDataService"),
+    )
+    monkeypatch.setattr(
+        "app.market_data.composition.get_redis_connection",
+        lambda: pytest.fail("current read initialized Redis"),
+    )
+
+    result = build_subing_daily_watch_current_service(object()).current(_NOW)
+
+    assert result.status == "ready"
+    assert result.snapshot is not None
+    assert result.snapshot.long_watch[0].symbol == "aa"
+
+
+def test_current_composition_rejects_scope_mismatch_before_calendar_or_store(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Catches active/operational mismatch becoming not-generated after store read."""
+    from app.market_data.composition import build_subing_daily_watch_current_service
+
+    monkeypatch.setattr(
+        "app.market_data.composition.load_active_products", lambda: _SYMBOLS
+    )
+    monkeypatch.setattr(
+        "app.market_data.composition.load_operational_products",
+        lambda: _SYMBOLS[:-1],
+    )
+    monkeypatch.setattr(
+        "app.market_data.composition.resolve_expected_daily_watch_day",
+        lambda *_args, **_kwargs: pytest.fail("invalid config reached Calendar"),
+    )
+    monkeypatch.setattr(
+        "app.market_data.composition.resolve_subing_observation_root",
+        lambda **_kwargs: pytest.fail("invalid config reached store"),
+    )
+    monkeypatch.setattr(
+        "app.market_data.composition.build_market_data_service",
+        lambda _session: pytest.fail("invalid config initialized MarketDataService"),
+    )
+    monkeypatch.setattr(
+        "app.market_data.composition.get_redis_connection",
+        lambda: pytest.fail("invalid config initialized Redis"),
+    )
+
+    result = build_subing_daily_watch_current_service(object()).current(_NOW)
+
+    assert result.error_code == "SUBING_DAILY_WATCH_INVALID"
+    assert result.expected_target_trading_day is None
+    assert result.latest_target_trading_day is None
+    assert result.snapshot is None
+
+
+@pytest.mark.parametrize(
+    ("loader_name", "error"),
+    [
+        ("load_active_products", ActiveUniverseError()),
+        ("load_operational_products", OperationalUniverseError()),
+    ],
+)
+def test_current_composition_maps_universe_loader_error_before_read_dependencies(
+    loader_name: str,
+    error: Exception,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Catches invalid universe files escaping before typed current response."""
+    from app.market_data.composition import build_subing_daily_watch_current_service
+
+    monkeypatch.setattr(
+        f"app.market_data.composition.{loader_name}",
+        lambda: (_ for _ in ()).throw(error),
+    )
+    monkeypatch.setattr(
+        "app.market_data.composition.resolve_expected_daily_watch_day",
+        lambda *_args, **_kwargs: pytest.fail("invalid config reached Calendar"),
+    )
+    monkeypatch.setattr(
+        "app.market_data.composition.resolve_subing_observation_root",
+        lambda **_kwargs: pytest.fail("invalid config reached store"),
+    )
+    monkeypatch.setattr(
+        "app.market_data.composition.build_market_data_service",
+        lambda _session: pytest.fail("invalid config initialized MarketDataService"),
+    )
+    monkeypatch.setattr(
+        "app.market_data.composition.get_redis_connection",
+        lambda: pytest.fail("invalid config initialized Redis"),
+    )
+
+    result = build_subing_daily_watch_current_service(object()).current(_NOW)
+
+    assert result.error_code == "SUBING_DAILY_WATCH_INVALID"
+    assert result.snapshot is None
 
 
 def test_current_api_returns_ready_decimal_projection_and_omits_excluded(
@@ -584,3 +752,55 @@ def test_current_api_unexpected_exception_uses_fastapi_safe_boundary(
     assert response.status_code == 500
     assert "/Volumes/" not in response.text
     assert "secret failure" not in response.text
+
+
+@pytest.mark.parametrize(
+    "configuration_error",
+    [ActiveUniverseError(), OperationalUniverseError()],
+)
+def test_current_api_maps_universe_configuration_error_to_sanitized_http_200(
+    configuration_error: Exception,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Catches composition config errors escaping as HTTP 500."""
+    monkeypatch.setattr(
+        "app.api.market.build_subing_daily_watch_current_service",
+        lambda _session: (_ for _ in ()).throw(configuration_error),
+    )
+
+    response = TestClient(app, raise_server_exceptions=False).get(
+        "/api/v1/market/research/subing-daily-watch/current"
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "unavailable",
+        "expected_target_trading_day": None,
+        "latest_target_trading_day": None,
+        "error_code": "SUBING_DAILY_WATCH_INVALID",
+        "snapshot": None,
+    }
+
+
+def test_current_api_unknown_store_code_uses_safe_500_boundary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Catches a new Store code or physical path leaking through HTTP."""
+    error = SubingDailyWatchStoreError(
+        "NEW_STORE_FAILURE at /Volumes/private/current.json"
+    )
+    service = _current_service(
+        lambda: (_ for _ in ()).throw(error),
+    )
+    monkeypatch.setattr(
+        "app.api.market.build_subing_daily_watch_current_service",
+        lambda _session: service,
+    )
+
+    response = TestClient(app, raise_server_exceptions=False).get(
+        "/api/v1/market/research/subing-daily-watch/current"
+    )
+
+    assert response.status_code == 500
+    assert "/Volumes/" not in response.text
+    assert "NEW_STORE_FAILURE" not in response.text

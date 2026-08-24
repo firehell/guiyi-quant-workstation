@@ -436,10 +436,12 @@ class SubingDailyWatchCurrentService:
         self,
         *,
         products: tuple[str, ...],
+        operational_products: tuple[str, ...],
         store_factory: Callable[[], _DailyWatchStore],
         expected_day: Callable[[datetime], date],
     ) -> None:
         self._products = products
+        self._operational_products = operational_products
         self._store_factory = store_factory
         self._expected_day = expected_day
 
@@ -447,9 +449,17 @@ class SubingDailyWatchCurrentService:
         from .subing_daily_watch_calendar import SubingDailyWatchCalendarError
         from .subing_daily_watch_store import SubingDailyWatchStoreError
 
+        if not _is_complete_scope(self._products, self._operational_products):
+            return _current_unavailable("SUBING_DAILY_WATCH_INVALID")
+
         try:
             expected = self._expected_day(now)
-        except SubingDailyWatchCalendarError:
+        except SubingDailyWatchCalendarError as exc:
+            if exc.code not in {
+                "EXPECTED_TRADING_DAY_UNAVAILABLE",
+                "OPERATIONAL_PRODUCT_EXCHANGE_UNAVAILABLE",
+            }:
+                raise
             return _current_unavailable(
                 "SUBING_DAILY_WATCH_EXPECTED_DAY_UNAVAILABLE"
             )
@@ -466,10 +476,12 @@ class SubingDailyWatchCurrentService:
                     "SUBING_OBSERVATION_ROOT_UNAVAILABLE",
                     expected=expected,
                 )
-            return _current_unavailable(
-                "SUBING_DAILY_WATCH_INVALID",
-                expected=expected,
-            )
+            if exc.code == "SNAPSHOT_INVALID":
+                return _current_unavailable(
+                    "SUBING_DAILY_WATCH_INVALID",
+                    expected=expected,
+                )
+            raise
 
         if snapshot is None:
             return _current_unavailable(
@@ -478,8 +490,6 @@ class SubingDailyWatchCurrentService:
             )
         if (
             len(snapshot.items) != 60
-            or len(self._products) != 60
-            or len(set(self._products)) != 60
             or tuple(item.symbol for item in snapshot.items) != self._products
         ):
             return _current_unavailable(
@@ -621,4 +631,17 @@ def _current_unavailable(
         latest_target_trading_day=latest,
         error_code=error_code,
         snapshot=None,
+    )
+
+
+def _is_complete_scope(
+    products: tuple[str, ...],
+    operational_products: tuple[str, ...],
+) -> bool:
+    return (
+        len(products) == 60
+        and len(operational_products) == 60
+        and len(set(products)) == 60
+        and len(set(operational_products)) == 60
+        and set(products) == set(operational_products)
     )
