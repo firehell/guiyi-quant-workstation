@@ -55,6 +55,17 @@
   共 `192` 次 prefix 比较，`0 mismatch`，无 future/same-boundary/cross-contract identity 冲突。
 - prospective shadow 仍是下一受控 Gate，当前未启用；本状态不授权真实通知或任何正式数据写入。
 
+## JDJ active60 1m reference replay develop candidate
+
+- pre-status implementation/plan exact head 为
+  `683c98a21bd70b2231cbf8975147bad358a73e77`。当前 active60 中单产品的
+  `actual_dominant + 1m` JDJ Historical reference replay 已完成实现，JM Golden exact parity 通过。
+- 固定 smoke window `2026-08-18..2026-08-20` 的唯一授权 retry 观察到 `60 ok / 0
+  typed_unavailable / 0 command_failed`，合计 `2004` 个 action；该数量只表示 reference replay
+  capability coverage，不构成排名、PnL 或策略有效性结论。
+- 该能力仍是 research-only，未消费 prospective OOS，未改变 Alert、Runtime、RQAlpha、Canonical、
+  data、DB、Redis 或 order 路径；main、release 与 production Runtime 状态均未改变。
+
 ## 当前 Runtime 与产品面
 
 - Data Foundation DFD-01～DFD-07 已完成，active 60 与 operational 60 一致。Historical 事实链为

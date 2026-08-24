@@ -8,7 +8,7 @@ from datetime import UTC, date, datetime
 from decimal import Decimal, ROUND_FLOOR
 from hashlib import sha256
 
-from app.market_data.domain import CanonicalBar
+from app.market_data.domain import CanonicalBar, ResolvedContractSegment
 from app.research.jdj.jdj_context import (
     JdjBarContext,
     valid_context_fact_identity,
@@ -83,6 +83,8 @@ _SETUP_PRIORITY = {
 
 def run_jdj_reference_segment(
     *,
+    symbol: str,
+    segment: ResolvedContractSegment,
     bars_1m: Sequence[CanonicalBar],
     contexts: Sequence[JdjBarContext],
     candidate_events: Sequence[JdjTriggerEvent],
@@ -96,6 +98,8 @@ def run_jdj_reference_segment(
     facts = tuple(contexts)
     events = tuple(candidate_events)
     _validate_inputs(
+        symbol,
+        segment,
         bars,
         facts,
         events,
@@ -303,6 +307,8 @@ def run_jdj_reference_segment(
 
 
 def _validate_inputs(
+    symbol: str,
+    segment: ResolvedContractSegment,
     bars: tuple[CanonicalBar, ...],
     contexts: tuple[JdjBarContext, ...],
     events: tuple[JdjTriggerEvent, ...],
@@ -317,7 +323,11 @@ def _validate_inputs(
         JdjKeyLevelBreakoutTriggerEvent,
     )
     if (
-        not isinstance(config, JdjV1Config)
+        not isinstance(symbol, str)
+        or not symbol
+        or symbol != symbol.strip().lower()
+        or not isinstance(segment, ResolvedContractSegment)
+        or not isinstance(config, JdjV1Config)
         or not isinstance(contract_multiplier, Decimal)
         or not contract_multiplier.is_finite()
         or contract_multiplier <= 0
@@ -327,15 +337,25 @@ def _validate_inputs(
         or any(context.bar != bar for bar, context in zip(bars, contexts, strict=True))
         or any(left.bar_end >= right.bar_end for left, right in zip(bars, bars[1:]))
         or any(not isinstance(event, event_types) for event in events)
+        or any(
+            not (
+                segment.start_trading_day
+                <= bar.trading_day
+                <= segment.end_trading_day
+            )
+            for bar in bars
+        )
     ):
         raise JdjStrategyReplayError()
-    bar_ends = {bar.bar_end for bar in bars}
-    days = {bar.trading_day for bar in bars}
-    if any(
+    bars_by_day: dict[date, set[datetime]] = {}
+    for bar in bars:
+        bars_by_day.setdefault(bar.trading_day, set()).add(bar.bar_end)
+    days = set(bars_by_day)
+    if set(terminal_bar_end_by_day) != days or any(
         day not in terminal_bar_end_by_day
         or not isinstance(terminal_bar_end_by_day[day], datetime)
         or terminal_bar_end_by_day[day].tzinfo is None
-        or terminal_bar_end_by_day[day].astimezone(UTC) not in bar_ends
+        or terminal_bar_end_by_day[day].astimezone(UTC) not in bars_by_day[day]
         for day in days
     ):
         raise JdjStrategyReplayError()
@@ -343,37 +363,28 @@ def _validate_inputs(
     for event in events:
         observed_bar = indexed_bars.get(event.observed_at)
         if (
-            event.symbol != config.profile.symbol
+            event.symbol != symbol
+            or event.contract != segment.contract
+            or event.segment_start_trading_day != segment.start_trading_day
+            or not (
+                segment.start_trading_day
+                <= event.trading_day
+                <= segment.end_trading_day
+            )
             or observed_bar is None
             or observed_bar.trading_day != event.trading_day
-            or event.segment_start_trading_day != events[0].segment_start_trading_day
-            or event.contract != events[0].contract
         ):
             raise JdjStrategyReplayError()
-    segment_contract, segment_start = _context_segment_identity(contexts, events)
     previous: JdjBarContext | None = None
     for context in contexts:
         if not valid_context_fact_identity(
             context,
             previous=previous,
-            contract=segment_contract,
-            segment_start_trading_day=segment_start,
+            contract=segment.contract,
+            segment_start_trading_day=segment.start_trading_day,
         ):
             raise JdjStrategyReplayError()
         previous = context
-
-
-def _context_segment_identity(
-    contexts: tuple[JdjBarContext, ...],
-    events: tuple[JdjTriggerEvent, ...],
-) -> tuple[str, date]:
-    if events:
-        return events[0].contract, events[0].segment_start_trading_day
-    for context in contexts:
-        pivot = context.eligible_high_pivot or context.eligible_low_pivot
-        if pivot is not None:
-            return pivot.contract, pivot.segment_start_trading_day
-    return "JM0000", date.min
 
 
 def _consider_entry(

@@ -1243,6 +1243,52 @@ Expected: task branch, clean worktree. Do not run from main/runtime worktrees.
 Run from repository root:
 
 ```bash
+{
+  jdj_xtrace_was_enabled=0
+  case "$-" in
+    *x*)
+      jdj_xtrace_was_enabled=1
+      set +x
+      ;;
+  esac
+} 2>/dev/null
+
+jdj_project_env_file="/Users/zhangzhao/Library/Application Support/GuiyiQuant/project.env"
+
+jdj_smoke_env_invalid() {
+  { set +x; } 2>/dev/null
+  printf '{"status":"command_failed","code":"JDJ_STRATEGY_SMOKE_ENV_INVALID"}\n' >&2
+  exit 1
+}
+
+if ! {
+  test -f "$jdj_project_env_file" \
+    && test "$(stat -f '%u' "$jdj_project_env_file")" -eq "$(id -u)" \
+    && test "$(stat -f '%Lp' "$jdj_project_env_file")" = "600"
+} >/dev/null 2>&1; then
+  jdj_smoke_env_invalid
+fi
+
+set -a
+jdj_source_status=0
+{
+  source "$jdj_project_env_file" || jdj_source_status=$?
+} >/dev/null 2>&1
+{ set +x; } 2>/dev/null
+set +a
+
+if ! test "$jdj_source_status" -eq 0 >/dev/null 2>&1; then
+  jdj_smoke_env_invalid
+fi
+
+if ! test -n "${DATABASE_URL:-}" >/dev/null 2>&1; then
+  jdj_smoke_env_invalid
+fi
+
+if test "$jdj_xtrace_was_enabled" -eq 1 >/dev/null 2>&1; then
+  set -x
+fi
+
 cd services/quant-api
 active_products_file="../../data/universe/active_products.txt"
 processed=0
@@ -1340,6 +1386,18 @@ cd ../..
 
 Expected:
 
+- the secure external project env exists, is owned by the invoking user, and has
+  exact mode `0600`;
+- the secure external project env is sourced before any Python process imports
+  `app.db.session`;
+- `DATABASE_URL` is present after sourcing;
+- all `stat`/`test` diagnostics and sourced-file stdout/stderr are suppressed;
+- any pre-existing xtrace is detected and disabled before the project env path
+  or values are handled, is forced off again immediately after sourcing, and is
+  restored only after every secure environment check passes;
+- any environment validation failure emits only
+  `JDJ_STRATEGY_SMOKE_ENV_INVALID`, does not print config values, and aborts
+  before processing a symbol;
 - exactly 60 result entries in active-universe order;
 - each entry is `ok` or a known typed Strategy unavailable code;
 - the shell reads `data/universe/active_products.txt` directly and starts one
@@ -1347,6 +1405,10 @@ Expected:
 - any active-universe or unexpected failure prints the current symbol and a
   non-zero status, then aborts rather than being swallowed;
 - no repository file changes.
+
+Attempt 1 failed closed at symbol `a` because the original plan omitted
+environment propagation. No repository change occurred. The user approved this
+amendment plus exactly one retry after independent Review.
 
 - [ ] **Step 3: Verify the smoke wrote nothing to the repository**
 

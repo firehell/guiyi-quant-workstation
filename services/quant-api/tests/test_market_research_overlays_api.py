@@ -30,6 +30,7 @@ from app.research.jdj.jdj_research import JdjSourceUnavailableError
 from app.research.jdj_strategy.engine import JdjAction, JdjActionKind
 from app.research.jdj_strategy.service import (
     JdjStrategyContextInvalidError,
+    JdjStrategyProfileUnavailableError,
     JdjStrategySegmentIdentityError,
     JdjStrategySessionIdentityError,
 )
@@ -667,10 +668,13 @@ def test_jdj_strategy_history_route_exposes_exact_read_only_query_contract() -> 
 class _JdjStrategyService:
     def __init__(self, failure: Exception | None = None) -> None:
         self.failure = failure
+        self.requests: list[object] = []
 
     def history(self, request: object) -> SimpleNamespace:
+        self.requests.append(request)
         if self.failure is not None:
             raise self.failure
+        contract = f"{getattr(request, 'symbol', 'jm').upper()}2701"
         return SimpleNamespace(
             request=request,
             reference_execution=True,
@@ -683,7 +687,7 @@ class _JdjStrategyService:
                     primary_setup="key_level_breakout",
                     supporting_setups=("trend_follow",),
                     direction=JdjDirection.LONG,
-                    contract="JM2701",
+                    contract=contract,
                     trading_day=date(2026, 8, 3),
                     segment_start_trading_day=date(2026, 8, 1),
                     decision_at=datetime(2026, 8, 3, 2, 15, tzinfo=UTC),
@@ -705,7 +709,7 @@ class _JdjStrategyService:
                     primary_setup="trend_follow",
                     supporting_setups=(),
                     direction=JdjDirection.SHORT,
-                    contract="JM2701",
+                    contract=contract,
                     trading_day=date(2026, 8, 3),
                     segment_start_trading_day=date(2026, 8, 1),
                     decision_at=datetime(2026, 8, 3, 2, 20, tzinfo=UTC),
@@ -783,11 +787,37 @@ def test_jdj_strategy_history_returns_complete_reference_actions(
     assert payload["actions"][1]["reference_price"] is None
 
 
+def test_jdj_strategy_history_accepts_active_non_jm_symbol(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = _JdjStrategyService()
+    monkeypatch.setattr(
+        "app.research.historical_overlay_api.build_jdj_strategy_replay_service",
+        lambda _session: service,
+        raising=False,
+    )
+
+    response = TestClient(app).get(
+        "/api/v1/market/research/jdj-strategy/history",
+        params={
+            "series_kind": "actual_dominant",
+            "symbol": "RB",
+            "frequency": "1m",
+            "since": "2026-08-03",
+            "through": "2026-08-04",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["request"]["symbol"] == "rb"
+    assert len(service.requests) == 1
+    assert getattr(service.requests[0], "symbol") == "rb"
+
+
 @pytest.mark.parametrize(
     ("series_kind", "symbol", "frequency"),
     (
         ("actual_dominant", "jm", "5m"),
-        ("actual_dominant", "rb", "1m"),
         ("continuous", "jm", "1m"),
     ),
 )
@@ -818,6 +848,62 @@ def test_jdj_strategy_history_rejects_unfrozen_profile_before_builder(
     assert response.json() == {
         "detail": {"code": "JDJ_STRATEGY_PROFILE_UNAVAILABLE"}
     }
+
+
+def test_jdj_strategy_history_maps_service_profile_unavailable_to_422(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = _JdjStrategyService(JdjStrategyProfileUnavailableError())
+    monkeypatch.setattr(
+        "app.research.historical_overlay_api.build_jdj_strategy_replay_service",
+        lambda _session: service,
+        raising=False,
+    )
+
+    response = TestClient(app, raise_server_exceptions=False).get(
+        "/api/v1/market/research/jdj-strategy/history",
+        params={
+            "series_kind": "actual_dominant",
+            "symbol": "not_active",
+            "frequency": "1m",
+            "since": "2026-08-03",
+            "through": "2026-08-04",
+        },
+    )
+
+    assert len(service.requests) == 1
+    assert getattr(service.requests[0], "symbol") == "not_active"
+    assert response.status_code == 422
+    assert response.json() == {
+        "detail": {"code": "JDJ_STRATEGY_PROFILE_UNAVAILABLE"}
+    }
+
+
+def test_jdj_strategy_history_maps_invalid_active_universe_to_409(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail(_session: object) -> None:
+        raise ActiveUniverseError()
+
+    monkeypatch.setattr(
+        "app.research.historical_overlay_api.build_jdj_strategy_replay_service",
+        fail,
+        raising=False,
+    )
+
+    response = TestClient(app, raise_server_exceptions=False).get(
+        "/api/v1/market/research/jdj-strategy/history",
+        params={
+            "series_kind": "actual_dominant",
+            "symbol": "rb",
+            "frequency": "1m",
+            "since": "2026-08-03",
+            "through": "2026-08-04",
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": {"code": "ACTIVE_UNIVERSE_INVALID"}}
 
 
 @pytest.mark.parametrize(

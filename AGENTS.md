@@ -12,7 +12,8 @@
 技术栈固定为 Vue 3/Vite/TypeScript/Naive UI、FastAPI/PostgreSQL/Redis 与
 RQData → Canonical Parquet → 八表 Catalog → MarketDataService；`quant-core` 仅保留
 Indicator Kernel（`guiyi_quant/indicators/`），旧 vn.py-compatible 策略研究包已退役（仅 Git
-history 可追溯）。当前与策略回放/回测相关的研究面包括 JM `actual_dominant + 1m` Historical 日进斗金参考策略回放 HTTP，
+history 可追溯）。当前与策略回放/回测相关的研究面包括当前 active universe 中单产品的
+`actual_dominant + 1m` Historical 日进斗金参考策略回放 HTTP，
 以及使用独立文件系统 artifact 的外部 RQAlpha 研究工作台；两者都不是基于
 Canonical/MarketDataService 的正式回测引擎、通用策略适配层、Candidate/OOS 体系或回测
 worker/queue/CLI。Alert 的两张表与 Execution
@@ -90,7 +91,8 @@ Rule、Scope、audience 或 transport 授权。当前 production、Runtime、Sco
 5. historical canonical 与 live observation 分离。RQData 先进入 staging，完成 schema/session/duplicate/OHLCV/coverage、identity、row-count 与物理可读性校验后才能发布；月分区以同文件系统临时文件原子替换 `part.parquet`，失败时保留最后有效 canonical。live 不得直接提升为正式历史 active。
 6. 映射、分区、coverage 或物理完整性异常必须显式失败，不得静默填充、缩短、替换或跨频回退；不得为此建立第二套缺口状态表。
 7. 策略研究与未来重建的回测禁止未来函数、泄漏和未记录重绘；所有交易相关价格、成本、仓位、资金、盈亏和费用使用 `Decimal`。HTDY original 观察边界见 `docs/INDICATOR_KERNEL.md`（盘中 realtime 应用路径与 Signal/Review 合同已退役，仅 Git history 可追溯）。
-8. 当前只有两条相互隔离的策略回放/回测相关 research-only 路径。JM 1m 日进斗金参考策略基于
+8. 当前只有两条相互隔离的策略回放/回测相关 research-only 路径。当前 active universe 中单产品的
+   `actual_dominant + 1m` 日进斗金参考策略基于
    Canonical/MarketDataService 做确定性 Historical replay，只输出 reference-only action 并只读展示
    reference fill，不进入 DB、Redis、Alert、Execution Review、Runtime 或订单路径。RQAlpha 工作台是
    local-only 外部工具：固定注册策略通过独立 loopback app 读取外部 Bundle，结果只写独立文件系统

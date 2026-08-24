@@ -3,7 +3,7 @@ from __future__ import annotations
 import ast
 import importlib
 import importlib.util
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
@@ -13,7 +13,13 @@ import pytest
 from app.market_data import composition as market_data_composition
 from app.research import composition as research_composition
 from app.market_data.domain import CanonicalBar
-from app.research.jdj_strategy.service import JdjStrategyContextInvalidError
+from app.market_data.session_clock import SessionClockError
+from app.research.jdj_strategy.service import (
+    JdjStrategyContextInvalidError,
+    JdjStrategySessionIdentityError,
+)
+from app.research.jdj.jdj_policy import JdjPolicyError
+from app.research.n_structure.n_structure_policy import NStructurePolicyError
 
 
 _QUANT_API_ROOT = Path(__file__).resolve().parents[1]
@@ -399,32 +405,53 @@ def test_jdj_research_builder_reuses_one_mds_and_no_write_factory(
     assert captured["loader"] is loader
 
 
-def test_jdj_strategy_builder_injects_catalog_multiplier_and_session_terminal(
+_JDJ_PRODUCT_FACTS = (
+    ("jm", "DCE", "JM2701", 60),
+    ("rb", "SHFE", "RB2701", 10),
+    ("cf", "CZCE", "CF701", 5),
+    ("sc", "INE", "SC2701", 1000),
+)
+
+
+class _JdjCatalogSession:
+    def __init__(
+        self,
+        *,
+        exchange_rows: dict[str, tuple[object, ...]] | None = None,
+        contract_rows: dict[str, tuple[tuple[object, object, object], ...]]
+        | None = None,
+    ) -> None:
+        self.exchange_rows = exchange_rows or {
+            symbol: (exchange,)
+            for symbol, exchange, _contract, _multiplier in _JDJ_PRODUCT_FACTS
+        }
+        self.contract_rows = contract_rows or {
+            contract: ((symbol, exchange, multiplier),)
+            for symbol, exchange, contract, multiplier in _JDJ_PRODUCT_FACTS
+        }
+
+    def scalars(self, statement: object) -> tuple[object, ...]:
+        params = statement.compile().params  # type: ignore[attr-defined]
+        assert "is_active IS true" in str(statement)
+        return self.exchange_rows[str(params["symbol_1"])]
+
+    def execute(
+        self,
+        statement: object,
+    ) -> tuple[tuple[object, object, object], ...]:
+        params = statement.compile().params  # type: ignore[attr-defined]
+        return self.contract_rows[str(params["contract_code_1"])]
+
+
+def _capture_jdj_strategy_builder(
     monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    class Session:
-        def scalars(self, _statement: object) -> tuple[str, ...]:
-            return ("DCE",)
-
-        def execute(self, _statement: object) -> tuple[tuple[str, str, int], ...]:
-            return (("jm", "DCE", 60),)
-
+    session: object,
+    *,
+    products: tuple[str, ...] = ("jm", "rb", "cf", "sc"),
+) -> dict[str, object]:
     market_data = object()
     loader = object()
     captured: dict[str, object] = {}
-    expected = object()
-    terminal = datetime(2026, 8, 20, 7, tzinfo=UTC)
-    bar = CanonicalBar(
-        bar_end=terminal,
-        trading_day=date(2026, 8, 20),
-        open=Decimal("100"),
-        high=Decimal("101"),
-        low=Decimal("99"),
-        close=Decimal("100"),
-        volume=Decimal("1"),
-        turnover=None,
-        open_interest=None,
-    )
     monkeypatch.setattr(
         research_composition,
         "build_market_data_service",
@@ -437,83 +464,228 @@ def test_jdj_strategy_builder_injects_catalog_multiplier_and_session_terminal(
     )
     monkeypatch.setattr(
         research_composition,
-        "resolved_session_windows_for_trading_day",
-        lambda *_args, **_kwargs: (
-            SimpleNamespace(window=SimpleNamespace(end=terminal)),
-        ),
-        raising=False,
+        "load_active_products",
+        lambda: products,
     )
     monkeypatch.setattr(
         research_composition,
         "JdjStrategyReplayService",
         lambda loader_arg, **kwargs: (
-            captured.update(loader=loader_arg, **kwargs) or expected
+            captured.update(loader=loader_arg, **kwargs) or object()
         ),
         raising=False,
     )
 
-    result = research_composition.build_jdj_strategy_replay_service(Session())
-
-    assert result is expected
+    research_composition.build_jdj_strategy_replay_service(session)  # type: ignore[arg-type]
     assert captured["loader"] is loader
+    return captured
+
+
+def test_jdj_strategy_builder_resolves_each_products_catalog_and_session_facts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = _JdjCatalogSession()
+    terminal = datetime(2026, 8, 20, 7, tzinfo=UTC)
+    bar = CanonicalBar(
+        bar_end=terminal,
+        trading_day=date(2026, 8, 20),
+        open=Decimal("100"),
+        high=Decimal("101"),
+        low=Decimal("99"),
+        close=Decimal("100"),
+        volume=Decimal("1"),
+        turnover=None,
+        open_interest=None,
+    )
+    session_calls: list[tuple[str, str, date]] = []
+
+    def resolve_session(
+        _session: object,
+        *,
+        exchange: str,
+        symbol: str,
+        trading_day: date,
+    ) -> tuple[SimpleNamespace, ...]:
+        session_calls.append((symbol, exchange, trading_day))
+        return (SimpleNamespace(window=SimpleNamespace(end=terminal)),)
+
+    monkeypatch.setattr(
+        research_composition,
+        "resolved_session_windows_for_trading_day",
+        resolve_session,
+        raising=False,
+    )
+    captured = _capture_jdj_strategy_builder(monkeypatch, session)
+
     multiplier = captured["contract_multiplier_for_contract"]
     terminals = captured["terminal_bar_ends_for_segment"]
     assert callable(multiplier)
     assert callable(terminals)
-    assert multiplier(symbol="jm", contract="JM2701") == Decimal("60")
-    assert terminals(symbol="jm", bars_1m=(bar,)) == {
-        date(2026, 8, 20): terminal
-    }
+    for symbol, _exchange, contract, expected_multiplier in _JDJ_PRODUCT_FACTS:
+        assert multiplier(symbol=symbol, contract=contract) == Decimal(
+            expected_multiplier
+        )
+        assert terminals(symbol=symbol, bars_1m=(bar,)) == {
+            date(2026, 8, 20): terminal
+        }
+    assert captured["products"] == ("jm", "rb", "cf", "sc")
+    assert session_calls == [
+        (symbol, exchange, date(2026, 8, 20))
+        for symbol, exchange, _contract, _multiplier in _JDJ_PRODUCT_FACTS
+    ]
 
 
 @pytest.mark.parametrize(
-    "rows",
+    ("case", "exchange_rows"),
     (
-        (),
-        (("rb", "DCE", 60),),
-        (("jm", "SHFE", 60),),
-        (("jm", "DCE", None),),
-        (("jm", "DCE", 0),),
-        (("jm", "DCE", 60), ("jm", "DCE", 60)),
+        ("missing Instrument", ()),
+        ("inactive Instrument", ()),
+        ("ambiguous exchange", ("DCE", "SHFE")),
+        ("empty exchange", ("",)),
     ),
+    ids=lambda value: value if isinstance(value, str) else None,
 )
-def test_jdj_strategy_catalog_multiplier_fails_closed_for_non_unique_invalid_fact(
+def test_jdj_strategy_exchange_fact_fails_closed(
     monkeypatch: pytest.MonkeyPatch,
-    rows: tuple[tuple[str, str, int | None], ...],
+    case: str,
+    exchange_rows: tuple[object, ...],
 ) -> None:
-    class Session:
-        def scalars(self, _statement: object) -> tuple[str, ...]:
-            return ("DCE",)
-
-        def execute(
-            self,
-            _statement: object,
-        ) -> tuple[tuple[str, str, int | None], ...]:
-            return rows
-
-    captured: dict[str, object] = {}
-    monkeypatch.setattr(
-        research_composition,
-        "build_market_data_service",
-        lambda _session: object(),
+    del case
+    session = _JdjCatalogSession(exchange_rows={"jm": exchange_rows})
+    captured = _capture_jdj_strategy_builder(
+        monkeypatch,
+        session,
+        products=("jm",),
     )
-    monkeypatch.setattr(
-        research_composition,
-        "ActualDominantResearchSegmentLoader",
-        lambda _market_data: object(),
-    )
-    monkeypatch.setattr(
-        research_composition,
-        "JdjStrategyReplayService",
-        lambda *_args, **kwargs: captured.update(kwargs) or object(),
-        raising=False,
-    )
-    service = research_composition.build_jdj_strategy_replay_service(Session())
-    assert service is not None
     multiplier = captured["contract_multiplier_for_contract"]
+    assert callable(multiplier)
 
     with pytest.raises(JdjStrategyContextInvalidError):
         multiplier(symbol="jm", contract="JM2701")
+
+
+@pytest.mark.parametrize(
+    ("case", "rows"),
+    (
+        ("missing Contract", ()),
+        ("contract owner", (("rb", "DCE", 60),)),
+        ("contract exchange", (("jm", "SHFE", 60),)),
+        ("multiplier None", (("jm", "DCE", None),)),
+        ("multiplier bool", (("jm", "DCE", True),)),
+        ("multiplier zero", (("jm", "DCE", 0),)),
+        ("multiplier negative", (("jm", "DCE", -60),)),
+        ("multiplier non-int", (("jm", "DCE", Decimal("60")),)),
+        (
+            "duplicate Contract rows",
+            (("jm", "DCE", 60), ("jm", "DCE", 60)),
+        ),
+    ),
+    ids=lambda value: value if isinstance(value, str) else None,
+)
+def test_jdj_strategy_catalog_multiplier_fails_closed_for_non_unique_invalid_fact(
+    monkeypatch: pytest.MonkeyPatch,
+    case: str,
+    rows: tuple[tuple[object, object, object], ...],
+) -> None:
+    del case
+    session = _JdjCatalogSession(
+        contract_rows={"JM2701": rows},
+    )
+    captured = _capture_jdj_strategy_builder(
+        monkeypatch,
+        session,
+        products=("jm",),
+    )
+    multiplier = captured["contract_multiplier_for_contract"]
+    assert callable(multiplier)
+
+    with pytest.raises(JdjStrategyContextInvalidError):
+        multiplier(symbol="jm", contract="JM2701")
+
+
+@pytest.mark.parametrize(
+    ("loader", "failure"),
+    (
+        ("load_jdj_policy", JdjPolicyError()),
+        ("load_n_structure_policy", NStructurePolicyError()),
+    ),
+)
+def test_jdj_strategy_profile_failure_maps_to_context_invalid(
+    monkeypatch: pytest.MonkeyPatch,
+    loader: str,
+    failure: Exception,
+) -> None:
+    def fail() -> object:
+        raise failure
+
+    monkeypatch.setattr(research_composition, loader, fail)
+
+    with pytest.raises(JdjStrategyContextInvalidError):
+        research_composition.build_jdj_strategy_replay_service(
+            _JdjCatalogSession()  # type: ignore[arg-type]
+        )
+
+
+@pytest.mark.parametrize("failure_kind", ("resolver", "empty", "absent", "naive"))
+def test_jdj_strategy_session_identity_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+    failure_kind: str,
+) -> None:
+    terminal = datetime(2026, 8, 20, 7, tzinfo=UTC)
+    bar = CanonicalBar(
+        bar_end=terminal,
+        trading_day=date(2026, 8, 20),
+        open=Decimal("100"),
+        high=Decimal("101"),
+        low=Decimal("99"),
+        close=Decimal("100"),
+        volume=Decimal("1"),
+        turnover=None,
+        open_interest=None,
+    )
+
+    def resolve_session(*_args: object, **_kwargs: object) -> tuple[object, ...]:
+        if failure_kind == "resolver":
+            raise SessionClockError("TRADING_SESSION_MISSING")
+        if failure_kind == "empty":
+            return ()
+        resolved_terminal = (
+            terminal.replace(tzinfo=None)
+            if failure_kind == "naive"
+            else terminal + timedelta(minutes=1)
+        )
+        return (SimpleNamespace(window=SimpleNamespace(end=resolved_terminal)),)
+
+    monkeypatch.setattr(
+        research_composition,
+        "resolved_session_windows_for_trading_day",
+        resolve_session,
+    )
+    captured = _capture_jdj_strategy_builder(
+        monkeypatch,
+        _JdjCatalogSession(),
+        products=("jm",),
+    )
+    terminals = captured["terminal_bar_ends_for_segment"]
+    assert callable(terminals)
+
+    with pytest.raises(JdjStrategySessionIdentityError):
+        terminals(symbol="jm", bars_1m=(bar,))
+
+
+def test_jdj_strategy_empty_segment_fails_session_identity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured = _capture_jdj_strategy_builder(
+        monkeypatch,
+        _JdjCatalogSession(),
+        products=("jm",),
+    )
+    terminals = captured["terminal_bar_ends_for_segment"]
+    assert callable(terminals)
+
+    with pytest.raises(JdjStrategySessionIdentityError):
+        terminals(symbol="jm", bars_1m=())
 
 
 def test_jdj_candidate_builder_checks_calendar_before_reusing_research(
