@@ -270,7 +270,7 @@ Swing
 
 阶段二允许把**公式规则本身**从“Policy identity + source timeframe”中机械分离，但不得改变规则值。
 
-建议内部边界：
+实现必须形成以下等价边界；具体类名可不同，但职责不得合并：
 
 ```text
 NFormulaRules
@@ -358,7 +358,7 @@ key_level_breakout
 
 现有 `jdj_1m_policy_v1` 继续 immutable。不得直接让现有 reducer 在 30m 时生成带 `*_1m_candidate_v1` 的 Event ID。
 
-建议机械拆分：
+实现必须形成以下等价拆分；具体类名可不同，但正式与 observation identity 必须隔离：
 
 ```text
 JdjSetupRules
@@ -472,7 +472,7 @@ through=<date>
 
 ### 11.1 Common observation metadata
 
-建议每个 response 明确：
+每个 response 必须明确：
 
 ```text
 observation_only = true
@@ -517,7 +517,7 @@ frequency
 event-specific identity
 ```
 
-建议 observation version：
+observation version 固定为：
 
 ```text
 subing_single_tf_observation_v1
@@ -554,7 +554,7 @@ htdy
 
 当前 `ResearchOverlayDefinition.historicalSource` 是静态值，无法表达“同一个 JDJ choice 在 1m 走 Strategy、其他周期走 Observation”。
 
-阶段二允许新增一个**仅属于 Web capability routing** 的 resolver，例如：
+阶段二必须存在一个**仅属于 Web capability routing** 的 resolver；函数名可不同，但职责必须等价于：
 
 ```text
 resolveResearchOverlayMode(overlay, seriesKind, frequency)
@@ -868,7 +868,7 @@ N 必须先于 JDJ，因为 non-native JDJ observation 依赖同周期 N context
 - per-frequency threshold tuning；
 - per-product parameter override；
 - RQAlpha adapter 扩展；
--正式 backtest engine；
+- 正式 backtest engine；
 - PnL / score / rank / winner / KEEP / DROP / PROMOTE；
 - DB/Redis observation persistence；
 - worker/queue/scheduler/cache；
