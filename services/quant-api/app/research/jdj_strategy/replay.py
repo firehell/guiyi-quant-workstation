@@ -347,13 +347,15 @@ def _validate_inputs(
         )
     ):
         raise JdjStrategyReplayError()
-    bar_ends = {bar.bar_end for bar in bars}
-    days = {bar.trading_day for bar in bars}
+    bars_by_day: dict[date, set[datetime]] = {}
+    for bar in bars:
+        bars_by_day.setdefault(bar.trading_day, set()).add(bar.bar_end)
+    days = set(bars_by_day)
     if set(terminal_bar_end_by_day) != days or any(
         day not in terminal_bar_end_by_day
         or not isinstance(terminal_bar_end_by_day[day], datetime)
         or terminal_bar_end_by_day[day].tzinfo is None
-        or terminal_bar_end_by_day[day].astimezone(UTC) not in bar_ends
+        or terminal_bar_end_by_day[day].astimezone(UTC) not in bars_by_day[day]
         for day in days
     ):
         raise JdjStrategyReplayError()

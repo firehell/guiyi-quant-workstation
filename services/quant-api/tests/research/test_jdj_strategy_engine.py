@@ -558,6 +558,35 @@ def test_terminal_day_set_must_exactly_match_bar_days(
         )
 
 
+def test_terminal_bar_end_must_belong_to_its_own_trading_day() -> None:
+    _, replay = _modules()
+    second_day = _DAY + timedelta(days=1)
+    first_day_bars = tuple(_bar(index) for index in range(3))
+    second_day_bars = tuple(
+        _bar(
+            index,
+            trading_day=second_day,
+            bar_end=_START + timedelta(days=1, minutes=index),
+        )
+        for index in range(3)
+    )
+    bars = first_day_bars + second_day_bars
+    segment = ResolvedContractSegment(_CONTRACT, _DAY, second_day)
+    swapped_terminals = {
+        _DAY: second_day_bars[-1].bar_end,
+        second_day: first_day_bars[-1].bar_end,
+    }
+
+    with pytest.raises(replay.JdjStrategyReplayError):
+        _run(
+            bars,
+            (),
+            segment=segment,
+            contexts=_contexts_without_pivots(bars),
+            terminal_by_day=swapped_terminals,
+        )
+
+
 def test_same_bar_setups_collapse_to_key_level_primary_with_causal_stop() -> None:
     bars = tuple(
         _bar(i, high=101 if i < 3 else 111, low=94 if i == 2 else 99, close=100)
