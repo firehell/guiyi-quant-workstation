@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, time
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.market_data.session_clock import SHANGHAI
@@ -133,6 +133,20 @@ def _resolve_next_day_for_exchanges(
             .limit(1)
         )
         if next_day is None:
+            raise SubingDailyWatchCalendarError("NEXT_TRADING_DAY_UNAVAILABLE")
+        calendar_days = int(
+            session.scalar(
+                select(func.count())
+                .select_from(TradingCalendar)
+                .where(
+                    TradingCalendar.exchange_code == exchange,
+                    TradingCalendar.trade_date > source_trading_day,
+                    TradingCalendar.trade_date <= next_day,
+                )
+            )
+            or 0
+        )
+        if calendar_days != (next_day - source_trading_day).days:
             raise SubingDailyWatchCalendarError("NEXT_TRADING_DAY_UNAVAILABLE")
         next_days.append(next_day)
     if len(set(next_days)) != 1:

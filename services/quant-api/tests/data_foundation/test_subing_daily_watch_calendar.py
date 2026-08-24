@@ -140,6 +140,34 @@ def test_next_common_trading_day_rejects_different_exchange_dates(
     assert captured.value.code == "NEXT_TRADING_DAY_UNAVAILABLE"
 
 
+def test_next_common_trading_day_rejects_shared_intermediate_calendar_gap(
+    session: Session,
+) -> None:
+    session.add_all(
+        TradingCalendar(
+            exchange_code=exchange,
+            trade_date=date(2026, 9, 1),
+            is_trading_day=True,
+        )
+        for exchange in ("DCE", "SHFE")
+    )
+    session.execute(
+        delete(TradingCalendar).where(
+            TradingCalendar.trade_date == date(2026, 8, 31)
+        )
+    )
+    session.commit()
+
+    with pytest.raises(SubingDailyWatchCalendarError) as captured:
+        resolve_next_common_trading_day(
+            session,
+            products=("jm", "rb"),
+            source_trading_day=date(2026, 8, 28),
+        )
+
+    assert captured.value.code == "NEXT_TRADING_DAY_UNAVAILABLE"
+
+
 @pytest.mark.parametrize(
     ("now", "expected"),
     (
@@ -167,6 +195,34 @@ def test_expected_daily_watch_day_rejects_naive_datetime(session: Session) -> No
             session,
             products=("jm", "rb"),
             now=datetime(2026, 8, 28, 18, 19),
+        )
+
+    assert captured.value.code == "EXPECTED_TRADING_DAY_UNAVAILABLE"
+
+
+def test_expected_daily_watch_day_rejects_shared_intermediate_calendar_gap(
+    session: Session,
+) -> None:
+    session.add_all(
+        TradingCalendar(
+            exchange_code=exchange,
+            trade_date=date(2026, 9, 1),
+            is_trading_day=True,
+        )
+        for exchange in ("DCE", "SHFE")
+    )
+    session.execute(
+        delete(TradingCalendar).where(
+            TradingCalendar.trade_date == date(2026, 8, 31)
+        )
+    )
+    session.commit()
+
+    with pytest.raises(SubingDailyWatchCalendarError) as captured:
+        resolve_expected_daily_watch_day(
+            session,
+            products=("jm", "rb"),
+            now=datetime(2026, 8, 28, 18, 20, tzinfo=SHANGHAI),
         )
 
     assert captured.value.code == "EXPECTED_TRADING_DAY_UNAVAILABLE"
