@@ -17,7 +17,7 @@ def _contract_module():
     return importlib.import_module(module_name)
 
 
-def test_jm_profile_loads_the_frozen_decimal_contract() -> None:
+def test_active_products_profile_loads_the_frozen_decimal_contract() -> None:
     contract = _contract_module()
 
     config = contract.load_jdj_v1_config()
@@ -33,8 +33,9 @@ def test_jm_profile_loads_the_frozen_decimal_contract() -> None:
     assert config.core.daily_pause_drawdown_fraction == Decimal("0.005")
     assert config.core.daily_pause_bars == 15
     assert config.core.daily_stop_drawdown_fraction == Decimal("0.01")
-    assert config.profile.profile_id == "jdj_jm_1m_v1"
-    assert config.profile.symbol == "jm"
+    assert config.profile.profile_id == "jdj_active60_1m_v1"
+    assert config.profile.product_scope_source == "active_products"
+    assert not hasattr(config.profile, "symbol")
     assert config.profile.series_kind == "actual_dominant"
     assert config.profile.execution_frequency is BarFrequency.M1
     assert config.profile.trend_context_frequency is BarFrequency.M5
@@ -60,7 +61,7 @@ def test_unknown_profile_fails_closed() -> None:
             "missing field",
         ),
         (
-            lambda payload: payload["profiles"]["jdj_jm_1m_v1"].update(
+            lambda payload: payload["profiles"]["jdj_active60_1m_v1"].update(
                 unexpected_knob=True
             ),
             "extra field",
@@ -70,6 +71,22 @@ def test_unknown_profile_fails_closed() -> None:
                 minimum_reward_risk="1.5"
             ),
             "drifted field",
+        ),
+        (
+            lambda payload: payload["profiles"]["jdj_active60_1m_v1"].update(
+                product_scope_source="all_products"
+            ),
+            "unsupported product scope",
+        ),
+        (
+            lambda payload: payload["profiles"]["jdj_active60_1m_v1"].update(
+                per_product_overrides={"jm": {}}
+            ),
+            "per-product override",
+        ),
+        (
+            lambda payload: payload.update(schema_version=1),
+            "old schema version",
         ),
     ),
 )

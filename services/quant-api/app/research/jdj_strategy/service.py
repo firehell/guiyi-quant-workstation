@@ -1,4 +1,4 @@
-"""JM-only actual-dominant Historical reference replay orchestration."""
+"""Active-product actual-dominant Historical reference replay orchestration."""
 
 from __future__ import annotations
 
@@ -89,7 +89,7 @@ class JdjStrategyReplayRequest:
         symbol = self.symbol.strip().lower() if isinstance(self.symbol, str) else ""
         if (
             series_kind is not SeriesKind.ACTUAL_DOMINANT
-            or symbol != "jm"
+            or not symbol
             or frequency is not BarFrequency.M1
             or type(self.since) is not date
             or type(self.through) is not date
@@ -139,6 +139,7 @@ class JdjStrategyReplayService:
         self,
         segment_loader: _ResearchSegmentLoader,
         *,
+        products: tuple[str, ...],
         jdj_policy: JdjPolicy,
         n_policy: NStructurePolicy,
         contract_multiplier_for_contract: _ContractMultiplierResolver,
@@ -154,14 +155,24 @@ class JdjStrategyReplayService:
             or not is_exact_n_structure_policy(n_policy)
             or not callable(contract_multiplier_for_contract)
             or not callable(terminal_bar_ends_for_segment)
-            or resolved_config.profile.symbol != "jm"
+            or resolved_config.profile.product_scope_source != "active_products"
             or resolved_config.profile.series_kind
             != SeriesKind.ACTUAL_DOMINANT.value
             or resolved_config.profile.execution_frequency is not BarFrequency.M1
             or resolved_config.profile.trend_context_frequency is not BarFrequency.M5
+            or not isinstance(products, tuple)
+            or not products
+            or not all(
+                isinstance(item, str)
+                and item
+                and item == item.strip().lower()
+                for item in products
+            )
+            or len(set(products)) != len(products)
         ):
             raise JdjStrategyContextInvalidError()
         self._segment_loader = segment_loader
+        self._products = products
         self._jdj_policy = jdj_policy
         self._n_policy = n_policy
         self._contract_multiplier_for_contract = contract_multiplier_for_contract
@@ -174,6 +185,8 @@ class JdjStrategyReplayService:
     ) -> JdjStrategyReplayResult:
         if not isinstance(request, JdjStrategyReplayRequest):
             raise TypeError("request must be JdjStrategyReplayRequest")
+        if request.symbol not in self._products:
+            raise JdjStrategyProfileUnavailableError()
         try:
             loaded = self._segment_loader.load(
                 symbol=request.symbol,

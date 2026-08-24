@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "strategy_id": "jdj_intraday_futures_v1",
   "core_rules": {
     "minimum_reward_risk": "2.0",
@@ -14,8 +14,8 @@
     "daily_stop_drawdown_fraction": "0.01"
   },
   "profiles": {
-    "jdj_jm_1m_v1": {
-      "symbol": "jm",
+    "jdj_active60_1m_v1": {
+      "product_scope_source": "active_products",
       "series_kind": "actual_dominant",
       "execution_frequency": "1m",
       "trend_context_frequency": "5m",
