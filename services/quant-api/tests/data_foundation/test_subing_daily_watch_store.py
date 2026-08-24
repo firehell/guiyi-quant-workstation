@@ -38,11 +38,20 @@ class _FakeMountInspector:
         *,
         mounted: bool = True,
         symlinks: tuple[Path, ...] = (),
+        missing: tuple[Path, ...] = (),
+        non_directories: tuple[Path, ...] = (),
+        unwritable: tuple[Path, ...] = (),
     ) -> None:
         self.mounted = mounted
         self.symlinks = frozenset(symlinks)
+        self.missing = frozenset(missing)
+        self.non_directories = frozenset(non_directories)
+        self.unwritable = frozenset(unwritable)
         self.mount_checks: list[Path] = []
         self.symlink_checks: list[Path] = []
+        self.exists_checks: list[Path] = []
+        self.directory_checks: list[Path] = []
+        self.writable_checks: list[Path] = []
 
     def is_mount(self, path: Path) -> bool:
         self.mount_checks.append(path)
@@ -51,6 +60,18 @@ class _FakeMountInspector:
     def is_symlink(self, path: Path) -> bool:
         self.symlink_checks.append(path)
         return path in self.symlinks
+
+    def exists(self, path: Path) -> bool:
+        self.exists_checks.append(path)
+        return path not in self.missing
+
+    def is_dir(self, path: Path) -> bool:
+        self.directory_checks.append(path)
+        return path not in self.non_directories
+
+    def is_writable(self, path: Path) -> bool:
+        self.writable_checks.append(path)
+        return path not in self.unwritable
 
 
 @pytest.mark.parametrize(
@@ -125,7 +146,7 @@ def test_root_policy_rejects_symlinked_volume_or_parent(symlink: Path) -> None:
 def test_root_policy_returns_validated_path_without_creating_it() -> None:
     """Catches production resolution creating the feature directory as a side effect."""
     configured = Path("/Volumes/Fake/observations/subing-daily-v1")
-    inspector = _FakeMountInspector()
+    inspector = _FakeMountInspector(missing=(configured,))
 
     resolved = resolve_subing_observation_root(
         environ={SUBING_OBSERVATION_ROOT_ENV: str(configured)},
@@ -139,6 +160,42 @@ def test_root_policy_returns_validated_path_without_creating_it() -> None:
         Path("/Volumes/Fake/observations"),
         configured,
     ]
+    assert inspector.exists_checks == [configured, configured.parent]
+    assert inspector.directory_checks == [configured.parent]
+    assert inspector.writable_checks == [configured.parent]
+
+
+@pytest.mark.parametrize(
+    "inspector",
+    [
+        _FakeMountInspector(
+            non_directories=(
+                Path("/Volumes/Fake/observations/subing-daily-v1"),
+            )
+        ),
+        _FakeMountInspector(
+            unwritable=(Path("/Volumes/Fake/observations/subing-daily-v1"),)
+        ),
+        _FakeMountInspector(
+            missing=(Path("/Volumes/Fake/observations/subing-daily-v1"),),
+            unwritable=(Path("/Volumes/Fake/observations"),),
+        ),
+    ],
+    ids=("root-is-file", "root-is-readonly", "nearest-parent-is-readonly"),
+)
+def test_root_policy_rejects_non_directory_or_unwritable_target(
+    inspector: _FakeMountInspector,
+) -> None:
+    """Catches an unusable configured root surviving until generation or write."""
+    configured = Path("/Volumes/Fake/observations/subing-daily-v1")
+
+    with pytest.raises(SubingDailyWatchStoreError) as raised:
+        resolve_subing_observation_root(
+            environ={SUBING_OBSERVATION_ROOT_ENV: str(configured)},
+            inspector=inspector,
+        )
+
+    assert raised.value.code == "OBSERVATION_ROOT_UNAVAILABLE"
 
 
 def _trend(
@@ -287,6 +344,17 @@ def test_publish_writes_canonical_snapshot_current_and_status(tmp_path: Path) ->
     assert current.read_bytes() == canonical
 
 
+def test_store_round_trips_non_alphabetical_active_order(tmp_path: Path) -> None:
+    """Catches the store replacing active_products order with alphabetic order."""
+    store = SubingDailyWatchStore(tmp_path)
+    snapshot = replace(_snapshot(), items=tuple(reversed(_snapshot().items)))
+
+    store.publish(snapshot, started_at=_STARTED_AT)
+
+    assert store.read_current() == snapshot
+    assert tuple(item.symbol for item in store.read_current().items) == ("b", "a")
+
+
 def test_publish_sets_private_modes_where_supported(tmp_path: Path) -> None:
     """Catches observation artifacts becoming group/world-readable."""
     store = SubingDailyWatchStore(tmp_path)
@@ -429,7 +497,6 @@ def test_invalid_existing_snapshot_fails_closed(
         lambda payload: payload.update(schema_version=True),
         lambda payload: payload.update(projection_version="other"),
         lambda payload: payload.update(formula_version="other"),
-        lambda payload: payload["items"].reverse(),
         lambda payload: payload["items"].__setitem__(
             1, {**payload["items"][1], "symbol": "a"}
         ),
@@ -441,7 +508,7 @@ def test_read_current_strictly_rejects_contract_drift(
     tmp_path: Path,
     mutate: object,
 ) -> None:
-    """Catches version, order, identity, or count drift entering the read path."""
+    """Catches version, identity, or count drift entering the read path."""
     store = SubingDailyWatchStore(tmp_path)
     store.publish(_snapshot(), started_at=_STARTED_AT)
     current = tmp_path / "current.json"
@@ -449,6 +516,52 @@ def test_read_current_strictly_rejects_contract_drift(
     assert callable(mutate)
     mutate(payload)
     current.write_text(
+        json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(SubingDailyWatchStoreError) as raised:
+        store.read_current()
+
+    assert raised.value.code == "SNAPSHOT_INVALID"
+
+
+@pytest.mark.parametrize(
+    ("artifact", "mutate"),
+    [
+        (
+            "current.json",
+            lambda payload: payload.update(generated_at="2026-08-21T18:30:00Z"),
+        ),
+        (
+            "current.json",
+            lambda payload: payload["items"][0]["daily"].update(
+                bar_end="2026-08-21T07:00:00Z"
+            ),
+        ),
+        (
+            "generation-status.json",
+            lambda payload: payload["last_run"].update(
+                started_at="2026-08-21T18:25:00Z"
+            ),
+        ),
+    ],
+    ids=("generated-at-z", "bar-end-z", "status-started-at-z"),
+)
+def test_read_current_rejects_alternate_datetime_spelling(
+    tmp_path: Path,
+    artifact: str,
+    mutate: object,
+) -> None:
+    """Catches an alternate ISO spelling decoding as a canonical snapshot."""
+    store = SubingDailyWatchStore(tmp_path)
+    store.publish(_snapshot(), started_at=_STARTED_AT)
+    path = tmp_path / artifact
+    payload = json.loads(path.read_bytes())
+    assert callable(mutate)
+    mutate(payload)
+    path.write_text(
         json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
         + "\n",
         encoding="utf-8",

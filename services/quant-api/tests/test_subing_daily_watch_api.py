@@ -199,6 +199,22 @@ def test_current_service_projects_ready_snapshot_without_excluded_details() -> N
     assert result.snapshot.long_watch[0].daily.close == Decimal("3512")
 
 
+def test_current_service_accepts_matching_non_alphabetical_active_order() -> None:
+    """Catches current validation replacing exact active order with sorting."""
+    products = tuple(reversed(_SYMBOLS))
+    snapshot = replace(_snapshot(), items=tuple(reversed(_snapshot().items)))
+
+    result = _current_service(
+        lambda: _Store(snapshot),
+        products=products,
+        operational_products=_SYMBOLS,
+    ).current(_NOW)
+
+    assert result.status == "ready"
+    assert result.snapshot is not None
+    assert result.snapshot.long_watch[0].symbol == "aa"
+
+
 def test_current_service_rejects_matching_but_incomplete_universe() -> None:
     """Catches a partial configured ledger being accepted as current active60."""
     partial = replace(_snapshot(), items=_snapshot().items[:1])
@@ -498,6 +514,34 @@ def test_generator_composition_requires_exact_active_operational_60(
     assert raised.value.code == "ACTIVE_OPERATIONAL_SCOPE_MISMATCH"
 
 
+def test_generator_composition_rejects_unavailable_root_before_market_build(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Catches an unusable output root failing only after expensive composition."""
+    from app.market_data.composition import build_subing_daily_watch_generator
+
+    monkeypatch.setattr(
+        "app.market_data.composition.load_active_products", lambda: _SYMBOLS
+    )
+    monkeypatch.setattr(
+        "app.market_data.composition.load_operational_products", lambda: _SYMBOLS
+    )
+    root_error = SubingDailyWatchStoreError("OBSERVATION_ROOT_UNAVAILABLE")
+    monkeypatch.setattr(
+        "app.market_data.composition.resolve_subing_observation_root",
+        lambda **_kwargs: (_ for _ in ()).throw(root_error),
+    )
+    monkeypatch.setattr(
+        "app.market_data.composition.build_market_data_service",
+        lambda _session: pytest.fail("unavailable root initialized market data"),
+    )
+
+    with pytest.raises(SubingDailyWatchStoreError) as raised:
+        build_subing_daily_watch_generator(object())
+
+    assert raised.value is root_error
+
+
 def test_current_composition_reads_only_calendar_and_store(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -538,6 +582,42 @@ def test_current_composition_reads_only_calendar_and_store(
     assert result.status == "unavailable"
     assert result.error_code == "SUBING_DAILY_WATCH_NOT_GENERATED"
     assert not root.exists()
+
+
+def test_current_composition_maps_non_directory_root_before_not_generated(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Catches an unusable configured root being reported as not generated."""
+    from app.market_data.composition import build_subing_daily_watch_current_service
+
+    root = Path("/Volumes/Fake/observations/subing-daily-v1")
+    monkeypatch.setenv("GUIYI_SUBING_OBSERVATION_ROOT", str(root))
+    monkeypatch.setattr(
+        "app.market_data.composition.load_active_products", lambda: _SYMBOLS
+    )
+    monkeypatch.setattr(
+        "app.market_data.composition.load_operational_products", lambda: _SYMBOLS
+    )
+    monkeypatch.setattr(
+        "app.market_data.composition.resolve_expected_daily_watch_day",
+        lambda _session, *, products, now: _TARGET_DAY,
+    )
+    monkeypatch.setattr(
+        "app.market_data.composition.PathMountInspector",
+        lambda: SimpleNamespace(
+            is_mount=lambda _path: True,
+            is_symlink=lambda _path: False,
+            exists=lambda _path: True,
+            is_dir=lambda path: path != root,
+            is_writable=lambda _path: True,
+        ),
+    )
+
+    result = build_subing_daily_watch_current_service(object()).current(_NOW)
+
+    assert result.status == "unavailable"
+    assert result.error_code == "SUBING_OBSERVATION_ROOT_UNAVAILABLE"
+    assert result.snapshot is None
 
 
 def test_current_composition_uses_active_order_when_operational_order_differs(

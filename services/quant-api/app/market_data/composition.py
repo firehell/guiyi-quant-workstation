@@ -295,6 +295,10 @@ def build_subing_daily_watch_generator(
     ):
         raise SubingDailyWatchError("ACTIVE_OPERATIONAL_SCOPE_MISMATCH")
 
+    root = resolve_subing_observation_root(
+        environ=os.environ,
+        inspector=PathMountInspector(),
+    )
     market_data = build_market_data_service(session)
     dominants = market_data.list_latest_dominants()
     metadata = {
@@ -306,12 +310,7 @@ def build_subing_daily_watch_generator(
         for item in dominants
         if item.symbol in set(active)
     }
-    store = SubingDailyWatchStore(
-        resolve_subing_observation_root(
-            environ=os.environ,
-            inspector=PathMountInspector(),
-        )
-    )
+    store = SubingDailyWatchStore(root)
     return SubingDailyWatchGenerator(
         builder=SubingDailyWatchBuilder(
             segment_loader=ActualDominantResearchSegmentLoader(market_data),

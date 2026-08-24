@@ -88,7 +88,10 @@ def run_after_market(
     roll_reconciler_factory: RollReconcilerFactory,
     daily_watch_generator_factory: DailyWatchGeneratorFactory | None = None,
 ) -> dict[str, object]:
-    """Run Market maintenance, then isolated Runtime-only follow-ups."""
+    """Run Market maintenance, then optional isolated follow-ups.
+
+    The Daily Watch factory is injected only by the supervised Runtime entrypoint.
+    """
     with session_factory() as session:
         manager = manager_factory(session)
         market_result = after_market_factory(

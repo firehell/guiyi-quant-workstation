@@ -55,6 +55,12 @@ class MountInspector(Protocol):
 
     def is_symlink(self, path: Path) -> bool: ...
 
+    def exists(self, path: Path) -> bool: ...
+
+    def is_dir(self, path: Path) -> bool: ...
+
+    def is_writable(self, path: Path) -> bool: ...
+
 
 class PathMountInspector:
     def is_mount(self, path: Path) -> bool:
@@ -62,6 +68,15 @@ class PathMountInspector:
 
     def is_symlink(self, path: Path) -> bool:
         return path.is_symlink()
+
+    def exists(self, path: Path) -> bool:
+        return path.exists()
+
+    def is_dir(self, path: Path) -> bool:
+        return path.is_dir()
+
+    def is_writable(self, path: Path) -> bool:
+        return os.access(path, os.W_OK)
 
 
 @dataclass(frozen=True, slots=True)
@@ -248,6 +263,16 @@ def resolve_subing_observation_root(
         candidate /= part
     if inspector.is_symlink(candidate):
         raise SubingDailyWatchStoreError("OBSERVATION_ROOT_UNAVAILABLE")
+    writable_parent = root
+    while not inspector.exists(writable_parent):
+        parent = writable_parent.parent
+        if parent == writable_parent:
+            raise SubingDailyWatchStoreError("OBSERVATION_ROOT_UNAVAILABLE")
+        writable_parent = parent
+    if not inspector.is_dir(writable_parent) or not inspector.is_writable(
+        writable_parent
+    ):
+        raise SubingDailyWatchStoreError("OBSERVATION_ROOT_UNAVAILABLE")
     return root
 
 
@@ -318,7 +343,7 @@ def _trend_payload(trend: SubingEmaTrendSnapshot | None) -> object:
 
 def _validate_snapshot(snapshot: SubingDailyWatchSnapshot) -> None:
     symbols = tuple(item.symbol for item in snapshot.items)
-    if symbols != tuple(sorted(symbols)) or len(set(symbols)) != len(symbols):
+    if not symbols or len(set(symbols)) != len(symbols):
         raise SubingDailyWatchStoreError("SNAPSHOT_INVALID")
     for item in snapshot.items:
         for timeframe, trend in (
@@ -382,7 +407,7 @@ def _parse_snapshot_bytes(raw: bytes) -> SubingDailyWatchSnapshot:
         )
         _validate_snapshot(snapshot)
         _validate_counts(payload["counts"], snapshot.counts)
-        if _canonical_bytes(payload) != raw:
+        if _snapshot_bytes(snapshot) != raw:
             raise ValueError
         return snapshot
     except (KeyError, TypeError, ValueError, SubingDailyWatchError) as exc:
@@ -602,8 +627,9 @@ def _parse_date(value: object) -> date:
 
 
 def _parse_datetime(value: object) -> datetime:
-    result = datetime.fromisoformat(_string(value))
-    if not _is_aware(result):
+    serialized = _string(value)
+    result = datetime.fromisoformat(serialized)
+    if not _is_aware(result) or result.isoformat() != serialized:
         raise ValueError
     return result
 
