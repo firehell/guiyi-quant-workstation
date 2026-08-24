@@ -14,8 +14,9 @@ backtest/Signal/Review/Strategy Web·HTTP·worker·queue 的恢复，也不是�
 Canonical/MarketDataService 的正式 Candidate/OOS 验证体系。当前工作台仅为仓库实现与自动化验证状态；
 sidecar 未加载、未 release、未进入 Runtime，真实 RQAlpha smoke 仍是独立人工 Gate。
 
-JM `actual_dominant + 1m` 日进斗金参考策略是另一条独立的 Historical research-only deterministic
-replay：它通过主 API 输出 reference-only action，并在 Market 展示 reference fill marker；它不是正式
+当前 active universe 中单产品的 `actual_dominant + 1m` 日进斗金参考策略 replay 是另一条独立的 Historical
+research-only deterministic reference replay：它通过主 API 输出 reference-only action，并在 Market 展示
+reference fill marker；它不是正式
 回测、交易指令或 RQAlpha adapter，不进入 DB、Redis、Alert、Execution Review、Runtime 或订单路径。
 当前产品仍不包含基于 Canonical/MarketDataService 的正式 backtest 子系统，也不恢复旧
 Signal/Review/Strategy Web、HTTP、worker 或 queue。Alert 与
@@ -83,7 +84,8 @@ Market K 线的 Historical Research Overlay 通过四个只读接口按需复算
 Canonical facts：`/api/v1/market/research/subing/history`、`/api/v1/market/research/n-structure/history`
 、`/api/v1/market/research/jdj/history` 与 `/api/v1/market/research/jdj-strategy/history`。前三个
 source-specific Candidate/Event 接口只支持 `actual_dominant`，分别固定为 SuBing `5m/15m`、
-N Structure `5m`、JDJ `1m`；日进斗金策略接口只支持 `jm + actual_dominant + 1m`，复用已有
+N Structure `5m`、JDJ `1m`；日进斗金策略接口只支持当前 active universe 中单产品的
+`actual_dominant + 1m`，复用已有
 Candidate reducer 与窄的 `app.research.jdj_strategy` reference lifecycle，返回完整 action 与顶层
 `reference_execution=true`。这些接口不建立通用 Strategy adapter，不创建 AlertEvent 或持久化派生结果。
 
