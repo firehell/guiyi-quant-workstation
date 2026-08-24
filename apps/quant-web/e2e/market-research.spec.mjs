@@ -129,6 +129,7 @@ async function mockMarketHomepage(
   currentFormalResponse,
   radarResponse = radar(),
   trendFocusResponse = trendFocus(),
+  runtimeResponse = runtimeHealth(),
 ) {
   await page.route('**/api/alerts/formal-signals/current', (route) => route.fulfill({ json: currentFormalResponse }))
   await page.route('**/api/execution-review/event-states**', (route) => {
@@ -137,7 +138,7 @@ async function mockMarketHomepage(
       event_id: id, state: 'pending_decision', decision_id: null, episode_id: null,
     })) } })
   })
-  await page.route('**/api/runtime/health', (route) => route.fulfill({ json: runtimeHealth() }))
+  await page.route('**/api/runtime/health', (route) => route.fulfill({ json: runtimeResponse }))
   await page.route('**/api/v1/market/research/radar', (route) => route.fulfill({ json: radarResponse }))
   await page.route('**/api/v1/market/research/trend-focus', (route) => route.fulfill({ json: trendFocusResponse }))
 }
@@ -155,6 +156,28 @@ test('Market homepage shows compact Runtime facts without implying provider deli
   await expect(strip).toContainText('2026-08-24 18:14')
   await expect(strip).not.toContainText('综合分')
   await expect(strip).not.toContainText('交易建议')
+})
+
+test('Market homepage accessibly distinguishes disabled Alert from missing natural observation', async ({ page }) => {
+  const disabledRuntime = runtimeHealth()
+  disabledRuntime.components.alert = {
+    ...disabledRuntime.components.alert,
+    status: 'disabled', configured_enabled: false,
+    processing_state: 'unobserved', notification_state: 'unobserved',
+    last_heartbeat_at: null, last_processed_bar_at: null,
+  }
+  await mockMarketHomepage(
+    page,
+    { status: 'ready', trading_day: '2026-08-15', items: [] },
+    radar(),
+    trendFocus(),
+    disabledRuntime,
+  )
+  await page.goto('/market')
+
+  const strip = page.getByRole('region', { name: 'Runtime 运行状态' })
+  await expect(strip).toContainText('Alert 未启用')
+  await expect(strip).not.toContainText('未获自然验证')
 })
 
 test('Market homepage refreshes four sources manually and only Formal plus Runtime on visibility', async ({ page }) => {

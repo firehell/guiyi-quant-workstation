@@ -52,11 +52,14 @@ export function runtimeStatusPresentation(snapshot: RuntimeHealthResponse): Runt
   const live = snapshot.components.live_market
   const alert = snapshot.components.alert
   const afterMarket = snapshot.components.after_market
-  const processingState = alert.processing_state === 'ok'
-    ? '处理正常'
-    : alert.processing_state === 'failed'
-      ? '处理失败'
-      : '未获自然验证'
+  const alertDisabled = !alert.configured_enabled || alert.status === 'disabled'
+  const processingState = alertDisabled
+    ? 'Alert 未启用'
+    : alert.processing_state === 'ok'
+      ? '处理正常'
+      : alert.processing_state === 'failed'
+        ? '处理失败'
+        : '未获自然验证'
 
   return [
     {
@@ -81,11 +84,11 @@ export function runtimeStatusPresentation(snapshot: RuntimeHealthResponse): Runt
       key: 'alert',
       label: 'Alert',
       state: processingState,
-      detail: alertNotificationLabel(alert.notification_state),
+      detail: alertDisabled ? '运行观察已关闭' : alertNotificationLabel(alert.notification_state),
       timestamp: alert.last_processed_bar_at
         ? `最近处理 ${formatRuntimeTimestamp(alert.last_processed_bar_at)}`
         : `心跳 ${formatRuntimeTimestamp(alert.last_heartbeat_at)}`,
-      tone: statusTone(alert.status),
+      tone: alertDisabled ? 'neutral' : statusTone(alert.status),
     },
     {
       key: 'after_market',

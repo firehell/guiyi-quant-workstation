@@ -66,6 +66,20 @@ test('runtime presentation exposes four compact operational items and useful tim
   assert.match(items[3].timestamp, /开始 2026-08-24 18:05/)
 })
 
+test('disabled Alert is explicit instead of being mislabeled as natural observation unavailable', async () => {
+  const module = await import('../src/utils/runtimePresentation.ts').catch(() => null)
+  assert.ok(module, 'runtime presentation helper must exist')
+  const payload = runtimeHealth()
+  payload.components.alert.status = 'disabled'
+  payload.components.alert.configured_enabled = false
+  payload.components.alert.processing_state = 'unobserved'
+  payload.components.alert.notification_state = 'unobserved'
+
+  const alert = module.runtimeStatusPresentation(payload).find((item) => item.key === 'alert')
+  assert.equal(alert.state, 'Alert 未启用')
+  assert.doesNotMatch(alert.detail, /未获自然验证/)
+})
+
 test('after-market failure notification acceptance is explicit that delivery is not proven', async () => {
   const module = await import('../src/utils/runtimePresentation.ts').catch(() => null)
   assert.ok(module, 'runtime presentation helper must exist')
