@@ -231,6 +231,70 @@ def test_alert_health_missing_stale_and_fresh_heartbeat(monkeypatch, tmp_path) -
     assert "fixture/secrets" not in rendered
 
 
+@pytest.mark.parametrize(
+    ("heartbeat", "expected_error_type"),
+    (
+        (None, "alert_heartbeat_missing"),
+        (
+            {
+                "generated_at": "2026-08-14T02:44:29+00:00",
+                "available": True,
+                "enabled_rule_count": 2,
+                "scope_product_count": 1,
+            },
+            "alert_heartbeat_stale",
+        ),
+    ),
+)
+def test_alert_health_preserves_failed_persistent_observation_when_heartbeat_is_unhealthy(
+    heartbeat: dict[str, object] | None,
+    expected_error_type: str,
+) -> None:
+    """A short-lived heartbeat failure must not erase the persistent failure record."""
+    now = datetime(2026, 8, 14, 2, 45, tzinfo=UTC)
+    runtime_status = {
+        "schema_version": 1,
+        "last_processed_bar_at": "2026-08-14T02:42:58+00:00",
+        "last_processing_success_at": "2026-08-14T02:42:00+00:00",
+        "last_processing_failure_at": "2026-08-14T02:43:00+00:00",
+        "processing_error_type": "processing_failed",
+        "last_event_at": "2026-08-14T02:42:00+00:00",
+        "last_transport_attempt_at": "2026-08-14T02:43:00+00:00",
+        "last_provider_accepted_at": "2026-08-14T02:42:00+00:00",
+        "last_notification_failure_at": "2026-08-14T02:43:00+00:00",
+        "notification_error_type": "notification_transport_failed",
+        "consecutive_notification_failures": 2,
+    }
+    values: dict[str, object] = {
+        "alert:runtime-status": json.dumps(runtime_status),
+    }
+    if heartbeat is not None:
+        values["alert:heartbeat"] = json.dumps(heartbeat)
+    TestingSessionLocal = _session_factory()
+
+    with TestingSessionLocal() as session:
+        payload = build_runtime_health(
+            session,
+            redis_factory=lambda: FakeRedis(values=values),
+            now=now,
+            live_runtime_enabled=False,
+            alert_runtime_enabled=True,
+            notification_transport_configured=True,
+            after_market_status_path=None,
+        )
+
+    alert = payload["components"]["alert"]
+    assert alert["status"] == "degraded"
+    assert alert["error_type"] == expected_error_type
+    assert alert["processing_state"] == "failed"
+    assert alert["notification_state"] == "failed"
+    assert alert["last_processing_failure_at"] == "2026-08-14T02:43:00+00:00"
+    assert alert["processing_error_type"] == "processing_failed"
+    assert alert["last_notification_failure_at"] == "2026-08-14T02:43:00+00:00"
+    assert alert["notification_error_type"] == "notification_transport_failed"
+    assert alert["consecutive_notification_failures"] == 2
+
+
 def test_alert_health_accepts_v2_heartbeat_counts() -> None:
     """V2 scope count is the unique enabled-rule product union, not rule-product pairs."""
     now = datetime(2026, 8, 14, 2, 45, tzinfo=UTC)
@@ -759,6 +823,65 @@ def test_enabled_after_market_preserves_activation_state_after_completed_run(
     assert after_market["configured_enabled"] is True
 
 
+@pytest.mark.parametrize(
+    "legacy_payload",
+    (
+        pytest.param(
+            json.dumps(
+                {
+                    "last_run": {
+                        "trading_day": "2026-08-10",
+                        "status": "passed",
+                        "attempts": 1,
+                        "started_at": "2026-08-10T18:05:00+08:00",
+                        "finished_at": "2026-08-10T18:10:00+08:00",
+                        "products": ["jm"],
+                        "error_code": None,
+                    },
+                    "last_successful_trading_day": "2026-08-10",
+                    "last_failure": None,
+                }
+            ),
+            id="valid-legacy-status",
+        ),
+        pytest.param("{invalid-json", id="invalid-legacy-status"),
+    ),
+)
+def test_disabled_after_market_ignores_legacy_status_file(
+    tmp_path,
+    legacy_payload: str,
+) -> None:
+    """Activation state is authoritative even when an old status file remains."""
+    status_path = tmp_path / "after-market-status.json"
+    status_path.write_text(legacy_payload, encoding="utf-8")
+    TestingSessionLocal = _session_factory()
+
+    with TestingSessionLocal() as session:
+        payload = build_runtime_health(
+            session,
+            redis_factory=lambda: FakeRedis(),
+            now=datetime(2026, 8, 24, 10, 10, tzinfo=UTC),
+            live_runtime_enabled=False,
+            after_market_automation_enabled=False,
+            alert_runtime_enabled=False,
+            notification_transport_configured=False,
+            after_market_status_path=status_path,
+        )
+
+    assert payload["components"]["after_market"] == {
+        "status": "disabled",
+        "configured_enabled": False,
+        "run_state": "disabled",
+        "expected_trading_day": None,
+        "current_run": None,
+        "last_run": None,
+        "last_successful_trading_day": None,
+        "last_failure": None,
+        "error_type": None,
+        "error_message": None,
+    }
+
+
 def test_after_market_before_cutoff_is_pending_and_excludes_today(
     monkeypatch, tmp_path
 ) -> None:
@@ -792,6 +915,49 @@ def test_after_market_before_cutoff_is_pending_and_excludes_today(
     assert after_market["status"] == "pending"
     assert after_market["run_state"] == "pending"
     assert after_market["expected_trading_day"] == "2026-08-21"
+
+
+def test_after_market_completed_today_before_cutoff_is_healthy(
+    monkeypatch, tmp_path
+) -> None:
+    """Expected day controls due/missed only; local today bounds recorded chronology."""
+    monkeypatch.setattr(
+        "app.services.runtime_health.load_operational_products", lambda: ("jm",)
+    )
+    status_path = tmp_path / "after-market-status.json"
+    status_path.write_text(
+        json.dumps(_completed_after_market_status()),
+        encoding="utf-8",
+    )
+    TestingSessionLocal = _session_factory()
+
+    with TestingSessionLocal() as session:
+        _seed_calendar(
+            session,
+            exchanges={"DCE": ("jm",)},
+            days={
+                "DCE": (
+                    (date(2026, 8, 21), True),
+                    (date(2026, 8, 24), True),
+                )
+            },
+        )
+        payload = build_runtime_health(
+            session,
+            redis_factory=lambda: FakeRedis(),
+            now=datetime(2026, 8, 24, 10, 10, tzinfo=UTC),
+            live_runtime_enabled=False,
+            after_market_automation_enabled=True,
+            alert_runtime_enabled=False,
+            notification_transport_configured=False,
+            after_market_status_path=status_path,
+        )
+
+    after_market = payload["components"]["after_market"]
+    assert after_market["status"] == "ok"
+    assert after_market["run_state"] == "completed"
+    assert after_market["expected_trading_day"] == "2026-08-21"
+    assert after_market["last_successful_trading_day"] == "2026-08-24"
 
 
 def test_after_market_missing_at_cutoff_is_degraded_missed(
@@ -1276,7 +1442,11 @@ def test_runtime_health_rejects_invalid_utf8_live_heartbeat_without_leaking_byte
     assert _contains_no_secret_words(payload)
 
 
-def test_runtime_health_surfaces_live_dominant_mismatch(tmp_path) -> None:
+def test_runtime_health_surfaces_live_dominant_mismatch(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(
+        "app.services.runtime_health.load_operational_products",
+        lambda: ("j", "jm", "ap", "ag"),
+    )
     status_path = tmp_path / "after-market-status.json"
     status_path.write_text(
         json.dumps(
@@ -1299,9 +1469,16 @@ def test_runtime_health_surfaces_live_dominant_mismatch(tmp_path) -> None:
     )
     TestingSessionLocal = _session_factory()
     with TestingSessionLocal() as session:
+        _seed_calendar(
+            session,
+            exchanges={"DCE": ("j", "jm", "ap", "ag")},
+            days={"DCE": ((date(2026, 8, 10), True),)},
+        )
         payload = build_runtime_health(
             session,
             redis_factory=lambda: FakeRedis(),
+            now=datetime(2026, 8, 10, 10, 30, tzinfo=UTC),
+            after_market_automation_enabled=True,
             alert_runtime_enabled=False,
             notification_transport_configured=False,
             after_market_status_path=status_path,

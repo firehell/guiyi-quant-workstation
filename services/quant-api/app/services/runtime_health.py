@@ -202,18 +202,35 @@ def _collect_alert_health(
             **empty,
             "error_type": "redis_unavailable",
         }
+    runtime_status_invalid = False
+    try:
+        runtime_status = _runtime_status_mapping(
+            connection.get("alert:runtime-status")
+        )
+        if runtime_status is not None:
+            runtime_status = validate_alert_runtime_status(runtime_status)
+    except Exception:  # noqa: BLE001 - public health stays sanitized
+        runtime_status = None
+        runtime_status_invalid = True
+    observation = (
+        _alert_runtime_observation(runtime_status)
+        if runtime_status is not None
+        else {}
+    )
     try:
         heartbeat = _json_mapping(connection.get("alert:heartbeat"))
     except Exception:  # noqa: BLE001 - public health stays sanitized
         return {
             "status": RUNTIME_STATUS_DEGRADED,
             **empty,
+            **observation,
             "error_type": "alert_heartbeat_invalid",
         }
     if heartbeat is None:
         return {
             "status": RUNTIME_STATUS_DEGRADED,
             **empty,
+            **observation,
             "error_type": "alert_heartbeat_missing",
         }
     try:
@@ -225,6 +242,7 @@ def _collect_alert_health(
         return {
             "status": RUNTIME_STATUS_DEGRADED,
             **empty,
+            **observation,
             "error_type": "alert_heartbeat_invalid",
         }
     payload = {
@@ -238,21 +256,17 @@ def _collect_alert_health(
         return {
             "status": RUNTIME_STATUS_DEGRADED,
             **payload,
+            **observation,
             "error_type": "alert_heartbeat_stale",
         }
     if not available:
         return {
             "status": RUNTIME_STATUS_DEGRADED,
             **payload,
+            **observation,
             "error_type": "alert_unavailable",
         }
-    try:
-        runtime_status = _runtime_status_mapping(
-            connection.get("alert:runtime-status")
-        )
-        if runtime_status is not None:
-            runtime_status = validate_alert_runtime_status(runtime_status)
-    except Exception:  # noqa: BLE001 - public health stays sanitized
+    if runtime_status_invalid:
         return {
             "status": RUNTIME_STATUS_DEGRADED,
             **payload,
@@ -260,7 +274,6 @@ def _collect_alert_health(
         }
     if runtime_status is None:
         return {"status": RUNTIME_STATUS_OK, **payload}
-    observation = _alert_runtime_observation(runtime_status)
     observed_status = (
         RUNTIME_STATUS_DEGRADED
         if "failed"
@@ -427,6 +440,8 @@ def _collect_after_market_health(
         "error_type": None,
         "error_message": None,
     }
+    if not configured_enabled:
+        return {"status": RUNTIME_STATUS_DISABLED, **empty}
     if status_path is None:
         return {"status": RUNTIME_STATUS_DISABLED, **empty}
     expected_day: date | None = None
@@ -476,7 +491,6 @@ def _collect_after_market_health(
     if not _finalized_after_market_chronology_valid(
         public,
         now=now,
-        expected_day=expected_day,
     ):
         return {
             "status": RUNTIME_STATUS_DEGRADED,
@@ -593,14 +607,8 @@ def _finalized_after_market_chronology_valid(
     public: Mapping[str, object],
     *,
     now: datetime,
-    expected_day: date | None,
 ) -> bool:
-    local_today = now.astimezone(SHANGHAI).date()
-    latest_allowed_day = (
-        min(local_today, expected_day)
-        if expected_day is not None
-        else local_today
-    )
+    latest_allowed_day = now.astimezone(SHANGHAI).date()
     last_run = public.get("last_run")
     try:
         if isinstance(last_run, Mapping):
