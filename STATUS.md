@@ -84,9 +84,22 @@
 - Market Web 的 B1 流程已进入 production：首页为“需要处理 → 优先检查 → 全市场研究”，详情页使用
   “当前检查栏”；正式 Event、研究观察和 Research-only 事实保持分层，不产生综合分或交易推荐。
 - The prior Four-System Active60 All-Frequency Observation direction was withdrawn by the user before implementation and its active Spec/Plan were removed.
-- SuBing Daily Watch V1 is the approved replacement design/plan.
-- No implementation, release, Runtime promotion, extension-drive configuration, real file generation or Alert Scope change has occurred yet.
-- The next step is Task 1 of the SuBing Daily Watch V1 implementation plan in an isolated Lane 3 task.
+
+## SuBing Daily Watch V1 develop candidate
+
+- SuBing Daily Watch V1 的 code-complete implementation base 为
+  `ed14c5a1990f34121329b22d05e3c6b612935264`；Task 9 canonical closeout 后，当前 feature branch 是面向
+  develop 的 `CODE_COMPLETE / TEST_COMPLETE` candidate，仍等待独立 Review 与 integration。
+- 2026-08-24 fresh verification 为 focused backend `242 passed`、full non-isolated backend
+  `3636 passed / 3 skipped / 16 deselected`、engineering `63 passed`、Mypy
+  `154 source files / 0 issues`、focused Node `12 passed`、Web unit `276 passed / 1 skipped`、focused
+  Playwright `56 passed`、full Playwright `98 passed / 1 skipped`；Ruff、Web build、OpenSpec `6 passed`、
+  secret scan `0 findings`、ops shell 与 launchd plist lint 均通过。该 feature 不含 migration、schema 或
+  concurrency 变化，因此未运行 isolated PostgreSQL，也未连接 production DB。
+- 本 candidate 未合入 main、未 release、未 Runtime-promoted；本任务未配置
+  `GUIYI_SUBING_OBSERVATION_ROOT`，未生成真实 `history/current/generation-status` 文件，也未运行或回填
+  真实盘后任务。首次自然 after-market evidence 继续 `pending`；production Alert Scope/transport、
+  prospective OOS 及其他既有 Gate 均未改变。
 
 ## No-Watch Reliability V1 develop integration
 

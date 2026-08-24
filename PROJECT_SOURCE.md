@@ -91,12 +91,14 @@ N Structure `5m`、JDJ `1m`；日进斗金策略接口只支持当前 active uni
 Candidate reducer 与窄的 `app.research.jdj_strategy` reference lifecycle，返回完整 action 与顶层
 `reference_execution=true`。这些接口不建立通用 Strategy adapter，不创建 AlertEvent 或持久化派生结果。
 
-Market 首页“优先检查”只消费 `/api/v1/market/research/trend-focus` 的当前只读快照。该 read model
-按请求从 Radar、`MarketDataService`、`MarketReadService` 与当前 rank1 physical contract 重算，输出
-多/空新机会及运行/转弱趋势；不持久化、不接 Alert/Runtime/订单，也不生成综合分或交易推荐。
+Market 首页“优先检查”只消费 `/api/v1/market/research/subing-daily-watch/current` 的当前目标日观察。
+SuBing Daily Watch 只在盘后任务通过后以 D1 + 60m EMA21 斜率正负同号决定多/空纳入，并在显式配置、
+已挂载的扩展盘根保存 active60 完整不可变 ledger；Web/API 只投影 current，不做排名、综合分或交易推荐。
+该观察不进入 Alert、DB、Redis、Canonical、Execution Review 或订单路径。既有 Trend Focus backend 保留为
+read-only code，但不再是首页 active product。
 
 Market 首页同页使用唯一完整 Runtime health DTO 展示 overall、Live、Alert 与盘后状态，不新增
-route/page。mount/手工刷新读 Formal + Runtime + Radar + Trend，页面重新 visible 只刷 Formal +
+route/page。mount/手工刷新读 Formal + Runtime + Radar + Daily Watch，页面重新 visible 只刷 Formal +
 Runtime；四源各自用 generation guard 拒绝旧响应覆盖新结果。Runtime 首次失败显示 unavailable，已有
 成功快照时保留并标记 stale；`disabled`、`unobserved`、provider accepted、missed 与 stuck 不得互相
 代替，provider accepted 不得表述为送达。
