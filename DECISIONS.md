@@ -31,7 +31,7 @@ exact protocol/window/hash/count 只看 policy、report 与测试；历史过程
 | Execution Review | 只从 eligible immutable Event 记录人工 Decision、Execution、Episode 与 Review | 不恢复旧 Review Center、不连接账户、不自动反手；Historical reconstruction 只经 `MarketDataService` |
 | Execution Review roll | roll reconcile 默认关闭；request-scoped composition 每请求读取一次 Gate 后注入 callback | missing/`disabled`/`invalid` 注入 fail-closed callback，只有 `enabled` 注入真实 reconciler；`record_executed` 不重复读取 marker |
 | Multiplier | 使用 trusted-partial 官方 evidence，Episode 创建时 snapshot | completeness 不阻断工作流；缺失只令人民币估算 unavailable，reference 扩大不改写历史 |
-| Web B1 | SuBing Daily Watch 是首页“优先检查”的 priority context；只按 D1 + 60m EMA21 斜率正负同号纳入多空 | active60 ledger 在已配置扩展盘根不可变保存；不排名、不回退 stale candidate，也不耦合 Alert Scope；正式 Event、研究观察与 Research-only 事实继续分层 |
+| Web B1 | SuBing Daily Watch 是首页“优先检查”的 priority context；每周期均要求 price-vs-EMA21 与 slope_5/slope_10 同向，再以 D1 + 60m 同向纳入多空 | active60 ledger 在已配置扩展盘根不可变保存；不排名、不回退 stale candidate，也不耦合 Alert Scope；正式 Event、研究观察与 Research-only 事实继续分层 |
 | Audit 进度 | `data audit --progress` 只向 stderr 输出 per-product compact NDJSON，默认 stdout 合同不变 | audit 仍是 provider-free 只读；进度输出首次失败后只禁用 observer，不改变审计结果或异常 |
 | Runtime 入口 | `guiyi` 是用户 CLI，`app.runtime_entry` 只服务受监督进程 | 避免第二套业务入口；手工进程调用不能冒充自然 Runtime evidence |
 | 工程验证 | `TESTING.md` 只保留项目原生命令；工程脚本只保留无依赖 secret scan；用户明确批准且绑定具体 Spec 的正式 design / implementation plan 可保存在 `docs/superpowers/specs/` 与 `docs/superpowers/plans/` | 不维护自验证治理框架、重复流程文档、active task/plan 目录或可选 CI 双轨；该狭窄例外只提供可审阅的设计合同，不构成 workflow、当前状态或外部操作授权 |
