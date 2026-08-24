@@ -1458,6 +1458,8 @@ Resolve and record the exact task worktree path, then fail closed unless all
 preconditions hold:
 
 ```bash
+set -euo pipefail
+
 task_worktree_path="<EXACT_TASK_WORKTREE_PATH>"
 cleanup_controller_path="<EXACT_DEVELOP_WORKTREE_PATH>"
 task_branch=feature/jdj-active60-1m-strategy
