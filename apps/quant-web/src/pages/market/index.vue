@@ -7,10 +7,10 @@ import MarketDetailTable from '@/components/market/MarketDetailTable.vue'
 import MarketScatter from '@/components/market/MarketScatter.vue'
 import MarketSummaryStrip from '@/components/market/MarketSummaryStrip.vue'
 import MarketFormalSignals from '@/components/market/MarketFormalSignals.vue'
-import MarketFocusList from '@/components/market/MarketFocusList.vue'
 import MarketRadarSkeleton from '@/components/market/MarketRadarSkeleton.vue'
 import MarketRuntimeStatus from '@/components/market/MarketRuntimeStatus.vue'
-import { getMarketRadar, getMarketTrendFocus } from '@/api/market'
+import SubingDailyWatch from '@/components/market/SubingDailyWatch.vue'
+import { getMarketRadar, getSubingDailyWatchCurrent } from '@/api/market'
 import { getRuntimeHealth } from '@/api/runtime'
 import { getEventStates } from '@/api/executionReview'
 import type { CurrentFormalSignalItem } from '@/api/alerts'
@@ -18,8 +18,8 @@ import type { EventState } from '@/types/executionReview'
 import type {
   MarketRadarItem,
   MarketRadarResponse,
-  MarketTrendFocusItem,
-  MarketTrendFocusResponse,
+  SubingDailyWatchCurrentResponse,
+  SubingDailyWatchItem,
 } from '@/types/market'
 import { useCurrentFormalSignals } from '@/composables/useCurrentFormalSignals'
 import { useLatestResource } from '@/composables/useLatestResource'
@@ -40,17 +40,20 @@ const {
 } = useCurrentFormalSignals()
 const runtimeState = useLatestResource({ fetch: getRuntimeHealth })
 const radarState = useLatestResource<MarketRadarResponse>({ fetch: getMarketRadar })
-const trendFocusState = useLatestResource<MarketTrendFocusResponse>({ fetch: getMarketTrendFocus })
+const dailyWatchState = useLatestResource<SubingDailyWatchCurrentResponse>({
+  fetch: getSubingDailyWatchCurrent,
+})
 const runtime = runtimeState.data
 const radar = radarState.data
-const trendFocus = trendFocusState.data
+const dailyWatch = computed(() => (
+  dailyWatchState.failed.value ? null : dailyWatchState.data.value
+))
 const error = radarState.failed
-const trendFocusError = trendFocusState.failed
 const loading = computed(() => (
   formalLoading.value
   || runtimeState.loading.value
   || radarState.loading.value
-  || trendFocusState.loading.value
+  || dailyWatchState.loading.value
 ))
 const preferences = ref(loadMarketWorkspacePreferences())
 const formalEventStates = ref<Record<number, EventState>>({})
@@ -64,11 +67,24 @@ const freshnessIssue = computed(() => {
   return `Radar 数据不完整：${parts.join('；') || radar.value.freshness_message}`
 })
 
-function openChart(item: MarketRadarItem | MarketTrendFocusItem) {
+function openChart(item: MarketRadarItem) {
   const frequency = preferences.value.frequency
   void router.push({
     name: 'market-chart',
     query: { symbol: item.symbol, series_kind: 'actual_dominant', frequency },
+  })
+}
+
+function openDailyWatch(item: SubingDailyWatchItem) {
+  void router.push({
+    name: 'market-chart',
+    query: {
+      symbol: item.symbol,
+      series_kind: 'actual_dominant',
+      frequency: '15m',
+      overlay: 'subing',
+      entry: 'subing-daily-watch',
+    },
   })
 }
 
@@ -120,12 +136,16 @@ async function refreshAll() {
     refreshFormalSignals(),
     runtimeState.refresh(),
     radarState.refresh(),
-    trendFocusState.refresh(),
+    dailyWatchState.refresh(),
   ])
 }
 
 async function refreshVisibleOperationalState() {
-  await Promise.all([refreshFormalSignals(), runtimeState.refresh()])
+  await Promise.all([
+    refreshFormalSignals(),
+    runtimeState.refresh(),
+    dailyWatchState.refresh(),
+  ])
 }
 
 function handleVisibilityChange() {
@@ -142,7 +162,7 @@ onBeforeUnmount(() => {
   invalidateFormalSignals()
   runtimeState.invalidate()
   radarState.invalidate()
-  trendFocusState.invalidate()
+  dailyWatchState.invalidate()
   formalStateGeneration += 1
 })
 </script>
@@ -176,11 +196,11 @@ onBeforeUnmount(() => {
           {{ radar ? '已保留上一份成功快照；重试前请以其时点为准。' : '无法读取只读 Radar；不影响 Product Workspace。' }}
         </NAlert>
       </div>
-      <MarketFocusList
-        :snapshot="trendFocus"
-        :loading="trendFocusState.loading.value && !trendFocus"
-        :stale="trendFocusError && Boolean(trendFocus)"
-        @open="openChart"
+      <SubingDailyWatch
+        :response="dailyWatch"
+        :loading="dailyWatchState.loading.value && !dailyWatch"
+        :request-failed="dailyWatchState.failed.value"
+        @open="openDailyWatch"
       />
       <template v-if="radar">
         <NAlert v-if="freshnessIssue" type="warning" :title="freshnessIssue" />

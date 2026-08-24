@@ -726,6 +726,259 @@ export interface MarketRadarResponse {
   sector_summary: MarketRadarSectorSummary[]
 }
 
+export type SubingDailyWatchDecision = 'long_watch' | 'short_watch'
+export type SubingDailyWatchPriceSide = 'above' | 'below' | 'equal' | 'unavailable'
+
+interface SubingDailyWatchTrendBase<TDecimal> {
+  bar_end: string
+  trading_day: string
+  physical_contract: string
+  segment_start_trading_day: string
+  close: TDecimal
+  ema21: TDecimal
+  price_side: SubingDailyWatchPriceSide
+  slope_5_bps_per_bar: TDecimal
+  slope_10_bps_per_bar: TDecimal
+}
+
+export type SubingDailyWatchTrendWire = SubingDailyWatchTrendBase<string>
+export type SubingDailyWatchTrend = SubingDailyWatchTrendBase<number>
+
+interface SubingDailyWatchItemBase<TTrend> {
+  symbol: string
+  product_name: string
+  sector: string
+  decision: SubingDailyWatchDecision | 'unavailable'
+  reason_codes: string[]
+  daily: TTrend | null
+  hourly: TTrend | null
+  unavailable_reasons: string[]
+}
+
+export type SubingDailyWatchItemWire = SubingDailyWatchItemBase<SubingDailyWatchTrendWire>
+export type SubingDailyWatchItem = SubingDailyWatchItemBase<SubingDailyWatchTrend>
+
+export interface SubingDailyWatchCounts {
+  universe: number
+  long_watch: number
+  short_watch: number
+  excluded: number
+  unavailable: number
+}
+
+interface SubingDailyWatchSnapshotBase<TItem> {
+  source_trading_day: string
+  target_trading_day: string
+  generated_at: string
+  counts: SubingDailyWatchCounts
+  long_watch: TItem[]
+  short_watch: TItem[]
+  unavailable: TItem[]
+}
+
+export type SubingDailyWatchSnapshotWire = SubingDailyWatchSnapshotBase<SubingDailyWatchItemWire>
+export type SubingDailyWatchSnapshot = SubingDailyWatchSnapshotBase<SubingDailyWatchItem>
+
+interface SubingDailyWatchCurrentResponseBase<TSnapshot> {
+  status: 'ready' | 'unavailable'
+  expected_target_trading_day: string | null
+  latest_target_trading_day: string | null
+  error_code: string | null
+  snapshot: TSnapshot | null
+}
+
+export type SubingDailyWatchCurrentWireResponse =
+  SubingDailyWatchCurrentResponseBase<SubingDailyWatchSnapshotWire>
+export type SubingDailyWatchCurrentResponse =
+  SubingDailyWatchCurrentResponseBase<SubingDailyWatchSnapshot>
+
+export function normalizeSubingDailyWatchCurrent(
+  payload: SubingDailyWatchCurrentWireResponse,
+): SubingDailyWatchCurrentResponse {
+  if (!isSubingDailyWatchRecord(payload)
+    || (payload.status !== 'ready' && payload.status !== 'unavailable')
+    || !isNullableDailyWatchDate(payload.expected_target_trading_day)
+    || !isNullableDailyWatchDate(payload.latest_target_trading_day)
+    || (payload.error_code !== null && !isNonEmptyDailyWatchString(payload.error_code))) {
+    throw new Error('SUBING_DAILY_WATCH_INVALID_RESPONSE')
+  }
+  if (payload.status === 'unavailable') {
+    if (payload.snapshot !== null || payload.error_code === null) {
+      throw new Error('SUBING_DAILY_WATCH_INVALID_RESPONSE')
+    }
+    return {
+      status: payload.status,
+      expected_target_trading_day: payload.expected_target_trading_day,
+      latest_target_trading_day: payload.latest_target_trading_day,
+      error_code: payload.error_code,
+      snapshot: null,
+    }
+  }
+  if (payload.error_code !== null || !isSubingDailyWatchSnapshotWire(payload.snapshot)) {
+    throw new Error('SUBING_DAILY_WATCH_INVALID_RESPONSE')
+  }
+  const snapshot = payload.snapshot
+  if (payload.expected_target_trading_day !== snapshot.target_trading_day
+    || payload.latest_target_trading_day !== snapshot.target_trading_day) {
+    throw new Error('SUBING_DAILY_WATCH_INVALID_RESPONSE')
+  }
+  const longWatch = snapshot.long_watch.map((item) => normalizeSubingDailyWatchItem(item, 'long_watch'))
+  const shortWatch = snapshot.short_watch.map((item) => normalizeSubingDailyWatchItem(item, 'short_watch'))
+  const unavailable = snapshot.unavailable.map((item) => normalizeSubingDailyWatchItem(item, 'unavailable'))
+  const symbols = [...longWatch, ...shortWatch, ...unavailable].map((item) => item.symbol)
+  if (new Set(symbols).size !== symbols.length
+    || snapshot.counts.long_watch !== longWatch.length
+    || snapshot.counts.short_watch !== shortWatch.length
+    || snapshot.counts.unavailable !== unavailable.length
+    || snapshot.counts.universe !== (
+      snapshot.counts.long_watch
+      + snapshot.counts.short_watch
+      + snapshot.counts.excluded
+      + snapshot.counts.unavailable
+    )) {
+    throw new Error('SUBING_DAILY_WATCH_INVALID_RESPONSE')
+  }
+  return {
+    status: 'ready',
+    expected_target_trading_day: payload.expected_target_trading_day,
+    latest_target_trading_day: payload.latest_target_trading_day,
+    error_code: null,
+    snapshot: {
+      source_trading_day: snapshot.source_trading_day,
+      target_trading_day: snapshot.target_trading_day,
+      generated_at: snapshot.generated_at,
+      counts: { ...snapshot.counts },
+      long_watch: longWatch,
+      short_watch: shortWatch,
+      unavailable,
+    },
+  }
+}
+
+function normalizeSubingDailyWatchItem(
+  value: SubingDailyWatchItemWire,
+  expectedDecision: SubingDailyWatchDecision | 'unavailable',
+): SubingDailyWatchItem {
+  if (!isSubingDailyWatchItemWire(value) || value.decision !== expectedDecision) {
+    throw new Error('SUBING_DAILY_WATCH_INVALID_RESPONSE')
+  }
+  if (expectedDecision !== 'unavailable' && (value.daily === null || value.hourly === null)) {
+    throw new Error('SUBING_DAILY_WATCH_INVALID_RESPONSE')
+  }
+  if (expectedDecision === 'unavailable' && value.unavailable_reasons.length === 0) {
+    throw new Error('SUBING_DAILY_WATCH_INVALID_RESPONSE')
+  }
+  return {
+    symbol: value.symbol,
+    product_name: value.product_name,
+    sector: value.sector,
+    decision: value.decision,
+    reason_codes: [...value.reason_codes],
+    daily: value.daily ? normalizeSubingDailyWatchTrend(value.daily) : null,
+    hourly: value.hourly ? normalizeSubingDailyWatchTrend(value.hourly) : null,
+    unavailable_reasons: [...value.unavailable_reasons],
+  }
+}
+
+function normalizeSubingDailyWatchTrend(
+  value: SubingDailyWatchTrendWire,
+): SubingDailyWatchTrend {
+  return {
+    bar_end: value.bar_end,
+    trading_day: value.trading_day,
+    physical_contract: value.physical_contract,
+    segment_start_trading_day: value.segment_start_trading_day,
+    close: normalizeSubingDailyWatchDecimal(value.close),
+    ema21: normalizeSubingDailyWatchDecimal(value.ema21),
+    price_side: value.price_side,
+    slope_5_bps_per_bar: normalizeSubingDailyWatchDecimal(value.slope_5_bps_per_bar),
+    slope_10_bps_per_bar: normalizeSubingDailyWatchDecimal(value.slope_10_bps_per_bar),
+  }
+}
+
+function normalizeSubingDailyWatchDecimal(value: string): number {
+  if (typeof value !== 'string'
+    || !/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(value)) {
+    throw new Error('SUBING_DAILY_WATCH_INVALID_RESPONSE')
+  }
+  const normalized = Number(value)
+  if (!Number.isFinite(normalized)) {
+    throw new Error('SUBING_DAILY_WATCH_INVALID_RESPONSE')
+  }
+  return Object.is(normalized, -0) ? 0 : normalized
+}
+
+function isSubingDailyWatchSnapshotWire(value: unknown): value is SubingDailyWatchSnapshotWire {
+  if (!isSubingDailyWatchRecord(value)
+    || !isDailyWatchDate(value.source_trading_day)
+    || !isDailyWatchDate(value.target_trading_day)
+    || !isDailyWatchTimestamp(value.generated_at)
+    || !isSubingDailyWatchCounts(value.counts)
+    || !Array.isArray(value.long_watch)
+    || !Array.isArray(value.short_watch)
+    || !Array.isArray(value.unavailable)) return false
+  return true
+}
+
+function isSubingDailyWatchCounts(value: unknown): value is SubingDailyWatchCounts {
+  if (!isSubingDailyWatchRecord(value)) return false
+  return ['universe', 'long_watch', 'short_watch', 'excluded', 'unavailable']
+    .every((key) => Number.isInteger(value[key]) && Number(value[key]) >= 0)
+}
+
+function isSubingDailyWatchItemWire(value: unknown): value is SubingDailyWatchItemWire {
+  if (!isSubingDailyWatchRecord(value)
+    || !isDailyWatchSymbol(value.symbol)
+    || typeof value.product_name !== 'string'
+    || typeof value.sector !== 'string'
+    || !['long_watch', 'short_watch', 'unavailable'].includes(String(value.decision))
+    || !isDailyWatchStringArray(value.reason_codes)
+    || !isDailyWatchStringArray(value.unavailable_reasons)) return false
+  return (value.daily === null || isSubingDailyWatchTrendWire(value.daily))
+    && (value.hourly === null || isSubingDailyWatchTrendWire(value.hourly))
+}
+
+function isSubingDailyWatchTrendWire(value: unknown): value is SubingDailyWatchTrendWire {
+  if (!isSubingDailyWatchRecord(value)) return false
+  return isDailyWatchTimestamp(value.bar_end)
+    && isDailyWatchDate(value.trading_day)
+    && isNonEmptyDailyWatchString(value.physical_contract)
+    && isDailyWatchDate(value.segment_start_trading_day)
+    && typeof value.close === 'string'
+    && typeof value.ema21 === 'string'
+    && ['above', 'below', 'equal', 'unavailable'].includes(String(value.price_side))
+    && typeof value.slope_5_bps_per_bar === 'string'
+    && typeof value.slope_10_bps_per_bar === 'string'
+}
+
+function isSubingDailyWatchRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function isDailyWatchStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every(isNonEmptyDailyWatchString)
+}
+
+function isDailyWatchSymbol(value: unknown): value is string {
+  return typeof value === 'string' && /^[a-z]+$/.test(value)
+}
+
+function isNonEmptyDailyWatchString(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0
+}
+
+function isDailyWatchDate(value: unknown): value is string {
+  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
+}
+
+function isNullableDailyWatchDate(value: unknown): value is string | null {
+  return value === null || isDailyWatchDate(value)
+}
+
+function isDailyWatchTimestamp(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0 && Number.isFinite(Date.parse(value))
+}
+
 export type MarketTrendFocusDirection = 'long' | 'short'
 export type MarketTrendFocusStage = 'setup' | 'breakout' | 'retest' | 'ready' | 'running' | 'weakening'
 export type MarketTrendFocusHourlyState = 'continuation' | 'pullback' | 'reversal_block'

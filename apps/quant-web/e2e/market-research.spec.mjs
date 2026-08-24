@@ -55,26 +55,26 @@ function radar(overrides = {}) {
   }
 }
 
-function trendFocusItem(symbol, overrides = {}) {
+function dailyWatchItem(symbol, productName = symbol.toUpperCase()) {
+  const trend = {
+    bar_end: '2026-08-24T07:00:00Z', trading_day: '2026-08-24', physical_contract: `${symbol.toUpperCase()}2701`,
+    segment_start_trading_day: '2026-07-20', close: '3512.125', ema21: '3478.2468', price_side: 'above',
+    slope_5_bps_per_bar: '8.6214', slope_10_bps_per_bar: '5.9173',
+  }
   return {
-    symbol, product_name: symbol.toUpperCase(), sector: 'black', physical_contract: `${symbol.toUpperCase()}2701`,
-    direction: 'long', stage: 'ready', hot_conditions: ['price_move_up', 'volume_expansion'], hot_count: 2,
-    price_change_1d: '0.0234', volume_ratio20: '1.75', atr14_percentile252: '0.81',
-    daily_volume_support: true, hourly_state: 'continuation', hourly_volume_support: false,
-    range_upper: '101.25', range_lower: '96.5', confirmation_count: 3, retest_held: true,
-    rebreak_reference: '103.5', ready_invalidation: '99.25', volume_confirmed: true,
-    five_minute_confirmed: false, entry_confirmed_at: null, latest_swing_high: '103.5',
-    latest_swing_low: '99.25', next_level: '104.75', invalidation_level: '101.25',
-    last_transition_at: '2026-08-23T02:30:00Z',
-    ...overrides,
+    symbol, product_name: productName, sector: 'black', decision: 'long_watch',
+    reason_codes: ['D1_H1_LONG_ALIGNED'], daily: trend, hourly: trend, unavailable_reasons: [],
   }
 }
 
-function trendFocus(overrides = {}) {
+function dailyWatch({ long_watch = [], short_watch = [], unavailable = [], excluded = 60 } = {}) {
   return {
-    status: 'ready', observed_at: '2026-08-23T03:00:00Z', long_opportunities: [],
-    short_opportunities: [], running_trends: [], weakening_trends: [], unavailable: [],
-    ...overrides,
+    status: 'ready', expected_target_trading_day: '2026-08-25', latest_target_trading_day: '2026-08-25', error_code: null,
+    snapshot: {
+      source_trading_day: '2026-08-24', target_trading_day: '2026-08-25', generated_at: '2026-08-24T10:24:13Z',
+      counts: { universe: long_watch.length + short_watch.length + unavailable.length + excluded, long_watch: long_watch.length, short_watch: short_watch.length, excluded, unavailable: unavailable.length },
+      long_watch, short_watch, unavailable,
+    },
   }
 }
 
@@ -128,7 +128,7 @@ async function mockMarketHomepage(
   page,
   currentFormalResponse,
   radarResponse = radar(),
-  trendFocusResponse = trendFocus(),
+  dailyWatchResponse = dailyWatch(),
   runtimeResponse = runtimeHealth(),
 ) {
   await page.route('**/api/alerts/formal-signals/current', (route) => route.fulfill({ json: currentFormalResponse }))
@@ -140,7 +140,7 @@ async function mockMarketHomepage(
   })
   await page.route('**/api/runtime/health', (route) => route.fulfill({ json: runtimeResponse }))
   await page.route('**/api/v1/market/research/radar', (route) => route.fulfill({ json: radarResponse }))
-  await page.route('**/api/v1/market/research/trend-focus', (route) => route.fulfill({ json: trendFocusResponse }))
+  await page.route('**/api/v1/market/research/subing-daily-watch/current', (route) => route.fulfill({ json: dailyWatchResponse }))
 }
 
 test('Market homepage shows compact Runtime facts without implying provider delivery', async ({ page }) => {
@@ -170,7 +170,7 @@ test('Market homepage accessibly distinguishes disabled Alert from missing natur
     page,
     { status: 'ready', trading_day: '2026-08-15', items: [] },
     radar(),
-    trendFocus(),
+    dailyWatch(),
     disabledRuntime,
   )
   await page.goto('/market')
@@ -180,8 +180,8 @@ test('Market homepage accessibly distinguishes disabled Alert from missing natur
   await expect(strip).not.toContainText('未获自然验证')
 })
 
-test('Market homepage refreshes four sources manually and only Formal plus Runtime on visibility', async ({ page }) => {
-  const counts = { formal: 0, runtime: 0, radar: 0, trend: 0 }
+test('Market homepage refreshes four sources manually and Formal plus Runtime plus Daily on visibility', async ({ page }) => {
+  const counts = { formal: 0, runtime: 0, radar: 0, daily: 0 }
   await page.route('**/api/alerts/formal-signals/current', (route) => {
     counts.formal += 1
     return route.fulfill({ json: { status: 'ready', trading_day: '2026-08-15', items: [] } })
@@ -194,19 +194,19 @@ test('Market homepage refreshes four sources manually and only Formal plus Runti
     counts.radar += 1
     return route.fulfill({ json: radar() })
   })
-  await page.route('**/api/v1/market/research/trend-focus', (route) => {
-    counts.trend += 1
-    return route.fulfill({ json: trendFocus() })
+  await page.route('**/api/v1/market/research/subing-daily-watch/current', (route) => {
+    counts.daily += 1
+    return route.fulfill({ json: dailyWatch() })
   })
 
   await page.goto('/market')
-  await expect.poll(() => ({ ...counts })).toEqual({ formal: 1, runtime: 1, radar: 1, trend: 1 })
+  await expect.poll(() => ({ ...counts })).toEqual({ formal: 1, runtime: 1, radar: 1, daily: 1 })
 
   await page.getByRole('button', { name: '全部刷新' }).click()
-  await expect.poll(() => ({ ...counts })).toEqual({ formal: 2, runtime: 2, radar: 2, trend: 2 })
+  await expect.poll(() => ({ ...counts })).toEqual({ formal: 2, runtime: 2, radar: 2, daily: 2 })
 
   await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))
-  await expect.poll(() => ({ ...counts })).toEqual({ formal: 3, runtime: 3, radar: 2, trend: 2 })
+  await expect.poll(() => ({ ...counts })).toEqual({ formal: 3, runtime: 3, radar: 2, daily: 3 })
 })
 
 test('Market homepage marks first Runtime failure unavailable and retains a stale successful snapshot', async ({ page }) => {
@@ -220,7 +220,7 @@ test('Market homepage marks first Runtime failure unavailable and retains a stal
     return route.fulfill({ status: 503 })
   })
   await page.route('**/api/v1/market/research/radar', (route) => route.fulfill({ json: radar() }))
-  await page.route('**/api/v1/market/research/trend-focus', (route) => route.fulfill({ json: trendFocus() }))
+  await page.route('**/api/v1/market/research/subing-daily-watch/current', (route) => route.fulfill({ json: dailyWatch() }))
 
   await page.goto('/market')
   const strip = page.getByTestId('market-runtime-status')
@@ -232,99 +232,6 @@ test('Market homepage marks first Runtime failure unavailable and retains a stal
   await page.getByRole('button', { name: '全部刷新' }).click()
   await expect(strip).toContainText('状态已过期')
   await expect(strip).toContainText('整体正常')
-})
-
-test('Trend Focus renders four backend groups, expands after three, and opens Product Workspace', async ({ page }) => {
-  await mockMarketHomepage(
-    page,
-    { status: 'ready', trading_day: '2026-08-15', items: [] },
-    radar(),
-    trendFocus({
-      long_opportunities: [
-        trendFocusItem('jm'),
-        trendFocusItem('rb', { stage: 'retest' }),
-        trendFocusItem('cu', { stage: 'breakout', volume_confirmed: false }),
-        trendFocusItem('al', { stage: 'setup', five_minute_confirmed: true }),
-      ],
-      short_opportunities: [trendFocusItem('ag', { direction: 'short', stage: 'setup' })],
-      running_trends: [trendFocusItem('au', { stage: 'running', five_minute_confirmed: true })],
-      weakening_trends: [trendFocusItem('i', { direction: 'short', stage: 'weakening', hourly_state: 'pullback' })],
-    }),
-  )
-  await page.goto('/market')
-
-  const focus = page.getByTestId('market-focus')
-  await expect(focus.getByTestId('market-focus-group-long')).toContainText('多头 4')
-  await expect(focus.getByTestId('market-focus-group-short')).toContainText('空头 1')
-  await expect(focus.getByTestId('market-focus-group-running')).toContainText('运行 1')
-  await expect(focus.getByTestId('market-focus-group-weakening')).toContainText('转弱 1')
-  await expect(focus.getByTestId('market-focus-group-long').getByTestId('market-focus-card')).toHaveCount(3)
-  await focus.getByTestId('market-focus-group-long').getByRole('button', { name: '查看更多 1' }).click()
-  await expect(focus.getByTestId('market-focus-group-long').getByTestId('market-focus-card')).toHaveCount(4)
-  await expect(focus).toContainText('就绪')
-  await expect(focus).toContainText('60m 延续')
-  await expect(focus).toContainText('15m 量能已确认')
-  await expect(focus).toContainText('5m 未确认')
-  await expect(focus).toContainText('下一条件')
-  await expect(focus).toContainText('104.75')
-  await expect(focus).toContainText('失效条件')
-  await expect(focus).toContainText('101.25')
-  await expect(focus).not.toContainText('综合分')
-  await expect(focus).not.toContainText('推荐交易')
-  await expect(focus).not.toContainText('Open Interest')
-
-  await focus.getByTestId('market-focus-group-long').getByRole('button', { name: '检查 JM' }).click()
-  await expect(page).toHaveURL(/\/market\/chart\?symbol=jm&series_kind=actual_dominant&frequency=15m/)
-})
-
-test('Trend Focus degraded response fails closed without hiding other Market research', async ({ page }) => {
-  await mockMarketHomepage(
-    page,
-    { status: 'ready', trading_day: '2026-08-15', items: [] },
-    radar(),
-    trendFocus({
-      status: 'degraded',
-      unavailable: [{ symbol: null, code: 'RADAR_DEGRADED' }],
-    }),
-  )
-  await page.goto('/market')
-
-  await expect(page.getByTestId('market-focus')).toContainText('Trend Focus 暂不可用')
-  await expect(page.getByTestId('market-focus')).toContainText('RADAR_DEGRADED')
-  await expect(page.getByTestId('market-full-research')).toBeVisible()
-})
-
-test('initial Trend Focus failure is unavailable without blocking Radar', async ({ page }) => {
-  await page.route('**/api/alerts/formal-signals/current', (route) => route.fulfill({
-    json: { status: 'ready', trading_day: '2026-08-15', items: [] },
-  }))
-  await page.route('**/api/v1/market/research/radar', (route) => route.fulfill({ json: radar() }))
-  await page.route('**/api/v1/market/research/trend-focus', (route) => route.fulfill({ status: 503 }))
-  await page.goto('/market')
-
-  await expect(page.getByTestId('market-focus')).toContainText('Trend Focus 暂不可用')
-  await expect(page.getByTestId('market-full-research')).toBeVisible()
-})
-
-test('unified Radar refresh retains and labels the previous Trend Focus snapshot on failure', async ({ page }) => {
-  let trendAttempt = 0
-  await page.route('**/api/alerts/formal-signals/current', (route) => route.fulfill({
-    json: { status: 'ready', trading_day: '2026-08-15', items: [] },
-  }))
-  await page.route('**/api/v1/market/research/radar', (route) => route.fulfill({ json: radar() }))
-  await page.route('**/api/v1/market/research/trend-focus', (route) => {
-    trendAttempt += 1
-    if (trendAttempt === 2) return route.fulfill({ status: 503 })
-    return route.fulfill({ json: trendFocus({ long_opportunities: [trendFocusItem('jm')] }) })
-  })
-  await page.goto('/market')
-  await expect(page.getByTestId('market-focus')).toContainText('JM')
-
-  await page.getByRole('button', { name: '全部刷新' }).click()
-
-  await expect.poll(() => trendAttempt).toBe(2)
-  await expect(page.getByTestId('market-focus')).toContainText('上一份')
-  await expect(page.getByTestId('market-focus')).toContainText('JM')
 })
 
 test('Market homepage shows the current formal signals above Radar', async ({ page }) => {
@@ -345,8 +252,8 @@ test('Market homepage shows the current formal signals above Radar', async ({ pa
   await expect(formal).toContainText('5m · 10:25 确认')
   await expect(formal).toContainText('5m 同向确认')
   await expect(formal).toContainText('火天大有')
-  await expect(page.getByTestId('market-focus')).toBeVisible()
-  expect(await page.locator('[data-testid="market-formal-signals"], [data-testid="market-focus"]').evaluateAll((nodes) => (
+  await expect(page.getByTestId('subing-daily-watch')).toBeVisible()
+  expect(await page.locator('[data-testid="market-formal-signals"], [data-testid="subing-daily-watch"]').evaluateAll((nodes) => (
     Boolean(nodes[0]?.compareDocumentPosition(nodes[1]) & Node.DOCUMENT_POSITION_FOLLOWING)
   ))).toBe(true)
 })
@@ -372,10 +279,10 @@ test('Market homepage keeps formal decisions ahead of Radar at a 980-like viewpo
 
   const formal = page.getByTestId('market-formal-signals')
   await expect(formal).toContainText('只显示当前交易日的正式信号')
-  await expect(page.getByTestId('market-focus')).toBeVisible()
+  await expect(page.getByTestId('subing-daily-watch')).toBeVisible()
   await expect(formal.locator('.market-formal-signals__card')).toHaveCount(2)
   expect(await formal.locator('.market-formal-signals__card').evaluateAll((cards) => cards[1].getBoundingClientRect().top > cards[0].getBoundingClientRect().top)).toBe(true)
-  expect(await page.locator('[data-testid="market-formal-signals"], [data-testid="market-focus"]').evaluateAll((nodes) => (
+  expect(await page.locator('[data-testid="market-formal-signals"], [data-testid="subing-daily-watch"]').evaluateAll((nodes) => (
     Boolean(nodes[0]?.compareDocumentPosition(nodes[1]) & Node.DOCUMENT_POSITION_FOLLOWING)
   ))).toBe(true)
 })
@@ -427,7 +334,7 @@ test('Market homepage keeps Radar visible when formal signals are unavailable', 
   const formal = page.getByTestId('market-formal-signals')
   await expect(formal.getByText('暂不可用', { exact: true })).toBeVisible()
   await expect(formal).toContainText('正式信号暂不可用')
-  await expect(page.getByTestId('market-focus')).toBeVisible()
+  await expect(page.getByTestId('subing-daily-watch')).toBeVisible()
 })
 
 test('Market homepage shows Radar skeletons while the initial snapshot is pending', async ({ page }) => {
@@ -441,7 +348,7 @@ test('Market homepage shows Radar skeletons while the initial snapshot is pendin
   await page.goto('/market')
 
   await expect(page.getByTestId('market-radar-skeleton')).toBeVisible()
-  await expect(page.getByTestId('market-focus')).toBeVisible()
+  await expect(page.getByTestId('subing-daily-watch')).toBeVisible()
   await expect(page.getByTestId('market-radar-skeleton')).toHaveCount(0)
 })
 
@@ -456,7 +363,7 @@ test('manual Radar refresh keeps the last snapshot on failure and updates on ret
     const asOf = attempt === 1 ? '2026-08-14' : '2026-08-15'
     return route.fulfill({ json: radar({ expected_as_of: asOf, target_as_of: asOf, data_as_of: asOf }) })
   })
-  await page.route('**/api/v1/market/research/trend-focus', (route) => route.fulfill({ json: trendFocus() }))
+  await page.route('**/api/v1/market/research/subing-daily-watch/current', (route) => route.fulfill({ json: dailyWatch() }))
   await page.goto('/market')
   await page.getByText('展开全市场研究', { exact: true }).click()
   const summary = page.locator('.radar-summary')
@@ -714,21 +621,22 @@ test('B1 journey narrows AG on the homepage before opening its verification view
     items: [ag],
     attention: [ag],
     sector_summary: [sectorSummary('precious', 0.012)],
-  }), trendFocus({
-    long_opportunities: [trendFocusItem('ag', { product_name: '白银' })],
+  }), dailyWatch({
+    long_watch: [dailyWatchItem('ag', '白银')],
+    excluded: 59,
   }))
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.goto('/market')
 
   await expect(page.getByTestId('market-formal-signals')).toBeVisible()
-  await expect(page.getByTestId('market-focus')).toBeVisible()
-  expect(await page.locator('[data-testid="market-formal-signals"], [data-testid="market-focus"]').evaluateAll((nodes) => (
+  await expect(page.getByTestId('subing-daily-watch')).toBeVisible()
+  expect(await page.locator('[data-testid="market-formal-signals"], [data-testid="subing-daily-watch"]').evaluateAll((nodes) => (
     Boolean(nodes[0]?.compareDocumentPosition(nodes[1]) & Node.DOCUMENT_POSITION_FOLLOWING)
   ))).toBe(true)
-  const focus = page.getByTestId('market-focus')
+  const focus = page.getByTestId('subing-daily-watch')
   await expect(focus).toContainText('AG 白银')
   await expect(page.getByTestId('market-full-research')).not.toHaveAttribute('open')
-  await focus.getByRole('button', { name: '检查 AG', exact: true }).click()
+  await focus.getByRole('button', { name: '检查 AG 15m', exact: true }).click()
 
   await expect(page).toHaveURL(/\/market\/chart\?symbol=ag/)
   await expect(page.getByTestId('product-check-now')).toBeVisible()
