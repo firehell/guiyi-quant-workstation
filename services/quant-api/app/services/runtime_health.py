@@ -13,7 +13,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, time, timedelta
 import json
 import os
 from pathlib import Path
@@ -21,7 +21,7 @@ from time import perf_counter
 from typing import Any
 
 from redis import Redis
-from sqlalchemy import text
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
 from app.alerts.notification_composition import notification_transport_status_from_env
@@ -31,6 +31,9 @@ from app.alerts.runtime import validate_alert_runtime_status
 from app.redis_connections import get_redis_connection
 from app.core.env import PROJECT_ROOT
 from app.market_data.after_market import public_after_market_status
+from app.market_data.operational_universe import load_operational_products
+from app.market_data.session_clock import SHANGHAI
+from app.models import Instrument, TradingCalendar
 
 RUNTIME_STATUS_OK = "ok"
 RUNTIME_STATUS_DEGRADED = "degraded"
@@ -112,7 +115,9 @@ def build_runtime_health(
         freshness_seconds=freshness_seconds,
     )
     components["after_market"] = _collect_after_market_health(
+        session,
         after_market_status_path,
+        now=current_time,
         configured_enabled=after_market_enabled,
     )
     components["alert"] = _collect_alert_health(
@@ -404,13 +409,18 @@ def _collect_live_market_health(
 
 
 def _collect_after_market_health(
+    session: Session,
     status_path: Path | None,
     *,
+    now: datetime,
     configured_enabled: bool,
 ) -> dict[str, Any]:
     """读取盘后运行的公开状态文件；不恢复任何 scheduler/checkpoint 模型。"""
     empty = {
         "configured_enabled": configured_enabled,
+        "run_state": "disabled" if not configured_enabled else "pending",
+        "expected_trading_day": None,
+        "current_run": None,
         "last_run": None,
         "last_successful_trading_day": None,
         "last_failure": None,
@@ -419,33 +429,191 @@ def _collect_after_market_health(
     }
     if status_path is None:
         return {"status": RUNTIME_STATUS_DISABLED, **empty}
+    expected_day: date | None = None
+    due_today = False
+    if configured_enabled:
+        try:
+            expected_day, due_today = _expected_after_market_day(
+                session,
+                now=now,
+                products=load_operational_products(),
+            )
+        except Exception:  # noqa: BLE001 - calendar/catalog errors are public-safe degraded state
+            return {
+                "status": RUNTIME_STATUS_DEGRADED,
+                **empty,
+                "run_state": "degraded",
+                "error_type": "after_market_expected_day_invalid",
+            }
+    expected_text = expected_day.isoformat() if expected_day is not None else None
+    base = {**empty, "expected_trading_day": expected_text}
     if not status_path.exists():
+        if configured_enabled and due_today:
+            return {
+                "status": RUNTIME_STATUS_DEGRADED,
+                **base,
+                "run_state": "missed",
+                "error_type": "after_market_run_missed",
+            }
         return {
             "status": RUNTIME_STATUS_PENDING if configured_enabled else RUNTIME_STATUS_DISABLED,
-            **empty,
+            **base,
         }
     try:
         raw = json.loads(status_path.read_text(encoding="utf-8"))
     except (OSError, ValueError, TypeError):
-        return {"status": RUNTIME_STATUS_DEGRADED, **empty, "error_type": "after_market_status_invalid"}
+        return {"status": RUNTIME_STATUS_DEGRADED, **base, "run_state": "degraded", "error_type": "after_market_status_invalid"}
     if not isinstance(raw, Mapping):
-        return {"status": RUNTIME_STATUS_DEGRADED, **empty, "error_type": "after_market_status_invalid"}
+        return {"status": RUNTIME_STATUS_DEGRADED, **base, "run_state": "degraded", "error_type": "after_market_status_invalid"}
     public = public_after_market_status(raw)
     if not public:
-        return {"status": RUNTIME_STATUS_DEGRADED, **empty, "error_type": "after_market_status_invalid"}
+        error_type = (
+            "after_market_current_run_invalid"
+            if raw.get("schema_version") == 2 and raw.get("current_run") is not None
+            else "after_market_status_invalid"
+        )
+        return {"status": RUNTIME_STATUS_DEGRADED, **base, "run_state": "degraded", "error_type": error_type}
+    current_run = public.get("current_run")
+    if isinstance(current_run, Mapping):
+        try:
+            started_at = _required_timestamp(current_run.get("started_at"))
+            scheduled_date = date.fromisoformat(str(current_run.get("scheduled_date")))
+            products = current_run.get("products")
+            expected_products = load_operational_products()
+            if (
+                not isinstance(products, list)
+                or tuple(products) != expected_products
+                or scheduled_date > now.astimezone(SHANGHAI).date()
+                or started_at > now
+            ):
+                raise ValueError
+        except (TypeError, ValueError):
+            return {
+                "status": RUNTIME_STATUS_DEGRADED,
+                **base,
+                "run_state": "degraded",
+                "current_run": current_run,
+                "error_type": "after_market_current_run_invalid",
+            }
+        age_seconds = (now - started_at).total_seconds()
+        if age_seconds <= 7200:
+            return {
+                "status": RUNTIME_STATUS_PENDING,
+                **base,
+                "run_state": "running",
+                "current_run": current_run,
+            }
+        return {
+            "status": RUNTIME_STATUS_DEGRADED,
+            **base,
+            "run_state": "stuck",
+            "current_run": current_run,
+            "error_type": "after_market_run_stuck",
+        }
     last_run = public["last_run"]
+    last_successful_day = public["last_successful_trading_day"]
+    if (
+        configured_enabled
+        and expected_day is not None
+        and isinstance(last_run, Mapping)
+        and last_run.get("status") == "failed"
+        and last_run.get("trading_day") == expected_text
+    ):
+        return {
+            "status": RUNTIME_STATUS_FAILED,
+            **base,
+            "run_state": "failed",
+            "last_run": last_run,
+            "last_successful_trading_day": last_successful_day,
+            "last_failure": public["last_failure"],
+        }
+    if configured_enabled and expected_day is not None and (
+        last_successful_day is None
+        or date.fromisoformat(str(last_successful_day)) < expected_day
+    ):
+        return {
+            "status": RUNTIME_STATUS_DEGRADED,
+            **base,
+            "run_state": "missed",
+            "last_run": last_run,
+            "last_successful_trading_day": last_successful_day,
+            "last_failure": public["last_failure"],
+            "error_type": "after_market_run_missed",
+        }
     status = RUNTIME_STATUS_UNKNOWN
+    run_state = "degraded"
     if isinstance(last_run, Mapping):
         status = RUNTIME_STATUS_FAILED if last_run["status"] == "failed" else RUNTIME_STATUS_OK
+        run_state = "failed" if last_run["status"] == "failed" else "completed"
     return {
         "status": status,
-        **empty,
+        **base,
+        "run_state": run_state,
         "last_run": last_run,
-        "last_successful_trading_day": public["last_successful_trading_day"],
+        "last_successful_trading_day": last_successful_day,
         "last_failure": public["last_failure"],
         "error_type": None,
         "error_message": None,
     }
+
+
+def _expected_after_market_day(
+    session: Session,
+    *,
+    now: datetime,
+    products: tuple[str, ...],
+) -> tuple[date, bool]:
+    if not products or now.tzinfo is None or now.utcoffset() is None:
+        raise ValueError
+    normalized = tuple(product.strip().lower() for product in products)
+    if len(set(normalized)) != len(normalized) or any(not product for product in normalized):
+        raise ValueError
+    rows = session.execute(
+        select(Instrument.symbol, Instrument.exchange_code).where(
+            Instrument.symbol.in_(normalized)
+        )
+    ).all()
+    product_exchanges = {
+        str(symbol).strip().lower(): str(exchange).strip().upper()
+        for symbol, exchange in rows
+    }
+    if set(product_exchanges) != set(normalized) or any(
+        not exchange for exchange in product_exchanges.values()
+    ):
+        raise ValueError
+    exchanges = tuple(sorted(set(product_exchanges.values())))
+    local_now = now.astimezone(SHANGHAI)
+    today = local_now.date()
+    cutoff_reached = local_now.timetz().replace(tzinfo=None) >= time(18, 20)
+    if cutoff_reached:
+        today_exchanges = {
+            str(exchange).strip().upper()
+            for exchange in session.execute(
+                select(TradingCalendar.exchange_code).where(
+                    TradingCalendar.exchange_code.in_(exchanges),
+                    TradingCalendar.trade_date == today,
+                )
+            ).scalars()
+        }
+        if today_exchanges != set(exchanges):
+            raise ValueError
+    ceiling = today if cutoff_reached else today - timedelta(days=1)
+    latest_days: list[date] = []
+    for exchange in exchanges:
+        latest = session.execute(
+            select(func.max(TradingCalendar.trade_date)).where(
+                TradingCalendar.exchange_code == exchange,
+                TradingCalendar.trade_date <= ceiling,
+                TradingCalendar.is_trading_day.is_(True),
+            )
+        ).scalar_one_or_none()
+        if not isinstance(latest, date):
+            raise ValueError
+        latest_days.append(latest)
+    if len(set(latest_days)) != 1:
+        raise ValueError
+    expected = latest_days[0]
+    return expected, cutoff_reached and expected == today
 
 
 def _collect_db_health(session: Session) -> dict[str, Any]:

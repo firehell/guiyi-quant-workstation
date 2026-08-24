@@ -11,12 +11,19 @@ from dataclasses import dataclass
 from datetime import date, datetime
 import json
 import logging
+import os
 from pathlib import Path
 import re
-import subprocess
+import tempfile
 import time
 from typing import Any
 
+from app.alerts.notification import (
+    ALERT_AUDIENCE_OWNER,
+    NotificationDelivery,
+    NotificationTransport,
+    ProviderAcceptance,
+)
 from app.market_data.errors import InfrastructureError
 from app.market_data.rqdata_adapter import RQDataClient
 from app.market_data.session_clock import SHANGHAI
@@ -26,7 +33,6 @@ from app.market_data.operational_universe import load_operational_products
 from app.core.env import PROJECT_ROOT
 
 
-_NOTIFICATION_TITLE = "Guiyi Quant After-Market"
 _LOGGER = logging.getLogger(__name__)
 _PUBLIC_ERROR_CODES = frozenset(
     {
@@ -40,16 +46,14 @@ _PUBLIC_ERROR_CODES = frozenset(
         "UPDATE_FAILED",
     }
 )
-_PUBLIC_NOTIFICATION_MESSAGES = {
-    "MAINTENANCE_LOCKED": "Historical maintenance remained locked after one retry.",
-    "LIVE_DOMINANT_MISMATCH": "Live dominant contract did not match the formal rank-one map.",
-    "NEXT_TRADING_SESSION_NOT_READY": "Next trading session metadata remained unavailable after one retry.",
-    "PROVIDER_QUOTA_EXHAUSTED": "RQData quota remained unavailable after one retry.",
-    "RQDATA_NOT_READY": "RQData futures data is not ready after one retry.",
-    "RQDATA_READY_CHECK_FAILED": "RQData readiness check failed after one retry.",
-    "UPDATE_FAILED": "Historical data update failed after one retry.",
-}
 _PUBLIC_PRODUCT_CODE = re.compile(r"[a-z]{1,4}\Z")
+_PUBLIC_NOTIFICATION_ERROR_TYPES = frozenset(
+    {
+        "ALERT_NOTIFICATION_CONFIG_INVALID",
+        "ALERT_NOTIFICATION_TRANSPORT_FAILED",
+        "ALERT_NOTIFICATION_TRANSPORT_INVALID",
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,7 +87,7 @@ class AfterMarketUpdater:
         live_store: RedisLiveStore,
         status_path: Path,
         sleep: Callable[[float], None],
-        notifier: Callable[[str], None],
+        notification_transport: NotificationTransport | None,
         now: Callable[[], datetime],
     ) -> None:
         self.manager = manager
@@ -91,13 +95,14 @@ class AfterMarketUpdater:
         self.live_store = live_store
         self.status_path = status_path
         self.sleep = sleep
-        self.notifier = notifier
+        self.notification_transport = notification_transport
         self.now = now
 
     def run(self) -> AfterMarketResult:
         """执行一次受限盘后维护，并写入仅含公开字段的状态。"""
         started_at = _local_timestamp(self.now())
         products = load_operational_products()
+        self._write_current_run(started_at, products)
         # 先用仅依赖 Calendar 的日期判断今天是否为交易日。当天 Session 正是下方
         # manager.update() 要同步的 metadata，不能反过来把它作为进入更新的前置条件。
         trading_day = self.manager.coverage.latest_metadata_day(products)
@@ -125,8 +130,53 @@ class AfterMarketUpdater:
 
         result = AfterMarketResult("failed", trading_day, attempt, error_code)
         self._write_status(result, started_at, products)
-        self.notifier(error_code or "UPDATE_FAILED")
+        if self.notification_transport is not None:
+            notification = self._send_failure_notification(result)
+            try:
+                self._write_failure_notification(notification)
+            except Exception as exc:  # noqa: BLE001 - primary failure remains authoritative
+                _LOGGER.warning(
+                    "after_market_notification_status_write_failed exception_type=%s",
+                    type(exc).__name__,
+                )
         return result
+
+    def _send_failure_notification(
+        self,
+        result: AfterMarketResult,
+    ) -> dict[str, object]:
+        attempted_at = _local_timestamp(self.now()).isoformat()
+        delivery = NotificationDelivery(
+            audience=ALERT_AUDIENCE_OWNER,
+            title="归一量化 盘后运维失败",
+            content=(
+                f"trading_day={result.trading_day.isoformat()}\n"
+                f"error_code={result.error_code or 'UPDATE_FAILED'}\n"
+                f"attempts={result.attempts}\n"
+                "系统运维提醒，非交易指令"
+            ),
+        )
+        try:
+            transport = self.notification_transport
+            if transport is None:
+                raise TypeError("AFTER_MARKET_NOTIFICATION_CAPABILITY_MISSING")
+            acceptance = transport.send(delivery)
+            if not isinstance(acceptance, ProviderAcceptance):
+                raise TypeError("AFTER_MARKET_PROVIDER_ACCEPTANCE_INVALID")
+        except Exception as exc:  # noqa: BLE001 - notification is one-shot and isolated
+            error_type = getattr(exc, "code", None)
+            if error_type not in _PUBLIC_NOTIFICATION_ERROR_TYPES:
+                error_type = "AFTER_MARKET_FAILURE_NOTIFICATION_FAILED"
+            return {
+                "attempted_at": attempted_at,
+                "state": "failed",
+                "error_type": error_type,
+            }
+        return {
+            "attempted_at": attempted_at,
+            "state": "provider_accepted",
+            "error_type": None,
+        }
 
     def _attempt(
         self,
@@ -229,6 +279,8 @@ class AfterMarketUpdater:
         previous = _load_status(self.status_path)
         finished_at = _local_timestamp(self.now())
         payload: dict[str, Any] = {
+            "schema_version": 2,
+            "current_run": None,
             "last_run": {
                 "trading_day": result.trading_day.isoformat(),
                 "status": result.status,
@@ -237,6 +289,7 @@ class AfterMarketUpdater:
                 "finished_at": finished_at.isoformat(),
                 "products": list(products),
                 "error_code": result.error_code,
+                "failure_notification": None,
             },
             "last_successful_trading_day": _public_trading_day(
                 previous.get("last_successful_trading_day")
@@ -251,25 +304,47 @@ class AfterMarketUpdater:
                 "trading_day": result.trading_day.isoformat(),
                 "error_code": result.error_code,
             }
-        self.status_path.parent.mkdir(parents=True, exist_ok=True)
-        self.status_path.write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-        )
+        _atomic_write_status(self.status_path, payload)
+
+    def _write_failure_notification(self, notification: Mapping[str, object]) -> None:
+        payload = _load_status(self.status_path)
+        last_run = payload.get("last_run")
+        if not isinstance(last_run, dict) or last_run.get("status") != "failed":
+            raise RuntimeError("AFTER_MARKET_FAILURE_STATUS_UNAVAILABLE")
+        last_run["failure_notification"] = dict(notification)
+        _atomic_write_status(self.status_path, payload)
+
+    def _write_current_run(
+        self,
+        started_at: datetime,
+        products: tuple[str, ...],
+    ) -> None:
+        previous = _load_status(self.status_path)
+        previous_schema_version = 2 if previous.get("schema_version") == 2 else 1
+        payload: dict[str, Any] = {
+            "schema_version": 2,
+            "current_run": {
+                "scheduled_date": started_at.date().isoformat(),
+                "started_at": started_at.isoformat(),
+                "products": list(products),
+            },
+            "last_run": _public_last_run(
+                previous.get("last_run"),
+                schema_version=previous_schema_version,
+            ),
+            "last_successful_trading_day": _public_trading_day(
+                previous.get("last_successful_trading_day")
+            ),
+            "last_failure": _public_last_failure(previous.get("last_failure")),
+        }
+        _atomic_write_status(self.status_path, payload)
 
 
-def default_after_market_notifier(error_code: str) -> None:
-    """发出固定标题、公开状态码限定的 macOS 通知。"""
-    message = _PUBLIC_NOTIFICATION_MESSAGES.get(error_code, _PUBLIC_NOTIFICATION_MESSAGES["UPDATE_FAILED"])
-    script = f'display notification "{message}" with title "{_NOTIFICATION_TITLE}"'
-    subprocess.run(
-        ["/usr/bin/osascript", "-e", script],
-        check=False,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-
-
-def build_after_market_updater(manager: HistoricalDataManager) -> AfterMarketUpdater:
+def build_after_market_updater(
+    manager: HistoricalDataManager,
+    *,
+    failure_notification: bool,
+) -> AfterMarketUpdater:
     """组装 CLI 盘后入口；只在该命令实际执行时才懒初始化 RQData client。"""
     provider = manager.provider
     client = getattr(provider, "client", None)
@@ -279,15 +354,29 @@ def build_after_market_updater(manager: HistoricalDataManager) -> AfterMarketUpd
     from app.redis_connections import get_redis_connection
     from typing import cast
 
+    notification_transport: NotificationTransport | None = None
+    if failure_notification:
+        notification_transport = _ConfiguredNotificationTransport()
     return AfterMarketUpdater(
         manager=manager,
         rqdata=client,
         live_store=RedisLiveStore(cast(RedisClient, get_redis_connection())),
         status_path=PROJECT_ROOT / ".run" / "after-market-status.json",
         sleep=time.sleep,
-        notifier=default_after_market_notifier,
+        notification_transport=notification_transport,
         now=lambda: datetime.now(SHANGHAI),
     )
+
+
+class _ConfiguredNotificationTransport:
+    """Lazily reuse the active PushPlus transport only after a natural failure."""
+
+    def send(self, delivery: NotificationDelivery) -> ProviderAcceptance:
+        from app.alerts.notification_composition import (
+            build_notification_transport_from_env,
+        )
+
+        return build_notification_transport_from_env().send(delivery)
 
 
 def _load_status(path: Path) -> dict[str, Any]:
@@ -296,6 +385,25 @@ def _load_status(path: Path) -> dict[str, Any]:
     except (OSError, ValueError, TypeError):
         return {}
     return payload if isinstance(payload, dict) else {}
+
+
+def _atomic_write_status(path: Path, payload: Mapping[str, object]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(
+        dir=path.parent,
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+    )
+    temporary_path = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            stream.write(json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary_path, path)
+    except BaseException:
+        temporary_path.unlink(missing_ok=True)
+        raise
 
 
 def _public_maintenance_failure_code(stop_reason: str | None) -> str:
@@ -365,19 +473,41 @@ def public_after_market_status(value: object) -> dict[str, object]:
     """Return the sole public, field-whitelisted view of a local status payload."""
     if not isinstance(value, Mapping):
         return {}
-    last_run = _public_last_run(value.get("last_run"))
+    raw_schema_version = value.get("schema_version", 1)
+    if type(raw_schema_version) is not int or raw_schema_version not in {1, 2}:
+        return {}
+    schema_version = raw_schema_version
+    current_run = (
+        _public_current_run(value.get("current_run"))
+        if schema_version == 2
+        else None
+    )
+    if schema_version == 2 and value.get("current_run") is not None and current_run is None:
+        return {}
+    last_run = _public_last_run(value.get("last_run"), schema_version=schema_version)
     last_success = _public_trading_day(value.get("last_successful_trading_day"))
     last_failure = _public_last_failure(value.get("last_failure"))
-    if last_run is None and last_success is None and last_failure is None:
+    if current_run is None and last_run is None and last_success is None and last_failure is None:
         return {}
-    return {
+    public: dict[str, object] = {
         "last_run": last_run,
         "last_successful_trading_day": last_success,
         "last_failure": last_failure,
     }
+    if schema_version == 2:
+        return {
+            "schema_version": 2,
+            "current_run": current_run,
+            **public,
+        }
+    return public
 
 
-def _public_last_run(value: object) -> dict[str, object] | None:
+def _public_last_run(
+    value: object,
+    *,
+    schema_version: int = 1,
+) -> dict[str, object] | None:
     if not isinstance(value, Mapping):
         return None
     trading_day = _public_trading_day(value.get("trading_day"))
@@ -412,7 +542,7 @@ def _public_last_run(value: object) -> dict[str, object] | None:
         or any(_PUBLIC_PRODUCT_CODE.fullmatch(product) is None for product in normalized_products)
     ):
         return None
-    return {
+    public = {
         "trading_day": trading_day,
         "status": status,
         "attempts": attempts,
@@ -420,6 +550,69 @@ def _public_last_run(value: object) -> dict[str, object] | None:
         "finished_at": finished_at,
         "products": normalized_products,
         "error_code": error_code,
+    }
+    if schema_version == 2:
+        failure_notification = _public_failure_notification(
+            value.get("failure_notification")
+        )
+        if value.get("failure_notification") is not None and failure_notification is None:
+            return None
+        public["failure_notification"] = failure_notification
+    return public
+
+
+def _public_current_run(value: object) -> dict[str, object] | None:
+    if not isinstance(value, Mapping):
+        return None
+    scheduled_date = _public_trading_day(value.get("scheduled_date"))
+    started_at = _public_timestamp(value.get("started_at"))
+    products = value.get("products")
+    normalized_products = (
+        [product.strip().lower() for product in products]
+        if isinstance(products, list)
+        and products
+        and all(isinstance(product, str) for product in products)
+        else []
+    )
+    if (
+        scheduled_date is None
+        or started_at is None
+        or not normalized_products
+        or any(
+            _PUBLIC_PRODUCT_CODE.fullmatch(product) is None
+            for product in normalized_products
+        )
+    ):
+        return None
+    return {
+        "scheduled_date": scheduled_date,
+        "started_at": started_at,
+        "products": normalized_products,
+    }
+
+
+def _public_failure_notification(value: object) -> dict[str, object] | None:
+    if not isinstance(value, Mapping):
+        return None
+    attempted_at = _public_timestamp(value.get("attempted_at"))
+    state = value.get("state")
+    error_type = value.get("error_type")
+    valid = (
+        (state == "provider_accepted" and error_type is None)
+        or (
+            state == "failed"
+            and isinstance(error_type, str)
+            and error_type
+            in _PUBLIC_NOTIFICATION_ERROR_TYPES
+            | {"AFTER_MARKET_FAILURE_NOTIFICATION_FAILED"}
+        )
+    )
+    if attempted_at is None or not valid:
+        return None
+    return {
+        "attempted_at": attempted_at,
+        "state": state,
+        "error_type": error_type,
     }
 
 

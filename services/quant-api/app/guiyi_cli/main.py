@@ -82,7 +82,7 @@ from app.runtime_entry import run_after_market, run_alert, run_live
 
 SessionFactory = Callable[[], AbstractContextManager[Any]]
 ManagerFactory = Callable[[Any], HistoricalDataManager]
-AfterMarketFactory = Callable[[HistoricalDataManager], Any]
+AfterMarketFactory = Callable[..., Any]
 LiveServiceFactory = Callable[[Any], Any]
 AlertRuntimeFactory = Callable[[], Any]
 AlertCanarySenderFactory = Callable[[], Any]
@@ -410,6 +410,7 @@ def _run_data(
             session_factory=session_factory,
             manager_factory=manager_factory,
             after_market_factory=after_market_factory,
+            failure_notification=False,
             roll_marker_state=execution_review_roll_marker_state,
             roll_reconciler_factory=roll_reconciler_factory,
         )

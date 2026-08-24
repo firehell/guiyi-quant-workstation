@@ -32,7 +32,7 @@ from app.market_data.historical_data_manager import HistoricalDataManager
 
 SessionFactory = Callable[[], AbstractContextManager[Any]]
 ManagerFactory = Callable[[Any], HistoricalDataManager]
-AfterMarketFactory = Callable[[HistoricalDataManager], Any]
+AfterMarketFactory = Callable[..., Any]
 LiveServiceFactory = Callable[[Any], Any]
 AlertRuntimeFactory = Callable[[], Any]
 RollReconcilerFactory = Callable[[Any], Any]
@@ -81,13 +81,17 @@ def run_after_market(
     session_factory: SessionFactory,
     manager_factory: ManagerFactory,
     after_market_factory: AfterMarketFactory,
+    failure_notification: bool,
     roll_marker_state: RollMarkerState,
     roll_reconciler_factory: RollReconcilerFactory,
 ) -> dict[str, object]:
     """Run Market maintenance, then the existing enabled-only roll follow-up."""
     with session_factory() as session:
         manager = manager_factory(session)
-        market_result = after_market_factory(manager).run()
+        market_result = after_market_factory(
+            manager,
+            failure_notification=failure_notification,
+        ).run()
     payload = market_result.as_payload()
     if market_result.status == "passed" and roll_marker_state() == "enabled":
         try:
@@ -133,6 +137,7 @@ def main(
                 session_factory=session_factory,
                 manager_factory=manager_factory,
                 after_market_factory=after_market_factory,
+                failure_notification=True,
                 roll_marker_state=roll_marker_state,
                 roll_reconciler_factory=roll_reconciler_factory,
             )

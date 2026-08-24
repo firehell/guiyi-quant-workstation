@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 import json
 
 from fastapi.testclient import TestClient
@@ -12,6 +12,7 @@ from sqlalchemy.pool import StaticPool
 from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
+from app.models import Exchange, Instrument, TradingCalendar
 from app.services.runtime_health import build_runtime_health
 
 
@@ -66,6 +67,9 @@ def test_runtime_health_endpoint_exposes_market_runtime_components(monkeypatch, 
     assert payload["components"]["after_market"] == {
         "status": "disabled",
         "configured_enabled": False,
+        "run_state": "disabled",
+        "expected_trading_day": None,
+        "current_run": None,
         "last_run": None,
         "last_successful_trading_day": None,
         "last_failure": None,
@@ -664,15 +668,26 @@ def test_runtime_health_uses_local_activation_marker_not_process_environment(mon
     assert live["error_type"] == "live_heartbeat_missing"
 
 
-def test_enabled_after_market_is_pending_before_its_first_runtime_run(tmp_path) -> None:
+def test_enabled_after_market_is_pending_before_its_first_runtime_run(
+    monkeypatch, tmp_path
+) -> None:
     """新 detached Runtime 不迁移旧状态时应显示待首跑，而不是误报未启用。"""
     missing_status = tmp_path / "after-market-status.json"
+    monkeypatch.setattr(
+        "app.services.runtime_health.load_operational_products", lambda: ("jm",)
+    )
     TestingSessionLocal = _session_factory()
 
     with TestingSessionLocal() as session:
+        _seed_calendar(
+            session,
+            exchanges={"DCE": ("jm",)},
+            days={"DCE": ((date(2026, 8, 21), True),)},
+        )
         payload = build_runtime_health(
             session,
             redis_factory=lambda: FakeRedis(),
+            now=datetime(2026, 8, 24, 10, 19, tzinfo=UTC),
             live_runtime_enabled=False,
             after_market_automation_enabled=True,
             alert_runtime_enabled=False,
@@ -685,6 +700,9 @@ def test_enabled_after_market_is_pending_before_its_first_runtime_run(tmp_path) 
     assert after_market == {
         "status": "pending",
         "configured_enabled": True,
+        "run_state": "pending",
+        "expected_trading_day": "2026-08-21",
+        "current_run": None,
         "last_run": None,
         "last_successful_trading_day": None,
         "last_failure": None,
@@ -693,7 +711,9 @@ def test_enabled_after_market_is_pending_before_its_first_runtime_run(tmp_path) 
     }
 
 
-def test_enabled_after_market_preserves_activation_state_after_completed_run(tmp_path) -> None:
+def test_enabled_after_market_preserves_activation_state_after_completed_run(
+    monkeypatch, tmp_path
+) -> None:
     """已完成的盘后状态不能覆盖 Runtime activation 的真实值。"""
     status_path = tmp_path / "after-market-status.json"
     status_path.write_text(
@@ -714,12 +734,21 @@ def test_enabled_after_market_preserves_activation_state_after_completed_run(tmp
         ),
         encoding="utf-8",
     )
+    monkeypatch.setattr(
+        "app.services.runtime_health.load_operational_products", lambda: ("jm",)
+    )
     TestingSessionLocal = _session_factory()
 
     with TestingSessionLocal() as session:
+        _seed_calendar(
+            session,
+            exchanges={"DCE": ("jm",)},
+            days={"DCE": ((date(2026, 8, 10), True),)},
+        )
         payload = build_runtime_health(
             session,
             redis_factory=lambda: FakeRedis(),
+            now=datetime(2026, 8, 11, 8, 0, tzinfo=UTC),
             live_runtime_enabled=False,
             after_market_automation_enabled=True,
             after_market_status_path=status_path,
@@ -728,6 +757,317 @@ def test_enabled_after_market_preserves_activation_state_after_completed_run(tmp
     after_market = payload["components"]["after_market"]
     assert after_market["status"] == "ok"
     assert after_market["configured_enabled"] is True
+
+
+def test_after_market_before_cutoff_is_pending_and_excludes_today(
+    monkeypatch, tmp_path
+) -> None:
+    monkeypatch.setattr(
+        "app.services.runtime_health.load_operational_products", lambda: ("jm",), raising=False
+    )
+    TestingSessionLocal = _session_factory()
+    with TestingSessionLocal() as session:
+        _seed_calendar(
+            session,
+            exchanges={"DCE": ("jm",)},
+            days={
+                "DCE": (
+                    (date(2026, 8, 21), True),
+                    (date(2026, 8, 24), True),
+                )
+            },
+        )
+        payload = build_runtime_health(
+            session,
+            redis_factory=lambda: FakeRedis(),
+            now=datetime(2026, 8, 24, 10, 19, tzinfo=UTC),
+            live_runtime_enabled=False,
+            after_market_automation_enabled=True,
+            alert_runtime_enabled=False,
+            notification_transport_configured=False,
+            after_market_status_path=tmp_path / "missing.json",
+        )
+
+    after_market = payload["components"]["after_market"]
+    assert after_market["status"] == "pending"
+    assert after_market["run_state"] == "pending"
+    assert after_market["expected_trading_day"] == "2026-08-21"
+
+
+def test_after_market_missing_at_cutoff_is_degraded_missed(
+    monkeypatch, tmp_path
+) -> None:
+    monkeypatch.setattr(
+        "app.services.runtime_health.load_operational_products", lambda: ("jm",), raising=False
+    )
+    TestingSessionLocal = _session_factory()
+    with TestingSessionLocal() as session:
+        _seed_calendar(
+            session,
+            exchanges={"DCE": ("jm",)},
+            days={"DCE": ((date(2026, 8, 24), True),)},
+        )
+        payload = build_runtime_health(
+            session,
+            redis_factory=lambda: FakeRedis(),
+            now=datetime(2026, 8, 24, 10, 20, tzinfo=UTC),
+            live_runtime_enabled=False,
+            after_market_automation_enabled=True,
+            alert_runtime_enabled=False,
+            notification_transport_configured=False,
+            after_market_status_path=tmp_path / "missing.json",
+        )
+
+    after_market = payload["components"]["after_market"]
+    assert payload["status"] == "degraded"
+    assert after_market["status"] == "degraded"
+    assert after_market["run_state"] == "missed"
+    assert after_market["expected_trading_day"] == "2026-08-24"
+    assert after_market["error_type"] == "after_market_run_missed"
+
+
+def test_after_market_weekend_missing_status_remains_pending(
+    monkeypatch, tmp_path
+) -> None:
+    monkeypatch.setattr(
+        "app.services.runtime_health.load_operational_products", lambda: ("jm",), raising=False
+    )
+    TestingSessionLocal = _session_factory()
+    with TestingSessionLocal() as session:
+        _seed_calendar(
+            session,
+            exchanges={"DCE": ("jm",)},
+            days={
+                "DCE": (
+                    (date(2026, 8, 21), True),
+                    (date(2026, 8, 22), False),
+                )
+            },
+        )
+        payload = build_runtime_health(
+            session,
+            redis_factory=lambda: FakeRedis(),
+            now=datetime(2026, 8, 22, 11, 0, tzinfo=UTC),
+            live_runtime_enabled=False,
+            after_market_automation_enabled=True,
+            alert_runtime_enabled=False,
+            notification_transport_configured=False,
+            after_market_status_path=tmp_path / "missing.json",
+        )
+
+    after_market = payload["components"]["after_market"]
+    assert after_market["status"] == "pending"
+    assert after_market["run_state"] == "pending"
+    assert after_market["expected_trading_day"] == "2026-08-21"
+
+
+def test_after_market_stale_success_is_degraded_missed(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(
+        "app.services.runtime_health.load_operational_products", lambda: ("jm",), raising=False
+    )
+    status_path = tmp_path / "after-market-status.json"
+    status_path.write_text(
+        json.dumps(
+            {
+                "last_run": {
+                    "trading_day": "2026-08-20",
+                    "status": "passed",
+                    "attempts": 1,
+                    "started_at": "2026-08-20T18:05:00+08:00",
+                    "finished_at": "2026-08-20T18:15:00+08:00",
+                    "products": ["jm"],
+                    "error_code": None,
+                },
+                "last_successful_trading_day": "2026-08-20",
+                "last_failure": None,
+            }
+        ),
+        encoding="utf-8",
+    )
+    TestingSessionLocal = _session_factory()
+    with TestingSessionLocal() as session:
+        _seed_calendar(
+            session,
+            exchanges={"DCE": ("jm",)},
+            days={"DCE": ((date(2026, 8, 21), True),)},
+        )
+        payload = build_runtime_health(
+            session,
+            redis_factory=lambda: FakeRedis(),
+            now=datetime(2026, 8, 24, 8, 0, tzinfo=UTC),
+            live_runtime_enabled=False,
+            after_market_automation_enabled=True,
+            alert_runtime_enabled=False,
+            notification_transport_configured=False,
+            after_market_status_path=status_path,
+        )
+
+    after_market = payload["components"]["after_market"]
+    assert after_market["status"] == "degraded"
+    assert after_market["run_state"] == "missed"
+    assert after_market["expected_trading_day"] == "2026-08-21"
+
+
+@pytest.mark.parametrize(
+    ("started_at", "now", "run_state", "status", "error_type"),
+    (
+        (
+            "2026-08-24T18:05:00+08:00",
+            datetime(2026, 8, 24, 11, 0, tzinfo=UTC),
+            "running",
+            "pending",
+            None,
+        ),
+        (
+            "2026-08-24T18:05:00+08:00",
+            datetime(2026, 8, 24, 12, 6, tzinfo=UTC),
+            "stuck",
+            "degraded",
+            "after_market_run_stuck",
+        ),
+        (
+            "2026-08-24T22:05:00+08:00",
+            datetime(2026, 8, 24, 11, 0, tzinfo=UTC),
+            "degraded",
+            "degraded",
+            "after_market_current_run_invalid",
+        ),
+        (
+            "invalid",
+            datetime(2026, 8, 24, 11, 0, tzinfo=UTC),
+            "degraded",
+            "degraded",
+            "after_market_current_run_invalid",
+        ),
+    ),
+)
+def test_after_market_current_run_age_is_fail_closed(
+    monkeypatch,
+    tmp_path,
+    started_at: str,
+    now: datetime,
+    run_state: str,
+    status: str,
+    error_type: str | None,
+) -> None:
+    monkeypatch.setattr(
+        "app.services.runtime_health.load_operational_products", lambda: ("jm",), raising=False
+    )
+    status_path = tmp_path / "after-market-status.json"
+    status_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 2,
+                "current_run": {
+                    "scheduled_date": "2026-08-24",
+                    "started_at": started_at,
+                    "products": ["jm"],
+                },
+                "last_run": None,
+                "last_successful_trading_day": None,
+                "last_failure": None,
+            }
+        ),
+        encoding="utf-8",
+    )
+    TestingSessionLocal = _session_factory()
+    with TestingSessionLocal() as session:
+        _seed_calendar(
+            session,
+            exchanges={"DCE": ("jm",)},
+            days={"DCE": ((date(2026, 8, 24), True),)},
+        )
+        payload = build_runtime_health(
+            session,
+            redis_factory=lambda: FakeRedis(),
+            now=now,
+            live_runtime_enabled=False,
+            after_market_automation_enabled=True,
+            alert_runtime_enabled=False,
+            notification_transport_configured=False,
+            after_market_status_path=status_path,
+        )
+
+    after_market = payload["components"]["after_market"]
+    assert after_market["status"] == status
+    assert after_market["run_state"] == run_state
+    assert after_market["error_type"] == error_type
+    assert after_market["current_run"] == (
+        None
+        if started_at == "invalid"
+        else {
+            "scheduled_date": "2026-08-24",
+            "started_at": started_at,
+            "products": ["jm"],
+        }
+    )
+
+
+@pytest.mark.parametrize("missing_product", (False, True))
+def test_after_market_expected_day_unavailable_or_non_unique_fails_closed(
+    monkeypatch, tmp_path, missing_product: bool
+) -> None:
+    products = ("jm", "rb") if not missing_product else ("jm", "missing")
+    monkeypatch.setattr(
+        "app.services.runtime_health.load_operational_products", lambda: products, raising=False
+    )
+    TestingSessionLocal = _session_factory()
+    with TestingSessionLocal() as session:
+        _seed_calendar(
+            session,
+            exchanges={"DCE": ("jm",), "SHFE": ("rb",)},
+            days={
+                "DCE": ((date(2026, 8, 21), True),),
+                "SHFE": ((date(2026, 8, 20), True),),
+            },
+        )
+        payload = build_runtime_health(
+            session,
+            redis_factory=lambda: FakeRedis(),
+            now=datetime(2026, 8, 24, 8, 0, tzinfo=UTC),
+            live_runtime_enabled=False,
+            after_market_automation_enabled=True,
+            alert_runtime_enabled=False,
+            notification_transport_configured=False,
+            after_market_status_path=tmp_path / "missing.json",
+        )
+
+    after_market = payload["components"]["after_market"]
+    assert after_market["status"] == "degraded"
+    assert after_market["run_state"] == "degraded"
+    assert after_market["expected_trading_day"] is None
+    assert after_market["error_type"] == "after_market_expected_day_invalid"
+
+
+def test_after_market_cutoff_requires_explicit_today_calendar_fact(
+    monkeypatch, tmp_path
+) -> None:
+    monkeypatch.setattr(
+        "app.services.runtime_health.load_operational_products", lambda: ("jm",)
+    )
+    TestingSessionLocal = _session_factory()
+    with TestingSessionLocal() as session:
+        _seed_calendar(
+            session,
+            exchanges={"DCE": ("jm",)},
+            days={"DCE": ((date(2026, 8, 21), True),)},
+        )
+        payload = build_runtime_health(
+            session,
+            redis_factory=lambda: FakeRedis(),
+            now=datetime(2026, 8, 24, 10, 20, tzinfo=UTC),
+            live_runtime_enabled=False,
+            after_market_automation_enabled=True,
+            alert_runtime_enabled=False,
+            notification_transport_configured=False,
+            after_market_status_path=tmp_path / "missing.json",
+        )
+
+    after_market = payload["components"]["after_market"]
+    assert after_market["status"] == "degraded"
+    assert after_market["run_state"] == "degraded"
+    assert after_market["expected_trading_day"] is None
+    assert after_market["error_type"] == "after_market_expected_day_invalid"
 
 
 def test_runtime_health_rejects_invalid_utf8_live_heartbeat_without_leaking_bytes() -> None:
@@ -851,6 +1191,43 @@ class FakeRedis:
 
     def get(self, key: str) -> object:
         return self.values.get(key)
+
+
+def _seed_calendar(
+    session,
+    *,
+    exchanges: dict[str, tuple[str, ...]],
+    days: dict[str, tuple[tuple[date, bool], ...]],
+) -> None:
+    for exchange_code, products in exchanges.items():
+        session.add(
+            Exchange(
+                code=exchange_code,
+                name=exchange_code,
+                country="CN",
+                timezone="Asia/Shanghai",
+                is_active=True,
+            )
+        )
+        for product in products:
+            session.add(
+                Instrument(
+                    symbol=product,
+                    name=product,
+                    exchange_code=exchange_code,
+                    is_active=True,
+                )
+            )
+        for trade_date, is_trading_day in days.get(exchange_code, ()):
+            session.add(
+                TradingCalendar(
+                    exchange_code=exchange_code,
+                    trade_date=trade_date,
+                    is_trading_day=is_trading_day,
+                    has_night_session=False,
+                )
+            )
+    session.commit()
 
 
 def _session_factory():

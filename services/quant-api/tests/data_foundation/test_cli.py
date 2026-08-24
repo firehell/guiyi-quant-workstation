@@ -292,7 +292,9 @@ def test_after_market_is_a_dedicated_apply_free_cli_entrypoint() -> None:
     code, payload = _run(
         ["data", "after-market"],
         manager,
-        after_market_factory=lambda supplied_manager: received.append(supplied_manager) or Updater(),
+        after_market_factory=lambda supplied_manager, **capability: (
+            received.append((supplied_manager, capability)) or Updater()
+        ),
     )
 
     assert code == 0
@@ -304,7 +306,7 @@ def test_after_market_is_a_dedicated_apply_free_cli_entrypoint() -> None:
         "attempts": 1,
         "error_code": None,
     }
-    assert received == [manager]
+    assert received == [(manager, {"failure_notification": False})]
     assert manager.calls == []
     with pytest.raises(CliUsageError):
         build_parser().parse_args(["data", "after-market", "--apply"])
@@ -327,7 +329,11 @@ def test_after_market_non_trading_day_skip_exits_successfully() -> None:
     code = main(
         ["data", "after-market"],
         manager_factory=lambda _session: manager,
-        after_market_factory=lambda _manager: Updater(),
+        after_market_factory=lambda _manager, **capability: (
+            Updater()
+            if capability == {"failure_notification": False}
+            else pytest.fail("manual CLI must disable failure notification")
+        ),
         session_factory=lambda: _NullContext(),
         stdout=stdout,
         stderr=stderr,

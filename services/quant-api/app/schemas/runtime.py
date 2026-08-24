@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -28,6 +30,14 @@ class RuntimeLiveMarketHealth(BaseModel):
     error_message: str | None = None
 
 
+class RuntimeAfterMarketFailureNotification(BaseModel):
+    """Owner PushPlus 的一次 provider acceptance 尝试，不代表送达。"""
+
+    attempted_at: str
+    state: Literal["provider_accepted", "failed"]
+    error_type: str | None = None
+
+
 class RuntimeAfterMarketRun(BaseModel):
     """盘后一次运行的公开摘要。"""
 
@@ -38,6 +48,15 @@ class RuntimeAfterMarketRun(BaseModel):
     finished_at: str
     products: list[str] = Field(default_factory=list)
     error_code: str | None = None
+    failure_notification: RuntimeAfterMarketFailureNotification | None = None
+
+
+class RuntimeAfterMarketCurrentRun(BaseModel):
+    """当前盘后自然运行的 crash-visible 摘要。"""
+
+    scheduled_date: str
+    started_at: str
+    products: list[str] = Field(default_factory=list)
 
 
 class RuntimeAfterMarketHealth(BaseModel):
@@ -45,6 +64,9 @@ class RuntimeAfterMarketHealth(BaseModel):
 
     status: str
     configured_enabled: bool = False
+    run_state: str = "disabled"
+    expected_trading_day: str | None = None
+    current_run: RuntimeAfterMarketCurrentRun | None = None
     last_run: RuntimeAfterMarketRun | None = None
     last_successful_trading_day: str | None = None
     last_failure: dict[str, str] | None = None
