@@ -187,30 +187,27 @@ def build_jdj_research_service(session: Session) -> JdjResearchService:
 def build_jdj_strategy_replay_service(
     session: Session,
 ) -> JdjStrategyReplayService:
-    """Compose JM replay with exact Catalog multiplier and Session facts."""
+    """Compose active-product replay with exact Catalog and Session facts."""
 
-    symbol = "jm"
-    exchange_codes = tuple(
-        session.scalars(
-            select(Instrument.exchange_code).where(
-                Instrument.symbol == symbol,
-                Instrument.is_active.is_(True),
+    def exchange_for_symbol(symbol: str) -> str:
+        rows = tuple(
+            session.scalars(
+                select(Instrument.exchange_code).where(
+                    Instrument.symbol == symbol,
+                    Instrument.is_active.is_(True),
+                )
             )
         )
-    )
-    if (
-        len(exchange_codes) != 1
-        or not isinstance(exchange_codes[0], str)
-        or not exchange_codes[0]
-    ):
-        raise JdjStrategyContextInvalidError()
-    exchange = exchange_codes[0]
+        if len(rows) != 1 or not isinstance(rows[0], str) or not rows[0]:
+            raise JdjStrategyContextInvalidError()
+        return rows[0]
 
     def contract_multiplier_for_contract(
         *,
         symbol: str,
         contract: str,
     ) -> Decimal:
+        exchange = exchange_for_symbol(symbol)
         rows = tuple(
             session.execute(
                 select(
@@ -224,8 +221,7 @@ def build_jdj_strategy_replay_service(
             raise JdjStrategyContextInvalidError()
         owner, contract_exchange, multiplier = rows[0]
         if (
-            symbol != "jm"
-            or owner != symbol
+            owner != symbol
             or contract_exchange != exchange
             or isinstance(multiplier, bool)
             or not isinstance(multiplier, int)
@@ -239,8 +235,9 @@ def build_jdj_strategy_replay_service(
         symbol: str,
         bars_1m: Sequence[CanonicalBar],
     ) -> dict[date, datetime]:
-        if symbol != "jm" or not bars_1m:
+        if not bars_1m:
             raise JdjStrategySessionIdentityError()
+        exchange = exchange_for_symbol(symbol)
         terminals: dict[date, datetime] = {}
         for trading_day in sorted({bar.trading_day for bar in bars_1m}):
             try:
@@ -255,14 +252,14 @@ def build_jdj_strategy_replay_service(
             if not windows:
                 raise JdjStrategySessionIdentityError()
             terminal = max(item.window.end for item in windows)
+            bar_ends = {
+                bar.bar_end
+                for bar in bars_1m
+                if bar.trading_day == trading_day
+            }
             if (
                 terminal.tzinfo is None
-                or terminal.astimezone(UTC)
-                not in {
-                    bar.bar_end
-                    for bar in bars_1m
-                    if bar.trading_day == trading_day
-                }
+                or terminal.astimezone(UTC) not in bar_ends
             ):
                 raise JdjStrategySessionIdentityError()
             terminals[trading_day] = terminal
@@ -276,6 +273,7 @@ def build_jdj_strategy_replay_service(
     market_data = build_market_data_service(session)
     return JdjStrategyReplayService(
         ActualDominantResearchSegmentLoader(market_data),
+        products=load_active_products(),
         jdj_policy=jdj_policy,
         n_policy=n_policy,
         contract_multiplier_for_contract=contract_multiplier_for_contract,
