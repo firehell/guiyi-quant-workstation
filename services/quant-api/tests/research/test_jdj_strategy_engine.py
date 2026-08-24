@@ -9,7 +9,7 @@ from types import ModuleType
 
 import pytest
 
-from app.market_data.domain import BarFrequency, CanonicalBar
+from app.market_data.domain import BarFrequency, CanonicalBar, ResolvedContractSegment
 from app.research.jdj.jdj_context import JdjBarContext
 from app.research.jdj.jdj_events import (
     JdjDirection,
@@ -331,6 +331,8 @@ def _run(
     bars: tuple[CanonicalBar, ...],
     events: tuple[JdjTriggerEvent, ...],
     *,
+    symbol: str = "jm",
+    segment: ResolvedContractSegment | None = None,
     contexts: tuple[JdjBarContext, ...] | None = None,
     config: JdjV1Config | None = None,
     multiplier: Decimal = _MULTIPLIER,
@@ -359,18 +361,201 @@ def _run(
         supplied_contexts = tuple(built_contexts)
     else:
         supplied_contexts = contexts
+    resolved_segment = segment or ResolvedContractSegment(
+        contract=events[0].contract if events else _CONTRACT,
+        start_trading_day=(
+            events[0].segment_start_trading_day if events else _SEGMENT_START
+        ),
+        end_trading_day=max(bar.trading_day for bar in bars),
+    )
     return replay.run_jdj_reference_segment(
+        symbol=symbol,
+        segment=resolved_segment,
         bars_1m=bars,
         contexts=supplied_contexts,
         candidate_events=events,
         contract_multiplier=multiplier,
-        terminal_bar_end_by_day=terminal_by_day or {bars[-1].trading_day: bars[-1].bar_end},
+        terminal_bar_end_by_day=(
+            terminal_by_day
+            if terminal_by_day is not None
+            else {bars[-1].trading_day: bars[-1].bar_end}
+        ),
         config=config or load_jdj_v1_config(),
     )
 
 
 def _actions(replay, kind: str):  # type: ignore[no-untyped-def]
     return tuple(action for action in replay.actions if action.kind.value == kind)
+
+
+def _contexts_without_pivots(
+    bars: tuple[CanonicalBar, ...],
+) -> tuple[JdjBarContext, ...]:
+    return tuple(
+        JdjBarContext(
+            bar=bar,
+            ema20=Decimal("100"),
+            trend_kind=NStructureKind.UNDEFINED,
+            trend_snapshot_observed_at=None,
+            trend_epoch=None,
+            eligible_high_pivot=None,
+            eligible_low_pivot=None,
+        )
+        for bar in bars
+    )
+
+
+def test_no_event_no_pivot_replay_uses_explicit_segment_identity() -> None:
+    _, replay = _modules()
+    bars = tuple(_bar(index) for index in range(3))
+    segment = ResolvedContractSegment(
+        contract="JM2701",
+        start_trading_day=_SEGMENT_START,
+        end_trading_day=_DAY,
+    )
+
+    result = replay.run_jdj_reference_segment(
+        symbol="jm",
+        segment=segment,
+        bars_1m=bars,
+        contexts=_contexts_without_pivots(bars),
+        candidate_events=(),
+        contract_multiplier=_MULTIPLIER,
+        terminal_bar_end_by_day={_DAY: bars[-1].bar_end},
+        config=load_jdj_v1_config(),
+    )
+
+    assert result.actions == ()
+
+
+@pytest.mark.parametrize("symbol", ("", "JM", " jm", "jm "))
+def test_explicit_symbol_must_be_nonempty_normalized_lowercase(symbol: str) -> None:
+    _, replay = _modules()
+    bars = tuple(_bar(index) for index in range(3))
+
+    with pytest.raises(replay.JdjStrategyReplayError):
+        _run(
+            bars,
+            (),
+            symbol=symbol,
+            contexts=_contexts_without_pivots(bars),
+        )
+
+
+def test_explicit_segment_must_be_resolved_contract_segment() -> None:
+    _, replay = _modules()
+    bars = tuple(_bar(index) for index in range(3))
+
+    with pytest.raises(replay.JdjStrategyReplayError):
+        _run(
+            bars,
+            (),
+            segment=object(),  # type: ignore[arg-type]
+            contexts=_contexts_without_pivots(bars),
+        )
+
+
+def test_event_symbol_must_match_explicit_symbol() -> None:
+    _, replay = _modules()
+    bars = tuple(_bar(index) for index in range(6))
+    event = _key_level(bars, 3)
+
+    with pytest.raises(replay.JdjStrategyReplayError):
+        _run(
+            bars,
+            (event,),
+            symbol="rb",
+            contexts=_contexts_without_pivots(bars),
+        )
+
+
+def test_event_contract_must_match_explicit_segment() -> None:
+    _, replay = _modules()
+    bars = tuple(_bar(index) for index in range(6))
+    event = _key_level(bars, 3)
+    segment = ResolvedContractSegment("JM2705", _SEGMENT_START, _DAY)
+
+    with pytest.raises(replay.JdjStrategyReplayError):
+        _run(
+            bars,
+            (event,),
+            segment=segment,
+            contexts=_contexts_without_pivots(bars),
+        )
+
+
+def test_event_segment_start_must_match_explicit_segment() -> None:
+    _, replay = _modules()
+    bars = tuple(_bar(index) for index in range(6))
+    event = _key_level(bars, 3)
+    segment = ResolvedContractSegment(
+        _CONTRACT,
+        _SEGMENT_START - timedelta(days=1),
+        _DAY,
+    )
+
+    with pytest.raises(replay.JdjStrategyReplayError):
+        _run(
+            bars,
+            (event,),
+            segment=segment,
+            contexts=_contexts_without_pivots(bars),
+        )
+
+
+@pytest.mark.parametrize(
+    "segment",
+    (
+        ResolvedContractSegment(
+            _CONTRACT,
+            _DAY + timedelta(days=1),
+            _DAY + timedelta(days=2),
+        ),
+        ResolvedContractSegment(
+            _CONTRACT,
+            _DAY - timedelta(days=2),
+            _DAY - timedelta(days=1),
+        ),
+    ),
+)
+def test_bars_must_stay_inside_explicit_segment_window(
+    segment: ResolvedContractSegment,
+) -> None:
+    _, replay = _modules()
+    bars = tuple(_bar(index) for index in range(3))
+
+    with pytest.raises(replay.JdjStrategyReplayError):
+        _run(
+            bars,
+            (),
+            segment=segment,
+            contexts=_contexts_without_pivots(bars),
+        )
+
+
+@pytest.mark.parametrize(
+    "terminal_by_day",
+    (
+        {},
+        {
+            _DAY: _START + timedelta(minutes=2),
+            _DAY + timedelta(days=1): _START + timedelta(minutes=2),
+        },
+    ),
+)
+def test_terminal_day_set_must_exactly_match_bar_days(
+    terminal_by_day: dict[date, datetime],
+) -> None:
+    _, replay = _modules()
+    bars = tuple(_bar(index) for index in range(3))
+
+    with pytest.raises(replay.JdjStrategyReplayError):
+        _run(
+            bars,
+            (),
+            contexts=_contexts_without_pivots(bars),
+            terminal_by_day=terminal_by_day,
+        )
 
 
 def test_same_bar_setups_collapse_to_key_level_primary_with_causal_stop() -> None:

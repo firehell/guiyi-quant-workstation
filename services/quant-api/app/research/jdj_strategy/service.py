@@ -233,6 +233,8 @@ class JdjStrategyReplayService:
             )
             try:
                 replay = run_jdj_reference_segment(
+                    symbol=request.symbol,
+                    segment=segment,
                     bars_1m=bars_1m,
                     contexts=contexts,
                     candidate_events=candidate_events,

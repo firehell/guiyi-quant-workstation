@@ -21,7 +21,7 @@ from app.market_data.domain import (
 from app.market_data.market_data_service import MarketDataError
 from app.research.jdj.jdj_context import JdjBarContext
 from app.research.jdj.jdj_policy import load_jdj_policy
-from app.research.jdj_strategy.engine import JdjActionKind
+from app.research.jdj_strategy.engine import JdjActionKind, JdjReferenceReplay
 from app.research.jdj_strategy.service import (
     JdjStrategyContextInvalidError,
     JdjStrategyProfileUnavailableError,
@@ -311,6 +311,50 @@ def test_history_warms_true_segment_prefix_and_keeps_episode_state_per_contract(
         JdjActionKind.EXIT,
     }
     assert any(call.since == _FIRST_START for call in reader.calls)
+
+
+def test_history_passes_each_exact_loader_segment_to_replay(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reader = _Reader()
+    received: list[tuple[str, ResolvedContractSegment]] = []
+
+    monkeypatch.setattr(
+        "app.research.jdj_strategy.service.build_jdj_context_series",
+        _contexts,
+    )
+
+    def record_replay(
+        *,
+        symbol: str,
+        segment: ResolvedContractSegment,
+        bars_1m: Sequence[CanonicalBar],
+        contexts: Sequence[JdjBarContext],
+        candidate_events: Sequence[object],
+        contract_multiplier: Decimal,
+        terminal_bar_end_by_day: dict[date, datetime],
+        config: object,
+    ) -> JdjReferenceReplay:
+        assert bars_1m
+        assert contexts
+        assert contract_multiplier == Decimal("60")
+        assert set(terminal_bar_end_by_day) == {
+            bar.trading_day for bar in bars_1m
+        }
+        assert candidate_events is not None
+        assert config is not None
+        received.append((symbol, segment))
+        return JdjReferenceReplay(actions=())
+
+    monkeypatch.setattr(
+        "app.research.jdj_strategy.service.run_jdj_reference_segment",
+        record_replay,
+    )
+
+    result = _service(reader).history(_request())
+
+    assert result.actions == ()
+    assert received == [("jm", _SEGMENTS[0]), ("jm", _SEGMENTS[1])]
 
 
 def test_history_prefix_is_identical_inside_a_longer_through_window(
