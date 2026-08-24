@@ -13,6 +13,7 @@
 ## Global Constraints
 
 - Lane 3. Use **Sol + high reasoning** in a new implementation session.
+- This user-approved plan is the narrow `AGENTS.md` / `DECISIONS.md` formal-plan exception: it is a reviewable design contract, not active task governance, current-status evidence, or authorization for any external operation.
 - Before implementation, read `STATUS.md`, `AGENTS.md`, `docs/DEVELOPMENT.md`, `PROJECT_SOURCE.md`, `DECISIONS.md`, this plan, and the Spec.
 - Create an isolated task worktree/branch from the then-current `develop`; recommended branch: `feature/jdj-active60-1m-strategy`.
 - Do not modify `main` or any Runtime worktree. Do not create a release/tag or perform Runtime promotion.
@@ -292,6 +293,9 @@ event.segment_start_trading_day != segment.start_trading_day
 
 # bar outside segment window
 bar.trading_day < segment.start_trading_day or > segment.end_trading_day
+
+# terminal map must have neither missing nor extra trading days
+set(terminal_bar_end_by_day) != {bar.trading_day for bar in bars}
 ```
 
 All negative cases must raise `JdjStrategyReplayError`.
@@ -333,6 +337,7 @@ and symbol
 and symbol == symbol.strip().lower()
 and isinstance(segment, ResolvedContractSegment)
 and all(segment.start_trading_day <= bar.trading_day <= segment.end_trading_day for bar in bars)
+and set(terminal_bar_end_by_day) == {bar.trading_day for bar in bars}
 and all(
     event.symbol == symbol
     and event.contract == segment.contract
@@ -483,6 +488,56 @@ with pytest.raises(JdjStrategyProfileUnavailableError):
     service.history(rb_request)
 assert loader.calls == []
 ```
+
+The same task must also prove that one service has no cached product identity. Generalize the existing `_Reader` fixture to accept this exact per-symbol segment map:
+
+```python
+_SEGMENTS_BY_SYMBOL = {
+    "jm": (
+        ResolvedContractSegment("JM2701", _FIRST_START, _FIRST_END),
+        ResolvedContractSegment("JM2705", _SECOND_START, _SECOND_END),
+    ),
+    "rb": (
+        ResolvedContractSegment("RB2701", _FIRST_START, _FIRST_END),
+        ResolvedContractSegment("RB2705", _SECOND_START, _SECOND_END),
+    ),
+    "cf": (
+        ResolvedContractSegment("CF701", _FIRST_START, _FIRST_END),
+        ResolvedContractSegment("CF705", _SECOND_START, _SECOND_END),
+    ),
+    "sc": (
+        ResolvedContractSegment("SC2701", _FIRST_START, _FIRST_END),
+        ResolvedContractSegment("SC2705", _SECOND_START, _SECOND_END),
+    ),
+}
+
+
+def test_one_service_replays_symbols_sequentially_without_cached_identity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.research.jdj_strategy.service.build_jdj_context_series", _contexts
+    )
+    reader = _Reader(segments_by_symbol=_SEGMENTS_BY_SYMBOL)
+    service = _service(
+        reader,
+        products=("jm", "rb", "cf", "sc"),
+    )
+
+    for symbol in ("jm", "rb", "cf", "sc"):
+        result = service.history(_request(symbol=symbol))
+        assert result.request.symbol == symbol
+        assert all(
+            action.contract.startswith(symbol.upper())
+            for action in result.actions
+        )
+
+    assert list(dict.fromkeys(call.symbol for call in reader.calls)) == [
+        "jm", "rb", "cf", "sc"
+    ]
+```
+
+`_Reader.query_actual_dominant_trading_days()` must choose `resolved_contract_segments` from `segments_by_symbol[request.symbol]`, and `_Reader.dominant_segment_for_day()` must use the same map. The generic multiplier and terminal callbacks must record their received `symbol` and validate the matching mapped contract; they must not rewrite a JM event after candidate reduction. This is the service-level proof required by the Spec; Task 4 separately proves Catalog exchange/session lookup.
 
 Keep request rejection for `continuous`, `5m`, invalid dates, blank/unnormalizable symbol.
 
@@ -1183,20 +1238,27 @@ git rev-parse HEAD
 
 Expected: task branch, clean worktree. Do not run from main/runtime worktrees.
 
-- [ ] **Step 2: Run the one-process, one-service read-only smoke**
+- [ ] **Step 2: Run the repository-outer shell loop, one symbol per process**
 
 Run from repository root:
 
 ```bash
 cd services/quant-api
-UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache uv run --offline python - <<'PY'
+active_products_file="../../data/universe/active_products.txt"
+processed=0
+
+while IFS= read -r symbol || test -n "$symbol"; do
+  test -n "$symbol" || continue
+  if UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
+    uv run --offline python - "$symbol" <<'PY'
 from __future__ import annotations
 
 from datetime import date
 import json
+import sys
 
 from app.db.session import SessionLocal
-from app.market_data.operational_universe import load_active_products
+from app.market_data.operational_universe import ActiveUniverseError
 from app.research.composition import build_jdj_strategy_replay_service
 from app.research.jdj_strategy.service import (
     JdjStrategyContextInvalidError,
@@ -1206,13 +1268,11 @@ from app.research.jdj_strategy.service import (
     JdjStrategySessionIdentityError,
 )
 
-products = load_active_products()
-assert len(products) == 60, f"active universe drifted: {len(products)}"
-results: list[dict[str, object]] = []
+symbol = sys.argv[1]
 
-with SessionLocal() as session:
-    service = build_jdj_strategy_replay_service(session)
-    for symbol in products:
+try:
+    with SessionLocal() as session:
+        service = build_jdj_strategy_replay_service(session)
         request = JdjStrategyReplayRequest(
             series_kind="actual_dominant",
             symbol=symbol,
@@ -1220,30 +1280,61 @@ with SessionLocal() as session:
             since=date(2026, 8, 18),
             through=date(2026, 8, 20),
         )
-        try:
-            result = service.history(request)
-        except (
-            JdjStrategyProfileUnavailableError,
-            JdjStrategyContextInvalidError,
-            JdjStrategySegmentIdentityError,
-            JdjStrategySessionIdentityError,
-        ) as exc:
-            results.append({
-                "symbol": symbol,
-                "status": "typed_unavailable",
-                "code": exc.code,
-            })
-        else:
-            results.append({
-                "symbol": symbol,
-                "status": "ok",
-                "action_count": len(result.actions),
-            })
+        result = service.history(request)
+except (
+    JdjStrategyProfileUnavailableError,
+    JdjStrategyContextInvalidError,
+    JdjStrategySegmentIdentityError,
+    JdjStrategySessionIdentityError,
+) as exc:
+    payload = {
+        "window": "2026-08-18..2026-08-20",
+        "symbol": symbol,
+        "status": "typed_unavailable",
+        "code": exc.code,
+    }
+except ActiveUniverseError as exc:
+    print(json.dumps({
+        "window": "2026-08-18..2026-08-20",
+        "symbol": symbol,
+        "status": "command_failed",
+        "code": exc.code,
+    }, ensure_ascii=False))
+    raise SystemExit(1) from None
+except Exception:
+    print(json.dumps({
+        "window": "2026-08-18..2026-08-20",
+        "symbol": symbol,
+        "status": "command_failed",
+        "code": "JDJ_STRATEGY_SMOKE_UNEXPECTED_FAILURE",
+    }, ensure_ascii=False))
+    raise SystemExit(1) from None
+else:
+    payload = {
+        "window": "2026-08-18..2026-08-20",
+        "symbol": symbol,
+        "status": "ok",
+        "action_count": len(result.actions),
+    }
 
-assert [item["symbol"] for item in results] == list(products)
-assert len(results) == 60
-print(json.dumps({"window": "2026-08-18..2026-08-20", "results": results}, ensure_ascii=False))
+print(json.dumps(payload, ensure_ascii=False))
 PY
+  then
+    processed=$((processed + 1))
+  else
+    exit_status=$?
+    printf '{"symbol":"%s","status":"command_failed","exit_status":%s}\n' \
+      "$symbol" "$exit_status" >&2
+    exit "$exit_status"
+  fi
+done < "$active_products_file"
+
+test "$processed" -eq 60 || {
+  printf '{"status":"command_failed","code":"ACTIVE60_RESULT_COUNT_INVALID","count":%s}\n' \
+    "$processed" >&2
+  exit 1
+}
+
 cd ../..
 ```
 
@@ -1251,7 +1342,10 @@ Expected:
 
 - exactly 60 result entries in active-universe order;
 - each entry is `ok` or a known typed Strategy unavailable code;
-- any unexpected exception aborts non-zero rather than being swallowed;
+- the shell reads `data/universe/active_products.txt` directly and starts one
+  existing single-product replay process per non-empty line;
+- any active-universe or unexpected failure prints the current symbol and a
+  non-zero status, then aborts rather than being swallowed;
 - no repository file changes.
 
 - [ ] **Step 3: Verify the smoke wrote nothing to the repository**
@@ -1360,7 +1454,45 @@ Expected: ancestor check returns zero and both documents are present.
 
 - [ ] **Step 7: Clean the temporary task worktree/branch only after confirmed integration**
 
-Remove the task worktree and delete the merged task branch according to `docs/DEVELOPMENT.md`. Do not touch `main`, tags, release refs, or Runtime worktrees.
+Resolve and record the exact task worktree path, then fail closed unless all
+preconditions hold:
+
+```bash
+task_worktree_path="<EXACT_TASK_WORKTREE_PATH>"
+task_branch=feature/jdj-active60-1m-strategy
+
+test "$(git -C "$task_worktree_path" branch --show-current)" = "$task_branch"
+test -z "$(git -C "$task_worktree_path" status --porcelain)"
+git worktree list --porcelain
+
+for label in \
+  com.guiyi.quant-api \
+  com.guiyi.quant-web \
+  com.guiyi.quant-live \
+  com.guiyi.quant-after-market \
+  com.guiyi.quant-alert
+do
+  if launchctl print "gui/$(id -u)/$label" 2>/dev/null \
+    | rg -F -q -- "$task_worktree_path"
+  then
+    printf 'TASK_WORKTREE_RUNTIME_REFERENCE_PRESENT label=%s\n' "$label" >&2
+    exit 1
+  fi
+done
+
+git worktree remove "$task_worktree_path"
+git branch -d "$task_branch"
+
+if git ls-remote --exit-code --heads origin "$task_branch" >/dev/null 2>&1
+then
+  git push origin --delete "$task_branch"
+fi
+```
+
+Do not use `--force`, broad paths, unresolved variables, direct directory
+deletion, or any command that touches `main`, tags, release refs, or Runtime
+worktrees. If a launchd label references the task worktree, stop without
+removing anything.
 
 ---
 

@@ -113,7 +113,7 @@ DFD-01～DFD-07 与 active 60 品种闭环已经完成；当前长期行为规�
 ## 文档与交付
 
 - 事实变化时更新对应 canonical：阶段更新 `STATUS.md`；长期边界更新 `PROJECT_SOURCE.md`；长期决策更新 `DECISIONS.md`；命令更新 README/`TESTING.md`；Execution Review 业务语义更新 `docs/EXECUTION_REVIEW.md`，其他业务语义更新对应 deep canonical。
-- 临时分析和会话 Plan 不入仓库。已完成执行事实可以保留其历史 PR/hash/receipt 等描述，但这些描述不能成为未来执行条件。
+- 临时分析和会话 Plan 不入仓库。例外仅限用户明确批准、绑定具体仓库 Spec 的正式 design / implementation plan；这类审阅用合同可保存在 `docs/superpowers/specs/` 与 `docs/superpowers/plans/`，但不构成 active task governance、通用 workflow 或任何外部操作授权，当前状态仍只看 `STATUS.md`。已完成执行事实可以保留其历史 PR/hash/receipt 等描述，但这些描述不能成为未来执行条件。
 - 交付说明变更范围、实际验证命令与结果、剩余风险、未执行的受控外部操作和最小下一步；未运行的验证明确标记。
 
 ## 接手最小阅读

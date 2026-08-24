@@ -30,5 +30,5 @@ exact protocol/window/hash/count 只看 policy、report 与测试；历史过程
 | Multiplier | 使用 trusted-partial 官方 evidence，Episode 创建时 snapshot | completeness 不阻断工作流；缺失只令人民币估算 unavailable，reference 扩大不改写历史 |
 | Web B1 | 首页“优先检查”只投影后端 Trend Focus 当前只读快照，详情页仍按“当前检查栏”验证 | completed-bar 与 current physical-contract 规则留在 Market read model；Web 不自行选品，不建立持久化 Opportunity domain、综合分或推荐；`degraded` fail-closed，正式 Event/研究观察/Research-only 分层 |
 | Runtime 入口 | `guiyi` 是用户 CLI，`app.runtime_entry` 只服务受监督进程 | 避免第二套业务入口；手工进程调用不能冒充自然 Runtime evidence |
-| 工程验证 | `TESTING.md` 只保留项目原生命令；工程脚本只保留无依赖 secret scan | 不维护自验证治理框架、重复流程文档、active task/plan 目录或可选 CI 双轨 |
+| 工程验证 | `TESTING.md` 只保留项目原生命令；工程脚本只保留无依赖 secret scan；用户明确批准且绑定具体 Spec 的正式 design / implementation plan 可保存在 `docs/superpowers/specs/` 与 `docs/superpowers/plans/` | 不维护自验证治理框架、重复流程文档、active task/plan 目录或可选 CI 双轨；该狭窄例外只提供可审阅的设计合同，不构成 workflow、当前状态或外部操作授权 |
 | 运维拓扑 | Mac launchd → FRPC → FRPS/Nginx 是唯一 active 链 | 本地/隧道/公网分段只读检查；不保留并行 PID 管理器或远端应用副本 |
