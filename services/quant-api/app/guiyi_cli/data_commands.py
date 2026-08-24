@@ -9,8 +9,11 @@ from __future__ import annotations
 
 import argparse
 from datetime import date
+import json
+from typing import TextIO
 
 from app.market_data.historical_data_manager import (
+    AuditProgressEvent,
     AuditRequest,
     HistoricalDataManager,
     RefreshRequest,
@@ -60,13 +63,46 @@ def build_request(args: argparse.Namespace):
     raise ValueError("CLI_DATA_COMMAND_INVALID")
 
 
-def run_data_command(args: argparse.Namespace, manager: HistoricalDataManager):
+def run_data_command(
+    args: argparse.Namespace,
+    manager: HistoricalDataManager,
+    *,
+    progress_stream: TextIO | None = None,
+):
     """调用 manager 上与 data_command 同名的方法并返回结果对象。"""
     if args.data_command == "member-rank":
         raise ValueError("CLI_MEMBER_RANK_MANAGER_INVALID")
     request = build_request(args)
+    if args.data_command == "audit" and bool(getattr(args, "progress", False)):
+        assert progress_stream is not None
+        return manager.audit(request, observer=_audit_progress_writer(progress_stream))
     action = getattr(manager, args.data_command)
     return action(request)
+
+
+def _audit_progress_writer(stream: TextIO):
+    """将结构化 audit 进度编码为 NDJSON；首次输出失败后永久静默。"""
+    disabled = False
+
+    def write(event: AuditProgressEvent) -> None:
+        nonlocal disabled
+        if disabled:
+            return
+        payload = {
+            "schema_version": 1,
+            "event": "data.audit.progress",
+            "state": event.state,
+            "completed": event.completed,
+            "total": event.total,
+            "symbol": event.symbol,
+            "finding_count": event.finding_count,
+        }
+        try:
+            stream.write(json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n")
+        except Exception:  # noqa: BLE001 - progress must not affect the audit result
+            disabled = True
+
+    return write
 
 
 def _products(symbol: str | None, universe: str | None) -> tuple[str, ...]:

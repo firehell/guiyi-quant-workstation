@@ -763,6 +763,16 @@ UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache uv run --offline --project service
 GUIYI_ISOLATED_MIGRATION_DATABASE_URL='<isolated-postgresql-url>' UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache uv run --offline --project services/quant-api pytest -q -m isolated_postgresql services/quant-api/tests
 ```
 
+## Data audit progress
+
+`guiyi data audit ... --progress` 仅额外向 stderr 写入 compact NDJSON 进度；默认 audit stdout JSON
+保持兼容，且两种模式都不请求 provider。使用以下离线测试验证 CLI、单品种 observer 时序与零 provider
+边界；不要将其替换为真实 audit：
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache uv run --offline --project services/quant-api pytest -q services/quant-api/tests/data_foundation/test_cli.py services/quant-api/tests/data_foundation
+```
+
 ## Ruff 与 Mypy
 
 ```bash

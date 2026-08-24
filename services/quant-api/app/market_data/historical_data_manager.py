@@ -29,7 +29,7 @@ fail-closed
 """
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from typing import Protocol
@@ -169,6 +169,20 @@ class AuditFinding:
     dataset: tuple[str, str, str, str]
     year: int | None
     month: int | None
+
+
+@dataclass(frozen=True, slots=True)
+class AuditProgressEvent:
+    """审计单品种进度的结构化 observer 值，不含 CLI 输出语义。"""
+
+    state: str
+    completed: int
+    total: int
+    symbol: str
+    finding_count: int | None
+
+
+AuditObserver = Callable[[AuditProgressEvent], None]
 
 
 @dataclass(frozen=True, slots=True)
@@ -392,12 +406,30 @@ class HistoricalDataManager:
         )
         return self._execute("refresh", targets, request.through, apply=request.apply)
 
-    def audit(self, request: AuditRequest) -> MaintenanceResult:
+    def audit(
+        self,
+        request: AuditRequest,
+        *,
+        observer: AuditObserver | None = None,
+    ) -> MaintenanceResult:
         """只读审计：不拉 RQData、不写分区；对照 catalog 与 coverage 期望发现缺口/损坏。"""
-        assert_products_not_retired(request.products)
+        products = tuple(symbol.strip().lower() for symbol in request.products)
+        assert_products_not_retired(products)
         findings: list[AuditFinding] = []
         throughs: list[date] = []
-        for symbol in request.products:
+        total = len(products)
+        for completed, symbol in enumerate(products):
+            if observer is not None:
+                observer(
+                    AuditProgressEvent(
+                        state="started",
+                        completed=completed,
+                        total=total,
+                        symbol=symbol,
+                        finding_count=None,
+                    )
+                )
+            finding_start = len(findings)
             try:
                 through = request.through or self.coverage.latest_complete_day((symbol,))
                 start = self.coverage.product_start(symbol)
@@ -444,6 +476,16 @@ class HistoricalDataManager:
                 if finding is None:
                     raise
                 findings.append(finding)
+            if observer is not None:
+                observer(
+                    AuditProgressEvent(
+                        state="completed",
+                        completed=completed + 1,
+                        total=total,
+                        symbol=symbol,
+                        finding_count=len(findings) - finding_start,
+                    )
+                )
         return MaintenanceResult(
             action="audit",
             status="passed" if not findings else "failed",

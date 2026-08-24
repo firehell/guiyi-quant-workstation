@@ -1375,6 +1375,28 @@ def test_audit_continues_after_known_session_metadata_failure(session, tmp_path)
     assert coverage.latest_calls == [("a",), ("jm",)]
 
 
+def test_audit_observer_reports_each_product_and_known_metadata_gap_completion(
+    session, tmp_path
+) -> None:
+    coverage = FakeCoverage({})
+    coverage.latest_errors["a"] = InfrastructureError("TRADING_SESSION_MISSING")
+    manager = _manager(session, tmp_path, coverage, FakeProvider({}))
+    events = []
+
+    result = manager.audit(AuditRequest((" A ", "JM")), observer=events.append)
+
+    assert result.status == "failed"
+    assert [
+        (event.state, event.completed, event.total, event.symbol, event.finding_count)
+        for event in events
+    ] == [
+        ("started", 0, 2, "a", None),
+        ("completed", 1, 2, "a", 1),
+        ("started", 1, 2, "jm", None),
+        ("completed", 2, 2, "jm", 0),
+    ]
+
+
 def test_audit_reports_calendar_metadata_failure(session, tmp_path) -> None:
     coverage = FakeCoverage({})
     coverage.latest_errors["jm"] = InfrastructureError("TRADING_CALENDAR_MISSING")
@@ -1387,13 +1409,21 @@ def test_audit_reports_calendar_metadata_failure(session, tmp_path) -> None:
     ]
 
 
-def test_audit_reraises_unknown_coverage_error(session, tmp_path) -> None:
+def test_audit_reraises_unknown_coverage_error_without_completed_observer_event(
+    session, tmp_path
+) -> None:
     coverage = FakeCoverage({})
     coverage.latest_errors["jm"] = RuntimeError("database disconnected")
     manager = _manager(session, tmp_path, coverage, FakeProvider({}))
+    events = []
 
     with pytest.raises(RuntimeError, match="database disconnected"):
-        manager.audit(AuditRequest(("jm",)))
+        manager.audit(AuditRequest(("jm",)), observer=events.append)
+
+    assert [
+        (event.state, event.completed, event.total, event.symbol, event.finding_count)
+        for event in events
+    ] == [("started", 0, 1, "jm", None)]
 
 
 def _publish_existing(

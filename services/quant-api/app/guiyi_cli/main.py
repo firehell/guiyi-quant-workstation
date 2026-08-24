@@ -235,6 +235,7 @@ def main(
                 after_market_factory,
                 execution_review_roll_marker_state,
                 roll_reconciler_factory,
+                stderr,
             )
         elif args.domain == "research":
             assert research_request is not None
@@ -399,6 +400,7 @@ def _run_data(
     after_market_factory: AfterMarketFactory,
     execution_review_roll_marker_state: RollMarkerState,
     roll_reconciler_factory: RollReconcilerFactory,
+    stderr: TextIO,
 ) -> dict[str, object]:
     """在 DB 会话内执行 data 子命令并返回 as_payload 字典。"""
     if args.data_command == "member-rank":
@@ -416,7 +418,7 @@ def _run_data(
         )
     with session_factory() as session:
         manager = manager_factory(session)
-        return run_data_command(args, manager).as_payload()
+        return run_data_command(args, manager, progress_stream=stderr).as_payload()
 
 
 def entrypoint() -> None:

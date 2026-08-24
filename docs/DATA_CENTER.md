@@ -127,7 +127,7 @@ coverage 和 resolved contract segments。
 ```bash
 guiyi data update (--symbol X | --universe active) [--since DATE] [--through DATE] [--apply]
 guiyi data refresh --symbol X --since DATE --through DATE [--apply]
-guiyi data audit (--symbol X | --universe active)
+guiyi data audit (--symbol X | --universe active) [--through DATE] [--progress]
 ```
 
 无 `--apply` 的 update/refresh 仅计划，零 RQData、零 PostgreSQL 写入、零 Parquet 写入；audit
@@ -136,6 +136,9 @@ Session、Calendar 与产品窗口元数据缺口分别归为 `metadata_session`
 `metadata_window`，但不会中断其余品种；主力映射、预期分区缺失与物理一致性问题分别归为
 `main_contract_map`、`partition`、`physical`。未知基础设施异常仍 fail-closed。已退役品种
 `br/cs/ic/if/ih/im/lu/nr/sp` 已完成一次性生产清退；系统只保留精确拒绝防护，不再公开重复删除入口。
+`--progress` 是 audit 专用 opt-in：最终 stdout JSON 与未传该参数时完全兼容；stderr 每品种输出
+started/completed 两条 compact NDJSON 进度记录。该观察不接 provider，audit 的 provider requests 仍为零；
+若 stderr 自身不可写，后续进度静默而审计和最终 stdout 保持正常业务结果。
 省略 `--through`
 时，update 在规划开始解析最新完整交易日，并将该值作为本轮固定水位；相同解析值的再次完整运行
 必须为 NOOP。真实 `--apply`、生产 schema migration 与正式数据删除/重建仍各自需要范围明确的
