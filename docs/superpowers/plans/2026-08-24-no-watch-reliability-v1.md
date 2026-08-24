@@ -8,7 +8,6 @@
 - 不执行 Runtime switch、真实 PushPlus、真实 RQData/Canonical/DB 写入、migration、main merge、tag 或 release。
 - Alert 运行观察只写现有 Redis，盘后运行观察只写既有状态文件；不新增 PostgreSQL 表、队列、retry 或独立监控进程。
 - 所有通知与 Web 状态都是研究/运维观察，不是交易指令；`auto_order=false` 不变。
-- Stage 2 四系统全周期观察实现暂停到本计划合入 `develop`；无需等待自然事件即可恢复 Stage 2 工程实施，但自然证据仍保持独立 pending。
 
 ## Task 1: Repair engineering and canonical documentation facts
 
@@ -175,7 +174,6 @@ uv run --offline --project services/quant-api pytest -q \
 3. Record only `CODE_COMPLETE / TEST_COMPLETE` on `develop`; explicitly preserve release, Runtime switch, real notification, natural-event acceptance and real data writes as separate pending Gates.
 4. Run independent final Standards and plan-compliance review. Fix all Critical/Important findings and re-run affected checks.
 5. Merge the reviewed task branch into local `develop`, push `develop`, and read back the remote SHA. Do not modify `main`, create release/tag, switch Runtime or send a real notification.
-6. After the `develop` integration is confirmed, mark Stage 2 engineering implementation as resumable; do not start Stage 2 in this task.
 
 **Final verification:**
 

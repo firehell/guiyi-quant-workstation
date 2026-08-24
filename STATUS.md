@@ -83,9 +83,10 @@
   `ROLL_RECONCILIATION_REQUIRED` 且不得创建 `DOMINANT_ROLL`，只有 `enabled` 注入真实 reconciler。
 - Market Web 的 B1 流程已进入 production：首页为“需要处理 → 优先检查 → 全市场研究”，详情页使用
   “当前检查栏”；正式 Event、研究观察和 Research-only 事实保持分层，不产生综合分或交易推荐。
-- 四系统全周期市场观察的设计与 implementation plan 已批准并持久化在
-  `docs/superpowers/specs/` 与 `docs/superpowers/plans/`；No-Watch Reliability V1 已集成 develop，
-  Stage 2 工程实施现为 `resumable`，但本任务未启动 Stage 2，不得提前记录其 Tasks 2–5 为完成。
+- The prior Four-System Active60 All-Frequency Observation direction was withdrawn by the user before implementation and its active Spec/Plan were removed.
+- SuBing Daily Watch V1 is the approved replacement design/plan.
+- No implementation, release, Runtime promotion, extension-drive configuration, real file generation or Alert Scope change has occurred yet.
+- The next step is Task 1 of the SuBing Daily Watch V1 implementation plan in an isolated Lane 3 task.
 
 ## No-Watch Reliability V1 develop integration
 
@@ -104,7 +105,6 @@
   `97 passed / 1 skipped`、OpenSpec `6 passed`、secret scan `0 findings` 与 diff check clean。
 - develop 首次 integration 的 local 与 remote readback 均为 reviewed implementation head
   `eddd13f9999297a93286389a85805c27fc41264f`；该 SHA 不表示本次 `STATUS.md` 收口提交后的最终 remote head。
-  Stage 2 四系统工程实施现为 `resumable`，但本任务没有启动 Stage 2。
 - 当前正式 release 和 production Runtime 仍是上文 v1.8.0；No-Watch 未 release、未 Runtime switch，
   且未执行真实 PushPlus、自然 HTDY/SuBing/after-market 新验收、真实 data audit、RQData、
   Canonical/production DB/Redis 写入或 migration。
@@ -189,4 +189,3 @@ Exact 命令见 `TESTING.md`。该协议只定义未来 read-only Gate，不构�
   `docs/ARCHITECTURE.md`；命令看 `TESTING.md`。
 - 已完成 spec/plan/task 与逐次 release/promotion 流水只从 Git history、`CHANGELOG.md`、tag 和 commit
   追溯，不作为 active surface。
-- 最小下一步：按新任务从已批准的四系统 implementation plan Task 1 恢复工程实施，不触碰 Runtime。
