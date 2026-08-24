@@ -5,14 +5,18 @@
 ## 正式 release 与 production Runtime
 
 - 已发布的正式 tag 为
-  `v1.8.0@8fac0a5f22951715711680b554a635d76166af24`；annotated tag object 为
-  `93806bad4def9b265fcee56265d4c25077cf04c8`，message=`Release v1.8.0`。
+  `v1.8.1@7e05d7d63f1e3437852fdcd56d6a3401fd7bcd16`；annotated tag object 为
+  `438461cb36058a683b13b24c15a65bceb55caa7a`，message=`Release v1.8.1`。
 - 2026-08-24 已将本机五个 launchd label 切到 clean/detached
-  `/Volumes/扩展盘/guiyi-quant-runtime-v1.8.0@8fac0a5f22951715711680b554a635d76166af24`。
-  API、Web、Live 与 Alert 均从该根运行；after-market 未手工触发。补齐新 worktree 缺少的 Git 忽略
-  `node_modules` 与 `dist` 后，最新只读读回为 API=`200`、Web=`200`、Runtime health=`ok / readonly`、
-  overall=`passed`，本机 v1.8.0 Runtime 已达到 `RUNTIME_READY`。
-- 旧 `v1.7.0` Runtime worktree 保留为 clean/detached rollback 资产，但当前没有 label 指向它；未执行
+  `/Volumes/扩展盘/guiyi-quant-runtime-v1.8.1@7e05d7d63f1e3437852fdcd56d6a3401fd7bcd16`。
+  API、Web、Live 与 Alert 均从该根运行，API=`200 / 1.8.1 / readonly`、Web=`200`；after-market
+  `not_running` 且未手工触发。新根错过当日自然 18:05 执行，Runtime health 当前诚实保持
+  `degraded / after_market_run_missed`，不得声明 `RUNTIME_READY`。
+- `GUIYI_SUBING_OBSERVATION_ROOT` 已精确配置为扩展盘
+  `/Volumes/扩展盘/guiyi-quant-data/observations/subing-daily-v1`；配置文件为 `0600`，目录为 `0700`，
+  production resolver 通过。当前目录为空，current API 返回
+  `200 / unavailable / SUBING_DAILY_WATCH_NOT_GENERATED / expected=2026-08-25`，等待下一次自然盘后生成。
+- 旧 `v1.8.0` 与 `v1.7.0` Runtime worktree 保留为 clean/detached rollback 资产，但当前没有 label 指向；未执行
   回滚、after-market、canary、人工通知、真实 RQAlpha smoke、migration、Canonical/production DB/Redis
   写入或 Alert Scope/transport 变更。
 - RQAlpha research workbench 代码已包含在 `v1.8.0`，但本地 sidecar 仍未加载、未进入 Runtime；真实
@@ -22,16 +26,17 @@
   验收均为 `passed`；ECS FRPS/Nginx 与公网 HTTPS 本轮没有可用执行入口，且 `PUBLIC_BASE_URL` 未配置，
   因此保持 `not verified`，不得由本机或 tunnel 读回推导为公网验收通过。
 
-## v1.8.1 release candidate
+## v1.8.1 release and Runtime deployment
 
-- `develop` 已冻结 v1.8.1 版本面：API、Web、`uv.lock` 与一致性测试均为 `1.8.1`；本候选包含 JDJ
-  active60 Historical reference replay、No-Watch Reliability V1、SuBing Daily Watch V1 及其 5 个
-  Important 窄修复。
-- 发布范围仅为现有 API、Web、Live、after-market 与 Alert 五个 launchd label；不加载 RQAlpha sidecar，
-  不运行手工 after-market、真实通知、migration、Canonical/production DB/Redis 写入，也不改变 Alert
-  Scope/transport 或 Execution Review roll，`auto_order=false` 不变。
-- 本节仅记录 release candidate；在 main merge、annotated tag 远端读回、精确 tag Runtime switch 与主机
-  健康读回完成前，正式 release 和 production Runtime 仍为上文 `v1.8.0`。
+- release preparation commit 为 `4d67c1f6d`；main integration 与 annotated tag peeled commit 均为
+  `7e05d7d63f1e3437852fdcd56d6a3401fd7bcd16`。本版包含 JDJ active60 Historical reference replay、
+  No-Watch Reliability V1、SuBing Daily Watch V1 及其 5 个 Important 窄修复。
+- exact main merge tree 验证为 backend `3659 passed / 3 skipped / 16 deselected`、engineering `63 passed`、
+  Web unit `276 passed / 1 skipped`、Playwright `98 passed / 1 skipped`、Mypy
+  `154 source files / 0 issues`；Ruff、Web build、OpenSpec `6 passed`、secret scan 与 diff check 均通过。
+- 五个现有 launchd label 已切换到精确 tag Runtime；不加载 RQAlpha sidecar，不运行手工 after-market、
+  真实通知、migration、Canonical/production DB/Redis 写入，也不改变 Alert Scope/transport 或 Execution
+  Review roll，`auto_order=false` 不变。首次自然盘后与 Daily Watch artifact 验收继续 `pending`。
 
 ## v1.8.0 release closeout
 
@@ -55,7 +60,7 @@
 - 本 release 不含 migration、Canonical/production DB/Redis 写入、Scope/transport 变化、通知
   retry/replay/backfill 或订单能力，`auto_order=false` 不变。
 
-## Market Trend Focus V1 develop release candidate
+## Market Trend Focus V1 v1.8.0 integration
 
 - Market Trend Focus V1 implementation exact head `b4330123d8483ebdd42583d1816ac15cf99b61db`
   已随 v1.8.0 release 合入；它仍是只读 Market research surface，不接 Alert、Runtime 或订单。
@@ -68,7 +73,7 @@
   共 `192` 次 prefix 比较，`0 mismatch`，无 future/same-boundary/cross-contract identity 冲突。
 - prospective shadow 仍是下一受控 Gate，当前未启用；本状态不授权真实通知或任何正式数据写入。
 
-## JDJ active60 1m reference replay develop candidate
+## JDJ active60 1m reference replay v1.8.1 integration
 
 - pre-status implementation/plan exact head 为
   `683c98a21bd70b2231cbf8975147bad358a73e77`。当前 active60 中单产品的
@@ -76,8 +81,8 @@
 - 固定 smoke window `2026-08-18..2026-08-20` 的唯一授权 retry 观察到 `60 ok / 0
   typed_unavailable / 0 command_failed`，合计 `2004` 个 action；该数量只表示 reference replay
   capability coverage，不构成排名、PnL 或策略有效性结论。
-- 该能力仍是 research-only，未消费 prospective OOS，未改变 Alert、Runtime、RQAlpha、Canonical、
-  data、DB、Redis 或 order 路径；main、release 与 production Runtime 状态均未改变。
+- 该能力已随 v1.8.1 合入 main/release，但仍是 research-only，未消费 prospective OOS，也不成为
+  Alert、Runtime、RQAlpha、Canonical、data、DB、Redis 或 order consumer。
 
 ## 当前 Runtime 与产品面
 
@@ -96,24 +101,23 @@
   “当前检查栏”；正式 Event、研究观察和 Research-only 事实保持分层，不产生综合分或交易推荐。
 - The prior Four-System Active60 All-Frequency Observation direction was withdrawn by the user before implementation and its active Spec/Plan were removed.
 
-## SuBing Daily Watch V1 develop integration
+## SuBing Daily Watch V1 v1.8.1 integration
 
-- SuBing Daily Watch V1 已集成到 `develop`。2026-08-24 的窄修复补齐同 target 失败后 current
+- SuBing Daily Watch V1 已随 v1.8.1 合入 main/release 并部署到精确 tag Runtime。2026-08-24 的窄修复补齐同 target 失败后 current
   fail-closed、目录及原子文件 mutation/replace 前扩展盘 root 重验、snapshot
   decision/reason/fact/price-side 语义校验，以及来自重构前实现的 5m/15m EMA/slope 独立 golden parity
-  覆盖；Task 0–9 的代码与 canonical 收口均在 develop。
+  覆盖；Task 0–9 的代码与 canonical 已收口。
 - 2026-08-24 fresh verification 为 focused backend `175 passed`、full non-isolated backend
   `3659 passed / 3 skipped / 16 deselected`、engineering `63 passed`、Mypy
   `154 source files / 0 issues`、Web unit `276 passed / 1 skipped`、full Playwright
   `98 passed / 1 skipped`；Ruff、Web build、OpenSpec `6 passed`、secret scan `0 findings`、ops shell、
   launchd plist lint 与 diff check 均通过。该 feature 不含 migration、schema 或 concurrency 变化，因此未运行
   isolated PostgreSQL，也未连接 production DB。
-- 本 integration 未合入 main、未 release、未 Runtime-promoted；本任务未配置
-  `GUIYI_SUBING_OBSERVATION_ROOT`，未生成真实 `history/current/generation-status` 文件，也未运行或回填
-  真实盘后任务。首次自然 after-market evidence 继续 `pending`；production Alert Scope/transport、
+- 扩展盘 root 已配置并通过 production resolver，但当前尚未生成真实 `history/current/generation-status`
+  文件，也未运行或回填真实盘后任务。首次自然 after-market evidence 继续 `pending`；production Alert Scope/transport、
   prospective OOS 及其他既有 Gate 均未改变。
 
-## No-Watch Reliability V1 develop integration
+## No-Watch Reliability V1 v1.8.1 integration
 
 - No-Watch Reliability V1 已达到 `CODE_COMPLETE / TEST_COMPLETE` 并合入 develop：Alert 已有无 TTL Redis schema v1
   processing/notification observation；盘后已有 schema v2 crash-visible `current_run`、18:20 expected-day
@@ -130,8 +134,8 @@
   `97 passed / 1 skipped`、OpenSpec `6 passed`、secret scan `0 findings` 与 diff check clean。
 - develop 首次 integration 的 local 与 remote readback 均为 reviewed implementation head
   `eddd13f9999297a93286389a85805c27fc41264f`；该 SHA 不表示本次 `STATUS.md` 收口提交后的最终 remote head。
-- 当前正式 release 和 production Runtime 仍是上文 v1.8.0；No-Watch 未 release、未 Runtime switch，
-  且未执行真实 PushPlus、自然 HTDY/SuBing/after-market 新验收、真实 data audit、RQData、
+- No-Watch 已随 v1.8.1 release 与 Runtime switch 部署；新 Runtime 根当前如实报告当日 after-market
+  `missed`，等待下一次自然执行。未执行真实 PushPlus、自然 HTDY/SuBing/after-market 新验收、真实 data audit、RQData、
   Canonical/production DB/Redis 写入或 migration。
 
 ## 当前 research evidence
@@ -192,8 +196,8 @@ Exact 命令见 `TESTING.md`。该协议只定义未来 read-only Gate，不构�
 
 ## 待完成 Gate
 
-- No-Watch Reliability V1 尚未合入 main/release，也未 Runtime switch；main/release 与 Runtime promotion/switch
-  仍是两个独立人工 Gate，develop 集成不授权任何一项。
+- v1.8.1 首次自然 after-market 与 Daily Watch artifact/API/Web 验收 `pending`；不得手工触发、回填或
+  复制旧 Runtime 状态补证。
 - MFM 60m sequence forensic 的真实 JM + active60 Historical read-only evidence Gate `pending`；本次不
   运行、不生成临时 evidence、不输出 Phase Gate 结论。
 - MFM Diagnostic Phase A 的真实 JM named view + frozen active60 Historical read-only diagnostic
@@ -201,7 +205,7 @@ Exact 命令见 `TESTING.md`。该协议只定义未来 read-only Gate，不构�
 - 自然 HTDY Topic Event 与自然 SuBing owner Event 的 production 验收 `pending`；不得用 synthetic
   Event、manual send、replay、backfill 或 retry 补证，历史 canary 不重复。
 - SuBing 自然 Live seam 仍需真实时点观察；Canonical-only HTTP smoke 不替代自然 Live evidence。
-- 当前 v1.8.0 API/Web/Market Runtime root 的下一次自然 18:05 盘后业务证据待观察；不得人工触发、回填或
+- 当前 v1.8.1 API/Web/Market Runtime root 的下一次自然 18:05 盘后业务证据待观察；不得人工触发、回填或
   用旧 root evidence 补证。
 - SuBing、N 与 JDJ Candidate 的 prospective OOS 继续按各自 exact protocol 独立累积，当前均
   `pending`。
