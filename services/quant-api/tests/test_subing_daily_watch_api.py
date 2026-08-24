@@ -584,10 +584,10 @@ def test_current_composition_reads_only_calendar_and_store(
     assert not root.exists()
 
 
-def test_current_composition_maps_non_directory_root_before_not_generated(
+def test_current_composition_maps_unsearchable_root_before_not_generated(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Catches an unusable configured root being reported as not generated."""
+    """Catches a write-only root being reported as not generated."""
     from app.market_data.composition import build_subing_daily_watch_current_service
 
     root = Path("/Volumes/Fake/observations/subing-daily-v1")
@@ -608,8 +608,8 @@ def test_current_composition_maps_non_directory_root_before_not_generated(
             is_mount=lambda _path: True,
             is_symlink=lambda _path: False,
             exists=lambda _path: True,
-            is_dir=lambda path: path != root,
-            is_writable=lambda _path: True,
+            is_dir=lambda _path: True,
+            is_writable=lambda path: path != root,
         ),
     )
 

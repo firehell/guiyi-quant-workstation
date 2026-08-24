@@ -19,6 +19,7 @@ from app.market_data.subing_daily_watch import (
 )
 from app.market_data.subing_daily_watch_store import (
     SUBING_OBSERVATION_ROOT_ENV,
+    PathMountInspector,
     SubingDailyWatchStore,
     SubingDailyWatchStoreError,
     resolve_subing_observation_root,
@@ -41,12 +42,14 @@ class _FakeMountInspector:
         missing: tuple[Path, ...] = (),
         non_directories: tuple[Path, ...] = (),
         unwritable: tuple[Path, ...] = (),
+        unsearchable: tuple[Path, ...] = (),
     ) -> None:
         self.mounted = mounted
         self.symlinks = frozenset(symlinks)
         self.missing = frozenset(missing)
         self.non_directories = frozenset(non_directories)
         self.unwritable = frozenset(unwritable)
+        self.unsearchable = frozenset(unsearchable)
         self.mount_checks: list[Path] = []
         self.symlink_checks: list[Path] = []
         self.exists_checks: list[Path] = []
@@ -71,7 +74,24 @@ class _FakeMountInspector:
 
     def is_writable(self, path: Path) -> bool:
         self.writable_checks.append(path)
-        return path not in self.unwritable
+        return path not in self.unwritable and path not in self.unsearchable
+
+
+def test_path_mount_inspector_requires_write_and_search_permissions(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Catches a write-only directory being treated as usable for child entries."""
+    observed_modes: list[int] = []
+
+    def access(_path: Path, mode: int) -> bool:
+        observed_modes.append(mode)
+        return mode == os.W_OK | os.X_OK
+
+    monkeypatch.setattr("app.market_data.subing_daily_watch_store.os.access", access)
+
+    assert PathMountInspector().is_writable(tmp_path)
+    assert observed_modes == [os.W_OK | os.X_OK]
 
 
 @pytest.mark.parametrize(
@@ -180,8 +200,21 @@ def test_root_policy_returns_validated_path_without_creating_it() -> None:
             missing=(Path("/Volumes/Fake/observations/subing-daily-v1"),),
             unwritable=(Path("/Volumes/Fake/observations"),),
         ),
+        _FakeMountInspector(
+            unsearchable=(Path("/Volumes/Fake/observations/subing-daily-v1"),)
+        ),
+        _FakeMountInspector(
+            missing=(Path("/Volumes/Fake/observations/subing-daily-v1"),),
+            unsearchable=(Path("/Volumes/Fake/observations"),),
+        ),
     ],
-    ids=("root-is-file", "root-is-readonly", "nearest-parent-is-readonly"),
+    ids=(
+        "root-is-file",
+        "root-is-readonly",
+        "nearest-parent-is-readonly",
+        "root-is-unsearchable",
+        "nearest-parent-is-unsearchable",
+    ),
 )
 def test_root_policy_rejects_non_directory_or_unwritable_target(
     inspector: _FakeMountInspector,

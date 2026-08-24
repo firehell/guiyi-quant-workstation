@@ -76,7 +76,7 @@ class PathMountInspector:
         return path.is_dir()
 
     def is_writable(self, path: Path) -> bool:
-        return os.access(path, os.W_OK)
+        return os.access(path, os.W_OK | os.X_OK)
 
 
 @dataclass(frozen=True, slots=True)
