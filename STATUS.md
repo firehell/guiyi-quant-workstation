@@ -103,6 +103,22 @@
 
 ## SuBing Daily Watch V1 v1.8.1 integration
 
+以下 Gate 只记录各自已经发生的事实，任一状态不得由其他状态推导：
+
+| Gate | 状态 | 独立 evidence |
+|---|---|---|
+| `CODE_COMPLETE` | `complete` | code-complete implementation base=`ed14c5a1990f34121329b22d05e3c6b612935264`；最后一笔 Daily Watch 业务修改=`30ed956ea7a4a7db2193db61156030fea9489157` |
+| `TEST_COMPLETE` | `complete` | 下述 focused/full backend、Web、Mypy、Ruff、OpenSpec、secret 与 diff checks 已完成 |
+| `REVIEW_COMPLETE` | `complete` | 对 implementation base 到 `develop@421ec498a2af08ad804f03e9b8c4c84b5c16211f` 的独立 Standards/Spec Review 均为 `C0 / I0 / M0`，结论=`允许集成 develop` |
+| `INTEGRATED_DEVELOP` | `complete` | implementation base、全部 Review 修复与 `30ed956ea` 均为远端 `develop@421ec498a2af08ad804f03e9b8c4c84b5c16211f` 的祖先 |
+| `RELEASED` | `complete` | annotated `v1.8.1` peeled commit=`7e05d7d63f1e3437852fdcd56d6a3401fd7bcd16` |
+| `RUNTIME_PROMOTED` | `complete` | 本机五个 label 已绑定 clean/detached `v1.8.1@7e05d7d63f1e3437852fdcd56d6a3401fd7bcd16` |
+| `NATURAL_EVIDENCE_COMPLETE` | `pending` | 首次自然 after-market 尚未发生，Daily Watch current 仍为 `SUBING_DAILY_WATCH_NOT_GENERATED` |
+
+`RUNTIME_PROMOTED=complete` 不表示 `RUNTIME_READY`：当前只读 health 仍是
+`degraded / after_market_run_missed`。`NATURAL_EVIDENCE_COMPLETE` 必须等待真实自然盘后 artifact、API 与
+Web 验收，不得由 code、tests、Review、develop integration、release 或 Runtime promotion 补证。
+
 - SuBing Daily Watch V1 已随 v1.8.1 合入 main/release 并部署到精确 tag Runtime。2026-08-24 的窄修复补齐同 target 失败后 current
   fail-closed、目录及原子文件 mutation/replace 前扩展盘 root 重验、snapshot
   decision/reason/fact/price-side 语义校验，以及来自重构前实现的 5m/15m EMA/slope 独立 golden parity
