@@ -59,12 +59,14 @@ import {
   saveMarketWorkspacePreferences,
   toggleWatchlistSymbol,
 } from '@/utils/marketWorkspacePreferences'
+import { resolveSubingDailyWatchChartEntry } from '@/utils/marketChartEntry'
 
 const route = useRoute()
 const router = useRouter()
 const message = useMessage()
 const initialWorkspacePreferences = loadMarketWorkspacePreferences()
 const initialMainChartPreferences = loadMainChartPreferences()
+const dailyWatchEntry = resolveSubingDailyWatchChartEntry(route.query)
 const metadataLoading = ref(false)
 const error = ref<string | null>(null)
 const dominants = ref<DominantContractItem[]>([])
@@ -74,7 +76,9 @@ const fullscreen = ref(false)
 const researchDrawerOpen = ref(false)
 const researchSidebarOpen = ref(initialWorkspacePreferences.researchSidebarOpen)
 const watchlist = ref(initialWorkspacePreferences.watchlist)
-const selectedOverlay = ref<ResearchOverlayId>(initialMainChartPreferences.selectedOverlay)
+const selectedOverlay = ref<ResearchOverlayId>(
+  dailyWatchEntry?.overlay ?? initialMainChartPreferences.selectedOverlay,
+)
 const optionalEmaIndicators = ref<OptionalEmaIndicatorId[]>([
   ...initialMainChartPreferences.optionalEmaIndicators,
 ])
@@ -82,10 +86,10 @@ const research = ref<ProductResearchResponse | null>(null)
 const researchLoading = ref(false)
 const researchError = ref(false)
 const currentEventStates = ref<Record<number, EventState>>({})
-const symbol = ref(resolveInitialSymbol())
+const symbol = ref(dailyWatchEntry?.symbol ?? resolveInitialSymbol())
 const contract = ref(String(route.query.contract || '').toUpperCase())
-const seriesKind = ref<SeriesKind>(resolveInitialSeriesKind())
-const frequency = ref<MarketFrequency>(resolveInitialFrequency())
+const seriesKind = ref<SeriesKind>(dailyWatchEntry?.seriesKind ?? resolveInitialSeriesKind())
+const frequency = ref<MarketFrequency>(dailyWatchEntry?.frequency ?? resolveInitialFrequency())
 const followLatest = ref(true)
 const selectedSecondaryPanel = ref<SecondaryPanelId>(normalizeSecondaryPanelPreference(undefined))
 const selectedDominant = computed(() => dominants.value.find((item) => item.product === symbol.value))

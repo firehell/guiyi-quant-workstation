@@ -646,6 +646,69 @@ test('B1 journey narrows AG on the homepage before opening its verification view
   await expect(page.getByTestId('product-check-more')).not.toHaveAttribute('open')
 })
 
+test('exact Daily Watch chart entry is one-shot and leaves saved chart preferences unchanged', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem('guiyi.market.chart.preferences.v3', JSON.stringify({
+      version: 3,
+      selectedOverlay: 'htdy',
+      optionalEmaIndicators: [],
+      period: '5m',
+      realtimeFollow: false,
+    }))
+  })
+  await mockWorkspace(page, { json: research() })
+  await mockAlertMarkerSurface(page)
+
+  await page.goto('/market/chart?symbol=AG&series_kind=actual_dominant&frequency=15m&overlay=subing&entry=subing-daily-watch')
+
+  const periods = page.getByRole('group', { name: '周期' })
+  const overlays = page.getByRole('group', { name: 'Overlay' })
+  await expect(periods.getByRole('button', { name: '15m', exact: true })).toHaveClass(/n-button--primary-type/)
+  await expect(overlays.getByRole('button', { name: '苏冰', exact: true })).toHaveClass(/n-button--primary-type/)
+  await expect(page.getByRole('button', { name: '真实主力', exact: true })).toHaveClass(/n-button--primary-type/)
+  await expect(page).toHaveURL(/symbol=ag/)
+  expect(Object.fromEntries(new URL(page.url()).searchParams)).toEqual({
+    symbol: 'ag',
+    series_kind: 'actual_dominant',
+    frequency: '15m',
+  })
+  expect(await page.evaluate(() => JSON.parse(
+    window.localStorage.getItem('guiyi.market.chart.preferences.v3'),
+  ))).toEqual({
+    version: 3,
+    selectedOverlay: 'htdy',
+    optionalEmaIndicators: [],
+    period: '5m',
+    realtimeFollow: false,
+  })
+
+  await overlays.getByRole('button', { name: '无', exact: true }).click()
+  await expect(overlays.getByRole('button', { name: '无', exact: true })).toHaveClass(/n-button--primary-type/)
+  await expect.poll(() => page.evaluate(() => JSON.parse(
+    window.localStorage.getItem('guiyi.market.chart.preferences.v3'),
+  ).selectedOverlay)).toBe('none')
+})
+
+test('normal Market chart URL still loads the saved non-SuBing overlay', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem('guiyi.market.chart.preferences.v3', JSON.stringify({
+      version: 3,
+      selectedOverlay: 'htdy',
+      optionalEmaIndicators: [],
+      period: '5m',
+      realtimeFollow: false,
+    }))
+  })
+  await mockWorkspace(page, { json: research() })
+  await mockAlertMarkerSurface(page)
+
+  await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=15m')
+
+  const overlays = page.getByRole('group', { name: 'Overlay' })
+  await expect(overlays.getByRole('button', { name: '火天大有', exact: true })).toHaveClass(/n-button--primary-type/)
+  await expect(overlays.getByRole('button', { name: '苏冰', exact: true })).not.toHaveClass(/n-button--primary-type/)
+})
+
 test('SuBing keeps the Market display identity separate from current-dominant research', async ({ page }) => {
   const marketRequests = []
   const researchRequests = []
