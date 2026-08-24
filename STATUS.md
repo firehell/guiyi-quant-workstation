@@ -189,4 +189,4 @@ Exact 命令见 `TESTING.md`。该协议只定义未来 read-only Gate，不构�
   `docs/ARCHITECTURE.md`；命令看 `TESTING.md`。
 - 已完成 spec/plan/task 与逐次 release/promotion 流水只从 Git history、`CHANGELOG.md`、tag 和 commit
   追溯，不作为 active surface。
-- 最小下一步：按新任务从已批准的四系统 implementation plan Task 2 恢复工程实施，不触碰 Runtime。
+- 最小下一步：按新任务从已批准的四系统 implementation plan Task 1 恢复工程实施，不触碰 Runtime。
