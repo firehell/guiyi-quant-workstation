@@ -40,9 +40,12 @@ def test_dispatcher_routes_htdy_to_one_observer_audience_request() -> None:
     transport = RecordingTransport()
     dispatcher = AlertNotificationDispatcher(transport)
 
-    dispatcher.send(_message())
+    accepted = dispatcher.send(_message())
 
     assert len(transport.deliveries) == 1
+    assert accepted == ProviderAcceptance(
+        "0123456789abcdef0123456789abcdef"
+    )
     delivery = transport.deliveries[0]
     assert delivery.audience == ALERT_AUDIENCE_HTDY_OBSERVERS
     assert delivery.title == "归一量化 火天大有"

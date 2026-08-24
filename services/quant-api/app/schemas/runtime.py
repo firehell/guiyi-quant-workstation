@@ -70,6 +70,18 @@ class RuntimeAlertHealth(BaseModel):
     last_heartbeat_at: str | None = None
     enabled_rule_count: int = 0
     scope_product_count: int = 0
+    processing_state: str = "unobserved"
+    notification_state: str = "unobserved"
+    last_processed_bar_at: str | None = None
+    last_processing_success_at: str | None = None
+    last_processing_failure_at: str | None = None
+    processing_error_type: str | None = None
+    last_event_at: str | None = None
+    last_transport_attempt_at: str | None = None
+    last_provider_accepted_at: str | None = None
+    last_notification_failure_at: str | None = None
+    notification_error_type: str | None = None
+    consecutive_notification_failures: int = 0
     error_type: str | None = None
 
 

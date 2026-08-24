@@ -9,14 +9,18 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, DecimalException
 import json
 import logging
-from typing import Protocol
+from typing import Protocol, cast
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.alerts.evaluators import AlertEvaluation, AlertEvaluator
 from app.alerts.models import AlertRule
-from app.alerts.notification import AlertNotificationMessage, AlertNotificationSender
+from app.alerts.notification import (
+    AlertNotificationMessage,
+    AlertNotificationSender,
+    ProviderAcceptance,
+)
 from app.alerts.registry import HTDY_RULE, SUBING_RULE, get_alert_rule_definition
 from app.alerts.service import AlertEventCreate, AlertService
 from app.market_data.aggregation import SessionWindow, bucket_window_for_bar
@@ -60,6 +64,11 @@ class AlertHeartbeatStore(Protocol):
     def write(self, payload: dict[str, object], *, ttl_seconds: int) -> None: ...
 
 
+class AlertRuntimeStatusStore(Protocol):
+    def read(self) -> dict[str, object]: ...
+    def write(self, payload: dict[str, object]) -> None: ...
+
+
 AlertSessionFactory = Callable[[], AbstractContextManager[Session]]
 AlertMarketReadFactory = Callable[[Session], MarketReadService]
 AlertSubingReadFactory = Callable[[Session], SubingReadService]
@@ -86,6 +95,7 @@ class AlertRuntime:
         taxonomy: Mapping[str, ProductTaxonomyEntry],
         message_source: AlertMessageSource | None = None,
         heartbeat_store: AlertHeartbeatStore | None = None,
+        runtime_status_store: AlertRuntimeStatusStore | None = None,
         clock: Callable[[], datetime] | None = None,
         stop_requested: Callable[[], bool] | None = None,
     ) -> None:
@@ -100,6 +110,8 @@ class AlertRuntime:
         self._taxonomy = dict(taxonomy)
         self.message_source = message_source
         self.heartbeat_store = heartbeat_store
+        self.runtime_status_store = runtime_status_store
+        self._runtime_status: dict[str, object] | None = None
         self.clock = clock or (lambda: datetime.now(UTC))
         self.stop_requested = stop_requested or (lambda: False)
 
@@ -136,6 +148,9 @@ class AlertRuntime:
             return
 
         messages: list[AlertNotificationMessage] = []
+        event_count = 0
+        notification_preparation_failures: list[str] = []
+        processing_error_type: str | None = None
         try:
             with self._session_factory() as session:
                 try:
@@ -187,9 +202,13 @@ class AlertRuntime:
                             )
                             if created is None:
                                 continue
+                            event_count += 1
                             taxonomy = self._taxonomy.get(symbol)
                             if taxonomy is None:
                                 _LOGGER.warning("ALERT_PRODUCT_NAME_UNAVAILABLE")
+                                notification_preparation_failures.append(
+                                    "ALERT_PRODUCT_NAME_UNAVAILABLE"
+                                )
                                 continue
                             messages.append(
                                 AlertNotificationMessage(
@@ -205,22 +224,61 @@ class AlertRuntime:
                                     ),
                                 )
                             )
-                        except Exception:  # noqa: BLE001 - isolate each fixed rule
+                        except Exception as exc:  # noqa: BLE001 - isolate each fixed rule
                             if session.in_transaction():
                                 session.rollback()
+                            processing_error_type = processing_error_type or type(exc).__name__
                             _LOGGER.warning("ALERT_RULE_PROCESSING_FAILED")
                 finally:
                     if session.in_transaction():
                         session.rollback()
-        except Exception:  # noqa: BLE001 - DB/session failure must not send
+        except Exception as exc:  # noqa: BLE001 - DB/session failure must not send
+            processing_error_type = type(exc).__name__
             _LOGGER.warning("ALERT_PROCESSING_FAILED")
-            return
+
+        if event_count:
+            self._update_runtime_status(last_event_at=_iso_timestamp(processing_now))
+        for error_type in notification_preparation_failures:
+            self._record_notification_failure(
+                at=processing_now,
+                error_type=error_type,
+            )
+        if processing_error_type is None:
+            self._update_runtime_status(
+                last_processed_bar_at=_iso_timestamp(event_bar.bar_end),
+                last_processing_success_at=_iso_timestamp(processing_now),
+                processing_error_type=None,
+            )
+        else:
+            self._update_runtime_status(
+                last_processed_bar_at=_iso_timestamp(event_bar.bar_end),
+                last_processing_failure_at=_iso_timestamp(processing_now),
+                processing_error_type=processing_error_type,
+            )
+            if not messages:
+                return
 
         for message in messages:
+            self._update_runtime_status(
+                last_transport_attempt_at=_iso_timestamp(processing_now)
+            )
             try:
-                self._sender.send(message)
-            except Exception:  # noqa: BLE001 - committed Event is never retried
+                acceptance = self._sender.send(message)
+                if not isinstance(acceptance, ProviderAcceptance):
+                    raise RuntimeError("ALERT_NOTIFICATION_ACCEPTANCE_INVALID")
+            except Exception as exc:  # noqa: BLE001 - committed Event is never retried
+                self._record_notification_failure(
+                    at=processing_now,
+                    error_type=type(exc).__name__,
+                )
                 _LOGGER.warning("ALERT_NOTIFICATION_FAILED")
+            else:
+                self._update_runtime_status(
+                    last_provider_accepted_at=_iso_timestamp(processing_now),
+                    last_notification_failure_at=None,
+                    notification_error_type=None,
+                    consecutive_notification_failures=0,
+                )
 
     def _evaluate_rule(
         self,
@@ -374,6 +432,106 @@ class AlertRuntime:
         if now.tzinfo is None or now.utcoffset() is None:
             raise RuntimeError("ALERT_RUNTIME_CLOCK_INVALID")
         return now.astimezone(UTC)
+
+    def _record_notification_failure(
+        self,
+        *,
+        at: datetime,
+        error_type: str,
+    ) -> None:
+        status = self._current_runtime_status()
+        self._update_runtime_status(
+            last_notification_failure_at=_iso_timestamp(at),
+            notification_error_type=error_type,
+            consecutive_notification_failures=(
+                cast(int, status["consecutive_notification_failures"]) + 1
+            ),
+        )
+
+    def _current_runtime_status(self) -> dict[str, object]:
+        if self._runtime_status is None:
+            if self.runtime_status_store is None:
+                self._runtime_status = empty_alert_runtime_status()
+            else:
+                self._runtime_status = self.runtime_status_store.read()
+        return self._runtime_status
+
+    def _update_runtime_status(self, **changes: object) -> None:
+        if self.runtime_status_store is None:
+            return
+        updated = {**self._current_runtime_status(), **changes}
+        normalized = validate_alert_runtime_status(updated)
+        self.runtime_status_store.write(normalized)
+        self._runtime_status = normalized
+
+
+_RUNTIME_STATUS_FIELDS = frozenset(
+    {
+        "schema_version",
+        "last_processed_bar_at",
+        "last_processing_success_at",
+        "last_processing_failure_at",
+        "processing_error_type",
+        "last_event_at",
+        "last_transport_attempt_at",
+        "last_provider_accepted_at",
+        "last_notification_failure_at",
+        "notification_error_type",
+        "consecutive_notification_failures",
+    }
+)
+_RUNTIME_STATUS_TIMESTAMP_FIELDS = _RUNTIME_STATUS_FIELDS - {
+    "schema_version",
+    "processing_error_type",
+    "notification_error_type",
+    "consecutive_notification_failures",
+}
+
+
+def empty_alert_runtime_status() -> dict[str, object]:
+    return {
+        "schema_version": 1,
+        "last_processed_bar_at": None,
+        "last_processing_success_at": None,
+        "last_processing_failure_at": None,
+        "processing_error_type": None,
+        "last_event_at": None,
+        "last_transport_attempt_at": None,
+        "last_provider_accepted_at": None,
+        "last_notification_failure_at": None,
+        "notification_error_type": None,
+        "consecutive_notification_failures": 0,
+    }
+
+
+def validate_alert_runtime_status(
+    payload: Mapping[str, object],
+) -> dict[str, object]:
+    if set(payload) != _RUNTIME_STATUS_FIELDS or type(payload.get("schema_version")) is not int:
+        raise ValueError("ALERT_RUNTIME_STATUS_INVALID")
+    if payload["schema_version"] != 1:
+        raise ValueError("ALERT_RUNTIME_STATUS_INVALID")
+    normalized = dict(payload)
+    for field in _RUNTIME_STATUS_TIMESTAMP_FIELDS:
+        value = payload[field]
+        if value is not None:
+            if not isinstance(value, str):
+                raise ValueError("ALERT_RUNTIME_STATUS_INVALID")
+            normalized[field] = _iso_timestamp(datetime.fromisoformat(value))
+    for field in ("processing_error_type", "notification_error_type"):
+        value = payload[field]
+        if value is not None and (not isinstance(value, str) or not value.strip()):
+            raise ValueError("ALERT_RUNTIME_STATUS_INVALID")
+    count = payload["consecutive_notification_failures"]
+    if type(count) is not int or count < 0:
+        raise ValueError("ALERT_RUNTIME_STATUS_INVALID")
+    return normalized
+
+
+def _iso_timestamp(value: datetime) -> str:
+    if value.tzinfo is None or value.utcoffset() is None:
+        raise ValueError("ALERT_RUNTIME_STATUS_INVALID")
+    return value.astimezone(UTC).isoformat()
 
 
 def _event_session_window(

@@ -83,6 +83,18 @@ def test_runtime_health_endpoint_exposes_market_runtime_components(monkeypatch, 
         "last_heartbeat_at": None,
         "enabled_rule_count": 0,
         "scope_product_count": 0,
+        "processing_state": "unobserved",
+        "notification_state": "unobserved",
+        "last_processed_bar_at": None,
+        "last_processing_success_at": None,
+        "last_processing_failure_at": None,
+        "processing_error_type": None,
+        "last_event_at": None,
+        "last_transport_attempt_at": None,
+        "last_provider_accepted_at": None,
+        "last_notification_failure_at": None,
+        "notification_error_type": None,
+        "consecutive_notification_failures": 0,
         "error_type": None,
     }
 
@@ -196,6 +208,18 @@ def test_alert_health_missing_stale_and_fresh_heartbeat(monkeypatch, tmp_path) -
         "last_heartbeat_at": now.isoformat(),
         "enabled_rule_count": 1,
         "scope_product_count": 2,
+        "processing_state": "unobserved",
+        "notification_state": "unobserved",
+        "last_processed_bar_at": None,
+        "last_processing_success_at": None,
+        "last_processing_failure_at": None,
+        "processing_error_type": None,
+        "last_event_at": None,
+        "last_transport_attempt_at": None,
+        "last_provider_accepted_at": None,
+        "last_notification_failure_at": None,
+        "notification_error_type": None,
+        "consecutive_notification_failures": 0,
         "error_type": None,
     }
     rendered = json.dumps(fresh, ensure_ascii=False)
@@ -230,6 +254,92 @@ def test_alert_health_accepts_v2_heartbeat_counts() -> None:
     assert alert["status"] == "ok"
     assert alert["enabled_rule_count"] == 2
     assert alert["scope_product_count"] == 1
+
+
+def test_alert_health_derives_latest_processing_and_notification_outcomes() -> None:
+    now = datetime(2026, 8, 14, 2, 45, tzinfo=UTC)
+    heartbeat = json.dumps(
+        {
+            "generated_at": now.isoformat(),
+            "available": True,
+            "enabled_rule_count": 2,
+            "scope_product_count": 1,
+        }
+    )
+    healthy_status = json.dumps(
+        {
+            "schema_version": 1,
+            "last_processed_bar_at": (now - timedelta(seconds=2)).isoformat(),
+            "last_processing_success_at": now.isoformat(),
+            "last_processing_failure_at": (now - timedelta(minutes=1)).isoformat(),
+            "processing_error_type": None,
+            "last_event_at": now.isoformat(),
+            "last_transport_attempt_at": now.isoformat(),
+            "last_provider_accepted_at": now.isoformat(),
+            "last_notification_failure_at": None,
+            "notification_error_type": None,
+            "consecutive_notification_failures": 0,
+        }
+    )
+    failed_status = json.dumps(
+        {
+            "schema_version": 1,
+            "last_processed_bar_at": (now - timedelta(seconds=2)).isoformat(),
+            "last_processing_success_at": (now - timedelta(minutes=2)).isoformat(),
+            "last_processing_failure_at": (now - timedelta(minutes=1)).isoformat(),
+            "processing_error_type": "RuntimeError",
+            "last_event_at": (now - timedelta(minutes=2)).isoformat(),
+            "last_transport_attempt_at": (now - timedelta(minutes=1)).isoformat(),
+            "last_provider_accepted_at": (now - timedelta(minutes=2)).isoformat(),
+            "last_notification_failure_at": (now - timedelta(minutes=1)).isoformat(),
+            "notification_error_type": "NotificationTransportError",
+            "consecutive_notification_failures": 2,
+        }
+    )
+    TestingSessionLocal = _session_factory()
+
+    with TestingSessionLocal() as session:
+        healthy = build_runtime_health(
+            session,
+            redis_factory=lambda: FakeRedis(
+                values={
+                    "alert:heartbeat": heartbeat,
+                    "alert:runtime-status": healthy_status,
+                }
+            ),
+            now=now,
+            live_runtime_enabled=False,
+            alert_runtime_enabled=True,
+            notification_transport_configured=True,
+            after_market_status_path=None,
+        )
+        failed = build_runtime_health(
+            session,
+            redis_factory=lambda: FakeRedis(
+                values={
+                    "alert:heartbeat": heartbeat,
+                    "alert:runtime-status": failed_status,
+                }
+            ),
+            now=now,
+            live_runtime_enabled=False,
+            alert_runtime_enabled=True,
+            notification_transport_configured=True,
+            after_market_status_path=None,
+        )
+
+    healthy_alert = healthy["components"]["alert"]
+    assert healthy_alert["status"] == "ok"
+    assert healthy_alert["processing_state"] == "ok"
+    assert healthy_alert["notification_state"] == "provider_accepted"
+    failed_alert = failed["components"]["alert"]
+    assert failed_alert["status"] == "degraded"
+    assert failed_alert["processing_state"] == "failed"
+    assert failed_alert["notification_state"] == "failed"
+    assert failed_alert["processing_error_type"] == "RuntimeError"
+    assert failed_alert["notification_error_type"] == "NotificationTransportError"
+    assert failed_alert["consecutive_notification_failures"] == 2
+    assert "provider_reference" not in json.dumps(failed_alert)
 
 
 def test_alert_health_structural_transport_is_ready_from_process_environment(

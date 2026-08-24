@@ -27,6 +27,7 @@ from sqlalchemy.orm import Session
 from app.alerts.notification_composition import notification_transport_status_from_env
 from app.alerts.notification_config import NOTIFICATION_CONFIG_ENV
 from app.alerts.pushplus import PUSHPLUS_TRANSPORT
+from app.alerts.runtime import validate_alert_runtime_status
 from app.redis_connections import get_redis_connection
 from app.core.env import PROJECT_ROOT
 from app.market_data.after_market import public_after_market_status
@@ -167,6 +168,18 @@ def _collect_alert_health(
         "last_heartbeat_at": None,
         "enabled_rule_count": 0,
         "scope_product_count": 0,
+        "processing_state": "unobserved",
+        "notification_state": "unobserved",
+        "last_processed_bar_at": None,
+        "last_processing_success_at": None,
+        "last_processing_failure_at": None,
+        "processing_error_type": None,
+        "last_event_at": None,
+        "last_transport_attempt_at": None,
+        "last_provider_accepted_at": None,
+        "last_notification_failure_at": None,
+        "notification_error_type": None,
+        "consecutive_notification_failures": 0,
         "error_type": None,
     }
     if not configured_enabled:
@@ -228,7 +241,87 @@ def _collect_alert_health(
             **payload,
             "error_type": "alert_unavailable",
         }
-    return {"status": RUNTIME_STATUS_OK, **payload}
+    try:
+        runtime_status = _json_mapping(connection.get("alert:runtime-status"))
+        if runtime_status is not None:
+            runtime_status = validate_alert_runtime_status(runtime_status)
+    except Exception:  # noqa: BLE001 - public health stays sanitized
+        return {
+            "status": RUNTIME_STATUS_DEGRADED,
+            **payload,
+            "error_type": "alert_runtime_status_invalid",
+        }
+    if runtime_status is None:
+        return {"status": RUNTIME_STATUS_OK, **payload}
+    observation = _alert_runtime_observation(runtime_status)
+    observed_status = (
+        RUNTIME_STATUS_DEGRADED
+        if "failed"
+        in {observation["processing_state"], observation["notification_state"]}
+        else RUNTIME_STATUS_OK
+    )
+    return {"status": observed_status, **payload, **observation}
+
+
+def _alert_runtime_observation(
+    runtime_status: Mapping[str, object],
+) -> dict[str, object]:
+    processing_success = _optional_timestamp(
+        runtime_status["last_processing_success_at"]
+    )
+    processing_failure = _optional_timestamp(
+        runtime_status["last_processing_failure_at"]
+    )
+    if processing_success is None and processing_failure is None:
+        processing_state = "unobserved"
+    elif processing_failure is not None and (
+        processing_success is None or processing_failure >= processing_success
+    ):
+        processing_state = "failed"
+    else:
+        processing_state = "ok"
+
+    provider_accepted = _optional_timestamp(
+        runtime_status["last_provider_accepted_at"]
+    )
+    notification_failure = _optional_timestamp(
+        runtime_status["last_notification_failure_at"]
+    )
+    if provider_accepted is None and notification_failure is None:
+        notification_state = "unobserved"
+    elif notification_failure is not None and (
+        provider_accepted is None or notification_failure >= provider_accepted
+    ):
+        notification_state = "failed"
+    else:
+        notification_state = "provider_accepted"
+
+    return {
+        "processing_state": processing_state,
+        "notification_state": notification_state,
+        "last_processed_bar_at": runtime_status["last_processed_bar_at"],
+        "last_processing_success_at": runtime_status[
+            "last_processing_success_at"
+        ],
+        "last_processing_failure_at": runtime_status[
+            "last_processing_failure_at"
+        ],
+        "processing_error_type": runtime_status["processing_error_type"],
+        "last_event_at": runtime_status["last_event_at"],
+        "last_transport_attempt_at": runtime_status[
+            "last_transport_attempt_at"
+        ],
+        "last_provider_accepted_at": runtime_status[
+            "last_provider_accepted_at"
+        ],
+        "last_notification_failure_at": runtime_status[
+            "last_notification_failure_at"
+        ],
+        "notification_error_type": runtime_status["notification_error_type"],
+        "consecutive_notification_failures": runtime_status[
+            "consecutive_notification_failures"
+        ],
+    }
 
 
 def _collect_live_market_health(
