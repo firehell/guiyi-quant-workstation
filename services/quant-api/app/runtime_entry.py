@@ -26,6 +26,7 @@ from app.market_data.after_market import build_after_market_updater
 from app.market_data.composition import (
     build_historical_data_manager,
     build_live_market_service,
+    build_subing_daily_watch_generator,
 )
 from app.market_data.historical_data_manager import HistoricalDataManager
 
@@ -35,6 +36,7 @@ ManagerFactory = Callable[[Any], HistoricalDataManager]
 AfterMarketFactory = Callable[..., Any]
 LiveServiceFactory = Callable[[Any], Any]
 AlertRuntimeFactory = Callable[[], Any]
+DailyWatchGeneratorFactory = Callable[[Any], Any]
 RollReconcilerFactory = Callable[[Any], Any]
 RollMarkerState = Callable[[], str]
 
@@ -84,8 +86,9 @@ def run_after_market(
     failure_notification: bool,
     roll_marker_state: RollMarkerState,
     roll_reconciler_factory: RollReconcilerFactory,
+    daily_watch_generator_factory: DailyWatchGeneratorFactory | None = None,
 ) -> dict[str, object]:
-    """Run Market maintenance, then the existing enabled-only roll follow-up."""
+    """Run Market maintenance, then isolated Runtime-only follow-ups."""
     with session_factory() as session:
         manager = manager_factory(session)
         market_result = after_market_factory(
@@ -93,6 +96,14 @@ def run_after_market(
             failure_notification=failure_notification,
         ).run()
     payload = market_result.as_payload()
+    if market_result.status == "passed" and daily_watch_generator_factory is not None:
+        try:
+            with session_factory() as daily_watch_session:
+                daily_watch_generator_factory(daily_watch_session).run(
+                    market_result.trading_day,
+                )
+        except Exception:  # noqa: BLE001 - sanitized, isolated follow-up
+            _LOGGER.warning("SUBING_DAILY_WATCH_FOLLOWUP_FAILED")
     if market_result.status == "passed" and roll_marker_state() == "enabled":
         try:
             with session_factory() as followup_session:
@@ -110,6 +121,9 @@ def main(
     after_market_factory: AfterMarketFactory = build_after_market_updater,
     live_service_factory: LiveServiceFactory = build_live_market_service,
     alert_runtime_factory: AlertRuntimeFactory = build_alert_runtime,
+    daily_watch_generator_factory: DailyWatchGeneratorFactory = (
+        build_subing_daily_watch_generator
+    ),
     roll_marker_state: RollMarkerState = execution_review_roll_marker_state,
     roll_reconciler_factory: RollReconcilerFactory = (
         build_execution_review_roll_reconciler
@@ -138,6 +152,7 @@ def main(
                 manager_factory=manager_factory,
                 after_market_factory=after_market_factory,
                 failure_notification=True,
+                daily_watch_generator_factory=daily_watch_generator_factory,
                 roll_marker_state=roll_marker_state,
                 roll_reconciler_factory=roll_reconciler_factory,
             )
