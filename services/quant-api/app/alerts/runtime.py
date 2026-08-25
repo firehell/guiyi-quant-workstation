@@ -22,11 +22,12 @@ from app.alerts.notification import (
     ProviderAcceptance,
 )
 from app.alerts.registry import HTDY_RULE, SUBING_RULE, get_alert_rule_definition
-from app.alerts.service import AlertEventCreate, AlertService
+from app.alerts.service import AlertEventCreate, AlertScopeError, AlertService
 from app.market_data.aggregation import SessionWindow, bucket_window_for_bar
 from app.market_data.domain import (
     BarFrequency,
     CanonicalBar,
+    INTRADAY_FREQUENCIES,
     SeriesKind,
     SeriesPageQuery,
     normalize_contract_for_symbol,
@@ -120,7 +121,7 @@ class AlertRuntime:
         self.stop_requested = stop_requested or (lambda: False)
 
     def run_forever(self) -> None:
-        """只消费启动后新到达的 completed 5m/15m Pub/Sub 消息。"""
+        """只消费启动后新到达的 completed 日内 Pub/Sub 消息。"""
         if self.message_source is None or self.heartbeat_store is None:
             raise RuntimeError("ALERT_RUNTIME_TRANSPORT_UNAVAILABLE")
         self.message_source.subscribe(_PATTERN)
@@ -165,13 +166,21 @@ class AlertRuntime:
                         .order_by(AlertRule.rule_code)
                         .execution_options(populate_existing=True)
                     ).all()
+                    service = AlertService(
+                        session,
+                        operational_products=tuple(
+                            sorted(self._operational_products)
+                        ),
+                    )
                     for rule in rules:
                         try:
                             definition = get_alert_rule_definition(rule.rule_code)
-                            if (
-                                event_frequency.value
-                                not in definition.input_frequencies
-                                or symbol not in set(rule.scope_products or [])
+                            if event_frequency.value not in definition.input_frequencies:
+                                continue
+                            if not service.rule_allows_event(
+                                rule,
+                                symbol=symbol,
+                                frequency=event_frequency.value,
                             ):
                                 continue
                             result = self._evaluate_rule(
@@ -184,12 +193,7 @@ class AlertRuntime:
                             )
                             if result is None:
                                 continue
-                            created = AlertService(
-                                session,
-                                operational_products=tuple(
-                                    sorted(self._operational_products)
-                                ),
-                            ).create_event(
+                            created = service.create_event(
                                 AlertEventCreate(
                                     rule_id=rule.id,
                                     symbol=symbol,
@@ -302,7 +306,12 @@ class AlertRuntime:
         processing_now: datetime,
     ) -> _RuleResult | None:
         if rule_code == HTDY_RULE.rule_code:
-            return self._evaluate_htdy(session, symbol=symbol, event_bar=event_bar)
+            return self._evaluate_htdy(
+                session,
+                symbol=symbol,
+                event_frequency=event_frequency,
+                event_bar=event_bar,
+            )
         if rule_code == SUBING_RULE.rule_code:
             return self._evaluate_subing(
                 session,
@@ -318,19 +327,25 @@ class AlertRuntime:
         session: Session,
         *,
         symbol: str,
+        event_frequency: BarFrequency,
         event_bar: CanonicalBar,
     ) -> _RuleResult | None:
         window = self._market_read_factory(session).bars_until(
             SeriesPageQuery(
                 SeriesKind.ACTUAL_DOMINANT,
                 symbol,
-                BarFrequency.M15,
+                event_frequency,
             ),
             trading_day=event_bar.trading_day,
             end=event_bar.bar_end,
             limit=32,
         )
-        if not _window_matches_event(window, symbol=symbol, event_bar=event_bar):
+        if not _window_matches_event(
+            window,
+            symbol=symbol,
+            event_frequency=event_frequency,
+            event_bar=event_bar,
+        ):
             return None
         evaluation = self._htdy_evaluator.evaluate(window)
         if (
@@ -340,7 +355,7 @@ class AlertRuntime:
             return None
         return _RuleResult(
             contract=window.contract,
-            frequency=BarFrequency.M15.value,
+            frequency=event_frequency.value,
             result_codes=evaluation.observation_types,
             lower_tf_confirmation=False,
         )
@@ -419,12 +434,32 @@ class AlertRuntime:
                     select(AlertRule).where(AlertRule.enabled.is_(True))
                 ).all()
                 enabled_rule_count = len(enabled)
-                scope = {
-                    symbol
-                    for rule in enabled
-                    for symbol in (rule.scope_products or [])
-                    if symbol in self._operational_products
-                }
+                service = AlertService(
+                    session,
+                    operational_products=tuple(
+                        sorted(self._operational_products)
+                    ),
+                )
+                scope: set[str] = set()
+                for rule in enabled:
+                    try:
+                        definition = get_alert_rule_definition(rule.rule_code)
+                        rule_scope = {
+                            symbol
+                            for symbol in self._operational_products
+                            if any(
+                                service.rule_allows_event(
+                                    rule,
+                                    symbol=symbol,
+                                    frequency=frequency,
+                                )
+                                for frequency in definition.input_frequencies
+                            )
+                        }
+                    except AlertScopeError:
+                        _LOGGER.warning("ALERT_RULE_SCOPE_INVALID")
+                        continue
+                    scope.update(rule_scope)
             finally:
                 if session.in_transaction():
                     session.rollback()
@@ -631,7 +666,7 @@ def _parse_event(
         if len(parts) != 4 or parts[:2] != ["live", "bar"]:
             return None
         frequency = BarFrequency(parts[3])
-        if frequency not in {BarFrequency.M5, BarFrequency.M15}:
+        if frequency not in INTRADAY_FREQUENCIES:
             return None
         symbol = normalize_symbol(parts[2])
         if not symbol:
@@ -671,12 +706,13 @@ def _window_matches_event(
     window: MarketReadWindow,
     *,
     symbol: str,
+    event_frequency: BarFrequency,
     event_bar: CanonicalBar,
 ) -> bool:
     return bool(
         window.symbol == symbol
         and window.series_kind == "actual_dominant"
-        and window.frequency == "15m"
+        and window.frequency == event_frequency.value
         and window.trading_day == event_bar.trading_day
         and window.cutoff == event_bar.bar_end
         and window.bars

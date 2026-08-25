@@ -97,12 +97,13 @@ def _window(
     trading_day: date = DAY,
     contract: str = "JM2609",
     cutoff: datetime | None = None,
+    frequency: str = "15m",
 ) -> MarketReadWindow:
     event_bar = _bar(bar_end, trading_day)
     return MarketReadWindow(
         symbol="jm",
         series_kind="actual_dominant",
-        frequency="15m",
+        frequency=frequency,
         trading_day=trading_day,
         contract=contract,
         cutoff=cutoff or bar_end,
@@ -230,12 +231,24 @@ def _seed_rule(
     rule_code: str,
     *,
     scope: tuple[str, ...] = ("jm",),
+    frequency_scope: dict[str, list[str]] | None = None,
     enabled: bool = True,
 ) -> AlertRule:
+    if rule_code == "htdy_original_15m":
+        scope_products: list[str] = []
+        scope_product_frequencies = (
+            frequency_scope
+            if frequency_scope is not None
+            else {symbol: ["15m"] for symbol in scope}
+        )
+    else:
+        scope_products = list(scope)
+        scope_product_frequencies = {}
     rule = AlertRule(
         rule_code=rule_code,
         enabled=enabled,
-        scope_products=list(scope),
+        scope_products=scope_products,
+        scope_product_frequencies=scope_product_frequencies,
     )
     session.add(rule)
     session.commit()
@@ -459,17 +472,25 @@ def _rule_codes(events: list[AlertEvent]) -> list[str]:
     return [event.rule.rule_code for event in events]
 
 
-def test_runtime_accepts_completed_5m_and_15m_channels() -> None:
-    assert _parse_event("live:bar:jm:5m", _payload()) is not None
-    assert _parse_event("live:bar:jm:15m", _payload()) is not None
-    assert _parse_event("live:bar:jm:30m", _payload()) is None
+@pytest.mark.parametrize("frequency", ("1m", "5m", "15m", "30m", "60m"))
+def test_runtime_accepts_each_completed_intraday_channel(frequency: str) -> None:
+    parsed = _parse_event(f"live:bar:jm:{frequency}", _payload())
+
+    assert parsed is not None
+    assert parsed[1].value == frequency
+
+
+@pytest.mark.parametrize("frequency", ("1d", "1w"))
+def test_runtime_rejects_daily_and_weekly_live_bar_channels(
+    frequency: str,
+) -> None:
+    assert _parse_event(f"live:bar:jm:{frequency}", _payload()) is None
 
 
 @pytest.mark.parametrize(
     ("channel", "payload"),
     (
         ("bad", _payload()),
-        ("live:bar:jm:1m", _payload()),
         ("live:bar:jm:15m:extra", _payload()),
         ("live:bar:jm:15m", "not-json"),
         ("live:bar:jm:15m", json.dumps({"bar_end": ORDINARY_END.isoformat()})),
@@ -1061,6 +1082,96 @@ def test_htdy_keeps_exact_event_cutoff_market_read_path(session: Session) -> Non
     assert kwargs == {"trading_day": DAY, "end": BOUNDARY_END, "limit": 32}
     events = _event_rows(session)
     assert events[0].result_codes == ["buy", "sell"]
+
+
+def test_htdy_uses_exact_frequency_pair_scope_before_market_read(
+    session: Session,
+) -> None:
+    _seed_rule(
+        session,
+        "htdy_original_15m",
+        frequency_scope={"jm": ["15m"]},
+    )
+    harness = _runtime(session)
+
+    harness.runtime.process_message("live:bar:jm:5m", _payload())
+
+    assert harness.market_read.calls == []
+    assert harness.htdy_evaluator.calls == []
+    assert _event_rows(session) == []
+    assert harness.sender.messages == []
+
+    harness.runtime.process_message("live:bar:jm:15m", _payload())
+
+    assert len(harness.market_read.calls) == 1
+    assert len(harness.htdy_evaluator.calls) == 1
+    assert [event.frequency for event in _event_rows(session)] == ["15m"]
+    assert [message.frequency for message in harness.sender.messages] == ["15m"]
+
+
+def test_htdy_enabled_frequency_pairs_evaluate_independently(
+    session: Session,
+) -> None:
+    _seed_rule(
+        session,
+        "htdy_original_15m",
+        frequency_scope={"jm": ["5m", "15m"]},
+    )
+    harness = _runtime(
+        session,
+        market_read_result=_window(
+            bar_end=BOUNDARY_END,
+            frequency="5m",
+        ),
+        event_end=BOUNDARY_END,
+    )
+
+    harness.runtime.process_message(
+        "live:bar:jm:5m",
+        _payload(bar_end=BOUNDARY_END),
+    )
+    harness.market_read.result = _window(
+        bar_end=BOUNDARY_END,
+        frequency="15m",
+    )
+    harness.runtime.process_message(
+        "live:bar:jm:15m",
+        _payload(bar_end=BOUNDARY_END),
+    )
+
+    assert [call[0].frequency for call in harness.market_read.calls] == [
+        BarFrequency.M5,
+        BarFrequency.M15,
+    ]
+    assert [window.frequency for window in harness.htdy_evaluator.calls] == [
+        "5m",
+        "15m",
+    ]
+    assert [event.frequency for event in _event_rows(session)] == ["5m", "15m"]
+    assert [message.frequency for message in harness.sender.messages] == [
+        "5m",
+        "15m",
+    ]
+
+
+def test_htdy_mixed_scope_authority_fails_before_evaluation(
+    session: Session,
+) -> None:
+    rule = _seed_rule(
+        session,
+        "htdy_original_15m",
+        frequency_scope={"jm": ["15m"]},
+    )
+    rule.scope_products = ["jm"]
+    session.commit()
+    harness = _runtime(session)
+
+    harness.runtime.process_message("live:bar:jm:15m", _payload())
+
+    assert harness.market_read.calls == []
+    assert harness.htdy_evaluator.calls == []
+    assert _event_rows(session) == []
+    assert harness.sender.messages == []
 
 
 def test_htdy_mismatched_event_cutoff_creates_no_event(session: Session) -> None:
@@ -1757,6 +1868,57 @@ def test_run_forever_uses_single_transport_and_fixed_heartbeat_contract(
         1,
         1,
     ]
+
+
+def test_heartbeat_counts_distinct_products_across_valid_rule_scopes(
+    session: Session,
+) -> None:
+    _seed_rule(
+        session,
+        "htdy_original_15m",
+        frequency_scope={"jm": ["5m", "15m"]},
+    )
+    _seed_rule(session, "subing_entry_signal_v1", scope=("ag",))
+    heartbeats = FakeHeartbeatStore()
+    harness = _runtime(session, operational_products=("jm", "ag"))
+    harness.runtime.heartbeat_store = heartbeats
+    now = datetime(2026, 8, 14, 0, 0, tzinfo=UTC)
+
+    harness.runtime._write_heartbeat(now)
+
+    assert heartbeats.writes == [
+        (
+            {
+                "generated_at": "2026-08-14T00:00:00+00:00",
+                "available": True,
+                "enabled_rule_count": 2,
+                "scope_product_count": 2,
+            },
+            30,
+        )
+    ]
+
+
+def test_heartbeat_does_not_union_or_count_mixed_scope_authority(
+    session: Session,
+) -> None:
+    rule = _seed_rule(
+        session,
+        "htdy_original_15m",
+        frequency_scope={"ag": ["15m"]},
+    )
+    rule.scope_products = ["jm"]
+    session.commit()
+    heartbeats = FakeHeartbeatStore()
+    harness = _runtime(session, operational_products=("jm", "ag"))
+    harness.runtime.heartbeat_store = heartbeats
+
+    harness.runtime._write_heartbeat(
+        datetime(2026, 8, 14, 0, 0, tzinfo=UTC)
+    )
+
+    assert heartbeats.writes[0][0]["enabled_rule_count"] == 1
+    assert heartbeats.writes[0][0]["scope_product_count"] == 0
 
 
 def test_session_fixture_uses_real_shanghai_anchor() -> None:
