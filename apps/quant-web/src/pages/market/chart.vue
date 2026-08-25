@@ -8,10 +8,8 @@ import KlineChart from '@/components/kline/KlineChart.vue'
 import { getEventStates } from '@/api/executionReview'
 import {
   getMarketDominants,
-  getJdjHistoricalEvents,
   getJdjStrategyHistoricalActions,
   getProductResearch,
-  getNStructureHistoricalEvents,
   getSubingHistoricalSignals,
   getSubingResearch,
 } from '@/api/market'
@@ -122,8 +120,6 @@ const {
   dispose: disposeHistoricalResearchMarkers,
 } = useHistoricalResearchMarkers({
   fetchSubing: getSubingHistoricalSignals,
-  fetchNStructure: getNStructureHistoricalEvents,
-  fetchJdj: getJdjHistoricalEvents,
   fetchJdjStrategy: getJdjStrategyHistoricalActions,
 })
 const {

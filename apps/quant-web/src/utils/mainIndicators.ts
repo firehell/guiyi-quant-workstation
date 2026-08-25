@@ -72,24 +72,8 @@ export const RESEARCH_OVERLAY_DEFINITIONS: readonly ResearchOverlayDefinition[] 
     historicalSource: 'subing',
   },
   {
-    id: 'n_structure',
-    label: 'N字',
-    supportedSeriesKinds: ['actual_dominant'],
-    supportedFrequencies: ['5m'],
-    mainIndicators: [],
-    historicalSource: 'n_structure',
-  },
-  {
-    id: 'jdj',
-    label: '日进斗金',
-    supportedSeriesKinds: ['actual_dominant'],
-    supportedFrequencies: ['1m'],
-    mainIndicators: ['ema_20'],
-    historicalSource: 'jdj',
-  },
-  {
     id: 'jdj_strategy',
-    label: '日进斗金策略',
+    label: '日进斗金参考回放',
     supportedSeriesKinds: ['actual_dominant'],
     supportedFrequencies: ['1m'],
     mainIndicators: [],
@@ -115,7 +99,7 @@ export function researchOverlayCapability(
   frequency: MarketFrequency,
 ): { supported: boolean; definition: ResearchOverlayDefinition } {
   const definition = overlayDefinitionsById.get(overlay)
-    ?? overlayDefinitionsById.get('subing')!
+    ?? overlayDefinitionsById.get('none')!
   return {
     definition,
     supported: definition.supportedSeriesKinds.includes(seriesKind)
@@ -253,7 +237,6 @@ export function visibleMainIndicatorsForOverlay(
     'ema_21',
     ...(optional.includes('ema_60') ? ['ema_60' as const] : []),
   ]
-  if (definition?.id === 'jdj') return [...definition.mainIndicators]
   if (definition?.id === 'htdy') return [...optional, ...definition.mainIndicators]
   return []
 }
@@ -366,10 +349,9 @@ function browserStorage(): Storage | null {
 
 function normalizeResearchOverlay(value: unknown): ResearchOverlayId {
   return value === 'none'
-    || value === 'n_structure'
-    || value === 'jdj'
+    || value === 'subing'
     || value === 'jdj_strategy'
     || value === 'htdy'
     ? value
-    : 'subing'
+    : 'none'
 }

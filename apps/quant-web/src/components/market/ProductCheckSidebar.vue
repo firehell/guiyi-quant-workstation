@@ -72,9 +72,7 @@ const overlayLabel = computed(() => {
   switch (props.selectedOverlay) {
     case 'none': return '当前未选择策略观察'
     case 'subing': return '苏冰品种研究'
-    case 'n_structure': return 'N 字结构研究'
-    case 'jdj': return '日进斗金 Candidate 研究'
-    case 'jdj_strategy': return '日进斗金策略参考'
+    case 'jdj_strategy': return '日进斗金参考回放'
     case 'htdy': return '火天大有观察'
   }
 })
@@ -158,14 +156,6 @@ function updateMoreOpen(event: Event) {
         @open-formal-event="(event, state) => emit('open-formal-event', event, state)"
         @toggle-subing-alert="(ruleCode, enabled) => emit('toggle-subing-alert', ruleCode, enabled)"
       />
-      <template v-else-if="selectedOverlay === 'n_structure'">
-        <strong>N 字结构历史研究</strong>
-        <p>Research-only 历史标记，无 Alert Scope。</p>
-      </template>
-      <template v-else-if="selectedOverlay === 'jdj'">
-        <strong>日进斗金 Candidate 历史研究</strong>
-        <p>Candidate 标记只读展示，无 Alert Scope。</p>
-      </template>
       <template v-else-if="selectedOverlay === 'jdj_strategy'">
         <strong>日进斗金策略 · Reference only</strong>
         <p>历史因果重放只读展示 reference action，不提供 Alert 开关。</p>

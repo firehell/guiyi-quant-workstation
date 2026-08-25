@@ -113,7 +113,7 @@ describe('Product Alert server-side scope', () => {
       'data-testid="product-check-observation"',
       'data-testid="product-check-participation"',
     )
-    for (const overlay of ['none', 'subing', 'n_structure', 'jdj', 'jdj_strategy', 'htdy']) {
+    for (const overlay of ['none', 'subing', 'jdj_strategy', 'htdy']) {
       assert.match(observationSource, new RegExp(`selectedOverlay === '${overlay}'`))
     }
     assert.doesNotMatch(observationSource, /<template v-else>/)

@@ -1,8 +1,6 @@
 import request from './request'
 import type {
   DominantContractListResponse,
-  JdjHistoricalRequest,
-  JdjHistoricalResponse,
   JdjStrategyHistoricalRequest,
   JdjStrategyHistoricalResponse,
   MarketBarsPageRequest,
@@ -13,8 +11,6 @@ import type {
   MarketReadState,
   MarketFrequency,
   MarketRadarResponse,
-  NStructureHistoricalRequest,
-  NStructureHistoricalResponse,
   MarketTrendFocusResponse,
   MarketTrendFocusWireResponse,
   ProductResearchResponse,
@@ -80,20 +76,6 @@ export function getSubingResearch(params: { symbol: string; frequency: SubingFre
 export function getSubingHistoricalSignals(params: SubingHistoricalSignalRequest) {
   return request.get<never, SubingHistoricalSignalResponse>(
     '/market/research/subing/history',
-    { params },
-  )
-}
-
-export function getNStructureHistoricalEvents(params: NStructureHistoricalRequest) {
-  return request.get<never, NStructureHistoricalResponse>(
-    '/market/research/n-structure/history',
-    { params },
-  )
-}
-
-export function getJdjHistoricalEvents(params: JdjHistoricalRequest) {
-  return request.get<never, JdjHistoricalResponse>(
-    '/market/research/jdj/history',
     { params },
   )
 }
