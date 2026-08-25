@@ -1,6 +1,6 @@
 # Market Structure V1 Design Spec
 
-**Status:** Reviewed — ready for implementation planning  
+**Status:** Reviewed design — canonical alignment amendment awaiting re-review  
 **Date:** 2026-08-25  
 **Target branch:** `research/market-structure-v1`  
 **Base:** `develop@ad30633da59668f5d9a3496238c4c15ec72e7aab`  
@@ -84,7 +84,6 @@ SeriesContext(
         series_or_contract, segment_start_trading_day,
     ),
     segment_coverage_end_trading_day=date,
-    tick_size=Decimal,
 )
 
 Sequence[BarInput]
@@ -111,7 +110,6 @@ Preconditions are enforced by the caller and checked again by the engine:
 - `bar_end` is timezone-aware UTC, strictly increasing, and unique;
 - bars are completed and lie inside the context segment;
 - OHLC values are finite `Decimal` values and satisfy `low <= open/close <= high`;
-- `tick_size > 0`, and every OHLC value is exactly aligned (`value % tick_size == 0`); the engine validates and never rounds;
 - every bar lies inside the supplied segment bounds.
 
 Per-bar DatasetKey/frequency consistency is the responsibility of `MarketDataService` and the authoritative segment loader because `CanonicalBar`/`BarInput` do not repeat physical DatasetKey. The engine does not claim to revalidate identity fields absent from the bar envelope.
@@ -145,7 +143,7 @@ ATR[13] = sum(TR[0:14]) / 14
 ATR[i] = (ATR[i-1] * 13 + TR[i]) / 14, for i > 13
 ```
 
-There is no explicit tick/digit quantization between operations; division, multiplication, ATR recursion, comparisons, and `range_position` all use the fixed 34-digit context above. Calculated values are serialized from that deterministic context as fixed-point strings with trailing zeros removed. Tests must prove identical facts, scores, and JSON when the caller's ambient Decimal precision/rounding is varied.
+There is no explicit price/digit quantization between operations; division, multiplication, ATR recursion, comparisons, and `range_position` all use the fixed 34-digit context above. Calculated values are serialized from that deterministic context as fixed-point strings with trailing zeros removed. Tests must prove identical facts, scores, and JSON when the caller's ambient Decimal precision/rounding is varied.
 
 The move filter is deterministic:
 
@@ -173,7 +171,7 @@ A high compares with the previous confirmed high; a low compares with the previo
 | high | greater / less / equal | `HH` / `LH` / `EH` |
 | low | greater / less / equal | `HL` / `LL` / `EL` |
 
-Equality is exact because tick alignment was validated. A first high or low has `label=null` until a same-kind predecessor exists.
+Equality is exact on the authoritative source Decimal values. The engine never guesses a market tick or imports the retired fee/margin `price_tick` field. A first high or low has `label=null` until a same-kind predecessor exists.
 
 The current structure snapshot contains:
 
@@ -190,7 +188,7 @@ Overall `status=ready` requires at least two confirmed highs and two confirmed l
 
 ### 5.4 Confirmed fact identity and provenance
 
-A confirmed fact contains kind, label, price, pivot/confirmation times, formula/policy ids, complete single-frequency logical identity, physical DatasetKey, stable segment identity, and tick size. Its id is the full lowercase SHA-256 of canonical JSON over exactly those fields. It never contains segment/coverage end.
+A confirmed fact contains kind, label, price, pivot/confirmation times, formula/policy ids, complete single-frequency logical identity, physical DatasetKey, and stable segment identity. Its id is the full lowercase SHA-256 of canonical JSON over exactly those fields. It never contains segment/coverage end.
 
 Canonical JSON uses lexicographically sorted keys, no insignificant whitespace, UTF-8, uppercase symbol/contract, lowercase frequency/enum values, ISO dates, UTC datetimes formatted as `YYYY-MM-DDTHH:MM:SS.ffffffZ`, and fixed-point Decimal strings with trailing zeros removed (`-0` becomes `0`). Source and calculation timestamps are excluded from the fact id.
 
@@ -266,7 +264,7 @@ Acceptance corpus minimum:
 - at least five label lifecycles per frequency with `first_seen_at` captured;
 - calibration has at least five and holdout at least two non-null active-leg observations per frequency;
 - at least 12 preview lifecycles, recorded as exploratory evidence only;
-- exact feed/series/contract, timezone, tick size, and logical-to-physical identity mapping.
+- exact feed/series/contract, timezone, Decimal string encoding, and logical-to-physical identity mapping.
 
 Each record has `evidence_tier=acceptance | exploratory`; only exact-series acceptance records enter metrics and there is no confidence weighting. Images support review but are not machine truth without matching structured observations.
 
@@ -287,7 +285,7 @@ Candidate id is `s{span}-a{factor_token}`, where factor tokens are exactly `0`, 
 
 ### A3. Mechanical scoring and selection
 
-Expected and predicted events match one-to-one on `(fixture_id, kind, label, pivot_time, price)` after validated tick alignment. An unmatched expected event is FN and an unmatched prediction is FP. Each `HH/LH/HL/LL` class uses `2TP/(2TP+FP+FN)`. A class with zero expected and predicted support is excluded from that frequency/split mean; a prediction-only class is included with F1 zero. An empty supported-class set is invalid evidence. Macro event F1 is the arithmetic mean of included class F1 values; equality labels are reported separately.
+Expected and predicted events match one-to-one on `(fixture_id, kind, label, pivot_time, price)` using exact Decimal strings from the same accepted feed. An unmatched expected event is FN and an unmatched prediction is FP. Each `HH/LH/HL/LL` class uses `2TP/(2TP+FP+FN)`. A class with zero expected and predicted support is excluded from that frequency/split mean; a prediction-only class is included with F1 zero. An empty supported-class set is invalid evidence. Macro event F1 is the arithmetic mean of included class F1 values; equality labels are reported separately.
 
 Active-leg observations are keyed by `(fixture_id, observed_at)` on a completed bar and compare the model state at that exact cutoff; each split's accuracy denominator is all of that split's acceptance observations with a non-null expected leg and must satisfy the per-frequency minima above. Range-position MAE uses only that split's acceptance observations with an explicit dashboard value. There is no imputation.
 
@@ -348,7 +346,7 @@ Stage D must explicitly update the approved capability manifest/guard and regist
 
 The application layer validates the immutable policy and approval manifest, then passes a typed policy and `SeriesContext` into the pure engine. Formula code never reads files. Missing, malformed, unapproved, aliased-to-unknown, or digest-mismatched policy fails closed.
 
-Required proof includes golden state fixtures; appended-prefix invariance; no dependency after `confirmed_at`; Decimal ATR/move behavior; equality/plateau/ambiguous/same-kind cases; tick and timestamp validation; deterministic preview winner; range invalidity; all status/reason mappings; canonical id serialization; all seven frequencies; and unchanged existing indicator/N/SuBing/JDJ/HTDY tests.
+Required proof includes golden state fixtures; appended-prefix invariance; no dependency after `confirmed_at`; Decimal ATR/move behavior; equality/plateau/ambiguous/same-kind cases; Decimal and timestamp validation; deterministic preview winner; range invalidity; all status/reason mappings; canonical id serialization; all seven frequencies; and unchanged existing indicator/N/SuBing/JDJ/HTDY tests.
 
 ### Stage B Gate
 
@@ -449,8 +447,6 @@ identity_mismatch
 segment_unresolved
 stale_resolver
 source_unavailable
-tick_size_unavailable
-tick_alignment_invalid
 unsupported_frequency
 unsupported_policy
 policy_digest_mismatch
@@ -472,7 +468,7 @@ The mapping is mutually exclusive:
 | otherwise, full valid calculation lacks two highs or two lows | insufficient | `structure_seed_incomplete` |
 | complete valid structure | ready | null |
 
-Tick, policy, invalid-bar, and time failures are unavailable when discovered during row calculation. `invalid_confirmed_range` is only `range_position.field_reason` / `breakout_state.field_reason`. Invalid client identity/policy/window/time is a 4xx before calculation. Expected insufficiency is never HTTP 500. Unexpected internal failures are logged without credentials or raw sensitive payloads and return a bounded 5xx.
+Policy, invalid-bar, and time failures are unavailable when discovered during row calculation. `invalid_confirmed_range` is only `range_position.field_reason` / `breakout_state.field_reason`. Invalid client identity/policy/window/time is a 4xx before calculation. Expected insufficiency is never HTTP 500. Unexpected internal failures are logged without credentials or raw sensitive payloads and return a bounded 5xx.
 
 ## 12. Security, data, and operational constraints
 
