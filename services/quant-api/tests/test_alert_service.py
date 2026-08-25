@@ -272,24 +272,6 @@ def test_duplicate_event_with_changed_result_attributes_fails_closed(
         service.create_event(replace(request, **{changed_field: changed_value}))
 
 
-def test_same_rule_symbol_and_bar_end_allows_distinct_frequencies(
-    session: Session,
-) -> None:
-    from app.alerts.service import AlertService
-
-    rule = seed_rule(session, "subing_entry_signal_v1")
-    service = AlertService(session, operational_products=("jm",))
-    first = service.create_event(event_request(rule.id, frequency="15m"))
-    second = service.create_event(event_request(rule.id, frequency="5m"))
-
-    assert first is not None
-    assert second is not None
-    assert {event.frequency for event in session.scalars(select(AlertEvent))} == {
-        "5m",
-        "15m",
-    }
-
-
 def test_create_event_requires_registry_frequency_and_trading_day(
     session: Session,
 ) -> None:

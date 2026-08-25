@@ -146,6 +146,7 @@ def isolated_postgres_engine() -> Iterator[Engine]:
         engine.dispose()
 
 
+@pytest.mark.isolated_postgresql
 def test_upgrade_transforms_only_htdy_scope_and_allows_frequency_identity(
     isolated_postgres_engine: Engine,
 ) -> None:
@@ -156,6 +157,10 @@ def test_upgrade_transforms_only_htdy_scope_and_allows_frequency_identity(
         for migration_path in MIGRATION_PATHS[:-1]:
             _run_upgrade(isolated_postgres_engine, schema, migration_path)
 
+        bar_end = datetime(2026, 8, 25, 2, 30, tzinfo=UTC)
+        detected_at = datetime(2026, 8, 25, 2, 30, 1, tzinfo=UTC)
+        notification_attempted_at = datetime(2026, 8, 25, 2, 30, 2, tzinfo=UTC)
+        created_at = datetime(2026, 8, 25, 2, 30, 3, tzinfo=UTC)
         with isolated_postgres_engine.begin() as connection:
             connection.exec_driver_sql(f'SET LOCAL search_path TO "{schema}"')
             connection.execute(
@@ -174,6 +179,35 @@ def test_upgrade_transforms_only_htdy_scope_and_allows_frequency_identity(
                     """
                 )
             )
+            rule_id = connection.scalar(
+                text("SELECT id FROM alert_rules WHERE rule_code = 'htdy_original_15m'")
+            )
+            existing_event_id = connection.scalar(
+                text(
+                    """
+                    INSERT INTO alert_events (
+                        rule_id, symbol, contract, trading_day, frequency,
+                        bar_end, result_codes, lower_tf_confirmation,
+                        detected_at, notification_attempted_at, created_at
+                    ) VALUES (
+                        :rule_id, 'jm', 'JM2609', :trading_day, '15m',
+                        :bar_end, ARRAY['buy']::varchar[], false,
+                        :detected_at, :notification_attempted_at, :created_at
+                    )
+                    RETURNING id
+                    """
+                ),
+                {
+                    "rule_id": rule_id,
+                    "trading_day": bar_end.date(),
+                    "bar_end": bar_end,
+                    "detected_at": detected_at,
+                    "notification_attempted_at": notification_attempted_at,
+                    "created_at": created_at,
+                },
+            )
+        assert isinstance(rule_id, int)
+        assert isinstance(existing_event_id, int)
 
         _run_upgrade(isolated_postgres_engine, schema, MIGRATION_PATHS[-1])
 
@@ -204,12 +238,35 @@ def test_upgrade_transforms_only_htdy_scope_and_allows_frequency_identity(
             assert subing.scope_products == ["ag"]
             assert subing.scope_product_frequencies == {}
 
-        bar_end = datetime(2026, 8, 25, 2, 30, tzinfo=UTC)
+            existing_events = connection.execute(
+                text(
+                    """
+                    SELECT id, rule_id, symbol, contract, trading_day, frequency,
+                           bar_end, result_codes, lower_tf_confirmation,
+                           detected_at, notification_attempted_at, created_at
+                    FROM alert_events
+                    ORDER BY id
+                    """
+                )
+            ).mappings().all()
+            assert len(existing_events) == 1
+            assert dict(existing_events[0]) == {
+                "id": existing_event_id,
+                "rule_id": rule_id,
+                "symbol": "jm",
+                "contract": "JM2609",
+                "trading_day": bar_end.date(),
+                "frequency": "15m",
+                "bar_end": bar_end,
+                "result_codes": ["buy"],
+                "lower_tf_confirmation": False,
+                "detected_at": detected_at,
+                "notification_attempted_at": notification_attempted_at,
+                "created_at": created_at,
+            }
+
         with isolated_postgres_engine.begin() as connection:
             connection.exec_driver_sql(f'SET LOCAL search_path TO "{schema}"')
-            rule_id = connection.scalar(
-                text("SELECT id FROM alert_rules WHERE rule_code = 'htdy_original_15m'")
-            )
             event_values = {
                 "rule_id": rule_id,
                 "symbol": "jm",
@@ -218,26 +275,9 @@ def test_upgrade_transforms_only_htdy_scope_and_allows_frequency_identity(
                 "bar_end": bar_end,
                 "result_codes": ["buy"],
                 "lower_tf_confirmation": False,
-                "detected_at": bar_end,
-                "notification_attempted_at": None,
+                "detected_at": detected_at,
+                "notification_attempted_at": notification_attempted_at,
             }
-            connection.execute(
-                text(
-                    """
-                    INSERT INTO alert_events (
-                        rule_id, symbol, contract, trading_day, frequency,
-                        bar_end, result_codes, lower_tf_confirmation,
-                        detected_at, notification_attempted_at
-                    ) VALUES (
-                        :rule_id, :symbol, :contract, :trading_day, '15m',
-                        :bar_end, ARRAY['buy']::varchar[],
-                        :lower_tf_confirmation, :detected_at,
-                        :notification_attempted_at
-                    )
-                    """
-                ),
-                event_values,
-            )
             connection.execute(
                 text(
                     """
@@ -255,6 +295,7 @@ def test_upgrade_transforms_only_htdy_scope_and_allows_frequency_identity(
                 ),
                 event_values,
             )
+            assert connection.scalar(text("SELECT COUNT(*) FROM alert_events")) == 2
 
         with pytest.raises(IntegrityError):
             with isolated_postgres_engine.begin() as connection:
@@ -276,6 +317,9 @@ def test_upgrade_transforms_only_htdy_scope_and_allows_frequency_identity(
                     ),
                     event_values,
                 )
+        with isolated_postgres_engine.connect() as connection:
+            connection.exec_driver_sql(f'SET search_path TO "{schema}"')
+            assert connection.scalar(text("SELECT COUNT(*) FROM alert_events")) == 2
     finally:
         with isolated_postgres_engine.begin() as connection:
             connection.exec_driver_sql(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
