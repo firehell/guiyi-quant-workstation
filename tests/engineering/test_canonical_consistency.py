@@ -168,7 +168,6 @@ def test_current_architecture_facts_are_explicit() -> None:
 
     assert "MarketDataService" in architecture
     assert "HistoricalDataManager" in architecture
-    assert "MainForceMirrorV2Service" in architecture
     assert "RQData" in architecture
     assert "auto_order=false" in project
     assert "active 60" in status
@@ -180,6 +179,78 @@ def test_current_architecture_facts_are_explicit() -> None:
         "schema、identity、主键单调唯一、OHLCV、session/frequency、coverage 和物理可读性",
     ):
         assert fact in data_contract
+
+
+def test_architecture_convergence_canonicals_describe_only_retained_surface() -> None:
+    canonical_paths = (
+        "AGENTS.md",
+        "STATUS.md",
+        "PROJECT_SOURCE.md",
+        "DECISIONS.md",
+        "README.md",
+        "TESTING.md",
+        "docs/ARCHITECTURE.md",
+        "docs/DEVELOPMENT.md",
+        "docs/INDICATOR_KERNEL.md",
+        "services/quant-api/README.md",
+    )
+    canonicals = {
+        relative: (ROOT / relative).read_text(encoding="utf-8")
+        for relative in canonical_paths
+    }
+    combined = "\n".join(canonicals.values())
+    agents = canonicals["AGENTS.md"]
+    project = canonicals["PROJECT_SOURCE.md"]
+    status = canonicals["STATUS.md"]
+    architecture = canonicals["docs/ARCHITECTURE.md"]
+    indicator_kernel = canonicals["docs/INDICATOR_KERNEL.md"]
+    backend_readme = canonicals["services/quant-api/README.md"]
+
+    assert "一个 SuBing 产品" in project
+    assert all(
+        projection in project
+        for projection in ("Daily Context", "Current Signal State", "Formal Event")
+    )
+    assert "operational universe × 七个正式周期" in project
+    assert "symbol × frequency" in agents
+    assert "无 | 苏冰 | 日进斗金参考回放 | 火天大有" in project
+    assert "N Structure 与 raw JDJ Candidate 只保留在内部研究面" in project
+    assert "Generic Robustness relationship metrics" in project
+    assert "pending prospective OOS" in status
+    assert "Alert Application Domain 仍只有 `alert_rules` 与 `alert_events` 两张表" in agents
+    assert "无逐收件人 DB 状态、retry、queue、replay、backfill、fallback 或订单路径" in agents
+    assert "RQAlpha 工作台是 local-only conditional keep" in project
+    assert "Execution Review roll" in status
+    assert "Alembic migration history" in project
+    assert "`futures_member_ranks` table identity" in project
+    assert "EMA/MACD/ATR/HTDY" in indicator_kernel
+    assert "MarketDataService" in architecture
+    assert "`guiyi research candidate-robustness`" in backend_readme
+
+    retired_active_terms = (
+        "MarketTrendFocus",
+        "MarketAttentionList",
+        "main-force-mirror",
+        "main_force_mirror",
+        "MainForceMirror",
+        "candidate-dossier",
+        "candidate-relationships",
+        "MFM Diagnostic",
+    )
+    assert all(term not in combined for term in retired_active_terms)
+
+    active_skills = tuple((ROOT / ".agents/skills").iterdir())
+    assert {path.name for path in active_skills if path.is_dir()} == {
+        "database-modeling",
+        "futures-data",
+        "market-kline-workbench",
+        "quant-backend",
+        "quant-frontend",
+        "ui-bugfix",
+    }
+    assert "main-force-mirror-futures" not in (
+        ROOT / ".agents/skills/quant-backend/SKILL.md"
+    ).read_text(encoding="utf-8")
 
 
 def test_futures_mirror_production_sources_have_no_test_only_injection() -> None:
