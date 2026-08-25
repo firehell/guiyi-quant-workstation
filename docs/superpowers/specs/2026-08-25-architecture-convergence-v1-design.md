@@ -1,8 +1,8 @@
 # 归一量化 Architecture Convergence V1 设计
 
-状态：Proposed（方向已由用户选择“方案 B”，本精确设计仍需审查）  
-日期：2026-08-25  
-设计基线：`develop@fd0777672c49a856b283a0f4653519c68a35cb38`  
+状态：Proposed（Architecture “方案 B”与本轮修订处置方向已获用户批准；本精确修订稿仍待 Gate A 独立审查与用户精确批准）
+日期：2026-08-25
+设计基线：`develop@af172e1bfa2722681ca67ffbdc8c5c0e895dddd8`
 任务等级：Lane 3 Program（产品收敛 + SuBing 信号口径 + HTDY Alert/migration 并行边界 + 大规模退役）
 
 关联且继续有效的 HTDY canonical：
@@ -10,13 +10,13 @@
 - `docs/superpowers/specs/2026-08-25-htdy-all-frequency-active60-design.md`
 - `docs/superpowers/plans/2026-08-25-htdy-all-frequency-active60.md`
 
-本设计不会撤回、改写或复制上述 HTDY 设计。它只规定 HTDY 实现完成后，Architecture Convergence V1 如何与其共存并收缩其他产品面。
+上述 HTDY 设计已由 PR `#208` 实现、完成独立 Review 并合入 `develop`。`v1.8.3` 的 production migration `20260825_0040`、release、Runtime promotion 与 Active60 × 七周期 production Scope 已在独立明确授权下完成；真实通知与 HTDY/SuBing 自然时点 evidence 仍是 pending。本设计只保护已部署的 HTDY 合同，不重做任何 migration、release、Runtime、Scope 或通知操作。
 
 ---
 
 ## 1. 决策摘要
 
-归一量化已经完成主要横向能力建设，进入架构收敛阶段。用户选择的“方案 B”固定为：
+归一量化已经完成主要横向能力建设，进入架构收敛阶段。用户选择的 Architecture “方案 B”固定为：
 
 ```text
 正式产品面收缩
@@ -27,7 +27,7 @@
 本次增加两项明确约束：
 
 1. **SuBing 从用户视角收敛为一个产品、一个入口、一个权威领域。**
-2. **HTDY 继续按已批准设计实现全品种、全正式周期图表显示，以及按 `symbol × frequency` 设置 Alert Scope。**
+2. **保护已部署的 HTDY 全品种、全正式周期图表显示与 `symbol × frequency` Alert Scope，不在本 Program 重新实现或逆转。**
 
 收敛后的正式产品主线固定为：
 
@@ -48,6 +48,8 @@
 - N Structure、原始 JDJ Candidate、Candidate Validation/Robustness 保留在内部研究面；
 - Market Trend Focus、Market Attention、Main Force Mirror、Five-Candidate Convergence 等退出 active 产品和代码面。
 
+用户本轮批准的“方案一”只指修订处置：取消 MFM 与 Market Trend Focus 尚未执行的 future research/evidence Gate，并将它们的 active code、HTTP、CLI、Web、tests、phase-specific protocol/report 完整退役，Git history 是唯一恢复面。这是维护面收敛决策，不是 empirical `STOP`/`ALLOW` 结论，也不将 Architecture “方案 B”重命名；本 Program 不运行也不补造对应 evidence。
+
 本设计不建立通用 Strategy 平台，不把 SuBing、HTDY、JDJ、N 强行适配到统一公式或统一事件模型。
 
 ---
@@ -56,25 +58,27 @@
 
 ### 2.1 当前 GitHub 基线
 
-当前 `develop` 已包含：
+当前 `develop@af172e1bfa2722681ca67ffbdc8c5c0e895dddd8` 已包含：
 
-- HTDY 全周期 × Active60 设计；
-- HTDY 全周期 × Active60 Implementation Plan；
+- HTDY 全周期 × Active60 实现，PR `#208` 已 Review 并合入；
+- `v1.8.3` 已 release 并 promotion 到精确 Runtime；
+- production Alembic 已在 `20260825_0040 (head)`，HTDY Scope 已是 Active60 × 七周期 `420 pairs`；
 - SuBing Daily Watch V1；
 - SuBing current-rank1 Factor/Signal/Lifecycle read model；
 - SuBing Formal AlertEvent 与 Execution Review；
 - SuBing Historical Overlay；
 - N、JDJ Candidate、JDJ Strategy Replay、MFM、Trend Focus、Candidate Convergence 等横向能力。
 
-当前代码仍是 HTDY 15m 实现基线：Web capability、Rule、evaluator、Runtime 与 product-level Scope 尚未完成全周期改造。用户已说明 HTDY 开发已开始，但本设计基线在 GitHub 上没有可见的 open implementation PR 或新的远端实现分支。因此：
+当前 HTDY 不再是 in-flight dependency。Architecture Convergence V1 的重叠任务直接以上述已集成、已部署合同为冻结基线：
 
 ```text
-GitHub canonical = 设计与 Plan 已批准，代码尚未进入 develop
-用户报告       = 实现正在其他可见性范围内进行
-处理方式       = 不重做 HTDY；收敛实现前必须发现并保护真实在途工作
+HTDY implementation = integrated develop / PR #208
+production state    = v1.8.3 + migration 0040 + Runtime + 420-pair Scope complete
+remaining Gates     = real notification + natural HTDY/SuBing evidence only
+program rule        = preserve behavior; no external operation replay
 ```
 
-如果执行 Architecture Convergence V1 时 HTDY 实现仍未进入 `develop`，所有会修改以下重叠文件的任务必须停止：
+任何修改以下重叠文件的任务都必须以已集成 HTDY 行为为 regression baseline：
 
 ```text
 apps/quant-web/src/pages/market/chart.vue
@@ -87,12 +91,7 @@ services/quant-api/app/alerts/*
 services/quant-api/app/schemas/alerts.py
 ```
 
-执行者必须选择其一：
-
-1. 等 HTDY implementation 合入 `develop` 后，从新 tip 创建收敛任务；
-2. 在用户明确确认的 HTDY implementation branch 上完成 rebase/整合，再独立 Review。
-
-不得从旧 `develop` 平行实现同一 HTDY 合同，也不得通过覆盖文件解决冲突。
+不得重写 HTDY evaluator、Scope/migration、Runtime trigger 或通知语义；不得从已完成 production 事实推导真实通知或自然 evidence 已完成。
 
 ### 2.2 SuBing 当前为何看起来是三个部分
 
@@ -182,10 +181,10 @@ Architecture Convergence V1 完成后：
 - 不把 Daily Watch artifact、current snapshot 与 AlertEvent 合并成一个存储；
 - 不新增消息队列、retry、replay、backfill、outbox 或逐人通知状态；
 - 不改变 Canonical、八表 Catalog、MainContractMap 或 MarketDataService；
-- 不删除 Alembic migration、accepted policy、pending prospective OOS baseline 或仍被 Gate 消费的 evidence；
+- 保留 retained SuBing/HTDY/N/JDJ/Validation/Robustness accepted policies、Alembic migration、universe 与 pending prospective OOS baseline/evidence；明确例外是用户已取消 Gate 的 MFM phase-specific protocol 以及已完成 Five-Candidate phase-specific protocol/report，它们随对应退役删除；
 - 不删除 RQAlpha 工作台；它在本阶段为 conditional keep；
 - 不修改 Execution Review roll 语义；是否退役自动 roll 是独立后续决策；
-- 不发布 `main`、不创建 tag、不切换 Runtime、不执行 production migration、不修改真实 Scope、不发送真实通知。
+- 本 Program 不发布 `main`、不创建 tag、不切换 Runtime、不执行新 production migration、不修改真实 Scope、不发送真实通知；已完成的 `v1.8.3/0040/420 pairs` 不重试。
 
 ---
 
@@ -486,9 +485,11 @@ SubingDailyWatch.vue
 interface SubingWorkbenchState {
   formal: CurrentFormalSignalsResponse | null
   formalEventStates: Record<number, EventState>
+  formalLoading: boolean
+  formalStale: boolean
   dailyWatch: SubingDailyWatchCurrentResponse | null
-  loading: boolean
-  stale: boolean
+  dailyLoading: boolean
+  dailyStale: boolean
 }
 ```
 
@@ -503,7 +504,9 @@ interface SubingWorkbenchState {
 - Formal API 失败时，Daily Watch 仍可显示；
 - Daily Watch 失败时，Formal Event 仍可处理；
 - 任一 source 已有成功快照时刷新失败，保留并标记 stale；
-- 每个 source 保留独立 generation guard；
+- Formal 继续由 `useCurrentFormalSignals.ts` 保留最后一次成功快照，刷新失败只标记 `formalStale=true`，不清空 `status/tradingDay/items`；
+- Formal 复用 `useCurrentFormalSignals.ts` 现有 generation，`useSubingWorkbench` 不得再包一层重复 Formal generation 或竞态判定；
+- Daily 保留自身独立 generation guard；
 - 一个统一 loading 状态不能覆盖 source-specific error。
 
 首页不再让用户判断“需要处理”和“苏冰今日观察”是否属于同一系统。
@@ -535,6 +538,15 @@ SuBing 专属 Alert 展示碎片
 5. SuBing Alert：当前品种 ON/OFF
 6. 折叠详情：contract、segment、source mode、calibration、typed unavailable
 ```
+
+`SubingPanel` 固定只产生 SuBing 行为：
+
+```ts
+emit('open-formal-event', event, state)
+emit('toggle-subing-alert', ruleCode, enabled)
+```
+
+`ProductCheckSidebar` 负责精确分支：`subing` 只渲染一个 `SubingPanel`，不再在“当前观察”、“提醒”和“更多研究”重复 SuBing；`htdy` 继续渲染 HTDY 观察与 current-frequency pair Scope；`jdj_strategy` 只显示 reference facts；`none` 无策略 Alert。Sidebar 只转发上述 emits，不允许将 HTDY Rule 传入 `SubingPanel` 或将 SuBing toggle 路由到 pair endpoint。
 
 它不重新计算任何 Factor、Signal 或 Lifecycle，只投影 `SubingReadSnapshot` 与 Alert DTO。
 
@@ -612,24 +624,24 @@ Architecture Convergence V1 不改变以下已批准合同：
 | Data Foundation / Canonical / Catalog / MDS | KEEP | 完整保留 | 可信事实链，不是横向冗余 |
 | Market Runtime / After-market / health | KEEP | 保留现有进程隔离 | 生命周期不同，合并进程收益低、风险高 |
 | Market Radar items/summary/sector/scatter | KEEP + REUSE | 唯一全市场研究 read model | 可复用一份事实驱动摘要、四象限和明细 |
-| Market Attention | DELETE | 删除组件、字段、规则与测试 | 与四象限/明细/Daily Watch 重复，语义模糊 |
+| Market Attention | DELETE | 删除组件、Radar `attention`、sector DTO `attention_count`、规则与测试；不重定义 | 与四象限/明细/Daily Watch 重复，语义模糊 |
 | Market Trend Focus | DELETE | 删除完整链路 | 已不是 active 首页产品，无 Runtime/Alert consumer |
 | SuBing | UNIFY | 一个产品、两个 Web 组件、三个内部投影 | 用户任务统一，事实边界仍准确 |
 | SuBing Candidate/OOS | INTERNALIZE | 只保留 CLI/evidence | 不作为日常 Web 产品 |
-| HTDY | KEEP + COMPLETE | 按已批准全品种全周期设计完成 | 用户明确要求，属于正式 Watcher |
+| HTDY | KEEP + PROTECT | 保护已部署的 Active60 × 七周期实现 | PR #208、migration/release/Runtime/Scope 已完成，本 Program 不重做外部操作 |
 | N Structure | INTERNALIZE | 删除 Web Overlay，保留 reducer/Policy/JDJ context/OOS | 有内部因果价值，无独立日常产品价值 |
 | raw JDJ Candidate | INTERNALIZE | 删除 Web Overlay，保留 Candidate/OOS | 避免 Candidate 与 Strategy Replay 混淆 |
 | JDJ Strategy Replay | KEEP + RENAME | “日进斗金参考回放” | 保留用户可检查的确定性参考动作 |
-| Candidate Validation / Robustness | KEEP INTERNAL | 保留 source-specific OOS 基础 | 仍服务候选研究可信度 |
-| Five-Candidate Dossier / Relationships | DELETE | 删除生成器、CLI、测试、完成性 reports | 只服务已完成阶段，不是通用 OOS 基础 |
-| Main Force Mirror V2 / Diagnostic | DELETE | 删除 Kernel、API、CLI、Web、tests、reports | 无日常闭环、无 Alert/Runtime/ER consumer，维护面过大 |
+| Candidate Validation / Robustness | KEEP INTERNAL | 保留 source-specific OOS 基础与 generic robustness relationship metrics/summary | 仍服务候选研究可信度 |
+| Five-Candidate Dossier / Relationships | DELETE | 删除 Five-Candidate generator、CLI、protocol/report 与 dedicated tests | 只服务已完成阶段，不得误删 generic Robustness relationship metrics |
+| Main Force Mirror V2 / Diagnostic | DELETE | 删除 Kernel、API、research/data CLI、Web、tests、active member-rank snapshot reader/builder/RQData provider 与 phase-specific protocol/report | 用户已取消未执行 evidence Gate；保留 Alembic migration/history 与仓库外已有 snapshot，不构成 empirical STOP/ALLOW |
 | RQAlpha local workbench | CONDITIONAL_KEEP | 本阶段保留 | 已有投入，下一 JDJ 任务必须产生真实使用；不继续横向扩建 |
 | Alert Domain | KEEP | 两表、one-shot 通知、两条 Rule | 当前个人项目足够，不扩消息基础设施 |
 | Execution Review | KEEP | 保留现有人工闭环 | 直接服务真实决策与复盘 |
 | Execution Review roll | DEFER | 本阶段不改 | 是否退役需独立业务决策与历史数据检查 |
 | `.agents/skills` 六个 active skill | KEEP | 保留 | 直接服务当前领域 |
 | 完成性 Spec/Plan/report | DELETE WHEN CLOSED | 吸收到 canonical 后删除 | Git history 已提供恢复 |
-| Alembic / accepted policy / OOS baseline | KEEP | 永不因“一次性”直接删除 | 属于重建、身份或未来 Gate 的事实资产 |
+| Retained accepted policy / Alembic / universe / OOS baseline | KEEP | 保留 SuBing/HTDY/N/JDJ/Validation/Robustness policy、migration history、universe 与 prospective OOS | 属于重建、身份或未来 Gate 的事实资产；MFM 与 Five-Candidate phase-specific protocol/report 是退役例外 |
 
 ---
 
@@ -672,7 +684,7 @@ HTDY 不增加第二个首页扫描器。HTDY 的正式 Event 可在 SuBing Work
 ```text
 none
 subing
-jdj_strategy_reference
+jdj_strategy
 htdy
 ```
 
@@ -692,7 +704,7 @@ n_structure
 jdj raw candidate
 ```
 
-旧 localStorage 中被删除的 Overlay 值读取时统一迁移为 `subing`，不得报错或继续发起旧 HTTP 请求。
+旧 localStorage 中 `n_structure`、raw `jdj` 和任何 unknown Overlay 值读取时统一迁移为 `none`，不得报错、默认选中 SuBing 或继续发起旧 HTTP 请求。日进斗金稳定 id 始终是 `jdj_strategy`，不新增 `jdj_strategy_reference` 别名。
 
 详情页 Overlay 分支必须显式穷举：
 
@@ -744,12 +756,15 @@ switch (selectedOverlay) {
 删除：
 
 - read model/domain；
-- API/schema；
+- API/schema，包括 Radar response 的 `attention` 和 sector DTO 的 `attention_count`；
+- 任何 Trend Focus CLI 或 phase-specific protocol/report（当前树未发现，执行时仍需搜索确认）；
 - Web component/client/type；
 - unit/E2E；
 - canonical 引用。
 
 在删除前必须证明没有 CLI、Runtime、Alert 或 internal Candidate consumer。
+
+Attention 的 `attention`/`attention_count` 是删除对象，不重定义为新排名、新评分或其他名称的相同计算。Trend Focus 尚未执行的 future research/evidence Gate 已取消；退役不运行该 Gate，也不形成 empirical `STOP`/`ALLOW`。
 
 ### 10.3 MFM：完整退役
 
@@ -760,10 +775,17 @@ quant-core indicator/registry/policy exports
 Market service/composition/API/schema
 app.research.main_force
 research CLI command/request/payload/parser
+data CLI `member-rank snapshot` parser/dispatch
+active member-rank snapshot reader/builder and RQData member-rank provider
 Web composable/presentation/panel
 unit/E2E/golden/reference
 MFM-specific reports and active canonical
+data/research_protocols/main_force_mirror_diagnostic_phase_a_v1.json
 ```
+
+`services/quant-api/app/research/main_force/` 、MFM research CLI 所有 command/request/payload/parser、`data member-rank snapshot` active CLI、member-rank reader/builder/RQData provider、所有 MFM unit/research/CLI/API/Web tests 和 golden fixture 都属于同一 active 维护面，必须一次性退役。删除 phase-specific protocol 表示取消未执行 Gate，不是运行 evidence 或生成 `STOP`/`ALLOW`。
+
+退役只删除 active RQData member-rank provider/CLI 与仓库内 reader/builder；保留 Alembic migration/history 以及既有表身份测试，不执行 production migration。仓库外既有 `main_force_member_rank_v1` snapshot 数据不删除、不修改，只通过 Git history 恢复对应 active reader/provider 能力。
 
 不得删除通用 EMA/MACD/ATR/HTDY Indicator Kernel。
 
@@ -778,6 +800,8 @@ candidate-relationships CLI
 对应 tests
 reports/research/candidate_dossier
 reports/research/candidate_relationships
+data/research_protocols/five_candidate_research_dossier_v1.json
+data/research_protocols/five_candidate_relationship_topology_v1.json
 ```
 
 保留：
@@ -787,7 +811,14 @@ candidate_validation
 candidate_robustness
 source-specific policies
 pending prospective OOS baseline/evidence
+services/quant-api/app/research/robustness/multi_candidate_events.py
+services/quant-api/app/research/robustness/multi_candidate_robustness_service.py
+services/quant-api/tests/test_multi_candidate_events.py
 ```
+
+Candidate Convergence 的 phase-specific protocol JSON 与两个已完成 freeze report 只支持已结束的 dossier/relationship phase；它们与汇总器一起删除。SuBing/HTDY/N/JDJ 源模块、Candidate Validation/Robustness 的 protocol/report 以及 pending prospective OOS 必须保留。
+
+`summarize_candidate_relationship` 等 generic Robustness relationship summary 是 retained Validation/Robustness 内部指标，不是 Five-Candidate Relationships generator。退役搜索只拒绝 retired module/command/protocol/report/dedicated-test identity，不得将 generic relationship metric 当作残留。
 
 ---
 
@@ -809,23 +840,25 @@ pending prospective OOS baseline/evidence
 必须保留：
 
 - Alembic migration history；
-- accepted policy 与公式身份；
+- retained SuBing/HTDY/N/JDJ/Validation/Robustness accepted policy 与公式身份；
 - current Canonical/OpenSpec data contracts；
 - pending prospective OOS baseline/evidence；
 - 仍被 Runtime health、release 或 rollback 使用的 artifact；
 - universe 文件；
 - current `STATUS.md` pending Gate evidence。
 
+上述保留规则不适用于已明确退役的 phase-only 产物：`main_force_mirror_diagnostic_phase_a_v1.json`、Five-Candidate dossier/relationship 两个 protocol 及其 completed reports 与对应代码同时删除。
+
 ### 11.3 当前两组 active docs
 
-以下文档在各自实现完成前保留：
+本 Program 执行期间保留：
 
 ```text
 HTDY all-frequency Spec/Plan
 Architecture Convergence V1 Spec/Plan
 ```
 
-HTDY 实现、Review、develop integration 和 canonical 更新完成后，HTDY Spec/Plan 可在独立清理任务中删除。Architecture Convergence V1 完成后同理。
+HTDY 实现、Review、develop integration 与 production 操作已是既有事实，但 Task 7 不在 Task 8 前删除 HTDY Spec/Plan。只有 Architecture Convergence V1 全 Program 完成后，才可以独立 closeout 删除 HTDY 与本 Program 的 completed Spec/Plan；Git history 为恢复面。
 
 ---
 
@@ -833,7 +866,7 @@ HTDY 实现、Review、develop integration 和 canonical 更新完成后，HTDY 
 
 ```mermaid
 flowchart LR
-    H[HTDY implementation<br/>existing Plan]
+    H[已部署 HTDY baseline<br/>freeze inventory]
     S[SuBing Web unification]
     O[Overlay convergence]
     T[Attention + Trend Focus retirement]
@@ -855,9 +888,9 @@ flowchart LR
 
 硬规则：
 
-1. HTDY implementation 不由本 Plan 重复执行。
-2. SuBing 首页纯组件任务若不接触 HTDY 文件，可以在 HTDY 期间独立进行。
-3. `chart.vue`、Alert types/API、ProductAlertRules、ProductCheckSidebar 的任务必须以已集成 HTDY 的最新 `develop` 为基线。
+1. HTDY implementation、production migration、release、Runtime promotion 与 Scope mutation 不由本 Plan 重复执行。
+2. Task 0 先冻结 PR #208 后的已部署 HTDY 行为与 remaining Gate inventory。
+3. `chart.vue`、Alert types/API、ProductAlertRules、ProductCheckSidebar 的任务必须以已集成 HTDY 的最新 `develop` 为基线并保护其 regression。
 4. MFM 与 Candidate Convergence 是两个独立删除任务，可在产品面收敛后并行 Review，但不得在同一 PR。
 5. 每个任务完成后先进入 `develop`，最后才形成 release candidate。
 
@@ -879,7 +912,7 @@ flowchart LR
 
 ### 13.2 HTDY coexistence
 
-在 HTDY implementation 已合入后，收敛任务必须重跑其 focused suites，证明：
+收敛任务必须重跑已部署 HTDY 的 focused suites，证明：
 
 - 7 周期 capability 仍在；
 - HTDY pair Scope 不被 SuBing product Scope 组件覆盖；
@@ -909,7 +942,7 @@ MFM 和 Candidate Convergence 删除后，必须运行完整 non-isolated backen
 
 收敛实现不运行：
 
-- production migration；
+- 新 production migration 或对既有 `0040` 的重试；
 - production DB/Redis/Canonical write；
 - real Alert Scope mutation；
 - real PushPlus；
@@ -928,9 +961,9 @@ MFM 和 Candidate Convergence 删除后，必须运行完整 non-isolated backen
 
 用户批准本精确 Spec 与 Plan 后，才允许开始 Architecture Convergence V1 代码任务。
 
-### Gate B：HTDY baseline
+### Gate B：已部署 HTDY baseline
 
-所有重叠任务必须确认 HTDY implementation 已进入目标基线，或取得用户明确的 in-flight integration 方案。
+所有重叠任务必须确认目标基线包含 PR `#208` 的 HTDY 行为，并保护七周期、pair Scope、Event identity 与 one-shot notification 合同。
 
 ### Gate C：逐任务 Review
 
@@ -955,7 +988,7 @@ MFM 和 Candidate Convergence 删除后，必须运行完整 non-isolated backen
 
 release 后用户再次独立批准 Runtime promotion。release 批准不包含 Runtime、production migration、Scope mutation 或真实通知。
 
-HTDY production migration、Scope 迁移、真实通知和 Runtime promotion仍按其原 Plan 的专用 Gate执行，不能由 Architecture Convergence V1 批准推导。
+HTDY production migration `0040`、Active60 × 七周期 Scope、release 与 Runtime promotion 已是既有事实，本 Program 不重试。真实通知、HTDY 自然 D1/W1 evidence 与 SuBing 自然 after-market/Live evidence 仍是独立 pending Gate；prospective OOS 仍是 future research Gate。MFM 和 Trend Focus future evidence Gate 已被用户取消，不得与这些保留 Gate 混淆。
 
 ---
 
@@ -978,18 +1011,19 @@ HTDY production migration、Scope 迁移、真实通知和 Runtime promotion仍�
 - [ ] SuBing 与 HTDY Scope authority 不混用。
 - [ ] Market、Runtime、Alert 不新增对 `app.research` 的反向依赖。
 - [ ] 无通用 Strategy adapter、mega endpoint、第二套 resolver 或第二套事实存储。
-- [ ] Trend Focus、Attention、MFM、Candidate Convergence 不再有 active imports/routes/CLI/tests/docs。
+- [ ] Trend Focus、Attention、MFM 不再有 active imports/routes/research 或 data CLI/tests/protocols/reports 或产品/canonical 声称；MFM active member-rank reader/builder/provider 已退役，而 Alembic migration/history、表身份测试与仓库外既有 snapshot 保留；Five-Candidate Dossier/Relationships generator、CLI、protocol/report 与 dedicated tests 不再 active；本执行中退役 Spec/Plan 保留到 Program 后 closeout。
 - [ ] N/JDJ internal reducers、Candidate Validation/Robustness 和 pending OOS evidence 保持可用。
+- [ ] Generic Robustness relationship metrics/summary 及 `multi_candidate_events.py`、`multi_candidate_robustness_service.py`、`test_multi_candidate_events.py` 保留。
 - [ ] Canonical、Catalog、MDS、Alert 两表、Execution Review 四表边界不被错误改写。
 
 ### 15.3 工程
 
 - [ ] focused 和 full backend tests 通过。
-- [ ] isolated PostgreSQL HTDY migration suites 通过，但未执行 production migration。
+- [ ] isolated PostgreSQL HTDY migration suites 通过；production `0040` 是执行本 Program 前已完成的既有事实，本 Program 未执行新 production migration。
 - [ ] Web unit、Playwright、production build 通过。
 - [ ] Ruff、Mypy、OpenSpec、secret scan、diff check 通过。
 - [ ] independent Review 结论为 `允许集成 develop`。
-- [ ] 未触及 main、tag、Runtime、production data、真实 Scope 或通知。
+- [ ] 本 Program 未触及 main、tag、Runtime、production data、真实 Scope 或通知。
 
 ---
 
@@ -1013,7 +1047,7 @@ HTDY production migration、Scope 迁移、真实通知和 Runtime promotion仍�
 
 ### 16.5 撤回 HTDY 全周期设计
 
-拒绝。用户已明确该能力正在实施，且现有 Spec/Plan 已批准；Architecture Convergence V1 必须兼容而不是逆转。
+拒绝。HTDY PR `#208` 已实现、Review 并合入，`v1.8.3` migration/release/Runtime/Active60 × 七周期 Scope 已部署完成；Architecture Convergence V1 必须保护该既有合同，不得逆转。
 
 ---
 
