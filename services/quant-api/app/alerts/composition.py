@@ -31,8 +31,8 @@ class RedisAlertMessageSource:
     def __init__(self, redis: Any) -> None:
         self._pubsub = redis.pubsub(ignore_subscribe_messages=True)
 
-    def subscribe(self, pattern: str) -> None:
-        self._pubsub.psubscribe(pattern)
+    def subscribe(self, *patterns: str) -> None:
+        self._pubsub.psubscribe(*patterns)
 
     def get_message(self, *, timeout_seconds: float) -> tuple[object, object] | None:
         message = self._pubsub.get_message(timeout=timeout_seconds)

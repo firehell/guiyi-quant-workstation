@@ -421,7 +421,7 @@ class _TrackedSessionContext:
 
 
 def test_skips_non_trading_day_without_ready_update_or_retry(tmp_path) -> None:
-    updater, manager, rqdata, sleeps, notices, _live_store = _updater(
+    updater, manager, rqdata, sleeps, notices, live_store = _updater(
         tmp_path,
         trading_day=date(2026, 8, 7),
         readiness=[],
@@ -438,6 +438,7 @@ def test_skips_non_trading_day_without_ready_update_or_retry(tmp_path) -> None:
     assert rqdata.calls == []
     assert sleeps == []
     assert notices == []
+    assert live_store.published == []
 
 
 def test_uses_calendar_metadata_day_before_current_session_sync(tmp_path) -> None:
@@ -619,7 +620,7 @@ def test_current_day_metadata_is_delegated_to_the_locked_update(tmp_path) -> Non
 
 
 def test_does_not_retry_when_rqdata_is_not_ready(tmp_path) -> None:
-    updater, manager, rqdata, sleeps, notices, _live_store = _updater(
+    updater, manager, rqdata, sleeps, notices, live_store = _updater(
         tmp_path,
         trading_day=date(2026, 8, 10),
         readiness=[False, True],
@@ -635,10 +636,11 @@ def test_does_not_retry_when_rqdata_is_not_ready(tmp_path) -> None:
     assert manager.calls == []
     assert sleeps == []
     assert _notice_error_codes(notices) == ["RQDATA_NOT_READY"]
+    assert live_store.published == []
 
 
 def test_does_not_retry_after_provider_quota_failure(tmp_path) -> None:
-    updater, manager, rqdata, sleeps, notices, _live_store = _updater(
+    updater, manager, rqdata, sleeps, notices, live_store = _updater(
         tmp_path,
         trading_day=date(2026, 8, 10),
         readiness=[True, True],
@@ -654,6 +656,7 @@ def test_does_not_retry_after_provider_quota_failure(tmp_path) -> None:
     assert len(manager.calls) == 1
     assert sleeps == []
     assert _notice_error_codes(notices) == ["PROVIDER_QUOTA_EXHAUSTED"]
+    assert live_store.published == []
 
 
 def test_records_final_failure_and_notifies_once(tmp_path) -> None:
@@ -976,7 +979,12 @@ def test_success_reconciles_rank1_publishes_state_and_cleans_live(tmp_path) -> N
         (symbol, date(2026, 8, 10), date(2026, 8, 10))
         for symbol in _ACTIVE_PRODUCTS
     ]
-    assert live_store.published == [{"trading_day": "2026-08-10"}]
+    assert live_store.published == [
+        {
+            "trading_day": "2026-08-10",
+            "reason": "canonical_updated",
+        }
+    ]
     assert live_store.cleaned == [date(2026, 8, 10)]
     assert notices == []
 
@@ -999,7 +1007,12 @@ def test_cleanup_failure_does_not_retry_or_report_success(tmp_path) -> None:
     assert result.error_code == "UPDATE_FAILED"
     assert sleeps == []
     assert _notice_error_codes(notices) == ["UPDATE_FAILED"]
-    assert live_store.published == [{"trading_day": "2026-08-10"}]
+    assert live_store.published == [
+        {
+            "trading_day": "2026-08-10",
+            "reason": "canonical_updated",
+        }
+    ]
     assert live_store.cleaned == []
     assert status["last_successful_trading_day"] is None
     assert status["last_failure"] == {
@@ -1025,7 +1038,12 @@ def test_rank1_mismatch_is_a_stable_failure_without_live_cleanup(tmp_path) -> No
     assert result.error_code == "LIVE_DOMINANT_MISMATCH"
     assert sleeps == []
     assert _notice_error_codes(notices) == ["LIVE_DOMINANT_MISMATCH"]
-    assert live_store.published == [{"trading_day": "2026-08-10"}]
+    assert live_store.published == [
+        {
+            "trading_day": "2026-08-10",
+            "reason": "canonical_updated",
+        }
+    ]
     assert live_store.cleaned == []
     assert status["last_failure"] == {
         "trading_day": "2026-08-10",
