@@ -26,6 +26,7 @@ import { usePersistentAlertMarkers } from '@/composables/usePersistentAlertMarke
 import { useHistoricalResearchMarkers } from '@/composables/useHistoricalResearchMarkers'
 import { useProductAlertScope } from '@/composables/useProductAlertScope'
 import { useProductCurrentAlertEvents } from '@/composables/useProductCurrentAlertEvents'
+import { useProductSymbolIdentityCoordinator } from '@/composables/useProductSymbolIdentityCoordinator'
 import { useSubingObservation } from '@/composables/useSubingObservation'
 import type {
   DominantContractItem,
@@ -122,6 +123,7 @@ const {
   subingError,
   subingSupported,
   reset: resetSubingSnapshot,
+  markUnavailable: markSubingUnavailable,
   refresh: refreshSubing,
   dispose: disposeSubingObservation,
 } = useSubingObservation({
@@ -140,6 +142,8 @@ const {
   alertLoading,
   savingRuleCodes,
   refresh: refreshAlerts,
+  invalidateIdentity: invalidateAlertIdentity,
+  markUnavailable: markAlertsUnavailable,
   toggleSubingProduct,
   toggleHtdyCurrentFrequency,
   dispose: disposeProductAlertScope,
@@ -157,13 +161,25 @@ const {
   status: currentEventsStatus,
   items: currentEvents,
   refresh: refreshCurrentEvents,
+  invalidateIdentity: invalidateCurrentEventsIdentity,
+  markUnavailable: markCurrentEventsUnavailable,
   dispose: disposeProductCurrentAlertEvents,
 } = useProductCurrentAlertEvents({ symbol, fetchCurrentEvents: getProductCurrentAlertEvents })
 let metadataReady = false
-let synchronizingSymbol = false
 let researchGeneration = 0
 let currentEventStateGeneration = 0
 let canonicalReplacementGeneration = 0
+let pendingHistoricalOverlayRefresh = false
+const {
+  synchronizing: synchronizingSymbol,
+  synchronize: synchronizeSymbolIdentity,
+  dispose: disposeSymbolIdentityCoordinator,
+} = useProductSymbolIdentityCoordinator({
+  invalidateFacts: invalidateSymbolFacts,
+  refreshMarket: refreshSeries,
+  refreshFacts: refreshSymbolFacts,
+  rejectFacts: rejectSymbolFacts,
+})
 
 const loading = computed(() => loadingInitial.value || loadingBefore.value)
 const visibleMainIndicators = computed(() => {
@@ -223,12 +239,8 @@ onMounted(async () => {
     if (!dominants.value.some((item) => item.product === symbol.value)) {
       symbol.value = dominants.value[0]?.product || ''
     }
-    await refreshSeries()
     metadataReady = true
-    void refreshSubing()
-    void refreshResearch()
-    void refreshAlerts()
-    void refreshCurrentEvents()
+    void synchronizeSymbolIdentity()
   } catch {
     error.value = '行情元数据加载失败'
   } finally {
@@ -236,28 +248,24 @@ onMounted(async () => {
   }
 })
 
-watch(symbol, async () => {
+watch(symbol, () => {
   if (!metadataReady) return
-  resetSubingSnapshot()
-  synchronizingSymbol = true
-  try {
-    await refreshSeries()
-    void refreshSubing()
-    void refreshAlerts()
-  } finally {
-    synchronizingSymbol = false
-  }
+  void synchronizeSymbolIdentity()
 })
 
 watch([contract, seriesKind, frequency], async () => {
-  if (!metadataReady || synchronizingSymbol) return
+  if (!metadataReady || synchronizingSymbol.value) return
   resetSubingSnapshot()
-  await refreshSeries()
-  void refreshSubing()
+  if (await refreshSeries()) void refreshSubing()
 })
 
 watch(selectedOverlay, () => {
-  if (synchronizingSymbol) return
+  if (synchronizingSymbol.value) {
+    pendingHistoricalOverlayRefresh = true
+    resetSubingSnapshot()
+    return
+  }
+  pendingHistoricalOverlayRefresh = false
   resetSubingSnapshot()
   void refreshSubing()
   void syncHistoricalResearchMarkers(
@@ -281,8 +289,8 @@ watch(subing, () => {
   void syncPersistentAlertMarkers(currentAlertMarkerIdentity(), visibleBars.value, 'replace')
 })
 
-watch([symbol, seriesKind, contract], () => {
-  if (metadataReady && !synchronizingSymbol) void refreshResearch()
+watch([seriesKind, contract], () => {
+  if (metadataReady && !synchronizingSymbol.value) void refreshResearch()
 })
 
 watch([symbol, seriesKind, frequency, researchSidebarOpen], persistWorkspacePreferences, { deep: true })
@@ -322,6 +330,7 @@ watch(mutation, (nextMutation) => {
 
 onUnmounted(() => {
   document.removeEventListener('fullscreenchange', syncFullscreen)
+  disposeSymbolIdentityCoordinator()
   disposeSubingObservation()
   disposeProductAlertScope()
   disposeProductCurrentAlertEvents()
@@ -417,6 +426,58 @@ async function refreshResearch() {
   } finally {
     if (requestGeneration === researchGeneration) researchLoading.value = false
   }
+}
+
+function invalidateResearch(): void {
+  researchGeneration += 1
+  research.value = null
+  researchError.value = false
+  researchLoading.value = true
+}
+
+function markResearchUnavailable(): void {
+  research.value = null
+  researchError.value = true
+  researchLoading.value = false
+}
+
+function invalidateCurrentEventStates(): void {
+  currentEventStateGeneration += 1
+  currentEventStates.value = {}
+}
+
+function invalidateSymbolFacts(): void {
+  invalidateResearch()
+  resetSubingSnapshot()
+  invalidateAlertIdentity()
+  invalidateCurrentEventsIdentity()
+  invalidateCurrentEventStates()
+}
+
+function rejectSymbolFacts(): void {
+  markResearchUnavailable()
+  markSubingUnavailable()
+  markAlertsUnavailable()
+  markCurrentEventsUnavailable()
+  invalidateCurrentEventStates()
+}
+
+function refreshSymbolFacts(): readonly Promise<void>[] {
+  if (pendingHistoricalOverlayRefresh) {
+    pendingHistoricalOverlayRefresh = false
+    void syncHistoricalResearchMarkers(
+      currentHistoricalMarkerIdentity(),
+      visibleBars.value,
+      canonicalCoverage.value,
+      'replace',
+    )
+  }
+  return [
+    refreshResearch(),
+    refreshSubing(),
+    refreshAlerts(),
+    refreshCurrentEvents(),
+  ]
 }
 
 async function refreshCurrentEventStates() {

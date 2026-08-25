@@ -375,6 +375,66 @@ describe('Product Alert server-side scope', () => {
     controller.dispose()
   })
 
+  it('invalidates loaded rules synchronously and blocks all mutations until the new Scope arrives', async () => {
+    const productCalls: string[] = []
+    const pairCalls: string[] = []
+    const controller = useProductAlertScope({
+      symbol: ref('ag'),
+      frequency: ref('15m'),
+      fetchProductAlerts: async () => ({ symbol: 'ag', rules: [htdyRule(true), subingRule(true)] }),
+      fetchRuntimeStatus: async () => 'ok',
+      setProductEnabled: async (_ruleCode, requestedSymbol) => {
+        productCalls.push(requestedSymbol)
+        return subingRule(false)
+      },
+      setProductFrequencyEnabled: async (_ruleCode, requestedSymbol) => {
+        pairCalls.push(requestedSymbol)
+        return htdyRule(false)
+      },
+      notifyError: () => undefined,
+    })
+    await controller.refresh()
+
+    controller.invalidateIdentity()
+    const subing = controller.toggleSubingProduct(ALERT_RULE_CODES.SUBING, false)
+    const htdy = controller.toggleHtdyCurrentFrequency(ALERT_RULE_CODES.HTDY, false)
+    await Promise.all([subing, htdy])
+
+    assert.deepEqual(controller.alertRules.value, [])
+    assert.equal(controller.alertLoading.value, true)
+    assert.deepEqual(productCalls, [])
+    assert.deepEqual(pairCalls, [])
+    controller.dispose()
+  })
+
+  it('drops an earlier AG Scope response after AG to JM to AG invalidations', async () => {
+    const symbol = ref('ag')
+    const resolvers: Array<(value: { symbol: string; rules: ReturnType<typeof htdyRule>[] }) => void> = []
+    const controller = useProductAlertScope({
+      symbol,
+      frequency: ref('15m'),
+      fetchProductAlerts: () => new Promise((resolve) => { resolvers.push(resolve) }),
+      fetchRuntimeStatus: async () => 'ok',
+      setProductEnabled: async () => { throw new Error('not used') },
+      setProductFrequencyEnabled: async () => { throw new Error('not used') },
+      notifyError: () => undefined,
+    })
+
+    const oldAg = controller.refresh()
+    controller.invalidateIdentity()
+    symbol.value = 'jm'
+    controller.invalidateIdentity()
+    symbol.value = 'ag'
+    const finalAg = controller.refresh()
+    resolvers[1]({ symbol: 'ag', rules: [htdyRule(true)] })
+    await finalAg
+    resolvers[0]({ symbol: 'ag', rules: [htdyRule(false)] })
+    await oldAg
+
+    assert.deepEqual(controller.alertRules.value[0].enabled_frequencies, ['15m'])
+    controller.dispose()
+  })
+
   it('labels V2 persistent events by Rule category while keeping the Event identity stable', () => {
     const markers = alertEventsToMarkers([
       event(0, ['buy', 'sell'], 'subing_entry_signal_v1'),

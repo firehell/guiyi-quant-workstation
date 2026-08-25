@@ -1,4 +1,4 @@
-import { MARKET_FREQUENCIES } from '../types/market.ts'
+import { MARKET_FREQUENCIES, SUBING_PUBLIC_FREQUENCIES } from '../types/market.ts'
 import type {
   MainIndicatorDefinition,
   MainIndicatorId,
@@ -67,7 +67,7 @@ export const RESEARCH_OVERLAY_DEFINITIONS: readonly ResearchOverlayDefinition[] 
     id: 'subing',
     label: '苏冰',
     supportedSeriesKinds: ['actual_dominant'],
-    supportedFrequencies: ['5m', '15m'],
+    supportedFrequencies: SUBING_PUBLIC_FREQUENCIES,
     mainIndicators: ['ema_21'],
     historicalSource: 'subing',
   },

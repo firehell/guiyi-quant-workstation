@@ -109,7 +109,8 @@ export interface ProductResearchResponse {
   recent_daily: CanonicalBarDto[]
 }
 
-export type SubingFrequency = '5m' | '15m' | '1d'
+export const SUBING_PUBLIC_FREQUENCIES = ['5m', '15m'] as const
+export type SubingFrequency = typeof SUBING_PUBLIC_FREQUENCIES[number]
 export type SubingFactorStatus = 'ready' | 'insufficient_data'
 
 export interface SubingFactorSnapshot {
@@ -344,7 +345,7 @@ export function filterBarsToSubingSegment(bars: BarData[], segmentStart: string)
 }
 
 export function isSubingSupportedFrequency(frequency: MarketFrequency): frequency is SubingFrequency {
-  return frequency === '5m' || frequency === '15m' || frequency === '1d'
+  return SUBING_PUBLIC_FREQUENCIES.includes(frequency as SubingFrequency)
 }
 
 export function shouldScheduleSubingCompanionRefresh(payload: SubingResearchResponse): boolean {

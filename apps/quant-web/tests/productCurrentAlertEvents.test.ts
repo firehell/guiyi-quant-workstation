@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
-import { nextTick, ref } from 'vue'
+import { ref } from 'vue'
 import { useProductCurrentAlertEvents } from '../src/composables/useProductCurrentAlertEvents.ts'
 import type { AlertEvent } from '../src/types/market.ts'
 import {
@@ -13,24 +13,68 @@ import {
 const chartSource = readFileSync(new URL('../src/pages/market/chart.vue', import.meta.url), 'utf-8')
 const sidebarSource = readFileSync(new URL('../src/components/market/ProductCheckSidebar.vue', import.meta.url), 'utf-8')
 
-test('drops a stale response after the product symbol changes', async () => {
+test('does not refresh merely because the product symbol changes', async () => {
   const symbol = ref('ag')
-  const resolvers = new Map<string, (response: { status: 'ready'; trading_day: string; items: AlertEvent[] }) => void>()
+  const requests: string[] = []
   const state = useProductCurrentAlertEvents({
     symbol,
-    fetchCurrentEvents: (requestedSymbol) => new Promise((resolve) => resolvers.set(requestedSymbol, resolve)),
+    fetchCurrentEvents: async (requestedSymbol) => {
+      requests.push(requestedSymbol)
+      return { status: 'ready', trading_day: '2026-08-15', items: [] }
+    },
+  })
+
+  symbol.value = 'jm'
+  await Promise.resolve()
+
+  assert.deepEqual(requests, [])
+  await state.refresh()
+  assert.deepEqual(requests, ['jm'])
+  state.dispose()
+})
+
+test('invalidates old facts synchronously and drops an earlier same-symbol response', async () => {
+  const symbol = ref('ag')
+  const resolvers: Array<(response: { status: 'ready'; trading_day: string; items: AlertEvent[] }) => void> = []
+  const state = useProductCurrentAlertEvents({
+    symbol,
+    fetchCurrentEvents: () => new Promise((resolve) => resolvers.push(resolve)),
   })
 
   const oldRequest = state.refresh()
+  state.invalidateIdentity()
+  assert.equal(state.loading.value, true)
+  assert.equal(state.status.value, null)
+  assert.equal(state.tradingDay.value, null)
+  assert.deepEqual(state.items.value, [])
   symbol.value = 'jm'
-  await nextTick()
-  resolvers.get('jm')!({ status: 'ready', trading_day: '2026-08-15', items: [event(2)] })
-  await nextTick()
-  resolvers.get('ag')!({ status: 'ready', trading_day: '2026-08-14', items: [event(1)] })
+  state.invalidateIdentity()
+  symbol.value = 'ag'
+  const finalRequest = state.refresh()
+  resolvers[1]({ status: 'ready', trading_day: '2026-08-15', items: [event(2)] })
+  await finalRequest
+  resolvers[0]({ status: 'ready', trading_day: '2026-08-14', items: [event(1)] })
   await oldRequest
 
   assert.deepEqual(state.items.value.map((item) => item.id), [2])
   assert.equal(state.tradingDay.value, '2026-08-15')
+  state.dispose()
+})
+
+test('marks an invalidated identity unavailable without restoring old items', async () => {
+  const state = useProductCurrentAlertEvents({
+    symbol: ref('ag'),
+    fetchCurrentEvents: async () => ({ status: 'ready', trading_day: '2026-08-15', items: [event(1)] }),
+  })
+  await state.refresh()
+
+  state.invalidateIdentity()
+  state.markUnavailable()
+
+  assert.equal(state.status.value, 'unavailable')
+  assert.equal(state.tradingDay.value, null)
+  assert.deepEqual(state.items.value, [])
+  assert.equal(state.loading.value, false)
   state.dispose()
 })
 
