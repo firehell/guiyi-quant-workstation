@@ -57,6 +57,33 @@ test('network error stays unavailable instead of ready empty', async () => {
   assert.deepEqual(state.items.value, [])
   assert.equal(state.tradingDay.value, null)
   assert.equal(state.loading.value, false)
+  assert.equal(state.stale.value, false)
+})
+
+test('a failed refresh preserves the last successful formal snapshot and marks it stale until recovery', async () => {
+  let attempt = 0
+  const state = useCurrentFormalSignals({
+    fetchCurrent: async () => {
+      attempt += 1
+      if (attempt === 2) throw new Error('temporarily unavailable')
+      return {
+        status: 'ready' as const,
+        trading_day: attempt === 1 ? '2026-08-15' : '2026-08-16',
+        items: [currentItem('subing_entry_signal_v1', '苏冰')],
+      }
+    },
+  })
+
+  await state.refresh()
+  await state.refresh()
+  assert.equal(state.status.value, 'ready')
+  assert.equal(state.tradingDay.value, '2026-08-15')
+  assert.deepEqual(state.items.value.map((item) => item.id), [1])
+  assert.equal(state.stale.value, true)
+
+  await state.refresh()
+  assert.equal(state.tradingDay.value, '2026-08-16')
+  assert.equal(state.stale.value, false)
 })
 
 test('homepage preserves the backend formal-signal response without duplicating rule filtering', async () => {

@@ -1,61 +1,49 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { NAlert, NButton } from 'naive-ui'
 import MarketAttentionList from '@/components/market/MarketAttentionList.vue'
 import MarketDetailTable from '@/components/market/MarketDetailTable.vue'
 import MarketScatter from '@/components/market/MarketScatter.vue'
 import MarketSummaryStrip from '@/components/market/MarketSummaryStrip.vue'
-import MarketFormalSignals from '@/components/market/MarketFormalSignals.vue'
 import MarketRadarSkeleton from '@/components/market/MarketRadarSkeleton.vue'
 import MarketRuntimeStatus from '@/components/market/MarketRuntimeStatus.vue'
-import SubingDailyWatch from '@/components/market/SubingDailyWatch.vue'
+import SubingWorkbench from '@/components/market/SubingWorkbench.vue'
 import { getMarketRadar, getSubingDailyWatchCurrent } from '@/api/market'
 import { getRuntimeHealth } from '@/api/runtime'
 import { getEventStates } from '@/api/executionReview'
+import { getCurrentFormalSignals } from '@/api/alerts'
 import type { CurrentFormalSignalItem } from '@/api/alerts'
 import type { EventState } from '@/types/executionReview'
 import type {
   MarketRadarItem,
   MarketRadarResponse,
-  SubingDailyWatchCurrentResponse,
   SubingDailyWatchItem,
 } from '@/types/market'
-import { useCurrentFormalSignals } from '@/composables/useCurrentFormalSignals'
 import { useLatestResource } from '@/composables/useLatestResource'
+import { useSubingWorkbench } from '@/composables/useSubingWorkbench'
 import {
   loadMarketWorkspacePreferences,
 } from '@/utils/marketWorkspacePreferences'
 
 const router = useRouter()
-const {
-  loading: formalLoading,
-  status: formalStatus,
-  tradingDay: formalTradingDay,
-  items: formalItems,
-  refresh: refreshFormalSignals,
-  invalidate: invalidateFormalSignals,
-} = useCurrentFormalSignals()
+const subingWorkbench = useSubingWorkbench({
+  fetchFormal: getCurrentFormalSignals,
+  fetchDailyWatch: getSubingDailyWatchCurrent,
+  fetchEventStates: getEventStates,
+})
 const runtimeState = useLatestResource({ fetch: getRuntimeHealth })
 const radarState = useLatestResource<MarketRadarResponse>({ fetch: getMarketRadar })
-const dailyWatchState = useLatestResource<SubingDailyWatchCurrentResponse>({
-  fetch: getSubingDailyWatchCurrent,
-})
 const runtime = runtimeState.data
 const radar = radarState.data
-const dailyWatch = computed(() => (
-  dailyWatchState.failed.value ? null : dailyWatchState.data.value
-))
 const error = radarState.failed
 const loading = computed(() => (
-  formalLoading.value
+  subingWorkbench.formalLoading.value
+  || subingWorkbench.dailyLoading.value
   || runtimeState.loading.value
   || radarState.loading.value
-  || dailyWatchState.loading.value
 ))
 const preferences = ref(loadMarketWorkspacePreferences())
-const formalEventStates = ref<Record<number, EventState>>({})
-let formalStateGeneration = 0
 const freshnessIssue = computed(() => {
   if (!radar.value || radar.value.freshness_state !== 'degraded') return ''
   const parts = [
@@ -105,39 +93,18 @@ function openFormalSignal(item: CurrentFormalSignalItem, state?: EventState) {
   })
 }
 
-watch([formalStatus, formalItems], () => {
-  void refreshFormalEventStates()
-}, { deep: true })
-
-async function refreshFormalEventStates() {
-  const generation = ++formalStateGeneration
-  if (formalStatus.value !== 'ready' || formalItems.value.length === 0) {
-    formalEventStates.value = {}
-    return
-  }
-  try {
-    const response = await getEventStates(formalItems.value.map((item) => item.id))
-    if (generation !== formalStateGeneration) return
-    formalEventStates.value = Object.fromEntries(response.items.map((item) => [item.event_id, item]))
-  } catch {
-    if (generation === formalStateGeneration) formalEventStates.value = {}
-  }
-}
-
 async function refreshAll() {
   await Promise.all([
-    refreshFormalSignals(),
+    subingWorkbench.refreshAll(),
     runtimeState.refresh(),
     radarState.refresh(),
-    dailyWatchState.refresh(),
   ])
 }
 
 async function refreshVisibleOperationalState() {
   await Promise.all([
-    refreshFormalSignals(),
+    subingWorkbench.refreshOperational(),
     runtimeState.refresh(),
-    dailyWatchState.refresh(),
   ])
 }
 
@@ -152,11 +119,9 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   document.removeEventListener('visibilitychange', handleVisibilityChange)
-  invalidateFormalSignals()
+  subingWorkbench.dispose()
   runtimeState.invalidate()
   radarState.invalidate()
-  dailyWatchState.invalidate()
-  formalStateGeneration += 1
 })
 </script>
 
@@ -171,19 +136,18 @@ onBeforeUnmount(() => {
       :loading="runtimeState.loading.value"
       :stale="runtimeState.failed.value && Boolean(runtime)"
     />
-    <MarketFormalSignals
-      :loading="formalLoading"
-      :status="formalStatus"
-      :trading-day="formalTradingDay"
-      :items="formalItems"
-      :event-states="formalEventStates"
-      @open="openFormalSignal"
-    />
-    <SubingDailyWatch
-      :response="dailyWatch"
-      :loading="dailyWatchState.loading.value && !dailyWatch"
-      :request-failed="dailyWatchState.failed.value"
-      @open="openDailyWatch"
+    <SubingWorkbench
+      :formal-loading="subingWorkbench.formalLoading.value"
+      :formal-status="subingWorkbench.formalStatus.value"
+      :formal-trading-day="subingWorkbench.formalTradingDay.value"
+      :formal-items="subingWorkbench.formalItems.value"
+      :formal-event-states="subingWorkbench.formalEventStates.value"
+      :formal-stale="subingWorkbench.formalStale.value"
+      :daily-watch="subingWorkbench.dailyWatch.value"
+      :daily-loading="subingWorkbench.dailyLoading.value"
+      :daily-stale="subingWorkbench.dailyStale.value"
+      @open-formal="openFormalSignal"
+      @open-daily="openDailyWatch"
     />
     <MarketRadarSkeleton v-if="radarState.loading.value && !radar" />
     <template v-else>
