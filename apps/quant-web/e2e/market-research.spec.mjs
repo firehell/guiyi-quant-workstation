@@ -525,6 +525,23 @@ function subing(overrides = {}) {
   return { ...cloneSubingLifecycleCase('longSetup'), ...overrides }
 }
 
+function panelEvent(overrides = {}) {
+  return {
+    id: 301,
+    rule_code: 'subing_entry_signal_v1',
+    symbol: 'ag',
+    contract: 'AG2601',
+    trading_day: '2026-01-12',
+    frequency: '5m',
+    bar_end: '2026-01-12T02:30:00Z',
+    result_codes: ['sell'],
+    lower_tf_confirmation: false,
+    detected_at: '2026-01-12T02:30:01Z',
+    notification_attempted_at: null,
+    ...overrides,
+  }
+}
+
 async function mockWorkspace(page, researchResponse, options = {}) {
   const workspaceSymbol = options.symbol || 'ag'
   const workspaceContract = options.resolvedContract || (workspaceSymbol === 'jm' ? 'JM2701' : 'AG2601')
@@ -688,8 +705,18 @@ async function mockAlertMarkerSurface(page, currentItems = [], options = {}) {
   } }))
   await page.route('**/api/alerts/**', async (route) => {
     const url = new URL(route.request().url())
-    if (url.pathname.endsWith(`/products/${symbol}`)) return route.fulfill({ json: { symbol, rules: [] } })
-    if (url.pathname.endsWith('/current-events')) return route.fulfill({ json: { status: 'ready', trading_day: '2026-01-12', items: currentItems } })
+    if (url.pathname.endsWith(`/products/${symbol}`)) {
+      if (options.alertScopeDelayMs) await new Promise((resolve) => setTimeout(resolve, options.alertScopeDelayMs))
+      return route.fulfill({ json: { symbol, rules: options.rules || [] } })
+    }
+    if (url.pathname.endsWith('/current-events')) {
+      if (options.currentEventsDelayMs) await new Promise((resolve) => setTimeout(resolve, options.currentEventsDelayMs))
+      return route.fulfill({ json: {
+        status: options.currentEventsStatus || 'ready',
+        trading_day: options.currentEventsStatus === 'unavailable' ? null : '2026-01-12',
+        items: currentItems,
+      } })
+    }
     if (url.pathname.endsWith('/events')) return route.fulfill({ json: { items: [{
       id: 101, rule_code: 'subing_entry_signal_v1', symbol, contract,
       trading_day: '2026-01-12', frequency: '5m', bar_end: '2026-01-12T02:20:00Z',
@@ -1141,6 +1168,98 @@ test('current SuBing Formal Event action remains available in the single product
   await expect(action).toBeVisible()
   await action.click()
   await expect(page).toHaveURL(/\/trade-records\?state=pending_decision&event_id=203/)
+})
+
+test('single SuBing panel selects one immutable Event and keeps the remaining backend order', async ({ page }) => {
+  const selected = panelEvent()
+  const htdy = panelEvent({
+    id: 304,
+    rule_code: 'htdy_original_15m',
+    frequency: '15m',
+    bar_end: '2026-01-12T02:25:00Z',
+    result_codes: ['buy'],
+  })
+  const olderBuy = panelEvent({ id: 302, bar_end: '2026-01-12T02:20:00Z', result_codes: ['buy'] })
+  const oldestSell = panelEvent({ id: 303, bar_end: '2026-01-12T02:10:00Z' })
+  const snapshot = cloneSubingLifecycleCase('dualFormalLong5m')
+  snapshot.companion.snapshot.bar_end = '2026-01-12T02:15:00Z'
+  await mockWorkspace(page, { json: research() }, {
+    subingResponse: snapshot,
+    eventStates: [{ event_id: 301, state: 'pending_decision', decision_id: null, episode_id: null }],
+  })
+  await mockAlertMarkerSurface(page, [selected, htdy, olderBuy, oldestSell], {
+    rules: [
+      { rule_code: 'htdy_original_15m', display_name: '火天大有', kind: 'indicator_observation', input_frequencies: ['5m', '15m'], enabled_for_product: true, enabled_frequencies: ['5m'] },
+      { rule_code: 'subing_entry_signal_v1', display_name: '苏冰入场信号', kind: 'formal_signal', input_frequencies: ['5m', '15m'], enabled_for_product: true, enabled_frequencies: [] },
+      { rule_code: 'future_rule', display_name: '未来提醒', kind: 'formal_signal', input_frequencies: ['5m'], enabled_for_product: true, enabled_frequencies: [] },
+    ],
+  })
+  await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=5m')
+
+  const panel = page.getByTestId('subing-panel')
+  const formal = page.getByTestId('subing-formal-event')
+  await expect(formal.locator('[data-formal-event-id="301"]')).toHaveCount(1)
+  const historicalRows = formal.locator('.product-today-alert-events__row')
+  await expect(historicalRows).toHaveCount(2)
+  expect(await historicalRows.evaluateAll((rows) => rows.map((row) => row.getAttribute('data-event-id'))))
+    .toEqual(['302', '303'])
+  await expect(formal.locator('[data-event-id="301"], [data-event-id="304"]')).toHaveCount(0)
+  await expect(panel).not.toContainText('火天大有')
+  await expect(panel).not.toContainText('未来提醒')
+  await expect(panel.getByRole('switch')).toHaveCount(1)
+
+  await expect(panel.getByText('Resolved Signal', { exact: true })).toBeVisible()
+  await expect(panel.getByRole('definition').filter({ hasText: '15m · 买入信号 · 低周期确认' })).toBeVisible()
+  await expect(panel.getByText('Primary Signal', { exact: true })).toBeVisible()
+  await expect(panel.getByText('5m · 买入信号', { exact: true })).toBeVisible()
+  await expect(panel.locator('.subing-panel__factor').filter({ hasText: 'Primary Factor' })).toContainText('5m')
+  await expect(panel.locator('.subing-panel__factor').filter({ hasText: 'Companion Factor' })).toContainText('15m')
+  await expect(panel.locator('.subing-panel__facts > div').filter({ hasText: 'Primary 确认' })).toContainText('01/12 10:30')
+  await expect(panel.locator('.subing-panel__facts > div').filter({ hasText: 'Companion 确认' })).toContainText('01/12 10:15')
+
+  await formal.getByRole('button', { name: '记录执行' }).click()
+  await expect(page).toHaveURL(/\/trade-records\?state=pending_decision&event_id=301/)
+})
+
+test('SuBing panel keeps Event and Alert loading independent from a ready snapshot', async ({ page }) => {
+  await mockWorkspace(page, { json: research() }, {
+    subingResponse: cloneSubingLifecycleCase('dualFormalLong5m'),
+  })
+  await mockAlertMarkerSurface(page, [], {
+    currentEventsDelayMs: 900,
+    alertScopeDelayMs: 1_500,
+    rules: [{
+      rule_code: 'subing_entry_signal_v1', display_name: '苏冰入场信号', kind: 'formal_signal',
+      input_frequencies: ['5m', '15m'], enabled_for_product: false, enabled_frequencies: [],
+    }],
+  })
+  await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=5m')
+
+  const panel = page.getByTestId('subing-panel')
+  const formal = page.getByTestId('subing-formal-event')
+  const scope = page.getByTestId('subing-alert-scope')
+  await expect(panel.getByText('Resolved Signal', { exact: true })).toBeVisible()
+  await expect(formal).toContainText('正在读取苏冰正式事件')
+  await expect(formal).not.toContainText('当前无可展示的苏冰正式事件记录')
+  await expect(scope).toContainText('正在读取苏冰提醒 Scope')
+  await expect(scope).not.toContainText('不可用')
+  await expect(scope.getByRole('switch')).toHaveCount(0)
+
+  await expect(formal.getByText('当前无可展示的苏冰正式事件记录', { exact: true })).toHaveCount(1)
+  await expect(formal.getByTestId('product-today-alert-events')).toHaveCount(0)
+  await expect(scope.getByRole('switch')).toBeVisible()
+  await expect(scope.getByRole('switch')).toBeEnabled()
+})
+
+test('SuBing panel keeps an unavailable Event source distinct from ready empty', async ({ page }) => {
+  await mockWorkspace(page, { json: research() })
+  await mockAlertMarkerSurface(page, [], { currentEventsStatus: 'unavailable' })
+  await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=5m')
+
+  const formal = page.getByTestId('subing-formal-event')
+  await expect(formal).toContainText('苏冰正式事件暂不可用')
+  await expect(formal).not.toContainText('当前无可展示的苏冰正式事件记录')
+  await expect(formal.getByTestId('product-today-alert-events')).toHaveCount(0)
 })
 
 test('SuBing lifecycle remains an explicitly research-only funnel beside formal V1 wording', async ({ page }) => {

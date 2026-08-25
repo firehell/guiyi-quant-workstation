@@ -122,10 +122,7 @@ function updateMoreOpen(event: Event) {
     <section class="product-check-sidebar__section" data-testid="product-check-now">
       <h3>1. 现在</h3>
       <strong>{{ overlayLabel }}</strong>
-      <p v-if="currentEventsLoading">正在读取正式事件…</p>
-      <p v-else-if="currentEventsStatus === 'unavailable'" class="product-check-sidebar__warning">正式事件暂不可用</p>
-      <p v-else-if="currentEventsStatus === 'ready'">正式事件来源已读取；具体事实与动作仅在对应策略面板展示。</p>
-      <p v-else>正式事件尚未读取</p>
+      <p>当前 Overlay 仅决定研究呈现，不触发 Alert 写入。</p>
     </section>
 
     <section class="product-check-sidebar__section" data-testid="product-check-background">
@@ -150,10 +147,13 @@ function updateMoreOpen(event: Event) {
         :supported="subingSupported"
         :loading="subingLoading"
         :error="subingError"
+        :event-loading="currentEventsLoading"
+        :event-status="currentEventsStatus"
         :current-events="subingEvents"
         :current-event-states="currentEventStates"
         :rules="subingRules"
         :runtime-status="alertRuntimeStatus"
+        :alert-loading="alertLoading"
         :saving-rule-codes="savingRuleCodes"
         @open-formal-event="(event, state) => emit('open-formal-event', event, state)"
         @toggle-subing-alert="(ruleCode, enabled) => emit('toggle-subing-alert', ruleCode, enabled)"

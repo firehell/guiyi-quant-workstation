@@ -150,7 +150,8 @@ const {
   alertLoading,
   savingRuleCodes,
   refresh: refreshAlerts,
-  toggle: toggleAlert,
+  toggleSubingProduct,
+  toggleHtdyCurrentFrequency,
   dispose: disposeProductAlertScope,
 } = useProductAlertScope({
   symbol,
@@ -562,12 +563,12 @@ function openFormalEvent(event: import('@/types/market').AlertEvent, state: Even
 
 function toggleSubingAlert(ruleCode: string, enabled: boolean) {
   if (selectedOverlay.value !== 'subing' || ruleCode !== ALERT_RULE_CODES.SUBING) return
-  void toggleAlert(ruleCode, enabled)
+  void toggleSubingProduct(ruleCode, enabled)
 }
 
 function toggleHtdyAlert(ruleCode: string, enabled: boolean) {
   if (selectedOverlay.value !== 'htdy' || ruleCode !== ALERT_RULE_CODES.HTDY) return
-  void toggleAlert(ruleCode, enabled)
+  void toggleHtdyCurrentFrequency(ruleCode, enabled)
 }
 
 async function toggleFullscreen() {

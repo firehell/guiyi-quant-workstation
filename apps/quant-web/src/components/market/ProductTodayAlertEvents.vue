@@ -43,10 +43,14 @@ function barTime(value: string) {
 
 <template>
   <section class="product-today-alert-events" data-testid="product-today-alert-events">
-    <h3>苏冰今日记录</h3>
-    <p v-if="items.length === 0">当前无可展示的苏冰 Event 记录</p>
-    <div v-else class="product-today-alert-events__rows">
-      <div v-for="item in items" :key="item.id" class="product-today-alert-events__row">
+    <h3>苏冰今日其余记录</h3>
+    <div class="product-today-alert-events__rows">
+      <div
+        v-for="item in items"
+        :key="item.id"
+        class="product-today-alert-events__row"
+        :data-event-id="String(item.id)"
+      >
         <time>{{ barTime(item.bar_end) }}</time>
         <strong>{{ ruleLabel(item.rule_code) }}</strong>
         <span :class="resultClass(item)">{{ resultLabel(item) }}</span>

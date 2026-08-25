@@ -152,7 +152,7 @@ test('persistent Alert V2 markers stay exact-frequency and actual-dominant only'
     nodes.every((node, index) => index === 0 || Boolean(nodes[index - 1].compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING))
   ))).toBe(true)
   await sidebar.getByTestId('product-check-more').locator('summary').click()
-  await expect(sidebar.getByTestId('product-today-alert-events')).toBeVisible()
+  await expect(sidebar.getByTestId('product-today-alert-events')).toHaveCount(0)
   await page.getByRole('group', { name: 'Overlay' }).getByRole('button', { name: '火天大有', exact: true }).click()
   await expect(sidebar.getByTestId('subing-panel')).toHaveCount(0)
   await expect(sidebar.getByTestId('product-alert-rules')).toBeVisible()
@@ -333,6 +333,14 @@ test('SuBing product and HTDY pair switches preserve separate Scope semantics', 
         enabled_for_product: false,
         enabled_frequencies: [],
       },
+      {
+        rule_code: 'future_rule',
+        display_name: '未来错误 Rule',
+        kind: 'formal_signal',
+        input_frequencies: ['5m'],
+        enabled_for_product: true,
+        enabled_frequencies: [],
+      },
     ] } })
     if (url.pathname.endsWith('/current-events')) {
       return route.fulfill({ json: { status: 'ready', trading_day: '2026-08-13', items: [] } })
@@ -350,6 +358,8 @@ test('SuBing product and HTDY pair switches preserve separate Scope semantics', 
 
   const subingScope = sidebar.getByTestId('subing-alert-scope')
   const subingSwitch = subingScope.getByRole('switch')
+  await expect(sidebar).not.toContainText('未来错误 Rule')
+  await expect(subingScope.getByRole('switch')).toHaveCount(1)
   await expect(subingSwitch).not.toBeChecked()
   expect(scopePuts).toEqual([])
   await subingSwitch.click()

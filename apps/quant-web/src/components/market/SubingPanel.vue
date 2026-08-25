@@ -22,10 +22,13 @@ const props = defineProps<{
   supported: boolean
   loading: boolean
   error: boolean
+  eventLoading: boolean
+  eventStatus: 'ready' | 'unavailable' | null
   currentEvents: AlertEvent[]
   currentEventStates: Record<number, EventState>
   rules: ProductAlertRuleState[]
   runtimeStatus: AlertRuntimeStatus | null
+  alertLoading: boolean
   savingRuleCodes: Set<string>
 }>()
 
@@ -36,6 +39,12 @@ const emit = defineEmits<{
 
 const subingEvents = computed(() => props.currentEvents.filter((event) => event.rule_code === ALERT_RULE_CODES.SUBING))
 const formalEvent = computed(() => summarizeFormalEvent(subingEvents.value, props.currentEventStates))
+const remainingEvents = computed(() => {
+  const selectedId = formalEvent.value?.event.id
+  return selectedId === undefined
+    ? []
+    : subingEvents.value.filter((event) => event.id !== selectedId)
+})
 const subingRule = computed(() => props.rules.find((rule) => rule.rule_code === ALERT_RULE_CODES.SUBING) ?? null)
 const displayedSignal = computed(() => props.snapshot?.resolved_signal ?? props.snapshot?.primary_signal ?? null)
 const runtimeLabel = computed(() => alertRuntimeLabel(props.runtimeStatus))
@@ -117,7 +126,14 @@ function toggleSubing(ruleCode: string, enabled: boolean) {
 
     <section class="subing-panel__section" data-testid="subing-formal-event">
       <h4>Formal Event / Execution Review</h4>
-      <template v-if="formalEvent">
+      <p v-if="eventLoading">正在读取苏冰正式事件…</p>
+      <p v-else-if="eventStatus === 'unavailable'" class="subing-panel__warning">苏冰正式事件暂不可用</p>
+      <p v-else-if="eventStatus !== 'ready'">苏冰正式事件尚未读取</p>
+      <div
+        v-else-if="formalEvent"
+        class="subing-panel__formal-summary"
+        :data-formal-event-id="String(formalEvent.event.id)"
+      >
         <strong>{{ formalEvent.headline }}</strong>
         <NButton
           v-if="formalEvent.actionLabel"
@@ -126,10 +142,11 @@ function toggleSubing(ruleCode: string, enabled: boolean) {
           @click="emit('open-formal-event', formalEvent.event, formalEvent.state)"
         >{{ formalEvent.actionLabel }}</NButton>
         <p v-else>今日正式提醒记录</p>
-      </template>
+      </div>
       <p v-else>当前无可展示的苏冰正式事件记录</p>
       <ProductTodayAlertEvents
-        :items="subingEvents"
+        v-if="eventStatus === 'ready' && remainingEvents.length > 0"
+        :items="remainingEvents"
         :rules="subingRule ? [subingRule] : []"
       />
     </section>
@@ -178,20 +195,23 @@ function toggleSubing(ruleCode: string, enabled: boolean) {
 
     <section class="subing-panel__section" data-testid="subing-alert-scope">
       <h4>苏冰品种提醒</h4>
-      <NSpin :show="loading" size="small">
-        <div class="subing-panel__switch-row">
-          <span>{{ subingRule ? `${subingRule.display_name} · 品种 Scope` : '苏冰入场信号（不可用）' }}</span>
-          <NSwitch
-            :value="subingRule ? subingRule.enabled_for_product : false"
-            :disabled="!subingRule || savingRuleCodes.has(ALERT_RULE_CODES.SUBING)"
-            :loading="savingRuleCodes.has(ALERT_RULE_CODES.SUBING)"
-            @update:value="toggleSubing(ALERT_RULE_CODES.SUBING, $event)"
-          />
-        </div>
-        <div class="subing-panel__switch-row">
-          <span>Alert Runtime</span>
-          <NTag size="small" :type="runtimeTagType">{{ runtimeLabel }}</NTag>
-        </div>
+      <NSpin :show="alertLoading" size="small">
+        <p v-if="alertLoading">正在读取苏冰提醒 Scope…</p>
+        <template v-else>
+          <div class="subing-panel__switch-row">
+            <span>{{ subingRule ? `${subingRule.display_name} · 品种 Scope` : '苏冰入场信号（不可用）' }}</span>
+            <NSwitch
+              :value="subingRule ? subingRule.enabled_for_product : false"
+              :disabled="!subingRule || alertLoading || savingRuleCodes.has(ALERT_RULE_CODES.SUBING)"
+              :loading="savingRuleCodes.has(ALERT_RULE_CODES.SUBING)"
+              @update:value="toggleSubing(ALERT_RULE_CODES.SUBING, $event)"
+            />
+          </div>
+          <div class="subing-panel__switch-row">
+            <span>Alert Runtime</span>
+            <NTag size="small" :type="runtimeTagType">{{ runtimeLabel }}</NTag>
+          </div>
+        </template>
       </NSpin>
     </section>
 
@@ -211,6 +231,7 @@ function toggleSubing(ruleCode: string, enabled: boolean) {
 <style scoped>
 .subing-panel { display: grid; gap: 12px; min-width: 0; }
 .subing-panel__header, .subing-panel__lifecycle-header, .subing-panel__switch-row { display: flex; align-items: start; justify-content: space-between; gap: 10px; }
+.subing-panel__formal-summary { display: grid; gap: 8px; }
 .subing-panel__header span, .subing-panel__lifecycle-header span { display: block; color: var(--gy-text-muted); font-size: var(--gy-font-size-xs); }
 .subing-panel__header h3, .subing-panel__section h4 { margin: 2px 0 0; font-size: var(--gy-font-size-sm); }
 .subing-panel__section { display: grid; gap: 8px; padding-top: 11px; border-top: 1px solid var(--gy-border); }

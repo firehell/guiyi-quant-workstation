@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { existsSync, readFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import { nextTick, ref } from 'vue'
 import { useProductCurrentAlertEvents } from '../src/composables/useProductCurrentAlertEvents.ts'
@@ -10,9 +10,6 @@ import {
   alertRuleShortLabel,
 } from '../src/utils/alertRules.ts'
 
-const todayEventsSource = readFileSync(new URL('../src/components/market/ProductTodayAlertEvents.vue', import.meta.url), 'utf-8')
-const subingPanelUrl = new URL('../src/components/market/SubingPanel.vue', import.meta.url)
-const subingPanelSource = existsSync(subingPanelUrl) ? readFileSync(subingPanelUrl, 'utf-8') : ''
 const chartSource = readFileSync(new URL('../src/pages/market/chart.vue', import.meta.url), 'utf-8')
 const sidebarSource = readFileSync(new URL('../src/components/market/ProductCheckSidebar.vue', import.meta.url), 'utf-8')
 
@@ -82,11 +79,6 @@ test('preserves the backend bar_end descending order', async () => {
   state.dispose()
 })
 
-test('uses a stable safe fallback for an unknown current-event rule', () => {
-  assert.match(todayEventsSource, /alertRuleShortLabel\(ruleCode\)/)
-  assert.match(todayEventsSource, /v-for="item in items"/)
-})
-
 test('does not infer a formal or observation result for an unknown current-event rule', () => {
   const unknown = eventWith({ rule_code: 'future_rule', result_codes: ['buy'] })
 
@@ -127,18 +119,6 @@ test('derives the sidebar HTDY observation from the latest existing HTDY marker'
   assert.match(sidebarSource, /htdyObservation: KlineMarker \| null/)
   assert.match(sidebarSource, /v-if="htdyObservation"/)
   assert.match(sidebarSource, /htdyObservationLabel\(htdyObservation\)/)
-})
-
-test('keeps the SuBing formal section sourced only from recorded SuBing AlertEvents', () => {
-  assert.match(subingPanelSource, /event\.rule_code === ALERT_RULE_CODES\.SUBING/)
-  assert.match(subingPanelSource, /summarizeFormalEvent\(subingEvents\.value, props\.currentEventStates\)/)
-  assert.match(subingPanelSource, /data-testid="subing-formal-event"/)
-  assert.match(subingPanelSource, /今日正式提醒记录/)
-  assert.doesNotMatch(sidebarSource, /summarizeFormalEvent/)
-  assert.match(sidebarSource, /v-if="currentEventsLoading"/)
-  assert.match(sidebarSource, /currentEventsStatus === 'unavailable'/)
-  assert.match(sidebarSource, /currentEventsStatus === 'ready'/)
-  assert.doesNotMatch(subingPanelSource, /status="ready"/)
 })
 
 function event(id: number): AlertEvent {
