@@ -38,6 +38,18 @@ export function useProductAlertScope(dependencies: Dependencies) {
   ))
   let generation = 0
 
+  function invalidateIdentity(): void {
+    generation += 1
+    alertRules.value = []
+    alertLoading.value = true
+    savingRuleCodes.value = new Set()
+  }
+
+  function markUnavailable(): void {
+    alertRules.value = []
+    alertLoading.value = false
+  }
+
   async function refresh(): Promise<void> {
     const requestedSymbol = dependencies.symbol.value
     if (!requestedSymbol) return
@@ -90,11 +102,15 @@ export function useProductAlertScope(dependencies: Dependencies) {
         ))
       }
     } catch {
-      dependencies.notifyError('Alert Scope 更新失败')
+      if (requestGeneration === generation && dependencies.symbol.value === requestedSymbol) {
+        dependencies.notifyError('Alert Scope 更新失败')
+      }
     } finally {
-      const saving = new Set(savingRuleCodes.value)
-      saving.delete(ruleCode)
-      savingRuleCodes.value = saving
+      if (requestGeneration === generation) {
+        const saving = new Set(savingRuleCodes.value)
+        saving.delete(ruleCode)
+        savingRuleCodes.value = saving
+      }
     }
   }
 
@@ -138,6 +154,8 @@ export function useProductAlertScope(dependencies: Dependencies) {
     alertLoading,
     savingRuleCodes,
     refresh,
+    invalidateIdentity,
+    markUnavailable,
     toggleSubingProduct,
     toggleHtdyCurrentFrequency,
     dispose,

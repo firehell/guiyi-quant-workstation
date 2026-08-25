@@ -3,6 +3,7 @@ import type {
   DominantContractItem,
   MarketFrequency,
   ResearchOverlayId,
+  SubingFrequency,
   SubingResearchResponse,
 } from '../types/market.ts'
 import {
@@ -21,7 +22,7 @@ interface Dependencies {
   selectedDominant: ComputedRef<DominantContractItem | undefined>
   fetchSnapshot: (params: {
     symbol: string
-    frequency: '5m' | '15m' | '1d'
+    frequency: SubingFrequency
   }) => Promise<SubingResearchResponse>
   fetchDominants: () => Promise<{ items: DominantContractItem[] }>
   refreshSeries: () => Promise<boolean>
@@ -50,6 +51,12 @@ export function useSubingObservation(dependencies: Dependencies) {
     subingError.value = false
     subingLoading.value = dependencies.selectedOverlay.value === 'subing'
       && subingSupported.value
+  }
+
+  function markUnavailable(): void {
+    subing.value = null
+    subingError.value = true
+    subingLoading.value = false
   }
 
   async function refresh(allowDelayedRefresh = true): Promise<void> {
@@ -140,6 +147,7 @@ export function useSubingObservation(dependencies: Dependencies) {
     subingError,
     subingSupported,
     reset,
+    markUnavailable,
     refresh,
     dispose,
   }

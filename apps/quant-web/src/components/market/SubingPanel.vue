@@ -152,7 +152,7 @@ function toggleSubing(ruleCode: string, enabled: boolean) {
     </section>
 
     <section class="subing-panel__section" data-testid="subing-current-research">
-      <p v-if="!supported" class="subing-panel__warning">苏冰当前周期不可用，仅支持 5m / 15m / 1d</p>
+      <p v-if="!supported" class="subing-panel__warning">苏冰公开当前观察仅支持 5m / 15m；D1 / 60m 请查看每日观察。</p>
       <p v-else-if="loading">苏冰观察加载中</p>
       <p v-else-if="error || !snapshot" class="subing-panel__warning">苏冰观察暂不可用；K 线保留当前展示行情</p>
       <template v-else>
@@ -197,16 +197,16 @@ function toggleSubing(ruleCode: string, enabled: boolean) {
       <h4>苏冰品种提醒</h4>
       <NSpin :show="alertLoading" size="small">
         <p v-if="alertLoading">正在读取苏冰提醒 Scope…</p>
-        <template v-else>
-          <div class="subing-panel__switch-row">
-            <span>{{ subingRule ? `${subingRule.display_name} · 品种 Scope` : '苏冰入场信号（不可用）' }}</span>
-            <NSwitch
-              :value="subingRule ? subingRule.enabled_for_product : false"
-              :disabled="!subingRule || alertLoading || savingRuleCodes.has(ALERT_RULE_CODES.SUBING)"
-              :loading="savingRuleCodes.has(ALERT_RULE_CODES.SUBING)"
-              @update:value="toggleSubing(ALERT_RULE_CODES.SUBING, $event)"
-            />
-          </div>
+        <div class="subing-panel__switch-row">
+          <span>{{ subingRule ? `${subingRule.display_name} · 品种 Scope` : alertLoading ? '苏冰入场信号 · 品种 Scope' : '苏冰入场信号（不可用）' }}</span>
+          <NSwitch
+            :value="subingRule ? subingRule.enabled_for_product : false"
+            :disabled="!subingRule || alertLoading || savingRuleCodes.has(ALERT_RULE_CODES.SUBING)"
+            :loading="alertLoading || savingRuleCodes.has(ALERT_RULE_CODES.SUBING)"
+            @update:value="toggleSubing(ALERT_RULE_CODES.SUBING, $event)"
+          />
+        </div>
+        <template v-if="!alertLoading">
           <div class="subing-panel__switch-row">
             <span>Alert Runtime</span>
             <NTag size="small" :type="runtimeTagType">{{ runtimeLabel }}</NTag>
