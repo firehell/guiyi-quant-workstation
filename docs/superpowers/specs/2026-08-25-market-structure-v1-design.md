@@ -136,6 +136,8 @@ Strict comparison rejects plateaus. A raw pivot can be confirmed only when compl
 
 ATR is a dedicated Decimal implementation and does not reuse a float compatibility variant:
 
+Every formula operation runs inside an engine-owned `decimal.localcontext` with `prec=34`, `rounding=ROUND_HALF_EVEN`, `Emin=-999999`, `Emax=999999`, `clamp=0`; `InvalidOperation`, `DivisionByZero`, and `Overflow` trap, while `Inexact` and `Rounded` do not. Inputs and policy factors are constructed from decimal strings before entering that context. The engine never reads or mutates ambient `decimal.getcontext()`.
+
 ```text
 TR[0] = high[0] - low[0]
 TR[i] = max(high[i]-low[i], abs(high[i]-close[i-1]), abs(low[i]-close[i-1]))
@@ -143,7 +145,7 @@ ATR[13] = sum(TR[0:14]) / 14
 ATR[i] = (ATR[i-1] * 13 + TR[i]) / 14, for i > 13
 ```
 
-No intermediate rounding is allowed. Serialization is tick-normalized only at input; calculated Decimal fields use their exact Decimal value.
+There is no explicit tick/digit quantization between operations; division, multiplication, ATR recursion, comparisons, and `range_position` all use the fixed 34-digit context above. Calculated values are serialized from that deterministic context as fixed-point strings with trailing zeros removed. Tests must prove identical facts, scores, and JSON when the caller's ambient Decimal precision/rounding is varied.
 
 The move filter is deterministic:
 
@@ -203,7 +205,7 @@ Provenance is response decoration, not part of the immutable fact:
 
 Preview is a separate nullable object and never a confirmed fact.
 
-At completed-series length `n`, examine candidate indices `j` satisfying `j >= s` and `j+s >= n`; these are the left-confirmed, right-incomplete tail. Apply the left-side strict predicate and the same move filter using `ATR[j]`. A bar satisfying both left predicates is discarded as ambiguous.
+At completed-series length `n`, examine candidate indices `j` satisfying `j >= s` and `j+s >= n`; these are the left-confirmed, right-incomplete tail. Apply the left-side strict predicate and require the same strict inequality against every already observed right-side bar `k` where `j < k < n`. The candidate remains unstable only because bars through `j+s` do not yet exist. Apply the same move filter using `ATR[j]`. A bar satisfying both partial high and low predicates is discarded as ambiguous.
 
 Expected kind follows `active_leg`. If the leg is unresolved, a preview is permitted only when candidates exist for exactly one kind. Among multiple high candidates choose greatest price, then earliest `pivot_time`; among multiple low candidates choose lowest price, then earliest `pivot_time`. This winner rule is total and deterministic.
 
@@ -262,12 +264,13 @@ Acceptance corpus minimum:
 - all seven canonical frequencies, at least two exact-series fixtures per frequency, and at least three products overall;
 - at least 30 confirmed labeled pivots per frequency and at least 20 of each `HH/LH/HL/LL` overall;
 - at least five label lifecycles per frequency with `first_seen_at` captured;
+- calibration has at least five and holdout at least two non-null active-leg observations per frequency;
 - at least 12 preview lifecycles, recorded as exploratory evidence only;
 - exact feed/series/contract, timezone, tick size, and logical-to-physical identity mapping.
 
 Each record has `evidence_tier=acceptance | exploratory`; only exact-series acceptance records enter metrics and there is no confidence weighting. Images support review but are not machine truth without matching structured observations.
 
-Before running the grid, the manifest freezes non-overlapping calibration and holdout ids. Holdout contains at least 20% of accepted events, at least eight events per frequency, and every label class. Calibration contains at least three and holdout at least two `first_seen_at` lifecycles per frequency. Split ids and the manifest digest are committed before scores are generated; changing the split invalidates all results.
+Before running the grid, the manifest freezes non-overlapping calibration and holdout ids. Holdout contains at least 20% of accepted events, at least eight events per frequency, and every scored class `HH/LH/HL/LL`. Calibration contains at least three and holdout at least two `first_seen_at` lifecycles per frequency. Split ids and the manifest digest are committed before scores are generated; changing the split invalidates all results. Equality samples are reported when present but have no minimum in V1.
 
 ### A2. Bounded parameter grid
 
@@ -286,15 +289,15 @@ Candidate id is `s{span}-a{factor_token}`, where factor tokens are exactly `0`, 
 
 Expected and predicted events match one-to-one on `(fixture_id, kind, label, pivot_time, price)` after validated tick alignment. An unmatched expected event is FN and an unmatched prediction is FP. Each `HH/LH/HL/LL` class uses `2TP/(2TP+FP+FN)`. A class with zero expected and predicted support is excluded from that frequency/split mean; a prediction-only class is included with F1 zero. An empty supported-class set is invalid evidence. Macro event F1 is the arithmetic mean of included class F1 values; equality labels are reported separately.
 
-Active-leg observations are keyed by `(fixture_id, observed_at)` on a completed bar and compare the model state at that exact cutoff; accuracy denominator is all acceptance observations with a non-null expected leg. Range-position MAE uses acceptance observations with an explicit dashboard value. There is no imputation.
+Active-leg observations are keyed by `(fixture_id, observed_at)` on a completed bar and compare the model state at that exact cutoff; each split's accuracy denominator is all of that split's acceptance observations with a non-null expected leg and must satisfy the per-frequency minima above. Range-position MAE uses only that split's acceptance observations with an explicit dashboard value. There is no imputation.
 
-When at least 20 accepted range observations exist, score is:
+For each split independently, when at least 20 accepted range observations exist, score is:
 
 ```text
 0.70 * macro_event_f1 + 0.20 * active_leg_accuracy + 0.10 * (1 - range_mae)
 ```
 
-Otherwise range is not scored and weights become `7/9` and `2/9`; the range threshold is not applicable.
+Otherwise range is not scored for that split, weights become `7/9` and `2/9`, and the range threshold is not applicable to that split.
 
 Run the full grid on calibration only. Candidates must meet the thresholds below on calibration. Select the highest score; all candidates within `0.01` of that highest score form the tie set, then choose lower `min_move_atr`, lower `span`, and lexical candidate id. Evaluate exactly that one frozen winner on holdout. The holdout is never used to reselect parameters.
 
@@ -465,7 +468,7 @@ The mapping is mutually exclusive:
 | authoritative coverage unavailable | unavailable | `source_unavailable` |
 | logical/physical segment unresolved or conflicting | unavailable | `segment_unresolved` or `ambiguous_current_segment` |
 | complete valid coverage below raw detection minimum | insufficient | `insufficient_bars` |
-| ATR-enabled candidate lacks required ATR warm-up | insufficient | `atr_warmup_insufficient` |
+| after full-series calculation structure is not ready, and a necessary filtered candidate was unavailable only because ATR warm-up was missing | insufficient | `atr_warmup_insufficient` |
 | full valid calculation lacks two highs or two lows | insufficient | `structure_seed_incomplete` |
 | complete valid structure | ready | null |
 
