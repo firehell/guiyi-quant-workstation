@@ -2,7 +2,6 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { NAlert, NButton } from 'naive-ui'
-import MarketAttentionList from '@/components/market/MarketAttentionList.vue'
 import MarketDetailTable from '@/components/market/MarketDetailTable.vue'
 import MarketScatter from '@/components/market/MarketScatter.vue'
 import MarketSummaryStrip from '@/components/market/MarketSummaryStrip.vue'
@@ -165,7 +164,7 @@ onBeforeUnmount(() => {
           <summary>展开全市场研究</summary>
           <div class="market-radar-page__research-content">
             <MarketSummaryStrip :radar="radar" />
-            <div class="market-radar-page__discovery"><MarketScatter :items="radar.items" @open="openChart" /><MarketAttentionList :items="radar.attention" @open="openChart" /></div>
+            <MarketScatter :items="radar.items" @open="openChart" />
             <MarketDetailTable :items="radar.items" :sectors="radar.sector_summary" @open="openChart" />
           </div>
         </details>
@@ -184,6 +183,4 @@ onBeforeUnmount(() => {
 .market-radar-page__research { min-width: 0; border: .5px solid var(--gy-border); border-radius: var(--gy-radius-lg); background: var(--gy-bg-panel); }
 .market-radar-page__research > summary { padding: 14px 16px; color: var(--gy-accent); font-weight: 500; cursor: pointer; }
 .market-radar-page__research-content { display: flex; flex-direction: column; gap: 16px; padding: 0 16px 16px; }
-.market-radar-page__discovery { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(320px, .9fr); gap: 16px; }
-@media (max-width: 980px) { .market-radar-page__discovery { grid-template-columns: 1fr; } }
 </style>

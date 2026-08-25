@@ -11,8 +11,6 @@ import type {
   MarketReadState,
   MarketFrequency,
   MarketRadarResponse,
-  MarketTrendFocusResponse,
-  MarketTrendFocusWireResponse,
   ProductResearchResponse,
   SeriesKind,
   SubingFrequency,
@@ -23,7 +21,7 @@ import type {
 } from '@/types/market'
 import {
   normalizeMainForceMirrorV2Page,
-  normalizeMarketTrendFocus,
+  normalizeMarketRadar,
   normalizeSubingDailyWatchCurrent,
   normalizeSubingResearch,
 } from '@/types/market'
@@ -35,11 +33,6 @@ export function getMarketDominants() {
 export function getMarketRadar() {
   return request.get<never, MarketRadarResponse>('/market/research/radar')
     .then(normalizeMarketRadar)
-}
-
-export function getMarketTrendFocus() {
-  return request.get<never, MarketTrendFocusWireResponse>('/market/research/trend-focus')
-    .then(normalizeMarketTrendFocus) as Promise<MarketTrendFocusResponse>
 }
 
 export function getSubingDailyWatchCurrent() {
@@ -122,30 +115,6 @@ function toNumber(value: number | string | null): number | null {
   return value === null ? null : Number(value)
 }
 
-function normalizeMarketRadar(payload: MarketRadarResponse): MarketRadarResponse {
-  return {
-    ...payload,
-    items: payload.items.map(normalizeRadarItem),
-    attention: payload.attention.map(normalizeRadarItem),
-    sector_summary: payload.sector_summary.map((sector) => ({
-      ...sector,
-      median_price_change_1d: toNumber(sector.median_price_change_1d),
-    })),
-  }
-}
-
-function normalizeRadarItem(item: MarketRadarResponse['items'][number]) {
-  return {
-    ...item,
-    price_change_1d: toNumber(item.price_change_1d),
-    price_change_5d: toNumber(item.price_change_5d),
-    volume_ratio20: toNumber(item.volume_ratio20),
-    oi_change_1d: toNumber(item.oi_change_1d),
-    atr14_percentile252: toNumber(item.atr14_percentile252),
-    position20: toNumber(item.position20),
-    turnover: toNumber(item.turnover),
-  }
-}
 
 export function getMarketBarsPage(params: MarketBarsPageRequest) {
   return request.get<never, MarketBarsPageResponse>('/market/bars/page', { params })

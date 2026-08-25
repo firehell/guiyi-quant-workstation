@@ -20,8 +20,6 @@ OI_EXPANSION_PCT = Decimal("0.05")
 HIGH_VOLATILITY_PERCENTILE = Decimal("0.80")
 NEAR_HIGH_POSITION = Decimal("0.90")
 NEAR_LOW_POSITION = Decimal("0.10")
-ATTENTION_MIN_REASONS = 2
-ATTENTION_LIMIT = 10
 RADAR_DAILY_METRIC_LIMIT = 300
 RADAR_DAILY_QUERY_LIMIT = RADAR_DAILY_METRIC_LIMIT + 1
 
@@ -44,7 +42,6 @@ class RadarSectorSummary:
     up_count: int
     down_count: int
     median_price_change_1d: Decimal | None
-    attention_count: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,7 +56,6 @@ class MarketRadarSnapshot:
     stale: tuple[str, ...]
     unavailable: tuple[str, ...]
     items: tuple[RadarItem, ...]
-    attention: tuple[RadarItem, ...]
     sector_summary: tuple[RadarSectorSummary, ...]
 
     @property
@@ -147,18 +143,7 @@ class MarketRadarService:
                     _reason_codes(item),
                 )
             )
-        attention = tuple(
-            sorted(
-                (
-                    item
-                    for item in items
-                    if len(item.reason_codes) >= ATTENTION_MIN_REASONS
-                ),
-                key=_attention_sort_key,
-            )[:ATTENTION_LIMIT]
-        )
-        attention_symbols = {item.symbol for item in attention}
-        sectors = tuple(_sector_summaries(self._products, self._taxonomy, items, attention_symbols))
+        sectors = tuple(_sector_summaries(self._products, self._taxonomy, items))
         freshness_state: Literal["current", "pending_after_market", "degraded"]
         if stale or unavailable:
             freshness_state = "degraded"
@@ -180,7 +165,6 @@ class MarketRadarService:
             stale=tuple(stale),
             unavailable=tuple(unavailable),
             items=tuple(items),
-            attention=attention,
             sector_summary=sectors,
         )
 
@@ -220,24 +204,10 @@ def _reason_codes(item: RadarItem) -> tuple[str, ...]:
     return tuple(reasons)
 
 
-def _attention_sort_key(item: RadarItem) -> tuple[Decimal, Decimal, Decimal, str]:
-    return (
-        -Decimal(len(item.reason_codes)),
-        -(
-            abs(item.metrics.price_change_1d)
-            if item.metrics.price_change_1d is not None
-            else Decimal("-1")
-        ),
-        -(item.turnover if item.turnover is not None else Decimal("-1")),
-        item.symbol,
-    )
-
-
 def _sector_summaries(
     products: tuple[str, ...],
     taxonomy: Mapping[str, ProductTaxonomyEntry],
     items: list[RadarItem],
-    attention_symbols: set[str],
 ):
     by_symbol = {item.symbol: item for item in items}
     for sector in sorted({entry.sector for entry in taxonomy.values()}):
@@ -259,5 +229,4 @@ def _sector_summaries(
                 for item in participants
             ),
             Decimal(str(median(changes))) if changes else None,
-            sum(item.symbol in attention_symbols for item in participants),
         )

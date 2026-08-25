@@ -40,7 +40,7 @@ function radarItem(overrides = {}) {
 function sectorSummary(sector, median) {
   return {
     sector, total_count: 1, participant_count: 1, up_count: median > 0 ? 1 : 0,
-    down_count: median < 0 ? 1 : 0, median_price_change_1d: median, attention_count: 1,
+    down_count: median < 0 ? 1 : 0, median_price_change_1d: median,
   }
 }
 
@@ -50,7 +50,7 @@ function radar(overrides = {}) {
     freshness_state: 'current', freshness_message: '当前完整', active_count: 60, participant_count: 60,
     stale: [], unavailable: [],
     summary: { up_count: 20, down_count: 18, volume_expansion_count: 12, oi_increase_count: 9, high_volatility_count: 7 },
-    items: [], attention: [], sector_summary: [],
+    items: [], sector_summary: [],
     ...overrides,
   }
 }
@@ -713,7 +713,6 @@ test('B1 journey narrows AG on the homepage before opening its verification view
     status: 'ready', trading_day: '2026-08-15', items: [],
   }, radar({
     items: [ag],
-    attention: [ag],
     sector_summary: [sectorSummary('precious', 0.012)],
   }), dailyWatch({
     long_watch: [dailyWatchItem('ag', '白银')],

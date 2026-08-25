@@ -706,7 +706,6 @@ export interface MarketRadarSectorSummary {
   up_count: number
   down_count: number
   median_price_change_1d: number | null
-  attention_count: number
 }
 
 export interface MarketRadarResponse {
@@ -722,8 +721,32 @@ export interface MarketRadarResponse {
   unavailable: string[]
   summary: MarketRadarSummary
   items: MarketRadarItem[]
-  attention: MarketRadarItem[]
   sector_summary: MarketRadarSectorSummary[]
+}
+
+/** FastAPI serializes Radar Decimal values as strings; normalize at the HTTP boundary. */
+export function normalizeMarketRadar(payload: MarketRadarResponse): MarketRadarResponse {
+  return {
+    ...payload,
+    items: payload.items.map((item) => ({
+      ...item,
+      price_change_1d: normalizeMarketRadarDecimal(item.price_change_1d),
+      price_change_5d: normalizeMarketRadarDecimal(item.price_change_5d),
+      volume_ratio20: normalizeMarketRadarDecimal(item.volume_ratio20),
+      oi_change_1d: normalizeMarketRadarDecimal(item.oi_change_1d),
+      atr14_percentile252: normalizeMarketRadarDecimal(item.atr14_percentile252),
+      position20: normalizeMarketRadarDecimal(item.position20),
+      turnover: normalizeMarketRadarDecimal(item.turnover),
+    })),
+    sector_summary: payload.sector_summary.map((sector) => ({
+      ...sector,
+      median_price_change_1d: normalizeMarketRadarDecimal(sector.median_price_change_1d),
+    })),
+  }
+}
+
+function normalizeMarketRadarDecimal(value: number | string | null): number | null {
+  return value === null ? null : Number(value)
 }
 
 export type SubingDailyWatchDecision = 'long_watch' | 'short_watch'
@@ -977,97 +1000,6 @@ function isNullableDailyWatchDate(value: unknown): value is string | null {
 
 function isDailyWatchTimestamp(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0 && Number.isFinite(Date.parse(value))
-}
-
-export type MarketTrendFocusDirection = 'long' | 'short'
-export type MarketTrendFocusStage = 'setup' | 'breakout' | 'retest' | 'ready' | 'running' | 'weakening'
-export type MarketTrendFocusHourlyState = 'continuation' | 'pullback' | 'reversal_block'
-
-interface MarketTrendFocusItemBase<TDecimal> {
-  symbol: string
-  product_name: string
-  sector: string
-  physical_contract: string
-  direction: MarketTrendFocusDirection
-  stage: MarketTrendFocusStage
-  hot_conditions: string[]
-  hot_count: number
-  price_change_1d: TDecimal | null
-  volume_ratio20: TDecimal | null
-  atr14_percentile252: TDecimal | null
-  daily_volume_support: boolean
-  hourly_state: MarketTrendFocusHourlyState
-  hourly_volume_support: boolean
-  range_upper: TDecimal
-  range_lower: TDecimal
-  confirmation_count: number
-  retest_held: boolean
-  rebreak_reference: TDecimal | null
-  ready_invalidation: TDecimal | null
-  volume_confirmed: boolean
-  five_minute_confirmed: boolean
-  entry_confirmed_at: string | null
-  latest_swing_high: TDecimal | null
-  latest_swing_low: TDecimal | null
-  next_level: TDecimal | null
-  invalidation_level: TDecimal | null
-  last_transition_at: string
-}
-
-export type MarketTrendFocusWireItem = MarketTrendFocusItemBase<number | string>
-export type MarketTrendFocusItem = MarketTrendFocusItemBase<number>
-
-export interface MarketTrendFocusUnavailable {
-  symbol: string | null
-  code: string
-}
-
-interface MarketTrendFocusResponseBase<TItem> {
-  status: 'ready' | 'degraded'
-  observed_at: string
-  long_opportunities: TItem[]
-  short_opportunities: TItem[]
-  running_trends: TItem[]
-  weakening_trends: TItem[]
-  unavailable: MarketTrendFocusUnavailable[]
-}
-
-export type MarketTrendFocusWireResponse = MarketTrendFocusResponseBase<MarketTrendFocusWireItem>
-export type MarketTrendFocusResponse = MarketTrendFocusResponseBase<MarketTrendFocusItem>
-
-export function normalizeMarketTrendFocus(
-  payload: MarketTrendFocusWireResponse,
-): MarketTrendFocusResponse {
-  return {
-    ...payload,
-    long_opportunities: payload.long_opportunities.map(normalizeMarketTrendFocusItem),
-    short_opportunities: payload.short_opportunities.map(normalizeMarketTrendFocusItem),
-    running_trends: payload.running_trends.map(normalizeMarketTrendFocusItem),
-    weakening_trends: payload.weakening_trends.map(normalizeMarketTrendFocusItem),
-  }
-}
-
-function normalizeMarketTrendFocusItem(
-  item: MarketTrendFocusWireItem,
-): MarketTrendFocusItem {
-  return {
-    ...item,
-    price_change_1d: normalizeTrendFocusDecimal(item.price_change_1d),
-    volume_ratio20: normalizeTrendFocusDecimal(item.volume_ratio20),
-    atr14_percentile252: normalizeTrendFocusDecimal(item.atr14_percentile252),
-    range_upper: Number(item.range_upper),
-    range_lower: Number(item.range_lower),
-    rebreak_reference: normalizeTrendFocusDecimal(item.rebreak_reference),
-    ready_invalidation: normalizeTrendFocusDecimal(item.ready_invalidation),
-    latest_swing_high: normalizeTrendFocusDecimal(item.latest_swing_high),
-    latest_swing_low: normalizeTrendFocusDecimal(item.latest_swing_low),
-    next_level: normalizeTrendFocusDecimal(item.next_level),
-    invalidation_level: normalizeTrendFocusDecimal(item.invalidation_level),
-  }
-}
-
-function normalizeTrendFocusDecimal(value: number | string | null): number | null {
-  return value === null ? null : Number(value)
 }
 
 /** 后端 `/market/state` 与 WebSocket `state` 事件的只读展示状态。 */

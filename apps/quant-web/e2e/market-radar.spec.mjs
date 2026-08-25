@@ -25,10 +25,10 @@ function radar(freshnessState = 'current') {
     active_count: 60, participant_count: degraded ? 59 : 60,
     stale: degraded ? ['jm'] : [], unavailable: [],
     summary: { up_count: 1, down_count: 1, volume_expansion_count: 1, oi_increase_count: 1, high_volatility_count: 1 },
-    items, attention: items,
+    items,
     sector_summary: [
-      { sector: 'precious', total_count: 1, participant_count: 1, up_count: 1, down_count: 0, median_price_change_1d: '0.032', attention_count: 1 },
-      { sector: 'black', total_count: 1, participant_count: degraded ? 0 : 1, up_count: 0, down_count: degraded ? 0 : 1, median_price_change_1d: degraded ? null : '-0.021', attention_count: degraded ? 0 : 1 },
+      { sector: 'precious', total_count: 1, participant_count: 1, up_count: 1, down_count: 0, median_price_change_1d: '0.032' },
+      { sector: 'black', total_count: 1, participant_count: degraded ? 0 : 1, up_count: 0, down_count: degraded ? 0 : 1, median_price_change_1d: degraded ? null : '-0.021' },
     ],
   }
 }
