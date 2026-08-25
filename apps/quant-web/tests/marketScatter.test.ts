@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 
 import type { MarketRadarItem } from '../src/types/market.ts'
@@ -62,4 +63,16 @@ test('sorts each quadrant by combined absolute change and breaks ties by symbol'
 
   const upIncrease = groups.find((group) => group.key === 'up_increase')
   assert.deepEqual(upIncrease?.items.map((entry) => entry.symbol), ['gamma', 'alpha', 'beta', 'minor'])
+})
+
+test('market homepage and radar types do not expose retired attention or trend focus surfaces', async () => {
+  const [homeSource, marketTypesSource] = await Promise.all([
+    readFile(new URL('../src/pages/market/index.vue', import.meta.url), 'utf8'),
+    readFile(new URL('../src/types/market.ts', import.meta.url), 'utf8'),
+  ])
+
+  assert.equal(homeSource.includes('MarketAttentionList'), false)
+  assert.equal(homeSource.includes('MarketFocusList'), false)
+  assert.equal(homeSource.includes('radar.attention'), false)
+  assert.equal(marketTypesSource.includes('attention_count'), false)
 })

@@ -11,8 +11,6 @@ import type {
   MarketReadState,
   MarketFrequency,
   MarketRadarResponse,
-  MarketTrendFocusResponse,
-  MarketTrendFocusWireResponse,
   ProductResearchResponse,
   SeriesKind,
   SubingFrequency,
@@ -23,7 +21,6 @@ import type {
 } from '@/types/market'
 import {
   normalizeMainForceMirrorV2Page,
-  normalizeMarketTrendFocus,
   normalizeSubingDailyWatchCurrent,
   normalizeSubingResearch,
 } from '@/types/market'
@@ -35,11 +32,6 @@ export function getMarketDominants() {
 export function getMarketRadar() {
   return request.get<never, MarketRadarResponse>('/market/research/radar')
     .then(normalizeMarketRadar)
-}
-
-export function getMarketTrendFocus() {
-  return request.get<never, MarketTrendFocusWireResponse>('/market/research/trend-focus')
-    .then(normalizeMarketTrendFocus) as Promise<MarketTrendFocusResponse>
 }
 
 export function getSubingDailyWatchCurrent() {

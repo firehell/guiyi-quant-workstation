@@ -810,7 +810,7 @@ test('MarketFormalSignals batches event states and deep-links all four actions',
   await page.route('**/api/v1/market/research/radar', (route) => route.fulfill({ json: {
     status: 'ready', expected_as_of: '2026-08-15', target_as_of: '2026-08-15', data_as_of: '2026-08-15', freshness_state: 'current', freshness_message: '当前完整', active_count: 60, participant_count: 60,
     stale: [], unavailable: [], summary: { up_count: 0, down_count: 0, volume_expansion_count: 0, oi_increase_count: 0, high_volatility_count: 0 },
-    items: [], attention: [], sector_summary: [],
+    items: [], sector_summary: [],
   } }))
   await page.goto('/market')
 
@@ -834,7 +834,7 @@ test('MarketFormalSignals stays visible with a safe action when review state is 
   await page.route('**/api/v1/market/research/radar', (route) => route.fulfill({ json: {
     status: 'ready', expected_as_of: '2026-08-15', target_as_of: '2026-08-15', data_as_of: '2026-08-15', freshness_state: 'current', freshness_message: '当前完整', active_count: 60, participant_count: 60,
     stale: [], unavailable: [], summary: { up_count: 0, down_count: 0, volume_expansion_count: 0, oi_increase_count: 0, high_volatility_count: 0 },
-    items: [], attention: [], sector_summary: [],
+    items: [], sector_summary: [],
   } }))
 
   await page.goto('/market')

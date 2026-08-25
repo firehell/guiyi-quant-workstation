@@ -21,11 +21,6 @@ from app.market_data.main_force_mirror_v2_service import (
     MainForceMirrorV2PageResult,
     MemberDatasetState,
 )
-from app.market_data.market_trend_focus import (
-    TrendFocusItem,
-    TrendFocusSnapshot,
-    TrendFocusUnavailable,
-)
 from guiyi_quant.indicators.main_force_mirror_v2 import (
     MainForceMirrorV2Point,
     MemberRankObservation,
@@ -552,7 +547,6 @@ class FakeRadarService:
             up_count=1,
             down_count=0,
             median_price_change_1d=Decimal("0.03"),
-            attention_count=1,
         )
         return SimpleNamespace(
             status="ready",
@@ -566,7 +560,6 @@ class FakeRadarService:
             stale=(),
             unavailable=(),
             items=(item,),
-            attention=(item,),
             sector_summary=(sector,),
         )
 
@@ -597,7 +590,7 @@ def test_market_radar_api_returns_explicit_freshness_and_transparent_reasons(mon
         "oi_increase_count": 1,
         "high_volatility_count": 1,
     }
-    assert payload["attention"][0]["reason_codes"] == [
+    assert payload["items"][0]["reason_codes"] == [
         "price_move_up",
         "volume_expansion",
         "oi_increase",
@@ -605,189 +598,16 @@ def test_market_radar_api_returns_explicit_freshness_and_transparent_reasons(mon
     ]
 
 
-def _trend_focus_item(**overrides) -> TrendFocusItem:
-    values = {
-        "symbol": "jm",
-        "product_name": "焦煤",
-        "sector": "black",
-        "physical_contract": "JM2701",
-        "direction": "long",
-        "stage": "ready",
-        "hot_conditions": ("price_move_up", "volume_expansion"),
-        "hot_count": 2,
-        "price_change_1d": Decimal("0.0234"),
-        "volume_ratio20": Decimal("1.75"),
-        "atr14_percentile252": Decimal("0.81"),
-        "daily_volume_support": True,
-        "hourly_state": "continuation",
-        "hourly_volume_support": False,
-        "range_upper": Decimal("101.25"),
-        "range_lower": Decimal("96.5"),
-        "confirmation_count": 3,
-        "retest_held": True,
-        "rebreak_reference": Decimal("103.5"),
-        "ready_invalidation": Decimal("99.25"),
-        "volume_confirmed": True,
-        "five_minute_confirmed": False,
-        "entry_confirmed_at": None,
-        "latest_swing_high": Decimal("103.5"),
-        "latest_swing_low": Decimal("99.25"),
-        "next_level": Decimal("104.75"),
-        "invalidation_level": Decimal("101.25"),
-        "last_transition_at": datetime(2026, 8, 23, 2, 30, tzinfo=UTC),
-    }
-    values.update(overrides)
-    return TrendFocusItem(**values)
-
-
-def _install_trend_focus_snapshot(monkeypatch, snapshot: TrendFocusSnapshot) -> None:
-    radar_snapshot = SimpleNamespace(freshness_state="current")
-    radar_service = SimpleNamespace(snapshot=lambda: radar_snapshot)
-    dominant = SimpleNamespace(symbol="jm", actual_contract="JM2701")
-    market_data = SimpleNamespace(list_latest_dominants=lambda: (dominant,))
-    market_read = object()
-
+def test_market_research_api_retires_attention_and_trend_focus(monkeypatch) -> None:
     monkeypatch.setattr(
         "app.api.market.build_market_radar_service",
-        lambda _session: radar_service,
-    )
-    monkeypatch.setattr(
-        "app.api.market.build_market_data_service",
-        lambda _session: market_data,
-    )
-    monkeypatch.setattr(
-        "app.api.market.build_market_read_service",
-        lambda _session: market_read,
+        lambda _session: FakeRadarService(),
+        raising=False,
     )
 
-    def _build_snapshot(**kwargs):
-        assert kwargs["radar_snapshot"] is radar_snapshot
-        assert kwargs["market_data"] is market_data
-        assert kwargs["market_read"] is market_read
-        assert kwargs["dominants"] == {"jm": dominant}
-        assert kwargs["now"].tzinfo is not None
-        return snapshot
+    client = TestClient(app, raise_server_exceptions=False)
+    radar = client.get("/api/v1/market/research/radar")
 
-    monkeypatch.setattr("app.api.market.build_market_trend_focus_snapshot", _build_snapshot)
-
-
-def test_market_trend_focus_api_returns_exact_ready_contract_and_decimal_json(
-    monkeypatch,
-) -> None:
-    observed_at = datetime(2026, 8, 23, 3, tzinfo=UTC)
-    item = _trend_focus_item()
-    _install_trend_focus_snapshot(
-        monkeypatch,
-        TrendFocusSnapshot(
-            status="ready",
-            observed_at=observed_at,
-            long_opportunities=(item,),
-            short_opportunities=(),
-            running_trends=(),
-            weakening_trends=(),
-            unavailable=(),
-        ),
-    )
-
-    response = TestClient(app).get("/api/v1/market/research/trend-focus")
-
-    assert response.status_code == 200
-    payload = response.json()
-    assert set(payload) == {
-        "status",
-        "observed_at",
-        "long_opportunities",
-        "short_opportunities",
-        "running_trends",
-        "weakening_trends",
-        "unavailable",
-    }
-    assert payload["observed_at"] == "2026-08-23T03:00:00Z"
-    assert payload["long_opportunities"][0] == {
-        "symbol": "jm",
-        "product_name": "焦煤",
-        "sector": "black",
-        "physical_contract": "JM2701",
-        "direction": "long",
-        "stage": "ready",
-        "hot_conditions": ["price_move_up", "volume_expansion"],
-        "hot_count": 2,
-        "price_change_1d": "0.0234",
-        "volume_ratio20": "1.75",
-        "atr14_percentile252": "0.81",
-        "daily_volume_support": True,
-        "hourly_state": "continuation",
-        "hourly_volume_support": False,
-        "range_upper": "101.25",
-        "range_lower": "96.5",
-        "confirmation_count": 3,
-        "retest_held": True,
-        "rebreak_reference": "103.5",
-        "ready_invalidation": "99.25",
-        "volume_confirmed": True,
-        "five_minute_confirmed": False,
-        "entry_confirmed_at": None,
-        "latest_swing_high": "103.5",
-        "latest_swing_low": "99.25",
-        "next_level": "104.75",
-        "invalidation_level": "101.25",
-        "last_transition_at": "2026-08-23T02:30:00Z",
-    }
-
-
-def test_market_trend_focus_api_returns_degraded_as_http_200_with_empty_groups(
-    monkeypatch,
-) -> None:
-    _install_trend_focus_snapshot(
-        monkeypatch,
-        TrendFocusSnapshot(
-            status="degraded",
-            observed_at=datetime(2026, 8, 23, 3, tzinfo=UTC),
-            long_opportunities=(),
-            short_opportunities=(),
-            running_trends=(),
-            weakening_trends=(),
-            unavailable=(TrendFocusUnavailable(None, "RADAR_DEGRADED"),),
-        ),
-    )
-
-    response = TestClient(app).get("/api/v1/market/research/trend-focus")
-
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["status"] == "degraded"
-    assert payload["long_opportunities"] == []
-    assert payload["short_opportunities"] == []
-    assert payload["running_trends"] == []
-    assert payload["weakening_trends"] == []
-    assert payload["unavailable"] == [{"symbol": None, "code": "RADAR_DEGRADED"}]
-
-
-def test_market_trend_focus_api_preserves_symbol_unavailable(monkeypatch) -> None:
-    _install_trend_focus_snapshot(
-        monkeypatch,
-        TrendFocusSnapshot(
-            status="ready",
-            observed_at=datetime(2026, 8, 23, 3, tzinfo=UTC),
-            long_opportunities=(),
-            short_opportunities=(),
-            running_trends=(),
-            weakening_trends=(),
-            unavailable=(
-                TrendFocusUnavailable("jm", "HOURLY_HISTORY_INSUFFICIENT"),
-            ),
-        ),
-    )
-
-    response = TestClient(app).get("/api/v1/market/research/trend-focus")
-
-    assert response.status_code == 200
-    assert response.json()["unavailable"] == [
-        {"symbol": "jm", "code": "HOURLY_HISTORY_INSUFFICIENT"}
-    ]
-
-
-def test_market_trend_focus_endpoint_exposes_no_threshold_or_score_parameters() -> None:
-    operation = app.openapi()["paths"]["/api/v1/market/research/trend-focus"]["get"]
-
-    assert operation.get("parameters", []) == []
+    assert client.get("/api/v1/market/research/trend-focus").status_code == 404
+    assert "attention" not in radar.json()
+    assert all("attention_count" not in sector for sector in radar.json()["sector_summary"])

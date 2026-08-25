@@ -359,7 +359,6 @@ class MarketRadarSectorOut(BaseModel):
     up_count: int
     down_count: int
     median_price_change_1d: Decimal | None
-    attention_count: int
 
 
 class MarketRadarResponse(BaseModel):
@@ -377,60 +376,7 @@ class MarketRadarResponse(BaseModel):
     unavailable: list[str]
     summary: MarketRadarSummaryOut
     items: list[MarketRadarItemOut]
-    attention: list[MarketRadarItemOut]
     sector_summary: list[MarketRadarSectorOut]
-
-
-class MarketTrendFocusUnavailableOut(BaseModel):
-    """单品种 Trend Focus 不可用事实。"""
-
-    symbol: str | None
-    code: str
-
-
-class MarketTrendFocusItemOut(BaseModel):
-    """Trend Focus 首页投影所需的稳定只读事实。"""
-
-    symbol: str
-    product_name: str
-    sector: str
-    physical_contract: str
-    direction: Literal["long", "short"]
-    stage: Literal["setup", "breakout", "retest", "ready", "running", "weakening"]
-    hot_conditions: list[str]
-    hot_count: int
-    price_change_1d: Decimal | None
-    volume_ratio20: Decimal | None
-    atr14_percentile252: Decimal | None
-    daily_volume_support: bool
-    hourly_state: Literal["continuation", "pullback", "reversal_block"]
-    hourly_volume_support: bool
-    range_upper: Decimal
-    range_lower: Decimal
-    confirmation_count: int
-    retest_held: bool
-    rebreak_reference: Decimal | None
-    ready_invalidation: Decimal | None
-    volume_confirmed: bool
-    five_minute_confirmed: bool
-    entry_confirmed_at: datetime | None
-    latest_swing_high: Decimal | None
-    latest_swing_low: Decimal | None
-    next_level: Decimal | None
-    invalidation_level: Decimal | None
-    last_transition_at: datetime
-
-
-class MarketTrendFocusResponse(BaseModel):
-    """``/research/trend-focus`` 全 active universe 当前快照。"""
-
-    status: Literal["ready", "degraded"]
-    observed_at: datetime
-    long_opportunities: list[MarketTrendFocusItemOut]
-    short_opportunities: list[MarketTrendFocusItemOut]
-    running_trends: list[MarketTrendFocusItemOut]
-    weakening_trends: list[MarketTrendFocusItemOut]
-    unavailable: list[MarketTrendFocusUnavailableOut]
 
 
 class SubingDailyWatchCountsOut(BaseModel):

@@ -158,18 +158,6 @@ def test_radar_isolates_known_market_data_errors_but_propagates_unexpected_error
         _service({"ag": RuntimeError("boom"), "jm": _bars()}).snapshot()
 
 
-def test_attention_uses_at_least_two_reasons_and_stable_order() -> None:
-    first = _bars(last_close=Decimal("200"), last_volume=Decimal("300"), last_oi=Decimal("200"))
-    second = _bars(last_close=Decimal("180"), last_volume=Decimal("250"), last_oi=Decimal("180"))
-    snapshot = _service({"ag": first, "jm": second}).snapshot()
-
-    assert [item.symbol for item in snapshot.attention] == ["ag", "jm"]
-    assert all(len(item.reason_codes) >= 2 for item in snapshot.attention)
-
-    no_candidate = _service({"ag": _bars(count=10), "jm": _bars(count=10)}).snapshot()
-    assert no_candidate.attention == ()
-
-
 def test_sector_totals_come_from_taxonomy_even_when_one_symbol_is_unavailable() -> None:
     snapshot = _service({"ag": _bars(), "jm": MarketDataError("QUERY_WINDOW_EMPTY")}).snapshot()
 
