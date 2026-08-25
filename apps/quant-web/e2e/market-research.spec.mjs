@@ -149,7 +149,7 @@ test('Market homepage shows compact Runtime facts without implying provider deli
 
   const strip = page.getByTestId('market-runtime-status')
   await expect(strip).toContainText('整体正常')
-  await expect(strip).toContainText('Live 正常')
+  await expect(strip).toContainText('实时正常')
   await expect(strip).toContainText('未获自然验证')
   await expect(strip).toContainText('服务商已接受（不代表送达）')
   await expect(strip).toContainText('已完成')
@@ -175,8 +175,8 @@ test('Market homepage accessibly distinguishes disabled Alert from missing natur
   )
   await page.goto('/market')
 
-  const strip = page.getByRole('region', { name: 'Runtime 运行状态' })
-  await expect(strip).toContainText('Alert 未启用')
+  const strip = page.getByRole('region', { name: '运行状态' })
+  await expect(strip).toContainText('提醒未启用')
   await expect(strip).not.toContainText('未获自然验证')
 })
 
@@ -224,7 +224,7 @@ test('Market homepage marks first Runtime failure unavailable and retains a stal
 
   await page.goto('/market')
   const strip = page.getByTestId('market-runtime-status')
-  await expect(strip).toContainText('Runtime 状态暂不可用')
+  await expect(strip).toContainText('运行状态暂不可用')
 
   await page.getByRole('button', { name: '全部刷新' }).click()
   await expect(strip).toContainText('整体正常')
@@ -307,6 +307,36 @@ test('Market homepage caps formal decisions at two columns on desktop', async ({
   expect(tops[2]).toBeGreaterThan(tops[1])
 })
 
+test('Market homepage lists every price and open-interest structure without overlapping points', async ({ page }) => {
+  const items = [
+    radarItem({ symbol: 'rb', product_name: '螺纹钢', price_change_1d: -0.012, oi_change_1d: 0.034 }),
+    radarItem({ symbol: 'jm', product_name: '焦煤', price_change_1d: 0.012, oi_change_1d: 0.021 }),
+    radarItem({ symbol: 'sf', product_name: '硅铁', price_change_1d: -0.02, oi_change_1d: -0.015 }),
+    radarItem({ symbol: 'au', product_name: '黄金', price_change_1d: 0.03, oi_change_1d: -0.01 }),
+    radarItem({ symbol: 'a', product_name: '豆一', price_change_1d: 0, oi_change_1d: 0.01 }),
+  ]
+  await mockWorkspace(page, { json: research() })
+  await mockMarketHomepage(page, { status: 'ready', trading_day: '2026-08-15', items: [] }, radar({
+    items,
+    sector_summary: [sectorSummary('black', 0.01)],
+  }))
+  await page.goto('/market')
+  await page.getByText('展开全市场研究', { exact: true }).click()
+
+  const quadrants = page.getByTestId('market-quadrant-list')
+  await expect(quadrants).toBeVisible()
+  await expect(quadrants.getByTestId('market-quadrant-down-increase').getByRole('button', { name: '打开 RB 螺纹钢' })).toBeVisible()
+  await expect(quadrants.getByTestId('market-quadrant-up-increase').getByRole('button', { name: '打开 JM 焦煤' })).toBeVisible()
+  await expect(quadrants.getByTestId('market-quadrant-down-decrease').getByRole('button', { name: '打开 SF 硅铁' })).toBeVisible()
+  await expect(quadrants.getByTestId('market-quadrant-up-decrease').getByRole('button', { name: '打开 AU 黄金' })).toBeVisible()
+  await expect(quadrants.getByTestId('market-quadrant-neutral').getByRole('button', { name: '打开 A 豆一' })).toBeVisible()
+  await expect(quadrants.getByRole('button')).toHaveCount(5)
+  await expect(quadrants.locator('.market-scatter__point')).toHaveCount(0)
+
+  await quadrants.getByRole('button', { name: '打开 JM 焦煤' }).click()
+  await expect(page).toHaveURL(/\/market\/chart\?symbol=jm/)
+})
+
 test('Market homepage keeps lower-timeframe confirmation fixed at 5m for a 15m signal', async ({ page }) => {
   await mockMarketHomepage(page, {
     status: 'ready', trading_day: '2026-08-15', items: [{ ...formalSignal(), frequency: '15m' }],
@@ -370,15 +400,15 @@ test('manual Radar refresh keeps the last snapshot on failure and updates on ret
   await expect(summary).toContainText('当前数据日期 2026-08-14')
 
   await page.getByRole('button', { name: '全部刷新' }).click()
-  await expect(page.getByRole('alert').filter({ hasText: 'Radar 刷新失败' })).toBeVisible()
+  await expect(page.getByRole('alert').filter({ hasText: '市场雷达刷新失败' })).toBeVisible()
   await expect(summary).toContainText('当前数据日期 2026-08-14')
 
   await page.getByRole('button', { name: '全部刷新' }).click()
   await expect(summary).toContainText('当前数据日期 2026-08-15')
-  await expect(page.getByRole('alert').filter({ hasText: 'Radar 刷新失败' })).toHaveCount(0)
+  await expect(page.getByRole('alert').filter({ hasText: '市场雷达刷新失败' })).toHaveCount(0)
 })
 
-test('sector tabs preserve backend order and combine sector with watchlist filtering', async ({ page }) => {
+test('sector tabs always show the selected market sector without self-select controls', async ({ page }) => {
   await page.addInitScript(() => {
     window.localStorage.setItem('guiyi.market.workspace.preferences.v1', JSON.stringify({
       version: 1, symbol: null, seriesKind: 'actual_dominant', frequency: '15m',
@@ -400,10 +430,10 @@ test('sector tabs preserve backend order and combine sector with watchlist filte
   await expect(tabs).toHaveText(['黑色系 0.8%', '农产品 -0.4%'])
   await expect(tabs.first()).toHaveAttribute('aria-selected', 'true')
   await expect(page.locator('.market-detail tbody tr')).toContainText('JM 焦煤')
-  await expect(page.locator('.market-detail tbody tr')).not.toContainText('A 豆一')
-
-  await page.getByRole('button', { name: '自选', exact: true }).click()
-  await expect(page.locator('.market-detail tbody tr')).toHaveCount(0)
+  await expect(page.locator('.market-detail thead')).not.toContainText('状态')
+  await expect(page.locator('.market-detail thead')).not.toContainText('自选')
+  await expect(page.getByRole('button', { name: '自选', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '加入', exact: true })).toHaveCount(0)
   await tabs.nth(1).click()
   await expect(page.locator('.market-detail tbody tr')).toHaveCount(1)
   await expect(page.locator('.market-detail tbody tr')).toContainText('A 豆一')

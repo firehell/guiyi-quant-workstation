@@ -57,7 +57,6 @@ import {
 import {
   loadMarketWorkspacePreferences,
   saveMarketWorkspacePreferences,
-  toggleWatchlistSymbol,
 } from '@/utils/marketWorkspacePreferences'
 import { resolveSubingDailyWatchChartEntry } from '@/utils/marketChartEntry'
 
@@ -75,7 +74,6 @@ const workspaceElement = ref<HTMLElement | null>(null)
 const fullscreen = ref(false)
 const researchDrawerOpen = ref(false)
 const researchSidebarOpen = ref(initialWorkspacePreferences.researchSidebarOpen)
-const watchlist = ref(initialWorkspacePreferences.watchlist)
 const selectedOverlay = ref<ResearchOverlayId>(
   dailyWatchEntry?.overlay ?? initialMainChartPreferences.selectedOverlay,
 )
@@ -227,7 +225,6 @@ const afterMarketFailed = computed(() => {
   const afterMarket = marketState.value?.after_market
   return !!afterMarket && typeof afterMarket === 'object' && afterMarket.last_failure != null
 })
-const watchlisted = computed(() => watchlist.value.includes(symbol.value))
 const htdyVisible = computed(() => selectedOverlay.value === 'htdy')
 const latestHtdyObservation = computed(() => {
   if (!htdyVisible.value || !overlayCapability.value.supported) return null
@@ -304,7 +301,7 @@ watch([symbol, seriesKind, contract], () => {
   if (metadataReady && !synchronizingSymbol) void refreshResearch()
 })
 
-watch([symbol, seriesKind, frequency, researchSidebarOpen, watchlist], persistWorkspacePreferences, { deep: true })
+watch([symbol, seriesKind, frequency, researchSidebarOpen], persistWorkspacePreferences, { deep: true })
 
 watch([currentEventsStatus, currentEvents], () => {
   void refreshCurrentEventStates()
@@ -528,18 +525,6 @@ function updateOptionalEmaIndicators(value: OptionalEmaIndicatorId[]) {
   saveMainChartPreferences({ ...current, optionalEmaIndicators: optionalEmaIndicators.value })
 }
 
-function toggleWatchlist() {
-  const next = toggleWatchlistSymbol({
-    version: 1,
-    symbol: symbol.value || null,
-    seriesKind: seriesKind.value === 'continuous' ? 'continuous' : 'actual_dominant',
-    frequency: frequency.value,
-    researchSidebarOpen: researchSidebarOpen.value,
-    watchlist: watchlist.value,
-  }, symbol.value)
-  watchlist.value = next.watchlist
-}
-
 function persistWorkspacePreferences() {
   saveMarketWorkspacePreferences({
     version: 1,
@@ -547,7 +532,6 @@ function persistWorkspacePreferences() {
     seriesKind: seriesKind.value === 'continuous' ? 'continuous' : 'actual_dominant',
     frequency: frequency.value,
     researchSidebarOpen: researchSidebarOpen.value,
-    watchlist: watchlist.value,
   })
 }
 
@@ -707,7 +691,6 @@ function normalizeSymbol(value: unknown): string | null {
               :phase="phaseLabel"
               :has-more-before="canLoadEarlier"
               :canonical-coverage="canonicalCoverage"
-              :watchlisted="watchlisted"
               :research="research"
               :research-loading="researchLoading"
               :research-error="researchError"
@@ -725,7 +708,6 @@ function normalizeSymbol(value: unknown): string | null {
               :current-events="currentEvents"
               :current-event-states="currentEventStates"
               :htdy-observation="latestHtdyObservation"
-              @toggle-watchlist="toggleWatchlist"
               @toggle-alert="toggleAlert"
               @open-formal-event="openFormalEvent"
             />
@@ -745,7 +727,6 @@ function normalizeSymbol(value: unknown): string | null {
           :phase="phaseLabel"
           :has-more-before="canLoadEarlier"
           :canonical-coverage="canonicalCoverage"
-          :watchlisted="watchlisted"
           :research="research"
           :research-loading="researchLoading"
           :research-error="researchError"
@@ -763,7 +744,6 @@ function normalizeSymbol(value: unknown): string | null {
           :current-events="currentEvents"
           :current-event-states="currentEventStates"
           :htdy-observation="latestHtdyObservation"
-          @toggle-watchlist="toggleWatchlist"
           @toggle-alert="toggleAlert"
           @open-formal-event="openFormalEvent"
         />
@@ -790,6 +770,15 @@ function normalizeSymbol(value: unknown): string | null {
 .product-workspace:fullscreen .product-workspace__main { grid-template-columns: minmax(0, 1fr); height: 100%; }
 .product-workspace:fullscreen .product-workspace__kline { min-height: 100%; }
 .product-workspace:fullscreen .product-workspace__sidebar-wrap { display: none; }
+
+@media (min-width: 980px) {
+  .chart-page { height: 100%; min-height: 0; }
+  .chart-page > :deep(.n-spin-container), .chart-page :deep(.n-spin-content) { display: flex; flex: 1 1 0; min-height: 0; flex-direction: column; }
+  .product-workspace, .product-workspace__main { flex: 1 1 0; min-height: 0; }
+  .product-workspace { display: flex; }
+  .product-workspace__kline { display: flex; min-height: 0; }
+  .product-workspace__kline :deep(.kline-shell) { flex: 1 1 0; height: 100%; }
+}
 
 @media (min-width: 980px) and (max-width: 1199px) {
   .product-workspace__main { grid-template-columns: minmax(0, 1fr); }

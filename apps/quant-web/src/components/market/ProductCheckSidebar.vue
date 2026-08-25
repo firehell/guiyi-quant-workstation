@@ -32,7 +32,6 @@ const props = defineProps<{
   phase: string
   hasMoreBefore: boolean
   canonicalCoverage: { start: string; end: string } | null
-  watchlisted: boolean
   research: ProductResearchResponse | null
   researchLoading: boolean
   researchError: boolean
@@ -53,7 +52,6 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  'toggle-watchlist': []
   'toggle-alert': [ruleCode: string, enabled: boolean]
   'open-formal-event': [event: AlertEvent, state: EventState | null]
 }>()
@@ -137,9 +135,6 @@ function updateMoreOpen(event: Event) {
         <span>当前检查栏</span>
         <strong>{{ dominant?.product.toUpperCase() || '--' }} {{ dominant?.product_name || '' }}</strong>
       </div>
-      <NButton size="small" :type="watchlisted ? 'primary' : 'default'" @click="emit('toggle-watchlist')">
-        {{ watchlisted ? '已自选' : '加入自选' }}
-      </NButton>
     </header>
 
     <section class="product-check-sidebar__section" data-testid="product-check-now">

@@ -90,9 +90,9 @@ async function installFakeWebSocket(page) {
 
 async function mockMarketApi(page, requests, controls = {}) {
   const initialStart = Date.UTC(2026, 7, 7, 1)
-  const initial = bars(initialStart, 1200)
+  const initial = bars(initialStart, 300)
   const daily = dailyBars(Date.UTC(2026, 0, 1, 7), 120)
-  const older = [...bars(initialStart - 1200 * 15 * 60 * 1000, 1200, 0), initial[0]]
+  const older = [...bars(initialStart - 300 * 15 * 60 * 1000, 300, 0), initial[0]]
   const formalAdvance = [...initial, bars(initialStart + 1200 * 15 * 60 * 1000, 1, 1300)[0]]
 
   await page.route('**/api/v1/market/**', async (route) => {
@@ -142,7 +142,8 @@ async function mockMarketApi(page, requests, controls = {}) {
       await route.fulfill({ json: {
         request: {
           series_kind: seriesKind, symbol, contract: requestedContract,
-          frequency: url.searchParams.get('frequency'), before, limit: 1200,
+          frequency: url.searchParams.get('frequency'), before,
+          limit: Number(url.searchParams.get('limit')),
         },
         bars: pageBars,
         canonical_coverage: null,
@@ -169,7 +170,8 @@ test('renders the latest canonical page first, paginates left, and overlays actu
   await expect.poll(() => requests.filter((url) => url.pathname.endsWith('/bars/page')).length).toBe(1)
   const first = requests.find((url) => url.pathname.endsWith('/bars/page'))
   expect(first.searchParams.has('before')).toBe(false)
-  await expect(page.getByText('1200 bars')).toBeVisible()
+  expect(first.searchParams.get('limit')).toBe('300')
+  await expect(page.getByText('300 bars')).toBeVisible()
   await expect(page.getByTestId('market-display-state')).toHaveText('Live')
   await expect.poll(() => page.evaluate(() => window.__marketSockets.filter((socket) => socket.url.includes('/api/v1/market/ws') && !socket.closed).length)).toBe(1)
 
@@ -179,7 +181,7 @@ test('renders the latest canonical page first, paginates left, and overlays actu
       { bar_end: '2026-08-19T13:15:00.000Z', trading_day: '2026-08-19', open: 1300, high: 1302, low: 1299, close: 1301, volume: 1, turnover: null, open_interest: null },
     ] })
   })
-  await expect(page.getByText('1202 bars')).toBeVisible()
+  await expect(page.getByText('302 bars')).toBeVisible()
 
   const canvas = page.locator('.chart canvas').first()
   const box = await canvas.boundingBox()
@@ -205,7 +207,7 @@ test('renders the latest canonical page first, paginates left, and overlays actu
     } })
   })
   await expect.poll(() => requests.filter((url) => url.pathname.endsWith('/bars/page')).length).toBe(3)
-  await expect(page.getByText('2402 bars')).toBeVisible()
+  await expect(page.getByText('602 bars')).toBeVisible()
   expect(requests.every((url) => !(url.searchParams.has('start') && url.searchParams.has('end')))).toBe(true)
 })
 
@@ -249,7 +251,7 @@ test('shows a post-close snapshot until the canonical edge takes it over', async
     for (const socket of window.__marketSockets.filter((candidate) => !candidate.closed && candidate.url.includes('symbol=jm'))) socket.serverSend(payload)
   })
   await expect(page.getByTestId('market-display-state')).toHaveText('收盘快照 · 待盘后更新')
-  await expect(page.getByText('1201 bars')).toBeVisible()
+  await expect(page.getByText('301 bars')).toBeVisible()
 
   controls.jmCanonicalReady = true
   await page.evaluate(() => {
@@ -262,7 +264,7 @@ test('shows a post-close snapshot until the canonical edge takes it over', async
   })
   await expect.poll(() => requests.filter((url) => url.pathname.endsWith('/bars/page') && url.searchParams.get('symbol') === 'jm').length).toBe(2)
   await expect(page.getByTestId('market-display-state')).toHaveText('Historical')
-  await expect(page.getByText('1201 bars')).toBeVisible()
+  await expect(page.getByText('301 bars')).toBeVisible()
 })
 
 test('does not leak a stale symbol websocket message after switching the displayed symbol', async ({ page }) => {
@@ -282,18 +284,18 @@ test('does not leak a stale symbol websocket message after switching the display
     } })
   })
 
-  await expect(page.getByText('1200 bars')).toBeVisible()
+  await expect(page.getByText('300 bars')).toBeVisible()
   await expect(page.getByText('999 bars')).toHaveCount(0)
 })
 
-test('switches series and period from the workspace shell, opens research on compact desktop, and stores watchlist locally', async ({ page }) => {
+test('switches series and period from the workspace shell and opens research without self-select controls', async ({ page }) => {
   const requests = []
   await installFakeWebSocket(page)
   await mockMarketApi(page, requests)
   await page.setViewportSize({ width: 1100, height: 900 })
 
   await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=15m')
-  await expect(page.getByText('1200 bars')).toBeVisible()
+  await expect(page.getByText('300 bars')).toBeVisible()
 
   await page.getByRole('button', { name: '主连', exact: true }).click()
   await expect.poll(() => requests.filter((url) => url.pathname.endsWith('/bars/page')).at(-1)?.searchParams.get('series_kind')).toBe('continuous')
@@ -303,7 +305,33 @@ test('switches series and period from the workspace shell, opens research on com
   await page.getByRole('button', { name: '检查', exact: true }).click()
   const drawer = page.getByRole('dialog')
   await expect(drawer.getByText('当前检查栏', { exact: true })).toBeVisible()
-  await drawer.getByRole('button', { name: '加入自选', exact: true }).click()
-  await expect(drawer.getByRole('button', { name: '已自选', exact: true })).toBeVisible()
-  await expect.poll(() => page.evaluate(() => JSON.parse(window.localStorage.getItem('guiyi.market.workspace.preferences.v1')).watchlist)).toEqual(['ag'])
+  await expect(drawer.getByRole('button', { name: /自选/ })).toHaveCount(0)
+  await expect.poll(() => page.evaluate(() => JSON.parse(window.localStorage.getItem('guiyi.market.workspace.preferences.v1')).watchlist)).toBeUndefined()
+})
+
+test('fills the remaining desktop viewport with the chart workspace and current check rail', async ({ page }) => {
+  const requests = []
+  await installFakeWebSocket(page)
+  await mockMarketApi(page, requests)
+  await page.setViewportSize({ width: 1680, height: 1000 })
+
+  await page.goto('/market/chart?symbol=jm&series_kind=actual_dominant&frequency=15m')
+  await expect(page.getByTestId('kline-shell')).toBeVisible()
+
+  const layout = await page.evaluate(() => {
+    const content = document.querySelector('.content')?.getBoundingClientRect()
+    const shell = document.querySelector('[data-testid="kline-shell"]')?.getBoundingClientRect()
+    const sidebar = document.querySelector('[data-testid="product-check-sidebar"]')?.getBoundingClientRect()
+    if (!content || !shell || !sidebar) throw new Error('chart layout is missing')
+    return {
+      chartBottomGap: content.bottom - shell.bottom,
+      chartHeight: shell.height,
+      sidebarBottomGap: content.bottom - sidebar.bottom,
+      sidebarHeight: sidebar.height,
+    }
+  })
+
+  expect(layout.chartBottomGap).toBeLessThanOrEqual(20)
+  expect(layout.sidebarBottomGap).toBeLessThanOrEqual(20)
+  expect(layout.sidebarHeight).toBe(layout.chartHeight)
 })

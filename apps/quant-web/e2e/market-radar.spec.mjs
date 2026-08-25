@@ -261,5 +261,5 @@ test('keeps Daily Watch independent from Radar freshness and readable at a narro
   const watch = page.getByTestId('subing-daily-watch')
   await expect(watch).toContainText('RB RB')
   await expect(watch).toContainText('目标交易日')
-  await expect(page.getByText('Radar 数据不完整：stale jm', { exact: true })).toBeVisible()
+  await expect(page.getByText('市场雷达数据不完整：stale jm', { exact: true })).toBeVisible()
 })
