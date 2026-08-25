@@ -254,7 +254,11 @@ watch(symbol, () => {
 })
 
 watch([contract, seriesKind, frequency], async () => {
-  if (!metadataReady || synchronizingSymbol.value) return
+  if (!metadataReady) return
+  if (synchronizingSymbol.value) {
+    void synchronizeSymbolIdentity()
+    return
+  }
   resetSubingSnapshot()
   if (await refreshSeries()) void refreshSubing()
 })

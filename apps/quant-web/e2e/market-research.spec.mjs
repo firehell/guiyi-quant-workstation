@@ -704,6 +704,7 @@ async function mockProductIdentityWorkspace(page) {
   const calls = { bars: [], research: [], subing: [], scope: [], events: [], put: [] }
   const gates = {
     jmBars: deferred(),
+    jm15mBars: deferred(),
     jmResearch: deferred(),
     jmSubing: deferred(),
     jmScope: deferred(),
@@ -758,7 +759,9 @@ async function mockProductIdentityWorkspace(page) {
     }
     if (url.pathname.endsWith('/bars/page')) {
       calls.bars.push(requestedSymbol)
-      if (requestedSymbol === 'jm') await gates.jmBars.promise
+      if (requestedSymbol === 'jm') {
+        await (url.searchParams.get('frequency') === '15m' ? gates.jm15mBars : gates.jmBars).promise
+      }
       const items = Array.from({ length: 120 }, (_, index) => bar(index))
       return route.fulfill({ json: {
         request: {
@@ -932,6 +935,40 @@ test('Product Workspace identity invalidates AG facts before delayed JM Market a
   await expect(page.getByTestId('subing-alert-scope')).toContainText('JM JM Scope')
   await expect(page.getByTestId('subing-alert-scope').getByRole('switch')).not.toHaveClass(/n-switch--disabled/)
   await expect(page.getByTestId('subing-formal-event')).toContainText('买入信号')
+  expect(calls.put).toEqual([])
+})
+
+test('Product Workspace identity replays a frequency change made during delayed symbol Market acceptance', async ({ page }) => {
+  const { calls, gates } = await mockProductIdentityWorkspace(page)
+  releaseIdentityFacts(gates, 'initialAg')
+  await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=5m')
+  await expect(page.getByTestId('product-check-participation')).toContainText('6.1%')
+
+  await selectProduct(page, 'JM 焦煤')
+  await expect.poll(() => calls.bars.filter((item) => item === 'jm').length).toBe(1)
+  await page.getByRole('group', { name: '周期' }).getByRole('button', { name: '15m', exact: true }).click()
+
+  await expect.poll(() => calls.bars.filter((item) => item === 'jm').length).toBe(2)
+  expect(calls.research.filter((item) => item === 'jm')).toEqual([])
+  expect(calls.scope.filter((item) => item === 'jm')).toEqual([])
+  await expect(page.getByTestId('product-check-participation')).not.toContainText('6.1%')
+  await expect(page.getByTestId('subing-alert-scope').getByRole('switch')).toHaveClass(/n-switch--disabled/)
+
+  gates.jm15mBars.resolve()
+  await expect.poll(() => calls.research.filter((item) => item === 'jm').length).toBe(1)
+  await expect.poll(() => calls.scope.filter((item) => item === 'jm').length).toBe(1)
+  gates.jmResearch.resolve()
+  gates.jmSubing.resolve()
+  gates.jmScope.resolve()
+  gates.jmEvents.resolve()
+  await expect(page.getByTestId('product-check-participation')).toContainText('-4.2%')
+  await expect(page.getByTestId('subing-alert-scope')).toContainText('JM JM Scope')
+
+  gates.jmBars.resolve()
+  await page.waitForTimeout(100)
+  await expect(page.getByRole('group', { name: '周期' }).getByRole('button', { name: '15m', exact: true })).toHaveClass(/n-button--primary-type/)
+  expect(calls.research.filter((item) => item === 'jm')).toHaveLength(1)
+  expect(calls.scope.filter((item) => item === 'jm')).toHaveLength(1)
   expect(calls.put).toEqual([])
 })
 
