@@ -68,6 +68,17 @@ test('Web public DTO, API, and marker modules omit N and raw JDJ while retaining
   assert.match(loaderSource, /fetchJdjStrategy/)
 })
 
+test('visible product copy uses the single approved SuBing and JDJ replay names', () => {
+  const sidebarSource = read('../src/components/market/ProductCheckSidebar.vue')
+  const subingPanelSource = read('../src/components/market/SubingPanel.vue')
+
+  assert.match(sidebarSource, /<strong>日进斗金参考回放 · Reference only<\/strong>/)
+  assert.doesNotMatch(sidebarSource, /日进斗金策略/)
+  assert.match(sidebarSource, /<summary>5\. 更多研究<\/summary>/)
+  assert.doesNotMatch(subingPanelSource, />SuBing</)
+  assert.match(subingPanelSource, />苏冰</)
+})
+
 function read(path: string): string {
   return readFileSync(new URL(path, import.meta.url), 'utf8')
 }

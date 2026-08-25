@@ -120,7 +120,7 @@ function toggleSubing(ruleCode: string, enabled: boolean) {
 <template>
   <section class="subing-panel" data-testid="subing-panel">
     <header class="subing-panel__header">
-      <div><span>SuBing</span><h3>品种研究面板</h3></div>
+      <div><span>苏冰</span><h3>品种研究面板</h3></div>
       <NTag size="small" type="info">Research only</NTag>
     </header>
 
@@ -172,7 +172,7 @@ function toggleSubing(ruleCode: string, enabled: boolean) {
 
         <section v-if="lifecycle" data-testid="subing-lifecycle-panel" class="subing-panel__lifecycle">
           <div class="subing-panel__lifecycle-header">
-            <div><span>SuBing Lifecycle V2</span><strong>研究生命周期</strong></div>
+            <div><span>苏冰生命周期 V2</span><strong>研究生命周期</strong></div>
             <NTag size="small" type="info">Research only</NTag>
           </div>
           <p class="subing-panel__funnel">准备 → 研究确认 → 延续 → 退出风险 → 本轮结束</p>
