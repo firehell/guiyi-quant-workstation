@@ -46,7 +46,7 @@ export function jdjStrategyActionToMarker(
     time: action.effective_bar_end,
     label,
     tooltip: [
-      '参考回放 · 日进斗金策略',
+      '日进斗金参考回放',
       `主设置 ${value(action.primary_setup)}`,
       `辅助设置 ${action.supporting_setups.join(', ') || '—'}`,
       `合约 ${action.contract}`,
