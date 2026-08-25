@@ -19,11 +19,13 @@
   `200 / unavailable / SUBING_DAILY_WATCH_NOT_GENERATED / expected=2026-08-25`，等待下一次自然盘后生成。
 - 旧 `v1.8.2` Runtime worktree 保留为 clean/detached rollback 资产，但当前没有 label 指向；未执行
   回滚、after-market、canary、人工通知、真实 RQAlpha smoke、Canonical/production Redis
-  写入或 Alert Scope/transport 变更。
+  写入或 Alert transport 变更。
 - production Alembic 已于 2026-08-25 14:56 CST 从 `20260815_0039` 升级到
   `20260825_0040 (head)`。migration 自动将旧 HTDY `scope_products=['jm']` 继承为
   `scope_product_frequencies={'jm':['15m']}` 并清空 HTDY 旧列；SuBing 继续为
-  `scope_products=['jm']` 且 frequency Scope 为空。未执行额外 Scope mutation 或通知。
+  `scope_products=['jm']` 且 frequency Scope 为空。后续独立 production HTDY Scope Gate 已于
+  2026-08-25 15:13 CST 原子更新为 Active60 × 七周期 `60 symbols / 420 pairs`，正式 HTTP 读模型与
+  Runtime authorization predicate 均读回 `420/420`；SuBing 未变，未执行人工通知、canary 或历史补发。
 - RQAlpha research workbench 代码已包含在 `v1.8.0`，但本地 sidecar 仍未加载、未进入 Runtime；真实
   RQAlpha smoke 继续 `pending`，不得由代码包含或其他 Runtime 验收推导为已完成。
 - Market/Alert marker 继续 enabled；Alert notification channel 仍为 pushplus 且 config=`ready`、
@@ -45,8 +47,9 @@
   `APPROVED / C0 I0 M0`。
 - 本 release 包含 Alembic `20260825_0040` 源码；release 当时未执行 production migration。后续独立
   production migration Gate 已于 2026-08-25 14:56 CST 完成，读回为 `20260825_0040 (head)`；随后独立
-  Runtime promotion Gate 已将本机五个 label 切至精确 `v1.8.3` tag Runtime。额外真实 HTDY Scope
-  mutation、真实 PushPlus、Canonical 或 production Redis 写入仍未执行，`auto_order=false` 不变。
+  Runtime promotion Gate 已将本机五个 label 切至精确 `v1.8.3` tag Runtime，独立 production HTDY Scope
+  Gate 已启用 Active60 × 七周期。真实 PushPlus canary/send、Canonical 或 production Redis 写入仍未执行，
+  `auto_order=false` 不变。
 
 ## v1.8.2 release and Runtime deployment
 
@@ -129,8 +132,9 @@
 - Market Runtime V1 已启用：只观察 `operational_products.txt` 的当日 rank1 completed 1m，并在
   18:05 及最多一次一小时后 retry 更新相同范围。
 - Alert Runtime V2 已启用：Code Registry 只含 `htdy_original_15m` 与
-  `subing_entry_signal_v1`。HTDY 每 Event 最多向 Topic 发起一次请求，SuBing 每 Event 最多向 owner
-  发起一次请求；无逐人状态、retry、queue、replay、backfill、fallback 或订单路径。
+  `subing_entry_signal_v1`。HTDY production Scope 已显式启用 Active60 × 七周期 `420 pairs`；每 Event
+  最多向 Topic 发起一次请求，SuBing 每 Event 最多向 owner 发起一次请求；无逐人状态、retry、queue、
+  replay、backfill、fallback 或订单路径。
 - Execution Review V1 是独立 Application Domain。HTTP request-scoped composition 每请求读取一次
   roll Gate 并注入 callback；missing/`disabled`/`invalid` 时 callback 返回
   `ROLL_RECONCILIATION_REQUIRED` 且不得创建 `DOMINANT_ROLL`，只有 `enabled` 注入真实 reconciler。
@@ -149,7 +153,7 @@
 | `REVIEW_COMPLETE` | `complete` | fixed base-to-head Lane 3 Standards/Spec Review=`APPROVED`，`Critical / Important / Minor = 0 / 0 / 0`，结论=`允许集成 develop` |
 | `INTEGRATED_DEVELOP` | `complete` | 用户已字面批准 `允许集成 develop`；PR `#208` 已合并，远端 develop merge commit=`8b970972b5ceeb3ba33904fab73446cdb3cba92c`，candidate `d60bc43d7115a970c154c0e5330e994c2567498e` 为其祖先 |
 | `PRODUCTION_MIGRATION` | `complete` | 用户明确授权后执行一次 `20260815_0039 -> 20260825_0040`；读回 head、新列/约束与 9 条历史 Event 完整性均通过 |
-| `REAL_SCOPE_MUTATION` | `pending` | 仅由 migration 自动继承旧 `jm` ON 为 `jm × 15m`；未执行任何额外 production HTDY Scope mutation |
+| `REAL_SCOPE_MUTATION` | `complete` | 用户独立授权后执行一次 production 原子 mutation：旧值 `jm × 15m` 更新为 Active60 × 七周期 `60 symbols / 420 pairs`；正式 HTTP 读模型 `420/420`、Runtime predicate `420/420`、目标哈希与 DB 读回一致，SuBing 未变 |
 | `RELEASED` | `complete` | main PR `#209` 已合并；annotated `v1.8.3` tag peeled commit=`9ca18afc9b056d413ee8cac56a056b7d7df078b4`，GitHub Release 已发布 |
 | `RUNTIME_PROMOTED` | `complete` | 五个 launchd label 已绑定 clean/detached `v1.8.3@9ca18afc9b056d413ee8cac56a056b7d7df078b4`；Runtime focused `192 passed`、Web production build、五 label exact root/commit、API `1.8.3`、Web 路由、DB head 与 local health 读回均通过 |
 | `REAL_NOTIFICATION_VERIFIED` | `pending` | 未执行真实 PushPlus；provider acceptance 与微信送达均未验证 |
