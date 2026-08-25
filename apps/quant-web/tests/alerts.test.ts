@@ -21,7 +21,6 @@ const apiSource = read('../src/api/alerts.ts')
 const marketTypesSource = read('../src/types/market.ts')
 const rulesPath = new URL('../src/components/market/ProductAlertRules.vue', import.meta.url)
 const chartSource = read('../src/pages/market/chart.vue')
-const scopeSource = read('../src/composables/useProductAlertScope.ts')
 
 
 describe('Product Alert server-side scope', () => {
@@ -91,34 +90,36 @@ describe('Product Alert server-side scope', () => {
     assert.doesNotMatch(interfaceBody(marketTypesSource, 'AlertEvent'), /observation_types|notified_at/)
   })
 
-  it('renders the two fixed registry rows and a shared Runtime status only once', () => {
+  it('renders only the HTDY current-frequency pair row and shared Runtime status', () => {
     assert.equal(existsSync(rulesPath), true)
     const rulesSource = read('../src/components/market/ProductAlertRules.vue')
     assert.deepEqual(ALERT_RULE_PRESENTATIONS.map((item) => item.ruleCode), [
       ALERT_RULE_CODES.HTDY,
       ALERT_RULE_CODES.SUBING,
     ])
-    assert.match(rulesSource, /rule\.display_name/)
-    assert.match(rulesSource, /rule\.enabled_frequencies\.includes\(props\.frequency\)/)
+    assert.match(rulesSource, /rule_code === ALERT_RULE_CODES\.HTDY/)
+    assert.match(rulesSource, /htdyRule\.value\?\.enabled_frequencies\.includes\(props\.frequency\)/)
     assert.match(rulesSource, /`\$\{rule\.display_name\} · \$\{props\.frequency\}`/)
+    assert.doesNotMatch(rulesSource, /ALERT_RULE_CODES\.SUBING|enabled_for_product/)
     assert.doesNotMatch(rulesSource, /全周期/)
     assert.equal((rulesSource.match(/Alert Runtime/g) || []).length, 1)
     assert.match(rulesSource, /不可用/)
   })
 
-  it('refetches on symbol change while series/frequency changes never invoke scope PUT', () => {
-    const symbolWatcher = between(chartSource, 'watch(symbol, async () => {', 'watch([contract, seriesKind, frequency]')
-    const identityWatcher = between(chartSource, 'watch([contract, seriesKind, frequency]', 'watch([symbol, seriesKind, contract]')
-    assert.match(symbolWatcher, /refreshAlerts\(\)/)
-    assert.doesNotMatch(identityWatcher, /setAlertProductEnabled|setAlertProductFrequencyEnabled|toggleAlert/)
-    assert.match(
-      scopeSource,
-      /setProductEnabled\([\s\S]*ruleCode,[\s\S]*requestedSymbol,[\s\S]*enabled/,
+  it('dispatches every Overlay explicitly without treating generic research as HTDY', () => {
+    const sidebarSource = read('../src/components/market/ProductCheckSidebar.vue')
+    const observationSource = between(
+      sidebarSource,
+      'data-testid="product-check-observation"',
+      'data-testid="product-check-participation"',
     )
-    assert.match(
-      scopeSource,
-      /setProductFrequencyEnabled\([\s\S]*ruleCode,[\s\S]*requestedSymbol,[\s\S]*requestedFrequency,[\s\S]*enabled/,
-    )
+    for (const overlay of ['none', 'subing', 'jdj_strategy', 'htdy']) {
+      assert.match(observationSource, new RegExp(`selectedOverlay === '${overlay}'`))
+    }
+    assert.doesNotMatch(observationSource, /<template v-else>/)
+    assert.match(observationSource, /selectedOverlay === 'htdy'[^]*<ProductAlertRules/)
+    assert.doesNotMatch(between(observationSource, "selectedOverlay === 'jdj_strategy'", "selectedOverlay === 'htdy'"), /<ProductAlertRules/)
+    assert.doesNotMatch(between(observationSource, "selectedOverlay === 'none'", "selectedOverlay === 'subing'"), /<ProductAlertRules/)
   })
 
   it('maps Runtime health to the three fixed labels', () => {
@@ -166,7 +167,7 @@ describe('Product Alert server-side scope', () => {
     })
 
     await controller.refresh()
-    await controller.toggle('subing_entry_signal_v1', true)
+    await controller.toggleSubingProduct('subing_entry_signal_v1', true)
 
     assert.equal(controller.alertRules.value.find((rule) => rule.rule_code === ALERT_RULE_CODES.SUBING)?.enabled_for_product, true)
     assert.equal(controller.alertRules.value.find((rule) => rule.rule_code === ALERT_RULE_CODES.HTDY)?.enabled_for_product, true)
@@ -188,7 +189,7 @@ describe('Product Alert server-side scope', () => {
     })
 
     await controller.refresh()
-    const pending = controller.toggle('subing_entry_signal_v1', true)
+    const pending = controller.toggleSubingProduct('subing_entry_signal_v1', true)
     assert.equal(controller.savingRuleCodes.value.has('subing_entry_signal_v1'), true)
     assert.equal(controller.savingRuleCodes.value.has('htdy_original_15m'), false)
     resolveUpdate!(subingRule(true))
@@ -212,7 +213,7 @@ describe('Product Alert server-side scope', () => {
     })
 
     await controller.refresh()
-    const pending = controller.toggle('htdy_original_15m', true)
+    const pending = controller.toggleHtdyCurrentFrequency('htdy_original_15m', true)
     symbol.value = 'jm'
     await controller.refresh()
     resolveUpdate!(htdyRule(true))
@@ -246,13 +247,44 @@ describe('Product Alert server-side scope', () => {
     })
 
     await controller.refresh()
-    const htdyMutation = controller.toggle(ALERT_RULE_CODES.HTDY, false)
+    const htdyMutation = controller.toggleHtdyCurrentFrequency(ALERT_RULE_CODES.HTDY, false)
     frequency.value = '5m'
     await htdyMutation
-    await controller.toggle(ALERT_RULE_CODES.SUBING, true)
+    await controller.toggleSubingProduct(ALERT_RULE_CODES.SUBING, true)
 
     assert.deepEqual(pairCalls, [[ALERT_RULE_CODES.HTDY, 'jm', '15m', false]])
     assert.deepEqual(productCalls, [[ALERT_RULE_CODES.SUBING, 'jm', true]])
+    controller.dispose()
+  })
+
+  it('fails closed before mutation when either named entry receives the wrong Rule', async () => {
+    const symbol = ref('jm')
+    const frequency = ref<'15m' | '5m'>('15m')
+    const calls: string[] = []
+    const controller = useProductAlertScope({
+      symbol,
+      frequency,
+      fetchProductAlerts: async () => ({ symbol: 'jm', rules: [htdyRule(true), subingRule(false)] }),
+      fetchRuntimeStatus: async () => 'ok',
+      setProductEnabled: async () => {
+        calls.push('product')
+        return subingRule(true)
+      },
+      setProductFrequencyEnabled: async () => {
+        calls.push('pair')
+        return htdyRule(true)
+      },
+      notifyError: () => undefined,
+    })
+
+    await controller.refresh()
+    await controller.toggleSubingProduct(ALERT_RULE_CODES.HTDY, true)
+    await controller.toggleSubingProduct('future_rule', true)
+    await controller.toggleHtdyCurrentFrequency(ALERT_RULE_CODES.SUBING, true)
+    await controller.toggleHtdyCurrentFrequency('future_rule', true)
+
+    assert.deepEqual(calls, [])
+    assert.equal(controller.savingRuleCodes.value.size, 0)
     controller.dispose()
   })
 
@@ -275,9 +307,9 @@ describe('Product Alert server-side scope', () => {
     })
 
     await controller.refresh()
-    const pending = controller.toggle(ALERT_RULE_CODES.HTDY, true)
+    const pending = controller.toggleHtdyCurrentFrequency(ALERT_RULE_CODES.HTDY, true)
     frequency.value = '5m'
-    await controller.toggle(ALERT_RULE_CODES.HTDY, true)
+    await controller.toggleHtdyCurrentFrequency(ALERT_RULE_CODES.HTDY, true)
 
     assert.deepEqual(pairCalls, [[ALERT_RULE_CODES.HTDY, 'jm', '15m', true]])
     assert.equal(controller.savingRuleCodes.value.has(ALERT_RULE_CODES.HTDY), true)
@@ -302,7 +334,7 @@ describe('Product Alert server-side scope', () => {
     })
 
     await controller.refresh()
-    const pending = controller.toggle(ALERT_RULE_CODES.HTDY, true)
+    const pending = controller.toggleHtdyCurrentFrequency(ALERT_RULE_CODES.HTDY, true)
     frequency.value = '5m'
     resolveUpdate!(htdyRule(true, ['15m']))
     await pending

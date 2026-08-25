@@ -59,76 +59,6 @@ class MarketBarsPageResponse(BaseModel):
     resolved_contract_segments: list[ContractSegmentOut]
 
 
-class MainForceMirrorV2IndicatorOut(BaseModel):
-    """Frozen identity and non-executing interpretation of the V2 observer."""
-
-    indicator_code: Literal["main_force_mirror_v2"]
-    indicator_version: Literal["futures-member-research-v2"]
-    formal_policy_id: Literal["main_force_mirror_observation_v2"]
-    parameters_hash: str
-    interpretation: Literal[
-        "directional_position_pressure_proxy_not_measured_fund_flow"
-    ]
-    observation_only: Literal[True]
-    historical_only: Literal[True]
-    auto_order: Literal[False]
-
-
-class MainForceMirrorV2MemberCoverageOut(BaseModel):
-    start: date
-    end: date
-
-
-class MainForceMirrorV2MemberDatasetOut(BaseModel):
-    status: Literal["ready", "unavailable"]
-    dataset_id: str | None
-    schema_version: int | None
-    admitted_product: bool
-    coverage: MainForceMirrorV2MemberCoverageOut | None
-
-
-class MainForceMirrorV2PointOut(BaseModel):
-    bar_end: datetime
-    trading_day: date
-    physical_contract: str
-    pressure_ready: bool
-    pressure_state: str | None
-    instant_pressure: float | None
-    accumulated_ready: bool
-    accumulated_pressure: float | None
-    caution_ready: bool
-    caution: str | None
-    caution_conflict: bool
-    long_caution_score: float | None
-    short_caution_score: float | None
-    caution_reason_codes: list[str]
-    price_impulse: float | None
-    clv: float | None
-    volume_ratio: float | None
-    delta_oi: float | None
-    oi_impulse: float | None
-    range_position: float | None
-    member_status: Literal["ready", "unavailable"]
-    member_trade_date: date | None
-    member_direction: str | None
-    member_change_bias: float | None
-    member_strength: float | None
-    position_skew: float | None
-    top5_volume_share: float | None
-    relation_to_accumulated: str
-    relation_to_caution: str
-    unavailable_reason: str | None
-
-
-class MainForceMirrorV2PageResponse(BaseModel):
-    request: dict[str, object]
-    indicator: MainForceMirrorV2IndicatorOut
-    member_dataset: MainForceMirrorV2MemberDatasetOut
-    points: list[MainForceMirrorV2PointOut]
-    page: MarketPageMetaOut
-    resolved_contract_segments: list[ContractSegmentOut]
-
-
 class MarketReadStateResponse(BaseModel):
     """Market Web 的统一历史/Live 展示状态。"""
 
@@ -359,7 +289,6 @@ class MarketRadarSectorOut(BaseModel):
     up_count: int
     down_count: int
     median_price_change_1d: Decimal | None
-    attention_count: int
 
 
 class MarketRadarResponse(BaseModel):
@@ -377,60 +306,7 @@ class MarketRadarResponse(BaseModel):
     unavailable: list[str]
     summary: MarketRadarSummaryOut
     items: list[MarketRadarItemOut]
-    attention: list[MarketRadarItemOut]
     sector_summary: list[MarketRadarSectorOut]
-
-
-class MarketTrendFocusUnavailableOut(BaseModel):
-    """单品种 Trend Focus 不可用事实。"""
-
-    symbol: str | None
-    code: str
-
-
-class MarketTrendFocusItemOut(BaseModel):
-    """Trend Focus 首页投影所需的稳定只读事实。"""
-
-    symbol: str
-    product_name: str
-    sector: str
-    physical_contract: str
-    direction: Literal["long", "short"]
-    stage: Literal["setup", "breakout", "retest", "ready", "running", "weakening"]
-    hot_conditions: list[str]
-    hot_count: int
-    price_change_1d: Decimal | None
-    volume_ratio20: Decimal | None
-    atr14_percentile252: Decimal | None
-    daily_volume_support: bool
-    hourly_state: Literal["continuation", "pullback", "reversal_block"]
-    hourly_volume_support: bool
-    range_upper: Decimal
-    range_lower: Decimal
-    confirmation_count: int
-    retest_held: bool
-    rebreak_reference: Decimal | None
-    ready_invalidation: Decimal | None
-    volume_confirmed: bool
-    five_minute_confirmed: bool
-    entry_confirmed_at: datetime | None
-    latest_swing_high: Decimal | None
-    latest_swing_low: Decimal | None
-    next_level: Decimal | None
-    invalidation_level: Decimal | None
-    last_transition_at: datetime
-
-
-class MarketTrendFocusResponse(BaseModel):
-    """``/research/trend-focus`` 全 active universe 当前快照。"""
-
-    status: Literal["ready", "degraded"]
-    observed_at: datetime
-    long_opportunities: list[MarketTrendFocusItemOut]
-    short_opportunities: list[MarketTrendFocusItemOut]
-    running_trends: list[MarketTrendFocusItemOut]
-    weakening_trends: list[MarketTrendFocusItemOut]
-    unavailable: list[MarketTrendFocusUnavailableOut]
 
 
 class SubingDailyWatchCountsOut(BaseModel):

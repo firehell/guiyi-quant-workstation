@@ -11,6 +11,7 @@ import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
+import app.alerts.runtime as alert_runtime_module
 from app.alerts.composition import RedisAlertHeartbeatStore, RedisAlertMessageSource
 from app.alerts.evaluators import AlertEvaluation
 from app.alerts.models import AlertEvent, AlertRule
@@ -24,6 +25,7 @@ from app.alerts.runtime import (
     _parse_canonical_updated_trigger,
     _parse_live_bar_trigger,
     _subing_snapshot_now,
+    validate_alert_runtime_status,
 )
 from app.db.base import Base
 from app.market_data.aggregation import SessionWindow
@@ -1631,6 +1633,7 @@ def test_invalid_canonical_state_message_has_zero_side_effects(
 
 def test_unavailable_daily_pair_does_not_authorize_weekly_fallback(
     session: Session,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     _seed_rule(
         session,
@@ -1653,6 +1656,10 @@ def test_unavailable_daily_pair_does_not_authorize_weekly_fallback(
     assert harness.htdy_evaluator.calls == []
     assert _event_rows(session) == []
     assert harness.sender.messages == []
+    assert caplog.messages.count(
+        "ALERT_RULE_PROCESSING_FAILED symbol=jm frequency=1d stage=market_read"
+    ) == 1
+    assert "private Canonical detail" not in caplog.text
 
 
 @pytest.mark.parametrize(
@@ -1847,6 +1854,40 @@ def test_redis_message_source_uses_one_pubsub_connection_for_both_patterns() -> 
     assert redis.active.calls == [("live:bar:*:*", "market:state")]
 
 
+class RuntimeStatusPipeline:
+    def __init__(self, redis) -> None:
+        self.redis = redis
+        self.watched_key: str | None = None
+        self.snapshot: str | None = None
+        self.pending: tuple[str, str] | None = None
+
+    def watch(self, key: str) -> None:
+        self.watched_key = key
+        self.snapshot = self.redis.values.get(key)
+
+    def get(self, key: str) -> str | None:
+        assert key == self.watched_key
+        return self.redis.values.get(key)
+
+    def multi(self) -> None:
+        return None
+
+    def set(self, key: str, value: str):
+        self.pending = (key, value)
+        return self
+
+    def execute(self) -> list[bool]:
+        assert self.watched_key is not None
+        assert self.redis.values.get(self.watched_key) == self.snapshot
+        assert self.pending is not None
+        key, value = self.pending
+        self.redis.values[key] = value
+        return [True]
+
+    def reset(self) -> None:
+        return None
+
+
 class RuntimeStatusRedis:
     def __init__(self, payload: dict[str, object] | None = None) -> None:
         self.values: dict[str, str] = {}
@@ -1859,6 +1900,9 @@ class RuntimeStatusRedis:
     def set(self, key: str, value: str) -> bool:
         self.values[key] = value
         return True
+
+    def pipeline(self) -> RuntimeStatusPipeline:
+        return RuntimeStatusPipeline(self)
 
 
 def _runtime_status_payload(**overrides: object) -> dict[str, object]:
@@ -1876,6 +1920,157 @@ def _runtime_status_payload(**overrides: object) -> dict[str, object]:
         "consecutive_notification_failures": 0,
         **overrides,
     }
+
+
+class AtomicRuntimeStatusStore:
+    def __init__(self, payload: dict[str, object] | None = None) -> None:
+        self.status = validate_alert_runtime_status(
+            payload or alert_runtime_module.empty_alert_runtime_status()
+        )
+
+    def read(self) -> dict[str, object]:
+        return dict(self.status)
+
+    def write(self, payload: dict[str, object]) -> None:
+        self.status = dict(payload)
+
+    def update(self, changes: dict[str, object]) -> dict[str, object]:
+        self.status = validate_alert_runtime_status(
+            {**self.status, **changes}
+        )
+        return dict(self.status)
+
+
+def test_runtime_status_v1_is_normalized_to_v2_without_acknowledgement() -> None:
+    normalized = validate_alert_runtime_status(_runtime_status_payload())
+
+    assert normalized["schema_version"] == 2
+    assert normalized["notification_acknowledged_at"] is None
+
+
+def test_runtime_status_rejects_acknowledgement_without_prior_failure() -> None:
+    payload = {
+        **_runtime_status_payload(),
+        "schema_version": 2,
+        "notification_acknowledged_at": "2026-08-14T02:44:00+00:00",
+    }
+
+    with pytest.raises(ValueError, match="^ALERT_RUNTIME_STATUS_INVALID$"):
+        validate_alert_runtime_status(payload)
+
+
+def test_acknowledge_notification_failure_preserves_failure_facts() -> None:
+    failure_at = "2026-08-14T02:44:00+00:00"
+    payload = _runtime_status_payload(
+        last_notification_failure_at=failure_at,
+        notification_error_type="notification_transport_failed",
+        consecutive_notification_failures=1,
+    )
+
+    acknowledged = alert_runtime_module.acknowledge_notification_failure(
+        payload,
+        expected_failure_at=failure_at,
+        acknowledged_at=datetime(2026, 8, 14, 2, 45, tzinfo=UTC),
+    )
+
+    assert acknowledged["schema_version"] == 2
+    assert acknowledged["last_notification_failure_at"] == failure_at
+    assert acknowledged["notification_error_type"] == "notification_transport_failed"
+    assert acknowledged["consecutive_notification_failures"] == 1
+    assert acknowledged["notification_acknowledged_at"] == (
+        "2026-08-14T02:45:00+00:00"
+    )
+
+
+def test_acknowledge_new_failure_after_prior_acknowledgement() -> None:
+    latest_failure_at = "2026-08-14T02:46:00+00:00"
+    payload = {
+        **_runtime_status_payload(
+            last_notification_failure_at=latest_failure_at,
+            notification_error_type="notification_transport_failed",
+            consecutive_notification_failures=1,
+        ),
+        "schema_version": 2,
+        "notification_acknowledged_at": "2026-08-14T02:45:00+00:00",
+    }
+
+    acknowledged = alert_runtime_module.acknowledge_notification_failure(
+        payload,
+        expected_failure_at=latest_failure_at,
+        acknowledged_at=datetime(2026, 8, 14, 2, 47, tzinfo=UTC),
+    )
+
+    assert acknowledged["last_notification_failure_at"] == latest_failure_at
+    assert acknowledged["notification_acknowledged_at"] == (
+        "2026-08-14T02:47:00+00:00"
+    )
+
+
+@pytest.mark.parametrize(
+    ("payload", "expected_failure_at", "acknowledged_at", "expected_code"),
+    (
+        (
+            _runtime_status_payload(),
+            "2026-08-14T02:44:00+00:00",
+            datetime(2026, 8, 14, 2, 45, tzinfo=UTC),
+            "ALERT_NOTIFICATION_FAILURE_NOT_FOUND",
+        ),
+        (
+            _runtime_status_payload(
+                last_notification_failure_at="2026-08-14T02:44:00+00:00",
+                notification_error_type="notification_transport_failed",
+            ),
+            "not-a-timestamp",
+            datetime(2026, 8, 14, 2, 45, tzinfo=UTC),
+            "ALERT_NOTIFICATION_FAILURE_AT_INVALID",
+        ),
+        (
+            _runtime_status_payload(
+                last_notification_failure_at="2026-08-14T02:44:00+00:00",
+                notification_error_type="notification_transport_failed",
+            ),
+            "2026-08-14T02:43:00+00:00",
+            datetime(2026, 8, 14, 2, 45, tzinfo=UTC),
+            "ALERT_NOTIFICATION_FAILURE_MISMATCH",
+        ),
+        (
+            {
+                **_runtime_status_payload(
+                    last_notification_failure_at="2026-08-14T02:44:00+00:00",
+                    notification_error_type="notification_transport_failed",
+                ),
+                "schema_version": 2,
+                "notification_acknowledged_at": "2026-08-14T02:45:00+00:00",
+            },
+            "2026-08-14T02:44:00+00:00",
+            datetime(2026, 8, 14, 2, 46, tzinfo=UTC),
+            "ALERT_NOTIFICATION_FAILURE_ALREADY_ACKNOWLEDGED",
+        ),
+        (
+            _runtime_status_payload(
+                last_notification_failure_at="2026-08-14T02:44:00+00:00",
+                notification_error_type="notification_transport_failed",
+            ),
+            "2026-08-14T02:44:00+00:00",
+            datetime(2026, 8, 14, 2, 43, tzinfo=UTC),
+            "ALERT_NOTIFICATION_ACKNOWLEDGEMENT_TIME_INVALID",
+        ),
+    ),
+)
+def test_acknowledge_notification_failure_fails_closed(
+    payload: dict[str, object],
+    expected_failure_at: str,
+    acknowledged_at: datetime,
+    expected_code: str,
+) -> None:
+    with pytest.raises(RuntimeError) as raised:
+        alert_runtime_module.acknowledge_notification_failure(
+            payload,
+            expected_failure_at=expected_failure_at,
+            acknowledged_at=acknowledged_at,
+        )
+
+    assert getattr(raised.value, "code", None) == expected_code
 
 
 def test_redis_heartbeat_store_sets_value_and_ttl_atomically() -> None:
@@ -1900,7 +2095,7 @@ def test_redis_heartbeat_store_sets_value_and_ttl_atomically() -> None:
     assert redis.calls[0][1] == {"ex": 30}
 
 
-def test_redis_runtime_status_store_persists_schema_v1_without_ttl() -> None:
+def test_redis_runtime_status_store_upgrades_v1_to_v2_without_ttl() -> None:
     from app.alerts import composition
 
     class FakeRedis:
@@ -1928,8 +2123,13 @@ def test_redis_runtime_status_store_persists_schema_v1_without_ttl() -> None:
 
     composition.RedisAlertRuntimeStatusStore(redis).write(payload)
 
+    expected = {
+        **payload,
+        "schema_version": 2,
+        "notification_acknowledged_at": None,
+    }
     assert redis.calls == [
-        (("alert:runtime-status", json.dumps(payload, ensure_ascii=False, separators=(",", ":"))), {})
+        (("alert:runtime-status", json.dumps(expected, ensure_ascii=False, separators=(",", ":"))), {})
     ]
     assert "provider_reference" not in redis.calls[0][0][1]
 
@@ -1960,6 +2160,108 @@ def test_redis_runtime_status_store_rejects_failed_set() -> None:
                 "consecutive_notification_failures": 0,
             }
         )
+
+
+def test_redis_runtime_status_acknowledgement_is_compare_and_set() -> None:
+    from app.alerts.composition import RedisAlertRuntimeStatusStore
+
+    failure_at = "2026-08-14T02:44:00+00:00"
+    redis = RuntimeStatusRedis(
+        _runtime_status_payload(
+            last_notification_failure_at=failure_at,
+            notification_error_type="notification_transport_failed",
+            consecutive_notification_failures=1,
+        )
+    )
+    store = RedisAlertRuntimeStatusStore(redis)
+
+    acknowledged = store.acknowledge_notification_failure(
+        expected_failure_at=failure_at,
+        acknowledged_at=datetime(2026, 8, 14, 2, 45, tzinfo=UTC),
+    )
+
+    persisted = json.loads(redis.values["alert:runtime-status"])
+    assert acknowledged == persisted
+    assert persisted["schema_version"] == 2
+    assert persisted["last_notification_failure_at"] == failure_at
+    assert persisted["notification_error_type"] == "notification_transport_failed"
+    assert persisted["notification_acknowledged_at"] == (
+        "2026-08-14T02:45:00+00:00"
+    )
+
+
+def test_redis_runtime_status_acknowledgement_rejects_concurrent_change() -> None:
+    from redis.exceptions import WatchError
+
+    from app.alerts.composition import RedisAlertRuntimeStatusStore
+
+    failure_at = "2026-08-14T02:44:00+00:00"
+    raw = json.dumps(
+        _runtime_status_payload(
+            last_notification_failure_at=failure_at,
+            notification_error_type="notification_transport_failed",
+        )
+    )
+
+    class ConflictingPipeline:
+        def watch(self, _key: str) -> None:
+            return None
+
+        def get(self, _key: str) -> str:
+            return raw
+
+        def multi(self) -> None:
+            return None
+
+        def set(self, _key: str, _value: str):
+            return self
+
+        def execute(self) -> list[bool]:
+            raise WatchError("concurrent status update")
+
+        def reset(self) -> None:
+            return None
+
+    class ConflictingRedis:
+        def pipeline(self) -> ConflictingPipeline:
+            return ConflictingPipeline()
+
+    with pytest.raises(RuntimeError) as raised:
+        RedisAlertRuntimeStatusStore(
+            ConflictingRedis()
+        ).acknowledge_notification_failure(
+            expected_failure_at=failure_at,
+            acknowledged_at=datetime(2026, 8, 14, 2, 45, tzinfo=UTC),
+        )
+
+    assert getattr(raised.value, "code", None) == "ALERT_RUNTIME_STATUS_CHANGED"
+
+
+def test_redis_runtime_status_atomic_update_merges_current_acknowledgement() -> None:
+    from app.alerts.composition import RedisAlertRuntimeStatusStore
+
+    failure_at = "2026-08-14T02:44:00+00:00"
+    current = {
+        **_runtime_status_payload(
+            last_notification_failure_at=failure_at,
+            notification_error_type="notification_transport_failed",
+            consecutive_notification_failures=1,
+        ),
+        "schema_version": 2,
+        "notification_acknowledged_at": "2026-08-14T02:45:00+00:00",
+    }
+
+    redis = RuntimeStatusRedis(current)
+    store = RedisAlertRuntimeStatusStore(redis)
+
+    updated = store.update(
+        {"last_processing_success_at": "2026-08-14T02:46:00+00:00"}
+    )
+
+    assert updated["notification_acknowledged_at"] == (
+        "2026-08-14T02:45:00+00:00"
+    )
+    assert json.loads(redis.values["alert:runtime-status"]) == updated
 
 
 @pytest.mark.parametrize(
@@ -2017,6 +2319,65 @@ def test_runtime_status_write_failure_escapes_processing_boundary(
         harness.runtime.process_message("live:bar:jm:5m", _payload())
 
     assert len(_event_rows(session)) == 1
+
+
+def test_runtime_status_update_preserves_external_acknowledgement(
+    session: Session,
+) -> None:
+    failure_at = "2026-08-14T02:44:00+00:00"
+
+    store = AtomicRuntimeStatusStore()
+    harness = _runtime(session, runtime_status_store=store)
+    harness.runtime._current_runtime_status()
+    store.status = validate_alert_runtime_status(
+        {
+            **store.status,
+            "last_notification_failure_at": failure_at,
+            "notification_acknowledged_at": "2026-08-14T02:45:00+00:00",
+            "notification_error_type": "notification_transport_failed",
+            "consecutive_notification_failures": 1,
+        }
+    )
+
+    harness.runtime._update_runtime_status(
+        last_processing_success_at="2026-08-14T02:46:00+00:00"
+    )
+
+    assert store.status["notification_acknowledged_at"] == (
+        "2026-08-14T02:45:00+00:00"
+    )
+    assert store.status["last_notification_failure_at"] == failure_at
+
+
+def test_new_notification_failure_invalidates_same_timestamp_acknowledgement(
+    session: Session,
+) -> None:
+    failure_at = datetime(2026, 8, 14, 2, 44, tzinfo=UTC)
+
+    store = AtomicRuntimeStatusStore(
+        {
+            **_runtime_status_payload(
+                last_notification_failure_at=failure_at.isoformat(),
+                notification_error_type="notification_transport_failed",
+                consecutive_notification_failures=1,
+            ),
+            "schema_version": 2,
+            "notification_acknowledged_at": failure_at.isoformat(),
+        }
+    )
+    harness = _runtime(session, runtime_status_store=store)
+
+    harness.runtime._record_notification_failure(
+        at=failure_at,
+        error_type="notification_transport_failed",
+    )
+
+    assert store.status["last_notification_failure_at"] == failure_at.isoformat()
+    assert store.status["notification_acknowledged_at"] is None
+    assert store.status["notification_error_type"] == (
+        "notification_transport_failed"
+    )
+    assert store.status["consecutive_notification_failures"] == 2
 
 
 @pytest.mark.parametrize(
@@ -2117,7 +2478,7 @@ def test_runtime_status_records_processing_event_and_provider_acceptance(
     status = json.loads(redis.values["alert:runtime-status"])
     observed_at = (ORDINARY_END + timedelta(seconds=2)).isoformat()
     assert status == {
-        "schema_version": 1,
+        "schema_version": 2,
         "last_processed_bar_at": ORDINARY_END.isoformat(),
         "last_processing_success_at": observed_at,
         "last_processing_failure_at": None,
@@ -2126,6 +2487,7 @@ def test_runtime_status_records_processing_event_and_provider_acceptance(
         "last_transport_attempt_at": observed_at,
         "last_provider_accepted_at": observed_at,
         "last_notification_failure_at": None,
+        "notification_acknowledged_at": None,
         "notification_error_type": None,
         "consecutive_notification_failures": 0,
     }
@@ -2210,7 +2572,7 @@ def test_missing_provider_acceptance_is_a_notification_failure(
     assert status["notification_error_type"] == "notification_acceptance_invalid"
 
 
-def test_next_provider_acceptance_clears_notification_failure_state(
+def test_next_provider_acceptance_preserves_last_notification_failure_fact(
     session: Session,
 ) -> None:
     from app.alerts.composition import RedisAlertRuntimeStatusStore
@@ -2237,8 +2599,8 @@ def test_next_provider_acceptance_clears_notification_failure_state(
     assert status["last_provider_accepted_at"] == (
         ORDINARY_END + timedelta(seconds=2)
     ).isoformat()
-    assert status["last_notification_failure_at"] is None
-    assert status["notification_error_type"] is None
+    assert status["last_notification_failure_at"] == "2026-08-13T01:01:00+00:00"
+    assert status["notification_error_type"] == "notification_transport_failed"
     assert status["consecutive_notification_failures"] == 0
 
 

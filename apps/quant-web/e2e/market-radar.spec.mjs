@@ -25,10 +25,10 @@ function radar(freshnessState = 'current') {
     active_count: 60, participant_count: degraded ? 59 : 60,
     stale: degraded ? ['jm'] : [], unavailable: [],
     summary: { up_count: 1, down_count: 1, volume_expansion_count: 1, oi_increase_count: 1, high_volatility_count: 1 },
-    items, attention: items,
+    items,
     sector_summary: [
-      { sector: 'precious', total_count: 1, participant_count: 1, up_count: 1, down_count: 0, median_price_change_1d: '0.032', attention_count: 1 },
-      { sector: 'black', total_count: 1, participant_count: degraded ? 0 : 1, up_count: 0, down_count: degraded ? 0 : 1, median_price_change_1d: degraded ? null : '-0.021', attention_count: degraded ? 0 : 1 },
+      { sector: 'precious', total_count: 1, participant_count: 1, up_count: 1, down_count: 0, median_price_change_1d: '0.032' },
+      { sector: 'black', total_count: 1, participant_count: degraded ? 0 : 1, up_count: 0, down_count: degraded ? 0 : 1, median_price_change_1d: degraded ? null : '-0.021' },
     ],
   }
 }
@@ -206,7 +206,7 @@ test('typed Daily Watch unavailable leaves Runtime, Formal and Radar usable with
   await expect(page.getByText('市场概览', { exact: true })).toBeVisible()
 })
 
-test('latest Daily Watch network failure hides the prior successful candidates', async ({ page }) => {
+test('latest Daily Watch network failure keeps the prior successful snapshot visibly stale', async ({ page }) => {
   let attempt = 0
   await page.route('**/api/alerts/formal-signals/current', (route) => route.fulfill({ json: { status: 'ready', trading_day: '2026-08-24', items: [] } }))
   await page.route('**/api/runtime/health', (route) => route.fulfill({ json: runtimeHealth() }))
@@ -221,9 +221,10 @@ test('latest Daily Watch network failure hides the prior successful candidates',
   await page.getByRole('button', { name: '全部刷新' }).click()
 
   await expect.poll(() => attempt).toBe(2)
-  await expect(page.getByTestId('subing-daily-watch')).toContainText('苏冰今日观察暂不可用')
-  await expect(page.getByTestId('subing-daily-watch-card')).toHaveCount(0)
-  await expect(page.getByTestId('subing-daily-watch')).not.toContainText('RB RB')
+  await expect(page.getByTestId('subing-daily-watch')).toContainText('状态已过期')
+  await expect(page.getByTestId('subing-daily-watch')).toContainText('目标交易日 2026-08-25 · 来源交易日 2026-08-24')
+  await expect(page.getByTestId('subing-daily-watch-card')).toHaveCount(12)
+  await expect(page.getByTestId('subing-daily-watch')).toContainText('RB RB')
 })
 
 test('refreshes Formal, Runtime, Radar and Daily manually, but excludes Radar from visibility refresh', async ({ page }) => {

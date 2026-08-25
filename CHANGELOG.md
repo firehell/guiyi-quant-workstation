@@ -2,6 +2,17 @@
 
 本文件记录正式产品版本；开发过程与逐品种执行流水从 Git history 追溯。
 
+## [1.8.4] - 2026-08-25
+
+- Architecture Convergence V1 将 SuBing 收敛为一个产品工作区，保留 Daily Context、Current Signal State 与 Formal Event 的独立事实边界；主图收敛为 SuBing、日进斗金参考回放与 HTDY。
+- 退役 Attention、Trend Focus、Main Force Mirror 与 Five-Candidate phase-specific Dossier/Relationships active surface；保留 Canonical/Catalog、Candidate Validation/Robustness、pending OOS、Alembic/table identity 与 RQAlpha local-only 边界。
+- Alert Runtime 对周内尚未形成完整周线的 W1 读取按正常 unavailable 跳过，并保留公开 stage 诊断；显式
+  notification acknowledgment 以 Redis schema v2 的 exact-failure CAS 记录 operator 已知事实，不重放
+  Event、不补发通知，也不把 acknowledgment 表述为 provider accepted 或微信送达。
+- 本版不新增 migration，不修改 production Scope/transport，不执行真实 PushPlus、production
+  acknowledgment、Canonical/Redis 数据写入或手工 after-market，也不增加订单能力；`auto_order=false`
+  不变。Runtime promotion 仅按独立授权切换到精确 annotated tag。
+
 ## [1.8.3] - 2026-08-25
 
 - HTDY original 观察能力扩展到 Active60 的七个正式周期 `1m/5m/15m/30m/60m/1d/1w`；日内五周期只消费

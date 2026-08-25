@@ -102,6 +102,7 @@ class RuntimeAlertHealth(BaseModel):
     last_transport_attempt_at: str | None = None
     last_provider_accepted_at: str | None = None
     last_notification_failure_at: str | None = None
+    notification_acknowledged_at: str | None = None
     notification_error_type: str | None = None
     consecutive_notification_failures: int = 0
     error_type: str | None = None

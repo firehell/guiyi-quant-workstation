@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import test from 'node:test'
 
 import {
@@ -185,4 +186,12 @@ test('Daily Watch maps stable unavailable reasons and never exposes unknown back
   assert.equal(subingDailyWatchReasonLabel('H1_HISTORY_INSUFFICIENT'), '60m 历史不足')
   assert.equal(subingDailyWatchReasonLabel('D1_HISTORY_INSUFFICIENT'), '日线历史不足')
   assert.equal(subingDailyWatchReasonLabel('raw backend database detail'), '数据身份不可用')
+})
+
+test('Market homepage owns exactly one SuBing workbench instead of sibling source components', () => {
+  const homeSource = readFileSync(new URL('../src/pages/market/index.vue', import.meta.url), 'utf8')
+
+  assert.equal(homeSource.match(/<SubingWorkbench\b/g)?.length, 1)
+  assert.equal(homeSource.includes('<MarketFormalSignals'), false)
+  assert.equal(homeSource.includes('<SubingDailyWatch'), false)
 })

@@ -97,6 +97,24 @@ def test_offline_research_builders_have_one_composition_entrypoint() -> None:
     assert not any(hasattr(market_data_composition, name) for name in builders)
 
 
+def test_retired_main_force_has_no_composition_builder() -> None:
+    assert not hasattr(
+        research_composition, "build_main_force_mirror_v2_research_service"
+    )
+    assert not hasattr(
+        research_composition, "build_main_force_mirror_diagnostic_service"
+    )
+    assert not hasattr(market_data_composition, "build_main_force_mirror_v2_service")
+    assert not hasattr(market_data_composition, "build_member_rank_snapshot_builder")
+
+
+def test_retired_candidate_convergence_has_no_composition_builder() -> None:
+    assert not hasattr(research_composition, "build_five_candidate_dossier_service")
+    assert not hasattr(
+        research_composition, "build_five_candidate_relationship_service"
+    )
+
+
 def test_offline_research_implementation_has_one_physical_package() -> None:
     modules = _research_implementation_modules()
     assert modules
@@ -759,89 +777,6 @@ def test_jdj_active60_robustness_builder_reuses_existing_jdj_research(
 
     assert service is expected
     assert constructor_calls == [(protocol, jdj_research)]
-
-
-def test_main_force_research_reuses_web_v2_service_identity(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    market_data = object()
-    mirror_service = SimpleNamespace(market_data=market_data)
-    captured: dict[str, object] = {}
-    result = object()
-    monkeypatch.setattr(
-        research_composition,
-        "build_main_force_mirror_v2_service",
-        lambda _session: mirror_service,
-    )
-    monkeypatch.setattr(
-        research_composition,
-        "build_market_data_service",
-        _fail_dependency("duplicate MarketDataService"),
-    )
-    monkeypatch.setattr(
-        research_composition,
-        "MainForceMirrorV2ResearchService",
-        lambda **kwargs: captured.update(kwargs) or result,
-    )
-
-    assert (
-        research_composition.build_main_force_mirror_v2_research_service(object())
-        is result
-    )
-    assert captured == {
-        "market_data": market_data,
-        "mirror_service": mirror_service,
-    }
-
-
-def test_main_force_diagnostic_reuses_one_v2_service_and_its_calendar(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    market_data = object()
-    previous_trading_day = object()
-    mirror_service = SimpleNamespace(
-        market_data=market_data,
-        coverage=SimpleNamespace(previous_trading_day=previous_trading_day),
-    )
-    captured: dict[str, object] = {}
-    result = object()
-    monkeypatch.setattr(
-        research_composition,
-        "build_main_force_mirror_v2_service",
-        lambda _session: mirror_service,
-    )
-    monkeypatch.setattr(
-        research_composition,
-        "build_market_data_service",
-        _fail_dependency("duplicate MarketDataService"),
-    )
-    monkeypatch.setattr(
-        research_composition,
-        "MainForceMirrorDiagnosticService",
-        lambda **kwargs: captured.update(kwargs) or result,
-    )
-    for name in (
-        "build_historical_data_manager",
-        "build_live_market_service",
-        "build_alert_runtime",
-        "build_notification_sender_from_env",
-    ):
-        monkeypatch.setattr(
-            research_composition,
-            name,
-            _fail_dependency(name),
-            raising=False,
-        )
-
-    assert (
-        research_composition.build_main_force_mirror_diagnostic_service(object())
-        is result
-    )
-    assert captured == {
-        "market_data": market_data,
-        "mirror_service": mirror_service,
-        "previous_trading_day": previous_trading_day,
-    }
 
 
 def test_robustness_builder_reuses_one_mds_and_frozen_active60(

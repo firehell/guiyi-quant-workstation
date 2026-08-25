@@ -4,64 +4,37 @@
 
 ## 稳定产品边界
 
-归一量化是本地运行、单用户的国内期货研究工作站，服务可信行情、Market Web、指标与只读研究、
-人工观察提醒和 Execution Review。它不做自动交易、实盘下单、账户/委托/持仓管理、SaaS、多用户、
-高频/Tick 平台或 AI 自动晋升；所有页面、信号、通知和研究结论始终是观察事实，`auto_order=false`。
+归一量化是本地、单用户的国内期货研究工作站：可信行情、Market Web、研究观察、Alert 与人工 Execution Review 构成闭环。它不做自动交易、实盘下单、账户/委托/持仓管理、SaaS 或 AI 自动晋升；所有信号和通知均为研究观察，`auto_order=false`。
 
-当前产品包含一个独立的 local-only、research-only RQAlpha Plus Web 工作台：它只运行 Git
-注册策略、只读外部米筐 Bundle、只写仓库外文件系统 artifact，并且不挂载到主 API。它不是旧
-backtest/Signal/Review/Strategy Web·HTTP·worker·queue 的恢复，也不是未来基于
-Canonical/MarketDataService 的正式 Candidate/OOS 验证体系。当前工作台仅为仓库实现与自动化验证状态；
-sidecar 未加载、未 release、未进入 Runtime，真实 RQAlpha smoke 仍是独立人工 Gate。
+SuBing 是一个 SuBing 产品，向用户投影三种不能互相替代的内部事实：Daily Context（盘后 immutable artifact，回答“今天看什么”）、Current Signal State（Canonical + completed Live current state，回答“现在是什么状态”）和 Formal Event（immutable `AlertEvent`，回答“是否需要处理”）。它们由同一权威 Factor/Signal/Lifecycle 逻辑服务，不合并为 mega endpoint、表或 DTO；SuBing Alert Scope 保持 product-level `scope_products`。
 
-当前 active universe 中单产品的 `actual_dominant + 1m` 日进斗金参考策略 replay 是另一条独立的 Historical
-research-only deterministic reference replay：它通过主 API 输出 reference-only action，并在 Market 展示
-reference fill marker；它不是正式
-回测、交易指令或 RQAlpha adapter，不进入 DB、Redis、Alert、Execution Review、Runtime 或订单路径。
-当前产品仍不包含基于 Canonical/MarketDataService 的正式 backtest 子系统，也不恢复旧
-Signal/Review/Strategy Web、HTTP、worker 或 queue。Alert 与
-Execution Review 是两个独立 Application Domain，不属于 Market Data Foundation。
+HTDY 是 observation-only/repainting 的全周期产品：operational universe × 七个正式周期 `1m/5m/15m/30m/60m/1d/1w`。稳定 Rule code 保持 `htdy_original_15m`；HTDY 唯一 Scope authority 为 `scope_product_frequencies` 的 symbol × frequency，SuBing 唯一 Scope authority 为 `scope_products`。HTDY storage identity 为 `(rule_id, symbol, frequency, bar_end)`，SuBing 的业务 Event identity 保持 `rule_id + symbol + bar_end`。日内只消费同周期 completed Live Bar；D1/W1 只由 `market:state(reason=canonical_updated)` 触发并读取 Canonical，不增加 scheduler、replay 或 backfill。
+
+Market 主图只保留：`无 | 苏冰 | 日进斗金参考回放 | 火天大有`。N Structure 与 raw JDJ Candidate 只保留在内部研究面；JDJ reference replay 是 active-universe 单品种 `actual_dominant + 1m` 的 deterministic、read-only reference action/fill，不进入 DB、Redis、Alert、Execution Review、Runtime 或订单。
+
+Market Radar 的 Summary、Scatter、Detail 是唯一全市场研究入口。Attention、Trend Focus、Main Force Mirror、Five-Candidate Dossier/Relationships 都不是 active 产品、API、CLI、Web、protocol 或 report。Generic Robustness relationship metrics 与 pending prospective OOS 保留；Alembic migration history 与 `futures_member_ranks` table identity 作为历史/schema 事实保留，但没有 active rank reader、builder、provider 或 CLI。
+
+RQAlpha 工作台是 local-only conditional keep：独立 loopback app 读取外部 Bundle、只写仓库外 artifact，不挂载主 API，不进入 Canonical、MarketDataService、DB、Redis、Alert、Execution Review、Runtime 或订单。真实 RQAlpha smoke 是独立 Gate。
 
 ## 稳定数据边界
 
 ```text
-RQData
--> temporary staging
--> normalization + hard validation
--> monthly Canonical Parquet
--> PostgreSQL eight-table Catalog + MainContractMap
--> MarketDataService
--> Market Web / Indicator / read-only research
+RQData -> staging + hard validation -> Canonical Parquet
+       -> 八表 Catalog + MainContractMap -> MarketDataService
+       -> Market Web / indicators / read-only research
 ```
 
-- RQData 是唯一外部行情事实源；Canonical Parquet 是唯一 active 历史 Bar 存储；PostgreSQL 不保存 Bar。
-- active universe 唯一入口为 `data/universe/active_products.txt`；正式周期只有
-  `1m/5m/15m/30m/60m/1d/1w`。
-- Provider 基础周期为 `1m/1d`；`1w` 只从完整同源 `1d` 聚合，其他日内派生周期只从质量通过的
-  Canonical `1m` 聚合。
-- 物理 Dataset 只有 `continuous` 与 `contract`；`actual_dominant` 只在查询时按
-  `MainContractMap rank=1` 的有效区间拼接。
-- 每 Dataset 每自然月只保留一个 `part.parquet`；schema、identity、OHLCV、session/frequency、
-  coverage 或物理可读性失败时 fail-closed，并保留最后有效 Canonical。
-- `MarketDataService` 是所有 Historical consumer 的唯一入口；consumer 不得 glob、自选 active、
-  自判主力、绕过质量状态或跨频回退。
-- Redis Live 只承载当日 observation；不得写入或提升为 Canonical，也不得替代 Historical 事实。
-- `guiyi data audit --progress` 仅可选增加 stderr per-product NDJSON observation；默认 stdout 合同不变，
-  两种模式均为 provider-free 只读，输出失败不改变 audit 结果。
+- RQData 是唯一外部行情事实源；Canonical Parquet 是唯一 active Historical Bar 存储；PostgreSQL 不存 Bar。
+- active universe 唯一入口为 `data/universe/active_products.txt`；物理 Dataset 只有 `continuous` 与 `contract`，`actual_dominant` 查询时按 rank1 有效区间拼接。
+- `MarketDataService` 是 Historical consumer 的唯一入口；不得 glob、自选 active、自判主力、绕过质量或跨频回退。
+- Redis Live 仅为当日 observation，不能提升为 Canonical。
+- `alert_rules` / `alert_events` 与四张 `trade_*` 表是独立 Application Domain，不改变八表 Catalog。
 
-Data Foundation / Market Catalog 精确为八表。Alert 的 `alert_rules` / `alert_events` 与 Execution
-Review 的四张 `trade_*` 表属于各自 Application Domain，不改变八表合同。
+## 稳定接口与 CLI
 
-## 稳定产品接口
+Web 为 Market、`/trade-records` 及本机限定 `/backtests`。主 HTTP 面为 `/api/v1/market/*`、`/api/alerts/*`、`/api/execution-review/*` 与只读 `/api/runtime/*`；RQAlpha 不进入主 API。
 
-用户界面为 Market Web、`/trade-records` 与只在浏览器 hostname 精确为
-`localhost|127.0.0.1` 时开放的 `/backtests`。主 HTTP 面为 `/api/v1/market/*`、
-`/api/alerts/*`、`/api/execution-review/*` 和只读 Runtime health/status。RQAlpha 工作台只由固定
-`127.0.0.1:8011` 的独立 app 提供 `/api/v1/backtests` 六路由，不进入主 API 或统一 CLI。统一 CLI
-仍为 `guiyi data`、`guiyi research` 与 `guiyi runtime`；真实通知 canary 与真实 RQAlpha smoke
-都是彼此独立的外部 Gate。
-
-只读 Research 命令精确为：
+只读 Research CLI 精确为：
 
 - `guiyi research subing-calibration`
 - `guiyi research subing-lifecycle`
@@ -69,165 +42,24 @@ Review 的四张 `trade_*` 表属于各自 Application Domain，不改变八表�
 - `guiyi research jdj-1m`
 - `guiyi research candidate-validation`
 - `guiyi research candidate-robustness`
-- `guiyi research candidate-dossier`
-- `guiyi research candidate-relationships`
-- `guiyi research main-force-mirror-v2`
-- `guiyi research main-force-mirror-diagnostic`
 
-`main-force-mirror-diagnostic` 仅接受冻结协议
-`main_force_mirror_diagnostic_phase_a_v1`，通过同一个 `MarketDataService` 与
-`main_force_mirror_v2` historical reader 形成 read-only retrospective diagnostic；它不替换
-`main-force-mirror-v2`，也不增加任意窗口、阈值、模型、member dataset 或输出路径覆盖面。
+Candidate Validation/Robustness 保持 source-specific causality、strict-before、embargo 与 prospective OOS 分离；retrospective 不回填 OOS，不生成 rank、winner、promotion、盈利或可交易结论。Historical overlay 只通过现有 confirmed Canonical 接口投影，Web 不复制公式。
 
-`app.runtime_entry` 仅是受监督 Runtime 的内部进程入口；它不是第二套用户 CLI，也不能由手工运行产生
-自然 Runtime evidence。
+## Alert 与 Execution Review
 
-Market K 线的 Historical Research Overlay 通过四个只读接口按需复算 confirmed
-Canonical facts：`/api/v1/market/research/subing/history`、`/api/v1/market/research/n-structure/history`
-、`/api/v1/market/research/jdj/history` 与 `/api/v1/market/research/jdj-strategy/history`。前三个
-source-specific Candidate/Event 接口只支持 `actual_dominant`，分别固定为 SuBing `5m/15m`、
-N Structure `5m`、JDJ `1m`；日进斗金策略接口只支持当前 active universe 中单产品的
-`actual_dominant + 1m`，复用已有
-Candidate reducer 与窄的 `app.research.jdj_strategy` reference lifecycle，返回完整 action 与顶层
-`reference_execution=true`。这些接口不建立通用 Strategy adapter，不创建 AlertEvent 或持久化派生结果。
+Alert 只含 `htdy_original_15m` 与 `subing_entry_signal_v1` 两个 Rule code，且仍只有 `alert_rules`、`alert_events` 两张表。Event 先提交，随后最多一次 transport；无逐收件人状态、retry、queue、replay、backfill、fallback 或订单路径。provider accepted 不等于送达。
 
-Market 首页“优先检查”只消费 `/api/v1/market/research/subing-daily-watch/current` 的当前目标日观察。
-SuBing Daily Watch 只在盘后任务通过后，分别以 D1 与 60m 的 close 相对 EMA21 方向及 EMA21
-slope_5/slope_10 同向正负判定单周期方向，并仅在双周期方向一致时纳入多/空观察；它在显式配置、
-已挂载的扩展盘根保存 active60 完整不可变 ledger，Web/API 只投影 current，不做排名、综合分或交易推荐。
-该观察不进入 Alert、DB、Redis、Canonical、Execution Review 或订单路径。既有 Trend Focus backend 保留为
-read-only code，但不再是首页 active product。
+Execution Review 只消费不可变 SuBing Formal Event，记录人工 Decision、Episode、Execution 和 Review；不连账户、不建订单。roll reconcile 默认关闭，只有精确 enabled Gate 才注入 reconciler，语义不因本 Program 改变。
 
-Market 首页同页使用唯一完整 Runtime health DTO 展示 overall、Live、Alert 与盘后状态，不新增
-route/page。mount/手工刷新读 Formal + Runtime + Radar + Daily Watch，页面重新 visible 只刷 Formal +
-Runtime + Daily Watch；四源各自用 generation guard 拒绝旧响应覆盖新结果。Runtime 首次失败显示 unavailable，已有
-成功快照时保留并标记 stale；`disabled`、`unobserved`、provider accepted、missed 与 stuck 不得互相
-代替，provider accepted 不得表述为送达。
+## 外部操作与文档职责
 
-## 研究边界
+真实 RQData、Canonical、生产 DB、Runtime/live、通知、release/tag、Scope/transport 变更及真实 RQAlpha smoke 都需要范围明确的一次性执行意图。当前 release、Runtime、Scope、evidence 与 Gate 只看 `STATUS.md`。
 
-- RQAlpha 工作台不读 Canonical/MarketDataService，不把 Bundle 宣称为归一量化数据事实。它只保存
-  `research_only=true / formal_evidence=false / promotion_eligible=false` 的本机 RQAlpha 结果，
-  不消费、回填或证明 prospective OOS，不产生 Candidate 晋升、策略有效性或可交易结论。
-- SuBing、N Structure、JDJ 与主力照妖镜各自保留 source-specific Policy、时间粒度、因果 reducer 和
-  Candidate/OOS 语义；不得为了统一展示建立 Strategy/Opportunity adapter 或修改既有公式。
-- Historical Research 只通过 `MarketDataService -> ActualDominantResearchSegmentLoader` 或对应
-  Market read service 读取 confirmed facts；不得读取未来 Bar。rank1 segment、physical contract、
-  trading-day 与 strict-before 边界不完整时 fail-closed。
-- Candidate Validation 只共享 request/error 与 rolling/prospective schedule。retrospective、embargo 与
-  prospective OOS 必须分离；retrospective 不得回填 OOS，也不得从 evidence 自动产生 rank、winner、
-  KEEP/DROP/PROMOTE、盈利、有效性或可交易结论。
-- Robustness、dossier 与 relationship topology 只组合或复算既有 Candidate facts。source-specific
-  window 不得伪装成 common window；comparability 不等于 relationship；N→JDJ strict-before dependency
-  不等于独立确认，JDJ overlap 不得扩写为 proximity、lead/lag 或 future outcome。
-- `main_force_mirror_v2` 仅支持 `60m + contract|actual_dominant` Historical confirmed observation，
-  只读不可变 member-rank snapshot。sequence forensic 保持 same-contract、strict-prior、prefix-invariant，
-  只输出预定义 profile 的事实，不选择 best profile，也不冻结正式 Phase。
-- `main_force_mirror_diagnostic_phase_a_v1` 只消费 frozen active60 `2023-01-01..2026-08-18`；
-  JM `2026-03-10..2026-03-30` 是同一 full causal input 内的固定 named view，单独输出 scoped
-  label/sequence/funnel 或 typed unavailable，但不单独训练 model、计算 member feasibility 或形成 Gate。
-  active60 整体只输出 label/sequence/funnel、deterministic model ceiling、member feasibility 与
-  `STOP|ALLOW_PHASE_FREEZE_DESIGN` research Gate，
-  不消费 `2026-08-19..20` 或 prospective 数据，不产生 PnL、rank、recommendation 或 promotion。
-- Research 只输出 source-specific 只读 HTTP projection、stdout JSON 或显式版本化 artifact；不写
-  DB/Canonical/Redis，不进入
-  Alert/notification/Runtime/Execution Review/订单路径。
-
-Historical Overlay 的事件只能落在当时可知的 evidence Bar：SuBing 使用 resolved `bar_end`，N 与 JDJ
-使用 source event `observed_at`，不得回标 pivot/reaction/reclaim/first-break/retest。Web 只统一 capability、
-confirmed Canonical 请求窗口、generation/full-identity 防旧响应、event-id 去重与 marker 渲染；不复制公式。
-日进斗金策略 marker 只投影具有非空 `effective_bar_end + reference_price` 的
-`ENTRY/ADD/REDUCE/EXIT` reference fill，不把 rejected/pause/stop intent 画成成交。顶部保持 single-select，
-固定为“无｜苏冰｜N字｜日进斗金｜日进斗金策略｜火天大有”；Candidate 与 Strategy 是两个独立 choice。
-JDJ Candidate 的 EMA20 只复用已有 EMA 展示算法；Strategy choice 不在 TypeScript 计算 EMA/N/R:R/仓位/PnL，
-也不增加 Candidate 开关或额外持久化设置。
-
-Exact protocol、window、hash、row/cell count 与 artifact identity 只保存在对应 policy、report 和测试中；
-当前 evidence 与 pending Gate 只看 `STATUS.md`。
-
-## Alert V2 稳定边界
-
-Alert Code Registry 只含 `htdy_original_15m` 与 `subing_entry_signal_v1`。HTDY 稳定 Rule code 保持 `htdy_original_15m`；
-其 capability 为 `1m/5m/15m/30m/60m/1d/1w`，名称中的 `15m` 不再表示能力范围。
-HTDY 唯一 Scope authority 为 `scope_product_frequencies`，按 exact `symbol + frequency` 授权；SuBing
-唯一 Scope authority 为 `scope_products`，仍按品种授权。任一 Rule 同时出现两种非空 Scope 必须
-fail-closed，不做 union 或 fallback。
-
-AlertEvent 通用存储唯一键为 `(rule_id, symbol, frequency, bar_end)`；HTDY 的业务 Event identity 同样
-包含 frequency，因此同一品种同一时点的不同周期可以分别保存。SuBing 的业务 Event identity 保持
-`rule_id + symbol + bar_end`，继续由 `AlertService` 阻止同一 Bar 的跨周期或内容漂移。
-
-HTDY 日内 `1m/5m/15m/30m/60m` 复用同周期 completed Live event-cutoff；D1/W1 只由
-`market:state(reason=canonical_updated)` 触发并读取正式 Canonical，不从 Live 1m 聚合，也不新增第二套
-scheduler。SuBing 只消费现有 `SubingReadService` 的 current-rank1 segment-local `resolved_signal`，
-不复制 Factor、Calibration、FormalPolicy 或 same-boundary resolver。
-
-incoming completed Bar 与 current snapshot 的 `bar_end + trading_day` 不同一、当前交易日不能由
-`MarketPhaseResolver + operational_products.txt` 唯一解析，或 Live arrival identity 不完整时
-fail-closed。5m/15m 同 boundary 继续服从 TradingSession bucket 与既有 resolver。
-
-AlertEvent 先提交，随后最多调用一次 transport。HTDY 路由到 topic audience，SuBing 路由到 owner；
-provider 接受不等于微信最终送达。无 replay、backfill、retry、outbox、queue、逐人 fan-out、fallback
-或订单路径；D1/W1 stale trading day 不补发。Git 外配置只含 transport 所需秘密，权限异常时
-fail-closed。
-
-Alert Runtime 额外在无 TTL Redis key `alert:runtime-status` 保存 schema v1 observation：最后已处理
-Bar、processing success/failure、Event、transport attempt、provider acceptance、notification failure 时点，以及两类
-公开 error type 和连续通知失败数。missing 是 `unobserved`；公开错误分类固定为
-`processing_failed` 以及 `notification_preparation_failed|notification_transport_failed|notification_acceptance_invalid`，
-不保存 provider reference 或异常正文。状态写入失败
-fail-closed 使受监督进程退出/重启；该 observation 不改变 `AlertEvent`、DB schema 和
-`notification_attempted_at` 语义。
-
-## 盘后 Runtime 观察稳定边界
-
-盘后状态文件写 schema v2 并兼容读 v1；受监督自然运行开始即原子写
-`current_run={scheduled_date,started_at,products}`，终态才清除。只读 health 按
-`operational_products.txt -> Instrument.exchange_code -> TradingCalendar` 唯一解析预期交易日：18:20
-前不把当日视为已应执行，18:20 起当日可成为 expected day；交易所事实不可用或不唯一时
-fail-closed。从未产生过状态时，只有当日为交易日且上海时间已到 18:20、当日已 due 才是
-missed；首次应执行前及周末/节假日仍是 pending。已有状态时，最后成功日落后于 expected day 才是
-missed。`current_run` 不超过 2h 为 running，超过 2h 为 stuck。
-
-盘后运维通知与 Alert Rule/Application Domain 分离：只有受监督自然 execution failure 向 owner
-发起最多一次 PushPlus 请求，不用 Topic、`AlertEvent`、DB、retry 或 fallback。provider accepted
-不等于送达；通知失败只记录在已失败的主 run，不改写或重试主业务结果。missed/stuck 只是
-health，没有独立 monitor 代为发送。精确状态文件合同见 `docs/DATA_CENTER.md`。
-
-## Execution Review 稳定边界
-
-Execution Review 只消费不可变的 `subing_entry_signal_v1` AlertEvent，记录人工 Decision、固定合约/方向
-Episode、真实手工 Execution timeline 与结构化 Review。一个品种最多一个 OPEN Episode；不跨合约合并、
-不自动反手、不连接账户、不创建订单。历史重建只经 `MarketDataService`。
-
-Multiplier 采用 trusted-partial 官方 evidence；缺失值不阻断 Decision/Execution/Review，只使人民币估算
-unavailable。Episode 创建时 snapshot，reference 扩大不自动改写历史。
-
-roll reconcile 默认关闭。HTTP request-scoped composition 每请求读取一次 Gate 并注入 callback；marker
-missing、`disabled` 或 `invalid` 时 callback 必须返回 `ROLL_RECONCILIATION_REQUIRED` 且不创建
-`DOMINANT_ROLL`，只有精确 `enabled` 才注入真实 reconciler。`record_executed` 不自行重复读取 marker。
-完整业务语义见 `docs/EXECUTION_REVIEW.md`。
-
-## 外部操作边界
-
-普通源码、测试、文档和 `develop` commit/push 是开发行为。真实 RQData、正式 Canonical、生产 DB、
-Runtime/live、真实通知、release/tag、Scope/transport 变化，以及加载 sidecar 并运行真实 RQAlpha
-smoke，必须在执行前取得范围明确的一次性意图；
-dry-run、代码、测试、health、历史 evidence 或既有授权都不能转换为新的 mutation 权限。
-
-Market Runtime 与 Alert Runtime 的持续授权彼此独立，只覆盖各自被明确启用的有界范围；不授权订单、
-未来 release、再次 Runtime switch 或其他数据/DB mutation。当前 release、Runtime、Scope 与 Gate 状态
-只由 `STATUS.md` 记录。
-
-## 文档职责
-
-| 文件 | 唯一职责 |
+| 文件 | 职责 |
 |---|---|
 | `STATUS.md` | 当前 release、Runtime、evidence 与 pending Gate |
-| `PROJECT_SOURCE.md` | 稳定产品与系统边界 |
-| `DECISIONS.md` | 长期决策及理由 |
-| `docs/ARCHITECTURE.md` | 模块与依赖方向 |
+| `DECISIONS.md` | 长期决策与理由 |
+| `docs/ARCHITECTURE.md` | active 模块依赖 |
 | `docs/DATA_CENTER.md` | Canonical 数据合同 |
-| `docs/EXECUTION_REVIEW.md` | Execution Review 业务语义 |
-| `openspec/specs/` | 当前可执行行为规范 |
+| `docs/EXECUTION_REVIEW.md` | Execution Review 语义 |
 | `TESTING.md` | 当前可执行验证命令 |

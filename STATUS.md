@@ -4,300 +4,31 @@
 
 ## 正式 release 与 production Runtime
 
-- 已发布的正式 tag 为
-  `v1.8.3@9ca18afc9b056d413ee8cac56a056b7d7df078b4`；annotated tag object 为
-  `939a7233724629f04579c5f83ad367462d9f1d0f`，message=`Release v1.8.3`；GitHub Release 已发布。
-- 2026-08-25 已将本机五个 launchd label 切到 clean/detached
-  `/Volumes/扩展盘/guiyi-quant-runtime-v1.8.3@9ca18afc9b056d413ee8cac56a056b7d7df078b4`。
-  API、Web、Live 与 Alert 均从该根运行，API=`200 / 1.8.3 / readonly`、Web=`200`；after-market
-  loaded 且按日程 `not_running`，只读 Runtime health=`ok`，local-services-status 与 local-tunnel-healthcheck
-  均为 `overall=passed`。本次未手工触发 after-market，下一次自然盘后与 Daily Watch artifact 仍是独立
-  未完成 evidence，不能由本机部署推导为已完成。
-- `GUIYI_SUBING_OBSERVATION_ROOT` 已精确配置为扩展盘
-  `/Volumes/扩展盘/guiyi-quant-data/observations/subing-daily-v1`；配置文件为 `0600`，目录为 `0700`，
-  production resolver 通过。当前目录为空，current API 返回
-  `200 / unavailable / SUBING_DAILY_WATCH_NOT_GENERATED / expected=2026-08-25`，等待下一次自然盘后生成。
-- 旧 `v1.8.2` Runtime worktree 保留为 clean/detached rollback 资产，但当前没有 label 指向；未执行
-  回滚、after-market、canary、人工通知、真实 RQAlpha smoke、Canonical/production Redis
-  写入或 Alert transport 变更。
-- production Alembic 已于 2026-08-25 14:56 CST 从 `20260815_0039` 升级到
-  `20260825_0040 (head)`。migration 自动将旧 HTDY `scope_products=['jm']` 继承为
-  `scope_product_frequencies={'jm':['15m']}` 并清空 HTDY 旧列；SuBing 继续为
-  `scope_products=['jm']` 且 frequency Scope 为空。后续独立 production HTDY Scope Gate 已于
-  2026-08-25 15:13 CST 原子更新为 Active60 × 七周期 `60 symbols / 420 pairs`，正式 HTTP 读模型与
-  Runtime authorization predicate 均读回 `420/420`；SuBing 未变，未执行人工通知、canary 或历史补发。
-- RQAlpha research workbench 代码已包含在 `v1.8.0`，但本地 sidecar 仍未加载、未进入 Runtime；真实
-  RQAlpha smoke 继续 `pending`，不得由代码包含或其他 Runtime 验收推导为已完成。
-- Market/Alert marker 继续 enabled；Alert notification channel 仍为 pushplus 且 config=`ready`、
-  audience_count=`2`，Execution Review roll 仍为 `disabled`。本机端口/HTTP 与 FRPC local tunnel 最新只读
-  验收均为 `passed`；ECS FRPS/Nginx 与公网 HTTPS 本轮没有可用执行入口，且 `PUBLIC_BASE_URL` 未配置，
-  因此保持 `not verified`，不得由本机或 tunnel 读回推导为公网验收通过。
+- 正式 release 为 `v1.8.3@9ca18afc9b056d413ee8cac56a056b7d7df078b4`；本机五个 launchd label 当前绑定 clean/detached `/Volumes/扩展盘/guiyi-quant-runtime-v1.8.3` 的同一 commit。该 Runtime 身份不包含本次 develop 收敛代码。
+- 本地 API、Web、Live 与 Alert 从该根运行；2026-08-25 自然 after-market 已于 18:05:02 开始、19:40:05 以 `passed` 终态完成，单次 attempts=1、覆盖 active60。旧 v1.8.2 Runtime worktree 保留为 rollback 资产，当前无 label 指向。
+- production Alembic 已在 `20260825_0040 (head)`。HTDY production Scope 曾于 15:13 在独立明确授权下更新为 active 60 × 七周期 `60 symbols / 420 pairs`，随后于 20:43 按新的明确请求原子收敛为唯一 `jm × 15m`（`1 symbol / 1 pair`）；七周期图表能力与逐 `symbol × frequency` 开关能力不变，SuBing Scope 未变，未触发 Event、重放或通知。
+- Alert transport 为 pushplus，provider accepted 不等于微信送达。19:40 的 processing failure 已被后续 `jm × 15m` 自然处理成功覆盖为 `processing_state=ok`；当前 Runtime 的 `degraded` 仅由同一时点保留的 `notification_transport_failed` 导致。develop 已加入 W1 周内正常跳过修复与保留失败事实的显式 notification acknowledgment 代码，但尚未 release、Runtime promotion 或执行 production acknowledgment。Execution Review roll 仍为 `disabled`。
 
-## v1.8.3 release closeout
+## 已集成 develop 的 Architecture Convergence
 
-- release preparation commit 为 `7e3a08554ba411764b2a247144f7c46b2cb5f9cc`；main PR `#209` 已合并，
-  main integration 与 annotated tag peeled commit 均为
-  `9ca18afc9b056d413ee8cac56a056b7d7df078b4`。annotated tag object 为
-  `939a7233724629f04579c5f83ad367462d9f1d0f`，GitHub Release URL 为
-  `https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.8.3`。
-- exact candidate 验证为 backend `3769 passed / 3 skipped / 17 deselected`、isolated PostgreSQL
-  migration `1 passed / 2 deselected`、engineering `64 passed`、Web unit `285 passed / 1 skipped`、
-  Playwright `101 passed / 1 skipped`；Ruff、Mypy `154 source files / 0 issues`、Web production build、
-  OpenSpec `6 passed`、secret scan、shell/launchd lint 与 diff check 均通过。独立 release Review 为
-  `APPROVED / C0 I0 M0`。
-- 本 release 包含 Alembic `20260825_0040` 源码；release 当时未执行 production migration。后续独立
-  production migration Gate 已于 2026-08-25 14:56 CST 完成，读回为 `20260825_0040 (head)`；随后独立
-  Runtime promotion Gate 已将本机五个 label 切至精确 `v1.8.3` tag Runtime，独立 production HTDY Scope
-  Gate 已启用 Active60 × 七周期。真实 PushPlus canary/send、Canonical 或 production Redis 写入仍未执行，
-  `auto_order=false` 不变。
+Architecture Convergence Tasks 1–6 已通过 merge `0cc2452048f2b03b521f351e1cbd443a359f2b7f` 集成到 develop：SuBing homepage workbench 与详情 panel、四项 public overlay、Attention/Trend Focus、Main Force Mirror 与 Five-Candidate phase assets 的 active surface 退役均已完成。它们尚未 release，也未 Runtime promotion。
 
-## v1.8.2 release and Runtime deployment
+保留的产品与研究事实：
 
-- release preparation commit 为 `fba78fed4`；main integration 与 annotated tag peeled commit 均为
-  `58e0f596a5b425e15697abc72b71c83cc878796c`。本版包含 Market 首页中文化、全市场价格变化 × 持仓变化
-  四象限名单、移除自选入口、RQAlpha 回测入口、以及 K 线初始 300 根与桌面工作区满高布局。
-- exact candidate 验证为 backend（排除需要独立 PostgreSQL 的两项迁移/并发套件）
-  `3720 passed / 3 skipped`、版本与工程契约 `19 passed`、Web unit `280 passed / 1 skipped`、Playwright
-  `100 passed / 1 skipped`；Ruff、Mypy `154 source files / 0 issues`、Web production build、OpenSpec
-  `6 passed`、secret scan、diff check 均通过。隔离 PostgreSQL 套件未执行：本版没有 migration，且未取得对
-  独立数据库写入的授权。
-- 五个现有 launchd label 已切换到精确 tag Runtime；`/market`、`/market/chart`、`/backtests` 均读回
-  HTTP `200`，local-services-status=`overall=passed`。不加载或执行 RQAlpha sidecar，不运行手工
-  after-market、真实通知、migration、Canonical/production DB/Redis 写入，也不改变 Alert Scope/transport
-  或 Execution Review roll，`auto_order=false` 不变。
-
-## v1.8.1 release and Runtime deployment
-
-- release preparation commit 为 `4d67c1f6d`；main integration 与 annotated tag peeled commit 均为
-  `7e05d7d63f1e3437852fdcd56d6a3401fd7bcd16`。本版包含 JDJ active60 Historical reference replay、
-  No-Watch Reliability V1、SuBing Daily Watch V1 及其 5 个 Important 窄修复。
-- exact main merge tree 验证为 backend `3659 passed / 3 skipped / 16 deselected`、engineering `63 passed`、
-  Web unit `276 passed / 1 skipped`、Playwright `98 passed / 1 skipped`、Mypy
-  `154 source files / 0 issues`；Ruff、Web build、OpenSpec `6 passed`、secret scan 与 diff check 均通过。
-- 五个现有 launchd label 已切换到精确 tag Runtime；不加载 RQAlpha sidecar，不运行手工 after-market、
-  真实通知、migration、Canonical/production DB/Redis 写入，也不改变 Alert Scope/transport 或 Execution
-  Review roll，`auto_order=false` 不变。首次自然盘后与 Daily Watch artifact 验收继续 `pending`。
-
-## v1.8.0 release closeout
-
-- release preparation commit `91246004cb4c2c8d72cf8729edca8a99b3e6982b` 已合入 `develop`；main release
-  integration 与 tag peeled commit 均为 `8fac0a5f22951715711680b554a635d76166af24`，并已完成远端读回。
-- exact candidate 验证为 backend `3409 passed / 3 skipped / 16 deselected`、engineering `62 passed`、Web
-  unit `255 passed / 1 skipped`、Playwright `93 passed / 1 skipped`；Ruff、Mypy、Web build、OpenSpec、
-  secret scan、launchd render/lint 均通过。
-- Runtime 补齐前端 lockfile 依赖与 production build 后，仅重启 Web label；五个 label 的 exact root/commit
-  读回一致，local-services-status 与 local-tunnel-healthcheck 均为 `overall=passed`。
-- 本 release 不含 migration、Canonical/production DB/Redis 写入、Scope/transport 变化、通知
-  retry/replay/backfill 或订单能力，`auto_order=false` 不变。
-
-## v1.7.0 release closeout
-
-- release PR `#197` 已合入 main；release commit、annotated tag peeled commit 与 Runtime checkout
-  精确一致。最终 Standards/Spec review 均为 `C0/I0/M0`。
-- exact candidate 验证为 backend `2703 passed / 3 skipped / 16 deselected`、isolated PostgreSQL
-  `16 passed`、engineering `58 passed`、Web unit `208 passed / 1 skipped`、Playwright `74 passed`，
-  Ruff、Mypy、Web build、OpenSpec、secret scan 与 launchd render 均通过。
-- 本 release 不含 migration、Canonical/production DB/Redis 写入、Scope/transport 变化、通知
-  retry/replay/backfill 或订单能力，`auto_order=false` 不变。
-
-## Market Trend Focus V1 v1.8.0 integration
-
-- Market Trend Focus V1 implementation exact head `b4330123d8483ebdd42583d1816ac15cf99b61db`
-  已随 v1.8.0 release 合入；它仍是只读 Market research surface，不接 Alert、Runtime 或订单。
-- 2026-08-23 Lane 3 exact-head 验证为 Trend Focus/API `77 passed`、backend
-  `2808 passed / 3 skipped / 16 deselected`、Web unit `221 passed / 1 skipped`、B1 Playwright
-  `48 passed`；Ruff、Mypy、Web build、OpenSpec 与 secret scan 均通过。真实 active60 只读快照为
-  Radar `ready/current / 60 active / 60 participant`、结构可评估 `32`、typed unavailable `11`
-  且全部为 `HOURLY_HISTORY_INSUFFICIENT`、long/short opportunity=`1/0`、
-  setup/breakout/retest/ready=`1/0/0/0`、running/weakening=`10/11`；六个 completed 15m cutoff
-  共 `192` 次 prefix 比较，`0 mismatch`，无 future/same-boundary/cross-contract identity 冲突。
-- prospective shadow 仍是下一受控 Gate，当前未启用；本状态不授权真实通知或任何正式数据写入。
-
-## JDJ active60 1m reference replay v1.8.1 integration
-
-- pre-status implementation/plan exact head 为
-  `683c98a21bd70b2231cbf8975147bad358a73e77`。当前 active60 中单产品的
-  `actual_dominant + 1m` JDJ Historical reference replay 已完成实现，JM Golden exact parity 通过。
-- 固定 smoke window `2026-08-18..2026-08-20` 的唯一授权 retry 观察到 `60 ok / 0
-  typed_unavailable / 0 command_failed`，合计 `2004` 个 action；该数量只表示 reference replay
-  capability coverage，不构成排名、PnL 或策略有效性结论。
-- 该能力已随 v1.8.1 合入 main/release，但仍是 research-only，未消费 prospective OOS，也不成为
-  Alert、Runtime、RQAlpha、Canonical、data、DB、Redis 或 order consumer。
-
-## 当前 Runtime 与产品面
-
-- Data Foundation DFD-01～DFD-07 已完成，active 60 与 operational 60 一致。Historical 事实链为
-  `RQData -> staging/校验 -> Canonical Parquet -> 八表 Catalog -> MarketDataService`；Redis Live
-  与 Historical Canonical 分离，Live 不写 Parquet/DB。
-- Market Runtime V1 已启用：只观察 `operational_products.txt` 的当日 rank1 completed 1m，并在
-  18:05 及最多一次一小时后 retry 更新相同范围。
-- Alert Runtime V2 已启用：Code Registry 只含 `htdy_original_15m` 与
-  `subing_entry_signal_v1`。HTDY production Scope 已显式启用 Active60 × 七周期 `420 pairs`；每 Event
-  最多向 Topic 发起一次请求，SuBing 每 Event 最多向 owner 发起一次请求；无逐人状态、retry、queue、
-  replay、backfill、fallback 或订单路径。
-- Execution Review V1 是独立 Application Domain。HTTP request-scoped composition 每请求读取一次
-  roll Gate 并注入 callback；missing/`disabled`/`invalid` 时 callback 返回
-  `ROLL_RECONCILIATION_REQUIRED` 且不得创建 `DOMINANT_ROLL`，只有 `enabled` 注入真实 reconciler。
-- Market Web 的 B1 流程已进入 production：首页为“需要处理 → 优先检查 → 全市场研究”，详情页使用
-  “当前检查栏”；正式 Event、研究观察和 Research-only 事实保持分层，不产生综合分或交易推荐。
-- The prior Four-System Active60 All-Frequency Observation direction was withdrawn by the user before implementation and its active Spec/Plan were removed.
-
-## HTDY Active60 七周期实现（已发布、完成 migration 并部署 Runtime）
-
-以下 Gate 只记录各自已经发生的事实，任一状态不得由其他状态推导：
-
-| Gate | 状态 | 独立 evidence |
-|---|---|---|
-| `CODE_COMPLETE` | `complete` | implementation base=`fd0777672c49a856b283a0f4653519c68a35cb38`；reviewed implementation head=`f444920c5ae02dc04785492986de8ecdebef0c3a` |
-| `TEST_COMPLETE` | `complete` | focused backend `332 passed`；isolated migration `1 passed / 2 deselected`；full backend `3769 passed / 3 skipped / 17 deselected`；engineering `64 passed`；Web unit `285 passed / 1 skipped`；full Playwright `101 passed / 1 skipped`；Ruff、Mypy、Web build、OpenSpec、secret scan 与 diff check 均通过 |
-| `REVIEW_COMPLETE` | `complete` | fixed base-to-head Lane 3 Standards/Spec Review=`APPROVED`，`Critical / Important / Minor = 0 / 0 / 0`，结论=`允许集成 develop` |
-| `INTEGRATED_DEVELOP` | `complete` | 用户已字面批准 `允许集成 develop`；PR `#208` 已合并，远端 develop merge commit=`8b970972b5ceeb3ba33904fab73446cdb3cba92c`，candidate `d60bc43d7115a970c154c0e5330e994c2567498e` 为其祖先 |
-| `PRODUCTION_MIGRATION` | `complete` | 用户明确授权后执行一次 `20260815_0039 -> 20260825_0040`；读回 head、新列/约束与 9 条历史 Event 完整性均通过 |
-| `REAL_SCOPE_MUTATION` | `complete` | 用户独立授权后执行一次 production 原子 mutation：旧值 `jm × 15m` 更新为 Active60 × 七周期 `60 symbols / 420 pairs`；正式 HTTP 读模型 `420/420`、Runtime predicate `420/420`、目标哈希与 DB 读回一致，SuBing 未变 |
-| `RELEASED` | `complete` | main PR `#209` 已合并；annotated `v1.8.3` tag peeled commit=`9ca18afc9b056d413ee8cac56a056b7d7df078b4`，GitHub Release 已发布 |
-| `RUNTIME_PROMOTED` | `complete` | 五个 launchd label 已绑定 clean/detached `v1.8.3@9ca18afc9b056d413ee8cac56a056b7d7df078b4`；Runtime focused `192 passed`、Web production build、五 label exact root/commit、API `1.8.3`、Web 路由、DB head 与 local health 读回均通过 |
-| `REAL_NOTIFICATION_VERIFIED` | `pending` | 未执行真实 PushPlus；provider acceptance 与微信送达均未验证 |
-| `NATURAL_D1_W1_EVIDENCE` | `pending` | 未等待或补造自然 `canonical_updated` D1/W1 Event；不得由测试或本地 Canonical 可读性推导 |
-
-- HTDY 保持稳定 Rule code `htdy_original_15m`，实现能力覆盖七个正式周期；旧 Scope migration 只继承
-  原有 15m ON。HTDY 唯一 Scope authority 为 `scope_product_frequencies`，SuBing 继续只认
-  `scope_products`；HTDY Event identity 包含 frequency，SuBing business identity 仍为 bar-level。
-- 日内五周期只消费同周期 completed Live Bar；D1/W1 只响应既有 `canonical_updated` seam 并读取
-  Canonical，不新增 Live 日/周聚合、第二 scheduler、retry、replay、queue、outbox、backfill 或订单路径。
-- Task 11 provider-free read-only matrix 为 Active60 × 七周期 `420/420` capability admitted，且当前本地
-  Canonical latest 32-Bar page `420 ready / 0 typed unavailable`。该结果不证明 current-event/Live arrival、
-  策略或回测有效性、盈利、真实 Scope、Runtime activation、provider acceptance 或通知送达。
-
-## SuBing Daily Watch V1 v1.8.1 integration
-
-以下 Gate 只记录各自已经发生的事实，任一状态不得由其他状态推导：
-
-| Gate | 状态 | 独立 evidence |
-|---|---|---|
-| `CODE_COMPLETE` | `complete` | code-complete implementation base=`ed14c5a1990f34121329b22d05e3c6b612935264`；最后一笔 Daily Watch 业务修改=`30ed956ea7a4a7db2193db61156030fea9489157` |
-| `TEST_COMPLETE` | `complete` | 下述 focused/full backend、Web、Mypy、Ruff、OpenSpec、secret 与 diff checks 已完成 |
-| `REVIEW_COMPLETE` | `complete` | 对 implementation base 到 `develop@421ec498a2af08ad804f03e9b8c4c84b5c16211f` 的独立 Standards/Spec Review 均为 `C0 / I0 / M0`，结论=`允许集成 develop` |
-| `INTEGRATED_DEVELOP` | `complete` | implementation base、全部 Review 修复与 `30ed956ea` 均为远端 `develop@421ec498a2af08ad804f03e9b8c4c84b5c16211f` 的祖先 |
-| `RELEASED` | `complete` | annotated `v1.8.1` peeled commit=`7e05d7d63f1e3437852fdcd56d6a3401fd7bcd16` |
-| `RUNTIME_PROMOTED` | `complete` | 本机五个 label 已绑定 clean/detached `v1.8.1@7e05d7d63f1e3437852fdcd56d6a3401fd7bcd16` |
-| `NATURAL_EVIDENCE_COMPLETE` | `pending` | 首次自然 after-market 尚未发生，Daily Watch current 仍为 `SUBING_DAILY_WATCH_NOT_GENERATED` |
-
-`RUNTIME_PROMOTED=complete` 不表示 `RUNTIME_READY`：当前只读 health 仍是
-`degraded / after_market_run_missed`。`NATURAL_EVIDENCE_COMPLETE` 必须等待真实自然盘后 artifact、API 与
-Web 验收，不得由 code、tests、Review、develop integration、release 或 Runtime promotion 补证。
-
-- SuBing Daily Watch V1 已随 v1.8.1 合入 main/release 并部署到精确 tag Runtime。2026-08-24 的窄修复补齐同 target 失败后 current
-  fail-closed、目录及原子文件 mutation/replace 前扩展盘 root 重验、snapshot
-  decision/reason/fact/price-side 语义校验，以及来自重构前实现的 5m/15m EMA/slope 独立 golden parity
-  覆盖；Task 0–9 的代码与 canonical 已收口。
-- 2026-08-24 fresh verification 为 focused backend `175 passed`、full non-isolated backend
-  `3659 passed / 3 skipped / 16 deselected`、engineering `63 passed`、Mypy
-  `154 source files / 0 issues`、Web unit `276 passed / 1 skipped`、full Playwright
-  `98 passed / 1 skipped`；Ruff、Web build、OpenSpec `6 passed`、secret scan `0 findings`、ops shell、
-  launchd plist lint 与 diff check 均通过。该 feature 不含 migration、schema 或 concurrency 变化，因此未运行
-  isolated PostgreSQL，也未连接 production DB。
-- 扩展盘 root 已配置并通过 production resolver，但当前尚未生成真实 `history/current/generation-status`
-  文件，也未运行或回填真实盘后任务。首次自然 after-market evidence 继续 `pending`；production Alert Scope/transport、
-  prospective OOS 及其他既有 Gate 均未改变。
-
-## No-Watch Reliability V1 v1.8.1 integration
-
-- No-Watch Reliability V1 已达到 `CODE_COMPLETE / TEST_COMPLETE` 并合入 develop：Alert 已有无 TTL Redis schema v1
-  processing/notification observation；盘后已有 schema v2 crash-visible `current_run`、18:20 expected-day
-  与 2h stuck health；Market 首页已有唯一完整 DTO 的 Runtime strip；data audit 已有默认
-  stdout 兼容的可选 stderr NDJSON progress。
-- 盘后 owner PushPlus 只针对受监督自然 execution failure、最多一次且无 retry；它与
-  Alert Rule/Application Domain 分离，不用 Topic、`AlertEvent` 或 DB。missed/stuck 只是 health，
-  provider accepted 不等于送达。
-- 整分支 final review 首轮发现 3 个 Important；在 reviewed implementation head
-  `eddd13f9999297a93286389a85805c27fc41264f` 修复后，唯一 scoped re-review 为 `APPROVED`，
-  Critical/Important/Minor 均为 `0 open`。
-- 最终验证为 backend non-isolated `3521 passed / 3 skipped / 16 deselected`、Ruff clean、Mypy
-  `150 files / 0 issues`、Web unit `264 passed / 1 skipped`、build passed、Playwright
-  `97 passed / 1 skipped`、OpenSpec `6 passed`、secret scan `0 findings` 与 diff check clean。
-- develop 首次 integration 的 local 与 remote readback 均为 reviewed implementation head
-  `eddd13f9999297a93286389a85805c27fc41264f`；该 SHA 不表示本次 `STATUS.md` 收口提交后的最终 remote head。
-- No-Watch 已随 v1.8.1 release 与 Runtime switch 部署；新 Runtime 根当前如实报告当日 after-market
-  `missed`，等待下一次自然执行。未执行真实 PushPlus、自然 HTDY/SuBing/after-market 新验收、真实 data audit、RQData、
-  Canonical/production DB/Redis 写入或 migration。
-
-## 当前 research evidence
-
-- SuBing、N Structure 与三条 JDJ Candidate 的 retrospective baseline 已冻结；各自 prospective OOS
-  独立保持 `pending`，不得用 retrospective 或 embargo 回填。
-- Multi-Candidate Robustness 与 JDJ Active60 Robustness evidence 已冻结；typed unavailable 保留，
-  不生成 score/rank/winner/KEEP/DROP/PROMOTE。
-- Five-Candidate Phase 8 dossier 与 relationship-topology evidence 已冻结；source-specific window、
-  comparability/relationship、N→JDJ dependency 与 JDJ overlap 的边界保持分离。Phase 8 已完成，
-  不保留 active task/plan。
-- 当前 evidence artifact 位于：
-  - `reports/research/candidate_validation/`
-  - `reports/research/candidate_robustness/`
-  - `reports/research/candidate_dossier/five_candidate_research_dossier_v1/`
-  - `reports/research/candidate_relationships/five_candidate_relationship_topology_v1/`
-- 主力照妖镜唯一 active identity 为 `main_force_mirror_v2`。60m sequence forensic 代码与 CLI 已完成，
-  但真实 JM/active60 read-only evidence Gate 未执行；当前不得形成 `STOP` 或
-  `ALLOW_PHASE_FREEZE_DESIGN` 结论，更不得冻结正式 Phase、接入 Web/Alert/Runtime 或晋升。
-- Main Force Mirror Diagnostic Phase A 的 CLI、composition、显式 payload 与端到端只读边界已
-  `CODE_COMPLETE / TEST_COMPLETE`；协议仍是 `main_force_mirror_diagnostic_phase_a_v1`，底层
-  indicator identity 仍是未修改的 `main_force_mirror_v2`。JM named view payload 会从同一 full causal
-  input 输出 scoped label/sequence/funnel 或 typed unavailable，不运行独立 model/member/Gate。真实 JM named view 与 active60 diagnostic
-  evidence 未运行，因此 empirical final Gate 仍为 `pending`；本轮未生成 evidence artifact，不得
-  复用历史 sequence `STOP`/`REJECT` 或宣称 release、Runtime-ready。
-- 所有 evidence 都只是可复算 research facts：不生成盈利、有效性、可交易、Alert Rule、release 或
-  Runtime-ready 结论；不写 Canonical/DB/Redis，不消费 prospective OOS，`auto_order=false`。
-
-已冻结 evidence 的 exact protocol、window、hash、count 和 artifact identity 由对应 policy、report 与
-测试保存，不在本文件复制；下方分别保留尚未执行的 MFM sequence forensic
-`2023-01-01..2026-08-20` 与 Diagnostic Phase A `2023-01-01..2026-08-18` 两项独立
-protocol/window Gate 边界，两者均不因代码或测试完成而视为已运行。
-
-### MFM sequence forensic 真实 evidence Gate
-
-该 Gate 必须按以下顺序完整执行，不能拆分、缩窗或静默丢弃 unavailable：
-
-1. 先只读运行 `jm / actual_dominant / 60m / 2026-03-10..2026-03-30 / --forensic`，核对 peak、首次
-   decay/liquidation/opposite-build/accumulated-reversal 的 evidence Bar、causal delay 与 physical-contract
-   continuity；member context 不可用时只记录 unavailable，不补取或猜测。
-2. 再由仓库外层 shell loop 逐行读取 `data/universe/active_products.txt`，对完整 active60 运行
-   `actual_dominant / 60m / 2023-01-01..2026-08-20`。只允许 OS temp 输出，不新增 repository batch
-   module/script；typed-unavailable 必须显式保留，命令失败也必须保留 stderr/status，不能跳过品种。
-3. 只比较 `balanced / fast / slow / loose / strict` 五个预定义 profile。每 profile 检查 sample count，
-   以及 `1/3/5/10` Bar 的 `median_reversal_return / hit_rate / median_mfe / median_mae`；同时检查 yearly、
-   long/short symmetry、product concentration、cross-year drift 与从 peak 到 later evidence 的 causal delay。
-   禁止选择 best profile，禁止 ranking、PnL、Sharpe、winner 或按品种调参。
-4. sequence facts 不稳定、因果证据过晚、样本过稀或产品特化到不能实质减少人工拼接/改善复盘
-   evidence 时必须 `STOP`；只有存在跨产品、跨年度、跨方向的小而稳定区域才允许
-   `ALLOW_PHASE_FREEZE_DESIGN`。最终结论只能是这两者之一。
-5. `ALLOW_PHASE_FREEZE_DESIGN` 只授权未来 Lane 3 正式 Phase 的设计，不授权实现、Web/API、
-   Alert/notification、Runtime、release、策略晋升或订单。
-6. 临时目录只有在 real path 精确匹配 `/private/tmp/guiyi-mfm-v2-sequence-forensic.*`、无 symlink/子目录/
-   device/socket、文件名与 active60 对应且只含 `.json/.stderr/.status` 后才可删除；任一检查失败必须
-   fail-closed 并保留 exact directory 供检查，禁止删除 broad root、glob 或 unresolved variable。
-
-Exact 命令见 `TESTING.md`。该协议只定义未来 read-only Gate，不构成本轮执行授权。
+- SuBing 仍有 Daily Context、Current Signal State、Formal Event 三类独立事实；本次自然盘后已生成 target=2026-08-26 的 Daily Watch，current=ready，计数为 universe=60、long=1、short=1、excluded=2、unavailable=56。unavailable 仍是显式数据充分性结果，不构成补取或回填授权。
+- HTDY 七周期、frequency-aware Event 与 symbol × frequency Scope 已是 release/Runtime 事实；当前 production Scope 精确为 `jm × 15m`。此前 420-pair Scope 下自然形成的 6 条 D1 Event 保持 immutable，未删除、重放或补发；19:40 曾出现 W1 处理失败并记录 provider accepted 与一次 transport failure，后续 processing 已自然恢复，但这仍不证明微信送达，也不改变真实通知 Gate；自然 D1/W1 event identity/evidence 仍需按各自事实独立核验。
+- Candidate Validation/Robustness 与 pending prospective OOS 保留；Generic Robustness relationship metrics 保留。已退役 phase-specific Dossier/Relationships 不再是 pending Gate。
+- Alembic migration history、`futures_member_ranks` table identity 与仓库外既有 historical snapshots 保留；没有 active reader/builder/provider/CLI。
+- RQAlpha local-only workbench 未加载、未进入 Runtime；真实 smoke 仍 pending。
 
 ## 待完成 Gate
 
-- v1.8.1 首次自然 after-market 与 Daily Watch artifact/API/Web 验收 `pending`；不得手工触发、回填或
-  复制旧 Runtime 状态补证。
-- MFM 60m sequence forensic 的真实 JM + active60 Historical read-only evidence Gate `pending`；本次不
-  运行、不生成临时 evidence、不输出 Phase Gate 结论。
-- MFM Diagnostic Phase A 的真实 JM named view + frozen active60 Historical read-only diagnostic
-  evidence 及 empirical `STOP|ALLOW_PHASE_FREEZE_DESIGN` Gate `pending`；当前只有代码与测试证据。
-- 自然 HTDY Topic Event 与自然 SuBing owner Event 的 production 验收 `pending`；不得用 synthetic
-  Event、manual send、replay、backfill 或 retry 补证，历史 canary 不重复。
-- SuBing 自然 Live seam 仍需真实时点观察；Canonical-only HTTP smoke 不替代自然 Live evidence。
-- 当前 v1.8.1 API/Web/Market Runtime root 的下一次自然 18:05 盘后业务证据待观察；不得人工触发、回填或
-  用旧 root evidence 补证。
-- SuBing、N 与 JDJ Candidate 的 prospective OOS 继续按各自 exact protocol 独立累积，当前均
-  `pending`。
-- Execution Review Gate D 继续 `disabled / not activated`。
+- HTDY 的真实 PushPlus/微信送达与自然 D1/W1 `canonical_updated` evidence pending；不以测试、synthetic event、replay 或手工发送补证。
+- SuBing 自然 Live seam evidence pending；Daily Watch 的自然盘后 artifact 已于上述单次自然运行产生，不手工触发或回填。
+- SuBing、N 与 JDJ Candidate 的 prospective OOS 按各自 protocol 独立累积，均为 pending prospective OOS。
+- Execution Review roll Gate 保持 `disabled / not activated`。
+- Architecture Convergence Task 7/8 尚在 develop 实施与验证流程；在用户明确 release 批准前不得合 main/tag/release，在单独 Runtime 批准前不得 promotion。
 
 ## 事实源边界
 
-- 当前 release、Runtime、Scope、evidence 与 pending Gate 只看本文件。
-- 稳定产品边界看 `PROJECT_SOURCE.md`；长期决策理由看 `DECISIONS.md`；模块依赖看
-  `docs/ARCHITECTURE.md`；命令看 `TESTING.md`。
-- 已完成 spec/plan/task 与逐次 release/promotion 流水只从 Git history、`CHANGELOG.md`、tag 和 commit
-  追溯，不作为 active surface。
+当前 release、Runtime、Scope、evidence 与 pending Gate 只看本文件。稳定产品边界见 `PROJECT_SOURCE.md`，长期决策见 `DECISIONS.md`，验证命令见 `TESTING.md`。

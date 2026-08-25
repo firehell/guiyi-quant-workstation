@@ -64,7 +64,6 @@ test('research overlay defaults to SuBing and exposes exactly one overlay indica
   assert.deepEqual(normalizeOptionalEmaIndicators(['ema_60', 'ema_21', 'ema_10', 'ema_60', 'htdy']), ['ema_10', 'ema_60'])
   assert.deepEqual(visibleMainIndicatorsForOverlay('subing', []), ['ema_21'])
   assert.deepEqual(visibleMainIndicatorsForOverlay('subing', ['ema_10', 'ema_60']), ['ema_10', 'ema_21', 'ema_60'])
-  assert.deepEqual(visibleMainIndicatorsForOverlay('jdj' as never, ['ema_10', 'ema_60']), ['ema_20'])
   assert.deepEqual(visibleMainIndicatorsForOverlay('htdy', ['ema_10', 'ema_60']), ['ema_10', 'ema_60', 'htdy'])
   assert.deepEqual(visibleMainIndicatorsForOverlay('none', ['ema_10', 'ema_60']), [])
 })
@@ -211,43 +210,34 @@ test('preference v3 saves and loads optional EMAs with chart UI preferences', ()
   assert.deepEqual(loadMainChartPreferences(storage), defaultMainChartPreferences())
 })
 
-test('preference v3 preserves the N overlay without a schema version change', () => {
+test('preference v3 migrates retired and unknown overlays to none while retaining public overlays', () => {
   const values = new Map<string, string>()
   const storage = {
     getItem: (key: string) => values.get(key) || null,
     setItem: (key: string, value: string) => values.set(key, value),
   }
 
-  saveMainChartPreferences({
-    version: 3,
-    selectedOverlay: 'n_structure',
-    optionalEmaIndicators: [],
-    period: '5m',
-    realtimeFollow: false,
-  }, storage)
-
-  assert.equal(loadMainChartPreferences(storage).selectedOverlay, 'n_structure')
-  assert.equal(JSON.parse(values.get(MAIN_CHART_PREFERENCES_KEY)!).version, 3)
-})
-
-test('preference v3 preserves the JDJ overlay without adding candidate settings', () => {
-  const values = new Map<string, string>()
-  const storage = {
-    getItem: (key: string) => values.get(key) || null,
-    setItem: (key: string, value: string) => values.set(key, value),
+  const cases = [
+    ['n_structure', 'none'],
+    ['jdj', 'none'],
+    ['unknown', 'none'],
+    ['jdj_strategy', 'jdj_strategy'],
+    ['htdy', 'htdy'],
+  ] as const
+  for (const [storedOverlay, expectedOverlay] of cases) {
+    values.set(MAIN_CHART_PREFERENCES_KEY, JSON.stringify({
+      version: 3,
+      selectedOverlay: storedOverlay,
+      optionalEmaIndicators: [],
+      period: '1m',
+      realtimeFollow: false,
+    }))
+    assert.equal(
+      loadMainChartPreferences(storage).selectedOverlay,
+      expectedOverlay,
+      storedOverlay,
+    )
   }
-
-  saveMainChartPreferences({
-    version: 3,
-    selectedOverlay: 'jdj' as never,
-    optionalEmaIndicators: [],
-    period: '1m',
-    realtimeFollow: false,
-  }, storage)
-
-  const loaded = loadMainChartPreferences(storage)
-  assert.equal(loaded.selectedOverlay, 'jdj')
-  assert.equal(JSON.parse(values.get(MAIN_CHART_PREFERENCES_KEY)!).candidate, undefined)
 })
 
 test('preference v3 preserves the JDJ strategy overlay across save and load', () => {

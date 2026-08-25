@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import replace
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
-import pytest
 
 from app.main import app
 from app.market_data.domain import (
@@ -16,20 +14,13 @@ from app.market_data.domain import (
     SeriesKind,
 )
 from app.market_data.market_data_service import MarketDataError
-from app.market_data.main_force_mirror_v2_service import (
-    MainForceMirrorV2Error,
-    MainForceMirrorV2PageResult,
-    MemberDatasetState,
-)
-from app.market_data.market_trend_focus import (
-    TrendFocusItem,
-    TrendFocusSnapshot,
-    TrendFocusUnavailable,
-)
-from guiyi_quant.indicators.main_force_mirror_v2 import (
-    MainForceMirrorV2Point,
-    MemberRankObservation,
-)
+
+
+def test_retired_main_force_mirror_route_is_absent() -> None:
+    assert (
+        TestClient(app).get("/api/v1/market/research/main-force-mirror").status_code
+        == 404
+    )
 
 
 class FakeService:
@@ -206,322 +197,6 @@ def test_product_research_api_maps_market_errors_without_internal_details(monkey
     assert response.json() == {"detail": {"code": "QUERY_WINDOW_EMPTY"}}
 
 
-class _FakeMirrorService:
-    def __init__(self, failure: MainForceMirrorV2Error | None = None) -> None:
-        self.failure = failure
-        self.requests = []
-
-    def query_page(self, request):
-        self.requests.append(request)
-        if self.failure is not None:
-            raise self.failure
-        member = MemberRankObservation(
-            status="ready",
-            member_trade_date=date(2026, 8, 20),
-            direction="long",
-            change_bias=0.000001,
-            strength=2.0,
-            position_skew=0.0,
-            top5_volume_share=0.4,
-            relation_to_accumulated="aligned",
-            relation_to_caution="strong_aligned",
-            unavailable_reason=None,
-        )
-        point = MainForceMirrorV2Point(
-            bar_end=datetime(2026, 8, 21, 7, tzinfo=UTC),
-            trading_day=date(2026, 8, 21),
-            physical_contract="JM2701",
-            pressure_ready=True,
-            pressure_state="long_build",
-            instant_pressure=-0.0,
-            accumulated_ready=True,
-            accumulated_pressure=1.2345674,
-            caution_ready=True,
-            caution="long_chase_caution",
-            caution_conflict=False,
-            long_caution_score=70.0,
-            short_caution_score=0.0,
-            caution_reason_codes=("LONG_UPPER_EXTREME",),
-            member=member,
-            unavailable_reason=None,
-            price_impulse=-0.0,
-            clv=0.1234565,
-            volume_ratio=2.1234564,
-            delta_oi=-0.0,
-            oi_impulse=-1.2345675,
-            range_position=0.9876545,
-        )
-        return MainForceMirrorV2PageResult(
-            request_identity={
-                "series_kind": request.series_kind.value,
-                "symbol": request.symbol,
-                "contract": request.contract,
-                "frequency": request.frequency.value,
-                "before": request.before.isoformat() if request.before else None,
-                "limit": request.limit,
-            },
-            indicator_code="main_force_mirror_v2",
-            indicator_version="futures-member-research-v2",
-            formal_policy_id="main_force_mirror_observation_v2",
-            parameters_hash="fixture-hash",
-            points=(point,),
-            member_dataset=MemberDatasetState(
-                status="ready",
-                dataset_id="fixture-member-v1",
-                schema_version=1,
-                admitted_product=True,
-                coverage=(date(2026, 7, 1), date(2026, 8, 20)),
-            ),
-            has_more_before=True,
-            next_before=point.bar_end,
-            resolved_contract_segments=(
-                ResolvedContractSegment(
-                    "JM2701", date(2026, 8, 21), date(2026, 8, 21)
-                ),
-            ),
-        )
-
-
-def test_main_force_mirror_v2_api_returns_exact_identity_t_minus_one_and_rounding(
-    monkeypatch,
-) -> None:
-    fake = _FakeMirrorService()
-    monkeypatch.setattr(
-        "app.api.market.build_main_force_mirror_v2_service",
-        lambda _session: fake,
-        raising=False,
-    )
-
-    response = TestClient(app).get(
-        "/api/v1/market/research/main-force-mirror",
-        params={
-            "series_kind": "actual_dominant",
-            "symbol": "jm",
-            "frequency": "60m",
-        },
-    )
-
-    assert response.status_code == 200
-    payload = response.json()
-    assert set(payload) == {
-        "request",
-        "indicator",
-        "member_dataset",
-        "points",
-        "page",
-        "resolved_contract_segments",
-    }
-    assert payload["indicator"] == {
-        "indicator_code": "main_force_mirror_v2",
-        "indicator_version": "futures-member-research-v2",
-        "formal_policy_id": "main_force_mirror_observation_v2",
-        "parameters_hash": "fixture-hash",
-        "interpretation": "directional_position_pressure_proxy_not_measured_fund_flow",
-        "observation_only": True,
-        "historical_only": True,
-        "auto_order": False,
-    }
-    assert payload["member_dataset"] == {
-        "status": "ready",
-        "dataset_id": "fixture-member-v1",
-        "schema_version": 1,
-        "admitted_product": True,
-        "coverage": {"start": "2026-07-01", "end": "2026-08-20"},
-    }
-    assert payload["points"][0]["member_trade_date"] == "2026-08-20"
-    assert payload["points"][0]["instant_pressure"] == 0.0
-    assert payload["points"][0]["accumulated_pressure"] == 1.234567
-    assert payload["points"][0]["member_change_bias"] == 0.000001
-    assert payload["points"][0]["relation_to_caution"] == "strong_aligned"
-    assert payload["points"][0]["caution_conflict"] is False
-    assert payload["points"][0]["price_impulse"] == 0.0
-    assert payload["points"][0]["clv"] == 0.123457
-    assert payload["points"][0]["volume_ratio"] == 2.123456
-    assert payload["points"][0]["delta_oi"] == 0.0
-    assert payload["points"][0]["oi_impulse"] == -1.234568
-    assert payload["points"][0]["range_position"] == 0.987655
-    assert payload["page"] == {
-        "has_more_before": True,
-        "next_before": "2026-08-21T07:00:00Z",
-    }
-
-
-@pytest.mark.parametrize(
-    ("code", "status_code"),
-    [
-        ("MFM_V2_UNSUPPORTED_SERIES_KIND", 422),
-        ("MFM_V2_UNSUPPORTED_FREQUENCY", 422),
-        ("MFM_V2_CONTRACT_INVALID", 422),
-        ("MFM_V2_REQUEST_INVALID", 422),
-        ("MFM_V2_MARKET_IDENTITY_CONFLICT", 409),
-        ("MFM_V2_PHYSICAL_CONTRACT_MISSING", 409),
-        ("MFM_V2_MEMBER_DATASET_INVALID", 409),
-        ("MFM_V2_MEMBER_DATASET_IDENTITY_CONFLICT", 409),
-    ],
-)
-def test_main_force_mirror_v2_api_maps_only_stable_public_codes(
-    monkeypatch,
-    code: str,
-    status_code: int,
-) -> None:
-    fake = _FakeMirrorService(MainForceMirrorV2Error(code))
-    monkeypatch.setattr(
-        "app.api.market.build_main_force_mirror_v2_service",
-        lambda _session: fake,
-        raising=False,
-    )
-
-    response = TestClient(app).get(
-        "/api/v1/market/research/main-force-mirror",
-        params={
-            "series_kind": "contract",
-            "symbol": "jm",
-            "contract": "JM2609",
-            "frequency": "60m",
-        },
-    )
-
-    assert response.status_code == status_code
-    assert response.json() == {"detail": {"code": code}}
-
-
-def test_main_force_mirror_v2_api_hides_corrupt_snapshot_details(monkeypatch) -> None:
-    class _CorruptComposition:
-        def __call__(self, _session):
-            try:
-                raise OSError("/private/research/secret/member_rank.parquet")
-            except OSError as exc:
-                raise MainForceMirrorV2Error(
-                    "MFM_V2_MEMBER_DATASET_INVALID"
-                ) from exc
-
-    monkeypatch.setattr(
-        "app.api.market.build_main_force_mirror_v2_service",
-        _CorruptComposition(),
-        raising=False,
-    )
-
-    response = TestClient(app).get(
-        "/api/v1/market/research/main-force-mirror",
-        params={
-            "series_kind": "contract",
-            "symbol": "jm",
-            "contract": "JM2609",
-            "frequency": "60m",
-        },
-    )
-
-    assert response.status_code == 409
-    assert response.json() == {
-        "detail": {"code": "MFM_V2_MEMBER_DATASET_INVALID"}
-    }
-    assert "/private/research" not in response.text
-
-
-@pytest.mark.parametrize(
-    ("series_kind", "frequency", "expected_code"),
-    [
-        ("continuous", "60m", "MFM_V2_UNSUPPORTED_SERIES_KIND"),
-        ("actual_dominant", "15m", "MFM_V2_UNSUPPORTED_FREQUENCY"),
-    ],
-)
-def test_main_force_mirror_v2_api_rejects_unsupported_before_repository_build(
-    monkeypatch,
-    series_kind: str,
-    frequency: str,
-    expected_code: str,
-) -> None:
-    build_requests = []
-
-    def _corrupt_builder(session):
-        build_requests.append(session)
-        raise MainForceMirrorV2Error("MFM_V2_MEMBER_DATASET_INVALID")
-
-    monkeypatch.setattr(
-        "app.api.market.build_main_force_mirror_v2_service",
-        _corrupt_builder,
-    )
-
-    response = TestClient(app).get(
-        "/api/v1/market/research/main-force-mirror",
-        params={
-            "series_kind": series_kind,
-            "symbol": "jm",
-            "frequency": frequency,
-        },
-    )
-
-    assert response.status_code == 422
-    assert response.json() == {"detail": {"code": expected_code}}
-    assert build_requests == []
-
-
-def test_main_force_mirror_v2_api_preserves_core_unavailable_reason(monkeypatch) -> None:
-    class _CoreUnavailableMirrorService(_FakeMirrorService):
-        def query_page(self, request):
-            result = super().query_page(request)
-            member = MemberRankObservation.unavailable(
-                "MFM_V2_MEMBER_WARMUP",
-                member_trade_date=date(2026, 8, 20),
-            )
-            point = replace(
-                result.points[0],
-                pressure_ready=False,
-                member=member,
-                unavailable_reason="MFM_V2_WARMUP",
-            )
-            return replace(result, points=(point,))
-
-    monkeypatch.setattr(
-        "app.api.market.build_main_force_mirror_v2_service",
-        lambda _session: _CoreUnavailableMirrorService(),
-    )
-
-    response = TestClient(app).get(
-        "/api/v1/market/research/main-force-mirror",
-        params={
-            "series_kind": "actual_dominant",
-            "symbol": "jm",
-            "frequency": "60m",
-        },
-    )
-
-    assert response.status_code == 200
-    point = response.json()["points"][0]
-    assert point["pressure_ready"] is False
-    assert point["member_status"] == "unavailable"
-    assert point["unavailable_reason"] == "MFM_V2_WARMUP"
-
-
-def test_main_force_mirror_v2_api_replaces_unknown_error_text_with_stable_code(
-    monkeypatch,
-) -> None:
-    fake = _FakeMirrorService(
-        MainForceMirrorV2Error("/private/research/secret/member_rank.parquet")
-    )
-    monkeypatch.setattr(
-        "app.api.market.build_main_force_mirror_v2_service",
-        lambda _session: fake,
-        raising=False,
-    )
-
-    response = TestClient(app).get(
-        "/api/v1/market/research/main-force-mirror",
-        params={
-            "series_kind": "contract",
-            "symbol": "jm",
-            "contract": "JM2609",
-            "frequency": "60m",
-        },
-    )
-
-    assert response.status_code == 409
-    assert response.json() == {
-        "detail": {"code": "MFM_V2_MARKET_IDENTITY_CONFLICT"}
-    }
-    assert "/private/research" not in response.text
-
-
 class FakeRadarService:
     def snapshot(self):
         metrics = SimpleNamespace(
@@ -552,7 +227,6 @@ class FakeRadarService:
             up_count=1,
             down_count=0,
             median_price_change_1d=Decimal("0.03"),
-            attention_count=1,
         )
         return SimpleNamespace(
             status="ready",
@@ -566,7 +240,6 @@ class FakeRadarService:
             stale=(),
             unavailable=(),
             items=(item,),
-            attention=(item,),
             sector_summary=(sector,),
         )
 
@@ -597,7 +270,7 @@ def test_market_radar_api_returns_explicit_freshness_and_transparent_reasons(mon
         "oi_increase_count": 1,
         "high_volatility_count": 1,
     }
-    assert payload["attention"][0]["reason_codes"] == [
+    assert payload["items"][0]["reason_codes"] == [
         "price_move_up",
         "volume_expansion",
         "oi_increase",
@@ -605,189 +278,17 @@ def test_market_radar_api_returns_explicit_freshness_and_transparent_reasons(mon
     ]
 
 
-def _trend_focus_item(**overrides) -> TrendFocusItem:
-    values = {
-        "symbol": "jm",
-        "product_name": "焦煤",
-        "sector": "black",
-        "physical_contract": "JM2701",
-        "direction": "long",
-        "stage": "ready",
-        "hot_conditions": ("price_move_up", "volume_expansion"),
-        "hot_count": 2,
-        "price_change_1d": Decimal("0.0234"),
-        "volume_ratio20": Decimal("1.75"),
-        "atr14_percentile252": Decimal("0.81"),
-        "daily_volume_support": True,
-        "hourly_state": "continuation",
-        "hourly_volume_support": False,
-        "range_upper": Decimal("101.25"),
-        "range_lower": Decimal("96.5"),
-        "confirmation_count": 3,
-        "retest_held": True,
-        "rebreak_reference": Decimal("103.5"),
-        "ready_invalidation": Decimal("99.25"),
-        "volume_confirmed": True,
-        "five_minute_confirmed": False,
-        "entry_confirmed_at": None,
-        "latest_swing_high": Decimal("103.5"),
-        "latest_swing_low": Decimal("99.25"),
-        "next_level": Decimal("104.75"),
-        "invalidation_level": Decimal("101.25"),
-        "last_transition_at": datetime(2026, 8, 23, 2, 30, tzinfo=UTC),
-    }
-    values.update(overrides)
-    return TrendFocusItem(**values)
-
-
-def _install_trend_focus_snapshot(monkeypatch, snapshot: TrendFocusSnapshot) -> None:
-    radar_snapshot = SimpleNamespace(freshness_state="current")
-    radar_service = SimpleNamespace(snapshot=lambda: radar_snapshot)
-    dominant = SimpleNamespace(symbol="jm", actual_contract="JM2701")
-    market_data = SimpleNamespace(list_latest_dominants=lambda: (dominant,))
-    market_read = object()
-
+def test_market_research_api_retires_attention_and_trend_focus(monkeypatch) -> None:
     monkeypatch.setattr(
         "app.api.market.build_market_radar_service",
-        lambda _session: radar_service,
-    )
-    monkeypatch.setattr(
-        "app.api.market.build_market_data_service",
-        lambda _session: market_data,
-    )
-    monkeypatch.setattr(
-        "app.api.market.build_market_read_service",
-        lambda _session: market_read,
+        lambda _session: FakeRadarService(),
+        raising=False,
     )
 
-    def _build_snapshot(**kwargs):
-        assert kwargs["radar_snapshot"] is radar_snapshot
-        assert kwargs["market_data"] is market_data
-        assert kwargs["market_read"] is market_read
-        assert kwargs["dominants"] == {"jm": dominant}
-        assert kwargs["now"].tzinfo is not None
-        return snapshot
+    client = TestClient(app, raise_server_exceptions=False)
+    radar = client.get("/api/v1/market/research/radar")
 
-    monkeypatch.setattr("app.api.market.build_market_trend_focus_snapshot", _build_snapshot)
-
-
-def test_market_trend_focus_api_returns_exact_ready_contract_and_decimal_json(
-    monkeypatch,
-) -> None:
-    observed_at = datetime(2026, 8, 23, 3, tzinfo=UTC)
-    item = _trend_focus_item()
-    _install_trend_focus_snapshot(
-        monkeypatch,
-        TrendFocusSnapshot(
-            status="ready",
-            observed_at=observed_at,
-            long_opportunities=(item,),
-            short_opportunities=(),
-            running_trends=(),
-            weakening_trends=(),
-            unavailable=(),
-        ),
-    )
-
-    response = TestClient(app).get("/api/v1/market/research/trend-focus")
-
-    assert response.status_code == 200
-    payload = response.json()
-    assert set(payload) == {
-        "status",
-        "observed_at",
-        "long_opportunities",
-        "short_opportunities",
-        "running_trends",
-        "weakening_trends",
-        "unavailable",
-    }
-    assert payload["observed_at"] == "2026-08-23T03:00:00Z"
-    assert payload["long_opportunities"][0] == {
-        "symbol": "jm",
-        "product_name": "焦煤",
-        "sector": "black",
-        "physical_contract": "JM2701",
-        "direction": "long",
-        "stage": "ready",
-        "hot_conditions": ["price_move_up", "volume_expansion"],
-        "hot_count": 2,
-        "price_change_1d": "0.0234",
-        "volume_ratio20": "1.75",
-        "atr14_percentile252": "0.81",
-        "daily_volume_support": True,
-        "hourly_state": "continuation",
-        "hourly_volume_support": False,
-        "range_upper": "101.25",
-        "range_lower": "96.5",
-        "confirmation_count": 3,
-        "retest_held": True,
-        "rebreak_reference": "103.5",
-        "ready_invalidation": "99.25",
-        "volume_confirmed": True,
-        "five_minute_confirmed": False,
-        "entry_confirmed_at": None,
-        "latest_swing_high": "103.5",
-        "latest_swing_low": "99.25",
-        "next_level": "104.75",
-        "invalidation_level": "101.25",
-        "last_transition_at": "2026-08-23T02:30:00Z",
-    }
-
-
-def test_market_trend_focus_api_returns_degraded_as_http_200_with_empty_groups(
-    monkeypatch,
-) -> None:
-    _install_trend_focus_snapshot(
-        monkeypatch,
-        TrendFocusSnapshot(
-            status="degraded",
-            observed_at=datetime(2026, 8, 23, 3, tzinfo=UTC),
-            long_opportunities=(),
-            short_opportunities=(),
-            running_trends=(),
-            weakening_trends=(),
-            unavailable=(TrendFocusUnavailable(None, "RADAR_DEGRADED"),),
-        ),
-    )
-
-    response = TestClient(app).get("/api/v1/market/research/trend-focus")
-
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["status"] == "degraded"
-    assert payload["long_opportunities"] == []
-    assert payload["short_opportunities"] == []
-    assert payload["running_trends"] == []
-    assert payload["weakening_trends"] == []
-    assert payload["unavailable"] == [{"symbol": None, "code": "RADAR_DEGRADED"}]
-
-
-def test_market_trend_focus_api_preserves_symbol_unavailable(monkeypatch) -> None:
-    _install_trend_focus_snapshot(
-        monkeypatch,
-        TrendFocusSnapshot(
-            status="ready",
-            observed_at=datetime(2026, 8, 23, 3, tzinfo=UTC),
-            long_opportunities=(),
-            short_opportunities=(),
-            running_trends=(),
-            weakening_trends=(),
-            unavailable=(
-                TrendFocusUnavailable("jm", "HOURLY_HISTORY_INSUFFICIENT"),
-            ),
-        ),
-    )
-
-    response = TestClient(app).get("/api/v1/market/research/trend-focus")
-
-    assert response.status_code == 200
-    assert response.json()["unavailable"] == [
-        {"symbol": "jm", "code": "HOURLY_HISTORY_INSUFFICIENT"}
-    ]
-
-
-def test_market_trend_focus_endpoint_exposes_no_threshold_or_score_parameters() -> None:
-    operation = app.openapi()["paths"]["/api/v1/market/research/trend-focus"]["get"]
-
-    assert operation.get("parameters", []) == []
+    assert client.get("/api/v1/market/research/trend-focus").status_code == 404
+    assert "/api/v1/market/research/trend-focus" not in app.openapi()["paths"]
+    assert "attention" not in radar.json()
+    assert all("attention_count" not in sector for sector in radar.json()["sector_summary"])

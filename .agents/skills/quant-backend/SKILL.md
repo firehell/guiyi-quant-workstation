@@ -24,7 +24,7 @@ description: 当任务涉及归一量化 FastAPI、PostgreSQL、SQLAlchemy、Ale
 - Alert Application Domain：server-side Scope/Event API、独立 Alert Runtime 与 PushPlus one-shot sender
 - Execution Review Application Domain：Decision、Episode/Execution timeline、Review、reconstruction 与 stats
 - `guiyi data update|refresh|audit`
-- `guiyi research`：calibration、lifecycle、N/JDJ、candidate validation/robustness 与 main-force-mirror-futures
+- `guiyi research`：SuBing calibration/lifecycle、N/JDJ 内部研究与 candidate validation/robustness
 - runtime 只读状态：`/api/runtime/health` + `guiyi runtime status`
 - 轻量 liveness：`/health`、`/api/health`、`/healthz`（同一 payload）
 

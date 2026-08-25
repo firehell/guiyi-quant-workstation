@@ -182,7 +182,7 @@ class MarketReadService:
         trading_day: date,
         limit: int = 32,
     ) -> MarketReadWindow:
-        """Read one exact latest D1/W1 Alert window from Canonical only."""
+        """Read the latest eligible D1/W1 Alert window from Canonical only."""
         if (
             identity.series_kind is not SeriesKind.ACTUAL_DOMINANT
             or identity.frequency not in {BarFrequency.D1, BarFrequency.W1}
@@ -190,9 +190,14 @@ class MarketReadService:
         ):
             raise MarketReadWindowError("MARKET_READ_IDENTITY_UNSUPPORTED")
         page = self.history_page(replace(identity, before=None, limit=limit))
-        if not page.bars or page.bars[-1].trading_day != trading_day:
+        if not page.bars:
             raise MarketReadWindowError("MARKET_READ_CUTOFF_BAR_MISSING")
         latest = page.bars[-1]
+        if latest.trading_day != trading_day and (
+            identity.frequency is BarFrequency.D1
+            or latest.trading_day > trading_day
+        ):
+            raise MarketReadWindowError("MARKET_READ_CUTOFF_BAR_MISSING")
         owners = tuple(
             segment
             for segment in page.resolved_contract_segments
@@ -207,7 +212,7 @@ class MarketReadService:
             symbol=identity.symbol,
             series_kind=identity.series_kind.value,
             frequency=identity.frequency.value,
-            trading_day=trading_day,
+            trading_day=latest.trading_day,
             contract=contract,
             cutoff=latest.bar_end,
             bars=page.bars[-limit:],

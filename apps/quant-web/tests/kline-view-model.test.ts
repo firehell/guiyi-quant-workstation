@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import type { BarData, MainForceMirrorV2Point } from '../src/types/market.ts'
+import type { BarData } from '../src/types/market.ts'
 import {
   buildKlineDerivedData,
   formatKlineHoverValue,
@@ -97,7 +97,7 @@ test('crosshair exposes the exact marker tooltip at its evidence bar', () => {
     shape: 'arrowUp' as const,
   }
 
-  const hover = resolveKlineHoverContext(bars, result, [], target.time, [], [marker])
+  const hover = resolveKlineHoverContext(bars, result, [], target.time, [marker])
 
   assert.deepEqual(hover?.marker, marker)
 })
@@ -106,68 +106,6 @@ test('missing hover values render as unavailable instead of a fabricated zero', 
   assert.equal(formatKlineHoverValue(undefined), '—')
   assert.equal(formatKlineHoverValue(null), '—')
   assert.equal(formatKlineHoverValue(0), '0')
-})
-
-test('crosshair projects the exact timestamp-aligned V2 observation without inventing missing values', () => {
-  const result = buildKlineDerivedData(bars, [])
-  const target = bars[79]
-  const point: MainForceMirrorV2Point = {
-    bar_end: target.time,
-    trading_day: target.trading_day!,
-    physical_contract: 'AG2601',
-    pressure_ready: true,
-    pressure_state: 'long_build',
-    instant_pressure: 82,
-    accumulated_ready: true,
-    accumulated_pressure: 61,
-    caution_ready: true,
-    caution: 'long_chase_caution',
-    caution_conflict: false,
-    long_caution_score: 70,
-    short_caution_score: 10,
-    caution_reason_codes: ['LONG_BUILD_STREAK'],
-    price_impulse: 0.23,
-    clv: null,
-    volume_ratio: 1.4,
-    delta_oi: 41,
-    oi_impulse: 0.18,
-    range_position: 0.79,
-    member_status: 'ready',
-    member_trade_date: '2026-03-20',
-    member_direction: 'long',
-    member_change_bias: 0.24,
-    member_strength: 1.4,
-    position_skew: 0.3,
-    top5_volume_share: 0.42,
-    relation_to_accumulated: 'strong_aligned',
-    relation_to_caution: 'aligned',
-    unavailable_reason: null,
-  }
-
-  const hover = resolveKlineHoverContext(bars, result, [], target.time, [point])
-
-  assert.ok(hover?.mainForceMirrorV2)
-  assert.equal(hover.mainForceMirrorV2.physicalContract, 'AG2601')
-  assert.equal(hover.mainForceMirrorV2.state, 'long_build')
-  assert.equal(hover.mainForceMirrorV2.instantPressure, 82)
-  assert.equal(hover.mainForceMirrorV2.accumulatedPressure, 61)
-  assert.equal(hover.mainForceMirrorV2.memberTradeDate, '2026-03-20')
-  assert.equal(hover.mainForceMirrorV2.memberStrength, 1.4)
-  assert.equal(hover.mainForceMirrorV2.relationToAccumulated, 'strong_aligned')
-  assert.equal(hover.mainForceMirrorV2.unavailableReason, null)
-})
-
-test('crosshair returns no V2 hover object when the server has no exact bar_end match', () => {
-  const result = buildKlineDerivedData(bars, [])
-  const target = bars[79]
-  const unmatched = {
-    bar_end: bars[78].time,
-  } as MainForceMirrorV2Point
-
-  const hover = resolveKlineHoverContext(bars, result, [], target.time, [unmatched])
-
-  assert.ok(hover)
-  assert.equal(hover.mainForceMirrorV2, null)
 })
 
 function makeDeterministicHtdyBars(seed: number, length = 100): BarData[] {

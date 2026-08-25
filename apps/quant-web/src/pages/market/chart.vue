@@ -8,10 +8,8 @@ import KlineChart from '@/components/kline/KlineChart.vue'
 import { getEventStates } from '@/api/executionReview'
 import {
   getMarketDominants,
-  getJdjHistoricalEvents,
   getJdjStrategyHistoricalActions,
   getProductResearch,
-  getNStructureHistoricalEvents,
   getSubingHistoricalSignals,
   getSubingResearch,
 } from '@/api/market'
@@ -24,7 +22,6 @@ import {
   setAlertProductFrequencyEnabled,
 } from '@/api/alerts'
 import { useMarketSeries } from '@/composables/useMarketSeries'
-import { useMainForceMirrorV2 } from '@/composables/useMainForceMirrorV2'
 import { usePersistentAlertMarkers } from '@/composables/usePersistentAlertMarkers'
 import { useHistoricalResearchMarkers } from '@/composables/useHistoricalResearchMarkers'
 import { useProductAlertScope } from '@/composables/useProductAlertScope'
@@ -41,12 +38,9 @@ import type {
 import type { EventState } from '@/types/executionReview'
 import { MARKET_FREQUENCIES } from '@/types/market'
 import { lifecycleSnapshotToMarkers } from '@/utils/subingLifecycleMarkers'
+import { ALERT_RULE_CODES } from '@/utils/alertRules'
 import { mergeKlineMarkers } from '@/utils/alertMarkers'
 import { buildKlineDerivedData } from '@/utils/klineViewModel'
-import {
-  normalizeSecondaryPanelPreference,
-  type SecondaryPanelId,
-} from '@/utils/mainForceMirrorV2Presentation'
 import {
   loadMainChartPreferences,
   normalizeOptionalEmaIndicators,
@@ -90,7 +84,7 @@ const contract = ref(String(route.query.contract || '').toUpperCase())
 const seriesKind = ref<SeriesKind>(dailyWatchEntry?.seriesKind ?? resolveInitialSeriesKind())
 const frequency = ref<MarketFrequency>(dailyWatchEntry?.frequency ?? resolveInitialFrequency())
 const followLatest = ref(true)
-const selectedSecondaryPanel = ref<SecondaryPanelId>(normalizeSecondaryPanelPreference(undefined))
+const selectedSecondaryPanel = ref<'macd'>('macd')
 const selectedDominant = computed(() => dominants.value.find((item) => item.product === symbol.value))
 const {
   bars,
@@ -107,7 +101,6 @@ const {
   loadMoreBefore,
   dispose,
 } = useMarketSeries()
-const mirror = useMainForceMirrorV2()
 const {
   markers: persistentAlertMarkers,
   sync: syncPersistentAlertMarkers,
@@ -121,8 +114,6 @@ const {
   dispose: disposeHistoricalResearchMarkers,
 } = useHistoricalResearchMarkers({
   fetchSubing: getSubingHistoricalSignals,
-  fetchNStructure: getNStructureHistoricalEvents,
-  fetchJdj: getJdjHistoricalEvents,
   fetchJdjStrategy: getJdjStrategyHistoricalActions,
 })
 const {
@@ -149,7 +140,8 @@ const {
   alertLoading,
   savingRuleCodes,
   refresh: refreshAlerts,
-  toggle: toggleAlert,
+  toggleSubingProduct,
+  toggleHtdyCurrentFrequency,
   dispose: disposeProductAlertScope,
 } = useProductAlertScope({
   symbol,
@@ -172,19 +164,8 @@ let synchronizingSymbol = false
 let researchGeneration = 0
 let currentEventStateGeneration = 0
 let canonicalReplacementGeneration = 0
-let canonicalPendingGeneration: number | null = null
-let acceptedCanonical: { generation: number; identity: ReturnType<typeof currentIdentity> } | null = null
-let mirrorRequestedCanonicalGeneration: number | null = null
 
 const loading = computed(() => loadingInitial.value || loadingBefore.value)
-const mainForceMirrorV2DisplayError = computed(() => {
-  if (selectedSecondaryPanel.value !== 'main_force_mirror_v2') return null
-  if (frequency.value !== '60m') return 'MFM_V2_UNSUPPORTED_FREQUENCY'
-  if (effectiveIdentity.value.seriesKind !== 'actual_dominant' && effectiveIdentity.value.seriesKind !== 'contract') {
-    return 'MFM_V2_UNSUPPORTED_SERIES_KIND'
-  }
-  return mirror.error.value
-})
 const visibleMainIndicators = computed(() => {
   if (!overlayCapability.value.supported) return []
   return visibleMainIndicatorsForOverlay(selectedOverlay.value, optionalEmaIndicators.value)
@@ -345,7 +326,6 @@ onUnmounted(() => {
   disposeProductAlertScope()
   disposeProductCurrentAlertEvents()
   currentEventStateGeneration += 1
-  mirror.clear()
   dispose()
   disposePersistentAlertMarkers()
   disposeHistoricalResearchMarkers()
@@ -385,19 +365,13 @@ function currentHistoricalMarkerIdentity() {
 
 async function refreshSeries() {
   const replacementGeneration = ++canonicalReplacementGeneration
-  canonicalPendingGeneration = replacementGeneration
-  acceptedCanonical = null
-  mirrorRequestedCanonicalGeneration = null
-  mirror.clear()
   if (!symbol.value) {
     clearSeries()
-    settleFailedCanonicalReplacement(replacementGeneration)
     return false
   }
   const requested = currentIdentity()
   if (requested.seriesKind === 'contract' && !requested.contract) {
     clearSeries()
-    settleFailedCanonicalReplacement(replacementGeneration)
     error.value = '指定真实合约时 contract 必填'
     return false
   }
@@ -413,13 +387,9 @@ async function refreshSeries() {
       frequency: requested.frequency,
     } })
     if (replacementGeneration !== canonicalReplacementGeneration || !isCurrentIdentity(requested)) return false
-    canonicalPendingGeneration = null
-    acceptedCanonical = { generation: replacementGeneration, identity: { ...requested } }
-    await requestMirrorForAcceptedCanonical()
     return true
   } catch {
     if (replacementGeneration !== canonicalReplacementGeneration || !isCurrentIdentity(requested)) return false
-    settleFailedCanonicalReplacement(replacementGeneration)
     error.value = '读取失败：数据集、月分区或主力映射不完整'
     message.error(error.value)
     return false
@@ -467,45 +437,14 @@ async function refreshCurrentEventStates() {
 async function loadEarlierBars() {
   try {
     await loadMoreBefore()
-    if (selectedSecondaryPanel.value === 'main_force_mirror_v2'
-      && canonicalPendingGeneration === null
-      && acceptedCanonical
-      && isCurrentIdentity(acceptedCanonical.identity)) {
-      await mirror.loadMoreBefore()
-    }
   } catch {
     error.value = '读取更早历史失败：数据集、月分区或主力映射不完整'
     message.error(error.value)
   }
 }
 
-async function updateSecondaryPanel(value: SecondaryPanelId) {
+function updateSecondaryPanel(value: 'macd') {
   selectedSecondaryPanel.value = value
-  if (value === 'macd') {
-    mirrorRequestedCanonicalGeneration = null
-    mirror.clear()
-    return
-  }
-  await requestMirrorForAcceptedCanonical()
-}
-
-async function requestMirrorForAcceptedCanonical() {
-  const accepted = acceptedCanonical
-  if (selectedSecondaryPanel.value !== 'main_force_mirror_v2'
-    || canonicalPendingGeneration !== null
-    || !accepted
-    || !isCurrentIdentity(accepted.identity)
-    || mirrorRequestedCanonicalGeneration === accepted.generation) return
-  mirrorRequestedCanonicalGeneration = accepted.generation
-  await mirror.replace(accepted.identity)
-}
-
-function settleFailedCanonicalReplacement(generation: number) {
-  if (generation !== canonicalReplacementGeneration) return
-  canonicalPendingGeneration = null
-  acceptedCanonical = null
-  mirrorRequestedCanonicalGeneration = null
-  mirror.clear()
 }
 
 function isCurrentIdentity(candidate: ReturnType<typeof currentIdentity>) {
@@ -557,6 +496,16 @@ function openFormalEvent(event: import('@/types/market').AlertEvent, state: Even
       episode_id: useEpisode && state.episode_id ? String(state.episode_id) : undefined,
     },
   })
+}
+
+function toggleSubingAlert(ruleCode: string, enabled: boolean) {
+  if (selectedOverlay.value !== 'subing' || ruleCode !== ALERT_RULE_CODES.SUBING) return
+  void toggleSubingProduct(ruleCode, enabled)
+}
+
+function toggleHtdyAlert(ruleCode: string, enabled: boolean) {
+  if (selectedOverlay.value !== 'htdy' || ruleCode !== ALERT_RULE_CODES.HTDY) return
+  void toggleHtdyCurrentFrequency(ruleCode, enabled)
 }
 
 async function toggleFullscreen() {
@@ -673,11 +622,6 @@ function normalizeSymbol(value: unknown): string | null {
               :alert-markers="persistentAlertMarkers"
               :research-markers="researchMarkers"
               :secondary-panel="selectedSecondaryPanel"
-              :main-force-mirror-v2-points="mirror.points.value"
-              :main-force-mirror-v2-member-dataset="mirror.memberDataset.value"
-              :main-force-mirror-v2-loading="mirror.loading.value"
-              :main-force-mirror-v2-error="mainForceMirrorV2DisplayError"
-              :main-force-mirror-v2-canonical-end="mirror.canonicalEnd.value"
               :data-historical-research-loading="historicalResearchLoading"
               @need-more-before="loadEarlierBars"
               @follow-latest-change="followLatest = $event"
@@ -711,7 +655,8 @@ function normalizeSymbol(value: unknown): string | null {
               :current-events="currentEvents"
               :current-event-states="currentEventStates"
               :htdy-observation="latestHtdyObservation"
-              @toggle-alert="toggleAlert"
+              @toggle-subing-alert="toggleSubingAlert"
+              @toggle-htdy-alert="toggleHtdyAlert"
               @open-formal-event="openFormalEvent"
             />
           </div>
@@ -747,7 +692,8 @@ function normalizeSymbol(value: unknown): string | null {
           :current-events="currentEvents"
           :current-event-states="currentEventStates"
           :htdy-observation="latestHtdyObservation"
-          @toggle-alert="toggleAlert"
+          @toggle-subing-alert="toggleSubingAlert"
+          @toggle-htdy-alert="toggleHtdyAlert"
           @open-formal-event="openFormalEvent"
         />
       </NDrawerContent>

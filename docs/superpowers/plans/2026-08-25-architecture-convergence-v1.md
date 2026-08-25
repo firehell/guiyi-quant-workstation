@@ -4,11 +4,13 @@
 
 **Goal:** 保留可信数据、一个 SuBing Trading Assistant、HTDY 全品种全周期观察及 `symbol × frequency` Alert、日进斗金参考回放、Alert 和 Execution Review；内部化 N/raw JDJ；删除无日常消费者的产品、API、CLI、Research 与一次性过程资产。
 
-**Architecture:** SuBing 统一为一个用户产品和一个权威领域，但 Daily Context、Current Signal State、Formal Event 仍保持不同存储与生命周期。Web composition 统一用户流程，后端不新增跨 Market/Alert 的 mega endpoint。HTDY 继续执行既有全周期 Spec/Plan，本计划不重复其 migration、Scope、Event identity 或 Runtime trigger。
+**Architecture:** SuBing 统一为一个用户产品和一个权威领域，但 Daily Context、Current Signal State、Formal Event 仍保持不同存储与生命周期。Web composition 统一用户流程，后端不新增跨 Market/Alert 的 mega endpoint。PR `#208` 的 HTDY 全周期实现、`v1.8.3` migration/release/Runtime/Active60 Scope 已完成；本计划只保护其行为，不重复任何外部操作。
 
 **Tech Stack:** Python 3.13 / FastAPI / SQLAlchemy / PostgreSQL / Redis / NumPy / pytest / Vue 3 / TypeScript 6 / Naive UI / Node test / Playwright.
 
 **Spec:** `docs/superpowers/specs/2026-08-25-architecture-convergence-v1-design.md`
+
+**Plan status:** Proposed. Architecture “方案 B”与本轮取消 MFM/Trend Focus future Gate 的修订处置方向已获用户批准；本精确 Spec/Plan 仍待 Gate A 独立审查与用户精确批准。
 
 **Required HTDY canonical:**
 
@@ -19,17 +21,17 @@
 
 ## Global Constraints
 
-- 本计划是 Lane 3 Program，不得做成一个巨大 PR。一个 Task = 一个会话 = 一个 task branch/worktree = 一个 PR。
-- 文档基线为 `develop@fd0777672c49a856b283a0f4653519c68a35cb38`；代码任务从执行时最新 `develop` 创建。
-- 用户已说明 HTDY 实现正在进行，但当前 GitHub 基线只看到已合入的 Spec/Plan。任何修改 HTDY 重叠文件的任务开始前，必须发现并保护真实在途 branch/worktree/dirty paths；不能识别则 fail-closed。
-- 若 HTDY 已合入 `develop`，重叠任务从该 integration commit 之后创建；若未合入，只允许执行不触碰 HTDY 文件的 SuBing 首页任务。
+- 本计划是 Lane 3 Program，不得做成一个巨大 PR。Task 1–8 每 Task = 一个会话 = 一个独立 task branch/worktree = 一个 PR；Task 0 是只读 inventory 例外，无仓库 mutation、commit 或 PR。
+- 文档基线为 `develop@af172e1bfa2722681ca67ffbdc8c5c0e895dddd8`；代码任务从执行时最新 `develop` 创建。
+- HTDY PR `#208` 已实现、Review 并合入；`v1.8.3` production migration `20260825_0040`、release、Runtime promotion 与 Active60 × 七周期 Scope 已完成。
+- 修改 HTDY 重叠文件的任务必须以该已部署行为为 regression baseline；不重做 migration、release、Runtime、Scope 或通知操作。
 - 不修改 SuBing Factor、Signal、Calibration、FormalPolicy、Lifecycle、Historical replay 或 Daily Watch 公式。
 - SuBing 继续使用 product-level `scope_products`；HTDY 继续使用 `scope_product_frequencies`。不得 union、互换或降级。
 - 不修改 HTDY original 公式、future-looking/repainting metadata、七周期 capability、D1/W1 `canonical_updated` trigger、Event identity 或 one-shot notification。
 - 不建立 StrategyAdapter、OpportunityScore、Scope DSL、插件框架、queue、retry、replay、backfill、outbox、fallback 或逐人状态。
 - 不修改 Canonical、八表 Catalog、MainContractMap、MarketDataService、RQData provider 或 Live/Historical 分界。
-- 不删除 Alembic migrations、accepted policies、universe files、pending prospective OOS baseline/evidence。
-- 只允许在隔离 PostgreSQL 执行 migration tests；不得执行 production migration。
+- 保留 retained SuBing/HTDY/N/JDJ/Validation/Robustness accepted policies、Alembic migrations、universe files 与 pending prospective OOS baseline/evidence。明确例外是用户已取消 Gate 的 MFM phase-specific protocol 以及已完成 Five-Candidate phase-specific protocol/report，它们随退役删除。
+- 只允许在隔离 PostgreSQL 执行 migration tests；production `0040` 是本 Program 前已完成事实，不得在本 Program 重试。
 - 不修改真实 Scope、owner、Topic、transport；不发送真实 PushPlus。
 - 不运行 manual after-market、真实 RQAlpha smoke、Runtime switch/promotion、main release 或 tag。
 - `auto_order=false` 不得改变。
@@ -37,10 +39,12 @@
 - 删除顺序固定为 consumer → projection/API → composition/export → domain/CLI → dedicated tests → active docs/reports。
 - 隐藏 consumer、pending Gate consumer 或公式漂移一旦出现，停止当前删除任务并回到设计 Gate。
 - `STATUS.md` 只记录已经发生的实现、测试、Review、integration、release、Runtime 或 evidence。
+- 用户已取消 MFM 与 Trend Focus 未执行的 future research/evidence Gate；完整退役不运行 evidence，不形成 empirical `STOP`/`ALLOW`。
+- HTDY/SuBing 真实通知与自然 evidence、pending prospective OOS 仍保持独立 Gate。
 
 ## Worktree and Integration Model
 
-每个 Task：
+Task 1–8 每个任务：
 
 ```text
 latest develop
@@ -55,6 +59,10 @@ latest develop
 → clean task worktree/merged branch
 ```
 
+上述“逐 Task worktree/PR/独立 Review/人工 integration Gate”是用户对本 Architecture Convergence V1 Program 的明确执行约束，不是通用仓库授权模型，也不改写 `AGENTS.md` 的默认工作流。
+
+Task 0 只产出会话内只读 inventory，不创建 task branch/worktree/PR，不修改或提交任何文件。
+
 不允许自动触及：
 
 ```text
@@ -65,10 +73,10 @@ real Scope / real notification
 
 ---
 
-## Task 0: Discover the HTDY in-flight baseline and freeze the deletion inventory
+## Task 0: Freeze the deployed HTDY baseline and remaining-Gate inventory
 
-**Lane:** Lane 3 / Sol / high reasoning / Plan-only  
-**Workspace:** new task worktree from latest `develop`  
+**Lane:** Lane 3 / Sol / high reasoning / Plan-only
+**Workspace:** read-only inspection of latest `develop`; no task branch/worktree
 **Files:** no repository mutation in this Task
 
 ### Step 0.1: Read the canonical and current tree
@@ -77,8 +85,8 @@ real Scope / real notification
 git status --short --branch
 git worktree list --porcelain
 git log --oneline --decorate -20 develop
-git branch -a | grep -E 'htdy|architecture-convergence' || true
-gh pr list --state open --search 'htdy' --json number,title,headRefName,baseRefName,url
+git merge-base --is-ancestor 8b970972b5ceeb3ba33904fab73446cdb3cba92c develop
+git show --stat --oneline 8b970972b5ceeb3ba33904fab73446cdb3cba92c
 ```
 
 Read:
@@ -94,51 +102,46 @@ Architecture Convergence V1 Spec
 HTDY all-frequency Spec/Plan
 ```
 
-### Step 0.2: Resolve the HTDY implementation identity
+### Step 0.2: Record deployed HTDY facts and remaining Gates
 
 Record:
 
 ```text
 exact develop SHA
-exact HTDY implementation branch/worktree/PR
-whether its head is an ancestor of develop
+PR #208 merge identity and ancestry
+v1.8.3 / production migration 0040 / Runtime / 420-pair Scope as existing facts
+real notification and natural HTDY/SuBing evidence as pending
+pending prospective OOS as retained future Gate
 all dirty overlapping paths
 ```
 
 Stop if any applies:
 
 ```text
-reported HTDY work cannot be identified
-multiple divergent HTDY implementations exist
+PR #208 merge is not in the selected develop ancestry
 uncommitted overlapping files have no clear task owner
-HTDY implementation contradicts its approved Spec
+current HTDY behavior contradicts the deployed contract
 ```
 
 Do not recreate or overwrite HTDY.
 
-### Step 0.3: Produce the task sequence
+### Step 0.3: Freeze the deletion and retention inventory
 
-Allowed sequence:
-
-```text
-Task 1 may run before HTDY integration if its file set remains isolated.
-Tasks 2–8 require the HTDY implementation to be in their exact base whenever files overlap.
-```
-
-Output a read-only inventory; no commit, PR, Runtime or external mutation.
+Record exact active paths for Attention/Trend Focus, MFM and Candidate Convergence; separately record retained SuBing/HTDY/N/JDJ, Validation/Robustness, Alembic and prospective OOS paths. Output a read-only inventory; no commit, PR, Runtime or external mutation.
 
 ---
 
 ## Task 1: Unify the SuBing homepage into one workbench
 
-**Lane:** Lane 3 / Sol / high reasoning / Plan-then-execute  
-**Branch:** `feature/subing-single-home-workbench`  
-**HTDY dependency:** none when restricted to the listed files  
+**Lane:** Lane 3 / Sol / high reasoning / Plan-then-execute
+**Branch:** `feature/subing-single-home-workbench`
+**HTDY dependency:** none when restricted to the listed files
 **Files:**
 
 - Create: `apps/quant-web/src/composables/useSubingWorkbench.ts`
 - Create: `apps/quant-web/src/components/market/SubingWorkbench.vue`
 - Create: `apps/quant-web/tests/subingWorkbench.test.ts`
+- Modify: `apps/quant-web/src/composables/useCurrentFormalSignals.ts`
 - Modify: `apps/quant-web/src/pages/market/index.vue`
 - Modify: `apps/quant-web/tests/currentFormalSignals.test.ts`
 - Modify: `apps/quant-web/tests/subingDailyWatch.test.ts`
@@ -185,6 +188,8 @@ export function useSubingWorkbench(
 6. `refreshOperational()` refreshes only Formal + Daily.
 7. `dispose()` prevents pending responses from mutating state.
 8. The composable does not re-evaluate or filter backend signal facts.
+9. A failed Formal refresh after one success keeps the last `status/tradingDay/items` snapshot and sets `formalStale=true`.
+10. `useSubingWorkbench` reuses `useCurrentFormalSignals` generation/invalidation; it does not add a second Formal request generation.
 
 Confirm failure:
 
@@ -198,7 +203,8 @@ node --test \
 
 ### Step 1.2: Implement by composing existing primitives
 
-- Reuse `useCurrentFormalSignals`; do not duplicate its generation logic or rule semantics.
+- Modify `useCurrentFormalSignals.ts` to expose `stale`: first load failure remains `status='unavailable'`, while refresh failure after success preserves the last successful `status/tradingDay/items` and sets `stale=true`; a later success clears stale.
+- Reuse `useCurrentFormalSignals` generation/invalidation exactly once; do not duplicate its generation logic, wrap Formal with another request generation or change rule semantics.
 - Reuse `useLatestResource` for Daily Watch.
 - Move page-owned event-state generation logic into `useSubingWorkbench`.
 - Preserve separate loading/stale/unavailable state for Formal and Daily.
@@ -259,10 +265,21 @@ node --test tests/*.test.ts
 pnpm test:e2e -- --grep "SuBing|苏冰|Market"
 pnpm build
 cd ../..
-python scripts/engineering/secret_scan.py
+python3 scripts/engineering/secret_scan.py --json
 git diff --check
 
-git add apps/quant-web/src apps/quant-web/tests apps/quant-web/e2e
+git add apps/quant-web/src/composables/useCurrentFormalSignals.ts \
+  apps/quant-web/src/composables/useSubingWorkbench.ts \
+  apps/quant-web/src/components/market/SubingWorkbench.vue \
+  apps/quant-web/src/components/market/MarketFormalSignals.vue \
+  apps/quant-web/src/components/market/SubingDailyWatch.vue \
+  apps/quant-web/src/pages/market/index.vue \
+  apps/quant-web/tests/subingWorkbench.test.ts \
+  apps/quant-web/tests/currentFormalSignals.test.ts \
+  apps/quant-web/tests/subingDailyWatch.test.ts \
+  apps/quant-web/e2e/market-research.spec.mjs
+git diff --cached --name-status
+git diff --cached --check
 git commit -m "refactor: unify SuBing homepage workbench"
 ```
 
@@ -272,9 +289,9 @@ Open PR to `develop`. Required conclusion before integration: `允许集成 deve
 
 ## Task 2: Unify the SuBing product workspace panel
 
-**Lane:** Lane 3 / Sol / high reasoning / Plan-then-execute  
-**Branch:** `feature/subing-single-product-panel`  
-**HTDY dependency:** hard; base must contain the approved HTDY implementation  
+**Lane:** Lane 3 / Sol / high reasoning / Plan-then-execute
+**Branch:** `feature/subing-single-product-panel`
+**HTDY dependency:** hard; base must contain the approved HTDY implementation
 **Files:**
 
 - Create: `apps/quant-web/src/components/market/SubingPanel.vue`
@@ -306,6 +323,11 @@ interface SubingPanelProps {
   runtimeStatus: AlertRuntimeStatus | null
   savingRuleCodes: Set<string>
 }
+
+interface SubingPanelEmits {
+  'open-formal-event': [event: AlertEvent, state: EventState | null]
+  'toggle-subing-alert': [ruleCode: string, enabled: boolean]
+}
 ```
 
 Tests must prove:
@@ -318,6 +340,8 @@ Tests must prove:
 - HTDY rule does not render inside the SuBing panel;
 - unsupported/loading/error/warm-up remain distinct;
 - component source contains no browser formula implementation.
+- `open-formal-event` forwards the selected immutable SuBing Event and state unchanged.
+- `toggle-subing-alert` can emit only for `subing_entry_signal_v1`; HTDY never reaches this component or emit.
 
 Confirm failure:
 
@@ -344,6 +368,8 @@ Formal Event / Execution Review action
 
 Reuse existing label utilities and formatting from the two deleted SuBing components. Do not recalculate Factor, Signal or Lifecycle.
 
+Filter props before rendering: `SubingPanel` receives only `subing_entry_signal_v1` events/rules. It emits `open-formal-event` and `toggle-subing-alert`; it does not own navigation, API mutation or HTDY presentation.
+
 ### Step 2.3: Make Overlay dispatch exhaustive
 
 Replace any generic “other Overlay = HTDY” fallback with:
@@ -362,6 +388,17 @@ switch (selectedOverlay) {
 - JDJ Strategy renders reference-only facts and no Alert switch.
 - none renders no strategy Alert control.
 
+In `ProductCheckSidebar.vue`, delete the old SuBing body from `product-check-observation`, the generic SuBing row in `ProductAlertRules`, and the `SubingResearchSection`/Lifecycle content under `product-check-more`. Replace them with exactly one `SubingPanel` branch. The sidebar must:
+
+```text
+subing      -> one SubingPanel; forward open-formal-event and toggle-subing-alert
+htdy        -> existing HTDY observation + ProductAlertRules pair toggle only
+jdj_strategy -> reference-only facts; no ProductAlertRules
+none        -> no strategy panel and no ProductAlertRules
+```
+
+Do not use an `else` branch for HTDY. Generic market background/participation/data identity may remain outside the Overlay branch, but SuBing facts/actions must not be duplicated there.
+
 ### Step 2.4: Preserve the two Scope modes
 
 After HTDY integration:
@@ -374,6 +411,7 @@ const htdyEnabled = rule.enabled_frequencies.includes(currentFrequency)
 - SuBing calls product-level mutation.
 - HTDY calls pair-level mutation.
 - selecting Overlay or changing frequency never performs PUT.
+- `chart.vue` handles `toggle-subing-alert` through the existing product setter and keeps the existing HTDY pair setter in the explicit `htdy` branch; the two events must not share a generic fallback.
 
 ### Step 2.5: Delete duplicated SuBing presentation
 
@@ -406,20 +444,33 @@ pnpm test:e2e -- --grep "SuBing|HTDY|Alert|品种工作台"
 pnpm build
 cd ../..
 
-uv run --offline --project services/quant-api pytest -q \
+UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache uv run --offline --project services/quant-api pytest -q \
   services/quant-api/tests/test_alert_api.py \
   services/quant-api/tests/test_alert_service.py \
   services/quant-api/tests/test_alert_runtime.py \
   services/quant-api/tests/data_foundation/test_market_api.py \
   services/quant-api/tests/data_foundation/test_subing_read_service.py
-python scripts/engineering/secret_scan.py
+python3 scripts/engineering/secret_scan.py --json
 git diff --check
 ```
 
 ### Step 2.7: Commit and PR
 
 ```bash
-git add apps/quant-web/src apps/quant-web/tests apps/quant-web/e2e
+git add apps/quant-web/src/components/market/SubingPanel.vue \
+  apps/quant-web/src/components/market/ProductCheckSidebar.vue \
+  apps/quant-web/src/pages/market/chart.vue \
+  apps/quant-web/src/components/market/ProductAlertRules.vue \
+  apps/quant-web/src/components/market/ProductTodayAlertEvents.vue \
+  apps/quant-web/src/components/market/SubingResearchSection.vue \
+  apps/quant-web/src/components/market/SubingLifecyclePanel.vue \
+  apps/quant-web/tests/subingPanel.test.ts \
+  apps/quant-web/tests/alerts.test.ts \
+  apps/quant-web/tests/productCurrentAlertEvents.test.ts \
+  apps/quant-web/e2e/market-research.spec.mjs \
+  apps/quant-web/e2e/alert-v1.spec.mjs
+git diff --cached --name-status
+git diff --cached --check
 git commit -m "refactor: unify SuBing product workspace"
 ```
 
@@ -429,14 +480,15 @@ Independent Review must explicitly compare SuBing and HTDY Scope semantics.
 
 ## Task 3: Converge the public Overlay surface and internalize N/raw JDJ
 
-**Lane:** Lane 2 / Terra / medium reasoning; upgrade to Sol if hidden consumers appear  
-**Branch:** `refactor/market-overlay-convergence-v1`  
+**Lane:** Lane 2 / Terra / medium reasoning; upgrade to Sol if hidden consumers appear
+**Branch:** `refactor/market-overlay-convergence-v1`
 **Files:**
 
 - Modify: `apps/quant-web/src/types/market.ts`
 - Modify: `apps/quant-web/src/utils/mainIndicators.ts`
 - Modify: `apps/quant-web/src/components/market/ProductWorkspaceToolbar.vue`
 - Modify: `apps/quant-web/src/composables/useHistoricalResearchMarkers.ts`
+- Modify: `apps/quant-web/src/utils/historicalResearchMarkers.ts`
 - Modify: `apps/quant-web/src/api/market.ts`
 - Modify: `apps/quant-web/src/pages/market/chart.vue`
 - Modify: `apps/quant-web/tests/historicalResearchMarkers.test.ts`
@@ -444,6 +496,7 @@ Independent Review must explicitly compare SuBing and HTDY Scope semantics.
 - Modify: `apps/quant-web/e2e/market-research.spec.mjs`
 - Modify: `services/quant-api/app/research/historical_overlay_api.py`
 - Modify: `services/quant-api/app/api/market_research_overlays.py`
+- Modify: `services/quant-api/app/schemas/research_overlays.py`
 - Modify: `services/quant-api/tests/test_market_research_overlays_api.py`
 
 ### Step 3.1: Write failing target tests
@@ -465,10 +518,20 @@ assert.deepEqual(
 Legacy preference migration:
 
 ```text
-n_structure → subing
-jdj         → subing
-unknown     → subing
+n_structure → none
+jdj         → none
+unknown     → none
 jdj_strategy and htdy remain unchanged
+```
+
+Backend/Web absence assertions must also prove that public N/raw JDJ DTO and marker mappings are gone while the retained JDJ Strategy projection is still present:
+
+```text
+NStructureHistorical* DTO family absent
+JdjHistorical* raw-candidate DTO family absent
+JdjStrategyHistorical* DTO family retained
+historicalResearchMarkers.ts has no N/raw JDJ marker branch
+historicalResearchMarkers.ts retains JDJ Strategy action-to-marker mapping
 ```
 
 HTDY must retain all seven formal frequencies.
@@ -476,16 +539,22 @@ HTDY must retain all seven formal frequencies.
 Confirm failure:
 
 ```bash
+UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache uv run --offline --project services/quant-api pytest -q \
+  services/quant-api/tests/test_market_research_overlays_api.py
+
 cd apps/quant-web
 node --test tests/marketOverlayConvergence.test.ts tests/historicalResearchMarkers.test.ts
+cd ../..
 ```
 
 ### Step 3.2: Remove Web consumers
 
 - remove `n_structure` and raw `jdj` from public types/definitions/options;
 - keep stable id `jdj_strategy`; change only its label;
+- do not introduce `jdj_strategy_reference` as an id or compatibility alias;
 - remove `getNStructureHistoricalEvents` and `getJdjHistoricalEvents` from Web API;
-- remove their injected fetchers and marker branches;
+- remove their injected fetchers and the N/raw JDJ branches from `historicalResearchMarkers.ts`;
+- retain `historicalResearchMarkers.ts` itself and its JDJ Strategy action mapping;
 - preserve SuBing and JDJ Strategy confirmed-window/generation guards;
 - preserve HTDY local derived-data and all-frequency capability.
 
@@ -497,6 +566,8 @@ Remove routes:
 /api/v1/market/research/n-structure/history
 /api/v1/market/research/jdj/history
 ```
+
+Remove the corresponding public `NStructureHistorical*` and raw-candidate `JdjHistorical*` schema families from `app/schemas/research_overlays.py`. Keep `JdjStrategyHistorical*` and the SuBing DTOs unchanged.
 
 Retain:
 
@@ -516,17 +587,24 @@ git grep -n "n_structure" -- services/quant-api/app/research services/quant-api/
 git grep -n -E "strict-before|strict_before" -- \
   services/quant-api/app/research/jdj services/quant-api/tests/research
 
-uv run --offline --project services/quant-api pytest -q \
+UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache uv run --offline --project services/quant-api pytest -q \
   services/quant-api/tests/test_market_research_overlays_api.py \
+  services/quant-api/tests/test_jdj_context.py \
+  services/quant-api/tests/test_jdj_research.py \
+  services/quant-api/tests/research/test_jdj_research_service.py \
+  services/quant-api/tests/research/test_jdj_strategy_replay_service.py \
+  services/quant-api/tests/research/test_n_structure_research_service.py \
   services/quant-api/tests/research/test_n_candidate_validation_service.py \
-  services/quant-api/tests/research/test_jdj_candidate_validation_service.py
+  services/quant-api/tests/research/test_jdj_candidate_validation_service.py \
+  services/quant-api/tests/test_jdj_robustness.py \
+  services/quant-api/tests/research/test_jdj_robustness_service.py
 
 cd apps/quant-web
 node --test tests/*.test.ts
 pnpm test:e2e -- --grep "Overlay|日进斗金|苏冰|火天大有"
 pnpm build
 cd ../..
-python scripts/engineering/secret_scan.py
+python3 scripts/engineering/secret_scan.py --json
 git diff --check
 ```
 
@@ -535,8 +613,20 @@ git diff --check
 ```bash
 git add services/quant-api/app/research/historical_overlay_api.py \
   services/quant-api/app/api/market_research_overlays.py \
+  services/quant-api/app/schemas/research_overlays.py \
   services/quant-api/tests/test_market_research_overlays_api.py \
-  apps/quant-web/src apps/quant-web/tests apps/quant-web/e2e
+  apps/quant-web/src/types/market.ts \
+  apps/quant-web/src/utils/mainIndicators.ts \
+  apps/quant-web/src/components/market/ProductWorkspaceToolbar.vue \
+  apps/quant-web/src/composables/useHistoricalResearchMarkers.ts \
+  apps/quant-web/src/utils/historicalResearchMarkers.ts \
+  apps/quant-web/src/api/market.ts \
+  apps/quant-web/src/pages/market/chart.vue \
+  apps/quant-web/tests/historicalResearchMarkers.test.ts \
+  apps/quant-web/tests/marketOverlayConvergence.test.ts \
+  apps/quant-web/e2e/market-research.spec.mjs
+git diff --cached --name-status
+git diff --cached --check
 git commit -m "refactor: converge Market research overlays"
 ```
 
@@ -544,8 +634,8 @@ git commit -m "refactor: converge Market research overlays"
 
 ## Task 4: Remove Market Attention and Market Trend Focus end to end
 
-**Lane:** Lane 2 / Terra / medium reasoning  
-**Branch:** `refactor/remove-market-attention-trend-focus`  
+**Lane:** Lane 2 / Terra / medium reasoning
+**Branch:** `refactor/remove-market-attention-trend-focus`
 **Files:**
 
 - Delete: `apps/quant-web/src/components/market/MarketAttentionList.vue`
@@ -557,6 +647,7 @@ git commit -m "refactor: converge Market research overlays"
 - Modify: `apps/quant-web/tests/marketScatter.test.ts`
 - Modify: `apps/quant-web/e2e/market-radar.spec.mjs`
 - Modify: `apps/quant-web/e2e/market-research.spec.mjs`
+- Modify: `apps/quant-web/e2e/execution-review.spec.mjs`
 - Delete: `services/quant-api/app/market_data/market_trend_focus.py`
 - Modify: `services/quant-api/app/market_data/market_radar.py`
 - Modify: `services/quant-api/app/market_data/composition.py`
@@ -564,6 +655,7 @@ git commit -m "refactor: converge Market research overlays"
 - Modify: `services/quant-api/app/schemas/market.py`
 - Delete: `services/quant-api/tests/data_foundation/test_market_trend_focus.py`
 - Modify: `services/quant-api/tests/data_foundation/test_market_api.py`
+- Modify: `services/quant-api/tests/data_foundation/test_market_radar.py`
 
 ### Step 4.1: Write failing absence tests
 
@@ -572,6 +664,7 @@ Backend:
 ```python
 assert client.get("/api/v1/market/research/trend-focus").status_code == 404
 assert "attention" not in client.get("/api/v1/market/radar").json()
+assert all("attention_count" not in sector for sector in client.get("/api/v1/market/radar").json()["sector_summary"])
 ```
 
 Web:
@@ -580,11 +673,16 @@ Web:
 assert.equal(homeSource.includes('MarketAttentionList'), false)
 assert.equal(homeSource.includes('MarketFocusList'), false)
 assert.equal(homeSource.includes('radar.attention'), false)
+assert.equal(marketTypesSource.includes('attention_count'), false)
 ```
 
 Confirm failure before implementation.
 
 ### Step 4.2: Remove consumers, then providers
+
+The user has cancelled the unexecuted Trend Focus future research/evidence Gate. Do not run evidence or write a `STOP`/`ALLOW` conclusion; remove the active implementation and its phase-specific references, with Git history as the recovery surface.
+
+The current-tree inventory has no Trend Focus CLI command or phase-specific protocol/report. Recheck at Task execution; if such an active asset appears, stop to add its exact path to this same Task rather than leaving a hidden maintenance surface.
 
 Final full-market research:
 
@@ -594,15 +692,17 @@ MarketScatter
 MarketDetailTable
 ```
 
-Remove Attention and Trend Focus clients/types first, then route/schema/composition/read model and dedicated tests. Preserve Radar items, summary, sectors, freshness and typed unavailable semantics.
+Remove Attention and Trend Focus clients/types first, then route/schema/composition/read model and dedicated tests. Delete Radar response `attention` and `MarketRadarSector`/sector DTO `attention_count` end to end, including API normalization and all E2E fixtures. Do not rename or re-express either calculation as a new score/list/count. Preserve Radar items, summary, sectors, freshness and typed unavailable semantics.
 
 ### Step 4.3: Search and verify
 
 ```bash
-git grep -n -E "MarketTrendFocus|market_trend_focus|trend-focus|MarketAttentionList|radar\.attention" -- . \
-  ':(exclude)CHANGELOG.md'
+git grep -n -E "MarketTrendFocus|market_trend_focus|trend-focus|MarketAttentionList|radar\.attention|attention_count" -- \
+  services/quant-api/app services/quant-api/tests \
+  apps/quant-web/src apps/quant-web/tests apps/quant-web/e2e \
+  data/research_protocols reports/research
 
-uv run --offline --project services/quant-api pytest -q \
+UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache uv run --offline --project services/quant-api pytest -q \
   services/quant-api/tests/data_foundation/test_market_api.py \
   services/quant-api/tests/data_foundation
 
@@ -611,17 +711,35 @@ node --test tests/*.test.ts
 pnpm test:e2e -- --grep "Market|全市场研究"
 pnpm build
 cd ../..
-python scripts/engineering/secret_scan.py
+python3 scripts/engineering/secret_scan.py --json
 git diff --check
 ```
 
-Expected active code/test hits: none.
+Expected active code/test hits: none. Canonical cleanup follows in Task 7.
 
 ### Step 4.4: Commit and PR
 
 ```bash
-git add services/quant-api/app services/quant-api/tests \
-  apps/quant-web/src apps/quant-web/tests apps/quant-web/e2e
+git add services/quant-api/app/market_data/market_trend_focus.py \
+  services/quant-api/app/market_data/market_radar.py \
+  services/quant-api/app/market_data/composition.py \
+  services/quant-api/app/api/market.py \
+  services/quant-api/app/schemas/market.py \
+  services/quant-api/tests/data_foundation/test_market_trend_focus.py \
+  services/quant-api/tests/data_foundation/test_market_api.py \
+  services/quant-api/tests/data_foundation/test_market_radar.py \
+  apps/quant-web/src/components/market/MarketAttentionList.vue \
+  apps/quant-web/src/components/market/MarketFocusList.vue \
+  apps/quant-web/src/pages/market/index.vue \
+  apps/quant-web/src/api/market.ts \
+  apps/quant-web/src/types/market.ts \
+  apps/quant-web/tests/marketFocus.test.ts \
+  apps/quant-web/tests/marketScatter.test.ts \
+  apps/quant-web/e2e/market-radar.spec.mjs \
+  apps/quant-web/e2e/market-research.spec.mjs \
+  apps/quant-web/e2e/execution-review.spec.mjs
+git diff --cached --name-status
+git diff --cached --check
 git commit -m "refactor: retire Market Attention and Trend Focus"
 ```
 
@@ -629,9 +747,9 @@ git commit -m "refactor: retire Market Attention and Trend Focus"
 
 ## Task 5: Retire Main Force Mirror V2 and diagnostics
 
-**Lane:** Lane 3 / Sol / high reasoning / Plan-then-execute  
-**Branch:** `refactor/retire-main-force-mirror-v2`  
-**Human Gate:** independent Review  
+**Lane:** Lane 3 / Sol / high reasoning / Plan-then-execute
+**Branch:** `refactor/retire-main-force-mirror-v2`
+**Human Gate:** independent Review
 **Files:**
 
 - Delete: `packages/quant-core/guiyi_quant/indicators/main_force_mirror_v2.py`
@@ -648,20 +766,42 @@ git commit -m "refactor: retire Market Attention and Trend Focus"
 - Modify: `services/quant-api/app/guiyi_cli/research_requests.py`
 - Modify: `services/quant-api/app/guiyi_cli/research_commands.py`
 - Modify: `services/quant-api/app/guiyi_cli/research_payloads.py`
+- Modify: `services/quant-api/app/guiyi_cli/data_parser.py`
+- Modify: `services/quant-api/app/guiyi_cli/data_commands.py`
 - Modify: `services/quant-api/app/guiyi_cli/main.py`
+- Delete: `services/quant-api/app/market_data/member_rank_snapshot.py`
+- Delete: `services/quant-api/app/market_data/member_rank_snapshot_builder.py`
+- Modify: `services/quant-api/app/market_data/rqdata_adapter.py`
 - Delete: `apps/quant-web/src/composables/useMainForceMirrorV2.ts`
 - Delete: `apps/quant-web/src/utils/mainForceMirrorV2Presentation.ts`
+- Modify: `apps/quant-web/src/api/market.ts`
+- Modify: `apps/quant-web/src/components/kline/KlineChart.vue`
+- Modify: `apps/quant-web/src/components/kline/KlineHoverLegend.vue`
+- Modify: `apps/quant-web/src/utils/klineViewModel.ts`
 - Modify: `apps/quant-web/src/pages/market/chart.vue`
 - Modify: `apps/quant-web/src/types/market.ts`
 - Delete: `apps/quant-web/tests/mainForceMirrorV2.test.ts`
+- Modify: `apps/quant-web/tests/kline-view-model.test.ts`
 - Delete: `apps/quant-web/e2e/main-force-mirror-v2.spec.mjs`
 - Delete: `services/quant-api/tests/test_main_force_mirror_v2.py`
 - Delete: `services/quant-api/tests/test_main_force_mirror_v2_audit.py`
 - Delete: `services/quant-api/tests/data_foundation/test_main_force_mirror_v2_service.py`
 - Delete: `services/quant-api/tests/research/test_main_force_mirror_v2_research_service.py`
 - Delete: `services/quant-api/tests/research/test_main_force_mirror_diagnostic_analysis.py`
+- Delete: `services/quant-api/tests/research/test_main_force_mirror_diagnostic_cli.py`
 - Delete: `services/quant-api/tests/research/test_main_force_mirror_diagnostic_contract.py`
+- Delete: `services/quant-api/tests/research/test_main_force_mirror_diagnostic_models.py`
+- Delete: `services/quant-api/tests/research/test_research_cli_mirror_robustness.py`
+- Delete: `services/quant-api/tests/data_foundation/test_member_rank_snapshot.py`
+- Delete: `services/quant-api/tests/data_foundation/test_member_rank_snapshot_builder.py`
 - Delete: `tests/fixtures/main_force_mirror_v2_golden.json`
+- Delete: `data/research_protocols/main_force_mirror_diagnostic_phase_a_v1.json`
+- Modify: `services/quant-api/tests/test_indicator_registry_v1.py`
+- Modify: `services/quant-api/tests/test_research_cli_boundaries.py`
+- Modify: `services/quant-api/tests/test_research_composition.py`
+- Modify: `services/quant-api/tests/data_foundation/test_market_api.py`
+- Modify: `services/quant-api/tests/data_foundation/test_cli.py`
+- Modify: `apps/quant-web/e2e/alert-v1.spec.mjs`
 
 ### Step 5.1: Prove no retained consumer exists
 
@@ -672,6 +812,10 @@ git grep -n -E "main_force_mirror|MainForceMirror|MFM_V2|main-force-mirror" -- \
 
 Classify every hit. Stop if SuBing, HTDY, JDJ, Alert, Runtime, Execution Review or core MarketDataService depends on MFM output.
 
+The inventory must include every file under `services/quant-api/app/research/main_force/`, both Market/Web projections, shared consumers `KlineChart.vue` / `KlineHoverLegend.vue` / `klineViewModel.ts`, all research CLI dispatch/request/payload/parser references, the `data member-rank snapshot` parser/dispatch/factory, `member_rank_snapshot.py`, `member_rank_snapshot_builder.py`, the RQData member-rank adapter and composition wiring, all dedicated and shared regression tests including `test_cli.py` and `kline-view-model.test.ts`, `tests/fixtures/main_force_mirror_v2_golden.json`, and `data/research_protocols/main_force_mirror_diagnostic_phase_a_v1.json`. The current tree has no separate MFM report directory; if execution-time inventory finds one, treat it as a phase-specific completion report and include it in this Task.
+
+The Alembic migrations that establish/preserve `futures_member_ranks`, their migration history, and the existing table-identity assertions in `tests/alembic/test_canonical_foundation_migration.py` and `tests/data_foundation/test_models.py` are retained. This Task does not run a production migration and does not delete or modify any repository-external `main_force_member_rank_v1` snapshot data.
+
 ### Step 5.2: Write failing absence tests
 
 Retained API/CLI tests must assert:
@@ -680,6 +824,7 @@ Retained API/CLI tests must assert:
 assert client.get("/api/v1/market/research/main-force-mirror").status_code == 404
 assert "main-force-mirror-v2" not in research_help
 assert "main-force-mirror-diagnostic" not in research_help
+assert "member-rank" not in data_help
 ```
 
 Web source test:
@@ -687,51 +832,126 @@ Web source test:
 ```ts
 assert.equal(chartSource.includes('useMainForceMirrorV2'), false)
 assert.equal(chartSource.includes('main_force_mirror_v2'), false)
+assert.equal(hoverLegendSource.includes('mainForceMirror'), false)
+assert.equal(klineViewModelSource.includes('mainForceMirror'), false)
 ```
 
+Retained CLI/composition tests must also assert that the member-rank parser, dispatch/factory and active provider imports are absent. Existing MFM tests remain the inventory/behavior coverage while the removal is developed; the dedicated MFM and member-rank suites are deleted only after retained API/CLI/registry/composition absence tests are RED and ready to replace them.
+
 ### Step 5.3: Delete consumer-to-provider
+
+The user has cancelled the unexecuted MFM future research/evidence Gate. Delete its phase-specific protocol instead of running it; do not create an evidence report or infer empirical `STOP`/`ALLOW`.
 
 Order:
 
 ```text
-Web panel/composable/types/tests
+Web panel/composable/types plus Kline hover/view-model shared consumers and their tests
 → Market API/schema/composition
 → research CLI/composition
+→ data CLI member-rank parser/dispatch/factory
+→ active member-rank snapshot reader/builder and RQData provider
 → app.research.main_force
 → Market service
 → quant-core module/exports
-→ dedicated tests/golden fixture
+→ dedicated/shared regression tests, golden fixture, phase-specific protocol/report
 ```
 
 Keep EMA/MACD/ATR/HTDY and generic policy helpers.
 
+Keep Alembic migration/history and the existing `futures_member_ranks` table-identity tests. Do not create or execute a replacement production migration. Do not traverse, delete, rewrite or republish repository-external member-rank snapshot roots; retirement ends at the active repository reader/builder/provider/CLI boundary. README, `PROJECT_SOURCE.md`, `TESTING.md` and other canonical wording are reconciled in Task 7.
+
 ### Step 5.4: Search and verify
 
 ```bash
-git grep -n -E "main_force_mirror|MainForceMirror|MFM_V2|main-force-mirror" -- . \
-  ':(exclude)CHANGELOG.md' \
-  ':(exclude)docs/superpowers/specs/2026-08-25-architecture-convergence-v1-design.md' \
-  ':(exclude)docs/superpowers/plans/2026-08-25-architecture-convergence-v1.md'
+git grep -n -E "main_force_mirror|MainForceMirror|MFM_V2|main-force-mirror" -- \
+  packages/quant-core services/quant-api/app services/quant-api/tests \
+  apps/quant-web/src apps/quant-web/tests apps/quant-web/e2e tests/fixtures \
+  data/research_protocols reports/research
 
-uv run --offline --project services/quant-api pytest -q
-uv run --offline --project services/quant-api ruff check services/quant-api/app services/quant-api/tests packages/quant-core
-uv run --offline --project services/quant-api mypy services/quant-api/app packages/quant-core/guiyi_quant
+git grep -n -E "mainForceMirror|main_force_mirror" -- \
+  apps/quant-web/src/components/kline/KlineHoverLegend.vue \
+  apps/quant-web/src/utils/klineViewModel.ts \
+  apps/quant-web/tests/kline-view-model.test.ts
+
+git grep -n -E "member_rank|member-rank|main_force_member_rank_v1" -- \
+  services/quant-api/app services/quant-api/alembic services/quant-api/tests
+
+UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache uv run --offline --project services/quant-api pytest -q -m 'not isolated_postgresql' services/quant-api/tests
+UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache uv run --offline --project services/quant-api ruff check services/quant-api/app services/quant-api/tests packages/quant-core/guiyi_quant tests/engineering
+UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache MYPYPATH=services/quant-api:packages/quant-core uv run --offline --project services/quant-api mypy --explicit-package-bases --ignore-missing-imports services/quant-api/app/backtest services/quant-api/app/market_data services/quant-api/app/research services/quant-api/app/guiyi_cli services/quant-api/app/alerts services/quant-api/app/execution_review services/quant-api/app/runtime_entry.py services/quant-api/app/services/runtime_health.py services/quant-api/app/api/market.py services/quant-api/app/api/market_live.py services/quant-api/app/api/alerts.py services/quant-api/app/api/execution_review.py
 
 cd apps/quant-web
 node --test tests/*.test.ts
 pnpm test:e2e
 pnpm build
 cd ../..
-python scripts/engineering/secret_scan.py
+python3 scripts/engineering/secret_scan.py --json
 git diff --check
 ```
 
-Expected active hits: none. Historical CHANGELOG is exempt.
+Expected active code/test/protocol/report hits: none. Member-rank hits are limited to retained historical Alembic migration references, existing table-identity tests and retained negative absence assertions such as `"member-rank" not in data_help`; no active reader, builder, RQData provider, composition or CLI import/use may remain. Repository-external snapshot roots are intentionally outside this search and mutation scope. Active canonical references may remain during Task 5 only and must be removed in Task 7; historical CHANGELOG is retained.
 
 ### Step 5.5: Commit and PR
 
 ```bash
-git add packages/quant-core services/quant-api apps/quant-web tests/fixtures
+git add packages/quant-core/guiyi_quant/indicators/main_force_mirror_v2.py \
+  packages/quant-core/guiyi_quant/indicators/__init__.py \
+  packages/quant-core/guiyi_quant/indicators/registry.py \
+  packages/quant-core/guiyi_quant/indicators/policy.py \
+  services/quant-api/app/market_data/main_force_mirror_v2_service.py \
+  services/quant-api/app/research/main_force/__init__.py \
+  services/quant-api/app/research/main_force/main_force_mirror_diagnostic.py \
+  services/quant-api/app/research/main_force/main_force_mirror_diagnostic_analysis.py \
+  services/quant-api/app/research/main_force/main_force_mirror_diagnostic_models.py \
+  services/quant-api/app/research/main_force/main_force_mirror_diagnostic_policy.py \
+  services/quant-api/app/research/main_force/main_force_mirror_diagnostic_service.py \
+  services/quant-api/app/research/main_force/main_force_mirror_v2_research_service.py \
+  services/quant-api/app/market_data/composition.py \
+  services/quant-api/app/research/composition.py \
+  services/quant-api/app/api/market.py \
+  services/quant-api/app/schemas/market.py \
+  services/quant-api/app/guiyi_cli/research_parser.py \
+  services/quant-api/app/guiyi_cli/research_requests.py \
+  services/quant-api/app/guiyi_cli/research_commands.py \
+  services/quant-api/app/guiyi_cli/research_payloads.py \
+  services/quant-api/app/guiyi_cli/data_parser.py \
+  services/quant-api/app/guiyi_cli/data_commands.py \
+  services/quant-api/app/guiyi_cli/main.py \
+  services/quant-api/app/market_data/member_rank_snapshot.py \
+  services/quant-api/app/market_data/member_rank_snapshot_builder.py \
+  services/quant-api/app/market_data/rqdata_adapter.py \
+  apps/quant-web/src/composables/useMainForceMirrorV2.ts \
+  apps/quant-web/src/utils/mainForceMirrorV2Presentation.ts \
+  apps/quant-web/src/api/market.ts \
+  apps/quant-web/src/components/kline/KlineChart.vue \
+  apps/quant-web/src/components/kline/KlineHoverLegend.vue \
+  apps/quant-web/src/utils/klineViewModel.ts \
+  apps/quant-web/src/pages/market/chart.vue \
+  apps/quant-web/src/types/market.ts \
+  apps/quant-web/tests/mainForceMirrorV2.test.ts \
+  apps/quant-web/tests/kline-view-model.test.ts \
+  apps/quant-web/e2e/main-force-mirror-v2.spec.mjs \
+  apps/quant-web/e2e/alert-v1.spec.mjs \
+  services/quant-api/tests/test_main_force_mirror_v2.py \
+  services/quant-api/tests/test_main_force_mirror_v2_audit.py \
+  services/quant-api/tests/data_foundation/test_main_force_mirror_v2_service.py \
+  services/quant-api/tests/research/test_main_force_mirror_v2_research_service.py \
+  services/quant-api/tests/research/test_main_force_mirror_diagnostic_analysis.py \
+  services/quant-api/tests/research/test_main_force_mirror_diagnostic_cli.py \
+  services/quant-api/tests/research/test_main_force_mirror_diagnostic_contract.py \
+  services/quant-api/tests/research/test_main_force_mirror_diagnostic_models.py \
+  services/quant-api/tests/research/test_research_cli_mirror_robustness.py \
+  services/quant-api/tests/data_foundation/test_member_rank_snapshot.py \
+  services/quant-api/tests/data_foundation/test_member_rank_snapshot_builder.py \
+  services/quant-api/tests/test_indicator_registry_v1.py \
+  services/quant-api/tests/test_research_cli_boundaries.py \
+  services/quant-api/tests/test_research_composition.py \
+  services/quant-api/tests/data_foundation/test_market_api.py \
+  services/quant-api/tests/data_foundation/test_cli.py \
+  tests/fixtures/main_force_mirror_v2_golden.json \
+  data/research_protocols/main_force_mirror_diagnostic_phase_a_v1.json
+git diff --cached --name-status
+git diff --cached --check
 git commit -m "refactor: retire Main Force Mirror research"
 ```
 
@@ -741,8 +961,8 @@ Review must explicitly confirm SuBing/HTDY/JDJ behavior is unchanged.
 
 ## Task 6: Retire Five-Candidate Dossier and Relationships
 
-**Lane:** Lane 3 / Sol / high reasoning / Plan-then-execute  
-**Branch:** `refactor/retire-candidate-convergence`  
+**Lane:** Lane 3 / Sol / high reasoning / Plan-then-execute
+**Branch:** `refactor/retire-candidate-convergence`
 **Files:**
 
 - Delete: `services/quant-api/app/research/candidate_convergence/`
@@ -755,10 +975,14 @@ Review must explicitly confirm SuBing/HTDY/JDJ behavior is unchanged.
 - Delete: `services/quant-api/tests/research/test_research_cli_convergence.py`
 - Delete: `services/quant-api/tests/test_five_candidate_dossier.py`
 - Delete: `services/quant-api/tests/test_five_candidate_relationships.py`
+- Delete: `services/quant-api/tests/test_candidate_convergence_identities.py`
+- Modify: `services/quant-api/tests/research/test_research_cli_candidate.py`
 - Modify: `services/quant-api/tests/research/test_research_cli_parser_requests.py`
 - Modify: `services/quant-api/tests/test_research_composition.py`
 - Delete: `reports/research/candidate_dossier/`
 - Delete: `reports/research/candidate_relationships/`
+- Delete: `data/research_protocols/five_candidate_research_dossier_v1.json`
+- Delete: `data/research_protocols/five_candidate_relationship_topology_v1.json`
 
 ### Step 6.1: Prove retained research independence
 
@@ -770,6 +994,8 @@ git grep -n -E "candidate_validation|candidate_robustness" -- \
 ```
 
 Stop if pending prospective OOS or Validation/Robustness requires dossier/relationship output.
+
+Inventory every module under `app/research/candidate_convergence/`, all dossier/relationship CLI and shared composition/test references, both phase-specific protocol JSON files, and both completed report roots. Retained source modules and assets must be listed separately: SuBing/HTDY/N/JDJ, Candidate Validation/Robustness protocol/report roots, Alembic, and pending prospective OOS.
 
 ### Step 6.2: Write failing CLI absence tests
 
@@ -794,46 +1020,82 @@ app.research.robustness
 reports/research/candidate_validation
 reports/research/candidate_robustness
 pending prospective OOS evidence
+services/quant-api/app/research/robustness/multi_candidate_events.py
+services/quant-api/app/research/robustness/multi_candidate_robustness_service.py
+services/quant-api/tests/test_multi_candidate_events.py
 ```
+
+Delete the two matching `data/research_protocols/five_candidate_*.json` files with their completed report roots. They are phase-specific completeness assets, not Validation/Robustness or prospective OOS contracts.
+
+Keep generic Robustness relationship metrics, including `summarize_candidate_relationship`; these are consumed by retained Robustness and are not the retired Five-Candidate Relationships generator.
 
 ### Step 6.4: Verify retained suites
 
 ```bash
-uv run --offline --project services/quant-api pytest -q \
+UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache uv run --offline --project services/quant-api pytest -q \
   services/quant-api/tests/research/test_research_cli_candidate.py \
   services/quant-api/tests/research/test_research_cli_parser_requests.py \
   services/quant-api/tests/research/test_subing_candidate_validation_service.py \
   services/quant-api/tests/research/test_n_candidate_validation_service.py \
   services/quant-api/tests/research/test_jdj_candidate_validation_service.py \
   services/quant-api/tests/test_multi_candidate_robustness_policy.py \
+  services/quant-api/tests/test_multi_candidate_events.py \
   services/quant-api/tests/test_multi_candidate_robustness.py \
   services/quant-api/tests/research/test_multi_candidate_robustness_service.py \
   services/quant-api/tests/test_jdj_robustness.py \
   services/quant-api/tests/research/test_jdj_robustness_service.py \
   services/quant-api/tests/test_research_composition.py
 
-uv run --offline --project services/quant-api pytest -q
-uv run --offline --project services/quant-api ruff check services/quant-api/app services/quant-api/tests
-uv run --offline --project services/quant-api mypy services/quant-api/app
-python scripts/engineering/secret_scan.py
+UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache uv run --offline --project services/quant-api pytest -q -m 'not isolated_postgresql' services/quant-api/tests
+UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache uv run --offline --project services/quant-api ruff check services/quant-api/app services/quant-api/tests packages/quant-core/guiyi_quant tests/engineering
+UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache MYPYPATH=services/quant-api:packages/quant-core uv run --offline --project services/quant-api mypy --explicit-package-bases --ignore-missing-imports services/quant-api/app/backtest services/quant-api/app/market_data services/quant-api/app/research services/quant-api/app/guiyi_cli services/quant-api/app/alerts services/quant-api/app/execution_review services/quant-api/app/runtime_entry.py services/quant-api/app/services/runtime_health.py services/quant-api/app/api/market.py services/quant-api/app/api/market_live.py services/quant-api/app/api/alerts.py services/quant-api/app/api/execution_review.py
+python3 scripts/engineering/secret_scan.py --json
 git diff --check
 ```
 
 Search:
 
 ```bash
-git grep -n -E "candidate-dossier|candidate-relationships|candidate_convergence|five_candidate" -- . \
-  ':(exclude)CHANGELOG.md' \
-  ':(exclude)docs/superpowers/specs/2026-08-25-architecture-convergence-v1-design.md' \
-  ':(exclude)docs/superpowers/plans/2026-08-25-architecture-convergence-v1.md'
+git grep -n -E "candidate-dossier|candidate-relationships|candidate_convergence|five_candidate_research_dossier_v1|five_candidate_relationship_topology_v1|build_five_candidate_(dossier|relationship)|_five_candidate_(dossier|relationship)" -- \
+  services/quant-api/app services/quant-api/tests data/research_protocols reports/research
+
+git grep -n "summarize_candidate_relationship" -- \
+  services/quant-api/app/research/robustness \
+  services/quant-api/tests/test_multi_candidate_events.py
 ```
 
-Expected active hits: none.
+Expected retired IDs/modules/commands/assets hits: none. The positive generic `summarize_candidate_relationship` search must still find the retained Robustness implementation/tests and is not a failure. Active canonical references may remain during Task 6 only and must be removed in Task 7; historical CHANGELOG is retained.
 
 ### Step 6.5: Commit and PR
 
 ```bash
-git add services/quant-api reports/research
+git add services/quant-api/app/research/candidate_convergence/__init__.py \
+  services/quant-api/app/research/candidate_convergence/artifact_source.py \
+  services/quant-api/app/research/candidate_convergence/five_candidate_dossier.py \
+  services/quant-api/app/research/candidate_convergence/five_candidate_dossier_service.py \
+  services/quant-api/app/research/candidate_convergence/five_candidate_relationships.py \
+  services/quant-api/app/research/candidate_convergence/five_candidate_relationships_service.py \
+  services/quant-api/app/research/candidate_convergence/identities.py \
+  services/quant-api/app/research/candidate_convergence/jdj_exact_overlap.py \
+  services/quant-api/app/research/composition.py \
+  services/quant-api/app/guiyi_cli/research_parser.py \
+  services/quant-api/app/guiyi_cli/research_requests.py \
+  services/quant-api/app/guiyi_cli/research_commands.py \
+  services/quant-api/app/guiyi_cli/research_payloads.py \
+  services/quant-api/app/guiyi_cli/main.py \
+  services/quant-api/tests/research/test_research_cli_convergence.py \
+  services/quant-api/tests/research/test_research_cli_candidate.py \
+  services/quant-api/tests/research/test_research_cli_parser_requests.py \
+  services/quant-api/tests/test_candidate_convergence_identities.py \
+  services/quant-api/tests/test_five_candidate_dossier.py \
+  services/quant-api/tests/test_five_candidate_relationships.py \
+  services/quant-api/tests/test_research_composition.py \
+  reports/research/candidate_dossier/five_candidate_research_dossier_v1/five-candidate-retrospective-evidence-freeze-2026-08-22.json \
+  reports/research/candidate_relationships/five_candidate_relationship_topology_v1/five-candidate-relationship-topology-freeze-2026-08-22.json \
+  data/research_protocols/five_candidate_research_dossier_v1.json \
+  data/research_protocols/five_candidate_relationship_topology_v1.json
+git diff --cached --name-status
+git diff --cached --check
 git commit -m "refactor: retire candidate convergence reports"
 ```
 
@@ -843,8 +1105,8 @@ Independent Review must verify no pending OOS baseline/evidence was deleted.
 
 ## Task 7: Reconcile canonical docs and remove completed process artifacts
 
-**Lane:** Lane 2 / Terra / medium reasoning  
-**Branch:** `docs/convergence-v1-canonical-reconciliation`  
+**Lane:** Lane 2 / Terra / medium reasoning
+**Branch:** `docs/convergence-v1-canonical-reconciliation`
 **Files:**
 
 - Modify: `STATUS.md`
@@ -852,9 +1114,12 @@ Independent Review must verify no pending OOS baseline/evidence was deleted.
 - Modify: `AGENTS.md`
 - Modify: `DECISIONS.md`
 - Modify: `docs/ARCHITECTURE.md`
+- Modify: `docs/INDICATOR_KERNEL.md`
 - Modify: `docs/DEVELOPMENT.md`
 - Modify: `TESTING.md`
 - Modify: `README.md`
+- Modify: `services/quant-api/README.md`
+- Modify: `.agents/skills/quant-backend/SKILL.md`
 - Modify: `CHANGELOG.md` only by adding next-release retirement notes
 - Delete: `docs/CODE_REVIEW.md`
 - Delete: `.github/ISSUE_TEMPLATE/config.yml`
@@ -864,15 +1129,11 @@ Independent Review must verify no pending OOS baseline/evidence was deleted.
 - Delete: `docs/superpowers/specs/2026-08-24-jdj-active60-1m-strategy-design.md`
 - Delete: `docs/superpowers/plans/2026-08-24-jdj-active60-1m-strategy.md`
 - Delete: `docs/superpowers/plans/2026-08-24-no-watch-reliability-v1.md`
-- Conditionally delete as one pair after HTDY closeout:
-  - `docs/superpowers/specs/2026-08-25-htdy-all-frequency-active60-design.md`
-  - `docs/superpowers/plans/2026-08-25-htdy-all-frequency-active60.md`
+- Modify: `tests/engineering/test_canonical_consistency.py`
 
-### Step 7.1: Add a canonical drift test
+### Step 7.1: Extend the existing canonical consistency test
 
-Create:
-
-- `services/quant-api/tests/engineering/test_architecture_convergence_inventory.py`
+Modify `tests/engineering/test_canonical_consistency.py`; do not create a second architecture inventory suite.
 
 The test reads active canonical and asserts:
 
@@ -880,11 +1141,14 @@ The test reads active canonical and asserts:
 SuBing = one product with three internal projections
 HTDY = operational universe × seven frequencies
 Overlay list = four
-Trend Focus/Attention/MFM/Dossier/Relationships are not active
+Trend Focus/Attention/MFM and Five-Candidate Dossier/Relationships phase assets are not active
+MFM member-rank active CLI/reader/builder/provider references are absent; historical migration/table identity is retained
 N/raw JDJ are internal-only
+Five-Candidate Dossier/Relationships phase assets are absent while generic Robustness relationship metrics remain active
 Alert remains two-table, one-shot, no retry/replay/backfill/queue/order
 RQAlpha remains local-only conditional keep
 Execution Review roll is unchanged
+active project skills do not reference main-force-mirror-futures
 ```
 
 Confirm the test fails before canonical reconciliation.
@@ -896,27 +1160,19 @@ Confirm the test fails before canonical reconciliation.
 - `AGENTS.md`: engineering hard rules; remove retired product examples.
 - `DECISIONS.md`: remove retired MFM/convergence decisions; add SuBing single-product decision.
 - `ARCHITECTURE.md`: target dependency graph; no dead modules.
+- `INDICATOR_KERNEL.md`: retain EMA/MACD/ATR/HTDY kernel contracts and remove MFM module/policy/consumer claims.
 - `DEVELOPMENT.md`: no retired commands or duplicate process.
 - `TESTING.md`: only existing tests and commands.
 - `README.md`: current short entry map.
+- `services/quant-api/README.md`: exact retained Research CLI command inventory; no retired MFM/dossier/relationship command.
+- `.agents/skills/quant-backend/SKILL.md`: remove the active `main-force-mirror-futures` guidance and leave only retained backend boundaries.
 - `CHANGELOG.md`: preserve history; add retirement notes only.
 
 ### Step 7.3: Delete completed process artifacts
 
 Delete the listed completed Spec/Plan files after their stable contracts have been absorbed into canonical.
 
-Delete HTDY Spec/Plan only when all are true:
-
-```text
-HTDY code integrated in develop
-independent Review complete
-canonical reflects implemented behavior
-no pending implementation task references either file
-```
-
-If any condition is false, keep both. Do not delete only one.
-
-Keep this Architecture Convergence V1 Spec/Plan until the whole program is integrated and released; later closeout is a separate commit.
+Do not delete HTDY Spec/Plan in Task 7. Keep HTDY and this Architecture Convergence V1 Spec/Plan through Task 8 and Program integration. After the whole Program completes, perform a separate closeout commit that deletes each completed pair together after stable contracts are present in canonical; do not fold closeout into Task 7/8.
 
 ### Step 7.4: Remove redundant personal-project process files
 
@@ -925,16 +1181,30 @@ Delete `docs/CODE_REVIEW.md` and `.github/ISSUE_TEMPLATE/*` only after `git grep
 ### Step 7.5: Verify and commit
 
 ```bash
-git grep -n -E "MarketTrendFocus|MarketAttentionList|main-force-mirror|candidate-dossier|candidate-relationships" -- \
-  STATUS.md PROJECT_SOURCE.md AGENTS.md DECISIONS.md README.md TESTING.md docs .github || true
+git grep -n -E "MarketTrendFocus|MarketAttentionList|main-force-mirror|main_force_mirror|MainForceMirror|MFM|member-rank|member_rank_snapshot|main_force_member_rank_v1|candidate-dossier|candidate-relationships" -- \
+  STATUS.md PROJECT_SOURCE.md AGENTS.md DECISIONS.md README.md TESTING.md \
+  services/quant-api/README.md docs/ARCHITECTURE.md docs/DEVELOPMENT.md \
+  docs/DATA_CENTER.md docs/INDICATOR_KERNEL.md docs/EXECUTION_REVIEW.md \
+  openspec .github .agents/skills || true
 
-uv run --offline --project services/quant-api pytest -q \
-  services/quant-api/tests/engineering/test_architecture_convergence_inventory.py
-python scripts/engineering/secret_scan.py
+PYTHONPATH=services/quant-api:packages/quant-core UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache uv run --offline --project services/quant-api pytest -q tests/engineering/test_canonical_consistency.py
+python3 scripts/engineering/secret_scan.py --json
 git diff --check
 
-git add STATUS.md PROJECT_SOURCE.md AGENTS.md DECISIONS.md README.md TESTING.md CHANGELOG.md docs .github \
-  services/quant-api/tests/engineering/test_architecture_convergence_inventory.py
+git add STATUS.md PROJECT_SOURCE.md AGENTS.md DECISIONS.md README.md TESTING.md CHANGELOG.md \
+  services/quant-api/README.md \
+  .agents/skills/quant-backend/SKILL.md \
+  docs/ARCHITECTURE.md docs/INDICATOR_KERNEL.md docs/DEVELOPMENT.md docs/CODE_REVIEW.md \
+  docs/superpowers/specs/2026-08-24-subing-daily-watch-v1-design.md \
+  docs/superpowers/plans/2026-08-24-subing-daily-watch-v1.md \
+  docs/superpowers/specs/2026-08-24-jdj-active60-1m-strategy-design.md \
+  docs/superpowers/plans/2026-08-24-jdj-active60-1m-strategy.md \
+  docs/superpowers/plans/2026-08-24-no-watch-reliability-v1.md \
+  .github/ISSUE_TEMPLATE/config.yml \
+  .github/ISSUE_TEMPLATE/optional_backlog.md \
+  tests/engineering/test_canonical_consistency.py
+git diff --cached --name-status
+git diff --cached --check
 git commit -m "docs: reconcile architecture convergence v1"
 ```
 
@@ -944,38 +1214,58 @@ Review must reject any status claim unsupported by integrated code/evidence.
 
 ## Task 8: Full verification, independent Review, and release-candidate handoff
 
-**Lane:** Lane 3 / Sol / high reasoning / independent Review  
-**Branch:** `chore/convergence-v1-verification` from exact latest `develop`  
+**Lane:** Lane 3 / Sol / high reasoning / independent Review
+**Branch:** `chore/convergence-v1-verification` from exact latest `develop`
 **Files:** only verification-driven fixes; no new feature scope
 
 ### Step 8.1: Run the target inventory
 
 ```bash
-uv run --offline --project services/quant-api pytest -q \
-  services/quant-api/tests/engineering/test_architecture_convergence_inventory.py
+PYTHONPATH=services/quant-api:packages/quant-core \
+  UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
+  uv run --offline --project services/quant-api pytest -q \
+  tests/engineering/test_canonical_consistency.py
+
+openspec validate --specs --strict --no-interactive
 ```
 
-The test must fail on missing target behavior and must not skip missing paths.
+These are the canonical commands recorded in `TESTING.md`. The consistency test must fail on missing target behavior and must not skip missing paths; OpenSpec must report all active specs strict-valid.
 
 ### Step 8.2: Run full backend quality
 
 ```bash
-uv run --offline --project services/quant-api pytest -q
-uv run --offline --project services/quant-api ruff check services/quant-api/app services/quant-api/tests packages/quant-core
-uv run --offline --project services/quant-api mypy services/quant-api/app packages/quant-core/guiyi_quant
+UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache uv run --offline --project services/quant-api pytest -q -m 'not isolated_postgresql' services/quant-api/tests
+UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache uv run --offline --project services/quant-api ruff check services/quant-api/app services/quant-api/tests packages/quant-core/guiyi_quant tests/engineering
+UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache MYPYPATH=services/quant-api:packages/quant-core uv run --offline --project services/quant-api mypy --explicit-package-bases --ignore-missing-imports services/quant-api/app/backtest services/quant-api/app/market_data services/quant-api/app/research services/quant-api/app/guiyi_cli services/quant-api/app/alerts services/quant-api/app/execution_review services/quant-api/app/runtime_entry.py services/quant-api/app/services/runtime_health.py services/quant-api/app/api/market.py services/quant-api/app/api/market_live.py services/quant-api/app/api/alerts.py services/quant-api/app/api/execution_review.py
 ```
 
-Run the existing isolated PostgreSQL HTDY migration suite using only the repository’s isolated DB environment. Do not connect production DB.
+Run the existing isolated PostgreSQL HTDY migration suite as an isolated regression only:
+
+```bash
+GUIYI_ISOLATED_MIGRATION_DATABASE_URL='<isolated-postgresql-url>' \
+  PYTHONPATH=services/quant-api:packages/quant-core \
+  UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache \
+  uv run --offline --project services/quant-api pytest -q -m isolated_postgresql \
+  services/quant-api/tests/alembic/test_htdy_frequency_scope_migration.py
+```
+
+Do not connect production DB. Production `20260825_0040 (head)` is an existing pre-Program fact; this command neither applies nor re-authorizes it.
 
 ### Step 8.3: Run focused SuBing/HTDY/Alert parity
 
 ```bash
-uv run --offline --project services/quant-api pytest -q \
+UV_CACHE_DIR=/private/tmp/guiyi-test-uv-cache uv run --offline --project services/quant-api pytest -q \
   services/quant-api/tests/test_alert_api.py \
   services/quant-api/tests/test_alert_service.py \
   services/quant-api/tests/test_alert_runtime.py \
   services/quant-api/tests/test_alert_notification_dispatcher.py \
+  services/quant-api/tests/test_alert_evaluator.py \
+  services/quant-api/tests/test_htdy_production_kernel_policy.py \
+  services/quant-api/tests/test_htdy_strict_kernel.py \
+  services/quant-api/tests/test_indicator_registry_v1.py \
   services/quant-api/tests/data_foundation/test_market_api.py \
+  services/quant-api/tests/data_foundation/test_market_read.py \
+  services/quant-api/tests/data_foundation/test_after_market.py \
   services/quant-api/tests/data_foundation/test_subing_read_service.py \
   services/quant-api/tests/data_foundation/test_subing_daily_watch.py \
   services/quant-api/tests/test_subing_daily_watch_api.py \
@@ -989,6 +1279,7 @@ SuBing Factor/Signal/Lifecycle parity preserved
 Daily Watch contract preserved
 SuBing product Scope preserved
 HTDY pair Scope and seven-frequency capability preserved
+HTDY D1/W1 canonical_updated seam and no-backfill behavior preserved
 SuBing bar-level Formal Event identity preserved
 no real notification or Scope mutation executed
 ```
@@ -1017,7 +1308,7 @@ HTDY current-frequency Scope behavior intact
 ### Step 8.5: Static and secret checks
 
 ```bash
-python scripts/engineering/secret_scan.py
+python3 scripts/engineering/secret_scan.py --json
 git diff --check
 git status --short
 ```
@@ -1077,11 +1368,11 @@ retained product surface
 retired surface
 full test results
 known pending evidence
-HTDY migration requirement
-production operations not executed
+isolated HTDY migration regression result and existing production 0040 fact
+external operations not executed by this Program
 ```
 
-Stop. Do not merge `main`, create tag, run production migration, modify real Scope, send notification or promote Runtime.
+Stop. Do not merge `main`, create tag, run a new production migration, modify real Scope, send notification or promote Runtime.
 
 Release and Runtime remain two separate future Gates:
 
@@ -1116,23 +1407,25 @@ separate user Runtime approval → exact-tag Runtime promotion
 
 - [ ] Overlay ids are exactly `none | subing | jdj_strategy | htdy`.
 - [ ] Labels are exactly `无 | 苏冰 | 日进斗金参考回放 | 火天大有`.
-- [ ] N and raw JDJ are internal-only.
+- [ ] N and raw JDJ are internal-only; their public routes/DTO/marker mappings are absent while JDJ Strategy DTO/marker mapping remains.
 - [ ] Full-market research contains Summary + Scatter + Detail only.
-- [ ] Trend Focus, Attention, MFM, Dossier and Relationships are absent from active code/API/CLI/tests/docs.
+- [ ] Trend Focus, Attention and MFM are absent from active code/API/research or data CLI/tests/protocols/reports and active product/canonical docs; MFM member-rank reader/builder/RQData provider/CLI is absent; Five-Candidate Dossier/Relationships generator, CLI, protocol/report and dedicated tests are absent; this in-progress retirement Spec/Plan remains until post-Program closeout.
 
 ### Retained Foundations
 
 - [ ] Canonical/Catalog/MDS unchanged.
+- [ ] Alembic migration/history, `futures_member_ranks` table-identity tests and repository-external existing member-rank snapshots are retained and untouched.
 - [ ] Candidate Validation/Robustness and pending OOS evidence retained.
+- [ ] Generic Robustness relationship metrics/summary, `multi_candidate_events.py`, `multi_candidate_robustness_service.py` and `test_multi_candidate_events.py` retained.
 - [ ] RQAlpha remains local-only conditional keep.
 - [ ] Alert remains two-table, one-shot, no queue/retry/replay/backfill/order.
 - [ ] Execution Review roll is unchanged in this program.
 
 ### Gates
 
-- [ ] No production migration executed.
-- [ ] No real Scope changed.
-- [ ] No real notification sent.
+- [ ] No production migration executed by this Program; existing production `0040` is not replayed.
+- [ ] No real Scope changed by this Program; existing HTDY `420 pairs` remains unchanged.
+- [ ] No real notification sent; natural HTDY/SuBing evidence remains pending.
 - [ ] No main/tag/release without approval.
 - [ ] No Runtime promotion without separate approval.
 - [ ] Independent Review returns `允许集成 develop` before final integration.

@@ -1,7 +1,7 @@
 export const MARKET_FREQUENCIES = ['1m', '5m', '15m', '30m', '60m', '1d', '1w'] as const
 export type MarketFrequency = (typeof MARKET_FREQUENCIES)[number]
 export type SeriesKind = 'continuous' | 'actual_dominant' | 'contract'
-export type ResearchOverlayId = 'none' | 'subing' | 'n_structure' | 'jdj' | 'jdj_strategy' | 'htdy'
+export type ResearchOverlayId = 'none' | 'subing' | 'jdj_strategy' | 'htdy'
 
 export interface ResearchOverlayDefinition {
   id: ResearchOverlayId
@@ -9,7 +9,7 @@ export interface ResearchOverlayDefinition {
   supportedSeriesKinds: readonly SeriesKind[]
   supportedFrequencies: readonly MarketFrequency[]
   mainIndicators: readonly MainIndicatorId[]
-  historicalSource: 'none' | 'local' | 'subing' | 'n_structure' | 'jdj' | 'jdj_strategy'
+  historicalSource: 'none' | 'local' | 'subing' | 'jdj_strategy'
 }
 
 export interface DominantContractItem {
@@ -84,326 +84,6 @@ export interface MarketBarsPageResponse {
   canonical_coverage: { start: string; end: string } | null
   page: MarketPageMeta
   resolved_contract_segments: ResolvedContractSegment[]
-}
-
-export type MainForceMirrorV2State =
-  | 'long_build'
-  | 'short_build'
-  | 'short_cover'
-  | 'long_liquidation'
-  | 'turnover'
-export type MainForceMirrorV2Caution = 'long_chase_caution' | 'short_chase_caution'
-export type MainForceMemberRelation =
-  | 'strong_aligned'
-  | 'aligned'
-  | 'divergent'
-  | 'neutral'
-  | 'unavailable'
-
-export interface MainForceMirrorV2Identity {
-  seriesKind: SeriesKind
-  symbol: string
-  contract?: string
-  frequency: MarketFrequency
-  limit?: number
-}
-
-export interface MainForceMirrorV2PageRequest {
-  series_kind: SeriesKind
-  symbol: string
-  contract?: string
-  frequency: MarketFrequency
-  before: string | null
-  limit?: number
-}
-
-export interface MainForceMirrorV2RequestIdentity {
-  series_kind: MainForceMirrorV2Identity['seriesKind']
-  symbol: string
-  contract: string | null
-  frequency: '60m'
-  before: string | null
-  limit: number
-}
-
-export interface MainForceMirrorV2Indicator {
-  indicator_code: 'main_force_mirror_v2'
-  indicator_version: 'futures-member-research-v2'
-  formal_policy_id: 'main_force_mirror_observation_v2'
-  parameters_hash: string
-  interpretation: 'directional_position_pressure_proxy_not_measured_fund_flow'
-  observation_only: true
-  historical_only: true
-  auto_order: false
-}
-
-export interface MainForceMirrorV2MemberDataset {
-  status: 'ready' | 'unavailable'
-  dataset_id: string | null
-  schema_version: number | null
-  admitted_product: boolean
-  coverage: { start: string; end: string } | null
-}
-
-export interface MainForceMirrorV2Point {
-  bar_end: string
-  trading_day: string
-  physical_contract: string
-  pressure_ready: boolean
-  pressure_state: MainForceMirrorV2State | null
-  instant_pressure: number | null
-  accumulated_ready: boolean
-  accumulated_pressure: number | null
-  caution_ready: boolean
-  caution: MainForceMirrorV2Caution | null
-  caution_conflict: boolean
-  long_caution_score: number | null
-  short_caution_score: number | null
-  caution_reason_codes: string[]
-  price_impulse: number | null
-  clv: number | null
-  volume_ratio: number | null
-  delta_oi: number | null
-  oi_impulse: number | null
-  range_position: number | null
-  member_status: 'ready' | 'unavailable'
-  member_trade_date: string | null
-  member_direction: 'long' | 'short' | 'neutral' | null
-  member_change_bias: number | null
-  member_strength: number | null
-  position_skew: number | null
-  top5_volume_share: number | null
-  relation_to_accumulated: MainForceMemberRelation
-  relation_to_caution: MainForceMemberRelation
-  unavailable_reason: string | null
-}
-
-/** The Task 5 Pydantic contract serializes all public V2 numerics as JSON numbers. */
-type MainForceMirrorV2WirePoint = MainForceMirrorV2Point
-
-export interface MainForceMirrorV2PageWireResponse {
-  request: MainForceMirrorV2RequestIdentity
-  indicator: MainForceMirrorV2Indicator
-  member_dataset: MainForceMirrorV2MemberDataset
-  points: MainForceMirrorV2WirePoint[]
-  page: MarketPageMeta
-  resolved_contract_segments: ResolvedContractSegment[]
-}
-
-export interface MainForceMirrorV2PageResponse {
-  request: MainForceMirrorV2RequestIdentity
-  indicator: MainForceMirrorV2Indicator
-  member_dataset: MainForceMirrorV2MemberDataset
-  points: MainForceMirrorV2Point[]
-  page: MarketPageMeta
-  resolved_contract_segments: ResolvedContractSegment[]
-}
-
-/** The sole V2 HTTP boundary: validate finite JSON numerics and return detached DTO copies. */
-export function normalizeMainForceMirrorV2Page(
-  payload: MainForceMirrorV2PageWireResponse,
-): MainForceMirrorV2PageResponse {
-  if (!hasMainForceMirrorV2PageShape(payload)) {
-    throw new Error('MAIN_FORCE_MIRROR_V2_INVALID_RESPONSE')
-  }
-  return {
-    ...payload,
-    request: { ...payload.request },
-    indicator: { ...payload.indicator },
-    member_dataset: {
-      ...payload.member_dataset,
-      coverage: payload.member_dataset.coverage ? { ...payload.member_dataset.coverage } : null,
-    },
-    points: payload.points.map(normalizeMainForceMirrorV2Point),
-    page: { ...payload.page },
-    resolved_contract_segments: payload.resolved_contract_segments.map((segment) => ({ ...segment })),
-  }
-}
-
-function normalizeMainForceMirrorV2Point(point: MainForceMirrorV2WirePoint): MainForceMirrorV2Point {
-  if (!Array.isArray(point.caution_reason_codes)) {
-    throw new Error('MAIN_FORCE_MIRROR_V2_INVALID_RESPONSE')
-  }
-  return {
-    ...point,
-    instant_pressure: normalizeMainForceMirrorV2Number(point.instant_pressure),
-    accumulated_pressure: normalizeMainForceMirrorV2Number(point.accumulated_pressure),
-    long_caution_score: normalizeMainForceMirrorV2Number(point.long_caution_score),
-    short_caution_score: normalizeMainForceMirrorV2Number(point.short_caution_score),
-    price_impulse: normalizeMainForceMirrorV2Number(point.price_impulse),
-    clv: normalizeMainForceMirrorV2Number(point.clv),
-    volume_ratio: normalizeMainForceMirrorV2Number(point.volume_ratio),
-    delta_oi: normalizeMainForceMirrorV2Number(point.delta_oi),
-    oi_impulse: normalizeMainForceMirrorV2Number(point.oi_impulse),
-    range_position: normalizeMainForceMirrorV2Number(point.range_position),
-    member_change_bias: normalizeMainForceMirrorV2Number(point.member_change_bias),
-    member_strength: normalizeMainForceMirrorV2Number(point.member_strength),
-    position_skew: normalizeMainForceMirrorV2Number(point.position_skew),
-    top5_volume_share: normalizeMainForceMirrorV2Number(point.top5_volume_share),
-    caution_reason_codes: [...point.caution_reason_codes],
-  }
-}
-
-function normalizeMainForceMirrorV2Number(value: number | null): number | null {
-  if (value === null) return null
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
-    throw new Error('MAIN_FORCE_MIRROR_V2_INVALID_RESPONSE')
-  }
-  return Object.is(value, -0) ? 0 : value
-}
-
-function hasMainForceMirrorV2PageShape(value: unknown): value is MainForceMirrorV2PageWireResponse {
-  if (!isMainForceMirrorV2Record(value)) return false
-  return hasMainForceMirrorV2Request(value.request)
-    && hasMainForceMirrorV2Indicator(value.indicator)
-    && hasMainForceMirrorV2MemberDataset(value.member_dataset)
-    && Array.isArray(value.points)
-    && value.points.every(hasMainForceMirrorV2PointShape)
-    && hasMainForceMirrorV2PageMeta(value.page)
-    && Array.isArray(value.resolved_contract_segments)
-    && value.resolved_contract_segments.every(hasMainForceMirrorV2ResolvedContractSegment)
-}
-
-function isMainForceMirrorV2Record(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-function hasMainForceMirrorV2Request(value: unknown): boolean {
-  if (!isMainForceMirrorV2Record(value)) return false
-  const seriesKind = value.series_kind
-  return (seriesKind === 'actual_dominant' || seriesKind === 'contract')
-    && isMainForceMirrorV2NonEmptyString(value.symbol)
-    && (seriesKind === 'actual_dominant'
-      ? value.contract === null
-      : isMainForceMirrorV2NonEmptyString(value.contract))
-    && value.frequency === '60m'
-    && isMainForceMirrorV2NullableInstant(value.before)
-    && isMainForceMirrorV2Integer(value.limit)
-    && value.limit >= 1
-    && value.limit <= 2000
-}
-
-function hasMainForceMirrorV2Indicator(value: unknown): boolean {
-  if (!isMainForceMirrorV2Record(value)) return false
-  return value.indicator_code === 'main_force_mirror_v2'
-    && value.indicator_version === 'futures-member-research-v2'
-    && value.formal_policy_id === 'main_force_mirror_observation_v2'
-    && isMainForceMirrorV2NonEmptyString(value.parameters_hash)
-    && value.interpretation === 'directional_position_pressure_proxy_not_measured_fund_flow'
-    && value.observation_only === true
-    && value.historical_only === true
-    && value.auto_order === false
-}
-
-function hasMainForceMirrorV2MemberDataset(value: unknown): boolean {
-  if (!isMainForceMirrorV2Record(value)) return false
-  return (value.status === 'ready' || value.status === 'unavailable')
-    && isMainForceMirrorV2NullableString(value.dataset_id)
-    && isMainForceMirrorV2NullableInteger(value.schema_version)
-    && typeof value.admitted_product === 'boolean'
-    && hasMainForceMirrorV2Coverage(value.coverage)
-}
-
-function hasMainForceMirrorV2Coverage(value: unknown): boolean {
-  if (value === null) return true
-  return isMainForceMirrorV2Record(value)
-    && isMainForceMirrorV2Date(value.start)
-    && isMainForceMirrorV2Date(value.end)
-    && value.start <= value.end
-}
-
-function hasMainForceMirrorV2PageMeta(value: unknown): boolean {
-  return isMainForceMirrorV2Record(value)
-    && typeof value.has_more_before === 'boolean'
-    && isMainForceMirrorV2NullableInstant(value.next_before)
-}
-
-function hasMainForceMirrorV2ResolvedContractSegment(value: unknown): boolean {
-  return isMainForceMirrorV2Record(value)
-    && isMainForceMirrorV2NonEmptyString(value.contract)
-    && isMainForceMirrorV2Date(value.start_trading_day)
-    && isMainForceMirrorV2Date(value.end_trading_day)
-    && value.start_trading_day <= value.end_trading_day
-}
-
-function hasMainForceMirrorV2PointShape(value: unknown): boolean {
-  if (!isMainForceMirrorV2Record(value)) return false
-  return isMainForceMirrorV2Instant(value.bar_end)
-    && isMainForceMirrorV2Date(value.trading_day)
-    && isMainForceMirrorV2NonEmptyString(value.physical_contract)
-    && typeof value.pressure_ready === 'boolean'
-    && isMainForceMirrorV2NullableEnum(value.pressure_state, MAIN_FORCE_MIRROR_V2_STATES)
-    && typeof value.accumulated_ready === 'boolean'
-    && typeof value.caution_ready === 'boolean'
-    && isMainForceMirrorV2NullableEnum(value.caution, MAIN_FORCE_MIRROR_V2_CAUTIONS)
-    && typeof value.caution_conflict === 'boolean'
-    && isMainForceMirrorV2ReasonCodes(value.caution_reason_codes)
-    && (value.member_status === 'ready' || value.member_status === 'unavailable')
-    && isMainForceMirrorV2NullableDate(value.member_trade_date)
-    && isMainForceMirrorV2NullableEnum(value.member_direction, MAIN_FORCE_MIRROR_V2_MEMBER_DIRECTIONS)
-    && isMainForceMirrorV2NullableEnum(value.relation_to_accumulated, MAIN_FORCE_MIRROR_V2_MEMBER_RELATIONS, false)
-    && isMainForceMirrorV2NullableEnum(value.relation_to_caution, MAIN_FORCE_MIRROR_V2_MEMBER_RELATIONS, false)
-    && isMainForceMirrorV2NullableString(value.unavailable_reason)
-}
-
-const MAIN_FORCE_MIRROR_V2_STATES = new Set([
-  'long_build', 'short_build', 'short_cover', 'long_liquidation', 'turnover',
-])
-const MAIN_FORCE_MIRROR_V2_CAUTIONS = new Set(['long_chase_caution', 'short_chase_caution'])
-const MAIN_FORCE_MIRROR_V2_MEMBER_DIRECTIONS = new Set(['long', 'short', 'neutral'])
-const MAIN_FORCE_MIRROR_V2_MEMBER_RELATIONS = new Set([
-  'strong_aligned', 'aligned', 'divergent', 'neutral', 'unavailable',
-])
-
-function isMainForceMirrorV2NullableEnum(
-  value: unknown,
-  allowed: Set<string>,
-  nullable = true,
-): boolean {
-  return (nullable && value === null) || (typeof value === 'string' && allowed.has(value))
-}
-
-function isMainForceMirrorV2ReasonCodes(value: unknown): boolean {
-  return Array.isArray(value) && value.every(isMainForceMirrorV2NonEmptyString)
-}
-
-function isMainForceMirrorV2NullableString(value: unknown): boolean {
-  return value === null || isMainForceMirrorV2NonEmptyString(value)
-}
-
-function isMainForceMirrorV2NonEmptyString(value: unknown): value is string {
-  return typeof value === 'string' && value.length > 0 && value.trim() === value
-}
-
-function isMainForceMirrorV2NullableInteger(value: unknown): boolean {
-  return value === null || isMainForceMirrorV2Integer(value)
-}
-
-function isMainForceMirrorV2Integer(value: unknown): value is number {
-  return typeof value === 'number' && Number.isSafeInteger(value)
-}
-
-function isMainForceMirrorV2NullableDate(value: unknown): boolean {
-  return value === null || isMainForceMirrorV2Date(value)
-}
-
-function isMainForceMirrorV2Date(value: unknown): value is string {
-  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
-  const timestamp = Date.parse(`${value}T00:00:00Z`)
-  return Number.isFinite(timestamp) && new Date(timestamp).toISOString().slice(0, 10) === value
-}
-
-function isMainForceMirrorV2NullableInstant(value: unknown): boolean {
-  return value === null || isMainForceMirrorV2Instant(value)
-}
-
-function isMainForceMirrorV2Instant(value: unknown): value is string {
-  if (
-    typeof value !== 'string'
-    || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(value)
-  ) return false
-  const date = value.slice(0, 10)
-  return isMainForceMirrorV2Date(date) && Number.isFinite(Date.parse(value))
 }
 
 /** Read-only Product Research snapshot; nullable backend metrics stay nullable in the browser. */
@@ -706,7 +386,6 @@ export interface MarketRadarSectorSummary {
   up_count: number
   down_count: number
   median_price_change_1d: number | null
-  attention_count: number
 }
 
 export interface MarketRadarResponse {
@@ -722,8 +401,32 @@ export interface MarketRadarResponse {
   unavailable: string[]
   summary: MarketRadarSummary
   items: MarketRadarItem[]
-  attention: MarketRadarItem[]
   sector_summary: MarketRadarSectorSummary[]
+}
+
+/** FastAPI serializes Radar Decimal values as strings; normalize at the HTTP boundary. */
+export function normalizeMarketRadar(payload: MarketRadarResponse): MarketRadarResponse {
+  return {
+    ...payload,
+    items: payload.items.map((item) => ({
+      ...item,
+      price_change_1d: normalizeMarketRadarDecimal(item.price_change_1d),
+      price_change_5d: normalizeMarketRadarDecimal(item.price_change_5d),
+      volume_ratio20: normalizeMarketRadarDecimal(item.volume_ratio20),
+      oi_change_1d: normalizeMarketRadarDecimal(item.oi_change_1d),
+      atr14_percentile252: normalizeMarketRadarDecimal(item.atr14_percentile252),
+      position20: normalizeMarketRadarDecimal(item.position20),
+      turnover: normalizeMarketRadarDecimal(item.turnover),
+    })),
+    sector_summary: payload.sector_summary.map((sector) => ({
+      ...sector,
+      median_price_change_1d: normalizeMarketRadarDecimal(sector.median_price_change_1d),
+    })),
+  }
+}
+
+function normalizeMarketRadarDecimal(value: number | string | null): number | null {
+  return value === null ? null : Number(value)
 }
 
 export type SubingDailyWatchDecision = 'long_watch' | 'short_watch'
@@ -979,97 +682,6 @@ function isDailyWatchTimestamp(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0 && Number.isFinite(Date.parse(value))
 }
 
-export type MarketTrendFocusDirection = 'long' | 'short'
-export type MarketTrendFocusStage = 'setup' | 'breakout' | 'retest' | 'ready' | 'running' | 'weakening'
-export type MarketTrendFocusHourlyState = 'continuation' | 'pullback' | 'reversal_block'
-
-interface MarketTrendFocusItemBase<TDecimal> {
-  symbol: string
-  product_name: string
-  sector: string
-  physical_contract: string
-  direction: MarketTrendFocusDirection
-  stage: MarketTrendFocusStage
-  hot_conditions: string[]
-  hot_count: number
-  price_change_1d: TDecimal | null
-  volume_ratio20: TDecimal | null
-  atr14_percentile252: TDecimal | null
-  daily_volume_support: boolean
-  hourly_state: MarketTrendFocusHourlyState
-  hourly_volume_support: boolean
-  range_upper: TDecimal
-  range_lower: TDecimal
-  confirmation_count: number
-  retest_held: boolean
-  rebreak_reference: TDecimal | null
-  ready_invalidation: TDecimal | null
-  volume_confirmed: boolean
-  five_minute_confirmed: boolean
-  entry_confirmed_at: string | null
-  latest_swing_high: TDecimal | null
-  latest_swing_low: TDecimal | null
-  next_level: TDecimal | null
-  invalidation_level: TDecimal | null
-  last_transition_at: string
-}
-
-export type MarketTrendFocusWireItem = MarketTrendFocusItemBase<number | string>
-export type MarketTrendFocusItem = MarketTrendFocusItemBase<number>
-
-export interface MarketTrendFocusUnavailable {
-  symbol: string | null
-  code: string
-}
-
-interface MarketTrendFocusResponseBase<TItem> {
-  status: 'ready' | 'degraded'
-  observed_at: string
-  long_opportunities: TItem[]
-  short_opportunities: TItem[]
-  running_trends: TItem[]
-  weakening_trends: TItem[]
-  unavailable: MarketTrendFocusUnavailable[]
-}
-
-export type MarketTrendFocusWireResponse = MarketTrendFocusResponseBase<MarketTrendFocusWireItem>
-export type MarketTrendFocusResponse = MarketTrendFocusResponseBase<MarketTrendFocusItem>
-
-export function normalizeMarketTrendFocus(
-  payload: MarketTrendFocusWireResponse,
-): MarketTrendFocusResponse {
-  return {
-    ...payload,
-    long_opportunities: payload.long_opportunities.map(normalizeMarketTrendFocusItem),
-    short_opportunities: payload.short_opportunities.map(normalizeMarketTrendFocusItem),
-    running_trends: payload.running_trends.map(normalizeMarketTrendFocusItem),
-    weakening_trends: payload.weakening_trends.map(normalizeMarketTrendFocusItem),
-  }
-}
-
-function normalizeMarketTrendFocusItem(
-  item: MarketTrendFocusWireItem,
-): MarketTrendFocusItem {
-  return {
-    ...item,
-    price_change_1d: normalizeTrendFocusDecimal(item.price_change_1d),
-    volume_ratio20: normalizeTrendFocusDecimal(item.volume_ratio20),
-    atr14_percentile252: normalizeTrendFocusDecimal(item.atr14_percentile252),
-    range_upper: Number(item.range_upper),
-    range_lower: Number(item.range_lower),
-    rebreak_reference: normalizeTrendFocusDecimal(item.rebreak_reference),
-    ready_invalidation: normalizeTrendFocusDecimal(item.ready_invalidation),
-    latest_swing_high: normalizeTrendFocusDecimal(item.latest_swing_high),
-    latest_swing_low: normalizeTrendFocusDecimal(item.latest_swing_low),
-    next_level: normalizeTrendFocusDecimal(item.next_level),
-    invalidation_level: normalizeTrendFocusDecimal(item.invalidation_level),
-  }
-}
-
-function normalizeTrendFocusDecimal(value: number | string | null): number | null {
-  return value === null ? null : Number(value)
-}
-
 /** 后端 `/market/state` 与 WebSocket `state` 事件的只读展示状态。 */
 export interface MarketReadState {
   symbol: string
@@ -1132,56 +744,6 @@ export interface SubingHistoricalSignalEvent {
 export interface SubingHistoricalSignalResponse {
   request: SubingHistoricalSignalRequest
   events: SubingHistoricalSignalEvent[]
-}
-
-export interface NStructureHistoricalRequest {
-  series_kind: 'actual_dominant'
-  symbol: string
-  frequency: '5m'
-  since: string
-  through: string
-}
-
-export interface NStructureHistoricalEvent {
-  event_id: string
-  observed_at: string
-  trading_day: string
-  contract: string
-  segment_start_trading_day: string
-  direction: 'up' | 'down'
-}
-
-export interface NStructureHistoricalResponse {
-  request: NStructureHistoricalRequest
-  events: NStructureHistoricalEvent[]
-}
-
-export interface JdjHistoricalRequest {
-  series_kind: 'actual_dominant'
-  symbol: string
-  frequency: '1m'
-  since: string
-  through: string
-}
-
-export interface JdjHistoricalEvent {
-  event_id: string
-  candidate_id:
-    | 'jdj_trend_follow_1m_candidate_v1'
-    | 'jdj_trend_reentry_6_1m_candidate_v1'
-    | 'jdj_key_level_breakout_1m_candidate_v1'
-  source_event_kind: string
-  observed_at: string
-  trading_day: string
-  contract: string
-  segment_start_trading_day: string
-  direction: 'long' | 'short'
-  trigger_level: string
-}
-
-export interface JdjHistoricalResponse {
-  request: JdjHistoricalRequest
-  events: JdjHistoricalEvent[]
 }
 
 export interface JdjStrategyHistoricalRequest {
@@ -1290,28 +852,7 @@ export interface HoverKlineContext {
   bar: BarData
   mainIndicators?: MainIndicatorValue[]
   macd?: { dif?: number | null; dea?: number | null; histogram?: number | null } | null
-  mainForceMirrorV2?: MainForceMirrorV2HoverDetails | null
   atr?: number | null
   marker?: KlineMarker | null
   cursorPrice?: number | null
-}
-
-export interface MainForceMirrorV2HoverDetails {
-  physicalContract: string
-  state: MainForceMirrorV2State | null
-  instantPressure: number | null
-  accumulatedPressure: number | null
-  caution: MainForceMirrorV2Caution | null
-  longScore: number | null
-  shortScore: number | null
-  memberStatus: 'ready' | 'unavailable'
-  memberTradeDate: string | null
-  memberDirection: 'long' | 'short' | 'neutral' | null
-  memberChangeBias: number | null
-  memberStrength: number | null
-  positionSkew: number | null
-  top5VolumeShare: number | null
-  relationToAccumulated: MainForceMemberRelation
-  relationToCaution: MainForceMemberRelation
-  unavailableReason: string | null
 }

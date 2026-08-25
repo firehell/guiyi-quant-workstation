@@ -1,8 +1,0 @@
-blank_issues_enabled: true
-contact_links:
-  - name: AGENTS.md
-    url: https://github.com/firehell/guiyi-quant-workstation/blob/main/AGENTS.md
-    about: Development rules; Issue/PR are optional and not authorization
-  - name: DECISIONS.md
-    url: https://github.com/firehell/guiyi-quant-workstation/blob/main/DECISIONS.md
-    about: Long-lived workflow and product decisions

@@ -1,0 +1,84 @@
+import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import test from 'node:test'
+
+import { MARKET_FREQUENCIES } from '../src/types/market.ts'
+import {
+  RESEARCH_OVERLAY_DEFINITIONS,
+  researchOverlayCapability,
+} from '../src/utils/mainIndicators.ts'
+
+
+test('public Market Overlay definitions expose only four retained choices', () => {
+  assert.deepEqual(
+    RESEARCH_OVERLAY_DEFINITIONS.map(({ id, label }) => ({ id, label })),
+    [
+      { id: 'none', label: '无' },
+      { id: 'subing', label: '苏冰' },
+      { id: 'jdj_strategy', label: '日进斗金参考回放' },
+      { id: 'htdy', label: '火天大有' },
+    ],
+  )
+})
+
+test('HTDY retains all seven formal frequencies after Overlay convergence', () => {
+  assert.deepEqual(
+    RESEARCH_OVERLAY_DEFINITIONS.find(({ id }) => id === 'htdy')?.supportedFrequencies,
+    MARKET_FREQUENCIES,
+  )
+  for (const frequency of MARKET_FREQUENCIES) {
+    assert.equal(
+      researchOverlayCapability('htdy', 'actual_dominant', frequency).supported,
+      true,
+      frequency,
+    )
+  }
+})
+
+test('Web public DTO, API, and marker modules omit N and raw JDJ while retaining JDJ Strategy', () => {
+  const typesSource = read('../src/types/market.ts')
+  const apiSource = read('../src/api/market.ts')
+  const markerSource = read('../src/utils/historicalResearchMarkers.ts')
+  const loaderSource = read('../src/composables/useHistoricalResearchMarkers.ts')
+
+  for (const retiredName of [
+    'NStructureHistoricalRequest',
+    'NStructureHistoricalEvent',
+    'NStructureHistoricalResponse',
+    'JdjHistoricalRequest',
+    'JdjHistoricalEvent',
+    'JdjHistoricalResponse',
+    'getNStructureHistoricalEvents',
+    'getJdjHistoricalEvents',
+    'nStructureHistoricalEventToMarker',
+    'jdjHistoricalEventToMarker',
+    'fetchNStructure',
+    'fetchJdj:',
+  ]) {
+    assert.equal(
+      [typesSource, apiSource, markerSource, loaderSource].some((source) => source.includes(retiredName)),
+      false,
+      retiredName,
+    )
+  }
+
+  assert.match(typesSource, /export interface JdjStrategyHistoricalResponse/)
+  assert.match(apiSource, /export function getJdjStrategyHistoricalActions/)
+  assert.match(markerSource, /export function jdjStrategyActionToMarker/)
+  assert.match(loaderSource, /fetchJdjStrategy/)
+})
+
+test('visible product copy uses the single approved SuBing and JDJ replay names', () => {
+  const sidebarSource = read('../src/components/market/ProductCheckSidebar.vue')
+  const subingPanelSource = read('../src/components/market/SubingPanel.vue')
+
+  assert.match(sidebarSource, /<strong>日进斗金参考回放 · Reference only<\/strong>/)
+  assert.doesNotMatch(sidebarSource, /日进斗金策略/)
+  assert.match(sidebarSource, /<summary>5\. 更多研究<\/summary>/)
+  assert.doesNotMatch(subingPanelSource, />SuBing</)
+  assert.match(subingPanelSource, />苏冰</)
+})
+
+function read(path: string): string {
+  return readFileSync(new URL(path, import.meta.url), 'utf8')
+}

@@ -48,8 +48,8 @@ guiyi_quant/
 - 默认 EMA 口径为 `seed_policy=sma_window`，对齐当前 Web `calculateEMA`。
 - MACD / ATR 已登记为 `compatibility_validated`（非正式 `validated`），不得据此静默迁移 live evaluator。
 - 火天大有 original=`observation_only`；strict=`strategy_candidate`。original 只允许明确命名的
-  `htdy_alert_observation` consumer 在 actual-dominant confirmed 15m current-last-bar 边界评估；
-  generic live/alert/notification 仍 fail-closed。
+  `htdy_alert_observation` consumer 在 actual-dominant confirmed `1m/5m/15m/30m/60m/1d/1w`
+  current-last-bar 边界评估；generic live/alert/notification 仍 fail-closed。
 
 ## 明确不做
 

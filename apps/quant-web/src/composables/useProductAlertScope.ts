@@ -61,7 +61,13 @@ export function useProductAlertScope(dependencies: Dependencies) {
     }
   }
 
-  async function toggle(ruleCode: string, enabled: boolean): Promise<void> {
+  async function mutateExactRule(
+    ruleCode: string,
+    update: (
+      requestedSymbol: string,
+      requestedFrequency: MarketFrequency,
+    ) => Promise<ProductAlertRuleState>,
+  ): Promise<void> {
     const current = rulesByCode.value.get(ruleCode)
     const requestedSymbol = dependencies.symbol.value
     const requestedFrequency = dependencies.frequency.value
@@ -69,18 +75,7 @@ export function useProductAlertScope(dependencies: Dependencies) {
     if (!current || !requestedSymbol || savingRuleCodes.value.has(ruleCode)) return
     savingRuleCodes.value = new Set(savingRuleCodes.value).add(ruleCode)
     try {
-      const updated = current.rule_code === ALERT_RULE_CODES.HTDY
-        ? await dependencies.setProductFrequencyEnabled(
-            ruleCode,
-            requestedSymbol,
-            requestedFrequency,
-            enabled,
-          )
-        : await dependencies.setProductEnabled(
-            ruleCode,
-            requestedSymbol,
-            enabled,
-          )
+      const updated = await update(requestedSymbol, requestedFrequency)
       if (isCurrentAlertMutation({
         requestGeneration,
         currentGeneration: generation,
@@ -103,6 +98,29 @@ export function useProductAlertScope(dependencies: Dependencies) {
     }
   }
 
+  function toggleSubingProduct(ruleCode: string, enabled: boolean): Promise<void> {
+    if (ruleCode !== ALERT_RULE_CODES.SUBING) return Promise.resolve()
+    return mutateExactRule(ruleCode, (requestedSymbol) => (
+      dependencies.setProductEnabled(
+        ALERT_RULE_CODES.SUBING,
+        requestedSymbol,
+        enabled,
+      )
+    ))
+  }
+
+  function toggleHtdyCurrentFrequency(ruleCode: string, enabled: boolean): Promise<void> {
+    if (ruleCode !== ALERT_RULE_CODES.HTDY) return Promise.resolve()
+    return mutateExactRule(ruleCode, (requestedSymbol, requestedFrequency) => (
+      dependencies.setProductFrequencyEnabled(
+        ALERT_RULE_CODES.HTDY,
+        requestedSymbol,
+        requestedFrequency,
+        enabled,
+      )
+    ))
+  }
+
   function isCurrent(requestGeneration: number, requestedSymbol: string): boolean {
     return requestGeneration === generation
       && dependencies.symbol.value === requestedSymbol
@@ -120,7 +138,8 @@ export function useProductAlertScope(dependencies: Dependencies) {
     alertLoading,
     savingRuleCodes,
     refresh,
-    toggle,
+    toggleSubingProduct,
+    toggleHtdyCurrentFrequency,
     dispose,
   }
 }

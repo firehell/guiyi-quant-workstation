@@ -7,14 +7,10 @@ from typing import Protocol, cast
 from app.guiyi_cli.research_payloads import (
     _calibration_payload,
     _candidate_payload,
-    _five_candidate_dossier_payload,
-    _five_candidate_relationship_payload,
     _jdj_active60_robustness_payload,
     _jdj_candidate_payload,
     _jdj_research_payload,
     _lifecycle_payload,
-    _main_force_mirror_v2_payload,
-    _main_force_mirror_diagnostic_payload,
     _multi_candidate_robustness_payload,
     _n_candidate_payload,
     _n_structure_payload,
@@ -27,16 +23,6 @@ from app.research.jdj.jdj_candidate_validation import (
     JdjCandidateValidationReport,
 )
 from app.research.jdj.jdj_research import JdjResearchRequest, JdjResearchResult
-from app.research.main_force.main_force_mirror_v2_research_service import (
-    MainForceMirrorV2ResearchRequest,
-    MainForceMirrorV2ResearchResult,
-)
-from app.research.main_force.main_force_mirror_diagnostic_policy import (
-    MainForceMirrorDiagnosticRequest,
-)
-from app.research.main_force.main_force_mirror_diagnostic_service import (
-    MainForceMirrorDiagnosticResult,
-)
 from app.research.n_structure.n_candidate_validation import (
     NStructureCandidateValidationReport,
 )
@@ -63,16 +49,6 @@ from app.research.subing.subing_lifecycle_research_service import (
     LifecycleResearchRequest,
     SubingLifecycleResearchResult,
 )
-from app.research.candidate_convergence.five_candidate_dossier import (
-    FiveCandidateDossierRequest,
-    FiveCandidateResearchDossier,
-)
-from app.research.candidate_convergence.five_candidate_relationships import (
-    FiveCandidateRelationshipReport,
-    FiveCandidateRelationshipRequest,
-)
-
-
 class _CalibrationResearchService(Protocol):
     def run(self, request: CalibrationResearchRequest) -> CalibrationResearchResult: ...
 
@@ -102,20 +78,6 @@ class _CandidateValidationService(Protocol):
     ): ...
 
 
-class _MainForceMirrorV2ResearchService(Protocol):
-    def run(
-        self,
-        request: MainForceMirrorV2ResearchRequest,
-    ) -> MainForceMirrorV2ResearchResult: ...
-
-
-class _MainForceMirrorDiagnosticService(Protocol):
-    def run(
-        self,
-        request: MainForceMirrorDiagnosticRequest,
-    ) -> MainForceMirrorDiagnosticResult: ...
-
-
 class _MultiCandidateRobustnessService(Protocol):
     def run(
         self, request: MultiCandidateRobustnessRequest
@@ -128,31 +90,11 @@ class _JdjActive60RobustnessService(Protocol):
     ) -> JdjActive60RobustnessReport: ...
 
 
-class _FiveCandidateDossierService(Protocol):
-    def run(
-        self, request: FiveCandidateDossierRequest
-    ) -> FiveCandidateResearchDossier: ...
-
-
-class _FiveCandidateRelationshipService(Protocol):
-    def run(
-        self, request: FiveCandidateRelationshipRequest
-    ) -> FiveCandidateRelationshipReport: ...
-
-
 def run_research_command(
     request: ResearchRequest,
     service: object,
 ) -> dict[str, object]:
     """Run one Historical-only research command and render its JSON schema."""
-    if isinstance(request, FiveCandidateDossierRequest):
-        dossier_service = cast(_FiveCandidateDossierService, service)
-        return _five_candidate_dossier_payload(dossier_service.run(request))
-    if isinstance(request, FiveCandidateRelationshipRequest):
-        relationship_service = cast(_FiveCandidateRelationshipService, service)
-        return _five_candidate_relationship_payload(
-            relationship_service.run(request)
-        )
     if isinstance(request, JdjActive60RobustnessRequest):
         jdj_robustness_service = cast(_JdjActive60RobustnessService, service)
         return _jdj_active60_robustness_payload(
@@ -161,14 +103,6 @@ def run_research_command(
     if isinstance(request, MultiCandidateRobustnessRequest):
         robustness_service = cast(_MultiCandidateRobustnessService, service)
         return _multi_candidate_robustness_payload(robustness_service.run(request))
-    if isinstance(request, MainForceMirrorV2ResearchRequest):
-        mirror_service = cast(_MainForceMirrorV2ResearchService, service)
-        return _main_force_mirror_v2_payload(request, mirror_service.run(request))
-    if isinstance(request, MainForceMirrorDiagnosticRequest):
-        diagnostic_service = cast(_MainForceMirrorDiagnosticService, service)
-        return _main_force_mirror_diagnostic_payload(
-            diagnostic_service.run(request)
-        )
     if isinstance(request, JdjResearchRequest):
         jdj_service = cast(_JdjResearchService, service)
         return _jdj_research_payload(request, jdj_service.run(request))
