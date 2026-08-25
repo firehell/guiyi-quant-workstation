@@ -504,6 +504,7 @@ def test_runtime_parser_exposes_active_runtime_commands() -> None:
         "live",
         "alert",
         "alert-canary",
+        "acknowledge-alert-notification",
     }
 
 

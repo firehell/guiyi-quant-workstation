@@ -2,14 +2,19 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
+from datetime import UTC, datetime
 import json
 from typing import Any
+
+from redis.exceptions import WatchError
 
 from app.alerts.evaluators import HtdyOriginalEvaluator
 from app.alerts.notification_composition import build_notification_sender_from_env
 from app.alerts.runtime import (
+    AlertNotificationAcknowledgeError,
     AlertRuntime,
+    acknowledge_notification_failure,
     empty_alert_runtime_status,
     validate_alert_runtime_status,
 )
@@ -79,6 +84,75 @@ class RedisAlertRuntimeStatusStore:
         )
         if persisted is not True:
             raise RuntimeError("ALERT_RUNTIME_STATUS_WRITE_FAILED")
+
+    def acknowledge_notification_failure(
+        self,
+        *,
+        expected_failure_at: str,
+        acknowledged_at: datetime,
+    ) -> dict[str, object]:
+        return self._atomic_mutate(
+            lambda current: acknowledge_notification_failure(
+                current,
+                expected_failure_at=expected_failure_at,
+                acknowledged_at=acknowledged_at,
+            )
+        )
+
+    def update(self, changes: dict[str, object]) -> dict[str, object]:
+        return self._atomic_mutate(
+            lambda current: validate_alert_runtime_status(
+                {**current, **changes}
+            )
+        )
+
+    def _atomic_mutate(
+        self,
+        mutation: Callable[[dict[str, object]], dict[str, object]],
+    ) -> dict[str, object]:
+        pipeline = self._redis.pipeline()
+        try:
+            pipeline.watch("alert:runtime-status")
+            raw = pipeline.get("alert:runtime-status")
+            if raw is None:
+                current = empty_alert_runtime_status()
+            else:
+                if isinstance(raw, bytes):
+                    raw = raw.decode("utf-8")
+                parsed = json.loads(raw)
+                if not isinstance(parsed, Mapping):
+                    raise ValueError("ALERT_RUNTIME_STATUS_INVALID")
+                current = validate_alert_runtime_status(parsed)
+            updated = mutation(current)
+            pipeline.multi()
+            pipeline.set(
+                "alert:runtime-status",
+                json.dumps(
+                    updated,
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                ),
+            )
+            if pipeline.execute() != [True]:
+                raise RuntimeError("ALERT_RUNTIME_STATUS_WRITE_FAILED")
+            return updated
+        except WatchError as exc:
+            raise AlertNotificationAcknowledgeError(
+                "ALERT_RUNTIME_STATUS_CHANGED"
+            ) from exc
+        finally:
+            pipeline.reset()
+
+
+def acknowledge_alert_notification_failure(
+    expected_failure_at: str,
+) -> dict[str, object]:
+    return RedisAlertRuntimeStatusStore(
+        get_redis_connection()
+    ).acknowledge_notification_failure(
+        expected_failure_at=expected_failure_at,
+        acknowledged_at=datetime.now(UTC),
+    )
 
 
 def build_alert_runtime() -> AlertRuntime:

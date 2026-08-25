@@ -183,6 +183,7 @@ def _collect_alert_health(
         "last_transport_attempt_at": None,
         "last_provider_accepted_at": None,
         "last_notification_failure_at": None,
+        "notification_acknowledged_at": None,
         "notification_error_type": None,
         "consecutive_notification_failures": 0,
         "error_type": None,
@@ -307,14 +308,22 @@ def _alert_runtime_observation(
     notification_failure = _optional_timestamp(
         runtime_status["last_notification_failure_at"]
     )
+    notification_acknowledged = _optional_timestamp(
+        runtime_status["notification_acknowledged_at"]
+    )
     if provider_accepted is None and notification_failure is None:
         notification_state = "unobserved"
-    elif notification_failure is not None and (
-        provider_accepted is None or notification_failure >= provider_accepted
+    elif notification_failure is None or (
+        provider_accepted is not None and provider_accepted > notification_failure
     ):
-        notification_state = "failed"
-    else:
         notification_state = "provider_accepted"
+    elif (
+        notification_acknowledged is not None
+        and notification_acknowledged >= notification_failure
+    ):
+        notification_state = "acknowledged"
+    else:
+        notification_state = "failed"
 
     return {
         "processing_state": processing_state,
@@ -336,6 +345,9 @@ def _alert_runtime_observation(
         ],
         "last_notification_failure_at": runtime_status[
             "last_notification_failure_at"
+        ],
+        "notification_acknowledged_at": runtime_status[
+            "notification_acknowledged_at"
         ],
         "notification_error_type": runtime_status["notification_error_type"],
         "consecutive_notification_failures": runtime_status[

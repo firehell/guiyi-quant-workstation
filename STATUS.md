@@ -7,7 +7,7 @@
 - 正式 release 为 `v1.8.3@9ca18afc9b056d413ee8cac56a056b7d7df078b4`；本机五个 launchd label 当前绑定 clean/detached `/Volumes/扩展盘/guiyi-quant-runtime-v1.8.3` 的同一 commit。该 Runtime 身份不包含本次 develop 收敛代码。
 - 本地 API、Web、Live 与 Alert 从该根运行；2026-08-25 自然 after-market 已于 18:05:02 开始、19:40:05 以 `passed` 终态完成，单次 attempts=1、覆盖 active60。旧 v1.8.2 Runtime worktree 保留为 rollback 资产，当前无 label 指向。
 - production Alembic 已在 `20260825_0040 (head)`。HTDY production Scope 曾于 15:13 在独立明确授权下更新为 active 60 × 七周期 `60 symbols / 420 pairs`，随后于 20:43 按新的明确请求原子收敛为唯一 `jm × 15m`（`1 symbol / 1 pair`）；七周期图表能力与逐 `symbol × frequency` 开关能力不变，SuBing Scope 未变，未触发 Event、重放或通知。
-- Alert transport 为 pushplus，provider accepted 不等于微信送达。Execution Review roll 仍为 `disabled`。
+- Alert transport 为 pushplus，provider accepted 不等于微信送达。19:40 的 processing failure 已被后续 `jm × 15m` 自然处理成功覆盖为 `processing_state=ok`；当前 Runtime 的 `degraded` 仅由同一时点保留的 `notification_transport_failed` 导致。develop 已加入 W1 周内正常跳过修复与保留失败事实的显式 notification acknowledgment 代码，但尚未 release、Runtime promotion 或执行 production acknowledgment。Execution Review roll 仍为 `disabled`。
 
 ## 已集成 develop 的 Architecture Convergence
 
@@ -16,7 +16,7 @@ Architecture Convergence Tasks 1–6 已通过 merge `0cc2452048f2b03b521f351e1c
 保留的产品与研究事实：
 
 - SuBing 仍有 Daily Context、Current Signal State、Formal Event 三类独立事实；本次自然盘后已生成 target=2026-08-26 的 Daily Watch，current=ready，计数为 universe=60、long=1、short=1、excluded=2、unavailable=56。unavailable 仍是显式数据充分性结果，不构成补取或回填授权。
-- HTDY 七周期、frequency-aware Event 与 symbol × frequency Scope 已是 release/Runtime 事实；当前 production Scope 精确为 `jm × 15m`。此前 420-pair Scope 下自然形成的 6 条 D1 Event 保持 immutable，未删除、重放或补发；本次终态 health 观察到 Alert 处理失败并记录一次 provider accepted transport attempt，但这不证明微信送达，也不改变真实通知 Gate；自然 D1/W1 event identity/evidence 仍需按各自事实独立核验。
+- HTDY 七周期、frequency-aware Event 与 symbol × frequency Scope 已是 release/Runtime 事实；当前 production Scope 精确为 `jm × 15m`。此前 420-pair Scope 下自然形成的 6 条 D1 Event 保持 immutable，未删除、重放或补发；19:40 曾出现 W1 处理失败并记录 provider accepted 与一次 transport failure，后续 processing 已自然恢复，但这仍不证明微信送达，也不改变真实通知 Gate；自然 D1/W1 event identity/evidence 仍需按各自事实独立核验。
 - Candidate Validation/Robustness 与 pending prospective OOS 保留；Generic Robustness relationship metrics 保留。已退役 phase-specific Dossier/Relationships 不再是 pending Gate。
 - Alembic migration history、`futures_member_ranks` table identity 与仓库外既有 historical snapshots 保留；没有 active reader/builder/provider/CLI。
 - RQAlpha local-only workbench 未加载、未进入 Runtime；真实 smoke 仍 pending。

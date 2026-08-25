@@ -92,10 +92,15 @@ PushPlus SDK。HTDY 日内五周期只消费同周期 completed Live Bar，D1/W1
 Rule、Scope、audience 或 transport 授权。当前 production、Runtime、Scope 与待完成 Gate 只看 `STATUS.md`，
 不得由本节、历史 canary、已有配置或既有 release 推断。
 
-Alert 运行观察只写无 TTL 的 Redis `alert:runtime-status` schema v1；missing 只表示
-`unobserved`。状态只允许固定公开失败分类，不保存 provider reference；状态写入失败必须
-fail-closed 使受监督进程退出/重启。该 Redis observation 不改变 `AlertEvent`、DB schema 或
-`notification_attempted_at` 的既有语义，provider accepted 也始终不等于微信送达。
+Alert 运行观察只写无 TTL 的 Redis `alert:runtime-status` schema v2，并兼容读取旧 schema v1；
+missing 只表示 `unobserved`。v2 的 `notification_acknowledged_at` 只允许 operator 通过精确匹配
+当前 `last_notification_failure_at` 的 CLI 做一次 CAS acknowledgment；原失败时间、公开错误分类与
+连续失败计数均保留，不重放 Event、不补发通知，也不把 acknowledgment 表述为 provider accepted
+或微信送达。任何新的 notification failure（包括同一批次的同时间戳失败）都会原子清空当前
+acknowledgment 并重新进入 `failed`。状态只允许固定公开失败分类，
+不保存 provider reference；状态写入失败或并发变化必须 fail-closed。该 Redis observation 不改变
+`AlertEvent`、DB schema 或 `notification_attempted_at` 的既有语义，provider accepted 也始终不等于
+微信已送达。真实 Runtime acknowledgment 仍是受控外部写入，需要当次范围明确的执行意图。
 
 ## 工程与业务硬规则
 

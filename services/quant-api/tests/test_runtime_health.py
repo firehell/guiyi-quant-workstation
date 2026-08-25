@@ -98,6 +98,7 @@ def test_runtime_health_endpoint_exposes_market_runtime_components(monkeypatch, 
         "last_transport_attempt_at": None,
         "last_provider_accepted_at": None,
         "last_notification_failure_at": None,
+        "notification_acknowledged_at": None,
         "notification_error_type": None,
         "consecutive_notification_failures": 0,
         "error_type": None,
@@ -223,6 +224,7 @@ def test_alert_health_missing_stale_and_fresh_heartbeat(monkeypatch, tmp_path) -
         "last_transport_attempt_at": None,
         "last_provider_accepted_at": None,
         "last_notification_failure_at": None,
+        "notification_acknowledged_at": None,
         "notification_error_type": None,
         "consecutive_notification_failures": 0,
         "error_type": None,
@@ -412,6 +414,118 @@ def test_alert_health_derives_latest_processing_and_notification_outcomes() -> N
     )
     assert failed_alert["consecutive_notification_failures"] == 2
     assert "provider_reference" not in json.dumps(failed_alert)
+
+
+def test_alert_health_acknowledges_failure_without_erasing_failure_facts() -> None:
+    now = datetime(2026, 8, 14, 2, 45, tzinfo=UTC)
+    failure_at = now - timedelta(minutes=5)
+    acknowledged_at = now - timedelta(minutes=1)
+    heartbeat = json.dumps(
+        {
+            "generated_at": now.isoformat(),
+            "available": True,
+            "enabled_rule_count": 2,
+            "scope_product_count": 1,
+        }
+    )
+    runtime_status = json.dumps(
+        {
+            "schema_version": 2,
+            "last_processed_bar_at": now.isoformat(),
+            "last_processing_success_at": now.isoformat(),
+            "last_processing_failure_at": None,
+            "processing_error_type": None,
+            "last_event_at": failure_at.isoformat(),
+            "last_transport_attempt_at": failure_at.isoformat(),
+            "last_provider_accepted_at": failure_at.isoformat(),
+            "last_notification_failure_at": failure_at.isoformat(),
+            "notification_acknowledged_at": acknowledged_at.isoformat(),
+            "notification_error_type": "notification_transport_failed",
+            "consecutive_notification_failures": 1,
+        }
+    )
+    TestingSessionLocal = _session_factory()
+
+    with TestingSessionLocal() as session:
+        health = build_runtime_health(
+            session,
+            redis_factory=lambda: FakeRedis(
+                values={
+                    "alert:heartbeat": heartbeat,
+                    "alert:runtime-status": runtime_status,
+                }
+            ),
+            now=now,
+            live_runtime_enabled=False,
+            alert_runtime_enabled=True,
+            notification_transport_configured=True,
+            after_market_status_path=None,
+        )
+
+    alert = health["components"]["alert"]
+    assert health["status"] == "ok"
+    assert alert["status"] == "ok"
+    assert alert["notification_state"] == "acknowledged"
+    assert alert["last_notification_failure_at"] == failure_at.isoformat()
+    assert alert["notification_acknowledged_at"] == acknowledged_at.isoformat()
+    assert alert["notification_error_type"] == "notification_transport_failed"
+    assert alert["consecutive_notification_failures"] == 1
+
+
+def test_alert_health_new_failure_after_acknowledgement_is_failed_again() -> None:
+    now = datetime(2026, 8, 14, 2, 45, tzinfo=UTC)
+    latest_failure_at = now - timedelta(minutes=1)
+    prior_acknowledgement_at = now - timedelta(minutes=2)
+    values = {
+        "alert:heartbeat": json.dumps(
+            {
+                "generated_at": now.isoformat(),
+                "available": True,
+                "enabled_rule_count": 2,
+                "scope_product_count": 1,
+            }
+        ),
+        "alert:runtime-status": json.dumps(
+            {
+                "schema_version": 2,
+                "last_processed_bar_at": now.isoformat(),
+                "last_processing_success_at": now.isoformat(),
+                "last_processing_failure_at": None,
+                "processing_error_type": None,
+                "last_event_at": latest_failure_at.isoformat(),
+                "last_transport_attempt_at": latest_failure_at.isoformat(),
+                "last_provider_accepted_at": (
+                    now - timedelta(minutes=3)
+                ).isoformat(),
+                "last_notification_failure_at": latest_failure_at.isoformat(),
+                "notification_acknowledged_at": (
+                    prior_acknowledgement_at.isoformat()
+                ),
+                "notification_error_type": "notification_transport_failed",
+                "consecutive_notification_failures": 1,
+            }
+        ),
+    }
+    TestingSessionLocal = _session_factory()
+
+    with TestingSessionLocal() as session:
+        health = build_runtime_health(
+            session,
+            redis_factory=lambda: FakeRedis(values=values),
+            now=now,
+            live_runtime_enabled=False,
+            alert_runtime_enabled=True,
+            notification_transport_configured=True,
+            after_market_status_path=None,
+        )
+
+    alert = health["components"]["alert"]
+    assert alert["status"] == "degraded"
+    assert alert["notification_state"] == "failed"
+    assert alert["last_notification_failure_at"] == latest_failure_at.isoformat()
+    assert alert["notification_acknowledged_at"] == (
+        prior_acknowledgement_at.isoformat()
+    )
 
 
 @pytest.mark.parametrize(

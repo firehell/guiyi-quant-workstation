@@ -10,6 +10,7 @@ import pytest
 import app.alerts.composition as alert_composition
 from app.alerts.composition import build_alert_runtime
 from app.alerts.notification import NotificationTransportError, ProviderAcceptance
+from app.alerts.runtime import AlertNotificationAcknowledgeError
 from app.guiyi_cli.main import build_parser, main
 
 
@@ -41,6 +42,7 @@ def test_parser_exposes_only_active_runtime_domains_and_commands() -> None:
         "live",
         "alert",
         "alert-canary",
+        "acknowledge-alert-notification",
     }
 
 
@@ -70,6 +72,77 @@ def test_runtime_alert_runs_only_injected_foreground_runtime() -> None:
     }
 
 
+def test_runtime_acknowledges_exact_notification_failure_without_sending() -> None:
+    failure_at = "2026-08-25T11:40:05.182316+00:00"
+    acknowledged_at = "2026-08-25T13:30:00+00:00"
+    calls: list[str] = []
+
+    def acknowledge(expected_failure_at: str) -> dict[str, object]:
+        calls.append(expected_failure_at)
+        return {
+            "last_notification_failure_at": failure_at,
+            "notification_acknowledged_at": acknowledged_at,
+            "notification_error_type": "notification_transport_failed",
+        }
+
+    def forbidden_session_factory():
+        raise AssertionError("acknowledgement must not open a DB session")
+
+    code, payload = _run(
+        [
+            "runtime",
+            "acknowledge-alert-notification",
+            "--failure-at",
+            failure_at,
+        ],
+        session_factory=forbidden_session_factory,
+        alert_notification_acknowledger=acknowledge,
+    )
+
+    assert code == 0
+    assert calls == [failure_at]
+    assert payload == {
+        "schema_version": 1,
+        "command": "runtime.acknowledge-alert-notification",
+        "status": "acknowledged",
+        "readonly": False,
+        "last_notification_failure_at": failure_at,
+        "notification_acknowledged_at": acknowledged_at,
+        "notification_error_type": "notification_transport_failed",
+        "event_replayed": False,
+        "notification_sent": False,
+    }
+
+
+def test_runtime_acknowledgement_mismatch_is_public_and_not_readonly() -> None:
+    def fail(_failure_at: str) -> dict[str, object]:
+        raise AlertNotificationAcknowledgeError(
+            "ALERT_NOTIFICATION_FAILURE_MISMATCH"
+        )
+
+    code, payload = _run(
+        [
+            "runtime",
+            "acknowledge-alert-notification",
+            "--failure-at",
+            "2026-08-25T11:40:05.182316+00:00",
+        ],
+        alert_notification_acknowledger=fail,
+    )
+
+    assert code == 1
+    assert payload == {
+        "schema_version": 1,
+        "command": "runtime.acknowledge-alert-notification",
+        "status": "error",
+        "readonly": False,
+        "error": {
+            "code": "ALERT_NOTIFICATION_FAILURE_MISMATCH",
+            "type": "AlertNotificationAcknowledgeError",
+        },
+    }
+
+
 @pytest.mark.parametrize(
     "arguments",
     [
@@ -90,9 +163,10 @@ def test_readonly_command_parser_failures_stay_readonly(arguments: list[str]) ->
     [
         ["runtime", "alert-canary"],
         ["runtime", "alert-canary", "--audience", "friend1"],
+        ["runtime", "acknowledge-alert-notification"],
     ],
 )
-def test_alert_canary_requires_one_fixed_audience(arguments: list[str]) -> None:
+def test_runtime_mutation_commands_require_exact_arguments(arguments: list[str]) -> None:
     code, payload = _run(arguments)
 
     assert code == 2

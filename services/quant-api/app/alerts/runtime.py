@@ -61,6 +61,12 @@ NOTIFICATION_TRANSPORT_FAILURE = "notification_transport_failed"
 NOTIFICATION_ACCEPTANCE_INVALID = "notification_acceptance_invalid"
 
 
+class AlertNotificationAcknowledgeError(RuntimeError):
+    def __init__(self, code: str) -> None:
+        self.code = code
+        super().__init__(code)
+
+
 class AlertMessageSource(Protocol):
     def subscribe(self, *patterns: str) -> None: ...
     def get_message(self, *, timeout_seconds: float) -> tuple[object, object] | None: ...
@@ -502,8 +508,6 @@ class AlertRuntime:
                 continue
             self._update_runtime_status(
                 last_provider_accepted_at=_iso_timestamp(processing_now),
-                last_notification_failure_at=None,
-                notification_error_type=None,
                 consecutive_notification_failures=0,
             )
 
@@ -700,6 +704,7 @@ class AlertRuntime:
         status = self._current_runtime_status()
         self._update_runtime_status(
             last_notification_failure_at=_iso_timestamp(at),
+            notification_acknowledged_at=None,
             notification_error_type=error_type,
             consecutive_notification_failures=(
                 cast(int, status["consecutive_notification_failures"]) + 1
@@ -717,13 +722,20 @@ class AlertRuntime:
     def _update_runtime_status(self, **changes: object) -> None:
         if self.runtime_status_store is None:
             return
+        atomic_update = getattr(self.runtime_status_store, "update", None)
+        if callable(atomic_update):
+            normalized = validate_alert_runtime_status(
+                atomic_update(dict(changes))
+            )
+            self._runtime_status = normalized
+            return
         updated = {**self._current_runtime_status(), **changes}
         normalized = validate_alert_runtime_status(updated)
         self.runtime_status_store.write(normalized)
         self._runtime_status = normalized
 
 
-_RUNTIME_STATUS_FIELDS = frozenset(
+_RUNTIME_STATUS_V1_FIELDS = frozenset(
     {
         "schema_version",
         "last_processed_bar_at",
@@ -738,6 +750,9 @@ _RUNTIME_STATUS_FIELDS = frozenset(
         "consecutive_notification_failures",
     }
 )
+_RUNTIME_STATUS_FIELDS = _RUNTIME_STATUS_V1_FIELDS | {
+    "notification_acknowledged_at"
+}
 _RUNTIME_STATUS_TIMESTAMP_FIELDS = _RUNTIME_STATUS_FIELDS - {
     "schema_version",
     "processing_error_type",
@@ -758,7 +773,7 @@ _RUNTIME_STATUS_ERROR_TYPES = {
 
 def empty_alert_runtime_status() -> dict[str, object]:
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "last_processed_bar_at": None,
         "last_processing_success_at": None,
         "last_processing_failure_at": None,
@@ -767,6 +782,7 @@ def empty_alert_runtime_status() -> dict[str, object]:
         "last_transport_attempt_at": None,
         "last_provider_accepted_at": None,
         "last_notification_failure_at": None,
+        "notification_acknowledged_at": None,
         "notification_error_type": None,
         "consecutive_notification_failures": 0,
     }
@@ -775,27 +791,90 @@ def empty_alert_runtime_status() -> dict[str, object]:
 def validate_alert_runtime_status(
     payload: Mapping[str, object],
 ) -> dict[str, object]:
-    if set(payload) != _RUNTIME_STATUS_FIELDS or type(payload.get("schema_version")) is not int:
+    if type(payload.get("schema_version")) is not int:
         raise ValueError("ALERT_RUNTIME_STATUS_INVALID")
-    if payload["schema_version"] != 1:
+    schema_version = payload["schema_version"]
+    fields = set(payload)
+    if schema_version == 1 and fields == _RUNTIME_STATUS_V1_FIELDS:
+        normalized = {
+            **payload,
+            "schema_version": 2,
+            "notification_acknowledged_at": None,
+        }
+    elif schema_version == 2 and fields == _RUNTIME_STATUS_FIELDS:
+        normalized = dict(payload)
+    else:
         raise ValueError("ALERT_RUNTIME_STATUS_INVALID")
-    normalized = dict(payload)
     for field in _RUNTIME_STATUS_TIMESTAMP_FIELDS:
-        value = payload[field]
+        value = normalized[field]
         if value is not None:
             if not isinstance(value, str):
                 raise ValueError("ALERT_RUNTIME_STATUS_INVALID")
             normalized[field] = _iso_timestamp(datetime.fromisoformat(value))
     for field, allowed_values in _RUNTIME_STATUS_ERROR_TYPES.items():
-        value = payload[field]
+        value = normalized[field]
         if value is not None and (
             not isinstance(value, str) or value not in allowed_values
         ):
             raise ValueError("ALERT_RUNTIME_STATUS_INVALID")
-    count = payload["consecutive_notification_failures"]
+    count = normalized["consecutive_notification_failures"]
     if type(count) is not int or count < 0:
         raise ValueError("ALERT_RUNTIME_STATUS_INVALID")
+    failure_at = normalized["last_notification_failure_at"]
+    acknowledged_at = normalized["notification_acknowledged_at"]
+    if acknowledged_at is not None and failure_at is None:
+        raise ValueError("ALERT_RUNTIME_STATUS_INVALID")
     return normalized
+
+
+def acknowledge_notification_failure(
+    payload: Mapping[str, object],
+    *,
+    expected_failure_at: str,
+    acknowledged_at: datetime,
+) -> dict[str, object]:
+    normalized = validate_alert_runtime_status(payload)
+    failure_at = normalized["last_notification_failure_at"]
+    if failure_at is None:
+        raise AlertNotificationAcknowledgeError(
+            "ALERT_NOTIFICATION_FAILURE_NOT_FOUND"
+        )
+    try:
+        expected = _iso_timestamp(datetime.fromisoformat(expected_failure_at))
+    except (TypeError, ValueError) as exc:
+        raise AlertNotificationAcknowledgeError(
+            "ALERT_NOTIFICATION_FAILURE_AT_INVALID"
+        ) from exc
+    if failure_at != expected:
+        raise AlertNotificationAcknowledgeError(
+            "ALERT_NOTIFICATION_FAILURE_MISMATCH"
+        )
+    existing_acknowledgement = normalized["notification_acknowledged_at"]
+    if (
+        existing_acknowledgement is not None
+        and datetime.fromisoformat(cast(str, existing_acknowledgement))
+        >= datetime.fromisoformat(cast(str, failure_at))
+    ):
+        raise AlertNotificationAcknowledgeError(
+            "ALERT_NOTIFICATION_FAILURE_ALREADY_ACKNOWLEDGED"
+        )
+    try:
+        acknowledgement = _iso_timestamp(acknowledged_at)
+    except ValueError as exc:
+        raise AlertNotificationAcknowledgeError(
+            "ALERT_NOTIFICATION_ACKNOWLEDGEMENT_TIME_INVALID"
+        ) from exc
+    if datetime.fromisoformat(acknowledgement) < datetime.fromisoformat(
+        cast(str, failure_at)
+    ):
+        raise AlertNotificationAcknowledgeError(
+            "ALERT_NOTIFICATION_ACKNOWLEDGEMENT_TIME_INVALID"
+        )
+    updated = {
+        **normalized,
+        "notification_acknowledged_at": acknowledgement,
+    }
+    return validate_alert_runtime_status(updated)
 
 
 def _iso_timestamp(value: datetime) -> str:

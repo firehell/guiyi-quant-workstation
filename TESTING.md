@@ -68,3 +68,7 @@ git diff --check
 ```
 
 Runtime health、data audit 与 alert status 是只读入口；它们不能推导 Runtime promotion、自然 evidence 或外部操作授权。
+
+`guiyi runtime acknowledge-alert-notification --failure-at <exact ISO timestamp>` 是受控 Redis 写入，
+不是只读测试命令。它不发送通知或重放 Event，但实际 Runtime 执行仍需单次明确授权；普通验证只运行
+对应 pytest，不执行该命令。

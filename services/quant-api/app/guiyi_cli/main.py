@@ -14,7 +14,10 @@ import sys
 from typing import Any, TextIO
 
 from app.db.session import SessionLocal
-from app.alerts.composition import build_alert_runtime
+from app.alerts.composition import (
+    acknowledge_alert_notification_failure,
+    build_alert_runtime,
+)
 from app.alerts.notification import ALERT_AUDIENCES
 from app.alerts.notification_composition import build_notification_sender_from_env
 from app.execution_review.composition import build_execution_review_roll_reconciler
@@ -72,6 +75,7 @@ AfterMarketFactory = Callable[..., Any]
 LiveServiceFactory = Callable[[Any], Any]
 AlertRuntimeFactory = Callable[[], Any]
 AlertCanarySenderFactory = Callable[[], Any]
+AlertNotificationAcknowledger = Callable[[str], dict[str, object]]
 ResearchServiceFactory = Callable[[Any], Any]
 JdjCandidateValidationServiceFactory = Callable[[Any, str], Any]
 RollReconcilerFactory = Callable[[Any], Any]
@@ -91,7 +95,13 @@ def _parse_error_is_readonly(raw: Sequence[str]) -> bool:
     return not (
         len(raw) >= 2
         and raw[0] == "runtime"
-        and raw[1] in {"live", "alert", "alert-canary"}
+        and raw[1]
+        in {
+            "live",
+            "alert",
+            "alert-canary",
+            "acknowledge-alert-notification",
+        }
     )
 
 
@@ -116,6 +126,10 @@ def build_parser() -> argparse.ArgumentParser:
         required=True,
         choices=sorted(ALERT_AUDIENCES),
     )
+    acknowledge_notification = runtime_commands.add_parser(
+        "acknowledge-alert-notification"
+    )
+    acknowledge_notification.add_argument("--failure-at", required=True)
     return parser
 
 
@@ -129,6 +143,9 @@ def main(
     alert_runtime_factory: AlertRuntimeFactory = build_alert_runtime,
     alert_canary_sender_factory: AlertCanarySenderFactory = (
         build_notification_sender_from_env
+    ),
+    alert_notification_acknowledger: AlertNotificationAcknowledger = (
+        acknowledge_alert_notification_failure
     ),
     research_service_factory: ResearchServiceFactory = (
         build_subing_calibration_research_service
@@ -288,6 +305,25 @@ def main(
                 ),
                 "delivery_confirmed": False,
             }
+        elif args.runtime_command == "acknowledge-alert-notification":
+            acknowledged = alert_notification_acknowledger(args.failure_at)
+            payload = {
+                "schema_version": 1,
+                "command": "runtime.acknowledge-alert-notification",
+                "status": "acknowledged",
+                "readonly": False,
+                "last_notification_failure_at": acknowledged[
+                    "last_notification_failure_at"
+                ],
+                "notification_acknowledged_at": acknowledged[
+                    "notification_acknowledged_at"
+                ],
+                "notification_error_type": acknowledged[
+                    "notification_error_type"
+                ],
+                "event_replayed": False,
+                "notification_sent": False,
+            }
         else:
             raise RuntimeError("CLI_RUNTIME_COMMAND_INVALID")
     except Exception as exc:  # noqa: BLE001 - safe CLI boundary
@@ -315,6 +351,7 @@ def main(
                 "ready",
                 "skipped",
                 "accepted",
+                "acknowledged",
             }
             or (
                 isinstance(
