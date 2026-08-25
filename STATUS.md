@@ -116,7 +116,7 @@
   “当前检查栏”；正式 Event、研究观察和 Research-only 事实保持分层，不产生综合分或交易推荐。
 - The prior Four-System Active60 All-Frequency Observation direction was withdrawn by the user before implementation and its active Spec/Plan were removed.
 
-## HTDY Active60 七周期实现（待集成）
+## HTDY Active60 七周期实现（已集成，待 release）
 
 以下 Gate 只记录各自已经发生的事实，任一状态不得由其他状态推导：
 
@@ -125,7 +125,7 @@
 | `CODE_COMPLETE` | `complete` | implementation base=`fd0777672c49a856b283a0f4653519c68a35cb38`；reviewed implementation head=`f444920c5ae02dc04785492986de8ecdebef0c3a` |
 | `TEST_COMPLETE` | `complete` | focused backend `332 passed`；isolated migration `1 passed / 2 deselected`；full backend `3769 passed / 3 skipped / 17 deselected`；engineering `64 passed`；Web unit `285 passed / 1 skipped`；full Playwright `101 passed / 1 skipped`；Ruff、Mypy、Web build、OpenSpec、secret scan 与 diff check 均通过 |
 | `REVIEW_COMPLETE` | `complete` | fixed base-to-head Lane 3 Standards/Spec Review=`APPROVED`，`Critical / Important / Minor = 0 / 0 / 0`，结论=`允许集成 develop` |
-| `INTEGRATED_DEVELOP` | `pending` | implementation 尚未合入 develop；必须等待用户字面批准 `允许集成 develop` |
+| `INTEGRATED_DEVELOP` | `complete` | 用户已字面批准 `允许集成 develop`；PR `#208` 已合并，远端 develop merge commit=`8b970972b5ceeb3ba33904fab73446cdb3cba92c`，candidate `d60bc43d7115a970c154c0e5330e994c2567498e` 为其祖先 |
 | `PRODUCTION_MIGRATION` | `pending` | Alembic `20260825_0040` 只在隔离 PostgreSQL 验证；production 仍为 `20260815_0039`，未执行 upgrade |
 | `REAL_SCOPE_MUTATION` | `pending` | 未修改 production HTDY `symbol × frequency` Scope；Task 11 matrix 只做 capability 与只读数据可用性检查 |
 | `RELEASED` | `pending` | 未创建 `main` release PR、`v1.8.3` tag 或 GitHub release；当前正式版本仍为 `v1.8.2` |
