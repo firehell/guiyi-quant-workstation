@@ -609,5 +609,6 @@ def test_market_research_api_retires_attention_and_trend_focus(monkeypatch) -> N
     radar = client.get("/api/v1/market/research/radar")
 
     assert client.get("/api/v1/market/research/trend-focus").status_code == 404
+    assert "/api/v1/market/research/trend-focus" not in app.openapi()["paths"]
     assert "attention" not in radar.json()
     assert all("attention_count" not in sector for sector in radar.json()["sector_summary"])

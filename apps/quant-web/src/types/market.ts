@@ -724,6 +724,31 @@ export interface MarketRadarResponse {
   sector_summary: MarketRadarSectorSummary[]
 }
 
+/** FastAPI serializes Radar Decimal values as strings; normalize at the HTTP boundary. */
+export function normalizeMarketRadar(payload: MarketRadarResponse): MarketRadarResponse {
+  return {
+    ...payload,
+    items: payload.items.map((item) => ({
+      ...item,
+      price_change_1d: normalizeMarketRadarDecimal(item.price_change_1d),
+      price_change_5d: normalizeMarketRadarDecimal(item.price_change_5d),
+      volume_ratio20: normalizeMarketRadarDecimal(item.volume_ratio20),
+      oi_change_1d: normalizeMarketRadarDecimal(item.oi_change_1d),
+      atr14_percentile252: normalizeMarketRadarDecimal(item.atr14_percentile252),
+      position20: normalizeMarketRadarDecimal(item.position20),
+      turnover: normalizeMarketRadarDecimal(item.turnover),
+    })),
+    sector_summary: payload.sector_summary.map((sector) => ({
+      ...sector,
+      median_price_change_1d: normalizeMarketRadarDecimal(sector.median_price_change_1d),
+    })),
+  }
+}
+
+function normalizeMarketRadarDecimal(value: number | string | null): number | null {
+  return value === null ? null : Number(value)
+}
+
 export type SubingDailyWatchDecision = 'long_watch' | 'short_watch'
 export type SubingDailyWatchPriceSide = 'above' | 'below' | 'equal' | 'unavailable'
 
