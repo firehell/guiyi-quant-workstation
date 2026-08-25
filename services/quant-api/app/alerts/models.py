@@ -47,6 +47,11 @@ class AlertRule(Base):
         default=list,
         nullable=False,
     )
+    scope_product_frequencies: Mapped[dict[str, list[str]]] = mapped_column(
+        JSON,
+        default=dict,
+        nullable=False,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now, nullable=False
     )
@@ -64,8 +69,9 @@ class AlertEvent(Base):
         UniqueConstraint(
             "rule_id",
             "symbol",
+            "frequency",
             "bar_end",
-            name="uq_alert_events_rule_symbol_bar_end",
+            name="uq_alert_events_rule_symbol_frequency_bar_end",
         ),
         CheckConstraint(
             "frequency IN ('1m','5m','15m','30m','60m','1d','1w')",

@@ -44,11 +44,13 @@ def seed_v2_rules(
                 rule_code="htdy_original_15m",
                 enabled=True,
                 scope_products=htdy_scope,
+                scope_product_frequencies={},
             ),
             AlertRule(
                 rule_code="subing_entry_signal_v1",
                 enabled=True,
                 scope_products=subing_scope,
+                scope_product_frequencies={},
             ),
         ]
     )
@@ -127,7 +129,14 @@ def test_product_rules_rejects_database_rule_missing_from_registry(
 ) -> None:
     from app.alerts.service import AlertRuleNotFoundError, AlertService
 
-    session.add(AlertRule(rule_code="unknown_rule", enabled=True, scope_products=[]))
+    session.add(
+        AlertRule(
+            rule_code="unknown_rule",
+            enabled=True,
+            scope_products=[],
+            scope_product_frequencies={},
+        )
+    )
     session.commit()
 
     with pytest.raises(AlertRuleNotFoundError, match="ALERT_RULE_NOT_FOUND"):
@@ -242,7 +251,6 @@ def test_create_event_normalizes_result_order_and_duplicate_identity_is_idempote
     ("changed_field", "changed_value"),
     [
         ("contract", "JM2610"),
-        ("frequency", "5m"),
         ("trading_day", date(2026, 8, 14)),
         ("result_codes", ("sell",)),
         ("lower_tf_confirmation", True),
@@ -262,6 +270,24 @@ def test_duplicate_event_with_changed_result_attributes_fails_closed(
 
     with pytest.raises(AlertConsistencyError, match="ALERT_EVENT_CONSISTENCY_ERROR"):
         service.create_event(replace(request, **{changed_field: changed_value}))
+
+
+def test_same_rule_symbol_and_bar_end_allows_distinct_frequencies(
+    session: Session,
+) -> None:
+    from app.alerts.service import AlertService
+
+    rule = seed_rule(session, "subing_entry_signal_v1")
+    service = AlertService(session, operational_products=("jm",))
+    first = service.create_event(event_request(rule.id, frequency="15m"))
+    second = service.create_event(event_request(rule.id, frequency="5m"))
+
+    assert first is not None
+    assert second is not None
+    assert {event.frequency for event in session.scalars(select(AlertEvent))} == {
+        "5m",
+        "15m",
+    }
 
 
 def test_create_event_requires_registry_frequency_and_trading_day(
@@ -358,7 +384,12 @@ def test_current_product_events_excludes_database_rules_missing_from_registry(
 
     htdy = seed_rule(session, "htdy_original_15m")
     subing = seed_rule(session, "subing_entry_signal_v1")
-    rogue = AlertRule(rule_code="rogue_rule", enabled=True, scope_products=["jm"])
+    rogue = AlertRule(
+        rule_code="rogue_rule",
+        enabled=True,
+        scope_products=["jm"],
+        scope_product_frequencies={},
+    )
     session.add(rogue)
     session.flush()
     session.add(
