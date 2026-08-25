@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { NSpin } from 'naive-ui'
 import type { ProductAlertRuleState } from '@/api/alerts'
 import type { AlertEvent } from '@/types/market'
 import {
@@ -10,8 +9,6 @@ import {
 } from '@/utils/alertRules'
 
 const props = defineProps<{
-  loading: boolean
-  status: 'ready' | 'unavailable' | null
   items: AlertEvent[]
   rules: ProductAlertRuleState[]
 }>()
@@ -46,19 +43,15 @@ function barTime(value: string) {
 
 <template>
   <section class="product-today-alert-events" data-testid="product-today-alert-events">
-    <h3>今日记录</h3>
-    <NSpin :show="loading" size="small">
-      <p v-if="loading">读取今日提醒…</p>
-      <p v-else-if="status === 'unavailable'">今日提醒暂不可用</p>
-      <p v-else-if="status === 'ready' && items.length === 0">今日暂无提醒记录</p>
-      <div v-else-if="status === 'ready'" class="product-today-alert-events__rows">
-        <div v-for="item in items" :key="item.id" class="product-today-alert-events__row">
-          <time>{{ barTime(item.bar_end) }}</time>
-          <strong>{{ ruleLabel(item.rule_code) }}</strong>
-          <span :class="resultClass(item)">{{ resultLabel(item) }}</span>
-        </div>
+    <h3>苏冰今日记录</h3>
+    <p v-if="items.length === 0">当前无可展示的苏冰 Event 记录</p>
+    <div v-else class="product-today-alert-events__rows">
+      <div v-for="item in items" :key="item.id" class="product-today-alert-events__row">
+        <time>{{ barTime(item.bar_end) }}</time>
+        <strong>{{ ruleLabel(item.rule_code) }}</strong>
+        <span :class="resultClass(item)">{{ resultLabel(item) }}</span>
       </div>
-    </NSpin>
+    </div>
   </section>
 </template>
 

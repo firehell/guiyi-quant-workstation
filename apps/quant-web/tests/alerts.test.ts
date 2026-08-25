@@ -91,19 +91,48 @@ describe('Product Alert server-side scope', () => {
     assert.doesNotMatch(interfaceBody(marketTypesSource, 'AlertEvent'), /observation_types|notified_at/)
   })
 
-  it('renders the two fixed registry rows and a shared Runtime status only once', () => {
+  it('renders only the HTDY current-frequency pair row and shared Runtime status', () => {
     assert.equal(existsSync(rulesPath), true)
     const rulesSource = read('../src/components/market/ProductAlertRules.vue')
     assert.deepEqual(ALERT_RULE_PRESENTATIONS.map((item) => item.ruleCode), [
       ALERT_RULE_CODES.HTDY,
       ALERT_RULE_CODES.SUBING,
     ])
-    assert.match(rulesSource, /rule\.display_name/)
-    assert.match(rulesSource, /rule\.enabled_frequencies\.includes\(props\.frequency\)/)
+    assert.match(rulesSource, /rule_code === ALERT_RULE_CODES\.HTDY/)
+    assert.match(rulesSource, /htdyRule\.value\?\.enabled_frequencies\.includes\(props\.frequency\)/)
     assert.match(rulesSource, /`\$\{rule\.display_name\} · \$\{props\.frequency\}`/)
+    assert.doesNotMatch(rulesSource, /ALERT_RULE_CODES\.SUBING|enabled_for_product/)
     assert.doesNotMatch(rulesSource, /全周期/)
     assert.equal((rulesSource.match(/Alert Runtime/g) || []).length, 1)
     assert.match(rulesSource, /不可用/)
+  })
+
+  it('dispatches every Overlay explicitly without treating generic research as HTDY', () => {
+    const sidebarSource = read('../src/components/market/ProductCheckSidebar.vue')
+    const observationSource = between(
+      sidebarSource,
+      'data-testid="product-check-observation"',
+      'data-testid="product-check-participation"',
+    )
+    for (const overlay of ['none', 'subing', 'n_structure', 'jdj', 'jdj_strategy', 'htdy']) {
+      assert.match(observationSource, new RegExp(`selectedOverlay === '${overlay}'`))
+    }
+    assert.doesNotMatch(observationSource, /<template v-else>/)
+    assert.match(observationSource, /selectedOverlay === 'htdy'[^]*<ProductAlertRules/)
+    assert.doesNotMatch(between(observationSource, "selectedOverlay === 'jdj_strategy'", "selectedOverlay === 'htdy'"), /<ProductAlertRules/)
+    assert.doesNotMatch(between(observationSource, "selectedOverlay === 'none'", "selectedOverlay === 'subing'"), /<ProductAlertRules/)
+  })
+
+  it('routes SuBing product and HTDY pair toggles through separate guarded handlers', () => {
+    assert.match(chartSource, /function toggleSubingAlert\(ruleCode: string, enabled: boolean\)/)
+    assert.match(chartSource, /selectedOverlay\.value !== 'subing'/)
+    assert.match(chartSource, /ruleCode !== ALERT_RULE_CODES\.SUBING/)
+    assert.match(chartSource, /function toggleHtdyAlert\(ruleCode: string, enabled: boolean\)/)
+    assert.match(chartSource, /selectedOverlay\.value !== 'htdy'/)
+    assert.match(chartSource, /ruleCode !== ALERT_RULE_CODES\.HTDY/)
+    assert.match(chartSource, /@toggle-subing-alert="toggleSubingAlert"/)
+    assert.match(chartSource, /@toggle-htdy-alert="toggleHtdyAlert"/)
+    assert.doesNotMatch(chartSource, /@toggle-alert="toggleAlert"/)
   })
 
   it('refetches on symbol change while series/frequency changes never invoke scope PUT', () => {

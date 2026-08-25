@@ -1075,14 +1075,14 @@ test('SuBing keeps the full Market display history and renders the requested pri
 
   await expect(page.getByText('120 bars', { exact: true })).toBeVisible()
   await expect(page.locator('.product-workspace__kline')).toHaveAttribute('data-visible-start-trading-day', '2026-01-01')
-  await expect(page.getByTestId('product-check-now')).toContainText('当前无正式事件')
+  await expect(page.getByTestId('subing-formal-event')).toContainText('当前无可展示的苏冰正式事件记录')
   await expect(page.getByTestId('product-check-background')).toContainText('周线')
   await expect(page.getByTestId('product-check-background')).toContainText('日线')
   await expect(page.getByTestId('product-check-observation')).toContainText('苏冰')
   await expect(page.getByTestId('product-check-observation')).toContainText('5m · 当前不匹配')
   await expect(page.getByTestId('product-check-participation')).toContainText('20日位置')
   await expect(page.getByTestId('product-check-more')).not.toHaveAttribute('open')
-  await expect(page.getByText('苏冰研究明细', { exact: true })).toBeHidden()
+  await expect(page.getByTestId('subing-panel')).toHaveCount(1)
   await expect(page.getByRole('button', { name: '真实主力', exact: true })).toBeVisible()
   await expect(page.locator('.toolbar__subing-basis')).toHaveText('苏冰计算 AG2601')
   await expect(page.locator('body')).not.toContainText('买入')
@@ -1109,11 +1109,38 @@ test('current AlertEvent remains a formal event when no Execution Review state e
   await mockAlertMarkerSurface(page, [currentEvent])
   await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=5m')
 
-  const now = page.getByTestId('product-check-now')
-  await expect(now).toContainText('苏冰 · 买入信号')
-  await expect(now).toContainText('今日正式提醒记录')
-  await expect(now.getByRole('button')).toHaveCount(0)
-  await expect(now).not.toContainText('研究确认')
+  const formal = page.getByTestId('subing-formal-event')
+  await expect(formal).toContainText('苏冰 · 买入信号')
+  await expect(formal).toContainText('今日正式提醒记录')
+  await expect(formal.getByRole('button')).toHaveCount(0)
+  await expect(formal).not.toContainText('研究确认')
+})
+
+test('current SuBing Formal Event action remains available in the single product panel', async ({ page }) => {
+  const currentEvent = {
+    id: 203,
+    rule_code: 'subing_entry_signal_v1',
+    symbol: 'ag',
+    contract: 'AG2601',
+    trading_day: '2026-01-12',
+    frequency: '5m',
+    bar_end: '2026-01-12T02:25:00Z',
+    result_codes: ['sell'],
+    lower_tf_confirmation: false,
+    detected_at: '2026-01-12T02:25:01Z',
+    notification_attempted_at: null,
+  }
+  await mockWorkspace(page, { json: research() }, {
+    eventStates: [{ event_id: 203, state: 'pending_decision', decision_id: null, episode_id: null }],
+  })
+  await mockAlertMarkerSurface(page, [currentEvent])
+  await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=5m')
+
+  const formal = page.getByTestId('subing-formal-event')
+  const action = formal.getByRole('button', { name: '记录执行' })
+  await expect(action).toBeVisible()
+  await action.click()
+  await expect(page).toHaveURL(/\/trade-records\?state=pending_decision&event_id=203/)
 })
 
 test('SuBing lifecycle remains an explicitly research-only funnel beside formal V1 wording', async ({ page }) => {
@@ -1156,7 +1183,7 @@ test('SuBing lifecycle shows a reducer-produced long momentum hold', async ({ pa
   await expect(page.getByTestId('product-check-observation')).toContainText('当前不匹配')
   await openMoreResearch(page)
   await expect(page.getByTestId('subing-lifecycle-panel')).toContainText('1/3')
-  await expect(page.locator('.subing-research__factor').filter({ hasText: 'Primary Factor' })).toContainText('S5 2.0 bps/bar · MACD 金叉')
+  await expect(page.locator('.subing-panel__factor').filter({ hasText: 'Primary Factor' })).toContainText('S5 2.0 bps/bar · MACD 金叉')
 })
 
 test('retest confirmation renders its own zero then one bar progress', async ({ page }) => {
@@ -1227,7 +1254,7 @@ test('SuBing lifecycle renders risk and closed research stages without trade ins
     await openMoreResearch(page)
     const lifecycle = page.getByTestId('subing-lifecycle-panel')
     await expect(lifecycle).toContainText(expected)
-    await expect(page.locator('.subing-research__factor').filter({ hasText: 'Primary Factor' })).toContainText(isRisk ? 'S5 -2.0 bps/bar' : 'S5 2.0 bps/bar')
+    await expect(page.locator('.subing-panel__factor').filter({ hasText: 'Primary Factor' })).toContainText(isRisk ? 'S5 -2.0 bps/bar' : 'S5 2.0 bps/bar')
     await expect(lifecycle).not.toContainText(/下单|加仓|平仓指令/)
   }
 })
