@@ -1,4 +1,4 @@
-import type { MarketFrequency } from '../types/market.ts'
+import { MARKET_FREQUENCIES, type MarketFrequency } from '../types/market.ts'
 
 export const ALERT_RULE_CODES = {
   HTDY: 'htdy_original_15m',
@@ -22,7 +22,7 @@ export const ALERT_RULE_PRESENTATIONS: readonly AlertRulePresentation[] = [
     shortLabel: '火天大有',
     resultNoun: '观察',
     markerTone: 'htdy',
-    persistentFrequencies: ['15m'],
+    persistentFrequencies: MARKET_FREQUENCIES,
   },
   {
     ruleCode: ALERT_RULE_CODES.SUBING,

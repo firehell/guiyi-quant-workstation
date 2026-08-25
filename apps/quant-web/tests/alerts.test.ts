@@ -14,7 +14,7 @@ import { usePersistentAlertMarkers } from '../src/composables/usePersistentAlert
 import { useProductAlertScope } from '../src/composables/useProductAlertScope.ts'
 import { ref } from 'vue'
 import type { AlertEvent } from '../src/api/alerts.ts'
-import type { BarData } from '../src/types/market.ts'
+import { MARKET_FREQUENCIES, type BarData } from '../src/types/market.ts'
 
 
 const apiSource = read('../src/api/alerts.ts')
@@ -236,11 +236,24 @@ describe('Product Alert server-side scope', () => {
     ])
 
     assert.deepEqual(markers.map((marker) => [marker.id, marker.label, marker.tone]), [
-      ['alert:subing_entry_signal_v1:ag:2026-08-13T02:00:00Z', '买入/卖出信号', 'neutral'],
-      ['alert:htdy_original_15m:ag:2026-08-13T02:15:00Z', '买入观察', 'htdy'],
-      ['alert:subing_entry_signal_v1:ag:2026-08-13T02:30:00Z', '卖出信号', 'down'],
-      ['alert:htdy_original_15m:ag:2026-08-13T02:45:00Z', '买入/卖出观察', 'htdy'],
+      ['alert:subing_entry_signal_v1:ag:15m:2026-08-13T02:00:00Z', '买入/卖出信号', 'neutral'],
+      ['alert:htdy_original_15m:ag:15m:2026-08-13T02:15:00Z', '买入观察', 'htdy'],
+      ['alert:subing_entry_signal_v1:ag:15m:2026-08-13T02:30:00Z', '卖出信号', 'down'],
+      ['alert:htdy_original_15m:ag:15m:2026-08-13T02:45:00Z', '买入/卖出观察', 'htdy'],
     ])
+  })
+
+  it('keeps same-rule same-bar HTDY events distinct by frequency', () => {
+    const fifteenMinute = event(1, ['buy'])
+    const sixtyMinute = { ...fifteenMinute, id: 60, frequency: '60m' as const }
+
+    assert.deepEqual(
+      alertEventsToMarkers([fifteenMinute, sixtyMinute]).map((marker) => marker.id),
+      [
+        'alert:htdy_original_15m:ag:15m:2026-08-13T02:15:00Z',
+        'alert:htdy_original_15m:ag:60m:2026-08-13T02:15:00Z',
+      ],
+    )
   })
 
   it('keeps SuBing direction tones separate from HTDY observation tone', () => {
@@ -283,15 +296,17 @@ describe('Product Alert server-side scope', () => {
   })
 
   it('uses the exact V2 Rule set for each visible series identity', () => {
-    assert.deepEqual(markerRuleCodes('actual_dominant', '5m'), ['subing_entry_signal_v1'])
-    assert.deepEqual(markerRuleCodes('actual_dominant', '15m'), ['htdy_original_15m', 'subing_entry_signal_v1'])
-    assert.deepEqual(markerRuleCodes('continuous', '15m'), [])
-    assert.deepEqual(markerRuleCodes('actual_dominant', '30m'), [])
-    assert.equal(isPersistentAlertIdentity('actual_dominant', '15m'), true)
-    assert.equal(isPersistentAlertIdentity('actual_dominant', '5m'), true)
-    assert.equal(isPersistentAlertIdentity('continuous', '15m'), false)
-    assert.equal(isPersistentAlertIdentity('contract', '15m'), false)
-    assert.equal(isPersistentAlertIdentity('actual_dominant', '30m'), false)
+    for (const frequency of MARKET_FREQUENCIES) {
+      const expected = frequency === '5m' || frequency === '15m'
+        ? ['htdy_original_15m', 'subing_entry_signal_v1']
+        : ['htdy_original_15m']
+      assert.deepEqual(markerRuleCodes('actual_dominant', frequency), expected)
+      assert.equal(isPersistentAlertIdentity('actual_dominant', frequency), true)
+      assert.deepEqual(markerRuleCodes('continuous', frequency), [])
+      assert.deepEqual(markerRuleCodes('contract', frequency), [])
+      assert.equal(isPersistentAlertIdentity('continuous', frequency), false)
+      assert.equal(isPersistentAlertIdentity('contract', frequency), false)
+    }
   })
 
   it('fetches only the exact V2 Rules per frequency, dedups, and clears timer off identity', async () => {
@@ -350,8 +365,8 @@ describe('Product Alert server-side scope', () => {
       },
     })
     await fiveMinute.sync({ ...identity(), frequency: '5m' }, initialBars, 'replace')
-    assert.deepEqual(fiveMinuteRequests, ['subing_entry_signal_v1'])
-    assert.equal(fiveMinute.markers.value.length, 1)
+    assert.deepEqual(fiveMinuteRequests, ['htdy_original_15m', 'subing_entry_signal_v1'])
+    assert.equal(fiveMinute.markers.value.length, 2)
     fiveMinute.dispose()
   })
 })

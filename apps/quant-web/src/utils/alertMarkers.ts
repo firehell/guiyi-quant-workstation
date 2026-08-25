@@ -32,7 +32,7 @@ export function alertEventsToMarkers(events: AlertEvent[]): KlineMarker[] {
       const label = alertResultLabel(event.rule_code, event.result_codes)
       if (label === '提醒记录') return []
       return [{
-        id: `alert:${event.rule_code}:${event.symbol}:${event.bar_end}`,
+        id: `alert:${event.rule_code}:${event.symbol}:${event.frequency}:${event.bar_end}`,
         dedupeKey: subingEventDedupeKey(event),
         time: event.bar_end,
         label,
