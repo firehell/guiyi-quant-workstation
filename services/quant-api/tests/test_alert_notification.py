@@ -27,16 +27,21 @@ def test_canary_text_is_channel_neutral() -> None:
         (("buy", "sell"), "买入观察 + 卖出观察"),
     ),
 )
+@pytest.mark.parametrize(
+    "frequency",
+    ("1m", "5m", "15m", "30m", "60m", "1d", "1w"),
+)
 def test_htdy_message_keeps_exact_copy(
     result_codes: tuple[str, ...],
     observation: str,
+    frequency: str,
 ) -> None:
     message = AlertNotificationMessage(
         rule_code="htdy_original_15m",
         symbol="ag",
         product_name="白银",
         contract="AG2610",
-        frequency="15m",
+        frequency=frequency,
         bar_end=datetime(2026, 8, 13, 2, 45, tzinfo=UTC),
         result_codes=result_codes,
     )
@@ -45,7 +50,7 @@ def test_htdy_message_keeps_exact_copy(
         "【归一量化】AG 白银\n\n"
         f"火天大有 · {observation}\n"
         "主力：AG2610\n"
-        "15m · 10:45 收线\n"
+        f"{frequency} · 10:45 收线\n"
         "研究观察，非交易指令"
     )
 
@@ -111,7 +116,7 @@ def test_subing_15m_lower_tf_confirmation_adds_one_line() -> None:
         (
             "htdy_original_15m",
             "JM2609",
-            "5m",
+            "2m",
             ("buy",),
             False,
             "ALERT_NOTIFICATION_FREQUENCY_INVALID",
