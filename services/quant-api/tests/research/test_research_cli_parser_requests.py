@@ -99,7 +99,7 @@ def _lifecycle_arguments() -> list[str]:
     ]
 
 
-def test_research_parser_exposes_only_the_nine_readonly_commands() -> None:
+def test_research_parser_exposes_only_the_retained_readonly_commands() -> None:
     parser = build_parser()
     domain_action = next(
         action for action in parser._actions if action.dest == "domain"
@@ -112,6 +112,20 @@ def test_research_parser_exposes_only_the_nine_readonly_commands() -> None:
     )
 
     assert tuple(command_action.choices) == research_parser.RESEARCH_COMMAND_NAMES
+
+
+def test_research_parser_excludes_retired_candidate_convergence_commands() -> None:
+    parser = build_parser()
+    domain_action = next(
+        action for action in parser._actions if action.dest == "domain"
+    )
+    research_parser_action = domain_action.choices["research"]
+    research_help = research_parser_action.format_help()
+
+    assert "candidate-dossier" not in research_help
+    assert "candidate-relationships" not in research_help
+    assert "candidate-validation" in research_help
+    assert "candidate-robustness" in research_help
 
 
 _JDJ_CANDIDATES = (

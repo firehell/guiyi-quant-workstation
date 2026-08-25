@@ -7,8 +7,6 @@ from typing import Protocol, cast
 from app.guiyi_cli.research_payloads import (
     _calibration_payload,
     _candidate_payload,
-    _five_candidate_dossier_payload,
-    _five_candidate_relationship_payload,
     _jdj_active60_robustness_payload,
     _jdj_candidate_payload,
     _jdj_research_payload,
@@ -51,16 +49,6 @@ from app.research.subing.subing_lifecycle_research_service import (
     LifecycleResearchRequest,
     SubingLifecycleResearchResult,
 )
-from app.research.candidate_convergence.five_candidate_dossier import (
-    FiveCandidateDossierRequest,
-    FiveCandidateResearchDossier,
-)
-from app.research.candidate_convergence.five_candidate_relationships import (
-    FiveCandidateRelationshipReport,
-    FiveCandidateRelationshipRequest,
-)
-
-
 class _CalibrationResearchService(Protocol):
     def run(self, request: CalibrationResearchRequest) -> CalibrationResearchResult: ...
 
@@ -102,31 +90,11 @@ class _JdjActive60RobustnessService(Protocol):
     ) -> JdjActive60RobustnessReport: ...
 
 
-class _FiveCandidateDossierService(Protocol):
-    def run(
-        self, request: FiveCandidateDossierRequest
-    ) -> FiveCandidateResearchDossier: ...
-
-
-class _FiveCandidateRelationshipService(Protocol):
-    def run(
-        self, request: FiveCandidateRelationshipRequest
-    ) -> FiveCandidateRelationshipReport: ...
-
-
 def run_research_command(
     request: ResearchRequest,
     service: object,
 ) -> dict[str, object]:
     """Run one Historical-only research command and render its JSON schema."""
-    if isinstance(request, FiveCandidateDossierRequest):
-        dossier_service = cast(_FiveCandidateDossierService, service)
-        return _five_candidate_dossier_payload(dossier_service.run(request))
-    if isinstance(request, FiveCandidateRelationshipRequest):
-        relationship_service = cast(_FiveCandidateRelationshipService, service)
-        return _five_candidate_relationship_payload(
-            relationship_service.run(request)
-        )
     if isinstance(request, JdjActive60RobustnessRequest):
         jdj_robustness_service = cast(_JdjActive60RobustnessService, service)
         return _jdj_active60_robustness_payload(

@@ -64,7 +64,7 @@ from app.research.n_structure.n_structure_policy import (
     load_n_structure_policy,
 )
 from app.research.n_structure.n_structure_research_service import NStructureResearchService
-from app.market_data.operational_universe import ActiveUniverseError, load_active_products
+from app.market_data.operational_universe import load_active_products
 from app.market_data.subing_calibration import load_accepted_subing_calibration
 from app.research.subing.subing_calibration_service import SubingCalibrationResearchService
 from app.research.subing.subing_candidate_validation_service import (
@@ -74,24 +74,6 @@ from app.market_data.subing_lifecycle_policy import load_subing_lifecycle_policy
 from app.research.subing.subing_lifecycle_research_service import (
     SubingLifecycleResearchService,
 )
-from app.research.candidate_convergence.five_candidate_dossier import (
-    load_five_candidate_dossier_protocol,
-)
-from app.research.candidate_convergence.five_candidate_dossier_service import (
-    FiveCandidateResearchDossierService,
-)
-from app.research.candidate_convergence.artifact_source import (
-    verify_json_artifact,
-)
-from app.research.candidate_convergence.five_candidate_relationships import (
-    FiveCandidateRelationshipProtocolError,
-    FiveCandidateRelationshipSourceError,
-    load_five_candidate_relationship_protocol,
-)
-from app.research.candidate_convergence.five_candidate_relationships_service import (
-    FiveCandidateRelationshipService,
-)
-from app.core.env import PROJECT_ROOT
 
 
 def build_subing_calibration_research_service(
@@ -101,43 +83,6 @@ def build_subing_calibration_research_service(
     return SubingCalibrationResearchService(
         market_data=build_market_data_service(session),
         products=load_active_products(),
-    )
-
-
-def build_five_candidate_dossier_service() -> FiveCandidateResearchDossierService:
-    """Compose the artifact-only five-candidate dossier without Runtime state."""
-    return FiveCandidateResearchDossierService(
-        load_five_candidate_dossier_protocol()
-    )
-
-
-def build_five_candidate_relationship_service(
-    session: Session,
-) -> FiveCandidateRelationshipService:
-    """Compose exact Phase 8B source verification and one JDJ service."""
-    protocol = load_five_candidate_relationship_protocol()
-    try:
-        active_products = load_active_products()
-    except ActiveUniverseError:
-        raise FiveCandidateRelationshipProtocolError() from None
-    if active_products != protocol.cross_symbol_products:
-        raise FiveCandidateRelationshipProtocolError()
-    dossier_source = verify_json_artifact(
-        protocol.dossier_source,
-        PROJECT_ROOT,
-        FiveCandidateRelationshipSourceError,
-    )
-    subing_n_source = verify_json_artifact(
-        protocol.subing_n_source,
-        PROJECT_ROOT,
-        FiveCandidateRelationshipSourceError,
-    )
-    jdj_research = build_jdj_research_service(session)
-    return FiveCandidateRelationshipService(
-        protocol,
-        jdj_research=jdj_research,
-        dossier_source=dossier_source,
-        subing_n_source=subing_n_source,
     )
 
 
