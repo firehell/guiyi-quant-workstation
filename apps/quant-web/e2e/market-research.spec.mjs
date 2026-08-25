@@ -548,43 +548,15 @@ async function mockWorkspace(page, researchResponse, options = {}) {
   const marketRequests = options.marketRequests || []
   const researchRequests = options.researchRequests || []
   const subingRequests = options.subingRequests || []
-  const nHistoricalRequests = options.nHistoricalRequests || []
-  const jdjHistoricalRequests = options.jdjHistoricalRequests || []
   const jdjStrategyHistoricalRequests = options.jdjStrategyHistoricalRequests || []
   const dominantRequests = options.dominantRequests || []
   let dominantResponseIndex = 0
   let subingResponseIndex = 0
   await page.route('**/api/v1/market/**', async (route) => {
     const url = new URL(route.request().url())
-    if (url.pathname.endsWith('/research/n-structure/history')) {
-      const request = Object.fromEntries(url.searchParams)
-      nHistoricalRequests.push(request)
-      return route.fulfill({ json: {
-        request,
-        events: options.nHistoricalEvents || [{
-          event_id: 'n-structure-up-1', observed_at: options.historicalEventTime,
-          trading_day: options.historicalEventTime?.slice(0, 10), contract: workspaceContract,
-          segment_start_trading_day: options.historicalEventTime?.slice(0, 10), direction: 'up',
-        }],
-      } })
-    }
     if (url.pathname.endsWith('/research/subing/history')) {
       const request = Object.fromEntries(url.searchParams)
       return route.fulfill({ json: { request, events: [] } })
-    }
-    if (url.pathname.endsWith('/research/jdj/history')) {
-      const request = Object.fromEntries(url.searchParams)
-      jdjHistoricalRequests.push(request)
-      return route.fulfill({ json: {
-        request,
-        events: options.jdjHistoricalEvents || [{
-          event_id: 'jdj-follow-long-1', candidate_id: 'jdj_trend_follow_1m_candidate_v1',
-          source_event_kind: 'jdj_trend_follow_triggered', observed_at: options.historicalEventTime,
-          trading_day: options.historicalEventTime?.slice(0, 10), contract: workspaceContract,
-          segment_start_trading_day: options.historicalEventTime?.slice(0, 10), direction: 'long',
-          trigger_level: '219.5',
-        }],
-      } })
     }
     if (url.pathname.endsWith('/research/jdj-strategy/history')) {
       const request = Object.fromEntries(url.searchParams)
@@ -849,7 +821,7 @@ test('SuBing keeps the Market display identity separate from current-dominant re
   await page.goto('/market/chart?symbol=ag&series_kind=continuous&frequency=5m')
 
   const overlay = page.getByRole('group', { name: 'Overlay' })
-  await expect(overlay.getByRole('button')).toHaveText(['无', '苏冰', 'N字', '日进斗金', '日进斗金策略', '火天大有'])
+  await expect(overlay.getByRole('button')).toHaveText(['无', '苏冰', '日进斗金参考回放', '火天大有'])
   await expect(page.getByText('120 bars', { exact: true })).toBeVisible()
   await expect(page.locator('.product-workspace__kline')).toHaveAttribute('data-visible-start-trading-day', '2026-01-01')
   await expect(page.locator('.product-workspace__kline')).toHaveAttribute('data-visible-main-indicators', '')
@@ -868,52 +840,6 @@ test('SuBing keeps the Market display identity separate from current-dominant re
   expect(researchRequests).toHaveLength(1)
   await expect(page.getByText('120 bars', { exact: true })).toBeVisible()
   await expect(page).toHaveURL(/series_kind=continuous/)
-})
-
-test('N and JDJ Candidate remain available for AG without implying strategy support', async ({ page }) => {
-  const bars = Array.from({ length: 120 }, (_, index) => bar(index))
-  const historicalEventTime = bars.at(-1).bar_end
-  const nHistoricalRequests = []
-  const jdjHistoricalRequests = []
-  await mockAlertMarkerSurface(page)
-  await mockWorkspace(page, { json: research() }, {
-    bars,
-    historicalEventTime,
-    canonicalCoverage: { start: bars[0].bar_end, end: historicalEventTime },
-    nHistoricalRequests,
-    jdjHistoricalRequests,
-  })
-  await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=5m')
-
-  const overlay = page.getByRole('group', { name: 'Overlay' })
-  const shell = page.getByTestId('kline-shell')
-  await expect(page.getByText('120 bars', { exact: true })).toBeVisible()
-  await overlay.getByRole('button', { name: 'N字', exact: true }).click()
-  await expect.poll(() => nHistoricalRequests.length).toBe(1)
-  await expect(shell).toHaveAttribute('data-research-marker-count', '1')
-  await expect(page.locator('.product-workspace__kline')).toHaveAttribute('data-visible-main-indicators', '')
-
-  await page.getByRole('group', { name: '周期' }).getByRole('button', { name: '1m', exact: true }).click()
-  await expect(shell).toHaveAttribute('data-research-marker-count', '0')
-  await overlay.getByRole('button', { name: '日进斗金', exact: true }).click()
-  await expect.poll(() => jdjHistoricalRequests.length).toBe(1)
-  await expect(shell).toHaveAttribute('data-research-marker-count', '1')
-  await expect(shell).toHaveAttribute('data-rendered-research-marker-count', '1')
-  await expect(page.locator('.product-workspace__kline')).toHaveAttribute('data-visible-main-indicators', 'ema_20')
-
-  const chartBox = await page.locator('.chart').boundingBox()
-  expect(chartBox).not.toBeNull()
-  const markerDetail = page.getByTestId('kline-hover-marker')
-  for (let x = chartBox.width - 220; x <= chartBox.width - 40; x += 4) {
-    await page.mouse.move(chartBox.x + x, chartBox.y + 180)
-    if (await markerDetail.count()) break
-  }
-  await expect(markerDetail).toContainText('jdj_trend_follow_1m_candidate_v1')
-  await expect(markerDetail).toContainText(`事件时间 ${historicalEventTime}`)
-  await expect(markerDetail).toContainText('触发位 219.5')
-
-  expect(nHistoricalRequests[0]).toMatchObject({ series_kind: 'actual_dominant', symbol: 'ag', frequency: '5m' })
-  expect(jdjHistoricalRequests[0]).toMatchObject({ series_kind: 'actual_dominant', symbol: 'ag', frequency: '1m' })
 })
 
 test('JDJ Strategy uses current RB identity and clears stale markers across 1m 5m 1m', async ({ page }) => {
@@ -975,7 +901,7 @@ test('JDJ Strategy uses current RB identity and clears stale markers across 1m 5
     series_kind: 'actual_dominant', symbol: 'rb', frequency: '1m',
   })
 
-  await overlay.getByRole('button', { name: '日进斗金策略', exact: true }).click()
+  await overlay.getByRole('button', { name: '日进斗金参考回放', exact: true }).click()
   await expect.poll(() => jdjStrategyHistoricalRequests.length).toBe(1)
   await page.getByRole('group', { name: '周期' }).getByRole('button', { name: '5m', exact: true }).click()
   await expect(shell).toHaveAttribute('data-research-marker-count', '0')
@@ -1023,7 +949,7 @@ test('JDJ Strategy fails closed for AG profile unavailability', async ({ page })
   const shell = page.getByTestId('kline-shell')
   await expect(page.getByText('120 bars', { exact: true })).toBeVisible()
   await page.getByRole('group', { name: 'Overlay' })
-    .getByRole('button', { name: '日进斗金策略', exact: true }).click()
+    .getByRole('button', { name: '日进斗金参考回放', exact: true }).click()
 
   await expect.poll(() => jdjStrategyHistoricalRequests.length).toBe(1)
   expect(jdjStrategyHistoricalRequests[0]).toMatchObject({
@@ -1054,7 +980,7 @@ test('JDJ Strategy keeps generic server failures distinct from profile unavailab
   await page.goto('/market/chart?symbol=jm&series_kind=actual_dominant&frequency=1m')
 
   await page.getByRole('group', { name: 'Overlay' })
-    .getByRole('button', { name: '日进斗金策略', exact: true }).click()
+    .getByRole('button', { name: '日进斗金参考回放', exact: true }).click()
 
   await expect.poll(() => jdjStrategyHistoricalRequests.length).toBe(1)
   await expect(page.getByText('历史因果重放暂不可用；Canonical K 线仍可正常查看。', { exact: true })).toBeVisible()

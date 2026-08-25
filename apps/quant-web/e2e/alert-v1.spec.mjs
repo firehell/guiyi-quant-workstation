@@ -369,7 +369,7 @@ test('SuBing product and HTDY pair switches preserve separate Scope semantics', 
   ])
 
   const putCountBeforeJdj = scopePuts.length
-  await overlays.getByRole('button', { name: '日进斗金策略', exact: true }).click()
+  await overlays.getByRole('button', { name: '日进斗金参考回放', exact: true }).click()
   await expect(sidebar).toContainText('Reference only')
   await expect(sidebar.getByRole('switch')).toHaveCount(0)
   expect(scopePuts).toHaveLength(putCountBeforeJdj)
