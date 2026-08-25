@@ -6,13 +6,14 @@
 
 **Architecture:** One pure quant-core engine owns all formula semantics. Application services resolve logical/physical market identity, full segment context, completed-Live seams, policy approval, and provenance. Source-specific read models project facts to CLI/API; Web only renders those facts as a context layer and never joins the four strategy-overlay ids.
 
-**Tech Stack:** Python 3.11+, `Decimal`, dataclasses, Pydantic/FastAPI, SQLAlchemy read composition, `MarketDataService`, pytest, Ruff, Mypy, Vue 3, TypeScript, Vitest, Naive UI, Lightweight Charts, Playwright.
+**Tech Stack:** Python 3.13+, `Decimal`, dataclasses, Pydantic/FastAPI, SQLAlchemy read composition, `MarketDataService`, pytest, Ruff, Mypy, Vue 3, TypeScript, Vitest, Naive UI, Lightweight Charts, Playwright.
 
 **Spec:** [Market Structure V1 Design Spec](../specs/2026-08-25-market-structure-v1-design.md)
 
 ## Global Constraints
 
 - This document is an execution plan, not implementation authorization. The current documentation branch changes no runtime code.
+- After creating each stage worktree, prepare the locked Python environment with `uv sync --project services/quant-api --locked`; before Stage D Web tests, also run `pnpm --dir apps/quant-web install --frozen-lockfile`.
 - Use a new worktree and a new branch from the then-current `develop` for each stage. Never continue on the documentation branch after its PR merges.
 - Stage branches are sequential:
   - A: `research/market-structure-v1-stage-a`
@@ -71,7 +72,7 @@ git -C ../guiyi-market-structure-stage-a rev-parse HEAD
 def test_acceptance_manifest_requires_every_frequency_and_split_minimum() -> None:
     with pytest.raises(CalibrationEvidenceError) as exc:
         validate_corpus_manifest(incomplete_manifest())
-    assert exc.value.code == "MARKET_STRUCTURE_CALIBRATION_EVIDENCE_INSUFFICIENT"
+    assert exc.value.reason == "calibration_evidence_insufficient"
 
 
 def test_corpus_digest_ignores_images_and_exploratory_records() -> None:
@@ -128,7 +129,7 @@ git commit -m "test(research): define market structure calibration contract"
 - Create: `packages/quant-core/guiyi_quant/indicators/market_structure_v1.py`
 - Create: `services/quant-api/tests/test_market_structure_v1_formula.py`
 
-- [ ] Write failing tests for the local Decimal context, OHLC/time validation, strict symmetric pivots, Wilder ATR, move filter, equality, plateau rejection, ambiguous outside bars, same-kind points, state readiness, invalid range, preview partial-right predicate/winner, canonical ids, and ambient-context independence.
+- [ ] Write failing tests for the local Decimal context, OHLC/time validation, strict symmetric pivots, Wilder ATR, move filter, equality, plateau rejection, ambiguous outside bars, same-kind points, state readiness, invalid range, preview partial-right predicate/winner, canonical ids, dependency closure, and ambient-context independence.
 
 ```python
 @pytest.mark.parametrize(("precision", "rounding"), [(6, ROUND_DOWN), (50, ROUND_UP)])
@@ -140,6 +141,12 @@ def test_formula_is_independent_of_ambient_decimal_context(precision, rounding) 
 
 def test_preview_drops_candidate_already_defeated_on_observed_right() -> None:
     assert compute_market_structure(context, bars, policy).preview is None
+
+
+def test_fact_dependency_indices_cover_transitive_formula_inputs() -> None:
+    fact = compute_market_structure(context, mixed_source_seam_bars, policy).facts[-1]
+    assert fact.dependency_bar_indices == expected_dependency_indices
+    assert "dependency_bar_indices" not in fact.canonical_id_payload()
 ```
 
 - [ ] Run the focused test and observe import/behavior failures:
@@ -179,7 +186,9 @@ def compute_market_structure(
 
 - [ ] Build canonical ids from sorted compact JSON and stable logical/physical/segment identity. Exclude source, calculated time, and segment coverage end.
 
-- [ ] Add a prefix test that computes every prefix and asserts all earlier confirmed facts retain identical ids and values.
+- [ ] For every fact, return deterministic ordered `dependency_bar_indices` as non-identity metadata. The transitive closure must cover every input bar used by strict left/right predicates, Wilder ATR seed/recursion, prior structure/active-leg state, and the confirmation window through `confirmed_at`. Quant-core exposes indices only—it never knows Canonical/Live source—and these indices are excluded from canonical fact serialization and id hashing.
+
+- [ ] Add a prefix test that computes every prefix and asserts all earlier confirmed facts retain identical ids, values, and dependency-index closures.
 
 - [ ] Run formula tests under at least two ambient Decimal contexts, then run existing indicator registry/kernel regressions to prove no registration or behavior change:
 
@@ -249,7 +258,7 @@ PYTHONPATH=services/quant-api:packages/quant-core \
   app.research.market_structure.calibration_runner
 ```
 
-- [ ] If the authorized acceptance manifest is absent or insufficient, verify the runner exits non-zero with `MARKET_STRUCTURE_CALIBRATION_EVIDENCE_INSUFFICIENT`; set task conclusion to `阻塞` and do not create fake policy/report files.
+- [ ] If the authorized acceptance manifest is absent or insufficient, verify the runner exits non-zero and serializes the stable machine reason `calibration_evidence_insufficient`; set task conclusion to `阻塞` and do not create fake policy/report files.
 
 - [ ] If evidence is present, run calibration twice and byte-compare the report/policy, then verify policy id contains the selected span/factor and corpus/formula digest prefixes.
 
@@ -298,9 +307,9 @@ git diff --check
 
 - [ ] Dispatch an independent read-only reviewer with base/head, the Spec, formula digest, corpus/split digest, calibration and holdout metrics. Fix every Critical/Important finding and rerun verification.
 
-- [ ] Record the exact reviewed evaluator/policy head and findings in the review document. Add an approval-manifest test that recomputes the immutable policy SHA-256, formula digest, corpus/split digest, and alias target.
+- [ ] After the preliminary review passes, record its exact evaluator/policy head and findings in the review document. Add an approval-manifest test that recomputes the immutable policy SHA-256, formula digest, corpus/split digest, and alias target.
 
-- [ ] Create the approval manifest only after review passes; then run one final exact-head reviewer confirmation and commit:
+- [ ] Create the approval manifest, run the focused and full Stage A checks again, then commit the tracked review/approval state:
 
 ```bash
 git add docs/superpowers/reviews/2026-08-25-market-structure-v1-stage-a.md \
@@ -308,6 +317,8 @@ git add docs/superpowers/reviews/2026-08-25-market-structure-v1-stage-a.md \
   services/quant-api/tests/research/test_market_structure_calibration.py
 git commit -m "docs(research): approve market structure stage A"
 ```
+
+- [ ] Dispatch the final read-only reviewer against that exact commit. Do not change any tracked file after a passing review. If the reviewer finds a Critical/Important issue, fix it in a new commit, rerun all Stage A verification, and repeat exact-head review; store the final review outcome in the PR review/timeline rather than making a post-review documentation commit.
 
 - [ ] Open a PR to `develop`. Do not merge. Recommended conclusion is `允许集成 develop` only if the exact final head passes; otherwise `要求修正后再集成` or `阻塞`.
 
@@ -323,6 +334,7 @@ git commit -m "docs(research): approve market structure stage A"
 - Update: `packages/quant-core/guiyi_quant/indicators/registry.py`
 - Update: `packages/quant-core/guiyi_quant/indicators/policy.py`
 - Update: `packages/quant-core/guiyi_quant/indicators/__init__.py`
+- Update: `docs/INDICATOR_KERNEL.md`
 - Create: `services/quant-api/tests/research/test_market_structure_policy.py`
 - Update: `services/quant-api/tests/test_indicator_registry_v1.py`
 
@@ -349,6 +361,8 @@ def test_completed_live_observation_does_not_enable_runtime_live() -> None:
 
 - [ ] Export only the typed formula API required by reviewed consumers; keep calibration runner/application imports out of quant-core.
 
+- [ ] Update `docs/INDICATOR_KERNEL.md` in the same Stage B PR with the approved formula/policy ids, immutable approval resolution, allowed research-observation consumer, blocked consumer matrix, and `web_capable=false`. Do not describe the Stage C service/CLI before they exist.
+
 - [ ] Run focused policy/registry/formula tests and assert the formula file digest is unchanged:
 
 ```bash
@@ -359,18 +373,28 @@ PYTHONPATH=services/quant-api:packages/quant-core \
   services/quant-api/tests/test_indicator_registry_v1.py
 ```
 
-- [ ] Commit, run Mypy/Ruff, dispatch independent review, and open an unmerged Stage B PR. The reviewer conclusion must be `允许集成 develop` before the human merge Gate.
+- [ ] Before committing, run the complete Stage B Gate. The policy test must recompute the formula digest from the checked-in bytes and compare it with the approval manifest:
 
 ```bash
-git add packages/quant-core/guiyi_quant/indicators \
+uv run --project services/quant-api python -m ruff check \
+  packages/quant-core/guiyi_quant/indicators \
   services/quant-api/app/research/market_structure/policy.py \
   services/quant-api/tests/research/test_market_structure_policy.py \
   services/quant-api/tests/test_indicator_registry_v1.py
-git commit -m "feat(indicators): register approved market structure policy"
 PYTHONPATH=services/quant-api:packages/quant-core MYPYPATH=services/quant-api:packages/quant-core \
   uv run --project services/quant-api mypy --explicit-package-bases \
   --ignore-missing-imports services/quant-api/app packages/quant-core/guiyi_quant
+python3 scripts/engineering/secret_scan.py --json
+git diff --check
+git add packages/quant-core/guiyi_quant/indicators \
+  services/quant-api/app/research/market_structure/policy.py \
+  services/quant-api/tests/research/test_market_structure_policy.py \
+  services/quant-api/tests/test_indicator_registry_v1.py \
+  docs/INDICATOR_KERNEL.md
+git commit -m "feat(indicators): register approved market structure policy"
 ```
+
+- [ ] Dispatch an independent read-only reviewer against the exact Stage B commit. If fixes are needed, commit them, rerun the full Stage B Gate, and repeat exact-head review. Open an unmerged Stage B PR only after the reviewer recommends `允许集成 develop`.
 
 ---
 
@@ -387,7 +411,7 @@ PYTHONPATH=services/quant-api:packages/quant-core MYPYPATH=services/quant-api:pa
 
 - [ ] After Stage B is merged, create the Stage C worktree from current `origin/develop`.
 
-- [ ] Write failing service tests for logical selector/full identity mapping, continuous `MAIN`, contract identity, actual-dominant true segments, roll reset, W1 segment restoration, full coverage-start calculation before crop, source/segment failures, and window-independent fact ids.
+- [ ] Write failing service tests for logical selector/full identity mapping, continuous `MAIN`, contract identity, actual-dominant true segments, roll reset, W1 segment restoration, full coverage-start calculation before crop, source/segment failures, and window-independent fact ids/dependency closures.
 
 - [ ] Add completed-Live seam tests using existing `MarketReadService` semantics: continuous remains Canonical-only; contract requires exact contract/trading-day; actual-dominant requires exact current rank1 contract and unique current segment; incomplete or mismatched Live fails closed.
 
@@ -400,6 +424,11 @@ def test_actual_dominant_live_contract_mismatch_is_unavailable() -> None:
 
 def test_visible_window_does_not_change_confirmed_fact_ids() -> None:
     assert service.history(short_window).facts == service.history(long_window).facts[-len(expected):]
+
+
+def test_dependency_sources_follow_engine_closure_across_live_seam() -> None:
+    fact = service.history(canonical_plus_completed_live_request).facts[-1]
+    assert fact.fact_dependency_sources == ("canonical", "live")
 ```
 
 - [ ] Implement immutable request/result models and map `SeriesKind` to canonical `DatasetKey` fields. Keep `segment_coverage_end_trading_day` in response provenance, never fact identity.
@@ -408,7 +437,9 @@ def test_visible_window_does_not_change_confirmed_fact_ids() -> None:
 
 - [ ] Calculate each segment from authoritative start through `resolved_cutoff`, then crop output. For snapshot, capture one UTC observation instant and resolve seven independent row cutoffs.
 
-- [ ] Separate immutable fact fields from `fact_dependency_sources`, response source mix, resolver decision, `resolved_cutoff`, and `calculated_at`.
+- [ ] Map each engine `dependency_bar_indices` closure back to the full-context bars, then project distinct `fact_dependency_sources` in first-dependency order. Never infer dependencies from the cropped response and never reproduce formula rules in the service. Separate immutable fact fields from this point provenance, response source mix, resolver decision, `resolved_cutoff`, and `calculated_at`.
+
+- [ ] Add source-provenance tests where a fact crosses the Canonical/completed-Live seam, where ATR recursion introduces the second source, and where a prior pivot/active-leg seed introduces the second source. Assert identical facts retain their ids while their provenance may upgrade after Live materializes as Canonical.
 
 - [ ] Run focused service tests plus actual-dominant loader and Market read regressions, then commit:
 
@@ -471,7 +502,7 @@ git commit -m "feat(cli): expose market structure research projection"
 - Create: `services/quant-api/tests/research/test_market_structure_benchmark.py`
 - Create after real read-only run: `docs/superpowers/reviews/2026-08-25-market-structure-v1-stage-c.md`
 - Update after acceptance: `PROJECT_SOURCE.md`
-- Update after acceptance: `docs/INDICATOR_KERNEL.md`
+- Update after acceptance: `docs/INDICATOR_KERNEL.md` (append Stage C service/CLI projection facts only)
 - Update after acceptance: `TESTING.md`
 
 - [ ] Write failing benchmark tests for three warm-ups, 30 serial measurements, nearest-rank p95, exact fixture/cutoff/input counts, environment metadata, and no cache/checkpoint writes.
@@ -701,7 +732,7 @@ git diff --check
 
 - [ ] Re-run the frozen Stage C benchmark against the exact Stage D head; both p95 targets must still pass.
 
-- [ ] Dispatch an independent read-only reviewer with base/head, Spec, this plan, formula/policy/corpus digests, Stage C evidence, test/build output, and benchmark. Fix every Critical/Important issue and rerun affected plus full verification.
+- [ ] Dispatch a preliminary independent read-only reviewer with base/head, Spec, this plan, formula/policy/corpus digests, Stage C evidence, test/build output, and benchmark. Fix every Critical/Important issue and rerun affected plus full verification.
 
 - [ ] Record the exact review result and residual known limitations. Commit docs only after facts match the final code:
 
@@ -711,6 +742,8 @@ git add PROJECT_SOURCE.md DECISIONS.md docs/ARCHITECTURE.md \
   docs/superpowers/reviews/2026-08-25-market-structure-v1-stage-d.md
 git commit -m "docs: record market structure v1 capability"
 ```
+
+- [ ] Re-run the full verification matrix against this exact commit, then dispatch the final read-only exact-head review. Do not change tracked files after it passes. If it finds a Critical/Important issue, fix and commit, rerun full verification, and repeat exact-head review; leave the final result in the PR review/timeline.
 
 - [ ] Compare the final branch to its exact `develop` base and confirm no migration, DB/Redis/runtime/alert/order/release files changed unexpectedly.
 
