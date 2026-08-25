@@ -71,6 +71,30 @@ def product_alert_state(
 
 
 @router.put(
+    "/rules/{rule_code}/scope/{symbol}/{frequency}",
+    response_model=ProductAlertRuleStateOut,
+)
+def set_product_frequency_alert_scope(
+    rule_code: str,
+    symbol: str,
+    frequency: str,
+    request: AlertScopeUpdate,
+    session: Session = Depends(get_db),
+) -> ProductAlertRuleStateOut:
+    """Add or remove one operational product/frequency pair from HTDY scope."""
+
+    try:
+        state = _service(session).set_product_frequency_enabled(
+            rule_code, symbol, frequency, request.enabled
+        )
+    except AlertRuleNotFoundError as exc:
+        raise HTTPException(status_code=404, detail={"code": exc.code}) from exc
+    except AlertScopeError as exc:
+        raise _scope_http_error(exc) from exc
+    return _state_out(state)
+
+
+@router.put(
     "/rules/{rule_code}/scope/{symbol}",
     response_model=ProductAlertRuleStateOut,
 )
@@ -200,6 +224,7 @@ def _state_out(state: ProductAlertRuleState) -> ProductAlertRuleStateOut:
         display_name=state.display_name,
         kind=state.kind,
         input_frequencies=list(state.input_frequencies),
+        enabled_frequencies=list(state.enabled_frequencies),
         enabled_for_product=state.enabled_for_product,
     )
 

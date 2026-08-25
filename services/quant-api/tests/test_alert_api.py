@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
@@ -43,6 +45,7 @@ def test_product_alert_state_returns_registry_metadata() -> None:
                 "display_name": "火天大有",
                 "kind": "indicator_observation",
                 "input_frequencies": ["15m"],
+                "enabled_frequencies": [],
                 "enabled_for_product": False,
             },
             {
@@ -50,6 +53,7 @@ def test_product_alert_state_returns_registry_metadata() -> None:
                 "display_name": "苏冰入场信号",
                 "kind": "formal_signal",
                 "input_frequencies": ["5m", "15m"],
+                "enabled_frequencies": [],
                 "enabled_for_product": False,
             },
         ],
@@ -265,6 +269,86 @@ def test_alert_api_rejects_invalid_symbol_and_unknown_rule() -> None:
     assert unknown_rule.json()["detail"]["code"] == "ALERT_RULE_NOT_FOUND"
 
 
+def test_alert_api_mutates_only_the_requested_htdy_frequency(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    testing_session = _session_factory()
+    _widen_htdy_test_frequencies(monkeypatch)
+
+    def override_get_db():
+        with testing_session() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        client = TestClient(app)
+        enabled_15m = client.put(
+            "/api/alerts/rules/htdy_original_15m/scope/jm/15m",
+            json={"enabled": True},
+        )
+        enabled_5m = client.put(
+            "/api/alerts/rules/htdy_original_15m/scope/jm/5m",
+            json={"enabled": True},
+        )
+        disabled_5m = client.put(
+            "/api/alerts/rules/htdy_original_15m/scope/jm/5m",
+            json={"enabled": False},
+        )
+        invalid_frequency = client.put(
+            "/api/alerts/rules/htdy_original_15m/scope/jm/invalid",
+            json={"enabled": True},
+        )
+        subing_pair = client.put(
+            "/api/alerts/rules/subing_entry_signal_v1/scope/jm/15m",
+            json={"enabled": True},
+        )
+        htdy_product = client.put(
+            "/api/alerts/rules/htdy_original_15m/scope/jm",
+            json={"enabled": True},
+        )
+        subing_product = client.put(
+            "/api/alerts/rules/subing_entry_signal_v1/scope/jm",
+            json={"enabled": True},
+        )
+        product_state = client.get("/api/alerts/products/jm")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert enabled_15m.status_code == 200
+    assert enabled_15m.json()["enabled_frequencies"] == ["15m"]
+    assert enabled_5m.status_code == 200
+    assert enabled_5m.json()["enabled_frequencies"] == ["5m", "15m"]
+    assert disabled_5m.status_code == 200
+    assert disabled_5m.json()["enabled_frequencies"] == ["15m"]
+    assert invalid_frequency.status_code == 422
+    assert invalid_frequency.json()["detail"]["code"] == "ALERT_SCOPE_FREQUENCY_INVALID"
+    assert subing_pair.status_code == 422
+    assert subing_pair.json()["detail"]["code"] == "ALERT_SCOPE_MODE_INVALID"
+    assert htdy_product.status_code == 422
+    assert htdy_product.json()["detail"]["code"] == "ALERT_SCOPE_MODE_INVALID"
+    assert subing_product.status_code == 200
+    assert subing_product.json()["enabled_frequencies"] == []
+    assert product_state.status_code == 200
+    assert product_state.json()["rules"] == [
+        {
+            "rule_code": "htdy_original_15m",
+            "display_name": "火天大有",
+            "kind": "indicator_observation",
+            "input_frequencies": ["1m", "5m", "15m", "30m", "60m", "1d", "1w"],
+            "enabled_frequencies": ["15m"],
+            "enabled_for_product": True,
+        },
+        {
+            "rule_code": "subing_entry_signal_v1",
+            "display_name": "苏冰入场信号",
+            "kind": "formal_signal",
+            "input_frequencies": ["5m", "15m"],
+            "enabled_frequencies": [],
+            "enabled_for_product": True,
+        },
+    ]
+
+
 def test_alert_api_exposes_no_rule_definition_mutation_surface() -> None:
     paths = TestClient(app).get("/openapi.json").json()["paths"]
 
@@ -276,6 +360,27 @@ def test_alert_api_exposes_no_rule_definition_mutation_surface() -> None:
     )
     scope_methods = paths["/api/alerts/rules/{rule_code}/scope/{symbol}"]
     assert set(scope_methods) == {"put"}
+    pair_scope_methods = paths[
+        "/api/alerts/rules/{rule_code}/scope/{symbol}/{frequency}"
+    ]
+    assert set(pair_scope_methods) == {"put"}
+
+
+def _widen_htdy_test_frequencies(monkeypatch: pytest.MonkeyPatch) -> None:
+    import app.alerts.service as service_module
+
+    original_definition = service_module._definition
+    htdy_definition = replace(
+        original_definition("htdy_original_15m"),
+        input_frequencies=("1m", "5m", "15m", "30m", "60m", "1d", "1w"),
+    )
+
+    def definition(rule_code: str):
+        if rule_code == "htdy_original_15m":
+            return htdy_definition
+        return original_definition(rule_code)
+
+    monkeypatch.setattr(service_module, "_definition", definition)
 
 
 def _override_current_trading_day(result: CurrentTradingDayResult) -> None:
