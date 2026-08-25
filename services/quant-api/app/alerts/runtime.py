@@ -382,6 +382,7 @@ class AlertRuntime:
                             continue
                         market_read = self._market_read_factory(session)
                         for symbol, frequency in pairs:
+                            stage = "market_read"
                             try:
                                 window = market_read.latest_canonical_window(
                                     SeriesPageQuery(
@@ -392,6 +393,7 @@ class AlertRuntime:
                                     trading_day=trigger.trading_day,
                                     limit=32,
                                 )
+                                stage = "window_validate"
                                 if not _canonical_window_matches_trigger(
                                     window,
                                     symbol=symbol,
@@ -399,12 +401,14 @@ class AlertRuntime:
                                     trading_day=trigger.trading_day,
                                 ):
                                     continue
+                                stage = "evaluate"
                                 evaluation = self._htdy_evaluator.evaluate(window)
                                 if (
                                     not isinstance(evaluation, AlertEvaluation)
                                     or not evaluation.observation_types
                                 ):
                                     continue
+                                stage = "event_persist"
                                 prepared = _persist_event_and_prepare_notification(
                                     service,
                                     taxonomy=self._taxonomy,
@@ -433,7 +437,13 @@ class AlertRuntime:
                                 if session.in_transaction():
                                     session.rollback()
                                 processing_error_type = PROCESSING_FAILURE
-                                _LOGGER.warning("ALERT_RULE_PROCESSING_FAILED")
+                                _LOGGER.warning(
+                                    "ALERT_RULE_PROCESSING_FAILED "
+                                    "symbol=%s frequency=%s stage=%s",
+                                    symbol,
+                                    frequency.value,
+                                    stage,
+                                )
                 finally:
                     if session.in_transaction():
                         session.rollback()

@@ -1631,6 +1631,7 @@ def test_invalid_canonical_state_message_has_zero_side_effects(
 
 def test_unavailable_daily_pair_does_not_authorize_weekly_fallback(
     session: Session,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     _seed_rule(
         session,
@@ -1653,6 +1654,10 @@ def test_unavailable_daily_pair_does_not_authorize_weekly_fallback(
     assert harness.htdy_evaluator.calls == []
     assert _event_rows(session) == []
     assert harness.sender.messages == []
+    assert caplog.messages.count(
+        "ALERT_RULE_PROCESSING_FAILED symbol=jm frequency=1d stage=market_read"
+    ) == 1
+    assert "private Canonical detail" not in caplog.text
 
 
 @pytest.mark.parametrize(

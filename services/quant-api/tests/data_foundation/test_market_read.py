@@ -690,16 +690,69 @@ def test_latest_canonical_window_reads_d1_w1_without_live(frequency: str) -> Non
     assert window.bars == canonical[-32:]
 
 
-@pytest.mark.parametrize("frequency", ("1d", "1w"))
-def test_latest_canonical_window_rejects_stale_trading_day(frequency: str) -> None:
+def test_latest_canonical_window_rejects_stale_daily_trading_day() -> None:
     latest = replace(_bar_at(datetime(2025, 1, 2, 15, 0, tzinfo=UTC)), trading_day=date(2025, 1, 1))
     owner = ResolvedContractSegment("J2505", date(2025, 1, 1), date(2025, 1, 2))
-    service = _canonical_window_service((latest,), frequency=frequency, segments=(owner,))
+    service = _canonical_window_service((latest,), frequency="1d", segments=(owner,))
 
     with pytest.raises(MarketReadWindowError, match="MARKET_READ_CUTOFF_BAR_MISSING"):
         service.latest_canonical_window(
-            SeriesPageQuery("actual_dominant", "j", frequency),
+            SeriesPageQuery("actual_dominant", "j", "1d"),
             trading_day=date(2025, 1, 2),
+        )
+
+
+def test_latest_canonical_window_returns_latest_completed_week_before_trigger_day() -> None:
+    """Catches treating an ordinary mid-week prior W1 bar as a processing failure."""
+    completed_week = replace(
+        _bar_at(datetime(2025, 1, 3, 15, 0, tzinfo=UTC)),
+        trading_day=date(2025, 1, 3),
+    )
+    trigger_day = date(2025, 1, 7)
+    owner = ResolvedContractSegment("J2505", completed_week.trading_day, trigger_day)
+    service = _canonical_window_service(
+        (completed_week,),
+        frequency="1w",
+        segments=(owner,),
+    )
+
+    window = service.latest_canonical_window(
+        SeriesPageQuery("actual_dominant", "j", "1w"),
+        trading_day=trigger_day,
+    )
+
+    assert window.trading_day == completed_week.trading_day
+    assert window.cutoff == completed_week.bar_end
+    assert window.bars == (completed_week,)
+
+
+def test_latest_canonical_window_rejects_empty_weekly_window() -> None:
+    service = _canonical_window_service((), frequency="1w", segments=())
+
+    with pytest.raises(MarketReadWindowError, match="MARKET_READ_CUTOFF_BAR_MISSING"):
+        service.latest_canonical_window(
+            SeriesPageQuery("actual_dominant", "j", "1w"),
+            trading_day=date(2025, 1, 7),
+        )
+
+
+def test_latest_canonical_window_rejects_future_weekly_trading_day() -> None:
+    trigger_day = date(2025, 1, 7)
+    future_week = replace(
+        _bar_at(datetime(2025, 1, 10, 15, 0, tzinfo=UTC)),
+        trading_day=date(2025, 1, 10),
+    )
+    owner = ResolvedContractSegment("J2505", trigger_day, future_week.trading_day)
+    service = _canonical_window_service(
+        (future_week,),
+        frequency="1w",
+        segments=(owner,),
+    )
+
+    with pytest.raises(MarketReadWindowError, match="MARKET_READ_CUTOFF_BAR_MISSING"):
+        service.latest_canonical_window(
+            SeriesPageQuery("actual_dominant", "j", "1w"),
+            trading_day=trigger_day,
         )
 
 
