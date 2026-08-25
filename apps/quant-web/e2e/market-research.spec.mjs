@@ -1262,6 +1262,39 @@ test('SuBing panel keeps an unavailable Event source distinct from ready empty',
   await expect(formal.getByTestId('product-today-alert-events')).toHaveCount(0)
 })
 
+test('SuBing panel distinguishes authoritative warm-up without inventing Factor evidence', async ({ page }) => {
+  const source = {
+    supported: true,
+    loading: false,
+    error: false,
+    snapshot: subing({
+      primary: { status: 'insufficient_data', snapshot: null },
+      companion: null,
+      primary_signal: {
+        status: 'insufficient_data', direction: 'none', trigger_timeframe: '5m',
+        lower_tf_confirmation: false, resolution: null, conditions: [], error_code: null,
+      },
+      resolved_signal: null,
+    }),
+  }
+  await mockWorkspace(page, { json: research() }, { subingResponse: source.snapshot })
+  await mockAlertMarkerSurface(page)
+  await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=5m')
+
+  const researchPanel = page.getByTestId('subing-current-research')
+  await expect(researchPanel.locator(':scope > p')).toHaveText('指标 warm-up 中 / 数据不足')
+  await expect(researchPanel).not.toContainText('苏冰当前周期不可用')
+  await expect(researchPanel).not.toContainText('苏冰观察加载中')
+  await expect(researchPanel).not.toContainText('苏冰观察暂不可用')
+
+  const primaryConfirmation = researchPanel.locator('.subing-panel__facts > div').filter({ hasText: 'Primary 确认' })
+  const primaryFactor = researchPanel.locator('.subing-panel__factor').filter({ hasText: 'Primary Factor' })
+  await expect(primaryConfirmation.getByRole('definition')).toHaveText('—')
+  await expect(primaryFactor.getByRole('definition')).toHaveText('warm-up 中')
+  await expect(primaryConfirmation).not.toContainText(/\d{2}\/\d{2} \d{2}:\d{2}/)
+  await expect(primaryFactor).not.toContainText(/EMA|S5|S10|MACD|V\/prev/)
+})
+
 test('SuBing lifecycle remains an explicitly research-only funnel beside formal V1 wording', async ({ page }) => {
   await mockWorkspace(page, { json: research() }, {
     subingResponse: cloneSubingLifecycleCase('formalDirectLong'),
