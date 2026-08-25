@@ -255,7 +255,7 @@ def test_release_versions_are_consistent() -> None:
         web["version"],
     }
 
-    assert versions == {"1.8.2"}
+    assert versions == {"1.8.3"}
     assert "version=APP_VERSION" in api
     assert '"version": APP_VERSION' in api
 
@@ -321,6 +321,65 @@ def test_alert_rule_codes_have_one_production_registry_per_language() -> None:
     assert {path.relative_to(ROOT).as_posix() for path in frontend_sources} == {
         "apps/quant-web/src/utils/alertRules.ts"
     }
+
+
+def test_htdy_all_frequency_alert_contract_matches_active_canonical() -> None:
+    registry = importlib.import_module("app.alerts.registry")
+    models = importlib.import_module("app.alerts.models")
+    service_module = importlib.import_module("app.alerts.service")
+
+    assert registry.HTDY_RULE.rule_code == "htdy_original_15m"
+    assert registry.HTDY_RULE.input_frequencies == (
+        "1m",
+        "5m",
+        "15m",
+        "30m",
+        "60m",
+        "1d",
+        "1w",
+    )
+
+    service = service_module.AlertService(object(), operational_products=("jm",))
+    htdy_rule = models.AlertRule(
+        rule_code=registry.HTDY_RULE.rule_code,
+        scope_products=[],
+        scope_product_frequencies={"jm": ["15m"]},
+    )
+    subing_rule = models.AlertRule(
+        rule_code=registry.SUBING_RULE.rule_code,
+        scope_products=["jm"],
+        scope_product_frequencies={},
+    )
+    assert service.rule_allows_event(htdy_rule, symbol="jm", frequency="15m")
+    assert not service.rule_allows_event(htdy_rule, symbol="jm", frequency="5m")
+    assert service.rule_allows_event(subing_rule, symbol="jm", frequency="5m")
+
+    storage_keys = {
+        tuple(column.name for column in constraint.columns)
+        for constraint in models.AlertEvent.__table__.constraints
+        if constraint.__class__.__name__ == "UniqueConstraint"
+    }
+    assert storage_keys == {("rule_id", "symbol", "frequency", "bar_end")}
+
+    def canonical_text(relative: str) -> str:
+        return " ".join((ROOT / relative).read_text(encoding="utf-8").split())
+
+    indicator = canonical_text("docs/INDICATOR_KERNEL.md")
+    project = canonical_text("PROJECT_SOURCE.md")
+    agents = canonical_text("AGENTS.md")
+    development = canonical_text("docs/DEVELOPMENT.md")
+    decisions = canonical_text("DECISIONS.md")
+
+    assert "`1m/5m/15m/30m/60m/1d/1w` 七个正式周期" in indicator
+    assert "稳定 Rule code 保持 `htdy_original_15m`" in project
+    assert "HTDY 唯一 Scope authority 为 `scope_product_frequencies`" in project
+    assert "SuBing 唯一 Scope authority 为 `scope_products`" in project
+    assert "`(rule_id, symbol, frequency, bar_end)`" in project
+    assert "SuBing 的业务 Event identity 保持 `rule_id + symbol + bar_end`" in project
+    assert "D1/W1 只由 `market:state(reason=canonical_updated)`" in project
+    assert "htdy_original_15m × 该 Rule 显式 symbol-frequency pair Scope" in agents
+    assert "htdy_original_15m × 该 Rule 显式 symbol-frequency pair Scope" in development
+    assert "不新增第二套 scheduler 或 Scope 表" in decisions
 
 
 def test_exact_contract_and_jdj_identity_have_one_implementation() -> None:

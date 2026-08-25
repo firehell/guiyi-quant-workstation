@@ -1,6 +1,6 @@
 # 架构决策记录
 
-更新时间：2026-08-24
+更新时间：2026-08-25
 
 本文件只记录长期决策、理由与不可破坏边界。版本、部署、evidence 和 Gate 状态只看 `STATUS.md`；
 exact protocol/window/hash/count 只看 policy、report 与测试；历史过程只从 Git history 追溯。
@@ -25,7 +25,9 @@ exact protocol/window/hash/count 只看 policy、report 与测试；历史过程
 | Candidate convergence | dossier 只组装冻结事实；comparability 不等于 relationship；dependency/overlap 不外推 | 避免把不同 timeframe、event unit 与 outcome 语义强行统一；exact count/window 留在 protocol/report/tests |
 | 主力照妖镜 | active observation 与 sequence forensic 分层；forensic 只使用预定义全局 profile | 不按品种调参、不选 best profile；没有真实 read-only evidence Gate 就不冻结正式 Phase |
 | RQAlpha 研究工作台 | 只作为 loopback local app + 外部 Bundle/artifact 的 research-only 工具，不挂载主 API、不进入正式事实链 | 可用 Web 解决本机 RQAlpha 配置/执行/观察，同时避免暴露远程进程启动面；不恢复旧 backtest worker/DB，不替代未来 Canonical/MarketDataService + Candidate/OOS 正式验证体系；仓库验证不授权 sidecar 加载、真实 smoke、release 或 Runtime |
-| Alert | Event 先提交，通知最多一次；两条 Rule 复用既有 evaluator/read model；无 TTL Redis schema v1 只记录 processing/notification observation | 保留故障隔离与因果 cutoff；missing 不得冒充成功，状态写失败即进程 fail-closed，不保存 provider reference；无 retry/replay/backfill/outbox/queue/逐人状态或订单路径，Event/DB 语义不变 |
+| Alert Scope 与 Event identity | HTDY 保留单一稳定 Rule `htdy_original_15m`，以 `scope_product_frequencies` 管理 exact `symbol + frequency`；SuBing 继续只认 `scope_products` | 两种 Scope authority 混用即 fail-closed；通用存储键包含 frequency，HTDY 业务 identity 也包含 frequency，SuBing 仍由 Service 保持 bar-level identity |
+| Alert 触发 | HTDY 日内五周期复用同周期 completed Live Bar，D1/W1 只响应 `canonical_updated` 并读取正式 Canonical | 不从 Live 聚合 D1/W1，不新增第二套 scheduler 或 Scope 表；保持 current-event cutoff、no-backfill、Event 先提交、通知最多一次及无 retry/replay/outbox/queue/订单路径 |
+| Alert Runtime observation | 无 TTL Redis schema v1 只记录 processing/notification observation | 保留故障隔离；missing 不得冒充成功，状态写失败即进程 fail-closed，不保存 provider reference，provider accepted 不等于送达 |
 | 盘后可观察性 | 状态文件使用 schema v2 并兼容读 v1，自然运行开始即原子写 `current_run`；health 依 operational exchanges 的 `TradingCalendar` 判断预期日与超时 | 18:20 预期边界和 2h stuck 边界必须可检查；日历/跨交易所事实不可用时 fail-closed，不增独立 monitor |
 | 盘后运维通知 | 只对受监督自然盘后 execution failure 向 owner 发起最多一次 PushPlus 请求 | 与 Alert Rule/Application Domain 分离，不用 Topic/Event/DB/retry/fallback；provider accepted 不等于送达，missed/stuck 只是 health |
 | Execution Review | 只从 eligible immutable Event 记录人工 Decision、Execution、Episode 与 Review | 不恢复旧 Review Center、不连接账户、不自动反手；Historical reconstruction 只经 `MarketDataService` |

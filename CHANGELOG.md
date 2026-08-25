@@ -2,6 +2,19 @@
 
 本文件记录正式产品版本；开发过程与逐品种执行流水从 Git history 追溯。
 
+## [1.8.3] - 2026-08-25
+
+- HTDY original 观察能力扩展到 Active60 的七个正式周期 `1m/5m/15m/30m/60m/1d/1w`；日内五周期只消费
+  同周期 completed Live Bar，D1/W1 只复用既有 `canonical_updated` seam 读取 Canonical，不新增第二套
+  Live 聚合、scheduler、retry、replay 或 backfill。
+- HTDY Scope 唯一权威收口为 `symbol × frequency` pair，Event identity 纳入 frequency；旧 HTDY Scope
+  migration 只继承原有 15m ON，SuBing 继续使用 `scope_products` 与 bar-level business identity。
+- Market K 线支持七周期 HTDY Overlay、frequency-aware marker/cache 与当前 `symbol × frequency` 单开关；
+  切换图表周期或 Overlay 不写 Scope，持久 Event 只展示实际命中周期。
+- 本版包含 Alembic `20260825_0040`，但 release 不执行 production migration，不修改真实 HTDY Scope，
+  不切换 Runtime、不发送真实 PushPlus、不写 Canonical/production Redis，也不增加订单能力；
+  `auto_order=false` 不变。
+
 ## [1.8.2] - 2026-08-25
 
 - 收敛 Market 首页为中文研究工作台：Runtime / Live / Alert 等状态采用中文、去除自选入口与列，

@@ -9,7 +9,12 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.market_data.domain import CanonicalBar, MarketSeriesPageResult, SeriesPageQuery
+from app.market_data.domain import (
+    CanonicalBar,
+    MarketSeriesPageResult,
+    ResolvedContractSegment,
+    SeriesPageQuery,
+)
 from app.market_data.market_phase import MarketPhase, ProductMarketPhase
 from app.market_data.market_read_service import MarketReadService, MarketReadWindowError
 
@@ -94,10 +99,19 @@ class FakeLiveStore:
 
 
 class WindowMarketDataService:
-    def __init__(self, bars: tuple[CanonicalBar, ...]) -> None:
+    def __init__(
+        self,
+        bars: tuple[CanonicalBar, ...],
+        *,
+        expected_frequency: str = "15m",
+        segments: tuple[ResolvedContractSegment, ...] = (),
+    ) -> None:
         self.bars = bars
+        self.expected_frequency = expected_frequency
+        self.segments = segments
 
     def query_page(self, request: SeriesPageQuery) -> MarketSeriesPageResult:
+        assert request.frequency.value == self.expected_frequency
         eligible = tuple(
             bar for bar in self.bars if request.before is None or bar.bar_end < request.before
         )[-request.limit :]
@@ -107,7 +121,7 @@ class WindowMarketDataService:
             canonical_coverage=None,
             has_more_before=False,
             next_before=None,
-            resolved_contract_segments=(),
+            resolved_contract_segments=self.segments,
         )
 
 
@@ -117,9 +131,11 @@ class WindowLiveStore(FakeLiveStore):
         bars: tuple[CanonicalBar, ...],
         *,
         subscription: object = "J2505",
+        expected_frequency: str = "15m",
     ) -> None:
         super().__init__(bars)
         self.snapshot = {"j": subscription}
+        self.expected_frequency = expected_frequency
 
     def bars_after(
         self,
@@ -128,7 +144,11 @@ class WindowLiveStore(FakeLiveStore):
         frequency: str,
         after: datetime | None,
     ) -> tuple[CanonicalBar, ...]:
-        assert (trading_day, symbol, frequency) == (date(2025, 1, 2), "j", "15m")
+        assert (trading_day, symbol, frequency) == (
+            date(2025, 1, 2),
+            "j",
+            self.expected_frequency,
+        )
         return tuple(bar for bar in self.bars if after is None or bar.bar_end > after)
 
 
@@ -137,17 +157,62 @@ class ForbiddenPhaseResolver:
         raise AssertionError("bars_until must not depend on current market phase")
 
 
+class ForbiddenLiveStore:
+    def subscriptions(self, trading_day: date) -> dict[str, str]:
+        raise AssertionError("canonical window must not read Live subscriptions")
+
+    def heartbeat(self) -> dict[str, object]:
+        raise AssertionError("canonical window must not read Live heartbeat")
+
+    def bars_after(
+        self,
+        trading_day: date,
+        symbol: str,
+        frequency: str,
+        after: datetime | None,
+    ) -> tuple[CanonicalBar, ...]:
+        raise AssertionError("canonical window must not read Live bars")
+
+
 def _window_service(
     canonical: tuple[CanonicalBar, ...],
     live: tuple[CanonicalBar, ...],
     *,
     subscription: object = "J2505",
+    frequency: str = "15m",
+    segments: tuple[ResolvedContractSegment, ...] = (),
 ) -> MarketReadService:
     return MarketReadService(
-        market_data=WindowMarketDataService(canonical),
+        market_data=WindowMarketDataService(
+            canonical,
+            expected_frequency=frequency,
+            segments=segments,
+        ),
         phase_resolver=ForbiddenPhaseResolver(),
         operational_products=("j",),
-        live_store=WindowLiveStore(live, subscription=subscription),
+        live_store=WindowLiveStore(
+            live,
+            subscription=subscription,
+            expected_frequency=frequency,
+        ),
+    )
+
+
+def _canonical_window_service(
+    canonical: tuple[CanonicalBar, ...],
+    *,
+    frequency: str,
+    segments: tuple[ResolvedContractSegment, ...],
+) -> MarketReadService:
+    return MarketReadService(
+        market_data=WindowMarketDataService(
+            canonical,
+            expected_frequency=frequency,
+            segments=segments,
+        ),
+        phase_resolver=ForbiddenPhaseResolver(),
+        operational_products=("j",),
+        live_store=ForbiddenLiveStore(),
     )
 
 
@@ -495,30 +560,61 @@ def test_state_exposes_only_whitelisted_after_market_status_fields(tmp_path) -> 
     assert "must-not-leak" not in json.dumps(dict(state.after_market))
 
 
-def test_bars_until_hard_cutoff_dedup_limit_and_event_day_contract() -> None:
+@pytest.mark.parametrize(
+    ("frequency", "minutes"),
+    (("1m", 1), ("5m", 5), ("15m", 15), ("30m", 30), ("60m", 60)),
+)
+def test_bars_until_hard_cutoff_dedup_limit_and_event_day_contract(
+    frequency: str,
+    minutes: int,
+) -> None:
     """Catches future Live bars, seam duplicates, or phase-gated contract lookup leaking into Alert."""
     start = datetime(2025, 1, 1, 16, 0, tzinfo=UTC)
-    canonical = tuple(_bar_at(start + timedelta(minutes=15 * index)) for index in range(40))
+    canonical = tuple(_bar_at(start + timedelta(minutes=minutes * index)) for index in range(40))
     cutoff = canonical[-2].bar_end
     live = (
         _bar_at(canonical[-3].bar_end, close="101"),
         _bar_at(cutoff, close="102"),
-        _bar_at(cutoff + timedelta(minutes=15), close="103"),
+        _bar_at(cutoff + timedelta(minutes=minutes), close="103"),
     )
 
-    window = _window_service(canonical, live).bars_until(
-        SeriesPageQuery("actual_dominant", "j", "15m"),
+    window = _window_service(canonical, live, frequency=frequency).bars_until(
+        SeriesPageQuery("actual_dominant", "j", frequency),
         trading_day=date(2025, 1, 2),
         end=cutoff,
         limit=32,
     )
 
     assert window.contract == "J2505"
+    assert window.frequency == frequency
     assert window.cutoff == cutoff
     assert len(window.bars) == 32
     assert window.bars[-1].bar_end == cutoff
     assert len({bar.bar_end for bar in window.bars}) == 32
     assert all(bar.bar_end <= cutoff for bar in window.bars)
+
+
+def test_bars_until_contract_comes_from_current_day_live_snapshot() -> None:
+    """Catches historical segment ownership replacing event-day Live rank1 identity."""
+    cutoff = datetime(2025, 1, 2, 2, 45, tzinfo=UTC)
+    historical_owner = ResolvedContractSegment(
+        contract="J2509",
+        start_trading_day=date(2025, 1, 2),
+        end_trading_day=date(2025, 1, 2),
+    )
+
+    window = _window_service(
+        (_bar_at(cutoff),),
+        (),
+        subscription="J2505",
+        segments=(historical_owner,),
+    ).bars_until(
+        SeriesPageQuery("actual_dominant", "j", "15m"),
+        trading_day=date(2025, 1, 2),
+        end=cutoff,
+    )
+
+    assert window.contract == "J2505"
 
 
 @pytest.mark.parametrize("subscription", (None, "", "AG2505", "J-INVALID"))
@@ -543,9 +639,113 @@ def test_bars_until_requires_exact_event_bar_and_alert_identity() -> None:
             trading_day=date(2025, 1, 2),
             end=cutoff,
         )
-    with pytest.raises(MarketReadWindowError, match="MARKET_READ_IDENTITY_UNSUPPORTED"):
-        service.bars_until(
-            SeriesPageQuery("continuous", "j", "15m"),
-            trading_day=date(2025, 1, 2),
-            end=cutoff,
+    unsupported = (
+        SeriesPageQuery("continuous", "j", "15m"),
+        SeriesPageQuery("contract", "j", "15m", contract="J2505"),
+        SeriesPageQuery("actual_dominant", "j", "1d"),
+        SeriesPageQuery("actual_dominant", "j", "1w"),
+    )
+    for identity in unsupported:
+        with pytest.raises(MarketReadWindowError, match="MARKET_READ_IDENTITY_UNSUPPORTED"):
+            service.bars_until(
+                identity,
+                trading_day=date(2025, 1, 2),
+                end=cutoff,
+            )
+
+
+@pytest.mark.parametrize("frequency", ("1d", "1w"))
+def test_latest_canonical_window_reads_d1_w1_without_live(frequency: str) -> None:
+    """Catches daily or weekly Alert windows consulting transient Live state."""
+    target_day = date(2025, 1, 2)
+    start = datetime(2024, 11, 24, 15, 0, tzinfo=UTC)
+    canonical = tuple(
+        replace(
+            _bar_at(start + timedelta(days=index)),
+            trading_day=(start + timedelta(days=index)).date(),
         )
+        for index in range(40)
+    )
+    assert canonical[-1].trading_day == target_day
+    owner = ResolvedContractSegment(
+        contract="J2505",
+        start_trading_day=canonical[0].trading_day,
+        end_trading_day=target_day,
+    )
+
+    window = _canonical_window_service(
+        canonical,
+        frequency=frequency,
+        segments=(owner,),
+    ).latest_canonical_window(
+        SeriesPageQuery("actual_dominant", "j", frequency),
+        trading_day=target_day,
+        limit=32,
+    )
+
+    assert window.frequency == frequency
+    assert window.trading_day == target_day
+    assert window.contract == "J2505"
+    assert window.cutoff == canonical[-1].bar_end
+    assert window.bars == canonical[-32:]
+
+
+@pytest.mark.parametrize("frequency", ("1d", "1w"))
+def test_latest_canonical_window_rejects_stale_trading_day(frequency: str) -> None:
+    latest = replace(_bar_at(datetime(2025, 1, 2, 15, 0, tzinfo=UTC)), trading_day=date(2025, 1, 1))
+    owner = ResolvedContractSegment("J2505", date(2025, 1, 1), date(2025, 1, 2))
+    service = _canonical_window_service((latest,), frequency=frequency, segments=(owner,))
+
+    with pytest.raises(MarketReadWindowError, match="MARKET_READ_CUTOFF_BAR_MISSING"):
+        service.latest_canonical_window(
+            SeriesPageQuery("actual_dominant", "j", frequency),
+            trading_day=date(2025, 1, 2),
+        )
+
+
+@pytest.mark.parametrize(
+    "segments",
+    (
+        (),
+        (
+            ResolvedContractSegment("J2505", date(2025, 1, 2), date(2025, 1, 2)),
+            ResolvedContractSegment("J2509", date(2025, 1, 2), date(2025, 1, 2)),
+        ),
+    ),
+)
+@pytest.mark.parametrize("frequency", ("1d", "1w"))
+def test_latest_canonical_window_requires_one_owner(
+    segments: tuple[ResolvedContractSegment, ...],
+    frequency: str,
+) -> None:
+    latest = _bar_at(datetime(2025, 1, 2, 15, 0, tzinfo=UTC))
+    service = _canonical_window_service((latest,), frequency=frequency, segments=segments)
+
+    with pytest.raises(MarketReadWindowError, match="MARKET_READ_CONTRACT_UNAVAILABLE"):
+        service.latest_canonical_window(
+            SeriesPageQuery("actual_dominant", "j", frequency),
+            trading_day=date(2025, 1, 2),
+        )
+
+
+@pytest.mark.parametrize(
+    "identity",
+    (
+        SeriesPageQuery("actual_dominant", "j", "15m"),
+        SeriesPageQuery("continuous", "j", "1d"),
+        SeriesPageQuery("contract", "j", "1d", contract="J2505"),
+    ),
+)
+def test_latest_canonical_window_rejects_unsupported_identity(
+    identity: SeriesPageQuery,
+) -> None:
+    latest = _bar_at(datetime(2025, 1, 2, 15, 0, tzinfo=UTC))
+    owner = ResolvedContractSegment("J2505", date(2025, 1, 2), date(2025, 1, 2))
+    service = _canonical_window_service(
+        (latest,),
+        frequency=identity.frequency.value,
+        segments=(owner,),
+    )
+
+    with pytest.raises(MarketReadWindowError, match="MARKET_READ_IDENTITY_UNSUPPORTED"):
+        service.latest_canonical_window(identity, trading_day=date(2025, 1, 2))

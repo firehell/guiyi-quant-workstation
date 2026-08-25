@@ -11,15 +11,18 @@ import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
-from app.alerts.composition import RedisAlertHeartbeatStore
+from app.alerts.composition import RedisAlertHeartbeatStore, RedisAlertMessageSource
 from app.alerts.evaluators import AlertEvaluation
 from app.alerts.models import AlertEvent, AlertRule
 from app.alerts.notification import AlertNotificationMessage, ProviderAcceptance
 from app.alerts.runtime import (
     AlertRuntime,
     AlertRuntimeStatusStore,
+    _CanonicalUpdatedTrigger,
+    _LiveBarTrigger,
     _event_session_window,
-    _parse_event,
+    _parse_canonical_updated_trigger,
+    _parse_live_bar_trigger,
     _subing_snapshot_now,
 )
 from app.db.base import Base
@@ -50,6 +53,7 @@ DAY_SESSION_START = datetime(2026, 8, 14, 1, 0, tzinfo=UTC)
 DAY_SESSION_END = datetime(2026, 8, 14, 3, 30, tzinfo=UTC)
 ORDINARY_END = datetime(2026, 8, 14, 1, 5, tzinfo=UTC)
 BOUNDARY_END = datetime(2026, 8, 14, 1, 15, tzinfo=UTC)
+CANONICAL_END = datetime(2026, 8, 14, 7, 0, tzinfo=UTC)
 CROSS_MIDNIGHT_START = datetime(2026, 8, 13, 13, 0, tzinfo=UTC)
 CROSS_MIDNIGHT_END = datetime(2026, 8, 13, 18, 30, tzinfo=UTC)
 
@@ -70,6 +74,15 @@ def _payload(
             "volume": "10",
             "turnover": "1000",
             "open_interest": "20",
+        }
+    )
+
+
+def _canonical_updated_payload(trading_day: date = DAY) -> str:
+    return json.dumps(
+        {
+            "trading_day": trading_day.isoformat(),
+            "reason": "canonical_updated",
         }
     )
 
@@ -97,12 +110,13 @@ def _window(
     trading_day: date = DAY,
     contract: str = "JM2609",
     cutoff: datetime | None = None,
+    frequency: str = "15m",
 ) -> MarketReadWindow:
     event_bar = _bar(bar_end, trading_day)
     return MarketReadWindow(
         symbol="jm",
         series_kind="actual_dominant",
-        frequency="15m",
+        frequency=frequency,
         trading_day=trading_day,
         contract=contract,
         cutoff=cutoff or bar_end,
@@ -230,12 +244,24 @@ def _seed_rule(
     rule_code: str,
     *,
     scope: tuple[str, ...] = ("jm",),
+    frequency_scope: dict[str, list[str]] | None = None,
     enabled: bool = True,
 ) -> AlertRule:
+    if rule_code == "htdy_original_15m":
+        scope_products: list[str] = []
+        scope_product_frequencies = (
+            frequency_scope
+            if frequency_scope is not None
+            else {symbol: ["15m"] for symbol in scope}
+        )
+    else:
+        scope_products = list(scope)
+        scope_product_frequencies = {}
     rule = AlertRule(
         rule_code=rule_code,
         enabled=enabled,
-        scope_products=list(scope),
+        scope_products=scope_products,
+        scope_product_frequencies=scope_product_frequencies,
     )
     session.add(rule)
     session.commit()
@@ -309,15 +335,32 @@ def _seed_market_facts(
 
 
 class FakeRead:
-    def __init__(self, result: MarketReadWindow | Exception) -> None:
+    def __init__(
+        self,
+        result: MarketReadWindow | Exception,
+        *,
+        canonical_results: dict[BarFrequency, MarketReadWindow | Exception]
+        | None = None,
+    ) -> None:
         self.result = result
+        self.canonical_results = canonical_results
         self.calls: list[tuple[object, dict[str, object]]] = []
+        self.canonical_calls: list[tuple[object, dict[str, object]]] = []
 
     def bars_until(self, request, **kwargs) -> MarketReadWindow:
         self.calls.append((request, kwargs))
         if isinstance(self.result, Exception):
             raise self.result
         return self.result
+
+    def latest_canonical_window(self, request, **kwargs) -> MarketReadWindow:
+        self.canonical_calls.append((request, kwargs))
+        if self.canonical_results is None:
+            raise AssertionError("unexpected Canonical window read")
+        result = self.canonical_results[request.frequency]
+        if isinstance(result, Exception):
+            raise result
+        return result
 
 
 class FakeHtdyEvaluator:
@@ -401,6 +444,8 @@ def _runtime(
     subing_snapshot: SubingReadSnapshot | None = None,
     subing_error: Exception | None = None,
     market_read_result: MarketReadWindow | Exception | None = None,
+    canonical_read_results: dict[BarFrequency, MarketReadWindow | Exception]
+    | None = None,
     htdy_observations: tuple[str, ...] = ("buy",),
     htdy_error: Exception | None = None,
     sender_error: Exception | None = None,
@@ -422,7 +467,8 @@ def _runtime(
         ),
     )
     market_read = FakeRead(
-        market_read_result or _window(bar_end=event_end, trading_day=event_day)
+        market_read_result or _window(bar_end=event_end, trading_day=event_day),
+        canonical_results=canonical_read_results,
     )
     subing_read = FakeSubingRead(active_snapshot, subing_error)
     htdy_evaluator = FakeHtdyEvaluator(htdy_observations, htdy_error)
@@ -459,17 +505,28 @@ def _rule_codes(events: list[AlertEvent]) -> list[str]:
     return [event.rule.rule_code for event in events]
 
 
-def test_runtime_accepts_completed_5m_and_15m_channels() -> None:
-    assert _parse_event("live:bar:jm:5m", _payload()) is not None
-    assert _parse_event("live:bar:jm:15m", _payload()) is not None
-    assert _parse_event("live:bar:jm:30m", _payload()) is None
+@pytest.mark.parametrize("frequency", ("1m", "5m", "15m", "30m", "60m"))
+def test_runtime_accepts_each_completed_intraday_channel(frequency: str) -> None:
+    parsed = _parse_live_bar_trigger(f"live:bar:jm:{frequency}", _payload())
+
+    assert parsed == _LiveBarTrigger(
+        symbol="jm",
+        frequency=BarFrequency(frequency),
+        bar=_bar(),
+    )
+
+
+@pytest.mark.parametrize("frequency", ("1d", "1w"))
+def test_runtime_rejects_daily_and_weekly_live_bar_channels(
+    frequency: str,
+) -> None:
+    assert _parse_live_bar_trigger(f"live:bar:jm:{frequency}", _payload()) is None
 
 
 @pytest.mark.parametrize(
     ("channel", "payload"),
     (
         ("bad", _payload()),
-        ("live:bar:jm:1m", _payload()),
         ("live:bar:jm:15m:extra", _payload()),
         ("live:bar:jm:15m", "not-json"),
         ("live:bar:jm:15m", json.dumps({"bar_end": ORDINARY_END.isoformat()})),
@@ -479,7 +536,7 @@ def test_malformed_channel_or_payload_is_rejected(
     channel: str,
     payload: object,
 ) -> None:
-    assert _parse_event(channel, payload) is None
+    assert _parse_live_bar_trigger(channel, payload) is None
 
 
 @pytest.mark.parametrize("numeric", ("not-a-number", "NaN", "Infinity"))
@@ -487,7 +544,72 @@ def test_nonfinite_numeric_payload_is_rejected(numeric: str) -> None:
     payload = json.loads(_payload())
     payload["close"] = numeric
 
-    assert _parse_event("live:bar:jm:5m", json.dumps(payload)) is None
+    assert _parse_live_bar_trigger("live:bar:jm:5m", json.dumps(payload)) is None
+
+
+@pytest.mark.parametrize("channel", ("market:state", b"market:state"))
+def test_canonical_updated_state_parser_returns_strongly_typed_trigger(
+    channel: object,
+) -> None:
+    assert _parse_canonical_updated_trigger(
+        channel,
+        json.dumps(
+            {
+                "trading_day": DAY.isoformat(),
+                "reason": "canonical_updated",
+            }
+        ),
+    ) == _CanonicalUpdatedTrigger(trading_day=DAY)
+
+
+@pytest.mark.parametrize(
+    ("channel", "payload"),
+    (
+        ("market:state", "not-json"),
+        ("market:state", json.dumps({"trading_day": DAY.isoformat()})),
+        (
+            "market:state",
+            json.dumps(
+                {
+                    "trading_day": DAY.isoformat(),
+                    "reason": "live_reconciled",
+                }
+            ),
+        ),
+        (
+            "market:state",
+            json.dumps(
+                {
+                    "trading_day": "20260814",
+                    "reason": "canonical_updated",
+                }
+            ),
+        ),
+        (
+            "market:state",
+            json.dumps(
+                {
+                    "trading_day": "not-a-date",
+                    "reason": "canonical_updated",
+                }
+            ),
+        ),
+        (
+            "market:other",
+            json.dumps(
+                {
+                    "trading_day": DAY.isoformat(),
+                    "reason": "canonical_updated",
+                }
+            ),
+        ),
+    ),
+)
+def test_canonical_updated_state_parser_rejects_invalid_input(
+    channel: object,
+    payload: object,
+) -> None:
+    assert _parse_canonical_updated_trigger(channel, payload) is None
 
 
 def test_non_operational_symbol_stops_before_rule_dispatch(session: Session) -> None:
@@ -1063,6 +1185,96 @@ def test_htdy_keeps_exact_event_cutoff_market_read_path(session: Session) -> Non
     assert events[0].result_codes == ["buy", "sell"]
 
 
+def test_htdy_uses_exact_frequency_pair_scope_before_market_read(
+    session: Session,
+) -> None:
+    _seed_rule(
+        session,
+        "htdy_original_15m",
+        frequency_scope={"jm": ["15m"]},
+    )
+    harness = _runtime(session)
+
+    harness.runtime.process_message("live:bar:jm:5m", _payload())
+
+    assert harness.market_read.calls == []
+    assert harness.htdy_evaluator.calls == []
+    assert _event_rows(session) == []
+    assert harness.sender.messages == []
+
+    harness.runtime.process_message("live:bar:jm:15m", _payload())
+
+    assert len(harness.market_read.calls) == 1
+    assert len(harness.htdy_evaluator.calls) == 1
+    assert [event.frequency for event in _event_rows(session)] == ["15m"]
+    assert [message.frequency for message in harness.sender.messages] == ["15m"]
+
+
+def test_htdy_enabled_frequency_pairs_evaluate_independently(
+    session: Session,
+) -> None:
+    _seed_rule(
+        session,
+        "htdy_original_15m",
+        frequency_scope={"jm": ["5m", "15m"]},
+    )
+    harness = _runtime(
+        session,
+        market_read_result=_window(
+            bar_end=BOUNDARY_END,
+            frequency="5m",
+        ),
+        event_end=BOUNDARY_END,
+    )
+
+    harness.runtime.process_message(
+        "live:bar:jm:5m",
+        _payload(bar_end=BOUNDARY_END),
+    )
+    harness.market_read.result = _window(
+        bar_end=BOUNDARY_END,
+        frequency="15m",
+    )
+    harness.runtime.process_message(
+        "live:bar:jm:15m",
+        _payload(bar_end=BOUNDARY_END),
+    )
+
+    assert [call[0].frequency for call in harness.market_read.calls] == [
+        BarFrequency.M5,
+        BarFrequency.M15,
+    ]
+    assert [window.frequency for window in harness.htdy_evaluator.calls] == [
+        "5m",
+        "15m",
+    ]
+    assert [event.frequency for event in _event_rows(session)] == ["5m", "15m"]
+    assert [message.frequency for message in harness.sender.messages] == [
+        "5m",
+        "15m",
+    ]
+
+
+def test_htdy_mixed_scope_authority_fails_before_evaluation(
+    session: Session,
+) -> None:
+    rule = _seed_rule(
+        session,
+        "htdy_original_15m",
+        frequency_scope={"jm": ["15m"]},
+    )
+    rule.scope_products = ["jm"]
+    session.commit()
+    harness = _runtime(session)
+
+    harness.runtime.process_message("live:bar:jm:15m", _payload())
+
+    assert harness.market_read.calls == []
+    assert harness.htdy_evaluator.calls == []
+    assert _event_rows(session) == []
+    assert harness.sender.messages == []
+
+
 def test_htdy_mismatched_event_cutoff_creates_no_event(session: Session) -> None:
     _seed_rule(session, "htdy_original_15m")
     harness = _runtime(
@@ -1133,6 +1345,359 @@ def test_duplicate_pubsub_creates_one_event_and_sends_once(session: Session) -> 
 
     assert len(_event_rows(session)) == 1
     assert len(harness.sender.messages) == 1
+
+
+def test_canonical_event_commits_before_missing_taxonomy_stops_notification(
+    session: Session,
+) -> None:
+    _seed_rule(
+        session,
+        "htdy_original_15m",
+        frequency_scope={"jm": ["1d"]},
+    )
+    processing_now = CANONICAL_END + timedelta(seconds=2)
+    harness = _runtime(
+        session,
+        event_end=CANONICAL_END,
+        canonical_read_results={
+            BarFrequency.D1: _window(
+                bar_end=CANONICAL_END,
+                frequency="1d",
+            )
+        },
+        taxonomy={},
+        clock=processing_now,
+    )
+
+    harness.runtime.process_message("market:state", _canonical_updated_payload())
+
+    events = _event_rows(session)
+    assert len(events) == 1
+    assert events[0].notification_attempted_at == processing_now.replace(tzinfo=None)
+    assert harness.sender.messages == []
+
+
+@pytest.mark.parametrize(
+    ("frequency", "enabled_frequency"),
+    (
+        (BarFrequency.D1, "1d"),
+        (BarFrequency.W1, "1w"),
+    ),
+)
+def test_canonical_updated_reads_only_the_exact_enabled_daily_or_weekly_pair(
+    session: Session,
+    frequency: BarFrequency,
+    enabled_frequency: str,
+) -> None:
+    _seed_rule(
+        session,
+        "htdy_original_15m",
+        frequency_scope={"jm": [enabled_frequency]},
+    )
+    harness = _runtime(
+        session,
+        event_end=CANONICAL_END,
+        canonical_read_results={
+            frequency: _window(
+                bar_end=CANONICAL_END,
+                frequency=enabled_frequency,
+            )
+        },
+    )
+
+    harness.runtime.process_message("market:state", _canonical_updated_payload())
+
+    assert harness.market_read.calls == []
+    assert len(harness.market_read.canonical_calls) == 1
+    request, kwargs = harness.market_read.canonical_calls[0]
+    assert request.series_kind.value == "actual_dominant"
+    assert request.symbol == "jm"
+    assert request.frequency is frequency
+    assert kwargs == {"trading_day": DAY, "limit": 32}
+    assert [window.frequency for window in harness.htdy_evaluator.calls] == [
+        enabled_frequency
+    ]
+    assert [event.frequency for event in _event_rows(session)] == [
+        enabled_frequency
+    ]
+    assert [message.frequency for message in harness.sender.messages] == [
+        enabled_frequency
+    ]
+
+
+def test_canonical_updated_evaluates_daily_and_weekly_pairs_independently(
+    session: Session,
+) -> None:
+    _seed_rule(
+        session,
+        "htdy_original_15m",
+        frequency_scope={"jm": ["1d", "1w"]},
+    )
+    harness = _runtime(
+        session,
+        event_end=CANONICAL_END,
+        canonical_read_results={
+            BarFrequency.D1: _window(
+                bar_end=CANONICAL_END,
+                frequency="1d",
+            ),
+            BarFrequency.W1: _window(
+                bar_end=CANONICAL_END,
+                frequency="1w",
+            ),
+        },
+    )
+    session_calls = 0
+
+    def one_session():
+        nonlocal session_calls
+        session_calls += 1
+        return nullcontext(session)
+
+    harness.runtime._session_factory = one_session
+
+    harness.runtime.process_message("market:state", _canonical_updated_payload())
+
+    assert session_calls == 1
+    assert [call[0].frequency for call in harness.market_read.canonical_calls] == [
+        BarFrequency.D1,
+        BarFrequency.W1,
+    ]
+    assert [event.frequency for event in _event_rows(session)] == ["1d", "1w"]
+    assert [message.frequency for message in harness.sender.messages] == [
+        "1d",
+        "1w",
+    ]
+
+
+def test_canonical_updated_with_neither_pair_enabled_reads_nothing(
+    session: Session,
+) -> None:
+    _seed_rule(
+        session,
+        "htdy_original_15m",
+        frequency_scope={},
+    )
+    harness = _runtime(
+        session,
+        canonical_read_results={},
+    )
+
+    harness.runtime.process_message("market:state", _canonical_updated_payload())
+
+    assert harness.market_read.calls == []
+    assert harness.market_read.canonical_calls == []
+    assert harness.htdy_evaluator.calls == []
+    assert _event_rows(session) == []
+    assert harness.sender.messages == []
+
+
+def test_canonical_updated_mixed_scope_authority_reads_nothing(
+    session: Session,
+) -> None:
+    rule = _seed_rule(
+        session,
+        "htdy_original_15m",
+        frequency_scope={"jm": ["1d"]},
+    )
+    rule.scope_products = ["jm"]
+    session.commit()
+    harness = _runtime(
+        session,
+        canonical_read_results={},
+    )
+
+    harness.runtime.process_message("market:state", _canonical_updated_payload())
+
+    assert harness.market_read.calls == []
+    assert harness.market_read.canonical_calls == []
+    assert harness.htdy_evaluator.calls == []
+    assert _event_rows(session) == []
+    assert harness.sender.messages == []
+
+
+def test_canonical_updated_rejects_stale_weekly_window_without_backfill(
+    session: Session,
+) -> None:
+    _seed_rule(
+        session,
+        "htdy_original_15m",
+        frequency_scope={"jm": ["1w"]},
+    )
+    harness = _runtime(
+        session,
+        event_end=CANONICAL_END,
+        canonical_read_results={
+            BarFrequency.W1: _window(
+                bar_end=CANONICAL_END - timedelta(days=7),
+                trading_day=DAY - timedelta(days=7),
+                frequency="1w",
+            )
+        },
+    )
+
+    harness.runtime.process_message("market:state", _canonical_updated_payload())
+
+    assert [call[0].frequency for call in harness.market_read.canonical_calls] == [
+        BarFrequency.W1
+    ]
+    assert harness.htdy_evaluator.calls == []
+    assert _event_rows(session) == []
+    assert harness.sender.messages == []
+
+
+def test_duplicate_canonical_updated_state_is_event_and_notification_idempotent(
+    session: Session,
+) -> None:
+    _seed_rule(
+        session,
+        "htdy_original_15m",
+        frequency_scope={"jm": ["1d"]},
+    )
+    harness = _runtime(
+        session,
+        event_end=CANONICAL_END,
+        canonical_read_results={
+            BarFrequency.D1: _window(
+                bar_end=CANONICAL_END,
+                frequency="1d",
+            )
+        },
+    )
+
+    harness.runtime.process_message("market:state", _canonical_updated_payload())
+    harness.runtime.process_message("market:state", _canonical_updated_payload())
+
+    assert len(harness.market_read.canonical_calls) == 2
+    assert len(harness.htdy_evaluator.calls) == 2
+    assert len(_event_rows(session)) == 1
+    assert len(harness.sender.messages) == 1
+
+
+def test_duplicate_canonical_updated_never_retries_failed_notification(
+    session: Session,
+) -> None:
+    _seed_rule(
+        session,
+        "htdy_original_15m",
+        frequency_scope={"jm": ["1d"]},
+    )
+    harness = _runtime(
+        session,
+        event_end=CANONICAL_END,
+        canonical_read_results={
+            BarFrequency.D1: _window(
+                bar_end=CANONICAL_END,
+                frequency="1d",
+            )
+        },
+        sender_error=RuntimeError("private provider detail"),
+    )
+
+    harness.runtime.process_message("market:state", _canonical_updated_payload())
+    harness.runtime.process_message("market:state", _canonical_updated_payload())
+
+    assert len(_event_rows(session)) == 1
+    assert len(harness.sender.messages) == 1
+
+
+def test_invalid_canonical_state_message_has_zero_side_effects(
+    session: Session,
+) -> None:
+    _seed_rule(
+        session,
+        "htdy_original_15m",
+        frequency_scope={"jm": ["1d", "1w"]},
+    )
+    harness = _runtime(session, canonical_read_results={})
+    harness.runtime.clock = lambda: pytest.fail("invalid state must stop before clock")
+
+    harness.runtime.process_message(
+        "market:state",
+        json.dumps(
+            {
+                "trading_day": DAY.isoformat(),
+                "reason": "live_reconciled",
+            }
+        ),
+    )
+
+    assert harness.market_read.calls == []
+    assert harness.market_read.canonical_calls == []
+    assert harness.htdy_evaluator.calls == []
+    assert _event_rows(session) == []
+    assert harness.sender.messages == []
+
+
+def test_unavailable_daily_pair_does_not_authorize_weekly_fallback(
+    session: Session,
+) -> None:
+    _seed_rule(
+        session,
+        "htdy_original_15m",
+        frequency_scope={"jm": ["1d"]},
+    )
+    harness = _runtime(
+        session,
+        event_end=CANONICAL_END,
+        canonical_read_results={
+            BarFrequency.D1: RuntimeError("private Canonical detail"),
+        },
+    )
+
+    harness.runtime.process_message("market:state", _canonical_updated_payload())
+
+    assert [call[0].frequency for call in harness.market_read.canonical_calls] == [
+        BarFrequency.D1
+    ]
+    assert harness.htdy_evaluator.calls == []
+    assert _event_rows(session) == []
+    assert harness.sender.messages == []
+
+
+@pytest.mark.parametrize(
+    ("failed_frequency", "successful_frequency", "successful_value"),
+    (
+        (BarFrequency.D1, BarFrequency.W1, "1w"),
+        (BarFrequency.W1, BarFrequency.D1, "1d"),
+    ),
+)
+def test_one_unavailable_canonical_pair_does_not_block_the_other_pair(
+    session: Session,
+    failed_frequency: BarFrequency,
+    successful_frequency: BarFrequency,
+    successful_value: str,
+) -> None:
+    _seed_rule(
+        session,
+        "htdy_original_15m",
+        frequency_scope={"jm": ["1d", "1w"]},
+    )
+    harness = _runtime(
+        session,
+        event_end=CANONICAL_END,
+        canonical_read_results={
+            failed_frequency: RuntimeError("private Canonical detail"),
+            successful_frequency: _window(
+                bar_end=CANONICAL_END,
+                frequency=successful_value,
+            ),
+        },
+    )
+
+    harness.runtime.process_message("market:state", _canonical_updated_payload())
+
+    assert [call[0].frequency for call in harness.market_read.canonical_calls] == [
+        BarFrequency.D1,
+        BarFrequency.W1,
+    ]
+    assert [window.frequency for window in harness.htdy_evaluator.calls] == [
+        successful_value
+    ]
+    assert [event.frequency for event in _event_rows(session)] == [successful_value]
+    assert [message.frequency for message in harness.sender.messages] == [
+        successful_value
+    ]
 
 
 def test_notification_failure_keeps_event_and_duplicate_never_retries(
@@ -1235,10 +1800,10 @@ def test_runtime_refreshes_rule_truth_after_external_revocation(
 
 class FakeMessageSource:
     def __init__(self) -> None:
-        self.patterns: list[str] = []
+        self.subscribe_calls: list[tuple[str, ...]] = []
 
-    def subscribe(self, pattern: str) -> None:
-        self.patterns.append(pattern)
+    def subscribe(self, *patterns: str) -> None:
+        self.subscribe_calls.append(patterns)
 
     def get_message(self, *, timeout_seconds: float):
         assert timeout_seconds == 1.0
@@ -1254,6 +1819,32 @@ class FakeHeartbeatStore:
 
     def write(self, payload: dict[str, object], *, ttl_seconds: int) -> None:
         self.writes.append((payload, ttl_seconds))
+
+
+def test_redis_message_source_uses_one_pubsub_connection_for_both_patterns() -> None:
+    class FakePubSub:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, ...]] = []
+
+        def psubscribe(self, *patterns: str) -> None:
+            self.calls.append(patterns)
+
+    class FakeRedis:
+        def __init__(self) -> None:
+            self.active = FakePubSub()
+            self.pubsub_calls: list[dict[str, object]] = []
+
+        def pubsub(self, **kwargs):
+            self.pubsub_calls.append(kwargs)
+            return self.active
+
+    redis = FakeRedis()
+    source = RedisAlertMessageSource(redis)
+
+    source.subscribe("live:bar:*:*", "market:state")
+
+    assert redis.pubsub_calls == [{"ignore_subscribe_messages": True}]
+    assert redis.active.calls == [("live:bar:*:*", "market:state")]
 
 
 class RuntimeStatusRedis:
@@ -1740,7 +2331,7 @@ def test_run_forever_uses_single_transport_and_fixed_heartbeat_contract(
 
     harness.runtime.run_forever()
 
-    assert source.patterns == ["live:bar:*:*"]
+    assert source.subscribe_calls == [("live:bar:*:*", "market:state")]
     assert [ttl for _payload, ttl in heartbeats.writes] == [30, 30, 30]
     assert [payload["generated_at"] for payload, _ttl in heartbeats.writes] == [
         "2026-08-14T00:00:00+00:00",
@@ -1757,6 +2348,57 @@ def test_run_forever_uses_single_transport_and_fixed_heartbeat_contract(
         1,
         1,
     ]
+
+
+def test_heartbeat_counts_distinct_products_across_valid_rule_scopes(
+    session: Session,
+) -> None:
+    _seed_rule(
+        session,
+        "htdy_original_15m",
+        frequency_scope={"jm": ["5m", "15m"]},
+    )
+    _seed_rule(session, "subing_entry_signal_v1", scope=("ag",))
+    heartbeats = FakeHeartbeatStore()
+    harness = _runtime(session, operational_products=("jm", "ag"))
+    harness.runtime.heartbeat_store = heartbeats
+    now = datetime(2026, 8, 14, 0, 0, tzinfo=UTC)
+
+    harness.runtime._write_heartbeat(now)
+
+    assert heartbeats.writes == [
+        (
+            {
+                "generated_at": "2026-08-14T00:00:00+00:00",
+                "available": True,
+                "enabled_rule_count": 2,
+                "scope_product_count": 2,
+            },
+            30,
+        )
+    ]
+
+
+def test_heartbeat_does_not_union_or_count_mixed_scope_authority(
+    session: Session,
+) -> None:
+    rule = _seed_rule(
+        session,
+        "htdy_original_15m",
+        frequency_scope={"ag": ["15m"]},
+    )
+    rule.scope_products = ["jm"]
+    session.commit()
+    heartbeats = FakeHeartbeatStore()
+    harness = _runtime(session, operational_products=("jm", "ag"))
+    harness.runtime.heartbeat_store = heartbeats
+
+    harness.runtime._write_heartbeat(
+        datetime(2026, 8, 14, 0, 0, tzinfo=UTC)
+    )
+
+    assert heartbeats.writes[0][0]["enabled_rule_count"] == 1
+    assert heartbeats.writes[0][0]["scope_product_count"] == 0
 
 
 def test_session_fixture_uses_real_shanghai_anchor() -> None:

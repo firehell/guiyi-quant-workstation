@@ -13,6 +13,7 @@ class ProductAlertRuleStateOut(BaseModel):
     display_name: str
     kind: str
     input_frequencies: list[str]
+    enabled_frequencies: list[str]
     enabled_for_product: bool
 
 

@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import type { BarData } from '../src/types/market.ts'
+import { MARKET_FREQUENCIES, type BarData, type SeriesKind } from '../src/types/market.ts'
 import {
   HTDY_REPAINT_SCAN_ZONE_BARS,
   DEFAULT_VISIBLE_MAIN_INDICATORS,
@@ -11,6 +11,7 @@ import {
   normalizeOptionalEmaIndicators,
   normalizeVisibleMainIndicators,
   resolveEffectiveSeriesIdentity,
+  researchOverlayCapability,
   saveMainChartPreferences,
   visibleMainIndicatorsForOverlay,
 } from '../src/utils/mainIndicators.ts'
@@ -66,6 +67,24 @@ test('research overlay defaults to SuBing and exposes exactly one overlay indica
   assert.deepEqual(visibleMainIndicatorsForOverlay('jdj' as never, ['ema_10', 'ema_60']), ['ema_20'])
   assert.deepEqual(visibleMainIndicatorsForOverlay('htdy', ['ema_10', 'ema_60']), ['ema_10', 'ema_60', 'htdy'])
   assert.deepEqual(visibleMainIndicatorsForOverlay('none', ['ema_10', 'ema_60']), [])
+})
+
+test('HTDY overlay stays available on every formal frequency and existing chart series kind', () => {
+  const seriesKinds: SeriesKind[] = ['continuous', 'actual_dominant', 'contract']
+
+  for (const seriesKind of seriesKinds) {
+    for (const frequency of MARKET_FREQUENCIES) {
+      assert.equal(
+        researchOverlayCapability('htdy', seriesKind, frequency).supported,
+        true,
+        `${seriesKind} ${frequency}`,
+      )
+      assert.deepEqual(
+        visibleMainIndicatorsForOverlay('htdy', ['ema_10', 'ema_60']),
+        ['ema_10', 'ema_60', 'htdy'],
+      )
+    }
+  }
 })
 
 test('research overlays never replace the user Market display series identity', () => {
