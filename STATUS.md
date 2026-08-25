@@ -18,8 +18,12 @@
   production resolver 通过。当前目录为空，current API 返回
   `200 / unavailable / SUBING_DAILY_WATCH_NOT_GENERATED / expected=2026-08-25`，等待下一次自然盘后生成。
 - 旧 `v1.8.0` 与 `v1.7.0` Runtime worktree 保留为 clean/detached rollback 资产，但当前没有 label 指向；未执行
-  回滚、after-market、canary、人工通知、真实 RQAlpha smoke、migration、Canonical/production DB/Redis
+  回滚、after-market、canary、人工通知、真实 RQAlpha smoke、Canonical/production Redis
   写入或 Alert Scope/transport 变更。
+- production Alembic 已于 2026-08-25 14:56 CST 从 `20260815_0039` 升级到
+  `20260825_0040 (head)`。migration 自动将旧 HTDY `scope_products=['jm']` 继承为
+  `scope_product_frequencies={'jm':['15m']}` 并清空 HTDY 旧列；SuBing 继续为
+  `scope_products=['jm']` 且 frequency Scope 为空。未执行额外 Scope mutation、Runtime switch 或通知。
 - RQAlpha research workbench 代码已包含在 `v1.8.0`，但本地 sidecar 仍未加载、未进入 Runtime；真实
   RQAlpha smoke 继续 `pending`，不得由代码包含或其他 Runtime 验收推导为已完成。
 - Market/Alert marker 继续 enabled；Alert notification channel 仍为 pushplus 且 config=`ready`、
@@ -39,9 +43,10 @@
   Playwright `101 passed / 1 skipped`；Ruff、Mypy `154 source files / 0 issues`、Web production build、
   OpenSpec `6 passed`、secret scan、shell/launchd lint 与 diff check 均通过。独立 release Review 为
   `APPROVED / C0 I0 M0`。
-- 本 release 包含 Alembic `20260825_0040` 源码，但 production 只读读回仍为 `20260815_0039`；未执行
-  production migration、真实 HTDY Scope mutation、Runtime promotion/switch、真实 PushPlus、Canonical
-  或 production Redis 写入，`auto_order=false` 不变。
+- 本 release 包含 Alembic `20260825_0040` 源码；release 当时未执行 production migration。后续独立
+  production migration Gate 已于 2026-08-25 14:56 CST 完成，读回为 `20260825_0040 (head)`；
+  Runtime promotion/switch、额外真实 HTDY Scope mutation、真实 PushPlus、Canonical 或 production Redis
+  写入仍未执行，`auto_order=false` 不变。
 
 ## v1.8.2 release and Runtime deployment
 
@@ -133,7 +138,7 @@
   “当前检查栏”；正式 Event、研究观察和 Research-only 事实保持分层，不产生综合分或交易推荐。
 - The prior Four-System Active60 All-Frequency Observation direction was withdrawn by the user before implementation and its active Spec/Plan were removed.
 
-## HTDY Active60 七周期实现（已发布，待 production migration / Runtime）
+## HTDY Active60 七周期实现（已发布并完成 migration，待 Runtime）
 
 以下 Gate 只记录各自已经发生的事实，任一状态不得由其他状态推导：
 
@@ -143,8 +148,8 @@
 | `TEST_COMPLETE` | `complete` | focused backend `332 passed`；isolated migration `1 passed / 2 deselected`；full backend `3769 passed / 3 skipped / 17 deselected`；engineering `64 passed`；Web unit `285 passed / 1 skipped`；full Playwright `101 passed / 1 skipped`；Ruff、Mypy、Web build、OpenSpec、secret scan 与 diff check 均通过 |
 | `REVIEW_COMPLETE` | `complete` | fixed base-to-head Lane 3 Standards/Spec Review=`APPROVED`，`Critical / Important / Minor = 0 / 0 / 0`，结论=`允许集成 develop` |
 | `INTEGRATED_DEVELOP` | `complete` | 用户已字面批准 `允许集成 develop`；PR `#208` 已合并，远端 develop merge commit=`8b970972b5ceeb3ba33904fab73446cdb3cba92c`，candidate `d60bc43d7115a970c154c0e5330e994c2567498e` 为其祖先 |
-| `PRODUCTION_MIGRATION` | `pending` | Alembic `20260825_0040` 只在隔离 PostgreSQL 验证；production 仍为 `20260815_0039`，未执行 upgrade |
-| `REAL_SCOPE_MUTATION` | `pending` | 未修改 production HTDY `symbol × frequency` Scope；Task 11 matrix 只做 capability 与只读数据可用性检查 |
+| `PRODUCTION_MIGRATION` | `complete` | 用户明确授权后执行一次 `20260815_0039 -> 20260825_0040`；读回 head、新列/约束与 9 条历史 Event 完整性均通过 |
+| `REAL_SCOPE_MUTATION` | `pending` | 仅由 migration 自动继承旧 `jm` ON 为 `jm × 15m`；未执行任何额外 production HTDY Scope mutation |
 | `RELEASED` | `complete` | main PR `#209` 已合并；annotated `v1.8.3` tag peeled commit=`9ca18afc9b056d413ee8cac56a056b7d7df078b4`，GitHub Release 已发布 |
 | `RUNTIME_PROMOTED` | `pending` | 当前五个 launchd label 仍绑定 clean/detached `v1.8.2` Runtime；未 reload、switch 或 promotion |
 | `REAL_NOTIFICATION_VERIFIED` | `pending` | 未执行真实 PushPlus；provider acceptance 与微信送达均未验证 |
