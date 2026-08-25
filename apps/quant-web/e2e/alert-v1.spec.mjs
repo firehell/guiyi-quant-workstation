@@ -117,8 +117,8 @@ test('persistent Alert V2 markers stay exact-frequency and actual-dominant only'
   await page.route('**/api/alerts/**', async (route) => {
     const url = new URL(route.request().url())
     if (url.pathname.endsWith('/products/ag')) return route.fulfill({ json: { symbol: 'ag', rules: [
-      { rule_code: 'htdy_original_15m', display_name: '火天大有', kind: 'indicator_observation', input_frequencies: frequencies, enabled_for_product: false },
-      { rule_code: 'subing_entry_signal_v1', display_name: '苏冰入场信号', kind: 'formal_signal', input_frequencies: ['5m', '15m'], enabled_for_product: false },
+      { rule_code: 'htdy_original_15m', display_name: '火天大有', kind: 'indicator_observation', input_frequencies: frequencies, enabled_for_product: false, enabled_frequencies: [] },
+      { rule_code: 'subing_entry_signal_v1', display_name: '苏冰入场信号', kind: 'formal_signal', input_frequencies: ['5m', '15m'], enabled_for_product: false, enabled_frequencies: [] },
     ] } })
     if (url.pathname.endsWith('/current-events')) return route.fulfill({ json: { status: 'ready', trading_day: '2026-08-13', items: [] } })
     if (url.pathname.endsWith('/events')) {
@@ -218,4 +218,154 @@ test('persistent Alert V2 markers stay exact-frequency and actual-dominant only'
   await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-alert-marker-count', '0')
   await page.waitForTimeout(100)
   expect(requests).toHaveLength(eventRequestCount)
+})
+
+test('single HTDY switch mutates only the current JM frequency', async ({ page }) => {
+  await page.setViewportSize({ width: 1680, height: 1000 })
+  const frequencies = ['1m', '5m', '15m', '30m', '60m', '1d', '1w']
+  const barsByFrequency = {
+    '5m': bars('5m'),
+    '15m': bars('15m'),
+  }
+  const enabledFrequencies = new Set(['15m'])
+  const scopePuts = []
+
+  await page.route('**/api/v1/market/**', async (route) => {
+    const url = new URL(route.request().url())
+    if (url.pathname.endsWith('/dominants')) return route.fulfill({ json: { items: [
+      { product: 'jm', product_name: '焦煤', sector: 'black', exchange: 'DCE', actual_contract: 'JM2609', dominant_mapping_date: '2026-08-13' },
+    ] } })
+    if (url.pathname.endsWith('/bars/page')) {
+      const frequency = url.searchParams.get('frequency')
+      const marketBars = barsByFrequency[frequency]
+      return route.fulfill({ json: {
+        request: {
+          series_kind: 'actual_dominant',
+          symbol: 'jm',
+          contract: null,
+          frequency,
+          before: null,
+          limit: 1200,
+        },
+        bars: marketBars,
+        canonical_coverage: null,
+        page: { has_more_before: false, next_before: null },
+        resolved_contract_segments: [{
+          contract: 'JM2609',
+          start_trading_day: marketBars[0].trading_day,
+          end_trading_day: marketBars.at(-1).trading_day,
+        }],
+      } })
+    }
+    if (url.pathname.endsWith('/state')) {
+      const frequency = url.searchParams.get('frequency')
+      return route.fulfill({ json: {
+        symbol: 'jm',
+        series_kind: 'actual_dominant',
+        frequency,
+        operational: true,
+        phase: 'CLOSED',
+        trading_day: '2026-08-13',
+        live_eligible: false,
+        live_available: false,
+        live_contract: null,
+        canonical_end: barsByFrequency[frequency].at(-1).bar_end,
+        after_market: {},
+      } })
+    }
+    if (url.pathname.endsWith('/research/product')) {
+      return route.fulfill({ status: 409, json: { detail: { code: 'QUERY_WINDOW_EMPTY' } } })
+    }
+    if (url.pathname.endsWith('/research/main-force-mirror')) {
+      return route.fulfill({ status: 400, json: { detail: { code: 'MFM_V2_UNSUPPORTED_FREQUENCY' } } })
+    }
+    return route.abort()
+  })
+  await page.route('**/api/runtime/health', (route) => route.fulfill({ json: {
+    status: 'ok', components: { alert: { status: 'disabled' } },
+  } }))
+  await page.route('**/api/alerts/**', async (route) => {
+    const url = new URL(route.request().url())
+    if (route.request().method() === 'PUT') {
+      const enabled = route.request().postDataJSON().enabled
+      const frequency = url.pathname.split('/').at(-1)
+      scopePuts.push({ path: url.pathname, enabled })
+      if (enabled) enabledFrequencies.add(frequency)
+      else enabledFrequencies.delete(frequency)
+      return route.fulfill({ json: {
+        rule_code: 'htdy_original_15m',
+        display_name: '火天大有',
+        kind: 'indicator_observation',
+        input_frequencies: frequencies,
+        enabled_for_product: enabledFrequencies.size > 0,
+        enabled_frequencies: [...enabledFrequencies],
+      } })
+    }
+    if (url.pathname.endsWith('/products/jm')) return route.fulfill({ json: { symbol: 'jm', rules: [
+      {
+        rule_code: 'htdy_original_15m',
+        display_name: '火天大有',
+        kind: 'indicator_observation',
+        input_frequencies: frequencies,
+        enabled_for_product: true,
+        enabled_frequencies: [...enabledFrequencies],
+      },
+      {
+        rule_code: 'subing_entry_signal_v1',
+        display_name: '苏冰入场信号',
+        kind: 'formal_signal',
+        input_frequencies: ['5m', '15m'],
+        enabled_for_product: false,
+        enabled_frequencies: [],
+      },
+    ] } })
+    if (url.pathname.endsWith('/current-events')) {
+      return route.fulfill({ json: { status: 'ready', trading_day: '2026-08-13', items: [] } })
+    }
+    if (url.pathname.endsWith('/events')) return route.fulfill({ json: { items: [] } })
+    return route.abort()
+  })
+
+  await page.goto('/market/chart?symbol=jm&series_kind=actual_dominant&frequency=15m')
+  const sidebar = page.locator('.product-workspace__sidebar')
+  const htdyRow = sidebar.locator('.product-alert-rules__row').filter({ hasText: '火天大有' })
+  const htdySwitch = htdyRow.getByRole('switch')
+  const periods = page.getByRole('group', { name: '周期' })
+  const overlays = page.getByRole('group', { name: 'Overlay' })
+
+  await expect(htdyRow).toContainText('火天大有 · 15m')
+  await expect(htdySwitch).toBeChecked()
+  expect(scopePuts).toEqual([])
+
+  await periods.getByRole('button', { name: '5m', exact: true }).click()
+  await expect(htdyRow).toContainText('火天大有 · 5m')
+  await expect(htdySwitch).not.toBeChecked()
+  expect(scopePuts).toEqual([])
+
+  await htdySwitch.click()
+  await expect(htdySwitch).toBeChecked()
+  expect(scopePuts).toEqual([
+    { path: '/api/alerts/rules/htdy_original_15m/scope/jm/5m', enabled: true },
+  ])
+
+  await periods.getByRole('button', { name: '15m', exact: true }).click()
+  await expect(htdyRow).toContainText('火天大有 · 15m')
+  await expect(htdySwitch).toBeChecked()
+  expect(scopePuts).toHaveLength(1)
+
+  await periods.getByRole('button', { name: '5m', exact: true }).click()
+  await expect(htdySwitch).toBeChecked()
+  await htdySwitch.click()
+  await expect(htdySwitch).not.toBeChecked()
+  expect(scopePuts).toEqual([
+    { path: '/api/alerts/rules/htdy_original_15m/scope/jm/5m', enabled: true },
+    { path: '/api/alerts/rules/htdy_original_15m/scope/jm/5m', enabled: false },
+  ])
+
+  await periods.getByRole('button', { name: '15m', exact: true }).click()
+  await expect(htdySwitch).toBeChecked()
+  const putCountBeforeOverlay = scopePuts.length
+  await overlays.getByRole('button', { name: '火天大有', exact: true }).click()
+  await overlays.getByRole('button', { name: '无', exact: true }).click()
+  expect(scopePuts).toHaveLength(putCountBeforeOverlay)
 })

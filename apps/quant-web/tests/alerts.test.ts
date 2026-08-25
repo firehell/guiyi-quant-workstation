@@ -28,6 +28,10 @@ describe('Product Alert server-side scope', () => {
   it('uses the exact GET and PUT server API contracts without localStorage truth', () => {
     assert.match(apiSource, /`\/api\/alerts\/products\/\$\{symbol\}`/)
     assert.match(apiSource, /`\/api\/alerts\/rules\/\$\{ruleCode\}\/scope\/\$\{symbol\}`/)
+    assert.match(
+      apiSource,
+      /`\/api\/alerts\/rules\/\$\{ruleCode\}\/scope\/\$\{symbol\}\/\$\{frequency\}`/,
+    )
     assert.match(apiSource, /\{ enabled \}/)
     assert.doesNotMatch(apiSource, /localStorage|sessionStorage/)
     assert.doesNotMatch(chartSource, /localStorage.*alert|alert.*localStorage/i)
@@ -51,6 +55,7 @@ describe('Product Alert server-side scope', () => {
       'kind: AlertRuleKind',
       'input_frequencies: MarketFrequency[]',
       'enabled_for_product: boolean',
+      'enabled_frequencies: MarketFrequency[]',
     ])
     assert.deepEqual(interfaceFields(marketTypesSource, 'AlertEvent'), [
       'id: number',
@@ -94,7 +99,9 @@ describe('Product Alert server-side scope', () => {
       ALERT_RULE_CODES.SUBING,
     ])
     assert.match(rulesSource, /rule\.display_name/)
-    assert.match(rulesSource, /rule\.input_frequencies\.join\('\/'\)/)
+    assert.match(rulesSource, /rule\.enabled_frequencies\.includes\(props\.frequency\)/)
+    assert.match(rulesSource, /`\$\{rule\.display_name\} · \$\{props\.frequency\}`/)
+    assert.doesNotMatch(rulesSource, /全周期/)
     assert.equal((rulesSource.match(/Alert Runtime/g) || []).length, 1)
     assert.match(rulesSource, /不可用/)
   })
@@ -103,10 +110,14 @@ describe('Product Alert server-side scope', () => {
     const symbolWatcher = between(chartSource, 'watch(symbol, async () => {', 'watch([contract, seriesKind, frequency]')
     const identityWatcher = between(chartSource, 'watch([contract, seriesKind, frequency]', 'watch([symbol, seriesKind, contract]')
     assert.match(symbolWatcher, /refreshAlerts\(\)/)
-    assert.doesNotMatch(identityWatcher, /setAlertProductEnabled|toggleAlert/)
+    assert.doesNotMatch(identityWatcher, /setAlertProductEnabled|setAlertProductFrequencyEnabled|toggleAlert/)
     assert.match(
       scopeSource,
       /setProductEnabled\([\s\S]*ruleCode,[\s\S]*requestedSymbol,[\s\S]*enabled/,
+    )
+    assert.match(
+      scopeSource,
+      /setProductFrequencyEnabled\([\s\S]*ruleCode,[\s\S]*requestedSymbol,[\s\S]*requestedFrequency,[\s\S]*enabled/,
     )
   })
 
@@ -140,14 +151,17 @@ describe('Product Alert server-side scope', () => {
 
   it('toggles the exact rule without changing its neighbor', async () => {
     const symbol = ref('jm')
+    const frequency = ref<'15m' | '5m'>('15m')
     const controller = useProductAlertScope({
       symbol,
+      frequency,
       fetchProductAlerts: async () => ({ symbol: 'jm', rules: [htdyRule(true), subingRule(false)] }),
       fetchRuntimeStatus: async () => 'ok',
       setProductEnabled: async (ruleCode, requestedSymbol, enabled) => ({
         ...(ruleCode === 'subing_entry_signal_v1' ? subingRule(enabled) : htdyRule(enabled)),
         symbol: requestedSymbol,
       }),
+      setProductFrequencyEnabled: async () => { throw new Error('not used') },
       notifyError: () => undefined,
     })
 
@@ -161,12 +175,15 @@ describe('Product Alert server-side scope', () => {
 
   it('tracks saving independently for each rule', async () => {
     const symbol = ref('jm')
+    const frequency = ref<'15m' | '5m'>('15m')
     let resolveUpdate: ((value: ReturnType<typeof subingRule>) => void) | undefined
     const controller = useProductAlertScope({
       symbol,
+      frequency,
       fetchProductAlerts: async () => ({ symbol: 'jm', rules: [htdyRule(false), subingRule(false)] }),
       fetchRuntimeStatus: async () => 'ok',
       setProductEnabled: () => new Promise((resolve) => { resolveUpdate = resolve }),
+      setProductFrequencyEnabled: async () => { throw new Error('not used') },
       notifyError: () => undefined,
     })
 
@@ -182,35 +199,134 @@ describe('Product Alert server-side scope', () => {
 
   it('drops a stale rule mutation response after the selected symbol changes', async () => {
     const symbol = ref('ag')
-    let resolveUpdate: ((value: ReturnType<typeof subingRule>) => void) | undefined
+    const frequency = ref<'15m' | '5m'>('15m')
+    let resolveUpdate: ((value: ReturnType<typeof htdyRule>) => void) | undefined
     const controller = useProductAlertScope({
       symbol,
+      frequency,
       fetchProductAlerts: async (requestedSymbol) => ({ symbol: requestedSymbol, rules: [htdyRule(false), subingRule(false)] }),
       fetchRuntimeStatus: async () => 'ok',
       setProductEnabled: () => new Promise((resolve) => { resolveUpdate = resolve }),
+      setProductFrequencyEnabled: () => new Promise((resolve) => { resolveUpdate = resolve }),
       notifyError: () => undefined,
     })
 
     await controller.refresh()
-    const pending = controller.toggle('subing_entry_signal_v1', true)
+    const pending = controller.toggle('htdy_original_15m', true)
     symbol.value = 'jm'
     await controller.refresh()
-    resolveUpdate!(subingRule(true))
+    resolveUpdate!(htdyRule(true))
     await pending
-    assert.equal(controller.alertRules.value.find((rule) => rule.rule_code === ALERT_RULE_CODES.SUBING)?.enabled_for_product, false)
+    assert.deepEqual(
+      controller.alertRules.value.find((rule) => rule.rule_code === ALERT_RULE_CODES.HTDY)?.enabled_frequencies,
+      [],
+    )
+    controller.dispose()
+  })
+
+  it('routes HTDY by captured symbol and frequency while SuBing stays product-scoped', async () => {
+    const symbol = ref('jm')
+    const frequency = ref<'15m' | '5m'>('15m')
+    const productCalls: Array<[string, string, boolean]> = []
+    const pairCalls: Array<[string, string, string, boolean]> = []
+    const controller = useProductAlertScope({
+      symbol,
+      frequency,
+      fetchProductAlerts: async () => ({ symbol: 'jm', rules: [htdyRule(true), subingRule(false)] }),
+      fetchRuntimeStatus: async () => 'ok',
+      setProductEnabled: async (ruleCode, requestedSymbol, enabled) => {
+        productCalls.push([ruleCode, requestedSymbol, enabled])
+        return subingRule(enabled)
+      },
+      setProductFrequencyEnabled: async (ruleCode, requestedSymbol, requestedFrequency, enabled) => {
+        pairCalls.push([ruleCode, requestedSymbol, requestedFrequency, enabled])
+        return htdyRule(enabled)
+      },
+      notifyError: () => undefined,
+    })
+
+    await controller.refresh()
+    const htdyMutation = controller.toggle(ALERT_RULE_CODES.HTDY, false)
+    frequency.value = '5m'
+    await htdyMutation
+    await controller.toggle(ALERT_RULE_CODES.SUBING, true)
+
+    assert.deepEqual(pairCalls, [[ALERT_RULE_CODES.HTDY, 'jm', '15m', false]])
+    assert.deepEqual(productCalls, [[ALERT_RULE_CODES.SUBING, 'jm', true]])
+    controller.dispose()
+  })
+
+  it('serializes HTDY writes by Rule code even when the displayed frequency changes', async () => {
+    const symbol = ref('jm')
+    const frequency = ref<'15m' | '5m'>('15m')
+    const pairCalls: Array<[string, string, string, boolean]> = []
+    let resolveUpdate: ((value: ReturnType<typeof htdyRule>) => void) | undefined
+    const controller = useProductAlertScope({
+      symbol,
+      frequency,
+      fetchProductAlerts: async () => ({ symbol: 'jm', rules: [htdyRule(false), subingRule(false)] }),
+      fetchRuntimeStatus: async () => 'ok',
+      setProductEnabled: () => new Promise((resolve) => { resolveUpdate = resolve }),
+      setProductFrequencyEnabled: (ruleCode, requestedSymbol, requestedFrequency, enabled) => {
+        pairCalls.push([ruleCode, requestedSymbol, requestedFrequency, enabled])
+        return new Promise((resolve) => { resolveUpdate = resolve })
+      },
+      notifyError: () => undefined,
+    })
+
+    await controller.refresh()
+    const pending = controller.toggle(ALERT_RULE_CODES.HTDY, true)
+    frequency.value = '5m'
+    await controller.toggle(ALERT_RULE_CODES.HTDY, true)
+
+    assert.deepEqual(pairCalls, [[ALERT_RULE_CODES.HTDY, 'jm', '15m', true]])
+    assert.equal(controller.savingRuleCodes.value.has(ALERT_RULE_CODES.HTDY), true)
+    resolveUpdate!(htdyRule(true))
+    await pending
+    assert.equal(controller.savingRuleCodes.value.size, 0)
+    controller.dispose()
+  })
+
+  it('accepts a same-symbol HTDY response with the full pair set after display frequency changes', async () => {
+    const symbol = ref('jm')
+    const frequency = ref<'15m' | '5m'>('15m')
+    let resolveUpdate: ((value: ReturnType<typeof htdyRule>) => void) | undefined
+    const controller = useProductAlertScope({
+      symbol,
+      frequency,
+      fetchProductAlerts: async () => ({ symbol: 'jm', rules: [htdyRule(false), subingRule(false)] }),
+      fetchRuntimeStatus: async () => 'ok',
+      setProductEnabled: () => new Promise((resolve) => { resolveUpdate = resolve }),
+      setProductFrequencyEnabled: () => new Promise((resolve) => { resolveUpdate = resolve }),
+      notifyError: () => undefined,
+    })
+
+    await controller.refresh()
+    const pending = controller.toggle(ALERT_RULE_CODES.HTDY, true)
+    frequency.value = '5m'
+    resolveUpdate!(htdyRule(true, ['15m']))
+    await pending
+
+    assert.deepEqual(
+      controller.alertRules.value.find((rule) => rule.rule_code === ALERT_RULE_CODES.HTDY)?.enabled_frequencies,
+      ['15m'],
+    )
     controller.dispose()
   })
 
   it('keeps only the latest symbol scope response after page lifecycle extraction', async () => {
     const symbol = ref('ag')
+    const frequency = ref<'15m' | '5m'>('15m')
     const resolvers = new Map<string, (value: { symbol: string; rules: never[] }) => void>()
     const controller = useProductAlertScope({
       symbol,
+      frequency,
       fetchProductAlerts: (requestedSymbol) => new Promise((resolve) => {
         resolvers.set(requestedSymbol, resolve)
       }),
       fetchRuntimeStatus: async () => 'ok',
       setProductEnabled: async () => { throw new Error('not used') },
+      setProductFrequencyEnabled: async () => { throw new Error('not used') },
       notifyError: () => undefined,
     })
 
@@ -418,13 +534,14 @@ function event(
   }
 }
 
-function htdyRule(enabled: boolean) {
+function htdyRule(enabled: boolean, enabledFrequencies: Array<'15m' | '5m'> = enabled ? ['15m'] : []) {
   return {
     rule_code: 'htdy_original_15m',
     display_name: '火天大有',
     kind: 'indicator_observation' as const,
-    input_frequencies: ['15m' as const],
-    enabled_for_product: enabled,
+    input_frequencies: MARKET_FREQUENCIES,
+    enabled_for_product: enabledFrequencies.length > 0,
+    enabled_frequencies: enabledFrequencies,
   }
 }
 
@@ -435,6 +552,7 @@ function subingRule(enabled: boolean) {
     kind: 'formal_signal' as const,
     input_frequencies: ['5m' as const, '15m' as const],
     enabled_for_product: enabled,
+    enabled_frequencies: [],
   }
 }
 
