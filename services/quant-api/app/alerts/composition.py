@@ -6,7 +6,7 @@ from collections.abc import Mapping
 import json
 from typing import Any
 
-from app.alerts.evaluators import HtdyOriginal15mEvaluator
+from app.alerts.evaluators import HtdyOriginalEvaluator
 from app.alerts.notification_composition import build_notification_sender_from_env
 from app.alerts.runtime import (
     AlertRuntime,
@@ -97,7 +97,7 @@ def build_alert_runtime() -> AlertRuntime:
         session_factory=SessionLocal,
         market_read_factory=build_market_read_service,
         subing_read_factory=build_subing_read_service,
-        htdy_evaluator=HtdyOriginal15mEvaluator(),
+        htdy_evaluator=HtdyOriginalEvaluator(),
         sender=sender,
         operational_products=operational_products,
         taxonomy=taxonomy,

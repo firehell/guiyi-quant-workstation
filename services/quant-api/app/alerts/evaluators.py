@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol
 
+from app.alerts.registry import HTDY_RULE
 from app.market_data.market_read_service import MarketReadWindow
 from guiyi_quant.indicators import (
     HTDY_ALERT_OBSERVATION_CONSUMER,
@@ -25,14 +26,12 @@ class AlertEvaluationError(RuntimeError):
 
 class AlertEvaluator(Protocol):
     indicator_code: str
-    frequency: str
 
     def evaluate(self, window: MarketReadWindow) -> AlertEvaluation: ...
 
 
-class HtdyOriginal15mEvaluator:
+class HtdyOriginalEvaluator:
     indicator_code = "huotian_dayou_original_v0"
-    frequency = "15m"
     context_bars = 32
 
     def evaluate(self, window: MarketReadWindow) -> AlertEvaluation:
@@ -48,7 +47,7 @@ class HtdyOriginal15mEvaluator:
             raise AlertEvaluationError("ALERT_EVALUATION_POLICY_DISABLED") from None
         if (
             window.series_kind != "actual_dominant"
-            or window.frequency != self.frequency
+            or window.frequency not in HTDY_RULE.input_frequencies
             or len(window.bars) < self.context_bars
             or not window.bars
             or window.bars[-1].bar_end != window.cutoff

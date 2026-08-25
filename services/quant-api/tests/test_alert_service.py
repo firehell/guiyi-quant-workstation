@@ -92,23 +92,6 @@ def event_request(
     )
 
 
-def widen_htdy_test_frequencies(monkeypatch: pytest.MonkeyPatch) -> None:
-    import app.alerts.service as service_module
-
-    original_definition = service_module._definition
-    htdy_definition = replace(
-        original_definition("htdy_original_15m"),
-        input_frequencies=("1m", "5m", "15m", "30m", "60m", "1d", "1w"),
-    )
-
-    def definition(rule_code: str):
-        if rule_code == "htdy_original_15m":
-            return htdy_definition
-        return original_definition(rule_code)
-
-    monkeypatch.setattr(service_module, "_definition", definition)
-
-
 def test_product_rules_exposes_registry_metadata_and_independent_scopes(
     session: Session,
 ) -> None:
@@ -131,7 +114,7 @@ def test_product_rules_exposes_registry_metadata_and_independent_scopes(
             "htdy_original_15m",
             "火天大有",
             "indicator_observation",
-            ("15m",),
+            ("1m", "5m", "15m", "30m", "60m", "1d", "1w"),
             ("15m",),
             True,
         ),
@@ -183,11 +166,9 @@ def test_scope_add_normalizes_and_remove_is_idempotent(session: Session) -> None
 
 def test_htdy_frequency_scope_mutations_are_normalized_and_idempotent(
     session: Session,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from app.alerts.service import AlertService
 
-    widen_htdy_test_frequencies(monkeypatch)
     htdy = seed_rule(session, "htdy_original_15m")
     htdy.scope_product_frequencies = {"rb": ["60m"]}
     session.commit()
@@ -253,7 +234,7 @@ def test_htdy_frequency_scope_rejects_non_input_frequency(session: Session) -> N
     with pytest.raises(AlertScopeError, match="^ALERT_SCOPE_FREQUENCY_INVALID$"):
         AlertService(
             session, operational_products=("jm",)
-        ).set_product_frequency_enabled("htdy_original_15m", "jm", "5m", True)
+        ).set_product_frequency_enabled("htdy_original_15m", "jm", "4h", True)
 
 
 def test_scope_authorities_fail_closed_instead_of_unioning_stores(
@@ -286,7 +267,7 @@ def test_scope_authorities_fail_closed_instead_of_unioning_stores(
         {"ag": ["15m"]},
         {"jm": "15m"},
         {"jm": []},
-        {"jm": ["60m"]},
+        {"jm": ["4h"]},
     ],
 )
 def test_htdy_frequency_scope_rejects_invalid_stored_json(
@@ -481,11 +462,9 @@ def test_duplicate_event_with_changed_result_attributes_fails_closed(
 
 def test_htdy_same_time_cross_frequency_events_coexist_and_same_frequency_is_idempotent(
     session: Session,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from app.alerts.service import AlertService
 
-    widen_htdy_test_frequencies(monkeypatch)
     htdy = seed_rule(session, "htdy_original_15m")
     service = AlertService(session, operational_products=("jm",))
     request_15m = event_request(htdy.id, frequency="15m")
@@ -515,7 +494,7 @@ def test_create_event_requires_registry_frequency_and_trading_day(
     service = AlertService(session, operational_products=("jm",))
 
     with pytest.raises(AlertConsistencyError, match="ALERT_EVENT_CONSISTENCY_ERROR"):
-        service.create_event(event_request(htdy.id, frequency="5m"))
+        service.create_event(event_request(htdy.id, frequency="4h"))
     with pytest.raises(AlertScopeError, match="ALERT_TRADING_DAY_REQUIRED"):
         service.create_event(event_request(htdy.id, trading_day=cast(date, None)))
 

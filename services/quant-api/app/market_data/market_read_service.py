@@ -124,7 +124,7 @@ class MarketReadService:
         """合并 Canonical/Live，并严格停在指定 completed event Bar。"""
         if (
             identity.series_kind is not SeriesKind.ACTUAL_DOMINANT
-            or identity.frequency is not BarFrequency.M15
+            or identity.frequency not in INTRADAY_FREQUENCIES
             or identity.contract is not None
         ):
             raise MarketReadWindowError("MARKET_READ_IDENTITY_UNSUPPORTED")
@@ -173,6 +173,44 @@ class MarketReadService:
             contract=contract,
             cutoff=cutoff,
             bars=bars,
+        )
+
+    def latest_canonical_window(
+        self,
+        identity: SeriesPageQuery,
+        *,
+        trading_day: date,
+        limit: int = 32,
+    ) -> MarketReadWindow:
+        """Read one exact latest D1/W1 Alert window from Canonical only."""
+        if (
+            identity.series_kind is not SeriesKind.ACTUAL_DOMINANT
+            or identity.frequency not in {BarFrequency.D1, BarFrequency.W1}
+            or identity.contract is not None
+        ):
+            raise MarketReadWindowError("MARKET_READ_IDENTITY_UNSUPPORTED")
+        page = self.history_page(replace(identity, before=None, limit=limit))
+        if not page.bars or page.bars[-1].trading_day != trading_day:
+            raise MarketReadWindowError("MARKET_READ_CUTOFF_BAR_MISSING")
+        latest = page.bars[-1]
+        owners = tuple(
+            segment
+            for segment in page.resolved_contract_segments
+            if segment.start_trading_day <= latest.trading_day <= segment.end_trading_day
+        )
+        if len(owners) != 1:
+            raise MarketReadWindowError("MARKET_READ_CONTRACT_UNAVAILABLE")
+        contract = normalize_contract_for_symbol(identity.symbol, owners[0].contract)
+        if contract is None:
+            raise MarketReadWindowError("MARKET_READ_CONTRACT_UNAVAILABLE")
+        return MarketReadWindow(
+            symbol=identity.symbol,
+            series_kind=identity.series_kind.value,
+            frequency=identity.frequency.value,
+            trading_day=trading_day,
+            contract=contract,
+            cutoff=latest.bar_end,
+            bars=page.bars[-limit:],
         )
 
     def state(self, identity: SeriesPageQuery, now: datetime) -> MarketReadState:

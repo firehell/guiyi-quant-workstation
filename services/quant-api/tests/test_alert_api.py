@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 
-import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
@@ -44,7 +42,7 @@ def test_product_alert_state_returns_registry_metadata() -> None:
                 "rule_code": "htdy_original_15m",
                 "display_name": "火天大有",
                 "kind": "indicator_observation",
-                "input_frequencies": ["15m"],
+                "input_frequencies": ["1m", "5m", "15m", "30m", "60m", "1d", "1w"],
                 "enabled_frequencies": [],
                 "enabled_for_product": False,
             },
@@ -269,11 +267,8 @@ def test_alert_api_rejects_invalid_symbol_and_unknown_rule() -> None:
     assert unknown_rule.json()["detail"]["code"] == "ALERT_RULE_NOT_FOUND"
 
 
-def test_alert_api_mutates_only_the_requested_htdy_frequency(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_alert_api_mutates_only_the_requested_htdy_frequency() -> None:
     testing_session = _session_factory()
-    _widen_htdy_test_frequencies(monkeypatch)
 
     def override_get_db():
         with testing_session() as session:
@@ -364,23 +359,6 @@ def test_alert_api_exposes_no_rule_definition_mutation_surface() -> None:
         "/api/alerts/rules/{rule_code}/scope/{symbol}/{frequency}"
     ]
     assert set(pair_scope_methods) == {"put"}
-
-
-def _widen_htdy_test_frequencies(monkeypatch: pytest.MonkeyPatch) -> None:
-    import app.alerts.service as service_module
-
-    original_definition = service_module._definition
-    htdy_definition = replace(
-        original_definition("htdy_original_15m"),
-        input_frequencies=("1m", "5m", "15m", "30m", "60m", "1d", "1w"),
-    )
-
-    def definition(rule_code: str):
-        if rule_code == "htdy_original_15m":
-            return htdy_definition
-        return original_definition(rule_code)
-
-    monkeypatch.setattr(service_module, "_definition", definition)
 
 
 def _override_current_trading_day(result: CurrentTradingDayResult) -> None:

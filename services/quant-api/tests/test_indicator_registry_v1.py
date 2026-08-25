@@ -97,6 +97,23 @@ def test_registry_uses_per_indicator_frequency_contracts() -> None:
     assert indicator_registry["main_force_mirror_v2"].supported_intervals == ("60m",)
 
 
+def test_alert_rule_capabilities_keep_stable_identity_and_exact_frequencies() -> None:
+    """Catches HTDY frequency expansion renaming the Rule or widening SuBing."""
+    from app.alerts.registry import HTDY_RULE, SUBING_RULE
+
+    assert HTDY_RULE.input_frequencies == (
+        "1m",
+        "5m",
+        "15m",
+        "30m",
+        "60m",
+        "1d",
+        "1w",
+    )
+    assert SUBING_RULE.input_frequencies == ("5m", "15m")
+    assert HTDY_RULE.rule_code == "htdy_original_15m"
+
+
 def test_main_force_mirror_registry_exposes_only_v2() -> None:
     """Catches a legacy mirror remaining callable after V2 becomes active."""
     from guiyi_quant.indicators import formal_policy_registry, indicator_registry
