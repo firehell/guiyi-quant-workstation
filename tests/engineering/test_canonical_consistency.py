@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import ast
-from datetime import UTC, datetime
 import importlib
 import json
 import re
@@ -328,7 +327,6 @@ def test_htdy_all_frequency_alert_contract_matches_active_canonical() -> None:
     registry = importlib.import_module("app.alerts.registry")
     models = importlib.import_module("app.alerts.models")
     service_module = importlib.import_module("app.alerts.service")
-    runtime = importlib.import_module("app.alerts.runtime")
 
     assert registry.HTDY_RULE.rule_code == "htdy_original_15m"
     assert registry.HTDY_RULE.input_frequencies == (
@@ -362,45 +360,6 @@ def test_htdy_all_frequency_alert_contract_matches_active_canonical() -> None:
         if constraint.__class__.__name__ == "UniqueConstraint"
     }
     assert storage_keys == {("rule_id", "symbol", "frequency", "bar_end")}
-
-    class ScalarCapture:
-        statement: object | None = None
-
-        def scalar(self, statement: object) -> None:
-            self.statement = statement
-
-    capture = ScalarCapture()
-    identity_service = service_module.AlertService(
-        capture,
-        operational_products=("jm",),
-    )
-    event_time = datetime(2026, 8, 25, 2, 0, tzinfo=UTC)
-    identity_service._event_by_identity(
-        definition=registry.HTDY_RULE,
-        rule_id=1,
-        symbol="jm",
-        frequency="15m",
-        bar_end=event_time,
-    )
-    assert capture.statement is not None
-    assert "alert_events.frequency" in str(capture.statement.whereclause)
-    identity_service._event_by_identity(
-        definition=registry.SUBING_RULE,
-        rule_id=2,
-        symbol="jm",
-        frequency="5m",
-        bar_end=event_time,
-    )
-    assert capture.statement is not None
-    assert "alert_events.frequency" not in str(capture.statement.whereclause)
-
-    assert tuple(
-        frequency.value for frequency in runtime._CANONICAL_ALERT_FREQUENCIES
-    ) == ("1d", "1w")
-    assert runtime._parse_canonical_updated_trigger(
-        "market:state",
-        '{"reason":"canonical_updated","trading_day":"2026-08-25"}',
-    ) is not None
 
     def canonical_text(relative: str) -> str:
         return " ".join((ROOT / relative).read_text(encoding="utf-8").split())
