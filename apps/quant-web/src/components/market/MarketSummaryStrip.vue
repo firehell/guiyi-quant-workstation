@@ -7,7 +7,7 @@ defineProps<{ radar: MarketRadarResponse }>()
 <template>
   <section class="radar-summary" aria-labelledby="market-summary-heading">
     <div class="radar-summary__meta">
-      <span class="radar-summary__eyebrow">Market Radar</span>
+      <span class="radar-summary__eyebrow">市场雷达</span>
       <h2 id="market-summary-heading">市场概览</h2>
       <div class="radar-summary__freshness">
         <span>当前数据日期 <b>{{ radar.data_as_of }}</b></span>

@@ -28,6 +28,7 @@ import type {
 import { resolveChartTheme } from '@/styles/chartTheme'
 import { formatChartAxisTimeInShanghai, formatChartTimeInShanghai } from '@/utils/barTime'
 import { normalizeBarSeries } from '@/utils/barSeries'
+import { initialChartLogicalRange } from '@/utils/chartViewport'
 import {
   buildKlineDerivedData,
   resolveKlineHoverContext,
@@ -238,7 +239,11 @@ function replaceBars(bars: BarData[], preserveViewport = false): void {
   renderAllSeries()
   chart.applyOptions({ timeScale: { timeVisible: !isDaily() } })
   if (visibleRange) chart.timeScale().setVisibleLogicalRange(visibleRange)
-  else chart.timeScale().fitContent()
+  else {
+    const initialRange = initialChartLogicalRange(renderedBars.length)
+    if (initialRange) chart.timeScale().setVisibleLogicalRange(initialRange)
+    else chart.timeScale().fitContent()
+  }
   requestAnimationFrame(() => {
     const range = chart?.timeScale().getVisibleLogicalRange()
     isNearLeftBoundary = !!range && range.from <= 20

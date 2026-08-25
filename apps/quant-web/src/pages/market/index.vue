@@ -25,8 +25,6 @@ import { useCurrentFormalSignals } from '@/composables/useCurrentFormalSignals'
 import { useLatestResource } from '@/composables/useLatestResource'
 import {
   loadMarketWorkspacePreferences,
-  saveMarketWorkspacePreferences,
-  toggleWatchlistSymbol,
 } from '@/utils/marketWorkspacePreferences'
 
 const router = useRouter()
@@ -64,7 +62,7 @@ const freshnessIssue = computed(() => {
     radar.value.stale.length ? `stale ${radar.value.stale.join(', ')}` : '',
     radar.value.unavailable.length ? `unavailable ${radar.value.unavailable.join(', ')}` : '',
   ].filter(Boolean)
-  return `Radar 数据不完整：${parts.join('；') || radar.value.freshness_message}`
+  return `市场雷达数据不完整：${parts.join('；') || radar.value.freshness_message}`
 })
 
 function openChart(item: MarketRadarItem) {
@@ -126,11 +124,6 @@ async function refreshFormalEventStates() {
   }
 }
 
-function toggleWatchlist(symbol: string) {
-  preferences.value = toggleWatchlistSymbol(preferences.value, symbol)
-  saveMarketWorkspacePreferences(preferences.value)
-}
-
 async function refreshAll() {
   await Promise.all([
     refreshFormalSignals(),
@@ -170,7 +163,7 @@ onBeforeUnmount(() => {
 <template>
   <div class="market-radar-page">
     <header class="market-radar-page__intro">
-      <div><h1>期货市场发现</h1><p>基于最近完整交易日的 Canonical 日线研究快照；所有内容仅供人工观察。</p></div>
+      <div><h1>期货市场发现</h1><p>基于最近完整交易日的已校验日线研究快照；所有内容仅供人工观察。</p></div>
       <NButton secondary size="small" :loading="loading" :disabled="loading" @click="refreshAll">全部刷新</NButton>
     </header>
     <MarketRuntimeStatus
@@ -197,9 +190,9 @@ onBeforeUnmount(() => {
       <div v-if="error" class="market-radar-page__error">
         <NAlert
           type="warning"
-          :title="radar ? 'Radar 刷新失败' : 'Radar 暂不可用'"
+          :title="radar ? '市场雷达刷新失败' : '市场雷达暂不可用'"
         >
-          {{ radar ? '已保留上一份成功快照；重试前请以其时点为准。' : '无法读取只读 Radar；不影响 Product Workspace。' }}
+          {{ radar ? '已保留上一份成功快照；重试前请以其时点为准。' : '无法读取只读市场雷达；不影响品种工作台。' }}
         </NAlert>
       </div>
       <template v-if="radar">
@@ -209,7 +202,7 @@ onBeforeUnmount(() => {
           <div class="market-radar-page__research-content">
             <MarketSummaryStrip :radar="radar" />
             <div class="market-radar-page__discovery"><MarketScatter :items="radar.items" @open="openChart" /><MarketAttentionList :items="radar.attention" @open="openChart" /></div>
-            <MarketDetailTable :items="radar.items" :sectors="radar.sector_summary" :watchlist="preferences.watchlist" @open="openChart" @toggle-watchlist="toggleWatchlist" />
+            <MarketDetailTable :items="radar.items" :sectors="radar.sector_summary" @open="openChart" />
           </div>
         </details>
       </template>

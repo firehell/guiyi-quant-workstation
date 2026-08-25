@@ -13,7 +13,8 @@ import type {
   SeriesKind,
 } from '../types/market'
 
-const DEFAULT_PAGE_LIMIT = 1200
+/** Keep the initial chart readable and cap first-render indicator work. */
+const DEFAULT_PAGE_LIMIT = 300
 const RECONNECT_DELAY_MS = 10_000
 const INTRADAY_FREQUENCIES = new Set<MarketFrequency>(['1m', '5m', '15m', '30m', '60m'])
 

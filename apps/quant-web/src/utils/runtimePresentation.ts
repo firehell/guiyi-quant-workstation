@@ -54,7 +54,7 @@ export function runtimeStatusPresentation(snapshot: RuntimeHealthResponse): Runt
   const afterMarket = snapshot.components.after_market
   const alertDisabled = !alert.configured_enabled || alert.status === 'disabled'
   const processingState = alertDisabled
-    ? 'Alert 未启用'
+    ? '提醒未启用'
     : alert.processing_state === 'ok'
       ? '处理正常'
       : alert.processing_state === 'failed'
@@ -64,7 +64,7 @@ export function runtimeStatusPresentation(snapshot: RuntimeHealthResponse): Runt
   return [
     {
       key: 'overall',
-      label: 'Runtime',
+      label: '运行概况',
       state: overallLabel(snapshot.status),
       detail: '只读健康快照',
       timestamp: `生成 ${formatRuntimeTimestamp(snapshot.generated_at)}`,
@@ -72,17 +72,17 @@ export function runtimeStatusPresentation(snapshot: RuntimeHealthResponse): Runt
     },
     {
       key: 'live',
-      label: 'Live',
+      label: '实时行情',
       state: liveLabel(live.status),
       detail: `${live.subscribed_count} / ${live.operational_count} 品种`,
       timestamp: live.last_bar_at
-        ? `最近 Bar ${formatRuntimeTimestamp(live.last_bar_at)}`
+        ? `最近 K 线 ${formatRuntimeTimestamp(live.last_bar_at)}`
         : `心跳 ${formatRuntimeTimestamp(live.last_heartbeat_at)}`,
       tone: statusTone(live.status),
     },
     {
       key: 'alert',
-      label: 'Alert',
+      label: '提醒服务',
       state: processingState,
       detail: alertDisabled ? '运行观察已关闭' : alertNotificationLabel(alert.notification_state),
       timestamp: alert.last_processed_bar_at
@@ -126,10 +126,10 @@ function overallLabel(status: string): string {
 }
 
 function liveLabel(status: string): string {
-  if (status === 'ok') return 'Live 正常'
-  if (status === 'disabled') return 'Live 未启用'
-  if (status === 'failed') return 'Live 失败'
-  return 'Live 异常'
+  if (status === 'ok') return '实时正常'
+  if (status === 'disabled') return '实时未启用'
+  if (status === 'failed') return '实时异常'
+  return '实时状态异常'
 }
 
 function statusTone(status: string): RuntimeStatusTone {

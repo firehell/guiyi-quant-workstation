@@ -62,7 +62,7 @@ function itemTitle(item: SubingDailyWatchItem) {
   <section class="daily-watch" aria-labelledby="subing-daily-watch-heading" data-testid="subing-daily-watch">
     <header class="daily-watch__heading">
       <div>
-        <span>Daily Watch</span>
+        <span>每日观察</span>
         <h2 id="subing-daily-watch-heading">苏冰今日观察</h2>
       </div>
       <small v-if="snapshot">
@@ -72,7 +72,7 @@ function itemTitle(item: SubingDailyWatchItem) {
 
     <div v-if="!snapshot" class="daily-watch__unavailable">
       <strong>{{ loading && !requestFailed ? '苏冰今日观察读取中' : '苏冰今日观察暂不可用' }}</strong>
-      <span>{{ loading && !requestFailed ? '正在读取已发布的当前观察。' : '当前没有可用候选；Runtime、正式信号与全市场研究仍可独立使用。' }}</span>
+      <span>{{ loading && !requestFailed ? '正在读取已发布的当前观察。' : '当前没有可用候选；运行概况、正式信号与全市场研究仍可独立使用。' }}</span>
     </div>
 
     <template v-else>

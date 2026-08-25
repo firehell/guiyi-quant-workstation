@@ -13,9 +13,9 @@ const items = computed(() => props.snapshot ? runtimeStatusPresentation(props.sn
 </script>
 
 <template>
-  <section class="runtime-status" data-testid="market-runtime-status" aria-label="Runtime 运行状态">
+  <section class="runtime-status" data-testid="market-runtime-status" aria-label="运行状态">
     <div v-if="!snapshot" class="runtime-status__unavailable">
-      <strong>{{ loading ? 'Runtime 状态读取中' : 'Runtime 状态暂不可用' }}</strong>
+      <strong>{{ loading ? '运行状态读取中' : '运行状态暂不可用' }}</strong>
       <span>{{ loading ? '正在读取只读健康快照。' : '本次读取失败，未获得可用快照。' }}</span>
     </div>
     <template v-else>

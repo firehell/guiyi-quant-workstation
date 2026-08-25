@@ -166,6 +166,33 @@ describe('market historical series', () => {
     assert.equal(isCurrentGeneration(5, 5), true)
   })
 
+  it('requests 300 bars for the initial view and each older-history page', async () => {
+    const requests: Array<{ before?: string; limit: number }> = []
+    const series = useMarketSeries({
+      fetchPage: async (request) => {
+        requests.push({ before: request.before, limit: request.limit })
+        return request.before
+          ? page(
+            [liveBar('2026-08-07T09:15:00Z', 99)],
+            { has_more_before: false, next_before: null },
+          )
+          : page(
+            [liveBar('2026-08-07T09:30:00Z', 100)],
+            { has_more_before: true, next_before: '2026-08-07T09:30:00Z' },
+          )
+      },
+      fetchState: async () => state({ live_eligible: false, live_available: false }),
+    })
+
+    await series.replaceSeries({ seriesKind: 'actual_dominant', symbol: 'ag', frequency: '15m' })
+    await series.loadMoreBefore()
+
+    assert.deepEqual(requests, [
+      { before: undefined, limit: 300 },
+      { before: '2026-08-07T09:30:00Z', limit: 300 },
+    ])
+  })
+
   it('clears the old public series before a replacement identity can fail', async () => {
     let rejectReplacement: ((reason: Error) => void) | undefined
     const series = useMarketSeries({

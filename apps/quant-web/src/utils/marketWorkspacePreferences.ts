@@ -11,7 +11,6 @@ export interface MarketWorkspacePreferences {
   seriesKind: Extract<SeriesKind, 'actual_dominant' | 'continuous'>
   frequency: MarketFrequency
   researchSidebarOpen: boolean
-  watchlist: string[]
 }
 
 type WorkspaceStorage = Pick<Storage, 'getItem' | 'setItem'>
@@ -23,7 +22,6 @@ export function defaultMarketWorkspacePreferences(): MarketWorkspacePreferences 
     seriesKind: 'actual_dominant',
     frequency: '15m',
     researchSidebarOpen: true,
-    watchlist: [],
   }
 }
 
@@ -46,7 +44,6 @@ export function loadMarketWorkspacePreferences(
       researchSidebarOpen: typeof parsed.researchSidebarOpen === 'boolean'
         ? parsed.researchSidebarOpen
         : true,
-      watchlist: normalizeWatchlist(parsed.watchlist),
     }
   } catch {
     return defaultMarketWorkspacePreferences()
@@ -65,36 +62,10 @@ export function saveMarketWorkspacePreferences(
       seriesKind: preferences.seriesKind === 'continuous' ? 'continuous' : 'actual_dominant',
       frequency: normalizeFrequency(preferences.frequency),
       researchSidebarOpen: Boolean(preferences.researchSidebarOpen),
-      watchlist: normalizeWatchlist(preferences.watchlist),
     }))
   } catch {
     // localStorage 不可用不能阻塞 Market 工作台。
   }
-}
-
-export function toggleWatchlistSymbol(
-  preferences: MarketWorkspacePreferences,
-  symbol: string,
-): MarketWorkspacePreferences {
-  const normalized = normalizeSymbol(symbol)
-  if (!normalized) return { ...preferences, watchlist: normalizeWatchlist(preferences.watchlist) }
-  const watchlist = normalizeWatchlist(preferences.watchlist)
-  return {
-    ...preferences,
-    watchlist: watchlist.includes(normalized)
-      ? watchlist.filter((item) => item !== normalized)
-      : [...watchlist, normalized],
-  }
-}
-
-function normalizeWatchlist(value: unknown): string[] {
-  if (!Array.isArray(value)) return []
-  const result: string[] = []
-  value.forEach((item) => {
-    const normalized = normalizeSymbol(item)
-    if (normalized && !result.includes(normalized)) result.push(normalized)
-  })
-  return result
 }
 
 function normalizeSymbol(value: unknown): string | null {

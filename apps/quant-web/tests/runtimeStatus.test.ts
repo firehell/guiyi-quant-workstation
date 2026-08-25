@@ -59,9 +59,10 @@ test('runtime presentation exposes four compact operational items and useful tim
 
   const items = module.runtimeStatusPresentation(runtimeHealth())
   assert.deepEqual(items.map((item) => item.key), ['overall', 'live', 'alert', 'after_market'])
-  assert.deepEqual(items.map((item) => item.state), ['整体降级', 'Live 正常', '处理正常', '运行卡住'])
+  assert.deepEqual(items.map((item) => item.label), ['运行概况', '实时行情', '提醒服务', '盘后维护'])
+  assert.deepEqual(items.map((item) => item.state), ['整体降级', '实时正常', '处理正常', '运行卡住'])
   assert.match(items[0].timestamp, /2026-08-24 18:15/)
-  assert.match(items[1].timestamp, /最近 Bar 2026-08-24 18:14/)
+  assert.match(items[1].timestamp, /最近 K 线 2026-08-24 18:14/)
   assert.match(items[2].detail, /服务商已接受（不代表送达）/)
   assert.match(items[3].timestamp, /开始 2026-08-24 18:05/)
 })
@@ -76,7 +77,7 @@ test('disabled Alert is explicit instead of being mislabeled as natural observat
   payload.components.alert.notification_state = 'unobserved'
 
   const alert = module.runtimeStatusPresentation(payload).find((item) => item.key === 'alert')
-  assert.equal(alert.state, 'Alert 未启用')
+  assert.equal(alert.state, '提醒未启用')
   assert.doesNotMatch(alert.detail, /未获自然验证/)
 })
 

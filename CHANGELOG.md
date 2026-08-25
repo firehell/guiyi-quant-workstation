@@ -2,6 +2,17 @@
 
 本文件记录正式产品版本；开发过程与逐品种执行流水从 Git history 追溯。
 
+## [1.8.2] - 2026-08-25
+
+- 收敛 Market 首页为中文研究工作台：Runtime / Live / Alert 等状态采用中文、去除自选入口与列，
+  全市场明细直接展示；价格变化 × 持仓变化改为不重叠的四象限完整名单，保留唯一品种入口。
+- 品种详情首屏与向左历史分页均为 300 根 K 线，默认视图固定到最新 300 根，避免 Live 尾部或长历史
+  被压缩至不可读尺度并降低首屏指标计算负担。
+- 桌面端详情工作区改为占满工具栏和状态条以下的可用视口；主图、成交量/副图与“当前检查栏”等高，
+  检查栏内容超出时独立滚动，窄屏仍使用既有抽屉布局。
+- 本版不新增 migration，不写 Canonical、production DB/Redis，不改变 Alert Rule Scope/transport，
+  不加载 RQAlpha sidecar、不运行手工 after-market 或真实通知，也不增加订单能力；`auto_order=false` 不变。
+
 ## [1.8.1] - 2026-08-24
 
 - 新增 active60 单产品 `actual_dominant + 1m` 日进斗金 Historical reference replay；保持 JM
