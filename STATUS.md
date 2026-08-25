@@ -4,14 +4,14 @@
 
 ## 正式 release 与 production Runtime
 
-- 正式 release 为 `v1.8.3@9ca18afc9b056d413ee8cac56a056b7d7df078b4`；本机五个 launchd label 当前绑定 clean/detached `/Volumes/扩展盘/guiyi-quant-runtime-v1.8.3` 的同一 commit。该 Runtime 身份不包含本次 develop 收敛代码。
-- 本地 API、Web、Live 与 Alert 从该根运行；2026-08-25 自然 after-market 已于 18:05:02 开始、19:40:05 以 `passed` 终态完成，单次 attempts=1、覆盖 active60。旧 v1.8.2 Runtime worktree 保留为 rollback 资产，当前无 label 指向。
+- 正式 release 为 `v1.8.4@f78db1b124744d8e2ebe1ee1b7a5ecdc365b40f6`（Release PR `#220`，annotated tag peeled commit 同一）；本机五个 launchd label 当前绑定 clean/detached `/Volumes/扩展盘/guiyi-quant-runtime-v1.8.4` 的同一 commit。API 返回 `1.8.4`，Web、Live 与 Alert 均已从该根运行；旧 v1.8.2/v1.8.3 Runtime 与临时 release worktree 已在无 label/进程引用且 clean 的检查后移除。
+- 2026-08-25 自然 after-market 曾于 18:05:02 开始、19:40:05 以 `passed` 终态完成，单次 attempts=1、覆盖 active60；该既有自然证据不因部署封装重复采集。v1.8.4 新 Runtime 根未导入旧根的运行状态文件，因此当前只读 health 将当日 after-market 表示为 `missed`；本次 promotion 未手工补跑、回填或写入该状态。
 - production Alembic 已在 `20260825_0040 (head)`。HTDY production Scope 曾于 15:13 在独立明确授权下更新为 active 60 × 七周期 `60 symbols / 420 pairs`，随后于 20:43 按新的明确请求原子收敛为唯一 `jm × 15m`（`1 symbol / 1 pair`）；七周期图表能力与逐 `symbol × frequency` 开关能力不变，SuBing Scope 未变，未触发 Event、重放或通知。
-- Alert transport 为 pushplus，provider accepted 不等于微信送达。19:40 的 processing failure 已被后续 `jm × 15m` 自然处理成功覆盖为 `processing_state=ok`；当前 Runtime 的 `degraded` 仅由同一时点保留的 `notification_transport_failed` 导致。develop 已加入 W1 周内正常跳过修复与保留失败事实的显式 notification acknowledgment 代码，但尚未 release、Runtime promotion 或执行 production acknowledgment。Execution Review roll 仍为 `disabled`。
+- Alert transport 为 pushplus，provider accepted 不等于微信送达。19:40 的 processing failure 已被后续 `jm × 15m` 自然处理成功覆盖为 `processing_state=ok`；v1.8.4 已包含 W1 周内正常跳过与 Runtime observation schema v2 的精确失败 CAS acknowledgment 能力。当前 acknowledgment 仍为 `null`，没有执行 production acknowledgment、Event 重放、补发或真实通知；当前 Runtime 的 `degraded` 来自上述 after-market `missed` 与保留的 `notification_transport_failed`。Execution Review roll 仍为 `disabled`。
 
-## 已集成 develop 的 Architecture Convergence
+## 已发布的 Architecture Convergence
 
-Architecture Convergence Tasks 1–6 已通过 merge `0cc2452048f2b03b521f351e1cbd443a359f2b7f` 集成到 develop：SuBing homepage workbench 与详情 panel、四项 public overlay、Attention/Trend Focus、Main Force Mirror 与 Five-Candidate phase assets 的 active surface 退役均已完成。它们尚未 release，也未 Runtime promotion。
+Architecture Convergence Tasks 1–8 已完成实现、验证与独立 Review，并通过 Release PR `#220` 进入 v1.8.4 与当前 Runtime：SuBing homepage workbench 与详情 panel、四项 public overlay、Attention/Trend Focus、Main Force Mirror 与 Five-Candidate phase assets 的 active surface 退役均已完成。
 
 保留的产品与研究事实：
 
@@ -27,7 +27,7 @@ Architecture Convergence Tasks 1–6 已通过 merge `0cc2452048f2b03b521f351e1c
 - SuBing 自然 Live seam evidence pending；Daily Watch 的自然盘后 artifact 已于上述单次自然运行产生，不手工触发或回填。
 - SuBing、N 与 JDJ Candidate 的 prospective OOS 按各自 protocol 独立累积，均为 pending prospective OOS。
 - Execution Review roll Gate 保持 `disabled / not activated`。
-- Architecture Convergence Task 7/8 尚在 develop 实施与验证流程；在用户明确 release 批准前不得合 main/tag/release，在单独 Runtime 批准前不得 promotion。
+- Production notification acknowledgment 尚未执行；只有新的范围明确执行意图才能对当前精确失败做一次 CAS acknowledgment，且该操作仍不重放、不补发、不证明 provider accepted 或微信送达。
 
 ## 事实源边界
 
