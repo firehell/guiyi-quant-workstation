@@ -171,7 +171,7 @@ JM + 5m switch OFF
 火天大有 · 1d
 ```
 
-标签跟随当前图表周期更新。不要显示“火天大有 · 全周期”，因为开关不再代表全周期。
+标签跟随当前图表周期更新。不得显示“火天大有 · 全周期”，因为开关不代表全周期。
 
 ### 5.3 频率切换必须是纯读状态切换
 
@@ -206,9 +206,9 @@ HTDY：
 
 - 返回当前 symbol 已开启的全部 HTDY frequencies；
 - Web 用 `enabled_frequencies.includes(currentFrequency)` 计算 HTDY switch；
-- 切频时可直接使用同一份读模型更新 switch，不需要因为每次切频都写 Scope。
+- 切频时直接使用同一份读模型更新 switch，不因为切频执行 Scope mutation。
 
-现有 `enabled_for_product` 可以保留为派生兼容字段，定义为“该品种至少有一个 frequency 已开启”，但 HTDY Web Switch **不得**再用它作为 value。
+现有 `enabled_for_product` **保留为派生摘要字段**，定义为“该品种至少有一个 frequency 已开启”，用于保持当前产品状态读模型兼容；HTDY Web Switch **不得**再用它作为 value。
 
 SuBing 的现有品种级 Scope 不改；它的 UI 行为和 mutation 语义继续按当前产品合同执行。
 
@@ -245,7 +245,7 @@ JM = ON/OFF
 ```text
 JM 15m = ON
 JM 5m  = OFF
-JM 1h  = ON
+JM 60m = ON
 ```
 
 因此本次不能只在前端记录当前 frequency，否则 Runtime 仍会把整个品种视为开启，形成错误通知。
@@ -287,7 +287,7 @@ scope_product_frequencies
 
 ```text
 scope_product_frequencies = authority
-scope_products             = 必须清空/不再作为 HTDY authority
+scope_products             = 必须为空
 ```
 
 **SuBing / `FORMAL_SIGNAL`**
@@ -296,6 +296,12 @@ scope_products             = 必须清空/不再作为 HTDY authority
 scope_products             = authority（保持现状）
 scope_product_frequencies  = 必须为空
 ```
+
+Service/Runtime 每次读取 Scope 时必须验证该互斥关系：
+
+- HTDY 如果同时出现非空 `scope_products`，fail-closed 为 Scope state invalid；
+- SuBing 如果出现非空 `scope_product_frequencies`，fail-closed 为 Scope state invalid；
+- 不允许把两个字段 union 后继续运行，因为那会制造双事实源。
 
 不新增通用 Scope DSL，不新增第三张 Scope 表，不把两个固定 Rule 强行抽象成复杂框架。
 
@@ -311,15 +317,15 @@ alert_rule_scopes(rule_id, symbol, frequency, ...)
 
 如果未来出现多个 frequency-scoped Rule，再根据真实重复决定是否抽表；本次不预建设。
 
-### 6.5 为什么不把 `jm@15m` 塞进 scope_products
+### 6.5 为什么不把 pair 塞进 scope_products
 
-拒绝把 pair 编码成字符串：
+拒绝把 pair 编码成：
 
 ```text
 jm@15m
 ```
 
-因为这会污染现有 `scope_products` 的“合法品种 symbol”语义，破坏 normalize/operational validation/heartbeat 等现有代码，且可读性差。
+因为这会污染现有 `scope_products` 的合法 symbol 语义，破坏 normalize/operational validation/heartbeat 等现有代码，且可读性差。
 
 ## 7. Scope API 设计
 
@@ -394,7 +400,7 @@ PUT /api/alerts/rules/{rule_code}/scope/{symbol}
 rule_code = htdy_original_15m
 ```
 
-虽然名称包含历史 `15m` 后缀，但它已经是 production 持久身份，并被已有 `alert_rules / alert_events / Web` 引用。为避免把能力扩展、Scope migration 与 Rule rename 绑在一次生产 migration，本次不改 rule_code。
+虽然名称包含历史 `15m` 后缀，但它已经是 production 持久身份，并被已有 `alert_rules / alert_events / Web` 引用。为避免把能力扩展、Scope migration 与 Rule rename 绑在一次 production migration，本次不改 rule_code。
 
 代码必须注释清楚：该字符串是 legacy stable identity，当前 capability 不再由名称中的 `15m` 推导。
 
@@ -427,7 +433,7 @@ JM enabled_frequencies = [15m]
 
 ### 8.3 Heartbeat 不扩 schema
 
-现有 Alert heartbeat 的 `scope_product_count` 可以继续表示：
+现有 Alert heartbeat 的 `scope_product_count` 继续表示：
 
 > 当前至少有一个 Alert Scope 的 distinct operational product 数量。
 
@@ -721,14 +727,14 @@ scope_product_frequencies = {
   "jm": ["15m"],
   "rb": ["15m"]
 }
-scope_products = []   # HTDY 不再以此字段为 authority
+scope_products = []
 ```
 
 即：
 
 > **现有已开启品种只继承 15m ON，不自动开启其他六个周期。**
 
-这样迁移不会因为“代码支持七周期”而扩大真实通知 Scope。
+这样 migration 不会因为“代码支持七周期”而扩大真实通知 Scope。
 
 SuBing 的 `scope_products` 原样保留，`scope_product_frequencies` 保持空对象。
 
@@ -811,8 +817,9 @@ Canonical docs
 3. 同 pair 重复 ON/OFF 幂等。
 4. 一个 pair mutation 不改变同 symbol 其他 frequencies。
 5. HTDY Runtime 只有当前 event 的 exact pair ON 才评估。
-6. SuBing 继续使用现有 `scope_products`，不因本任务变成 frequency scope。
-7. heartbeat `scope_product_count` 继续按 distinct products 统计，不增加 Redis schema。
+6. HTDY `scope_products` 与 SuBing `scope_product_frequencies` 任一出现非空混用都 fail-closed。
+7. SuBing 继续使用现有 `scope_products`，不因本任务变成 frequency scope。
+8. heartbeat `scope_product_count` 继续按 distinct products 统计，不增加 Redis schema。
 
 ### 17.4 Runtime / Alert
 
@@ -841,8 +848,8 @@ Canonical docs
 
 1. `alert_rules.scope_product_frequencies` 存在且默认空对象。
 2. 现有 HTDY `scope_products` 每个 symbol 只迁移为 `15m` ON。
-3. migration 后 HTDY `scope_products` 不再作为 authority，不产生双事实源。
-4. SuBing `scope_products` 原样保持。
+3. migration 后 HTDY `scope_products` 必须为空，不产生双事实源。
+4. SuBing `scope_products` 原样保持，`scope_product_frequencies` 必须为空。
 5. migration 不自动增加任何品种或 frequency。
 6. PostgreSQL AlertEvent storage constraint 为 `(rule_id, symbol, frequency, bar_end)`。
 7. migration 前已有 Event 数量和内容保持不变。
@@ -937,13 +944,13 @@ release 批准、production migration 与 Runtime promotion 不能由本 Spec、
 
 ### 21.1 开关理解错误
 
-最大的 UX 风险从“误以为只开当前周期，实际开了七周期”转为必须确保 Switch 明确显示当前 frequency。
+最大的 UX 风险是用户误以为开关代表整个品种。Switch 必须明确显示当前 frequency。
 
-因此标签必须包含周期，切频只切换状态展示，不做 mutation。
+切频只切换状态展示，不执行 mutation。
 
 ### 21.2 同时刻多周期事件
 
-如果用户确实分别开启多个周期，整点可能同时触发多个 Event。设计选择“一个 HTDY frequency 一个 Event/一次通知”，不合并。
+如果用户分别开启多个周期，整点可能同时触发多个 Event。设计选择“一个 HTDY frequency 一个 Event/一次通知”，不合并。
 
 ### 21.3 重绘造成历史图与当时提醒不一致
 
@@ -957,7 +964,7 @@ release 批准、production migration 与 Runtime promotion 不能由本 Spec、
 
 HTDY migration 后必须把 `scope_product_frequencies` 定为唯一 authority，并清空 HTDY 原 `scope_products`；Runtime、API、Web 不得一部分读旧字段、一部分读新字段。
 
-SuBing 则反过来只认旧 `scope_products`。该 rule-kind-specific authority 必须由 Service tests 锁定。
+SuBing 则只认 `scope_products`。任何混合状态必须 fail-closed，不做 union 或 fallback。
 
 ### 21.6 数据库 Event constraint 变宽后的 SuBing 保护
 
@@ -982,9 +989,10 @@ D1/W1      = canonical-updated trigger
 按以下项目重新自审：
 
 - Placeholder：无 `TBD/TODO` 或未定义选择；
-- 用户目标一致性：开关现在精确定义为“当前品种 × 当前周期”，不存在“一次打开七周期”的旧语义；
+- 用户目标一致性：开关精确定义为“当前品种 × 当前周期”，不存在“一次打开七周期”的旧语义；
 - Web/Runtime 一致性：Web pair Switch 对应后端真实 pair Scope，不存在前端按周期、Runtime 按品种的假隔离；
 - 迁移安全：旧 HTDY product scope 只迁移成同品种 `15m` ON，不自动扩大通知范围；
+- Scope authority：HTDY 与 SuBing 两种 Scope 字段严格互斥，混用 fail-closed；
 - SuBing 隔离：现有品种级 Scope 与 bar-level formal Event identity 均保持；
 - D1/W1：仍然只在盘后 Canonical 完成后触发；
 - 多周期 Event：同一时间不同周期分别形成 Event 并分别推送，不合并；
