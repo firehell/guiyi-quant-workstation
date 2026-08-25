@@ -5,26 +5,51 @@
 ## 正式 release 与 production Runtime
 
 - 已发布的正式 tag 为
-  `v1.8.2@58e0f596a5b425e15697abc72b71c83cc878796c`；annotated tag object 为
-  `d48bdd3d2d7fad8d41d876896b76624918273ac3`，message=`Release v1.8.2`。
+  `v1.8.3@9ca18afc9b056d413ee8cac56a056b7d7df078b4`；annotated tag object 为
+  `939a7233724629f04579c5f83ad367462d9f1d0f`，message=`Release v1.8.3`；GitHub Release 已发布。
 - 2026-08-25 已将本机五个 launchd label 切到 clean/detached
-  `/Volumes/扩展盘/guiyi-quant-runtime-v1.8.2@58e0f596a5b425e15697abc72b71c83cc878796c`。
-  API、Web、Live 与 Alert 均从该根运行，API=`200 / 1.8.2 / readonly`、Web=`200`；after-market
-  `not_running`，只读 Runtime health=`ok`。本次未手工触发 after-market，下一次自然盘后与 Daily
-  Watch artifact 仍是独立未完成 evidence，不能由本机部署推导为已完成。
+  `/Volumes/扩展盘/guiyi-quant-runtime-v1.8.3@9ca18afc9b056d413ee8cac56a056b7d7df078b4`。
+  API、Web、Live 与 Alert 均从该根运行，API=`200 / 1.8.3 / readonly`、Web=`200`；after-market
+  loaded 且按日程 `not_running`，只读 Runtime health=`ok`，local-services-status 与 local-tunnel-healthcheck
+  均为 `overall=passed`。本次未手工触发 after-market，下一次自然盘后与 Daily Watch artifact 仍是独立
+  未完成 evidence，不能由本机部署推导为已完成。
 - `GUIYI_SUBING_OBSERVATION_ROOT` 已精确配置为扩展盘
   `/Volumes/扩展盘/guiyi-quant-data/observations/subing-daily-v1`；配置文件为 `0600`，目录为 `0700`，
   production resolver 通过。当前目录为空，current API 返回
   `200 / unavailable / SUBING_DAILY_WATCH_NOT_GENERATED / expected=2026-08-25`，等待下一次自然盘后生成。
-- 旧 `v1.8.0` 与 `v1.7.0` Runtime worktree 保留为 clean/detached rollback 资产，但当前没有 label 指向；未执行
-  回滚、after-market、canary、人工通知、真实 RQAlpha smoke、migration、Canonical/production DB/Redis
-  写入或 Alert Scope/transport 变更。
+- 旧 `v1.8.2` Runtime worktree 保留为 clean/detached rollback 资产，但当前没有 label 指向；未执行
+  回滚、after-market、canary、人工通知、真实 RQAlpha smoke、Canonical/production Redis
+  写入或 Alert transport 变更。
+- production Alembic 已于 2026-08-25 14:56 CST 从 `20260815_0039` 升级到
+  `20260825_0040 (head)`。migration 自动将旧 HTDY `scope_products=['jm']` 继承为
+  `scope_product_frequencies={'jm':['15m']}` 并清空 HTDY 旧列；SuBing 继续为
+  `scope_products=['jm']` 且 frequency Scope 为空。后续独立 production HTDY Scope Gate 已于
+  2026-08-25 15:13 CST 原子更新为 Active60 × 七周期 `60 symbols / 420 pairs`，正式 HTTP 读模型与
+  Runtime authorization predicate 均读回 `420/420`；SuBing 未变，未执行人工通知、canary 或历史补发。
 - RQAlpha research workbench 代码已包含在 `v1.8.0`，但本地 sidecar 仍未加载、未进入 Runtime；真实
   RQAlpha smoke 继续 `pending`，不得由代码包含或其他 Runtime 验收推导为已完成。
 - Market/Alert marker 继续 enabled；Alert notification channel 仍为 pushplus 且 config=`ready`、
   audience_count=`2`，Execution Review roll 仍为 `disabled`。本机端口/HTTP 与 FRPC local tunnel 最新只读
   验收均为 `passed`；ECS FRPS/Nginx 与公网 HTTPS 本轮没有可用执行入口，且 `PUBLIC_BASE_URL` 未配置，
   因此保持 `not verified`，不得由本机或 tunnel 读回推导为公网验收通过。
+
+## v1.8.3 release closeout
+
+- release preparation commit 为 `7e3a08554ba411764b2a247144f7c46b2cb5f9cc`；main PR `#209` 已合并，
+  main integration 与 annotated tag peeled commit 均为
+  `9ca18afc9b056d413ee8cac56a056b7d7df078b4`。annotated tag object 为
+  `939a7233724629f04579c5f83ad367462d9f1d0f`，GitHub Release URL 为
+  `https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.8.3`。
+- exact candidate 验证为 backend `3769 passed / 3 skipped / 17 deselected`、isolated PostgreSQL
+  migration `1 passed / 2 deselected`、engineering `64 passed`、Web unit `285 passed / 1 skipped`、
+  Playwright `101 passed / 1 skipped`；Ruff、Mypy `154 source files / 0 issues`、Web production build、
+  OpenSpec `6 passed`、secret scan、shell/launchd lint 与 diff check 均通过。独立 release Review 为
+  `APPROVED / C0 I0 M0`。
+- 本 release 包含 Alembic `20260825_0040` 源码；release 当时未执行 production migration。后续独立
+  production migration Gate 已于 2026-08-25 14:56 CST 完成，读回为 `20260825_0040 (head)`；随后独立
+  Runtime promotion Gate 已将本机五个 label 切至精确 `v1.8.3` tag Runtime，独立 production HTDY Scope
+  Gate 已启用 Active60 × 七周期。真实 PushPlus canary/send、Canonical 或 production Redis 写入仍未执行，
+  `auto_order=false` 不变。
 
 ## v1.8.2 release and Runtime deployment
 
@@ -107,8 +132,9 @@
 - Market Runtime V1 已启用：只观察 `operational_products.txt` 的当日 rank1 completed 1m，并在
   18:05 及最多一次一小时后 retry 更新相同范围。
 - Alert Runtime V2 已启用：Code Registry 只含 `htdy_original_15m` 与
-  `subing_entry_signal_v1`。HTDY 每 Event 最多向 Topic 发起一次请求，SuBing 每 Event 最多向 owner
-  发起一次请求；无逐人状态、retry、queue、replay、backfill、fallback 或订单路径。
+  `subing_entry_signal_v1`。HTDY production Scope 已显式启用 Active60 × 七周期 `420 pairs`；每 Event
+  最多向 Topic 发起一次请求，SuBing 每 Event 最多向 owner 发起一次请求；无逐人状态、retry、queue、
+  replay、backfill、fallback 或订单路径。
 - Execution Review V1 是独立 Application Domain。HTTP request-scoped composition 每请求读取一次
   roll Gate 并注入 callback；missing/`disabled`/`invalid` 时 callback 返回
   `ROLL_RECONCILIATION_REQUIRED` 且不得创建 `DOMINANT_ROLL`，只有 `enabled` 注入真实 reconciler。
@@ -116,7 +142,7 @@
   “当前检查栏”；正式 Event、研究观察和 Research-only 事实保持分层，不产生综合分或交易推荐。
 - The prior Four-System Active60 All-Frequency Observation direction was withdrawn by the user before implementation and its active Spec/Plan were removed.
 
-## HTDY Active60 七周期实现（已集成，待 release）
+## HTDY Active60 七周期实现（已发布、完成 migration 并部署 Runtime）
 
 以下 Gate 只记录各自已经发生的事实，任一状态不得由其他状态推导：
 
@@ -126,10 +152,10 @@
 | `TEST_COMPLETE` | `complete` | focused backend `332 passed`；isolated migration `1 passed / 2 deselected`；full backend `3769 passed / 3 skipped / 17 deselected`；engineering `64 passed`；Web unit `285 passed / 1 skipped`；full Playwright `101 passed / 1 skipped`；Ruff、Mypy、Web build、OpenSpec、secret scan 与 diff check 均通过 |
 | `REVIEW_COMPLETE` | `complete` | fixed base-to-head Lane 3 Standards/Spec Review=`APPROVED`，`Critical / Important / Minor = 0 / 0 / 0`，结论=`允许集成 develop` |
 | `INTEGRATED_DEVELOP` | `complete` | 用户已字面批准 `允许集成 develop`；PR `#208` 已合并，远端 develop merge commit=`8b970972b5ceeb3ba33904fab73446cdb3cba92c`，candidate `d60bc43d7115a970c154c0e5330e994c2567498e` 为其祖先 |
-| `PRODUCTION_MIGRATION` | `pending` | Alembic `20260825_0040` 只在隔离 PostgreSQL 验证；production 仍为 `20260815_0039`，未执行 upgrade |
-| `REAL_SCOPE_MUTATION` | `pending` | 未修改 production HTDY `symbol × frequency` Scope；Task 11 matrix 只做 capability 与只读数据可用性检查 |
-| `RELEASED` | `pending` | 未创建 `main` release PR、`v1.8.3` tag 或 GitHub release；当前正式版本仍为 `v1.8.2` |
-| `RUNTIME_PROMOTED` | `pending` | 当前五个 launchd label 仍绑定 clean/detached `v1.8.2` Runtime；未 reload、switch 或 promotion |
+| `PRODUCTION_MIGRATION` | `complete` | 用户明确授权后执行一次 `20260815_0039 -> 20260825_0040`；读回 head、新列/约束与 9 条历史 Event 完整性均通过 |
+| `REAL_SCOPE_MUTATION` | `complete` | 用户独立授权后执行一次 production 原子 mutation：旧值 `jm × 15m` 更新为 Active60 × 七周期 `60 symbols / 420 pairs`；正式 HTTP 读模型 `420/420`、Runtime predicate `420/420`、目标哈希与 DB 读回一致，SuBing 未变 |
+| `RELEASED` | `complete` | main PR `#209` 已合并；annotated `v1.8.3` tag peeled commit=`9ca18afc9b056d413ee8cac56a056b7d7df078b4`，GitHub Release 已发布 |
+| `RUNTIME_PROMOTED` | `complete` | 五个 launchd label 已绑定 clean/detached `v1.8.3@9ca18afc9b056d413ee8cac56a056b7d7df078b4`；Runtime focused `192 passed`、Web production build、五 label exact root/commit、API `1.8.3`、Web 路由、DB head 与 local health 读回均通过 |
 | `REAL_NOTIFICATION_VERIFIED` | `pending` | 未执行真实 PushPlus；provider acceptance 与微信送达均未验证 |
 | `NATURAL_D1_W1_EVIDENCE` | `pending` | 未等待或补造自然 `canonical_updated` D1/W1 Event；不得由测试或本地 Canonical 可读性推导 |
 
