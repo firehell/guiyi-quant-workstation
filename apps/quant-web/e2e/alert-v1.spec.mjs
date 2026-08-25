@@ -1,4 +1,19 @@
 import { expect, test } from '@playwright/test'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+
+
+test('retired Main Force Mirror is absent from shared chart consumers', () => {
+  const readSource = (path) => readFileSync(fileURLToPath(new URL(path, import.meta.url)), 'utf8')
+  const chartSource = readSource('../src/pages/market/chart.vue')
+  const hoverLegendSource = readSource('../src/components/kline/KlineHoverLegend.vue')
+  const klineViewModelSource = readSource('../src/utils/klineViewModel.ts')
+
+  expect(chartSource.includes('useMainForceMirrorV2')).toBe(false)
+  expect(chartSource.includes('main_force_mirror_v2')).toBe(false)
+  expect(hoverLegendSource.includes('mainForceMirror')).toBe(false)
+  expect(klineViewModelSource.includes('mainForceMirror')).toBe(false)
+})
 
 
 function bars(frequency) {
@@ -108,7 +123,6 @@ test('persistent Alert V2 markers stay exact-frequency and actual-dominant only'
       live_contract: null, canonical_end: barsByFrequency[activeFrequency]?.at(-1)?.bar_end ?? null, after_market: {},
     } })
     if (url.pathname.endsWith('/research/product')) return route.fulfill({ status: 409, json: { detail: { code: 'QUERY_WINDOW_EMPTY' } } })
-    if (url.pathname.endsWith('/research/main-force-mirror')) return route.fulfill({ status: 400, json: { detail: { code: 'MFM_V2_UNSUPPORTED_FREQUENCY' } } })
     return route.abort()
   })
   await page.route('**/api/runtime/health', (route) => route.fulfill({ json: {
@@ -199,7 +213,7 @@ test('persistent Alert V2 markers stay exact-frequency and actual-dominant only'
   await page.getByRole('button', { name: '15m', exact: true }).click()
 
   const tabs = page.getByTestId('secondary-panel-tabs')
-  await expect(tabs.getByRole('tab')).toHaveText(['MACD', '主力照妖镜 V2'])
+  await expect(tabs.getByRole('tab')).toHaveText(['MACD'])
   await page.evaluate(() => { window.__GUIYI_E2E_CANVAS_TEXT__ = [] })
   await tabs.getByRole('tab', { name: 'MACD' }).click()
   await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-alert-marker-count', '2')
@@ -279,9 +293,6 @@ test('SuBing product and HTDY pair switches preserve separate Scope semantics', 
     }
     if (url.pathname.endsWith('/research/product')) {
       return route.fulfill({ status: 409, json: { detail: { code: 'QUERY_WINDOW_EMPTY' } } })
-    }
-    if (url.pathname.endsWith('/research/main-force-mirror')) {
-      return route.fulfill({ status: 400, json: { detail: { code: 'MFM_V2_UNSUPPORTED_FREQUENCY' } } })
     }
     return route.abort()
   })

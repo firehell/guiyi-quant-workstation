@@ -1,4 +1,4 @@
-import type { BarData, HoverKlineContext, KlineMarker, MainForceMirrorV2Point, MainIndicatorId, MainIndicatorValue } from '../types/market.ts'
+import type { BarData, HoverKlineContext, KlineMarker, MainIndicatorId, MainIndicatorValue } from '../types/market.ts'
 import { calculateEMA, calculateHuoTianDaYou, calculateMACD } from './indicators.ts'
 import { MAIN_INDICATOR_DEFINITIONS } from './mainIndicators.ts'
 
@@ -106,7 +106,6 @@ export function resolveKlineHoverContext(
   derived: KlineDerivedData,
   visibleMainIndicators: MainIndicatorId[],
   time: string,
-  mainForceMirrorV2Points: MainForceMirrorV2Point[] = [],
   markers: KlineMarker[] = [],
 ): HoverKlineContext | null {
   const bar = bars.find((item) => item.time === time)
@@ -123,7 +122,6 @@ export function resolveKlineHoverContext(
       dea: pointValue(derived.macd.dea, time),
       histogram: pointValue(derived.macd.histogram, time),
     },
-    mainForceMirrorV2: toMainForceMirrorV2Hover(mainForceMirrorV2Points, time),
     marker: markers.find((marker) => sameMarkerTime(marker.time, time)) ?? null,
   }
 }
@@ -135,30 +133,6 @@ function sameMarkerTime(left: string, right: string): boolean {
     return leftTimestamp === rightTimestamp
   }
   return left === right
-}
-
-function toMainForceMirrorV2Hover(points: MainForceMirrorV2Point[], time: string) {
-  const point = points.find((item) => item.bar_end === time)
-  if (!point) return null
-  return {
-    physicalContract: point.physical_contract,
-    state: point.pressure_state,
-    instantPressure: point.instant_pressure,
-    accumulatedPressure: point.accumulated_pressure,
-    caution: point.caution,
-    longScore: point.long_caution_score,
-    shortScore: point.short_caution_score,
-    memberStatus: point.member_status,
-    memberTradeDate: point.member_trade_date,
-    memberDirection: point.member_direction,
-    memberChangeBias: point.member_change_bias,
-    memberStrength: point.member_strength,
-    positionSkew: point.position_skew,
-    top5VolumeShare: point.top5_volume_share,
-    relationToAccumulated: point.relation_to_accumulated,
-    relationToCaution: point.relation_to_caution,
-    unavailableReason: point.unavailable_reason,
-  }
 }
 
 function isEmaIndicator(indicator: MainIndicatorId): indicator is EmaIndicatorId {

@@ -15,8 +15,6 @@ RESEARCH_COMMAND_NAMES = (
     "candidate-robustness",
     "candidate-dossier",
     "candidate-relationships",
-    "main-force-mirror-v2",
-    "main-force-mirror-diagnostic",
 )
 
 
@@ -107,26 +105,6 @@ def add_research_commands(
     relationships.add_argument(
         "--protocol",
         choices=("five_candidate_relationship_topology_v1",),
-        required=True,
-    )
-
-    mirror = commands.add_parser("main-force-mirror-v2")
-    mirror.add_argument("--symbol", required=True)
-    mirror.add_argument(
-        "--series-kind",
-        choices=("actual_dominant", "contract"),
-        required=True,
-    )
-    mirror.add_argument("--contract")
-    mirror.add_argument("--frequency", choices=("60m",), required=True)
-    mirror.add_argument("--since", required=True)
-    mirror.add_argument("--through", required=True)
-    mirror.add_argument("--forensic", action="store_true")
-
-    diagnostic = commands.add_parser("main-force-mirror-diagnostic")
-    diagnostic.add_argument(
-        "--protocol",
-        choices=("main_force_mirror_diagnostic_phase_a_v1",),
         required=True,
     )
 

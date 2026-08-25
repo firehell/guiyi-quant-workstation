@@ -14,9 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.market_data.composition import (
-    build_main_force_mirror_v2_service,
     build_market_data_service,
-    build_market_read_service,
     build_market_radar_service,
     build_market_research_service,
     build_subing_daily_watch_current_service,
@@ -33,11 +31,6 @@ from app.market_data.market_data_service import MarketDataError
 from app.market_data.operational_universe import (
     ActiveUniverseError,
     OperationalUniverseError,
-)
-from app.market_data.main_force_mirror_v2_service import (
-    MainForceMirrorV2Error,
-    MainForceMirrorV2PageResult,
-    validate_main_force_mirror_v2_request,
 )
 from app.market_data.market_research_service import ResearchSeriesIdentity
 from app.market_data.subing_calibration import SubingCalibrationError
@@ -56,11 +49,6 @@ from app.schemas.market import (
     DominantContractOut,
     MarketBarOut,
     MarketBarsPageResponse,
-    MainForceMirrorV2IndicatorOut,
-    MainForceMirrorV2MemberCoverageOut,
-    MainForceMirrorV2MemberDatasetOut,
-    MainForceMirrorV2PageResponse,
-    MainForceMirrorV2PointOut,
     MarketPageMetaOut,
     MarketRadarItemOut,
     MarketRadarResponse,
@@ -81,29 +69,8 @@ from app.schemas.market import (
     SubingResearchResponse,
     SubingSignalOut,
 )
-from guiyi_quant.indicators.main_force_mirror_v2 import (
-    round_half_away_from_zero_binary64,
-)
 
 router = APIRouter(prefix="/api/v1/market", tags=["market"])
-
-_MFM_V2_REQUEST_CODES = frozenset(
-    {
-        "MFM_V2_UNSUPPORTED_FREQUENCY",
-        "MFM_V2_UNSUPPORTED_SERIES_KIND",
-        "MFM_V2_CONTRACT_INVALID",
-        "MFM_V2_REQUEST_INVALID",
-    }
-)
-_MFM_V2_CONFLICT_CODES = frozenset(
-    {
-        "MFM_V2_MARKET_IDENTITY_CONFLICT",
-        "MFM_V2_PHYSICAL_CONTRACT_MISSING",
-        "MFM_V2_MEMBER_DATASET_INVALID",
-        "MFM_V2_MEMBER_DATASET_IDENTITY_CONFLICT",
-    }
-)
-
 
 @router.get("/bars/page", response_model=MarketBarsPageResponse)
 def canonical_market_bars_page(
@@ -173,171 +140,6 @@ def canonical_market_bars_page(
             )
             for item in result.resolved_contract_segments
         ],
-    )
-
-
-@router.get(
-    "/research/main-force-mirror",
-    response_model=MainForceMirrorV2PageResponse,
-)
-def main_force_mirror_v2_page(
-    series_kind: str = Query(...),
-    symbol: str = Query(...),
-    frequency: str = Query(...),
-    before: str | None = Query(default=None),
-    limit: int = Query(default=1200, ge=1, le=2000),
-    contract: str | None = Query(default=None),
-    session: Session = Depends(get_db),
-) -> MainForceMirrorV2PageResponse:
-    """Return confirmed historical V2 observations for one exact page."""
-    try:
-        request = SeriesPageQuery(
-            series_kind=cast(SeriesKind, series_kind),
-            symbol=symbol,
-            contract=contract,
-            frequency=cast(BarFrequency, frequency),
-            before=(
-                parse_rfc3339_instant(before, field="datetime")
-                if before is not None
-                else None
-            ),
-            limit=limit,
-        )
-        validate_main_force_mirror_v2_request(request)
-        result = build_main_force_mirror_v2_service(session).query_page(request)
-        return to_main_force_mirror_v2_response(result)
-    except ContractError as exc:
-        field = exc.facts.get("field")
-        code = (
-            "MFM_V2_UNSUPPORTED_SERIES_KIND"
-            if field == "series_kind"
-            else "MFM_V2_UNSUPPORTED_FREQUENCY"
-            if field == "frequency"
-            else "MFM_V2_CONTRACT_INVALID"
-            if field == "contract"
-            else "MFM_V2_REQUEST_INVALID"
-        )
-        raise HTTPException(status_code=422, detail={"code": code}) from None
-    except MainForceMirrorV2Error as exc:
-        code = (
-            exc.code
-            if exc.code in _MFM_V2_REQUEST_CODES | _MFM_V2_CONFLICT_CODES
-            else "MFM_V2_MARKET_IDENTITY_CONFLICT"
-        )
-        status_code = 422 if code in _MFM_V2_REQUEST_CODES else 409
-        raise HTTPException(
-            status_code=status_code,
-            detail={"code": code},
-        ) from None
-
-
-def to_main_force_mirror_v2_response(
-    result: MainForceMirrorV2PageResult,
-) -> MainForceMirrorV2PageResponse:
-    dataset = result.member_dataset
-    return MainForceMirrorV2PageResponse(
-        request=dict(result.request_identity),
-        indicator=MainForceMirrorV2IndicatorOut(
-            indicator_code="main_force_mirror_v2",
-            indicator_version="futures-member-research-v2",
-            formal_policy_id="main_force_mirror_observation_v2",
-            parameters_hash=result.parameters_hash,
-            interpretation=(
-                "directional_position_pressure_proxy_not_measured_fund_flow"
-            ),
-            observation_only=True,
-            historical_only=True,
-            auto_order=False,
-        ),
-        member_dataset=MainForceMirrorV2MemberDatasetOut(
-            status=dataset.status,
-            dataset_id=dataset.dataset_id,
-            schema_version=dataset.schema_version,
-            admitted_product=dataset.admitted_product,
-            coverage=(
-                MainForceMirrorV2MemberCoverageOut(
-                    start=dataset.coverage[0],
-                    end=dataset.coverage[1],
-                )
-                if dataset.coverage is not None
-                else None
-            ),
-        ),
-        points=[_main_force_mirror_v2_point(point) for point in result.points],
-        page=MarketPageMetaOut(
-            has_more_before=result.has_more_before,
-            next_before=result.next_before,
-        ),
-        resolved_contract_segments=[
-            ContractSegmentOut(
-                contract=item.contract,
-                start_trading_day=item.start_trading_day,
-                end_trading_day=item.end_trading_day,
-            )
-            for item in result.resolved_contract_segments
-        ],
-    )
-
-
-def _main_force_mirror_v2_point(point) -> MainForceMirrorV2PointOut:
-    if point.physical_contract is None:
-        raise MainForceMirrorV2Error("MFM_V2_PHYSICAL_CONTRACT_MISSING")
-    member = point.member
-    return MainForceMirrorV2PointOut(
-        bar_end=point.bar_end,
-        trading_day=point.trading_day,
-        physical_contract=point.physical_contract,
-        pressure_ready=point.pressure_ready,
-        pressure_state=point.pressure_state,
-        instant_pressure=_v2_number(point.instant_pressure),
-        accumulated_ready=point.accumulated_ready,
-        accumulated_pressure=_v2_number(point.accumulated_pressure),
-        caution_ready=point.caution_ready,
-        caution=point.caution,
-        caution_conflict=point.caution_conflict,
-        long_caution_score=_v2_number(point.long_caution_score),
-        short_caution_score=_v2_number(point.short_caution_score),
-        caution_reason_codes=list(point.caution_reason_codes),
-        price_impulse=_v2_number(point.price_impulse),
-        clv=_v2_number(point.clv),
-        volume_ratio=_v2_number(point.volume_ratio),
-        delta_oi=_v2_number(point.delta_oi),
-        oi_impulse=_v2_number(point.oi_impulse),
-        range_position=_v2_number(point.range_position),
-        member_status=member.status if member is not None else "unavailable",
-        member_trade_date=(member.member_trade_date if member is not None else None),
-        member_direction=(member.direction if member is not None else None),
-        member_change_bias=_v2_number(
-            member.change_bias if member is not None else None
-        ),
-        member_strength=_v2_number(member.strength if member is not None else None),
-        position_skew=_v2_number(
-            member.position_skew if member is not None else None
-        ),
-        top5_volume_share=_v2_number(
-            member.top5_volume_share if member is not None else None
-        ),
-        relation_to_accumulated=(
-            member.relation_to_accumulated if member is not None else "unavailable"
-        ),
-        relation_to_caution=(
-            member.relation_to_caution if member is not None else "unavailable"
-        ),
-        unavailable_reason=(
-            point.unavailable_reason
-            if point.unavailable_reason is not None
-            else member.unavailable_reason
-            if member is not None
-            else None
-        ),
-    )
-
-
-def _v2_number(value: float | None) -> float | None:
-    return (
-        None
-        if value is None
-        else round_half_away_from_zero_binary64(float(value), 6)
     )
 
 

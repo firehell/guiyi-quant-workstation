@@ -20,8 +20,6 @@ import type {
   BarData,
   HoverKlineContext,
   KlineMarker,
-  MainForceMirrorV2MemberDataset,
-  MainForceMirrorV2Point,
   MainIndicatorId,
   SeriesKind,
 } from '@/types/market'
@@ -35,10 +33,8 @@ import {
   type KlineValuePoint,
 } from '@/utils/klineViewModel'
 import { mergeKlineMarkers } from '@/utils/alertMarkers'
-import {
-  buildMainForceMirrorV2RenderModel,
-  type SecondaryPanelId,
-} from '@/utils/mainForceMirrorV2Presentation'
+
+type SecondaryPanelId = 'macd'
 
 const props = withDefaults(defineProps<{
   bars: BarData[]
@@ -50,11 +46,6 @@ const props = withDefaults(defineProps<{
   alertMarkers?: KlineMarker[]
   researchMarkers?: KlineMarker[]
   secondaryPanel: SecondaryPanelId
-  mainForceMirrorV2Points?: MainForceMirrorV2Point[]
-  mainForceMirrorV2MemberDataset?: MainForceMirrorV2MemberDataset | null
-  mainForceMirrorV2Loading?: boolean
-  mainForceMirrorV2Error?: string | null
-  mainForceMirrorV2CanonicalEnd?: string | null
 }>(), {
   loading: false,
   error: null,
@@ -62,11 +53,6 @@ const props = withDefaults(defineProps<{
   visibleMainIndicators: () => [],
   alertMarkers: () => [],
   researchMarkers: () => [],
-  mainForceMirrorV2Points: () => [],
-  mainForceMirrorV2MemberDataset: null,
-  mainForceMirrorV2Loading: false,
-  mainForceMirrorV2Error: null,
-  mainForceMirrorV2CanonicalEnd: null,
 })
 
 const emit = defineEmits<{
@@ -83,9 +69,6 @@ let volume: ISeriesApi<'Histogram'> | null = null
 let macdHistogram: ISeriesApi<'Histogram'> | null = null
 let macdDif: ISeriesApi<'Line'> | null = null
 let macdDea: ISeriesApi<'Line'> | null = null
-let mainForceV2Histogram: ISeriesApi<'Histogram'> | null = null
-let mainForceV2Accumulated: ISeriesApi<'Line'> | null = null
-let mainForceV2Markers: ISeriesMarkersPluginApi<Time> | null = null
 let htdyZk1: ISeriesApi<'Line'> | null = null
 let htdyZd1: ISeriesApi<'Line'> | null = null
 let htdyZd2: ISeriesApi<'Line'> | null = null
@@ -105,7 +88,6 @@ type EmaIndicatorId = 'ema_10' | 'ema_20' | 'ema_21' | 'ema_60'
 const EMA_INDICATORS: EmaIndicatorId[] = ['ema_10', 'ema_20', 'ema_21', 'ema_60']
 const SECONDARY_PANEL_TABS: Array<{ id: SecondaryPanelId; label: string }> = [
   { id: 'macd', label: 'MACD' },
-  { id: 'main_force_mirror_v2', label: '主力照妖镜 V2' },
 ]
 
 onMounted(async () => {
@@ -156,20 +138,6 @@ onMounted(async () => {
   macdHistogram = chart.addSeries(HistogramSeries, { base: 0, lastValueVisible: false }, 2)
   macdDif = chart.addSeries(LineSeries, { color: theme.macdDif, lineWidth: 1, lastValueVisible: false }, 2)
   macdDea = chart.addSeries(LineSeries, { color: theme.macdDea, lineWidth: 1, lastValueVisible: false }, 2)
-  mainForceV2Histogram = chart.addSeries(HistogramSeries, {
-    base: 0,
-    lastValueVisible: false,
-    priceLineVisible: false,
-    autoscaleInfoProvider: () => ({ priceRange: { minValue: -105, maxValue: 105 } }),
-  }, 2)
-  mainForceV2Accumulated = chart.addSeries(LineSeries, {
-    color: theme.macdDea,
-    lineWidth: 2,
-    lastValueVisible: false,
-    priceLineVisible: false,
-    autoscaleInfoProvider: () => ({ priceRange: { minValue: -105, maxValue: 105 } }),
-  }, 2)
-  mainForceV2Markers = createSeriesMarkers(mainForceV2Accumulated)
   chart.priceScale('right', 1).applyOptions({ scaleMargins: { top: 0.15, bottom: 0.05 } })
   chart.priceScale('right', 2).applyOptions({ scaleMargins: { top: 0.15, bottom: 0.1 } })
   chart.timeScale().subscribeVisibleLogicalRangeChange(onVisibleLogicalRangeChange)
@@ -207,10 +175,6 @@ watch(() => props.researchMarkers, () => {
 watch(() => props.secondaryPanel, () => {
   renderDerivedSeries()
 })
-
-watch(() => props.mainForceMirrorV2Points, () => {
-  renderDerivedSeries()
-}, { deep: true })
 
 function barValues(bars: BarData[]) {
   return bars.map((bar) => ({
@@ -317,7 +281,6 @@ function onCrosshairMove(param: MouseEventParams<Time>) {
       derivedData,
       props.visibleMainIndicators,
       bar.time,
-      props.mainForceMirrorV2Points,
       mergedDisplayMarkers(),
     )
     : null
@@ -334,7 +297,7 @@ function renderAllSeries(): void {
 
 function renderDerivedSeries(): void {
   renderedResearchMarkerCount.value = 0
-  if (!chart || !macdHistogram || !macdDif || !macdDea || !mainForceV2Histogram || !mainForceV2Accumulated) return
+  if (!chart || !macdHistogram || !macdDif || !macdDea) return
   derivedData = buildKlineDerivedData(renderedBars, props.visibleMainIndicators)
   const theme = resolveChartTheme()
 
@@ -342,20 +305,12 @@ function renderDerivedSeries(): void {
     emaLines[indicator]?.setData(chartValues(derivedData.ema[indicator]))
   })
 
-  if (props.secondaryPanel === 'macd') {
-    macdDif.setData(chartValues(derivedData.macd.dif))
-    macdDea.setData(chartValues(derivedData.macd.dea))
-    macdHistogram.setData(chartValues(derivedData.macd.histogram).map((point) => ({
-      ...point,
-      color: point.value >= 0 ? theme.volumeUp : theme.volumeDown,
-    })))
-    clearMainForceMirrorV2()
-  } else {
-    macdDif.setData([])
-    macdDea.setData([])
-    macdHistogram.setData([])
-    renderMainForceMirrorV2()
-  }
+  macdDif.setData(chartValues(derivedData.macd.dif))
+  macdDea.setData(chartValues(derivedData.macd.dea))
+  macdHistogram.setData(chartValues(derivedData.macd.histogram).map((point) => ({
+    ...point,
+    color: point.value >= 0 ? theme.volumeUp : theme.volumeDown,
+  })))
 
   htdyZk1?.setData(chartValues(derivedData.htdy?.zk1))
   htdyZd1?.setData(chartValues(derivedData.htdy?.zd1))
@@ -370,36 +325,6 @@ function mergedDisplayMarkers(): KlineMarker[] {
     mergeKlineMarkers(derivedData.htdy?.markers ?? [], props.alertMarkers),
     props.researchMarkers,
   )
-}
-
-function clearMainForceMirrorV2() {
-  mainForceV2Histogram?.setData([])
-  mainForceV2Accumulated?.setData([])
-  mainForceV2Markers?.setMarkers([])
-}
-
-function renderMainForceMirrorV2() {
-  if (!mainForceV2Histogram || !mainForceV2Accumulated) return
-  const model = buildMainForceMirrorV2RenderModel(props.mainForceMirrorV2Points)
-  const theme = resolveChartTheme()
-  const barsByTime = new Map(renderedBars.map((bar) => [bar.time, bar]))
-  const histogram = model.histogram.flatMap((point) => {
-    const bar = barsByTime.get(point.time)
-    return bar ? [{ time: chartTime(bar), value: point.value, color: theme[point.colorKey] }] : []
-  })
-  mainForceV2Histogram.setData(histogram)
-  mainForceV2Accumulated.setData(model.accumulated.flatMap((point) => {
-    const bar = barsByTime.get(point.time)
-    return bar ? [{ time: chartTime(bar), value: point.value }] : []
-  }))
-  const markers = model.markers.flatMap((marker) => {
-    const bar = barsByTime.get(marker.time)
-    return bar ? [{
-      time: chartTime(bar), position: marker.position, shape: marker.shape,
-      color: marker.tone === 'up' ? theme.up : theme.down, text: marker.text, size: 1.5,
-    }] : []
-  })
-  mainForceV2Markers?.setMarkers(markers)
 }
 
 function chartValues(points: KlineValuePoint[] | undefined): Array<{ time: Time; value: number }> {
@@ -489,7 +414,6 @@ defineExpose({
     <KlineHoverLegend
       :context="hoverContext"
       :show-macd="secondaryPanel === 'macd'"
-      :show-main-force-mirror-v2="secondaryPanel === 'main_force_mirror_v2'"
     />
     <div
       class="secondary-panel-header"
@@ -508,17 +432,6 @@ defineExpose({
         :aria-selected="secondaryPanel === item.id"
         @click="emit('secondary-panel-change', item.id)"
       >{{ item.label }}</button>
-      <div v-if="secondaryPanel === 'main_force_mirror_v2'" class="main-force-legend" aria-label="主力照妖镜 V2 图例">
-        <span data-testid="mfm-v2-legend-long-build"><i class="main-force-legend__swatch main-force-legend__swatch--long-build" aria-hidden="true" />红：多头增仓</span>
-        <span data-testid="mfm-v2-legend-short-build"><i class="main-force-legend__swatch main-force-legend__swatch--short-build" aria-hidden="true" />绿：空头增仓</span>
-        <span data-testid="mfm-v2-legend-short-cover"><i class="main-force-legend__swatch main-force-legend__swatch--short-cover" aria-hidden="true" />橙：空头减仓</span>
-        <span data-testid="mfm-v2-legend-long-liquidation"><i class="main-force-legend__swatch main-force-legend__swatch--long-liquidation" aria-hidden="true" />蓝：多头减仓</span>
-        <span data-testid="mfm-v2-legend-turnover"><i class="main-force-legend__swatch main-force-legend__swatch--turnover" aria-hidden="true" />灰：换手</span>
-        <span data-testid="mfm-v2-legend-accumulated"><i class="main-force-legend__line" aria-hidden="true" />橙线：累积压力 EMA5</span>
-        <span v-if="mainForceMirrorV2Loading">读取 V2…</span>
-        <span v-else-if="mainForceMirrorV2Error" data-testid="main-force-v2-pane-error">{{ mainForceMirrorV2Error }}</span>
-        <span v-else-if="!mainForceMirrorV2Points.length">当前窗口无可用 V2 观察点</span>
-      </div>
     </div>
     <div
       v-if="visibleMainIndicators.includes('htdy')"
@@ -543,15 +456,6 @@ defineExpose({
 .secondary-panel-tab { appearance: none; border: 0; border-bottom: 2px solid transparent; padding: 3px 8px; background: color-mix(in srgb, var(--gy-bg-panel) 88%, transparent); color: var(--gy-text-muted); font: inherit; font-size: var(--gy-font-size-xs); cursor: pointer; }
 .secondary-panel-tab:hover { color: var(--gy-text-primary); }
 .secondary-panel-tab--active { border-bottom-color: var(--gy-accent); color: var(--gy-text-primary); font-weight: 600; }
-.main-force-legend { display: flex; align-items: center; gap: 7px; min-width: 0; color: var(--gy-text-muted); font-size: var(--gy-font-size-xs); }
-.main-force-legend span { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; }
-.main-force-legend__swatch { width: 9px; height: 9px; border-radius: 2px; }
-.main-force-legend__swatch--long-build { background: var(--gy-up); }
-.main-force-legend__swatch--short-build { background: var(--gy-down); }
-.main-force-legend__swatch--short-cover { background: var(--gy-chart-ema); }
-.main-force-legend__swatch--long-liquidation { background: var(--gy-chart-macd-dif); }
-.main-force-legend__swatch--turnover { background: var(--gy-text-muted); }
-.main-force-legend__line { width: 14px; border-top: 2px solid var(--gy-chart-macd-dea); }
 .htdy-legend { position: absolute; z-index: 2; top: 52px; right: 72px; display: flex; gap: 12px; align-items: center; padding: 5px 9px; border: 1px solid var(--gy-border); border-radius: var(--gy-radius-sm); background: rgba(255, 255, 255, .9); color: var(--gy-text-secondary); font-size: var(--gy-font-size-xs); pointer-events: none; box-shadow: var(--gy-shadow-sm); }
 .htdy-legend span { display: inline-flex; gap: 5px; align-items: center; white-space: nowrap; }
 .htdy-legend__line { display: inline-block; width: 18px; border-top: 2px solid; }
@@ -563,6 +467,5 @@ defineExpose({
 
 @media (max-width: 980px) {
   .secondary-panel-header { right: 10px; flex-wrap: wrap; max-width: none; }
-  .main-force-legend { flex: 1 1 100%; flex-wrap: wrap; gap: 3px 9px; padding: 2px 6px; background: color-mix(in srgb, var(--gy-bg-panel) 92%, transparent); }
 }
 </style>

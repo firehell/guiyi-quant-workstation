@@ -5,9 +5,6 @@ import type {
   JdjStrategyHistoricalResponse,
   MarketBarsPageRequest,
   MarketBarsPageResponse,
-  MainForceMirrorV2PageRequest,
-  MainForceMirrorV2PageResponse,
-  MainForceMirrorV2PageWireResponse,
   MarketReadState,
   MarketFrequency,
   MarketRadarResponse,
@@ -20,7 +17,6 @@ import type {
   SubingResearchResponse,
 } from '@/types/market'
 import {
-  normalizeMainForceMirrorV2Page,
   normalizeMarketRadar,
   normalizeSubingDailyWatchCurrent,
   normalizeSubingResearch,
@@ -78,13 +74,6 @@ export function getJdjStrategyHistoricalActions(params: JdjStrategyHistoricalReq
     '/market/research/jdj-strategy/history',
     { params },
   )
-}
-
-export function getMainForceMirrorV2Page(params: MainForceMirrorV2PageRequest) {
-  return request.get<never, MainForceMirrorV2PageWireResponse>(
-    '/market/research/main-force-mirror',
-    { params },
-  ).then(normalizeMainForceMirrorV2Page) as Promise<MainForceMirrorV2PageResponse>
 }
 
 /** FastAPI serializes Decimal as strings; convert only at the display HTTP boundary. */
