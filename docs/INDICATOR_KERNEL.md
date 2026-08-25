@@ -1,13 +1,13 @@
 # Indicator Kernel
 
-更新时间：2026-08-21
+更新时间：2026-08-25
 
 ## 定位
 
 `packages/quant-core/guiyi_quant/indicators/` 是指标业务口径的唯一权威模块。当前保留 EMA、
 MACD、ATR、HTDY original/strict、主力照妖镜 V2、Registry 与 formal policy。旧策略包、回测、
 Signal/Review、generic realtime evaluator 与主力照妖镜 V0/V1 执行实现已退役，仅由 Git
-history 追溯。当前 Alert V2 只保留独立、严格限域的 HTDY current-bar consumer，
+history 追溯。当前 Alert V2 只保留独立、严格限域的 HTDY current-event consumer，
 以及复用现有 resolver 的 SuBing consumer；主力照妖镜不进入 Alert。
 
 | 角色 | 位置 | 当前状态 |
@@ -40,7 +40,8 @@ packages/quant-core/guiyi_quant/indicators/
 - Gate C 批准的 `subing_macd_sma_window_scale2_v1` 只允许 `subing_signal` consumer，不提升
   generic MACD。
 - HTDY original 只允许明确命名的 `htdy_alert_observation` consumer 在
-  `actual_dominant + confirmed 15m + current last bar` 边界执行。
+  `actual_dominant + confirmed completed current-event Bar` 边界执行；capability 覆盖
+  `1m/5m/15m/30m/60m/1d/1w` 七个正式周期，但每次只检查当前 Event 的最后一根。
 - 所有正式消费者只使用 confirmed bars；未确认 bar 最多用于 Web preview。
 - 未知 `indicator_code`、policy 或 consumer 必须 fail-closed。
 - 未来若重建策略或回测，必须新任务、新合同并复用 Python Kernel。
@@ -109,9 +110,11 @@ intraday V1 executable Signal 条件。
 ## HTDY 风险边界
 
 - original 使用 XMA 风格居中窗口，具有已知未来依赖和重绘风险；只能作为 Web observation，
-  或在 `actual_dominant + 15m + confirmed completed bar` 上只检查当前最后一根的 Alert observation。
+  或在 `actual_dominant + confirmed completed current-event Bar` 上只检查当前最后一根的 Alert
+  observation。日内五周期使用同周期 completed Live event-cutoff；D1/W1 只读盘后已更新的
+  Canonical，不从 Live 1m 聚合。
 - Alert 只使用 Python Kernel 已有 observation，不扫描旧 repaint 区域，不将 original 升级为
-  backtest、正式 live strategy 或 `auto_order`。
+  backtest、正式 live strategy 或 `auto_order`，也不 replay/backfill 历史 observation。
 - original 的 single/double XMA exact future dependency 分别为 12/24 根；Web 使用 27 根保守
   repaint scan zone。
 - strict 是独立 causal 计算，只具策略研究候选资格；它不会自动恢复回测、Signal、
