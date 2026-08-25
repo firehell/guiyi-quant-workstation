@@ -14,7 +14,8 @@
 - 当前 Web Overlay capability 却把 HTDY 限定为 `15m`，因此用户切换其他周期后会进入 unsupported 状态并停止绘制；
 - 当前 Alert Rule `htdy_original_15m`、HTDY evaluator、Alert Runtime message parser、event-cutoff read window、通知文案均显式写死 15m；
 - Market Live 当前发布 completed `1m`，并由 1m 派生并发布 `5m / 15m / 30m / 60m`；`1d / 1w` 不属于 Live Pub/Sub 派生面，而是在盘后 Canonical 维护中形成正式数据；
-- 当前 `alert_events` 的唯一键为 `(rule_id, symbol, bar_end)`，如果同一品种在同一收线时刻多个周期同时触发 HTDY，会发生跨周期唯一键冲突；
+- 当前 `alert_events` 的唯一键为 `(rule_id, symbol, bar_end)`；Alert V2 曾有意从含 frequency 的 V1 identity 收敛为该 identity，以保证 SuBing 同一 Rule + 品种 + bar_end 只能形成一个正式信号；
+- HTDY 全周期后，同一品种、同一 `bar_end` 可以合法出现多个 frequency 的 observation，因此存储层必须允许 HTDY 跨周期共存，同时不能破坏 SuBing 现有 bar-level 幂等语义；
 - 当前 `operational_products.txt` 与 active universe 一致，共 60 个品种。产品覆盖应继续由该文件驱动，不在 HTDY 代码中硬编码“60”或具体品种列表。
 
 本设计是新的 HTDY 单系统全周期方向，不恢复已经撤回的“四系统 Active60 全周期观察”方向。
@@ -46,7 +47,7 @@
 - 不新增 HTDY 派生表、第二套事件表、第二套 scheduler；
 - 不修改 HTDY original 数学公式、XMA 语义、25 周期参数、3 连续 K 线观察判定；
 - 不把 `continuous` 或指定 `contract` 变成 Alert 身份；Alert 继续是品种级 `actual_dominant` 当前 rank1 观察；
-- 不改变 SuBing Alert 的 5m/15m 行为；
+- 不改变 SuBing Alert 的 5m/15m 触发、同 boundary 抑制和 bar-level 正式 Event 幂等语义；
 - 不做自动交易，`auto_order=false` 保持不变。
 
 ## 4. 统一 Capability Contract
@@ -166,13 +167,13 @@ rule_code = htdy_original_15m
 
 现有 scope 必须原样保留：
 
-- migration 不自动加入新的 59 个品种；
+- migration 不自动加入任何当前 HTDY scope 之外的品种；
 - 当前已经 ON 的品种在新 Runtime promotion 后，其 ON 语义会从“15m”扩大为“七周期”；
 - 因为该语义会扩大既有开启品种的实际通知量，Runtime promotion 前必须只读核对当前 HTDY scope，并把这一变化作为人工 Gate 的显式审查项。
 
-## 7. AlertEvent 身份迁移
+## 7. AlertEvent 身份与幂等设计
 
-### 7.1 问题
+### 7.1 为什么不能只保留当前唯一键
 
 七周期后，同一品种可以在同一 `bar_end` 同时出现多个合法 HTDY Event，例如：
 
@@ -184,17 +185,23 @@ rule_code = htdy_original_15m
 -> 60m close
 ```
 
-当前唯一键：
+当前数据库唯一键：
 
 ```text
 (rule_id, symbol, bar_end)
 ```
 
-会错误地把不同周期视为同一个 Event。
+会错误地把 HTDY 不同周期 observation 视为同一个 Event。
 
-### 7.2 新唯一键
+### 7.2 为什么也不能把所有 Rule 的业务 identity 一刀切改成含 frequency
 
-AlertEvent 的业务身份改回：
+Alert V2 当前把 SuBing formal signal 的同一 `rule + symbol + bar_end` 视为一个业务事件，`frequency` 是该事件的结果属性之一。现有 Service 测试明确要求：如果同一 bar-level identity 只改变 frequency，必须 fail-closed，而不是创建第二条 SuBing Event。
+
+因此本次不能为了 HTDY 放宽 SuBing 的正式信号幂等语义。
+
+### 7.3 数据库存储唯一键
+
+数据库通用存储约束改为：
 
 ```text
 (rule_id, symbol, frequency, bar_end)
@@ -204,17 +211,36 @@ AlertEvent 的业务身份改回：
 
 1. 删除 `uq_alert_events_rule_symbol_bar_end`；
 2. 创建 `uq_alert_events_rule_symbol_frequency_bar_end`；
-3. ORM `UniqueConstraint` 同步；
-4. `AlertService._event_by_identity()` 和 duplicate consistency 检查同步加入 `frequency`。
+3. ORM `UniqueConstraint` 同步。
 
-已有 Event 数据天然满足更宽的新唯一键，不需要修改历史 Event 内容，也不需要 backfill。
+已有 Event 数据天然满足新的存储唯一键，不需要改写历史 Event 内容，也不需要 backfill。
 
-### 7.3 幂等语义
+### 7.4 Rule-kind-specific 业务 identity
 
-- 同 rule + symbol + frequency + bar_end 再次到达：不重复 Event、不重复通知；
-- 同 rule + symbol + bar_end 但 frequency 不同：允许分别创建 Event，并分别进行一次通知尝试。
+`AlertService.create_event()` 必须按 Code Registry 中的 `AlertRuleKind` 执行业务幂等，而不是把数据库 constraint 直接等同于所有 Rule 的业务 identity。
 
-不做跨周期通知合并。
+**HTDY / `INDICATOR_OBSERVATION`**：
+
+```text
+business identity = (rule_id, symbol, frequency, bar_end)
+```
+
+- 同 frequency 重复：idempotent，返回 None，不重发；
+- 同 bar_end 不同 frequency：允许分别创建 Event。
+
+**SuBing / `FORMAL_SIGNAL`**：
+
+```text
+business identity = (rule_id, symbol, bar_end)
+```
+
+- 同一 bar_end 的完全相同 Event：idempotent；
+- 同一 bar_end 但 frequency、contract、trading_day、result_codes 或 lower_tf_confirmation 任一变化：继续抛 `ALERT_EVENT_CONSISTENCY_ERROR`；
+- 不允许因为数据库 constraint 变宽而创建第二条跨周期 SuBing Event。
+
+实现应在 FORMAL_SIGNAL 创建路径先按 bar-level identity 查已有 Event，再执行现有 consistency check；该路径只由单前台 Alert Runtime 内部创建，不新增外部并发写 API。本任务不为这个内部单写者再引入新 identity 列、第二张表或通用 event-key 框架。
+
+如果实现 Review 发现现有单写者假设已经失效，必须停回设计 Gate，而不是静默削弱 SuBing 幂等。
 
 ## 8. HTDY Evaluator 设计
 
@@ -235,6 +261,14 @@ auto_order     = false
 32 bars 不随周期改变；算法仍按“Bar 数”而不是自然时间长度计算。
 
 Evaluator 不扫描 repaint 区域找旧信号，不撤销旧 AlertEvent，不把未来重新计算后的历史形态当成新事件。
+
+### 8.1 不修改冻结的旧 realtime policy validator
+
+`packages/quant-core/guiyi_quant/indicators/realtime_observation_policy.py` 中 JM/15m 的 `RealtimeRepaintingObservationPolicy` / `ClosedBarRealtimeObservationPolicy` 是冻结兼容资产，当前 Alert V2 evaluator 并不以它作为 active capability gate。
+
+本任务不把该冻结对象扩成 Active60/七周期，也不修改其 exact-identity 测试；新的 active HTDY Alert capability 由 Indicator Registry + Formal Policy scoped consumer + Alert Rule/evaluator 合同表达。
+
+这样既避免伪造“旧 pilot policy 已自然升级”的历史，也避免让 legacy validator 继续反向限制新的正式 Alert capability。
 
 ## 9. Runtime 触发设计
 
@@ -293,10 +327,13 @@ HistoricalDataManager.update passed/noop
 `latest bar.trading_day == T` 是 no-backfill 边界：
 
 - 周一到周四如果最新 W1 仍属于上周，不允许补发；
+- 节假日缩短周只以 `MarketDataService`/TradingCalendar 已确认的完整交易周事实为准；
 - Alert Runtime 如果在周线形成当天宕机并错过 Pub/Sub，不在下一交易日补发；
-- 重复收到同一 `canonical_updated` 只依靠 Event 唯一键幂等，不产生重复通知。
+- 重复收到同一 `canonical_updated` 只依靠 Event 幂等，不产生重复通知。
 
 这保持现有 Alert V2 的“启动后新事实、无 replay/backfill”原则。
+
+D1/W1 的用户可见提醒时机因此是**盘后 Canonical 更新完成后**，而不是 Session 最后一根 1m 到达的瞬间；这是本设计为保持唯一正式日/周数据口径所接受的延迟。
 
 ### 9.3 为什么不直接把 D1/W1 放进 Live derive
 
@@ -375,9 +412,10 @@ HTDY 继续发到既有 `htdy_observers` Topic，仍然是每 Event 最多一次
 
 允许修改：
 
-- AlertEvent unique constraint；
-- ORM / service 的 Event identity；
-- 与该 constraint 对应的 migration test。
+- AlertEvent storage unique constraint；
+- ORM constraint；
+- `AlertService` 的 rule-kind-specific Event identity / consistency logic；
+- 与该 constraint 和 SuBing invariant 对应的 migration/service tests。
 
 禁止：
 
@@ -387,6 +425,8 @@ HTDY 继续发到既有 `htdy_observers` Topic，仍然是每 Event 最多一次
 - 生产 migration 未经独立明确执行意图直接运行。
 
 由于 `rule_code` 本次保持不变，新 constraint 可以先应用而不破坏旧 15m Runtime 的 Rule lookup；这降低本地单用户发布时的耦合风险。
+
+数据库 constraint 变宽不等于 SuBing business identity 变宽；两者必须通过 Service 测试分别锁定。
 
 ## 14. 预计实现范围
 
@@ -424,7 +464,7 @@ Canonical docs
 - STATUS.md（只有实现/集成的真实状态发生后才更新）
 ```
 
-如果实现过程中发现必须新增 scheduler、queue、第二套 daily/weekly aggregation 或新 Application Domain，应停止并回到设计 Gate，不得静默扩范围。
+如果实现过程中发现必须新增 scheduler、queue、第二套 daily/weekly aggregation、新 Application Domain 或通用 Event identity 框架，应停止并回到设计 Gate，不得静默扩范围。
 
 ## 15. 验收标准
 
@@ -443,11 +483,12 @@ Canonical docs
 3. Alert Runtime 接受 completed `1m/5m/15m/30m/60m` live bar；SuBing 仍只消费 5m/15m。
 4. `market:state` 只有 `reason=canonical_updated` 才能触发 D1/W1；普通 state 变化不能触发。
 5. D1/W1 只有 latest canonical bar 的 `trading_day` 等于本次 canonical-updated trading day 才可评估，禁止补发旧日/旧周。
-6. 同一 HTDY rule + symbol + bar_end 的不同 frequency 可以各自创建 Event；同 frequency 重复输入仍幂等且不重发。
-7. Web Switch OFF 的品种在任何周期都不创建 HTDY Event；ON 的品种才进入评估。
-8. 非 operational product 继续 fail-closed。
-9. 通知文案动态显示实际 frequency；topic audience、one-shot、provider acceptance 语义不变。
-10. 无 replay/backfill/retry/outbox/queue/fallback/order。
+6. HTDY 同一 rule + symbol + bar_end 的不同 frequency 可以各自创建 Event；同 frequency 重复输入仍幂等且不重发。
+7. SuBing 同一 rule + symbol + bar_end 仍只能形成一个 formal Event；只改变 frequency 仍必须 `ALERT_EVENT_CONSISTENCY_ERROR`。
+8. Web Switch OFF 的品种在任何周期都不创建 HTDY Event；ON 的品种才进入评估。
+9. 非 operational product 继续 fail-closed。
+10. 通知文案动态显示实际 frequency；topic audience、one-shot、provider acceptance 语义不变。
+11. 无 replay/backfill/retry/outbox/queue/fallback/order。
 
 ### 15.3 数据与因果
 
@@ -455,14 +496,16 @@ Canonical docs
 2. D1/W1 只消费正式 Canonical；W1 owner 由 `MarketDataService` 唯一解析。
 3. exact cutoff、rank1 identity、coverage 或 32-bar context 不完整时不产生 Event/通知。
 4. original 的 future-looking/repainting metadata、24-bar future dependency、27-bar Web repaint scan zone 保持不变。
-5. `auto_order=false`。
+5. 冻结的 JM/15m legacy realtime observation policy/hash 测试保持不变，不被冒充为新 Active60 capability。
+6. `auto_order=false`。
 
 ### 15.4 Migration
 
-1. PostgreSQL constraint 为 `(rule_id, symbol, frequency, bar_end)`。
+1. PostgreSQL storage constraint 为 `(rule_id, symbol, frequency, bar_end)`。
 2. migration 前已有 Rule、scope、Event 数量与内容保持不变。
 3. migration 不自动增加任何 scope product。
-4. isolated PostgreSQL migration test 必须覆盖 upgrade 和新唯一键行为。
+4. isolated PostgreSQL migration test 必须覆盖 upgrade 和新存储唯一键行为。
+5. Service regression 必须证明数据库 constraint 变宽后 SuBing bar-level identity 仍未改变。
 
 ## 16. 验证要求
 
@@ -520,7 +563,7 @@ release 批准、production migration 与 Runtime promotion 不能由本 Spec、
 - 日内使用现有 Live bar；
 - D1/W1 使用现有盘后 Canonical-updated seam；
 - 一个 Rule、一个 scope、一个开关；
-- 只需要调整 Event identity，不创建新表或 scheduler。
+- 只调整现有 AlertEvent storage identity 与 rule-kind-specific Service 幂等，不创建新表或 scheduler。
 
 优点：最贴合用户目标，且最大程度复用现有 Market/Alert 基础设施。  
 缺点：D1/W1 提醒发生在盘后 Canonical 更新完成后，而不是 Session 最后一根 1m 到达瞬间。
@@ -533,6 +576,10 @@ release 批准、production migration 与 Runtime promotion 不能由本 Spec、
 
 拒绝。直接违反“图表观察和 Alert 不拆开、是否提醒只看一个 Web 开关”的目标，还会放大个人项目维护复杂度。
 
+### 方案 D：新增通用 event identity 列/框架
+
+本版拒绝。当前只有 HTDY indicator observation 需要 frequency 进入业务 identity，而 SuBing formal signal 仍需要 bar-level identity。通过现有 `AlertRuleKind` 做 Service 分支即可表达这两个已知合同；新增通用 identity DSL/列会为两个固定 Rule 引入不必要抽象。
+
 ## 19. 风险
 
 ### 19.1 通知量明显上升
@@ -541,7 +588,7 @@ HTDY Switch ON 代表七周期同时开启，尤其 1m 可能显著增加事件�
 
 ### 19.2 同时刻多周期事件
 
-整点可能同时触发多个周期。设计选择“一个 frequency 一个 Event/一次通知”，通过新 Event unique identity 保证合法共存与同频幂等。
+整点可能同时触发多个周期。设计选择“一个 HTDY frequency 一个 Event/一次通知”，通过新 storage unique identity 保证合法共存与同频幂等；SuBing 仍维持 bar-level formal identity。
 
 ### 19.3 重绘造成历史图与当时提醒不一致
 
@@ -550,6 +597,10 @@ HTDY Switch ON 代表七周期同时开启，尤其 1m 可能显著增加事件�
 ### 19.4 D1/W1 Runtime 错过触发
 
 继续遵守无 replay/backfill：Runtime 当时不在线就可能错过该自然事件。第一版不为提高送达率引入队列或补发系统；这是刻意保持的简单边界。
+
+### 19.5 数据库 constraint 变宽后的 SuBing 保护
+
+数据库无法再单独依靠通用 unique constraint 阻止同一 SuBing bar_end 的不同 frequency。该 invariant 必须由 `AlertRuleKind.FORMAL_SIGNAL` 的 Service consistency logic 和 regression tests 保持。由于当前 Event 只有 Alert Runtime 内部单写入口，本版不增加通用并发框架；若后续出现第二个 Event 写入口，必须重新评估该边界。
 
 ## 20. Canonical 变更原则
 
@@ -562,8 +613,10 @@ HTDY Switch ON 代表七周期同时开启，尤其 1m 可能显著增加事件�
 按以下四项完成自审：
 
 - Placeholder：无 `TBD/TODO` 或依赖未定义选择；
-- Internal consistency：Web 与 Alert 的产品/周期集合一致；Alert actual-dominant 身份、D1/W1 Canonical 数据边界与现有 Market Foundation 不冲突；
-- Scope：单一 HTDY 能力扩展，可由一份 implementation plan 承载；未恢复四系统全周期方向；
-- Ambiguity：明确了“一个 Switch=一个品种七周期”、Event 跨周期唯一键、D1/W1 触发时机、Rule code 保留策略、scope 不自动扩张和 no-backfill 语义。
+- Internal consistency：Web 与 Alert 的产品/周期集合一致；Alert actual-dominant 身份、D1/W1 Canonical 数据边界与现有 Market Foundation 不冲突；数据库 storage identity 扩频后仍通过 Rule-kind-specific Service 合同保留 SuBing bar-level formal identity；
+- Scope：单一 HTDY 能力扩展，可由一份 implementation plan 承载；未恢复四系统全周期方向；未引入第二套日/周数据、scheduler 或通用 Event identity 框架；
+- Ambiguity：明确了“一个 Switch=一个品种七周期”、HTDY/SuBing 不同业务 identity、D1/W1 触发时机、Rule code 保留策略、scope 不自动扩张、legacy JM/15m policy 不修改和 no-backfill 语义。
+
+自审过程中识别并修正了一个关键设计缺陷：不能把 AlertEvent 业务 identity 对所有 Rule 统一改成含 frequency，否则会削弱 Alert V2 已冻结的 SuBing 同 bar 正式信号幂等。修正版只把数据库 storage constraint 扩为含 frequency，同时按 `AlertRuleKind` 保留 SuBing 既有 business identity。
 
 Spec 自审结果：可以进入用户 Review Gate；在用户批准前不得开始 Lane 3 实现。
