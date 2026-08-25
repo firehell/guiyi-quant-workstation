@@ -253,6 +253,112 @@ def test_architecture_convergence_canonicals_describe_only_retained_surface() ->
     ).read_text(encoding="utf-8")
 
 
+def test_architecture_convergence_contract_is_backed_by_code_and_paths() -> None:
+    overlays = (
+        ROOT / "apps/quant-web/src/utils/mainIndicators.ts"
+    ).read_text(encoding="utf-8")
+    market_types = (ROOT / "apps/quant-web/src/types/market.ts").read_text(
+        encoding="utf-8"
+    )
+    parser = importlib.import_module("app.guiyi_cli.research_parser")
+    main = (ROOT / "services/quant-api/app/main.py").read_text(encoding="utf-8")
+    roll_composition = (
+        ROOT / "services/quant-api/app/execution_review/composition.py"
+    ).read_text(encoding="utf-8")
+
+    assert "ResearchOverlayId = 'none' | 'subing' | 'jdj_strategy' | 'htdy'" in market_types
+    assert all(
+        fragment in overlays
+        for fragment in (
+            "id: 'none'",
+            "label: '无'",
+            "id: 'subing'",
+            "label: '苏冰'",
+            "id: 'jdj_strategy'",
+            "label: '日进斗金参考回放'",
+            "id: 'htdy'",
+            "label: '火天大有'",
+        )
+    )
+    assert not {"candidate-dossier", "candidate-relationships"} & set(
+        parser.RESEARCH_COMMAND_NAMES
+    )
+    assert set(parser.RESEARCH_COMMAND_NAMES) == {
+        "subing-calibration",
+        "subing-lifecycle",
+        "n-structure",
+        "jdj-1m",
+        "candidate-validation",
+        "candidate-robustness",
+    }
+
+    retired_paths = (
+        "services/quant-api/app/market_data/market_trend_focus.py",
+        "services/quant-api/app/research/main_force_mirror_v2_service.py",
+        "services/quant-api/app/research/main_force_mirror_diagnostic.py",
+        "data/research_protocols/main_force_mirror_diagnostic_phase_a_v1.json",
+        "reports/research/candidate_dossier",
+        "reports/research/candidate_relationships",
+        "docs/CODE_REVIEW.md",
+        ".github/ISSUE_TEMPLATE/config.yml",
+        ".github/ISSUE_TEMPLATE/optional_backlog.md",
+        "docs/superpowers/specs/2026-08-24-subing-daily-watch-v1-design.md",
+        "docs/superpowers/plans/2026-08-24-subing-daily-watch-v1.md",
+        "docs/superpowers/specs/2026-08-24-jdj-active60-1m-strategy-design.md",
+        "docs/superpowers/plans/2026-08-24-jdj-active60-1m-strategy.md",
+        "docs/superpowers/plans/2026-08-24-no-watch-reliability-v1.md",
+    )
+    assert all(not (ROOT / relative).exists() for relative in retired_paths)
+    assert not any(
+        "member_rank" in path.name
+        for path in (ROOT / "services/quant-api/app").rglob("*.py")
+    )
+    assert (ROOT / "services/quant-api/alembic/versions/20260718_0024_backtest_binding_snapshot.py").is_file()
+    assert (ROOT / "services/quant-api/alembic/versions/20260707_0017_futures_member_ranks.py").is_file()
+    assert (ROOT / "services/quant-api/tests/data_foundation/test_models.py").is_file()
+    assert (ROOT / "services/quant-api/app/research/robustness/multi_candidate_events.py").is_file()
+    assert (ROOT / "services/quant-api/app/research/robustness/multi_candidate_robustness_service.py").is_file()
+    assert (ROOT / "services/quant-api/tests/test_multi_candidate_events.py").is_file()
+    assert (ROOT / "data/research_protocols/multi_candidate_robustness_v1.json").is_file()
+    assert (ROOT / "reports/research/candidate_robustness").is_dir()
+
+    assert (ROOT / "services/quant-api/app/backtest/local_app.py").is_file()
+    assert "backtest" not in main
+    assert (ROOT / "openspec/specs/rqalpha-research-backtest-workbench/spec.md").is_file()
+    assert (ROOT / "docs/superpowers/specs/2026-08-25-htdy-all-frequency-active60-design.md").is_file()
+    assert (ROOT / "docs/superpowers/plans/2026-08-25-htdy-all-frequency-active60.md").is_file()
+    assert (ROOT / "docs/superpowers/specs/2026-08-25-architecture-convergence-v1-design.md").is_file()
+    assert (ROOT / "docs/superpowers/plans/2026-08-25-architecture-convergence-v1.md").is_file()
+    assert 'execution_review_roll_marker_state() == "enabled"' in roll_composition
+    assert '"ROLL_RECONCILIATION_REQUIRED"' in roll_composition
+
+
+def test_daily_watch_storage_contract_is_explicit_and_backed_by_store() -> None:
+    data_center = (ROOT / "docs/DATA_CENTER.md").read_text(encoding="utf-8")
+    store = (
+        ROOT / "services/quant-api/app/market_data/subing_daily_watch_store.py"
+    ).read_text(encoding="utf-8")
+    for contract in (
+        "GUIYI_SUBING_OBSERVATION_ROOT",
+        "history/<target>.json",
+        "current.json",
+        "generation-status.json",
+        "同目录以原子替换",
+        "current regression",
+        "stale candidate fallback",
+        "不得手工 backfill",
+    ):
+        assert contract in data_center
+    for implementation in (
+        "SUBING_OBSERVATION_ROOT_ENV",
+        'root / "current.json"',
+        'root / "generation-status.json"',
+        "_atomic_write(",
+        "CURRENT_TARGET_REGRESSION",
+    ):
+        assert implementation in store
+
+
 def test_futures_mirror_production_sources_have_no_test_only_injection() -> None:
     chart = (
         ROOT / "apps/quant-web/src/components/kline/KlineChart.vue"

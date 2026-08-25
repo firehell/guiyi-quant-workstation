@@ -13,6 +13,8 @@ flowchart LR
   SuBing --> Daily[Daily Context artifact]
   SuBing --> Current[Current Signal State]
   SuBing --> Event[Formal AlertEvent]
+  HTDYLive[HTDY completed Live 1m..60m] --> Alert
+  HTDYCanonical[HTDY Canonical D1/W1 canonical_updated] --> Alert
   Event --> Alert[Alert two-table one-shot]
   Event --> Review[Execution Review]
   Market --> Web[Market Web]

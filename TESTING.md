@@ -5,15 +5,35 @@
 ## 后端
 
 ```bash
+uv sync --project services/quant-api --locked
+pnpm --dir apps/quant-web install --frozen-lockfile
 PYTHONPATH=services/quant-api:packages/quant-core \
   uv run --project services/quant-api pytest -q -m "not isolated_postgresql" services/quant-api/tests
-PYTHONPATH=services/quant-api:packages/quant-core \
+PYTHONPATH=services/quant-api:packages/quant-core MYPYPATH=services/quant-api:packages/quant-core \
+  uv run --project services/quant-api mypy --explicit-package-bases --ignore-missing-imports services/quant-api/app packages/quant-core/guiyi_quant
+```
+
+Isolated PostgreSQL 测试只能指向专用、空白、可销毁的 isolated DB；未设置该变量时不得运行：
+
+```bash
+GUIYI_ISOLATED_MIGRATION_DATABASE_URL='postgresql+psycopg://USER:PASSWORD@HOST:5432/isolated_db' \
+  PYTHONPATH=services/quant-api:packages/quant-core \
   uv run --project services/quant-api pytest -q -m isolated_postgresql services/quant-api/tests
+```
+
+## RQAlpha local-only automated validation
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+  uv run --project services/quant-api pytest -q services/quant-api/tests/backtest
+pnpm --dir apps/quant-web test tests/backtestCapability.test.ts tests/backtestPresentation.test.ts tests/backtests.test.ts
+pnpm --dir apps/quant-web exec playwright test -c playwright.config.mjs e2e/backtests.spec.mjs
+```
+
+这些 fake-runner、TestClient 与 route-intercepted browser 测试不加载 sidecar，也不运行真实 RQAlpha smoke。
 PYTHONPATH=services/quant-api:packages/quant-core \
   uv run --project services/quant-api pytest -q tests/engineering/test_canonical_consistency.py
 uv run --project services/quant-api python -m ruff check services/quant-api/app services/quant-api/tests packages/quant-core/guiyi_quant tests/engineering
-MYPYPATH=services/quant-api:packages/quant-core \
-  uv run --project services/quant-api mypy services/quant-api/app packages/quant-core/guiyi_quant
 ```
 
 ## Research CLI help
