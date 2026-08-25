@@ -1,17 +1,17 @@
 # 当前状态
 
-更新时间：2026-08-24
+更新时间：2026-08-25
 
 ## 正式 release 与 production Runtime
 
 - 已发布的正式 tag 为
-  `v1.8.1@7e05d7d63f1e3437852fdcd56d6a3401fd7bcd16`；annotated tag object 为
-  `438461cb36058a683b13b24c15a65bceb55caa7a`，message=`Release v1.8.1`。
-- 2026-08-24 已将本机五个 launchd label 切到 clean/detached
-  `/Volumes/扩展盘/guiyi-quant-runtime-v1.8.1@7e05d7d63f1e3437852fdcd56d6a3401fd7bcd16`。
-  API、Web、Live 与 Alert 均从该根运行，API=`200 / 1.8.1 / readonly`、Web=`200`；after-market
-  `not_running` 且未手工触发。新根错过当日自然 18:05 执行，Runtime health 当前诚实保持
-  `degraded / after_market_run_missed`，不得声明 `RUNTIME_READY`。
+  `v1.8.2@58e0f596a5b425e15697abc72b71c83cc878796c`；annotated tag object 为
+  `d48bdd3d2d7fad8d41d876896b76624918273ac3`，message=`Release v1.8.2`。
+- 2026-08-25 已将本机五个 launchd label 切到 clean/detached
+  `/Volumes/扩展盘/guiyi-quant-runtime-v1.8.2@58e0f596a5b425e15697abc72b71c83cc878796c`。
+  API、Web、Live 与 Alert 均从该根运行，API=`200 / 1.8.2 / readonly`、Web=`200`；after-market
+  `not_running`，只读 Runtime health=`ok`。本次未手工触发 after-market，下一次自然盘后与 Daily
+  Watch artifact 仍是独立未完成 evidence，不能由本机部署推导为已完成。
 - `GUIYI_SUBING_OBSERVATION_ROOT` 已精确配置为扩展盘
   `/Volumes/扩展盘/guiyi-quant-data/observations/subing-daily-v1`；配置文件为 `0600`，目录为 `0700`，
   production resolver 通过。当前目录为空，current API 返回
@@ -25,6 +25,21 @@
   audience_count=`2`，Execution Review roll 仍为 `disabled`。本机端口/HTTP 与 FRPC local tunnel 最新只读
   验收均为 `passed`；ECS FRPS/Nginx 与公网 HTTPS 本轮没有可用执行入口，且 `PUBLIC_BASE_URL` 未配置，
   因此保持 `not verified`，不得由本机或 tunnel 读回推导为公网验收通过。
+
+## v1.8.2 release and Runtime deployment
+
+- release preparation commit 为 `fba78fed4`；main integration 与 annotated tag peeled commit 均为
+  `58e0f596a5b425e15697abc72b71c83cc878796c`。本版包含 Market 首页中文化、全市场价格变化 × 持仓变化
+  四象限名单、移除自选入口、RQAlpha 回测入口、以及 K 线初始 300 根与桌面工作区满高布局。
+- exact candidate 验证为 backend（排除需要独立 PostgreSQL 的两项迁移/并发套件）
+  `3720 passed / 3 skipped`、版本与工程契约 `19 passed`、Web unit `280 passed / 1 skipped`、Playwright
+  `100 passed / 1 skipped`；Ruff、Mypy `154 source files / 0 issues`、Web production build、OpenSpec
+  `6 passed`、secret scan、diff check 均通过。隔离 PostgreSQL 套件未执行：本版没有 migration，且未取得对
+  独立数据库写入的授权。
+- 五个现有 launchd label 已切换到精确 tag Runtime；`/market`、`/market/chart`、`/backtests` 均读回
+  HTTP `200`，local-services-status=`overall=passed`。不加载或执行 RQAlpha sidecar，不运行手工
+  after-market、真实通知、migration、Canonical/production DB/Redis 写入，也不改变 Alert Scope/transport
+  或 Execution Review roll，`auto_order=false` 不变。
 
 ## v1.8.1 release and Runtime deployment
 
