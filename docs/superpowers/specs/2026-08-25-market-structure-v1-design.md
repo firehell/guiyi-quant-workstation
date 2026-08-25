@@ -1,6 +1,6 @@
 # Market Structure V1 Design Spec
 
-**Status:** Reviewed design — canonical alignment amendment awaiting re-review  
+**Status:** Reviewed — ready for implementation planning  
 **Date:** 2026-08-25  
 **Target branch:** `research/market-structure-v1`  
 **Base:** `develop@ad30633da59668f5d9a3496238c4c15ec72e7aab`  
