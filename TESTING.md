@@ -31,6 +31,10 @@ pnpm --dir apps/quant-web exec playwright test -c playwright.config.mjs e2e/back
 ```
 
 这些 fake-runner、TestClient 与 route-intercepted browser 测试不加载 sidecar，也不运行真实 RQAlpha smoke。
+
+## 工程一致性与静态检查
+
+```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
   uv run --project services/quant-api pytest -q tests/engineering/test_canonical_consistency.py
 uv run --project services/quant-api python -m ruff check services/quant-api/app services/quant-api/tests packages/quant-core/guiyi_quant tests/engineering
