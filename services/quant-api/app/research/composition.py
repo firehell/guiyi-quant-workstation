@@ -22,10 +22,7 @@ from app.research.subing.candidate_validation_policy import (
     load_candidate_manifest,
     load_candidate_validation_protocol,
 )
-from app.market_data.composition import (
-    build_main_force_mirror_v2_service,
-    build_market_data_service,
-)
+from app.market_data.composition import build_market_data_service
 from app.research.jdj.jdj_candidate_validation_calendar import (
     assert_jdj_prospective_calendar,
 )
@@ -42,12 +39,6 @@ from app.research.jdj_strategy.service import (
     JdjStrategyContextInvalidError,
     JdjStrategyReplayService,
     JdjStrategySessionIdentityError,
-)
-from app.research.main_force.main_force_mirror_v2_research_service import (
-    MainForceMirrorV2ResearchService,
-)
-from app.research.main_force.main_force_mirror_diagnostic_service import (
-    MainForceMirrorDiagnosticService,
 )
 from app.research.robustness.multi_candidate_robustness_policy import (
     load_multi_candidate_robustness_protocol,
@@ -365,27 +356,4 @@ def build_multi_candidate_robustness_service(
             protocol=load_n_candidate_validation_protocol(),
         ),
         current_active_products=active_products,
-    )
-
-
-def build_main_force_mirror_v2_research_service(
-    session: Session,
-) -> MainForceMirrorV2ResearchService:
-    """Compose retrospective V2 around the exact API service identities."""
-    mirror_service = build_main_force_mirror_v2_service(session)
-    return MainForceMirrorV2ResearchService(
-        market_data=mirror_service.market_data,
-        mirror_service=mirror_service,
-    )
-
-
-def build_main_force_mirror_diagnostic_service(
-    session: Session,
-) -> MainForceMirrorDiagnosticService:
-    """Compose frozen Phase A over the existing V2/MDS historical readers."""
-    mirror_service = build_main_force_mirror_v2_service(session)
-    return MainForceMirrorDiagnosticService(
-        market_data=mirror_service.market_data,
-        mirror_service=mirror_service,
-        previous_trading_day=mirror_service.coverage.previous_trading_day,
     )

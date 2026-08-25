@@ -7,17 +7,11 @@ from datetime import date
 from decimal import Decimal, InvalidOperation
 from typing import TypeAlias
 
-from app.market_data.domain import BarFrequency, SeriesKind
+from app.market_data.domain import BarFrequency
 from app.research.common.candidate_validation_schedule import (
     CandidateValidationRequest,
 )
 from app.research.jdj.jdj_research import JdjResearchRequest
-from app.research.main_force.main_force_mirror_v2_research_service import (
-    MainForceMirrorV2ResearchRequest,
-)
-from app.research.main_force.main_force_mirror_diagnostic_policy import (
-    MainForceMirrorDiagnosticRequest,
-)
 from app.research.n_structure.n_structure_research_service import (
     NStructureResearchRequest,
 )
@@ -49,8 +43,6 @@ ResearchRequest: TypeAlias = (
     | LifecycleResearchRequest
     | JdjResearchRequest
     | CandidateValidationRequest
-    | MainForceMirrorV2ResearchRequest
-    | MainForceMirrorDiagnosticRequest
     | NStructureResearchRequest
     | MultiCandidateRobustnessRequest
     | JdjActive60RobustnessRequest
@@ -69,18 +61,6 @@ def build_research_request(args: argparse.Namespace) -> ResearchRequest:
         if args.protocol == "jdj_active60_robustness_v1":
             return JdjActive60RobustnessRequest(protocol_id=args.protocol)
         return MultiCandidateRobustnessRequest(protocol_id=args.protocol)
-    if args.research_command == "main-force-mirror-v2":
-        return MainForceMirrorV2ResearchRequest(
-            symbol=args.symbol,
-            series_kind=SeriesKind(args.series_kind),
-            contract=args.contract,
-            frequency=BarFrequency(args.frequency),
-            since=_day(args.since),
-            through=_day(args.through),
-            forensic=args.forensic,
-        )
-    if args.research_command == "main-force-mirror-diagnostic":
-        return MainForceMirrorDiagnosticRequest(protocol_id=args.protocol)
     if args.research_command == "candidate-validation":
         return CandidateValidationRequest(
             candidate_id=args.candidate,

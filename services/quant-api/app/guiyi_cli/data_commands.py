@@ -21,23 +21,12 @@ from app.market_data.historical_data_manager import (
 )
 from app.market_data.product_retirement import assert_not_retired
 from app.market_data.operational_universe import load_active_products
-from app.market_data.member_rank_snapshot_builder import MemberRankSnapshotRequest
 
 
 def build_request(args: argparse.Namespace):
     """根据 data_command 分支构造对应的维护请求对象。"""
     if args.data_command == "after-market":
         return None
-    if args.data_command == "member-rank":
-        if args.member_rank_command != "snapshot":
-            raise ValueError("CLI_MEMBER_RANK_COMMAND_INVALID")
-        return MemberRankSnapshotRequest(
-            dataset_id=str(args.dataset_id),
-            products=tuple(args.products),
-            since=_required_day(args.since),
-            through=_required_day(args.through),
-            apply=bool(args.apply),
-        )
     if args.data_command == "update":
         return UpdateRequest(
             products=_products(args.symbol, args.universe),
@@ -70,8 +59,6 @@ def run_data_command(
     progress_stream: TextIO | None = None,
 ):
     """调用 manager 上与 data_command 同名的方法并返回结果对象。"""
-    if args.data_command == "member-rank":
-        raise ValueError("CLI_MEMBER_RANK_MANAGER_INVALID")
     request = build_request(args)
     if args.data_command == "audit" and bool(getattr(args, "progress", False)):
         assert progress_stream is not None

@@ -49,14 +49,3 @@ def add_data_commands(
     audit.add_argument("--progress", action="store_true")
 
     commands.add_parser("after-market")
-
-    member_rank = commands.add_parser("member-rank")
-    member_rank_commands = member_rank.add_subparsers(
-        dest="member_rank_command", required=True
-    )
-    snapshot = member_rank_commands.add_parser("snapshot")
-    snapshot.add_argument("--dataset-id", required=True)
-    snapshot.add_argument("--products", nargs="+", required=True)
-    snapshot.add_argument("--since", required=True)
-    snapshot.add_argument("--through", required=True)
-    snapshot.add_argument("--apply", action="store_true")

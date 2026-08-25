@@ -39,7 +39,6 @@ from app.guiyi_cli.research_requests import (
     build_research_request,
 )
 from app.market_data.composition import (
-    build_member_rank_snapshot_builder,
     build_historical_data_manager,
     build_live_market_service,
 )
@@ -56,8 +55,6 @@ from app.research.composition import (
     build_jdj_active60_robustness_service,
     build_jdj_candidate_validation_service,
     build_jdj_research_service,
-    build_main_force_mirror_v2_research_service,
-    build_main_force_mirror_diagnostic_service,
     build_multi_candidate_robustness_service,
     build_n_candidate_validation_service,
     build_n_structure_research_service,
@@ -74,9 +71,6 @@ from app.research.candidate_convergence.five_candidate_dossier import (
 from app.research.candidate_convergence.five_candidate_relationships import (
     FiveCandidateRelationshipRequest,
 )
-from app.research.main_force.main_force_mirror_diagnostic_policy import (
-    MainForceMirrorDiagnosticRequest,
-)
 from app.services.runtime_health import build_runtime_health
 from app.runtime_entry import run_after_market, run_alert, run_live
 
@@ -91,7 +85,6 @@ ArtifactResearchServiceFactory = Callable[[], Any]
 JdjCandidateValidationServiceFactory = Callable[[Any, str], Any]
 RollReconcilerFactory = Callable[[Any], Any]
 RollMarkerState = Callable[[], str]
-MemberRankSnapshotBuilderFactory = Callable[[Any], Any]
 
 def _execution_is_readonly(args: argparse.Namespace) -> bool:
     if args.domain == "research":
@@ -140,9 +133,6 @@ def main(
     *,
     session_factory: SessionFactory = SessionLocal,
     manager_factory: ManagerFactory = build_historical_data_manager,
-    member_rank_snapshot_builder_factory: MemberRankSnapshotBuilderFactory = (
-        build_member_rank_snapshot_builder
-    ),
     after_market_factory: AfterMarketFactory = build_after_market_updater,
     live_service_factory: LiveServiceFactory = build_live_market_service,
     alert_runtime_factory: AlertRuntimeFactory = build_alert_runtime,
@@ -160,12 +150,6 @@ def main(
     ),
     n_candidate_validation_service_factory: ResearchServiceFactory = (
         build_n_candidate_validation_service
-    ),
-    main_force_mirror_v2_research_service_factory: ResearchServiceFactory = (
-        build_main_force_mirror_v2_research_service
-    ),
-    main_force_mirror_diagnostic_service_factory: ResearchServiceFactory = (
-        build_main_force_mirror_diagnostic_service
     ),
     n_structure_research_service_factory: ResearchServiceFactory = (
         build_n_structure_research_service
@@ -231,7 +215,6 @@ def main(
                 args,
                 session_factory,
                 manager_factory,
-                member_rank_snapshot_builder_factory,
                 after_market_factory,
                 execution_review_roll_marker_state,
                 roll_reconciler_factory,
@@ -296,17 +279,6 @@ def main(
                             )
                         else:
                             raise ValueError("CLI_CANDIDATE_ID_INVALID")
-                    elif args.research_command == "main-force-mirror-v2":
-                        service = main_force_mirror_v2_research_service_factory(
-                            session
-                        )
-                    elif isinstance(
-                        research_request,
-                        MainForceMirrorDiagnosticRequest,
-                    ):
-                        service = main_force_mirror_diagnostic_service_factory(
-                            session
-                        )
                     elif isinstance(
                         research_request,
                         FiveCandidateRelationshipRequest,
@@ -396,17 +368,12 @@ def _run_data(
     args: argparse.Namespace,
     session_factory: SessionFactory,
     manager_factory: ManagerFactory,
-    member_rank_snapshot_builder_factory: MemberRankSnapshotBuilderFactory,
     after_market_factory: AfterMarketFactory,
     execution_review_roll_marker_state: RollMarkerState,
     roll_reconciler_factory: RollReconcilerFactory,
     stderr: TextIO,
 ) -> dict[str, object]:
     """在 DB 会话内执行 data 子命令并返回 as_payload 字典。"""
-    if args.data_command == "member-rank":
-        with session_factory() as session:
-            builder = member_rank_snapshot_builder_factory(session)
-            return builder.snapshot(build_request(args)).as_payload()
     if args.data_command == "after-market":
         return run_after_market(
             session_factory=session_factory,

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import ast
 import importlib
-from pathlib import Path
+
+from app.guiyi_cli.main import build_parser
 
 
 def test_research_cli_modules_own_one_boundary_each() -> None:
@@ -19,34 +19,14 @@ def test_research_cli_modules_own_one_boundary_each() -> None:
     assert not hasattr(commands, "build_research_request")
 
 
-def test_main_force_diagnostic_service_has_no_write_or_runtime_dependency() -> None:
-    module = importlib.import_module(
-        "app.research.main_force.main_force_mirror_diagnostic_service"
+def test_research_help_omits_retired_main_force_commands() -> None:
+    parser = build_parser()
+    domain_action = next(action for action in parser._actions if action.dest == "domain")
+    research_parser = domain_action.choices["research"]
+    command_action = next(
+        action for action in research_parser._actions if action.dest == "research_command"
     )
-    path = Path(module.__file__)
-    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-    imported = tuple(
-        node.module or ""
-        for node in ast.walk(tree)
-        if isinstance(node, ast.ImportFrom)
-    ) + tuple(
-        alias.name
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Import)
-        for alias in node.names
-    )
-    forbidden = (
-        "app.db",
-        "app.alerts",
-        "app.runtime_entry",
-        "app.services.runtime_health",
-        "redis",
-        "rqdatac",
-        "rqdata",
-    )
+    research_help = " ".join(command_action.choices)
 
-    assert not any(
-        module_name == prefix or module_name.startswith(f"{prefix}.")
-        for module_name in imported
-        for prefix in forbidden
-    )
+    assert "main-force-mirror-v2" not in research_help
+    assert "main-force-mirror-diagnostic" not in research_help
