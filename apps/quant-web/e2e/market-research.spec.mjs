@@ -245,6 +245,8 @@ test('Market homepage shows the current formal signals above Radar', async ({ pa
   })
   await page.goto('/market')
 
+  await expect(page.getByRole('region', { name: '苏冰' })).toHaveCount(1)
+  const workbench = page.getByTestId('subing-workbench')
   const formal = page.getByTestId('market-formal-signals')
   await expect(formal).toContainText('苏冰')
   await expect(formal).toContainText('JM 焦煤 · 买入信号')
@@ -252,10 +254,48 @@ test('Market homepage shows the current formal signals above Radar', async ({ pa
   await expect(formal).toContainText('5m · 10:25 确认')
   await expect(formal).toContainText('5m 同向确认')
   await expect(formal).toContainText('火天大有')
-  await expect(page.getByTestId('subing-daily-watch')).toBeVisible()
+  await expect(workbench.getByTestId('subing-daily-watch')).toBeVisible()
   expect(await page.locator('[data-testid="market-formal-signals"], [data-testid="subing-daily-watch"]').evaluateAll((nodes) => (
     Boolean(nodes[0]?.compareDocumentPosition(nodes[1]) & Node.DOCUMENT_POSITION_FOLLOWING)
   ))).toBe(true)
+})
+
+test('SuBing workbench keeps Formal and Daily Watch failures independent', async ({ page }) => {
+  let formalFails = true
+  let dailyFails = false
+  let dailyResponse = dailyWatch({ long_watch: [dailyWatchItem('ag', '白银')], excluded: 59 })
+  await page.route('**/api/alerts/formal-signals/current', (route) => (
+    formalFails
+      ? route.fulfill({ status: 503 })
+      : route.fulfill({ json: { status: 'ready', trading_day: '2026-08-15', items: [formalSignal()] } })
+  ))
+  await page.route('**/api/runtime/health', (route) => route.fulfill({ json: runtimeHealth() }))
+  await page.route('**/api/v1/market/research/radar', (route) => route.fulfill({ json: radar() }))
+  await page.route('**/api/v1/market/research/subing-daily-watch/current', (route) => (
+    dailyFails ? route.fulfill({ status: 503 }) : route.fulfill({ json: dailyResponse })
+  ))
+  await page.route('**/api/execution-review/event-states**', (route) => route.fulfill({ json: { items: [] } }))
+  await page.goto('/market')
+
+  const workbench = page.getByTestId('subing-workbench')
+  await expect(workbench.getByTestId('market-formal-signals')).toContainText('正式信号暂不可用')
+  await expect(workbench.getByTestId('subing-daily-watch')).toContainText('AG 白银')
+
+  formalFails = false
+  dailyFails = true
+  await page.getByRole('button', { name: '全部刷新' }).click()
+  await expect(workbench.getByTestId('market-formal-signals')).toContainText('JM 焦煤')
+  await expect(workbench.getByTestId('subing-daily-watch')).toContainText('状态已过期')
+  await expect(workbench.getByTestId('subing-daily-watch')).toContainText('目标交易日 2026-08-25 · 来源交易日 2026-08-24')
+  await expect(workbench.getByTestId('subing-daily-watch')).toContainText('AG 白银')
+  await expect(workbench.getByTestId('subing-daily-watch-card')).toHaveCount(1)
+
+  dailyFails = false
+  dailyResponse = dailyWatch({ long_watch: [dailyWatchItem('cu', '沪铜')], excluded: 59 })
+  await page.getByRole('button', { name: '全部刷新' }).click()
+  await expect(workbench.getByTestId('subing-daily-watch').getByText('状态已过期', { exact: true })).toHaveCount(0)
+  await expect(workbench.getByTestId('subing-daily-watch')).toContainText('CU 沪铜')
+  await expect(workbench.getByTestId('subing-daily-watch')).not.toContainText('AG 白银')
 })
 
 test('formal signal cards do not advertise a container-wide click target', async ({ page }) => {
@@ -266,6 +306,31 @@ test('formal signal cards do not advertise a container-wide click target', async
   await card.hover()
   await expect(card).toHaveCSS('transform', 'none')
   await expect(card.getByRole('button', { name: '记录执行' })).toBeVisible()
+})
+
+test('same Formal event-id set keeps its Execution Review action while refreshed states are pending', async ({ page }) => {
+  let lookupCount = 0
+  let releaseReplacementLookup
+  const replacementLookup = new Promise((resolve) => { releaseReplacementLookup = resolve })
+  await page.route('**/api/alerts/formal-signals/current', (route) => route.fulfill({
+    json: { status: 'ready', trading_day: '2026-08-15', items: [formalSignal()] },
+  }))
+  await page.route('**/api/execution-review/event-states**', async (route) => {
+    lookupCount += 1
+    if (lookupCount === 2) await replacementLookup
+    return route.fulfill({ json: { items: [{ event_id: 17, state: 'pending_decision', decision_id: null, episode_id: null }] } })
+  })
+  await page.route('**/api/runtime/health', (route) => route.fulfill({ json: runtimeHealth() }))
+  await page.route('**/api/v1/market/research/radar', (route) => route.fulfill({ json: radar() }))
+  await page.route('**/api/v1/market/research/subing-daily-watch/current', (route) => route.fulfill({ json: dailyWatch() }))
+  await page.goto('/market')
+
+  const formal = page.getByTestId('market-formal-signals')
+  await expect(formal.getByRole('button', { name: '记录执行' })).toBeVisible()
+  await page.getByRole('button', { name: '全部刷新' }).click()
+  await expect.poll(() => lookupCount).toBe(2)
+  await expect(formal.getByRole('button', { name: '记录执行' })).toBeVisible()
+  releaseReplacementLookup()
 })
 
 test('Market homepage keeps formal decisions ahead of Radar at a 980-like viewport', async ({ page }) => {
@@ -658,6 +723,7 @@ test('B1 journey narrows AG on the homepage before opening its verification view
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.goto('/market')
 
+  await expect(page.getByRole('region', { name: '苏冰' })).toHaveCount(1)
   await expect(page.getByTestId('market-formal-signals')).toBeVisible()
   await expect(page.getByTestId('subing-daily-watch')).toBeVisible()
   expect(await page.locator('[data-testid="market-formal-signals"], [data-testid="subing-daily-watch"]').evaluateAll((nodes) => (
@@ -666,9 +732,18 @@ test('B1 journey narrows AG on the homepage before opening its verification view
   const focus = page.getByTestId('subing-daily-watch')
   await expect(focus).toContainText('AG 白银')
   await expect(page.getByTestId('market-full-research')).not.toHaveAttribute('open')
+  await page.getByText('展开全市场研究', { exact: true }).click()
+  await expect(page.getByTestId('market-full-research')).toHaveAttribute('open', '')
+  await page.getByText('展开全市场研究', { exact: true }).click()
   await focus.getByRole('button', { name: '检查 AG 15m', exact: true }).click()
 
   await expect(page).toHaveURL(/\/market\/chart\?symbol=ag/)
+  expect(Object.fromEntries(new URL(page.url()).searchParams)).toMatchObject({
+    symbol: 'ag', series_kind: 'actual_dominant', frequency: '15m',
+  })
+  await expect(page.getByRole('button', { name: '真实主力', exact: true })).toHaveClass(/n-button--primary-type/)
+  await expect(page.getByRole('group', { name: '周期' }).getByRole('button', { name: '15m', exact: true })).toHaveClass(/n-button--primary-type/)
+  await expect(page.getByRole('group', { name: 'Overlay' }).getByRole('button', { name: '苏冰', exact: true })).toHaveClass(/n-button--primary-type/)
   await expect(page.getByTestId('product-check-now')).toBeVisible()
   await expect(page.getByTestId('product-check-background')).toBeVisible()
   await expect(page.getByTestId('product-check-observation')).toBeVisible()
