@@ -35,7 +35,7 @@ const longExpanded = ref(false)
 const shortExpanded = ref(false)
 const unavailableExpanded = ref(false)
 const snapshot = computed(() => (
-  !props.dailyStale && props.dailyWatch?.status === 'ready' ? props.dailyWatch.snapshot : null
+  props.dailyWatch?.status === 'ready' ? props.dailyWatch.snapshot : null
 ))
 
 function direction(item: CurrentFormalSignalItem) {
@@ -138,7 +138,7 @@ function itemTitle(item: SubingDailyWatchItem) {
         <div><h3 id="subing-daily-watch-heading">今日观察</h3><p>日线与 60m 候选快照</p></div>
         <div class="source-status">
           <span v-if="snapshot">目标交易日 {{ snapshot.target_trading_day }} · 来源交易日 {{ snapshot.source_trading_day }}</span>
-          <NTag v-if="dailyStale && dailyWatch" type="warning" size="small" :bordered="false">状态已过期</NTag>
+          <NTag v-if="dailyStale && dailyWatch" type="warning" size="small" :bordered="false">状态已过期：已保留上一份成功快照</NTag>
         </div>
       </header>
 

@@ -21,22 +21,33 @@ export function useSubingWorkbench(dependencies: SubingWorkbenchDependencies) {
   })
   const formalEventStates = ref<Record<number, EventState>>({})
   let eventStateGeneration = 0
+  let formalEventIdentity = ''
   let disposed = false
 
   const stopFormalWatch = watch(
     [formal.status, formal.items],
     () => {
       const generation = ++eventStateGeneration
-      formalEventStates.value = {}
-      if (disposed || formal.status.value !== 'ready' || formal.items.value.length === 0) return
-      const eventIds = formal.items.value.map((item: CurrentFormalSignalItem) => item.id)
+      const eventIds = formal.status.value === 'ready'
+        ? [...new Set(formal.items.value.map((item: CurrentFormalSignalItem) => item.id))]
+          .sort((left, right) => left - right)
+        : []
+      const nextIdentity = eventIds.join(',')
+      const identityChanged = nextIdentity !== formalEventIdentity
+      if (identityChanged) {
+        formalEventIdentity = nextIdentity
+        formalEventStates.value = {}
+      }
+      if (disposed || eventIds.length === 0) return
       void dependencies.fetchEventStates(eventIds).then((response) => {
         if (disposed || generation !== eventStateGeneration) return
         formalEventStates.value = Object.fromEntries(
           response.items.map((item) => [item.event_id, item]),
         )
       }).catch(() => {
-        if (!disposed && generation === eventStateGeneration) formalEventStates.value = {}
+        if (!disposed && generation === eventStateGeneration && identityChanged) {
+          formalEventStates.value = {}
+        }
       })
     },
     { flush: 'sync' },

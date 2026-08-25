@@ -172,6 +172,76 @@ test('Formal event-state lookup is cleared and older lookup is invalidated when 
   state.dispose()
 })
 
+test('a fresh Formal array with the same event-id set keeps old states while replacement lookup is pending or fails', async () => {
+  const replacementLookup = deferred<{ items: Array<{ event_id: number, state: 'pending_decision', decision_id: null, episode_id: null }> }>()
+  let formalAttempt = 0
+  let lookupAttempt = 0
+  const state = useSubingWorkbench({
+    fetchFormal: async () => {
+      formalAttempt += 1
+      const items = [formal(1).items[0], formal(2).items[0]]
+      return {
+        status: 'ready' as const,
+        trading_day: '2026-08-25',
+        items: formalAttempt === 1 ? items : [...items].reverse(),
+      }
+    },
+    fetchDailyWatch: async () => daily(),
+    fetchEventStates: async () => {
+      lookupAttempt += 1
+      if (lookupAttempt === 1) return {
+        items: [
+          { event_id: 1, state: 'pending_decision' as const, decision_id: null, episode_id: null },
+          { event_id: 2, state: 'pending_decision' as const, decision_id: null, episode_id: null },
+        ],
+      }
+      if (lookupAttempt === 2) return replacementLookup.promise
+      throw new Error('event states temporarily unavailable')
+    },
+  })
+
+  await state.refreshAll()
+  await settleWatchers()
+  assert.deepEqual(Object.keys(state.formalEventStates.value).sort(), ['1', '2'])
+
+  await state.refreshAll()
+  assert.deepEqual(Object.keys(state.formalEventStates.value).sort(), ['1', '2'])
+  replacementLookup.resolve({
+    items: [
+      { event_id: 1, state: 'pending_decision', decision_id: null, episode_id: null },
+      { event_id: 2, state: 'pending_decision', decision_id: null, episode_id: null },
+    ],
+  })
+  await settleWatchers()
+
+  await state.refreshAll()
+  await settleWatchers()
+  assert.deepEqual(Object.keys(state.formalEventStates.value).sort(), ['1', '2'])
+  state.dispose()
+})
+
+test('a changed Formal event-id set stays empty when its event-state lookup fails', async () => {
+  let formalAttempt = 0
+  const state = useSubingWorkbench({
+    fetchFormal: async () => formal(++formalAttempt),
+    fetchDailyWatch: async () => daily(),
+    fetchEventStates: async (ids) => {
+      if (ids[0] === 1) return { items: [{ event_id: 1, state: 'pending_decision', decision_id: null, episode_id: null }] }
+      throw new Error('event states unavailable')
+    },
+  })
+
+  await state.refreshAll()
+  await settleWatchers()
+  assert.deepEqual(Object.keys(state.formalEventStates.value), ['1'])
+
+  await state.refreshAll()
+  assert.deepEqual(state.formalEventStates.value, {})
+  await settleWatchers()
+  assert.deepEqual(state.formalEventStates.value, {})
+  state.dispose()
+})
+
 test('refreshOperational refreshes only the Formal and Daily primitives', async () => {
   const calls = { formal: 0, daily: 0, states: 0 }
   const state = useSubingWorkbench({
@@ -238,6 +308,29 @@ test('a failed Formal refresh preserves its last snapshot and exposes source-spe
   assert.equal(state.formalTradingDay.value, '2026-08-25')
   assert.deepEqual(state.formalItems.value.map((item) => item.id), [1])
   assert.equal(state.formalStale.value, true)
+  assert.equal(state.dailyStale.value, false)
+  state.dispose()
+})
+
+test('a failed Daily refresh preserves its last snapshot and a later success clears stale', async () => {
+  let dailyAttempt = 0
+  const state = useSubingWorkbench({
+    fetchFormal: async () => ({ status: 'ready', trading_day: '2026-08-25', items: [] }),
+    fetchDailyWatch: async () => {
+      dailyAttempt += 1
+      if (dailyAttempt === 2) throw new Error('temporary')
+      return daily(dailyAttempt === 1 ? '2026-08-26' : '2026-08-27')
+    },
+    fetchEventStates: async () => ({ items: [] }),
+  })
+
+  await state.refreshAll()
+  await state.refreshAll()
+  assert.equal(state.dailyWatch.value?.snapshot?.target_trading_day, '2026-08-26')
+  assert.equal(state.dailyStale.value, true)
+
+  await state.refreshAll()
+  assert.equal(state.dailyWatch.value?.snapshot?.target_trading_day, '2026-08-27')
   assert.equal(state.dailyStale.value, false)
   state.dispose()
 })
