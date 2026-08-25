@@ -19,7 +19,15 @@ def test_registry_has_exact_two_v2_rules() -> None:
     htdy = get_alert_rule_definition("htdy_original_15m")
     assert htdy.display_name == "火天大有"
     assert htdy.kind is AlertRuleKind.INDICATOR_OBSERVATION
-    assert htdy.input_frequencies == ("15m",)
+    assert htdy.input_frequencies == (
+        "1m",
+        "5m",
+        "15m",
+        "30m",
+        "60m",
+        "1d",
+        "1w",
+    )
     assert htdy.series_kind == "actual_dominant"
 
     subing = get_alert_rule_definition("subing_entry_signal_v1")

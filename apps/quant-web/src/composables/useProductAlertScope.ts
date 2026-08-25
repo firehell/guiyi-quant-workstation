@@ -5,15 +5,24 @@ import type {
   ProductAlertStateResponse,
 } from '../api/alerts.ts'
 import { isCurrentAlertMutation } from '../utils/alertControl.ts'
+import { ALERT_RULE_CODES } from '../utils/alertRules.ts'
+import type { MarketFrequency } from '../types/market.ts'
 
 
 interface Dependencies {
   symbol: Ref<string>
+  frequency: Ref<MarketFrequency>
   fetchProductAlerts: (symbol: string) => Promise<ProductAlertStateResponse>
   fetchRuntimeStatus: () => Promise<AlertRuntimeStatus>
   setProductEnabled: (
     ruleCode: string,
     symbol: string,
+    enabled: boolean,
+  ) => Promise<ProductAlertRuleState>
+  setProductFrequencyEnabled: (
+    ruleCode: string,
+    symbol: string,
+    frequency: MarketFrequency,
     enabled: boolean,
   ) => Promise<ProductAlertRuleState>
   notifyError: (message: string) => void
@@ -55,15 +64,23 @@ export function useProductAlertScope(dependencies: Dependencies) {
   async function toggle(ruleCode: string, enabled: boolean): Promise<void> {
     const current = rulesByCode.value.get(ruleCode)
     const requestedSymbol = dependencies.symbol.value
+    const requestedFrequency = dependencies.frequency.value
     const requestGeneration = generation
     if (!current || !requestedSymbol || savingRuleCodes.value.has(ruleCode)) return
     savingRuleCodes.value = new Set(savingRuleCodes.value).add(ruleCode)
     try {
-      const updated = await dependencies.setProductEnabled(
-        ruleCode,
-        requestedSymbol,
-        enabled,
-      )
+      const updated = current.rule_code === ALERT_RULE_CODES.HTDY
+        ? await dependencies.setProductFrequencyEnabled(
+            ruleCode,
+            requestedSymbol,
+            requestedFrequency,
+            enabled,
+          )
+        : await dependencies.setProductEnabled(
+            ruleCode,
+            requestedSymbol,
+            enabled,
+          )
       if (isCurrentAlertMutation({
         requestGeneration,
         currentGeneration: generation,

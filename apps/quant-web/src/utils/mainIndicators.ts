@@ -1,3 +1,4 @@
+import { MARKET_FREQUENCIES } from '../types/market.ts'
 import type {
   MainIndicatorDefinition,
   MainIndicatorId,
@@ -98,7 +99,7 @@ export const RESEARCH_OVERLAY_DEFINITIONS: readonly ResearchOverlayDefinition[] 
     id: 'htdy',
     label: '火天大有',
     supportedSeriesKinds: ['continuous', 'actual_dominant', 'contract'],
-    supportedFrequencies: ['15m'],
+    supportedFrequencies: MARKET_FREQUENCIES,
     mainIndicators: ['htdy'],
     historicalSource: 'local',
   },

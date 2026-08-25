@@ -22,11 +22,12 @@ from app.alerts.notification import (
     ProviderAcceptance,
 )
 from app.alerts.registry import HTDY_RULE, SUBING_RULE, get_alert_rule_definition
-from app.alerts.service import AlertEventCreate, AlertService
+from app.alerts.service import AlertEventCreate, AlertScopeError, AlertService
 from app.market_data.aggregation import SessionWindow, bucket_window_for_bar
 from app.market_data.domain import (
     BarFrequency,
     CanonicalBar,
+    INTRADAY_FREQUENCIES,
     SeriesKind,
     SeriesPageQuery,
     normalize_contract_for_symbol,
@@ -49,7 +50,9 @@ from app.models import Instrument, TradingCalendar
 
 
 _LOGGER = logging.getLogger(__name__)
-_PATTERN = "live:bar:*:*"
+_LIVE_BAR_PATTERN = "live:bar:*:*"
+_MARKET_STATE_PATTERN = "market:state"
+_CANONICAL_ALERT_FREQUENCIES = (BarFrequency.D1, BarFrequency.W1)
 _HEARTBEAT_INTERVAL = timedelta(seconds=10)
 _HEARTBEAT_TTL_SECONDS = 30
 PROCESSING_FAILURE = "processing_failed"
@@ -59,7 +62,7 @@ NOTIFICATION_ACCEPTANCE_INVALID = "notification_acceptance_invalid"
 
 
 class AlertMessageSource(Protocol):
-    def subscribe(self, pattern: str) -> None: ...
+    def subscribe(self, *patterns: str) -> None: ...
     def get_message(self, *, timeout_seconds: float) -> tuple[object, object] | None: ...
     def close(self) -> None: ...
 
@@ -84,6 +87,76 @@ class _RuleResult:
     frequency: str
     result_codes: tuple[str, ...]
     lower_tf_confirmation: bool
+
+
+@dataclass(frozen=True, slots=True)
+class _LiveBarTrigger:
+    symbol: str
+    frequency: BarFrequency
+    bar: CanonicalBar
+
+
+@dataclass(frozen=True, slots=True)
+class _CanonicalUpdatedTrigger:
+    trading_day: date
+
+
+@dataclass(frozen=True, slots=True)
+class _PreparedEvent:
+    event_created: bool
+    message: AlertNotificationMessage | None
+    notification_error_type: str | None
+
+
+def _persist_event_and_prepare_notification(
+    service: AlertService,
+    *,
+    taxonomy: Mapping[str, ProductTaxonomyEntry],
+    rule: AlertRule,
+    symbol: str,
+    trading_day: date,
+    bar_end: datetime,
+    result: _RuleResult,
+    processing_now: datetime,
+) -> _PreparedEvent:
+    created = service.create_event(
+        AlertEventCreate(
+            rule_id=rule.id,
+            symbol=symbol,
+            contract=result.contract,
+            trading_day=trading_day,
+            frequency=result.frequency,
+            bar_end=bar_end,
+            result_codes=result.result_codes,
+            lower_tf_confirmation=result.lower_tf_confirmation,
+            detected_at=processing_now,
+            notification_attempted_at=processing_now,
+        )
+    )
+    if created is None:
+        return _PreparedEvent(False, None, None)
+    taxonomy_entry = taxonomy.get(symbol)
+    if taxonomy_entry is None:
+        _LOGGER.warning("ALERT_PRODUCT_NAME_UNAVAILABLE")
+        return _PreparedEvent(
+            True,
+            None,
+            NOTIFICATION_PREPARATION_FAILURE,
+        )
+    return _PreparedEvent(
+        True,
+        AlertNotificationMessage(
+            rule_code=rule.rule_code,
+            symbol=symbol,
+            product_name=taxonomy_entry.name,
+            contract=result.contract,
+            frequency=result.frequency,
+            bar_end=bar_end,
+            result_codes=result.result_codes,
+            lower_tf_confirmation=result.lower_tf_confirmation,
+        ),
+        None,
+    )
 
 
 class AlertRuntime:
@@ -120,10 +193,10 @@ class AlertRuntime:
         self.stop_requested = stop_requested or (lambda: False)
 
     def run_forever(self) -> None:
-        """只消费启动后新到达的 completed 5m/15m Pub/Sub 消息。"""
+        """只消费启动后新到达的 completed 日内 Bar 与 Canonical state。"""
         if self.message_source is None or self.heartbeat_store is None:
             raise RuntimeError("ALERT_RUNTIME_TRANSPORT_UNAVAILABLE")
-        self.message_source.subscribe(_PATTERN)
+        self.message_source.subscribe(_LIVE_BAR_PATTERN, _MARKET_STATE_PATTERN)
         next_heartbeat = self._aware_now()
         try:
             while not self.stop_requested():
@@ -138,11 +211,16 @@ class AlertRuntime:
             self.message_source.close()
 
     def process_message(self, channel: object, payload: object) -> None:
-        """处理单条完成 Bar；Rule 故障隔离，Event 提交后只发送一次。"""
-        parsed = _parse_event(channel, payload)
-        if parsed is None:
+        """处理单条强类型触发；Rule 故障隔离，Event 提交后只发送一次。"""
+        trigger = _parse_live_bar_trigger(channel, payload)
+        if trigger is None:
+            canonical_trigger = _parse_canonical_updated_trigger(channel, payload)
+            if canonical_trigger is not None:
+                self._process_canonical_updated(canonical_trigger)
             return
-        symbol, event_frequency, event_bar = parsed
+        symbol = trigger.symbol
+        event_frequency = trigger.frequency
+        event_bar = trigger.bar
         if symbol not in self._operational_products:
             return
         try:
@@ -165,13 +243,21 @@ class AlertRuntime:
                         .order_by(AlertRule.rule_code)
                         .execution_options(populate_existing=True)
                     ).all()
+                    service = AlertService(
+                        session,
+                        operational_products=tuple(
+                            sorted(self._operational_products)
+                        ),
+                    )
                     for rule in rules:
                         try:
                             definition = get_alert_rule_definition(rule.rule_code)
-                            if (
-                                event_frequency.value
-                                not in definition.input_frequencies
-                                or symbol not in set(rule.scope_products or [])
+                            if event_frequency.value not in definition.input_frequencies:
+                                continue
+                            if not service.rule_allows_event(
+                                rule,
+                                symbol=symbol,
+                                frequency=event_frequency.value,
                             ):
                                 continue
                             result = self._evaluate_rule(
@@ -184,51 +270,25 @@ class AlertRuntime:
                             )
                             if result is None:
                                 continue
-                            created = AlertService(
-                                session,
-                                operational_products=tuple(
-                                    sorted(self._operational_products)
-                                ),
-                            ).create_event(
-                                AlertEventCreate(
-                                    rule_id=rule.id,
-                                    symbol=symbol,
-                                    contract=result.contract,
-                                    trading_day=event_bar.trading_day,
-                                    frequency=result.frequency,
-                                    bar_end=event_bar.bar_end,
-                                    result_codes=result.result_codes,
-                                    lower_tf_confirmation=(
-                                        result.lower_tf_confirmation
-                                    ),
-                                    detected_at=processing_now,
-                                    notification_attempted_at=processing_now,
-                                )
+                            prepared = _persist_event_and_prepare_notification(
+                                service,
+                                taxonomy=self._taxonomy,
+                                rule=rule,
+                                symbol=symbol,
+                                trading_day=event_bar.trading_day,
+                                bar_end=event_bar.bar_end,
+                                result=result,
+                                processing_now=processing_now,
                             )
-                            if created is None:
+                            if not prepared.event_created:
                                 continue
                             event_count += 1
-                            taxonomy = self._taxonomy.get(symbol)
-                            if taxonomy is None:
-                                _LOGGER.warning("ALERT_PRODUCT_NAME_UNAVAILABLE")
+                            if prepared.notification_error_type is not None:
                                 notification_preparation_failures.append(
-                                    NOTIFICATION_PREPARATION_FAILURE
+                                    prepared.notification_error_type
                                 )
-                                continue
-                            messages.append(
-                                AlertNotificationMessage(
-                                    rule_code=definition.rule_code,
-                                    symbol=symbol,
-                                    product_name=taxonomy.name,
-                                    contract=result.contract,
-                                    frequency=result.frequency,
-                                    bar_end=event_bar.bar_end,
-                                    result_codes=result.result_codes,
-                                    lower_tf_confirmation=(
-                                        result.lower_tf_confirmation
-                                    ),
-                                )
-                            )
+                            if prepared.message is not None:
+                                messages.append(prepared.message)
                         except Exception:  # noqa: BLE001 - isolate each fixed rule
                             if session.in_transaction():
                                 session.rollback()
@@ -264,6 +324,152 @@ class AlertRuntime:
             if fatal_processing_failure or not messages:
                 return
 
+        self._send_messages_once(messages, processing_now=processing_now)
+
+    def _process_canonical_updated(
+        self,
+        trigger: _CanonicalUpdatedTrigger,
+    ) -> None:
+        try:
+            processing_now = self._aware_now()
+        except Exception:  # noqa: BLE001 - collapse clock detail
+            _LOGGER.warning("ALERT_PROCESSING_FAILED")
+            return
+
+        messages: list[AlertNotificationMessage] = []
+        event_count = 0
+        notification_preparation_failures: list[str] = []
+        processing_error_type: str | None = None
+        fatal_processing_failure = False
+        try:
+            with self._session_factory() as session:
+                try:
+                    rules = session.scalars(
+                        select(AlertRule)
+                        .where(
+                            AlertRule.enabled.is_(True),
+                            AlertRule.rule_code == HTDY_RULE.rule_code,
+                        )
+                        .execution_options(populate_existing=True)
+                    ).all()
+                    service = AlertService(
+                        session,
+                        operational_products=tuple(
+                            sorted(self._operational_products)
+                        ),
+                    )
+                    for rule in rules:
+                        try:
+                            definition = get_alert_rule_definition(rule.rule_code)
+                            pairs = tuple(
+                                (symbol, frequency)
+                                for symbol in sorted(self._operational_products)
+                                for frequency in _CANONICAL_ALERT_FREQUENCIES
+                                if frequency.value in definition.input_frequencies
+                                and service.rule_allows_event(
+                                    rule,
+                                    symbol=symbol,
+                                    frequency=frequency.value,
+                                )
+                            )
+                        except Exception:  # noqa: BLE001 - invalid Rule Scope is isolated
+                            if session.in_transaction():
+                                session.rollback()
+                            processing_error_type = PROCESSING_FAILURE
+                            _LOGGER.warning("ALERT_RULE_PROCESSING_FAILED")
+                            continue
+                        if not pairs:
+                            continue
+                        market_read = self._market_read_factory(session)
+                        for symbol, frequency in pairs:
+                            try:
+                                window = market_read.latest_canonical_window(
+                                    SeriesPageQuery(
+                                        SeriesKind.ACTUAL_DOMINANT,
+                                        symbol,
+                                        frequency,
+                                    ),
+                                    trading_day=trigger.trading_day,
+                                    limit=32,
+                                )
+                                if not _canonical_window_matches_trigger(
+                                    window,
+                                    symbol=symbol,
+                                    frequency=frequency,
+                                    trading_day=trigger.trading_day,
+                                ):
+                                    continue
+                                evaluation = self._htdy_evaluator.evaluate(window)
+                                if (
+                                    not isinstance(evaluation, AlertEvaluation)
+                                    or not evaluation.observation_types
+                                ):
+                                    continue
+                                prepared = _persist_event_and_prepare_notification(
+                                    service,
+                                    taxonomy=self._taxonomy,
+                                    rule=rule,
+                                    symbol=symbol,
+                                    trading_day=trigger.trading_day,
+                                    bar_end=window.cutoff,
+                                    result=_RuleResult(
+                                        contract=window.contract,
+                                        frequency=frequency.value,
+                                        result_codes=evaluation.observation_types,
+                                        lower_tf_confirmation=False,
+                                    ),
+                                    processing_now=processing_now,
+                                )
+                                if not prepared.event_created:
+                                    continue
+                                event_count += 1
+                                if prepared.notification_error_type is not None:
+                                    notification_preparation_failures.append(
+                                        prepared.notification_error_type
+                                    )
+                                if prepared.message is not None:
+                                    messages.append(prepared.message)
+                            except Exception:  # noqa: BLE001 - isolate each exact pair
+                                if session.in_transaction():
+                                    session.rollback()
+                                processing_error_type = PROCESSING_FAILURE
+                                _LOGGER.warning("ALERT_RULE_PROCESSING_FAILED")
+                finally:
+                    if session.in_transaction():
+                        session.rollback()
+        except Exception:  # noqa: BLE001 - DB/session failure must not send
+            processing_error_type = PROCESSING_FAILURE
+            fatal_processing_failure = True
+            _LOGGER.warning("ALERT_PROCESSING_FAILED")
+
+        if event_count:
+            self._update_runtime_status(last_event_at=_iso_timestamp(processing_now))
+        for error_type in notification_preparation_failures:
+            self._record_notification_failure(
+                at=processing_now,
+                error_type=error_type,
+            )
+        if processing_error_type is None:
+            self._update_runtime_status(
+                last_processing_success_at=_iso_timestamp(processing_now),
+                processing_error_type=None,
+            )
+        else:
+            self._update_runtime_status(
+                last_processing_failure_at=_iso_timestamp(processing_now),
+                processing_error_type=processing_error_type,
+            )
+            if fatal_processing_failure or not messages:
+                return
+
+        self._send_messages_once(messages, processing_now=processing_now)
+
+    def _send_messages_once(
+        self,
+        messages: list[AlertNotificationMessage],
+        *,
+        processing_now: datetime,
+    ) -> None:
         for message in messages:
             self._update_runtime_status(
                 last_transport_attempt_at=_iso_timestamp(processing_now)
@@ -302,7 +508,12 @@ class AlertRuntime:
         processing_now: datetime,
     ) -> _RuleResult | None:
         if rule_code == HTDY_RULE.rule_code:
-            return self._evaluate_htdy(session, symbol=symbol, event_bar=event_bar)
+            return self._evaluate_htdy(
+                session,
+                symbol=symbol,
+                event_frequency=event_frequency,
+                event_bar=event_bar,
+            )
         if rule_code == SUBING_RULE.rule_code:
             return self._evaluate_subing(
                 session,
@@ -318,19 +529,25 @@ class AlertRuntime:
         session: Session,
         *,
         symbol: str,
+        event_frequency: BarFrequency,
         event_bar: CanonicalBar,
     ) -> _RuleResult | None:
         window = self._market_read_factory(session).bars_until(
             SeriesPageQuery(
                 SeriesKind.ACTUAL_DOMINANT,
                 symbol,
-                BarFrequency.M15,
+                event_frequency,
             ),
             trading_day=event_bar.trading_day,
             end=event_bar.bar_end,
             limit=32,
         )
-        if not _window_matches_event(window, symbol=symbol, event_bar=event_bar):
+        if not _window_matches_event(
+            window,
+            symbol=symbol,
+            event_frequency=event_frequency,
+            event_bar=event_bar,
+        ):
             return None
         evaluation = self._htdy_evaluator.evaluate(window)
         if (
@@ -340,7 +557,7 @@ class AlertRuntime:
             return None
         return _RuleResult(
             contract=window.contract,
-            frequency=BarFrequency.M15.value,
+            frequency=event_frequency.value,
             result_codes=evaluation.observation_types,
             lower_tf_confirmation=False,
         )
@@ -419,12 +636,32 @@ class AlertRuntime:
                     select(AlertRule).where(AlertRule.enabled.is_(True))
                 ).all()
                 enabled_rule_count = len(enabled)
-                scope = {
-                    symbol
-                    for rule in enabled
-                    for symbol in (rule.scope_products or [])
-                    if symbol in self._operational_products
-                }
+                service = AlertService(
+                    session,
+                    operational_products=tuple(
+                        sorted(self._operational_products)
+                    ),
+                )
+                scope: set[str] = set()
+                for rule in enabled:
+                    try:
+                        definition = get_alert_rule_definition(rule.rule_code)
+                        rule_scope = {
+                            symbol
+                            for symbol in self._operational_products
+                            if any(
+                                service.rule_allows_event(
+                                    rule,
+                                    symbol=symbol,
+                                    frequency=frequency,
+                                )
+                                for frequency in definition.input_frequencies
+                            )
+                        }
+                    except AlertScopeError:
+                        _LOGGER.warning("ALERT_RULE_SCOPE_INVALID")
+                        continue
+                    scope.update(rule_scope)
             finally:
                 if session.in_transaction():
                     session.rollback()
@@ -618,10 +855,10 @@ def _subing_snapshot_now(
     return None
 
 
-def _parse_event(
+def _parse_live_bar_trigger(
     channel: object,
     payload: object,
-) -> tuple[str, BarFrequency, CanonicalBar] | None:
+) -> _LiveBarTrigger | None:
     try:
         if isinstance(channel, bytes):
             channel = channel.decode("utf-8")
@@ -631,7 +868,7 @@ def _parse_event(
         if len(parts) != 4 or parts[:2] != ["live", "bar"]:
             return None
         frequency = BarFrequency(parts[3])
-        if frequency not in {BarFrequency.M5, BarFrequency.M15}:
+        if frequency not in INTRADAY_FREQUENCIES:
             return None
         symbol = normalize_symbol(parts[2])
         if not symbol:
@@ -664,22 +901,67 @@ def _parse_event(
         )
     except (DecimalException, KeyError, TypeError, ValueError, UnicodeError):
         return None
-    return symbol, frequency, bar
+    return _LiveBarTrigger(symbol=symbol, frequency=frequency, bar=bar)
+
+
+def _parse_canonical_updated_trigger(
+    channel: object,
+    payload: object,
+) -> _CanonicalUpdatedTrigger | None:
+    try:
+        if isinstance(channel, bytes):
+            channel = channel.decode("utf-8")
+        if channel != _MARKET_STATE_PATTERN:
+            return None
+        if isinstance(payload, bytes):
+            payload = payload.decode("utf-8")
+        raw = json.loads(payload) if isinstance(payload, str) else payload
+        if not isinstance(raw, Mapping) or raw.get("reason") != "canonical_updated":
+            return None
+        raw_trading_day = raw.get("trading_day")
+        if not isinstance(raw_trading_day, str):
+            return None
+        trading_day = date.fromisoformat(raw_trading_day)
+        if raw_trading_day != trading_day.isoformat():
+            return None
+    except (TypeError, ValueError, UnicodeError):
+        return None
+    return _CanonicalUpdatedTrigger(trading_day=trading_day)
 
 
 def _window_matches_event(
     window: MarketReadWindow,
     *,
     symbol: str,
+    event_frequency: BarFrequency,
     event_bar: CanonicalBar,
 ) -> bool:
     return bool(
         window.symbol == symbol
         and window.series_kind == "actual_dominant"
-        and window.frequency == "15m"
+        and window.frequency == event_frequency.value
         and window.trading_day == event_bar.trading_day
         and window.cutoff == event_bar.bar_end
         and window.bars
         and window.bars[-1] == event_bar
+        and normalize_contract_for_symbol(symbol, window.contract) == window.contract
+    )
+
+
+def _canonical_window_matches_trigger(
+    window: MarketReadWindow,
+    *,
+    symbol: str,
+    frequency: BarFrequency,
+    trading_day: date,
+) -> bool:
+    return bool(
+        window.symbol == symbol
+        and window.series_kind == "actual_dominant"
+        and window.frequency == frequency.value
+        and window.trading_day == trading_day
+        and window.bars
+        and window.bars[-1].trading_day == trading_day
+        and window.cutoff == window.bars[-1].bar_end
         and normalize_contract_for_symbol(symbol, window.contract) == window.contract
     )

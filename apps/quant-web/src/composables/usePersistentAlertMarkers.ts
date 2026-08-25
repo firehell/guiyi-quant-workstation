@@ -162,7 +162,7 @@ function identityKey(identity: AlertMarkerIdentity | null): string {
 }
 
 function eventKey(event: AlertEventListResponse['items'][number]): string {
-  return `${event.rule_code}:${event.symbol}:${event.bar_end}`
+  return `${event.rule_code}:${event.symbol}:${event.frequency}:${event.bar_end}`
 }
 
 function barRange(bars: BarData[]): { start: string; end: string } {

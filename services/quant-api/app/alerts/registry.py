@@ -29,10 +29,11 @@ class AlertRuleDefinition:
 
 
 HTDY_RULE = AlertRuleDefinition(
+    # Legacy stable database identity; the suffix no longer defines capability.
     rule_code="htdy_original_15m",
     display_name="火天大有",
     kind=AlertRuleKind.INDICATOR_OBSERVATION,
-    input_frequencies=("15m",),
+    input_frequencies=("1m", "5m", "15m", "30m", "60m", "1d", "1w"),
     series_kind="actual_dominant",
 )
 SUBING_RULE = AlertRuleDefinition(

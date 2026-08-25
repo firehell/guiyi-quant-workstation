@@ -211,6 +211,7 @@ function updateMoreOpen(event: Event) {
       <h3>5. 提醒</h3>
       <ProductAlertRules
         :rules="alertRules"
+        :frequency="frequency"
         :runtime-status="alertRuntimeStatus"
         :loading="alertLoading"
         :saving-rule-codes="savingRuleCodes"

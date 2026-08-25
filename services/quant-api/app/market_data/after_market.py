@@ -251,7 +251,12 @@ class AfterMarketUpdater:
         try:
             # A successful Canonical write must notify the Web seam even when the
             # temporary intraday snapshot disagrees with the formal map.
-            self.live_store.publish_state({"trading_day": trading_day.isoformat()})
+            self.live_store.publish_state(
+                {
+                    "trading_day": trading_day.isoformat(),
+                    "reason": "canonical_updated",
+                }
+            )
             if not _rank1_matches_live_snapshot(self.manager, self.live_store, products, trading_day):
                 _LOGGER.warning(
                     "after_market_attempt_failed stage=live_reconciliation attempt=%s "

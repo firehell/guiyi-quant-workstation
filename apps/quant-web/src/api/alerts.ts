@@ -13,6 +13,7 @@ export interface ProductAlertRuleState {
   kind: AlertRuleKind
   input_frequencies: MarketFrequency[]
   enabled_for_product: boolean
+  enabled_frequencies: MarketFrequency[]
 }
 
 export interface ProductAlertStateResponse {
@@ -52,6 +53,18 @@ export function setAlertProductEnabled(
 ) {
   return request.put<never, ProductAlertRuleState>(
     `/api/alerts/rules/${ruleCode}/scope/${symbol}`,
+    { enabled },
+  )
+}
+
+export function setAlertProductFrequencyEnabled(
+  ruleCode: string,
+  symbol: string,
+  frequency: MarketFrequency,
+  enabled: boolean,
+) {
+  return request.put<never, ProductAlertRuleState>(
+    `/api/alerts/rules/${ruleCode}/scope/${symbol}/${frequency}`,
     { enabled },
   )
 }

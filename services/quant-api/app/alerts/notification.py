@@ -137,7 +137,7 @@ def _notification_rule(rule_code: str) -> AlertRuleDefinition:
 
 
 def _format_htdy_message(message: AlertNotificationMessage) -> str:
-    if message.frequency != "15m":
+    if message.frequency not in HTDY_RULE.input_frequencies:
         raise ValueError("ALERT_NOTIFICATION_FREQUENCY_INVALID")
     if message.result_codes == ("buy",):
         observation = "买入观察"
@@ -152,7 +152,7 @@ def _format_htdy_message(message: AlertNotificationMessage) -> str:
         f"【归一量化】{message.symbol.strip().upper()} {message.product_name.strip()}\n\n"
         f"火天大有 · {observation}\n"
         f"主力：{message.contract.strip().upper()}\n"
-        f"15m · {local_time} 收线\n"
+        f"{message.frequency} · {local_time} 收线\n"
         "研究观察，非交易指令"
     )
 

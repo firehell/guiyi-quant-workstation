@@ -70,10 +70,13 @@ owner 发起最多一次 PushPlus 请求；该运维通知不属于 Alert Rule/A
 Alert 代码与 launchd 模板默认关闭。develop 的唯一 active 通知设计为 `pushplus`：
 
 ```text
-htdy_original_15m × 该 Rule 显式 scope_products × htdy_observers × pushplus-wechat-topic
+htdy_original_15m × 该 Rule 显式 symbol-frequency pair Scope × htdy_observers × pushplus-wechat-topic
 +
 subing_entry_signal_v1 × 该 Rule 显式 scope_products × owner × pushplus-wechat
 ```
+
+HTDY 的稳定 Rule code 仍为 `htdy_original_15m`，能力覆盖七个正式周期；唯一 Scope authority 为
+`scope_product_frequencies`。SuBing 继续只认 `scope_products`。两种 Scope authority 不得混用或合并。
 
 HTDY 只发起一次 Topic 请求，Topic 当前成员由 PushPlus 外部管理；owner 与最多三位朋友必须关注
 PushPlus 公众号并扫码加入同一个专用 Topic，创建者也必须加入。SuBing 不传 Topic，只发给消息 token
@@ -82,7 +85,9 @@ PushPlus 公众号并扫码加入同一个专用 Topic，创建者也必须加�
 parent / `0600` file；结构健康检查不联网、不发送。
 
 Alert Application Domain 仍只有 `alert_rules` 与 `alert_events` 两张表；Event 先提交，再最多调用一次
-PushPlus SDK。无逐收件人 DB 状态、retry、queue、replay、backfill、fallback 或订单路径。develop 代码、
+PushPlus SDK。HTDY 日内五周期只消费同周期 completed Live Bar，D1/W1 只响应既有盘后
+`canonical_updated` seam 并读取 Canonical，不新增 scheduler、Scope 表或 Live 日/周聚合。无逐收件人
+DB 状态、retry、queue、replay、backfill、fallback 或订单路径。develop 代码、
 测试或 Topic 配置均不授权 release、真实 canary/send、Scope 变更或 Runtime promotion/switch。Topic 成员
 始终由 operator 在 PushPlus 页面人工核对且不得超过 owner + 三位朋友；成员变化不修改代码，也不扩大
 Rule、Scope、audience 或 transport 授权。当前 production、Runtime、Scope 与待完成 Gate 只看 `STATUS.md`，
@@ -112,7 +117,7 @@ fail-closed 使受监督进程退出/重启。该 Redis observation 不改变 `A
    Canonical/MarketDataService 定义策略、参数、数据、模拟订单、trade、equity 与 lineage 的可复算合同。
    RQAlpha 工作台精确行为只看 `openspec/specs/rqalpha-research-backtest-workbench/spec.md`；Execution
    Review 业务语义只看 `docs/EXECUTION_REVIEW.md`。
-9. live、Runtime promotion/switch、真实通知与微信 autosend 默认关闭；配置缺失、异常、过期或不一致时保持关闭。Market Runtime V1 的 Redis Live Overlay 与盘后 runner 只读取同一个 `operational_products.txt`，且不新增生产表。Alert V2 的 HTDY 保持 event-cutoff；SuBing 只复用已有 Factor/accepted Calibration/FormalPolicy/`SubingReadService` resolver，不复制公式或 same-boundary 规则。SuBing 仅在 incoming Bar 与 current snapshot 的 `bar_end + trading_day` 同一时继续，stale 必须 fail-closed；final Session Bar 只在共享 Live arrival grace 内可见，5m 在同一 15m boundary 按 TradingSession bucket 延后。current trading day 只通过 `MarketPhaseResolver + operational_products.txt` 唯一解析，不可用时 fail-closed。repair、replay、backfill、migration 与 EOD recalculation 不补评或补发历史通知。
+9. live、Runtime promotion/switch、真实通知与微信 autosend 默认关闭；配置缺失、异常、过期或不一致时保持关闭。Market Runtime V1 的 Redis Live Overlay 与盘后 runner 只读取同一个 `operational_products.txt`，且不新增生产表。Alert V2 的 HTDY 保持 current-event cutoff：日内 `1m/5m/15m/30m/60m` 只消费同周期 completed Live Bar，D1/W1 只由 `market:state(reason=canonical_updated)` 读取正式 Canonical；SuBing 只复用已有 Factor/accepted Calibration/FormalPolicy/`SubingReadService` resolver，不复制公式或 same-boundary 规则。SuBing 仅在 incoming Bar 与 current snapshot 的 `bar_end + trading_day` 同一时继续，stale 必须 fail-closed；final Session Bar 只在共享 Live arrival grace 内可见，5m 在同一 15m boundary 按 TradingSession bucket 延后。current trading day 只通过 `MarketPhaseResolver + operational_products.txt` 唯一解析，不可用时 fail-closed。repair、replay、backfill、migration 与 EOD recalculation 不补评或补发历史通知。
 10. `auto_order=false` 适用于所有研究观察与 Runtime 模式。RQAlpha 内部 Order/Trade 只是 simulation-only 回测 artifact，不得连接账户或进入归一量化订单路径；任何创建或提交真实订单的流程都必须拒绝，本项目不实现自动交易。
 11. 数据或指标语义变化时，同一变更更新相应 deep canonical；普通 bug fix、UI 调整和测试增加不自动改写项目状态。
 

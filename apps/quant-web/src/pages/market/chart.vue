@@ -21,6 +21,7 @@ import {
   getProductCurrentAlertEvents,
   getProductAlerts,
   setAlertProductEnabled,
+  setAlertProductFrequencyEnabled,
 } from '@/api/alerts'
 import { useMarketSeries } from '@/composables/useMarketSeries'
 import { useMainForceMirrorV2 } from '@/composables/useMainForceMirrorV2'
@@ -152,9 +153,11 @@ const {
   dispose: disposeProductAlertScope,
 } = useProductAlertScope({
   symbol,
+  frequency,
   fetchProductAlerts: getProductAlerts,
   fetchRuntimeStatus: getAlertRuntimeStatus,
   setProductEnabled: setAlertProductEnabled,
+  setProductFrequencyEnabled: setAlertProductFrequencyEnabled,
   notifyError: (text) => message.error(text),
 })
 const {

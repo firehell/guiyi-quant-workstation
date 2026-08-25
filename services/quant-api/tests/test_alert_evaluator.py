@@ -11,7 +11,8 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from app.alerts.evaluators import AlertEvaluationError, HtdyOriginal15mEvaluator
+from app.alerts import evaluators as evaluator_module
+from app.alerts.evaluators import AlertEvaluationError
 from app.market_data.domain import CanonicalBar
 from app.market_data.market_read_service import MarketReadWindow
 from guiyi_quant.indicators import compute_htdy_original
@@ -32,12 +33,12 @@ def _bar(index: int) -> CanonicalBar:
     )
 
 
-def _window(length: int = 32) -> MarketReadWindow:
+def _window(length: int = 32, *, frequency: str = "15m") -> MarketReadWindow:
     bars = tuple(_bar(index) for index in range(length))
     return MarketReadWindow(
         symbol="j",
         series_kind="actual_dominant",
-        frequency="15m",
+        frequency=frequency,
         trading_day=date(2025, 1, 2),
         contract="J2505",
         cutoff=bars[-1].bar_end,
@@ -45,6 +46,7 @@ def _window(length: int = 32) -> MarketReadWindow:
     )
 
 
+@pytest.mark.parametrize("frequency", ("1m", "5m", "15m", "30m", "60m", "1d", "1w"))
 @pytest.mark.parametrize(
     ("buy", "sell", "expected"),
     (
@@ -56,6 +58,7 @@ def _window(length: int = 32) -> MarketReadWindow:
 )
 def test_evaluator_reads_only_current_bar_observations(
     monkeypatch: pytest.MonkeyPatch,
+    frequency: str,
     buy: bool,
     sell: bool,
     expected: tuple[str, ...],
@@ -73,22 +76,28 @@ def test_evaluator_reads_only_current_bar_observations(
         ),
     )
 
-    assert HtdyOriginal15mEvaluator().evaluate(_window()).observation_types == expected
+    assert (
+        evaluator_module.HtdyOriginalEvaluator()
+        .evaluate(_window(frequency=frequency))
+        .observation_types
+        == expected
+    )
 
 
 @pytest.mark.parametrize(
     "window",
     (
-        replace(_window(), frequency="5m"),
+        replace(_window(), frequency="4h"),
         replace(_window(), series_kind="continuous"),
         _window(31),
+        replace(_window(), cutoff=_window().cutoff + timedelta(minutes=15)),
     ),
 )
 def test_evaluator_fails_closed_for_wrong_identity_or_short_context(
     window: MarketReadWindow,
 ) -> None:
     with pytest.raises(AlertEvaluationError, match="ALERT_EVALUATION_INPUT_INVALID"):
-        HtdyOriginal15mEvaluator().evaluate(window)
+        evaluator_module.HtdyOriginalEvaluator().evaluate(window)
 
 
 def test_evaluator_requires_the_scoped_htdy_alert_policy(
@@ -104,7 +113,34 @@ def test_evaluator_requires_the_scoped_htdy_alert_policy(
     )
 
     with pytest.raises(AlertEvaluationError, match="ALERT_EVALUATION_POLICY_DISABLED"):
-        HtdyOriginal15mEvaluator().evaluate(_window())
+        evaluator_module.HtdyOriginalEvaluator().evaluate(_window())
+
+
+def test_composition_uses_generalized_evaluator_and_keeps_activation_gate(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Catches composition retaining the 15m evaluator or bypassing its marker."""
+    from app.alerts import composition
+
+    marker = tmp_path / "alert-runtime-enabled"
+    monkeypatch.setattr(composition, "ALERT_RUNTIME_ACTIVATION_MARKER", marker)
+    with pytest.raises(RuntimeError, match="ALERT_RUNTIME_NOT_ENABLED"):
+        composition.build_alert_runtime()
+
+    marker.write_text("enabled\n", encoding="utf-8")
+    monkeypatch.setattr(composition, "build_notification_sender_from_env", object)
+    monkeypatch.setattr(composition, "load_operational_products", lambda: ("j",))
+    monkeypatch.setattr(composition, "load_product_taxonomy", dict)
+    monkeypatch.setattr(
+        composition,
+        "get_redis_connection",
+        lambda: SimpleNamespace(pubsub=lambda **_kwargs: object()),
+    )
+
+    runtime = composition.build_alert_runtime()
+
+    assert isinstance(runtime._htdy_evaluator, evaluator_module.HtdyOriginalEvaluator)
 
 
 def test_32_bar_contract_matches_full_history_current_observation() -> None:

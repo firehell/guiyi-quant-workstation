@@ -1,6 +1,6 @@
 # 个人开发与本地验证
 
-更新时间：2026-08-23
+更新时间：2026-08-25
 
 本文定义仓库日常开发与外部副作用边界的唯一流程入口；产品、数据、策略、信号和 Runtime 语义仍由
 `PROJECT_SOURCE.md`、`DECISIONS.md` 及对应 deep canonical 定义。当前可执行产品面以 `STATUS.md` 为准；Execution Review 语义以 `docs/EXECUTION_REVIEW.md` 为准。
@@ -107,13 +107,14 @@ Release/tag 的意图不授权 Runtime/live、通知、数据写入或 GitHub �
 Alert Runtime V2 是另一份独立持续授权，且只列举：
 
 ```text
-htdy_original_15m × 该 Rule 显式 scope_products × htdy_observers × pushplus-wechat-topic
+htdy_original_15m × 该 Rule 显式 symbol-frequency pair Scope × htdy_observers × pushplus-wechat-topic
 +
 subing_entry_signal_v1 × 该 Rule 显式 scope_products × owner × pushplus-wechat
 ```
 
 用户必须先对识别出的本地工作站明确执行 V2 Runtime promotion，目标 Scope 还必须已获得精确 Rule +
-Product + audience + transport 授权；开启成功后只允许该精确范围的后续自然事件持续创建 Event
+Product + audience + transport 授权；HTDY 还必须精确到 frequency，SuBing 仍是 product-level。开启成功后
+只允许该精确范围的后续自然事件持续创建 Event
 并通过 PushPlus SDK 尝试一次请求。HTDY 的 Topic 成员在 PushPlus 外部人工管理，SuBing 保持 owner-only；
 同步 shortCode 不代表送达。当前 production Scope、audience、transport 与运行状态只看 `STATUS.md`；
 未来第三条 Rule 不继承授权。该授权不从 Market Runtime、既有
@@ -129,7 +130,8 @@ Scope/owner/transport 变更、真实 canary/send 和 rollback 都必须分别�
   Execution Review 或 Runtime；其结果不替代 Canonical/OOS 正式 evidence。
 - 旧 Signal/Review/Strategy 应用链已经退役；Alert V2 两表与 Execution Review 四表是不同的独立
   Application Domain，均不属于且不改变八表 Market Catalog，不得恢复旧事件表、RQ worker 或历史补发路径。
-- HTDY 继续使用 event-cutoff；SuBing 只复用 Factor/accepted Calibration/FormalPolicy/
+- HTDY 继续使用 current-event cutoff：日内五周期只消费同周期 completed Live Bar，D1/W1 只响应
+  `canonical_updated` 并读取正式 Canonical，不从 Live 聚合日/周；SuBing 只复用 Factor/accepted Calibration/FormalPolicy/
   `SubingReadService` resolver，stale identity fail-closed，final Session Bar 仅在共享 arrival grace
   内可见，5m 在 15m boundary 按 TradingSession bucket 延后。current trading day 只由
   `MarketPhaseResolver + operational products` 唯一解析，不可用时 fail-closed。

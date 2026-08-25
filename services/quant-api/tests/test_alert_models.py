@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import Boolean, CheckConstraint, Date, Index, UniqueConstraint
+from sqlalchemy import Boolean, CheckConstraint, Date, Index, JSON, UniqueConstraint
 from sqlalchemy.dialects.postgresql import ARRAY
 
 
@@ -14,12 +14,17 @@ def test_alert_rule_uses_application_domain_columns_and_array_scope() -> None:
         "rule_code",
         "enabled",
         "scope_products",
+        "scope_product_frequencies",
         "created_at",
         "updated_at",
     }
     assert table.c.rule_code.unique is True
     assert isinstance(table.c.scope_products.type, ARRAY)
     assert table.c.scope_products.nullable is False
+    assert isinstance(table.c.scope_product_frequencies.type, JSON)
+    assert table.c.scope_product_frequencies.nullable is False
+    assert table.c.scope_product_frequencies.default is not None
+    assert table.c.scope_product_frequencies.default.arg(None) == {}
     assert _check_names(table) == set()
 
 
@@ -50,9 +55,12 @@ def test_alert_event_enforces_identity_fk_and_range_index() -> None:
     assert table.c.lower_tf_confirmation.nullable is False
     assert table.c.lower_tf_confirmation.default.arg is False
     assert {fk.target_fullname for fk in table.c.rule_id.foreign_keys} == {"alert_rules.id"}
-    assert _unique_columns(table, "uq_alert_events_rule_symbol_bar_end") == (
+    assert _unique_columns(
+        table, "uq_alert_events_rule_symbol_frequency_bar_end"
+    ) == (
         "rule_id",
         "symbol",
+        "frequency",
         "bar_end",
     )
     assert _index_columns(table, "ix_alert_events_symbol_bar_end") == (

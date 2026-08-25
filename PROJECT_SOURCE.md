@@ -1,6 +1,6 @@
 # 归一量化项目事实源
 
-更新时间：2026-08-24
+更新时间：2026-08-25
 
 ## 稳定产品边界
 
@@ -147,9 +147,20 @@ Exact protocol、window、hash、row/cell count 与 artifact identity 只保存�
 
 ## Alert V2 稳定边界
 
-Alert Code Registry 只含 `htdy_original_15m` 与 `subing_entry_signal_v1`。HTDY 复用 event-cutoff
-Historical window；SuBing 只消费现有 `SubingReadService` 的 current-rank1 segment-local
-`resolved_signal`，不复制 Factor、Calibration、FormalPolicy 或 same-boundary resolver。
+Alert Code Registry 只含 `htdy_original_15m` 与 `subing_entry_signal_v1`。HTDY 稳定 Rule code 保持 `htdy_original_15m`；
+其 capability 为 `1m/5m/15m/30m/60m/1d/1w`，名称中的 `15m` 不再表示能力范围。
+HTDY 唯一 Scope authority 为 `scope_product_frequencies`，按 exact `symbol + frequency` 授权；SuBing
+唯一 Scope authority 为 `scope_products`，仍按品种授权。任一 Rule 同时出现两种非空 Scope 必须
+fail-closed，不做 union 或 fallback。
+
+AlertEvent 通用存储唯一键为 `(rule_id, symbol, frequency, bar_end)`；HTDY 的业务 Event identity 同样
+包含 frequency，因此同一品种同一时点的不同周期可以分别保存。SuBing 的业务 Event identity 保持
+`rule_id + symbol + bar_end`，继续由 `AlertService` 阻止同一 Bar 的跨周期或内容漂移。
+
+HTDY 日内 `1m/5m/15m/30m/60m` 复用同周期 completed Live event-cutoff；D1/W1 只由
+`market:state(reason=canonical_updated)` 触发并读取正式 Canonical，不从 Live 1m 聚合，也不新增第二套
+scheduler。SuBing 只消费现有 `SubingReadService` 的 current-rank1 segment-local `resolved_signal`，
+不复制 Factor、Calibration、FormalPolicy 或 same-boundary resolver。
 
 incoming completed Bar 与 current snapshot 的 `bar_end + trading_day` 不同一、当前交易日不能由
 `MarketPhaseResolver + operational_products.txt` 唯一解析，或 Live arrival identity 不完整时
@@ -157,7 +168,8 @@ fail-closed。5m/15m 同 boundary 继续服从 TradingSession bucket 与既有 r
 
 AlertEvent 先提交，随后最多调用一次 transport。HTDY 路由到 topic audience，SuBing 路由到 owner；
 provider 接受不等于微信最终送达。无 replay、backfill、retry、outbox、queue、逐人 fan-out、fallback
-或订单路径。Git 外配置只含 transport 所需秘密，权限异常时 fail-closed。
+或订单路径；D1/W1 stale trading day 不补发。Git 外配置只含 transport 所需秘密，权限异常时
+fail-closed。
 
 Alert Runtime 额外在无 TTL Redis key `alert:runtime-status` 保存 schema v1 observation：最后已处理
 Bar、processing success/failure、Event、transport attempt、provider acceptance、notification failure 时点，以及两类
