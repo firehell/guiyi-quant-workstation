@@ -41,6 +41,7 @@ import type {
 import type { EventState } from '@/types/executionReview'
 import { MARKET_FREQUENCIES } from '@/types/market'
 import { lifecycleSnapshotToMarkers } from '@/utils/subingLifecycleMarkers'
+import { ALERT_RULE_CODES } from '@/utils/alertRules'
 import { mergeKlineMarkers } from '@/utils/alertMarkers'
 import { buildKlineDerivedData } from '@/utils/klineViewModel'
 import {
@@ -149,7 +150,8 @@ const {
   alertLoading,
   savingRuleCodes,
   refresh: refreshAlerts,
-  toggle: toggleAlert,
+  toggleSubingProduct,
+  toggleHtdyCurrentFrequency,
   dispose: disposeProductAlertScope,
 } = useProductAlertScope({
   symbol,
@@ -559,6 +561,16 @@ function openFormalEvent(event: import('@/types/market').AlertEvent, state: Even
   })
 }
 
+function toggleSubingAlert(ruleCode: string, enabled: boolean) {
+  if (selectedOverlay.value !== 'subing' || ruleCode !== ALERT_RULE_CODES.SUBING) return
+  void toggleSubingProduct(ruleCode, enabled)
+}
+
+function toggleHtdyAlert(ruleCode: string, enabled: boolean) {
+  if (selectedOverlay.value !== 'htdy' || ruleCode !== ALERT_RULE_CODES.HTDY) return
+  void toggleHtdyCurrentFrequency(ruleCode, enabled)
+}
+
 async function toggleFullscreen() {
   if (!workspaceElement.value) return
   try {
@@ -711,7 +723,8 @@ function normalizeSymbol(value: unknown): string | null {
               :current-events="currentEvents"
               :current-event-states="currentEventStates"
               :htdy-observation="latestHtdyObservation"
-              @toggle-alert="toggleAlert"
+              @toggle-subing-alert="toggleSubingAlert"
+              @toggle-htdy-alert="toggleHtdyAlert"
               @open-formal-event="openFormalEvent"
             />
           </div>
@@ -747,7 +760,8 @@ function normalizeSymbol(value: unknown): string | null {
           :current-events="currentEvents"
           :current-event-states="currentEventStates"
           :htdy-observation="latestHtdyObservation"
-          @toggle-alert="toggleAlert"
+          @toggle-subing-alert="toggleSubingAlert"
+          @toggle-htdy-alert="toggleHtdyAlert"
           @open-formal-event="openFormalEvent"
         />
       </NDrawerContent>

@@ -10,7 +10,6 @@ import {
   alertRuleShortLabel,
 } from '../src/utils/alertRules.ts'
 
-const todayEventsSource = readFileSync(new URL('../src/components/market/ProductTodayAlertEvents.vue', import.meta.url), 'utf-8')
 const chartSource = readFileSync(new URL('../src/pages/market/chart.vue', import.meta.url), 'utf-8')
 const sidebarSource = readFileSync(new URL('../src/components/market/ProductCheckSidebar.vue', import.meta.url), 'utf-8')
 
@@ -80,11 +79,6 @@ test('preserves the backend bar_end descending order', async () => {
   state.dispose()
 })
 
-test('uses a stable safe fallback for an unknown current-event rule', () => {
-  assert.match(todayEventsSource, /alertRuleShortLabel\(ruleCode\)/)
-  assert.match(todayEventsSource, /v-for="item in items"/)
-})
-
 test('does not infer a formal or observation result for an unknown current-event rule', () => {
   const unknown = eventWith({ rule_code: 'future_rule', result_codes: ['buy'] })
 
@@ -125,13 +119,6 @@ test('derives the sidebar HTDY observation from the latest existing HTDY marker'
   assert.match(sidebarSource, /htdyObservation: KlineMarker \| null/)
   assert.match(sidebarSource, /v-if="htdyObservation"/)
   assert.match(sidebarSource, /htdyObservationLabel\(htdyObservation\)/)
-})
-
-test('keeps the current formal section sourced from recorded AlertEvents', () => {
-  assert.match(sidebarSource, /summarizeFormalEvent\(props\.currentEvents, props\.currentEventStates\)/)
-  assert.match(sidebarSource, /data-testid="product-check-now"/)
-  assert.match(sidebarSource, /v-else-if="formalEvent"/)
-  assert.match(sidebarSource, /今日正式提醒记录/)
 })
 
 function event(id: number): AlertEvent {

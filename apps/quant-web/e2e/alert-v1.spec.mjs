@@ -145,14 +145,17 @@ test('persistent Alert V2 markers stay exact-frequency and actual-dominant only'
   const sidebar = page.locator('.product-workspace__sidebar')
   await expect(sidebar).toBeVisible()
   await expect(sidebar.getByTestId('product-check-now')).toBeVisible()
-  await expect(sidebar.getByTestId('product-alert-rules')).toBeVisible()
+  await expect(sidebar.getByTestId('subing-panel')).toHaveCount(1)
+  await expect(sidebar.getByTestId('product-alert-rules')).toHaveCount(0)
   await expect(sidebar.getByTestId('product-check-more')).not.toHaveAttribute('open')
-  expect(await sidebar.locator('[data-testid="product-check-now"], [data-testid="product-check-alerts"], [data-testid="product-check-more"]').evaluateAll((nodes) => (
+  expect(await sidebar.locator('[data-testid="product-check-now"], [data-testid="product-check-observation"], [data-testid="product-check-more"]').evaluateAll((nodes) => (
     nodes.every((node, index) => index === 0 || Boolean(nodes[index - 1].compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING))
   ))).toBe(true)
   await sidebar.getByTestId('product-check-more').locator('summary').click()
-  await expect(sidebar.getByTestId('product-today-alert-events')).toBeVisible()
+  await expect(sidebar.getByTestId('product-today-alert-events')).toHaveCount(0)
   await page.getByRole('group', { name: 'Overlay' }).getByRole('button', { name: '火天大有', exact: true }).click()
+  await expect(sidebar.getByTestId('subing-panel')).toHaveCount(0)
+  await expect(sidebar.getByTestId('product-alert-rules')).toBeVisible()
   await page.getByRole('button', { name: '真实主力', exact: true }).click()
   await expect(page.getByTestId('htdy-chart-legend')).toBeVisible()
   await expect(page.getByText('当前序列或周期不支持该 Overlay')).toHaveCount(0)
@@ -220,7 +223,7 @@ test('persistent Alert V2 markers stay exact-frequency and actual-dominant only'
   expect(requests).toHaveLength(eventRequestCount)
 })
 
-test('single HTDY switch mutates only the current JM frequency', async ({ page }) => {
+test('SuBing product and HTDY pair switches preserve separate Scope semantics', async ({ page }) => {
   await page.setViewportSize({ width: 1680, height: 1000 })
   const frequencies = ['1m', '5m', '15m', '30m', '60m', '1d', '1w']
   const barsByFrequency = {
@@ -228,6 +231,7 @@ test('single HTDY switch mutates only the current JM frequency', async ({ page }
     '15m': bars('15m'),
   }
   const enabledFrequencies = new Set(['15m'])
+  let subingEnabled = false
   const scopePuts = []
 
   await page.route('**/api/v1/market/**', async (route) => {
@@ -288,8 +292,19 @@ test('single HTDY switch mutates only the current JM frequency', async ({ page }
     const url = new URL(route.request().url())
     if (route.request().method() === 'PUT') {
       const enabled = route.request().postDataJSON().enabled
-      const frequency = url.pathname.split('/').at(-1)
       scopePuts.push({ path: url.pathname, enabled })
+      if (url.pathname.endsWith('/rules/subing_entry_signal_v1/scope/jm')) {
+        subingEnabled = enabled
+        return route.fulfill({ json: {
+          rule_code: 'subing_entry_signal_v1',
+          display_name: '苏冰入场信号',
+          kind: 'formal_signal',
+          input_frequencies: ['5m', '15m'],
+          enabled_for_product: subingEnabled,
+          enabled_frequencies: [],
+        } })
+      }
+      const frequency = url.pathname.split('/').at(-1)
       if (enabled) enabledFrequencies.add(frequency)
       else enabledFrequencies.delete(frequency)
       return route.fulfill({ json: {
@@ -318,6 +333,14 @@ test('single HTDY switch mutates only the current JM frequency', async ({ page }
         enabled_for_product: false,
         enabled_frequencies: [],
       },
+      {
+        rule_code: 'future_rule',
+        display_name: '未来错误 Rule',
+        kind: 'formal_signal',
+        input_frequencies: ['5m'],
+        enabled_for_product: true,
+        enabled_frequencies: [],
+      },
     ] } })
     if (url.pathname.endsWith('/current-events')) {
       return route.fulfill({ json: { status: 'ready', trading_day: '2026-08-13', items: [] } })
@@ -333,31 +356,50 @@ test('single HTDY switch mutates only the current JM frequency', async ({ page }
   const periods = page.getByRole('group', { name: '周期' })
   const overlays = page.getByRole('group', { name: 'Overlay' })
 
+  const subingScope = sidebar.getByTestId('subing-alert-scope')
+  const subingSwitch = subingScope.getByRole('switch')
+  await expect(sidebar).not.toContainText('未来错误 Rule')
+  await expect(subingScope.getByRole('switch')).toHaveCount(1)
+  await expect(subingSwitch).not.toBeChecked()
+  expect(scopePuts).toEqual([])
+  await subingSwitch.click()
+  await expect(subingSwitch).toBeChecked()
+  expect(scopePuts).toEqual([
+    { path: '/api/alerts/rules/subing_entry_signal_v1/scope/jm', enabled: true },
+  ])
+
+  const putCountBeforeJdj = scopePuts.length
+  await overlays.getByRole('button', { name: '日进斗金策略', exact: true }).click()
+  await expect(sidebar).toContainText('Reference only')
+  await expect(sidebar.getByRole('switch')).toHaveCount(0)
+  expect(scopePuts).toHaveLength(putCountBeforeJdj)
+  await overlays.getByRole('button', { name: '火天大有', exact: true }).click()
+
   await expect(htdyRow).toContainText('火天大有 · 15m')
   await expect(htdySwitch).toBeChecked()
-  expect(scopePuts).toEqual([])
+  expect(scopePuts).toHaveLength(1)
 
   await periods.getByRole('button', { name: '5m', exact: true }).click()
   await expect(htdyRow).toContainText('火天大有 · 5m')
   await expect(htdySwitch).not.toBeChecked()
-  expect(scopePuts).toEqual([])
+  expect(scopePuts).toHaveLength(1)
 
   await htdySwitch.click()
   await expect(htdySwitch).toBeChecked()
-  expect(scopePuts).toEqual([
+  expect(scopePuts.filter((item) => item.path.includes('htdy_original_15m'))).toEqual([
     { path: '/api/alerts/rules/htdy_original_15m/scope/jm/5m', enabled: true },
   ])
 
   await periods.getByRole('button', { name: '15m', exact: true }).click()
   await expect(htdyRow).toContainText('火天大有 · 15m')
   await expect(htdySwitch).toBeChecked()
-  expect(scopePuts).toHaveLength(1)
+  expect(scopePuts.filter((item) => item.path.includes('htdy_original_15m'))).toHaveLength(1)
 
   await periods.getByRole('button', { name: '5m', exact: true }).click()
   await expect(htdySwitch).toBeChecked()
   await htdySwitch.click()
   await expect(htdySwitch).not.toBeChecked()
-  expect(scopePuts).toEqual([
+  expect(scopePuts.filter((item) => item.path.includes('htdy_original_15m'))).toEqual([
     { path: '/api/alerts/rules/htdy_original_15m/scope/jm/5m', enabled: true },
     { path: '/api/alerts/rules/htdy_original_15m/scope/jm/5m', enabled: false },
   ])

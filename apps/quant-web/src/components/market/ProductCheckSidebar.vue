@@ -1,16 +1,12 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { NButton, NTag } from 'naive-ui'
+import { NTag } from 'naive-ui'
 import PriceVolumeOiPanel from '@/components/market/PriceVolumeOiPanel.vue'
 import ProductAlertRules from '@/components/market/ProductAlertRules.vue'
-import ProductTodayAlertEvents from '@/components/market/ProductTodayAlertEvents.vue'
-import SubingResearchSection from '@/components/market/SubingResearchSection.vue'
+import SubingPanel from '@/components/market/SubingPanel.vue'
 import type { AlertRuntimeStatus, ProductAlertRuleState } from '@/api/alerts'
 import type { EventState } from '@/types/executionReview'
 import {
-  subingLifecycleProgressLabel,
-  subingLifecycleStageLabel,
-  subingSignalLabel,
   type AlertEvent,
   type DominantContractItem,
   type KlineMarker,
@@ -18,10 +14,10 @@ import {
   type ProductResearchResponse,
   type ResearchOverlayId,
   type SeriesKind,
-  type SubingFactorSnapshot,
   type SubingResearchResponse,
 } from '@/types/market'
-import { summarizeFormalEvent, summarizeMarketBackground } from '@/utils/productCheck'
+import { ALERT_RULE_CODES } from '@/utils/alertRules'
+import { summarizeMarketBackground } from '@/utils/productCheck'
 
 const props = defineProps<{
   dominant: DominantContractItem | undefined
@@ -52,20 +48,35 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  'toggle-alert': [ruleCode: string, enabled: boolean]
+  'toggle-subing-alert': [ruleCode: string, enabled: boolean]
+  'toggle-htdy-alert': [ruleCode: string, enabled: boolean]
   'open-formal-event': [event: AlertEvent, state: EventState | null]
 }>()
 
-const formalEvent = computed(() => summarizeFormalEvent(props.currentEvents, props.currentEventStates))
 const moreOpen = ref(false)
 const background = computed(() => props.research
   ? summarizeMarketBackground(props.research.daily_trend, props.research.weekly_trend)
   : null)
-const subingSignal = computed(() => props.subing?.resolved_signal ?? props.subing?.primary_signal ?? null)
+const subingEvents = computed(() => props.currentEvents.filter((event) => (
+  event.rule_code === ALERT_RULE_CODES.SUBING
+)))
+const subingRules = computed(() => props.alertRules.filter((rule) => (
+  rule.rule_code === ALERT_RULE_CODES.SUBING
+)))
 const seriesLabel = computed(() => {
   if (props.seriesKind === 'actual_dominant') return '真实主力'
   if (props.seriesKind === 'continuous') return '主连'
   return '指定合约'
+})
+const overlayLabel = computed(() => {
+  switch (props.selectedOverlay) {
+    case 'none': return '当前未选择策略观察'
+    case 'subing': return '苏冰品种研究'
+    case 'n_structure': return 'N 字结构研究'
+    case 'jdj': return '日进斗金 Candidate 研究'
+    case 'jdj_strategy': return '日进斗金策略参考'
+    case 'htdy': return '火天大有观察'
+  }
 })
 
 function trendLabel(value: ProductResearchResponse['daily_trend']) {
@@ -78,35 +89,6 @@ function percent(value: number | null) {
 
 function ratio(value: number | null) {
   return value === null ? '—' : `${value.toFixed(2)}x`
-}
-
-function factorDirection(snapshot: SubingFactorSnapshot | null | undefined) {
-  if (!snapshot) return '—'
-  return snapshot.price_side === 'above' ? '↑' : snapshot.price_side === 'below' ? '↓' : '→'
-}
-
-function subingDirections() {
-  const primary = props.subing?.primary.snapshot
-  const companion = props.subing?.companion?.snapshot
-  if (!primary) return ''
-  const primaryLabel = `${primary.timeframe} ${factorDirection(primary)}`
-  if (!companion) return primaryLabel
-  const resonance = primary.price_side === companion.price_side ? '同向' : '分歧'
-  return `${primaryLabel} / ${companion.timeframe} ${factorDirection(companion)} · ${resonance}`
-}
-
-function subingSignalSummary() {
-  if (!subingSignal.value || !props.subing) return ''
-  const timeframe = subingSignal.value.trigger_timeframe ?? props.subing.frequency
-  const confirmation = subingSignal.value.lower_tf_confirmation ? ' · 低周期确认' : ''
-  return `${timeframe} · ${subingSignalLabel(subingSignal.value)}${confirmation}`
-}
-
-function lifecycleProgress() {
-  const lifecycle = props.subing?.lifecycle
-  if (!lifecycle || lifecycle.availability !== 'ready') return '当前不可用'
-  const progress = subingLifecycleProgressLabel(lifecycle)
-  return `${subingLifecycleStageLabel(lifecycle.stage)}${progress === '—' ? '' : ` · ${progress}`}`
 }
 
 function htdyObservationLabel(marker: KlineMarker) {
@@ -139,23 +121,8 @@ function updateMoreOpen(event: Event) {
 
     <section class="product-check-sidebar__section" data-testid="product-check-now">
       <h3>1. 现在</h3>
-      <p v-if="currentEventsLoading">正在读取正式事件…</p>
-      <p v-else-if="currentEventsStatus === 'unavailable'" class="product-check-sidebar__warning">正式事件暂不可用</p>
-      <template v-else-if="formalEvent">
-        <strong>{{ formalEvent.headline }}</strong>
-        <NButton
-          v-if="formalEvent.actionLabel"
-          size="small"
-          type="primary"
-          @click="emit('open-formal-event', formalEvent.event, formalEvent.state)"
-        >{{ formalEvent.actionLabel }}</NButton>
-        <p v-else>今日正式提醒记录</p>
-      </template>
-      <template v-else-if="currentEventsStatus === 'ready'">
-        <strong>当前无正式事件</strong>
-        <p>继续观察</p>
-      </template>
-      <p v-else>正式事件尚未读取</p>
+      <strong>{{ overlayLabel }}</strong>
+      <p>当前 Overlay 仅决定研究呈现，不触发 Alert 写入。</p>
     </section>
 
     <section class="product-check-sidebar__section" data-testid="product-check-background">
@@ -174,24 +141,47 @@ function updateMoreOpen(event: Event) {
     <section class="product-check-sidebar__section" data-testid="product-check-observation">
       <h3>3. 当前观察</h3>
       <p v-if="selectedOverlay === 'none'">当前未选择策略观察</p>
-      <template v-else-if="selectedOverlay === 'subing'">
-        <p v-if="!subingSupported" class="product-check-sidebar__warning">苏冰当前周期不可用，仅支持 5m / 15m / 1d</p>
-        <p v-else-if="subingLoading">苏冰观察加载中</p>
-        <p v-else-if="subingError || !subing" class="product-check-sidebar__warning">苏冰观察暂不可用；K 线保留当前展示行情</p>
-        <p v-else-if="subing.primary.status !== 'ready' || !subing.primary.snapshot" class="product-check-sidebar__warning">苏冰 · 指标 warm-up 中 / 数据不足</p>
-        <template v-else>
-          <strong>苏冰 · {{ subingSignalSummary() }}</strong>
-          <p>{{ subingDirections() }}</p>
-          <div class="product-check-sidebar__lifecycle">
-            <span>Lifecycle · {{ lifecycleProgress() }}</span>
-            <NTag size="small" type="info">Research only</NTag>
-          </div>
-        </template>
+      <SubingPanel
+        v-else-if="selectedOverlay === 'subing'"
+        :snapshot="subing"
+        :supported="subingSupported"
+        :loading="subingLoading"
+        :error="subingError"
+        :event-loading="currentEventsLoading"
+        :event-status="currentEventsStatus"
+        :current-events="subingEvents"
+        :current-event-states="currentEventStates"
+        :rules="subingRules"
+        :runtime-status="alertRuntimeStatus"
+        :alert-loading="alertLoading"
+        :saving-rule-codes="savingRuleCodes"
+        @open-formal-event="(event, state) => emit('open-formal-event', event, state)"
+        @toggle-subing-alert="(ruleCode, enabled) => emit('toggle-subing-alert', ruleCode, enabled)"
+      />
+      <template v-else-if="selectedOverlay === 'n_structure'">
+        <strong>N 字结构历史研究</strong>
+        <p>Research-only 历史标记，无 Alert Scope。</p>
       </template>
-      <template v-else>
+      <template v-else-if="selectedOverlay === 'jdj'">
+        <strong>日进斗金 Candidate 历史研究</strong>
+        <p>Candidate 标记只读展示，无 Alert Scope。</p>
+      </template>
+      <template v-else-if="selectedOverlay === 'jdj_strategy'">
+        <strong>日进斗金策略 · Reference only</strong>
+        <p>历史因果重放只读展示 reference action，不提供 Alert 开关。</p>
+      </template>
+      <template v-else-if="selectedOverlay === 'htdy'">
         <strong v-if="htdyObservation">火天大有 · {{ htdyObservationLabel(htdyObservation) }} · {{ observationTime(htdyObservation.time) }}</strong>
         <p v-else>火天大有暂无当前观察</p>
         <p class="product-check-sidebar__warning">原始观察可能重绘，仅供人工观察</p>
+        <ProductAlertRules
+          :rules="alertRules"
+          :frequency="frequency"
+          :runtime-status="alertRuntimeStatus"
+          :loading="alertLoading"
+          :saving-rule-codes="savingRuleCodes"
+          @toggle="(ruleCode, enabled) => emit('toggle-htdy-alert', ruleCode, enabled)"
+        />
       </template>
     </section>
 
@@ -207,18 +197,6 @@ function updateMoreOpen(event: Event) {
       </dl>
     </section>
 
-    <section class="product-check-sidebar__section" data-testid="product-check-alerts">
-      <h3>5. 提醒</h3>
-      <ProductAlertRules
-        :rules="alertRules"
-        :frequency="frequency"
-        :runtime-status="alertRuntimeStatus"
-        :loading="alertLoading"
-        :saving-rule-codes="savingRuleCodes"
-        @toggle="(ruleCode, enabled) => emit('toggle-alert', ruleCode, enabled)"
-      />
-    </section>
-
     <details
       class="product-check-sidebar__more"
       data-testid="product-check-more"
@@ -226,19 +204,6 @@ function updateMoreOpen(event: Event) {
     >
       <summary>6. 更多研究</summary>
       <div v-if="moreOpen" class="product-check-sidebar__more-content">
-        <SubingResearchSection
-          v-if="selectedOverlay === 'subing'"
-          :snapshot="subing"
-          :loading="subingLoading"
-          :error="subingError"
-          :supported="subingSupported"
-        />
-        <ProductTodayAlertEvents
-          :loading="currentEventsLoading"
-          :status="currentEventsStatus"
-          :items="currentEvents"
-          :rules="alertRules"
-        />
         <PriceVolumeOiPanel v-if="research" :daily="research.recent_daily" />
         <p v-else-if="researchError" class="product-check-sidebar__warning">研究数据暂不可用；K 线保留当前展示行情。</p>
         <section>
@@ -273,7 +238,6 @@ function updateMoreOpen(event: Event) {
 .product-check-sidebar__facts > div { display: flex; align-items: start; justify-content: space-between; gap: 10px; min-width: 0; }
 .product-check-sidebar__facts dt { color: var(--gy-text-muted); font-size: var(--gy-font-size-sm); }
 .product-check-sidebar__facts dd { margin: 0; min-width: 0; font-family: var(--gy-font-mono); font-size: var(--gy-font-size-sm); overflow-wrap: anywhere; text-align: right; }
-.product-check-sidebar__lifecycle { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--gy-text-secondary); font-size: var(--gy-font-size-sm); }
 .product-check-sidebar__tone--up { color: var(--gy-up); }
 .product-check-sidebar__tone--down { color: var(--gy-down); }
 .product-check-sidebar__tone--warning { color: var(--gy-status-warning); }

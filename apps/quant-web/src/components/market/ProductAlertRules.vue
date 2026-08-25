@@ -4,7 +4,7 @@ import { NSpin, NSwitch, NTag } from 'naive-ui'
 import type { ProductAlertRuleState } from '@/api/alerts'
 import type { MarketFrequency } from '@/types/market'
 import { alertRuntimeLabel, type AlertRuntimeStatus } from '@/utils/alertControl'
-import { ALERT_RULE_CODES, ALERT_RULE_PRESENTATIONS } from '@/utils/alertRules'
+import { ALERT_RULE_CODES } from '@/utils/alertRules'
 
 const props = defineProps<{
   rules: ProductAlertRuleState[]
@@ -23,36 +23,26 @@ const runtimeTagType = computed(() => props.runtimeStatus === 'ok'
   ? 'success'
   : props.runtimeStatus === 'disabled' ? 'default' : 'warning')
 
-const rows = computed(() => ALERT_RULE_PRESENTATIONS.map((presentation) => {
-  const rule = props.rules.find((item) => item.rule_code === presentation.ruleCode) ?? null
-  const htdy = presentation.ruleCode === ALERT_RULE_CODES.HTDY
-  return {
-    ruleCode: presentation.ruleCode,
-    label: rule
-      ? htdy
-        ? `${rule.display_name} · ${props.frequency}`
-        : `${rule.display_name} · ${rule.input_frequencies.join('/')}`
-      : presentation.shortLabel,
-    value: rule
-      ? htdy
-        ? rule.enabled_frequencies.includes(props.frequency)
-        : rule.enabled_for_product
-      : false,
-    rule,
-  }
-}))
+const htdyRule = computed(() => (
+  props.rules.find((rule) => rule.rule_code === ALERT_RULE_CODES.HTDY) ?? null
+))
+const label = computed(() => {
+  const rule = htdyRule.value
+  return rule ? `${rule.display_name} · ${props.frequency}` : '火天大有（不可用）'
+})
+const enabled = computed(() => htdyRule.value?.enabled_frequencies.includes(props.frequency) ?? false)
 </script>
 
 <template>
   <section class="product-alert-rules" data-testid="product-alert-rules">
     <NSpin :show="loading" size="small">
-      <div v-for="row in rows" :key="row.ruleCode" class="product-alert-rules__row">
-        <span>{{ row.rule ? row.label : `${row.label}（不可用）` }}</span>
+      <div class="product-alert-rules__row">
+        <span>{{ label }}</span>
         <NSwitch
-          :value="row.value"
-          :disabled="!row.rule || loading || savingRuleCodes.has(row.ruleCode)"
-          :loading="savingRuleCodes.has(row.ruleCode)"
-          @update:value="emit('toggle', row.ruleCode, $event)"
+          :value="enabled"
+          :disabled="!htdyRule || loading || savingRuleCodes.has(ALERT_RULE_CODES.HTDY)"
+          :loading="savingRuleCodes.has(ALERT_RULE_CODES.HTDY)"
+          @update:value="emit('toggle', ALERT_RULE_CODES.HTDY, $event)"
         />
       </div>
       <div class="product-alert-rules__row">
