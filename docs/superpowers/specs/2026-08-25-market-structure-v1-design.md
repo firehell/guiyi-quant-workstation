@@ -1,6 +1,6 @@
 # Market Structure V1 Design Spec
 
-**Status:** Proposed — revised after independent review; awaiting re-review  
+**Status:** Reviewed — ready for implementation planning  
 **Date:** 2026-08-25  
 **Target branch:** `research/market-structure-v1`  
 **Base:** `develop@ad30633da59668f5d9a3496238c4c15ec72e7aab`  
@@ -469,7 +469,7 @@ The mapping is mutually exclusive:
 | logical/physical segment unresolved or conflicting | unavailable | `segment_unresolved` or `ambiguous_current_segment` |
 | complete valid coverage below raw detection minimum | insufficient | `insufficient_bars` |
 | after full-series calculation structure is not ready, and a necessary filtered candidate was unavailable only because ATR warm-up was missing | insufficient | `atr_warmup_insufficient` |
-| full valid calculation lacks two highs or two lows | insufficient | `structure_seed_incomplete` |
+| otherwise, full valid calculation lacks two highs or two lows | insufficient | `structure_seed_incomplete` |
 | complete valid structure | ready | null |
 
 Tick, policy, invalid-bar, and time failures are unavailable when discovered during row calculation. `invalid_confirmed_range` is only `range_position.field_reason` / `breakout_state.field_reason`. Invalid client identity/policy/window/time is a 4xx before calculation. Expected insufficiency is never HTTP 500. Unexpected internal failures are logged without credentials or raw sensitive payloads and return a bounded 5xx.
