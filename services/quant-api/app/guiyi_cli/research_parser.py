@@ -13,8 +13,6 @@ RESEARCH_COMMAND_NAMES = (
     "jdj-1m",
     "candidate-validation",
     "candidate-robustness",
-    "candidate-dossier",
-    "candidate-relationships",
 )
 
 
@@ -91,20 +89,6 @@ def add_research_commands(
             "multi_candidate_robustness_v1",
             "jdj_active60_robustness_v1",
         ),
-        required=True,
-    )
-
-    dossier = commands.add_parser("candidate-dossier")
-    dossier.add_argument(
-        "--protocol",
-        choices=("five_candidate_research_dossier_v1",),
-        required=True,
-    )
-
-    relationships = commands.add_parser("candidate-relationships")
-    relationships.add_argument(
-        "--protocol",
-        choices=("five_candidate_relationship_topology_v1",),
         required=True,
     )
 
