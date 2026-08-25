@@ -8,22 +8,22 @@
   `v1.8.3@9ca18afc9b056d413ee8cac56a056b7d7df078b4`；annotated tag object 为
   `939a7233724629f04579c5f83ad367462d9f1d0f`，message=`Release v1.8.3`；GitHub Release 已发布。
 - 2026-08-25 已将本机五个 launchd label 切到 clean/detached
-  `/Volumes/扩展盘/guiyi-quant-runtime-v1.8.2@58e0f596a5b425e15697abc72b71c83cc878796c`。
-  API、Web、Live 与 Alert 均从该根运行，API=`200 / 1.8.2 / readonly`、Web=`200`；after-market
-  `not_running`，只读 Runtime health=`ok`。本次未手工触发 after-market，下一次自然盘后与 Daily
-  Watch artifact 仍是独立未完成 evidence，不能由本机部署推导为已完成。正式 release 已领先 Runtime，
-  `v1.8.3` 尚未进行 Runtime promotion/switch。
+  `/Volumes/扩展盘/guiyi-quant-runtime-v1.8.3@9ca18afc9b056d413ee8cac56a056b7d7df078b4`。
+  API、Web、Live 与 Alert 均从该根运行，API=`200 / 1.8.3 / readonly`、Web=`200`；after-market
+  loaded 且按日程 `not_running`，只读 Runtime health=`ok`，local-services-status 与 local-tunnel-healthcheck
+  均为 `overall=passed`。本次未手工触发 after-market，下一次自然盘后与 Daily Watch artifact 仍是独立
+  未完成 evidence，不能由本机部署推导为已完成。
 - `GUIYI_SUBING_OBSERVATION_ROOT` 已精确配置为扩展盘
   `/Volumes/扩展盘/guiyi-quant-data/observations/subing-daily-v1`；配置文件为 `0600`，目录为 `0700`，
   production resolver 通过。当前目录为空，current API 返回
   `200 / unavailable / SUBING_DAILY_WATCH_NOT_GENERATED / expected=2026-08-25`，等待下一次自然盘后生成。
-- 旧 `v1.8.0` 与 `v1.7.0` Runtime worktree 保留为 clean/detached rollback 资产，但当前没有 label 指向；未执行
+- 旧 `v1.8.2` Runtime worktree 保留为 clean/detached rollback 资产，但当前没有 label 指向；未执行
   回滚、after-market、canary、人工通知、真实 RQAlpha smoke、Canonical/production Redis
   写入或 Alert Scope/transport 变更。
 - production Alembic 已于 2026-08-25 14:56 CST 从 `20260815_0039` 升级到
   `20260825_0040 (head)`。migration 自动将旧 HTDY `scope_products=['jm']` 继承为
   `scope_product_frequencies={'jm':['15m']}` 并清空 HTDY 旧列；SuBing 继续为
-  `scope_products=['jm']` 且 frequency Scope 为空。未执行额外 Scope mutation、Runtime switch 或通知。
+  `scope_products=['jm']` 且 frequency Scope 为空。未执行额外 Scope mutation 或通知。
 - RQAlpha research workbench 代码已包含在 `v1.8.0`，但本地 sidecar 仍未加载、未进入 Runtime；真实
   RQAlpha smoke 继续 `pending`，不得由代码包含或其他 Runtime 验收推导为已完成。
 - Market/Alert marker 继续 enabled；Alert notification channel 仍为 pushplus 且 config=`ready`、
@@ -44,9 +44,9 @@
   OpenSpec `6 passed`、secret scan、shell/launchd lint 与 diff check 均通过。独立 release Review 为
   `APPROVED / C0 I0 M0`。
 - 本 release 包含 Alembic `20260825_0040` 源码；release 当时未执行 production migration。后续独立
-  production migration Gate 已于 2026-08-25 14:56 CST 完成，读回为 `20260825_0040 (head)`；
-  Runtime promotion/switch、额外真实 HTDY Scope mutation、真实 PushPlus、Canonical 或 production Redis
-  写入仍未执行，`auto_order=false` 不变。
+  production migration Gate 已于 2026-08-25 14:56 CST 完成，读回为 `20260825_0040 (head)`；随后独立
+  Runtime promotion Gate 已将本机五个 label 切至精确 `v1.8.3` tag Runtime。额外真实 HTDY Scope
+  mutation、真实 PushPlus、Canonical 或 production Redis 写入仍未执行，`auto_order=false` 不变。
 
 ## v1.8.2 release and Runtime deployment
 
@@ -138,7 +138,7 @@
   “当前检查栏”；正式 Event、研究观察和 Research-only 事实保持分层，不产生综合分或交易推荐。
 - The prior Four-System Active60 All-Frequency Observation direction was withdrawn by the user before implementation and its active Spec/Plan were removed.
 
-## HTDY Active60 七周期实现（已发布并完成 migration，待 Runtime）
+## HTDY Active60 七周期实现（已发布、完成 migration 并部署 Runtime）
 
 以下 Gate 只记录各自已经发生的事实，任一状态不得由其他状态推导：
 
@@ -151,7 +151,7 @@
 | `PRODUCTION_MIGRATION` | `complete` | 用户明确授权后执行一次 `20260815_0039 -> 20260825_0040`；读回 head、新列/约束与 9 条历史 Event 完整性均通过 |
 | `REAL_SCOPE_MUTATION` | `pending` | 仅由 migration 自动继承旧 `jm` ON 为 `jm × 15m`；未执行任何额外 production HTDY Scope mutation |
 | `RELEASED` | `complete` | main PR `#209` 已合并；annotated `v1.8.3` tag peeled commit=`9ca18afc9b056d413ee8cac56a056b7d7df078b4`，GitHub Release 已发布 |
-| `RUNTIME_PROMOTED` | `pending` | 当前五个 launchd label 仍绑定 clean/detached `v1.8.2` Runtime；未 reload、switch 或 promotion |
+| `RUNTIME_PROMOTED` | `complete` | 五个 launchd label 已绑定 clean/detached `v1.8.3@9ca18afc9b056d413ee8cac56a056b7d7df078b4`；Runtime focused `192 passed`、Web production build、五 label exact root/commit、API `1.8.3`、Web 路由、DB head 与 local health 读回均通过 |
 | `REAL_NOTIFICATION_VERIFIED` | `pending` | 未执行真实 PushPlus；provider acceptance 与微信送达均未验证 |
 | `NATURAL_D1_W1_EVIDENCE` | `pending` | 未等待或补造自然 `canonical_updated` D1/W1 Event；不得由测试或本地 Canonical 可读性推导 |
 
