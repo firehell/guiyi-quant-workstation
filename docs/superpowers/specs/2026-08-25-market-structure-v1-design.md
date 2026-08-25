@@ -1,6 +1,6 @@
 # Market Structure V1 Design Spec
 
-**Status:** Proposed — awaiting independent review  
+**Status:** Proposed — revised after independent review; awaiting re-review  
 **Date:** 2026-08-25  
 **Target branch:** `research/market-structure-v1`  
 **Base:** `develop@ad30633da59668f5d9a3496238c4c15ec72e7aab`  
@@ -65,15 +65,27 @@ The resulting implementation is an independent design. Product naming, code iden
 
 ## 5. Domain contract
 
-### 5.1 Input
+### 5.1 Input and identity
 
-The kernel accepts a single, already resolved series segment:
+The pure engine accepts an immutable `SeriesContext` and one resolved physical series segment:
 
 ```python
+SeriesContext(
+    request_identity=LogicalSeriesIdentity(
+        series_kind, symbol, requested_contract, frequency,
+    ),
+    physical_dataset_key=DatasetKey(kind, symbol, contract, frequency),
+    segment=SegmentIdentity(
+        contract, segment_start_trading_day, segment_end_trading_day,
+    ),
+    tick_size=Decimal,
+)
+
 Sequence[BarInput]
 
 BarInput(
     bar_end: datetime,
+    trading_day: date,
     open: Decimal,
     high: Decimal,
     low: Decimal,
@@ -82,39 +94,65 @@ BarInput(
 )
 ```
 
-Preconditions are enforced by the caller and checked again by the kernel:
+`actual_dominant` is a logical `SeriesKind`, never a physical DatasetKey. For each actual-dominant segment, `physical_dataset_key` is the exact contract DatasetKey and `request_identity.series_kind` remains `actual_dominant`. For continuous and contract requests, logical and physical identity agree.
 
-- bars are non-empty, strictly increasing by `bar_end`, and contain no duplicate timestamp;
+`segment_id` is the full lowercase SHA-256 of canonical JSON containing logical identity, physical DatasetKey, contract, and `segment_start_trading_day/segment_end_trading_day`.
+
+Preconditions are enforced by the caller and checked again by the engine:
+
+- `bar_end` is timezone-aware UTC, strictly increasing, and unique;
+- bars are completed and lie inside the context segment;
 - OHLC values are finite `Decimal` values and satisfy `low <= open/close <= high`;
-- every consumed bar is completed;
-- all bars share one DatasetKey/frequency/physical-contract segment;
-- at least `2 * span + 1` bars exist, otherwise the result is `unavailable`.
+- `tick_size > 0`, and every OHLC value is exactly aligned (`value % tick_size == 0`); the engine validates and never rounds;
+- all bars share the context frequency and physical DatasetKey.
 
-The kernel is pure: no DB, Redis, file, network, clock, logging side effect, or global state.
+The engine is pure: no DB, Redis, file, network, clock, logging side effect, or global state.
 
-### 5.2 Formula identity
+### 5.2 Closed formula
 
-The fixed formula family is `symmetric_pivot_atr_filter_v1`. Stage A selects only its bounded policy parameters; it does not select an unrelated algorithm family.
+The fixed formula family is `symmetric_pivot_atr_filter_v1`. Stage A selects only its bounded `span` and `min_move_atr`; it does not select another algorithm family.
 
-For candidate bar `i` and policy span `s`:
+For candidate bar `i` and span `s`:
 
 ```text
-pivot_high(i) := high[i] > every high in [i-s, i) and
-                 high[i] > every high in (i, i+s]
+raw_high(i) := high[i] > every high in [i-s, i) and
+               high[i] > every high in (i, i+s]
 
-pivot_low(i)  := low[i]  < every low in [i-s, i) and
-                 low[i]  < every low in (i, i+s]
+raw_low(i)  := low[i]  < every low in [i-s, i) and
+               low[i]  < every low in (i, i+s]
 ```
 
-Strict comparison intentionally rejects plateaus. A pivot can be confirmed only when bar `i+s` is completed. `pivot_time` is bar `i`; `confirmed_at` is bar `i+s`.
+Strict comparison rejects plateaus. A raw pivot can be confirmed only when completed bar `i+s` exists. `pivot_time=bars[i].bar_end`; `confirmed_at=bars[i+s].bar_end`.
 
-An optional minimum-move filter is expressed as `min_move_atr × ATR(14)` from the most recent confirmed opposite-kind pivot. The ATR value uses data available at `pivot_time`; no later bar may enter it. `min_move_atr=0` disables the filter.
+ATR is a dedicated Decimal implementation and does not reuse a float compatibility variant:
 
-If the same bar satisfies both pivot predicates, it is `ambiguous_outside_bar`: no pivot is emitted for that bar, preview is cleared, and later processing continues without changing previously confirmed facts.
+```text
+TR[0] = high[0] - low[0]
+TR[i] = max(high[i]-low[i], abs(high[i]-close[i-1]), abs(low[i]-close[i-1]))
+ATR[13] = sum(TR[0:14]) / 14
+ATR[i] = (ATR[i-1] * 13 + TR[i]) / 14, for i > 13
+```
 
-Consecutive confirmed points of the same kind are allowed and never rewrite an earlier confirmed point. The state becomes `transition` until both a comparable high and low exist. This causal rule is preferred over retroactively replacing a confirmed point.
+No intermediate rounding is allowed. Serialization is tick-normalized only at input; calculated Decimal fields use their exact Decimal value.
 
-### 5.3 Labels and equality
+The move filter is deterministic:
+
+```text
+high_move = candidate_high - latest_confirmed_low.price
+low_move  = latest_confirmed_high.price - candidate_low
+accept when move >= min_move_atr * ATR[i]
+```
+
+- `min_move_atr=0` disables ATR and the move filter.
+- Before an opposite-kind confirmed pivot exists, the raw pivot is accepted as a state seed.
+- When the filter is enabled and an opposite pivot exists but `ATR[i]` is unavailable, the candidate is not emitted and the result records `atr_warmup_insufficient` when no later usable structure exists.
+- A negative move fails the filter.
+
+If one bar satisfies both raw predicates, it is `ambiguous_outside_bar`: neither pivot is emitted and no earlier confirmed fact changes. Consecutive confirmed points of the same kind are allowed and never replace an earlier confirmed point.
+
+The minimum bar count for any raw pivot is `2*s+1`. With the ATR filter enabled, the minimum for a filtered pivot is `max(2*s+1, 14+s)`. These are detection minima, not a promise that a ready structure exists; readiness also requires the state prerequisites below.
+
+### 5.3 Labels and state
 
 A high compares with the previous confirmed high; a low compares with the previous confirmed low:
 
@@ -123,88 +161,103 @@ A high compares with the previous confirmed high; a low compares with the previo
 | high | greater / less / equal | `HH` / `LH` / `EH` |
 | low | greater / less / equal | `HL` / `LL` / `EL` |
 
-Equality is exact after the caller normalizes prices to the series tick size. The kernel receives normalized `Decimal` values and never guesses tick size. A first high or low has `label=null` until a same-kind predecessor exists.
-
-### 5.4 Confirmed state
-
-Each confirmed point contains:
-
-```text
-id = sha256(formula_version, policy_id, dataset_key, segment_id,
-            frequency, kind, pivot_time, confirmed_at, price)
-kind, label, pivot_time, confirmed_at, price
-formula_version, policy_id
-dataset_key, series_kind, symbol, frequency
-physical_contract, segment_start_day, source, as_of
-```
-
-`id` is a stable dedupe identity, not a database key. `physical_contract` and `segment_start_day` are required for `actual_dominant`; they are nullable only where the DatasetKey genuinely has no physical contract.
+Equality is exact because tick alignment was validated. A first high or low has `label=null` until a same-kind predecessor exists.
 
 The current structure snapshot contains:
 
-- `status`: `ready | insufficient | unavailable`;
+- `status`: `ready | insufficient | unavailable` plus one stable reason;
 - `recent_labels`: last four non-null confirmed labels in event order;
-- `latest_high` and `latest_low` plus their previous same-kind point;
-- `high_direction`: `up | down | equal | unavailable`;
-- `low_direction`: `up | down | equal | unavailable`;
-- `active_leg`: `up | down | unresolved` (`up` after the latest confirmed low, `down` after the latest confirmed high);
-- `regime`: `bull | bear | transition | unavailable`, where only `HH + HL` is bull and only `LH + LL` is bear;
-- `range_position`: clamped `(last_close - latest_low.price) / (latest_high.price - latest_low.price)`, or unavailable for a missing/zero-width range;
-- `breakout_state`: `above_high | below_low | inside | unavailable`, computed before clamping;
-- `as_of`, identity, formula, policy, and source provenance.
+- latest and previous same-kind high/low points;
+- `high_direction` and `low_direction`: `up | down | equal | unavailable`;
+- `active_leg`: `up` after the latest confirmed low, `down` after the latest confirmed high, otherwise `unresolved`; same timestamp or ambiguous ordering is unresolved;
+- `regime`: only latest `HH + HL` is `bull`, only latest `LH + LL` is `bear`, equality/missing/conflict is `transition`, and absent prerequisites are `unavailable`;
+- `range_position` and `breakout_state` are calculated only when both latest points exist and `latest_low.price < latest_high.price`; otherwise both are unavailable with `invalid_confirmed_range` or `structure_seed_incomplete`;
+- for a valid range, `range_position=clamp((last_close-low)/(high-low), 0, 1)` and exactly one breakout state is selected in order `above_high`, `below_low`, `inside`.
 
-An equality label does not manufacture a trend. Any latest `EH` or `EL`, missing counterpart, or conflicting high/low pair produces `transition`.
+Overall `status=ready` requires at least two confirmed highs and two confirmed lows so both latest directional labels exist. A valid source with fewer state seeds is `status=insufficient, reason=structure_seed_incomplete`; context validation or authoritative-source failure is `status=unavailable`. `invalid_confirmed_range` is a field-level reason and does not downgrade an otherwise ready label/regime snapshot.
 
-### 5.5 Unstable preview
+### 5.4 Confirmed fact identity and provenance
 
-Preview is a separate nullable object, never a confirmed point:
+A confirmed fact contains kind, label, price, pivot/confirmation times, formula/policy ids, logical request identity, physical DatasetKey, segment identity, and tick size. Its id is the full lowercase SHA-256 of canonical JSON over exactly those fields.
 
-- it uses completed bars only;
-- it examines only the unconfirmed tail shorter than `span` right bars;
-- expected kind follows `active_leg`; with unresolved leg, only an unambiguous single-kind candidate is shown;
-- it must satisfy the left-side pivot predicate and the minimum-move rule;
-- its label is suffixed `?` in the UI and `unstable=true` in the schema;
-- it may move, change label, or disappear after any new completed bar;
-- it is never persisted, emitted as an event, used by Alert, or included in confirmed-history scoring.
+Canonical JSON uses lexicographically sorted keys, no insignificant whitespace, UTF-8, uppercase symbol/contract, lowercase frequency/enum values, ISO dates, UTC datetimes formatted as `YYYY-MM-DDTHH:MM:SS.ffffffZ`, and fixed-point Decimal strings with trailing zeros removed (`-0` becomes `0`). Source and calculation timestamps are excluded from the fact id.
 
-Historical rendering places a confirmed label at `pivot_time`, but the tooltip must show `confirmed_at` so the confirmation delay is visible.
+Provenance is response decoration, not part of the immutable fact:
 
-## 6. Identity, segmentation, and time seams
+- point provenance records `pivot_bar_source` plus the distinct ordered `confirmation_dependency_sources` used from pivot through `confirmed_at`;
+- response provenance records source mix, `resolved_cutoff`, `calculated_at`, and resolver decision;
+- a completed-Live bar later materialized as Canonical may upgrade provenance without changing an identical fact id;
+- any OHLC, identity, formula, policy, pivot, label, or confirmation change produces a different fact or a fail-closed mismatch.
 
-### Dataset and contract identity
+### 5.5 Deterministic unstable preview
 
-- `continuous`: calculate within the requested continuous DatasetKey and label it as continuous observation.
-- `contract`: calculate within exactly one requested physical contract.
-- `actual_dominant`: resolve through `MarketDataService`, partition at every rank1 physical-contract change, reset structure state at the segment boundary, and never compare points across segments.
+Preview is a separate nullable object and never a confirmed fact.
 
-The response includes the segment that produced each point and snapshot. If the visible chart spans rolls, older segment points may render, but the current state uses only the current segment.
+At completed-series length `n`, examine candidate indices `j` satisfying `j >= s` and `j+s >= n`; these are the left-confirmed, right-incomplete tail. Apply the left-side strict predicate and the same move filter using `ATR[j]`. A bar satisfying both left predicates is discarded as ambiguous.
 
-### Frequency and current data
+Expected kind follows `active_leg`. If the leg is unresolved, a preview is permitted only when candidates exist for exactly one kind. Among multiple high candidates choose greatest price, then earliest `pivot_time`; among multiple low candidates choose lowest price, then earliest `pivot_time`. This winner rule is total and deterministic.
 
-The same accepted policy parameters apply to all seven frequencies. No frequency silently falls back to another.
+Preview has `confirmed_at=null`, `unstable=true`, and a provisional label compared with the latest confirmed same-kind point. The UI suffixes `?`. It may move, relabel, or disappear after a new completed bar and is never persisted, scored as a confirmed event, sent to Alert, or used by a strategy/order path.
 
-- Intraday (`1m/5m/15m/30m/60m`): Historical Canonical plus same-frequency completed Live may form current observation through the existing Market seam. Incomplete Live bars are excluded.
-- `1d/1w`: read confirmed Canonical only and update only after the existing `canonical_updated` seam. Never aggregate Live bars into day/week bars.
-- A row unavailable at one frequency does not suppress ready rows at other frequencies.
+Historical rendering places a confirmed label at `pivot_time`, while the tooltip always shows `confirmed_at`.
 
-Every result carries `source=canonical | completed_live | canonical_plus_completed_live`, `as_of`, and a stale/identity decision. Identity ambiguity or stale resolver state fails closed rather than falling back.
+## 6. Initialization, segmentation, and time seams
 
-## 7. Stage A — Clean-room calibration
+### Window-independent initialization
 
-### A1. Observation corpus
+Calculation never starts at the visible window plus a guessed warm-up. The service resolves the physical coverage start for every segment, computes from that segment start through one `resolved_cutoff`, and only then crops confirmed output to the requested display window.
 
-Create a versioned, reviewable fixture corpus from user-authorized chart observations and matching OHLC exports. No protected source is collected.
+- continuous starts at the continuous DatasetKey's available Canonical coverage start;
+- contract starts at that contract DatasetKey's available Canonical coverage start;
+- actual-dominant starts independently at each true rank1 segment start and resets state at every segment boundary.
+
+If coverage start or a complete state seed cannot be resolved within the authoritative source, return `status=insufficient, reason=insufficient_context`; do not create partial labels. The initial design deliberately prefers full deterministic recomputation over cache/checkpoint state. Stage C measures the real cost; a cache or checkpoint requires a reviewed Spec amendment.
+
+### Canonical segment seam
+
+Actual-dominant calculation must reuse `ActualDominantResearchSegmentLoader` or a future canonical resolver that preserves all of its invariants: true containing rank1 segment restoration, coverage completeness, no overlap, probe/full identity agreement, and cross-frequency segment agreement. Ordinary query-returned W1 slices are not accepted as complete segment identity.
+
+| Request kind | Logical identity | Physical DatasetKey | Live rule |
+|---|---|---|---|
+| `continuous` | continuous | continuous | Canonical-only in V1 |
+| `contract` | requested contract | exact contract | completed Live only when existing Market seam proves exact contract and trading-day match |
+| `actual_dominant` | actual_dominant | exact contract per rank1 segment | completed Live only when current rank1 contract, trading day, and unique current segment all match |
+
+Incomplete Live bars are always excluded. A roll, stale resolver, multiple candidate segment, contract mismatch, or Live trading day outside the current segment fails closed. Older segment points may render, but current snapshot state comes only from the current segment.
+
+### Frequency and cutoff
+
+The same accepted policy parameters apply to all seven frequencies. No frequency falls back to another.
+
+- Intraday frequencies may use Canonical plus same-frequency completed Live only under the table above.
+- D1/W1 use confirmed Canonical only and advance only through the existing `canonical_updated` seam; Live is never aggregated to day/week.
+- One unavailable row does not suppress other frequency rows.
+
+Public `since/through` are exchange trading dates, inclusive. The service uses `TradingSession`/Market time authorities to translate them to the canonical UTC `(start, end]` query contract. Snapshot resolution captures one timezone-aware UTC `observation_at` at request entry, or accepts an explicit RFC3339 UTC instant; naive or invalid future instants fail closed. All seven rows resolve their eligible cutoff at or before that one instant and return `resolved_cutoff`.
+
+## 7. Stage A — Clean-room evaluator and calibration
+
+### A0. Shared formula evaluator
+
+Stage A is authorized to implement one pure, unregistered formula module under the indicator kernel namespace plus research-only tests and calibration tooling. It has no registry entry, application service, CLI, API, Web, DB, Redis, or Runtime consumer.
+
+The evaluator implements Sections 5–6 exactly and is the sole formula implementation used by the grid. Stage B must promote this same module by adding typed policy loading and registry/capability wiring; copying or rewriting the formula is forbidden. The SHA-256 of the exact LF-normalized UTF-8 formula module and its exact evaluator commit are frozen with the calibration result. Any later formula-byte change returns to Stage A.
+
+### A1. Observation corpus and holdout
+
+Create a versioned fixture corpus from user-authorized visible observations and matching OHLC exports. No protected source is collected.
 
 Acceptance corpus minimum:
 
-- all seven canonical frequencies;
-- at least two exact-series fixtures per frequency and at least three products overall;
-- at least 20 observable confirmed labeled pivots per frequency;
-- at least 20 examples of each `HH/LH/HL/LL` overall;
-- at least 12 captured preview lifecycles showing candidate move, confirmation, or invalidation;
-- exact series/feed/contract and timezone mapping recorded; unmatched feeds are exploratory only and cannot count toward acceptance.
+- all seven canonical frequencies, at least two exact-series fixtures per frequency, and at least three products overall;
+- at least 30 confirmed labeled pivots per frequency and at least 20 of each `HH/LH/HL/LL` overall;
+- at least five label lifecycles per frequency with `first_seen_at` captured;
+- at least 12 preview lifecycles, recorded as exploratory evidence only;
+- exact feed/series/contract, timezone, tick size, and logical-to-physical identity mapping.
 
-Fixture records contain observation id, capture time, authorized source description, DatasetKey mapping, frequency, timezone, completed OHLC bars, observed point kind/label/time/price, optional dashboard range position, and confidence. Images may support review but are not machine truth without matching structured observations.
+Each record has `evidence_tier=acceptance | exploratory`; only exact-series acceptance records enter metrics and there is no confidence weighting. Images support review but are not machine truth without matching structured observations.
+
+Before running the grid, the manifest freezes non-overlapping calibration and holdout ids. Holdout contains at least 20% of accepted events, at least eight events per frequency, and every label class. Split ids and the manifest digest are committed before scores are generated; changing the split invalidates all results.
 
 ### A2. Bounded parameter grid
 
@@ -214,89 +267,85 @@ Evaluate only:
 span ∈ {2, 3, 5, 8, 13}
 min_move_atr ∈ {0, 0.5, 1.0, 1.5}
 atr_length = 14
+atr_policy = decimal_wilder_sma_seed_v1
 ```
 
-One global `(span, min_move_atr)` pair must serve all seven frequencies. Per-symbol or per-frequency fitting is forbidden in V1.
+Candidate id is `s{span}-a{factor_token}`, where factor tokens are exactly `0`, `0p5`, `1`, and `1p5`. One global pair serves every symbol and frequency; per-symbol or per-frequency fitting is forbidden.
 
-### A3. Scoring and selection
+### A3. Mechanical scoring and selection
 
-For each fixture, compare confirmed events by exact kind, label, and pivot bar after tick normalization. The corpus score is:
+Expected and predicted events match one-to-one on `(fixture_id, kind, label, pivot_time, price)` after validated tick alignment. An unmatched expected event is FN and an unmatched prediction is FP. Macro event F1 is the arithmetic mean of the four class F1 values for `HH/LH/HL/LL`; equality labels are reported separately.
+
+Active-leg observations are keyed by `(fixture_id, observed_at)` on a completed bar and compare the model state at that exact cutoff; accuracy denominator is all acceptance observations with a non-null expected leg. Range-position MAE uses acceptance observations with an explicit dashboard value. There is no imputation.
+
+When at least 20 accepted range observations exist, score is:
 
 ```text
-0.70 × macro event F1
-+ 0.20 × active-leg accuracy
-+ 0.10 × (1 - mean absolute range-position error)
+0.70 * macro_event_f1 + 0.20 * active_leg_accuracy + 0.10 * (1 - range_mae)
 ```
 
-Missing dashboard position omits that fixture from the last component and re-normalizes weights. Preview lifecycles are reported separately because the third-party confirmation rule is not fully observable.
+Otherwise range is not scored and weights become `7/9` and `2/9`; the range threshold is not applicable.
 
-Acceptance requires:
+Run the full grid on calibration only. Candidates must meet the thresholds below on calibration. Select the highest score; all candidates within `0.01` of that highest score form the tie set, then choose lower `min_move_atr`, lower `span`, and lexical candidate id. Evaluate exactly that one frozen winner on holdout. The holdout is never used to reselect parameters.
+
+Both calibration and holdout must satisfy:
 
 - macro event F1 `>= 0.85` overall and `>= 0.75` on every frequency;
 - active-leg accuracy `>= 0.90`;
-- range-position MAE `<= 0.08` when at least 20 observations exist;
-- `100%` prefix-immutability and causality tests for our implementation;
-- no exact-series fixture with an unexplained identity mismatch.
+- range-position MAE `<= 0.08` when applicable;
+- first-seen/confirmation delay within one completed bar on at least `85%` of captured lifecycles;
+- no unexplained exact-series identity mismatch.
 
-Ties within `0.01` total score choose lower `min_move_atr`, then lower `span`, then lexical policy id. If no candidate passes, Stage A ends as `blocked`; parameters must not be guessed and Stages B–D must not proceed.
+The evaluator must also pass `100%` prefix-immutability, confirmation-cutoff, and determinism tests. Preview lifecycles are exploratory: V1 makes no third-party preview-compatibility claim.
 
-### A4. Frozen evidence
+### A4. Frozen policy and approval manifest
 
-The accepted output is:
+The immutable policy id is:
 
-- `data/research_policies/market_structure_v1.json` — selected parameters, corpus digest, formula version, accepted metrics, and review commit;
-- a deterministic calibration report generated from the fixture manifest;
-- tests proving the report and digest are reproducible.
+```text
+market_structure_v1-s{span}-a{factor_token}-c{corpus_digest_12}-f{formula_digest_12}
+```
 
-Changing formula logic, corpus digest, or selected parameters requires a new policy id and a new Stage A review. Existing result identities remain tied to their original policy.
+`corpus_digest` is full lowercase SHA-256 over LF-normalized UTF-8 canonical JSON for the manifest plus all referenced structured acceptance fixtures, ordered by fixture id; screenshots and exploratory evidence are excluded. `formula_digest` is defined in A0. `market_structure_v1` is only a friendly alias resolved through a checked-in approval manifest to one immutable id. The accepted files are:
+
+- immutable policy JSON with exact parameters, formula/evaluator commit, corpus/split/formula digests, calibration and holdout metrics;
+- deterministic calibration report;
+- approval manifest containing the exact immutable policy SHA-256, digests, evaluator commit, independent review record path, reviewer identity, and review timestamp.
+
+Tests recompute every digest and reject self-reported mismatch or an alias without an exact approved target. Changing formula bytes, corpus/split digest, or parameters creates a new immutable id and repeats Stage A.
 
 ### Stage A Gate
 
-Proceed only when the corpus minimum, thresholds, deterministic report, secret scan, and independent review all pass. This Gate permits Stage B implementation only.
+Proceed only when A0 code, corpus/split minimum, calibration and holdout thresholds, deterministic report/digests, causality tests, secret scan, and independent review all pass. This Gate permits Stage B registration of the already reviewed formula only.
 
-## 8. Stage B — Pure indicator kernel
+## 8. Stage B — Indicator kernel promotion
 
-Add a dedicated `market_structure_v1` module under the existing indicator kernel. Register it with explicit capabilities:
+Promote the unchanged Stage A formula module through typed models and the existing registry. Initial registration is `compatibility_validated`, `display_type=marker`, `output_schema=signal_state`, `web_capable=false`, and all backtest/live/alert capabilities false. Add an explicit `market_structure_research_observation` consumer guard; do not create a generic policy DSL.
 
-- `consumer=research_observation` only;
-- `causality=confirmed_with_unstable_preview`;
-- seven supported frequencies;
-- no formal policy, Alert, strategy, or order capability.
+The application layer validates the immutable policy and approval manifest, then passes a typed policy and `SeriesContext` into the pure engine. Formula code never reads files. Missing, malformed, unapproved, aliased-to-unknown, or digest-mismatched policy fails closed.
 
-The registry loads the frozen policy by explicit id; missing, malformed, unreviewed, or mismatched policies fail closed. Formula code cannot read the policy file directly—the application layer validates the artifact and passes a typed policy into the pure kernel.
-
-Required proof:
-
-- golden fixtures for labels/state/range position;
-- prefix invariance: appending bars never changes an earlier confirmed point;
-- no use of bars after `confirmed_at`;
-- equality, plateau, ambiguous outside bar, duplicate timestamp, insufficient data, and zero-width range cases;
-- property-style parameterized tests across all seven frequencies;
-- Decimal preservation and deterministic point ids;
-- existing indicator, N, SuBing, JDJ, and HTDY tests remain unchanged and pass.
+Required proof includes golden state fixtures; appended-prefix invariance; no dependency after `confirmed_at`; Decimal ATR/move behavior; equality/plateau/ambiguous/same-kind cases; tick and timestamp validation; deterministic preview winner; range invalidity; all status/reason mappings; canonical id serialization; all seven frequencies; and unchanged existing indicator/N/SuBing/JDJ/HTDY tests.
 
 ### Stage B Gate
 
-Proceed only when kernel tests, registry/capability tests, type/lint checks, and an independent formula review pass. This Gate permits Stage C internal projection only.
+Proceed only when the frozen formula digest is unchanged, kernel and capability tests pass, type/lint checks pass, and an independent formula review approves the exact head. This Gate permits Stage C internal projection only.
 
 ## 9. Stage C — Internal research projection
 
-### Service
+### Service and initialization
 
 Add a source-specific read service that:
 
-1. resolves the exact DatasetKey and requested frequency through `MarketDataService`;
-2. applies actual-dominant segmentation before calculation;
-3. optionally joins same-frequency completed Live for intraday current observation through the existing resolver;
-4. invokes the kernel per segment;
-5. returns confirmed history and current snapshot with full identity/provenance;
-6. represents insufficient/unavailable explicitly and never cross-frequency/source falls back.
-
-No result is stored in PostgreSQL, Redis, Canonical, or an external artifact root.
+1. resolves logical request identity and physical DatasetKeys only through `MarketDataService`;
+2. reuses the canonical actual-dominant segment loader/resolver described in Section 6;
+3. expands calculation to each physical coverage/segment start, invokes the kernel, then crops output;
+4. joins completed Live only under the exact contract/trading-day/segment rules;
+5. returns immutable facts plus separate provenance, cutoff, coverage, policy, and status;
+6. never cross-frequency/source falls back and never stores results.
 
 ### CLI
 
-Expose one read-only internal command:
+Expose one stdout-only command:
 
 ```text
 guiyi research market-structure \
@@ -305,71 +354,63 @@ guiyi research market-structure \
   --frequency 15m \
   --since 2026-06-01 \
   --through 2026-08-25 \
+  --observation-at 2026-08-25T08:00:00Z \
   --policy-id market_structure_v1
 ```
 
-It writes deterministic JSON to stdout and supports an explicit output path only for a user-selected local research artifact. It performs no DB/Redis/Canonical mutation and does not enter Runtime.
+It emits deterministic JSON to stdout only. There is no output-path option, side effect, Runtime entry, or external mutation. JSON includes logical and physical identities, true segment summaries, confirmed facts, snapshot, preview, formula/policy/corpus digests, coverage, `resolved_cutoff`, provenance, and typed unavailable reasons. Byte-equivalence tests exclude only `calculated_at`.
 
-The JSON contains request identity, segment summaries, confirmed points, snapshot, preview, formula/policy/corpus digest, input coverage, and unavailable reasons.
+### Internal acceptance and benchmark evidence
 
-### Internal acceptance evidence
+Evidence covers continuous, contract, and actual-dominant; a roll window; all seven frequencies; exact Live match and Live mismatch; W1 true segment restoration; canonical-only D1/W1; same-cutoff Canonical versus Canonical-plus-completed-Live parity; window-independent labels; and repeated deterministic output.
 
-Run representative checks for:
-
-- one `continuous`, one `contract`, and one `actual_dominant` query;
-- an actual-dominant window crossing a roll;
-- all seven frequencies;
-- intraday canonical-only versus canonical-plus-completed-live parity at the same cutoff;
-- D1/W1 canonical-only enforcement;
-- repeated run byte-equivalent JSON after volatile metadata is excluded.
+Benchmark evidence freezes commit, OS/architecture/CPU, Python version, policy/corpus/data digests, exact request fixtures and cutoffs, input/output bar counts, and cold first-run timing. For the Gate, run three unmeasured process warm-ups followed by 30 measured serial runs and calculate nearest-rank p95. Fixed targets are `history <= 500 ms` and seven-row `snapshot <= 1500 ms` on the documented development machine. A miss blocks Stage D and triggers profiling; it does not authorize cache/checkpoint infrastructure.
 
 ### Stage C Gate
 
-Stage C ends with a reviewable evidence summary, not a promotion claim. Stage D requires a new human decision based on Stage A metrics, Stage B causality evidence, Stage C identity/roll/seam evidence, and measured response cost.
+Stage C ends with independently reviewed evidence, not a promotion claim. Stage D requires a new human decision based on Stage A holdout metrics, Stage B causality/digest evidence, Stage C identity/roll/seam evidence, and the frozen benchmark.
 
 ## 10. Stage D — Market observation UI
 
-### API
+### API and time contract
 
-Add two source-specific, read-only endpoints; do not merge them into existing strategy endpoints:
+Add two source-specific read-only endpoints:
 
 ```text
 GET /api/v1/market/research/market-structure/history
 GET /api/v1/market/research/market-structure/snapshot
 ```
 
-`history` accepts exact series identity, one frequency, `since`, `through`, `policy_id`, and bounded `limit/cursor`. It returns confirmed points only, ordered by `(pivot_time, confirmed_at, id)`.
+`history` accepts exact logical identity, one frequency, inclusive exchange trading dates `since/through`, immutable-or-approved-alias policy id, bounded `limit/cursor`, and optional RFC3339 UTC `observation_at`. It calculates from authoritative segment/coverage start, crops to the display dates, and returns confirmed facts ordered by `(pivot_time, confirmed_at, id)`.
 
-`snapshot` accepts exact series identity and `policy_id`, then returns independent rows for the seven canonical frequencies. Intraday rows may include the one unstable preview; D1/W1 rows remain Canonical-only. Each row carries its own status, source, as-of, segment, policy, and unavailable reason.
+`snapshot` accepts exact logical identity, policy id, and optional RFC3339 UTC `observation_at`. Omission captures one server UTC instant before any frequency work. Seven independent rows derive eligible cutoffs from that instant. Intraday rows may include one unstable preview; D1/W1 are Canonical-only.
 
-Both endpoints reject unsupported policy, identity mismatch, inverted/unbounded windows, limits above the configured cap, and requests that would bypass `MarketDataService`. Initial implementation is on-demand and has no DB/Redis cache.
+Invalid identity/policy/window/cursor/time is 4xx. Expected insufficiency is a typed row/result. Source/segment/resolver conflicts fail closed. The endpoints remain on-demand, use `MarketDataService`, and add no storage or cache.
 
-### Web placement
+### Web placement and preference migration
 
-Keep `mainOverlay` unchanged. Add `marketStructureVisible: boolean` to chart preferences as an independent context-layer toggle.
+Keep `ResearchOverlayId` and `mainOverlay` unchanged. Bump the existing main-chart preference schema from v3 to v4, add `marketStructureVisible: boolean` with default `false`, and implement v3→v4 plus corrupt/unknown-version fail-safe migration without losing overlay/EMA settings.
 
 When enabled:
 
-- the current chart renders confirmed markers for the visible range;
-- one unstable marker such as `HH?`/`LL?` and a dashed candidate price line may render separately;
-- hover shows pivot time, confirmation time, price, formula/policy, contract segment, source, and unstable warning;
-- `ProductCheckSidebar` gets a compact `市场结构` block with seven rows: frequency, low-to-high range position, latest high/low direction, last four labels, active leg, source/as-of/status;
-- partial unavailable rows remain visible and explain why;
-- changing product, series kind, contract, frequency, or policy invalidates stale requests and clears mismatched markers before repaint.
+- the current chart renders confirmed markers for the visible range after server-side full-context calculation;
+- one unstable `HH?`/`LL?` marker and dashed candidate price line render separately;
+- hover shows pivot and confirmation time, price, formula/policy, physical contract segment, provenance, and unstable warning;
+- `ProductCheckSidebar` gets a compact seven-row `市场结构` block with range position, high/low direction, four labels, active leg, source/cutoff/status/reason;
+- partial insufficient/unavailable rows remain visible;
+- any product, logical series, contract, frequency, policy, or observation identity change cancels/discards stale responses and clears mismatched markers first.
 
-Markers use stable point ids for pagination dedupe. The UI does not calculate pivots, labels, range position, or regime; it only projects API facts. Existing overlay selection, historical SuBing/JDJ markers, HTDY rendering, and K-line interactions must continue to work when the context layer is on or off.
+Stable fact ids drive pagination dedupe. Web calculates no formula, label, regime, range, source, or cutoff. Existing overlays, SuBing/JDJ historical markers, HTDY, preferences, and K-line interactions work unchanged with the context layer on or off.
 
 ### Load and performance contract
 
-- K-line loading and interaction do not wait for structure requests.
-- History fetch covers the visible chart window plus bounded warm-up, not all available history.
-- Snapshot fans out to at most seven bounded service reads with independent timeout/status; one failure cannot fail the full matrix.
-- Request keys include complete series identity and policy id; stale responses are discarded.
-- Stage C records a baseline and Stage D may proceed only if the agreed local p95 budgets are met without adding cache infrastructure. The initial target is `<= 500 ms` for one history request and `<= 1500 ms` for the seven-row snapshot on the documented development machine; misses block D acceptance and trigger profiling, not silent cache introduction.
+K-line rendering never waits for structure. History requests contain the display window, but the server performs the Section 6 full-context initialization before crop. Snapshot executes at most seven bounded reads with independent row status; one row cannot fail the matrix. Request keys include full logical identity, policy id, and observation instant, and stale responses are discarded.
+
+Stage D uses the exact Stage C benchmark schema and fixed targets. A performance miss blocks acceptance; adding persistence/cache/checkpoints requires a new reviewed design.
 
 ### Stage D Gate
 
-Acceptance requires backend contract tests, frontend unit/component tests, route-intercepted browser tests, production Web build, full identity-switch regression, accessibility/empty/error states, no formula duplication in Web, and independent review. It permits only a PR recommendation to `develop`; merge remains a human Gate.
+Acceptance requires backend contract tests, frontend unit/component tests, route-intercepted browser tests, production Web build, v3→v4 preference migration, identity-switch regression, accessibility/empty/error states, no Web formula duplication, and independent review. It permits only a PR recommendation to `develop`; merge remains a human Gate.
 
 ## 11. Error and unavailable taxonomy
 
@@ -377,24 +418,31 @@ Stable machine reasons:
 
 ```text
 insufficient_bars
+atr_warmup_insufficient
+insufficient_context
+structure_seed_incomplete
+invalid_confirmed_range
 identity_mismatch
 segment_unresolved
 stale_resolver
 source_unavailable
+tick_size_unavailable
+tick_alignment_invalid
 unsupported_frequency
 unsupported_policy
 policy_digest_mismatch
 invalid_bar_sequence
 ambiguous_current_segment
+invalid_observation_at
 calibration_evidence_insufficient
 calibration_threshold_failed
 ```
 
-API responses use existing project error conventions. Expected data insufficiency is represented as a typed row/result, not an HTTP 500. Invalid client identity/policy/window is a 4xx. Unexpected internal failures are logged without credentials or raw sensitive payloads and return a bounded 5xx.
+`insufficient_bars`, `atr_warmup_insufficient`, `insufficient_context`, and `structure_seed_incomplete` always map to `status=insufficient`. Identity, source, segment, tick, policy, invalid-bar, and time failures map to `status=unavailable` when discovered during row calculation. `invalid_confirmed_range` is field-level only. Invalid client identity/policy/window/time is a 4xx before calculation. Expected insufficiency is never HTTP 500. Unexpected internal failures are logged without credentials or raw sensitive payloads and return a bounded 5xx.
 
 ## 12. Security, data, and operational constraints
 
-- Validate symbol, contract, frequency, policy id, time window, limit, cursor, and output path before use.
+- Validate symbol, contract, frequency, policy id, observation instant, time window, limit, and cursor before use.
 - Never interpolate untrusted values into shell, file, SQL, or network targets.
 - Fixtures and reports contain no credentials, cookies, protected script source, account data, or brokerage identifiers.
 - No production DB migration, live scope change, Runtime load, notification, release, tag, main merge, or external order is part of A–D.
@@ -416,4 +464,3 @@ The final implementation PR must state:
 ## 14. Acceptance summary
 
 `market_structure_v1` is acceptable only when it is independently derived, causal, versioned, identity-complete, segment-safe, source-explicit, and read-only. Confirmed facts never repaint; preview is visibly unstable. The capability remains internal until calibration, kernel, and research evidence pass, and the Market UI remains a context layer rather than a strategy product.
-
