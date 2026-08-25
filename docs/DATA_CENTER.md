@@ -170,3 +170,9 @@ write/flush 失败，立即禁用后续进度输出，审计异常和最终 stdo
 
 active universe 为 `data/universe/active_products.txt` 的 60 品种；退役精确名单为
 `data/universe/retired_products.txt`，与 active 互斥。
+
+## SuBing Daily Context artifact
+
+`GUIYI_SUBING_OBSERVATION_ROOT` 必须解析到已挂载的 `/Volumes/...` 根，目录和文件操作前重复验证；不得回退系统盘。Daily Watch 仅保存 immutable `history/<target>.json`、`current.json` 与 `generation-status.json`，均在同目录以原子替换发布。
+
+同一 target identity 冲突、current regression、snapshot identity 不一致或物理根异常必须 fail-closed。current 只能在 expected target trading day 精确匹配时投影；没有 stale candidate fallback。盘后任务的 Daily Watch follow-up 与主盘后结果隔离，follow-up 失败不回写主任务；不得手工 backfill、触发或用历史 artifact 补造自然 evidence。

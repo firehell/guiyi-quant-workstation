@@ -5,7 +5,7 @@
 ## 项目边界
 
 - 做（长期）：数据治理、K 线、策略研究、复盘、信号提醒与人工观察；未来可按新任务重建历史回测。
-- 当前可执行面：Web 为 Market、独立 Execution Review 与本机限定的 RQAlpha 研究工作台；主 API/CLI 为 market / execution-review / data CLI / runtime，并包含独立 Alert Application Domain。RQAlpha 工作台使用未挂载到主 API 的 loopback local app，当前未加载、未 release、未进入 Runtime。Market Runtime V1 的仓库模板默认关闭；本地工作站已按明确请求启用由 `operational_products.txt` 界定范围的 Runtime。Alert Runtime 模板默认关闭，不能从 Market Runtime 授权推导启用。旧 signal/review/strategy Web·HTTP·worker 与 data_center HTTP 已退役；Execution Review 不是旧 Review Center 的恢复。
+- 当前可执行面：Web 为 Market、独立 Execution Review 与本机限定的 RQAlpha 研究工作台；Market 主图仅 `none | subing | jdj_strategy | htdy`，SuBing 是一个产品的 Daily Context / Current Signal State / Formal Event 投影。主 API/CLI 为 market / execution-review / data CLI / runtime，并包含独立 Alert Application Domain。RQAlpha 工作台使用未挂载到主 API 的 loopback local app，当前未加载、未 release、未进入 Runtime。Market Runtime V1 的仓库模板默认关闭；本地工作站已按明确请求启用由 `operational_products.txt` 界定范围的 Runtime。Alert Runtime 模板默认关闭，不能从 Market Runtime 授权推导启用。旧 signal/review/strategy Web·HTTP·worker 与 data_center HTTP 已退役；Execution Review 不是旧 Review Center 的恢复。
 - 不做：自动交易、实盘下单、SaaS、多用户权限、手机 App、无人值守交易。
 - 信号、通知和 Web 始终是研究观察，不是交易指令。
 
@@ -76,7 +76,7 @@ subing_entry_signal_v1 × 该 Rule 显式 scope_products × owner × pushplus-we
 ```
 
 HTDY 的稳定 Rule code 仍为 `htdy_original_15m`，能力覆盖七个正式周期；唯一 Scope authority 为
-`scope_product_frequencies`。SuBing 继续只认 `scope_products`。两种 Scope authority 不得混用或合并。
+`scope_product_frequencies`，按 symbol × frequency 授权。SuBing 继续只认 `scope_products`。两种 Scope authority 不得混用或合并。
 
 HTDY 只发起一次 Topic 请求，Topic 当前成员由 PushPlus 外部管理；owner 与最多三位朋友必须关注
 PushPlus 公众号并扫码加入同一个专用 Topic，创建者也必须加入。SuBing 不传 Topic，只发给消息 token
@@ -86,8 +86,7 @@ parent / `0600` file；结构健康检查不联网、不发送。
 
 Alert Application Domain 仍只有 `alert_rules` 与 `alert_events` 两张表；Event 先提交，再最多调用一次
 PushPlus SDK。HTDY 日内五周期只消费同周期 completed Live Bar，D1/W1 只响应既有盘后
-`canonical_updated` seam 并读取 Canonical，不新增 scheduler、Scope 表或 Live 日/周聚合。无逐收件人
-DB 状态、retry、queue、replay、backfill、fallback 或订单路径。develop 代码、
+`canonical_updated` seam 并读取 Canonical，不新增 scheduler、Scope 表或 Live 日/周聚合。无逐收件人 DB 状态、retry、queue、replay、backfill、fallback 或订单路径。develop 代码、
 测试或 Topic 配置均不授权 release、真实 canary/send、Scope 变更或 Runtime promotion/switch。Topic 成员
 始终由 operator 在 PushPlus 页面人工核对且不得超过 owner + 三位朋友；成员变化不修改代码，也不扩大
 Rule、Scope、audience 或 transport 授权。当前 production、Runtime、Scope 与待完成 Gate 只看 `STATUS.md`，

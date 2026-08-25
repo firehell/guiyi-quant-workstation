@@ -2,7 +2,7 @@
 
 更新时间：2026-08-25
 
-本文定义仓库日常开发与外部副作用边界的唯一流程入口；产品、数据、策略、信号和 Runtime 语义仍由
+本文定义仓库日常开发与外部副作用边界的唯一流程入口；当前 active 产品面只描述 Market、一个 SuBing 产品、HTDY、JDJ reference replay、Alert、Execution Review 与 local-only RQAlpha；N/raw JDJ 和 Candidate Validation/Robustness 是内部研究。产品、数据、策略、信号和 Runtime 语义仍由
 `PROJECT_SOURCE.md`、`DECISIONS.md` 及对应 deep canonical 定义。当前可执行产品面以 `STATUS.md` 为准；Execution Review 语义以 `docs/EXECUTION_REVIEW.md` 为准。
 
 ## 唯一日常流程

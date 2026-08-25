@@ -2,6 +2,11 @@
 
 本文件记录正式产品版本；开发过程与逐品种执行流水从 Git history 追溯。
 
+## Next release
+
+- Architecture Convergence V1 将 SuBing 收敛为一个产品工作区，保留 Daily Context、Current Signal State 与 Formal Event 的独立事实边界；主图收敛为 SuBing、日进斗金参考回放与 HTDY。
+- 退役 Attention、Trend Focus、Main Force Mirror 与 Five-Candidate phase-specific Dossier/Relationships active surface；保留 Canonical/Catalog、Candidate Validation/Robustness、pending OOS、Alembic/table identity 与 RQAlpha local-only 边界。
+
 ## [1.8.3] - 2026-08-25
 
 - HTDY original 观察能力扩展到 Active60 的七个正式周期 `1m/5m/15m/30m/60m/1d/1w`；日内五周期只消费
