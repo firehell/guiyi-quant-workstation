@@ -410,14 +410,22 @@ class SubingDailyWatchBuilder:
             timeframe=BarFrequency.D1,
             current_contract=current_segment.contract,
             current_segment_start_trading_day=(current_segment.start_trading_day),
-            resolved_contract_segments=(daily_result.resolved_contract_segments),
+            resolved_contract_segments=_segments_with_full_current(
+                daily_result,
+                current_segment=current_segment,
+                source_trading_day=source_trading_day,
+            ),
         )
         hourly = calculate_subing_ema_trend_stitched(
             hourly_bars,
             timeframe=BarFrequency.H1,
             current_contract=current_segment.contract,
             current_segment_start_trading_day=(current_segment.start_trading_day),
-            resolved_contract_segments=(hourly_result.resolved_contract_segments),
+            resolved_contract_segments=_segments_with_full_current(
+                hourly_result,
+                current_segment=current_segment,
+                source_trading_day=source_trading_day,
+            ),
         )
         unavailable_reasons = _history_unavailable_reasons(daily, hourly)
         if unavailable_reasons:
@@ -662,7 +670,16 @@ def _validate_loaded_identity(
             for segment in result.resolved_contract_segments
             if segment.start_trading_day <= final_day <= segment.end_trading_day
         )
-        if final_segments != (current_segment,):
+        if len(final_segments) != 1:
+            return None
+        page_current_segment = final_segments[0]
+        if (
+            page_current_segment.contract != current_segment.contract
+            or page_current_segment.start_trading_day
+            < current_segment.start_trading_day
+            or page_current_segment.end_trading_day
+            > current_segment.end_trading_day
+        ):
             return None
     return current_segment, daily, hourly
 
@@ -681,6 +698,22 @@ def _source_trading_day_missing(
             not result.bars or result.bars[-1].trading_day != source_trading_day
             for result in (daily, hourly)
         )
+    )
+
+
+def _segments_with_full_current(
+    result: MarketSeriesPageResult,
+    *,
+    current_segment: ResolvedContractSegment,
+    source_trading_day: date,
+) -> tuple[ResolvedContractSegment, ...]:
+    return tuple(
+        current_segment
+        if segment.start_trading_day
+        <= source_trading_day
+        <= segment.end_trading_day
+        else segment
+        for segment in result.resolved_contract_segments
     )
 
 

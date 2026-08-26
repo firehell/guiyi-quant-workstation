@@ -418,6 +418,61 @@ def test_builder_classifies_rollover_stitched_30_bar_history() -> None:
     assert item.daily.current_segment_start_trading_day == date(2026, 8, 17)
 
 
+def test_builder_classifies_page_segments_clipped_within_full_current_segment() -> None:
+    """Catches requiring a recent page segment to repeat the full rank1 range."""
+    loaded = _stitched_series(
+        symbol="a",
+        direction="long",
+        daily_count=30,
+        hourly_count=30,
+    )
+    full_current = ResolvedContractSegment(
+        loaded.current_segment.contract,
+        _SOURCE_DAY - timedelta(days=60),
+        _SOURCE_DAY,
+    )
+    results = {
+        frequency: replace(
+            result,
+            resolved_contract_segments=(
+                ResolvedContractSegment(
+                    full_current.contract,
+                    result.bars[0].trading_day,
+                    _SOURCE_DAY,
+                ),
+            ),
+        )
+        for frequency, result in loaded.results.items()
+    }
+    loader = _FakeStitchedLoader(
+        {
+            "a": ActualDominantStitchedResearchSeries(
+                results=results,
+                current_segment=full_current,
+            )
+        }
+    )
+
+    item = (
+        _builder(loader)
+        .build(
+            source_trading_day=_SOURCE_DAY,
+            target_trading_day=_TARGET_DAY,
+            generated_at=_GENERATED_AT,
+        )
+        .items[0]
+    )
+
+    assert item.decision is SubingDailyWatchDecision.LONG_WATCH
+    assert item.unavailable_reasons == ()
+    assert item.daily is not None
+    assert item.hourly is not None
+    assert item.daily.current_segment_start_trading_day == full_current.start_trading_day
+    assert item.hourly.current_segment_start_trading_day == full_current.start_trading_day
+    assert item.daily.warmup_segment_count == 1
+    assert item.hourly.warmup_segment_count == 1
+
+
 def test_builder_preserves_complete_active_universe_ledger() -> None:
     """Catches dropping excluded/unavailable products or reordering the scope."""
     loader = _FakeStitchedLoader(
@@ -604,6 +659,93 @@ def test_builder_rejects_d1_h1_physical_contract_mismatch() -> None:
     results[BarFrequency.H1] = replace(
         hourly,
         resolved_contract_segments=(mismatched,),
+    )
+    loader = _FakeStitchedLoader(
+        {
+            "a": ActualDominantStitchedResearchSeries(
+                results=results,
+                current_segment=loaded.current_segment,
+            )
+        }
+    )
+
+    item = (
+        _builder(loader)
+        .build(
+            source_trading_day=_SOURCE_DAY,
+            target_trading_day=_TARGET_DAY,
+            generated_at=_GENERATED_AT,
+        )
+        .items[0]
+    )
+
+    assert item.decision is SubingDailyWatchDecision.UNAVAILABLE
+    assert item.unavailable_reasons == ("DATA_IDENTITY_MISMATCH",)
+
+
+@pytest.mark.parametrize(
+    ("page_start", "page_end"),
+    [
+        (date(2026, 8, 16), _SOURCE_DAY),
+        (date(2026, 8, 17), date(2026, 8, 22)),
+    ],
+)
+def test_builder_rejects_page_current_segment_outside_full_segment(
+    page_start: date,
+    page_end: date,
+) -> None:
+    """Catches accepting page current-segment bounds outside rank1 truth."""
+    loaded = _stitched_series(symbol="a", direction="long")
+    page_current = ResolvedContractSegment(
+        loaded.current_segment.contract,
+        page_start,
+        page_end,
+    )
+    results = {
+        frequency: replace(
+            result,
+            resolved_contract_segments=tuple(
+                page_current if segment == loaded.current_segment else segment
+                for segment in result.resolved_contract_segments
+            ),
+        )
+        for frequency, result in loaded.results.items()
+    }
+    loader = _FakeStitchedLoader(
+        {
+            "a": ActualDominantStitchedResearchSeries(
+                results=results,
+                current_segment=loaded.current_segment,
+            )
+        }
+    )
+
+    item = (
+        _builder(loader)
+        .build(
+            source_trading_day=_SOURCE_DAY,
+            target_trading_day=_TARGET_DAY,
+            generated_at=_GENERATED_AT,
+        )
+        .items[0]
+    )
+
+    assert item.decision is SubingDailyWatchDecision.UNAVAILABLE
+    assert item.unavailable_reasons == ("DATA_IDENTITY_MISMATCH",)
+
+
+def test_builder_rejects_multiple_page_owners_for_source_day() -> None:
+    """Catches accepting overlapping source-day owners from a corrupt page."""
+    loaded = _stitched_series(symbol="a", direction="long")
+    hourly = loaded.results[BarFrequency.H1]
+    overlapping = ResolvedContractSegment("A2610", _SOURCE_DAY, _SOURCE_DAY)
+    results = dict(loaded.results)
+    results[BarFrequency.H1] = replace(
+        hourly,
+        resolved_contract_segments=(
+            *hourly.resolved_contract_segments,
+            overlapping,
+        ),
     )
     loader = _FakeStitchedLoader(
         {
