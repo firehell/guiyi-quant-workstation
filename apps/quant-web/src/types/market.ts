@@ -1,7 +1,7 @@
 export const MARKET_FREQUENCIES = ['1m', '5m', '15m', '30m', '60m', '1d', '1w'] as const
 export type MarketFrequency = (typeof MARKET_FREQUENCIES)[number]
 export type SeriesKind = 'continuous' | 'actual_dominant' | 'contract'
-export type ResearchOverlayId = 'none' | 'subing' | 'jdj_strategy' | 'htdy'
+export type ResearchOverlayId = 'none' | 'subing' | 'htdy'
 
 export interface ResearchOverlayDefinition {
   id: ResearchOverlayId
@@ -9,7 +9,7 @@ export interface ResearchOverlayDefinition {
   supportedSeriesKinds: readonly SeriesKind[]
   supportedFrequencies: readonly MarketFrequency[]
   mainIndicators: readonly MainIndicatorId[]
-  historicalSource: 'none' | 'local' | 'subing_strategy' | 'jdj_strategy'
+  historicalSource: 'none' | 'local' | 'subing_strategy'
 }
 
 export interface DominantContractItem {
@@ -1190,52 +1190,6 @@ export function normalizeSubingStrategyHistory(
     actions,
     episodes,
   }
-}
-
-export interface JdjStrategyHistoricalRequest {
-  series_kind: 'actual_dominant'
-  symbol: string
-  frequency: '1m'
-  since: string
-  through: string
-}
-
-export type JdjStrategyActionKind =
-  | 'entry'
-  | 'add'
-  | 'reduce'
-  | 'exit'
-  | 'rejected'
-  | 'daily_pause'
-  | 'daily_stop'
-
-export interface JdjStrategyHistoricalAction {
-  event_id: string
-  episode_id: string | null
-  kind: JdjStrategyActionKind
-  source_event_ids: string[]
-  primary_setup: string | null
-  supporting_setups: string[]
-  direction: 'long' | 'short' | null
-  contract: string
-  trading_day: string
-  segment_start_trading_day: string
-  decision_at: string
-  effective_bar_end: string | null
-  reference_price: string | null
-  quantity: number
-  position_quantity_after: number
-  stop_price: string | null
-  target_price: string | null
-  reward_risk: string | null
-  reason: string
-  fill_basis: string | null
-}
-
-export interface JdjStrategyHistoricalResponse {
-  request: JdjStrategyHistoricalRequest
-  reference_execution: boolean
-  actions: JdjStrategyHistoricalAction[]
 }
 
 export interface NStructureBandRequest {

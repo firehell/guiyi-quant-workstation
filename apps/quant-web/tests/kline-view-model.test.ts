@@ -71,10 +71,10 @@ test('crosshair exposes the exact marker tooltip at its evidence bar', () => {
   const result = buildKlineDerivedData(bars, [])
   const target = bars[79]
   const marker = {
-    id: 'historical:jdj-1',
+    id: 'historical:subing-1',
     time: target.time,
     label: '跟随多',
-    tooltip: 'JDJ candidate detail',
+    tooltip: 'SuBing strategy detail',
     tone: 'up' as const,
     position: 'belowBar' as const,
     shape: 'arrowUp' as const,

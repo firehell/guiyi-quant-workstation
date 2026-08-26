@@ -113,12 +113,11 @@ describe('Product Alert server-side scope', () => {
       'data-testid="product-check-observation"',
       'data-testid="product-check-background"',
     )
-    for (const overlay of ['none', 'subing', 'jdj_strategy', 'htdy']) {
+    for (const overlay of ['none', 'subing', 'htdy']) {
       assert.match(observationSource, new RegExp(`selectedOverlay === '${overlay}'`))
     }
     assert.doesNotMatch(observationSource, /<template v-else>/)
     assert.match(observationSource, /selectedOverlay === 'htdy'[^]*<ProductAlertRules/)
-    assert.doesNotMatch(between(observationSource, "selectedOverlay === 'jdj_strategy'", "selectedOverlay === 'htdy'"), /<ProductAlertRules/)
     assert.doesNotMatch(between(observationSource, "selectedOverlay === 'none'", "selectedOverlay === 'subing'"), /<ProductAlertRules/)
   })
 
