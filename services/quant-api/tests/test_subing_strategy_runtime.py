@@ -338,6 +338,12 @@ def _result_for(
     return next(result for result in results if result.product_status.symbol == symbol)
 
 
+def _emitted_actions(
+    result: SubingStrategyRuntimeResult,
+):
+    return tuple(fact.action for fact in result.action_facts)
+
+
 def test_restore_calculates_every_active_product_without_scope_input() -> None:
     jm, _, _ = _recorded_machine(symbol="jm")
     ag, _, _ = _recorded_machine(symbol="ag")
@@ -352,7 +358,7 @@ def test_restore_calculates_every_active_product_without_scope_input() -> None:
 
     assert restore.calls == [("jm", STARTED_AT), ("ag", STARTED_AT)]
     assert tuple(result.product_status.symbol for result in results) == ("jm", "ag")
-    assert all(result.actions == () for result in results)
+    assert all(result.action_facts == () for result in results)
     assert all(result.product_status.state == "warming" for result in results)
 
 
@@ -373,7 +379,7 @@ def test_final_catch_up_closes_restore_race_without_emitting_past_action() -> No
 
     result = evaluator.final_catch_up(ready_at=READY_AT)[0]
 
-    assert result.actions == ()
+    assert result.action_facts == ()
     assert result.product_status.state == "ready"
     restored = evaluator.current_state("jm")
     assert restored is not None
@@ -384,7 +390,7 @@ def test_final_catch_up_closes_restore_race_without_emitting_past_action() -> No
         BarFrequency.M1,
         source_identity=identity,
     )
-    assert queued_duplicate.actions == ()
+    assert queued_duplicate.action_facts == ()
     assert queued_duplicate.product_status.state == "ready"
     assert current.catch_up_calls == [
         (
@@ -408,7 +414,7 @@ def test_pending_action_with_future_first_1m_remains_eligible_after_ready() -> N
         source_identity=identity,
     )
 
-    assert tuple(action.kind for action in result.actions) == (
+    assert tuple(action.kind for action in _emitted_actions(result)) == (
         SubingStrategyActionKind.OPEN_LONG,
     )
     assert result.product_status.state == "ready"
@@ -433,8 +439,8 @@ def test_future_interval_is_derived_from_authoritative_session_bucket() -> None:
         source_identity=identity,
     )
 
-    assert len(result.actions) == 1
-    assert result.actions[0].effective_bar_end == target_end
+    assert len(result.action_facts) == 1
+    assert result.action_facts[0].action.effective_bar_end == target_end
 
 
 def test_completed_5m_updates_internal_state_without_public_action() -> None:
@@ -447,7 +453,7 @@ def test_completed_5m_updates_internal_state_without_public_action() -> None:
         source_identity=identity,
     )
 
-    assert result.actions == ()
+    assert result.action_facts == ()
     current = evaluator.current_state("jm")
     assert current is not None
     assert current.watermarks.latest_5m == events[752].bar
@@ -468,7 +474,7 @@ def test_completed_15m_creates_pending_but_does_not_emit_action() -> None:
         source_identity=identity,
     )
 
-    assert result.actions == ()
+    assert result.action_facts == ()
     current = evaluator.current_state("jm")
     assert current is not None
     assert current.pending_action is not None
@@ -485,9 +491,10 @@ def test_exact_first_completed_1m_applies_pending_action() -> None:
         source_identity=identity,
     )
 
-    assert len(result.actions) == 1
-    assert result.actions[0].reference_price == events[760].bar.open
-    assert result.actions[0].effective_open_at == (
+    assert len(result.action_facts) == 1
+    assert result.action_facts[0].action.reference_price == events[760].bar.open
+    assert result.action_facts[0].episode is None
+    assert result.action_facts[0].action.effective_open_at == (
         events[760].bar.bar_end - timedelta(minutes=1)
     )
 
@@ -508,10 +515,27 @@ def test_duplicate_completed_bar_is_idempotent_after_action() -> None:
         source_identity=identity,
     )
 
-    assert len(first.actions) == 1
-    assert duplicate.actions == ()
+    assert len(first.action_facts) == 1
+    assert duplicate.action_facts == ()
     assert duplicate.product_status.state == "ready"
     assert evaluator.current_state("jm") == state_after_first
+
+
+def test_completed_close_emits_its_exact_closed_episode_fact() -> None:
+    holding, _, events = _recorded_machine(event_count=779)
+    evaluator, identity = _ready_evaluator(holding)
+
+    result = evaluator.process_completed_bar(
+        events[779].bar,
+        BarFrequency.M1,
+        source_identity=identity,
+    )
+
+    assert len(result.action_facts) == 1
+    fact = result.action_facts[0]
+    assert fact.action.kind is SubingStrategyActionKind.CLOSE_LONG
+    assert fact.episode is not None
+    assert fact.episode.exit_action == fact.action
 
 
 def test_conflicting_same_identity_degrades_only_that_product() -> None:
@@ -540,7 +564,7 @@ def test_conflicting_same_identity_degrades_only_that_product() -> None:
         source_identity=jm_identity,
     )
 
-    assert result.actions == ()
+    assert result.action_facts == ()
     assert result.product_status.state == "unavailable"
     assert result.product_status.reason_codes == ("CONFLICTING_DUPLICATE",)
     assert evaluator.current_state("ag") == ag
@@ -610,7 +634,7 @@ def test_later_1m_cancels_pending_when_exact_first_bar_is_missing() -> None:
         source_identity=identity,
     )
 
-    assert result.actions == ()
+    assert result.action_facts == ()
     assert result.product_status.state == "ready"
     current = evaluator.current_state("jm")
     assert current is not None
@@ -676,12 +700,12 @@ def test_later_1m_does_not_poison_new_interval_open_identity() -> None:
 
 
 def test_canonical_updated_emits_terminal_close_only_when_newly_authoritative() -> None:
-    holding, identity, events = _recorded_machine(event_count=761)
+    holding, identity, events = _recorded_machine(event_count=779)
     terminal = AuthoritativeSegmentTerminal(
         symbol="jm",
         contract=identity.contract,
         segment_start_trading_day=identity.segment_start_trading_day,
-        terminal_bar=events[759].bar,
+        terminal_bar=events[778].bar,
     )
     new_state, new_identity, new_bar = _new_flat_segment()
     restore = _RestoreReader({"jm": holding}, rollovers={"jm": new_state})
@@ -703,14 +727,16 @@ def test_canonical_updated_emits_terminal_close_only_when_newly_authoritative() 
         source_identity=new_identity,
     )
 
-    assert tuple(action.kind for action in first.actions) == (
-        SubingStrategyActionKind.CLOSE_LONG,
-    )
-    assert first.actions[0].reason_codes == ("CONTRACT_SEGMENT_END",)
+    assert len(first.action_facts) == 1
+    terminal_fact = first.action_facts[0]
+    assert terminal_fact.action.kind is SubingStrategyActionKind.CLOSE_LONG
+    assert terminal_fact.action.reason_codes[-1] == "CONTRACT_SEGMENT_END"
+    assert terminal_fact.episode is not None
+    assert terminal_fact.episode.exit_action == terminal_fact.action
     assert rolled is not None
     assert rolled == new_state
     assert rolled.position is None
-    assert second.actions == ()
+    assert second.action_facts == ()
     assert second.product_status.state == "ready"
     assert restore.rollover_calls == [("jm", TRADING_DAY, identity, terminal)]
     assert continued.product_status.state == "ready"
@@ -732,7 +758,7 @@ def test_later_startup_does_not_reemit_restored_terminal_close() -> None:
 
     result = evaluator.process_canonical_updated(TRADING_DAY)[0]
 
-    assert result.actions == ()
+    assert result.action_facts == ()
     assert result.product_status.state == "ready"
     assert evaluator.current_state("jm") == new_state
     assert current.terminal_calls == [("jm", TRADING_DAY, new_identity)]
@@ -754,8 +780,8 @@ def test_restore_open_and_close_during_downtime_ends_flat_without_backfill() -> 
     restored = evaluator.restore_all(started_at=STARTED_AT)[0]
     ready = evaluator.final_catch_up(ready_at=READY_AT)[0]
 
-    assert restored.actions == ()
-    assert ready.actions == ()
+    assert restored.action_facts == ()
+    assert ready.action_facts == ()
     assert ready.product_status.state == "ready"
     current = evaluator.current_state("jm")
     assert current is not None

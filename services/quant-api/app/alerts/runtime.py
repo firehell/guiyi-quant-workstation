@@ -30,7 +30,9 @@ from app.alerts.registry import (
 from app.alerts.service import AlertEventCreate, AlertScopeError, AlertService
 from app.alerts.strategy_payload import serialize_subing_strategy_payload
 from app.alerts.subing_strategy_runtime import (
+    SubingStrategyRuntimeActionFact,
     SubingStrategyRuntimeEvaluator,
+    SubingStrategyRuntimeProductStatus,
     SubingStrategyRuntimeResult,
 )
 from app.market_data.domain import (
@@ -235,6 +237,23 @@ class AlertRuntime:
         self._session_factory = session_factory
         self._market_read_factory = market_read_factory
         self._strategy_evaluator = strategy_evaluator
+        try:
+            strategy_products = tuple(strategy_evaluator.products)
+        except (AttributeError, TypeError):
+            raise ValueError("ALERT_RUNTIME_STRATEGY_PRODUCTS_INVALID") from None
+        if (
+            not strategy_products
+            or len(set(strategy_products)) != len(strategy_products)
+            or any(
+                type(symbol) is not str
+                or symbol != symbol.strip().lower()
+                or not symbol.isascii()
+                or not symbol.isalpha()
+                for symbol in strategy_products
+            )
+        ):
+            raise ValueError("ALERT_RUNTIME_STRATEGY_PRODUCTS_INVALID")
+        self._strategy_products = frozenset(strategy_products)
         self._htdy_evaluator = htdy_evaluator
         self._sender = sender
         self._operational_products = frozenset(
@@ -245,6 +264,9 @@ class AlertRuntime:
         self.heartbeat_store = heartbeat_store
         self.runtime_status_store = runtime_status_store
         self._runtime_status: dict[str, object] | None = None
+        self._strategy_product_statuses: dict[
+            str, SubingStrategyRuntimeProductStatus
+        ] = {}
         self.clock = clock or (lambda: datetime.now(UTC))
         self.stop_requested = stop_requested or (lambda: False)
 
@@ -270,14 +292,10 @@ class AlertRuntime:
         )
         ready_at = self._aware_now()
         caught_up = self._strategy_evaluator.final_catch_up(ready_at=ready_at)
-        strategy_summary = _strategy_runtime_summary(caught_up)
+        self._strategy_product_statuses.clear()
+        self._refresh_strategy_runtime_status(caught_up, require_complete=True)
         self._update_runtime_status(
-            strategy_state=("degraded" if strategy_summary[2] else "ready"),
             strategy_ready_at=_iso_timestamp(ready_at),
-            strategy_product_count=strategy_summary[0],
-            strategy_ready_product_count=strategy_summary[1],
-            strategy_unavailable_product_count=len(strategy_summary[2]),
-            strategy_unavailable_symbols=list(strategy_summary[2]),
             last_strategy_restore_at=_iso_timestamp(ready_at),
         )
         next_heartbeat = self._aware_now()
@@ -298,6 +316,8 @@ class AlertRuntime:
             sorted(definition.rule_code for definition in alert_rule_definitions())
         )
         try:
+            if not self._strategy_products.issubset(self._operational_products):
+                raise ValueError("strategy Live feed incomplete")
             with self._session_factory() as session:
                 try:
                     rules = session.scalars(
@@ -330,42 +350,37 @@ class AlertRuntime:
         symbol = trigger.symbol
         event_frequency = trigger.frequency
         event_bar = trigger.bar
-        if symbol not in self._operational_products:
-            return
         try:
             processing_now = self._aware_now()
         except Exception:  # noqa: BLE001 - collapse clock detail
             _LOGGER.warning("ALERT_PROCESSING_FAILED")
             return
 
-        strategy_actions: tuple[SubingStrategyAction, ...] = ()
-        strategy_processing_failed = False
-        try:
+        strategy_action_facts: tuple[SubingStrategyRuntimeActionFact, ...] = ()
+        if symbol in self._strategy_products:
             state = self._strategy_evaluator.current_state(symbol)
-            if (
-                state is not None
-                and event_frequency.value in SUBING_RULE.input_frequencies
-            ):
-                strategy_result = self._strategy_evaluator.process_completed_bar(
-                    event_bar,
-                    event_frequency,
-                    source_identity=SubingStrategySourceIdentity(
-                        symbol=state.symbol,
-                        contract=state.contract,
-                        segment_start_trading_day=state.segment_start_trading_day,
-                    ),
-                )
-                strategy_actions = strategy_result.actions
-        except Exception:  # noqa: BLE001 - Strategy Rule isolation; detail is private
-            strategy_processing_failed = True
-            _LOGGER.warning("ALERT_STRATEGY_PROCESSING_FAILED")
+        else:
+            state = None
+        if state is not None and event_frequency.value in SUBING_RULE.input_frequencies:
+            strategy_result = self._strategy_evaluator.process_completed_bar(
+                event_bar,
+                event_frequency,
+                source_identity=SubingStrategySourceIdentity(
+                    symbol=state.symbol,
+                    contract=state.contract,
+                    segment_start_trading_day=state.segment_start_trading_day,
+                ),
+            )
+            self._refresh_strategy_runtime_status((strategy_result,))
+            strategy_action_facts = strategy_result.action_facts
+
+        if symbol not in self._operational_products:
+            return
 
         messages: list[AlertNotificationMessage] = []
         event_count = 0
         notification_preparation_failures: list[str] = []
-        processing_error_type: str | None = (
-            PROCESSING_FAILURE if strategy_processing_failed else None
-        )
+        processing_error_type: str | None = None
         fatal_processing_failure = False
         try:
             with self._session_factory() as session:
@@ -429,7 +444,7 @@ class AlertRuntime:
                                 session.rollback()
                             processing_error_type = PROCESSING_FAILURE
                             _LOGGER.warning("ALERT_RULE_PROCESSING_FAILED")
-                    if strategy_actions:
+                    if strategy_action_facts:
                         strategy_rule = next(
                             (
                                 rule
@@ -439,7 +454,8 @@ class AlertRuntime:
                             None,
                         )
                         if strategy_rule is not None:
-                            for action in strategy_actions:
+                            for action_fact in strategy_action_facts:
+                                action = action_fact.action
                                 try:
                                     if not service.rule_allows_event(
                                         strategy_rule,
@@ -452,7 +468,7 @@ class AlertRuntime:
                                         taxonomy=self._taxonomy,
                                         rule=strategy_rule,
                                         action=action,
-                                        episode=self._strategy_episode(action),
+                                        episode=action_fact.episode,
                                         processing_now=processing_now,
                                     )
                                     if not prepared.event_created:
@@ -479,11 +495,11 @@ class AlertRuntime:
 
         if event_count:
             self._update_runtime_status(last_event_at=_iso_timestamp(processing_now))
-        if strategy_actions:
+        if strategy_action_facts:
             self._update_runtime_status(
                 last_strategy_action_at=max(
-                    _iso_timestamp(action.effective_bar_end)
-                    for action in strategy_actions
+                    _iso_timestamp(fact.action.effective_bar_end)
+                    for fact in strategy_action_facts
                 )
             )
         for error_type in notification_preparation_failures:
@@ -508,27 +524,6 @@ class AlertRuntime:
 
         self._send_messages_once(messages, processing_now=processing_now)
 
-    def _strategy_episode(
-        self,
-        action: SubingStrategyAction,
-    ) -> SubingStrategyEpisode | None:
-        state = self._strategy_evaluator.current_state(action.symbol)
-        if state is None:
-            return None
-        candidates = (
-            *((state.current_episode,) if state.current_episode is not None else ()),
-            *state.closed_episodes,
-        )
-        return next(
-            (
-                episode
-                for episode in candidates
-                if episode.episode_id == action.episode_id
-                and episode.exit_action == action
-            ),
-            None,
-        )
-
     def _process_canonical_updated(
         self,
         trigger: _CanonicalUpdatedTrigger,
@@ -539,25 +534,19 @@ class AlertRuntime:
             _LOGGER.warning("ALERT_PROCESSING_FAILED")
             return
 
-        strategy_actions: tuple[SubingStrategyAction, ...] = ()
-        strategy_processing_failed = False
-        try:
-            strategy_results = self._strategy_evaluator.process_canonical_updated(
-                trigger.trading_day
-            )
-            strategy_actions = tuple(
-                action for result in strategy_results for action in result.actions
-            )
-        except Exception:  # noqa: BLE001 - Strategy Rule isolation; detail is private
-            strategy_processing_failed = True
-            _LOGGER.warning("ALERT_STRATEGY_PROCESSING_FAILED")
+        strategy_action_facts: tuple[SubingStrategyRuntimeActionFact, ...] = ()
+        strategy_results = self._strategy_evaluator.process_canonical_updated(
+            trigger.trading_day
+        )
+        self._refresh_strategy_runtime_status(strategy_results, require_complete=True)
+        strategy_action_facts = tuple(
+            fact for result in strategy_results for fact in result.action_facts
+        )
 
         messages: list[AlertNotificationMessage] = []
         event_count = 0
         notification_preparation_failures: list[str] = []
-        processing_error_type: str | None = (
-            PROCESSING_FAILURE if strategy_processing_failed else None
-        )
+        processing_error_type: str | None = None
         fatal_processing_failure = False
         try:
             with self._session_factory() as session:
@@ -659,7 +648,7 @@ class AlertRuntime:
                                     frequency.value,
                                     stage,
                                 )
-                    if strategy_actions:
+                    if strategy_action_facts:
                         strategy_rule = next(
                             (
                                 rule
@@ -669,7 +658,8 @@ class AlertRuntime:
                             None,
                         )
                         if strategy_rule is not None:
-                            for action in strategy_actions:
+                            for action_fact in strategy_action_facts:
+                                action = action_fact.action
                                 try:
                                     if not service.rule_allows_event(
                                         strategy_rule,
@@ -682,7 +672,7 @@ class AlertRuntime:
                                         taxonomy=self._taxonomy,
                                         rule=strategy_rule,
                                         action=action,
-                                        episode=self._strategy_episode(action),
+                                        episode=action_fact.episode,
                                         processing_now=processing_now,
                                     )
                                     if not prepared.event_created:
@@ -709,11 +699,11 @@ class AlertRuntime:
 
         if event_count:
             self._update_runtime_status(last_event_at=_iso_timestamp(processing_now))
-        if strategy_actions:
+        if strategy_action_facts:
             self._update_runtime_status(
                 last_strategy_action_at=max(
-                    _iso_timestamp(action.effective_bar_end)
-                    for action in strategy_actions
+                    _iso_timestamp(fact.action.effective_bar_end)
+                    for fact in strategy_action_facts
                 )
             )
         for error_type in notification_preparation_failures:
@@ -872,6 +862,44 @@ class AlertRuntime:
         if now.tzinfo is None or now.utcoffset() is None:
             raise RuntimeError("ALERT_RUNTIME_CLOCK_INVALID")
         return now.astimezone(UTC)
+
+    def _refresh_strategy_runtime_status(
+        self,
+        results: tuple[SubingStrategyRuntimeResult, ...],
+        *,
+        require_complete: bool = False,
+    ) -> None:
+        if type(results) is not tuple or any(
+            type(result) is not SubingStrategyRuntimeResult for result in results
+        ):
+            raise ValueError("ALERT_RUNTIME_STRATEGY_RESULT_INVALID")
+        incoming_statuses = tuple(result.product_status for result in results)
+        if any(
+            type(status) is not SubingStrategyRuntimeProductStatus
+            for status in incoming_statuses
+        ) or len({status.symbol for status in incoming_statuses}) != len(
+            incoming_statuses
+        ):
+            raise ValueError("ALERT_RUNTIME_STRATEGY_RESULT_INVALID")
+        if (
+            require_complete
+            and {status.symbol for status in incoming_statuses}
+            != self._strategy_products
+        ):
+            raise ValueError("ALERT_RUNTIME_STRATEGY_RESULT_INVALID")
+        for result in results:
+            status = result.product_status
+            self._strategy_product_statuses[status.symbol] = status
+        summary = _strategy_runtime_summary(
+            tuple(self._strategy_product_statuses.values())
+        )
+        self._update_runtime_status(
+            strategy_state=("degraded" if summary[2] else "ready"),
+            strategy_product_count=summary[0],
+            strategy_ready_product_count=summary[1],
+            strategy_unavailable_product_count=len(summary[2]),
+            strategy_unavailable_symbols=list(summary[2]),
+        )
 
     def _record_notification_failure(
         self,
@@ -1078,14 +1106,24 @@ def validate_alert_runtime_status(
 
 
 def _strategy_runtime_summary(
-    results: tuple[SubingStrategyRuntimeResult, ...],
+    statuses: tuple[SubingStrategyRuntimeProductStatus, ...],
 ) -> tuple[int, int, tuple[str, ...]]:
-    if type(results) is not tuple:
+    if type(statuses) is not tuple:
         raise ValueError("ALERT_RUNTIME_STRATEGY_RESULT_INVALID")
-    statuses = tuple(result.product_status for result in results)
-    if any(
-        type(result) is not SubingStrategyRuntimeResult for result in results
-    ) or len({status.symbol for status in statuses}) != len(statuses):
+    if (
+        any(
+            type(status) is not SubingStrategyRuntimeProductStatus
+            for status in statuses
+        )
+        or len(statuses) > _STRATEGY_PRODUCT_LIMIT
+    ):
+        raise ValueError("ALERT_RUNTIME_STRATEGY_RESULT_INVALID")
+    if len({status.symbol for status in statuses}) != len(statuses) or any(
+        status.symbol != status.symbol.strip().lower()
+        or not status.symbol.isascii()
+        or not status.symbol.isalpha()
+        for status in statuses
+    ):
         raise ValueError("ALERT_RUNTIME_STRATEGY_RESULT_INVALID")
     unavailable = tuple(
         sorted(status.symbol for status in statuses if status.state == "unavailable")

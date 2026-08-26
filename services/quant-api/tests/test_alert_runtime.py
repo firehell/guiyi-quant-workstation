@@ -26,6 +26,7 @@ from app.alerts.runtime import (
     validate_alert_runtime_status,
 )
 from app.alerts.subing_strategy_runtime import (
+    SubingStrategyRuntimeActionFact,
     SubingStrategyRuntimeProductStatus,
     SubingStrategyRuntimeResult,
 )
@@ -470,7 +471,9 @@ def test_canonical_updated_state_parser_rejects_invalid_input(
     assert _parse_canonical_updated_trigger(channel, payload) is None
 
 
-def test_non_operational_symbol_stops_before_rule_dispatch(session: Session) -> None:
+def test_active_strategy_runs_before_non_operational_htdy_gate(
+    session: Session,
+) -> None:
     order: list[str] = []
     strategy = _Task9StrategyEvaluator(order)
     _seed_rule(session, "subing_strategy_v1")
@@ -482,7 +485,7 @@ def test_non_operational_symbol_stops_before_rule_dispatch(session: Session) -> 
 
     harness.runtime.process_message("live:bar:jm:5m", _payload())
 
-    assert order == []
+    assert order == ["strategy:5m"]
     assert _event_rows(session) == []
     assert harness.sender.messages == []
 
@@ -1662,7 +1665,7 @@ def test_runtime_status_write_failure_escapes_processing_boundary(
     ):
         harness.runtime.process_message("live:bar:jm:15m", _payload())
 
-    assert len(_event_rows(session)) == 1
+    assert _event_rows(session) == []
 
 
 def test_runtime_status_update_preserves_external_acknowledgement(
@@ -1828,11 +1831,11 @@ def test_runtime_status_records_processing_event_and_provider_acceptance(
         "notification_acknowledged_at": None,
         "notification_error_type": None,
         "consecutive_notification_failures": 0,
-        "strategy_state": "warming",
+        "strategy_state": "ready",
         "strategy_started_at": None,
         "strategy_ready_at": None,
-        "strategy_product_count": 0,
-        "strategy_ready_product_count": 0,
+        "strategy_product_count": 1,
+        "strategy_ready_product_count": 1,
         "strategy_unavailable_product_count": 0,
         "strategy_unavailable_symbols": [],
         "last_strategy_action_at": None,
@@ -2112,12 +2115,13 @@ def test_session_fixture_uses_real_shanghai_anchor() -> None:
 class _Task9StrategyEvaluator:
     def __init__(self, order: list[str]) -> None:
         self.order = order
+        self.products = ("jm",)
 
     def restore_all(self, *, started_at: datetime):
         self.order.append("restore")
         return (
             SubingStrategyRuntimeResult(
-                actions=(),
+                action_facts=(),
                 product_status=SubingStrategyRuntimeProductStatus(
                     symbol="jm",
                     state="warming",
@@ -2133,7 +2137,7 @@ class _Task9StrategyEvaluator:
         self.order.append("catch_up")
         return (
             SubingStrategyRuntimeResult(
-                actions=(),
+                action_facts=(),
                 product_status=SubingStrategyRuntimeProductStatus(
                     symbol="jm",
                     state="ready",
@@ -2161,7 +2165,7 @@ class _Task9StrategyEvaluator:
     def process_completed_bar(self, bar, frequency, *, source_identity):
         self.order.append(f"strategy:{frequency.value}")
         return SubingStrategyRuntimeResult(
-            actions=(),
+            action_facts=(),
             product_status=SubingStrategyRuntimeProductStatus(
                 symbol=source_identity.symbol,
                 state="ready",
@@ -2174,7 +2178,19 @@ class _Task9StrategyEvaluator:
 
     def process_canonical_updated(self, trading_day: date):
         self.order.append(f"terminal:{trading_day.isoformat()}")
-        return ()
+        return (
+            SubingStrategyRuntimeResult(
+                action_facts=(),
+                product_status=SubingStrategyRuntimeProductStatus(
+                    symbol="jm",
+                    state="ready",
+                    cutoff_1m=ORDINARY_END,
+                    cutoff_5m=ORDINARY_END,
+                    cutoff_15m=BOUNDARY_END,
+                    reason_codes=(),
+                ),
+            ),
+        )
 
 
 def _task9_open_action() -> SubingStrategyAction:
@@ -2274,6 +2290,7 @@ class _Task9ActionEvaluator(_Task9StrategyEvaluator):
         super().__init__(order)
         self.action = action
         self.episode = episode
+        self.rolled_over = False
 
     def current_state(self, symbol: str):
         return type(
@@ -2285,7 +2302,11 @@ class _Task9ActionEvaluator(_Task9StrategyEvaluator):
                 "segment_start_trading_day": DAY,
                 "current_episode": None,
                 "closed_episodes": (
-                    (self.episode,) if self.episode is not None else ()
+                    ()
+                    if self.rolled_over
+                    else (self.episode,)
+                    if self.episode is not None
+                    else ()
                 ),
             },
         )()
@@ -2293,7 +2314,7 @@ class _Task9ActionEvaluator(_Task9StrategyEvaluator):
     def process_completed_bar(self, bar, frequency, *, source_identity):
         self.order.append(f"strategy:{frequency.value}")
         return SubingStrategyRuntimeResult(
-            actions=(self.action,),
+            action_facts=(SubingStrategyRuntimeActionFact(self.action, self.episode),),
             product_status=SubingStrategyRuntimeProductStatus(
                 symbol=source_identity.symbol,
                 state="ready",
@@ -2306,9 +2327,12 @@ class _Task9ActionEvaluator(_Task9StrategyEvaluator):
 
     def process_canonical_updated(self, trading_day: date):
         self.order.append(f"terminal:{trading_day.isoformat()}")
+        self.rolled_over = True
         return (
             SubingStrategyRuntimeResult(
-                actions=(self.action,),
+                action_facts=(
+                    SubingStrategyRuntimeActionFact(self.action, self.episode),
+                ),
                 product_status=SubingStrategyRuntimeProductStatus(
                     symbol="jm",
                     state="ready",
@@ -2436,6 +2460,35 @@ def test_missing_rule_registry_blocks_subscribe_restore_and_ready(
     assert order == []
 
 
+def test_active_strategy_without_operational_live_feed_blocks_subscribe(
+    session: Session,
+) -> None:
+    _seed_rule(session, "htdy_original_15m", scope=())
+    _seed_rule(session, "subing_strategy_v1", scope=())
+    order: list[str] = []
+    source = FakeMessageSource()
+    runtime = AlertRuntime(
+        session_factory=lambda: nullcontext(session),
+        market_read_factory=lambda _session: FakeRead(_window(bar_end=ORDINARY_END)),
+        strategy_evaluator=_Task9StrategyEvaluator(order),
+        htdy_evaluator=FakeHtdyEvaluator(()),
+        sender=FakeSender(),
+        operational_products=("ag",),
+        taxonomy={"jm": ProductTaxonomyEntry(name="焦煤", sector="coal")},
+        message_source=source,
+        heartbeat_store=FakeHeartbeatStore(),
+        runtime_status_store=AtomicRuntimeStatusStore(),
+        clock=lambda: ORDINARY_END,
+        stop_requested=lambda: True,
+    )
+
+    with pytest.raises(RuntimeError, match="^ALERT_RUNTIME_COMPOSITION_INVALID$"):
+        runtime.run_forever()
+
+    assert source.subscribe_calls == []
+    assert order == []
+
+
 def test_invalid_runtime_status_blocks_subscribe_restore_and_ready(
     session: Session,
 ) -> None:
@@ -2542,13 +2595,23 @@ def test_strategy_duplicate_and_fact_conflict_never_send_again(
 def test_strategy_product_failure_does_not_block_htdy(session: Session) -> None:
     _seed_rule(session, "htdy_original_15m")
 
-    class FailingStrategy(_Task9StrategyEvaluator):
-        def process_completed_bar(self, *_args, **_kwargs):
-            self.order.append("strategy:failed")
-            raise RuntimeError("private product source detail")
+    class DegradedStrategy(_Task9StrategyEvaluator):
+        def process_completed_bar(self, bar, _frequency, *, source_identity):
+            self.order.append("strategy:degraded")
+            return SubingStrategyRuntimeResult(
+                action_facts=(),
+                product_status=SubingStrategyRuntimeProductStatus(
+                    symbol=source_identity.symbol,
+                    state="unavailable",
+                    cutoff_1m=bar.bar_end,
+                    cutoff_5m=None,
+                    cutoff_15m=None,
+                    reason_codes=("CURRENT_UNAVAILABLE",),
+                ),
+            )
 
     order: list[str] = []
-    strategy = FailingStrategy(order)
+    strategy = DegradedStrategy(order)
     harness = _runtime(
         session,
         event_end=BOUNDARY_END,
@@ -2557,9 +2620,149 @@ def test_strategy_product_failure_does_not_block_htdy(session: Session) -> None:
 
     harness.runtime.process_message("live:bar:jm:15m", _payload(bar_end=BOUNDARY_END))
 
-    assert order == ["strategy:failed"]
+    assert order == ["strategy:degraded"]
     assert _rule_codes(_event_rows(session)) == ["htdy_original_15m"]
     assert len(harness.sender.messages) == 1
+
+
+def test_unknown_completed_bar_evaluator_fault_escapes_without_rule_side_effects(
+    session: Session,
+) -> None:
+    _seed_rule(session, "htdy_original_15m")
+
+    class BrokenStrategy(_Task9StrategyEvaluator):
+        def process_completed_bar(self, *_args, **_kwargs):
+            raise AssertionError("programming bug")
+
+    harness = _runtime(
+        session,
+        event_end=BOUNDARY_END,
+        strategy_evaluator=BrokenStrategy([]),
+    )
+
+    with pytest.raises(AssertionError, match="^programming bug$"):
+        harness.runtime.process_message(
+            "live:bar:jm:15m", _payload(bar_end=BOUNDARY_END)
+        )
+
+    assert _event_rows(session) == []
+    assert harness.sender.messages == []
+
+
+def test_unknown_canonical_evaluator_fault_escapes_without_rule_side_effects(
+    session: Session,
+) -> None:
+    _seed_rule(session, "htdy_original_15m")
+
+    class BrokenStrategy(_Task9StrategyEvaluator):
+        def process_canonical_updated(self, _trading_day: date):
+            raise AssertionError("programming bug")
+
+    harness = _runtime(
+        session,
+        strategy_evaluator=BrokenStrategy([]),
+    )
+
+    with pytest.raises(AssertionError, match="^programming bug$"):
+        harness.runtime.process_message("market:state", _canonical_updated_payload())
+
+    assert _event_rows(session) == []
+    assert harness.sender.messages == []
+
+
+def test_canonical_missing_active_product_result_fails_closed(
+    session: Session,
+) -> None:
+    class MissingProductStrategy(_Task9StrategyEvaluator):
+        def process_canonical_updated(self, _trading_day: date):
+            return ()
+
+    harness = _runtime(
+        session,
+        strategy_evaluator=MissingProductStrategy([]),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="^ALERT_RUNTIME_STRATEGY_RESULT_INVALID$",
+    ):
+        harness.runtime.process_message("market:state", _canonical_updated_payload())
+
+
+def test_completed_bar_refreshes_strategy_v3_degrade_and_recovery(
+    session: Session,
+) -> None:
+    states = iter(("unavailable", "ready"))
+
+    class ChangingStrategy(_Task9StrategyEvaluator):
+        def process_completed_bar(self, bar, frequency, *, source_identity):
+            state = next(states)
+            return SubingStrategyRuntimeResult(
+                action_facts=(),
+                product_status=SubingStrategyRuntimeProductStatus(
+                    symbol=source_identity.symbol,
+                    state=state,
+                    cutoff_1m=bar.bar_end,
+                    cutoff_5m=None,
+                    cutoff_15m=None,
+                    reason_codes=("CURRENT_UNAVAILABLE",)
+                    if state == "unavailable"
+                    else (),
+                ),
+            )
+
+    status = AtomicRuntimeStatusStore()
+    harness = _runtime(
+        session,
+        strategy_evaluator=ChangingStrategy([]),
+        runtime_status_store=status,
+    )
+
+    harness.runtime.process_message("live:bar:jm:1m", _payload())
+    assert status.status["strategy_state"] == "degraded"
+    assert status.status["strategy_product_count"] == 1
+    assert status.status["strategy_ready_product_count"] == 0
+    assert status.status["strategy_unavailable_symbols"] == ["jm"]
+
+    harness.runtime.process_message("live:bar:jm:1m", _payload())
+    assert status.status["strategy_state"] == "ready"
+    assert status.status["strategy_ready_product_count"] == 1
+    assert status.status["strategy_unavailable_product_count"] == 0
+    assert status.status["strategy_unavailable_symbols"] == []
+
+
+def test_canonical_result_refreshes_strategy_v3_product_aggregate(
+    session: Session,
+) -> None:
+    class DegradedTerminalStrategy(_Task9StrategyEvaluator):
+        def process_canonical_updated(self, trading_day: date):
+            return (
+                SubingStrategyRuntimeResult(
+                    action_facts=(),
+                    product_status=SubingStrategyRuntimeProductStatus(
+                        symbol="jm",
+                        state="unavailable",
+                        cutoff_1m=None,
+                        cutoff_5m=None,
+                        cutoff_15m=None,
+                        reason_codes=("TERMINAL_UNAVAILABLE",),
+                    ),
+                ),
+            )
+
+    status = AtomicRuntimeStatusStore()
+    harness = _runtime(
+        session,
+        strategy_evaluator=DegradedTerminalStrategy([]),
+        runtime_status_store=status,
+    )
+
+    harness.runtime.process_message("market:state", _canonical_updated_payload())
+
+    assert status.status["strategy_state"] == "degraded"
+    assert status.status["strategy_product_count"] == 1
+    assert status.status["strategy_unavailable_product_count"] == 1
+    assert status.status["strategy_unavailable_symbols"] == ["jm"]
 
 
 def test_canonical_terminal_action_uses_the_same_event_path(session: Session) -> None:

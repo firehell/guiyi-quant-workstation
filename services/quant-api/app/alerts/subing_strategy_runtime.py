@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, timedelta
-from typing import Literal, Protocol
+from typing import Literal, Protocol, TypeAlias
 
 from app.market_data.aggregation import (
     AggregationError,
@@ -13,7 +13,11 @@ from app.market_data.aggregation import (
     bucket_window_for_bar,
 )
 from app.market_data.domain import BarFrequency, CanonicalBar
-from app.market_data.subing_strategy.contracts import SubingStrategyAction
+from app.market_data.subing_strategy.contracts import (
+    SubingStrategyAction,
+    SubingStrategyActionKind,
+    SubingStrategyEpisode,
+)
 from app.market_data.subing_strategy.machine import (
     SubingStrategyMachineError,
     SubingStrategyMachineState,
@@ -30,7 +34,7 @@ from app.market_data.subing_strategy.stream_contracts import (
 
 
 _RuntimeState = Literal["warming", "ready", "unavailable"]
-_RuntimeCompletedBar = Completed1mBar | Completed5mBar | Completed15mBar
+_RuntimeCompletedBar: TypeAlias = Completed1mBar | Completed5mBar | Completed15mBar
 _RUNTIME_FREQUENCIES = (
     BarFrequency.M1,
     BarFrequency.M5,
@@ -74,8 +78,32 @@ class SubingStrategyRuntimeProductStatus:
 
 
 @dataclass(frozen=True, slots=True)
+class SubingStrategyRuntimeActionFact:
+    action: SubingStrategyAction
+    episode: SubingStrategyEpisode | None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.action, SubingStrategyAction):
+            raise ValueError("SUBING_STRATEGY_RUNTIME_ACTION_FACT_INVALID")
+        is_open = self.action.kind in {
+            SubingStrategyActionKind.OPEN_LONG,
+            SubingStrategyActionKind.OPEN_SHORT,
+        }
+        if is_open:
+            valid = self.episode is None
+        else:
+            valid = (
+                isinstance(self.episode, SubingStrategyEpisode)
+                and self.episode.episode_id == self.action.episode_id
+                and self.episode.exit_action == self.action
+            )
+        if not valid:
+            raise ValueError("SUBING_STRATEGY_RUNTIME_ACTION_FACT_INVALID")
+
+
+@dataclass(frozen=True, slots=True)
 class SubingStrategyRuntimeResult:
-    actions: tuple[SubingStrategyAction, ...]
+    action_facts: tuple[SubingStrategyRuntimeActionFact, ...]
     product_status: SubingStrategyRuntimeProductStatus
 
 
@@ -166,6 +194,10 @@ class SubingStrategyRuntimeEvaluator:
         self._restore_reader = restore_reader
         self._current_reader = current_reader
         self._started_at: datetime | None = None
+
+    @property
+    def products(self) -> tuple[str, ...]:
+        return tuple(self._products)
 
     def restore_all(
         self,
@@ -301,8 +333,8 @@ class SubingStrategyRuntimeEvaluator:
             return self._result(product)
         return self._result(
             product,
-            actions=(
-                output.actions
+            action_facts=(
+                _action_facts(state, output.actions)
                 if product.availability == "ready"
                 and _after_ready_cutoff(product, event)
                 else ()
@@ -365,6 +397,7 @@ class SubingStrategyRuntimeEvaluator:
                     terminal,
                     source_identity=identity,
                 )
+                action_facts = _action_facts(state, output.actions)
                 product.state = next_state
                 if product.availability == "ready":
                     (
@@ -375,8 +408,8 @@ class SubingStrategyRuntimeEvaluator:
                 results.append(
                     self._result(
                         product,
-                        actions=(
-                            output.actions if product.availability == "ready" else ()
+                        action_facts=(
+                            action_facts if product.availability == "ready" else ()
                         ),
                     )
                 )
@@ -487,11 +520,11 @@ class SubingStrategyRuntimeEvaluator:
     def _result(
         product: _ProductRuntime,
         *,
-        actions: tuple[SubingStrategyAction, ...] = (),
+        action_facts: tuple[SubingStrategyRuntimeActionFact, ...] = (),
     ) -> SubingStrategyRuntimeResult:
         cutoffs = _cutoffs(product.state) if product.state is not None else (None,) * 3
         return SubingStrategyRuntimeResult(
-            actions=actions,
+            action_facts=action_facts,
             product_status=SubingStrategyRuntimeProductStatus(
                 symbol=product.symbol,
                 state=product.availability,
@@ -501,6 +534,31 @@ class SubingStrategyRuntimeEvaluator:
                 reason_codes=product.reason_codes,
             ),
         )
+
+
+def _action_facts(
+    state: SubingStrategyMachineState,
+    actions: tuple[SubingStrategyAction, ...],
+) -> tuple[SubingStrategyRuntimeActionFact, ...]:
+    facts: list[SubingStrategyRuntimeActionFact] = []
+    for action in actions:
+        if action.kind in {
+            SubingStrategyActionKind.OPEN_LONG,
+            SubingStrategyActionKind.OPEN_SHORT,
+        }:
+            episode = None
+        else:
+            matches = tuple(
+                episode
+                for episode in state.closed_episodes
+                if episode.episode_id == action.episode_id
+                and episode.exit_action == action
+            )
+            if len(matches) != 1:
+                raise SubingStrategyMachineError("ACTION_EPISODE_INVALID")
+            episode = matches[0]
+        facts.append(SubingStrategyRuntimeActionFact(action, episode))
+    return tuple(facts)
 
 
 def _source_identity(state: SubingStrategyMachineState) -> SubingStrategySourceIdentity:
@@ -656,6 +714,7 @@ def _utc_instant(value: datetime) -> datetime:
 
 
 __all__ = [
+    "SubingStrategyRuntimeActionFact",
     "SubingStrategyRuntimeEvaluator",
     "SubingStrategyRuntimeProductStatus",
     "SubingStrategyRuntimeProductSourceError",

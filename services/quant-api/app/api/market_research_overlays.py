@@ -187,11 +187,11 @@ def _strategy_current_response(
     pending = result.pending_action
     context = result.direction_context
     return SubingStrategyCurrentResponse(
-        strategy_id=result.policy.strategy_id,
-        formula_version=result.policy.formula_version,
-        series_kind=result.request.series_kind.value,
+        strategy_id="subing_strategy_v1",
+        formula_version="subing_strategy_15m_v1",
+        series_kind="actual_dominant",
         symbol=result.request.symbol,
-        frequency=result.request.frequency.value,
+        frequency="15m",
         contract=result.contract,
         segment_start_trading_day=result.segment_start_trading_day,
         source_mode=result.source_mode,

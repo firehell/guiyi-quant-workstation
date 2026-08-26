@@ -134,10 +134,17 @@ class _CurrentSnapshotStore(Protocol):
 
 
 class _SegmentSummary(Protocol):
-    symbol: str
-    contract: str
-    start_trading_day: date
-    end_trading_day: date
+    @property
+    def symbol(self) -> str: ...
+
+    @property
+    def contract(self) -> str: ...
+
+    @property
+    def start_trading_day(self) -> date: ...
+
+    @property
+    def end_trading_day(self) -> date: ...
 
 
 @dataclass(frozen=True, slots=True)
