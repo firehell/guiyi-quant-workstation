@@ -8,6 +8,7 @@ import pytest
 from app.market_data.actual_dominant_research import (
     ActualDominantResearchSegmentLoader,
     ActualDominantResearchSegmentIdentityError,
+    ActualDominantResearchSourceTradingDayMissingError,
     ActualDominantStitchedResearchLoader,
 )
 from app.market_data.domain import (
@@ -19,7 +20,10 @@ from app.market_data.domain import (
     MarketSeriesResult,
     ResolvedContractSegment,
 )
-from app.market_data.market_data_service import DominantContractSegmentSummary
+from app.market_data.market_data_service import (
+    ActualDominantSourceTradingDayMissingError,
+    DominantContractSegmentSummary,
+)
 
 
 _DAY_ONE = date(2026, 8, 3)
@@ -74,9 +78,11 @@ class _StitchedMarketData:
         *,
         results: dict[BarFrequency, MarketSeriesPageResult],
         summary: DominantContractSegmentSummary,
+        failures: dict[BarFrequency, Exception] | None = None,
     ) -> None:
         self._results = results
         self._summary = summary
+        self._failures = failures or {}
         self.queries: list[ActualDominantRecentBarsQuery] = []
         self.segment_requests: list[tuple[str, date]] = []
 
@@ -85,6 +91,9 @@ class _StitchedMarketData:
         request: ActualDominantRecentBarsQuery,
     ) -> MarketSeriesPageResult:
         self.queries.append(request)
+        failure = self._failures.get(request.frequency)
+        if failure is not None:
+            raise failure
         return self._results[request.frequency]
 
     def dominant_segment_for_day(
@@ -185,7 +194,7 @@ def test_stitched_loader_rejects_empty_frequencies_before_market_read() -> None:
 
 
 @pytest.mark.parametrize("frequency", (BarFrequency.D1, BarFrequency.H1))
-def test_stitched_loader_requires_each_final_bar_on_source_day(
+def test_stitched_loader_types_each_missing_source_day_bar(
     frequency: BarFrequency,
 ) -> None:
     current = ResolvedContractSegment(
@@ -200,10 +209,6 @@ def test_stitched_loader_requires_each_final_bar_on_source_day(
         )
         for item in (BarFrequency.D1, BarFrequency.H1)
     }
-    results[frequency] = _page_result(
-        _bars(frequency, (_STITCHED_SOURCE_DAY - timedelta(days=1),)),
-        (current,),
-    )
     market_data = _StitchedMarketData(
         results=results,
         summary=DominantContractSegmentSummary(
@@ -212,12 +217,10 @@ def test_stitched_loader_requires_each_final_bar_on_source_day(
             _STITCHED_CURRENT_START,
             date(2026, 8, 31),
         ),
+        failures={frequency: ActualDominantSourceTradingDayMissingError()},
     )
 
-    with pytest.raises(
-        ActualDominantResearchSegmentIdentityError,
-        match="rank1 stitched identity is missing or inconsistent",
-    ):
+    with pytest.raises(ActualDominantResearchSourceTradingDayMissingError):
         ActualDominantStitchedResearchLoader(market_data).load(
             symbol="rb",
             frequencies=(BarFrequency.D1, BarFrequency.H1),

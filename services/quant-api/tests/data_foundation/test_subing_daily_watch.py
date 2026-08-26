@@ -9,15 +9,20 @@ import pytest
 
 from app.market_data.actual_dominant_research import (
     ActualDominantResearchSegmentIdentityError,
+    ActualDominantStitchedResearchLoader,
     ActualDominantStitchedResearchSeries,
 )
 from app.market_data.domain import (
+    ActualDominantRecentBarsQuery,
     BarFrequency,
     CanonicalBar,
     MarketSeriesPageResult,
     ResolvedContractSegment,
 )
-from app.market_data.market_data_service import MarketDataError
+from app.market_data.market_data_service import (
+    DominantContractSegmentSummary,
+    MarketDataError,
+)
 from app.market_data.subing_daily_watch import (
     SubingDailyWatchBuilder,
     SubingDailyWatchDecision,
@@ -188,6 +193,35 @@ class _FakeStitchedLoader:
         if isinstance(outcome, Exception):
             raise outcome
         return outcome
+
+
+class _FakeStitchedReader:
+    def __init__(
+        self,
+        *,
+        results: dict[BarFrequency, MarketSeriesPageResult],
+        current_segment: ResolvedContractSegment,
+    ) -> None:
+        self._results = results
+        self._current_segment = current_segment
+
+    def query_actual_dominant_recent_bars(
+        self,
+        request: ActualDominantRecentBarsQuery,
+    ) -> MarketSeriesPageResult:
+        return self._results[request.frequency]
+
+    def dominant_segment_for_day(
+        self,
+        symbol: str,
+        trading_day: date,
+    ) -> DominantContractSegmentSummary:
+        return DominantContractSegmentSummary(
+            symbol=symbol,
+            contract=self._current_segment.contract,
+            start_trading_day=self._current_segment.start_trading_day,
+            end_trading_day=self._current_segment.end_trading_day,
+        )
 
 
 def _bars(
@@ -494,6 +528,67 @@ def test_builder_marks_latest_fact_before_source_day_unavailable() -> None:
 
     assert item.decision is SubingDailyWatchDecision.UNAVAILABLE
     assert item.unavailable_reasons == ("SOURCE_TRADING_DAY_MISSING",)
+
+
+def test_builder_maps_real_loader_missing_source_day_to_typed_unavailable() -> None:
+    """Catches the service-loader path swallowing source-day Bar absence."""
+    loaded = _stitched_series(symbol="a", direction="long")
+    daily = loaded.results[BarFrequency.D1]
+    results = dict(loaded.results)
+    results[BarFrequency.D1] = replace(daily, bars=daily.bars[:-1])
+    reader = _FakeStitchedReader(
+        results=results,
+        current_segment=loaded.current_segment,
+    )
+    builder = SubingDailyWatchBuilder(
+        stitched_loader=ActualDominantStitchedResearchLoader(reader),
+        products=("a",),
+        product_metadata=_metadata("a"),
+        expected_universe_size=1,
+    )
+
+    item = builder.build(
+        source_trading_day=_SOURCE_DAY,
+        target_trading_day=_TARGET_DAY,
+        generated_at=_GENERATED_AT,
+    ).items[0]
+
+    assert item.decision is SubingDailyWatchDecision.UNAVAILABLE
+    assert item.unavailable_reasons == ("SOURCE_TRADING_DAY_MISSING",)
+
+
+def test_builder_keeps_real_loader_corrupt_page_as_identity_mismatch() -> None:
+    """Catches corrupt stitched identity being mislabeled as source-day absence."""
+    loaded = _stitched_series(symbol="a", direction="long")
+    daily = loaded.results[BarFrequency.D1]
+    corrupt = replace(
+        daily.bars[0],
+        trading_day=_SOURCE_DAY + timedelta(days=1),
+    )
+    results = dict(loaded.results)
+    results[BarFrequency.D1] = replace(
+        daily,
+        bars=(corrupt, *daily.bars[1:]),
+    )
+    reader = _FakeStitchedReader(
+        results=results,
+        current_segment=loaded.current_segment,
+    )
+    builder = SubingDailyWatchBuilder(
+        stitched_loader=ActualDominantStitchedResearchLoader(reader),
+        products=("a",),
+        product_metadata=_metadata("a"),
+        expected_universe_size=1,
+    )
+
+    item = builder.build(
+        source_trading_day=_SOURCE_DAY,
+        target_trading_day=_TARGET_DAY,
+        generated_at=_GENERATED_AT,
+    ).items[0]
+
+    assert item.decision is SubingDailyWatchDecision.UNAVAILABLE
+    assert item.unavailable_reasons == ("DATA_IDENTITY_MISMATCH",)
 
 
 def test_builder_rejects_d1_h1_physical_contract_mismatch() -> None:

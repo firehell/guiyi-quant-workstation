@@ -64,6 +64,13 @@ class MarketDataError(RuntimeError):
         super().__init__(code)
 
 
+class ActualDominantSourceTradingDayMissingError(MarketDataError):
+    """The recent actual-dominant page has no Bar for its exact source day."""
+
+    def __init__(self) -> None:
+        super().__init__("ACTUAL_DOMINANT_SOURCE_TRADING_DAY_MISSING")
+
+
 @dataclass(frozen=True, slots=True)
 class DominantContractSummary:
     """各品种最新主力映射一行摘要（映射日 + 实际合约代码）。"""
@@ -155,15 +162,14 @@ class MarketDataService:
             )
         )
         bars = result.bars
-        if (
-            not bars
-            or bars[-1].trading_day != request.through
-            or any(bar.trading_day > request.through for bar in bars)
-            or any(
-                current.bar_end <= previous.bar_end
-                for previous, current in zip(bars, bars[1:], strict=False)
-            )
+        if any(bar.trading_day > request.through for bar in bars) or any(
+            current.bar_end <= previous.bar_end
+            for previous, current in zip(bars, bars[1:], strict=False)
         ):
+            raise MarketDataError("ACTUAL_DOMINANT_RECENT_BARS_INVALID")
+        if not bars or bars[-1].trading_day < request.through:
+            raise ActualDominantSourceTradingDayMissingError
+        if bars[-1].trading_day != request.through:
             raise MarketDataError("ACTUAL_DOMINANT_RECENT_BARS_INVALID")
         return result
 

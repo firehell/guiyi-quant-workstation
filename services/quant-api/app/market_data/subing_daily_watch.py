@@ -9,6 +9,7 @@ from typing import Literal, Protocol
 
 from .actual_dominant_research import (
     ActualDominantResearchSegmentIdentityError,
+    ActualDominantResearchSourceTradingDayMissingError,
     ActualDominantStitchedResearchSeries,
 )
 from .domain import BarFrequency, MarketSeriesPageResult, ResolvedContractSegment
@@ -361,6 +362,12 @@ class SubingDailyWatchBuilder:
                 frequencies=(BarFrequency.D1, BarFrequency.H1),
                 through=source_trading_day,
                 limit=30,
+            )
+        except ActualDominantResearchSourceTradingDayMissingError:
+            return _unavailable_item(
+                symbol,
+                metadata=metadata,
+                reasons=("SOURCE_TRADING_DAY_MISSING",),
             )
         except ActualDominantResearchSegmentIdentityError:
             return _unavailable_item(

@@ -18,7 +18,11 @@ from app.market_data.domain import (
     SeriesKind,
     SeriesPageQuery,
 )
-from app.market_data.market_data_service import MarketDataError, MarketDataService
+from app.market_data.market_data_service import (
+    ActualDominantSourceTradingDayMissingError,
+    MarketDataError,
+    MarketDataService,
+)
 from app.market_data.storage import CanonicalMonthlyStore, PublishRequest
 from app.models import Exchange, Instrument, TradingCalendar, TradingSession
 
@@ -575,6 +579,34 @@ def test_query_actual_dominant_recent_bars_uses_canonical_page_across_rollover(
     [
         _page_result(),
         _page_result(_bar(3, 100)),
+    ],
+)
+def test_query_actual_dominant_recent_bars_types_source_day_missing(
+    session, tmp_path, monkeypatch, page: MarketSeriesPageResult
+) -> None:
+    """Catches empty or stale pages being collapsed into corrupt-page identity."""
+    _, service, _ = _service(session, tmp_path)
+    monkeypatch.setattr(
+        service,
+        "_trading_day_window",
+        lambda **_kwargs: (
+            datetime(2025, 1, 4, 1, tzinfo=UTC),
+            datetime(2025, 1, 4, 7, tzinfo=UTC),
+        ),
+    )
+    monkeypatch.setattr(service, "query_page", lambda _request: page)
+
+    with pytest.raises(ActualDominantSourceTradingDayMissingError) as raised:
+        service.query_actual_dominant_recent_bars(
+            ActualDominantRecentBarsQuery("jm", "1d", date(2025, 1, 4), 3)
+        )
+
+    assert raised.value.code == "ACTUAL_DOMINANT_SOURCE_TRADING_DAY_MISSING"
+
+
+@pytest.mark.parametrize(
+    "page",
+    [
         _page_result(_bar(4, 100), _bar(5, 101)),
         _page_result(
             _bar(4, 100),
@@ -592,7 +624,7 @@ def test_query_actual_dominant_recent_bars_uses_canonical_page_across_rollover(
         ),
     ],
 )
-def test_query_actual_dominant_recent_bars_rejects_invalid_page(
+def test_query_actual_dominant_recent_bars_keeps_corrupt_page_invalid(
     session, tmp_path, monkeypatch, page: MarketSeriesPageResult
 ) -> None:
     _, service, _ = _service(session, tmp_path)
@@ -606,7 +638,10 @@ def test_query_actual_dominant_recent_bars_rejects_invalid_page(
     )
     monkeypatch.setattr(service, "query_page", lambda _request: page)
 
-    with pytest.raises(MarketDataError, match="ACTUAL_DOMINANT_RECENT_BARS_INVALID"):
+    with pytest.raises(MarketDataError) as raised:
         service.query_actual_dominant_recent_bars(
             ActualDominantRecentBarsQuery("jm", "1d", date(2025, 1, 4), 3)
         )
+
+    assert raised.value.code == "ACTUAL_DOMINANT_RECENT_BARS_INVALID"
+    assert type(raised.value) is MarketDataError

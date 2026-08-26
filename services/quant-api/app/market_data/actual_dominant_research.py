@@ -15,6 +15,7 @@ from .domain import (
     MarketSeriesResult,
     ResolvedContractSegment,
 )
+from .market_data_service import ActualDominantSourceTradingDayMissingError
 
 
 class _DominantSegmentSummary(Protocol):
@@ -53,6 +54,10 @@ class ActualDominantResearchSegmentIdentityError(ValueError):
     """Typed shared-loader boundary for invalid rank-1 segment identity."""
 
 
+class ActualDominantResearchSourceTradingDayMissingError(ValueError):
+    """Typed shared-loader boundary for an absent exact source-day Bar."""
+
+
 @dataclass(frozen=True, slots=True)
 class ActualDominantResearchSeries:
     results: Mapping[BarFrequency, MarketSeriesResult]
@@ -82,12 +87,15 @@ class ActualDominantStitchedResearchLoader:
             raise ActualDominantResearchSegmentIdentityError(
                 "rank1 stitched identity is missing or inconsistent"
             )
-        results = {
-            frequency: self._market_data.query_actual_dominant_recent_bars(
-                ActualDominantRecentBarsQuery(symbol, frequency, through, limit)
-            )
-            for frequency in requested
-        }
+        try:
+            results = {
+                frequency: self._market_data.query_actual_dominant_recent_bars(
+                    ActualDominantRecentBarsQuery(symbol, frequency, through, limit)
+                )
+                for frequency in requested
+            }
+        except ActualDominantSourceTradingDayMissingError as exc:
+            raise ActualDominantResearchSourceTradingDayMissingError from exc
         summary = self._market_data.dominant_segment_for_day(symbol, through)
         if summary.symbol != symbol:
             raise ActualDominantResearchSegmentIdentityError(
@@ -335,7 +343,22 @@ def _validate_stitched_current_identity(
         )
 
     for result in results.values():
-        if not result.bars or result.bars[-1].trading_day != through:
+        if not result.bars:
+            raise ActualDominantResearchSourceTradingDayMissingError
+        if any(bar.trading_day > through for bar in result.bars) or any(
+            current.bar_end <= previous.bar_end
+            for previous, current in zip(
+                result.bars,
+                result.bars[1:],
+                strict=False,
+            )
+        ):
+            raise ActualDominantResearchSegmentIdentityError(
+                "rank1 stitched identity is missing or inconsistent"
+            )
+        if result.bars[-1].trading_day < through:
+            raise ActualDominantResearchSourceTradingDayMissingError
+        if result.bars[-1].trading_day != through:
             raise ActualDominantResearchSegmentIdentityError(
                 "rank1 stitched identity is missing or inconsistent"
             )
