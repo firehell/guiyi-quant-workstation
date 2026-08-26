@@ -1,10 +1,16 @@
 # SuBing Strategy V1 Design Spec
 
-**Status:** Reviewed — ready for Stage 1 implementation<br>
+> **Document status: design-only.**
+>
+> **Written-spec review: pending.**
+>
+> This document does **not** authorize implementation, migration, Alert Rule, Scope, notification, Runtime, release, or any external mutation. Existing repository implementation facts, if any, are tracked separately and do not change this document's authorization boundary.
+
+**Status:** Design-only — written-spec review pending<br>
 **Date:** 2026-08-26  
 **Implementation target branch:** `research/subing-strategy-v1`  
 **Base:** `develop@b2cf5f1b57d59c770ab664d46c64267c8fc70b54`  
-**Delivery lane:** Lane 3 / Plan-only / independent review required / no implementation in this change
+**Delivery lane:** Lane 3 / Plan-only / independent written-spec review required / no implementation authorization
 
 ## 1. Decision
 

@@ -1,41 +1,65 @@
-# 归一量化系统架构
+# 归一量化 Active Architecture
 
-## Active dependency graph
+本文件只描述当前 active 模块和消费者依赖；产品边界见 `PROJECT_SOURCE.md`，业务公式见 deep canonical，当前部署与 Gate 见 `STATUS.md`。
+
+## Dependency graph
 
 ```mermaid
 flowchart LR
-  RQData --> Canonical[Canonical Parquet]
-  Canonical --> Catalog[八表 Catalog + MainContractMap]
-  Catalog --> MDS[MarketDataService]
-  MDS --> Market[Market API / Radar / Kline]
-  MDS --> SuBing[SuBing Factor / Signal / Lifecycle]
-  MDS --> JDJ[JDJ reference replay]
-  SuBing --> Daily[Daily Context artifact]
-  SuBing --> Current[Current Signal State]
-  SuBing --> Event[Formal AlertEvent]
-  HTDYLive[HTDY completed Live 1m..60m] --> Alert
-  HTDYCanonical[HTDY Canonical D1/W1 canonical_updated] --> Alert
-  Event --> Alert[Alert two-table one-shot]
-  Market --> Web[Market Web]
-  Daily --> Workbench[SuBingWorkbench]
-  Current --> Panel[SubingPanel]
-  Alert --> Workbench
+  RQ[RQData] --> HDM[HistoricalDataManager<br/>staging + validation]
+  HDM --> CP[Canonical Parquet]
+  CP --> CAT[八表 Catalog]
+  CAT --> MCM[MainContractMap rank1]
+  CP --> MDS[MarketDataService]
+  CAT --> MDS
+  MCM --> MDS
+
+  ACTIVE[active_products.txt<br/>research capability] --> MARKET[Market API / Radar / Kline]
+  MDS --> MARKET
+  MARKET --> WEB[Market Web<br/>/market + /market/chart]
+
+  MDS --> SF[SuBing Factor / Signal /<br/>Calibration / Lifecycle]
+  SF --> DAILY[Daily Context artifact]
+  SF --> CURRENT[Current Signal State]
+  SF --> SSP[SuBing Strategy V1<br/>15m Historical Projection]
+  DAILY --> MARKET
+  CURRENT --> MARKET
+  SSP --> MARKET
+
+  MDS --> JDJ[JDJ 1m reference replay]
+  JDJ --> MARKET
+  MDS --> N[N Structure range bands]
+  N --> MARKET
+
+  SRC[research sources +<br/>candidate/policy/protocol/profile] --> CV[Candidate Validation]
+  MDS --> CV
+  CV --> ROB[Candidate Robustness]
+  CV --> RCLI[research CLI]
+  ROB --> RCLI
+
+  OPS[operational_products.txt<br/>Runtime authorization] --> MR[Market Runtime]
+  MR --> LIVE[Redis completed Live overlay]
+  MR --> EOD[after-market Canonical update]
+  EOD --> CP
+
+  LIVE --> AE[Alert evaluators]
+  EOD --> AE
+  SF --> AE
+  RULE[alert_rules + distinct Scope authorities] --> AE
+  AE --> EVENT[alert_events]
+  EVENT --> PUSH[one-shot PushPlus]
+  EVENT --> WEB
 ```
 
-## Data and Market
+## Consumer boundaries
 
-`HistoricalDataManager` publishes Canonical only after validation. `MarketDataService` is the sole Historical reader. Canonical is the governed fact; Catalog carries dataset identity, quality, coverage and MainContractMap. Redis Live is an overlay only. All consumers resolve `actual_dominant` through rank1 mapping and fail closed on incomplete identity, coverage or physical readability.
+- `MarketDataService` is the only Historical Bar reader for Market, SuBing, JDJ, N Structure and validation services. `actual_dominant` is resolved only through `MainContractMap rank=1`; incomplete identity, coverage or physical readability fails closed.
+- Web consumes typed Market APIs. It may compose Daily Context, Current Signal State, Formal Event and Historical projections, but does not calculate strategy formulas or mutate Scope.
+- SuBing Strategy V1 and JDJ replay are deterministic Historical read models. Their output has Web/test consumers only; no DB, Redis, Alert, Runtime or order consumer.
+- Candidate Validation feeds Candidate Robustness through source-specific contracts. Policy/protocol/profile files remain explicit inputs; neither service is a Runtime evaluator or automatic promotion path.
+- Market Runtime reads only `operational_products.txt`; research/API capability reads `active_products.txt`. Their current equality, if any, does not create one authority.
+- Alert is independent from the Market Catalog. HTDY uses `scope_product_frequencies`; SuBing uses `scope_products`. Event persistence precedes at most one transport attempt.
 
-Market API provides bars, dominants, product research, SuBing current state, Daily Context, Radar Summary/Scatter/Detail and four Historical overlays. The public overlay set is `none | subing | jdj_strategy | htdy`; N/raw JDJ remain internal research dependencies.
+## Preserved seams
 
-## Product boundaries
-
-SuBing has one product workspace. Daily Context is an immutable post-close artifact; Current Signal State is a current Canonical/completed-Live read model; Formal Event is an immutable Alert Domain fact. The Web composes them client-side so unavailable one source does not hide the others; no cross-domain mega endpoint is introduced.
-
-HTDY supports all operational products and seven frequencies. Its current event identity and authorization are frequency-aware. SuBing remains product-scoped. Alert is an independent Application Domain and does not alter the Market Catalog.
-
-## Research and Runtime
-
-JDJ reference replay is the only active product-facing strategy replay path. Candidate Validation/Robustness retain strict causal and prospective OOS boundaries. RQAlpha and Execution Review are retired; their history remains in Git/Alembic only.
-
-Market Runtime, Alert Runtime and after-market are supervised processes with read-only health surfaces. They do not authorize release, Runtime promotion, Scope mutation, Canonical mutation, real notification or orders.
+Canonical/Catalog, `DatasetKey`, Trading Calendar/Session, `MainContractMap`, Live/Historical isolation, Alert Application Domain and Runtime authorization remain separate modules. Alembic migrations are schema lineage and are not active application dependencies once their domains retire.
