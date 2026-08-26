@@ -542,6 +542,22 @@ function nStructureBand(
   }
 }
 
+function emptySubingStrategyHistory(request) {
+  return {
+    request,
+    policy: {
+      strategy_id: 'subing_strategy_v1', formula_version: 'subing_strategy_15m_v1',
+      research_only: true, series_kind: 'actual_dominant', decision_frequency: '15m',
+      lifecycle_policy_id: 'subing_lifecycle_v2_research_v1',
+      allowed_confirmation_sources: [
+        'formal_v1', 'momentum_hold', 'pivot_break_hold', 'pivot_retest_rebreak',
+      ],
+    },
+    resolved_cutoff: `${request.through}T07:00:00Z`, segment_summaries: [],
+    actions: [], episodes: [], context_unavailable: [], cache_state: 'unavailable',
+  }
+}
+
 async function mockWorkspace(page, researchResponse, options = {}) {
   const workspaceSymbol = options.symbol || 'ag'
   const workspaceContract = options.resolvedContract || (workspaceSymbol === 'jm' ? 'JM2701' : 'AG2601')
@@ -576,9 +592,9 @@ async function mockWorkspace(page, researchResponse, options = {}) {
         bands: options.nStructureBands || [],
       } })
     }
-    if (url.pathname.endsWith('/research/subing/history')) {
+    if (url.pathname.endsWith('/research/subing-strategy/history')) {
       const request = Object.fromEntries(url.searchParams)
-      return route.fulfill({ json: { request, events: [] } })
+      return route.fulfill({ json: emptySubingStrategyHistory(request) })
     }
     if (url.pathname.endsWith('/research/jdj-strategy/history')) {
       const request = Object.fromEntries(url.searchParams)
@@ -754,8 +770,9 @@ async function mockProductIdentityWorkspace(page) {
         dominant_mapping_date: '2026-01-12',
       })) } })
     }
-    if (url.pathname.endsWith('/research/subing/history')) {
-      return route.fulfill({ json: { request: Object.fromEntries(url.searchParams), events: [] } })
+    if (url.pathname.endsWith('/research/subing-strategy/history')) {
+      const request = Object.fromEntries(url.searchParams)
+      return route.fulfill({ json: emptySubingStrategyHistory(request) })
     }
     if (url.pathname.endsWith('/research/product')) {
       const index = requestedSymbol === 'ag' ? agRequestCounts.research++ : 0

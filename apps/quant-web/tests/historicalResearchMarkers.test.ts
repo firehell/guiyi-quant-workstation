@@ -1,18 +1,12 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type {
-  AlertEvent,
   BarData,
-  SubingHistoricalSignalResponse,
+  SubingStrategyEpisode,
+  SubingStrategyHistoricalResponse,
 } from '../src/types/market.ts'
 import { useHistoricalResearchMarkers } from '../src/composables/useHistoricalResearchMarkers.ts'
-import {
-  historicalResearchEventToMarker,
-} from '../src/utils/historicalResearchMarkers.ts'
-import {
-  alertEventsToMarkers,
-  mergeKlineMarkers,
-} from '../src/utils/alertMarkers.ts'
+import { subingStrategyActionToMarker } from '../src/utils/historicalResearchMarkers.ts'
 import {
   RESEARCH_OVERLAY_DEFINITIONS,
   researchOverlayCapability,
@@ -42,30 +36,62 @@ const canonicalBars: BarData[] = [
   },
 ]
 
-function response(
+function strategyResponse(
   symbol: string,
-  frequency: '5m' | '15m',
-  barEnd: string,
-  direction: 'buy' | 'sell' = 'buy',
-): SubingHistoricalSignalResponse {
+  since = '2026-08-03',
+  through = '2026-08-03',
+  state: 'open' | 'closed' = 'closed',
+): SubingStrategyHistoricalResponse {
+  const entry = {
+    action_id: `subing-action:${symbol}:entry`, episode_id: `subing-episode:${symbol}`,
+    strategy_id: 'subing_strategy_v1' as const,
+    formula_version: 'subing_strategy_15m_v1' as const,
+    kind: 'open_long' as const, symbol, contract: `${symbol.toUpperCase()}2609`,
+    trading_day: '2026-08-03', segment_start_trading_day: '2026-08-01',
+    opportunity_id: `subing-opportunity:${symbol}`,
+    decision_at: '2026-08-03T01:05:00Z', effective_bar_end: '2026-08-03T01:10:00Z',
+    reference_price: 100, fill_basis: 'next_bar_open' as const,
+    confirmation_source: 'formal_v1' as const, reason_codes: [],
+    direction_context_source_day: '2026-07-31',
+    direction_context_target_day: '2026-08-03', bound_reference_pivot: null,
+  }
+  const exit = {
+    ...entry,
+    action_id: `subing-action:${symbol}:exit`, kind: 'close_long' as const,
+    trading_day: '2026-08-03', decision_at: '2026-08-03T01:10:00Z',
+    effective_bar_end: '2026-08-03T01:15:00Z', reference_price: 107.97,
+    confirmation_source: null, reason_codes: ['EMA21', 'MACD_HIGH_DEAD_CROSS'],
+    direction_context_source_day: null, direction_context_target_day: null,
+  }
+  const episode: SubingStrategyEpisode = {
+    episode_id: entry.episode_id, direction: 'long', entry_action: entry,
+    exit_action: state === 'closed' ? exit : null, state,
+    holding_bar_count: state === 'closed' ? 2 : 1,
+    reference_change_percent: state === 'closed' ? 7.97 : null,
+    current_reference_change_percent: state === 'open' ? 1 : null,
+    latest_reference_price: state === 'open' ? 101 : null,
+    exit_reason_codes: state === 'closed' ? [...exit.reason_codes] : [],
+    structure_exit_available: false,
+  }
   return {
     request: {
       series_kind: 'actual_dominant',
       symbol,
-      frequency,
-      since: '2026-08-03',
-      through: '2026-08-03',
+      frequency: '15m',
+      since,
+      through,
     },
-    events: [{
-      event_id: `subing_entry_signal_v1|${symbol}|JM2609|2026-08-03|${barEnd}|${frequency}|${direction}`,
-      bar_end: barEnd,
-      trading_day: '2026-08-03',
-      contract: 'JM2609',
-      segment_start_trading_day: '2026-08-03',
-      direction,
-      trigger_timeframe: frequency,
-      lower_tf_confirmation: false,
-    }],
+    policy: {
+      strategy_id: 'subing_strategy_v1', formula_version: 'subing_strategy_15m_v1',
+      research_only: true, series_kind: 'actual_dominant', decision_frequency: '15m',
+      lifecycle_policy_id: 'subing_lifecycle_v2_research_v1',
+      allowed_confirmation_sources: [
+        'formal_v1', 'momentum_hold', 'pivot_break_hold', 'pivot_retest_rebreak',
+      ],
+    },
+    resolved_cutoff: '2026-08-03T01:15:00Z', segment_summaries: [],
+    actions: state === 'closed' ? [entry, exit] : [entry], episodes: [episode],
+    context_unavailable: [], cache_state: 'miss',
   }
 }
 
@@ -173,7 +199,7 @@ test('JDJ strategy markers project only reference fills with exact symbols and r
 test('JDJ strategy loader sends the current non-JM replay identity', async () => {
   let capturedRequest: Record<string, unknown> | undefined
   const controller = useHistoricalResearchMarkers({
-    fetchSubing: async () => { throw new Error('wrong source') },
+    fetchSubingStrategy: async () => { throw new Error('wrong source') },
     fetchJdjStrategy: async (request: Record<string, unknown>) => {
       capturedRequest = request
       return { request, reference_execution: true, actions: [] }
@@ -199,7 +225,7 @@ test('JDJ strategy loader sends the current non-JM replay identity', async () =>
 
 test('JDJ strategy loader rejects an rb request answered with jm identity', async () => {
   const controller = useHistoricalResearchMarkers({
-    fetchSubing: async () => { throw new Error('wrong source') },
+    fetchSubingStrategy: async () => { throw new Error('wrong source') },
     fetchJdjStrategy: async (request: Record<string, unknown>) => ({
       request: { ...request, symbol: 'jm' },
       reference_execution: true,
@@ -245,7 +271,7 @@ test('JDJ strategy shared loader clears unsupported identity, reloads, prepends 
     position_quantity_after: 10, reason: 'ADD_FILLED',
   }
   const controller = useHistoricalResearchMarkers({
-    fetchSubing: async () => { throw new Error('wrong source') },
+    fetchSubingStrategy: async () => { throw new Error('wrong source') },
     fetchJdjStrategy: async (request: Record<string, unknown>) => {
       calls += 1
       if (calls === 1) return first.promise
@@ -297,7 +323,7 @@ test('JDJ strategy loader preserves typed profile unavailable without relabeling
   }
   const coverage = { start: canonicalBars[0].time, end: canonicalBars[1].time }
   const dependencies = (failure: unknown) => ({
-    fetchSubing: async () => { throw new Error('wrong source') },
+    fetchSubingStrategy: async () => { throw new Error('wrong source') },
     fetchJdjStrategy: async () => { throw failure },
   })
 
@@ -319,170 +345,129 @@ test('JDJ strategy loader preserves typed profile unavailable without relabeling
   assert.deepEqual(serverFailure.markers.value, [])
 })
 
-test('historical loader discards stale response after full overlay identity changes', async () => {
-  const first = deferred<SubingHistoricalSignalResponse>()
-  const second = deferred<SubingHistoricalSignalResponse>()
-  const controller = useHistoricalResearchMarkers({
-    fetchSubing: ({ symbol }) => symbol === 'jm' ? first.promise : second.promise,
-  })
-  const coverage = { start: canonicalBars[0].time, end: canonicalBars[1].time }
+test('SuBing Strategy marker anchors effective Bar and shows all close reasons', () => {
+  const response = strategyResponse('jm')
+  const episodes = new Map(response.episodes.map((episode) => [episode.episode_id, episode]))
+  const open = subingStrategyActionToMarker(response.actions[0], episodes)
+  const close = subingStrategyActionToMarker(response.actions[1], episodes)
 
-  const oldSync = controller.sync(
-    { overlay: 'subing', seriesKind: 'actual_dominant', symbol: 'jm', frequency: '5m' },
-    canonicalBars,
-    coverage,
-    'replace',
-  )
-  const newSync = controller.sync(
-    { overlay: 'subing', seriesKind: 'actual_dominant', symbol: 'ag', frequency: '5m' },
-    canonicalBars,
-    coverage,
-    'replace',
-  )
-  second.resolve(response('ag', '5m', canonicalBars[1].time))
-  await newSync
-  first.resolve(response('jm', '5m', canonicalBars[0].time))
-  await oldSync
-
-  assert.equal(controller.markers.value.length, 1)
-  assert.match(controller.markers.value[0].id, /\|ag\|/)
+  assert.equal(open.time, '2026-08-03T01:10:00Z')
+  assert.equal(open.label, '▲ 建多')
+  assert.equal(open.position, 'belowBar')
+  assert.equal(open.shape, 'arrowUp')
+  assert.equal(close.label, '× 清多')
+  assert.match(close.tooltip!, /EMA21 跌破/)
+  assert.match(close.tooltip!, /MACD 高位死叉/)
+  assert.match(close.tooltip!, /参考变动 \+7\.97%/)
+  assert.match(close.tooltip!, /模拟动作·非实际成交/)
 })
 
-test('historical loader clips requests to canonical coverage and ignores live-only mutations', async () => {
+test('SuBing Strategy history requests only actual-dominant 15m', async () => {
   const requests: Array<Record<string, string>> = []
   const controller = useHistoricalResearchMarkers({
-    fetchSubing: async (request) => {
+    fetchSubingStrategy: async (request) => {
       requests.push(request)
-      return response(request.symbol, request.frequency, canonicalBars[1].time)
+      return strategyResponse(request.symbol, request.since, request.through)
     },
-  })
-  const liveTail: BarData = {
-    ...canonicalBars[1],
-    time: '2026-08-04T01:05:00Z',
-    trading_day: '2026-08-04',
-  }
-  const identity = {
-    overlay: 'subing' as const,
-    seriesKind: 'actual_dominant' as const,
-    symbol: 'jm',
-    frequency: '5m' as const,
-  }
+  } as never)
+  const coverage = { start: canonicalBars[0].time, end: canonicalBars[1].time }
 
   await controller.sync(
-    identity,
-    [...canonicalBars, liveTail],
-    { start: canonicalBars[0].time, end: canonicalBars[1].time },
-    'replace',
+    { overlay: 'subing', seriesKind: 'actual_dominant', symbol: 'jm', frequency: '5m' },
+    canonicalBars, coverage, 'replace',
   )
+  assert.deepEqual(requests, [])
   await controller.sync(
-    identity,
-    [...canonicalBars, liveTail],
-    { start: canonicalBars[0].time, end: canonicalBars[1].time },
-    'live',
+    { overlay: 'subing', seriesKind: 'actual_dominant', symbol: 'jm', frequency: '15m' },
+    canonicalBars, coverage, 'replace',
   )
-
   assert.deepEqual(requests, [{
-    series_kind: 'actual_dominant',
-    symbol: 'jm',
-    frequency: '5m',
-    since: '2026-08-03',
-    through: '2026-08-03',
+    series_kind: 'actual_dominant', symbol: 'jm', frequency: '15m',
+    since: '2026-08-03', through: '2026-08-03',
   }])
 })
 
-test('unsupported identity clears replay markers without requesting or mutating Kline bars', async () => {
-  let requests = 0
-  const bars = canonicalBars.map((bar) => ({ ...bar }))
+test('SuBing Strategy discards stale identity and merges prepend actions and Episodes', async () => {
+  const stale = deferred<SubingStrategyHistoricalResponse>()
+  let calls = 0
   const controller = useHistoricalResearchMarkers({
-    fetchSubing: async (request) => {
-      requests += 1
-      return response(request.symbol, request.frequency, canonicalBars[1].time)
+    fetchSubingStrategy: async (request: Record<string, string>) => {
+      calls += 1
+      if (calls === 1) return stale.promise
+      const result = strategyResponse(request.symbol, request.since, request.through)
+      if (calls === 3) {
+        result.episodes[0] = strategyResponse(request.symbol, request.since, request.through, 'open').episodes[0]
+        result.actions = [result.episodes[0].entry_action]
+      }
+      return result
     },
-  })
-  await controller.sync(
-    { overlay: 'subing', seriesKind: 'actual_dominant', symbol: 'jm', frequency: '5m' },
-    bars,
-    { start: bars[0].time, end: bars[1].time },
-    'replace',
-  )
-  assert.equal(controller.markers.value.length, 1)
+  } as never)
+  const identity = {
+    overlay: 'subing' as const, seriesKind: 'actual_dominant' as const,
+    symbol: 'jm', frequency: '15m' as const,
+  }
+  const coverage = { start: canonicalBars[0].time, end: canonicalBars[1].time }
 
-  await controller.sync(
-    { overlay: 'subing', seriesKind: 'continuous', symbol: 'jm', frequency: '5m' },
-    bars,
-    { start: bars[0].time, end: bars[1].time },
-    'replace',
-  )
+  const oldSync = controller.sync(identity, canonicalBars, coverage, 'replace')
+  await controller.sync({ ...identity, symbol: 'ag' }, canonicalBars, coverage, 'replace')
+  stale.resolve(strategyResponse('jm'))
+  await oldSync
+  assert.match(controller.markers.value[0].id, /ag/)
 
-  assert.equal(requests, 1)
-  assert.deepEqual(controller.markers.value, [])
-  assert.deepEqual(bars, canonicalBars)
+  await controller.sync(identity, canonicalBars, coverage, 'replace')
+  assert.equal(controller.subingStrategyEpisodes.value[0].state, 'open')
+  const earlier = { ...canonicalBars[0], time: '2026-08-02T01:05:00Z', trading_day: '2026-08-02' }
+  await controller.sync(identity, [earlier, ...canonicalBars], {
+    start: earlier.time, end: canonicalBars[1].time,
+  }, 'prepend')
+  assert.equal(controller.subingStrategyEpisodes.value[0].state, 'closed')
+  assert.equal(new Set(controller.markers.value.map((marker) => marker.id)).size, 2)
 })
 
-test('prepend failure keeps confirmed markers and never mutates Kline bars', async () => {
+test('complete Episode survives when only its exit Action is in the visible window', async () => {
+  const controller = useHistoricalResearchMarkers({
+    fetchSubingStrategy: async (request: Record<string, string>) => {
+      const result = strategyResponse('jm', request.since, request.through)
+      result.actions = [result.episodes[0].exit_action!]
+      return result
+    },
+  } as never)
+  await controller.sync(
+    { overlay: 'subing', seriesKind: 'actual_dominant', symbol: 'jm', frequency: '15m' },
+    canonicalBars, { start: canonicalBars[0].time, end: canonicalBars[1].time }, 'replace',
+  )
+
+  assert.deepEqual(controller.markers.value.map((marker) => marker.label), ['× 清多'])
+  assert.equal(controller.subingStrategyEpisodes.value[0].entry_action.action_id,
+    'subing-action:jm:entry')
+})
+
+test('prepend failure preserves Strategy markers, Episodes, and Kline bars', async () => {
   let fail = false
   const bars = canonicalBars.map((bar) => ({ ...bar }))
   const controller = useHistoricalResearchMarkers({
-    fetchSubing: async (request) => {
+    fetchSubingStrategy: async (request: Record<string, string>) => {
       if (fail) throw new Error('offline')
-      return response(request.symbol, request.frequency, canonicalBars[1].time)
+      return strategyResponse('jm', request.since, request.through)
     },
-  })
+  } as never)
   const identity = {
-    overlay: 'subing' as const,
-    seriesKind: 'actual_dominant' as const,
-    symbol: 'jm',
-    frequency: '5m' as const,
+    overlay: 'subing' as const, seriesKind: 'actual_dominant' as const,
+    symbol: 'jm', frequency: '15m' as const,
   }
-  await controller.sync(
-    identity,
-    bars,
-    { start: bars[0].time, end: bars[1].time },
-    'replace',
-  )
-  const previous = [...controller.markers.value]
+  await controller.sync(identity, bars, {
+    start: bars[0].time, end: bars[1].time,
+  }, 'replace')
+  const previousMarkers = [...controller.markers.value]
+  const previousEpisodes = [...controller.subingStrategyEpisodes.value]
   fail = true
-  const earlier = {
-    ...bars[0],
-    time: '2026-08-02T01:05:00Z',
-    trading_day: '2026-08-02',
-  }
+  const earlier = { ...bars[0], time: '2026-08-02T01:05:00Z', trading_day: '2026-08-02' }
+  await controller.sync(identity, [earlier, ...bars], {
+    start: earlier.time, end: bars[1].time,
+  }, 'prepend')
 
-  await controller.sync(
-    identity,
-    [earlier, ...bars],
-    { start: earlier.time, end: bars[1].time },
-    'prepend',
-  )
-
-  assert.deepEqual(controller.markers.value, previous)
+  assert.deepEqual(controller.markers.value, previousMarkers)
+  assert.deepEqual(controller.subingStrategyEpisodes.value, previousEpisodes)
   assert.equal(controller.error.value, 'HISTORICAL_RESEARCH_UNAVAILABLE')
   assert.deepEqual(bars, canonicalBars)
-})
-
-test('persisted SuBing AlertEvent overrides replay marker with the same dedupe identity', () => {
-  const replay = historicalResearchEventToMarker(
-    'jm',
-    response('jm', '5m', canonicalBars[1].time).events[0],
-  )
-  const event: AlertEvent = {
-    id: 42,
-    rule_code: 'subing_entry_signal_v1',
-    symbol: 'jm',
-    contract: 'JM2609',
-    trading_day: '2026-08-03',
-    frequency: '5m',
-    bar_end: canonicalBars[1].time,
-    result_codes: ['buy'],
-    lower_tf_confirmation: false,
-    detected_at: canonicalBars[1].time,
-    notification_attempted_at: null,
-  }
-  const persisted = alertEventsToMarkers([event])[0]
-
-  assert.equal(replay.dedupeKey, persisted.dedupeKey)
-  const merged = mergeKlineMarkers([persisted], [replay])
-  assert.equal(merged.length, 1)
-  assert.equal(merged[0].id, persisted.id)
-  assert.equal(merged[0].label, '买入信号')
 })

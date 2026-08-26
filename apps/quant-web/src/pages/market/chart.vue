@@ -10,7 +10,7 @@ import {
   getJdjStrategyHistoricalActions,
   getNStructureBands,
   getProductResearch,
-  getSubingHistoricalSignals,
+  getSubingStrategyHistory,
   getSubingResearch,
 } from '@/api/market'
 import {
@@ -114,7 +114,7 @@ const {
   sync: syncHistoricalResearchMarkers,
   dispose: disposeHistoricalResearchMarkers,
 } = useHistoricalResearchMarkers({
-  fetchSubing: getSubingHistoricalSignals,
+  fetchSubingStrategy: getSubingStrategyHistory,
   fetchJdjStrategy: getJdjStrategyHistoricalActions,
 })
 const {

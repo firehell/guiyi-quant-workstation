@@ -59,7 +59,7 @@ export const RESEARCH_OVERLAY_DEFINITIONS: readonly ResearchOverlayDefinition[] 
     supportedSeriesKinds: ['actual_dominant'],
     supportedFrequencies: SUBING_PUBLIC_FREQUENCIES,
     mainIndicators: ['ema_21'],
-    historicalSource: 'subing',
+    historicalSource: 'subing_strategy',
   },
   {
     id: 'jdj_strategy',
@@ -103,6 +103,14 @@ export function nStructureBandCapability(
   frequency: MarketFrequency,
 ): boolean {
   return seriesKind === 'actual_dominant' && frequency === '5m'
+}
+
+/** SuBing 当前观察仍支持 5m；Strategy Historical 只支持 15m。 */
+export function subingStrategyHistoricalCapability(
+  seriesKind: SeriesKind,
+  frequency: MarketFrequency,
+): boolean {
+  return seriesKind === 'actual_dominant' && frequency === '15m'
 }
 
 /** 主图可叠加指标定义表（EMA、火天大有等） */

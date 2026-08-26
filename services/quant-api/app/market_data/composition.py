@@ -58,9 +58,6 @@ from app.market_data.subing_strategy.service import (
     SubingStrategyHistoricalProjectionService,
 )
 from app.market_data.subing_read_service import SubingReadService
-from app.market_data.subing_historical_signal_service import (
-    SubingHistoricalSignalService,
-)
 from app.market_data.subing_daily_watch import (
     SubingDailyWatchBuilder,
     SubingDailyWatchCurrentService,
@@ -152,18 +149,6 @@ def build_market_data_service(session: Session) -> MarketDataService:
 def build_market_research_service(session: Session) -> MarketResearchService:
     """构造 Product Workspace 的只读研究服务。"""
     return MarketResearchService(build_market_data_service(session))
-
-
-def build_subing_historical_signal_service(
-    session: Session,
-) -> SubingHistoricalSignalService:
-    """Compose confirmed Canonical SuBing replay without Runtime or writes."""
-    market_data = build_market_data_service(session)
-    return SubingHistoricalSignalService(
-        ActualDominantResearchSegmentLoader(market_data),
-        products=load_active_products(),
-        calibration=load_accepted_subing_calibration(_SUBING_CALIBRATION),
-    )
 
 
 def _subing_daily_watch_v2_root() -> Path:

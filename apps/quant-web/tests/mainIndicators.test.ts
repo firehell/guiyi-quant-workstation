@@ -14,6 +14,7 @@ import {
   resolveEffectiveSeriesIdentity,
   researchOverlayCapability,
   saveMainChartPreferences,
+  subingStrategyHistoricalCapability,
   visibleMainIndicatorsForOverlay,
 } from '../src/utils/mainIndicators.ts'
 
@@ -75,6 +76,17 @@ test('N structure bands are independently supported only for actual-dominant 5m'
   assert.equal(nStructureBandCapability('actual_dominant', '15m'), false)
   assert.equal(nStructureBandCapability('continuous', '5m'), false)
   assert.equal(nStructureBandCapability('contract', '5m'), false)
+})
+
+test('SuBing Strategy history is independently restricted to actual-dominant 15m', () => {
+  assert.equal(researchOverlayCapability('subing', 'actual_dominant', '5m').supported, true)
+  assert.equal(
+    researchOverlayCapability('subing', 'actual_dominant', '15m').definition.historicalSource,
+    'subing_strategy',
+  )
+  assert.equal(subingStrategyHistoricalCapability('actual_dominant', '15m'), true)
+  assert.equal(subingStrategyHistoricalCapability('actual_dominant', '5m'), false)
+  assert.equal(subingStrategyHistoricalCapability('continuous', '15m'), false)
 })
 
 test('HTDY overlay stays available on every formal frequency and existing chart series kind', () => {
