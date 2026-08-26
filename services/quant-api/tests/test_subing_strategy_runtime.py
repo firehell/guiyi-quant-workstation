@@ -9,6 +9,7 @@ import pytest
 
 from app.alerts.subing_strategy_runtime import (
     SubingStrategyRuntimeEvaluator,
+    SubingStrategyRuntimeProductSourceError,
     SubingStrategyRuntimeResult,
 )
 from app.market_data.aggregation import SessionWindow, bucket_window_for_bar
@@ -50,9 +51,20 @@ class _RestoreReader:
     def __init__(
         self,
         states: Mapping[str, SubingStrategyMachineState | Exception],
+        *,
+        rollovers: Mapping[str, SubingStrategyMachineState | Exception] | None = None,
     ) -> None:
         self.states = dict(states)
+        self.rollovers = dict(rollovers or {})
         self.calls: list[tuple[str, datetime]] = []
+        self.rollover_calls: list[
+            tuple[
+                str,
+                date,
+                SubingStrategySourceIdentity,
+                AuthoritativeSegmentTerminal,
+            ]
+        ] = []
 
     def restore(
         self,
@@ -62,6 +74,20 @@ class _RestoreReader:
     ) -> SubingStrategyMachineState:
         self.calls.append((symbol, started_at))
         result = self.states[symbol]
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+    def restore_rollover(
+        self,
+        *,
+        symbol: str,
+        trading_day: date,
+        previous_identity: SubingStrategySourceIdentity,
+        terminal: AuthoritativeSegmentTerminal,
+    ) -> SubingStrategyMachineState:
+        self.rollover_calls.append((symbol, trading_day, previous_identity, terminal))
+        result = self.rollovers[symbol]
         if isinstance(result, Exception):
             raise result
         return result
@@ -82,12 +108,18 @@ class _CurrentReader:
         ]
         | None = None,
         sessions: Mapping[str, tuple[SessionWindow, ...]] | None = None,
+        completed_error: Exception | None = None,
+        session_error: Exception | None = None,
+        terminal_error: Exception | None = None,
     ) -> None:
         self.streams = {
             symbol: dict(stream) for symbol, stream in (streams or {}).items()
         }
         self.terminals = dict(terminals or {})
         self.sessions = dict(sessions or {})
+        self.completed_error = completed_error
+        self.session_error = session_error
+        self.terminal_error = terminal_error
         self.catch_up_calls: list[
             tuple[
                 str,
@@ -120,6 +152,8 @@ class _CurrentReader:
                 through,
             )
         )
+        if self.completed_error is not None:
+            raise self.completed_error
         return self.streams.get(symbol, {})
 
     def read_authoritative_terminal(
@@ -130,7 +164,19 @@ class _CurrentReader:
         source_identity: SubingStrategySourceIdentity,
     ) -> AuthoritativeSegmentTerminal | None:
         self.terminal_calls.append((symbol, trading_day, source_identity))
-        return self.terminals.get((symbol, trading_day))
+        if self.terminal_error is not None:
+            raise self.terminal_error
+        terminal = self.terminals.get((symbol, trading_day))
+        if terminal is None:
+            return None
+        if (
+            terminal.symbol != source_identity.symbol
+            or terminal.contract != source_identity.contract
+            or terminal.segment_start_trading_day
+            != source_identity.segment_start_trading_day
+        ):
+            return None
+        return terminal
 
     def read_session_windows(
         self,
@@ -140,6 +186,8 @@ class _CurrentReader:
         source_identity: SubingStrategySourceIdentity,
     ) -> tuple[SessionWindow, ...]:
         del source_identity
+        if self.session_error is not None:
+            raise self.session_error
         return self.sessions.get(
             symbol,
             (
@@ -223,6 +271,42 @@ def _recorded_machine(
             source_identity=identity,
         )
     return state, identity, tuple(events)
+
+
+def _new_flat_segment() -> tuple[
+    SubingStrategyMachineState,
+    SubingStrategySourceIdentity,
+    CanonicalBar,
+]:
+    recorded = recorded_strategy_stream(18, SubingStrategyDirection.LONG_ONLY)
+    segment_start = TRADING_DAY + timedelta(days=1)
+    contract = "JM2705"
+    first_bar = replace(
+        recorded.bars_1m[0],
+        bar_end=recorded.bars_1m[0].bar_end + timedelta(days=1),
+        trading_day=segment_start,
+    )
+    context = replace(
+        _context(recorded.bars_15m[0], SubingStrategyDirection.LONG_ONLY),
+        target_trading_day=segment_start,
+        symbol="jm",
+        physical_contract=contract,
+    )
+    state = initial_subing_strategy_machine(
+        symbol="jm",
+        contract=contract,
+        segment_start_trading_day=segment_start,
+        calibration=load_subing_calibration(),
+        lifecycle_policy=load_subing_lifecycle_policy(),
+        strategy_policy=load_subing_strategy_policy(),
+        direction_contexts={segment_start: context},
+        intervals=(),
+    )
+    return (
+        state,
+        SubingStrategySourceIdentity("jm", contract, segment_start),
+        first_bar,
+    )
 
 
 def _ready_evaluator(
@@ -467,7 +551,9 @@ def test_one_restore_failure_does_not_stop_other_active_products() -> None:
     restore = _RestoreReader(
         {
             "jm": jm,
-            "ag": SubingStrategyMachineError("RESTORE_FIXTURE_UNAVAILABLE"),
+            "ag": SubingStrategyRuntimeProductSourceError(
+                "private restore fixture unavailable"
+            ),
         }
     )
     evaluator = SubingStrategyRuntimeEvaluator(
@@ -531,6 +617,64 @@ def test_later_1m_cancels_pending_when_exact_first_bar_is_missing() -> None:
     assert current.pending_action is None
 
 
+def test_later_1m_does_not_poison_new_interval_open_identity() -> None:
+    pending, _, events = _recorded_machine(event_count=760)
+    target_end = events[759].bar.bar_end + timedelta(minutes=15)
+    pending = replace(
+        pending,
+        intervals=tuple(
+            interval
+            for interval in pending.intervals
+            if interval.effective_bar_end != target_end
+        ),
+    )
+    evaluator, identity = _ready_evaluator(pending)
+    later_1m = Completed1mBar(
+        replace(events[761].bar, open=events[761].bar.open + Decimal("0.25"))
+    )
+    five_minute_events = tuple(
+        event
+        for event in events
+        if isinstance(event, Completed5mBar)
+        and later_1m.bar.bar_end < event.bar.bar_end <= target_end
+    )
+    closing_15m = next(
+        event
+        for event in events
+        if isinstance(event, Completed15mBar) and event.bar.bar_end == target_end
+    )
+
+    missing = evaluator.process_completed_bar(
+        later_1m.bar,
+        BarFrequency.M1,
+        source_identity=identity,
+    )
+    five_results = tuple(
+        evaluator.process_completed_bar(
+            event.bar,
+            BarFrequency.M5,
+            source_identity=identity,
+        )
+        for event in five_minute_events
+    )
+    fifteen = evaluator.process_completed_bar(
+        closing_15m.bar,
+        BarFrequency.M15,
+        source_identity=identity,
+    )
+
+    assert missing.product_status.state == "ready"
+    assert all(result.product_status.state == "ready" for result in five_results)
+    assert fifteen.product_status.state == "ready"
+    current = evaluator.current_state("jm")
+    assert current is not None
+    interval = next(
+        item for item in current.intervals if item.effective_bar_end == target_end
+    )
+    assert interval.expected_open == five_minute_events[0].bar.open
+    assert interval.expected_open != later_1m.bar.open
+
+
 def test_canonical_updated_emits_terminal_close_only_when_newly_authoritative() -> None:
     holding, identity, events = _recorded_machine(event_count=761)
     terminal = AuthoritativeSegmentTerminal(
@@ -539,18 +683,39 @@ def test_canonical_updated_emits_terminal_close_only_when_newly_authoritative() 
         segment_start_trading_day=identity.segment_start_trading_day,
         terminal_bar=events[759].bar,
     )
+    new_state, new_identity, new_bar = _new_flat_segment()
+    restore = _RestoreReader({"jm": holding}, rollovers={"jm": new_state})
     current = _CurrentReader(terminals={("jm", TRADING_DAY): terminal})
-    evaluator, _ = _ready_evaluator(holding, current=current)
+    evaluator = SubingStrategyRuntimeEvaluator(
+        ("jm",),
+        restore_reader=restore,
+        current_reader=current,
+    )
+    evaluator.restore_all(started_at=STARTED_AT)
+    evaluator.final_catch_up(ready_at=READY_AT)
 
     first = evaluator.process_canonical_updated(TRADING_DAY)[0]
+    rolled = evaluator.current_state("jm")
     second = evaluator.process_canonical_updated(TRADING_DAY)[0]
+    continued = evaluator.process_completed_bar(
+        new_bar,
+        BarFrequency.M1,
+        source_identity=new_identity,
+    )
 
     assert tuple(action.kind for action in first.actions) == (
         SubingStrategyActionKind.CLOSE_LONG,
     )
     assert first.actions[0].reason_codes == ("CONTRACT_SEGMENT_END",)
+    assert rolled is not None
+    assert rolled == new_state
+    assert rolled.position is None
     assert second.actions == ()
     assert second.product_status.state == "ready"
+    assert restore.rollover_calls == [("jm", TRADING_DAY, identity, terminal)]
+    assert continued.product_status.state == "ready"
+    assert evaluator.current_state("jm") is not None
+    assert evaluator.current_state("jm").contract == new_identity.contract
 
 
 def test_later_startup_does_not_reemit_restored_terminal_close() -> None:
@@ -561,20 +726,16 @@ def test_later_startup_does_not_reemit_restored_terminal_close() -> None:
         segment_start_trading_day=identity.segment_start_trading_day,
         terminal_bar=events[759].bar,
     )
-    closed, output = step_subing_strategy_machine(
-        holding,
-        terminal,
-        source_identity=identity,
-    )
-    assert len(output.actions) == 1
+    new_state, new_identity, _ = _new_flat_segment()
     current = _CurrentReader(terminals={("jm", TRADING_DAY): terminal})
-    evaluator, _ = _ready_evaluator(closed, current=current)
+    evaluator, _ = _ready_evaluator(new_state, current=current)
 
     result = evaluator.process_canonical_updated(TRADING_DAY)[0]
 
     assert result.actions == ()
     assert result.product_status.state == "ready"
-    assert evaluator.current_state("jm") == closed
+    assert evaluator.current_state("jm") == new_state
+    assert current.terminal_calls == [("jm", TRADING_DAY, new_identity)]
 
 
 def test_restore_open_and_close_during_downtime_ends_flat_without_backfill() -> None:
@@ -599,3 +760,144 @@ def test_restore_open_and_close_during_downtime_ends_flat_without_backfill() -> 
     current = evaluator.current_state("jm")
     assert current is not None
     assert current.position is None
+
+
+def test_restore_product_source_failure_uses_fixed_public_code() -> None:
+    private = "token=private-restore-value"
+    evaluator = SubingStrategyRuntimeEvaluator(
+        ("jm",),
+        restore_reader=_RestoreReader(
+            {"jm": SubingStrategyRuntimeProductSourceError(private)}
+        ),
+        current_reader=_CurrentReader(),
+    )
+
+    result = evaluator.restore_all(started_at=STARTED_AT)[0]
+
+    assert result.product_status.reason_codes == ("RESTORE_UNAVAILABLE",)
+    assert private not in repr(result)
+
+
+def test_catch_up_product_source_failure_uses_fixed_public_code() -> None:
+    state, _, _ = _recorded_machine()
+    private = "password=private-catch-up-value"
+    evaluator = SubingStrategyRuntimeEvaluator(
+        ("jm",),
+        restore_reader=_RestoreReader({"jm": state}),
+        current_reader=_CurrentReader(
+            completed_error=SubingStrategyRuntimeProductSourceError(private)
+        ),
+    )
+    evaluator.restore_all(started_at=STARTED_AT)
+
+    result = evaluator.final_catch_up(ready_at=READY_AT)[0]
+
+    assert result.product_status.reason_codes == ("CURRENT_UNAVAILABLE",)
+    assert private not in repr(result)
+
+
+def test_completed_bar_product_source_failure_uses_fixed_public_code() -> None:
+    state, identity, events = _recorded_machine()
+    private = "secret=session-private-value"
+    evaluator, _ = _ready_evaluator(
+        state,
+        current=_CurrentReader(
+            session_error=SubingStrategyRuntimeProductSourceError(private)
+        ),
+    )
+
+    result = evaluator.process_completed_bar(
+        events[0].bar,
+        BarFrequency.M1,
+        source_identity=identity,
+    )
+
+    assert result.product_status.reason_codes == ("COMPLETED_BAR_UNAVAILABLE",)
+    assert private not in repr(result)
+
+
+def test_terminal_product_source_failure_uses_fixed_public_code() -> None:
+    state, _, _ = _recorded_machine()
+    private = "credential=terminal-private-value"
+    evaluator, _ = _ready_evaluator(
+        state,
+        current=_CurrentReader(
+            terminal_error=SubingStrategyRuntimeProductSourceError(private)
+        ),
+    )
+
+    result = evaluator.process_canonical_updated(TRADING_DAY)[0]
+
+    assert result.product_status.reason_codes == ("TERMINAL_UNAVAILABLE",)
+    assert private not in repr(result)
+
+
+@pytest.mark.parametrize(
+    "error",
+    (
+        ValueError("INVALID_POLICY_SCHEMA"),
+        AssertionError("programming fault"),
+    ),
+)
+def test_restore_process_faults_propagate(error: Exception) -> None:
+    evaluator = SubingStrategyRuntimeEvaluator(
+        ("jm",),
+        restore_reader=_RestoreReader({"jm": error}),
+        current_reader=_CurrentReader(),
+    )
+
+    with pytest.raises(type(error), match=str(error)):
+        evaluator.restore_all(started_at=STARTED_AT)
+
+
+def test_catch_up_unexpected_fault_propagates() -> None:
+    state, _, _ = _recorded_machine()
+    evaluator = SubingStrategyRuntimeEvaluator(
+        ("jm",),
+        restore_reader=_RestoreReader({"jm": state}),
+        current_reader=_CurrentReader(
+            completed_error=RuntimeError("unexpected catch-up bug")
+        ),
+    )
+    evaluator.restore_all(started_at=STARTED_AT)
+
+    with pytest.raises(RuntimeError, match="unexpected catch-up bug"):
+        evaluator.final_catch_up(ready_at=READY_AT)
+
+
+def test_completed_bar_unexpected_fault_propagates() -> None:
+    state, identity, events = _recorded_machine()
+    evaluator, _ = _ready_evaluator(
+        state,
+        current=_CurrentReader(session_error=AssertionError("unexpected session bug")),
+    )
+
+    with pytest.raises(AssertionError, match="unexpected session bug"):
+        evaluator.process_completed_bar(
+            events[0].bar,
+            BarFrequency.M1,
+            source_identity=identity,
+        )
+
+
+def test_terminal_unexpected_fault_propagates() -> None:
+    state, _, _ = _recorded_machine()
+    evaluator, _ = _ready_evaluator(
+        state,
+        current=_CurrentReader(terminal_error=RuntimeError("unexpected terminal bug")),
+    )
+
+    with pytest.raises(RuntimeError, match="unexpected terminal bug"):
+        evaluator.process_canonical_updated(TRADING_DAY)
+
+
+def test_unknown_machine_reason_is_not_published() -> None:
+    private = "token=unknown-machine-private-value"
+    evaluator = SubingStrategyRuntimeEvaluator(
+        ("jm",),
+        restore_reader=_RestoreReader({"jm": SubingStrategyMachineError(private)}),
+        current_reader=_CurrentReader(),
+    )
+
+    with pytest.raises(SubingStrategyMachineError, match=private):
+        evaluator.restore_all(started_at=STARTED_AT)

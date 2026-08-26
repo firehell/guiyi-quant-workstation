@@ -36,6 +36,31 @@ _RUNTIME_FREQUENCIES = (
     BarFrequency.M5,
     BarFrequency.M15,
 )
+_PUBLIC_PRODUCT_MACHINE_REASONS = frozenset(
+    {
+        "BOUNDARY_COMPANION_MISSING",
+        "CONFLICTING_DUPLICATE",
+        "CONFLICTING_TERMINAL",
+        "DIRECTION_CONTEXT_UNAVAILABLE",
+        "FACTOR_UNAVAILABLE_AT_DECISION",
+        "INTERVAL_IDENTITY_INVALID",
+        "LIFECYCLE_UNAVAILABLE",
+        "RESTORE_IDENTITY_INVALID",
+        "ROLLOVER_IDENTITY_INVALID",
+        "SEGMENT_TERMINATED",
+        "SOURCE_IDENTITY_INCONSISTENT",
+        "SOURCE_IDENTITY_INVALID",
+        "SOURCE_IDENTITY_MISMATCH",
+        "STALE_INPUT",
+        "STALE_SEGMENT_INPUT",
+        "TERMINAL_IDENTITY_INVALID",
+        "UNSCHEDULED_15M_BOUNDARY",
+    }
+)
+
+
+class SubingStrategyRuntimeProductSourceError(RuntimeError):
+    """Explicit per-product read failure whose private detail is never published."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,6 +85,15 @@ class _RestoreReader(Protocol):
         *,
         symbol: str,
         started_at: datetime,
+    ) -> SubingStrategyMachineState: ...
+
+    def restore_rollover(
+        self,
+        *,
+        symbol: str,
+        trading_day: date,
+        previous_identity: SubingStrategySourceIdentity,
+        terminal: AuthoritativeSegmentTerminal,
     ) -> SubingStrategyMachineState: ...
 
 
@@ -160,8 +194,14 @@ class SubingStrategyRuntimeEvaluator:
                     raise SubingStrategyMachineError("RESTORE_IDENTITY_INVALID")
                 _source_identity(restored)
                 product.state = restored
-            except Exception as exc:  # noqa: BLE001 - per-product read boundary
-                self._degrade(product, _reason(exc, "RESTORE_UNAVAILABLE"))
+            except (
+                SubingStrategyRuntimeProductSourceError,
+                SubingStrategyMachineError,
+            ) as exc:
+                self._degrade(
+                    product,
+                    _public_reason(exc, "RESTORE_UNAVAILABLE"),
+                )
             results.append(self._result(product))
         return tuple(results)
 
@@ -209,8 +249,14 @@ class SubingStrategyRuntimeEvaluator:
                     product.ready_cutoff_15m,
                 ) = _cutoffs(state)
                 product.availability = "ready"
-            except Exception as exc:  # noqa: BLE001 - per-product read boundary
-                self._degrade(product, _reason(exc, "CURRENT_UNAVAILABLE"))
+            except (
+                SubingStrategyRuntimeProductSourceError,
+                SubingStrategyMachineError,
+            ) as exc:
+                self._degrade(
+                    product,
+                    _public_reason(exc, "CURRENT_UNAVAILABLE"),
+                )
             results.append(self._result(product))
         return tuple(results)
 
@@ -244,8 +290,14 @@ class SubingStrategyRuntimeEvaluator:
                 source_identity=source_identity,
             )
             product.state = state
-        except Exception as exc:  # noqa: BLE001 - per-product stream boundary
-            self._degrade(product, _reason(exc, "COMPLETED_BAR_UNAVAILABLE"))
+        except (
+            SubingStrategyRuntimeProductSourceError,
+            SubingStrategyMachineError,
+        ) as exc:
+            self._degrade(
+                product,
+                _public_reason(exc, "COMPLETED_BAR_UNAVAILABLE"),
+            )
             return self._result(product)
         return self._result(
             product,
@@ -297,12 +349,29 @@ class SubingStrategyRuntimeEvaluator:
                         results.append(self._result(product))
                         continue
                     raise SubingStrategyMachineError("CONFLICTING_TERMINAL")
+                next_state = self._restore_reader.restore_rollover(
+                    symbol=product.symbol,
+                    trading_day=trading_day,
+                    previous_identity=identity,
+                    terminal=terminal,
+                )
+                _validate_rollover_state(
+                    next_state,
+                    symbol=product.symbol,
+                    previous_identity=identity,
+                )
                 state, output = step_subing_strategy_machine(
                     state,
                     terminal,
                     source_identity=identity,
                 )
-                product.state = state
+                product.state = next_state
+                if product.availability == "ready":
+                    (
+                        product.ready_cutoff_1m,
+                        product.ready_cutoff_5m,
+                        product.ready_cutoff_15m,
+                    ) = _cutoffs(next_state)
                 results.append(
                     self._result(
                         product,
@@ -311,8 +380,14 @@ class SubingStrategyRuntimeEvaluator:
                         ),
                     )
                 )
-            except Exception as exc:  # noqa: BLE001 - per-product read boundary
-                self._degrade(product, _reason(exc, "TERMINAL_UNAVAILABLE"))
+            except (
+                SubingStrategyRuntimeProductSourceError,
+                SubingStrategyMachineError,
+            ) as exc:
+                self._degrade(
+                    product,
+                    _public_reason(exc, "TERMINAL_UNAVAILABLE"),
+                )
                 results.append(self._result(product))
         return tuple(results)
 
@@ -379,6 +454,11 @@ class SubingStrategyRuntimeEvaluator:
             if authoritative_open and interval.expected_open != event.bar.open:
                 raise SubingStrategyMachineError("SOURCE_IDENTITY_INCONSISTENT")
             return state
+        if isinstance(event, Completed1mBar) and event.bar.bar_end > first_1m:
+            pending = state.pending_action
+            if pending is not None and pending.decision_at < bucket.end:
+                return replace(state, pending_action=None)
+            return state
         interval = SubingStrategyInterval(
             effective_bar_end=bucket.end,
             first_1m_bar_end=first_1m,
@@ -429,6 +509,29 @@ def _source_identity(state: SubingStrategyMachineState) -> SubingStrategySourceI
         contract=state.contract,
         segment_start_trading_day=state.segment_start_trading_day,
     )
+
+
+def _validate_rollover_state(
+    state: SubingStrategyMachineState,
+    *,
+    symbol: str,
+    previous_identity: SubingStrategySourceIdentity,
+) -> None:
+    if type(state) is not SubingStrategyMachineState or state.symbol != symbol:
+        raise SubingStrategyMachineError("ROLLOVER_IDENTITY_INVALID")
+    identity = _source_identity(state)
+    if (
+        identity == previous_identity
+        or identity.segment_start_trading_day
+        <= previous_identity.segment_start_trading_day
+        or state.position is not None
+        or state.pending_action is not None
+        or state.actions
+        or state.current_episode is not None
+        or state.closed_episodes
+        or state.watermarks.terminal_at is not None
+    ):
+        raise SubingStrategyMachineError("ROLLOVER_IDENTITY_INVALID")
 
 
 def _cutoffs(
@@ -531,10 +634,15 @@ def _session_for_bar(
     return matches[0]
 
 
-def _reason(exc: Exception, fallback: str) -> str:
-    if isinstance(exc, SubingStrategyMachineError):
-        return exc.reason
-    return fallback
+def _public_reason(
+    exc: SubingStrategyRuntimeProductSourceError | SubingStrategyMachineError,
+    fallback: str,
+) -> str:
+    if isinstance(exc, SubingStrategyRuntimeProductSourceError):
+        return fallback
+    if exc.reason not in _PUBLIC_PRODUCT_MACHINE_REASONS:
+        raise exc
+    return exc.reason
 
 
 def _utc_instant(value: datetime) -> datetime:
@@ -550,5 +658,6 @@ def _utc_instant(value: datetime) -> datetime:
 __all__ = [
     "SubingStrategyRuntimeEvaluator",
     "SubingStrategyRuntimeProductStatus",
+    "SubingStrategyRuntimeProductSourceError",
     "SubingStrategyRuntimeResult",
 ]
