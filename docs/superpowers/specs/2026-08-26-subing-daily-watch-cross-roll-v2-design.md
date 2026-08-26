@@ -1,7 +1,7 @@
 # SuBing Daily Watch Cross-Roll V2 Design
 
 日期：2026-08-26
-状态：用户已确认口径，待书面 Spec 审阅
+状态：用户已批准（2026-08-26）
 目标分支：`develop`
 
 ## 1. 决策摘要
