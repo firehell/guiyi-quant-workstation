@@ -22,15 +22,34 @@ def test_requires_explicit_isolated_migration_database_url() -> None:
         )
 
 
+def test_empty_isolated_url_fails_before_any_identity_probe() -> None:
+    probes: list[str] = []
+
+    with pytest.raises(
+        MigrationTestDatabaseSafetyError,
+        match="GUIYI_ISOLATED_MIGRATION_DATABASE_URL",
+    ):
+        require_isolated_migration_database_url(
+            {"GUIYI_ISOLATED_MIGRATION_DATABASE_URL": "   "},
+            identity_probe=lambda url: probes.append(url) or DatabaseIdentity("x", 1),
+        )
+
+    assert probes == []
+
+
 def test_rejects_isolated_url_without_test_database_name() -> None:
-    with pytest.raises(MigrationTestDatabaseSafetyError, match="isolated/test database"):
+    with pytest.raises(
+        MigrationTestDatabaseSafetyError, match="isolated/test database"
+    ):
         require_isolated_migration_database_url(
             {
                 "GUIYI_ISOLATED_MIGRATION_DATABASE_URL": (
                     "postgresql+psycopg://user:secret@db.example/guiyi_quant"
                 ),
             },
-            identity_probe=lambda _url: DatabaseIdentity(database="guiyi_quant", oid=16384),
+            identity_probe=lambda _url: DatabaseIdentity(
+                database="guiyi_quant", oid=16384
+            ),
         )
 
 
@@ -42,7 +61,9 @@ def test_rejects_runtime_database_even_when_url_uses_test_alias() -> None:
         )
     )
 
-    with pytest.raises(MigrationTestDatabaseSafetyError, match="same PostgreSQL database OID"):
+    with pytest.raises(
+        MigrationTestDatabaseSafetyError, match="same PostgreSQL database OID"
+    ):
         require_isolated_migration_database_url(
             {
                 "GUIYI_ISOLATED_MIGRATION_DATABASE_URL": (

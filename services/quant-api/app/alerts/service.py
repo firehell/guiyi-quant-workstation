@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
@@ -15,6 +15,11 @@ from app.alerts.registry import (
     AlertRuleKind,
     alert_rule_definitions,
     get_alert_rule_definition,
+)
+from app.alerts.strategy_payload import (
+    StrategyPayloadError,
+    SubingStrategyActionPayload,
+    validate_subing_strategy_event_facts,
 )
 from app.market_data.domain import normalize_contract_for_symbol
 from app.market_data.product_retirement import normalize_symbol
@@ -65,7 +70,8 @@ class AlertEventCreate:
     frequency: str
     bar_end: datetime
     result_codes: tuple[str, ...]
-    lower_tf_confirmation: bool
+    action_id: str | None
+    strategy_payload: SubingStrategyActionPayload | None
     detected_at: datetime
     notification_attempted_at: datetime
 
@@ -97,7 +103,7 @@ class AlertService:
         normalized = self._require_operational_symbol(symbol)
         rule = self._rule_by_code(rule_code, for_update=True)
         definition = _definition(rule.rule_code)
-        if definition.kind is not AlertRuleKind.FORMAL_SIGNAL:
+        if definition.kind is not AlertRuleKind.STRATEGY_ACTION:
             raise AlertScopeError("ALERT_SCOPE_MODE_INVALID")
         self._require_product_scope_authority(rule, definition)
         scope = set(rule.scope_products or [])
@@ -154,6 +160,8 @@ class AlertService:
         if definition.kind is AlertRuleKind.INDICATOR_OBSERVATION:
             scope = self._normalized_frequency_scope(rule, definition)
             return frequency in scope.get(normalized_symbol, ())
+        if frequency != "15m":
+            return False
         self._require_product_scope_authority(rule, definition)
         return normalized_symbol in set(rule.scope_products or [])
 
@@ -173,7 +181,12 @@ class AlertService:
             request.trading_day, datetime
         ):
             raise AlertScopeError("ALERT_TRADING_DAY_REQUIRED")
-        result_codes = _normalize_result_codes(request.result_codes)
+        try:
+            result_codes = _normalize_result_codes(definition, request.result_codes)
+        except AlertScopeError:
+            if definition.kind is AlertRuleKind.STRATEGY_ACTION:
+                raise AlertConsistencyError() from None
+            raise
         for value in (
             request.bar_end,
             request.detected_at,
@@ -181,21 +194,53 @@ class AlertService:
         ):
             _require_aware(value)
 
+        strategy_payload_json: dict[str, object] | None
+        if definition.kind is AlertRuleKind.INDICATOR_OBSERVATION:
+            if request.action_id is not None or request.strategy_payload is not None:
+                raise AlertConsistencyError()
+            strategy_payload_json = None
+        else:
+            if (
+                not isinstance(request.action_id, str)
+                or not request.action_id
+                or not isinstance(request.strategy_payload, SubingStrategyActionPayload)
+            ):
+                raise AlertConsistencyError()
+            try:
+                validate_subing_strategy_event_facts(
+                    request.strategy_payload,
+                    action_id=request.action_id,
+                    symbol=symbol,
+                    contract=contract,
+                    trading_day=request.trading_day,
+                    frequency=frequency,
+                    bar_end=request.bar_end,
+                    result_codes=result_codes,
+                )
+            except StrategyPayloadError:
+                raise AlertConsistencyError() from None
+            strategy_payload_json = request.strategy_payload.to_json()
+
         existing = self._event_by_identity(
             definition=definition,
             rule_id=rule.id,
             symbol=symbol,
             frequency=frequency,
             bar_end=request.bar_end,
+            action_id=request.action_id,
         )
         if existing is not None:
             if self._event_matches(
                 existing,
+                rule_id=rule.id,
+                symbol=symbol,
+                bar_end=request.bar_end,
                 contract=contract,
                 trading_day=request.trading_day,
                 frequency=frequency,
                 result_codes=result_codes,
-                lower_tf_confirmation=request.lower_tf_confirmation,
+                action_id=request.action_id,
+                strategy_payload=strategy_payload_json,
             ):
                 return None
             raise AlertConsistencyError()
@@ -208,7 +253,8 @@ class AlertService:
             frequency=frequency,
             bar_end=request.bar_end,
             result_codes=list(result_codes),
-            lower_tf_confirmation=request.lower_tf_confirmation,
+            action_id=request.action_id,
+            strategy_payload=strategy_payload_json,
             detected_at=request.detected_at,
             notification_attempted_at=request.notification_attempted_at,
         )
@@ -223,35 +269,40 @@ class AlertService:
                 symbol=symbol,
                 frequency=frequency,
                 bar_end=request.bar_end,
+                action_id=request.action_id,
             )
             if existing is not None and self._event_matches(
                 existing,
+                rule_id=rule.id,
+                symbol=symbol,
+                bar_end=request.bar_end,
                 contract=contract,
                 trading_day=request.trading_day,
                 frequency=frequency,
                 result_codes=result_codes,
-                lower_tf_confirmation=request.lower_tf_confirmation,
+                action_id=request.action_id,
+                strategy_payload=strategy_payload_json,
             ):
                 return None
             raise AlertConsistencyError() from None
         self._session.refresh(event)
         return event
 
-    def list_current_formal_signal_events(
+    def list_current_strategy_action_events(
         self,
         *,
         trading_day: date,
     ) -> tuple[AlertEvent, ...]:
-        formal_rule_codes = tuple(
+        strategy_rule_codes = tuple(
             definition.rule_code
             for definition in alert_rule_definitions()
-            if definition.kind is AlertRuleKind.FORMAL_SIGNAL
+            if definition.kind is AlertRuleKind.STRATEGY_ACTION
         )
         statement = (
             select(AlertEvent)
             .join(AlertRule, AlertEvent.rule_id == AlertRule.id)
             .where(
-                AlertRule.rule_code.in_(formal_rule_codes),
+                AlertRule.rule_code.in_(strategy_rule_codes),
                 AlertEvent.trading_day == trading_day,
             )
             .order_by(AlertEvent.bar_end.desc())
@@ -304,32 +355,46 @@ class AlertService:
         symbol: str,
         frequency: str,
         bar_end: datetime,
+        action_id: str | None,
     ) -> AlertEvent | None:
+        if definition.kind is AlertRuleKind.STRATEGY_ACTION:
+            if action_id is None:
+                return None
+            return self._session.scalar(
+                select(AlertEvent).where(AlertEvent.action_id == action_id)
+            )
         statement = select(AlertEvent).where(
             AlertEvent.rule_id == rule_id,
             AlertEvent.symbol == symbol,
             AlertEvent.bar_end == bar_end,
         )
-        if definition.kind is AlertRuleKind.INDICATOR_OBSERVATION:
-            statement = statement.where(AlertEvent.frequency == frequency)
+        statement = statement.where(AlertEvent.frequency == frequency)
         return self._session.scalar(statement)
 
     @staticmethod
     def _event_matches(
         event: AlertEvent,
         *,
+        rule_id: int,
+        symbol: str,
+        bar_end: datetime,
         contract: str,
         trading_day: date,
         frequency: str,
         result_codes: tuple[str, ...],
-        lower_tf_confirmation: bool,
+        action_id: str | None,
+        strategy_payload: dict[str, object] | None,
     ) -> bool:
         return (
-            event.contract == contract
+            event.rule_id == rule_id
+            and event.symbol == symbol
+            and _same_utc_instant(event.bar_end, bar_end)
+            and event.contract == contract
             and event.frequency == frequency
             and event.trading_day == trading_day
             and tuple(event.result_codes) == result_codes
-            and event.lower_tf_confirmation is lower_tf_confirmation
+            and event.action_id == action_id
+            and event.strategy_payload == strategy_payload
         )
 
     def _require_operational_symbol(self, symbol: str) -> str:
@@ -431,13 +496,38 @@ def _definition(rule_code: str) -> AlertRuleDefinition:
         raise AlertRuleNotFoundError() from None
 
 
-def _normalize_result_codes(values: tuple[str, ...]) -> tuple[str, ...]:
-    requested = set(values)
-    if not requested or not requested.issubset({"buy", "sell"}):
+def _normalize_result_codes(
+    definition: AlertRuleDefinition,
+    values: tuple[str, ...],
+) -> tuple[str, ...]:
+    if type(values) is not tuple or any(type(value) is not str for value in values):
         raise AlertScopeError("ALERT_RESULT_CODES_INVALID")
-    return tuple(item for item in ("buy", "sell") if item in requested)
+    requested = set(values)
+    if len(requested) != len(values):
+        raise AlertScopeError("ALERT_RESULT_CODES_INVALID")
+    if definition.kind is AlertRuleKind.INDICATOR_OBSERVATION:
+        if not requested or not requested.issubset({"buy", "sell"}):
+            raise AlertScopeError("ALERT_RESULT_CODES_INVALID")
+        return tuple(item for item in ("buy", "sell") if item in requested)
+    if len(values) != 1 or values[0] not in {
+        "open_long",
+        "open_short",
+        "close_long",
+        "close_short",
+    }:
+        raise AlertScopeError("ALERT_RESULT_CODES_INVALID")
+    return values
 
 
 def _require_aware(value: datetime) -> None:
     if value.tzinfo is None or value.utcoffset() is None:
         raise AlertScopeError("ALERT_TIMEZONE_REQUIRED")
+
+
+def _same_utc_instant(stored: datetime, requested: datetime) -> bool:
+    stored_utc = (
+        stored.replace(tzinfo=UTC)
+        if stored.tzinfo is None or stored.utcoffset() is None
+        else stored.astimezone(UTC)
+    )
+    return stored_utc == requested.astimezone(UTC)

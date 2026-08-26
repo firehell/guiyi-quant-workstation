@@ -35,7 +35,8 @@ class AlertEventOut(BaseModel):
     frequency: str
     bar_end: datetime
     result_codes: list[str]
-    lower_tf_confirmation: bool
+    action_id: str | None
+    strategy_payload: dict[str, object] | None
     detected_at: datetime
     notification_attempted_at: datetime | None
 

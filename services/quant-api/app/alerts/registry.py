@@ -14,7 +14,7 @@ class AlertRuleKind(StrEnum):
     """Supported Alert V2 rule behavior categories."""
 
     INDICATOR_OBSERVATION = "indicator_observation"
-    FORMAL_SIGNAL = "formal_signal"
+    STRATEGY_ACTION = "strategy_action"
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,10 +37,10 @@ HTDY_RULE = AlertRuleDefinition(
     series_kind="actual_dominant",
 )
 SUBING_RULE = AlertRuleDefinition(
-    rule_code="subing_entry_signal_v1",
-    display_name="苏冰入场信号",
-    kind=AlertRuleKind.FORMAL_SIGNAL,
-    input_frequencies=("5m", "15m"),
+    rule_code="subing_strategy_v1",
+    display_name="苏冰策略",
+    kind=AlertRuleKind.STRATEGY_ACTION,
+    input_frequencies=("1m", "5m", "15m"),
     series_kind="actual_dominant",
 )
 
