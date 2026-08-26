@@ -10,8 +10,10 @@ import pytest
 from app.guiyi_cli.main import build_parser
 from app.guiyi_cli.main import main
 from app.guiyi_cli.data_parser import CliUsageError
+from app.research import composition as research_composition
 from app.research.subing.subing_candidate_validation_service import (
     CandidateValidationRequest,
+    SubingCandidateValidationService,
 )
 from research.research_cli_fixtures import (
     _FakeCandidateValidationService,
@@ -130,6 +132,37 @@ def test_candidate_cli_dispatches_explicit_service_and_serializes_report() -> No
         ]
         == "12.3400"
     )
+
+
+def test_candidate_cli_real_composition_accepts_current_lifecycle_runner(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        research_composition,
+        "build_market_data_service",
+        lambda _session: object(),
+    )
+    monkeypatch.setattr(
+        SubingCandidateValidationService,
+        "run",
+        lambda _service, _request: _candidate_report(),
+    )
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+
+    code = main(
+        _candidate_arguments(),
+        session_factory=lambda: nullcontext(object()),
+        candidate_validation_service_factory=(
+            research_composition.build_subing_candidate_validation_service
+        ),
+        stdout=stdout,
+        stderr=stderr,
+    )
+
+    assert code == 0
+    assert stderr.getvalue() == ""
+    assert json.loads(stdout.getvalue())["formula_version"] == "subing_lifecycle_v2"
 
 
 def _n_candidate_arguments(

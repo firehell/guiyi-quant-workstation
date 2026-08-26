@@ -34,7 +34,7 @@ from app.research.subing.subing_lifecycle_research_service import (
 
 class _LifecycleResearchRunner(Protocol):
     @property
-    def formula_version(self) -> str: ...
+    def candidate_projection_formula_version(self) -> str: ...
 
     def run(
         self,
@@ -56,7 +56,10 @@ class SubingCandidateValidationService:
             protocol, CandidateValidationProtocol
         ):
             raise TypeError("manifest and protocol must use Candidate contracts")
-        if lifecycle_research.formula_version != manifest.formula_version:
+        if (
+            lifecycle_research.candidate_projection_formula_version
+            != manifest.formula_version
+        ):
             raise CandidateValidationIdentityError()
         self._lifecycle_research = lifecycle_research
         self._manifest = manifest

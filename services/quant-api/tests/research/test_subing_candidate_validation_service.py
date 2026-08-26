@@ -81,7 +81,7 @@ def _result(
 
 
 class _Runner:
-    formula_version = "subing_lifecycle_v2"
+    candidate_projection_formula_version = "subing_lifecycle_v2"
 
     def __init__(
         self,
@@ -108,9 +108,11 @@ def _service(runner: _Runner) -> SubingCandidateValidationService:
     )
 
 
-def test_service_rejects_replaying_historical_candidate_with_current_formula() -> None:
+def test_service_rejects_candidate_projection_formula_drift() -> None:
     runner = _Runner()
-    runner.formula_version = "subing_lifecycle_v2_structure_binding_v1"
+    runner.candidate_projection_formula_version = (
+        "subing_lifecycle_v2_structure_binding_v1"
+    )
 
     with pytest.raises(
         CandidateValidationIdentityError,

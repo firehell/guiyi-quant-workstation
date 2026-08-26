@@ -11,8 +11,12 @@ import pytest
 
 from app.guiyi_cli.main import main
 from app.guiyi_cli.research_commands import run_research_command
+from app.research import composition as research_composition
 from app.research.robustness.multi_candidate_robustness_policy import (
     MultiCandidateRobustnessRequest,
+)
+from app.research.robustness.multi_candidate_robustness_service import (
+    MultiCandidateRobustnessService,
 )
 from app.research.robustness.jdj_robustness import (
     JdjActive60RobustnessRequest,
@@ -520,3 +524,41 @@ def test_candidate_robustness_cli_dispatches_readonly_deterministic_json() -> No
     assert payload["readonly"] is payload["research_only"] is True
     assert payload["cross_symbol_results"][0]["event_rate_per_1000_evaluable"] == "500"
     assert payload["relationships"][0]["signed_distance_median"] == "1"
+
+
+def test_robustness_cli_real_composition_accepts_current_lifecycle_runner(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        research_composition,
+        "build_market_data_service",
+        lambda _session: object(),
+    )
+    monkeypatch.setattr(
+        MultiCandidateRobustnessService,
+        "run",
+        lambda _service, _request: _robustness_report(),
+    )
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+
+    code = main(
+        [
+            "research",
+            "candidate-robustness",
+            "--protocol",
+            "multi_candidate_robustness_v1",
+        ],
+        session_factory=lambda: nullcontext(object()),
+        multi_candidate_robustness_service_factory=(
+            research_composition.build_multi_candidate_robustness_service
+        ),
+        stdout=stdout,
+        stderr=stderr,
+    )
+
+    assert code == 0
+    assert stderr.getvalue() == ""
+    assert json.loads(stdout.getvalue())["protocol_id"] == (
+        "multi_candidate_robustness_v1"
+    )
