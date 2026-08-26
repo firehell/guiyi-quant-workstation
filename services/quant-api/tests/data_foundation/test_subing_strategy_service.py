@@ -18,6 +18,9 @@ from app.market_data.subing_strategy.contracts import (
     SubingStrategyDirection,
     SubingStrategyPositionState,
 )
+from app.market_data.subing_strategy.cache import (
+    SubingStrategyCacheError,
+)
 from app.market_data.subing_strategy.engine import SubingStrategySegmentResult
 from app.market_data.subing_strategy.policy import load_subing_strategy_policy
 from app.market_data.subing_strategy.service import (
@@ -277,6 +280,63 @@ def test_service_rejects_symbol_outside_active_products() -> None:
                 through=SEGMENT_START,
             )
         )
+
+
+@pytest.mark.parametrize("failure", ("read", "write"))
+def test_cache_failure_recomputes_without_changing_result(
+    monkeypatch: pytest.MonkeyPatch,
+    failure: str,
+) -> None:
+    bar = _bar(1)
+    segment = ResolvedContractSegment(CONTRACT, SEGMENT_START, SEGMENT_START)
+    loader = FakeSegmentLoader(
+        loaded_series(segments=(segment,), bars_5m=(bar,), bars_15m=(bar,))
+    )
+    resolver = FakeDirectionContextResolver(
+        {SEGMENT_START: _context(bar, SubingStrategyDirection.NO_NEW_ENTRY)}
+    )
+    expected = SubingStrategySegmentResult(
+        actions=(),
+        episodes=(),
+        consumed_opportunity_ids=(),
+        canceled_pending=(),
+        pending_action=None,
+        final_position=SubingStrategyPositionState.FLAT,
+    )
+    monkeypatch.setattr(
+        "app.market_data.subing_strategy.service.replay_subing_strategy_segment",
+        lambda **_kwargs: expected,
+    )
+
+    class FailingCache:
+        available = True
+
+        def read(self, _identity):
+            if failure == "read":
+                raise SubingStrategyCacheError()
+            return None
+
+        def write(self, _identity, _projection):
+            if failure == "write":
+                raise SubingStrategyCacheError()
+
+    service = SubingStrategyHistoricalProjectionService(
+        loader,
+        products=("jm",),
+        direction_context_resolver=resolver,
+        calibration=_accepted_calibration(),
+        lifecycle_policy=load_subing_lifecycle_policy(),
+        strategy_policy=load_subing_strategy_policy(),
+        cache=FailingCache(),
+    )
+
+    result = service.history(
+        _request(since=SEGMENT_START, through=SEGMENT_START)
+    )
+
+    assert result.actions == expected.actions
+    assert result.episodes == expected.episodes
+    assert result.cache_state == "unavailable"
 
 
 @pytest.mark.parametrize(

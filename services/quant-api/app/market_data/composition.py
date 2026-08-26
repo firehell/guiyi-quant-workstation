@@ -46,6 +46,17 @@ from app.market_data.subing_lifecycle_policy import (
     SubingLifecyclePolicyError,
     load_subing_lifecycle_policy,
 )
+from app.market_data.subing_strategy.cache import (
+    NullSubingStrategyCache,
+    SubingStrategyCache,
+)
+from app.market_data.subing_strategy.direction_context import (
+    SubingStrategyDirectionContextResolver,
+)
+from app.market_data.subing_strategy.policy import load_subing_strategy_policy
+from app.market_data.subing_strategy.service import (
+    SubingStrategyHistoricalProjectionService,
+)
 from app.market_data.subing_read_service import SubingReadService
 from app.market_data.subing_historical_signal_service import (
     SubingHistoricalSignalService,
@@ -61,9 +72,11 @@ from app.market_data.subing_daily_watch import (
 from app.market_data.subing_daily_watch_calendar import (
     resolve_expected_daily_watch_day,
     resolve_next_common_trading_day,
+    resolve_previous_common_trading_day,
 )
 from app.market_data.subing_daily_watch_store import (
     PathMountInspector,
+    SubingDailyWatchStoreError,
     SubingDailyWatchStore,
     resolve_subing_observation_root,
 )
@@ -154,12 +167,68 @@ def build_subing_historical_signal_service(
 
 
 def _subing_daily_watch_v2_root() -> Path:
-    return (
-        resolve_subing_observation_root(
-            environ=os.environ,
-            inspector=PathMountInspector(),
+    return _subing_observation_base_root() / "v2"
+
+
+def _subing_observation_base_root() -> Path:
+    return resolve_subing_observation_root(
+        environ=os.environ,
+        inspector=PathMountInspector(),
+    )
+
+
+def _subing_strategy_cache_root() -> Path:
+    return _subing_observation_base_root() / "cache" / "subing-strategy-v1"
+
+
+def _build_subing_strategy_cache_or_null() -> (
+    SubingStrategyCache | NullSubingStrategyCache
+):
+    try:
+        root = _subing_strategy_cache_root()
+    except SubingDailyWatchStoreError:
+        return NullSubingStrategyCache()
+    return SubingStrategyCache(
+        root,
+        root_validator=_subing_strategy_cache_root,
+    )
+
+
+def build_subing_strategy_historical_service(
+    session: Session,
+) -> SubingStrategyHistoricalProjectionService:
+    """Compose the read-only Stage 1 Strategy projection without starting I/O."""
+    market_data = build_market_data_service(session)
+    active = load_active_products()
+    dominants = market_data.list_latest_dominants()
+    metadata = {
+        item.symbol: SubingDailyWatchProduct(
+            symbol=item.symbol,
+            product_name=item.product_name,
+            sector=item.sector,
         )
-        / "v2"
+        for item in dominants
+        if item.symbol in set(active)
+    }
+    projector = SubingDailyWatchItemProjector(
+        stitched_loader=ActualDominantStitchedResearchLoader(market_data),
+        product_metadata=metadata,
+    )
+    return SubingStrategyHistoricalProjectionService(
+        ActualDominantResearchSegmentLoader(market_data),
+        products=active,
+        direction_context_resolver=SubingStrategyDirectionContextResolver(
+            projector=projector,
+            previous_trading_day=lambda target: resolve_previous_common_trading_day(
+                session,
+                products=active,
+                target_trading_day=target,
+            ),
+        ),
+        calibration=load_accepted_subing_calibration(_SUBING_CALIBRATION),
+        lifecycle_policy=load_subing_lifecycle_policy(_SUBING_LIFECYCLE_POLICY),
+        strategy_policy=load_subing_strategy_policy(),
+        cache=_build_subing_strategy_cache_or_null(),
     )
 
 

@@ -5,7 +5,10 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
+from pathlib import Path
 from typing import Protocol
+
+from app.core.env import PROJECT_ROOT
 
 from ..actual_dominant_research import (
     ActualDominantResearchSegmentIdentityError,
@@ -32,6 +35,15 @@ from .contracts import (
     SubingStrategyDirection,
     SubingStrategyEpisode,
     SubingStrategyPositionState,
+)
+from .cache import (
+    CachedSubingStrategySegmentProjection,
+    NullSubingStrategyCache,
+    SubingStrategyCacheError,
+    SubingStrategyCacheIdentity,
+    digest_canonical_bars,
+    digest_direction_contexts,
+    strategy_policy_sha256,
 )
 from .direction_context import (
     SubingStrategyContextIdentityError,
@@ -79,6 +91,21 @@ class _DirectionContextResolver(Protocol):
         symbol: str,
         target_days: Sequence[date],
     ) -> Mapping[date, SubingStrategyDirectionContext]: ...
+
+
+class _StrategyCache(Protocol):
+    available: bool
+
+    def read(
+        self,
+        identity: SubingStrategyCacheIdentity,
+    ) -> CachedSubingStrategySegmentProjection | None: ...
+
+    def write(
+        self,
+        identity: SubingStrategyCacheIdentity,
+        projection: CachedSubingStrategySegmentProjection,
+    ) -> None: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -149,6 +176,8 @@ class SubingStrategyHistoricalProjectionService:
         calibration: SubingCalibration,
         lifecycle_policy: SubingLifecyclePolicy,
         strategy_policy: SubingStrategyPolicy,
+        cache: _StrategyCache | None = None,
+        strategy_policy_path: Path | None = None,
     ) -> None:
         normalized = tuple(product.strip().lower() for product in products)
         if (
@@ -172,6 +201,15 @@ class SubingStrategyHistoricalProjectionService:
         self._calibration = calibration
         self._lifecycle_policy = lifecycle_policy
         self._strategy_policy = strategy_policy
+        self._cache = cache or NullSubingStrategyCache()
+        self._strategy_policy_sha256: str | None
+        try:
+            self._strategy_policy_sha256 = strategy_policy_sha256(
+                strategy_policy_path
+                or PROJECT_ROOT / "data/research_policies/subing_strategy_v1.json"
+            )
+        except SubingStrategyCacheError:
+            self._strategy_policy_sha256 = None
 
     def history(
         self,
@@ -219,6 +257,7 @@ class SubingStrategyHistoricalProjectionService:
         unavailable_contexts: dict[date, SubingStrategyDirectionContext] = {}
         summaries: list[SubingStrategySegmentSummary] = []
         resolved_cutoffs: list[datetime] = []
+        cache_states: list[str] = []
         for segment, bars_5m, bars_15m in zip(
             loaded.segments,
             grouped_5m,
@@ -256,23 +295,51 @@ class SubingStrategyHistoricalProjectionService:
                 and bars_15m[-1].trading_day == segment.end_trading_day
                 else None
             )
-            try:
-                segment_result = replay_subing_strategy_segment(
-                    symbol=request.symbol,
-                    segment=segment,
-                    bars_5m=bars_5m,
-                    bars_15m=bars_15m,
-                    direction_contexts=contexts,
-                    calibration=self._calibration,
-                    lifecycle_policy=self._lifecycle_policy,
-                    strategy_policy=self._strategy_policy,
-                    terminal_bar_end=terminal_bar_end,
+            cache_identity = self._cache_identity(
+                request=request,
+                segment=segment,
+                bars_5m=bars_5m,
+                bars_15m=bars_15m,
+                contexts=contexts,
+            )
+            cached: CachedSubingStrategySegmentProjection | None = None
+            cache_state = "unavailable"
+            if self._cache.available and cache_identity is not None:
+                try:
+                    cached = self._cache.read(cache_identity)
+                    cache_state = "hit" if cached is not None else "miss"
+                except SubingStrategyCacheError:
+                    cache_state = "unavailable"
+            if cached is None:
+                try:
+                    segment_result = replay_subing_strategy_segment(
+                        symbol=request.symbol,
+                        segment=segment,
+                        bars_5m=bars_5m,
+                        bars_15m=bars_15m,
+                        direction_contexts=contexts,
+                        calibration=self._calibration,
+                        lifecycle_policy=self._lifecycle_policy,
+                        strategy_policy=self._strategy_policy,
+                        terminal_bar_end=terminal_bar_end,
+                    )
+                except SubingStrategyReplayError:
+                    raise SubingStrategyContextIdentityError() from None
+                cached = CachedSubingStrategySegmentProjection(
+                    actions=segment_result.actions,
+                    episodes=segment_result.episodes,
+                    final_position=segment_result.final_position,
+                    pending_action=segment_result.pending_action is not None,
                 )
-            except SubingStrategyReplayError:
-                raise SubingStrategyContextIdentityError() from None
-            all_actions.extend(segment_result.actions)
-            all_episodes.extend(segment_result.episodes)
+                if cache_state == "miss" and cache_identity is not None:
+                    try:
+                        self._cache.write(cache_identity, cached)
+                    except SubingStrategyCacheError:
+                        cache_state = "unavailable"
+            all_actions.extend(cached.actions)
+            all_episodes.extend(cached.episodes)
             resolved_cutoffs.append(bars_15m[-1].bar_end)
+            cache_states.append(cache_state)
             summaries.append(
                 SubingStrategySegmentSummary(
                     contract=segment.contract,
@@ -282,9 +349,9 @@ class SubingStrategyHistoricalProjectionService:
                     bar_count_5m=len(bars_5m),
                     bar_count_15m=len(bars_15m),
                     initial_position=SubingStrategyPositionState.FLAT,
-                    final_position=segment_result.final_position,
+                    final_position=cached.final_position,
                     terminal_bar_end=terminal_bar_end,
-                    pending_action=segment_result.pending_action is not None,
+                    pending_action=cached.pending_action,
                 )
             )
         if not resolved_cutoffs:
@@ -324,7 +391,70 @@ class SubingStrategyHistoricalProjectionService:
                 for day, context in sorted(unavailable_contexts.items())
                 if request.since <= day <= request.through
             ),
-            cache_state="unavailable",
+            cache_state=(
+                "unavailable"
+                if not cache_states or "unavailable" in cache_states
+                else "hit" if all(state == "hit" for state in cache_states) else "miss"
+            ),
+        )
+
+    def _cache_identity(
+        self,
+        *,
+        request: SubingStrategyHistoricalRequest,
+        segment: ResolvedContractSegment,
+        bars_5m: tuple[CanonicalBar, ...],
+        bars_15m: tuple[CanonicalBar, ...],
+        contexts: Mapping[date, SubingStrategyDirectionContext],
+    ) -> SubingStrategyCacheIdentity | None:
+        daily_ends = tuple(
+            context.daily_bar_end
+            for context in contexts.values()
+            if context.daily_bar_end is not None
+        )
+        hourly_ends = tuple(
+            context.hourly_bar_end
+            for context in contexts.values()
+            if context.hourly_bar_end is not None
+        )
+        calibration_id = self._calibration.calibration_id
+        if (
+            self._strategy_policy_sha256 is None
+            or calibration_id is None
+            or not daily_ends
+            or not hourly_ends
+        ):
+            return None
+        return SubingStrategyCacheIdentity(
+            strategy_policy_sha256=self._strategy_policy_sha256,
+            strategy_id=self._strategy_policy.strategy_id,
+            formula_version=self._strategy_policy.formula_version,
+            calibration_id=calibration_id,
+            lifecycle_policy_id=self._lifecycle_policy.policy_id,
+            lifecycle_formula_version=self._lifecycle_policy.formula_version,
+            daily_watch_projection_version="subing_daily_watch_v2",
+            daily_watch_formula_version="subing_ema21_rank1_stitched_raw_v2",
+            daily_watch_history_mode="rank1_stitched_raw",
+            symbol=request.symbol,
+            contract=segment.contract,
+            segment_start_trading_day=segment.start_trading_day,
+            segment_end_trading_day=segment.end_trading_day,
+            cutoff_5m=bars_5m[-1].bar_end,
+            cutoff_15m=bars_15m[-1].bar_end,
+            cutoff_d1=max(daily_ends),
+            cutoff_60m=max(hourly_ends),
+            bars_5m_digest=digest_canonical_bars(
+                bars_5m,
+                contract=segment.contract,
+                segment_start=segment.start_trading_day,
+            ),
+            bars_15m_digest=digest_canonical_bars(
+                bars_15m,
+                contract=segment.contract,
+                segment_start=segment.start_trading_day,
+            ),
+            direction_context_digest=digest_direction_contexts(contexts),
+            through=request.through,
         )
 
 
