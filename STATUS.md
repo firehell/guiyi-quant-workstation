@@ -5,9 +5,9 @@
 ## 正式 release 与 production Runtime
 
 - 正式 release 为 `v1.8.5@8af22bd65aa182313ee1108a23d975606d215495`（Release PR `#224`，annotated tag peeled commit 与 GitHub Release target 均为同一提交）。2026-08-26 经用户本轮明确请求，本机五个 launchd label 已协调切换到 clean/detached `/Volumes/扩展盘/guiyi-quant-runtime-v1.8.5@8af22bd65aa182313ee1108a23d975606d215495`；API `/api/health` 返回 `version=1.8.5 / readonly=true`，Web、Live 与 Alert 均从该精确根运行，after-market 保持按计划的 `not_running`。`/Volumes/扩展盘/guiyi-quant-runtime-c9633ef30` 与 `/Volumes/扩展盘/guiyi-quant-runtime-v1.8.4` 已分别在五个 label、LaunchAgents、主机进程与当前 Runtime symlink 均无引用的 fail-closed 读回后删除；`c9633ef3` 继续可由 `v1.8.5` 祖先谱系追溯，`v1.8.4` tag 保留。
-- 2026-08-25 自然 after-market 曾于 18:05:02 开始、19:40:05 以 `passed` 终态完成，单次 attempts=1、覆盖 active60；该既有自然证据不因部署封装重复采集。此前 c9633ef30 与当前 v1.8.5 Runtime 根均未导入旧根的运行状态文件，因此当前只读 health 将 after-market 表示为 `pending`；本次 switch 未手工补跑、回填或写入该状态。
+- 2026-08-26 自然 after-market 于 18:05:01 开始、19:48:41 以 `passed` 终态完成，`attempts=1 / error_code=null`、覆盖 active60；launchd `runs=1 / last exit code=0`，未发生 retry。盘后只读验收确认六个当日周期 60/60 推进到 `2026-08-26T07:00:00Z`、最近完整周 60/60 为 `2026-08-21T07:00:00Z`，420 个最新 Continuous 分区物理回读与 60 个 actual-dominant 1m 正式读取均零错误；成功后当日 Live subscription 与 300 个 Live bar key 均已清理。未手工启动、补跑或回填。
 - production Alembic 已按用户单次明确授权从 `20260825_0040` 升级到 `20260826_0041 (head)`。升级前四张退役 `trade_*` 表均为 0 行，升级后均已不存在；HTDY production Scope 曾于 15:13 在独立明确授权下更新为 active 60 × 七周期 `60 symbols / 420 pairs`，随后于 20:43 按新的明确请求原子收敛为唯一 `jm × 15m`（`1 symbol / 1 pair`）。本次 migration 未改变 HTDY/SuBing Scope，未触发 Event、重放或通知。
-- Alert transport 为 pushplus，provider accepted 不等于微信送达。19:40 的 processing failure 已被后续 `jm × 15m` 自然处理成功覆盖为 `processing_state=ok`；v1.8.5 保留 W1 周内正常跳过与 Runtime observation schema v2 的精确失败 CAS acknowledgment 能力。当前 acknowledgment 仍为 `null`，没有执行 production acknowledgment、Event 重放、补发或真实通知；当前 Runtime 的 `degraded` 来自上述 after-market `pending` 与保留的 `notification_transport_failed`。DB/Redis 与 Live 均为 `ok`，Live 读取 60 个 operational products 并处于 `BREAK`；Alert 仍为 2 个 enabled Rule、1 个 Scope product、audience count 2。
+- Alert transport 为 pushplus，provider accepted 不等于微信送达。19:40 的 processing failure 已被后续 `jm × 15m` 自然处理成功覆盖为 `processing_state=ok`；v1.8.5 保留 W1 周内正常跳过与 Runtime observation schema v2 的精确失败 CAS acknowledgment 能力。2026-08-26 21:33 经用户当次明确请求，operator 已对 `last_notification_failure_at=2026-08-25T11:40:05.182316+00:00` 执行一次精确 CAS acknowledgment，读回 `notification_state=acknowledged`、`notification_acknowledged_at=2026-08-26T13:33:29.088633+00:00`。原 failure 时间、`notification_transport_failed` 与连续失败计数均保留，`event_replayed=false / notification_sent=false`，不证明 provider accepted 或微信送达。当次 Runtime health 读回 `status=ok / readonly=true`，DB/Redis/Live/after-market/Alert 均为 `ok`；Alert 仍为 2 个 enabled Rule、1 个 Scope product、audience count 2。
 
 ## Daily Watch V2 已 release 并进入 Runtime、自然证据 pending
 
@@ -58,7 +58,6 @@ Architecture Convergence Tasks 1–8 已完成实现、验证与独立 Review，
 - SuBing 自然 Live seam evidence pending；Daily Watch V2 已进入 release 与 Runtime，但自然盘后 artifact 仍 pending。上述既有 V1 自然 artifact 不作为 V2 evidence，不手工触发或回填。
 - Market Structure V1 缺少用户授权的 acceptance corpus，Stage A 保持 `calibration_evidence_insufficient`；不得用 synthetic fixtures、截图推断或其他 feed 代替，也不得据此开始 Stage B。
 - SuBing、N 与 JDJ Candidate 的 prospective OOS 按各自 protocol 独立累积，均为 pending prospective OOS。
-- Production notification acknowledgment 尚未执行；只有新的范围明确执行意图才能对当前精确失败做一次 CAS acknowledgment，且该操作仍不重放、不补发、不证明 provider accepted 或微信送达。
 
 ## 事实源边界
 
