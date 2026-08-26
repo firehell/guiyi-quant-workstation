@@ -24,6 +24,7 @@ from app.market_data.subing_strategy.cache import (
 from app.market_data.subing_strategy.engine import SubingStrategySegmentResult
 from app.market_data.subing_strategy.policy import load_subing_strategy_policy
 from app.market_data.subing_strategy.service import (
+    _combine_cache_states,
     SubingStrategyHistoricalProjectionService,
     SubingStrategyActiveProductError,
     SubingStrategyHistoricalRequest,
@@ -46,6 +47,23 @@ from research.test_subing_strategy_engine import (
     _frame,
     _run,
 )
+
+
+@pytest.mark.parametrize(
+    ("states", "expected"),
+    (
+        (("hit", "hit"), "hit"),
+        (("miss", "miss"), "miss"),
+        (("hit", "miss"), "mixed"),
+        (("hit", "unavailable"), "unavailable"),
+        ((), "unavailable"),
+    ),
+)
+def test_cache_state_combines_all_segment_results(
+    states: tuple[str, ...],
+    expected: str,
+) -> None:
+    assert _combine_cache_states(states) == expected
 
 
 def _request(*, since: date, through: date) -> SubingStrategyHistoricalRequest:

@@ -6,7 +6,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
-from typing import Protocol
+from typing import Literal, Protocol
 
 from app.core.env import PROJECT_ROOT
 
@@ -163,7 +163,7 @@ class SubingStrategyHistoricalProjection:
     actions: tuple[SubingStrategyAction, ...]
     episodes: tuple[SubingStrategyEpisode, ...]
     context_unavailable: tuple[SubingStrategyDirectionContext, ...]
-    cache_state: str
+    cache_state: Literal["hit", "miss", "mixed", "unavailable"]
 
 
 class SubingStrategyHistoricalProjectionService:
@@ -257,7 +257,7 @@ class SubingStrategyHistoricalProjectionService:
         unavailable_contexts: dict[date, SubingStrategyDirectionContext] = {}
         summaries: list[SubingStrategySegmentSummary] = []
         resolved_cutoffs: list[datetime] = []
-        cache_states: list[str] = []
+        cache_states: list[Literal["hit", "miss", "unavailable"]] = []
         for segment, bars_5m, bars_15m in zip(
             loaded.segments,
             grouped_5m,
@@ -303,7 +303,7 @@ class SubingStrategyHistoricalProjectionService:
                 contexts=contexts,
             )
             cached: CachedSubingStrategySegmentProjection | None = None
-            cache_state = "unavailable"
+            cache_state: Literal["hit", "miss", "unavailable"] = "unavailable"
             if self._cache.available and cache_identity is not None:
                 try:
                     cached = self._cache.read(cache_identity)
@@ -391,11 +391,7 @@ class SubingStrategyHistoricalProjectionService:
                 for day, context in sorted(unavailable_contexts.items())
                 if request.since <= day <= request.through
             ),
-            cache_state=(
-                "unavailable"
-                if not cache_states or "unavailable" in cache_states
-                else "hit" if all(state == "hit" for state in cache_states) else "miss"
-            ),
+            cache_state=_combine_cache_states(cache_states),
         )
 
     def _cache_identity(
@@ -483,6 +479,19 @@ def _partition_segment_bars(
             raise SubingStrategySegmentIdentityError()
         grouped[matches[0]].append(bar)
     return tuple(tuple(segment_bars) for segment_bars in grouped)
+
+
+def _combine_cache_states(
+    states: Sequence[Literal["hit", "miss", "unavailable"]],
+) -> Literal["hit", "miss", "mixed", "unavailable"]:
+    values = tuple(states)
+    if not values or "unavailable" in values:
+        return "unavailable"
+    if all(value == "hit" for value in values):
+        return "hit"
+    if all(value == "miss" for value in values):
+        return "miss"
+    return "mixed"
 
 
 def _episode_intersects(
