@@ -73,6 +73,20 @@ ALERT_RULE_LITERAL_EXPECTED = {
         "apps/quant-web/src/utils/alertRules.ts": 1,
     },
 }
+_JS_ESCAPED_CODEPOINT = re.compile(
+    r"\\(?:x([0-9a-fA-F]{2})|u([0-9a-fA-F]{4})|u\{([0-9a-fA-F]{1,6})\})"
+)
+
+
+def _canonicalize_js_escapes(source: str) -> str:
+    def replace_escape(match: re.Match[str]) -> str:
+        digits = next(group for group in match.groups() if group is not None)
+        codepoint = int(digits, 16)
+        if codepoint > 0x10FFFF or 0xD800 <= codepoint <= 0xDFFF:
+            return match.group(0)
+        return chr(codepoint)
+
+    return _JS_ESCAPED_CODEPOINT.sub(replace_escape, source)
 
 
 def _assert_alert_rule_literal_ownership(sources: dict[str, str]) -> None:
@@ -89,7 +103,8 @@ def _assert_alert_rule_literal_ownership(sources: dict[str, str]) -> None:
         else:
             # Frontend comments are intentionally included: hiding an active Rule
             # literal in a comment must still consume the exact expected count.
-            counts = {code: source.count(code) for code in ALERT_RULE_CODES}
+            normalized = _canonicalize_js_escapes(source)
+            counts = {code: normalized.count(code) for code in ALERT_RULE_CODES}
         for code, count in counts.items():
             if count:
                 actual[code][path] = count
@@ -248,13 +263,17 @@ def test_alert_rule_codes_have_one_production_registry_per_language() -> None:
     "rogue_source",
     (
         "event.rule_code === 'subing_strategy_v1'",
-        "const target = '\x73ubing_strategy_v1'\nevent.rule_code === target",
+        r"const target = '\x73ubing_strategy_v1'" + "\nevent.rule_code === target",
+        r'const target = "\u0073ubing_strategy_v1"'
+        + "\nevent.rule_code === target",
+        r"const target = `\u{73}ubing_strategy_v1`"
+        + "\nevent.rule_code === target",
     ),
 )
 def test_second_active_alert_rule_literal_is_rejected_by_executable_guard(
     rogue_source: str,
 ) -> None:
-    assert "subing_strategy_v1" in rogue_source
+    assert "subing_strategy_v1" in rogue_source or "\\" in rogue_source
     sources = _active_alert_rule_sources()
     sources["apps/quant-web/src/rogueConsumer.ts"] = rogue_source
     with pytest.raises(AssertionError, match="ownership/count mismatch"):

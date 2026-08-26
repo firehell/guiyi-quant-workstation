@@ -42,7 +42,7 @@ _WRITE_CAPABLE_NAMES = frozenset(
 )
 
 
-class _ShadowReadService(Protocol):
+class _RestoreService(Protocol):
     def restore_machine(
         self,
         *,
@@ -50,6 +50,8 @@ class _ShadowReadService(Protocol):
         now: datetime,
     ) -> SubingStrategyMachineState: ...
 
+
+class _CurrentService(Protocol):
     def completed_live_after(
         self,
         *,
@@ -76,6 +78,10 @@ class _ShadowReadService(Protocol):
         trading_day: date,
         source_identity: SubingStrategySourceIdentity,
     ) -> AuthoritativeSegmentTerminal | None: ...
+
+
+class _ShadowReadBackend(_RestoreService, _CurrentService, Protocol):
+    pass
 
 
 class SubingStrategyShadowAuthorizationError(RuntimeError):
@@ -131,11 +137,11 @@ class NoShadowRuntimeStatusWriter:
 
 
 @dataclass(frozen=True, slots=True)
-class BoundShadowReadService:
-    """Exact composition token binding one read service to one session object."""
+class _LocalShadowReadService:
+    """Trusted concrete service attested to its construction session."""
 
-    __session: object
-    __service: _ShadowReadService
+    __session_identity: object
+    __service: _ShadowReadBackend
     __seal: object = field(repr=False)
 
     def __post_init__(self) -> None:
@@ -143,10 +149,10 @@ class BoundShadowReadService:
             raise SubingStrategyShadowDependencyError()
 
     def _require_session(self, session: object) -> None:
-        if self.__session is not session:
+        if self.__session_identity is not session:
             raise SubingStrategyShadowDependencyError()
 
-    def _restore_machine(
+    def restore_machine(
         self,
         session: object,
         *,
@@ -156,7 +162,7 @@ class BoundShadowReadService:
         self._require_session(session)
         return self.__service.restore_machine(symbol=symbol, now=now)
 
-    def _completed_live_after(
+    def completed_live_after(
         self,
         session: object,
         *,
@@ -177,7 +183,7 @@ class BoundShadowReadService:
             through=through,
         )
 
-    def _session_windows(
+    def session_windows(
         self,
         session: object,
         *,
@@ -192,7 +198,7 @@ class BoundShadowReadService:
             source_identity=source_identity,
         )
 
-    def _authoritative_terminal(
+    def authoritative_terminal(
         self,
         session: object,
         *,
@@ -208,30 +214,25 @@ class BoundShadowReadService:
         )
 
 
-def bind_shadow_read_service(
-    session: object,
-    service: _ShadowReadService,
-) -> BoundShadowReadService:
-    """Create the exact session/service binding required by the transaction."""
+def _build_local_shadow_read_service(session: object) -> _LocalShadowReadService:
+    """Trusted production builder: the same session builds and attests the service."""
 
+    from app.market_data.composition import build_subing_strategy_current_service
+
+    service = build_subing_strategy_current_service(session)  # type: ignore[arg-type]
     _reject_write_capable_service(service)
-    return BoundShadowReadService(session, service, _SEAL)
+    return _LocalShadowReadService(session, service, _SEAL)
 
 
 @dataclass(frozen=True, slots=True)
-class _ShadowReadOnlyPostgresTransaction:
-    """Private executor with four fixed read operations and no callable escape."""
+class _LocalShadowReadOnlyPostgres:
+    """Private local executor with four fixed reads and no injected service factory."""
 
     __session_factory: Callable[[], Any]
-    __service_factory: Callable[[Any], BoundShadowReadService]
     __seal: object = field(repr=False)
 
     def __post_init__(self) -> None:
-        if (
-            self.__seal is not _SEAL
-            or not callable(self.__session_factory)
-            or not callable(self.__service_factory)
-        ):
+        if self.__seal is not _SEAL or not callable(self.__session_factory):
             raise SubingStrategyShadowDependencyError()
 
     def restore_machine(
@@ -240,8 +241,8 @@ class _ShadowReadOnlyPostgresTransaction:
         symbol: str,
         now: datetime,
     ) -> SubingStrategyMachineState:
-        with self.__verified_bound() as (session, bound):
-            return bound._restore_machine(session, symbol=symbol, now=now)
+        with self.__verified_service() as (session, service):
+            return service.restore_machine(session, symbol=symbol, now=now)
 
     def completed_live_after(
         self,
@@ -253,8 +254,8 @@ class _ShadowReadOnlyPostgresTransaction:
         after_15m: datetime | None,
         through: datetime,
     ) -> Mapping[BarFrequency, tuple[CanonicalBar, ...]]:
-        with self.__verified_bound() as (session, bound):
-            return bound._completed_live_after(
+        with self.__verified_service() as (session, service):
+            return service.completed_live_after(
                 session,
                 symbol=symbol,
                 source_identity=source_identity,
@@ -271,8 +272,8 @@ class _ShadowReadOnlyPostgresTransaction:
         trading_day: date,
         source_identity: SubingStrategySourceIdentity,
     ) -> tuple[SessionWindow, ...]:
-        with self.__verified_bound() as (session, bound):
-            return bound._session_windows(
+        with self.__verified_service() as (session, service):
+            return service.session_windows(
                 session,
                 symbol=symbol,
                 trading_day=trading_day,
@@ -286,8 +287,8 @@ class _ShadowReadOnlyPostgresTransaction:
         trading_day: date,
         source_identity: SubingStrategySourceIdentity,
     ) -> AuthoritativeSegmentTerminal | None:
-        with self.__verified_bound() as (session, bound):
-            return bound._authoritative_terminal(
+        with self.__verified_service() as (session, service):
+            return service.authoritative_terminal(
                 session,
                 symbol=symbol,
                 trading_day=trading_day,
@@ -295,18 +296,18 @@ class _ShadowReadOnlyPostgresTransaction:
             )
 
     @contextmanager
-    def __verified_bound(self) -> Iterator[tuple[object, BoundShadowReadService]]:
+    def __verified_service(self) -> Iterator[tuple[object, _LocalShadowReadService]]:
         try:
             with self.__session_factory() as session:
                 session.execute(text("SET TRANSACTION READ ONLY"))
                 if session.scalar(text("SHOW transaction_read_only")) != "on":
                     raise SubingStrategyShadowDependencyError()
                 try:
-                    bound = self.__service_factory(session)
-                    if type(bound) is not BoundShadowReadService:
+                    service = _build_local_shadow_read_service(session)
+                    if type(service) is not _LocalShadowReadService:
                         raise SubingStrategyShadowDependencyError()
-                    bound._require_session(session)
-                    yield session, bound
+                    service._require_session(session)
+                    yield session, service
                 finally:
                     session.rollback()
         except SubingStrategyShadowDependencyError:
@@ -320,17 +321,86 @@ class _ShadowReadOnlyPostgresTransaction:
 
 
 @dataclass(frozen=True, slots=True)
+class _RecordedShadowReadBackend:
+    """Committed-fixture seam; it makes no PostgreSQL read-only attestation."""
+
+    __restore_service: _RestoreService
+    __current_service: _CurrentService
+    __seal: object = field(repr=False)
+
+    def __post_init__(self) -> None:
+        if self.__seal is not _SEAL:
+            raise SubingStrategyShadowDependencyError()
+        _reject_write_capable_service(self.__restore_service)
+        _reject_write_capable_service(self.__current_service)
+
+    def restore_machine(
+        self,
+        *,
+        symbol: str,
+        now: datetime,
+    ) -> SubingStrategyMachineState:
+        return self.__restore_service.restore_machine(symbol=symbol, now=now)
+
+    def completed_live_after(
+        self,
+        *,
+        symbol: str,
+        source_identity: SubingStrategySourceIdentity,
+        after_1m: datetime | None,
+        after_5m: datetime | None,
+        after_15m: datetime | None,
+        through: datetime,
+    ) -> Mapping[BarFrequency, tuple[CanonicalBar, ...]]:
+        return self.__current_service.completed_live_after(
+            symbol=symbol,
+            source_identity=source_identity,
+            after_1m=after_1m,
+            after_5m=after_5m,
+            after_15m=after_15m,
+            through=through,
+        )
+
+    def session_windows(
+        self,
+        *,
+        symbol: str,
+        trading_day: date,
+        source_identity: SubingStrategySourceIdentity,
+    ) -> tuple[SessionWindow, ...]:
+        return self.__current_service.session_windows(
+            symbol=symbol,
+            trading_day=trading_day,
+            source_identity=source_identity,
+        )
+
+    def authoritative_terminal(
+        self,
+        *,
+        symbol: str,
+        trading_day: date,
+        source_identity: SubingStrategySourceIdentity,
+    ) -> AuthoritativeSegmentTerminal | None:
+        return self.__current_service.authoritative_terminal(
+            symbol=symbol,
+            trading_day=trading_day,
+            source_identity=source_identity,
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class ShadowReadOnlyCanonicalReader:
     """Expose only the Canonical reconstruction reads required by the evaluator."""
 
-    __transaction: _ShadowReadOnlyPostgresTransaction
+    __backend: _ShadowReadBackend
     __clock: Callable[[], datetime]
     __seal: object = field(repr=False)
 
     def __post_init__(self) -> None:
         if (
             self.__seal is not _SEAL
-            or type(self.__transaction) is not _ShadowReadOnlyPostgresTransaction
+            or type(self.__backend)
+            not in {_LocalShadowReadOnlyPostgres, _RecordedShadowReadBackend}
             or not callable(self.__clock)
         ):
             raise SubingStrategyShadowDependencyError()
@@ -341,7 +411,7 @@ class ShadowReadOnlyCanonicalReader:
         symbol: str,
         started_at: datetime,
     ) -> SubingStrategyMachineState:
-        return self.__transaction.restore_machine(symbol=symbol, now=started_at)
+        return self.__backend.restore_machine(symbol=symbol, now=started_at)
 
     def restore_rollover(
         self,
@@ -363,20 +433,21 @@ class ShadowReadOnlyCanonicalReader:
             )
 
             raise SubingStrategyRuntimeProductSourceError()
-        return self.__transaction.restore_machine(symbol=symbol, now=self.__clock())
+        return self.__backend.restore_machine(symbol=symbol, now=self.__clock())
 
 
 @dataclass(frozen=True, slots=True)
 class ShadowReadOnlyLiveReader:
     """Expose only completed-Live reads required by the evaluator."""
 
-    __transaction: _ShadowReadOnlyPostgresTransaction
+    __backend: _ShadowReadBackend
     __seal: object = field(repr=False)
 
     def __post_init__(self) -> None:
         if (
             self.__seal is not _SEAL
-            or type(self.__transaction) is not _ShadowReadOnlyPostgresTransaction
+            or type(self.__backend)
+            not in {_LocalShadowReadOnlyPostgres, _RecordedShadowReadBackend}
         ):
             raise SubingStrategyShadowDependencyError()
 
@@ -391,7 +462,7 @@ class ShadowReadOnlyLiveReader:
         through: datetime,
     ) -> Mapping[BarFrequency, tuple[CanonicalBar, ...]]:
         return dict(
-            self.__transaction.completed_live_after(
+            self.__backend.completed_live_after(
                 symbol=symbol,
                 source_identity=source_identity,
                 after_1m=after_1m,
@@ -408,7 +479,7 @@ class ShadowReadOnlyLiveReader:
         trading_day: date,
         source_identity: SubingStrategySourceIdentity,
     ) -> tuple[SessionWindow, ...]:
-        return self.__transaction.session_windows(
+        return self.__backend.session_windows(
             symbol=symbol,
             trading_day=trading_day,
             source_identity=source_identity,
@@ -421,7 +492,7 @@ class ShadowReadOnlyLiveReader:
         trading_day: date,
         source_identity: SubingStrategySourceIdentity,
     ) -> AuthoritativeSegmentTerminal | None:
-        return self.__transaction.authoritative_terminal(
+        return self.__backend.authoritative_terminal(
             symbol=symbol,
             trading_day=trading_day,
             source_identity=source_identity,
@@ -450,49 +521,60 @@ class SubingStrategyShadowDependencies:
             raise SubingStrategyShadowDependencyError()
 
 
-def build_subing_strategy_shadow_dependencies(
+def _build_dependencies(
+    backend: _ShadowReadBackend,
     *,
-    session_factory: Callable[[], Any],
-    service_factory: Callable[[Any], BoundShadowReadService],
     clock: Callable[[], datetime] | None = None,
 ) -> SubingStrategyShadowDependencies:
-    """Build sealed adapters without opening a database or Live connection."""
-
-    transaction = _ShadowReadOnlyPostgresTransaction(
-        session_factory,
-        service_factory,
-        _SEAL,
-    )
+    if type(backend) not in {
+        _LocalShadowReadOnlyPostgres,
+        _RecordedShadowReadBackend,
+    }:
+        raise SubingStrategyShadowDependencyError()
     return SubingStrategyShadowDependencies(
         event_writer=NullShadowEventWriter(),
         notification_sender=NullShadowNotificationSender(),
         cache_writer=NoShadowCacheWriter(),
         runtime_status_writer=NoShadowRuntimeStatusWriter(),
         canonical_reader=ShadowReadOnlyCanonicalReader(
-            transaction,
+            backend,
             clock or (lambda: datetime.now(UTC)),
             _SEAL,
         ),
-        live_reader=ShadowReadOnlyLiveReader(transaction, _SEAL),
+        live_reader=ShadowReadOnlyLiveReader(backend, _SEAL),
+    )
+
+
+def build_recorded_subing_strategy_shadow_dependencies(
+    *,
+    restore_service: _RestoreService,
+    current_service: _CurrentService,
+    clock: Callable[[], datetime] | None = None,
+) -> SubingStrategyShadowDependencies:
+    """Build the committed-fixture seam without any database attestation claim."""
+
+    return _build_dependencies(
+        _RecordedShadowReadBackend(
+            restore_service,
+            current_service,
+            _SEAL,
+        ),
+        clock=clock,
     )
 
 
 def build_local_readonly_subing_strategy_shadow_dependencies(
+    *,
+    session_factory: Callable[[], Any] | None = None,
 ) -> SubingStrategyShadowDependencies:
-    """Compose production-shaped readers lazily; construction performs no I/O."""
+    """Compose trusted local readers lazily; construction opens no connection."""
 
-    from app.db.session import SessionLocal
-    from app.market_data.composition import build_subing_strategy_current_service
+    if session_factory is None:
+        from app.db.session import SessionLocal
 
-    def service_factory(session: Any) -> BoundShadowReadService:
-        return bind_shadow_read_service(
-            session,
-            build_subing_strategy_current_service(session),
-        )
-
-    return build_subing_strategy_shadow_dependencies(
-        session_factory=SessionLocal,
-        service_factory=service_factory,
+        session_factory = SessionLocal
+    return _build_dependencies(
+        _LocalShadowReadOnlyPostgres(session_factory, _SEAL),
     )
 
 
@@ -531,7 +613,7 @@ def authorize_subing_strategy_shadow(
     return dependencies
 
 
-def _reject_write_capable_service(service: _ShadowReadService) -> None:
+def _reject_write_capable_service(service: object) -> None:
     if service is None:
         raise SubingStrategyShadowDependencyError()
     public = {name for name in dir(service) if not name.startswith("_")}
@@ -540,7 +622,6 @@ def _reject_write_capable_service(service: _ShadowReadService) -> None:
 
 
 __all__ = [
-    "BoundShadowReadService",
     "LOCAL_READ_ONLY_COMPOSITION",
     "NoShadowCacheWriter",
     "NoShadowRuntimeStatusWriter",
@@ -556,8 +637,7 @@ __all__ = [
     "SubingStrategyShadowDependencyError",
     "SubingStrategyShadowWriteBlocked",
     "authorize_subing_strategy_shadow",
-    "bind_shadow_read_service",
     "build_local_readonly_subing_strategy_shadow_dependencies",
     "build_manual_subing_strategy_shadow",
-    "build_subing_strategy_shadow_dependencies",
+    "build_recorded_subing_strategy_shadow_dependencies",
 ]

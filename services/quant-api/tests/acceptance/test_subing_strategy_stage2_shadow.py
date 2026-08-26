@@ -6,10 +6,10 @@ from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from functools import lru_cache
 import os
-from typing import Any
 
 import pytest
 
+import app.market_data.subing_strategy.shadow as shadow_module
 from app.alerts.subing_strategy_runtime import (
     SubingStrategyRuntimeActionFact,
     SubingStrategyRuntimeEvaluator,
@@ -52,10 +52,9 @@ from app.market_data.subing_strategy.shadow import (
     SubingStrategyShadowDependencyError,
     SubingStrategyShadowWriteBlocked,
     authorize_subing_strategy_shadow,
-    bind_shadow_read_service,
     build_local_readonly_subing_strategy_shadow_dependencies,
     build_manual_subing_strategy_shadow,
-    build_subing_strategy_shadow_dependencies,
+    build_recorded_subing_strategy_shadow_dependencies,
 )
 from app.market_data.subing_strategy.stream_contracts import (
     AuthoritativeSegmentTerminal,
@@ -205,56 +204,15 @@ class _ReadOnlySession:
         self.ledger.append(("rollback", self.identity))
 
 
-class _RecordedReadService:
-    def __init__(
-        self,
-        session: _ReadOnlySession,
-        restore_reader: _RestoreReader,
-        current_reader: _CurrentReader,
-    ) -> None:
-        self._session = session
-        self._restore = restore_reader
-        self._current = current_reader
-
-    def _read(self, name: str) -> None:
-        self._session.ledger.append((name, self._session.identity))
-
-    def restore_machine(self, **kwargs: Any) -> SubingStrategyMachineState:
-        self._read("restore_machine")
-        return self._restore.restore_machine(**kwargs)
-
-    def completed_live_after(
-        self, **kwargs: Any
-    ) -> Mapping[BarFrequency, tuple[CanonicalBar, ...]]:
-        self._read("completed_live_after")
-        return self._current.completed_live_after(**kwargs)
-
-    def session_windows(self, **kwargs: Any) -> tuple[SessionWindow, ...]:
-        self._read("session_windows")
-        return self._current.session_windows(**kwargs)
-
-    def authoritative_terminal(
-        self, **kwargs: Any
-    ) -> AuthoritativeSegmentTerminal | None:
-        self._read("authoritative_terminal")
-        return self._current.authoritative_terminal(**kwargs)
-
-
 def _safe_dependencies(
     *,
     unavailable_symbol: str = "zz",
-    ledger: list[tuple[str, int]] | None = None,
 ) -> SubingStrategyShadowDependencies:
-    audit = ledger if ledger is not None else []
-    counter = iter(range(1, 100_000))
     restore = _RestoreReader(unavailable_symbol)
     current = _CurrentReader()
-    return build_subing_strategy_shadow_dependencies(
-        session_factory=lambda: _ReadOnlySession(audit, next(counter)),
-        service_factory=lambda session: bind_shadow_read_service(
-            session,
-            _RecordedReadService(session, restore, current),
-        ),
+    return build_recorded_subing_strategy_shadow_dependencies(
+        restore_service=restore,
+        current_service=current,
         clock=lambda: _READY_AT,
     )
 
@@ -334,6 +292,8 @@ def test_shadow_sinks_block_every_write_attempt(
 
 def test_read_only_adapters_do_not_expose_raw_reader_session_or_generic_read() -> None:
     dependencies = _safe_dependencies()
+    assert not hasattr(shadow_module, "bind_shadow_read_service")
+    assert not hasattr(shadow_module, "build_subing_strategy_shadow_dependencies")
     assert not hasattr(dependencies, "postgres_transaction")
     assert {
         name for name in dir(dependencies) if not name.startswith("_")
@@ -350,6 +310,7 @@ def test_read_only_adapters_do_not_expose_raw_reader_session_or_generic_read() -
             "reader",
             "session",
             "service",
+            "backend",
             "transaction",
             "raw",
             "read",
@@ -374,68 +335,50 @@ def test_read_only_adapters_do_not_expose_raw_reader_session_or_generic_read() -
     }
 
 
-def test_postgres_verification_and_catalog_read_share_exact_session() -> None:
+def test_local_attestation_rejects_outer_session_token_for_service_using_99(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     ledger: list[tuple[str, int]] = []
-    dependencies = _safe_dependencies(ledger=ledger)
-    dependencies.canonical_reader.restore(symbol="jm", started_at=_STARTED_AT)
+    verified_session = _ReadOnlySession(ledger, 1)
+    internal_session = _ReadOnlySession([], 99)
+    business_reads: list[int] = []
 
+    class _ForgedOuterToken:
+        session_identity = verified_session
+
+        def restore_machine(self, **_kwargs: object) -> None:
+            business_reads.append(internal_session.identity)
+
+    monkeypatch.setattr(
+        shadow_module,
+        "_build_local_shadow_read_service",
+        lambda _verified: _ForgedOuterToken(),
+    )
+    dependencies = build_local_readonly_subing_strategy_shadow_dependencies(
+        session_factory=lambda: verified_session,
+    )
+    with pytest.raises(SubingStrategyShadowDependencyError):
+        dependencies.canonical_reader.restore(symbol="jm", started_at=_STARTED_AT)
+    assert not business_reads
     assert ledger == [
         ("enter", 1),
         ("set_read_only", 1),
         ("verify_read_only", 1),
-        ("restore_machine", 1),
         ("rollback", 1),
         ("exit", 1),
     ]
 
 
-def test_service_factory_bound_to_a_different_session_is_rejected() -> None:
-    wrong_session = _ReadOnlySession([], 99)
-    restore = _RestoreReader("zz")
-    current = _CurrentReader()
-    dependencies = build_subing_strategy_shadow_dependencies(
-        session_factory=lambda: _ReadOnlySession([], 1),
-        service_factory=lambda _verified_session: bind_shadow_read_service(
-            wrong_session,
-            _RecordedReadService(wrong_session, restore, current),
-        ),
-    )
-    with pytest.raises(SubingStrategyShadowDependencyError):
-        dependencies.canonical_reader.restore(symbol="jm", started_at=_STARTED_AT)
-
-
-def test_service_factory_must_return_exact_bound_result() -> None:
-    restore = _RestoreReader("zz")
-    current = _CurrentReader()
-    dependencies = build_subing_strategy_shadow_dependencies(
-        session_factory=lambda: _ReadOnlySession([], 1),
-        service_factory=lambda session: _RecordedReadService(  # type: ignore[arg-type,return-value]
-            session,
-            restore,
-            current,
-        ),
-    )
-    with pytest.raises(SubingStrategyShadowDependencyError):
-        dependencies.canonical_reader.restore(symbol="jm", started_at=_STARTED_AT)
-
-
-def test_write_capable_service_is_rejected_before_any_read() -> None:
-    class _MaliciousService:
+def test_recorded_composition_rejects_write_capable_read_source() -> None:
+    class _WriteCapableRestore(_RestoreReader):
         def write(self) -> None:
             raise AssertionError("must not be called")
 
-        def restore_machine(self, **_kwargs: object) -> None:
-            raise AssertionError("must not be called")
-
-    dependencies = build_subing_strategy_shadow_dependencies(
-        session_factory=lambda: _ReadOnlySession([], 1),
-        service_factory=lambda session: bind_shadow_read_service(
-            session,
-            _MaliciousService(),
-        ),
-    )
     with pytest.raises(SubingStrategyShadowDependencyError):
-        dependencies.canonical_reader.restore(symbol="jm", started_at=_STARTED_AT)
+        build_recorded_subing_strategy_shadow_dependencies(
+            restore_service=_WriteCapableRestore("zz"),
+            current_service=_CurrentReader(),
+        )
 
 
 @pytest.mark.manual_acceptance
