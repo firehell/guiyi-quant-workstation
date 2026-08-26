@@ -37,7 +37,9 @@ function dailyWatchTrend(priceSide) {
   const rising = priceSide === 'above'
   return {
     bar_end: '2026-08-24T07:00:00Z', trading_day: '2026-08-24',
-    physical_contract: 'RB2610', segment_start_trading_day: '2026-07-20',
+    physical_contract: 'RB2610', current_segment_start_trading_day: '2026-07-20',
+    warmup_start_trading_day: '2026-07-01', warmup_bar_count: 30, warmup_segment_count: 2,
+    history_mode: 'rank1_stitched_raw',
     close: rising ? '3512.125' : '3400.5', ema21: '3478.2468', price_side: priceSide,
     slope_5_bps_per_bar: rising ? '8.6214' : '-8.6214',
     slope_10_bps_per_bar: rising ? '5.9173' : '-5.9173',
@@ -58,6 +60,9 @@ function dailyWatch(overrides = {}) {
   const longSymbols = ['rb', 'ag', 'cu', 'al', 'zn', 'au', 'sn']
   const shortSymbols = ['jm', 'i', 'hc', 'ni', 'pb', 'ru', 'bu']
   return {
+    projection_version: 'subing_daily_watch_v2',
+    formula_version: 'subing_ema21_rank1_stitched_raw_v2',
+    history_mode: 'rank1_stitched_raw',
     status: 'ready', expected_target_trading_day: '2026-08-25',
     latest_target_trading_day: '2026-08-25', error_code: null,
     snapshot: {
