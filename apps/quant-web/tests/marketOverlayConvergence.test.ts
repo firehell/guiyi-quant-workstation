@@ -85,6 +85,34 @@ test('Web keeps retired N event markers and raw JDJ absent while exposing only t
   assert.match(apiSource, /export function getNStructureBands/)
 })
 
+test('Web exposes Strategy V1 facts while the retired SuBing single-signal seam stays absent', () => {
+  const typesSource = read('../src/types/market.ts')
+  const apiSource = read('../src/api/market.ts')
+  const markerSource = read('../src/utils/historicalResearchMarkers.ts')
+  const loaderSource = read('../src/composables/useHistoricalResearchMarkers.ts')
+  const sidebarSource = read('../src/components/market/ProductCheckSidebar.vue')
+
+  for (const retiredName of [
+    'SubingHistoricalSignal',
+    'getSubingHistoricalSignals',
+    'historicalResearchEventToMarker',
+    'subingMarkerDedupeKey',
+    '/subing/history',
+  ]) {
+    assert.equal(
+      [typesSource, apiSource, markerSource, loaderSource].some((source) => source.includes(retiredName)),
+      false,
+      retiredName,
+    )
+  }
+
+  assert.match(typesSource, /export interface SubingStrategyHistoricalResponse/)
+  assert.match(apiSource, /export function getSubingStrategyHistory/)
+  assert.match(markerSource, /export function subingStrategyActionToMarker/)
+  assert.match(loaderSource, /subingStrategyEpisodes/)
+  assert.match(sidebarSource, /:strategy-episodes="subingStrategyEpisodes"/)
+})
+
 test('visible product copy uses the single approved SuBing and JDJ replay names', () => {
   const sidebarSource = read('../src/components/market/ProductCheckSidebar.vue')
   const subingPanelSource = read('../src/components/market/SubingPanel.vue')

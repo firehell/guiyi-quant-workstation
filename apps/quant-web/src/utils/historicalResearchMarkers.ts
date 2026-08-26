@@ -1,19 +1,10 @@
 import type {
   JdjStrategyHistoricalAction,
   KlineMarker,
-  SubingHistoricalSignalEvent,
+  SubingStrategyAction,
+  SubingStrategyEpisode,
 } from '../types/market.ts'
-import { ALERT_RULE_CODES } from './alertRules.ts'
-
-
-export function subingMarkerDedupeKey(
-  symbol: string,
-  barEnd: string,
-  frequency: '5m' | '15m',
-  direction: 'buy' | 'sell',
-): string {
-  return `${ALERT_RULE_CODES.SUBING}:${symbol.trim().toLowerCase()}:${barEnd}:${frequency}:${direction}`
-}
+import { subingStrategyExitReasonLabel } from './subingStrategyRecords.ts'
 
 const JDJ_STRATEGY_FILL_KINDS = new Set(['entry', 'add', 'reduce', 'exit'])
 
@@ -64,25 +55,79 @@ export function jdjStrategyActionToMarker(
   }
 }
 
-export function historicalResearchEventToMarker(
-  symbol: string,
-  event: SubingHistoricalSignalEvent,
+export function subingStrategyActionToMarker(
+  action: SubingStrategyAction,
+  episodeById: ReadonlyMap<string, SubingStrategyEpisode>,
 ): KlineMarker {
-  const buy = event.direction === 'buy'
-  const label = buy ? '买入信号' : '卖出信号'
+  const long = action.kind.endsWith('_long')
+  const open = action.kind.startsWith('open_')
+  const label = open
+    ? long ? '▲ 建多' : '▼ 建空'
+    : long ? '× 清多' : '× 清空'
+  const episode = episodeById.get(action.episode_id)
+  const entry = episode?.entry_action ?? (open ? action : null)
+  const reasons = action.reason_codes.map(subingStrategyExitReasonLabel)
+  const context = entry?.direction_context_source_day
+    && entry.direction_context_target_day
+    ? `${entry.direction_context_source_day} → ${entry.direction_context_target_day}`
+    : '不可用'
+  const pivot = entry?.bound_reference_pivot
+  const structureExit = pivot
+    ? `${pivot.kind === 'low' ? '低点' : '高点'} Pivot ${pivot.price}`
+    : '不可用'
+  const fillBasisLabel = (fillBasis: SubingStrategyAction['fill_basis']) => (
+    fillBasis === 'segment_terminal_close'
+      ? '旧段末最后一根 15m close'
+      : '下一根同合约 15m open'
+  )
+  const actionFacts = open
+    ? [
+        `生效口径 ${fillBasisLabel(action.fill_basis)}`,
+        `决策 ${action.decision_at}`,
+        `生效 ${action.effective_bar_end}`,
+        `参考价 ${action.reference_price}`,
+      ]
+    : [
+        ...(entry
+          ? [
+              `入场决策 ${entry.decision_at}`,
+              `入场生效 ${entry.effective_bar_end}`,
+              `入场参考价 ${entry.reference_price}`,
+              `入场生效口径 ${fillBasisLabel(entry.fill_basis)}`,
+            ]
+          : ['入场事实 不可用']),
+        `平仓决策 ${action.decision_at}`,
+        `平仓生效 ${action.effective_bar_end}`,
+        `平仓参考价 ${action.reference_price}`,
+        `平仓生效口径 ${fillBasisLabel(action.fill_basis)}`,
+        `持有 ${episode?.holding_bar_count ?? '—'} 根 15m Bar`,
+        ...(reasons.length ? [`原因 ${reasons.join('、')}`] : []),
+        ...(episode?.reference_change_percent === null
+          || episode?.reference_change_percent === undefined
+          ? []
+          : [
+              `参考变动 ${episode.reference_change_percent >= 0 ? '+' : ''}`
+                + `${episode.reference_change_percent.toFixed(2)}%`,
+            ]),
+      ]
   return {
-    id: `historical:${event.event_id}`,
-    dedupeKey: subingMarkerDedupeKey(
-      symbol,
-      event.bar_end,
-      event.trigger_timeframe,
-      event.direction,
-    ),
-    time: event.bar_end,
+    id: `historical:${action.action_id}`,
+    time: action.effective_bar_end,
     label,
-    tooltip: `历史因果重放 · SuBing · ${event.contract} · ${event.trigger_timeframe} · ${label} · 非成交回测`,
-    tone: buy ? 'up' : 'down',
-    position: buy ? 'belowBar' : 'aboveBar',
-    shape: buy ? 'arrowUp' : 'arrowDown',
+    tooltip: [
+      'SuBing Strategy V1 · 15m · 历史因果投影',
+      '模拟动作·非实际成交',
+      `合约 ${action.contract}`,
+      `方向 Context ${context}`,
+      `确认来源 ${entry?.confirmation_source ?? '不可用'}`,
+      `Opportunity ${action.opportunity_id}`,
+      `结构退出 ${structureExit}`,
+      ...actionFacts,
+    ].join(' · '),
+    tone: long ? 'up' : 'down',
+    position: open
+      ? long ? 'belowBar' : 'aboveBar'
+      : long ? 'aboveBar' : 'belowBar',
+    shape: open ? long ? 'arrowUp' : 'arrowDown' : 'square',
   }
 }

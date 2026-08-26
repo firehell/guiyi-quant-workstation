@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { NSpin, NSwitch, NTag } from 'naive-ui'
 import ProductTodayAlertEvents from '@/components/market/ProductTodayAlertEvents.vue'
+import SubingStrategyRecords from '@/components/market/SubingStrategyRecords.vue'
 import type { AlertRuntimeStatus, ProductAlertRuleState } from '@/api/alerts'
 import {
   subingLifecycleProgressLabel,
@@ -10,6 +11,7 @@ import {
   type AlertEvent,
   type SubingFactorSnapshot,
   type SubingResearchResponse,
+  type SubingStrategyEpisode,
   type SubingSignal,
 } from '@/types/market'
 import { alertRuntimeLabel } from '@/utils/alertControl'
@@ -28,6 +30,11 @@ const props = defineProps<{
   runtimeStatus: AlertRuntimeStatus | null
   alertLoading: boolean
   savingRuleCodes: Set<string>
+  strategyEpisodes: SubingStrategyEpisode[]
+  strategyLoading: boolean
+  strategyError: string | null
+  strategySupported: boolean
+  showInternalProcess: boolean
 }>()
 
 const emit = defineEmits<{
@@ -121,6 +128,16 @@ function toggleSubing(ruleCode: string, enabled: boolean) {
       <NTag size="small" type="info">Research only</NTag>
     </header>
 
+    <SubingStrategyRecords
+      v-if="strategySupported"
+      :episodes="strategyEpisodes"
+      :loading="strategyLoading"
+      :error="strategyError"
+    />
+    <p v-else data-testid="subing-strategy-guidance" class="subing-panel__warning">
+      当前 5m 仅保留苏冰观察；历史策略投影仅支持真实主力 15m。
+    </p>
+
     <section class="subing-panel__section" data-testid="subing-formal-event">
       <h4>Formal Event</h4>
       <p v-if="eventLoading">正在读取苏冰正式事件…</p>
@@ -146,7 +163,8 @@ function toggleSubing(ruleCode: string, enabled: boolean) {
       <p v-if="!supported" class="subing-panel__warning">苏冰公开当前观察仅支持 5m / 15m；D1 / 60m 请查看每日观察。</p>
       <p v-else-if="loading">苏冰观察加载中</p>
       <p v-else-if="error || !snapshot" class="subing-panel__warning">苏冰观察暂不可用；K 线保留当前展示行情</p>
-      <template v-else>
+      <details v-else class="subing-panel__details" data-testid="subing-research-details">
+        <summary>当前研究 / 数据身份 / 详细信息</summary>
         <p v-if="snapshot.primary.status !== 'ready' || !snapshot.primary.snapshot" class="subing-panel__warning">
           指标 warm-up 中 / 数据不足
         </p>
@@ -161,7 +179,7 @@ function toggleSubing(ruleCode: string, enabled: boolean) {
           </template>
         </dl>
 
-        <section v-if="lifecycle" data-testid="subing-lifecycle-panel" class="subing-panel__lifecycle">
+        <section v-if="showInternalProcess && lifecycle" data-testid="subing-lifecycle-panel" class="subing-panel__lifecycle">
           <div class="subing-panel__lifecycle-header">
             <div><span>苏冰生命周期 V2</span><strong>研究生命周期</strong></div>
             <NTag size="small" type="info">Research only</NTag>
@@ -181,7 +199,13 @@ function toggleSubing(ruleCode: string, enabled: boolean) {
             <div><dt>最近状态转换</dt><dd>{{ lifecycleTransitionLabel }}</dd></div>
           </dl>
         </section>
-      </template>
+        <dl class="subing-panel__facts subing-panel__identity">
+          <div><dt>当前合约</dt><dd>{{ snapshot.actual_contract }}</dd></div>
+          <div><dt>段起始</dt><dd>{{ snapshot.segment_start_trading_day }}</dd></div>
+          <div><dt>数据模式</dt><dd>{{ snapshot.source_mode === 'canonical_live' ? 'Canonical + completed Live' : 'Canonical' }}</dd></div>
+          <div><dt>MACD Policy</dt><dd>{{ snapshot.signal_macd_policy_id }}</dd></div>
+        </dl>
+      </details>
     </section>
 
     <section class="subing-panel__section" data-testid="subing-alert-scope">
@@ -206,16 +230,6 @@ function toggleSubing(ruleCode: string, enabled: boolean) {
       </NSpin>
     </section>
 
-    <details class="subing-panel__details">
-      <summary>数据身份 / 详细信息</summary>
-      <dl v-if="snapshot" class="subing-panel__facts">
-        <div><dt>当前合约</dt><dd>{{ snapshot.actual_contract }}</dd></div>
-        <div><dt>段起始</dt><dd>{{ snapshot.segment_start_trading_day }}</dd></div>
-        <div><dt>数据模式</dt><dd>{{ snapshot.source_mode === 'canonical_live' ? 'Canonical + completed Live' : 'Canonical' }}</dd></div>
-        <div><dt>MACD Policy</dt><dd>{{ snapshot.signal_macd_policy_id }}</dd></div>
-      </dl>
-      <p v-else>当前无可读苏冰数据身份</p>
-    </details>
   </section>
 </template>
 
@@ -242,4 +256,5 @@ function toggleSubing(ruleCode: string, enabled: boolean) {
 .subing-panel__details { border-top: 1px solid var(--gy-border); }
 .subing-panel__details summary { padding-top: 11px; color: var(--gy-accent); font-size: var(--gy-font-size-sm); cursor: pointer; }
 .subing-panel__details[open] summary { margin-bottom: 9px; }
+.subing-panel__identity { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--gy-border); }
 </style>

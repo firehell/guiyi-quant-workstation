@@ -13,6 +13,7 @@ from app.main import app
 from app.market_data.domain import BarFrequency
 from app.market_data.subing_daily_watch import (
     SubingDailyWatchBuilder,
+    SubingDailyWatchItemProjector,
     SubingDailyWatchCurrentResult,
     SubingDailyWatchCurrentService,
     SubingDailyWatchDecision,
@@ -392,9 +393,13 @@ def test_builder_takes_generated_at_only_after_product_work() -> None:
             raise MarketDataError("MAPPED_CONTRACT_DATASET_MISSING")
 
     builder = SubingDailyWatchBuilder(
-        stitched_loader=_UnavailableLoader(),
+        projector=SubingDailyWatchItemProjector(
+            stitched_loader=_UnavailableLoader(),
+            product_metadata={
+                "aa": SubingDailyWatchProduct("aa", "Product aa", "black")
+            },
+        ),
         products=("aa",),
-        product_metadata={"aa": SubingDailyWatchProduct("aa", "Product aa", "black")},
         expected_universe_size=1,
     )
 
@@ -534,7 +539,7 @@ def test_generator_composition_is_complete_and_creates_no_files(
     generator = build_subing_daily_watch_generator(object())
 
     assert isinstance(generator, SubingDailyWatchGenerator)
-    assert generator.builder._stitched_loader is loader
+    assert generator.builder._projector._stitched_loader is loader
     assert generator.builder._products == products
     assert captured_store["root"] == root / "v2"
     root_validator = captured_store["root_validator"]

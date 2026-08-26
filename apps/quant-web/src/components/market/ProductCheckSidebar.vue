@@ -14,6 +14,7 @@ import {
   type ResearchOverlayId,
   type SeriesKind,
   type SubingResearchResponse,
+  type SubingStrategyEpisode,
 } from '@/types/market'
 import { ALERT_RULE_CODES } from '@/utils/alertRules'
 import { summarizeMarketBackground } from '@/utils/productCheck'
@@ -43,6 +44,11 @@ const props = defineProps<{
   currentEventsStatus: 'ready' | 'unavailable' | null
   currentEvents: AlertEvent[]
   htdyObservation: KlineMarker | null
+  subingStrategyEpisodes: SubingStrategyEpisode[]
+  subingStrategyLoading: boolean
+  subingStrategyError: string | null
+  subingStrategySupported: boolean
+  showSubingInternalProcess: boolean
 }>()
 
 const emit = defineEmits<{
@@ -122,11 +128,16 @@ function updateDataDetailsOpen(event: Event) {
         :runtime-status="alertRuntimeStatus"
         :alert-loading="alertLoading"
         :saving-rule-codes="savingRuleCodes"
+        :strategy-episodes="subingStrategyEpisodes"
+        :strategy-loading="subingStrategyLoading"
+        :strategy-error="subingStrategyError"
+        :strategy-supported="subingStrategySupported"
+        :show-internal-process="showSubingInternalProcess"
         @toggle-subing-alert="(ruleCode, enabled) => emit('toggle-subing-alert', ruleCode, enabled)"
       />
       <template v-else-if="selectedOverlay === 'jdj_strategy'">
         <strong>日进斗金参考回放 · Reference only</strong>
-        <p>历史因果重放只读展示 reference action，不提供 Alert 开关。</p>
+        <p>历史因果回放只读展示 reference action，不提供 Alert 开关。</p>
       </template>
       <template v-else-if="selectedOverlay === 'htdy'">
         <strong v-if="htdyObservation">火天大有 · {{ htdyObservationLabel(htdyObservation) }} · {{ observationTime(htdyObservation.time) }}</strong>

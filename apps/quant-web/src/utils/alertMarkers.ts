@@ -6,7 +6,6 @@ import {
   alertResultLabel,
   getAlertRulePresentation,
 } from './alertRules.ts'
-import { subingMarkerDedupeKey } from './historicalResearchMarkers.ts'
 
 export function isPersistentAlertIdentity(
   seriesKind: SeriesKind,
@@ -51,12 +50,13 @@ function subingEventDedupeKey(event: AlertEvent): string | undefined {
     || event.result_codes.length !== 1
   ) return undefined
   const direction = event.result_codes[0]
-  return subingMarkerDedupeKey(
-    event.symbol,
+  return [
+    ALERT_RULE_CODES.SUBING,
+    event.symbol.trim().toLowerCase(),
     event.bar_end,
     event.frequency,
     direction,
-  )
+  ].join(':')
 }
 
 function markerTone(

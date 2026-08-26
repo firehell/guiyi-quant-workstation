@@ -12,9 +12,10 @@
 技术栈固定为 Vue 3/Vite/TypeScript/Naive UI、FastAPI/PostgreSQL/Redis 与
 RQData → Canonical Parquet → 八表 Catalog → MarketDataService；`quant-core` 仅保留
 Indicator Kernel（`guiyi_quant/indicators/`），旧 vn.py-compatible 策略研究包已退役（仅 Git
-history 可追溯）。当前唯一策略回放相关产品面是 active universe 中单产品的
-`actual_dominant + 1m` Historical 日进斗金参考策略回放 HTTP；它不是正式回测引擎、通用策略适配层、
-Candidate/OOS 体系或回测 worker/queue/CLI。Alert 两张表是独立 Application Domain，不属于 Market
+history 可追溯）。当前策略回放相关产品面只有 active universe 中单产品的两条
+research-only Historical 路径：`actual_dominant + 1m` 日进斗金参考回放，以及
+`actual_dominant + 15m` SuBing Strategy V1 Stage 1 历史因果投影。二者都不是正式回测引擎、
+通用策略适配层、Candidate/OOS 体系或回测 worker/queue/CLI。Alert 两张表是独立 Application Domain，不属于 Market
 Catalog，不改变八表合同。
 
 ## 个人量化架构原则
@@ -108,10 +109,13 @@ acknowledgment 并重新进入 `failed`。状态只允许固定公开失败分�
 5. historical canonical 与 live observation 分离。RQData 先进入 staging，完成 schema/session/duplicate/OHLCV/coverage、identity、row-count 与物理可读性校验后才能发布；月分区以同文件系统临时文件原子替换 `part.parquet`，失败时保留最后有效 canonical。live 不得直接提升为正式历史 active。
 6. 映射、分区、coverage 或物理完整性异常必须显式失败，不得静默填充、缩短、替换或跨频回退；不得为此建立第二套缺口状态表。
 7. 策略研究与未来重建的回测禁止未来函数、泄漏和未记录重绘；所有交易相关价格、成本、仓位、资金、盈亏和费用使用 `Decimal`。HTDY original 观察边界见 `docs/INDICATOR_KERNEL.md`（盘中 realtime 应用路径与 Signal/Review 合同已退役，仅 Git history 可追溯）。
-8. 当前唯一策略回放相关 research-only 路径是 active universe 中单产品的
-   `actual_dominant + 1m` 日进斗金参考策略基于
-   Canonical/MarketDataService 做确定性 Historical replay，只输出 reference-only action 并只读展示
-   reference fill，不进入 DB、Redis、Alert、Runtime 或订单路径。它不是旧
+8. 当前策略回放相关 research-only 路径只有 active universe 中单产品的
+   `actual_dominant + 1m` 日进斗金参考回放和 `actual_dominant + 15m` SuBing Strategy V1
+   Stage 1 历史因果投影。二者均基于 Canonical/MarketDataService 确定性复算，只输出
+   reference-only 模拟动作/参考变动并只读展示，不进入 DB、Redis、Alert、Runtime 或订单路径。
+   SuBing Stage 1 只支持 15m Strategy Action/Episode：普通动作下一根同物理合约 15m open 模拟生效，
+   只有 EMA21、上一根极值、绑定 Pivot 与 MACD 高低位反向交叉四类退出；不加减仓、反手、
+   跨物理段或同 Bar 重新建仓，只在权威段末以旧段最后 15m close 清仓。这两条路径都不是旧
    backtest/Signal/Review/Strategy Web·HTTP·worker·queue·DB 体系的恢复，也不是正式回测引擎或通用
    策略适配层。未来正式验证回测必须作为新任务基于
    Canonical/MarketDataService 定义策略、参数、数据、模拟订单、trade、equity 与 lineage 的可复算合同。

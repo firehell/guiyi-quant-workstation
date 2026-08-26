@@ -14,6 +14,7 @@ import {
 } from '../src/types/market.ts'
 import { lifecycleSnapshotToMarkers } from '../src/utils/subingLifecycleMarkers.ts'
 import { cloneSubingLifecycleCase } from './fixtures/subingLifecycleCases.mjs'
+import { readFileSync } from 'node:fs'
 
 const readyPayload = cloneSubingLifecycleCase('longSetup') as SubingResearchResponse
 
@@ -62,6 +63,13 @@ test('maps only current immutable lifecycle facts to neutral research markers', 
     { id: `lifecycle:${key}:entry`, time: '2026-01-12T02:00:00Z', label: '研究确认', tooltip: 'SuBing 生命周期研究 · 研究确认', tone: 'neutral', position: 'belowBar', shape: 'circle' },
     { id: `lifecycle:${key}:transition:${transitionId}`, time: '2026-01-12T02:10:00Z', label: '风险', tooltip: 'SuBing 生命周期研究 · 风险', tone: 'neutral', position: 'belowBar', shape: 'circle' },
   ])
+})
+
+test('keeps current Lifecycle markers behind the preference without gating Strategy markers', () => {
+  const source = readFileSync(new URL('../src/pages/market/chart.vue', import.meta.url), 'utf8')
+
+  assert.match(source, /const lifecycleMarkers = computed\(\(\) => \{\s+if \(!showSubingInternalProcess\.value\) return \[\]/)
+  assert.match(source, /const researchMarkers = computed\(\(\) => mergeKlineMarkers\(\s+lifecycleMarkers\.value,\s+historicalResearchMarkers\.value,/)
 })
 
 test('maps a confirmed hard close to its immutable entry and close facts', () => {

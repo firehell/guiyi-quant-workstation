@@ -18,7 +18,7 @@ from app.market_data.composition import (
     build_market_data_service,
     build_subing_daily_watch_current_service,
     build_subing_daily_watch_generator,
-    build_subing_historical_signal_service,
+    build_subing_strategy_historical_service,
     canonical_root,
 )
 from app.market_data.metadata import MetadataSynchronizer
@@ -90,46 +90,6 @@ def test_metadata_synchronizer_uses_existing_composition_boundary(
     session.close()
 
 
-def test_subing_historical_builder_uses_market_read_composition(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    market_data = object()
-    loader = object()
-    calibration = object()
-    result = object()
-    captured: dict[str, object] = {}
-    session = object()
-    monkeypatch.setattr(
-        "app.market_data.composition.build_market_data_service",
-        lambda value: market_data if value is session else pytest.fail("wrong session"),
-    )
-    monkeypatch.setattr(
-        "app.market_data.composition.ActualDominantResearchSegmentLoader",
-        lambda value: loader if value is market_data else pytest.fail("wrong MDS"),
-    )
-    monkeypatch.setattr(
-        "app.market_data.composition.load_active_products",
-        lambda: ("jm",),
-    )
-    monkeypatch.setattr(
-        "app.market_data.composition.load_accepted_subing_calibration",
-        lambda _path: calibration,
-    )
-    monkeypatch.setattr(
-        "app.market_data.composition.SubingHistoricalSignalService",
-        lambda loader_arg, **kwargs: (
-            captured.update(loader=loader_arg, **kwargs) or result
-        ),
-    )
-
-    assert build_subing_historical_signal_service(session) is result
-    assert captured == {
-        "loader": loader,
-        "products": ("jm",),
-        "calibration": calibration,
-    }
-
-
 def test_subing_daily_watch_generator_uses_stitched_loader_and_v2_root(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
@@ -177,7 +137,7 @@ def test_subing_daily_watch_generator_uses_stitched_loader_and_v2_root(
     generator = build_subing_daily_watch_generator(object())
 
     assert isinstance(
-        generator.builder._stitched_loader,
+        generator.builder._projector._stitched_loader,
         ActualDominantStitchedResearchLoader,
     )
     assert generator._store._root == base / "v2"
@@ -231,3 +191,37 @@ def test_subing_daily_watch_current_service_reads_only_v2_root(
         store.read_current()
 
     assert raised.value.code == "OBSERVATION_ROOT_UNAVAILABLE"
+
+
+def test_subing_strategy_cache_is_sibling_of_daily_watch_v2(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    base = (tmp_path / "observations").resolve()
+    base.mkdir()
+    market_data = SimpleNamespace(
+        list_latest_dominants=lambda: (
+            SimpleNamespace(symbol="jm", product_name="焦煤", sector="black"),
+        )
+    )
+    monkeypatch.setattr(
+        "app.market_data.composition.load_active_products",
+        lambda: ("jm",),
+    )
+    monkeypatch.setattr(
+        "app.market_data.composition.build_market_data_service",
+        lambda _session: market_data,
+    )
+    monkeypatch.setattr(
+        "app.market_data.composition.resolve_subing_observation_root",
+        lambda *, environ, inspector: base,
+    )
+
+    service = build_subing_strategy_historical_service(object())
+
+    assert service._cache._root == base / "cache" / "subing-strategy-v1"
+    assert service._cache._root.parent != base / "v2"
+    assert isinstance(
+        service._direction_context_resolver._projector._stitched_loader,
+        ActualDominantStitchedResearchLoader,
+    )

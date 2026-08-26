@@ -22,6 +22,7 @@ const props = defineProps<{
   selectedOverlay: ResearchOverlayId
   optionalEmaIndicators: OptionalEmaIndicatorId[]
   showNStructureBands: boolean
+  showSubingInternalProcess: boolean
   nStructureBandsSupported: boolean
   nStructureBandsLoading: boolean
   nStructureBandsError: string | null
@@ -36,6 +37,7 @@ const emit = defineEmits<{
   'update:selected-overlay': [value: ResearchOverlayId]
   'update:optional-ema-indicators': [value: OptionalEmaIndicatorId[]]
   'update:show-n-structure-bands': [value: boolean]
+  'update:show-subing-internal-process': [value: boolean]
   'open-research': []
   'toggle-fullscreen': []
   back: []
@@ -134,6 +136,18 @@ function toggleOptionalEma(value: OptionalEmaIndicatorId) {
         <small class="toolbar__settings-help">已完成 N · Canonical 历史 · 仅真实主力 5m</small>
         <small v-if="nStructureBandsError" class="toolbar__settings-error">N字区间暂不可用</small>
         <small v-else-if="nStructureBandsLoading" class="toolbar__settings-help">N字区间读取中…</small>
+        <div v-if="selectedOverlay === 'subing'" class="toolbar__settings-title">
+          <span>显示苏冰内部研究过程</span>
+          <NSwitch
+            :value="showSubingInternalProcess"
+            size="small"
+            aria-label="显示苏冰内部研究过程"
+            @update:value="emit('update:show-subing-internal-process', $event)"
+          />
+        </div>
+        <small v-if="selectedOverlay === 'subing'" class="toolbar__settings-help">
+          默认关闭；仅显示当前准备 / 研究确认 / 风险 / 结束事实
+        </small>
         <span>指定真实合约</span>
         <NInput
           :value="contract"
