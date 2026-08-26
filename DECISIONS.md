@@ -11,7 +11,7 @@
 | Live/Historical | Redis Live 仅为当日 observation，Canonical 是治理后的 Historical fact | Live 不直接晋升 Canonical；未确认 Bar 不进入正式历史或正式信号 |
 | Universe | `active_products.txt` 定义研究能力，`operational_products.txt` 定义持续 Runtime 授权 | 即使文件内容相同也不合并授权边界 |
 | SuBing | 一个产品，Daily Context、Current Signal State、Formal Event 三种事实 | 共享权威公式但不合并为 mega endpoint、表或 DTO；Alert 只认 `scope_products` |
-| Historical replay | JDJ 1m reference replay 与 SuBing 15m Strategy Projection 保持 source-specific | 不创建 UniversalStrategyAdapter、统一 Opportunity 模型、正式回测 worker/queue 或订单域 |
+| Historical replay | SuBing 15m Strategy Projection 保持 source-specific | 不创建 UniversalStrategyAdapter、统一 Opportunity 模型、正式回测 worker/queue 或订单域 |
 | HTDY | operational universe × 七周期 observation | Scope 只认 symbol × frequency；D1/W1 只走 `canonical_updated` seam |
 | Validation | causality、strict-before、future-leak、prefix invariance、golden parity、fail-closed 是长期合同 | Retrospective 不回填 prospective OOS，不自动晋升候选 |
 | Alert | 两表、Event 先提交、one-shot transport | 无 retry/replay/backfill/queue/outbox/订单；provider accepted 不等于送达 |

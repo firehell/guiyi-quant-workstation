@@ -43,20 +43,25 @@ Implementation is split into two separately gated stages:
 
 Approval of this document authorizes neither implementation nor any Stage 2 mutation. Stage 1 must be implemented, reviewed, and accepted before a Stage 2 implementation plan is approved.
 
-## 2. Current canonical compatibility
+## 2. Historical planning context and current canonical compatibility
 
-This design is constrained by the active repository facts at the base commit:
+This design records its historical planning context separately from the current repository facts:
+
+- At the historical base, Web exposed four public overlays.
+- The current active set is `none | subing | htdy`.
+- In both contexts, SuBing Strategy reuses the existing `subing` overlay; it never adds an overlay.
+
+The current repository facts are:
 
 - The product is a local, single-user futures research workstation.
-- Web exposes only Market; the four public chart overlays remain `none | subing | jdj_strategy | htdy`.
+- Web exposes only Market; the public chart overlays remain `none | subing | htdy`.
 - SuBing currently projects three independent facts: Daily Context, Current Signal State, and Formal Event.
 - Daily Watch V2 is the accepted D1/60m direction-context capability.
 - The current SuBing Alert Rule is `subing_entry_signal_v1`; it remains active until Stage 2 explicitly introduces a new Rule.
 - Historical bars are consumed only through `MarketDataService`; `actual_dominant` is a logical rank1 stitched view over physical contract segments.
 - RQAlpha and Execution Review are retired and must not be restored by this work.
-- The only current strategy-style historical product is the source-specific JDJ reference replay. It is a useful orchestration pattern, not a generic adapter to extend.
 
-`subing_strategy_v1` therefore remains the existing `subing` overlay. It is not a fifth overlay and does not create a generic strategy registry, backtest worker, queue, account model, or trading domain.
+`subing_strategy_v1` therefore remains the existing `subing` overlay. It does not create a generic strategy registry, backtest worker, queue, account model, or trading domain.
 
 ## 3. Goals and non-goals
 

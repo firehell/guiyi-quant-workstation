@@ -8,18 +8,8 @@ from decimal import Decimal, InvalidOperation
 from typing import TypeAlias
 
 from app.market_data.domain import BarFrequency
-from app.research.common.candidate_validation_schedule import (
-    CandidateValidationRequest,
-)
-from app.research.jdj.jdj_research import JdjResearchRequest
 from app.research.n_structure.n_structure_research_service import (
     NStructureResearchRequest,
-)
-from app.research.robustness.multi_candidate_robustness_policy import (
-    MultiCandidateRobustnessRequest,
-)
-from app.research.robustness.jdj_robustness import (
-    JdjActive60RobustnessRequest,
 )
 from app.research.subing.subing_calibration_service import (
     CalibrationMode,
@@ -33,34 +23,12 @@ from app.research.subing.subing_lifecycle_research_service import (
 ResearchRequest: TypeAlias = (
     CalibrationResearchRequest
     | LifecycleResearchRequest
-    | JdjResearchRequest
-    | CandidateValidationRequest
     | NStructureResearchRequest
-    | MultiCandidateRobustnessRequest
-    | JdjActive60RobustnessRequest
 )
 
 
 def build_research_request(args: argparse.Namespace) -> ResearchRequest:
     """Convert CLI strings into one immutable research request."""
-    if args.research_command == "candidate-robustness":
-        if args.protocol == "jdj_active60_robustness_v1":
-            return JdjActive60RobustnessRequest(protocol_id=args.protocol)
-        return MultiCandidateRobustnessRequest(protocol_id=args.protocol)
-    if args.research_command == "candidate-validation":
-        return CandidateValidationRequest(
-            candidate_id=args.candidate,
-            protocol_id=args.protocol,
-            symbol=args.symbol,
-            through=_day(args.through),
-        )
-    if args.research_command == "jdj-1m":
-        return JdjResearchRequest(
-            since=_day(args.since),
-            through=_day(args.through),
-            symbol=args.symbol,
-            candidate_id=args.candidate,
-        )
     if args.research_command == "subing-lifecycle":
         return LifecycleResearchRequest(
             since=_day(args.since),

@@ -8,7 +8,7 @@
 
 - 唯一 Web 产品为 Market，route 仅 `/market` 与 `/market/chart`。
 - Market Radar 的 Summary、Scatter、Detail 是唯一全市场研究入口。
-- 主图 Overlay 仅 `none | subing | jdj_strategy | htdy`。
+- 主图 Overlay 仅 `none | subing | htdy`。
 - N Structure 是可与 Overlay 组合的 `actual_dominant + 5m` completed-N Historical range-band 图层，不是第五个 Overlay、独立产品、Alert 或 Runtime evaluator。
 
 ## SuBing
@@ -23,11 +23,10 @@ SuBing 是一个产品，保留三种不可互相替代的事实：
 
 SuBing Strategy V1 Stage 1 是独立的 research-only Historical Strategy Projection：只支持 active universe 中单品种 `actual_dominant + 15m + since/through`，从每个 rank1 物理段起点确定性复算 Daily Context、Factor、Lifecycle、Strategy Action 与 Episode。普通动作在下一根同物理合约 15m open 模拟生效；退出仅来自 EMA21、上一根 15m 极值、绑定 Pivot 与 MACD 高低位反向交叉。不加减仓、不反手、不跨物理段、不在同 Bar 重建仓；只有覆盖权威段末时才以旧段最后一根 15m close 清仓。输出仅为模拟动作与参考变动，不进入 DB、Redis、Alert、Runtime 或订单。
 
-## JDJ 与保留研究能力
+## 保留研究能力
 
-- JDJ reference replay 是 active universe 中单品种 `actual_dominant + 1m` 的 deterministic、read-only reference action/fill；不进入 DB、Redis、Alert、Runtime 或订单。
 - Candidate Validation/Robustness 保留 source-specific causality、strict-before、embargo、prefix invariance、golden parity 与 prospective OOS 分离；retrospective 不生成 rank、winner、promotion、盈利或可交易结论。
-- Generic Robustness relationship metrics 保留。N/raw JDJ Candidate 只属于内部研究面。
+- Generic Robustness relationship metrics 保留。N 与 SuBing Candidate 只属于内部研究面。
 
 ## HTDY 与 Alert
 
@@ -48,7 +47,7 @@ RQData -> staging + hard validation -> Canonical Parquet
 - 物理 Dataset 只有 `continuous` 与 `contract`；`actual_dominant` 是按 `MainContractMap rank=1` 有效区间拼接的查询模式。
 - `MarketDataService` 是 Historical consumer 的唯一入口；Redis Live 只承载当日 observation，不能提升为 Canonical。
 
-稳定 HTTP 面为 `/api/v1/market/*`、`/api/alerts/*` 与只读 `/api/runtime/*`。统一 CLI 为 `uv run --project services/quant-api guiyi`；research 子命令仅保留 `subing-calibration`、`subing-lifecycle`、`n-structure`、`jdj-1m`、`candidate-validation` 与 `candidate-robustness`。
+稳定 HTTP 面为 `/api/v1/market/*`、`/api/alerts/*` 与只读 `/api/runtime/*`。统一 CLI 为 `uv run --project services/quant-api guiyi`；research 子命令仅保留 `subing-calibration`、`subing-lifecycle` 与 `n-structure`。
 
 ## Retired surface
 

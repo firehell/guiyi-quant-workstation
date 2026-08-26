@@ -5,13 +5,13 @@
 ## 快速导航
 
 - [当前状态](STATUS.md)：release、Runtime、evidence 与 pending Gate。
-- [稳定产品边界](PROJECT_SOURCE.md)：SuBing、HTDY、JDJ、Alert 与研究边界。
+- [稳定产品边界](PROJECT_SOURCE.md)：SuBing、HTDY、Alert 与研究边界。
 - [工程规则](AGENTS.md) 与 [验证命令](TESTING.md)。
 - [系统架构](docs/ARCHITECTURE.md) 与 [数据合同](docs/DATA_CENTER.md)。
 
 ## 当前产品面
 
-SuBing 是一个由 Daily Context、Current Signal State、Formal Event 组成的产品工作区。HTDY 支持 operational universe 的七个正式周期及 symbol × frequency Scope。主图选择仅为：无、苏冰、日进斗金参考回放、火天大有。N/raw JDJ 为内部研究；RQAlpha 与 Execution Review 已退役。
+SuBing 是一个由 Daily Context、Current Signal State、Formal Event 组成的产品工作区。HTDY 支持 operational universe 的七个正式周期及 symbol × frequency Scope。主图选择仅为：无、苏冰、火天大有。N 与 SuBing Candidate 为内部研究；RQAlpha 与 Execution Review 已退役。
 
 ## 本地开发
 
@@ -22,4 +22,4 @@ pnpm --dir apps/quant-web install --frozen-lockfile
 pnpm --dir apps/quant-web build
 ```
 
-统一 CLI 的 Research 子命令为 `subing-calibration`、`subing-lifecycle`、`n-structure`、`jdj-1m`、`candidate-validation` 与 `candidate-robustness`。真实数据、生产 DB、Runtime、Scope、通知与 release/tag 均需独立明确授权。
+统一 CLI 的 Research 子命令为 `subing-calibration`、`subing-lifecycle` 与 `n-structure`。真实数据、生产 DB、Runtime、Scope、通知与 release/tag 均需独立明确授权。
