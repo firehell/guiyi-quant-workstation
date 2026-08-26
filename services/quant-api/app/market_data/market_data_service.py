@@ -24,6 +24,7 @@ from app.market_data.catalog import (
     MarketCatalog,
 )
 from app.market_data.domain import (
+    ActualDominantRecentBarsQuery,
     ActualDominantTradingDayQuery,
     BarFrequency,
     CanonicalBar,
@@ -61,6 +62,13 @@ class MarketDataError(RuntimeError):
     def __init__(self, code: str) -> None:
         self.code = code
         super().__init__(code)
+
+
+class ActualDominantSourceTradingDayMissingError(MarketDataError):
+    """The recent actual-dominant page has no Bar for its exact source day."""
+
+    def __init__(self) -> None:
+        super().__init__("ACTUAL_DOMINANT_SOURCE_TRADING_DAY_MISSING")
 
 
 @dataclass(frozen=True, slots=True)
@@ -133,6 +141,37 @@ class MarketDataService:
             ),
             requested_trading_day_window=(request.since, request.through),
         )
+
+    def query_actual_dominant_recent_bars(
+        self,
+        request: ActualDominantRecentBarsQuery,
+    ) -> MarketSeriesPageResult:
+        """Return the latest actual-dominant bars through one exact trading day."""
+        _, session_end = self._trading_day_window(
+            symbol=request.symbol,
+            since=request.through,
+            through=request.through,
+        )
+        result = self.query_page(
+            SeriesPageQuery(
+                series_kind=SeriesKind.ACTUAL_DOMINANT,
+                symbol=request.symbol,
+                frequency=request.frequency,
+                before=session_end + timedelta(microseconds=1),
+                limit=request.limit,
+            )
+        )
+        bars = result.bars
+        if any(bar.trading_day > request.through for bar in bars) or any(
+            current.bar_end <= previous.bar_end
+            for previous, current in zip(bars, bars[1:], strict=False)
+        ):
+            raise MarketDataError("ACTUAL_DOMINANT_RECENT_BARS_INVALID")
+        if not bars or bars[-1].trading_day < request.through:
+            raise ActualDominantSourceTradingDayMissingError
+        if bars[-1].trading_day != request.through:
+            raise MarketDataError("ACTUAL_DOMINANT_RECENT_BARS_INVALID")
+        return result
 
     def query_contract_trading_days(
         self,

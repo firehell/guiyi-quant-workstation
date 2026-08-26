@@ -6,7 +6,7 @@
 
 归一量化是本地、单用户的国内期货研究工作站：可信行情、Market Web、研究观察与 Alert 构成当前闭环。它不做自动交易、实盘下单、账户/委托/持仓管理、SaaS 或 AI 自动晋升；所有信号和通知均为研究观察，`auto_order=false`。
 
-SuBing 是一个 SuBing 产品，向用户投影三种不能互相替代的内部事实：Daily Context（盘后 immutable artifact，回答“今天看什么”）、Current Signal State（Canonical + completed Live current state，回答“现在是什么状态”）和 Formal Event（immutable `AlertEvent`，回答“是否需要处理”）。它们由同一权威 Factor/Signal/Lifecycle 逻辑服务，不合并为 mega endpoint、表或 DTO；SuBing Alert Scope 保持 product-level `scope_products`。
+SuBing 是一个 SuBing 产品，向用户投影三种不能互相替代的内部事实：Daily Context（盘后 immutable artifact，回答“今天看什么”）、Current Signal State（Canonical + completed Live current state，回答“现在是什么状态”）和 Formal Event（immutable `AlertEvent`，回答“是否需要处理”）。Daily Watch V2 的 Daily Context 只使用截至来源交易日的最近 30 根 confirmed raw rank1 stitched `actual_dominant` D1/60m Bar；换月不复权、不平移、不重置 EMA21/slope，固定身份为 `subing_daily_watch_v2 + subing_ema21_rank1_stitched_raw_v2 + rank1_stitched_raw`，artifact 只写校验后 base 根的 `v2/` namespace。base 根中的 V1 字节保持不变且 active API/Store 不回退 V1；只有整个 stitched 历史仍不足 30 根或存在真实来源日、rank1、数据身份、metadata 缺口时才 typed unavailable。三类事实由同一权威 Factor/Signal/Lifecycle 逻辑服务，不合并为 mega endpoint、表或 DTO；SuBing Alert Scope 保持 product-level `scope_products`，所有 Daily Watch 结果仍是 research-only observation，不进入订单路径。
 
 HTDY 是 observation-only/repainting 的全周期产品：operational universe × 七个正式周期 `1m/5m/15m/30m/60m/1d/1w`。稳定 Rule code 保持 `htdy_original_15m`；HTDY 唯一 Scope authority 为 `scope_product_frequencies` 的 symbol × frequency，SuBing 唯一 Scope authority 为 `scope_products`。HTDY storage identity 为 `(rule_id, symbol, frequency, bar_end)`，SuBing 的业务 Event identity 保持 `rule_id + symbol + bar_end`。日内只消费同周期 completed Live Bar；D1/W1 只由 `market:state(reason=canonical_updated)` 触发并读取 Canonical，不增加 scheduler、replay 或 backfill。
 

@@ -17,14 +17,15 @@ from .subing_daily_watch import (
     SubingDailyWatchItem,
     SubingDailyWatchSnapshot,
 )
-from .subing_ema_trend import PriceSide, SubingEmaTrendSnapshot
+from .subing_ema_trend import PriceSide, SubingStitchedEmaTrendSnapshot
 
 
 SUBING_OBSERVATION_ROOT_ENV = "GUIYI_SUBING_OBSERVATION_ROOT"
 
-_SCHEMA_VERSION = 1
-_PROJECTION_VERSION = "subing_daily_watch_v1"
-_FORMULA_VERSION = "subing_ema21_trend_v1"
+_SCHEMA_VERSION = 2
+_PROJECTION_VERSION = "subing_daily_watch_v2"
+_FORMULA_VERSION = "subing_ema21_rank1_stitched_raw_v2"
+_HISTORY_MODE: Literal["rank1_stitched_raw"] = "rank1_stitched_raw"
 _SERIES_KIND = "actual_dominant"
 _FREQUENCIES = ["1d", "60m"]
 _EMA_PERIOD = 21
@@ -108,13 +109,9 @@ class SubingDailyWatchStore:
         if not _is_aware(started_at) or started_at > snapshot.generated_at:
             raise SubingDailyWatchStoreError("SNAPSHOT_INVALID")
         snapshot_bytes = _snapshot_bytes(snapshot)
-        current_bytes = (
-            _read_bytes(self._current) if self._current.exists() else None
-        )
+        current_bytes = _read_bytes(self._current) if self._current.exists() else None
         current = (
-            _parse_snapshot_bytes(current_bytes)
-            if current_bytes is not None
-            else None
+            _parse_snapshot_bytes(current_bytes) if current_bytes is not None else None
         )
         if (
             current is not None
@@ -152,9 +149,7 @@ class SubingDailyWatchStore:
             )
         _atomic_write(
             self._generation_status,
-            _canonical_bytes(
-                _passed_status_payload(snapshot, started_at=started_at)
-            ),
+            _canonical_bytes(_passed_status_payload(snapshot, started_at=started_at)),
             preflight=self._revalidate_root,
         )
         return SubingDailyWatchPublishResult(
@@ -163,9 +158,10 @@ class SubingDailyWatchStore:
         )
 
     def read_current(self) -> SubingDailyWatchSnapshot | None:
-        if not self._current.exists():
+        current_bytes = self._read_optional_bytes(self._current)
+        if current_bytes is None:
             return None
-        snapshot = _parse_snapshot_bytes(_read_bytes(self._current))
+        snapshot = _parse_snapshot_bytes(current_bytes)
         status = self.read_generation_status()
         last_run = status.get("last_run") if status is not None else None
         if (
@@ -183,9 +179,10 @@ class SubingDailyWatchStore:
         return snapshot
 
     def read_generation_status(self) -> Mapping[str, object] | None:
-        if not self._generation_status.exists():
+        status_bytes = self._read_optional_bytes(self._generation_status)
+        if status_bytes is None:
             return None
-        return _parse_generation_status(_read_bytes(self._generation_status))
+        return _parse_generation_status(status_bytes)
 
     def record_failure(
         self,
@@ -215,6 +212,7 @@ class SubingDailyWatchStore:
         payload: dict[str, object] = {
             "schema_version": _SCHEMA_VERSION,
             "projection_version": _PROJECTION_VERSION,
+            "history_mode": _HISTORY_MODE,
             "last_run": {
                 "source_trading_day": source_trading_day.isoformat(),
                 "target_trading_day": (
@@ -241,34 +239,48 @@ class SubingDailyWatchStore:
         if self._root_validator() != self._root:
             raise SubingDailyWatchStoreError("OBSERVATION_ROOT_UNAVAILABLE")
 
+    def _read_optional_bytes(self, path: Path) -> bytes | None:
+        self._read_preflight(path)
+        if not path.exists():
+            self._read_preflight(path)
+            return None
+        self._read_preflight(path)
+        content = _read_bytes(path)
+        self._read_preflight(path)
+        return content
+
+    def _read_preflight(self, path: Path) -> None:
+        try:
+            if self._root.is_symlink() or path.is_symlink():
+                raise SubingDailyWatchStoreError("OBSERVATION_ROOT_UNAVAILABLE")
+            self._revalidate_root()
+            if self._root.is_symlink() or path.is_symlink():
+                raise SubingDailyWatchStoreError("OBSERVATION_ROOT_UNAVAILABLE")
+        except SubingDailyWatchStoreError:
+            raise
+        except (OSError, NotImplementedError) as exc:
+            raise SubingDailyWatchStoreError("OBSERVATION_ROOT_UNAVAILABLE") from exc
+
     def _ensure_directories(self) -> None:
         try:
             if self._root.is_symlink() or self._history.is_symlink():
-                raise SubingDailyWatchStoreError(
-                    "OBSERVATION_ROOT_UNAVAILABLE"
-                )
+                raise SubingDailyWatchStoreError("OBSERVATION_ROOT_UNAVAILABLE")
             self._revalidate_root()
             self._root.mkdir(parents=True, exist_ok=True, mode=0o700)
             if self._root.is_symlink() or self._history.is_symlink():
-                raise SubingDailyWatchStoreError(
-                    "OBSERVATION_ROOT_UNAVAILABLE"
-                )
+                raise SubingDailyWatchStoreError("OBSERVATION_ROOT_UNAVAILABLE")
             self._revalidate_root()
             self._root.chmod(0o700)
             self._revalidate_root()
             self._history.mkdir(exist_ok=True, mode=0o700)
             if self._history.is_symlink():
-                raise SubingDailyWatchStoreError(
-                    "OBSERVATION_ROOT_UNAVAILABLE"
-                )
+                raise SubingDailyWatchStoreError("OBSERVATION_ROOT_UNAVAILABLE")
             self._revalidate_root()
             self._history.chmod(0o700)
         except SubingDailyWatchStoreError:
             raise
         except (OSError, NotImplementedError) as exc:
-            raise SubingDailyWatchStoreError(
-                "OBSERVATION_ROOT_NOT_WRITABLE"
-            ) from exc
+            raise SubingDailyWatchStoreError("OBSERVATION_ROOT_NOT_WRITABLE") from exc
 
 
 def resolve_subing_observation_root(
@@ -336,6 +348,7 @@ def _snapshot_payload(snapshot: SubingDailyWatchSnapshot) -> dict[str, object]:
         "schema_version": _SCHEMA_VERSION,
         "projection_version": _PROJECTION_VERSION,
         "formula_version": _FORMULA_VERSION,
+        "history_mode": _HISTORY_MODE,
         "source_trading_day": snapshot.source_trading_day.isoformat(),
         "target_trading_day": snapshot.target_trading_day.isoformat(),
         "generated_at": snapshot.generated_at.isoformat(),
@@ -361,14 +374,20 @@ def _item_payload(item: SubingDailyWatchItem) -> dict[str, object]:
     }
 
 
-def _trend_payload(trend: SubingEmaTrendSnapshot | None) -> object:
+def _trend_payload(trend: SubingStitchedEmaTrendSnapshot | None) -> object:
     if trend is None:
         return None
     return {
         "bar_end": trend.bar_end.isoformat(),
         "trading_day": trend.trading_day.isoformat(),
         "physical_contract": trend.contract,
-        "segment_start_trading_day": trend.segment_start_trading_day.isoformat(),
+        "current_segment_start_trading_day": (
+            trend.current_segment_start_trading_day.isoformat()
+        ),
+        "warmup_start_trading_day": trend.warmup_start_trading_day.isoformat(),
+        "warmup_bar_count": trend.warmup_bar_count,
+        "warmup_segment_count": trend.warmup_segment_count,
+        "history_mode": trend.history_mode,
         "close": _decimal_string(trend.close),
         "ema21": _decimal_string(trend.ema21),
         "price_side": trend.price_side.value,
@@ -388,18 +407,43 @@ def _validate_snapshot(snapshot: SubingDailyWatchSnapshot) -> None:
             (BarFrequency.D1, item.daily),
             (BarFrequency.H1, item.hourly),
         ):
-            if trend is not None and (
-                trend.timeframe is not timeframe
-                or trend.trading_day != snapshot.source_trading_day
-                or not _is_aware(trend.bar_end)
-            ):
-                raise SubingDailyWatchStoreError("SNAPSHOT_INVALID")
-        if item.daily is not None and item.hourly is not None and (
-            item.daily.contract != item.hourly.contract
-            or item.daily.segment_start_trading_day
-            != item.hourly.segment_start_trading_day
+            if trend is not None:
+                _validate_trend(
+                    trend,
+                    timeframe=timeframe,
+                    source_day=snapshot.source_trading_day,
+                )
+        if (
+            item.daily is not None
+            and item.hourly is not None
+            and (
+                item.daily.contract != item.hourly.contract
+                or item.daily.current_segment_start_trading_day
+                != item.hourly.current_segment_start_trading_day
+            )
         ):
             raise SubingDailyWatchStoreError("SNAPSHOT_INVALID")
+
+
+def _validate_trend(
+    trend: object,
+    *,
+    timeframe: BarFrequency,
+    source_day: date,
+) -> None:
+    if not isinstance(trend, SubingStitchedEmaTrendSnapshot) or (
+        trend.timeframe is not timeframe
+        or trend.trading_day != source_day
+        or not _is_aware(trend.bar_end)
+        or trend.history_mode != _HISTORY_MODE
+        or type(trend.warmup_bar_count) is not int
+        or trend.warmup_bar_count != 30
+        or type(trend.warmup_segment_count) is not int
+        or not 1 <= trend.warmup_segment_count <= trend.warmup_bar_count
+        or trend.warmup_start_trading_day > trend.trading_day
+        or trend.current_segment_start_trading_day > trend.trading_day
+    ):
+        raise SubingDailyWatchStoreError("SNAPSHOT_INVALID")
 
 
 def _parse_snapshot_bytes(raw: bytes) -> SubingDailyWatchSnapshot:
@@ -411,6 +455,7 @@ def _parse_snapshot_bytes(raw: bytes) -> SubingDailyWatchSnapshot:
                 "schema_version",
                 "projection_version",
                 "formula_version",
+                "history_mode",
                 "source_trading_day",
                 "target_trading_day",
                 "generated_at",
@@ -427,6 +472,7 @@ def _parse_snapshot_bytes(raw: bytes) -> SubingDailyWatchSnapshot:
             or payload["schema_version"] != _SCHEMA_VERSION
             or payload["projection_version"] != _PROJECTION_VERSION
             or payload["formula_version"] != _FORMULA_VERSION
+            or payload["history_mode"] != _HISTORY_MODE
             or payload["series_kind"] != _SERIES_KIND
             or payload["frequencies"] != _FREQUENCIES
             or payload["ema_period"] != _EMA_PERIOD
@@ -485,7 +531,7 @@ def _parse_trend(
     value: object,
     timeframe: BarFrequency,
     source_day: date,
-) -> SubingEmaTrendSnapshot | None:
+) -> SubingStitchedEmaTrendSnapshot | None:
     if value is None:
         return None
     trend = _as_object(value)
@@ -495,7 +541,11 @@ def _parse_trend(
             "bar_end",
             "trading_day",
             "physical_contract",
-            "segment_start_trading_day",
+            "current_segment_start_trading_day",
+            "warmup_start_trading_day",
+            "warmup_bar_count",
+            "warmup_segment_count",
+            "history_mode",
             "close",
             "ema21",
             "price_side",
@@ -508,25 +558,33 @@ def _parse_trend(
     trading_day = _parse_date(trend["trading_day"])
     if trading_day != source_day:
         raise ValueError
-    return SubingEmaTrendSnapshot(
+    warmup_bar_count = trend["warmup_bar_count"]
+    warmup_segment_count = trend["warmup_segment_count"]
+    if (
+        type(warmup_bar_count) is not int
+        or type(warmup_segment_count) is not int
+        or trend["history_mode"] != _HISTORY_MODE
+    ):
+        raise ValueError
+    return SubingStitchedEmaTrendSnapshot(
         timeframe=timeframe,
         bar_end=_parse_datetime(trend["bar_end"]),
         trading_day=trading_day,
         contract=_nonempty_string(trend["physical_contract"]),
-        segment_start_trading_day=_parse_date(
-            trend["segment_start_trading_day"]
+        current_segment_start_trading_day=_parse_date(
+            trend["current_segment_start_trading_day"]
         ),
+        warmup_start_trading_day=_parse_date(trend["warmup_start_trading_day"]),
+        warmup_bar_count=warmup_bar_count,
+        warmup_segment_count=warmup_segment_count,
+        history_mode=_HISTORY_MODE,
         close=_parse_decimal_string(trend["close"]),
         ema21=_parse_decimal_string(trend["ema21"]),
         price_side=PriceSide(_string(trend["price_side"])),
         slope_5_raw=_parse_decimal_string(trend["slope_5_raw"]),
         slope_10_raw=_parse_decimal_string(trend["slope_10_raw"]),
-        slope_5_bps_per_bar=_parse_decimal_string(
-            trend["slope_5_bps_per_bar"]
-        ),
-        slope_10_bps_per_bar=_parse_decimal_string(
-            trend["slope_10_bps_per_bar"]
-        ),
+        slope_5_bps_per_bar=_parse_decimal_string(trend["slope_5_bps_per_bar"]),
+        slope_10_bps_per_bar=_parse_decimal_string(trend["slope_10_bps_per_bar"]),
     )
 
 
@@ -539,6 +597,7 @@ def _passed_status_payload(
     return {
         "schema_version": _SCHEMA_VERSION,
         "projection_version": _PROJECTION_VERSION,
+        "history_mode": _HISTORY_MODE,
         "last_run": {
             "source_trading_day": snapshot.source_trading_day.isoformat(),
             "target_trading_day": snapshot.target_trading_day.isoformat(),
@@ -559,6 +618,7 @@ def _parse_generation_status(raw: bytes) -> Mapping[str, object]:
             {
                 "schema_version",
                 "projection_version",
+                "history_mode",
                 "last_run",
                 "last_successful_target_trading_day",
             },
@@ -567,6 +627,7 @@ def _parse_generation_status(raw: bytes) -> Mapping[str, object]:
             type(payload["schema_version"]) is not int
             or payload["schema_version"] != _SCHEMA_VERSION
             or payload["projection_version"] != _PROJECTION_VERSION
+            or payload["history_mode"] != _HISTORY_MODE
         ):
             raise ValueError
         last_run = _as_object(payload["last_run"])
@@ -590,8 +651,7 @@ def _parse_generation_status(raw: bytes) -> Mapping[str, object]:
             raise ValueError
         error_code = last_run["error_code"]
         if (last_run["status"] == "passed" and error_code is not None) or (
-            last_run["status"] == "failed"
-            and error_code not in _GENERATION_ERROR_CODES
+            last_run["status"] == "failed" and error_code not in _GENERATION_ERROR_CODES
         ):
             raise ValueError
         successful = payload["last_successful_target_trading_day"]
@@ -618,9 +678,7 @@ def _load_object(raw: bytes) -> dict[str, object]:
 
 
 def _as_object(value: object) -> dict[str, object]:
-    if not isinstance(value, dict) or not all(
-        isinstance(key, str) for key in value
-    ):
+    if not isinstance(value, dict) or not all(isinstance(key, str) for key in value):
         raise ValueError
     return cast(dict[str, object], value)
 
