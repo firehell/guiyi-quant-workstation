@@ -5,7 +5,6 @@ import PriceVolumeOiPanel from '@/components/market/PriceVolumeOiPanel.vue'
 import ProductAlertRules from '@/components/market/ProductAlertRules.vue'
 import SubingPanel from '@/components/market/SubingPanel.vue'
 import type { AlertRuntimeStatus, ProductAlertRuleState } from '@/api/alerts'
-import type { EventState } from '@/types/executionReview'
 import {
   type AlertEvent,
   type DominantContractItem,
@@ -43,17 +42,15 @@ const props = defineProps<{
   currentEventsLoading: boolean
   currentEventsStatus: 'ready' | 'unavailable' | null
   currentEvents: AlertEvent[]
-  currentEventStates: Record<number, EventState>
   htdyObservation: KlineMarker | null
 }>()
 
 const emit = defineEmits<{
   'toggle-subing-alert': [ruleCode: string, enabled: boolean]
   'toggle-htdy-alert': [ruleCode: string, enabled: boolean]
-  'open-formal-event': [event: AlertEvent, state: EventState | null]
 }>()
 
-const moreOpen = ref(false)
+const dataDetailsOpen = ref(false)
 const background = computed(() => props.research
   ? summarizeMarketBackground(props.research.daily_trend, props.research.weekly_trend)
   : null)
@@ -67,14 +64,6 @@ const seriesLabel = computed(() => {
   if (props.seriesKind === 'actual_dominant') return '真实主力'
   if (props.seriesKind === 'continuous') return '主连'
   return '指定合约'
-})
-const overlayLabel = computed(() => {
-  switch (props.selectedOverlay) {
-    case 'none': return '当前未选择策略观察'
-    case 'subing': return '苏冰品种研究'
-    case 'jdj_strategy': return '日进斗金参考回放'
-    case 'htdy': return '火天大有观察'
-  }
 })
 
 function trendLabel(value: ProductResearchResponse['daily_trend']) {
@@ -103,8 +92,8 @@ function observationTime(value: string) {
   }).format(date)
 }
 
-function updateMoreOpen(event: Event) {
-  moreOpen.value = (event.currentTarget as HTMLDetailsElement).open
+function updateDataDetailsOpen(event: Event) {
+  dataDetailsOpen.value = (event.currentTarget as HTMLDetailsElement).open
 }
 </script>
 
@@ -117,27 +106,8 @@ function updateMoreOpen(event: Event) {
       </div>
     </header>
 
-    <section class="product-check-sidebar__section" data-testid="product-check-now">
-      <h3>1. 现在</h3>
-      <strong>{{ overlayLabel }}</strong>
-      <p>当前 Overlay 仅决定研究呈现，不触发 Alert 写入。</p>
-    </section>
-
-    <section class="product-check-sidebar__section" data-testid="product-check-background">
-      <h3>2. 市场背景</h3>
-      <p v-if="researchLoading">正在读取周线 / 日线…</p>
-      <p v-else-if="researchError || !research" class="product-check-sidebar__warning">周线 / 日线数据不可用</p>
-      <template v-else>
-        <dl class="product-check-sidebar__facts">
-          <div><dt>周线</dt><dd>{{ trendLabel(research.weekly_trend) }}</dd></div>
-          <div><dt>日线</dt><dd>{{ trendLabel(research.daily_trend) }}</dd></div>
-        </dl>
-        <NTag size="small" :class="`product-check-sidebar__tone--${background?.tone}`">{{ background?.label }}</NTag>
-      </template>
-    </section>
-
     <section class="product-check-sidebar__section" data-testid="product-check-observation">
-      <h3>3. 当前观察</h3>
+      <h3>1. 当前观察</h3>
       <p v-if="selectedOverlay === 'none'">当前未选择策略观察</p>
       <SubingPanel
         v-else-if="selectedOverlay === 'subing'"
@@ -148,12 +118,10 @@ function updateMoreOpen(event: Event) {
         :event-loading="currentEventsLoading"
         :event-status="currentEventsStatus"
         :current-events="subingEvents"
-        :current-event-states="currentEventStates"
         :rules="subingRules"
         :runtime-status="alertRuntimeStatus"
         :alert-loading="alertLoading"
         :saving-rule-codes="savingRuleCodes"
-        @open-formal-event="(event, state) => emit('open-formal-event', event, state)"
         @toggle-subing-alert="(ruleCode, enabled) => emit('toggle-subing-alert', ruleCode, enabled)"
       />
       <template v-else-if="selectedOverlay === 'jdj_strategy'">
@@ -175,40 +143,42 @@ function updateMoreOpen(event: Event) {
       </template>
     </section>
 
-    <section class="product-check-sidebar__section" data-testid="product-check-participation">
-      <h3>4. 位置 / 参与</h3>
-      <p v-if="researchLoading">正在读取参与数据…</p>
-      <p v-else-if="researchError || !research" class="product-check-sidebar__warning">位置 / 参与数据不可用</p>
-      <dl v-else class="product-check-sidebar__facts">
-        <div><dt>20日位置</dt><dd>{{ percent(research.position20) }}</dd></div>
-        <div><dt>量比20</dt><dd>{{ ratio(research.volume_ratio20) }}</dd></div>
-        <div><dt>OI 1D</dt><dd>{{ percent(research.oi_change_1d) }}</dd></div>
-        <div><dt>ATR 分位</dt><dd>{{ percent(research.atr14_percentile252) }}</dd></div>
-      </dl>
+    <section class="product-check-sidebar__section" data-testid="product-check-background">
+      <h3>2. 市场背景</h3>
+      <p v-if="researchLoading">正在读取周线 / 日线…</p>
+      <p v-else-if="researchError || !research" class="product-check-sidebar__warning">市场背景数据不可用</p>
+      <template v-else>
+        <dl class="product-check-sidebar__facts">
+          <div><dt>周线</dt><dd>{{ trendLabel(research.weekly_trend) }}</dd></div>
+          <div><dt>日线</dt><dd>{{ trendLabel(research.daily_trend) }}</dd></div>
+          <div><dt>20日位置</dt><dd>{{ percent(research.position20) }}</dd></div>
+          <div><dt>量比20</dt><dd>{{ ratio(research.volume_ratio20) }}</dd></div>
+          <div><dt>OI 1D</dt><dd>{{ percent(research.oi_change_1d) }}</dd></div>
+          <div><dt>ATR 分位</dt><dd>{{ percent(research.atr14_percentile252) }}</dd></div>
+        </dl>
+        <NTag size="small" :class="`product-check-sidebar__tone--${background?.tone}`">{{ background?.label }}</NTag>
+      </template>
     </section>
 
     <details
-      class="product-check-sidebar__more"
-      data-testid="product-check-more"
-      @toggle="updateMoreOpen"
+      class="product-check-sidebar__details"
+      data-testid="product-check-data-details"
+      @toggle="updateDataDetailsOpen"
     >
-      <summary>5. 更多研究</summary>
-      <div v-if="moreOpen" class="product-check-sidebar__more-content">
+      <summary>3. 数据详情</summary>
+      <div v-if="dataDetailsOpen" class="product-check-sidebar__details-content">
         <PriceVolumeOiPanel v-if="research" :daily="research.recent_daily" />
         <p v-else-if="researchError" class="product-check-sidebar__warning">研究数据暂不可用；K 线保留当前展示行情。</p>
-        <section>
-          <h4>数据 / 合约详情</h4>
-          <dl class="product-check-sidebar__facts">
-            <div><dt>序列</dt><dd>{{ seriesLabel }}</dd></div>
-            <div><dt>周期</dt><dd>{{ frequency }}</dd></div>
-            <div><dt>当前合约</dt><dd>{{ seriesKind === 'contract' ? contract : dominant?.actual_contract || '--' }}</dd></div>
-            <div><dt>映射日</dt><dd>{{ dominant?.dominant_mapping_date || '--' }}</dd></div>
-            <div><dt>数据状态</dt><dd>{{ live ? 'Live' : 'Historical' }}</dd></div>
-            <div><dt>市场状态</dt><dd>{{ phase }}</dd></div>
-            <div><dt>Canonical 覆盖</dt><dd>{{ canonicalCoverage ? `${canonicalCoverage.start} → ${canonicalCoverage.end}` : '—' }}</dd></div>
-            <div><dt>历史边界</dt><dd>{{ hasMoreBefore ? '可继续向左加载' : '已到当前可读边界' }}</dd></div>
-          </dl>
-        </section>
+        <dl class="product-check-sidebar__facts">
+          <div><dt>序列</dt><dd>{{ seriesLabel }}</dd></div>
+          <div><dt>周期</dt><dd>{{ frequency }}</dd></div>
+          <div><dt>当前合约</dt><dd>{{ seriesKind === 'contract' ? contract : dominant?.actual_contract || '--' }}</dd></div>
+          <div><dt>映射日</dt><dd>{{ dominant?.dominant_mapping_date || '--' }}</dd></div>
+          <div><dt>数据状态</dt><dd>{{ live ? 'Live' : 'Historical' }}</dd></div>
+          <div><dt>市场状态</dt><dd>{{ phase }}</dd></div>
+          <div><dt>Canonical 覆盖</dt><dd>{{ canonicalCoverage ? `${canonicalCoverage.start} → ${canonicalCoverage.end}` : '—' }}</dd></div>
+          <div><dt>历史边界</dt><dd>{{ hasMoreBefore ? '可继续向左加载' : '已到当前可读边界' }}</dd></div>
+        </dl>
       </div>
     </details>
   </aside>
@@ -221,8 +191,8 @@ function updateMoreOpen(event: Event) {
 .product-check-sidebar__header strong { display: block; margin-top: 2px; }
 .product-check-sidebar__section { display: grid; gap: 8px; padding: 13px 0; border-top: 1px solid var(--gy-border); }
 .product-check-sidebar__section:first-of-type { margin-top: 12px; }
-.product-check-sidebar__section h3, .product-check-sidebar__more h4 { margin: 0; font-size: var(--gy-font-size-sm); }
-.product-check-sidebar__section p { margin: 0; color: var(--gy-text-muted); font-size: var(--gy-font-size-sm); line-height: 1.45; }
+.product-check-sidebar__section h3 { margin: 0; font-size: var(--gy-font-size-sm); }
+.product-check-sidebar__section p, .product-check-sidebar__details p { margin: 0; color: var(--gy-text-muted); font-size: var(--gy-font-size-sm); line-height: 1.45; }
 .product-check-sidebar__warning { color: var(--gy-status-warning) !important; }
 .product-check-sidebar__facts { display: grid; gap: 7px; margin: 0; }
 .product-check-sidebar__facts > div { display: flex; align-items: start; justify-content: space-between; gap: 10px; min-width: 0; }
@@ -231,8 +201,8 @@ function updateMoreOpen(event: Event) {
 .product-check-sidebar__tone--up { color: var(--gy-up); }
 .product-check-sidebar__tone--down { color: var(--gy-down); }
 .product-check-sidebar__tone--warning { color: var(--gy-status-warning); }
-.product-check-sidebar__more { border-top: 1px solid var(--gy-border); }
-.product-check-sidebar__more > summary { padding: 13px 0; color: var(--gy-accent); font-size: var(--gy-font-size-sm); font-weight: 500; cursor: pointer; }
-.product-check-sidebar__more-content { display: grid; gap: 16px; padding-bottom: 8px; }
-.product-check-sidebar__more-content :deep(.price-volume-oi) { padding: 10px; }
+.product-check-sidebar__details { border-top: 1px solid var(--gy-border); }
+.product-check-sidebar__details > summary { padding: 13px 0; color: var(--gy-accent); font-size: var(--gy-font-size-sm); font-weight: 500; cursor: pointer; }
+.product-check-sidebar__details-content { display: grid; gap: 16px; padding-bottom: 8px; }
+.product-check-sidebar__details-content :deep(.price-volume-oi) { padding: 10px; }
 </style>

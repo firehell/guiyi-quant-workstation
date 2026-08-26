@@ -23,6 +23,7 @@ RETIRED_GET_PATHS = [
     "/api/v1/market/bars/canonical",
     "/api/v1/market/coverage/canonical",
     "/api/v1/backtests/health",
+    "/api/execution-review/items",
 ]
 
 RETIRED_MODULES = [
@@ -40,6 +41,10 @@ RETIRED_MODULES = [
     "signal",
     "review",
     "strategy",
+    "backtest",
+    "execution_review",
+    "api/execution_review.py",
+    "schemas/execution_review.py",
 ]
 
 
@@ -69,6 +74,7 @@ def test_retained_ops_surfaces_still_present() -> None:
     assert any(path.startswith("/api/runtime") or "/runtime/" in path for path in paths)
     assert "/api/symbols" not in paths
     assert not any(path.startswith("/api/v1/backtests") for path in paths)
+    assert not any(path.startswith("/api/execution-review") for path in paths)
 
 
 def test_main_api_has_no_backtest_endpoint_callable() -> None:

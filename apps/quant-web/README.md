@@ -4,21 +4,20 @@
 
 ## Current surface
 
-- 路由为 Market（`/` → `/market`、`/market/chart`）与 Execution Review（`/trade-records`）。
+- 路由只保留 Market（`/` → `/market`、`/market/chart`）。
 - 展示60个 active 历史研究品种的当前 rank1 映射，并读取 Canonical K 线。
 - active 60 的当日 rank1 completed 1m 可通过 Historical/Live seam 增量观察；continuous、非 rank1
   contract、日线和周线保持 Historical-only。
 - 图表已挂载 K 线、成交量、OI、EMA/MACD、HTDY 观察、SuBing Factor/Signal 观察与
-  Alert V2 Scope/Event 上下文；Web 计算仍只是展示镜像。
-- `/trade-records` 提供四状态人工处理、真实执行时间线、复盘重建、trusted-partial 人民币估算与轻量统计；缺失 multiplier 时明确显示人民币估算不可用。
-- 无通用 signal/strategy、旧 review center、dashboard/settings 入口。
+  Alert V2 Scope/Event 上下文；`图表设置` 另有默认关闭、仅支持真实主力 5m 的 `N字区间`
+  Historical Canonical 图层，可与四项主图 Overlay 组合显示。密集同向区间会保留一个完整主 N、
+  其余显示淡轨，并可通过 `N↑ ×N` / `N↓ ×N` 徽标轮换查看；Web 不复制 N 计算。
+- 无通用 signal/strategy、Execution Review、RQAlpha、dashboard/settings 入口。
 
 ## B1 决策漏斗
 
-日常路径固定为：Market 首页先看“需要处理”，再从 `0..3` 个“优先检查”进入品种详情；详情页按
-“当前检查栏”的 `现在 → 市场背景 → 当前观察 → 位置/参与 → 提醒 → 更多研究` 顺序完成验证。
-`degraded` Radar 不输出优先检查，正式 Event、研究观察与 Research-only 事实保持分层；该流程不产生
-综合分、推荐、winner 或交易指令。
+日常路径固定为：Market 首页先看苏冰正式事件与每日观察，再进入品种详情；详情检查栏保持
+`当前观察 → 市场背景 → 数据详情` 三段。正式 Event、研究观察与 Research-only 事实保持分层；该流程不产生综合分、推荐、winner 或交易指令。
 
 ## 不做
 

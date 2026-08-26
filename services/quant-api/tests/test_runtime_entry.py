@@ -111,10 +111,6 @@ def test_daily_watch_is_not_constructed_for_non_passed_after_market(
         daily_watch_generator_factory=lambda _session: pytest.fail(
             "daily watch must not be constructed"
         ),
-        roll_marker_state=lambda: pytest.fail("roll marker must not be read"),
-        roll_reconciler_factory=lambda _session: pytest.fail(
-            "roll reconciler must not be constructed"
-        ),
     )
 
     assert result == payload
@@ -144,10 +140,6 @@ def test_passed_after_market_runs_daily_watch_once_in_a_fresh_session() -> None:
         daily_watch_generator_factory=lambda session: (
             events.append(f"daily_watch_factory:{session}") or Generator()
         ),
-        roll_marker_state=lambda: events.append("roll_marker") or "disabled",
-        roll_reconciler_factory=lambda _session: pytest.fail(
-            "roll reconciler must not be constructed"
-        ),
     )
 
     assert result == _PASSED_PAYLOAD
@@ -160,7 +152,6 @@ def test_passed_after_market_runs_daily_watch_once_in_a_fresh_session() -> None:
         "daily_watch_factory:session-2",
         "daily_watch:2026-08-21",
         "exit:session-2",
-        "roll_marker",
     ]
 
 
@@ -185,10 +176,6 @@ def test_daily_watch_exception_preserves_payload_and_logs_only_stable_marker(
             events,
         ),
         daily_watch_generator_factory=lambda _session: Generator(),
-        roll_marker_state=lambda: "disabled",
-        roll_reconciler_factory=lambda _session: pytest.fail(
-            "roll reconciler must not be constructed"
-        ),
         stdout=stdout,
         stderr=stderr,
     )
@@ -202,86 +189,6 @@ def test_daily_watch_exception_preserves_payload_and_logs_only_stable_marker(
     assert all(record.exc_info is None for record in caplog.records)
     assert "private" not in caplog.text
     assert "/Volumes/" not in caplog.text
-
-
-def test_daily_watch_exception_does_not_block_enabled_roll_followup() -> None:
-    events: list[str] = []
-
-    class Generator:
-        def run(self, _source_trading_day: date) -> None:
-            events.append("daily_watch")
-            raise RuntimeError("daily watch failed")
-
-    class Reconciler:
-        def reconcile_open_episodes(self) -> None:
-            events.append("reconcile")
-
-    result = run_after_market(
-        session_factory=_TrackedSessionFactory(events),
-        manager_factory=lambda _session: object(),
-        after_market_factory=_after_market_factory(
-            _MarketResult("passed", _PASSED_PAYLOAD),
-            events,
-        ),
-        failure_notification=True,
-        daily_watch_generator_factory=lambda session: (
-            events.append(f"daily_watch_factory:{session}") or Generator()
-        ),
-        roll_marker_state=lambda: events.append("roll_marker") or "enabled",
-        roll_reconciler_factory=lambda session: (
-            events.append(f"roll_factory:{session}") or Reconciler()
-        ),
-    )
-
-    assert result == _PASSED_PAYLOAD
-    assert events == [
-        "enter:session-1",
-        "market_run",
-        "exit:session-1",
-        "enter:session-2",
-        "daily_watch_factory:session-2",
-        "daily_watch",
-        "exit:session-2",
-        "roll_marker",
-        "enter:session-3",
-        "roll_factory:session-3",
-        "reconcile",
-        "exit:session-3",
-    ]
-
-
-def test_successful_daily_watch_does_not_enable_disabled_roll_followup() -> None:
-    events: list[str] = []
-
-    class Generator:
-        def run(self, _source_trading_day: date) -> None:
-            events.append("daily_watch")
-
-    result = run_after_market(
-        session_factory=_TrackedSessionFactory(events),
-        manager_factory=lambda _session: object(),
-        after_market_factory=_after_market_factory(
-            _MarketResult("passed", _PASSED_PAYLOAD),
-            events,
-        ),
-        failure_notification=True,
-        daily_watch_generator_factory=lambda _session: Generator(),
-        roll_marker_state=lambda: events.append("roll_marker") or "disabled",
-        roll_reconciler_factory=lambda _session: pytest.fail(
-            "roll reconciler must remain disabled"
-        ),
-    )
-
-    assert result == _PASSED_PAYLOAD
-    assert events == [
-        "enter:session-1",
-        "market_run",
-        "exit:session-1",
-        "enter:session-2",
-        "daily_watch",
-        "exit:session-2",
-        "roll_marker",
-    ]
 
 
 def test_runtime_main_passes_daily_watch_factory_to_after_market_runner() -> None:
@@ -301,10 +208,6 @@ def test_runtime_main_passes_daily_watch_factory_to_after_market_runner() -> Non
             events,
         ),
         daily_watch_generator_factory=lambda _session: Generator(),
-        roll_marker_state=lambda: "disabled",
-        roll_reconciler_factory=lambda _session: pytest.fail(
-            "roll reconciler must remain disabled"
-        ),
         stdout=stdout,
         stderr=io.StringIO(),
     )

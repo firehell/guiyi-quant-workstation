@@ -173,6 +173,27 @@ active universe 为 `data/universe/active_products.txt` 的 60 品种；退役�
 
 ## SuBing Daily Context artifact
 
-`GUIYI_SUBING_OBSERVATION_ROOT` 必须解析到已挂载的 `/Volumes/...` 根，目录和文件操作前重复验证；不得回退系统盘。Daily Watch 仅保存 immutable `history/<target>.json`、`current.json` 与 `generation-status.json`，均在同目录以原子替换发布。
+Daily Watch V2 对 `actual_dominant + 1d + 60m` 分别只读截至来源交易日的最近 30 根 confirmed
+Canonical Bar。每根 Bar 仍由该交易日的 `MainContractMap rank=1` 选择真实物理合约，输入序列按原始
+价格跨 rank1 segment 拼接；不做前/后复权、比例调整、平移或换月 reset，真实换月价差直接进入
+EMA21 与 5/10 Bar slope。不得混入 `continuous`、Live preview 或当前合约成为 rank1 之前的历史，
+也不得读取来源交易日之后的 Bar。
 
-同一 target identity 冲突、current regression、snapshot identity 不一致或物理根异常必须 fail-closed。current 只能在 expected target trading day 精确匹配时投影；没有 stale candidate fallback。盘后任务的 Daily Watch follow-up 与主盘后结果隔离，follow-up 失败不回写主任务；不得手工 backfill、触发或用历史 artifact 补造自然 evidence。
+V2 固定身份为 `schema_version=2`、`projection_version=subing_daily_watch_v2`、
+`formula_version=subing_ema21_rank1_stitched_raw_v2`、`history_mode=rank1_stitched_raw`。ready trend
+必须记录来源日 rank1 物理合约、`current_segment_start_trading_day`、`warmup_start_trading_day`、
+固定 `warmup_bar_count=30` 与实际 `warmup_segment_count`。`D1_HISTORY_INSUFFICIENT` /
+`H1_HISTORY_INSUFFICIENT` 只表示对应周期的整个 stitched actual-dominant 历史仍不足 30 根；
+来源日 Bar、rank1 segment、数据身份或品种 metadata 的真实缺口继续使用各自 typed unavailable，
+不得用缩短窗口、V1、continuous 或 current-contract history 回退成 ready。
+
+`GUIYI_SUBING_OBSERVATION_ROOT` 必须解析到已挂载的 `/Volumes/...` base 根，目录和文件操作前重复
+验证；不得回退系统盘。active Store 只在校验后的 `base/v2/` namespace 保存 immutable
+`history/<target>.json`、`current.json` 与 `generation-status.json`，均在同目录以原子替换发布。
+base 根中既有 V1 文件保持原字节，不移动、覆盖、重新序列化或回退读取；V2 parser 只接受上述
+严格 V2 身份。
+
+同一 target identity 冲突、current regression、snapshot identity 不一致或物理根异常必须
+fail-closed。current 只能在 expected target trading day 精确匹配时投影；没有 stale candidate 或
+V1 fallback。盘后任务的 Daily Watch follow-up 与主盘后结果隔离，follow-up 失败不回写主任务；
+不得手工 backfill、触发或用历史 artifact 补造自然 evidence。

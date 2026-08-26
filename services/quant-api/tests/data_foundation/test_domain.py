@@ -6,6 +6,7 @@ from decimal import Decimal
 import pytest
 
 from app.market_data.domain import (
+    ActualDominantRecentBarsQuery,
     BASE_PROVIDER_FREQUENCIES,
     BarFrequency,
     CanonicalBar,
@@ -170,6 +171,49 @@ def test_series_page_query_requires_aware_cursor_and_contract_only_for_contract(
             frequency="1d",
             before=datetime(2025, 1, 3, 7),
         )
+
+
+def test_actual_dominant_recent_bars_query_normalizes_identity() -> None:
+    query = ActualDominantRecentBarsQuery(
+        symbol="RB",
+        frequency="1d",
+        through=date(2026, 8, 25),
+        limit=30,
+    )
+
+    assert query.symbol == "rb"
+    assert query.frequency is BarFrequency.D1
+    assert query.through == date(2026, 8, 25)
+    assert query.limit == 30
+
+
+@pytest.mark.parametrize("limit", [True, 0, -1, 2001, 1.5])
+def test_actual_dominant_recent_bars_query_rejects_invalid_limit(limit: object) -> None:
+    with pytest.raises(ContractError):
+        ActualDominantRecentBarsQuery("rb", BarFrequency.D1, date(2026, 8, 25), limit)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"symbol": "rb1"},
+        {"frequency": "unsupported"},
+        {"through": datetime(2026, 8, 25, tzinfo=UTC)},
+    ],
+)
+def test_actual_dominant_recent_bars_query_rejects_invalid_identity_or_through(
+    changes: dict[str, object],
+) -> None:
+    values: dict[str, object] = {
+        "symbol": "rb",
+        "frequency": BarFrequency.D1,
+        "through": date(2026, 8, 25),
+        "limit": 30,
+    }
+    values.update(changes)
+
+    with pytest.raises(ContractError):
+        ActualDominantRecentBarsQuery(**values)  # type: ignore[arg-type]
 
 
 def test_canonical_bar_contains_only_bar_values_and_normalizes_utc_decimal() -> None:

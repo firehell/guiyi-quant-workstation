@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { summarizeFormalEvent, summarizeMarketBackground } from '../src/utils/productCheck.ts'
-import type { EventState } from '../src/types/executionReview.ts'
 import type { AlertEvent } from '../src/types/market.ts'
 
 const event: AlertEvent = {
@@ -26,27 +25,12 @@ test('market background keeps aligned and conflict semantics explicit', () => {
   assert.deepEqual(summarizeMarketBackground('unavailable', 'up'), { label: '数据不足', tone: 'warning' })
 })
 
-test('formal event summary uses EventState and never invents one', () => {
-  assert.equal(summarizeFormalEvent([event], {})?.actionLabel, null)
-  assert.equal(summarizeFormalEvent([event], {
-    17: { event_id: 17, state: 'pending_decision', decision_id: null, episode_id: null },
-  })?.actionLabel, '记录执行')
-})
-
-test('formal event summary chooses the latest recorded event and preserves its state', () => {
+test('formal event summary chooses the latest immutable Alert Event', () => {
   const latest = { ...event, id: 18, rule_code: 'htdy_original_15m', bar_end: '2026-08-21T03:00:00Z' }
-  const latestState: EventState = {
-    event_id: 18,
-    state: 'done',
-    decision_id: 23,
-    episode_id: null,
-  }
 
-  assert.deepEqual(summarizeFormalEvent([latest, event], { 18: latestState }), {
+  assert.deepEqual(summarizeFormalEvent([latest, event]), {
     event: latest,
-    state: latestState,
     headline: '火天大有 · 买入观察',
-    actionLabel: '查看记录',
   })
-  assert.equal(summarizeFormalEvent([], {}), null)
+  assert.equal(summarizeFormalEvent([]), null)
 })

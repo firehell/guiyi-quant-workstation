@@ -1,6 +1,6 @@
 # 架构决策记录
 
-更新时间：2026-08-25
+更新时间：2026-08-26
 
 版本、部署、evidence 与 Gate 状态只看 `STATUS.md`；历史过程只从 Git history 追溯。
 
@@ -14,7 +14,5 @@
 | HTDY | operational universe × 七周期观察 | Scope 仅 symbol × frequency；D1/W1 只走 `canonical_updated` seam，不新增第二套 scheduler 或 Scope 表 |
 | 研究 | N/raw JDJ 内部化，JDJ 保留参考回放 | 不建立 StrategyAdapter、Scope DSL 或正式回测平台 |
 | Retained research | Candidate Validation/Robustness 与 prospective OOS 保留 | 关系指标保持 generic；不从 retrospective 自动晋升结论 |
-| Retired surface | Attention、Trend Focus、Main Force Mirror、Five-Candidate phase assets 退出 active surface | 历史仅 Git；保留 Alembic 和 table identity，未留下 active rank 链路 |
+| Retired surface | Attention、Trend Focus、Main Force Mirror、Five-Candidate phase assets、RQAlpha 与 Execution Review 退出 active surface | 历史仅 Git/Alembic lineage；不保留 active route、consumer、roll seam 或外部 runs artifacts |
 | Alert | 两表、one-shot | 无 retry/replay/backfill/queue/outbox/订单 |
-| Execution Review | 仅人工复盘不可变 SuBing Event | roll Gate 语义不变，默认关闭 |
-| RQAlpha | local-only conditional keep | 不进入主 API、Canonical、Runtime 或订单 |

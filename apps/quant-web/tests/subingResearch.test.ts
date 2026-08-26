@@ -98,11 +98,45 @@ test('keeps an insufficient companion explicit without inventing a Factor snapsh
   assert.equal(result.companion?.snapshot, null)
 })
 
-test('supports only the three SuBing V1 snapshot frequencies', () => {
+test('exposes only the 5m and 15m SuBing public observation frequencies', () => {
   assert.equal(isSubingSupportedFrequency('5m'), true)
   assert.equal(isSubingSupportedFrequency('15m'), true)
-  assert.equal(isSubingSupportedFrequency('1d'), true)
+  assert.equal(isSubingSupportedFrequency('1d'), false)
   assert.equal(isSubingSupportedFrequency('30m'), false)
+  assert.equal(isSubingSupportedFrequency('60m'), false)
+  assert.equal(isSubingSupportedFrequency('1w'), false)
+})
+
+test('does not request the backend SuBing read capability for a public 1d panel', async () => {
+  let requests = 0
+  const dominants = ref([{
+    product: 'ag',
+    product_name: '白银',
+    sector: 'precious',
+    exchange: 'SHFE',
+    actual_contract: 'AG2601',
+    dominant_mapping_date: '2026-01-12',
+  }])
+  const controller = useSubingObservation({
+    selectedOverlay: ref('subing'),
+    symbol: ref('ag'),
+    frequency: ref('1d'),
+    dominants,
+    selectedDominant: computed(() => dominants.value[0]),
+    fetchSnapshot: async () => {
+      requests += 1
+      return normalizeSubingResearch(readyPayload)
+    },
+    fetchDominants: async () => ({ items: dominants.value }),
+    refreshSeries: async () => true,
+  })
+
+  await controller.refresh()
+
+  assert.equal(requests, 0)
+  assert.equal(controller.subingSupported.value, false)
+  assert.equal(controller.subing.value, null)
+  controller.dispose()
 })
 
 test('maps every formal Signal status without trading or zero-band language', () => {
@@ -145,7 +179,7 @@ test('schedules one bounded refresh only for an older companion at a common 5m b
 test('SuBing observation composable preserves current dominant identity without owning chart bars', async () => {
   const selectedOverlay = ref<'subing' | 'htdy' | 'none'>('subing')
   const symbol = ref('ag')
-  const frequency = ref<'5m' | '15m' | '1d'>('5m')
+  const frequency = ref<'5m' | '15m'>('5m')
   const dominants = ref([{
     product: 'ag',
     product_name: '白银',

@@ -1,21 +1,17 @@
 """归一量化 FastAPI 应用入口。
 
-当前仅挂载 Market 行情、Alert、Execution Review 与 Runtime 运维只读 API；
+当前仅挂载 Market 行情、Alert 与 Runtime 运维只读 API；
 data_center HTTP、旧 Signal/Review/Strategy
 等已退役表面均未注册。存活探针（liveness）与详细运维健康检查分层：本模块提供轻量
 `/health` 别名，完整组件状态见 `/api/runtime/health`。
 """
 
-from fastapi import FastAPI, Request
-from fastapi.exception_handlers import request_validation_exception_handler
-from fastapi.exceptions import RequestValidationError
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 import logging
 import os
 
 from app.api.alerts import router as alerts_router
-from app.api.execution_review import router as execution_review_router
 from app.api.market import router as market_router
 from app.api.market_live import router as market_live_router
 from app.api.market_research_overlays import router as market_research_overlays_router
@@ -59,34 +55,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Market + Alert + Execution Review + Runtime 运维面；旧 Review Center 仍未挂载
+# Market + Alert + Runtime 运维面
 app.include_router(market_router)
 app.include_router(market_live_router)
 app.include_router(market_research_overlays_router)
 app.include_router(research_historical_overlay_router)
 app.include_router(alerts_router)
-app.include_router(execution_review_router)
 app.include_router(runtime_router)
-
-
-@app.exception_handler(RequestValidationError)
-async def execution_review_validation_error(
-    request: Request,
-    exc: RequestValidationError,
-) -> JSONResponse:
-    """Use one stable request code only on the Execution Review HTTP surface."""
-
-    path = request.url.path
-    if path == "/api/execution-review" or path.startswith(
-        "/api/execution-review/"
-    ):
-        return JSONResponse(
-            status_code=422,
-            content={
-                "detail": {"code": "INVALID_EXECUTION_REVIEW_REQUEST"}
-            },
-        )
-    return await request_validation_exception_handler(request, exc)
 
 
 @app.get("/health")

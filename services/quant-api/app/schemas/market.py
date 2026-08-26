@@ -321,7 +321,11 @@ class SubingDailyWatchTrendOut(BaseModel):
     bar_end: datetime
     trading_day: date
     physical_contract: str
-    segment_start_trading_day: date
+    current_segment_start_trading_day: date
+    warmup_start_trading_day: date
+    warmup_bar_count: int
+    warmup_segment_count: int
+    history_mode: Literal["rank1_stitched_raw"]
     close: Decimal
     ema21: Decimal
     price_side: Literal["above", "below", "equal", "unavailable"]
@@ -352,6 +356,9 @@ class SubingDailyWatchWebSnapshotOut(BaseModel):
 
 class SubingDailyWatchCurrentResponse(BaseModel):
     status: Literal["ready", "unavailable"]
+    projection_version: Literal["subing_daily_watch_v2"]
+    formula_version: Literal["subing_ema21_rank1_stitched_raw_v2"]
+    history_mode: Literal["rank1_stitched_raw"]
     expected_target_trading_day: date | None
     latest_target_trading_day: date | None
     error_code: str | None

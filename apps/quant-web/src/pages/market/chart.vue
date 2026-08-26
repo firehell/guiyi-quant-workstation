@@ -5,10 +5,10 @@ import { NAlert, NButton, NDrawer, NDrawerContent, NSpin, NTag, useMessage } fro
 import ProductCheckSidebar from '@/components/market/ProductCheckSidebar.vue'
 import ProductWorkspaceToolbar from '@/components/market/ProductWorkspaceToolbar.vue'
 import KlineChart from '@/components/kline/KlineChart.vue'
-import { getEventStates } from '@/api/executionReview'
 import {
   getMarketDominants,
   getJdjStrategyHistoricalActions,
+  getNStructureBands,
   getProductResearch,
   getSubingHistoricalSignals,
   getSubingResearch,
@@ -24,8 +24,10 @@ import {
 import { useMarketSeries } from '@/composables/useMarketSeries'
 import { usePersistentAlertMarkers } from '@/composables/usePersistentAlertMarkers'
 import { useHistoricalResearchMarkers } from '@/composables/useHistoricalResearchMarkers'
+import { useNStructureBands } from '@/composables/useNStructureBands'
 import { useProductAlertScope } from '@/composables/useProductAlertScope'
 import { useProductCurrentAlertEvents } from '@/composables/useProductCurrentAlertEvents'
+import { useProductSymbolIdentityCoordinator } from '@/composables/useProductSymbolIdentityCoordinator'
 import { useSubingObservation } from '@/composables/useSubingObservation'
 import type {
   DominantContractItem,
@@ -35,7 +37,6 @@ import type {
   ResearchOverlayId,
   SeriesKind,
 } from '@/types/market'
-import type { EventState } from '@/types/executionReview'
 import { MARKET_FREQUENCIES } from '@/types/market'
 import { lifecycleSnapshotToMarkers } from '@/utils/subingLifecycleMarkers'
 import { ALERT_RULE_CODES } from '@/utils/alertRules'
@@ -43,6 +44,7 @@ import { mergeKlineMarkers } from '@/utils/alertMarkers'
 import { buildKlineDerivedData } from '@/utils/klineViewModel'
 import {
   loadMainChartPreferences,
+  nStructureBandCapability,
   normalizeOptionalEmaIndicators,
   resolveEffectiveSeriesIdentity,
   researchOverlayCapability,
@@ -75,16 +77,15 @@ const selectedOverlay = ref<ResearchOverlayId>(
 const optionalEmaIndicators = ref<OptionalEmaIndicatorId[]>([
   ...initialMainChartPreferences.optionalEmaIndicators,
 ])
+const showNStructureBands = ref(initialMainChartPreferences.showNStructureBands)
 const research = ref<ProductResearchResponse | null>(null)
 const researchLoading = ref(false)
 const researchError = ref(false)
-const currentEventStates = ref<Record<number, EventState>>({})
 const symbol = ref(dailyWatchEntry?.symbol ?? resolveInitialSymbol())
 const contract = ref(String(route.query.contract || '').toUpperCase())
 const seriesKind = ref<SeriesKind>(dailyWatchEntry?.seriesKind ?? resolveInitialSeriesKind())
 const frequency = ref<MarketFrequency>(dailyWatchEntry?.frequency ?? resolveInitialFrequency())
 const followLatest = ref(true)
-const selectedSecondaryPanel = ref<'macd'>('macd')
 const selectedDominant = computed(() => dominants.value.find((item) => item.product === symbol.value))
 const {
   bars,
@@ -117,11 +118,19 @@ const {
   fetchJdjStrategy: getJdjStrategyHistoricalActions,
 })
 const {
+  bands: nStructureBands,
+  loading: nStructureBandsLoading,
+  error: nStructureBandsError,
+  sync: syncNStructureBands,
+  dispose: disposeNStructureBands,
+} = useNStructureBands({ fetchBands: getNStructureBands })
+const {
   subing,
   subingLoading,
   subingError,
   subingSupported,
   reset: resetSubingSnapshot,
+  markUnavailable: markSubingUnavailable,
   refresh: refreshSubing,
   dispose: disposeSubingObservation,
 } = useSubingObservation({
@@ -140,6 +149,8 @@ const {
   alertLoading,
   savingRuleCodes,
   refresh: refreshAlerts,
+  invalidateIdentity: invalidateAlertIdentity,
+  markUnavailable: markAlertsUnavailable,
   toggleSubingProduct,
   toggleHtdyCurrentFrequency,
   dispose: disposeProductAlertScope,
@@ -157,13 +168,24 @@ const {
   status: currentEventsStatus,
   items: currentEvents,
   refresh: refreshCurrentEvents,
+  invalidateIdentity: invalidateCurrentEventsIdentity,
+  markUnavailable: markCurrentEventsUnavailable,
   dispose: disposeProductCurrentAlertEvents,
 } = useProductCurrentAlertEvents({ symbol, fetchCurrentEvents: getProductCurrentAlertEvents })
 let metadataReady = false
-let synchronizingSymbol = false
 let researchGeneration = 0
-let currentEventStateGeneration = 0
 let canonicalReplacementGeneration = 0
+let pendingHistoricalOverlayRefresh = false
+const {
+  synchronizing: synchronizingSymbol,
+  synchronize: synchronizeSymbolIdentity,
+  dispose: disposeSymbolIdentityCoordinator,
+} = useProductSymbolIdentityCoordinator({
+  invalidateFacts: invalidateSymbolFacts,
+  refreshMarket: refreshSeries,
+  refreshFacts: refreshSymbolFacts,
+  rejectFacts: rejectSymbolFacts,
+})
 
 const loading = computed(() => loadingInitial.value || loadingBefore.value)
 const visibleMainIndicators = computed(() => {
@@ -177,6 +199,13 @@ const overlayCapability = computed(() => researchOverlayCapability(
   frequency.value,
 ))
 const visibleBars = computed(() => bars.value)
+const nStructureBandsSupported = computed(() => nStructureBandCapability(
+  effectiveIdentity.value.seriesKind,
+  frequency.value,
+))
+const visibleNStructureBands = computed(() => (
+  showNStructureBands.value && nStructureBandsSupported.value ? nStructureBands.value : []
+))
 const visibleStartTradingDay = computed(() => visibleBars.value[0]?.trading_day || '')
 const lifecycleMarkers = computed(() => {
   if (!overlayCapability.value.supported || subingLoading.value || subingError.value) return []
@@ -214,6 +243,32 @@ const latestHtdyObservation = computed(() => {
   if (!htdyVisible.value || !overlayCapability.value.supported) return null
   return buildKlineDerivedData(visibleBars.value, ['htdy']).htdy?.markers.at(-1) ?? null
 })
+const productCheckSidebarProps = computed(() => ({
+  dominant: selectedDominant.value,
+  seriesKind: effectiveIdentity.value.seriesKind,
+  frequency: frequency.value,
+  contract: effectiveIdentity.value.contract || '',
+  live: isLiveDisplay.value,
+  phase: phaseLabel.value,
+  hasMoreBefore: canLoadEarlier.value,
+  canonicalCoverage: canonicalCoverage.value,
+  research: research.value,
+  researchLoading: researchLoading.value,
+  researchError: researchError.value,
+  selectedOverlay: selectedOverlay.value,
+  subing: subing.value,
+  subingLoading: subingLoading.value || metadataLoading.value,
+  subingError: subingError.value,
+  subingSupported: subingSupported.value,
+  alertRules: alertRules.value,
+  alertRuntimeStatus: alertRuntimeStatus.value,
+  alertLoading: alertLoading.value,
+  savingRuleCodes: savingRuleCodes.value,
+  currentEventsLoading: currentEventsLoading.value,
+  currentEventsStatus: currentEventsStatus.value,
+  currentEvents: currentEvents.value,
+  htdyObservation: latestHtdyObservation.value,
+}))
 
 onMounted(async () => {
   document.addEventListener('fullscreenchange', syncFullscreen)
@@ -223,12 +278,8 @@ onMounted(async () => {
     if (!dominants.value.some((item) => item.product === symbol.value)) {
       symbol.value = dominants.value[0]?.product || ''
     }
-    await refreshSeries()
     metadataReady = true
-    void refreshSubing()
-    void refreshResearch()
-    void refreshAlerts()
-    void refreshCurrentEvents()
+    void synchronizeSymbolIdentity()
   } catch {
     error.value = '行情元数据加载失败'
   } finally {
@@ -236,28 +287,45 @@ onMounted(async () => {
   }
 })
 
-watch(symbol, async () => {
+watch(symbol, () => {
   if (!metadataReady) return
-  resetSubingSnapshot()
-  synchronizingSymbol = true
-  try {
-    await refreshSeries()
-    void refreshSubing()
-    void refreshAlerts()
-  } finally {
-    synchronizingSymbol = false
-  }
+  void synchronizeSymbolIdentity()
 })
 
 watch([contract, seriesKind, frequency], async () => {
-  if (!metadataReady || synchronizingSymbol) return
+  if (!metadataReady) return
+  if (synchronizingSymbol.value) {
+    void synchronizeSymbolIdentity()
+    return
+  }
   resetSubingSnapshot()
-  await refreshSeries()
-  void refreshSubing()
+  if (await refreshSeries()) void refreshSubing()
+})
+
+watch([symbol, seriesKind, frequency], () => {
+  if (!metadataReady) return
+  void syncNStructureBands(currentNStructureBandIdentity(), [], null, 'replace')
+})
+
+watch(showNStructureBands, (value) => {
+  const current = loadMainChartPreferences()
+  saveMainChartPreferences({ ...current, showNStructureBands: value })
+  if (!metadataReady) return
+  void syncNStructureBands(
+    currentNStructureBandIdentity(),
+    visibleBars.value,
+    canonicalCoverage.value,
+    'replace',
+  )
 })
 
 watch(selectedOverlay, () => {
-  if (synchronizingSymbol) return
+  if (synchronizingSymbol.value) {
+    pendingHistoricalOverlayRefresh = true
+    resetSubingSnapshot()
+    return
+  }
+  pendingHistoricalOverlayRefresh = false
   resetSubingSnapshot()
   void refreshSubing()
   void syncHistoricalResearchMarkers(
@@ -281,15 +349,11 @@ watch(subing, () => {
   void syncPersistentAlertMarkers(currentAlertMarkerIdentity(), visibleBars.value, 'replace')
 })
 
-watch([symbol, seriesKind, contract], () => {
-  if (metadataReady && !synchronizingSymbol) void refreshResearch()
+watch([seriesKind, contract], () => {
+  if (metadataReady && !synchronizingSymbol.value) void refreshResearch()
 })
 
 watch([symbol, seriesKind, frequency, researchSidebarOpen], persistWorkspacePreferences, { deep: true })
-
-watch([currentEventsStatus, currentEvents], () => {
-  void refreshCurrentEventStates()
-}, { deep: true })
 
 watch(frequency, (period) => {
   const current = loadMainChartPreferences()
@@ -300,6 +364,12 @@ watch(mutation, (nextMutation) => {
   void syncPersistentAlertMarkers(currentAlertMarkerIdentity(), bars.value, nextMutation.kind)
   void syncHistoricalResearchMarkers(
     currentHistoricalMarkerIdentity(),
+    bars.value,
+    canonicalCoverage.value,
+    nextMutation.kind,
+  )
+  void syncNStructureBands(
+    currentNStructureBandIdentity(),
     bars.value,
     canonicalCoverage.value,
     nextMutation.kind,
@@ -322,13 +392,14 @@ watch(mutation, (nextMutation) => {
 
 onUnmounted(() => {
   document.removeEventListener('fullscreenchange', syncFullscreen)
+  disposeSymbolIdentityCoordinator()
   disposeSubingObservation()
   disposeProductAlertScope()
   disposeProductCurrentAlertEvents()
-  currentEventStateGeneration += 1
   dispose()
   disposePersistentAlertMarkers()
   disposeHistoricalResearchMarkers()
+  disposeNStructureBands()
 })
 
 function currentIdentity() {
@@ -357,6 +428,15 @@ function currentAlertMarkerIdentity() {
 function currentHistoricalMarkerIdentity() {
   return {
     overlay: selectedOverlay.value,
+    seriesKind: effectiveIdentity.value.seriesKind,
+    symbol: symbol.value,
+    frequency: frequency.value,
+  }
+}
+
+function currentNStructureBandIdentity() {
+  return {
+    enabled: showNStructureBands.value,
     seriesKind: effectiveIdentity.value.seriesKind,
     symbol: symbol.value,
     frequency: frequency.value,
@@ -419,19 +499,49 @@ async function refreshResearch() {
   }
 }
 
-async function refreshCurrentEventStates() {
-  const generation = ++currentEventStateGeneration
-  if (currentEventsStatus.value !== 'ready' || currentEvents.value.length === 0) {
-    currentEventStates.value = {}
-    return
+function invalidateResearch(): void {
+  researchGeneration += 1
+  research.value = null
+  researchError.value = false
+  researchLoading.value = true
+}
+
+function markResearchUnavailable(): void {
+  research.value = null
+  researchError.value = true
+  researchLoading.value = false
+}
+
+function invalidateSymbolFacts(): void {
+  invalidateResearch()
+  resetSubingSnapshot()
+  invalidateAlertIdentity()
+  invalidateCurrentEventsIdentity()
+}
+
+function rejectSymbolFacts(): void {
+  markResearchUnavailable()
+  markSubingUnavailable()
+  markAlertsUnavailable()
+  markCurrentEventsUnavailable()
+}
+
+function refreshSymbolFacts(): readonly Promise<void>[] {
+  if (pendingHistoricalOverlayRefresh) {
+    pendingHistoricalOverlayRefresh = false
+    void syncHistoricalResearchMarkers(
+      currentHistoricalMarkerIdentity(),
+      visibleBars.value,
+      canonicalCoverage.value,
+      'replace',
+    )
   }
-  try {
-    const response = await getEventStates(currentEvents.value.map((item) => item.id))
-    if (generation !== currentEventStateGeneration) return
-    currentEventStates.value = Object.fromEntries(response.items.map((item) => [item.event_id, item]))
-  } catch {
-    if (generation === currentEventStateGeneration) currentEventStates.value = {}
-  }
+  return [
+    refreshResearch(),
+    refreshSubing(),
+    refreshAlerts(),
+    refreshCurrentEvents(),
+  ]
 }
 
 async function loadEarlierBars() {
@@ -441,10 +551,6 @@ async function loadEarlierBars() {
     error.value = '读取更早历史失败：数据集、月分区或主力映射不完整'
     message.error(error.value)
   }
-}
-
-function updateSecondaryPanel(value: 'macd') {
-  selectedSecondaryPanel.value = value
 }
 
 function isCurrentIdentity(candidate: ReturnType<typeof currentIdentity>) {
@@ -467,6 +573,10 @@ function updateOptionalEmaIndicators(value: OptionalEmaIndicatorId[]) {
   saveMainChartPreferences({ ...current, optionalEmaIndicators: optionalEmaIndicators.value })
 }
 
+function updateShowNStructureBands(value: boolean) {
+  showNStructureBands.value = value
+}
+
 function persistWorkspacePreferences() {
   saveMarketWorkspacePreferences({
     version: 1,
@@ -483,19 +593,6 @@ function openResearchDrawer() {
     return
   }
   researchDrawerOpen.value = true
-}
-
-function openFormalEvent(event: import('@/types/market').AlertEvent, state: EventState | null) {
-  if (!state) return
-  const useEpisode = state.state === 'open' || state.state === 'pending_review'
-  void router.push({
-    name: 'trade-records',
-    query: {
-      state: state.state,
-      event_id: useEpisode ? undefined : String(event.id),
-      episode_id: useEpisode && state.episode_id ? String(state.episode_id) : undefined,
-    },
-  })
 }
 
 function toggleSubingAlert(ruleCode: string, enabled: boolean) {
@@ -566,6 +663,10 @@ function normalizeSymbol(value: unknown): string | null {
       :dominants="dominants"
       :selected-overlay="selectedOverlay"
       :optional-ema-indicators="optionalEmaIndicators"
+      :show-n-structure-bands="showNStructureBands"
+      :n-structure-bands-supported="nStructureBandsSupported"
+      :n-structure-bands-loading="nStructureBandsLoading"
+      :n-structure-bands-error="nStructureBandsError"
       :fullscreen="fullscreen"
       @update:symbol="symbol = $event"
       @update:series-kind="seriesKind = $event"
@@ -573,6 +674,7 @@ function normalizeSymbol(value: unknown): string | null {
       @update:contract="contract = $event"
       @update:selected-overlay="updateSelectedOverlay"
       @update:optional-ema-indicators="updateOptionalEmaIndicators"
+      @update:show-n-structure-bands="updateShowNStructureBands"
       @open-research="openResearchDrawer"
       @toggle-fullscreen="toggleFullscreen"
       @back="router.push({ name: 'market' })"
@@ -610,6 +712,8 @@ function normalizeSymbol(value: unknown): string | null {
             class="product-workspace__kline"
             :data-visible-start-trading-day="visibleStartTradingDay"
             :data-visible-main-indicators="visibleMainIndicators.join(',')"
+            :data-n-structure-bands-supported="nStructureBandsSupported"
+            :data-n-structure-bands-enabled="showNStructureBands"
           >
             <KlineChart
               ref="chart"
@@ -621,43 +725,17 @@ function normalizeSymbol(value: unknown): string | null {
               :visible-main-indicators="visibleMainIndicators"
               :alert-markers="persistentAlertMarkers"
               :research-markers="researchMarkers"
-              :secondary-panel="selectedSecondaryPanel"
+              :n-structure-bands="visibleNStructureBands"
               :data-historical-research-loading="historicalResearchLoading"
               @need-more-before="loadEarlierBars"
               @follow-latest-change="followLatest = $event"
-              @secondary-panel-change="updateSecondaryPanel"
             />
           </div>
           <div class="product-workspace__sidebar-wrap">
             <ProductCheckSidebar
-              :dominant="selectedDominant"
-              :series-kind="effectiveIdentity.seriesKind"
-              :frequency="frequency"
-              :contract="effectiveIdentity.contract || ''"
-              :live="isLiveDisplay"
-              :phase="phaseLabel"
-              :has-more-before="canLoadEarlier"
-              :canonical-coverage="canonicalCoverage"
-              :research="research"
-              :research-loading="researchLoading"
-              :research-error="researchError"
-              :selected-overlay="selectedOverlay"
-              :subing="subing"
-              :subing-loading="subingLoading || metadataLoading"
-              :subing-error="subingError"
-              :subing-supported="subingSupported"
-              :alert-rules="alertRules"
-              :alert-runtime-status="alertRuntimeStatus"
-              :alert-loading="alertLoading"
-              :saving-rule-codes="savingRuleCodes"
-              :current-events-loading="currentEventsLoading"
-              :current-events-status="currentEventsStatus"
-              :current-events="currentEvents"
-              :current-event-states="currentEventStates"
-              :htdy-observation="latestHtdyObservation"
+              v-bind="productCheckSidebarProps"
               @toggle-subing-alert="toggleSubingAlert"
               @toggle-htdy-alert="toggleHtdyAlert"
-              @open-formal-event="openFormalEvent"
             />
           </div>
         </div>
@@ -667,34 +745,9 @@ function normalizeSymbol(value: unknown): string | null {
     <NDrawer v-model:show="researchDrawerOpen" :width="320" placement="right">
       <NDrawerContent title="检查" closable>
         <ProductCheckSidebar
-          :dominant="selectedDominant"
-          :series-kind="effectiveIdentity.seriesKind"
-          :frequency="frequency"
-          :contract="effectiveIdentity.contract || ''"
-          :live="isLiveDisplay"
-          :phase="phaseLabel"
-          :has-more-before="canLoadEarlier"
-          :canonical-coverage="canonicalCoverage"
-          :research="research"
-          :research-loading="researchLoading"
-          :research-error="researchError"
-          :selected-overlay="selectedOverlay"
-          :subing="subing"
-          :subing-loading="subingLoading || metadataLoading"
-          :subing-error="subingError"
-          :subing-supported="subingSupported"
-          :alert-rules="alertRules"
-          :alert-runtime-status="alertRuntimeStatus"
-          :alert-loading="alertLoading"
-          :saving-rule-codes="savingRuleCodes"
-          :current-events-loading="currentEventsLoading"
-          :current-events-status="currentEventsStatus"
-          :current-events="currentEvents"
-          :current-event-states="currentEventStates"
-          :htdy-observation="latestHtdyObservation"
+          v-bind="productCheckSidebarProps"
           @toggle-subing-alert="toggleSubingAlert"
           @toggle-htdy-alert="toggleHtdyAlert"
-          @open-formal-event="openFormalEvent"
         />
       </NDrawerContent>
     </NDrawer>

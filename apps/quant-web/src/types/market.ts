@@ -109,7 +109,8 @@ export interface ProductResearchResponse {
   recent_daily: CanonicalBarDto[]
 }
 
-export type SubingFrequency = '5m' | '15m' | '1d'
+export const SUBING_PUBLIC_FREQUENCIES = ['5m', '15m'] as const
+export type SubingFrequency = typeof SUBING_PUBLIC_FREQUENCIES[number]
 export type SubingFactorStatus = 'ready' | 'insufficient_data'
 
 export interface SubingFactorSnapshot {
@@ -344,7 +345,7 @@ export function filterBarsToSubingSegment(bars: BarData[], segmentStart: string)
 }
 
 export function isSubingSupportedFrequency(frequency: MarketFrequency): frequency is SubingFrequency {
-  return frequency === '5m' || frequency === '15m' || frequency === '1d'
+  return SUBING_PUBLIC_FREQUENCIES.includes(frequency as SubingFrequency)
 }
 
 export function shouldScheduleSubingCompanionRefresh(payload: SubingResearchResponse): boolean {
@@ -431,12 +432,19 @@ function normalizeMarketRadarDecimal(value: number | string | null): number | nu
 
 export type SubingDailyWatchDecision = 'long_watch' | 'short_watch'
 export type SubingDailyWatchPriceSide = 'above' | 'below' | 'equal' | 'unavailable'
+export type SubingDailyWatchProjectionVersion = 'subing_daily_watch_v2'
+export type SubingDailyWatchFormulaVersion = 'subing_ema21_rank1_stitched_raw_v2'
+export type SubingDailyWatchHistoryMode = 'rank1_stitched_raw'
 
 interface SubingDailyWatchTrendBase<TDecimal> {
   bar_end: string
   trading_day: string
   physical_contract: string
-  segment_start_trading_day: string
+  current_segment_start_trading_day: string
+  warmup_start_trading_day: string
+  warmup_bar_count: number
+  warmup_segment_count: number
+  history_mode: SubingDailyWatchHistoryMode
   close: TDecimal
   ema21: TDecimal
   price_side: SubingDailyWatchPriceSide
@@ -484,6 +492,9 @@ export type SubingDailyWatchSnapshot = SubingDailyWatchSnapshotBase<SubingDailyW
 
 interface SubingDailyWatchCurrentResponseBase<TSnapshot> {
   status: 'ready' | 'unavailable'
+  projection_version: SubingDailyWatchProjectionVersion
+  formula_version: SubingDailyWatchFormulaVersion
+  history_mode: SubingDailyWatchHistoryMode
   expected_target_trading_day: string | null
   latest_target_trading_day: string | null
   error_code: string | null
@@ -500,6 +511,9 @@ export function normalizeSubingDailyWatchCurrent(
 ): SubingDailyWatchCurrentResponse {
   if (!isSubingDailyWatchRecord(payload)
     || (payload.status !== 'ready' && payload.status !== 'unavailable')
+    || payload.projection_version !== 'subing_daily_watch_v2'
+    || payload.formula_version !== 'subing_ema21_rank1_stitched_raw_v2'
+    || payload.history_mode !== 'rank1_stitched_raw'
     || !isNullableDailyWatchDate(payload.expected_target_trading_day)
     || !isNullableDailyWatchDate(payload.latest_target_trading_day)
     || (payload.error_code !== null && !isNonEmptyDailyWatchString(payload.error_code))) {
@@ -511,6 +525,9 @@ export function normalizeSubingDailyWatchCurrent(
     }
     return {
       status: payload.status,
+      projection_version: payload.projection_version,
+      formula_version: payload.formula_version,
+      history_mode: payload.history_mode,
       expected_target_trading_day: payload.expected_target_trading_day,
       latest_target_trading_day: payload.latest_target_trading_day,
       error_code: payload.error_code,
@@ -543,6 +560,9 @@ export function normalizeSubingDailyWatchCurrent(
   }
   return {
     status: 'ready',
+    projection_version: payload.projection_version,
+    formula_version: payload.formula_version,
+    history_mode: payload.history_mode,
     expected_target_trading_day: payload.expected_target_trading_day,
     latest_target_trading_day: payload.latest_target_trading_day,
     error_code: null,
@@ -590,7 +610,11 @@ function normalizeSubingDailyWatchTrend(
     bar_end: value.bar_end,
     trading_day: value.trading_day,
     physical_contract: value.physical_contract,
-    segment_start_trading_day: value.segment_start_trading_day,
+    current_segment_start_trading_day: value.current_segment_start_trading_day,
+    warmup_start_trading_day: value.warmup_start_trading_day,
+    warmup_bar_count: value.warmup_bar_count,
+    warmup_segment_count: value.warmup_segment_count,
+    history_mode: value.history_mode,
     close: normalizeSubingDailyWatchDecimal(value.close),
     ema21: normalizeSubingDailyWatchDecimal(value.ema21),
     price_side: value.price_side,
@@ -646,7 +670,16 @@ function isSubingDailyWatchTrendWire(value: unknown): value is SubingDailyWatchT
   return isDailyWatchTimestamp(value.bar_end)
     && isDailyWatchDate(value.trading_day)
     && isNonEmptyDailyWatchString(value.physical_contract)
-    && isDailyWatchDate(value.segment_start_trading_day)
+    && isDailyWatchDate(value.current_segment_start_trading_day)
+    && isDailyWatchDate(value.warmup_start_trading_day)
+    && value.warmup_bar_count === 30
+    && Number.isInteger(value.warmup_segment_count)
+    && Number(value.warmup_segment_count) >= 1
+    && Number(value.warmup_segment_count) <= 30
+    && value.history_mode === 'rank1_stitched_raw'
+    && value.current_segment_start_trading_day <= value.trading_day
+    && value.warmup_start_trading_day <= value.trading_day
+    && !Object.hasOwn(value, 'segment_start_trading_day')
     && typeof value.close === 'string'
     && typeof value.ema21 === 'string'
     && ['above', 'below', 'equal', 'unavailable'].includes(String(value.price_side))
@@ -671,7 +704,19 @@ function isNonEmptyDailyWatchString(value: unknown): value is string {
 }
 
 function isDailyWatchDate(value: unknown): value is string {
-  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
+  if (typeof value !== 'string') return false
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
+  if (match === null) return false
+  const year = Number(match[1])
+  const month = Number(match[2])
+  const day = Number(match[3])
+  if (year < 1 || year > 9999 || month < 1 || month > 12 || day < 1) return false
+  const daysInMonth = [31, isDailyWatchLeapYear(year) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+  return day <= daysInMonth[month - 1]
+}
+
+function isDailyWatchLeapYear(year: number): boolean {
+  return year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0)
 }
 
 function isNullableDailyWatchDate(value: unknown): value is string | null {
@@ -792,6 +837,57 @@ export interface JdjStrategyHistoricalResponse {
   actions: JdjStrategyHistoricalAction[]
 }
 
+export interface NStructureBandRequest {
+  series_kind: 'actual_dominant'
+  symbol: string
+  frequency: '5m'
+  since: string
+  through: string
+}
+
+export interface NStructureBandPolicy {
+  policy_id: 'n_structure_5m_v1'
+  formula_version: 'n_structure_v1'
+  source_timeframe: '5m'
+  research_only: true
+}
+
+export interface NStructureBand {
+  band_id: string
+  contract: string
+  segment_start_trading_day: string
+  completion_trading_day: string
+  direction: 'up' | 'down'
+  role: 'support_reference' | 'resistance_reference'
+  n1_at: string
+  completed_at: string
+  completion_level: number
+  lower: number
+  upper: number
+  first_reentered_at: string | null
+  invalidated_at: string | null
+  expanded_until: string
+}
+
+export interface NStructureBandWire extends Omit<
+  NStructureBand,
+  'completion_level' | 'lower' | 'upper'
+> {
+  completion_level: number | string
+  lower: number | string
+  upper: number | string
+}
+
+export interface NStructureBandResponse {
+  request: NStructureBandRequest
+  policy: NStructureBandPolicy
+  bands: NStructureBand[]
+}
+
+export interface NStructureBandWireResponse extends Omit<NStructureBandResponse, 'bands'> {
+  bands: NStructureBandWire[]
+}
+
 /** Alert V2 `AlertEventOut`：只读展示 DTO，方向语义见 result_codes。 */
 export interface AlertEvent {
   id: number
@@ -817,7 +913,7 @@ export interface ChartOverlay {
 }
 
 export type IndicatorPanelType = 'macd' | 'atr' | 'volume_ratio' | 'signal_score'
-export type MainIndicatorId = 'ema_10' | 'ema_20' | 'ema_21' | 'ema_60' | 'htdy'
+export type MainIndicatorId = 'ema_10' | 'ema_21' | 'ema_60' | 'htdy'
 export type OptionalEmaIndicatorId = 'ema_10' | 'ema_60'
 
 export interface MainIndicatorDefinition {

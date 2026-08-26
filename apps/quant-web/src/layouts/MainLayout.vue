@@ -19,7 +19,6 @@ import BrandLogo from '@/components/brand/BrandLogo.vue'
 import RouteErrorFallback from '@/components/common/RouteErrorFallback.vue'
 import UiIcon from '@/components/common/UiIcon.vue'
 import WorkspaceContext from '@/components/workspace/WorkspaceContext.vue'
-import { isLocalBacktestHostname } from '@/utils/backtestCapability'
 
 const route = useRoute()
 const router = useRouter()
@@ -53,11 +52,7 @@ function renderIcon(name: string) {
 const menuOptions = computed<MenuOption[]>(() => {
   const children: MenuOption[] = [
     { label: 'Market 工作台', key: 'market', icon: renderIcon('market') },
-    { label: '交易记录', key: 'trade-records', icon: renderIcon('review') },
   ]
-  if (isLocalBacktestHostname(window.location.hostname)) {
-    children.push({ label: 'RQAlpha 回测', key: 'backtests', icon: renderIcon('backtest') })
-  }
   return [{ type: 'group', label: '工作', key: 'work-group', children }]
 })
 
@@ -73,8 +68,6 @@ const activeKey = computed(() => {
 
 const breadcrumbItems = computed(() => {
   if (route.name === 'market-chart') return ['行情看板', '品种行情']
-  if (route.name === 'trade-records') return ['交易记录']
-  if (route.name === 'backtests') return ['RQAlpha 回测']
   if (route.name === 'not-found') return ['页面不存在']
   return [String(route.meta.title || '归一量化工作站')]
 })

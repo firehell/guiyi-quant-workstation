@@ -15,8 +15,6 @@ from typing import Any, TextIO
 
 from app.alerts.composition import build_alert_runtime
 from app.db.session import SessionLocal
-from app.execution_review.composition import build_execution_review_roll_reconciler
-from app.execution_review.roll_gate import execution_review_roll_marker_state
 from app.guiyi_cli.output import (
     argument_error_payload,
     exception_error_payload,
@@ -37,8 +35,6 @@ AfterMarketFactory = Callable[..., Any]
 LiveServiceFactory = Callable[[Any], Any]
 AlertRuntimeFactory = Callable[[], Any]
 DailyWatchGeneratorFactory = Callable[[Any], Any]
-RollReconcilerFactory = Callable[[Any], Any]
-RollMarkerState = Callable[[], str]
 
 _LOGGER = logging.getLogger(__name__)
 _COMMANDS = {
@@ -84,8 +80,6 @@ def run_after_market(
     manager_factory: ManagerFactory,
     after_market_factory: AfterMarketFactory,
     failure_notification: bool,
-    roll_marker_state: RollMarkerState,
-    roll_reconciler_factory: RollReconcilerFactory,
     daily_watch_generator_factory: DailyWatchGeneratorFactory | None = None,
 ) -> dict[str, object]:
     """Run Market maintenance, then optional isolated follow-ups.
@@ -107,12 +101,6 @@ def run_after_market(
                 )
         except Exception:  # noqa: BLE001 - sanitized, isolated follow-up
             _LOGGER.warning("SUBING_DAILY_WATCH_FOLLOWUP_FAILED")
-    if market_result.status == "passed" and roll_marker_state() == "enabled":
-        try:
-            with session_factory() as followup_session:
-                roll_reconciler_factory(followup_session).reconcile_open_episodes()
-        except Exception:  # noqa: BLE001 - isolated best-effort follow-up
-            _LOGGER.warning("EXECUTION_REVIEW_ROLL_FOLLOWUP_FAILED")
     return payload
 
 
@@ -126,10 +114,6 @@ def main(
     alert_runtime_factory: AlertRuntimeFactory = build_alert_runtime,
     daily_watch_generator_factory: DailyWatchGeneratorFactory = (
         build_subing_daily_watch_generator
-    ),
-    roll_marker_state: RollMarkerState = execution_review_roll_marker_state,
-    roll_reconciler_factory: RollReconcilerFactory = (
-        build_execution_review_roll_reconciler
     ),
     stdout: TextIO = sys.stdout,
     stderr: TextIO = sys.stderr,
@@ -156,8 +140,6 @@ def main(
                 after_market_factory=after_market_factory,
                 failure_notification=True,
                 daily_watch_generator_factory=daily_watch_generator_factory,
-                roll_marker_state=roll_marker_state,
-                roll_reconciler_factory=roll_reconciler_factory,
             )
     except Exception as exc:  # noqa: BLE001 - safe process boundary
         print_json(

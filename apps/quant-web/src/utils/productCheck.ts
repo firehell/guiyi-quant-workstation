@@ -1,7 +1,5 @@
-import type { EventState } from '../types/executionReview.ts'
 import type { AlertEvent, ProductResearchResponse } from '../types/market.ts'
 import { alertResultLabel, alertRuleShortLabel } from './alertRules.ts'
-import { executionReviewActionLabel } from './executionReview.ts'
 
 export interface MarketBackgroundSummary {
   label: '同向偏多' | '同向偏空' | '中性' | '未共振' | '数据不足'
@@ -23,22 +21,16 @@ export function summarizeMarketBackground(
 
 export interface FormalEventSummary {
   event: AlertEvent
-  state: EventState | null
   headline: string
-  actionLabel: string | null
 }
 
 export function summarizeFormalEvent(
   items: AlertEvent[],
-  states: Record<number, EventState>,
 ): FormalEventSummary | null {
   const event = [...items].sort((left, right) => Date.parse(right.bar_end) - Date.parse(left.bar_end))[0]
   if (!event) return null
-  const state = states[event.id] ?? null
   return {
     event,
-    state,
     headline: `${alertRuleShortLabel(event.rule_code)} · ${alertResultLabel(event.rule_code, event.result_codes)}`,
-    actionLabel: state ? executionReviewActionLabel(state.state) : null,
   }
 }

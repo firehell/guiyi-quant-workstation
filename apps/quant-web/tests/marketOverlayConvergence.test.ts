@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
 
-import { MARKET_FREQUENCIES } from '../src/types/market.ts'
+import { MARKET_FREQUENCIES, SUBING_PUBLIC_FREQUENCIES } from '../src/types/market.ts'
 import {
   RESEARCH_OVERLAY_DEFINITIONS,
   researchOverlayCapability,
@@ -35,7 +35,22 @@ test('HTDY retains all seven formal frequencies after Overlay convergence', () =
   }
 })
 
-test('Web public DTO, API, and marker modules omit N and raw JDJ while retaining JDJ Strategy', () => {
+test('SuBing Overlay and public Panel share the exact 5m and 15m allowlist', () => {
+  assert.deepEqual(SUBING_PUBLIC_FREQUENCIES, ['5m', '15m'])
+  assert.deepEqual(
+    RESEARCH_OVERLAY_DEFINITIONS.find(({ id }) => id === 'subing')?.supportedFrequencies,
+    SUBING_PUBLIC_FREQUENCIES,
+  )
+  for (const frequency of MARKET_FREQUENCIES) {
+    assert.equal(
+      researchOverlayCapability('subing', 'actual_dominant', frequency).supported,
+      SUBING_PUBLIC_FREQUENCIES.includes(frequency as '5m' | '15m'),
+      frequency,
+    )
+  }
+})
+
+test('Web keeps retired N event markers and raw JDJ absent while exposing only the N range-band projection', () => {
   const typesSource = read('../src/types/market.ts')
   const apiSource = read('../src/api/market.ts')
   const markerSource = read('../src/utils/historicalResearchMarkers.ts')
@@ -66,6 +81,8 @@ test('Web public DTO, API, and marker modules omit N and raw JDJ while retaining
   assert.match(apiSource, /export function getJdjStrategyHistoricalActions/)
   assert.match(markerSource, /export function jdjStrategyActionToMarker/)
   assert.match(loaderSource, /fetchJdjStrategy/)
+  assert.match(typesSource, /export interface NStructureBandResponse/)
+  assert.match(apiSource, /export function getNStructureBands/)
 })
 
 test('visible product copy uses the single approved SuBing and JDJ replay names', () => {
@@ -74,9 +91,13 @@ test('visible product copy uses the single approved SuBing and JDJ replay names'
 
   assert.match(sidebarSource, /<strong>日进斗金参考回放 · Reference only<\/strong>/)
   assert.doesNotMatch(sidebarSource, /日进斗金策略/)
-  assert.match(sidebarSource, /<summary>5\. 更多研究<\/summary>/)
   assert.doesNotMatch(subingPanelSource, />SuBing</)
   assert.match(subingPanelSource, />苏冰</)
+  assert.match(
+    subingPanelSource,
+    /苏冰公开当前观察仅支持 5m \/ 15m；D1 \/ 60m 请查看每日观察。/,
+  )
+  assert.doesNotMatch(subingPanelSource, /仅支持 5m \/ 15m \/ 1d/)
 })
 
 function read(path: string): string {

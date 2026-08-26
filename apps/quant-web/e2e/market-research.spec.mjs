@@ -132,12 +132,6 @@ async function mockMarketHomepage(
   runtimeResponse = runtimeHealth(),
 ) {
   await page.route('**/api/alerts/formal-signals/current', (route) => route.fulfill({ json: currentFormalResponse }))
-  await page.route('**/api/execution-review/event-states**', (route) => {
-    const ids = new URL(route.request().url()).searchParams.getAll('event_ids').map(Number)
-    return route.fulfill({ json: { items: ids.map((id) => ({
-      event_id: id, state: 'pending_decision', decision_id: null, episode_id: null,
-    })) } })
-  })
   await page.route('**/api/runtime/health', (route) => route.fulfill({ json: runtimeResponse }))
   await page.route('**/api/v1/market/research/radar', (route) => route.fulfill({ json: radarResponse }))
   await page.route('**/api/v1/market/research/subing-daily-watch/current', (route) => route.fulfill({ json: dailyWatchResponse }))
@@ -274,7 +268,6 @@ test('SuBing workbench keeps Formal and Daily Watch failures independent', async
   await page.route('**/api/v1/market/research/subing-daily-watch/current', (route) => (
     dailyFails ? route.fulfill({ status: 503 }) : route.fulfill({ json: dailyResponse })
   ))
-  await page.route('**/api/execution-review/event-states**', (route) => route.fulfill({ json: { items: [] } }))
   await page.goto('/market')
 
   const workbench = page.getByTestId('subing-workbench')
@@ -305,32 +298,7 @@ test('formal signal cards do not advertise a container-wide click target', async
   const card = page.getByTestId('market-formal-signals').locator('.market-formal-signals__card')
   await card.hover()
   await expect(card).toHaveCSS('transform', 'none')
-  await expect(card.getByRole('button', { name: '记录执行' })).toBeVisible()
-})
-
-test('same Formal event-id set keeps its Execution Review action while refreshed states are pending', async ({ page }) => {
-  let lookupCount = 0
-  let releaseReplacementLookup
-  const replacementLookup = new Promise((resolve) => { releaseReplacementLookup = resolve })
-  await page.route('**/api/alerts/formal-signals/current', (route) => route.fulfill({
-    json: { status: 'ready', trading_day: '2026-08-15', items: [formalSignal()] },
-  }))
-  await page.route('**/api/execution-review/event-states**', async (route) => {
-    lookupCount += 1
-    if (lookupCount === 2) await replacementLookup
-    return route.fulfill({ json: { items: [{ event_id: 17, state: 'pending_decision', decision_id: null, episode_id: null }] } })
-  })
-  await page.route('**/api/runtime/health', (route) => route.fulfill({ json: runtimeHealth() }))
-  await page.route('**/api/v1/market/research/radar', (route) => route.fulfill({ json: radar() }))
-  await page.route('**/api/v1/market/research/subing-daily-watch/current', (route) => route.fulfill({ json: dailyWatch() }))
-  await page.goto('/market')
-
-  const formal = page.getByTestId('market-formal-signals')
-  await expect(formal.getByRole('button', { name: '记录执行' })).toBeVisible()
-  await page.getByRole('button', { name: '全部刷新' }).click()
-  await expect.poll(() => lookupCount).toBe(2)
-  await expect(formal.getByRole('button', { name: '记录执行' })).toBeVisible()
-  releaseReplacementLookup()
+  await expect(card.getByRole('button', { name: '查看 →' })).toBeVisible()
 })
 
 test('Market homepage keeps formal decisions ahead of Radar at a 980-like viewport', async ({ page }) => {
@@ -542,6 +510,33 @@ function panelEvent(overrides = {}) {
   }
 }
 
+function nStructureBand(
+  id,
+  direction,
+  n1At,
+  completedAt,
+  lower,
+  upper,
+  { firstReenteredAt = null, invalidatedAt = null, expandedUntil = completedAt } = {},
+) {
+  return {
+    band_id: id,
+    contract: 'AG2601',
+    segment_start_trading_day: '2025-12-01',
+    completion_trading_day: completedAt.slice(0, 10),
+    direction,
+    role: direction === 'up' ? 'support_reference' : 'resistance_reference',
+    n1_at: n1At,
+    completed_at: completedAt,
+    completion_level: direction === 'up' ? String(upper) : String(lower),
+    lower: String(lower),
+    upper: String(upper),
+    first_reentered_at: firstReenteredAt,
+    invalidated_at: invalidatedAt,
+    expanded_until: expandedUntil,
+  }
+}
+
 async function mockWorkspace(page, researchResponse, options = {}) {
   const workspaceSymbol = options.symbol || 'ag'
   const workspaceContract = options.resolvedContract || (workspaceSymbol === 'jm' ? 'JM2701' : 'AG2601')
@@ -549,11 +544,33 @@ async function mockWorkspace(page, researchResponse, options = {}) {
   const researchRequests = options.researchRequests || []
   const subingRequests = options.subingRequests || []
   const jdjStrategyHistoricalRequests = options.jdjStrategyHistoricalRequests || []
+  const nStructureBandRequests = options.nStructureBandRequests || []
   const dominantRequests = options.dominantRequests || []
   let dominantResponseIndex = 0
   let subingResponseIndex = 0
   await page.route('**/api/v1/market/**', async (route) => {
     const url = new URL(route.request().url())
+    if (url.pathname.endsWith('/research/n-structure/bands')) {
+      const request = Object.fromEntries(url.searchParams)
+      nStructureBandRequests.push(request)
+      if (options.nStructureBandDelayMs) {
+        await new Promise((resolve) => setTimeout(resolve, options.nStructureBandDelayMs))
+      }
+      if (options.nStructureBandHttpStatus) {
+        return route.fulfill({
+          status: options.nStructureBandHttpStatus,
+          json: { detail: { code: 'N_STRUCTURE_SOURCE_UNAVAILABLE' } },
+        })
+      }
+      return route.fulfill({ json: {
+        request,
+        policy: {
+          policy_id: 'n_structure_5m_v1', formula_version: 'n_structure_v1',
+          source_timeframe: '5m', research_only: true,
+        },
+        bands: options.nStructureBands || [],
+      } })
+    }
     if (url.pathname.endsWith('/research/subing/history')) {
       const request = Object.fromEntries(url.searchParams)
       return route.fulfill({ json: { request, events: [] } })
@@ -664,9 +681,6 @@ async function mockWorkspace(page, researchResponse, options = {}) {
     }
     return route.abort()
   })
-  await page.route('**/api/execution-review/event-states**', (route) => route.fulfill({
-    json: { items: options.eventStates || [] },
-  }))
 }
 
 async function mockAlertMarkerSurface(page, currentItems = [], options = {}) {
@@ -678,7 +692,8 @@ async function mockAlertMarkerSurface(page, currentItems = [], options = {}) {
   await page.route('**/api/alerts/**', async (route) => {
     const url = new URL(route.request().url())
     if (url.pathname.endsWith(`/products/${symbol}`)) {
-      if (options.alertScopeDelayMs) await new Promise((resolve) => setTimeout(resolve, options.alertScopeDelayMs))
+      if (options.alertScopeGate) await options.alertScopeGate.promise
+      else if (options.alertScopeDelayMs) await new Promise((resolve) => setTimeout(resolve, options.alertScopeDelayMs))
       return route.fulfill({ json: { symbol, rules: options.rules || [] } })
     }
     if (url.pathname.endsWith('/current-events')) {
@@ -699,11 +714,308 @@ async function mockAlertMarkerSurface(page, currentItems = [], options = {}) {
   })
 }
 
-async function openMoreResearch(page) {
-  const more = page.getByTestId('product-check-more')
-  if (!(await more.getAttribute('open'))) await more.locator('summary').click()
-  return more
+async function mockProductIdentityWorkspace(page) {
+  const calls = { bars: [], research: [], subing: [], scope: [], events: [], put: [] }
+  const gates = {
+    jmBars: deferred(),
+    jm15mBars: deferred(),
+    jmResearch: deferred(),
+    jmSubing: deferred(),
+    jmScope: deferred(),
+    jmEvents: deferred(),
+    initialAgResearch: deferred(),
+    initialAgSubing: deferred(),
+    initialAgScope: deferred(),
+    initialAgEvents: deferred(),
+    finalAgResearch: deferred(),
+    finalAgSubing: deferred(),
+    finalAgScope: deferred(),
+    finalAgEvents: deferred(),
+  }
+  const agRequestCounts = { research: 0, subing: 0, scope: 0, events: 0 }
+  const contracts = { ag: 'AG2601', jm: 'JM2701' }
+  const productNames = { ag: '白银', jm: '焦煤' }
+
+  await page.route('**/api/v1/market/**', async (route) => {
+    const url = new URL(route.request().url())
+    const requestedSymbol = url.searchParams.get('symbol') || 'ag'
+    if (url.pathname.endsWith('/dominants')) {
+      return route.fulfill({ json: { items: ['ag', 'jm'].map((item) => ({
+        product: item,
+        product_name: productNames[item],
+        sector: item === 'ag' ? 'precious' : 'black',
+        exchange: item === 'ag' ? 'SHFE' : 'DCE',
+        actual_contract: contracts[item],
+        dominant_mapping_date: '2026-01-12',
+      })) } })
+    }
+    if (url.pathname.endsWith('/research/subing/history')) {
+      return route.fulfill({ json: { request: Object.fromEntries(url.searchParams), events: [] } })
+    }
+    if (url.pathname.endsWith('/research/product')) {
+      const index = requestedSymbol === 'ag' ? agRequestCounts.research++ : 0
+      calls.research.push(requestedSymbol)
+      await identityFactGate(gates, 'Research', requestedSymbol, index)
+      return route.fulfill({ json: identityResearch(
+        requestedSymbol,
+        requestedSymbol === 'jm' ? -0.042 : index === 0 ? 0.061 : 0.092,
+      ) })
+    }
+    if (url.pathname.endsWith('/research/subing')) {
+      const index = requestedSymbol === 'ag' ? agRequestCounts.subing++ : 0
+      calls.subing.push(requestedSymbol)
+      await identityFactGate(gates, 'Subing', requestedSymbol, index)
+      return route.fulfill({ json: identitySubing(
+        requestedSymbol,
+        contracts[requestedSymbol],
+        requestedSymbol === 'jm' ? -4.2 : index === 0 ? 6.1 : 9.2,
+      ) })
+    }
+    if (url.pathname.endsWith('/bars/page')) {
+      calls.bars.push(requestedSymbol)
+      if (requestedSymbol === 'jm') {
+        await (url.searchParams.get('frequency') === '15m' ? gates.jm15mBars : gates.jmBars).promise
+      }
+      const items = Array.from({ length: 120 }, (_, index) => bar(index))
+      return route.fulfill({ json: {
+        request: {
+          series_kind: url.searchParams.get('series_kind'),
+          symbol: requestedSymbol,
+          contract: null,
+          frequency: url.searchParams.get('frequency'),
+          before: null,
+          limit: 1200,
+        },
+        bars: items,
+        canonical_coverage: null,
+        page: { has_more_before: false, next_before: null },
+        resolved_contract_segments: [{
+          contract: contracts[requestedSymbol],
+          start_trading_day: items[0].trading_day,
+          end_trading_day: items.at(-1).trading_day,
+        }],
+      } })
+    }
+    if (url.pathname.endsWith('/state')) {
+      return route.fulfill({ json: {
+        symbol: requestedSymbol,
+        series_kind: url.searchParams.get('series_kind'),
+        frequency: url.searchParams.get('frequency'),
+        operational: true,
+        phase: 'CLOSED',
+        trading_day: '2026-08-11',
+        live_eligible: false,
+        live_available: false,
+        live_contract: null,
+        canonical_end: null,
+        after_market: {},
+      } })
+    }
+    return route.abort()
+  })
+  await page.route('**/api/runtime/health', (route) => route.fulfill({ json: {
+    status: 'ok', components: { alert: { status: 'disabled' } },
+  } }))
+  await page.route('**/api/alerts/**', async (route) => {
+    const request = route.request()
+    const url = new URL(request.url())
+    if (request.method() === 'PUT') {
+      calls.put.push(url.pathname)
+      return route.fulfill({ status: 500, json: { detail: 'unexpected PUT' } })
+    }
+    const currentEventsMatch = url.pathname.match(/\/products\/(ag|jm)\/current-events$/)
+    if (currentEventsMatch) {
+      const requestedSymbol = currentEventsMatch[1]
+      const index = requestedSymbol === 'ag' ? agRequestCounts.events++ : 0
+      calls.events.push(requestedSymbol)
+      await identityFactGate(gates, 'Events', requestedSymbol, index)
+      const id = index === 0 ? 401 : requestedSymbol === 'ag' ? 409 : 502
+      return route.fulfill({ json: {
+        status: 'ready',
+        trading_day: '2026-01-12',
+        items: [panelEvent({
+          id,
+          symbol: requestedSymbol,
+          contract: contracts[requestedSymbol],
+          result_codes: requestedSymbol === 'jm' ? ['buy'] : ['sell'],
+        })],
+      } })
+    }
+    const scopeMatch = url.pathname.match(/\/products\/(ag|jm)$/)
+    if (scopeMatch) {
+      const requestedSymbol = scopeMatch[1]
+      const index = requestedSymbol === 'ag' ? agRequestCounts.scope++ : 0
+      calls.scope.push(requestedSymbol)
+      await identityFactGate(gates, 'Scope', requestedSymbol, index)
+      const suffix = requestedSymbol === 'jm' ? 'JM' : index === 0 ? 'OLD' : 'FINAL'
+      return route.fulfill({ json: { symbol: requestedSymbol, rules: [{
+        rule_code: 'subing_entry_signal_v1',
+        display_name: `${requestedSymbol.toUpperCase()} ${suffix} Scope`,
+        kind: 'formal_signal',
+        input_frequencies: ['5m', '15m'],
+        enabled_for_product: true,
+        enabled_frequencies: [],
+      }] } })
+    }
+    if (url.pathname.endsWith('/events')) return route.fulfill({ json: { items: [] } })
+    return route.abort()
+  })
+
+  return { calls, gates }
 }
+
+function identityResearch(symbol, oiChange) {
+  return {
+    ...research(oiChange),
+    symbol,
+    product_name: symbol === 'ag' ? '白银' : '焦煤',
+    sector: symbol === 'ag' ? 'precious' : 'black',
+    exchange: symbol === 'ag' ? 'SHFE' : 'DCE',
+    current_dominant: symbol === 'ag' ? 'AG2601' : 'JM2701',
+  }
+}
+
+function identitySubing(symbol, contract, slope) {
+  const response = reidentifySubingResponse(cloneSubingLifecycleCase('longSetup'), contract)
+  response.symbol = symbol
+  response.primary.snapshot.slope_5_bps_per_bar = String(slope)
+  return response
+}
+
+function identityFactGate(gates, kind, symbol, index) {
+  if (symbol === 'jm') return gates[`jm${kind}`].promise
+  return gates[index === 0 ? `initialAg${kind}` : `finalAg${kind}`].promise
+}
+
+function deferred() {
+  let resolve
+  const promise = new Promise((resolver) => { resolve = resolver })
+  return { promise, resolve }
+}
+
+async function selectProduct(page, label) {
+  await page.getByLabel('品种').click()
+  await page.locator('.n-base-select-option').filter({ hasText: label }).click()
+}
+
+function releaseIdentityFacts(gates, prefix) {
+  for (const kind of ['Research', 'Subing', 'Scope', 'Events']) gates[`${prefix}${kind}`].resolve()
+}
+
+async function openDataDetails(page) {
+  const details = page.getByTestId('product-check-data-details')
+  if (!(await details.getAttribute('open'))) await details.locator('summary').click()
+  return details
+}
+
+test('Product Workspace identity invalidates AG facts before delayed JM Market acceptance', async ({ page }) => {
+  const { calls, gates } = await mockProductIdentityWorkspace(page)
+  releaseIdentityFacts(gates, 'initialAg')
+  await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=5m')
+
+  await expect(page.getByTestId('product-check-sidebar')).toContainText('AG OLD Scope')
+  await expect(page.getByTestId('product-check-background')).toContainText('6.1%')
+  await selectProduct(page, 'JM 焦煤')
+  await expect.poll(() => calls.bars.filter((item) => item === 'jm').length).toBe(1)
+
+  expect(calls.research.filter((item) => item === 'jm')).toEqual([])
+  expect(calls.subing.filter((item) => item === 'jm')).toEqual([])
+  expect(calls.scope.filter((item) => item === 'jm')).toEqual([])
+  expect(calls.events.filter((item) => item === 'jm')).toEqual([])
+  await expect(page.getByTestId('product-check-sidebar')).toContainText('JM 焦煤')
+  await expect(page.getByTestId('product-check-background')).toContainText('正在读取周线 / 日线…')
+  await expect(page.getByTestId('product-check-background')).not.toContainText('6.1%')
+  await expect(page.getByTestId('subing-current-research')).toContainText('苏冰观察加载中')
+  await expect(page.getByTestId('subing-alert-scope')).not.toContainText('AG OLD Scope')
+  await expect(page.getByTestId('subing-alert-scope').getByRole('switch')).toHaveClass(/n-switch--disabled/)
+  await expect(page.getByTestId('subing-alert-scope').getByRole('switch')).toHaveClass(/n-switch--loading/)
+  expect(calls.put).toEqual([])
+
+  gates.jmBars.resolve()
+  await expect.poll(() => calls.research.filter((item) => item === 'jm').length).toBe(1)
+  await expect.poll(() => calls.subing.filter((item) => item === 'jm').length).toBe(1)
+  await expect.poll(() => calls.scope.filter((item) => item === 'jm').length).toBe(1)
+  await expect.poll(() => calls.events.filter((item) => item === 'jm').length).toBe(1)
+  await expect(page.getByTestId('subing-alert-scope').getByRole('switch')).toHaveClass(/n-switch--disabled/)
+  await expect(page.getByTestId('subing-alert-scope').getByRole('switch')).toHaveClass(/n-switch--loading/)
+
+  gates.jmResearch.resolve()
+  gates.jmSubing.resolve()
+  gates.jmScope.resolve()
+  gates.jmEvents.resolve()
+  await expect(page.getByTestId('product-check-background')).toContainText('-4.2%')
+  await expect(page.locator('.subing-panel__factor').filter({ hasText: 'Primary Factor' })).toContainText('S5 -4.2 bps/bar')
+  await expect(page.getByTestId('subing-alert-scope')).toContainText('JM JM Scope')
+  await expect(page.getByTestId('subing-alert-scope').getByRole('switch')).not.toHaveClass(/n-switch--disabled/)
+  await expect(page.getByTestId('subing-formal-event')).toContainText('买入信号')
+  expect(calls.put).toEqual([])
+})
+
+test('Product Workspace identity replays a frequency change made during delayed symbol Market acceptance', async ({ page }) => {
+  const { calls, gates } = await mockProductIdentityWorkspace(page)
+  releaseIdentityFacts(gates, 'initialAg')
+  await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=5m')
+  await expect(page.getByTestId('product-check-background')).toContainText('6.1%')
+
+  await selectProduct(page, 'JM 焦煤')
+  await expect.poll(() => calls.bars.filter((item) => item === 'jm').length).toBe(1)
+  await page.getByRole('group', { name: '周期' }).getByRole('button', { name: '15m', exact: true }).click()
+
+  await expect.poll(() => calls.bars.filter((item) => item === 'jm').length).toBe(2)
+  expect(calls.research.filter((item) => item === 'jm')).toEqual([])
+  expect(calls.scope.filter((item) => item === 'jm')).toEqual([])
+  await expect(page.getByTestId('product-check-background')).not.toContainText('6.1%')
+  await expect(page.getByTestId('subing-alert-scope').getByRole('switch')).toHaveClass(/n-switch--disabled/)
+
+  gates.jm15mBars.resolve()
+  await expect.poll(() => calls.research.filter((item) => item === 'jm').length).toBe(1)
+  await expect.poll(() => calls.scope.filter((item) => item === 'jm').length).toBe(1)
+  gates.jmResearch.resolve()
+  gates.jmSubing.resolve()
+  gates.jmScope.resolve()
+  gates.jmEvents.resolve()
+  await expect(page.getByTestId('product-check-background')).toContainText('-4.2%')
+  await expect(page.getByTestId('subing-alert-scope')).toContainText('JM JM Scope')
+
+  gates.jmBars.resolve()
+  await page.waitForTimeout(100)
+  await expect(page.getByRole('group', { name: '周期' }).getByRole('button', { name: '15m', exact: true })).toHaveClass(/n-button--primary-type/)
+  expect(calls.research.filter((item) => item === 'jm')).toHaveLength(1)
+  expect(calls.scope.filter((item) => item === 'jm')).toHaveLength(1)
+  expect(calls.put).toEqual([])
+})
+
+test('Product Workspace identity keeps only the final AG generation across AG to JM to AG', async ({ page }) => {
+  const { calls, gates } = await mockProductIdentityWorkspace(page)
+  await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=5m')
+  await expect.poll(() => calls.research.filter((item) => item === 'ag').length).toBe(1)
+  await expect.poll(() => calls.scope.filter((item) => item === 'ag').length).toBe(1)
+
+  await selectProduct(page, 'JM 焦煤')
+  await expect.poll(() => calls.bars.filter((item) => item === 'jm').length).toBe(1)
+  await selectProduct(page, 'AG 白银')
+  await expect.poll(() => calls.research.filter((item) => item === 'ag').length).toBe(2)
+  await expect.poll(() => calls.subing.filter((item) => item === 'ag').length).toBe(2)
+  await expect.poll(() => calls.scope.filter((item) => item === 'ag').length).toBe(2)
+  await expect.poll(() => calls.events.filter((item) => item === 'ag').length).toBe(2)
+
+  releaseIdentityFacts(gates, 'finalAg')
+  await expect(page.getByTestId('product-check-sidebar')).toContainText('AG 白银')
+  await expect(page.getByTestId('product-check-background')).toContainText('9.2%')
+  await expect(page.locator('.subing-panel__factor').filter({ hasText: 'Primary Factor' })).toContainText('S5 9.2 bps/bar')
+  await expect(page.getByTestId('subing-alert-scope')).toContainText('AG FINAL Scope')
+
+  releaseIdentityFacts(gates, 'initialAg')
+  gates.jmBars.resolve()
+  await expect.poll(() => calls.bars.filter((item) => item === 'jm').length).toBe(1)
+  await page.waitForTimeout(100)
+  expect(calls.research.filter((item) => item === 'jm')).toEqual([])
+  expect(calls.scope.filter((item) => item === 'jm')).toEqual([])
+  await expect(page.getByTestId('product-check-background')).toContainText('9.2%')
+  await expect(page.getByTestId('subing-alert-scope')).toContainText('AG FINAL Scope')
+  await expect(page.getByTestId('subing-alert-scope')).not.toContainText('AG OLD Scope')
+  expect(calls.put).toEqual([])
+})
 
 test('B1 journey narrows AG on the homepage before opening its verification view', async ({ page }) => {
   const ag = radarItem({ symbol: 'ag', product_name: '白银', sector: 'precious' })
@@ -742,19 +1054,18 @@ test('B1 journey narrows AG on the homepage before opening its verification view
   await expect(page.getByRole('button', { name: '真实主力', exact: true })).toHaveClass(/n-button--primary-type/)
   await expect(page.getByRole('group', { name: '周期' }).getByRole('button', { name: '15m', exact: true })).toHaveClass(/n-button--primary-type/)
   await expect(page.getByRole('group', { name: 'Overlay' }).getByRole('button', { name: '苏冰', exact: true })).toHaveClass(/n-button--primary-type/)
-  await expect(page.getByTestId('product-check-now')).toBeVisible()
-  await expect(page.getByTestId('product-check-background')).toBeVisible()
   await expect(page.getByTestId('product-check-observation')).toBeVisible()
-  await expect(page.getByTestId('product-check-participation')).toBeVisible()
-  await expect(page.getByTestId('product-check-more')).not.toHaveAttribute('open')
+  await expect(page.getByTestId('product-check-background')).toBeVisible()
+  await expect(page.getByTestId('product-check-data-details')).not.toHaveAttribute('open')
 })
 
 test('exact Daily Watch chart entry is one-shot and leaves saved chart preferences unchanged', async ({ page }) => {
   await page.addInitScript(() => {
-    window.localStorage.setItem('guiyi.market.chart.preferences.v3', JSON.stringify({
-      version: 3,
+    window.localStorage.setItem('guiyi.market.chart.preferences.v4', JSON.stringify({
+      version: 4,
       selectedOverlay: 'htdy',
       optionalEmaIndicators: [],
+      showNStructureBands: false,
       period: '5m',
       realtimeFollow: false,
     }))
@@ -776,11 +1087,12 @@ test('exact Daily Watch chart entry is one-shot and leaves saved chart preferenc
     frequency: '15m',
   })
   expect(await page.evaluate(() => JSON.parse(
-    window.localStorage.getItem('guiyi.market.chart.preferences.v3'),
+    window.localStorage.getItem('guiyi.market.chart.preferences.v4'),
   ))).toEqual({
-    version: 3,
+    version: 4,
     selectedOverlay: 'htdy',
     optionalEmaIndicators: [],
+    showNStructureBands: false,
     period: '5m',
     realtimeFollow: false,
   })
@@ -788,16 +1100,17 @@ test('exact Daily Watch chart entry is one-shot and leaves saved chart preferenc
   await overlays.getByRole('button', { name: '无', exact: true }).click()
   await expect(overlays.getByRole('button', { name: '无', exact: true })).toHaveClass(/n-button--primary-type/)
   await expect.poll(() => page.evaluate(() => JSON.parse(
-    window.localStorage.getItem('guiyi.market.chart.preferences.v3'),
+    window.localStorage.getItem('guiyi.market.chart.preferences.v4'),
   ).selectedOverlay)).toBe('none')
 })
 
 test('normal Market chart URL still loads the saved non-SuBing overlay', async ({ page }) => {
   await page.addInitScript(() => {
-    window.localStorage.setItem('guiyi.market.chart.preferences.v3', JSON.stringify({
-      version: 3,
+    window.localStorage.setItem('guiyi.market.chart.preferences.v4', JSON.stringify({
+      version: 4,
       selectedOverlay: 'htdy',
       optionalEmaIndicators: [],
+      showNStructureBands: false,
       period: '5m',
       realtimeFollow: false,
     }))
@@ -839,6 +1152,115 @@ test('SuBing keeps the Market display identity separate from current-dominant re
   expect(researchRequests).toHaveLength(1)
   await expect(page.getByText('120 bars', { exact: true })).toBeVisible()
   await expect(page).toHaveURL(/series_kind=continuous/)
+})
+
+test('N structure bands stay independent, identity-gated, visible in both directions, and persistent', async ({ page }) => {
+  const bars = Array.from({ length: 120 }, (_, index) => bar(index))
+  const requests = []
+  const bands = [
+    nStructureBand(
+      'n-pre-window',
+      'up',
+      new Date(Date.parse(bars[0].bar_end) - 2 * 86_400_000).toISOString(),
+      new Date(Date.parse(bars[0].bar_end) - 86_400_000).toISOString(),
+      105,
+      210,
+      { expandedUntil: bars[119].bar_end },
+    ),
+    nStructureBand('n-up-1', 'up', bars[20].bar_end, bars[105].bar_end, 105, 210, {
+      firstReenteredAt: bars[108].bar_end,
+      expandedUntil: bars[119].bar_end,
+    }),
+    nStructureBand('n-up-2', 'up', bars[22].bar_end, bars[107].bar_end, 105, 210, {
+      firstReenteredAt: bars[109].bar_end,
+      expandedUntil: bars[119].bar_end,
+    }),
+    nStructureBand('n-down-1', 'down', bars[30].bar_end, bars[110].bar_end, 105, 210, {
+      firstReenteredAt: bars[112].bar_end,
+      invalidatedAt: bars[117].bar_end,
+      expandedUntil: bars[117].bar_end,
+    }),
+  ]
+  await mockAlertMarkerSurface(page)
+  await mockWorkspace(page, { json: research() }, {
+    bars,
+    canonicalCoverage: { start: bars[0].bar_end, end: bars.at(-1).bar_end },
+    nStructureBands: bands,
+    nStructureBandRequests: requests,
+  })
+  await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=15m')
+
+  const overlay = page.getByRole('group', { name: 'Overlay' })
+  await expect(overlay.getByRole('button', { name: '苏冰', exact: true })).toHaveClass(/n-button--primary-type/)
+  await page.getByRole('button', { name: '图表设置', exact: true }).click()
+  let toggle = page.getByRole('switch', { name: 'N字区间', exact: true })
+  await expect(toggle).toBeDisabled()
+  await expect(page.getByText('已完成 N · Canonical 历史 · 仅真实主力 5m', { exact: true })).toBeVisible()
+  expect(requests).toHaveLength(0)
+
+  await page.getByRole('group', { name: '周期' }).getByRole('button', { name: '5m', exact: true }).click()
+  await page.getByRole('button', { name: '图表设置', exact: true }).click()
+  toggle = page.getByRole('switch', { name: 'N字区间', exact: true })
+  await expect(toggle).toBeEnabled()
+  await toggle.click()
+  const shell = page.getByTestId('kline-shell')
+  await expect(shell).toHaveAttribute('data-n-structure-band-count', '4')
+  await expect(shell).toHaveAttribute('data-rendered-n-structure-band-count', '4')
+  await expect(shell).toHaveAttribute('data-n-structure-overlap-group-count', '1')
+  await expect(shell).toHaveAttribute('data-n-structure-suppressed-count', '2')
+  await expect(shell).toHaveAttribute('data-n-structure-overlap-label', 'N↑ ×3')
+  await expect(shell).toHaveAttribute('data-n-structure-band-directions', 'up,down')
+  await expect(overlay.getByRole('button', { name: '苏冰', exact: true })).toHaveClass(/n-button--primary-type/)
+  const mainPane = await page.locator('.chart canvas').first().boundingBox()
+  expect(mainPane).not.toBeNull()
+  const overlapBadge = page.getByRole('button', { name: 'N↑ ×3', exact: true })
+  await overlapBadge.hover()
+  const tooltip = page.getByTestId('n-structure-band-tooltip')
+  await expect(tooltip).toContainText('同方向重叠 3 条 · 当前 1/3')
+  await overlapBadge.click()
+  await expect(shell).toHaveAttribute('data-n-structure-overlap-label', 'N↑ 2/3')
+  await expect(tooltip).toContainText('同方向重叠 3 条 · 当前 2/3')
+  await page.mouse.move(mainPane.x + mainPane.width / 2, mainPane.y + mainPane.height / 2)
+  await expect(shell).toHaveAttribute('data-n-structure-overlap-label', 'N↑ ×3')
+  await expect(tooltip).toContainText('N↓ 下跌')
+  await expect(tooltip).toContainText('AG2601')
+  await expect(tooltip).toContainText('N2 起点破坏')
+  await expect(tooltip).toContainText('历史确认 · 研究观察')
+
+  await page.getByRole('group', { name: '周期' }).getByRole('button', { name: '15m', exact: true }).click()
+  await expect(shell).toHaveAttribute('data-n-structure-band-count', '0')
+  await page.getByRole('button', { name: '图表设置', exact: true }).click()
+  await expect(page.getByRole('switch', { name: 'N字区间', exact: true })).toBeDisabled()
+
+  await page.getByRole('group', { name: '周期' }).getByRole('button', { name: '5m', exact: true }).click()
+  await expect(shell).toHaveAttribute('data-n-structure-band-count', '4')
+  await page.reload()
+  await expect(shell).toHaveAttribute('data-n-structure-band-count', '4')
+  await expect(shell).toHaveAttribute('data-rendered-n-structure-band-count', '4')
+  await expect(shell).toHaveAttribute('data-n-structure-overlap-group-count', '1')
+  expect(await page.evaluate(() => JSON.parse(
+    window.localStorage.getItem('guiyi.market.chart.preferences.v4'),
+  ).showNStructureBands)).toBe(true)
+  expect(requests.length).toBeGreaterThanOrEqual(3)
+})
+
+test('N structure band API failure leaves the K-line usable and reports only beside the setting', async ({ page }) => {
+  const bars = Array.from({ length: 120 }, (_, index) => bar(index))
+  await mockAlertMarkerSurface(page)
+  await mockWorkspace(page, { json: research() }, {
+    bars,
+    canonicalCoverage: { start: bars[0].bar_end, end: bars.at(-1).bar_end },
+    nStructureBandHttpStatus: 409,
+  })
+  await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=5m')
+  await page.getByRole('button', { name: '图表设置', exact: true }).click()
+  await page.getByRole('switch', { name: 'N字区间', exact: true }).click()
+
+  await expect(page.getByText('N字区间暂不可用', { exact: true })).toBeVisible()
+  await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-n-structure-band-count', '0')
+  await expect(page.locator('.chart canvas').first()).toBeVisible()
+  await expect(page.getByTestId('secondary-panel-label')).toHaveText('MACD')
+  await expect(page.getByTestId('secondary-panel-tabs')).toHaveCount(0)
 })
 
 test('JDJ Strategy uses current RB identity and clears stale markers across 1m 5m 1m', async ({ page }) => {
@@ -1032,8 +1454,8 @@ test('SuBing keeps the full Market display history and renders the requested pri
   await expect(page.getByTestId('product-check-background')).toContainText('日线')
   await expect(page.getByTestId('product-check-observation')).toContainText('苏冰')
   await expect(page.getByTestId('product-check-observation')).toContainText('5m · 当前不匹配')
-  await expect(page.getByTestId('product-check-participation')).toContainText('20日位置')
-  await expect(page.getByTestId('product-check-more')).not.toHaveAttribute('open')
+  await expect(page.getByTestId('product-check-background')).toContainText('20日位置')
+  await expect(page.getByTestId('product-check-data-details')).not.toHaveAttribute('open')
   await expect(page.getByTestId('subing-panel')).toHaveCount(1)
   await expect(page.getByRole('button', { name: '真实主力', exact: true })).toBeVisible()
   await expect(page.locator('.toolbar__subing-basis')).toHaveText('苏冰计算 AG2601')
@@ -1043,7 +1465,7 @@ test('SuBing keeps the full Market display history and renders the requested pri
   await expect(page.locator('body')).not.toContainText('ZERO_BAND')
 })
 
-test('current AlertEvent remains a formal event when no Execution Review state exists', async ({ page }) => {
+test('current AlertEvent remains an immutable formal event', async ({ page }) => {
   const currentEvent = {
     id: 202,
     rule_code: 'subing_entry_signal_v1',
@@ -1068,7 +1490,7 @@ test('current AlertEvent remains a formal event when no Execution Review state e
   await expect(formal).not.toContainText('研究确认')
 })
 
-test('current SuBing Formal Event action remains available in the single product panel', async ({ page }) => {
+test('current SuBing Formal Event has no retired workflow action', async ({ page }) => {
   const currentEvent = {
     id: 203,
     rule_code: 'subing_entry_signal_v1',
@@ -1082,17 +1504,14 @@ test('current SuBing Formal Event action remains available in the single product
     detected_at: '2026-01-12T02:25:01Z',
     notification_attempted_at: null,
   }
-  await mockWorkspace(page, { json: research() }, {
-    eventStates: [{ event_id: 203, state: 'pending_decision', decision_id: null, episode_id: null }],
-  })
+  await mockWorkspace(page, { json: research() })
   await mockAlertMarkerSurface(page, [currentEvent])
   await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=5m')
 
   const formal = page.getByTestId('subing-formal-event')
-  const action = formal.getByRole('button', { name: '记录执行' })
-  await expect(action).toBeVisible()
-  await action.click()
-  await expect(page).toHaveURL(/\/trade-records\?state=pending_decision&event_id=203/)
+  await expect(formal).toContainText('苏冰 · 卖出信号')
+  await expect(formal).toContainText('今日正式提醒记录')
+  await expect(formal.getByRole('button')).toHaveCount(0)
 })
 
 test('single SuBing panel selects one immutable Event and keeps the remaining backend order', async ({ page }) => {
@@ -1110,7 +1529,6 @@ test('single SuBing panel selects one immutable Event and keeps the remaining ba
   snapshot.companion.snapshot.bar_end = '2026-01-12T02:15:00Z'
   await mockWorkspace(page, { json: research() }, {
     subingResponse: snapshot,
-    eventStates: [{ event_id: 301, state: 'pending_decision', decision_id: null, episode_id: null }],
   })
   await mockAlertMarkerSurface(page, [selected, htdy, olderBuy, oldestSell], {
     rules: [
@@ -1142,17 +1560,17 @@ test('single SuBing panel selects one immutable Event and keeps the remaining ba
   await expect(panel.locator('.subing-panel__facts > div').filter({ hasText: 'Primary 确认' })).toContainText('01/12 10:30')
   await expect(panel.locator('.subing-panel__facts > div').filter({ hasText: 'Companion 确认' })).toContainText('01/12 10:15')
 
-  await formal.getByRole('button', { name: '记录执行' }).click()
-  await expect(page).toHaveURL(/\/trade-records\?state=pending_decision&event_id=301/)
+  await expect(formal.getByRole('button')).toHaveCount(0)
 })
 
 test('SuBing panel keeps Event and Alert loading independent from a ready snapshot', async ({ page }) => {
+  const alertScopeGate = deferred()
   await mockWorkspace(page, { json: research() }, {
     subingResponse: cloneSubingLifecycleCase('dualFormalLong5m'),
   })
   await mockAlertMarkerSurface(page, [], {
     currentEventsDelayMs: 900,
-    alertScopeDelayMs: 1_500,
+    alertScopeGate,
     rules: [{
       rule_code: 'subing_entry_signal_v1', display_name: '苏冰入场信号', kind: 'formal_signal',
       input_frequencies: ['5m', '15m'], enabled_for_product: false, enabled_frequencies: [],
@@ -1168,12 +1586,15 @@ test('SuBing panel keeps Event and Alert loading independent from a ready snapsh
   await expect(formal).not.toContainText('当前无可展示的苏冰正式事件记录')
   await expect(scope).toContainText('正在读取苏冰提醒 Scope')
   await expect(scope).not.toContainText('不可用')
-  await expect(scope.getByRole('switch')).toHaveCount(0)
+  await expect(scope.getByRole('switch')).toHaveCount(1)
+  await expect(scope.getByRole('switch')).toHaveClass(/n-switch--disabled/)
+  await expect(scope.getByRole('switch')).toHaveClass(/n-switch--loading/)
 
   await expect(formal.getByText('当前无可展示的苏冰正式事件记录', { exact: true })).toHaveCount(1)
   await expect(formal.getByTestId('product-today-alert-events')).toHaveCount(0)
+  alertScopeGate.resolve()
   await expect(scope.getByRole('switch')).toBeVisible()
-  await expect(scope.getByRole('switch')).toBeEnabled()
+  await expect(scope.getByRole('switch')).not.toHaveClass(/n-switch--disabled/)
 })
 
 test('SuBing panel keeps an unavailable Event source distinct from ready empty', async ({ page }) => {
@@ -1230,8 +1651,7 @@ test('SuBing lifecycle remains an explicitly research-only funnel beside formal 
   const observation = page.getByTestId('product-check-observation')
   await expect(observation).toContainText('5m · 买入信号')
   await expect(observation).toContainText('Research only')
-  await expect(page.getByTestId('product-check-now')).not.toContainText('研究确认')
-  await openMoreResearch(page)
+  await openDataDetails(page)
   const lifecycle = page.getByTestId('subing-lifecycle-panel')
   await expect(lifecycle).toContainText('Research only')
   await expect(lifecycle).toContainText('研究确认')
@@ -1258,7 +1678,7 @@ test('SuBing lifecycle shows a reducer-produced long momentum hold', async ({ pa
 
   await expect(page.getByTestId('product-check-observation')).toContainText('1/3')
   await expect(page.getByTestId('product-check-observation')).toContainText('当前不匹配')
-  await openMoreResearch(page)
+  await openDataDetails(page)
   await expect(page.getByTestId('subing-lifecycle-panel')).toContainText('1/3')
   await expect(page.locator('.subing-panel__factor').filter({ hasText: 'Primary Factor' })).toContainText('S5 2.0 bps/bar · MACD 金叉')
 })
@@ -1270,7 +1690,7 @@ test('retest confirmation renders its own zero then one bar progress', async ({ 
   })
   await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=5m')
 
-  await openMoreResearch(page)
+  await openDataDetails(page)
   await expect(page.getByTestId('subing-lifecycle-panel')).toContainText('0/3')
   await expect(page.getByTestId('product-check-observation')).toContainText('0/3')
   const overlay = page.getByRole('group', { name: 'Overlay' })
@@ -1290,7 +1710,7 @@ test('lifecycle markers keep Alert counts independent and clear stale research s
   await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=5m')
 
   const shell = page.getByTestId('kline-shell')
-  await openMoreResearch(page)
+  await openDataDetails(page)
   const setupPanel = page.getByTestId('subing-lifecycle-panel')
   await expect(setupPanel).toBeVisible()
   await expect(setupPanel).toContainText('准备中')
@@ -1328,7 +1748,7 @@ test('SuBing lifecycle renders risk and closed research stages without trade ins
       subingResponse: cloneSubingLifecycleCase(caseName),
     })
     await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=5m')
-    await openMoreResearch(page)
+    await openDataDetails(page)
     const lifecycle = page.getByTestId('subing-lifecycle-panel')
     await expect(lifecycle).toContainText(expected)
     await expect(page.locator('.subing-panel__factor').filter({ hasText: 'Primary Factor' })).toContainText(isRisk ? 'S5 -2.0 bps/bar' : 'S5 2.0 bps/bar')
@@ -1336,16 +1756,14 @@ test('SuBing lifecycle renders risk and closed research stages without trade ins
   }
 })
 
-test('SuBing daily lifecycle unavailability leaves the existing Factor view readable', async ({ page }) => {
-  await mockWorkspace(page, { json: research() }, {
-    subingResponse: cloneSubingLifecycleCase('dailyUnavailable'),
-  })
+test('SuBing public frequency keeps 1d in Daily Watch and does not request the public Panel', async ({ page }) => {
+  const subingRequests = []
+  await mockWorkspace(page, { json: research() }, { subingRequests })
   await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=1d')
 
-  await expect(page.getByTestId('product-check-observation')).toContainText('苏冰')
-  await openMoreResearch(page)
-  await expect(page.getByTestId('subing-lifecycle-panel')).toContainText('SUBING_LIFECYCLE_INTRADAY_ONLY')
-  await expect(page.getByText('Primary Factor', { exact: true })).toBeVisible()
+  await expect(page.getByText('苏冰公开当前观察仅支持 5m / 15m；D1 / 60m 请查看每日观察。', { exact: true })).toBeVisible()
+  await expect(page.getByTestId('subing-lifecycle-panel')).toHaveCount(0)
+  expect(subingRequests).toEqual([])
 })
 
 test('SuBing shows a same-boundary companion-only match without replacing the requested primary', async ({ page }) => {
@@ -1356,7 +1774,7 @@ test('SuBing shows a same-boundary companion-only match without replacing the re
   await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=5m')
 
   await expect(page.getByTestId('product-check-observation')).toContainText('15m · 买入信号')
-  await openMoreResearch(page)
+  await openDataDetails(page)
   await expect(page.getByRole('definition').filter({ hasText: '5m · 当前不匹配' })).toBeVisible()
   await expect(page.getByRole('definition').filter({ hasText: '15m · 买入信号' })).toBeVisible()
 })
@@ -1374,7 +1792,7 @@ test('SuBing same-boundary dual match keeps 5m primary and resolves one 15m buy 
   await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=5m')
 
   await expect(page.getByTestId('product-check-observation')).toContainText('15m · 买入信号 · 低周期确认')
-  await openMoreResearch(page)
+  await openDataDetails(page)
   await expect(page.getByText('Primary Signal')).toBeVisible()
   await expect(page.getByText('5m · 买入信号', { exact: true })).toBeVisible()
   await expect(page.getByText('Resolved Signal')).toBeVisible()
@@ -1392,7 +1810,7 @@ test('SuBing same-boundary 15m request keeps 15m as both primary and resolved si
   await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=15m')
 
   await expect(page.getByTestId('product-check-observation')).toContainText('15m · 卖出信号 · 低周期确认')
-  await openMoreResearch(page)
+  await openDataDetails(page)
   await expect(page.getByText('15m · 卖出信号', { exact: true })).toBeVisible()
   await expect(page.getByRole('definition').filter({ hasText: '15m · 卖出信号 · 低周期确认' })).toBeVisible()
 })
@@ -1405,7 +1823,7 @@ test('SuBing 15m non-match keeps the requested primary and creates no resolved s
   await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=15m')
 
   await expect(page.getByTestId('product-check-observation')).toContainText('15m · 当前不匹配')
-  await openMoreResearch(page)
+  await openDataDetails(page)
   await expect(page.getByRole('definition').filter({ hasText: '15m · 当前不匹配' })).toBeVisible()
   await expect(page.getByText('Resolved Signal')).toHaveCount(0)
 })
@@ -1420,7 +1838,7 @@ test('SuBing keeps Market display bars visible while the segment snapshot resolv
   await expect(page.getByText('120 bars', { exact: true })).toBeVisible()
 })
 
-test('SuBing keeps unsupported 30m explicit and does not request a snapshot', async ({ page }) => {
+test('SuBing public frequency keeps unsupported 30m explicit and does not request a snapshot', async ({ page }) => {
   const subingRequests = []
   await mockWorkspace(page, { json: research() }, {
     subingRequests,
@@ -1428,10 +1846,10 @@ test('SuBing keeps unsupported 30m explicit and does not request a snapshot', as
   })
   await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=30m')
 
-  await expect(page.getByText('苏冰当前周期不可用，仅支持 5m / 15m / 1d', { exact: true })).toBeVisible()
+  await expect(page.getByText('苏冰公开当前观察仅支持 5m / 15m；D1 / 60m 请查看每日观察。', { exact: true })).toBeVisible()
   await expect(page.getByText('120 bars', { exact: true })).toBeVisible()
   await expect(page.locator('.product-workspace__kline')).toHaveAttribute('data-visible-main-indicators', '')
-  await openMoreResearch(page)
+  await openDataDetails(page)
   await expect(page.getByText('可继续向左加载', { exact: true })).toBeVisible()
   expect(subingRequests).toEqual([])
 
@@ -1542,9 +1960,9 @@ test('shows one identity-matched research snapshot without crowding desktop Klin
   await expect(page.getByText('Price / Volume / OI', { exact: true })).toHaveCount(0)
   await expect(page.getByTestId('product-check-background')).toContainText('日线')
   await expect(page.getByTestId('product-check-background')).toContainText('上行')
-  await expect(page.getByTestId('product-check-participation')).toContainText('20日位置')
-  const more = await openMoreResearch(page)
-  await expect(more.getByText('Price / Volume / OI')).toBeVisible()
+  await expect(page.getByTestId('product-check-background')).toContainText('20日位置')
+  const details = await openDataDetails(page)
+  await expect(details.getByText('Price / Volume / OI')).toBeVisible()
   await expect(page.locator('.product-workspace__sidebar')).toBeVisible()
 })
 
@@ -1591,8 +2009,8 @@ test('Product Workspace stays inside desktop widths and exposes the Check drawer
   await page.getByRole('button', { name: '检查', exact: true }).click()
   const drawer = page.getByRole('dialog')
   await expect(drawer).toContainText('检查')
-  await expect(drawer.getByTestId('product-check-now')).toBeVisible()
-  await expect(drawer.getByTestId('product-check-more')).not.toHaveAttribute('open')
+  await expect(drawer.getByTestId('product-check-observation')).toBeVisible()
+  await expect(drawer.getByTestId('product-check-data-details')).not.toHaveAttribute('open')
 })
 
 test('keeps Kline usable when research is unavailable and does not invent missing OI', async ({ page }) => {
@@ -1600,8 +2018,8 @@ test('keeps Kline usable when research is unavailable and does not invent missin
   await page.setViewportSize({ width: 1280, height: 900 })
   await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=15m')
   await expect(page.getByText('120 bars')).toBeVisible()
-  const more = await openMoreResearch(page)
-  await expect(more.getByText('OI 暂无可用数据')).toBeVisible()
+  const details = await openDataDetails(page)
+  await expect(details.getByText('OI 暂无可用数据')).toBeVisible()
 })
 
 test('research endpoint failure leaves the Kline readable', async ({ page }) => {
@@ -1609,7 +2027,7 @@ test('research endpoint failure leaves the Kline readable', async ({ page }) => 
   await page.setViewportSize({ width: 1280, height: 900 })
   await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=15m')
   await expect(page.getByText('120 bars')).toBeVisible()
-  await expect(page.getByTestId('product-check-background')).toContainText('周线 / 日线数据不可用')
+  await expect(page.getByTestId('product-check-background')).toContainText('市场背景数据不可用')
 })
 
 test('HTDY stays opt-in and uses an in-chart legend without the redundant risk banner', async ({ page }) => {
