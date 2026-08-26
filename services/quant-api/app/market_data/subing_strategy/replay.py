@@ -24,6 +24,7 @@ from .entry_projection import (
 )
 from .policy import SubingStrategyPolicy
 from .machine import (
+    SubingStrategyMachineState,
     SubingStrategySourceIdentity,
     authoritative_subing_strategy_intervals,
     initial_subing_strategy_machine,
@@ -112,6 +113,70 @@ def replay_subing_strategy_segment(
     strategy_policy: SubingStrategyPolicy,
     terminal_bar_end: datetime | None,
 ) -> SubingStrategySegmentResult:
+    state, cancellations = _replay_subing_strategy_state(
+        symbol=symbol,
+        segment=segment,
+        bars_1m=bars_1m,
+        bars_5m=bars_5m,
+        bars_15m=bars_15m,
+        sessions=sessions,
+        direction_contexts=direction_contexts,
+        calibration=calibration,
+        lifecycle_policy=lifecycle_policy,
+        strategy_policy=strategy_policy,
+        terminal_bar_end=terminal_bar_end,
+    )
+    return subing_strategy_segment_result(
+        state,
+        canceled_pending=cancellations,
+    )
+
+
+def replay_subing_strategy_machine(
+    *,
+    symbol: str,
+    segment: ResolvedContractSegment,
+    bars_1m: tuple[CanonicalBar, ...],
+    bars_5m: tuple[CanonicalBar, ...],
+    bars_15m: tuple[CanonicalBar, ...],
+    sessions: tuple[SessionWindow, ...],
+    direction_contexts: Mapping[date, SubingStrategyDirectionContext],
+    calibration: SubingCalibration,
+    lifecycle_policy: SubingLifecyclePolicy,
+    strategy_policy: SubingStrategyPolicy,
+    terminal_bar_end: datetime | None,
+) -> SubingStrategyMachineState:
+    """Replay the authoritative prefix and retain the shared incremental state."""
+    state, _ = _replay_subing_strategy_state(
+        symbol=symbol,
+        segment=segment,
+        bars_1m=bars_1m,
+        bars_5m=bars_5m,
+        bars_15m=bars_15m,
+        sessions=sessions,
+        direction_contexts=direction_contexts,
+        calibration=calibration,
+        lifecycle_policy=lifecycle_policy,
+        strategy_policy=strategy_policy,
+        terminal_bar_end=terminal_bar_end,
+    )
+    return state
+
+
+def _replay_subing_strategy_state(
+    *,
+    symbol: str,
+    segment: ResolvedContractSegment,
+    bars_1m: tuple[CanonicalBar, ...],
+    bars_5m: tuple[CanonicalBar, ...],
+    bars_15m: tuple[CanonicalBar, ...],
+    sessions: tuple[SessionWindow, ...],
+    direction_contexts: Mapping[date, SubingStrategyDirectionContext],
+    calibration: SubingCalibration,
+    lifecycle_policy: SubingLifecyclePolicy,
+    strategy_policy: SubingStrategyPolicy,
+    terminal_bar_end: datetime | None,
+) -> tuple[SubingStrategyMachineState, tuple[SubingStrategyPendingCancellation, ...]]:
     _validate_segment_bars(segment, bars_1m, bars_5m, bars_15m)
     if terminal_bar_end is not None and (
         not bars_15m or terminal_bar_end != bars_15m[-1].bar_end
@@ -172,10 +237,7 @@ def replay_subing_strategy_segment(
                 source_identity=source_identity,
             )
             cancellations.extend(output.cancellations)
-        return subing_strategy_segment_result(
-            state,
-            canceled_pending=tuple(cancellations),
-        )
+        return state, tuple(cancellations)
     except ValueError:
         raise SubingStrategyReplayError() from None
 

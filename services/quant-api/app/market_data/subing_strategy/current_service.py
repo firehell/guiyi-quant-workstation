@@ -41,9 +41,18 @@ from .direction_context import (
     SubingStrategyDirectionContext,
 )
 from .engine import SubingStrategyPendingAction
-from .machine import SubingStrategyMachineError
+from .machine import (
+    SubingStrategyMachineError,
+    SubingStrategyMachineState,
+    SubingStrategySourceIdentity,
+)
 from .policy import SubingStrategyPolicy
-from .replay import SubingStrategyReplayError, replay_subing_strategy_segment
+from .replay import (
+    SubingStrategyReplayError,
+    replay_subing_strategy_machine,
+    replay_subing_strategy_segment,
+)
+from .stream_contracts import AuthoritativeSegmentTerminal
 
 
 _FREQUENCIES = (BarFrequency.M1, BarFrequency.M5, BarFrequency.M15)
@@ -173,6 +182,19 @@ class SubingStrategyCurrentProjection:
     direction_context: SubingStrategyDirectionContext
 
 
+@dataclass(frozen=True, slots=True)
+class _CurrentInputs:
+    segment: ResolvedContractSegment
+    source_mode: Literal["canonical", "canonical_live"]
+    cutoff: datetime
+    direction_context: SubingStrategyDirectionContext
+    bars_1m: tuple[CanonicalBar, ...]
+    bars_5m: tuple[CanonicalBar, ...]
+    bars_15m: tuple[CanonicalBar, ...]
+    sessions: tuple[SessionWindow, ...]
+    direction_contexts: Mapping[date, SubingStrategyDirectionContext]
+
+
 class SubingStrategyCurrentProjectionService:
     def __init__(
         self,
@@ -231,6 +253,281 @@ class SubingStrategyCurrentProjectionService:
         if request.symbol not in self._products:
             raise SubingStrategyCurrentActiveProductError()
 
+        inputs = self._prepare_current(request, now)
+        try:
+            replayed = replay_subing_strategy_segment(
+                symbol=request.symbol,
+                segment=inputs.segment,
+                bars_1m=inputs.bars_1m,
+                bars_5m=inputs.bars_5m,
+                bars_15m=inputs.bars_15m,
+                sessions=inputs.sessions,
+                direction_contexts=inputs.direction_contexts,
+                calibration=self._calibration,
+                lifecycle_policy=self._lifecycle_policy,
+                strategy_policy=self._strategy_policy,
+                terminal_bar_end=None,
+            )
+        except (
+            SubingStrategyReplayError,
+            SubingStrategyMachineError,
+            SubingStrategyContextIdentityError,
+            ValueError,
+        ):
+            raise SubingStrategyCurrentSourceIdentityError() from None
+        current_episode = next(
+            (
+                episode
+                for episode in reversed(replayed.episodes)
+                if episode.exit_action is None
+            ),
+            None,
+        )
+        latest_completed = next(
+            (
+                episode
+                for episode in reversed(replayed.episodes)
+                if episode.exit_action is not None
+            ),
+            None,
+        )
+        return SubingStrategyCurrentProjection(
+            policy=self._strategy_policy,
+            request=request,
+            contract=inputs.segment.contract,
+            segment_start_trading_day=inputs.segment.start_trading_day,
+            source_mode=inputs.source_mode,
+            cutoff=inputs.cutoff,
+            position_state=replayed.final_position,
+            pending_action=replayed.pending_action,
+            current_episode=current_episode,
+            latest_completed_episode=latest_completed,
+            direction_context=inputs.direction_context,
+        )
+
+    def restore_machine(
+        self,
+        *,
+        symbol: str,
+        now: datetime,
+    ) -> SubingStrategyMachineState:
+        request = SubingStrategyCurrentRequest(
+            SeriesKind.ACTUAL_DOMINANT,
+            symbol,
+            BarFrequency.M15,
+        )
+        if request.symbol not in self._products:
+            raise SubingStrategyCurrentActiveProductError()
+        if (
+            not isinstance(now, datetime)
+            or now.tzinfo is None
+            or now.utcoffset() is None
+        ):
+            raise SubingStrategyCurrentSourceIdentityError()
+        inputs = self._prepare_current(request, now)
+        try:
+            return replay_subing_strategy_machine(
+                symbol=request.symbol,
+                segment=inputs.segment,
+                bars_1m=inputs.bars_1m,
+                bars_5m=inputs.bars_5m,
+                bars_15m=inputs.bars_15m,
+                sessions=inputs.sessions,
+                direction_contexts=inputs.direction_contexts,
+                calibration=self._calibration,
+                lifecycle_policy=self._lifecycle_policy,
+                strategy_policy=self._strategy_policy,
+                terminal_bar_end=None,
+            )
+        except (
+            SubingStrategyReplayError,
+            SubingStrategyMachineError,
+            SubingStrategyContextIdentityError,
+            ValueError,
+        ):
+            raise SubingStrategyCurrentSourceIdentityError() from None
+
+    def completed_live_after(
+        self,
+        *,
+        symbol: str,
+        source_identity: SubingStrategySourceIdentity,
+        after_1m: datetime | None,
+        after_5m: datetime | None,
+        after_15m: datetime | None,
+        through: datetime,
+    ) -> Mapping[BarFrequency, tuple[CanonicalBar, ...]]:
+        if (
+            symbol not in self._products
+            or not isinstance(source_identity, SubingStrategySourceIdentity)
+            or source_identity.symbol != symbol
+            or not isinstance(through, datetime)
+            or through.tzinfo is None
+            or through.utcoffset() is None
+        ):
+            raise SubingStrategyCurrentSourceIdentityError()
+        target_day, _ = self._resolve_days(through)
+        segment = self._resolve_segment(symbol, target_day)
+        if (
+            segment.contract != source_identity.contract
+            or segment.start_trading_day != source_identity.segment_start_trading_day
+        ):
+            raise SubingStrategyCurrentSourceIdentityError()
+        cutoffs = {
+            BarFrequency.M1: after_1m,
+            BarFrequency.M5: after_5m,
+            BarFrequency.M15: after_15m,
+        }
+        if any(
+            after is not None
+            and (
+                not isinstance(after, datetime)
+                or after.tzinfo is None
+                or after.utcoffset() is None
+                or after > through
+            )
+            for after in cutoffs.values()
+        ):
+            raise SubingStrategyCurrentSourceIdentityError()
+        completed: dict[BarFrequency, tuple[CanonicalBar, ...]] = {}
+        for frequency, after in cutoffs.items():
+            identity = SeriesPageQuery(
+                SeriesKind.ACTUAL_DOMINANT,
+                symbol,
+                frequency,
+            )
+            try:
+                state = self._market_read.state(identity, through)
+                self._validate_live_state(
+                    state,
+                    identity=identity,
+                    contract=segment.contract,
+                    target_day=target_day,
+                )
+                bars = (
+                    self._market_read.live_snapshot(identity, after, through)
+                    if state.live_available
+                    else ()
+                )
+            except SubingStrategyCurrentSourceIdentityError:
+                raise
+            except Exception as exc:  # noqa: BLE001 - typed read boundary
+                raise SubingStrategyCurrentSourceUnavailableError() from exc
+            if any(
+                type(bar) is not CanonicalBar
+                or bar.trading_day != target_day
+                or bar.bar_end > through
+                or (after is not None and bar.bar_end <= after)
+                for bar in bars
+            ):
+                raise SubingStrategyCurrentSourceIdentityError()
+            completed[frequency] = tuple(bars)
+        return completed
+
+    def session_windows(
+        self,
+        *,
+        symbol: str,
+        trading_day: date,
+        source_identity: SubingStrategySourceIdentity,
+    ) -> tuple[SessionWindow, ...]:
+        if (
+            symbol not in self._products
+            or type(trading_day) is not date
+            or not isinstance(source_identity, SubingStrategySourceIdentity)
+            or source_identity.symbol != symbol
+        ):
+            raise SubingStrategyCurrentSourceIdentityError()
+        segment = self._resolve_segment(symbol, trading_day)
+        if (
+            segment.contract != source_identity.contract
+            or segment.start_trading_day != source_identity.segment_start_trading_day
+        ):
+            raise SubingStrategyCurrentSourceIdentityError()
+        try:
+            sessions = self._segment_loader.sessions(
+                symbol=symbol,
+                trading_days=(trading_day,),
+            )
+        except ActualDominantResearchSegmentIdentityError:
+            raise SubingStrategyCurrentSourceIdentityError() from None
+        except MarketDataError:
+            raise SubingStrategyCurrentSourceUnavailableError() from None
+        windows = sessions.get(trading_day)
+        if (
+            set(sessions) != {trading_day}
+            or type(windows) is not tuple
+            or not windows
+            or any(type(window) is not SessionWindow for window in windows)
+        ):
+            raise SubingStrategyCurrentSourceIdentityError()
+        return windows
+
+    def authoritative_terminal(
+        self,
+        *,
+        symbol: str,
+        trading_day: date,
+        source_identity: SubingStrategySourceIdentity,
+    ) -> AuthoritativeSegmentTerminal | None:
+        if (
+            symbol not in self._products
+            or type(trading_day) is not date
+            or not isinstance(source_identity, SubingStrategySourceIdentity)
+            or source_identity.symbol != symbol
+        ):
+            raise SubingStrategyCurrentSourceIdentityError()
+        current = self._resolve_segment(symbol, trading_day)
+        if (
+            current.contract == source_identity.contract
+            and current.start_trading_day == source_identity.segment_start_trading_day
+        ):
+            return None
+        if current.start_trading_day <= source_identity.segment_start_trading_day:
+            raise SubingStrategyCurrentSourceIdentityError()
+        try:
+            loaded = self._segment_loader.load(
+                symbol=symbol,
+                frequencies=(BarFrequency.M15,),
+                since=source_identity.segment_start_trading_day,
+                through=trading_day,
+            )
+        except ActualDominantResearchSegmentIdentityError:
+            raise SubingStrategyCurrentSourceIdentityError() from None
+        except MarketDataError:
+            raise SubingStrategyCurrentSourceUnavailableError() from None
+        previous = tuple(
+            segment
+            for segment in loaded.segments
+            if segment.contract == source_identity.contract
+            and segment.start_trading_day == source_identity.segment_start_trading_day
+            and segment.end_trading_day < current.start_trading_day
+        )
+        result = loaded.results.get(BarFrequency.M15)
+        if len(previous) != 1 or result is None:
+            raise SubingStrategyCurrentSourceIdentityError()
+        old_segment = previous[0]
+        bars = tuple(
+            bar
+            for bar in result.bars
+            if old_segment.start_trading_day
+            <= bar.trading_day
+            <= old_segment.end_trading_day
+        )
+        if not bars or bars[-1].trading_day != old_segment.end_trading_day:
+            raise SubingStrategyCurrentSourceIdentityError()
+        return AuthoritativeSegmentTerminal(
+            symbol=symbol,
+            contract=source_identity.contract,
+            segment_start_trading_day=source_identity.segment_start_trading_day,
+            terminal_bar=bars[-1],
+        )
+
+    def _prepare_current(
+        self,
+        request: SubingStrategyCurrentRequest,
+        now: datetime,
+    ) -> _CurrentInputs:
         target_day, source_day = self._resolve_days(now)
         segment = self._resolve_segment(request.symbol, target_day)
         source_segment = self._resolve_segment(request.symbol, source_day)
@@ -251,9 +548,7 @@ class SubingStrategyCurrentProjectionService:
             raise SubingStrategyCurrentSourceUnavailableError()
         cutoff = bars_15m[-1].bar_end
         replay_bars = {
-            frequency: tuple(
-                bar for bar in merged[frequency] if bar.bar_end <= cutoff
-            )
+            frequency: tuple(bar for bar in merged[frequency] if bar.bar_end <= cutoff)
             for frequency in _FREQUENCIES
         }
         source_mode: Literal["canonical", "canonical_live"] = (
@@ -286,48 +581,16 @@ class SubingStrategyCurrentProjectionService:
             dict.fromkeys(bar.trading_day for bar in replay_bars[BarFrequency.M15])
         )
         sessions = self._sessions(request.symbol, replay_days)
-        try:
-            replayed = replay_subing_strategy_segment(
-                symbol=request.symbol,
-                segment=segment,
-                bars_1m=replay_bars[BarFrequency.M1],
-                bars_5m=replay_bars[BarFrequency.M5],
-                bars_15m=replay_bars[BarFrequency.M15],
-                sessions=sessions,
-                direction_contexts=contexts,
-                calibration=self._calibration,
-                lifecycle_policy=self._lifecycle_policy,
-                strategy_policy=self._strategy_policy,
-                terminal_bar_end=None,
-            )
-        except (
-            SubingStrategyReplayError,
-            SubingStrategyMachineError,
-            SubingStrategyContextIdentityError,
-            ValueError,
-        ):
-            raise SubingStrategyCurrentSourceIdentityError() from None
-
-        current_episode = next(
-            (episode for episode in reversed(replayed.episodes) if episode.exit_action is None),
-            None,
-        )
-        latest_completed = next(
-            (episode for episode in reversed(replayed.episodes) if episode.exit_action is not None),
-            None,
-        )
-        return SubingStrategyCurrentProjection(
-            policy=self._strategy_policy,
-            request=request,
-            contract=segment.contract,
-            segment_start_trading_day=segment.start_trading_day,
+        return _CurrentInputs(
+            segment=segment,
             source_mode=source_mode,
             cutoff=cutoff,
-            position_state=replayed.final_position,
-            pending_action=replayed.pending_action,
-            current_episode=current_episode,
-            latest_completed_episode=latest_completed,
             direction_context=current_context,
+            bars_1m=replay_bars[BarFrequency.M1],
+            bars_5m=replay_bars[BarFrequency.M5],
+            bars_15m=replay_bars[BarFrequency.M15],
+            sessions=sessions,
+            direction_contexts=contexts,
         )
 
     def _resolve_days(self, now: datetime) -> tuple[date, date]:
@@ -340,7 +603,9 @@ class SubingStrategyCurrentProjectionService:
             raise SubingStrategyCurrentSourceIdentityError()
         return target, source
 
-    def _resolve_segment(self, symbol: str, target_day: date) -> ResolvedContractSegment:
+    def _resolve_segment(
+        self, symbol: str, target_day: date
+    ) -> ResolvedContractSegment:
         try:
             summary = self._current_segment(symbol, target_day)
             contract = normalize_contract_for_symbol(symbol, summary.contract)
@@ -396,8 +661,7 @@ class SubingStrategyCurrentProjectionService:
         if any(
             not bars
             or any(
-                bar.trading_day < segment.start_trading_day
-                or bar.trading_day > through
+                bar.trading_day < segment.start_trading_day or bar.trading_day > through
                 for bar in bars
             )
             for bars in canonical.values()
@@ -563,8 +827,7 @@ class SubingStrategyCurrentProjectionService:
         except MarketDataError:
             raise SubingStrategyCurrentSourceUnavailableError() from None
         if set(by_day) != set(trading_days) or any(
-            not windows
-            or any(type(window) is not SessionWindow for window in windows)
+            not windows or any(type(window) is not SessionWindow for window in windows)
             for windows in by_day.values()
         ):
             raise SubingStrategyCurrentSourceIdentityError()
@@ -599,7 +862,10 @@ def _context_from_item(
         )
         or len(contracts) > 1
         or (contracts and contracts != {expected_source_contract})
-        or (item.decision is not SubingDailyWatchDecision.UNAVAILABLE and len(facts) != 2)
+        or (
+            item.decision is not SubingDailyWatchDecision.UNAVAILABLE
+            and len(facts) != 2
+        )
     ):
         raise SubingStrategyCurrentSourceIdentityError()
     return SubingStrategyDirectionContext(

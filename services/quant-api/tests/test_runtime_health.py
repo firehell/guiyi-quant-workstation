@@ -16,16 +16,24 @@ from app.models import Exchange, Instrument, TradingCalendar
 from app.services.runtime_health import build_runtime_health
 
 
-def test_runtime_health_endpoint_exposes_market_runtime_components(monkeypatch, tmp_path) -> None:
+def test_runtime_health_endpoint_exposes_market_runtime_components(
+    monkeypatch, tmp_path
+) -> None:
     TestingSessionLocal = _session_factory()
 
     def override_get_db():
         with TestingSessionLocal() as session:
             yield session
 
-    monkeypatch.setattr("app.services.runtime_health.get_redis_connection", lambda: FakeRedis())
-    monkeypatch.setattr("app.services.runtime_health._market_runtime_activation_enabled", lambda: False)
-    monkeypatch.setattr("app.services.runtime_health._alert_runtime_activation_enabled", lambda: False)
+    monkeypatch.setattr(
+        "app.services.runtime_health.get_redis_connection", lambda: FakeRedis()
+    )
+    monkeypatch.setattr(
+        "app.services.runtime_health._market_runtime_activation_enabled", lambda: False
+    )
+    monkeypatch.setattr(
+        "app.services.runtime_health._alert_runtime_activation_enabled", lambda: False
+    )
     monkeypatch.setattr(
         "app.services.runtime_health.notification_transport_status_from_env",
         lambda: {
@@ -52,7 +60,13 @@ def test_runtime_health_endpoint_exposes_market_runtime_components(monkeypatch, 
     assert payload["would_start_services"] is False
     assert payload["would_enqueue_jobs"] is False
     assert payload["would_send_notifications"] is False
-    assert set(payload["components"]) == {"db", "redis", "live_market", "after_market", "alert"}
+    assert set(payload["components"]) == {
+        "db",
+        "redis",
+        "live_market",
+        "after_market",
+        "alert",
+    }
     assert payload["components"]["live_market"] == {
         "status": "disabled",
         "configured_enabled": False,
@@ -101,11 +115,22 @@ def test_runtime_health_endpoint_exposes_market_runtime_components(monkeypatch, 
         "notification_acknowledged_at": None,
         "notification_error_type": None,
         "consecutive_notification_failures": 0,
+        "strategy_state": "warming",
+        "strategy_started_at": None,
+        "strategy_ready_at": None,
+        "strategy_product_count": 0,
+        "strategy_ready_product_count": 0,
+        "strategy_unavailable_product_count": 0,
+        "strategy_unavailable_symbols": [],
+        "last_strategy_action_at": None,
+        "last_strategy_restore_at": None,
         "error_type": None,
     }
 
 
-def test_alert_health_activation_and_transport_fail_closed(monkeypatch, tmp_path) -> None:
+def test_alert_health_activation_and_transport_fail_closed(
+    monkeypatch, tmp_path
+) -> None:
     monkeypatch.setattr("app.services.runtime_health.PROJECT_ROOT", tmp_path)
     monkeypatch.setattr(
         "app.services.runtime_health.notification_transport_status_from_env",
@@ -227,6 +252,15 @@ def test_alert_health_missing_stale_and_fresh_heartbeat(monkeypatch, tmp_path) -
         "notification_acknowledged_at": None,
         "notification_error_type": None,
         "consecutive_notification_failures": 0,
+        "strategy_state": "warming",
+        "strategy_started_at": None,
+        "strategy_ready_at": None,
+        "strategy_product_count": 0,
+        "strategy_ready_product_count": 0,
+        "strategy_unavailable_product_count": 0,
+        "strategy_unavailable_symbols": [],
+        "last_strategy_action_at": None,
+        "last_strategy_restore_at": None,
         "error_type": None,
     }
     rendered = json.dumps(fresh, ensure_ascii=False)
@@ -327,6 +361,64 @@ def test_alert_health_accepts_v2_heartbeat_counts() -> None:
     assert alert["scope_product_count"] == 1
 
 
+def test_alert_health_exposes_bounded_strategy_v3_observation() -> None:
+    now = datetime(2026, 8, 14, 2, 45, tzinfo=UTC)
+    heartbeat = {
+        "generated_at": now.isoformat(),
+        "available": True,
+        "enabled_rule_count": 2,
+        "scope_product_count": 1,
+    }
+    runtime_status = {
+        "schema_version": 3,
+        "last_processed_bar_at": None,
+        "last_processing_success_at": None,
+        "last_processing_failure_at": None,
+        "processing_error_type": None,
+        "last_event_at": None,
+        "last_transport_attempt_at": None,
+        "last_provider_accepted_at": None,
+        "last_notification_failure_at": None,
+        "notification_acknowledged_at": None,
+        "notification_error_type": None,
+        "consecutive_notification_failures": 0,
+        "strategy_state": "degraded",
+        "strategy_started_at": (now - timedelta(seconds=4)).isoformat(),
+        "strategy_ready_at": (now - timedelta(seconds=1)).isoformat(),
+        "strategy_product_count": 2,
+        "strategy_ready_product_count": 1,
+        "strategy_unavailable_product_count": 1,
+        "strategy_unavailable_symbols": ["jm"],
+        "last_strategy_action_at": None,
+        "last_strategy_restore_at": (now - timedelta(seconds=1)).isoformat(),
+    }
+    TestingSessionLocal = _session_factory()
+
+    with TestingSessionLocal() as session:
+        health = build_runtime_health(
+            session,
+            redis_factory=lambda: FakeRedis(
+                values={
+                    "alert:heartbeat": json.dumps(heartbeat),
+                    "alert:runtime-status": json.dumps(runtime_status),
+                }
+            ),
+            now=now,
+            live_runtime_enabled=False,
+            alert_runtime_enabled=True,
+            notification_transport_configured=True,
+            after_market_status_path=None,
+        )
+
+    alert = health["components"]["alert"]
+    assert alert["status"] == "degraded"
+    assert alert["strategy_state"] == "degraded"
+    assert alert["strategy_product_count"] == 2
+    assert alert["strategy_ready_product_count"] == 1
+    assert alert["strategy_unavailable_product_count"] == 1
+    assert alert["strategy_unavailable_symbols"] == ["jm"]
+
+
 def test_alert_health_derives_latest_processing_and_notification_outcomes() -> None:
     now = datetime(2026, 8, 14, 2, 45, tzinfo=UTC)
     heartbeat = json.dumps(
@@ -408,10 +500,7 @@ def test_alert_health_derives_latest_processing_and_notification_outcomes() -> N
     assert failed_alert["processing_state"] == "failed"
     assert failed_alert["notification_state"] == "failed"
     assert failed_alert["processing_error_type"] == "processing_failed"
-    assert (
-        failed_alert["notification_error_type"]
-        == "notification_transport_failed"
-    )
+    assert failed_alert["notification_error_type"] == "notification_transport_failed"
     assert failed_alert["consecutive_notification_failures"] == 2
     assert "provider_reference" not in json.dumps(failed_alert)
 
@@ -494,13 +583,9 @@ def test_alert_health_new_failure_after_acknowledgement_is_failed_again() -> Non
                 "processing_error_type": None,
                 "last_event_at": latest_failure_at.isoformat(),
                 "last_transport_attempt_at": latest_failure_at.isoformat(),
-                "last_provider_accepted_at": (
-                    now - timedelta(minutes=3)
-                ).isoformat(),
+                "last_provider_accepted_at": (now - timedelta(minutes=3)).isoformat(),
                 "last_notification_failure_at": latest_failure_at.isoformat(),
-                "notification_acknowledged_at": (
-                    prior_acknowledgement_at.isoformat()
-                ),
+                "notification_acknowledged_at": (prior_acknowledgement_at.isoformat()),
                 "notification_error_type": "notification_transport_failed",
                 "consecutive_notification_failures": 1,
             }
@@ -549,9 +634,7 @@ def test_alert_health_distinguishes_missing_from_invalid_runtime_status(
     with TestingSessionLocal() as session:
         missing = build_runtime_health(
             session,
-            redis_factory=lambda: FakeRedis(
-                values={"alert:heartbeat": heartbeat}
-            ),
+            redis_factory=lambda: FakeRedis(values={"alert:heartbeat": heartbeat}),
             now=now,
             live_runtime_enabled=False,
             alert_runtime_enabled=True,
@@ -645,13 +728,15 @@ def test_alert_health_structural_transport_is_ready_from_process_environment(
     calls: list[str] = []
     monkeypatch.setattr(
         "app.services.runtime_health.notification_transport_status_from_env",
-        lambda: calls.append("structural-check")
-        or {
-            "transport": "pushplus",
-            "configured": True,
-            "audience_count": 2,
-            "would_send": False,
-        },
+        lambda: (
+            calls.append("structural-check")
+            or {
+                "transport": "pushplus",
+                "configured": True,
+                "audience_count": 2,
+                "would_send": False,
+            }
+        ),
     )
     TestingSessionLocal = _session_factory()
 
@@ -686,7 +771,9 @@ def test_alert_health_structural_transport_is_ready_from_process_environment(
     }
 
 
-def test_alert_health_rejects_invalid_transport_config_path(monkeypatch, tmp_path) -> None:
+def test_alert_health_rejects_invalid_transport_config_path(
+    monkeypatch, tmp_path
+) -> None:
     monkeypatch.setattr("app.services.runtime_health.PROJECT_ROOT", tmp_path)
     marker = tmp_path / ".run" / "alert-runtime-enabled"
     marker.parent.mkdir()
@@ -759,7 +846,9 @@ def test_runtime_health_marks_fresh_live_heartbeat_ok() -> None:
     assert live["phase_counts"] == {"trading": 4}
 
 
-def test_runtime_health_missing_or_stale_live_heartbeat_only_degrades_when_enabled() -> None:
+def test_runtime_health_missing_or_stale_live_heartbeat_only_degrades_when_enabled() -> (
+    None
+):
     now = datetime(2026, 8, 10, 1, 10, tzinfo=UTC)
     TestingSessionLocal = _session_factory()
     with TestingSessionLocal() as session:
@@ -805,7 +894,9 @@ def test_runtime_health_missing_or_stale_live_heartbeat_only_degrades_when_enabl
     assert stale["components"]["live_market"]["error_type"] == "live_heartbeat_stale"
 
 
-def test_runtime_health_is_disabled_before_local_market_runtime_activation(monkeypatch, tmp_path) -> None:
+def test_runtime_health_is_disabled_before_local_market_runtime_activation(
+    monkeypatch, tmp_path
+) -> None:
     """The API must remain fail-closed without the fixed local activation marker."""
     monkeypatch.setattr("app.services.runtime_health.PROJECT_ROOT", tmp_path)
     # An env var in the API process cannot stand in for the explicit local activation.
@@ -824,7 +915,9 @@ def test_runtime_health_is_disabled_before_local_market_runtime_activation(monke
     assert live["status"] == "disabled"
 
 
-def test_runtime_health_uses_local_activation_marker_not_process_environment(monkeypatch, tmp_path) -> None:
+def test_runtime_health_uses_local_activation_marker_not_process_environment(
+    monkeypatch, tmp_path
+) -> None:
     """A marker enables missing-heartbeat degradation; another launchd job's env cannot."""
     monkeypatch.setattr("app.services.runtime_health.PROJECT_ROOT", tmp_path)
     monkeypatch.setenv("GUIYI_MARKET_RUNTIME_ENABLED", "0")
@@ -1000,7 +1093,9 @@ def test_after_market_before_cutoff_is_pending_and_excludes_today(
     monkeypatch, tmp_path
 ) -> None:
     monkeypatch.setattr(
-        "app.services.runtime_health.load_operational_products", lambda: ("jm",), raising=False
+        "app.services.runtime_health.load_operational_products",
+        lambda: ("jm",),
+        raising=False,
     )
     TestingSessionLocal = _session_factory()
     with TestingSessionLocal() as session:
@@ -1078,7 +1173,9 @@ def test_after_market_missing_at_cutoff_is_degraded_missed(
     monkeypatch, tmp_path
 ) -> None:
     monkeypatch.setattr(
-        "app.services.runtime_health.load_operational_products", lambda: ("jm",), raising=False
+        "app.services.runtime_health.load_operational_products",
+        lambda: ("jm",),
+        raising=False,
     )
     TestingSessionLocal = _session_factory()
     with TestingSessionLocal() as session:
@@ -1110,7 +1207,9 @@ def test_after_market_weekend_missing_status_remains_pending(
     monkeypatch, tmp_path
 ) -> None:
     monkeypatch.setattr(
-        "app.services.runtime_health.load_operational_products", lambda: ("jm",), raising=False
+        "app.services.runtime_health.load_operational_products",
+        lambda: ("jm",),
+        raising=False,
     )
     TestingSessionLocal = _session_factory()
     with TestingSessionLocal() as session:
@@ -1143,7 +1242,9 @@ def test_after_market_weekend_missing_status_remains_pending(
 
 def test_after_market_stale_success_is_degraded_missed(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(
-        "app.services.runtime_health.load_operational_products", lambda: ("jm",), raising=False
+        "app.services.runtime_health.load_operational_products",
+        lambda: ("jm",),
+        raising=False,
     )
     status_path = tmp_path / "after-market-status.json"
     status_path.write_text(
@@ -1231,7 +1332,9 @@ def test_after_market_current_run_age_is_fail_closed(
     error_type: str | None,
 ) -> None:
     monkeypatch.setattr(
-        "app.services.runtime_health.load_operational_products", lambda: ("jm",), raising=False
+        "app.services.runtime_health.load_operational_products",
+        lambda: ("jm",),
+        raising=False,
     )
     status_path = tmp_path / "after-market-status.json"
     status_path.write_text(
@@ -1337,7 +1440,9 @@ def test_after_market_expected_day_unavailable_or_non_unique_fails_closed(
 ) -> None:
     products = ("jm", "rb") if not missing_product else ("jm", "missing")
     monkeypatch.setattr(
-        "app.services.runtime_health.load_operational_products", lambda: products, raising=False
+        "app.services.runtime_health.load_operational_products",
+        lambda: products,
+        raising=False,
     )
     TestingSessionLocal = _session_factory()
     with TestingSessionLocal() as session:
@@ -1440,7 +1545,9 @@ def test_after_market_present_invalid_last_run_with_valid_success_fails_closed(
     assert after_market["error_type"] == "after_market_status_invalid"
 
 
-def test_after_market_future_finalized_success_fails_closed(monkeypatch, tmp_path) -> None:
+def test_after_market_future_finalized_success_fails_closed(
+    monkeypatch, tmp_path
+) -> None:
     monkeypatch.setattr(
         "app.services.runtime_health.load_operational_products", lambda: ("jm",)
     )
@@ -1534,7 +1641,9 @@ def test_after_market_finalized_chronology_fails_closed(
     assert after_market["error_type"] == "after_market_status_invalid"
 
 
-def test_runtime_health_rejects_invalid_utf8_live_heartbeat_without_leaking_bytes() -> None:
+def test_runtime_health_rejects_invalid_utf8_live_heartbeat_without_leaking_bytes() -> (
+    None
+):
     TestingSessionLocal = _session_factory()
     with TestingSessionLocal() as session:
         payload = build_runtime_health(
@@ -1576,7 +1685,10 @@ def test_runtime_health_surfaces_live_dominant_mismatch(monkeypatch, tmp_path) -
                     "provider_token": "must-not-leak",
                 },
                 "last_successful_trading_day": "2026-08-09",
-                "last_failure": {"trading_day": "2026-08-10", "error_code": "LIVE_DOMINANT_MISMATCH"},
+                "last_failure": {
+                    "trading_day": "2026-08-10",
+                    "error_code": "LIVE_DOMINANT_MISMATCH",
+                },
             }
         ),
         encoding="utf-8",
@@ -1623,7 +1735,9 @@ def test_runtime_health_returns_failed_payload_when_redis_unavailable() -> None:
     with TestingSessionLocal() as session:
         payload = build_runtime_health(
             session,
-            redis_factory=lambda: FakeRedis(exc=ConnectionError("redis password should-not-leak")),
+            redis_factory=lambda: FakeRedis(
+                exc=ConnectionError("redis password should-not-leak")
+            ),
             now=datetime(2026, 7, 9, 12, 0, tzinfo=UTC),
             alert_runtime_enabled=False,
             notification_transport_configured=False,
@@ -1645,7 +1759,9 @@ def test_runtime_health_never_exposes_arbitrary_exception_messages() -> None:
         payload = build_runtime_health(
             session,
             redis_factory=lambda: FakeRedis(
-                exc=ConnectionError("127.0.0.1 /private/runtime/catalog.db select internal_table")
+                exc=ConnectionError(
+                    "127.0.0.1 /private/runtime/catalog.db select internal_table"
+                )
             ),
             after_market_status_path=None,
         )
@@ -1655,7 +1771,9 @@ def test_runtime_health_never_exposes_arbitrary_exception_messages() -> None:
 
 
 class FakeRedis:
-    def __init__(self, exc: Exception | None = None, values: dict[str, object] | None = None) -> None:
+    def __init__(
+        self, exc: Exception | None = None, values: dict[str, object] | None = None
+    ) -> None:
         self.exc = exc
         self.values = values or {}
 
@@ -1747,4 +1865,14 @@ def _contains_no_secret_words(payload: dict) -> bool:
     if isinstance(alert, dict):
         alert.pop("notification_transport_configured", None)
     text = json.dumps(public, ensure_ascii=False, default=str).lower()
-    return not any(secret in text for secret in ("webhook", "token", "password", "cookie", "secret", "must-not-leak"))
+    return not any(
+        secret in text
+        for secret in (
+            "webhook",
+            "token",
+            "password",
+            "cookie",
+            "secret",
+            "must-not-leak",
+        )
+    )

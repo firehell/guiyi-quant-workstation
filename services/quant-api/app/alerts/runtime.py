@@ -21,9 +21,18 @@ from app.alerts.notification import (
     AlertNotificationSender,
     ProviderAcceptance,
 )
-from app.alerts.registry import HTDY_RULE, SUBING_RULE, get_alert_rule_definition
+from app.alerts.registry import (
+    HTDY_RULE,
+    SUBING_RULE,
+    alert_rule_definitions,
+    get_alert_rule_definition,
+)
 from app.alerts.service import AlertEventCreate, AlertScopeError, AlertService
-from app.market_data.aggregation import SessionWindow, bucket_window_for_bar
+from app.alerts.strategy_payload import serialize_subing_strategy_payload
+from app.alerts.subing_strategy_runtime import (
+    SubingStrategyRuntimeEvaluator,
+    SubingStrategyRuntimeResult,
+)
 from app.market_data.domain import (
     BarFrequency,
     CanonicalBar,
@@ -32,21 +41,14 @@ from app.market_data.domain import (
     SeriesPageQuery,
     normalize_contract_for_symbol,
 )
-from app.market_data.live_market import LIVE_SESSION_END_ARRIVAL_GRACE
 from app.market_data.market_read_service import MarketReadService, MarketReadWindow
 from app.market_data.product_retirement import normalize_symbol
 from app.market_data.product_taxonomy import ProductTaxonomyEntry
-from app.market_data.session_clock import (
-    SessionClockError,
-    resolved_session_windows_for_trading_day,
+from app.market_data.subing_strategy.contracts import (
+    SubingStrategyAction,
+    SubingStrategyEpisode,
 )
-from app.market_data.subing_read_service import SubingReadRequest, SubingReadService
-from app.market_data.subing_research import (
-    SubingDirection,
-    SubingFactorStatus,
-    SubingSignalStatus,
-)
-from app.models import Instrument, TradingCalendar
+from app.market_data.subing_strategy.machine import SubingStrategySourceIdentity
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -55,6 +57,7 @@ _MARKET_STATE_PATTERN = "market:state"
 _CANONICAL_ALERT_FREQUENCIES = (BarFrequency.D1, BarFrequency.W1)
 _HEARTBEAT_INTERVAL = timedelta(seconds=10)
 _HEARTBEAT_TTL_SECONDS = 30
+_STRATEGY_PRODUCT_LIMIT = 60
 PROCESSING_FAILURE = "processing_failed"
 NOTIFICATION_PREPARATION_FAILURE = "notification_preparation_failed"
 NOTIFICATION_TRANSPORT_FAILURE = "notification_transport_failed"
@@ -69,7 +72,9 @@ class AlertNotificationAcknowledgeError(RuntimeError):
 
 class AlertMessageSource(Protocol):
     def subscribe(self, *patterns: str) -> None: ...
-    def get_message(self, *, timeout_seconds: float) -> tuple[object, object] | None: ...
+    def get_message(
+        self, *, timeout_seconds: float
+    ) -> tuple[object, object] | None: ...
     def close(self) -> None: ...
 
 
@@ -84,7 +89,6 @@ class AlertRuntimeStatusStore(Protocol):
 
 AlertSessionFactory = Callable[[], AbstractContextManager[Session]]
 AlertMarketReadFactory = Callable[[Session], MarketReadService]
-AlertSubingReadFactory = Callable[[Session], SubingReadService]
 
 
 @dataclass(frozen=True, slots=True)
@@ -92,7 +96,6 @@ class _RuleResult:
     contract: str
     frequency: str
     result_codes: tuple[str, ...]
-    lower_tf_confirmation: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -134,7 +137,8 @@ def _persist_event_and_prepare_notification(
             frequency=result.frequency,
             bar_end=bar_end,
             result_codes=result.result_codes,
-            lower_tf_confirmation=result.lower_tf_confirmation,
+            action_id=None,
+            strategy_payload=None,
             detected_at=processing_now,
             notification_attempted_at=processing_now,
         )
@@ -159,7 +163,53 @@ def _persist_event_and_prepare_notification(
             frequency=result.frequency,
             bar_end=bar_end,
             result_codes=result.result_codes,
-            lower_tf_confirmation=result.lower_tf_confirmation,
+        ),
+        None,
+    )
+
+
+def _persist_strategy_action_and_prepare_notification(
+    service: AlertService,
+    *,
+    taxonomy: Mapping[str, ProductTaxonomyEntry],
+    rule: AlertRule,
+    action: SubingStrategyAction,
+    episode: SubingStrategyEpisode | None,
+    processing_now: datetime,
+) -> _PreparedEvent:
+    payload = serialize_subing_strategy_payload(action, episode=episode)
+    created = service.create_event(
+        AlertEventCreate(
+            rule_id=rule.id,
+            symbol=action.symbol,
+            contract=action.contract,
+            trading_day=action.trading_day,
+            frequency=BarFrequency.M15.value,
+            bar_end=action.decision_at,
+            result_codes=(action.kind.value,),
+            action_id=action.action_id,
+            strategy_payload=payload,
+            detected_at=processing_now,
+            notification_attempted_at=processing_now,
+        )
+    )
+    if created is None:
+        return _PreparedEvent(False, None, None)
+    taxonomy_entry = taxonomy.get(action.symbol)
+    if taxonomy_entry is None:
+        _LOGGER.warning("ALERT_PRODUCT_NAME_UNAVAILABLE")
+        return _PreparedEvent(True, None, NOTIFICATION_PREPARATION_FAILURE)
+    return _PreparedEvent(
+        True,
+        AlertNotificationMessage(
+            rule_code=rule.rule_code,
+            symbol=action.symbol,
+            product_name=taxonomy_entry.name,
+            contract=action.contract,
+            frequency=BarFrequency.M15.value,
+            bar_end=action.decision_at,
+            result_codes=(action.kind.value,),
+            strategy_payload=payload,
         ),
         None,
     )
@@ -171,7 +221,7 @@ class AlertRuntime:
         *,
         session_factory: AlertSessionFactory,
         market_read_factory: AlertMarketReadFactory,
-        subing_read_factory: AlertSubingReadFactory,
+        strategy_evaluator: SubingStrategyRuntimeEvaluator,
         htdy_evaluator: AlertEvaluator,
         sender: AlertNotificationSender,
         operational_products: tuple[str, ...],
@@ -184,7 +234,7 @@ class AlertRuntime:
     ) -> None:
         self._session_factory = session_factory
         self._market_read_factory = market_read_factory
-        self._subing_read_factory = subing_read_factory
+        self._strategy_evaluator = strategy_evaluator
         self._htdy_evaluator = htdy_evaluator
         self._sender = sender
         self._operational_products = frozenset(
@@ -202,7 +252,34 @@ class AlertRuntime:
         """只消费启动后新到达的 completed 日内 Bar 与 Canonical state。"""
         if self.message_source is None or self.heartbeat_store is None:
             raise RuntimeError("ALERT_RUNTIME_TRANSPORT_UNAVAILABLE")
+        self._current_runtime_status()
+        self._validate_startup_composition()
         self.message_source.subscribe(_LIVE_BAR_PATTERN, _MARKET_STATE_PATTERN)
+        strategy_started_at = self._aware_now()
+        self._update_runtime_status(
+            strategy_state="warming",
+            strategy_started_at=_iso_timestamp(strategy_started_at),
+            strategy_ready_at=None,
+            strategy_product_count=0,
+            strategy_ready_product_count=0,
+            strategy_unavailable_product_count=0,
+            strategy_unavailable_symbols=[],
+        )
+        self._strategy_evaluator.restore_all(
+            started_at=strategy_started_at,
+        )
+        ready_at = self._aware_now()
+        caught_up = self._strategy_evaluator.final_catch_up(ready_at=ready_at)
+        strategy_summary = _strategy_runtime_summary(caught_up)
+        self._update_runtime_status(
+            strategy_state=("degraded" if strategy_summary[2] else "ready"),
+            strategy_ready_at=_iso_timestamp(ready_at),
+            strategy_product_count=strategy_summary[0],
+            strategy_ready_product_count=strategy_summary[1],
+            strategy_unavailable_product_count=len(strategy_summary[2]),
+            strategy_unavailable_symbols=list(strategy_summary[2]),
+            last_strategy_restore_at=_iso_timestamp(ready_at),
+        )
         next_heartbeat = self._aware_now()
         try:
             while not self.stop_requested():
@@ -215,6 +292,32 @@ class AlertRuntime:
                     self.process_message(*message)
         finally:
             self.message_source.close()
+
+    def _validate_startup_composition(self) -> None:
+        expected_codes = tuple(
+            sorted(definition.rule_code for definition in alert_rule_definitions())
+        )
+        try:
+            with self._session_factory() as session:
+                try:
+                    rules = session.scalars(
+                        select(AlertRule).order_by(AlertRule.rule_code)
+                    ).all()
+                    if tuple(rule.rule_code for rule in rules) != expected_codes:
+                        raise ValueError("rule registry mismatch")
+                    service = AlertService(
+                        session,
+                        operational_products=tuple(sorted(self._operational_products)),
+                    )
+                    for symbol in sorted(self._operational_products):
+                        states = service.product_rules(symbol)
+                        if tuple(state.rule_code for state in states) != expected_codes:
+                            raise ValueError("rule projection mismatch")
+                finally:
+                    if session.in_transaction():
+                        session.rollback()
+        except Exception:
+            raise RuntimeError("ALERT_RUNTIME_COMPOSITION_INVALID") from None
 
     def process_message(self, channel: object, payload: object) -> None:
         """处理单条强类型触发；Rule 故障隔离，Event 提交后只发送一次。"""
@@ -235,10 +338,34 @@ class AlertRuntime:
             _LOGGER.warning("ALERT_PROCESSING_FAILED")
             return
 
+        strategy_actions: tuple[SubingStrategyAction, ...] = ()
+        strategy_processing_failed = False
+        try:
+            state = self._strategy_evaluator.current_state(symbol)
+            if (
+                state is not None
+                and event_frequency.value in SUBING_RULE.input_frequencies
+            ):
+                strategy_result = self._strategy_evaluator.process_completed_bar(
+                    event_bar,
+                    event_frequency,
+                    source_identity=SubingStrategySourceIdentity(
+                        symbol=state.symbol,
+                        contract=state.contract,
+                        segment_start_trading_day=state.segment_start_trading_day,
+                    ),
+                )
+                strategy_actions = strategy_result.actions
+        except Exception:  # noqa: BLE001 - Strategy Rule isolation; detail is private
+            strategy_processing_failed = True
+            _LOGGER.warning("ALERT_STRATEGY_PROCESSING_FAILED")
+
         messages: list[AlertNotificationMessage] = []
         event_count = 0
         notification_preparation_failures: list[str] = []
-        processing_error_type: str | None = None
+        processing_error_type: str | None = (
+            PROCESSING_FAILURE if strategy_processing_failed else None
+        )
         fatal_processing_failure = False
         try:
             with self._session_factory() as session:
@@ -251,14 +378,17 @@ class AlertRuntime:
                     ).all()
                     service = AlertService(
                         session,
-                        operational_products=tuple(
-                            sorted(self._operational_products)
-                        ),
+                        operational_products=tuple(sorted(self._operational_products)),
                     )
                     for rule in rules:
                         try:
                             definition = get_alert_rule_definition(rule.rule_code)
-                            if event_frequency.value not in definition.input_frequencies:
+                            if definition.rule_code == SUBING_RULE.rule_code:
+                                continue
+                            if (
+                                event_frequency.value
+                                not in definition.input_frequencies
+                            ):
                                 continue
                             if not service.rule_allows_event(
                                 rule,
@@ -272,7 +402,6 @@ class AlertRuntime:
                                 symbol=symbol,
                                 event_frequency=event_frequency,
                                 event_bar=event_bar,
-                                processing_now=processing_now,
                             )
                             if result is None:
                                 continue
@@ -300,6 +429,46 @@ class AlertRuntime:
                                 session.rollback()
                             processing_error_type = PROCESSING_FAILURE
                             _LOGGER.warning("ALERT_RULE_PROCESSING_FAILED")
+                    if strategy_actions:
+                        strategy_rule = next(
+                            (
+                                rule
+                                for rule in rules
+                                if rule.rule_code == SUBING_RULE.rule_code
+                            ),
+                            None,
+                        )
+                        if strategy_rule is not None:
+                            for action in strategy_actions:
+                                try:
+                                    if not service.rule_allows_event(
+                                        strategy_rule,
+                                        symbol=action.symbol,
+                                        frequency=BarFrequency.M15.value,
+                                    ):
+                                        continue
+                                    prepared = _persist_strategy_action_and_prepare_notification(
+                                        service,
+                                        taxonomy=self._taxonomy,
+                                        rule=strategy_rule,
+                                        action=action,
+                                        episode=self._strategy_episode(action),
+                                        processing_now=processing_now,
+                                    )
+                                    if not prepared.event_created:
+                                        continue
+                                    event_count += 1
+                                    if prepared.notification_error_type is not None:
+                                        notification_preparation_failures.append(
+                                            prepared.notification_error_type
+                                        )
+                                    if prepared.message is not None:
+                                        messages.append(prepared.message)
+                                except Exception:  # noqa: BLE001 - exact Strategy Rule isolation
+                                    if session.in_transaction():
+                                        session.rollback()
+                                    processing_error_type = PROCESSING_FAILURE
+                                    _LOGGER.warning("ALERT_RULE_PROCESSING_FAILED")
                 finally:
                     if session.in_transaction():
                         session.rollback()
@@ -310,6 +479,13 @@ class AlertRuntime:
 
         if event_count:
             self._update_runtime_status(last_event_at=_iso_timestamp(processing_now))
+        if strategy_actions:
+            self._update_runtime_status(
+                last_strategy_action_at=max(
+                    _iso_timestamp(action.effective_bar_end)
+                    for action in strategy_actions
+                )
+            )
         for error_type in notification_preparation_failures:
             self._record_notification_failure(
                 at=processing_now,
@@ -332,6 +508,27 @@ class AlertRuntime:
 
         self._send_messages_once(messages, processing_now=processing_now)
 
+    def _strategy_episode(
+        self,
+        action: SubingStrategyAction,
+    ) -> SubingStrategyEpisode | None:
+        state = self._strategy_evaluator.current_state(action.symbol)
+        if state is None:
+            return None
+        candidates = (
+            *((state.current_episode,) if state.current_episode is not None else ()),
+            *state.closed_episodes,
+        )
+        return next(
+            (
+                episode
+                for episode in candidates
+                if episode.episode_id == action.episode_id
+                and episode.exit_action == action
+            ),
+            None,
+        )
+
     def _process_canonical_updated(
         self,
         trigger: _CanonicalUpdatedTrigger,
@@ -342,29 +539,42 @@ class AlertRuntime:
             _LOGGER.warning("ALERT_PROCESSING_FAILED")
             return
 
+        strategy_actions: tuple[SubingStrategyAction, ...] = ()
+        strategy_processing_failed = False
+        try:
+            strategy_results = self._strategy_evaluator.process_canonical_updated(
+                trigger.trading_day
+            )
+            strategy_actions = tuple(
+                action for result in strategy_results for action in result.actions
+            )
+        except Exception:  # noqa: BLE001 - Strategy Rule isolation; detail is private
+            strategy_processing_failed = True
+            _LOGGER.warning("ALERT_STRATEGY_PROCESSING_FAILED")
+
         messages: list[AlertNotificationMessage] = []
         event_count = 0
         notification_preparation_failures: list[str] = []
-        processing_error_type: str | None = None
+        processing_error_type: str | None = (
+            PROCESSING_FAILURE if strategy_processing_failed else None
+        )
         fatal_processing_failure = False
         try:
             with self._session_factory() as session:
                 try:
                     rules = session.scalars(
                         select(AlertRule)
-                        .where(
-                            AlertRule.enabled.is_(True),
-                            AlertRule.rule_code == HTDY_RULE.rule_code,
-                        )
+                        .where(AlertRule.enabled.is_(True))
+                        .order_by(AlertRule.rule_code)
                         .execution_options(populate_existing=True)
                     ).all()
                     service = AlertService(
                         session,
-                        operational_products=tuple(
-                            sorted(self._operational_products)
-                        ),
+                        operational_products=tuple(sorted(self._operational_products)),
                     )
                     for rule in rules:
+                        if rule.rule_code != HTDY_RULE.rule_code:
+                            continue
                         try:
                             definition = get_alert_rule_definition(rule.rule_code)
                             pairs = tuple(
@@ -426,7 +636,6 @@ class AlertRuntime:
                                         contract=window.contract,
                                         frequency=frequency.value,
                                         result_codes=evaluation.observation_types,
-                                        lower_tf_confirmation=False,
                                     ),
                                     processing_now=processing_now,
                                 )
@@ -450,6 +659,46 @@ class AlertRuntime:
                                     frequency.value,
                                     stage,
                                 )
+                    if strategy_actions:
+                        strategy_rule = next(
+                            (
+                                rule
+                                for rule in rules
+                                if rule.rule_code == SUBING_RULE.rule_code
+                            ),
+                            None,
+                        )
+                        if strategy_rule is not None:
+                            for action in strategy_actions:
+                                try:
+                                    if not service.rule_allows_event(
+                                        strategy_rule,
+                                        symbol=action.symbol,
+                                        frequency=BarFrequency.M15.value,
+                                    ):
+                                        continue
+                                    prepared = _persist_strategy_action_and_prepare_notification(
+                                        service,
+                                        taxonomy=self._taxonomy,
+                                        rule=strategy_rule,
+                                        action=action,
+                                        episode=self._strategy_episode(action),
+                                        processing_now=processing_now,
+                                    )
+                                    if not prepared.event_created:
+                                        continue
+                                    event_count += 1
+                                    if prepared.notification_error_type is not None:
+                                        notification_preparation_failures.append(
+                                            prepared.notification_error_type
+                                        )
+                                    if prepared.message is not None:
+                                        messages.append(prepared.message)
+                                except Exception:  # noqa: BLE001 - exact Strategy Rule isolation
+                                    if session.in_transaction():
+                                        session.rollback()
+                                    processing_error_type = PROCESSING_FAILURE
+                                    _LOGGER.warning("ALERT_RULE_PROCESSING_FAILED")
                 finally:
                     if session.in_transaction():
                         session.rollback()
@@ -460,6 +709,13 @@ class AlertRuntime:
 
         if event_count:
             self._update_runtime_status(last_event_at=_iso_timestamp(processing_now))
+        if strategy_actions:
+            self._update_runtime_status(
+                last_strategy_action_at=max(
+                    _iso_timestamp(action.effective_bar_end)
+                    for action in strategy_actions
+                )
+            )
         for error_type in notification_preparation_failures:
             self._record_notification_failure(
                 at=processing_now,
@@ -519,7 +775,6 @@ class AlertRuntime:
         symbol: str,
         event_frequency: BarFrequency,
         event_bar: CanonicalBar,
-        processing_now: datetime,
     ) -> _RuleResult | None:
         if rule_code == HTDY_RULE.rule_code:
             return self._evaluate_htdy(
@@ -527,14 +782,6 @@ class AlertRuntime:
                 symbol=symbol,
                 event_frequency=event_frequency,
                 event_bar=event_bar,
-            )
-        if rule_code == SUBING_RULE.rule_code:
-            return self._evaluate_subing(
-                session,
-                symbol=symbol,
-                event_frequency=event_frequency,
-                event_bar=event_bar,
-                processing_now=processing_now,
             )
         return None
 
@@ -573,73 +820,6 @@ class AlertRuntime:
             contract=window.contract,
             frequency=event_frequency.value,
             result_codes=evaluation.observation_types,
-            lower_tf_confirmation=False,
-        )
-
-    def _evaluate_subing(
-        self,
-        session: Session,
-        *,
-        symbol: str,
-        event_frequency: BarFrequency,
-        event_bar: CanonicalBar,
-        processing_now: datetime,
-    ) -> _RuleResult | None:
-        event_session = _event_session_window(
-            session,
-            symbol=symbol,
-            event_bar=event_bar,
-        )
-        if event_session is None:
-            return None
-        if (
-            event_frequency is BarFrequency.M5
-            and bucket_window_for_bar(
-                event_session,
-                BarFrequency.M15,
-                event_bar.bar_end,
-            ).end
-            == event_bar.bar_end
-        ):
-            return None
-        snapshot_now = _subing_snapshot_now(
-            event_bar=event_bar,
-            event_session=event_session,
-            processing_now=processing_now,
-        )
-        if snapshot_now is None:
-            return None
-        snapshot = self._subing_read_factory(session).snapshot(
-            SubingReadRequest(symbol, event_frequency),
-            snapshot_now,
-        )
-        primary = snapshot.primary
-        if (
-            primary.status is not SubingFactorStatus.READY
-            or primary.snapshot is None
-            or primary.snapshot.bar_end != event_bar.bar_end
-            or primary.snapshot.trading_day != event_bar.trading_day
-        ):
-            return None
-        resolved = snapshot.resolved_signal
-        if (
-            resolved is None
-            or resolved.status is not SubingSignalStatus.MATCHED
-            or resolved.trigger_timeframe
-            not in {BarFrequency.M5, BarFrequency.M15}
-        ):
-            return None
-        if resolved.direction is SubingDirection.LONG:
-            result_codes = ("buy",)
-        elif resolved.direction is SubingDirection.SHORT:
-            result_codes = ("sell",)
-        else:
-            return None
-        return _RuleResult(
-            contract=snapshot.actual_contract,
-            frequency=resolved.trigger_timeframe.value,
-            result_codes=result_codes,
-            lower_tf_confirmation=resolved.lower_tf_confirmation,
         )
 
     def _write_heartbeat(self, now: datetime) -> None:
@@ -652,9 +832,7 @@ class AlertRuntime:
                 enabled_rule_count = len(enabled)
                 service = AlertService(
                     session,
-                    operational_products=tuple(
-                        sorted(self._operational_products)
-                    ),
+                    operational_products=tuple(sorted(self._operational_products)),
                 )
                 scope: set[str] = set()
                 for rule in enabled:
@@ -716,7 +894,9 @@ class AlertRuntime:
             if self.runtime_status_store is None:
                 self._runtime_status = empty_alert_runtime_status()
             else:
-                self._runtime_status = self.runtime_status_store.read()
+                self._runtime_status = validate_alert_runtime_status(
+                    self.runtime_status_store.read()
+                )
         return self._runtime_status
 
     def _update_runtime_status(self, **changes: object) -> None:
@@ -724,9 +904,7 @@ class AlertRuntime:
             return
         atomic_update = getattr(self.runtime_status_store, "update", None)
         if callable(atomic_update):
-            normalized = validate_alert_runtime_status(
-                atomic_update(dict(changes))
-            )
+            normalized = validate_alert_runtime_status(atomic_update(dict(changes)))
             self._runtime_status = normalized
             return
         updated = {**self._current_runtime_status(), **changes}
@@ -750,14 +928,31 @@ _RUNTIME_STATUS_V1_FIELDS = frozenset(
         "consecutive_notification_failures",
     }
 )
-_RUNTIME_STATUS_FIELDS = _RUNTIME_STATUS_V1_FIELDS | {
-    "notification_acknowledged_at"
-}
+_RUNTIME_STATUS_V2_FIELDS = _RUNTIME_STATUS_V1_FIELDS | {"notification_acknowledged_at"}
+_RUNTIME_STATUS_STRATEGY_FIELDS = frozenset(
+    {
+        "strategy_state",
+        "strategy_started_at",
+        "strategy_ready_at",
+        "strategy_product_count",
+        "strategy_ready_product_count",
+        "strategy_unavailable_product_count",
+        "strategy_unavailable_symbols",
+        "last_strategy_action_at",
+        "last_strategy_restore_at",
+    }
+)
+_RUNTIME_STATUS_FIELDS = _RUNTIME_STATUS_V2_FIELDS | _RUNTIME_STATUS_STRATEGY_FIELDS
 _RUNTIME_STATUS_TIMESTAMP_FIELDS = _RUNTIME_STATUS_FIELDS - {
     "schema_version",
     "processing_error_type",
     "notification_error_type",
     "consecutive_notification_failures",
+    "strategy_state",
+    "strategy_product_count",
+    "strategy_ready_product_count",
+    "strategy_unavailable_product_count",
+    "strategy_unavailable_symbols",
 }
 _RUNTIME_STATUS_ERROR_TYPES = {
     "processing_error_type": frozenset({PROCESSING_FAILURE}),
@@ -773,7 +968,7 @@ _RUNTIME_STATUS_ERROR_TYPES = {
 
 def empty_alert_runtime_status() -> dict[str, object]:
     return {
-        "schema_version": 2,
+        "schema_version": 3,
         "last_processed_bar_at": None,
         "last_processing_success_at": None,
         "last_processing_failure_at": None,
@@ -785,6 +980,15 @@ def empty_alert_runtime_status() -> dict[str, object]:
         "notification_acknowledged_at": None,
         "notification_error_type": None,
         "consecutive_notification_failures": 0,
+        "strategy_state": "warming",
+        "strategy_started_at": None,
+        "strategy_ready_at": None,
+        "strategy_product_count": 0,
+        "strategy_ready_product_count": 0,
+        "strategy_unavailable_product_count": 0,
+        "strategy_unavailable_symbols": [],
+        "last_strategy_action_at": None,
+        "last_strategy_restore_at": None,
     }
 
 
@@ -801,10 +1005,22 @@ def validate_alert_runtime_status(
             "schema_version": 2,
             "notification_acknowledged_at": None,
         }
-    elif schema_version == 2 and fields == _RUNTIME_STATUS_FIELDS:
+    elif schema_version == 2 and fields == _RUNTIME_STATUS_V2_FIELDS:
+        normalized = dict(payload)
+    elif schema_version == 3 and fields == _RUNTIME_STATUS_FIELDS:
         normalized = dict(payload)
     else:
         raise ValueError("ALERT_RUNTIME_STATUS_INVALID")
+    if normalized["schema_version"] in {1, 2}:
+        normalized = {
+            **normalized,
+            **{
+                key: value
+                for key, value in empty_alert_runtime_status().items()
+                if key in _RUNTIME_STATUS_STRATEGY_FIELDS
+            },
+            "schema_version": 3,
+        }
     for field in _RUNTIME_STATUS_TIMESTAMP_FIELDS:
         value = normalized[field]
         if value is not None:
@@ -824,7 +1040,60 @@ def validate_alert_runtime_status(
     acknowledged_at = normalized["notification_acknowledged_at"]
     if acknowledged_at is not None and failure_at is None:
         raise ValueError("ALERT_RUNTIME_STATUS_INVALID")
+    if normalized["strategy_state"] not in {"warming", "ready", "degraded"}:
+        raise ValueError("ALERT_RUNTIME_STATUS_INVALID")
+    strategy_counts = tuple(
+        normalized[field]
+        for field in (
+            "strategy_product_count",
+            "strategy_ready_product_count",
+            "strategy_unavailable_product_count",
+        )
+    )
+    if any(
+        type(value) is not int or value < 0 or value > _STRATEGY_PRODUCT_LIMIT
+        for value in strategy_counts
+    ):
+        raise ValueError("ALERT_RUNTIME_STATUS_INVALID")
+    product_count, ready_count, unavailable_count = cast(
+        tuple[int, int, int], strategy_counts
+    )
+    unavailable_symbols = normalized["strategy_unavailable_symbols"]
+    if (
+        type(unavailable_symbols) is not list
+        or len(unavailable_symbols) != unavailable_count
+        or len(unavailable_symbols) > product_count
+        or any(
+            type(symbol) is not str
+            or symbol != symbol.strip().lower()
+            or not symbol.isascii()
+            or not symbol.isalpha()
+            for symbol in unavailable_symbols
+        )
+        or unavailable_symbols != sorted(set(unavailable_symbols))
+        or ready_count + unavailable_count > product_count
+    ):
+        raise ValueError("ALERT_RUNTIME_STATUS_INVALID")
     return normalized
+
+
+def _strategy_runtime_summary(
+    results: tuple[SubingStrategyRuntimeResult, ...],
+) -> tuple[int, int, tuple[str, ...]]:
+    if type(results) is not tuple:
+        raise ValueError("ALERT_RUNTIME_STRATEGY_RESULT_INVALID")
+    statuses = tuple(result.product_status for result in results)
+    if any(
+        type(result) is not SubingStrategyRuntimeResult for result in results
+    ) or len({status.symbol for status in statuses}) != len(statuses):
+        raise ValueError("ALERT_RUNTIME_STRATEGY_RESULT_INVALID")
+    unavailable = tuple(
+        sorted(status.symbol for status in statuses if status.state == "unavailable")
+    )
+    ready = sum(status.state == "ready" for status in statuses)
+    if ready + len(unavailable) != len(statuses):
+        raise ValueError("ALERT_RUNTIME_STRATEGY_RESULT_INVALID")
+    return len(statuses), ready, unavailable
 
 
 def acknowledge_notification_failure(
@@ -836,9 +1105,7 @@ def acknowledge_notification_failure(
     normalized = validate_alert_runtime_status(payload)
     failure_at = normalized["last_notification_failure_at"]
     if failure_at is None:
-        raise AlertNotificationAcknowledgeError(
-            "ALERT_NOTIFICATION_FAILURE_NOT_FOUND"
-        )
+        raise AlertNotificationAcknowledgeError("ALERT_NOTIFICATION_FAILURE_NOT_FOUND")
     try:
         expected = _iso_timestamp(datetime.fromisoformat(expected_failure_at))
     except (TypeError, ValueError) as exc:
@@ -846,15 +1113,11 @@ def acknowledge_notification_failure(
             "ALERT_NOTIFICATION_FAILURE_AT_INVALID"
         ) from exc
     if failure_at != expected:
-        raise AlertNotificationAcknowledgeError(
-            "ALERT_NOTIFICATION_FAILURE_MISMATCH"
-        )
+        raise AlertNotificationAcknowledgeError("ALERT_NOTIFICATION_FAILURE_MISMATCH")
     existing_acknowledgement = normalized["notification_acknowledged_at"]
-    if (
-        existing_acknowledgement is not None
-        and datetime.fromisoformat(cast(str, existing_acknowledgement))
-        >= datetime.fromisoformat(cast(str, failure_at))
-    ):
+    if existing_acknowledgement is not None and datetime.fromisoformat(
+        cast(str, existing_acknowledgement)
+    ) >= datetime.fromisoformat(cast(str, failure_at)):
         raise AlertNotificationAcknowledgeError(
             "ALERT_NOTIFICATION_FAILURE_ALREADY_ACKNOWLEDGED"
         )
@@ -883,67 +1146,6 @@ def _iso_timestamp(value: datetime) -> str:
     return value.astimezone(UTC).isoformat()
 
 
-def _event_session_window(
-    session: Session,
-    *,
-    symbol: str,
-    event_bar: CanonicalBar,
-) -> SessionWindow | None:
-    """使用交易日、交易所与既有 Session clock 唯一解析事件时段。"""
-    normalized = normalize_symbol(symbol)
-    exchange = session.scalar(
-        select(Instrument.exchange_code).where(
-            Instrument.symbol == normalized,
-            Instrument.is_active.is_(True),
-        )
-    )
-    if exchange is None:
-        return None
-    calendar = session.scalar(
-        select(TradingCalendar).where(
-            TradingCalendar.exchange_code == exchange,
-            TradingCalendar.trade_date == event_bar.trading_day,
-        )
-    )
-    if calendar is None or calendar.is_trading_day is not True:
-        return None
-    try:
-        resolved = resolved_session_windows_for_trading_day(
-            session,
-            exchange=exchange,
-            symbol=normalized,
-            trading_day=event_bar.trading_day,
-        )
-    except SessionClockError:
-        return None
-    matching = tuple(
-        item.window
-        for item in resolved
-        if (not item.is_night or calendar.has_night_session is True)
-        and item.window.start < event_bar.bar_end <= item.window.end
-    )
-    return matching[0] if len(matching) == 1 else None
-
-
-def _subing_snapshot_now(
-    *,
-    event_bar: CanonicalBar,
-    event_session: SessionWindow,
-    processing_now: datetime,
-) -> datetime | None:
-    """限定 final Session Bar 的 phase-observation 时间，不改变 snapshot 数据截止。"""
-    if processing_now.tzinfo is None or processing_now.utcoffset() is None:
-        return None
-    normalized_now = processing_now.astimezone(UTC)
-    if normalized_now < event_bar.bar_end:
-        return None
-    if event_bar.bar_end != event_session.end:
-        return normalized_now
-    if normalized_now <= event_bar.bar_end + LIVE_SESSION_END_ARRIVAL_GRACE:
-        return event_bar.bar_end - timedelta(microseconds=1)
-    return None
-
-
 def _parse_live_bar_trigger(
     channel: object,
     payload: object,
@@ -968,9 +1170,7 @@ def _parse_live_bar_trigger(
         if not isinstance(raw, Mapping):
             return None
         bar = CanonicalBar(
-            bar_end=datetime.fromisoformat(
-                str(raw["bar_end"]).replace("Z", "+00:00")
-            ),
+            bar_end=datetime.fromisoformat(str(raw["bar_end"]).replace("Z", "+00:00")),
             trading_day=date.fromisoformat(str(raw["trading_day"])),
             open=Decimal(str(raw["open"])),
             high=Decimal(str(raw["high"])),
@@ -978,9 +1178,7 @@ def _parse_live_bar_trigger(
             close=Decimal(str(raw["close"])),
             volume=Decimal(str(raw["volume"])),
             turnover=(
-                None
-                if raw["turnover"] is None
-                else Decimal(str(raw["turnover"]))
+                None if raw["turnover"] is None else Decimal(str(raw["turnover"]))
             ),
             open_interest=(
                 None

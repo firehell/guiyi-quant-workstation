@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from contextlib import nullcontext
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 import json
@@ -21,31 +21,29 @@ from app.alerts.runtime import (
     AlertRuntimeStatusStore,
     _CanonicalUpdatedTrigger,
     _LiveBarTrigger,
-    _event_session_window,
     _parse_canonical_updated_trigger,
     _parse_live_bar_trigger,
-    _subing_snapshot_now,
     validate_alert_runtime_status,
+)
+from app.alerts.subing_strategy_runtime import (
+    SubingStrategyRuntimeProductStatus,
+    SubingStrategyRuntimeResult,
+)
+from app.market_data.subing_lifecycle import ConfirmationSource
+from app.market_data.subing_strategy.contracts import (
+    SubingStrategyAction,
+    SubingStrategyActionKind,
+    SubingStrategyEpisode,
+    SubingStrategyFillBasis,
+    subing_strategy_action_id,
+    subing_strategy_episode_id,
 )
 from app.db.base import Base
 from app.market_data.aggregation import SessionWindow
 from app.market_data.domain import BarFrequency, CanonicalBar
-from app.market_data.live_market import LIVE_SESSION_END_ARRIVAL_GRACE
 from app.market_data.market_read_service import MarketReadWindow
 from app.market_data.product_taxonomy import ProductTaxonomyEntry
 from app.market_data.session_clock import SHANGHAI
-from app.market_data.subing_read_service import SubingReadRequest, SubingReadSnapshot
-from app.market_data.subing_research import (
-    MacdCross,
-    PriceSide,
-    SubingDirection,
-    SubingFactorResult,
-    SubingFactorSnapshot,
-    SubingFactorStatus,
-    SubingSignalEvaluation,
-    SubingSignalResolution,
-    SubingSignalStatus,
-)
 from app.models import Exchange, Instrument, TradingCalendar, TradingSession
 
 
@@ -123,113 +121,6 @@ def _window(
         contract=contract,
         cutoff=cutoff or bar_end,
         bars=(event_bar,) * 32,
-    )
-
-
-def _factor(
-    *,
-    frequency: BarFrequency,
-    bar_end: datetime,
-    trading_day: date = DAY,
-    status: SubingFactorStatus = SubingFactorStatus.READY,
-) -> SubingFactorResult:
-    if status is not SubingFactorStatus.READY:
-        return SubingFactorResult(status, None)
-    return SubingFactorResult(
-        status,
-        SubingFactorSnapshot(
-            timeframe=frequency,
-            bar_end=bar_end,
-            trading_day=trading_day,
-            contract="JM2609",
-            segment_start_trading_day=date(2026, 8, 3),
-            bar_source="live",
-            close=Decimal("100"),
-            ema21=Decimal("99"),
-            price_side=PriceSide.ABOVE,
-            slope_5_raw=Decimal("0.1"),
-            slope_10_raw=Decimal("0.1"),
-            slope_5_bps_per_bar=Decimal("10"),
-            slope_10_bps_per_bar=Decimal("10"),
-            macd_dif=Decimal("0.2"),
-            macd_dea=Decimal("0.1"),
-            macd_histogram=Decimal("0.2"),
-            macd_cross=MacdCross.GOLDEN,
-            macd_cross_level=Decimal("0.15"),
-            macd_zero_distance_abs=Decimal("0.15"),
-            macd_zero_distance_bps=Decimal("15"),
-            volume=Decimal("20"),
-            previous_volume=Decimal("10"),
-            volume_ratio_prev=Decimal("2"),
-        ),
-    )
-
-
-def _signal(
-    *,
-    status: SubingSignalStatus = SubingSignalStatus.MATCHED,
-    direction: SubingDirection = SubingDirection.LONG,
-    trigger_timeframe: BarFrequency | None = BarFrequency.M5,
-    bar_end: datetime = ORDINARY_END,
-    lower_tf_confirmation: bool = False,
-    resolution: SubingSignalResolution | None = None,
-    error_code: str | None = None,
-) -> SubingSignalEvaluation:
-    return SubingSignalEvaluation(
-        status=status,
-        direction=direction,
-        trigger_timeframe=trigger_timeframe,
-        bar_end=bar_end,
-        lower_tf_confirmation=lower_tf_confirmation,
-        resolution=resolution,
-        conditions=(),
-        error_code=error_code,
-    )
-
-
-def _snapshot(
-    *,
-    frequency: BarFrequency,
-    primary_bar_end: datetime,
-    primary_trading_day: date = DAY,
-    primary_status: SubingFactorStatus = SubingFactorStatus.READY,
-    primary_signal: SubingSignalEvaluation | None = None,
-    resolved_signal: SubingSignalEvaluation | None = None,
-) -> SubingReadSnapshot:
-    primary = _factor(
-        frequency=frequency,
-        bar_end=primary_bar_end,
-        trading_day=primary_trading_day,
-        status=primary_status,
-    )
-    active_primary_signal = (
-        primary_signal
-        if primary_signal is not None
-        else _signal(
-            status=SubingSignalStatus.NOT_MATCHED,
-            direction=SubingDirection.NONE,
-            trigger_timeframe=frequency,
-            bar_end=primary_bar_end,
-        )
-    )
-    return SubingReadSnapshot(
-        symbol="jm",
-        product_name="焦煤",
-        frequency=frequency,
-        actual_contract="JM2609",
-        dominant_mapping_date=primary_trading_day,
-        segment_start_trading_day=date(2026, 8, 3),
-        source_mode="canonical_live",
-        live_observation="available",
-        live_reason=None,
-        macd_policy_id="web_macd_legacy_v1",
-        signal_macd_policy_id="subing_macd_sma_window_scale2_v1",
-        calibration_state="accepted",
-        calibration_id="subing_intraday_v1",
-        primary=primary,
-        companion=None,
-        primary_signal=active_primary_signal,
-        resolved_signal=resolved_signal,
     )
 
 
@@ -385,31 +276,6 @@ class FakeHtdyEvaluator:
         return AlertEvaluation(self.observations)
 
 
-@dataclass(frozen=True, slots=True)
-class SubingCall:
-    request: object
-    now: datetime
-
-
-class FakeSubingRead:
-    def __init__(
-        self,
-        snapshot: SubingReadSnapshot,
-        error: Exception | None = None,
-    ) -> None:
-        self.result = snapshot
-        self.error = error
-        self.calls: list[SubingCall] = []
-        self.raised: list[Exception] = []
-
-    def snapshot(self, request, now: datetime) -> SubingReadSnapshot:
-        self.calls.append(SubingCall(request, now))
-        if self.error is not None:
-            self.raised.append(self.error)
-            raise self.error
-        return self.result
-
-
 class FakeSender:
     def __init__(
         self,
@@ -433,7 +299,7 @@ class FakeSender:
 class RuntimeHarness:
     runtime: AlertRuntime
     market_read: FakeRead
-    subing_read: FakeSubingRead
+    strategy_evaluator: object
     htdy_evaluator: FakeHtdyEvaluator
     sender: FakeSender
 
@@ -443,8 +309,7 @@ def _runtime(
     *,
     event_end: datetime = ORDINARY_END,
     event_day: date = DAY,
-    subing_snapshot: SubingReadSnapshot | None = None,
-    subing_error: Exception | None = None,
+    strategy_evaluator: object | None = None,
     market_read_result: MarketReadWindow | Exception | None = None,
     canonical_read_results: dict[BarFrequency, MarketReadWindow | Exception]
     | None = None,
@@ -459,26 +324,17 @@ def _runtime(
     runtime_status_store: AlertRuntimeStatusStore | None = None,
     taxonomy: dict[str, ProductTaxonomyEntry] | None = None,
 ) -> RuntimeHarness:
-    active_snapshot = subing_snapshot or _snapshot(
-        frequency=BarFrequency.M5,
-        primary_bar_end=event_end,
-        primary_trading_day=event_day,
-        resolved_signal=_signal(
-            trigger_timeframe=BarFrequency.M5,
-            bar_end=event_end,
-        ),
-    )
     market_read = FakeRead(
         market_read_result or _window(bar_end=event_end, trading_day=event_day),
         canonical_results=canonical_read_results,
     )
-    subing_read = FakeSubingRead(active_snapshot, subing_error)
+    active_strategy = strategy_evaluator or _Task9StrategyEvaluator([])
     htdy_evaluator = FakeHtdyEvaluator(htdy_observations, htdy_error)
     sender = FakeSender(sender_error, sender_acceptance)
     runtime = AlertRuntime(
         session_factory=lambda: nullcontext(session),
         market_read_factory=lambda _session: market_read,
-        subing_read_factory=lambda _session: subing_read,
+        strategy_evaluator=active_strategy,
         htdy_evaluator=htdy_evaluator,
         sender=sender,
         operational_products=operational_products,
@@ -493,7 +349,7 @@ def _runtime(
     return RuntimeHarness(
         runtime,
         market_read,
-        subing_read,
+        active_strategy,
         htdy_evaluator,
         sender,
     )
@@ -615,554 +471,20 @@ def test_canonical_updated_state_parser_rejects_invalid_input(
 
 
 def test_non_operational_symbol_stops_before_rule_dispatch(session: Session) -> None:
-    _seed_rule(session, "subing_entry_signal_v1")
-    harness = _runtime(session, operational_products=("ag",))
+    order: list[str] = []
+    strategy = _Task9StrategyEvaluator(order)
+    _seed_rule(session, "subing_strategy_v1")
+    harness = _runtime(
+        session,
+        operational_products=("ag",),
+        strategy_evaluator=strategy,
+    )
 
     harness.runtime.process_message("live:bar:jm:5m", _payload())
 
-    assert harness.subing_read.calls == []
+    assert order == []
     assert _event_rows(session) == []
     assert harness.sender.messages == []
-
-
-def test_ordinary_5m_subing_match_creates_event_and_sends_once(
-    session: Session,
-) -> None:
-    _seed_rule(session, "subing_entry_signal_v1")
-    _seed_market_facts(session)
-    snapshot = _snapshot(
-        frequency=BarFrequency.M5,
-        primary_bar_end=ORDINARY_END,
-        resolved_signal=_signal(
-            direction=SubingDirection.LONG,
-            trigger_timeframe=BarFrequency.M5,
-            bar_end=ORDINARY_END,
-        ),
-    )
-    harness = _runtime(session, subing_snapshot=snapshot)
-
-    harness.runtime.process_message("live:bar:jm:5m", _payload())
-
-    events = _event_rows(session)
-    assert harness.subing_read.calls[0].request == SubingReadRequest(
-        "jm",
-        BarFrequency.M5,
-    )
-    assert len(events) == 1
-    assert events[0].frequency == "5m"
-    assert events[0].result_codes == ["buy"]
-    assert events[0].lower_tf_confirmation is False
-    assert events[0].notification_attempted_at is not None
-    assert harness.sender.messages == [
-        AlertNotificationMessage(
-            rule_code="subing_entry_signal_v1",
-            symbol="jm",
-            product_name="焦煤",
-            contract="JM2609",
-            frequency="5m",
-            bar_end=ORDINARY_END,
-            result_codes=("buy",),
-            lower_tf_confirmation=False,
-        )
-    ]
-
-
-@pytest.mark.parametrize(
-    ("bar_end", "trading_day", "status"),
-    (
-        (ORDINARY_END + timedelta(minutes=5), DAY, SubingFactorStatus.READY),
-        (ORDINARY_END, DAY + timedelta(days=1), SubingFactorStatus.READY),
-        (ORDINARY_END, DAY, SubingFactorStatus.INSUFFICIENT_DATA),
-    ),
-)
-def test_stale_or_unready_subing_primary_is_dropped_without_event_or_send(
-    session: Session,
-    bar_end: datetime,
-    trading_day: date,
-    status: SubingFactorStatus,
-) -> None:
-    _seed_rule(session, "subing_entry_signal_v1")
-    _seed_market_facts(session)
-    snapshot = _snapshot(
-        frequency=BarFrequency.M5,
-        primary_bar_end=bar_end,
-        primary_trading_day=trading_day,
-        primary_status=status,
-        resolved_signal=_signal(bar_end=bar_end),
-    )
-    harness = _runtime(session, subing_snapshot=snapshot)
-
-    harness.runtime.process_message("live:bar:jm:5m", _payload())
-
-    assert len(harness.subing_read.calls) == 1
-    assert _event_rows(session) == []
-    assert harness.sender.messages == []
-
-
-def test_event_session_window_resolves_exact_real_day_session(session: Session) -> None:
-    expected = _seed_market_facts(session)
-
-    resolved = _event_session_window(
-        session,
-        symbol="jm",
-        event_bar=_bar(BOUNDARY_END),
-    )
-
-    assert resolved == expected
-
-
-@pytest.mark.parametrize(
-    ("include_calendar", "is_trading_day"),
-    ((False, True), (True, False)),
-)
-def test_event_session_window_requires_current_trading_calendar_fact(
-    session: Session,
-    include_calendar: bool,
-    is_trading_day: bool,
-) -> None:
-    _seed_market_facts(
-        session,
-        include_calendar=include_calendar,
-        is_trading_day=is_trading_day,
-    )
-
-    assert (
-        _event_session_window(
-            session,
-            symbol="jm",
-            event_bar=_bar(BOUNDARY_END),
-        )
-        is None
-    )
-
-
-def test_event_session_window_rejects_night_bar_on_no_night_trading_day(
-    session: Session,
-) -> None:
-    _seed_market_facts(
-        session,
-        session_kind="night",
-        has_night_session=False,
-    )
-
-    assert (
-        _event_session_window(
-            session,
-            symbol="jm",
-            event_bar=_bar(CROSS_MIDNIGHT_END),
-        )
-        is None
-    )
-
-
-def test_event_session_window_rejects_ambiguous_matching_windows(
-    session: Session,
-) -> None:
-    _seed_market_facts(session)
-    session.add(
-        TradingSession(
-            exchange_code="DCE",
-            instrument_symbol="jm",
-            session_name="duplicate-day-window",
-            start_time=time(9),
-            end_time=time(11, 30),
-            effective_from=date(2020, 1, 1),
-            crosses_midnight=False,
-            is_active=True,
-        )
-    )
-    session.commit()
-
-    assert (
-        _event_session_window(
-            session,
-            symbol="jm",
-            event_bar=_bar(BOUNDARY_END),
-        )
-        is None
-    )
-
-
-def test_same_boundary_5m_defers_to_single_15m_subing_evaluation(
-    session: Session,
-) -> None:
-    _seed_rule(session, "subing_entry_signal_v1")
-    _seed_market_facts(session)
-    snapshot = _snapshot(
-        frequency=BarFrequency.M15,
-        primary_bar_end=BOUNDARY_END,
-        resolved_signal=_signal(
-            trigger_timeframe=BarFrequency.M15,
-            bar_end=BOUNDARY_END,
-        ),
-    )
-    harness = _runtime(
-        session,
-        event_end=BOUNDARY_END,
-        subing_snapshot=snapshot,
-    )
-
-    harness.runtime.process_message(
-        "live:bar:jm:5m",
-        _payload(bar_end=BOUNDARY_END),
-    )
-
-    assert harness.subing_read.calls == []
-    assert _event_rows(session) == []
-
-    harness.runtime.process_message(
-        "live:bar:jm:15m",
-        _payload(bar_end=BOUNDARY_END),
-    )
-
-    assert len(harness.subing_read.calls) == 1
-    assert harness.subing_read.calls[0].request == SubingReadRequest(
-        "jm",
-        BarFrequency.M15,
-    )
-    assert len(_event_rows(session)) == 1
-    assert len(harness.sender.messages) == 1
-
-
-@pytest.mark.parametrize(
-    ("session_kind", "bar_end"),
-    (("day", DAY_SESSION_END), ("night", CROSS_MIDNIGHT_END)),
-)
-def test_session_final_bar_uses_bounded_phase_observation_handoff(
-    session: Session,
-    session_kind: str,
-    bar_end: datetime,
-) -> None:
-    _seed_rule(session, "subing_entry_signal_v1")
-    _seed_market_facts(session, session_kind=session_kind)
-    snapshot = _snapshot(
-        frequency=BarFrequency.M15,
-        primary_bar_end=bar_end,
-        resolved_signal=_signal(
-            trigger_timeframe=BarFrequency.M15,
-            bar_end=bar_end,
-        ),
-    )
-    harness = _runtime(
-        session,
-        event_end=bar_end,
-        subing_snapshot=snapshot,
-        clock=bar_end + timedelta(seconds=2),
-    )
-
-    harness.runtime.process_message(
-        "live:bar:jm:15m",
-        _payload(bar_end=bar_end),
-    )
-
-    assert harness.subing_read.calls[0].now == bar_end - timedelta(microseconds=1)
-    assert len(_event_rows(session)) == 1
-    assert len(harness.sender.messages) == 1
-
-
-def test_session_final_bar_after_shared_grace_is_dropped(session: Session) -> None:
-    _seed_rule(session, "subing_entry_signal_v1")
-    _seed_market_facts(session)
-    snapshot = _snapshot(
-        frequency=BarFrequency.M15,
-        primary_bar_end=DAY_SESSION_END,
-        resolved_signal=_signal(
-            trigger_timeframe=BarFrequency.M15,
-            bar_end=DAY_SESSION_END,
-        ),
-    )
-    harness = _runtime(
-        session,
-        event_end=DAY_SESSION_END,
-        subing_snapshot=snapshot,
-        clock=(
-            DAY_SESSION_END + LIVE_SESSION_END_ARRIVAL_GRACE + timedelta(microseconds=1)
-        ),
-    )
-
-    harness.runtime.process_message(
-        "live:bar:jm:15m",
-        _payload(bar_end=DAY_SESSION_END),
-    )
-
-    assert harness.subing_read.calls == []
-    assert _event_rows(session) == []
-    assert harness.sender.messages == []
-
-
-def test_ordinary_bar_uses_processing_time_without_adjustment(session: Session) -> None:
-    _seed_rule(session, "subing_entry_signal_v1")
-    _seed_market_facts(session)
-    processing_now = ORDINARY_END + timedelta(seconds=2)
-    harness = _runtime(session, clock=processing_now)
-
-    harness.runtime.process_message("live:bar:jm:5m", _payload())
-
-    assert harness.subing_read.calls[0].now == processing_now
-
-
-@pytest.mark.parametrize(
-    ("processing_now", "event_end", "session_end", "expected"),
-    (
-        (
-            ORDINARY_END - timedelta(microseconds=1),
-            ORDINARY_END,
-            DAY_SESSION_END,
-            None,
-        ),
-        (
-            ORDINARY_END + timedelta(seconds=2),
-            ORDINARY_END,
-            DAY_SESSION_END,
-            ORDINARY_END + timedelta(seconds=2),
-        ),
-        (
-            DAY_SESSION_END + LIVE_SESSION_END_ARRIVAL_GRACE,
-            DAY_SESSION_END,
-            DAY_SESSION_END,
-            DAY_SESSION_END - timedelta(microseconds=1),
-        ),
-        (
-            DAY_SESSION_END
-            + LIVE_SESSION_END_ARRIVAL_GRACE
-            + timedelta(microseconds=1),
-            DAY_SESSION_END,
-            DAY_SESSION_END,
-            None,
-        ),
-    ),
-)
-def test_subing_snapshot_now_obeys_exact_final_bar_contract(
-    processing_now: datetime,
-    event_end: datetime,
-    session_end: datetime,
-    expected: datetime | None,
-) -> None:
-    assert (
-        _subing_snapshot_now(
-            event_bar=_bar(event_end),
-            event_session=SessionWindow(DAY_SESSION_START, session_end),
-            processing_now=processing_now,
-        )
-        == expected
-    )
-
-
-def test_reciprocal_only_resolved_match_drives_event_and_sender(
-    session: Session,
-) -> None:
-    _seed_rule(session, "subing_entry_signal_v1")
-    _seed_market_facts(session)
-    primary_signal = _signal(
-        status=SubingSignalStatus.NOT_MATCHED,
-        direction=SubingDirection.NONE,
-        trigger_timeframe=BarFrequency.M15,
-        bar_end=BOUNDARY_END,
-    )
-    resolved_signal = _signal(
-        direction=SubingDirection.SHORT,
-        trigger_timeframe=BarFrequency.M5,
-        bar_end=BOUNDARY_END,
-    )
-    snapshot = _snapshot(
-        frequency=BarFrequency.M15,
-        primary_bar_end=BOUNDARY_END,
-        primary_signal=primary_signal,
-        resolved_signal=resolved_signal,
-    )
-    harness = _runtime(
-        session,
-        event_end=BOUNDARY_END,
-        subing_snapshot=snapshot,
-    )
-
-    harness.runtime.process_message(
-        "live:bar:jm:15m",
-        _payload(bar_end=BOUNDARY_END),
-    )
-
-    events = _event_rows(session)
-    assert len(events) == 1
-    assert events[0].frequency == "5m"
-    assert events[0].result_codes == ["sell"]
-    assert events[0].lower_tf_confirmation is False
-    assert harness.sender.messages == [
-        AlertNotificationMessage(
-            rule_code="subing_entry_signal_v1",
-            symbol="jm",
-            product_name="焦煤",
-            contract="JM2609",
-            frequency="5m",
-            bar_end=BOUNDARY_END,
-            result_codes=("sell",),
-            lower_tf_confirmation=False,
-        )
-    ]
-
-
-def test_higher_timeframe_resolved_confirmation_drives_event_and_sender(
-    session: Session,
-) -> None:
-    _seed_rule(session, "subing_entry_signal_v1")
-    _seed_market_facts(session)
-    primary_signal = _signal(
-        direction=SubingDirection.LONG,
-        trigger_timeframe=BarFrequency.M15,
-        bar_end=BOUNDARY_END,
-        lower_tf_confirmation=False,
-    )
-    resolved_signal = _signal(
-        direction=SubingDirection.LONG,
-        trigger_timeframe=BarFrequency.M15,
-        bar_end=BOUNDARY_END,
-        lower_tf_confirmation=True,
-        resolution=SubingSignalResolution.HIGHER_TIMEFRAME_WINS,
-    )
-    snapshot = _snapshot(
-        frequency=BarFrequency.M15,
-        primary_bar_end=BOUNDARY_END,
-        primary_signal=primary_signal,
-        resolved_signal=resolved_signal,
-    )
-    harness = _runtime(
-        session,
-        event_end=BOUNDARY_END,
-        subing_snapshot=snapshot,
-    )
-
-    harness.runtime.process_message(
-        "live:bar:jm:15m",
-        _payload(bar_end=BOUNDARY_END),
-    )
-
-    events = _event_rows(session)
-    assert len(events) == 1
-    assert events[0].frequency == "15m"
-    assert events[0].result_codes == ["buy"]
-    assert events[0].lower_tf_confirmation is True
-    assert harness.sender.messages == [
-        AlertNotificationMessage(
-            rule_code="subing_entry_signal_v1",
-            symbol="jm",
-            product_name="焦煤",
-            contract="JM2609",
-            frequency="15m",
-            bar_end=BOUNDARY_END,
-            result_codes=("buy",),
-            lower_tf_confirmation=True,
-        )
-    ]
-
-
-@pytest.mark.parametrize(
-    "resolved_signal",
-    (
-        None,
-        _signal(
-            status=SubingSignalStatus.NOT_MATCHED,
-            direction=SubingDirection.NONE,
-            trigger_timeframe=None,
-            bar_end=BOUNDARY_END,
-            resolution=SubingSignalResolution.DIRECTION_CONFLICT,
-            error_code="SUBING_SIGNAL_DIRECTION_CONFLICT",
-        ),
-    ),
-)
-def test_none_or_direction_conflict_resolved_signal_creates_no_event(
-    session: Session,
-    resolved_signal: SubingSignalEvaluation | None,
-) -> None:
-    _seed_rule(session, "subing_entry_signal_v1")
-    _seed_market_facts(session)
-    snapshot = _snapshot(
-        frequency=BarFrequency.M15,
-        primary_bar_end=BOUNDARY_END,
-        resolved_signal=resolved_signal,
-    )
-    harness = _runtime(
-        session,
-        event_end=BOUNDARY_END,
-        subing_snapshot=snapshot,
-    )
-
-    harness.runtime.process_message(
-        "live:bar:jm:15m",
-        _payload(bar_end=BOUNDARY_END),
-    )
-
-    assert _event_rows(session) == []
-    assert harness.sender.messages == []
-
-
-def test_subing_failure_does_not_block_htdy(
-    session: Session,
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    _seed_rule(session, "htdy_original_15m")
-    _seed_rule(session, "subing_entry_signal_v1")
-    _seed_market_facts(session)
-    subing_error = RuntimeError("SUBING_READ_FAILED")
-    harness = _runtime(
-        session,
-        event_end=BOUNDARY_END,
-        subing_error=subing_error,
-        htdy_observations=("sell",),
-    )
-
-    harness.runtime.process_message(
-        "live:bar:jm:15m",
-        _payload(bar_end=BOUNDARY_END),
-    )
-
-    events = _event_rows(session)
-    assert len(harness.subing_read.calls) == 1
-    assert harness.subing_read.calls[0].request == SubingReadRequest(
-        "jm",
-        BarFrequency.M15,
-    )
-    assert harness.subing_read.raised == [subing_error]
-    assert caplog.messages.count("ALERT_RULE_PROCESSING_FAILED") == 1
-    assert _rule_codes(events) == ["htdy_original_15m"]
-    assert events[0].result_codes == ["sell"]
-    assert harness.sender.messages == [
-        AlertNotificationMessage(
-            rule_code="htdy_original_15m",
-            symbol="jm",
-            product_name="焦煤",
-            contract="JM2609",
-            frequency="15m",
-            bar_end=BOUNDARY_END,
-            result_codes=("sell",),
-            lower_tf_confirmation=False,
-        )
-    ]
-
-
-def test_htdy_failure_does_not_block_subing(session: Session) -> None:
-    _seed_rule(session, "htdy_original_15m")
-    _seed_rule(session, "subing_entry_signal_v1")
-    _seed_market_facts(session)
-    snapshot = _snapshot(
-        frequency=BarFrequency.M15,
-        primary_bar_end=BOUNDARY_END,
-        resolved_signal=_signal(
-            trigger_timeframe=BarFrequency.M15,
-            bar_end=BOUNDARY_END,
-        ),
-    )
-    harness = _runtime(
-        session,
-        event_end=BOUNDARY_END,
-        subing_snapshot=snapshot,
-        htdy_error=RuntimeError("x"),
-    )
-
-    harness.runtime.process_message(
-        "live:bar:jm:15m",
-        _payload(bar_end=BOUNDARY_END),
-    )
-
-    assert _rule_codes(_event_rows(session)) == ["subing_entry_signal_v1"]
 
 
 def test_htdy_keeps_exact_event_cutoff_market_read_path(session: Session) -> None:
@@ -1338,12 +660,11 @@ def test_htdy_same_cutoff_with_different_bar_values_creates_no_event(
 
 
 def test_duplicate_pubsub_creates_one_event_and_sends_once(session: Session) -> None:
-    _seed_rule(session, "subing_entry_signal_v1")
-    _seed_market_facts(session)
-    harness = _runtime(session)
+    _seed_rule(session, "htdy_original_15m")
+    harness = _runtime(session, event_end=BOUNDARY_END)
 
-    harness.runtime.process_message("live:bar:jm:5m", _payload())
-    harness.runtime.process_message("live:bar:jm:5m", _payload())
+    harness.runtime.process_message("live:bar:jm:15m", _payload(bar_end=BOUNDARY_END))
+    harness.runtime.process_message("live:bar:jm:15m", _payload(bar_end=BOUNDARY_END))
 
     assert len(_event_rows(session)) == 1
     assert len(harness.sender.messages) == 1
@@ -1419,9 +740,7 @@ def test_canonical_updated_reads_only_the_exact_enabled_daily_or_weekly_pair(
     assert [window.frequency for window in harness.htdy_evaluator.calls] == [
         enabled_frequency
     ]
-    assert [event.frequency for event in _event_rows(session)] == [
-        enabled_frequency
-    ]
+    assert [event.frequency for event in _event_rows(session)] == [enabled_frequency]
     assert [message.frequency for message in harness.sender.messages] == [
         enabled_frequency
     ]
@@ -1656,9 +975,12 @@ def test_unavailable_daily_pair_does_not_authorize_weekly_fallback(
     assert harness.htdy_evaluator.calls == []
     assert _event_rows(session) == []
     assert harness.sender.messages == []
-    assert caplog.messages.count(
-        "ALERT_RULE_PROCESSING_FAILED symbol=jm frequency=1d stage=market_read"
-    ) == 1
+    assert (
+        caplog.messages.count(
+            "ALERT_RULE_PROCESSING_FAILED symbol=jm frequency=1d stage=market_read"
+        )
+        == 1
+    )
     assert "private Canonical detail" not in caplog.text
 
 
@@ -1710,12 +1032,15 @@ def test_one_unavailable_canonical_pair_does_not_block_the_other_pair(
 def test_notification_failure_keeps_event_and_duplicate_never_retries(
     session: Session,
 ) -> None:
-    _seed_rule(session, "subing_entry_signal_v1")
-    _seed_market_facts(session)
-    harness = _runtime(session, sender_error=RuntimeError("send failed"))
+    _seed_rule(session, "htdy_original_15m")
+    harness = _runtime(
+        session,
+        event_end=BOUNDARY_END,
+        sender_error=RuntimeError("send failed"),
+    )
 
-    harness.runtime.process_message("live:bar:jm:5m", _payload())
-    harness.runtime.process_message("live:bar:jm:5m", _payload())
+    harness.runtime.process_message("live:bar:jm:15m", _payload(bar_end=BOUNDARY_END))
+    harness.runtime.process_message("live:bar:jm:15m", _payload(bar_end=BOUNDARY_END))
 
     assert len(_event_rows(session)) == 1
     assert len(harness.sender.messages) == 1
@@ -1724,23 +1049,19 @@ def test_notification_failure_keeps_event_and_duplicate_never_retries(
 def test_notification_failure_does_not_block_next_completed_bar(
     session: Session,
 ) -> None:
-    _seed_rule(session, "subing_entry_signal_v1")
-    _seed_market_facts(session)
-    harness = _runtime(session, sender_error=RuntimeError("send failed"))
-
-    harness.runtime.process_message("live:bar:jm:5m", _payload())
-    next_end = ORDINARY_END + timedelta(minutes=15)
-    harness.subing_read.result = _snapshot(
-        frequency=BarFrequency.M5,
-        primary_bar_end=next_end,
-        resolved_signal=_signal(
-            trigger_timeframe=BarFrequency.M5,
-            bar_end=next_end,
-        ),
+    _seed_rule(session, "htdy_original_15m")
+    harness = _runtime(
+        session,
+        event_end=BOUNDARY_END,
+        sender_error=RuntimeError("send failed"),
     )
+
+    harness.runtime.process_message("live:bar:jm:15m", _payload(bar_end=BOUNDARY_END))
+    next_end = BOUNDARY_END + timedelta(minutes=15)
+    harness.market_read.result = _window(bar_end=next_end)
     harness.runtime.clock = lambda: next_end + timedelta(seconds=2)
     harness.runtime.process_message(
-        "live:bar:jm:5m",
+        "live:bar:jm:15m",
         _payload(bar_end=next_end),
     )
 
@@ -1749,32 +1070,29 @@ def test_notification_failure_does_not_block_next_completed_bar(
 
 
 def test_multiple_messages_from_one_bar_are_sent_sequentially(session: Session) -> None:
-    _seed_rule(session, "htdy_original_15m")
-    _seed_rule(session, "subing_entry_signal_v1")
-    _seed_market_facts(session)
-    snapshot = _snapshot(
-        frequency=BarFrequency.M15,
-        primary_bar_end=BOUNDARY_END,
-        resolved_signal=_signal(
-            trigger_timeframe=BarFrequency.M15,
-            bar_end=BOUNDARY_END,
-        ),
+    _seed_rule(
+        session,
+        "htdy_original_15m",
+        frequency_scope={"jm": ["1m"]},
     )
+    _seed_rule(session, "subing_strategy_v1")
+    strategy = _Task9ActionEvaluator([], _task9_open_action())
     harness = _runtime(
         session,
         event_end=BOUNDARY_END,
-        subing_snapshot=snapshot,
+        market_read_result=_window(bar_end=BOUNDARY_END, frequency="1m"),
+        strategy_evaluator=strategy,
     )
 
     harness.runtime.process_message(
-        "live:bar:jm:15m",
+        "live:bar:jm:1m",
         _payload(bar_end=BOUNDARY_END),
     )
 
     assert len(_event_rows(session)) == 2
     assert [message.rule_code for message in harness.sender.messages] == [
         "htdy_original_15m",
-        "subing_entry_signal_v1",
+        "subing_strategy_v1",
     ]
 
 
@@ -1786,7 +1104,7 @@ def test_runtime_refreshes_rule_truth_after_external_revocation(
     engine = create_engine(f"sqlite+pysqlite:///{tmp_path / 'alerts.sqlite3'}")
     Base.metadata.create_all(engine)
     with Session(engine) as runtime_session:
-        _seed_rule(runtime_session, "subing_entry_signal_v1")
+        _seed_rule(runtime_session, "subing_strategy_v1")
         cached = runtime_session.scalar(select(AlertRule))
         assert cached is not None
         with Session(engine) as writer:
@@ -1798,10 +1116,13 @@ def test_runtime_refreshes_rule_truth_after_external_revocation(
                 rule.scope_products = []
             writer.commit()
 
-        harness = _runtime(runtime_session)
-        harness.runtime.process_message("live:bar:jm:5m", _payload())
+        strategy = _Task9ActionEvaluator([], _task9_open_action())
+        harness = _runtime(runtime_session, strategy_evaluator=strategy)
+        harness.runtime.process_message(
+            "live:bar:jm:1m", _payload(bar_end=BOUNDARY_END)
+        )
 
-        assert harness.subing_read.calls == []
+        assert strategy.order == ["strategy:1m"]
         assert _event_rows(runtime_session) == []
 
 
@@ -1935,17 +1256,39 @@ class AtomicRuntimeStatusStore:
         self.status = dict(payload)
 
     def update(self, changes: dict[str, object]) -> dict[str, object]:
-        self.status = validate_alert_runtime_status(
-            {**self.status, **changes}
-        )
+        self.status = validate_alert_runtime_status({**self.status, **changes})
         return dict(self.status)
 
 
-def test_runtime_status_v1_is_normalized_to_v2_without_acknowledgement() -> None:
-    normalized = validate_alert_runtime_status(_runtime_status_payload())
+@pytest.mark.parametrize("schema_version", (1, 2))
+def test_runtime_status_v1_v2_is_normalized_to_v3(
+    schema_version: int,
+) -> None:
+    payload = _runtime_status_payload()
+    if schema_version == 2:
+        payload = {
+            **payload,
+            "schema_version": 2,
+            "notification_acknowledged_at": None,
+        }
+    normalized = validate_alert_runtime_status(payload)
 
-    assert normalized["schema_version"] == 2
+    assert normalized["schema_version"] == 3
     assert normalized["notification_acknowledged_at"] is None
+    assert normalized["strategy_state"] == "warming"
+    assert normalized["strategy_product_count"] == 0
+    assert normalized["strategy_unavailable_symbols"] == []
+
+
+def test_runtime_status_rejects_strategy_counts_above_active60_bound() -> None:
+    payload = {
+        **alert_runtime_module.empty_alert_runtime_status(),
+        "strategy_product_count": 61,
+        "strategy_ready_product_count": 61,
+    }
+
+    with pytest.raises(ValueError, match="^ALERT_RUNTIME_STATUS_INVALID$"):
+        validate_alert_runtime_status(payload)
 
 
 def test_runtime_status_rejects_acknowledgement_without_prior_failure() -> None:
@@ -1973,13 +1316,11 @@ def test_acknowledge_notification_failure_preserves_failure_facts() -> None:
         acknowledged_at=datetime(2026, 8, 14, 2, 45, tzinfo=UTC),
     )
 
-    assert acknowledged["schema_version"] == 2
+    assert acknowledged["schema_version"] == 3
     assert acknowledged["last_notification_failure_at"] == failure_at
     assert acknowledged["notification_error_type"] == "notification_transport_failed"
     assert acknowledged["consecutive_notification_failures"] == 1
-    assert acknowledged["notification_acknowledged_at"] == (
-        "2026-08-14T02:45:00+00:00"
-    )
+    assert acknowledged["notification_acknowledged_at"] == ("2026-08-14T02:45:00+00:00")
 
 
 def test_acknowledge_new_failure_after_prior_acknowledgement() -> None:
@@ -2001,9 +1342,7 @@ def test_acknowledge_new_failure_after_prior_acknowledgement() -> None:
     )
 
     assert acknowledged["last_notification_failure_at"] == latest_failure_at
-    assert acknowledged["notification_acknowledged_at"] == (
-        "2026-08-14T02:47:00+00:00"
-    )
+    assert acknowledged["notification_acknowledged_at"] == ("2026-08-14T02:47:00+00:00")
 
 
 @pytest.mark.parametrize(
@@ -2095,7 +1434,7 @@ def test_redis_heartbeat_store_sets_value_and_ttl_atomically() -> None:
     assert redis.calls[0][1] == {"ex": 30}
 
 
-def test_redis_runtime_status_store_upgrades_v1_to_v2_without_ttl() -> None:
+def test_redis_runtime_status_store_upgrades_v1_to_v3_without_ttl() -> None:
     from app.alerts import composition
 
     class FakeRedis:
@@ -2125,11 +1464,26 @@ def test_redis_runtime_status_store_upgrades_v1_to_v2_without_ttl() -> None:
 
     expected = {
         **payload,
-        "schema_version": 2,
+        "schema_version": 3,
         "notification_acknowledged_at": None,
+        "strategy_state": "warming",
+        "strategy_started_at": None,
+        "strategy_ready_at": None,
+        "strategy_product_count": 0,
+        "strategy_ready_product_count": 0,
+        "strategy_unavailable_product_count": 0,
+        "strategy_unavailable_symbols": [],
+        "last_strategy_action_at": None,
+        "last_strategy_restore_at": None,
     }
     assert redis.calls == [
-        (("alert:runtime-status", json.dumps(expected, ensure_ascii=False, separators=(",", ":"))), {})
+        (
+            (
+                "alert:runtime-status",
+                json.dumps(expected, ensure_ascii=False, separators=(",", ":")),
+            ),
+            {},
+        )
     ]
     assert "provider_reference" not in redis.calls[0][0][1]
 
@@ -2182,12 +1536,10 @@ def test_redis_runtime_status_acknowledgement_is_compare_and_set() -> None:
 
     persisted = json.loads(redis.values["alert:runtime-status"])
     assert acknowledged == persisted
-    assert persisted["schema_version"] == 2
+    assert persisted["schema_version"] == 3
     assert persisted["last_notification_failure_at"] == failure_at
     assert persisted["notification_error_type"] == "notification_transport_failed"
-    assert persisted["notification_acknowledged_at"] == (
-        "2026-08-14T02:45:00+00:00"
-    )
+    assert persisted["notification_acknowledged_at"] == ("2026-08-14T02:45:00+00:00")
 
 
 def test_redis_runtime_status_acknowledgement_rejects_concurrent_change() -> None:
@@ -2241,26 +1593,21 @@ def test_redis_runtime_status_atomic_update_merges_current_acknowledgement() -> 
     from app.alerts.composition import RedisAlertRuntimeStatusStore
 
     failure_at = "2026-08-14T02:44:00+00:00"
-    current = {
-        **_runtime_status_payload(
+    current = validate_alert_runtime_status(
+        _runtime_status_payload(
             last_notification_failure_at=failure_at,
             notification_error_type="notification_transport_failed",
             consecutive_notification_failures=1,
-        ),
-        "schema_version": 2,
-        "notification_acknowledged_at": "2026-08-14T02:45:00+00:00",
-    }
+        )
+    )
+    current["notification_acknowledged_at"] = "2026-08-14T02:45:00+00:00"
 
     redis = RuntimeStatusRedis(current)
     store = RedisAlertRuntimeStatusStore(redis)
 
-    updated = store.update(
-        {"last_processing_success_at": "2026-08-14T02:46:00+00:00"}
-    )
+    updated = store.update({"last_processing_success_at": "2026-08-14T02:46:00+00:00"})
 
-    assert updated["notification_acknowledged_at"] == (
-        "2026-08-14T02:45:00+00:00"
-    )
+    assert updated["notification_acknowledged_at"] == ("2026-08-14T02:45:00+00:00")
     assert json.loads(redis.values["alert:runtime-status"]) == updated
 
 
@@ -2285,9 +1632,7 @@ def test_redis_runtime_status_store_rejects_nonpublic_error_token(
 
     with pytest.raises(ValueError, match="^ALERT_RUNTIME_STATUS_INVALID$"):
         RedisAlertRuntimeStatusStore(redis).write(
-            _runtime_status_payload(
-                **{error_field: "must_not_leak"}
-            )
+            _runtime_status_payload(**{error_field: "must_not_leak"})
         )
 
     assert redis.values == {}
@@ -2305,8 +1650,7 @@ def test_runtime_status_write_failure_escapes_processing_boundary(
         def write(self, _payload: dict[str, object]) -> None:
             raise RuntimeError("ALERT_RUNTIME_STATUS_WRITE_FAILED")
 
-    _seed_rule(session, "subing_entry_signal_v1")
-    _seed_market_facts(session)
+    _seed_rule(session, "htdy_original_15m")
     harness = _runtime(
         session,
         runtime_status_store=FailingStatusStore(),
@@ -2316,7 +1660,7 @@ def test_runtime_status_write_failure_escapes_processing_boundary(
         RuntimeError,
         match="^ALERT_RUNTIME_STATUS_WRITE_FAILED$",
     ):
-        harness.runtime.process_message("live:bar:jm:5m", _payload())
+        harness.runtime.process_message("live:bar:jm:15m", _payload())
 
     assert len(_event_rows(session)) == 1
 
@@ -2343,9 +1687,7 @@ def test_runtime_status_update_preserves_external_acknowledgement(
         last_processing_success_at="2026-08-14T02:46:00+00:00"
     )
 
-    assert store.status["notification_acknowledged_at"] == (
-        "2026-08-14T02:45:00+00:00"
-    )
+    assert store.status["notification_acknowledged_at"] == ("2026-08-14T02:45:00+00:00")
     assert store.status["last_notification_failure_at"] == failure_at
 
 
@@ -2374,9 +1716,7 @@ def test_new_notification_failure_invalidates_same_timestamp_acknowledgement(
 
     assert store.status["last_notification_failure_at"] == failure_at.isoformat()
     assert store.status["notification_acknowledged_at"] is None
-    assert store.status["notification_error_type"] == (
-        "notification_transport_failed"
-    )
+    assert store.status["notification_error_type"] == ("notification_transport_failed")
     assert store.status["consecutive_notification_failures"] == 2
 
 
@@ -2441,8 +1781,7 @@ def test_runtime_status_write_failure_escapes_each_notification_boundary(
                 )
             return payload["last_provider_accepted_at"] is not None
 
-    _seed_rule(session, "subing_entry_signal_v1")
-    _seed_market_facts(session)
+    _seed_rule(session, "htdy_original_15m")
     harness = _runtime(
         session,
         taxonomy=taxonomy,
@@ -2454,7 +1793,7 @@ def test_runtime_status_write_failure_escapes_each_notification_boundary(
         RuntimeError,
         match="^ALERT_RUNTIME_STATUS_WRITE_FAILED$",
     ):
-        harness.runtime.process_message("live:bar:jm:5m", _payload())
+        harness.runtime.process_message("live:bar:jm:15m", _payload())
 
     assert len(_event_rows(session)) == 1
     assert len(harness.sender.messages) == expected_sender_calls
@@ -2465,20 +1804,19 @@ def test_runtime_status_records_processing_event_and_provider_acceptance(
 ) -> None:
     from app.alerts.composition import RedisAlertRuntimeStatusStore
 
-    _seed_rule(session, "subing_entry_signal_v1")
-    _seed_market_facts(session)
+    _seed_rule(session, "htdy_original_15m")
     redis = RuntimeStatusRedis()
     harness = _runtime(
         session,
         runtime_status_store=RedisAlertRuntimeStatusStore(redis),
     )
 
-    harness.runtime.process_message("live:bar:jm:5m", _payload())
+    harness.runtime.process_message("live:bar:jm:15m", _payload())
 
     status = json.loads(redis.values["alert:runtime-status"])
     observed_at = (ORDINARY_END + timedelta(seconds=2)).isoformat()
     assert status == {
-        "schema_version": 2,
+        "schema_version": 3,
         "last_processed_bar_at": ORDINARY_END.isoformat(),
         "last_processing_success_at": observed_at,
         "last_processing_failure_at": None,
@@ -2490,6 +1828,15 @@ def test_runtime_status_records_processing_event_and_provider_acceptance(
         "notification_acknowledged_at": None,
         "notification_error_type": None,
         "consecutive_notification_failures": 0,
+        "strategy_state": "warming",
+        "strategy_started_at": None,
+        "strategy_ready_at": None,
+        "strategy_product_count": 0,
+        "strategy_ready_product_count": 0,
+        "strategy_unavailable_product_count": 0,
+        "strategy_unavailable_symbols": [],
+        "last_strategy_action_at": None,
+        "last_strategy_restore_at": None,
     }
     assert "private-provider-reference" not in redis.values["alert:runtime-status"]
 
@@ -2499,8 +1846,7 @@ def test_missing_taxonomy_records_preparation_failure_without_transport_attempt(
 ) -> None:
     from app.alerts.composition import RedisAlertRuntimeStatusStore
 
-    _seed_rule(session, "subing_entry_signal_v1")
-    _seed_market_facts(session)
+    _seed_rule(session, "htdy_original_15m")
     redis = RuntimeStatusRedis()
     harness = _runtime(
         session,
@@ -2508,7 +1854,7 @@ def test_missing_taxonomy_records_preparation_failure_without_transport_attempt(
         runtime_status_store=RedisAlertRuntimeStatusStore(redis),
     )
 
-    harness.runtime.process_message("live:bar:jm:5m", _payload())
+    harness.runtime.process_message("live:bar:jm:15m", _payload())
 
     event = _event_rows(session)[0]
     observed_at = ORDINARY_END + timedelta(seconds=2)
@@ -2527,8 +1873,7 @@ def test_transport_failure_is_persisted_after_real_attempt(
 ) -> None:
     from app.alerts.composition import RedisAlertRuntimeStatusStore
 
-    _seed_rule(session, "subing_entry_signal_v1")
-    _seed_market_facts(session)
+    _seed_rule(session, "htdy_original_15m")
     redis = RuntimeStatusRedis()
     harness = _runtime(
         session,
@@ -2536,7 +1881,7 @@ def test_transport_failure_is_persisted_after_real_attempt(
         runtime_status_store=RedisAlertRuntimeStatusStore(redis),
     )
 
-    harness.runtime.process_message("live:bar:jm:5m", _payload())
+    harness.runtime.process_message("live:bar:jm:15m", _payload())
 
     observed_at = (ORDINARY_END + timedelta(seconds=2)).isoformat()
     status = json.loads(redis.values["alert:runtime-status"])
@@ -2553,8 +1898,7 @@ def test_missing_provider_acceptance_is_a_notification_failure(
 ) -> None:
     from app.alerts.composition import RedisAlertRuntimeStatusStore
 
-    _seed_rule(session, "subing_entry_signal_v1")
-    _seed_market_facts(session)
+    _seed_rule(session, "htdy_original_15m")
     redis = RuntimeStatusRedis()
     harness = _runtime(
         session,
@@ -2562,7 +1906,7 @@ def test_missing_provider_acceptance_is_a_notification_failure(
         runtime_status_store=RedisAlertRuntimeStatusStore(redis),
     )
 
-    harness.runtime.process_message("live:bar:jm:5m", _payload())
+    harness.runtime.process_message("live:bar:jm:15m", _payload())
 
     status = json.loads(redis.values["alert:runtime-status"])
     observed_at = (ORDINARY_END + timedelta(seconds=2)).isoformat()
@@ -2577,8 +1921,7 @@ def test_next_provider_acceptance_preserves_last_notification_failure_fact(
 ) -> None:
     from app.alerts.composition import RedisAlertRuntimeStatusStore
 
-    _seed_rule(session, "subing_entry_signal_v1")
-    _seed_market_facts(session)
+    _seed_rule(session, "htdy_original_15m")
     redis = RuntimeStatusRedis(
         _runtime_status_payload(
             last_transport_attempt_at="2026-08-13T01:00:00+00:00",
@@ -2593,12 +1936,13 @@ def test_next_provider_acceptance_preserves_last_notification_failure_fact(
         runtime_status_store=RedisAlertRuntimeStatusStore(redis),
     )
 
-    harness.runtime.process_message("live:bar:jm:5m", _payload())
+    harness.runtime.process_message("live:bar:jm:15m", _payload())
 
     status = json.loads(redis.values["alert:runtime-status"])
-    assert status["last_provider_accepted_at"] == (
-        ORDINARY_END + timedelta(seconds=2)
-    ).isoformat()
+    assert (
+        status["last_provider_accepted_at"]
+        == (ORDINARY_END + timedelta(seconds=2)).isoformat()
+    )
     assert status["last_notification_failure_at"] == "2026-08-13T01:01:00+00:00"
     assert status["notification_error_type"] == "notification_transport_failed"
     assert status["consecutive_notification_failures"] == 0
@@ -2649,8 +1993,7 @@ def test_fatal_session_failure_never_sends_queued_notification(
         def __exit__(self, *_args: object) -> None:
             raise RuntimeError("private database exit detail")
 
-    _seed_rule(session, "subing_entry_signal_v1")
-    _seed_market_facts(session)
+    _seed_rule(session, "htdy_original_15m")
     redis = RuntimeStatusRedis()
     harness = _runtime(
         session,
@@ -2658,29 +2001,28 @@ def test_fatal_session_failure_never_sends_queued_notification(
     )
     harness.runtime._session_factory = FailingSessionContext
 
-    harness.runtime.process_message("live:bar:jm:5m", _payload())
+    harness.runtime.process_message("live:bar:jm:15m", _payload())
 
     assert len(_event_rows(session)) == 1
     assert harness.sender.messages == []
     status = json.loads(redis.values["alert:runtime-status"])
-    assert status["last_processing_failure_at"] == (
-        ORDINARY_END + timedelta(seconds=2)
-    ).isoformat()
+    assert (
+        status["last_processing_failure_at"]
+        == (ORDINARY_END + timedelta(seconds=2)).isoformat()
+    )
     assert status["processing_error_type"] == "processing_failed"
     assert status["last_transport_attempt_at"] is None
-    assert "private database exit detail" not in redis.values[
-        "alert:runtime-status"
-    ]
+    assert "private database exit detail" not in redis.values["alert:runtime-status"]
 
 
 def test_run_forever_uses_single_transport_and_fixed_heartbeat_contract(
     session: Session,
 ) -> None:
     _seed_rule(session, "htdy_original_15m")
-    _seed_rule(session, "subing_entry_signal_v1", scope=())
+    _seed_rule(session, "subing_strategy_v1", scope=())
     moments = iter(
         datetime(2026, 8, 14, 0, 0, second, tzinfo=UTC)
-        for second in (0, 0, 5, 10, 10, 15, 20, 20)
+        for second in (0, 0, 0, 0, 5, 10, 15, 20, 20)
     )
     checks = iter((False, False, False, False, False, False, True))
     source = FakeMessageSource()
@@ -2720,7 +2062,7 @@ def test_heartbeat_counts_distinct_products_across_valid_rule_scopes(
         "htdy_original_15m",
         frequency_scope={"jm": ["5m", "15m"]},
     )
-    _seed_rule(session, "subing_entry_signal_v1", scope=("ag",))
+    _seed_rule(session, "subing_strategy_v1", scope=("ag",))
     heartbeats = FakeHeartbeatStore()
     harness = _runtime(session, operational_products=("jm", "ag"))
     harness.runtime.heartbeat_store = heartbeats
@@ -2755,9 +2097,7 @@ def test_heartbeat_does_not_union_or_count_mixed_scope_authority(
     harness = _runtime(session, operational_products=("jm", "ag"))
     harness.runtime.heartbeat_store = heartbeats
 
-    harness.runtime._write_heartbeat(
-        datetime(2026, 8, 14, 0, 0, tzinfo=UTC)
-    )
+    harness.runtime._write_heartbeat(datetime(2026, 8, 14, 0, 0, tzinfo=UTC))
 
     assert heartbeats.writes[0][0]["enabled_rule_count"] == 1
     assert heartbeats.writes[0][0]["scope_product_count"] == 0
@@ -2767,3 +2107,472 @@ def test_session_fixture_uses_real_shanghai_anchor() -> None:
     assert DAY_SESSION_START.astimezone(SHANGHAI).time() == time(9)
     assert CROSS_MIDNIGHT_START.astimezone(SHANGHAI).time() == time(21)
     assert CROSS_MIDNIGHT_END.astimezone(SHANGHAI).time() == time(2, 30)
+
+
+class _Task9StrategyEvaluator:
+    def __init__(self, order: list[str]) -> None:
+        self.order = order
+
+    def restore_all(self, *, started_at: datetime):
+        self.order.append("restore")
+        return (
+            SubingStrategyRuntimeResult(
+                actions=(),
+                product_status=SubingStrategyRuntimeProductStatus(
+                    symbol="jm",
+                    state="warming",
+                    cutoff_1m=None,
+                    cutoff_5m=None,
+                    cutoff_15m=None,
+                    reason_codes=(),
+                ),
+            ),
+        )
+
+    def final_catch_up(self, *, ready_at: datetime):
+        self.order.append("catch_up")
+        return (
+            SubingStrategyRuntimeResult(
+                actions=(),
+                product_status=SubingStrategyRuntimeProductStatus(
+                    symbol="jm",
+                    state="ready",
+                    cutoff_1m=ORDINARY_END,
+                    cutoff_5m=ORDINARY_END,
+                    cutoff_15m=BOUNDARY_END,
+                    reason_codes=(),
+                ),
+            ),
+        )
+
+    def current_state(self, symbol: str):
+        return type(
+            "State",
+            (),
+            {
+                "symbol": symbol,
+                "contract": "JM2609",
+                "segment_start_trading_day": DAY,
+                "current_episode": None,
+                "closed_episodes": (),
+            },
+        )()
+
+    def process_completed_bar(self, bar, frequency, *, source_identity):
+        self.order.append(f"strategy:{frequency.value}")
+        return SubingStrategyRuntimeResult(
+            actions=(),
+            product_status=SubingStrategyRuntimeProductStatus(
+                symbol=source_identity.symbol,
+                state="ready",
+                cutoff_1m=bar.bar_end if frequency is BarFrequency.M1 else None,
+                cutoff_5m=bar.bar_end if frequency is BarFrequency.M5 else None,
+                cutoff_15m=bar.bar_end if frequency is BarFrequency.M15 else None,
+                reason_codes=(),
+            ),
+        )
+
+    def process_canonical_updated(self, trading_day: date):
+        self.order.append(f"terminal:{trading_day.isoformat()}")
+        return ()
+
+
+def _task9_open_action() -> SubingStrategyAction:
+    effective_bar_end = BOUNDARY_END
+    identity = {
+        "strategy_id": "subing_strategy_v1",
+        "formula_version": "subing_strategy_15m_v1",
+        "symbol": "jm",
+        "contract": "JM2609",
+        "segment_start_trading_day": DAY.isoformat(),
+        "opportunity_id": "subing-opportunity:task9",
+        "kind": "open_long",
+        "decision_at": ORDINARY_END.isoformat(),
+        "effective_bar_end": effective_bar_end.isoformat(),
+        "fill_basis": "next_bar_open",
+    }
+    return SubingStrategyAction(
+        action_id=subing_strategy_action_id(identity),
+        episode_id=subing_strategy_episode_id(identity),
+        strategy_id="subing_strategy_v1",
+        formula_version="subing_strategy_15m_v1",
+        kind=SubingStrategyActionKind.OPEN_LONG,
+        symbol="jm",
+        contract="JM2609",
+        trading_day=DAY,
+        segment_start_trading_day=DAY,
+        opportunity_id="subing-opportunity:task9",
+        decision_at=ORDINARY_END,
+        effective_open_at=ORDINARY_END,
+        effective_bar_end=effective_bar_end,
+        reference_price=Decimal("100"),
+        fill_basis=SubingStrategyFillBasis.NEXT_BAR_OPEN,
+        confirmation_source=ConfirmationSource.FORMAL_V1,
+        reason_codes=(),
+        direction_context_source_day=DAY,
+        direction_context_target_day=DAY,
+        bound_reference_pivot=None,
+    )
+
+
+def _task9_terminal_close() -> tuple[SubingStrategyAction, SubingStrategyEpisode]:
+    entry = _task9_open_action()
+    identity = {
+        "strategy_id": "subing_strategy_v1",
+        "formula_version": "subing_strategy_15m_v1",
+        "symbol": "jm",
+        "contract": "JM2609",
+        "segment_start_trading_day": DAY.isoformat(),
+        "opportunity_id": "subing-opportunity:task9",
+        "kind": "close_long",
+        "decision_at": CANONICAL_END.isoformat(),
+        "effective_bar_end": CANONICAL_END.isoformat(),
+        "fill_basis": "segment_terminal_close",
+    }
+    close = SubingStrategyAction(
+        action_id=subing_strategy_action_id(identity),
+        episode_id=entry.episode_id,
+        strategy_id="subing_strategy_v1",
+        formula_version="subing_strategy_15m_v1",
+        kind=SubingStrategyActionKind.CLOSE_LONG,
+        symbol="jm",
+        contract="JM2609",
+        trading_day=DAY,
+        segment_start_trading_day=DAY,
+        opportunity_id="subing-opportunity:task9",
+        decision_at=CANONICAL_END,
+        effective_open_at=None,
+        effective_bar_end=CANONICAL_END,
+        reference_price=Decimal("101"),
+        fill_basis=SubingStrategyFillBasis.SEGMENT_TERMINAL_CLOSE,
+        confirmation_source=None,
+        reason_codes=("CONTRACT_SEGMENT_END",),
+        direction_context_source_day=None,
+        direction_context_target_day=None,
+        bound_reference_pivot=None,
+    )
+    episode = SubingStrategyEpisode.from_actions(
+        entry_action=entry,
+        exit_action=close,
+        completed_15m_bars=(
+            _bar(BOUNDARY_END),
+            _bar(CANONICAL_END),
+        ),
+        latest_reference_price=None,
+    )
+    return close, episode
+
+
+class _Task9ActionEvaluator(_Task9StrategyEvaluator):
+    def __init__(
+        self,
+        order: list[str],
+        action: SubingStrategyAction,
+        *,
+        episode: SubingStrategyEpisode | None = None,
+    ) -> None:
+        super().__init__(order)
+        self.action = action
+        self.episode = episode
+
+    def current_state(self, symbol: str):
+        return type(
+            "State",
+            (),
+            {
+                "symbol": symbol,
+                "contract": "JM2609",
+                "segment_start_trading_day": DAY,
+                "current_episode": None,
+                "closed_episodes": (
+                    (self.episode,) if self.episode is not None else ()
+                ),
+            },
+        )()
+
+    def process_completed_bar(self, bar, frequency, *, source_identity):
+        self.order.append(f"strategy:{frequency.value}")
+        return SubingStrategyRuntimeResult(
+            actions=(self.action,),
+            product_status=SubingStrategyRuntimeProductStatus(
+                symbol=source_identity.symbol,
+                state="ready",
+                cutoff_1m=bar.bar_end,
+                cutoff_5m=None,
+                cutoff_15m=None,
+                reason_codes=(),
+            ),
+        )
+
+    def process_canonical_updated(self, trading_day: date):
+        self.order.append(f"terminal:{trading_day.isoformat()}")
+        return (
+            SubingStrategyRuntimeResult(
+                actions=(self.action,),
+                product_status=SubingStrategyRuntimeProductStatus(
+                    symbol="jm",
+                    state="ready",
+                    cutoff_1m=None,
+                    cutoff_5m=None,
+                    cutoff_15m=self.action.decision_at,
+                    reason_codes=(),
+                ),
+            ),
+        )
+
+
+def test_strategy_startup_subscribes_before_restore_and_catch_up(
+    session: Session,
+) -> None:
+    _seed_rule(session, "htdy_original_15m")
+    _seed_rule(session, "subing_strategy_v1", scope=())
+    order: list[str] = []
+
+    class OrderedSource(FakeMessageSource):
+        def subscribe(self, *patterns: str) -> None:
+            order.append("subscribe")
+            super().subscribe(*patterns)
+
+    source = OrderedSource()
+    heartbeats = FakeHeartbeatStore()
+    strategy = _Task9StrategyEvaluator(order)
+    status = AtomicRuntimeStatusStore()
+    sender = FakeSender()
+    runtime = AlertRuntime(
+        session_factory=lambda: nullcontext(session),
+        market_read_factory=lambda _session: FakeRead(_window(bar_end=ORDINARY_END)),
+        strategy_evaluator=strategy,
+        htdy_evaluator=FakeHtdyEvaluator(()),
+        sender=sender,
+        operational_products=("jm",),
+        taxonomy={"jm": ProductTaxonomyEntry(name="焦煤", sector="coal")},
+        message_source=source,
+        heartbeat_store=heartbeats,
+        runtime_status_store=status,
+        clock=lambda: ORDINARY_END + timedelta(seconds=2),
+        stop_requested=lambda: True,
+    )
+
+    runtime.run_forever()
+
+    assert order == ["subscribe", "restore", "catch_up"]
+    assert status.status["schema_version"] == 3
+    assert status.status["strategy_state"] == "ready"
+    assert _event_rows(session) == []
+    assert sender.messages == []
+
+
+def test_pending_action_can_notify_only_from_a_post_ready_live_bar(
+    session: Session,
+) -> None:
+    _seed_rule(session, "htdy_original_15m", scope=())
+    _seed_rule(session, "subing_strategy_v1")
+    order: list[str] = []
+    strategy = _Task9ActionEvaluator(order, _task9_open_action())
+
+    class OneMessageSource(FakeMessageSource):
+        def __init__(self) -> None:
+            super().__init__()
+            self.message = (
+                "live:bar:jm:1m",
+                _payload(bar_end=BOUNDARY_END),
+            )
+
+        def get_message(self, *, timeout_seconds: float):
+            assert timeout_seconds == 1.0
+            message, self.message = self.message, None
+            return message
+
+    stop_checks = iter((False, True))
+    source = OneMessageSource()
+    sender = FakeSender()
+    runtime = AlertRuntime(
+        session_factory=lambda: nullcontext(session),
+        market_read_factory=lambda _session: FakeRead(_window(bar_end=ORDINARY_END)),
+        strategy_evaluator=strategy,
+        htdy_evaluator=FakeHtdyEvaluator(()),
+        sender=sender,
+        operational_products=("jm",),
+        taxonomy={"jm": ProductTaxonomyEntry(name="焦煤", sector="coal")},
+        message_source=source,
+        heartbeat_store=FakeHeartbeatStore(),
+        runtime_status_store=AtomicRuntimeStatusStore(),
+        clock=lambda: BOUNDARY_END + timedelta(seconds=2),
+        stop_requested=lambda: next(stop_checks),
+    )
+
+    runtime.run_forever()
+
+    assert order == ["restore", "catch_up", "strategy:1m"]
+    assert len(_event_rows(session)) == 1
+    assert len(sender.messages) == 1
+
+
+def test_missing_rule_registry_blocks_subscribe_restore_and_ready(
+    session: Session,
+) -> None:
+    _seed_rule(session, "htdy_original_15m")
+    order: list[str] = []
+    source = FakeMessageSource()
+    runtime = AlertRuntime(
+        session_factory=lambda: nullcontext(session),
+        market_read_factory=lambda _session: FakeRead(_window(bar_end=ORDINARY_END)),
+        strategy_evaluator=_Task9StrategyEvaluator(order),
+        htdy_evaluator=FakeHtdyEvaluator(()),
+        sender=FakeSender(),
+        operational_products=("jm",),
+        taxonomy={"jm": ProductTaxonomyEntry(name="焦煤", sector="coal")},
+        message_source=source,
+        heartbeat_store=FakeHeartbeatStore(),
+        runtime_status_store=AtomicRuntimeStatusStore(),
+        clock=lambda: ORDINARY_END,
+        stop_requested=lambda: True,
+    )
+
+    with pytest.raises(RuntimeError, match="^ALERT_RUNTIME_COMPOSITION_INVALID$"):
+        runtime.run_forever()
+
+    assert source.subscribe_calls == []
+    assert order == []
+
+
+def test_invalid_runtime_status_blocks_subscribe_restore_and_ready(
+    session: Session,
+) -> None:
+    order: list[str] = []
+    source = FakeMessageSource()
+
+    class InvalidStatusStore:
+        def read(self) -> dict[str, object]:
+            return {"schema_version": 999}
+
+        def write(self, _payload: dict[str, object]) -> None:
+            raise AssertionError("invalid status must block every write")
+
+    runtime = AlertRuntime(
+        session_factory=lambda: nullcontext(session),
+        market_read_factory=lambda _session: FakeRead(_window(bar_end=ORDINARY_END)),
+        strategy_evaluator=_Task9StrategyEvaluator(order),
+        htdy_evaluator=FakeHtdyEvaluator(()),
+        sender=FakeSender(),
+        operational_products=("jm",),
+        taxonomy={"jm": ProductTaxonomyEntry(name="焦煤", sector="coal")},
+        message_source=source,
+        heartbeat_store=FakeHeartbeatStore(),
+        runtime_status_store=InvalidStatusStore(),
+        clock=lambda: ORDINARY_END,
+        stop_requested=lambda: True,
+    )
+
+    with pytest.raises(ValueError, match="^ALERT_RUNTIME_STATUS_INVALID$"):
+        runtime.run_forever()
+
+    assert source.subscribe_calls == []
+    assert order == []
+
+
+def test_new_strategy_action_is_committed_before_one_shot_send(
+    session: Session,
+) -> None:
+    _seed_rule(session, "subing_strategy_v1")
+    order: list[str] = []
+    strategy = _Task9ActionEvaluator(order, _task9_open_action())
+
+    class OrderedSender(FakeSender):
+        def send(self, event: AlertNotificationMessage) -> ProviderAcceptance:
+            assert len(_event_rows(session)) == 1
+            order.append("send")
+            return super().send(event)
+
+    sender = OrderedSender()
+    runtime = AlertRuntime(
+        session_factory=lambda: nullcontext(session),
+        market_read_factory=lambda _session: FakeRead(_window(bar_end=ORDINARY_END)),
+        strategy_evaluator=strategy,
+        htdy_evaluator=FakeHtdyEvaluator(()),
+        sender=sender,
+        operational_products=("jm",),
+        taxonomy={"jm": ProductTaxonomyEntry(name="焦煤", sector="coal")},
+        clock=lambda: BOUNDARY_END + timedelta(seconds=2),
+    )
+
+    runtime.process_message("live:bar:jm:1m", _payload(bar_end=BOUNDARY_END))
+
+    event = _event_rows(session)[0]
+    assert event.action_id == strategy.action.action_id
+    assert event.result_codes == ["open_long"]
+    assert order == ["strategy:1m", "send"]
+
+
+@pytest.mark.parametrize("enabled,scope", ((False, ("jm",)), (True, ())))
+def test_strategy_rule_authority_never_controls_calculation_state(
+    session: Session,
+    enabled: bool,
+    scope: tuple[str, ...],
+) -> None:
+    _seed_rule(session, "subing_strategy_v1", enabled=enabled, scope=scope)
+    order: list[str] = []
+    strategy = _Task9ActionEvaluator(order, _task9_open_action())
+    harness = _runtime(session, strategy_evaluator=strategy)
+
+    harness.runtime.process_message("live:bar:jm:1m", _payload(bar_end=BOUNDARY_END))
+
+    assert order == ["strategy:1m"]
+    assert _event_rows(session) == []
+    assert harness.sender.messages == []
+
+
+def test_strategy_duplicate_and_fact_conflict_never_send_again(
+    session: Session,
+) -> None:
+    _seed_rule(session, "subing_strategy_v1")
+    action = _task9_open_action()
+    strategy = _Task9ActionEvaluator([], action)
+    harness = _runtime(session, strategy_evaluator=strategy)
+
+    harness.runtime.process_message("live:bar:jm:1m", _payload(bar_end=BOUNDARY_END))
+    harness.runtime.process_message("live:bar:jm:1m", _payload(bar_end=BOUNDARY_END))
+    strategy.action = replace(action, reference_price=Decimal("101"))
+    harness.runtime.process_message("live:bar:jm:1m", _payload(bar_end=BOUNDARY_END))
+
+    assert len(_event_rows(session)) == 1
+    assert len(harness.sender.messages) == 1
+
+
+def test_strategy_product_failure_does_not_block_htdy(session: Session) -> None:
+    _seed_rule(session, "htdy_original_15m")
+
+    class FailingStrategy(_Task9StrategyEvaluator):
+        def process_completed_bar(self, *_args, **_kwargs):
+            self.order.append("strategy:failed")
+            raise RuntimeError("private product source detail")
+
+    order: list[str] = []
+    strategy = FailingStrategy(order)
+    harness = _runtime(
+        session,
+        event_end=BOUNDARY_END,
+        strategy_evaluator=strategy,
+    )
+
+    harness.runtime.process_message("live:bar:jm:15m", _payload(bar_end=BOUNDARY_END))
+
+    assert order == ["strategy:failed"]
+    assert _rule_codes(_event_rows(session)) == ["htdy_original_15m"]
+    assert len(harness.sender.messages) == 1
+
+
+def test_canonical_terminal_action_uses_the_same_event_path(session: Session) -> None:
+    _seed_rule(session, "subing_strategy_v1")
+    close, episode = _task9_terminal_close()
+    order: list[str] = []
+    strategy = _Task9ActionEvaluator(order, close, episode=episode)
+    harness = _runtime(session, strategy_evaluator=strategy)
+
+    harness.runtime.process_message("market:state", _canonical_updated_payload())
+
+    event = _event_rows(session)[0]
+    assert event.action_id == close.action_id
+    assert event.result_codes == ["close_long"]
+    assert order == [f"terminal:{DAY.isoformat()}"]
+    assert len(harness.sender.messages) == 1

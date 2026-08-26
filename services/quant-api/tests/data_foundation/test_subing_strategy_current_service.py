@@ -260,6 +260,28 @@ def test_current_restores_only_current_segment_and_uses_causal_contexts(
     assert result.direction_context.target_trading_day == TARGET_DAY
 
 
+def test_runtime_restore_returns_the_shared_incremental_machine_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service, *_ = _service()
+    captured = {}
+    expected = object()
+    monkeypatch.setattr(
+        "app.market_data.subing_strategy.current_service.replay_subing_strategy_machine",
+        lambda **kwargs: captured.update(kwargs) or expected,
+    )
+
+    restored = service.restore_machine(symbol="jm", now=NOW)
+
+    assert restored is expected
+    assert captured["segment"] == ResolvedContractSegment(
+        CONTRACT, SEGMENT_START, TARGET_DAY
+    )
+    assert captured["bars_1m"]
+    assert captured["bars_5m"]
+    assert captured["bars_15m"]
+
+
 def test_current_reports_canonical_only_source_mode(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -463,7 +485,9 @@ def test_current_artifact_contract_must_belong_to_item_symbol() -> None:
             CONTRACT, SEGMENT_START, target
         ),
         historical_direction_context_resolver=historical,
-        current_snapshot_store=_Store(replace(_snapshot(), items=(other_product_item,))),
+        current_snapshot_store=_Store(
+            replace(_snapshot(), items=(other_product_item,))
+        ),
         target_trading_day=lambda _now: TARGET_DAY,
         previous_trading_day=lambda _target: SOURCE_DAY,
         calibration=_accepted_calibration(),
