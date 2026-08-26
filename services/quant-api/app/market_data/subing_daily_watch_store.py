@@ -158,9 +158,10 @@ class SubingDailyWatchStore:
         )
 
     def read_current(self) -> SubingDailyWatchSnapshot | None:
-        if not self._current.exists():
+        current_bytes = self._read_optional_bytes(self._current)
+        if current_bytes is None:
             return None
-        snapshot = _parse_snapshot_bytes(_read_bytes(self._current))
+        snapshot = _parse_snapshot_bytes(current_bytes)
         status = self.read_generation_status()
         last_run = status.get("last_run") if status is not None else None
         if (
@@ -178,9 +179,10 @@ class SubingDailyWatchStore:
         return snapshot
 
     def read_generation_status(self) -> Mapping[str, object] | None:
-        if not self._generation_status.exists():
+        status_bytes = self._read_optional_bytes(self._generation_status)
+        if status_bytes is None:
             return None
-        return _parse_generation_status(_read_bytes(self._generation_status))
+        return _parse_generation_status(status_bytes)
 
     def record_failure(
         self,
@@ -236,6 +238,28 @@ class SubingDailyWatchStore:
             return
         if self._root_validator() != self._root:
             raise SubingDailyWatchStoreError("OBSERVATION_ROOT_UNAVAILABLE")
+
+    def _read_optional_bytes(self, path: Path) -> bytes | None:
+        self._read_preflight(path)
+        if not path.exists():
+            self._read_preflight(path)
+            return None
+        self._read_preflight(path)
+        content = _read_bytes(path)
+        self._read_preflight(path)
+        return content
+
+    def _read_preflight(self, path: Path) -> None:
+        try:
+            if self._root.is_symlink() or path.is_symlink():
+                raise SubingDailyWatchStoreError("OBSERVATION_ROOT_UNAVAILABLE")
+            self._revalidate_root()
+            if self._root.is_symlink() or path.is_symlink():
+                raise SubingDailyWatchStoreError("OBSERVATION_ROOT_UNAVAILABLE")
+        except SubingDailyWatchStoreError:
+            raise
+        except (OSError, NotImplementedError) as exc:
+            raise SubingDailyWatchStoreError("OBSERVATION_ROOT_UNAVAILABLE") from exc
 
     def _ensure_directories(self) -> None:
         try:

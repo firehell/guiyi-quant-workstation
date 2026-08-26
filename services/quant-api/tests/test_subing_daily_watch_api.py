@@ -703,11 +703,20 @@ def test_current_composition_uses_active_order_when_operational_order_differs(
         "app.market_data.composition.resolve_subing_observation_root",
         lambda **_kwargs: root,
     )
+
+    def build_current_store(
+        value: Path,
+        *,
+        root_validator: object,
+    ) -> object:
+        assert value == root / "v2"
+        assert callable(root_validator)
+        assert root_validator() == root / "v2"
+        return store
+
     monkeypatch.setattr(
         "app.market_data.composition.SubingDailyWatchStore",
-        lambda value: (
-            store if value == root / "v2" else pytest.fail("wrong store root")
-        ),
+        build_current_store,
     )
     monkeypatch.setattr(
         "app.market_data.composition.build_market_data_service",

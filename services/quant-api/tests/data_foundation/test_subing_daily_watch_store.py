@@ -250,6 +250,60 @@ def test_publish_revalidates_production_root_before_creating_directories(
     assert not root.exists()
 
 
+def test_read_current_rejects_symlinked_v2_root_with_valid_outside_artifacts(
+    tmp_path: Path,
+) -> None:
+    """Catches a V2 root symlink projecting a valid snapshot from outside."""
+    outside = tmp_path / "outside-v2"
+    SubingDailyWatchStore(outside).publish(_snapshot(), started_at=_STARTED_AT)
+    base = tmp_path / "observations"
+    base.mkdir()
+    root = base / "v2"
+    root.symlink_to(outside, target_is_directory=True)
+
+    with pytest.raises(SubingDailyWatchStoreError) as raised:
+        SubingDailyWatchStore(root).read_current()
+
+    assert raised.value.code == "OBSERVATION_ROOT_UNAVAILABLE"
+
+
+@pytest.mark.parametrize(
+    ("artifact_name", "read_method"),
+    [
+        ("current.json", "read_current"),
+        ("generation-status.json", "read_generation_status"),
+    ],
+)
+def test_reads_reject_symlinked_artifact_before_following_it(
+    tmp_path: Path,
+    artifact_name: str,
+    read_method: str,
+) -> None:
+    """Catches current/status reads following an otherwise valid file symlink."""
+    root = tmp_path / "v2"
+    store = SubingDailyWatchStore(root)
+    store.publish(_snapshot(), started_at=_STARTED_AT)
+    artifact = root / artifact_name
+    outside = tmp_path / f"outside-{artifact_name}"
+    artifact.replace(outside)
+    artifact.symlink_to(outside)
+
+    with pytest.raises(SubingDailyWatchStoreError) as raised:
+        getattr(store, read_method)()
+
+    assert raised.value.code == "OBSERVATION_ROOT_UNAVAILABLE"
+
+
+def test_reads_preserve_missing_v2_first_generation_behavior(tmp_path: Path) -> None:
+    """Catches read preflight creating or rejecting an ordinary missing V2 root."""
+    root = tmp_path / "observations" / "v2"
+    store = SubingDailyWatchStore(root)
+
+    assert store.read_current() is None
+    assert store.read_generation_status() is None
+    assert not root.exists()
+
+
 @pytest.mark.parametrize("fail_on_check", [2, 3])
 def test_publish_revalidates_root_at_each_mutation_boundary(
     tmp_path: Path,

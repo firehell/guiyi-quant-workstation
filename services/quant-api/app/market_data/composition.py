@@ -227,7 +227,10 @@ def build_subing_daily_watch_current_service(
             products=products,
             now=now,
         ),
-        store_factory=lambda: SubingDailyWatchStore(_subing_daily_watch_v2_root()),
+        store_factory=lambda: SubingDailyWatchStore(
+            _subing_daily_watch_v2_root(),
+            root_validator=_subing_daily_watch_v2_root,
+        ),
     )
 
 

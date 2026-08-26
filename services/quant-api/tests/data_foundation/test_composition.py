@@ -199,10 +199,13 @@ def test_subing_daily_watch_current_service_reads_only_v2_root(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Catches the current projection reading V1 bytes from the base root."""
+    """Catches current reads lacking exact V2 root identity revalidation."""
     products = _sixty_products()
     base = (tmp_path / "observations").resolve()
+    changed_base = (tmp_path / "changed-observations").resolve()
     base.mkdir()
+    changed_base.mkdir()
+    resolved = {"base": base}
     monkeypatch.setattr(
         "app.market_data.composition.load_active_products",
         lambda: products,
@@ -213,10 +216,18 @@ def test_subing_daily_watch_current_service_reads_only_v2_root(
     )
     monkeypatch.setattr(
         "app.market_data.composition.resolve_subing_observation_root",
-        lambda *, environ, inspector: base,
+        lambda *, environ, inspector: resolved["base"],
     )
 
     service = build_subing_daily_watch_current_service(object())
     store = service._store_factory()
 
     assert store._root == base / "v2"
+    assert store.read_current() is None
+    assert not (base / "v2").exists()
+
+    resolved["base"] = changed_base
+    with pytest.raises(SubingDailyWatchStoreError) as raised:
+        store.read_current()
+
+    assert raised.value.code == "OBSERVATION_ROOT_UNAVAILABLE"
