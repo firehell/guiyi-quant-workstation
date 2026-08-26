@@ -16,7 +16,11 @@ from app.alerts.current_trading_day import (
     resolve_current_trading_day,
 )
 from app.alerts.models import AlertEvent, AlertRule
-from app.alerts.registry import get_alert_rule_definition
+from app.alerts.registry import (
+    HTDY_ALERT_RULE_CODE,
+    SUBING_STRATEGY_RULE_CODE,
+    get_alert_rule_definition,
+)
 from app.alerts.strategy_payload import (
     StrategyPayloadError,
     parse_subing_strategy_payload,
@@ -296,7 +300,7 @@ def _event_out(event: AlertEvent, *, rule_code: str) -> AlertEventOut:
                 raise StrategyPayloadError()
             return HtdyAlertEventOut(
                 id=event.id,
-                rule_code="htdy_original_15m",
+                rule_code=HTDY_ALERT_RULE_CODE,
                 symbol=event.symbol,
                 contract=event.contract,
                 trading_day=event.trading_day,
@@ -337,7 +341,7 @@ def _event_out(event: AlertEvent, *, rule_code: str) -> AlertEventOut:
             )
             return StrategyAlertEventOut(
                 id=event.id,
-                rule_code="subing_strategy_v1",
+                rule_code=SUBING_STRATEGY_RULE_CODE,
                 symbol=event.symbol,
                 contract=event.contract,
                 trading_day=event.trading_day,

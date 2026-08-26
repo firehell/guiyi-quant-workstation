@@ -21,6 +21,7 @@ from app.market_data.composition import (
     build_subing_strategy_historical_service,
 )
 from app.market_data.subing_strategy.contracts import (
+    SUBING_STRATEGY_ID,
     SubingStrategyAction,
     SubingStrategyEpisode,
 )
@@ -187,7 +188,7 @@ def _strategy_current_response(
     pending = result.pending_action
     context = result.direction_context
     return SubingStrategyCurrentResponse(
-        strategy_id="subing_strategy_v1",
+        strategy_id=SUBING_STRATEGY_ID,
         formula_version="subing_strategy_15m_v1",
         series_kind="actual_dominant",
         symbol=result.request.symbol,

@@ -1,6 +1,7 @@
 import type { AlertEvent, KlineMarker, MarketFrequency, SeriesKind } from '../types/market.ts'
 import {
   ALERT_RULE_PRESENTATIONS,
+  HTDY_ALERT_RULE_CODE,
   alertDirectionalTone,
   alertResultLabel,
   getAlertRulePresentation,
@@ -27,7 +28,7 @@ export function alertEventsToMarkers(events: AlertEvent[]): KlineMarker[] {
   return [...events]
     .sort((left, right) => Date.parse(left.bar_end) - Date.parse(right.bar_end))
     .flatMap((event) => {
-      if (event.rule_code !== 'htdy_original_15m') return []
+      if (event.rule_code !== HTDY_ALERT_RULE_CODE) return []
       const observations = event.result_codes.filter(
         (item): item is 'buy' | 'sell' => item === 'buy' || item === 'sell',
       )

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import Final, Literal
 
 
 class AlertRuleKind(StrEnum):
@@ -15,6 +16,12 @@ class AlertRuleKind(StrEnum):
 
     INDICATOR_OBSERVATION = "indicator_observation"
     STRATEGY_ACTION = "strategy_action"
+
+
+HTDY_ALERT_RULE_CODE: Final[Literal["htdy_original_15m"]] = "htdy_original_15m"
+SUBING_STRATEGY_RULE_CODE: Final[Literal["subing_strategy_v1"]] = (
+    "subing_strategy_v1"
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -30,14 +37,14 @@ class AlertRuleDefinition:
 
 HTDY_RULE = AlertRuleDefinition(
     # Legacy stable database identity; the suffix no longer defines capability.
-    rule_code="htdy_original_15m",
+    rule_code=HTDY_ALERT_RULE_CODE,
     display_name="火天大有",
     kind=AlertRuleKind.INDICATOR_OBSERVATION,
     input_frequencies=("1m", "5m", "15m", "30m", "60m", "1d", "1w"),
     series_kind="actual_dominant",
 )
 SUBING_RULE = AlertRuleDefinition(
-    rule_code="subing_strategy_v1",
+    rule_code=SUBING_STRATEGY_RULE_CODE,
     display_name="苏冰策略",
     kind=AlertRuleKind.STRATEGY_ACTION,
     input_frequencies=("1m", "5m", "15m"),

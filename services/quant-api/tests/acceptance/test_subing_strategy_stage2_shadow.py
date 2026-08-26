@@ -1,22 +1,22 @@
 from __future__ import annotations
 
+from collections import defaultdict
 from collections.abc import Callable, Mapping
 from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
+from functools import lru_cache
 import os
+from typing import Any
 
 import pytest
 
 from app.alerts.subing_strategy_runtime import (
+    SubingStrategyRuntimeActionFact,
     SubingStrategyRuntimeEvaluator,
     SubingStrategyRuntimeProductSourceError,
 )
 from app.market_data.aggregation import SessionWindow, bucket_window_for_bar
-from app.market_data.domain import (
-    BarFrequency,
-    CanonicalBar,
-    ResolvedContractSegment,
-)
+from app.market_data.domain import BarFrequency, CanonicalBar, ResolvedContractSegment
 from app.market_data.operational_universe import load_active_products
 from app.market_data.subing_calibration import load_subing_calibration
 from app.market_data.subing_lifecycle_policy import load_subing_lifecycle_policy
@@ -39,32 +39,30 @@ from app.market_data.subing_strategy.machine import (
 from app.market_data.subing_strategy.policy import load_subing_strategy_policy
 from app.market_data.subing_strategy.replay import replay_subing_strategy_segment
 from app.market_data.subing_strategy.shadow import (
+    LOCAL_READ_ONLY_COMPOSITION,
     NoShadowCacheWriter,
     NoShadowRuntimeStatusWriter,
     NullShadowEventWriter,
     NullShadowNotificationSender,
-    ShadowReadOnlyCanonicalReader,
-    ShadowReadOnlyLiveReader,
-    ShadowReadOnlyPostgresTransaction,
+    SHADOW_COMPOSITION_ENV,
+    SHADOW_ENABLE_ENV,
     SubingStrategyShadowAuthorizationError,
+    SubingStrategyShadowCompositionNotConfigured,
     SubingStrategyShadowDependencies,
     SubingStrategyShadowDependencyError,
     SubingStrategyShadowWriteBlocked,
     authorize_subing_strategy_shadow,
+    build_local_readonly_subing_strategy_shadow_dependencies,
+    build_manual_subing_strategy_shadow,
+    build_subing_strategy_shadow_dependencies,
 )
 from app.market_data.subing_strategy.stream_contracts import (
     AuthoritativeSegmentTerminal,
-    Completed1mBar,
-    Completed5mBar,
-    Completed15mBar,
 )
-from research.subing_strategy_fixtures import (
-    RecordedStrategyStream,
-    recorded_strategy_stream,
-)
+from research.subing_strategy_fixtures import RecordedStrategyStream, recorded_strategy_stream
 
 
-_SHADOW_ENABLED = os.environ.get("GUIYI_SUBING_STAGE2_SHADOW") == "1"
+_SHADOW_ENABLED = os.environ.get(SHADOW_ENABLE_ENV) == "1"
 _TRADING_DAY = date(2026, 8, 3)
 _STARTED_AT = datetime(2026, 8, 3, 9, 59, 30, tzinfo=UTC)
 _READY_AT = datetime(2026, 8, 3, 10, 1, 30, tzinfo=UTC)
@@ -75,13 +73,12 @@ def _context(
     symbol: str,
     contract: str,
     bar: CanonicalBar,
-    direction: SubingStrategyDirection,
 ) -> SubingStrategyDirectionContext:
     return SubingStrategyDirectionContext(
         symbol=symbol,
         target_trading_day=bar.trading_day,
         source_trading_day=bar.trading_day - timedelta(days=1),
-        direction=direction,
+        direction=SubingStrategyDirection.LONG_ONLY,
         reason_codes=("D1_H1_ALIGNED",),
         daily_bar_end=bar.bar_end - timedelta(days=1),
         hourly_bar_end=bar.bar_end - timedelta(hours=1),
@@ -100,76 +97,26 @@ def _recorded_identity(
     SubingStrategySourceIdentity,
 ]:
     recorded = recorded_strategy_stream(18, SubingStrategyDirection.LONG_ONLY)
-    context = _context(
-        symbol=symbol,
-        contract=contract,
-        bar=recorded.bars_15m[0],
-        direction=SubingStrategyDirection.LONG_ONLY,
+    context = _context(symbol=symbol, contract=contract, bar=recorded.bars_15m[0])
+    return (
+        recorded,
+        context,
+        ResolvedContractSegment(contract, _TRADING_DAY, _TRADING_DAY),
+        SubingStrategySourceIdentity(symbol, contract, _TRADING_DAY),
     )
-    segment = ResolvedContractSegment(contract, _TRADING_DAY, _TRADING_DAY)
-    identity = SubingStrategySourceIdentity(symbol, contract, _TRADING_DAY)
-    return recorded, context, segment, identity
-
-
-def _stream_prefix(
-    *,
-    symbol: str,
-    contract: str,
-    bars_1m: tuple[CanonicalBar, ...],
-    bars_5m: tuple[CanonicalBar, ...],
-    bars_15m: tuple[CanonicalBar, ...],
-    sessions: tuple[SessionWindow, ...],
-    context: SubingStrategyDirectionContext,
-) -> tuple[SubingStrategyMachineState, tuple[SubingStrategyAction, ...]]:
-    intervals = authoritative_subing_strategy_intervals(
-        bars_1m=bars_1m,
-        bars_15m=bars_15m,
-        sessions=sessions,
-    )
-    state = initial_subing_strategy_machine(
-        symbol=symbol,
-        contract=contract,
-        segment_start_trading_day=_TRADING_DAY,
-        calibration=load_subing_calibration(),
-        lifecycle_policy=load_subing_lifecycle_policy(),
-        strategy_policy=load_subing_strategy_policy(),
-        direction_contexts={_TRADING_DAY: context},
-        intervals=intervals,
-    )
-    identity = SubingStrategySourceIdentity(symbol, contract, _TRADING_DAY)
-    events = [*(Completed1mBar(bar) for bar in bars_1m)]
-    events.extend(Completed5mBar(bar) for bar in bars_5m)
-    events.extend(Completed15mBar(bar) for bar in bars_15m)
-    events.sort(
-        key=lambda event: (
-            event.bar.bar_end,
-            0
-            if isinstance(event, Completed1mBar)
-            else 1
-            if isinstance(event, Completed15mBar)
-            else 2,
-        )
-    )
-    for event in events:
-        state, _ = step_subing_strategy_machine(
-            state,
-            event,
-            source_identity=identity,
-        )
-    return state, state.actions
 
 
 class _RestoreReader:
     def __init__(self, unavailable_symbol: str) -> None:
         self.unavailable_symbol = unavailable_symbol
 
-    def restore(
+    def restore_machine(
         self,
         *,
         symbol: str,
-        started_at: datetime,
+        now: datetime,
     ) -> SubingStrategyMachineState:
-        assert started_at == _STARTED_AT
+        assert now == _STARTED_AT
         if symbol == self.unavailable_symbol:
             raise SubingStrategyRuntimeProductSourceError()
         recorded, context, _, _ = _recorded_identity(
@@ -191,21 +138,9 @@ class _RestoreReader:
             ),
         )
 
-    def restore_rollover(
-        self,
-        *,
-        symbol: str,
-        trading_day: date,
-        previous_identity: SubingStrategySourceIdentity,
-        terminal: AuthoritativeSegmentTerminal,
-    ) -> SubingStrategyMachineState:
-        raise AssertionError(
-            (symbol, trading_day, previous_identity, terminal),
-        )
-
 
 class _CurrentReader:
-    def read_completed_bars(
+    def completed_live_after(
         self,
         *,
         symbol: str,
@@ -219,55 +154,140 @@ class _CurrentReader:
         assert through == _READY_AT
         return {}
 
-    def read_session_windows(
+    def session_windows(
         self,
         *,
         symbol: str,
         trading_day: date,
         source_identity: SubingStrategySourceIdentity,
     ) -> tuple[SessionWindow, ...]:
-        raise AssertionError((symbol, trading_day, source_identity))
+        assert trading_day == _TRADING_DAY
+        assert symbol == source_identity.symbol
+        return _recorded_identity(
+            symbol=symbol,
+            contract=source_identity.contract,
+        )[0].sessions
 
-    def read_authoritative_terminal(
+    def authoritative_terminal(
         self,
         *,
         symbol: str,
         trading_day: date,
         source_identity: SubingStrategySourceIdentity,
     ) -> AuthoritativeSegmentTerminal | None:
-        raise AssertionError((symbol, trading_day, source_identity))
+        del symbol, trading_day, source_identity
+        return None
+
+
+class _ReadOnlySession:
+    def __init__(self, ledger: list[tuple[str, int]], identity: int) -> None:
+        self.ledger = ledger
+        self.identity = identity
+
+    def __enter__(self) -> _ReadOnlySession:
+        self.ledger.append(("enter", self.identity))
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        self.ledger.append(("exit", self.identity))
+
+    def execute(self, statement: object) -> None:
+        assert str(statement) == "SET TRANSACTION READ ONLY"
+        self.ledger.append(("set_read_only", self.identity))
+
+    def scalar(self, statement: object) -> str:
+        assert str(statement) == "SHOW transaction_read_only"
+        self.ledger.append(("verify_read_only", self.identity))
+        return "on"
+
+    def rollback(self) -> None:
+        self.ledger.append(("rollback", self.identity))
+
+
+class _RecordedReadService:
+    def __init__(
+        self,
+        session: _ReadOnlySession,
+        restore_reader: _RestoreReader,
+        current_reader: _CurrentReader,
+    ) -> None:
+        self._session = session
+        self._restore = restore_reader
+        self._current = current_reader
+
+    def _read(self, name: str) -> None:
+        self._session.ledger.append((name, self._session.identity))
+
+    def restore_machine(self, **kwargs: Any) -> SubingStrategyMachineState:
+        self._read("restore_machine")
+        return self._restore.restore_machine(**kwargs)
+
+    def completed_live_after(
+        self, **kwargs: Any
+    ) -> Mapping[BarFrequency, tuple[CanonicalBar, ...]]:
+        self._read("completed_live_after")
+        return self._current.completed_live_after(**kwargs)
+
+    def session_windows(self, **kwargs: Any) -> tuple[SessionWindow, ...]:
+        self._read("session_windows")
+        return self._current.session_windows(**kwargs)
+
+    def authoritative_terminal(
+        self, **kwargs: Any
+    ) -> AuthoritativeSegmentTerminal | None:
+        self._read("authoritative_terminal")
+        return self._current.authoritative_terminal(**kwargs)
 
 
 def _safe_dependencies(
     *,
-    restore_reader: object | None = None,
-    current_reader: object | None = None,
+    unavailable_symbol: str = "zz",
+    ledger: list[tuple[str, int]] | None = None,
 ) -> SubingStrategyShadowDependencies:
-    return SubingStrategyShadowDependencies(
-        event_writer=NullShadowEventWriter(),
-        notification_sender=NullShadowNotificationSender(),
-        cache_writer=NoShadowCacheWriter(),
-        runtime_status_writer=NoShadowRuntimeStatusWriter(),
-        postgres_transaction=ShadowReadOnlyPostgresTransaction(
-            verify_read_only=lambda: True,
-            read=lambda operation: operation,
-        ),
-        canonical_reader=ShadowReadOnlyCanonicalReader(
-            reader=restore_reader or _RestoreReader("zz")
-        ),
-        live_reader=ShadowReadOnlyLiveReader(reader=current_reader or _CurrentReader()),
+    audit = ledger if ledger is not None else []
+    counter = iter(range(1, 100_000))
+    restore = _RestoreReader(unavailable_symbol)
+    current = _CurrentReader()
+    return build_subing_strategy_shadow_dependencies(
+        session_factory=lambda: _ReadOnlySession(audit, next(counter)),
+        service_factory=lambda session: _RecordedReadService(session, restore, current),
+        clock=lambda: _READY_AT,
     )
 
 
 @pytest.mark.parametrize("raw", (None, "", "0", "true", "TRUE", "2"))
 def test_shadow_authorization_requires_exact_enable_marker(raw: str | None) -> None:
-    environment = {} if raw is None else {"GUIYI_SUBING_STAGE2_SHADOW": raw}
-
+    environment = {} if raw is None else {SHADOW_ENABLE_ENV: raw}
     with pytest.raises(SubingStrategyShadowAuthorizationError):
         authorize_subing_strategy_shadow(
             environment=environment,
             dependencies=_safe_dependencies(),
         )
+
+
+def test_marker_without_exact_composition_fails_closed() -> None:
+    with pytest.raises(
+        SubingStrategyShadowCompositionNotConfigured,
+        match="SHADOW_COMPOSITION_NOT_CONFIGURED",
+    ):
+        build_manual_subing_strategy_shadow(
+            environment={SHADOW_ENABLE_ENV: "1"},
+            composition_factories={},
+        )
+
+
+def test_injected_exact_composition_is_independent_and_default_off() -> None:
+    built = _safe_dependencies()
+    assert (
+        build_manual_subing_strategy_shadow(
+            environment={
+                SHADOW_ENABLE_ENV: "1",
+                SHADOW_COMPOSITION_ENV: "recorded_readonly",
+            },
+            composition_factories={"recorded_readonly": lambda: built},
+        )
+        is built
+    )
 
 
 @pytest.mark.parametrize(
@@ -282,23 +302,13 @@ def test_shadow_authorization_requires_exact_enable_marker(raw: str | None) -> N
         "live_reader",
     ),
 )
-def test_shadow_dependencies_reject_any_non_exact_write_or_read_adapter(
-    field: str,
-) -> None:
+def test_shadow_dependencies_reject_non_exact_adapters(field: str) -> None:
+    safe = _safe_dependencies()
     values = {
-        "event_writer": NullShadowEventWriter(),
-        "notification_sender": NullShadowNotificationSender(),
-        "cache_writer": NoShadowCacheWriter(),
-        "runtime_status_writer": NoShadowRuntimeStatusWriter(),
-        "postgres_transaction": ShadowReadOnlyPostgresTransaction(
-            verify_read_only=lambda: True,
-            read=lambda operation: operation,
-        ),
-        "canonical_reader": ShadowReadOnlyCanonicalReader(reader=_RestoreReader("zz")),
-        "live_reader": ShadowReadOnlyLiveReader(reader=_CurrentReader()),
+        name: getattr(safe, name)
+        for name in SubingStrategyShadowDependencies.__dataclass_fields__
     }
     values[field] = object()
-
     with pytest.raises(SubingStrategyShadowDependencyError):
         SubingStrategyShadowDependencies(**values)
 
@@ -319,170 +329,213 @@ def test_shadow_sinks_block_every_write_attempt(
         sink_method()
 
 
-@pytest.mark.parametrize("verified", (False, None, "on", 1))
-def test_shadow_dependencies_require_boolean_true_read_only_verification(
-    verified: object,
-) -> None:
+def test_read_only_adapters_do_not_expose_raw_reader_session_or_generic_read() -> None:
+    dependencies = _safe_dependencies()
+    for adapter in (
+        dependencies.postgres_transaction,
+        dependencies.canonical_reader,
+        dependencies.live_reader,
+    ):
+        assert not hasattr(adapter, "reader")
+        assert not hasattr(adapter, "session")
+        assert not hasattr(adapter, "read")
+
+    assert {
+        name
+        for name in dir(dependencies.canonical_reader)
+        if not name.startswith("_")
+    } == {"restore", "restore_rollover"}
+    assert {
+        name for name in dir(dependencies.live_reader) if not name.startswith("_")
+    } == {
+        "read_completed_bars",
+        "read_session_windows",
+        "read_authoritative_terminal",
+    }
+
+
+def test_postgres_verification_and_catalog_read_share_exact_session() -> None:
+    ledger: list[tuple[str, int]] = []
+    dependencies = _safe_dependencies(ledger=ledger)
+    dependencies.canonical_reader.restore(symbol="jm", started_at=_STARTED_AT)
+
+    assert ledger == [
+        ("enter", 1),
+        ("set_read_only", 1),
+        ("verify_read_only", 1),
+        ("restore_machine", 1),
+        ("rollback", 1),
+        ("exit", 1),
+    ]
+
+
+def test_dependency_composition_rejects_readers_bound_to_another_transaction() -> None:
+    left = _safe_dependencies()
+    right = _safe_dependencies()
     with pytest.raises(SubingStrategyShadowDependencyError):
         SubingStrategyShadowDependencies(
-            event_writer=NullShadowEventWriter(),
-            notification_sender=NullShadowNotificationSender(),
-            cache_writer=NoShadowCacheWriter(),
-            runtime_status_writer=NoShadowRuntimeStatusWriter(),
-            postgres_transaction=ShadowReadOnlyPostgresTransaction(
-                verify_read_only=lambda: verified,
-                read=lambda operation: operation,
-            ),
-            canonical_reader=ShadowReadOnlyCanonicalReader(reader=_RestoreReader("zz")),
-            live_reader=ShadowReadOnlyLiveReader(reader=_CurrentReader()),
+            event_writer=left.event_writer,
+            notification_sender=left.notification_sender,
+            cache_writer=left.cache_writer,
+            runtime_status_writer=left.runtime_status_writer,
+            postgres_transaction=left.postgres_transaction,
+            canonical_reader=right.canonical_reader,
+            live_reader=left.live_reader,
         )
+
+
+def test_write_capable_service_is_rejected_before_any_read() -> None:
+    class _MaliciousService:
+        def write(self) -> None:
+            raise AssertionError("must not be called")
+
+        def restore_machine(self, **_kwargs: object) -> None:
+            raise AssertionError("must not be called")
+
+    dependencies = build_subing_strategy_shadow_dependencies(
+        session_factory=lambda: _ReadOnlySession([], 1),
+        service_factory=lambda _session: _MaliciousService(),
+    )
+    with pytest.raises(SubingStrategyShadowDependencyError):
+        dependencies.canonical_reader.restore(symbol="jm", started_at=_STARTED_AT)
 
 
 @pytest.mark.manual_acceptance
 @pytest.mark.skipif(
     not _SHADOW_ENABLED,
-    reason="requires GUIYI_SUBING_STAGE2_SHADOW=1 and authorized read-only inputs",
+    reason="requires exact per-run authorization and sealed read-only composition",
 )
-def test_authorized_read_only_shadow_uses_only_sealed_dependencies() -> None:
-    active_products = load_active_products()
-    dependencies = _safe_dependencies(
-        restore_reader=_RestoreReader(active_products[-1]),
-        current_reader=_CurrentReader(),
-    )
-
-    assert (
-        authorize_subing_strategy_shadow(
+def test_authorized_real_read_only_shadow_composition() -> None:
+    try:
+        dependencies = build_manual_subing_strategy_shadow(
             environment=os.environ,
-            dependencies=dependencies,
+            composition_factories={
+                LOCAL_READ_ONLY_COMPOSITION: (
+                    build_local_readonly_subing_strategy_shadow_dependencies
+                )
+            },
         )
-        is dependencies
+    except SubingStrategyShadowCompositionNotConfigured:
+        pytest.skip("SHADOW_COMPOSITION_NOT_CONFIGURED")
+
+    evaluator = SubingStrategyRuntimeEvaluator(
+        load_active_products(),
+        restore_reader=dependencies.canonical_reader,
+        current_reader=dependencies.live_reader,
     )
-    _assert_recorded_stream_no_write_contract(
-        active_products=active_products,
-        dependencies=dependencies,
+    restored = evaluator.restore_all(started_at=datetime.now(UTC))
+    caught_up = evaluator.final_catch_up(ready_at=datetime.now(UTC))
+    assert len(restored) == len(caught_up) == 60
+
+
+@pytest.mark.parametrize("boundary_order", ("5m_first", "15m_first"))
+def test_recorded_stream_evaluator_matches_historical_for_every_checked_prefix(
+    boundary_order: str,
+) -> None:
+    recorded, context, segment, identity = _recorded_identity()
+    dependencies = _safe_dependencies()
+    evaluator = SubingStrategyRuntimeEvaluator(
+        ("jm",),
+        restore_reader=dependencies.canonical_reader,
+        current_reader=dependencies.live_reader,
+    )
+    evaluator.restore_all(started_at=_STARTED_AT)
+    ready = evaluator.final_catch_up(ready_at=_READY_AT)
+    assert ready[0].product_status.state == "ready"
+    assert not ready[0].action_facts
+
+    events_by_end: dict[datetime, list[tuple[BarFrequency, CanonicalBar]]] = defaultdict(
+        list
+    )
+    for frequency, bars in (
+        (BarFrequency.M1, recorded.bars_1m),
+        (BarFrequency.M5, recorded.bars_5m),
+        (BarFrequency.M15, recorded.bars_15m),
+    ):
+        for bar in bars:
+            events_by_end[bar.bar_end].append((frequency, bar))
+
+    rank = {
+        BarFrequency.M1: 0,
+        BarFrequency.M5: 1 if boundary_order == "5m_first" else 2,
+        BarFrequency.M15: 2 if boundary_order == "5m_first" else 1,
+    }
+    emitted: list[SubingStrategyRuntimeActionFact] = []
+    boundary_count = 0
+    for bar_end in sorted(events_by_end):
+        group = sorted(events_by_end[bar_end], key=lambda item: rank[item[0]])
+        for frequency, bar in group:
+            result = evaluator.process_completed_bar(
+                bar,
+                frequency,
+                source_identity=identity,
+            )
+            assert result.product_status.state == "ready"
+            emitted.extend(result.action_facts)
+        if any(frequency is BarFrequency.M15 for frequency, _ in group):
+            boundary_count += 1
+            historical = _expected_historical_prefix(boundary_count)
+            assert tuple(fact.action for fact in emitted) == historical
+            if boundary_count <= 12:
+                assert not emitted
+
+    assert tuple(fact.action for fact in emitted) == _historical_prefix(
+        recorded=recorded,
+        segment=segment,
+        context=context,
+        boundary_count=60,
     )
 
 
-def test_recorded_stream_proves_no_write_stage2_shadow_contract() -> None:
+def test_recorded_stream_proves_active60_bounded_unavailable_and_no_writes() -> None:
     active_products = load_active_products()
     unavailable_symbol = active_products[-1]
-    dependencies = _safe_dependencies(
-        restore_reader=_RestoreReader(unavailable_symbol),
-        current_reader=_CurrentReader(),
-    )
-    _assert_recorded_stream_no_write_contract(
-        active_products=active_products,
-        dependencies=dependencies,
-    )
-
-
-def _assert_recorded_stream_no_write_contract(
-    *,
-    active_products: tuple[str, ...],
-    dependencies: SubingStrategyShadowDependencies,
-) -> None:
-    unavailable_symbol = active_products[-1]
+    dependencies = _safe_dependencies(unavailable_symbol=unavailable_symbol)
     evaluator = SubingStrategyRuntimeEvaluator(
         active_products,
-        restore_reader=dependencies.canonical_reader.reader,
-        current_reader=dependencies.live_reader.reader,
+        restore_reader=dependencies.canonical_reader,
+        current_reader=dependencies.live_reader,
     )
-
     restored = evaluator.restore_all(started_at=_STARTED_AT)
     caught_up = evaluator.final_catch_up(ready_at=_READY_AT)
 
     assert len(restored) == len(caught_up) == 60
+    assert sum(item.product_status.state == "ready" for item in caught_up) == 59
     unavailable = tuple(
-        result.product_status.symbol
-        for result in caught_up
-        if result.product_status.state == "unavailable"
+        item.product_status for item in caught_up if item.product_status.state == "unavailable"
     )
-    assert unavailable == (unavailable_symbol,)
-    assert all(
-        result.product_status.reason_codes == ("RESTORE_UNAVAILABLE",)
-        for result in caught_up
-        if result.product_status.symbol == unavailable_symbol
-    )
-    assert sum(result.product_status.state == "ready" for result in caught_up) == 59
-    assert not any(result.action_facts for result in caught_up)
+    assert len(unavailable) == 1
+    assert unavailable[0].symbol == unavailable_symbol
+    assert unavailable[0].reason_codes == ("RESTORE_UNAVAILABLE",)
+    assert not any(item.action_facts for item in caught_up)
+    assert type(dependencies.event_writer) is NullShadowEventWriter
+    assert type(dependencies.notification_sender) is NullShadowNotificationSender
+    assert type(dependencies.cache_writer) is NoShadowCacheWriter
+    assert type(dependencies.runtime_status_writer) is NoShadowRuntimeStatusWriter
 
+
+def test_recorded_stream_exact_first_1m_open_and_cross_identity_fail_closed() -> None:
     recorded, context, segment, identity = _recorded_identity()
-    for boundary_count in (12, 30, 60):
-        bars_1m = recorded.bars_1m[: boundary_count * 15]
-        bars_5m = recorded.bars_5m[: boundary_count * 3]
-        bars_15m = recorded.bars_15m[:boundary_count]
-        historical = replay_subing_strategy_segment(
-            symbol="jm",
-            segment=segment,
-            bars_1m=bars_1m,
-            bars_5m=bars_5m,
-            bars_15m=bars_15m,
-            sessions=recorded.sessions,
-            direction_contexts={_TRADING_DAY: context},
-            calibration=load_subing_calibration(),
-            lifecycle_policy=load_subing_lifecycle_policy(),
-            strategy_policy=load_subing_strategy_policy(),
-            terminal_bar_end=None,
-        )
-        state, streamed_actions = _stream_prefix(
-            symbol="jm",
-            contract="JM2701",
-            bars_1m=bars_1m,
-            bars_5m=bars_5m,
-            bars_15m=bars_15m,
-            sessions=recorded.sessions,
-            context=context,
-        )
-
-        assert streamed_actions == historical.actions
-        assert state.contract == "JM2701"
-        assert state.segment_start_trading_day == _TRADING_DAY
-
-    assert not replay_subing_strategy_segment(
-        symbol="jm",
+    actions = _historical_prefix(
+        recorded=recorded,
         segment=segment,
-        bars_1m=recorded.bars_1m[: 12 * 15],
-        bars_5m=recorded.bars_5m[: 12 * 3],
-        bars_15m=recorded.bars_15m[:12],
-        sessions=recorded.sessions,
-        direction_contexts={_TRADING_DAY: context},
-        calibration=load_subing_calibration(),
-        lifecycle_policy=load_subing_lifecycle_policy(),
-        strategy_policy=load_subing_strategy_policy(),
-        terminal_bar_end=None,
-    ).actions
-
-    full = replay_subing_strategy_segment(
-        symbol="jm",
-        segment=segment,
-        bars_1m=recorded.bars_1m,
-        bars_5m=recorded.bars_5m,
-        bars_15m=recorded.bars_15m,
-        sessions=recorded.sessions,
-        direction_contexts={_TRADING_DAY: context},
-        calibration=load_subing_calibration(),
-        lifecycle_policy=load_subing_lifecycle_policy(),
-        strategy_policy=load_subing_strategy_policy(),
-        terminal_bar_end=None,
+        context=context,
+        boundary_count=60,
     )
     first_1m_by_interval = {
         bucket_window_for_bar(
-            recorded.sessions[0],
-            BarFrequency.M15,
-            bar.bar_end,
+            recorded.sessions[0], BarFrequency.M15, bar.bar_end
         ).end: bar
         for bar in recorded.bars_1m
         if bar.bar_end
         == bucket_window_for_bar(
-            recorded.sessions[0],
-            BarFrequency.M15,
-            bar.bar_end,
+            recorded.sessions[0], BarFrequency.M15, bar.bar_end
         ).start
         + timedelta(minutes=1)
     }
     next_open_actions = tuple(
         action
-        for action in full.actions
+        for action in actions
         if action.fill_basis is SubingStrategyFillBasis.NEXT_BAR_OPEN
     )
     assert next_open_actions
@@ -491,15 +544,7 @@ def _assert_recorded_stream_no_write_contract(
         assert action.reference_price == first_1m.open
         assert action.effective_open_at == first_1m.bar_end - timedelta(minutes=1)
 
-    streamed_state, _ = _stream_prefix(
-        symbol="jm",
-        contract="JM2701",
-        bars_1m=recorded.bars_1m,
-        bars_5m=recorded.bars_5m,
-        bars_15m=recorded.bars_15m,
-        sessions=recorded.sessions,
-        context=context,
-    )
+    state = _stream_state(recorded=recorded, context=context)
     for foreign_identity in (
         replace(identity, contract="JM2705"),
         replace(
@@ -508,17 +553,93 @@ def _assert_recorded_stream_no_write_contract(
             + timedelta(days=1),
         ),
     ):
-        with pytest.raises(
-            SubingStrategyMachineError,
-            match="SOURCE_IDENTITY_MISMATCH",
-        ):
+        with pytest.raises(SubingStrategyMachineError, match="SOURCE_IDENTITY_MISMATCH"):
             step_subing_strategy_machine(
-                streamed_state,
-                Completed1mBar(recorded.bars_1m[-1]),
+                state,
+                # Duplicate input is sufficient: identity is checked first.
+                _completed_1m(recorded.bars_1m[-1]),
                 source_identity=foreign_identity,
             )
 
-    assert type(dependencies.event_writer) is NullShadowEventWriter
-    assert type(dependencies.notification_sender) is NullShadowNotificationSender
-    assert type(dependencies.cache_writer) is NoShadowCacheWriter
-    assert type(dependencies.runtime_status_writer) is NoShadowRuntimeStatusWriter
+
+def _historical_prefix(
+    *,
+    recorded: RecordedStrategyStream,
+    segment: ResolvedContractSegment,
+    context: SubingStrategyDirectionContext,
+    boundary_count: int,
+) -> tuple[SubingStrategyAction, ...]:
+    return replay_subing_strategy_segment(
+        symbol="jm",
+        segment=segment,
+        bars_1m=recorded.bars_1m[: boundary_count * 15],
+        bars_5m=recorded.bars_5m[: boundary_count * 3],
+        bars_15m=recorded.bars_15m[:boundary_count],
+        sessions=recorded.sessions,
+        direction_contexts={_TRADING_DAY: context},
+        calibration=load_subing_calibration(),
+        lifecycle_policy=load_subing_lifecycle_policy(),
+        strategy_policy=load_subing_strategy_policy(),
+        terminal_bar_end=None,
+    ).actions
+
+
+@lru_cache(maxsize=60)
+def _expected_historical_prefix(
+    boundary_count: int,
+) -> tuple[SubingStrategyAction, ...]:
+    recorded, context, segment, _ = _recorded_identity()
+    return _historical_prefix(
+        recorded=recorded,
+        segment=segment,
+        context=context,
+        boundary_count=boundary_count,
+    )
+
+
+def _stream_state(
+    *,
+    recorded: RecordedStrategyStream,
+    context: SubingStrategyDirectionContext,
+) -> SubingStrategyMachineState:
+    identity = SubingStrategySourceIdentity("jm", "JM2701", _TRADING_DAY)
+    state = initial_subing_strategy_machine(
+        symbol="jm",
+        contract="JM2701",
+        segment_start_trading_day=_TRADING_DAY,
+        calibration=load_subing_calibration(),
+        lifecycle_policy=load_subing_lifecycle_policy(),
+        strategy_policy=load_subing_strategy_policy(),
+        direction_contexts={_TRADING_DAY: context},
+        intervals=authoritative_subing_strategy_intervals(
+            bars_1m=recorded.bars_1m,
+            bars_15m=recorded.bars_15m,
+            sessions=recorded.sessions,
+        ),
+    )
+    events = [
+        *((bar.bar_end, 0, _completed_1m(bar)) for bar in recorded.bars_1m),
+        *((bar.bar_end, 1, _completed_15m(bar)) for bar in recorded.bars_15m),
+        *((bar.bar_end, 2, _completed_5m(bar)) for bar in recorded.bars_5m),
+    ]
+    for _, _, event in sorted(events, key=lambda item: (item[0], item[1])):
+        state, _ = step_subing_strategy_machine(state, event, source_identity=identity)
+    return state
+
+
+def _completed_1m(bar: CanonicalBar):
+    from app.market_data.subing_strategy.stream_contracts import Completed1mBar
+
+    return Completed1mBar(bar)
+
+
+def _completed_5m(bar: CanonicalBar):
+    from app.market_data.subing_strategy.stream_contracts import Completed5mBar
+
+    return Completed5mBar(bar)
+
+
+def _completed_15m(bar: CanonicalBar):
+    from app.market_data.subing_strategy.stream_contracts import Completed15mBar
+
+    return Completed15mBar(bar)

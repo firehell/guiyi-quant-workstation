@@ -1,8 +1,11 @@
 import { MARKET_FREQUENCIES, type MarketFrequency } from '../types/market.ts'
 
+export const HTDY_ALERT_RULE_CODE = 'htdy_original_15m'
+export const SUBING_STRATEGY_RULE_CODE = 'subing_strategy_v1'
+
 export const ALERT_RULE_CODES = {
-  HTDY: 'htdy_original_15m',
-  SUBING: 'subing_strategy_v1',
+  HTDY: HTDY_ALERT_RULE_CODE,
+  SUBING: SUBING_STRATEGY_RULE_CODE,
 } as const
 
 export type AlertRuleCode = typeof ALERT_RULE_CODES[keyof typeof ALERT_RULE_CODES]

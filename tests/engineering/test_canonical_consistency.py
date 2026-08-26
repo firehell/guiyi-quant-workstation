@@ -10,6 +10,8 @@ import subprocess
 import tomllib
 from pathlib import Path
 
+import pytest
+
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -50,6 +52,27 @@ RETIRED_ENTRYPOINTS = (
     "reports/research/candidate_relationships",
     "apps/quant-web/package-lock.json",
 )
+ALERT_RULE_CODES = frozenset({"htdy_original_15m", "subing_strategy_v1"})
+ALERT_RULE_LITERAL_ALLOWLIST = frozenset(
+    {
+        "services/quant-api/app/alerts/registry.py",
+        "services/quant-api/app/schemas/alerts.py",
+        "apps/quant-web/src/utils/alertRules.ts",
+        "apps/quant-web/src/types/market.ts",
+    }
+)
+
+
+def _assert_alert_rule_literal_ownership(sources: dict[str, str]) -> None:
+    owners = {
+        path
+        for path, source in sources.items()
+        for line in source.splitlines()
+        if ("rule_code" in line or "RULE_CODE" in line)
+        and any(code in line for code in ALERT_RULE_CODES)
+    }
+    unexpected = owners - ALERT_RULE_LITERAL_ALLOWLIST
+    assert not unexpected, f"active Alert Rule literal outside registry/type allowlist: {unexpected}"
 
 
 def test_public_entrypoints_are_exact() -> None:
@@ -166,28 +189,43 @@ def test_release_versions_are_consistent() -> None:
 
 
 def test_alert_rule_codes_have_one_production_registry_per_language() -> None:
-    expected = {"htdy_original_15m", "subing_strategy_v1"}
     backend_registry = importlib.import_module("app.alerts.registry")
     assert {
         definition.rule_code for definition in backend_registry.alert_rule_definitions()
-    } == expected
+    } == ALERT_RULE_CODES
 
     frontend_registry = (ROOT / "apps/quant-web/src/utils/alertRules.ts").read_text(
         encoding="utf-8"
     )
-    registry_block = frontend_registry.split("ALERT_RULE_CODES =", maxsplit=1)[1].split(
-        "} as const", maxsplit=1
-    )[0]
-    assert set(re.findall(r"'([^']+)'", registry_block)) == expected
+    assert set(
+        re.findall(
+            r"(?:HTDY_ALERT_RULE_CODE|SUBING_STRATEGY_RULE_CODE) = '([^']+)'",
+            frontend_registry,
+        )
+    ) == ALERT_RULE_CODES
 
-    active_sources = tuple(
-        (ROOT / relative).read_text(encoding="utf-8")
+    active_sources = {
+        relative.as_posix(): (ROOT / relative).read_text(encoding="utf-8")
         for root in ("services/quant-api/app", "apps/quant-web/src")
         for path in (ROOT / root).rglob("*")
         if path.is_file() and path.suffix in {".py", ".ts", ".vue"}
         for relative in (path.relative_to(ROOT),)
+    }
+    _assert_alert_rule_literal_ownership(active_sources)
+    assert all(
+        "subing_entry_signal_v1" not in source for source in active_sources.values()
     )
-    assert all("subing_entry_signal_v1" not in source for source in active_sources)
+
+
+def test_second_active_alert_rule_literal_is_rejected_by_executable_guard() -> None:
+    with pytest.raises(AssertionError, match="outside registry/type allowlist"):
+        _assert_alert_rule_literal_ownership(
+            {
+                "apps/quant-web/src/rogueConsumer.ts": (
+                    "event.rule_code === 'subing_strategy_v1'"
+                )
+            }
+        )
 
 
 def test_release_candidate_excludes_private_sources() -> None:

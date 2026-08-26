@@ -2,7 +2,7 @@ import { ref } from 'vue'
 import type { AlertEventListResponse } from '../api/alerts.ts'
 import type { AlertEvent, BarData, KlineMarker, MarketFrequency, SeriesKind } from '../types/market.ts'
 import { alertEventsToMarkers, isPersistentAlertIdentity, markerRuleCodes } from '../utils/alertMarkers.ts'
-
+import { SUBING_STRATEGY_RULE_CODE } from '../utils/alertRules.ts'
 
 const REFRESH_INTERVAL_MS = 30_000
 const RECENT_WINDOW_MS = 2 * 60 * 60 * 1000
@@ -138,7 +138,7 @@ export function usePersistentAlertMarkers(dependencies: Dependencies) {
       }
       markers.value = alertEventsToMarkers([...events.values()])
       strategyEvents.value = [...events.values()].filter((event) => (
-        event.rule_code === 'subing_strategy_v1'
+        event.rule_code === SUBING_STRATEGY_RULE_CODE
         && event.action_id !== null
         && event.strategy_action !== null
       ))

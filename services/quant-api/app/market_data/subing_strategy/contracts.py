@@ -9,6 +9,7 @@ from decimal import Decimal
 from enum import StrEnum
 from hashlib import sha256
 import json
+from typing import Final, Literal
 
 from ..domain import CanonicalBar
 from ..subing_lifecycle import ConfirmationSource, SubingOpportunityKey
@@ -16,7 +17,7 @@ from ..subing_research import SubingDirection
 from ..subing_structure import ConfirmedPivot
 
 
-_STRATEGY_ID = "subing_strategy_v1"
+SUBING_STRATEGY_ID: Final[Literal["subing_strategy_v1"]] = "subing_strategy_v1"
 _FORMULA_VERSION = "subing_strategy_15m_v1"
 _ALLOWED_CONFIRMATION_SOURCES = frozenset(ConfirmationSource)
 
@@ -141,7 +142,7 @@ class SubingStrategyAction:
             SubingStrategyActionKind.OPEN_SHORT,
         }
         if (
-            self.strategy_id != _STRATEGY_ID
+            self.strategy_id != SUBING_STRATEGY_ID
             or self.formula_version != _FORMULA_VERSION
             or not isinstance(self.kind, SubingStrategyActionKind)
             or not isinstance(self.symbol, str)

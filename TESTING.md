@@ -71,7 +71,7 @@ PYTHONPATH=services/quant-api:packages/quant-core \
   -k recorded_stream
 ```
 
-真实 read-only shadow 只有在用户对目标 PostgreSQL、Canonical 与 completed-Live reader 给出当次精确只读授权，并且 operator 已注入 sealed Null Event/notification、no cache/status writer、已验证 read-only PostgreSQL transaction 与只读 reader adapter 后，才可额外设置 `GUIYI_SUBING_STAGE2_SHADOW=1` 运行同一 `-m manual_acceptance` 命令。环境变量本身不是授权；未满足任一依赖时必须 fail-closed。该命令不创建 AlertEvent、不改 Scope/Redis/Canonical、不发送 PushPlus、不启动 Runtime。
+真实 read-only shadow 只有在用户对目标 PostgreSQL、Canonical 与 completed-Live reader 给出当次精确只读授权后，operator 才可为同一 `-m manual_acceptance` 命令同时选择 `GUIYI_SUBING_STAGE2_SHADOW=1` 与 `GUIYI_SUBING_STAGE2_SHADOW_COMPOSITION=local_readonly`。只有 enable marker 但没有精确 composition 时必须明确 skip/fail `SHADOW_COMPOSITION_NOT_CONFIGURED`；两个环境变量本身也不是授权。composition 将 PostgreSQL `SET TRANSACTION READ ONLY`/`SHOW transaction_read_only` 与实际 Catalog read 绑定在同一 session/transaction，只暴露窄 Canonical/completed-Live read methods，并固定 sealed Null Event/notification 与 no cache/status sinks。该命令不创建 AlertEvent、不改 Scope/Redis/Canonical、不发送 PushPlus、不启动 Runtime。Task 11 没有获得该真实只读授权，所以实际只运行上述默认 skipped 和 recorded/fakes 命令。
 
 ## Contract and static checks
 

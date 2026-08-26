@@ -6,8 +6,7 @@ import type {
   SubingStrategyEpisode,
 } from '../types/market.ts'
 import { subingStrategyActionToMarker } from './historicalResearchMarkers.ts'
-import { strategyActionLabel } from './alertRules.ts'
-
+import { SUBING_STRATEGY_RULE_CODE, strategyActionLabel } from './alertRules.ts'
 
 export const STRATEGY_ACTION_FACT_MISMATCH = 'STRATEGY_ACTION_FACT_MISMATCH' as const
 
@@ -32,7 +31,7 @@ export function reconcileSubingStrategyActions(
   }
   for (const event of liveEvents) {
     if (
-      event.rule_code !== 'subing_strategy_v1'
+      event.rule_code !== SUBING_STRATEGY_RULE_CODE
       || event.action_id === null
       || event.strategy_action === null
       || event.action_id !== event.strategy_action.action_id

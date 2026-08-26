@@ -55,7 +55,7 @@ subing_entry_signal_v1 × scope_products × owner × pushplus-wechat
 - `alert_rules` 与 `alert_events` 是独立 Application Domain。Event 先提交，再最多调用一次 transport；无逐收件人状态、retry、queue、replay、backfill、fallback 或订单。
 - Stage 2 Runtime 对 active60 恢复和维护内存策略状态，`scope_products` 只控制 Strategy Event 与 owner PushPlus；Scope 变化不得创建、删除或重置策略状态。启动 restore/catch-up 不补 Event、不补通知，AlertEvent 不得作为策略仓位权威。
 - HTDY 日内五周期只消费同周期 completed Live Bar；D1/W1 只响应 `market:state(reason=canonical_updated)` 并读取 Canonical，不新增 scheduler、Scope 表或 Live 日/周聚合。
-- Redis `alert:runtime-status` 只承载无 TTL observation，兼容读 schema v1 并规范化为 v2；missing 只表示 `unobserved`。状态只保存固定公开错误分类，不保存 provider reference。notification acknowledgment 必须精确匹配当前 failure timestamp 做一次 CAS；保留原失败、公开分类与计数，不重放、不补发。同一 timestamp 在内的任何新 failure 都必须原子清空 acknowledgment；状态写失败或并发变化时 fail-closed。
+- 仓库 Stage 2 `alert:runtime-status` 实现写 schema v3，只为升级兼容读 v1/v2，并在下一次仓库代码写入时规范化为 v3；missing 只表示 `unobserved`。当前 production `v1.8.5` Runtime 未 promotion，仍保持已部署旧版的状态行为，仓库文档或代码存在不会改变该事实。状态只保存固定公开错误分类，不保存 provider reference。notification acknowledgment 必须精确匹配当前 failure timestamp 做一次 CAS；保留原失败、公开分类与计数，不重放、不补发。同一 timestamp 内的任何新 failure 都必须原子清空 acknowledgment；状态写失败或并发变化时 fail-closed。
 - provider accepted 只表示请求被接受，不表示微信送达。代码、测试、配置或历史 canary 不授权真实 send、Scope 变更或 Runtime switch。
 
 ## 安全规则
