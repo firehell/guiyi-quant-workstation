@@ -26,6 +26,8 @@ from app.market_data.subing_lifecycle_policy import (
 from app.market_data.subing_research import (
     MacdCross,
     SubingDirection,
+    SubingFactorStatus,
+    calculate_subing_factor_series,
 )
 from research.subing_lifecycle_fixtures import (
     _accepted_calibration,
@@ -427,6 +429,70 @@ def test_series_alignment_mismatch_is_unavailable_without_index_error(
         trace.current_snapshot.unavailable_reason
         == "SUBING_LIFECYCLE_SERIES_ALIGNMENT_INVALID"
     )
+    assert trace.confirmed_pivots == ()
+    assert trace.completed_opportunities == ()
+    assert trace.transitions == ()
+
+
+def test_batch_warmup_15m_factor_returns_unavailable_trace() -> None:
+    """Catches the batch adapter sending a real warm-up Factor to the strict step."""
+    boundary = _bar(15)
+    factors_15m = calculate_subing_factor_series(
+        (boundary,),
+        timeframe=BarFrequency.M15,
+        contract="JM2701",
+        segment_start_trading_day=_SEGMENT_START,
+        latest_bar_source="canonical",
+    )
+    assert factors_15m[0].status is SubingFactorStatus.INSUFFICIENT_DATA
+    assert factors_15m[0].snapshot is None
+
+    trace = evaluate_subing_lifecycle(
+        symbol="JM",
+        contract="JM2701",
+        segment_start_trading_day=_SEGMENT_START,
+        bars_5m=(boundary,),
+        factors_5m=(_factor(boundary, BarFrequency.M5),),
+        bars_15m=(boundary,),
+        factors_15m=factors_15m,
+        calibration=_accepted_calibration(),
+        policy=load_subing_lifecycle_policy(),
+    )
+
+    assert len(trace.snapshots) == 1
+    assert trace.current_snapshot.availability is LifecycleAvailability.UNAVAILABLE
+    assert trace.current_snapshot.unavailable_reason == "SUBING_FACTOR_UNAVAILABLE"
+    assert trace.current_snapshot.anchor_bar_end == boundary.bar_end
+    assert trace.confirmed_pivots == ()
+    assert trace.completed_opportunities == ()
+    assert trace.transitions == ()
+
+
+def test_batch_mismatched_15m_factor_returns_unavailable_trace() -> None:
+    """Catches the batch adapter storing or raising on a mismatched 15m Factor."""
+    boundary = _bar(15)
+
+    trace = evaluate_subing_lifecycle(
+        symbol="JM",
+        contract="JM2701",
+        segment_start_trading_day=_SEGMENT_START,
+        bars_5m=(boundary,),
+        factors_5m=(_factor(boundary, BarFrequency.M5),),
+        bars_15m=(boundary,),
+        factors_15m=(
+            _factor(boundary, BarFrequency.M15, contract="RB2701"),
+        ),
+        calibration=_accepted_calibration(),
+        policy=load_subing_lifecycle_policy(),
+    )
+
+    assert len(trace.snapshots) == 1
+    assert trace.current_snapshot.availability is LifecycleAvailability.UNAVAILABLE
+    assert (
+        trace.current_snapshot.unavailable_reason
+        == "SUBING_FACTOR_IDENTITY_MISMATCH"
+    )
+    assert trace.current_snapshot.anchor_bar_end == boundary.bar_end
     assert trace.confirmed_pivots == ()
     assert trace.completed_opportunities == ()
     assert trace.transitions == ()

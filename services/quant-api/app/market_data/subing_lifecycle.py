@@ -396,6 +396,7 @@ class SubingLifecycleMachineState:
     latest_5m_bar: CanonicalBar | None = None
     latest_15m_bar: CanonicalBar | None = None
     latest_15m_result: SubingFactorResult | None = None
+    latest_15m_error: str | None = None
     pivot_window: tuple[CanonicalBar, ...] = ()
     last_confirmed_stage: LifecycleStage = LifecycleStage.IDLE
     last_confirmed_at: datetime | None = None
@@ -413,6 +414,16 @@ class SubingLifecycleMachineState:
             or type(self.pivot_window) is not tuple
             or len(self.confirmed_pivots) != len(self.pivot_trading_days)
             or len(self.pivot_window) > 5
+            or self.latest_15m_error
+            not in {None, "SUBING_FACTOR_UNAVAILABLE", "SUBING_FACTOR_IDENTITY_MISMATCH"}
+            or (
+                self.latest_15m_error is not None
+                and (
+                    self.latest_15m_bar is None
+                    or self.latest_15m_result is not None
+                    or self.latest_15m_factor is not None
+                )
+            )
         ):
             raise SubingLifecycleContractError()
 
@@ -1192,6 +1203,36 @@ def step_subing_lifecycle_15m(
         latest_15m_bar_end=bar.bar_end,
         latest_15m_bar=bar,
         latest_15m_result=factor,
+        latest_15m_error=None,
+    )
+
+
+def _advance_batch_15m_error(
+    state: SubingLifecycleMachineState,
+    *,
+    bar: CanonicalBar,
+    error: str,
+) -> SubingLifecycleMachineState:
+    """Record an invalid batch anchor boundary without retaining its Factor."""
+
+    if state.input_error is None:
+        _validate_stream_boundary(
+            state,
+            bar=bar,
+            latest_bar_end=state.latest_15m_bar_end,
+        )
+        if (
+            state.latest_5m_bar_end is not None
+            and bar.bar_end <= state.latest_5m_bar_end
+        ):
+            raise ValueError("SUBING_LIFECYCLE_STREAM_ORDER_INVALID")
+    return replace(
+        state,
+        latest_15m_factor=None,
+        latest_15m_bar_end=bar.bar_end,
+        latest_15m_bar=bar,
+        latest_15m_result=None,
+        latest_15m_error=error,
     )
 
 
@@ -1278,6 +1319,7 @@ def step_subing_lifecycle_5m(
         segment_start_trading_day=state.segment_start_trading_day,
     )
     if anchor_bar is None or anchor_factor is None:
+        boundary_error = boundary_error or state.latest_15m_error
         boundary_error = boundary_error or "SUBING_15M_ANCHOR_UNAVAILABLE"
     elif boundary_error is None:
         boundary_error = _boundary_contract_error(
@@ -1763,11 +1805,27 @@ def evaluate_subing_lifecycle(
             and bars_15m[anchor_index].bar_end <= bar_5m.bar_end
         ):
             if anchor_index < len(factors_15m):
-                state = step_subing_lifecycle_15m(
-                    state,
-                    bar=bars_15m[anchor_index],
-                    factor=factors_15m[anchor_index],
+                anchor_bar = bars_15m[anchor_index]
+                anchor_factor = factors_15m[anchor_index]
+                anchor_error = _boundary_contract_error(
+                    bar=anchor_bar,
+                    factor=anchor_factor,
+                    timeframe=BarFrequency.M15,
+                    contract=state.contract,
+                    segment_start_trading_day=state.segment_start_trading_day,
                 )
+                if anchor_error is None:
+                    state = step_subing_lifecycle_15m(
+                        state,
+                        bar=anchor_bar,
+                        factor=anchor_factor,
+                    )
+                else:
+                    state = _advance_batch_15m_error(
+                        state,
+                        bar=anchor_bar,
+                        error=anchor_error,
+                    )
             anchor_index += 1
         state, _ = step_subing_lifecycle_5m(
             state,
