@@ -10,9 +10,10 @@ import type {
 } from '@/types/market'
 
 /** 主图指标偏好 localStorage 键 */
-export const MAIN_CHART_PREFERENCES_KEY = 'guiyi.market.chart.preferences.v3'
+export const MAIN_CHART_PREFERENCES_KEY = 'guiyi.market.chart.preferences.v4'
 /** 主图指标偏好 schema 版本 */
-export const MAIN_CHART_PREFERENCES_VERSION = 3
+export const MAIN_CHART_PREFERENCES_VERSION = 4
+const LEGACY_V3_MAIN_CHART_PREFERENCES_KEY = 'guiyi.market.chart.preferences.v3'
 const LEGACY_V2_MAIN_CHART_PREFERENCES_KEY = 'guiyi.market.chart.preferences.v2'
 const LEGACY_V1_MAIN_CHART_PREFERENCES_KEY = 'guiyi.market.chart.preferences.v1'
 export const HTDY_REPAINT_SCAN_ZONE_BARS = 27
@@ -31,6 +32,15 @@ export const HTDY_WEB_OBSERVATION_METADATA = {
 
 /** 主图指标显示偏好（可见指标、周期、实时跟随） */
 export interface MainChartPreferences {
+  version: 4
+  selectedOverlay: ResearchOverlayId
+  optionalEmaIndicators: OptionalEmaIndicatorId[]
+  showNStructureBands: boolean
+  period?: string | null
+  realtimeFollow?: boolean
+}
+
+interface LegacyV3MainChartPreferences {
   version: 3
   selectedOverlay: ResearchOverlayId
   optionalEmaIndicators: OptionalEmaIndicatorId[]
@@ -105,6 +115,14 @@ export function researchOverlayCapability(
     supported: definition.supportedSeriesKinds.includes(seriesKind)
       && definition.supportedFrequencies.includes(frequency),
   }
+}
+
+/** N 字区间是独立 Historical 投影，仅支持真实主力 5m。 */
+export function nStructureBandCapability(
+  seriesKind: SeriesKind,
+  frequency: MarketFrequency,
+): boolean {
+  return seriesKind === 'actual_dominant' && frequency === '5m'
 }
 
 /** 主图可叠加指标定义表（EMA、火天大有等） */
@@ -265,20 +283,34 @@ export function loadMainChartPreferences(storage: Pick<Storage, 'getItem'> | nul
       const parsed = JSON.parse(raw) as Partial<MainChartPreferences> | null
       if (!parsed || parsed.version !== MAIN_CHART_PREFERENCES_VERSION) return defaultMainChartPreferences()
       return {
-        version: 3,
+        version: 4,
         selectedOverlay: normalizeResearchOverlay(parsed.selectedOverlay),
         optionalEmaIndicators: normalizeOptionalEmaIndicators(parsed.optionalEmaIndicators),
+        showNStructureBands: Boolean(parsed.showNStructureBands),
         period: typeof parsed.period === 'string' ? parsed.period : null,
         realtimeFollow: Boolean(parsed.realtimeFollow),
+      }
+    }
+    const legacyV3Raw = storage.getItem(LEGACY_V3_MAIN_CHART_PREFERENCES_KEY)
+    if (legacyV3Raw) {
+      const legacy = JSON.parse(legacyV3Raw) as Partial<LegacyV3MainChartPreferences> | null
+      if (legacy?.version === 3) return {
+        version: 4,
+        selectedOverlay: normalizeResearchOverlay(legacy.selectedOverlay),
+        optionalEmaIndicators: normalizeOptionalEmaIndicators(legacy.optionalEmaIndicators),
+        showNStructureBands: false,
+        period: typeof legacy.period === 'string' ? legacy.period : null,
+        realtimeFollow: Boolean(legacy.realtimeFollow),
       }
     }
     const legacyV2Raw = storage.getItem(LEGACY_V2_MAIN_CHART_PREFERENCES_KEY)
     if (legacyV2Raw) {
       const legacy = JSON.parse(legacyV2Raw) as Partial<LegacyV2MainChartPreferences> | null
       if (legacy?.version === 2) return {
-        version: 3,
+        version: 4,
         selectedOverlay: normalizeResearchOverlay(legacy.selectedOverlay),
         optionalEmaIndicators: [],
+        showNStructureBands: false,
         period: typeof legacy.period === 'string' ? legacy.period : null,
         realtimeFollow: Boolean(legacy.realtimeFollow),
       }
@@ -290,9 +322,10 @@ export function loadMainChartPreferences(storage: Pick<Storage, 'getItem'> | nul
       return defaultMainChartPreferences()
     }
     return {
-      version: 3,
+      version: 4,
       selectedOverlay: normalizeVisibleMainIndicators(legacy.visibleMainIndicators).includes('htdy') ? 'htdy' : 'subing',
       optionalEmaIndicators: [],
+      showNStructureBands: false,
       period: typeof legacy.period === 'string' ? legacy.period : null,
       realtimeFollow: Boolean(legacy.realtimeFollow),
     }
@@ -316,6 +349,7 @@ export function saveMainChartPreferences(
         version: MAIN_CHART_PREFERENCES_VERSION,
         selectedOverlay: normalizeResearchOverlay(preferences.selectedOverlay),
         optionalEmaIndicators: normalizeOptionalEmaIndicators(preferences.optionalEmaIndicators),
+        showNStructureBands: Boolean(preferences.showNStructureBands),
         period: preferences.period || null,
         realtimeFollow: Boolean(preferences.realtimeFollow),
       }),
@@ -330,9 +364,10 @@ export function saveMainChartPreferences(
  */
 export function defaultMainChartPreferences(): MainChartPreferences {
   return {
-    version: 3,
+    version: 4,
     selectedOverlay: 'subing',
     optionalEmaIndicators: [],
+    showNStructureBands: false,
     period: null,
     realtimeFollow: false,
   }

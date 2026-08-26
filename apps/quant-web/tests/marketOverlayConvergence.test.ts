@@ -50,7 +50,7 @@ test('SuBing Overlay and public Panel share the exact 5m and 15m allowlist', () 
   }
 })
 
-test('Web public DTO, API, and marker modules omit N and raw JDJ while retaining JDJ Strategy', () => {
+test('Web keeps retired N event markers and raw JDJ absent while exposing only the N range-band projection', () => {
   const typesSource = read('../src/types/market.ts')
   const apiSource = read('../src/api/market.ts')
   const markerSource = read('../src/utils/historicalResearchMarkers.ts')
@@ -81,6 +81,8 @@ test('Web public DTO, API, and marker modules omit N and raw JDJ while retaining
   assert.match(apiSource, /export function getJdjStrategyHistoricalActions/)
   assert.match(markerSource, /export function jdjStrategyActionToMarker/)
   assert.match(loaderSource, /fetchJdjStrategy/)
+  assert.match(typesSource, /export interface NStructureBandResponse/)
+  assert.match(apiSource, /export function getNStructureBands/)
 })
 
 test('visible product copy uses the single approved SuBing and JDJ replay names', () => {

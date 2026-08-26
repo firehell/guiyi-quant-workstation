@@ -9,6 +9,7 @@ import { getEventStates } from '@/api/executionReview'
 import {
   getMarketDominants,
   getJdjStrategyHistoricalActions,
+  getNStructureBands,
   getProductResearch,
   getSubingHistoricalSignals,
   getSubingResearch,
@@ -24,6 +25,7 @@ import {
 import { useMarketSeries } from '@/composables/useMarketSeries'
 import { usePersistentAlertMarkers } from '@/composables/usePersistentAlertMarkers'
 import { useHistoricalResearchMarkers } from '@/composables/useHistoricalResearchMarkers'
+import { useNStructureBands } from '@/composables/useNStructureBands'
 import { useProductAlertScope } from '@/composables/useProductAlertScope'
 import { useProductCurrentAlertEvents } from '@/composables/useProductCurrentAlertEvents'
 import { useProductSymbolIdentityCoordinator } from '@/composables/useProductSymbolIdentityCoordinator'
@@ -44,6 +46,7 @@ import { mergeKlineMarkers } from '@/utils/alertMarkers'
 import { buildKlineDerivedData } from '@/utils/klineViewModel'
 import {
   loadMainChartPreferences,
+  nStructureBandCapability,
   normalizeOptionalEmaIndicators,
   resolveEffectiveSeriesIdentity,
   researchOverlayCapability,
@@ -76,6 +79,7 @@ const selectedOverlay = ref<ResearchOverlayId>(
 const optionalEmaIndicators = ref<OptionalEmaIndicatorId[]>([
   ...initialMainChartPreferences.optionalEmaIndicators,
 ])
+const showNStructureBands = ref(initialMainChartPreferences.showNStructureBands)
 const research = ref<ProductResearchResponse | null>(null)
 const researchLoading = ref(false)
 const researchError = ref(false)
@@ -117,6 +121,13 @@ const {
   fetchSubing: getSubingHistoricalSignals,
   fetchJdjStrategy: getJdjStrategyHistoricalActions,
 })
+const {
+  bands: nStructureBands,
+  loading: nStructureBandsLoading,
+  error: nStructureBandsError,
+  sync: syncNStructureBands,
+  dispose: disposeNStructureBands,
+} = useNStructureBands({ fetchBands: getNStructureBands })
 const {
   subing,
   subingLoading,
@@ -193,6 +204,13 @@ const overlayCapability = computed(() => researchOverlayCapability(
   frequency.value,
 ))
 const visibleBars = computed(() => bars.value)
+const nStructureBandsSupported = computed(() => nStructureBandCapability(
+  effectiveIdentity.value.seriesKind,
+  frequency.value,
+))
+const visibleNStructureBands = computed(() => (
+  showNStructureBands.value && nStructureBandsSupported.value ? nStructureBands.value : []
+))
 const visibleStartTradingDay = computed(() => visibleBars.value[0]?.trading_day || '')
 const lifecycleMarkers = computed(() => {
   if (!overlayCapability.value.supported || subingLoading.value || subingError.value) return []
@@ -263,6 +281,23 @@ watch([contract, seriesKind, frequency], async () => {
   if (await refreshSeries()) void refreshSubing()
 })
 
+watch([symbol, seriesKind, frequency], () => {
+  if (!metadataReady) return
+  void syncNStructureBands(currentNStructureBandIdentity(), [], null, 'replace')
+})
+
+watch(showNStructureBands, (value) => {
+  const current = loadMainChartPreferences()
+  saveMainChartPreferences({ ...current, showNStructureBands: value })
+  if (!metadataReady) return
+  void syncNStructureBands(
+    currentNStructureBandIdentity(),
+    visibleBars.value,
+    canonicalCoverage.value,
+    'replace',
+  )
+})
+
 watch(selectedOverlay, () => {
   if (synchronizingSymbol.value) {
     pendingHistoricalOverlayRefresh = true
@@ -316,6 +351,12 @@ watch(mutation, (nextMutation) => {
     canonicalCoverage.value,
     nextMutation.kind,
   )
+  void syncNStructureBands(
+    currentNStructureBandIdentity(),
+    bars.value,
+    canonicalCoverage.value,
+    nextMutation.kind,
+  )
   if (nextMutation.kind === 'live' && selectedOverlay.value === 'subing' && subingSupported.value) {
     void refreshSubing()
   }
@@ -342,6 +383,7 @@ onUnmounted(() => {
   dispose()
   disposePersistentAlertMarkers()
   disposeHistoricalResearchMarkers()
+  disposeNStructureBands()
 })
 
 function currentIdentity() {
@@ -370,6 +412,15 @@ function currentAlertMarkerIdentity() {
 function currentHistoricalMarkerIdentity() {
   return {
     overlay: selectedOverlay.value,
+    seriesKind: effectiveIdentity.value.seriesKind,
+    symbol: symbol.value,
+    frequency: frequency.value,
+  }
+}
+
+function currentNStructureBandIdentity() {
+  return {
+    enabled: showNStructureBands.value,
     seriesKind: effectiveIdentity.value.seriesKind,
     symbol: symbol.value,
     frequency: frequency.value,
@@ -532,6 +583,10 @@ function updateOptionalEmaIndicators(value: OptionalEmaIndicatorId[]) {
   saveMainChartPreferences({ ...current, optionalEmaIndicators: optionalEmaIndicators.value })
 }
 
+function updateShowNStructureBands(value: boolean) {
+  showNStructureBands.value = value
+}
+
 function persistWorkspacePreferences() {
   saveMarketWorkspacePreferences({
     version: 1,
@@ -631,6 +686,10 @@ function normalizeSymbol(value: unknown): string | null {
       :dominants="dominants"
       :selected-overlay="selectedOverlay"
       :optional-ema-indicators="optionalEmaIndicators"
+      :show-n-structure-bands="showNStructureBands"
+      :n-structure-bands-supported="nStructureBandsSupported"
+      :n-structure-bands-loading="nStructureBandsLoading"
+      :n-structure-bands-error="nStructureBandsError"
       :fullscreen="fullscreen"
       @update:symbol="symbol = $event"
       @update:series-kind="seriesKind = $event"
@@ -638,6 +697,7 @@ function normalizeSymbol(value: unknown): string | null {
       @update:contract="contract = $event"
       @update:selected-overlay="updateSelectedOverlay"
       @update:optional-ema-indicators="updateOptionalEmaIndicators"
+      @update:show-n-structure-bands="updateShowNStructureBands"
       @open-research="openResearchDrawer"
       @toggle-fullscreen="toggleFullscreen"
       @back="router.push({ name: 'market' })"
@@ -675,6 +735,8 @@ function normalizeSymbol(value: unknown): string | null {
             class="product-workspace__kline"
             :data-visible-start-trading-day="visibleStartTradingDay"
             :data-visible-main-indicators="visibleMainIndicators.join(',')"
+            :data-n-structure-bands-supported="nStructureBandsSupported"
+            :data-n-structure-bands-enabled="showNStructureBands"
           >
             <KlineChart
               ref="chart"
@@ -686,6 +748,7 @@ function normalizeSymbol(value: unknown): string | null {
               :visible-main-indicators="visibleMainIndicators"
               :alert-markers="persistentAlertMarkers"
               :research-markers="researchMarkers"
+              :n-structure-bands="visibleNStructureBands"
               :secondary-panel="selectedSecondaryPanel"
               :data-historical-research-loading="historicalResearchLoading"
               @need-more-before="loadEarlierBars"

@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime
+from decimal import Decimal
 from types import MappingProxyType
 from typing import Protocol
 
@@ -19,10 +20,18 @@ from app.market_data.domain import (
     normalize_contract_for_symbol,
 )
 from app.market_data.market_data_service import MarketDataError
-from app.research.n_structure.n_structure_pattern import NDirection
+from app.research.n_structure.n_structure_pattern import (
+    NBreakKind,
+    NDirection,
+    NRangeBandRole,
+)
 from app.research.n_structure.n_structure_policy import NStructurePolicy, is_exact_n_structure_policy
 from app.research.n_structure.n_structure_segment import evaluate_n_structure_segment
 from app.research.n_structure.n_structure_state import NStructureTransitionReason
+from app.research.n_structure.n_structure_swing import (
+    NStructureContractError,
+    NStructureSeriesError,
+)
 from app.market_data.price_outcome import (
     PriceDirection,
     PriceDirectionalOutcome,
@@ -44,6 +53,13 @@ class NStructureSourceUnavailableError(RuntimeError):
 
 class NStructureSegmentIdentityError(ValueError):
     code = "N_STRUCTURE_SEGMENT_IDENTITY_INVALID"
+
+    def __init__(self) -> None:
+        super().__init__(self.code)
+
+
+class NStructureProductScopeError(ValueError):
+    code = "N_STRUCTURE_PRODUCT_NOT_ACTIVE"
 
     def __init__(self) -> None:
         super().__init__(self.code)
@@ -129,9 +145,76 @@ class NStructureCompletionResearchEvent:
 
 
 @dataclass(frozen=True, slots=True)
+class NStructureRangeBandResearchFact:
+    band_id: str
+    symbol: str
+    contract: str
+    segment_start_trading_day: date
+    completion_trading_day: date
+    direction: NDirection
+    role: NRangeBandRole
+    n1_at: datetime
+    completed_at: datetime
+    completion_level: Decimal
+    lower: Decimal
+    upper: Decimal
+    first_reentered_at: datetime | None
+    invalidated_at: datetime | None
+    expanded_until: datetime
+
+    def __post_init__(self) -> None:
+        if (
+            not isinstance(self.band_id, str)
+            or not self.band_id
+            or not _valid_symbol(self.symbol)
+            or normalize_contract_for_symbol(self.symbol, self.contract)
+            != self.contract
+            or type(self.segment_start_trading_day) is not date
+            or type(self.completion_trading_day) is not date
+            or self.completion_trading_day < self.segment_start_trading_day
+            or not isinstance(self.direction, NDirection)
+            or not isinstance(self.role, NRangeBandRole)
+            or not _aware_datetime(self.n1_at)
+            or not _aware_datetime(self.completed_at)
+            or self.n1_at >= self.completed_at
+            or (
+                self.first_reentered_at is not None
+                and (
+                    not _aware_datetime(self.first_reentered_at)
+                    or self.first_reentered_at <= self.completed_at
+                )
+            )
+            or (
+                self.invalidated_at is not None
+                and (
+                    not _aware_datetime(self.invalidated_at)
+                    or self.invalidated_at < self.completed_at
+                )
+            )
+            or not _aware_datetime(self.expanded_until)
+            or self.expanded_until < self.completed_at
+            or (
+                self.first_reentered_at is not None
+                and self.first_reentered_at > self.expanded_until
+            )
+            or (
+                self.invalidated_at is not None
+                and self.invalidated_at != self.expanded_until
+            )
+            or not _positive_decimal(self.completion_level)
+            or not _positive_decimal(self.lower)
+            or not _positive_decimal(self.upper)
+            or self.lower > self.upper
+            or not self.lower <= self.completion_level <= self.upper
+        ):
+            raise ValueError("N_STRUCTURE_RANGE_BAND_FACT_INVALID")
+
+
+@dataclass(frozen=True, slots=True)
 class _NStructureResearchProjection:
     result: NStructureResearchResult
     completion_events: tuple[NStructureCompletionResearchEvent, ...]
+    range_bands: tuple[NStructureRangeBandResearchFact, ...]
 
 
 @dataclass(slots=True)
@@ -161,6 +244,9 @@ class _Accumulator:
         default_factory=lambda: {horizon: [] for horizon in _HORIZONS}
     )
     completion_events: list[NStructureCompletionResearchEvent] = field(
+        default_factory=list
+    )
+    range_bands: list[NStructureRangeBandResearchFact] = field(
         default_factory=list
     )
 
@@ -198,6 +284,12 @@ class NStructureResearchService:
     ) -> tuple[NStructureCompletionResearchEvent, ...]:
         return self._project(request).completion_events
 
+    def range_bands(
+        self,
+        request: NStructureResearchRequest,
+    ) -> tuple[NStructureRangeBandResearchFact, ...]:
+        return self._project(request).range_bands
+
     def _project(
         self,
         request: NStructureResearchRequest,
@@ -233,14 +325,17 @@ class NStructureResearchService:
             ):
                 if not bars:
                     continue
-                self._add_segment(
-                    accumulator,
-                    bars,
-                    symbol=product,
-                    segment=segment,
-                    since=request.since,
-                    through=request.through,
-                )
+                try:
+                    self._add_segment(
+                        accumulator,
+                        bars,
+                        symbol=product,
+                        segment=segment,
+                        since=request.since,
+                        through=request.through,
+                    )
+                except (NStructureContractError, NStructureSeriesError):
+                    raise NStructureSegmentIdentityError() from None
         research_result = NStructureResearchResult(
             products=products,
             segment_count=accumulator.segment_count,
@@ -273,13 +368,14 @@ class NStructureResearchService:
         return _NStructureResearchProjection(
             research_result,
             tuple(accumulator.completion_events),
+            tuple(accumulator.range_bands),
         )
 
     def _selected_products(self, symbol: str | None) -> tuple[str, ...]:
         if symbol is None:
             return self._products
         if symbol not in self._products:
-            raise ValueError("symbol is outside the active product scope")
+            raise NStructureProductScopeError()
         return (symbol,)
 
     def _add_segment(
@@ -325,15 +421,61 @@ class NStructureResearchService:
             for replaced_at in patterns.incomplete_attempt_replaced_at
         )
 
+        first_reentry_by_n_id = {
+            event.n_id: event.observed_at
+            for event in patterns.range_band_reentries
+        }
+        invalidated_by_n_id = {
+            event.n_id: event.observed_at
+            for event in patterns.break_events
+            if event.kind is NBreakKind.N2_ORIGIN_BROKEN
+        }
+        segment_observed_until = bars[-1].bar_end
+
         for pattern in patterns.patterns:
-            if not requested(pattern.completed_at):
-                continue
-            accumulator.completed_n_counts[pattern.direction.value] += 1
             index = bar_index.get(pattern.completed_at)
             if index is None:
                 raise NStructureSegmentIdentityError()
             if bars[index].close != pattern.completion_bar_close:
                 raise NStructureSegmentIdentityError()
+            invalidated_at = invalidated_by_n_id.get(pattern.n_id)
+            expanded_until = invalidated_at or segment_observed_until
+            expanded_trading_day = days_by_time.get(expanded_until)
+            if expanded_trading_day is None:
+                raise NStructureSegmentIdentityError()
+            first_reentered_at = first_reentry_by_n_id.get(pattern.n_id)
+            if (
+                first_reentered_at is not None
+                and first_reentered_at > expanded_until
+            ):
+                first_reentered_at = None
+            if (
+                bars[index].trading_day <= through
+                and expanded_trading_day >= since
+            ):
+                accumulator.range_bands.append(
+                    NStructureRangeBandResearchFact(
+                        band_id=pattern.n_id,
+                        symbol=symbol,
+                        contract=segment.contract,
+                        segment_start_trading_day=segment.start_trading_day,
+                        completion_trading_day=bars[index].trading_day,
+                        direction=pattern.direction,
+                        role=pattern.range_band.role,
+                        n1_at=pattern.n1_extreme.pivot_time,
+                        completed_at=pattern.completed_at,
+                        completion_level=pattern.completion_level,
+                        lower=pattern.range_band.lower,
+                        upper=pattern.range_band.upper,
+                        first_reentered_at=first_reentered_at,
+                        invalidated_at=invalidated_at,
+                        expanded_until=expanded_until,
+                    )
+                )
+
+            if not requested(pattern.completed_at):
+                continue
+            accumulator.completed_n_counts[pattern.direction.value] += 1
             accumulator.completion_events.append(
                 NStructureCompletionResearchEvent(
                     event_id=pattern.n_id,
@@ -431,6 +573,14 @@ def _valid_symbol(value: object) -> bool:
         and value.isascii()
         and value.isalpha()
         and value == value.lower()
+    )
+
+
+def _positive_decimal(value: object) -> bool:
+    return (
+        isinstance(value, Decimal)
+        and value.is_finite()
+        and value > 0
     )
 
 

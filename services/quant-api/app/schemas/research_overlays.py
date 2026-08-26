@@ -28,6 +28,44 @@ class SubingHistoricalSignalResponse(BaseModel):
     events: list[SubingHistoricalSignalEventOut]
 
 
+class NStructureBandRequestOut(BaseModel):
+    series_kind: str
+    symbol: str
+    frequency: str
+    since: date
+    through: date
+
+
+class NStructureBandPolicyOut(BaseModel):
+    policy_id: str
+    formula_version: str
+    source_timeframe: str
+    research_only: bool
+
+
+class NStructureBandOut(BaseModel):
+    band_id: str
+    contract: str
+    segment_start_trading_day: date
+    completion_trading_day: date
+    direction: str
+    role: str
+    n1_at: datetime
+    completed_at: datetime
+    completion_level: Decimal
+    lower: Decimal
+    upper: Decimal
+    first_reentered_at: datetime | None
+    invalidated_at: datetime | None
+    expanded_until: datetime
+
+
+class NStructureBandResponse(BaseModel):
+    request: NStructureBandRequestOut
+    policy: NStructureBandPolicyOut
+    bands: list[NStructureBandOut]
+
+
 class JdjStrategyHistoricalRequestOut(BaseModel):
     series_kind: str
     symbol: str

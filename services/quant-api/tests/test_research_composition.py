@@ -360,8 +360,11 @@ def test_n_research_builder_reuses_one_market_data_service(
     monkeypatch.setattr(
         research_composition, "load_active_products", lambda: ("jm",)
     )
+    policy = object()
     monkeypatch.setattr(
-        research_composition, "load_n_structure_policy", object
+        research_composition,
+        "load_n_structure_policy",
+        lambda: pytest.fail("an injected policy must not be reloaded"),
     )
     monkeypatch.setattr(
         research_composition,
@@ -372,9 +375,13 @@ def test_n_research_builder_reuses_one_market_data_service(
     )
     session = object()
 
-    assert research_composition.build_n_structure_research_service(session) is result
+    assert research_composition.build_n_structure_research_service(
+        session,
+        policy=policy,
+    ) is result
     assert calls == [session]
     assert captured["loader"] is loader
+    assert captured["policy"] is policy
 
 
 def test_jdj_research_builder_reuses_one_mds_and_no_write_factory(

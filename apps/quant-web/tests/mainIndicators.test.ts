@@ -8,6 +8,7 @@ import {
   loadMainChartPreferences,
   MAIN_CHART_PREFERENCES_KEY,
   MAIN_INDICATOR_DEFINITIONS,
+  nStructureBandCapability,
   normalizeOptionalEmaIndicators,
   normalizeVisibleMainIndicators,
   resolveEffectiveSeriesIdentity,
@@ -55,9 +56,10 @@ test('normalizeVisibleMainIndicators keeps available indicators without a second
 
 test('research overlay defaults to SuBing and exposes exactly one overlay indicator set', () => {
   assert.deepEqual(defaultMainChartPreferences(), {
-    version: 3,
+    version: 4,
     selectedOverlay: 'subing',
     optionalEmaIndicators: [],
+    showNStructureBands: false,
     period: null,
     realtimeFollow: false,
   })
@@ -66,6 +68,13 @@ test('research overlay defaults to SuBing and exposes exactly one overlay indica
   assert.deepEqual(visibleMainIndicatorsForOverlay('subing', ['ema_10', 'ema_60']), ['ema_10', 'ema_21', 'ema_60'])
   assert.deepEqual(visibleMainIndicatorsForOverlay('htdy', ['ema_10', 'ema_60']), ['ema_10', 'ema_60', 'htdy'])
   assert.deepEqual(visibleMainIndicatorsForOverlay('none', ['ema_10', 'ema_60']), [])
+})
+
+test('N structure bands are independently supported only for actual-dominant 5m', () => {
+  assert.equal(nStructureBandCapability('actual_dominant', '5m'), true)
+  assert.equal(nStructureBandCapability('actual_dominant', '15m'), false)
+  assert.equal(nStructureBandCapability('continuous', '5m'), false)
+  assert.equal(nStructureBandCapability('contract', '5m'), false)
 })
 
 test('HTDY overlay stays available on every formal frequency and existing chart series kind', () => {
@@ -141,9 +150,10 @@ test('preference v2 migrates legacy overlay and preserves period and realtime fo
     realtimeFollow: true,
   }))
   assert.deepEqual(loadMainChartPreferences(storage), {
-    version: 3,
+    version: 4,
     selectedOverlay: 'htdy',
     optionalEmaIndicators: [],
+    showNStructureBands: false,
     period: '15m',
     realtimeFollow: true,
   })
@@ -157,9 +167,10 @@ test('preference v2 migrates legacy overlay and preserves period and realtime fo
     realtimeFollow: true,
   }))
   assert.deepEqual(loadMainChartPreferences(storage), {
-    version: 3,
+    version: 4,
     selectedOverlay: 'htdy',
     optionalEmaIndicators: [],
+    showNStructureBands: false,
     period: '15m',
     realtimeFollow: true,
   })
@@ -171,15 +182,16 @@ test('preference v2 migrates legacy overlay and preserves period and realtime fo
     realtimeFollow: false,
   }))
   assert.deepEqual(loadMainChartPreferences(storage), {
-    version: 3,
+    version: 4,
     selectedOverlay: 'subing',
     optionalEmaIndicators: [],
+    showNStructureBands: false,
     period: '1d',
     realtimeFollow: false,
   })
 })
 
-test('preference v3 saves and loads optional EMAs with chart UI preferences', () => {
+test('preference v4 saves and loads optional EMAs plus N structure bands', () => {
   const values = new Map<string, string>()
   const storage = {
     getItem: (key: string) => values.get(key) || null,
@@ -188,18 +200,20 @@ test('preference v3 saves and loads optional EMAs with chart UI preferences', ()
 
   saveMainChartPreferences(
     {
-      version: 3,
+      version: 4,
       selectedOverlay: 'none',
       optionalEmaIndicators: ['ema_60', 'ema_10'],
+      showNStructureBands: true,
       period: '15m',
       realtimeFollow: true,
     },
     storage,
   )
   const loaded = loadMainChartPreferences(storage)
-  assert.equal(loaded.version, 3)
+  assert.equal(loaded.version, 4)
   assert.equal(loaded.selectedOverlay, 'none')
   assert.deepEqual(loaded.optionalEmaIndicators, ['ema_10', 'ema_60'])
+  assert.equal(loaded.showNStructureBands, true)
   assert.equal(loaded.period, '15m')
   assert.equal(loaded.realtimeFollow, true)
   const saved = JSON.parse(values.get(MAIN_CHART_PREFERENCES_KEY)!)
@@ -210,7 +224,7 @@ test('preference v3 saves and loads optional EMAs with chart UI preferences', ()
   assert.deepEqual(loadMainChartPreferences(storage), defaultMainChartPreferences())
 })
 
-test('preference v3 migrates retired and unknown overlays to none while retaining public overlays', () => {
+test('preference v3 migrates retired overlays and defaults N structure bands off', () => {
   const values = new Map<string, string>()
   const storage = {
     getItem: (key: string) => values.get(key) || null,
@@ -225,18 +239,16 @@ test('preference v3 migrates retired and unknown overlays to none while retainin
     ['htdy', 'htdy'],
   ] as const
   for (const [storedOverlay, expectedOverlay] of cases) {
-    values.set(MAIN_CHART_PREFERENCES_KEY, JSON.stringify({
+    values.set('guiyi.market.chart.preferences.v3', JSON.stringify({
       version: 3,
       selectedOverlay: storedOverlay,
       optionalEmaIndicators: [],
       period: '1m',
       realtimeFollow: false,
     }))
-    assert.equal(
-      loadMainChartPreferences(storage).selectedOverlay,
-      expectedOverlay,
-      storedOverlay,
-    )
+    const loaded = loadMainChartPreferences(storage)
+    assert.equal(loaded.selectedOverlay, expectedOverlay, storedOverlay)
+    assert.equal(loaded.showNStructureBands, false, storedOverlay)
   }
 })
 
@@ -248,9 +260,10 @@ test('preference v3 preserves the JDJ strategy overlay across save and load', ()
   }
 
   saveMainChartPreferences({
-    version: 3,
+    version: 4,
     selectedOverlay: 'jdj_strategy',
     optionalEmaIndicators: [],
+    showNStructureBands: false,
     period: '1m',
     realtimeFollow: false,
   }, storage)

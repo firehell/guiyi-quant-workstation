@@ -1,6 +1,6 @@
 # 归一量化项目事实源
 
-更新时间：2026-08-25
+更新时间：2026-08-26
 
 ## 稳定产品边界
 
@@ -10,7 +10,7 @@ SuBing 是一个 SuBing 产品，向用户投影三种不能互相替代的内�
 
 HTDY 是 observation-only/repainting 的全周期产品：operational universe × 七个正式周期 `1m/5m/15m/30m/60m/1d/1w`。稳定 Rule code 保持 `htdy_original_15m`；HTDY 唯一 Scope authority 为 `scope_product_frequencies` 的 symbol × frequency，SuBing 唯一 Scope authority 为 `scope_products`。HTDY storage identity 为 `(rule_id, symbol, frequency, bar_end)`，SuBing 的业务 Event identity 保持 `rule_id + symbol + bar_end`。日内只消费同周期 completed Live Bar；D1/W1 只由 `market:state(reason=canonical_updated)` 触发并读取 Canonical，不增加 scheduler、replay 或 backfill。
 
-Market 主图只保留：`无 | 苏冰 | 日进斗金参考回放 | 火天大有`。N Structure 与 raw JDJ Candidate 只保留在内部研究面；JDJ reference replay 是 active-universe 单品种 `actual_dominant + 1m` 的 deterministic、read-only reference action/fill，不进入 DB、Redis、Alert、Execution Review、Runtime 或订单。
+Market 主图只保留：`无 | 苏冰 | 日进斗金参考回放 | 火天大有`。N Structure 与 raw JDJ Candidate 只保留在内部研究面；N Structure 仅额外提供可选的 `actual_dominant + 5m` Historical Canonical completed-N range-band 投影：形成区为 N1 pivot 到严格完成点，完成后沿同一 N1-N2 price span 向右观察至既有 N2-origin break、rank1 segment 边界或当前 Canonical 边界。该投影可与四项主图 Overlay 组合显示，但不是第五个 Overlay、独立策略产品、Alert、Live 或 Runtime evaluator。JDJ reference replay 是 active-universe 单品种 `actual_dominant + 1m` 的 deterministic、read-only reference action/fill，不进入 DB、Redis、Alert、Execution Review、Runtime 或订单。
 
 Market Radar 的 Summary、Scatter、Detail 是唯一全市场研究入口。Attention、Trend Focus、Main Force Mirror、Five-Candidate Dossier/Relationships 都不是 active 产品、API、CLI、Web、protocol 或 report。Generic Robustness relationship metrics 与 pending prospective OOS 保留；Alembic migration history 与 `futures_member_ranks` table identity 作为历史/schema 事实保留，但没有 active rank reader、builder、provider 或 CLI。
 

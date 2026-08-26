@@ -6,6 +6,7 @@ import {
   NInput,
   NPopover,
   NSelect,
+  NSwitch,
   NTag,
 } from 'naive-ui'
 import type { DominantContractItem, MarketFrequency, OptionalEmaIndicatorId, ResearchOverlayId, SeriesKind } from '@/types/market'
@@ -20,6 +21,10 @@ const props = defineProps<{
   dominants: DominantContractItem[]
   selectedOverlay: ResearchOverlayId
   optionalEmaIndicators: OptionalEmaIndicatorId[]
+  showNStructureBands: boolean
+  nStructureBandsSupported: boolean
+  nStructureBandsLoading: boolean
+  nStructureBandsError: string | null
   fullscreen: boolean
 }>()
 
@@ -30,6 +35,7 @@ const emit = defineEmits<{
   'update:contract': [value: string]
   'update:selected-overlay': [value: ResearchOverlayId]
   'update:optional-ema-indicators': [value: OptionalEmaIndicatorId[]]
+  'update:show-n-structure-bands': [value: boolean]
   'open-research': []
   'toggle-fullscreen': []
   back: []
@@ -114,6 +120,20 @@ function toggleOptionalEma(value: OptionalEmaIndicatorId) {
             @click="toggleOptionalEma(item.value)"
           >{{ item.label }}</NButton>
         </NButtonGroup>
+        <div class="toolbar__settings-title">
+          <span>N字区间</span>
+          <NSwitch
+            :value="showNStructureBands"
+            :disabled="!nStructureBandsSupported"
+            :aria-disabled="!nStructureBandsSupported"
+            size="small"
+            aria-label="N字区间"
+            @update:value="emit('update:show-n-structure-bands', $event)"
+          />
+        </div>
+        <small class="toolbar__settings-help">已完成 N · Canonical 历史 · 仅真实主力 5m</small>
+        <small v-if="nStructureBandsError" class="toolbar__settings-error">N字区间暂不可用</small>
+        <small v-else-if="nStructureBandsLoading" class="toolbar__settings-help">N字区间读取中…</small>
         <span>指定真实合约</span>
         <NInput
           :value="contract"
@@ -141,6 +161,10 @@ function toggleOptionalEma(value: OptionalEmaIndicatorId) {
 .toolbar__spacer { flex: 1 1 8px; }
 .toolbar__settings { display: grid; gap: 8px; width: 196px; padding: 4px; }
 .toolbar__settings > span { color: var(--gy-text-muted); font-size: var(--gy-font-size-sm); }
+.toolbar__settings-title { display: flex; align-items: center; justify-content: space-between; color: var(--gy-text-primary); font-size: var(--gy-font-size-sm); }
+.toolbar__settings-help, .toolbar__settings-error { line-height: 1.45; font-size: var(--gy-font-size-xs); }
+.toolbar__settings-help { color: var(--gy-text-muted); }
+.toolbar__settings-error { color: var(--gy-status-error); }
 
 @media (max-width: 860px) {
   .toolbar__back { display: none; }

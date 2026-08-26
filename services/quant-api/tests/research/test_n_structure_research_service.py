@@ -21,8 +21,13 @@ from app.market_data.domain import (
 )
 from app.research.n_structure.n_structure_policy import load_n_structure_policy
 from app.research.n_structure.n_structure_segment import evaluate_n_structure_segment
+from app.research.n_structure.n_structure_swing import (
+    NStructureContractError,
+    NStructureSeriesError,
+)
 from app.market_data.market_data_service import MarketDataError
 from app.research.n_structure.n_structure_research_service import (
+    NStructureProductScopeError,
     NStructureSegmentIdentityError,
     NStructureResearchRequest,
     NStructureResearchService,
@@ -155,6 +160,47 @@ def test_shared_loader_failures_map_to_stable_sanitized_n_errors(
     assert "MarketDataError" not in rendered
 
 
+@pytest.mark.parametrize("failure", (NStructureContractError(), NStructureSeriesError()))
+def test_reducer_contract_or_series_failure_maps_to_segment_identity(
+    monkeypatch: pytest.MonkeyPatch,
+    failure: Exception,
+) -> None:
+    service = NStructureResearchService(
+        _FakeSegmentLoader(_bars()),
+        products=("jm",),
+        policy=load_n_structure_policy(),
+    )
+    monkeypatch.setattr(
+        research_module,
+        "evaluate_n_structure_segment",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(failure),
+    )
+
+    with pytest.raises(
+        NStructureSegmentIdentityError,
+        match="^N_STRUCTURE_SEGMENT_IDENTITY_INVALID$",
+    ):
+        service.range_bands(
+            NStructureResearchRequest(date(2026, 8, 18), date(2026, 8, 20), "jm")
+        )
+
+
+def test_symbol_outside_active_products_has_typed_scope_failure() -> None:
+    service = NStructureResearchService(
+        _FakeSegmentLoader(_bars()),
+        products=("jm",),
+        policy=load_n_structure_policy(),
+    )
+
+    with pytest.raises(
+        NStructureProductScopeError,
+        match="^N_STRUCTURE_PRODUCT_NOT_ACTIVE$",
+    ):
+        service.range_bands(
+            NStructureResearchRequest(date(2026, 8, 18), date(2026, 8, 20), "au")
+        )
+
+
 @pytest.mark.parametrize(
     "unexpected",
     (
@@ -251,6 +297,129 @@ def test_reducer_uses_true_segment_prefix_but_counts_only_requested_window() -> 
     assert service.run(request) == result
 
 
+def test_range_bands_project_exact_completed_n1_n2_facts_only() -> None:
+    bars = _bars()
+    service = NStructureResearchService(
+        _FakeSegmentLoader(bars),
+        products=("jm",),
+        policy=load_n_structure_policy(),
+    )
+    request = NStructureResearchRequest(
+        since=date(2026, 8, 19),
+        through=date(2026, 8, 20),
+        symbol="jm",
+    )
+    trace = evaluate_n_structure_segment(
+        bars,
+        contract="JM2701",
+        segment_start_trading_day=date(2026, 8, 18),
+        segment_end_trading_day=date(2026, 8, 20),
+        policy=load_n_structure_policy(),
+    )
+    requested_bar_times = {
+        bar.bar_end
+        for bar in bars
+        if request.since <= bar.trading_day <= request.through
+    }
+    expected = tuple(
+        pattern
+        for pattern in trace.patterns.patterns
+        if pattern.completed_at in requested_bar_times
+    )
+    reentry_by_n_id = {
+        event.n_id: event.observed_at
+        for event in trace.patterns.range_band_reentries
+    }
+    invalidated_by_n_id = {
+        event.n_id: event.observed_at
+        for event in trace.patterns.break_events
+        if event.kind.value == "n2_origin_broken"
+    }
+
+    bands = service.range_bands(request)
+
+    assert len(bands) == len(expected) == 2
+    assert tuple(band.band_id for band in bands) == tuple(
+        pattern.n_id for pattern in expected
+    )
+    for band, pattern in zip(bands, expected, strict=True):
+        assert band.symbol == "jm"
+        assert band.contract == "JM2701"
+        assert band.segment_start_trading_day == date(2026, 8, 18)
+        assert band.completion_trading_day in {
+            date(2026, 8, 19),
+            date(2026, 8, 20),
+        }
+        assert band.direction is pattern.direction
+        assert band.role is pattern.range_band.role
+        assert band.n1_at == pattern.n1_extreme.pivot_time
+        assert band.completed_at == pattern.completed_at
+        assert band.completion_level == pattern.completion_level
+        assert band.lower == pattern.range_band.lower
+        assert band.upper == pattern.range_band.upper
+        assert band.first_reentered_at == reentry_by_n_id.get(pattern.n_id)
+        assert band.invalidated_at == invalidated_by_n_id.get(pattern.n_id)
+        assert band.expanded_until == (
+            invalidated_by_n_id.get(pattern.n_id) or bars[-1].bar_end
+        )
+
+
+def test_range_bands_include_a_pre_window_completion_still_observable_in_window() -> None:
+    bars = _bars()
+    service = NStructureResearchService(
+        _FakeSegmentLoader(bars),
+        products=("jm",),
+        policy=load_n_structure_policy(),
+    )
+
+    bands = service.range_bands(
+        NStructureResearchRequest(
+            since=date(2026, 8, 20),
+            through=date(2026, 8, 20),
+            symbol="jm",
+        )
+    )
+
+    assert len(bands) == 2
+    assert bands[0].completion_trading_day == date(2026, 8, 19)
+    assert bands[0].expanded_until == bars[-1].bar_end
+
+
+def test_range_band_expansion_stops_at_the_first_strict_n2_origin_break() -> None:
+    bars = _bars()
+    invalidation_bar = CanonicalBar(
+        bar_end=bars[-1].bar_end + timedelta(minutes=5),
+        trading_day=date(2026, 8, 20),
+        open=Decimal("10"),
+        high=Decimal("16"),
+        low=Decimal("8.7"),
+        close=Decimal("12"),
+        volume=Decimal("1"),
+        turnover=None,
+        open_interest=None,
+    )
+    loaded_bars = (*bars, invalidation_bar)
+    service = NStructureResearchService(
+        _FakeSegmentLoader(loaded_bars),
+        products=("jm",),
+        policy=load_n_structure_policy(),
+    )
+
+    bands = service.range_bands(
+        NStructureResearchRequest(
+            since=date(2026, 8, 18),
+            through=date(2026, 8, 20),
+            symbol="jm",
+        )
+    )
+
+    invalidated = tuple(
+        band for band in bands if band.invalidated_at == invalidation_bar.bar_end
+    )
+    assert len(invalidated) >= 1
+    assert all(band.expanded_until == invalidation_bar.bar_end for band in invalidated)
+
+
 def test_research_uses_one_segment_trace_without_legacy_rescans(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -288,7 +457,7 @@ def test_research_uses_one_segment_trace_without_legacy_rescans(
         policy=load_n_structure_policy(),
     )
 
-    result = service.run(
+    bands = service.range_bands(
         NStructureResearchRequest(
             since=date(2026, 8, 19),
             through=date(2026, 8, 20),
@@ -297,7 +466,7 @@ def test_research_uses_one_segment_trace_without_legacy_rescans(
     )
 
     assert calls == 1
-    assert result.completed_n_counts == {"up": 2, "down": 0}
+    assert len(bands) == 2
 
 
 def test_outcomes_stop_at_requested_through_even_if_loader_returns_later_bars() -> None:
@@ -496,6 +665,13 @@ def test_rank1_segment_change_resets_the_real_n_producer_chain() -> None:
     assert result.segment_count == 2
     assert result.evaluable_bar_count == len(bars)
     assert result.completed_n_counts == {"up": 0, "down": 0}
+    assert service.range_bands(
+        NStructureResearchRequest(
+            since=date(2026, 8, 18),
+            through=date(2026, 8, 20),
+            symbol="jm",
+        )
+    ) == ()
     assert all(
         evaluation.sample_count == 0
         for evaluation in result.horizon_summary.values()

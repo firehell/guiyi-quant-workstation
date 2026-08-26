@@ -60,6 +60,7 @@ from app.research.n_structure.n_candidate_validation_service import (
     NStructureCandidateValidationService,
 )
 from app.research.n_structure.n_structure_policy import (
+    NStructurePolicy,
     NStructurePolicyError,
     load_n_structure_policy,
 )
@@ -100,12 +101,14 @@ def build_subing_lifecycle_research_service(
 
 def build_n_structure_research_service(
     session: Session,
+    *,
+    policy: NStructurePolicy | None = None,
 ) -> NStructureResearchService:
     """Compose read-only N research over the shared segment loader."""
     return NStructureResearchService(
         ActualDominantResearchSegmentLoader(build_market_data_service(session)),
         products=load_active_products(),
-        policy=load_n_structure_policy(),
+        policy=policy if policy is not None else load_n_structure_policy(),
     )
 
 

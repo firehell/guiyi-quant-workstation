@@ -26,6 +26,20 @@ from app.research.jdj_strategy.service import (
     JdjStrategySegmentIdentityError,
     JdjStrategySessionIdentityError,
 )
+from app.research.n_structure.n_structure_pattern import (
+    NDirection,
+    NRangeBandRole,
+)
+from app.research.n_structure.n_structure_research_service import (
+    NStructureProductScopeError,
+    NStructureRangeBandResearchFact,
+    NStructureSegmentIdentityError,
+    NStructureSourceUnavailableError,
+)
+from app.research.n_structure.n_structure_policy import (
+    NStructurePolicyError,
+    load_n_structure_policy,
+)
 
 
 def test_subing_historical_overlay_route_exposes_exact_read_only_query_contract() -> None:
@@ -259,7 +273,251 @@ def test_internal_n_and_raw_jdj_have_no_public_historical_route(path: str) -> No
     assert response.status_code == 404
 
 
-def test_public_overlay_schemas_keep_only_subing_and_jdj_strategy_families() -> None:
+def test_n_structure_bands_route_exposes_exact_read_only_query_contract() -> None:
+    path = "/api/v1/market/research/n-structure/bands"
+
+    assert path in app.openapi()["paths"]
+    operation = app.openapi()["paths"][path]["get"]
+    assert [parameter["name"] for parameter in operation["parameters"]] == [
+        "series_kind",
+        "symbol",
+        "frequency",
+        "since",
+        "through",
+    ]
+
+
+class _NStructureBandService:
+    def range_bands(self, request: object):
+        assert getattr(request, "symbol") == "jm"
+        return (
+            NStructureRangeBandResearchFact(
+                band_id="n-1",
+                symbol="jm",
+                contract="JM2609",
+                segment_start_trading_day=date(2026, 8, 3),
+                completion_trading_day=date(2026, 8, 4),
+                direction=NDirection.UP,
+                role=NRangeBandRole.SUPPORT_REFERENCE,
+                n1_at=datetime(2026, 8, 4, 1, 30, tzinfo=UTC),
+                completed_at=datetime(2026, 8, 4, 2, 15, tzinfo=UTC),
+                completion_level=Decimal("101.5"),
+                lower=Decimal("99.5"),
+                upper=Decimal("101.5"),
+                first_reentered_at=datetime(2026, 8, 4, 2, 30, tzinfo=UTC),
+                invalidated_at=datetime(2026, 8, 4, 3, 0, tzinfo=UTC),
+                expanded_until=datetime(2026, 8, 4, 3, 0, tzinfo=UTC),
+            ),
+        )
+
+
+def test_n_structure_bands_returns_policy_lineage_and_exact_decimal_facts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    policy = load_n_structure_policy()
+    injected: list[object] = []
+    monkeypatch.setattr(
+        "app.research.historical_overlay_api.load_n_structure_policy",
+        lambda: policy,
+    )
+    monkeypatch.setattr(
+        "app.research.historical_overlay_api.build_n_structure_research_service",
+        lambda _session, **kwargs: injected.append(kwargs["policy"])
+        or _NStructureBandService(),
+    )
+
+    response = TestClient(app).get(
+        "/api/v1/market/research/n-structure/bands",
+        params={
+            "series_kind": "actual_dominant",
+            "symbol": "JM",
+            "frequency": "5m",
+            "since": "2026-08-03",
+            "through": "2026-08-04",
+        },
+    )
+
+    assert response.status_code == 200
+    assert injected == [policy]
+    assert response.json() == {
+        "request": {
+            "series_kind": "actual_dominant",
+            "symbol": "jm",
+            "frequency": "5m",
+            "since": "2026-08-03",
+            "through": "2026-08-04",
+        },
+        "policy": {
+            "policy_id": "n_structure_5m_v1",
+            "formula_version": "n_structure_v1",
+            "source_timeframe": "5m",
+            "research_only": True,
+        },
+        "bands": [
+            {
+                "band_id": "n-1",
+                "contract": "JM2609",
+                "segment_start_trading_day": "2026-08-03",
+                "completion_trading_day": "2026-08-04",
+                "direction": "up",
+                "role": "support_reference",
+                "n1_at": "2026-08-04T01:30:00Z",
+                "completed_at": "2026-08-04T02:15:00Z",
+                "completion_level": "101.5",
+                "lower": "99.5",
+                "upper": "101.5",
+                "first_reentered_at": "2026-08-04T02:30:00Z",
+                "invalidated_at": "2026-08-04T03:00:00Z",
+                "expanded_until": "2026-08-04T03:00:00Z",
+            }
+        ],
+    }
+
+
+@pytest.mark.parametrize(
+    ("series_kind", "frequency"),
+    (
+        ("continuous", "5m"),
+        ("contract", "5m"),
+        ("actual_dominant", "15m"),
+        ("actual_dominant", "1m"),
+    ),
+)
+def test_n_structure_bands_reject_unsupported_identity_before_service(
+    monkeypatch: pytest.MonkeyPatch,
+    series_kind: str,
+    frequency: str,
+) -> None:
+    monkeypatch.setattr(
+        "app.research.historical_overlay_api.build_n_structure_research_service",
+        lambda _session, **_kwargs: pytest.fail("unsupported identity must not build service"),
+    )
+
+    response = TestClient(app).get(
+        "/api/v1/market/research/n-structure/bands",
+        params={
+            "series_kind": series_kind,
+            "symbol": "jm",
+            "frequency": frequency,
+            "since": "2026-08-03",
+            "through": "2026-08-04",
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json() == {
+        "detail": {"code": "INVALID_N_STRUCTURE_BAND_REQUEST"}
+    }
+
+
+def test_n_structure_bands_reject_invalid_request_window_as_422(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.research.historical_overlay_api.build_n_structure_research_service",
+        lambda *_args, **_kwargs: pytest.fail("invalid request must not build service"),
+    )
+
+    response = TestClient(app).get(
+        "/api/v1/market/research/n-structure/bands",
+        params={
+            "series_kind": "actual_dominant",
+            "symbol": "jm",
+            "frequency": "5m",
+            "since": "2026-08-04",
+            "through": "2026-08-03",
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json() == {
+        "detail": {"code": "INVALID_N_STRUCTURE_BAND_REQUEST"}
+    }
+
+
+@pytest.mark.parametrize(
+    ("failure", "expected_code"),
+    (
+        (
+            NStructureSegmentIdentityError(),
+            "N_STRUCTURE_SEGMENT_IDENTITY_INVALID",
+        ),
+        (
+            NStructureSourceUnavailableError(),
+            "N_STRUCTURE_SOURCE_UNAVAILABLE",
+        ),
+        (
+            NStructureProductScopeError(),
+            "N_STRUCTURE_PRODUCT_NOT_ACTIVE",
+        ),
+    ),
+)
+def test_n_structure_bands_map_source_identity_failures_to_409(
+    monkeypatch: pytest.MonkeyPatch,
+    failure: Exception,
+    expected_code: str,
+) -> None:
+    class _FailingService:
+        def range_bands(self, _request: object):
+            raise failure
+
+    monkeypatch.setattr(
+        "app.research.historical_overlay_api.build_n_structure_research_service",
+        lambda _session, **_kwargs: _FailingService(),
+    )
+    response = TestClient(app).get(
+        "/api/v1/market/research/n-structure/bands",
+        params={
+            "series_kind": "actual_dominant",
+            "symbol": "jm",
+            "frequency": "5m",
+            "since": "2026-08-03",
+            "through": "2026-08-04",
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": {"code": expected_code}}
+
+
+@pytest.mark.parametrize(
+    ("failure", "expected_code"),
+    (
+        (ActiveUniverseError(), "ACTIVE_UNIVERSE_INVALID"),
+        (NStructurePolicyError(), "N_STRUCTURE_POLICY_INVALID"),
+    ),
+)
+def test_n_structure_bands_map_builder_or_policy_failures_to_409(
+    monkeypatch: pytest.MonkeyPatch,
+    failure: Exception,
+    expected_code: str,
+) -> None:
+    if isinstance(failure, NStructurePolicyError):
+        monkeypatch.setattr(
+            "app.research.historical_overlay_api.load_n_structure_policy",
+            lambda: (_ for _ in ()).throw(failure),
+        )
+    else:
+        monkeypatch.setattr(
+            "app.research.historical_overlay_api.build_n_structure_research_service",
+            lambda _session, **_kwargs: (_ for _ in ()).throw(failure),
+        )
+    response = TestClient(app).get(
+        "/api/v1/market/research/n-structure/bands",
+        params={
+            "series_kind": "actual_dominant",
+            "symbol": "jm",
+            "frequency": "5m",
+            "since": "2026-08-03",
+            "through": "2026-08-04",
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": {"code": expected_code}}
+
+
+def test_public_overlay_schemas_keep_only_retained_projection_families() -> None:
     for name in (
         "NStructureHistoricalRequestOut",
         "NStructureHistoricalEventOut",
@@ -272,6 +530,7 @@ def test_public_overlay_schemas_keep_only_subing_and_jdj_strategy_families() -> 
 
     assert hasattr(research_overlay_schemas, "SubingHistoricalSignalResponse")
     assert hasattr(research_overlay_schemas, "JdjStrategyHistoricalResponse")
+    assert hasattr(research_overlay_schemas, "NStructureBandResponse")
 
 
 def test_jdj_strategy_history_route_exposes_exact_read_only_query_contract() -> None:

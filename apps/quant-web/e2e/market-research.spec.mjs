@@ -542,6 +542,33 @@ function panelEvent(overrides = {}) {
   }
 }
 
+function nStructureBand(
+  id,
+  direction,
+  n1At,
+  completedAt,
+  lower,
+  upper,
+  { firstReenteredAt = null, invalidatedAt = null, expandedUntil = completedAt } = {},
+) {
+  return {
+    band_id: id,
+    contract: 'AG2601',
+    segment_start_trading_day: '2025-12-01',
+    completion_trading_day: completedAt.slice(0, 10),
+    direction,
+    role: direction === 'up' ? 'support_reference' : 'resistance_reference',
+    n1_at: n1At,
+    completed_at: completedAt,
+    completion_level: direction === 'up' ? String(upper) : String(lower),
+    lower: String(lower),
+    upper: String(upper),
+    first_reentered_at: firstReenteredAt,
+    invalidated_at: invalidatedAt,
+    expanded_until: expandedUntil,
+  }
+}
+
 async function mockWorkspace(page, researchResponse, options = {}) {
   const workspaceSymbol = options.symbol || 'ag'
   const workspaceContract = options.resolvedContract || (workspaceSymbol === 'jm' ? 'JM2701' : 'AG2601')
@@ -549,11 +576,33 @@ async function mockWorkspace(page, researchResponse, options = {}) {
   const researchRequests = options.researchRequests || []
   const subingRequests = options.subingRequests || []
   const jdjStrategyHistoricalRequests = options.jdjStrategyHistoricalRequests || []
+  const nStructureBandRequests = options.nStructureBandRequests || []
   const dominantRequests = options.dominantRequests || []
   let dominantResponseIndex = 0
   let subingResponseIndex = 0
   await page.route('**/api/v1/market/**', async (route) => {
     const url = new URL(route.request().url())
+    if (url.pathname.endsWith('/research/n-structure/bands')) {
+      const request = Object.fromEntries(url.searchParams)
+      nStructureBandRequests.push(request)
+      if (options.nStructureBandDelayMs) {
+        await new Promise((resolve) => setTimeout(resolve, options.nStructureBandDelayMs))
+      }
+      if (options.nStructureBandHttpStatus) {
+        return route.fulfill({
+          status: options.nStructureBandHttpStatus,
+          json: { detail: { code: 'N_STRUCTURE_SOURCE_UNAVAILABLE' } },
+        })
+      }
+      return route.fulfill({ json: {
+        request,
+        policy: {
+          policy_id: 'n_structure_5m_v1', formula_version: 'n_structure_v1',
+          source_timeframe: '5m', research_only: true,
+        },
+        bands: options.nStructureBands || [],
+      } })
+    }
     if (url.pathname.endsWith('/research/subing/history')) {
       const request = Object.fromEntries(url.searchParams)
       return route.fulfill({ json: { request, events: [] } })
@@ -1050,10 +1099,11 @@ test('B1 journey narrows AG on the homepage before opening its verification view
 
 test('exact Daily Watch chart entry is one-shot and leaves saved chart preferences unchanged', async ({ page }) => {
   await page.addInitScript(() => {
-    window.localStorage.setItem('guiyi.market.chart.preferences.v3', JSON.stringify({
-      version: 3,
+    window.localStorage.setItem('guiyi.market.chart.preferences.v4', JSON.stringify({
+      version: 4,
       selectedOverlay: 'htdy',
       optionalEmaIndicators: [],
+      showNStructureBands: false,
       period: '5m',
       realtimeFollow: false,
     }))
@@ -1075,11 +1125,12 @@ test('exact Daily Watch chart entry is one-shot and leaves saved chart preferenc
     frequency: '15m',
   })
   expect(await page.evaluate(() => JSON.parse(
-    window.localStorage.getItem('guiyi.market.chart.preferences.v3'),
+    window.localStorage.getItem('guiyi.market.chart.preferences.v4'),
   ))).toEqual({
-    version: 3,
+    version: 4,
     selectedOverlay: 'htdy',
     optionalEmaIndicators: [],
+    showNStructureBands: false,
     period: '5m',
     realtimeFollow: false,
   })
@@ -1087,16 +1138,17 @@ test('exact Daily Watch chart entry is one-shot and leaves saved chart preferenc
   await overlays.getByRole('button', { name: '无', exact: true }).click()
   await expect(overlays.getByRole('button', { name: '无', exact: true })).toHaveClass(/n-button--primary-type/)
   await expect.poll(() => page.evaluate(() => JSON.parse(
-    window.localStorage.getItem('guiyi.market.chart.preferences.v3'),
+    window.localStorage.getItem('guiyi.market.chart.preferences.v4'),
   ).selectedOverlay)).toBe('none')
 })
 
 test('normal Market chart URL still loads the saved non-SuBing overlay', async ({ page }) => {
   await page.addInitScript(() => {
-    window.localStorage.setItem('guiyi.market.chart.preferences.v3', JSON.stringify({
-      version: 3,
+    window.localStorage.setItem('guiyi.market.chart.preferences.v4', JSON.stringify({
+      version: 4,
       selectedOverlay: 'htdy',
       optionalEmaIndicators: [],
+      showNStructureBands: false,
       period: '5m',
       realtimeFollow: false,
     }))
@@ -1138,6 +1190,115 @@ test('SuBing keeps the Market display identity separate from current-dominant re
   expect(researchRequests).toHaveLength(1)
   await expect(page.getByText('120 bars', { exact: true })).toBeVisible()
   await expect(page).toHaveURL(/series_kind=continuous/)
+})
+
+test('N structure bands stay independent, identity-gated, visible in both directions, and persistent', async ({ page }) => {
+  const bars = Array.from({ length: 120 }, (_, index) => bar(index))
+  const requests = []
+  const bands = [
+    nStructureBand(
+      'n-pre-window',
+      'up',
+      new Date(Date.parse(bars[0].bar_end) - 2 * 86_400_000).toISOString(),
+      new Date(Date.parse(bars[0].bar_end) - 86_400_000).toISOString(),
+      105,
+      210,
+      { expandedUntil: bars[119].bar_end },
+    ),
+    nStructureBand('n-up-1', 'up', bars[20].bar_end, bars[105].bar_end, 105, 210, {
+      firstReenteredAt: bars[108].bar_end,
+      expandedUntil: bars[119].bar_end,
+    }),
+    nStructureBand('n-up-2', 'up', bars[22].bar_end, bars[107].bar_end, 105, 210, {
+      firstReenteredAt: bars[109].bar_end,
+      expandedUntil: bars[119].bar_end,
+    }),
+    nStructureBand('n-down-1', 'down', bars[30].bar_end, bars[110].bar_end, 105, 210, {
+      firstReenteredAt: bars[112].bar_end,
+      invalidatedAt: bars[117].bar_end,
+      expandedUntil: bars[117].bar_end,
+    }),
+  ]
+  await mockAlertMarkerSurface(page)
+  await mockWorkspace(page, { json: research() }, {
+    bars,
+    canonicalCoverage: { start: bars[0].bar_end, end: bars.at(-1).bar_end },
+    nStructureBands: bands,
+    nStructureBandRequests: requests,
+  })
+  await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=15m')
+
+  const overlay = page.getByRole('group', { name: 'Overlay' })
+  await expect(overlay.getByRole('button', { name: '苏冰', exact: true })).toHaveClass(/n-button--primary-type/)
+  await page.getByRole('button', { name: '图表设置', exact: true }).click()
+  let toggle = page.getByRole('switch', { name: 'N字区间', exact: true })
+  await expect(toggle).toBeDisabled()
+  await expect(page.getByText('已完成 N · Canonical 历史 · 仅真实主力 5m', { exact: true })).toBeVisible()
+  expect(requests).toHaveLength(0)
+
+  await page.getByRole('group', { name: '周期' }).getByRole('button', { name: '5m', exact: true }).click()
+  await page.getByRole('button', { name: '图表设置', exact: true }).click()
+  toggle = page.getByRole('switch', { name: 'N字区间', exact: true })
+  await expect(toggle).toBeEnabled()
+  await toggle.click()
+  const shell = page.getByTestId('kline-shell')
+  await expect(shell).toHaveAttribute('data-n-structure-band-count', '4')
+  await expect(shell).toHaveAttribute('data-rendered-n-structure-band-count', '4')
+  await expect(shell).toHaveAttribute('data-n-structure-overlap-group-count', '1')
+  await expect(shell).toHaveAttribute('data-n-structure-suppressed-count', '2')
+  await expect(shell).toHaveAttribute('data-n-structure-overlap-label', 'N↑ ×3')
+  await expect(shell).toHaveAttribute('data-n-structure-band-directions', 'up,down')
+  await expect(overlay.getByRole('button', { name: '苏冰', exact: true })).toHaveClass(/n-button--primary-type/)
+  const mainPane = await page.locator('.chart canvas').first().boundingBox()
+  expect(mainPane).not.toBeNull()
+  const overlapBadge = page.getByRole('button', { name: 'N↑ ×3', exact: true })
+  await overlapBadge.hover()
+  const tooltip = page.getByTestId('n-structure-band-tooltip')
+  await expect(tooltip).toContainText('同方向重叠 3 条 · 当前 1/3')
+  await overlapBadge.click()
+  await expect(shell).toHaveAttribute('data-n-structure-overlap-label', 'N↑ 2/3')
+  await expect(tooltip).toContainText('同方向重叠 3 条 · 当前 2/3')
+  await page.mouse.move(mainPane.x + mainPane.width / 2, mainPane.y + mainPane.height / 2)
+  await expect(shell).toHaveAttribute('data-n-structure-overlap-label', 'N↑ ×3')
+  await expect(tooltip).toContainText('N↓ 下跌')
+  await expect(tooltip).toContainText('AG2601')
+  await expect(tooltip).toContainText('N2 起点破坏')
+  await expect(tooltip).toContainText('历史确认 · 研究观察')
+
+  await page.getByRole('group', { name: '周期' }).getByRole('button', { name: '15m', exact: true }).click()
+  await expect(shell).toHaveAttribute('data-n-structure-band-count', '0')
+  await page.getByRole('button', { name: '图表设置', exact: true }).click()
+  await expect(page.getByRole('switch', { name: 'N字区间', exact: true })).toBeDisabled()
+
+  await page.getByRole('group', { name: '周期' }).getByRole('button', { name: '5m', exact: true }).click()
+  await expect(shell).toHaveAttribute('data-n-structure-band-count', '4')
+  await page.reload()
+  await expect(shell).toHaveAttribute('data-n-structure-band-count', '4')
+  await expect(shell).toHaveAttribute('data-rendered-n-structure-band-count', '4')
+  await expect(shell).toHaveAttribute('data-n-structure-overlap-group-count', '1')
+  expect(await page.evaluate(() => JSON.parse(
+    window.localStorage.getItem('guiyi.market.chart.preferences.v4'),
+  ).showNStructureBands)).toBe(true)
+  expect(requests.length).toBeGreaterThanOrEqual(3)
+})
+
+test('N structure band API failure leaves the K-line usable and reports only beside the setting', async ({ page }) => {
+  const bars = Array.from({ length: 120 }, (_, index) => bar(index))
+  await mockAlertMarkerSurface(page)
+  await mockWorkspace(page, { json: research() }, {
+    bars,
+    canonicalCoverage: { start: bars[0].bar_end, end: bars.at(-1).bar_end },
+    nStructureBandHttpStatus: 409,
+  })
+  await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=5m')
+  await page.getByRole('button', { name: '图表设置', exact: true }).click()
+  await page.getByRole('switch', { name: 'N字区间', exact: true }).click()
+
+  await expect(page.getByText('N字区间暂不可用', { exact: true })).toBeVisible()
+  await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-n-structure-band-count', '0')
+  await expect(page.locator('.chart canvas').first()).toBeVisible()
+  await page.getByRole('tab', { name: 'MACD', exact: true }).click()
+  await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-secondary-panel', 'macd')
 })
 
 test('JDJ Strategy uses current RB identity and clears stale markers across 1m 5m 1m', async ({ page }) => {

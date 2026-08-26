@@ -1,6 +1,6 @@
 # 当前状态
 
-更新时间：2026-08-25
+更新时间：2026-08-26
 
 ## 正式 release 与 production Runtime
 
@@ -20,6 +20,14 @@ Architecture Convergence Tasks 1–8 已完成实现、验证与独立 Review，
 - Candidate Validation/Robustness 与 pending prospective OOS 保留；Generic Robustness relationship metrics 保留。已退役 phase-specific Dossier/Relationships 不再是 pending Gate。
 - Alembic migration history、`futures_member_ranks` table identity 与仓库外既有 historical snapshots 保留；没有 active reader/builder/provider/CLI。
 - RQAlpha local-only workbench 未加载、未进入 Runtime；真实 smoke 仍 pending。
+
+## develop 中的 N Structure Historical range band
+
+- Market `图表设置` 已增加独立持久化的 `N字区间` 开关，默认关闭，仅在 `actual_dominant + 5m` 可用；四项 public Overlay 保持不变，N 区间可与任一 Overlay 组合显示。
+- 只读 `GET /api/v1/market/research/n-structure/bands` 复用既有 causal N reducer 与真实 rank1 segment warm-up，只投影严格 Completed N：形成区为 `N1 pivot -> completed_at`，完成后沿精确 N1-N2 price span 继续扩张，记录既有 first range-band re-entry，并终止于首个严格 N2-origin break 或当前 segment/Canonical 边界；窗口相交的更早 Completed N 也会返回。不跨 segment，不复制算法，不读取 Live。
+- Web 使用一个 candlestick series primitive 在 K 线下层绘制双阶段区间：形成区 6% 实线、完成后观察区 2.5% 虚线，完成点为实心圆、首次回区间为空心圆、N2 破坏为叉号；支持左侧裁剪、分页生命周期合并、最新重叠命中和 factual Historical hover。屏幕内同方向、至少三条的 `>=60%` 可见矩形重叠簇会自动降噪：从未失效且最新完成的优先锚点最多沿三跳纳入邻近成员，第四跳及更远不合并；主 N 保留完整呈现，其余成员只保留低透明上下轨。稳定公共可见锚点上的可访问徽标显示组数，可悬停查看并点击/键盘轮换；离开、缩放或 resize 后重置，方向彼此独立。旧/畸形生命周期响应 fail-closed，只降级该图层，不遮挡 K 线。
+- 2026-08-26 后端 N Swing/Pattern/State/API/composition 回归 `250 passed`，Web 单元测试 `323 passed / 1 skipped`，ruff、Vue 类型检查、生产 build/bundle topology 与完整 Web E2E `110 passed / 1 skipped` 均通过；E2E 覆盖完成点在已加载窗口左侧、但扩张观察段仍与窗口相交的分页场景，以及不同起点的三条同向高重叠区间的主成员/淡轨、悬停、点击轮换与离开复位。隔离本地开发栈真实读取 AU `actual_dominant + 5m` 的 Canonical 页面：请求窗口得到 32 条相交生命周期事实（26 条已有首次回区间、11 条已有 N2 失效），其中 15 条与当前视口/价格范围相交并形成有效 geometry，同时包含 up/down；当前 300-bar 视口实际形成 1 个同向重叠组（`N↑ ×4`）并压低 3 条成员。
+- 当前只是 develop 代码与本地验证事实；没有执行 DB、Canonical、Redis、Alert、通知、Runtime switch、release 或 promotion，也不构成 N 独立产品、第五个 Overlay、候选晋升或交易语义。
 
 ## 待完成 Gate
 
