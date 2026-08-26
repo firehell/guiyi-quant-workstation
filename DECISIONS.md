@@ -1,6 +1,6 @@
 # 架构决策记录
 
-更新时间：2026-08-26
+更新时间：2026-08-27
 
 本文件只记录长期决策；当前版本、部署、Scope、evidence 与 Gate 只看 `STATUS.md`，历史过程只从 Git history 追溯。
 
@@ -12,6 +12,9 @@
 | Universe | `active_products.txt` 定义研究能力，`operational_products.txt` 定义持续 Runtime 授权 | 即使文件内容相同也不合并授权边界 |
 | SuBing | 一个产品，Daily Context、Current Signal State、Formal Event 三种事实 | 共享权威公式但不合并为 mega endpoint、表或 DTO；Alert 只认 `scope_products` |
 | Historical replay | JDJ 1m reference replay 与 SuBing 15m Strategy Projection 保持 source-specific | 不创建 UniversalStrategyAdapter、统一 Opportunity 模型、正式回测 worker/queue 或订单域 |
+| SuBing Strategy engine | Historical 与 completed-Live 只使用同一个增量状态机；公开身份保持 `actual_dominant + 15m` | 1m/5m 只作内部输入；普通 Action 只认下一实际同合约 15m 区间第一根 1m open；状态不跨 rank1 物理段 |
+| SuBing Runtime/Scope | active60 计算状态与 `scope_products` 通知授权分离；当前状态从市场事实重建 | restore/catch-up 不补 Event 或通知；Scope 不创建、删除、重置状态；AlertEvent 不是仓位权威 |
+| SuBing Rule replacement | `20260826_0042` forward-only 直接将 `subing_entry_signal_v1` 替换为 `subing_strategy_v1` | 删除旧 SuBing Event，保留 Rule `id/enabled/scope_products`；无 archive、双 Rule、兼容 reader、replay 或 downgrade；production 执行另需 Gate |
 | HTDY | operational universe × 七周期 observation | Scope 只认 symbol × frequency；D1/W1 只走 `canonical_updated` seam |
 | Validation | causality、strict-before、future-leak、prefix invariance、golden parity、fail-closed 是长期合同 | Retrospective 不回填 prospective OOS，不自动晋升候选 |
 | Alert | 两表、Event 先提交、one-shot transport | 无 retry/replay/backfill/queue/outbox/订单；provider accepted 不等于送达 |

@@ -43,6 +43,7 @@ packages = ["app"]
 pythonpath = ["."]
 markers = [
   "isolated_postgresql: requires GUIYI_ISOLATED_MIGRATION_DATABASE_URL for a non-Runtime isolated PostgreSQL database",
+  "manual_acceptance: requires an explicit per-run authorization and sealed read-only dependencies",
 ]
 
 [tool.uv]

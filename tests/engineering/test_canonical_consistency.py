@@ -166,20 +166,28 @@ def test_release_versions_are_consistent() -> None:
 
 
 def test_alert_rule_codes_have_one_production_registry_per_language() -> None:
-    rule_codes = ("htdy_original_15m", "subing_entry_signal_v1")
-    backend_sources = {
-        path.relative_to(ROOT).as_posix()
-        for path in (ROOT / "services/quant-api/app").rglob("*.py")
-        if any(code in path.read_text(encoding="utf-8") for code in rule_codes)
-    }
-    frontend_sources = {
-        path.relative_to(ROOT).as_posix()
-        for path in (ROOT / "apps/quant-web/src").rglob("*")
-        if path.suffix in {".ts", ".vue"}
-        and any(code in path.read_text(encoding="utf-8") for code in rule_codes)
-    }
-    assert backend_sources == {"services/quant-api/app/alerts/registry.py"}
-    assert frontend_sources == {"apps/quant-web/src/utils/alertRules.ts"}
+    expected = {"htdy_original_15m", "subing_strategy_v1"}
+    backend_registry = importlib.import_module("app.alerts.registry")
+    assert {
+        definition.rule_code for definition in backend_registry.alert_rule_definitions()
+    } == expected
+
+    frontend_registry = (ROOT / "apps/quant-web/src/utils/alertRules.ts").read_text(
+        encoding="utf-8"
+    )
+    registry_block = frontend_registry.split("ALERT_RULE_CODES =", maxsplit=1)[1].split(
+        "} as const", maxsplit=1
+    )[0]
+    assert set(re.findall(r"'([^']+)'", registry_block)) == expected
+
+    active_sources = tuple(
+        (ROOT / relative).read_text(encoding="utf-8")
+        for root in ("services/quant-api/app", "apps/quant-web/src")
+        for path in (ROOT / root).rglob("*")
+        if path.is_file() and path.suffix in {".py", ".ts", ".vue"}
+        for relative in (path.relative_to(ROOT),)
+    )
+    assert all("subing_entry_signal_v1" not in source for source in active_sources)
 
 
 def test_release_candidate_excludes_private_sources() -> None:

@@ -1,11 +1,11 @@
 # SuBing Strategy V1 Stage 2 and v1.8.7 Design Spec
 
-**Status:** Self-reviewed — user written-spec review pending  
+**Status:** Approved; implementation present on feature branch; Task 12 full verification, exact-head Review and develop integration Gate pending
 **Date:** 2026-08-26  
 **Design base:** `develop@ee4a7d7091acc4139931fc56c8a5a61421aa3ad4`  
 **Target release:** `v1.8.7`  
 **Delivery lane:** Lane 3 — strategy causality, production migration, Runtime, real notification, release  
-**Implementation authorization:** Not granted by this document
+**Implementation authorization:** Granted separately by the user; this document still grants no production migration, Scope mutation, Runtime promotion, real notification or release mutation
 
 ## 1. Decision
 
