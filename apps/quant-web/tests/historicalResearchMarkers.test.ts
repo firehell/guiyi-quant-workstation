@@ -72,6 +72,7 @@ test('SuBing Strategy marker anchors effective bars and preserves simulated-acti
 
   assert.equal(open.time, '2026-08-03T01:10:00Z')
   assert.equal(open.label, '▲ 建多')
+  assert.equal(open.position, 'belowBar')
   assert.doesNotMatch(open.tooltip!, /持有/)
   assert.equal(close.label, '× 清多')
   assert.equal(close.position, 'aboveBar')
@@ -79,7 +80,17 @@ test('SuBing Strategy marker anchors effective bars and preserves simulated-acti
   assert.match(close.tooltip!, /MACD 高位死叉/)
   assert.match(close.tooltip!, /参考变动 \+7\.97%/)
   assert.match(close.tooltip!, /模拟动作·非实际成交/)
+  assert.match(close.tooltip!, /方向 Context 2026-07-31 → 2026-08-03/)
+  assert.match(close.tooltip!, /确认来源 formal_v1/)
+  assert.match(close.tooltip!, /Opportunity subing-opportunity:jm/)
+  assert.match(close.tooltip!, /持有 2 根 15m Bar/)
   assert.match(close.tooltip!, /生效口径 下一根同合约 15m open/)
+
+  const closeShort = subingStrategyActionToMarker(
+    { ...response.actions[1], kind: 'close_short' },
+    new Map(),
+  )
+  assert.equal(closeShort.position, 'belowBar')
 })
 
 test('SuBing Strategy marker keeps entry and terminal fill bases distinct', () => {
@@ -161,6 +172,7 @@ test('SuBing Strategy ignores stale responses and preserves markers after a prep
   const stale = deferred<SubingStrategyHistoricalResponse>()
   let calls = 0
   let fail = false
+  const bars = canonicalBars.map((bar) => ({ ...bar }))
   const controller = useHistoricalResearchMarkers({
     fetchSubingStrategy: async (request) => {
       calls += 1
@@ -170,18 +182,21 @@ test('SuBing Strategy ignores stale responses and preserves markers after a prep
     },
   })
   const identity = { overlay: 'subing' as const, seriesKind: 'actual_dominant' as const, symbol: 'jm', frequency: '15m' as const }
-  const coverage = { start: canonicalBars[0].time, end: canonicalBars[1].time }
-  const oldSync = controller.sync(identity, canonicalBars, coverage, 'replace')
-  await controller.sync({ ...identity, symbol: 'ag' }, canonicalBars, coverage, 'replace')
+  const coverage = { start: bars[0].time, end: bars[1].time }
+  const oldSync = controller.sync(identity, bars, coverage, 'replace')
+  await controller.sync({ ...identity, symbol: 'ag' }, bars, coverage, 'replace')
   stale.resolve(strategyResponse('jm'))
   await oldSync
   assert.match(controller.markers.value[0].id, /ag/)
 
-  await controller.sync(identity, canonicalBars, coverage, 'replace')
+  await controller.sync(identity, bars, coverage, 'replace')
   const previousMarkers = [...controller.markers.value]
-  const earlier = { ...canonicalBars[0], time: '2026-08-02T01:05:00Z', trading_day: '2026-08-02' }
+  const previousEpisodes = [...controller.subingStrategyEpisodes.value]
+  const earlier = { ...bars[0], time: '2026-08-02T01:05:00Z', trading_day: '2026-08-02' }
   fail = true
-  await controller.sync(identity, [earlier, ...canonicalBars], { start: earlier.time, end: canonicalBars[1].time }, 'prepend')
+  await controller.sync(identity, [earlier, ...bars], { start: earlier.time, end: bars[1].time }, 'prepend')
   assert.deepEqual(controller.markers.value, previousMarkers)
+  assert.deepEqual(controller.subingStrategyEpisodes.value, previousEpisodes)
+  assert.deepEqual(bars, canonicalBars)
   assert.equal(controller.error.value, 'HISTORICAL_RESEARCH_UNAVAILABLE')
 })

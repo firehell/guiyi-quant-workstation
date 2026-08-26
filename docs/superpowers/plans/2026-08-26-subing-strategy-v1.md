@@ -12,7 +12,7 @@
 
 **Spec:** [SuBing Strategy V1 Design Spec](../specs/2026-08-26-subing-strategy-v1-design.md)
 
-**Historical planning base:** `develop@fee29d2f8a2528b0f5ab05ce99be97c7072fc8de`; retained only to explain the completed implementation sequence, not as a branch or execution instruction.
+**Historical planning base:** `develop@fee29d2f8a2528b0f5ab05ce99be97c7072fc8de`; retained only to explain the completed implementation sequence, not as a branch or execution instruction. That historical checkout had four public overlays; the current active set is `none | subing | htdy`.
 
 ## Global Constraints
 
@@ -21,7 +21,7 @@
 - The historical integration target was `develop`; PR `#225` and corrective PR `#226` completed that integration. No future Gate or authorization may be inferred from it.
 - The historical task did not touch `main` or the Runtime worktree. Current repository and Runtime authorization are governed by `AGENTS.md` and `STATUS.md`.
 - Preserve `auto_order=false`. No account, order, commission, slippage, margin, leverage, contract-value PnL, portfolio state, or automatic trading path.
-- Keep the public overlays exactly `none | subing | htdy`; `subing_strategy_v1` replaces only the old SuBing historical single-signal projection inside the existing `subing` overlay.
+- The historical and current SuBing strategy surfaces both reuse the existing `subing` overlay; no new overlay is created. The current active set is exactly `none | subing | htdy`, and `subing_strategy_v1` replaces only the old SuBing historical single-signal projection inside `subing`.
 - Historical reads go only through `MarketDataService` and `ActualDominantResearchSegmentLoader` / `ActualDominantStitchedResearchLoader`. Do not glob Canonical files, infer rank1, or synthesize cross-frequency fallbacks.
 - Public strategy identity is exactly `actual_dominant + 15m`. Existing 5m/15m current SuBing observation may remain, but no 5m Strategy Action, Episode, Marker, or API request is valid.
 - Use only completed bars. D1/60m context must be causally equivalent to Daily Watch V2 for the target trading day. The decision Bar never reads the next Bar open before the decision exists.
