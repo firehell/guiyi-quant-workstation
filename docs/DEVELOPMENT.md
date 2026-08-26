@@ -1,154 +1,61 @@
 # 个人开发与本地验证
 
-更新时间：2026-08-25
+本文只提供日常开发导航。工程授权与外部操作规则见 `AGENTS.md`；当前状态见
+`STATUS.md`；产品和数据边界见 `PROJECT_SOURCE.md`、`DECISIONS.md` 及对应 deep
+canonical；可执行命令见 `TESTING.md`。
 
-本文定义仓库日常开发与外部副作用边界的唯一流程入口；当前 active 产品面只描述 Market、一个 SuBing 产品、HTDY、JDJ reference replay、Alert、Execution Review 与 local-only RQAlpha；N/raw JDJ 和 Candidate Validation/Robustness 是内部研究。产品、数据、策略、信号和 Runtime 语义仍由
-`PROJECT_SOURCE.md`、`DECISIONS.md` 及对应 deep canonical 定义。当前可执行产品面以 `STATUS.md` 为准；Execution Review 语义以 `docs/EXECUTION_REVIEW.md` 为准。
-
-## 唯一日常流程
-
-普通仓库变更直接使用：
+## 日常 develop 流程
 
 ```text
 develop
--> 检查 branch/status/最近提交并识别已有改动
+-> 检查 branch、worktree、dirty state 与最近提交
+-> 保留并避开其他任务或用户已有修改
 -> 只修改当前任务范围
 -> 按影响运行本地验证
--> 可选 commit
--> 可选 git push origin develop
+-> 提交并按需要推送 develop
 ```
 
-普通源码、测试、普通配置、研究实验和文档变更可以直接在 `develop` 编辑、验证、提交和推送。
-协作门禁与可选工具边界见 `AGENTS.md`「个人开发工作流」与 `DECISIONS.md`「个人开发」；本文不重复罗列。
+普通源码、测试、文档和仓库内普通删除可按上述流程执行。删除前先关闭 active
+references；历史恢复使用 Git，不建立 archive、backup 或 legacy-copy。
 
-开始修改前记录现有 dirty paths；不覆盖、不还原、不暂存与当前任务无关的改动。提交时只选择当前
-任务文件，不使用会意外纳入无关改动的全量暂存方式。
+## 修改前检查
 
-## 本地验证
+- 确认当前任务目标、允许范围、验收标准和禁止范围。
+- 数据、策略、回测、Alert、Runtime 或发布语义有冲突时 fail-closed，并以对应
+  canonical 和 `STATUS.md` 为准。
+- 不读取、输出、提交或记录凭据；不覆盖、不清理无关 dirty paths。
 
-本地验证是完成声明的依据，按影响选择：
+## 按影响验证
 
-- 仅文档或非执行注释：运行适用的引用、格式和 diff 检查。
-- 可执行行为：运行覆盖所改行为的定向测试，并按需要补充模块测试、lint、类型检查或构建。
-- 数据身份/质量、策略、回测、信号、migration、Runtime、live 或通知：运行对应领域专项测试，
-  且保留 deep canonical 的业务约束。
-- tracked 内容发生变化时运行适用的 secret scan；输出不得包含命中的秘密值。
+- 文档或注释：引用检查、`git diff --check`，以及适用的 OpenSpec/secret scan。
+- Web：定向 unit/E2E，再按风险运行完整 Web unit、Playwright 和 build。
+- 后端：定向 pytest，再按风险运行模块/完整 pytest、Ruff 和 Mypy。
+- 数据身份、策略、migration、Runtime、live 或通知：追加对应领域测试；isolated
+  PostgreSQL 只按 `TESTING.md` 使用专用可销毁数据库。
+- 任何必要检查失败时只报告失败，不声明完成。
 
-当前仓库有一个已包含在 v1.8.0 代码中的外部 local-only、research-only RQAlpha 工作台：`/backtests` 只请求固定
-`127.0.0.1:8011` 独立 app，该 app 不挂载主 API，不连接 PostgreSQL/Redis/Canonical/Alert/
-Execution Review/Runtime，也没有 worker、queue、scheduler 或 `guiyi` 回测 CLI。它未加载、未
-进入 Runtime，真实 smoke 仍为 `pending`；行为合同只看
-`openspec/specs/rqalpha-research-backtest-workbench/spec.md`。
-仓库也没有 `guiyi runtime plan` 或 active 旧 scheduler component。
-Market Runtime V1 的 `runtime live`、`data after-market` 与运行健康只读状态已实现；代码和 launchd 模板默认关闭，当前本机是否启用及部署根仅以 `STATUS.md` 为准。
-Alert V2 的 Application Domain、API 与独立 `runtime alert` 代码面，以及 Execution Review 的四表
-Application Domain、API 和 `/trade-records`，都不恢复已退役的旧 Signal/Review/Strategy 链。production migration、release/tag、Runtime
-promotion/switch、Scope/owner/transport 变更、真实 canary/send 与 rollback 未经各自明确请求
-不得执行，当前实施与生产状态只以 `STATUS.md` 为准。测试路由的 Scope PUT
-只验证代码合同，不是真实 Scope mutation 授权。
-唯一 active 运维链为 Mac launchd → FRPC → 腾讯云 FRPS/Nginx；本地状态只使用
-`scripts/ops/macos/local-services-status.sh`，分段只读检查与配置导航见 `deploy/README.md`。仓库不保留
-并行 PID 管理器、远端 API/Web 副本或会隐式执行 migration 的聚合启动器。
-不要用旧测试、脚本、evidence 或 Git-history 路径恢复兼容入口；未来正式 Candidate/OOS
-回测体系必须单独立项并从 Canonical/MarketDataService 合同开始，不得把外部 RQAlpha artifact
-直接晋升为正式 evidence。
+测试、fake runner、route intercept、render-only、dry-run 和只读 health 都不授权真实
+RQData、Canonical、DB、Redis、Scope、Runtime、通知或发布操作。
 
-RQAlpha 日常开发验证只运行 `TESTING.md` 中的 fake runner、TestClient local-app、完整 backtest
-测试与 route-intercepted browser 测试：不启动端口 `8011`，不导入本机 RQAlpha，不访问真实 Bundle，
-不写仓库外正式 results root。加载 sidecar 并运行真实 smoke 只能在当次对精确本机、Bundle、
-策略/窗口与 runs root 取得新的范围明确单次执行意图后执行；成功、失败或重试都不得复用该意图。
-真实 smoke 严禁运行 `rqsdk update-data`、`download-data` 或任何 Bundle mutation。
+## 受控外部操作索引
 
-任何必需检查失败时，明确报告失败，不宣称任务完成。CI 如存在，只是补充结果，不是本地开发、
-commit 或 push 的前置授权。
+以下操作必须在首次 mutation 前取得目标和范围明确的单次执行意图：
 
-## 开发态 Runtime 部署
+- 真实 RQData 下载、正式 Canonical 或生产数据库写入/删除；
+- Runtime/live 启用、切换、promotion 或受控 Redis acknowledgment；
+- Alert Scope/transport 变更、真实通知或真实 RQAlpha smoke；
+- main/tag/release、Git 历史重写、force update 或 GitHub rules 修改。
 
-```text
-clean develop + 预期提交
--> 受影响测试 / Ruff / Mypy / Web build
--> 新 detached Runtime 根按 lockfile 准备 Python / Web 依赖与 Web dist
--> 当次明确的部署请求
--> render 并 lint launchd plist
--> 只重载已授权的服务面
--> 读回安装根和健康状态
-```
+执行边界与持续授权只看 `AGENTS.md`；当前 release、Runtime、Scope、evidence 和
+pending Gate 只看 `STATUS.md`。本页不复制业务合同。
 
-`--render-only` 是普通无副作用验证；`--confirm-load` 和 `--confirm-market-runtime` 会改变本机服务状态，属于受控外部操作。新 detached Runtime worktree 不含 Git 忽略的 `.venv`、`node_modules`、`dist`，必须在 render 前依照 `TESTING.md` 的 lockfile 命令完成依赖准备并 build。直接修改 `develop` 不会自动生效：Web 需要 build/重载，API/Live 需要重载。开发态运行不是 Ready、Runtime promotion 或最终验收；功能收口后仍需独立精确提交的 Runtime worktree。
+## 相关入口
 
-## 普通仓库删除
-
-删除 Git 跟踪的过期源码、测试、普通配置、工程流程、hook/rule、CI、ADR 或文档属于普通仓库删除：
-扫描并关闭 active references，以 Git 历史恢复。细则见 `AGENTS.md` / `DECISIONS.md`。
-
-生产数据库记录、正式市场数据、Runtime 状态、live 配置、remote refs 或 Git 历史不属于普通仓库
-删除；它们必须按受控外部操作处理。
-
-## 受控外部操作
-
-生产 DB/正式数据不可逆写入或删除、远端 release/tag、force update 或历史重写、Runtime/live
-切换、真实通知及 GitHub 规则修改，在执行前需要用户一次明确请求，并给出操作类别和可识别范围。
-该请求只授权紧随其后的一个匹配执行尝试；完成、失败、重试、范围变化或后续会话都需要新的明确
-请求。
-
-Dry-run 只验证计划，绝不转化为 mutation authorization。授权模型与禁止从历史材料推断权限的细则见
-`AGENTS.md`「受控外部操作」与 `DECISIONS.md`。执行前仍须校验输入、范围、认证、质量和安全开关；
-业务正确性约束优先于任何执行意图。
-
-Release/tag 的意图不授权 Runtime/live、通知、数据写入或 GitHub 规则修改；每个类别和范围必须
-分别请求。普通 `git push origin develop` 仍属于上述日常开发流，不继承为 release/tag 或其他
-外部操作权限。
-
-唯一的持续授权例外是用户明确要求在识别出的本地工作站“启用 Market Runtime V1”后，既定
-`operational_products.txt`（当前与 active 60 一致）的 rank1 Live 观察与 18:05/一次 1h retry 盘后更新可
-持续运行；该请求不授权其他 DB mutation、release、真实通知或订单。未
-收到该请求时，只能执行 mock、临时目录、render-only 与只读健康验证。
-
-Alert Runtime V2 是另一份独立持续授权，且只列举：
-
-```text
-htdy_original_15m × 该 Rule 显式 symbol-frequency pair Scope × htdy_observers × pushplus-wechat-topic
-+
-subing_entry_signal_v1 × 该 Rule 显式 scope_products × owner × pushplus-wechat
-```
-
-用户必须先对识别出的本地工作站明确执行 V2 Runtime promotion，目标 Scope 还必须已获得精确 Rule +
-Product + audience + transport 授权；HTDY 还必须精确到 frequency，SuBing 仍是 product-level。开启成功后
-只允许该精确范围的后续自然事件持续创建 Event
-并通过 PushPlus SDK 尝试一次请求。HTDY 的 Topic 成员在 PushPlus 外部人工管理，SuBing 保持 owner-only；
-同步 shortCode 不代表送达。当前 production Scope、audience、transport 与运行状态只看 `STATUS.md`；
-未来第三条 Rule 不继承授权。该授权不从 Market Runtime、既有
-HTDY Scope 或任何其他 Gate 推导；production migration、release/tag、Runtime promotion/switch、
-Scope/owner/transport 变更、真实 canary/send 和 rollback 都必须分别取得一次性执行意图。
-
-## 不可放宽的业务边界
-
-- 正式历史数据继续遵守 DatasetKey、精确八表 Market Catalog、MainContractMap、coverage/可读性和
-  MarketDataService 边界；Historical Canonical 与 Live Observation 分离。
-- 策略、回测和正式历史信号禁止未来函数、泄漏和未记录重绘；交易相关计算使用 `Decimal`。
-- RQAlpha 工作台中的 Order/Trade 只是 simulation-only artifact，不连接账户、真实订单、Alert、
-  Execution Review 或 Runtime；其结果不替代 Canonical/OOS 正式 evidence。
-- 旧 Signal/Review/Strategy 应用链已经退役；Alert V2 两表与 Execution Review 四表是不同的独立
-  Application Domain，均不属于且不改变八表 Market Catalog，不得恢复旧事件表、RQ worker 或历史补发路径。
-- HTDY 继续使用 current-event cutoff：日内五周期只消费同周期 completed Live Bar，D1/W1 只响应
-  `canonical_updated` 并读取正式 Canonical，不从 Live 聚合日/周；SuBing 只复用 Factor/accepted Calibration/FormalPolicy/
-  `SubingReadService` resolver，stale identity fail-closed，final Session Bar 仅在共享 arrival grace
-  内可见，5m 在 15m boundary 按 TradingSession bucket 延后。current trading day 只由
-  `MarketPhaseResolver + operational products` 唯一解析，不可用时 fail-closed。
-- Alert V2 无 replay/backfill/retry/outbox/queue/Signal Center/订单路径；SuBing Rule seed
-  Scope 为空集，`auto_order=false`。
-- Live、真实通知、Runtime switch/promotion 均受独立 Gate 约束；Market 与 Alert 两份持续授权只覆盖各自
-  明确范围，不能相互或向外扩张。
-- 所有输出都是研究观察，不是交易指令；`auto_order=false`，拒绝创建或提交订单。
-- 不读取、显示、提交或记录凭据；外部输入在命令、文件、网络或数据库敏感操作前完成校验。
-
-## 权威边界
-
-- 工程执行规则：`AGENTS.md`
-- 日常开发流程：本文
+- 工程规则：`AGENTS.md`
 - 当前状态：`STATUS.md`
-- 长期产品与数据边界：`PROJECT_SOURCE.md`、`DECISIONS.md`
-- 数据与查询 active 合同：`openspec/specs/`
-- Execution Review 业务合同：`docs/EXECUTION_REVIEW.md`
-
-本文不得复制或重新解释业务 canonical。
+- 产品与长期决策：`PROJECT_SOURCE.md`、`DECISIONS.md`
+- 架构与数据：`docs/ARCHITECTURE.md`、`docs/DATA_CENTER.md`
+- Execution Review：`docs/EXECUTION_REVIEW.md`
+- active OpenSpec：`openspec/specs/`
+- 验证命令：`TESTING.md`
+- 本机部署导航：`deploy/README.md`
