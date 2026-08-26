@@ -24,12 +24,13 @@ flowchart LR
   MARKET --> WEB[Market Web<br/>/market + /market/chart]
 
   MDS --> SF[SuBing Factor / Signal /<br/>Calibration / Lifecycle]
+  MDS --> DWP[Daily Watch V2 pure<br/>projector / classification]
   MDS --> MREAD[MarketReadService]
-  SF --> DAILY[Daily Context artifact]
+  DWP --> DAILY[Daily Context artifact]
+  DWP --> SSP
   SF --> CURRENT[Current Signal State]
   SF --> SSP[SuBing Strategy V1<br/>15m Historical Projection]
   MREAD --> CURRENT
-  DAILY --> SSP
   DAILY --> MARKET
   CURRENT --> MARKET
   SSP --> MARKET
