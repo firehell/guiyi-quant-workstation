@@ -9,12 +9,17 @@
 - production Alembic 已在 `20260825_0040 (head)`。HTDY production Scope 曾于 15:13 在独立明确授权下更新为 active 60 × 七周期 `60 symbols / 420 pairs`，随后于 20:43 按新的明确请求原子收敛为唯一 `jm × 15m`（`1 symbol / 1 pair`）；七周期图表能力与逐 `symbol × frequency` 开关能力不变，SuBing Scope 未变，未触发 Event、重放或通知。
 - Alert transport 为 pushplus，provider accepted 不等于微信送达。19:40 的 processing failure 已被后续 `jm × 15m` 自然处理成功覆盖为 `processing_state=ok`；v1.8.4 已包含 W1 周内正常跳过与 Runtime observation schema v2 的精确失败 CAS acknowledgment 能力。当前 acknowledgment 仍为 `null`，没有执行 production acknowledgment、Event 重放、补发或真实通知；当前 Runtime 的 `degraded` 来自上述 after-market `pending` 与保留的 `notification_transport_failed`。当前旧 Runtime 仍来自 `c9633ef30`，尚未切入 develop 的 RQAlpha / Execution Review 退役提交。
 
-## Daily Watch V2 task branch 已验证、待合入
+## Daily Watch V2 已合入 develop、外部 Gate pending
 
-- Task branch `f17bf510a` 已将 Daily Watch D1/60m warm-up 改为截至来源交易日的最近 30 根 raw rank1 stitched actual-dominant Bar，并以唯一 source-day owner、同 contract 与 page segment 被完整 current segment 包含校验分页 identity；wrong owner、重叠 owner、越界 segment、future Bar 与 source-day 缺失继续 fail-closed。V1 bytes 未改，未增加 V1 fallback，Canonical、Catalog、DB 与 Runtime 均未改变。
-- Task 1–4 相关后端验证为 `224 passed`，Ruff clean，focused Mypy `1 source file` 与仓库 canonical Mypy `171 source files` 均无问题。Web V2 contract 的既有本轮验证为 `300 passed / 1 skipped / 0 failed`、`vue-tsc` 与 production build 通过；本次 concern fix 只改后端 Builder 与后端测试，未改变 Web contract。
+- Daily Watch V2 已通过 merge commit `a5031c2f3` 进入 develop；合入后的 symlink/read-root fail-closed 修正包含在 `7933d9251`。D1/60m warm-up 使用截至来源交易日的最近 30 根 raw rank1 stitched actual-dominant Bar，并以唯一 source-day owner、同 contract 与 page segment 被完整 current segment 包含校验分页 identity；wrong owner、重叠 owner、越界 segment、future Bar 与 source-day 缺失继续 fail-closed。V1 bytes 未改，未增加 V1 fallback，Canonical、Catalog、DB 与 Runtime 均未改变。
+- 合入前 Task 1–4 后端验证为 `224 passed`，Ruff clean，focused Mypy `1 source file` 与仓库 canonical Mypy `171 source files` 均无问题。Web V2 contract 验证为 `300 passed / 1 skipped / 0 failed`、`vue-tsc` 与 production build 通过；最终 concern fix 只改后端 Builder/read-root 与后端测试，未改变 Web contract。
 - 对 production Catalog/Canonical 的严格只读 smoke 使用 source trading day `2026-08-25`，active60 结果为 `universe=60 / long=16 / short=5 / excluded=39 / unavailable=0`；D1/H1 `warmup_bar_count` 均为 `30 × 60`，D1 segment-count 分布为 `1:4 / 2:47 / 3:9`，H1 为 `1:49 / 2:11`。该 smoke 直接调用 Builder、使用 read-only transaction 并 rollback；未调用 Generator/Store publish、RQData、HistoricalDataManager、Redis、notification 或 Runtime，也未生成或发布 V2 artifact。
-- 上述仅构成 CODE_COMPLETE / TEST_COMPLETE 与 read-only data acceptance；尚未进入 develop、release 或 production Runtime，也不是自然盘后 V2 evidence。
+- 上述构成 develop 的 CODE_COMPLETE / TEST_COMPLETE 与 read-only data acceptance；尚未进入 release 或当前 production Runtime，也不是自然盘后 V2 evidence。
+
+## Market Structure V1 Stage A evidence blocked
+
+- 隔离 worktree `research/market-structure-v1-stage-a@36a486b90` 已实现纯公式、calibration contract/runner 与 synthetic mechanics fixtures，但没有用户授权的 exact-feed acceptance corpus、冻结 policy/report、approval manifest 或 Stage A independent Gate；该分支未进入 develop。
+- 2026-08-26 fresh Stage A focused verification 为 `153 passed`，Ruff clean；真实 Gate runner 按合同返回 `calibration_evidence_insufficient` 并以非零状态停止。此结果只证明 fail-closed 工具边界，不构成公式兼容性、policy 冻结、Stage A 完成或后续 Stage B 授权。
 
 ## 已发布的 Architecture Convergence
 
@@ -40,7 +45,8 @@ Architecture Convergence Tasks 1–8 已完成实现、验证与独立 Review，
 ## 待完成 Gate
 
 - HTDY 的真实 PushPlus/微信送达与自然 D1/W1 `canonical_updated` evidence pending；不以测试、synthetic event、replay 或手工发送补证。
-- SuBing 自然 Live seam evidence pending；Daily Watch V2 的 develop integration、release、Runtime 与自然盘后 artifact 均 pending。上述既有 V1 自然 artifact 不作为 V2 evidence，不手工触发或回填。
+- SuBing 自然 Live seam evidence pending；Daily Watch V2 的 release、Runtime 与自然盘后 artifact 均 pending。上述既有 V1 自然 artifact 不作为 V2 evidence，不手工触发或回填。
+- Market Structure V1 缺少用户授权的 acceptance corpus，Stage A 保持 `calibration_evidence_insufficient`；不得用 synthetic fixtures、截图推断或其他 feed 代替，也不得据此开始 Stage B。
 - SuBing、N 与 JDJ Candidate 的 prospective OOS 按各自 protocol 独立累积，均为 pending prospective OOS。
 - RQAlpha / Execution Review 退役的生产收口 pending：必须先取得一次明确 Runtime switch 授权，将不再读取四表的新精确提交切入并读回健康状态；随后才可执行已批准的 production `upgrade 20260826_0041`。外部 RQAlpha runs 根与遗留 sidecar 已关闭。
 - Production notification acknowledgment 尚未执行；只有新的范围明确执行意图才能对当前精确失败做一次 CAS acknowledgment，且该操作仍不重放、不补发、不证明 provider accepted 或微信送达。
