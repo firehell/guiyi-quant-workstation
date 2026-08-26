@@ -25,7 +25,9 @@ AtrSmoothingPolicy = Literal["wilder_sma_seed", "wilder_first_tr", "ema_first_tr
 def parameters_hash(parameters: dict[str, Any]) -> str:
     """Return a stable short hash for indicator parameters."""
 
-    payload = json.dumps(parameters, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
+    payload = json.dumps(
+        parameters, ensure_ascii=True, sort_keys=True, separators=(",", ":")
+    )
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
 
 
@@ -36,6 +38,25 @@ class IndicatorPoint:
     ready: bool
     valid: bool
     reason: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class EmaState:
+    period: int
+    seed_policy: SeedPolicy
+    count: int
+    seed_values: tuple[float, ...]
+    previous: float | None
+    round_digits: int = 6
+
+
+@dataclass(frozen=True, slots=True)
+class MacdState:
+    fast: EmaState
+    slow: EmaState
+    signal: EmaState
+    histogram_scale: HistogramScale
+    round_digits: int = 6
 
 
 @dataclass(frozen=True)
@@ -118,7 +139,11 @@ def validate_definition_capabilities(definition: IndicatorDefinition) -> None:
         raise ValueError("confirmed_only must match closed_bar_only")
 
     if status in {"draft", "compatibility_validated"}:
-        if definition.backtest_capable or definition.live_capable or definition.alert_capable:
+        if (
+            definition.backtest_capable
+            or definition.live_capable
+            or definition.alert_capable
+        ):
             raise ValueError(f"{status} cannot be backtest/live/alert capable")
     elif status == "observation_only":
         if definition.backtest_capable or definition.live_capable:
@@ -127,7 +152,9 @@ def validate_definition_capabilities(definition: IndicatorDefinition) -> None:
         if not definition.backtest_capable:
             raise ValueError("strategy_candidate requires backtest_capable=True")
         if not definition.confirmed_only or definition.repainting_risk != "none":
-            raise ValueError("strategy_candidate must be confirmed_only with repainting_risk=none")
+            raise ValueError(
+                "strategy_candidate must be confirmed_only with repainting_risk=none"
+            )
         if definition.live_capable or definition.alert_capable:
             raise ValueError("strategy_candidate cannot be live/alert capable")
     elif status == "validated":
@@ -137,12 +164,18 @@ def validate_definition_capabilities(definition: IndicatorDefinition) -> None:
             raise ValueError("validated indicators must be confirmed_only")
     elif status == "alert_capable":
         if not definition.confirmed_only or definition.repainting_risk != "none":
-            raise ValueError("alert_capable must be confirmed_only with repainting_risk=none")
+            raise ValueError(
+                "alert_capable must be confirmed_only with repainting_risk=none"
+            )
         if not definition.live_capable or not definition.alert_capable:
-            raise ValueError("status=alert_capable requires live_capable=True and alert_capable=True")
+            raise ValueError(
+                "status=alert_capable requires live_capable=True and alert_capable=True"
+            )
     elif status == "live_candidate":
         if not definition.confirmed_only or definition.repainting_risk != "none":
-            raise ValueError("live_candidate must be confirmed_only with repainting_risk=none")
+            raise ValueError(
+                "live_candidate must be confirmed_only with repainting_risk=none"
+            )
         if not definition.live_capable:
             raise ValueError("status=live_candidate requires live_capable=True")
         if definition.alert_capable:

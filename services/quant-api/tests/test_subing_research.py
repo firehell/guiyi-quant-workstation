@@ -801,7 +801,9 @@ def test_same_boundary_opposite_matched_directions_fail_closed() -> None:
 
 
 def test_ready_factor_preserves_raw_observation_values_and_identity() -> None:
-    bars = _ready_bars(count=48, previous_volume=Decimal("100"), final_volume=Decimal("300"))
+    bars = _ready_bars(
+        count=48, previous_volume=Decimal("100"), final_volume=Decimal("300")
+    )
 
     series = calculate_subing_factor_series(
         bars,
@@ -823,11 +825,36 @@ def test_ready_factor_preserves_raw_observation_values_and_identity() -> None:
     assert result.snapshot.price_side is PriceSide.ABOVE
     assert result.snapshot.slope_5_raw == Decimal("1")
     assert result.snapshot.slope_10_raw == Decimal("1")
-    assert result.snapshot.slope_5_bps_per_bar == Decimal("74.07407407407407407407407407")
-    assert result.snapshot.slope_10_bps_per_bar == Decimal("75.47169811320754716981132075")
+    assert result.snapshot.slope_5_bps_per_bar == Decimal(
+        "74.07407407407407407407407407"
+    )
+    assert result.snapshot.slope_10_bps_per_bar == Decimal(
+        "75.47169811320754716981132075"
+    )
     assert result.snapshot.volume_ratio_prev == Decimal("3")
     with pytest.raises(FrozenInstanceError):
         result.snapshot.close = Decimal("0")  # type: ignore[misc]
+
+
+def test_appending_future_factor_bar_does_not_change_prior_results() -> None:
+    """Catches a future Factor Bar repainting an earlier observation."""
+    bars = _ready_bars(count=49)
+    original = calculate_subing_factor_series(
+        bars[:-1],
+        timeframe=BarFrequency.M5,
+        contract="JM2609",
+        segment_start_trading_day=bars[0].trading_day,
+        latest_bar_source="canonical",
+    )
+    appended = calculate_subing_factor_series(
+        bars,
+        timeframe=BarFrequency.M5,
+        contract="JM2609",
+        segment_start_trading_day=bars[0].trading_day,
+        latest_bar_source="canonical",
+    )
+
+    assert appended[:-1] == original
 
 
 def test_segment_local_warmup_is_insufficient_until_previous_macd_is_ready() -> None:
@@ -898,7 +925,10 @@ def test_historical_and_completed_live_have_identical_confirmed_factor_math() ->
             assert live_result.snapshot is None
             continue
         assert live_result.snapshot is not None
-        assert replace(live_result.snapshot, bar_source="canonical") == historical_result.snapshot
+        assert (
+            replace(live_result.snapshot, bar_source="canonical")
+            == historical_result.snapshot
+        )
 
 
 @pytest.mark.parametrize("previous_volume", (Decimal("0"), Decimal("-1")))
@@ -976,8 +1006,12 @@ def test_input_before_segment_start_is_rejected_instead_of_inheriting_state() ->
         )
 
 
-def test_factor_macd_matches_scoped_signal_equivalence_target_without_promotion() -> None:
-    policy = require_formal_policy("web_macd_legacy_v1", consumer="subing_factor_observation")
+def test_factor_macd_matches_scoped_signal_equivalence_target_without_promotion() -> (
+    None
+):
+    policy = require_formal_policy(
+        "web_macd_legacy_v1", consumer="subing_factor_observation"
+    )
     definition = get_indicator("macd")
 
     assert policy.policy_id == definition.formal_policy_id
