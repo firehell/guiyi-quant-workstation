@@ -13,6 +13,7 @@ from pathlib import Path
 import tempfile
 
 from ..domain import BarFrequency, CanonicalBar
+from ..aggregation import SessionWindow
 from ..subing_lifecycle import ConfirmationSource
 from ..subing_research import SubingDirection
 from ..subing_structure import ConfirmedPivot, PivotKind
@@ -27,7 +28,7 @@ from .contracts import (
 from .direction_context import SubingStrategyDirectionContext
 
 
-_SCHEMA_VERSION = 3
+_SCHEMA_VERSION = 4
 
 
 class SubingStrategyCacheError(RuntimeError):
@@ -60,6 +61,7 @@ class SubingStrategyCacheIdentity:
     bars_1m_digest: str
     bars_5m_digest: str
     bars_15m_digest: str
+    session_windows_digest: str
     direction_context_digest: str
     through: date
 
@@ -69,6 +71,7 @@ class SubingStrategyCacheIdentity:
             self.bars_1m_digest,
             self.bars_5m_digest,
             self.bars_15m_digest,
+            self.session_windows_digest,
             self.direction_context_digest,
         )
         if (
@@ -300,6 +303,27 @@ def digest_direction_contexts(
         for day, context in sorted(contexts.items())
     ]
     return sha256(_canonical_bytes(payload)).hexdigest()
+
+
+def digest_session_windows(sessions: Sequence[SessionWindow]) -> str:
+    windows = tuple(sessions)
+    if (
+        not windows
+        or any(not isinstance(window, SessionWindow) for window in windows)
+        or any(left.end > right.start for left, right in zip(windows, windows[1:]))
+    ):
+        raise SubingStrategyCacheError()
+    return sha256(
+        _canonical_bytes(
+            [
+                {
+                    "start": window.start.astimezone(UTC).isoformat(),
+                    "end": window.end.astimezone(UTC).isoformat(),
+                }
+                for window in windows
+            ]
+        )
+    ).hexdigest()
 
 
 def strategy_policy_sha256(path: Path) -> str:

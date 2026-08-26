@@ -5,6 +5,7 @@ from types import MappingProxyType
 import pytest
 
 from app.market_data.domain import ResolvedContractSegment
+from app.market_data.aggregation import SessionWindow
 from app.market_data.subing_lifecycle_policy import load_subing_lifecycle_policy
 from app.market_data.subing_research import (
     SubingDirection,
@@ -22,6 +23,7 @@ from app.market_data.subing_strategy.replay import (
 from app.market_data.subing_strategy.policy import load_subing_strategy_policy
 
 from research.subing_lifecycle_fixtures import _accepted_calibration
+from research.subing_strategy_fixtures import recorded_strategy_stream
 from research.test_subing_strategy_engine import (
     CONTRACT,
     SEGMENT_START,
@@ -32,6 +34,15 @@ from research.test_subing_strategy_engine import (
 )
 from datetime import timedelta
 from dataclasses import replace
+
+
+def _sessions(*bars) -> tuple[SessionWindow, ...]:
+    return (
+        SessionWindow(
+            start=bars[0].bar_end - timedelta(minutes=15),
+            end=bars[-1].bar_end,
+        ),
+    )
 
 
 def test_build_frames_rejects_future_lifecycle_confirmation() -> None:
@@ -87,6 +98,7 @@ def test_replay_consumes_authoritative_three_frequency_stream() -> None:
         bars_1m=bars_1m,
         bars_5m=bars_5m,
         bars_15m=bars_15m,
+        sessions=_sessions(*bars_15m),
         direction_contexts=contexts,
         calibration=_accepted_calibration(),
         lifecycle_policy=load_subing_lifecycle_policy(),
@@ -114,6 +126,7 @@ def test_replay_rejects_15m_open_that_disagrees_with_first_1m() -> None:
             bars_1m=(first_1m,),
             bars_5m=(bar_15m,),
             bars_15m=(bar_15m,),
+            sessions=_sessions(bar_15m),
             direction_contexts={
                 SEGMENT_START: _context(
                     bar_15m,
@@ -125,3 +138,51 @@ def test_replay_rejects_15m_open_that_disagrees_with_first_1m() -> None:
             strategy_policy=load_subing_strategy_policy(),
             terminal_bar_end=None,
         )
+
+
+def test_replay_does_not_substitute_later_same_price_1m_for_missing_first() -> None:
+    stream = recorded_strategy_stream(8, SubingStrategyDirection.SHORT_ONLY)
+    trading_day = stream.bars_15m[0].trading_day
+    segment = ResolvedContractSegment(CONTRACT, trading_day, trading_day)
+    kwargs = {
+        "symbol": "jm",
+        "segment": segment,
+        "bars_5m": stream.bars_5m,
+        "bars_15m": stream.bars_15m,
+        "sessions": stream.sessions,
+        "direction_contexts": {
+            trading_day: _context(
+                stream.bars_15m[0],
+                SubingStrategyDirection.SHORT_ONLY,
+            )
+        },
+        "calibration": _accepted_calibration(),
+        "lifecycle_policy": load_subing_lifecycle_policy(),
+        "strategy_policy": load_subing_strategy_policy(),
+        "terminal_bar_end": None,
+    }
+    baseline = replay_subing_strategy_segment(
+        bars_1m=stream.bars_1m,
+        **kwargs,
+    )
+    target = baseline.actions[0]
+    assert target.effective_open_at is not None
+    exact_first_end = target.effective_open_at + timedelta(minutes=1)
+    without_first = tuple(
+        bar for bar in stream.bars_1m if bar.bar_end != exact_first_end
+    )
+    assert any(
+        bar.bar_end == exact_first_end + timedelta(minutes=1)
+        and bar.open == target.reference_price
+        for bar in without_first
+    )
+
+    replayed = replay_subing_strategy_segment(
+        bars_1m=without_first,
+        **kwargs,
+    )
+
+    assert all(action.action_id != target.action_id for action in replayed.actions)
+    assert tuple(item.reason_code for item in replayed.canceled_pending) == (
+        "NEXT_BAR_OPEN_UNAVAILABLE",
+    )

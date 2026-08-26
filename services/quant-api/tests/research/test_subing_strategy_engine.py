@@ -9,6 +9,8 @@ import pytest
 from app.market_data.domain import BarFrequency, CanonicalBar
 from app.market_data.subing_ema_trend import PriceSide
 from app.market_data.subing_lifecycle import ConfirmationSource, SubingOpportunityKey
+from app.market_data.subing_calibration import load_subing_calibration
+from app.market_data.subing_lifecycle_policy import load_subing_lifecycle_policy
 from app.market_data.subing_research import (
     MacdCross,
     SubingDirection,
@@ -33,6 +35,7 @@ from app.market_data.subing_strategy.entry_projection import (
     SubingStrategyEntryCandidate,
 )
 from app.market_data.subing_strategy.policy import load_subing_strategy_policy
+from app.market_data.subing_strategy.machine import SubingStrategyInterval
 from app.market_data.subing_structure import (
     ConfirmedPivot,
     PivotKind,
@@ -253,15 +256,51 @@ def _run(
             )
             for frame in frames
         )
+    intervals = tuple(
+        SubingStrategyInterval(
+            effective_bar_end=frame.bar.bar_end,
+            first_1m_bar_end=frame.bar.bar_end - timedelta(minutes=14),
+            expected_open=frame.bar.open,
+        )
+        for frame in frames
+    )
     return run_subing_strategy_segment(
         symbol="jm",
         contract=CONTRACT,
         segment_start=SEGMENT_START,
         frames=frames,
         first_1m_bars=first_1m_bars,
+        intervals=intervals,
+        calibration=load_subing_calibration(),
+        lifecycle_policy=load_subing_lifecycle_policy(),
         policy=POLICY,
         terminal_bar_end=terminal_bar_end,
     )
+
+
+def test_compatibility_reducer_rejects_later_same_price_1m() -> None:
+    frames = _entry_frames()[:2]
+    exact = tuple(
+        CanonicalBar(
+            bar_end=frame.bar.bar_end - timedelta(minutes=14),
+            trading_day=frame.bar.trading_day,
+            open=frame.bar.open,
+            high=frame.bar.open,
+            low=frame.bar.open,
+            close=frame.bar.open,
+            volume=frame.bar.volume,
+            turnover=None,
+            open_interest=frame.bar.open_interest,
+        )
+        for frame in frames
+    )
+    later = (
+        exact[0],
+        replace(exact[1], bar_end=exact[1].bar_end + timedelta(minutes=1)),
+    )
+
+    with pytest.raises(ValueError, match="SUBING_STRATEGY_FIRST_1M_IDENTITY_INVALID"):
+        _run(frames, first_1m_bars=later)
 
 
 def test_long_entry_decides_on_close_and_fills_next_open() -> None:

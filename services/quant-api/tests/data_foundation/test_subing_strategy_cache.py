@@ -16,7 +16,9 @@ from app.market_data.subing_strategy.cache import (
     SubingStrategyCacheIdentity,
     digest_canonical_bars,
     digest_direction_contexts,
+    digest_session_windows,
 )
+from app.market_data.aggregation import SessionWindow
 from app.market_data.subing_strategy.contracts import (
     SubingStrategyActionKind,
     SubingStrategyDirection,
@@ -55,6 +57,7 @@ def _identity() -> SubingStrategyCacheIdentity:
         bars_1m_digest="b" * 64,
         bars_5m_digest="c" * 64,
         bars_15m_digest="d" * 64,
+        session_windows_digest="f" * 64,
         direction_context_digest="e" * 64,
         through=SEGMENT_START,
     )
@@ -98,6 +101,22 @@ def test_cache_path_binds_authoritative_1m_bytes(tmp_path: Path) -> None:
     )
 
 
+def test_cache_path_binds_authoritative_session_windows(tmp_path: Path) -> None:
+    cache = SubingStrategyCache(tmp_path, root_validator=lambda: tmp_path)
+    identity = _identity()
+
+    assert cache.path_for(identity) != cache.path_for(
+        replace(identity, session_windows_digest="0" * 64)
+    )
+
+
+def test_session_digest_changes_with_bucket_start_identity() -> None:
+    first = SessionWindow(aware_dt(9, 0), aware_dt(10, 0))
+    shifted = SessionWindow(aware_dt(9, 1), aware_dt(10, 0))
+
+    assert digest_session_windows((first,)) != digest_session_windows((shifted,))
+
+
 def test_cache_round_trips_actions_and_episodes(tmp_path: Path) -> None:
     entry = action_fixture(kind=SubingStrategyActionKind.OPEN_LONG)
     completed_bar = _bar(1, close="100")
@@ -131,7 +150,7 @@ def test_previous_cache_schema_is_unavailable(tmp_path: Path) -> None:
     cache.write(identity, _projection())
     path = cache.path_for(identity)
     payload = json.loads(path.read_text(encoding="utf-8"))
-    payload["schema_version"] = 2
+    payload["schema_version"] = 3
     path.write_text(json.dumps(payload), encoding="utf-8")
 
     with pytest.raises(SubingStrategyCacheError):

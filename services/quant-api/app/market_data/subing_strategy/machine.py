@@ -62,6 +62,27 @@ class SubingStrategyMachineError(ValueError):
 
 
 @dataclass(frozen=True, slots=True)
+class SubingStrategySourceIdentity:
+    """Authoritative caller context kept outside the locked completed-Bar facts."""
+
+    symbol: str
+    contract: str
+    segment_start_trading_day: date
+
+    def __post_init__(self) -> None:
+        if (
+            not isinstance(self.symbol, str)
+            or self.symbol != self.symbol.strip().lower()
+            or not self.symbol.isascii()
+            or not self.symbol.isalpha()
+            or normalize_contract_for_symbol(self.symbol, self.contract)
+            != self.contract
+            or type(self.segment_start_trading_day) is not date
+        ):
+            raise SubingStrategyMachineError("SOURCE_IDENTITY_INVALID")
+
+
+@dataclass(frozen=True, slots=True)
 class SubingStrategyInterval:
     effective_bar_end: datetime
     first_1m_bar_end: datetime
@@ -111,6 +132,11 @@ class SubingStrategyMachineState:
     pending_boundary_15m: Completed15mBar | None = None
     pending_boundary_5m: Completed5mBar | None = None
     watermarks: SubingStrategyWatermarks = SubingStrategyWatermarks()
+
+
+@dataclass(frozen=True, slots=True)
+class _CompletedCompatibilityDecision:
+    frame: SubingStrategyDecisionFrame
 
 
 def initial_subing_strategy_machine(
@@ -191,104 +217,91 @@ def replay_subing_strategy_frames(
     segment_start_trading_day: date,
     frames: tuple[SubingStrategyDecisionFrame, ...],
     first_1m_bars: tuple[CanonicalBar, ...],
+    intervals: tuple[SubingStrategyInterval, ...],
+    calibration: SubingCalibration,
+    lifecycle_policy: SubingLifecyclePolicy,
+    strategy_policy: SubingStrategyPolicy,
     terminal_bar_end: datetime | None,
 ) -> SubingStrategySegmentResult:
-    """Compatibility adapter for frozen Stage 1 decision-frame tests."""
+    """Feed frozen Stage 1 frames through the one unified step machine."""
 
-    actions: list[SubingStrategyAction] = []
-    closed_pairs: list[tuple[SubingStrategyAction, SubingStrategyAction]] = []
-    consumed: list[str] = []
-    consumed_set: set[str] = set()
+    state = initial_subing_strategy_machine(
+        symbol=symbol,
+        contract=contract,
+        segment_start_trading_day=segment_start_trading_day,
+        calibration=calibration,
+        lifecycle_policy=lifecycle_policy,
+        strategy_policy=strategy_policy,
+        direction_contexts={
+            frame.bar.trading_day: frame.direction_context for frame in frames
+        },
+        intervals=intervals,
+    )
+    source_identity = SubingStrategySourceIdentity(
+        symbol=symbol,
+        contract=contract,
+        segment_start_trading_day=segment_start_trading_day,
+    )
     canceled: list[SubingStrategyPendingCancellation] = []
-    pending: SubingStrategyPendingAction | None = None
-    position: SubingStrategyPosition | None = None
     for frame, first_minute in zip(frames, first_1m_bars, strict=True):
-        if pending is not None:
-            applied, position, closed_pair = apply_pending_next_open(
-                pending,
-                first_1m_bar=first_minute,
-                effective_bar_end=frame.bar.bar_end,
-                symbol=symbol,
-                contract=contract,
-                segment_start=segment_start_trading_day,
-                position=position,
-            )
-            actions.append(applied)
-            if closed_pair is not None:
-                closed_pairs.append(closed_pair)
-            pending = None
-        pending, newly_consumed = decide_completed_15m(
-            frame=frame,
-            position=position,
-            pending_action=pending,
-            consumed_opportunity_ids=frozenset(consumed_set),
+        state, output = step_subing_strategy_machine(
+            state,
+            Completed1mBar(first_minute),
+            source_identity=source_identity,
         )
-        consumed.extend(newly_consumed)
-        consumed_set.update(newly_consumed)
+        canceled.extend(output.cancellations)
+        state, output = step_subing_strategy_machine(
+            state,
+            _CompletedCompatibilityDecision(frame),
+            source_identity=source_identity,
+        )
+        canceled.extend(output.cancellations)
     if terminal_bar_end is not None and frames:
-        final_frame = frames[-1]
-        if pending is not None and pending.kind in {
-            SubingStrategyActionKind.OPEN_LONG,
-            SubingStrategyActionKind.OPEN_SHORT,
-        }:
-            canceled.append(_cancel_pending(pending))
-            pending = None
-        elif position is not None:
-            terminal_close = finalize_segment(
-                position=position,
-                pending_action=pending,
-                terminal_bar=final_frame.bar,
+        state, output = step_subing_strategy_machine(
+            state,
+            AuthoritativeSegmentTerminal(
                 symbol=symbol,
                 contract=contract,
-                segment_start=segment_start_trading_day,
-            )
-            actions.append(terminal_close)
-            closed_pairs.append((position.entry_action, terminal_close))
-            position = None
-            pending = None
-    bars = tuple(frame.bar for frame in frames)
-    episodes = [
-        SubingStrategyEpisode.from_actions(
-            entry_action=entry,
-            exit_action=exit_action,
-            completed_15m_bars=bars,
-            latest_reference_price=None,
+                segment_start_trading_day=segment_start_trading_day,
+                terminal_bar=frames[-1].bar,
+            ),
+            source_identity=source_identity,
         )
-        for entry, exit_action in closed_pairs
-    ]
-    if position is not None:
-        episodes.append(
-            SubingStrategyEpisode.from_actions(
-                entry_action=position.entry_action,
-                exit_action=None,
-                completed_15m_bars=bars,
-                latest_reference_price=bars[-1].close,
-            )
-        )
-    episodes.sort(key=lambda episode: episode.entry_action.effective_bar_end)
-    return SubingStrategySegmentResult(
-        actions=tuple(actions),
-        episodes=tuple(episodes),
-        consumed_opportunity_ids=tuple(consumed),
+        canceled.extend(output.cancellations)
+    return subing_strategy_segment_result(
+        state,
         canceled_pending=tuple(canceled),
-        pending_action=pending,
-        final_position=(
-            position.state if position is not None else SubingStrategyPositionState.FLAT
-        ),
     )
 
 
 def step_subing_strategy_machine(
     state: SubingStrategyMachineState,
-    event: SubingStrategyStreamInput,
+    event: SubingStrategyStreamInput | _CompletedCompatibilityDecision,
+    *,
+    source_identity: SubingStrategySourceIdentity,
 ) -> tuple[SubingStrategyMachineState, SubingStrategyStepOutput]:
     if not isinstance(state, SubingStrategyMachineState) or not isinstance(
         event,
-        (Completed1mBar, Completed5mBar, Completed15mBar, AuthoritativeSegmentTerminal),
+        (
+            Completed1mBar,
+            Completed5mBar,
+            Completed15mBar,
+            AuthoritativeSegmentTerminal,
+            _CompletedCompatibilityDecision,
+        ),
     ):
         raise SubingStrategyMachineError("INPUT_INVALID")
+    if (
+        not isinstance(source_identity, SubingStrategySourceIdentity)
+        or source_identity.symbol != state.symbol
+        or source_identity.contract != state.contract
+        or source_identity.segment_start_trading_day != state.segment_start_trading_day
+    ):
+        raise SubingStrategyMachineError("SOURCE_IDENTITY_MISMATCH")
     if state.watermarks.terminal_at is not None:
         raise SubingStrategyMachineError("SEGMENT_TERMINATED")
+    if isinstance(event, _CompletedCompatibilityDecision):
+        return _step_compatibility_decision(state, event.frame)
     if isinstance(event, AuthoritativeSegmentTerminal):
         return _step_terminal(state, event)
     if event.bar.trading_day < state.segment_start_trading_day:
@@ -317,6 +330,65 @@ def step_subing_strategy_machine(
     if isinstance(event, Completed5mBar):
         return _step_5m(state, event, missed)
     return _step_15m(state, event, missed)
+
+
+def _step_compatibility_decision(
+    state: SubingStrategyMachineState,
+    frame: SubingStrategyDecisionFrame,
+) -> tuple[SubingStrategyMachineState, SubingStrategyStepOutput]:
+    if (
+        state.pending_boundary_5m is not None
+        or state.pending_boundary_15m is not None
+        or not _is_shared_boundary(state, frame.bar.bar_end)
+        or frame.previous_bar != state.previous_15m_bar
+    ):
+        raise SubingStrategyMachineError("COMPATIBILITY_FRAME_IDENTITY_INVALID")
+    pending, newly_consumed = decide_completed_15m(
+        frame=frame,
+        position=state.position,
+        pending_action=state.pending_action,
+        consumed_opportunity_ids=frozenset(state.consumed_opportunity_ids),
+    )
+    state = replace(
+        state,
+        pending_action=pending,
+        consumed_opportunity_ids=(
+            *state.consumed_opportunity_ids,
+            *newly_consumed,
+        ),
+        previous_15m_bar=frame.bar,
+        completed_15m_bars=(*state.completed_15m_bars, frame.bar),
+        watermarks=replace(state.watermarks, latest_15m=frame.bar),
+    )
+    return _refresh_episodes(state), SubingStrategyStepOutput(
+        actions=(),
+        cancellations=(),
+        state_changed=True,
+    )
+
+
+def subing_strategy_segment_result(
+    state: SubingStrategyMachineState,
+    *,
+    canceled_pending: tuple[SubingStrategyPendingCancellation, ...],
+) -> SubingStrategySegmentResult:
+    episodes = (*state.closed_episodes,)
+    if state.current_episode is not None:
+        episodes = (*episodes, state.current_episode)
+    return SubingStrategySegmentResult(
+        actions=state.actions,
+        episodes=tuple(
+            sorted(episodes, key=lambda item: item.entry_action.effective_bar_end)
+        ),
+        consumed_opportunity_ids=state.consumed_opportunity_ids,
+        canceled_pending=canceled_pending,
+        pending_action=state.pending_action,
+        final_position=(
+            state.position.state
+            if state.position is not None
+            else SubingStrategyPositionState.FLAT
+        ),
+    )
 
 
 def _step_1m(

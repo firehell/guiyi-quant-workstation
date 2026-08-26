@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
+from ..aggregation import AggregationError, SessionWindow, bucket_window_for_bar
 from ..domain import BarFrequency, CanonicalBar, ResolvedContractSegment
 from ..subing_calibration import SubingCalibration
 from ..subing_lifecycle_policy import SubingLifecyclePolicy
@@ -21,13 +22,14 @@ from .engine import (
 from .entry_projection import (
     SubingStrategyEntryCandidate,
 )
-from .contracts import SubingStrategyPositionState
 from .policy import SubingStrategyPolicy
 from .machine import (
     SubingStrategyInterval,
     SubingStrategyMachineError,
+    SubingStrategySourceIdentity,
     initial_subing_strategy_machine,
     step_subing_strategy_machine,
+    subing_strategy_segment_result,
 )
 from .stream_contracts import (
     AuthoritativeSegmentTerminal,
@@ -104,6 +106,7 @@ def replay_subing_strategy_segment(
     bars_1m: tuple[CanonicalBar, ...],
     bars_5m: tuple[CanonicalBar, ...],
     bars_15m: tuple[CanonicalBar, ...],
+    sessions: tuple[SessionWindow, ...],
     direction_contexts: Mapping[date, SubingStrategyDirectionContext],
     calibration: SubingCalibration,
     lifecycle_policy: SubingLifecyclePolicy,
@@ -124,7 +127,7 @@ def replay_subing_strategy_segment(
             lifecycle_policy=lifecycle_policy,
             strategy_policy=strategy_policy,
             direction_contexts=direction_contexts,
-            intervals=_authoritative_intervals(bars_1m, bars_15m),
+            intervals=_authoritative_intervals(bars_1m, bars_15m, sessions),
         )
         events: list[Completed1mBar | Completed5mBar | Completed15mBar] = [
             *(Completed1mBar(bar) for bar in bars_1m)
@@ -141,9 +144,18 @@ def replay_subing_strategy_segment(
                 else 2,
             )
         )
+        source_identity = SubingStrategySourceIdentity(
+            symbol=symbol,
+            contract=segment.contract,
+            segment_start_trading_day=segment.start_trading_day,
+        )
         cancellations: list[SubingStrategyPendingCancellation] = []
         for event in events:
-            state, output = step_subing_strategy_machine(state, event)
+            state, output = step_subing_strategy_machine(
+                state,
+                event,
+                source_identity=source_identity,
+            )
             cancellations.extend(output.cancellations)
         if terminal_bar_end is not None:
             state, output = step_subing_strategy_machine(
@@ -154,26 +166,14 @@ def replay_subing_strategy_segment(
                     segment_start_trading_day=segment.start_trading_day,
                     terminal_bar=bars_15m[-1],
                 ),
+                source_identity=source_identity,
             )
             cancellations.extend(output.cancellations)
-        episodes = (*state.closed_episodes,)
-        if state.current_episode is not None:
-            episodes = (*episodes, state.current_episode)
-        return SubingStrategySegmentResult(
-            actions=state.actions,
-            episodes=tuple(
-                sorted(episodes, key=lambda item: item.entry_action.effective_bar_end)
-            ),
-            consumed_opportunity_ids=state.consumed_opportunity_ids,
+        return subing_strategy_segment_result(
+            state,
             canceled_pending=tuple(cancellations),
-            pending_action=state.pending_action,
-            final_position=(
-                state.position.state
-                if state.position is not None
-                else SubingStrategyPositionState.FLAT
-            ),
         )
-    except (ValueError, SubingStrategyMachineError):
+    except (AggregationError, ValueError, SubingStrategyMachineError):
         raise SubingStrategyReplayError() from None
 
 
@@ -203,33 +203,53 @@ def _validate_segment_bars(
 def _authoritative_intervals(
     bars_1m: tuple[CanonicalBar, ...],
     bars_15m: tuple[CanonicalBar, ...],
+    sessions: tuple[SessionWindow, ...],
 ) -> tuple[SubingStrategyInterval, ...]:
+    if (
+        not sessions
+        or any(not isinstance(session, SessionWindow) for session in sessions)
+        or any(left.end > right.start for left, right in zip(sessions, sessions[1:]))
+    ):
+        raise SubingStrategyReplayError()
     intervals: list[SubingStrategyInterval] = []
-    previous_end: datetime | None = None
-    consumed = 0
+    bars_by_end = {bar.bar_end: bar for bar in bars_1m}
+    if len(bars_by_end) != len(bars_1m):
+        raise SubingStrategyReplayError()
+    fifteen_by_end = {bar.bar_end: bar for bar in bars_15m}
     for bar_15m in bars_15m:
-        source = tuple(
-            bar
-            for bar in bars_1m
-            if (previous_end is None or bar.bar_end > previous_end)
-            and bar.bar_end <= bar_15m.bar_end
-        )
-        if (
-            not source
-            or source[-1].bar_end != bar_15m.bar_end
-            or source[0].open != bar_15m.open
-            or any(bar.trading_day != bar_15m.trading_day for bar in source)
+        session = _unique_session(sessions, bar_15m.bar_end)
+        bucket = bucket_window_for_bar(session, BarFrequency.M15, bar_15m.bar_end)
+        if bucket.end != bar_15m.bar_end:
+            raise SubingStrategyReplayError()
+        first_1m_bar_end = bucket.start + timedelta(minutes=1)
+        first_1m = bars_by_end.get(first_1m_bar_end)
+        if first_1m is not None and (
+            first_1m.open != bar_15m.open or first_1m.trading_day != bar_15m.trading_day
         ):
             raise SubingStrategyReplayError()
         intervals.append(
             SubingStrategyInterval(
                 effective_bar_end=bar_15m.bar_end,
-                first_1m_bar_end=source[0].bar_end,
+                first_1m_bar_end=first_1m_bar_end,
                 expected_open=bar_15m.open,
             )
         )
-        consumed += len(source)
-        previous_end = bar_15m.bar_end
-    if consumed != len(bars_1m):
-        raise SubingStrategyReplayError()
+    for bar_1m in bars_1m:
+        session = _unique_session(sessions, bar_1m.bar_end)
+        bucket = bucket_window_for_bar(session, BarFrequency.M15, bar_1m.bar_end)
+        containing = fifteen_by_end.get(bucket.end)
+        if containing is None or containing.trading_day != bar_1m.trading_day:
+            raise SubingStrategyReplayError()
     return tuple(intervals)
+
+
+def _unique_session(
+    sessions: tuple[SessionWindow, ...],
+    bar_end: datetime,
+) -> SessionWindow:
+    matches = tuple(
+        session for session in sessions if session.start < bar_end <= session.end
+    )
+    if len(matches) != 1:
+        raise SubingStrategyReplayError()
+    return matches[0]

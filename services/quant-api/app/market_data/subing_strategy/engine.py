@@ -6,6 +6,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
+from typing import TYPE_CHECKING
 
 from ..domain import BarFrequency, CanonicalBar, normalize_contract_for_symbol
 from ..subing_research import MacdCross, SubingDirection, SubingFactorSnapshot
@@ -22,6 +23,11 @@ from .contracts import (
 from .direction_context import SubingStrategyDirectionContext
 from .entry_projection import SubingStrategyEntryCandidate
 from .policy import SubingStrategyPolicy
+
+if TYPE_CHECKING:
+    from ..subing_calibration import SubingCalibration
+    from ..subing_lifecycle_policy import SubingLifecyclePolicy
+    from .machine import SubingStrategyInterval
 
 
 @dataclass(frozen=True, slots=True)
@@ -111,12 +117,18 @@ def run_subing_strategy_segment(
     segment_start: date,
     frames: Sequence[SubingStrategyDecisionFrame],
     first_1m_bars: Sequence[CanonicalBar],
+    intervals: Sequence[SubingStrategyInterval],
+    calibration: SubingCalibration,
+    lifecycle_policy: SubingLifecyclePolicy,
     policy: SubingStrategyPolicy,
     terminal_bar_end: datetime | None,
 ) -> SubingStrategySegmentResult:
     """Reduce one physical segment prefix without reading beyond each frame."""
     frame_tuple = tuple(frames)
     first_minutes = tuple(first_1m_bars)
+    interval_tuple = tuple(intervals)
+    from .machine import SubingStrategyInterval, replay_subing_strategy_frames
+
     _validate_reducer_inputs(
         symbol=symbol,
         contract=contract,
@@ -125,21 +137,37 @@ def run_subing_strategy_segment(
         policy=policy,
         terminal_bar_end=terminal_bar_end,
     )
-    if len(first_minutes) != len(frame_tuple) or any(
-        minute.trading_day != frame.bar.trading_day
-        or minute.bar_end >= frame.bar.bar_end
-        or minute.open != frame.bar.open
-        for minute, frame in zip(first_minutes, frame_tuple, strict=True)
+    if (
+        len(first_minutes) != len(frame_tuple)
+        or len(interval_tuple) != len(frame_tuple)
+        or any(
+            type(interval) is not SubingStrategyInterval for interval in interval_tuple
+        )
+        or any(
+            interval.effective_bar_end != frame.bar.bar_end
+            or interval.first_1m_bar_end != minute.bar_end
+            or interval.expected_open != frame.bar.open
+            or minute.trading_day != frame.bar.trading_day
+            or minute.open != frame.bar.open
+            for minute, frame, interval in zip(
+                first_minutes,
+                frame_tuple,
+                interval_tuple,
+                strict=True,
+            )
+        )
     ):
         raise ValueError("SUBING_STRATEGY_FIRST_1M_IDENTITY_INVALID")
-    from .machine import replay_subing_strategy_frames
-
     return replay_subing_strategy_frames(
         symbol=symbol,
         contract=contract,
         segment_start_trading_day=segment_start,
         frames=frame_tuple,
         first_1m_bars=first_minutes,
+        intervals=interval_tuple,
+        calibration=calibration,
+        lifecycle_policy=lifecycle_policy,
+        strategy_policy=policy,
         terminal_bar_end=terminal_bar_end,
     )
 

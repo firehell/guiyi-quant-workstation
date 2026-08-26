@@ -142,6 +142,9 @@ def test_entry_left_of_window_and_exit_inside_returns_complete_episode(
         BarFrequency.M15,
     )
     assert result.segment_summaries[0].bar_count_1m == len(bars)
+    assert loader.session_requests == [
+        ("jm", tuple(dict.fromkeys(bar.trading_day for bar in bars)))
+    ]
 
 
 def test_nonterminal_through_preserves_open_episode(

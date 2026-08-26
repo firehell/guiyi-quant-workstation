@@ -14,6 +14,7 @@ from ..actual_dominant_research import (
     ActualDominantResearchSegmentIdentityError,
     ActualDominantResearchSeries,
 )
+from ..aggregation import SessionWindow
 from ..domain import (
     BarFrequency,
     CanonicalBar,
@@ -43,6 +44,7 @@ from .cache import (
     SubingStrategyCacheIdentity,
     digest_canonical_bars,
     digest_direction_contexts,
+    digest_session_windows,
     strategy_policy_sha256,
 )
 from .direction_context import (
@@ -83,6 +85,13 @@ class _ResearchSegmentLoader(Protocol):
         since: date,
         through: date,
     ) -> ActualDominantResearchSeries: ...
+
+    def sessions(
+        self,
+        *,
+        symbol: str,
+        trading_days: Sequence[date],
+    ) -> Mapping[date, tuple[SessionWindow, ...]]: ...
 
 
 class _DirectionContextResolver(Protocol):
@@ -254,6 +263,24 @@ class SubingStrategyHistoricalProjectionService:
             segments=loaded.segments,
             through=request.through,
         )
+        all_target_days = tuple(
+            dict.fromkeys(bar.trading_day for bar in results[BarFrequency.M15].bars)
+        )
+        try:
+            sessions_by_day = self._segment_loader.sessions(
+                symbol=request.symbol,
+                trading_days=all_target_days,
+            )
+        except ActualDominantResearchSegmentIdentityError:
+            raise SubingStrategySegmentIdentityError() from None
+        except MarketDataError:
+            raise SubingStrategySourceUnavailableError() from None
+        if set(sessions_by_day) != set(all_target_days) or any(
+            not windows
+            or any(not isinstance(window, SessionWindow) for window in windows)
+            for windows in sessions_by_day.values()
+        ):
+            raise SubingStrategySegmentIdentityError()
 
         all_actions: list[SubingStrategyAction] = []
         all_episodes: list[SubingStrategyEpisode] = []
@@ -273,6 +300,12 @@ class SubingStrategyHistoricalProjectionService:
             if not bars_1m or not bars_5m or not bars_15m:
                 raise SubingStrategySegmentIdentityError()
             target_days = tuple(dict.fromkeys(bar.trading_day for bar in bars_15m))
+            sessions = tuple(
+                sorted(
+                    (window for day in target_days for window in sessions_by_day[day]),
+                    key=lambda window: window.start,
+                )
+            )
             contexts = self._direction_context_resolver.resolve(
                 request.symbol,
                 target_days,
@@ -303,6 +336,7 @@ class SubingStrategyHistoricalProjectionService:
                 bars_1m=bars_1m,
                 bars_5m=bars_5m,
                 bars_15m=bars_15m,
+                sessions=sessions,
                 contexts=contexts,
             )
             cached: CachedSubingStrategySegmentProjection | None = None
@@ -321,6 +355,7 @@ class SubingStrategyHistoricalProjectionService:
                         bars_1m=bars_1m,
                         bars_5m=bars_5m,
                         bars_15m=bars_15m,
+                        sessions=sessions,
                         direction_contexts=contexts,
                         calibration=self._calibration,
                         lifecycle_policy=self._lifecycle_policy,
@@ -407,6 +442,7 @@ class SubingStrategyHistoricalProjectionService:
         bars_1m: tuple[CanonicalBar, ...],
         bars_5m: tuple[CanonicalBar, ...],
         bars_15m: tuple[CanonicalBar, ...],
+        sessions: tuple[SessionWindow, ...],
         contexts: Mapping[date, SubingStrategyDirectionContext],
     ) -> SubingStrategyCacheIdentity | None:
         daily_ends = tuple(
@@ -461,6 +497,7 @@ class SubingStrategyHistoricalProjectionService:
                 contract=segment.contract,
                 segment_start=segment.start_trading_day,
             ),
+            session_windows_digest=digest_session_windows(sessions),
             direction_context_digest=digest_direction_contexts(contexts),
             through=request.through,
         )
