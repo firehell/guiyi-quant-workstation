@@ -107,8 +107,11 @@ Stage 2 must reuse these boundaries. It must not create a generic StrategyAdapte
 ```text
 RQData → Canonical Parquet → MarketDataService
                                   |
+                                  +→ Historical Daily Watch V2 reconstruction
+                                  |     prior target days during restore
+                                  |
                                   +→ Daily Watch V2 current artifact
-                                  |     target trading day D1 + 60m direction
+                                  |     current target day D1 + 60m direction
                                   |
 Market Runtime → Redis completed Live Bars
                   1m / 5m / 15m  |
@@ -211,7 +214,8 @@ No strategy state table and no Redis checkpoint are added. State is reconstructi
 - exact strategy, calibration and Lifecycle policies;
 - Canonical data from the current rank1 segment start;
 - completed Live 1m / 5m / 15m data;
-- the target-day Daily Watch V2 artifact.
+- causally reconstructed Daily Watch V2 direction for completed prior target days;
+- the immutable Daily Watch V2 artifact for the current target trading day.
 
 AlertEvent is notification history, not position authority.
 
@@ -233,6 +237,8 @@ A fundamental process-level failure, invalid policy, invalid schema or unavailab
 5. Record strategy_ready_at and per-symbol cutoffs.
 6. Enter normal message processing.
 ```
+
+For each target day before the current day, restoration uses the exact Stage 1 Historical Daily Watch V2 reconstruction. For the current target day, it consumes the immutable current Daily Watch V2 artifact. A current artifact is never projected backward over earlier days.
 
 The final catch-up closes the subscription/warm-up race without generating delayed notifications.
 
@@ -348,7 +354,23 @@ No Strategy Action, Event or notification is produced.
 
 ## 10. Daily Context
 
-Runtime consumes only the immutable Daily Watch V2 artifact whose:
+### 10.1 One formula, two read modes
+
+There is one Daily Watch V2 formula and identity, but restoration has two causal read modes:
+
+```text
+prior target trading days
+→ reuse Stage 1 historical Daily Watch V2 reconstruction
+
+current target trading day
+→ read the immutable Daily Watch V2 current artifact
+```
+
+The Runtime may not use today's current artifact for an earlier target day and may not create a second D1/60m formula.
+
+### 10.2 Current artifact contract
+
+For the current target day, require:
 
 ```text
 projection_version = subing_daily_watch_v2
@@ -367,8 +389,6 @@ unavailable/stale    → UNAVAILABLE
 ```
 
 While flat, unavailable or mismatched context blocks new entry. While already holding, the four 15m exit families continue. A later neutral or opposite context is not a fifth exit.
-
-Alert Runtime does not recalculate D1/60m or read a current artifact for the wrong target day.
 
 ## 11. Rank1 segment rollover
 
@@ -493,9 +513,12 @@ UNIQUE(action_id) WHERE action_id IS NOT NULL
 For Strategy Events:
 
 ```text
-AlertEvent.bar_end = Action.decision_at
-AlertEvent.frequency = 15m
+AlertEvent.bar_end    = Action.decision_at
+AlertEvent.trading_day = Action.trading_day of the effective Action
+AlertEvent.frequency  = 15m
 ```
+
+A decision may occur on the preceding trading day while its next-open Action belongs to the next trading day. Current-day Event reads therefore use the effective Action's trading day.
 
 The Marker anchor is not `AlertEvent.bar_end`; it is `strategy_payload.effective_bar_end`.
 
@@ -705,19 +728,27 @@ It returns:
 - target-day Daily Context availability;
 - source mode `canonical | canonical_live`.
 
-It reconstructs through the shared engine and performs no Event, Scope, Redis-status or notification write.
+It reconstructs prior target days with the Historical Daily Watch V2 seam and the current target day with the current artifact. It uses the shared engine and performs no Event, Scope, Redis-status or notification write.
 
-### 17.3 Live chart Marker
+### 17.3 Live chart Marker and later Canonical reconciliation
 
-A persisted Strategy Event maps to the same Marker identity as Historical Projection:
+A persisted Strategy Event maps to the same logical Marker identity as Historical Projection:
 
 ```text
-marker.id       = action_id
-marker.time     = strategy_payload.effective_bar_end
-marker label    = 建多 / 建空 / 清多 / 清空
+marker dedupe key = action_id
+marker.time       = strategy_payload.effective_bar_end
+marker label      = 建多 / 建空 / 清多 / 清空
 ```
 
-When Canonical later produces the same Historical Action, Web dedupes by `action_id`; it does not display two Markers.
+Before Canonical publication, Web displays the immutable Live Event facts. When Canonical later returns a Historical Action with the same `action_id`:
+
+- exact matching contract, kind, decision time, effective Bar, fill basis and reference price dedupe to one Marker;
+- a factual mismatch is not silently merged;
+- Canonical Historical facts become the research-chart display authority;
+- the original Event remains immutable as the notification fact;
+- Web/API exposes `STRATEGY_ACTION_FACT_MISMATCH` rather than rewriting, duplicating or re-notifying.
+
+This handles later Canonical corrections while preserving deterministic identity and Event immutability.
 
 The existing old SuBing `buy / sell` Alert Marker conversion is removed.
 
@@ -745,14 +776,15 @@ A Strategy read failure degrades only the Strategy layer; Canonical K-lines and 
 
 A product becomes unavailable without stopping others for:
 
-- missing or stale Daily Context;
+- missing or stale current Daily Context;
+- unavailable causal Historical Context needed for restore;
 - incomplete current-segment Canonical/Live data;
 - contract/segment identity mismatch;
 - missing exact first 1m open;
 - out-of-order or conflicting Bar identity;
 - Factor/Lifecycle warm-up insufficiency.
 
-Missing Daily Context blocks entry but does not block exits. Missing exact effective open cancels only the pending Action.
+Missing current Daily Context blocks entry but does not block exits. Missing exact effective open cancels only the pending Action. A restore-context identity failure degrades the product rather than inventing an entry history.
 
 ### 18.2 Process-level fail-closed
 
@@ -784,7 +816,7 @@ The release candidate must contain:
 - direct Rule and Event replacement;
 - owner notification formatter;
 - live current Strategy HTTP/Web projection;
-- Marker/Event dedupe;
+- Marker/Event dedupe and Canonical reconciliation;
 - Runtime status schema v3;
 - version synchronization to `1.8.7`.
 
@@ -881,6 +913,7 @@ Tests must prove Historical and Live streaming equivalence for:
 - contract rollover terminal close;
 - no reverse and no same-Bar re-entry;
 - restart before and after effective open;
+- prior-day Historical Context plus current-day artifact restoration;
 - prefix invariance and stable ids.
 
 ### 22.2 Runtime tests
@@ -936,6 +969,7 @@ Verify:
 - typed Strategy Event rendering;
 - event Marker anchored to effective 15m Bar;
 - `action_id` dedupe against Historical Projection;
+- factual mismatch produces `STRATEGY_ACTION_FACT_MISMATCH` and Canonical display authority;
 - current open Episode update;
 - symbol/frequency/series stale-response isolation;
 - pan/prepend behavior remains stable;
@@ -997,17 +1031,20 @@ No Gate implies the next one. Migration success does not authorize Runtime; Runt
 The following issues were found during design review and are resolved by this Spec:
 
 1. **Future Marker time conflict:** `AlertEvent.bar_end` cannot be the future incomplete effective Bar. It is fixed to `decision_at`; the typed payload owns `effective_bar_end`.
-2. **Historical/Live duplicate risk:** a partial unique `action_id` and Web `action_id` dedupe are mandatory.
-3. **Old result-code width:** current storage sized for `buy/sell` cannot safely hold `close_short`; migration widens the array element type.
-4. **Rule-specific payload validity:** the database permits the finite global code union, while application contracts enforce exact HTDY versus Strategy combinations.
-5. **Warm-up message gap:** subscribe-first plus final completed-Live catch-up restores state without delayed notifications.
-6. **Event-history-as-state risk:** current Strategy state is reconstructed from market facts, never inferred from scoped AlertEvents.
-7. **Direct replacement rollback risk:** deleting old history and changing schema makes the cutover explicitly forward-only.
-8. **Implicit real-notification risk:** Runtime promotion must explicitly mention whether preserved enabled/Scope state may begin natural Strategy notifications.
-9. **Scope/state coupling:** active60 calculation and product Scope are separated.
-10. **Trigger/protective Pivot confusion:** Stage 2 consumes the already corrected `bound_reference_pivot`; it never substitutes `trigger_reference_pivot`.
-11. **Notification format drift:** exact user-approved close text and fixed reason labels are contractual tests.
-12. **Over-design risk:** no extra process, state table, queue, retry, archive or generic strategy framework is introduced.
+2. **Effective trading-day ambiguity:** Event `trading_day` follows the effective Action, not necessarily the decision Bar.
+3. **Historical/Live duplicate risk:** a partial unique `action_id` and Web `action_id` dedupe are mandatory.
+4. **Live/Canonical factual correction:** same-id price or fact mismatch is surfaced; Canonical becomes chart authority without rewriting the immutable Event.
+5. **Old result-code width:** current storage sized for `buy/sell` cannot safely hold `close_short`; migration widens the array element type.
+6. **Rule-specific payload validity:** the database permits the finite global code union, while application contracts enforce exact HTDY versus Strategy combinations.
+7. **Warm-up message gap:** subscribe-first plus final completed-Live catch-up restores state without delayed notifications.
+8. **Historical Context restoration:** prior target days are reconstructed causally; today's artifact is never projected backward.
+9. **Event-history-as-state risk:** current Strategy state is reconstructed from market facts, never inferred from scoped AlertEvents.
+10. **Direct replacement rollback risk:** deleting old history and changing schema makes the cutover explicitly forward-only.
+11. **Implicit real-notification risk:** Runtime promotion must explicitly mention whether preserved enabled/Scope state may begin natural Strategy notifications.
+12. **Scope/state coupling:** active60 calculation and product Scope are separated.
+13. **Trigger/protective Pivot confusion:** Stage 2 consumes the already corrected `bound_reference_pivot`; it never substitutes `trigger_reference_pivot`.
+14. **Notification format drift:** exact user-approved close text and fixed reason labels are contractual tests.
+15. **Over-design risk:** no extra process, state table, queue, retry, archive or generic strategy framework is introduced.
 
 Placeholder scan: no `TBD`, `TODO`, `FIXME` or unresolved choice remains.  
 Consistency review: Runtime, migration, Event, Web and release identities use the same four Action kinds and the same Stage 1 strategy policy.  
