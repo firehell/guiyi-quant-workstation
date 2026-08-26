@@ -37,6 +37,7 @@ from app.market_data.subing_calibration import SubingCalibrationError
 from app.market_data.subing_lifecycle import SubingLifecycleSnapshot
 from app.market_data.subing_read_service import SubingReadRequest
 from app.market_data.subing_research import SubingFactorResult, SubingSignalEvaluation
+from app.market_data.subing_structure import ConfirmedPivot
 from app.market_data.subing_daily_watch import (
     SubingDailyWatchItem,
     SubingDailyWatchWebSnapshot,
@@ -506,7 +507,6 @@ def _subing_signal(signal: SubingSignalEvaluation) -> SubingSignalOut:
 
 def _subing_lifecycle(snapshot: SubingLifecycleSnapshot) -> SubingLifecycleSnapshotOut:
     """Project the immutable research snapshot without evaluating lifecycle logic."""
-    pivot = snapshot.bound_reference_pivot
     transition = snapshot.latest_transition
     return SubingLifecycleSnapshotOut(
         formula_version=snapshot.formula_version,
@@ -539,20 +539,10 @@ def _subing_lifecycle(snapshot: SubingLifecycleSnapshot) -> SubingLifecycleSnaps
         confirmed_at=snapshot.confirmed_at,
         hold_count=snapshot.hold_count,
         hold_required=snapshot.hold_required,
-        bound_reference_pivot=(
-            SubingLifecyclePivotOut(
-                pivot_id=pivot.pivot_id,
-                kind=pivot.kind.value,
-                timeframe=pivot.source_timeframe.value,
-                pivot_time=pivot.pivot_time,
-                confirmed_at=pivot.confirmed_at,
-                price=pivot.price,
-                contract=pivot.contract,
-                segment_start_trading_day=pivot.segment_start_trading_day,
-            )
-            if pivot is not None
-            else None
+        trigger_reference_pivot=_subing_lifecycle_pivot(
+            snapshot.trigger_reference_pivot
         ),
+        bound_reference_pivot=_subing_lifecycle_pivot(snapshot.bound_reference_pivot),
         rebreak_reference_price=snapshot.rebreak_reference_price,
         retest_at=snapshot.retest_at,
         retest_rebreak_count=snapshot.retest_rebreak_count,
@@ -577,6 +567,23 @@ def _subing_lifecycle(snapshot: SubingLifecycleSnapshot) -> SubingLifecycleSnaps
         crossed_trading_day=snapshot.crossed_trading_day,
         boundary_reset=snapshot.boundary_reset,
         formal_v1_matched=snapshot.formal_v1_matched,
+    )
+
+
+def _subing_lifecycle_pivot(
+    pivot: ConfirmedPivot | None,
+) -> SubingLifecyclePivotOut | None:
+    if pivot is None:
+        return None
+    return SubingLifecyclePivotOut(
+        pivot_id=pivot.pivot_id,
+        kind=pivot.kind.value,
+        timeframe=pivot.source_timeframe.value,
+        pivot_time=pivot.pivot_time,
+        confirmed_at=pivot.confirmed_at,
+        price=pivot.price,
+        contract=pivot.contract,
+        segment_start_trading_day=pivot.segment_start_trading_day,
     )
 
 

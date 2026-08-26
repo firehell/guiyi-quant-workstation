@@ -13,7 +13,12 @@ import {
   type SubingResearchResponse,
 } from '../src/types/market.ts'
 import { lifecycleSnapshotToMarkers } from '../src/utils/subingLifecycleMarkers.ts'
-import { cloneSubingLifecycleCase } from './fixtures/subingLifecycleCases.mjs'
+import { buildSubingLifecyclePivotFacts } from '../src/utils/subingLifecycleFacts.ts'
+import {
+  cloneSubingLifecycleCase,
+  reidentifySubingResponse,
+} from './fixtures/subingLifecycleCases.mjs'
+import { readFileSync } from 'node:fs'
 
 const readyPayload = cloneSubingLifecycleCase('longSetup') as SubingResearchResponse
 
@@ -26,17 +31,49 @@ test('normalizes Decimal Factor values at the SuBing HTTP boundary', () => {
 })
 
 test('normalizes the complete additive lifecycle contract without changing Factor values', () => {
-  const result = normalizeSubingResearch(
-    cloneSubingLifecycleCase('pivotRetest1') as SubingResearchResponse,
-  )
+  const payload = cloneSubingLifecycleCase('pivotRetest1') as SubingResearchResponse
+  const result = normalizeSubingResearch(payload)
 
   assert.equal(result.primary.snapshot?.slope_5_bps_per_bar, 2)
   assert.equal(result.companion?.status, 'ready')
-  assert.equal(result.lifecycle.bound_reference_pivot?.price, 110)
+  assert.equal(
+    result.lifecycle.trigger_reference_pivot?.price,
+    110,
+  )
+  assert.equal(result.lifecycle.bound_reference_pivot, null)
   assert.equal(result.lifecycle.rebreak_reference_price, 115)
   assert.equal(result.lifecycle.volume_ratio_prev, 3)
   assert.equal(result.lifecycle.open_interest_delta, 18)
   assert.equal(result.lifecycle.latest_transition?.to_stage, 'setup_armed')
+})
+
+test('formats trigger and protective lifecycle pivots as separate current facts', () => {
+  const setup = normalizeSubingResearch(
+    cloneSubingLifecycleCase('pivotRetest1') as SubingResearchResponse,
+  )
+  const confirmed = normalizeSubingResearch(
+    cloneSubingLifecycleCase('pivotRetestConfirmed') as SubingResearchResponse,
+  )
+
+  assert.deepEqual(buildSubingLifecyclePivotFacts(setup.lifecycle), [
+    { role: 'trigger', label: '触发前高', price: 110 },
+  ])
+  assert.deepEqual(buildSubingLifecyclePivotFacts(confirmed.lifecycle), [
+    { role: 'trigger', label: '触发前高', price: 110 },
+    { role: 'bound', label: '绑定前低', price: 105 },
+  ])
+})
+
+test('reidentifies both lifecycle pivot roles with the physical contract', () => {
+  const response = reidentifySubingResponse(
+    cloneSubingLifecycleCase('pivotRetestConfirmed'),
+    'AG2602',
+  ) as SubingResearchResponse
+
+  assert.equal(response.lifecycle.trigger_reference_pivot?.contract, 'AG2602')
+  assert.match(response.lifecycle.trigger_reference_pivot?.pivot_id ?? '', /^AG2602:/)
+  assert.equal(response.lifecycle.bound_reference_pivot?.contract, 'AG2602')
+  assert.match(response.lifecycle.bound_reference_pivot?.pivot_id ?? '', /^AG2602:/)
 })
 
 test('keeps research lifecycle labels separate from formal V1 signal labels', () => {
@@ -62,6 +99,13 @@ test('maps only current immutable lifecycle facts to neutral research markers', 
     { id: `lifecycle:${key}:entry`, time: '2026-01-12T02:00:00Z', label: '研究确认', tooltip: 'SuBing 生命周期研究 · 研究确认', tone: 'neutral', position: 'belowBar', shape: 'circle' },
     { id: `lifecycle:${key}:transition:${transitionId}`, time: '2026-01-12T02:10:00Z', label: '风险', tooltip: 'SuBing 生命周期研究 · 风险', tone: 'neutral', position: 'belowBar', shape: 'circle' },
   ])
+})
+
+test('keeps current Lifecycle markers behind the preference without gating Strategy markers', () => {
+  const source = readFileSync(new URL('../src/pages/market/chart.vue', import.meta.url), 'utf8')
+
+  assert.match(source, /const lifecycleMarkers = computed\(\(\) => \{\s+if \(!showSubingInternalProcess\.value\) return \[\]/)
+  assert.match(source, /const researchMarkers = computed\(\(\) => mergeKlineMarkers\(\s+lifecycleMarkers\.value,\s+historicalResearchMarkers\.value,/)
 })
 
 test('maps a confirmed hard close to its immutable entry and close facts', () => {

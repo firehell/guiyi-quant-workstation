@@ -38,6 +38,7 @@ export const subingLifecycleCases = {
     "lifecycle": {
       "anchor_bar_end": "2026-01-12T02:30:00Z",
       "availability": "ready",
+      "trigger_reference_pivot": null,
       "bound_reference_pivot": null,
       "boundary_reset": null,
       "confirmation_source": "formal_v1",
@@ -47,7 +48,7 @@ export const subingLifecycleCases = {
       "direction": "long",
       "entry_progress": null,
       "formal_v1_matched": true,
-      "formula_version": "subing_lifecycle_v2",
+      "formula_version": "subing_lifecycle_v2_structure_binding_v1",
       "hold_count": 0,
       "hold_required": 3,
       "last_confirmed_at": "2026-01-12T02:30:00Z",
@@ -213,6 +214,7 @@ export const subingLifecycleCases = {
     "lifecycle": {
       "anchor_bar_end": null,
       "availability": "unavailable",
+      "trigger_reference_pivot": null,
       "bound_reference_pivot": null,
       "boundary_reset": null,
       "confirmation_source": null,
@@ -222,7 +224,7 @@ export const subingLifecycleCases = {
       "direction": "none",
       "entry_progress": null,
       "formal_v1_matched": false,
-      "formula_version": "subing_lifecycle_v2",
+      "formula_version": "subing_lifecycle_v2_structure_binding_v1",
       "hold_count": 0,
       "hold_required": 3,
       "last_confirmed_at": null,
@@ -334,6 +336,7 @@ export const subingLifecycleCases = {
     "lifecycle": {
       "anchor_bar_end": "2026-01-12T02:30:00Z",
       "availability": "ready",
+      "trigger_reference_pivot": null,
       "bound_reference_pivot": null,
       "boundary_reset": null,
       "confirmation_source": "formal_v1",
@@ -343,7 +346,7 @@ export const subingLifecycleCases = {
       "direction": "long",
       "entry_progress": null,
       "formal_v1_matched": true,
-      "formula_version": "subing_lifecycle_v2",
+      "formula_version": "subing_lifecycle_v2_structure_binding_v1",
       "hold_count": 0,
       "hold_required": 3,
       "last_confirmed_at": "2026-01-12T02:30:00Z",
@@ -540,6 +543,7 @@ export const subingLifecycleCases = {
     "lifecycle": {
       "anchor_bar_end": "2026-01-12T02:30:00Z",
       "availability": "ready",
+      "trigger_reference_pivot": null,
       "bound_reference_pivot": null,
       "boundary_reset": null,
       "confirmation_source": "formal_v1",
@@ -549,7 +553,7 @@ export const subingLifecycleCases = {
       "direction": "short",
       "entry_progress": null,
       "formal_v1_matched": true,
-      "formula_version": "subing_lifecycle_v2",
+      "formula_version": "subing_lifecycle_v2_structure_binding_v1",
       "hold_count": 0,
       "hold_required": 3,
       "last_confirmed_at": "2026-01-12T02:30:00Z",
@@ -746,6 +750,7 @@ export const subingLifecycleCases = {
     "lifecycle": {
       "anchor_bar_end": "2026-01-12T02:00:00Z",
       "availability": "ready",
+      "trigger_reference_pivot": null,
       "bound_reference_pivot": null,
       "boundary_reset": null,
       "confirmation_source": "formal_v1",
@@ -755,7 +760,7 @@ export const subingLifecycleCases = {
       "direction": "long",
       "entry_progress": null,
       "formal_v1_matched": true,
-      "formula_version": "subing_lifecycle_v2",
+      "formula_version": "subing_lifecycle_v2_structure_binding_v1",
       "hold_count": 0,
       "hold_required": 3,
       "last_confirmed_at": "2026-01-12T02:00:00Z",
@@ -952,6 +957,7 @@ export const subingLifecycleCases = {
     "lifecycle": {
       "anchor_bar_end": "2026-01-12T02:00:00Z",
       "availability": "ready",
+      "trigger_reference_pivot": null,
       "bound_reference_pivot": null,
       "boundary_reset": null,
       "confirmation_source": null,
@@ -961,7 +967,7 @@ export const subingLifecycleCases = {
       "direction": "long",
       "entry_progress": "hold_confirming",
       "formal_v1_matched": false,
-      "formula_version": "subing_lifecycle_v2",
+      "formula_version": "subing_lifecycle_v2_structure_binding_v1",
       "hold_count": 1,
       "hold_required": 3,
       "last_confirmed_at": "2026-01-12T02:05:00Z",
@@ -1109,6 +1115,7 @@ export const subingLifecycleCases = {
     "lifecycle": {
       "anchor_bar_end": "2026-01-12T01:30:00Z",
       "availability": "ready",
+      "trigger_reference_pivot": null,
       "bound_reference_pivot": null,
       "boundary_reset": null,
       "confirmation_source": null,
@@ -1118,7 +1125,7 @@ export const subingLifecycleCases = {
       "direction": "long",
       "entry_progress": "waiting_trigger",
       "formal_v1_matched": false,
-      "formula_version": "subing_lifecycle_v2",
+      "formula_version": "subing_lifecycle_v2_structure_binding_v1",
       "hold_count": 0,
       "hold_required": 3,
       "last_confirmed_at": "2026-01-12T01:30:00Z",
@@ -1266,6 +1273,7 @@ export const subingLifecycleCases = {
     "lifecycle": {
       "anchor_bar_end": "2026-01-12T02:30:00Z",
       "availability": "ready",
+      "trigger_reference_pivot": null,
       "bound_reference_pivot": null,
       "boundary_reset": null,
       "confirmation_source": null,
@@ -1275,7 +1283,7 @@ export const subingLifecycleCases = {
       "direction": "long",
       "entry_progress": "waiting_trigger",
       "formal_v1_matched": false,
-      "formula_version": "subing_lifecycle_v2",
+      "formula_version": "subing_lifecycle_v2_structure_binding_v1",
       "hold_count": 0,
       "hold_required": 3,
       "last_confirmed_at": "2026-01-12T02:30:00Z",
@@ -1423,6 +1431,7 @@ export const subingLifecycleCases = {
     "lifecycle": {
       "anchor_bar_end": "2026-01-12T02:15:00Z",
       "availability": "ready",
+      "trigger_reference_pivot": null,
       "bound_reference_pivot": null,
       "boundary_reset": null,
       "confirmation_source": "formal_v1",
@@ -1432,7 +1441,7 @@ export const subingLifecycleCases = {
       "direction": "short",
       "entry_progress": null,
       "formal_v1_matched": false,
-      "formula_version": "subing_lifecycle_v2",
+      "formula_version": "subing_lifecycle_v2_structure_binding_v1",
       "hold_count": 0,
       "hold_required": 3,
       "last_confirmed_at": "2026-01-12T02:15:00Z",
@@ -1580,7 +1589,7 @@ export const subingLifecycleCases = {
     "lifecycle": {
       "anchor_bar_end": "2026-01-12T01:30:00Z",
       "availability": "ready",
-      "bound_reference_pivot": {
+      "trigger_reference_pivot": {
         "confirmed_at": "2026-01-12T01:50:00Z",
         "contract": "AG2601",
         "kind": "high",
@@ -1590,6 +1599,7 @@ export const subingLifecycleCases = {
         "segment_start_trading_day": "2026-01-12",
         "timeframe": "5m"
       },
+      "bound_reference_pivot": null,
       "boundary_reset": null,
       "confirmation_source": null,
       "confirmed_at": null,
@@ -1598,7 +1608,7 @@ export const subingLifecycleCases = {
       "direction": "long",
       "entry_progress": "hold_confirming",
       "formal_v1_matched": false,
-      "formula_version": "subing_lifecycle_v2",
+      "formula_version": "subing_lifecycle_v2_structure_binding_v1",
       "hold_count": 1,
       "hold_required": 3,
       "last_confirmed_at": "2026-01-12T01:55:00Z",
@@ -1746,7 +1756,7 @@ export const subingLifecycleCases = {
     "lifecycle": {
       "anchor_bar_end": "2026-01-12T01:30:00Z",
       "availability": "ready",
-      "bound_reference_pivot": {
+      "trigger_reference_pivot": {
         "confirmed_at": "2026-01-12T01:50:00Z",
         "contract": "AG2601",
         "kind": "high",
@@ -1756,6 +1766,7 @@ export const subingLifecycleCases = {
         "segment_start_trading_day": "2026-01-12",
         "timeframe": "5m"
       },
+      "bound_reference_pivot": null,
       "boundary_reset": null,
       "confirmation_source": null,
       "confirmed_at": null,
@@ -1764,7 +1775,7 @@ export const subingLifecycleCases = {
       "direction": "long",
       "entry_progress": "retest_confirming",
       "formal_v1_matched": false,
-      "formula_version": "subing_lifecycle_v2",
+      "formula_version": "subing_lifecycle_v2_structure_binding_v1",
       "hold_count": 1,
       "hold_required": 3,
       "last_confirmed_at": "2026-01-12T02:00:00Z",
@@ -1912,7 +1923,7 @@ export const subingLifecycleCases = {
     "lifecycle": {
       "anchor_bar_end": "2026-01-12T01:30:00Z",
       "availability": "ready",
-      "bound_reference_pivot": {
+      "trigger_reference_pivot": {
         "confirmed_at": "2026-01-12T01:50:00Z",
         "contract": "AG2601",
         "kind": "high",
@@ -1922,6 +1933,7 @@ export const subingLifecycleCases = {
         "segment_start_trading_day": "2026-01-12",
         "timeframe": "5m"
       },
+      "bound_reference_pivot": null,
       "boundary_reset": null,
       "confirmation_source": null,
       "confirmed_at": null,
@@ -1930,7 +1942,7 @@ export const subingLifecycleCases = {
       "direction": "long",
       "entry_progress": "retest_confirming",
       "formal_v1_matched": false,
-      "formula_version": "subing_lifecycle_v2",
+      "formula_version": "subing_lifecycle_v2_structure_binding_v1",
       "hold_count": 1,
       "hold_required": 3,
       "last_confirmed_at": "2026-01-12T02:05:00Z",
@@ -2078,13 +2090,23 @@ export const subingLifecycleCases = {
     "lifecycle": {
       "anchor_bar_end": "2026-01-12T01:30:00Z",
       "availability": "ready",
-      "bound_reference_pivot": {
+      "trigger_reference_pivot": {
         "confirmed_at": "2026-01-12T01:50:00Z",
         "contract": "AG2601",
         "kind": "high",
         "pivot_id": "AG2601:2026-01-12:5m:high:2026-01-12T01:40:00+00:00",
         "pivot_time": "2026-01-12T01:40:00Z",
         "price": "110",
+        "segment_start_trading_day": "2026-01-12",
+        "timeframe": "5m"
+      },
+      "bound_reference_pivot": {
+        "confirmed_at": "2026-01-12T02:05:00Z",
+        "contract": "AG2601",
+        "kind": "low",
+        "pivot_id": "AG2601:2026-01-12:5m:low:2026-01-12T01:55:00+00:00",
+        "pivot_time": "2026-01-12T01:55:00Z",
+        "price": "105",
         "segment_start_trading_day": "2026-01-12",
         "timeframe": "5m"
       },
@@ -2096,7 +2118,7 @@ export const subingLifecycleCases = {
       "direction": "long",
       "entry_progress": null,
       "formal_v1_matched": false,
-      "formula_version": "subing_lifecycle_v2",
+      "formula_version": "subing_lifecycle_v2_structure_binding_v1",
       "hold_count": 1,
       "hold_required": 3,
       "last_confirmed_at": "2026-01-12T02:10:00Z",
@@ -2244,6 +2266,7 @@ export const subingLifecycleCases = {
     "lifecycle": {
       "anchor_bar_end": "2026-01-12T02:00:00Z",
       "availability": "ready",
+      "trigger_reference_pivot": null,
       "bound_reference_pivot": null,
       "boundary_reset": null,
       "confirmation_source": "formal_v1",
@@ -2255,7 +2278,7 @@ export const subingLifecycleCases = {
       "direction": "short",
       "entry_progress": null,
       "formal_v1_matched": false,
-      "formula_version": "subing_lifecycle_v2",
+      "formula_version": "subing_lifecycle_v2_structure_binding_v1",
       "hold_count": 0,
       "hold_required": 3,
       "last_confirmed_at": "2026-01-12T02:10:00Z",
@@ -2403,6 +2426,7 @@ export const subingLifecycleCases = {
     "lifecycle": {
       "anchor_bar_end": "2026-01-12T02:15:00Z",
       "availability": "ready",
+      "trigger_reference_pivot": null,
       "bound_reference_pivot": null,
       "boundary_reset": null,
       "confirmation_source": "formal_v1",
@@ -2414,7 +2438,7 @@ export const subingLifecycleCases = {
       "direction": "short",
       "entry_progress": null,
       "formal_v1_matched": false,
-      "formula_version": "subing_lifecycle_v2",
+      "formula_version": "subing_lifecycle_v2_structure_binding_v1",
       "hold_count": 0,
       "hold_required": 3,
       "last_confirmed_at": "2026-01-12T02:25:00Z",
@@ -2554,9 +2578,10 @@ export function reidentifySubingResponse(response, contract) {
   if (lifecycle?.latest_transition?.transition_id) {
     lifecycle.latest_transition.transition_id = lifecycle.latest_transition.transition_id.replaceAll(previous, contract)
   }
-  if (lifecycle?.bound_reference_pivot) {
-    lifecycle.bound_reference_pivot.contract = contract
-    lifecycle.bound_reference_pivot.pivot_id = lifecycle.bound_reference_pivot.pivot_id.replaceAll(previous, contract)
+  for (const pivot of [lifecycle?.trigger_reference_pivot, lifecycle?.bound_reference_pivot]) {
+    if (!pivot) continue
+    pivot.contract = contract
+    pivot.pivot_id = pivot.pivot_id.replaceAll(previous, contract)
   }
   return clone
 }

@@ -14,8 +14,9 @@ import type {
   ProductResearchResponse,
   SeriesKind,
   SubingFrequency,
-  SubingHistoricalSignalRequest,
-  SubingHistoricalSignalResponse,
+  SubingStrategyHistoricalRequest,
+  SubingStrategyHistoricalResponse,
+  SubingStrategyHistoricalWireResponse,
   SubingDailyWatchCurrentWireResponse,
   SubingResearchResponse,
 } from '@/types/market'
@@ -23,6 +24,7 @@ import {
   normalizeMarketRadar,
   normalizeSubingDailyWatchCurrent,
   normalizeSubingResearch,
+  normalizeSubingStrategyHistory,
 } from '@/types/market'
 
 export function getMarketDominants() {
@@ -65,11 +67,11 @@ export function getSubingResearch(params: { symbol: string; frequency: SubingFre
   }).then(normalizeSubingResearch)
 }
 
-export function getSubingHistoricalSignals(params: SubingHistoricalSignalRequest) {
-  return request.get<never, SubingHistoricalSignalResponse>(
-    '/market/research/subing/history',
+export function getSubingStrategyHistory(params: SubingStrategyHistoricalRequest) {
+  return request.get<never, SubingStrategyHistoricalWireResponse>(
+    '/market/research/subing-strategy/history',
     { params },
-  )
+  ).then(normalizeSubingStrategyHistory) as Promise<SubingStrategyHistoricalResponse>
 }
 
 export function getJdjStrategyHistoricalActions(params: JdjStrategyHistoricalRequest) {

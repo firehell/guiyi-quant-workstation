@@ -1,22 +1,41 @@
-# 归一量化项目事实源
+# 归一量化稳定产品面
 
 更新时间：2026-08-26
 
-## 稳定产品边界
+归一量化是本地、单用户的国内期货研究工作站。稳定闭环是可信行情、Market Web、研究观察、Alert 与人工判断；不做自动交易、实盘下单、账户/委托/持仓管理、SaaS、多用户权限或 AI 自动晋升。所有信号、图表和通知都是研究观察，`auto_order=false`。
 
-归一量化是本地、单用户的国内期货研究工作站：可信行情、Market Web、研究观察与 Alert 构成当前闭环。它不做自动交易、实盘下单、账户/委托/持仓管理、SaaS 或 AI 自动晋升；所有信号和通知均为研究观察，`auto_order=false`。
+## Market Web
 
-SuBing 是一个 SuBing 产品，向用户投影三种不能互相替代的内部事实：Daily Context（盘后 immutable artifact，回答“今天看什么”）、Current Signal State（Canonical + completed Live current state，回答“现在是什么状态”）和 Formal Event（immutable `AlertEvent`，回答“是否需要处理”）。Daily Watch V2 的 Daily Context 只使用截至来源交易日的最近 30 根 confirmed raw rank1 stitched `actual_dominant` D1/60m Bar；换月不复权、不平移、不重置 EMA21/slope，固定身份为 `subing_daily_watch_v2 + subing_ema21_rank1_stitched_raw_v2 + rank1_stitched_raw`，artifact 只写校验后 base 根的 `v2/` namespace。base 根中的 V1 字节保持不变且 active API/Store 不回退 V1；只有整个 stitched 历史仍不足 30 根或存在真实来源日、rank1、数据身份、metadata 缺口时才 typed unavailable。三类事实由同一权威 Factor/Signal/Lifecycle 逻辑服务，不合并为 mega endpoint、表或 DTO；SuBing Alert Scope 保持 product-level `scope_products`，所有 Daily Watch 结果仍是 research-only observation，不进入订单路径。
+- 唯一 Web 产品为 Market，route 仅 `/market` 与 `/market/chart`。
+- Market Radar 的 Summary、Scatter、Detail 是唯一全市场研究入口。
+- 主图 Overlay 仅 `none | subing | jdj_strategy | htdy`。
+- N Structure 是可与 Overlay 组合的 `actual_dominant + 5m` completed-N Historical range-band 图层，不是第五个 Overlay、独立产品、Alert 或 Runtime evaluator。
 
-HTDY 是 observation-only/repainting 的全周期产品：operational universe × 七个正式周期 `1m/5m/15m/30m/60m/1d/1w`。稳定 Rule code 保持 `htdy_original_15m`；HTDY 唯一 Scope authority 为 `scope_product_frequencies` 的 symbol × frequency，SuBing 唯一 Scope authority 为 `scope_products`。HTDY storage identity 为 `(rule_id, symbol, frequency, bar_end)`，SuBing 的业务 Event identity 保持 `rule_id + symbol + bar_end`。日内只消费同周期 completed Live Bar；D1/W1 只由 `market:state(reason=canonical_updated)` 触发并读取 Canonical，不增加 scheduler、replay 或 backfill。
+## SuBing
 
-Market 主图只保留：`无 | 苏冰 | 日进斗金参考回放 | 火天大有`。N Structure 与 raw JDJ Candidate 只保留在内部研究面；N Structure 仅额外提供可选的 `actual_dominant + 5m` Historical Canonical completed-N range-band 投影：形成区为 N1 pivot 到严格完成点，完成后沿同一 N1-N2 price span 向右观察至既有 N2-origin break、rank1 segment 边界或当前 Canonical 边界。该投影可与四项主图 Overlay 组合显示，但不是第五个 Overlay、独立策略产品、Alert、Live 或 Runtime evaluator。JDJ reference replay 是 active-universe 单品种 `actual_dominant + 1m` 的 deterministic、read-only reference action/fill，不进入 DB、Redis、Alert、Runtime 或订单。
+SuBing 是一个产品，保留三种不可互相替代的事实：
 
-Market Radar 的 Summary、Scatter、Detail 是唯一全市场研究入口。Attention、Trend Focus、Main Force Mirror、Five-Candidate Dossier/Relationships 都不是 active 产品、API、CLI、Web、protocol 或 report。Generic Robustness relationship metrics 与 pending prospective OOS 保留；Alembic migration history 与 `futures_member_ranks` table identity 作为历史/schema 事实保留，但没有 active rank reader、builder、provider 或 CLI。
+- Daily Context：盘后 immutable artifact，回答“今天看什么”；
+- Current Signal State：Canonical 与 completed Live 的当前状态，回答“现在是什么状态”；
+- Formal Event：immutable `AlertEvent`，回答“是否需要处理”。
 
-RQAlpha 与 Execution Review 已退出 active 产品面、源码和接口；历史 migration 只保留 schema lineage。未来如需回测或人工执行复盘，必须作为新任务重新定义当前 consumer、事实合同和数据边界，不恢复旧模块。
+三类事实共享权威 Factor、Signal、Calibration、Lifecycle 与 policy，但不合并成 mega endpoint、表或 DTO。SuBing Alert 的唯一授权面是 product-level `scope_products`。
 
-## 稳定数据边界
+SuBing Strategy V1 Stage 1 是独立的 research-only Historical Strategy Projection：只支持 active universe 中单品种 `actual_dominant + 15m + since/through`，从每个 rank1 物理段起点确定性复算 Daily Context、Factor、Lifecycle、Strategy Action 与 Episode。普通动作在下一根同物理合约 15m open 模拟生效；退出仅来自 EMA21、上一根 15m 极值、绑定 Pivot 与 MACD 高低位反向交叉。不加减仓、不反手、不跨物理段、不在同 Bar 重建仓；只有覆盖权威段末时才以旧段最后一根 15m close 清仓。输出仅为模拟动作与参考变动，不进入 DB、Redis、Alert、Runtime 或订单。
+
+## JDJ 与保留研究能力
+
+- JDJ reference replay 是 active universe 中单品种 `actual_dominant + 1m` 的 deterministic、read-only reference action/fill；不进入 DB、Redis、Alert、Runtime 或订单。
+- Candidate Validation/Robustness 保留 source-specific causality、strict-before、embargo、prefix invariance、golden parity 与 prospective OOS 分离；retrospective 不生成 rank、winner、promotion、盈利或可交易结论。
+- Generic Robustness relationship metrics 保留。N/raw JDJ Candidate 只属于内部研究面。
+
+## HTDY 与 Alert
+
+HTDY 是 observation-only/repainting 产品，能力覆盖七个正式周期 `1m/5m/15m/30m/60m/1d/1w`。稳定 Rule code 为 `htdy_original_15m`，唯一 Scope authority 是 `scope_product_frequencies` 的 symbol × frequency；SuBing Rule code 为 `subing_entry_signal_v1`，唯一 Scope authority 是 `scope_products`。两种 Scope 不混用、不合并。
+
+Alert 是独立 Application Domain，只含 `alert_rules` 与 `alert_events` 两张表。Event 先提交，随后最多一次 transport；无逐收件人状态、retry、queue、replay、backfill、fallback 或订单路径。provider accepted 不等于送达。
+
+## 数据与稳定入口
 
 ```text
 RQData -> staging + hard validation -> Canonical Parquet
@@ -24,39 +43,13 @@ RQData -> staging + hard validation -> Canonical Parquet
        -> Market Web / indicators / read-only research
 ```
 
-- RQData 是唯一外部行情事实源；Canonical Parquet 是唯一 active Historical Bar 存储；PostgreSQL 不存 Bar。
-- active universe 唯一入口为 `data/universe/active_products.txt`；物理 Dataset 只有 `continuous` 与 `contract`，`actual_dominant` 查询时按 rank1 有效区间拼接。
-- `MarketDataService` 是 Historical consumer 的唯一入口；不得 glob、自选 active、自判主力、绕过质量或跨频回退。
-- Redis Live 仅为当日 observation，不能提升为 Canonical。
-- `alert_rules` / `alert_events` 是独立 Application Domain，不改变八表 Catalog；历史 `trade_*` migration 不构成 active schema 或 consumer。
+- RQData 是唯一外部行情事实源，Canonical Parquet 是唯一 active Historical Bar 存储，PostgreSQL 不存 Bar。
+- active research universe 由 `data/universe/active_products.txt` 定义；持续 Runtime 授权由 `data/universe/operational_products.txt` 定义。即使内容相同，两者也不合并。
+- 物理 Dataset 只有 `continuous` 与 `contract`；`actual_dominant` 是按 `MainContractMap rank=1` 有效区间拼接的查询模式。
+- `MarketDataService` 是 Historical consumer 的唯一入口；Redis Live 只承载当日 observation，不能提升为 Canonical。
 
-## 稳定接口与 CLI
+稳定 HTTP 面为 `/api/v1/market/*`、`/api/alerts/*` 与只读 `/api/runtime/*`。统一 CLI 为 `uv run --project services/quant-api guiyi`；research 子命令仅保留 `subing-calibration`、`subing-lifecycle`、`n-structure`、`jdj-1m`、`candidate-validation` 与 `candidate-robustness`。
 
-Web 只保留 Market：`/market` 与 `/market/chart`。主 HTTP 面为 `/api/v1/market/*`、`/api/alerts/*` 与只读 `/api/runtime/*`。
+## Retired surface
 
-只读 Research CLI 精确为：
-
-- `guiyi research subing-calibration`
-- `guiyi research subing-lifecycle`
-- `guiyi research n-structure`
-- `guiyi research jdj-1m`
-- `guiyi research candidate-validation`
-- `guiyi research candidate-robustness`
-
-Candidate Validation/Robustness 保持 source-specific causality、strict-before、embargo 与 prospective OOS 分离；retrospective 不回填 OOS，不生成 rank、winner、promotion、盈利或可交易结论。Historical overlay 只通过现有 confirmed Canonical 接口投影，Web 不复制公式。
-
-## Alert
-
-Alert 只含 `htdy_original_15m` 与 `subing_entry_signal_v1` 两个 Rule code，且仍只有 `alert_rules`、`alert_events` 两张表。Event 先提交，随后最多一次 transport；无逐收件人状态、retry、queue、replay、backfill、fallback 或订单路径。provider accepted 不等于送达。
-
-## 外部操作与文档职责
-
-真实 RQData、Canonical、生产 DB、Runtime/live、通知、release/tag 与 Scope/transport 变更都需要范围明确的一次性执行意图。当前 release、Runtime、Scope、evidence 与 Gate 只看 `STATUS.md`。
-
-| 文件 | 职责 |
-|---|---|
-| `STATUS.md` | 当前 release、Runtime、evidence 与 pending Gate |
-| `DECISIONS.md` | 长期决策与理由 |
-| `docs/ARCHITECTURE.md` | active 模块依赖 |
-| `docs/DATA_CENTER.md` | Canonical 数据合同 |
-| `TESTING.md` | 当前可执行验证命令 |
+Attention、Trend Focus、Main Force Mirror、Five-Candidate phase assets、RQAlpha 与 Execution Review 均不属于 active 产品、API、CLI、Web 或 Runtime。Alembic history 只保留 schema lineage；恢复任何退役能力必须由新任务重新定义 consumer、事实合同与数据边界，不能直接恢复旧模块。

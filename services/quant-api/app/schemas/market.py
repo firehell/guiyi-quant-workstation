@@ -214,6 +214,7 @@ class SubingLifecycleSnapshotOut(BaseModel):
     confirmed_at: datetime | None
     hold_count: int
     hold_required: int
+    trigger_reference_pivot: SubingLifecyclePivotOut | None
     bound_reference_pivot: SubingLifecyclePivotOut | None
     rebreak_reference_price: Decimal | None
     retest_at: datetime | None

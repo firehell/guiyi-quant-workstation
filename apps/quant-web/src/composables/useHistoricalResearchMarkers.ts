@@ -8,14 +8,19 @@ import type {
   MarketFrequency,
   ResearchOverlayId,
   SeriesKind,
-  SubingHistoricalSignalRequest,
-  SubingHistoricalSignalResponse,
+  SubingStrategyAction,
+  SubingStrategyEpisode,
+  SubingStrategyHistoricalRequest,
+  SubingStrategyHistoricalResponse,
 } from '../types/market.ts'
 import {
-  historicalResearchEventToMarker,
   jdjStrategyActionToMarker,
+  subingStrategyActionToMarker,
 } from '../utils/historicalResearchMarkers.ts'
-import { researchOverlayCapability } from '../utils/mainIndicators.ts'
+import {
+  researchOverlayCapability,
+  subingStrategyHistoricalCapability,
+} from '../utils/mainIndicators.ts'
 
 
 export interface HistoricalResearchMarkerIdentity {
@@ -26,9 +31,9 @@ export interface HistoricalResearchMarkerIdentity {
 }
 
 interface Dependencies {
-  fetchSubing: (
-    request: SubingHistoricalSignalRequest,
-  ) => Promise<SubingHistoricalSignalResponse>
+  fetchSubingStrategy: (
+    request: SubingStrategyHistoricalRequest,
+  ) => Promise<SubingStrategyHistoricalResponse>
   fetchJdjStrategy: (
     request: JdjStrategyHistoricalRequest,
   ) => Promise<JdjStrategyHistoricalResponse>
@@ -36,9 +41,11 @@ interface Dependencies {
 
 export function useHistoricalResearchMarkers(dependencies: Dependencies) {
   const markers = ref<KlineMarker[]>([])
+  const subingStrategyEpisodes = ref<SubingStrategyEpisode[]>([])
   const loading = ref(false)
   const error = ref<string | null>(null)
   const markersByEventId = new Map<string, KlineMarker>()
+  const episodesById = new Map<string, SubingStrategyEpisode>()
   let generation = 0
   let activeIdentity: HistoricalResearchMarkerIdentity | null = null
   let loadedSince: string | null = null
@@ -61,7 +68,9 @@ export function useHistoricalResearchMarkers(dependencies: Dependencies) {
     const historicalSource = capability.definition.historicalSource
     if (
       !capability.supported
-      || !['subing', 'jdj_strategy'].includes(historicalSource)
+      || !['subing_strategy', 'jdj_strategy'].includes(historicalSource)
+      || (historicalSource === 'subing_strategy'
+        && !subingStrategyHistoricalCapability(identity.seriesKind, identity.frequency))
     ) {
       reset(identity)
       return
@@ -82,14 +91,27 @@ export function useHistoricalResearchMarkers(dependencies: Dependencies) {
     loading.value = true
     error.value = null
     try {
-      const loaded = historicalSource === 'subing'
-        ? await loadSubing(dependencies, identity, range.since, through)
+      const loaded = historicalSource === 'subing_strategy'
+        ? await loadSubingStrategy(dependencies, identity, range.since, through)
         : await loadJdjStrategy(dependencies, identity, range.since, through)
       if (
         requestGeneration !== generation
         || identityKey(identity) !== identityKey(activeIdentity)
       ) return
-      for (const event of loaded) markersByEventId.set(event.eventId, event.marker)
+      if (loaded.kind === 'subing_strategy') {
+        mergeStrategyEpisodes(episodesById, loaded.episodes)
+        subingStrategyEpisodes.value = [...episodesById.values()]
+          .sort((left, right) => Date.parse(left.entry_action.effective_bar_end)
+            - Date.parse(right.entry_action.effective_bar_end))
+        for (const action of loaded.actions) {
+          const marker = subingStrategyActionToMarker(action, episodesById)
+          markersByEventId.set(action.action_id, marker)
+        }
+      } else {
+        for (const event of loaded.events) {
+          markersByEventId.set(event.eventId, event.marker)
+        }
+      }
       markers.value = [...markersByEventId.values()]
         .sort((left, right) => Date.parse(left.time) - Date.parse(right.time))
       if (loadedSince === null || range.since < loadedSince) {
@@ -114,7 +136,9 @@ export function useHistoricalResearchMarkers(dependencies: Dependencies) {
     generation += 1
     activeIdentity = { ...identity }
     markersByEventId.clear()
+    episodesById.clear()
     markers.value = []
+    subingStrategyEpisodes.value = []
     error.value = null
     loadedSince = null
   }
@@ -123,13 +147,15 @@ export function useHistoricalResearchMarkers(dependencies: Dependencies) {
     generation += 1
     activeIdentity = null
     markersByEventId.clear()
+    episodesById.clear()
     markers.value = []
+    subingStrategyEpisodes.value = []
     loading.value = false
     error.value = null
     loadedSince = null
   }
 
-  return { markers, loading, error, sync, dispose }
+  return { markers, subingStrategyEpisodes, loading, error, sync, dispose }
 }
 
 function isJdjStrategyProfileUnavailable(caught: unknown): boolean {
@@ -189,27 +215,36 @@ interface LoadedHistoricalEvent {
   marker: KlineMarker
 }
 
-async function loadSubing(
+type LoadedHistoricalResult =
+  | {
+      kind: 'subing_strategy'
+      actions: SubingStrategyAction[]
+      episodes: SubingStrategyEpisode[]
+    }
+  | { kind: 'markers'; events: LoadedHistoricalEvent[] }
+
+async function loadSubingStrategy(
   dependencies: Dependencies,
   identity: HistoricalResearchMarkerIdentity,
   since: string,
   through: string,
-): Promise<LoadedHistoricalEvent[]> {
-  const request: SubingHistoricalSignalRequest = {
+): Promise<LoadedHistoricalResult> {
+  const request: SubingStrategyHistoricalRequest = {
     series_kind: 'actual_dominant',
     symbol: identity.symbol,
-    frequency: identity.frequency as '5m' | '15m',
+    frequency: '15m',
     since,
     through,
   }
-  const response = await dependencies.fetchSubing(request)
+  const response = await dependencies.fetchSubingStrategy(request)
   if (!matchesRequest(response, request)) {
     throw new Error('HISTORICAL_RESEARCH_IDENTITY_MISMATCH')
   }
-  return response.events.map((event) => ({
-    eventId: event.event_id,
-    marker: historicalResearchEventToMarker(identity.symbol, event),
-  }))
+  return {
+    kind: 'subing_strategy',
+    actions: response.actions,
+    episodes: response.episodes,
+  }
 }
 
 async function loadJdjStrategy(
@@ -217,7 +252,7 @@ async function loadJdjStrategy(
   identity: HistoricalResearchMarkerIdentity,
   since: string,
   through: string,
-): Promise<LoadedHistoricalEvent[]> {
+): Promise<LoadedHistoricalResult> {
   const request: JdjStrategyHistoricalRequest = {
     series_kind: 'actual_dominant',
     symbol: identity.symbol,
@@ -229,10 +264,32 @@ async function loadJdjStrategy(
   if (!response.reference_execution || !matchesRequest(response, request)) {
     throw new Error('HISTORICAL_RESEARCH_IDENTITY_MISMATCH')
   }
-  return response.actions.flatMap((action) => {
+  return { kind: 'markers', events: response.actions.flatMap((action) => {
     const marker = jdjStrategyActionToMarker(action)
     return marker === null ? [] : [{ eventId: action.event_id, marker }]
-  })
+  }) }
+}
+
+function mergeStrategyEpisodes(
+  current: Map<string, SubingStrategyEpisode>,
+  incoming: SubingStrategyEpisode[],
+): void {
+  for (const episode of incoming) {
+    const existing = current.get(episode.episode_id)
+    if (
+      existing !== undefined
+      && existing.entry_action.action_id !== episode.entry_action.action_id
+    ) throw new Error('SUBING_STRATEGY_EPISODE_IDENTITY_MISMATCH')
+  }
+  for (const episode of incoming) {
+    const existing = current.get(episode.episode_id)
+    if (
+      existing === undefined
+      || (existing.state === 'open' && episode.state === 'closed')
+      || (existing.state === episode.state
+        && episode.holding_bar_count >= existing.holding_bar_count)
+    ) current.set(episode.episode_id, episode)
+  }
 }
 
 function identityKey(identity: HistoricalResearchMarkerIdentity | null): string {

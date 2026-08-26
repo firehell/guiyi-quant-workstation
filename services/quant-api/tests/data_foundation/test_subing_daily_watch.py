@@ -27,6 +27,7 @@ from app.market_data.subing_daily_watch import (
     SubingDailyWatchBuilder,
     SubingDailyWatchDecision,
     SubingDailyWatchError,
+    SubingDailyWatchItemProjector,
     SubingDailyWatchProduct,
     classify_daily_watch,
 )
@@ -350,12 +351,36 @@ def _builder(
     products: tuple[str, ...] = ("a",),
     metadata: dict[str, SubingDailyWatchProduct] | None = None,
 ) -> SubingDailyWatchBuilder:
-    return SubingDailyWatchBuilder(
+    projector = SubingDailyWatchItemProjector(
         stitched_loader=loader,
-        products=products,
         product_metadata=metadata if metadata is not None else _metadata(*products),
+    )
+    return SubingDailyWatchBuilder(
+        projector=projector,
+        products=products,
         expected_universe_size=len(products),
     )
+
+
+def test_single_product_projector_matches_builder_item() -> None:
+    loader = _FakeStitchedLoader({"a": _stitched_series(symbol="a", direction="long")})
+    projector = SubingDailyWatchItemProjector(
+        stitched_loader=loader,
+        product_metadata=_metadata("a"),
+    )
+
+    item = projector.project("a", source_trading_day=_SOURCE_DAY)
+    snapshot = SubingDailyWatchBuilder(
+        projector=projector,
+        products=("a",),
+        expected_universe_size=1,
+    ).build(
+        source_trading_day=_SOURCE_DAY,
+        target_trading_day=_TARGET_DAY,
+        generated_at=_GENERATED_AT,
+    )
+
+    assert snapshot.items == (item,)
 
 
 def test_builder_requests_stitched_history_through_source_day_with_limit_30() -> None:
@@ -513,9 +538,11 @@ def test_builder_rejects_duplicate_active_products() -> None:
 
     with pytest.raises(SubingDailyWatchError) as raised:
         SubingDailyWatchBuilder(
-            stitched_loader=loader,
+            projector=SubingDailyWatchItemProjector(
+                stitched_loader=loader,
+                product_metadata=_metadata("a"),
+            ),
             products=("a", "a"),
-            product_metadata=_metadata("a"),
             expected_universe_size=2,
         )
 
@@ -596,9 +623,11 @@ def test_builder_maps_real_loader_missing_source_day_to_typed_unavailable() -> N
         current_segment=loaded.current_segment,
     )
     builder = SubingDailyWatchBuilder(
-        stitched_loader=ActualDominantStitchedResearchLoader(reader),
+        projector=SubingDailyWatchItemProjector(
+            stitched_loader=ActualDominantStitchedResearchLoader(reader),
+            product_metadata=_metadata("a"),
+        ),
         products=("a",),
-        product_metadata=_metadata("a"),
         expected_universe_size=1,
     )
 
@@ -630,9 +659,11 @@ def test_builder_keeps_real_loader_corrupt_page_as_identity_mismatch() -> None:
         current_segment=loaded.current_segment,
     )
     builder = SubingDailyWatchBuilder(
-        stitched_loader=ActualDominantStitchedResearchLoader(reader),
+        projector=SubingDailyWatchItemProjector(
+            stitched_loader=ActualDominantStitchedResearchLoader(reader),
+            product_metadata=_metadata("a"),
+        ),
         products=("a",),
-        product_metadata=_metadata("a"),
         expected_universe_size=1,
     )
 
