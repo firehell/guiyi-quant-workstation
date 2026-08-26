@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
-from typing import Any, Protocol, TypeVar
+from typing import Any, Protocol
 
 from sqlalchemy import text
 
@@ -22,7 +23,6 @@ SHADOW_ENABLE_ENV = "GUIYI_SUBING_STAGE2_SHADOW"
 SHADOW_COMPOSITION_ENV = "GUIYI_SUBING_STAGE2_SHADOW_COMPOSITION"
 LOCAL_READ_ONLY_COMPOSITION = "local_readonly"
 _SEAL = object()
-_ReadResult = TypeVar("_ReadResult")
 _WRITE_CAPABLE_NAMES = frozenset(
     {
         "add",
@@ -131,11 +131,99 @@ class NoShadowRuntimeStatusWriter:
 
 
 @dataclass(frozen=True, slots=True)
-class ShadowReadOnlyPostgresTransaction:
-    """Verify read-only mode and perform the catalog read in one transaction."""
+class BoundShadowReadService:
+    """Exact composition token binding one read service to one session object."""
+
+    __session: object
+    __service: _ShadowReadService
+    __seal: object = field(repr=False)
+
+    def __post_init__(self) -> None:
+        if self.__seal is not _SEAL:
+            raise SubingStrategyShadowDependencyError()
+
+    def _require_session(self, session: object) -> None:
+        if self.__session is not session:
+            raise SubingStrategyShadowDependencyError()
+
+    def _restore_machine(
+        self,
+        session: object,
+        *,
+        symbol: str,
+        now: datetime,
+    ) -> SubingStrategyMachineState:
+        self._require_session(session)
+        return self.__service.restore_machine(symbol=symbol, now=now)
+
+    def _completed_live_after(
+        self,
+        session: object,
+        *,
+        symbol: str,
+        source_identity: SubingStrategySourceIdentity,
+        after_1m: datetime | None,
+        after_5m: datetime | None,
+        after_15m: datetime | None,
+        through: datetime,
+    ) -> Mapping[BarFrequency, tuple[CanonicalBar, ...]]:
+        self._require_session(session)
+        return self.__service.completed_live_after(
+            symbol=symbol,
+            source_identity=source_identity,
+            after_1m=after_1m,
+            after_5m=after_5m,
+            after_15m=after_15m,
+            through=through,
+        )
+
+    def _session_windows(
+        self,
+        session: object,
+        *,
+        symbol: str,
+        trading_day: date,
+        source_identity: SubingStrategySourceIdentity,
+    ) -> tuple[SessionWindow, ...]:
+        self._require_session(session)
+        return self.__service.session_windows(
+            symbol=symbol,
+            trading_day=trading_day,
+            source_identity=source_identity,
+        )
+
+    def _authoritative_terminal(
+        self,
+        session: object,
+        *,
+        symbol: str,
+        trading_day: date,
+        source_identity: SubingStrategySourceIdentity,
+    ) -> AuthoritativeSegmentTerminal | None:
+        self._require_session(session)
+        return self.__service.authoritative_terminal(
+            symbol=symbol,
+            trading_day=trading_day,
+            source_identity=source_identity,
+        )
+
+
+def bind_shadow_read_service(
+    session: object,
+    service: _ShadowReadService,
+) -> BoundShadowReadService:
+    """Create the exact session/service binding required by the transaction."""
+
+    _reject_write_capable_service(service)
+    return BoundShadowReadService(session, service, _SEAL)
+
+
+@dataclass(frozen=True, slots=True)
+class _ShadowReadOnlyPostgresTransaction:
+    """Private executor with four fixed read operations and no callable escape."""
 
     __session_factory: Callable[[], Any]
-    __service_factory: Callable[[Any], _ShadowReadService]
+    __service_factory: Callable[[Any], BoundShadowReadService]
     __seal: object = field(repr=False)
 
     def __post_init__(self) -> None:
@@ -146,16 +234,79 @@ class ShadowReadOnlyPostgresTransaction:
         ):
             raise SubingStrategyShadowDependencyError()
 
-    def _run(self, operation: Callable[[_ShadowReadService], _ReadResult]) -> _ReadResult:
+    def restore_machine(
+        self,
+        *,
+        symbol: str,
+        now: datetime,
+    ) -> SubingStrategyMachineState:
+        with self.__verified_bound() as (session, bound):
+            return bound._restore_machine(session, symbol=symbol, now=now)
+
+    def completed_live_after(
+        self,
+        *,
+        symbol: str,
+        source_identity: SubingStrategySourceIdentity,
+        after_1m: datetime | None,
+        after_5m: datetime | None,
+        after_15m: datetime | None,
+        through: datetime,
+    ) -> Mapping[BarFrequency, tuple[CanonicalBar, ...]]:
+        with self.__verified_bound() as (session, bound):
+            return bound._completed_live_after(
+                session,
+                symbol=symbol,
+                source_identity=source_identity,
+                after_1m=after_1m,
+                after_5m=after_5m,
+                after_15m=after_15m,
+                through=through,
+            )
+
+    def session_windows(
+        self,
+        *,
+        symbol: str,
+        trading_day: date,
+        source_identity: SubingStrategySourceIdentity,
+    ) -> tuple[SessionWindow, ...]:
+        with self.__verified_bound() as (session, bound):
+            return bound._session_windows(
+                session,
+                symbol=symbol,
+                trading_day=trading_day,
+                source_identity=source_identity,
+            )
+
+    def authoritative_terminal(
+        self,
+        *,
+        symbol: str,
+        trading_day: date,
+        source_identity: SubingStrategySourceIdentity,
+    ) -> AuthoritativeSegmentTerminal | None:
+        with self.__verified_bound() as (session, bound):
+            return bound._authoritative_terminal(
+                session,
+                symbol=symbol,
+                trading_day=trading_day,
+                source_identity=source_identity,
+            )
+
+    @contextmanager
+    def __verified_bound(self) -> Iterator[tuple[object, BoundShadowReadService]]:
         try:
             with self.__session_factory() as session:
                 session.execute(text("SET TRANSACTION READ ONLY"))
                 if session.scalar(text("SHOW transaction_read_only")) != "on":
                     raise SubingStrategyShadowDependencyError()
-                service = self.__service_factory(session)
-                _reject_write_capable_service(service)
                 try:
-                    return operation(service)
+                    bound = self.__service_factory(session)
+                    if type(bound) is not BoundShadowReadService:
+                        raise SubingStrategyShadowDependencyError()
+                    bound._require_session(session)
+                    yield session, bound
                 finally:
                     session.rollback()
         except SubingStrategyShadowDependencyError:
@@ -172,14 +323,14 @@ class ShadowReadOnlyPostgresTransaction:
 class ShadowReadOnlyCanonicalReader:
     """Expose only the Canonical reconstruction reads required by the evaluator."""
 
-    __transaction: ShadowReadOnlyPostgresTransaction
+    __transaction: _ShadowReadOnlyPostgresTransaction
     __clock: Callable[[], datetime]
     __seal: object = field(repr=False)
 
     def __post_init__(self) -> None:
         if (
             self.__seal is not _SEAL
-            or type(self.__transaction) is not ShadowReadOnlyPostgresTransaction
+            or type(self.__transaction) is not _ShadowReadOnlyPostgresTransaction
             or not callable(self.__clock)
         ):
             raise SubingStrategyShadowDependencyError()
@@ -190,9 +341,7 @@ class ShadowReadOnlyCanonicalReader:
         symbol: str,
         started_at: datetime,
     ) -> SubingStrategyMachineState:
-        return self.__transaction._run(
-            lambda service: service.restore_machine(symbol=symbol, now=started_at)
-        )
+        return self.__transaction.restore_machine(symbol=symbol, now=started_at)
 
     def restore_rollover(
         self,
@@ -214,25 +363,20 @@ class ShadowReadOnlyCanonicalReader:
             )
 
             raise SubingStrategyRuntimeProductSourceError()
-        return self.__transaction._run(
-            lambda service: service.restore_machine(symbol=symbol, now=self.__clock())
-        )
-
-    def _bound_to(self, transaction: ShadowReadOnlyPostgresTransaction) -> bool:
-        return self.__transaction is transaction
+        return self.__transaction.restore_machine(symbol=symbol, now=self.__clock())
 
 
 @dataclass(frozen=True, slots=True)
 class ShadowReadOnlyLiveReader:
     """Expose only completed-Live reads required by the evaluator."""
 
-    __transaction: ShadowReadOnlyPostgresTransaction
+    __transaction: _ShadowReadOnlyPostgresTransaction
     __seal: object = field(repr=False)
 
     def __post_init__(self) -> None:
         if (
             self.__seal is not _SEAL
-            or type(self.__transaction) is not ShadowReadOnlyPostgresTransaction
+            or type(self.__transaction) is not _ShadowReadOnlyPostgresTransaction
         ):
             raise SubingStrategyShadowDependencyError()
 
@@ -247,15 +391,13 @@ class ShadowReadOnlyLiveReader:
         through: datetime,
     ) -> Mapping[BarFrequency, tuple[CanonicalBar, ...]]:
         return dict(
-            self.__transaction._run(
-                lambda service: service.completed_live_after(
-                    symbol=symbol,
-                    source_identity=source_identity,
-                    after_1m=after_1m,
-                    after_5m=after_5m,
-                    after_15m=after_15m,
-                    through=through,
-                )
+            self.__transaction.completed_live_after(
+                symbol=symbol,
+                source_identity=source_identity,
+                after_1m=after_1m,
+                after_5m=after_5m,
+                after_15m=after_15m,
+                through=through,
             )
         )
 
@@ -266,12 +408,10 @@ class ShadowReadOnlyLiveReader:
         trading_day: date,
         source_identity: SubingStrategySourceIdentity,
     ) -> tuple[SessionWindow, ...]:
-        return self.__transaction._run(
-            lambda service: service.session_windows(
-                symbol=symbol,
-                trading_day=trading_day,
-                source_identity=source_identity,
-            )
+        return self.__transaction.session_windows(
+            symbol=symbol,
+            trading_day=trading_day,
+            source_identity=source_identity,
         )
 
     def read_authoritative_terminal(
@@ -281,16 +421,11 @@ class ShadowReadOnlyLiveReader:
         trading_day: date,
         source_identity: SubingStrategySourceIdentity,
     ) -> AuthoritativeSegmentTerminal | None:
-        return self.__transaction._run(
-            lambda service: service.authoritative_terminal(
-                symbol=symbol,
-                trading_day=trading_day,
-                source_identity=source_identity,
-            )
+        return self.__transaction.authoritative_terminal(
+            symbol=symbol,
+            trading_day=trading_day,
+            source_identity=source_identity,
         )
-
-    def _bound_to(self, transaction: ShadowReadOnlyPostgresTransaction) -> bool:
-        return self.__transaction is transaction
 
 
 @dataclass(frozen=True, slots=True)
@@ -299,7 +434,6 @@ class SubingStrategyShadowDependencies:
     notification_sender: NullShadowNotificationSender
     cache_writer: NoShadowCacheWriter
     runtime_status_writer: NoShadowRuntimeStatusWriter
-    postgres_transaction: ShadowReadOnlyPostgresTransaction
     canonical_reader: ShadowReadOnlyCanonicalReader
     live_reader: ShadowReadOnlyLiveReader
 
@@ -309,27 +443,22 @@ class SubingStrategyShadowDependencies:
             (self.notification_sender, NullShadowNotificationSender),
             (self.cache_writer, NoShadowCacheWriter),
             (self.runtime_status_writer, NoShadowRuntimeStatusWriter),
-            (self.postgres_transaction, ShadowReadOnlyPostgresTransaction),
             (self.canonical_reader, ShadowReadOnlyCanonicalReader),
             (self.live_reader, ShadowReadOnlyLiveReader),
         )
         if any(type(value) is not expected_type for value, expected_type in expected):
-            raise SubingStrategyShadowDependencyError()
-        if not self.canonical_reader._bound_to(
-            self.postgres_transaction
-        ) or not self.live_reader._bound_to(self.postgres_transaction):
             raise SubingStrategyShadowDependencyError()
 
 
 def build_subing_strategy_shadow_dependencies(
     *,
     session_factory: Callable[[], Any],
-    service_factory: Callable[[Any], _ShadowReadService],
+    service_factory: Callable[[Any], BoundShadowReadService],
     clock: Callable[[], datetime] | None = None,
 ) -> SubingStrategyShadowDependencies:
     """Build sealed adapters without opening a database or Live connection."""
 
-    transaction = ShadowReadOnlyPostgresTransaction(
+    transaction = _ShadowReadOnlyPostgresTransaction(
         session_factory,
         service_factory,
         _SEAL,
@@ -339,7 +468,6 @@ def build_subing_strategy_shadow_dependencies(
         notification_sender=NullShadowNotificationSender(),
         cache_writer=NoShadowCacheWriter(),
         runtime_status_writer=NoShadowRuntimeStatusWriter(),
-        postgres_transaction=transaction,
         canonical_reader=ShadowReadOnlyCanonicalReader(
             transaction,
             clock or (lambda: datetime.now(UTC)),
@@ -356,9 +484,15 @@ def build_local_readonly_subing_strategy_shadow_dependencies(
     from app.db.session import SessionLocal
     from app.market_data.composition import build_subing_strategy_current_service
 
+    def service_factory(session: Any) -> BoundShadowReadService:
+        return bind_shadow_read_service(
+            session,
+            build_subing_strategy_current_service(session),
+        )
+
     return build_subing_strategy_shadow_dependencies(
         session_factory=SessionLocal,
-        service_factory=build_subing_strategy_current_service,
+        service_factory=service_factory,
     )
 
 
@@ -406,6 +540,7 @@ def _reject_write_capable_service(service: _ShadowReadService) -> None:
 
 
 __all__ = [
+    "BoundShadowReadService",
     "LOCAL_READ_ONLY_COMPOSITION",
     "NoShadowCacheWriter",
     "NoShadowRuntimeStatusWriter",
@@ -415,13 +550,13 @@ __all__ = [
     "SHADOW_ENABLE_ENV",
     "ShadowReadOnlyCanonicalReader",
     "ShadowReadOnlyLiveReader",
-    "ShadowReadOnlyPostgresTransaction",
     "SubingStrategyShadowAuthorizationError",
     "SubingStrategyShadowCompositionNotConfigured",
     "SubingStrategyShadowDependencies",
     "SubingStrategyShadowDependencyError",
     "SubingStrategyShadowWriteBlocked",
     "authorize_subing_strategy_shadow",
+    "bind_shadow_read_service",
     "build_local_readonly_subing_strategy_shadow_dependencies",
     "build_manual_subing_strategy_shadow",
     "build_subing_strategy_shadow_dependencies",

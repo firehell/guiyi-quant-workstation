@@ -52,6 +52,7 @@ from app.market_data.subing_strategy.shadow import (
     SubingStrategyShadowDependencyError,
     SubingStrategyShadowWriteBlocked,
     authorize_subing_strategy_shadow,
+    bind_shadow_read_service,
     build_local_readonly_subing_strategy_shadow_dependencies,
     build_manual_subing_strategy_shadow,
     build_subing_strategy_shadow_dependencies,
@@ -250,7 +251,10 @@ def _safe_dependencies(
     current = _CurrentReader()
     return build_subing_strategy_shadow_dependencies(
         session_factory=lambda: _ReadOnlySession(audit, next(counter)),
-        service_factory=lambda session: _RecordedReadService(session, restore, current),
+        service_factory=lambda session: bind_shadow_read_service(
+            session,
+            _RecordedReadService(session, restore, current),
+        ),
         clock=lambda: _READY_AT,
     )
 
@@ -297,7 +301,6 @@ def test_injected_exact_composition_is_independent_and_default_off() -> None:
         "notification_sender",
         "cache_writer",
         "runtime_status_writer",
-        "postgres_transaction",
         "canonical_reader",
         "live_reader",
     ),
@@ -331,14 +334,31 @@ def test_shadow_sinks_block_every_write_attempt(
 
 def test_read_only_adapters_do_not_expose_raw_reader_session_or_generic_read() -> None:
     dependencies = _safe_dependencies()
-    for adapter in (
-        dependencies.postgres_transaction,
-        dependencies.canonical_reader,
-        dependencies.live_reader,
-    ):
-        assert not hasattr(adapter, "reader")
-        assert not hasattr(adapter, "session")
-        assert not hasattr(adapter, "read")
+    assert not hasattr(dependencies, "postgres_transaction")
+    assert {
+        name for name in dir(dependencies) if not name.startswith("_")
+    } == {
+        "event_writer",
+        "notification_sender",
+        "cache_writer",
+        "runtime_status_writer",
+        "canonical_reader",
+        "live_reader",
+    }
+    for adapter in (dependencies.canonical_reader, dependencies.live_reader):
+        for capability in (
+            "reader",
+            "session",
+            "service",
+            "transaction",
+            "raw",
+            "read",
+            "run",
+            "_run",
+            "operation",
+        ):
+            assert not hasattr(adapter, capability)
+        assert not hasattr(adapter, "__dict__")
 
     assert {
         name
@@ -369,19 +389,34 @@ def test_postgres_verification_and_catalog_read_share_exact_session() -> None:
     ]
 
 
-def test_dependency_composition_rejects_readers_bound_to_another_transaction() -> None:
-    left = _safe_dependencies()
-    right = _safe_dependencies()
+def test_service_factory_bound_to_a_different_session_is_rejected() -> None:
+    wrong_session = _ReadOnlySession([], 99)
+    restore = _RestoreReader("zz")
+    current = _CurrentReader()
+    dependencies = build_subing_strategy_shadow_dependencies(
+        session_factory=lambda: _ReadOnlySession([], 1),
+        service_factory=lambda _verified_session: bind_shadow_read_service(
+            wrong_session,
+            _RecordedReadService(wrong_session, restore, current),
+        ),
+    )
     with pytest.raises(SubingStrategyShadowDependencyError):
-        SubingStrategyShadowDependencies(
-            event_writer=left.event_writer,
-            notification_sender=left.notification_sender,
-            cache_writer=left.cache_writer,
-            runtime_status_writer=left.runtime_status_writer,
-            postgres_transaction=left.postgres_transaction,
-            canonical_reader=right.canonical_reader,
-            live_reader=left.live_reader,
-        )
+        dependencies.canonical_reader.restore(symbol="jm", started_at=_STARTED_AT)
+
+
+def test_service_factory_must_return_exact_bound_result() -> None:
+    restore = _RestoreReader("zz")
+    current = _CurrentReader()
+    dependencies = build_subing_strategy_shadow_dependencies(
+        session_factory=lambda: _ReadOnlySession([], 1),
+        service_factory=lambda session: _RecordedReadService(  # type: ignore[arg-type,return-value]
+            session,
+            restore,
+            current,
+        ),
+    )
+    with pytest.raises(SubingStrategyShadowDependencyError):
+        dependencies.canonical_reader.restore(symbol="jm", started_at=_STARTED_AT)
 
 
 def test_write_capable_service_is_rejected_before_any_read() -> None:
@@ -394,7 +429,10 @@ def test_write_capable_service_is_rejected_before_any_read() -> None:
 
     dependencies = build_subing_strategy_shadow_dependencies(
         session_factory=lambda: _ReadOnlySession([], 1),
-        service_factory=lambda _session: _MaliciousService(),
+        service_factory=lambda session: bind_shadow_read_service(
+            session,
+            _MaliciousService(),
+        ),
     )
     with pytest.raises(SubingStrategyShadowDependencyError):
         dependencies.canonical_reader.restore(symbol="jm", started_at=_STARTED_AT)

@@ -53,26 +53,59 @@ RETIRED_ENTRYPOINTS = (
     "apps/quant-web/package-lock.json",
 )
 ALERT_RULE_CODES = frozenset({"htdy_original_15m", "subing_strategy_v1"})
-ALERT_RULE_LITERAL_ALLOWLIST = frozenset(
-    {
-        "services/quant-api/app/alerts/registry.py",
-        "services/quant-api/app/schemas/alerts.py",
-        "apps/quant-web/src/utils/alertRules.ts",
-        "apps/quant-web/src/types/market.ts",
-    }
-)
+# The SuBing Rule and Strategy identities intentionally share a public value.
+# Exact file/count ownership keeps those typed strategy uses narrow as well.
+ALERT_RULE_LITERAL_EXPECTED = {
+    "htdy_original_15m": {
+        "services/quant-api/app/alerts/registry.py": 2,
+        "services/quant-api/app/schemas/alerts.py": 1,
+        "apps/quant-web/src/types/market.ts": 1,
+        "apps/quant-web/src/utils/alertRules.ts": 1,
+    },
+    "subing_strategy_v1": {
+        "services/quant-api/app/alerts/registry.py": 2,
+        "services/quant-api/app/alerts/strategy_payload.py": 1,
+        "services/quant-api/app/market_data/subing_strategy/contracts.py": 2,
+        "services/quant-api/app/market_data/subing_strategy/engine.py": 3,
+        "services/quant-api/app/schemas/alerts.py": 2,
+        "services/quant-api/app/schemas/research_overlays.py": 1,
+        "apps/quant-web/src/types/market.ts": 8,
+        "apps/quant-web/src/utils/alertRules.ts": 1,
+    },
+}
 
 
 def _assert_alert_rule_literal_ownership(sources: dict[str, str]) -> None:
-    owners = {
-        path
-        for path, source in sources.items()
-        for line in source.splitlines()
-        if ("rule_code" in line or "RULE_CODE" in line)
-        and any(code in line for code in ALERT_RULE_CODES)
+    actual: dict[str, dict[str, int]] = {code: {} for code in ALERT_RULE_CODES}
+    for path, source in sources.items():
+        if path.endswith(".py"):
+            # Python comments are excluded by AST; only exact string constants count.
+            values = tuple(
+                node.value
+                for node in ast.walk(ast.parse(source))
+                if isinstance(node, ast.Constant) and isinstance(node.value, str)
+            )
+            counts = {code: values.count(code) for code in ALERT_RULE_CODES}
+        else:
+            # Frontend comments are intentionally included: hiding an active Rule
+            # literal in a comment must still consume the exact expected count.
+            counts = {code: source.count(code) for code in ALERT_RULE_CODES}
+        for code, count in counts.items():
+            if count:
+                actual[code][path] = count
+    assert actual == ALERT_RULE_LITERAL_EXPECTED, (
+        f"active Alert Rule literal ownership/count mismatch: {actual}"
+    )
+
+
+def _active_alert_rule_sources() -> dict[str, str]:
+    return {
+        relative.as_posix(): (ROOT / relative).read_text(encoding="utf-8")
+        for root in ("services/quant-api/app", "apps/quant-web/src")
+        for path in (ROOT / root).rglob("*")
+        if path.is_file() and path.suffix in {".py", ".ts", ".vue"}
+        for relative in (path.relative_to(ROOT),)
     }
-    unexpected = owners - ALERT_RULE_LITERAL_ALLOWLIST
-    assert not unexpected, f"active Alert Rule literal outside registry/type allowlist: {unexpected}"
 
 
 def test_public_entrypoints_are_exact() -> None:
@@ -204,28 +237,28 @@ def test_alert_rule_codes_have_one_production_registry_per_language() -> None:
         )
     ) == ALERT_RULE_CODES
 
-    active_sources = {
-        relative.as_posix(): (ROOT / relative).read_text(encoding="utf-8")
-        for root in ("services/quant-api/app", "apps/quant-web/src")
-        for path in (ROOT / root).rglob("*")
-        if path.is_file() and path.suffix in {".py", ".ts", ".vue"}
-        for relative in (path.relative_to(ROOT),)
-    }
+    active_sources = _active_alert_rule_sources()
     _assert_alert_rule_literal_ownership(active_sources)
     assert all(
         "subing_entry_signal_v1" not in source for source in active_sources.values()
     )
 
 
-def test_second_active_alert_rule_literal_is_rejected_by_executable_guard() -> None:
-    with pytest.raises(AssertionError, match="outside registry/type allowlist"):
-        _assert_alert_rule_literal_ownership(
-            {
-                "apps/quant-web/src/rogueConsumer.ts": (
-                    "event.rule_code === 'subing_strategy_v1'"
-                )
-            }
-        )
+@pytest.mark.parametrize(
+    "rogue_source",
+    (
+        "event.rule_code === 'subing_strategy_v1'",
+        "const target = '\x73ubing_strategy_v1'\nevent.rule_code === target",
+    ),
+)
+def test_second_active_alert_rule_literal_is_rejected_by_executable_guard(
+    rogue_source: str,
+) -> None:
+    assert "subing_strategy_v1" in rogue_source
+    sources = _active_alert_rule_sources()
+    sources["apps/quant-web/src/rogueConsumer.ts"] = rogue_source
+    with pytest.raises(AssertionError, match="ownership/count mismatch"):
+        _assert_alert_rule_literal_ownership(sources)
 
 
 def test_release_candidate_excludes_private_sources() -> None:
