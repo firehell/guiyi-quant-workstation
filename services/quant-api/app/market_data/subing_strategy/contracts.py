@@ -125,6 +125,7 @@ class SubingStrategyAction:
     segment_start_trading_day: date
     opportunity_id: str
     decision_at: datetime
+    effective_open_at: datetime | None
     effective_bar_end: datetime
     reference_price: Decimal
     fill_basis: SubingStrategyFillBasis
@@ -162,18 +163,45 @@ class SubingStrategyAction:
             or self.reference_price <= 0
             or not isinstance(self.fill_basis, SubingStrategyFillBasis)
             or type(self.reason_codes) is not tuple
-            or any(not isinstance(reason, str) or not reason for reason in self.reason_codes)
+            or any(
+                not isinstance(reason, str) or not reason
+                for reason in self.reason_codes
+            )
             or len(set(self.reason_codes)) != len(self.reason_codes)
         ):
             raise SubingStrategyContractError()
 
         decision_at = self.decision_at.astimezone(UTC)
+        effective_open_at = (
+            self.effective_open_at.astimezone(UTC)
+            if _is_aware(self.effective_open_at)
+            else None
+        )
         effective_bar_end = self.effective_bar_end.astimezone(UTC)
         if (
             effective_bar_end < decision_at
-            or (self.fill_basis is SubingStrategyFillBasis.NEXT_BAR_OPEN and effective_bar_end <= decision_at)
-            or (self.fill_basis is SubingStrategyFillBasis.SEGMENT_TERMINAL_CLOSE and is_open)
-            or (is_open and self.confirmation_source not in _ALLOWED_CONFIRMATION_SOURCES)
+            or (
+                self.fill_basis is SubingStrategyFillBasis.NEXT_BAR_OPEN
+                and effective_bar_end <= decision_at
+            )
+            or (
+                self.fill_basis is SubingStrategyFillBasis.NEXT_BAR_OPEN
+                and (
+                    effective_open_at is None or effective_open_at >= effective_bar_end
+                )
+            )
+            or (
+                self.fill_basis is SubingStrategyFillBasis.SEGMENT_TERMINAL_CLOSE
+                and self.effective_open_at is not None
+            )
+            or (
+                self.fill_basis is SubingStrategyFillBasis.SEGMENT_TERMINAL_CLOSE
+                and is_open
+            )
+            or (
+                is_open
+                and self.confirmation_source not in _ALLOWED_CONFIRMATION_SOURCES
+            )
             or (not is_open and self.confirmation_source is not None)
             or (is_open and self.reason_codes)
             or (not is_open and not self.reason_codes)
@@ -191,6 +219,7 @@ class SubingStrategyAction:
             raise SubingStrategyContractError()
 
         object.__setattr__(self, "decision_at", decision_at)
+        object.__setattr__(self, "effective_open_at", effective_open_at)
         object.__setattr__(self, "effective_bar_end", effective_bar_end)
         expected_action_id = subing_strategy_action_id(self.identity_fields())
         if self.action_id != expected_action_id:
@@ -198,7 +227,11 @@ class SubingStrategyAction:
         if (
             not isinstance(self.episode_id, str)
             or not self.episode_id.startswith("subing-episode:")
-            or (is_open and self.episode_id != subing_strategy_episode_id(self.identity_fields()))
+            or (
+                is_open
+                and self.episode_id
+                != subing_strategy_episode_id(self.identity_fields())
+            )
         ):
             raise SubingStrategyContractError()
 
@@ -240,14 +273,12 @@ class SubingStrategyEpisode:
         completed_15m_bars: Sequence[CanonicalBar],
         latest_reference_price: Decimal | None,
     ) -> SubingStrategyEpisode:
-        if (
-            not isinstance(entry_action, SubingStrategyAction)
-            or entry_action.kind
-            not in {
-                SubingStrategyActionKind.OPEN_LONG,
-                SubingStrategyActionKind.OPEN_SHORT,
-            }
-        ):
+        if not isinstance(
+            entry_action, SubingStrategyAction
+        ) or entry_action.kind not in {
+            SubingStrategyActionKind.OPEN_LONG,
+            SubingStrategyActionKind.OPEN_SHORT,
+        }:
             raise SubingStrategyContractError()
         direction = (
             SubingDirection.LONG
@@ -280,9 +311,8 @@ class SubingStrategyEpisode:
             raise SubingStrategyContractError()
 
         bars = tuple(completed_15m_bars)
-        if (
-            any(not isinstance(bar, CanonicalBar) for bar in bars)
-            or any(left.bar_end >= right.bar_end for left, right in zip(bars, bars[1:]))
+        if any(not isinstance(bar, CanonicalBar) for bar in bars) or any(
+            left.bar_end >= right.bar_end for left, right in zip(bars, bars[1:])
         ):
             raise SubingStrategyContractError()
         holding_through = exit_action.decision_at if exit_action is not None else None

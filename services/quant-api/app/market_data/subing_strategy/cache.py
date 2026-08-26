@@ -27,7 +27,7 @@ from .contracts import (
 from .direction_context import SubingStrategyDirectionContext
 
 
-_SCHEMA_VERSION = 1
+_SCHEMA_VERSION = 2
 
 
 class SubingStrategyCacheError(RuntimeError):
@@ -163,7 +163,13 @@ class SubingStrategyCache:
             return _parse_projection(payload["projection"])
         except SubingStrategyCacheError:
             raise
-        except (OSError, UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError):
+        except (
+            OSError,
+            UnicodeDecodeError,
+            json.JSONDecodeError,
+            TypeError,
+            ValueError,
+        ):
             raise SubingStrategyCacheError() from None
 
     def write(
@@ -336,6 +342,11 @@ def _action_payload(action: SubingStrategyAction) -> dict[str, object]:
         "segment_start_trading_day": action.segment_start_trading_day.isoformat(),
         "opportunity_id": action.opportunity_id,
         "decision_at": action.decision_at.astimezone(UTC).isoformat(),
+        "effective_open_at": (
+            action.effective_open_at.astimezone(UTC).isoformat()
+            if action.effective_open_at is not None
+            else None
+        ),
         "effective_bar_end": action.effective_bar_end.astimezone(UTC).isoformat(),
         "reference_price": str(action.reference_price),
         "fill_basis": action.fill_basis.value,
@@ -437,9 +448,12 @@ def _parse_action(payload: object) -> SubingStrategyAction:
             ),
             opportunity_id=str(payload["opportunity_id"]),
             decision_at=datetime.fromisoformat(str(payload["decision_at"])),
-            effective_bar_end=datetime.fromisoformat(
-                str(payload["effective_bar_end"])
+            effective_open_at=(
+                datetime.fromisoformat(str(payload["effective_open_at"]))
+                if payload["effective_open_at"] is not None
+                else None
             ),
+            effective_bar_end=datetime.fromisoformat(str(payload["effective_bar_end"])),
             reference_price=_decimal(payload["reference_price"]),
             fill_basis=SubingStrategyFillBasis(payload["fill_basis"]),
             confirmation_source=(
@@ -487,9 +501,7 @@ def _parse_episode(payload: object) -> SubingStrategyEpisode:
             current_reference_change_percent=_optional_decimal(
                 payload["current_reference_change_percent"]
             ),
-            latest_reference_price=_optional_decimal(
-                payload["latest_reference_price"]
-            ),
+            latest_reference_price=_optional_decimal(payload["latest_reference_price"]),
             exit_reason_codes=tuple(payload["exit_reason_codes"]),
             structure_exit_available=payload["structure_exit_available"],
         )

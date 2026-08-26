@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import replace
 from datetime import UTC, datetime
+from decimal import Decimal
+import json
 from pathlib import Path
 
 import pytest
@@ -16,17 +18,20 @@ from app.market_data.subing_strategy.cache import (
     digest_direction_contexts,
 )
 from app.market_data.subing_strategy.contracts import (
+    SubingStrategyActionKind,
     SubingStrategyDirection,
+    SubingStrategyEpisode,
     SubingStrategyPositionState,
 )
+from research.subing_strategy_fixtures import action_fixture, aware_dt
 from research.test_subing_strategy_engine import (
     CONTRACT,
     SEGMENT_START,
     _bar,
     _context,
-    _entry_frames,
-    _run,
 )
+
+
 def _identity() -> SubingStrategyCacheIdentity:
     return SubingStrategyCacheIdentity(
         strategy_policy_sha256="a" * 64,
@@ -83,18 +88,43 @@ def test_cache_path_changes_with_lifecycle_formula_version(tmp_path: Path) -> No
 
 
 def test_cache_round_trips_actions_and_episodes(tmp_path: Path) -> None:
-    result = _run(_entry_frames()[:2])
+    entry = action_fixture(kind=SubingStrategyActionKind.OPEN_LONG)
+    completed_bar = _bar(1, close="100")
+    completed_bar = replace(
+        completed_bar,
+        bar_end=aware_dt(10, 30),
+        trading_day=entry.trading_day,
+    )
+    episode = SubingStrategyEpisode.from_actions(
+        entry_action=entry,
+        exit_action=None,
+        completed_15m_bars=(completed_bar,),
+        latest_reference_price=Decimal("100"),
+    )
     projection = CachedSubingStrategySegmentProjection(
-        actions=result.actions,
-        episodes=result.episodes,
-        final_position=result.final_position,
-        pending_action=result.pending_action is not None,
+        actions=(entry,),
+        episodes=(episode,),
+        final_position=SubingStrategyPositionState.LONG,
+        pending_action=False,
     )
     cache = SubingStrategyCache(tmp_path, root_validator=lambda: tmp_path)
 
     cache.write(_identity(), projection)
 
     assert cache.read(_identity()) == projection
+
+
+def test_previous_cache_schema_is_unavailable(tmp_path: Path) -> None:
+    cache = SubingStrategyCache(tmp_path, root_validator=lambda: tmp_path)
+    identity = _identity()
+    cache.write(identity, _projection())
+    path = cache.path_for(identity)
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload["schema_version"] = 1
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(SubingStrategyCacheError):
+        cache.read(identity)
 
 
 def test_corrupt_cache_is_typed_failure(tmp_path: Path) -> None:
