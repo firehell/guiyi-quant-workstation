@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { NTag } from 'naive-ui'
+import { NSpin, NTag } from 'naive-ui'
+import type { CurrentStrategyActionItem } from '@/api/alerts'
 import type {
   SubingDailyWatchCurrentResponse,
   SubingDailyWatchItem,
@@ -10,14 +11,21 @@ import {
   subingDailyWatchReasonLabel,
   visibleDailyWatchItems,
 } from '@/utils/subingDailyWatch'
+import { strategyActionLabel } from '@/utils/alertRules'
 
 const props = defineProps<{
+  strategyLoading: boolean
+  strategyStatus: 'ready' | 'unavailable' | null
+  strategyTradingDay: string | null
+  strategyItems: CurrentStrategyActionItem[]
+  strategyStale: boolean
   dailyWatch: SubingDailyWatchCurrentResponse | null
   dailyLoading: boolean
   dailyStale: boolean
 }>()
 
 const emit = defineEmits<{
+  openStrategy: [item: CurrentStrategyActionItem]
   openDaily: [item: SubingDailyWatchItem]
 }>()
 
@@ -27,6 +35,16 @@ const unavailableExpanded = ref(false)
 const snapshot = computed(() => (
   props.dailyWatch?.status === 'ready' ? props.dailyWatch.snapshot : null
 ))
+
+function strategyTone(item: CurrentStrategyActionItem) {
+  return item.strategy_action.kind.endsWith('_long') ? 'long' : 'short'
+}
+
+function strategyTime(value: string) {
+  return new Intl.DateTimeFormat('zh-CN', {
+    hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Shanghai',
+  }).format(new Date(value))
+}
 
 function priceSideLabel(trend: SubingDailyWatchTrend) {
   if (trend.price_side === 'above') return '价格在 EMA21 上方'
@@ -63,8 +81,48 @@ function itemTitle(item: SubingDailyWatchItem) {
         <span>研究观察工作台</span>
         <h2 id="subing-workbench-heading">苏冰</h2>
       </div>
-      <p>每日观察保留独立时点与可用状态；策略事件在品种 15m 工作台查看</p>
+      <p>策略事件与每日观察分别保留各自的时点与可用状态</p>
     </header>
+
+    <section class="market-strategy-actions" aria-label="苏冰策略事件" data-testid="market-strategy-actions">
+      <header class="source-heading">
+        <div><h3>苏冰策略事件</h3><p>当前交易日全品种建仓与清仓事实</p></div>
+        <div class="source-status">
+          <span v-if="strategyTradingDay">交易日 {{ strategyTradingDay }}</span>
+          <NTag v-if="strategyStale" type="warning" size="small" :bordered="false">状态已过期：已保留上一份成功事件</NTag>
+        </div>
+      </header>
+      <NSpin :show="strategyLoading">
+        <p v-if="strategyLoading" class="source-state">正在读取苏冰策略事件…</p>
+        <div v-else-if="strategyStatus === 'unavailable'" class="source-unavailable">
+          <NTag type="warning" size="small" :bordered="false">暂不可用</NTag>
+          <span>苏冰策略事件暂不可用</span>
+        </div>
+        <p v-else-if="strategyStatus === 'ready' && strategyItems.length === 0" class="source-state">当前交易日暂无苏冰策略事件</p>
+        <div v-else-if="strategyStatus === 'ready'" class="market-strategy-actions__cards">
+          <article
+            v-for="item in strategyItems"
+            :key="item.action_id"
+            :class="['market-strategy-actions__card', `market-strategy-actions__card--${strategyTone(item)}`]"
+          >
+            <div class="market-strategy-actions__main">
+              <div class="market-strategy-actions__title">
+                {{ item.symbol.toUpperCase() }} {{ item.product_name }} ·
+                <span :class="['market-strategy-actions__kind', `market-strategy-actions__kind--${strategyTone(item)}`]">{{ strategyActionLabel(item.strategy_action.kind) }}</span>
+              </div>
+              <div class="market-strategy-actions__meta">
+                {{ item.contract }} · {{ strategyTime(item.strategy_action.effective_bar_end) }} 生效 · 参考价 {{ item.strategy_action.reference_price }}
+              </div>
+            </div>
+            <button
+              class="market-strategy-actions__open"
+              :aria-label="`查看 ${item.symbol.toUpperCase()} ${strategyActionLabel(item.strategy_action.kind)}`"
+              @click="emit('openStrategy', item)"
+            >查看 →</button>
+          </article>
+        </div>
+      </NSpin>
+    </section>
 
     <section class="daily-watch" aria-labelledby="subing-daily-watch-heading" data-testid="subing-daily-watch">
       <header class="source-heading">
@@ -150,8 +208,20 @@ function itemTitle(item: SubingDailyWatchItem) {
 .subing-workbench__heading h2 { margin-top: 3px; font-size: var(--gy-font-size-lg); }
 .source-heading h3 { font-size: var(--gy-font-size-md); }
 .source-status { display: flex; align-items: center; justify-content: flex-end; gap: 8px; text-align: right; }
-.daily-watch { display: flex; flex-direction: column; gap: 10px; padding-top: 14px; border-top: .5px solid var(--gy-border); }
+.market-strategy-actions, .daily-watch { display: flex; flex-direction: column; gap: 10px; padding-top: 14px; border-top: .5px solid var(--gy-border); }
 .source-unavailable { display: flex; align-items: center; gap: 8px; color: var(--gy-text-secondary); font-size: var(--gy-font-size-sm); }
+.market-strategy-actions__cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.market-strategy-actions__card { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; border-left: 3px solid var(--gy-border-strong); border-radius: var(--gy-radius-md); background: var(--gy-bg-app); }
+.market-strategy-actions__card--long { border-left-color: var(--gy-up); background: var(--gy-up-soft); }
+.market-strategy-actions__card--short { border-left-color: var(--gy-down); background: var(--gy-down-soft); }
+.market-strategy-actions__main { min-width: 0; }
+.market-strategy-actions__title { color: var(--gy-text-primary); font-size: var(--gy-font-size-md); font-weight: 500; }
+.market-strategy-actions__kind { font-weight: 500; }
+.market-strategy-actions__kind--long { color: var(--gy-up); }
+.market-strategy-actions__kind--short { color: var(--gy-down); }
+.market-strategy-actions__meta { margin-top: 3px; color: var(--gy-text-secondary); font-size: var(--gy-font-size-xs); }
+.market-strategy-actions__open { flex: 0 0 auto; padding: 4px 2px; border: 0; background: none; color: var(--gy-accent); font-size: var(--gy-font-size-sm); cursor: pointer; white-space: nowrap; }
+.market-strategy-actions__open:hover { color: var(--gy-accent-hover); text-decoration: underline; }
 .daily-watch__unavailable { display: flex; flex-direction: column; gap: 4px; padding: 12px; border-radius: var(--gy-radius-md); background: var(--gy-status-warning-soft); color: var(--gy-text-secondary); font-size: var(--gy-font-size-sm); }
 .daily-watch__counts { display: flex; flex-wrap: wrap; gap: 8px; }
 .daily-watch__counts span { padding: 5px 9px; border-radius: var(--gy-radius-pill); background: var(--gy-bg-app); color: var(--gy-text-secondary); font-size: var(--gy-font-size-sm); }
@@ -173,6 +243,6 @@ function itemTitle(item: SubingDailyWatchItem) {
 .daily-watch__unavailable-list { display: grid; gap: 8px; margin-top: 9px; }
 .daily-watch__unavailable-item { display: flex; flex-direction: column; gap: 3px; padding: 9px 10px; border-radius: var(--gy-radius-md); background: var(--gy-bg-app); color: var(--gy-text-secondary); font-size: var(--gy-font-size-sm); }
 .daily-watch__unavailable-item strong { color: var(--gy-text-primary); }
-@media (max-width: 979px) { .daily-watch__groups { grid-template-columns: 1fr; } }
+@media (max-width: 979px) { .market-strategy-actions__cards, .daily-watch__groups { grid-template-columns: 1fr; } }
 @media (max-width: 720px) { .subing-workbench__heading, .source-heading { align-items: flex-start; flex-direction: column; } .source-status { justify-content: flex-start; text-align: left; } .daily-watch__card-heading { align-items: flex-start; flex-wrap: wrap; } }
 </style>

@@ -77,6 +77,35 @@ it('does not collapse a higher-precision live Decimal into an equal historical n
 })
 
 
+it('normalizes both Pivot timestamps before comparing exact Strategy facts', () => {
+  const action = historicalAction()
+  action.bound_reference_pivot = {
+    pivot_id: 'pivot:test',
+    kind: 'low',
+    source_timeframe: '5m',
+    pivot_time: '2026-08-14T13:00:00Z',
+    confirmed_at: '2026-08-14T13:10:00Z',
+    price: 99,
+    contract: 'JM2609',
+    segment_start_trading_day: '2026-08-01',
+  }
+  const event = liveEvent(action)
+  event.strategy_action = {
+    ...event.strategy_action!,
+    bound_reference_pivot: {
+      ...event.strategy_action!.bound_reference_pivot!,
+      pivot_time: '2026-08-14T13:00:00+00:00',
+      confirmed_at: '2026-08-14T13:10:00+00:00',
+    },
+  }
+
+  const result = reconcileSubingStrategyActions([action], [], [event])
+
+  assert.deepEqual(result.mismatchActionIds, [])
+  assert.deepEqual(result.errorCodes, [])
+})
+
+
 it('renders a live-only strategy event at effective_bar_end', () => {
   const action = historicalAction()
   const result = reconcileSubingStrategyActions([], [], [liveEvent(action)])
@@ -137,7 +166,10 @@ function actionPayload(action: SubingStrategyAction): SubingStrategyActionPayloa
     schema_version: 1,
     ...action,
     reference_price: String(action.reference_price),
-    bound_reference_pivot: null,
+    bound_reference_pivot: action.bound_reference_pivot === null ? null : {
+      ...action.bound_reference_pivot,
+      price: String(action.bound_reference_pivot.price),
+    },
     entry: null,
     holding_bar_count: null,
     reference_change_percent: null,

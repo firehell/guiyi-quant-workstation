@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import TypeAdapter, ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -37,14 +39,25 @@ from app.schemas.alerts import (
     AlertScopeUpdate,
     CurrentAlertEventsResponse,
     CurrentStrategyActionEventsResponse,
+    HtdyAlertEventOut,
     ProductAlertRuleStateOut,
     ProductAlertStateResponse,
     StrategyActionAlertEventOut,
+    StrategyAlertEventOut,
     SubingStrategyActionOut,
 )
 
 
 router = APIRouter(prefix="/api/alerts", tags=["alerts"])
+_STRATEGY_ACTION_ADAPTER: TypeAdapter[SubingStrategyActionOut] = TypeAdapter(
+    SubingStrategyActionOut
+)
+_HTDY_RESULT_CODES_ADAPTER: TypeAdapter[list[Literal["buy", "sell"]]] = TypeAdapter(
+    list[Literal["buy", "sell"]]
+)
+_STRATEGY_RESULT_CODES_ADAPTER: TypeAdapter[
+    list[Literal["open_long", "open_short", "close_long", "close_short"]]
+] = TypeAdapter(list[Literal["open_long", "open_short", "close_long", "close_short"]])
 
 
 def get_current_alert_trading_day(
@@ -176,7 +189,9 @@ def current_strategy_action_events(
         trading_day=current_day.trading_day,
         items=[
             StrategyActionAlertEventOut(
-                **_event_out(event, rule_code=event.rule.rule_code).model_dump(),
+                **_strategy_event_out(
+                    event, rule_code=event.rule.rule_code
+                ).model_dump(),
                 display_name=get_alert_rule_definition(
                     event.rule.rule_code
                 ).display_name,
@@ -275,11 +290,30 @@ def _list_events(
 def _event_out(event: AlertEvent, *, rule_code: str) -> AlertEventOut:
     definition = get_alert_rule_definition(rule_code)
     bar_end = _utc(event.bar_end)
-    strategy_action: SubingStrategyActionOut | None = None
     try:
         if definition.kind.value == "indicator_observation":
             if event.action_id is not None or event.strategy_payload is not None:
                 raise StrategyPayloadError()
+            return HtdyAlertEventOut(
+                id=event.id,
+                rule_code="htdy_original_15m",
+                symbol=event.symbol,
+                contract=event.contract,
+                trading_day=event.trading_day,
+                frequency=event.frequency,
+                bar_end=bar_end,
+                result_codes=_HTDY_RESULT_CODES_ADAPTER.validate_python(
+                    event.result_codes
+                ),
+                action_id=None,
+                strategy_action=None,
+                detected_at=_utc(event.detected_at),
+                notification_attempted_at=(
+                    _utc(event.notification_attempted_at)
+                    if event.notification_attempted_at is not None
+                    else None
+                ),
+            )
         else:
             if (
                 event.action_id is None
@@ -298,30 +332,44 @@ def _event_out(event: AlertEvent, *, rule_code: str) -> AlertEventOut:
                 bar_end=bar_end,
                 result_codes=tuple(event.result_codes),
             )
-            strategy_action = SubingStrategyActionOut.model_validate(payload.to_json())
-    except StrategyPayloadError as exc:
+            strategy_action = _STRATEGY_ACTION_ADAPTER.validate_python(
+                payload.to_json()
+            )
+            return StrategyAlertEventOut(
+                id=event.id,
+                rule_code="subing_strategy_v1",
+                symbol=event.symbol,
+                contract=event.contract,
+                trading_day=event.trading_day,
+                frequency="15m",
+                bar_end=bar_end,
+                result_codes=_STRATEGY_RESULT_CODES_ADAPTER.validate_python(
+                    event.result_codes
+                ),
+                action_id=event.action_id,
+                strategy_action=strategy_action,
+                detected_at=_utc(event.detected_at),
+                notification_attempted_at=(
+                    _utc(event.notification_attempted_at)
+                    if event.notification_attempted_at is not None
+                    else None
+                ),
+            )
+    except (StrategyPayloadError, ValidationError) as exc:
         raise HTTPException(
             status_code=409,
             detail={"code": "ALERT_EVENT_FACTS_INVALID"},
         ) from exc
-    return AlertEventOut(
-        id=event.id,
-        rule_code=rule_code,
-        symbol=event.symbol,
-        contract=event.contract,
-        trading_day=event.trading_day,
-        frequency=event.frequency,
-        bar_end=bar_end,
-        result_codes=list(event.result_codes),
-        action_id=event.action_id,
-        strategy_action=strategy_action,
-        detected_at=_utc(event.detected_at),
-        notification_attempted_at=(
-            _utc(event.notification_attempted_at)
-            if event.notification_attempted_at is not None
-            else None
-        ),
-    )
+
+
+def _strategy_event_out(event: AlertEvent, *, rule_code: str) -> StrategyAlertEventOut:
+    result = _event_out(event, rule_code=rule_code)
+    if not isinstance(result, StrategyAlertEventOut):
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "ALERT_EVENT_FACTS_INVALID"},
+        )
+    return result
 
 
 def _utc(value: datetime) -> datetime:

@@ -4,6 +4,8 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 from fastapi.testclient import TestClient
+from pydantic import TypeAdapter, ValidationError
+import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -25,6 +27,7 @@ from app.market_data.subing_strategy.contracts import (
     subing_strategy_action_id,
     subing_strategy_episode_id,
 )
+from app.schemas.alerts import AlertEventOut, SubingStrategyActionOut
 
 
 TRADING_DAY = date(2026, 8, 15)
@@ -88,6 +91,95 @@ def test_current_views_return_typed_strategy_action_and_null_htdy_fields() -> No
     assert by_rule["htdy_original_15m"]["strategy_action"] is None
     assert by_rule["subing_strategy_v1"]["strategy_action"]["kind"] == "open_long"
     assert all("lower_tf_confirmation" not in entry for entry in by_rule.values())
+
+
+def test_public_strategy_action_union_rejects_kind_incompatible_fields_and_reasons() -> (
+    None
+):
+    adapter = TypeAdapter(SubingStrategyActionOut)
+    open_payload = serialize_subing_strategy_payload(_strategy_action()).to_json()
+
+    assert adapter.validate_python(open_payload).kind == "open_long"
+    with pytest.raises(ValidationError):
+        adapter.validate_python({**open_payload, "effective_open_at": None})
+    with pytest.raises(ValidationError):
+        adapter.validate_python({**open_payload, "reason_codes": ["EMA21_BREACH_LONG"]})
+
+    close_payload = _close_strategy_payload()
+    assert adapter.validate_python(close_payload).kind == "close_long"
+    canonical_reasons = ["EMA21_BREACH_LONG", "MACD_HIGH_DEAD_CROSS"]
+    assert (
+        adapter.validate_python(
+            {**close_payload, "reason_codes": canonical_reasons}
+        ).reason_codes
+        == canonical_reasons
+    )
+    with pytest.raises(ValidationError):
+        adapter.validate_python(
+            {**close_payload, "reason_codes": list(reversed(canonical_reasons))}
+        )
+    with pytest.raises(ValidationError):
+        adapter.validate_python(
+            {**close_payload, "reason_codes": [canonical_reasons[0]] * 2}
+        )
+    with pytest.raises(ValidationError):
+        adapter.validate_python(
+            {**close_payload, "reason_codes": ["UNKNOWN_EXIT_REASON"]}
+        )
+    with pytest.raises(ValidationError):
+        adapter.validate_python({**close_payload, "entry": None})
+    with pytest.raises(ValidationError):
+        adapter.validate_python({**close_payload, "effective_open_at": None})
+
+
+def test_public_alert_event_union_binds_rule_to_exact_fields() -> None:
+    adapter = TypeAdapter(AlertEventOut)
+    base = {
+        "id": 1,
+        "rule_code": "htdy_original_15m",
+        "symbol": "jm",
+        "contract": "JM2609",
+        "trading_day": "2026-08-15",
+        "frequency": "15m",
+        "bar_end": DECISION_AT,
+        "result_codes": ["buy"],
+        "action_id": None,
+        "strategy_action": None,
+        "detected_at": DECISION_AT,
+        "notification_attempted_at": None,
+    }
+    assert adapter.validate_python(base).rule_code == "htdy_original_15m"
+
+    action = _strategy_action()
+    action_payload = serialize_subing_strategy_payload(action).to_json()
+    with pytest.raises(ValidationError):
+        adapter.validate_python(
+            {**base, "action_id": action.action_id, "strategy_action": action_payload}
+        )
+    with pytest.raises(ValidationError):
+        adapter.validate_python(
+            {
+                **base,
+                "rule_code": "subing_strategy_v1",
+                "result_codes": ["open_long"],
+            }
+        )
+
+
+def test_openapi_exposes_rule_and_action_discriminators() -> None:
+    components = TestClient(app).get("/openapi.json").json()["components"]["schemas"]
+    event_items = components["AlertEventListResponse"]["properties"]["items"]["items"]
+    assert event_items["discriminator"]["propertyName"] == "rule_code"
+    strategy_action = components["StrategyAlertEventOut"]["properties"][
+        "strategy_action"
+    ]
+    assert strategy_action["discriminator"]["propertyName"] == "kind"
+    assert set(strategy_action["discriminator"]["mapping"]) == {
+        "open_long",
+        "open_short",
+        "close_long",
+        "close_short",
+    }
 
 
 def test_cross_day_next_open_event_is_in_effective_trading_day_view() -> None:
@@ -329,6 +421,47 @@ def _strategy_action(
         direction_context_target_day=TRADING_DAY,
         bound_reference_pivot=None,
     )
+
+
+def _close_strategy_payload() -> dict[str, object]:
+    entry = _strategy_action()
+    decision_at = DECISION_AT + timedelta(minutes=30)
+    effective_bar_end = decision_at + timedelta(minutes=15)
+    identity = {
+        "strategy_id": "subing_strategy_v1",
+        "formula_version": "subing_strategy_15m_v1",
+        "symbol": "jm",
+        "contract": "JM2609",
+        "segment_start_trading_day": TRADING_DAY.isoformat(),
+        "opportunity_id": "subing-opportunity:test",
+        "kind": "close_long",
+        "decision_at": decision_at.isoformat(),
+        "effective_bar_end": effective_bar_end.isoformat(),
+        "fill_basis": "next_bar_open",
+    }
+    return {
+        "schema_version": 1,
+        **identity,
+        "action_id": subing_strategy_action_id(identity),
+        "episode_id": entry.episode_id,
+        "trading_day": TRADING_DAY.isoformat(),
+        "effective_open_at": decision_at.isoformat(),
+        "reference_price": "99",
+        "confirmation_source": None,
+        "reason_codes": ["EMA21_BREACH_LONG"],
+        "direction_context_source_day": None,
+        "direction_context_target_day": None,
+        "bound_reference_pivot": None,
+        "entry": {
+            "action_id": entry.action_id,
+            "kind": "open_long",
+            "effective_bar_end": entry.effective_bar_end.isoformat(),
+            "reference_price": "100",
+            "confirmation_source": "formal_v1",
+        },
+        "holding_bar_count": 2,
+        "reference_change_percent": "-1",
+    }
 
 
 def _seed_htdy_event(factory: sessionmaker[Session]) -> None:

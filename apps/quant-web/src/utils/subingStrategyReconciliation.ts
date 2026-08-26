@@ -102,6 +102,7 @@ function sameActionFacts(
     reference_price: decimal(payload.reference_price),
     bound_reference_pivot: payload.bound_reference_pivot === null ? null : {
       ...payload.bound_reference_pivot,
+      pivot_time: instant(payload.bound_reference_pivot.pivot_time),
       confirmed_at: instant(payload.bound_reference_pivot.confirmed_at),
       price: decimal(payload.bound_reference_pivot.price),
     },
@@ -139,6 +140,7 @@ function wireActionFacts(action: SubingStrategyAction) {
     direction_context_target_day: action.direction_context_target_day,
     bound_reference_pivot: action.bound_reference_pivot === null ? null : {
       ...action.bound_reference_pivot,
+      pivot_time: instant(action.bound_reference_pivot.pivot_time),
       confirmed_at: instant(action.bound_reference_pivot.confirmed_at),
       price: decimal(action.bound_reference_pivot.price),
     },

@@ -1,6 +1,6 @@
 import request from './request'
 import { getRuntimeHealth } from './runtime'
-import type { AlertEvent, MarketFrequency } from '@/types/market'
+import type { AlertEvent, MarketFrequency, SubingStrategyAlertEvent } from '@/types/market'
 
 export type { AlertRuntimeStatus } from '@/utils/alertControl'
 export type { AlertEvent } from '@/types/market'
@@ -25,7 +25,7 @@ export interface AlertEventListResponse {
   items: AlertEvent[]
 }
 
-export interface CurrentStrategyActionItem extends AlertEvent {
+export type CurrentStrategyActionItem = SubingStrategyAlertEvent & {
   display_name: string
   product_name: string
 }

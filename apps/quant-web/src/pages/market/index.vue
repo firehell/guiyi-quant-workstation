@@ -8,6 +8,8 @@ import MarketSummaryStrip from '@/components/market/MarketSummaryStrip.vue'
 import MarketRadarSkeleton from '@/components/market/MarketRadarSkeleton.vue'
 import MarketRuntimeStatus from '@/components/market/MarketRuntimeStatus.vue'
 import SubingWorkbench from '@/components/market/SubingWorkbench.vue'
+import { getCurrentStrategyActions } from '@/api/alerts'
+import type { CurrentStrategyActionItem } from '@/api/alerts'
 import { getMarketRadar, getSubingDailyWatchCurrent } from '@/api/market'
 import { getRuntimeHealth } from '@/api/runtime'
 import type {
@@ -23,6 +25,7 @@ import {
 
 const router = useRouter()
 const subingWorkbench = useSubingWorkbench({
+  fetchStrategyActions: getCurrentStrategyActions,
   fetchDailyWatch: getSubingDailyWatchCurrent,
 })
 const runtimeState = useLatestResource({ fetch: getRuntimeHealth })
@@ -31,7 +34,8 @@ const runtime = runtimeState.data
 const radar = radarState.data
 const error = radarState.failed
 const loading = computed(() => (
-  subingWorkbench.dailyLoading.value
+  subingWorkbench.strategyLoading.value
+  || subingWorkbench.dailyLoading.value
   || runtimeState.loading.value
   || radarState.loading.value
 ))
@@ -62,6 +66,18 @@ function openDailyWatch(item: SubingDailyWatchItem) {
       frequency: '15m',
       overlay: 'subing',
       entry: 'subing-daily-watch',
+    },
+  })
+}
+
+function openStrategyAction(item: CurrentStrategyActionItem) {
+  void router.push({
+    name: 'market-chart',
+    query: {
+      symbol: item.symbol,
+      series_kind: 'actual_dominant',
+      frequency: '15m',
+      overlay: 'subing',
     },
   })
 }
@@ -110,9 +126,15 @@ onBeforeUnmount(() => {
       :stale="runtimeState.failed.value && Boolean(runtime)"
     />
     <SubingWorkbench
+      :strategy-loading="subingWorkbench.strategyLoading.value"
+      :strategy-status="subingWorkbench.strategyStatus.value"
+      :strategy-trading-day="subingWorkbench.strategyTradingDay.value"
+      :strategy-items="subingWorkbench.strategyItems.value"
+      :strategy-stale="subingWorkbench.strategyStale.value"
       :daily-watch="subingWorkbench.dailyWatch.value"
       :daily-loading="subingWorkbench.dailyLoading.value"
       :daily-stale="subingWorkbench.dailyStale.value"
+      @open-strategy="openStrategyAction"
       @open-daily="openDailyWatch"
     />
     <MarketRadarSkeleton v-if="radarState.loading.value && !radar" />

@@ -132,6 +132,12 @@ async function mockMarketHomepage(
   await page.route('**/api/v1/market/research/subing-daily-watch/current', (route) => route.fulfill({ json: dailyWatchResponse }))
 }
 
+test.beforeEach(async ({ page }) => {
+  await page.route('**/api/alerts/strategy-actions/current', (route) => route.fulfill({
+    json: { status: 'ready', trading_day: '2026-08-25', items: [] },
+  }))
+})
+
 test('Market homepage shows compact Runtime facts without implying provider delivery', async ({ page }) => {
   await mockMarketHomepage(page)
   await page.goto('/market')
@@ -168,8 +174,8 @@ test('Market homepage accessibly distinguishes disabled Alert from missing natur
   await expect(strip).not.toContainText('未获自然验证')
 })
 
-test('Market homepage refreshes Runtime, Radar and Daily with the bounded visibility policy', async ({ page }) => {
-  const counts = { runtime: 0, radar: 0, daily: 0 }
+test('Market homepage refreshes Runtime, Strategy Actions and Daily with the bounded visibility policy', async ({ page }) => {
+  const counts = { runtime: 0, radar: 0, daily: 0, strategy: 0 }
   await page.route('**/api/runtime/health', (route) => {
     counts.runtime += 1
     return route.fulfill({ json: runtimeHealth() })
@@ -182,15 +188,19 @@ test('Market homepage refreshes Runtime, Radar and Daily with the bounded visibi
     counts.daily += 1
     return route.fulfill({ json: dailyWatch() })
   })
+  await page.route('**/api/alerts/strategy-actions/current', (route) => {
+    counts.strategy += 1
+    return route.fulfill({ json: { status: 'ready', trading_day: '2026-08-25', items: [] } })
+  })
 
   await page.goto('/market')
-  await expect.poll(() => ({ ...counts })).toEqual({ runtime: 1, radar: 1, daily: 1 })
+  await expect.poll(() => ({ ...counts })).toEqual({ runtime: 1, radar: 1, daily: 1, strategy: 1 })
 
   await page.getByRole('button', { name: '全部刷新' }).click()
-  await expect.poll(() => ({ ...counts })).toEqual({ runtime: 2, radar: 2, daily: 2 })
+  await expect.poll(() => ({ ...counts })).toEqual({ runtime: 2, radar: 2, daily: 2, strategy: 2 })
 
   await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))
-  await expect.poll(() => ({ ...counts })).toEqual({ runtime: 3, radar: 2, daily: 3 })
+  await expect.poll(() => ({ ...counts })).toEqual({ runtime: 3, radar: 2, daily: 3, strategy: 3 })
 })
 
 test('Market homepage marks first Runtime failure unavailable and retains a stale successful snapshot', async ({ page }) => {
@@ -998,10 +1008,13 @@ test('B1 journey narrows AG on the homepage before opening its verification view
     long_watch: [dailyWatchItem('ag', '白银')],
     excluded: 59,
   }))
+  await page.route('**/api/alerts/strategy-actions/current', (route) => route.fulfill({
+    json: { status: 'ready', trading_day: '2026-08-25', items: [] },
+  }))
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.goto('/market')
 
-  await expect(page.getByRole('region', { name: '苏冰' })).toHaveCount(1)
+  await expect(page.getByRole('region', { name: '苏冰', exact: true })).toHaveCount(1)
   await expect(page.getByTestId('subing-daily-watch')).toBeVisible()
   const focus = page.getByTestId('subing-daily-watch')
   await expect(focus).toContainText('AG 白银')

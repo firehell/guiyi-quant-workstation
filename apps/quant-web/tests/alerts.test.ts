@@ -56,24 +56,24 @@ describe('Product Alert server-side scope', () => {
       'enabled_for_product: boolean',
       'enabled_frequencies: MarketFrequency[]',
     ])
-    assert.deepEqual(interfaceFields(marketTypesSource, 'AlertEvent'), [
-      'id: number',
-      'rule_code: string',
-      'symbol: string',
-      'contract: string',
-      'trading_day: string | null',
-      'frequency: MarketFrequency',
-      'bar_end: string',
-      "result_codes: Array<'buy' | 'sell' | SubingStrategyActionKind>",
-      'action_id: string | null',
-      'strategy_action: SubingStrategyActionPayloadWire | null',
-      'detected_at: string',
-      'notification_attempted_at: string | null',
+    assert.deepEqual(interfaceFields(marketTypesSource, 'HtdyAlertEvent'), [
+      "rule_code: 'htdy_original_15m'",
+      "result_codes: Array<'buy' | 'sell'>",
+      'action_id: null',
+      'strategy_action: null',
     ])
-    assert.deepEqual(interfaceFields(apiSource, 'CurrentStrategyActionItem'), [
-      'display_name: string',
-      'product_name: string',
+    assert.deepEqual(interfaceFields(marketTypesSource, 'SubingStrategyAlertEventCommon'), [
+      "rule_code: 'subing_strategy_v1'",
+      'trading_day: string',
+      "frequency: '15m'",
+      'action_id: string',
     ])
+    assert.match(marketTypesSource, /result_codes: \['open_long'\][^]*strategy_action: SubingStrategyOpenLongActionPayloadWire/)
+    assert.match(marketTypesSource, /result_codes: \['close_short'\][^]*strategy_action: SubingStrategyCloseShortActionPayloadWire/)
+    assert.match(marketTypesSource, /reason_codes: \[SubingStrategyLongExitReason, \.\.\.SubingStrategyLongExitReason\[\]\]/)
+    assert.match(marketTypesSource, /reason_codes: \[SubingStrategyShortExitReason, \.\.\.SubingStrategyShortExitReason\[\]\]/)
+    assert.match(marketTypesSource, /export type AlertEvent = HtdyAlertEvent \| SubingStrategyAlertEvent/)
+    assert.match(apiSource, /export type CurrentStrategyActionItem = SubingStrategyAlertEvent & \{/)
     assert.deepEqual(interfaceFields(apiSource, 'CurrentStrategyActionsResponse'), [
       "status: 'ready' | 'unavailable'",
       'trading_day: string | null',
@@ -88,7 +88,8 @@ describe('Product Alert server-side scope', () => {
 
   it('drops V1 rule shape fields in favor of the V2 rule registry contract', () => {
     assert.doesNotMatch(interfaceBody(apiSource, 'ProductAlertRuleState'), /indicator_code|series_kind|frequency:/)
-    assert.doesNotMatch(interfaceBody(marketTypesSource, 'AlertEvent'), /observation_types|notified_at/)
+    assert.doesNotMatch(interfaceBody(marketTypesSource, 'HtdyAlertEvent'), /observation_types|notified_at|lower_tf_confirmation/)
+    assert.doesNotMatch(interfaceBody(marketTypesSource, 'SubingStrategyAlertEventCommon'), /observation_types|notified_at|lower_tf_confirmation/)
   })
 
   it('renders only the HTDY current-frequency pair row and shared Runtime status', () => {

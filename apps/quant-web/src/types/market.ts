@@ -784,6 +784,18 @@ export type SubingStrategyActionKind =
 export type SubingStrategyFillBasis = 'next_bar_open' | 'segment_terminal_close'
 export type SubingStrategyConfirmationSource =
   | 'formal_v1' | 'momentum_hold' | 'pivot_break_hold' | 'pivot_retest_rebreak'
+export type SubingStrategyLongExitReason =
+  | 'EMA21_BREACH_LONG'
+  | 'PREVIOUS_BAR_LOW_BREACH'
+  | 'BOUND_LOW_PIVOT_BREACH'
+  | 'MACD_HIGH_DEAD_CROSS'
+  | 'CONTRACT_SEGMENT_END'
+export type SubingStrategyShortExitReason =
+  | 'EMA21_BREACH_SHORT'
+  | 'PREVIOUS_BAR_HIGH_BREACH'
+  | 'BOUND_HIGH_PIVOT_BREACH'
+  | 'MACD_LOW_GOLDEN_CROSS'
+  | 'CONTRACT_SEGMENT_END'
 
 export interface SubingStrategyBoundPivotWire {
   pivot_id: string
@@ -798,6 +810,14 @@ export interface SubingStrategyBoundPivotWire {
 
 export interface SubingStrategyBoundPivot extends Omit<SubingStrategyBoundPivotWire, 'price'> {
   price: number
+}
+
+export interface SubingStrategyBoundLowPivotWire extends Omit<SubingStrategyBoundPivotWire, 'kind'> {
+  kind: 'low'
+}
+
+export interface SubingStrategyBoundHighPivotWire extends Omit<SubingStrategyBoundPivotWire, 'kind'> {
+  kind: 'high'
 }
 
 export interface SubingStrategyActionWire {
@@ -831,20 +851,97 @@ export interface SubingStrategyAction extends Omit<
   bound_reference_pivot: SubingStrategyBoundPivot | null
 }
 
-export interface SubingStrategyEventEntryWire {
+interface SubingStrategyEventEntryCommonWire {
   action_id: string
-  kind: 'open_long' | 'open_short'
   effective_bar_end: string
   reference_price: string
   confirmation_source: SubingStrategyConfirmationSource
 }
 
-export interface SubingStrategyActionPayloadWire extends SubingStrategyActionWire {
-  schema_version: 1
-  entry: SubingStrategyEventEntryWire | null
-  holding_bar_count: number | null
-  reference_change_percent: string | null
+export interface SubingStrategyOpenLongEntryWire extends SubingStrategyEventEntryCommonWire {
+  kind: 'open_long'
 }
+
+export interface SubingStrategyOpenShortEntryWire extends SubingStrategyEventEntryCommonWire {
+  kind: 'open_short'
+}
+
+type SubingStrategyActionPayloadCommonWire = Omit<
+  SubingStrategyActionWire,
+  | 'kind' | 'effective_open_at' | 'fill_basis' | 'confirmation_source'
+  | 'reason_codes' | 'direction_context_source_day'
+  | 'direction_context_target_day' | 'bound_reference_pivot'
+> & {
+  schema_version: 1
+}
+
+export type SubingStrategyOpenLongActionPayloadWire = SubingStrategyActionPayloadCommonWire & {
+  kind: 'open_long'
+  effective_open_at: string
+  fill_basis: 'next_bar_open'
+  confirmation_source: SubingStrategyConfirmationSource
+  reason_codes: []
+  direction_context_source_day: string
+  direction_context_target_day: string
+  bound_reference_pivot: SubingStrategyBoundLowPivotWire | null
+  entry: null
+  holding_bar_count: null
+  reference_change_percent: null
+}
+
+export type SubingStrategyOpenShortActionPayloadWire = SubingStrategyActionPayloadCommonWire & {
+  kind: 'open_short'
+  effective_open_at: string
+  fill_basis: 'next_bar_open'
+  confirmation_source: SubingStrategyConfirmationSource
+  reason_codes: []
+  direction_context_source_day: string
+  direction_context_target_day: string
+  bound_reference_pivot: SubingStrategyBoundHighPivotWire | null
+  entry: null
+  holding_bar_count: null
+  reference_change_percent: null
+}
+
+type SubingStrategyNextOpenFillWire = {
+  fill_basis: 'next_bar_open'
+  effective_open_at: string
+}
+
+type SubingStrategyTerminalFillWire = {
+  fill_basis: 'segment_terminal_close'
+  effective_open_at: null
+}
+
+export type SubingStrategyCloseLongActionPayloadWire = SubingStrategyActionPayloadCommonWire & {
+  kind: 'close_long'
+  confirmation_source: null
+  reason_codes: [SubingStrategyLongExitReason, ...SubingStrategyLongExitReason[]]
+  direction_context_source_day: null
+  direction_context_target_day: null
+  bound_reference_pivot: SubingStrategyBoundLowPivotWire | null
+  entry: SubingStrategyOpenLongEntryWire
+  holding_bar_count: number
+  reference_change_percent: string
+} & (SubingStrategyNextOpenFillWire | SubingStrategyTerminalFillWire)
+
+export type SubingStrategyCloseShortActionPayloadWire = SubingStrategyActionPayloadCommonWire & {
+  kind: 'close_short'
+  confirmation_source: null
+  reason_codes: [SubingStrategyShortExitReason, ...SubingStrategyShortExitReason[]]
+  direction_context_source_day: null
+  direction_context_target_day: null
+  bound_reference_pivot: SubingStrategyBoundHighPivotWire | null
+  entry: SubingStrategyOpenShortEntryWire
+  holding_bar_count: number
+  reference_change_percent: string
+} & (SubingStrategyNextOpenFillWire | SubingStrategyTerminalFillWire)
+
+export type SubingStrategyActionPayloadWire =
+  | SubingStrategyOpenLongActionPayloadWire
+  | SubingStrategyOpenShortActionPayloadWire
+  | SubingStrategyCloseLongActionPayloadWire
+  | SubingStrategyCloseShortActionPayloadWire
 
 export interface SubingStrategyEpisodeWire {
   episode_id: string
@@ -1428,21 +1525,52 @@ export interface NStructureBandWireResponse extends Omit<NStructureBandResponse,
   bands: NStructureBandWire[]
 }
 
-/** Alert V2 `AlertEventOut`：只读展示 DTO，方向语义见 result_codes。 */
-export interface AlertEvent {
+interface AlertEventCommon {
   id: number
-  rule_code: string
   symbol: string
   contract: string
   trading_day: string | null
   frequency: MarketFrequency
   bar_end: string
-  result_codes: Array<'buy' | 'sell' | SubingStrategyActionKind>
-  action_id: string | null
-  strategy_action: SubingStrategyActionPayloadWire | null
   detected_at: string
   notification_attempted_at: string | null
 }
+
+export interface HtdyAlertEvent extends AlertEventCommon {
+  rule_code: 'htdy_original_15m'
+  result_codes: Array<'buy' | 'sell'>
+  action_id: null
+  strategy_action: null
+}
+
+export interface SubingStrategyAlertEventCommon extends AlertEventCommon {
+  rule_code: 'subing_strategy_v1'
+  trading_day: string
+  frequency: '15m'
+  action_id: string
+}
+
+export type SubingStrategyAlertEvent = SubingStrategyAlertEventCommon & (
+  | {
+      result_codes: ['open_long']
+      strategy_action: SubingStrategyOpenLongActionPayloadWire
+    }
+  | {
+      result_codes: ['open_short']
+      strategy_action: SubingStrategyOpenShortActionPayloadWire
+    }
+  | {
+      result_codes: ['close_long']
+      strategy_action: SubingStrategyCloseLongActionPayloadWire
+    }
+  | {
+      result_codes: ['close_short']
+      strategy_action: SubingStrategyCloseShortActionPayloadWire
+    }
+)
+
+/** Exact Alert HTTP union discriminated by the registered Rule identity. */
+export type AlertEvent = HtdyAlertEvent | SubingStrategyAlertEvent
 
 export interface ChartOverlay {
   id: string
