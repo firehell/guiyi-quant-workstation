@@ -8,12 +8,12 @@
 
 | 项目 | 当前事实 |
 |---|---|
-| Release | `v1.8.5@8af22bd65aa182313ee1108a23d975606d215495`；Release PR `#224`、annotated tag peeled commit 与 GitHub Release target 一致。 |
-| Runtime | 本机五个 launchd label 绑定 clean/detached `/Volumes/扩展盘/guiyi-quant-runtime-v1.8.5@8af22bd65aa182313ee1108a23d975606d215495`；API health 为 `version=1.8.5 / readonly=true`。2026-08-26 21:33 的读回为 `status=ok`，DB、Redis、Live、after-market 与 Alert 均为 `ok`。 |
+| Release | `v1.8.6@8e8334c8f22147548079bffb866864ca74ffb592`；Release PR `#232`、annotated tag peeled commit 与 GitHub Release target 一致。 |
+| Runtime | 本机五个 launchd label 仍绑定 clean/detached `/Volumes/扩展盘/guiyi-quant-runtime-v1.8.5@8af22bd65aa182313ee1108a23d975606d215495`；API health 为 `version=1.8.5 / readonly=true`。2026-08-26 23:48 的回滚后读回为 `status=ok`，DB、Redis、Live、after-market 与 Alert 均为 `ok`。 |
 | Database | production Alembic 为 `20260826_0041 (head)`；四张空的退役 `trade_*` 表已删除。 |
 | Market Runtime Scope | `operational_products.txt` 的 60 个品种；2026-08-26 自然盘后成功后，当日 Live subscription 与 300 个 Live bar key 已清理。 |
 | Alert Scope | HTDY 唯一 production Scope 为 `jm × 15m`（`1 symbol / 1 pair`）；SuBing 保持 1 个 product-level Scope。两种授权边界不合并。当前有 2 个 enabled Rule、audience count 2。 |
-| Develop-only | SuBing Strategy V1 Stage 1 已由 PR `#225` 与修正 PR `#226` 合入 `develop`；仍未进入 release、Runtime、Alert Rule、Scope 或通知路径。其 Design Spec 仍为 design-only，written-spec review pending，且不构成任何实现或外部操作授权。 |
+| Release-only | SuBing Strategy V1 Stage 1 与 repository convergence 已进入 v1.8.6 release，但尚未进入 Runtime；不改变 Alert Rule、Scope 或通知路径。后续 Design Spec 仍为 design-only，written-spec review pending，且不构成实现或外部操作授权。 |
 
 Alert transport 为 PushPlus；provider accepted 不等于微信送达。2026-08-26 21:33，operator 已按当次明确请求对 `last_notification_failure_at=2026-08-25T11:40:05.182316+00:00` 执行一次精确 CAS acknowledgment；读回 `notification_state=acknowledged`、`notification_acknowledged_at=2026-08-26T13:33:29.088633+00:00`。原 failure、`notification_transport_failed` 与连续失败计数保留，`event_replayed=false / notification_sent=false`；该操作不证明 provider accepted 或微信送达。
 
@@ -27,6 +27,7 @@ Alert transport 为 PushPlus；provider accepted 不等于微信送达。2026-08
 
 ## Pending Gate
 
+- v1.8.6 Runtime promotion pending：首次切换的 root/commit/API/Web/已删除接口 404 均读回正确，但 fresh Runtime worktree 缺少 `.run/after-market-status.json`，使只读 Runtime health 返回 `after_market_run_missed`；五个 label 已回滚到健康的 v1.8.5，旧 Runtime worktree 未删除。下一次 promotion 必须先明确运行状态的跨 worktree 持续性合同，再重新执行完整健康验收。
 - HTDY 的真实 PushPlus/微信送达，以及 D1/W1 `canonical_updated` 的自然 Event identity/evidence，仍须分别核验；不以测试、synthetic event、replay 或手工发送补证。
 - SuBing 自然 Live seam evidence pending；Daily Watch V2 自然盘后 artifact pending，不以既有 V1 artifact、手工触发或回填替代。
 - SuBing Strategy V1 Design Spec 的 written-spec review pending；该文档不授权 implementation、migration、Rule、Scope、通知或 Runtime。
