@@ -156,9 +156,25 @@ def test_nonterminal_through_preserves_open_episode(
         SEGMENT_START + timedelta(days=5),
     )
     bars = tuple(frame.bar for frame in frames)
-    loader = FakeSegmentLoader(
-        loaded_series(segments=(segment,), bars_5m=bars, bars_15m=bars)
+    loaded = loaded_series(segments=(segment,), bars_5m=bars, bars_15m=bars)
+    observed_prefix = ResolvedContractSegment(
+        CONTRACT,
+        SEGMENT_START,
+        SEGMENT_START,
     )
+    loaded = replace(
+        loaded,
+        results=MappingProxyType(
+            {
+                frequency: replace(
+                    result,
+                    resolved_contract_segments=(observed_prefix,),
+                )
+                for frequency, result in loaded.results.items()
+            }
+        ),
+    )
+    loader = FakeSegmentLoader(loaded)
     resolver = FakeDirectionContextResolver(
         {SEGMENT_START: _context(_bar(1), SubingStrategyDirection.LONG_ONLY)}
     )
@@ -198,7 +214,9 @@ def test_new_contract_segment_starts_flat(monkeypatch: pytest.MonkeyPatch) -> No
             ),
             bars[1].trading_day: replace(
                 _context(bars[1], SubingStrategyDirection.NO_NEW_ENTRY),
-                physical_contract="JM2705",
+                # The target is the first day of JM2705, while Daily Watch V2
+                # causally reads the previous common trading day on JM2701.
+                physical_contract="JM2701",
             ),
         }
     )

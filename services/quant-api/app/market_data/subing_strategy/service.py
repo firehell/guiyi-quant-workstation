@@ -235,10 +235,6 @@ class SubingStrategyHistoricalProjectionService:
             results.get(BarFrequency.M5) is None
             or results.get(BarFrequency.M15) is None
             or not loaded.segments
-            or results[BarFrequency.M5].resolved_contract_segments
-            != loaded.segments
-            or results[BarFrequency.M15].resolved_contract_segments
-            != loaded.segments
         ):
             raise SubingStrategySegmentIdentityError()
         grouped_5m = _partition_segment_bars(
@@ -278,7 +274,6 @@ class SubingStrategyHistoricalProjectionService:
             if any(
                 context.symbol != request.symbol
                 or context.target_trading_day != day
-                or context.physical_contract not in {None, segment.contract}
                 for day, context in contexts.items()
             ):
                 raise SubingStrategyContextIdentityError()

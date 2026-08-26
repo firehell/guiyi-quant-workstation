@@ -285,7 +285,6 @@ def _validate_reducer_inputs(
             or frame.bar.trading_day < segment_start
             or context.symbol != symbol
             or context.target_trading_day != frame.bar.trading_day
-            or context.physical_contract not in {None, contract}
             or type(frame.entry_candidates) is not tuple
             or any(
                 candidate.decision_bar_end != frame.bar.bar_end

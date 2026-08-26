@@ -379,6 +379,22 @@ def test_context_change_does_not_exit_an_existing_position() -> None:
     assert result.final_position is SubingStrategyPositionState.LONG
 
 
+def test_rollover_first_day_accepts_previous_source_contract_context() -> None:
+    bar = _bar(1)
+    frame = replace(
+        _frame(bar, previous=None),
+        direction_context=replace(
+            _context(bar, SubingStrategyDirection.NO_NEW_ENTRY),
+            physical_contract="JM2612",
+        ),
+    )
+
+    result = _run((frame,))
+
+    assert result.actions == ()
+    assert result.final_position is SubingStrategyPositionState.FLAT
+
+
 def test_one_opportunity_enters_at_most_once_after_it_closes() -> None:
     first = _bar(1)
     second = _bar(2, close="98")
