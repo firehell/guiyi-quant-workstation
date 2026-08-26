@@ -27,7 +27,7 @@ Architecture Convergence Tasks 1–8 已完成实现、验证与独立 Review，
 - Candidate Validation/Robustness 与 pending prospective OOS 保留；Generic Robustness relationship metrics 保留。已退役 phase-specific Dossier/Relationships 不再是 pending Gate。
 - Alembic migration history、`futures_member_ranks` table identity 与仓库外既有 historical snapshots 保留；没有 active reader/builder/provider/CLI。
 - develop 已退役 RQAlpha 与 Execution Review 的 active Web/API/domain/roll seam/tests/docs，Web 路由只保留 `/market` 与 `/market/chart`；SuBing Formal Event 与 Alert 主链保留。仓库 Alembic head 已延伸到 `20260826_0041`，但 production 仍为 `20260825_0040`，四张 `trade_*` 表只读盘点均为 0 行，尚未执行删表。
-- 2026-08-26 已解析并验证唯一 RQAlpha runs 根 `/Volumes/扩展盘/.rqalpha-plus/runs`；该目录为 `0700`、0B、0 文件、无符号链接且无打开句柄，已按一次明确授权用精确 `rmdir` 删除。同级 RQAlpha Bundle 保持存在；遗留 loopback sidecar 未在本次 artifacts 删除授权中停止，只读 health 已显示 `runs_root_available=false`。
+- 2026-08-26 已解析并验证唯一 RQAlpha runs 根 `/Volumes/扩展盘/.rqalpha-plus/runs`；该目录为 `0700`、0B、0 文件、无符号链接且无打开句柄，已按一次明确授权用精确 `rmdir` 删除。同级 RQAlpha Bundle 保持存在；遗留 loopback sidecar PID `85772` 随后按独立明确授权用一次 `SIGTERM` 优雅停止，8011 已无监听且 sidecar health 不可达。
 
 ## develop 中的 N Structure Historical range band
 
@@ -42,7 +42,7 @@ Architecture Convergence Tasks 1–8 已完成实现、验证与独立 Review，
 - HTDY 的真实 PushPlus/微信送达与自然 D1/W1 `canonical_updated` evidence pending；不以测试、synthetic event、replay 或手工发送补证。
 - SuBing 自然 Live seam evidence pending；Daily Watch V2 的 develop integration、release、Runtime 与自然盘后 artifact 均 pending。上述既有 V1 自然 artifact 不作为 V2 evidence，不手工触发或回填。
 - SuBing、N 与 JDJ Candidate 的 prospective OOS 按各自 protocol 独立累积，均为 pending prospective OOS。
-- RQAlpha / Execution Review 退役的生产收口 pending：必须先取得一次明确 Runtime switch 授权，将不再读取四表的新精确提交切入并读回健康状态；随后才可执行已批准的 production `upgrade 20260826_0041`。外部 RQAlpha runs 根已删除；遗留 sidecar 进程的停止仍需独立明确授权。
+- RQAlpha / Execution Review 退役的生产收口 pending：必须先取得一次明确 Runtime switch 授权，将不再读取四表的新精确提交切入并读回健康状态；随后才可执行已批准的 production `upgrade 20260826_0041`。外部 RQAlpha runs 根与遗留 sidecar 已关闭。
 - Production notification acknowledgment 尚未执行；只有新的范围明确执行意图才能对当前精确失败做一次 CAS acknowledgment，且该操作仍不重放、不补发、不证明 provider accepted 或微信送达。
 
 ## 事实源边界
