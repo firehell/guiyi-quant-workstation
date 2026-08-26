@@ -39,6 +39,7 @@ from app.market_data.market_radar import MarketRadarService
 from app.market_data.market_research_service import MarketResearchService
 from app.market_data.actual_dominant_research import (
     ActualDominantResearchSegmentLoader,
+    ActualDominantStitchedResearchLoader,
 )
 from app.market_data.subing_calibration import load_accepted_subing_calibration
 from app.market_data.subing_lifecycle_policy import (
@@ -151,6 +152,16 @@ def build_subing_historical_signal_service(
     )
 
 
+def _subing_daily_watch_v2_root() -> Path:
+    return (
+        resolve_subing_observation_root(
+            environ=os.environ,
+            inspector=PathMountInspector(),
+        )
+        / "v2"
+    )
+
+
 def build_subing_daily_watch_generator(
     session: Session,
 ) -> SubingDailyWatchGenerator:
@@ -166,10 +177,7 @@ def build_subing_daily_watch_generator(
     ):
         raise SubingDailyWatchError("ACTIVE_OPERATIONAL_SCOPE_MISMATCH")
 
-    root = resolve_subing_observation_root(
-        environ=os.environ,
-        inspector=PathMountInspector(),
-    )
+    root = _subing_daily_watch_v2_root()
     market_data = build_market_data_service(session)
     dominants = market_data.list_latest_dominants()
     metadata = {
@@ -183,14 +191,11 @@ def build_subing_daily_watch_generator(
     }
     store = SubingDailyWatchStore(
         root,
-        root_validator=lambda: resolve_subing_observation_root(
-            environ=os.environ,
-            inspector=PathMountInspector(),
-        ),
+        root_validator=_subing_daily_watch_v2_root,
     )
     return SubingDailyWatchGenerator(
         builder=SubingDailyWatchBuilder(
-            segment_loader=ActualDominantResearchSegmentLoader(market_data),
+            stitched_loader=ActualDominantStitchedResearchLoader(market_data),
             products=active,
             product_metadata=metadata,
         ),
@@ -222,12 +227,7 @@ def build_subing_daily_watch_current_service(
             products=products,
             now=now,
         ),
-        store_factory=lambda: SubingDailyWatchStore(
-            resolve_subing_observation_root(
-                environ=os.environ,
-                inspector=PathMountInspector(),
-            )
-        ),
+        store_factory=lambda: SubingDailyWatchStore(_subing_daily_watch_v2_root()),
     )
 
 

@@ -9,16 +9,16 @@ from typing import Literal, Protocol
 
 from .actual_dominant_research import (
     ActualDominantResearchSegmentIdentityError,
-    ActualDominantResearchSeries,
+    ActualDominantStitchedResearchSeries,
 )
-from .domain import BarFrequency, MarketSeriesResult, ResolvedContractSegment
+from .domain import BarFrequency, MarketSeriesPageResult, ResolvedContractSegment
 from .market_data_service import MarketDataError
 from .subing_ema_trend import (
     PriceSide,
-    SubingEmaTrendResult,
-    SubingEmaTrendSnapshot,
+    SubingStitchedEmaTrendResult,
+    SubingStitchedEmaTrendSnapshot,
     SubingEmaTrendStatus,
-    calculate_subing_ema_trend,
+    calculate_subing_ema_trend_stitched,
 )
 
 
@@ -55,8 +55,8 @@ class SubingDailyWatchItem:
     sector: str
     decision: SubingDailyWatchDecision
     reason_codes: tuple[str, ...]
-    daily: SubingEmaTrendSnapshot | None
-    hourly: SubingEmaTrendSnapshot | None
+    daily: SubingStitchedEmaTrendSnapshot | None
+    hourly: SubingStitchedEmaTrendSnapshot | None
     unavailable_reasons: tuple[str, ...]
 
     def __post_init__(self) -> None:
@@ -74,8 +74,7 @@ class SubingDailyWatchItem:
                 self.reason_codes
                 or not self.unavailable_reasons
                 or has_complete_facts
-                or len(set(self.unavailable_reasons))
-                != len(self.unavailable_reasons)
+                or len(set(self.unavailable_reasons)) != len(self.unavailable_reasons)
                 or any(
                     reason not in _UNAVAILABLE_REASON_CODES
                     for reason in self.unavailable_reasons
@@ -88,9 +87,7 @@ class SubingDailyWatchItem:
             ):
                 raise SubingDailyWatchError("SNAPSHOT_INVALID")
         elif (
-            not has_complete_facts
-            or not self.reason_codes
-            or self.unavailable_reasons
+            not has_complete_facts or not self.reason_codes or self.unavailable_reasons
         ):
             raise SubingDailyWatchError("SNAPSHOT_INVALID")
         else:
@@ -154,15 +151,15 @@ class SubingDailyWatchCurrentResult:
     snapshot: SubingDailyWatchWebSnapshot | None
 
 
-class _SegmentLoader(Protocol):
+class _StitchedLoader(Protocol):
     def load(
         self,
         *,
         symbol: str,
         frequencies: Sequence[BarFrequency],
-        since: date,
         through: date,
-    ) -> ActualDominantResearchSeries: ...
+        limit: int = 30,
+    ) -> ActualDominantStitchedResearchSeries: ...
 
 
 class _PublishResult(Protocol):
@@ -230,8 +227,8 @@ _FACTLESS_UNAVAILABLE_REASON_CODES = frozenset(
 
 
 def classify_daily_watch(
-    daily: SubingEmaTrendSnapshot,
-    hourly: SubingEmaTrendSnapshot,
+    daily: SubingStitchedEmaTrendSnapshot,
+    hourly: SubingStitchedEmaTrendSnapshot,
 ) -> SubingDailyWatchClassification:
     daily_direction = _trend_direction(daily)
     hourly_direction = _trend_direction(hourly)
@@ -265,7 +262,7 @@ class SubingDailyWatchBuilder:
     def __init__(
         self,
         *,
-        segment_loader: _SegmentLoader,
+        stitched_loader: _StitchedLoader,
         products: tuple[str, ...],
         product_metadata: Mapping[str, SubingDailyWatchProduct],
         expected_universe_size: int = 60,
@@ -283,7 +280,7 @@ class SubingDailyWatchBuilder:
             )
         ):
             raise SubingDailyWatchError("ACTIVE_OPERATIONAL_SCOPE_MISMATCH")
-        self._segment_loader = segment_loader
+        self._stitched_loader = stitched_loader
         self._products = products
         self._product_metadata = product_metadata
         self._expected_universe_size = expected_universe_size
@@ -359,11 +356,11 @@ class SubingDailyWatchBuilder:
                 reasons=("PRODUCT_METADATA_UNAVAILABLE",),
             )
         try:
-            loaded = self._segment_loader.load(
+            loaded = self._stitched_loader.load(
                 symbol=symbol,
                 frequencies=(BarFrequency.D1, BarFrequency.H1),
-                since=source_trading_day,
                 through=source_trading_day,
+                limit=30,
             )
         except ActualDominantResearchSegmentIdentityError:
             return _unavailable_item(
@@ -378,6 +375,16 @@ class SubingDailyWatchBuilder:
                 reasons=("DOMINANT_SEGMENT_UNAVAILABLE",),
             )
 
+        if _source_trading_day_missing(
+            loaded,
+            source_trading_day=source_trading_day,
+        ):
+            return _unavailable_item(
+                symbol,
+                metadata=metadata,
+                reasons=("SOURCE_TRADING_DAY_MISSING",),
+            )
+
         identity = _validate_loaded_identity(
             loaded,
             source_trading_day=source_trading_day,
@@ -388,32 +395,22 @@ class SubingDailyWatchBuilder:
                 metadata=metadata,
                 reasons=("DATA_IDENTITY_MISMATCH",),
             )
-        segment, daily_result, hourly_result = identity
+        current_segment, daily_result, hourly_result = identity
         daily_bars = daily_result.bars
         hourly_bars = hourly_result.bars
-        if (
-            not daily_bars
-            or not hourly_bars
-            or daily_bars[-1].trading_day != source_trading_day
-            or hourly_bars[-1].trading_day != source_trading_day
-        ):
-            return _unavailable_item(
-                symbol,
-                metadata=metadata,
-                reasons=("SOURCE_TRADING_DAY_MISSING",),
-            )
-
-        daily = calculate_subing_ema_trend(
+        daily = calculate_subing_ema_trend_stitched(
             daily_bars,
             timeframe=BarFrequency.D1,
-            contract=segment.contract,
-            segment_start_trading_day=segment.start_trading_day,
+            current_contract=current_segment.contract,
+            current_segment_start_trading_day=(current_segment.start_trading_day),
+            resolved_contract_segments=(daily_result.resolved_contract_segments),
         )
-        hourly = calculate_subing_ema_trend(
+        hourly = calculate_subing_ema_trend_stitched(
             hourly_bars,
             timeframe=BarFrequency.H1,
-            contract=segment.contract,
-            segment_start_trading_day=segment.start_trading_day,
+            current_contract=current_segment.contract,
+            current_segment_start_trading_day=(current_segment.start_trading_day),
+            resolved_contract_segments=(hourly_result.resolved_contract_segments),
         )
         unavailable_reasons = _history_unavailable_reasons(daily, hourly)
         if unavailable_reasons:
@@ -510,9 +507,7 @@ class SubingDailyWatchCurrentService:
                 "OPERATIONAL_PRODUCT_EXCHANGE_UNAVAILABLE",
             }:
                 raise
-            return _current_unavailable(
-                "SUBING_DAILY_WATCH_EXPECTED_DAY_UNAVAILABLE"
-            )
+            return _current_unavailable("SUBING_DAILY_WATCH_EXPECTED_DAY_UNAVAILABLE")
 
         try:
             snapshot = self._store_factory().read_current()
@@ -584,7 +579,7 @@ class SubingDailyWatchCurrentService:
         )
 
 
-def _trend_direction(snapshot: SubingEmaTrendSnapshot) -> str:
+def _trend_direction(snapshot: SubingStitchedEmaTrendSnapshot) -> str:
     if (
         snapshot.price_side is PriceSide.ABOVE
         and snapshot.close > snapshot.ema21
@@ -602,7 +597,7 @@ def _trend_direction(snapshot: SubingEmaTrendSnapshot) -> str:
     return "neutral"
 
 
-def _price_side_matches_close(snapshot: SubingEmaTrendSnapshot) -> bool:
+def _price_side_matches_close(snapshot: SubingStitchedEmaTrendSnapshot) -> bool:
     if snapshot.close > snapshot.ema21:
         return snapshot.price_side is PriceSide.ABOVE
     if snapshot.close < snapshot.ema21:
@@ -613,34 +608,34 @@ def _price_side_matches_close(snapshot: SubingEmaTrendSnapshot) -> bool:
 def _unavailable_reasons_match_facts(
     reasons: tuple[str, ...],
     *,
-    daily: SubingEmaTrendSnapshot | None,
-    hourly: SubingEmaTrendSnapshot | None,
+    daily: SubingStitchedEmaTrendSnapshot | None,
+    hourly: SubingStitchedEmaTrendSnapshot | None,
 ) -> bool:
     reason_set = frozenset(reasons)
     if reason_set & _FACTLESS_UNAVAILABLE_REASON_CODES:
         return daily is None and hourly is None
-    return (
-        (daily is None) == ("D1_HISTORY_INSUFFICIENT" in reason_set)
-        and (hourly is None) == ("H1_HISTORY_INSUFFICIENT" in reason_set)
-    )
+    return (daily is None) == ("D1_HISTORY_INSUFFICIENT" in reason_set) and (
+        hourly is None
+    ) == ("H1_HISTORY_INSUFFICIENT" in reason_set)
 
 
 def _validate_loaded_identity(
-    loaded: ActualDominantResearchSeries,
+    loaded: ActualDominantStitchedResearchSeries,
     *,
     source_trading_day: date,
-) -> tuple[
-    ResolvedContractSegment,
-    MarketSeriesResult,
-    MarketSeriesResult,
-] | None:
-    if len(loaded.segments) != 1:
-        return None
-    segment = loaded.segments[0]
+) -> (
+    tuple[
+        ResolvedContractSegment,
+        MarketSeriesPageResult,
+        MarketSeriesPageResult,
+    ]
+    | None
+):
+    current_segment = loaded.current_segment
     if not (
-        segment.start_trading_day
+        current_segment.start_trading_day
         <= source_trading_day
-        <= segment.end_trading_day
+        <= current_segment.end_trading_day
     ):
         return None
     daily = loaded.results.get(BarFrequency.D1)
@@ -648,21 +643,43 @@ def _validate_loaded_identity(
     if daily is None or hourly is None:
         return None
     for result in (daily, hourly):
-        if result.resolved_contract_segments != loaded.segments or any(
-            not (
-                segment.start_trading_day
-                <= bar.trading_day
-                <= source_trading_day
-            )
-            for bar in result.bars
+        if (
+            not result.bars
+            or result.bars[-1].trading_day != source_trading_day
+            or any(bar.trading_day > source_trading_day for bar in result.bars)
         ):
             return None
-    return segment, daily, hourly
+        final_day = result.bars[-1].trading_day
+        final_segments = tuple(
+            segment
+            for segment in result.resolved_contract_segments
+            if segment.start_trading_day <= final_day <= segment.end_trading_day
+        )
+        if final_segments != (current_segment,):
+            return None
+    return current_segment, daily, hourly
+
+
+def _source_trading_day_missing(
+    loaded: ActualDominantStitchedResearchSeries,
+    *,
+    source_trading_day: date,
+) -> bool:
+    daily = loaded.results.get(BarFrequency.D1)
+    hourly = loaded.results.get(BarFrequency.H1)
+    return (
+        daily is not None
+        and hourly is not None
+        and any(
+            not result.bars or result.bars[-1].trading_day != source_trading_day
+            for result in (daily, hourly)
+        )
+    )
 
 
 def _history_unavailable_reasons(
-    daily: SubingEmaTrendResult,
-    hourly: SubingEmaTrendResult,
+    daily: SubingStitchedEmaTrendResult,
+    hourly: SubingStitchedEmaTrendResult,
 ) -> tuple[str, ...]:
     reasons: list[str] = []
     if daily.status is not SubingEmaTrendStatus.READY:
@@ -677,8 +694,8 @@ def _unavailable_item(
     *,
     metadata: SubingDailyWatchProduct | None,
     reasons: tuple[str, ...],
-    daily: SubingEmaTrendSnapshot | None = None,
-    hourly: SubingEmaTrendSnapshot | None = None,
+    daily: SubingStitchedEmaTrendSnapshot | None = None,
+    hourly: SubingStitchedEmaTrendSnapshot | None = None,
 ) -> SubingDailyWatchItem:
     return SubingDailyWatchItem(
         symbol=symbol,
