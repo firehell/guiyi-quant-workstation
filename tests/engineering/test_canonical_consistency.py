@@ -133,6 +133,7 @@ def test_release_versions_are_consistent() -> None:
     lock = tomllib.loads(
         (ROOT / "services/quant-api/uv.lock").read_text(encoding="utf-8")
     )
+    api = (ROOT / "services/quant-api/app/main.py").read_text(encoding="utf-8")
     version_module = ast.parse(
         (ROOT / "services/quant-api/app/version.py").read_text(encoding="utf-8")
     )
@@ -160,6 +161,8 @@ def test_release_versions_are_consistent() -> None:
         *lock_versions,
         *app_versions,
     } == {"1.8.5"}
+    assert "version=APP_VERSION" in api
+    assert '"version": APP_VERSION' in api
 
 
 def test_alert_rule_codes_have_one_production_registry_per_language() -> None:
