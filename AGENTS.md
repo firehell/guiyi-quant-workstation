@@ -39,7 +39,7 @@
 
 ### Alert Runtime V2
 
-Alert Runtime 的授权与 Market Runtime 独立。唯一 active 组合为：
+Alert Runtime 的授权与 Market Runtime 独立。代码、launchd 模板与 enable marker 默认关闭；只有用户对识别出的本地工作站明确请求启用并实际执行后，才形成不超出既有 Rule、Scope、audience 与 transport 的持续授权。唯一 active 组合为：
 
 ```text
 htdy_original_15m × scope_product_frequencies × htdy_observers × pushplus-wechat-topic
@@ -49,9 +49,10 @@ subing_entry_signal_v1 × scope_products × owner × pushplus-wechat
 
 - HTDY Scope 只能按 symbol × frequency；SuBing Scope 只能按 product。两种 authority 不混用、不合并。
 - HTDY 最多发起一次 Topic 请求，Topic 成员由 PushPlus 外部人工管理且不超过 owner + 三位朋友；SuBing 不传 Topic。系统不读取成员清单，不声明精确送达人数。
+- Git 外通知配置只含 message token 与 HTDY Topic code；parent 必须为当前用户所有的 `0700` 目录，file 必须为当前用户所有的 `0600` 普通文件。结构 health 不联网、不发送。
 - `alert_rules` 与 `alert_events` 是独立 Application Domain。Event 先提交，再最多调用一次 transport；无逐收件人状态、retry、queue、replay、backfill、fallback 或订单。
 - HTDY 日内五周期只消费同周期 completed Live Bar；D1/W1 只响应 `market:state(reason=canonical_updated)` 并读取 Canonical，不新增 scheduler、Scope 表或 Live 日/周聚合。
-- Redis `alert:runtime-status` 只承载 observation。notification acknowledgment 必须精确匹配当前 failure timestamp 做一次 CAS；保留原失败、公开分类与计数，不重放、不补发。新 failure 必须原子清空 acknowledgment；状态写失败或并发变化时 fail-closed。
+- Redis `alert:runtime-status` 只承载无 TTL observation，兼容读 schema v1 并规范化为 v2；missing 只表示 `unobserved`。状态只保存固定公开错误分类，不保存 provider reference。notification acknowledgment 必须精确匹配当前 failure timestamp 做一次 CAS；保留原失败、公开分类与计数，不重放、不补发。同一 timestamp 在内的任何新 failure 都必须原子清空 acknowledgment；状态写失败或并发变化时 fail-closed。
 - provider accepted 只表示请求被接受，不表示微信送达。代码、测试、配置或历史 canary 不授权真实 send、Scope 变更或 Runtime switch。
 
 ## 安全规则
@@ -73,7 +74,7 @@ subing_entry_signal_v1 × scope_products × owner × pushplus-wechat
 7. 策略与研究必须保护 causality、strict-before、future-leak、prefix invariance、golden parity、fail-closed、warm-up、合约切换、成交时序和 OOS/Walk-forward 边界。交易相关价格、成本、仓位、资金、盈亏和费用使用 `Decimal`。
 8. JDJ 1m reference replay 与 SuBing 15m Historical Strategy Projection 保持 source-specific、deterministic、read-only，只输出模拟动作/参考变动。不得创建 UniversalStrategyAdapter、统一 Opportunity 模型、通用策略平台、正式回测 worker/queue、账户或订单域。
 9. SuBing Strategy 普通动作只在下一根同物理合约 15m open 生效；退出只认 accepted policy 的四类来源；不加减仓、不反手、不跨物理段、不在同 Bar 重建仓。任何公式变化必须新版本，不能以文档收敛修改策略语义。
-10. Alert 不属于八表 Market Catalog。HTDY 与 SuBing 的 Rule、Scope、current-event cutoff 和 audience boundary 保持分离；repair、replay、backfill、migration 或 EOD recalculation 不补评、不补发历史通知。
+10. Alert 不属于八表 Market Catalog。HTDY 与 SuBing 的 Rule、Scope、current-event cutoff 和 audience boundary 保持分离；repair、replay、backfill、migration 或 EOD recalculation 不补评、不补发历史通知。SuBing 只在 incoming completed Bar 与 current snapshot 的 `bar_end + trading_day` 同边界时继续，stale fail-closed；final Session Bar 只在共享 Live arrival grace 内可见，5m 在同一 15m boundary 按 TradingSession bucket 延后。current trading day 只通过 `MarketPhaseResolver + operational_products.txt` 解析，不可用时 fail-closed。
 11. causality、strict-before、prefix-invariance、future-leak、golden parity 与 fail-closed 测试不得删除。Alembic chain 只允许审计；除非新任务明确要求并授权，不修改 migration。
 
 ## 验证与交付
