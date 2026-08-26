@@ -875,20 +875,28 @@ def test_current_strategy_builder_uses_read_only_authoritative_seams(
 ) -> None:
     session = object()
     products = ("jm",)
-    market_data = SimpleNamespace(
-        list_latest_dominants=lambda: (
+    catalog_reads = 0
+
+    def list_latest_dominants():
+        nonlocal catalog_reads
+        catalog_reads += 1
+        return (
             SimpleNamespace(
                 symbol="jm",
                 product_name="焦煤",
                 sector="黑色",
             ),
-        ),
+        )
+
+    market_data = SimpleNamespace(
+        list_latest_dominants=list_latest_dominants,
         dominant_segment_for_day=lambda symbol, target: (symbol, target),
     )
     market_read = object()
     loader = object()
     projector = object()
-    resolver = object()
+    resolved = {date(2026, 8, 4): object()}
+    resolver = SimpleNamespace(resolve=lambda _symbol, _days: resolved)
     store = SimpleNamespace(read_current=lambda: "snapshot")
     expected = object()
     captured: dict[str, object] = {}
@@ -967,9 +975,12 @@ def test_current_strategy_builder_uses_read_only_authoritative_seams(
     result = market_data_composition.build_subing_strategy_current_service(session)
 
     assert result is expected
+    assert catalog_reads == 0
     assert captured["segment_loader"] is loader
     assert captured["market_read"] is market_read
-    assert captured["historical_direction_context_resolver"] is resolver
+    lazy_resolver = captured["historical_direction_context_resolver"]
+    assert lazy_resolver.resolve("jm", (date(2026, 8, 4),)) is resolved
+    assert catalog_reads == 1
     assert captured["current_snapshot_store"].read_current() == "snapshot"
     assert captured["products"] == products
     assert "cache" not in captured

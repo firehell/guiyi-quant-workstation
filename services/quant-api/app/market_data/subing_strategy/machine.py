@@ -40,6 +40,7 @@ from .engine import (
     SubingStrategySegmentResult,
     apply_pending_next_open,
     decide_completed_15m,
+    direction_context_allows_entry,
     finalize_segment,
 )
 from .entry_projection import project_lifecycle_entries
@@ -477,22 +478,55 @@ def _step_1m(
         if event.bar.bar_end == interval.first_1m_bar_end:
             if event.bar.open != interval.expected_open:
                 raise SubingStrategyMachineError("SOURCE_IDENTITY_INCONSISTENT")
-            action, position, _ = apply_pending_next_open(
-                pending_action,
-                first_1m_bar=event.bar,
-                effective_bar_end=interval.effective_bar_end,
-                symbol=state.symbol,
-                contract=state.contract,
-                segment_start=state.segment_start_trading_day,
-                position=state.position,
+            is_open = pending_action.kind in {
+                SubingStrategyActionKind.OPEN_LONG,
+                SubingStrategyActionKind.OPEN_SHORT,
+            }
+            crosses_trading_day = (
+                pending_action.direction_context is not None
+                and pending_action.direction_context.target_trading_day
+                != event.bar.trading_day
             )
-            actions = (action,)
-            state = replace(
-                state,
-                position=position,
-                pending_action=None,
-                actions=(*state.actions, action),
+            current_context = dict(state.direction_contexts).get(
+                event.bar.trading_day
             )
+            if (
+                is_open
+                and crosses_trading_day
+                and pending_action.candidate is not None
+                and (
+                    current_context is None
+                    or not direction_context_allows_entry(
+                        pending_action.candidate,
+                        current_context,
+                    )
+                )
+            ):
+                cancellations = (
+                    *cancellations,
+                    _cancel_pending(
+                        pending_action,
+                        reason_code="DIRECTION_CONTEXT_BLOCKS_ENTRY",
+                    ),
+                )
+                state = replace(state, pending_action=None)
+            else:
+                action, position, _ = apply_pending_next_open(
+                    pending_action,
+                    first_1m_bar=event.bar,
+                    effective_bar_end=interval.effective_bar_end,
+                    symbol=state.symbol,
+                    contract=state.contract,
+                    segment_start=state.segment_start_trading_day,
+                    position=state.position,
+                )
+                actions = (action,)
+                state = replace(
+                    state,
+                    position=position,
+                    pending_action=None,
+                    actions=(*state.actions, action),
+                )
         elif event.bar.bar_end > interval.first_1m_bar_end:
             cancellation = _cancel_pending(pending_action)
             cancellations = (*cancellations, cancellation)
@@ -713,12 +747,14 @@ def _cancel_missed_open_before(
 
 def _cancel_pending(
     pending: SubingStrategyPendingAction,
+    *,
+    reason_code: str = "NEXT_BAR_OPEN_UNAVAILABLE",
 ) -> SubingStrategyPendingCancellation:
     return SubingStrategyPendingCancellation(
         kind=pending.kind,
         decision_at=pending.decision_at,
         opportunity_id=pending.opportunity_id,
-        reason_code="NEXT_BAR_OPEN_UNAVAILABLE",
+        reason_code=reason_code,
     )
 
 

@@ -233,6 +233,7 @@ class SubingStrategyCurrentProjectionService:
 
         target_day, source_day = self._resolve_days(now)
         segment = self._resolve_segment(request.symbol, target_day)
+        source_segment = self._resolve_segment(request.symbol, source_day)
         canonical = self._load_canonical(
             symbol=request.symbol,
             segment=segment,
@@ -278,6 +279,7 @@ class SubingStrategyCurrentProjectionService:
             symbol=request.symbol,
             target_day=target_day,
             source_day=source_day,
+            expected_source_contract=source_segment.contract,
         )
         contexts = {**historical_contexts, target_day: current_context}
         replay_days = tuple(
@@ -505,6 +507,7 @@ class SubingStrategyCurrentProjectionService:
         symbol: str,
         target_day: date,
         source_day: date,
+        expected_source_contract: str,
     ) -> SubingStrategyDirectionContext:
         try:
             snapshot = self._current_snapshot_store.read_current()
@@ -538,7 +541,12 @@ class SubingStrategyCurrentProjectionService:
         ):
             raise SubingStrategyCurrentSourceIdentityError()
         item = snapshot.items[self._products.index(symbol)]
-        return _context_from_item(item, target_day=target_day, source_day=source_day)
+        return _context_from_item(
+            item,
+            target_day=target_day,
+            source_day=source_day,
+            expected_source_contract=expected_source_contract,
+        )
 
     def _sessions(
         self,
@@ -573,6 +581,7 @@ def _context_from_item(
     *,
     target_day: date,
     source_day: date,
+    expected_source_contract: str,
 ) -> SubingStrategyDirectionContext:
     if item.decision is SubingDailyWatchDecision.UNAVAILABLE:
         reasons = item.unavailable_reasons
@@ -584,7 +593,12 @@ def _context_from_item(
     contracts = {fact.contract for fact in facts}
     if (
         any(fact.trading_day != source_day for fact in facts)
+        or any(
+            normalize_contract_for_symbol(item.symbol, fact.contract) != fact.contract
+            for fact in facts
+        )
         or len(contracts) > 1
+        or (contracts and contracts != {expected_source_contract})
         or (item.decision is not SubingDailyWatchDecision.UNAVAILABLE and len(facts) != 2)
     ):
         raise SubingStrategyCurrentSourceIdentityError()

@@ -447,6 +447,61 @@ def test_current_artifact_source_identity_reason_fails_closed() -> None:
         service.current(_request(), NOW)
 
 
+def test_current_artifact_contract_must_belong_to_item_symbol() -> None:
+    module = _current_module()
+    service, loader, historical, _store, market_read = _service()
+    other_product_item = replace(
+        _snapshot().items[0],
+        daily=replace(_trend(BarFrequency.D1), contract="RB2610"),
+        hourly=replace(_trend(BarFrequency.H1), contract="RB2610"),
+    )
+    service = module.SubingStrategyCurrentProjectionService(
+        loader,
+        products=("jm",),
+        market_read=market_read,
+        current_segment=lambda _symbol, target: ResolvedContractSegment(
+            CONTRACT, SEGMENT_START, target
+        ),
+        historical_direction_context_resolver=historical,
+        current_snapshot_store=_Store(replace(_snapshot(), items=(other_product_item,))),
+        target_trading_day=lambda _now: TARGET_DAY,
+        previous_trading_day=lambda _target: SOURCE_DAY,
+        calibration=_accepted_calibration(),
+        lifecycle_policy=load_subing_lifecycle_policy(),
+        strategy_policy=load_subing_strategy_policy(),
+    )
+
+    with pytest.raises(module.SubingStrategyCurrentSourceIdentityError):
+        service.current(_request(), NOW)
+
+
+def test_current_artifact_contract_must_match_source_day_rank1_owner() -> None:
+    module = _current_module()
+    service, loader, historical, store, market_read = _service()
+
+    def segment_for_day(_symbol: str, target: date) -> ResolvedContractSegment:
+        if target == SOURCE_DAY:
+            return ResolvedContractSegment("JM2609", SEGMENT_START, SOURCE_DAY)
+        return ResolvedContractSegment(CONTRACT, SEGMENT_START, TARGET_DAY)
+
+    service = module.SubingStrategyCurrentProjectionService(
+        loader,
+        products=("jm",),
+        market_read=market_read,
+        current_segment=segment_for_day,
+        historical_direction_context_resolver=historical,
+        current_snapshot_store=store,
+        target_trading_day=lambda _now: TARGET_DAY,
+        previous_trading_day=lambda _target: SOURCE_DAY,
+        calibration=_accepted_calibration(),
+        lifecycle_policy=load_subing_lifecycle_policy(),
+        strategy_policy=load_subing_strategy_policy(),
+    )
+
+    with pytest.raises(module.SubingStrategyCurrentSourceIdentityError):
+        service.current(_request(), NOW)
+
+
 def test_live_contract_identity_failure_is_typed() -> None:
     module = _current_module()
     live_bar = replace(_canonical_stream()[0][-1], trading_day=TARGET_DAY)

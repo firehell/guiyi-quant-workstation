@@ -138,6 +138,69 @@ def test_pending_open_applies_on_exact_first_completed_1m() -> None:
     assert state.pending_action is None
 
 
+def test_new_day_unavailable_context_cancels_open_but_does_not_block_close() -> None:
+    state, first, effective = _machine(pending=True)
+    next_day = SEGMENT_START + timedelta(days=1)
+    next_effective = replace(
+        effective,
+        bar_end=effective.bar_end + timedelta(days=1),
+        trading_day=next_day,
+    )
+    next_first = replace(
+        first,
+        bar_end=first.bar_end + timedelta(days=1),
+        trading_day=next_day,
+    )
+    unavailable = replace(
+        _context(next_effective, SubingStrategyDirection.UNAVAILABLE),
+        source_trading_day=None,
+        reason_codes=("SUBING_DAILY_WATCH_NOT_GENERATED",),
+        daily_bar_end=None,
+        hourly_bar_end=None,
+        physical_contract=None,
+    )
+    next_interval = SubingStrategyInterval(
+        effective_bar_end=next_effective.bar_end,
+        first_1m_bar_end=next_first.bar_end,
+        expected_open=next_effective.open,
+    )
+    state = replace(
+        state,
+        direction_contexts=(*state.direction_contexts, (next_day, unavailable)),
+        intervals=(next_interval,),
+    )
+
+    state, output = _step(state, Completed1mBar(next_first))
+
+    assert output.actions == ()
+    assert output.cancellations[0].reason_code == "DIRECTION_CONTEXT_BLOCKS_ENTRY"
+    assert state.pending_action is None
+
+    holding, first, effective = _machine(pending=True)
+    holding, _ = _step(holding, Completed1mBar(first))
+    assert holding.position is not None
+    pending_close = SubingStrategyPendingAction(
+        kind=SubingStrategyActionKind.CLOSE_LONG,
+        decision_at=effective.bar_end,
+        candidate=None,
+        direction_context=None,
+        episode_id=holding.position.entry_action.episode_id,
+        opportunity_id=holding.position.entry_action.opportunity_id,
+        reason_codes=("EMA21_BREACH_LONG",),
+    )
+    holding = replace(
+        holding,
+        direction_contexts=(*holding.direction_contexts, (next_day, unavailable)),
+        intervals=(*holding.intervals, next_interval),
+        pending_action=pending_close,
+    )
+
+    holding, output = _step(holding, Completed1mBar(next_first))
+
+    assert output.actions[0].kind is SubingStrategyActionKind.CLOSE_LONG
+    assert holding.position is None
+
+
 def test_later_1m_cannot_substitute_for_missing_first_bar() -> None:
     state, first, _ = _machine(pending=True)
     later = replace(first, bar_end=first.bar_end + timedelta(minutes=1))

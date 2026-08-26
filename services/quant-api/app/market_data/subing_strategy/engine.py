@@ -210,7 +210,7 @@ def decide_completed_15m(
             position is None
             and pending is None
             and eligible_entry is None
-            and _context_allows_entry(candidate, frame.direction_context)
+            and direction_context_allows_entry(candidate, frame.direction_context)
         ):
             eligible_entry = candidate
     if eligible_entry is not None:
@@ -381,7 +381,7 @@ def _validate_reducer_inputs(
             raise ValueError("SUBING_STRATEGY_FRAME_IDENTITY_INVALID")
 
 
-def _context_allows_entry(
+def direction_context_allows_entry(
     candidate: SubingStrategyEntryCandidate,
     context: SubingStrategyDirectionContext,
 ) -> bool:

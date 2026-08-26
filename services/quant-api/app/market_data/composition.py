@@ -11,7 +11,8 @@ canonical 根目录由环境变量 ``GUIYI_CANONICAL_DATA_ROOT`` 或仓库默认
 from __future__ import annotations
 
 import os
-from datetime import UTC, datetime
+from collections.abc import Mapping, Sequence
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import cast
 
@@ -51,6 +52,7 @@ from app.market_data.subing_strategy.cache import (
     SubingStrategyCache,
 )
 from app.market_data.subing_strategy.direction_context import (
+    SubingStrategyDirectionContext,
     SubingStrategyDirectionContextResolver,
 )
 from app.market_data.subing_strategy.current_service import (
@@ -93,6 +95,47 @@ _SUBING_CALIBRATION = (
 _SUBING_LIFECYCLE_POLICY = (
     PROJECT_ROOT / "data/research_policies/subing_lifecycle_v2_research_v1.json"
 )
+
+
+class _LazySubingStrategyDirectionContextResolver:
+    def __init__(
+        self,
+        *,
+        session: Session,
+        market_data: MarketDataService,
+        products: tuple[str, ...],
+    ) -> None:
+        self._session = session
+        self._market_data = market_data
+        self._products = products
+
+    def resolve(
+        self,
+        symbol: str,
+        target_days: Sequence[date],
+    ) -> Mapping[date, SubingStrategyDirectionContext]:
+        product_set = set(self._products)
+        metadata = {
+            item.symbol: SubingDailyWatchProduct(
+                symbol=item.symbol,
+                product_name=item.product_name,
+                sector=item.sector,
+            )
+            for item in self._market_data.list_latest_dominants()
+            if item.symbol in product_set
+        }
+        projector = SubingDailyWatchItemProjector(
+            stitched_loader=ActualDominantStitchedResearchLoader(self._market_data),
+            product_metadata=metadata,
+        )
+        return SubingStrategyDirectionContextResolver(
+            projector=projector,
+            previous_trading_day=lambda target: resolve_previous_common_trading_day(
+                self._session,
+                products=self._products,
+                target_trading_day=target,
+            ),
+        ).resolve(symbol, target_days)
 
 
 def canonical_root() -> Path:
@@ -238,20 +281,6 @@ def build_subing_strategy_current_service(
     market_data = build_market_data_service(session)
     market_read = build_market_read_service(session)
     active = load_active_products()
-    active_set = set(active)
-    metadata = {
-        item.symbol: SubingDailyWatchProduct(
-            symbol=item.symbol,
-            product_name=item.product_name,
-            sector=item.sector,
-        )
-        for item in market_data.list_latest_dominants()
-        if item.symbol in active_set
-    }
-    projector = SubingDailyWatchItemProjector(
-        stitched_loader=ActualDominantStitchedResearchLoader(market_data),
-        product_metadata=metadata,
-    )
     return SubingStrategyCurrentProjectionService(
         ActualDominantResearchSegmentLoader(market_data),
         products=active,
@@ -260,13 +289,10 @@ def build_subing_strategy_current_service(
             symbol,
             target,
         ),
-        historical_direction_context_resolver=SubingStrategyDirectionContextResolver(
-            projector=projector,
-            previous_trading_day=lambda target: resolve_previous_common_trading_day(
-                session,
-                products=active,
-                target_trading_day=target,
-            ),
+        historical_direction_context_resolver=_LazySubingStrategyDirectionContextResolver(
+            session=session,
+            market_data=market_data,
+            products=active,
         ),
         current_snapshot_store=_SubingDailyWatchCurrentSnapshotStore(),
         target_trading_day=lambda now: resolve_expected_daily_watch_day(

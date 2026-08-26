@@ -276,6 +276,34 @@ def test_subing_strategy_current_maps_source_identity_failure_to_409(
     }
 
 
+def test_subing_strategy_current_maps_composition_source_failure_to_409(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.market_data.operational_universe import OperationalUniverseError
+
+    def fail_build(_session):
+        raise OperationalUniverseError()
+
+    monkeypatch.setattr(
+        "app.api.market_research_overlays.build_subing_strategy_current_service",
+        fail_build,
+    )
+
+    response = TestClient(app).get(
+        "/api/v1/market/research/subing-strategy/current",
+        params={
+            "series_kind": "actual_dominant",
+            "symbol": "jm",
+            "frequency": "15m",
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {
+        "detail": {"code": "OPERATIONAL_UNIVERSE_INVALID"}
+    }
+
+
 def test_subing_strategy_history_returns_actions_complete_episodes_and_context(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

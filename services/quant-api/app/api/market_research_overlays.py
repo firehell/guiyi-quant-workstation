@@ -10,7 +10,10 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.market_data.domain import BarFrequency, SeriesKind
-from app.market_data.operational_universe import ActiveUniverseError
+from app.market_data.operational_universe import (
+    ActiveUniverseError,
+    OperationalUniverseError,
+)
 from app.market_data.subing_calibration import SubingCalibrationError
 from app.market_data.subing_lifecycle_policy import SubingLifecyclePolicyError
 from app.market_data.composition import (
@@ -243,15 +246,21 @@ def subing_strategy_current(
             symbol=symbol,
             frequency=cast(BarFrequency, frequency),
         )
+    except (TypeError, ValueError):
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "INVALID_SUBING_STRATEGY_CURRENT_REQUEST"},
+        ) from None
+    try:
         result = build_subing_strategy_current_service(session).current(
-            request,
-            datetime.now(UTC),
+            request, datetime.now(UTC)
         )
     except (
         SubingStrategyPolicyError,
         SubingCalibrationError,
         SubingLifecyclePolicyError,
         ActiveUniverseError,
+        OperationalUniverseError,
         SubingStrategyCurrentActiveProductError,
         SubingStrategyCurrentSourceUnavailableError,
         SubingStrategyCurrentSourceIdentityError,
@@ -260,10 +269,10 @@ def subing_strategy_current(
             status_code=409,
             detail={"code": exc.code},
         ) from None
-    except ValueError:
+    except (ValueError, RuntimeError):
         raise HTTPException(
-            status_code=422,
-            detail={"code": "INVALID_SUBING_STRATEGY_CURRENT_REQUEST"},
+            status_code=409,
+            detail={"code": "SUBING_STRATEGY_CURRENT_SOURCE_UNAVAILABLE"},
         ) from None
     return _strategy_current_response(result)
 
