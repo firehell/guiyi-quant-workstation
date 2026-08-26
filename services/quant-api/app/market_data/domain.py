@@ -305,6 +305,32 @@ class ActualDominantTradingDayQuery:
 
 
 @dataclass(frozen=True, slots=True)
+class ActualDominantRecentBarsQuery:
+    """Research-only actual-dominant request ending on one exact trading day."""
+
+    symbol: str
+    frequency: BarFrequency
+    through: date
+    limit: int
+
+    def __post_init__(self) -> None:
+        symbol = _text(self.symbol, field="symbol")
+        if _SYMBOL.fullmatch(symbol.upper()) is None:
+            raise ContractError(field="symbol", reason="invalid", value=symbol)
+        frequency = _enum(BarFrequency, self.frequency, field="frequency")
+        if type(self.through) is not date:
+            raise ContractError(field="through", reason="date_required")
+        if (
+            isinstance(self.limit, bool)
+            or not isinstance(self.limit, int)
+            or not 1 <= self.limit <= 2000
+        ):
+            raise ContractError(field="limit", reason="out_of_range", value=self.limit)
+        object.__setattr__(self, "symbol", symbol)
+        object.__setattr__(self, "frequency", frequency)
+
+
+@dataclass(frozen=True, slots=True)
 class ContractTradingDayQuery:
     """Research-only physical-contract request with exact trading-day bounds."""
 

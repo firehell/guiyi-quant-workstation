@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, date, datetime, time
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 
 import pytest
@@ -9,7 +9,15 @@ from sqlalchemy.orm import Session
 
 from app.db.base import Base
 from app.market_data.catalog import MarketCatalog
-from app.market_data.domain import CanonicalBar, DatasetKey, SeriesPageQuery
+from app.market_data.domain import (
+    ActualDominantRecentBarsQuery,
+    CanonicalBar,
+    DatasetKey,
+    MarketSeriesPageResult,
+    ResolvedContractSegment,
+    SeriesKind,
+    SeriesPageQuery,
+)
 from app.market_data.market_data_service import MarketDataError, MarketDataService
 from app.market_data.storage import CanonicalMonthlyStore, PublishRequest
 from app.models import Exchange, Instrument, TradingCalendar, TradingSession
@@ -446,3 +454,159 @@ def test_query_page_actual_dominant_remains_fail_closed(session, tmp_path, failu
 
     with pytest.raises(MarketDataError, match=expected):
         service.query_page(SeriesPageQuery("actual_dominant", "jm", "1d"))
+
+
+def _page_result(*bars: CanonicalBar) -> MarketSeriesPageResult:
+    return MarketSeriesPageResult(
+        request_identity={},
+        bars=bars,
+        canonical_coverage=(bars[0].bar_end, bars[-1].bar_end) if bars else None,
+        has_more_before=False,
+        next_before=None,
+        resolved_contract_segments=(),
+    )
+
+
+def test_query_actual_dominant_recent_bars_delegates_with_source_day_cutoff(
+    session, tmp_path, monkeypatch
+) -> None:
+    _, service, _ = _service(session, tmp_path)
+    session_end = datetime(2025, 1, 4, 7, tzinfo=UTC)
+    expected = MarketSeriesPageResult(
+        request_identity={},
+        bars=(_bar(3, 100), _bar(4, 200)),
+        canonical_coverage=(
+            datetime(2025, 1, 3, 7, tzinfo=UTC),
+            datetime(2025, 1, 4, 7, tzinfo=UTC),
+        ),
+        has_more_before=False,
+        next_before=None,
+        resolved_contract_segments=(
+            ResolvedContractSegment("JM2505", date(2025, 1, 3), date(2025, 1, 3)),
+            ResolvedContractSegment("JM2509", date(2025, 1, 4), date(2025, 1, 4)),
+        ),
+    )
+    requests: list[SeriesPageQuery] = []
+
+    monkeypatch.setattr(
+        service,
+        "_trading_day_window",
+        lambda **_kwargs: (datetime(2025, 1, 4, 1, tzinfo=UTC), session_end),
+    )
+
+    def query_page(request: SeriesPageQuery) -> MarketSeriesPageResult:
+        requests.append(request)
+        return expected
+
+    monkeypatch.setattr(service, "query_page", query_page)
+
+    result = service.query_actual_dominant_recent_bars(
+        ActualDominantRecentBarsQuery("jm", "1d", date(2025, 1, 4), 2)
+    )
+
+    assert result is expected
+    assert requests == [
+        SeriesPageQuery(
+            series_kind=SeriesKind.ACTUAL_DOMINANT,
+            symbol="jm",
+            frequency="1d",
+            before=session_end + timedelta(microseconds=1),
+            limit=2,
+        )
+    ]
+
+
+def test_query_actual_dominant_recent_bars_uses_canonical_page_across_rollover(
+    session, tmp_path
+) -> None:
+    catalog, service, store = _service(session, tmp_path)
+    _publish(
+        catalog,
+        store,
+        DatasetKey("contract", "jm", "JM2505", "1d"),
+        (_bar(2, 100), _bar(3, 101)),
+    )
+    _publish(
+        catalog,
+        store,
+        DatasetKey("contract", "jm", "JM2509", "1d"),
+        (
+            _bar(4, 200),
+            CanonicalBar(
+                bar_end=datetime(2025, 1, 4, 13, 1, tzinfo=UTC),
+                trading_day=date(2025, 1, 5),
+                open=Decimal(300),
+                high=Decimal(301),
+                low=Decimal(299),
+                close=Decimal(300),
+                volume=Decimal(1),
+                turnover=Decimal(10),
+                open_interest=Decimal(20),
+            ),
+        ),
+    )
+    _calendar_and_map(
+        session,
+        catalog,
+        ((2, "JM2505"), (3, "JM2505"), (4, "JM2509"), (5, "JM2509")),
+    )
+    session.commit()
+
+    result = service.query_actual_dominant_recent_bars(
+        ActualDominantRecentBarsQuery("jm", "1d", date(2025, 1, 4), 3)
+    )
+
+    assert len(result.bars) <= 3
+    assert [bar.close for bar in result.bars] == [Decimal("100"), Decimal("101"), Decimal("200")]
+    assert result.bars[-1].trading_day == date(2025, 1, 4)
+    assert all(bar.trading_day <= date(2025, 1, 4) for bar in result.bars)
+    assert all(
+        previous.bar_end < current.bar_end
+        for previous, current in zip(result.bars, result.bars[1:], strict=False)
+    )
+    assert result.resolved_contract_segments == (
+        ResolvedContractSegment("JM2505", date(2025, 1, 2), date(2025, 1, 3)),
+        ResolvedContractSegment("JM2509", date(2025, 1, 4), date(2025, 1, 4)),
+    )
+
+
+@pytest.mark.parametrize(
+    "page",
+    [
+        _page_result(),
+        _page_result(_bar(3, 100)),
+        _page_result(_bar(4, 100), _bar(5, 101)),
+        _page_result(
+            _bar(4, 100),
+            CanonicalBar(
+                bar_end=datetime(2025, 1, 4, 6, 59, tzinfo=UTC),
+                trading_day=date(2025, 1, 4),
+                open=Decimal(101),
+                high=Decimal(102),
+                low=Decimal(100),
+                close=Decimal(101),
+                volume=Decimal(1),
+                turnover=Decimal(10),
+                open_interest=Decimal(20),
+            ),
+        ),
+    ],
+)
+def test_query_actual_dominant_recent_bars_rejects_invalid_page(
+    session, tmp_path, monkeypatch, page: MarketSeriesPageResult
+) -> None:
+    _, service, _ = _service(session, tmp_path)
+    monkeypatch.setattr(
+        service,
+        "_trading_day_window",
+        lambda **_kwargs: (
+            datetime(2025, 1, 4, 1, tzinfo=UTC),
+            datetime(2025, 1, 4, 7, tzinfo=UTC),
+        ),
+    )
+    monkeypatch.setattr(service, "query_page", lambda _request: page)
+
+    with pytest.raises(MarketDataError, match="ACTUAL_DOMINANT_RECENT_BARS_INVALID"):
+        service.query_actual_dominant_recent_bars(
+            ActualDominantRecentBarsQuery("jm", "1d", date(2025, 1, 4), 3)
+        )
