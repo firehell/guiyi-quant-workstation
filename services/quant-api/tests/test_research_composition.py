@@ -868,3 +868,109 @@ def test_robustness_builder_reuses_one_mds_and_frozen_active60(
         ("subing", market_data, products),
         ("n", market_data, products),
     ]
+
+
+def test_current_strategy_builder_uses_read_only_authoritative_seams(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = object()
+    products = ("jm",)
+    market_data = SimpleNamespace(
+        list_latest_dominants=lambda: (
+            SimpleNamespace(
+                symbol="jm",
+                product_name="焦煤",
+                sector="黑色",
+            ),
+        ),
+        dominant_segment_for_day=lambda symbol, target: (symbol, target),
+    )
+    market_read = object()
+    loader = object()
+    projector = object()
+    resolver = object()
+    store = SimpleNamespace(read_current=lambda: "snapshot")
+    expected = object()
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(
+        market_data_composition,
+        "load_active_products",
+        lambda: products,
+    )
+    monkeypatch.setattr(
+        market_data_composition,
+        "build_market_data_service",
+        lambda value: market_data if value is session else None,
+    )
+    monkeypatch.setattr(
+        market_data_composition,
+        "build_market_read_service",
+        lambda value: market_read if value is session else None,
+    )
+    monkeypatch.setattr(
+        market_data_composition,
+        "ActualDominantResearchSegmentLoader",
+        lambda value: loader if value is market_data else None,
+    )
+    monkeypatch.setattr(
+        market_data_composition,
+        "ActualDominantStitchedResearchLoader",
+        lambda value: SimpleNamespace(market_data=value),
+    )
+    monkeypatch.setattr(
+        market_data_composition,
+        "SubingDailyWatchItemProjector",
+        lambda **_kwargs: projector,
+    )
+    monkeypatch.setattr(
+        market_data_composition,
+        "SubingStrategyDirectionContextResolver",
+        lambda **_kwargs: resolver,
+    )
+    monkeypatch.setattr(
+        market_data_composition,
+        "SubingDailyWatchStore",
+        lambda *_args, **_kwargs: store,
+    )
+    monkeypatch.setattr(
+        market_data_composition,
+        "_subing_daily_watch_v2_root",
+        lambda: Path("/tmp/subing-v2"),
+    )
+    monkeypatch.setattr(
+        market_data_composition,
+        "load_accepted_subing_calibration",
+        lambda *_args: object(),
+    )
+    monkeypatch.setattr(
+        market_data_composition,
+        "load_subing_lifecycle_policy",
+        lambda *_args: object(),
+    )
+    monkeypatch.setattr(
+        market_data_composition,
+        "load_subing_strategy_policy",
+        lambda: object(),
+    )
+
+    def construct(segment_loader, **kwargs):
+        captured.update(segment_loader=segment_loader, **kwargs)
+        return expected
+
+    monkeypatch.setattr(
+        market_data_composition,
+        "SubingStrategyCurrentProjectionService",
+        construct,
+        raising=False,
+    )
+
+    result = market_data_composition.build_subing_strategy_current_service(session)
+
+    assert result is expected
+    assert captured["segment_loader"] is loader
+    assert captured["market_read"] is market_read
+    assert captured["historical_direction_context_resolver"] is resolver
+    assert captured["current_snapshot_store"].read_current() == "snapshot"
+    assert captured["products"] == products
+    assert "cache" not in captured
+    assert "event_history" not in captured

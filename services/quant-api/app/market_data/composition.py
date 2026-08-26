@@ -53,6 +53,9 @@ from app.market_data.subing_strategy.cache import (
 from app.market_data.subing_strategy.direction_context import (
     SubingStrategyDirectionContextResolver,
 )
+from app.market_data.subing_strategy.current_service import (
+    SubingStrategyCurrentProjectionService,
+)
 from app.market_data.subing_strategy.policy import load_subing_strategy_policy
 from app.market_data.subing_strategy.service import (
     SubingStrategyHistoricalProjectionService,
@@ -179,6 +182,17 @@ def _build_subing_strategy_cache_or_null() -> (
     )
 
 
+class _SubingDailyWatchCurrentSnapshotStore:
+    """Defer Git-external root validation until the read-only request executes."""
+
+    def read_current(self):
+        root = _subing_daily_watch_v2_root()
+        return SubingDailyWatchStore(
+            root,
+            root_validator=_subing_daily_watch_v2_root,
+        ).read_current()
+
+
 def build_subing_strategy_historical_service(
     session: Session,
 ) -> SubingStrategyHistoricalProjectionService:
@@ -214,6 +228,60 @@ def build_subing_strategy_historical_service(
         lifecycle_policy=load_subing_lifecycle_policy(_SUBING_LIFECYCLE_POLICY),
         strategy_policy=load_subing_strategy_policy(),
         cache=_build_subing_strategy_cache_or_null(),
+    )
+
+
+def build_subing_strategy_current_service(
+    session: Session,
+) -> SubingStrategyCurrentProjectionService:
+    """Compose current Canonical/completed-Live state without cache or Event I/O."""
+    market_data = build_market_data_service(session)
+    market_read = build_market_read_service(session)
+    active = load_active_products()
+    active_set = set(active)
+    metadata = {
+        item.symbol: SubingDailyWatchProduct(
+            symbol=item.symbol,
+            product_name=item.product_name,
+            sector=item.sector,
+        )
+        for item in market_data.list_latest_dominants()
+        if item.symbol in active_set
+    }
+    projector = SubingDailyWatchItemProjector(
+        stitched_loader=ActualDominantStitchedResearchLoader(market_data),
+        product_metadata=metadata,
+    )
+    return SubingStrategyCurrentProjectionService(
+        ActualDominantResearchSegmentLoader(market_data),
+        products=active,
+        market_read=market_read,
+        current_segment=lambda symbol, target: market_data.dominant_segment_for_day(
+            symbol,
+            target,
+        ),
+        historical_direction_context_resolver=SubingStrategyDirectionContextResolver(
+            projector=projector,
+            previous_trading_day=lambda target: resolve_previous_common_trading_day(
+                session,
+                products=active,
+                target_trading_day=target,
+            ),
+        ),
+        current_snapshot_store=_SubingDailyWatchCurrentSnapshotStore(),
+        target_trading_day=lambda now: resolve_expected_daily_watch_day(
+            session,
+            products=active,
+            now=now,
+        ),
+        previous_trading_day=lambda target: resolve_previous_common_trading_day(
+            session,
+            products=active,
+            target_trading_day=target,
+        ),
+        calibration=load_accepted_subing_calibration(_SUBING_CALIBRATION),
+        lifecycle_policy=load_subing_lifecycle_policy(_SUBING_LIFECYCLE_POLICY),
+        strategy_policy=load_subing_strategy_policy(),
     )
 
 
