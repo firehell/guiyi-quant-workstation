@@ -517,6 +517,9 @@ def test_public_overlay_schemas_keep_only_retained_projection_families() -> None
         "JdjHistoricalRequestOut",
         "JdjHistoricalEventOut",
         "JdjHistoricalResponse",
+        "JdjStrategyHistoricalRequestOut",
+        "JdjStrategyHistoricalActionOut",
+        "JdjStrategyHistoricalResponse",
     ):
         assert not hasattr(research_overlay_schemas, name)
 
