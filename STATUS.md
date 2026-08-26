@@ -7,7 +7,7 @@
 - 正式 release 仍为 `v1.8.4@f78db1b124744d8e2ebe1ee1b7a5ecdc365b40f6`（Release PR `#220`，annotated tag peeled commit 同一）。2026-08-26 经用户单次明确批准，本机五个 launchd label 已从 v1.8.4 根协调切换到 clean/detached `/Volumes/扩展盘/guiyi-quant-runtime-c9633ef30@c9633ef302e536ba4f8c138c4334fffd54b3d232`；这是 develop 精确提交的本地开发 Runtime，不是新 release/tag。API `/api/health` 返回仓库包版本 `1.8.3`，Web、Live 与 Alert 均从该精确根运行；原 `/Volumes/扩展盘/guiyi-quant-runtime-v1.8.4` clean/detached 根保留为回滚点，未删除。
 - 2026-08-25 自然 after-market 曾于 18:05:02 开始、19:40:05 以 `passed` 终态完成，单次 attempts=1、覆盖 active60；该既有自然证据不因部署封装重复采集。当前 c9633ef30 Runtime 根未导入旧根的运行状态文件，因此当前只读 health 将 after-market 表示为 `pending`；本次 switch 未手工补跑、回填或写入该状态。
 - production Alembic 已在 `20260825_0040 (head)`。HTDY production Scope 曾于 15:13 在独立明确授权下更新为 active 60 × 七周期 `60 symbols / 420 pairs`，随后于 20:43 按新的明确请求原子收敛为唯一 `jm × 15m`（`1 symbol / 1 pair`）；七周期图表能力与逐 `symbol × frequency` 开关能力不变，SuBing Scope 未变，未触发 Event、重放或通知。
-- Alert transport 为 pushplus，provider accepted 不等于微信送达。19:40 的 processing failure 已被后续 `jm × 15m` 自然处理成功覆盖为 `processing_state=ok`；v1.8.4 已包含 W1 周内正常跳过与 Runtime observation schema v2 的精确失败 CAS acknowledgment 能力。当前 acknowledgment 仍为 `null`，没有执行 production acknowledgment、Event 重放、补发或真实通知；当前 Runtime 的 `degraded` 来自上述 after-market `pending` 与保留的 `notification_transport_failed`。Execution Review roll 仍为 `disabled`。
+- Alert transport 为 pushplus，provider accepted 不等于微信送达。19:40 的 processing failure 已被后续 `jm × 15m` 自然处理成功覆盖为 `processing_state=ok`；v1.8.4 已包含 W1 周内正常跳过与 Runtime observation schema v2 的精确失败 CAS acknowledgment 能力。当前 acknowledgment 仍为 `null`，没有执行 production acknowledgment、Event 重放、补发或真实通知；当前 Runtime 的 `degraded` 来自上述 after-market `pending` 与保留的 `notification_transport_failed`。当前旧 Runtime 仍来自 `c9633ef30`，尚未切入 develop 的 RQAlpha / Execution Review 退役提交。
 
 ## 已发布的 Architecture Convergence
 
@@ -19,7 +19,8 @@ Architecture Convergence Tasks 1–8 已完成实现、验证与独立 Review，
 - HTDY 七周期、frequency-aware Event 与 symbol × frequency Scope 已是 release/Runtime 事实；当前 production Scope 精确为 `jm × 15m`。此前 420-pair Scope 下自然形成的 6 条 D1 Event 保持 immutable，未删除、重放或补发；19:40 曾出现 W1 处理失败并记录 provider accepted 与一次 transport failure，后续 processing 已自然恢复，但这仍不证明微信送达，也不改变真实通知 Gate；自然 D1/W1 event identity/evidence 仍需按各自事实独立核验。
 - Candidate Validation/Robustness 与 pending prospective OOS 保留；Generic Robustness relationship metrics 保留。已退役 phase-specific Dossier/Relationships 不再是 pending Gate。
 - Alembic migration history、`futures_member_ranks` table identity 与仓库外既有 historical snapshots 保留；没有 active reader/builder/provider/CLI。
-- RQAlpha local-only workbench 未加载、未进入 Runtime；真实 smoke 仍 pending。
+- develop 已退役 RQAlpha 与 Execution Review 的 active Web/API/domain/roll seam/tests/docs，Web 路由只保留 `/market` 与 `/market/chart`；SuBing Formal Event 与 Alert 主链保留。仓库 Alembic head 已延伸到 `20260826_0041`，但 production 仍为 `20260825_0040`，四张 `trade_*` 表只读盘点均为 0 行，尚未执行删表。
+- Git 外安全配置未设置 `GUIYI_BACKTEST_RUNS_ROOT`，受限路径发现也未得到唯一 artifacts 目录，因此当前没有可验证的 RQAlpha runs 删除目标；未猜测路径，也未触及 Bundle 或 RQAlpha 安装。
 
 ## develop 中的 N Structure Historical range band
 
@@ -34,7 +35,7 @@ Architecture Convergence Tasks 1–8 已完成实现、验证与独立 Review，
 - HTDY 的真实 PushPlus/微信送达与自然 D1/W1 `canonical_updated` evidence pending；不以测试、synthetic event、replay 或手工发送补证。
 - SuBing 自然 Live seam evidence pending；Daily Watch 的自然盘后 artifact 已于上述单次自然运行产生，不手工触发或回填。
 - SuBing、N 与 JDJ Candidate 的 prospective OOS 按各自 protocol 独立累积，均为 pending prospective OOS。
-- Execution Review roll Gate 保持 `disabled / not activated`。
+- RQAlpha / Execution Review 退役的生产收口 pending：必须先取得一次明确 Runtime switch 授权，将不再读取四表的新精确提交切入并读回健康状态；随后才可执行已批准的 production `upgrade 20260826_0041`。外部 runs artifacts 仅在发现并验证唯一 `GUIYI_BACKTEST_RUNS_ROOT` 时删除。
 - Production notification acknowledgment 尚未执行；只有新的范围明确执行意图才能对当前精确失败做一次 CAS acknowledgment，且该操作仍不重放、不补发、不证明 provider accepted 或微信送达。
 
 ## 事实源边界

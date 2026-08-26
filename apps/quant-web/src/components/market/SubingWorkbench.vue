@@ -7,8 +7,6 @@ import type {
   SubingDailyWatchItem,
   SubingDailyWatchTrend,
 } from '@/types/market'
-import type { EventState } from '@/types/executionReview'
-import { executionReviewActionLabel } from '@/utils/executionReview'
 import {
   subingDailyWatchReasonLabel,
   visibleDailyWatchItems,
@@ -19,7 +17,6 @@ const props = defineProps<{
   formalStatus: 'ready' | 'unavailable' | null
   formalTradingDay: string | null
   formalItems: CurrentFormalSignalItem[]
-  formalEventStates: Record<number, EventState>
   formalStale: boolean
   dailyWatch: SubingDailyWatchCurrentResponse | null
   dailyLoading: boolean
@@ -27,7 +24,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  openFormal: [item: CurrentFormalSignalItem, state?: EventState]
+  openFormal: [item: CurrentFormalSignalItem]
   openDaily: [item: SubingDailyWatchItem]
 }>()
 
@@ -48,15 +45,6 @@ function barTime(value: string) {
   return new Intl.DateTimeFormat('zh-CN', {
     hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Shanghai',
   }).format(new Date(value))
-}
-
-function stateFor(item: CurrentFormalSignalItem) {
-  return props.formalEventStates[item.id]
-}
-
-function actionLabel(item: CurrentFormalSignalItem) {
-  const state = stateFor(item)
-  return state ? executionReviewActionLabel(state.state) : '查看 →'
 }
 
 function priceSideLabel(trend: SubingDailyWatchTrend) {
@@ -127,7 +115,7 @@ function itemTitle(item: SubingDailyWatchItem) {
                 {{ item.display_name }} · {{ item.frequency }} · {{ barTime(item.bar_end) }} 确认 · {{ item.contract }}<template v-if="item.lower_tf_confirmation"> · 5m 同向确认</template>
               </div>
             </div>
-            <button class="market-formal-signals__open" @click="emit('openFormal', item, stateFor(item))">{{ actionLabel(item) }}</button>
+            <button class="market-formal-signals__open" @click="emit('openFormal', item)">查看 →</button>
           </article>
         </div>
       </NSpin>

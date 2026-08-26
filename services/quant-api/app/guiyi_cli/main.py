@@ -20,10 +20,6 @@ from app.alerts.composition import (
 )
 from app.alerts.notification import ALERT_AUDIENCES
 from app.alerts.notification_composition import build_notification_sender_from_env
-from app.execution_review.composition import build_execution_review_roll_reconciler
-from app.execution_review.roll_gate import (
-    execution_review_roll_marker_state as read_execution_review_roll_gate,
-)
 from app.guiyi_cli.data_commands import build_request, run_data_command
 from app.guiyi_cli.data_parser import (
     CliUsageError,
@@ -78,8 +74,6 @@ AlertCanarySenderFactory = Callable[[], Any]
 AlertNotificationAcknowledger = Callable[[str], dict[str, object]]
 ResearchServiceFactory = Callable[[Any], Any]
 JdjCandidateValidationServiceFactory = Callable[[Any, str], Any]
-RollReconcilerFactory = Callable[[Any], Any]
-RollMarkerState = Callable[[], str]
 
 def _execution_is_readonly(args: argparse.Namespace) -> bool:
     if args.domain == "research":
@@ -174,12 +168,6 @@ def main(
     jdj_active60_robustness_service_factory: ResearchServiceFactory = (
         build_jdj_active60_robustness_service
     ),
-    execution_review_roll_marker_state: RollMarkerState = (
-        read_execution_review_roll_gate
-    ),
-    roll_reconciler_factory: RollReconcilerFactory = (
-        build_execution_review_roll_reconciler
-    ),
     runtime_health_builder=build_runtime_health,
     stdout: TextIO = sys.stdout,
     stderr: TextIO = sys.stderr,
@@ -218,8 +206,6 @@ def main(
                 session_factory,
                 manager_factory,
                 after_market_factory,
-                execution_review_roll_marker_state,
-                roll_reconciler_factory,
                 stderr,
             )
         elif args.domain == "research":
@@ -370,8 +356,6 @@ def _run_data(
     session_factory: SessionFactory,
     manager_factory: ManagerFactory,
     after_market_factory: AfterMarketFactory,
-    execution_review_roll_marker_state: RollMarkerState,
-    roll_reconciler_factory: RollReconcilerFactory,
     stderr: TextIO,
 ) -> dict[str, object]:
     """在 DB 会话内执行 data 子命令并返回 as_payload 字典。"""
@@ -381,8 +365,6 @@ def _run_data(
             manager_factory=manager_factory,
             after_market_factory=after_market_factory,
             failure_notification=False,
-            roll_marker_state=execution_review_roll_marker_state,
-            roll_reconciler_factory=roll_reconciler_factory,
         )
     with session_factory() as session:
         manager = manager_factory(session)

@@ -10,10 +10,8 @@ import MarketRuntimeStatus from '@/components/market/MarketRuntimeStatus.vue'
 import SubingWorkbench from '@/components/market/SubingWorkbench.vue'
 import { getMarketRadar, getSubingDailyWatchCurrent } from '@/api/market'
 import { getRuntimeHealth } from '@/api/runtime'
-import { getEventStates } from '@/api/executionReview'
 import { getCurrentFormalSignals } from '@/api/alerts'
 import type { CurrentFormalSignalItem } from '@/api/alerts'
-import type { EventState } from '@/types/executionReview'
 import type {
   MarketRadarItem,
   MarketRadarResponse,
@@ -29,7 +27,6 @@ const router = useRouter()
 const subingWorkbench = useSubingWorkbench({
   fetchFormal: getCurrentFormalSignals,
   fetchDailyWatch: getSubingDailyWatchCurrent,
-  fetchEventStates: getEventStates,
 })
 const runtimeState = useLatestResource({ fetch: getRuntimeHealth })
 const radarState = useLatestResource<MarketRadarResponse>({ fetch: getMarketRadar })
@@ -73,19 +70,7 @@ function openDailyWatch(item: SubingDailyWatchItem) {
   })
 }
 
-function openFormalSignal(item: CurrentFormalSignalItem, state?: EventState) {
-  if (state) {
-    const useEpisode = state.state === 'open' || state.state === 'pending_review'
-    void router.push({
-      name: 'trade-records',
-      query: {
-        state: state.state,
-        event_id: useEpisode ? undefined : String(item.id),
-        episode_id: useEpisode && state.episode_id ? String(state.episode_id) : undefined,
-      },
-    })
-    return
-  }
+function openFormalSignal(item: CurrentFormalSignalItem) {
   void router.push({
     name: 'market-chart',
     query: { symbol: item.symbol, series_kind: 'actual_dominant', frequency: item.frequency },
@@ -140,7 +125,6 @@ onBeforeUnmount(() => {
       :formal-status="subingWorkbench.formalStatus.value"
       :formal-trading-day="subingWorkbench.formalTradingDay.value"
       :formal-items="subingWorkbench.formalItems.value"
-      :formal-event-states="subingWorkbench.formalEventStates.value"
       :formal-stale="subingWorkbench.formalStale.value"
       :daily-watch="subingWorkbench.dailyWatch.value"
       :daily-loading="subingWorkbench.dailyLoading.value"

@@ -1,9 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { NButton, NSpin, NSwitch, NTag } from 'naive-ui'
+import { NSpin, NSwitch, NTag } from 'naive-ui'
 import ProductTodayAlertEvents from '@/components/market/ProductTodayAlertEvents.vue'
 import type { AlertRuntimeStatus, ProductAlertRuleState } from '@/api/alerts'
-import type { EventState } from '@/types/executionReview'
 import {
   subingLifecycleProgressLabel,
   subingLifecycleStageLabel,
@@ -25,7 +24,6 @@ const props = defineProps<{
   eventLoading: boolean
   eventStatus: 'ready' | 'unavailable' | null
   currentEvents: AlertEvent[]
-  currentEventStates: Record<number, EventState>
   rules: ProductAlertRuleState[]
   runtimeStatus: AlertRuntimeStatus | null
   alertLoading: boolean
@@ -33,12 +31,11 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  'open-formal-event': [event: AlertEvent, state: EventState | null]
   'toggle-subing-alert': [ruleCode: string, enabled: boolean]
 }>()
 
 const subingEvents = computed(() => props.currentEvents.filter((event) => event.rule_code === ALERT_RULE_CODES.SUBING))
-const formalEvent = computed(() => summarizeFormalEvent(subingEvents.value, props.currentEventStates))
+const formalEvent = computed(() => summarizeFormalEvent(subingEvents.value))
 const remainingEvents = computed(() => {
   const selectedId = formalEvent.value?.event.id
   return selectedId === undefined
@@ -125,7 +122,7 @@ function toggleSubing(ruleCode: string, enabled: boolean) {
     </header>
 
     <section class="subing-panel__section" data-testid="subing-formal-event">
-      <h4>Formal Event / Execution Review</h4>
+      <h4>Formal Event</h4>
       <p v-if="eventLoading">正在读取苏冰正式事件…</p>
       <p v-else-if="eventStatus === 'unavailable'" class="subing-panel__warning">苏冰正式事件暂不可用</p>
       <p v-else-if="eventStatus !== 'ready'">苏冰正式事件尚未读取</p>
@@ -135,13 +132,7 @@ function toggleSubing(ruleCode: string, enabled: boolean) {
         :data-formal-event-id="String(formalEvent.event.id)"
       >
         <strong>{{ formalEvent.headline }}</strong>
-        <NButton
-          v-if="formalEvent.actionLabel"
-          size="small"
-          type="primary"
-          @click="emit('open-formal-event', formalEvent.event, formalEvent.state)"
-        >{{ formalEvent.actionLabel }}</NButton>
-        <p v-else>今日正式提醒记录</p>
+        <p>今日正式提醒记录</p>
       </div>
       <p v-else>当前无可展示的苏冰正式事件记录</p>
       <ProductTodayAlertEvents

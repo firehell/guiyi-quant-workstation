@@ -21,17 +21,6 @@ GUIYI_ISOLATED_MIGRATION_DATABASE_URL='postgresql+psycopg://USER:PASSWORD@HOST:5
   uv run --project services/quant-api pytest -q -m isolated_postgresql services/quant-api/tests
 ```
 
-## RQAlpha local-only automated validation
-
-```bash
-PYTHONPATH=services/quant-api:packages/quant-core \
-  uv run --project services/quant-api pytest -q services/quant-api/tests/backtest
-pnpm --dir apps/quant-web test tests/backtestCapability.test.ts tests/backtestPresentation.test.ts tests/backtests.test.ts
-pnpm --dir apps/quant-web exec playwright test -c playwright.config.mjs e2e/backtests.spec.mjs
-```
-
-这些 fake-runner、TestClient 与 route-intercepted browser 测试不加载 sidecar，也不运行真实 RQAlpha smoke。
-
 ## 工程一致性与静态检查
 
 ```bash

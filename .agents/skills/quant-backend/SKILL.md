@@ -1,20 +1,18 @@
 ---
 name: quant-backend
-description: Use when 任务涉及归一量化 FastAPI、Pydantic、PostgreSQL 应用域、Redis、Alert、Execution Review、Runtime、后端接口或 guiyi CLI。
+description: Use when 任务涉及归一量化 FastAPI、Pydantic、PostgreSQL 应用域、Redis、Alert、Runtime、后端接口或 guiyi CLI。
 ---
 
 # 归一量化后端
 
 ## Current surface
 
-- 主 API：Market、Alert、Execution Review、Runtime health。
+- 主 API：Market、Alert、Runtime health。
 - CLI：`guiyi data`、`guiyi research`、`guiyi runtime` 的 active 子命令。
 - Alert：Rule/Scope/Event、HTDY/SuBing evaluator、one-shot PushPlus transport。
-- Execution Review：Decision、Episode、Execution、Review、reconstruction 与 stats。
-- RQAlpha 是独立 loopback local app；不挂载主 API，不进入 Runtime、DB、Redis 或正式订单路径。
 
-已退役的 Signal/Review/Strategy Web·HTTP·worker、旧 backtest worker/queue、data_center HTTP 与
-RQ notification worker 不得恢复。
+已退役的 Signal/Review/Strategy、RQAlpha、Execution Review、旧 backtest worker/queue、data_center
+HTTP 与 RQ notification worker 不得恢复。
 
 ## 实现边界
 
@@ -22,7 +20,6 @@ RQ notification worker 不得恢复。
   `MarketDataService`。
 - Catalog、coverage、mapping、Session 与物理完整性异常 fail-closed。
 - Alert 保持两表、Event-first、one-shot；无 retry/replay/backfill/queue/outbox 或订单。
-- Execution Review 只消费 SuBing Formal Event；roll Gate 默认 disabled。
 - Redis Live 是当日 observation，不提升为 Canonical；`auto_order=false`。
 - 错误和日志不得暴露密钥、内部路径、SQL、stack 或 provider token。
 
@@ -31,5 +28,5 @@ RQ notification worker 不得恢复。
 ## 验证
 
 先运行覆盖改动的定向 pytest，再按风险扩展 Ruff、Mypy 和完整非 isolated PostgreSQL 测试。
-真实 DB/Redis、Runtime switch、Scope、通知、RQAlpha smoke 或 release 都不是普通测试；执行前需
+真实 DB/Redis、Runtime switch、Scope、通知或 release 都不是普通测试；执行前需
 当次范围明确的单次执行意图。命令以 `TESTING.md` 为准。

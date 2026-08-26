@@ -33,6 +33,14 @@ MARKET_TABLES = {
     "market_partitions",
 }
 RETIRED_ENTRYPOINTS = (
+    "services/quant-api/app/backtest",
+    "services/quant-api/app/execution_review",
+    "services/quant-api/app/api/execution_review.py",
+    "services/quant-api/app/schemas/execution_review.py",
+    "apps/quant-web/src/pages/backtests",
+    "apps/quant-web/src/pages/trade-records",
+    "openspec/specs/rqalpha-research-backtest-workbench",
+    "docs/EXECUTION_REVIEW.md",
     "services/quant-api/app/worker.py",
     "services/quant-api/app/queue.py",
     "services/quant-api/app/market_data/market_trend_focus.py",
@@ -68,15 +76,13 @@ def test_public_entrypoints_are_exact() -> None:
     assert set(command_action.choices) == RESEARCH_COMMANDS
 
 
-def test_rqalpha_is_not_mounted_on_the_main_api() -> None:
+def test_retired_rqalpha_and_execution_review_are_not_mounted() -> None:
     main_module = importlib.import_module("app.main")
     route_paths = {
         route.path for route in main_module.app.routes if hasattr(route, "path")
     }
     assert not any("backtest" in path for path in route_paths)
-    assert (
-        ROOT / "services/quant-api/app/backtest/local_app.py"
-    ).is_file()
+    assert not any("execution-review" in path for path in route_paths)
 
 
 def test_market_identity_and_no_order_contracts_are_executable() -> None:
@@ -154,41 +160,6 @@ def test_release_versions_are_consistent() -> None:
         *lock_versions,
         *app_versions,
     } == {"1.8.3"}
-
-
-def test_isolated_postgresql_tests_keep_their_marker() -> None:
-    pyproject = tomllib.loads(
-        (ROOT / "services/quant-api/pyproject.toml").read_text(encoding="utf-8")
-    )
-    markers = pyproject["tool"]["pytest"]["ini_options"]["markers"]
-    assert any(marker.startswith("isolated_postgresql:") for marker in markers)
-
-    service_tree = ast.parse(
-        (
-            ROOT
-            / "services/quant-api/tests/execution_review/test_isolated_postgresql_concurrency.py"
-        ).read_text(encoding="utf-8")
-    )
-    migration_tree = ast.parse(
-        (
-            ROOT
-            / "services/quant-api/tests/alembic/test_execution_review_v1_migration.py"
-        ).read_text(encoding="utf-8")
-    )
-    tests = [
-        node
-        for node in service_tree.body
-        if isinstance(node, ast.FunctionDef) and node.name.startswith("test_postgresql_")
-    ] + [
-        node
-        for node in migration_tree.body
-        if isinstance(node, ast.FunctionDef)
-        and any(arg.arg == "isolated_migration_context" for arg in node.args.args)
-    ]
-    assert tests
-    for test in tests:
-        decorators = {ast.unparse(item) for item in test.decorator_list}
-        assert "pytest.mark.isolated_postgresql" in decorators, test.name
 
 
 def test_alert_rule_codes_have_one_production_registry_per_language() -> None:

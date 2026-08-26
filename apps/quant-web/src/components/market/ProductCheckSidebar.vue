@@ -5,7 +5,6 @@ import PriceVolumeOiPanel from '@/components/market/PriceVolumeOiPanel.vue'
 import ProductAlertRules from '@/components/market/ProductAlertRules.vue'
 import SubingPanel from '@/components/market/SubingPanel.vue'
 import type { AlertRuntimeStatus, ProductAlertRuleState } from '@/api/alerts'
-import type { EventState } from '@/types/executionReview'
 import {
   type AlertEvent,
   type DominantContractItem,
@@ -43,14 +42,12 @@ const props = defineProps<{
   currentEventsLoading: boolean
   currentEventsStatus: 'ready' | 'unavailable' | null
   currentEvents: AlertEvent[]
-  currentEventStates: Record<number, EventState>
   htdyObservation: KlineMarker | null
 }>()
 
 const emit = defineEmits<{
   'toggle-subing-alert': [ruleCode: string, enabled: boolean]
   'toggle-htdy-alert': [ruleCode: string, enabled: boolean]
-  'open-formal-event': [event: AlertEvent, state: EventState | null]
 }>()
 
 const dataDetailsOpen = ref(false)
@@ -121,12 +118,10 @@ function updateDataDetailsOpen(event: Event) {
         :event-loading="currentEventsLoading"
         :event-status="currentEventsStatus"
         :current-events="subingEvents"
-        :current-event-states="currentEventStates"
         :rules="subingRules"
         :runtime-status="alertRuntimeStatus"
         :alert-loading="alertLoading"
         :saving-rule-codes="savingRuleCodes"
-        @open-formal-event="(event, state) => emit('open-formal-event', event, state)"
         @toggle-subing-alert="(ruleCode, enabled) => emit('toggle-subing-alert', ruleCode, enabled)"
       />
       <template v-else-if="selectedOverlay === 'jdj_strategy'">

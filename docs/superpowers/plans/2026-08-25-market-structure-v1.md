@@ -22,7 +22,7 @@
   - D: `feat/market-structure-v1-stage-d`
 - Do not start the next stage until the prior stage has fresh verification, independent review, a human `允许集成 develop` decision, and is present in `develop`.
 - Stage D additionally requires a new human `允许继续实现` decision after reviewing Stage C evidence. Approval of this plan does not satisfy that Gate.
-- Preserve existing SuBing, N Structure, JDJ, HTDY, Market overlays, Alert, Execution Review, Canonical, Live, and Runtime behavior. Do not create a generic strategy adapter or policy DSL.
+- Preserve existing SuBing, N Structure, JDJ, HTDY, Market overlays, Alert, Canonical, Live, and Runtime behavior. Do not create a generic strategy adapter or policy DSL.
 - Do not add DB tables, migrations, Redis keys, workers, schedulers, queues, replay/backfill, notifications, orders, `main` changes, tags, releases, or Runtime promotion.
 - Historical reads go only through `MarketDataService`; actual-dominant segmentation uses `ActualDominantResearchSegmentLoader`; D1/W1 remain Canonical-only.
 - Do not invent or scrape acceptance evidence. If the user-authorized same-feed observation corpus is absent or below the Spec minimum, Stage A must return `calibration_evidence_insufficient` and stop.

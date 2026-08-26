@@ -118,7 +118,7 @@ test('renders Daily Watch instead of Trend Focus, expands each direction indepen
   await page.goto('/market')
 
   const watch = page.getByTestId('subing-daily-watch')
-  await expect(watch).toContainText('苏冰今日观察')
+  await expect(watch).toContainText('今日观察')
   await expect(page.getByText('Trend Focus', { exact: true })).toHaveCount(0)
   await expect(watch).toContainText('目标交易日 2026-08-25 · 来源交易日 2026-08-24')
   await expect(watch).toContainText('多头观察 7')
@@ -163,7 +163,7 @@ test('renders ready Daily Watch before a pending Radar request completes', async
   try {
     await page.goto('/market')
     const watch = page.getByTestId('subing-daily-watch')
-    await expect(watch).toContainText('苏冰今日观察')
+    await expect(watch).toContainText('今日观察')
     await expect(watch).toContainText('多头观察 7')
     await expect(watch).toContainText('RB RB')
     await expect(page.getByTestId('market-radar-skeleton')).toBeVisible()

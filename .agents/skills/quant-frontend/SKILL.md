@@ -7,17 +7,15 @@ description: Use when 任务涉及归一量化 Vue 3、Vite、TypeScript、Naive
 
 ## Current surface
 
-- 路由：`/market`、`/market/chart`、`/trade-records`，以及 local-only 条件入口 `/backtests`；后者的
-  loopback、远程零探测和零正式副作用边界只看
-  `openspec/specs/rqalpha-research-backtest-workbench/spec.md`。
+- 路由只保留 `/market`、`/market/chart`。
 - 主图 Overlay 精确为 `none | subing | jdj_strategy | htdy`。
 - `jdj_strategy` 只展示 `actual_dominant + 1m` Historical reference replay，不是正式回测、订单或
   Candidate 入口。
 - N 字区间是独立、默认关闭的 `actual_dominant + 5m` Historical 投影，不是第五个 Overlay。
 - Market 展示 Canonical 历史、允许范围内的 Redis Live observation、server-side Alert Scope 和
-  persistent Event；Execution Review 只记录人工事实。
+  persistent Event。
 
-已退役 Dashboard、数据中心、策略中心、旧信号/Review Center、N/raw JDJ Web Overlay 不得恢复。
+已退役 Dashboard、数据中心、策略中心、旧信号/Review Center、RQAlpha、Execution Review、N/raw JDJ Web Overlay 不得恢复。
 
 ## 实现边界
 

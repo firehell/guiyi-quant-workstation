@@ -62,10 +62,6 @@ secrets/
 *.key
 *.pem
 
-# backtest outputs
-backtests/results/
-backtests/reports/
-
 # IDE
 .idea/
 .vscode/*

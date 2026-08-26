@@ -48,7 +48,7 @@ V2 目标：
 
 - SuBing intraday Factor、Signal、Calibration、FormalPolicy、Lifecycle；
 - SuBing Historical replay/overlay；
-- SuBing Alert Rule、product Scope、Event identity、通知与 Execution Review；
+- SuBing Alert Rule、product Scope、Event identity 与通知；
 - HTDY、N、JDJ 或 Candidate/OOS 语义；
 - Canonical、八表 Catalog、MainContractMap schema 或数据内容；
 - Market Radar 公式；
@@ -395,4 +395,4 @@ V2 完成的定义：
 3. V1 artifact 不变，V2 identity/namespace 独立且 fail-closed；
 4. current source-day、current contract 与完整 map/coverage 仍严格验证；
 5. 真实只读 active60 smoke 能解释所有剩余 unavailable；
-6. 不改变 SuBing intraday、Alert、Execution Review、其他研究产品或 Runtime 授权。
+6. 不改变 SuBing intraday、Alert、其他研究产品或 Runtime 授权。

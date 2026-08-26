@@ -43,7 +43,7 @@ RQData、Canonical、DB、Redis、Scope、Runtime、通知或发布操作。
 
 - 真实 RQData 下载、正式 Canonical 或生产数据库写入/删除；
 - Runtime/live 启用、切换、promotion 或受控 Redis acknowledgment；
-- Alert Scope/transport 变更、真实通知或真实 RQAlpha smoke；
+- Alert Scope/transport 变更或真实通知；
 - main/tag/release、Git 历史重写、force update 或 GitHub rules 修改。
 
 执行边界与持续授权只看 `AGENTS.md`；当前 release、Runtime、Scope、evidence 和
@@ -55,7 +55,6 @@ pending Gate 只看 `STATUS.md`。本页不复制业务合同。
 - 当前状态：`STATUS.md`
 - 产品与长期决策：`PROJECT_SOURCE.md`、`DECISIONS.md`
 - 架构与数据：`docs/ARCHITECTURE.md`、`docs/DATA_CENTER.md`
-- Execution Review：`docs/EXECUTION_REVIEW.md`
 - active OpenSpec：`openspec/specs/`
 - 验证命令：`TESTING.md`
 - 本机部署导航：`deploy/README.md`

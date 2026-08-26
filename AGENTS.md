@@ -5,19 +5,17 @@
 ## 项目边界
 
 - 做（长期）：数据治理、K 线、策略研究、复盘、信号提醒与人工观察；未来可按新任务重建历史回测。
-- 当前可执行面：Web 为 Market、独立 Execution Review 与本机限定的 RQAlpha 研究工作台；Market 主图仅 `none | subing | jdj_strategy | htdy`，SuBing 是一个产品的 Daily Context / Current Signal State / Formal Event 投影。主 API/CLI 为 market / execution-review / data CLI / runtime，并包含独立 Alert Application Domain。RQAlpha 工作台使用未挂载到主 API 的 loopback local app，当前未加载、未 release、未进入 Runtime。Market Runtime V1 的仓库模板默认关闭；本地工作站已按明确请求启用由 `operational_products.txt` 界定范围的 Runtime。Alert Runtime 模板默认关闭，不能从 Market Runtime 授权推导启用。旧 signal/review/strategy Web·HTTP·worker 与 data_center HTTP 已退役；Execution Review 不是旧 Review Center 的恢复。
+- 当前可执行面：Web 只保留 Market；Market 主图仅 `none | subing | jdj_strategy | htdy`，SuBing 是一个产品的 Daily Context / Current Signal State / Formal Event 投影。主 API/CLI 为 market / alert / data CLI / runtime。RQAlpha 与 Execution Review 的 Web、HTTP、CLI/Runtime seam 和 active domain 均已退役；历史 migration 只为 schema lineage 保留。Market Runtime V1 的仓库模板默认关闭；本地工作站已按明确请求启用由 `operational_products.txt` 界定范围的 Runtime。Alert Runtime 模板默认关闭，不能从 Market Runtime 授权推导启用。
 - 不做：自动交易、实盘下单、SaaS、多用户权限、手机 App、无人值守交易。
 - 信号、通知和 Web 始终是研究观察，不是交易指令。
 
 技术栈固定为 Vue 3/Vite/TypeScript/Naive UI、FastAPI/PostgreSQL/Redis 与
 RQData → Canonical Parquet → 八表 Catalog → MarketDataService；`quant-core` 仅保留
 Indicator Kernel（`guiyi_quant/indicators/`），旧 vn.py-compatible 策略研究包已退役（仅 Git
-history 可追溯）。当前与策略回放/回测相关的研究面包括当前 active universe 中单产品的
-`actual_dominant + 1m` Historical 日进斗金参考策略回放 HTTP，
-以及使用独立文件系统 artifact 的外部 RQAlpha 研究工作台；两者都不是基于
-Canonical/MarketDataService 的正式回测引擎、通用策略适配层、Candidate/OOS 体系或回测
-worker/queue/CLI。Alert 的两张表与 Execution
-Review 的四张表都是独立 Application Domain，不属于 Market Catalog，不改变八表合同。
+history 可追溯）。当前唯一策略回放相关产品面是 active universe 中单产品的
+`actual_dominant + 1m` Historical 日进斗金参考策略回放 HTTP；它不是正式回测引擎、通用策略适配层、
+Candidate/OOS 体系或回测 worker/queue/CLI。Alert 两张表是独立 Application Domain，不属于 Market
+Catalog，不改变八表合同。
 
 ## 个人量化架构原则
 
@@ -110,19 +108,15 @@ acknowledgment 并重新进入 `failed`。状态只允许固定公开失败分�
 5. historical canonical 与 live observation 分离。RQData 先进入 staging，完成 schema/session/duplicate/OHLCV/coverage、identity、row-count 与物理可读性校验后才能发布；月分区以同文件系统临时文件原子替换 `part.parquet`，失败时保留最后有效 canonical。live 不得直接提升为正式历史 active。
 6. 映射、分区、coverage 或物理完整性异常必须显式失败，不得静默填充、缩短、替换或跨频回退；不得为此建立第二套缺口状态表。
 7. 策略研究与未来重建的回测禁止未来函数、泄漏和未记录重绘；所有交易相关价格、成本、仓位、资金、盈亏和费用使用 `Decimal`。HTDY original 观察边界见 `docs/INDICATOR_KERNEL.md`（盘中 realtime 应用路径与 Signal/Review 合同已退役，仅 Git history 可追溯）。
-8. 当前只有两条相互隔离的策略回放/回测相关 research-only 路径。当前 active universe 中单产品的
+8. 当前唯一策略回放相关 research-only 路径是 active universe 中单产品的
    `actual_dominant + 1m` 日进斗金参考策略基于
    Canonical/MarketDataService 做确定性 Historical replay，只输出 reference-only action 并只读展示
-   reference fill，不进入 DB、Redis、Alert、Execution Review、Runtime 或订单路径。RQAlpha 工作台是
-   local-only 外部工具：固定注册策略通过独立 loopback app 读取外部 Bundle，结果只写独立文件系统
-   artifact，不进入 Canonical、MarketDataService、DB、Redis、Alert、Execution Review、Runtime 或
-   Candidate/OOS。二者都不是旧 backtest/Signal/Review/Strategy Web·HTTP·worker·queue·DB 体系的恢复，
-   也不是正式回测引擎或通用策略适配层。未来正式验证回测仍必须作为新任务基于
+   reference fill，不进入 DB、Redis、Alert、Runtime 或订单路径。它不是旧
+   backtest/Signal/Review/Strategy Web·HTTP·worker·queue·DB 体系的恢复，也不是正式回测引擎或通用
+   策略适配层。未来正式验证回测必须作为新任务基于
    Canonical/MarketDataService 定义策略、参数、数据、模拟订单、trade、equity 与 lineage 的可复算合同。
-   RQAlpha 工作台精确行为只看 `openspec/specs/rqalpha-research-backtest-workbench/spec.md`；Execution
-   Review 业务语义只看 `docs/EXECUTION_REVIEW.md`。
 9. live、Runtime promotion/switch、真实通知与微信 autosend 默认关闭；配置缺失、异常、过期或不一致时保持关闭。Market Runtime V1 的 Redis Live Overlay 与盘后 runner 只读取同一个 `operational_products.txt`，且不新增生产表。Alert V2 的 HTDY 保持 current-event cutoff：日内 `1m/5m/15m/30m/60m` 只消费同周期 completed Live Bar，D1/W1 只由 `market:state(reason=canonical_updated)` 读取正式 Canonical；SuBing 只复用已有 Factor/accepted Calibration/FormalPolicy/`SubingReadService` resolver，不复制公式或 same-boundary 规则。SuBing 仅在 incoming Bar 与 current snapshot 的 `bar_end + trading_day` 同一时继续，stale 必须 fail-closed；final Session Bar 只在共享 Live arrival grace 内可见，5m 在同一 15m boundary 按 TradingSession bucket 延后。current trading day 只通过 `MarketPhaseResolver + operational_products.txt` 唯一解析，不可用时 fail-closed。repair、replay、backfill、migration 与 EOD recalculation 不补评或补发历史通知。
-10. `auto_order=false` 适用于所有研究观察与 Runtime 模式。RQAlpha 内部 Order/Trade 只是 simulation-only 回测 artifact，不得连接账户或进入归一量化订单路径；任何创建或提交真实订单的流程都必须拒绝，本项目不实现自动交易。
+10. `auto_order=false` 适用于所有研究观察与 Runtime 模式；任何创建或提交真实订单的流程都必须拒绝，本项目不实现自动交易。
 11. 数据或指标语义变化时，同一变更更新相应 deep canonical；普通 bug fix、UI 调整和测试增加不自动改写项目状态。
 
 ## Data Foundation 稳定合同
@@ -133,7 +127,7 @@ DFD-01～DFD-07 与 active 60 品种闭环已经完成；当前长期行为规�
 
 ## 文档与交付
 
-- 事实变化时更新对应 canonical：阶段更新 `STATUS.md`；长期边界更新 `PROJECT_SOURCE.md`；长期决策更新 `DECISIONS.md`；命令更新 README/`TESTING.md`；Execution Review 业务语义更新 `docs/EXECUTION_REVIEW.md`，其他业务语义更新对应 deep canonical。
+- 事实变化时更新对应 canonical：阶段更新 `STATUS.md`；长期边界更新 `PROJECT_SOURCE.md`；长期决策更新 `DECISIONS.md`；命令更新 README/`TESTING.md`；业务语义更新对应 deep canonical。
 - 临时分析和会话 Plan 不入仓库。例外仅限用户明确批准、绑定具体仓库 Spec 的正式 design / implementation plan；这类审阅用合同可保存在 `docs/superpowers/specs/` 与 `docs/superpowers/plans/`，但不构成 active task governance、通用 workflow 或任何外部操作授权，当前状态仍只看 `STATUS.md`。已完成执行事实可以保留其历史 PR/hash/receipt 等描述，但这些描述不能成为未来执行条件。
 - 交付说明变更范围、实际验证命令与结果、剩余风险、未执行的受控外部操作和最小下一步；未运行的验证明确标记。
 
@@ -141,6 +135,6 @@ DFD-01～DFD-07 与 active 60 品种闭环已经完成；当前长期行为规�
 
 1. `AGENTS.md`
 2. `STATUS.md`
-3. 与任务相关的 deep canonical 或 OpenSpec 主 spec；Execution Review 固定读取 `docs/EXECUTION_REVIEW.md`
+3. 与任务相关的 deep canonical 或 OpenSpec 主 spec
 
 统一业务 CLI 入口为 `uv run --project services/quant-api guiyi`。`data audit`、`runtime status` 等只读命令不授权后续写入；任何 dry-run 也不授权真实执行。`main` 仍用于 canonical/release；开发期可临时从 `develop` 运行本地服务，最终 Runtime 验收仍使用隔离、精确提交的 worktree。二者都不是普通 `develop` 编辑与本地测试的前置流程。

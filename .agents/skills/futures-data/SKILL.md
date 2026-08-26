@@ -14,8 +14,7 @@ RQData -> staging + hard validation -> Canonical Parquet
        -> 八表 Catalog + MainContractMap -> MarketDataService
 ```
 
-PostgreSQL 只保存 Catalog、lineage 与应用元数据，不保存全量 K 线。Alert 两表和 Execution
-Review 四表是独立 Application Domain，不属于八表 Catalog。
+PostgreSQL 只保存 Catalog、lineage 与应用元数据，不保存全量 K 线。Alert 两表是独立 Application Domain，不属于八表 Catalog；历史 `trade_*` migration 不构成 active schema。
 
 先读 `STATUS.md`、`docs/DATA_CENTER.md` 和任务相关的 OpenSpec；Catalog 模型任务优先读取
 `openspec/specs/data-foundation-metadata/spec.md`，Canonical 发布任务优先读取

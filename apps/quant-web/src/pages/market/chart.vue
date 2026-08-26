@@ -5,7 +5,6 @@ import { NAlert, NButton, NDrawer, NDrawerContent, NSpin, NTag, useMessage } fro
 import ProductCheckSidebar from '@/components/market/ProductCheckSidebar.vue'
 import ProductWorkspaceToolbar from '@/components/market/ProductWorkspaceToolbar.vue'
 import KlineChart from '@/components/kline/KlineChart.vue'
-import { getEventStates } from '@/api/executionReview'
 import {
   getMarketDominants,
   getJdjStrategyHistoricalActions,
@@ -38,7 +37,6 @@ import type {
   ResearchOverlayId,
   SeriesKind,
 } from '@/types/market'
-import type { EventState } from '@/types/executionReview'
 import { MARKET_FREQUENCIES } from '@/types/market'
 import { lifecycleSnapshotToMarkers } from '@/utils/subingLifecycleMarkers'
 import { ALERT_RULE_CODES } from '@/utils/alertRules'
@@ -83,7 +81,6 @@ const showNStructureBands = ref(initialMainChartPreferences.showNStructureBands)
 const research = ref<ProductResearchResponse | null>(null)
 const researchLoading = ref(false)
 const researchError = ref(false)
-const currentEventStates = ref<Record<number, EventState>>({})
 const symbol = ref(dailyWatchEntry?.symbol ?? resolveInitialSymbol())
 const contract = ref(String(route.query.contract || '').toUpperCase())
 const seriesKind = ref<SeriesKind>(dailyWatchEntry?.seriesKind ?? resolveInitialSeriesKind())
@@ -177,7 +174,6 @@ const {
 } = useProductCurrentAlertEvents({ symbol, fetchCurrentEvents: getProductCurrentAlertEvents })
 let metadataReady = false
 let researchGeneration = 0
-let currentEventStateGeneration = 0
 let canonicalReplacementGeneration = 0
 let pendingHistoricalOverlayRefresh = false
 const {
@@ -271,7 +267,6 @@ const productCheckSidebarProps = computed(() => ({
   currentEventsLoading: currentEventsLoading.value,
   currentEventsStatus: currentEventsStatus.value,
   currentEvents: currentEvents.value,
-  currentEventStates: currentEventStates.value,
   htdyObservation: latestHtdyObservation.value,
 }))
 
@@ -360,10 +355,6 @@ watch([seriesKind, contract], () => {
 
 watch([symbol, seriesKind, frequency, researchSidebarOpen], persistWorkspacePreferences, { deep: true })
 
-watch([currentEventsStatus, currentEvents], () => {
-  void refreshCurrentEventStates()
-}, { deep: true })
-
 watch(frequency, (period) => {
   const current = loadMainChartPreferences()
   saveMainChartPreferences({ ...current, period })
@@ -405,7 +396,6 @@ onUnmounted(() => {
   disposeSubingObservation()
   disposeProductAlertScope()
   disposeProductCurrentAlertEvents()
-  currentEventStateGeneration += 1
   dispose()
   disposePersistentAlertMarkers()
   disposeHistoricalResearchMarkers()
@@ -522,17 +512,11 @@ function markResearchUnavailable(): void {
   researchLoading.value = false
 }
 
-function invalidateCurrentEventStates(): void {
-  currentEventStateGeneration += 1
-  currentEventStates.value = {}
-}
-
 function invalidateSymbolFacts(): void {
   invalidateResearch()
   resetSubingSnapshot()
   invalidateAlertIdentity()
   invalidateCurrentEventsIdentity()
-  invalidateCurrentEventStates()
 }
 
 function rejectSymbolFacts(): void {
@@ -540,7 +524,6 @@ function rejectSymbolFacts(): void {
   markSubingUnavailable()
   markAlertsUnavailable()
   markCurrentEventsUnavailable()
-  invalidateCurrentEventStates()
 }
 
 function refreshSymbolFacts(): readonly Promise<void>[] {
@@ -559,21 +542,6 @@ function refreshSymbolFacts(): readonly Promise<void>[] {
     refreshAlerts(),
     refreshCurrentEvents(),
   ]
-}
-
-async function refreshCurrentEventStates() {
-  const generation = ++currentEventStateGeneration
-  if (currentEventsStatus.value !== 'ready' || currentEvents.value.length === 0) {
-    currentEventStates.value = {}
-    return
-  }
-  try {
-    const response = await getEventStates(currentEvents.value.map((item) => item.id))
-    if (generation !== currentEventStateGeneration) return
-    currentEventStates.value = Object.fromEntries(response.items.map((item) => [item.event_id, item]))
-  } catch {
-    if (generation === currentEventStateGeneration) currentEventStates.value = {}
-  }
 }
 
 async function loadEarlierBars() {
@@ -625,19 +593,6 @@ function openResearchDrawer() {
     return
   }
   researchDrawerOpen.value = true
-}
-
-function openFormalEvent(event: import('@/types/market').AlertEvent, state: EventState | null) {
-  if (!state) return
-  const useEpisode = state.state === 'open' || state.state === 'pending_review'
-  void router.push({
-    name: 'trade-records',
-    query: {
-      state: state.state,
-      event_id: useEpisode ? undefined : String(event.id),
-      episode_id: useEpisode && state.episode_id ? String(state.episode_id) : undefined,
-    },
-  })
 }
 
 function toggleSubingAlert(ruleCode: string, enabled: boolean) {
@@ -781,7 +736,6 @@ function normalizeSymbol(value: unknown): string | null {
               v-bind="productCheckSidebarProps"
               @toggle-subing-alert="toggleSubingAlert"
               @toggle-htdy-alert="toggleHtdyAlert"
-              @open-formal-event="openFormalEvent"
             />
           </div>
         </div>
@@ -794,7 +748,6 @@ function normalizeSymbol(value: unknown): string | null {
           v-bind="productCheckSidebarProps"
           @toggle-subing-alert="toggleSubingAlert"
           @toggle-htdy-alert="toggleHtdyAlert"
-          @open-formal-event="openFormalEvent"
         />
       </NDrawerContent>
     </NDrawer>

@@ -132,12 +132,6 @@ async function mockMarketHomepage(
   runtimeResponse = runtimeHealth(),
 ) {
   await page.route('**/api/alerts/formal-signals/current', (route) => route.fulfill({ json: currentFormalResponse }))
-  await page.route('**/api/execution-review/event-states**', (route) => {
-    const ids = new URL(route.request().url()).searchParams.getAll('event_ids').map(Number)
-    return route.fulfill({ json: { items: ids.map((id) => ({
-      event_id: id, state: 'pending_decision', decision_id: null, episode_id: null,
-    })) } })
-  })
   await page.route('**/api/runtime/health', (route) => route.fulfill({ json: runtimeResponse }))
   await page.route('**/api/v1/market/research/radar', (route) => route.fulfill({ json: radarResponse }))
   await page.route('**/api/v1/market/research/subing-daily-watch/current', (route) => route.fulfill({ json: dailyWatchResponse }))
@@ -274,7 +268,6 @@ test('SuBing workbench keeps Formal and Daily Watch failures independent', async
   await page.route('**/api/v1/market/research/subing-daily-watch/current', (route) => (
     dailyFails ? route.fulfill({ status: 503 }) : route.fulfill({ json: dailyResponse })
   ))
-  await page.route('**/api/execution-review/event-states**', (route) => route.fulfill({ json: { items: [] } }))
   await page.goto('/market')
 
   const workbench = page.getByTestId('subing-workbench')
@@ -305,32 +298,7 @@ test('formal signal cards do not advertise a container-wide click target', async
   const card = page.getByTestId('market-formal-signals').locator('.market-formal-signals__card')
   await card.hover()
   await expect(card).toHaveCSS('transform', 'none')
-  await expect(card.getByRole('button', { name: '记录执行' })).toBeVisible()
-})
-
-test('same Formal event-id set keeps its Execution Review action while refreshed states are pending', async ({ page }) => {
-  let lookupCount = 0
-  let releaseReplacementLookup
-  const replacementLookup = new Promise((resolve) => { releaseReplacementLookup = resolve })
-  await page.route('**/api/alerts/formal-signals/current', (route) => route.fulfill({
-    json: { status: 'ready', trading_day: '2026-08-15', items: [formalSignal()] },
-  }))
-  await page.route('**/api/execution-review/event-states**', async (route) => {
-    lookupCount += 1
-    if (lookupCount === 2) await replacementLookup
-    return route.fulfill({ json: { items: [{ event_id: 17, state: 'pending_decision', decision_id: null, episode_id: null }] } })
-  })
-  await page.route('**/api/runtime/health', (route) => route.fulfill({ json: runtimeHealth() }))
-  await page.route('**/api/v1/market/research/radar', (route) => route.fulfill({ json: radar() }))
-  await page.route('**/api/v1/market/research/subing-daily-watch/current', (route) => route.fulfill({ json: dailyWatch() }))
-  await page.goto('/market')
-
-  const formal = page.getByTestId('market-formal-signals')
-  await expect(formal.getByRole('button', { name: '记录执行' })).toBeVisible()
-  await page.getByRole('button', { name: '全部刷新' }).click()
-  await expect.poll(() => lookupCount).toBe(2)
-  await expect(formal.getByRole('button', { name: '记录执行' })).toBeVisible()
-  releaseReplacementLookup()
+  await expect(card.getByRole('button', { name: '查看 →' })).toBeVisible()
 })
 
 test('Market homepage keeps formal decisions ahead of Radar at a 980-like viewport', async ({ page }) => {
@@ -713,9 +681,6 @@ async function mockWorkspace(page, researchResponse, options = {}) {
     }
     return route.abort()
   })
-  await page.route('**/api/execution-review/event-states**', (route) => route.fulfill({
-    json: { items: options.eventStates || [] },
-  }))
 }
 
 async function mockAlertMarkerSurface(page, currentItems = [], options = {}) {
@@ -895,7 +860,6 @@ async function mockProductIdentityWorkspace(page) {
     if (url.pathname.endsWith('/events')) return route.fulfill({ json: { items: [] } })
     return route.abort()
   })
-  await page.route('**/api/execution-review/event-states**', (route) => route.fulfill({ json: { items: [] } }))
 
   return { calls, gates }
 }
@@ -1501,7 +1465,7 @@ test('SuBing keeps the full Market display history and renders the requested pri
   await expect(page.locator('body')).not.toContainText('ZERO_BAND')
 })
 
-test('current AlertEvent remains a formal event when no Execution Review state exists', async ({ page }) => {
+test('current AlertEvent remains an immutable formal event', async ({ page }) => {
   const currentEvent = {
     id: 202,
     rule_code: 'subing_entry_signal_v1',
@@ -1526,7 +1490,7 @@ test('current AlertEvent remains a formal event when no Execution Review state e
   await expect(formal).not.toContainText('研究确认')
 })
 
-test('current SuBing Formal Event action remains available in the single product panel', async ({ page }) => {
+test('current SuBing Formal Event has no retired workflow action', async ({ page }) => {
   const currentEvent = {
     id: 203,
     rule_code: 'subing_entry_signal_v1',
@@ -1540,17 +1504,14 @@ test('current SuBing Formal Event action remains available in the single product
     detected_at: '2026-01-12T02:25:01Z',
     notification_attempted_at: null,
   }
-  await mockWorkspace(page, { json: research() }, {
-    eventStates: [{ event_id: 203, state: 'pending_decision', decision_id: null, episode_id: null }],
-  })
+  await mockWorkspace(page, { json: research() })
   await mockAlertMarkerSurface(page, [currentEvent])
   await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=5m')
 
   const formal = page.getByTestId('subing-formal-event')
-  const action = formal.getByRole('button', { name: '记录执行' })
-  await expect(action).toBeVisible()
-  await action.click()
-  await expect(page).toHaveURL(/\/trade-records\?state=pending_decision&event_id=203/)
+  await expect(formal).toContainText('苏冰 · 卖出信号')
+  await expect(formal).toContainText('今日正式提醒记录')
+  await expect(formal.getByRole('button')).toHaveCount(0)
 })
 
 test('single SuBing panel selects one immutable Event and keeps the remaining backend order', async ({ page }) => {
@@ -1568,7 +1529,6 @@ test('single SuBing panel selects one immutable Event and keeps the remaining ba
   snapshot.companion.snapshot.bar_end = '2026-01-12T02:15:00Z'
   await mockWorkspace(page, { json: research() }, {
     subingResponse: snapshot,
-    eventStates: [{ event_id: 301, state: 'pending_decision', decision_id: null, episode_id: null }],
   })
   await mockAlertMarkerSurface(page, [selected, htdy, olderBuy, oldestSell], {
     rules: [
@@ -1600,8 +1560,7 @@ test('single SuBing panel selects one immutable Event and keeps the remaining ba
   await expect(panel.locator('.subing-panel__facts > div').filter({ hasText: 'Primary 确认' })).toContainText('01/12 10:30')
   await expect(panel.locator('.subing-panel__facts > div').filter({ hasText: 'Companion 确认' })).toContainText('01/12 10:15')
 
-  await formal.getByRole('button', { name: '记录执行' }).click()
-  await expect(page).toHaveURL(/\/trade-records\?state=pending_decision&event_id=301/)
+  await expect(formal.getByRole('button')).toHaveCount(0)
 })
 
 test('SuBing panel keeps Event and Alert loading independent from a ready snapshot', async ({ page }) => {
