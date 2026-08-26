@@ -5,12 +5,18 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 import pytest
+from guiyi_quant.indicators import ema_series
 
-from app.market_data.domain import BarFrequency, CanonicalBar
+from app.market_data.domain import (
+    BarFrequency,
+    CanonicalBar,
+    ResolvedContractSegment,
+)
 from app.market_data.subing_ema_trend import (
     SubingEmaTrendStatus,
     calculate_subing_ema_trend,
     calculate_subing_ema_trend_series,
+    calculate_subing_ema_trend_stitched,
 )
 from app.market_data.subing_research import (
     PriceSide,
@@ -80,6 +86,201 @@ def _pre_refactor_golden_bars(
         )
         for index, close in enumerate(closes)
     )
+
+
+def _stitched_bars() -> tuple[CanonicalBar, ...]:
+    start_day = date(2026, 7, 23)
+    closes = tuple(
+        [Decimal("3100") + Decimal(index) for index in range(20)]
+        + [Decimal("3500") + Decimal(index) for index in range(10)]
+    )
+    return tuple(
+        CanonicalBar(
+            bar_end=datetime.combine(
+                start_day + timedelta(days=index),
+                datetime.min.time(),
+                UTC,
+            )
+            + timedelta(hours=15),
+            trading_day=start_day + timedelta(days=index),
+            open=close,
+            high=close + Decimal("1"),
+            low=close - Decimal("1"),
+            close=close,
+            volume=Decimal("100") + Decimal(index),
+            turnover=None,
+            open_interest=None,
+        )
+        for index, close in enumerate(closes)
+    )
+
+
+_STITCHED_SEGMENTS = (
+    ResolvedContractSegment("RB2605", date(2026, 7, 23), date(2026, 8, 11)),
+    ResolvedContractSegment("RB2610", date(2026, 8, 12), date(2026, 8, 31)),
+)
+
+
+def _calculate_stitched(
+    bars: tuple[CanonicalBar, ...],
+    *,
+    current_contract: str = "RB2610",
+    current_segment_start_trading_day: date = date(2026, 8, 12),
+    segments: tuple[ResolvedContractSegment, ...] = _STITCHED_SEGMENTS,
+):
+    return calculate_subing_ema_trend_stitched(
+        bars,
+        timeframe=BarFrequency.D1,
+        current_contract=current_contract,
+        current_segment_start_trading_day=current_segment_start_trading_day,
+        resolved_contract_segments=segments,
+    )
+
+
+def _regression_slope(values: tuple[Decimal, ...]) -> Decimal:
+    x_mean = Decimal(len(values) - 1) / Decimal(2)
+    y_mean = sum(values, Decimal(0)) / Decimal(len(values))
+    return sum(
+        (
+            (Decimal(index) - x_mean) * (value - y_mean)
+            for index, value in enumerate(values)
+        ),
+        Decimal(0),
+    ) / sum(
+        ((Decimal(index) - x_mean) ** 2 for index in range(len(values))),
+        Decimal(0),
+    )
+
+
+def test_stitched_trend_uses_raw_cross_roll_closes_and_records_lineage() -> None:
+    """Catches smoothing/resetting the rollover or mislabeling warm-up lineage."""
+    bars = _stitched_bars()
+    raw_ema = ema_series(
+        [float(bar.close) for bar in bars],
+        21,
+        bar_ends=[bar.bar_end.isoformat() for bar in bars],
+        seed_policy="sma_window",
+        indicator_code="ema21",
+    )
+    ema_values = tuple(
+        Decimal(str(point.value))
+        for point in raw_ema.points[-10:]
+        if point.value is not None
+    )
+
+    result = _calculate_stitched(bars)
+
+    assert result.status is SubingEmaTrendStatus.READY
+    assert result.snapshot is not None
+    snapshot = result.snapshot
+    assert len(ema_values) == 10
+    assert snapshot.ema21 == ema_values[-1]
+    expected_slope_5 = _regression_slope(ema_values[-5:])
+    expected_slope_10 = _regression_slope(ema_values)
+    assert snapshot.slope_5_raw == expected_slope_5
+    assert snapshot.slope_10_raw == expected_slope_10
+    assert snapshot.slope_5_bps_per_bar == (
+        expected_slope_5
+        / (sum(ema_values[-5:], Decimal(0)) / Decimal(5))
+        * Decimal(10000)
+    )
+    assert snapshot.slope_10_bps_per_bar == (
+        expected_slope_10
+        / (sum(ema_values, Decimal(0)) / Decimal(10))
+        * Decimal(10000)
+    )
+    assert snapshot.contract == "RB2610"
+    assert snapshot.current_segment_start_trading_day == date(2026, 8, 12)
+    assert snapshot.warmup_start_trading_day == bars[0].trading_day
+    assert snapshot.warmup_bar_count == 30
+    assert snapshot.warmup_segment_count == 2
+    assert snapshot.history_mode == "rank1_stitched_raw"
+
+
+def test_stitched_trend_requires_all_thirty_raw_bars() -> None:
+    """Catches treating 29 EMA warm-up bars as ready."""
+    bars = _stitched_bars()
+
+    insufficient = _calculate_stitched(bars[:-1])
+    ready = _calculate_stitched(bars)
+
+    assert insufficient.status is SubingEmaTrendStatus.INSUFFICIENT_DATA
+    assert insufficient.snapshot is None
+    assert ready.status is SubingEmaTrendStatus.READY
+    assert ready.snapshot is not None
+
+
+def test_stitched_trend_rejects_empty_current_contract() -> None:
+    with pytest.raises(ValueError, match="current_contract must not be empty"):
+        _calculate_stitched(_stitched_bars(), current_contract="   ")
+
+
+def test_stitched_trend_rejects_non_increasing_bar_end() -> None:
+    bars = list(_stitched_bars())
+    bars[20] = replace(bars[20], bar_end=bars[19].bar_end)
+
+    with pytest.raises(ValueError, match="bar_end must be strictly increasing"):
+        _calculate_stitched(tuple(bars))
+
+
+@pytest.mark.parametrize(
+    "segments",
+    (
+        (
+            ResolvedContractSegment(
+                "RB2605", date(2026, 7, 23), date(2026, 8, 10)
+            ),
+            _STITCHED_SEGMENTS[1],
+        ),
+        (
+            ResolvedContractSegment(
+                "RB2605", date(2026, 7, 23), date(2026, 8, 12)
+            ),
+            _STITCHED_SEGMENTS[1],
+        ),
+    ),
+)
+def test_stitched_trend_requires_every_bar_covered_exactly_once(
+    segments: tuple[ResolvedContractSegment, ...],
+) -> None:
+    """Catches accepting a map gap or overlap inside the EMA input window."""
+    with pytest.raises(
+        ValueError,
+        match="bars must be covered exactly once by resolved_contract_segments",
+    ):
+        _calculate_stitched(_stitched_bars(), segments=segments)
+
+
+def test_stitched_trend_requires_current_segment_lineage_to_own_latest_bar() -> None:
+    segments = (
+        ResolvedContractSegment(
+            "RB2605", date(2026, 7, 23), date(2026, 8, 12)
+        ),
+        ResolvedContractSegment(
+            "RB2610", date(2026, 8, 13), date(2026, 8, 31)
+        ),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="current segment must contain latest trading day",
+    ):
+        _calculate_stitched(_stitched_bars(), segments=segments)
+
+
+def test_stitched_trend_requires_latest_owner_to_equal_current_contract() -> None:
+    segments = (
+        _STITCHED_SEGMENTS[0],
+        ResolvedContractSegment(
+            "RB2701", date(2026, 8, 12), date(2026, 8, 31)
+        ),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="latest segment owner must equal current_contract",
+    ):
+        _calculate_stitched(_stitched_bars(), segments=segments)
 
 
 def test_rising_ema_trend_is_ready_above_with_positive_slopes() -> None:
@@ -175,7 +376,7 @@ def test_non_increasing_bar_end_is_rejected() -> None:
         )
 
 
-def test_bar_before_segment_start_is_rejected() -> None:
+def test_segment_local_v1_rejects_bar_before_segment_start() -> None:
     """Catches trend leakage from a prior dominant-contract segment."""
     bars = _bars_from_closes([Decimal("100") for _ in range(40)])
 

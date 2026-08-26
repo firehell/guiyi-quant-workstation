@@ -8,11 +8,14 @@ import pytest
 from app.market_data.actual_dominant_research import (
     ActualDominantResearchSegmentLoader,
     ActualDominantResearchSegmentIdentityError,
+    ActualDominantStitchedResearchLoader,
 )
 from app.market_data.domain import (
+    ActualDominantRecentBarsQuery,
     ActualDominantTradingDayQuery,
     BarFrequency,
     CanonicalBar,
+    MarketSeriesPageResult,
     MarketSeriesResult,
     ResolvedContractSegment,
 )
@@ -24,6 +27,8 @@ _DAY_TWO = date(2026, 8, 4)
 _DAY_THREE = date(2026, 8, 5)
 _DAY_FOUR = date(2026, 8, 6)
 _FREQUENCIES = (BarFrequency.M5, BarFrequency.M15)
+_STITCHED_SOURCE_DAY = date(2026, 8, 21)
+_STITCHED_CURRENT_START = date(2026, 8, 12)
 
 
 class _WindowAwareMarketData:
@@ -60,6 +65,239 @@ class _WindowAwareMarketData:
             segment
             for segment in self._true_segments
             if segment.start_trading_day <= trading_day <= segment.end_trading_day
+        )
+
+
+class _StitchedMarketData:
+    def __init__(
+        self,
+        *,
+        results: dict[BarFrequency, MarketSeriesPageResult],
+        summary: DominantContractSegmentSummary,
+    ) -> None:
+        self._results = results
+        self._summary = summary
+        self.queries: list[ActualDominantRecentBarsQuery] = []
+        self.segment_requests: list[tuple[str, date]] = []
+
+    def query_actual_dominant_recent_bars(
+        self,
+        request: ActualDominantRecentBarsQuery,
+    ) -> MarketSeriesPageResult:
+        self.queries.append(request)
+        return self._results[request.frequency]
+
+    def dominant_segment_for_day(
+        self,
+        symbol: str,
+        trading_day: date,
+    ) -> DominantContractSegmentSummary:
+        self.segment_requests.append((symbol, trading_day))
+        return self._summary
+
+
+def test_stitched_loader_accepts_different_histories_and_preserves_pages() -> None:
+    previous = ResolvedContractSegment(
+        "RB2605",
+        date(2026, 7, 23),
+        date(2026, 8, 11),
+    )
+    current = ResolvedContractSegment(
+        "RB2610",
+        _STITCHED_CURRENT_START,
+        date(2026, 8, 31),
+    )
+    daily = _page_result(
+        _bars(
+            BarFrequency.D1,
+            tuple(
+                date(2026, 7, 23) + timedelta(days=index)
+                for index in range(30)
+            ),
+        ),
+        (previous, current),
+    )
+    hourly = _page_result(
+        _bars(
+            BarFrequency.H1,
+            tuple(
+                _STITCHED_CURRENT_START + timedelta(days=index // 3)
+                for index in range(30)
+            ),
+        ),
+        (current,),
+    )
+    market_data = _StitchedMarketData(
+        results={BarFrequency.D1: daily, BarFrequency.H1: hourly},
+        summary=DominantContractSegmentSummary(
+            "rb",
+            "RB2610",
+            _STITCHED_CURRENT_START,
+            date(2026, 8, 31),
+        ),
+    )
+
+    loaded = ActualDominantStitchedResearchLoader(market_data).load(
+        symbol="rb",
+        frequencies=(BarFrequency.D1, BarFrequency.H1),
+        through=_STITCHED_SOURCE_DAY,
+        limit=30,
+    )
+
+    assert loaded.results[BarFrequency.D1] is daily
+    assert loaded.results[BarFrequency.H1] is hourly
+    assert loaded.current_segment == current
+    assert market_data.queries == [
+        ActualDominantRecentBarsQuery(
+            "rb", BarFrequency.D1, _STITCHED_SOURCE_DAY, 30
+        ),
+        ActualDominantRecentBarsQuery(
+            "rb", BarFrequency.H1, _STITCHED_SOURCE_DAY, 30
+        ),
+    ]
+    assert market_data.segment_requests == [("rb", _STITCHED_SOURCE_DAY)]
+
+
+def test_stitched_loader_rejects_empty_frequencies_before_market_read() -> None:
+    market_data = _StitchedMarketData(
+        results={},
+        summary=DominantContractSegmentSummary(
+            "rb",
+            "RB2610",
+            _STITCHED_CURRENT_START,
+            date(2026, 8, 31),
+        ),
+    )
+
+    with pytest.raises(
+        ActualDominantResearchSegmentIdentityError,
+        match="rank1 stitched identity is missing or inconsistent",
+    ):
+        ActualDominantStitchedResearchLoader(market_data).load(
+            symbol="rb",
+            frequencies=(),
+            through=_STITCHED_SOURCE_DAY,
+            limit=30,
+        )
+
+    assert market_data.queries == []
+    assert market_data.segment_requests == []
+
+
+@pytest.mark.parametrize("frequency", (BarFrequency.D1, BarFrequency.H1))
+def test_stitched_loader_requires_each_final_bar_on_source_day(
+    frequency: BarFrequency,
+) -> None:
+    current = ResolvedContractSegment(
+        "RB2610",
+        _STITCHED_CURRENT_START,
+        date(2026, 8, 31),
+    )
+    results = {
+        item: _page_result(
+            _bars(item, (_STITCHED_SOURCE_DAY,)),
+            (current,),
+        )
+        for item in (BarFrequency.D1, BarFrequency.H1)
+    }
+    results[frequency] = _page_result(
+        _bars(frequency, (_STITCHED_SOURCE_DAY - timedelta(days=1),)),
+        (current,),
+    )
+    market_data = _StitchedMarketData(
+        results=results,
+        summary=DominantContractSegmentSummary(
+            "rb",
+            "RB2610",
+            _STITCHED_CURRENT_START,
+            date(2026, 8, 31),
+        ),
+    )
+
+    with pytest.raises(
+        ActualDominantResearchSegmentIdentityError,
+        match="rank1 stitched identity is missing or inconsistent",
+    ):
+        ActualDominantStitchedResearchLoader(market_data).load(
+            symbol="rb",
+            frequencies=(BarFrequency.D1, BarFrequency.H1),
+            through=_STITCHED_SOURCE_DAY,
+        )
+
+
+def test_stitched_loader_requires_same_current_owner_across_frequencies() -> None:
+    daily_segment = ResolvedContractSegment(
+        "RB2610", _STITCHED_CURRENT_START, date(2026, 8, 31)
+    )
+    hourly_segment = ResolvedContractSegment(
+        "RB2605", date(2026, 7, 23), date(2026, 8, 31)
+    )
+    market_data = _StitchedMarketData(
+        results={
+            BarFrequency.D1: _page_result(
+                _bars(BarFrequency.D1, (_STITCHED_SOURCE_DAY,)),
+                (daily_segment,),
+            ),
+            BarFrequency.H1: _page_result(
+                _bars(BarFrequency.H1, (_STITCHED_SOURCE_DAY,)),
+                (hourly_segment,),
+            ),
+        },
+        summary=DominantContractSegmentSummary(
+            "rb",
+            "RB2610",
+            _STITCHED_CURRENT_START,
+            date(2026, 8, 31),
+        ),
+    )
+
+    with pytest.raises(
+        ActualDominantResearchSegmentIdentityError,
+        match="rank1 stitched identity is missing or inconsistent",
+    ):
+        ActualDominantStitchedResearchLoader(market_data).load(
+            symbol="rb",
+            frequencies=(BarFrequency.D1, BarFrequency.H1),
+            through=_STITCHED_SOURCE_DAY,
+        )
+
+
+@pytest.mark.parametrize(
+    "summary",
+    (
+        DominantContractSegmentSummary(
+            "rb", "RB2605", date(2026, 7, 23), date(2026, 8, 31)
+        ),
+        DominantContractSegmentSummary(
+            "rb", "RB2610", date(2026, 7, 23), date(2026, 8, 20)
+        ),
+    ),
+)
+def test_stitched_loader_requires_source_day_summary_identity(
+    summary: DominantContractSegmentSummary,
+) -> None:
+    current = ResolvedContractSegment(
+        "RB2610", _STITCHED_CURRENT_START, date(2026, 8, 31)
+    )
+    market_data = _StitchedMarketData(
+        results={
+            frequency: _page_result(
+                _bars(frequency, (_STITCHED_SOURCE_DAY,)),
+                (current,),
+            )
+            for frequency in (BarFrequency.D1, BarFrequency.H1)
+        },
+        summary=summary,
+    )
+
+    with pytest.raises(
+        ActualDominantResearchSegmentIdentityError,
+        match="rank1 stitched identity is missing or inconsistent",
+    ):
+        ActualDominantStitchedResearchLoader(market_data).load(
+            symbol="rb",
+            frequencies=(BarFrequency.D1, BarFrequency.H1),
+            through=_STITCHED_SOURCE_DAY,
         )
 
 
@@ -448,5 +686,19 @@ def _result(
         request_identity={},
         bars=bars,
         coverage=(bars[0].bar_end, bars[-1].bar_end),
+        resolved_contract_segments=segments,
+    )
+
+
+def _page_result(
+    bars: tuple[CanonicalBar, ...],
+    segments: tuple[ResolvedContractSegment, ...],
+) -> MarketSeriesPageResult:
+    return MarketSeriesPageResult(
+        request_identity={},
+        bars=bars,
+        canonical_coverage=(bars[0].bar_end, bars[-1].bar_end),
+        has_more_before=False,
+        next_before=None,
         resolved_contract_segments=segments,
     )
