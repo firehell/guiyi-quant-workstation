@@ -966,6 +966,20 @@ def test_future_stream_append_preserves_earlier_transition_ids() -> None:
         bars_15m=anchors,
         factors_15m=anchor_factors,
     )
+    for prefix, state in enumerate(states, start=1):
+        boundary = raw_bars[prefix - 1].bar_end
+        anchor_count = sum(bar.bar_end <= boundary for bar in anchors)
+        batch = _evaluate_raw(
+            raw_bars[:prefix],
+            factors_5m=raw_factors[:prefix],
+            bars_15m=anchors[:anchor_count],
+            factors_15m=anchor_factors[:anchor_count],
+        )
+        assert state.snapshots == batch.snapshots
+        assert state.transitions == batch.transitions
+        assert state.confirmed_pivots == batch.confirmed_pivots
+        assert state.completed_opportunities == batch.completed_opportunities
+
     prefix_ids = tuple(
         transition.transition_id for transition in states[-2].transitions
     )
@@ -973,3 +987,10 @@ def test_future_stream_append_preserves_earlier_transition_ids() -> None:
 
     assert full_ids[: len(prefix_ids)] == prefix_ids
     assert len(set(full_ids)) == len(full_ids)
+    assert tuple(
+        transition.reason_codes for transition in states[-1].transitions
+    ) == (
+        ("FORMAL_V1_MATCHED",),
+        ("CONFIRMED_TREND_CONTINUES",),
+        ("OPPOSITE_DIRECTION_CONTEXT_CONFIRMED",),
+    )

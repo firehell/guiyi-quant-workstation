@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import FrozenInstanceError
+from dataclasses import FrozenInstanceError, replace
 from datetime import timedelta
 from decimal import Decimal
 
@@ -10,11 +10,13 @@ from app.market_data.domain import BarFrequency, CanonicalBar
 from app.market_data import subing_lifecycle as lifecycle_module
 from app.market_data.subing_lifecycle import (
     ConfirmationSource,
+    LifecycleStage,
     evaluate_subing_lifecycle,
 )
 from app.market_data.subing_lifecycle_policy import load_subing_lifecycle_policy
 from app.market_data.subing_research import (
     MacdCross,
+    SubingDirection,
     SubingFactorResult,
 )
 from research.subing_lifecycle_fixtures import (
@@ -81,9 +83,13 @@ def _case(
     )
 
 
-@pytest.mark.parametrize("source", tuple(ConfirmationSource))
-def test_streaming_every_prefix_matches_batch_trace(source: ConfirmationSource) -> None:
-    bars_5m, factors_5m, bars_15m, factors_15m = _case(source)
+def _assert_every_prefix_parity(
+    *,
+    bars_5m: tuple[CanonicalBar, ...],
+    factors_5m: tuple[SubingFactorResult, ...],
+    bars_15m: tuple[CanonicalBar, ...],
+    factors_15m: tuple[SubingFactorResult, ...],
+):
     states = _stream_lifecycle_prefixes(
         bars_5m,
         factors_5m=factors_5m,
@@ -114,7 +120,113 @@ def test_streaming_every_prefix_matches_batch_trace(source: ConfirmationSource) 
         assert state.confirmed_pivots == batch.confirmed_pivots
         assert state.completed_opportunities == batch.completed_opportunities
 
+    return states
+
+
+def _protective_pivot_case(
+    direction: SubingDirection,
+) -> tuple[
+    tuple[CanonicalBar, ...],
+    tuple[SubingFactorResult, ...],
+    tuple[CanonicalBar, ...],
+    tuple[SubingFactorResult, ...],
+]:
+    long = direction is SubingDirection.LONG
+    bars = (
+        _bar(5, close="100", high="101", low="99"),
+        _bar(10, close="100", high="102", low="98"),
+        _bar(
+            15,
+            close="95" if long else "105",
+            high="103" if long else "110",
+            low="90" if long else "97",
+        ),
+        _bar(
+            20,
+            close="100",
+            high="104",
+            low="97" if long else "96",
+        ),
+        _bar(
+            25,
+            close="102" if long else "99",
+            high="105" if long else "103",
+            low="98" if long else "95",
+        ),
+        _bar(30, close="100" if long else "98", high="101", low="97"),
+    )
+    initial_direction = SubingDirection.SHORT if long else SubingDirection.LONG
+    factors = tuple(
+        _factor(
+            bar,
+            BarFrequency.M5,
+            direction=(direction if index == len(bars) - 1 else initial_direction),
+            cross=(
+                MacdCross.GOLDEN
+                if long and index == len(bars) - 1
+                else MacdCross.DEAD
+                if not long and index == len(bars) - 1
+                else MacdCross.NONE
+            ),
+            volume_ratio=(
+                Decimal("3") if index == len(bars) - 1 else Decimal("1")
+            ),
+        )
+        for index, bar in enumerate(bars)
+    )
+    anchors = (_bar(0), _bar(15), _bar(30))
+    anchor_factors = tuple(
+        _factor(bar, BarFrequency.M15, direction=direction) for bar in anchors
+    )
+    raw_bars, raw_factors = _with_lifecycle_reset(bars, factors)
+    return raw_bars, raw_factors, anchors, anchor_factors
+
+
+@pytest.mark.parametrize("source", tuple(ConfirmationSource))
+def test_streaming_every_prefix_matches_batch_trace(source: ConfirmationSource) -> None:
+    bars_5m, factors_5m, bars_15m, factors_15m = _case(source)
+    states = _assert_every_prefix_parity(
+        bars_5m=bars_5m,
+        factors_5m=factors_5m,
+        bars_15m=bars_15m,
+        factors_15m=factors_15m,
+    )
+
     assert states[-1].snapshots[-1].confirmation_source is source
+
+
+@pytest.mark.parametrize(
+    ("direction", "kind", "price"),
+    (
+        (SubingDirection.LONG, lifecycle_module.PivotKind.LOW, Decimal("90")),
+        (SubingDirection.SHORT, lifecycle_module.PivotKind.HIGH, Decimal("110")),
+    ),
+)
+def test_long_and_short_protective_pivots_match_batch_for_every_prefix(
+    direction: SubingDirection,
+    kind: object,
+    price: Decimal,
+) -> None:
+    bars_5m, factors_5m, bars_15m, factors_15m = _protective_pivot_case(
+        direction
+    )
+
+    state = _assert_every_prefix_parity(
+        bars_5m=bars_5m,
+        factors_5m=factors_5m,
+        bars_15m=bars_15m,
+        factors_15m=factors_15m,
+    )[-1]
+
+    confirmation = state.snapshots[-1]
+    pivot = confirmation.bound_reference_pivot
+    assert confirmation.stage is LifecycleStage.ENTRY_CONFIRMED
+    assert confirmation.confirmation_source is ConfirmationSource.FORMAL_V1
+    assert confirmation.trigger_reference_pivot is None
+    assert pivot is not None
+    assert pivot.kind is kind
+    assert pivot.price == price
+    assert pivot.confirmed_at < confirmation.confirmed_at
 
 
 def test_equal_boundary_uses_new_completed_15m_anchor_before_5m_output() -> None:
@@ -131,7 +243,7 @@ def test_equal_boundary_uses_new_completed_15m_anchor_before_5m_output() -> None
     assert state.snapshots[-1].confirmation_source is ConfirmationSource.FORMAL_V1
 
 
-def test_streaming_preserves_risk_recovery_day_crossing_and_segment_reset() -> None:
+def test_risk_recovery_day_crossing_and_segment_reset_match_every_prefix() -> None:
     next_day = _SEGMENT_START + timedelta(days=1)
     confirmed, first_risk, second_risk, recovery = (
         _bar(minutes) for minutes in (15, 20, 25, 30)
@@ -155,8 +267,8 @@ def test_streaming_preserves_risk_recovery_day_crossing_and_segment_reset() -> N
     anchors = (confirmed, recovery, crossing)
     anchor_factors = tuple(_factor(bar, BarFrequency.M15) for bar in anchors)
 
-    states = _stream_lifecycle_prefixes(
-        bars,
+    states = _assert_every_prefix_parity(
+        bars_5m=bars,
         factors_5m=factors,
         bars_15m=anchors,
         factors_15m=anchor_factors,
@@ -235,3 +347,43 @@ def test_equal_boundary_rejects_15m_anchor_after_5m_output() -> None:
             bar=boundary,
             factor=_factor(boundary, BarFrequency.M15),
         )
+
+
+@pytest.mark.parametrize(
+    ("field", "invalid"),
+    (
+        ("contract", "RB2701"),
+        ("segment_start_trading_day", _SEGMENT_START + timedelta(days=1)),
+        ("timeframe", BarFrequency.M5),
+        ("bar_end", _bar(20).bar_end),
+        ("trading_day", _SEGMENT_START + timedelta(days=1)),
+        ("close", Decimal("101")),
+    ),
+)
+def test_15m_step_rejects_factor_identity_before_state_write(
+    field: str,
+    invalid: object,
+) -> None:
+    state = lifecycle_module.initial_subing_lifecycle_state(
+        symbol="JM",
+        contract="JM2701",
+        segment_start_trading_day=_SEGMENT_START,
+    )
+    bar = _bar(15)
+    factor = _factor(bar, BarFrequency.M15)
+    assert factor.snapshot is not None
+    mismatched = replace(
+        factor,
+        snapshot=replace(factor.snapshot, **{field: invalid}),
+    )
+
+    with pytest.raises(ValueError, match="SUBING_FACTOR_IDENTITY_MISMATCH"):
+        lifecycle_module.step_subing_lifecycle_15m(
+            state,
+            bar=bar,
+            factor=mismatched,
+        )
+
+    assert state.latest_15m_bar is None
+    assert state.latest_15m_factor is None
+    assert state.latest_15m_result is None

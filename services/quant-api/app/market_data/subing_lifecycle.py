@@ -1175,6 +1175,15 @@ def step_subing_lifecycle_15m(
             and bar.bar_end <= state.latest_5m_bar_end
         ):
             raise ValueError("SUBING_LIFECYCLE_STREAM_ORDER_INVALID")
+    factor_error = _boundary_contract_error(
+        bar=bar,
+        factor=factor,
+        timeframe=BarFrequency.M15,
+        contract=state.contract,
+        segment_start_trading_day=state.segment_start_trading_day,
+    )
+    if factor_error is not None:
+        raise ValueError(factor_error)
     return replace(
         state,
         latest_15m_factor=(
@@ -1753,15 +1762,12 @@ def evaluate_subing_lifecycle(
             anchor_index < len(bars_15m)
             and bars_15m[anchor_index].bar_end <= bar_5m.bar_end
         ):
-            state = step_subing_lifecycle_15m(
-                state,
-                bar=bars_15m[anchor_index],
-                factor=(
-                    factors_15m[anchor_index]
-                    if anchor_index < len(factors_15m)
-                    else unavailable_factor
-                ),
-            )
+            if anchor_index < len(factors_15m):
+                state = step_subing_lifecycle_15m(
+                    state,
+                    bar=bars_15m[anchor_index],
+                    factor=factors_15m[anchor_index],
+                )
             anchor_index += 1
         state, _ = step_subing_lifecycle_5m(
             state,
