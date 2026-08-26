@@ -388,6 +388,35 @@ test('SuBing Strategy marker anchors effective Bar and shows all close reasons',
   assert.equal(closeShort.position, 'belowBar')
 })
 
+test('SuBing Strategy marker keeps open progress out of entry and separates terminal fill bases', () => {
+  const openResponse = strategyResponse('jm', '2026-08-03', '2026-08-03', 'open')
+  const openEpisodes = new Map(
+    openResponse.episodes.map((episode) => [episode.episode_id, episode]),
+  )
+  const open = subingStrategyActionToMarker(openResponse.actions[0], openEpisodes)
+
+  assert.doesNotMatch(open.tooltip!, /持有/)
+  assert.doesNotMatch(open.tooltip!, /参考变动/)
+  assert.doesNotMatch(open.tooltip!, /\+1\.00%/)
+
+  const closedResponse = strategyResponse('jm')
+  const terminalExit = {
+    ...closedResponse.actions[1],
+    fill_basis: 'segment_terminal_close' as const,
+  }
+  const terminalEpisode = {
+    ...closedResponse.episodes[0],
+    exit_action: terminalExit,
+  }
+  const close = subingStrategyActionToMarker(
+    terminalExit,
+    new Map([[terminalEpisode.episode_id, terminalEpisode]]),
+  )
+
+  assert.match(close.tooltip!, /入场生效口径 下一根同合约 15m open/)
+  assert.match(close.tooltip!, /平仓生效口径 旧段末最后一根 15m close/)
+})
+
 test('SuBing Strategy history requests only actual-dominant 15m', async () => {
   const requests: Array<Record<string, string>> = []
   const controller = useHistoricalResearchMarkers({
