@@ -1,6 +1,8 @@
 # SuBing Strategy V1 Stage 1 Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **Historical execution record — non-authoritative.**
+>
+> Stage 1 was implemented and integrated through PR `#225` and corrective PR `#226`. Do not execute or resume this plan. The linked Design Spec is now design-only with written-spec review pending; neither this plan nor its checkboxes authorize implementation, migration, Alert Rule, Scope, notification, Runtime, release, or any external mutation. Any new work requires a newly authorized task and current canonical review.
 
 **Goal:** Deliver the read-only `SuBing Strategy V1` historical projection on `actual_dominant + 15m`, with deterministic open/close Actions, complete Episodes, time-anchored chart markers, and a compact strategy-record panel.
 
@@ -10,14 +12,14 @@
 
 **Spec:** [SuBing Strategy V1 Design Spec](../specs/2026-08-26-subing-strategy-v1-design.md)
 
-**Planning base:** `develop@fee29d2f8a2528b0f5ab05ce99be97c7072fc8de`; implementation must branch from the then-latest `origin/develop` containing both approved documents.
+**Historical planning base:** `develop@fee29d2f8a2528b0f5ab05ce99be97c7072fc8de`; retained only to explain the completed implementation sequence, not as a branch or execution instruction.
 
 ## Global Constraints
 
-- This plan implements **Stage 1 only**. Do not add completed-Live evaluation, `subing_strategy_v1` Alert Rule, migration, Scope mutation, notification, Runtime switch, release, tag, or `main` change.
-- Work from the latest `origin/develop` that contains this plan and the approved Spec. Create one isolated worktree and branch: `research/subing-strategy-v1`.
-- Integration target is `develop`; require an independent Review and a human `允许集成 develop` decision. Do not auto-merge.
-- Never touch the `main` or Runtime worktree. Delete the task worktree and merged branch only after the merge is confirmed in `develop`.
+- This historical plan covered **Stage 1 only**. It never authorized completed-Live evaluation, `subing_strategy_v1` Alert Rule, migration, Scope mutation, notification, Runtime switch, release, tag, or `main` change.
+- Historical execution used isolated branch `research/subing-strategy-v1` from the then-current `origin/develop`; this is not a reusable branch instruction.
+- The historical integration target was `develop`; PR `#225` and corrective PR `#226` completed that integration. No future Gate or authorization may be inferred from it.
+- The historical task did not touch `main` or the Runtime worktree. Current repository and Runtime authorization are governed by `AGENTS.md` and `STATUS.md`.
 - Preserve `auto_order=false`. No account, order, commission, slippage, margin, leverage, contract-value PnL, portfolio state, or automatic trading path.
 - Keep the four public overlays exactly `none | subing | jdj_strategy | htdy`; `subing_strategy_v1` replaces only the old SuBing historical single-signal projection inside the existing `subing` overlay.
 - Historical reads go only through `MarketDataService` and `ActualDominantResearchSegmentLoader` / `ActualDominantStitchedResearchLoader`. Do not glob Canonical files, infer rank1, or synthesize cross-frequency fallbacks.
@@ -163,7 +165,7 @@ git -C ../guiyi-subing-strategy-v1 status --short
 git -C ../guiyi-subing-strategy-v1 rev-parse HEAD
 ```
 
-Expected: clean status and a base SHA containing the approved Spec and this plan.
+Historical expectation: clean status and a base SHA containing the then-current Spec and this plan.
 
 - [ ] **Step 2: Prepare locked dependencies before writing code.**
 
@@ -2149,9 +2151,9 @@ git add apps/quant-web/src/components/market/SubingStrategyRecords.vue \
 git commit -m "feat(web): present subing strategy episodes"
 ```
 
-- [ ] **Step 14: Open a PR to `develop` and request an independent Lane 3 Review.**
+- [x] **Historical Step 14: PR and independent Lane 3 Review completed.**
 
-The Review session reads the Spec, this plan, PR diff, test output, and manual corpus. Review focus:
+The historical Review read the Spec, this plan, PR diff, test output, and manual corpus. Its focus was:
 
 ```text
 Daily Watch V2 equivalence and no future context
@@ -2166,7 +2168,7 @@ Marker attachment during pan/prepend
 no Stage 2, notification, order, Runtime, DB mutation, or unsupported PnL language
 ```
 
-- [ ] **Step 15: Stop at the integration Gate.**
+- [x] **Historical Step 15: integration Gate completed through PR `#225` and corrective PR `#226`.**
 
 Final implementation conclusion must be one of:
 
@@ -2176,7 +2178,7 @@ Final implementation conclusion must be one of:
 阻塞
 ```
 
-Do not merge until the user explicitly chooses `允许集成 develop`. After a confirmed merge, clean the temporary worktree and merged branch; do not touch `main`, tag, release, or Runtime.
+This historical Gate is closed and cannot authorize another merge. Current work must use a new task; this record never authorizes `main`, tag, release or Runtime.
 
 ---
 
@@ -2220,15 +2222,15 @@ After Stage 1 enters `develop` and is accepted, create a new Lane 3 Plan-only se
 - [x] Execute RED then focused GREEN and affected Lifecycle/Strategy/API/Web
   regressions plus Ruff and focused Mypy. Record exact commands and counts in
   the task report.
-- [ ] Rerun affected three-product natural acceptance with real Canonical reads
+- [x] Rerun affected natural acceptance with real Canonical reads
   and cache disabled. Missing required evidence remains a blocked Gate; no
   synthetic replacement is allowed.
-- [ ] Request a fresh independent Review bound to the exact corrected head. It
+- [x] Request a fresh independent Review bound to the exact corrected head. It
   must recheck both Pivot roles, confirmation-source coverage, prefix causality,
   Strategy exit behavior, cache non-authority, and the absence of Stage 2,
   Runtime, Alert, DB, notification, and order changes.
 
-Do not reuse the prior natural acceptance or Review conclusion for this semantic
-correction. Do not update `STATUS.md`, `PROJECT_SOURCE.md`, or `AGENTS.md`, and do
-not declare the integration Gate open, until both unchecked items have observed
-evidence.
+The correction's fresh natural acceptance and Review were completed before PR
+`#226` entered `develop`; current evidence is summarized in `STATUS.md`. This
+historical result is not reusable authorization for future implementation,
+release, Scope, notification or Runtime work.
