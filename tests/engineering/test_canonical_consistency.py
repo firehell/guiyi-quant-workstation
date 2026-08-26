@@ -18,9 +18,6 @@ RESEARCH_COMMANDS = {
     "subing-calibration",
     "subing-lifecycle",
     "n-structure",
-    "jdj-1m",
-    "candidate-validation",
-    "candidate-robustness",
 }
 MARKET_TABLES = {
     "exchanges",
