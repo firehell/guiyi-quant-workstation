@@ -39,7 +39,7 @@ describe('Product Alert server-side scope', () => {
   it('uses the exact V2 current-view endpoints', () => {
     assert.match(
       apiSource,
-      /getCurrentFormalSignals\(\)\s*\{\s*return request\.get<never, CurrentFormalSignalsResponse>\('\/api\/alerts\/formal-signals\/current'\)/,
+      /getCurrentStrategyActions\(\)\s*\{\s*return request\.get<never, CurrentStrategyActionsResponse>\('\/api\/alerts\/strategy-actions\/current'\)/,
     )
     assert.match(
       apiSource,
@@ -64,19 +64,20 @@ describe('Product Alert server-side scope', () => {
       'trading_day: string | null',
       'frequency: MarketFrequency',
       'bar_end: string',
-      "result_codes: Array<'buy' | 'sell'>",
-      'lower_tf_confirmation: boolean',
+      "result_codes: Array<'buy' | 'sell' | SubingStrategyActionKind>",
+      'action_id: string | null',
+      'strategy_action: SubingStrategyActionPayloadWire | null',
       'detected_at: string',
       'notification_attempted_at: string | null',
     ])
-    assert.deepEqual(interfaceFields(apiSource, 'CurrentFormalSignalItem'), [
+    assert.deepEqual(interfaceFields(apiSource, 'CurrentStrategyActionItem'), [
       'display_name: string',
       'product_name: string',
     ])
-    assert.deepEqual(interfaceFields(apiSource, 'CurrentFormalSignalsResponse'), [
+    assert.deepEqual(interfaceFields(apiSource, 'CurrentStrategyActionsResponse'), [
       "status: 'ready' | 'unavailable'",
       'trading_day: string | null',
-      'items: CurrentFormalSignalItem[]',
+      'items: CurrentStrategyActionItem[]',
     ])
     assert.deepEqual(interfaceFields(apiSource, 'ProductCurrentAlertEventsResponse'), [
       "status: 'ready' | 'unavailable'",
@@ -159,7 +160,7 @@ describe('Product Alert server-side scope', () => {
       fetchProductAlerts: async () => ({ symbol: 'jm', rules: [htdyRule(true), subingRule(false)] }),
       fetchRuntimeStatus: async () => 'ok',
       setProductEnabled: async (ruleCode, requestedSymbol, enabled) => ({
-        ...(ruleCode === 'subing_entry_signal_v1' ? subingRule(enabled) : htdyRule(enabled)),
+        ...(ruleCode === 'subing_strategy_v1' ? subingRule(enabled) : htdyRule(enabled)),
         symbol: requestedSymbol,
       }),
       setProductFrequencyEnabled: async () => { throw new Error('not used') },
@@ -167,7 +168,7 @@ describe('Product Alert server-side scope', () => {
     })
 
     await controller.refresh()
-    await controller.toggleSubingProduct('subing_entry_signal_v1', true)
+    await controller.toggleSubingProduct('subing_strategy_v1', true)
 
     assert.equal(controller.alertRules.value.find((rule) => rule.rule_code === ALERT_RULE_CODES.SUBING)?.enabled_for_product, true)
     assert.equal(controller.alertRules.value.find((rule) => rule.rule_code === ALERT_RULE_CODES.HTDY)?.enabled_for_product, true)
@@ -189,8 +190,8 @@ describe('Product Alert server-side scope', () => {
     })
 
     await controller.refresh()
-    const pending = controller.toggleSubingProduct('subing_entry_signal_v1', true)
-    assert.equal(controller.savingRuleCodes.value.has('subing_entry_signal_v1'), true)
+    const pending = controller.toggleSubingProduct('subing_strategy_v1', true)
+    assert.equal(controller.savingRuleCodes.value.has('subing_strategy_v1'), true)
     assert.equal(controller.savingRuleCodes.value.has('htdy_original_15m'), false)
     resolveUpdate!(subingRule(true))
     await pending
@@ -435,18 +436,16 @@ describe('Product Alert server-side scope', () => {
     controller.dispose()
   })
 
-  it('labels V2 persistent events by Rule category while keeping the Event identity stable', () => {
+  it('keeps Strategy Events out of the generic persistent marker path', () => {
     const markers = alertEventsToMarkers([
-      event(0, ['buy', 'sell'], 'subing_entry_signal_v1'),
+      event(0, ['buy', 'sell'], 'subing_strategy_v1'),
       event(1, ['buy']),
-      event(2, ['sell'], 'subing_entry_signal_v1'),
+      event(2, ['sell'], 'subing_strategy_v1'),
       event(3, ['buy', 'sell']),
     ])
 
     assert.deepEqual(markers.map((marker) => [marker.id, marker.label, marker.tone]), [
-      ['alert:subing_entry_signal_v1:ag:15m:2026-08-13T02:00:00Z', '买入/卖出信号', 'neutral'],
       ['alert:htdy_original_15m:ag:15m:2026-08-13T02:15:00Z', '买入观察', 'htdy'],
-      ['alert:subing_entry_signal_v1:ag:15m:2026-08-13T02:30:00Z', '卖出信号', 'down'],
       ['alert:htdy_original_15m:ag:15m:2026-08-13T02:45:00Z', '买入/卖出观察', 'htdy'],
     ])
   })
@@ -464,12 +463,12 @@ describe('Product Alert server-side scope', () => {
     )
   })
 
-  it('keeps SuBing direction tones separate from HTDY observation tone', () => {
+  it('renders only HTDY observation tone in the generic path', () => {
     assert.deepEqual(alertEventsToMarkers([
-      event(0, ['buy'], 'subing_entry_signal_v1'),
-      event(1, ['sell'], 'subing_entry_signal_v1'),
+      event(0, ['buy'], 'subing_strategy_v1'),
+      event(1, ['sell'], 'subing_strategy_v1'),
       event(2, ['buy'], 'htdy_original_15m'),
-    ]).map((marker) => marker.tone), ['up', 'down', 'htdy'])
+    ]).map((marker) => marker.tone), ['htdy'])
   })
 
   it('keeps persistent bells independent from current repainting HTDY markers', () => {
@@ -505,8 +504,8 @@ describe('Product Alert server-side scope', () => {
 
   it('uses the exact V2 Rule set for each visible series identity', () => {
     for (const frequency of MARKET_FREQUENCIES) {
-      const expected = frequency === '5m' || frequency === '15m'
-        ? ['htdy_original_15m', 'subing_entry_signal_v1']
+      const expected = frequency === '15m'
+        ? ['htdy_original_15m', 'subing_strategy_v1']
         : ['htdy_original_15m']
       assert.deepEqual(markerRuleCodes('actual_dominant', frequency), expected)
       assert.equal(isPersistentAlertIdentity('actual_dominant', frequency), true)
@@ -542,9 +541,9 @@ describe('Product Alert server-side scope', () => {
     await controller.sync(identity(), initialBars, 'replace')
     assert.deepEqual(requests.map((request) => request.ruleCode), [
       'htdy_original_15m',
-      'subing_entry_signal_v1',
+      'subing_strategy_v1',
     ])
-    assert.equal(controller.markers.value.length, 2)
+    assert.equal(controller.markers.value.length, 1)
 
     await controller.sync(
       identity(),
@@ -552,7 +551,7 @@ describe('Product Alert server-side scope', () => {
       'prepend',
     )
     assert.equal(requests.length, 4)
-    assert.equal(controller.markers.value.length, 2)
+    assert.equal(controller.markers.value.length, 1)
 
     await scheduled.at(-1)!()
     assert.equal(requests.length, 6)
@@ -573,8 +572,8 @@ describe('Product Alert server-side scope', () => {
       },
     })
     await fiveMinute.sync({ ...identity(), frequency: '5m' }, initialBars, 'replace')
-    assert.deepEqual(fiveMinuteRequests, ['htdy_original_15m', 'subing_entry_signal_v1'])
-    assert.equal(fiveMinute.markers.value.length, 2)
+    assert.deepEqual(fiveMinuteRequests, ['htdy_original_15m'])
+    assert.equal(fiveMinute.markers.value.length, 1)
     fiveMinute.dispose()
   })
 })
@@ -620,7 +619,8 @@ function event(
     frequency: '15m',
     bar_end: `2026-08-13T02:${minute}:00Z`,
     result_codes: observations,
-    lower_tf_confirmation: false,
+    action_id: null,
+    strategy_action: null,
     detected_at: '2026-08-13T02:45:01Z',
     notification_attempted_at: '2026-08-13T02:45:01Z',
   }
@@ -639,10 +639,10 @@ function htdyRule(enabled: boolean, enabledFrequencies: Array<'15m' | '5m'> = en
 
 function subingRule(enabled: boolean) {
   return {
-    rule_code: 'subing_entry_signal_v1',
-    display_name: '苏冰入场信号',
-    kind: 'formal_signal' as const,
-    input_frequencies: ['5m' as const, '15m' as const],
+    rule_code: 'subing_strategy_v1',
+    display_name: '苏冰策略',
+    kind: 'strategy_action' as const,
+    input_frequencies: ['1m' as const, '5m' as const, '15m' as const],
     enabled_for_product: enabled,
     enabled_frequencies: [],
   }

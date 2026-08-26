@@ -10,8 +10,6 @@ import MarketRuntimeStatus from '@/components/market/MarketRuntimeStatus.vue'
 import SubingWorkbench from '@/components/market/SubingWorkbench.vue'
 import { getMarketRadar, getSubingDailyWatchCurrent } from '@/api/market'
 import { getRuntimeHealth } from '@/api/runtime'
-import { getCurrentFormalSignals } from '@/api/alerts'
-import type { CurrentFormalSignalItem } from '@/api/alerts'
 import type {
   MarketRadarItem,
   MarketRadarResponse,
@@ -25,7 +23,6 @@ import {
 
 const router = useRouter()
 const subingWorkbench = useSubingWorkbench({
-  fetchFormal: getCurrentFormalSignals,
   fetchDailyWatch: getSubingDailyWatchCurrent,
 })
 const runtimeState = useLatestResource({ fetch: getRuntimeHealth })
@@ -34,8 +31,7 @@ const runtime = runtimeState.data
 const radar = radarState.data
 const error = radarState.failed
 const loading = computed(() => (
-  subingWorkbench.formalLoading.value
-  || subingWorkbench.dailyLoading.value
+  subingWorkbench.dailyLoading.value
   || runtimeState.loading.value
   || radarState.loading.value
 ))
@@ -67,13 +63,6 @@ function openDailyWatch(item: SubingDailyWatchItem) {
       overlay: 'subing',
       entry: 'subing-daily-watch',
     },
-  })
-}
-
-function openFormalSignal(item: CurrentFormalSignalItem) {
-  void router.push({
-    name: 'market-chart',
-    query: { symbol: item.symbol, series_kind: 'actual_dominant', frequency: item.frequency },
   })
 }
 
@@ -121,15 +110,9 @@ onBeforeUnmount(() => {
       :stale="runtimeState.failed.value && Boolean(runtime)"
     />
     <SubingWorkbench
-      :formal-loading="subingWorkbench.formalLoading.value"
-      :formal-status="subingWorkbench.formalStatus.value"
-      :formal-trading-day="subingWorkbench.formalTradingDay.value"
-      :formal-items="subingWorkbench.formalItems.value"
-      :formal-stale="subingWorkbench.formalStale.value"
       :daily-watch="subingWorkbench.dailyWatch.value"
       :daily-loading="subingWorkbench.dailyLoading.value"
       :daily-stale="subingWorkbench.dailyStale.value"
-      @open-formal="openFormalSignal"
       @open-daily="openDailyWatch"
     />
     <MarketRadarSkeleton v-if="radarState.loading.value && !radar" />

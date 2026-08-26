@@ -12,11 +12,11 @@ import {
   type SubingFactorSnapshot,
   type SubingResearchResponse,
   type SubingStrategyEpisode,
+  type SubingStrategyCurrentResponse,
   type SubingSignal,
 } from '@/types/market'
 import { alertRuntimeLabel } from '@/utils/alertControl'
-import { ALERT_RULE_CODES } from '@/utils/alertRules'
-import { summarizeFormalEvent } from '@/utils/productCheck'
+import { ALERT_RULE_CODES, strategyActionLabel } from '@/utils/alertRules'
 import { buildSubingLifecyclePivotFacts } from '@/utils/subingLifecycleFacts'
 
 const props = defineProps<{
@@ -35,6 +35,10 @@ const props = defineProps<{
   strategyLoading: boolean
   strategyError: string | null
   strategySupported: boolean
+  strategyCurrent: SubingStrategyCurrentResponse | null
+  strategyCurrentLoading: boolean
+  strategyCurrentError: string | null
+  strategyReconciliationErrors: string[]
   showInternalProcess: boolean
 }>()
 
@@ -43,9 +47,11 @@ const emit = defineEmits<{
 }>()
 
 const subingEvents = computed(() => props.currentEvents.filter((event) => event.rule_code === ALERT_RULE_CODES.SUBING))
-const formalEvent = computed(() => summarizeFormalEvent(subingEvents.value))
+const strategyEvent = computed(() => [...subingEvents.value]
+  .filter((event) => event.strategy_action !== null)
+  .sort((left, right) => Date.parse(right.bar_end) - Date.parse(left.bar_end))[0] ?? null)
 const remainingEvents = computed(() => {
-  const selectedId = formalEvent.value?.event.id
+  const selectedId = strategyEvent.value?.id
   return selectedId === undefined
     ? []
     : subingEvents.value.filter((event) => event.id !== selectedId)
@@ -134,25 +140,32 @@ function toggleSubing(ruleCode: string, enabled: boolean) {
       :episodes="strategyEpisodes"
       :loading="strategyLoading"
       :error="strategyError"
+      :current-episode="strategyCurrent?.current_episode ?? null"
+      :latest-completed-episode="strategyCurrent?.latest_completed_episode ?? null"
+      :current-loading="strategyCurrentLoading"
+      :current-error="strategyCurrentError"
     />
     <p v-else data-testid="subing-strategy-guidance" class="subing-panel__warning">
       当前 5m 仅保留苏冰观察；历史策略投影仅支持真实主力 15m。
     </p>
 
-    <section class="subing-panel__section" data-testid="subing-formal-event">
-      <h4>Formal Event</h4>
-      <p v-if="eventLoading">正在读取苏冰正式事件…</p>
-      <p v-else-if="eventStatus === 'unavailable'" class="subing-panel__warning">苏冰正式事件暂不可用</p>
-      <p v-else-if="eventStatus !== 'ready'">苏冰正式事件尚未读取</p>
+    <section class="subing-panel__section" data-testid="subing-strategy-event">
+      <h4>苏冰策略事件</h4>
+      <p v-if="eventLoading">正在读取苏冰策略事件…</p>
+      <p v-else-if="eventStatus === 'unavailable'" class="subing-panel__warning">苏冰策略事件暂不可用</p>
+      <p v-else-if="eventStatus !== 'ready'">苏冰策略事件尚未读取</p>
       <div
-        v-else-if="formalEvent"
+        v-else-if="strategyEvent"
         class="subing-panel__formal-summary"
-        :data-formal-event-id="String(formalEvent.event.id)"
+        :data-strategy-event-id="String(strategyEvent.id)"
       >
-        <strong>{{ formalEvent.headline }}</strong>
-        <p>今日正式提醒记录</p>
+        <strong>{{ strategyActionLabel(strategyEvent.strategy_action!.kind) }}</strong>
+        <p>不可变通知事实 · {{ strategyEvent.strategy_action!.contract }}</p>
       </div>
-      <p v-else>当前无可展示的苏冰正式事件记录</p>
+      <p v-else>当前无可展示的苏冰策略事件记录</p>
+      <p v-if="strategyReconciliationErrors.includes('STRATEGY_ACTION_FACT_MISMATCH')" class="subing-panel__warning">
+        STRATEGY_ACTION_FACT_MISMATCH · 图表采用 Canonical Historical 事实
+      </p>
       <ProductTodayAlertEvents
         v-if="eventStatus === 'ready' && remainingEvents.length > 0"
         :items="remainingEvents"
@@ -214,7 +227,7 @@ function toggleSubing(ruleCode: string, enabled: boolean) {
       <NSpin :show="alertLoading" size="small">
         <p v-if="alertLoading">正在读取苏冰提醒 Scope…</p>
         <div class="subing-panel__switch-row">
-          <span>{{ subingRule ? `${subingRule.display_name} · 品种 Scope` : alertLoading ? '苏冰入场信号 · 品种 Scope' : '苏冰入场信号（不可用）' }}</span>
+          <span>{{ subingRule ? `${subingRule.display_name} · 品种 Scope` : alertLoading ? '苏冰策略 · 品种 Scope' : '苏冰策略（不可用）' }}</span>
           <NSwitch
             :value="subingRule ? subingRule.enabled_for_product : false"
             :disabled="!subingRule || alertLoading || savingRuleCodes.has(ALERT_RULE_CODES.SUBING)"

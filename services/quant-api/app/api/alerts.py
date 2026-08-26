@@ -15,6 +15,11 @@ from app.alerts.current_trading_day import (
 )
 from app.alerts.models import AlertEvent, AlertRule
 from app.alerts.registry import get_alert_rule_definition
+from app.alerts.strategy_payload import (
+    StrategyPayloadError,
+    parse_subing_strategy_payload,
+    validate_subing_strategy_event_facts,
+)
 from app.alerts.service import (
     AlertRuleNotFoundError,
     AlertScopeError,
@@ -31,10 +36,11 @@ from app.schemas.alerts import (
     AlertEventOut,
     AlertScopeUpdate,
     CurrentAlertEventsResponse,
-    CurrentFormalSignalEventsResponse,
-    FormalSignalAlertEventOut,
+    CurrentStrategyActionEventsResponse,
     ProductAlertRuleStateOut,
     ProductAlertStateResponse,
+    StrategyActionAlertEventOut,
+    SubingStrategyActionOut,
 )
 
 
@@ -140,41 +146,40 @@ def alert_events(
     except AlertScopeError as exc:
         raise _scope_http_error(exc) from exc
     return AlertEventListResponse(
-        items=[
-            _event_out(event, rule_code=rule_code)
-            for event in events
-        ]
+        items=[_event_out(event, rule_code=rule_code) for event in events]
     )
 
 
 @router.get(
-    "/formal-signals/current",
-    response_model=CurrentFormalSignalEventsResponse,
+    "/strategy-actions/current",
+    response_model=CurrentStrategyActionEventsResponse,
 )
-def current_formal_signal_events(
+def current_strategy_action_events(
     current_day: CurrentTradingDayResult = Depends(get_current_alert_trading_day),
     session: Session = Depends(get_db),
-) -> CurrentFormalSignalEventsResponse:
-    """Return current-trading-day events for code-defined formal Signal rules."""
+) -> CurrentStrategyActionEventsResponse:
+    """Return current-trading-day immutable Strategy Action events."""
 
     if current_day.status is CurrentTradingDayStatus.UNAVAILABLE:
-        return CurrentFormalSignalEventsResponse(
+        return CurrentStrategyActionEventsResponse(
             status="unavailable",
             trading_day=None,
             items=[],
         )
     assert current_day.trading_day is not None
     taxonomy = load_product_taxonomy()
-    events = _service(session).list_current_formal_signal_events(
+    events = _service(session).list_current_strategy_action_events(
         trading_day=current_day.trading_day
     )
-    return CurrentFormalSignalEventsResponse(
+    return CurrentStrategyActionEventsResponse(
         status="ready",
         trading_day=current_day.trading_day,
         items=[
-            FormalSignalAlertEventOut(
+            StrategyActionAlertEventOut(
                 **_event_out(event, rule_code=event.rule.rule_code).model_dump(),
-                display_name=get_alert_rule_definition(event.rule.rule_code).display_name,
+                display_name=get_alert_rule_definition(
+                    event.rule.rule_code
+                ).display_name,
                 product_name=taxonomy[event.symbol].name,
             )
             for event in events
@@ -268,6 +273,37 @@ def _list_events(
 
 
 def _event_out(event: AlertEvent, *, rule_code: str) -> AlertEventOut:
+    definition = get_alert_rule_definition(rule_code)
+    bar_end = _utc(event.bar_end)
+    strategy_action: SubingStrategyActionOut | None = None
+    try:
+        if definition.kind.value == "indicator_observation":
+            if event.action_id is not None or event.strategy_payload is not None:
+                raise StrategyPayloadError()
+        else:
+            if (
+                event.action_id is None
+                or event.strategy_payload is None
+                or event.trading_day is None
+            ):
+                raise StrategyPayloadError()
+            payload = parse_subing_strategy_payload(event.strategy_payload)
+            validate_subing_strategy_event_facts(
+                payload,
+                action_id=event.action_id,
+                symbol=event.symbol,
+                contract=event.contract,
+                trading_day=event.trading_day,
+                frequency=event.frequency,
+                bar_end=bar_end,
+                result_codes=tuple(event.result_codes),
+            )
+            strategy_action = SubingStrategyActionOut.model_validate(payload.to_json())
+    except StrategyPayloadError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "ALERT_EVENT_FACTS_INVALID"},
+        ) from exc
     return AlertEventOut(
         id=event.id,
         rule_code=rule_code,
@@ -275,12 +311,21 @@ def _event_out(event: AlertEvent, *, rule_code: str) -> AlertEventOut:
         contract=event.contract,
         trading_day=event.trading_day,
         frequency=event.frequency,
-        bar_end=event.bar_end,
+        bar_end=bar_end,
         result_codes=list(event.result_codes),
-        lower_tf_confirmation=event.lower_tf_confirmation,
-        detected_at=event.detected_at,
-        notification_attempted_at=event.notification_attempted_at,
+        action_id=event.action_id,
+        strategy_action=strategy_action,
+        detected_at=_utc(event.detected_at),
+        notification_attempted_at=(
+            _utc(event.notification_attempted_at)
+            if event.notification_attempted_at is not None
+            else None
+        ),
     )
+
+
+def _utc(value: datetime) -> datetime:
+    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
 
 
 def _scope_http_error(exc: AlertScopeError) -> HTTPException:

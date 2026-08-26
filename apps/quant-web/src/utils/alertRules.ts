@@ -2,7 +2,7 @@ import { MARKET_FREQUENCIES, type MarketFrequency } from '../types/market.ts'
 
 export const ALERT_RULE_CODES = {
   HTDY: 'htdy_original_15m',
-  SUBING: 'subing_entry_signal_v1',
+  SUBING: 'subing_strategy_v1',
 } as const
 
 export type AlertRuleCode = typeof ALERT_RULE_CODES[keyof typeof ALERT_RULE_CODES]
@@ -11,7 +11,7 @@ export type AlertDirection = 'buy' | 'sell'
 export interface AlertRulePresentation {
   ruleCode: AlertRuleCode
   shortLabel: string
-  resultNoun: '观察' | '信号'
+  resultNoun: '观察' | '策略动作'
   markerTone: 'htdy' | null
   persistentFrequencies: readonly MarketFrequency[]
 }
@@ -27,9 +27,9 @@ export const ALERT_RULE_PRESENTATIONS: readonly AlertRulePresentation[] = [
   {
     ruleCode: ALERT_RULE_CODES.SUBING,
     shortLabel: '苏冰',
-    resultNoun: '信号',
+    resultNoun: '策略动作',
     markerTone: null,
-    persistentFrequencies: ['5m', '15m'],
+    persistentFrequencies: ['15m'],
   },
 ]
 
@@ -53,6 +53,14 @@ export function alertResultLabel(ruleCode: string, directions: readonly AlertDir
   if (values.has('buy')) return `买入${presentation.resultNoun}`
   if (values.has('sell')) return `卖出${presentation.resultNoun}`
   return '提醒记录'
+}
+
+export function strategyActionLabel(kind: string): string {
+  if (kind === 'open_long') return '建多'
+  if (kind === 'open_short') return '建空'
+  if (kind === 'close_long') return '清多'
+  if (kind === 'close_short') return '清空'
+  return '策略动作'
 }
 
 export function alertDirectionalTone(

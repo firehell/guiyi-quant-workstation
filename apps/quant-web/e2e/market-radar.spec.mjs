@@ -110,9 +110,6 @@ function runtimeHealth() {
 }
 
 async function mockHomepage(page, radarPayload = radar(), dailyPayload = dailyWatch()) {
-  await page.route('**/api/alerts/formal-signals/current', (route) => route.fulfill({
-    json: { status: 'ready', trading_day: '2026-08-24', items: [] },
-  }))
   await page.route('**/api/runtime/health', (route) => route.fulfill({ json: runtimeHealth() }))
   await page.route('**/api/v1/market/research/radar', (route) => route.fulfill({ json: radarPayload }))
   await page.route('**/api/v1/market/research/subing-daily-watch/current', (route) => route.fulfill({ json: dailyPayload }))
@@ -155,9 +152,6 @@ test('renders Daily Watch instead of Trend Focus, expands each direction indepen
 test('renders ready Daily Watch before a pending Radar request completes', async ({ page }) => {
   let releaseRadar = () => {}
   const radarGate = new Promise((resolve) => { releaseRadar = resolve })
-  await page.route('**/api/alerts/formal-signals/current', (route) => route.fulfill({
-    json: { status: 'ready', trading_day: '2026-08-24', items: [] },
-  }))
   await page.route('**/api/runtime/health', (route) => route.fulfill({ json: runtimeHealth() }))
   await page.route('**/api/v1/market/research/subing-daily-watch/current', (route) => route.fulfill({ json: dailyWatch() }))
   await page.route('**/api/v1/market/research/radar', async (route) => {
@@ -196,7 +190,7 @@ test('keeps unavailable items collapsed, explains stable reasons, and never make
   await expect(unavailable.getByRole('button')).toHaveCount(0)
 })
 
-test('typed Daily Watch unavailable leaves Runtime, Formal and Radar usable without exposing backend codes', async ({ page }) => {
+test('typed Daily Watch unavailable leaves Runtime and Radar usable without exposing backend codes', async ({ page }) => {
   await mockHomepage(page, radar(), {
     status: 'unavailable', expected_target_trading_day: '2026-08-25',
     latest_target_trading_day: '2026-08-22', error_code: 'SUBING_DAILY_WATCH_STALE', snapshot: null,
@@ -206,14 +200,12 @@ test('typed Daily Watch unavailable leaves Runtime, Formal and Radar usable with
   await expect(page.getByTestId('subing-daily-watch')).toContainText('苏冰今日观察暂不可用')
   await expect(page.getByTestId('subing-daily-watch')).not.toContainText('SUBING_DAILY_WATCH_STALE')
   await expect(page.getByTestId('market-runtime-status')).toContainText('整体正常')
-  await expect(page.getByTestId('market-formal-signals')).toContainText('当前交易日暂无正式信号')
   await page.getByText('展开全市场研究', { exact: true }).click()
   await expect(page.getByText('市场概览', { exact: true })).toBeVisible()
 })
 
 test('latest Daily Watch network failure keeps the prior successful snapshot visibly stale', async ({ page }) => {
   let attempt = 0
-  await page.route('**/api/alerts/formal-signals/current', (route) => route.fulfill({ json: { status: 'ready', trading_day: '2026-08-24', items: [] } }))
   await page.route('**/api/runtime/health', (route) => route.fulfill({ json: runtimeHealth() }))
   await page.route('**/api/v1/market/research/radar', (route) => route.fulfill({ json: radar() }))
   await page.route('**/api/v1/market/research/subing-daily-watch/current', (route) => {
@@ -232,12 +224,8 @@ test('latest Daily Watch network failure keeps the prior successful snapshot vis
   await expect(page.getByTestId('subing-daily-watch')).toContainText('RB RB')
 })
 
-test('refreshes Formal, Runtime, Radar and Daily manually, but excludes Radar from visibility refresh', async ({ page }) => {
-  const counts = { formal: 0, runtime: 0, radar: 0, daily: 0 }
-  await page.route('**/api/alerts/formal-signals/current', (route) => {
-    counts.formal += 1
-    return route.fulfill({ json: { status: 'ready', trading_day: '2026-08-24', items: [] } })
-  })
+test('refreshes Runtime, Radar and Daily manually, but excludes Radar from visibility refresh', async ({ page }) => {
+  const counts = { runtime: 0, radar: 0, daily: 0 }
   await page.route('**/api/runtime/health', (route) => {
     counts.runtime += 1
     return route.fulfill({ json: runtimeHealth() })
@@ -252,11 +240,11 @@ test('refreshes Formal, Runtime, Radar and Daily manually, but excludes Radar fr
   })
 
   await page.goto('/market')
-  await expect.poll(() => ({ ...counts })).toEqual({ formal: 1, runtime: 1, radar: 1, daily: 1 })
+  await expect.poll(() => ({ ...counts })).toEqual({ runtime: 1, radar: 1, daily: 1 })
   await page.getByRole('button', { name: '全部刷新' }).click()
-  await expect.poll(() => ({ ...counts })).toEqual({ formal: 2, runtime: 2, radar: 2, daily: 2 })
+  await expect.poll(() => ({ ...counts })).toEqual({ runtime: 2, radar: 2, daily: 2 })
   await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))
-  await expect.poll(() => ({ ...counts })).toEqual({ formal: 3, runtime: 3, radar: 2, daily: 3 })
+  await expect.poll(() => ({ ...counts })).toEqual({ runtime: 3, radar: 2, daily: 3 })
 })
 
 test('keeps Daily Watch independent from Radar freshness and readable at a narrow viewport', async ({ page }) => {

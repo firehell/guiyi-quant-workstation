@@ -83,14 +83,6 @@ function dailyWatch({ long_watch = [], short_watch = [], unavailable = [], exclu
   }
 }
 
-function formalSignal() {
-  return {
-    id: 17, rule_code: 'subing_entry_signal_v1', display_name: '苏冰', symbol: 'jm', product_name: '焦煤',
-    contract: 'JM2609', trading_day: '2026-08-15', frequency: '5m', bar_end: '2026-08-15T02:25:00Z',
-    result_codes: ['buy'], lower_tf_confirmation: true, detected_at: '2026-08-15T02:26:00Z', notification_attempted_at: null,
-  }
-}
-
 function runtimeHealth(overrides = {}) {
   return {
     status: 'ok', generated_at: '2026-08-24T10:15:00+00:00', readonly: true,
@@ -131,19 +123,17 @@ function runtimeHealth(overrides = {}) {
 
 async function mockMarketHomepage(
   page,
-  currentFormalResponse,
   radarResponse = radar(),
   dailyWatchResponse = dailyWatch(),
   runtimeResponse = runtimeHealth(),
 ) {
-  await page.route('**/api/alerts/formal-signals/current', (route) => route.fulfill({ json: currentFormalResponse }))
   await page.route('**/api/runtime/health', (route) => route.fulfill({ json: runtimeResponse }))
   await page.route('**/api/v1/market/research/radar', (route) => route.fulfill({ json: radarResponse }))
   await page.route('**/api/v1/market/research/subing-daily-watch/current', (route) => route.fulfill({ json: dailyWatchResponse }))
 }
 
 test('Market homepage shows compact Runtime facts without implying provider delivery', async ({ page }) => {
-  await mockMarketHomepage(page, { status: 'ready', trading_day: '2026-08-15', items: [] })
+  await mockMarketHomepage(page)
   await page.goto('/market')
 
   const strip = page.getByTestId('market-runtime-status')
@@ -167,7 +157,6 @@ test('Market homepage accessibly distinguishes disabled Alert from missing natur
   }
   await mockMarketHomepage(
     page,
-    { status: 'ready', trading_day: '2026-08-15', items: [] },
     radar(),
     dailyWatch(),
     disabledRuntime,
@@ -179,12 +168,8 @@ test('Market homepage accessibly distinguishes disabled Alert from missing natur
   await expect(strip).not.toContainText('未获自然验证')
 })
 
-test('Market homepage refreshes four sources manually and Formal plus Runtime plus Daily on visibility', async ({ page }) => {
-  const counts = { formal: 0, runtime: 0, radar: 0, daily: 0 }
-  await page.route('**/api/alerts/formal-signals/current', (route) => {
-    counts.formal += 1
-    return route.fulfill({ json: { status: 'ready', trading_day: '2026-08-15', items: [] } })
-  })
+test('Market homepage refreshes Runtime, Radar and Daily with the bounded visibility policy', async ({ page }) => {
+  const counts = { runtime: 0, radar: 0, daily: 0 }
   await page.route('**/api/runtime/health', (route) => {
     counts.runtime += 1
     return route.fulfill({ json: runtimeHealth() })
@@ -199,20 +184,17 @@ test('Market homepage refreshes four sources manually and Formal plus Runtime pl
   })
 
   await page.goto('/market')
-  await expect.poll(() => ({ ...counts })).toEqual({ formal: 1, runtime: 1, radar: 1, daily: 1 })
+  await expect.poll(() => ({ ...counts })).toEqual({ runtime: 1, radar: 1, daily: 1 })
 
   await page.getByRole('button', { name: '全部刷新' }).click()
-  await expect.poll(() => ({ ...counts })).toEqual({ formal: 2, runtime: 2, radar: 2, daily: 2 })
+  await expect.poll(() => ({ ...counts })).toEqual({ runtime: 2, radar: 2, daily: 2 })
 
   await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))
-  await expect.poll(() => ({ ...counts })).toEqual({ formal: 3, runtime: 3, radar: 2, daily: 3 })
+  await expect.poll(() => ({ ...counts })).toEqual({ runtime: 3, radar: 2, daily: 3 })
 })
 
 test('Market homepage marks first Runtime failure unavailable and retains a stale successful snapshot', async ({ page }) => {
   let runtimeAttempt = 0
-  await page.route('**/api/alerts/formal-signals/current', (route) => route.fulfill({
-    json: { status: 'ready', trading_day: '2026-08-15', items: [] },
-  }))
   await page.route('**/api/runtime/health', (route) => {
     runtimeAttempt += 1
     if (runtimeAttempt === 2) return route.fulfill({ json: runtimeHealth() })
@@ -233,118 +215,6 @@ test('Market homepage marks first Runtime failure unavailable and retains a stal
   await expect(strip).toContainText('整体正常')
 })
 
-test('Market homepage shows the current formal signals above Radar', async ({ page }) => {
-  await mockMarketHomepage(page, {
-    status: 'ready',
-    trading_day: '2026-08-15',
-    items: [
-      formalSignal(),
-      { ...formalSignal(), id: 18, rule_code: 'htdy_original_15m', display_name: '火天大有' },
-    ],
-  })
-  await page.goto('/market')
-
-  await expect(page.getByRole('region', { name: '苏冰' })).toHaveCount(1)
-  const workbench = page.getByTestId('subing-workbench')
-  const formal = page.getByTestId('market-formal-signals')
-  await expect(formal).toContainText('苏冰')
-  await expect(formal).toContainText('JM 焦煤 · 买入信号')
-  await expect(formal).toContainText('JM2609')
-  await expect(formal).toContainText('5m · 10:25 确认')
-  await expect(formal).toContainText('5m 同向确认')
-  await expect(formal).toContainText('火天大有')
-  await expect(workbench.getByTestId('subing-daily-watch')).toBeVisible()
-  expect(await page.locator('[data-testid="market-formal-signals"], [data-testid="subing-daily-watch"]').evaluateAll((nodes) => (
-    Boolean(nodes[0]?.compareDocumentPosition(nodes[1]) & Node.DOCUMENT_POSITION_FOLLOWING)
-  ))).toBe(true)
-})
-
-test('SuBing workbench keeps Formal and Daily Watch failures independent', async ({ page }) => {
-  let formalFails = true
-  let dailyFails = false
-  let dailyResponse = dailyWatch({ long_watch: [dailyWatchItem('ag', '白银')], excluded: 59 })
-  await page.route('**/api/alerts/formal-signals/current', (route) => (
-    formalFails
-      ? route.fulfill({ status: 503 })
-      : route.fulfill({ json: { status: 'ready', trading_day: '2026-08-15', items: [formalSignal()] } })
-  ))
-  await page.route('**/api/runtime/health', (route) => route.fulfill({ json: runtimeHealth() }))
-  await page.route('**/api/v1/market/research/radar', (route) => route.fulfill({ json: radar() }))
-  await page.route('**/api/v1/market/research/subing-daily-watch/current', (route) => (
-    dailyFails ? route.fulfill({ status: 503 }) : route.fulfill({ json: dailyResponse })
-  ))
-  await page.goto('/market')
-
-  const workbench = page.getByTestId('subing-workbench')
-  await expect(workbench.getByTestId('market-formal-signals')).toContainText('正式信号暂不可用')
-  await expect(workbench.getByTestId('subing-daily-watch')).toContainText('AG 白银')
-
-  formalFails = false
-  dailyFails = true
-  await page.getByRole('button', { name: '全部刷新' }).click()
-  await expect(workbench.getByTestId('market-formal-signals')).toContainText('JM 焦煤')
-  await expect(workbench.getByTestId('subing-daily-watch')).toContainText('状态已过期')
-  await expect(workbench.getByTestId('subing-daily-watch')).toContainText('目标交易日 2026-08-25 · 来源交易日 2026-08-24')
-  await expect(workbench.getByTestId('subing-daily-watch')).toContainText('AG 白银')
-  await expect(workbench.getByTestId('subing-daily-watch-card')).toHaveCount(1)
-
-  dailyFails = false
-  dailyResponse = dailyWatch({ long_watch: [dailyWatchItem('cu', '沪铜')], excluded: 59 })
-  await page.getByRole('button', { name: '全部刷新' }).click()
-  await expect(workbench.getByTestId('subing-daily-watch').getByText('状态已过期', { exact: true })).toHaveCount(0)
-  await expect(workbench.getByTestId('subing-daily-watch')).toContainText('CU 沪铜')
-  await expect(workbench.getByTestId('subing-daily-watch')).not.toContainText('AG 白银')
-})
-
-test('formal signal cards do not advertise a container-wide click target', async ({ page }) => {
-  await mockMarketHomepage(page, { status: 'ready', trading_day: '2026-08-15', items: [formalSignal()] })
-  await page.goto('/market')
-
-  const card = page.getByTestId('market-formal-signals').locator('.market-formal-signals__card')
-  await card.hover()
-  await expect(card).toHaveCSS('transform', 'none')
-  await expect(card.getByRole('button', { name: '查看 →' })).toBeVisible()
-})
-
-test('Market homepage keeps formal decisions ahead of Radar at a 980-like viewport', async ({ page }) => {
-  await page.setViewportSize({ width: 979, height: 900 })
-  await mockMarketHomepage(page, {
-    status: 'ready',
-    trading_day: '2026-08-15',
-    items: [formalSignal(), { ...formalSignal(), id: 18, symbol: 'ag', product_name: '白银', contract: 'AG2601' }],
-  })
-  await page.goto('/market')
-
-  const formal = page.getByTestId('market-formal-signals')
-  await expect(formal).toContainText('只显示当前交易日的正式信号')
-  await expect(page.getByTestId('subing-daily-watch')).toBeVisible()
-  await expect(formal.locator('.market-formal-signals__card')).toHaveCount(2)
-  expect(await formal.locator('.market-formal-signals__card').evaluateAll((cards) => cards[1].getBoundingClientRect().top > cards[0].getBoundingClientRect().top)).toBe(true)
-  expect(await page.locator('[data-testid="market-formal-signals"], [data-testid="subing-daily-watch"]').evaluateAll((nodes) => (
-    Boolean(nodes[0]?.compareDocumentPosition(nodes[1]) & Node.DOCUMENT_POSITION_FOLLOWING)
-  ))).toBe(true)
-})
-
-test('Market homepage caps formal decisions at two columns on desktop', async ({ page }) => {
-  await page.setViewportSize({ width: 1440, height: 900 })
-  await mockMarketHomepage(page, {
-    status: 'ready',
-    trading_day: '2026-08-15',
-    items: [
-      formalSignal(),
-      { ...formalSignal(), id: 18, symbol: 'ag', product_name: '白银', contract: 'AG2601' },
-      { ...formalSignal(), id: 19, symbol: 'au', product_name: '黄金', contract: 'AU2610' },
-    ],
-  })
-  await page.goto('/market')
-
-  const cards = page.getByTestId('market-formal-signals').locator('.market-formal-signals__card')
-  await expect(cards).toHaveCount(3)
-  const tops = await cards.evaluateAll((nodes) => nodes.map((node) => node.getBoundingClientRect().top))
-  expect(Math.abs(tops[0] - tops[1])).toBeLessThan(1)
-  expect(tops[2]).toBeGreaterThan(tops[1])
-})
-
 test('Market homepage lists every price and open-interest structure without overlapping points', async ({ page }) => {
   const items = [
     radarItem({ symbol: 'rb', product_name: '螺纹钢', price_change_1d: -0.012, oi_change_1d: 0.034 }),
@@ -354,7 +224,7 @@ test('Market homepage lists every price and open-interest structure without over
     radarItem({ symbol: 'a', product_name: '豆一', price_change_1d: 0, oi_change_1d: 0.01 }),
   ]
   await mockWorkspace(page, { json: research() })
-  await mockMarketHomepage(page, { status: 'ready', trading_day: '2026-08-15', items: [] }, radar({
+  await mockMarketHomepage(page, radar({
     items,
     sector_summary: [sectorSummary('black', 0.01)],
   }))
@@ -375,40 +245,7 @@ test('Market homepage lists every price and open-interest structure without over
   await expect(page).toHaveURL(/\/market\/chart\?symbol=jm/)
 })
 
-test('Market homepage keeps lower-timeframe confirmation fixed at 5m for a 15m signal', async ({ page }) => {
-  await mockMarketHomepage(page, {
-    status: 'ready', trading_day: '2026-08-15', items: [{ ...formalSignal(), frequency: '15m' }],
-  })
-  await page.goto('/market')
-
-  const formal = page.getByTestId('market-formal-signals')
-  await expect(formal).toContainText('买入信号')
-  await expect(formal).toContainText('15m')
-  await expect(formal).toContainText('5m 同向确认')
-  await expect(formal).not.toContainText('15m 同向确认')
-})
-
-test('Market homepage distinguishes ready empty formal signals', async ({ page }) => {
-  await mockMarketHomepage(page, { status: 'ready', trading_day: '2026-08-15', items: [] })
-  await page.goto('/market')
-
-  await expect(page.getByTestId('market-formal-signals')).toContainText('当前交易日暂无正式信号')
-})
-
-test('Market homepage keeps Radar visible when formal signals are unavailable', async ({ page }) => {
-  await mockMarketHomepage(page, { status: 'unavailable', trading_day: null, items: [] })
-  await page.goto('/market')
-
-  const formal = page.getByTestId('market-formal-signals')
-  await expect(formal.getByText('暂不可用', { exact: true })).toBeVisible()
-  await expect(formal).toContainText('正式信号暂不可用')
-  await expect(page.getByTestId('subing-daily-watch')).toBeVisible()
-})
-
 test('Market homepage shows Radar skeletons while the initial snapshot is pending', async ({ page }) => {
-  await page.route('**/api/alerts/formal-signals/current', (route) => route.fulfill({
-    json: { status: 'ready', trading_day: '2026-08-15', items: [] },
-  }))
   await page.route('**/api/v1/market/research/radar', async (route) => {
     await new Promise((resolve) => setTimeout(resolve, 600))
     await route.fulfill({ json: radar() })
@@ -422,9 +259,6 @@ test('Market homepage shows Radar skeletons while the initial snapshot is pendin
 
 test('manual Radar refresh keeps the last snapshot on failure and updates on retry', async ({ page }) => {
   let attempt = 0
-  await page.route('**/api/alerts/formal-signals/current', (route) => route.fulfill({
-    json: { status: 'ready', trading_day: '2026-08-15', items: [] },
-  }))
   await page.route('**/api/v1/market/research/radar', async (route) => {
     attempt += 1
     if (attempt === 2) return route.fulfill({ status: 503, json: { detail: 'temporarily unavailable' } })
@@ -453,9 +287,6 @@ test('sector tabs always show the selected market sector without self-select con
       researchSidebarOpen: true, watchlist: ['a'],
     }))
   })
-  await page.route('**/api/alerts/formal-signals/current', (route) => route.fulfill({
-    json: { status: 'ready', trading_day: '2026-08-15', items: [] },
-  }))
   await page.route('**/api/v1/market/research/radar', (route) => route.fulfill({ json: radar({
     items: [radarItem(), radarItem({ symbol: 'a', product_name: '豆一', sector: 'agriculture', price_change_1d: -0.004 })],
     sector_summary: [sectorSummary('black', 0.008), sectorSummary('agriculture', -0.004)],
@@ -479,7 +310,7 @@ test('sector tabs always show the selected market sector without self-select con
 })
 
 test('Market homepage stays inside the three desktop acceptance viewports', async ({ page }) => {
-  await mockMarketHomepage(page, { status: 'ready', trading_day: '2026-08-15', items: [formalSignal()] })
+  await mockMarketHomepage(page)
   await page.goto('/market')
 
   for (const viewport of [
@@ -489,7 +320,7 @@ test('Market homepage stays inside the three desktop acceptance viewports', asyn
   ]) {
     await page.setViewportSize(viewport)
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
-    const box = await page.getByTestId('market-formal-signals').boundingBox()
+    const box = await page.getByTestId('subing-daily-watch').boundingBox()
     expect(box.x + box.width).toBeLessThanOrEqual(viewport.width)
   }
 })
@@ -499,19 +330,54 @@ function subing(overrides = {}) {
 }
 
 function panelEvent(overrides = {}) {
-  return {
+  const event = {
     id: 301,
-    rule_code: 'subing_entry_signal_v1',
+    rule_code: 'subing_strategy_v1',
     symbol: 'ag',
     contract: 'AG2601',
     trading_day: '2026-01-12',
-    frequency: '5m',
+    frequency: '15m',
     bar_end: '2026-01-12T02:30:00Z',
-    result_codes: ['sell'],
-    lower_tf_confirmation: false,
+    result_codes: ['open_long'],
+    action_id: 'subing-action:301',
     detected_at: '2026-01-12T02:30:01Z',
     notification_attempted_at: null,
     ...overrides,
+  }
+  if (event.rule_code !== 'subing_strategy_v1') {
+    return { ...event, action_id: null, strategy_action: null }
+  }
+  const kind = event.result_codes[0]
+  const actionId = event.action_id || `subing-action:${event.id}`
+  return {
+    ...event,
+    action_id: actionId,
+    strategy_action: {
+      schema_version: 1,
+      strategy_id: 'subing_strategy_v1',
+      formula_version: 'subing_strategy_15m_v1',
+      action_id: actionId,
+      episode_id: `subing-episode:${event.id}`,
+      kind,
+      symbol: event.symbol,
+      contract: event.contract,
+      trading_day: event.trading_day,
+      segment_start_trading_day: '2026-01-01',
+      opportunity_id: `subing-opportunity:${event.id}`,
+      decision_at: event.bar_end,
+      effective_open_at: event.bar_end,
+      effective_bar_end: event.bar_end,
+      reference_price: '101.5',
+      fill_basis: 'next_bar_open',
+      confirmation_source: 'formal_v1',
+      reason_codes: [],
+      direction_context_source_day: '2026-01-09',
+      direction_context_target_day: '2026-01-12',
+      bound_reference_pivot: null,
+      entry: null,
+      holding_bar_count: null,
+      reference_change_percent: null,
+    },
   }
 }
 
@@ -558,6 +424,22 @@ function emptySubingStrategyHistory(request) {
   }
 }
 
+function subingStrategyCurrent(request, contract = 'AG2601', overrides = {}) {
+  return {
+    strategy_id: 'subing_strategy_v1', formula_version: 'subing_strategy_15m_v1',
+    series_kind: 'actual_dominant', symbol: request.symbol, frequency: '15m', contract,
+    segment_start_trading_day: '2026-01-01', source_mode: 'canonical',
+    cutoff: '2026-01-12T02:30:00Z', position_state: 'flat', pending_action: null,
+    current_episode: null, latest_completed_episode: null,
+    direction_context: {
+      symbol: request.symbol, target_trading_day: '2026-01-12', source_trading_day: '2026-01-09',
+      direction: 'no_new_entry', reason_codes: [], daily_bar_end: null, hourly_bar_end: null,
+      physical_contract: contract,
+    },
+    ...overrides,
+  }
+}
+
 function subingStrategyHistory(request, entryTime, exitTime) {
   const decisionBefore = (value) => new Date(Date.parse(value) - 15 * 60 * 1000).toISOString()
   const entry = {
@@ -566,6 +448,7 @@ function subingStrategyHistory(request, entryTime, exitTime) {
     kind: 'open_long', symbol: request.symbol, contract: 'AG2601',
     trading_day: entryTime.slice(0, 10), segment_start_trading_day: entryTime.slice(0, 10),
     opportunity_id: 'subing-opportunity:e2e', decision_at: decisionBefore(entryTime),
+    effective_open_at: decisionBefore(entryTime),
     effective_bar_end: entryTime, reference_price: '100.5', fill_basis: 'next_bar_open',
     confirmation_source: 'formal_v1', reason_codes: [],
     direction_context_source_day: entryTime.slice(0, 10),
@@ -574,6 +457,7 @@ function subingStrategyHistory(request, entryTime, exitTime) {
   const exit = {
     ...entry, action_id: 'subing-action:e2e-exit', kind: 'close_long',
     trading_day: exitTime.slice(0, 10), decision_at: decisionBefore(exitTime),
+    effective_open_at: decisionBefore(exitTime),
     effective_bar_end: exitTime, reference_price: '108.50985', confirmation_source: null,
     reason_codes: ['EMA21', 'MACD_HIGH_DEAD_CROSS'],
     direction_context_source_day: null, direction_context_target_day: null,
@@ -613,6 +497,13 @@ async function mockWorkspace(page, researchResponse, options = {}) {
   let subingResponseIndex = 0
   await page.route('**/api/v1/market/**', async (route) => {
     const url = new URL(route.request().url())
+    if (url.pathname.endsWith('/research/subing-strategy/current')) {
+      const request = Object.fromEntries(url.searchParams)
+      const configured = typeof options.subingStrategyCurrentResponse === 'function'
+        ? options.subingStrategyCurrentResponse(request)
+        : options.subingStrategyCurrentResponse
+      return route.fulfill({ json: configured || subingStrategyCurrent(request, workspaceContract) })
+    }
     if (url.pathname.endsWith('/research/n-structure/bands')) {
       const request = Object.fromEntries(url.searchParams)
       nStructureBandRequests.push(request)
@@ -771,12 +662,9 @@ async function mockAlertMarkerSurface(page, currentItems = [], options = {}) {
         items: currentItems,
       } })
     }
-    if (url.pathname.endsWith('/events')) return route.fulfill({ json: { items: [{
-      id: 101, rule_code: 'subing_entry_signal_v1', symbol, contract,
-      trading_day: '2026-01-12', frequency: '5m', bar_end: '2026-01-12T02:20:00Z',
-      result_codes: ['buy'], lower_tf_confirmation: false, detected_at: '2026-01-12T02:20:01Z',
-      notification_attempted_at: null,
-    }] } })
+    if (url.pathname.endsWith('/events')) return route.fulfill({ json: {
+      items: options.persistentItems || [],
+    } })
     return route.abort()
   })
 }
@@ -905,7 +793,7 @@ async function mockProductIdentityWorkspace(page) {
           id,
           symbol: requestedSymbol,
           contract: contracts[requestedSymbol],
-          result_codes: requestedSymbol === 'jm' ? ['buy'] : ['sell'],
+          result_codes: requestedSymbol === 'jm' ? ['open_long'] : ['open_short'],
         })],
       } })
     }
@@ -917,9 +805,9 @@ async function mockProductIdentityWorkspace(page) {
       await identityFactGate(gates, 'Scope', requestedSymbol, index)
       const suffix = requestedSymbol === 'jm' ? 'JM' : index === 0 ? 'OLD' : 'FINAL'
       return route.fulfill({ json: { symbol: requestedSymbol, rules: [{
-        rule_code: 'subing_entry_signal_v1',
+        rule_code: 'subing_strategy_v1',
         display_name: `${requestedSymbol.toUpperCase()} ${suffix} Scope`,
-        kind: 'formal_signal',
+        kind: 'strategy_action',
         input_frequencies: ['5m', '15m'],
         enabled_for_product: true,
         enabled_frequencies: [],
@@ -1029,7 +917,7 @@ test('Product Workspace identity invalidates AG facts before delayed JM Market a
   await expect(page.locator('.subing-panel__factor').filter({ hasText: 'Primary Factor' })).toContainText('S5 -4.2 bps/bar')
   await expect(page.getByTestId('subing-alert-scope')).toContainText('JM JM Scope')
   await expect(page.getByTestId('subing-alert-scope').getByRole('switch')).not.toHaveClass(/n-switch--disabled/)
-  await expect(page.getByTestId('subing-formal-event')).toContainText('买入信号')
+  await expect(page.getByTestId('subing-strategy-event')).toContainText('建多')
   expect(calls.put).toEqual([])
 })
 
@@ -1103,9 +991,7 @@ test('B1 journey narrows AG on the homepage before opening its verification view
   const ag = radarItem({ symbol: 'ag', product_name: '白银', sector: 'precious' })
   await mockWorkspace(page, { json: research() })
   await mockAlertMarkerSurface(page)
-  await mockMarketHomepage(page, {
-    status: 'ready', trading_day: '2026-08-15', items: [],
-  }, radar({
+  await mockMarketHomepage(page, radar({
     items: [ag],
     sector_summary: [sectorSummary('precious', 0.012)],
   }), dailyWatch({
@@ -1116,11 +1002,7 @@ test('B1 journey narrows AG on the homepage before opening its verification view
   await page.goto('/market')
 
   await expect(page.getByRole('region', { name: '苏冰' })).toHaveCount(1)
-  await expect(page.getByTestId('market-formal-signals')).toBeVisible()
   await expect(page.getByTestId('subing-daily-watch')).toBeVisible()
-  expect(await page.locator('[data-testid="market-formal-signals"], [data-testid="subing-daily-watch"]').evaluateAll((nodes) => (
-    Boolean(nodes[0]?.compareDocumentPosition(nodes[1]) & Node.DOCUMENT_POSITION_FOLLOWING)
-  ))).toBe(true)
   const focus = page.getByTestId('subing-daily-watch')
   await expect(focus).toContainText('AG 白银')
   await expect(page.getByTestId('market-full-research')).not.toHaveAttribute('open')
@@ -1481,6 +1363,87 @@ test('SuBing Strategy anchors Action times, shows complete records, and keeps in
   await expect(shell).toHaveAttribute('data-research-marker-count', '3')
 })
 
+test('SuBing Strategy renders the current open episode from the current endpoint', async ({ page }) => {
+  const entry = {
+    action_id: 'subing-action:e2e-current-entry', episode_id: 'subing-episode:e2e-current',
+    strategy_id: 'subing_strategy_v1', formula_version: 'subing_strategy_15m_v1',
+    kind: 'open_long', symbol: 'ag', contract: 'AG2601', trading_day: '2026-01-12',
+    segment_start_trading_day: '2026-01-01', opportunity_id: 'subing-opportunity:e2e-current',
+    decision_at: '2026-01-12T02:15:00Z', effective_open_at: '2026-01-12T02:15:00Z',
+    effective_bar_end: '2026-01-12T02:30:00Z', reference_price: '100.5',
+    fill_basis: 'next_bar_open', confirmation_source: 'formal_v1', reason_codes: [],
+    direction_context_source_day: '2026-01-09', direction_context_target_day: '2026-01-12',
+    bound_reference_pivot: null,
+  }
+  const currentEpisode = {
+    episode_id: entry.episode_id, direction: 'long', entry_action: entry, exit_action: null,
+    state: 'open', holding_bar_count: 3, reference_change_percent: null,
+    current_reference_change_percent: '2.49', latest_reference_price: '103.0',
+    exit_reason_codes: [], structure_exit_available: false,
+  }
+  await mockAlertMarkerSurface(page)
+  await mockWorkspace(page, { json: research() }, {
+    subingStrategyCurrentResponse: (request) => subingStrategyCurrent(request, 'AG2601', {
+      position_state: 'long', current_episode: currentEpisode,
+      direction_context: {
+        symbol: 'ag', target_trading_day: '2026-01-12', source_trading_day: '2026-01-09',
+        direction: 'long_only', reason_codes: [], daily_bar_end: null, hourly_bar_end: null,
+        physical_contract: 'AG2601',
+      },
+    }),
+  })
+
+  await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=15m')
+
+  const records = page.getByTestId('subing-strategy-records')
+  const episode = records.locator('[data-episode-id="subing-episode:e2e-current"]')
+  await expect(episode).toContainText('建多')
+  await expect(episode).toContainText('持仓中')
+  await expect(episode).toContainText('100.5')
+  await expect(episode).toContainText('3 根 15m Bar')
+  await expect(episode).toContainText('当前参考变动 +2.49%')
+})
+
+test('SuBing Strategy keeps the canonical marker and exposes an immutable Event fact mismatch', async ({ page }) => {
+  const bars = Array.from({ length: 120 }, (_, index) => bar(index))
+  const history = subingStrategyHistory(
+    { series_kind: 'actual_dominant', symbol: 'ag', frequency: '15m', since: '2026-01-01', through: '2026-04-30' },
+    bars[20].bar_end,
+    bars[100].bar_end,
+  )
+  const entry = history.actions[0]
+  const currentEvent = {
+    id: 220, rule_code: 'subing_strategy_v1', symbol: 'ag', contract: 'AG2601',
+    trading_day: entry.trading_day, frequency: '15m', bar_end: entry.decision_at,
+    result_codes: ['open_long'], action_id: entry.action_id,
+    strategy_action: {
+      schema_version: 1, ...entry, reference_price: '999', entry: null,
+      holding_bar_count: null, reference_change_percent: null,
+    },
+    detected_at: entry.decision_at, notification_attempted_at: null,
+  }
+  await mockAlertMarkerSurface(page, [currentEvent])
+  await mockWorkspace(page, { json: research() }, {
+    bars,
+    canonicalCoverage: { start: bars[0].bar_end, end: bars.at(-1).bar_end },
+    subingStrategyHistoricalResponse: history,
+  })
+
+  await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=15m')
+
+  const shell = page.getByTestId('kline-shell')
+  await expect(shell).toHaveAttribute('data-research-marker-count', '2')
+  await expect(shell).toHaveAttribute(
+    'data-research-marker-ids',
+    'historical:subing-action:e2e-entry,historical:subing-action:e2e-exit',
+  )
+  const event = page.getByTestId('subing-strategy-event')
+  await expect(event).toContainText('建多')
+  await expect(event).toContainText('不可变通知事实 · AG2601')
+  await expect(event).toContainText('STRATEGY_ACTION_FACT_MISMATCH')
+  await expect(event).toContainText('图表采用 Canonical Historical 事实')
+})
+
 test('JDJ Strategy fails closed for AG profile unavailability', async ({ page }) => {
   const bars = Array.from({ length: 120 }, (_, index) => bar(index))
   const jdjStrategyHistoricalRequests = []
@@ -1576,7 +1539,7 @@ test('SuBing keeps the full Market display history and renders the requested pri
 
   await expect(page.getByText('120 bars', { exact: true })).toBeVisible()
   await expect(page.locator('.product-workspace__kline')).toHaveAttribute('data-visible-start-trading-day', '2026-01-01')
-  await expect(page.getByTestId('subing-formal-event')).toContainText('当前无可展示的苏冰正式事件记录')
+  await expect(page.getByTestId('subing-strategy-event')).toContainText('当前无可展示的苏冰策略事件记录')
   await expect(page.getByTestId('product-check-background')).toContainText('周线')
   await expect(page.getByTestId('product-check-background')).toContainText('日线')
   await expect(page.getByTestId('product-check-observation')).toContainText('苏冰')
@@ -1592,53 +1555,37 @@ test('SuBing keeps the full Market display history and renders the requested pri
   await expect(page.locator('body')).not.toContainText('ZERO_BAND')
 })
 
-test('current AlertEvent remains an immutable formal event', async ({ page }) => {
-  const currentEvent = {
+test('current AlertEvent remains an immutable strategy action event', async ({ page }) => {
+  const currentEvent = panelEvent({
     id: 202,
-    rule_code: 'subing_entry_signal_v1',
-    symbol: 'ag',
-    contract: 'AG2601',
-    trading_day: '2026-01-12',
-    frequency: '5m',
+    action_id: 'subing-action:202',
+    result_codes: ['open_long'],
     bar_end: '2026-01-12T02:20:00Z',
-    result_codes: ['buy'],
-    lower_tf_confirmation: false,
-    detected_at: '2026-01-12T02:20:01Z',
-    notification_attempted_at: null,
-  }
+  })
   await mockWorkspace(page, { json: research() })
   await mockAlertMarkerSurface(page, [currentEvent])
-  await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=5m')
+  await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=15m')
 
-  const formal = page.getByTestId('subing-formal-event')
-  await expect(formal).toContainText('苏冰 · 买入信号')
-  await expect(formal).toContainText('今日正式提醒记录')
-  await expect(formal.getByRole('button')).toHaveCount(0)
-  await expect(formal).not.toContainText('研究确认')
+  const strategyEvent = page.getByTestId('subing-strategy-event')
+  await expect(strategyEvent).toContainText('建多')
+  await expect(strategyEvent).toContainText('不可变通知事实 · AG2601')
+  await expect(strategyEvent.getByRole('button')).toHaveCount(0)
 })
 
-test('current SuBing Formal Event has no retired workflow action', async ({ page }) => {
-  const currentEvent = {
+test('current SuBing Strategy Event has no workflow mutation action', async ({ page }) => {
+  const currentEvent = panelEvent({
     id: 203,
-    rule_code: 'subing_entry_signal_v1',
-    symbol: 'ag',
-    contract: 'AG2601',
-    trading_day: '2026-01-12',
-    frequency: '5m',
+    action_id: 'subing-action:203',
+    result_codes: ['open_short'],
     bar_end: '2026-01-12T02:25:00Z',
-    result_codes: ['sell'],
-    lower_tf_confirmation: false,
-    detected_at: '2026-01-12T02:25:01Z',
-    notification_attempted_at: null,
-  }
+  })
   await mockWorkspace(page, { json: research() })
   await mockAlertMarkerSurface(page, [currentEvent])
-  await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=5m')
+  await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=15m')
 
-  const formal = page.getByTestId('subing-formal-event')
-  await expect(formal).toContainText('苏冰 · 卖出信号')
-  await expect(formal).toContainText('今日正式提醒记录')
-  await expect(formal.getByRole('button')).toHaveCount(0)
+  const strategyEvent = page.getByTestId('subing-strategy-event')
+  await expect(strategyEvent).toContainText('建空')
+  await expect(strategyEvent.getByRole('button')).toHaveCount(0)
 })
 
 test('single SuBing panel selects one immutable Event and keeps the remaining backend order', async ({ page }) => {
@@ -1650,8 +1597,8 @@ test('single SuBing panel selects one immutable Event and keeps the remaining ba
     bar_end: '2026-01-12T02:25:00Z',
     result_codes: ['buy'],
   })
-  const olderBuy = panelEvent({ id: 302, bar_end: '2026-01-12T02:20:00Z', result_codes: ['buy'] })
-  const oldestSell = panelEvent({ id: 303, bar_end: '2026-01-12T02:10:00Z' })
+  const olderBuy = panelEvent({ id: 302, action_id: 'subing-action:302', bar_end: '2026-01-12T02:20:00Z', result_codes: ['open_long'] })
+  const oldestSell = panelEvent({ id: 303, action_id: 'subing-action:303', bar_end: '2026-01-12T02:10:00Z', result_codes: ['open_short'] })
   const snapshot = cloneSubingLifecycleCase('dualFormalLong5m')
   snapshot.companion.snapshot.bar_end = '2026-01-12T02:15:00Z'
   await mockWorkspace(page, { json: research() }, {
@@ -1660,20 +1607,20 @@ test('single SuBing panel selects one immutable Event and keeps the remaining ba
   await mockAlertMarkerSurface(page, [selected, htdy, olderBuy, oldestSell], {
     rules: [
       { rule_code: 'htdy_original_15m', display_name: '火天大有', kind: 'indicator_observation', input_frequencies: ['5m', '15m'], enabled_for_product: true, enabled_frequencies: ['5m'] },
-      { rule_code: 'subing_entry_signal_v1', display_name: '苏冰入场信号', kind: 'formal_signal', input_frequencies: ['5m', '15m'], enabled_for_product: true, enabled_frequencies: [] },
-      { rule_code: 'future_rule', display_name: '未来提醒', kind: 'formal_signal', input_frequencies: ['5m'], enabled_for_product: true, enabled_frequencies: [] },
+      { rule_code: 'subing_strategy_v1', display_name: '苏冰策略', kind: 'strategy_action', input_frequencies: ['5m', '15m'], enabled_for_product: true, enabled_frequencies: [] },
+      { rule_code: 'future_rule', display_name: '未来提醒', kind: 'strategy_action', input_frequencies: ['5m'], enabled_for_product: true, enabled_frequencies: [] },
     ],
   })
   await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=5m')
 
   const panel = page.getByTestId('subing-panel')
-  const formal = page.getByTestId('subing-formal-event')
-  await expect(formal.locator('[data-formal-event-id="301"]')).toHaveCount(1)
-  const historicalRows = formal.locator('.product-today-alert-events__row')
+  const strategyEvent = page.getByTestId('subing-strategy-event')
+  await expect(strategyEvent.locator('[data-strategy-event-id="301"]')).toHaveCount(1)
+  const historicalRows = strategyEvent.locator('.product-today-alert-events__row')
   await expect(historicalRows).toHaveCount(2)
   expect(await historicalRows.evaluateAll((rows) => rows.map((row) => row.getAttribute('data-event-id'))))
     .toEqual(['302', '303'])
-  await expect(formal.locator('[data-event-id="301"], [data-event-id="304"]')).toHaveCount(0)
+  await expect(strategyEvent.locator('[data-event-id="301"], [data-event-id="304"]')).toHaveCount(0)
   await expect(panel).not.toContainText('火天大有')
   await expect(panel).not.toContainText('未来提醒')
   await expect(panel.getByRole('switch')).toHaveCount(1)
@@ -1688,7 +1635,7 @@ test('single SuBing panel selects one immutable Event and keeps the remaining ba
   await expect(panel.locator('.subing-panel__facts > div').filter({ hasText: 'Primary 确认' })).toContainText('01/12 10:30')
   await expect(panel.locator('.subing-panel__facts > div').filter({ hasText: 'Companion 确认' })).toContainText('01/12 10:15')
 
-  await expect(formal.getByRole('button')).toHaveCount(0)
+  await expect(strategyEvent.getByRole('button')).toHaveCount(0)
 })
 
 test('SuBing panel keeps Event and Alert loading independent from a ready snapshot', async ({ page }) => {
@@ -1700,27 +1647,27 @@ test('SuBing panel keeps Event and Alert loading independent from a ready snapsh
     currentEventsDelayMs: 900,
     alertScopeGate,
     rules: [{
-      rule_code: 'subing_entry_signal_v1', display_name: '苏冰入场信号', kind: 'formal_signal',
+      rule_code: 'subing_strategy_v1', display_name: '苏冰策略', kind: 'strategy_action',
       input_frequencies: ['5m', '15m'], enabled_for_product: false, enabled_frequencies: [],
     }],
   })
   await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=5m')
 
   const panel = page.getByTestId('subing-panel')
-  const formal = page.getByTestId('subing-formal-event')
+  const strategyEvent = page.getByTestId('subing-strategy-event')
   const scope = page.getByTestId('subing-alert-scope')
   await openSubingResearchDetails(page)
   await expect(panel.getByText('Resolved Signal', { exact: true })).toBeVisible()
-  await expect(formal).toContainText('正在读取苏冰正式事件')
-  await expect(formal).not.toContainText('当前无可展示的苏冰正式事件记录')
+  await expect(strategyEvent).toContainText('正在读取苏冰策略事件')
+  await expect(strategyEvent).not.toContainText('当前无可展示的苏冰策略事件记录')
   await expect(scope).toContainText('正在读取苏冰提醒 Scope')
   await expect(scope).not.toContainText('不可用')
   await expect(scope.getByRole('switch')).toHaveCount(1)
   await expect(scope.getByRole('switch')).toHaveClass(/n-switch--disabled/)
   await expect(scope.getByRole('switch')).toHaveClass(/n-switch--loading/)
 
-  await expect(formal.getByText('当前无可展示的苏冰正式事件记录', { exact: true })).toHaveCount(1)
-  await expect(formal.getByTestId('product-today-alert-events')).toHaveCount(0)
+  await expect(strategyEvent.getByText('当前无可展示的苏冰策略事件记录', { exact: true })).toHaveCount(1)
+  await expect(strategyEvent.getByTestId('product-today-alert-events')).toHaveCount(0)
   alertScopeGate.resolve()
   await expect(scope.getByRole('switch')).toBeVisible()
   await expect(scope.getByRole('switch')).not.toHaveClass(/n-switch--disabled/)
@@ -1731,10 +1678,10 @@ test('SuBing panel keeps an unavailable Event source distinct from ready empty',
   await mockAlertMarkerSurface(page, [], { currentEventsStatus: 'unavailable' })
   await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=5m')
 
-  const formal = page.getByTestId('subing-formal-event')
-  await expect(formal).toContainText('苏冰正式事件暂不可用')
-  await expect(formal).not.toContainText('当前无可展示的苏冰正式事件记录')
-  await expect(formal.getByTestId('product-today-alert-events')).toHaveCount(0)
+  const strategyEvent = page.getByTestId('subing-strategy-event')
+  await expect(strategyEvent).toContainText('苏冰策略事件暂不可用')
+  await expect(strategyEvent).not.toContainText('当前无可展示的苏冰策略事件记录')
+  await expect(strategyEvent.getByTestId('product-today-alert-events')).toHaveCount(0)
 })
 
 test('SuBing panel distinguishes authoritative warm-up without inventing Factor evidence', async ({ page }) => {
@@ -1857,13 +1804,13 @@ test('lifecycle markers keep Alert counts independent and clear stale research s
   await expect(setupPanel).toBeVisible()
   await expect(setupPanel).toContainText('准备中')
   await expect(setupPanel).toContainText('—')
-  await expect(shell).toHaveAttribute('data-alert-marker-count', '1')
+  await expect(shell).toHaveAttribute('data-alert-marker-count', '0')
   await expect(shell).toHaveAttribute('data-research-marker-count', '1')
   await expect(shell).toHaveAttribute('data-rendered-research-marker-count', '1')
 
   const overlay = page.getByRole('group', { name: 'Overlay' })
   await overlay.getByRole('button', { name: '无', exact: true }).click()
-  await expect(shell).toHaveAttribute('data-alert-marker-count', '1')
+  await expect(shell).toHaveAttribute('data-alert-marker-count', '0')
   await expect(shell).toHaveAttribute('data-research-marker-count', '0')
   await expect(shell).toHaveAttribute('data-rendered-research-marker-count', '0')
   await overlay.getByRole('button', { name: '苏冰', exact: true }).click()
@@ -1878,7 +1825,7 @@ test('lifecycle markers keep Alert counts independent and clear stale research s
   await expect(confirmedLifecycle).toContainText('绑定前低')
   await expect(confirmedLifecycle).toContainText('105')
   await expect(shell).toHaveAttribute('data-rendered-research-marker-count', '2')
-  await expect(shell).toHaveAttribute('data-alert-marker-count', '1')
+  await expect(shell).toHaveAttribute('data-alert-marker-count', '0')
 
   await overlay.getByRole('button', { name: '无', exact: true }).click()
   await overlay.getByRole('button', { name: '苏冰', exact: true }).click()

@@ -6,6 +6,7 @@ import {
   alertDirectionalTone,
   alertResultLabel,
   alertRuleShortLabel,
+  strategyActionLabel,
 } from '@/utils/alertRules'
 
 const props = defineProps<{
@@ -22,11 +23,24 @@ function ruleLabel(ruleCode: string) {
 }
 
 function resultLabel(event: AlertEvent) {
-  return alertResultLabel(event.rule_code, event.result_codes)
+  if (event.strategy_action) return strategyActionLabel(event.strategy_action.kind)
+  return alertResultLabel(
+    event.rule_code,
+    event.result_codes.filter((item): item is 'buy' | 'sell' => item === 'buy' || item === 'sell'),
+  )
 }
 
 function resultClass(event: AlertEvent) {
-  const direction = alertDirectionalTone(event.rule_code, event.result_codes)
+  const strategyKind = event.strategy_action?.kind
+  if (strategyKind) {
+    return strategyKind.endsWith('_long')
+      ? 'product-today-alert-events__result--buy'
+      : 'product-today-alert-events__result--sell'
+  }
+  const direction = alertDirectionalTone(
+    event.rule_code,
+    event.result_codes.filter((item): item is 'buy' | 'sell' => item === 'buy' || item === 'sell'),
+  )
   return direction === 'buy' ? 'product-today-alert-events__result--buy'
     : direction === 'sell' ? 'product-today-alert-events__result--sell'
       : ''
@@ -43,7 +57,7 @@ function barTime(value: string) {
 
 <template>
   <section class="product-today-alert-events" data-testid="product-today-alert-events">
-    <h3>苏冰今日其余记录</h3>
+    <h3>苏冰策略事件</h3>
     <div class="product-today-alert-events__rows">
       <div
         v-for="item in items"

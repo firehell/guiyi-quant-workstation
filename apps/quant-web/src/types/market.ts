@@ -812,6 +812,7 @@ export interface SubingStrategyActionWire {
   segment_start_trading_day: string
   opportunity_id: string
   decision_at: string
+  effective_open_at: string | null
   effective_bar_end: string
   reference_price: string
   fill_basis: SubingStrategyFillBasis
@@ -828,6 +829,21 @@ export interface SubingStrategyAction extends Omit<
 > {
   reference_price: number
   bound_reference_pivot: SubingStrategyBoundPivot | null
+}
+
+export interface SubingStrategyEventEntryWire {
+  action_id: string
+  kind: 'open_long' | 'open_short'
+  effective_bar_end: string
+  reference_price: string
+  confirmation_source: SubingStrategyConfirmationSource
+}
+
+export interface SubingStrategyActionPayloadWire extends SubingStrategyActionWire {
+  schema_version: 1
+  entry: SubingStrategyEventEntryWire | null
+  holding_bar_count: number | null
+  reference_change_percent: string | null
 }
 
 export interface SubingStrategyEpisodeWire {
@@ -903,6 +919,49 @@ export interface SubingStrategyHistoricalResponse extends Omit<
   episodes: SubingStrategyEpisode[]
 }
 
+export interface SubingStrategyPendingSummary {
+  kind: SubingStrategyActionKind
+  decision_at: string
+  opportunity_id: string
+  reason_codes: string[]
+}
+
+export interface SubingStrategyCurrentContext {
+  symbol: string
+  target_trading_day: string
+  source_trading_day: string | null
+  direction: 'long_only' | 'short_only' | 'no_new_entry' | 'unavailable'
+  reason_codes: string[]
+  daily_bar_end: string | null
+  hourly_bar_end: string | null
+  physical_contract: string | null
+}
+
+export interface SubingStrategyCurrentWireResponse {
+  strategy_id: 'subing_strategy_v1'
+  formula_version: 'subing_strategy_15m_v1'
+  series_kind: 'actual_dominant'
+  symbol: string
+  frequency: '15m'
+  contract: string
+  segment_start_trading_day: string
+  source_mode: 'canonical' | 'canonical_live'
+  cutoff: string
+  position_state: 'flat' | 'long' | 'short'
+  pending_action: SubingStrategyPendingSummary | null
+  current_episode: SubingStrategyEpisodeWire | null
+  latest_completed_episode: SubingStrategyEpisodeWire | null
+  direction_context: SubingStrategyCurrentContext
+}
+
+export interface SubingStrategyCurrentResponse extends Omit<
+  SubingStrategyCurrentWireResponse,
+  'current_episode' | 'latest_completed_episode'
+> {
+  current_episode: SubingStrategyEpisode | null
+  latest_completed_episode: SubingStrategyEpisode | null
+}
+
 const SUBING_STRATEGY_CONFIRMATION_SOURCES = [
   'formal_v1', 'momentum_hold', 'pivot_break_hold', 'pivot_retest_rebreak',
 ] as const
@@ -939,6 +998,10 @@ function strategyTimestamp(value: unknown): string {
   return result
 }
 
+function strategyNullableTimestamp(value: unknown): string | null {
+  return value === null ? null : strategyTimestamp(value)
+}
+
 function strategyDecimal(value: unknown): number {
   if (typeof value !== 'string' || value.trim() === '') invalidSubingStrategyResponse()
   const number = Number(value)
@@ -955,6 +1018,11 @@ function strategyStringArray(value: unknown): string[] {
     invalidSubingStrategyResponse()
   }
   return [...value] as string[]
+}
+
+function strategyEnum<const T extends readonly string[]>(value: unknown, allowed: T): T[number] {
+  if (typeof value !== 'string' || !allowed.includes(value)) invalidSubingStrategyResponse()
+  return value as T[number]
 }
 
 function normalizeStrategyPivot(value: unknown): SubingStrategyBoundPivot | null {
@@ -1028,6 +1096,7 @@ function normalizeStrategyAction(value: unknown): SubingStrategyAction {
     segment_start_trading_day: strategyDate(action.segment_start_trading_day),
     opportunity_id: strategyString(action.opportunity_id),
     decision_at: decision,
+    effective_open_at: strategyNullableTimestamp(action.effective_open_at),
     effective_bar_end: effective,
     reference_price: strategyDecimal(action.reference_price),
     fill_basis: action.fill_basis as SubingStrategyFillBasis,
@@ -1038,6 +1107,63 @@ function normalizeStrategyAction(value: unknown): SubingStrategyAction {
     direction_context_target_day: action.direction_context_target_day === null
       ? null : strategyDate(action.direction_context_target_day),
     bound_reference_pivot: pivot,
+  }
+}
+
+function normalizeStrategyEpisode(value: unknown, expectedSymbol: string): SubingStrategyEpisode {
+  const episode = strategyRecord(value)
+  const entry = normalizeStrategyAction(episode.entry_action)
+  const exit = episode.exit_action === null ? null : normalizeStrategyAction(episode.exit_action)
+  const episodeId = strategyString(episode.episode_id)
+  const direction = episode.direction
+  const state = episode.state
+  if (
+    !['long', 'short'].includes(String(direction))
+    || !['open', 'closed'].includes(String(state))
+    || entry.episode_id !== episodeId
+    || entry.symbol !== expectedSymbol
+    || (direction === 'long' ? entry.kind !== 'open_long' : entry.kind !== 'open_short')
+    || (state === 'open') !== (exit === null)
+    || (exit !== null && (
+      exit.episode_id !== episodeId
+      || exit.symbol !== entry.symbol
+      || exit.contract !== entry.contract
+      || exit.opportunity_id !== entry.opportunity_id
+      || (direction === 'long' ? exit.kind !== 'close_long' : exit.kind !== 'close_short')
+    ))
+    || !Number.isInteger(episode.holding_bar_count)
+    || Number(episode.holding_bar_count) < 1
+    || typeof episode.structure_exit_available !== 'boolean'
+  ) invalidSubingStrategyResponse()
+  const exitReasons = strategyStringArray(episode.exit_reason_codes)
+  if (
+    (exit !== null && exitReasons.join('|') !== exit.reason_codes.join('|'))
+    || (exit === null && exitReasons.length > 0)
+    || (state === 'closed' && (
+      episode.reference_change_percent === null
+      || episode.current_reference_change_percent !== null
+      || episode.latest_reference_price !== null
+    ))
+    || (state === 'open' && (
+      episode.reference_change_percent !== null
+      || episode.current_reference_change_percent === null
+      || episode.latest_reference_price === null
+    ))
+  ) invalidSubingStrategyResponse()
+  return {
+    episode_id: episodeId,
+    direction: direction as 'long' | 'short',
+    entry_action: entry,
+    exit_action: exit,
+    state: state as 'open' | 'closed',
+    holding_bar_count: episode.holding_bar_count as number,
+    reference_change_percent: strategyNullableDecimal(episode.reference_change_percent),
+    current_reference_change_percent: strategyNullableDecimal(
+      episode.current_reference_change_percent,
+    ),
+    latest_reference_price: strategyNullableDecimal(episode.latest_reference_price),
+    exit_reason_codes: exitReasons,
+    structure_exit_available: episode.structure_exit_available,
   }
 }
 
@@ -1085,65 +1211,9 @@ export function normalizeSubingStrategyHistory(
     || action.trading_day < normalizedRequest.since
     || action.trading_day > normalizedRequest.through
   ))) invalidSubingStrategyResponse()
-  const episodes = payload.episodes.map((value): SubingStrategyEpisode => {
-    const episode = strategyRecord(value)
-    const entry = normalizeStrategyAction(episode.entry_action)
-    const exit = episode.exit_action === null
-      ? null : normalizeStrategyAction(episode.exit_action)
-    const episodeId = strategyString(episode.episode_id)
-    const direction = episode.direction
-    const state = episode.state
-    if (
-      !['long', 'short'].includes(String(direction))
-      || !['open', 'closed'].includes(String(state))
-      || entry.episode_id !== episodeId
-      || entry.symbol !== normalizedRequest.symbol
-      || (direction === 'long' ? entry.kind !== 'open_long' : entry.kind !== 'open_short')
-      || (state === 'open') !== (exit === null)
-      || (exit !== null && (
-        exit.episode_id !== episodeId
-        || exit.symbol !== entry.symbol
-        || exit.contract !== entry.contract
-        || exit.opportunity_id !== entry.opportunity_id
-        || (direction === 'long' ? exit.kind !== 'close_long' : exit.kind !== 'close_short')
-      ))
-      || !Number.isInteger(episode.holding_bar_count)
-      || Number(episode.holding_bar_count) < 1
-      || typeof episode.structure_exit_available !== 'boolean'
-    ) invalidSubingStrategyResponse()
-    const exitReasons = strategyStringArray(episode.exit_reason_codes)
-    if (
-      (exit !== null && exitReasons.join('|') !== exit.reason_codes.join('|'))
-      || (exit === null && exitReasons.length > 0)
-      || (state === 'closed' && (
-        episode.reference_change_percent === null
-        || episode.current_reference_change_percent !== null
-        || episode.latest_reference_price !== null
-      ))
-      || (state === 'open' && (
-        episode.reference_change_percent !== null
-        || episode.current_reference_change_percent === null
-        || episode.latest_reference_price === null
-      ))
-    ) {
-      invalidSubingStrategyResponse()
-    }
-    return {
-      episode_id: episodeId,
-      direction: direction as 'long' | 'short',
-      entry_action: entry,
-      exit_action: exit,
-      state: state as 'open' | 'closed',
-      holding_bar_count: episode.holding_bar_count as number,
-      reference_change_percent: strategyNullableDecimal(episode.reference_change_percent),
-      current_reference_change_percent: strategyNullableDecimal(
-        episode.current_reference_change_percent,
-      ),
-      latest_reference_price: strategyNullableDecimal(episode.latest_reference_price),
-      exit_reason_codes: exitReasons,
-      structure_exit_available: episode.structure_exit_available,
-    }
-  })
+  const episodes = payload.episodes.map((value) => (
+    normalizeStrategyEpisode(value, normalizedRequest.symbol)
+  ))
   if (new Set(episodes.map((episode) => episode.episode_id)).size !== episodes.length) {
     invalidSubingStrategyResponse()
   }
@@ -1189,6 +1259,75 @@ export function normalizeSubingStrategyHistory(
     request: normalizedRequest,
     actions,
     episodes,
+  }
+}
+
+export function normalizeSubingStrategyCurrent(value: unknown): SubingStrategyCurrentResponse {
+  const payload = strategyRecord(value)
+  if (
+    payload.strategy_id !== 'subing_strategy_v1'
+    || payload.formula_version !== 'subing_strategy_15m_v1'
+    || payload.series_kind !== 'actual_dominant'
+    || payload.frequency !== '15m'
+    || !['canonical', 'canonical_live'].includes(String(payload.source_mode))
+    || !['flat', 'long', 'short'].includes(String(payload.position_state))
+  ) invalidSubingStrategyResponse()
+  const symbol = strategyString(payload.symbol)
+  const contract = strategyString(payload.contract)
+  if (symbol !== symbol.toLowerCase() || !contract.startsWith(symbol.toUpperCase())) {
+    invalidSubingStrategyResponse()
+  }
+  strategyDate(payload.segment_start_trading_day)
+  strategyTimestamp(payload.cutoff)
+  const currentEpisode = payload.current_episode === null
+    ? null : normalizeStrategyEpisode(payload.current_episode, symbol)
+  const latestCompleted = payload.latest_completed_episode === null
+    ? null : normalizeStrategyEpisode(payload.latest_completed_episode, symbol)
+  const pending = payload.pending_action === null ? null : strategyRecord(payload.pending_action)
+  const normalizedPending = pending === null ? null : {
+    kind: strategyEnum(pending.kind, SUBING_STRATEGY_ACTION_KINDS),
+    decision_at: strategyTimestamp(pending.decision_at),
+    opportunity_id: strategyString(pending.opportunity_id),
+    reason_codes: strategyStringArray(pending.reason_codes),
+  }
+  const context = strategyRecord(payload.direction_context)
+  const contextDirection = strategyEnum(context.direction, [
+    'long_only', 'short_only', 'no_new_entry', 'unavailable',
+  ] as const)
+  const sourceTradingDay = context.source_trading_day === null
+    ? null : strategyDate(context.source_trading_day)
+  const dailyBarEnd = context.daily_bar_end === null
+    ? null : strategyTimestamp(context.daily_bar_end)
+  const hourlyBarEnd = context.hourly_bar_end === null
+    ? null : strategyTimestamp(context.hourly_bar_end)
+  const physicalContract = context.physical_contract === null
+    ? null : strategyString(context.physical_contract)
+  if (
+    (payload.position_state === 'flat' && currentEpisode !== null)
+    || (payload.position_state !== 'flat' && currentEpisode?.state !== 'open')
+    || latestCompleted?.state === 'open'
+    || context.symbol !== symbol
+    || (payload.position_state === 'long' && currentEpisode?.direction !== 'long')
+    || (payload.position_state === 'short' && currentEpisode?.direction !== 'short')
+    || (currentEpisode !== null && currentEpisode.entry_action.contract !== contract)
+    || (latestCompleted !== null && latestCompleted.entry_action.contract !== contract)
+    || (physicalContract !== null && physicalContract !== contract)
+  ) invalidSubingStrategyResponse()
+  return {
+    ...(payload as unknown as SubingStrategyCurrentWireResponse),
+    pending_action: normalizedPending,
+    current_episode: currentEpisode,
+    latest_completed_episode: latestCompleted,
+    direction_context: {
+      symbol,
+      target_trading_day: strategyDate(context.target_trading_day),
+      source_trading_day: sourceTradingDay,
+      direction: contextDirection,
+      reason_codes: strategyStringArray(context.reason_codes),
+      daily_bar_end: dailyBarEnd,
+      hourly_bar_end: hourlyBarEnd,
+      physical_contract: physicalContract,
+    },
   }
 }
 
@@ -1298,8 +1437,9 @@ export interface AlertEvent {
   trading_day: string | null
   frequency: MarketFrequency
   bar_end: string
-  result_codes: Array<'buy' | 'sell'>
-  lower_tf_confirmation: boolean
+  result_codes: Array<'buy' | 'sell' | SubingStrategyActionKind>
+  action_id: string | null
+  strategy_action: SubingStrategyActionPayloadWire | null
   detected_at: string
   notification_attempted_at: string | null
 }

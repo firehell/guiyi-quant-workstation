@@ -6,17 +6,30 @@ import { buildSubingStrategyRecordRows } from '@/utils/subingStrategyRecords'
 
 const props = defineProps<{
   episodes: SubingStrategyEpisode[]
+  currentEpisode: SubingStrategyEpisode | null
+  latestCompletedEpisode: SubingStrategyEpisode | null
+  currentLoading: boolean
+  currentError: string | null
   loading: boolean
   error: string | null
 }>()
 
-const rows = computed(() => buildSubingStrategyRecordRows(props.episodes))
+const episodes = computed(() => {
+  const byId = new Map(props.episodes.map((episode) => [episode.episode_id, episode]))
+  for (const episode of [props.latestCompletedEpisode, props.currentEpisode]) {
+    if (episode) byId.set(episode.episode_id, episode)
+  }
+  return [...byId.values()]
+})
+const rows = computed(() => buildSubingStrategyRecordRows(episodes.value))
 </script>
 
 <template>
   <section class="subing-strategy-records" data-testid="subing-strategy-records">
     <header><div><span>苏冰策略 V1</span><strong>策略记录</strong></div><NTag size="small" type="info">15m</NTag></header>
     <NSpin :show="loading" size="small">
+      <p v-if="currentLoading">正在读取当前策略状态…</p>
+      <p v-else-if="currentError" class="subing-strategy-records__warning">当前策略状态暂不可用；历史策略投影与 K 线保持可用。</p>
       <p v-if="loading">正在读取历史策略投影…</p>
       <p v-else-if="error" class="subing-strategy-records__warning">历史策略投影暂不可用；K 线与当前观察保持可用。</p>
       <p v-else-if="rows.length === 0">当前窗口暂无相交策略记录</p>

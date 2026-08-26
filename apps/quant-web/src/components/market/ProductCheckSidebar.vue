@@ -15,6 +15,7 @@ import {
   type SeriesKind,
   type SubingResearchResponse,
   type SubingStrategyEpisode,
+  type SubingStrategyCurrentResponse,
 } from '@/types/market'
 import { ALERT_RULE_CODES } from '@/utils/alertRules'
 import { summarizeMarketBackground } from '@/utils/productCheck'
@@ -48,6 +49,10 @@ const props = defineProps<{
   subingStrategyLoading: boolean
   subingStrategyError: string | null
   subingStrategySupported: boolean
+  subingStrategyCurrent: SubingStrategyCurrentResponse | null
+  subingStrategyCurrentLoading: boolean
+  subingStrategyCurrentError: string | null
+  subingStrategyReconciliationErrors: string[]
   showSubingInternalProcess: boolean
 }>()
 
@@ -132,6 +137,10 @@ function updateDataDetailsOpen(event: Event) {
         :strategy-loading="subingStrategyLoading"
         :strategy-error="subingStrategyError"
         :strategy-supported="subingStrategySupported"
+        :strategy-current="subingStrategyCurrent"
+        :strategy-current-loading="subingStrategyCurrentLoading"
+        :strategy-current-error="subingStrategyCurrentError"
+        :strategy-reconciliation-errors="subingStrategyReconciliationErrors"
         :show-internal-process="showSubingInternalProcess"
         @toggle-subing-alert="(ruleCode, enabled) => emit('toggle-subing-alert', ruleCode, enabled)"
       />

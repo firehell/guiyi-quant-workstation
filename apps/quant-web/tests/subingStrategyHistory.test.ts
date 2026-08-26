@@ -18,6 +18,7 @@ function action(kind: string, id: string) {
     segment_start_trading_day: '2026-08-01',
     opportunity_id: 'subing-opportunity:one',
     decision_at: open ? '2026-08-03T02:15:00Z' : '2026-08-07T02:15:00Z',
+    effective_open_at: open ? '2026-08-03T02:15:00Z' : '2026-08-07T02:15:00Z',
     effective_bar_end: open ? '2026-08-03T02:30:00Z' : '2026-08-07T02:30:00Z',
     reference_price: open ? '100.5' : '108.50985',
     fill_basis: 'next_bar_open',

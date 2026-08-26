@@ -131,11 +131,11 @@ test('does not infer a formal or observation result for an unknown current-event
   assert.equal(alertDirectionalTone(unknown.rule_code, unknown.result_codes), null)
 })
 
-test('preserves legal combined HTDY and SuBing current-event directions without coloring them as one direction', () => {
+test('keeps combined HTDY observations neutral and Strategy Actions out of the old direction helper', () => {
   assert.equal(alertResultLabel('htdy_original_15m', ['buy', 'sell']), '买入/卖出观察')
-  assert.equal(alertResultLabel('subing_entry_signal_v1', ['buy', 'sell']), '买入/卖出信号')
+  assert.equal(alertResultLabel('subing_strategy_v1', ['buy', 'sell']), '买入/卖出策略动作')
   assert.equal(alertDirectionalTone('htdy_original_15m', ['buy', 'sell']), null)
-  assert.equal(alertDirectionalTone('subing_entry_signal_v1', ['buy', 'sell']), null)
+  assert.equal(alertDirectionalTone('subing_strategy_v1', ['buy', 'sell']), null)
 })
 
 test('keeps an unknown combined current event fail-closed', () => {
@@ -168,14 +168,15 @@ test('derives the sidebar HTDY observation from the latest existing HTDY marker'
 function event(id: number): AlertEvent {
   return {
     id,
-    rule_code: 'subing_entry_signal_v1',
+    rule_code: 'subing_strategy_v1',
     symbol: 'ag',
     contract: 'AG2610',
     trading_day: '2026-08-15',
     frequency: '15m',
     bar_end: `2026-08-15T0${id}:00:00Z`,
     result_codes: ['buy'],
-    lower_tf_confirmation: false,
+    action_id: null,
+    strategy_action: null,
     detected_at: '2026-08-15T01:00:01Z',
     notification_attempted_at: null,
   }

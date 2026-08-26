@@ -61,7 +61,8 @@ function event({ id, ruleCode, frequency, barEnd, resultCode }) {
     frequency,
     bar_end: barEnd,
     result_codes: [resultCode],
-    lower_tf_confirmation: false,
+    action_id: null,
+    strategy_action: null,
     detected_at: '2026-08-13T07:45:01Z',
     notification_attempted_at: '2026-08-13T07:45:01Z',
   }
@@ -132,7 +133,7 @@ test('persistent Alert V2 markers stay exact-frequency and actual-dominant only'
     const url = new URL(route.request().url())
     if (url.pathname.endsWith('/products/ag')) return route.fulfill({ json: { symbol: 'ag', rules: [
       { rule_code: 'htdy_original_15m', display_name: '火天大有', kind: 'indicator_observation', input_frequencies: frequencies, enabled_for_product: false, enabled_frequencies: [] },
-      { rule_code: 'subing_entry_signal_v1', display_name: '苏冰入场信号', kind: 'formal_signal', input_frequencies: ['5m', '15m'], enabled_for_product: false, enabled_frequencies: [] },
+      { rule_code: 'subing_strategy_v1', display_name: '苏冰策略', kind: 'strategy_action', input_frequencies: ['1m', '5m', '15m'], enabled_for_product: false, enabled_frequencies: [] },
     ] } })
     if (url.pathname.endsWith('/current-events')) return route.fulfill({ json: { status: 'ready', trading_day: '2026-08-13', items: [] } })
     if (url.pathname.endsWith('/events')) {
@@ -182,16 +183,16 @@ test('persistent Alert V2 markers stay exact-frequency and actual-dominant only'
 
   await page.getByRole('button', { name: '5m', exact: true }).click()
   await expect.poll(() => requestedRuleCodesFor('5m'))
-    .toEqual(['htdy_original_15m', 'subing_entry_signal_v1'])
-  await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-alert-marker-count', '2')
+    .toEqual(['htdy_original_15m'])
+  await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-alert-marker-count', '1')
 
   await page.getByRole('button', { name: '15m', exact: true }).click()
-  await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-alert-marker-count', '2')
+  await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-alert-marker-count', '1')
   await expect.poll(() => page.evaluate(() => window.__GUIYI_E2E_CANVAS_TEXT__)).toEqual(
-    expect.arrayContaining(['卖出观察', '买入信号']),
+    expect.arrayContaining(['卖出观察']),
   )
   await expect.poll(() => requestedRuleCodesFor('15m'))
-    .toEqual(['htdy_original_15m', 'subing_entry_signal_v1'])
+    .toEqual(['htdy_original_15m', 'subing_strategy_v1'])
 
   for (const frequency of ['30m', '60m']) {
     await page.getByRole('button', { name: frequency, exact: true }).click()
@@ -215,9 +216,9 @@ test('persistent Alert V2 markers stay exact-frequency and actual-dominant only'
   await expect(page.getByTestId('secondary-panel-label')).toHaveText('MACD')
   await expect(page.getByTestId('secondary-panel-tabs')).toHaveCount(0)
   await page.evaluate(() => { window.__GUIYI_E2E_CANVAS_TEXT__ = [] })
-  await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-alert-marker-count', '2')
+  await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-alert-marker-count', '1')
   await expect.poll(() => page.evaluate(() => window.__GUIYI_E2E_CANVAS_TEXT__)).toEqual(
-    expect.arrayContaining(['卖出观察', '买入信号']),
+    expect.arrayContaining(['卖出观察']),
   )
 
   const eventRequestCount = requests.length
@@ -303,12 +304,12 @@ test('SuBing product and HTDY pair switches preserve separate Scope semantics', 
     if (route.request().method() === 'PUT') {
       const enabled = route.request().postDataJSON().enabled
       scopePuts.push({ path: url.pathname, enabled })
-      if (url.pathname.endsWith('/rules/subing_entry_signal_v1/scope/jm')) {
+      if (url.pathname.endsWith('/rules/subing_strategy_v1/scope/jm')) {
         subingEnabled = enabled
         return route.fulfill({ json: {
-          rule_code: 'subing_entry_signal_v1',
-          display_name: '苏冰入场信号',
-          kind: 'formal_signal',
+          rule_code: 'subing_strategy_v1',
+          display_name: '苏冰策略',
+          kind: 'strategy_action',
           input_frequencies: ['5m', '15m'],
           enabled_for_product: subingEnabled,
           enabled_frequencies: [],
@@ -336,9 +337,9 @@ test('SuBing product and HTDY pair switches preserve separate Scope semantics', 
         enabled_frequencies: [...enabledFrequencies],
       },
       {
-        rule_code: 'subing_entry_signal_v1',
-        display_name: '苏冰入场信号',
-        kind: 'formal_signal',
+        rule_code: 'subing_strategy_v1',
+        display_name: '苏冰策略',
+        kind: 'strategy_action',
         input_frequencies: ['5m', '15m'],
         enabled_for_product: false,
         enabled_frequencies: [],
@@ -346,7 +347,7 @@ test('SuBing product and HTDY pair switches preserve separate Scope semantics', 
       {
         rule_code: 'future_rule',
         display_name: '未来错误 Rule',
-        kind: 'formal_signal',
+        kind: 'strategy_action',
         input_frequencies: ['5m'],
         enabled_for_product: true,
         enabled_frequencies: [],
@@ -375,7 +376,7 @@ test('SuBing product and HTDY pair switches preserve separate Scope semantics', 
   await subingSwitch.click()
   await expect(subingSwitch).toBeChecked()
   expect(scopePuts).toEqual([
-    { path: '/api/alerts/rules/subing_entry_signal_v1/scope/jm', enabled: true },
+    { path: '/api/alerts/rules/subing_strategy_v1/scope/jm', enabled: true },
   ])
 
   const putCountBeforeJdj = scopePuts.length

@@ -1,6 +1,6 @@
 import { ref } from 'vue'
 import type { AlertEventListResponse } from '../api/alerts.ts'
-import type { BarData, KlineMarker, MarketFrequency, SeriesKind } from '../types/market.ts'
+import type { AlertEvent, BarData, KlineMarker, MarketFrequency, SeriesKind } from '../types/market.ts'
 import { alertEventsToMarkers, isPersistentAlertIdentity, markerRuleCodes } from '../utils/alertMarkers.ts'
 
 
@@ -28,6 +28,7 @@ interface Dependencies {
 
 export function usePersistentAlertMarkers(dependencies: Dependencies) {
   const markers = ref<KlineMarker[]>([])
+  const strategyEvents = ref<AlertEvent[]>([])
   const events = new Map<string, AlertEventListResponse['items'][number]>()
   const fetchEvents = dependencies.fetchEvents
   const scheduleInterval = dependencies.scheduleInterval
@@ -51,6 +52,7 @@ export function usePersistentAlertMarkers(dependencies: Dependencies) {
       stopTimer()
       events.clear()
       markers.value = []
+      strategyEvents.value = []
       activeIdentity = { ...identity }
       loadedStart = null
       loadedEnd = null
@@ -60,6 +62,7 @@ export function usePersistentAlertMarkers(dependencies: Dependencies) {
       stopTimer()
       events.clear()
       markers.value = []
+      strategyEvents.value = []
       activeIdentity = { ...identity }
       loadedStart = null
       loadedEnd = null
@@ -134,6 +137,11 @@ export function usePersistentAlertMarkers(dependencies: Dependencies) {
         }
       }
       markers.value = alertEventsToMarkers([...events.values()])
+      strategyEvents.value = [...events.values()].filter((event) => (
+        event.rule_code === 'subing_strategy_v1'
+        && event.action_id !== null
+        && event.strategy_action !== null
+      ))
     } catch {
       // Presentation refresh is optional; keep the last persistent marker snapshot.
     }
@@ -150,9 +158,10 @@ export function usePersistentAlertMarkers(dependencies: Dependencies) {
     stopTimer()
     events.clear()
     markers.value = []
+    strategyEvents.value = []
   }
 
-  return { markers, sync, dispose }
+  return { markers, strategyEvents, sync, dispose }
 }
 
 function identityKey(identity: AlertMarkerIdentity | null): string {
@@ -162,7 +171,7 @@ function identityKey(identity: AlertMarkerIdentity | null): string {
 }
 
 function eventKey(event: AlertEventListResponse['items'][number]): string {
-  return `${event.rule_code}:${event.symbol}:${event.frequency}:${event.bar_end}`
+  return event.action_id ?? `${event.rule_code}:${event.symbol}:${event.frequency}:${event.bar_end}`
 }
 
 function barRange(bars: BarData[]): { start: string; end: string } {

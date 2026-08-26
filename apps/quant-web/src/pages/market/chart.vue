@@ -11,6 +11,7 @@ import {
   getNStructureBands,
   getProductResearch,
   getSubingStrategyHistory,
+  getSubingStrategyCurrent,
   getSubingResearch,
 } from '@/api/market'
 import {
@@ -29,6 +30,7 @@ import { useProductAlertScope } from '@/composables/useProductAlertScope'
 import { useProductCurrentAlertEvents } from '@/composables/useProductCurrentAlertEvents'
 import { useProductSymbolIdentityCoordinator } from '@/composables/useProductSymbolIdentityCoordinator'
 import { useSubingObservation } from '@/composables/useSubingObservation'
+import { useSubingStrategyCurrent } from '@/composables/useSubingStrategyCurrent'
 import type {
   DominantContractItem,
   MarketFrequency,
@@ -41,6 +43,7 @@ import { MARKET_FREQUENCIES } from '@/types/market'
 import { lifecycleSnapshotToMarkers } from '@/utils/subingLifecycleMarkers'
 import { ALERT_RULE_CODES } from '@/utils/alertRules'
 import { mergeKlineMarkers } from '@/utils/alertMarkers'
+import { reconcileSubingStrategyActions } from '@/utils/subingStrategyReconciliation'
 import { buildKlineDerivedData } from '@/utils/klineViewModel'
 import {
   loadMainChartPreferences,
@@ -108,11 +111,13 @@ const {
 } = useMarketSeries()
 const {
   markers: persistentAlertMarkers,
+  strategyEvents: persistentStrategyEvents,
   sync: syncPersistentAlertMarkers,
   dispose: disposePersistentAlertMarkers,
 } = usePersistentAlertMarkers({ fetchEvents: getAlertEvents })
 const {
   markers: historicalResearchMarkers,
+  subingStrategyActions,
   subingStrategyEpisodes,
   loading: historicalResearchLoading,
   error: historicalResearchError,
@@ -122,6 +127,15 @@ const {
   fetchSubingStrategy: getSubingStrategyHistory,
   fetchJdjStrategy: getJdjStrategyHistoricalActions,
 })
+const {
+  current: subingStrategyCurrent,
+  loading: subingStrategyCurrentLoading,
+  error: subingStrategyCurrentError,
+  refresh: refreshSubingStrategyCurrent,
+  invalidate: invalidateSubingStrategyCurrent,
+  markUnavailable: markSubingStrategyCurrentUnavailable,
+  dispose: disposeSubingStrategyCurrent,
+} = useSubingStrategyCurrent({ fetchCurrent: getSubingStrategyCurrent })
 const {
   bands: nStructureBands,
   loading: nStructureBandsLoading,
@@ -223,9 +237,26 @@ const lifecycleMarkers = computed(() => {
     ? lifecycleSnapshotToMarkers(subing.value.lifecycle)
     : []
 })
+const liveStrategyEvents = computed(() => {
+  const byId = new Map<string, typeof currentEvents.value[number]>()
+  for (const event of [...persistentStrategyEvents.value, ...currentEvents.value]) {
+    if (event.action_id) byId.set(event.action_id, event)
+  }
+  return [...byId.values()]
+})
+const strategyReconciliation = computed(() => reconcileSubingStrategyActions(
+  subingStrategyActions.value,
+  subingStrategyEpisodes.value,
+  liveStrategyEvents.value,
+))
+const visibleHistoricalResearchMarkers = computed(() => (
+  selectedOverlay.value === 'subing'
+    ? strategyReconciliation.value.markers
+    : historicalResearchMarkers.value
+))
 const researchMarkers = computed(() => mergeKlineMarkers(
   lifecycleMarkers.value,
-  historicalResearchMarkers.value,
+  visibleHistoricalResearchMarkers.value,
 ))
 const canLoadEarlier = computed(() => hasMoreBefore.value)
 const isLiveDisplay = computed(() => !!marketState.value?.live_eligible
@@ -282,6 +313,10 @@ const productCheckSidebarProps = computed(() => ({
   subingStrategyLoading: historicalResearchLoading.value,
   subingStrategyError: historicalResearchError.value,
   subingStrategySupported: subingStrategySupported.value,
+  subingStrategyCurrent: subingStrategyCurrent.value,
+  subingStrategyCurrentLoading: subingStrategyCurrentLoading.value,
+  subingStrategyCurrentError: subingStrategyCurrentError.value,
+  subingStrategyReconciliationErrors: strategyReconciliation.value.errorCodes,
   showSubingInternalProcess: showSubingInternalProcess.value,
 }))
 
@@ -354,6 +389,11 @@ watch(selectedOverlay, () => {
     canonicalCoverage.value,
     'replace',
   )
+  if (selectedOverlay.value === 'subing') {
+    void refreshSubingStrategyCurrent(currentSubingStrategyIdentity())
+  } else {
+    invalidateSubingStrategyCurrent()
+  }
 })
 
 watch([symbol, seriesKind, contract], () => {
@@ -396,6 +436,10 @@ watch(mutation, (nextMutation) => {
   )
   if (nextMutation.kind === 'live' && selectedOverlay.value === 'subing' && subingSupported.value) {
     void refreshSubing()
+    void refreshCurrentEvents()
+    if (subingStrategySupported.value) {
+      void refreshSubingStrategyCurrent(currentSubingStrategyIdentity())
+    }
   }
   if (!chart.value) return
   if (nextMutation.kind === 'replace') {
@@ -419,6 +463,7 @@ onUnmounted(() => {
   dispose()
   disposePersistentAlertMarkers()
   disposeHistoricalResearchMarkers()
+  disposeSubingStrategyCurrent()
   disposeNStructureBands()
 })
 
@@ -451,6 +496,18 @@ function currentHistoricalMarkerIdentity() {
     seriesKind: effectiveIdentity.value.seriesKind,
     symbol: symbol.value,
     frequency: frequency.value,
+  }
+}
+
+function currentSubingStrategyIdentity() {
+  const identity = currentIdentity()
+  return {
+    seriesKind: identity.seriesKind,
+    symbol: identity.symbol,
+    frequency: identity.frequency,
+    contract: identity.seriesKind === 'actual_dominant'
+      ? selectedDominant.value?.actual_contract ?? null
+      : identity.contract ?? null,
   }
 }
 
@@ -537,6 +594,7 @@ function invalidateSymbolFacts(): void {
   resetSubingSnapshot()
   invalidateAlertIdentity()
   invalidateCurrentEventsIdentity()
+  invalidateSubingStrategyCurrent()
 }
 
 function rejectSymbolFacts(): void {
@@ -544,6 +602,7 @@ function rejectSymbolFacts(): void {
   markSubingUnavailable()
   markAlertsUnavailable()
   markCurrentEventsUnavailable()
+  markSubingStrategyCurrentUnavailable()
 }
 
 function refreshSymbolFacts(): readonly Promise<void>[] {
@@ -561,6 +620,7 @@ function refreshSymbolFacts(): readonly Promise<void>[] {
     refreshSubing(),
     refreshAlerts(),
     refreshCurrentEvents(),
+    refreshSubingStrategyCurrent(currentSubingStrategyIdentity()),
   ]
 }
 
