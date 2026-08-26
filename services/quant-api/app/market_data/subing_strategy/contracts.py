@@ -145,9 +145,11 @@ class SubingStrategyAction:
             or not isinstance(self.kind, SubingStrategyActionKind)
             or not isinstance(self.symbol, str)
             or not self.symbol
-            or self.symbol != self.symbol.strip().upper()
+            or self.symbol != self.symbol.strip()
+            or not self.symbol.isascii()
+            or not self.symbol.isalpha()
             or not isinstance(self.contract, str)
-            or not self.contract.startswith(self.symbol)
+            or not self.contract.startswith(self.symbol.upper())
             or type(self.trading_day) is not date
             or type(self.segment_start_trading_day) is not date
             or self.trading_day < self.segment_start_trading_day
