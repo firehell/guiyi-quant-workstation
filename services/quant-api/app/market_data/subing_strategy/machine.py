@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 
+from ..aggregation import AggregationError, SessionWindow, bucket_window_for_bar
 from ..domain import BarFrequency, CanonicalBar, normalize_contract_for_symbol
 from ..subing_calibration import SubingCalibration, is_accepted_subing_calibration
 from ..subing_lifecycle import (
@@ -98,6 +99,79 @@ class SubingStrategyInterval:
             or self.expected_open <= 0
         ):
             raise SubingStrategyMachineError("INTERVAL_IDENTITY_INVALID")
+
+
+def authoritative_subing_strategy_intervals(
+    *,
+    bars_1m: Sequence[CanonicalBar],
+    bars_15m: Sequence[CanonicalBar],
+    sessions: Sequence[SessionWindow],
+) -> tuple[SubingStrategyInterval, ...]:
+    """Derive interval identities only from authoritative Session buckets."""
+
+    minute_bars = tuple(bars_1m)
+    fifteen_bars = tuple(bars_15m)
+    session_windows = tuple(sessions)
+    if (
+        not session_windows
+        or any(type(session) is not SessionWindow for session in session_windows)
+        or any(
+            left.end > right.start
+            for left, right in zip(session_windows, session_windows[1:])
+        )
+    ):
+        raise SubingStrategyMachineError("INTERVAL_IDENTITY_INVALID")
+    bars_by_end = {bar.bar_end: bar for bar in minute_bars}
+    fifteen_by_end = {bar.bar_end: bar for bar in fifteen_bars}
+    if len(bars_by_end) != len(minute_bars) or len(fifteen_by_end) != len(fifteen_bars):
+        raise SubingStrategyMachineError("INTERVAL_IDENTITY_INVALID")
+
+    def unique_session(bar_end: datetime) -> SessionWindow:
+        matches = tuple(
+            session
+            for session in session_windows
+            if session.start < bar_end <= session.end
+        )
+        if len(matches) != 1:
+            raise SubingStrategyMachineError("INTERVAL_IDENTITY_INVALID")
+        return matches[0]
+
+    try:
+        intervals: list[SubingStrategyInterval] = []
+        for bar_15m in fifteen_bars:
+            bucket = bucket_window_for_bar(
+                unique_session(bar_15m.bar_end),
+                BarFrequency.M15,
+                bar_15m.bar_end,
+            )
+            if bucket.end != bar_15m.bar_end:
+                raise SubingStrategyMachineError("INTERVAL_IDENTITY_INVALID")
+            first_1m_bar_end = bucket.start + timedelta(minutes=1)
+            first_1m = bars_by_end.get(first_1m_bar_end)
+            if first_1m is not None and (
+                first_1m.open != bar_15m.open
+                or first_1m.trading_day != bar_15m.trading_day
+            ):
+                raise SubingStrategyMachineError("INTERVAL_IDENTITY_INVALID")
+            intervals.append(
+                SubingStrategyInterval(
+                    effective_bar_end=bar_15m.bar_end,
+                    first_1m_bar_end=first_1m_bar_end,
+                    expected_open=bar_15m.open,
+                )
+            )
+        for bar_1m in minute_bars:
+            bucket = bucket_window_for_bar(
+                unique_session(bar_1m.bar_end),
+                BarFrequency.M15,
+                bar_1m.bar_end,
+            )
+            containing = fifteen_by_end.get(bucket.end)
+            if containing is None or containing.trading_day != bar_1m.trading_day:
+                raise SubingStrategyMachineError("INTERVAL_IDENTITY_INVALID")
+    except AggregationError:
+        raise SubingStrategyMachineError("INTERVAL_IDENTITY_INVALID") from None
+    return tuple(intervals)
 
 
 @dataclass(frozen=True, slots=True)

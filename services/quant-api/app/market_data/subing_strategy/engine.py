@@ -25,6 +25,7 @@ from .entry_projection import SubingStrategyEntryCandidate
 from .policy import SubingStrategyPolicy
 
 if TYPE_CHECKING:
+    from ..aggregation import SessionWindow
     from ..subing_calibration import SubingCalibration
     from ..subing_lifecycle_policy import SubingLifecyclePolicy
     from .machine import SubingStrategyInterval
@@ -118,6 +119,7 @@ def run_subing_strategy_segment(
     frames: Sequence[SubingStrategyDecisionFrame],
     first_1m_bars: Sequence[CanonicalBar],
     intervals: Sequence[SubingStrategyInterval],
+    sessions: Sequence[SessionWindow],
     calibration: SubingCalibration,
     lifecycle_policy: SubingLifecyclePolicy,
     policy: SubingStrategyPolicy,
@@ -127,7 +129,11 @@ def run_subing_strategy_segment(
     frame_tuple = tuple(frames)
     first_minutes = tuple(first_1m_bars)
     interval_tuple = tuple(intervals)
-    from .machine import SubingStrategyInterval, replay_subing_strategy_frames
+    from .machine import (
+        SubingStrategyInterval,
+        authoritative_subing_strategy_intervals,
+        replay_subing_strategy_frames,
+    )
 
     _validate_reducer_inputs(
         symbol=symbol,
@@ -136,6 +142,11 @@ def run_subing_strategy_segment(
         frames=frame_tuple,
         policy=policy,
         terminal_bar_end=terminal_bar_end,
+    )
+    authoritative_intervals = authoritative_subing_strategy_intervals(
+        bars_1m=first_minutes,
+        bars_15m=tuple(frame.bar for frame in frame_tuple),
+        sessions=sessions,
     )
     if (
         len(first_minutes) != len(frame_tuple)
@@ -156,6 +167,7 @@ def run_subing_strategy_segment(
                 strict=True,
             )
         )
+        or interval_tuple != authoritative_intervals
     ):
         raise ValueError("SUBING_STRATEGY_FIRST_1M_IDENTITY_INVALID")
     return replay_subing_strategy_frames(

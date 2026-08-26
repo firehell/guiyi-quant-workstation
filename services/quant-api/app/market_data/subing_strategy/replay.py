@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 
-from ..aggregation import AggregationError, SessionWindow, bucket_window_for_bar
+from ..aggregation import SessionWindow
 from ..domain import BarFrequency, CanonicalBar, ResolvedContractSegment
 from ..subing_calibration import SubingCalibration
 from ..subing_lifecycle_policy import SubingLifecyclePolicy
@@ -24,9 +24,8 @@ from .entry_projection import (
 )
 from .policy import SubingStrategyPolicy
 from .machine import (
-    SubingStrategyInterval,
-    SubingStrategyMachineError,
     SubingStrategySourceIdentity,
+    authoritative_subing_strategy_intervals,
     initial_subing_strategy_machine,
     step_subing_strategy_machine,
     subing_strategy_segment_result,
@@ -127,7 +126,11 @@ def replay_subing_strategy_segment(
             lifecycle_policy=lifecycle_policy,
             strategy_policy=strategy_policy,
             direction_contexts=direction_contexts,
-            intervals=_authoritative_intervals(bars_1m, bars_15m, sessions),
+            intervals=authoritative_subing_strategy_intervals(
+                bars_1m=bars_1m,
+                bars_15m=bars_15m,
+                sessions=sessions,
+            ),
         )
         events: list[Completed1mBar | Completed5mBar | Completed15mBar] = [
             *(Completed1mBar(bar) for bar in bars_1m)
@@ -173,7 +176,7 @@ def replay_subing_strategy_segment(
             state,
             canceled_pending=tuple(cancellations),
         )
-    except (AggregationError, ValueError, SubingStrategyMachineError):
+    except ValueError:
         raise SubingStrategyReplayError() from None
 
 
@@ -198,58 +201,3 @@ def _validate_segment_bars(
             )
         ):
             raise SubingStrategyReplayError()
-
-
-def _authoritative_intervals(
-    bars_1m: tuple[CanonicalBar, ...],
-    bars_15m: tuple[CanonicalBar, ...],
-    sessions: tuple[SessionWindow, ...],
-) -> tuple[SubingStrategyInterval, ...]:
-    if (
-        not sessions
-        or any(not isinstance(session, SessionWindow) for session in sessions)
-        or any(left.end > right.start for left, right in zip(sessions, sessions[1:]))
-    ):
-        raise SubingStrategyReplayError()
-    intervals: list[SubingStrategyInterval] = []
-    bars_by_end = {bar.bar_end: bar for bar in bars_1m}
-    if len(bars_by_end) != len(bars_1m):
-        raise SubingStrategyReplayError()
-    fifteen_by_end = {bar.bar_end: bar for bar in bars_15m}
-    for bar_15m in bars_15m:
-        session = _unique_session(sessions, bar_15m.bar_end)
-        bucket = bucket_window_for_bar(session, BarFrequency.M15, bar_15m.bar_end)
-        if bucket.end != bar_15m.bar_end:
-            raise SubingStrategyReplayError()
-        first_1m_bar_end = bucket.start + timedelta(minutes=1)
-        first_1m = bars_by_end.get(first_1m_bar_end)
-        if first_1m is not None and (
-            first_1m.open != bar_15m.open or first_1m.trading_day != bar_15m.trading_day
-        ):
-            raise SubingStrategyReplayError()
-        intervals.append(
-            SubingStrategyInterval(
-                effective_bar_end=bar_15m.bar_end,
-                first_1m_bar_end=first_1m_bar_end,
-                expected_open=bar_15m.open,
-            )
-        )
-    for bar_1m in bars_1m:
-        session = _unique_session(sessions, bar_1m.bar_end)
-        bucket = bucket_window_for_bar(session, BarFrequency.M15, bar_1m.bar_end)
-        containing = fifteen_by_end.get(bucket.end)
-        if containing is None or containing.trading_day != bar_1m.trading_day:
-            raise SubingStrategyReplayError()
-    return tuple(intervals)
-
-
-def _unique_session(
-    sessions: tuple[SessionWindow, ...],
-    bar_end: datetime,
-) -> SessionWindow:
-    matches = tuple(
-        session for session in sessions if session.start < bar_end <= session.end
-    )
-    if len(matches) != 1:
-        raise SubingStrategyReplayError()
-    return matches[0]

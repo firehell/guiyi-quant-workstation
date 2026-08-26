@@ -6,6 +6,7 @@ from decimal import Decimal
 
 import pytest
 
+from app.market_data.aggregation import SessionWindow
 from app.market_data.domain import BarFrequency, CanonicalBar
 from app.market_data.subing_ema_trend import PriceSide
 from app.market_data.subing_lifecycle import ConfirmationSource, SubingOpportunityKey
@@ -239,6 +240,8 @@ def _run(
     frames: tuple[SubingStrategyDecisionFrame, ...],
     *,
     first_1m_bars: tuple[CanonicalBar, ...] | None = None,
+    intervals: tuple[SubingStrategyInterval, ...] | None = None,
+    sessions: tuple[SessionWindow, ...] | None = None,
     terminal_bar_end: datetime | None = None,
 ):
     if first_1m_bars is None:
@@ -256,14 +259,23 @@ def _run(
             )
             for frame in frames
         )
-    intervals = tuple(
-        SubingStrategyInterval(
-            effective_bar_end=frame.bar.bar_end,
-            first_1m_bar_end=frame.bar.bar_end - timedelta(minutes=14),
-            expected_open=frame.bar.open,
+    if intervals is None:
+        intervals = tuple(
+            SubingStrategyInterval(
+                effective_bar_end=frame.bar.bar_end,
+                first_1m_bar_end=frame.bar.bar_end - timedelta(minutes=14),
+                expected_open=frame.bar.open,
+            )
+            for frame in frames
         )
-        for frame in frames
-    )
+    if sessions is None:
+        sessions = tuple(
+            SessionWindow(
+                start=frame.bar.bar_end - timedelta(minutes=15),
+                end=frame.bar.bar_end,
+            )
+            for frame in frames
+        )
     return run_subing_strategy_segment(
         symbol="jm",
         contract=CONTRACT,
@@ -271,6 +283,7 @@ def _run(
         frames=frames,
         first_1m_bars=first_1m_bars,
         intervals=intervals,
+        sessions=sessions,
         calibration=load_subing_calibration(),
         lifecycle_policy=load_subing_lifecycle_policy(),
         policy=POLICY,
@@ -301,6 +314,47 @@ def test_compatibility_reducer_rejects_later_same_price_1m() -> None:
 
     with pytest.raises(ValueError, match="SUBING_STRATEGY_FIRST_1M_IDENTITY_INVALID"):
         _run(frames, first_1m_bars=later)
+
+
+def test_compatibility_reducer_rejects_jointly_shifted_interval_and_1m() -> None:
+    frames = _entry_frames()[:2]
+    exact = tuple(
+        CanonicalBar(
+            bar_end=frame.bar.bar_end - timedelta(minutes=14),
+            trading_day=frame.bar.trading_day,
+            open=frame.bar.open,
+            high=frame.bar.open,
+            low=frame.bar.open,
+            close=frame.bar.open,
+            volume=frame.bar.volume,
+            turnover=None,
+            open_interest=frame.bar.open_interest,
+        )
+        for frame in frames
+    )
+    shifted = (
+        exact[0],
+        replace(exact[1], bar_end=exact[1].bar_end + timedelta(minutes=1)),
+    )
+    shifted_intervals = (
+        SubingStrategyInterval(
+            effective_bar_end=frames[0].bar.bar_end,
+            first_1m_bar_end=exact[0].bar_end,
+            expected_open=frames[0].bar.open,
+        ),
+        SubingStrategyInterval(
+            effective_bar_end=frames[1].bar.bar_end,
+            first_1m_bar_end=shifted[1].bar_end,
+            expected_open=frames[1].bar.open,
+        ),
+    )
+
+    with pytest.raises(ValueError, match="SUBING_STRATEGY_FIRST_1M_IDENTITY_INVALID"):
+        _run(
+            frames,
+            first_1m_bars=shifted,
+            intervals=shifted_intervals,
+        )
 
 
 def test_long_entry_decides_on_close_and_fills_next_open() -> None:
