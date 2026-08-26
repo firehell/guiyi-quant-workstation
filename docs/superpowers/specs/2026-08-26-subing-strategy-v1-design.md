@@ -1,6 +1,6 @@
 # SuBing Strategy V1 Design Spec
 
-**Status:** Dialogue-approved — written-spec review pending  
+**Status:** Reviewed — ready for Stage 1 implementation<br>
 **Date:** 2026-08-26  
 **Implementation target branch:** `research/subing-strategy-v1`  
 **Base:** `develop@b2cf5f1b57d59c770ab664d46c64267c8fc70b54`  
