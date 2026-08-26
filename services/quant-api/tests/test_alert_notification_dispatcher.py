@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 
 import pytest
 
@@ -12,6 +13,15 @@ from app.alerts.notification import (
     NotificationDelivery,
     NotificationTransportError,
     ProviderAcceptance,
+)
+from app.alerts.strategy_payload import serialize_subing_strategy_payload
+from app.market_data.subing_lifecycle import ConfirmationSource
+from app.market_data.subing_strategy.contracts import (
+    SubingStrategyAction,
+    SubingStrategyActionKind,
+    SubingStrategyFillBasis,
+    subing_strategy_action_id,
+    subing_strategy_episode_id,
 )
 
 
@@ -25,14 +35,62 @@ class RecordingTransport:
 
 
 def _message(rule_code: str = "htdy_original_15m") -> AlertNotificationMessage:
+    if rule_code == "subing_strategy_v1":
+        decision_at = datetime(2026, 8, 20, 10, 30, tzinfo=UTC)
+        effective_bar_end = decision_at + timedelta(minutes=15)
+        identity = {
+            "strategy_id": "subing_strategy_v1",
+            "formula_version": "subing_strategy_15m_v1",
+            "symbol": "jm",
+            "contract": "JM2609",
+            "segment_start_trading_day": "2026-08-20",
+            "opportunity_id": "subing-opportunity:dispatcher-test",
+            "kind": "open_long",
+            "decision_at": decision_at.isoformat(),
+            "effective_bar_end": effective_bar_end.isoformat(),
+            "fill_basis": "next_bar_open",
+        }
+        action = SubingStrategyAction(
+            action_id=subing_strategy_action_id(identity),
+            episode_id=subing_strategy_episode_id(identity),
+            strategy_id="subing_strategy_v1",
+            formula_version="subing_strategy_15m_v1",
+            kind=SubingStrategyActionKind.OPEN_LONG,
+            symbol="jm",
+            contract="JM2609",
+            trading_day=date(2026, 8, 20),
+            segment_start_trading_day=date(2026, 8, 20),
+            opportunity_id="subing-opportunity:dispatcher-test",
+            decision_at=decision_at,
+            effective_open_at=decision_at,
+            effective_bar_end=effective_bar_end,
+            reference_price=Decimal("100"),
+            fill_basis=SubingStrategyFillBasis.NEXT_BAR_OPEN,
+            confirmation_source=ConfirmationSource.FORMAL_V1,
+            reason_codes=(),
+            direction_context_source_day=date(2026, 8, 20),
+            direction_context_target_day=date(2026, 8, 20),
+            bound_reference_pivot=None,
+        )
+        return AlertNotificationMessage(
+            rule_code=rule_code,
+            symbol="jm",
+            product_name="焦煤",
+            contract="JM2609",
+            frequency="15m",
+            bar_end=decision_at,
+            result_codes=("open_long",),
+            strategy_payload=serialize_subing_strategy_payload(action),
+        )
     return AlertNotificationMessage(
         rule_code=rule_code,
         symbol="jm",
         product_name="焦煤",
         contract="JM2609",
-        frequency="15m" if rule_code == "htdy_original_15m" else "5m",
+        frequency="15m",
         bar_end=datetime(2026, 8, 20, 10, 30, tzinfo=UTC),
         result_codes=("buy",),
+        strategy_payload=None,
     )
 
 
@@ -43,9 +101,7 @@ def test_dispatcher_routes_htdy_to_one_observer_audience_request() -> None:
     accepted = dispatcher.send(_message())
 
     assert len(transport.deliveries) == 1
-    assert accepted == ProviderAcceptance(
-        "0123456789abcdef0123456789abcdef"
-    )
+    assert accepted == ProviderAcceptance("0123456789abcdef0123456789abcdef")
     delivery = transport.deliveries[0]
     assert delivery.audience == ALERT_AUDIENCE_HTDY_OBSERVERS
     assert delivery.title == "归一量化 火天大有"
@@ -56,11 +112,9 @@ def test_dispatcher_routes_subing_to_owner_only() -> None:
     transport = RecordingTransport()
     dispatcher = AlertNotificationDispatcher(transport)
 
-    dispatcher.send(_message("subing_entry_signal_v1"))
+    dispatcher.send(_message("subing_strategy_v1"))
 
-    assert [item.audience for item in transport.deliveries] == [
-        ALERT_AUDIENCE_OWNER
-    ]
+    assert [item.audience for item in transport.deliveries] == [ALERT_AUDIENCE_OWNER]
     assert transport.deliveries[0].title == "归一量化 苏冰"
 
 
