@@ -10,9 +10,10 @@ import type {
 } from '@/types/market'
 
 /** 主图指标偏好 localStorage 键 */
-export const MAIN_CHART_PREFERENCES_KEY = 'guiyi.market.chart.preferences.v4'
+export const MAIN_CHART_PREFERENCES_KEY = 'guiyi.market.chart.preferences.v5'
 /** 主图指标偏好 schema 版本 */
-export const MAIN_CHART_PREFERENCES_VERSION = 4
+export const MAIN_CHART_PREFERENCES_VERSION = 5
+const MAIN_CHART_PREFERENCES_V4_KEY = 'guiyi.market.chart.preferences.v4'
 const RETIRED_MAIN_CHART_PREFERENCE_KEYS = [
   'guiyi.market.chart.preferences.v1',
   'guiyi.market.chart.preferences.v2',
@@ -34,10 +35,11 @@ export const HTDY_WEB_OBSERVATION_METADATA = {
 
 /** 主图指标显示偏好（可见指标、周期、实时跟随） */
 export interface MainChartPreferences {
-  version: 4
+  version: 5
   selectedOverlay: ResearchOverlayId
   optionalEmaIndicators: OptionalEmaIndicatorId[]
   showNStructureBands: boolean
+  showSubingInternalProcess: boolean
   period?: string | null
   realtimeFollow?: boolean
 }
@@ -251,20 +253,22 @@ export function resolveEffectiveSeriesIdentity(input: {
  * 从 localStorage 加载主图偏好；版本不匹配或解析失败时返回默认值。
  */
 export function loadMainChartPreferences(
-  storage: Pick<Storage, 'getItem'> & Partial<Pick<Storage, 'removeItem'>> | null = browserStorage(),
+  storage: Pick<Storage, 'getItem'>
+    & Partial<Pick<Storage, 'setItem' | 'removeItem'>> | null = browserStorage(),
 ): MainChartPreferences {
   if (!storage) return defaultMainChartPreferences()
   purgeRetiredMainChartPreferences(storage)
   try {
     const raw = storage.getItem(MAIN_CHART_PREFERENCES_KEY)
-    if (!raw) return defaultMainChartPreferences()
+    if (!raw) return migrateV4MainChartPreferences(storage)
     const parsed = JSON.parse(raw) as Partial<MainChartPreferences> | null
     if (!parsed || parsed.version !== MAIN_CHART_PREFERENCES_VERSION) return defaultMainChartPreferences()
     return {
-      version: 4,
+      version: 5,
       selectedOverlay: normalizeResearchOverlay(parsed.selectedOverlay),
       optionalEmaIndicators: normalizeOptionalEmaIndicators(parsed.optionalEmaIndicators),
       showNStructureBands: Boolean(parsed.showNStructureBands),
+      showSubingInternalProcess: Boolean(parsed.showSubingInternalProcess),
       period: typeof parsed.period === 'string' ? parsed.period : null,
       realtimeFollow: Boolean(parsed.realtimeFollow),
     }
@@ -289,6 +293,7 @@ export function saveMainChartPreferences(
         selectedOverlay: normalizeResearchOverlay(preferences.selectedOverlay),
         optionalEmaIndicators: normalizeOptionalEmaIndicators(preferences.optionalEmaIndicators),
         showNStructureBands: Boolean(preferences.showNStructureBands),
+        showSubingInternalProcess: Boolean(preferences.showSubingInternalProcess),
         period: preferences.period || null,
         realtimeFollow: Boolean(preferences.realtimeFollow),
       }),
@@ -303,12 +308,41 @@ export function saveMainChartPreferences(
  */
 export function defaultMainChartPreferences(): MainChartPreferences {
   return {
-    version: 4,
+    version: 5,
     selectedOverlay: 'subing',
     optionalEmaIndicators: [],
     showNStructureBands: false,
+    showSubingInternalProcess: false,
     period: null,
     realtimeFollow: false,
+  }
+}
+
+function migrateV4MainChartPreferences(
+  storage: Pick<Storage, 'getItem'>
+    & Partial<Pick<Storage, 'setItem' | 'removeItem'>>,
+): MainChartPreferences {
+  try {
+    const raw = storage.getItem(MAIN_CHART_PREFERENCES_V4_KEY)
+    if (!raw) return defaultMainChartPreferences()
+    const parsed = JSON.parse(raw) as Record<string, unknown> | null
+    if (!parsed || parsed.version !== 4) return defaultMainChartPreferences()
+    const migrated: MainChartPreferences = {
+      version: 5,
+      selectedOverlay: normalizeResearchOverlay(parsed.selectedOverlay),
+      optionalEmaIndicators: normalizeOptionalEmaIndicators(parsed.optionalEmaIndicators),
+      showNStructureBands: Boolean(parsed.showNStructureBands),
+      showSubingInternalProcess: false,
+      period: typeof parsed.period === 'string' ? parsed.period : null,
+      realtimeFollow: Boolean(parsed.realtimeFollow),
+    }
+    if (storage.setItem) {
+      storage.setItem(MAIN_CHART_PREFERENCES_KEY, JSON.stringify(migrated))
+      storage.removeItem?.(MAIN_CHART_PREFERENCES_V4_KEY)
+    }
+    return migrated
+  } catch {
+    return defaultMainChartPreferences()
   }
 }
 

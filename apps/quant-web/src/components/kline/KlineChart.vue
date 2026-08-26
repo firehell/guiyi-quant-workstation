@@ -531,6 +531,8 @@ defineExpose({
     :data-alert-marker-count="alertMarkers.length"
     :data-research-marker-count="researchMarkers.length"
     :data-rendered-research-marker-count="renderedResearchMarkerCount"
+    :data-research-marker-ids="researchMarkers.map((marker) => marker.id).join(',')"
+    :data-research-marker-times="researchMarkers.map((marker) => marker.time).join(',')"
     :data-n-structure-band-count="nStructureBands.length"
     :data-rendered-n-structure-band-count="renderedNStructureBandCount"
     :data-n-structure-overlap-group-count="renderedNStructureOverlapGroupCount"

@@ -49,6 +49,7 @@ import {
   resolveEffectiveSeriesIdentity,
   researchOverlayCapability,
   saveMainChartPreferences,
+  subingStrategyHistoricalCapability,
   visibleMainIndicatorsForOverlay,
 } from '@/utils/mainIndicators'
 import {
@@ -78,6 +79,9 @@ const optionalEmaIndicators = ref<OptionalEmaIndicatorId[]>([
   ...initialMainChartPreferences.optionalEmaIndicators,
 ])
 const showNStructureBands = ref(initialMainChartPreferences.showNStructureBands)
+const showSubingInternalProcess = ref(
+  initialMainChartPreferences.showSubingInternalProcess,
+)
 const research = ref<ProductResearchResponse | null>(null)
 const researchLoading = ref(false)
 const researchError = ref(false)
@@ -109,6 +113,7 @@ const {
 } = usePersistentAlertMarkers({ fetchEvents: getAlertEvents })
 const {
   markers: historicalResearchMarkers,
+  subingStrategyEpisodes,
   loading: historicalResearchLoading,
   error: historicalResearchError,
   sync: syncHistoricalResearchMarkers,
@@ -203,11 +208,16 @@ const nStructureBandsSupported = computed(() => nStructureBandCapability(
   effectiveIdentity.value.seriesKind,
   frequency.value,
 ))
+const subingStrategySupported = computed(() => subingStrategyHistoricalCapability(
+  effectiveIdentity.value.seriesKind,
+  frequency.value,
+))
 const visibleNStructureBands = computed(() => (
   showNStructureBands.value && nStructureBandsSupported.value ? nStructureBands.value : []
 ))
 const visibleStartTradingDay = computed(() => visibleBars.value[0]?.trading_day || '')
 const lifecycleMarkers = computed(() => {
+  if (!showSubingInternalProcess.value) return []
   if (!overlayCapability.value.supported || subingLoading.value || subingError.value) return []
   return selectedOverlay.value === 'subing' && subing.value
     ? lifecycleSnapshotToMarkers(subing.value.lifecycle)
@@ -268,6 +278,11 @@ const productCheckSidebarProps = computed(() => ({
   currentEventsStatus: currentEventsStatus.value,
   currentEvents: currentEvents.value,
   htdyObservation: latestHtdyObservation.value,
+  subingStrategyEpisodes: subingStrategyEpisodes.value,
+  subingStrategyLoading: historicalResearchLoading.value,
+  subingStrategyError: historicalResearchError.value,
+  subingStrategySupported: subingStrategySupported.value,
+  showSubingInternalProcess: showSubingInternalProcess.value,
 }))
 
 onMounted(async () => {
@@ -317,6 +332,11 @@ watch(showNStructureBands, (value) => {
     canonicalCoverage.value,
     'replace',
   )
+})
+
+watch(showSubingInternalProcess, (value) => {
+  const current = loadMainChartPreferences()
+  saveMainChartPreferences({ ...current, showSubingInternalProcess: value })
 })
 
 watch(selectedOverlay, () => {
@@ -577,6 +597,10 @@ function updateShowNStructureBands(value: boolean) {
   showNStructureBands.value = value
 }
 
+function updateShowSubingInternalProcess(value: boolean) {
+  showSubingInternalProcess.value = value
+}
+
 function persistWorkspacePreferences() {
   saveMarketWorkspacePreferences({
     version: 1,
@@ -664,6 +688,7 @@ function normalizeSymbol(value: unknown): string | null {
       :selected-overlay="selectedOverlay"
       :optional-ema-indicators="optionalEmaIndicators"
       :show-n-structure-bands="showNStructureBands"
+      :show-subing-internal-process="showSubingInternalProcess"
       :n-structure-bands-supported="nStructureBandsSupported"
       :n-structure-bands-loading="nStructureBandsLoading"
       :n-structure-bands-error="nStructureBandsError"
@@ -675,6 +700,7 @@ function normalizeSymbol(value: unknown): string | null {
       @update:selected-overlay="updateSelectedOverlay"
       @update:optional-ema-indicators="updateOptionalEmaIndicators"
       @update:show-n-structure-bands="updateShowNStructureBands"
+      @update:show-subing-internal-process="updateShowSubingInternalProcess"
       @open-research="openResearchDrawer"
       @toggle-fullscreen="toggleFullscreen"
       @back="router.push({ name: 'market' })"
@@ -693,7 +719,9 @@ function normalizeSymbol(value: unknown): string | null {
         :show-icon="true"
       >{{ historicalResearchError === 'JDJ_STRATEGY_PROFILE_UNAVAILABLE'
         ? '该品种/周期尚未验证；Canonical K 线仍可正常查看。'
-        : '历史因果重放暂不可用；Canonical K 线仍可正常查看。' }}</NAlert>
+        : selectedOverlay === 'subing'
+          ? '历史因果投影暂不可用；Canonical K 线与当前苏冰观察仍可正常查看。'
+          : '历史因果重放暂不可用；Canonical K 线仍可正常查看。' }}</NAlert>
       <div class="product-status-strip" data-testid="product-status-strip">
         <strong>{{ effectiveIdentity.contract || selectedDominant?.actual_contract || symbol.toUpperCase() }}</strong>
         <NTag

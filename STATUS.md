@@ -16,6 +16,14 @@
 - 对 production Catalog/Canonical 的严格只读 smoke 使用 source trading day `2026-08-25`，active60 结果为 `universe=60 / long=16 / short=5 / excluded=39 / unavailable=0`；D1/H1 `warmup_bar_count` 均为 `30 × 60`，D1 segment-count 分布为 `1:4 / 2:47 / 3:9`，H1 为 `1:49 / 2:11`。该 smoke 直接调用 Builder、使用 read-only transaction 并 rollback；未调用 Generator/Store publish、RQData、HistoricalDataManager、Redis、notification 或 Runtime，也未生成或发布 V2 artifact。
 - 上述实现已通过 v1.8.5 进入正式 release 与当前 production Runtime；部署后只读 `current` API 返回 `projection_version=subing_daily_watch_v2`、`formula_version=subing_ema21_rank1_stitched_raw_v2`、`history_mode=rank1_stitched_raw`，并因当天尚无自然产物显式返回 `SUBING_DAILY_WATCH_NOT_GENERATED`。这证明 V2 Runtime contract 已生效，但仍不是自然盘后 V2 artifact evidence。
 
+## SuBing Strategy V1 Stage 1 待集成 Gate
+
+- 隔离分支 `research/subing-strategy-v1` 已完成 Stage 1 Historical Strategy Projection 的 Task 1–9：只支持 active 单品种 `actual_dominant + 15m`，后端从真实 rank1 物理段起点复算 Daily Watch V2 方向、Factor、Lifecycle、Action 与 Episode，Web 显示“历史因果投影 / 模拟动作 / 非实际成交 / 参考变动”。旧 `/subing/history` 路由和旧买卖信号 Marker 已在分支上原子退役；新路由为 `GET /api/v1/market/research/subing-strategy/history`。
+- 严格只读自然数据验收使用 PostgreSQL `READ ONLY` transaction + 最终 rollback，且注入 `NullSubingStrategyCache`；未调用 RQData、HistoricalDataManager、Redis、Alert、PushPlus 或任何写入路径。AG/JM/RB 分别得到 `66/32/27` 个完整 Episode，自然覆盖 long/short、四种 `ENTRY_CONFIRMED` 来源、八个方向化退出原因、同 Bar 多原因、session/overnight gap 和窗口外建仓/窗口内清仓。额外找到 EG2609 在 2026-08-21 的真实段末 Episode，以旧段最后 15m close 清仓并保留全部 reason codes。对 AG/JM/RB/EG 共 274 个 Action 的同合约 next-open/terminal-close、退出原始值、Pivot、MACD 位阶与单 effective-Bar 唯一性逐项检查全部通过。
+- 关闭策略缓存后，同一 JM 单段请求连续 5 次均为 `1 segment / 3057 5m / 1019 15m / 2 Actions / 1 Episode / cache_state=unavailable`，身份与结果完全一致，耗时 `3.616/3.577/3.571/3.515/3.567s`，median `3.571s`；不设性能阈值。真实 rollover 验收曾发现并以 RED→GREEN 修正两个边界：新段首日允许上一交易日方向 context 指向旧合约，以及普通 `through` 查询的观测前缀不必与权威物理段末完全相等。
+- 分支最终自动验证为 Python `2833 passed / 3 skipped / 1 deselected`、Ruff clean、Mypy `151 source files`、canonical consistency `8 passed`、Web unit `287 passed / 1 skipped`、Vue typecheck + production build/bundle topology 通过、Web E2E `77 passed`。OpenSpec strict、secret scan 与 diff 检查结果以 PR exact head 的最终读回为准。
+- 该分支尚未合入 `develop`，未进入 release/main/Runtime，未创建 migration、Stage 2、SuBing Strategy Alert Rule、账户/订单/费用/资金曲线或真实通知。必须经过 PR exact-head 独立 Review 后停在人工“允许集成 develop” Gate，不得自动合并。
+
 ## Market Structure V1 Stage A evidence blocked
 
 - 隔离 worktree `research/market-structure-v1-stage-a@36a486b90` 已实现纯公式、calibration contract/runner 与 synthetic mechanics fixtures，但没有用户授权的 exact-feed acceptance corpus、冻结 policy/report、approval manifest 或 Stage A independent Gate；该分支未进入 develop。

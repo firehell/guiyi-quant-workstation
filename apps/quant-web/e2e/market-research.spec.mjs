@@ -558,6 +558,47 @@ function emptySubingStrategyHistory(request) {
   }
 }
 
+function subingStrategyHistory(request, entryTime, exitTime) {
+  const decisionBefore = (value) => new Date(Date.parse(value) - 15 * 60 * 1000).toISOString()
+  const entry = {
+    action_id: 'subing-action:e2e-entry', episode_id: 'subing-episode:e2e',
+    strategy_id: 'subing_strategy_v1', formula_version: 'subing_strategy_15m_v1',
+    kind: 'open_long', symbol: request.symbol, contract: 'AG2601',
+    trading_day: entryTime.slice(0, 10), segment_start_trading_day: entryTime.slice(0, 10),
+    opportunity_id: 'subing-opportunity:e2e', decision_at: decisionBefore(entryTime),
+    effective_bar_end: entryTime, reference_price: '100.5', fill_basis: 'next_bar_open',
+    confirmation_source: 'formal_v1', reason_codes: [],
+    direction_context_source_day: entryTime.slice(0, 10),
+    direction_context_target_day: entryTime.slice(0, 10), bound_reference_pivot: null,
+  }
+  const exit = {
+    ...entry, action_id: 'subing-action:e2e-exit', kind: 'close_long',
+    trading_day: exitTime.slice(0, 10), decision_at: decisionBefore(exitTime),
+    effective_bar_end: exitTime, reference_price: '108.50985', confirmation_source: null,
+    reason_codes: ['EMA21', 'MACD_HIGH_DEAD_CROSS'],
+    direction_context_source_day: null, direction_context_target_day: null,
+  }
+  return {
+    ...emptySubingStrategyHistory(request),
+    resolved_cutoff: exitTime,
+    segment_summaries: [{
+      contract: 'AG2601', start_trading_day: entry.trading_day,
+      end_trading_day: exit.trading_day, loaded_through: exit.trading_day,
+      bar_count_5m: 3, bar_count_15m: 2, initial_position: 'flat',
+      final_position: 'flat', terminal_bar_end: null, pending_action: false,
+    }],
+    actions: [entry, exit],
+    episodes: [{
+      episode_id: entry.episode_id, direction: 'long', entry_action: entry,
+      exit_action: exit, state: 'closed', holding_bar_count: 20,
+      reference_change_percent: '7.97', current_reference_change_percent: null,
+      latest_reference_price: null,
+      exit_reason_codes: ['EMA21', 'MACD_HIGH_DEAD_CROSS'],
+      structure_exit_available: false,
+    }],
+  }
+}
+
 async function mockWorkspace(page, researchResponse, options = {}) {
   const workspaceSymbol = options.symbol || 'ag'
   const workspaceContract = options.resolvedContract || (workspaceSymbol === 'jm' ? 'JM2701' : 'AG2601')
@@ -565,6 +606,7 @@ async function mockWorkspace(page, researchResponse, options = {}) {
   const researchRequests = options.researchRequests || []
   const subingRequests = options.subingRequests || []
   const jdjStrategyHistoricalRequests = options.jdjStrategyHistoricalRequests || []
+  const subingStrategyHistoricalRequests = options.subingStrategyHistoricalRequests || []
   const nStructureBandRequests = options.nStructureBandRequests || []
   const dominantRequests = options.dominantRequests || []
   let dominantResponseIndex = 0
@@ -594,7 +636,11 @@ async function mockWorkspace(page, researchResponse, options = {}) {
     }
     if (url.pathname.endsWith('/research/subing-strategy/history')) {
       const request = Object.fromEntries(url.searchParams)
-      return route.fulfill({ json: emptySubingStrategyHistory(request) })
+      subingStrategyHistoricalRequests.push(request)
+      const configured = typeof options.subingStrategyHistoricalResponse === 'function'
+        ? options.subingStrategyHistoricalResponse(request)
+        : options.subingStrategyHistoricalResponse
+      return route.fulfill({ json: configured || emptySubingStrategyHistory(request) })
     }
     if (url.pathname.endsWith('/research/jdj-strategy/history')) {
       const request = Object.fromEntries(url.searchParams)
@@ -930,6 +976,20 @@ async function openDataDetails(page) {
   return details
 }
 
+async function openSubingResearchDetails(page) {
+  const details = page.getByTestId('subing-research-details')
+  if (!(await details.getAttribute('open'))) await details.locator('summary').click()
+  return details
+}
+
+async function enableSubingInternalProcess(page) {
+  await page.getByRole('button', { name: '图表设置', exact: true }).click()
+  const toggle = page.getByRole('switch', { name: '显示苏冰内部研究过程', exact: true })
+  if (!(await toggle.isChecked())) await toggle.click()
+  await page.keyboard.press('Escape')
+  await openSubingResearchDetails(page)
+}
+
 test('Product Workspace identity invalidates AG facts before delayed JM Market acceptance', async ({ page }) => {
   const { calls, gates } = await mockProductIdentityWorkspace(page)
   releaseIdentityFacts(gates, 'initialAg')
@@ -1109,12 +1169,13 @@ test('exact Daily Watch chart entry is one-shot and leaves saved chart preferenc
     frequency: '15m',
   })
   expect(await page.evaluate(() => JSON.parse(
-    window.localStorage.getItem('guiyi.market.chart.preferences.v4'),
+    window.localStorage.getItem('guiyi.market.chart.preferences.v5'),
   ))).toEqual({
-    version: 4,
+    version: 5,
     selectedOverlay: 'htdy',
     optionalEmaIndicators: [],
     showNStructureBands: false,
+    showSubingInternalProcess: false,
     period: '5m',
     realtimeFollow: false,
   })
@@ -1122,7 +1183,7 @@ test('exact Daily Watch chart entry is one-shot and leaves saved chart preferenc
   await overlays.getByRole('button', { name: '无', exact: true }).click()
   await expect(overlays.getByRole('button', { name: '无', exact: true })).toHaveClass(/n-button--primary-type/)
   await expect.poll(() => page.evaluate(() => JSON.parse(
-    window.localStorage.getItem('guiyi.market.chart.preferences.v4'),
+    window.localStorage.getItem('guiyi.market.chart.preferences.v5'),
   ).selectedOverlay)).toBe('none')
 })
 
@@ -1261,7 +1322,7 @@ test('N structure bands stay independent, identity-gated, visible in both direct
   await expect(shell).toHaveAttribute('data-rendered-n-structure-band-count', '4')
   await expect(shell).toHaveAttribute('data-n-structure-overlap-group-count', '1')
   expect(await page.evaluate(() => JSON.parse(
-    window.localStorage.getItem('guiyi.market.chart.preferences.v4'),
+    window.localStorage.getItem('guiyi.market.chart.preferences.v5'),
   ).showNStructureBands)).toBe(true)
   expect(requests.length).toBeGreaterThanOrEqual(3)
 })
@@ -1374,6 +1435,50 @@ test('JDJ Strategy uses current RB identity and clears stale markers across 1m 5
     { series_kind: 'actual_dominant', symbol: 'rb', frequency: '1m', since: '2026-01-01', through: '2026-08-20' },
     { series_kind: 'actual_dominant', symbol: 'rb', frequency: '1m', since: '2026-01-01', through: '2026-08-20' },
   ])
+})
+
+test('SuBing Strategy anchors Action times, shows complete records, and keeps internal process opt-in', async ({ page }) => {
+  const bars = Array.from({ length: 120 }, (_, index) => bar(index))
+  const entryTime = bars[20].bar_end
+  const exitTime = bars[100].bar_end
+  const strategyRequests = []
+  await mockAlertMarkerSurface(page)
+  await mockWorkspace(page, { json: research() }, {
+    bars,
+    canonicalCoverage: { start: bars[0].bar_end, end: bars.at(-1).bar_end },
+    subingStrategyHistoricalRequests: strategyRequests,
+    subingStrategyHistoricalResponse: (request) => (
+      subingStrategyHistory(request, entryTime, exitTime)
+    ),
+    subingResponse: cloneSubingLifecycleCase('longSetup'),
+  })
+
+  await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=15m')
+
+  const shell = page.getByTestId('kline-shell')
+  await expect.poll(() => strategyRequests.length).toBe(1)
+  await expect(shell).toHaveAttribute('data-research-marker-count', '2')
+  await expect(shell).toHaveAttribute('data-rendered-research-marker-count', '2')
+  await expect(shell).toHaveAttribute(
+    'data-research-marker-ids',
+    'historical:subing-action:e2e-entry,historical:subing-action:e2e-exit',
+  )
+  await expect(shell).toHaveAttribute('data-research-marker-times', `${entryTime},${exitTime}`)
+  const records = page.getByTestId('subing-strategy-records')
+  await expect(records.locator('[data-episode-id="subing-episode:e2e"]')).toHaveCount(1)
+  await expect(records).toContainText('建多 → 清多')
+  await expect(records).toContainText('参考变动 +7.97%')
+  await expect(records).toContainText('历史因果投影 · 模拟动作 · 非实际成交')
+  await expect(page.getByTestId('subing-lifecycle-panel')).toHaveCount(0)
+
+  await enableSubingInternalProcess(page)
+  await expect(page.getByTestId('subing-lifecycle-panel')).toBeVisible()
+  await expect(shell).toHaveAttribute('data-research-marker-count', '3')
+  await page.reload()
+  await openSubingResearchDetails(page)
+  await expect(page.getByTestId('subing-lifecycle-panel')).toBeVisible()
+  await expect(page.getByRole('button', { name: '图表设置', exact: true })).toBeVisible()
+  await expect(shell).toHaveAttribute('data-research-marker-count', '3')
 })
 
 test('JDJ Strategy fails closed for AG profile unavailability', async ({ page }) => {
@@ -1573,6 +1678,7 @@ test('single SuBing panel selects one immutable Event and keeps the remaining ba
   await expect(panel).not.toContainText('未来提醒')
   await expect(panel.getByRole('switch')).toHaveCount(1)
 
+  await openSubingResearchDetails(page)
   await expect(panel.getByText('Resolved Signal', { exact: true })).toBeVisible()
   await expect(panel.getByRole('definition').filter({ hasText: '15m · 买入信号 · 低周期确认' })).toBeVisible()
   await expect(panel.getByText('Primary Signal', { exact: true })).toBeVisible()
@@ -1603,6 +1709,7 @@ test('SuBing panel keeps Event and Alert loading independent from a ready snapsh
   const panel = page.getByTestId('subing-panel')
   const formal = page.getByTestId('subing-formal-event')
   const scope = page.getByTestId('subing-alert-scope')
+  await openSubingResearchDetails(page)
   await expect(panel.getByText('Resolved Signal', { exact: true })).toBeVisible()
   await expect(formal).toContainText('正在读取苏冰正式事件')
   await expect(formal).not.toContainText('当前无可展示的苏冰正式事件记录')
@@ -1650,7 +1757,8 @@ test('SuBing panel distinguishes authoritative warm-up without inventing Factor 
   await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=5m')
 
   const researchPanel = page.getByTestId('subing-current-research')
-  await expect(researchPanel.locator(':scope > p')).toHaveText('指标 warm-up 中 / 数据不足')
+  await openSubingResearchDetails(page)
+  await expect(researchPanel.getByText('指标 warm-up 中 / 数据不足', { exact: true })).toBeVisible()
   await expect(researchPanel).not.toContainText('苏冰当前周期不可用')
   await expect(researchPanel).not.toContainText('苏冰观察加载中')
   await expect(researchPanel).not.toContainText('苏冰观察暂不可用')
@@ -1673,6 +1781,8 @@ test('SuBing lifecycle remains an explicitly research-only funnel beside formal 
   const observation = page.getByTestId('product-check-observation')
   await expect(observation).toContainText('5m · 买入信号')
   await expect(observation).toContainText('Research only')
+  await expect(page.getByTestId('subing-lifecycle-panel')).toHaveCount(0)
+  await enableSubingInternalProcess(page)
   await openDataDetails(page)
   const lifecycle = page.getByTestId('subing-lifecycle-panel')
   await expect(lifecycle).toContainText('Research only')
@@ -1698,6 +1808,7 @@ test('SuBing lifecycle shows a reducer-produced long momentum hold', async ({ pa
   })
   await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=5m')
 
+  await enableSubingInternalProcess(page)
   await expect(page.getByTestId('product-check-observation')).toContainText('1/3')
   await expect(page.getByTestId('product-check-observation')).toContainText('当前不匹配')
   await openDataDetails(page)
@@ -1712,6 +1823,7 @@ test('retest confirmation renders its own zero then one bar progress', async ({ 
   })
   await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=5m')
 
+  await enableSubingInternalProcess(page)
   await openDataDetails(page)
   await expect(page.getByTestId('subing-lifecycle-panel')).toContainText('0/3')
   await expect(page.getByTestId('product-check-observation')).toContainText('0/3')
@@ -1732,6 +1844,8 @@ test('lifecycle markers keep Alert counts independent and clear stale research s
   await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=5m')
 
   const shell = page.getByTestId('kline-shell')
+  await expect(shell).toHaveAttribute('data-research-marker-count', '0')
+  await enableSubingInternalProcess(page)
   await openDataDetails(page)
   const setupPanel = page.getByTestId('subing-lifecycle-panel')
   await expect(setupPanel).toBeVisible()
@@ -1770,6 +1884,7 @@ test('SuBing lifecycle renders risk and closed research stages without trade ins
       subingResponse: cloneSubingLifecycleCase(caseName),
     })
     await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=5m')
+    await enableSubingInternalProcess(page)
     await openDataDetails(page)
     const lifecycle = page.getByTestId('subing-lifecycle-panel')
     await expect(lifecycle).toContainText(expected)
@@ -1796,7 +1911,7 @@ test('SuBing shows a same-boundary companion-only match without replacing the re
   await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=5m')
 
   await expect(page.getByTestId('product-check-observation')).toContainText('15m · 买入信号')
-  await openDataDetails(page)
+  await openSubingResearchDetails(page)
   await expect(page.getByRole('definition').filter({ hasText: '5m · 当前不匹配' })).toBeVisible()
   await expect(page.getByRole('definition').filter({ hasText: '15m · 买入信号' })).toBeVisible()
 })
@@ -1814,7 +1929,7 @@ test('SuBing same-boundary dual match keeps 5m primary and resolves one 15m buy 
   await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=5m')
 
   await expect(page.getByTestId('product-check-observation')).toContainText('15m · 买入信号 · 低周期确认')
-  await openDataDetails(page)
+  await openSubingResearchDetails(page)
   await expect(page.getByText('Primary Signal')).toBeVisible()
   await expect(page.getByText('5m · 买入信号', { exact: true })).toBeVisible()
   await expect(page.getByText('Resolved Signal')).toBeVisible()
@@ -1832,7 +1947,7 @@ test('SuBing same-boundary 15m request keeps 15m as both primary and resolved si
   await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=15m')
 
   await expect(page.getByTestId('product-check-observation')).toContainText('15m · 卖出信号 · 低周期确认')
-  await openDataDetails(page)
+  await openSubingResearchDetails(page)
   await expect(page.getByText('15m · 卖出信号', { exact: true })).toBeVisible()
   await expect(page.getByRole('definition').filter({ hasText: '15m · 卖出信号 · 低周期确认' })).toBeVisible()
 })
@@ -1845,7 +1960,7 @@ test('SuBing 15m non-match keeps the requested primary and creates no resolved s
   await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=15m')
 
   await expect(page.getByTestId('product-check-observation')).toContainText('15m · 当前不匹配')
-  await openDataDetails(page)
+  await openSubingResearchDetails(page)
   await expect(page.getByRole('definition').filter({ hasText: '15m · 当前不匹配' })).toBeVisible()
   await expect(page.getByText('Resolved Signal')).toHaveCount(0)
 })
