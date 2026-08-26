@@ -17,7 +17,11 @@ function trend(priceSide: 'above' | 'below' = 'above') {
     bar_end: '2026-08-24T07:00:00Z',
     trading_day: '2026-08-24',
     physical_contract: 'RB2610',
-    segment_start_trading_day: '2026-07-20',
+    current_segment_start_trading_day: '2026-07-20',
+    warmup_start_trading_day: '2026-07-01',
+    warmup_bar_count: 30,
+    warmup_segment_count: 2,
+    history_mode: 'rank1_stitched_raw',
     close: priceSide === 'above' ? '3512.125' : '3400.5',
     ema21: '3478.2468',
     price_side: priceSide,
@@ -58,6 +62,9 @@ function unavailableItem(symbol: string): SubingDailyWatchItemWire {
 
 function readyPayload(): SubingDailyWatchCurrentWireResponse {
   return {
+    projection_version: 'subing_daily_watch_v2',
+    formula_version: 'subing_ema21_rank1_stitched_raw_v2',
+    history_mode: 'rank1_stitched_raw',
     status: 'ready',
     expected_target_trading_day: '2026-08-25',
     latest_target_trading_day: '2026-08-25',
@@ -80,10 +87,13 @@ function readyPayload(): SubingDailyWatchCurrentWireResponse {
   }
 }
 
-test('Daily Watch normalizes finite Decimal strings without changing counts, order or unavailable reasons', () => {
+test('Daily Watch normalizes only finite Decimal strings while preserving V2 identity, lineage, counts, order and unavailable reasons', () => {
   const result = normalizeSubingDailyWatchCurrent(readyPayload())
 
   assert.equal(result.status, 'ready')
+  assert.equal(result.projection_version, 'subing_daily_watch_v2')
+  assert.equal(result.formula_version, 'subing_ema21_rank1_stitched_raw_v2')
+  assert.equal(result.history_mode, 'rank1_stitched_raw')
   assert.deepEqual(result.snapshot?.counts, {
     universe: 5,
     long_watch: 2,
@@ -97,7 +107,157 @@ test('Daily Watch normalizes finite Decimal strings without changing counts, ord
   assert.equal(result.snapshot?.long_watch[0].hourly?.ema21, 3478.2468)
   assert.equal(result.snapshot?.short_watch[0].daily?.slope_5_bps_per_bar, -8.6214)
   assert.equal(result.snapshot?.short_watch[0].hourly?.slope_10_bps_per_bar, -5.9173)
+  assert.deepEqual(result.snapshot?.long_watch[0].daily, {
+    bar_end: '2026-08-24T07:00:00Z',
+    trading_day: '2026-08-24',
+    physical_contract: 'RB2610',
+    current_segment_start_trading_day: '2026-07-20',
+    warmup_start_trading_day: '2026-07-01',
+    warmup_bar_count: 30,
+    warmup_segment_count: 2,
+    history_mode: 'rank1_stitched_raw',
+    close: 3512.125,
+    ema21: 3478.2468,
+    price_side: 'above',
+    slope_5_bps_per_bar: 8.6214,
+    slope_10_bps_per_bar: 5.9173,
+  })
   assert.deepEqual(result.snapshot?.unavailable[0].unavailable_reasons, ['H1_HISTORY_INSUFFICIENT'])
+})
+
+test('Daily Watch rejects a V1 projection version', () => {
+  const payload = readyPayload() as unknown as Record<string, unknown>
+  payload.projection_version = 'subing_daily_watch_v1'
+
+  assert.throws(
+    () => normalizeSubingDailyWatchCurrent(payload as unknown as SubingDailyWatchCurrentWireResponse),
+    new Error('SUBING_DAILY_WATCH_INVALID_RESPONSE'),
+  )
+})
+
+test('Daily Watch rejects a V1 formula version', () => {
+  const payload = readyPayload() as unknown as Record<string, unknown>
+  payload.formula_version = 'subing_ema21_trend_v1'
+
+  assert.throws(
+    () => normalizeSubingDailyWatchCurrent(payload as unknown as SubingDailyWatchCurrentWireResponse),
+    new Error('SUBING_DAILY_WATCH_INVALID_RESPONSE'),
+  )
+})
+
+test('Daily Watch rejects missing or wrong top-level history mode', () => {
+  const missing = readyPayload() as unknown as Record<string, unknown>
+  delete missing.history_mode
+  const wrong = readyPayload() as unknown as Record<string, unknown>
+  wrong.history_mode = 'segment_local'
+
+  assert.throws(
+    () => normalizeSubingDailyWatchCurrent(missing as unknown as SubingDailyWatchCurrentWireResponse),
+    new Error('SUBING_DAILY_WATCH_INVALID_RESPONSE'),
+  )
+  assert.throws(
+    () => normalizeSubingDailyWatchCurrent(wrong as unknown as SubingDailyWatchCurrentWireResponse),
+    new Error('SUBING_DAILY_WATCH_INVALID_RESPONSE'),
+  )
+})
+
+test('Daily Watch rejects trend history mode mismatch', () => {
+  const payload = readyPayload()
+  const daily = payload.snapshot!.long_watch[0].daily! as unknown as Record<string, unknown>
+  daily.history_mode = 'segment_local'
+
+  assert.throws(
+    () => normalizeSubingDailyWatchCurrent(payload),
+    new Error('SUBING_DAILY_WATCH_INVALID_RESPONSE'),
+  )
+})
+
+test('Daily Watch rejects missing trend warm-up start', () => {
+  const payload = readyPayload()
+  const daily = payload.snapshot!.long_watch[0].daily! as unknown as Record<string, unknown>
+  delete daily.warmup_start_trading_day
+
+  assert.throws(
+    () => normalizeSubingDailyWatchCurrent(payload),
+    new Error('SUBING_DAILY_WATCH_INVALID_RESPONSE'),
+  )
+})
+
+test('Daily Watch rejects a trend warm-up bar count other than 30', () => {
+  const payload = readyPayload()
+  const daily = payload.snapshot!.long_watch[0].daily! as unknown as Record<string, unknown>
+  daily.warmup_bar_count = 29
+
+  assert.throws(
+    () => normalizeSubingDailyWatchCurrent(payload),
+    new Error('SUBING_DAILY_WATCH_INVALID_RESPONSE'),
+  )
+})
+
+test('Daily Watch rejects invalid trend warm-up segment counts', () => {
+  const zero = readyPayload()
+  const tooMany = readyPayload()
+  ;(zero.snapshot!.long_watch[0].daily! as unknown as Record<string, unknown>).warmup_segment_count = 0
+  ;(tooMany.snapshot!.long_watch[0].daily! as unknown as Record<string, unknown>).warmup_segment_count = 31
+
+  assert.throws(
+    () => normalizeSubingDailyWatchCurrent(zero),
+    new Error('SUBING_DAILY_WATCH_INVALID_RESPONSE'),
+  )
+  assert.throws(
+    () => normalizeSubingDailyWatchCurrent(tooMany),
+    new Error('SUBING_DAILY_WATCH_INVALID_RESPONSE'),
+  )
+})
+
+test('Daily Watch rejects legacy-only trend lineage', () => {
+  const payload = readyPayload()
+  const daily = payload.snapshot!.long_watch[0].daily! as unknown as Record<string, unknown>
+  delete daily.current_segment_start_trading_day
+  daily.segment_start_trading_day = '2026-07-20'
+
+  assert.throws(
+    () => normalizeSubingDailyWatchCurrent(payload),
+    new Error('SUBING_DAILY_WATCH_INVALID_RESPONSE'),
+  )
+})
+
+test('Daily Watch rejects invalid, future, or mixed V1/V2 trend lineage', () => {
+  const invalidDate = readyPayload()
+  const futureCurrentSegment = readyPayload()
+  const futureWarmupSegment = readyPayload()
+  const mixed = readyPayload()
+  ;(invalidDate.snapshot!.long_watch[0].daily! as unknown as Record<string, unknown>)
+    .warmup_start_trading_day = '2026-02-30'
+  ;(futureCurrentSegment.snapshot!.long_watch[0].daily! as unknown as Record<string, unknown>)
+    .current_segment_start_trading_day = '2026-08-25'
+  ;(futureWarmupSegment.snapshot!.long_watch[0].daily! as unknown as Record<string, unknown>)
+    .warmup_start_trading_day = '2026-08-25'
+  ;(mixed.snapshot!.long_watch[0].daily! as unknown as Record<string, unknown>)
+    .segment_start_trading_day = '2026-07-20'
+
+  for (const payload of [invalidDate, futureCurrentSegment, futureWarmupSegment, mixed]) {
+    assert.throws(
+      () => normalizeSubingDailyWatchCurrent(payload),
+      new Error('SUBING_DAILY_WATCH_INVALID_RESPONSE'),
+    )
+  }
+})
+
+test('Daily Watch rejects negative and fractional count fields', () => {
+  const negative = readyPayload()
+  const fractional = readyPayload()
+  negative.snapshot!.counts.excluded = -1
+  fractional.snapshot!.counts.unavailable = 0.5
+
+  assert.throws(
+    () => normalizeSubingDailyWatchCurrent(negative),
+    new Error('SUBING_DAILY_WATCH_INVALID_RESPONSE'),
+  )
+  assert.throws(
+    () => normalizeSubingDailyWatchCurrent(fractional),
+    new Error('SUBING_DAILY_WATCH_INVALID_RESPONSE'),
+  )
 })
 
 test('Daily Watch rejects non-finite Decimal strings', () => {
@@ -157,6 +317,9 @@ test('Daily Watch rejects count mismatches and duplicate symbols across projecte
 test('Daily Watch preserves a typed unavailable response without inventing a snapshot', () => {
   const result = normalizeSubingDailyWatchCurrent({
     status: 'unavailable',
+    projection_version: 'subing_daily_watch_v2',
+    formula_version: 'subing_ema21_rank1_stitched_raw_v2',
+    history_mode: 'rank1_stitched_raw',
     expected_target_trading_day: '2026-08-25',
     latest_target_trading_day: '2026-08-22',
     error_code: 'SUBING_DAILY_WATCH_STALE',
@@ -165,6 +328,9 @@ test('Daily Watch preserves a typed unavailable response without inventing a sna
 
   assert.deepEqual(result, {
     status: 'unavailable',
+    projection_version: 'subing_daily_watch_v2',
+    formula_version: 'subing_ema21_rank1_stitched_raw_v2',
+    history_mode: 'rank1_stitched_raw',
     expected_target_trading_day: '2026-08-25',
     latest_target_trading_day: '2026-08-22',
     error_code: 'SUBING_DAILY_WATCH_STALE',

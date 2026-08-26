@@ -40,6 +40,9 @@ function formal(id: number, tradingDay = '2026-08-25'): CurrentFormalSignalsResp
 function daily(target = '2026-08-26'): SubingDailyWatchCurrentResponse {
   return {
     status: 'ready',
+    projection_version: 'subing_daily_watch_v2',
+    formula_version: 'subing_ema21_rank1_stitched_raw_v2',
+    history_mode: 'rank1_stitched_raw',
     expected_target_trading_day: target,
     latest_target_trading_day: target,
     error_code: null,
@@ -56,6 +59,9 @@ function daily(target = '2026-08-26'): SubingDailyWatchCurrentResponse {
 function unavailableDaily(): SubingDailyWatchCurrentResponse {
   return {
     status: 'unavailable',
+    projection_version: 'subing_daily_watch_v2',
+    formula_version: 'subing_ema21_rank1_stitched_raw_v2',
+    history_mode: 'rank1_stitched_raw',
     expected_target_trading_day: '2026-08-26',
     latest_target_trading_day: null,
     error_code: 'SUBING_DAILY_WATCH_NOT_GENERATED',

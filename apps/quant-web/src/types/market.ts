@@ -432,12 +432,19 @@ function normalizeMarketRadarDecimal(value: number | string | null): number | nu
 
 export type SubingDailyWatchDecision = 'long_watch' | 'short_watch'
 export type SubingDailyWatchPriceSide = 'above' | 'below' | 'equal' | 'unavailable'
+export type SubingDailyWatchProjectionVersion = 'subing_daily_watch_v2'
+export type SubingDailyWatchFormulaVersion = 'subing_ema21_rank1_stitched_raw_v2'
+export type SubingDailyWatchHistoryMode = 'rank1_stitched_raw'
 
 interface SubingDailyWatchTrendBase<TDecimal> {
   bar_end: string
   trading_day: string
   physical_contract: string
-  segment_start_trading_day: string
+  current_segment_start_trading_day: string
+  warmup_start_trading_day: string
+  warmup_bar_count: number
+  warmup_segment_count: number
+  history_mode: SubingDailyWatchHistoryMode
   close: TDecimal
   ema21: TDecimal
   price_side: SubingDailyWatchPriceSide
@@ -485,6 +492,9 @@ export type SubingDailyWatchSnapshot = SubingDailyWatchSnapshotBase<SubingDailyW
 
 interface SubingDailyWatchCurrentResponseBase<TSnapshot> {
   status: 'ready' | 'unavailable'
+  projection_version: SubingDailyWatchProjectionVersion
+  formula_version: SubingDailyWatchFormulaVersion
+  history_mode: SubingDailyWatchHistoryMode
   expected_target_trading_day: string | null
   latest_target_trading_day: string | null
   error_code: string | null
@@ -501,6 +511,9 @@ export function normalizeSubingDailyWatchCurrent(
 ): SubingDailyWatchCurrentResponse {
   if (!isSubingDailyWatchRecord(payload)
     || (payload.status !== 'ready' && payload.status !== 'unavailable')
+    || payload.projection_version !== 'subing_daily_watch_v2'
+    || payload.formula_version !== 'subing_ema21_rank1_stitched_raw_v2'
+    || payload.history_mode !== 'rank1_stitched_raw'
     || !isNullableDailyWatchDate(payload.expected_target_trading_day)
     || !isNullableDailyWatchDate(payload.latest_target_trading_day)
     || (payload.error_code !== null && !isNonEmptyDailyWatchString(payload.error_code))) {
@@ -512,6 +525,9 @@ export function normalizeSubingDailyWatchCurrent(
     }
     return {
       status: payload.status,
+      projection_version: payload.projection_version,
+      formula_version: payload.formula_version,
+      history_mode: payload.history_mode,
       expected_target_trading_day: payload.expected_target_trading_day,
       latest_target_trading_day: payload.latest_target_trading_day,
       error_code: payload.error_code,
@@ -544,6 +560,9 @@ export function normalizeSubingDailyWatchCurrent(
   }
   return {
     status: 'ready',
+    projection_version: payload.projection_version,
+    formula_version: payload.formula_version,
+    history_mode: payload.history_mode,
     expected_target_trading_day: payload.expected_target_trading_day,
     latest_target_trading_day: payload.latest_target_trading_day,
     error_code: null,
@@ -591,7 +610,11 @@ function normalizeSubingDailyWatchTrend(
     bar_end: value.bar_end,
     trading_day: value.trading_day,
     physical_contract: value.physical_contract,
-    segment_start_trading_day: value.segment_start_trading_day,
+    current_segment_start_trading_day: value.current_segment_start_trading_day,
+    warmup_start_trading_day: value.warmup_start_trading_day,
+    warmup_bar_count: value.warmup_bar_count,
+    warmup_segment_count: value.warmup_segment_count,
+    history_mode: value.history_mode,
     close: normalizeSubingDailyWatchDecimal(value.close),
     ema21: normalizeSubingDailyWatchDecimal(value.ema21),
     price_side: value.price_side,
@@ -647,7 +670,16 @@ function isSubingDailyWatchTrendWire(value: unknown): value is SubingDailyWatchT
   return isDailyWatchTimestamp(value.bar_end)
     && isDailyWatchDate(value.trading_day)
     && isNonEmptyDailyWatchString(value.physical_contract)
-    && isDailyWatchDate(value.segment_start_trading_day)
+    && isDailyWatchDate(value.current_segment_start_trading_day)
+    && isDailyWatchDate(value.warmup_start_trading_day)
+    && value.warmup_bar_count === 30
+    && Number.isInteger(value.warmup_segment_count)
+    && Number(value.warmup_segment_count) >= 1
+    && Number(value.warmup_segment_count) <= 30
+    && value.history_mode === 'rank1_stitched_raw'
+    && value.current_segment_start_trading_day <= value.trading_day
+    && value.warmup_start_trading_day <= value.trading_day
+    && !Object.hasOwn(value, 'segment_start_trading_day')
     && typeof value.close === 'string'
     && typeof value.ema21 === 'string'
     && ['above', 'below', 'equal', 'unavailable'].includes(String(value.price_side))
@@ -672,7 +704,19 @@ function isNonEmptyDailyWatchString(value: unknown): value is string {
 }
 
 function isDailyWatchDate(value: unknown): value is string {
-  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
+  if (typeof value !== 'string') return false
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
+  if (match === null) return false
+  const year = Number(match[1])
+  const month = Number(match[2])
+  const day = Number(match[3])
+  if (year < 1 || year > 9999 || month < 1 || month > 12 || day < 1) return false
+  const daysInMonth = [31, isDailyWatchLeapYear(year) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+  return day <= daysInMonth[month - 1]
+}
+
+function isDailyWatchLeapYear(year: number): boolean {
+  return year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0)
 }
 
 function isNullableDailyWatchDate(value: unknown): value is string | null {
