@@ -13,6 +13,11 @@ from .contracts import (
     subing_strategy_action_id,
     subing_strategy_episode_id,
 )
+from .direction_context import (
+    SubingStrategyContextIdentityError,
+    SubingStrategyDirectionContext,
+    SubingStrategyDirectionContextResolver,
+)
 from .policy import (
     SubingStrategyPolicy,
     SubingStrategyPolicyError,
@@ -23,7 +28,10 @@ __all__ = [
     "SubingStrategyAction",
     "SubingStrategyActionKind",
     "SubingStrategyContractError",
+    "SubingStrategyContextIdentityError",
     "SubingStrategyDirection",
+    "SubingStrategyDirectionContext",
+    "SubingStrategyDirectionContextResolver",
     "SubingStrategyEpisode",
     "SubingStrategyEpisodeState",
     "SubingStrategyFillBasis",

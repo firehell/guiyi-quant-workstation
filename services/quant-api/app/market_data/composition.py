@@ -55,6 +55,7 @@ from app.market_data.subing_daily_watch import (
     SubingDailyWatchCurrentService,
     SubingDailyWatchError,
     SubingDailyWatchGenerator,
+    SubingDailyWatchItemProjector,
     SubingDailyWatchProduct,
 )
 from app.market_data.subing_daily_watch_calendar import (
@@ -193,11 +194,14 @@ def build_subing_daily_watch_generator(
         root,
         root_validator=_subing_daily_watch_v2_root,
     )
+    projector = SubingDailyWatchItemProjector(
+        stitched_loader=ActualDominantStitchedResearchLoader(market_data),
+        product_metadata=metadata,
+    )
     return SubingDailyWatchGenerator(
         builder=SubingDailyWatchBuilder(
-            stitched_loader=ActualDominantStitchedResearchLoader(market_data),
+            projector=projector,
             products=active,
-            product_metadata=metadata,
         ),
         store=store,
         target_day=lambda source: resolve_next_common_trading_day(

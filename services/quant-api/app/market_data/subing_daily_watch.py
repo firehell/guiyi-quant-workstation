@@ -192,6 +192,32 @@ class _DailyWatchStore(Protocol):
     ) -> None: ...
 
 
+class SubingDailyWatchItemProjector:
+    """Project one product with the exact Daily Watch V2 formula and lineage."""
+
+    def __init__(
+        self,
+        *,
+        stitched_loader: _StitchedLoader,
+        product_metadata: Mapping[str, SubingDailyWatchProduct],
+    ) -> None:
+        self._stitched_loader = stitched_loader
+        self._product_metadata = product_metadata
+
+    def project(
+        self,
+        symbol: str,
+        *,
+        source_trading_day: date,
+    ) -> SubingDailyWatchItem:
+        return _project_daily_watch_item(
+            stitched_loader=self._stitched_loader,
+            metadata=self._product_metadata.get(symbol),
+            symbol=symbol,
+            source_trading_day=source_trading_day,
+        )
+
+
 _GENERATION_FAILURE_CODES = frozenset(
     {
         "ACTIVE_OPERATIONAL_SCOPE_MISMATCH",
@@ -263,9 +289,8 @@ class SubingDailyWatchBuilder:
     def __init__(
         self,
         *,
-        stitched_loader: _StitchedLoader,
+        projector: SubingDailyWatchItemProjector,
         products: tuple[str, ...],
-        product_metadata: Mapping[str, SubingDailyWatchProduct],
         expected_universe_size: int = 60,
     ) -> None:
         if (
@@ -281,9 +306,8 @@ class SubingDailyWatchBuilder:
             )
         ):
             raise SubingDailyWatchError("ACTIVE_OPERATIONAL_SCOPE_MISMATCH")
-        self._stitched_loader = stitched_loader
+        self._projector = projector
         self._products = products
-        self._product_metadata = product_metadata
         self._expected_universe_size = expected_universe_size
 
     def build(
@@ -322,7 +346,7 @@ class SubingDailyWatchBuilder:
         source_trading_day: date,
     ) -> tuple[SubingDailyWatchItem, ...]:
         return tuple(
-            self._build_item(symbol, source_trading_day=source_trading_day)
+            self._projector.project(symbol, source_trading_day=source_trading_day)
             for symbol in self._products
         )
 
@@ -343,112 +367,110 @@ class SubingDailyWatchBuilder:
             items=items,
         )
 
-    def _build_item(
-        self,
-        symbol: str,
-        *,
-        source_trading_day: date,
-    ) -> SubingDailyWatchItem:
-        metadata = self._product_metadata.get(symbol)
-        if metadata is None or metadata.symbol != symbol:
-            return _unavailable_item(
-                symbol,
-                metadata=None,
-                reasons=("PRODUCT_METADATA_UNAVAILABLE",),
-            )
-        try:
-            loaded = self._stitched_loader.load(
-                symbol=symbol,
-                frequencies=(BarFrequency.D1, BarFrequency.H1),
-                through=source_trading_day,
-                limit=30,
-            )
-        except ActualDominantResearchSourceTradingDayMissingError:
-            return _unavailable_item(
-                symbol,
-                metadata=metadata,
-                reasons=("SOURCE_TRADING_DAY_MISSING",),
-            )
-        except ActualDominantResearchSegmentIdentityError:
-            return _unavailable_item(
-                symbol,
-                metadata=metadata,
-                reasons=("DATA_IDENTITY_MISMATCH",),
-            )
-        except MarketDataError:
-            return _unavailable_item(
-                symbol,
-                metadata=metadata,
-                reasons=("DOMINANT_SEGMENT_UNAVAILABLE",),
-            )
-
-        if _source_trading_day_missing(
-            loaded,
-            source_trading_day=source_trading_day,
-        ):
-            return _unavailable_item(
-                symbol,
-                metadata=metadata,
-                reasons=("SOURCE_TRADING_DAY_MISSING",),
-            )
-
-        identity = _validate_loaded_identity(
-            loaded,
-            source_trading_day=source_trading_day,
+def _project_daily_watch_item(
+    *,
+    stitched_loader: _StitchedLoader,
+    metadata: SubingDailyWatchProduct | None,
+    symbol: str,
+    source_trading_day: date,
+) -> SubingDailyWatchItem:
+    if metadata is None or metadata.symbol != symbol:
+        return _unavailable_item(
+            symbol,
+            metadata=None,
+            reasons=("PRODUCT_METADATA_UNAVAILABLE",),
         )
-        if identity is None:
-            return _unavailable_item(
-                symbol,
-                metadata=metadata,
-                reasons=("DATA_IDENTITY_MISMATCH",),
-            )
-        current_segment, daily_result, hourly_result = identity
-        daily_bars = daily_result.bars
-        hourly_bars = hourly_result.bars
-        daily = calculate_subing_ema_trend_stitched(
-            daily_bars,
-            timeframe=BarFrequency.D1,
-            current_contract=current_segment.contract,
-            current_segment_start_trading_day=(current_segment.start_trading_day),
-            resolved_contract_segments=_segments_with_full_current(
-                daily_result,
-                current_segment=current_segment,
-                source_trading_day=source_trading_day,
-            ),
-        )
-        hourly = calculate_subing_ema_trend_stitched(
-            hourly_bars,
-            timeframe=BarFrequency.H1,
-            current_contract=current_segment.contract,
-            current_segment_start_trading_day=(current_segment.start_trading_day),
-            resolved_contract_segments=_segments_with_full_current(
-                hourly_result,
-                current_segment=current_segment,
-                source_trading_day=source_trading_day,
-            ),
-        )
-        unavailable_reasons = _history_unavailable_reasons(daily, hourly)
-        if unavailable_reasons:
-            return _unavailable_item(
-                symbol,
-                metadata=metadata,
-                reasons=unavailable_reasons,
-                daily=daily.snapshot,
-                hourly=hourly.snapshot,
-            )
-        assert daily.snapshot is not None
-        assert hourly.snapshot is not None
-        classification = classify_daily_watch(daily.snapshot, hourly.snapshot)
-        return SubingDailyWatchItem(
+    try:
+        loaded = stitched_loader.load(
             symbol=symbol,
-            product_name=metadata.product_name,
-            sector=metadata.sector,
-            decision=classification.decision,
-            reason_codes=classification.reason_codes,
+            frequencies=(BarFrequency.D1, BarFrequency.H1),
+            through=source_trading_day,
+            limit=30,
+        )
+    except ActualDominantResearchSourceTradingDayMissingError:
+        return _unavailable_item(
+            symbol,
+            metadata=metadata,
+            reasons=("SOURCE_TRADING_DAY_MISSING",),
+        )
+    except ActualDominantResearchSegmentIdentityError:
+        return _unavailable_item(
+            symbol,
+            metadata=metadata,
+            reasons=("DATA_IDENTITY_MISMATCH",),
+        )
+    except MarketDataError:
+        return _unavailable_item(
+            symbol,
+            metadata=metadata,
+            reasons=("DOMINANT_SEGMENT_UNAVAILABLE",),
+        )
+
+    if _source_trading_day_missing(
+        loaded,
+        source_trading_day=source_trading_day,
+    ):
+        return _unavailable_item(
+            symbol,
+            metadata=metadata,
+            reasons=("SOURCE_TRADING_DAY_MISSING",),
+        )
+
+    identity = _validate_loaded_identity(
+        loaded,
+        source_trading_day=source_trading_day,
+    )
+    if identity is None:
+        return _unavailable_item(
+            symbol,
+            metadata=metadata,
+            reasons=("DATA_IDENTITY_MISMATCH",),
+        )
+    current_segment, daily_result, hourly_result = identity
+    daily = calculate_subing_ema_trend_stitched(
+        daily_result.bars,
+        timeframe=BarFrequency.D1,
+        current_contract=current_segment.contract,
+        current_segment_start_trading_day=current_segment.start_trading_day,
+        resolved_contract_segments=_segments_with_full_current(
+            daily_result,
+            current_segment=current_segment,
+            source_trading_day=source_trading_day,
+        ),
+    )
+    hourly = calculate_subing_ema_trend_stitched(
+        hourly_result.bars,
+        timeframe=BarFrequency.H1,
+        current_contract=current_segment.contract,
+        current_segment_start_trading_day=current_segment.start_trading_day,
+        resolved_contract_segments=_segments_with_full_current(
+            hourly_result,
+            current_segment=current_segment,
+            source_trading_day=source_trading_day,
+        ),
+    )
+    unavailable_reasons = _history_unavailable_reasons(daily, hourly)
+    if unavailable_reasons:
+        return _unavailable_item(
+            symbol,
+            metadata=metadata,
+            reasons=unavailable_reasons,
             daily=daily.snapshot,
             hourly=hourly.snapshot,
-            unavailable_reasons=(),
         )
+    assert daily.snapshot is not None
+    assert hourly.snapshot is not None
+    classification = classify_daily_watch(daily.snapshot, hourly.snapshot)
+    return SubingDailyWatchItem(
+        symbol=symbol,
+        product_name=metadata.product_name,
+        sector=metadata.sector,
+        decision=classification.decision,
+        reason_codes=classification.reason_codes,
+        daily=daily.snapshot,
+        hourly=hourly.snapshot,
+        unavailable_reasons=(),
+    )
 
 
 class SubingDailyWatchGenerator:

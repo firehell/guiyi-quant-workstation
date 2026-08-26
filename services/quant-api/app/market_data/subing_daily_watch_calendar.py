@@ -34,6 +34,27 @@ def resolve_next_common_trading_day(
     )
 
 
+def resolve_previous_common_trading_day(
+    session: Session,
+    *,
+    products: tuple[str, ...],
+    target_trading_day: date,
+) -> date:
+    """Resolve the identical trading day immediately before ``target``."""
+    exchanges = _resolve_product_exchanges(session, products)
+    previous_days = tuple(
+        _previous_trading_day_for_exchange(
+            session,
+            exchange=exchange,
+            target_trading_day=target_trading_day,
+        )
+        for exchange in exchanges
+    )
+    if len(set(previous_days)) != 1:
+        raise SubingDailyWatchCalendarError("PREVIOUS_TRADING_DAY_UNAVAILABLE")
+    return previous_days[0]
+
+
 def resolve_expected_daily_watch_day(
     session: Session,
     *,
@@ -152,3 +173,48 @@ def _resolve_next_day_for_exchanges(
     if len(set(next_days)) != 1:
         raise SubingDailyWatchCalendarError("NEXT_TRADING_DAY_UNAVAILABLE")
     return next_days[0]
+
+
+def _previous_trading_day_for_exchange(
+    session: Session,
+    *,
+    exchange: str,
+    target_trading_day: date,
+) -> date:
+    target_states = tuple(
+        session.scalars(
+            select(TradingCalendar.is_trading_day).where(
+                TradingCalendar.exchange_code == exchange,
+                TradingCalendar.trade_date == target_trading_day,
+            )
+        )
+    )
+    if len(target_states) != 1 or target_states[0] is not True:
+        raise SubingDailyWatchCalendarError("PREVIOUS_TRADING_DAY_UNAVAILABLE")
+    previous_day = session.scalar(
+        select(TradingCalendar.trade_date)
+        .where(
+            TradingCalendar.exchange_code == exchange,
+            TradingCalendar.trade_date < target_trading_day,
+            TradingCalendar.is_trading_day.is_(True),
+        )
+        .order_by(TradingCalendar.trade_date.desc())
+        .limit(1)
+    )
+    if previous_day is None:
+        raise SubingDailyWatchCalendarError("PREVIOUS_TRADING_DAY_UNAVAILABLE")
+    calendar_days = int(
+        session.scalar(
+            select(func.count())
+            .select_from(TradingCalendar)
+            .where(
+                TradingCalendar.exchange_code == exchange,
+                TradingCalendar.trade_date > previous_day,
+                TradingCalendar.trade_date <= target_trading_day,
+            )
+        )
+        or 0
+    )
+    if calendar_days != (target_trading_day - previous_day).days:
+        raise SubingDailyWatchCalendarError("PREVIOUS_TRADING_DAY_UNAVAILABLE")
+    return previous_day

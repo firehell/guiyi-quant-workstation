@@ -177,7 +177,7 @@ def test_subing_daily_watch_generator_uses_stitched_loader_and_v2_root(
     generator = build_subing_daily_watch_generator(object())
 
     assert isinstance(
-        generator.builder._stitched_loader,
+        generator.builder._projector._stitched_loader,
         ActualDominantStitchedResearchLoader,
     )
     assert generator._store._root == base / "v2"

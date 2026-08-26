@@ -4,7 +4,7 @@ from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
 import pytest
-from sqlalchemy import create_engine, delete
+from sqlalchemy import create_engine, delete, update
 from sqlalchemy.orm import Session
 
 from app.db.base import Base
@@ -12,6 +12,7 @@ from app.market_data.subing_daily_watch_calendar import (
     SubingDailyWatchCalendarError,
     resolve_expected_daily_watch_day,
     resolve_next_common_trading_day,
+    resolve_previous_common_trading_day,
 )
 from app.models import Exchange, Instrument, TradingCalendar
 
@@ -68,6 +69,64 @@ def test_next_common_trading_day_resolves_friday_to_monday(
         products=("jm", "rb"),
         source_trading_day=date(2026, 8, 28),
     ) == date(2026, 8, 31)
+
+
+def test_previous_common_trading_day_is_inverse_of_next(session: Session) -> None:
+    source = date(2026, 8, 28)
+    target = resolve_next_common_trading_day(
+        session,
+        products=("jm", "rb"),
+        source_trading_day=source,
+    )
+
+    assert resolve_previous_common_trading_day(
+        session,
+        products=("jm", "rb"),
+        target_trading_day=target,
+    ) == source
+
+
+def test_previous_common_trading_day_rejects_non_trading_target(
+    session: Session,
+) -> None:
+    with pytest.raises(SubingDailyWatchCalendarError) as captured:
+        resolve_previous_common_trading_day(
+            session,
+            products=("jm", "rb"),
+            target_trading_day=date(2026, 8, 30),
+        )
+
+    assert captured.value.code == "PREVIOUS_TRADING_DAY_UNAVAILABLE"
+
+
+def test_previous_common_trading_day_rejects_exchange_disagreement(
+    session: Session,
+) -> None:
+    session.add(
+        TradingCalendar(
+            exchange_code="SHFE",
+            trade_date=date(2026, 8, 27),
+            is_trading_day=True,
+        )
+    )
+    session.execute(
+        update(TradingCalendar)
+        .where(
+            TradingCalendar.exchange_code == "SHFE",
+            TradingCalendar.trade_date == date(2026, 8, 28),
+        )
+        .values(is_trading_day=False)
+    )
+    session.commit()
+
+    with pytest.raises(SubingDailyWatchCalendarError) as captured:
+        resolve_previous_common_trading_day(
+            session,
+            products=("jm", "rb"),
+            target_trading_day=date(2026, 8, 31),
+        )
+
+    assert captured.value.code == "PREVIOUS_TRADING_DAY_UNAVAILABLE"
 
 
 def test_next_common_trading_day_normalizes_products(session: Session) -> None:
