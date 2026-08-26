@@ -19,6 +19,7 @@ from app.alerts.registry import (
 from app.alerts.strategy_payload import (
     StrategyPayloadError,
     SubingStrategyActionPayload,
+    parse_subing_strategy_payload,
     validate_subing_strategy_event_facts,
 )
 from app.market_data.domain import normalize_contract_for_symbol
@@ -29,6 +30,15 @@ class AlertConsistencyError(RuntimeError):
     """An existing event disagrees with the same unique event identity."""
 
     code = "ALERT_EVENT_CONSISTENCY_ERROR"
+
+    def __init__(self) -> None:
+        super().__init__(self.code)
+
+
+class AlertEventPersistenceError(RuntimeError):
+    """An AlertEvent write failed without an idempotent identity readback."""
+
+    code = "ALERT_EVENT_PERSIST_FAILED"
 
     def __init__(self) -> None:
         super().__init__(self.code)
@@ -207,8 +217,11 @@ class AlertService:
             ):
                 raise AlertConsistencyError()
             try:
+                canonical_payload = parse_subing_strategy_payload(
+                    request.strategy_payload.to_json()
+                )
                 validate_subing_strategy_event_facts(
-                    request.strategy_payload,
+                    canonical_payload,
                     action_id=request.action_id,
                     symbol=symbol,
                     contract=contract,
@@ -219,7 +232,7 @@ class AlertService:
                 )
             except StrategyPayloadError:
                 raise AlertConsistencyError() from None
-            strategy_payload_json = request.strategy_payload.to_json()
+            strategy_payload_json = canonical_payload.to_json()
 
         existing = self._event_by_identity(
             definition=definition,
@@ -263,28 +276,41 @@ class AlertService:
             self._session.commit()
         except IntegrityError:
             self._session.rollback()
-            existing = self._event_by_identity(
-                definition=definition,
-                rule_id=rule.id,
-                symbol=symbol,
-                frequency=frequency,
-                bar_end=request.bar_end,
-                action_id=request.action_id,
-            )
-            if existing is not None and self._event_matches(
-                existing,
-                rule_id=rule.id,
-                symbol=symbol,
-                bar_end=request.bar_end,
-                contract=contract,
-                trading_day=request.trading_day,
-                frequency=frequency,
-                result_codes=result_codes,
-                action_id=request.action_id,
-                strategy_payload=strategy_payload_json,
-            ):
-                return None
-            raise AlertConsistencyError() from None
+            if definition.kind is AlertRuleKind.STRATEGY_ACTION:
+                try:
+                    existing = self._event_by_identity(
+                        definition=definition,
+                        rule_id=rule.id,
+                        symbol=symbol,
+                        frequency=frequency,
+                        bar_end=request.bar_end,
+                        action_id=request.action_id,
+                    )
+                except SQLAlchemyError:
+                    self._session.rollback()
+                    raise AlertEventPersistenceError() from None
+                if existing is not None:
+                    matches = self._event_matches(
+                        existing,
+                        rule_id=rule.id,
+                        symbol=symbol,
+                        bar_end=request.bar_end,
+                        contract=contract,
+                        trading_day=request.trading_day,
+                        frequency=frequency,
+                        result_codes=result_codes,
+                        action_id=request.action_id,
+                        strategy_payload=strategy_payload_json,
+                    )
+                    self._session.rollback()
+                    if matches:
+                        return None
+                    raise AlertConsistencyError() from None
+            self._session.rollback()
+            raise AlertEventPersistenceError() from None
+        except SQLAlchemyError:
+            self._session.rollback()
+            raise AlertEventPersistenceError() from None
         self._session.refresh(event)
         return event
 

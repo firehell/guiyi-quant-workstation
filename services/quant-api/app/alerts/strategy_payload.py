@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from decimal import Decimal, InvalidOperation
+import re
 from typing import Any
 
 from app.market_data.domain import BarFrequency
@@ -75,24 +76,21 @@ _OPEN_KINDS = frozenset(
 _CLOSE_KINDS = frozenset(
     {SubingStrategyActionKind.CLOSE_LONG, SubingStrategyActionKind.CLOSE_SHORT}
 )
-_LONG_EXIT_REASON_CODES = frozenset(
-    {
-        "EMA21_BREACH_LONG",
-        "PREVIOUS_BAR_LOW_BREACH",
-        "BOUND_LOW_PIVOT_BREACH",
-        "MACD_HIGH_DEAD_CROSS",
-        "CONTRACT_SEGMENT_END",
-    }
+_LONG_EXIT_REASON_CODES = (
+    "EMA21_BREACH_LONG",
+    "PREVIOUS_BAR_LOW_BREACH",
+    "BOUND_LOW_PIVOT_BREACH",
+    "MACD_HIGH_DEAD_CROSS",
+    "CONTRACT_SEGMENT_END",
 )
-_SHORT_EXIT_REASON_CODES = frozenset(
-    {
-        "EMA21_BREACH_SHORT",
-        "PREVIOUS_BAR_HIGH_BREACH",
-        "BOUND_HIGH_PIVOT_BREACH",
-        "MACD_LOW_GOLDEN_CROSS",
-        "CONTRACT_SEGMENT_END",
-    }
+_SHORT_EXIT_REASON_CODES = (
+    "EMA21_BREACH_SHORT",
+    "PREVIOUS_BAR_HIGH_BREACH",
+    "BOUND_HIGH_PIVOT_BREACH",
+    "MACD_LOW_GOLDEN_CROSS",
+    "CONTRACT_SEGMENT_END",
 )
+_IDENTITY_DIGEST_PATTERN = re.compile(r"[0-9a-f]{64}\Z")
 
 
 class StrategyPayloadError(ValueError):
@@ -416,6 +414,9 @@ def _validate_payload(payload: SubingStrategyActionPayload) -> None:
         if payload.kind is SubingStrategyActionKind.CLOSE_LONG
         else _SHORT_EXIT_REASON_CODES
     )
+    canonical_reason_codes = tuple(
+        reason for reason in expected_reason_codes if reason in payload.reason_codes
+    )
     if (
         payload.kind not in _CLOSE_KINDS
         or payload.confirmation_source is not None
@@ -423,14 +424,25 @@ def _validate_payload(payload: SubingStrategyActionPayload) -> None:
         or payload.direction_context_source_day is not None
         or payload.direction_context_target_day is not None
         or payload.entry is None
-        or not payload.entry.action_id.startswith("subing-action:")
+        or _identity_digest(payload.entry.action_id, "subing-action")
+        != _identity_digest(payload.episode_id, "subing-episode")
         or payload.entry.kind is not expected_entry_kind
         or payload.entry.effective_bar_end > payload.decision_at
         or payload.holding_bar_count is None
         or payload.reference_change_percent is None
-        or any(reason not in expected_reason_codes for reason in payload.reason_codes)
+        or payload.reason_codes != canonical_reason_codes
     ):
         raise StrategyPayloadError()
+
+
+def _identity_digest(value: str, prefix: str) -> str:
+    expected_prefix = f"{prefix}:"
+    if not value.startswith(expected_prefix):
+        raise StrategyPayloadError()
+    digest = value[len(expected_prefix) :]
+    if _IDENTITY_DIGEST_PATTERN.fullmatch(digest) is None:
+        raise StrategyPayloadError()
+    return digest
 
 
 def _parse_entry(payload: object) -> SubingStrategyEntryPayload | None:

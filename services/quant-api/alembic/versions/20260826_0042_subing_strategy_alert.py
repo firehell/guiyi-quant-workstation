@@ -7,6 +7,7 @@ Revises: 20260826_0041
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from datetime import date, datetime
 import re
 
 from alembic import op
@@ -117,7 +118,10 @@ def _preflight(bind: sa.Connection) -> None:
         event_rows = (
             bind.execute(
                 sa.text(
-                    "SELECT r.rule_code, e.frequency, e.result_codes "
+                    "SELECT r.rule_code, e.symbol, e.contract, e.trading_day, "
+                    "e.frequency, e.bar_end, e.result_codes, "
+                    "e.lower_tf_confirmation, e.detected_at, "
+                    "e.notification_attempted_at "
                     "FROM alert_events e JOIN alert_rules r ON r.id = e.rule_id"
                 )
             )
@@ -176,11 +180,17 @@ def _valid_htdy_rule(row: Mapping[str, object]) -> bool:
 
 def _valid_event(row: Mapping[str, object]) -> bool:
     rule_code = row["rule_code"]
+    symbol = row["symbol"]
+    contract = row["contract"]
     frequency = row["frequency"]
     result_codes = row["result_codes"]
     if (
         rule_code not in _KNOWN_RULES
+        or not _valid_symbol(symbol)
+        or not _valid_contract_for_symbol(contract, symbol)
+        or type(row["trading_day"]) is not date
         or type(frequency) is not str
+        or not _aware_datetime(row["bar_end"])
         or not isinstance(result_codes, list)
         or not 1 <= len(result_codes) <= 2
         or len(result_codes) != len(set(result_codes))
@@ -188,12 +198,38 @@ def _valid_event(row: Mapping[str, object]) -> bool:
             type(value) is not str or value not in _OLD_RESULT_CODES
             for value in result_codes
         )
+        or type(row["lower_tf_confirmation"]) is not bool
+        or not _aware_datetime(row["detected_at"])
+        or (
+            row["notification_attempted_at"] is not None
+            and not _aware_datetime(row["notification_attempted_at"])
+        )
     ):
         return False
     if rule_code == _HTDY_RULE:
-        return frequency in _HTDY_FREQUENCIES
+        return (
+            frequency in _HTDY_FREQUENCIES
+            and row["lower_tf_confirmation"] is False
+        )
     return frequency in _OLD_SUBING_FREQUENCIES
 
 
 def _valid_symbol(value: object) -> bool:
     return type(value) is str and _SYMBOL_PATTERN.fullmatch(value) is not None
+
+
+def _valid_contract_for_symbol(contract: object, symbol: object) -> bool:
+    return (
+        type(contract) is str
+        and type(symbol) is str
+        and re.fullmatch(rf"{re.escape(symbol.upper())}[0-9]{{3,4}}", contract)
+        is not None
+    )
+
+
+def _aware_datetime(value: object) -> bool:
+    return (
+        isinstance(value, datetime)
+        and value.tzinfo is not None
+        and value.utcoffset() is not None
+    )

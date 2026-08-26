@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 import importlib.util
 import os
 from pathlib import Path
@@ -46,6 +46,37 @@ def test_migration_is_forward_only_from_exact_0041_parent() -> None:
         match="^SUBING_STRATEGY_ALERT_DOWNGRADE_UNSUPPORTED$",
     ):
         migration.downgrade()
+
+
+@pytest.mark.parametrize(
+    "changed",
+    [
+        {"lower_tf_confirmation": True},
+        {"symbol": "JM"},
+        {"contract": "RB2610"},
+    ],
+)
+def test_htdy_preflight_rejects_event_facts_that_cannot_be_safely_preserved(
+    changed: dict[str, object],
+) -> None:
+    migration = _load_migration(MIGRATION_PATHS[-1])
+    valid = {
+        "rule_code": "htdy_original_15m",
+        "symbol": "jm",
+        "contract": "JM2609",
+        "trading_day": date(2026, 8, 26),
+        "frequency": "15m",
+        "bar_end": datetime(2026, 8, 26, 2, 30, tzinfo=UTC),
+        "result_codes": ["buy"],
+        "lower_tf_confirmation": False,
+        "detected_at": datetime(2026, 8, 26, 2, 30, 1, tzinfo=UTC),
+        "notification_attempted_at": datetime(
+            2026, 8, 26, 2, 30, 2, tzinfo=UTC
+        ),
+    }
+
+    assert migration._valid_event(valid) is True
+    assert migration._valid_event({**valid, **changed}) is False
 
 
 @pytest.fixture
@@ -176,6 +207,9 @@ def test_upgrade_replaces_subing_history_and_preserves_htdy_facts(
         "INSERT INTO alert_rules "
         "(rule_code, enabled, scope_products, scope_product_frequencies) "
         "VALUES ('unknown_active', true, ARRAY[]::varchar[], '{}'::json)",
+        "UPDATE alert_events SET lower_tf_confirmation = true "
+        "WHERE rule_id = (SELECT id FROM alert_rules "
+        "WHERE rule_code = 'htdy_original_15m')",
     ],
 )
 def test_preflight_failure_is_atomic_at_0041(

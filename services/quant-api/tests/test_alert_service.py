@@ -7,7 +7,7 @@ from typing import Callable, cast
 
 import pytest
 from sqlalchemy import create_engine, event, select
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
@@ -636,7 +636,10 @@ def _bar(bar_end: datetime, close: str) -> CanonicalBar:
     )
 
 
-def closed_strategy_episode() -> tuple[SubingStrategyAction, SubingStrategyEpisode]:
+def closed_strategy_episode(
+    *,
+    reason_codes: tuple[str, ...] = ("EMA21_BREACH_LONG",),
+) -> tuple[SubingStrategyAction, SubingStrategyEpisode]:
     entry = strategy_action()
     exit_action = strategy_action(
         kind=SubingStrategyActionKind.CLOSE_LONG,
@@ -644,6 +647,7 @@ def closed_strategy_episode() -> tuple[SubingStrategyAction, SubingStrategyEpiso
         decision_at=BAR_END + timedelta(minutes=30),
         effective_bar_end=BAR_END + timedelta(minutes=45),
         episode_id=entry.episode_id,
+        reason_codes=reason_codes,
     )
     episode = SubingStrategyEpisode.from_actions(
         entry_action=entry,
@@ -828,6 +832,46 @@ def test_close_payload_rejects_untrusted_entry_ids_and_reason_codes(
         parse_subing_strategy_payload(mutate(raw))
 
 
+def test_close_payload_requires_entry_and_episode_to_share_identity_digest() -> None:
+    from app.alerts.strategy_payload import (
+        StrategyPayloadError,
+        parse_subing_strategy_payload,
+        serialize_subing_strategy_payload,
+    )
+
+    action, episode = closed_strategy_episode()
+    raw = serialize_subing_strategy_payload(action, episode=episode).to_json()
+    entry = cast(dict[str, object], raw["entry"])
+    mismatched_entry = {
+        **entry,
+        "action_id": f"subing-action:{'0' * 64}",
+    }
+
+    with pytest.raises(StrategyPayloadError, match="SUBING_STRATEGY_PAYLOAD_INVALID"):
+        parse_subing_strategy_payload({**raw, "entry": mismatched_entry})
+
+
+def test_close_payload_rejects_noncanonical_policy_reason_order() -> None:
+    from app.alerts.strategy_payload import (
+        StrategyPayloadError,
+        parse_subing_strategy_payload,
+        serialize_subing_strategy_payload,
+    )
+
+    action, episode = closed_strategy_episode(
+        reason_codes=("EMA21_BREACH_LONG", "MACD_HIGH_DEAD_CROSS")
+    )
+    raw = serialize_subing_strategy_payload(action, episode=episode).to_json()
+
+    with pytest.raises(StrategyPayloadError, match="SUBING_STRATEGY_PAYLOAD_INVALID"):
+        parse_subing_strategy_payload(
+            {
+                **raw,
+                "reason_codes": ["MACD_HIGH_DEAD_CROSS", "EMA21_BREACH_LONG"],
+            }
+        )
+
+
 def test_create_strategy_event_is_action_id_idempotent_and_conflict_safe(
     session: Session,
 ) -> None:
@@ -912,6 +956,73 @@ def test_strategy_event_rejects_rule_specific_contract_mismatch(
         AlertService(session, operational_products=("jm",)).create_event(
             replace(request, **request_change)
         )
+
+
+@pytest.mark.parametrize(
+    "payload_change",
+    [
+        {"schema_version": 2},
+        {"reason_codes": ("EMA21_BREACH_LONG",)},
+    ],
+)
+def test_strategy_event_revalidates_typed_payload_before_persisting(
+    session: Session,
+    payload_change: dict[str, object],
+) -> None:
+    from app.alerts.service import AlertConsistencyError, AlertService
+
+    rule = seed_rule(session, "subing_strategy_v1")
+    request = strategy_request(rule.id)
+    assert request.strategy_payload is not None
+    bypassed = replace(request.strategy_payload, **payload_change)
+
+    with pytest.raises(AlertConsistencyError, match="ALERT_EVENT_CONSISTENCY_ERROR"):
+        AlertService(session, operational_products=("jm",)).create_event(
+            replace(request, strategy_payload=bypassed)
+        )
+
+    assert session.scalar(select(AlertEvent).where(AlertEvent.rule_id == rule.id)) is None
+
+
+def test_integrity_error_without_action_id_readback_is_persistence_failure(
+    session: Session,
+) -> None:
+    from app.alerts.service import AlertEventPersistenceError, AlertService
+
+    rule = seed_rule(session, "subing_strategy_v1")
+
+    def fail_commit(_: Session) -> None:
+        raise IntegrityError("INSERT", {}, RuntimeError("constraint detail"))
+
+    event.listen(session, "before_commit", fail_commit, once=True)
+
+    with pytest.raises(AlertEventPersistenceError, match="ALERT_EVENT_PERSIST_FAILED"):
+        AlertService(session, operational_products=("jm",)).create_event(
+            strategy_request(rule.id)
+        )
+
+    assert session.in_transaction() is False
+    assert session.scalar(select(AlertEvent).where(AlertEvent.rule_id == rule.id)) is None
+
+
+def test_sqlalchemy_error_is_stable_event_persistence_failure(
+    session: Session,
+) -> None:
+    from app.alerts.service import AlertEventPersistenceError, AlertService
+
+    rule = seed_rule(session, "subing_strategy_v1")
+
+    def fail_commit(_: Session) -> None:
+        raise SQLAlchemyError("schema drift detail")
+
+    event.listen(session, "before_commit", fail_commit, once=True)
+
+    with pytest.raises(AlertEventPersistenceError, match="ALERT_EVENT_PERSIST_FAILED"):
+        AlertService(session, operational_products=("jm",)).create_event(
+            strategy_request(rule.id)
+        )
+
+    assert session.in_transaction() is False
 
 
 def test_htdy_same_time_cross_frequency_events_coexist_and_same_frequency_is_idempotent(
