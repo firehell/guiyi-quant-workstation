@@ -65,6 +65,7 @@ _FUNNEL_COUNT_UNITS = MappingProxyType(
 _CONFIRMATION_KEYS = tuple(source.name for source in ConfirmationSource)
 _OVERLAP_KEYS = ("V1_AND_V2", "V2_ONLY", "V1_ONLY")
 _POLICY_ID = "subing_lifecycle_v2_research_v1"
+_CANDIDATE_PROJECTION_FORMULA_VERSION = "subing_lifecycle_v2"
 
 
 @dataclass(frozen=True, slots=True)
@@ -375,6 +376,11 @@ class SubingLifecycleResearchService:
         self._products = normalized
         self._calibration = calibration
         self._policy = policy
+
+    @property
+    def candidate_projection_formula_version(self) -> str:
+        """Identity of the unchanged facts consumed by Candidate research."""
+        return _CANDIDATE_PROJECTION_FORMULA_VERSION
 
     def run(
         self,

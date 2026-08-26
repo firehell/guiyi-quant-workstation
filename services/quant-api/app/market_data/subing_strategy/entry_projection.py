@@ -67,6 +67,7 @@ class SubingStrategyEntryCandidate:
                     or pivot.contract != self.opportunity_key.contract
                     or pivot.segment_start_trading_day
                     != self.opportunity_key.segment_start_trading_day
+                    or pivot.confirmed_at >= self.confirmed_at
                 )
             )
         ):
@@ -224,27 +225,5 @@ def _candidate_from_confirmation(
         confirmation_source=snapshot.confirmation_source,
         confirmed_at=transition.transition_at,
         decision_bar_end=decision_bar_end,
-        bound_reference_pivot=_directional_structure_pivot(
-            snapshot.bound_reference_pivot,
-            key=transition.opportunity_key,
-        ),
+        bound_reference_pivot=snapshot.bound_reference_pivot,
     )
-
-
-def _directional_structure_pivot(
-    pivot: ConfirmedPivot | None,
-    *,
-    key: SubingOpportunityKey,
-) -> ConfirmedPivot | None:
-    if pivot is None:
-        return None
-    if (
-        not isinstance(pivot, ConfirmedPivot)
-        or pivot.contract != key.contract
-        or pivot.segment_start_trading_day != key.segment_start_trading_day
-    ):
-        raise SubingStrategyContextIdentityError()
-    expected_kind = (
-        PivotKind.LOW if key.direction is SubingDirection.LONG else PivotKind.HIGH
-    )
-    return pivot if pivot.kind is expected_kind else None

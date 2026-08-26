@@ -1139,3 +1139,41 @@ The written-spec review should concentrate on:
 - whether next-Bar-open and segment-terminal-close reference fills are acceptable;
 - whether the Stage 1 Web surface is simple enough despite retaining internal research capabilities;
 - whether Stage 2 remains sufficiently isolated from Stage 1 and from all real external mutations.
+
+## 23. Approved Lifecycle structure-binding correction
+
+The Strategy structure exit consumes one authoritative Lifecycle fact. The two
+previously conflated Pivot roles are split atomically:
+
+- `trigger_reference_pivot` is the existing 5m breakout/retest Pivot: HIGH for
+  long and LOW for short. Existing trigger, retest, and Lifecycle risk behavior
+  continues to consume this field unchanged.
+- `bound_reference_pivot` is the Strategy protective structure Pivot: LOW for
+  long and HIGH for short. It is sourced only from the existing 5m strict
+  2-left/2-right `ConfirmedPivot` stream and is frozen at the unique
+  `ENTRY_CONFIRMED` transition.
+
+At the entry confirmation Bar, Lifecycle selects the latest Pivot ordered by
+`(confirmed_at, pivot_time, pivot_id)` whose `confirmed_at` is strictly earlier
+than the entry boundary and whose physical contract, segment start, and trading
+day equal the entry Bar. The selection has no opportunity-origin lower bound,
+does not cross a day or segment, and never searches N Structure, 15m Pivots,
+frontend state, previous-Bar fallbacks, or future Bars. Missing evidence freezes
+`None` without blocking entry; the value is immutable for the Episode and makes
+the structure-exit family unavailable.
+
+This output-contract correction changes Lifecycle `formula_version` to
+`subing_lifecycle_v2_structure_binding_v1`. Policy id
+`subing_lifecycle_v2_research_v1` and every policy parameter remain unchanged.
+Strategy cache identity receives the new formula version from Lifecycle;
+retrospective candidate/protocol JSON remains pinned to its historical formula
+identity and is not rewritten.
+
+Acceptance must rerun all four confirmation-source cases, long/short direction,
+exact-boundary exclusion, missing/day/segment isolation, trigger/retest/risk
+regressions, prefix invariance, Strategy Action/Episode preservation, current
+HTTP/Web dual-field projection, and cache identity checks. Existing natural-data
+acceptance evidence is invalidated for the affected structure-exit cases and must
+be rerun. Independent Review must bind to the exact corrected head and repeat
+the original causal/exit/no-Stage-2 review focus plus this field split; until
+those gates pass, the implementation does not open integration or acceptance.

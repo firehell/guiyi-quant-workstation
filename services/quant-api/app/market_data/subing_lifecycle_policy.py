@@ -14,7 +14,7 @@ _SUBING_LIFECYCLE_POLICY_PATH = (
     PROJECT_ROOT / "data/research_policies/subing_lifecycle_v2_research_v1.json"
 )
 _POLICY_ID = "subing_lifecycle_v2_research_v1"
-_FORMULA_VERSION = "subing_lifecycle_v2"
+_FORMULA_VERSION = "subing_lifecycle_v2_structure_binding_v1"
 _SUPPORTED_TIMEFRAMES = (BarFrequency.M5, BarFrequency.M15)
 _EXPECTED_PAYLOAD: dict[str, Any] = {
     "schema_version": 1,

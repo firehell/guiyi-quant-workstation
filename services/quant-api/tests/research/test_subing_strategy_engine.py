@@ -425,6 +425,16 @@ def test_missing_pivot_disables_only_structure_exit() -> None:
     assert result.episodes[0].structure_exit_available is False
 
 
+def test_entry_action_and_episode_preserve_lifecycle_bound_pivot() -> None:
+    pivot = _pivot(SubingDirection.LONG, "98")
+
+    result = _run(_entry_frames(pivot=pivot)[:2])
+
+    assert result.actions[0].bound_reference_pivot is pivot
+    assert result.episodes[0].entry_action.bound_reference_pivot is pivot
+    assert result.episodes[0].structure_exit_available is True
+
+
 def test_ordinary_cutoff_preserves_pending_without_close_fallback() -> None:
     first = _bar(1, close="100")
     frames = (

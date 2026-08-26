@@ -209,6 +209,7 @@ export interface SubingLifecycleSnapshot {
   confirmed_at: string | null
   hold_count: number
   hold_required: number
+  trigger_reference_pivot: SubingLifecyclePivot | null
   bound_reference_pivot: SubingLifecyclePivot | null
   rebreak_reference_price: number | null
   retest_at: string | null
@@ -302,6 +303,9 @@ export function normalizeSubingResearch(payload: SubingResearchResponse): Subing
 function normalizeSubingLifecycle(snapshot: SubingLifecycleSnapshot): SubingLifecycleSnapshot {
   return {
     ...snapshot,
+    trigger_reference_pivot: snapshot.trigger_reference_pivot
+      ? { ...snapshot.trigger_reference_pivot, price: Number(snapshot.trigger_reference_pivot.price) }
+      : null,
     bound_reference_pivot: snapshot.bound_reference_pivot
       ? { ...snapshot.bound_reference_pivot, price: Number(snapshot.bound_reference_pivot.price) }
       : null,

@@ -34,7 +34,7 @@ def _identity() -> SubingStrategyCacheIdentity:
         formula_version="subing_strategy_15m_v1",
         calibration_id="subing_intraday_v1",
         lifecycle_policy_id="subing_lifecycle_v2_research_v1",
-        lifecycle_formula_version="subing_lifecycle_v2",
+        lifecycle_formula_version="subing_lifecycle_v2_structure_binding_v1",
         daily_watch_projection_version="subing_daily_watch_v2",
         daily_watch_formula_version="subing_ema21_rank1_stitched_raw_v2",
         daily_watch_history_mode="rank1_stitched_raw",
@@ -71,6 +71,15 @@ def test_cache_hit_requires_exact_identity(tmp_path: Path) -> None:
 
     assert cache.read(identity) == projection
     assert cache.read(replace(identity, calibration_id="other")) is None
+
+
+def test_cache_path_changes_with_lifecycle_formula_version(tmp_path: Path) -> None:
+    cache = SubingStrategyCache(tmp_path, root_validator=lambda: tmp_path)
+    identity = _identity()
+
+    assert cache.path_for(identity) != cache.path_for(
+        replace(identity, lifecycle_formula_version="subing_lifecycle_v2")
+    )
 
 
 def test_cache_round_trips_actions_and_episodes(tmp_path: Path) -> None:

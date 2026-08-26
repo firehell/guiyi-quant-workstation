@@ -30,7 +30,10 @@ from app.market_data.subing_lifecycle import (
     SubingLifecycleSnapshot,
     evaluate_subing_lifecycle,
 )
-from app.market_data.subing_lifecycle_policy import SubingLifecyclePolicy
+from app.market_data.subing_lifecycle_policy import (
+    _FORMULA_VERSION,
+    SubingLifecyclePolicy,
+)
 from app.market_data.subing_research import (
     SubingDirection,
     SubingFactorResult,
@@ -924,7 +927,7 @@ def _unavailable_lifecycle(
     observed_at: datetime | None,
 ) -> SubingLifecycleSnapshot:
     return SubingLifecycleSnapshot(
-        formula_version="subing_lifecycle_v2",
+        formula_version=_FORMULA_VERSION,
         policy_id="subing_lifecycle_v2_research_v1",
         research_only=True,
         observed_at=observed_at,

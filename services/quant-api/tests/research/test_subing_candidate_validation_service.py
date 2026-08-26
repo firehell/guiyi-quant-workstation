@@ -81,6 +81,8 @@ def _result(
 
 
 class _Runner:
+    candidate_projection_formula_version = "subing_lifecycle_v2"
+
     def __init__(
         self,
         *,
@@ -104,6 +106,19 @@ def _service(runner: _Runner) -> SubingCandidateValidationService:
         manifest=load_candidate_manifest(),
         protocol=load_candidate_validation_protocol(),
     )
+
+
+def test_service_rejects_candidate_projection_formula_drift() -> None:
+    runner = _Runner()
+    runner.candidate_projection_formula_version = (
+        "subing_lifecycle_v2_structure_binding_v1"
+    )
+
+    with pytest.raises(
+        CandidateValidationIdentityError,
+        match="CANDIDATE_VALIDATION_IDENTITY_MISMATCH",
+    ):
+        _service(runner)
 
 
 def _request(*, through: date = date(2026, 8, 19)) -> CandidateValidationRequest:

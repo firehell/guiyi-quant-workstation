@@ -26,6 +26,7 @@ from research.subing_lifecycle_fixtures import (
     _evaluate_raw,
     _factor,
     _long_pivot_prefix,
+    _long_trace_with_protective_pivot,
 )
 
 
@@ -375,7 +376,7 @@ def test_pivot_break_beats_macd_and_freezes_reference_at_trigger() -> None:
     )
 
     snapshot = trace.current_snapshot
-    pivot = snapshot.bound_reference_pivot
+    pivot = getattr(snapshot, "trigger_reference_pivot", None)
     assert pivot is not None
     assert pivot.price == Decimal("110")
     assert pivot.confirmed_at == bars[4].bar_end
@@ -402,7 +403,7 @@ def test_formal_v1_has_priority_over_simultaneous_pivot_break() -> None:
 
     assert trace.current_snapshot.stage is LifecycleStage.ENTRY_CONFIRMED
     assert trace.current_snapshot.confirmation_source is ConfirmationSource.FORMAL_V1
-    assert trace.current_snapshot.bound_reference_pivot is None
+    assert getattr(trace.current_snapshot, "trigger_reference_pivot", None) is None
 
 
 def test_formal_v1_preempts_active_momentum_hold_with_prior_trigger_evidence() -> None:
@@ -464,7 +465,7 @@ def test_formal_v1_preempts_active_pivot_hold_with_prior_trigger_evidence() -> N
     assert snapshot.triggered_at == prefix[-1].bar_end
     assert snapshot.triggered_at < snapshot.confirmed_at
     assert snapshot.hold_count == 1
-    assert snapshot.bound_reference_pivot is not None
+    assert getattr(snapshot, "trigger_reference_pivot", None) is not None
 
 
 def test_pivot_break_hold_confirms_after_three_bars_with_frozen_pivot() -> None:
@@ -485,8 +486,143 @@ def test_pivot_break_hold_confirms_after_three_bars_with_frozen_pivot() -> None:
         trace.current_snapshot.confirmation_source
         is ConfirmationSource.PIVOT_BREAK_HOLD
     )
-    assert trace.current_snapshot.bound_reference_pivot is not None
-    assert trace.current_snapshot.bound_reference_pivot.price == Decimal("110")
+    trigger = getattr(trace.current_snapshot, "trigger_reference_pivot", None)
+    assert trigger is not None
+    assert trigger.price == Decimal("110")
+
+
+@pytest.mark.parametrize("source", tuple(ConfirmationSource))
+def test_every_confirmation_source_freezes_latest_prior_same_day_low(
+    source: ConfirmationSource,
+) -> None:
+    trace = _long_trace_with_protective_pivot(source)
+    confirmation = next(
+        snapshot
+        for snapshot in trace.snapshots
+        if snapshot.stage is LifecycleStage.ENTRY_CONFIRMED
+    )
+
+    pivot = confirmation.bound_reference_pivot
+    assert confirmation.confirmation_source is source
+    assert pivot is not None
+    assert pivot.kind is lifecycle_module.PivotKind.LOW
+    assert pivot.price == Decimal("90")
+    assert confirmation.opportunity_key is not None
+    assert pivot.pivot_time < confirmation.opportunity_key.origin_at
+    assert pivot.confirmed_at < confirmation.confirmed_at
+
+
+def test_short_confirmation_freezes_latest_prior_same_day_high() -> None:
+    bars = (
+        _bar(5, close="100", high="101", low="99"),
+        _bar(10, close="100", high="102", low="98"),
+        _bar(15, close="105", high="110", low="97"),
+        _bar(20, close="100", high="104", low="96"),
+        _bar(25, close="99", high="103", low="95"),
+        _bar(30, close="98", high="99", low="97"),
+    )
+    trace = _evaluate(
+        bars,
+        factors_5m=tuple(
+            _factor(
+                bar,
+                BarFrequency.M5,
+                direction=(
+                    SubingDirection.SHORT
+                    if index == len(bars) - 1
+                    else SubingDirection.LONG
+                ),
+                cross=(MacdCross.DEAD if index == len(bars) - 1 else MacdCross.NONE),
+                volume_ratio=(
+                    Decimal("3") if index == len(bars) - 1 else Decimal("1")
+                ),
+            )
+            for index, bar in enumerate(bars)
+        ),
+        bars_15m=(_bar(0), _bar(15), _bar(30)),
+        factors_15m=tuple(
+            _factor(bar, BarFrequency.M15, direction=SubingDirection.SHORT)
+            for bar in (_bar(0), _bar(15), _bar(30))
+        ),
+    )
+
+    pivot = trace.current_snapshot.bound_reference_pivot
+    assert trace.current_snapshot.confirmation_source is ConfirmationSource.FORMAL_V1
+    assert pivot is not None
+    assert pivot.kind is lifecycle_module.PivotKind.HIGH
+    assert pivot.price == Decimal("110")
+
+
+def test_pivot_confirmed_exactly_at_entry_boundary_is_not_bound() -> None:
+    bars = (
+        _bar(5, close="100", low="99"),
+        _bar(10, close="100", low="98"),
+        _bar(15, close="100", low="97"),
+        _bar(20, close="95", low="90"),
+        _bar(25, close="100", low="96"),
+        _bar(30, close="101", low="97"),
+    )
+    trace = _evaluate(
+        bars,
+        factors_5m=tuple(
+            _factor(
+                bar,
+                BarFrequency.M5,
+                direction=(
+                    SubingDirection.LONG
+                    if index == len(bars) - 1
+                    else SubingDirection.SHORT
+                ),
+                cross=(MacdCross.GOLDEN if index == len(bars) - 1 else MacdCross.NONE),
+                volume_ratio=(
+                    Decimal("3") if index == len(bars) - 1 else Decimal("1")
+                ),
+            )
+            for index, bar in enumerate(bars)
+        ),
+        bars_15m=(_bar(0), _bar(15), _bar(30)),
+    )
+
+    assert trace.confirmed_pivots[-1].confirmed_at == bars[-1].bar_end
+    assert trace.current_snapshot.stage is LifecycleStage.ENTRY_CONFIRMED
+    assert trace.current_snapshot.bound_reference_pivot is None
+
+
+def test_prior_day_protective_pivot_does_not_bind_to_next_day_entry() -> None:
+    next_day = date(2026, 8, 4)
+    bars = (
+        _bar(5, low="99"),
+        _bar(10, low="98"),
+        _bar(15, close="95", low="90"),
+        _bar(20, low="97"),
+        _bar(25, low="98"),
+        _bar(24 * 60 + 5, trading_day=next_day),
+        _bar(24 * 60 + 10, trading_day=next_day),
+        _bar(24 * 60 + 15, trading_day=next_day),
+    )
+    trace = _evaluate(
+        bars,
+        factors_5m=tuple(
+            _factor(
+                bar,
+                BarFrequency.M5,
+                direction=(
+                    SubingDirection.LONG
+                    if index == len(bars) - 1
+                    else SubingDirection.SHORT
+                ),
+                cross=(MacdCross.GOLDEN if index == len(bars) - 1 else MacdCross.NONE),
+                volume_ratio=(
+                    Decimal("3") if index == len(bars) - 1 else Decimal("1")
+                ),
+            )
+            for index, bar in enumerate(bars)
+        ),
+        bars_15m=(_bar(0), _bar(15), _bar(24 * 60 + 15, trading_day=next_day)),
+    )
+
+    assert trace.current_snapshot.stage is LifecycleStage.ENTRY_CONFIRMED
+    assert trace.current_snapshot.bound_reference_pivot is None
 
 
 def test_legal_retest_beats_hold_increment_and_rebreak_uses_trigger_high() -> None:

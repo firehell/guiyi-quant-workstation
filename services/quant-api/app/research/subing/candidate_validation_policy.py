@@ -8,12 +8,6 @@ from typing import Any
 from app.core.env import PROJECT_ROOT
 
 from app.core.exact_json_contract import load_exact_json as _load_exact
-from app.market_data.subing_lifecycle_policy import (
-    SubingLifecyclePolicyError,
-    load_subing_lifecycle_policy,
-)
-
-
 _CANDIDATE_PATH = (
     PROJECT_ROOT / "data/research_candidates/subing_lifecycle_v2_candidate_v1.json"
 )
@@ -149,16 +143,6 @@ def load_candidate_manifest(path: Path | None = None) -> CandidateManifest:
         _EXPECTED_CANDIDATE,
         CandidateManifestError,
     )
-    try:
-        lifecycle_policy = load_subing_lifecycle_policy()
-    except SubingLifecyclePolicyError as exc:
-        raise CandidateManifestError() from exc
-    if (
-        lifecycle_policy.policy_id != payload["policy_id"]
-        or lifecycle_policy.formula_version != payload["formula_version"]
-        or lifecycle_policy.research_only is not True
-    ):
-        raise CandidateManifestError()
     return CandidateManifest(
         schema_version=payload["schema_version"],
         candidate_id=payload["candidate_id"],

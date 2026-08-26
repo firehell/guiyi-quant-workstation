@@ -179,7 +179,7 @@ def test_subing_api_adds_a_research_only_lifecycle_projection(monkeypatch) -> No
     )
 
     assert payload["lifecycle"] == {
-        "formula_version": "subing_lifecycle_v2",
+        "formula_version": "subing_lifecycle_v2_structure_binding_v1",
         "policy_id": "subing_lifecycle_v2_research_v1",
         "research_only": True,
         "observed_at": "2026-08-13T02:25:00Z",
@@ -200,6 +200,7 @@ def test_subing_api_adds_a_research_only_lifecycle_projection(monkeypatch) -> No
         "confirmed_at": None,
         "hold_count": 0,
         "hold_required": 3,
+        "trigger_reference_pivot": None,
         "bound_reference_pivot": None,
         "rebreak_reference_price": None,
         "retest_at": None,
@@ -406,7 +407,7 @@ def _matched_signal(timeframe: BarFrequency) -> SubingSignalEvaluation:
 
 def _setup_lifecycle() -> SubingLifecycleSnapshot:
     return SubingLifecycleSnapshot(
-        formula_version="subing_lifecycle_v2",
+        formula_version="subing_lifecycle_v2_structure_binding_v1",
         policy_id="subing_lifecycle_v2_research_v1",
         research_only=True,
         observed_at=datetime(2026, 8, 13, 2, 25, tzinfo=UTC),
@@ -433,7 +434,7 @@ def _setup_lifecycle() -> SubingLifecycleSnapshot:
 
 def _intraday_only_lifecycle() -> SubingLifecycleSnapshot:
     return SubingLifecycleSnapshot(
-        formula_version="subing_lifecycle_v2",
+        formula_version="subing_lifecycle_v2_structure_binding_v1",
         policy_id="subing_lifecycle_v2_research_v1",
         research_only=True,
         observed_at=datetime(2026, 8, 13, 2, 25, tzinfo=UTC),

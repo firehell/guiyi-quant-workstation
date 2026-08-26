@@ -2197,3 +2197,38 @@ Runtime promotion/switch
 ```
 
 After Stage 1 enters `develop` and is accepted, create a new Lane 3 Plan-only session and a separate Stage 2 Spec amendment if observed Stage 1 behavior changes any Runtime assumption.
+
+---
+
+## Approved correction task: authoritative Lifecycle structure Pivot
+
+- [x] Split the existing long-HIGH/short-LOW breakout/retest fact into
+  `trigger_reference_pivot` and keep all existing trigger, retest, and Lifecycle
+  risk consumers on it.
+- [x] Freeze `bound_reference_pivot` at the unique `ENTRY_CONFIRMED` boundary as
+  the latest same-contract, same-segment, same-trading-day strict 5m 2L/2R
+  `ConfirmedPivot`, ordered by `(confirmed_at, pivot_time, pivot_id)`, with LOW
+  for long, HIGH for short, and `pivot.confirmed_at < entry boundary`.
+- [x] Permit pivots before opportunity origin; prohibit cross-day/segment,
+  exact-boundary, N Structure, 15m, frontend, fallback, and future selection.
+  Freeze missing evidence as `None` without blocking entry and preserve the
+  frozen value through Strategy Entry, Action, and Episode.
+- [x] Bump only Lifecycle formula identity to
+  `subing_lifecycle_v2_structure_binding_v1`; retain policy id and parameters,
+  flow the formula through current cache/API/Web consumers, and leave historical
+  candidate/protocol JSON untouched.
+- [x] Execute RED then focused GREEN and affected Lifecycle/Strategy/API/Web
+  regressions plus Ruff and focused Mypy. Record exact commands and counts in
+  the task report.
+- [ ] Rerun affected three-product natural acceptance with real Canonical reads
+  and cache disabled. Missing required evidence remains a blocked Gate; no
+  synthetic replacement is allowed.
+- [ ] Request a fresh independent Review bound to the exact corrected head. It
+  must recheck both Pivot roles, confirmation-source coverage, prefix causality,
+  Strategy exit behavior, cache non-authority, and the absence of Stage 2,
+  Runtime, Alert, DB, notification, and order changes.
+
+Do not reuse the prior natural acceptance or Review conclusion for this semantic
+correction. Do not update `STATUS.md`, `PROJECT_SOURCE.md`, or `AGENTS.md`, and do
+not declare the integration Gate open, until both unchecked items have observed
+evidence.

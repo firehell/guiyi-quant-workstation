@@ -298,6 +298,7 @@ class SubingLifecycleSnapshot:
     confirmed_at: datetime | None = None
     hold_count: int = 0
     hold_required: int = 3
+    trigger_reference_pivot: ConfirmedPivot | None = None
     bound_reference_pivot: ConfirmedPivot | None = None
     rebreak_reference_price: Decimal | None = None
     retest_at: datetime | None = None
@@ -363,6 +364,7 @@ class _ActiveOpportunity:
     hold_count: int = 0
     volume_ratio_prev: Decimal | None = None
     open_interest_delta: Decimal | None = None
+    trigger_reference_pivot: ConfirmedPivot | None = None
     bound_reference_pivot: ConfirmedPivot | None = None
     rebreak_reference_price: Decimal | None = None
     retest_at: datetime | None = None
@@ -584,6 +586,7 @@ def _validate_snapshot_contract(snapshot: SubingLifecycleSnapshot) -> None:
             snapshot.confirmation_source is not None,
             snapshot.confirmed_at is not None,
             snapshot.hold_count != 0,
+            snapshot.trigger_reference_pivot is not None,
             snapshot.bound_reference_pivot is not None,
             snapshot.rebreak_reference_price is not None,
             snapshot.retest_at is not None,
@@ -646,7 +649,7 @@ def _validate_snapshot_contract(snapshot: SubingLifecycleSnapshot) -> None:
     ):
         raise SubingLifecycleContractError()
 
-    pivot = snapshot.bound_reference_pivot
+    pivot = snapshot.trigger_reference_pivot
     if snapshot.trigger_kind == "pivot_break":
         if (
             not isinstance(pivot, ConfirmedPivot)
@@ -654,6 +657,12 @@ def _validate_snapshot_contract(snapshot: SubingLifecycleSnapshot) -> None:
             or not isinstance(snapshot.rebreak_reference_price, Decimal)
             or not snapshot.rebreak_reference_price.is_finite()
             or key is None
+            or pivot.kind
+            is not (
+                PivotKind.HIGH
+                if snapshot.direction is SubingDirection.LONG
+                else PivotKind.LOW
+            )
             or pivot.contract != key.contract
             or pivot.segment_start_trading_day != key.segment_start_trading_day
         ):
@@ -663,6 +672,31 @@ def _validate_snapshot_contract(snapshot: SubingLifecycleSnapshot) -> None:
         or snapshot.rebreak_reference_price is not None
         or snapshot.retest_at is not None
         or snapshot.retest_rebreak_count != 0
+    ):
+        raise SubingLifecycleContractError()
+
+    bound_pivot = snapshot.bound_reference_pivot
+    expected_bound_kind = (
+        PivotKind.LOW
+        if snapshot.direction is SubingDirection.LONG
+        else PivotKind.HIGH
+    )
+    if bound_pivot is not None and (
+        not isinstance(bound_pivot, ConfirmedPivot)
+        or key is None
+        or snapshot.stage
+        not in {
+            LifecycleStage.ENTRY_CONFIRMED,
+            LifecycleStage.CONTINUATION,
+            LifecycleStage.EXIT_RISK,
+            LifecycleStage.CLOSED,
+        }
+        or snapshot.confirmed_at is None
+        or bound_pivot.kind is not expected_bound_kind
+        or bound_pivot.contract != key.contract
+        or bound_pivot.segment_start_trading_day
+        != key.segment_start_trading_day
+        or bound_pivot.confirmed_at >= snapshot.confirmed_at
     ):
         raise SubingLifecycleContractError()
 
@@ -926,6 +960,38 @@ def _validate_trace_contract(trace: SubingLifecycleTrace) -> None:
         replace(pivot)
         pivot_ids.add(pivot.pivot_id)
 
+    frozen_pivots_by_opportunity: dict[
+        SubingOpportunityKey,
+        tuple[ConfirmedPivot | None, ConfirmedPivot | None],
+    ] = {}
+    for snapshot in trace.snapshots:
+        for snapshot_pivot in (
+            snapshot.trigger_reference_pivot,
+            snapshot.bound_reference_pivot,
+        ):
+            if (
+                snapshot_pivot is not None
+                and snapshot_pivot not in trace.confirmed_pivots
+            ):
+                raise SubingLifecycleContractError()
+        key = snapshot.opportunity_key
+        if key is None:
+            continue
+        if (
+            snapshot.stage is LifecycleStage.ENTRY_CONFIRMED
+            and key not in frozen_pivots_by_opportunity
+        ):
+            frozen_pivots_by_opportunity[key] = (
+                snapshot.trigger_reference_pivot,
+                snapshot.bound_reference_pivot,
+            )
+        frozen_pivots = frozen_pivots_by_opportunity.get(key)
+        if frozen_pivots is not None and (
+            snapshot.trigger_reference_pivot,
+            snapshot.bound_reference_pivot,
+        ) != frozen_pivots:
+            raise SubingLifecycleContractError()
+
 
 def _key_matches_trace(
     key: SubingOpportunityKey,
@@ -1106,10 +1172,13 @@ def evaluate_subing_lifecycle(
                     origin_at=bar_5m.bar_end,
                     origin_trading_day=bar_5m.trading_day,
                 )
-                opportunity.stage = LifecycleStage.ENTRY_CONFIRMED
-                opportunity.progress = None
-                opportunity.confirmation_source = ConfirmationSource.FORMAL_V1
-                opportunity.confirmed_at = bar_5m.bar_end
+                _confirm_entry(
+                    opportunity,
+                    source=ConfirmationSource.FORMAL_V1,
+                    confirmed_at=bar_5m.bar_end,
+                    boundary=bar_5m,
+                    pivot_cursor=pivot_cursor,
+                )
                 transitions.append(
                     _transition(
                         opportunity_key=opportunity.key,
@@ -1166,6 +1235,8 @@ def evaluate_subing_lifecycle(
                     opportunity,
                     source=ConfirmationSource.FORMAL_V1,
                     confirmed_at=bar_5m.bar_end,
+                    boundary=bar_5m,
+                    pivot_cursor=pivot_cursor,
                 )
                 transitions.append(
                     _transition(
@@ -1185,7 +1256,7 @@ def evaluate_subing_lifecycle(
                     completed=completed,
                 )
             elif opportunity.progress is EntryProgress.RETEST_CONFIRMING:
-                pivot = opportunity.bound_reference_pivot
+                pivot = opportunity.trigger_reference_pivot
                 assert pivot is not None
                 retest = assess_pivot_retest(
                     bar_5m,
@@ -1218,6 +1289,8 @@ def evaluate_subing_lifecycle(
                             opportunity,
                             source=ConfirmationSource.PIVOT_RETEST_REBREAK,
                             confirmed_at=bar_5m.bar_end,
+                            boundary=bar_5m,
+                            pivot_cursor=pivot_cursor,
                         )
                         transitions.append(
                             _transition(
@@ -1243,7 +1316,7 @@ def evaluate_subing_lifecycle(
             elif opportunity.progress is EntryProgress.HOLD_CONFIRMING and (
                 opportunity.trigger_kind == "pivot_break"
             ):
-                pivot = opportunity.bound_reference_pivot
+                pivot = opportunity.trigger_reference_pivot
                 assert pivot is not None
                 retest = assess_pivot_retest(
                     bar_5m,
@@ -1283,6 +1356,8 @@ def evaluate_subing_lifecycle(
                             opportunity,
                             source=ConfirmationSource.PIVOT_BREAK_HOLD,
                             confirmed_at=bar_5m.bar_end,
+                            boundary=bar_5m,
+                            pivot_cursor=pivot_cursor,
                         )
                         transitions.append(
                             _transition(
@@ -1315,6 +1390,8 @@ def evaluate_subing_lifecycle(
                             opportunity,
                             source=ConfirmationSource.MOMENTUM_HOLD,
                             confirmed_at=bar_5m.bar_end,
+                            boundary=bar_5m,
+                            pivot_cursor=pivot_cursor,
                         )
                         transitions.append(
                             _transition(
@@ -1358,7 +1435,7 @@ def evaluate_subing_lifecycle(
                     opportunity.trigger_timeframe = BarFrequency.M5
                     opportunity.triggered_at = bar_5m.bar_end
                     opportunity.hold_count = 1
-                    opportunity.bound_reference_pivot = pivot
+                    opportunity.trigger_reference_pivot = pivot
                     opportunity.rebreak_reference_price = (
                         bar_5m.high
                         if opportunity.key.direction is SubingDirection.LONG
@@ -1555,7 +1632,7 @@ def _all_confirmed_pivots(
     bars_by_trading_day: dict[date, list[CanonicalBar]] = {}
     for bar in bars:
         bars_by_trading_day.setdefault(bar.trading_day, []).append(bar)
-    return tuple(
+    pivots = tuple(
         pivot
         for trading_day, day_bars in bars_by_trading_day.items()
         for pivot in confirmed_pivots(
@@ -1564,6 +1641,16 @@ def _all_confirmed_pivots(
             contract=contract,
             segment_start_trading_day=segment_start_trading_day,
             trading_day=trading_day,
+        )
+    )
+    return tuple(
+        sorted(
+            pivots,
+            key=lambda pivot: (
+                pivot.confirmed_at,
+                pivot.pivot_time,
+                pivot.pivot_id,
+            ),
         )
     )
 
@@ -1732,11 +1819,41 @@ def _confirm_entry(
     *,
     source: ConfirmationSource,
     confirmed_at: datetime,
+    boundary: CanonicalBar,
+    pivot_cursor: _ConfirmedPivotCursor,
 ) -> None:
     opportunity.stage = LifecycleStage.ENTRY_CONFIRMED
     opportunity.progress = None
     opportunity.confirmation_source = source
     opportunity.confirmed_at = confirmed_at
+    opportunity.bound_reference_pivot = _bound_reference_pivot_at(
+        opportunity,
+        boundary=boundary,
+        pivot_cursor=pivot_cursor,
+    )
+
+
+def _bound_reference_pivot_at(
+    opportunity: _ActiveOpportunity,
+    *,
+    boundary: CanonicalBar,
+    pivot_cursor: _ConfirmedPivotCursor,
+) -> ConfirmedPivot | None:
+    kind = (
+        PivotKind.LOW
+        if opportunity.key.direction is SubingDirection.LONG
+        else PivotKind.HIGH
+    )
+    pivot = pivot_cursor.latest_before(boundary=boundary, kind=kind)
+    if pivot is None:
+        return None
+    if (
+        pivot.contract != opportunity.key.contract
+        or pivot.segment_start_trading_day
+        != opportunity.key.segment_start_trading_day
+    ):
+        raise SubingLifecycleContractError()
+    return pivot
 
 
 def _advance_confirmed_opportunity(
@@ -1883,7 +2000,7 @@ def _lower_tf_risk_codes(
         codes.append("LOWER_TF_SLOPE5_REVERSAL")
     if factor_5m.macd_cross is opposite_cross:
         codes.append("LOWER_TF_MACD_OPPOSITE_CROSS")
-    pivot = opportunity.bound_reference_pivot
+    pivot = opportunity.trigger_reference_pivot
     if pivot is not None and (
         (long and factor_5m.close < pivot.price)
         or (not long and factor_5m.close > pivot.price)
@@ -1933,7 +2050,7 @@ def _recovery_allowed(
         else factor_15m.close < factor_15m.ema21
         and factor_15m.slope_10_bps_per_bar < 0
     )
-    pivot = opportunity.bound_reference_pivot
+    pivot = opportunity.trigger_reference_pivot
     pivot_side_preserved = pivot is None or (
         factor_15m.close >= pivot.price
         if long
@@ -1981,7 +2098,7 @@ def _hard_close_reason(
     if anchor_broken:
         return "ANCHOR_TREND_BROKEN"
 
-    pivot = opportunity.bound_reference_pivot
+    pivot = opportunity.trigger_reference_pivot
     pivot_confirmed = opportunity.confirmation_source in {
         ConfirmationSource.PIVOT_BREAK_HOLD,
         ConfirmationSource.PIVOT_RETEST_REBREAK,
@@ -2138,6 +2255,9 @@ def _snapshot(
         confirmed_at=(opportunity.confirmed_at if opportunity is not None else None),
         hold_count=(opportunity.hold_count if opportunity is not None else 0),
         hold_required=3,
+        trigger_reference_pivot=(
+            opportunity.trigger_reference_pivot if opportunity is not None else None
+        ),
         bound_reference_pivot=(
             opportunity.bound_reference_pivot if opportunity is not None else None
         ),

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from types import MappingProxyType
 
@@ -27,6 +27,7 @@ from .subing_lifecycle_fixtures import (
     _evaluate,
     _factor,
     _long_pivot_prefix,
+    _long_trace_with_protective_pivot,
 )
 
 
@@ -195,8 +196,9 @@ def test_lifecycle_breakout_pivot_is_not_relabelled_as_structure_exit() -> None:
         for snapshot in trace.snapshots
         if snapshot.stage is LifecycleStage.ENTRY_CONFIRMED
     )
-    assert confirmation.bound_reference_pivot is not None
-    assert confirmation.bound_reference_pivot.kind is PivotKind.HIGH
+    assert confirmation.trigger_reference_pivot is not None
+    assert confirmation.trigger_reference_pivot.kind is PivotKind.HIGH
+    assert confirmation.bound_reference_pivot is None
 
     projected = project_lifecycle_entries(trace, _decision_bars())
 
@@ -217,6 +219,24 @@ def test_pivot_confirmation_without_structure_pivot_still_enters() -> None:
     projected = project_lifecycle_entries(trace, _decision_bars())
 
     assert _all_candidates(projected)[0].bound_reference_pivot is None
+
+
+def test_projection_rejects_a_protective_pivot_from_another_segment() -> None:
+    trace = _long_trace_with_protective_pivot(ConfirmationSource.FORMAL_V1)
+    confirmation = next(
+        snapshot
+        for snapshot in trace.snapshots
+        if snapshot.stage is LifecycleStage.ENTRY_CONFIRMED
+    )
+    assert confirmation.bound_reference_pivot is not None
+    object.__setattr__(
+        confirmation.bound_reference_pivot,
+        "segment_start_trading_day",
+        date(2026, 8, 4),
+    )
+
+    with pytest.raises(SubingStrategyContextIdentityError):
+        project_lifecycle_entries(trace, _decision_bars())
 
 
 def test_trace_segment_identity_must_match_every_opportunity() -> None:
@@ -257,3 +277,62 @@ def test_appending_later_snapshots_does_not_change_prior_projection() -> None:
 
     for boundary, candidates in prefix_projection.items():
         assert extended_projection[boundary] == candidates
+
+
+@pytest.mark.parametrize("source", tuple(ConfirmationSource))
+def test_projection_consumes_lifecycle_protective_pivot_without_rederiving_it(
+    source: ConfirmationSource,
+) -> None:
+    trace = _long_trace_with_protective_pivot(source)
+    confirmation = next(
+        snapshot
+        for snapshot in trace.snapshots
+        if snapshot.stage is LifecycleStage.ENTRY_CONFIRMED
+    )
+
+    projected = project_lifecycle_entries(trace, (*_decision_bars(), _bar(75)))
+    candidate = _all_candidates(projected)[0]
+
+    assert confirmation.bound_reference_pivot is not None
+    assert candidate.bound_reference_pivot is confirmation.bound_reference_pivot
+
+
+def test_later_pivots_cannot_change_frozen_confirmation_or_candidate() -> None:
+    prefix = _long_trace_with_protective_pivot(ConfirmationSource.FORMAL_V1)
+    bars = (
+        _bar(5, close="100", high="101", low="99"),
+        _bar(10, close="100", high="102", low="98"),
+        _bar(15, close="95", high="103", low="90"),
+        _bar(20, close="100", high="104", low="97"),
+        _bar(25, close="102", high="105", low="98"),
+        _bar(30, close="100", high="101", low="99"),
+        _bar(35, close="100", high="102", low="98"),
+        _bar(40, close="90", high="99", low="80"),
+        _bar(45, close="100", high="103", low="97"),
+        _bar(50, close="101", high="104", low="98"),
+    )
+    extended = _evaluate(
+        bars,
+        factors_5m=tuple(
+            _factor(
+                bar,
+                BarFrequency.M5,
+                direction=(
+                    SubingDirection.LONG if index >= 5 else SubingDirection.SHORT
+                ),
+                cross=(MacdCross.GOLDEN if index == 5 else MacdCross.NONE),
+                volume_ratio=(Decimal("3") if index == 5 else Decimal("1")),
+            )
+            for index, bar in enumerate(bars)
+        ),
+        bars_15m=(_bar(0), _bar(15), _bar(30), _bar(45)),
+    )
+
+    prefix_candidate = _all_candidates(project_lifecycle_entries(prefix, _decision_bars()))[0]
+    extended_candidate = _all_candidates(
+        project_lifecycle_entries(extended, _decision_bars())
+    )[0]
+
+    assert prefix_candidate.bound_reference_pivot is not None
+    assert extended.confirmed_pivots[-1].price == Decimal("80")
+    assert extended_candidate == prefix_candidate
