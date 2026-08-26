@@ -293,7 +293,10 @@ class AlertRuntime:
         ready_at = self._aware_now()
         caught_up = self._strategy_evaluator.final_catch_up(ready_at=ready_at)
         self._strategy_product_statuses.clear()
-        self._refresh_strategy_runtime_status(caught_up, require_complete=True)
+        self._refresh_strategy_runtime_status(
+            caught_up,
+            expected_products=self._strategy_products,
+        )
         self._update_runtime_status(
             strategy_ready_at=_iso_timestamp(ready_at),
             last_strategy_restore_at=_iso_timestamp(ready_at),
@@ -371,7 +374,10 @@ class AlertRuntime:
                     segment_start_trading_day=state.segment_start_trading_day,
                 ),
             )
-            self._refresh_strategy_runtime_status((strategy_result,))
+            self._refresh_strategy_runtime_status(
+                (strategy_result,),
+                expected_products=frozenset((symbol,)),
+            )
             strategy_action_facts = strategy_result.action_facts
 
         if symbol not in self._operational_products:
@@ -538,7 +544,10 @@ class AlertRuntime:
         strategy_results = self._strategy_evaluator.process_canonical_updated(
             trigger.trading_day
         )
-        self._refresh_strategy_runtime_status(strategy_results, require_complete=True)
+        self._refresh_strategy_runtime_status(
+            strategy_results,
+            expected_products=self._strategy_products,
+        )
         strategy_action_facts = tuple(
             fact for result in strategy_results for fact in result.action_facts
         )
@@ -867,26 +876,13 @@ class AlertRuntime:
         self,
         results: tuple[SubingStrategyRuntimeResult, ...],
         *,
-        require_complete: bool = False,
+        expected_products: frozenset[str],
     ) -> None:
-        if type(results) is not tuple or any(
-            type(result) is not SubingStrategyRuntimeResult for result in results
-        ):
-            raise ValueError("ALERT_RUNTIME_STRATEGY_RESULT_INVALID")
-        incoming_statuses = tuple(result.product_status for result in results)
-        if any(
-            type(status) is not SubingStrategyRuntimeProductStatus
-            for status in incoming_statuses
-        ) or len({status.symbol for status in incoming_statuses}) != len(
-            incoming_statuses
-        ):
-            raise ValueError("ALERT_RUNTIME_STRATEGY_RESULT_INVALID")
-        if (
-            require_complete
-            and {status.symbol for status in incoming_statuses}
-            != self._strategy_products
-        ):
-            raise ValueError("ALERT_RUNTIME_STRATEGY_RESULT_INVALID")
+        _validate_strategy_runtime_results(
+            results,
+            active_products=self._strategy_products,
+            expected_products=expected_products,
+        )
         for result in results:
             status = result.product_status
             self._strategy_product_statuses[status.symbol] = status
@@ -1132,6 +1128,37 @@ def _strategy_runtime_summary(
     if ready + len(unavailable) != len(statuses):
         raise ValueError("ALERT_RUNTIME_STRATEGY_RESULT_INVALID")
     return len(statuses), ready, unavailable
+
+
+def _validate_strategy_runtime_results(
+    results: tuple[SubingStrategyRuntimeResult, ...],
+    *,
+    active_products: frozenset[str],
+    expected_products: frozenset[str],
+) -> None:
+    if type(results) is not tuple:
+        raise ValueError("ALERT_RUNTIME_STRATEGY_RESULT_INVALID")
+    symbols: list[str] = []
+    for result in results:
+        if (
+            type(result) is not SubingStrategyRuntimeResult
+            or type(result.action_facts) is not tuple
+            or type(result.product_status) is not SubingStrategyRuntimeProductStatus
+            or any(
+                type(fact) is not SubingStrategyRuntimeActionFact
+                or fact.action.symbol != result.product_status.symbol
+                for fact in result.action_facts
+            )
+        ):
+            raise ValueError("ALERT_RUNTIME_STRATEGY_RESULT_INVALID")
+        symbols.append(result.product_status.symbol)
+    symbol_set = frozenset(symbols)
+    if (
+        len(symbol_set) != len(symbols)
+        or not symbol_set.issubset(active_products)
+        or symbol_set != expected_products
+    ):
+        raise ValueError("ALERT_RUNTIME_STRATEGY_RESULT_INVALID")
 
 
 def acknowledge_notification_failure(

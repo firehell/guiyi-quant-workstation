@@ -106,6 +106,18 @@ class SubingStrategyRuntimeResult:
     action_facts: tuple[SubingStrategyRuntimeActionFact, ...]
     product_status: SubingStrategyRuntimeProductStatus
 
+    def __post_init__(self) -> None:
+        if (
+            type(self.action_facts) is not tuple
+            or type(self.product_status) is not SubingStrategyRuntimeProductStatus
+            or any(
+                type(fact) is not SubingStrategyRuntimeActionFact
+                or fact.action.symbol != self.product_status.symbol
+                for fact in self.action_facts
+            )
+        ):
+            raise ValueError("SUBING_STRATEGY_RUNTIME_RESULT_INVALID")
+
 
 class _RestoreReader(Protocol):
     def restore(

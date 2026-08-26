@@ -2193,13 +2193,17 @@ class _Task9StrategyEvaluator:
         )
 
 
-def _task9_open_action() -> SubingStrategyAction:
+def _task9_open_action(
+    *,
+    symbol: str = "jm",
+    contract: str = "JM2609",
+) -> SubingStrategyAction:
     effective_bar_end = BOUNDARY_END
     identity = {
         "strategy_id": "subing_strategy_v1",
         "formula_version": "subing_strategy_15m_v1",
-        "symbol": "jm",
-        "contract": "JM2609",
+        "symbol": symbol,
+        "contract": contract,
         "segment_start_trading_day": DAY.isoformat(),
         "opportunity_id": "subing-opportunity:task9",
         "kind": "open_long",
@@ -2213,8 +2217,8 @@ def _task9_open_action() -> SubingStrategyAction:
         strategy_id="subing_strategy_v1",
         formula_version="subing_strategy_15m_v1",
         kind=SubingStrategyActionKind.OPEN_LONG,
-        symbol="jm",
-        contract="JM2609",
+        symbol=symbol,
+        contract=contract,
         trading_day=DAY,
         segment_start_trading_day=DAY,
         opportunity_id="subing-opportunity:task9",
@@ -2229,6 +2233,64 @@ def _task9_open_action() -> SubingStrategyAction:
         direction_context_target_day=DAY,
         bound_reference_pivot=None,
     )
+
+
+def _task9_product_status(symbol: str = "jm") -> SubingStrategyRuntimeProductStatus:
+    return SubingStrategyRuntimeProductStatus(
+        symbol=symbol,
+        state="ready",
+        cutoff_1m=ORDINARY_END,
+        cutoff_5m=ORDINARY_END,
+        cutoff_15m=BOUNDARY_END,
+        reason_codes=(),
+    )
+
+
+@pytest.mark.parametrize(
+    "action_facts",
+    (
+        [],
+        (object(),),
+    ),
+    ids=("list", "wrong-fact-type"),
+)
+def test_strategy_runtime_result_rejects_non_exact_action_fact_tuple(
+    action_facts: object,
+) -> None:
+    with pytest.raises(
+        ValueError,
+        match="^SUBING_STRATEGY_RUNTIME_RESULT_INVALID$",
+    ):
+        SubingStrategyRuntimeResult(
+            action_facts=action_facts,  # type: ignore[arg-type]
+            product_status=_task9_product_status(),
+        )
+
+
+def test_strategy_runtime_result_rejects_action_from_another_product() -> None:
+    wrong_product_action = _task9_open_action(symbol="ag", contract="AG2609")
+
+    with pytest.raises(
+        ValueError,
+        match="^SUBING_STRATEGY_RUNTIME_RESULT_INVALID$",
+    ):
+        SubingStrategyRuntimeResult(
+            action_facts=(SubingStrategyRuntimeActionFact(wrong_product_action, None),),
+            product_status=_task9_product_status("jm"),
+        )
+
+
+def _unsafe_strategy_runtime_result(
+    *,
+    action_facts: object,
+    product_status: object,
+) -> SubingStrategyRuntimeResult:
+    """Bypass the constructor to exercise Runtime's evaluator trust boundary."""
+
+    result = object.__new__(SubingStrategyRuntimeResult)
+    object.__setattr__(result, "action_facts", action_facts)
+    object.__setattr__(result, "product_status", product_status)
+    return result
 
 
 def _task9_terminal_close() -> tuple[SubingStrategyAction, SubingStrategyEpisode]:
@@ -2670,23 +2732,129 @@ def test_unknown_canonical_evaluator_fault_escapes_without_rule_side_effects(
     assert harness.sender.messages == []
 
 
-def test_canonical_missing_active_product_result_fails_closed(
+def test_completed_result_from_wrong_status_product_fails_before_session(
     session: Session,
 ) -> None:
-    class MissingProductStrategy(_Task9StrategyEvaluator):
-        def process_canonical_updated(self, _trading_day: date):
-            return ()
+    class WrongStatusStrategy(_Task9StrategyEvaluator):
+        def process_completed_bar(self, bar, frequency, *, source_identity):
+            return SubingStrategyRuntimeResult(
+                action_facts=(),
+                product_status=_task9_product_status("ag"),
+            )
 
     harness = _runtime(
         session,
-        strategy_evaluator=MissingProductStrategy([]),
+        strategy_evaluator=WrongStatusStrategy([]),
     )
+    session_calls = 0
+
+    def fail_if_session_opens():
+        nonlocal session_calls
+        session_calls += 1
+        raise AssertionError("Rule session opened")
+
+    harness.runtime._session_factory = fail_if_session_opens
+
+    with pytest.raises(
+        ValueError,
+        match="^ALERT_RUNTIME_STRATEGY_RESULT_INVALID$",
+    ):
+        harness.runtime.process_message("live:bar:jm:1m", _payload())
+
+    assert session_calls == 0
+    assert _event_rows(session) == []
+    assert harness.sender.messages == []
+
+
+def test_completed_result_with_cross_product_action_fails_before_session(
+    session: Session,
+) -> None:
+    wrong_product_action = _task9_open_action(symbol="ag", contract="AG2609")
+
+    class WrongActionStrategy(_Task9StrategyEvaluator):
+        def process_completed_bar(self, bar, frequency, *, source_identity):
+            return _unsafe_strategy_runtime_result(
+                action_facts=(
+                    SubingStrategyRuntimeActionFact(wrong_product_action, None),
+                ),
+                product_status=_task9_product_status("jm"),
+            )
+
+    harness = _runtime(
+        session,
+        strategy_evaluator=WrongActionStrategy([]),
+    )
+    session_calls = 0
+
+    def fail_if_session_opens():
+        nonlocal session_calls
+        session_calls += 1
+        raise AssertionError("Rule session opened")
+
+    harness.runtime._session_factory = fail_if_session_opens
+
+    with pytest.raises(
+        ValueError,
+        match="^ALERT_RUNTIME_STRATEGY_RESULT_INVALID$",
+    ):
+        harness.runtime.process_message("live:bar:jm:1m", _payload())
+
+    assert session_calls == 0
+    assert _event_rows(session) == []
+    assert harness.sender.messages == []
+
+
+@pytest.mark.parametrize(
+    ("active_products", "result_symbols"),
+    (
+        (("jm", "ag"), ("jm",)),
+        (("jm", "ag"), ("jm", "jm")),
+        (("jm",), ("jm", "ag")),
+    ),
+    ids=("missing", "duplicate", "extra"),
+)
+def test_canonical_result_product_set_mismatch_fails_before_session(
+    session: Session,
+    active_products: tuple[str, ...],
+    result_symbols: tuple[str, ...],
+) -> None:
+    class WrongProductSetStrategy(_Task9StrategyEvaluator):
+        def __init__(self) -> None:
+            super().__init__([])
+            self.products = active_products
+
+        def process_canonical_updated(self, _trading_day: date):
+            return tuple(
+                SubingStrategyRuntimeResult(
+                    action_facts=(),
+                    product_status=_task9_product_status(symbol),
+                )
+                for symbol in result_symbols
+            )
+
+    harness = _runtime(
+        session,
+        operational_products=active_products,
+        strategy_evaluator=WrongProductSetStrategy(),
+    )
+    session_calls = 0
+
+    def fail_if_session_opens():
+        nonlocal session_calls
+        session_calls += 1
+        raise AssertionError("Rule session opened")
+
+    harness.runtime._session_factory = fail_if_session_opens
 
     with pytest.raises(
         ValueError,
         match="^ALERT_RUNTIME_STRATEGY_RESULT_INVALID$",
     ):
         harness.runtime.process_message("market:state", _canonical_updated_payload())
+
+    assert session_calls == 0
+    assert _event_rows(session) == []
+    assert harness.sender.messages == []
 
 
 def test_completed_bar_refreshes_strategy_v3_degrade_and_recovery(
