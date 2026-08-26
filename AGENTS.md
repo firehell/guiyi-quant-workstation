@@ -72,7 +72,7 @@ subing_entry_signal_v1 × scope_products × owner × pushplus-wechat
 5. RQData 必须先进入 staging，通过 schema/session/duplicate/OHLCV/coverage、identity、row-count 与物理可读性校验后再原子发布；失败保留最后有效 Canonical。
 6. 映射、分区、coverage 或物理完整性异常必须显式失败，不得静默填充、缩短、替换或另建第二套缺口事实。
 7. 策略与研究必须保护 causality、strict-before、future-leak、prefix invariance、golden parity、fail-closed、warm-up、合约切换、成交时序和 OOS/Walk-forward 边界。交易相关价格、成本、仓位、资金、盈亏和费用使用 `Decimal`。
-8. JDJ 1m reference replay 与 SuBing 15m Historical Strategy Projection 保持 source-specific、deterministic、read-only，只输出模拟动作/参考变动。不得创建 UniversalStrategyAdapter、统一 Opportunity 模型、通用策略平台、正式回测 worker/queue、账户或订单域。
+8. SuBing 15m Historical Strategy Projection 保持 source-specific、deterministic、read-only，只输出模拟动作/参考变动。不得创建 UniversalStrategyAdapter、统一 Opportunity 模型、通用策略平台、正式回测 worker/queue、账户或订单域。
 9. SuBing Strategy 普通动作只在下一根同物理合约 15m open 生效；退出只认 accepted policy 的四类来源；不加减仓、不反手、不跨物理段、不在同 Bar 重建仓。任何公式变化必须新版本，不能以文档收敛修改策略语义。
 10. Alert 不属于八表 Market Catalog。HTDY 与 SuBing 的 Rule、Scope、current-event cutoff 和 audience boundary 保持分离；repair、replay、backfill、migration 或 EOD recalculation 不补评、不补发历史通知。SuBing 只在 incoming completed Bar 与 current snapshot 的 `bar_end + trading_day` 同边界时继续，stale fail-closed；final Session Bar 只在共享 Live arrival grace 内可见，5m 在同一 15m boundary 按 TradingSession bucket 延后。current trading day 只通过 `MarketPhaseResolver + operational_products.txt` 解析，不可用时 fail-closed。
 11. causality、strict-before、prefix-invariance、future-leak、golden parity 与 fail-closed 测试不得删除。Alembic chain 只允许审计；除非新任务明确要求并授权，不修改 migration。

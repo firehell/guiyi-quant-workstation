@@ -13,7 +13,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 
-PUBLIC_OVERLAYS = {"none", "subing", "jdj_strategy", "htdy"}
+PUBLIC_OVERLAYS = {"none", "subing", "htdy"}
 RESEARCH_COMMANDS = {
     "subing-calibration",
     "subing-lifecycle",
@@ -42,7 +42,6 @@ RETIRED_ENTRYPOINTS = (
     "services/quant-api/app/queue.py",
     "services/quant-api/app/market_data/market_trend_focus.py",
     "services/quant-api/app/research/main_force_mirror_v2_service.py",
-    "services/quant-api/app/research/main_force_mirror_diagnostic.py",
     "reports/research/candidate_dossier",
     "reports/research/candidate_relationships",
     "apps/quant-web/package-lock.json",

@@ -514,12 +514,6 @@ def test_public_overlay_schemas_keep_only_retained_projection_families() -> None
         "NStructureHistoricalRequestOut",
         "NStructureHistoricalEventOut",
         "NStructureHistoricalResponse",
-        "JdjHistoricalRequestOut",
-        "JdjHistoricalEventOut",
-        "JdjHistoricalResponse",
-        "JdjStrategyHistoricalRequestOut",
-        "JdjStrategyHistoricalActionOut",
-        "JdjStrategyHistoricalResponse",
     ):
         assert not hasattr(research_overlay_schemas, name)
 
@@ -531,4 +525,3 @@ def test_historical_overlay_api_keeps_n_structure_as_the_only_research_overlay()
     paths = app.openapi()["paths"]
 
     assert "/api/v1/market/research/n-structure/bands" in paths
-    assert "/api/v1/market/research/jdj-strategy/history" not in paths

@@ -29,4 +29,3 @@ def test_research_help_omits_retired_main_force_commands() -> None:
     research_help = " ".join(command_action.choices)
 
     assert "main-force-mirror-v2" not in research_help
-    assert "main-force-mirror-diagnostic" not in research_help

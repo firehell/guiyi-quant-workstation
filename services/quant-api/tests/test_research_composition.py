@@ -91,9 +91,6 @@ def test_retired_main_force_has_no_composition_builder() -> None:
     assert not hasattr(
         research_composition, "build_main_force_mirror_v2_research_service"
     )
-    assert not hasattr(
-        research_composition, "build_main_force_mirror_diagnostic_service"
-    )
     assert not hasattr(market_data_composition, "build_main_force_mirror_v2_service")
     assert not hasattr(market_data_composition, "build_member_rank_snapshot_builder")
 

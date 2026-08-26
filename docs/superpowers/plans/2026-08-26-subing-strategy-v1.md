@@ -21,7 +21,7 @@
 - The historical integration target was `develop`; PR `#225` and corrective PR `#226` completed that integration. No future Gate or authorization may be inferred from it.
 - The historical task did not touch `main` or the Runtime worktree. Current repository and Runtime authorization are governed by `AGENTS.md` and `STATUS.md`.
 - Preserve `auto_order=false`. No account, order, commission, slippage, margin, leverage, contract-value PnL, portfolio state, or automatic trading path.
-- Keep the four public overlays exactly `none | subing | jdj_strategy | htdy`; `subing_strategy_v1` replaces only the old SuBing historical single-signal projection inside the existing `subing` overlay.
+- Keep the public overlays exactly `none | subing | htdy`; `subing_strategy_v1` replaces only the old SuBing historical single-signal projection inside the existing `subing` overlay.
 - Historical reads go only through `MarketDataService` and `ActualDominantResearchSegmentLoader` / `ActualDominantStitchedResearchLoader`. Do not glob Canonical files, infer rank1, or synthesize cross-frequency fallbacks.
 - Public strategy identity is exactly `actual_dominant + 15m`. Existing 5m/15m current SuBing observation may remain, but no 5m Strategy Action, Episode, Marker, or API request is valid.
 - Use only completed bars. D1/60m context must be causally equivalent to Daily Watch V2 for the target trading day. The decision Bar never reads the next Bar open before the decision exists.

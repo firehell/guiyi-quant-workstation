@@ -167,7 +167,7 @@ test('preference loading purges and ignores legacy schemas', () => {
   }))
   values.set('guiyi.market.chart.preferences.v3', JSON.stringify({
     version: 3,
-    selectedOverlay: 'jdj_strategy',
+    selectedOverlay: 'htdy',
     optionalEmaIndicators: ['ema_10'],
   }))
 
@@ -216,7 +216,7 @@ test('preference v6 saves and loads overlays plus the internal-process toggle', 
   assert.deepEqual(loadMainChartPreferences(storage), defaultMainChartPreferences())
 })
 
-test('preference v5 migrates retained fields, maps retired JDJ to none, and clears the v5 key', () => {
+test('preference v5 migrates retained fields, maps retired overlay to none, and clears the v5 key', () => {
   const values = new Map<string, string>()
   const removed: string[] = []
   const storage = {
