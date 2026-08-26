@@ -41,7 +41,7 @@ from app.market_data.subing_daily_watch import (
     SubingDailyWatchItem,
     SubingDailyWatchWebSnapshot,
 )
-from app.market_data.subing_ema_trend import SubingEmaTrendSnapshot
+from app.market_data.subing_ema_trend import SubingStitchedEmaTrendSnapshot
 from app.schemas.market import (
     ContractSegmentOut,
     CoverageOut,
@@ -71,6 +71,7 @@ from app.schemas.market import (
 )
 
 router = APIRouter(prefix="/api/v1/market", tags=["market"])
+
 
 @router.get("/bars/page", response_model=MarketBarsPageResponse)
 def canonical_market_bars_page(
@@ -295,6 +296,9 @@ def subing_daily_watch_current(
     except (ActiveUniverseError, OperationalUniverseError):
         return SubingDailyWatchCurrentResponse(
             status="unavailable",
+            projection_version="subing_daily_watch_v2",
+            formula_version="subing_ema21_rank1_stitched_raw_v2",
+            history_mode="rank1_stitched_raw",
             expected_target_trading_day=None,
             latest_target_trading_day=None,
             error_code="SUBING_DAILY_WATCH_INVALID",
@@ -302,6 +306,9 @@ def subing_daily_watch_current(
         )
     return SubingDailyWatchCurrentResponse(
         status=result.status,
+        projection_version="subing_daily_watch_v2",
+        formula_version="subing_ema21_rank1_stitched_raw_v2",
+        history_mode="rank1_stitched_raw",
         expected_target_trading_day=result.expected_target_trading_day,
         latest_target_trading_day=result.latest_target_trading_day,
         error_code=result.error_code,
@@ -391,12 +398,8 @@ def _subing_daily_watch_snapshot(
         generated_at=snapshot.generated_at,
         counts=SubingDailyWatchCountsOut(**snapshot.counts),
         long_watch=[_subing_daily_watch_item(item) for item in snapshot.long_watch],
-        short_watch=[
-            _subing_daily_watch_item(item) for item in snapshot.short_watch
-        ],
-        unavailable=[
-            _subing_daily_watch_item(item) for item in snapshot.unavailable
-        ],
+        short_watch=[_subing_daily_watch_item(item) for item in snapshot.short_watch],
+        unavailable=[_subing_daily_watch_item(item) for item in snapshot.unavailable],
     )
 
 
@@ -415,27 +418,29 @@ def _subing_daily_watch_item(
         ),
         reason_codes=list(item.reason_codes),
         daily=(
-            _subing_daily_watch_trend(item.daily)
-            if item.daily is not None
-            else None
+            _subing_daily_watch_trend(item.daily) if item.daily is not None else None
         ),
         hourly=(
-            _subing_daily_watch_trend(item.hourly)
-            if item.hourly is not None
-            else None
+            _subing_daily_watch_trend(item.hourly) if item.hourly is not None else None
         ),
         unavailable_reasons=list(item.unavailable_reasons),
     )
 
 
 def _subing_daily_watch_trend(
-    trend: SubingEmaTrendSnapshot,
+    trend: SubingStitchedEmaTrendSnapshot,
 ) -> SubingDailyWatchTrendOut:
+    if not isinstance(trend, SubingStitchedEmaTrendSnapshot):
+        raise ValueError("V2 Daily Watch requires stitched trend lineage")
     return SubingDailyWatchTrendOut(
         bar_end=trend.bar_end,
         trading_day=trend.trading_day,
         physical_contract=trend.contract,
-        segment_start_trading_day=trend.segment_start_trading_day,
+        current_segment_start_trading_day=(trend.current_segment_start_trading_day),
+        warmup_start_trading_day=trend.warmup_start_trading_day,
+        warmup_bar_count=trend.warmup_bar_count,
+        warmup_segment_count=trend.warmup_segment_count,
+        history_mode=trend.history_mode,
         close=trend.close,
         ema21=trend.ema21,
         price_side=trend.price_side.value,
@@ -515,7 +520,9 @@ def _subing_lifecycle(snapshot: SubingLifecycleSnapshot) -> SubingLifecycleSnaps
         stage=snapshot.stage.value,
         opportunity_key=_subing_opportunity_key(snapshot),
         entry_progress=(
-            snapshot.entry_progress.value if snapshot.entry_progress is not None else None
+            snapshot.entry_progress.value
+            if snapshot.entry_progress is not None
+            else None
         ),
         trigger_kind=snapshot.trigger_kind,
         trigger_timeframe=(

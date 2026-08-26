@@ -24,7 +24,10 @@ from app.market_data.subing_daily_watch_store import (
     SubingDailyWatchStoreError,
     resolve_subing_observation_root,
 )
-from app.market_data.subing_ema_trend import PriceSide, SubingEmaTrendSnapshot
+from app.market_data.subing_ema_trend import (
+    PriceSide,
+    SubingStitchedEmaTrendSnapshot,
+)
 
 
 _SOURCE_DAY = date(2026, 8, 21)
@@ -189,9 +192,7 @@ def test_root_policy_returns_validated_path_without_creating_it() -> None:
     "inspector",
     [
         _FakeMountInspector(
-            non_directories=(
-                Path("/Volumes/Fake/observations/subing-daily-v1"),
-            )
+            non_directories=(Path("/Volumes/Fake/observations/subing-daily-v1"),)
         ),
         _FakeMountInspector(
             unwritable=(Path("/Volumes/Fake/observations/subing-daily-v1"),)
@@ -303,13 +304,17 @@ def _trend(
     price_side: PriceSide,
     slope_5: str,
     slope_10: str,
-) -> SubingEmaTrendSnapshot:
-    return SubingEmaTrendSnapshot(
+) -> SubingStitchedEmaTrendSnapshot:
+    return SubingStitchedEmaTrendSnapshot(
         timeframe=timeframe,
         bar_end=datetime(2026, 8, 21, 7, tzinfo=UTC),
         trading_day=_SOURCE_DAY,
         contract=contract,
-        segment_start_trading_day=date(2026, 7, 1),
+        current_segment_start_trading_day=date(2026, 8, 12),
+        warmup_start_trading_day=date(2026, 7, 10),
+        warmup_bar_count=30,
+        warmup_segment_count=2,
+        history_mode="rank1_stitched_raw",
         close=Decimal(close),
         ema21=Decimal(ema21),
         price_side=price_side,
@@ -387,9 +392,10 @@ def test_publish_writes_canonical_snapshot_current_and_status(tmp_path: Path) ->
     assert not current.read_bytes().endswith(b"\n\n")
 
     payload = json.loads(current.read_bytes())
-    assert payload["schema_version"] == 1
-    assert payload["projection_version"] == "subing_daily_watch_v1"
-    assert payload["formula_version"] == "subing_ema21_trend_v1"
+    assert payload["schema_version"] == 2
+    assert payload["projection_version"] == "subing_daily_watch_v2"
+    assert payload["formula_version"] == "subing_ema21_rank1_stitched_raw_v2"
+    assert payload["history_mode"] == "rank1_stitched_raw"
     assert payload["series_kind"] == "actual_dominant"
     assert payload["frequencies"] == ["1d", "60m"]
     assert payload["ema_period"] == 21
@@ -405,16 +411,21 @@ def test_publish_writes_canonical_snapshot_current_and_status(tmp_path: Path) ->
     assert daily == {
         "bar_end": "2026-08-21T07:00:00+00:00",
         "close": "102.50",
+        "current_segment_start_trading_day": "2026-08-12",
         "ema21": "100.25",
+        "history_mode": "rank1_stitched_raw",
         "physical_contract": "A2609",
         "price_side": "above",
-        "segment_start_trading_day": "2026-07-01",
         "slope_10_bps_per_bar": "0.24",
         "slope_10_raw": "2.40",
         "slope_5_bps_per_bar": "0.12",
         "slope_5_raw": "1.20",
         "trading_day": "2026-08-21",
+        "warmup_bar_count": 30,
+        "warmup_segment_count": 2,
+        "warmup_start_trading_day": "2026-07-10",
     }
+    assert "segment_start_trading_day" not in daily
     assert store.read_current() == snapshot
     assert store.read_generation_status() == json.loads(status_path.read_bytes())
     assert store.read_generation_status() == {
@@ -427,17 +438,40 @@ def test_publish_writes_canonical_snapshot_current_and_status(tmp_path: Path) ->
             "target_trading_day": "2026-08-24",
         },
         "last_successful_target_trading_day": "2026-08-24",
-        "projection_version": "subing_daily_watch_v1",
-        "schema_version": 1,
+        "history_mode": "rank1_stitched_raw",
+        "projection_version": "subing_daily_watch_v2",
+        "schema_version": 2,
     }
 
-    canonical = json.dumps(
-        payload,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    ).encode() + b"\n"
+    canonical = (
+        json.dumps(
+            payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+        + b"\n"
+    )
     assert current.read_bytes() == canonical
+
+
+def test_v2_store_does_not_read_or_modify_v1_current(tmp_path: Path) -> None:
+    """Catches the V2 reader falling back to the base-root V1 artifact."""
+    base_root = tmp_path / "subing-daily-watch"
+    base_root.mkdir()
+    v1_current = base_root / "current.json"
+    v1_bytes = (
+        b'{"formula_version":"subing_ema21_trend_v1",'
+        b'"projection_version":"subing_daily_watch_v1",'
+        b'"schema_version":1}\n'
+    )
+    v1_current.write_bytes(v1_bytes)
+
+    current = SubingDailyWatchStore(base_root / "v2").read_current()
+
+    assert current is None
+    assert v1_current.read_bytes() == v1_bytes
+    assert not (base_root / "v2").exists()
 
 
 def test_store_round_trips_non_alphabetical_active_order(tmp_path: Path) -> None:
@@ -554,7 +588,9 @@ def test_same_target_conflict_in_current_fails_before_recreating_missing_history
     assert (tmp_path / "current.json").read_bytes() == original_current
 
 
-def test_target_older_than_current_fails_before_creating_history(tmp_path: Path) -> None:
+def test_target_older_than_current_fails_before_creating_history(
+    tmp_path: Path,
+) -> None:
     """Catches a delayed generation moving current backward or adding stale history."""
     store = SubingDailyWatchStore(tmp_path)
     newer = _snapshot(target=date(2026, 8, 25))
@@ -592,10 +628,28 @@ def test_invalid_existing_snapshot_fails_closed(
 @pytest.mark.parametrize(
     "mutate",
     [
-        lambda payload: payload.update(schema_version=2),
+        lambda payload: payload.update(schema_version=1),
         lambda payload: payload.update(schema_version=True),
-        lambda payload: payload.update(projection_version="other"),
-        lambda payload: payload.update(formula_version="other"),
+        lambda payload: payload.update(projection_version="subing_daily_watch_v1"),
+        lambda payload: payload.update(formula_version="subing_ema21_trend_v1"),
+        lambda payload: payload.update(history_mode="segment_local"),
+        lambda payload: payload.pop("history_mode"),
+        lambda payload: payload["items"][0]["daily"].pop("warmup_start_trading_day"),
+        lambda payload: payload["items"][0]["daily"].update(warmup_bar_count=29),
+        lambda payload: payload["items"][0]["daily"].update(warmup_segment_count=0),
+        lambda payload: payload["items"][0]["daily"].update(warmup_segment_count=31),
+        lambda payload: payload["items"][0]["daily"].update(
+            warmup_start_trading_day="2026-08-22"
+        ),
+        lambda payload: payload["items"][0]["daily"].update(
+            current_segment_start_trading_day="2026-08-22"
+        ),
+        lambda payload: payload["items"][0]["daily"].update(
+            history_mode="segment_local"
+        ),
+        lambda payload: payload["items"][0]["daily"].update(
+            segment_start_trading_day="2026-07-01"
+        ),
         lambda payload: payload["items"].__setitem__(
             1, {**payload["items"][1], "symbol": "a"}
         ),
@@ -763,8 +817,9 @@ def test_record_failure_preserves_last_success_without_touching_snapshot_files(
             "target_trading_day": "2026-08-25",
         },
         "last_successful_target_trading_day": "2026-08-24",
-        "projection_version": "subing_daily_watch_v1",
-        "schema_version": 1,
+        "history_mode": "rank1_stitched_raw",
+        "projection_version": "subing_daily_watch_v2",
+        "schema_version": 2,
     }
     assert current.read_bytes() == original_current
     assert history.read_bytes() == original_history

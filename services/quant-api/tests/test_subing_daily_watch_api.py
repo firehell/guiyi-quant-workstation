@@ -21,6 +21,7 @@ from app.market_data.subing_daily_watch import (
     SubingDailyWatchItem,
     SubingDailyWatchProduct,
     SubingDailyWatchSnapshot,
+    SubingDailyWatchWebSnapshot,
 )
 from app.market_data.subing_daily_watch_calendar import (
     SubingDailyWatchCalendarError,
@@ -29,7 +30,11 @@ from app.market_data.subing_daily_watch_store import (
     SubingDailyWatchPublishResult,
     SubingDailyWatchStoreError,
 )
-from app.market_data.subing_ema_trend import PriceSide, SubingEmaTrendSnapshot
+from app.market_data.subing_ema_trend import (
+    PriceSide,
+    SubingEmaTrendSnapshot,
+    SubingStitchedEmaTrendSnapshot,
+)
 from app.market_data.operational_universe import (
     ActiveUniverseError,
     OperationalUniverseError,
@@ -41,9 +46,7 @@ _TARGET_DAY = date(2026, 8, 25)
 _NOW = datetime(2026, 8, 24, 18, 25, tzinfo=UTC)
 _GENERATED_AT = datetime(2026, 8, 24, 10, 24, 13, tzinfo=UTC)
 _SYMBOLS = tuple(
-    f"{first}{second}"
-    for first in "abc"
-    for second in "abcdefghijklmnopqrstuvwxyz"
+    f"{first}{second}" for first in "abc" for second in "abcdefghijklmnopqrstuvwxyz"
 )[:60]
 
 
@@ -54,13 +57,17 @@ def _trend(
     close: Decimal = Decimal("3512"),
     ema21: Decimal = Decimal("3478.2468"),
     slope: Decimal = Decimal("8.6214"),
-) -> SubingEmaTrendSnapshot:
-    return SubingEmaTrendSnapshot(
+) -> SubingStitchedEmaTrendSnapshot:
+    return SubingStitchedEmaTrendSnapshot(
         timeframe=timeframe,
         bar_end=datetime(2026, 8, 24, 7, tzinfo=UTC),
         trading_day=_SOURCE_DAY,
         contract="RB2610",
-        segment_start_trading_day=date(2026, 7, 20),
+        current_segment_start_trading_day=date(2026, 8, 12),
+        warmup_start_trading_day=date(2026, 7, 14),
+        warmup_bar_count=30,
+        warmup_segment_count=2,
+        history_mode="rank1_stitched_raw",
         close=close,
         ema21=ema21,
         price_side=price_side,
@@ -68,6 +75,23 @@ def _trend(
         slope_10_raw=Decimal("2.0001"),
         slope_5_bps_per_bar=slope,
         slope_10_bps_per_bar=Decimal("5.9173") if slope > 0 else slope,
+    )
+
+
+def _v1_trend(timeframe: BarFrequency) -> SubingEmaTrendSnapshot:
+    return SubingEmaTrendSnapshot(
+        timeframe=timeframe,
+        bar_end=datetime(2026, 8, 24, 7, tzinfo=UTC),
+        trading_day=_SOURCE_DAY,
+        contract="RB2610",
+        segment_start_trading_day=date(2026, 7, 20),
+        close=Decimal("3512"),
+        ema21=Decimal("3478.2468"),
+        price_side=PriceSide.ABOVE,
+        slope_5_raw=Decimal("3.0001"),
+        slope_10_raw=Decimal("2.0001"),
+        slope_5_bps_per_bar=Decimal("8.6214"),
+        slope_10_bps_per_bar=Decimal("5.9173"),
     )
 
 
@@ -274,18 +298,14 @@ def test_current_service_validates_ledger_before_reporting_stale() -> None:
             None,
         ),
         (
-            lambda: _Store(
-                replace(_snapshot(), target_trading_day=date(2026, 8, 26))
-            ),
+            lambda: _Store(replace(_snapshot(), target_trading_day=date(2026, 8, 26))),
             lambda _now: _TARGET_DAY,
             "SUBING_DAILY_WATCH_STALE",
             _TARGET_DAY,
             date(2026, 8, 26),
         ),
         (
-            lambda: _Store(
-                read_error=SubingDailyWatchStoreError("SNAPSHOT_INVALID")
-            ),
+            lambda: _Store(read_error=SubingDailyWatchStoreError("SNAPSHOT_INVALID")),
             lambda _now: _TARGET_DAY,
             "SUBING_DAILY_WATCH_INVALID",
             _TARGET_DAY,
@@ -372,11 +392,9 @@ def test_builder_takes_generated_at_only_after_product_work() -> None:
             raise MarketDataError("MAPPED_CONTRACT_DATASET_MISSING")
 
     builder = SubingDailyWatchBuilder(
-        segment_loader=_UnavailableLoader(),
+        stitched_loader=_UnavailableLoader(),
         products=("aa",),
-        product_metadata={
-            "aa": SubingDailyWatchProduct("aa", "Product aa", "black")
-        },
+        product_metadata={"aa": SubingDailyWatchProduct("aa", "Product aa", "black")},
         expected_universe_size=1,
     )
 
@@ -488,9 +506,10 @@ def test_generator_composition_is_complete_and_creates_no_files(
         lambda _session: market_data,
     )
     monkeypatch.setattr(
-        "app.market_data.composition.ActualDominantResearchSegmentLoader",
+        "app.market_data.composition.ActualDominantStitchedResearchLoader",
         lambda value: loader if value is market_data else pytest.fail("wrong MDS"),
     )
+
     def resolve_root(**_kwargs: object) -> Path:
         root_resolutions.append(root)
         return root
@@ -515,12 +534,12 @@ def test_generator_composition_is_complete_and_creates_no_files(
     generator = build_subing_daily_watch_generator(object())
 
     assert isinstance(generator, SubingDailyWatchGenerator)
-    assert generator.builder._segment_loader is loader
+    assert generator.builder._stitched_loader is loader
     assert generator.builder._products == products
-    assert captured_store["root"] == root
+    assert captured_store["root"] == root / "v2"
     root_validator = captured_store["root_validator"]
     assert callable(root_validator)
-    assert root_validator() == root
+    assert root_validator() == root / "v2"
     assert root_resolutions == [root, root]
     assert not root.exists()
 
@@ -580,7 +599,11 @@ def test_current_composition_reads_only_calendar_and_store(
     """Catches the current HTTP read path initializing provider, Redis, or writes."""
     from app.market_data.composition import build_subing_daily_watch_current_service
 
-    root = tmp_path / "missing-observation-root"
+    root = tmp_path / "observation-root"
+    root.mkdir()
+    v1_current = root / "current.json"
+    v1_bytes = b'{"projection_version":"subing_daily_watch_v1"}\n'
+    v1_current.write_bytes(v1_bytes)
     monkeypatch.setattr(
         "app.market_data.composition.load_active_products", lambda: _SYMBOLS
     )
@@ -612,7 +635,9 @@ def test_current_composition_reads_only_calendar_and_store(
 
     assert result.status == "unavailable"
     assert result.error_code == "SUBING_DAILY_WATCH_NOT_GENERATED"
-    assert not root.exists()
+    assert result.snapshot is None
+    assert v1_current.read_bytes() == v1_bytes
+    assert not (root / "v2").exists()
 
 
 def test_current_composition_maps_unsearchable_root_before_not_generated(
@@ -680,7 +705,9 @@ def test_current_composition_uses_active_order_when_operational_order_differs(
     )
     monkeypatch.setattr(
         "app.market_data.composition.SubingDailyWatchStore",
-        lambda value: store if value == root else pytest.fail("wrong store root"),
+        lambda value: (
+            store if value == root / "v2" else pytest.fail("wrong store root")
+        ),
     )
     monkeypatch.setattr(
         "app.market_data.composition.build_market_data_service",
@@ -788,17 +815,78 @@ def test_current_api_returns_ready_decimal_projection_and_omits_excluded(
         lambda _session: SimpleNamespace(current=lambda _now: result),
     )
 
-    response = TestClient(app).get(
-        "/api/v1/market/research/subing-daily-watch/current"
-    )
+    response = TestClient(app).get("/api/v1/market/research/subing-daily-watch/current")
 
     assert response.status_code == 200
     payload = response.json()
     assert payload["status"] == "ready"
+    assert payload["projection_version"] == "subing_daily_watch_v2"
+    assert payload["formula_version"] == "subing_ema21_rank1_stitched_raw_v2"
+    assert payload["history_mode"] == "rank1_stitched_raw"
     assert payload["snapshot"]["counts"]["universe"] == 60
-    assert payload["snapshot"]["long_watch"][0]["daily"]["close"] == "3512"
+    daily = payload["snapshot"]["long_watch"][0]["daily"]
+    assert daily == {
+        "bar_end": "2026-08-24T07:00:00Z",
+        "trading_day": "2026-08-24",
+        "physical_contract": "RB2610",
+        "current_segment_start_trading_day": "2026-08-12",
+        "warmup_start_trading_day": "2026-07-14",
+        "warmup_bar_count": 30,
+        "warmup_segment_count": 2,
+        "history_mode": "rank1_stitched_raw",
+        "close": "3512",
+        "ema21": "3478.2468",
+        "price_side": "above",
+        "slope_5_bps_per_bar": "8.6214",
+        "slope_10_bps_per_bar": "5.9173",
+    }
+    assert "segment_start_trading_day" not in daily
     assert "excluded_items" not in payload["snapshot"]
     assert "excluded" not in payload["snapshot"]
+
+
+def test_current_api_rejects_mixed_v1_domain_trends(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Catches V1 trend objects being projected under V2 top-level identity."""
+    first = _snapshot().items[0]
+    mixed_item = replace(
+        first,
+        daily=_v1_trend(BarFrequency.D1),
+        hourly=_v1_trend(BarFrequency.H1),
+    )
+    result = SubingDailyWatchCurrentResult(
+        status="ready",
+        expected_target_trading_day=_TARGET_DAY,
+        latest_target_trading_day=_TARGET_DAY,
+        error_code=None,
+        snapshot=SubingDailyWatchWebSnapshot(
+            source_trading_day=_SOURCE_DAY,
+            target_trading_day=_TARGET_DAY,
+            generated_at=_GENERATED_AT,
+            counts={
+                "universe": 1,
+                "long_watch": 1,
+                "short_watch": 0,
+                "excluded": 0,
+                "unavailable": 0,
+            },
+            long_watch=(mixed_item,),
+            short_watch=(),
+            unavailable=(),
+        ),
+    )
+    monkeypatch.setattr(
+        "app.api.market.build_subing_daily_watch_current_service",
+        lambda _session: SimpleNamespace(current=lambda _now: result),
+    )
+
+    response = TestClient(app, raise_server_exceptions=False).get(
+        "/api/v1/market/research/subing-daily-watch/current"
+    )
+
+    assert response.status_code == 500
+    assert "subing_daily_watch_v2" not in response.text
 
 
 @pytest.mark.parametrize(
@@ -832,11 +920,12 @@ def test_current_api_returns_each_unavailable_as_sanitized_http_200(
         lambda _session: SimpleNamespace(current=lambda _now: result),
     )
 
-    response = TestClient(app).get(
-        "/api/v1/market/research/subing-daily-watch/current"
-    )
+    response = TestClient(app).get("/api/v1/market/research/subing-daily-watch/current")
 
     assert response.status_code == 200
+    assert response.json()["projection_version"] == "subing_daily_watch_v2"
+    assert response.json()["formula_version"] == "subing_ema21_rank1_stitched_raw_v2"
+    assert response.json()["history_mode"] == "rank1_stitched_raw"
     assert response.json()["error_code"] == error_code
     assert response.json()["snapshot"] is None
     serialized = response.text
@@ -886,6 +975,9 @@ def test_current_api_maps_universe_configuration_error_to_sanitized_http_200(
     assert response.status_code == 200
     assert response.json() == {
         "status": "unavailable",
+        "projection_version": "subing_daily_watch_v2",
+        "formula_version": "subing_ema21_rank1_stitched_raw_v2",
+        "history_mode": "rank1_stitched_raw",
         "expected_target_trading_day": None,
         "latest_target_trading_day": None,
         "error_code": "SUBING_DAILY_WATCH_INVALID",
