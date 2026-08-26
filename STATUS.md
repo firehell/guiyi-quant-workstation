@@ -4,10 +4,10 @@
 
 ## 正式 release 与 production Runtime
 
-- 正式 release 为 `v1.8.4@f78db1b124744d8e2ebe1ee1b7a5ecdc365b40f6`（Release PR `#220`，annotated tag peeled commit 同一）；本机五个 launchd label 当前绑定 clean/detached `/Volumes/扩展盘/guiyi-quant-runtime-v1.8.4` 的同一 commit。API 返回 `1.8.4`，Web、Live 与 Alert 均已从该根运行；旧 v1.8.2/v1.8.3 Runtime 与临时 release worktree 已在无 label/进程引用且 clean 的检查后移除。
-- 2026-08-25 自然 after-market 曾于 18:05:02 开始、19:40:05 以 `passed` 终态完成，单次 attempts=1、覆盖 active60；该既有自然证据不因部署封装重复采集。v1.8.4 新 Runtime 根未导入旧根的运行状态文件，因此当前只读 health 将当日 after-market 表示为 `missed`；本次 promotion 未手工补跑、回填或写入该状态。
+- 正式 release 仍为 `v1.8.4@f78db1b124744d8e2ebe1ee1b7a5ecdc365b40f6`（Release PR `#220`，annotated tag peeled commit 同一）。2026-08-26 经用户单次明确批准，本机五个 launchd label 已从 v1.8.4 根协调切换到 clean/detached `/Volumes/扩展盘/guiyi-quant-runtime-c9633ef30@c9633ef302e536ba4f8c138c4334fffd54b3d232`；这是 develop 精确提交的本地开发 Runtime，不是新 release/tag。API `/api/health` 返回仓库包版本 `1.8.3`，Web、Live 与 Alert 均从该精确根运行；原 `/Volumes/扩展盘/guiyi-quant-runtime-v1.8.4` clean/detached 根保留为回滚点，未删除。
+- 2026-08-25 自然 after-market 曾于 18:05:02 开始、19:40:05 以 `passed` 终态完成，单次 attempts=1、覆盖 active60；该既有自然证据不因部署封装重复采集。当前 c9633ef30 Runtime 根未导入旧根的运行状态文件，因此当前只读 health 将 after-market 表示为 `pending`；本次 switch 未手工补跑、回填或写入该状态。
 - production Alembic 已在 `20260825_0040 (head)`。HTDY production Scope 曾于 15:13 在独立明确授权下更新为 active 60 × 七周期 `60 symbols / 420 pairs`，随后于 20:43 按新的明确请求原子收敛为唯一 `jm × 15m`（`1 symbol / 1 pair`）；七周期图表能力与逐 `symbol × frequency` 开关能力不变，SuBing Scope 未变，未触发 Event、重放或通知。
-- Alert transport 为 pushplus，provider accepted 不等于微信送达。19:40 的 processing failure 已被后续 `jm × 15m` 自然处理成功覆盖为 `processing_state=ok`；v1.8.4 已包含 W1 周内正常跳过与 Runtime observation schema v2 的精确失败 CAS acknowledgment 能力。当前 acknowledgment 仍为 `null`，没有执行 production acknowledgment、Event 重放、补发或真实通知；当前 Runtime 的 `degraded` 来自上述 after-market `missed` 与保留的 `notification_transport_failed`。Execution Review roll 仍为 `disabled`。
+- Alert transport 为 pushplus，provider accepted 不等于微信送达。19:40 的 processing failure 已被后续 `jm × 15m` 自然处理成功覆盖为 `processing_state=ok`；v1.8.4 已包含 W1 周内正常跳过与 Runtime observation schema v2 的精确失败 CAS acknowledgment 能力。当前 acknowledgment 仍为 `null`，没有执行 production acknowledgment、Event 重放、补发或真实通知；当前 Runtime 的 `degraded` 来自上述 after-market `pending` 与保留的 `notification_transport_failed`。Execution Review roll 仍为 `disabled`。
 
 ## 已发布的 Architecture Convergence
 
@@ -27,7 +27,7 @@ Architecture Convergence Tasks 1–8 已完成实现、验证与独立 Review，
 - 只读 `GET /api/v1/market/research/n-structure/bands` 复用既有 causal N reducer 与真实 rank1 segment warm-up，只投影严格 Completed N：形成区为 `N1 pivot -> completed_at`，完成后沿精确 N1-N2 price span 继续扩张，记录既有 first range-band re-entry，并终止于首个严格 N2-origin break 或当前 segment/Canonical 边界；窗口相交的更早 Completed N 也会返回。不跨 segment，不复制算法，不读取 Live。
 - Web 使用一个 candlestick series primitive 在 K 线下层绘制双阶段区间：形成区 6% 实线、完成后观察区 2.5% 虚线，完成点为实心圆、首次回区间为空心圆、N2 破坏为叉号；支持左侧裁剪、分页生命周期合并、最新重叠命中和 factual Historical hover。屏幕内同方向、至少三条的 `>=60%` 可见矩形重叠簇会自动降噪：从未失效且最新完成的优先锚点最多沿三跳纳入邻近成员，第四跳及更远不合并；主 N 保留完整呈现，其余成员只保留低透明上下轨。稳定公共可见锚点上的可访问徽标显示组数，可悬停查看并点击/键盘轮换；离开、缩放或 resize 后重置，方向彼此独立。旧/畸形生命周期响应 fail-closed，只降级该图层，不遮挡 K 线。
 - 2026-08-26 后端 N Swing/Pattern/State/API/composition 回归 `250 passed`，Web 单元测试 `323 passed / 1 skipped`，ruff、Vue 类型检查、生产 build/bundle topology 与完整 Web E2E `110 passed / 1 skipped` 均通过；E2E 覆盖完成点在已加载窗口左侧、但扩张观察段仍与窗口相交的分页场景，以及不同起点的三条同向高重叠区间的主成员/淡轨、悬停、点击轮换与离开复位。隔离本地开发栈真实读取 AU `actual_dominant + 5m` 的 Canonical 页面：请求窗口得到 32 条相交生命周期事实（26 条已有首次回区间、11 条已有 N2 失效），其中 15 条与当前视口/价格范围相交并形成有效 geometry，同时包含 up/down；当前 300-bar 视口实际形成 1 个同向重叠组（`N↑ ×4`）并压低 3 条成员。
-- 当前只是 develop 代码与本地验证事实；没有执行 DB、Canonical、Redis、Alert、通知、Runtime switch、release 或 promotion，也不构成 N 独立产品、第五个 Overlay、候选晋升或交易语义。
+- 2026-08-26 上述精确 develop commit 已按一次明确授权切入本机五标签 Runtime：所有 plist/loaded environment 均读回同一根与 `c9633ef3`，checkout clean/detached，API/Web 为 200；AU `actual_dominant + 5m` 截至已完成 Canonical `2026-08-25` 的 bands API 返回 200 与正确 Policy lineage，包含 `2026-08-26` 尚未满足源合同的窗口继续显式返回 `N_STRUCTURE_SOURCE_UNAVAILABLE` 409。正式 5173 页面实际加载 32 条 N facts、当前视口渲染 13 条、同时包含 up/down，并形成 `N↑ ×4` / 3 条 suppressed；验收后开关恢复默认关闭。本次未执行 DB、Canonical、Scope、手工盘后、手工 Event/通知、release 或 tag，也不构成 N 独立产品、第五个 Overlay、候选晋升或交易语义。
 
 ## 待完成 Gate
 
