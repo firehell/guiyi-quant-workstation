@@ -17,6 +17,7 @@ import {
 import { alertRuntimeLabel } from '@/utils/alertControl'
 import { ALERT_RULE_CODES } from '@/utils/alertRules'
 import { summarizeFormalEvent } from '@/utils/productCheck'
+import { buildSubingLifecyclePivotFacts } from '@/utils/subingLifecycleFacts'
 
 const props = defineProps<{
   snapshot: SubingResearchResponse | null
@@ -61,8 +62,8 @@ const lifecycleDirection = computed(() => {
   if (lifecycle.value?.direction === 'short') return '向下研究'
   return '暂无方向'
 })
-const lifecyclePivotLabel = computed(() => (
-  lifecycle.value?.bound_reference_pivot?.kind === 'low' ? '绑定前低' : '绑定前高'
+const lifecyclePivotFacts = computed(() => (
+  lifecycle.value ? buildSubingLifecyclePivotFacts(lifecycle.value) : []
 ))
 const lifecycleTriggerLabel = computed(() => {
   if (lifecycle.value?.trigger_kind === 'pivot_break') {
@@ -193,7 +194,7 @@ function toggleSubing(ruleCode: string, enabled: boolean) {
             <div><dt>阶段</dt><dd>{{ subingLifecycleStageLabel(lifecycle.stage) }}</dd></div>
             <div><dt>触发来源</dt><dd>{{ lifecycleTriggerLabel }} · {{ lifecycleSourceLabel }}</dd></div>
             <div><dt>确认进度</dt><dd>{{ subingLifecycleProgressLabel(lifecycle) }}</dd></div>
-            <div v-if="lifecycle.bound_reference_pivot"><dt>{{ lifecyclePivotLabel }}</dt><dd>{{ lifecycle.bound_reference_pivot.price }}</dd></div>
+            <div v-for="pivotFact in lifecyclePivotFacts" :key="pivotFact.role"><dt>{{ pivotFact.label }}</dt><dd>{{ pivotFact.price }}</dd></div>
             <div v-if="lifecycle.rebreak_reference_price !== null"><dt>再突破参考</dt><dd>{{ lifecycle.rebreak_reference_price }}</dd></div>
             <div><dt>风险 codes</dt><dd>{{ lifecycle.current_risk_codes.length ? lifecycle.current_risk_codes.join(' · ') : '—' }}</dd></div>
             <div><dt>最近状态转换</dt><dd>{{ lifecycleTransitionLabel }}</dd></div>

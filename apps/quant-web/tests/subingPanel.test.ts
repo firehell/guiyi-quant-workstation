@@ -39,3 +39,11 @@ test('makes Strategy records primary while internal Lifecycle facts stay opt-in'
   assert.match(toolbarSource, /显示苏冰内部研究过程/)
   assert.match(toolbarSource, /默认关闭；仅显示当前准备 \/ 研究确认 \/ 风险 \/ 结束事实/)
 })
+
+test('renders trigger and protective lifecycle pivots as distinct formatted facts', () => {
+  assert.match(panelSource, /buildSubingLifecyclePivotFacts/)
+  assert.match(panelSource, /lifecyclePivotFacts/)
+  assert.match(panelSource, /pivotFact\.label/)
+  assert.match(panelSource, /pivotFact\.price/)
+  assert.doesNotMatch(panelSource, /lifecycle\.bound_reference_pivot\.price/)
+})
