@@ -33,6 +33,8 @@ from research.subing_lifecycle_fixtures import (
     _evaluate,
     _factor,
     _opportunity_key,
+    _stream_lifecycle_prefixes,
+    _with_lifecycle_reset,
 )
 
 
@@ -53,6 +55,27 @@ def test_lifecycle_enums_expose_the_approved_wire_values() -> None:
         "exit_risk",
         "closed",
     )
+
+
+def test_machine_state_and_nested_opportunity_are_immutable() -> None:
+    boundary = _bar(5)
+    bars, factors = _with_lifecycle_reset(
+        (boundary,),
+        (_factor(boundary, BarFrequency.M5),),
+    )
+    anchor = _bar(0)
+    state = _stream_lifecycle_prefixes(
+        bars,
+        factors_5m=factors,
+        bars_15m=(anchor,),
+        factors_15m=(_factor(anchor, BarFrequency.M15),),
+    )[-1]
+
+    assert state.active_opportunity is not None
+    with pytest.raises(FrozenInstanceError):
+        state.active_opportunity.hold_count = 2  # type: ignore[misc]
+    with pytest.raises(SubingLifecycleContractError):
+        replace(state, formula_version="drifted")
     assert tuple(member.value for member in EntryProgress) == (
         "waiting_trigger",
         "hold_confirming",

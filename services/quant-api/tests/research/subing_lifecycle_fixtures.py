@@ -7,8 +7,12 @@ from decimal import Decimal
 
 from app.market_data.subing_lifecycle import (
     ConfirmationSource,
+    SubingLifecycleMachineState,
     SubingOpportunityKey,
     evaluate_subing_lifecycle,
+    initial_subing_lifecycle_state,
+    step_subing_lifecycle_15m,
+    step_subing_lifecycle_5m,
 )
 from app.market_data.domain import BarFrequency, CanonicalBar
 from app.market_data.subing_calibration import SubingCalibration
@@ -173,6 +177,24 @@ def _evaluate(
     return replace(trace, snapshots=trace.snapshots[1:])
 
 
+def _with_lifecycle_reset(
+    bars: tuple[CanonicalBar, ...],
+    factors: tuple[SubingFactorResult, ...],
+) -> tuple[tuple[CanonicalBar, ...], tuple[SubingFactorResult, ...]]:
+    reset = replace(bars[0], bar_end=bars[0].bar_end - timedelta(minutes=5))
+    return (
+        (reset, *bars),
+        (
+            _factor(
+                reset,
+                BarFrequency.M5,
+                status=SubingFactorStatus.INSUFFICIENT_DATA,
+            ),
+            *factors,
+        ),
+    )
+
+
 def _evaluate_raw(
     bars_5m: tuple[CanonicalBar, ...],
     *,
@@ -201,6 +223,47 @@ def _evaluate_raw(
         calibration=calibration or _accepted_calibration(),
         policy=policy or load_subing_lifecycle_policy(),
     )
+
+
+def _stream_lifecycle_prefixes(
+    bars_5m: tuple[CanonicalBar, ...],
+    *,
+    factors_5m: tuple[SubingFactorResult, ...],
+    bars_15m: tuple[CanonicalBar, ...],
+    factors_15m: tuple[SubingFactorResult, ...],
+    calibration: SubingCalibration | None = None,
+    policy: SubingLifecyclePolicy | None = None,
+) -> tuple[SubingLifecycleMachineState, ...]:
+    effective_calibration = calibration or _accepted_calibration()
+    effective_policy = policy or load_subing_lifecycle_policy()
+    state = initial_subing_lifecycle_state(
+        symbol="JM",
+        contract="JM2701",
+        segment_start_trading_day=_SEGMENT_START,
+    )
+    states: list[SubingLifecycleMachineState] = []
+    anchor_index = 0
+    for bar_5m, factor_5m in zip(bars_5m, factors_5m):
+        while (
+            anchor_index < len(bars_15m)
+            and bars_15m[anchor_index].bar_end <= bar_5m.bar_end
+        ):
+            state = step_subing_lifecycle_15m(
+                state,
+                bar=bars_15m[anchor_index],
+                factor=factors_15m[anchor_index],
+            )
+            anchor_index += 1
+        state, snapshot = step_subing_lifecycle_5m(
+            state,
+            bar=bar_5m,
+            factor=factor_5m,
+            calibration=effective_calibration,
+            policy=effective_policy,
+        )
+        assert snapshot == state.snapshots[-1]
+        states.append(state)
+    return tuple(states)
 
 
 def _long_pivot_prefix() -> tuple[CanonicalBar, ...]:
