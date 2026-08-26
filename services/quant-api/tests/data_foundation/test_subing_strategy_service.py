@@ -136,6 +136,12 @@ def test_entry_left_of_window_and_exit_inside_returns_complete_episode(
     assert tuple(action.kind for action in result.actions) == (
         SubingStrategyActionKind.CLOSE_LONG,
     )
+    assert loader.requests[0][1] == (
+        BarFrequency.M1,
+        BarFrequency.M5,
+        BarFrequency.M15,
+    )
+    assert result.segment_summaries[0].bar_count_1m == len(bars)
 
 
 def test_nonterminal_through_preserves_open_episode(
@@ -195,7 +201,9 @@ def test_nonterminal_through_preserves_open_episode(
 
     assert terminals == [None]
     assert result.episodes[0].exit_action is None
-    assert result.segment_summaries[0].final_position is SubingStrategyPositionState.LONG
+    assert (
+        result.segment_summaries[0].final_position is SubingStrategyPositionState.LONG
+    )
 
 
 def test_new_contract_segment_starts_flat(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -366,9 +374,7 @@ def test_cache_failure_recomputes_without_changing_result(
         cache=FailingCache(),
     )
 
-    result = service.history(
-        _request(since=SEGMENT_START, through=SEGMENT_START)
-    )
+    result = service.history(_request(since=SEGMENT_START, through=SEGMENT_START))
 
     assert result.actions == expected.actions
     assert result.episodes == expected.episodes

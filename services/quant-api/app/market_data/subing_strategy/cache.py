@@ -27,7 +27,7 @@ from .contracts import (
 from .direction_context import SubingStrategyDirectionContext
 
 
-_SCHEMA_VERSION = 2
+_SCHEMA_VERSION = 3
 
 
 class SubingStrategyCacheError(RuntimeError):
@@ -52,10 +52,12 @@ class SubingStrategyCacheIdentity:
     contract: str
     segment_start_trading_day: date
     segment_end_trading_day: date
+    cutoff_1m: datetime
     cutoff_5m: datetime
     cutoff_15m: datetime
     cutoff_d1: datetime
     cutoff_60m: datetime
+    bars_1m_digest: str
     bars_5m_digest: str
     bars_15m_digest: str
     direction_context_digest: str
@@ -64,6 +66,7 @@ class SubingStrategyCacheIdentity:
     def __post_init__(self) -> None:
         digest_fields = (
             self.strategy_policy_sha256,
+            self.bars_1m_digest,
             self.bars_5m_digest,
             self.bars_15m_digest,
             self.direction_context_digest,
@@ -81,6 +84,7 @@ class SubingStrategyCacheIdentity:
             or any(
                 value.tzinfo is None or value.utcoffset() is None
                 for value in (
+                    self.cutoff_1m,
                     self.cutoff_5m,
                     self.cutoff_15m,
                     self.cutoff_d1,
@@ -313,7 +317,13 @@ def _identity_payload(identity: SubingStrategyCacheIdentity) -> dict[str, object
         "through",
     ):
         payload[field] = payload[field].isoformat()
-    for field in ("cutoff_5m", "cutoff_15m", "cutoff_d1", "cutoff_60m"):
+    for field in (
+        "cutoff_1m",
+        "cutoff_5m",
+        "cutoff_15m",
+        "cutoff_d1",
+        "cutoff_60m",
+    ):
         payload[field] = payload[field].astimezone(UTC).isoformat()
     return payload
 

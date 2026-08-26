@@ -28,6 +28,7 @@ class SubingStrategySegmentSummaryOut(BaseModel):
     start_trading_day: date
     end_trading_day: date
     loaded_through: date
+    bar_count_1m: int
     bar_count_5m: int
     bar_count_15m: int
     initial_position: str
@@ -59,6 +60,7 @@ class SubingStrategyActionOut(BaseModel):
     segment_start_trading_day: date
     opportunity_id: str
     decision_at: datetime
+    effective_open_at: datetime | None
     effective_bar_end: datetime
     reference_price: Decimal
     fill_basis: str

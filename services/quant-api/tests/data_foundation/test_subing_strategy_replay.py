@@ -4,8 +4,7 @@ from types import MappingProxyType
 
 import pytest
 
-from app.market_data.domain import BarFrequency, ResolvedContractSegment
-from app.market_data.subing_lifecycle import ConfirmationSource
+from app.market_data.domain import ResolvedContractSegment
 from app.market_data.subing_lifecycle_policy import load_subing_lifecycle_policy
 from app.market_data.subing_research import (
     SubingDirection,
@@ -31,7 +30,8 @@ from research.test_subing_strategy_engine import (
     _context,
     _factor,
 )
-from research.test_subing_strategy_entry_projection import _trace_for_source
+from datetime import timedelta
+from dataclasses import replace
 
 
 def test_build_frames_rejects_future_lifecycle_confirmation() -> None:
@@ -55,38 +55,22 @@ def test_build_frames_rejects_future_lifecycle_confirmation() -> None:
         )
 
 
-def test_replay_calculates_both_frequencies_from_segment_start(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_replay_consumes_authoritative_three_frequency_stream() -> None:
     bars_15m = (_bar(1), _bar(2, open_price="101"))
     bars_5m = bars_15m
-    segment = ResolvedContractSegment(CONTRACT, SEGMENT_START, SEGMENT_START)
-    calls: list[tuple[BarFrequency, str, object]] = []
-
-    def calculate(bars, *, timeframe, contract, segment_start_trading_day, latest_bar_source):
-        calls.append((timeframe, contract, segment_start_trading_day))
-        return tuple(
-            SubingFactorResult(SubingFactorStatus.READY, _factor(bar)) for bar in bars
+    bars_1m = tuple(
+        replace(
+            bar,
+            bar_end=bar.bar_end - timedelta(minutes=15 - minute),
+            open=bar.open,
+            high=bar.open,
+            low=bar.open,
+            close=bar.open,
         )
-
-    candidate = _candidate(
-        bars_15m[0],
-        direction=SubingDirection.LONG,
+        for bar in bars_15m
+        for minute in range(1, 16)
     )
-    monkeypatch.setattr(
-        "app.market_data.subing_strategy.replay.calculate_subing_factor_series",
-        calculate,
-    )
-    monkeypatch.setattr(
-        "app.market_data.subing_strategy.replay.evaluate_subing_lifecycle",
-        lambda **_kwargs: _trace_for_source(ConfirmationSource.FORMAL_V1),
-    )
-    monkeypatch.setattr(
-        "app.market_data.subing_strategy.replay.project_lifecycle_entries",
-        lambda _trace, _bars: MappingProxyType(
-            {bars_15m[0].bar_end: (candidate,), bars_15m[1].bar_end: ()}
-        ),
-    )
+    segment = ResolvedContractSegment(CONTRACT, SEGMENT_START, SEGMENT_START)
     contexts = MappingProxyType(
         {
             bar.trading_day: _context(
@@ -100,6 +84,7 @@ def test_replay_calculates_both_frequencies_from_segment_start(
     result = replay_subing_strategy_segment(
         symbol="jm",
         segment=segment,
+        bars_1m=bars_1m,
         bars_5m=bars_5m,
         bars_15m=bars_15m,
         direction_contexts=contexts,
@@ -109,9 +94,34 @@ def test_replay_calculates_both_frequencies_from_segment_start(
         terminal_bar_end=None,
     )
 
-    assert calls == [
-        (BarFrequency.M5, CONTRACT, SEGMENT_START),
-        (BarFrequency.M15, CONTRACT, SEGMENT_START),
-    ]
-    assert result.actions[0].contract == CONTRACT
-    assert result.actions[0].segment_start_trading_day == SEGMENT_START
+    assert result.actions == ()
+    assert result.final_position.value == "flat"
+
+
+def test_replay_rejects_15m_open_that_disagrees_with_first_1m() -> None:
+    bar_15m = _bar(1)
+    first_1m = replace(
+        bar_15m,
+        bar_end=bar_15m.bar_end - timedelta(minutes=14),
+        open=bar_15m.open + 1,
+    )
+    segment = ResolvedContractSegment(CONTRACT, SEGMENT_START, SEGMENT_START)
+
+    with pytest.raises(SubingStrategyContextIdentityError):
+        replay_subing_strategy_segment(
+            symbol="jm",
+            segment=segment,
+            bars_1m=(first_1m,),
+            bars_5m=(bar_15m,),
+            bars_15m=(bar_15m,),
+            direction_contexts={
+                SEGMENT_START: _context(
+                    bar_15m,
+                    SubingStrategyDirection.LONG_ONLY,
+                )
+            },
+            calibration=_accepted_calibration(),
+            lifecycle_policy=load_subing_lifecycle_policy(),
+            strategy_policy=load_subing_strategy_policy(),
+            terminal_bar_end=None,
+        )

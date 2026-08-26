@@ -65,6 +65,7 @@ class _StrategyService:
             segment_start_trading_day=date(2026, 8, 3),
             opportunity_id="subing-opportunity:one",
             decision_at=datetime(2026, 8, 3, 2, 15, tzinfo=UTC),
+            effective_open_at=datetime(2026, 8, 3, 2, 15, tzinfo=UTC),
             effective_bar_end=datetime(2026, 8, 3, 2, 30, tzinfo=UTC),
             reference_price=Decimal("100.5"),
             fill_basis=SimpleNamespace(value="next_bar_open"),
@@ -92,6 +93,7 @@ class _StrategyService:
                     start_trading_day=date(2026, 8, 3),
                     end_trading_day=date(2026, 8, 20),
                     loaded_through=date(2026, 8, 3),
+                    bar_count_1m=15,
                     bar_count_5m=3,
                     bar_count_15m=1,
                     initial_position=SimpleNamespace(value="flat"),
@@ -158,10 +160,10 @@ def test_subing_strategy_history_returns_actions_complete_episodes_and_context(
     assert payload["policy"]["strategy_id"] == "subing_strategy_v1"
     assert payload["resolved_cutoff"] == "2026-08-03T02:30:00Z"
     assert payload["actions"][0]["kind"] == "open_long"
+    assert payload["actions"][0]["effective_open_at"] == "2026-08-03T02:15:00Z"
     assert payload["actions"][0]["reference_price"] == "100.5"
-    assert payload["episodes"][0]["entry_action"]["action_id"] == (
-        "subing-action:open"
-    )
+    assert payload["segment_summaries"][0]["bar_count_1m"] == 15
+    assert payload["episodes"][0]["entry_action"]["action_id"] == ("subing-action:open")
     assert payload["episodes"][0]["state"] == "open"
     assert payload["context_unavailable"][0]["direction"] == "unavailable"
     assert payload["cache_state"] == "miss"
@@ -212,9 +214,7 @@ def test_subing_strategy_history_rejects_invalid_request(
     )
 
     assert response.status_code == 422
-    assert response.json() == {
-        "detail": {"code": "INVALID_SUBING_STRATEGY_REQUEST"}
-    }
+    assert response.json() == {"detail": {"code": "INVALID_SUBING_STRATEGY_REQUEST"}}
 
 
 @pytest.mark.parametrize(
@@ -328,8 +328,9 @@ def test_n_structure_bands_returns_policy_lineage_and_exact_decimal_facts(
     )
     monkeypatch.setattr(
         "app.research.historical_overlay_api.build_n_structure_research_service",
-        lambda _session, **kwargs: injected.append(kwargs["policy"])
-        or _NStructureBandService(),
+        lambda _session, **kwargs: (
+            injected.append(kwargs["policy"]) or _NStructureBandService()
+        ),
     )
 
     response = TestClient(app).get(
@@ -396,7 +397,9 @@ def test_n_structure_bands_reject_unsupported_identity_before_service(
 ) -> None:
     monkeypatch.setattr(
         "app.research.historical_overlay_api.build_n_structure_research_service",
-        lambda _session, **_kwargs: pytest.fail("unsupported identity must not build service"),
+        lambda _session, **_kwargs: pytest.fail(
+            "unsupported identity must not build service"
+        ),
     )
 
     response = TestClient(app).get(
@@ -411,9 +414,7 @@ def test_n_structure_bands_reject_unsupported_identity_before_service(
     )
 
     assert response.status_code == 422
-    assert response.json() == {
-        "detail": {"code": "INVALID_N_STRUCTURE_BAND_REQUEST"}
-    }
+    assert response.json() == {"detail": {"code": "INVALID_N_STRUCTURE_BAND_REQUEST"}}
 
 
 def test_n_structure_bands_reject_invalid_request_window_as_422(
@@ -436,9 +437,7 @@ def test_n_structure_bands_reject_invalid_request_window_as_422(
     )
 
     assert response.status_code == 422
-    assert response.json() == {
-        "detail": {"code": "INVALID_N_STRUCTURE_BAND_REQUEST"}
-    }
+    assert response.json() == {"detail": {"code": "INVALID_N_STRUCTURE_BAND_REQUEST"}}
 
 
 @pytest.mark.parametrize(
@@ -733,9 +732,7 @@ def test_jdj_strategy_history_rejects_unfrozen_profile_before_builder(
     )
 
     assert response.status_code == 422
-    assert response.json() == {
-        "detail": {"code": "JDJ_STRATEGY_PROFILE_UNAVAILABLE"}
-    }
+    assert response.json() == {"detail": {"code": "JDJ_STRATEGY_PROFILE_UNAVAILABLE"}}
 
 
 def test_jdj_strategy_history_maps_service_profile_unavailable_to_422(
@@ -762,9 +759,7 @@ def test_jdj_strategy_history_maps_service_profile_unavailable_to_422(
     assert len(service.requests) == 1
     assert getattr(service.requests[0], "symbol") == "not_active"
     assert response.status_code == 422
-    assert response.json() == {
-        "detail": {"code": "JDJ_STRATEGY_PROFILE_UNAVAILABLE"}
-    }
+    assert response.json() == {"detail": {"code": "JDJ_STRATEGY_PROFILE_UNAVAILABLE"}}
 
 
 def test_jdj_strategy_history_maps_invalid_active_universe_to_409(

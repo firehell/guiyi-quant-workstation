@@ -174,7 +174,8 @@ class SubingStrategyAction:
         decision_at = self.decision_at.astimezone(UTC)
         effective_open_at = (
             self.effective_open_at.astimezone(UTC)
-            if _is_aware(self.effective_open_at)
+            if isinstance(self.effective_open_at, datetime)
+            and _is_aware(self.effective_open_at)
             else None
         )
         effective_bar_end = self.effective_bar_end.astimezone(UTC)

@@ -31,6 +31,14 @@ from .stream_contracts import (
     SubingStrategyStepOutput,
     SubingStrategyStreamInput,
 )
+from .machine import (
+    SubingStrategyInterval,
+    SubingStrategyMachineError,
+    SubingStrategyMachineState,
+    SubingStrategyWatermarks,
+    initial_subing_strategy_machine,
+    step_subing_strategy_machine,
+)
 
 __all__ = [
     "AuthoritativeSegmentTerminal",
@@ -47,13 +55,19 @@ __all__ = [
     "SubingStrategyEpisode",
     "SubingStrategyEpisodeState",
     "SubingStrategyFillBasis",
+    "SubingStrategyInterval",
+    "SubingStrategyMachineError",
+    "SubingStrategyMachineState",
     "SubingStrategyPolicy",
     "SubingStrategyPolicyError",
     "SubingStrategyPositionState",
     "SubingStrategyStepOutput",
     "SubingStrategyStreamInput",
+    "SubingStrategyWatermarks",
+    "initial_subing_strategy_machine",
     "load_subing_strategy_policy",
     "subing_opportunity_key_id",
     "subing_strategy_action_id",
     "subing_strategy_episode_id",
+    "step_subing_strategy_machine",
 ]

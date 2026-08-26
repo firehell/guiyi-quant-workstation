@@ -135,6 +135,7 @@ class FakeDirectionContextResolver:
 def loaded_series(
     *,
     segments: tuple[ResolvedContractSegment, ...],
+    bars_1m: tuple[CanonicalBar, ...] | None = None,
     bars_5m: tuple[CanonicalBar, ...],
     bars_15m: tuple[CanonicalBar, ...],
 ) -> ActualDominantResearchSeries:
@@ -156,6 +157,10 @@ def loaded_series(
     return ActualDominantResearchSeries(
         results=MappingProxyType(
             {
+                BarFrequency.M1: result(
+                    BarFrequency.M1,
+                    bars_5m if bars_1m is None else bars_1m,
+                ),
                 BarFrequency.M5: result(BarFrequency.M5, bars_5m),
                 BarFrequency.M15: result(BarFrequency.M15, bars_15m),
             }
