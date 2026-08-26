@@ -55,7 +55,10 @@ EXACT_POLICY_PAYLOAD = {
         "logic": "any",
         "ema21": "close_beyond_ema21",
         "previous_bar": "close_beyond_previous_15m_extreme",
-        "structure": "close_beyond_bound_lifecycle_pivot_when_available",
+        "structure": (
+            "close_beyond_bound_low_pivot_for_long_"
+            "high_pivot_for_short_when_available"
+        ),
         "macd": "high_dead_cross_for_long_low_golden_cross_for_short",
         "preserve_all_same_bar_reason_codes": True,
     },

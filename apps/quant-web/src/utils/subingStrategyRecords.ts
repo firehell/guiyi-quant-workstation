@@ -13,6 +13,10 @@ const EXIT_REASON_LABELS: Record<string, string> = {
   CONTRACT_SEGMENT_END: '物理主力段末',
 }
 
+export function subingStrategyExitReasonLabel(reason: string): string {
+  return EXIT_REASON_LABELS[reason] ?? reason
+}
+
 export interface SubingStrategyRecordRow {
   episodeId: string
   contract: string
@@ -63,9 +67,7 @@ export function buildSubingStrategyRecordRows(
         referenceChangeLabel: referenceChange === null
           ? '参考变动 —'
           : `${closed ? '参考变动' : '当前参考变动'} ${signedPercent(referenceChange)}`,
-        exitReasonLabels: episode.exit_reason_codes.map(
-          (reason) => EXIT_REASON_LABELS[reason] ?? reason,
-        ),
+        exitReasonLabels: episode.exit_reason_codes.map(subingStrategyExitReasonLabel),
         structureExitLabel: episode.structure_exit_available
           ? '绑定 Pivot 退出可用' : '无绑定 Pivot 退出',
         disclaimer: '历史因果投影 · 模拟动作 · 非实际成交',

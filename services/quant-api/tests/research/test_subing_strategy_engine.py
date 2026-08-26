@@ -121,7 +121,7 @@ def _context(
 
 
 def _pivot(direction: SubingDirection, price: str) -> ConfirmedPivot:
-    kind = PivotKind.HIGH if direction is SubingDirection.LONG else PivotKind.LOW
+    kind = PivotKind.LOW if direction is SubingDirection.LONG else PivotKind.HIGH
     pivot_time = START - timedelta(minutes=30)
     return ConfirmedPivot(
         pivot_id=_canonical_pivot_id(

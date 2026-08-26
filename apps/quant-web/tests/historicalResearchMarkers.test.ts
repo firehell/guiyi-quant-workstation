@@ -60,7 +60,8 @@ function strategyResponse(
     action_id: `subing-action:${symbol}:exit`, kind: 'close_long' as const,
     trading_day: '2026-08-03', decision_at: '2026-08-03T01:10:00Z',
     effective_bar_end: '2026-08-03T01:15:00Z', reference_price: 107.97,
-    confirmation_source: null, reason_codes: ['EMA21', 'MACD_HIGH_DEAD_CROSS'],
+    confirmation_source: null,
+    reason_codes: ['EMA21_BREACH_LONG', 'MACD_HIGH_DEAD_CROSS'],
     direction_context_source_day: null, direction_context_target_day: null,
   }
   const episode: SubingStrategyEpisode = {
@@ -356,10 +357,24 @@ test('SuBing Strategy marker anchors effective Bar and shows all close reasons',
   assert.equal(open.position, 'belowBar')
   assert.equal(open.shape, 'arrowUp')
   assert.equal(close.label, '× 清多')
+  assert.equal(close.position, 'aboveBar')
   assert.match(close.tooltip!, /EMA21 跌破/)
   assert.match(close.tooltip!, /MACD 高位死叉/)
   assert.match(close.tooltip!, /参考变动 \+7\.97%/)
   assert.match(close.tooltip!, /模拟动作·非实际成交/)
+  assert.match(close.tooltip!, /SuBing Strategy V1 · 15m/)
+  assert.match(close.tooltip!, /方向 Context 2026-07-31 → 2026-08-03/)
+  assert.match(close.tooltip!, /确认来源 formal_v1/)
+  assert.match(close.tooltip!, /Opportunity subing-opportunity:jm/)
+  assert.match(close.tooltip!, /结构退出 不可用/)
+  assert.match(close.tooltip!, /持有 2 根 15m Bar/)
+  assert.match(close.tooltip!, /生效口径 下一根同合约 15m open/)
+
+  const closeShort = subingStrategyActionToMarker(
+    { ...response.actions[1], kind: 'close_short' },
+    new Map(),
+  )
+  assert.equal(closeShort.position, 'belowBar')
 })
 
 test('SuBing Strategy history requests only actual-dominant 15m', async () => {

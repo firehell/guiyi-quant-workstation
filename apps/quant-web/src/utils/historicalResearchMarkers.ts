@@ -4,6 +4,7 @@ import type {
   SubingStrategyAction,
   SubingStrategyEpisode,
 } from '../types/market.ts'
+import { subingStrategyExitReasonLabel } from './subingStrategyRecords.ts'
 
 const JDJ_STRATEGY_FILL_KINDS = new Set(['entry', 'add', 'reduce', 'exit'])
 
@@ -54,15 +55,6 @@ export function jdjStrategyActionToMarker(
   }
 }
 
-const SUBING_REASON_LABELS: Record<string, string> = {
-  EMA21: 'EMA21 跌破',
-  PREVIOUS_15M_EXTREME: '上一根 15m 极值突破',
-  BOUND_PIVOT: '绑定 Pivot 突破',
-  MACD_HIGH_DEAD_CROSS: 'MACD 高位死叉',
-  MACD_LOW_GOLDEN_CROSS: 'MACD 低位金叉',
-  CONTRACT_SEGMENT_END: '物理主力段末',
-}
-
 export function subingStrategyActionToMarker(
   action: SubingStrategyAction,
   episodeById: ReadonlyMap<string, SubingStrategyEpisode>,
@@ -73,17 +65,35 @@ export function subingStrategyActionToMarker(
     ? long ? '▲ 建多' : '▼ 建空'
     : long ? '× 清多' : '× 清空'
   const episode = episodeById.get(action.episode_id)
+  const entry = episode?.entry_action ?? (open ? action : null)
   const referenceChange = episode?.reference_change_percent
     ?? episode?.current_reference_change_percent
-  const reasons = action.reason_codes.map((reason) => SUBING_REASON_LABELS[reason] ?? reason)
+  const reasons = action.reason_codes.map(subingStrategyExitReasonLabel)
+  const context = entry?.direction_context_source_day
+    && entry.direction_context_target_day
+    ? `${entry.direction_context_source_day} → ${entry.direction_context_target_day}`
+    : '不可用'
+  const pivot = entry?.bound_reference_pivot
+  const structureExit = pivot
+    ? `${pivot.kind === 'low' ? '低点' : '高点'} Pivot ${pivot.price}`
+    : '不可用'
+  const fillBasis = action.fill_basis === 'segment_terminal_close'
+    ? '旧段末最后一根 15m close'
+    : '下一根同合约 15m open'
   return {
     id: `historical:${action.action_id}`,
     time: action.effective_bar_end,
     label,
     tooltip: [
-      'SuBing 历史因果投影',
+      'SuBing Strategy V1 · 15m · 历史因果投影',
       '模拟动作·非实际成交',
       `合约 ${action.contract}`,
+      `方向 Context ${context}`,
+      `确认来源 ${entry?.confirmation_source ?? '不可用'}`,
+      `Opportunity ${action.opportunity_id}`,
+      `结构退出 ${structureExit}`,
+      `持有 ${episode?.holding_bar_count ?? '—'} 根 15m Bar`,
+      `生效口径 ${fillBasis}`,
       `决策 ${action.decision_at}`,
       `生效 ${action.effective_bar_end}`,
       `参考价 ${action.reference_price}`,
@@ -93,7 +103,9 @@ export function subingStrategyActionToMarker(
         : [`参考变动 ${referenceChange >= 0 ? '+' : ''}${referenceChange.toFixed(2)}%`]),
     ].join(' · '),
     tone: long ? 'up' : 'down',
-    position: long ? 'belowBar' : 'aboveBar',
+    position: open
+      ? long ? 'belowBar' : 'aboveBar'
+      : long ? 'aboveBar' : 'belowBar',
     shape: open ? long ? 'arrowUp' : 'arrowDown' : 'square',
   }
 }

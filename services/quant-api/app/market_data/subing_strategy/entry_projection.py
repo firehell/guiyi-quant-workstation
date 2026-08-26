@@ -25,14 +25,6 @@ from .direction_context import SubingStrategyContextIdentityError
 _TERMINAL_CANCELLATION_STAGES = frozenset(
     {LifecycleStage.EXIT_RISK, LifecycleStage.CLOSED}
 )
-_PIVOT_CONFIRMATION_SOURCES = frozenset(
-    {
-        ConfirmationSource.PIVOT_BREAK_HOLD,
-        ConfirmationSource.PIVOT_RETEST_REBREAK,
-    }
-)
-
-
 def _is_aware(value: object) -> bool:
     return (
         isinstance(value, datetime)
@@ -54,9 +46,9 @@ class SubingStrategyEntryCandidate:
     def __post_init__(self) -> None:
         pivot = self.bound_reference_pivot
         expected_pivot_kind = (
-            PivotKind.HIGH
+            PivotKind.LOW
             if self.direction is SubingDirection.LONG
-            else PivotKind.LOW
+            else PivotKind.HIGH
         )
         if (
             not isinstance(self.opportunity_key, SubingOpportunityKey)
@@ -67,10 +59,6 @@ class SubingStrategyEntryCandidate:
             or not _is_aware(self.confirmed_at)
             or not _is_aware(self.decision_bar_end)
             or self.confirmed_at > self.decision_bar_end
-            or (
-                self.confirmation_source in _PIVOT_CONFIRMATION_SOURCES
-                and pivot is None
-            )
             or (
                 pivot is not None
                 and (
@@ -236,5 +224,27 @@ def _candidate_from_confirmation(
         confirmation_source=snapshot.confirmation_source,
         confirmed_at=transition.transition_at,
         decision_bar_end=decision_bar_end,
-        bound_reference_pivot=snapshot.bound_reference_pivot,
+        bound_reference_pivot=_directional_structure_pivot(
+            snapshot.bound_reference_pivot,
+            key=transition.opportunity_key,
+        ),
     )
+
+
+def _directional_structure_pivot(
+    pivot: ConfirmedPivot | None,
+    *,
+    key: SubingOpportunityKey,
+) -> ConfirmedPivot | None:
+    if pivot is None:
+        return None
+    if (
+        not isinstance(pivot, ConfirmedPivot)
+        or pivot.contract != key.contract
+        or pivot.segment_start_trading_day != key.segment_start_trading_day
+    ):
+        raise SubingStrategyContextIdentityError()
+    expected_kind = (
+        PivotKind.LOW if key.direction is SubingDirection.LONG else PivotKind.HIGH
+    )
+    return pivot if pivot.kind is expected_kind else None

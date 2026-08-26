@@ -188,10 +188,7 @@ def test_confirmation_snapshot_is_bound_uniquely_by_transition_id(
         project_lifecycle_entries(trace, _decision_bars())
 
 
-@pytest.mark.parametrize("pivot_fault", ("missing", "wrong_kind"))
-def test_pivot_confirmation_requires_bound_directional_pivot(
-    pivot_fault: str,
-) -> None:
+def test_lifecycle_breakout_pivot_is_not_relabelled_as_structure_exit() -> None:
     trace = _trace_for_source(ConfirmationSource.PIVOT_BREAK_HOLD)
     confirmation = next(
         snapshot
@@ -199,13 +196,27 @@ def test_pivot_confirmation_requires_bound_directional_pivot(
         if snapshot.stage is LifecycleStage.ENTRY_CONFIRMED
     )
     assert confirmation.bound_reference_pivot is not None
-    if pivot_fault == "missing":
-        object.__setattr__(confirmation, "bound_reference_pivot", None)
-    else:
-        object.__setattr__(confirmation.bound_reference_pivot, "kind", PivotKind.LOW)
+    assert confirmation.bound_reference_pivot.kind is PivotKind.HIGH
 
-    with pytest.raises(SubingStrategyContextIdentityError):
-        project_lifecycle_entries(trace, _decision_bars())
+    projected = project_lifecycle_entries(trace, _decision_bars())
+
+    candidate = _all_candidates(projected)[0]
+    assert candidate.confirmation_source is ConfirmationSource.PIVOT_BREAK_HOLD
+    assert candidate.bound_reference_pivot is None
+
+
+def test_pivot_confirmation_without_structure_pivot_still_enters() -> None:
+    trace = _trace_for_source(ConfirmationSource.PIVOT_BREAK_HOLD)
+    confirmation = next(
+        snapshot
+        for snapshot in trace.snapshots
+        if snapshot.stage is LifecycleStage.ENTRY_CONFIRMED
+    )
+    object.__setattr__(confirmation, "bound_reference_pivot", None)
+
+    projected = project_lifecycle_entries(trace, _decision_bars())
+
+    assert _all_candidates(projected)[0].bound_reference_pivot is None
 
 
 def test_trace_segment_identity_must_match_every_opportunity() -> None:
