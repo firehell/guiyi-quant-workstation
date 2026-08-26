@@ -135,10 +135,6 @@ function updateDataDetailsOpen(event: Event) {
         :show-internal-process="showSubingInternalProcess"
         @toggle-subing-alert="(ruleCode, enabled) => emit('toggle-subing-alert', ruleCode, enabled)"
       />
-      <template v-else-if="selectedOverlay === 'jdj_strategy'">
-        <strong>日进斗金参考回放 · Reference only</strong>
-        <p>历史因果回放只读展示 reference action，不提供 Alert 开关。</p>
-      </template>
       <template v-else-if="selectedOverlay === 'htdy'">
         <strong v-if="htdyObservation">火天大有 · {{ htdyObservationLabel(htdyObservation) }} · {{ observationTime(htdyObservation.time) }}</strong>
         <p v-else>火天大有暂无当前观察</p>

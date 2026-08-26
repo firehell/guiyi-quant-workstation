@@ -1,1 +1,0 @@
-"""Offline JDJ research implementation."""

@@ -30,4 +30,4 @@ Alert transport 为 PushPlus；provider accepted 不等于微信送达。2026-08
 - HTDY 的真实 PushPlus/微信送达，以及 D1/W1 `canonical_updated` 的自然 Event identity/evidence，仍须分别核验；不以测试、synthetic event、replay 或手工发送补证。
 - SuBing 自然 Live seam evidence pending；Daily Watch V2 自然盘后 artifact pending，不以既有 V1 artifact、手工触发或回填替代。
 - SuBing Strategy V1 Design Spec 的 written-spec review pending；该文档不授权 implementation、migration、Rule、Scope、通知或 Runtime。
-- SuBing、N 与 JDJ Candidate 的 prospective OOS 按各自 protocol 独立累积，retrospective 不回填 OOS。
+- SuBing 与 N Candidate 的 prospective OOS 按各自 protocol 独立累积，retrospective 不回填 OOS。

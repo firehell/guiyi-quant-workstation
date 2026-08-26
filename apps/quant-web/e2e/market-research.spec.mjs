@@ -605,7 +605,6 @@ async function mockWorkspace(page, researchResponse, options = {}) {
   const marketRequests = options.marketRequests || []
   const researchRequests = options.researchRequests || []
   const subingRequests = options.subingRequests || []
-  const jdjStrategyHistoricalRequests = options.jdjStrategyHistoricalRequests || []
   const subingStrategyHistoricalRequests = options.subingStrategyHistoricalRequests || []
   const nStructureBandRequests = options.nStructureBandRequests || []
   const dominantRequests = options.dominantRequests || []
@@ -641,48 +640,6 @@ async function mockWorkspace(page, researchResponse, options = {}) {
         ? options.subingStrategyHistoricalResponse(request)
         : options.subingStrategyHistoricalResponse
       return route.fulfill({ json: configured || emptySubingStrategyHistory(request) })
-    }
-    if (url.pathname.endsWith('/research/jdj-strategy/history')) {
-      const request = Object.fromEntries(url.searchParams)
-      jdjStrategyHistoricalRequests.push(request)
-      if (jdjStrategyHistoricalRequests.length === 1 && options.jdjStrategyFirstDelayMs) {
-        await new Promise((resolve) => setTimeout(resolve, options.jdjStrategyFirstDelayMs))
-      }
-      if (options.jdjStrategyErrorCode) {
-        return route.fulfill({
-          status: 422,
-          json: { detail: { code: options.jdjStrategyErrorCode } },
-        })
-      }
-      if (options.jdjStrategyHttpStatus) {
-        return route.fulfill({
-          status: options.jdjStrategyHttpStatus,
-          json: { detail: 'unavailable' },
-        })
-      }
-      return route.fulfill({ json: {
-        request,
-        reference_execution: true,
-        actions: options.jdjStrategyHistoricalActions || [{
-          event_id: 'jdj-strategy-entry-long-1', episode_id: 'jdj-episode-1', kind: 'entry',
-          source_event_ids: ['jdj-follow-long-1'], primary_setup: 'trend_follow', supporting_setups: [],
-          direction: 'long', contract: workspaceContract, trading_day: options.historicalEventTime?.slice(0, 10),
-          segment_start_trading_day: options.historicalEventTime?.slice(0, 10),
-          decision_at: options.historicalEventTime, effective_bar_end: options.historicalEventTime,
-          reference_price: '219.5', quantity: 8, position_quantity_after: 8,
-          stop_price: '217.5', target_price: '224', reward_risk: '2.25',
-          reason: 'ENTRY_FILLED', fill_basis: 'limit_touch',
-        }, {
-          event_id: 'jdj-strategy-rejected-1', episode_id: null, kind: 'rejected',
-          source_event_ids: ['jdj-follow-short-2'], primary_setup: 'trend_follow', supporting_setups: [],
-          direction: 'short', contract: workspaceContract, trading_day: options.historicalEventTime?.slice(0, 10),
-          segment_start_trading_day: options.historicalEventTime?.slice(0, 10),
-          decision_at: options.historicalEventTime, effective_bar_end: null,
-          reference_price: null, quantity: 0, position_quantity_after: 8,
-          stop_price: '221.5', target_price: null, reward_risk: null,
-          reason: 'OPEN_EPISODE_EVENT_REJECTED', fill_basis: null,
-        }],
-      } })
     }
     if (url.pathname.endsWith('/dominants')) {
       dominantRequests.push(Object.fromEntries(url.searchParams))
@@ -1143,11 +1100,12 @@ test('B1 journey narrows AG on the homepage before opening its verification view
 
 test('exact Daily Watch chart entry is one-shot and leaves saved chart preferences unchanged', async ({ page }) => {
   await page.addInitScript(() => {
-    window.localStorage.setItem('guiyi.market.chart.preferences.v4', JSON.stringify({
-      version: 4,
+    window.localStorage.setItem('guiyi.market.chart.preferences.v5', JSON.stringify({
+      version: 5,
       selectedOverlay: 'htdy',
       optionalEmaIndicators: [],
       showNStructureBands: false,
+      showSubingInternalProcess: false,
       period: '5m',
       realtimeFollow: false,
     }))
@@ -1169,9 +1127,9 @@ test('exact Daily Watch chart entry is one-shot and leaves saved chart preferenc
     frequency: '15m',
   })
   expect(await page.evaluate(() => JSON.parse(
-    window.localStorage.getItem('guiyi.market.chart.preferences.v5'),
+    window.localStorage.getItem('guiyi.market.chart.preferences.v6'),
   ))).toEqual({
-    version: 5,
+    version: 6,
     selectedOverlay: 'htdy',
     optionalEmaIndicators: [],
     showNStructureBands: false,
@@ -1183,17 +1141,18 @@ test('exact Daily Watch chart entry is one-shot and leaves saved chart preferenc
   await overlays.getByRole('button', { name: '无', exact: true }).click()
   await expect(overlays.getByRole('button', { name: '无', exact: true })).toHaveClass(/n-button--primary-type/)
   await expect.poll(() => page.evaluate(() => JSON.parse(
-    window.localStorage.getItem('guiyi.market.chart.preferences.v5'),
+    window.localStorage.getItem('guiyi.market.chart.preferences.v6'),
   ).selectedOverlay)).toBe('none')
 })
 
 test('normal Market chart URL still loads the saved non-SuBing overlay', async ({ page }) => {
   await page.addInitScript(() => {
-    window.localStorage.setItem('guiyi.market.chart.preferences.v4', JSON.stringify({
-      version: 4,
+    window.localStorage.setItem('guiyi.market.chart.preferences.v5', JSON.stringify({
+      version: 5,
       selectedOverlay: 'htdy',
       optionalEmaIndicators: [],
       showNStructureBands: false,
+      showSubingInternalProcess: false,
       period: '5m',
       realtimeFollow: false,
     }))
@@ -1216,7 +1175,7 @@ test('SuBing keeps the Market display identity separate from current-dominant re
   await page.goto('/market/chart?symbol=ag&series_kind=continuous&frequency=5m')
 
   const overlay = page.getByRole('group', { name: 'Overlay' })
-  await expect(overlay.getByRole('button')).toHaveText(['无', '苏冰', '日进斗金参考回放', '火天大有'])
+  await expect(overlay.getByRole('button')).toHaveText(['无', '苏冰', '火天大有'])
   await expect(page.getByText('120 bars', { exact: true })).toBeVisible()
   await expect(page.locator('.product-workspace__kline')).toHaveAttribute('data-visible-start-trading-day', '2026-01-01')
   await expect(page.locator('.product-workspace__kline')).toHaveAttribute('data-visible-main-indicators', '')
@@ -1322,7 +1281,7 @@ test('N structure bands stay independent, identity-gated, visible in both direct
   await expect(shell).toHaveAttribute('data-rendered-n-structure-band-count', '4')
   await expect(shell).toHaveAttribute('data-n-structure-overlap-group-count', '1')
   expect(await page.evaluate(() => JSON.parse(
-    window.localStorage.getItem('guiyi.market.chart.preferences.v5'),
+    window.localStorage.getItem('guiyi.market.chart.preferences.v6'),
   ).showNStructureBands)).toBe(true)
   expect(requests.length).toBeGreaterThanOrEqual(3)
 })
@@ -1344,97 +1303,6 @@ test('N structure band API failure leaves the K-line usable and reports only bes
   await expect(page.locator('.chart canvas').first()).toBeVisible()
   await expect(page.getByTestId('secondary-panel-label')).toHaveText('MACD')
   await expect(page.getByTestId('secondary-panel-tabs')).toHaveCount(0)
-})
-
-test('JDJ Strategy uses current RB identity and clears stale markers across 1m 5m 1m', async ({ page }) => {
-  const bars = Array.from({ length: 120 }, (_, index) => bar(index))
-  bars[bars.length - 1] = {
-    ...bars.at(-1),
-    bar_end: '2026-08-20T01:02:00Z',
-    trading_day: '2026-08-20',
-  }
-  const historicalEventTime = bars.at(-1).bar_end
-  const marketRequests = []
-  const jdjStrategyHistoricalRequests = []
-  await mockAlertMarkerSurface(page, [], { symbol: 'rb', contract: 'RB2701' })
-  await mockWorkspace(page, { json: {
-    ...research(),
-    symbol: 'rb', product_name: '螺纹钢', sector: 'black', exchange: 'SHFE', current_dominant: 'RB2701',
-  } }, {
-    symbol: 'rb',
-    productName: '螺纹钢',
-    sector: 'black',
-    exchange: 'SHFE',
-    resolvedContract: 'RB2701',
-    bars,
-    marketRequests,
-    historicalEventTime,
-    canonicalCoverage: { start: bars[0].bar_end, end: historicalEventTime },
-    jdjStrategyHistoricalRequests,
-    jdjStrategyFirstDelayMs: 400,
-    jdjStrategyHistoricalActions: [{
-      event_id: 'jdj-strategy-rb-entry-1',
-      episode_id: 'jdj-rb-episode-1',
-      kind: 'entry',
-      source_event_ids: ['jdj-rb-follow-long-1'],
-      primary_setup: 'trend_follow',
-      supporting_setups: [],
-      direction: 'long',
-      contract: 'RB2701',
-      trading_day: '2026-08-20',
-      segment_start_trading_day: '2026-08-20',
-      decision_at: '2026-08-20T01:01:00Z',
-      effective_bar_end: '2026-08-20T01:02:00Z',
-      reference_price: '3200',
-      quantity: 1,
-      position_quantity_after: 1,
-      stop_price: '3180',
-      target_price: '3240',
-      reward_risk: '2',
-      reason: 'ENTRY_AUTHORIZED',
-      fill_basis: 'limit_touch',
-    }],
-  })
-  await page.goto('/market/chart?symbol=rb&series_kind=actual_dominant&frequency=1m')
-
-  const overlay = page.getByRole('group', { name: 'Overlay' })
-  const shell = page.getByTestId('kline-shell')
-  await expect(page.getByText('120 bars', { exact: true })).toBeVisible()
-  await expect(page.locator('.product-status-strip strong')).toHaveText('RB2701')
-  expect(marketRequests[0]).toMatchObject({
-    series_kind: 'actual_dominant', symbol: 'rb', frequency: '1m',
-  })
-
-  await overlay.getByRole('button', { name: '日进斗金参考回放', exact: true }).click()
-  await expect.poll(() => jdjStrategyHistoricalRequests.length).toBe(1)
-  await page.getByRole('group', { name: '周期' }).getByRole('button', { name: '5m', exact: true }).click()
-  await expect(shell).toHaveAttribute('data-research-marker-count', '0')
-  await expect(page.getByText('当前序列或周期不支持该 Overlay；K 线保持原选择，不自动切换。', { exact: true })).toBeVisible()
-  await page.waitForTimeout(450)
-  await expect(shell).toHaveAttribute('data-research-marker-count', '0')
-
-  await page.getByRole('group', { name: '周期' }).getByRole('button', { name: '1m', exact: true }).click()
-  await expect.poll(() => jdjStrategyHistoricalRequests.length).toBe(2)
-  await expect(shell).toHaveAttribute('data-research-marker-count', '1')
-  await expect(shell).toHaveAttribute('data-rendered-research-marker-count', '1')
-  await expect(page.locator('.product-workspace__kline')).toHaveAttribute('data-visible-main-indicators', '')
-
-  const chartBox = await page.locator('.chart').boundingBox()
-  expect(chartBox).not.toBeNull()
-  const markerDetail = page.getByTestId('kline-hover-marker')
-  for (let x = chartBox.width - 220; x <= chartBox.width - 40; x += 4) {
-    await page.mouse.move(chartBox.x + x, chartBox.y + 180)
-    if (await markerDetail.count() && (await markerDetail.textContent())?.includes('参考回放')) break
-  }
-  await expect(markerDetail).toContainText('参考回放')
-  await expect(markerDetail).toContainText('主设置 trend_follow')
-  await expect(markerDetail).toContainText('合约 RB2701')
-  await expect(markerDetail).toContainText('数量 1')
-  await expect(markerDetail).toContainText('R:R 2')
-  expect(jdjStrategyHistoricalRequests).toEqual([
-    { series_kind: 'actual_dominant', symbol: 'rb', frequency: '1m', since: '2026-01-01', through: '2026-08-20' },
-    { series_kind: 'actual_dominant', symbol: 'rb', frequency: '1m', since: '2026-01-01', through: '2026-08-20' },
-  ])
 })
 
 test('SuBing Strategy anchors Action times, shows complete records, and keeps internal process opt-in', async ({ page }) => {
@@ -1479,59 +1347,6 @@ test('SuBing Strategy anchors Action times, shows complete records, and keeps in
   await expect(page.getByTestId('subing-lifecycle-panel')).toBeVisible()
   await expect(page.getByRole('button', { name: '图表设置', exact: true })).toBeVisible()
   await expect(shell).toHaveAttribute('data-research-marker-count', '3')
-})
-
-test('JDJ Strategy fails closed for AG profile unavailability', async ({ page }) => {
-  const bars = Array.from({ length: 120 }, (_, index) => bar(index))
-  const jdjStrategyHistoricalRequests = []
-  await mockAlertMarkerSurface(page)
-  await mockWorkspace(page, { json: research() }, {
-    bars,
-    historicalEventTime: bars.at(-1).bar_end,
-    canonicalCoverage: { start: bars[0].bar_end, end: bars.at(-1).bar_end },
-    jdjStrategyHistoricalRequests,
-    jdjStrategyErrorCode: 'JDJ_STRATEGY_PROFILE_UNAVAILABLE',
-  })
-  await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=1m')
-
-  const shell = page.getByTestId('kline-shell')
-  await expect(page.getByText('120 bars', { exact: true })).toBeVisible()
-  await page.getByRole('group', { name: 'Overlay' })
-    .getByRole('button', { name: '日进斗金参考回放', exact: true }).click()
-
-  await expect.poll(() => jdjStrategyHistoricalRequests.length).toBe(1)
-  expect(jdjStrategyHistoricalRequests[0]).toMatchObject({
-    series_kind: 'actual_dominant', symbol: 'ag', frequency: '1m',
-  })
-  await expect(shell).toHaveAttribute('data-research-marker-count', '0')
-  await expect(shell).toHaveAttribute('data-rendered-research-marker-count', '0')
-  await expect(page.getByText('该品种/周期尚未验证；Canonical K 线仍可正常查看。', { exact: true })).toBeVisible()
-})
-
-test('JDJ Strategy keeps generic server failures distinct from profile unavailability', async ({ page }) => {
-  const bars = Array.from({ length: 120 }, (_, index) => bar(index))
-  const jdjStrategyHistoricalRequests = []
-  await mockAlertMarkerSurface(page, [], { symbol: 'jm', contract: 'JM2701' })
-  await mockWorkspace(page, { json: {
-    ...research(),
-    symbol: 'jm', product_name: '焦煤', sector: 'black', exchange: 'DCE', current_dominant: 'JM2701',
-  } }, {
-    symbol: 'jm',
-    resolvedContract: 'JM2701',
-    bars,
-    historicalEventTime: bars.at(-1).bar_end,
-    canonicalCoverage: { start: bars[0].bar_end, end: bars.at(-1).bar_end },
-    jdjStrategyHistoricalRequests,
-    jdjStrategyHttpStatus: 503,
-    marketStateDelayMs: 400,
-  })
-  await page.goto('/market/chart?symbol=jm&series_kind=actual_dominant&frequency=1m')
-
-  await page.getByRole('group', { name: 'Overlay' })
-    .getByRole('button', { name: '日进斗金参考回放', exact: true }).click()
-
-  await expect.poll(() => jdjStrategyHistoricalRequests.length).toBe(1)
-  await expect(page.getByText('历史因果重放暂不可用；Canonical K 线仍可正常查看。', { exact: true })).toBeVisible()
 })
 
 test('shared EMA switches persist across SuBing and HTDY while none hides every overlay', async ({ page }) => {

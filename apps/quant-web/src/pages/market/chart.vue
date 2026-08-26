@@ -7,7 +7,6 @@ import ProductWorkspaceToolbar from '@/components/market/ProductWorkspaceToolbar
 import KlineChart from '@/components/kline/KlineChart.vue'
 import {
   getMarketDominants,
-  getJdjStrategyHistoricalActions,
   getNStructureBands,
   getProductResearch,
   getSubingStrategyHistory,
@@ -120,7 +119,6 @@ const {
   dispose: disposeHistoricalResearchMarkers,
 } = useHistoricalResearchMarkers({
   fetchSubingStrategy: getSubingStrategyHistory,
-  fetchJdjStrategy: getJdjStrategyHistoricalActions,
 })
 const {
   bands: nStructureBands,
@@ -717,11 +715,9 @@ function normalizeSymbol(value: unknown): string | null {
         v-else-if="historicalResearchError"
         type="warning"
         :show-icon="true"
-      >{{ historicalResearchError === 'JDJ_STRATEGY_PROFILE_UNAVAILABLE'
-        ? '该品种/周期尚未验证；Canonical K 线仍可正常查看。'
-        : selectedOverlay === 'subing'
+      >{{ selectedOverlay === 'subing'
           ? '历史因果投影暂不可用；Canonical K 线与当前苏冰观察仍可正常查看。'
-          : '历史因果重放暂不可用；Canonical K 线仍可正常查看。' }}</NAlert>
+          : '历史因果投影暂不可用；Canonical K 线仍可正常查看。' }}</NAlert>
       <div class="product-status-strip" data-testid="product-status-strip">
         <strong>{{ effectiveIdentity.contract || selectedDominant?.actual_contract || symbol.toUpperCase() }}</strong>
         <NTag
