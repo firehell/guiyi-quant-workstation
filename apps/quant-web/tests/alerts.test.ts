@@ -111,7 +111,7 @@ describe('Product Alert server-side scope', () => {
     const observationSource = between(
       sidebarSource,
       'data-testid="product-check-observation"',
-      'data-testid="product-check-participation"',
+      'data-testid="product-check-background"',
     )
     for (const overlay of ['none', 'subing', 'jdj_strategy', 'htdy']) {
       assert.match(observationSource, new RegExp(`selectedOverlay === '${overlay}'`))

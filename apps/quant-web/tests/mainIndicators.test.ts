@@ -132,63 +132,39 @@ test('research overlays never replace the user Market display series identity', 
   }), { seriesKind: 'contract', contract: 'JM2605' })
 })
 
-test('preference v2 migrates legacy overlay and preserves period and realtime follow', () => {
+test('preference loading purges and ignores legacy schemas', () => {
   const values = new Map<string, string>()
+  const removed: string[] = []
   const storage = {
     getItem: (key: string) => values.get(key) || null,
     setItem: (key: string, value: string) => values.set(key, value),
+    removeItem: (key: string) => {
+      removed.push(key)
+      values.delete(key)
+    },
   }
 
-  values.set(MAIN_CHART_PREFERENCES_KEY, 'not-json')
-  assert.deepEqual(loadMainChartPreferences(storage), defaultMainChartPreferences())
-
-  values.delete(MAIN_CHART_PREFERENCES_KEY)
+  values.set('guiyi.market.chart.preferences.v1', JSON.stringify({
+    version: 1,
+    visibleMainIndicators: ['htdy'],
+  }))
   values.set('guiyi.market.chart.preferences.v2', JSON.stringify({
     version: 2,
     selectedOverlay: 'htdy',
-    period: '15m',
-    realtimeFollow: true,
   }))
-  assert.deepEqual(loadMainChartPreferences(storage), {
-    version: 4,
-    selectedOverlay: 'htdy',
-    optionalEmaIndicators: [],
-    showNStructureBands: false,
-    period: '15m',
-    realtimeFollow: true,
-  })
+  values.set('guiyi.market.chart.preferences.v3', JSON.stringify({
+    version: 3,
+    selectedOverlay: 'jdj_strategy',
+    optionalEmaIndicators: ['ema_10'],
+  }))
 
-  values.delete(MAIN_CHART_PREFERENCES_KEY)
-  values.delete('guiyi.market.chart.preferences.v2')
-  values.set('guiyi.market.chart.preferences.v1', JSON.stringify({
-    version: 1,
-    visibleMainIndicators: ['ema_10', 'htdy', 'ema_60'],
-    period: '15m',
-    realtimeFollow: true,
-  }))
-  assert.deepEqual(loadMainChartPreferences(storage), {
-    version: 4,
-    selectedOverlay: 'htdy',
-    optionalEmaIndicators: [],
-    showNStructureBands: false,
-    period: '15m',
-    realtimeFollow: true,
-  })
-
-  values.set('guiyi.market.chart.preferences.v1', JSON.stringify({
-    version: 1,
-    visibleMainIndicators: ['ema_10', 'ema_60'],
-    period: '1d',
-    realtimeFollow: false,
-  }))
-  assert.deepEqual(loadMainChartPreferences(storage), {
-    version: 4,
-    selectedOverlay: 'subing',
-    optionalEmaIndicators: [],
-    showNStructureBands: false,
-    period: '1d',
-    realtimeFollow: false,
-  })
+  assert.deepEqual(loadMainChartPreferences(storage), defaultMainChartPreferences())
+  assert.deepEqual(removed, [
+    'guiyi.market.chart.preferences.v1',
+    'guiyi.market.chart.preferences.v2',
+    'guiyi.market.chart.preferences.v3',
+  ])
+  assert.equal(values.size, 0)
 })
 
 test('preference v4 saves and loads optional EMAs plus N structure bands', () => {
@@ -224,35 +200,7 @@ test('preference v4 saves and loads optional EMAs plus N structure bands', () =>
   assert.deepEqual(loadMainChartPreferences(storage), defaultMainChartPreferences())
 })
 
-test('preference v3 migrates retired overlays and defaults N structure bands off', () => {
-  const values = new Map<string, string>()
-  const storage = {
-    getItem: (key: string) => values.get(key) || null,
-    setItem: (key: string, value: string) => values.set(key, value),
-  }
-
-  const cases = [
-    ['n_structure', 'none'],
-    ['jdj', 'none'],
-    ['unknown', 'none'],
-    ['jdj_strategy', 'jdj_strategy'],
-    ['htdy', 'htdy'],
-  ] as const
-  for (const [storedOverlay, expectedOverlay] of cases) {
-    values.set('guiyi.market.chart.preferences.v3', JSON.stringify({
-      version: 3,
-      selectedOverlay: storedOverlay,
-      optionalEmaIndicators: [],
-      period: '1m',
-      realtimeFollow: false,
-    }))
-    const loaded = loadMainChartPreferences(storage)
-    assert.equal(loaded.selectedOverlay, expectedOverlay, storedOverlay)
-    assert.equal(loaded.showNStructureBands, false, storedOverlay)
-  }
-})
-
-test('preference v3 preserves the JDJ strategy overlay across save and load', () => {
+test('current preferences preserve the JDJ strategy overlay across save and load', () => {
   const values = new Map<string, string>()
   const storage = {
     getItem: (key: string) => values.get(key) || null,

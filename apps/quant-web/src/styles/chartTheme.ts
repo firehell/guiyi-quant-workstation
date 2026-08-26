@@ -10,7 +10,6 @@ export interface ChartTheme {
   volumeUp: string
   volumeDown: string
   ema10: string
-  ema20: string
   ema21: string
   ema60: string
   macdDif: string
@@ -33,7 +32,6 @@ const FALLBACK: ChartTheme = {
   volumeUp: 'rgba(220, 38, 38, 0.38)',
   volumeDown: 'rgba(22, 163, 74, 0.38)',
   ema10: '#D97706',
-  ema20: '#EA580C',
   ema21: '#F59E0B',
   ema60: '#7C3AED',
   macdDif: '#0284C7',
@@ -63,7 +61,6 @@ export function resolveChartTheme(root: Element = document.documentElement): Cha
     volumeUp: cssValue(style, '--gy-chart-volume-up', FALLBACK.volumeUp),
     volumeDown: cssValue(style, '--gy-chart-volume-down', FALLBACK.volumeDown),
     ema10: cssValue(style, '--gy-chart-ema-10', FALLBACK.ema10),
-    ema20: cssValue(style, '--gy-chart-ema-20', FALLBACK.ema20),
     ema21: cssValue(style, '--gy-chart-ema', FALLBACK.ema21),
     ema60: cssValue(style, '--gy-chart-ema-60', FALLBACK.ema60),
     macdDif: cssValue(style, '--gy-chart-macd-dif', FALLBACK.macdDif),

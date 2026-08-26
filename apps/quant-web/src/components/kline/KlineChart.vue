@@ -36,8 +36,6 @@ import {
 } from '@/utils/klineViewModel'
 import { mergeKlineMarkers } from '@/utils/alertMarkers'
 
-type SecondaryPanelId = 'macd'
-
 const props = withDefaults(defineProps<{
   bars: BarData[]
   loading?: boolean
@@ -48,7 +46,6 @@ const props = withDefaults(defineProps<{
   alertMarkers?: KlineMarker[]
   researchMarkers?: KlineMarker[]
   nStructureBands?: NStructureBand[]
-  secondaryPanel: SecondaryPanelId
 }>(), {
   loading: false,
   error: null,
@@ -63,7 +60,6 @@ const emit = defineEmits<{
   'need-more-before': []
   'follow-latest-change': [followLatest: boolean]
   'crosshair-change': [context: HoverKlineContext | null]
-  'secondary-panel-change': [panel: SecondaryPanelId]
 }>()
 
 const container = ref<HTMLElement>()
@@ -85,7 +81,7 @@ let isNearLeftBoundary = false
 let paginationArmed = false
 let followLatest = true
 const hoverContext = ref<HoverKlineContext | null>(null)
-const secondaryPanelTop = ref<number | null>(null)
+const macdLabelTop = ref<number | null>(null)
 const renderedResearchMarkerCount = ref(0)
 const renderedNStructureBandCount = ref(0)
 const renderedNStructureOverlapGroupCount = ref(0)
@@ -103,11 +99,8 @@ const hoveredNStructureBand = ref<NStructureBand | null>(null)
 const hoveredNStructureOverlap = ref<{ groupId: string; count: number; position: number } | null>(null)
 let derivedData = buildKlineDerivedData([], [])
 
-type EmaIndicatorId = 'ema_10' | 'ema_20' | 'ema_21' | 'ema_60'
-const EMA_INDICATORS: EmaIndicatorId[] = ['ema_10', 'ema_20', 'ema_21', 'ema_60']
-const SECONDARY_PANEL_TABS: Array<{ id: SecondaryPanelId; label: string }> = [
-  { id: 'macd', label: 'MACD' },
-]
+type EmaIndicatorId = 'ema_10' | 'ema_21' | 'ema_60'
+const EMA_INDICATORS: EmaIndicatorId[] = ['ema_10', 'ema_21', 'ema_60']
 
 onMounted(async () => {
   await nextTick()
@@ -149,7 +142,6 @@ onMounted(async () => {
   )
   candles.attachPrimitive(nStructureBandPrimitive)
   emaLines.ema_10 = chart.addSeries(LineSeries, { color: theme.ema10, lineWidth: 1, lastValueVisible: false }, 0)
-  emaLines.ema_20 = chart.addSeries(LineSeries, { color: theme.ema20, lineWidth: 2, lastValueVisible: false }, 0)
   emaLines.ema_21 = chart.addSeries(LineSeries, { color: theme.ema21, lineWidth: 2, lastValueVisible: false }, 0)
   emaLines.ema_60 = chart.addSeries(LineSeries, { color: theme.ema60, lineWidth: 1, lastValueVisible: false }, 0)
   htdyZk1 = chart.addSeries(LineSeries, { color: theme.htdyZk1, lineWidth: 2, lineStyle: 0, lastValueVisible: false }, 0)
@@ -169,7 +161,7 @@ onMounted(async () => {
   chart.subscribeClick(onChartClick)
   observer = new ResizeObserver(() => resize())
   observer.observe(container.value)
-  container.value.addEventListener('pointerup', syncSecondaryPanelTop)
+  container.value.addEventListener('pointerup', syncMacdLabelTop)
   replaceBars(props.bars)
 })
 
@@ -178,7 +170,7 @@ onUnmounted(() => {
   chart?.unsubscribeCrosshairMove(onCrosshairMove)
   chart?.unsubscribeClick(onChartClick)
   observer?.disconnect()
-  container.value?.removeEventListener('pointerup', syncSecondaryPanelTop)
+  container.value?.removeEventListener('pointerup', syncMacdLabelTop)
   if (candles && nStructureBandPrimitive) candles.detachPrimitive(nStructureBandPrimitive)
   chart?.remove()
 })
@@ -202,10 +194,6 @@ watch(() => props.researchMarkers, () => {
 watch(() => props.nStructureBands, () => {
   renderNStructureBands()
 }, { deep: true })
-
-watch(() => props.secondaryPanel, () => {
-  renderDerivedSeries()
-})
 
 function barValues(bars: BarData[]) {
   return bars.map((bar) => ({
@@ -243,7 +231,7 @@ function replaceBars(bars: BarData[], preserveViewport = false): void {
     const range = chart?.timeScale().getVisibleLogicalRange()
     isNearLeftBoundary = !!range && range.from <= 20
     paginationArmed = true
-    syncSecondaryPanelTop()
+    syncMacdLabelTop()
   })
 }
 
@@ -511,10 +499,10 @@ function isDaily() {
   return props.period === '1d' || props.period === '1w'
 }
 
-function syncSecondaryPanelTop() {
+function syncMacdLabelTop() {
   const panes = chart?.panes()
   if (!panes || panes.length < 3) return
-  secondaryPanelTop.value = panes[0].getHeight() + panes[1].getHeight()
+  macdLabelTop.value = panes[0].getHeight() + panes[1].getHeight()
 }
 
 function resize() {
@@ -525,7 +513,7 @@ function resize() {
     syncNStructureBandDiagnostics()
   }
   chart.resize(container.value.clientWidth, container.value.clientHeight)
-  requestAnimationFrame(syncSecondaryPanelTop)
+  requestAnimationFrame(syncMacdLabelTop)
 }
 
 defineExpose({
@@ -550,7 +538,6 @@ defineExpose({
     :data-n-structure-overlap-label="renderedNStructureOverlapLabel"
     :data-n-structure-overlap-label-point="renderedNStructureOverlapLabelPoint"
     :data-n-structure-band-directions="[...new Set(nStructureBands.map((band) => band.direction))].join(',')"
-    :data-secondary-panel="secondaryPanel"
   >
     <div ref="container" class="chart" />
     <button
@@ -571,7 +558,7 @@ defineExpose({
     </button>
     <KlineHoverLegend
       :context="hoverContext"
-      :show-macd="secondaryPanel === 'macd'"
+      :show-macd="true"
     />
     <div
       v-if="hoveredNStructureBand"
@@ -596,22 +583,11 @@ defineExpose({
       <small>历史确认 · 研究观察</small>
     </div>
     <div
-      class="secondary-panel-header"
-      data-testid="secondary-panel-tabs"
-      role="tablist"
-      aria-label="副图指标"
-      :style="{ top: secondaryPanelTop === null ? '80%' : `${secondaryPanelTop + 5}px` }"
+      class="secondary-panel-label"
+      data-testid="secondary-panel-label"
+      :style="{ top: macdLabelTop === null ? '80%' : `${macdLabelTop + 5}px` }"
     >
-      <button
-        v-for="item in SECONDARY_PANEL_TABS"
-        :key="item.id"
-        type="button"
-        class="secondary-panel-tab"
-        :class="{ 'secondary-panel-tab--active': secondaryPanel === item.id }"
-        role="tab"
-        :aria-selected="secondaryPanel === item.id"
-        @click="emit('secondary-panel-change', item.id)"
-      >{{ item.label }}</button>
+      MACD
     </div>
     <div
       v-if="visibleMainIndicators.includes('htdy')"
@@ -636,10 +612,7 @@ defineExpose({
 .n-structure-overlap-badge:hover { background: rgba(255, 255, 255, .98); box-shadow: 0 0 0 1px currentColor; }
 .n-structure-overlap-badge--up { color: var(--gy-up); }
 .n-structure-overlap-badge--down { color: var(--gy-down); }
-.secondary-panel-header { position: absolute; z-index: 3; left: 10px; display: flex; align-items: center; gap: 6px; max-width: calc(100% - 84px); min-height: 26px; pointer-events: auto; }
-.secondary-panel-tab { appearance: none; border: 0; border-bottom: 2px solid transparent; padding: 3px 8px; background: color-mix(in srgb, var(--gy-bg-panel) 88%, transparent); color: var(--gy-text-muted); font: inherit; font-size: var(--gy-font-size-xs); cursor: pointer; }
-.secondary-panel-tab:hover { color: var(--gy-text-primary); }
-.secondary-panel-tab--active { border-bottom-color: var(--gy-accent); color: var(--gy-text-primary); font-weight: 600; }
+.secondary-panel-label { position: absolute; z-index: 3; left: 10px; min-height: 26px; padding: 3px 8px; background: color-mix(in srgb, var(--gy-bg-panel) 88%, transparent); color: var(--gy-text-primary); font-size: var(--gy-font-size-xs); font-weight: 600; pointer-events: none; }
 .htdy-legend { position: absolute; z-index: 2; top: 52px; right: 72px; display: flex; gap: 12px; align-items: center; padding: 5px 9px; border: 1px solid var(--gy-border); border-radius: var(--gy-radius-sm); background: rgba(255, 255, 255, .9); color: var(--gy-text-secondary); font-size: var(--gy-font-size-xs); pointer-events: none; box-shadow: var(--gy-shadow-sm); }
 .htdy-legend span { display: inline-flex; gap: 5px; align-items: center; white-space: nowrap; }
 .htdy-legend__line { display: inline-block; width: 18px; border-top: 2px solid; }
@@ -653,6 +626,6 @@ defineExpose({
 .overlay.error { color: var(--gy-status-error); }
 
 @media (max-width: 980px) {
-  .secondary-panel-header { right: 10px; flex-wrap: wrap; max-width: none; }
+  .secondary-panel-label { right: 10px; }
 }
 </style>

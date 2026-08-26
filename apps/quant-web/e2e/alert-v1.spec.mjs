@@ -158,14 +158,14 @@ test('persistent Alert V2 markers stay exact-frequency and actual-dominant only'
   await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=30m')
   const sidebar = page.locator('.product-workspace__sidebar')
   await expect(sidebar).toBeVisible()
-  await expect(sidebar.getByTestId('product-check-now')).toBeVisible()
+  await expect(sidebar.getByTestId('product-check-observation')).toBeVisible()
   await expect(sidebar.getByTestId('subing-panel')).toHaveCount(1)
   await expect(sidebar.getByTestId('product-alert-rules')).toHaveCount(0)
-  await expect(sidebar.getByTestId('product-check-more')).not.toHaveAttribute('open')
-  expect(await sidebar.locator('[data-testid="product-check-now"], [data-testid="product-check-observation"], [data-testid="product-check-more"]').evaluateAll((nodes) => (
+  await expect(sidebar.getByTestId('product-check-data-details')).not.toHaveAttribute('open')
+  expect(await sidebar.locator('[data-testid="product-check-observation"], [data-testid="product-check-background"], [data-testid="product-check-data-details"]').evaluateAll((nodes) => (
     nodes.every((node, index) => index === 0 || Boolean(nodes[index - 1].compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING))
   ))).toBe(true)
-  await sidebar.getByTestId('product-check-more').locator('summary').click()
+  await sidebar.getByTestId('product-check-data-details').locator('summary').click()
   await expect(sidebar.getByTestId('product-today-alert-events')).toHaveCount(0)
   await page.getByRole('group', { name: 'Overlay' }).getByRole('button', { name: '火天大有', exact: true }).click()
   await expect(sidebar.getByTestId('subing-panel')).toHaveCount(0)
@@ -212,10 +212,9 @@ test('persistent Alert V2 markers stay exact-frequency and actual-dominant only'
 
   await page.getByRole('button', { name: '15m', exact: true }).click()
 
-  const tabs = page.getByTestId('secondary-panel-tabs')
-  await expect(tabs.getByRole('tab')).toHaveText(['MACD'])
+  await expect(page.getByTestId('secondary-panel-label')).toHaveText('MACD')
+  await expect(page.getByTestId('secondary-panel-tabs')).toHaveCount(0)
   await page.evaluate(() => { window.__GUIYI_E2E_CANVAS_TEXT__ = [] })
-  await tabs.getByRole('tab', { name: 'MACD' }).click()
   await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-alert-marker-count', '2')
   await expect.poll(() => page.evaluate(() => window.__GUIYI_E2E_CANVAS_TEXT__)).toEqual(
     expect.arrayContaining(['卖出观察', '买入信号']),

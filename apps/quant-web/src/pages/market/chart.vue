@@ -89,7 +89,6 @@ const contract = ref(String(route.query.contract || '').toUpperCase())
 const seriesKind = ref<SeriesKind>(dailyWatchEntry?.seriesKind ?? resolveInitialSeriesKind())
 const frequency = ref<MarketFrequency>(dailyWatchEntry?.frequency ?? resolveInitialFrequency())
 const followLatest = ref(true)
-const selectedSecondaryPanel = ref<'macd'>('macd')
 const selectedDominant = computed(() => dominants.value.find((item) => item.product === symbol.value))
 const {
   bars,
@@ -248,6 +247,33 @@ const latestHtdyObservation = computed(() => {
   if (!htdyVisible.value || !overlayCapability.value.supported) return null
   return buildKlineDerivedData(visibleBars.value, ['htdy']).htdy?.markers.at(-1) ?? null
 })
+const productCheckSidebarProps = computed(() => ({
+  dominant: selectedDominant.value,
+  seriesKind: effectiveIdentity.value.seriesKind,
+  frequency: frequency.value,
+  contract: effectiveIdentity.value.contract || '',
+  live: isLiveDisplay.value,
+  phase: phaseLabel.value,
+  hasMoreBefore: canLoadEarlier.value,
+  canonicalCoverage: canonicalCoverage.value,
+  research: research.value,
+  researchLoading: researchLoading.value,
+  researchError: researchError.value,
+  selectedOverlay: selectedOverlay.value,
+  subing: subing.value,
+  subingLoading: subingLoading.value || metadataLoading.value,
+  subingError: subingError.value,
+  subingSupported: subingSupported.value,
+  alertRules: alertRules.value,
+  alertRuntimeStatus: alertRuntimeStatus.value,
+  alertLoading: alertLoading.value,
+  savingRuleCodes: savingRuleCodes.value,
+  currentEventsLoading: currentEventsLoading.value,
+  currentEventsStatus: currentEventsStatus.value,
+  currentEvents: currentEvents.value,
+  currentEventStates: currentEventStates.value,
+  htdyObservation: latestHtdyObservation.value,
+}))
 
 onMounted(async () => {
   document.addEventListener('fullscreenchange', syncFullscreen)
@@ -559,10 +585,6 @@ async function loadEarlierBars() {
   }
 }
 
-function updateSecondaryPanel(value: 'macd') {
-  selectedSecondaryPanel.value = value
-}
-
 function isCurrentIdentity(candidate: ReturnType<typeof currentIdentity>) {
   const current = currentIdentity()
   return candidate.seriesKind === current.seriesKind
@@ -749,40 +771,14 @@ function normalizeSymbol(value: unknown): string | null {
               :alert-markers="persistentAlertMarkers"
               :research-markers="researchMarkers"
               :n-structure-bands="visibleNStructureBands"
-              :secondary-panel="selectedSecondaryPanel"
               :data-historical-research-loading="historicalResearchLoading"
               @need-more-before="loadEarlierBars"
               @follow-latest-change="followLatest = $event"
-              @secondary-panel-change="updateSecondaryPanel"
             />
           </div>
           <div class="product-workspace__sidebar-wrap">
             <ProductCheckSidebar
-              :dominant="selectedDominant"
-              :series-kind="effectiveIdentity.seriesKind"
-              :frequency="frequency"
-              :contract="effectiveIdentity.contract || ''"
-              :live="isLiveDisplay"
-              :phase="phaseLabel"
-              :has-more-before="canLoadEarlier"
-              :canonical-coverage="canonicalCoverage"
-              :research="research"
-              :research-loading="researchLoading"
-              :research-error="researchError"
-              :selected-overlay="selectedOverlay"
-              :subing="subing"
-              :subing-loading="subingLoading || metadataLoading"
-              :subing-error="subingError"
-              :subing-supported="subingSupported"
-              :alert-rules="alertRules"
-              :alert-runtime-status="alertRuntimeStatus"
-              :alert-loading="alertLoading"
-              :saving-rule-codes="savingRuleCodes"
-              :current-events-loading="currentEventsLoading"
-              :current-events-status="currentEventsStatus"
-              :current-events="currentEvents"
-              :current-event-states="currentEventStates"
-              :htdy-observation="latestHtdyObservation"
+              v-bind="productCheckSidebarProps"
               @toggle-subing-alert="toggleSubingAlert"
               @toggle-htdy-alert="toggleHtdyAlert"
               @open-formal-event="openFormalEvent"
@@ -795,31 +791,7 @@ function normalizeSymbol(value: unknown): string | null {
     <NDrawer v-model:show="researchDrawerOpen" :width="320" placement="right">
       <NDrawerContent title="检查" closable>
         <ProductCheckSidebar
-          :dominant="selectedDominant"
-          :series-kind="effectiveIdentity.seriesKind"
-          :frequency="frequency"
-          :contract="effectiveIdentity.contract || ''"
-          :live="isLiveDisplay"
-          :phase="phaseLabel"
-          :has-more-before="canLoadEarlier"
-          :canonical-coverage="canonicalCoverage"
-          :research="research"
-          :research-loading="researchLoading"
-          :research-error="researchError"
-          :selected-overlay="selectedOverlay"
-          :subing="subing"
-          :subing-loading="subingLoading || metadataLoading"
-          :subing-error="subingError"
-          :subing-supported="subingSupported"
-          :alert-rules="alertRules"
-          :alert-runtime-status="alertRuntimeStatus"
-          :alert-loading="alertLoading"
-          :saving-rule-codes="savingRuleCodes"
-          :current-events-loading="currentEventsLoading"
-          :current-events-status="currentEventsStatus"
-          :current-events="currentEvents"
-          :current-event-states="currentEventStates"
-          :htdy-observation="latestHtdyObservation"
+          v-bind="productCheckSidebarProps"
           @toggle-subing-alert="toggleSubingAlert"
           @toggle-htdy-alert="toggleHtdyAlert"
           @open-formal-event="openFormalEvent"

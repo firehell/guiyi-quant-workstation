@@ -91,7 +91,6 @@ test('visible product copy uses the single approved SuBing and JDJ replay names'
 
   assert.match(sidebarSource, /<strong>日进斗金参考回放 · Reference only<\/strong>/)
   assert.doesNotMatch(sidebarSource, /日进斗金策略/)
-  assert.match(sidebarSource, /<summary>5\. 更多研究<\/summary>/)
   assert.doesNotMatch(subingPanelSource, />SuBing</)
   assert.match(subingPanelSource, />苏冰</)
   assert.match(
