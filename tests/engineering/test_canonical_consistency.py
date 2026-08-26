@@ -159,7 +159,7 @@ def test_release_versions_are_consistent() -> None:
         web["version"],
         *lock_versions,
         *app_versions,
-    } == {"1.8.3"}
+    } == {"1.8.5"}
 
 
 def test_alert_rule_codes_have_one_production_registry_per_language() -> None:
