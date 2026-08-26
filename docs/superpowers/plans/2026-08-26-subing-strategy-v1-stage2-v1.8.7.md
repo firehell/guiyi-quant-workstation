@@ -1948,10 +1948,10 @@ This is repository-safe and uses only committed fixtures/fakes.
 PYTHONPATH=services/quant-api:packages/quant-core \
   uv run --project services/quant-api pytest -q \
   services/quant-api/tests/acceptance/test_subing_strategy_stage2_shadow.py \
-  --run-recorded
+  -k recorded_stream
 ```
 
-Use the exact CLI shape actually implemented; document it in `TESTING.md`.
+Keep the recorded-stream test outside the `manual_acceptance` marker so it is part of ordinary repository verification. Document both recorded and real read-only commands in `TESTING.md`.
 
 - [ ] **Step 4: Run authorized real read-only shadow only when the user has granted that exact read scope.**
 
