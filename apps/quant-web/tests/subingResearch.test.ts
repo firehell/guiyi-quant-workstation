@@ -27,13 +27,21 @@ test('normalizes Decimal Factor values at the SuBing HTTP boundary', () => {
 })
 
 test('normalizes the complete additive lifecycle contract without changing Factor values', () => {
-  const result = normalizeSubingResearch(
-    cloneSubingLifecycleCase('pivotRetest1') as SubingResearchResponse,
-  )
+  const payload = cloneSubingLifecycleCase('pivotRetest1') as SubingResearchResponse
+  const lifecycle = payload.lifecycle as SubingResearchResponse['lifecycle'] & {
+    trigger_reference_pivot: SubingResearchResponse['lifecycle']['bound_reference_pivot']
+  }
+  lifecycle.trigger_reference_pivot = lifecycle.bound_reference_pivot
+  lifecycle.bound_reference_pivot = null
+  const result = normalizeSubingResearch(payload)
 
   assert.equal(result.primary.snapshot?.slope_5_bps_per_bar, 2)
   assert.equal(result.companion?.status, 'ready')
-  assert.equal(result.lifecycle.bound_reference_pivot?.price, 110)
+  assert.equal(
+    (result.lifecycle as typeof lifecycle).trigger_reference_pivot?.price,
+    110,
+  )
+  assert.equal(result.lifecycle.bound_reference_pivot, null)
   assert.equal(result.lifecycle.rebreak_reference_price, 115)
   assert.equal(result.lifecycle.volume_ratio_prev, 3)
   assert.equal(result.lifecycle.open_interest_delta, 18)

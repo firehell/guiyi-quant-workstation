@@ -18,7 +18,7 @@ def _valid_payload() -> dict[str, Any]:
     return {
         "schema_version": 1,
         "policy_id": "subing_lifecycle_v2_research_v1",
-        "formula_version": "subing_lifecycle_v2",
+        "formula_version": "subing_lifecycle_v2_structure_binding_v1",
         "research_only": True,
         "supported_timeframes": ["5m", "15m"],
         "clock_timeframe": "5m",
@@ -71,7 +71,7 @@ def test_load_exact_lifecycle_policy() -> None:
     policy = load_subing_lifecycle_policy()
 
     assert policy.policy_id == "subing_lifecycle_v2_research_v1"
-    assert policy.formula_version == "subing_lifecycle_v2"
+    assert policy.formula_version == "subing_lifecycle_v2_structure_binding_v1"
     assert policy.research_only is True
     assert policy.supported_timeframes == (BarFrequency.M5, BarFrequency.M15)
     assert policy.clock_timeframe is BarFrequency.M5

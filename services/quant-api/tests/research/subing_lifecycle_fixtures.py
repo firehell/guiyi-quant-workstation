@@ -6,6 +6,7 @@ from decimal import Decimal
 
 
 from app.market_data.subing_lifecycle import (
+    ConfirmationSource,
     SubingOpportunityKey,
     evaluate_subing_lifecycle,
 )
@@ -221,6 +222,105 @@ def _short_pivot_prefix() -> tuple[CanonicalBar, ...]:
         _bar(20, close="98", high="101", low="97"),
         _bar(25, close="92", high="99", low="91"),
         _bar(30, close="89", high="91", low="85"),
+    )
+
+
+def _long_trace_with_protective_pivot(
+    source: ConfirmationSource,
+):
+    """Return a real Lifecycle trace whose prior LOW predates the opportunity."""
+
+    prefix = (
+        _bar(5, close="100", high="101", low="99"),
+        _bar(10, close="100", high="102", low="98"),
+        _bar(15, close="95", high="103", low="90"),
+        _bar(20, close="100", high="104", low="97"),
+        _bar(25, close="102", high="105", low="98"),
+        _bar(30, close="108", high="110", low="99"),
+        _bar(35, close="105", high="106", low="100"),
+        _bar(40, close="106", high="107", low="101"),
+    )
+    if source is ConfirmationSource.FORMAL_V1:
+        bars = (*prefix[:5], _bar(30, close="100", high="101", low="99"))
+        factors = tuple(
+            _factor(
+                bar,
+                BarFrequency.M5,
+                direction=(
+                    SubingDirection.LONG
+                    if index == len(bars) - 1
+                    else SubingDirection.SHORT
+                ),
+                cross=(MacdCross.GOLDEN if index == len(bars) - 1 else MacdCross.NONE),
+                volume_ratio=(
+                    Decimal("3") if index == len(bars) - 1 else Decimal("1")
+                ),
+            )
+            for index, bar in enumerate(bars)
+        )
+        return _evaluate(
+            bars,
+            factors_5m=factors,
+            bars_15m=(_bar(0), _bar(15), _bar(30)),
+        )
+
+    setup = _bar(45, close="108", high="109", low="107")
+    if source is ConfirmationSource.MOMENTUM_HOLD:
+        bars = (
+            *prefix[:5],
+            _bar(30, close="100", high="101", low="99"),
+            _bar(35, close="101", high="102", low="100"),
+            _bar(40, close="102", high="103", low="101"),
+            _bar(45, close="103", high="104", low="102"),
+        )
+        factors = tuple(
+            _factor(
+                bar,
+                BarFrequency.M5,
+                direction=(
+                    SubingDirection.LONG if index >= 5 else SubingDirection.SHORT
+                ),
+                cross=(MacdCross.GOLDEN if index == 6 else MacdCross.NONE),
+            )
+            for index, bar in enumerate(bars)
+        )
+        return _evaluate(
+            bars,
+            factors_5m=factors,
+            bars_15m=(_bar(0), _bar(15), _bar(30), _bar(45)),
+        )
+
+    breakout = _bar(50, close="111", high="112", low="110")
+    if source is ConfirmationSource.PIVOT_BREAK_HOLD:
+        tail = (
+            setup,
+            breakout,
+            _bar(55, close="112", high="113", low="111"),
+            _bar(60, close="113", high="114", low="112"),
+        )
+    else:
+        tail = (
+            setup,
+            breakout,
+            _bar(55, close="111", high="112", low="109"),
+            _bar(60, close="111", high="111.5", low="110"),
+            _bar(65, close="113", high="114", low="112"),
+        )
+    bars = (*prefix, *tail)
+    factors = tuple(
+        _factor(
+            bar,
+            BarFrequency.M5,
+            direction=(
+                SubingDirection.LONG if bar.bar_end >= setup.bar_end else SubingDirection.SHORT
+            ),
+        )
+        for bar in bars
+    )
+    return _evaluate(
+        bars,
+        factors_5m=factors,
+        bars_15m=tuple(_bar(minutes) for minutes in (0, 15, 30, 45, 60)),
     )
 
 

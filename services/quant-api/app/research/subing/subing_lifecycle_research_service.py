@@ -376,6 +376,10 @@ class SubingLifecycleResearchService:
         self._calibration = calibration
         self._policy = policy
 
+    @property
+    def formula_version(self) -> str:
+        return self._policy.formula_version
+
     def run(
         self,
         request: LifecycleResearchRequest,

@@ -375,6 +375,61 @@ def test_cache_failure_recomputes_without_changing_result(
     assert result.cache_state == "unavailable"
 
 
+def test_cache_identity_uses_current_lifecycle_formula_version(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bar = _bar(1)
+    segment = ResolvedContractSegment(CONTRACT, SEGMENT_START, SEGMENT_START)
+    loader = FakeSegmentLoader(
+        loaded_series(segments=(segment,), bars_5m=(bar,), bars_15m=(bar,))
+    )
+    resolver = FakeDirectionContextResolver(
+        {SEGMENT_START: _context(bar, SubingStrategyDirection.NO_NEW_ENTRY)}
+    )
+    empty = SubingStrategySegmentResult(
+        actions=(),
+        episodes=(),
+        consumed_opportunity_ids=(),
+        canceled_pending=(),
+        pending_action=None,
+        final_position=SubingStrategyPositionState.FLAT,
+    )
+    monkeypatch.setattr(
+        "app.market_data.subing_strategy.service.replay_subing_strategy_segment",
+        lambda **_kwargs: empty,
+    )
+
+    identities = []
+
+    class CapturingCache:
+        available = True
+
+        def read(self, identity):
+            identities.append(identity)
+            return None
+
+        def write(self, _identity, _projection):
+            return None
+
+    service = SubingStrategyHistoricalProjectionService(
+        loader,
+        products=("jm",),
+        direction_context_resolver=resolver,
+        calibration=_accepted_calibration(),
+        lifecycle_policy=load_subing_lifecycle_policy(),
+        strategy_policy=load_subing_strategy_policy(),
+        cache=CapturingCache(),
+    )
+
+    service.history(_request(since=SEGMENT_START, through=SEGMENT_START))
+
+    assert len(identities) == 1
+    assert (
+        identities[0].lifecycle_formula_version
+        == "subing_lifecycle_v2_structure_binding_v1"
+    )
+
+
 @pytest.mark.parametrize(
     ("series_kind", "frequency"),
     (

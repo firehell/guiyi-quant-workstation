@@ -496,7 +496,7 @@ def test_unavailable_snapshot_retains_the_last_evaluable_stage_and_time() -> Non
     assert trace.current_snapshot.last_confirmed_at == stable_boundary.bar_end
 
 
-def test_bound_pivot_reentry_is_a_lower_tf_risk() -> None:
+def test_trigger_pivot_reentry_remains_the_existing_lower_tf_risk() -> None:
     confirmed_bars = (
         *_long_pivot_prefix(),
         _bar(35, close="112", high="113", low="111"),
@@ -507,6 +507,9 @@ def test_bound_pivot_reentry_is_a_lower_tf_risk() -> None:
     trace = _evaluate((*confirmed_bars, reentry), bars_15m=(_bar(0),))
 
     assert trace.snapshots[-2].confirmation_source is ConfirmationSource.PIVOT_BREAK_HOLD
+    assert trace.snapshots[-2].trigger_reference_pivot is not None
+    assert trace.snapshots[-2].trigger_reference_pivot.price == Decimal("110")
+    assert trace.snapshots[-2].bound_reference_pivot is None
     assert trace.current_snapshot.stage is LifecycleStage.CONTINUATION
     assert trace.current_snapshot.current_risk_codes == (
         "LOWER_TF_BOUND_PIVOT_REENTRY",
@@ -842,7 +845,7 @@ def test_short_anchor_trend_break_uses_the_exact_mirrored_formula() -> None:
     assert trace.transitions[-1].reason_codes == ("ANCHOR_TREND_BROKEN",)
 
 
-def test_short_pivot_structure_invalidation_uses_close_above_bound_low() -> None:
+def test_short_structure_invalidation_keeps_using_trigger_low() -> None:
     prefix = _short_pivot_prefix()
     confirmed_bars = (
         *prefix,
@@ -872,6 +875,9 @@ def test_short_pivot_structure_invalidation_uses_close_above_bound_low() -> None
     )
 
     assert trace.snapshots[-2].confirmation_source is ConfirmationSource.PIVOT_BREAK_HOLD
+    assert trace.snapshots[-2].trigger_reference_pivot is not None
+    assert trace.snapshots[-2].trigger_reference_pivot.price == Decimal("90")
+    assert trace.snapshots[-2].bound_reference_pivot is None
     assert trace.current_snapshot.stage is LifecycleStage.CLOSED
     assert trace.transitions[-1].reason_codes == ("STRUCTURE_INVALIDATED",)
 
