@@ -339,6 +339,12 @@ def validate_subing_strategy_event_facts(
 
 def _validate_payload(payload: SubingStrategyActionPayload) -> None:
     is_open = payload.kind in _OPEN_KINDS
+    expected_pivot_kind = (
+        PivotKind.LOW
+        if payload.kind
+        in {SubingStrategyActionKind.OPEN_LONG, SubingStrategyActionKind.CLOSE_LONG}
+        else PivotKind.HIGH
+    )
     expected_identity = {
         "strategy_id": payload.strategy_id,
         "formula_version": payload.formula_version,
@@ -371,6 +377,7 @@ def _validate_payload(payload: SubingStrategyActionPayload) -> None:
                 payload.bound_reference_pivot.contract != payload.contract
                 or payload.bound_reference_pivot.segment_start_trading_day
                 != payload.segment_start_trading_day
+                or payload.bound_reference_pivot.kind is not expected_pivot_kind
             )
         )
         or len(set(payload.reason_codes)) != len(payload.reason_codes)

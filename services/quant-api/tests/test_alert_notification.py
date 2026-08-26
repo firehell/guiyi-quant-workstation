@@ -227,6 +227,25 @@ def test_formatter_rejects_loose_strategy_payload_dict() -> None:
         format_alert_message(message)
 
 
+def test_notification_boundary_rejects_opposite_side_pivot_in_typed_payload() -> None:
+    payload = _open_payload(
+        kind=SubingStrategyActionKind.OPEN_LONG,
+        price=Decimal("100"),
+        source=ConfirmationSource.PIVOT_BREAK_HOLD,
+        pivot=_pivot(PivotKind.LOW, Decimal("98")),
+    )
+    bypassed = replace(
+        payload,
+        bound_reference_pivot=_pivot(PivotKind.HIGH, Decimal("102")),
+    )
+
+    with pytest.raises(
+        StrategyPayloadError,
+        match="^SUBING_STRATEGY_PAYLOAD_INVALID$",
+    ):
+        format_alert_message(_message(bypassed))
+
+
 @pytest.mark.parametrize(
     ("message", "error_code"),
     (

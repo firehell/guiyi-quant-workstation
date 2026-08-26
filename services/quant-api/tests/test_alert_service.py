@@ -735,17 +735,21 @@ def test_close_payload_rejects_exit_that_changes_entry_bound_pivot() -> None:
         serialize_subing_strategy_payload(exit_action, episode=episode)
 
 
-def _pivot(contract: str) -> ConfirmedPivot:
+def _pivot(
+    contract: str,
+    *,
+    kind: PivotKind = PivotKind.LOW,
+) -> ConfirmedPivot:
     pivot_time = BAR_END - timedelta(minutes=30)
     return ConfirmedPivot(
         pivot_id=_canonical_pivot_id(
             contract=contract,
             segment_start_trading_day=TRADING_DAY,
             source_timeframe=BarFrequency.M5,
-            kind=PivotKind.LOW,
+            kind=kind,
             pivot_time=pivot_time,
         ),
-        kind=PivotKind.LOW,
+        kind=kind,
         source_timeframe=BarFrequency.M5,
         pivot_time=pivot_time,
         confirmed_at=BAR_END - timedelta(minutes=15),
@@ -753,6 +757,119 @@ def _pivot(contract: str) -> ConfirmedPivot:
         contract=contract,
         segment_start_trading_day=TRADING_DAY,
     )
+
+
+@pytest.mark.parametrize(
+    ("kind", "wrong_pivot_kind"),
+    (
+        (SubingStrategyActionKind.OPEN_LONG, PivotKind.HIGH),
+        (SubingStrategyActionKind.OPEN_SHORT, PivotKind.LOW),
+    ),
+)
+def test_open_payload_rejects_bound_pivot_from_opposite_position_side(
+    kind: SubingStrategyActionKind,
+    wrong_pivot_kind: PivotKind,
+) -> None:
+    from app.alerts.strategy_payload import (
+        StrategyPayloadError,
+        parse_subing_strategy_payload,
+        serialize_subing_strategy_payload,
+    )
+
+    expected_pivot_kind = (
+        PivotKind.LOW if kind is SubingStrategyActionKind.OPEN_LONG else PivotKind.HIGH
+    )
+    accepted = serialize_subing_strategy_payload(
+        strategy_action(
+            kind=kind,
+            bound_reference_pivot=_pivot("JM2609", kind=expected_pivot_kind),
+        )
+    ).to_json()
+    donor_kind = (
+        SubingStrategyActionKind.OPEN_SHORT
+        if kind is SubingStrategyActionKind.OPEN_LONG
+        else SubingStrategyActionKind.OPEN_LONG
+    )
+    wrong_pivot = serialize_subing_strategy_payload(
+        strategy_action(
+            kind=donor_kind,
+            bound_reference_pivot=_pivot("JM2609", kind=wrong_pivot_kind),
+        )
+    ).to_json()["bound_reference_pivot"]
+
+    with pytest.raises(StrategyPayloadError, match="SUBING_STRATEGY_PAYLOAD_INVALID"):
+        parse_subing_strategy_payload(
+            {**accepted, "bound_reference_pivot": wrong_pivot}
+        )
+
+
+def test_serializer_rejects_core_open_action_with_opposite_side_pivot() -> None:
+    from app.alerts.strategy_payload import (
+        StrategyPayloadError,
+        serialize_subing_strategy_payload,
+    )
+
+    action = strategy_action(
+        kind=SubingStrategyActionKind.OPEN_LONG,
+        bound_reference_pivot=_pivot("JM2609", kind=PivotKind.HIGH),
+    )
+
+    with pytest.raises(StrategyPayloadError, match="SUBING_STRATEGY_PAYLOAD_INVALID"):
+        serialize_subing_strategy_payload(action)
+
+
+@pytest.mark.parametrize(
+    ("entry_kind", "close_kind", "wrong_pivot_kind", "reason_codes"),
+    (
+        (
+            SubingStrategyActionKind.OPEN_LONG,
+            SubingStrategyActionKind.CLOSE_LONG,
+            PivotKind.HIGH,
+            ("EMA21_BREACH_LONG",),
+        ),
+        (
+            SubingStrategyActionKind.OPEN_SHORT,
+            SubingStrategyActionKind.CLOSE_SHORT,
+            PivotKind.LOW,
+            ("EMA21_BREACH_SHORT",),
+        ),
+    ),
+)
+def test_close_payload_rejects_inherited_pivot_from_opposite_position_side(
+    entry_kind: SubingStrategyActionKind,
+    close_kind: SubingStrategyActionKind,
+    wrong_pivot_kind: PivotKind,
+    reason_codes: tuple[str, ...],
+) -> None:
+    from app.alerts.strategy_payload import (
+        StrategyPayloadError,
+        serialize_subing_strategy_payload,
+    )
+
+    pivot = _pivot("JM2609", kind=wrong_pivot_kind)
+    entry = strategy_action(kind=entry_kind, bound_reference_pivot=pivot)
+    exit_action = strategy_action(
+        kind=close_kind,
+        reference_price=Decimal("95"),
+        decision_at=BAR_END + timedelta(minutes=30),
+        effective_bar_end=BAR_END + timedelta(minutes=45),
+        episode_id=entry.episode_id,
+        reason_codes=reason_codes,
+        bound_reference_pivot=pivot,
+    )
+    episode = SubingStrategyEpisode.from_actions(
+        entry_action=entry,
+        exit_action=exit_action,
+        completed_15m_bars=(
+            _bar(BAR_END + timedelta(minutes=15), "100"),
+            _bar(BAR_END + timedelta(minutes=30), "96"),
+            _bar(BAR_END + timedelta(minutes=45), "95"),
+        ),
+        latest_reference_price=None,
+    )
+
+    with pytest.raises(StrategyPayloadError, match="SUBING_STRATEGY_PAYLOAD_INVALID"):
+        serialize_subing_strategy_payload(exit_action, episode=episode)
 
 
 def test_payload_rejects_valid_pivot_from_another_contract() -> None:
@@ -981,7 +1098,9 @@ def test_strategy_event_revalidates_typed_payload_before_persisting(
             replace(request, strategy_payload=bypassed)
         )
 
-    assert session.scalar(select(AlertEvent).where(AlertEvent.rule_id == rule.id)) is None
+    assert (
+        session.scalar(select(AlertEvent).where(AlertEvent.rule_id == rule.id)) is None
+    )
 
 
 def test_integrity_error_without_action_id_readback_is_persistence_failure(
@@ -1002,7 +1121,9 @@ def test_integrity_error_without_action_id_readback_is_persistence_failure(
         )
 
     assert session.in_transaction() is False
-    assert session.scalar(select(AlertEvent).where(AlertEvent.rule_id == rule.id)) is None
+    assert (
+        session.scalar(select(AlertEvent).where(AlertEvent.rule_id == rule.id)) is None
+    )
 
 
 def test_sqlalchemy_error_is_stable_event_persistence_failure(
