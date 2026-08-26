@@ -62,8 +62,10 @@ def test_ema_series_supports_registered_periods_with_one_algorithm() -> None:
 def test_ema_series_rejects_invalid_period_and_bar_alignment() -> None:
     from guiyi_quant.indicators import ema_series
 
-    with pytest.raises(ValueError, match="period"):
+    with pytest.raises(ValueError, match="EMA period must be positive"):
         ema_series([1.0, 2.0], 0)
+    with pytest.raises(ValueError, match="EMA period must be positive"):
+        ema_series([1.0], -1)
     with pytest.raises(ValueError, match="bar_ends"):
         ema_series([1.0, 2.0], 2, bar_ends=["2026-01-01"])
 

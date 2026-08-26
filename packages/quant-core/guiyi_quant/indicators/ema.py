@@ -158,12 +158,12 @@ def ema_series(
         "seed_policy": seed_policy,
         "round_digits": round_digits,
     }
-    alpha = 2 / (period + 1)
     state = initial_ema_state(
         period,
         seed_policy=seed_policy,
         round_digits=round_digits,
     )
+    alpha = 2 / (period + 1)
     points: list[IndicatorPoint] = []
 
     for index, raw_value in enumerate(values):
