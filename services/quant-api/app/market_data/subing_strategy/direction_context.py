@@ -65,9 +65,11 @@ class SubingStrategyDirectionContextResolver:
         *,
         projector: _ItemProjector,
         previous_trading_day: Callable[[date], date],
+        source_floor: Callable[[str], date] | None = None,
     ) -> None:
         self._projector = projector
         self._previous_trading_day = previous_trading_day
+        self._source_floor = source_floor
 
     def resolve(
         self,
@@ -96,16 +98,14 @@ class SubingStrategyDirectionContextResolver:
         except SubingDailyWatchCalendarError as exc:
             if exc.code != "PREVIOUS_TRADING_DAY_UNAVAILABLE":
                 raise
-            return SubingStrategyDirectionContext(
-                symbol=symbol,
-                target_trading_day=target_day,
-                source_trading_day=None,
-                direction=SubingStrategyDirection.UNAVAILABLE,
-                reason_codes=(exc.code,),
-                daily_bar_end=None,
-                hourly_bar_end=None,
-                physical_contract=None,
-            )
+            return _unavailable_previous_context(symbol, target_day)
+
+        if self._source_floor is not None:
+            source_floor = self._source_floor(symbol)
+            if type(source_floor) is not date or source_floor > target_day:
+                raise SubingStrategyContextIdentityError()
+            if source_day < source_floor:
+                return _unavailable_previous_context(symbol, target_day)
 
         item = self._projector.project(
             symbol,
@@ -137,3 +137,19 @@ class SubingStrategyDirectionContextResolver:
             hourly_bar_end=item.hourly.bar_end if item.hourly is not None else None,
             physical_contract=next(iter(contracts), None),
         )
+
+
+def _unavailable_previous_context(
+    symbol: str,
+    target_day: date,
+) -> SubingStrategyDirectionContext:
+    return SubingStrategyDirectionContext(
+        symbol=symbol,
+        target_trading_day=target_day,
+        source_trading_day=None,
+        direction=SubingStrategyDirection.UNAVAILABLE,
+        reason_codes=("PREVIOUS_TRADING_DAY_UNAVAILABLE",),
+        daily_bar_end=None,
+        hourly_bar_end=None,
+        physical_contract=None,
+    )
