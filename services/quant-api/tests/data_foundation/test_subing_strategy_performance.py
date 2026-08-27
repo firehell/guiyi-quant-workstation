@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import UTC, date, datetime
 from decimal import Decimal
+import json
 
 import pytest
 
@@ -149,7 +150,12 @@ def test_performance_service_uses_fixed_actual_dominant_15m_full_window(tmp_path
         ),
     )
 
-    result = service.performance("JM")
+    read_only = service.performance("JM")
+    assert read_only.cache_state == "unavailable"
+    assert read_only.cache_identity_sha256 is not None
+    assert not tuple(cache_root.rglob("*.json"))
+
+    result = service.performance("JM", publish_cache=True)
     cached = service.performance("JM")
 
     expected_request = SubingStrategyHistoricalRequest(
@@ -159,7 +165,7 @@ def test_performance_service_uses_fixed_actual_dominant_15m_full_window(tmp_path
         since=date(2020, 1, 2),
         through=date(2026, 8, 26),
     )
-    assert observed == [expected_request, expected_request]
+    assert observed == [expected_request, expected_request, expected_request]
     assert result.symbol == "jm"
     assert result.series_kind is SeriesKind.ACTUAL_DOMINANT
     assert result.frequency is BarFrequency.M15
@@ -170,6 +176,14 @@ def test_performance_service_uses_fixed_actual_dominant_15m_full_window(tmp_path
     assert result.cache_generated_at == datetime(2026, 8, 27, 8, tzinfo=UTC)
     assert cached.cache_state == "hit"
     assert cached.cache_identity_sha256 == result.cache_identity_sha256
+
+    cache_path = next(cache_root.rglob("*.json"))
+    stale = json.loads(cache_path.read_text(encoding="utf-8"))
+    stale["schema_version"] = 1
+    cache_path.write_text(json.dumps(stale), encoding="utf-8")
+    repaired = service.performance("JM", publish_cache=True)
+    assert repaired.cache_state == "refreshed"
+    assert service.performance("JM").cache_state == "hit"
 
 
 def test_performance_rejects_projection_that_did_not_reach_requested_through() -> None:
@@ -223,7 +237,8 @@ def test_active_warm_is_sequential_resumable_and_reports_partial_failure() -> No
                 windows=windows,
             )
 
-        def performance(self, symbol: str, *, window):
+        def performance(self, symbol: str, *, window, publish_cache=False):
+            assert publish_cache is True
             assert window == next(item for item in windows if item.symbol == symbol)
             calls.append(symbol)
             if symbol == "b":

@@ -294,7 +294,10 @@ class SubingStrategyPerformanceService:
         symbol: str,
         *,
         window: SubingStrategyPerformanceWindow | None = None,
+        publish_cache: bool = False,
     ) -> SubingStrategyPerformanceProjection:
+        if type(publish_cache) is not bool:
+            raise SubingStrategyPerformanceError()
         normalized = symbol.strip().lower()
         if normalized not in self._products:
             raise SubingStrategyPerformanceError("SUBING_STRATEGY_ACTIVE_PRODUCT_INVALID")
@@ -387,15 +390,20 @@ class SubingStrategyPerformanceService:
         payload = _performance_snapshot_payload(fresh)
         try:
             cached = self._performance_cache.read(identity)
-            if cached is not None:
-                if cached.payload != payload:
-                    raise SubingStrategyCacheError()
+            if cached is not None and cached.payload == payload:
                 return replace(
                     fresh,
                     cache_state="hit",
                     cache_identity_sha256=identity_sha256,
                     cache_generated_at=cached.generated_at,
                 )
+        except SubingStrategyCacheError:
+            cached = None
+
+        if not publish_cache:
+            return replace(fresh, cache_identity_sha256=identity_sha256)
+
+        try:
             receipt = self._performance_cache.publish(identity, payload)
             verified = self._performance_cache.read(identity)
             if (
@@ -447,7 +455,11 @@ def warm_active_performance_cache(
     for window in plan.windows:
         symbol = window.symbol
         try:
-            projection = service.performance(symbol, window=window)
+            projection = service.performance(
+                symbol,
+                window=window,
+                publish_cache=True,
+            )
         except Exception as exc:  # noqa: BLE001 - fixed public error boundary
             code = getattr(exc, "code", "SUBING_STRATEGY_PERFORMANCE_UNAVAILABLE")
             if not isinstance(code, str) or not code.startswith("SUBING_STRATEGY_"):
