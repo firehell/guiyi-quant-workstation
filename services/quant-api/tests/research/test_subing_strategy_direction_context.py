@@ -26,6 +26,7 @@ TARGET_LONG = date(2026, 8, 26)
 TARGET_SHORT = date(2026, 8, 27)
 SOURCE_LONG = date(2026, 8, 25)
 SOURCE_SHORT = date(2026, 8, 26)
+HISTORY_FLOOR = date(2026, 8, 26)
 
 
 def _trend(
@@ -173,6 +174,42 @@ def test_one_unavailable_day_does_not_block_another_target_day() -> None:
     assert result[TARGET_SHORT].direction is SubingStrategyDirection.UNAVAILABLE
     assert result[TARGET_SHORT].reason_codes == ("PREVIOUS_TRADING_DAY_UNAVAILABLE",)
     assert result[TARGET_LONG].direction is SubingStrategyDirection.LONG_ONLY
+
+
+def test_source_before_history_floor_is_causal_warmup_without_projection() -> None:
+    projector = _Projector({})
+    resolver = SubingStrategyDirectionContextResolver(
+        projector=projector,
+        previous_trading_day=_previous,
+        source_floor=lambda symbol: HISTORY_FLOOR,
+    )
+
+    result = resolver.resolve("jm", (TARGET_LONG,))[TARGET_LONG]
+
+    assert result.direction is SubingStrategyDirection.UNAVAILABLE
+    assert result.source_trading_day is None
+    assert result.reason_codes == ("PREVIOUS_TRADING_DAY_UNAVAILABLE",)
+    assert projector.calls == []
+
+
+def test_identity_failure_inside_history_floor_still_escalates() -> None:
+    projector = _Projector(
+        {
+            SOURCE_SHORT: _item(
+                SubingDailyWatchDecision.UNAVAILABLE,
+                source_day=SOURCE_SHORT,
+                unavailable_reasons=("DOMINANT_SEGMENT_UNAVAILABLE",),
+            )
+        }
+    )
+    resolver = SubingStrategyDirectionContextResolver(
+        projector=projector,
+        previous_trading_day=_previous,
+        source_floor=lambda symbol: HISTORY_FLOOR,
+    )
+
+    with pytest.raises(SubingStrategyContextIdentityError):
+        resolver.resolve("jm", (TARGET_SHORT,))
 
 
 def test_authoritative_daily_watch_identity_failure_escalates() -> None:

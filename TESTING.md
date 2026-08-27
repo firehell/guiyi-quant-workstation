@@ -89,7 +89,7 @@ Runtime health、data audit 与 alert status 是只读入口；它们不能推�
 定向验证：
 
 ```bash
-PYTHONPATH=services/quant-api:packages/quant-core uv run --project services/quant-api --no-sync pytest -q services/quant-api/tests/data_foundation/test_subing_strategy_performance.py services/quant-api/tests/data_foundation/test_after_market.py services/quant-api/tests/test_market_research_overlays_api.py
+PYTHONPATH=services/quant-api:packages/quant-core uv run --project services/quant-api --no-sync pytest -q services/quant-api/tests/research/test_subing_strategy_direction_context.py services/quant-api/tests/data_foundation/test_composition.py services/quant-api/tests/data_foundation/test_subing_strategy_performance.py services/quant-api/tests/data_foundation/test_after_market.py services/quant-api/tests/test_market_research_overlays_api.py
 pnpm --dir apps/quant-web test
 pnpm --dir apps/quant-web exec vue-tsc --noEmit
 ```
