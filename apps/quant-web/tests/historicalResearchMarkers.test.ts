@@ -20,19 +20,19 @@ function strategyResponse(
     strategy_id: 'subing_strategy_v1' as const, formula_version: 'subing_strategy_15m_v1' as const,
     kind: 'open_long' as const, symbol, contract: `${symbol.toUpperCase()}2609`,
     trading_day: '2026-08-03', segment_start_trading_day: '2026-08-01', opportunity_id: `subing-opportunity:${symbol}`,
-    decision_at: '2026-08-03T01:05:00Z', effective_bar_end: '2026-08-03T01:10:00Z', reference_price: 100,
+    decision_at: '2026-08-03T01:05:00Z', effective_bar_end: '2026-08-03T01:10:00Z', reference_price: '100',
     fill_basis: 'next_bar_open' as const, confirmation_source: 'formal_v1' as const, reason_codes: [],
     direction_context_source_day: '2026-07-31', direction_context_target_day: '2026-08-03', bound_reference_pivot: null,
   }
   const exit = {
     ...entry, action_id: `subing-action:${symbol}:exit`, kind: 'close_long' as const,
-    decision_at: '2026-08-03T01:10:00Z', effective_bar_end: '2026-08-03T01:15:00Z', reference_price: 107.97,
+    decision_at: '2026-08-03T01:10:00Z', effective_bar_end: '2026-08-03T01:15:00Z', reference_price: '107.97',
     confirmation_source: null, reason_codes: ['EMA21_BREACH_LONG', 'MACD_HIGH_DEAD_CROSS'],
     direction_context_source_day: null, direction_context_target_day: null,
   }
   const episode: SubingStrategyEpisode = {
     episode_id: entry.episode_id, direction: 'long', entry_action: entry, exit_action: exit, state: 'closed',
-    holding_bar_count: 2, reference_change_percent: 7.97, current_reference_change_percent: null,
+    holding_bar_count: 2, reference_change_percent: '7.97', current_reference_change_percent: null,
     latest_reference_price: null, exit_reason_codes: [...exit.reason_codes], structure_exit_available: false,
   }
   return {
@@ -147,7 +147,7 @@ test('SuBing Strategy prepend upgrades an open Episode without duplicate markers
       if (calls === 1) {
         result.episodes[0] = {
           ...result.episodes[0], exit_action: null, state: 'open', holding_bar_count: 1,
-          reference_change_percent: null, current_reference_change_percent: 1, latest_reference_price: 101,
+          reference_change_percent: null, current_reference_change_percent: '1', latest_reference_price: '101',
           exit_reason_codes: [],
         }
         result.actions = [result.episodes[0].entry_action]

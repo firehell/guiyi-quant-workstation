@@ -15,8 +15,13 @@ import {
   type SeriesKind,
   type SubingResearchResponse,
   type SubingStrategyEpisode,
+  type SubingStrategyCurrentResponse,
 } from '@/types/market'
-import { ALERT_RULE_CODES } from '@/utils/alertRules'
+import {
+  ALERT_RULE_CODES,
+  isSubingStrategyAlertEvent,
+  matchesAlertRuleCode,
+} from '@/utils/alertRules'
 import { summarizeMarketBackground } from '@/utils/productCheck'
 
 const props = defineProps<{
@@ -48,6 +53,10 @@ const props = defineProps<{
   subingStrategyLoading: boolean
   subingStrategyError: string | null
   subingStrategySupported: boolean
+  subingStrategyCurrent: SubingStrategyCurrentResponse | null
+  subingStrategyCurrentLoading: boolean
+  subingStrategyCurrentError: string | null
+  subingStrategyReconciliationErrors: string[]
   showSubingInternalProcess: boolean
 }>()
 
@@ -61,10 +70,10 @@ const background = computed(() => props.research
   ? summarizeMarketBackground(props.research.daily_trend, props.research.weekly_trend)
   : null)
 const subingEvents = computed(() => props.currentEvents.filter((event) => (
-  event.rule_code === ALERT_RULE_CODES.SUBING
+  isSubingStrategyAlertEvent(event)
 )))
 const subingRules = computed(() => props.alertRules.filter((rule) => (
-  rule.rule_code === ALERT_RULE_CODES.SUBING
+  matchesAlertRuleCode(rule, ALERT_RULE_CODES.SUBING)
 )))
 const seriesLabel = computed(() => {
   if (props.seriesKind === 'actual_dominant') return '真实主力'
@@ -132,6 +141,10 @@ function updateDataDetailsOpen(event: Event) {
         :strategy-loading="subingStrategyLoading"
         :strategy-error="subingStrategyError"
         :strategy-supported="subingStrategySupported"
+        :strategy-current="subingStrategyCurrent"
+        :strategy-current-loading="subingStrategyCurrentLoading"
+        :strategy-current-error="subingStrategyCurrentError"
+        :strategy-reconciliation-errors="subingStrategyReconciliationErrors"
         :show-internal-process="showSubingInternalProcess"
         @toggle-subing-alert="(ruleCode, enabled) => emit('toggle-subing-alert', ruleCode, enabled)"
       />

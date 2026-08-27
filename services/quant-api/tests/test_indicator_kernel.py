@@ -54,14 +54,18 @@ def test_ema_series_supports_registered_periods_with_one_algorithm() -> None:
         assert definition.alert_capable is False
         assert result.points[first_ready_index].ready is True
         assert result.points[first_ready_index].valid is True
-        assert result.points[first_ready_index].value == round(sum(closes[:period]) / period, 6)
+        assert result.points[first_ready_index].value == round(
+            sum(closes[:period]) / period, 6
+        )
 
 
 def test_ema_series_rejects_invalid_period_and_bar_alignment() -> None:
     from guiyi_quant.indicators import ema_series
 
-    with pytest.raises(ValueError, match="period"):
+    with pytest.raises(ValueError, match="EMA period must be positive"):
         ema_series([1.0, 2.0], 0)
+    with pytest.raises(ValueError, match="EMA period must be positive"):
+        ema_series([1.0], -1)
     with pytest.raises(ValueError, match="bar_ends"):
         ema_series([1.0, 2.0], 2, bar_ends=["2026-01-01"])
 
@@ -91,6 +95,39 @@ def test_ema_series_future_tail_does_not_repaint_past_values() -> None:
 
     assert original_result.points[3].value == changed_result.points[3].value
     assert original_result.points[4].value != changed_result.points[4].value
+
+
+def test_incremental_ema_matches_batch_seed_reset_rounding_and_warmup() -> None:
+    """Catches incremental EMA drifting from the public batch contract."""
+    from guiyi_quant.indicators import (
+        IndicatorPoint,
+        ema_series,
+        initial_ema_state,
+        step_ema,
+    )
+
+    values = [10.125, 11.25, 12.5, 13.75, math.nan, 20.125, 21.25, 22.5]
+    bar_ends = [f"bar-{index}" for index in range(len(values))]
+    batch = ema_series(values, 3, bar_ends=bar_ends, round_digits=4)
+    state = initial_ema_state(3, seed_policy="sma_window", round_digits=4)
+    streamed = []
+
+    for value, bar_end in zip(values, bar_ends, strict=True):
+        state, point = step_ema(state, value, bar_end=bar_end)
+        streamed.append(point)
+        assert len(state.seed_values) <= state.period
+
+    assert streamed == batch.points
+    assert streamed[0] == IndicatorPoint(
+        bar_end="bar-0", value=None, ready=False, valid=True, reason="warming_up"
+    )
+    assert streamed[2].value == 11.2917
+    assert streamed[4] == IndicatorPoint(
+        bar_end="bar-4", value=None, ready=True, valid=False, reason="input_invalid"
+    )
+    assert streamed[5].reason == "seed_window_invalid"
+    assert streamed[6].reason == "seed_window_invalid"
+    assert streamed[7].value == 21.2917
 
 
 def test_parameters_hash_is_stable_and_order_independent() -> None:

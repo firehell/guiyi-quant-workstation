@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed } from 'vue'
 import type { ProductAlertRuleState } from '@/api/alerts'
 import type { AlertEvent } from '@/types/market'
 import {
-  alertDirectionalTone,
-  alertResultLabel,
-  alertRuleShortLabel,
+  alertEventDirectionalTone,
+  alertEventResultLabel,
+  alertEventRuleShortLabel,
+  findAlertRuleForEvent,
+  strategyActionLabel,
 } from '@/utils/alertRules'
 
 const props = defineProps<{
@@ -13,20 +14,30 @@ const props = defineProps<{
   rules: ProductAlertRuleState[]
 }>()
 
-const displayNames = computed(() => new Map(
-  props.rules.map((rule) => [rule.rule_code, rule.display_name]),
-))
-
-function ruleLabel(ruleCode: string) {
-  return displayNames.value.get(ruleCode) ?? alertRuleShortLabel(ruleCode)
+function ruleLabel(event: AlertEvent) {
+  return findAlertRuleForEvent(props.rules, event)?.display_name
+    ?? alertEventRuleShortLabel(event)
 }
 
 function resultLabel(event: AlertEvent) {
-  return alertResultLabel(event.rule_code, event.result_codes)
+  if (event.strategy_action) return strategyActionLabel(event.strategy_action.kind)
+  return alertEventResultLabel(
+    event,
+    event.result_codes.filter((item): item is 'buy' | 'sell' => item === 'buy' || item === 'sell'),
+  )
 }
 
 function resultClass(event: AlertEvent) {
-  const direction = alertDirectionalTone(event.rule_code, event.result_codes)
+  const strategyKind = event.strategy_action?.kind
+  if (strategyKind) {
+    return strategyKind.endsWith('_long')
+      ? 'product-today-alert-events__result--buy'
+      : 'product-today-alert-events__result--sell'
+  }
+  const direction = alertEventDirectionalTone(
+    event,
+    event.result_codes.filter((item): item is 'buy' | 'sell' => item === 'buy' || item === 'sell'),
+  )
   return direction === 'buy' ? 'product-today-alert-events__result--buy'
     : direction === 'sell' ? 'product-today-alert-events__result--sell'
       : ''
@@ -43,7 +54,7 @@ function barTime(value: string) {
 
 <template>
   <section class="product-today-alert-events" data-testid="product-today-alert-events">
-    <h3>苏冰今日其余记录</h3>
+    <h3>苏冰策略事件</h3>
     <div class="product-today-alert-events__rows">
       <div
         v-for="item in items"
@@ -52,7 +63,7 @@ function barTime(value: string) {
         :data-event-id="String(item.id)"
       >
         <time>{{ barTime(item.bar_end) }}</time>
-        <strong>{{ ruleLabel(item.rule_code) }}</strong>
+        <strong>{{ ruleLabel(item) }}</strong>
         <span :class="resultClass(item)">{{ resultLabel(item) }}</span>
       </div>
     </div>

@@ -105,7 +105,7 @@ test('keeps current Lifecycle markers behind the preference without gating Strat
   const source = readFileSync(new URL('../src/pages/market/chart.vue', import.meta.url), 'utf8')
 
   assert.match(source, /const lifecycleMarkers = computed\(\(\) => \{\s+if \(!showSubingInternalProcess\.value\) return \[\]/)
-  assert.match(source, /const researchMarkers = computed\(\(\) => mergeKlineMarkers\(\s+lifecycleMarkers\.value,\s+historicalResearchMarkers\.value,/)
+  assert.match(source, /const researchMarkers = computed\(\(\) => mergeKlineMarkers\(\s+lifecycleMarkers\.value,\s+visibleHistoricalResearchMarkers\.value,/)
 })
 
 test('maps a confirmed hard close to its immutable entry and close facts', () => {

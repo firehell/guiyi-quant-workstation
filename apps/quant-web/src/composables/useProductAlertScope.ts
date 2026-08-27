@@ -1,11 +1,15 @@
-import { computed, ref, type Ref } from 'vue'
+import { ref, type Ref } from 'vue'
 import type {
   AlertRuntimeStatus,
   ProductAlertRuleState,
   ProductAlertStateResponse,
 } from '../api/alerts.ts'
 import { isCurrentAlertMutation } from '../utils/alertControl.ts'
-import { ALERT_RULE_CODES } from '../utils/alertRules.ts'
+import {
+  ALERT_RULE_CODES,
+  findAlertRuleByCode,
+  matchesAlertRuleCode,
+} from '../utils/alertRules.ts'
 import type { MarketFrequency } from '../types/market.ts'
 
 
@@ -33,9 +37,6 @@ export function useProductAlertScope(dependencies: Dependencies) {
   const alertRuntimeStatus = ref<AlertRuntimeStatus | null>(null)
   const alertLoading = ref(false)
   const savingRuleCodes = ref<Set<string>>(new Set())
-  const rulesByCode = computed(() => new Map(
-    alertRules.value.map((rule) => [rule.rule_code, rule]),
-  ))
   let generation = 0
 
   function invalidateIdentity(): void {
@@ -80,7 +81,7 @@ export function useProductAlertScope(dependencies: Dependencies) {
       requestedFrequency: MarketFrequency,
     ) => Promise<ProductAlertRuleState>,
   ): Promise<void> {
-    const current = rulesByCode.value.get(ruleCode)
+    const current = findAlertRuleByCode(alertRules.value, ruleCode)
     const requestedSymbol = dependencies.symbol.value
     const requestedFrequency = dependencies.frequency.value
     const requestGeneration = generation
@@ -93,12 +94,13 @@ export function useProductAlertScope(dependencies: Dependencies) {
         currentGeneration: generation,
         requestedSymbol,
         currentSymbol: dependencies.symbol.value,
-        requestedRuleCode: ruleCode,
-        currentRuleCode: rulesByCode.value.get(ruleCode)?.rule_code,
-        updatedRuleCode: updated.rule_code,
+        ruleIdentityCurrent: (
+          findAlertRuleByCode(alertRules.value, ruleCode) !== undefined
+          && matchesAlertRuleCode(updated, ruleCode)
+        ),
       })) {
         alertRules.value = alertRules.value.map((rule) => (
-          rule.rule_code === ruleCode ? updated : rule
+          matchesAlertRuleCode(rule, ruleCode) ? updated : rule
         ))
       }
     } catch {

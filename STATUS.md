@@ -10,10 +10,10 @@
 |---|---|
 | Release | `v1.8.6@8e8334c8f22147548079bffb866864ca74ffb592`；Release PR `#232`、annotated tag peeled commit 与 GitHub Release target 一致。 |
 | Runtime | 本机五个 launchd label 已绑定 clean/detached `/Volumes/扩展盘/guiyi-quant-runtime-v1.8.6@8e8334c8f22147548079bffb866864ca74ffb592`；API health 为 `version=1.8.6 / readonly=true`。2026-08-27 08:11 的即时读回为 `overall=passed`，DB、Redis、Live、after-market 与 Alert 均为 `ok`；当时 60 个品种均为 `CLOSED`，Live heartbeat 正常、`subscribed_count=0 / last_bar_at=null`，未等待或声称重启后的首根 completed Bar evidence。 |
-| Database | production Alembic 为 `20260826_0041 (head)`；四张空的退役 `trade_*` 表已删除。 |
+| Database | production Alembic 为 `20260826_0041 (head)`；仓库 feature branch 已包含 forward-only `20260826_0042` migration 源码，但尚未对 production 执行。四张空的退役 `trade_*` 表已删除。 |
 | Market Runtime Scope | `operational_products.txt` 的 60 个品种；2026-08-26 自然盘后成功后，当日 Live subscription 与 300 个 Live bar key 已清理。 |
 | Alert Scope | HTDY 唯一 production Scope 为 `jm × 15m`（`1 symbol / 1 pair`）；SuBing 保持 1 个 product-level Scope。两种授权边界不合并。当前有 2 个 enabled Rule、audience count 2。 |
-| v1.8.6 Runtime 能力 | SuBing Strategy V1 Stage 1 与 repository convergence 已进入 release/Runtime；不改变 Alert Rule、Scope 或通知路径。后续 Design Spec 仍为 design-only，written-spec review pending，且不构成实现或外部操作授权。 |
+| v1.8.6 Runtime 能力 | SuBing Strategy V1 Stage 1 与 repository convergence 已进入 release/Runtime；不改变 Alert Rule、Scope 或通知路径。Stage 2 仅存在于 `feature/subing-strategy-v1-stage2-v1.8.7`，Task 12 全量验证、独立 exact-head Review 与人工 `允许集成 develop` 均 pending；尚未进入 release、production DB/Rule、Runtime、Scope 或真实通知路径。 |
 
 Alert transport 为 PushPlus；provider accepted 不等于微信送达。2026-08-26 21:33，operator 已按当次明确请求对 `last_notification_failure_at=2026-08-25T11:40:05.182316+00:00` 执行一次精确 CAS acknowledgment；读回 `notification_state=acknowledged`、`notification_acknowledged_at=2026-08-26T13:33:29.088633+00:00`。原 failure、`notification_transport_failed` 与连续失败计数保留，`event_replayed=false / notification_sent=false`；该操作不证明 provider accepted 或微信送达。
 
@@ -25,9 +25,14 @@ Alert transport 为 PushPlus；provider accepted 不等于微信送达。2026-08
 - HTDY 在既有 420-pair Scope 下形成的 6 条 D1 Event 保持 immutable；一次 W1 transport failure 后 processing 已自然恢复，但这不证明微信送达，也不替代 D1/W1 各自的自然身份核验。
 - N Structure 已在真实 AU `actual_dominant + 5m` Canonical 页面完成只读 API/Web 验收并随 v1.8.5 进入 Runtime；它仍是可选 Historical 图层，不是独立产品、第五个 Overlay、Alert 或 Runtime evaluator。
 
+## 仓库验收 evidence
+
+- Stage 2 recorded production-format shadow 使用 sealed Null Event/notification/cache/status 依赖与 committed deterministic fake readers，故意注入 1 个 source unavailable 后验证 active60 为 `59 ready / 1 bounded unavailable`、相同输入前缀的 Historical/Live Action 一致、Action 精确绑定下一实际 15m 区间第一根 1m open、跨 contract/segment identity 拒绝，以及无 Action 前缀不制造 Action。真实 read-only shadow 未获本轮授权，保持 skipped；该证据不构成 Runtime、自然 Event 或通知证据。
+
 ## Pending Gate
 
 - HTDY 的真实 PushPlus/微信送达，以及 D1/W1 `canonical_updated` 的自然 Event identity/evidence，仍须分别核验；不以测试、synthetic event、replay 或手工发送补证。
 - SuBing 自然 Live seam evidence pending；Daily Watch V2 自然盘后 artifact pending，不以既有 V1 artifact、手工触发或回填替代。
-- SuBing Strategy V1 Design Spec 的 written-spec review pending；该文档不授权 implementation、migration、Rule、Scope、通知或 Runtime。
+- SuBing Strategy V1 Stage 2 仍待 Task 12 全量验证、独立 exact-head Review 与人工 `允许集成 develop`；之后 release、production migration 0042、Runtime promotion/未来自然通知及 owner canary 仍是四个相互独立 Gate。
+- production `subing_entry_signal_v1` Rule/Event/Scope 在 0042 Gate 前保持原事实；仓库中的 `subing_strategy_v1` 直接替换代码不得被表述为 production 已迁移。
 - SuBing 与 N Candidate 的 prospective OOS 按各自 protocol 独立累积，retrospective 不回填 OOS。

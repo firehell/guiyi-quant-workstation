@@ -6,6 +6,7 @@ from datetime import date, datetime
 from types import MappingProxyType
 from typing import Protocol
 
+from .aggregation import SessionWindow
 from .domain import (
     ActualDominantRecentBarsQuery,
     ActualDominantTradingDayQuery,
@@ -48,6 +49,13 @@ class ActualDominantResearchReader(Protocol):
         symbol: str,
         trading_day: date,
     ) -> _DominantSegmentSummary: ...
+
+    def session_windows(
+        self,
+        *,
+        symbol: str,
+        trading_day: date,
+    ) -> tuple[SessionWindow, ...]: ...
 
 
 class ActualDominantResearchSegmentIdentityError(ValueError):
@@ -198,6 +206,34 @@ class ActualDominantResearchSegmentLoader:
                 "rank1 probe/full segment identity is inconsistent"
             )
         return ActualDominantResearchSeries(MappingProxyType(full), segments)
+
+    def sessions(
+        self,
+        *,
+        symbol: str,
+        trading_days: Sequence[date],
+    ) -> Mapping[date, tuple[SessionWindow, ...]]:
+        days = tuple(trading_days)
+        if (
+            not days
+            or len(set(days)) != len(days)
+            or any(type(day) is not date for day in days)
+        ):
+            raise ActualDominantResearchSegmentIdentityError(
+                "rank1 TradingSession identity is missing or inconsistent"
+            )
+        windows = {
+            day: self._market_data.session_windows(
+                symbol=symbol,
+                trading_day=day,
+            )
+            for day in days
+        }
+        if any(not value for value in windows.values()):
+            raise ActualDominantResearchSegmentIdentityError(
+                "rank1 TradingSession identity is missing or inconsistent"
+            )
+        return MappingProxyType(windows)
 
     def _query_actual_dominant_trading_days(
         self,

@@ -110,12 +110,95 @@ function runtimeHealth() {
 }
 
 async function mockHomepage(page, radarPayload = radar(), dailyPayload = dailyWatch()) {
-  await page.route('**/api/alerts/formal-signals/current', (route) => route.fulfill({
-    json: { status: 'ready', trading_day: '2026-08-24', items: [] },
-  }))
   await page.route('**/api/runtime/health', (route) => route.fulfill({ json: runtimeHealth() }))
   await page.route('**/api/v1/market/research/radar', (route) => route.fulfill({ json: radarPayload }))
   await page.route('**/api/v1/market/research/subing-daily-watch/current', (route) => route.fulfill({ json: dailyPayload }))
+  await page.route('**/api/alerts/strategy-actions/current', (route) => route.fulfill({
+    json: { status: 'ready', trading_day: '2026-08-25', items: [] },
+  }))
+}
+
+test.beforeEach(async ({ page }) => {
+  await page.route('**/api/alerts/strategy-actions/current', (route) => route.fulfill({
+    json: { status: 'ready', trading_day: '2026-08-25', items: [] },
+  }))
+})
+
+test('loads and presents the all-product current SuBing Strategy Event surface', async ({ page }) => {
+  let strategyRequests = 0
+  await page.route('**/api/runtime/health', (route) => route.fulfill({ json: runtimeHealth() }))
+  await page.route('**/api/v1/market/research/radar', (route) => route.fulfill({ json: radar() }))
+  await page.route('**/api/v1/market/research/subing-daily-watch/current', (route) => route.fulfill({ json: dailyWatch() }))
+  await page.route('**/api/alerts/strategy-actions/current', (route) => {
+    strategyRequests += 1
+    return route.fulfill({ json: currentStrategyActions() })
+  })
+
+  await page.goto('/market')
+
+  await expect.poll(() => strategyRequests).toBe(1)
+  const surface = page.getByTestId('market-strategy-actions')
+  await expect(surface).toContainText('苏冰策略事件')
+  await expect(surface).toContainText('JM 焦煤 · 建多')
+  await expect(surface).toContainText('JM2609')
+  await surface.getByRole('button', { name: '查看 JM 建多' }).click()
+  await expect(page).toHaveURL(/\/market\/chart\?/)
+  expect(Object.fromEntries(new URL(page.url()).searchParams)).toEqual({
+    symbol: 'jm', series_kind: 'actual_dominant', frequency: '15m', overlay: 'subing',
+  })
+})
+
+test('distinguishes unavailable, ready empty, and a stale Strategy Event snapshot', async ({ page }) => {
+  let attempt = 0
+  await page.route('**/api/runtime/health', (route) => route.fulfill({ json: runtimeHealth() }))
+  await page.route('**/api/v1/market/research/radar', (route) => route.fulfill({ json: radar() }))
+  await page.route('**/api/v1/market/research/subing-daily-watch/current', (route) => route.fulfill({ json: dailyWatch() }))
+  await page.route('**/api/alerts/strategy-actions/current', (route) => {
+    attempt += 1
+    if (attempt === 1) return route.fulfill({ json: { status: 'unavailable', trading_day: null, items: [] } })
+    if (attempt === 2) return route.fulfill({ json: { status: 'ready', trading_day: '2026-08-25', items: [] } })
+    if (attempt === 3) return route.fulfill({ json: currentStrategyActions() })
+    return route.fulfill({ status: 503 })
+  })
+
+  await page.goto('/market')
+  const surface = page.getByTestId('market-strategy-actions')
+  await expect(surface).toContainText('苏冰策略事件暂不可用')
+
+  await page.getByRole('button', { name: '全部刷新' }).click()
+  await expect(surface).toContainText('当前交易日暂无苏冰策略事件')
+
+  await page.getByRole('button', { name: '全部刷新' }).click()
+  await expect(surface).toContainText('JM 焦煤 · 建多')
+
+  await page.getByRole('button', { name: '全部刷新' }).click()
+  await expect(surface).toContainText('状态已过期：已保留上一份成功事件')
+  await expect(surface).toContainText('JM 焦煤 · 建多')
+})
+
+function currentStrategyActions() {
+  const action = {
+    schema_version: 1,
+    strategy_id: 'subing_strategy_v1', formula_version: 'subing_strategy_15m_v1',
+    action_id: 'subing-action:test', episode_id: 'subing-episode:test', kind: 'open_long',
+    symbol: 'jm', contract: 'JM2609', trading_day: '2026-08-25',
+    segment_start_trading_day: '2026-08-01', opportunity_id: 'subing-opportunity:test',
+    decision_at: '2026-08-25T02:30:00Z', effective_open_at: '2026-08-25T02:30:00Z',
+    effective_bar_end: '2026-08-25T02:45:00Z', reference_price: '100',
+    fill_basis: 'next_bar_open', confirmation_source: 'formal_v1', reason_codes: [],
+    direction_context_source_day: '2026-08-24', direction_context_target_day: '2026-08-25',
+    bound_reference_pivot: null, entry: null, holding_bar_count: null,
+    reference_change_percent: null,
+  }
+  return {
+    status: 'ready', trading_day: '2026-08-25', items: [{
+      id: 1, rule_code: 'subing_strategy_v1', display_name: '苏冰策略', product_name: '焦煤',
+      symbol: 'jm', contract: 'JM2609', trading_day: '2026-08-25', frequency: '15m',
+      bar_end: '2026-08-25T02:30:00Z', result_codes: ['open_long'],
+      action_id: action.action_id, strategy_action: action,
+      detected_at: '2026-08-25T02:30:01Z', notification_attempted_at: null,
+    }],
+  }
 }
 
 test('renders Daily Watch instead of Trend Focus, expands each direction independently, and opens exact SuBing entry', async ({ page }) => {
@@ -155,9 +238,6 @@ test('renders Daily Watch instead of Trend Focus, expands each direction indepen
 test('renders ready Daily Watch before a pending Radar request completes', async ({ page }) => {
   let releaseRadar = () => {}
   const radarGate = new Promise((resolve) => { releaseRadar = resolve })
-  await page.route('**/api/alerts/formal-signals/current', (route) => route.fulfill({
-    json: { status: 'ready', trading_day: '2026-08-24', items: [] },
-  }))
   await page.route('**/api/runtime/health', (route) => route.fulfill({ json: runtimeHealth() }))
   await page.route('**/api/v1/market/research/subing-daily-watch/current', (route) => route.fulfill({ json: dailyWatch() }))
   await page.route('**/api/v1/market/research/radar', async (route) => {
@@ -196,7 +276,7 @@ test('keeps unavailable items collapsed, explains stable reasons, and never make
   await expect(unavailable.getByRole('button')).toHaveCount(0)
 })
 
-test('typed Daily Watch unavailable leaves Runtime, Formal and Radar usable without exposing backend codes', async ({ page }) => {
+test('typed Daily Watch unavailable leaves Runtime and Radar usable without exposing backend codes', async ({ page }) => {
   await mockHomepage(page, radar(), {
     status: 'unavailable', expected_target_trading_day: '2026-08-25',
     latest_target_trading_day: '2026-08-22', error_code: 'SUBING_DAILY_WATCH_STALE', snapshot: null,
@@ -206,14 +286,12 @@ test('typed Daily Watch unavailable leaves Runtime, Formal and Radar usable with
   await expect(page.getByTestId('subing-daily-watch')).toContainText('苏冰今日观察暂不可用')
   await expect(page.getByTestId('subing-daily-watch')).not.toContainText('SUBING_DAILY_WATCH_STALE')
   await expect(page.getByTestId('market-runtime-status')).toContainText('整体正常')
-  await expect(page.getByTestId('market-formal-signals')).toContainText('当前交易日暂无正式信号')
   await page.getByText('展开全市场研究', { exact: true }).click()
   await expect(page.getByText('市场概览', { exact: true })).toBeVisible()
 })
 
 test('latest Daily Watch network failure keeps the prior successful snapshot visibly stale', async ({ page }) => {
   let attempt = 0
-  await page.route('**/api/alerts/formal-signals/current', (route) => route.fulfill({ json: { status: 'ready', trading_day: '2026-08-24', items: [] } }))
   await page.route('**/api/runtime/health', (route) => route.fulfill({ json: runtimeHealth() }))
   await page.route('**/api/v1/market/research/radar', (route) => route.fulfill({ json: radar() }))
   await page.route('**/api/v1/market/research/subing-daily-watch/current', (route) => {
@@ -232,12 +310,8 @@ test('latest Daily Watch network failure keeps the prior successful snapshot vis
   await expect(page.getByTestId('subing-daily-watch')).toContainText('RB RB')
 })
 
-test('refreshes Formal, Runtime, Radar and Daily manually, but excludes Radar from visibility refresh', async ({ page }) => {
-  const counts = { formal: 0, runtime: 0, radar: 0, daily: 0 }
-  await page.route('**/api/alerts/formal-signals/current', (route) => {
-    counts.formal += 1
-    return route.fulfill({ json: { status: 'ready', trading_day: '2026-08-24', items: [] } })
-  })
+test('refreshes Runtime, Radar and Daily manually, but excludes Radar from visibility refresh', async ({ page }) => {
+  const counts = { runtime: 0, radar: 0, daily: 0, strategy: 0 }
   await page.route('**/api/runtime/health', (route) => {
     counts.runtime += 1
     return route.fulfill({ json: runtimeHealth() })
@@ -250,13 +324,17 @@ test('refreshes Formal, Runtime, Radar and Daily manually, but excludes Radar fr
     counts.daily += 1
     return route.fulfill({ json: dailyWatch() })
   })
+  await page.route('**/api/alerts/strategy-actions/current', (route) => {
+    counts.strategy += 1
+    return route.fulfill({ json: { status: 'ready', trading_day: '2026-08-25', items: [] } })
+  })
 
   await page.goto('/market')
-  await expect.poll(() => ({ ...counts })).toEqual({ formal: 1, runtime: 1, radar: 1, daily: 1 })
+  await expect.poll(() => ({ ...counts })).toEqual({ runtime: 1, radar: 1, daily: 1, strategy: 1 })
   await page.getByRole('button', { name: '全部刷新' }).click()
-  await expect.poll(() => ({ ...counts })).toEqual({ formal: 2, runtime: 2, radar: 2, daily: 2 })
+  await expect.poll(() => ({ ...counts })).toEqual({ runtime: 2, radar: 2, daily: 2, strategy: 2 })
   await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))
-  await expect.poll(() => ({ ...counts })).toEqual({ formal: 3, runtime: 3, radar: 2, daily: 3 })
+  await expect.poll(() => ({ ...counts })).toEqual({ runtime: 3, radar: 2, daily: 3, strategy: 3 })
 })
 
 test('keeps Daily Watch independent from Radar freshness and readable at a narrow viewport', async ({ page }) => {

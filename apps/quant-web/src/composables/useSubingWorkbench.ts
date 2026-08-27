@@ -1,42 +1,42 @@
-import type { getCurrentFormalSignals } from '../api/alerts.ts'
+import type { getCurrentStrategyActions } from '../api/alerts.ts'
 import type { getSubingDailyWatchCurrent } from '../api/market.ts'
 import type { SubingDailyWatchCurrentResponse } from '../types/market.ts'
-import { useCurrentFormalSignals } from './useCurrentFormalSignals.ts'
+import { useCurrentStrategyActions } from './useCurrentStrategyActions.ts'
 import { useLatestResource } from './useLatestResource.ts'
 
 export interface SubingWorkbenchDependencies {
-  fetchFormal: typeof getCurrentFormalSignals
+  fetchStrategyActions: typeof getCurrentStrategyActions
   fetchDailyWatch: typeof getSubingDailyWatchCurrent
 }
 
 export function useSubingWorkbench(dependencies: SubingWorkbenchDependencies) {
-  const formal = useCurrentFormalSignals({ fetchCurrent: dependencies.fetchFormal })
+  const strategy = useCurrentStrategyActions({ fetchCurrent: dependencies.fetchStrategyActions })
   const daily = useLatestResource<SubingDailyWatchCurrentResponse>({
     fetch: dependencies.fetchDailyWatch,
   })
   let disposed = false
 
   async function refreshAll() {
-    await Promise.all([formal.refresh(), daily.refresh()])
+    await Promise.all([strategy.refresh(), daily.refresh()])
   }
 
   async function refreshOperational() {
-    await Promise.all([formal.refresh(), daily.refresh()])
+    await Promise.all([strategy.refresh(), daily.refresh()])
   }
 
   function dispose() {
     if (disposed) return
     disposed = true
-    formal.invalidate()
+    strategy.invalidate()
     daily.invalidate()
   }
 
   return {
-    formalStatus: formal.status,
-    formalTradingDay: formal.tradingDay,
-    formalItems: formal.items,
-    formalLoading: formal.loading,
-    formalStale: formal.stale,
+    strategyStatus: strategy.status,
+    strategyTradingDay: strategy.tradingDay,
+    strategyItems: strategy.items,
+    strategyLoading: strategy.loading,
+    strategyStale: strategy.stale,
     dailyWatch: daily.data,
     dailyLoading: daily.loading,
     dailyStale: daily.failed,

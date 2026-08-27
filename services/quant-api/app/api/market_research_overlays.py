@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, date, datetime
 from typing import cast
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -10,11 +10,28 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.market_data.domain import BarFrequency, SeriesKind
-from app.market_data.operational_universe import ActiveUniverseError
+from app.market_data.operational_universe import (
+    ActiveUniverseError,
+    OperationalUniverseError,
+)
 from app.market_data.subing_calibration import SubingCalibrationError
 from app.market_data.subing_lifecycle_policy import SubingLifecyclePolicyError
-from app.market_data.composition import build_subing_strategy_historical_service
-from app.market_data.subing_strategy.contracts import SubingStrategyAction
+from app.market_data.composition import (
+    build_subing_strategy_current_service,
+    build_subing_strategy_historical_service,
+)
+from app.market_data.subing_strategy.contracts import (
+    SUBING_STRATEGY_ID,
+    SubingStrategyAction,
+    SubingStrategyEpisode,
+)
+from app.market_data.subing_strategy.current_service import (
+    SubingStrategyCurrentActiveProductError,
+    SubingStrategyCurrentProjection,
+    SubingStrategyCurrentRequest,
+    SubingStrategyCurrentSourceIdentityError,
+    SubingStrategyCurrentSourceUnavailableError,
+)
 from app.market_data.subing_strategy.direction_context import (
     SubingStrategyContextIdentityError,
 )
@@ -30,10 +47,13 @@ from app.schemas.research_overlays import (
     SubingStrategyActionOut,
     SubingStrategyBoundPivotOut,
     SubingStrategyContextUnavailableOut,
+    SubingStrategyCurrentContextOut,
+    SubingStrategyCurrentResponse,
     SubingStrategyEpisodeOut,
     SubingStrategyHistoricalRequestOut,
     SubingStrategyHistoricalResponse,
     SubingStrategyPolicyOut,
+    SubingStrategyPendingSummaryOut,
     SubingStrategySegmentSummaryOut,
 )
 
@@ -55,6 +75,7 @@ def _strategy_action_out(action: SubingStrategyAction) -> SubingStrategyActionOu
         segment_start_trading_day=action.segment_start_trading_day,
         opportunity_id=action.opportunity_id,
         decision_at=action.decision_at,
+        effective_open_at=action.effective_open_at,
         effective_bar_end=action.effective_bar_end,
         reference_price=action.reference_price,
         fill_basis=action.fill_basis.value,
@@ -80,6 +101,26 @@ def _strategy_action_out(action: SubingStrategyAction) -> SubingStrategyActionOu
             if pivot is not None
             else None
         ),
+    )
+
+
+def _strategy_episode_out(episode: SubingStrategyEpisode) -> SubingStrategyEpisodeOut:
+    return SubingStrategyEpisodeOut(
+        episode_id=episode.episode_id,
+        direction=episode.direction.value,
+        entry_action=_strategy_action_out(episode.entry_action),
+        exit_action=(
+            _strategy_action_out(episode.exit_action)
+            if episode.exit_action is not None
+            else None
+        ),
+        state=episode.state.value,
+        holding_bar_count=episode.holding_bar_count,
+        reference_change_percent=episode.reference_change_percent,
+        current_reference_change_percent=episode.current_reference_change_percent,
+        latest_reference_price=episode.latest_reference_price,
+        exit_reason_codes=list(episode.exit_reason_codes),
+        structure_exit_available=episode.structure_exit_available,
     )
 
 
@@ -112,6 +153,7 @@ def _strategy_response(
                 start_trading_day=summary.start_trading_day,
                 end_trading_day=summary.end_trading_day,
                 loaded_through=summary.loaded_through,
+                bar_count_1m=summary.bar_count_1m,
                 bar_count_5m=summary.bar_count_5m,
                 bar_count_15m=summary.bar_count_15m,
                 initial_position=summary.initial_position.value,
@@ -122,28 +164,7 @@ def _strategy_response(
             for summary in result.segment_summaries
         ],
         actions=[_strategy_action_out(action) for action in result.actions],
-        episodes=[
-            SubingStrategyEpisodeOut(
-                episode_id=episode.episode_id,
-                direction=episode.direction.value,
-                entry_action=_strategy_action_out(episode.entry_action),
-                exit_action=(
-                    _strategy_action_out(episode.exit_action)
-                    if episode.exit_action is not None
-                    else None
-                ),
-                state=episode.state.value,
-                holding_bar_count=episode.holding_bar_count,
-                reference_change_percent=episode.reference_change_percent,
-                current_reference_change_percent=(
-                    episode.current_reference_change_percent
-                ),
-                latest_reference_price=episode.latest_reference_price,
-                exit_reason_codes=list(episode.exit_reason_codes),
-                structure_exit_available=episode.structure_exit_available,
-            )
-            for episode in result.episodes
-        ],
+        episodes=[_strategy_episode_out(episode) for episode in result.episodes],
         context_unavailable=[
             SubingStrategyContextUnavailableOut(
                 symbol=context.symbol,
@@ -159,6 +180,102 @@ def _strategy_response(
         ],
         cache_state=result.cache_state,
     )
+
+
+def _strategy_current_response(
+    result: SubingStrategyCurrentProjection,
+) -> SubingStrategyCurrentResponse:
+    pending = result.pending_action
+    context = result.direction_context
+    return SubingStrategyCurrentResponse(
+        strategy_id=SUBING_STRATEGY_ID,
+        formula_version="subing_strategy_15m_v1",
+        series_kind="actual_dominant",
+        symbol=result.request.symbol,
+        frequency="15m",
+        contract=result.contract,
+        segment_start_trading_day=result.segment_start_trading_day,
+        source_mode=result.source_mode,
+        cutoff=result.cutoff,
+        position_state=result.position_state.value,
+        pending_action=(
+            SubingStrategyPendingSummaryOut(
+                kind=pending.kind.value,
+                decision_at=pending.decision_at,
+                opportunity_id=pending.opportunity_id,
+                reason_codes=list(pending.reason_codes),
+            )
+            if pending is not None
+            else None
+        ),
+        current_episode=(
+            _strategy_episode_out(result.current_episode)
+            if result.current_episode is not None
+            else None
+        ),
+        latest_completed_episode=(
+            _strategy_episode_out(result.latest_completed_episode)
+            if result.latest_completed_episode is not None
+            else None
+        ),
+        direction_context=SubingStrategyCurrentContextOut(
+            symbol=context.symbol,
+            target_trading_day=context.target_trading_day,
+            source_trading_day=context.source_trading_day,
+            direction=context.direction.value,
+            reason_codes=list(context.reason_codes),
+            daily_bar_end=context.daily_bar_end,
+            hourly_bar_end=context.hourly_bar_end,
+            physical_contract=context.physical_contract,
+        ),
+    )
+
+
+@router.get(
+    "/subing-strategy/current",
+    response_model=SubingStrategyCurrentResponse,
+)
+def subing_strategy_current(
+    series_kind: str = Query(...),
+    symbol: str = Query(...),
+    frequency: str = Query(...),
+    session: Session = Depends(get_db),
+) -> SubingStrategyCurrentResponse:
+    try:
+        request = SubingStrategyCurrentRequest(
+            series_kind=cast(SeriesKind, series_kind),
+            symbol=symbol,
+            frequency=cast(BarFrequency, frequency),
+        )
+    except (TypeError, ValueError):
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "INVALID_SUBING_STRATEGY_CURRENT_REQUEST"},
+        ) from None
+    try:
+        result = build_subing_strategy_current_service(session).current(
+            request, datetime.now(UTC)
+        )
+    except (
+        SubingStrategyPolicyError,
+        SubingCalibrationError,
+        SubingLifecyclePolicyError,
+        ActiveUniverseError,
+        OperationalUniverseError,
+        SubingStrategyCurrentActiveProductError,
+        SubingStrategyCurrentSourceUnavailableError,
+        SubingStrategyCurrentSourceIdentityError,
+    ) as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": exc.code},
+        ) from None
+    except (ValueError, RuntimeError):
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "SUBING_STRATEGY_CURRENT_SOURCE_UNAVAILABLE"},
+        ) from None
+    return _strategy_current_response(result)
 
 
 @router.get(

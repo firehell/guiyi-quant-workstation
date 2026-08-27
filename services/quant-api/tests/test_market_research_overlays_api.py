@@ -13,6 +13,9 @@ from app.market_data.subing_calibration import SubingCalibrationError
 from app.market_data.subing_lifecycle import ConfirmationSource
 from app.market_data.subing_lifecycle_policy import SubingLifecyclePolicyError
 from app.market_data.subing_strategy.contracts import SubingStrategyDirection
+from app.market_data.subing_strategy.current_service import (
+    SubingStrategyCurrentSourceIdentityError,
+)
 from app.market_data.subing_strategy.direction_context import (
     SubingStrategyContextIdentityError,
 )
@@ -57,6 +60,7 @@ class _StrategyService:
             segment_start_trading_day=date(2026, 8, 3),
             opportunity_id="subing-opportunity:one",
             decision_at=datetime(2026, 8, 3, 2, 15, tzinfo=UTC),
+            effective_open_at=datetime(2026, 8, 3, 2, 15, tzinfo=UTC),
             effective_bar_end=datetime(2026, 8, 3, 2, 30, tzinfo=UTC),
             reference_price=Decimal("100.5"),
             fill_basis=SimpleNamespace(value="next_bar_open"),
@@ -84,6 +88,7 @@ class _StrategyService:
                     start_trading_day=date(2026, 8, 3),
                     end_trading_day=date(2026, 8, 20),
                     loaded_through=date(2026, 8, 3),
+                    bar_count_1m=15,
                     bar_count_5m=3,
                     bar_count_15m=1,
                     initial_position=SimpleNamespace(value="flat"),
@@ -124,6 +129,173 @@ class _StrategyService:
         )
 
 
+class _CurrentStrategyService:
+    def __init__(self, failure: Exception | None = None) -> None:
+        self.failure = failure
+
+    def current(self, request: object, _now: datetime):
+        if self.failure is not None:
+            raise self.failure
+        return SimpleNamespace(
+            policy=SimpleNamespace(
+                strategy_id="subing_strategy_v1",
+                formula_version="subing_strategy_15m_v1",
+            ),
+            request=request,
+            contract="JM2605",
+            segment_start_trading_day=date(2026, 8, 1),
+            source_mode="canonical_live",
+            cutoff=datetime(2026, 8, 4, 2, 30, tzinfo=UTC),
+            position_state=SimpleNamespace(value="flat"),
+            pending_action=SimpleNamespace(
+                kind=SimpleNamespace(value="open_long"),
+                decision_at=datetime(2026, 8, 4, 2, 15, tzinfo=UTC),
+                opportunity_id="subing-opportunity:one",
+                reason_codes=(),
+            ),
+            current_episode=None,
+            latest_completed_episode=None,
+            direction_context=SimpleNamespace(
+                symbol="jm",
+                target_trading_day=date(2026, 8, 4),
+                source_trading_day=date(2026, 8, 3),
+                direction=SubingStrategyDirection.LONG_ONLY,
+                reason_codes=("D1_H1_LONG_ALIGNED",),
+                daily_bar_end=datetime(2026, 8, 3, 7, 0, tzinfo=UTC),
+                hourly_bar_end=datetime(2026, 8, 3, 7, 0, tzinfo=UTC),
+                physical_contract="JM2605",
+            ),
+        )
+
+
+def test_subing_strategy_current_returns_public_projection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.api.market_research_overlays.build_subing_strategy_current_service",
+        lambda _session: _CurrentStrategyService(),
+        raising=False,
+    )
+
+    response = TestClient(app).get(
+        "/api/v1/market/research/subing-strategy/current",
+        params={
+            "series_kind": "actual_dominant",
+            "symbol": "JM",
+            "frequency": "15m",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "strategy_id": "subing_strategy_v1",
+        "formula_version": "subing_strategy_15m_v1",
+        "series_kind": "actual_dominant",
+        "symbol": "jm",
+        "frequency": "15m",
+        "contract": "JM2605",
+        "segment_start_trading_day": "2026-08-01",
+        "source_mode": "canonical_live",
+        "cutoff": "2026-08-04T02:30:00Z",
+        "position_state": "flat",
+        "pending_action": {
+            "kind": "open_long",
+            "decision_at": "2026-08-04T02:15:00Z",
+            "opportunity_id": "subing-opportunity:one",
+            "reason_codes": [],
+        },
+        "current_episode": None,
+        "latest_completed_episode": None,
+        "direction_context": {
+            "symbol": "jm",
+            "target_trading_day": "2026-08-04",
+            "source_trading_day": "2026-08-03",
+            "direction": "long_only",
+            "reason_codes": ["D1_H1_LONG_ALIGNED"],
+            "daily_bar_end": "2026-08-03T07:00:00Z",
+            "hourly_bar_end": "2026-08-03T07:00:00Z",
+            "physical_contract": "JM2605",
+        },
+    }
+
+
+def test_subing_strategy_current_rejects_unsupported_frequency(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.api.market_research_overlays.build_subing_strategy_current_service",
+        lambda _session: pytest.fail("invalid request must not execute service"),
+        raising=False,
+    )
+
+    response = TestClient(app).get(
+        "/api/v1/market/research/subing-strategy/current",
+        params={
+            "series_kind": "actual_dominant",
+            "symbol": "jm",
+            "frequency": "5m",
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json() == {
+        "detail": {"code": "INVALID_SUBING_STRATEGY_CURRENT_REQUEST"}
+    }
+
+
+def test_subing_strategy_current_maps_source_identity_failure_to_409(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.api.market_research_overlays.build_subing_strategy_current_service",
+        lambda _session: _CurrentStrategyService(
+            SubingStrategyCurrentSourceIdentityError()
+        ),
+    )
+
+    response = TestClient(app).get(
+        "/api/v1/market/research/subing-strategy/current",
+        params={
+            "series_kind": "actual_dominant",
+            "symbol": "jm",
+            "frequency": "15m",
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {
+        "detail": {"code": "SUBING_STRATEGY_CURRENT_SOURCE_IDENTITY_INVALID"}
+    }
+
+
+def test_subing_strategy_current_maps_composition_source_failure_to_409(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.market_data.operational_universe import OperationalUniverseError
+
+    def fail_build(_session):
+        raise OperationalUniverseError()
+
+    monkeypatch.setattr(
+        "app.api.market_research_overlays.build_subing_strategy_current_service",
+        fail_build,
+    )
+
+    response = TestClient(app).get(
+        "/api/v1/market/research/subing-strategy/current",
+        params={
+            "series_kind": "actual_dominant",
+            "symbol": "jm",
+            "frequency": "15m",
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {
+        "detail": {"code": "OPERATIONAL_UNIVERSE_INVALID"}
+    }
+
+
 def test_subing_strategy_history_returns_actions_complete_episodes_and_context(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -150,10 +322,10 @@ def test_subing_strategy_history_returns_actions_complete_episodes_and_context(
     assert payload["policy"]["strategy_id"] == "subing_strategy_v1"
     assert payload["resolved_cutoff"] == "2026-08-03T02:30:00Z"
     assert payload["actions"][0]["kind"] == "open_long"
+    assert payload["actions"][0]["effective_open_at"] == "2026-08-03T02:15:00Z"
     assert payload["actions"][0]["reference_price"] == "100.5"
-    assert payload["episodes"][0]["entry_action"]["action_id"] == (
-        "subing-action:open"
-    )
+    assert payload["segment_summaries"][0]["bar_count_1m"] == 15
+    assert payload["episodes"][0]["entry_action"]["action_id"] == ("subing-action:open")
     assert payload["episodes"][0]["state"] == "open"
     assert payload["context_unavailable"][0]["direction"] == "unavailable"
     assert payload["cache_state"] == "miss"
@@ -204,9 +376,7 @@ def test_subing_strategy_history_rejects_invalid_request(
     )
 
     assert response.status_code == 422
-    assert response.json() == {
-        "detail": {"code": "INVALID_SUBING_STRATEGY_REQUEST"}
-    }
+    assert response.json() == {"detail": {"code": "INVALID_SUBING_STRATEGY_REQUEST"}}
 
 
 @pytest.mark.parametrize(
@@ -314,8 +484,9 @@ def test_n_structure_bands_returns_policy_lineage_and_exact_decimal_facts(
     )
     monkeypatch.setattr(
         "app.research.historical_overlay_api.build_n_structure_research_service",
-        lambda _session, **kwargs: injected.append(kwargs["policy"])
-        or _NStructureBandService(),
+        lambda _session, **kwargs: (
+            injected.append(kwargs["policy"]) or _NStructureBandService()
+        ),
     )
 
     response = TestClient(app).get(
@@ -382,7 +553,9 @@ def test_n_structure_bands_reject_unsupported_identity_before_service(
 ) -> None:
     monkeypatch.setattr(
         "app.research.historical_overlay_api.build_n_structure_research_service",
-        lambda _session, **_kwargs: pytest.fail("unsupported identity must not build service"),
+        lambda _session, **_kwargs: pytest.fail(
+            "unsupported identity must not build service"
+        ),
     )
 
     response = TestClient(app).get(
@@ -397,9 +570,7 @@ def test_n_structure_bands_reject_unsupported_identity_before_service(
     )
 
     assert response.status_code == 422
-    assert response.json() == {
-        "detail": {"code": "INVALID_N_STRUCTURE_BAND_REQUEST"}
-    }
+    assert response.json() == {"detail": {"code": "INVALID_N_STRUCTURE_BAND_REQUEST"}}
 
 
 def test_n_structure_bands_reject_invalid_request_window_as_422(
@@ -422,9 +593,7 @@ def test_n_structure_bands_reject_invalid_request_window_as_422(
     )
 
     assert response.status_code == 422
-    assert response.json() == {
-        "detail": {"code": "INVALID_N_STRUCTURE_BAND_REQUEST"}
-    }
+    assert response.json() == {"detail": {"code": "INVALID_N_STRUCTURE_BAND_REQUEST"}}
 
 
 @pytest.mark.parametrize(
@@ -518,6 +687,7 @@ def test_public_overlay_schemas_keep_only_retained_projection_families() -> None
         assert not hasattr(research_overlay_schemas, name)
 
     assert hasattr(research_overlay_schemas, "SubingStrategyHistoricalResponse")
+    assert hasattr(research_overlay_schemas, "SubingStrategyCurrentResponse")
     assert hasattr(research_overlay_schemas, "NStructureBandResponse")
 
 

@@ -4,7 +4,7 @@ import { NSpin, NSwitch, NTag } from 'naive-ui'
 import type { ProductAlertRuleState } from '@/api/alerts'
 import type { MarketFrequency } from '@/types/market'
 import { alertRuntimeLabel, type AlertRuntimeStatus } from '@/utils/alertControl'
-import { ALERT_RULE_CODES } from '@/utils/alertRules'
+import { ALERT_RULE_CODES, matchesAlertRuleCode } from '@/utils/alertRules'
 
 const props = defineProps<{
   rules: ProductAlertRuleState[]
@@ -24,7 +24,7 @@ const runtimeTagType = computed(() => props.runtimeStatus === 'ok'
   : props.runtimeStatus === 'disabled' ? 'default' : 'warning')
 
 const htdyRule = computed(() => (
-  props.rules.find((rule) => rule.rule_code === ALERT_RULE_CODES.HTDY) ?? null
+  props.rules.find((rule) => matchesAlertRuleCode(rule, ALERT_RULE_CODES.HTDY)) ?? null
 ))
 const label = computed(() => {
   const rule = htdyRule.value

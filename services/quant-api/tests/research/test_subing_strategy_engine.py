@@ -6,10 +6,17 @@ from decimal import Decimal
 
 import pytest
 
+from app.market_data.aggregation import SessionWindow
 from app.market_data.domain import BarFrequency, CanonicalBar
 from app.market_data.subing_ema_trend import PriceSide
 from app.market_data.subing_lifecycle import ConfirmationSource, SubingOpportunityKey
-from app.market_data.subing_research import MacdCross, SubingDirection, SubingFactorSnapshot
+from app.market_data.subing_calibration import load_subing_calibration
+from app.market_data.subing_lifecycle_policy import load_subing_lifecycle_policy
+from app.market_data.subing_research import (
+    MacdCross,
+    SubingDirection,
+    SubingFactorSnapshot,
+)
 from app.market_data.subing_strategy.contracts import (
     SubingStrategyActionKind,
     SubingStrategyDirection,
@@ -29,6 +36,7 @@ from app.market_data.subing_strategy.entry_projection import (
     SubingStrategyEntryCandidate,
 )
 from app.market_data.subing_strategy.policy import load_subing_strategy_policy
+from app.market_data.subing_strategy.machine import SubingStrategyInterval
 from app.market_data.subing_structure import (
     ConfirmedPivot,
     PivotKind,
@@ -85,7 +93,9 @@ def _factor(
         price_side=(
             PriceSide.ABOVE
             if bar.close > ema
-            else PriceSide.BELOW if bar.close < ema else PriceSide.EQUAL
+            else PriceSide.BELOW
+            if bar.close < ema
+            else PriceSide.EQUAL
         ),
         slope_5_raw=Decimal("1"),
         slope_10_raw=Decimal("1"),
@@ -157,7 +167,9 @@ def _candidate(
         origin_at=frame_bar.bar_end - timedelta(minutes=5),
     )
     if suffix != "a":
-        object.__setattr__(key, "origin_at", key.origin_at - timedelta(seconds=ord(suffix)))
+        object.__setattr__(
+            key, "origin_at", key.origin_at - timedelta(seconds=ord(suffix))
+        )
     return SubingStrategyEntryCandidate(
         opportunity_key=key,
         opportunity_id=subing_opportunity_key_id(key),
@@ -227,16 +239,122 @@ def _entry_frames(
 def _run(
     frames: tuple[SubingStrategyDecisionFrame, ...],
     *,
+    first_1m_bars: tuple[CanonicalBar, ...] | None = None,
+    intervals: tuple[SubingStrategyInterval, ...] | None = None,
+    sessions: tuple[SessionWindow, ...] | None = None,
     terminal_bar_end: datetime | None = None,
 ):
+    if first_1m_bars is None:
+        first_1m_bars = tuple(
+            CanonicalBar(
+                bar_end=frame.bar.bar_end - timedelta(minutes=14),
+                trading_day=frame.bar.trading_day,
+                open=frame.bar.open,
+                high=frame.bar.open,
+                low=frame.bar.open,
+                close=frame.bar.open,
+                volume=frame.bar.volume,
+                turnover=None,
+                open_interest=frame.bar.open_interest,
+            )
+            for frame in frames
+        )
+    if intervals is None:
+        intervals = tuple(
+            SubingStrategyInterval(
+                effective_bar_end=frame.bar.bar_end,
+                first_1m_bar_end=frame.bar.bar_end - timedelta(minutes=14),
+                expected_open=frame.bar.open,
+            )
+            for frame in frames
+        )
+    if sessions is None:
+        sessions = tuple(
+            SessionWindow(
+                start=frame.bar.bar_end - timedelta(minutes=15),
+                end=frame.bar.bar_end,
+            )
+            for frame in frames
+        )
     return run_subing_strategy_segment(
         symbol="jm",
         contract=CONTRACT,
         segment_start=SEGMENT_START,
         frames=frames,
+        first_1m_bars=first_1m_bars,
+        intervals=intervals,
+        sessions=sessions,
+        calibration=load_subing_calibration(),
+        lifecycle_policy=load_subing_lifecycle_policy(),
         policy=POLICY,
         terminal_bar_end=terminal_bar_end,
     )
+
+
+def test_compatibility_reducer_rejects_later_same_price_1m() -> None:
+    frames = _entry_frames()[:2]
+    exact = tuple(
+        CanonicalBar(
+            bar_end=frame.bar.bar_end - timedelta(minutes=14),
+            trading_day=frame.bar.trading_day,
+            open=frame.bar.open,
+            high=frame.bar.open,
+            low=frame.bar.open,
+            close=frame.bar.open,
+            volume=frame.bar.volume,
+            turnover=None,
+            open_interest=frame.bar.open_interest,
+        )
+        for frame in frames
+    )
+    later = (
+        exact[0],
+        replace(exact[1], bar_end=exact[1].bar_end + timedelta(minutes=1)),
+    )
+
+    with pytest.raises(ValueError, match="SUBING_STRATEGY_FIRST_1M_IDENTITY_INVALID"):
+        _run(frames, first_1m_bars=later)
+
+
+def test_compatibility_reducer_rejects_jointly_shifted_interval_and_1m() -> None:
+    frames = _entry_frames()[:2]
+    exact = tuple(
+        CanonicalBar(
+            bar_end=frame.bar.bar_end - timedelta(minutes=14),
+            trading_day=frame.bar.trading_day,
+            open=frame.bar.open,
+            high=frame.bar.open,
+            low=frame.bar.open,
+            close=frame.bar.open,
+            volume=frame.bar.volume,
+            turnover=None,
+            open_interest=frame.bar.open_interest,
+        )
+        for frame in frames
+    )
+    shifted = (
+        exact[0],
+        replace(exact[1], bar_end=exact[1].bar_end + timedelta(minutes=1)),
+    )
+    shifted_intervals = (
+        SubingStrategyInterval(
+            effective_bar_end=frames[0].bar.bar_end,
+            first_1m_bar_end=exact[0].bar_end,
+            expected_open=frames[0].bar.open,
+        ),
+        SubingStrategyInterval(
+            effective_bar_end=frames[1].bar.bar_end,
+            first_1m_bar_end=shifted[1].bar_end,
+            expected_open=frames[1].bar.open,
+        ),
+    )
+
+    with pytest.raises(ValueError, match="SUBING_STRATEGY_FIRST_1M_IDENTITY_INVALID"):
+        _run(
+            frames,
+            first_1m_bars=shifted,
+            intervals=shifted_intervals,
+        )
 
 
 def test_long_entry_decides_on_close_and_fills_next_open() -> None:
@@ -245,6 +363,7 @@ def test_long_entry_decides_on_close_and_fills_next_open() -> None:
 
     assert action.kind is SubingStrategyActionKind.OPEN_LONG
     assert action.decision_at == _bar(1).bar_end
+    assert action.effective_open_at == _bar(2).bar_end - timedelta(minutes=15)
     assert action.effective_bar_end == _bar(2).bar_end
     assert action.reference_price == Decimal("100.5")
     assert action.fill_basis is SubingStrategyFillBasis.NEXT_BAR_OPEN
@@ -272,14 +391,78 @@ def test_unaligned_context_consumes_but_does_not_enter_old_opportunity() -> None
 @pytest.mark.parametrize(
     ("direction", "bar", "ema", "cross", "level", "pivot", "reason"),
     (
-        (SubingDirection.LONG, _bar(2, close="98"), "99", MacdCross.NONE, "0", None, "EMA21_BREACH_LONG"),
-        (SubingDirection.LONG, _bar(2, close="94", high="100", low="93"), "90", MacdCross.NONE, "0", None, "PREVIOUS_BAR_LOW_BREACH"),
-        (SubingDirection.LONG, _bar(2, close="97"), "90", MacdCross.NONE, "0", _pivot(SubingDirection.LONG, "98"), "BOUND_LOW_PIVOT_BREACH"),
-        (SubingDirection.LONG, _bar(2), "99", MacdCross.DEAD, "1", None, "MACD_HIGH_DEAD_CROSS"),
-        (SubingDirection.SHORT, _bar(2, close="102"), "101", MacdCross.NONE, "0", None, "EMA21_BREACH_SHORT"),
-        (SubingDirection.SHORT, _bar(2, close="106", high="107"), "110", MacdCross.NONE, "0", None, "PREVIOUS_BAR_HIGH_BREACH"),
-        (SubingDirection.SHORT, _bar(2, close="103"), "110", MacdCross.NONE, "0", _pivot(SubingDirection.SHORT, "102"), "BOUND_HIGH_PIVOT_BREACH"),
-        (SubingDirection.SHORT, _bar(2), "101", MacdCross.GOLDEN, "-1", None, "MACD_LOW_GOLDEN_CROSS"),
+        (
+            SubingDirection.LONG,
+            _bar(2, close="98"),
+            "99",
+            MacdCross.NONE,
+            "0",
+            None,
+            "EMA21_BREACH_LONG",
+        ),
+        (
+            SubingDirection.LONG,
+            _bar(2, close="94", high="100", low="93"),
+            "90",
+            MacdCross.NONE,
+            "0",
+            None,
+            "PREVIOUS_BAR_LOW_BREACH",
+        ),
+        (
+            SubingDirection.LONG,
+            _bar(2, close="97"),
+            "90",
+            MacdCross.NONE,
+            "0",
+            _pivot(SubingDirection.LONG, "98"),
+            "BOUND_LOW_PIVOT_BREACH",
+        ),
+        (
+            SubingDirection.LONG,
+            _bar(2),
+            "99",
+            MacdCross.DEAD,
+            "1",
+            None,
+            "MACD_HIGH_DEAD_CROSS",
+        ),
+        (
+            SubingDirection.SHORT,
+            _bar(2, close="102"),
+            "101",
+            MacdCross.NONE,
+            "0",
+            None,
+            "EMA21_BREACH_SHORT",
+        ),
+        (
+            SubingDirection.SHORT,
+            _bar(2, close="106", high="107"),
+            "110",
+            MacdCross.NONE,
+            "0",
+            None,
+            "PREVIOUS_BAR_HIGH_BREACH",
+        ),
+        (
+            SubingDirection.SHORT,
+            _bar(2, close="103"),
+            "110",
+            MacdCross.NONE,
+            "0",
+            _pivot(SubingDirection.SHORT, "102"),
+            "BOUND_HIGH_PIVOT_BREACH",
+        ),
+        (
+            SubingDirection.SHORT,
+            _bar(2),
+            "101",
+            MacdCross.GOLDEN,
+            "-1",
+            None,
+            "MACD_LOW_GOLDEN_CROSS",
+        ),
     ),
 )
 def test_each_exit_family_closes_full_position(
@@ -480,7 +663,7 @@ def test_authoritative_terminal_cancels_pending_open() -> None:
 
     assert result.actions == ()
     assert result.pending_action is None
-    assert result.canceled_pending[0].reason_code == "NEXT_BAR_UNAVAILABLE"
+    assert result.canceled_pending[0].reason_code == "NEXT_BAR_OPEN_UNAVAILABLE"
     assert result.final_position is SubingStrategyPositionState.FLAT
 
 
@@ -488,7 +671,11 @@ def test_session_gap_fills_at_next_existing_same_segment_bar() -> None:
     first = _bar(1)
     next_session = _bar(2, open_price="103", gap_days=1)
     frames = (
-        _frame(first, previous=None, candidates=(_candidate(first, direction=SubingDirection.LONG),)),
+        _frame(
+            first,
+            previous=None,
+            candidates=(_candidate(first, direction=SubingDirection.LONG),),
+        ),
         _frame(next_session, previous=first),
     )
 
@@ -508,6 +695,7 @@ def test_authoritative_terminal_closes_at_final_close() -> None:
     assert close.kind is SubingStrategyActionKind.CLOSE_LONG
     assert close.reference_price == frames[-1].bar.close
     assert close.fill_basis is SubingStrategyFillBasis.SEGMENT_TERMINAL_CLOSE
+    assert close.effective_open_at is None
     assert close.reason_codes == ("CONTRACT_SEGMENT_END",)
     assert result.final_position is SubingStrategyPositionState.FLAT
 

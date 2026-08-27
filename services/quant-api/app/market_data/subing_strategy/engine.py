@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
+from typing import TYPE_CHECKING
 
 from ..domain import BarFrequency, CanonicalBar, normalize_contract_for_symbol
 from ..subing_research import MacdCross, SubingDirection, SubingFactorSnapshot
@@ -22,6 +23,12 @@ from .contracts import (
 from .direction_context import SubingStrategyDirectionContext
 from .entry_projection import SubingStrategyEntryCandidate
 from .policy import SubingStrategyPolicy
+
+if TYPE_CHECKING:
+    from ..aggregation import SessionWindow
+    from ..subing_calibration import SubingCalibration
+    from ..subing_lifecycle_policy import SubingLifecyclePolicy
+    from .machine import SubingStrategyInterval
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,11 +117,24 @@ def run_subing_strategy_segment(
     contract: str,
     segment_start: date,
     frames: Sequence[SubingStrategyDecisionFrame],
+    first_1m_bars: Sequence[CanonicalBar],
+    intervals: Sequence[SubingStrategyInterval],
+    sessions: Sequence[SessionWindow],
+    calibration: SubingCalibration,
+    lifecycle_policy: SubingLifecyclePolicy,
     policy: SubingStrategyPolicy,
     terminal_bar_end: datetime | None,
 ) -> SubingStrategySegmentResult:
     """Reduce one physical segment prefix without reading beyond each frame."""
     frame_tuple = tuple(frames)
+    first_minutes = tuple(first_1m_bars)
+    interval_tuple = tuple(intervals)
+    from .machine import (
+        SubingStrategyInterval,
+        authoritative_subing_strategy_intervals,
+        replay_subing_strategy_frames,
+    )
+
     _validate_reducer_inputs(
         symbol=symbol,
         contract=contract,
@@ -123,120 +143,184 @@ def run_subing_strategy_segment(
         policy=policy,
         terminal_bar_end=terminal_bar_end,
     )
-    actions: list[SubingStrategyAction] = []
-    closed_pairs: list[tuple[SubingStrategyAction, SubingStrategyAction]] = []
-    consumed: list[str] = []
-    consumed_set: set[str] = set()
-    canceled: list[SubingStrategyPendingCancellation] = []
-    pending: SubingStrategyPendingAction | None = None
-    position: SubingStrategyPosition | None = None
-
-    for frame in frame_tuple:
-        if pending is not None:
-            applied, position, closed_pair = _apply_pending(
-                pending,
-                frame=frame,
-                symbol=symbol,
-                contract=contract,
-                segment_start=segment_start,
-                position=position,
-            )
-            actions.append(applied)
-            if closed_pair is not None:
-                closed_pairs.append(closed_pair)
-            pending = None
-
-        if position is not None:
-            reasons = exit_reason_codes(position=position, frame=frame)
-            if reasons:
-                pending = _pending_close(position, frame=frame, reasons=reasons)
-
-        eligible_entry: SubingStrategyEntryCandidate | None = None
-        for candidate in frame.entry_candidates:
-            if candidate.opportunity_id in consumed_set:
-                continue
-            consumed_set.add(candidate.opportunity_id)
-            consumed.append(candidate.opportunity_id)
-            if (
-                position is None
-                and pending is None
-                and eligible_entry is None
-                and _context_allows_entry(candidate, frame.direction_context)
-            ):
-                eligible_entry = candidate
-        if eligible_entry is not None:
-            pending = _pending_open(
-                eligible_entry,
-                context=frame.direction_context,
-            )
-
-    if terminal_bar_end is not None and frame_tuple:
-        final_frame = frame_tuple[-1]
-        if pending is not None and pending.kind in {
-            SubingStrategyActionKind.OPEN_LONG,
-            SubingStrategyActionKind.OPEN_SHORT,
-        }:
-            canceled.append(
-                SubingStrategyPendingCancellation(
-                    kind=pending.kind,
-                    decision_at=pending.decision_at,
-                    opportunity_id=pending.opportunity_id,
-                    reason_code="NEXT_BAR_UNAVAILABLE",
-                )
-            )
-            pending = None
-        elif position is not None:
-            reasons = (
-                pending.reason_codes if pending is not None else ()
-            ) + ("CONTRACT_SEGMENT_END",)
-            terminal_close = _close_action(
-                position,
-                symbol=symbol,
-                contract=contract,
-                segment_start=segment_start,
-                trading_day=final_frame.bar.trading_day,
-                decision_at=(
-                    pending.decision_at if pending is not None else final_frame.bar.bar_end
-                ),
-                effective_bar_end=final_frame.bar.bar_end,
-                reference_price=final_frame.bar.close,
-                fill_basis=SubingStrategyFillBasis.SEGMENT_TERMINAL_CLOSE,
-                reason_codes=reasons,
-            )
-            actions.append(terminal_close)
-            closed_pairs.append((position.entry_action, terminal_close))
-            position = None
-            pending = None
-
-    bars = tuple(frame.bar for frame in frame_tuple)
-    episodes = [
-        SubingStrategyEpisode.from_actions(
-            entry_action=entry,
-            exit_action=exit_action,
-            completed_15m_bars=bars,
-            latest_reference_price=None,
+    authoritative_intervals = authoritative_subing_strategy_intervals(
+        bars_1m=first_minutes,
+        bars_15m=tuple(frame.bar for frame in frame_tuple),
+        sessions=sessions,
+    )
+    if (
+        len(first_minutes) != len(frame_tuple)
+        or len(interval_tuple) != len(frame_tuple)
+        or any(
+            type(interval) is not SubingStrategyInterval for interval in interval_tuple
         )
-        for entry, exit_action in closed_pairs
-    ]
+        or any(
+            interval.effective_bar_end != frame.bar.bar_end
+            or interval.first_1m_bar_end != minute.bar_end
+            or interval.expected_open != frame.bar.open
+            or minute.trading_day != frame.bar.trading_day
+            or minute.open != frame.bar.open
+            for minute, frame, interval in zip(
+                first_minutes,
+                frame_tuple,
+                interval_tuple,
+                strict=True,
+            )
+        )
+        or interval_tuple != authoritative_intervals
+    ):
+        raise ValueError("SUBING_STRATEGY_FIRST_1M_IDENTITY_INVALID")
+    return replay_subing_strategy_frames(
+        symbol=symbol,
+        contract=contract,
+        segment_start_trading_day=segment_start,
+        frames=frame_tuple,
+        first_1m_bars=first_minutes,
+        intervals=interval_tuple,
+        calibration=calibration,
+        lifecycle_policy=lifecycle_policy,
+        strategy_policy=policy,
+        terminal_bar_end=terminal_bar_end,
+    )
+
+
+def decide_completed_15m(
+    *,
+    frame: SubingStrategyDecisionFrame,
+    position: SubingStrategyPosition | None,
+    pending_action: SubingStrategyPendingAction | None,
+    consumed_opportunity_ids: frozenset[str],
+) -> tuple[SubingStrategyPendingAction | None, tuple[str, ...]]:
+    """Decide exactly once at a completed 15m boundary; never apply an Action."""
+
+    pending = pending_action
     if position is not None:
-        episodes.append(
-            SubingStrategyEpisode.from_actions(
-                entry_action=position.entry_action,
-                exit_action=None,
-                completed_15m_bars=bars,
-                latest_reference_price=bars[-1].close,
-            )
+        reasons = exit_reason_codes(position=position, frame=frame)
+        if reasons:
+            pending = _pending_close(position, frame=frame, reasons=reasons)
+    newly_consumed: list[str] = []
+    eligible_entry: SubingStrategyEntryCandidate | None = None
+    seen = set(consumed_opportunity_ids)
+    for candidate in frame.entry_candidates:
+        if candidate.opportunity_id in seen:
+            continue
+        seen.add(candidate.opportunity_id)
+        newly_consumed.append(candidate.opportunity_id)
+        if (
+            position is None
+            and pending is None
+            and eligible_entry is None
+            and direction_context_allows_entry(candidate, frame.direction_context)
+        ):
+            eligible_entry = candidate
+    if eligible_entry is not None:
+        pending = _pending_open(eligible_entry, context=frame.direction_context)
+    return pending, tuple(newly_consumed)
+
+
+def apply_pending_next_open(
+    pending: SubingStrategyPendingAction,
+    *,
+    first_1m_bar: CanonicalBar,
+    effective_bar_end: datetime,
+    symbol: str,
+    contract: str,
+    segment_start: date,
+    position: SubingStrategyPosition | None,
+) -> tuple[
+    SubingStrategyAction,
+    SubingStrategyPosition | None,
+    tuple[SubingStrategyAction, SubingStrategyAction] | None,
+]:
+    """Apply a pending decision from the authoritative first completed 1m Bar."""
+
+    if (
+        not isinstance(first_1m_bar, CanonicalBar)
+        or first_1m_bar.bar_end >= effective_bar_end
+        or pending.decision_at >= effective_bar_end
+    ):
+        raise ValueError("SUBING_STRATEGY_FIRST_1M_IDENTITY_INVALID")
+    effective_open_at = first_1m_bar.bar_end - timedelta(minutes=1)
+    if pending.kind in {
+        SubingStrategyActionKind.OPEN_LONG,
+        SubingStrategyActionKind.OPEN_SHORT,
+    }:
+        if (
+            position is not None
+            or pending.candidate is None
+            or pending.direction_context is None
+        ):
+            raise ValueError("SUBING_STRATEGY_PENDING_INVALID")
+        action = _open_action(
+            pending,
+            first_1m_bar=first_1m_bar,
+            effective_open_at=effective_open_at,
+            effective_bar_end=effective_bar_end,
+            symbol=symbol,
+            contract=contract,
+            segment_start=segment_start,
         )
-    episodes.sort(key=lambda episode: episode.entry_action.effective_bar_end)
-    return SubingStrategySegmentResult(
-        actions=tuple(actions),
-        episodes=tuple(episodes),
-        consumed_opportunity_ids=tuple(consumed),
-        canceled_pending=tuple(canceled),
-        pending_action=pending,
-        final_position=(
-            position.state if position is not None else SubingStrategyPositionState.FLAT
+        return (
+            action,
+            SubingStrategyPosition(
+                state=(
+                    SubingStrategyPositionState.LONG
+                    if action.kind is SubingStrategyActionKind.OPEN_LONG
+                    else SubingStrategyPositionState.SHORT
+                ),
+                entry_action=action,
+                bound_reference_pivot=action.bound_reference_pivot,
+            ),
+            None,
+        )
+    if position is None or pending.episode_id != position.entry_action.episode_id:
+        raise ValueError("SUBING_STRATEGY_PENDING_INVALID")
+    close = _close_action(
+        position,
+        symbol=symbol,
+        contract=contract,
+        segment_start=segment_start,
+        trading_day=first_1m_bar.trading_day,
+        decision_at=pending.decision_at,
+        effective_open_at=effective_open_at,
+        effective_bar_end=effective_bar_end,
+        reference_price=first_1m_bar.open,
+        fill_basis=SubingStrategyFillBasis.NEXT_BAR_OPEN,
+        reason_codes=pending.reason_codes,
+    )
+    return close, None, (position.entry_action, close)
+
+
+def finalize_segment(
+    *,
+    position: SubingStrategyPosition,
+    pending_action: SubingStrategyPendingAction | None,
+    terminal_bar: CanonicalBar,
+    symbol: str,
+    contract: str,
+    segment_start: date,
+) -> SubingStrategyAction:
+    """Close one remaining position on the authoritative terminal 15m close."""
+
+    reasons = (pending_action.reason_codes if pending_action is not None else ()) + (
+        "CONTRACT_SEGMENT_END",
+    )
+    return _close_action(
+        position,
+        symbol=symbol,
+        contract=contract,
+        segment_start=segment_start,
+        trading_day=terminal_bar.trading_day,
+        decision_at=(
+            pending_action.decision_at
+            if pending_action is not None
+            else terminal_bar.bar_end
         ),
+        effective_open_at=None,
+        effective_bar_end=terminal_bar.bar_end,
+        reference_price=terminal_bar.close,
+        fill_basis=SubingStrategyFillBasis.SEGMENT_TERMINAL_CLOSE,
+        reason_codes=reasons,
     )
 
 
@@ -297,7 +381,7 @@ def _validate_reducer_inputs(
             raise ValueError("SUBING_STRATEGY_FRAME_IDENTITY_INVALID")
 
 
-def _context_allows_entry(
+def direction_context_allows_entry(
     candidate: SubingStrategyEntryCandidate,
     context: SubingStrategyDirectionContext,
 ) -> bool:
@@ -353,66 +437,12 @@ def _pending_close(
     )
 
 
-def _apply_pending(
-    pending: SubingStrategyPendingAction,
-    *,
-    frame: SubingStrategyDecisionFrame,
-    symbol: str,
-    contract: str,
-    segment_start: date,
-    position: SubingStrategyPosition | None,
-) -> tuple[
-    SubingStrategyAction,
-    SubingStrategyPosition | None,
-    tuple[SubingStrategyAction, SubingStrategyAction] | None,
-]:
-    if pending.kind in {
-        SubingStrategyActionKind.OPEN_LONG,
-        SubingStrategyActionKind.OPEN_SHORT,
-    }:
-        if position is not None or pending.candidate is None or pending.direction_context is None:
-            raise ValueError("SUBING_STRATEGY_PENDING_INVALID")
-        action = _open_action(
-            pending,
-            frame=frame,
-            symbol=symbol,
-            contract=contract,
-            segment_start=segment_start,
-        )
-        return (
-            action,
-            SubingStrategyPosition(
-                state=(
-                    SubingStrategyPositionState.LONG
-                    if action.kind is SubingStrategyActionKind.OPEN_LONG
-                    else SubingStrategyPositionState.SHORT
-                ),
-                entry_action=action,
-                bound_reference_pivot=action.bound_reference_pivot,
-            ),
-            None,
-        )
-    if position is None or pending.episode_id != position.entry_action.episode_id:
-        raise ValueError("SUBING_STRATEGY_PENDING_INVALID")
-    close = _close_action(
-        position,
-        symbol=symbol,
-        contract=contract,
-        segment_start=segment_start,
-        trading_day=frame.bar.trading_day,
-        decision_at=pending.decision_at,
-        effective_bar_end=frame.bar.bar_end,
-        reference_price=frame.bar.open,
-        fill_basis=SubingStrategyFillBasis.NEXT_BAR_OPEN,
-        reason_codes=pending.reason_codes,
-    )
-    return close, None, (position.entry_action, close)
-
-
 def _open_action(
     pending: SubingStrategyPendingAction,
     *,
-    frame: SubingStrategyDecisionFrame,
+    first_1m_bar: CanonicalBar,
+    effective_open_at: datetime,
+    effective_bar_end: datetime,
     symbol: str,
     contract: str,
     segment_start: date,
@@ -427,7 +457,7 @@ def _open_action(
         opportunity_id=candidate.opportunity_id,
         kind=pending.kind,
         decision_at=pending.decision_at,
-        effective_bar_end=frame.bar.bar_end,
+        effective_bar_end=effective_bar_end,
         fill_basis=SubingStrategyFillBasis.NEXT_BAR_OPEN,
     )
     return SubingStrategyAction(
@@ -438,12 +468,13 @@ def _open_action(
         kind=pending.kind,
         symbol=symbol,
         contract=contract,
-        trading_day=frame.bar.trading_day,
+        trading_day=first_1m_bar.trading_day,
         segment_start_trading_day=segment_start,
         opportunity_id=candidate.opportunity_id,
         decision_at=pending.decision_at,
-        effective_bar_end=frame.bar.bar_end,
-        reference_price=frame.bar.open,
+        effective_open_at=effective_open_at,
+        effective_bar_end=effective_bar_end,
+        reference_price=first_1m_bar.open,
         fill_basis=SubingStrategyFillBasis.NEXT_BAR_OPEN,
         confirmation_source=candidate.confirmation_source,
         reason_codes=(),
@@ -461,6 +492,7 @@ def _close_action(
     segment_start: date,
     trading_day: date,
     decision_at: datetime,
+    effective_open_at: datetime | None,
     effective_bar_end: datetime,
     reference_price: Decimal,
     fill_basis: SubingStrategyFillBasis,
@@ -493,6 +525,7 @@ def _close_action(
         segment_start_trading_day=segment_start,
         opportunity_id=position.entry_action.opportunity_id,
         decision_at=decision_at,
+        effective_open_at=effective_open_at,
         effective_bar_end=effective_bar_end,
         reference_price=reference_price,
         fill_basis=fill_basis,

@@ -10,7 +10,6 @@ import subprocess
 import tomllib
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[2]
 
 PUBLIC_OVERLAYS = {"none", "subing", "htdy"}
@@ -46,6 +45,52 @@ RETIRED_ENTRYPOINTS = (
     "reports/research/candidate_relationships",
     "apps/quant-web/package-lock.json",
 )
+ALERT_RULE_CODES = frozenset({"htdy_original_15m", "subing_strategy_v1"})
+# The SuBing Rule and Strategy identities intentionally share a public value.
+# Exact file/count ownership keeps those typed strategy uses narrow as well.
+BACKEND_ALERT_RULE_LITERAL_EXPECTED = {
+    "htdy_original_15m": {
+        "services/quant-api/app/alerts/registry.py": 2,
+        "services/quant-api/app/schemas/alerts.py": 1,
+    },
+    "subing_strategy_v1": {
+        "services/quant-api/app/alerts/registry.py": 2,
+        "services/quant-api/app/alerts/strategy_payload.py": 1,
+        "services/quant-api/app/market_data/subing_strategy/contracts.py": 2,
+        "services/quant-api/app/market_data/subing_strategy/engine.py": 3,
+        "services/quant-api/app/schemas/alerts.py": 2,
+        "services/quant-api/app/schemas/research_overlays.py": 1,
+    },
+}
+
+
+def _assert_backend_alert_rule_literal_ownership(
+    sources: dict[str, str],
+) -> None:
+    actual: dict[str, dict[str, int]] = {code: {} for code in ALERT_RULE_CODES}
+    for path, source in sources.items():
+        values = tuple(
+            node.value
+            for node in ast.walk(ast.parse(source))
+            if isinstance(node, ast.Constant) and isinstance(node.value, str)
+        )
+        counts = {code: values.count(code) for code in ALERT_RULE_CODES}
+        assert "subing_entry_signal_v1" not in values
+        for code, count in counts.items():
+            if count:
+                actual[code][path] = count
+    assert actual == BACKEND_ALERT_RULE_LITERAL_EXPECTED, (
+        f"backend Alert Rule literal ownership/count mismatch: {actual}"
+    )
+
+
+def _active_backend_alert_rule_sources() -> dict[str, str]:
+    return {
+        relative.as_posix(): (ROOT / relative).read_text(encoding="utf-8")
+        for path in (ROOT / "services/quant-api/app").rglob("*.py")
+        if path.is_file()
+        for relative in (path.relative_to(ROOT),)
+    }
 
 
 def test_public_entrypoints_are_exact() -> None:
@@ -162,20 +207,22 @@ def test_release_versions_are_consistent() -> None:
 
 
 def test_alert_rule_codes_have_one_production_registry_per_language() -> None:
-    rule_codes = ("htdy_original_15m", "subing_entry_signal_v1")
-    backend_sources = {
-        path.relative_to(ROOT).as_posix()
-        for path in (ROOT / "services/quant-api/app").rglob("*.py")
-        if any(code in path.read_text(encoding="utf-8") for code in rule_codes)
-    }
-    frontend_sources = {
-        path.relative_to(ROOT).as_posix()
-        for path in (ROOT / "apps/quant-web/src").rglob("*")
-        if path.suffix in {".ts", ".vue"}
-        and any(code in path.read_text(encoding="utf-8") for code in rule_codes)
-    }
-    assert backend_sources == {"services/quant-api/app/alerts/registry.py"}
-    assert frontend_sources == {"apps/quant-web/src/utils/alertRules.ts"}
+    backend_registry = importlib.import_module("app.alerts.registry")
+    assert {
+        definition.rule_code for definition in backend_registry.alert_rule_definitions()
+    } == ALERT_RULE_CODES
+
+    _assert_backend_alert_rule_literal_ownership(
+        _active_backend_alert_rule_sources()
+    )
+    frontend = subprocess.run(
+        ["pnpm", "--dir", "apps/quant-web", "run", "check:alert-rules"],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert frontend.stdout.strip() == "[alert-rule-ownership] passed"
 
 
 def test_release_candidate_excludes_private_sources() -> None:

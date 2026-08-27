@@ -15,6 +15,8 @@ import type {
   SubingStrategyHistoricalRequest,
   SubingStrategyHistoricalResponse,
   SubingStrategyHistoricalWireResponse,
+  SubingStrategyCurrentResponse,
+  SubingStrategyCurrentWireResponse,
   SubingDailyWatchCurrentWireResponse,
   SubingResearchResponse,
 } from '@/types/market'
@@ -23,6 +25,7 @@ import {
   normalizeSubingDailyWatchCurrent,
   normalizeSubingResearch,
   normalizeSubingStrategyHistory,
+  normalizeSubingStrategyCurrent,
 } from '@/types/market'
 
 export function getMarketDominants() {
@@ -72,6 +75,20 @@ export function getSubingStrategyHistory(params: SubingStrategyHistoricalRequest
   ).then(normalizeSubingStrategyHistory) as Promise<SubingStrategyHistoricalResponse>
 }
 
+export function getSubingStrategyCurrent(params: {
+  seriesKind: 'actual_dominant'
+  symbol: string
+  frequency: '15m'
+}) {
+  return request.get<never, SubingStrategyCurrentWireResponse>(
+    '/market/research/subing-strategy/current',
+    { params: {
+      series_kind: params.seriesKind,
+      symbol: params.symbol,
+      frequency: params.frequency,
+    } },
+  ).then(normalizeSubingStrategyCurrent) as Promise<SubingStrategyCurrentResponse>
+}
 export function getNStructureBands(params: NStructureBandRequest) {
   return request.get<never, NStructureBandWireResponse>(
     '/market/research/n-structure/bands',

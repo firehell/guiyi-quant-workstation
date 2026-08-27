@@ -11,10 +11,10 @@ from app.core.exact_json_contract import load_exact_json
 
 from ..domain import BarFrequency, SeriesKind
 from ..subing_lifecycle import ConfirmationSource
+from .contracts import SUBING_STRATEGY_ID
 
 
 _POLICY_PATH = PROJECT_ROOT / "data/research_policies/subing_strategy_v1.json"
-_STRATEGY_ID = "subing_strategy_v1"
 _FORMULA_VERSION = "subing_strategy_15m_v1"
 _LIFECYCLE_POLICY_ID = "subing_lifecycle_v2_research_v1"
 _CONFIRMATION_SOURCES = (
@@ -25,7 +25,7 @@ _CONFIRMATION_SOURCES = (
 )
 _EXPECTED_PAYLOAD: dict[str, Any] = {
     "schema_version": 1,
-    "strategy_id": _STRATEGY_ID,
+    "strategy_id": SUBING_STRATEGY_ID,
     "formula_version": _FORMULA_VERSION,
     "research_only": True,
     "series_kind": "actual_dominant",
@@ -94,7 +94,7 @@ class SubingStrategyPolicy:
 
     def __post_init__(self) -> None:
         if (
-            self.strategy_id != _STRATEGY_ID
+            self.strategy_id != SUBING_STRATEGY_ID
             or self.formula_version != _FORMULA_VERSION
             or self.research_only is not True
             or self.series_kind is not SeriesKind.ACTUAL_DOMINANT

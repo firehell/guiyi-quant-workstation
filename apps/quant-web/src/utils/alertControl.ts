@@ -11,12 +11,9 @@ export function isCurrentAlertMutation(input: {
   currentGeneration: number
   requestedSymbol: string
   currentSymbol: string
-  requestedRuleCode: string
-  currentRuleCode: string | undefined
-  updatedRuleCode: string
+  ruleIdentityCurrent: boolean
 }): boolean {
   return input.requestGeneration === input.currentGeneration
     && input.requestedSymbol === input.currentSymbol
-    && input.requestedRuleCode === input.currentRuleCode
-    && input.requestedRuleCode === input.updatedRuleCode
+    && input.ruleIdentityCurrent
 }

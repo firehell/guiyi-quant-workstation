@@ -4,6 +4,7 @@ import math
 from collections.abc import Sequence
 
 from .models import (
+    MacdState,
     HistogramScale,
     IndicatorPoint,
     IndicatorSeries,
@@ -11,9 +12,123 @@ from .models import (
     SeedPolicy,
     parameters_hash,
 )
+from .ema import initial_ema_state, step_ema
 
 
 MACD_VERSION = "v1-draft"
+
+
+def initial_macd_state(
+    fast: int,
+    slow: int,
+    signal: int,
+    *,
+    ema_seed_policy: SeedPolicy,
+    histogram_scale: HistogramScale,
+    round_digits: int = 6,
+) -> MacdState:
+    _validate_macd_periods(
+        fast,
+        slow,
+        signal,
+        ema_seed_policy,
+        histogram_scale,
+        round_digits,
+    )
+    return MacdState(
+        fast=initial_ema_state(
+            fast,
+            seed_policy=ema_seed_policy,
+            round_digits=round_digits,
+        ),
+        slow=initial_ema_state(
+            slow,
+            seed_policy=ema_seed_policy,
+            round_digits=round_digits,
+        ),
+        signal=initial_ema_state(
+            signal,
+            seed_policy=ema_seed_policy,
+            round_digits=round_digits,
+        ),
+        histogram_scale=histogram_scale,
+        round_digits=round_digits,
+    )
+
+
+def step_macd(
+    state: MacdState,
+    close: float | int | None,
+    *,
+    bar_end: str | None,
+) -> tuple[MacdState, tuple[IndicatorPoint, IndicatorPoint, IndicatorPoint]]:
+    """Advance MACD using ready DIF observations as the compact DEA input."""
+
+    close_value = _finite_float(close)
+    fast, _ = step_ema(state.fast, close, bar_end=bar_end)
+    slow, _ = step_ema(state.slow, close, bar_end=bar_end)
+    signal = state.signal
+
+    if close_value is None:
+        if state.fast.seed_policy == "first_value":
+            signal, _ = step_ema(signal, None, bar_end=bar_end)
+        next_state = MacdState(
+            fast=fast,
+            slow=slow,
+            signal=signal,
+            histogram_scale=state.histogram_scale,
+            round_digits=state.round_digits,
+        )
+        invalid = _invalid_point(bar_end, "input_invalid")
+        return next_state, (invalid, invalid, invalid)
+
+    if fast.previous is None or slow.previous is None:
+        next_state = MacdState(
+            fast=fast,
+            slow=slow,
+            signal=signal,
+            histogram_scale=state.histogram_scale,
+            round_digits=state.round_digits,
+        )
+        warming = _warming_point(bar_end)
+        return next_state, (warming, warming, warming)
+
+    dif_value = fast.previous - slow.previous
+    signal, signal_point = step_ema(signal, dif_value, bar_end=bar_end)
+    next_state = MacdState(
+        fast=fast,
+        slow=slow,
+        signal=signal,
+        histogram_scale=state.histogram_scale,
+        round_digits=state.round_digits,
+    )
+    dif_point = IndicatorPoint(
+        bar_end=bar_end,
+        value=round(dif_value, state.round_digits),
+        ready=True,
+        valid=True,
+    )
+    if not signal_point.ready or not signal_point.valid or signal.previous is None:
+        warming = _warming_point(bar_end)
+        return next_state, (dif_point, warming, warming)
+
+    dea_value = signal.previous
+    histogram = (dif_value - dea_value) * state.histogram_scale
+    return next_state, (
+        dif_point,
+        IndicatorPoint(
+            bar_end=bar_end,
+            value=round(dea_value, state.round_digits),
+            ready=True,
+            valid=True,
+        ),
+        IndicatorPoint(
+            bar_end=bar_end,
+            value=round(histogram, state.round_digits),
+            ready=True,
+            valid=True,
+        ),
+    )
 
 
 def macd_series(
@@ -54,126 +169,28 @@ def macd_series(
         "round_digits": round_digits,
     }
     params_hash = parameters_hash(params)
-    fast_ema = _ema_values(closes, fast, ema_seed_policy)
-    slow_ema = _ema_values(closes, slow, ema_seed_policy)
-    dif_raw: list[float | None] = []
-    dif_indexes: list[int] = []
-    valid_closes = [_finite_float(value) for value in closes]
-
-    for index, (fast_value, slow_value, close_value) in enumerate(
-        zip(fast_ema, slow_ema, valid_closes, strict=True)
-    ):
-        if close_value is None or fast_value is None or slow_value is None:
-            dif_raw.append(None)
-            continue
-        value = fast_value - slow_value
-        dif_raw.append(value)
-        dif_indexes.append(index)
-
-    if ema_seed_policy == "sma_window":
-        compact_dif = [value for value in dif_raw if value is not None]
-        dea_compact = _ema_values(compact_dif, signal, ema_seed_policy)
-        dea_raw: list[float | None] = [None] * len(closes)
-        for local_index, dea_value in enumerate(dea_compact):
-            if local_index >= len(dif_indexes):
-                break
-            if dea_value is not None:
-                dea_raw[dif_indexes[local_index]] = dea_value
-    else:
-        dea_raw = _ema_values(dif_raw, signal, ema_seed_policy)
-
+    state = initial_macd_state(
+        fast,
+        slow,
+        signal,
+        ema_seed_policy=ema_seed_policy,
+        histogram_scale=histogram_scale,
+        round_digits=round_digits,
+    )
     dif_points: list[IndicatorPoint] = []
     dea_points: list[IndicatorPoint] = []
     histogram_points: list[IndicatorPoint] = []
 
-    for index, close_value in enumerate(valid_closes):
-        bar_end = _bar_end(bar_ends, index)
-        dif_value = dif_raw[index]
-        dea_value = dea_raw[index]
-
-        if close_value is None:
-            dif_points.append(_invalid_point(bar_end, "input_invalid"))
-            dea_points.append(_invalid_point(bar_end, "input_invalid"))
-            histogram_points.append(_invalid_point(bar_end, "input_invalid"))
-            continue
-
-        if dif_value is None:
-            dif_points.append(
-                IndicatorPoint(
-                    bar_end=bar_end,
-                    value=None,
-                    ready=False,
-                    valid=True,
-                    reason="warming_up",
-                )
-            )
-            dea_points.append(
-                IndicatorPoint(
-                    bar_end=bar_end,
-                    value=None,
-                    ready=False,
-                    valid=True,
-                    reason="warming_up",
-                )
-            )
-            histogram_points.append(
-                IndicatorPoint(
-                    bar_end=bar_end,
-                    value=None,
-                    ready=False,
-                    valid=True,
-                    reason="warming_up",
-                )
-            )
-            continue
-
-        dif_points.append(
-            IndicatorPoint(
-                bar_end=bar_end,
-                value=round(dif_value, round_digits),
-                ready=True,
-                valid=True,
-            )
+    for index, close in enumerate(closes):
+        state, points = step_macd(
+            state,
+            close,
+            bar_end=_bar_end(bar_ends, index),
         )
-
-        if dea_value is None:
-            dea_points.append(
-                IndicatorPoint(
-                    bar_end=bar_end,
-                    value=None,
-                    ready=False,
-                    valid=True,
-                    reason="warming_up",
-                )
-            )
-            histogram_points.append(
-                IndicatorPoint(
-                    bar_end=bar_end,
-                    value=None,
-                    ready=False,
-                    valid=True,
-                    reason="warming_up",
-                )
-            )
-            continue
-
-        histogram = (dif_value - dea_value) * histogram_scale
-        dea_points.append(
-            IndicatorPoint(
-                bar_end=bar_end,
-                value=round(dea_value, round_digits),
-                ready=True,
-                valid=True,
-            )
-        )
-        histogram_points.append(
-            IndicatorPoint(
-                bar_end=bar_end,
-                value=round(histogram, round_digits),
-                ready=True,
-                valid=True,
-            )
-        )
+        dif_point, dea_point, histogram_point = points
+        dif_points.append(dif_point)
+        dea_points.append(dea_point)
+        histogram_points.append(histogram_point)
 
     basis: dict[str, int | str | bool] = {
         "input_field": "close",
@@ -212,6 +229,26 @@ def _validate_macd_params(
     bar_ends: Sequence[str | None] | None,
     round_digits: int,
 ) -> None:
+    _validate_macd_periods(
+        fast,
+        slow,
+        signal,
+        ema_seed_policy,
+        histogram_scale,
+        round_digits,
+    )
+    if bar_ends is not None and len(bar_ends) != len(closes):
+        raise ValueError("bar_ends length must match closes length")
+
+
+def _validate_macd_periods(
+    fast: int,
+    slow: int,
+    signal: int,
+    ema_seed_policy: SeedPolicy,
+    histogram_scale: HistogramScale,
+    round_digits: int,
+) -> None:
     if fast <= 0 or slow <= 0 or signal <= 0:
         raise ValueError("MACD fast, slow, and signal periods must be positive")
     if fast >= slow:
@@ -220,63 +257,8 @@ def _validate_macd_params(
         raise ValueError("ema_seed_policy must be 'sma_window' or 'first_value'")
     if histogram_scale not in (1, 2):
         raise ValueError("histogram_scale must be 1 or 2")
-    if bar_ends is not None and len(bar_ends) != len(closes):
-        raise ValueError("bar_ends length must match closes length")
     if round_digits < 0:
         raise ValueError("round_digits must be non-negative")
-
-
-def _ema_values(
-    values: Sequence[float | int | None],
-    period: int,
-    seed_policy: SeedPolicy,
-) -> list[float | None]:
-    if seed_policy == "first_value":
-        return _ema_values_first_value(values, period)
-    return _ema_values_sma_window(values, period)
-
-
-def _ema_values_first_value(
-    values: Sequence[float | int | None], period: int
-) -> list[float | None]:
-    alpha = 2 / (period + 1)
-    result: list[float | None] = []
-    previous: float | None = None
-    for raw_value in values:
-        value = _finite_float(raw_value)
-        if value is None:
-            previous = None
-            result.append(None)
-            continue
-        previous = value if previous is None else (value - previous) * alpha + previous
-        result.append(previous)
-    return result
-
-
-def _ema_values_sma_window(
-    values: Sequence[float | int | None], period: int
-) -> list[float | None]:
-    alpha = 2 / (period + 1)
-    result: list[float | None] = [None] * len(values)
-    previous: float | None = None
-    for index, raw_value in enumerate(values):
-        value = _finite_float(raw_value)
-        if value is None:
-            previous = None
-            continue
-        if index < period - 1:
-            continue
-        if previous is None:
-            seed_window = [
-                _finite_float(item) for item in values[index - period + 1 : index + 1]
-            ]
-            if any(item is None for item in seed_window):
-                continue
-            previous = sum(item for item in seed_window if item is not None) / period
-        else:
-            previous = (value - previous) * alpha + previous
-        result[index] = previous
-    return result
 
 
 def _indicator_series(
@@ -313,6 +295,16 @@ def _bar_end(bar_ends: Sequence[str | None] | None, index: int) -> str | None:
 def _invalid_point(bar_end: str | None, reason: str) -> IndicatorPoint:
     return IndicatorPoint(
         bar_end=bar_end, value=None, ready=True, valid=False, reason=reason
+    )
+
+
+def _warming_point(bar_end: str | None) -> IndicatorPoint:
+    return IndicatorPoint(
+        bar_end=bar_end,
+        value=None,
+        ready=False,
+        valid=True,
+        reason="warming_up",
     )
 
 

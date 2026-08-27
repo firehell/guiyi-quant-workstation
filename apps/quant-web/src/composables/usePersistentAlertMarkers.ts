@@ -1,8 +1,12 @@
 import { ref } from 'vue'
 import type { AlertEventListResponse } from '../api/alerts.ts'
-import type { BarData, KlineMarker, MarketFrequency, SeriesKind } from '../types/market.ts'
+import type { AlertEvent, BarData, KlineMarker, MarketFrequency, SeriesKind } from '../types/market.ts'
 import { alertEventsToMarkers, isPersistentAlertIdentity, markerRuleCodes } from '../utils/alertMarkers.ts'
-
+import {
+  alertEventIdentityKey,
+  isSubingStrategyAlertEvent,
+  matchesAlertRuleCode,
+} from '../utils/alertRules.ts'
 
 const REFRESH_INTERVAL_MS = 30_000
 const RECENT_WINDOW_MS = 2 * 60 * 60 * 1000
@@ -28,6 +32,7 @@ interface Dependencies {
 
 export function usePersistentAlertMarkers(dependencies: Dependencies) {
   const markers = ref<KlineMarker[]>([])
+  const strategyEvents = ref<AlertEvent[]>([])
   const events = new Map<string, AlertEventListResponse['items'][number]>()
   const fetchEvents = dependencies.fetchEvents
   const scheduleInterval = dependencies.scheduleInterval
@@ -51,6 +56,7 @@ export function usePersistentAlertMarkers(dependencies: Dependencies) {
       stopTimer()
       events.clear()
       markers.value = []
+      strategyEvents.value = []
       activeIdentity = { ...identity }
       loadedStart = null
       loadedEnd = null
@@ -60,6 +66,7 @@ export function usePersistentAlertMarkers(dependencies: Dependencies) {
       stopTimer()
       events.clear()
       markers.value = []
+      strategyEvents.value = []
       activeIdentity = { ...identity }
       loadedStart = null
       loadedEnd = null
@@ -126,7 +133,7 @@ export function usePersistentAlertMarkers(dependencies: Dependencies) {
         const ruleCode = ruleCodes[index]
         for (const event of response.items) {
           if (
-            event.rule_code !== ruleCode
+            !matchesAlertRuleCode(event, ruleCode)
             || event.symbol !== identity.symbol
             || event.frequency !== identity.frequency
           ) continue
@@ -134,6 +141,11 @@ export function usePersistentAlertMarkers(dependencies: Dependencies) {
         }
       }
       markers.value = alertEventsToMarkers([...events.values()])
+      strategyEvents.value = [...events.values()].filter((event) => (
+        isSubingStrategyAlertEvent(event)
+        && event.action_id !== null
+        && event.strategy_action !== null
+      ))
     } catch {
       // Presentation refresh is optional; keep the last persistent marker snapshot.
     }
@@ -150,9 +162,10 @@ export function usePersistentAlertMarkers(dependencies: Dependencies) {
     stopTimer()
     events.clear()
     markers.value = []
+    strategyEvents.value = []
   }
 
-  return { markers, sync, dispose }
+  return { markers, strategyEvents, sync, dispose }
 }
 
 function identityKey(identity: AlertMarkerIdentity | null): string {
@@ -162,7 +175,7 @@ function identityKey(identity: AlertMarkerIdentity | null): string {
 }
 
 function eventKey(event: AlertEventListResponse['items'][number]): string {
-  return `${event.rule_code}:${event.symbol}:${event.frequency}:${event.bar_end}`
+  return alertEventIdentityKey(event)
 }
 
 function barRange(bars: BarData[]): { start: string; end: string } {
