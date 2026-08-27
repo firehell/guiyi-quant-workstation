@@ -229,6 +229,67 @@ describe('Alert Rule AST ownership guard', () => {
     )
   })
 
+  test('resolves bounded const strings for computed runtime rule_code reads', () => {
+    const attacks = {
+      'apps/quant-web/src/AConcat.ts': [
+        "const target = 'subing' + '_strategy_v1'",
+        "const key = 'rule_' + 'code'",
+        'event[key] === target',
+        'const { [key]: code } = event',
+        'target !== code',
+      ].join('\n'),
+      'apps/quant-web/src/BAlias.tsx': [
+        "const target = 'htdy_' + 'original_15m'",
+        "const direct = ('rule_code' as const)",
+        'const key = direct',
+        'const route = () => <p>{target !== event[key]}</p>',
+        'const { [key]: code } = event',
+        'const view = <p>{code === target}</p>',
+      ].join('\n'),
+      'apps/quant-web/src/CComputed.vue': [
+        '<script lang="ts">',
+        "const target = 'subing' + '_strategy_v1'",
+        "const key = 'rule_' + `code`",
+        'event[key] === target',
+        'const { [key]: code } = event',
+        'target !== code',
+        '</script>',
+        '<script setup lang="ts">',
+        "const direct = 'rule_code'",
+        'const key = direct',
+        'const route = () => target !== event[key]',
+        'const { [key]: code } = event',
+        'code === target',
+        '</script>',
+      ].join('\n'),
+      'apps/quant-web/src/DImported.ts': [
+        "import { RULE_KEY as importedKey } from './DKey'",
+        "const target = 'subing' + '_strategy_v1'",
+        'event[importedKey] === target',
+        'const { [importedKey]: code } = event',
+        'target !== code',
+      ].join('\n'),
+      'apps/quant-web/src/DKey.ts': "export const RULE_KEY = 'rule_code'",
+    }
+
+    assert.deepEqual(
+      inspectAlertRuleOwnership(validSources(attacks), EXPECTED_OWNERSHIP)
+        .map(({ code, path }) => ({ code, path })),
+      [
+        { code: 'ALERT_RULE_DIRECT_ROUTING', path: 'apps/quant-web/src/AConcat.ts' },
+        { code: 'ALERT_RULE_DIRECT_ROUTING', path: 'apps/quant-web/src/AConcat.ts' },
+        { code: 'ALERT_RULE_DIRECT_ROUTING', path: 'apps/quant-web/src/BAlias.tsx' },
+        { code: 'ALERT_RULE_DIRECT_ROUTING', path: 'apps/quant-web/src/BAlias.tsx' },
+        { code: 'ALERT_RULE_DIRECT_ROUTING', path: 'apps/quant-web/src/CComputed.vue' },
+        { code: 'ALERT_RULE_DIRECT_ROUTING', path: 'apps/quant-web/src/CComputed.vue' },
+        { code: 'ALERT_RULE_DIRECT_ROUTING', path: 'apps/quant-web/src/CComputed.vue' },
+        { code: 'ALERT_RULE_DIRECT_ROUTING', path: 'apps/quant-web/src/CComputed.vue' },
+        { code: 'ALERT_RULE_DIRECT_ROUTING', path: 'apps/quant-web/src/DImported.ts' },
+        { code: 'ALERT_RULE_DIRECT_ROUTING', path: 'apps/quant-web/src/DImported.ts' },
+      ],
+    )
+  })
+
   test('allows rule_code declarations and helper-only consumers', () => {
     const path = 'apps/quant-web/src/helperConsumer.ts'
     const source = [
@@ -251,8 +312,12 @@ describe('Alert Rule AST ownership guard', () => {
       [ALERT_RULES_PATH]: [
         "export const HTDY = 'htdy_original_15m'",
         "export const SUBING = 'subing_strategy_v1'",
-        'export function matchesAlertRuleCode({ rule_code: code }, ruleCode) {',
-        '  return code === ruleCode',
+        "const directKey = 'rule_code'",
+        'const aliasKey = directKey',
+        "const concatenatedKey = 'rule_' + 'code'",
+        'export function matchesAlertRuleCode(event, ruleCode) {',
+        '  const { [concatenatedKey]: code } = event',
+        '  return code === ruleCode && event[aliasKey] === ruleCode',
         '}',
       ].join('\n'),
     })

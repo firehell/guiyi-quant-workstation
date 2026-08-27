@@ -30,19 +30,26 @@ export function inspectAlertRuleOwnership(sources, expectedOwnership) {
   const activeRuleCodes = Object.keys(expected).sort()
   const occurrences = new Map(activeRuleCodes.map((code) => [code, new Map()]))
   const violations = []
+  const parsedSources = Object.entries(sources)
+    .sort(([left], [right]) => compareText(left, right))
+    .map(([path, source]) => ({ path, source, parsed: parseSource(path, source) }))
 
-  for (const [path, source] of Object.entries(sources).sort(([left], [right]) => (
-    compareText(left, right)
-  ))) {
-    const parsed = parseSource(path, source)
+  for (const { parsed } of parsedSources) {
     violations.push(...parsed.violations)
-    if (parsed.violations.length > 0) continue
+  }
 
+  const checker = createInspectionProgram(
+    parsedSources.flatMap(({ parsed }) => parsed.units),
+  ).getTypeChecker()
+
+  for (const { path, source, parsed } of parsedSources) {
+    if (parsed.violations.length > 0) continue
     for (const unit of parsed.units) {
       inspectTypeScriptUnit({
         path,
         fullSource: source,
         unit,
+        checker,
         activeRuleCodes,
         occurrences,
         violations,
@@ -79,75 +86,13 @@ function inspectTypeScriptUnit({
   path,
   fullSource,
   unit,
+  checker,
   activeRuleCodes,
   occurrences,
   violations,
 }) {
-  const staticKeyBindings = new Map()
-  const staticScopeStack = [unit.sourceFile]
-
-  const scopeBindings = (scope) => {
-    const existing = staticKeyBindings.get(scope)
-    if (existing) return existing
-    const created = new Map()
-    staticKeyBindings.set(scope, created)
-    return created
-  }
-
-  const declareBindingName = (name, value = null) => {
-    if (ts.isIdentifier(name)) {
-      scopeBindings(staticScopeStack.at(-1)).set(name.text, value)
-      return
-    }
-    if (!ts.isObjectBindingPattern(name) && !ts.isArrayBindingPattern(name)) return
-    for (const element of name.elements) {
-      if (ts.isBindingElement(element)) declareBindingName(element.name)
-    }
-  }
-
-  const directStaticText = (node) => {
-    if (!node) return null
-    const expression = ts.skipOuterExpressions(node, ts.OuterExpressionKinds.All)
-    return ts.isStringLiteral(expression) || ts.isNoSubstitutionTemplateLiteral(expression)
-      ? expression.text
-      : null
-  }
-
-  const collectStaticKeyBindings = (node) => {
-    const ownsScope = node !== unit.sourceFile && isRuntimeScope(node)
-    if (ownsScope) staticScopeStack.push(node)
-    if (ts.isFunctionLike(node)) {
-      for (const parameter of node.parameters) declareBindingName(parameter.name)
-    } else if (ts.isCatchClause(node) && node.variableDeclaration) {
-      declareBindingName(node.variableDeclaration.name)
-    } else if (ts.isVariableDeclaration(node)) {
-      const declarationList = node.parent
-      const isConst = ts.isVariableDeclarationList(declarationList)
-        && (declarationList.flags & ts.NodeFlags.Const) !== 0
-      declareBindingName(
-        node.name,
-        isConst && directStaticText(node.initializer) === 'rule_code'
-          ? 'rule_code'
-          : null,
-      )
-    }
-    ts.forEachChild(node, collectStaticKeyBindings)
-    if (ownsScope) staticScopeStack.pop()
-  }
-
-  collectStaticKeyBindings(unit.sourceFile)
-  const runtimeScopeStack = [unit.sourceFile]
-
   const staticPropertyText = (node) => {
-    const direct = directStaticText(node)
-    if (direct !== null) return direct
-    const expression = ts.skipOuterExpressions(node, ts.OuterExpressionKinds.All)
-    if (!ts.isIdentifier(expression)) return null
-    for (let index = runtimeScopeStack.length - 1; index >= 0; index -= 1) {
-      const bindings = staticKeyBindings.get(runtimeScopeStack[index])
-      if (bindings?.has(expression.text)) return bindings.get(expression.text)
-    }
-    return null
+    return evaluateStaticString(node, checker, new Set())
   }
 
   const runtimePropertyName = (node) => {
@@ -194,9 +139,6 @@ function inspectTypeScriptUnit({
   }
 
   const visit = (node) => {
-    const ownsScope = node !== unit.sourceFile && isRuntimeScope(node)
-    if (ownsScope) runtimeScopeStack.push(node)
-
     if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
       const location = sourceLocation(fullSource, unit.baseOffset + node.getStart(unit.sourceFile))
       if (node.text === RETIRED_RULE_CODE) {
@@ -219,19 +161,109 @@ function inspectTypeScriptUnit({
     }
 
     ts.forEachChild(node, visit)
-    if (ownsScope) runtimeScopeStack.pop()
   }
 
   visit(unit.sourceFile)
 }
 
-function isRuntimeScope(node) {
-  return ts.isBlock(node) || ts.isFunctionLike(node) || ts.isCatchClause(node)
+function createInspectionProgram(units) {
+  const options = {
+    allowImportingTsExtensions: true,
+    baseUrl: WEB_ROOT,
+    jsx: ts.JsxEmit.Preserve,
+    module: ts.ModuleKind.ESNext,
+    moduleDetection: ts.ModuleDetectionKind.Force,
+    moduleResolution: ts.ModuleResolutionKind.Bundler,
+    noEmit: true,
+    noLib: true,
+    paths: { '@/*': ['src/*'] },
+    target: ts.ScriptTarget.Latest,
+  }
+  const sourceFiles = new Map(units.map(({ sourceFile }) => [
+    resolve(sourceFile.fileName),
+    sourceFile,
+  ]))
+  const sourceDirectories = new Set()
+  for (const fileName of sourceFiles.keys()) {
+    let directory = dirname(fileName)
+    while (!sourceDirectories.has(directory)) {
+      sourceDirectories.add(directory)
+      const parent = dirname(directory)
+      if (parent === directory) break
+      directory = parent
+    }
+  }
+  const baseHost = ts.createCompilerHost(options, true)
+  const host = {
+    ...baseHost,
+    directoryExists: (directoryName) => sourceDirectories.has(resolve(directoryName)),
+    fileExists: (fileName) => sourceFiles.has(resolve(fileName)),
+    getCurrentDirectory: () => REPOSITORY_ROOT,
+    getDirectories: () => [],
+    getSourceFile: (fileName) => sourceFiles.get(resolve(fileName)),
+    readFile: (fileName) => sourceFiles.get(resolve(fileName))?.text,
+    realpath: (fileName) => resolve(fileName),
+  }
+  return ts.createProgram({
+    rootNames: [...sourceFiles.keys()],
+    options,
+    host,
+  })
+}
+
+function evaluateStaticString(node, checker, resolvingSymbols) {
+  if (!node) return null
+  const expression = ts.skipOuterExpressions(node, ts.OuterExpressionKinds.All)
+  if (ts.isStringLiteral(expression) || ts.isNoSubstitutionTemplateLiteral(expression)) {
+    return expression.text
+  }
+  if (
+    ts.isBinaryExpression(expression)
+    && expression.operatorToken.kind === ts.SyntaxKind.PlusToken
+  ) {
+    const left = evaluateStaticString(expression.left, checker, resolvingSymbols)
+    if (left === null) return null
+    const right = evaluateStaticString(expression.right, checker, resolvingSymbols)
+    return right === null ? null : left + right
+  }
+  if (!ts.isIdentifier(expression)) return null
+
+  let symbol = checker.getSymbolAtLocation(expression)
+  if (!symbol) return null
+  if ((symbol.flags & ts.SymbolFlags.Alias) !== 0) {
+    symbol = checker.getAliasedSymbol(symbol)
+  }
+  if (!symbol || resolvingSymbols.has(symbol)) return null
+
+  const declarations = (symbol.declarations ?? []).filter(ts.isVariableDeclaration)
+  if (declarations.length !== 1) return null
+  const [declaration] = declarations
+  const declarationList = declaration.parent
+  if (
+    !ts.isIdentifier(declaration.name)
+    || !declaration.initializer
+    || !ts.isVariableDeclarationList(declarationList)
+    || (declarationList.flags & ts.NodeFlags.Const) === 0
+  ) return null
+
+  resolvingSymbols.add(symbol)
+  try {
+    return evaluateStaticString(declaration.initializer, checker, resolvingSymbols)
+  } finally {
+    resolvingSymbols.delete(symbol)
+  }
 }
 
 function parseSource(path, source) {
   if (extname(path) === '.vue') return parseVue(path, source)
-  return parseTypeScript(path, source, 0, extname(path) === '.tsx')
+  return parseTypeScript(
+    path,
+    source,
+    0,
+    extname(path) === '.tsx',
+    source,
+    resolve(REPOSITORY_ROOT, path),
+  )
 }
 
 function parseVue(path, source) {
@@ -252,14 +284,19 @@ function parseVue(path, source) {
   }
 
   const units = []
-  for (const block of [descriptor.script, descriptor.scriptSetup]) {
+  for (const [blockName, block] of [
+    ['script', descriptor.script],
+    ['script-setup', descriptor.scriptSetup],
+  ]) {
     if (!block) continue
+    const extension = block.lang === 'tsx' ? 'tsx' : 'ts'
     const parsed = parseTypeScript(
       path,
       block.content,
       block.loc.start.offset,
       block.lang === 'tsx',
       source,
+      resolve(REPOSITORY_ROOT, `${path}.__${blockName}.${extension}`),
     )
     if (parsed.violations.length > 0) return parsed
     units.push(...parsed.units)
@@ -267,9 +304,9 @@ function parseVue(path, source) {
   return { units, violations: [] }
 }
 
-function parseTypeScript(path, source, baseOffset, isTsx, fullSource = source) {
+function parseTypeScript(path, source, baseOffset, isTsx, fullSource, programPath) {
   const sourceFile = ts.createSourceFile(
-    path,
+    programPath,
     source,
     ts.ScriptTarget.Latest,
     true,
