@@ -243,9 +243,13 @@ class SubingStrategyHistoricalProjectionService:
     def history(
         self,
         request: SubingStrategyHistoricalRequest,
+        *,
+        publish_cache: bool = True,
     ) -> SubingStrategyHistoricalProjection:
         if not isinstance(request, SubingStrategyHistoricalRequest):
             raise TypeError("request must be SubingStrategyHistoricalRequest")
+        if type(publish_cache) is not bool:
+            raise TypeError("publish_cache must be bool")
         if request.symbol not in self._products:
             raise SubingStrategyActiveProductError()
         try:
@@ -389,7 +393,11 @@ class SubingStrategyHistoricalProjectionService:
                     final_position=segment_result.final_position,
                     pending_action=segment_result.pending_action is not None,
                 )
-                if cache_state == "miss" and cache_identity is not None:
+                if (
+                    publish_cache
+                    and cache_state == "miss"
+                    and cache_identity is not None
+                ):
                     try:
                         self._cache.write(cache_identity, cached)
                     except SubingStrategyCacheError:

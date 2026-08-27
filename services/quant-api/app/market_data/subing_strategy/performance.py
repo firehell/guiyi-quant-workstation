@@ -112,7 +112,10 @@ class SubingStrategyPerformanceBatchPlan:
 
 class _HistoricalService(Protocol):
     def history(
-        self, request: SubingStrategyHistoricalRequest
+        self,
+        request: SubingStrategyHistoricalRequest,
+        *,
+        publish_cache: bool = True,
     ) -> SubingStrategyHistoricalProjection: ...
 
 
@@ -323,7 +326,8 @@ class SubingStrategyPerformanceService:
                 frequency=BarFrequency.M15,
                 since=since,
                 through=through,
-            )
+            ),
+            publish_cache=publish_cache,
         )
         loaded_through = tuple(
             summary.loaded_through for summary in projection.segment_summaries

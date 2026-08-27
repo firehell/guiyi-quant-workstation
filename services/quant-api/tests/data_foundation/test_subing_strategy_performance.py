@@ -107,7 +107,7 @@ def test_zero_completed_has_null_aggregates() -> None:
 
 
 def test_performance_service_uses_fixed_actual_dominant_15m_full_window(tmp_path) -> None:
-    observed: list[SubingStrategyHistoricalRequest] = []
+    observed: list[tuple[SubingStrategyHistoricalRequest, bool]] = []
     projection = type(
         "Projection",
         (),
@@ -133,8 +133,13 @@ def test_performance_service_uses_fixed_actual_dominant_15m_full_window(tmp_path
     )()
 
     class Historical:
-        def history(self, request: SubingStrategyHistoricalRequest):
-            observed.append(request)
+        def history(
+            self,
+            request: SubingStrategyHistoricalRequest,
+            *,
+            publish_cache: bool = True,
+        ):
+            observed.append((request, publish_cache))
             return projection
 
     cache_root = tmp_path / "cache"
@@ -165,7 +170,11 @@ def test_performance_service_uses_fixed_actual_dominant_15m_full_window(tmp_path
         since=date(2020, 1, 2),
         through=date(2026, 8, 26),
     )
-    assert observed == [expected_request, expected_request, expected_request]
+    assert observed == [
+        (expected_request, False),
+        (expected_request, True),
+        (expected_request, False),
+    ]
     assert result.symbol == "jm"
     assert result.series_kind is SeriesKind.ACTUAL_DOMINANT
     assert result.frequency is BarFrequency.M15
@@ -208,7 +217,13 @@ def test_performance_rejects_projection_that_did_not_reach_requested_through() -
         },
     )()
     service = SubingStrategyPerformanceService(
-        type("Historical", (), {"history": lambda _self, _request: projection})(),
+        type(
+            "Historical",
+            (),
+            {
+                "history": lambda _self, _request, publish_cache=False: projection,
+            },
+        )(),
         products=("jm",),
         window_resolver=lambda _symbol: (date(2020, 1, 2), date(2026, 8, 26)),
     )
