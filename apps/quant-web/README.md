@@ -9,9 +9,7 @@
 - active 60 的当日 rank1 completed 1m 可通过 Historical/Live seam 增量观察；continuous、非 rank1
   contract、日线和周线保持 Historical-only。
 - 图表已挂载 K 线、成交量、OI、EMA/MACD、HTDY 观察、SuBing Factor/Signal 观察与
-  Alert V2 Scope/Event 上下文；`图表设置` 另有默认关闭、仅支持真实主力 5m 的 `N字区间`
-  Historical Canonical 图层，可与四项主图 Overlay 组合显示。密集同向区间会保留一个完整主 N、
-  其余显示淡轨，并可通过 `N↑ ×N` / `N↓ ×N` 徽标轮换查看；Web 不复制 N 计算。
+  Alert V2 Scope/Event 上下文；`图表设置`保留可选 EMA、SuBing internal-process 与合约控制。
 - 无通用 signal/strategy、Execution Review、RQAlpha、dashboard/settings 入口。
 
 ## B1 决策漏斗
