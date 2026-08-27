@@ -181,11 +181,12 @@ function parseTypeScript(path, source, baseOffset, isTsx, fullSource = source) {
 }
 
 function isRuleCodeProperty(node) {
-  if (ts.isPropertyAccessExpression(node)) return node.name.text === 'rule_code'
-  return ts.isElementAccessExpression(node)
-    && (ts.isStringLiteral(node.argumentExpression)
-      || ts.isNoSubstitutionTemplateLiteral(node.argumentExpression))
-    && node.argumentExpression.text === 'rule_code'
+  const expression = ts.skipOuterExpressions(node, ts.OuterExpressionKinds.All)
+  if (ts.isPropertyAccessExpression(expression)) return expression.name.text === 'rule_code'
+  return ts.isElementAccessExpression(expression)
+    && (ts.isStringLiteral(expression.argumentExpression)
+      || ts.isNoSubstitutionTemplateLiteral(expression.argumentExpression))
+    && expression.argumentExpression.text === 'rule_code'
 }
 
 function sourceLocation(source, offset) {

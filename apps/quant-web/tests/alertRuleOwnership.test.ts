@@ -80,6 +80,58 @@ describe('Alert Rule AST ownership guard', () => {
     )
   })
 
+  test('rejects rule_code routing through every transparent TypeScript wrapper', () => {
+    const attacks = [
+      '(event.rule_code) === target',
+      'event.rule_code! === target',
+      '(event.rule_code as string) === target',
+      '<string>event.rule_code === target',
+      '(event.rule_code satisfies string) === target',
+      'target !== (event.rule_code)',
+    ]
+
+    for (const [index, source] of attacks.entries()) {
+      const path = `apps/quant-web/src/wrapped-${index}.ts`
+      assert.deepEqual(
+        inspectAlertRuleOwnership(validSources({ [path]: source }), EXPECTED_OWNERSHIP)
+          .map(({ code, path: violationPath }) => ({ code, path: violationPath })),
+        [{ code: 'ALERT_RULE_DIRECT_ROUTING', path }],
+      )
+    }
+  })
+
+  test('rejects nested transparent rule_code wrappers in TSX', () => {
+    const path = 'apps/quant-web/src/Wrapped.tsx'
+    const source = 'export const view = <p>{((event.rule_code as string)!) === target}</p>'
+
+    assert.deepEqual(
+      inspectAlertRuleOwnership(validSources({ [path]: source }), EXPECTED_OWNERSHIP)
+        .map(({ code, path: violationPath }) => ({ code, path: violationPath })),
+      [{ code: 'ALERT_RULE_DIRECT_ROUTING', path }],
+    )
+  })
+
+  test('rejects transparent rule_code wrappers in both Vue script blocks', () => {
+    const path = 'apps/quant-web/src/Wrapped.vue'
+    const source = [
+      '<script lang="ts">',
+      '(event.rule_code as string) === target',
+      '</script>',
+      '<script setup lang="ts">',
+      'target !== event.rule_code!',
+      '</script>',
+    ].join('\n')
+
+    assert.deepEqual(
+      inspectAlertRuleOwnership(validSources({ [path]: source }), EXPECTED_OWNERSHIP)
+        .map(({ code, line, path: violationPath }) => ({ code, line, path: violationPath })),
+      [
+        { code: 'ALERT_RULE_DIRECT_ROUTING', line: 2, path },
+        { code: 'ALERT_RULE_DIRECT_ROUTING', line: 5, path },
+      ],
+    )
+  })
+
   test('parses both Vue script blocks as TypeScript', () => {
     const path = 'apps/quant-web/src/Rogue.vue'
     const source = [
