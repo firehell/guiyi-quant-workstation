@@ -19,5 +19,5 @@
 | Validation | causality、strict-before、future-leak、prefix invariance、golden parity、fail-closed 是长期合同 | Retrospective 不回填 prospective OOS，不自动晋升候选 |
 | Alert | 两表、Event 先提交、one-shot transport | 无 retry/replay/backfill/queue/outbox/订单；provider accepted 不等于送达 |
 | 外部操作 | 真实数据/DB、Runtime/live、Scope、通知、release/tag 需要范围明确的一次性执行意图 | 测试、dry-run、历史授权、配置存在或 health 不构成 mutation 授权 |
-| Retired surface | JDJ、Attention、Trend Focus、Main Force Mirror、Five-Candidate phase assets、RQAlpha、Execution Review 退出 active surface | 历史只保留 Git/Alembic lineage，不保留 active route、consumer 或 Runtime seam |
+| Retired surface | JDJ、Attention、Trend Focus、Main Force Mirror、Five-Candidate phase assets、N Structure、专用于 SuBing↔N 的 Multi-Candidate Robustness、RQAlpha、Execution Review 退出 active surface | 历史只保留 Git/Alembic lineage，不保留 active route、consumer 或 Runtime seam；恢复必须由新任务定义 consumer、formula、value 与 evidence；`subing_structure.py` 是保留的 SuBing 基础设施，不属于本次退役 |
 | 文档职责 | `PROJECT_SOURCE.md` 定义稳定产品面；`docs/ARCHITECTURE.md` 定义 active 依赖；deep canonical 定义业务语义 | `STATUS.md` 不承载历史过程，Git history 不构成未来授权 |

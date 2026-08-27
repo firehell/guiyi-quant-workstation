@@ -37,7 +37,6 @@ uv run --project services/quant-api python -m ruff check services/quant-api/app 
 ```bash
 uv run --project services/quant-api guiyi research subing-calibration --help
 uv run --project services/quant-api guiyi research subing-lifecycle --help
-uv run --project services/quant-api guiyi research n-structure --help
 ```
 
 ## Web

@@ -6,9 +6,6 @@ import type {
   MarketReadState,
   MarketFrequency,
   MarketRadarResponse,
-  NStructureBandRequest,
-  NStructureBandResponse,
-  NStructureBandWireResponse,
   ProductResearchResponse,
   SeriesKind,
   SubingFrequency,
@@ -88,20 +85,6 @@ export function getSubingStrategyCurrent(params: {
       frequency: params.frequency,
     } },
   ).then(normalizeSubingStrategyCurrent) as Promise<SubingStrategyCurrentResponse>
-}
-export function getNStructureBands(params: NStructureBandRequest) {
-  return request.get<never, NStructureBandWireResponse>(
-    '/market/research/n-structure/bands',
-    { params },
-  ).then((payload): NStructureBandResponse => ({
-    ...payload,
-    bands: payload.bands.map((band) => ({
-      ...band,
-      completion_level: Number(band.completion_level),
-      lower: Number(band.lower),
-      upper: Number(band.upper),
-    })),
-  }))
 }
 
 /** FastAPI serializes Decimal as strings; convert only at the display HTTP boundary. */

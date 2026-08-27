@@ -8,9 +8,6 @@ from decimal import Decimal, InvalidOperation
 from typing import TypeAlias
 
 from app.market_data.domain import BarFrequency
-from app.research.n_structure.n_structure_research_service import (
-    NStructureResearchRequest,
-)
 from app.research.subing.subing_calibration_service import (
     CalibrationMode,
     CalibrationPhase,
@@ -20,23 +17,15 @@ from app.research.subing.subing_calibration_service import (
 from app.research.subing.subing_lifecycle_research_service import (
     LifecycleResearchRequest,
 )
-ResearchRequest: TypeAlias = (
-    CalibrationResearchRequest
-    | LifecycleResearchRequest
-    | NStructureResearchRequest
-)
+
+
+ResearchRequest: TypeAlias = CalibrationResearchRequest | LifecycleResearchRequest
 
 
 def build_research_request(args: argparse.Namespace) -> ResearchRequest:
     """Convert CLI strings into one immutable research request."""
     if args.research_command == "subing-lifecycle":
         return LifecycleResearchRequest(
-            since=_day(args.since),
-            through=_day(args.through),
-            symbol=args.symbol,
-        )
-    if args.research_command == "n-structure":
-        return NStructureResearchRequest(
             since=_day(args.since),
             through=_day(args.through),
             symbol=args.symbol,
