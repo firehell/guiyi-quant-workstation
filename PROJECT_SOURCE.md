@@ -22,7 +22,7 @@ SuBing 是一个产品，保留三种不可互相替代的事实：
 
 SuBing Strategy V1 的 Stage 1 Historical Projection 与 Stage 2 completed-Live evaluator 共享唯一增量状态机。公开身份始终为 active universe 中单品种 `actual_dominant + 15m`；1m/5m 仅为内部权威输入。Historical 从每个 rank1 物理段起点确定性复算 Daily Context、Factor、Lifecycle、Strategy Action 与 Episode；普通动作只在下一实际同物理合约 15m 区间第一根 completed 1m 的 open 生效。退出仅来自 EMA21、上一根 15m 极值、绑定 Pivot 与 MACD 高低位反向交叉。不加减仓、不反手、不跨物理段、不在同 Bar 重建仓；只有覆盖权威段末时才以旧段最后一根 15m close 清仓。
 
-Stage 2 代码为 active60 在内存恢复和维护相互隔离的策略状态，计算范围独立于 Alert Scope；`scope_products` 只控制 immutable Strategy Action Event 与 owner one-shot PushPlus。启动恢复/catch-up 不补 Event、不补通知；Current Strategy 从 Canonical + completed Live 只读重建，不以 AlertEvent 作为仓位权威。该代码已随 `v1.8.7` release，尚未 Runtime promotion，不改变当前 production Runtime。
+Stage 2 代码为 active60 在内存恢复和维护相互隔离的策略状态，计算范围独立于 Alert Scope；`scope_products` 只控制 immutable Strategy Action Event 与 owner one-shot PushPlus。启动恢复/catch-up 不补 Event、不补通知；Current Strategy 从 Canonical + completed Live 只读重建，不以 AlertEvent 作为仓位权威。具体 release、production migration、Runtime 与 enable 状态只在 `STATUS.md` 记录。
 
 产品详情另有固定的 `actual_dominant + 15m` 全历史策略效果视图：仍复用唯一 Historical Strategy Projection，只统计完整 Episode 的参考价变动、持有 Bar 与退出原因；未完成 Episode 仅展示、不进入完成统计。该视图不引入本金、仓位、费用、资金曲线、回撤或订单语义。结果使用可删除的 Git 外 cache；首次 active60 预热和盘后刷新均是派生步骤，单品失败只令派生状态 degraded，不撤销已成功的 Canonical 更新，也不触发通知或 retry。
 
@@ -32,7 +32,7 @@ Stage 2 代码为 active60 在内存恢复和维护相互隔离的策略状态�
 
 ## HTDY 与 Alert
 
-HTDY 是 observation-only/repainting 产品，能力覆盖七个正式周期 `1m/5m/15m/30m/60m/1d/1w`。稳定 Rule code 为 `htdy_original_15m`，唯一 Scope authority 是 `scope_product_frequencies` 的 symbol × frequency；新 SuBing 代码唯一 Rule code 为 `subing_strategy_v1`，唯一 Scope authority 是 `scope_products`。Migration `20260826_0042` 以 forward-only 原子步骤删除旧 SuBing Event、保留旧 Rule row 的 `id/enabled/scope_products` 并将 `subing_entry_signal_v1` 直接替换为 `subing_strategy_v1`；不保留 archive、双 Rule、兼容 reader、replay 或 downgrade。0042 尚未在 production 执行，因此当前 production Rule 身份仍以 `STATUS.md` 为准。两种 Scope 不混用、不合并。
+HTDY 是 observation-only/repainting 产品，能力覆盖七个正式周期 `1m/5m/15m/30m/60m/1d/1w`。稳定 Rule code 为 `htdy_original_15m`，唯一 Scope authority 是 `scope_product_frequencies` 的 symbol × frequency；SuBing 唯一 Rule code 为 `subing_strategy_v1`，唯一 Scope authority 是 `scope_products`。Migration `20260826_0042` 以 forward-only 原子步骤删除旧 SuBing Event、保留旧 Rule row 的 `id/enabled/scope_products` 并将 `subing_entry_signal_v1` 直接替换为 `subing_strategy_v1`；不保留 archive、双 Rule、兼容 reader、replay 或 downgrade。两种 Scope 不混用、不合并。
 
 Alert 是独立 Application Domain，只含 `alert_rules` 与 `alert_events` 两张表。Event 先提交，随后最多一次 transport；无逐收件人状态、retry、queue、replay、backfill、fallback 或订单路径。provider accepted 不等于送达。
 
