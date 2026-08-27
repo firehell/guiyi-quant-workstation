@@ -120,13 +120,79 @@ describe('Alert Rule AST ownership guard', () => {
     )
   })
 
+  test('rejects rule_code aliases introduced by destructured function parameters', () => {
+    const attacks = {
+      'apps/quant-web/src/Parameter.ts': [
+        "const target = 'subing' + '_strategy_v1'",
+        'function route({ rule_code: code }) {',
+        '  return code === target',
+        '}',
+      ].join('\n'),
+      'apps/quant-web/src/Parameter.tsx': [
+        "const target = 'subing' + '_strategy_v1'",
+        'export const route = ({ rule_code: code }) => <p>{target !== code}</p>',
+      ].join('\n'),
+      'apps/quant-web/src/Parameter.vue': [
+        '<script lang="ts">',
+        "const target = 'subing' + '_strategy_v1'",
+        'function route({ rule_code: code }) {',
+        '  return target === code',
+        '}',
+        '</script>',
+        '<script setup lang="ts">',
+        "const target = 'htdy_' + 'original_15m'",
+        'const route = ({ rule_code: code }) => code !== target',
+        '</script>',
+      ].join('\n'),
+    }
+
+    assert.deepEqual(
+      inspectAlertRuleOwnership(validSources(attacks), EXPECTED_OWNERSHIP)
+        .map(({ code, path }) => ({ code, path })),
+      [
+        { code: 'ALERT_RULE_DIRECT_ROUTING', path: 'apps/quant-web/src/Parameter.ts' },
+        { code: 'ALERT_RULE_DIRECT_ROUTING', path: 'apps/quant-web/src/Parameter.tsx' },
+        { code: 'ALERT_RULE_DIRECT_ROUTING', path: 'apps/quant-web/src/Parameter.vue' },
+        { code: 'ALERT_RULE_DIRECT_ROUTING', path: 'apps/quant-web/src/Parameter.vue' },
+      ],
+    )
+  })
+
+  test('propagates computed, array, nested, and default binding sources recursively', () => {
+    const path = 'apps/quant-web/src/BindingSources.ts'
+    const source = [
+      "const target = 'subing' + '_strategy_v1'",
+      "const { ['rule_code']: computedCode } = event",
+      'computedCode === target',
+      'const [arrayCode] = [event.rule_code]',
+      'target !== arrayCode',
+      'const { x = event.rule_code } = object',
+      'x === target',
+      'const { nested: { rule_code: nestedCode } } = event',
+      'target === nestedCode',
+      'const { outer: [recursiveCode] } = { outer: [event.rule_code] }',
+      'recursiveCode !== target',
+    ].join('\n')
+
+    assert.deepEqual(
+      inspectAlertRuleOwnership(validSources({ [path]: source }), EXPECTED_OWNERSHIP)
+        .map(({ code, path: violationPath }) => ({ code, path: violationPath })),
+      [
+        { code: 'ALERT_RULE_DIRECT_ROUTING', path },
+        { code: 'ALERT_RULE_DIRECT_ROUTING', path },
+        { code: 'ALERT_RULE_DIRECT_ROUTING', path },
+        { code: 'ALERT_RULE_DIRECT_ROUTING', path },
+        { code: 'ALERT_RULE_DIRECT_ROUTING', path },
+      ],
+    )
+  })
+
   test('allows local rule_code aliases inside the routing owner helper', () => {
     const sources = validSources({
       [ALERT_RULES_PATH]: [
         "export const HTDY = 'htdy_original_15m'",
         "export const SUBING = 'subing_strategy_v1'",
-        'export function matchesAlertRuleCode(event, ruleCode) {',
-        '  const code = event.rule_code',
+        'export function matchesAlertRuleCode({ rule_code: code }, ruleCode) {',
         '  return code === ruleCode',
         '}',
       ].join('\n'),

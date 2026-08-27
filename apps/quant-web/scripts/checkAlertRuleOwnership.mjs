@@ -113,59 +113,132 @@ function inspectTypeScriptUnit({
     scopes[scopes.length - 1].set(name, alias)
   }
 
-  const bindName = (name, alias, assignment = false) => {
+  const objectPropertySource = (source, propertyName) => {
+    if (!source) return undefined
+    const expression = ts.skipOuterExpressions(source, ts.OuterExpressionKinds.All)
+    if (!ts.isObjectLiteralExpression(expression)) return undefined
+    const expectedName = propertyNameText(propertyName)
+    if (expectedName === null) return undefined
+    for (const property of expression.properties) {
+      if (
+        ts.isPropertyAssignment(property)
+        && propertyNameText(property.name) === expectedName
+      ) return property.initializer
+      if (
+        ts.isShorthandPropertyAssignment(property)
+        && property.name.text === expectedName
+      ) return property.name
+    }
+    return undefined
+  }
+
+  const arrayElementSource = (source, index) => {
+    if (!source) return undefined
+    const expression = ts.skipOuterExpressions(source, ts.OuterExpressionKinds.All)
+    if (!ts.isArrayLiteralExpression(expression)) return undefined
+    const element = expression.elements[index]
+    if (!element || ts.isOmittedExpression(element)) return undefined
+    return ts.isSpreadElement(element) ? element.expression : element
+  }
+
+  const bindBindingName = (name, source, inheritedAlias = false) => {
+    const sourceAlias = source ? isTrackedRuleCode(source) : false
+    const alias = inheritedAlias || sourceAlias
     if (ts.isIdentifier(name)) {
-      bindIdentifier(name.text, alias, assignment)
+      bindIdentifier(name.text, alias)
       return
     }
-    if (ts.isObjectBindingPattern(name) || ts.isArrayBindingPattern(name)) {
+    if (ts.isObjectBindingPattern(name)) {
       for (const element of name.elements) {
+        const property = element.propertyName ?? element.name
+        bindBindingName(
+          element.name,
+          objectPropertySource(source, property),
+          alias
+            || propertyNameText(property) === 'rule_code'
+            || (element.initializer ? isTrackedRuleCode(element.initializer) : false),
+        )
+      }
+      return
+    }
+    if (ts.isArrayBindingPattern(name)) {
+      for (const [index, element] of name.elements.entries()) {
         if (!ts.isBindingElement(element)) continue
-        bindName(element.name, alias, assignment)
+        bindBindingName(
+          element.name,
+          arrayElementSource(source, index),
+          alias || (element.initializer ? isTrackedRuleCode(element.initializer) : false),
+        )
       }
     }
   }
 
-  const recordObjectBinding = (pattern, assignment = false) => {
-    for (const element of pattern.elements) {
-      if (!ts.isBindingElement(element)) continue
-      const property = element.propertyName ?? element.name
-      bindName(element.name, propertyNameText(property) === 'rule_code', assignment)
+  const bindAssignmentTarget = (target, source, inheritedAlias = false) => {
+    const expression = ts.skipOuterExpressions(target, ts.OuterExpressionKinds.All)
+    const alias = inheritedAlias || (source ? isTrackedRuleCode(source) : false)
+    if (ts.isIdentifier(expression)) {
+      bindIdentifier(expression.text, alias, true)
+      return
     }
-  }
-
-  const recordObjectAssignment = (expression) => {
-    for (const property of expression.properties) {
-      if (ts.isShorthandPropertyAssignment(property)) {
-        bindIdentifier(property.name.text, property.name.text === 'rule_code', true)
-      } else if (
-        ts.isPropertyAssignment(property)
-        && propertyNameText(property.name) === 'rule_code'
-      ) {
-        bindName(property.initializer, true, true)
+    if (
+      ts.isBinaryExpression(expression)
+      && expression.operatorToken.kind === ts.SyntaxKind.EqualsToken
+    ) {
+      bindAssignmentTarget(
+        expression.left,
+        source,
+        alias || isTrackedRuleCode(expression.right),
+      )
+      return
+    }
+    if (ts.isObjectLiteralExpression(expression)) {
+      for (const property of expression.properties) {
+        if (ts.isShorthandPropertyAssignment(property)) {
+          const propertySource = objectPropertySource(source, property.name)
+          bindIdentifier(
+            property.name.text,
+            alias
+              || property.name.text === 'rule_code'
+              || (propertySource ? isTrackedRuleCode(propertySource) : false)
+              || (property.objectAssignmentInitializer
+                ? isTrackedRuleCode(property.objectAssignmentInitializer)
+                : false),
+            true,
+          )
+        } else if (ts.isPropertyAssignment(property)) {
+          bindAssignmentTarget(
+            property.initializer,
+            objectPropertySource(source, property.name),
+            alias || propertyNameText(property.name) === 'rule_code',
+          )
+        } else if (ts.isSpreadAssignment(property)) {
+          bindAssignmentTarget(property.expression, undefined, alias)
+        }
+      }
+      return
+    }
+    if (ts.isArrayLiteralExpression(expression)) {
+      for (const [index, element] of expression.elements.entries()) {
+        if (ts.isOmittedExpression(element)) continue
+        bindAssignmentTarget(
+          ts.isSpreadElement(element) ? element.expression : element,
+          arrayElementSource(source, index),
+          alias,
+        )
       }
     }
   }
 
   const recordAliases = (node) => {
     if (ts.isVariableDeclaration(node)) {
-      if (ts.isObjectBindingPattern(node.name)) {
-        recordObjectBinding(node.name)
-      } else {
-        bindName(node.name, node.initializer ? isTrackedRuleCode(node.initializer) : false)
-      }
+      bindBindingName(node.name, node.initializer)
       return
     }
     if (
       !ts.isBinaryExpression(node)
       || node.operatorToken.kind !== ts.SyntaxKind.EqualsToken
     ) return
-    const left = ts.skipOuterExpressions(node.left, ts.OuterExpressionKinds.All)
-    if (ts.isObjectLiteralExpression(left)) {
-      recordObjectAssignment(left)
-    } else {
-      bindName(left, isTrackedRuleCode(node.right), true)
-    }
+    bindAssignmentTarget(node.left, node.right)
   }
 
   const visit = (node) => {
@@ -174,9 +247,11 @@ function inspectTypeScriptUnit({
     )
     if (ownsScope) scopes.push(new Map())
     if (ts.isFunctionLike(node)) {
-      for (const parameter of node.parameters) bindName(parameter.name, false)
+      for (const parameter of node.parameters) {
+        bindBindingName(parameter.name, parameter.initializer)
+      }
     } else if (ts.isCatchClause(node) && node.variableDeclaration) {
-      bindName(node.variableDeclaration.name, false)
+      bindBindingName(node.variableDeclaration.name, node.variableDeclaration.initializer)
     }
     recordAliases(node)
 
@@ -211,6 +286,17 @@ function inspectTypeScriptUnit({
 }
 
 function propertyNameText(node) {
+  if (ts.isComputedPropertyName(node)) {
+    const expression = ts.skipOuterExpressions(
+      node.expression,
+      ts.OuterExpressionKinds.All,
+    )
+    if (
+      ts.isStringLiteral(expression)
+      || ts.isNoSubstitutionTemplateLiteral(expression)
+    ) return expression.text
+    return null
+  }
   if (
     ts.isIdentifier(node)
     || ts.isStringLiteral(node)
