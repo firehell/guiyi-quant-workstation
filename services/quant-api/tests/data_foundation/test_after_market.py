@@ -927,6 +927,34 @@ def test_public_status_rejects_boolean_attempt_count() -> None:
     assert payload == {}
 
 
+def test_schema_v3_rejects_malformed_nonnull_current_run() -> None:
+    payload = public_after_market_status(
+        {
+            "schema_version": 3,
+            "current_run": {"status": "private-corrupt"},
+            "last_run": {
+                "trading_day": "2026-08-10",
+                "status": "passed",
+                "attempts": 1,
+                "started_at": "2026-08-10T17:00:00+08:00",
+                "finished_at": "2026-08-10T17:05:00+08:00",
+                "products": list(_ACTIVE_PRODUCTS),
+                "error_code": None,
+            },
+            "subing_strategy_performance": {
+                "status": "skipped",
+                "completed_count": 0,
+                "cache_hit_count": 0,
+                "cache_published_count": 0,
+                "batch_identity_sha256": None,
+                "failed_products": [],
+            },
+        }
+    )
+
+    assert payload == {}
+
+
 def test_successful_canonical_run_records_degraded_performance_without_failing_run(
     tmp_path,
 ) -> None:
@@ -940,11 +968,25 @@ def test_successful_canonical_run_records_degraded_performance_without_failing_r
         readiness=[True],
         results=[_result("passed")],
     )
-    updater.derived_refresh = lambda: SubingStrategyPerformanceWarmResult(
-        status="degraded",
-        completed_products=("ag",),
-        failed_products=(("jm", "SUBING_STRATEGY_SOURCE_UNAVAILABLE"),),
-    )
+    derived_calls: list[tuple[date, tuple[str, ...]]] = []
+
+    def refresh(trading_day: date, products: tuple[str, ...]):
+        derived_calls.append((trading_day, products))
+        return SubingStrategyPerformanceWarmResult(
+            status="degraded",
+            completed_products=("ag",),
+            failed_products=tuple(
+                (symbol, "SUBING_STRATEGY_SOURCE_UNAVAILABLE")
+                for symbol in _ACTIVE_PRODUCTS
+                if symbol != "ag"
+            ),
+            cache_hit_count=1,
+            cache_published_count=0,
+            batch_identity_sha256="1" * 64,
+            batch_created_at=datetime.fromisoformat("2026-08-10T18:06:00+08:00"),
+        )
+
+    updater.derived_refresh = refresh
 
     result = updater.run()
     status = _status(tmp_path / "after-market-status.json")
@@ -953,16 +995,59 @@ def test_successful_canonical_run_records_degraded_performance_without_failing_r
     assert sleeps == []
     assert notices == []
     assert live_store.cleaned == [date(2026, 8, 10)]
+    assert derived_calls == [(date(2026, 8, 10), _ACTIVE_PRODUCTS)]
     assert status["schema_version"] == 3
     assert status["last_successful_trading_day"] == "2026-08-10"
     assert status["subing_strategy_performance"] == {
         "status": "degraded",
         "completed_count": 1,
+        "cache_hit_count": 1,
+        "cache_published_count": 0,
+        "batch_identity_sha256": "1" * 64,
         "failed_products": [
-            {"symbol": "jm", "code": "SUBING_STRATEGY_SOURCE_UNAVAILABLE"}
+            {"symbol": symbol, "code": "SUBING_STRATEGY_SOURCE_UNAVAILABLE"}
+            for symbol in _ACTIVE_PRODUCTS
+            if symbol != "ag"
         ],
     }
     assert public_after_market_status(status)["subing_strategy_performance"]["status"] == "degraded"
+
+
+def test_after_market_rejects_derived_result_that_does_not_cover_exact_products(
+    tmp_path,
+) -> None:
+    from app.market_data.subing_strategy.performance import (
+        SubingStrategyPerformanceWarmResult,
+    )
+
+    updater, _manager, _rqdata, _sleeps, _notices, _live_store = _updater(
+        tmp_path,
+        trading_day=date(2026, 8, 10),
+        readiness=[True],
+        results=[_result("passed")],
+    )
+    updater.derived_refresh = lambda _day, _products: (
+        SubingStrategyPerformanceWarmResult(
+            status="passed",
+            completed_products=("ag",),
+            failed_products=(),
+            cache_hit_count=1,
+            cache_published_count=0,
+            batch_identity_sha256="1" * 64,
+        )
+    )
+
+    assert updater.run().status == "passed"
+    assert _status(tmp_path / "after-market-status.json")[
+        "subing_strategy_performance"
+    ] == {
+        "status": "degraded",
+        "completed_count": 0,
+        "cache_hit_count": 0,
+        "cache_published_count": 0,
+        "batch_identity_sha256": None,
+        "failed_products": [],
+    }
 
 
 def test_public_status_rejects_non_string_error_codes() -> None:

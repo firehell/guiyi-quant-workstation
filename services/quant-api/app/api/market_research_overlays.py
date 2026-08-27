@@ -269,6 +269,8 @@ def _strategy_performance_response(
             context_unavailable_count=result.context_unavailable_count,
         ),
         cache_state=result.cache_state,
+        cache_identity_sha256=result.cache_identity_sha256,
+        cache_generated_at=result.cache_generated_at,
         summary=SubingStrategyPerformanceSummaryOut(
             overall=_performance_stats_out(result.summary.overall),
             long=_performance_stats_out(result.summary.long),
@@ -375,7 +377,10 @@ def subing_strategy_history(
             since=since,
             through=through,
         )
-        result = build_subing_strategy_historical_service(session).history(request)
+        result = build_subing_strategy_historical_service(session).history(
+            request,
+            publish_cache=False,
+        )
     except (
         SubingStrategyPolicyError,
         SubingCalibrationError,

@@ -44,7 +44,9 @@ from .cache import (
     SubingStrategyCacheIdentity,
     digest_canonical_bars,
     digest_direction_contexts,
+    digest_subing_strategy_engine_identity,
     digest_session_windows,
+    digest_subing_strategy_segment_source,
     strategy_policy_sha256,
 )
 from .direction_context import (
@@ -162,6 +164,7 @@ class SubingStrategySegmentSummary:
     final_position: SubingStrategyPositionState
     terminal_bar_end: datetime | None
     pending_action: bool
+    source_identity_sha256: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -174,6 +177,7 @@ class SubingStrategyHistoricalProjection:
     episodes: tuple[SubingStrategyEpisode, ...]
     context_unavailable: tuple[SubingStrategyDirectionContext, ...]
     cache_state: Literal["hit", "miss", "mixed", "unavailable"]
+    engine_identity_sha256: str | None
 
 
 class SubingStrategyHistoricalProjectionService:
@@ -220,13 +224,32 @@ class SubingStrategyHistoricalProjectionService:
             )
         except SubingStrategyCacheError:
             self._strategy_policy_sha256 = None
+        calibration_id = self._calibration.calibration_id
+        if self._strategy_policy_sha256 is None or calibration_id is None:
+            self._engine_identity_sha256 = None
+        else:
+            self._engine_identity_sha256 = digest_subing_strategy_engine_identity(
+                strategy_policy_sha256=self._strategy_policy_sha256,
+                strategy_id=self._strategy_policy.strategy_id,
+                formula_version=self._strategy_policy.formula_version,
+                calibration_id=calibration_id,
+                lifecycle_policy_id=self._lifecycle_policy.policy_id,
+                lifecycle_formula_version=self._lifecycle_policy.formula_version,
+                daily_watch_projection_version="subing_daily_watch_v2",
+                daily_watch_formula_version="subing_ema21_rank1_stitched_raw_v2",
+                daily_watch_history_mode="rank1_stitched_raw",
+            )
 
     def history(
         self,
         request: SubingStrategyHistoricalRequest,
+        *,
+        publish_cache: bool = False,
     ) -> SubingStrategyHistoricalProjection:
         if not isinstance(request, SubingStrategyHistoricalRequest):
             raise TypeError("request must be SubingStrategyHistoricalRequest")
+        if type(publish_cache) is not bool:
+            raise TypeError("publish_cache must be bool")
         if request.symbol not in self._products:
             raise SubingStrategyActiveProductError()
         try:
@@ -330,7 +353,7 @@ class SubingStrategyHistoricalProjectionService:
                 and bars_15m[-1].trading_day == segment.end_trading_day
                 else None
             )
-            cache_identity = self._cache_identity(
+            cache_identity, source_identity_sha256 = self._cache_identity_and_source_digest(
                 request=request,
                 segment=segment,
                 bars_1m=bars_1m,
@@ -370,9 +393,14 @@ class SubingStrategyHistoricalProjectionService:
                     final_position=segment_result.final_position,
                     pending_action=segment_result.pending_action is not None,
                 )
-                if cache_state == "miss" and cache_identity is not None:
+                if (
+                    publish_cache
+                    and cache_state in {"miss", "unavailable"}
+                    and cache_identity is not None
+                ):
                     try:
                         self._cache.write(cache_identity, cached)
+                        cache_state = "miss"
                     except SubingStrategyCacheError:
                         cache_state = "unavailable"
             all_actions.extend(cached.actions)
@@ -392,6 +420,7 @@ class SubingStrategyHistoricalProjectionService:
                     final_position=cached.final_position,
                     terminal_bar_end=terminal_bar_end,
                     pending_action=cached.pending_action,
+                    source_identity_sha256=source_identity_sha256,
                 )
             )
         if not resolved_cutoffs:
@@ -432,9 +461,10 @@ class SubingStrategyHistoricalProjectionService:
                 if request.since <= day <= request.through
             ),
             cache_state=_combine_cache_states(cache_states),
+            engine_identity_sha256=self._engine_identity_sha256,
         )
 
-    def _cache_identity(
+    def _cache_identity_and_source_digest(
         self,
         *,
         request: SubingStrategyHistoricalRequest,
@@ -444,7 +474,7 @@ class SubingStrategyHistoricalProjectionService:
         bars_15m: tuple[CanonicalBar, ...],
         sessions: tuple[SessionWindow, ...],
         contexts: Mapping[date, SubingStrategyDirectionContext],
-    ) -> SubingStrategyCacheIdentity | None:
+    ) -> tuple[SubingStrategyCacheIdentity | None, str]:
         daily_ends = tuple(
             context.daily_bar_end
             for context in contexts.values()
@@ -456,13 +486,42 @@ class SubingStrategyHistoricalProjectionService:
             if context.hourly_bar_end is not None
         )
         calibration_id = self._calibration.calibration_id
+        bars_1m_digest = digest_canonical_bars(
+            bars_1m,
+            contract=segment.contract,
+            segment_start=segment.start_trading_day,
+        )
+        bars_5m_digest = digest_canonical_bars(
+            bars_5m,
+            contract=segment.contract,
+            segment_start=segment.start_trading_day,
+        )
+        bars_15m_digest = digest_canonical_bars(
+            bars_15m,
+            contract=segment.contract,
+            segment_start=segment.start_trading_day,
+        )
+        session_windows_digest = digest_session_windows(sessions)
+        direction_context_digest = digest_direction_contexts(contexts)
+        source_identity_sha256 = digest_subing_strategy_segment_source(
+            symbol=request.symbol,
+            contract=segment.contract,
+            segment_start=segment.start_trading_day,
+            segment_end=segment.end_trading_day,
+            through=request.through,
+            bars_1m_digest=bars_1m_digest,
+            bars_5m_digest=bars_5m_digest,
+            bars_15m_digest=bars_15m_digest,
+            session_windows_digest=session_windows_digest,
+            direction_context_digest=direction_context_digest,
+        )
         if (
             self._strategy_policy_sha256 is None
             or calibration_id is None
             or not daily_ends
             or not hourly_ends
         ):
-            return None
+            return None, source_identity_sha256
         return SubingStrategyCacheIdentity(
             strategy_policy_sha256=self._strategy_policy_sha256,
             strategy_id=self._strategy_policy.strategy_id,
@@ -482,25 +541,13 @@ class SubingStrategyHistoricalProjectionService:
             cutoff_15m=bars_15m[-1].bar_end,
             cutoff_d1=max(daily_ends),
             cutoff_60m=max(hourly_ends),
-            bars_1m_digest=digest_canonical_bars(
-                bars_1m,
-                contract=segment.contract,
-                segment_start=segment.start_trading_day,
-            ),
-            bars_5m_digest=digest_canonical_bars(
-                bars_5m,
-                contract=segment.contract,
-                segment_start=segment.start_trading_day,
-            ),
-            bars_15m_digest=digest_canonical_bars(
-                bars_15m,
-                contract=segment.contract,
-                segment_start=segment.start_trading_day,
-            ),
-            session_windows_digest=digest_session_windows(sessions),
-            direction_context_digest=digest_direction_contexts(contexts),
+            bars_1m_digest=bars_1m_digest,
+            bars_5m_digest=bars_5m_digest,
+            bars_15m_digest=bars_15m_digest,
+            session_windows_digest=session_windows_digest,
+            direction_context_digest=direction_context_digest,
             through=request.through,
-        )
+        ), source_identity_sha256
 
 
 def _partition_segment_bars(

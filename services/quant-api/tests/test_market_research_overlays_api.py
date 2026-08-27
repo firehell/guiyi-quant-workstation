@@ -50,6 +50,8 @@ def test_subing_strategy_performance_returns_fixed_full_history_contract(
         cache_state="hit",
         summary=SubingStrategyPerformanceSummary(empty, empty, empty, 0, (("EMA21", 2),)),
         episodes=(),
+        cache_identity_sha256="1" * 64,
+        cache_generated_at=datetime(2026, 8, 27, 8, 0, tzinfo=UTC),
     )
     service = SimpleNamespace(performance=lambda symbol: projection)
     monkeypatch.setattr(
@@ -78,6 +80,9 @@ def test_subing_strategy_performance_returns_fixed_full_history_contract(
     }
     assert payload["summary"]["overall"]["completed"] == 0
     assert payload["summary"]["overall"]["mean_reference_change_percent"] is None
+    assert payload["cache_state"] == "hit"
+    assert payload["cache_identity_sha256"] == "1" * 64
+    assert payload["cache_generated_at"] == "2026-08-27T08:00:00Z"
     assert payload["exit_reason_counts"] == [{"reason_code": "EMA21", "count": 2}]
     assert payload["episodes"] == []
 
@@ -85,8 +90,10 @@ def test_subing_strategy_performance_returns_fixed_full_history_contract(
 class _StrategyService:
     def __init__(self, failure: Exception | None = None) -> None:
         self.failure = failure
+        self.publish_cache_calls: list[bool] = []
 
-    def history(self, request: object):
+    def history(self, request: object, *, publish_cache: bool = False):
+        self.publish_cache_calls.append(publish_cache)
         if self.failure is not None:
             raise self.failure
         action = SimpleNamespace(
@@ -340,9 +347,10 @@ def test_subing_strategy_current_maps_composition_source_failure_to_409(
 def test_subing_strategy_history_returns_actions_complete_episodes_and_context(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    service = _StrategyService()
     monkeypatch.setattr(
         "app.api.market_research_overlays.build_subing_strategy_historical_service",
-        lambda _session: _StrategyService(),
+        lambda _session: service,
         raising=False,
     )
 
@@ -368,6 +376,7 @@ def test_subing_strategy_history_returns_actions_complete_episodes_and_context(
     assert payload["segment_summaries"][0]["bar_count_1m"] == 15
     assert payload["episodes"][0]["entry_action"]["action_id"] == ("subing-action:open")
     assert payload["episodes"][0]["state"] == "open"
+    assert service.publish_cache_calls == [False]
     assert payload["context_unavailable"][0]["direction"] == "unavailable"
     assert payload["cache_state"] == "miss"
 

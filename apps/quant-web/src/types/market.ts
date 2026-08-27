@@ -1036,7 +1036,9 @@ export interface SubingStrategyPerformanceResponse {
     bar_count_15m: number
     context_unavailable_count: number
   }
-  cache_state: 'hit' | 'miss' | 'mixed' | 'unavailable'
+  cache_state: 'hit' | 'refreshed' | 'unavailable'
+  cache_identity_sha256: string | null
+  cache_generated_at: string | null
   summary: {
     overall: SubingStrategyPerformanceStats
     long: SubingStrategyPerformanceStats
@@ -1066,7 +1068,7 @@ export interface SubingStrategyCurrentContext {
 }
 
 export interface SubingStrategyCurrentWireResponse {
-  strategy_id: 'subing_strategy_v1'
+  strategy_id: SubingStrategyHistoricalWireResponse['policy']['strategy_id']
   formula_version: 'subing_strategy_15m_v1'
   series_kind: 'actual_dominant'
   symbol: string
@@ -1096,7 +1098,8 @@ const SUBING_STRATEGY_CONFIRMATION_SOURCES = [
 const SUBING_STRATEGY_ACTION_KINDS = [
   'open_long', 'open_short', 'close_long', 'close_short',
 ] as const
-const SUBING_STRATEGY_CACHE_STATES = ['hit', 'miss', 'mixed', 'unavailable'] as const
+const SUBING_STRATEGY_SEGMENT_CACHE_STATES = ['hit', 'miss', 'mixed', 'unavailable'] as const
+const SUBING_STRATEGY_PERFORMANCE_CACHE_STATES = ['hit', 'refreshed', 'unavailable'] as const
 
 function invalidSubingStrategyResponse(): never {
   throw new Error('SUBING_STRATEGY_INVALID_RESPONSE')
@@ -1157,6 +1160,58 @@ function strategyDecimal(value: unknown): string {
 
 function strategyNullableDecimal(value: unknown): string | null {
   return value === null ? null : strategyDecimal(value)
+}
+
+function strategyNonnegativeInteger(value: unknown): number {
+  if (!Number.isInteger(value) || Number(value) < 0) invalidSubingStrategyResponse()
+  return value as number
+}
+
+function normalizeSubingStrategyPerformanceStats(
+  value: unknown,
+): SubingStrategyPerformanceStats {
+  const stats = strategyRecord(value)
+  const completed = strategyNonnegativeInteger(stats.completed)
+  const positive = strategyNonnegativeInteger(stats.positive)
+  const negative = strategyNonnegativeInteger(stats.negative)
+  const flat = strategyNonnegativeInteger(stats.flat)
+  const normalized = {
+    completed,
+    positive,
+    negative,
+    flat,
+    positive_rate_percent: strategyNullableDecimal(stats.positive_rate_percent),
+    mean_reference_change_percent: strategyNullableDecimal(stats.mean_reference_change_percent),
+    median_reference_change_percent: strategyNullableDecimal(stats.median_reference_change_percent),
+    best_reference_change_percent: strategyNullableDecimal(stats.best_reference_change_percent),
+    worst_reference_change_percent: strategyNullableDecimal(stats.worst_reference_change_percent),
+    mean_holding_15m_bars: strategyNullableDecimal(stats.mean_holding_15m_bars),
+  }
+  const aggregateValues = [
+    normalized.positive_rate_percent,
+    normalized.mean_reference_change_percent,
+    normalized.median_reference_change_percent,
+    normalized.best_reference_change_percent,
+    normalized.worst_reference_change_percent,
+    normalized.mean_holding_15m_bars,
+  ]
+  const positiveRate = normalized.positive_rate_percent === null
+    ? null : Number(normalized.positive_rate_percent)
+  const meanHolding = normalized.mean_holding_15m_bars === null
+    ? null : Number(normalized.mean_holding_15m_bars)
+  if (
+    completed !== positive + negative + flat
+    || (completed === 0 && aggregateValues.some((item) => item !== null))
+    || (completed > 0 && aggregateValues.some((item) => item === null))
+    || (positiveRate !== null && (
+      !Number.isFinite(positiveRate)
+      || positiveRate < 0
+      || positiveRate > 100
+      || Math.abs(positiveRate - positive / completed * 100) > 1e-9
+    ))
+    || (meanHolding !== null && (!Number.isFinite(meanHolding) || meanHolding < 0))
+  ) invalidSubingStrategyResponse()
+  return normalized
 }
 
 function strategyStringArray(value: unknown): string[] {
@@ -1331,7 +1386,7 @@ export function normalizeSubingStrategyHistory(
     || !Array.isArray(policy.allowed_confirmation_sources)
     || policy.allowed_confirmation_sources.join('|')
       !== SUBING_STRATEGY_CONFIRMATION_SOURCES.join('|')
-    || !SUBING_STRATEGY_CACHE_STATES.includes(payload.cache_state as never)
+    || !SUBING_STRATEGY_SEGMENT_CACHE_STATES.includes(payload.cache_state as never)
     || !Array.isArray(payload.actions)
     || !Array.isArray(payload.episodes)
     || !Array.isArray(payload.segment_summaries)
@@ -1415,25 +1470,102 @@ export function normalizeSubingStrategyPerformance(
   const coverage = strategyRecord(payload.coverage)
   const summary = strategyRecord(payload.summary)
   if (
-    payload.formula_version !== 'subing_strategy_15m_v1'
+    payload.strategy_id !== 'subing_strategy_v1'
+    || payload.formula_version !== 'subing_strategy_15m_v1'
     || payload.series_kind !== 'actual_dominant'
     || payload.frequency !== '15m'
-    || !SUBING_STRATEGY_CACHE_STATES.includes(payload.cache_state as never)
+    || !SUBING_STRATEGY_PERFORMANCE_CACHE_STATES.includes(payload.cache_state as never)
     || !Array.isArray(payload.episodes)
     || !Array.isArray(payload.exit_reason_counts)
     || typeof payload.symbol !== 'string'
     || payload.symbol !== payload.symbol.toLowerCase()
-    || typeof coverage.since !== 'string'
-    || typeof coverage.through !== 'string'
-    || coverage.since > coverage.through
-    || !Number.isFinite(Date.parse(String(coverage.resolved_cutoff)))
+    || strategyDate(coverage.since) > strategyDate(coverage.through)
+    || !Number.isFinite(Date.parse(strategyTimestamp(coverage.resolved_cutoff)))
+    || strategyNonnegativeInteger(coverage.segment_count) === 0
+    || strategyNonnegativeInteger(coverage.bar_count_15m) === 0
+    || strategyNonnegativeInteger(coverage.context_unavailable_count) < 0
     || !summary.overall || !summary.long || !summary.short
+    || (
+      payload.cache_state !== 'unavailable'
+      && (
+        typeof payload.cache_identity_sha256 !== 'string'
+        || !/^[0-9a-f]{64}$/.test(payload.cache_identity_sha256)
+        || typeof payload.cache_generated_at !== 'string'
+        || !Number.isFinite(Date.parse(payload.cache_generated_at))
+      )
+    )
+    || (
+      payload.cache_state === 'unavailable'
+      && (
+        payload.cache_generated_at !== null
+        || (
+          payload.cache_identity_sha256 !== null
+          && (
+            typeof payload.cache_identity_sha256 !== 'string'
+            || !/^[0-9a-f]{64}$/.test(payload.cache_identity_sha256)
+          )
+        )
+      )
+    )
+  ) invalidSubingStrategyResponse()
+  const episodes = payload.episodes.map((episode) => (
+    normalizeStrategyEpisode(episode, payload.symbol as string)
+  ))
+  const overall = normalizeSubingStrategyPerformanceStats(summary.overall)
+  const long = normalizeSubingStrategyPerformanceStats(summary.long)
+  const short = normalizeSubingStrategyPerformanceStats(summary.short)
+  const openEpisodes = strategyNonnegativeInteger(summary.open_episodes)
+  const exitReasonCounts = payload.exit_reason_counts.map((item) => {
+    const reason = strategyRecord(item)
+    const count = strategyNonnegativeInteger(reason.count)
+    if (count === 0) invalidSubingStrategyResponse()
+    return { reason_code: strategyString(reason.reason_code), count }
+  })
+  const expectedExitReasonCounts = new Map<string, number>()
+  for (const episode of episodes) {
+    for (const reasonCode of episode.exit_reason_codes) {
+      expectedExitReasonCounts.set(
+        reasonCode,
+        (expectedExitReasonCounts.get(reasonCode) ?? 0) + 1,
+      )
+    }
+  }
+  const closedLong = episodes.filter((episode) => (
+    episode.state === 'closed' && episode.direction === 'long'
+  )).length
+  const closedShort = episodes.filter((episode) => (
+    episode.state === 'closed' && episode.direction === 'short'
+  )).length
+  if (
+    overall.completed !== long.completed + short.completed
+    || overall.positive !== long.positive + short.positive
+    || overall.negative !== long.negative + short.negative
+    || overall.flat !== long.flat + short.flat
+    || overall.completed + openEpisodes !== episodes.length
+    || long.completed !== closedLong
+    || short.completed !== closedShort
+    || new Set(exitReasonCounts.map((item) => item.reason_code)).size
+      !== exitReasonCounts.length
+    || exitReasonCounts.length !== expectedExitReasonCounts.size
+    || exitReasonCounts.some((item) => (
+      expectedExitReasonCounts.get(item.reason_code) !== item.count
+    ))
   ) invalidSubingStrategyResponse()
   return {
     ...(payload as unknown as SubingStrategyPerformanceResponse),
-    episodes: payload.episodes.map((episode) => (
-      normalizeStrategyEpisode(episode, payload.symbol as string)
-    )),
+    coverage: {
+      since: strategyDate(coverage.since),
+      through: strategyDate(coverage.through),
+      resolved_cutoff: strategyTimestamp(coverage.resolved_cutoff),
+      segment_count: strategyNonnegativeInteger(coverage.segment_count),
+      bar_count_15m: strategyNonnegativeInteger(coverage.bar_count_15m),
+      context_unavailable_count: strategyNonnegativeInteger(
+        coverage.context_unavailable_count,
+      ),
+    },
+    summary: { overall, long, short, open_episodes: openEpisodes },
+    exit_reason_counts: exitReasonCounts,
+    episodes,
   }
 }
 
