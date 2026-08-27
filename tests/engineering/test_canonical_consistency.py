@@ -16,7 +16,6 @@ PUBLIC_OVERLAYS = {"none", "subing", "htdy"}
 RESEARCH_COMMANDS = {
     "subing-calibration",
     "subing-lifecycle",
-    "n-structure",
 }
 MARKET_TABLES = {
     "exchanges",
@@ -114,7 +113,10 @@ def test_public_entrypoints_are_exact() -> None:
         if action.dest == "research_command"
     )
     assert set(parser_module.RESEARCH_COMMAND_NAMES) == RESEARCH_COMMANDS
-    assert set(command_action.choices) == RESEARCH_COMMANDS
+    assert tuple(command_action.choices) == (
+        "subing-calibration",
+        "subing-lifecycle",
+    )
 
 
 def test_retired_rqalpha_and_execution_review_are_not_mounted() -> None:

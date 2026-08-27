@@ -45,7 +45,6 @@ from app.market_data.after_market import build_after_market_updater
 from app.market_data.historical_data_manager import HistoricalDataManager
 from app.market_data.product_retirement import ProductRetiredError
 from app.research.composition import (
-    build_n_structure_research_service,
     build_subing_calibration_research_service,
     build_subing_lifecycle_research_service,
 )
@@ -133,9 +132,6 @@ def main(
     lifecycle_research_service_factory: ResearchServiceFactory = (
         build_subing_lifecycle_research_service
     ),
-    n_structure_research_service_factory: ResearchServiceFactory = (
-        build_n_structure_research_service
-    ),
     runtime_health_builder=build_runtime_health,
     stdout: TextIO = sys.stdout,
     stderr: TextIO = sys.stderr,
@@ -181,8 +177,6 @@ def main(
             with session_factory() as session:
                 if args.research_command == "subing-lifecycle":
                     service = lifecycle_research_service_factory(session)
-                elif args.research_command == "n-structure":
-                    service = n_structure_research_service_factory(session)
                 elif args.research_command == "subing-calibration":
                     service = research_service_factory(session)
                 else:

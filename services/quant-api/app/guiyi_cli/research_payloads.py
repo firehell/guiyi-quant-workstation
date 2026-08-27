@@ -4,11 +4,6 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from app.research.n_structure.n_structure_research_service import (
-    NStructureResearchRequest,
-    NStructureResearchResult,
-)
-from app.market_data.price_outcome import PriceHorizonEvaluation
 from app.market_data.subing_calibration import (
     CalibrationReport,
     HorizonEvaluation,
@@ -81,51 +76,6 @@ def _lifecycle_payload(
             str(horizon): _horizon_payload(evaluation)
             for horizon, evaluation in result.horizon_summary.items()
         },
-    }
-
-
-def _n_structure_payload(
-    request: NStructureResearchRequest,
-    result: NStructureResearchResult,
-) -> dict[str, object]:
-    return {
-        "schema_version": 1,
-        "command": "research.n-structure",
-        "status": "ok",
-        "readonly": True,
-        "policy_id": "n_structure_5m_v1",
-        "formula_version": "n_structure_v1",
-        "research_only": True,
-        "since": request.since.isoformat(),
-        "through": request.through.isoformat(),
-        "products": list(result.products),
-        "segment_count": result.segment_count,
-        "evaluable_bar_count": result.evaluable_bar_count,
-        "confirmed_pivot_count": result.confirmed_pivot_count,
-        "ambiguous_outside_reset_count": result.ambiguous_outside_reset_count,
-        "incomplete_attempt_replaced_count": (result.incomplete_attempt_replaced_count),
-        "completed_n_counts": dict(result.completed_n_counts),
-        "n_break_counts": dict(result.n_break_counts),
-        "range_band_reentry_count": result.range_band_reentry_count,
-        "structure_established_counts": dict(result.structure_established_counts),
-        "structure_break_counts": dict(result.structure_break_counts),
-        "horizon_summary": {
-            str(horizon): _price_horizon_payload(evaluation)
-            for horizon, evaluation in result.horizon_summary.items()
-        },
-    }
-
-
-def _price_horizon_payload(
-    evaluation: PriceHorizonEvaluation,
-) -> dict[str, object]:
-    return {
-        "sample_count": evaluation.sample_count,
-        "median_directional_return_bps": _optional_decimal(
-            evaluation.median_directional_return_bps
-        ),
-        "median_mfe_bps": _optional_decimal(evaluation.median_mfe_bps),
-        "median_mae_bps": _optional_decimal(evaluation.median_mae_bps),
     }
 
 
