@@ -8,7 +8,7 @@
 
 - 唯一 Web 产品为 Market，route 仅 `/market` 与 `/market/chart`。
 - Market Radar 的 Summary、Scatter、Detail 是唯一全市场研究入口。
-- 主图 Overlay 仅 `none | subing | jdj_strategy | htdy`。
+- 主图 Overlay 仅 `none | subing | htdy`。
 - N Structure 是可与 Overlay 组合的 `actual_dominant + 5m` completed-N Historical range-band 图层，不是第五个 Overlay、独立产品、Alert 或 Runtime evaluator。
 
 ## SuBing
@@ -25,11 +25,10 @@ SuBing Strategy V1 的 Stage 1 Historical Projection 与 Stage 2 completed-Live 
 
 Stage 2 代码为 active60 在内存恢复和维护相互隔离的策略状态，计算范围独立于 Alert Scope；`scope_products` 只控制 immutable Strategy Action Event 与 owner one-shot PushPlus。启动恢复/catch-up 不补 Event、不补通知；Current Strategy 从 Canonical + completed Live 只读重建，不以 AlertEvent 作为仓位权威。该代码尚未 release 或 Runtime promotion，不改变当前 production Runtime。
 
-## JDJ 与保留研究能力
+## 保留研究能力
 
-- JDJ reference replay 是 active universe 中单品种 `actual_dominant + 1m` 的 deterministic、read-only reference action/fill；不进入 DB、Redis、Alert、Runtime 或订单。
 - Candidate Validation/Robustness 保留 source-specific causality、strict-before、embargo、prefix invariance、golden parity 与 prospective OOS 分离；retrospective 不生成 rank、winner、promotion、盈利或可交易结论。
-- Generic Robustness relationship metrics 保留。N/raw JDJ Candidate 只属于内部研究面。
+- Generic Robustness relationship metrics 保留。N 与 SuBing Candidate 只属于内部研究面。
 
 ## HTDY 与 Alert
 
@@ -50,7 +49,7 @@ RQData -> staging + hard validation -> Canonical Parquet
 - 物理 Dataset 只有 `continuous` 与 `contract`；`actual_dominant` 是按 `MainContractMap rank=1` 有效区间拼接的查询模式。
 - `MarketDataService` 是 Historical consumer 的唯一入口；Redis Live 只承载当日 observation，不能提升为 Canonical。
 
-稳定 HTTP 面为 `/api/v1/market/*`、`/api/alerts/*` 与只读 `/api/runtime/*`。统一 CLI 为 `uv run --project services/quant-api guiyi`；research 子命令仅保留 `subing-calibration`、`subing-lifecycle`、`n-structure`、`jdj-1m`、`candidate-validation` 与 `candidate-robustness`。
+稳定 HTTP 面为 `/api/v1/market/*`、`/api/alerts/*` 与只读 `/api/runtime/*`。统一 CLI 为 `uv run --project services/quant-api guiyi`；research 子命令仅保留 `subing-calibration`、`subing-lifecycle` 与 `n-structure`。
 
 ## Retired surface
 

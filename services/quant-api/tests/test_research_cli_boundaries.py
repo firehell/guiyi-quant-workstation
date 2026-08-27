@@ -13,7 +13,7 @@ def test_research_cli_modules_own_one_boundary_each() -> None:
     assert requests.build_research_request.__module__ == requests.__name__
     assert commands.run_research_command.__module__ == commands.__name__
     assert (
-        payloads._multi_candidate_robustness_payload.__module__
+        payloads._n_structure_payload.__module__
         == payloads.__name__
     )
     assert not hasattr(commands, "build_research_request")
@@ -29,4 +29,3 @@ def test_research_help_omits_retired_main_force_commands() -> None:
     research_help = " ".join(command_action.choices)
 
     assert "main-force-mirror-v2" not in research_help
-    assert "main-force-mirror-diagnostic" not in research_help

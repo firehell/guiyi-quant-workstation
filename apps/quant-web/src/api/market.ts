@@ -1,8 +1,6 @@
 import request from './request'
 import type {
   DominantContractListResponse,
-  JdjStrategyHistoricalRequest,
-  JdjStrategyHistoricalResponse,
   MarketBarsPageRequest,
   MarketBarsPageResponse,
   MarketReadState,
@@ -91,14 +89,6 @@ export function getSubingStrategyCurrent(params: {
     } },
   ).then(normalizeSubingStrategyCurrent) as Promise<SubingStrategyCurrentResponse>
 }
-
-export function getJdjStrategyHistoricalActions(params: JdjStrategyHistoricalRequest) {
-  return request.get<never, JdjStrategyHistoricalResponse>(
-    '/market/research/jdj-strategy/history',
-    { params },
-  )
-}
-
 export function getNStructureBands(params: NStructureBandRequest) {
   return request.get<never, NStructureBandWireResponse>(
     '/market/research/n-structure/bands',

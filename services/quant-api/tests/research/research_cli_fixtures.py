@@ -70,11 +70,6 @@ def _request(arguments: list[str]):
     return build_research_request(build_parser().parse_args(arguments))
 
 
-_JDJ_CANDIDATES = (
-    "jdj_trend_follow_1m_candidate_v1",
-    "jdj_trend_reentry_6_1m_candidate_v1",
-    "jdj_key_level_breakout_1m_candidate_v1",
-)
 
 
 def _horizon(*, sample_count: int = 2) -> HorizonEvaluation:

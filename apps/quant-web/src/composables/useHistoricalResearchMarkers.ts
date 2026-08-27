@@ -1,8 +1,6 @@
 import { ref } from 'vue'
 import type {
   BarData,
-  JdjStrategyHistoricalRequest,
-  JdjStrategyHistoricalResponse,
   KlineMarker,
   MarketBarsPageResponse,
   MarketFrequency,
@@ -14,7 +12,6 @@ import type {
   SubingStrategyHistoricalResponse,
 } from '../types/market.ts'
 import {
-  jdjStrategyActionToMarker,
   subingStrategyActionToMarker,
 } from '../utils/historicalResearchMarkers.ts'
 import {
@@ -34,9 +31,6 @@ interface Dependencies {
   fetchSubingStrategy: (
     request: SubingStrategyHistoricalRequest,
   ) => Promise<SubingStrategyHistoricalResponse>
-  fetchJdjStrategy: (
-    request: JdjStrategyHistoricalRequest,
-  ) => Promise<JdjStrategyHistoricalResponse>
 }
 
 export function useHistoricalResearchMarkers(dependencies: Dependencies) {
@@ -69,9 +63,8 @@ export function useHistoricalResearchMarkers(dependencies: Dependencies) {
     const historicalSource = capability.definition.historicalSource
     if (
       !capability.supported
-      || !['subing_strategy', 'jdj_strategy'].includes(historicalSource)
-      || (historicalSource === 'subing_strategy'
-        && !subingStrategyHistoricalCapability(identity.seriesKind, identity.frequency))
+      || historicalSource !== 'subing_strategy'
+      || !subingStrategyHistoricalCapability(identity.seriesKind, identity.frequency)
     ) {
       reset(identity)
       return
@@ -92,29 +85,21 @@ export function useHistoricalResearchMarkers(dependencies: Dependencies) {
     loading.value = true
     error.value = null
     try {
-      const loaded = historicalSource === 'subing_strategy'
-        ? await loadSubingStrategy(dependencies, identity, range.since, through)
-        : await loadJdjStrategy(dependencies, identity, range.since, through)
+      const loaded = await loadSubingStrategy(dependencies, identity, range.since, through)
       if (
         requestGeneration !== generation
         || identityKey(identity) !== identityKey(activeIdentity)
       ) return
-      if (loaded.kind === 'subing_strategy') {
-        mergeStrategyEpisodes(episodesById, loaded.episodes)
-        const actionsById = new Map(subingStrategyActions.value.map((action) => [action.action_id, action]))
-        for (const action of loaded.actions) actionsById.set(action.action_id, action)
-        subingStrategyActions.value = [...actionsById.values()]
-        subingStrategyEpisodes.value = [...episodesById.values()]
-          .sort((left, right) => Date.parse(left.entry_action.effective_bar_end)
-            - Date.parse(right.entry_action.effective_bar_end))
-        for (const action of loaded.actions) {
-          const marker = subingStrategyActionToMarker(action, episodesById)
-          markersByEventId.set(action.action_id, marker)
-        }
-      } else {
-        for (const event of loaded.events) {
-          markersByEventId.set(event.eventId, event.marker)
-        }
+      mergeStrategyEpisodes(episodesById, loaded.episodes)
+      const actionsById = new Map(subingStrategyActions.value.map((action) => [action.action_id, action]))
+      for (const action of loaded.actions) actionsById.set(action.action_id, action)
+      subingStrategyActions.value = [...actionsById.values()]
+      subingStrategyEpisodes.value = [...episodesById.values()]
+        .sort((left, right) => Date.parse(left.entry_action.effective_bar_end)
+          - Date.parse(right.entry_action.effective_bar_end))
+      for (const action of loaded.actions) {
+        const marker = subingStrategyActionToMarker(action, episodesById)
+        markersByEventId.set(action.action_id, marker)
       }
       markers.value = [...markersByEventId.values()]
         .sort((left, right) => Date.parse(left.time) - Date.parse(right.time))
@@ -126,10 +111,7 @@ export function useHistoricalResearchMarkers(dependencies: Dependencies) {
         requestGeneration === generation
         && identityKey(identity) === identityKey(activeIdentity)
       ) {
-        error.value = identity.overlay === 'jdj_strategy'
-          && isJdjStrategyProfileUnavailable(caught)
-          ? 'JDJ_STRATEGY_PROFILE_UNAVAILABLE'
-          : 'HISTORICAL_RESEARCH_UNAVAILABLE'
+        error.value = 'HISTORICAL_RESEARCH_UNAVAILABLE'
       }
     } finally {
       if (requestGeneration === generation) loading.value = false
@@ -172,18 +154,6 @@ export function useHistoricalResearchMarkers(dependencies: Dependencies) {
   }
 }
 
-function isJdjStrategyProfileUnavailable(caught: unknown): boolean {
-  if (typeof caught !== 'object' || caught === null) return false
-  const response = (caught as {
-    response?: { status?: unknown; data?: { detail?: unknown } }
-  }).response
-  if (response?.status !== 422) return false
-  const detail = response.data?.detail
-  return typeof detail === 'object'
-    && detail !== null
-    && (detail as { code?: unknown }).code === 'JDJ_STRATEGY_PROFILE_UNAVAILABLE'
-}
-
 function confirmedRange(
   bars: BarData[],
   coverage: MarketBarsPageResponse['canonical_coverage'],
@@ -224,18 +194,10 @@ interface HistoricalRequestIdentity {
   through: string
 }
 
-interface LoadedHistoricalEvent {
-  eventId: string
-  marker: KlineMarker
+interface LoadedHistoricalResult {
+  actions: SubingStrategyAction[]
+  episodes: SubingStrategyEpisode[]
 }
-
-type LoadedHistoricalResult =
-  | {
-      kind: 'subing_strategy'
-      actions: SubingStrategyAction[]
-      episodes: SubingStrategyEpisode[]
-    }
-  | { kind: 'markers'; events: LoadedHistoricalEvent[] }
 
 async function loadSubingStrategy(
   dependencies: Dependencies,
@@ -255,33 +217,9 @@ async function loadSubingStrategy(
     throw new Error('HISTORICAL_RESEARCH_IDENTITY_MISMATCH')
   }
   return {
-    kind: 'subing_strategy',
     actions: response.actions,
     episodes: response.episodes,
   }
-}
-
-async function loadJdjStrategy(
-  dependencies: Dependencies,
-  identity: HistoricalResearchMarkerIdentity,
-  since: string,
-  through: string,
-): Promise<LoadedHistoricalResult> {
-  const request: JdjStrategyHistoricalRequest = {
-    series_kind: 'actual_dominant',
-    symbol: identity.symbol,
-    frequency: '1m',
-    since,
-    through,
-  }
-  const response = await dependencies.fetchJdjStrategy(request)
-  if (!response.reference_execution || !matchesRequest(response, request)) {
-    throw new Error('HISTORICAL_RESEARCH_IDENTITY_MISMATCH')
-  }
-  return { kind: 'markers', events: response.actions.flatMap((action) => {
-    const marker = jdjStrategyActionToMarker(action)
-    return marker === null ? [] : [{ eventId: action.event_id, marker }]
-  }) }
 }
 
 function mergeStrategyEpisodes(

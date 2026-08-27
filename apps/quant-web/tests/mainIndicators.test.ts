@@ -57,7 +57,7 @@ test('normalizeVisibleMainIndicators keeps available indicators without a second
 
 test('research overlay defaults to SuBing and exposes exactly one overlay indicator set', () => {
   assert.deepEqual(defaultMainChartPreferences(), {
-    version: 5,
+    version: 6,
     selectedOverlay: 'subing',
     optionalEmaIndicators: [],
     showNStructureBands: false,
@@ -167,7 +167,7 @@ test('preference loading purges and ignores legacy schemas', () => {
   }))
   values.set('guiyi.market.chart.preferences.v3', JSON.stringify({
     version: 3,
-    selectedOverlay: 'jdj_strategy',
+    selectedOverlay: 'htdy',
     optionalEmaIndicators: ['ema_10'],
   }))
 
@@ -176,11 +176,12 @@ test('preference loading purges and ignores legacy schemas', () => {
     'guiyi.market.chart.preferences.v1',
     'guiyi.market.chart.preferences.v2',
     'guiyi.market.chart.preferences.v3',
+    'guiyi.market.chart.preferences.v4',
   ])
   assert.equal(values.size, 0)
 })
 
-test('preference v5 saves and loads overlays plus the internal-process toggle', () => {
+test('preference v6 saves and loads overlays plus the internal-process toggle', () => {
   const values = new Map<string, string>()
   const storage = {
     getItem: (key: string) => values.get(key) || null,
@@ -189,7 +190,7 @@ test('preference v5 saves and loads overlays plus the internal-process toggle', 
 
   saveMainChartPreferences(
     {
-      version: 5,
+      version: 6,
       selectedOverlay: 'none',
       optionalEmaIndicators: ['ema_60', 'ema_10'],
       showNStructureBands: true,
@@ -200,7 +201,7 @@ test('preference v5 saves and loads overlays plus the internal-process toggle', 
     storage,
   )
   const loaded = loadMainChartPreferences(storage)
-  assert.equal(loaded.version, 5)
+  assert.equal(loaded.version, 6)
   assert.equal(loaded.selectedOverlay, 'none')
   assert.deepEqual(loaded.optionalEmaIndicators, ['ema_10', 'ema_60'])
   assert.equal(loaded.showNStructureBands, true)
@@ -215,28 +216,54 @@ test('preference v5 saves and loads overlays plus the internal-process toggle', 
   assert.deepEqual(loadMainChartPreferences(storage), defaultMainChartPreferences())
 })
 
-test('current preferences preserve the JDJ strategy overlay across save and load', () => {
+test('preference v5 migrates retained fields, maps retired overlay to none, and clears the v5 key', () => {
   const values = new Map<string, string>()
+  const removed: string[] = []
   const storage = {
     getItem: (key: string) => values.get(key) || null,
     setItem: (key: string, value: string) => values.set(key, value),
+    removeItem: (key: string) => { removed.push(key); values.delete(key) },
   }
 
-  saveMainChartPreferences({
+  values.set('guiyi.market.chart.preferences.v5', JSON.stringify({
     version: 5,
     selectedOverlay: 'jdj_strategy',
-    optionalEmaIndicators: [],
-    showNStructureBands: false,
-    showSubingInternalProcess: false,
+    optionalEmaIndicators: ['ema_60', 'ema_10'],
+    showNStructureBands: true,
+    showSubingInternalProcess: true,
     period: '1m',
-    realtimeFollow: false,
-  }, storage)
+    realtimeFollow: true,
+  }))
 
-  assert.equal(loadMainChartPreferences(storage).selectedOverlay, 'jdj_strategy')
-  assert.equal(JSON.parse(values.get(MAIN_CHART_PREFERENCES_KEY)!).selectedOverlay, 'jdj_strategy')
+  assert.deepEqual(loadMainChartPreferences(storage), {
+    version: 6,
+    selectedOverlay: 'none',
+    optionalEmaIndicators: ['ema_10', 'ema_60'],
+    showNStructureBands: true,
+    showSubingInternalProcess: true,
+    period: '1m',
+    realtimeFollow: true,
+  })
+  assert.equal(values.has('guiyi.market.chart.preferences.v5'), false)
+  assert.deepEqual(removed, [
+    'guiyi.market.chart.preferences.v1',
+    'guiyi.market.chart.preferences.v2',
+    'guiyi.market.chart.preferences.v3',
+    'guiyi.market.chart.preferences.v4',
+    'guiyi.market.chart.preferences.v5',
+  ])
+  assert.deepEqual(JSON.parse(values.get(MAIN_CHART_PREFERENCES_KEY)!), {
+    version: 6,
+    selectedOverlay: 'none',
+    optionalEmaIndicators: ['ema_10', 'ema_60'],
+    showNStructureBands: true,
+    showSubingInternalProcess: true,
+    period: '1m',
+    realtimeFollow: true,
+  })
 })
 
-test('preference v4 migrates losslessly to v5 with internal process off', () => {
+test('preference v1 through v4 are discarded without restoration', () => {
   const values = new Map<string, string>()
   const removed: string[] = []
   const storage = {
@@ -253,16 +280,8 @@ test('preference v4 migrates losslessly to v5 with internal process off', () => 
     realtimeFollow: true,
   }))
 
-  assert.deepEqual(loadMainChartPreferences(storage), {
-    version: 5,
-    selectedOverlay: 'subing',
-    optionalEmaIndicators: ['ema_60'],
-    showNStructureBands: true,
-    showSubingInternalProcess: false,
-    period: '15m',
-    realtimeFollow: true,
-  })
-  assert.equal(JSON.parse(values.get(MAIN_CHART_PREFERENCES_KEY)!).version, 5)
+  assert.deepEqual(loadMainChartPreferences(storage), defaultMainChartPreferences())
+  assert.equal(values.has(MAIN_CHART_PREFERENCES_KEY), false)
   assert.deepEqual(removed, ['guiyi.market.chart.preferences.v1',
     'guiyi.market.chart.preferences.v2', 'guiyi.market.chart.preferences.v3',
     'guiyi.market.chart.preferences.v4'])

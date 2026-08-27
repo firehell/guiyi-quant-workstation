@@ -42,25 +42,12 @@ from app.market_data.composition import (
     build_live_market_service,
 )
 from app.market_data.after_market import build_after_market_updater
-from app.research.common.candidate_validation_schedule import (
-    CandidateValidationIdentityError,
-    CandidateValidationRequest,
-)
 from app.market_data.historical_data_manager import HistoricalDataManager
 from app.market_data.product_retirement import ProductRetiredError
 from app.research.composition import (
-    build_jdj_active60_robustness_service,
-    build_jdj_candidate_validation_service,
-    build_jdj_research_service,
-    build_multi_candidate_robustness_service,
-    build_n_candidate_validation_service,
     build_n_structure_research_service,
     build_subing_calibration_research_service,
-    build_subing_candidate_validation_service,
     build_subing_lifecycle_research_service,
-)
-from app.research.robustness.jdj_robustness import (
-    JdjActive60RobustnessRequest,
 )
 from app.services.runtime_health import build_runtime_health
 from app.runtime_entry import run_after_market, run_alert, run_live
@@ -73,7 +60,6 @@ AlertRuntimeFactory = Callable[[], Any]
 AlertCanarySenderFactory = Callable[[], Any]
 AlertNotificationAcknowledger = Callable[[str], dict[str, object]]
 ResearchServiceFactory = Callable[[Any], Any]
-JdjCandidateValidationServiceFactory = Callable[[Any, str], Any]
 
 def _execution_is_readonly(args: argparse.Namespace) -> bool:
     if args.domain == "research":
@@ -147,26 +133,8 @@ def main(
     lifecycle_research_service_factory: ResearchServiceFactory = (
         build_subing_lifecycle_research_service
     ),
-    candidate_validation_service_factory: ResearchServiceFactory = (
-        build_subing_candidate_validation_service
-    ),
-    n_candidate_validation_service_factory: ResearchServiceFactory = (
-        build_n_candidate_validation_service
-    ),
     n_structure_research_service_factory: ResearchServiceFactory = (
         build_n_structure_research_service
-    ),
-    jdj_research_service_factory: ResearchServiceFactory = (
-        build_jdj_research_service
-    ),
-    jdj_candidate_validation_service_factory: (
-        JdjCandidateValidationServiceFactory
-    ) = build_jdj_candidate_validation_service,
-    multi_candidate_robustness_service_factory: ResearchServiceFactory = (
-        build_multi_candidate_robustness_service
-    ),
-    jdj_active60_robustness_service_factory: ResearchServiceFactory = (
-        build_jdj_active60_robustness_service
     ),
     runtime_health_builder=build_runtime_health,
     stdout: TextIO = sys.stdout,
@@ -213,44 +181,8 @@ def main(
             with session_factory() as session:
                 if args.research_command == "subing-lifecycle":
                     service = lifecycle_research_service_factory(session)
-                elif args.research_command == "candidate-robustness":
-                    if isinstance(
-                        research_request,
-                        JdjActive60RobustnessRequest,
-                    ):
-                        service = jdj_active60_robustness_service_factory(session)
-                    else:
-                        service = multi_candidate_robustness_service_factory(session)
                 elif args.research_command == "n-structure":
                     service = n_structure_research_service_factory(session)
-                elif args.research_command == "jdj-1m":
-                    service = jdj_research_service_factory(session)
-                elif args.research_command == "candidate-validation":
-                    if not isinstance(research_request, CandidateValidationRequest):
-                        raise ValueError("CLI_CANDIDATE_REQUEST_INVALID")
-                    if (
-                        research_request.candidate_id
-                        == "subing_lifecycle_v2_candidate_v1"
-                    ):
-                        service = candidate_validation_service_factory(session)
-                    elif research_request.candidate_id == "n_structure_5m_candidate_v1":
-                        service = n_candidate_validation_service_factory(session)
-                    elif research_request.candidate_id in {
-                        "jdj_trend_follow_1m_candidate_v1",
-                        "jdj_trend_reentry_6_1m_candidate_v1",
-                        "jdj_key_level_breakout_1m_candidate_v1",
-                    }:
-                        if (
-                            research_request.protocol_id
-                            != "jdj_candidate_validation_v1"
-                        ):
-                            raise CandidateValidationIdentityError()
-                        service = jdj_candidate_validation_service_factory(
-                            session,
-                            research_request.candidate_id,
-                        )
-                    else:
-                        raise ValueError("CLI_CANDIDATE_ID_INVALID")
                 elif args.research_command == "subing-calibration":
                     service = research_service_factory(session)
                 else:
@@ -339,13 +271,6 @@ def main(
                 "accepted",
                 "acknowledged",
             }
-            or (
-                isinstance(
-                    research_request,
-                    JdjActive60RobustnessRequest,
-                )
-                and "status" not in payload
-            )
         )
         else 1
     )

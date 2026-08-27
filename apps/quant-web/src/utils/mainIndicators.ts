@@ -10,14 +10,15 @@ import type {
 } from '@/types/market'
 
 /** 主图指标偏好 localStorage 键 */
-export const MAIN_CHART_PREFERENCES_KEY = 'guiyi.market.chart.preferences.v5'
+export const MAIN_CHART_PREFERENCES_KEY = 'guiyi.market.chart.preferences.v6'
 /** 主图指标偏好 schema 版本 */
-export const MAIN_CHART_PREFERENCES_VERSION = 5
-const MAIN_CHART_PREFERENCES_V4_KEY = 'guiyi.market.chart.preferences.v4'
+export const MAIN_CHART_PREFERENCES_VERSION = 6
+const MAIN_CHART_PREFERENCES_V5_KEY = 'guiyi.market.chart.preferences.v5'
 const RETIRED_MAIN_CHART_PREFERENCE_KEYS = [
   'guiyi.market.chart.preferences.v1',
   'guiyi.market.chart.preferences.v2',
   'guiyi.market.chart.preferences.v3',
+  'guiyi.market.chart.preferences.v4',
 ] as const
 export const HTDY_REPAINT_SCAN_ZONE_BARS = 27
 export const HTDY_WEB_OBSERVATION_METADATA = {
@@ -35,7 +36,7 @@ export const HTDY_WEB_OBSERVATION_METADATA = {
 
 /** 主图指标显示偏好（可见指标、周期、实时跟随） */
 export interface MainChartPreferences {
-  version: 5
+  version: 6
   selectedOverlay: ResearchOverlayId
   optionalEmaIndicators: OptionalEmaIndicatorId[]
   showNStructureBands: boolean
@@ -62,14 +63,6 @@ export const RESEARCH_OVERLAY_DEFINITIONS: readonly ResearchOverlayDefinition[] 
     supportedFrequencies: SUBING_PUBLIC_FREQUENCIES,
     mainIndicators: ['ema_21'],
     historicalSource: 'subing_strategy',
-  },
-  {
-    id: 'jdj_strategy',
-    label: '日进斗金参考回放',
-    supportedSeriesKinds: ['actual_dominant'],
-    supportedFrequencies: ['1m'],
-    mainIndicators: [],
-    historicalSource: 'jdj_strategy',
   },
   {
     id: 'htdy',
@@ -260,11 +253,11 @@ export function loadMainChartPreferences(
   purgeRetiredMainChartPreferences(storage)
   try {
     const raw = storage.getItem(MAIN_CHART_PREFERENCES_KEY)
-    if (!raw) return migrateV4MainChartPreferences(storage)
+    if (!raw) return migrateV5MainChartPreferences(storage)
     const parsed = JSON.parse(raw) as Partial<MainChartPreferences> | null
     if (!parsed || parsed.version !== MAIN_CHART_PREFERENCES_VERSION) return defaultMainChartPreferences()
     return {
-      version: 5,
+      version: 6,
       selectedOverlay: normalizeResearchOverlay(parsed.selectedOverlay),
       optionalEmaIndicators: normalizeOptionalEmaIndicators(parsed.optionalEmaIndicators),
       showNStructureBands: Boolean(parsed.showNStructureBands),
@@ -308,7 +301,7 @@ export function saveMainChartPreferences(
  */
 export function defaultMainChartPreferences(): MainChartPreferences {
   return {
-    version: 5,
+    version: 6,
     selectedOverlay: 'subing',
     optionalEmaIndicators: [],
     showNStructureBands: false,
@@ -318,27 +311,27 @@ export function defaultMainChartPreferences(): MainChartPreferences {
   }
 }
 
-function migrateV4MainChartPreferences(
+function migrateV5MainChartPreferences(
   storage: Pick<Storage, 'getItem'>
     & Partial<Pick<Storage, 'setItem' | 'removeItem'>>,
 ): MainChartPreferences {
   try {
-    const raw = storage.getItem(MAIN_CHART_PREFERENCES_V4_KEY)
+    const raw = storage.getItem(MAIN_CHART_PREFERENCES_V5_KEY)
     if (!raw) return defaultMainChartPreferences()
     const parsed = JSON.parse(raw) as Record<string, unknown> | null
-    if (!parsed || parsed.version !== 4) return defaultMainChartPreferences()
+    if (!parsed || parsed.version !== 5) return defaultMainChartPreferences()
     const migrated: MainChartPreferences = {
-      version: 5,
+      version: 6,
       selectedOverlay: normalizeResearchOverlay(parsed.selectedOverlay),
       optionalEmaIndicators: normalizeOptionalEmaIndicators(parsed.optionalEmaIndicators),
       showNStructureBands: Boolean(parsed.showNStructureBands),
-      showSubingInternalProcess: false,
+      showSubingInternalProcess: Boolean(parsed.showSubingInternalProcess),
       period: typeof parsed.period === 'string' ? parsed.period : null,
       realtimeFollow: Boolean(parsed.realtimeFollow),
     }
     if (storage.setItem) {
       storage.setItem(MAIN_CHART_PREFERENCES_KEY, JSON.stringify(migrated))
-      storage.removeItem?.(MAIN_CHART_PREFERENCES_V4_KEY)
+      storage.removeItem?.(MAIN_CHART_PREFERENCES_V5_KEY)
     }
     return migrated
   } catch {
@@ -371,7 +364,6 @@ function purgeRetiredMainChartPreferences(
 function normalizeResearchOverlay(value: unknown): ResearchOverlayId {
   return value === 'none'
     || value === 'subing'
-    || value === 'jdj_strategy'
     || value === 'htdy'
     ? value
     : 'none'
