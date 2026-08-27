@@ -1,7 +1,9 @@
 # SuBing Performance Incremental Snapshots Design
 
-**Status:** Approved in chat; written Spec pending user review  
-**Date:** 2026-08-27  
+**Status:** Approved in chat; written Spec pending user review
+
+**Date:** 2026-08-27
+
 **Repository base:** `origin/develop@f896730554d57149b27b675e5346b59563a951b9`
 
 ## 1. Goal
