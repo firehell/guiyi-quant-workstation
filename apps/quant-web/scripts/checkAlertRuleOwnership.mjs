@@ -25,13 +25,6 @@ const DEFAULT_EXPECTED_OWNERSHIP = {
   },
 }
 
-const EQUALITY_OPERATORS = new Set([
-  ts.SyntaxKind.EqualsEqualsToken,
-  ts.SyntaxKind.EqualsEqualsEqualsToken,
-  ts.SyntaxKind.ExclamationEqualsToken,
-  ts.SyntaxKind.ExclamationEqualsEqualsToken,
-])
-
 export function inspectAlertRuleOwnership(sources, expectedOwnership) {
   const expected = normalizeExpectedOwnership(expectedOwnership)
   const activeRuleCodes = Object.keys(expected).sort()
@@ -90,170 +83,119 @@ function inspectTypeScriptUnit({
   occurrences,
   violations,
 }) {
-  const scopes = [new Map()]
+  const staticKeyBindings = new Map()
+  const staticScopeStack = [unit.sourceFile]
 
-  const isTrackedRuleCode = (node) => {
+  const scopeBindings = (scope) => {
+    const existing = staticKeyBindings.get(scope)
+    if (existing) return existing
+    const created = new Map()
+    staticKeyBindings.set(scope, created)
+    return created
+  }
+
+  const declareBindingName = (name, value = null) => {
+    if (ts.isIdentifier(name)) {
+      scopeBindings(staticScopeStack.at(-1)).set(name.text, value)
+      return
+    }
+    if (!ts.isObjectBindingPattern(name) && !ts.isArrayBindingPattern(name)) return
+    for (const element of name.elements) {
+      if (ts.isBindingElement(element)) declareBindingName(element.name)
+    }
+  }
+
+  const directStaticText = (node) => {
+    if (!node) return null
     const expression = ts.skipOuterExpressions(node, ts.OuterExpressionKinds.All)
-    if (isRuleCodeProperty(expression)) return true
-    if (!ts.isIdentifier(expression)) return false
-    for (let index = scopes.length - 1; index >= 0; index -= 1) {
-      if (scopes[index].has(expression.text)) return scopes[index].get(expression.text)
+    return ts.isStringLiteral(expression) || ts.isNoSubstitutionTemplateLiteral(expression)
+      ? expression.text
+      : null
+  }
+
+  const collectStaticKeyBindings = (node) => {
+    const ownsScope = node !== unit.sourceFile && isRuntimeScope(node)
+    if (ownsScope) staticScopeStack.push(node)
+    if (ts.isFunctionLike(node)) {
+      for (const parameter of node.parameters) declareBindingName(parameter.name)
+    } else if (ts.isCatchClause(node) && node.variableDeclaration) {
+      declareBindingName(node.variableDeclaration.name)
+    } else if (ts.isVariableDeclaration(node)) {
+      const declarationList = node.parent
+      const isConst = ts.isVariableDeclarationList(declarationList)
+        && (declarationList.flags & ts.NodeFlags.Const) !== 0
+      declareBindingName(
+        node.name,
+        isConst && directStaticText(node.initializer) === 'rule_code'
+          ? 'rule_code'
+          : null,
+      )
+    }
+    ts.forEachChild(node, collectStaticKeyBindings)
+    if (ownsScope) staticScopeStack.pop()
+  }
+
+  collectStaticKeyBindings(unit.sourceFile)
+  const runtimeScopeStack = [unit.sourceFile]
+
+  const staticPropertyText = (node) => {
+    const direct = directStaticText(node)
+    if (direct !== null) return direct
+    const expression = ts.skipOuterExpressions(node, ts.OuterExpressionKinds.All)
+    if (!ts.isIdentifier(expression)) return null
+    for (let index = runtimeScopeStack.length - 1; index >= 0; index -= 1) {
+      const bindings = staticKeyBindings.get(runtimeScopeStack[index])
+      if (bindings?.has(expression.text)) return bindings.get(expression.text)
+    }
+    return null
+  }
+
+  const runtimePropertyName = (node) => {
+    if (ts.isComputedPropertyName(node)) return staticPropertyText(node.expression)
+    if (
+      ts.isIdentifier(node)
+      || ts.isStringLiteral(node)
+      || ts.isNoSubstitutionTemplateLiteral(node)
+    ) return node.text
+    return null
+  }
+
+  const isDestructuringAssignmentProperty = (node) => {
+    let current = node
+    while (current.parent) {
+      const parent = current.parent
+      if (
+        ts.isBinaryExpression(parent)
+        && parent.operatorToken.kind === ts.SyntaxKind.EqualsToken
+      ) {
+        return node.pos >= parent.left.pos && node.end <= parent.left.end
+      }
+      if (ts.isFunctionLike(parent) || ts.isSourceFile(parent) || ts.isStatement(parent)) {
+        return false
+      }
+      current = parent
     }
     return false
   }
 
-  const bindIdentifier = (name, alias, assignment = false) => {
-    if (assignment) {
-      for (let index = scopes.length - 1; index >= 0; index -= 1) {
-        if (!scopes[index].has(name)) continue
-        if (alias) scopes[index].set(name, true)
-        return
-      }
+  const isRuntimeRuleCodeRead = (node) => {
+    if (ts.isPropertyAccessExpression(node)) return node.name.text === 'rule_code'
+    if (ts.isElementAccessExpression(node)) {
+      return staticPropertyText(node.argumentExpression) === 'rule_code'
     }
-    scopes[scopes.length - 1].set(name, alias)
-  }
-
-  const objectPropertySource = (source, propertyName) => {
-    if (!source) return undefined
-    const expression = ts.skipOuterExpressions(source, ts.OuterExpressionKinds.All)
-    if (!ts.isObjectLiteralExpression(expression)) return undefined
-    const expectedName = propertyNameText(propertyName)
-    if (expectedName === null) return undefined
-    for (const property of expression.properties) {
-      if (
-        ts.isPropertyAssignment(property)
-        && propertyNameText(property.name) === expectedName
-      ) return property.initializer
-      if (
-        ts.isShorthandPropertyAssignment(property)
-        && property.name.text === expectedName
-      ) return property.name
-    }
-    return undefined
-  }
-
-  const arrayElementSource = (source, index) => {
-    if (!source) return undefined
-    const expression = ts.skipOuterExpressions(source, ts.OuterExpressionKinds.All)
-    if (!ts.isArrayLiteralExpression(expression)) return undefined
-    const element = expression.elements[index]
-    if (!element || ts.isOmittedExpression(element)) return undefined
-    return ts.isSpreadElement(element) ? element.expression : element
-  }
-
-  const bindBindingName = (name, source, inheritedAlias = false) => {
-    const sourceAlias = source ? isTrackedRuleCode(source) : false
-    const alias = inheritedAlias || sourceAlias
-    if (ts.isIdentifier(name)) {
-      bindIdentifier(name.text, alias)
-      return
-    }
-    if (ts.isObjectBindingPattern(name)) {
-      for (const element of name.elements) {
-        const property = element.propertyName ?? element.name
-        bindBindingName(
-          element.name,
-          objectPropertySource(source, property),
-          alias
-            || propertyNameText(property) === 'rule_code'
-            || (element.initializer ? isTrackedRuleCode(element.initializer) : false),
-        )
-      }
-      return
-    }
-    if (ts.isArrayBindingPattern(name)) {
-      for (const [index, element] of name.elements.entries()) {
-        if (!ts.isBindingElement(element)) continue
-        bindBindingName(
-          element.name,
-          arrayElementSource(source, index),
-          alias || (element.initializer ? isTrackedRuleCode(element.initializer) : false),
-        )
-      }
-    }
-  }
-
-  const bindAssignmentTarget = (target, source, inheritedAlias = false) => {
-    const expression = ts.skipOuterExpressions(target, ts.OuterExpressionKinds.All)
-    const alias = inheritedAlias || (source ? isTrackedRuleCode(source) : false)
-    if (ts.isIdentifier(expression)) {
-      bindIdentifier(expression.text, alias, true)
-      return
+    if (ts.isBindingElement(node) && ts.isObjectBindingPattern(node.parent)) {
+      return runtimePropertyName(node.propertyName ?? node.name) === 'rule_code'
     }
     if (
-      ts.isBinaryExpression(expression)
-      && expression.operatorToken.kind === ts.SyntaxKind.EqualsToken
-    ) {
-      bindAssignmentTarget(
-        expression.left,
-        source,
-        alias || isTrackedRuleCode(expression.right),
-      )
-      return
-    }
-    if (ts.isObjectLiteralExpression(expression)) {
-      for (const property of expression.properties) {
-        if (ts.isShorthandPropertyAssignment(property)) {
-          const propertySource = objectPropertySource(source, property.name)
-          bindIdentifier(
-            property.name.text,
-            alias
-              || property.name.text === 'rule_code'
-              || (propertySource ? isTrackedRuleCode(propertySource) : false)
-              || (property.objectAssignmentInitializer
-                ? isTrackedRuleCode(property.objectAssignmentInitializer)
-                : false),
-            true,
-          )
-        } else if (ts.isPropertyAssignment(property)) {
-          bindAssignmentTarget(
-            property.initializer,
-            objectPropertySource(source, property.name),
-            alias || propertyNameText(property.name) === 'rule_code',
-          )
-        } else if (ts.isSpreadAssignment(property)) {
-          bindAssignmentTarget(property.expression, undefined, alias)
-        }
-      }
-      return
-    }
-    if (ts.isArrayLiteralExpression(expression)) {
-      for (const [index, element] of expression.elements.entries()) {
-        if (ts.isOmittedExpression(element)) continue
-        bindAssignmentTarget(
-          ts.isSpreadElement(element) ? element.expression : element,
-          arrayElementSource(source, index),
-          alias,
-        )
-      }
-    }
-  }
-
-  const recordAliases = (node) => {
-    if (ts.isVariableDeclaration(node)) {
-      bindBindingName(node.name, node.initializer)
-      return
-    }
-    if (
-      !ts.isBinaryExpression(node)
-      || node.operatorToken.kind !== ts.SyntaxKind.EqualsToken
-    ) return
-    bindAssignmentTarget(node.left, node.right)
+      (ts.isPropertyAssignment(node) || ts.isShorthandPropertyAssignment(node))
+      && isDestructuringAssignmentProperty(node)
+    ) return runtimePropertyName(node.name) === 'rule_code'
+    return false
   }
 
   const visit = (node) => {
-    const ownsScope = node !== unit.sourceFile && (
-      ts.isBlock(node) || ts.isFunctionLike(node) || ts.isCatchClause(node)
-    )
-    if (ownsScope) scopes.push(new Map())
-    if (ts.isFunctionLike(node)) {
-      for (const parameter of node.parameters) {
-        bindBindingName(parameter.name, parameter.initializer)
-      }
-    } else if (ts.isCatchClause(node) && node.variableDeclaration) {
-      bindBindingName(node.variableDeclaration.name, node.variableDeclaration.initializer)
-    }
-    recordAliases(node)
+    const ownsScope = node !== unit.sourceFile && isRuntimeScope(node)
+    if (ownsScope) runtimeScopeStack.push(node)
 
     if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
       const location = sourceLocation(fullSource, unit.baseOffset + node.getStart(unit.sourceFile))
@@ -270,39 +212,21 @@ function inspectTypeScriptUnit({
 
     if (
       path !== RULE_ROUTING_OWNER
-      && ts.isBinaryExpression(node)
-      && EQUALITY_OPERATORS.has(node.operatorToken.kind)
-      && (isTrackedRuleCode(node.left) || isTrackedRuleCode(node.right))
+      && isRuntimeRuleCodeRead(node)
     ) {
       const location = sourceLocation(fullSource, unit.baseOffset + node.getStart(unit.sourceFile))
       violations.push({ path, ...location, code: 'ALERT_RULE_DIRECT_ROUTING' })
     }
 
     ts.forEachChild(node, visit)
-    if (ownsScope) scopes.pop()
+    if (ownsScope) runtimeScopeStack.pop()
   }
 
   visit(unit.sourceFile)
 }
 
-function propertyNameText(node) {
-  if (ts.isComputedPropertyName(node)) {
-    const expression = ts.skipOuterExpressions(
-      node.expression,
-      ts.OuterExpressionKinds.All,
-    )
-    if (
-      ts.isStringLiteral(expression)
-      || ts.isNoSubstitutionTemplateLiteral(expression)
-    ) return expression.text
-    return null
-  }
-  if (
-    ts.isIdentifier(node)
-    || ts.isStringLiteral(node)
-    || ts.isNoSubstitutionTemplateLiteral(node)
-  ) return node.text
-  return null
+function isRuntimeScope(node) {
+  return ts.isBlock(node) || ts.isFunctionLike(node) || ts.isCatchClause(node)
 }
 
 function parseSource(path, source) {
@@ -363,15 +287,6 @@ function parseTypeScript(path, source, baseOffset, isTsx, fullSource = source) {
     }
   }
   return { units: [{ sourceFile, baseOffset }], violations: [] }
-}
-
-function isRuleCodeProperty(node) {
-  const expression = ts.skipOuterExpressions(node, ts.OuterExpressionKinds.All)
-  if (ts.isPropertyAccessExpression(expression)) return expression.name.text === 'rule_code'
-  return ts.isElementAccessExpression(expression)
-    && (ts.isStringLiteral(expression.argumentExpression)
-      || ts.isNoSubstitutionTemplateLiteral(expression.argumentExpression))
-    && expression.argumentExpression.text === 'rule_code'
 }
 
 function sourceLocation(source, offset) {

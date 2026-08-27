@@ -187,6 +187,65 @@ describe('Alert Rule AST ownership guard', () => {
     )
   })
 
+  test('rejects runtime rule_code reads without following aliases or calls', () => {
+    const attacks = {
+      'apps/quant-web/src/ForwardClosure.ts': [
+        "const target = 'subing' + '_strategy_v1'",
+        'const route = () => code === target',
+        'const code = event.rule_code',
+      ].join('\n'),
+      'apps/quant-web/src/ParameterCarrier.tsx': [
+        "const target = 'subing' + '_strategy_v1'",
+        'const route = (code) => <p>{target !== code}</p>',
+        'route(event.rule_code)',
+        'const carrier = [event.rule_code]',
+        'const code = carrier[0]',
+      ].join('\n'),
+      'apps/quant-web/src/RuntimeReads.vue': [
+        '<script lang="ts">',
+        "const target = 'subing' + '_strategy_v1'",
+        "const key = 'rule_code'",
+        'event[key] === target',
+        '</script>',
+        '<script setup lang="ts">',
+        "const target = 'htdy_' + 'original_15m'",
+        'const route = () => code !== target',
+        'const carrier = [event.rule_code]',
+        'const code = carrier[0]',
+        '</script>',
+      ].join('\n'),
+    }
+
+    assert.deepEqual(
+      inspectAlertRuleOwnership(validSources(attacks), EXPECTED_OWNERSHIP)
+        .map(({ code, path }) => ({ code, path })),
+      [
+        { code: 'ALERT_RULE_DIRECT_ROUTING', path: 'apps/quant-web/src/ForwardClosure.ts' },
+        { code: 'ALERT_RULE_DIRECT_ROUTING', path: 'apps/quant-web/src/ParameterCarrier.tsx' },
+        { code: 'ALERT_RULE_DIRECT_ROUTING', path: 'apps/quant-web/src/ParameterCarrier.tsx' },
+        { code: 'ALERT_RULE_DIRECT_ROUTING', path: 'apps/quant-web/src/RuntimeReads.vue' },
+        { code: 'ALERT_RULE_DIRECT_ROUTING', path: 'apps/quant-web/src/RuntimeReads.vue' },
+      ],
+    )
+  })
+
+  test('allows rule_code declarations and helper-only consumers', () => {
+    const path = 'apps/quant-web/src/helperConsumer.ts'
+    const source = [
+      "interface EventContract { readonly rule_code: 'subing_strategy_v1' }",
+      "type WireContract = { ['rule_code']: 'htdy_original_15m' }",
+      'isHtdyAlertEvent(event)',
+      'isSubingStrategyAlertEvent(event)',
+      'matchesAlertRuleCode(event, target)',
+    ].join('\n')
+    const expected = {
+      htdy_original_15m: { [path]: 1 },
+      subing_strategy_v1: { [path]: 1 },
+    }
+
+    assert.deepEqual(inspectAlertRuleOwnership({ [path]: source }, expected), [])
+  })
+
   test('allows local rule_code aliases inside the routing owner helper', () => {
     const sources = validSources({
       [ALERT_RULES_PATH]: [

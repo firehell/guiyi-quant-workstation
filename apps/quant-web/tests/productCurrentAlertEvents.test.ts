@@ -5,9 +5,9 @@ import { ref } from 'vue'
 import { useProductCurrentAlertEvents } from '../src/composables/useProductCurrentAlertEvents.ts'
 import type { AlertEvent } from '../src/types/market.ts'
 import {
-  alertDirectionalTone,
-  alertResultLabel,
-  alertRuleShortLabel,
+  alertEventDirectionalTone,
+  alertEventResultLabel,
+  alertEventRuleShortLabel,
 } from '../src/utils/alertRules.ts'
 
 const chartSource = readFileSync(new URL('../src/pages/market/chart.vue', import.meta.url), 'utf-8')
@@ -126,24 +126,27 @@ test('preserves the backend bar_end descending order', async () => {
 test('does not infer a formal or observation result for an unknown current-event rule', () => {
   const unknown = eventWith({ rule_code: 'future_rule', result_codes: ['buy'] })
 
-  assert.equal(alertRuleShortLabel(unknown.rule_code), '未知提醒')
-  assert.equal(alertResultLabel(unknown.rule_code, unknown.result_codes), '提醒记录')
-  assert.equal(alertDirectionalTone(unknown.rule_code, unknown.result_codes), null)
+  assert.equal(alertEventRuleShortLabel(unknown), '未知提醒')
+  assert.equal(alertEventResultLabel(unknown, unknown.result_codes), '提醒记录')
+  assert.equal(alertEventDirectionalTone(unknown, unknown.result_codes), null)
 })
 
 test('keeps combined HTDY observations neutral and Strategy Actions out of the old direction helper', () => {
-  assert.equal(alertResultLabel('htdy_original_15m', ['buy', 'sell']), '买入/卖出观察')
-  assert.equal(alertResultLabel('subing_strategy_v1', ['buy', 'sell']), '买入/卖出策略动作')
-  assert.equal(alertDirectionalTone('htdy_original_15m', ['buy', 'sell']), null)
-  assert.equal(alertDirectionalTone('subing_strategy_v1', ['buy', 'sell']), null)
+  const htdy = eventWith({ rule_code: 'htdy_original_15m', result_codes: ['buy', 'sell'] })
+  const subing = eventWith({ rule_code: 'subing_strategy_v1', result_codes: ['buy', 'sell'] })
+
+  assert.equal(alertEventResultLabel(htdy, htdy.result_codes), '买入/卖出观察')
+  assert.equal(alertEventResultLabel(subing, subing.result_codes), '买入/卖出策略动作')
+  assert.equal(alertEventDirectionalTone(htdy, htdy.result_codes), null)
+  assert.equal(alertEventDirectionalTone(subing, subing.result_codes), null)
 })
 
 test('keeps an unknown combined current event fail-closed', () => {
   const unknown = eventWith({ rule_code: 'future_rule', result_codes: ['buy', 'sell'] })
 
-  assert.equal(alertRuleShortLabel(unknown.rule_code), '未知提醒')
-  assert.equal(alertResultLabel(unknown.rule_code, unknown.result_codes), '提醒记录')
-  assert.equal(alertDirectionalTone(unknown.rule_code, unknown.result_codes), null)
+  assert.equal(alertEventRuleShortLabel(unknown), '未知提醒')
+  assert.equal(alertEventResultLabel(unknown, unknown.result_codes), '提醒记录')
+  assert.equal(alertEventDirectionalTone(unknown, unknown.result_codes), null)
 })
 
 test('derives the sidebar HTDY observation from the latest existing HTDY marker', () => {

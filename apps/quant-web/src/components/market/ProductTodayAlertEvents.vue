@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { computed } from 'vue'
 import type { ProductAlertRuleState } from '@/api/alerts'
 import type { AlertEvent } from '@/types/market'
 import {
-  alertDirectionalTone,
-  alertResultLabel,
-  alertRuleShortLabel,
+  alertEventDirectionalTone,
+  alertEventResultLabel,
+  alertEventRuleShortLabel,
+  findAlertRuleForEvent,
   strategyActionLabel,
 } from '@/utils/alertRules'
 
@@ -14,18 +14,15 @@ const props = defineProps<{
   rules: ProductAlertRuleState[]
 }>()
 
-const displayNames = computed(() => new Map(
-  props.rules.map((rule) => [rule.rule_code, rule.display_name]),
-))
-
-function ruleLabel(ruleCode: string) {
-  return displayNames.value.get(ruleCode) ?? alertRuleShortLabel(ruleCode)
+function ruleLabel(event: AlertEvent) {
+  return findAlertRuleForEvent(props.rules, event)?.display_name
+    ?? alertEventRuleShortLabel(event)
 }
 
 function resultLabel(event: AlertEvent) {
   if (event.strategy_action) return strategyActionLabel(event.strategy_action.kind)
-  return alertResultLabel(
-    event.rule_code,
+  return alertEventResultLabel(
+    event,
     event.result_codes.filter((item): item is 'buy' | 'sell' => item === 'buy' || item === 'sell'),
   )
 }
@@ -37,8 +34,8 @@ function resultClass(event: AlertEvent) {
       ? 'product-today-alert-events__result--buy'
       : 'product-today-alert-events__result--sell'
   }
-  const direction = alertDirectionalTone(
-    event.rule_code,
+  const direction = alertEventDirectionalTone(
+    event,
     event.result_codes.filter((item): item is 'buy' | 'sell' => item === 'buy' || item === 'sell'),
   )
   return direction === 'buy' ? 'product-today-alert-events__result--buy'
@@ -66,7 +63,7 @@ function barTime(value: string) {
         :data-event-id="String(item.id)"
       >
         <time>{{ barTime(item.bar_end) }}</time>
-        <strong>{{ ruleLabel(item.rule_code) }}</strong>
+        <strong>{{ ruleLabel(item) }}</strong>
         <span :class="resultClass(item)">{{ resultLabel(item) }}</span>
       </div>
     </div>

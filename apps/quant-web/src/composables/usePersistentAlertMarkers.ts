@@ -2,7 +2,11 @@ import { ref } from 'vue'
 import type { AlertEventListResponse } from '../api/alerts.ts'
 import type { AlertEvent, BarData, KlineMarker, MarketFrequency, SeriesKind } from '../types/market.ts'
 import { alertEventsToMarkers, isPersistentAlertIdentity, markerRuleCodes } from '../utils/alertMarkers.ts'
-import { isSubingStrategyAlertEvent, matchesAlertRuleCode } from '../utils/alertRules.ts'
+import {
+  alertEventIdentityKey,
+  isSubingStrategyAlertEvent,
+  matchesAlertRuleCode,
+} from '../utils/alertRules.ts'
 
 const REFRESH_INTERVAL_MS = 30_000
 const RECENT_WINDOW_MS = 2 * 60 * 60 * 1000
@@ -171,7 +175,7 @@ function identityKey(identity: AlertMarkerIdentity | null): string {
 }
 
 function eventKey(event: AlertEventListResponse['items'][number]): string {
-  return event.action_id ?? `${event.rule_code}:${event.symbol}:${event.frequency}:${event.bar_end}`
+  return alertEventIdentityKey(event)
 }
 
 function barRange(bars: BarData[]): { start: string; end: string } {

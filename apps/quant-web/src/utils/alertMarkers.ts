@@ -2,9 +2,10 @@ import type { AlertEvent, KlineMarker, MarketFrequency, SeriesKind } from '../ty
 import {
   ALERT_RULE_PRESENTATIONS,
   type AlertRuleCode,
-  alertDirectionalTone,
-  alertResultLabel,
-  getAlertRulePresentation,
+  alertEventDirectionalTone,
+  alertEventIdentityKey,
+  alertEventMarkerTone,
+  alertEventResultLabel,
   isHtdyAlertEvent,
 } from './alertRules.ts'
 
@@ -33,14 +34,14 @@ export function alertEventsToMarkers(events: AlertEvent[]): KlineMarker[] {
       const observations = event.result_codes.filter(
         (item): item is 'buy' | 'sell' => item === 'buy' || item === 'sell',
       )
-      const label = alertResultLabel(event.rule_code, observations)
+      const label = alertEventResultLabel(event, observations)
       if (label === '提醒记录') return []
       return [{
-        id: `alert:${event.rule_code}:${event.symbol}:${event.frequency}:${event.bar_end}`,
+        id: `alert:${alertEventIdentityKey(event)}`,
         time: event.bar_end,
         label,
         tooltip: `持久 AlertEvent · ${event.contract} · ${label}`,
-        tone: markerTone(event.rule_code, observations),
+        tone: markerTone(event, observations),
         position: 'aboveBar' as const,
         shape: 'square' as const,
       }]
@@ -48,13 +49,13 @@ export function alertEventsToMarkers(events: AlertEvent[]): KlineMarker[] {
 }
 
 function markerTone(
-  ruleCode: string,
+  event: AlertEvent,
   observations: AlertEvent['result_codes'],
 ): KlineMarker['tone'] {
-  const presentation = getAlertRulePresentation(ruleCode)
-  if (presentation?.markerTone) return presentation.markerTone
-  const direction = alertDirectionalTone(
-    ruleCode,
+  const registeredTone = alertEventMarkerTone(event)
+  if (registeredTone) return registeredTone
+  const direction = alertEventDirectionalTone(
+    event,
     observations.filter((item): item is 'buy' | 'sell' => item === 'buy' || item === 'sell'),
   )
   if (direction === 'buy') return 'up'

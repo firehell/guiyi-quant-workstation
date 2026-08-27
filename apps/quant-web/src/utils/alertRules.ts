@@ -61,6 +61,20 @@ export function matchesAlertRuleCode(
   return event.rule_code === ruleCode
 }
 
+export function findAlertRuleByCode<T extends AlertRuleIdentity>(
+  rules: readonly T[],
+  ruleCode: string,
+): T | undefined {
+  return rules.find((rule) => matchesAlertRuleCode(rule, ruleCode))
+}
+
+export function findAlertRuleForEvent<T extends AlertRuleIdentity>(
+  rules: readonly T[],
+  event: AlertRuleIdentity,
+): T | undefined {
+  return rules.find((rule) => rule.rule_code === event.rule_code)
+}
+
 export function isHtdyAlertEvent(event: AlertEvent): event is HtdyAlertEvent {
   return matchesAlertRuleCode(event, ALERT_RULE_CODES.HTDY)
 }
@@ -75,6 +89,10 @@ export function alertRuleShortLabel(ruleCode: string): string {
   return getAlertRulePresentation(ruleCode)?.shortLabel ?? '未知提醒'
 }
 
+export function alertEventRuleShortLabel(event: AlertRuleIdentity): string {
+  return alertRuleShortLabel(event.rule_code)
+}
+
 export function alertResultLabel(ruleCode: string, directions: readonly AlertDirection[]): string {
   const presentation = getAlertRulePresentation(ruleCode)
   if (!presentation) return '提醒记录'
@@ -83,6 +101,13 @@ export function alertResultLabel(ruleCode: string, directions: readonly AlertDir
   if (values.has('buy')) return `买入${presentation.resultNoun}`
   if (values.has('sell')) return `卖出${presentation.resultNoun}`
   return '提醒记录'
+}
+
+export function alertEventResultLabel(
+  event: AlertRuleIdentity,
+  directions: readonly AlertDirection[],
+): string {
+  return alertResultLabel(event.rule_code, directions)
 }
 
 export function strategyActionLabel(kind: string): string {
@@ -99,4 +124,22 @@ export function alertDirectionalTone(
 ): AlertDirection | null {
   if (!getAlertRulePresentation(ruleCode) || directions.length !== 1) return null
   return directions[0] === 'buy' || directions[0] === 'sell' ? directions[0] : null
+}
+
+export function alertEventDirectionalTone(
+  event: AlertRuleIdentity,
+  directions: readonly AlertDirection[],
+): AlertDirection | null {
+  return alertDirectionalTone(event.rule_code, directions)
+}
+
+export function alertEventMarkerTone(
+  event: AlertRuleIdentity,
+): AlertRulePresentation['markerTone'] {
+  return getAlertRulePresentation(event.rule_code)?.markerTone ?? null
+}
+
+export function alertEventIdentityKey(event: AlertEvent): string {
+  return event.action_id
+    ?? `${event.rule_code}:${event.symbol}:${event.frequency}:${event.bar_end}`
 }

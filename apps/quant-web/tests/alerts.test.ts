@@ -137,18 +137,14 @@ describe('Product Alert server-side scope', () => {
       currentGeneration: 3,
       requestedSymbol: 'ag',
       currentSymbol: 'ag',
-      requestedRuleCode: 'htdy_original_15m',
-      currentRuleCode: 'htdy_original_15m',
-      updatedRuleCode: 'htdy_original_15m',
+      ruleIdentityCurrent: true,
     }), false)
     assert.equal(isCurrentAlertMutation({
       requestGeneration: 3,
       currentGeneration: 3,
       requestedSymbol: 'ag',
       currentSymbol: 'ag',
-      requestedRuleCode: 'htdy_original_15m',
-      currentRuleCode: 'htdy_original_15m',
-      updatedRuleCode: 'htdy_original_15m',
+      ruleIdentityCurrent: true,
     }), true)
   })
 
