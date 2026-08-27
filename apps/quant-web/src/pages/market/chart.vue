@@ -863,7 +863,7 @@ function normalizeSymbol(value: unknown): string | null {
   .product-workspace, .product-workspace__main { flex: 1 1 0; min-height: 0; }
   .product-workspace { display: flex; }
   .product-workspace__kline { display: flex; min-height: 0; }
-  .product-workspace__kline :deep(.kline-shell) { flex: 1 1 0; height: 100%; }
+  .product-workspace__kline :deep(.kline-shell) { flex: 1 1 0; min-width: 0; height: 100%; }
 }
 
 @media (min-width: 980px) and (max-width: 1199px) {

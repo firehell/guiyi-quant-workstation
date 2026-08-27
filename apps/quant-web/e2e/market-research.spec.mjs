@@ -1568,12 +1568,20 @@ test('SuBing lifecycle remains an explicitly research-only funnel beside formal 
   await expect(lifecycle).not.toContainText('3/3')
   await expect(lifecycle).toContainText('最近状态转换')
   await expect(lifecycle).not.toContainText('买入信号')
+  const settings = page.locator('.toolbar__settings')
+  if (await settings.isVisible()) await page.getByTestId('kline-shell').click({ position: { x: 400, y: 400 } })
+  await expect(settings).not.toBeVisible()
   for (const viewport of [
     { width: 1440, height: 900 },
     { width: 1280, height: 720 },
     { width: 1024, height: 768 },
   ]) {
     await page.setViewportSize(viewport)
+    await expect.poll(() => page.evaluate(() => {
+      const column = document.querySelector('.product-workspace__kline')?.getBoundingClientRect()
+      const shell = document.querySelector('[data-testid="kline-shell"]')?.getBoundingClientRect()
+      return Boolean(column && shell && shell.right <= column.right + 1)
+    })).toBe(true)
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
   }
 })
