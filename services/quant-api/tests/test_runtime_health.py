@@ -87,6 +87,7 @@ def test_runtime_health_endpoint_exposes_market_runtime_components(
         "last_run": None,
         "last_successful_trading_day": None,
         "last_failure": None,
+        "subing_strategy_performance": None,
         "error_type": None,
         "error_message": None,
     }

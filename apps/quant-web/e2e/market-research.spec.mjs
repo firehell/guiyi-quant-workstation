@@ -466,6 +466,26 @@ function subingStrategyHistory(request, entryTime, exitTime) {
   }
 }
 
+function subingStrategyPerformance(symbol, episodes = []) {
+  const empty = {
+    completed: 0, positive: 0, negative: 0, flat: 0,
+    positive_rate_percent: null, mean_reference_change_percent: null,
+    median_reference_change_percent: null, best_reference_change_percent: null,
+    worst_reference_change_percent: null, mean_holding_15m_bars: null,
+  }
+  return {
+    strategy_id: 'subing_strategy_v1', formula_version: 'subing_strategy_15m_v1',
+    symbol, series_kind: 'actual_dominant', frequency: '15m',
+    coverage: {
+      since: '2026-01-01', through: '2026-04-30', resolved_cutoff: '2026-04-30T07:00:00Z',
+      segment_count: 1, bar_count_15m: 120, context_unavailable_count: 0,
+    },
+    cache_state: 'hit',
+    summary: { overall: empty, long: empty, short: empty, open_episodes: episodes.filter((item) => item.state === 'open').length },
+    exit_reason_counts: [], episodes,
+  }
+}
+
 async function mockWorkspace(page, researchResponse, options = {}) {
   const workspaceSymbol = options.symbol || 'ag'
   const workspaceContract = options.resolvedContract || (workspaceSymbol === 'jm' ? 'JM2701' : 'AG2601')
@@ -478,6 +498,13 @@ async function mockWorkspace(page, researchResponse, options = {}) {
   let subingResponseIndex = 0
   await page.route('**/api/v1/market/**', async (route) => {
     const url = new URL(route.request().url())
+    if (url.pathname.endsWith('/research/subing-strategy/performance')) {
+      const request = Object.fromEntries(url.searchParams)
+      const configured = typeof options.subingStrategyPerformanceResponse === 'function'
+        ? options.subingStrategyPerformanceResponse(request)
+        : options.subingStrategyPerformanceResponse
+      return route.fulfill({ json: configured || subingStrategyPerformance(request.symbol) })
+    }
     if (url.pathname.endsWith('/research/subing-strategy/current')) {
       const request = Object.fromEntries(url.searchParams)
       const configured = typeof options.subingStrategyCurrentResponse === 'function'
@@ -1054,6 +1081,14 @@ test('SuBing Strategy anchors Action times, shows complete records, and keeps in
     subingStrategyHistoricalResponse: (request) => (
       subingStrategyHistory(request, entryTime, exitTime)
     ),
+    subingStrategyPerformanceResponse: (request) => {
+      const history = subingStrategyHistory(
+        { ...request, series_kind: 'actual_dominant', frequency: '15m', since: '2026-01-01', through: '2026-04-30' },
+        entryTime,
+        exitTime,
+      )
+      return subingStrategyPerformance(request.symbol, history.episodes)
+    },
     subingResponse: cloneSubingLifecycleCase('longSetup'),
   })
 
@@ -1113,6 +1148,10 @@ test('SuBing Strategy renders the current open episode from the current endpoint
         physical_contract: 'AG2601',
       },
     }),
+    subingStrategyPerformanceResponse: (request) => subingStrategyPerformance(
+      request.symbol,
+      [currentEpisode],
+    ),
   })
 
   await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=15m')

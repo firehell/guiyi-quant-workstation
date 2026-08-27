@@ -19,6 +19,7 @@ from app.market_data.subing_lifecycle_policy import SubingLifecyclePolicyError
 from app.market_data.composition import (
     build_subing_strategy_current_service,
     build_subing_strategy_historical_service,
+    build_subing_strategy_performance_service,
 )
 from app.market_data.subing_strategy.contracts import (
     SUBING_STRATEGY_ID,
@@ -43,6 +44,11 @@ from app.market_data.subing_strategy.service import (
     SubingStrategySegmentIdentityError,
     SubingStrategySourceUnavailableError,
 )
+from app.market_data.subing_strategy.performance import (
+    SubingStrategyPerformanceError,
+    SubingStrategyPerformanceProjection,
+    SubingStrategyPerformanceStats,
+)
 from app.schemas.research_overlays import (
     SubingStrategyActionOut,
     SubingStrategyBoundPivotOut,
@@ -55,6 +61,11 @@ from app.schemas.research_overlays import (
     SubingStrategyPolicyOut,
     SubingStrategyPendingSummaryOut,
     SubingStrategySegmentSummaryOut,
+    SubingStrategyExitReasonCountOut,
+    SubingStrategyPerformanceCoverageOut,
+    SubingStrategyPerformanceResponse,
+    SubingStrategyPerformanceStatsOut,
+    SubingStrategyPerformanceSummaryOut,
 )
 
 
@@ -229,6 +240,72 @@ def _strategy_current_response(
             physical_contract=context.physical_contract,
         ),
     )
+
+
+def _performance_stats_out(
+    value: SubingStrategyPerformanceStats,
+) -> SubingStrategyPerformanceStatsOut:
+    return SubingStrategyPerformanceStatsOut(**{
+        field: getattr(value, field)
+        for field in SubingStrategyPerformanceStatsOut.model_fields
+    })
+
+
+def _strategy_performance_response(
+    result: SubingStrategyPerformanceProjection,
+) -> SubingStrategyPerformanceResponse:
+    return SubingStrategyPerformanceResponse(
+        strategy_id=result.strategy_id,
+        formula_version="subing_strategy_15m_v1",
+        symbol=result.symbol,
+        series_kind="actual_dominant",
+        frequency="15m",
+        coverage=SubingStrategyPerformanceCoverageOut(
+            since=result.coverage_since,
+            through=result.coverage_through,
+            resolved_cutoff=result.resolved_cutoff,
+            segment_count=result.segment_count,
+            bar_count_15m=result.bar_count_15m,
+            context_unavailable_count=result.context_unavailable_count,
+        ),
+        cache_state=result.cache_state,
+        summary=SubingStrategyPerformanceSummaryOut(
+            overall=_performance_stats_out(result.summary.overall),
+            long=_performance_stats_out(result.summary.long),
+            short=_performance_stats_out(result.summary.short),
+            open_episodes=result.summary.open_episodes,
+        ),
+        exit_reason_counts=[
+            SubingStrategyExitReasonCountOut(reason_code=code, count=count)
+            for code, count in result.summary.exit_reason_counts
+        ],
+        episodes=[_strategy_episode_out(episode) for episode in result.episodes],
+    )
+
+
+@router.get(
+    "/subing-strategy/performance",
+    response_model=SubingStrategyPerformanceResponse,
+)
+def subing_strategy_performance(
+    symbol: str = Query(...),
+    session: Session = Depends(get_db),
+) -> SubingStrategyPerformanceResponse:
+    try:
+        result = build_subing_strategy_performance_service(session).performance(symbol)
+    except (
+        ActiveUniverseError,
+        SubingStrategyPerformanceError,
+        SubingStrategyActiveProductError,
+        SubingStrategySourceUnavailableError,
+        SubingStrategySegmentIdentityError,
+        SubingStrategyContextIdentityError,
+        SubingStrategyPolicyError,
+        SubingCalibrationError,
+        SubingLifecyclePolicyError,
+    ) as exc:
+        raise HTTPException(status_code=409, detail={"code": exc.code}) from None
+    return _strategy_performance_response(result)
 
 
 @router.get(

@@ -140,3 +140,50 @@ class SubingStrategyCurrentResponse(BaseModel):
     current_episode: SubingStrategyEpisodeOut | None
     latest_completed_episode: SubingStrategyEpisodeOut | None
     direction_context: SubingStrategyCurrentContextOut
+
+
+class SubingStrategyPerformanceStatsOut(BaseModel):
+    completed: int
+    positive: int
+    negative: int
+    flat: int
+    positive_rate_percent: Decimal | None
+    mean_reference_change_percent: Decimal | None
+    median_reference_change_percent: Decimal | None
+    best_reference_change_percent: Decimal | None
+    worst_reference_change_percent: Decimal | None
+    mean_holding_15m_bars: Decimal | None
+
+
+class SubingStrategyPerformanceCoverageOut(BaseModel):
+    since: date
+    through: date
+    resolved_cutoff: datetime
+    segment_count: int
+    bar_count_15m: int
+    context_unavailable_count: int
+
+
+class SubingStrategyExitReasonCountOut(BaseModel):
+    reason_code: str
+    count: int
+
+
+class SubingStrategyPerformanceSummaryOut(BaseModel):
+    overall: SubingStrategyPerformanceStatsOut
+    long: SubingStrategyPerformanceStatsOut
+    short: SubingStrategyPerformanceStatsOut
+    open_episodes: int
+
+
+class SubingStrategyPerformanceResponse(BaseModel):
+    strategy_id: str
+    formula_version: Literal["subing_strategy_15m_v1"]
+    symbol: str
+    series_kind: Literal["actual_dominant"]
+    frequency: Literal["15m"]
+    coverage: SubingStrategyPerformanceCoverageOut
+    cache_state: Literal["hit", "miss", "mixed", "unavailable"]
+    summary: SubingStrategyPerformanceSummaryOut
+    exit_reason_counts: list[SubingStrategyExitReasonCountOut]
+    episodes: list[SubingStrategyEpisodeOut]

@@ -1,4 +1,4 @@
-"""``guiyi research`` read-only research command definitions."""
+"""``guiyi research`` research and expendable-cache command definitions."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from typing import Any
 RESEARCH_COMMAND_NAMES = (
     "subing-calibration",
     "subing-lifecycle",
+    "subing-strategy-performance",
 )
 
 
@@ -34,6 +35,10 @@ def add_research_commands(
     lifecycle.add_argument("--since", required=True)
     lifecycle.add_argument("--through", required=True)
     lifecycle.add_argument("--symbol")
+
+    performance = commands.add_parser("subing-strategy-performance")
+    performance.add_argument("--scope", choices=("active",), required=True)
+    performance.add_argument("--warm-cache", action="store_true", required=True)
 
     if tuple(commands.choices) != RESEARCH_COMMAND_NAMES:
         raise RuntimeError("CLI_RESEARCH_COMMAND_REGISTRY_INVALID")
