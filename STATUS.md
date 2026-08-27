@@ -29,6 +29,7 @@ Alert transport 为 PushPlus；provider accepted 不等于微信送达。2026-08
 ## 仓库验收 evidence
 
 - Stage 2 recorded production-format shadow 使用 sealed Null Event/notification/cache/status 依赖与 committed deterministic fake readers，故意注入 1 个 source unavailable 后验证 active60 为 `59 ready / 1 bounded unavailable`、相同输入前缀的 Historical/Live Action 一致、Action 精确绑定下一实际 15m 区间第一根 1m open、跨 contract/segment identity 拒绝，以及无 Action 前缀不制造 Action。真实 read-only shadow 未获本轮授权，保持 skipped；该证据不构成 Runtime、自然 Event 或通知证据。
+- SuBing active60 全历史效果代码已在 feature branch 完成：固定复用 `actual_dominant + 15m` Historical Projection，新增 reference-change 统计 API、产品详情底部效果与 Episode 记录、Git 外 cache warm CLI，以及 after-market schema v3 派生阶段。真实 active60 cache warm 与 Runtime promotion 均未执行，不构成 production 数据或运行证据。
 
 ## Pending Gate
 
@@ -37,3 +38,4 @@ Alert transport 为 PushPlus；provider accepted 不等于微信送达。2026-08
 - SuBing Strategy V1 Stage 2 已随 `v1.8.7` 发布；Gate B（production migration `20260826_0042`）、Gate C（Runtime promotion 与未来自然通知）及 Gate D（一次 owner PushPlus canary）仍是三个相互独立 Gate。
 - production `subing_entry_signal_v1` Rule/Event/Scope 在 0042 Gate 前保持原事实；仓库中的 `subing_strategy_v1` 直接替换代码不得被表述为 production 已迁移。
 - SuBing Candidate 的 prospective OOS 按其 protocol 独立累积，retrospective 不回填 OOS。
+- SuBing 全历史效果首次 active60 Git 外 cache warm，以及含该派生阶段的 Runtime promotion，仍须分别取得单次明确授权；代码测试不自动授予任一 Gate。

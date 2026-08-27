@@ -24,6 +24,62 @@ from app.market_data.subing_strategy.service import (
     SubingStrategySegmentIdentityError,
     SubingStrategySourceUnavailableError,
 )
+from app.market_data.subing_strategy.performance import (
+    SubingStrategyPerformanceProjection,
+    SubingStrategyPerformanceStats,
+    SubingStrategyPerformanceSummary,
+)
+
+
+def test_subing_strategy_performance_returns_fixed_full_history_contract(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    empty = SubingStrategyPerformanceStats(0, 0, 0, 0, None, None, None, None, None, None)
+    projection = SubingStrategyPerformanceProjection(
+        strategy_id="subing_strategy_v1",
+        formula_version="subing_strategy_15m_v1",
+        symbol="jm",
+        series_kind=SeriesKind.ACTUAL_DOMINANT,
+        frequency=BarFrequency.M15,
+        coverage_since=date(2020, 1, 2),
+        coverage_through=date(2026, 8, 26),
+        resolved_cutoff=datetime(2026, 8, 26, 7, 0, tzinfo=UTC),
+        segment_count=12,
+        bar_count_15m=12345,
+        context_unavailable_count=3,
+        cache_state="hit",
+        summary=SubingStrategyPerformanceSummary(empty, empty, empty, 0, (("EMA21", 2),)),
+        episodes=(),
+    )
+    service = SimpleNamespace(performance=lambda symbol: projection)
+    monkeypatch.setattr(
+        "app.api.market_research_overlays.build_subing_strategy_performance_service",
+        lambda _session: service,
+        raising=False,
+    )
+
+    response = TestClient(app).get(
+        "/api/v1/market/research/subing-strategy/performance",
+        params={"symbol": "JM"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["strategy_id"] == "subing_strategy_v1"
+    assert payload["series_kind"] == "actual_dominant"
+    assert payload["frequency"] == "15m"
+    assert payload["coverage"] == {
+        "since": "2020-01-02",
+        "through": "2026-08-26",
+        "resolved_cutoff": "2026-08-26T07:00:00Z",
+        "segment_count": 12,
+        "bar_count_15m": 12345,
+        "context_unavailable_count": 3,
+    }
+    assert payload["summary"]["overall"]["completed"] == 0
+    assert payload["summary"]["overall"]["mean_reference_change_percent"] is None
+    assert payload["exit_reason_counts"] == [{"reason_code": "EMA21", "count": 2}]
+    assert payload["episodes"] == []
 
 
 class _StrategyService:

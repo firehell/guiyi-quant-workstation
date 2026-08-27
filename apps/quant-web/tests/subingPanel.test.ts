@@ -16,7 +16,7 @@ test('contains presentation formatting only and no browser Factor Signal or Life
   )
 })
 
-test('makes Strategy records primary while internal Lifecycle facts stay opt-in', () => {
+test('moves Strategy records to bottom while sidebar keeps current state and Lifecycle opt-in', () => {
   const chartSource = readFileSync(
     new URL('../src/pages/market/chart.vue', import.meta.url),
     'utf-8',
@@ -26,7 +26,9 @@ test('makes Strategy records primary while internal Lifecycle facts stay opt-in'
     'utf-8',
   )
 
-  assert.match(panelSource, /<SubingStrategyRecords/)
+  assert.doesNotMatch(panelSource, /<SubingStrategyRecords/)
+  assert.match(panelSource, /data-testid="subing-current-strategy-state"/)
+  assert.match(chartSource, /<SubingStrategyPerformancePanel/)
   assert.match(panelSource, /data-testid="subing-research-details"/)
   assert.match(panelSource, /<summary>当前研究 \/ 数据身份 \/ 详细信息<\/summary>/)
   assert.doesNotMatch(

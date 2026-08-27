@@ -24,6 +24,8 @@ SuBing Strategy V1 的 Stage 1 Historical Projection 与 Stage 2 completed-Live 
 
 Stage 2 代码为 active60 在内存恢复和维护相互隔离的策略状态，计算范围独立于 Alert Scope；`scope_products` 只控制 immutable Strategy Action Event 与 owner one-shot PushPlus。启动恢复/catch-up 不补 Event、不补通知；Current Strategy 从 Canonical + completed Live 只读重建，不以 AlertEvent 作为仓位权威。该代码已随 `v1.8.7` release，尚未 Runtime promotion，不改变当前 production Runtime。
 
+产品详情另有固定的 `actual_dominant + 15m` 全历史策略效果视图：仍复用唯一 Historical Strategy Projection，只统计完整 Episode 的参考价变动、持有 Bar 与退出原因；未完成 Episode 仅展示、不进入完成统计。该视图不引入本金、仓位、费用、资金曲线、回撤或订单语义。结果使用可删除的 Git 外 cache；首次 active60 预热和盘后刷新均是派生步骤，单品失败只令派生状态 degraded，不撤销已成功的 Canonical 更新，也不触发通知或 retry。
+
 ## 保留研究能力
 
 - SuBing Candidate Validation 保留 source-specific causality、strict-before、embargo、prefix invariance、golden parity 与 prospective OOS 分离；retrospective 不生成自动 rank、winner、promotion、盈利或可交易结论。

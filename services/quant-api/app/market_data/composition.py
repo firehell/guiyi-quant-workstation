@@ -62,6 +62,10 @@ from app.market_data.subing_strategy.policy import load_subing_strategy_policy
 from app.market_data.subing_strategy.service import (
     SubingStrategyHistoricalProjectionService,
 )
+from app.market_data.subing_strategy.performance import (
+    SubingStrategyPerformanceService,
+)
+from app.market_data.domain import RQDATA_INTRADAY_HISTORY_START
 from app.market_data.subing_read_service import SubingReadService
 from app.market_data.subing_daily_watch import (
     SubingDailyWatchBuilder,
@@ -271,6 +275,28 @@ def build_subing_strategy_historical_service(
         lifecycle_policy=load_subing_lifecycle_policy(_SUBING_LIFECYCLE_POLICY),
         strategy_policy=load_subing_strategy_policy(),
         cache=_build_subing_strategy_cache_or_null(),
+    )
+
+
+def build_subing_strategy_performance_service(
+    session: Session,
+) -> SubingStrategyPerformanceService:
+    """Compose fixed actual-dominant 15m full-history performance."""
+    from app.market_data.coverage_source import DatabaseCoverageSource
+
+    active = load_active_products()
+    coverage = DatabaseCoverageSource(
+        session,
+        _PRODUCT_STARTS,
+        history_floor_path=_HISTORY_FLOOR,
+    )
+    return SubingStrategyPerformanceService(
+        build_subing_strategy_historical_service(session),
+        products=active,
+        window_resolver=lambda symbol: (
+            max(coverage.product_start(symbol), RQDATA_INTRADAY_HISTORY_START),
+            coverage.latest_complete_day((symbol,)),
+        ),
     )
 
 

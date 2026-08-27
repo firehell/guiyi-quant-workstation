@@ -1009,6 +1009,44 @@ export interface SubingStrategyHistoricalResponse extends Omit<
   episodes: SubingStrategyEpisode[]
 }
 
+export interface SubingStrategyPerformanceStats {
+  completed: number
+  positive: number
+  negative: number
+  flat: number
+  positive_rate_percent: string | null
+  mean_reference_change_percent: string | null
+  median_reference_change_percent: string | null
+  best_reference_change_percent: string | null
+  worst_reference_change_percent: string | null
+  mean_holding_15m_bars: string | null
+}
+
+export interface SubingStrategyPerformanceResponse {
+  strategy_id: SubingStrategyHistoricalWireResponse['policy']['strategy_id']
+  formula_version: 'subing_strategy_15m_v1'
+  symbol: string
+  series_kind: 'actual_dominant'
+  frequency: '15m'
+  coverage: {
+    since: string
+    through: string
+    resolved_cutoff: string
+    segment_count: number
+    bar_count_15m: number
+    context_unavailable_count: number
+  }
+  cache_state: 'hit' | 'miss' | 'mixed' | 'unavailable'
+  summary: {
+    overall: SubingStrategyPerformanceStats
+    long: SubingStrategyPerformanceStats
+    short: SubingStrategyPerformanceStats
+    open_episodes: number
+  }
+  exit_reason_counts: Array<{ reason_code: string; count: number }>
+  episodes: SubingStrategyEpisode[]
+}
+
 export interface SubingStrategyPendingSummary {
   kind: SubingStrategyActionKind
   decision_at: string
@@ -1367,6 +1405,35 @@ export function normalizeSubingStrategyHistory(
     request: normalizedRequest,
     actions,
     episodes,
+  }
+}
+
+export function normalizeSubingStrategyPerformance(
+  value: unknown,
+): SubingStrategyPerformanceResponse {
+  const payload = strategyRecord(value)
+  const coverage = strategyRecord(payload.coverage)
+  const summary = strategyRecord(payload.summary)
+  if (
+    payload.formula_version !== 'subing_strategy_15m_v1'
+    || payload.series_kind !== 'actual_dominant'
+    || payload.frequency !== '15m'
+    || !SUBING_STRATEGY_CACHE_STATES.includes(payload.cache_state as never)
+    || !Array.isArray(payload.episodes)
+    || !Array.isArray(payload.exit_reason_counts)
+    || typeof payload.symbol !== 'string'
+    || payload.symbol !== payload.symbol.toLowerCase()
+    || typeof coverage.since !== 'string'
+    || typeof coverage.through !== 'string'
+    || coverage.since > coverage.through
+    || !Number.isFinite(Date.parse(String(coverage.resolved_cutoff)))
+    || !summary.overall || !summary.long || !summary.short
+  ) invalidSubingStrategyResponse()
+  return {
+    ...(payload as unknown as SubingStrategyPerformanceResponse),
+    episodes: payload.episodes.map((episode) => (
+      normalizeStrategyEpisode(episode, payload.symbol as string)
+    )),
   }
 }
 

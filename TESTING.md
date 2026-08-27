@@ -83,3 +83,15 @@ Runtime health、data audit 与 alert status 是只读入口；它们不能推�
 `guiyi runtime acknowledge-alert-notification --failure-at <exact ISO timestamp>` 是受控 Redis 写入，
 不是只读测试命令。它不发送通知或重放 Event，但实际 Runtime 执行仍需单次明确授权；普通验证只运行
 对应 pytest，不执行该命令。
+
+## SuBing Strategy 全历史效果
+
+定向验证：
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core uv run --project services/quant-api --no-sync pytest -q services/quant-api/tests/data_foundation/test_subing_strategy_performance.py services/quant-api/tests/data_foundation/test_after_market.py services/quant-api/tests/test_market_research_overlays_api.py
+pnpm --dir apps/quant-web test
+pnpm --dir apps/quant-web exec vue-tsc --noEmit
+```
+
+真实 active60 cache warm 会写 Git 外派生 cache，须在独立数据写入 Gate 后执行：`guiyi research subing-strategy-performance --scope active --warm-cache`。测试与 API 读取不替代该 Gate。

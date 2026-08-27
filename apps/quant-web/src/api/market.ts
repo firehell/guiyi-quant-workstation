@@ -14,6 +14,7 @@ import type {
   SubingStrategyHistoricalWireResponse,
   SubingStrategyCurrentResponse,
   SubingStrategyCurrentWireResponse,
+  SubingStrategyPerformanceResponse,
   SubingDailyWatchCurrentWireResponse,
   SubingResearchResponse,
 } from '@/types/market'
@@ -23,6 +24,7 @@ import {
   normalizeSubingResearch,
   normalizeSubingStrategyHistory,
   normalizeSubingStrategyCurrent,
+  normalizeSubingStrategyPerformance,
 } from '@/types/market'
 
 export function getMarketDominants() {
@@ -85,6 +87,13 @@ export function getSubingStrategyCurrent(params: {
       frequency: params.frequency,
     } },
   ).then(normalizeSubingStrategyCurrent) as Promise<SubingStrategyCurrentResponse>
+}
+
+export function getSubingStrategyPerformance(params: { symbol: string }) {
+  return request.get<never, unknown>(
+    '/market/research/subing-strategy/performance',
+    { params },
+  ).then(normalizeSubingStrategyPerformance) as Promise<SubingStrategyPerformanceResponse>
 }
 
 /** FastAPI serializes Decimal as strings; convert only at the display HTTP boundary. */

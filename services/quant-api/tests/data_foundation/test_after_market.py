@@ -927,6 +927,44 @@ def test_public_status_rejects_boolean_attempt_count() -> None:
     assert payload == {}
 
 
+def test_successful_canonical_run_records_degraded_performance_without_failing_run(
+    tmp_path,
+) -> None:
+    from app.market_data.subing_strategy.performance import (
+        SubingStrategyPerformanceWarmResult,
+    )
+
+    updater, _manager, _rqdata, sleeps, notices, live_store = _updater(
+        tmp_path,
+        trading_day=date(2026, 8, 10),
+        readiness=[True],
+        results=[_result("passed")],
+    )
+    updater.derived_refresh = lambda: SubingStrategyPerformanceWarmResult(
+        status="degraded",
+        completed_products=("ag",),
+        failed_products=(("jm", "SUBING_STRATEGY_SOURCE_UNAVAILABLE"),),
+    )
+
+    result = updater.run()
+    status = _status(tmp_path / "after-market-status.json")
+
+    assert result.status == "passed"
+    assert sleeps == []
+    assert notices == []
+    assert live_store.cleaned == [date(2026, 8, 10)]
+    assert status["schema_version"] == 3
+    assert status["last_successful_trading_day"] == "2026-08-10"
+    assert status["subing_strategy_performance"] == {
+        "status": "degraded",
+        "completed_count": 1,
+        "failed_products": [
+            {"symbol": "jm", "code": "SUBING_STRATEGY_SOURCE_UNAVAILABLE"}
+        ],
+    }
+    assert public_after_market_status(status)["subing_strategy_performance"]["status"] == "degraded"
+
+
 def test_public_status_rejects_non_string_error_codes() -> None:
     """Malformed local JSON must fail closed instead of breaking a public endpoint."""
     payload = public_after_market_status(

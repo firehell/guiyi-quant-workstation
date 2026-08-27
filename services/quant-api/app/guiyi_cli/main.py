@@ -40,7 +40,9 @@ from app.guiyi_cli.research_requests import (
 from app.market_data.composition import (
     build_historical_data_manager,
     build_live_market_service,
+    build_subing_strategy_performance_service,
 )
+from app.market_data.subing_strategy.performance import warm_active_performance_cache
 from app.market_data.after_market import build_after_market_updater
 from app.market_data.historical_data_manager import HistoricalDataManager
 from app.market_data.product_retirement import ProductRetiredError
@@ -62,7 +64,7 @@ ResearchServiceFactory = Callable[[Any], Any]
 
 def _execution_is_readonly(args: argparse.Namespace) -> bool:
     if args.domain == "research":
-        return True
+        return args.research_command != "subing-strategy-performance"
     if args.domain == "runtime":
         if args.runtime_command == "status":
             return True
@@ -132,6 +134,9 @@ def main(
     lifecycle_research_service_factory: ResearchServiceFactory = (
         build_subing_lifecycle_research_service
     ),
+    performance_service_factory: ResearchServiceFactory = (
+        build_subing_strategy_performance_service
+    ),
     runtime_health_builder=build_runtime_health,
     stdout: TextIO = sys.stdout,
     stderr: TextIO = sys.stderr,
@@ -145,7 +150,8 @@ def main(
         if args.domain == "data":
             build_request(args)
         elif args.domain == "research":
-            research_request = build_research_request(args)
+            if args.research_command != "subing-strategy-performance":
+                research_request = build_research_request(args)
     except ProductRetiredError as exc:
         print_json(
             exception_error_payload(
@@ -173,18 +179,34 @@ def main(
                 stderr,
             )
         elif args.domain == "research":
-            assert research_request is not None
             with session_factory() as session:
-                if args.research_command == "subing-lifecycle":
+                if args.research_command == "subing-strategy-performance":
+                    warm = warm_active_performance_cache(
+                        performance_service_factory(session)
+                    )
+                    payload = {
+                        "schema_version": 1,
+                        "command": "research.subing-strategy-performance",
+                        "status": warm.status,
+                        "scope": "active",
+                        "authoritative_writes": warm.authoritative_writes,
+                        "cache_writes": warm.cache_writes,
+                        "completed_products": list(warm.completed_products),
+                        "failed_products": [
+                            {"symbol": symbol, "code": code}
+                            for symbol, code in warm.failed_products
+                        ],
+                    }
+                    service = None
+                elif args.research_command == "subing-lifecycle":
                     service = lifecycle_research_service_factory(session)
                 elif args.research_command == "subing-calibration":
                     service = research_service_factory(session)
                 else:
                     raise ValueError("CLI_RESEARCH_COMMAND_INVALID")
-                payload = run_research_command(
-                    research_request,
-                    service,
-                )
+                if args.research_command != "subing-strategy-performance":
+                    assert research_request is not None
+                    payload = run_research_command(research_request, service)
         elif args.runtime_command == "status":
             # runtime status：只读聚合健康，与 HTTP /api/runtime/health 同源
             with session_factory() as session:
