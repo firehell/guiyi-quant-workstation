@@ -304,6 +304,28 @@ class AfterMarketUpdater:
                     )
                 ):
                     raise ValueError("DERIVED_RESULT_INVALID")
+                if (
+                    any(not isinstance(symbol, str) for symbol in completed)
+                    or any(
+                        not isinstance(item, tuple)
+                        or len(item) != 2
+                        or not isinstance(item[0], str)
+                        or not isinstance(item[1], str)
+                        or not item[1].startswith("SUBING_STRATEGY_")
+                        for item in failed
+                    )
+                ):
+                    raise ValueError("DERIVED_RESULT_INVALID")
+                failed_symbols = tuple(item[0] for item in failed)
+                if (
+                    len(set(completed)) != len(completed)
+                    or len(set(failed_symbols)) != len(failed_symbols)
+                    or set(completed) & set(failed_symbols)
+                    or set(completed) | set(failed_symbols) != set(products)
+                    or cache_hit_count + cache_published_count != len(completed)
+                    or (status == "passed") != (not failed)
+                ):
+                    raise ValueError("DERIVED_RESULT_INVALID")
                 self._derived_performance = {
                     "status": status,
                     "completed_count": len(completed),

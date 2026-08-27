@@ -947,7 +947,11 @@ def test_successful_canonical_run_records_degraded_performance_without_failing_r
         return SubingStrategyPerformanceWarmResult(
             status="degraded",
             completed_products=("ag",),
-            failed_products=(("jm", "SUBING_STRATEGY_SOURCE_UNAVAILABLE"),),
+            failed_products=tuple(
+                (symbol, "SUBING_STRATEGY_SOURCE_UNAVAILABLE")
+                for symbol in _ACTIVE_PRODUCTS
+                if symbol != "ag"
+            ),
             cache_hit_count=1,
             cache_published_count=0,
             batch_identity_sha256="1" * 64,
@@ -973,10 +977,49 @@ def test_successful_canonical_run_records_degraded_performance_without_failing_r
         "cache_published_count": 0,
         "batch_identity_sha256": "1" * 64,
         "failed_products": [
-            {"symbol": "jm", "code": "SUBING_STRATEGY_SOURCE_UNAVAILABLE"}
+            {"symbol": symbol, "code": "SUBING_STRATEGY_SOURCE_UNAVAILABLE"}
+            for symbol in _ACTIVE_PRODUCTS
+            if symbol != "ag"
         ],
     }
     assert public_after_market_status(status)["subing_strategy_performance"]["status"] == "degraded"
+
+
+def test_after_market_rejects_derived_result_that_does_not_cover_exact_products(
+    tmp_path,
+) -> None:
+    from app.market_data.subing_strategy.performance import (
+        SubingStrategyPerformanceWarmResult,
+    )
+
+    updater, _manager, _rqdata, _sleeps, _notices, _live_store = _updater(
+        tmp_path,
+        trading_day=date(2026, 8, 10),
+        readiness=[True],
+        results=[_result("passed")],
+    )
+    updater.derived_refresh = lambda _day, _products: (
+        SubingStrategyPerformanceWarmResult(
+            status="passed",
+            completed_products=("ag",),
+            failed_products=(),
+            cache_hit_count=1,
+            cache_published_count=0,
+            batch_identity_sha256="1" * 64,
+        )
+    )
+
+    assert updater.run().status == "passed"
+    assert _status(tmp_path / "after-market-status.json")[
+        "subing_strategy_performance"
+    ] == {
+        "status": "degraded",
+        "completed_count": 0,
+        "cache_hit_count": 0,
+        "cache_published_count": 0,
+        "batch_identity_sha256": None,
+        "failed_products": [],
+    }
 
 
 def test_public_status_rejects_non_string_error_codes() -> None:
