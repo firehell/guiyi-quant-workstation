@@ -867,5 +867,3 @@ function normalizeSymbol(value: unknown): string | null {
   .product-workspace__sidebar-wrap > .product-workspace__sidebar { position: static; overflow: visible; }
 }
 </style>
-  strategyPerformanceController?.abort()
-  strategyPerformanceController = null
