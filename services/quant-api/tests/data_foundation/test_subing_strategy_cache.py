@@ -169,6 +169,36 @@ def test_performance_cache_rejects_tampered_product_snapshot(tmp_path: Path) -> 
         cache.read(identity)
 
 
+def test_performance_cache_rejects_tampered_generated_timestamp(tmp_path: Path) -> None:
+    root = tmp_path / "cache"
+    root.mkdir()
+    cache = SubingStrategyPerformanceCache(root, root_validator=lambda: root)
+    identity = _performance_identity()
+    cache.publish(identity, {"summary": {"completed": 3}})
+    path = cache.path_for(identity)
+    stored = json.loads(path.read_text(encoding="utf-8"))
+    stored["generated_at"] = "2025-01-01T00:00:00+00:00"
+    path.write_text(json.dumps(stored), encoding="utf-8")
+
+    with pytest.raises(SubingStrategyCacheError):
+        cache.read(identity)
+
+
+def test_performance_cache_normalizes_validator_drift_to_unavailable(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "cache"
+    root.mkdir()
+
+    def drifted_root() -> Path:
+        raise RuntimeError("private mount drift")
+
+    cache = SubingStrategyPerformanceCache(root, root_validator=drifted_root)
+
+    with pytest.raises(SubingStrategyCacheError):
+        cache.read(_performance_identity())
+
+
 def test_cache_path_changes_with_lifecycle_formula_version(tmp_path: Path) -> None:
     cache = SubingStrategyCache(tmp_path, root_validator=lambda: tmp_path)
     identity = _identity()

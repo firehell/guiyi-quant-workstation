@@ -49,7 +49,7 @@ RQData -> staging + hard validation -> Canonical Parquet
 - 物理 Dataset 只有 `continuous` 与 `contract`；`actual_dominant` 是按 `MainContractMap rank=1` 有效区间拼接的查询模式。
 - `MarketDataService` 是 Historical consumer 的唯一入口；Redis Live 只承载当日 observation，不能提升为 Canonical。
 
-稳定 HTTP 面为 `/api/v1/market/*`、`/api/alerts/*` 与只读 `/api/runtime/*`。统一 CLI 为 `uv run --project services/quant-api guiyi`；research 子命令仅保留 `subing-calibration`、`subing-lifecycle`。
+稳定 HTTP 面为 `/api/v1/market/*`、`/api/alerts/*` 与只读 `/api/runtime/*`。统一 CLI 为 `uv run --project services/quant-api guiyi`；research 子命令保留 `subing-calibration`、`subing-lifecycle` 与受独立数据写入 Gate 约束的 `subing-strategy-performance` cache warm。
 
 ## Retired surface
 

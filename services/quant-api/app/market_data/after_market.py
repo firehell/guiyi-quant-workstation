@@ -599,7 +599,10 @@ def public_after_market_status(value: object) -> dict[str, object]:
     last_success = _public_trading_day(value.get("last_successful_trading_day"))
     last_failure = _public_last_failure(value.get("last_failure"))
     if (
-        (schema_version == 2 and _present_nonnull_invalid(value, "current_run", current_run))
+        (
+            schema_version in {2, 3}
+            and _present_nonnull_invalid(value, "current_run", current_run)
+        )
         or _present_nonnull_invalid(value, "last_run", last_run)
         or _present_nonnull_invalid(
             value,

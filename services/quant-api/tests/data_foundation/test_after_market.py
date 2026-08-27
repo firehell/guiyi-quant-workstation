@@ -927,6 +927,34 @@ def test_public_status_rejects_boolean_attempt_count() -> None:
     assert payload == {}
 
 
+def test_schema_v3_rejects_malformed_nonnull_current_run() -> None:
+    payload = public_after_market_status(
+        {
+            "schema_version": 3,
+            "current_run": {"status": "private-corrupt"},
+            "last_run": {
+                "trading_day": "2026-08-10",
+                "status": "passed",
+                "attempts": 1,
+                "started_at": "2026-08-10T17:00:00+08:00",
+                "finished_at": "2026-08-10T17:05:00+08:00",
+                "products": list(_ACTIVE_PRODUCTS),
+                "error_code": None,
+            },
+            "subing_strategy_performance": {
+                "status": "skipped",
+                "completed_count": 0,
+                "cache_hit_count": 0,
+                "cache_published_count": 0,
+                "batch_identity_sha256": None,
+                "failed_products": [],
+            },
+        }
+    )
+
+    assert payload == {}
+
+
 def test_successful_canonical_run_records_degraded_performance_without_failing_run(
     tmp_path,
 ) -> None:

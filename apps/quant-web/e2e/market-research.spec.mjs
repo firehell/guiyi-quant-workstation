@@ -466,13 +466,41 @@ function subingStrategyHistory(request, entryTime, exitTime) {
   }
 }
 
-function subingStrategyPerformance(symbol, episodes = [], exitReasonCounts = []) {
-  const empty = {
-    completed: 0, positive: 0, negative: 0, flat: 0,
-    positive_rate_percent: null, mean_reference_change_percent: null,
-    median_reference_change_percent: null, best_reference_change_percent: null,
-    worst_reference_change_percent: null, mean_holding_15m_bars: null,
+function subingStrategyPerformance(symbol, episodes = [], exitReasonCounts = null) {
+  const stats = (items) => {
+    const closed = items.filter((item) => item.state === 'closed')
+    if (closed.length === 0) return {
+      completed: 0, positive: 0, negative: 0, flat: 0,
+      positive_rate_percent: null, mean_reference_change_percent: null,
+      median_reference_change_percent: null, best_reference_change_percent: null,
+      worst_reference_change_percent: null, mean_holding_15m_bars: null,
+    }
+    const changes = closed.map((item) => Number(item.reference_change_percent))
+    const ordered = [...changes].sort((left, right) => left - right)
+    const middle = Math.floor(ordered.length / 2)
+    const median = ordered.length % 2
+      ? ordered[middle]
+      : (ordered[middle - 1] + ordered[middle]) / 2
+    const positive = changes.filter((value) => value > 0).length
+    return {
+      completed: closed.length,
+      positive,
+      negative: changes.filter((value) => value < 0).length,
+      flat: changes.filter((value) => value === 0).length,
+      positive_rate_percent: String(positive / closed.length * 100),
+      mean_reference_change_percent: String(changes.reduce((sum, value) => sum + value, 0) / closed.length),
+      median_reference_change_percent: String(median),
+      best_reference_change_percent: String(Math.max(...changes)),
+      worst_reference_change_percent: String(Math.min(...changes)),
+      mean_holding_15m_bars: String(closed.reduce((sum, item) => sum + item.holding_bar_count, 0) / closed.length),
+    }
   }
+  const resolvedExitReasonCounts = exitReasonCounts || [...episodes.reduce((counts, episode) => {
+    for (const reasonCode of episode.exit_reason_codes) {
+      counts.set(reasonCode, (counts.get(reasonCode) || 0) + 1)
+    }
+    return counts
+  }, new Map())].map(([reason_code, count]) => ({ reason_code, count }))
   return {
     strategy_id: 'subing_strategy_v1', formula_version: 'subing_strategy_15m_v1',
     symbol, series_kind: 'actual_dominant', frequency: '15m',
@@ -483,8 +511,13 @@ function subingStrategyPerformance(symbol, episodes = [], exitReasonCounts = [])
     cache_state: 'hit',
     cache_identity_sha256: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     cache_generated_at: '2026-08-27T06:00:00Z',
-    summary: { overall: empty, long: empty, short: empty, open_episodes: episodes.filter((item) => item.state === 'open').length },
-    exit_reason_counts: exitReasonCounts, episodes,
+    summary: {
+      overall: stats(episodes),
+      long: stats(episodes.filter((item) => item.direction === 'long')),
+      short: stats(episodes.filter((item) => item.direction === 'short')),
+      open_episodes: episodes.filter((item) => item.state === 'open').length,
+    },
+    exit_reason_counts: resolvedExitReasonCounts, episodes,
   }
 }
 
@@ -1189,14 +1222,13 @@ test('SuBing full-history performance expands episodes by twenty and shows exit 
     subingStrategyPerformanceResponse: (request) => subingStrategyPerformance(
       request.symbol,
       episodes,
-      [{ reason_code: 'EMA21_BREACH_LONG', count: 45 }],
     ),
   })
   await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=15m')
 
   const panel = page.getByTestId('subing-strategy-performance')
   await expect(panel.locator('[data-episode-id]')).toHaveCount(20)
-  await expect(page.getByTestId('subing-performance-exit-reasons')).toContainText('EMA21 跌破')
+  await expect(page.getByTestId('subing-performance-exit-reasons')).toContainText('MACD 高位死叉')
   await page.getByTestId('subing-performance-show-more').click()
   await expect(panel.locator('[data-episode-id]')).toHaveCount(40)
   await page.getByTestId('subing-performance-show-more').click()

@@ -80,4 +80,28 @@ test('performance wire contract requires exact product cache identity facts', ()
     }),
     /SUBING_STRATEGY_INVALID_RESPONSE/,
   )
+  assert.throws(
+    () => normalizeSubingStrategyPerformance({
+      ...payload,
+      coverage: { ...payload.coverage, segment_count: 1.5 },
+    }),
+    /SUBING_STRATEGY_INVALID_RESPONSE/,
+  )
+  assert.throws(
+    () => normalizeSubingStrategyPerformance({
+      ...payload,
+      summary: {
+        ...payload.summary,
+        overall: { ...empty, completed: 1 },
+      },
+    }),
+    /SUBING_STRATEGY_INVALID_RESPONSE/,
+  )
+  assert.throws(
+    () => normalizeSubingStrategyPerformance({
+      ...payload,
+      exit_reason_counts: [{ reason_code: 'EMA21_BREACH_LONG', count: 0 }],
+    }),
+    /SUBING_STRATEGY_INVALID_RESPONSE/,
+  )
 })

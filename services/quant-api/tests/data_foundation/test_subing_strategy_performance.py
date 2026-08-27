@@ -4,6 +4,8 @@ from dataclasses import replace
 from datetime import UTC, date, datetime
 from decimal import Decimal
 
+import pytest
+
 from app.market_data.domain import BarFrequency, SeriesKind
 from app.market_data.subing_research import SubingDirection
 from app.market_data.subing_strategy.contracts import (
@@ -14,6 +16,7 @@ from app.market_data.subing_strategy.contracts import (
 from app.market_data.subing_strategy.cache import SubingStrategyPerformanceCache
 from app.market_data.subing_strategy.performance import (
     SubingStrategyPerformanceBatchPlan,
+    SubingStrategyPerformanceError,
     SubingStrategyPerformanceWindow,
     SubingStrategyPerformanceService,
     summarize_subing_strategy_episodes,
@@ -115,7 +118,11 @@ def test_performance_service_uses_fixed_actual_dominant_15m_full_window(tmp_path
                 type(
                     "Segment",
                     (),
-                    {"bar_count_15m": 12, "source_identity_sha256": "1" * 64},
+                    {
+                        "bar_count_15m": 12,
+                        "loaded_through": date(2026, 8, 26),
+                        "source_identity_sha256": "1" * 64,
+                    },
                 )(),
             ),
             "context_unavailable": (),
@@ -163,6 +170,39 @@ def test_performance_service_uses_fixed_actual_dominant_15m_full_window(tmp_path
     assert result.cache_generated_at == datetime(2026, 8, 27, 8, tzinfo=UTC)
     assert cached.cache_state == "hit"
     assert cached.cache_identity_sha256 == result.cache_identity_sha256
+
+
+def test_performance_rejects_projection_that_did_not_reach_requested_through() -> None:
+    projection = type(
+        "Projection",
+        (),
+        {
+            "episodes": (),
+            "segment_summaries": (
+                type(
+                    "Segment",
+                    (),
+                    {
+                        "loaded_through": date(2026, 8, 25),
+                        "bar_count_15m": 12,
+                        "source_identity_sha256": "1" * 64,
+                    },
+                )(),
+            ),
+            "context_unavailable": (),
+            "resolved_cutoff": action_fixture().effective_bar_end,
+        },
+    )()
+    service = SubingStrategyPerformanceService(
+        type("Historical", (), {"history": lambda _self, _request: projection})(),
+        products=("jm",),
+        window_resolver=lambda _symbol: (date(2020, 1, 2), date(2026, 8, 26)),
+    )
+
+    with pytest.raises(SubingStrategyPerformanceError) as exc_info:
+        service.performance("jm")
+
+    assert exc_info.value.code == "SUBING_STRATEGY_SOURCE_UNAVAILABLE"
 
 
 def test_active_warm_is_sequential_resumable_and_reports_partial_failure() -> None:

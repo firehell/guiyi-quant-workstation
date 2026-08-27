@@ -204,16 +204,25 @@ class SubingStrategyPerformanceCache:
             identity_sha256 = sha256(_canonical_bytes(identity_payload)).hexdigest()
             if (
                 not isinstance(envelope, dict)
-                or envelope.get("schema_version") != 1
+                or envelope.get("schema_version") != 2
                 or envelope.get("identity") != identity_payload
                 or envelope.get("identity_sha256") != identity_sha256
                 or not isinstance(envelope.get("payload"), dict)
             ):
                 raise SubingStrategyCacheError()
             payload_sha256 = sha256(_canonical_bytes(envelope["payload"])).hexdigest()
-            if envelope.get("payload_sha256") != payload_sha256:
+            generated_at_text = envelope.get("generated_at")
+            snapshot_sha256 = _performance_snapshot_sha256(
+                identity_sha256=identity_sha256,
+                generated_at=generated_at_text,
+                payload_sha256=payload_sha256,
+            )
+            if (
+                envelope.get("payload_sha256") != payload_sha256
+                or envelope.get("snapshot_sha256") != snapshot_sha256
+            ):
                 raise SubingStrategyCacheError()
-            generated_at = datetime.fromisoformat(str(envelope["generated_at"]))
+            generated_at = datetime.fromisoformat(str(generated_at_text))
             if generated_at.tzinfo is None or generated_at.utcoffset() is None:
                 raise SubingStrategyCacheError()
             self._preflight(path)
@@ -244,13 +253,19 @@ class SubingStrategyPerformanceCache:
         identity_sha256 = sha256(_canonical_bytes(identity_payload)).hexdigest()
         normalized_payload = dict(payload)
         payload_sha256 = sha256(_canonical_bytes(normalized_payload)).hexdigest()
+        generated_at_text = generated_at.astimezone(UTC).isoformat()
         envelope = {
-            "schema_version": 1,
+            "schema_version": 2,
             "identity": identity_payload,
             "identity_sha256": identity_sha256,
-            "generated_at": generated_at.astimezone(UTC).isoformat(),
+            "generated_at": generated_at_text,
             "payload": normalized_payload,
             "payload_sha256": payload_sha256,
+            "snapshot_sha256": _performance_snapshot_sha256(
+                identity_sha256=identity_sha256,
+                generated_at=generated_at_text,
+                payload_sha256=payload_sha256,
+            ),
         }
         content = _canonical_bytes(envelope)
         try:
@@ -297,22 +312,29 @@ class SubingStrategyPerformanceCache:
                 current = current / part
             if current.exists() and current.is_symlink():
                 raise SubingStrategyCacheError()
-        except (OSError, ValueError):
+        except SubingStrategyCacheError:
+            raise
+        except Exception:
             raise SubingStrategyCacheError() from None
 
     def _ensure_parent(self, parent: Path) -> None:
-        trusted_base = self._trusted_base_validator()
-        self._root.relative_to(trusted_base)
-        parent.relative_to(self._root)
-        if not trusted_base.is_dir() or trusted_base.is_symlink():
-            raise SubingStrategyCacheError()
-        current = trusted_base
-        for part in parent.relative_to(trusted_base).parts:
-            if current.exists() and current.is_symlink():
+        try:
+            trusted_base = self._trusted_base_validator()
+            self._root.relative_to(trusted_base)
+            parent.relative_to(self._root)
+            if not trusted_base.is_dir() or trusted_base.is_symlink():
                 raise SubingStrategyCacheError()
-            current = current / part
-            current.mkdir(mode=0o700, parents=False, exist_ok=True)
-            os.chmod(current, 0o700)
+            current = trusted_base
+            for part in parent.relative_to(trusted_base).parts:
+                if current.exists() and current.is_symlink():
+                    raise SubingStrategyCacheError()
+                current = current / part
+                current.mkdir(mode=0o700, parents=False, exist_ok=True)
+                os.chmod(current, 0o700)
+        except SubingStrategyCacheError:
+            raise
+        except Exception:
+            raise SubingStrategyCacheError() from None
 
 
 @dataclass(frozen=True, slots=True)
@@ -453,22 +475,29 @@ class SubingStrategyCache:
                 current = current / part
             if current.exists() and current.is_symlink():
                 raise SubingStrategyCacheError()
-        except (OSError, ValueError):
+        except SubingStrategyCacheError:
+            raise
+        except Exception:
             raise SubingStrategyCacheError() from None
 
     def _ensure_parent(self, parent: Path) -> None:
-        trusted_base = self._trusted_base_validator()
-        self._root.relative_to(trusted_base)
-        parent.relative_to(self._root)
-        if not trusted_base.is_dir() or trusted_base.is_symlink():
-            raise SubingStrategyCacheError()
-        current = trusted_base
-        for part in parent.relative_to(trusted_base).parts:
-            if current.exists() and current.is_symlink():
+        try:
+            trusted_base = self._trusted_base_validator()
+            self._root.relative_to(trusted_base)
+            parent.relative_to(self._root)
+            if not trusted_base.is_dir() or trusted_base.is_symlink():
                 raise SubingStrategyCacheError()
-            current = current / part
-            current.mkdir(mode=0o700, parents=False, exist_ok=True)
-            os.chmod(current, 0o700)
+            current = trusted_base
+            for part in parent.relative_to(trusted_base).parts:
+                if current.exists() and current.is_symlink():
+                    raise SubingStrategyCacheError()
+                current = current / part
+                current.mkdir(mode=0o700, parents=False, exist_ok=True)
+                os.chmod(current, 0o700)
+        except SubingStrategyCacheError:
+            raise
+        except Exception:
+            raise SubingStrategyCacheError() from None
 
 
 def digest_canonical_bars(
@@ -643,6 +672,24 @@ def subing_strategy_performance_cache_identity_sha256(
     identity: SubingStrategyPerformanceCacheIdentity,
 ) -> str:
     return sha256(_canonical_bytes(_performance_identity_payload(identity))).hexdigest()
+
+
+def _performance_snapshot_sha256(
+    *,
+    identity_sha256: object,
+    generated_at: object,
+    payload_sha256: object,
+) -> str:
+    if not all(
+        isinstance(value, str) and value
+        for value in (identity_sha256, generated_at, payload_sha256)
+    ):
+        raise SubingStrategyCacheError()
+    return sha256(_canonical_bytes({
+        "identity_sha256": identity_sha256,
+        "generated_at": generated_at,
+        "payload_sha256": payload_sha256,
+    })).hexdigest()
 
 
 def subing_strategy_episode_payload(

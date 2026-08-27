@@ -322,6 +322,17 @@ class SubingStrategyPerformanceService:
                 through=through,
             )
         )
+        loaded_through = tuple(
+            summary.loaded_through for summary in projection.segment_summaries
+        )
+        if (
+            not loaded_through
+            or any(type(value) is not date for value in loaded_through)
+            or max(loaded_through) != through
+        ):
+            raise SubingStrategyPerformanceError(
+                "SUBING_STRATEGY_SOURCE_UNAVAILABLE"
+            )
         episodes = tuple(
             sorted(
                 projection.episodes,
