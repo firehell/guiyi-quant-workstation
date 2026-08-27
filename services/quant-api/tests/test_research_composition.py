@@ -83,7 +83,11 @@ def _offline_research_imports(path: Path) -> tuple[str, ...]:
 def test_offline_research_builders_have_one_composition_entrypoint() -> None:
     research_composition = importlib.import_module("app.research.composition")
     builders = _local_research_builders()
-    assert builders
+    assert builders == (
+        "build_subing_calibration_research_service",
+        "build_subing_lifecycle_research_service",
+        "build_subing_candidate_validation_service",
+    )
     assert all(hasattr(research_composition, name) for name in builders)
     assert not any(hasattr(market_data_composition, name) for name in builders)
 
@@ -265,195 +269,33 @@ def test_lifecycle_builder_uses_only_historical_market_data(
     }
 
 
-@pytest.mark.parametrize(
-    ("candidate_builder", "research_builder", "service_name", "extra_args"),
-    (
-        (
-            "build_subing_candidate_validation_service",
-            "build_subing_lifecycle_research_service",
-            "SubingCandidateValidationService",
-            (),
-        ),
-        (
-            "build_n_candidate_validation_service",
-            "build_n_structure_research_service",
-            "NStructureCandidateValidationService",
-            (),
-        ),
-    ),
-)
-def test_candidate_builders_reuse_corresponding_research_service(
+def test_subing_candidate_builder_reuses_lifecycle_research_service(
     monkeypatch: pytest.MonkeyPatch,
-    candidate_builder: str,
-    research_builder: str,
-    service_name: str,
-    extra_args: tuple[object, ...],
 ) -> None:
     research = object()
     captured: dict[str, object] = {}
     result = object()
     monkeypatch.setattr(
         research_composition,
-        research_builder,
+        "build_subing_lifecycle_research_service",
         lambda _session: research,
     )
     monkeypatch.setattr(
         research_composition,
-        service_name,
+        "SubingCandidateValidationService",
         lambda source, **kwargs: (
             captured.update(source=source, **kwargs) or result
         ),
     )
-    if service_name == "SubingCandidateValidationService":
-        monkeypatch.setattr(
-            research_composition, "load_candidate_manifest", object
-        )
-        monkeypatch.setattr(
-            research_composition, "load_candidate_validation_protocol", object
-        )
-    else:
-        monkeypatch.setattr(
-            research_composition, "load_n_candidate_manifest", object
-        )
-        monkeypatch.setattr(
-            research_composition, "load_n_candidate_validation_protocol", object
-        )
-
-    built = getattr(research_composition, candidate_builder)(
-        object(), *extra_args
+    monkeypatch.setattr(research_composition, "load_candidate_manifest", object)
+    monkeypatch.setattr(
+        research_composition, "load_candidate_validation_protocol", object
     )
+
+    built = research_composition.build_subing_candidate_validation_service(object())
 
     assert built is result
     assert captured["source"] is research
-
-
-def test_n_research_builder_reuses_one_market_data_service(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    market_data = object()
-    loader = SimpleNamespace(market_data=market_data)
-    calls: list[object] = []
-    captured: dict[str, object] = {}
-    result = object()
-    monkeypatch.setattr(
-        research_composition,
-        "build_market_data_service",
-        lambda session: calls.append(session) or market_data,
-    )
-    monkeypatch.setattr(
-        research_composition,
-        "ActualDominantResearchSegmentLoader",
-        lambda value: loader if value is market_data else pytest.fail("wrong MDS"),
-    )
-    monkeypatch.setattr(
-        research_composition, "load_active_products", lambda: ("jm",)
-    )
-    policy = object()
-    monkeypatch.setattr(
-        research_composition,
-        "load_n_structure_policy",
-        lambda: pytest.fail("an injected policy must not be reloaded"),
-    )
-    monkeypatch.setattr(
-        research_composition,
-        "NStructureResearchService",
-        lambda loader_arg, **kwargs: (
-            captured.update(loader=loader_arg, **kwargs) or result
-        ),
-    )
-    session = object()
-
-    assert research_composition.build_n_structure_research_service(
-        session,
-        policy=policy,
-    ) is result
-    assert calls == [session]
-    assert captured["loader"] is loader
-    assert captured["policy"] is policy
-
-
-def test_robustness_builder_reuses_one_mds_and_frozen_active60(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    products = ("ag", "jm")
-    protocol = SimpleNamespace(cross_symbol_products=products)
-    market_data = object()
-    build_calls: list[object] = []
-    source_calls: list[tuple[str, object, tuple[str, ...]]] = []
-    subing = object()
-    n_structure = object()
-    result = object()
-    monkeypatch.setattr(
-        research_composition,
-        "load_multi_candidate_robustness_protocol",
-        lambda: protocol,
-    )
-    monkeypatch.setattr(
-        research_composition, "load_active_products", lambda: products
-    )
-    monkeypatch.setattr(
-        research_composition,
-        "build_market_data_service",
-        lambda session: build_calls.append(session) or market_data,
-    )
-    monkeypatch.setattr(
-        research_composition, "load_accepted_subing_calibration", object
-    )
-    monkeypatch.setattr(
-        research_composition, "load_subing_lifecycle_policy", object
-    )
-    monkeypatch.setattr(
-        research_composition, "load_n_structure_policy", object
-    )
-    monkeypatch.setattr(
-        research_composition,
-        "SubingLifecycleResearchService",
-        lambda mds, *, products, **_kwargs: (
-            source_calls.append(("subing", mds, products)) or subing
-        ),
-    )
-    monkeypatch.setattr(
-        research_composition,
-        "ActualDominantResearchSegmentLoader",
-        lambda mds: SimpleNamespace(market_data=mds),
-    )
-    monkeypatch.setattr(
-        research_composition,
-        "NStructureResearchService",
-        lambda loader, *, products, **_kwargs: (
-            source_calls.append(("n", loader.market_data, products)) or n_structure
-        ),
-    )
-    monkeypatch.setattr(
-        research_composition,
-        "SubingCandidateValidationService",
-        lambda source, **_kwargs: SimpleNamespace(source=source),
-    )
-    monkeypatch.setattr(
-        research_composition,
-        "NStructureCandidateValidationService",
-        lambda source, **_kwargs: SimpleNamespace(source=source),
-    )
-    for name in (
-        "load_candidate_manifest",
-        "load_candidate_validation_protocol",
-        "load_n_candidate_manifest",
-        "load_n_candidate_validation_protocol",
-    ):
-        monkeypatch.setattr(research_composition, name, object)
-    monkeypatch.setattr(
-        research_composition,
-        "MultiCandidateRobustnessService",
-        lambda *_args, **_kwargs: result,
-    )
-    session = object()
-
-    assert research_composition.build_multi_candidate_robustness_service(session) is result
-    assert build_calls == [session]
-    assert source_calls == [
-        ("subing", market_data, products),
-        ("n", market_data, products),
-    ]
 
 
 def test_current_strategy_builder_uses_read_only_authoritative_seams(

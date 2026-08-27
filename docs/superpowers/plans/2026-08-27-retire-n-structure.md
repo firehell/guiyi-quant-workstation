@@ -26,7 +26,7 @@
 - 不修改 `services/quant-api/alembic/versions/20260826_0042_subing_strategy_alert.py`，不执行 migration，不修改 Alert Rule/Scope/audience/transport，不发送真实通知，不写 production PostgreSQL/Redis/Canonical，不下载 RQData。
 - 不发布 `main`、不创建 tag/GitHub Release、不做 Runtime promotion。release 与 Runtime promotion 仍是独立人工 Gate。
 - `STATUS.md` 必须区分 repository code 与 production `v1.8.6 + migration 0041`。production 仍可包含 N Structure Historical layer，直到未来独立 release + Runtime promotion 完成。
-- 当前 `develop` 有一处已验证的 canonical drift：PR `#236` 已合入 `develop`，但 `STATUS.md` 仍写 Stage 2 “仅存在于 feature branch / 允许集成 develop pending”。Task 0 必须先修正这一 repository-state 事实；不得借此改变 production 事实。
+- Task 0 必须以 then-latest `origin/develop` 的 `STATUS.md` 为准。当前基线已由 `v1.8.7` Release 同步：Stage 2 已发布；production Runtime 仍为 `v1.8.6`、production migration 仍为 0041。若 newer `origin/develop` 已保持这些事实，不编辑 `STATUS.md`，更不得重新加入“仅 repository Stage 2”表述。
 - Approved Spec 写于 Stage 2 merge 之前；若 Spec 对“retained SuBing 行为”的简写与当前 `PROJECT_SOURCE.md`、`DECISIONS.md`、Stage 2 code/tests 冲突，**当前 active canonical + code/test facts 优先**。本 retirement 不得把 Stage 2 回退成 Stage 1。
 
 ---
@@ -267,26 +267,33 @@ sed -n '1,520p' \
 
 Stop if a new canonical introduces an N consumer, production persistence contract, or strategy dependency not covered by the Spec.
 
-- [ ] **Step 4: Correct only the verified Stage 2 repository-state drift if it still exists.**
+- [ ] **Step 4: Verify the current Stage 2 release/production facts; edit `STATUS.md` only if latest `origin/develop` is stale.**
 
 First detect it:
 
 ```bash
 git grep -n -E \
   'Stage 2 仅存在于|允许集成 develop.*pending|feature/subing-strategy-v1-stage2-v1.8.7' \
+  -- STATUS.md || true
+git grep -n -E \
+  'v1\.8\.7|Stage 2 已进入 release|production Runtime 仍为 `v1\.8\.6`|20260826_0042' \
   -- STATUS.md
 ```
 
-On the planning base, `STATUS.md` is stale because PR `#236` is already merged into `develop`. Replace only that repository-state claim with wording equivalent to:
+At the current planning baseline, `origin/develop` already records the correct
+facts:
 
 ```text
-Repository Stage 2：PR #236 已合入 develop；当前 repository code 包含 Stage 2。
-Production：仍是 v1.8.6 + migration 0041；0042 未执行；未 release、未 Runtime promotion。
+Release：v1.8.7，SuBing Strategy V1 Stage 2 已进入 release。
+Production：Runtime 仍为 v1.8.6；migration 0041 仍为 production；0042 未执行。
 ```
 
-Do **not** change the current production Rule identity, database version, Runtime tag, Scope, notification evidence, or claim Stage 2 is live.
+Do **not** change the current production Rule identity, database version, Runtime tag, Scope or notification evidence. The Stage 2 release fact does not
+claim production migration, Runtime promotion, Scope switching or a real
+notification.
 
-If the stale text has already been fixed by a newer `origin/develop`, make no edit here.
+If the stale text is absent and the current release/production facts are present,
+make no `STATUS.md` edit in Task 0.
 
 - [ ] **Step 5: Record the exact current N/Multi tracked inventory without writing a report file.**
 
@@ -337,13 +344,19 @@ pnpm --dir apps/quant-web exec playwright test \
 
 Expected: baseline passes.
 
-- [ ] **Step 8: Commit the STATUS correction only if Step 4 changed it.**
+- [ ] **Step 8: Commit the mandatory plan amendments, plus a `STATUS.md` correction only if latest develop was stale.**
+
+The Task 0 commit also records the approved plan-review amendments: Task 5 must
+remove active N/CLI wording from the root, Web and API READMEs; Task 6 must
+preserve the two named historical SuBing planning files as historical context
+only; and Task 6 must use the fork-point protected-path diff gate. Do not add
+business-code changes to this baseline commit.
 
 ```bash
 git diff --check
-git add STATUS.md
+git add STATUS.md docs/superpowers/plans/2026-08-27-retire-n-structure.md
 git diff --cached --quiet || git commit -m \
-  'docs: align Stage 2 repository status'
+  'docs: align N retirement baseline'
 ```
 
 No business code is changed in Task 0.
@@ -926,6 +939,9 @@ git commit -m 'refactor(research): retire N structure core'
 - Modify: `DECISIONS.md`
 - Modify: `STATUS.md`
 - Modify: `TESTING.md`
+- Modify: `README.md`
+- Modify: `apps/quant-web/README.md`
+- Modify: `services/quant-api/README.md`
 
 **Interfaces:**
 - Consumes: N-free repository state from Tasks 1–4 and current production `v1.8.6 + 0041` facts.
@@ -998,7 +1014,13 @@ Remove N Candidate prospective-OOS as an active repository pending gate; retain 
 
 Retain production Rule/0042/Runtime/Scope facts exactly. Do not claim migration 0042, `subing_strategy_v1` production replacement, Runtime promotion or notification evidence happened.
 
-- [ ] **Step 5: Update `TESTING.md` CLI commands.**
+- [ ] **Step 5: Remove active N/CLI wording from repository READMEs and update `TESTING.md` CLI commands.**
+
+Remove any active N Structure explanation, endpoint, chart setting or `guiyi
+research n-structure` invocation from `README.md`, `apps/quant-web/README.md`
+and `services/quant-api/README.md`. Retain only active Market, SuBing and HTDY
+contracts. Do not turn a removed N surface into a retired-command compatibility
+notice or replacement command.
 
 Research CLI help becomes:
 
@@ -1026,7 +1048,9 @@ Expected: PASS.
 - [ ] **Step 7: Commit.**
 
 ```bash
-git add STATUS.md PROJECT_SOURCE.md DECISIONS.md docs/ARCHITECTURE.md TESTING.md
+git add \
+  STATUS.md PROJECT_SOURCE.md DECISIONS.md docs/ARCHITECTURE.md TESTING.md \
+  README.md apps/quant-web/README.md services/quant-api/README.md
 git diff --cached --check
 git commit -m 'docs: retire N structure active surface'
 ```
@@ -1071,9 +1095,40 @@ rg -n \
   --glob '!.git/**'
 ```
 
-Allowed matches are limited to the approved retirement Spec/Plan, `PROJECT_SOURCE.md`/`DECISIONS.md` Retired surface, and `STATUS.md` statements required to describe the still-deployed production v1.8.6 fact. Any active implementation/API/CLI/Web/test/config match is a blocker.
+Allowed matches are limited to the approved retirement Spec/Plan,
+`PROJECT_SOURCE.md`/`DECISIONS.md` Retired surface, `STATUS.md` statements
+required to describe the still-deployed production v1.8.6 fact, and exactly
+these two unchanged historical-context files:
 
-- [ ] **Step 2: Run retained research + SuBing structure/Candidate tests.**
+```text
+docs/superpowers/plans/2026-08-26-subing-strategy-v1.md
+docs/superpowers/specs/2026-08-26-subing-strategy-v1-design.md
+```
+
+The two historical files are not active references and must remain unchanged.
+Any active implementation/API/CLI/Web/test/config match is a blocker.
+
+- [ ] **Step 2: Prove the protected SuBing/Alert seams are byte-for-byte unchanged from the task fork point.**
+
+Use the recorded task fork point, rather than a working-tree-only diff, so the
+gate covers every committed retirement change as well as any uncommitted edit:
+
+```bash
+git diff --exit-code 9cf013d5ee78a3a6756480afdc0100ac7ffd8e70 -- \
+  services/quant-api/app/market_data/subing_structure.py \
+  services/quant-api/app/market_data/subing_strategy/ \
+  services/quant-api/app/alerts/ \
+  services/quant-api/alembic/versions/20260826_0042_subing_strategy_alert.py \
+  apps/quant-web/src/composables/useSubingStrategyCurrent.ts \
+  apps/quant-web/src/composables/useCurrentStrategyActions.ts \
+  apps/quant-web/src/components/market/SubingStrategyRecords.vue
+```
+
+Expected: exit `0`. A difference is a blocker; do not classify it as an
+incidental retirement edit. The recorded base is the `git merge-base HEAD
+origin/develop` captured before `origin/develop` advanced.
+
+- [ ] **Step 3: Run retained research + SuBing structure/Candidate tests.**
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
@@ -1089,7 +1144,7 @@ PYTHONPATH=services/quant-api:packages/quant-core \
 
 Expected: PASS.
 
-- [ ] **Step 3: Run retained Stage 2 Strategy parity/causality/runtime tests.**
+- [ ] **Step 4: Run retained Stage 2 Strategy parity/causality/runtime tests.**
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
@@ -1108,7 +1163,7 @@ PYTHONPATH=services/quant-api:packages/quant-core \
 
 Expected: PASS with no Strategy formula/action-identity/timing changes attributable to retirement. The acceptance shadow remains sealed/no-write; do not run a real production shadow.
 
-- [ ] **Step 4: Run retained Market/Alert API tests.**
+- [ ] **Step 5: Run retained Market/Alert API tests.**
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
@@ -1123,7 +1178,7 @@ PYTHONPATH=services/quant-api:packages/quant-core \
 
 Expected: PASS; no production service is started and no real notification is sent.
 
-- [ ] **Step 5: Run the complete non-production backend gate.**
+- [ ] **Step 6: Run the complete non-production backend gate.**
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
@@ -1151,7 +1206,7 @@ PYTHONPATH=services/quant-api:packages/quant-core \
 
 Do not run isolated PostgreSQL unless a separate task explicitly provides and authorizes the disposable isolated DB. Do not execute migration 0042.
 
-- [ ] **Step 6: Run the full Web gate.**
+- [ ] **Step 7: Run the full Web gate.**
 
 ```bash
 pnpm --dir apps/quant-web test
@@ -1161,7 +1216,7 @@ pnpm --dir apps/quant-web build
 
 Expected: PASS.
 
-- [ ] **Step 7: Run final repository static checks.**
+- [ ] **Step 8: Run final repository static checks.**
 
 ```bash
 openspec validate --specs --strict --no-interactive
@@ -1172,7 +1227,7 @@ git status --short
 
 Expected: all checks pass; only intentional committed changes exist; task worktree is clean before Review.
 
-- [ ] **Step 8: If a regression fix was required, keep it tracked-only and rerun the affected gate.**
+- [ ] **Step 9: If a regression fix was required, keep it tracked-only and rerun the affected gate.**
 
 A regression fix in this task must not add a new module or abstraction. Starting from the clean worktree produced by Step 7:
 

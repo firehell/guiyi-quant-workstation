@@ -1,8 +1,0 @@
-{
-  "schema_version": 1,
-  "candidate_id": "n_structure_5m_candidate_v1",
-  "source_kind": "n_structure",
-  "policy_id": "n_structure_5m_v1",
-  "formula_version": "n_structure_v1",
-  "research_only": true
-}

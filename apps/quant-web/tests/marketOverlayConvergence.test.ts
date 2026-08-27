@@ -49,29 +49,15 @@ test('SuBing Overlay and public Panel share the exact 5m and 15m allowlist', () 
   }
 })
 
-test('Web keeps N as the independent range-band projection', () => {
-  const typesSource = read('../src/types/market.ts')
+test('Web keeps the retained SuBing history/current and internal-process surfaces', () => {
   const apiSource = read('../src/api/market.ts')
-  const markerSource = read('../src/utils/historicalResearchMarkers.ts')
-  const loaderSource = read('../src/composables/useHistoricalResearchMarkers.ts')
+  const chartSource = read('../src/pages/market/chart.vue')
+  const toolbarSource = read('../src/components/market/ProductWorkspaceToolbar.vue')
 
-  for (const retiredName of [
-    'NStructureHistoricalRequest',
-    'NStructureHistoricalEvent',
-    'NStructureHistoricalResponse',
-    'getNStructureHistoricalEvents',
-    'nStructureHistoricalEventToMarker',
-    'fetchNStructure',
-  ]) {
-    assert.equal(
-      [typesSource, apiSource, markerSource, loaderSource].some((source) => source.includes(retiredName)),
-      false,
-      retiredName,
-    )
-  }
-
-  assert.match(typesSource, /export interface NStructureBandResponse/)
-  assert.match(apiSource, /export function getNStructureBands/)
+  assert.match(apiSource, /export function getSubingStrategyHistory/)
+  assert.match(apiSource, /export function getSubingStrategyCurrent/)
+  assert.match(chartSource, /useSubingStrategyCurrent/)
+  assert.match(toolbarSource, /显示苏冰内部研究过程/)
 })
 
 test('Web exposes Strategy V1 facts while the retired SuBing single-signal seam stays absent', () => {

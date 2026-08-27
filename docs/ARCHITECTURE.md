@@ -35,13 +35,9 @@ flowchart LR
   CURRENT --> MARKET
   SSP --> MARKET
 
-  MDS --> N[N Structure range bands]
-  N --> MARKET
-
-  MDS --> RS[SuBing calibration/lifecycle +<br/>N research services]
-  SRC[research sources +<br/>candidate/policy/protocol/profile] --> CV[Candidate Validation]
+  MDS --> RS[SuBing calibration/lifecycle<br/>research]
+  SRC[SuBing lifecycle research +<br/>candidate manifest/protocol] --> CV[SuBing Candidate Validation]
   MDS --> CV
-  CV --> ROB[Candidate Robustness]
   RS --> RCLI[research CLI]
 
   OPS[operational_products.txt<br/>Runtime authorization] --> MR[Market Runtime]
@@ -67,11 +63,11 @@ flowchart LR
 
 ## Consumer boundaries
 
-- `MarketDataService` is the only Historical Bar reader for Market, SuBing, N Structure and validation services. `actual_dominant` is resolved only through `MainContractMap rank=1`; incomplete identity, coverage or physical readability fails closed.
+- `MarketDataService` is the only Historical Bar reader for Market, SuBing and validation services. `actual_dominant` is resolved only through `MainContractMap rank=1`; incomplete identity, coverage or physical readability fails closed.
 - Web consumes typed Market APIs. It may compose Daily Context, Current Signal State, Formal Event and Historical projections, but does not calculate strategy formulas or mutate Scope.
-- SuBing Strategy V1 is a deterministic Historical read model. Its output has Web/test consumers only; no DB, Redis, Alert, Runtime or order consumer.
-- `active_products.txt` is consumed by Market/research APIs, the three retained research CLI services, Daily Watch, SuBing Strategy and data CLI active-universe selection. It defines capability, not sustained Runtime authority.
-- Candidate Validation feeds Candidate Robustness through source-specific contracts. Policy/protocol/profile files remain explicit inputs; neither service is a Runtime evaluator or automatic promotion path.
+- SuBing Strategy V1 Historical 与 completed-Live 共享同一个增量状态机；公开身份为 `actual_dominant + 15m`，1m/5m 仅为内部权威输入。其 active60 Runtime state 独立于 Alert Scope，production promotion 仍是外部 Gate。
+- `active_products.txt` is consumed by Market/research APIs, the two retained research CLI services, SuBing Candidate Validation, Daily Watch, SuBing Strategy and data CLI active-universe selection. It defines capability, not sustained Runtime authority.
+- SuBing lifecycle research plus an explicit candidate manifest/protocol feed SuBing Candidate Validation. It is neither a Runtime evaluator nor an automatic promotion path.
 - `operational_products.txt` is consumed by Market Runtime, `MarketReadService`/Live, Daily Watch, Alert API/Runtime and Runtime health. Its outer Runtime-universe boundary is applied in addition to, not instead of, each Alert Rule Scope.
 - Alert is independent from the Market Catalog. HTDY uses `scope_product_frequencies`; SuBing uses `scope_products`. Event persistence precedes at most one transport attempt.
 

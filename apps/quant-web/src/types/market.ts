@@ -1438,56 +1438,6 @@ export function normalizeSubingStrategyCurrent(value: unknown): SubingStrategyCu
     },
   }
 }
-export interface NStructureBandRequest {
-  series_kind: 'actual_dominant'
-  symbol: string
-  frequency: '5m'
-  since: string
-  through: string
-}
-
-export interface NStructureBandPolicy {
-  policy_id: 'n_structure_5m_v1'
-  formula_version: 'n_structure_v1'
-  source_timeframe: '5m'
-  research_only: true
-}
-
-export interface NStructureBand {
-  band_id: string
-  contract: string
-  segment_start_trading_day: string
-  completion_trading_day: string
-  direction: 'up' | 'down'
-  role: 'support_reference' | 'resistance_reference'
-  n1_at: string
-  completed_at: string
-  completion_level: number
-  lower: number
-  upper: number
-  first_reentered_at: string | null
-  invalidated_at: string | null
-  expanded_until: string
-}
-
-export interface NStructureBandWire extends Omit<
-  NStructureBand,
-  'completion_level' | 'lower' | 'upper'
-> {
-  completion_level: number | string
-  lower: number | string
-  upper: number | string
-}
-
-export interface NStructureBandResponse {
-  request: NStructureBandRequest
-  policy: NStructureBandPolicy
-  bands: NStructureBand[]
-}
-
-export interface NStructureBandWireResponse extends Omit<NStructureBandResponse, 'bands'> {
-  bands: NStructureBandWire[]
-}
 
 interface AlertEventCommon {
   id: number

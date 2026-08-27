@@ -4,16 +4,8 @@ from __future__ import annotations
 
 from typing import Protocol, cast
 
-from app.guiyi_cli.research_payloads import (
-    _calibration_payload,
-    _lifecycle_payload,
-    _n_structure_payload,
-)
+from app.guiyi_cli.research_payloads import _calibration_payload, _lifecycle_payload
 from app.guiyi_cli.research_requests import ResearchRequest
-from app.research.n_structure.n_structure_research_service import (
-    NStructureResearchRequest,
-    NStructureResearchResult,
-)
 from app.research.subing.subing_calibration_service import (
     CalibrationResearchRequest,
     CalibrationResearchResult,
@@ -22,6 +14,8 @@ from app.research.subing.subing_lifecycle_research_service import (
     LifecycleResearchRequest,
     SubingLifecycleResearchResult,
 )
+
+
 class _CalibrationResearchService(Protocol):
     def run(self, request: CalibrationResearchRequest) -> CalibrationResearchResult: ...
 
@@ -32,10 +26,6 @@ class _LifecycleResearchService(Protocol):
     ) -> SubingLifecycleResearchResult: ...
 
 
-class _NStructureResearchService(Protocol):
-    def run(self, request: NStructureResearchRequest) -> NStructureResearchResult: ...
-
-
 def run_research_command(
     request: ResearchRequest,
     service: object,
@@ -44,8 +34,5 @@ def run_research_command(
     if isinstance(request, LifecycleResearchRequest):
         lifecycle_service = cast(_LifecycleResearchService, service)
         return _lifecycle_payload(request, lifecycle_service.run(request))
-    if isinstance(request, NStructureResearchRequest):
-        n_service = cast(_NStructureResearchService, service)
-        return _n_structure_payload(request, n_service.run(request))
     calibration_service = cast(_CalibrationResearchService, service)
     return _calibration_payload(request, calibration_service.run(request))

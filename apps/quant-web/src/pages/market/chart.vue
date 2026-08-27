@@ -7,7 +7,6 @@ import ProductWorkspaceToolbar from '@/components/market/ProductWorkspaceToolbar
 import KlineChart from '@/components/kline/KlineChart.vue'
 import {
   getMarketDominants,
-  getNStructureBands,
   getProductResearch,
   getSubingStrategyHistory,
   getSubingStrategyCurrent,
@@ -24,7 +23,6 @@ import {
 import { useMarketSeries } from '@/composables/useMarketSeries'
 import { usePersistentAlertMarkers } from '@/composables/usePersistentAlertMarkers'
 import { useHistoricalResearchMarkers } from '@/composables/useHistoricalResearchMarkers'
-import { useNStructureBands } from '@/composables/useNStructureBands'
 import { useProductAlertScope } from '@/composables/useProductAlertScope'
 import { useProductCurrentAlertEvents } from '@/composables/useProductCurrentAlertEvents'
 import { useProductSymbolIdentityCoordinator } from '@/composables/useProductSymbolIdentityCoordinator'
@@ -46,7 +44,6 @@ import { reconcileSubingStrategyActions } from '@/utils/subingStrategyReconcilia
 import { buildKlineDerivedData } from '@/utils/klineViewModel'
 import {
   loadMainChartPreferences,
-  nStructureBandCapability,
   normalizeOptionalEmaIndicators,
   resolveEffectiveSeriesIdentity,
   researchOverlayCapability,
@@ -80,7 +77,6 @@ const selectedOverlay = ref<ResearchOverlayId>(
 const optionalEmaIndicators = ref<OptionalEmaIndicatorId[]>([
   ...initialMainChartPreferences.optionalEmaIndicators,
 ])
-const showNStructureBands = ref(initialMainChartPreferences.showNStructureBands)
 const showSubingInternalProcess = ref(
   initialMainChartPreferences.showSubingInternalProcess,
 )
@@ -134,13 +130,6 @@ const {
   markUnavailable: markSubingStrategyCurrentUnavailable,
   dispose: disposeSubingStrategyCurrent,
 } = useSubingStrategyCurrent({ fetchCurrent: getSubingStrategyCurrent })
-const {
-  bands: nStructureBands,
-  loading: nStructureBandsLoading,
-  error: nStructureBandsError,
-  sync: syncNStructureBands,
-  dispose: disposeNStructureBands,
-} = useNStructureBands({ fetchBands: getNStructureBands })
 const {
   subing,
   subingLoading,
@@ -216,16 +205,9 @@ const overlayCapability = computed(() => researchOverlayCapability(
   frequency.value,
 ))
 const visibleBars = computed(() => bars.value)
-const nStructureBandsSupported = computed(() => nStructureBandCapability(
-  effectiveIdentity.value.seriesKind,
-  frequency.value,
-))
 const subingStrategySupported = computed(() => subingStrategyHistoricalCapability(
   effectiveIdentity.value.seriesKind,
   frequency.value,
-))
-const visibleNStructureBands = computed(() => (
-  showNStructureBands.value && nStructureBandsSupported.value ? nStructureBands.value : []
 ))
 const visibleStartTradingDay = computed(() => visibleBars.value[0]?.trading_day || '')
 const lifecycleMarkers = computed(() => {
@@ -350,23 +332,6 @@ watch([contract, seriesKind, frequency], async () => {
   if (await refreshSeries()) void refreshSubing()
 })
 
-watch([symbol, seriesKind, frequency], () => {
-  if (!metadataReady) return
-  void syncNStructureBands(currentNStructureBandIdentity(), [], null, 'replace')
-})
-
-watch(showNStructureBands, (value) => {
-  const current = loadMainChartPreferences()
-  saveMainChartPreferences({ ...current, showNStructureBands: value })
-  if (!metadataReady) return
-  void syncNStructureBands(
-    currentNStructureBandIdentity(),
-    visibleBars.value,
-    canonicalCoverage.value,
-    'replace',
-  )
-})
-
 watch(showSubingInternalProcess, (value) => {
   const current = loadMainChartPreferences()
   saveMainChartPreferences({ ...current, showSubingInternalProcess: value })
@@ -426,12 +391,6 @@ watch(mutation, (nextMutation) => {
     canonicalCoverage.value,
     nextMutation.kind,
   )
-  void syncNStructureBands(
-    currentNStructureBandIdentity(),
-    bars.value,
-    canonicalCoverage.value,
-    nextMutation.kind,
-  )
   if (nextMutation.kind === 'live' && selectedOverlay.value === 'subing' && subingSupported.value) {
     void refreshSubing()
     void refreshCurrentEvents()
@@ -462,7 +421,6 @@ onUnmounted(() => {
   disposePersistentAlertMarkers()
   disposeHistoricalResearchMarkers()
   disposeSubingStrategyCurrent()
-  disposeNStructureBands()
 })
 
 function currentIdentity() {
@@ -506,15 +464,6 @@ function currentSubingStrategyIdentity() {
     contract: identity.seriesKind === 'actual_dominant'
       ? selectedDominant.value?.actual_contract ?? null
       : identity.contract ?? null,
-  }
-}
-
-function currentNStructureBandIdentity() {
-  return {
-    enabled: showNStructureBands.value,
-    seriesKind: effectiveIdentity.value.seriesKind,
-    symbol: symbol.value,
-    frequency: frequency.value,
   }
 }
 
@@ -651,10 +600,6 @@ function updateOptionalEmaIndicators(value: OptionalEmaIndicatorId[]) {
   saveMainChartPreferences({ ...current, optionalEmaIndicators: optionalEmaIndicators.value })
 }
 
-function updateShowNStructureBands(value: boolean) {
-  showNStructureBands.value = value
-}
-
 function updateShowSubingInternalProcess(value: boolean) {
   showSubingInternalProcess.value = value
 }
@@ -745,11 +690,7 @@ function normalizeSymbol(value: unknown): string | null {
       :dominants="dominants"
       :selected-overlay="selectedOverlay"
       :optional-ema-indicators="optionalEmaIndicators"
-      :show-n-structure-bands="showNStructureBands"
       :show-subing-internal-process="showSubingInternalProcess"
-      :n-structure-bands-supported="nStructureBandsSupported"
-      :n-structure-bands-loading="nStructureBandsLoading"
-      :n-structure-bands-error="nStructureBandsError"
       :fullscreen="fullscreen"
       @update:symbol="symbol = $event"
       @update:series-kind="seriesKind = $event"
@@ -757,7 +698,6 @@ function normalizeSymbol(value: unknown): string | null {
       @update:contract="contract = $event"
       @update:selected-overlay="updateSelectedOverlay"
       @update:optional-ema-indicators="updateOptionalEmaIndicators"
-      @update:show-n-structure-bands="updateShowNStructureBands"
       @update:show-subing-internal-process="updateShowSubingInternalProcess"
       @open-research="openResearchDrawer"
       @toggle-fullscreen="toggleFullscreen"
@@ -796,8 +736,6 @@ function normalizeSymbol(value: unknown): string | null {
             class="product-workspace__kline"
             :data-visible-start-trading-day="visibleStartTradingDay"
             :data-visible-main-indicators="visibleMainIndicators.join(',')"
-            :data-n-structure-bands-supported="nStructureBandsSupported"
-            :data-n-structure-bands-enabled="showNStructureBands"
           >
             <KlineChart
               ref="chart"
@@ -809,7 +747,6 @@ function normalizeSymbol(value: unknown): string | null {
               :visible-main-indicators="visibleMainIndicators"
               :alert-markers="persistentAlertMarkers"
               :research-markers="researchMarkers"
-              :n-structure-bands="visibleNStructureBands"
               :data-historical-research-loading="historicalResearchLoading"
               @need-more-before="loadEarlierBars"
               @follow-latest-change="followLatest = $event"

@@ -9,7 +9,6 @@ from typing import Any
 RESEARCH_COMMAND_NAMES = (
     "subing-calibration",
     "subing-lifecycle",
-    "n-structure",
 )
 
 
@@ -35,11 +34,6 @@ def add_research_commands(
     lifecycle.add_argument("--since", required=True)
     lifecycle.add_argument("--through", required=True)
     lifecycle.add_argument("--symbol")
-
-    n_structure = commands.add_parser("n-structure")
-    n_structure.add_argument("--since", required=True)
-    n_structure.add_argument("--through", required=True)
-    n_structure.add_argument("--symbol")
 
     if tuple(commands.choices) != RESEARCH_COMMAND_NAMES:
         raise RuntimeError("CLI_RESEARCH_COMMAND_REGISTRY_INVALID")

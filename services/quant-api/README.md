@@ -7,7 +7,7 @@
 - `/api/v1/market`：Canonical bars、dominants、product/SuBing/Daily Context/Radar 与 Historical overlays。
 - `/api/alerts`：两条 code-defined Rule 的 server-side Scope、Event 与当前视图。
 - `/api/runtime`：DB、Redis、Live、after-market 与 Alert 的只读状态。
-- CLI：`guiyi data update|refresh|audit|after-market`；只读 `guiyi research subing-calibration`、`guiyi research subing-lifecycle`、`guiyi research n-structure`；`guiyi runtime status|live|alert|acknowledge-alert-notification`。
+- CLI：`guiyi data update|refresh|audit|after-market`；只读 `guiyi research subing-calibration`、`guiyi research subing-lifecycle`；`guiyi runtime status|live|alert|acknowledge-alert-notification`。
 
 `guiyi runtime alert-canary --audience ...` 是 active 但受 Gate 保护的真实通知命令，不属于日常测试；每次实际发送都需要当次范围明确的用户授权。
 

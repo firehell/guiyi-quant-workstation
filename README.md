@@ -11,7 +11,7 @@
 
 ## 当前产品面
 
-SuBing 是一个由 Daily Context、Current Signal State、Formal Event 组成的产品工作区。HTDY 支持 operational universe 的七个正式周期及 symbol × frequency Scope。主图选择仅为：无、苏冰、火天大有。N 与 SuBing Candidate 为内部研究；RQAlpha 与 Execution Review 已退役。
+SuBing 是一个由 Daily Context、Current Signal State、Formal Event 组成的产品工作区。HTDY 支持 operational universe 的七个正式周期及 symbol × frequency Scope。主图选择仅为：无、苏冰、火天大有。SuBing Candidate Validation 是内部研究；RQAlpha 与 Execution Review 已退役。
 
 ## 本地开发
 
@@ -22,4 +22,4 @@ pnpm --dir apps/quant-web install --frozen-lockfile
 pnpm --dir apps/quant-web build
 ```
 
-统一 CLI 的 Research 子命令为 `subing-calibration`、`subing-lifecycle` 与 `n-structure`。真实数据、生产 DB、Runtime、Scope、通知与 release/tag 均需独立明确授权。
+统一 CLI 的 Research 子命令为 `subing-calibration`、`subing-lifecycle`。真实数据、生产 DB、Runtime、Scope、通知与 release/tag 均需独立明确授权。
