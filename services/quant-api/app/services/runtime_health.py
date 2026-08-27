@@ -597,6 +597,7 @@ def _collect_after_market_health(
         }
     last_run = public["last_run"]
     last_successful_day = public["last_successful_trading_day"]
+    derived_performance = public.get("subing_strategy_performance")
     if (
         configured_enabled
         and expected_day is not None
@@ -638,6 +639,20 @@ def _collect_after_market_health(
             "last_failure": public["last_failure"],
             "error_type": "after_market_status_invalid",
         }
+    if (
+        isinstance(derived_performance, Mapping)
+        and derived_performance.get("status") == "degraded"
+    ):
+        return {
+            "status": RUNTIME_STATUS_DEGRADED,
+            **base,
+            "run_state": "degraded",
+            "last_run": last_run,
+            "last_successful_trading_day": last_successful_day,
+            "last_failure": public["last_failure"],
+            "subing_strategy_performance": dict(derived_performance),
+            "error_type": "subing_strategy_performance_degraded",
+        }
     status = (
         RUNTIME_STATUS_FAILED if last_run["status"] == "failed" else RUNTIME_STATUS_OK
     )
@@ -655,15 +670,21 @@ def _collect_after_market_health(
 
 
 def _raw_current_run_is_invalid(raw: Mapping[str, object]) -> bool:
-    if raw.get("schema_version") != 2 or raw.get("current_run") is None:
+    schema_version = raw.get("schema_version")
+    if schema_version not in {2, 3} or raw.get("current_run") is None:
         return False
     current_only = public_after_market_status(
         {
-            "schema_version": 2,
+            "schema_version": schema_version,
             "current_run": raw.get("current_run"),
             "last_run": None,
             "last_successful_trading_day": None,
             "last_failure": None,
+            **(
+                {"subing_strategy_performance": raw.get("subing_strategy_performance")}
+                if schema_version == 3
+                else {}
+            ),
         }
     )
     return not current_only

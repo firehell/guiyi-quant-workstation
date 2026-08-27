@@ -89,6 +89,7 @@ class AfterMarketUpdater:
         sleep: Callable[[float], None],
         notification_transport: NotificationTransport | None,
         now: Callable[[], datetime],
+        derived_refresh: Callable[[], object] | None = None,
     ) -> None:
         self.manager = manager
         self.rqdata = rqdata
@@ -97,6 +98,8 @@ class AfterMarketUpdater:
         self.sleep = sleep
         self.notification_transport = notification_transport
         self.now = now
+        self.derived_refresh = derived_refresh
+        self._derived_performance: dict[str, object] | None = None
 
     def run(self) -> AfterMarketResult:
         """执行一次受限盘后维护，并写入仅含公开字段的状态。"""
@@ -273,6 +276,32 @@ class AfterMarketUpdater:
                 type(exc).__name__,
             )
             return "UPDATE_FAILED"
+        if self.derived_refresh is not None:
+            try:
+                derived = self.derived_refresh()
+                status = getattr(derived, "status", None)
+                completed = tuple(getattr(derived, "completed_products", ()))
+                failed = tuple(getattr(derived, "failed_products", ()))
+                if status not in {"passed", "degraded"}:
+                    raise ValueError("DERIVED_RESULT_INVALID")
+                self._derived_performance = {
+                    "status": status,
+                    "completed_count": len(completed),
+                    "failed_products": [
+                        {"symbol": symbol, "code": code}
+                        for symbol, code in failed
+                    ],
+                }
+            except Exception as exc:  # noqa: BLE001 - Canonical success remains authoritative
+                _LOGGER.warning(
+                    "after_market_derived_degraded stage=subing_strategy_performance exception_type=%s",
+                    type(exc).__name__,
+                )
+                self._derived_performance = {
+                    "status": "degraded",
+                    "completed_count": 0,
+                    "failed_products": [],
+                }
         return None
 
     def _write_status(
@@ -283,8 +312,9 @@ class AfterMarketUpdater:
     ) -> None:
         previous = _load_status(self.status_path)
         finished_at = _local_timestamp(self.now())
+        schema_version = 3 if self.derived_refresh is not None else 2
         payload: dict[str, Any] = {
-            "schema_version": 2,
+            "schema_version": schema_version,
             "current_run": None,
             "last_run": {
                 "trading_day": result.trading_day.isoformat(),
@@ -301,6 +331,12 @@ class AfterMarketUpdater:
             ),
             "last_failure": _public_last_failure(previous.get("last_failure")),
         }
+        if schema_version == 3:
+            payload["subing_strategy_performance"] = self._derived_performance or {
+                "status": "skipped",
+                "completed_count": 0,
+                "failed_products": [],
+            }
         if result.status == "passed":
             payload["last_successful_trading_day"] = result.trading_day.isoformat()
             payload["last_failure"] = None
@@ -325,9 +361,14 @@ class AfterMarketUpdater:
         products: tuple[str, ...],
     ) -> None:
         previous = _load_status(self.status_path)
-        previous_schema_version = 2 if previous.get("schema_version") == 2 else 1
+        previous_schema_version = (
+            int(previous["schema_version"])
+            if previous.get("schema_version") in {2, 3}
+            else 1
+        )
+        schema_version = 3 if self.derived_refresh is not None else 2
         payload: dict[str, Any] = {
-            "schema_version": 2,
+            "schema_version": schema_version,
             "current_run": {
                 "scheduled_date": started_at.date().isoformat(),
                 "started_at": started_at.isoformat(),
@@ -342,6 +383,12 @@ class AfterMarketUpdater:
             ),
             "last_failure": _public_last_failure(previous.get("last_failure")),
         }
+        if schema_version == 3:
+            payload["subing_strategy_performance"] = {
+                "status": "skipped",
+                "completed_count": 0,
+                "failed_products": [],
+            }
         _atomic_write_status(self.status_path, payload)
 
 
@@ -357,6 +404,8 @@ def build_after_market_updater(
         raise RuntimeError("AFTER_MARKET_RQDATA_CLIENT_UNAVAILABLE")
     from app.market_data.live_market import RedisClient
     from app.redis_connections import get_redis_connection
+    from app.market_data.composition import build_subing_strategy_performance_service
+    from app.market_data.subing_strategy.performance import warm_active_performance_cache
     from typing import cast
 
     notification_transport: NotificationTransport | None = None
@@ -370,6 +419,10 @@ def build_after_market_updater(
         sleep=time.sleep,
         notification_transport=notification_transport,
         now=lambda: datetime.now(SHANGHAI),
+        derived_refresh=lambda: warm_active_performance_cache(
+            build_subing_strategy_performance_service(manager.catalog.session),
+            expected_products=load_operational_products(),
+        ),
     )
 
 
@@ -479,12 +532,12 @@ def public_after_market_status(value: object) -> dict[str, object]:
     if not isinstance(value, Mapping):
         return {}
     raw_schema_version = value.get("schema_version", 1)
-    if type(raw_schema_version) is not int or raw_schema_version not in {1, 2}:
+    if type(raw_schema_version) is not int or raw_schema_version not in {1, 2, 3}:
         return {}
     schema_version = raw_schema_version
     current_run = (
         _public_current_run(value.get("current_run"))
-        if schema_version == 2
+        if schema_version in {2, 3}
         else None
     )
     last_run = _public_last_run(value.get("last_run"), schema_version=schema_version)
@@ -508,11 +561,23 @@ def public_after_market_status(value: object) -> dict[str, object]:
         "last_successful_trading_day": last_success,
         "last_failure": last_failure,
     }
-    if schema_version == 2:
+    if schema_version in {2, 3}:
+        derived = (
+            _public_derived_performance(value.get("subing_strategy_performance"))
+            if schema_version == 3
+            else None
+        )
+        if schema_version == 3 and derived is None:
+            return {}
         return {
-            "schema_version": 2,
+            "schema_version": schema_version,
             "current_run": current_run,
             **public,
+            **(
+                {"subing_strategy_performance": derived}
+                if schema_version == 3
+                else {}
+            ),
         }
     return public
 
@@ -573,7 +638,7 @@ def _public_last_run(
         "products": normalized_products,
         "error_code": error_code,
     }
-    if schema_version == 2:
+    if schema_version in {2, 3}:
         failure_notification = _public_failure_notification(
             value.get("failure_notification")
         )
@@ -581,6 +646,40 @@ def _public_last_run(
             return None
         public["failure_notification"] = failure_notification
     return public
+
+
+def _public_derived_performance(value: object) -> dict[str, object] | None:
+    if not isinstance(value, Mapping):
+        return None
+    status = value.get("status")
+    completed_count = value.get("completed_count")
+    failed = value.get("failed_products")
+    if (
+        status not in {"passed", "degraded", "skipped"}
+        or type(completed_count) is not int
+        or completed_count < 0
+        or not isinstance(failed, list)
+    ):
+        return None
+    normalized: list[dict[str, str]] = []
+    for item in failed:
+        if not isinstance(item, Mapping):
+            return None
+        symbol = item.get("symbol")
+        code = item.get("code")
+        if (
+            not isinstance(symbol, str)
+            or _PUBLIC_PRODUCT_CODE.fullmatch(symbol) is None
+            or not isinstance(code, str)
+            or not code.startswith("SUBING_STRATEGY_")
+        ):
+            return None
+        normalized.append({"symbol": symbol, "code": code})
+    return {
+        "status": status,
+        "completed_count": completed_count,
+        "failed_products": normalized,
+    }
 
 
 def _public_current_run(value: object) -> dict[str, object] | None:

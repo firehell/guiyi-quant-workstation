@@ -16,6 +16,7 @@ PUBLIC_OVERLAYS = {"none", "subing", "htdy"}
 RESEARCH_COMMANDS = {
     "subing-calibration",
     "subing-lifecycle",
+    "subing-strategy-performance",
 }
 MARKET_TABLES = {
     "exchanges",
@@ -116,6 +117,7 @@ def test_public_entrypoints_are_exact() -> None:
     assert tuple(command_action.choices) == (
         "subing-calibration",
         "subing-lifecycle",
+        "subing-strategy-performance",
     )
 
 

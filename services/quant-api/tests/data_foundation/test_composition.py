@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 import os
 from types import SimpleNamespace
 
@@ -18,6 +19,7 @@ from app.market_data.composition import (
     build_market_data_service,
     build_subing_daily_watch_current_service,
     build_subing_daily_watch_generator,
+    build_subing_strategy_performance_service,
     build_subing_strategy_historical_service,
     canonical_root,
 )
@@ -225,3 +227,64 @@ def test_subing_strategy_cache_is_sibling_of_daily_watch_v2(
         service._direction_context_resolver._projector._stitched_loader,
         ActualDominantStitchedResearchLoader,
     )
+
+
+def test_subing_strategy_performance_uses_effective_history_floor_for_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    market_data = SimpleNamespace(
+        list_latest_dominants=lambda: (
+            SimpleNamespace(symbol="jm", product_name="焦煤", sector="black"),
+        )
+    )
+
+    class Coverage:
+        product_start_calls = 0
+
+        def __init__(self, session, starts, *, history_floor_path) -> None:
+            pass
+
+        def product_start(self, symbol: str) -> date:
+            assert symbol == "jm"
+            type(self).product_start_calls += 1
+            assert type(self).product_start_calls == 1
+            return date(2024, 1, 2)
+
+        def latest_complete_day(self, symbols: tuple[str, ...]) -> date:
+            return date(2026, 8, 26)
+
+    monkeypatch.setattr(
+        "app.market_data.composition.load_active_products",
+        lambda: ("jm",),
+    )
+    monkeypatch.setattr(
+        "app.market_data.composition.build_market_data_service",
+        lambda _session: market_data,
+    )
+    monkeypatch.setattr(
+        "app.market_data.coverage_source.DatabaseCoverageSource",
+        Coverage,
+    )
+
+    service = build_subing_strategy_performance_service(object())
+
+    resolver = service._historical._direction_context_resolver
+    resolver._previous_trading_day = lambda target: date(2023, 12, 29)
+    projector_calls: list[tuple[str, date]] = []
+    resolver._projector = SimpleNamespace(
+        project=lambda symbol, *, source_trading_day: projector_calls.append(
+            (symbol, source_trading_day)
+        )
+    )
+
+    contexts = resolver.resolve(
+        "jm",
+        (date(2024, 1, 2), date(2024, 1, 3)),
+    )
+
+    assert all(context.direction.value == "unavailable" for context in contexts.values())
+    assert all(
+        context.reason_codes == ("PREVIOUS_TRADING_DAY_UNAVAILABLE",)
+        for context in contexts.values()
+    )
+    assert projector_calls == []

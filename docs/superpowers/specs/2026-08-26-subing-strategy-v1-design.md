@@ -609,6 +609,15 @@ For each validated physical segment:
 
 Calculation never begins at the first visible Bar with an assumed flat state.
 
+For the fixed full-history performance view, the effective product history
+floor is also the earliest permitted Daily Context source day. If the previous
+common trading day for the first loaded target day is earlier than that floor,
+that target day is an explicit `PREVIOUS_TRADING_DAY_UNAVAILABLE` causal
+warm-up day and the Daily Watch projector is not called. At or after the floor,
+`DATA_IDENTITY_MISMATCH`, `DOMINANT_SEGMENT_UNAVAILABLE`, and
+`PRODUCT_METADATA_UNAVAILABLE` remain authoritative identity failures and
+must fail closed.
+
 ### 13.2 Window intersection
 
 The API returns every Action whose effective Bar lies inside the requested window and every Episode that intersects the window.

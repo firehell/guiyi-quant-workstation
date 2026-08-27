@@ -2,7 +2,6 @@
 import { computed } from 'vue'
 import { NSpin, NSwitch, NTag } from 'naive-ui'
 import ProductTodayAlertEvents from '@/components/market/ProductTodayAlertEvents.vue'
-import SubingStrategyRecords from '@/components/market/SubingStrategyRecords.vue'
 import type { AlertRuntimeStatus, ProductAlertRuleState } from '@/api/alerts'
 import {
   subingLifecycleProgressLabel,
@@ -142,16 +141,13 @@ function toggleSubing(ruleCode: string, enabled: boolean) {
       <NTag size="small" type="info">Research only</NTag>
     </header>
 
-    <SubingStrategyRecords
-      v-if="strategySupported"
-      :episodes="strategyEpisodes"
-      :loading="strategyLoading"
-      :error="strategyError"
-      :current-episode="strategyCurrent?.current_episode ?? null"
-      :latest-completed-episode="strategyCurrent?.latest_completed_episode ?? null"
-      :current-loading="strategyCurrentLoading"
-      :current-error="strategyCurrentError"
-    />
+    <section v-if="strategySupported" class="subing-panel__section" data-testid="subing-current-strategy-state">
+      <h4>当前策略状态</h4>
+      <p v-if="strategyCurrentLoading">正在读取当前策略状态…</p>
+      <p v-else-if="strategyCurrentError" class="subing-panel__warning">当前策略状态暂不可用</p>
+      <p v-else-if="strategyCurrent">{{ strategyCurrent.position_state }} · {{ strategyCurrent.contract }}</p>
+      <p v-else>暂无当前策略状态</p>
+    </section>
     <p v-else data-testid="subing-strategy-guidance" class="subing-panel__warning">
       当前 5m 仅保留苏冰观察；历史策略投影仅支持真实主力 15m。
     </p>

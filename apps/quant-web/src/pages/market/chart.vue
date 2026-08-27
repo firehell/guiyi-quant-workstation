@@ -4,12 +4,14 @@ import { useRoute, useRouter } from 'vue-router'
 import { NAlert, NButton, NDrawer, NDrawerContent, NSpin, NTag, useMessage } from 'naive-ui'
 import ProductCheckSidebar from '@/components/market/ProductCheckSidebar.vue'
 import ProductWorkspaceToolbar from '@/components/market/ProductWorkspaceToolbar.vue'
+import SubingStrategyPerformancePanel from '@/components/market/SubingStrategyPerformancePanel.vue'
 import KlineChart from '@/components/kline/KlineChart.vue'
 import {
   getMarketDominants,
   getProductResearch,
   getSubingStrategyHistory,
   getSubingStrategyCurrent,
+  getSubingStrategyPerformance,
   getSubingResearch,
 } from '@/api/market'
 import {
@@ -35,6 +37,7 @@ import type {
   ProductResearchResponse,
   ResearchOverlayId,
   SeriesKind,
+  SubingStrategyPerformanceResponse,
 } from '@/types/market'
 import { MARKET_FREQUENCIES } from '@/types/market'
 import { lifecycleSnapshotToMarkers } from '@/utils/subingLifecycleMarkers'
@@ -83,6 +86,10 @@ const showSubingInternalProcess = ref(
 const research = ref<ProductResearchResponse | null>(null)
 const researchLoading = ref(false)
 const researchError = ref(false)
+const strategyPerformance = ref<SubingStrategyPerformanceResponse | null>(null)
+const strategyPerformanceLoading = ref(false)
+const strategyPerformanceError = ref<string | null>(null)
+let strategyPerformanceGeneration = 0
 const symbol = ref(dailyWatchEntry?.symbol ?? resolveInitialSymbol())
 const contract = ref(String(route.query.contract || '').toUpperCase())
 const seriesKind = ref<SeriesKind>(dailyWatchEntry?.seriesKind ?? resolveInitialSeriesKind())
@@ -542,6 +549,10 @@ function invalidateSymbolFacts(): void {
   invalidateAlertIdentity()
   invalidateCurrentEventsIdentity()
   invalidateSubingStrategyCurrent()
+  strategyPerformanceGeneration += 1
+  strategyPerformance.value = null
+  strategyPerformanceLoading.value = true
+  strategyPerformanceError.value = null
 }
 
 function rejectSymbolFacts(): void {
@@ -550,6 +561,9 @@ function rejectSymbolFacts(): void {
   markAlertsUnavailable()
   markCurrentEventsUnavailable()
   markSubingStrategyCurrentUnavailable()
+  strategyPerformance.value = null
+  strategyPerformanceLoading.value = false
+  strategyPerformanceError.value = 'SUBING_STRATEGY_PERFORMANCE_UNAVAILABLE'
 }
 
 function refreshSymbolFacts(): readonly Promise<void>[] {
@@ -568,7 +582,26 @@ function refreshSymbolFacts(): readonly Promise<void>[] {
     refreshAlerts(),
     refreshCurrentEvents(),
     refreshSubingStrategyCurrent(currentSubingStrategyIdentity()),
+    refreshStrategyPerformance(),
   ]
+}
+
+async function refreshStrategyPerformance(): Promise<void> {
+  const requestSymbol = symbol.value
+  const generation = ++strategyPerformanceGeneration
+  strategyPerformanceLoading.value = true
+  strategyPerformanceError.value = null
+  try {
+    const result = await getSubingStrategyPerformance({ symbol: requestSymbol })
+    if (generation !== strategyPerformanceGeneration || requestSymbol !== symbol.value) return
+    strategyPerformance.value = result
+  } catch {
+    if (generation !== strategyPerformanceGeneration || requestSymbol !== symbol.value) return
+    strategyPerformance.value = null
+    strategyPerformanceError.value = 'SUBING_STRATEGY_PERFORMANCE_UNAVAILABLE'
+  } finally {
+    if (generation === strategyPerformanceGeneration) strategyPerformanceLoading.value = false
+  }
 }
 
 async function loadEarlierBars() {
@@ -763,6 +796,13 @@ function normalizeSymbol(value: unknown): string | null {
       </div>
     </NSpin>
 
+    <SubingStrategyPerformancePanel
+      :symbol="symbol"
+      :result="strategyPerformance"
+      :loading="strategyPerformanceLoading"
+      :error="strategyPerformanceError"
+    />
+
     <NDrawer v-model:show="researchDrawerOpen" :width="320" placement="right">
       <NDrawerContent title="检查" closable>
         <ProductCheckSidebar
@@ -795,8 +835,9 @@ function normalizeSymbol(value: unknown): string | null {
 .product-workspace:fullscreen .product-workspace__sidebar-wrap { display: none; }
 
 @media (min-width: 980px) {
-  .chart-page { height: 100%; min-height: 0; }
-  .chart-page > :deep(.n-spin-container), .chart-page :deep(.n-spin-content) { display: flex; flex: 1 1 0; min-height: 0; flex-direction: column; }
+  .chart-page { height: 100%; min-height: 0; overflow-y: auto; }
+  .chart-page > :deep(.n-spin-container) { display: flex; flex: 0 0 calc(100vh - 120px); min-height: 620px; flex-direction: column; }
+  .chart-page :deep(.n-spin-content) { display: flex; flex: 1 1 0; min-height: 0; flex-direction: column; }
   .product-workspace, .product-workspace__main { flex: 1 1 0; min-height: 0; }
   .product-workspace { display: flex; }
   .product-workspace__kline { display: flex; min-height: 0; }

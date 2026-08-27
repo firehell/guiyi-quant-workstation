@@ -78,7 +78,23 @@ def test_research_parser_exposes_only_the_retained_readonly_commands() -> None:
     assert tuple(command_action.choices) == (
         "subing-calibration",
         "subing-lifecycle",
+        "subing-strategy-performance",
     )
+
+
+def test_performance_warm_parser_requires_exact_active_cache_contract() -> None:
+    args = build_parser().parse_args(
+        [
+            "research",
+            "subing-strategy-performance",
+            "--scope",
+            "active",
+            "--warm-cache",
+        ]
+    )
+
+    assert args.scope == "active"
+    assert args.warm_cache is True
 
 
 def test_lifecycle_request_parses_dates_and_normalizes_optional_symbol() -> None:

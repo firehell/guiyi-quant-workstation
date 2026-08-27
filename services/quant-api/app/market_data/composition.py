@@ -11,7 +11,7 @@ canonical 根目录由环境变量 ``GUIYI_CANONICAL_DATA_ROOT`` 或仓库默认
 from __future__ import annotations
 
 import os
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import cast
@@ -62,6 +62,10 @@ from app.market_data.subing_strategy.policy import load_subing_strategy_policy
 from app.market_data.subing_strategy.service import (
     SubingStrategyHistoricalProjectionService,
 )
+from app.market_data.subing_strategy.performance import (
+    SubingStrategyPerformanceService,
+)
+from app.market_data.domain import RQDATA_INTRADAY_HISTORY_START
 from app.market_data.subing_read_service import SubingReadService
 from app.market_data.subing_daily_watch import (
     SubingDailyWatchBuilder,
@@ -238,6 +242,8 @@ class _SubingDailyWatchCurrentSnapshotStore:
 
 def build_subing_strategy_historical_service(
     session: Session,
+    *,
+    context_source_floor: Callable[[str], date] | None = None,
 ) -> SubingStrategyHistoricalProjectionService:
     """Compose the read-only Stage 1 Strategy projection without starting I/O."""
     market_data = build_market_data_service(session)
@@ -266,11 +272,47 @@ def build_subing_strategy_historical_service(
                 products=active,
                 target_trading_day=target,
             ),
+            source_floor=context_source_floor,
         ),
         calibration=load_accepted_subing_calibration(_SUBING_CALIBRATION),
         lifecycle_policy=load_subing_lifecycle_policy(_SUBING_LIFECYCLE_POLICY),
         strategy_policy=load_subing_strategy_policy(),
         cache=_build_subing_strategy_cache_or_null(),
+    )
+
+
+def build_subing_strategy_performance_service(
+    session: Session,
+) -> SubingStrategyPerformanceService:
+    """Compose fixed actual-dominant 15m full-history performance."""
+    from app.market_data.coverage_source import DatabaseCoverageSource
+
+    active = load_active_products()
+    coverage = DatabaseCoverageSource(
+        session,
+        _PRODUCT_STARTS,
+        history_floor_path=_HISTORY_FLOOR,
+    )
+    effective_starts: dict[str, date] = {}
+
+    def effective_start(symbol: str) -> date:
+        if symbol not in effective_starts:
+            effective_starts[symbol] = max(
+                coverage.product_start(symbol),
+                RQDATA_INTRADAY_HISTORY_START,
+            )
+        return effective_starts[symbol]
+
+    return SubingStrategyPerformanceService(
+        build_subing_strategy_historical_service(
+            session,
+            context_source_floor=effective_start,
+        ),
+        products=active,
+        window_resolver=lambda symbol: (
+            effective_start(symbol),
+            coverage.latest_complete_day((symbol,)),
+        ),
     )
 
 
