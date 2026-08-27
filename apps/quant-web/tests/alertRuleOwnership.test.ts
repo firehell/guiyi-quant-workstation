@@ -290,6 +290,59 @@ describe('Alert Rule AST ownership guard', () => {
     )
   })
 
+  test('resolves namespace-imported const strings for computed runtime rule_code reads', () => {
+    const attacks = {
+      'apps/quant-web/src/Namespace.ts': [
+        "import * as Keys from './RuleKeys'",
+        "const target = 'subing' + '_strategy_v1'",
+        'event[Keys.RULE_KEY] === target',
+        'const { [Keys.RULE_KEY]: code } = event',
+        'target !== code',
+        'const dynamicKey = readRuntimeKey()',
+        'event[dynamicKey]',
+      ].join('\n'),
+      'apps/quant-web/src/Namespace.tsx': [
+        "import * as Keys from './RuleKeys'",
+        "const target = 'htdy_' + 'original_15m'",
+        "const route = <p>{target !== event[Keys['RULE_KEY']]}</p>",
+        "const { [Keys['RULE_KEY']]: code } = event",
+        'const view = <p>{code === target}</p>',
+      ].join('\n'),
+      'apps/quant-web/src/Namespace.vue': [
+        '<script lang="ts">',
+        "import * as Keys from './RuleKeys'",
+        "const target = 'subing' + '_strategy_v1'",
+        'event[Keys.RULE_KEY] === target',
+        'const { [Keys.RULE_KEY]: code } = event',
+        'target !== code',
+        '</script>',
+        '<script setup lang="ts">',
+        "import * as Keys from './RuleKeys'",
+        "const target = 'htdy_' + 'original_15m'",
+        "event[Keys['RULE_KEY']] !== target",
+        "const { [Keys['RULE_KEY']]: code } = event",
+        'code === target',
+        '</script>',
+      ].join('\n'),
+      'apps/quant-web/src/RuleKeys.ts': "export const RULE_KEY = 'rule_code'",
+    }
+
+    assert.deepEqual(
+      inspectAlertRuleOwnership(validSources(attacks), EXPECTED_OWNERSHIP)
+        .map(({ code, path }) => ({ code, path })),
+      [
+        { code: 'ALERT_RULE_DIRECT_ROUTING', path: 'apps/quant-web/src/Namespace.ts' },
+        { code: 'ALERT_RULE_DIRECT_ROUTING', path: 'apps/quant-web/src/Namespace.ts' },
+        { code: 'ALERT_RULE_DIRECT_ROUTING', path: 'apps/quant-web/src/Namespace.tsx' },
+        { code: 'ALERT_RULE_DIRECT_ROUTING', path: 'apps/quant-web/src/Namespace.tsx' },
+        { code: 'ALERT_RULE_DIRECT_ROUTING', path: 'apps/quant-web/src/Namespace.vue' },
+        { code: 'ALERT_RULE_DIRECT_ROUTING', path: 'apps/quant-web/src/Namespace.vue' },
+        { code: 'ALERT_RULE_DIRECT_ROUTING', path: 'apps/quant-web/src/Namespace.vue' },
+        { code: 'ALERT_RULE_DIRECT_ROUTING', path: 'apps/quant-web/src/Namespace.vue' },
+      ],
+    )
+  })
+
   test('allows rule_code declarations and helper-only consumers', () => {
     const path = 'apps/quant-web/src/helperConsumer.ts'
     const source = [

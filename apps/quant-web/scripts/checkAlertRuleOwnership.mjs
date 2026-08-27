@@ -226,9 +226,24 @@ function evaluateStaticString(node, checker, resolvingSymbols) {
     const right = evaluateStaticString(expression.right, checker, resolvingSymbols)
     return right === null ? null : left + right
   }
-  if (!ts.isIdentifier(expression)) return null
+  if (
+    !ts.isIdentifier(expression)
+    && !ts.isPropertyAccessExpression(expression)
+    && !ts.isElementAccessExpression(expression)
+  ) return null
 
-  let symbol = checker.getSymbolAtLocation(expression)
+  let symbol
+  if (ts.isElementAccessExpression(expression)) {
+    const propertyName = evaluateStaticString(
+      expression.argumentExpression,
+      checker,
+      resolvingSymbols,
+    )
+    if (propertyName === null) return null
+    symbol = checker.getTypeAtLocation(expression.expression).getProperty(propertyName)
+  } else {
+    symbol = checker.getSymbolAtLocation(expression)
+  }
   if (!symbol) return null
   if ((symbol.flags & ts.SymbolFlags.Alias) !== 0) {
     symbol = checker.getAliasedSymbol(symbol)
