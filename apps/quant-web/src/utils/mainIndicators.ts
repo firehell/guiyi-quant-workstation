@@ -10,9 +10,10 @@ import type {
 } from '@/types/market'
 
 /** 主图指标偏好 localStorage 键 */
-export const MAIN_CHART_PREFERENCES_KEY = 'guiyi.market.chart.preferences.v6'
+export const MAIN_CHART_PREFERENCES_KEY = 'guiyi.market.chart.preferences.v7'
 /** 主图指标偏好 schema 版本 */
-export const MAIN_CHART_PREFERENCES_VERSION = 6
+export const MAIN_CHART_PREFERENCES_VERSION = 7
+const MAIN_CHART_PREFERENCES_V6_KEY = 'guiyi.market.chart.preferences.v6'
 const MAIN_CHART_PREFERENCES_V5_KEY = 'guiyi.market.chart.preferences.v5'
 const RETIRED_MAIN_CHART_PREFERENCE_KEYS = [
   'guiyi.market.chart.preferences.v1',
@@ -36,10 +37,9 @@ export const HTDY_WEB_OBSERVATION_METADATA = {
 
 /** 主图指标显示偏好（可见指标、周期、实时跟随） */
 export interface MainChartPreferences {
-  version: 6
+  version: 7
   selectedOverlay: ResearchOverlayId
   optionalEmaIndicators: OptionalEmaIndicatorId[]
-  showNStructureBands: boolean
   showSubingInternalProcess: boolean
   period?: string | null
   realtimeFollow?: boolean
@@ -90,14 +90,6 @@ export function researchOverlayCapability(
     supported: definition.supportedSeriesKinds.includes(seriesKind)
       && definition.supportedFrequencies.includes(frequency),
   }
-}
-
-/** N 字区间是独立 Historical 投影，仅支持真实主力 5m。 */
-export function nStructureBandCapability(
-  seriesKind: SeriesKind,
-  frequency: MarketFrequency,
-): boolean {
-  return seriesKind === 'actual_dominant' && frequency === '5m'
 }
 
 /** SuBing 当前观察仍支持 5m；Strategy Historical 只支持 15m。 */
@@ -253,14 +245,14 @@ export function loadMainChartPreferences(
   purgeRetiredMainChartPreferences(storage)
   try {
     const raw = storage.getItem(MAIN_CHART_PREFERENCES_KEY)
-    if (!raw) return migrateV5MainChartPreferences(storage)
+    if (!raw) return migrateV6MainChartPreferences(storage)
+      ?? migrateV5MainChartPreferences(storage)
     const parsed = JSON.parse(raw) as Partial<MainChartPreferences> | null
     if (!parsed || parsed.version !== MAIN_CHART_PREFERENCES_VERSION) return defaultMainChartPreferences()
     return {
-      version: 6,
+      version: 7,
       selectedOverlay: normalizeResearchOverlay(parsed.selectedOverlay),
       optionalEmaIndicators: normalizeOptionalEmaIndicators(parsed.optionalEmaIndicators),
-      showNStructureBands: Boolean(parsed.showNStructureBands),
       showSubingInternalProcess: Boolean(parsed.showSubingInternalProcess),
       period: typeof parsed.period === 'string' ? parsed.period : null,
       realtimeFollow: Boolean(parsed.realtimeFollow),
@@ -285,7 +277,6 @@ export function saveMainChartPreferences(
         version: MAIN_CHART_PREFERENCES_VERSION,
         selectedOverlay: normalizeResearchOverlay(preferences.selectedOverlay),
         optionalEmaIndicators: normalizeOptionalEmaIndicators(preferences.optionalEmaIndicators),
-        showNStructureBands: Boolean(preferences.showNStructureBands),
         showSubingInternalProcess: Boolean(preferences.showSubingInternalProcess),
         period: preferences.period || null,
         realtimeFollow: Boolean(preferences.realtimeFollow),
@@ -301,13 +292,43 @@ export function saveMainChartPreferences(
  */
 export function defaultMainChartPreferences(): MainChartPreferences {
   return {
-    version: 6,
+    version: 7,
     selectedOverlay: 'subing',
     optionalEmaIndicators: [],
-    showNStructureBands: false,
     showSubingInternalProcess: false,
     period: null,
     realtimeFollow: false,
+  }
+}
+
+function migrateV6MainChartPreferences(
+  storage: Pick<Storage, 'getItem'>
+    & Partial<Pick<Storage, 'setItem' | 'removeItem'>>,
+): MainChartPreferences | null {
+  try {
+    const raw = storage.getItem(MAIN_CHART_PREFERENCES_V6_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as Record<string, unknown> | null
+    if (!parsed || parsed.version !== 6) return null
+    const migrated: MainChartPreferences = {
+      version: 7,
+      selectedOverlay: normalizeResearchOverlay(parsed.selectedOverlay),
+      optionalEmaIndicators: normalizeOptionalEmaIndicators(parsed.optionalEmaIndicators),
+      showSubingInternalProcess: Boolean(parsed.showSubingInternalProcess),
+      period: typeof parsed.period === 'string' ? parsed.period : null,
+      realtimeFollow: Boolean(parsed.realtimeFollow),
+    }
+    if (storage.setItem) {
+      try {
+        storage.setItem(MAIN_CHART_PREFERENCES_KEY, JSON.stringify(migrated))
+        storage.removeItem?.(MAIN_CHART_PREFERENCES_V6_KEY)
+      } catch {
+        // 已读取的 retained 偏好仍可使用；持久化失败不得阻塞图表打开。
+      }
+    }
+    return migrated
+  } catch {
+    return null
   }
 }
 
@@ -321,10 +342,9 @@ function migrateV5MainChartPreferences(
     const parsed = JSON.parse(raw) as Record<string, unknown> | null
     if (!parsed || parsed.version !== 5) return defaultMainChartPreferences()
     const migrated: MainChartPreferences = {
-      version: 6,
+      version: 7,
       selectedOverlay: normalizeResearchOverlay(parsed.selectedOverlay),
       optionalEmaIndicators: normalizeOptionalEmaIndicators(parsed.optionalEmaIndicators),
-      showNStructureBands: Boolean(parsed.showNStructureBands),
       showSubingInternalProcess: Boolean(parsed.showSubingInternalProcess),
       period: typeof parsed.period === 'string' ? parsed.period : null,
       realtimeFollow: Boolean(parsed.realtimeFollow),

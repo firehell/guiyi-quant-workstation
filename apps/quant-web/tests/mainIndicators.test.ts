@@ -8,7 +8,6 @@ import {
   loadMainChartPreferences,
   MAIN_CHART_PREFERENCES_KEY,
   MAIN_INDICATOR_DEFINITIONS,
-  nStructureBandCapability,
   normalizeOptionalEmaIndicators,
   normalizeVisibleMainIndicators,
   resolveEffectiveSeriesIdentity,
@@ -57,10 +56,9 @@ test('normalizeVisibleMainIndicators keeps available indicators without a second
 
 test('research overlay defaults to SuBing and exposes exactly one overlay indicator set', () => {
   assert.deepEqual(defaultMainChartPreferences(), {
-    version: 6,
+    version: 7,
     selectedOverlay: 'subing',
     optionalEmaIndicators: [],
-    showNStructureBands: false,
     showSubingInternalProcess: false,
     period: null,
     realtimeFollow: false,
@@ -70,13 +68,6 @@ test('research overlay defaults to SuBing and exposes exactly one overlay indica
   assert.deepEqual(visibleMainIndicatorsForOverlay('subing', ['ema_10', 'ema_60']), ['ema_10', 'ema_21', 'ema_60'])
   assert.deepEqual(visibleMainIndicatorsForOverlay('htdy', ['ema_10', 'ema_60']), ['ema_10', 'ema_60', 'htdy'])
   assert.deepEqual(visibleMainIndicatorsForOverlay('none', ['ema_10', 'ema_60']), [])
-})
-
-test('N structure bands are independently supported only for actual-dominant 5m', () => {
-  assert.equal(nStructureBandCapability('actual_dominant', '5m'), true)
-  assert.equal(nStructureBandCapability('actual_dominant', '15m'), false)
-  assert.equal(nStructureBandCapability('continuous', '5m'), false)
-  assert.equal(nStructureBandCapability('contract', '5m'), false)
 })
 
 test('SuBing Strategy history is independently restricted to actual-dominant 15m', () => {
@@ -181,7 +172,7 @@ test('preference loading purges and ignores legacy schemas', () => {
   assert.equal(values.size, 0)
 })
 
-test('preference v6 saves and loads overlays plus the internal-process toggle', () => {
+test('preference v7 saves and loads overlays plus the internal-process toggle', () => {
   const values = new Map<string, string>()
   const storage = {
     getItem: (key: string) => values.get(key) || null,
@@ -190,10 +181,9 @@ test('preference v6 saves and loads overlays plus the internal-process toggle', 
 
   saveMainChartPreferences(
     {
-      version: 6,
+      version: 7,
       selectedOverlay: 'none',
       optionalEmaIndicators: ['ema_60', 'ema_10'],
-      showNStructureBands: true,
       showSubingInternalProcess: true,
       period: '15m',
       realtimeFollow: true,
@@ -201,10 +191,9 @@ test('preference v6 saves and loads overlays plus the internal-process toggle', 
     storage,
   )
   const loaded = loadMainChartPreferences(storage)
-  assert.equal(loaded.version, 6)
+  assert.equal(loaded.version, 7)
   assert.equal(loaded.selectedOverlay, 'none')
   assert.deepEqual(loaded.optionalEmaIndicators, ['ema_10', 'ema_60'])
-  assert.equal(loaded.showNStructureBands, true)
   assert.equal(loaded.showSubingInternalProcess, true)
   assert.equal(loaded.period, '15m')
   assert.equal(loaded.realtimeFollow, true)
@@ -214,6 +203,70 @@ test('preference v6 saves and loads overlays plus the internal-process toggle', 
 
   values.set(MAIN_CHART_PREFERENCES_KEY, 'not-json')
   assert.deepEqual(loadMainChartPreferences(storage), defaultMainChartPreferences())
+})
+
+test('preference v6 migrates only retained fields to v7 and clears the v6 key', () => {
+  const values = new Map<string, string>()
+  const removed: string[] = []
+  const storage = {
+    getItem: (key: string) => values.get(key) || null,
+    setItem: (key: string, value: string) => values.set(key, value),
+    removeItem: (key: string) => { removed.push(key); values.delete(key) },
+  }
+
+  values.set('guiyi.market.chart.preferences.v6', JSON.stringify({
+    version: 6,
+    selectedOverlay: 'htdy',
+    optionalEmaIndicators: ['ema_60', 'ema_10'],
+    showSubingInternalProcess: true,
+    period: '15m',
+    realtimeFollow: true,
+    retiredField: true,
+  }))
+
+  assert.deepEqual(loadMainChartPreferences(storage), {
+    version: 7,
+    selectedOverlay: 'htdy',
+    optionalEmaIndicators: ['ema_10', 'ema_60'],
+    showSubingInternalProcess: true,
+    period: '15m',
+    realtimeFollow: true,
+  })
+  assert.equal(values.has('guiyi.market.chart.preferences.v6'), false)
+  assert.ok(removed.includes('guiyi.market.chart.preferences.v6'))
+  assert.deepEqual(JSON.parse(values.get(MAIN_CHART_PREFERENCES_KEY)!), {
+    version: 7,
+    selectedOverlay: 'htdy',
+    optionalEmaIndicators: ['ema_10', 'ema_60'],
+    showSubingInternalProcess: true,
+    period: '15m',
+    realtimeFollow: true,
+  })
+})
+
+test('preference v6 migration retains readable fields when v7 persistence is unavailable', () => {
+  const raw = JSON.stringify({
+    version: 6,
+    selectedOverlay: 'htdy',
+    optionalEmaIndicators: ['ema_60'],
+    showSubingInternalProcess: true,
+    period: '15m',
+    realtimeFollow: true,
+  })
+
+  assert.deepEqual(loadMainChartPreferences({
+    getItem: (key: string) => key === 'guiyi.market.chart.preferences.v6' ? raw : null,
+    setItem() {
+      throw new Error('SecurityError')
+    },
+  }), {
+    version: 7,
+    selectedOverlay: 'htdy',
+    optionalEmaIndicators: ['ema_60'],
+    showSubingInternalProcess: true,
+    period: '15m',
+    realtimeFollow: true,
+  })
 })
 
 test('preference v5 migrates retained fields, maps retired overlay to none, and clears the v5 key', () => {
@@ -229,17 +282,15 @@ test('preference v5 migrates retained fields, maps retired overlay to none, and 
     version: 5,
     selectedOverlay: 'jdj_strategy',
     optionalEmaIndicators: ['ema_60', 'ema_10'],
-    showNStructureBands: true,
     showSubingInternalProcess: true,
     period: '1m',
     realtimeFollow: true,
   }))
 
   assert.deepEqual(loadMainChartPreferences(storage), {
-    version: 6,
+    version: 7,
     selectedOverlay: 'none',
     optionalEmaIndicators: ['ema_10', 'ema_60'],
-    showNStructureBands: true,
     showSubingInternalProcess: true,
     period: '1m',
     realtimeFollow: true,
@@ -253,10 +304,9 @@ test('preference v5 migrates retained fields, maps retired overlay to none, and 
     'guiyi.market.chart.preferences.v5',
   ])
   assert.deepEqual(JSON.parse(values.get(MAIN_CHART_PREFERENCES_KEY)!), {
-    version: 6,
+    version: 7,
     selectedOverlay: 'none',
     optionalEmaIndicators: ['ema_10', 'ema_60'],
-    showNStructureBands: true,
     showSubingInternalProcess: true,
     period: '1m',
     realtimeFollow: true,
@@ -275,7 +325,6 @@ test('preference v1 through v4 are discarded without restoration', () => {
     version: 4,
     selectedOverlay: 'subing',
     optionalEmaIndicators: ['ema_60'],
-    showNStructureBands: true,
     period: '15m',
     realtimeFollow: true,
   }))
