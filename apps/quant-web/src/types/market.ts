@@ -1443,10 +1443,15 @@ export function normalizeSubingStrategyPerformance(
     )
     || (
       payload.cache_state === 'unavailable'
-      && payload.cache_identity_sha256 !== null
       && (
-        typeof payload.cache_identity_sha256 !== 'string'
-        || !/^[0-9a-f]{64}$/.test(payload.cache_identity_sha256)
+        payload.cache_generated_at !== null
+        || (
+          payload.cache_identity_sha256 !== null
+          && (
+            typeof payload.cache_identity_sha256 !== 'string'
+            || !/^[0-9a-f]{64}$/.test(payload.cache_identity_sha256)
+          )
+        )
       )
     )
   ) invalidSubingStrategyResponse()

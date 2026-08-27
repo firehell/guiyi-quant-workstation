@@ -71,4 +71,13 @@ test('performance wire contract requires exact product cache identity facts', ()
     () => normalizeSubingStrategyPerformance({ ...payload, cache_identity_sha256: null }),
     /SUBING_STRATEGY_INVALID_RESPONSE/,
   )
+  assert.throws(
+    () => normalizeSubingStrategyPerformance({
+      ...payload,
+      cache_state: 'unavailable',
+      cache_identity_sha256: null,
+      cache_generated_at: 'not-a-timestamp',
+    }),
+    /SUBING_STRATEGY_INVALID_RESPONSE/,
+  )
 })
