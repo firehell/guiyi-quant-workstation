@@ -44,10 +44,10 @@ Alert Runtime 的授权与 Market Runtime 独立。代码、launchd 模板与 en
 ```text
 htdy_original_15m × scope_product_frequencies × htdy_observers × pushplus-wechat-topic
 +
-subing_entry_signal_v1 × scope_products × owner × pushplus-wechat
+subing_strategy_v1 × scope_products × owner × pushplus-wechat
 ```
 
-上述组合记录当前 production `v1.8.6 + migration 0041` 事实。仓库 Stage 2 代码定义 forward-only `20260826_0042`，届时只允许保留原 Rule row 的 `id/enabled/scope_products` 并将 `subing_entry_signal_v1` 直接替换为 `subing_strategy_v1`，同时删除旧 SuBing Event；不得建立 archive、双 Rule、兼容 reader、replay 或 downgrade。代码存在、测试通过或合入 develop 均不改变当前 production 组合；0042、release 与 Runtime promotion 各需独立明确 Gate。
+Migration `20260826_0042` 定义 forward-only Rule lineage：保留原 Rule row 的 `id/enabled/scope_products`，将旧 SuBing Rule 直接替换为 `subing_strategy_v1`，并删除旧 SuBing Event；不得建立 archive、双 Rule、兼容 reader、replay 或 downgrade。当前 release、production migration、Runtime 与 enable 状态只以 `STATUS.md` 为准；任何一次状态变化都不能替代下一项受控操作的明确授权。
 
 - HTDY Scope 只能按 symbol × frequency；SuBing Scope 只能按 product。两种 authority 不混用、不合并。
 - HTDY 最多发起一次 Topic 请求，Topic 成员由 PushPlus 外部人工管理且不超过 owner + 三位朋友；SuBing 不传 Topic。系统不读取成员清单，不声明精确送达人数。
@@ -55,7 +55,7 @@ subing_entry_signal_v1 × scope_products × owner × pushplus-wechat
 - `alert_rules` 与 `alert_events` 是独立 Application Domain。Event 先提交，再最多调用一次 transport；无逐收件人状态、retry、queue、replay、backfill、fallback 或订单。
 - Stage 2 Runtime 对 active60 恢复和维护内存策略状态，`scope_products` 只控制 Strategy Event 与 owner PushPlus；Scope 变化不得创建、删除或重置策略状态。启动 restore/catch-up 不补 Event、不补通知，AlertEvent 不得作为策略仓位权威。
 - HTDY 日内五周期只消费同周期 completed Live Bar；D1/W1 只响应 `market:state(reason=canonical_updated)` 并读取 Canonical，不新增 scheduler、Scope 表或 Live 日/周聚合。
-- 仓库 Stage 2 `alert:runtime-status` 实现写 schema v3，只为升级兼容读 v1/v2，并在下一次仓库代码写入时规范化为 v3；missing 只表示 `unobserved`。当前 production `v1.8.6` Runtime 尚未包含 Stage 2，仍保持已部署 0041 代码的状态行为，仓库文档或 feature 代码存在不会改变该事实。状态只保存固定公开错误分类，不保存 provider reference。notification acknowledgment 必须精确匹配当前 failure timestamp 做一次 CAS；保留原失败、公开分类与计数，不重放、不补发。同一 timestamp 内的任何新 failure 都必须原子清空 acknowledgment；状态写失败或并发变化时 fail-closed。
+- Stage 2 `alert:runtime-status` 写 schema v3，只为升级兼容读 v1/v2，并在下一次代码写入时规范化为 v3；missing 只表示 `unobserved`。状态只保存固定公开错误分类，不保存 provider reference。notification acknowledgment 必须精确匹配当前 failure timestamp 做一次 CAS；保留原失败、公开分类与计数，不重放、不补发。同一 timestamp 内的任何新 failure 都必须原子清空 acknowledgment；状态写失败或并发变化时 fail-closed。
 - provider accepted 只表示请求被接受，不表示微信送达。代码、测试、配置或历史 canary 不授权真实 send、Scope 变更或 Runtime switch。
 
 ## 安全规则
