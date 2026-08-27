@@ -940,11 +940,21 @@ def test_successful_canonical_run_records_degraded_performance_without_failing_r
         readiness=[True],
         results=[_result("passed")],
     )
-    updater.derived_refresh = lambda: SubingStrategyPerformanceWarmResult(
-        status="degraded",
-        completed_products=("ag",),
-        failed_products=(("jm", "SUBING_STRATEGY_SOURCE_UNAVAILABLE"),),
-    )
+    derived_calls: list[tuple[date, tuple[str, ...]]] = []
+
+    def refresh(trading_day: date, products: tuple[str, ...]):
+        derived_calls.append((trading_day, products))
+        return SubingStrategyPerformanceWarmResult(
+            status="degraded",
+            completed_products=("ag",),
+            failed_products=(("jm", "SUBING_STRATEGY_SOURCE_UNAVAILABLE"),),
+            cache_hit_count=1,
+            cache_published_count=0,
+            batch_identity_sha256="1" * 64,
+            batch_created_at=datetime.fromisoformat("2026-08-10T18:06:00+08:00"),
+        )
+
+    updater.derived_refresh = refresh
 
     result = updater.run()
     status = _status(tmp_path / "after-market-status.json")
@@ -953,11 +963,15 @@ def test_successful_canonical_run_records_degraded_performance_without_failing_r
     assert sleeps == []
     assert notices == []
     assert live_store.cleaned == [date(2026, 8, 10)]
+    assert derived_calls == [(date(2026, 8, 10), _ACTIVE_PRODUCTS)]
     assert status["schema_version"] == 3
     assert status["last_successful_trading_day"] == "2026-08-10"
     assert status["subing_strategy_performance"] == {
         "status": "degraded",
         "completed_count": 1,
+        "cache_hit_count": 1,
+        "cache_published_count": 0,
+        "batch_identity_sha256": "1" * 64,
         "failed_products": [
             {"symbol": "jm", "code": "SUBING_STRATEGY_SOURCE_UNAVAILABLE"}
         ],

@@ -50,6 +50,8 @@ def test_subing_strategy_performance_returns_fixed_full_history_contract(
         cache_state="hit",
         summary=SubingStrategyPerformanceSummary(empty, empty, empty, 0, (("EMA21", 2),)),
         episodes=(),
+        cache_identity_sha256="1" * 64,
+        cache_generated_at=datetime(2026, 8, 27, 8, 0, tzinfo=UTC),
     )
     service = SimpleNamespace(performance=lambda symbol: projection)
     monkeypatch.setattr(
@@ -78,6 +80,9 @@ def test_subing_strategy_performance_returns_fixed_full_history_contract(
     }
     assert payload["summary"]["overall"]["completed"] == 0
     assert payload["summary"]["overall"]["mean_reference_change_percent"] is None
+    assert payload["cache_state"] == "hit"
+    assert payload["cache_identity_sha256"] == "1" * 64
+    assert payload["cache_generated_at"] == "2026-08-27T08:00:00Z"
     assert payload["exit_reason_counts"] == [{"reason_code": "EMA21", "count": 2}]
     assert payload["episodes"] == []
 

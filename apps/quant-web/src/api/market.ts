@@ -89,10 +89,10 @@ export function getSubingStrategyCurrent(params: {
   ).then(normalizeSubingStrategyCurrent) as Promise<SubingStrategyCurrentResponse>
 }
 
-export function getSubingStrategyPerformance(params: { symbol: string }) {
+export function getSubingStrategyPerformance(params: { symbol: string; signal?: AbortSignal }) {
   return request.get<never, unknown>(
     '/market/research/subing-strategy/performance',
-    { params },
+    { params: { symbol: params.symbol }, signal: params.signal },
   ).then(normalizeSubingStrategyPerformance) as Promise<SubingStrategyPerformanceResponse>
 }
 

@@ -185,12 +185,22 @@ def main(
                         performance_service_factory(session)
                     )
                     payload = {
-                        "schema_version": 1,
+                        "schema_version": 2,
                         "command": "research.subing-strategy-performance",
                         "status": warm.status,
                         "scope": "active",
                         "authoritative_writes": warm.authoritative_writes,
-                        "cache_writes": warm.cache_writes,
+                        "batch_identity_sha256": warm.batch_identity_sha256,
+                        "batch_created_at": (
+                            warm.batch_created_at.isoformat()
+                            if warm.batch_created_at is not None
+                            else None
+                        ),
+                        "planned_count": len(warm.completed_products)
+                        + len(warm.failed_products),
+                        "completed_count": len(warm.completed_products),
+                        "cache_hit_count": warm.cache_hit_count,
+                        "cache_published_count": warm.cache_published_count,
                         "completed_products": list(warm.completed_products),
                         "failed_products": [
                             {"symbol": symbol, "code": code}

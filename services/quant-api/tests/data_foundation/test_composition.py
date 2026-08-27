@@ -203,7 +203,12 @@ def test_subing_strategy_cache_is_sibling_of_daily_watch_v2(
     base.mkdir()
     market_data = SimpleNamespace(
         list_latest_dominants=lambda: (
-            SimpleNamespace(symbol="jm", product_name="焦煤", sector="black"),
+            SimpleNamespace(
+                symbol="jm",
+                product_name="焦煤",
+                sector="black",
+                dominant_mapping_date=date(2026, 8, 25),
+            ),
         )
     )
     monkeypatch.setattr(
@@ -230,18 +235,26 @@ def test_subing_strategy_cache_is_sibling_of_daily_watch_v2(
 
 
 def test_subing_strategy_performance_uses_effective_history_floor_for_context(
+    tmp_path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    base = (tmp_path / "observations").resolve()
+    base.mkdir()
     market_data = SimpleNamespace(
         list_latest_dominants=lambda: (
-            SimpleNamespace(symbol="jm", product_name="焦煤", sector="black"),
+            SimpleNamespace(
+                symbol="jm",
+                product_name="焦煤",
+                sector="black",
+                dominant_mapping_date=date(2026, 8, 25),
+            ),
         )
     )
 
     class Coverage:
         product_start_calls = 0
 
-        def __init__(self, session, starts, *, history_floor_path) -> None:
+        def __init__(self, session, starts, *, history_floor_path, now=None) -> None:
             pass
 
         def product_start(self, symbol: str) -> date:
@@ -265,8 +278,15 @@ def test_subing_strategy_performance_uses_effective_history_floor_for_context(
         "app.market_data.coverage_source.DatabaseCoverageSource",
         Coverage,
     )
+    monkeypatch.setattr(
+        "app.market_data.composition.resolve_subing_observation_root",
+        lambda *, environ, inspector: base,
+    )
 
     service = build_subing_strategy_performance_service(object())
+
+    assert service._performance_cache._root == base / "cache" / "subing-strategy-v1"
+    assert service.plan().windows[0].through == date(2026, 8, 25)
 
     resolver = service._historical._direction_context_resolver
     resolver._previous_trading_day = lambda target: date(2023, 12, 29)

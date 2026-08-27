@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 from app.market_data.domain import BarFrequency, SeriesKind
@@ -11,7 +11,10 @@ from app.market_data.subing_strategy.contracts import (
     SubingStrategyEpisode,
     SubingStrategyEpisodeState,
 )
+from app.market_data.subing_strategy.cache import SubingStrategyPerformanceCache
 from app.market_data.subing_strategy.performance import (
+    SubingStrategyPerformanceBatchPlan,
+    SubingStrategyPerformanceWindow,
     SubingStrategyPerformanceService,
     summarize_subing_strategy_episodes,
 )
@@ -99,18 +102,25 @@ def test_zero_completed_has_null_aggregates() -> None:
     assert result.overall.mean_holding_15m_bars is None
 
 
-def test_performance_service_uses_fixed_actual_dominant_15m_full_window() -> None:
+def test_performance_service_uses_fixed_actual_dominant_15m_full_window(tmp_path) -> None:
     observed: list[SubingStrategyHistoricalRequest] = []
     projection = type(
         "Projection",
         (),
         {
+            "engine_identity_sha256": "0" * 64,
             "policy": type("Policy", (), {"formula_version": "subing_strategy_15m_v1"})(),
             "episodes": (),
-            "segment_summaries": (),
+            "segment_summaries": (
+                type(
+                    "Segment",
+                    (),
+                    {"bar_count_15m": 12, "source_identity_sha256": "1" * 64},
+                )(),
+            ),
             "context_unavailable": (),
             "resolved_cutoff": action_fixture().effective_bar_end,
-            "cache_state": "hit",
+            "cache_state": "miss",
         },
     )()
 
@@ -119,41 +129,73 @@ def test_performance_service_uses_fixed_actual_dominant_15m_full_window() -> Non
             observed.append(request)
             return projection
 
+    cache_root = tmp_path / "cache"
+    cache_root.mkdir()
     service = SubingStrategyPerformanceService(
         Historical(),
         products=("jm",),
         window_resolver=lambda symbol: (date(2020, 1, 2), date(2026, 8, 26)),
+        performance_cache=SubingStrategyPerformanceCache(
+            cache_root,
+            root_validator=lambda: cache_root,
+            now=lambda: datetime(2026, 8, 27, 8, tzinfo=UTC),
+        ),
     )
 
     result = service.performance("JM")
+    cached = service.performance("JM")
 
-    assert observed == [
-        SubingStrategyHistoricalRequest(
-            series_kind=SeriesKind.ACTUAL_DOMINANT,
-            symbol="jm",
-            frequency=BarFrequency.M15,
-            since=date(2020, 1, 2),
-            through=date(2026, 8, 26),
-        )
-    ]
+    expected_request = SubingStrategyHistoricalRequest(
+        series_kind=SeriesKind.ACTUAL_DOMINANT,
+        symbol="jm",
+        frequency=BarFrequency.M15,
+        since=date(2020, 1, 2),
+        through=date(2026, 8, 26),
+    )
+    assert observed == [expected_request, expected_request]
     assert result.symbol == "jm"
     assert result.series_kind is SeriesKind.ACTUAL_DOMINANT
     assert result.frequency is BarFrequency.M15
     assert result.coverage_since == date(2020, 1, 2)
     assert result.coverage_through == date(2026, 8, 26)
+    assert result.cache_state == "refreshed"
+    assert result.cache_identity_sha256 is not None
+    assert result.cache_generated_at == datetime(2026, 8, 27, 8, tzinfo=UTC)
+    assert cached.cache_state == "hit"
+    assert cached.cache_identity_sha256 == result.cache_identity_sha256
 
 
 def test_active_warm_is_sequential_resumable_and_reports_partial_failure() -> None:
     calls: list[str] = []
+    windows = (
+        SubingStrategyPerformanceWindow("a", date(2020, 1, 2), date(2026, 8, 26)),
+        SubingStrategyPerformanceWindow("b", date(2020, 1, 2), date(2026, 8, 26)),
+        SubingStrategyPerformanceWindow("c", date(2020, 1, 2), date(2026, 8, 26)),
+    )
 
     class Service:
         products = ("a", "b", "c")
 
-        def performance(self, symbol: str):
+        def plan(self, *, through=None):
+            assert through is None
+            return SubingStrategyPerformanceBatchPlan.create(
+                created_at=datetime(2026, 8, 27, 7, 55, tzinfo=UTC),
+                windows=windows,
+            )
+
+        def performance(self, symbol: str, *, window):
+            assert window == next(item for item in windows if item.symbol == symbol)
             calls.append(symbol)
             if symbol == "b":
                 raise RuntimeError("private")
-            return type("Result", (), {"cache_state": "hit" if symbol == "a" else "miss"})()
+            return type(
+                "Result",
+                (),
+                {
+                    "cache_state": "hit" if symbol == "a" else "unavailable",
+                    "cache_identity_sha256": "1" * 64 if symbol == "a" else None,
+                },
+            )()
 
     from app.market_data.subing_strategy.performance import warm_active_performance_cache
 
@@ -161,7 +203,38 @@ def test_active_warm_is_sequential_resumable_and_reports_partial_failure() -> No
 
     assert calls == ["a", "b", "c"]
     assert result.status == "degraded"
-    assert result.completed_products == ("a", "c")
-    assert result.failed_products == (("b", "SUBING_STRATEGY_PERFORMANCE_UNAVAILABLE"),)
+    assert result.completed_products == ("a",)
+    assert result.failed_products == (
+        ("b", "SUBING_STRATEGY_PERFORMANCE_UNAVAILABLE"),
+        ("c", "SUBING_STRATEGY_CACHE_UNAVAILABLE"),
+    )
     assert result.authoritative_writes is False
-    assert result.cache_writes is True
+    assert result.cache_hit_count == 1
+    assert result.cache_published_count == 0
+
+
+def test_batch_plan_freezes_every_product_window_before_performance_runs() -> None:
+    current_through = date(2026, 8, 26)
+    resolver_calls: list[str] = []
+
+    def resolve(symbol: str) -> tuple[date, date]:
+        resolver_calls.append(symbol)
+        return date(2020, 1, 2), current_through
+
+    service = SubingStrategyPerformanceService(
+        type("Historical", (), {})(),
+        products=("a", "ag"),
+        window_resolver=resolve,
+        now=lambda: datetime(2026, 8, 27, 6, 59, tzinfo=UTC),
+    )
+
+    plan = service.plan()
+    current_through = date(2026, 8, 27)
+
+    assert resolver_calls == ["a", "ag"]
+    assert tuple(window.through for window in plan.windows) == (
+        date(2026, 8, 26),
+        date(2026, 8, 26),
+    )
+    assert plan.created_at == datetime(2026, 8, 27, 6, 59, tzinfo=UTC)
+    assert len(plan.batch_identity_sha256) == 64

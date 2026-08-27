@@ -269,6 +269,8 @@ def _strategy_performance_response(
             context_unavailable_count=result.context_unavailable_count,
         ),
         cache_state=result.cache_state,
+        cache_identity_sha256=result.cache_identity_sha256,
+        cache_generated_at=result.cache_generated_at,
         summary=SubingStrategyPerformanceSummaryOut(
             overall=_performance_stats_out(result.summary.overall),
             long=_performance_stats_out(result.summary.long),

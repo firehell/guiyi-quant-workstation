@@ -1036,7 +1036,9 @@ export interface SubingStrategyPerformanceResponse {
     bar_count_15m: number
     context_unavailable_count: number
   }
-  cache_state: 'hit' | 'miss' | 'mixed' | 'unavailable'
+  cache_state: 'hit' | 'refreshed' | 'unavailable'
+  cache_identity_sha256: string | null
+  cache_generated_at: string | null
   summary: {
     overall: SubingStrategyPerformanceStats
     long: SubingStrategyPerformanceStats
@@ -1066,7 +1068,7 @@ export interface SubingStrategyCurrentContext {
 }
 
 export interface SubingStrategyCurrentWireResponse {
-  strategy_id: 'subing_strategy_v1'
+  strategy_id: SubingStrategyHistoricalWireResponse['policy']['strategy_id']
   formula_version: 'subing_strategy_15m_v1'
   series_kind: 'actual_dominant'
   symbol: string
@@ -1096,7 +1098,8 @@ const SUBING_STRATEGY_CONFIRMATION_SOURCES = [
 const SUBING_STRATEGY_ACTION_KINDS = [
   'open_long', 'open_short', 'close_long', 'close_short',
 ] as const
-const SUBING_STRATEGY_CACHE_STATES = ['hit', 'miss', 'mixed', 'unavailable'] as const
+const SUBING_STRATEGY_SEGMENT_CACHE_STATES = ['hit', 'miss', 'mixed', 'unavailable'] as const
+const SUBING_STRATEGY_PERFORMANCE_CACHE_STATES = ['hit', 'refreshed', 'unavailable'] as const
 
 function invalidSubingStrategyResponse(): never {
   throw new Error('SUBING_STRATEGY_INVALID_RESPONSE')
@@ -1331,7 +1334,7 @@ export function normalizeSubingStrategyHistory(
     || !Array.isArray(policy.allowed_confirmation_sources)
     || policy.allowed_confirmation_sources.join('|')
       !== SUBING_STRATEGY_CONFIRMATION_SOURCES.join('|')
-    || !SUBING_STRATEGY_CACHE_STATES.includes(payload.cache_state as never)
+    || !SUBING_STRATEGY_SEGMENT_CACHE_STATES.includes(payload.cache_state as never)
     || !Array.isArray(payload.actions)
     || !Array.isArray(payload.episodes)
     || !Array.isArray(payload.segment_summaries)
@@ -1415,10 +1418,11 @@ export function normalizeSubingStrategyPerformance(
   const coverage = strategyRecord(payload.coverage)
   const summary = strategyRecord(payload.summary)
   if (
-    payload.formula_version !== 'subing_strategy_15m_v1'
+    payload.strategy_id !== 'subing_strategy_v1'
+    || payload.formula_version !== 'subing_strategy_15m_v1'
     || payload.series_kind !== 'actual_dominant'
     || payload.frequency !== '15m'
-    || !SUBING_STRATEGY_CACHE_STATES.includes(payload.cache_state as never)
+    || !SUBING_STRATEGY_PERFORMANCE_CACHE_STATES.includes(payload.cache_state as never)
     || !Array.isArray(payload.episodes)
     || !Array.isArray(payload.exit_reason_counts)
     || typeof payload.symbol !== 'string'
@@ -1428,6 +1432,23 @@ export function normalizeSubingStrategyPerformance(
     || coverage.since > coverage.through
     || !Number.isFinite(Date.parse(String(coverage.resolved_cutoff)))
     || !summary.overall || !summary.long || !summary.short
+    || (
+      payload.cache_state !== 'unavailable'
+      && (
+        typeof payload.cache_identity_sha256 !== 'string'
+        || !/^[0-9a-f]{64}$/.test(payload.cache_identity_sha256)
+        || typeof payload.cache_generated_at !== 'string'
+        || !Number.isFinite(Date.parse(payload.cache_generated_at))
+      )
+    )
+    || (
+      payload.cache_state === 'unavailable'
+      && payload.cache_identity_sha256 !== null
+      && (
+        typeof payload.cache_identity_sha256 !== 'string'
+        || !/^[0-9a-f]{64}$/.test(payload.cache_identity_sha256)
+      )
+    )
   ) invalidSubingStrategyResponse()
   return {
     ...(payload as unknown as SubingStrategyPerformanceResponse),

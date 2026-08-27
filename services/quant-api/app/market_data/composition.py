@@ -49,7 +49,9 @@ from app.market_data.subing_lifecycle_policy import (
 )
 from app.market_data.subing_strategy.cache import (
     NullSubingStrategyCache,
+    NullSubingStrategyPerformanceCache,
     SubingStrategyCache,
+    SubingStrategyPerformanceCache,
 )
 from app.market_data.subing_strategy.direction_context import (
     SubingStrategyDirectionContext,
@@ -226,6 +228,21 @@ def _build_subing_strategy_cache_or_null() -> (
     return SubingStrategyCache(
         root,
         root_validator=_subing_strategy_cache_root,
+        trusted_base_validator=_subing_observation_base_root,
+    )
+
+
+def _build_subing_strategy_performance_cache_or_null() -> (
+    SubingStrategyPerformanceCache | NullSubingStrategyPerformanceCache
+):
+    try:
+        root = _subing_strategy_cache_root()
+    except SubingDailyWatchStoreError:
+        return NullSubingStrategyPerformanceCache()
+    return SubingStrategyPerformanceCache(
+        root,
+        root_validator=_subing_strategy_cache_root,
+        trusted_base_validator=_subing_observation_base_root,
     )
 
 
@@ -288,11 +305,18 @@ def build_subing_strategy_performance_service(
     from app.market_data.coverage_source import DatabaseCoverageSource
 
     active = load_active_products()
+    frozen_now = datetime.now(UTC)
     coverage = DatabaseCoverageSource(
         session,
         _PRODUCT_STARTS,
         history_floor_path=_HISTORY_FLOOR,
+        now=lambda: frozen_now,
     )
+    dominant_dates = {
+        item.symbol: item.dominant_mapping_date
+        for item in build_market_data_service(session).list_latest_dominants()
+        if item.symbol in set(active)
+    }
     effective_starts: dict[str, date] = {}
 
     def effective_start(symbol: str) -> date:
@@ -311,8 +335,13 @@ def build_subing_strategy_performance_service(
         products=active,
         window_resolver=lambda symbol: (
             effective_start(symbol),
-            coverage.latest_complete_day((symbol,)),
+            min(
+                coverage.latest_complete_day((symbol,)),
+                dominant_dates[symbol],
+            ),
         ),
+        performance_cache=_build_subing_strategy_performance_cache_or_null(),
+        now=lambda: frozen_now,
     )
 
 

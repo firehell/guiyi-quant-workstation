@@ -89,9 +89,10 @@ Runtime health、data audit 与 alert status 是只读入口；它们不能推�
 定向验证：
 
 ```bash
-PYTHONPATH=services/quant-api:packages/quant-core uv run --project services/quant-api --no-sync pytest -q services/quant-api/tests/research/test_subing_strategy_direction_context.py services/quant-api/tests/data_foundation/test_composition.py services/quant-api/tests/data_foundation/test_subing_strategy_performance.py services/quant-api/tests/data_foundation/test_after_market.py services/quant-api/tests/test_market_research_overlays_api.py
-pnpm --dir apps/quant-web test
-pnpm --dir apps/quant-web exec vue-tsc --noEmit
+PYTHONPATH=services/quant-api:packages/quant-core uv run --project services/quant-api --no-sync pytest -q services/quant-api/tests/research/test_subing_strategy_direction_context.py services/quant-api/tests/data_foundation/test_composition.py services/quant-api/tests/data_foundation/test_subing_strategy_cache.py services/quant-api/tests/data_foundation/test_subing_strategy_performance.py services/quant-api/tests/data_foundation/test_after_market.py services/quant-api/tests/test_market_research_overlays_api.py
+pnpm -C apps/quant-web test
+pnpm -C apps/quant-web exec vue-tsc -b
+pnpm -C apps/quant-web exec playwright test -c playwright.config.mjs e2e/market-research.spec.mjs --grep "full-history performance|old full-history performance request"
 ```
 
 真实 active60 cache warm 会写 Git 外派生 cache，须在独立数据写入 Gate 后执行：`guiyi research subing-strategy-performance --scope active --warm-cache`。测试与 API 读取不替代该 Gate。

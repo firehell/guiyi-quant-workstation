@@ -466,7 +466,7 @@ function subingStrategyHistory(request, entryTime, exitTime) {
   }
 }
 
-function subingStrategyPerformance(symbol, episodes = []) {
+function subingStrategyPerformance(symbol, episodes = [], exitReasonCounts = []) {
   const empty = {
     completed: 0, positive: 0, negative: 0, flat: 0,
     positive_rate_percent: null, mean_reference_change_percent: null,
@@ -481,8 +481,10 @@ function subingStrategyPerformance(symbol, episodes = []) {
       segment_count: 1, bar_count_15m: 120, context_unavailable_count: 0,
     },
     cache_state: 'hit',
+    cache_identity_sha256: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    cache_generated_at: '2026-08-27T06:00:00Z',
     summary: { overall: empty, long: empty, short: empty, open_episodes: episodes.filter((item) => item.state === 'open').length },
-    exit_reason_counts: [], episodes,
+    exit_reason_counts: exitReasonCounts, episodes,
   }
 }
 
@@ -615,7 +617,7 @@ async function mockAlertMarkerSurface(page, currentItems = [], options = {}) {
 }
 
 async function mockProductIdentityWorkspace(page) {
-  const calls = { bars: [], research: [], subing: [], scope: [], events: [], put: [] }
+  const calls = { bars: [], research: [], subing: [], performance: [], scope: [], events: [], put: [] }
   const gates = {
     jmBars: deferred(),
     jm15mBars: deferred(),
@@ -623,16 +625,19 @@ async function mockProductIdentityWorkspace(page) {
     jmSubing: deferred(),
     jmScope: deferred(),
     jmEvents: deferred(),
+    jmPerformance: deferred(),
     initialAgResearch: deferred(),
     initialAgSubing: deferred(),
     initialAgScope: deferred(),
     initialAgEvents: deferred(),
+    initialAgPerformance: deferred(),
     finalAgResearch: deferred(),
     finalAgSubing: deferred(),
     finalAgScope: deferred(),
     finalAgEvents: deferred(),
+    finalAgPerformance: deferred(),
   }
-  const agRequestCounts = { research: 0, subing: 0, scope: 0, events: 0 }
+  const agRequestCounts = { research: 0, subing: 0, performance: 0, scope: 0, events: 0 }
   const contracts = { ag: 'AG2601', jm: 'JM2701' }
   const productNames = { ag: '白银', jm: '焦煤' }
 
@@ -652,6 +657,16 @@ async function mockProductIdentityWorkspace(page) {
     if (url.pathname.endsWith('/research/subing-strategy/history')) {
       const request = Object.fromEntries(url.searchParams)
       return route.fulfill({ json: emptySubingStrategyHistory(request) })
+    }
+    if (url.pathname.endsWith('/research/subing-strategy/performance')) {
+      const index = requestedSymbol === 'ag' ? agRequestCounts.performance++ : 0
+      calls.performance.push(requestedSymbol)
+      await identityFactGate(gates, 'Performance', requestedSymbol, index)
+      try {
+        return await route.fulfill({ json: subingStrategyPerformance(requestedSymbol) })
+      } catch {
+        return undefined
+      }
     }
     if (url.pathname.endsWith('/research/product')) {
       const index = requestedSymbol === 'ag' ? agRequestCounts.research++ : 0
@@ -800,7 +815,7 @@ async function selectProduct(page, label) {
 }
 
 function releaseIdentityFacts(gates, prefix) {
-  for (const kind of ['Research', 'Subing', 'Scope', 'Events']) gates[`${prefix}${kind}`].resolve()
+  for (const kind of ['Research', 'Subing', 'Performance', 'Scope', 'Events']) gates[`${prefix}${kind}`].resolve()
 }
 
 async function openDataDetails(page) {
@@ -866,6 +881,31 @@ test('Product Workspace identity invalidates AG facts before delayed JM Market a
   await expect(page.getByTestId('subing-alert-scope').getByRole('switch')).not.toHaveClass(/n-switch--disabled/)
   await expect(page.getByTestId('subing-strategy-event')).toContainText('建多')
   expect(calls.put).toEqual([])
+})
+
+test('Product Workspace aborts the old full-history performance request on symbol change', async ({ page }) => {
+  const failedPerformanceRequests = []
+  page.on('requestfailed', (request) => {
+    if (request.url().includes('/research/subing-strategy/performance')) {
+      failedPerformanceRequests.push(request.url())
+    }
+  })
+  const { calls, gates } = await mockProductIdentityWorkspace(page)
+  for (const kind of ['Research', 'Subing', 'Scope', 'Events']) {
+    gates[`initialAg${kind}`].resolve()
+  }
+  await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=5m')
+  await expect.poll(() => calls.performance).toEqual(['ag'])
+
+  await selectProduct(page, 'JM 焦煤')
+  gates.jmBars.resolve()
+  for (const kind of ['Research', 'Subing', 'Performance', 'Scope', 'Events']) {
+    gates[`jm${kind}`].resolve()
+  }
+
+  await expect.poll(() => calls.performance).toEqual(['ag', 'jm'])
+  await expect(page.getByTestId('subing-strategy-performance')).toContainText('JM')
+  await expect.poll(() => failedPerformanceRequests.some((url) => url.includes('symbol=ag'))).toBe(true)
 })
 
 test('Product Workspace identity replays a frequency change made during delayed symbol Market acceptance', async ({ page }) => {
@@ -1118,6 +1158,50 @@ test('SuBing Strategy anchors Action times, shows complete records, and keeps in
   await expect(page.getByTestId('subing-lifecycle-panel')).toBeVisible()
   await expect(page.getByRole('button', { name: '图表设置', exact: true })).toBeVisible()
   await expect(shell).toHaveAttribute('data-research-marker-count', '3')
+})
+
+test('SuBing full-history performance expands episodes by twenty and shows exit reasons', async ({ page }) => {
+  const history = subingStrategyHistory(
+    { symbol: 'ag', since: '2026-01-01', through: '2026-04-30' },
+    '2026-01-12T02:15:00Z',
+    '2026-01-12T07:00:00Z',
+  )
+  const base = history.episodes[0]
+  const episodes = Array.from({ length: 45 }, (_, index) => {
+    const episodeId = `subing-episode:e2e-${index}`
+    return {
+      ...base,
+      episode_id: episodeId,
+      entry_action: {
+        ...base.entry_action,
+        action_id: `subing-action:e2e-entry-${index}`,
+        episode_id: episodeId,
+      },
+      exit_action: {
+        ...base.exit_action,
+        action_id: `subing-action:e2e-exit-${index}`,
+        episode_id: episodeId,
+      },
+    }
+  })
+  await mockAlertMarkerSurface(page)
+  await mockWorkspace(page, { json: research() }, {
+    subingStrategyPerformanceResponse: (request) => subingStrategyPerformance(
+      request.symbol,
+      episodes,
+      [{ reason_code: 'EMA21_BREACH_LONG', count: 45 }],
+    ),
+  })
+  await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=15m')
+
+  const panel = page.getByTestId('subing-strategy-performance')
+  await expect(panel.locator('[data-episode-id]')).toHaveCount(20)
+  await expect(page.getByTestId('subing-performance-exit-reasons')).toContainText('EMA21 跌破')
+  await page.getByTestId('subing-performance-show-more').click()
+  await expect(panel.locator('[data-episode-id]')).toHaveCount(40)
+  await page.getByTestId('subing-performance-show-more').click()
+  await expect(panel.locator('[data-episode-id]')).toHaveCount(45)
+  await expect(page.getByTestId('subing-performance-show-more')).toHaveCount(0)
 })
 
 test('SuBing Strategy renders the current open episode from the current endpoint', async ({ page }) => {

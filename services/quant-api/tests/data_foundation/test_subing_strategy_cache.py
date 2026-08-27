@@ -14,9 +14,12 @@ from app.market_data.subing_strategy.cache import (
     SubingStrategyCache,
     SubingStrategyCacheError,
     SubingStrategyCacheIdentity,
+    SubingStrategyPerformanceCache,
+    SubingStrategyPerformanceCacheIdentity,
     digest_canonical_bars,
     digest_direction_contexts,
     digest_session_windows,
+    subing_strategy_performance_cache_identity_sha256,
 )
 from app.market_data.aggregation import SessionWindow
 from app.market_data.subing_strategy.contracts import (
@@ -72,6 +75,19 @@ def _projection() -> CachedSubingStrategySegmentProjection:
     )
 
 
+def _performance_identity() -> SubingStrategyPerformanceCacheIdentity:
+    return SubingStrategyPerformanceCacheIdentity(
+        strategy_id="subing_strategy_v1",
+        formula_version="subing_strategy_15m_v1",
+        engine_identity_sha256="0" * 64,
+        symbol="jm",
+        since=SEGMENT_START,
+        through=SEGMENT_START,
+        resolved_cutoff=datetime(2026, 8, 3, 7, tzinfo=UTC),
+        segment_identity_sha256s=("1" * 64, "2" * 64),
+    )
+
+
 def test_cache_hit_requires_exact_identity(tmp_path: Path) -> None:
     cache = SubingStrategyCache(tmp_path, root_validator=lambda: tmp_path)
     identity = _identity()
@@ -81,6 +97,76 @@ def test_cache_hit_requires_exact_identity(tmp_path: Path) -> None:
 
     assert cache.read(identity) == projection
     assert cache.read(replace(identity, calibration_id="other")) is None
+
+
+def test_performance_cache_identity_changes_with_engine_policy() -> None:
+    identity = _performance_identity()
+
+    assert subing_strategy_performance_cache_identity_sha256(identity) != (
+        subing_strategy_performance_cache_identity_sha256(
+            replace(identity, engine_identity_sha256="f" * 64)
+        )
+    )
+
+
+def test_cache_creates_missing_namespace_below_trusted_base(tmp_path: Path) -> None:
+    base = tmp_path / "observation"
+    base.mkdir(mode=0o700)
+    root = base / "cache" / "subing-strategy-v1"
+    cache = SubingStrategyCache(
+        root,
+        root_validator=lambda: root,
+        trusted_base_validator=lambda: base,
+    )
+
+    cache.write(_identity(), _projection())
+
+    path = cache.path_for(_identity())
+    assert path.is_file()
+    assert path.read_bytes()
+    assert path.stat().st_mode & 0o777 == 0o600
+    assert root.stat().st_mode & 0o777 == 0o700
+
+
+def test_performance_cache_atomically_publishes_and_reads_product_snapshot(
+    tmp_path: Path,
+) -> None:
+    base = tmp_path / "observation"
+    base.mkdir(mode=0o700)
+    root = base / "cache" / "subing-strategy-v1"
+    cache = SubingStrategyPerformanceCache(
+        root,
+        root_validator=lambda: root,
+        trusted_base_validator=lambda: base,
+        now=lambda: datetime(2026, 8, 27, 8, tzinfo=UTC),
+    )
+    payload = {"summary": {"completed": 3}, "episodes": []}
+
+    receipt = cache.publish(_performance_identity(), payload)
+    snapshot = cache.read(_performance_identity())
+
+    assert snapshot is not None
+    assert snapshot.payload == payload
+    assert snapshot.generated_at == datetime(2026, 8, 27, 8, tzinfo=UTC)
+    assert snapshot.identity_sha256 == receipt.identity_sha256
+    assert snapshot.payload_sha256 == receipt.payload_sha256
+    assert receipt.byte_count > 0
+    assert cache.path_for(_performance_identity()).stat().st_mode & 0o777 == 0o600
+
+
+def test_performance_cache_rejects_tampered_product_snapshot(tmp_path: Path) -> None:
+    root = tmp_path / "cache"
+    root.mkdir()
+    cache = SubingStrategyPerformanceCache(root, root_validator=lambda: root)
+    identity = _performance_identity()
+    cache.publish(identity, {"summary": {"completed": 3}})
+    path = cache.path_for(identity)
+    stored = json.loads(path.read_text(encoding="utf-8"))
+    stored["payload"]["summary"]["completed"] = 4
+    path.write_text(json.dumps(stored), encoding="utf-8")
+
+    with pytest.raises(SubingStrategyCacheError):
+        cache.read(identity)
 
 
 def test_cache_path_changes_with_lifecycle_formula_version(tmp_path: Path) -> None:
