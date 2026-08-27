@@ -18,7 +18,7 @@ function episode(
     kind: openKind, symbol: 'jm', contract: 'JM2609', trading_day: '2026-08-03',
     segment_start_trading_day: '2026-08-01', opportunity_id: 'subing-opportunity:one',
     decision_at: '2026-08-03T02:15:00Z', effective_bar_end: '2026-08-03T02:30:00Z',
-    reference_price: 100.5, fill_basis: 'next_bar_open' as const,
+    reference_price: '100.5', fill_basis: 'next_bar_open' as const,
     confirmation_source: 'formal_v1' as const, reason_codes: [],
     direction_context_source_day: '2026-07-31', direction_context_target_day: '2026-08-03',
     bound_reference_pivot: null,
@@ -26,7 +26,7 @@ function episode(
   const exit = {
     ...entry, action_id: `subing-action:${direction}:exit`, kind: closeKind,
     decision_at: '2026-08-07T02:15:00Z', effective_bar_end: '2026-08-07T02:30:00Z',
-    reference_price: direction === 'long' ? 108.50985 : 92.49015,
+    reference_price: direction === 'long' ? '108.50985' : '92.49015',
     confirmation_source: null, reason_codes: [
       direction === 'long' ? 'EMA21_BREACH_LONG' : 'EMA21_BREACH_SHORT',
       direction === 'long' ? 'PREVIOUS_BAR_LOW_BREACH' : 'PREVIOUS_BAR_HIGH_BREACH',
@@ -39,9 +39,9 @@ function episode(
   return {
     episode_id: entry.episode_id, direction, entry_action: entry,
     exit_action: state === 'closed' ? exit : null, state, holding_bar_count: 20,
-    reference_change_percent: state === 'closed' ? 7.97 : null,
-    current_reference_change_percent: state === 'open' ? -1.25 : null,
-    latest_reference_price: state === 'open' ? 101.75625 : null,
+    reference_change_percent: state === 'closed' ? '7.97' : null,
+    current_reference_change_percent: state === 'open' ? '-1.25' : null,
+    latest_reference_price: state === 'open' ? '101.75625' : null,
     exit_reason_codes: state === 'closed' ? [...exit.reason_codes] : [],
     structure_exit_available: false,
   }

@@ -18,6 +18,7 @@ from sqlalchemy import (
     JSON,
     String,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -26,7 +27,7 @@ from app.db.base import Base
 
 
 _SCOPE_PRODUCTS_TYPE = ARRAY(String(32)).with_variant(JSON(), "sqlite")
-_RESULT_CODES_TYPE = ARRAY(String(8)).with_variant(JSON(), "sqlite")
+_RESULT_CODES_TYPE = ARRAY(String(16)).with_variant(JSON(), "sqlite")
 
 
 def utc_now() -> datetime:
@@ -79,26 +80,32 @@ class AlertEvent(Base):
         ),
         CheckConstraint(
             "cardinality(result_codes) BETWEEN 1 AND 2 "
-            "AND result_codes <@ ARRAY['buy','sell']::varchar[]",
+            "AND result_codes <@ ARRAY["
+            "'buy','sell','open_long','open_short','close_long','close_short'"
+            "]::varchar[]",
             name="ck_alert_events_result_codes",
         ).ddl_if(dialect="postgresql"),
         Index("ix_alert_events_symbol_bar_end", "symbol", "bar_end"),
+        Index(
+            "ux_alert_events_action_id_not_null",
+            "action_id",
+            unique=True,
+            postgresql_where=text("action_id IS NOT NULL"),
+            sqlite_where=text("action_id IS NOT NULL"),
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    rule_id: Mapped[int] = mapped_column(
-        ForeignKey("alert_rules.id"), nullable=False
-    )
+    rule_id: Mapped[int] = mapped_column(ForeignKey("alert_rules.id"), nullable=False)
     symbol: Mapped[str] = mapped_column(String(32), nullable=False)
     contract: Mapped[str] = mapped_column(String(64), nullable=False)
     trading_day: Mapped[date | None] = mapped_column(Date(), nullable=True)
     frequency: Mapped[str] = mapped_column(String(8), nullable=False)
     bar_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    result_codes: Mapped[list[str]] = mapped_column(
-        _RESULT_CODES_TYPE, nullable=False
-    )
-    lower_tf_confirmation: Mapped[bool] = mapped_column(
-        Boolean, default=False, nullable=False
+    result_codes: Mapped[list[str]] = mapped_column(_RESULT_CODES_TYPE, nullable=False)
+    action_id: Mapped[str | None] = mapped_column(String(96), nullable=True)
+    strategy_payload: Mapped[dict[str, object] | None] = mapped_column(
+        JSON, nullable=True
     )
     detected_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False

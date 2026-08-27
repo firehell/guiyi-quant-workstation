@@ -1,20 +1,17 @@
 import { ref } from 'vue'
-import type { CurrentFormalSignalsResponse } from '../api/alerts.ts'
+import type { CurrentStrategyActionsResponse } from '../api/alerts.ts'
 
-interface CurrentFormalSignalsDependencies {
-  fetchCurrent?: () => Promise<CurrentFormalSignalsResponse>
+
+interface Dependencies {
+  fetchCurrent: () => Promise<CurrentStrategyActionsResponse>
 }
 
-export function useCurrentFormalSignals(dependencies: CurrentFormalSignalsDependencies = {}) {
+export function useCurrentStrategyActions(dependencies: Dependencies) {
   const loading = ref(false)
   const stale = ref(false)
-  const status = ref<CurrentFormalSignalsResponse['status'] | null>(null)
+  const status = ref<CurrentStrategyActionsResponse['status'] | null>(null)
   const tradingDay = ref<string | null>(null)
-  const items = ref<CurrentFormalSignalsResponse['items']>([])
-  const fetchCurrent = dependencies.fetchCurrent ?? (async () => {
-    const { getCurrentFormalSignals } = await import('../api/alerts.ts')
-    return getCurrentFormalSignals()
-  })
+  const items = ref<CurrentStrategyActionsResponse['items']>([])
   let generation = 0
   let hasSuccessfulResponse = false
 
@@ -22,7 +19,7 @@ export function useCurrentFormalSignals(dependencies: CurrentFormalSignalsDepend
     const requestGeneration = ++generation
     loading.value = true
     try {
-      const response = await fetchCurrent()
+      const response = await dependencies.fetchCurrent()
       if (requestGeneration !== generation) return
       status.value = response.status
       tradingDay.value = response.trading_day

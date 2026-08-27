@@ -1,12 +1,19 @@
 from .atr import atr_series
-from .ema import ema_series
-from .htdy_original import HtdyOriginalResult, compute_htdy_original, htdy_original_source_sha256, normalize_period, xma
+from .ema import ema_series, initial_ema_state, step_ema
+from .htdy_original import (
+    HtdyOriginalResult,
+    compute_htdy_original,
+    htdy_original_source_sha256,
+    normalize_period,
+    xma,
+)
 from .htdy_strict import BOOLEAN_FIELDS as HTDY_STRICT_BOOLEAN_FIELDS
 from .htdy_strict import NUMERIC_FIELDS as HTDY_STRICT_NUMERIC_FIELDS
 from .htdy_strict import compute_strict_fields
-from .macd import macd_series
+from .macd import initial_macd_state, macd_series, step_macd
 from .models import (
     AtrSmoothingPolicy,
+    EmaState,
     FormalPolicy,
     HistogramScale,
     IndicatorDefinition,
@@ -14,6 +21,7 @@ from .models import (
     IndicatorSeries,
     IndicatorStatus,
     MacdSeries,
+    MacdState,
     RepaintingRisk,
     SeedPolicy,
     build_indicator_definition,
@@ -41,6 +49,7 @@ from .realtime_observation_policy import (
 
 __all__ = [
     "AtrSmoothingPolicy",
+    "EmaState",
     "FormalPolicy",
     "HtdyOriginalResult",
     "FORMAL_BACKTEST_CONSUMER",
@@ -54,6 +63,7 @@ __all__ = [
     "IndicatorSeries",
     "IndicatorStatus",
     "MacdSeries",
+    "MacdState",
     "RepaintingRisk",
     "SeedPolicy",
     "atr_series",
@@ -62,6 +72,8 @@ __all__ = [
     "compute_htdy_original",
     "compute_strict_fields",
     "ema_series",
+    "initial_ema_state",
+    "initial_macd_state",
     "formal_policy_registry",
     "get_formal_policy",
     "get_indicator",
@@ -78,6 +90,8 @@ __all__ = [
     "require_realtime_repainting_observation_policy",
     "require_formal_policy",
     "resolve_indicator_code",
+    "step_ema",
+    "step_macd",
     "validate_definition_capabilities",
     "xma",
 ]

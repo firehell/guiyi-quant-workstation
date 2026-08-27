@@ -13,6 +13,7 @@ from pathlib import Path
 import tempfile
 
 from ..domain import BarFrequency, CanonicalBar
+from ..aggregation import SessionWindow
 from ..subing_lifecycle import ConfirmationSource
 from ..subing_research import SubingDirection
 from ..subing_structure import ConfirmedPivot, PivotKind
@@ -27,7 +28,7 @@ from .contracts import (
 from .direction_context import SubingStrategyDirectionContext
 
 
-_SCHEMA_VERSION = 1
+_SCHEMA_VERSION = 4
 
 
 class SubingStrategyCacheError(RuntimeError):
@@ -52,20 +53,25 @@ class SubingStrategyCacheIdentity:
     contract: str
     segment_start_trading_day: date
     segment_end_trading_day: date
+    cutoff_1m: datetime
     cutoff_5m: datetime
     cutoff_15m: datetime
     cutoff_d1: datetime
     cutoff_60m: datetime
+    bars_1m_digest: str
     bars_5m_digest: str
     bars_15m_digest: str
+    session_windows_digest: str
     direction_context_digest: str
     through: date
 
     def __post_init__(self) -> None:
         digest_fields = (
             self.strategy_policy_sha256,
+            self.bars_1m_digest,
             self.bars_5m_digest,
             self.bars_15m_digest,
+            self.session_windows_digest,
             self.direction_context_digest,
         )
         if (
@@ -81,6 +87,7 @@ class SubingStrategyCacheIdentity:
             or any(
                 value.tzinfo is None or value.utcoffset() is None
                 for value in (
+                    self.cutoff_1m,
                     self.cutoff_5m,
                     self.cutoff_15m,
                     self.cutoff_d1,
@@ -163,7 +170,13 @@ class SubingStrategyCache:
             return _parse_projection(payload["projection"])
         except SubingStrategyCacheError:
             raise
-        except (OSError, UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError):
+        except (
+            OSError,
+            UnicodeDecodeError,
+            json.JSONDecodeError,
+            TypeError,
+            ValueError,
+        ):
             raise SubingStrategyCacheError() from None
 
     def write(
@@ -292,6 +305,27 @@ def digest_direction_contexts(
     return sha256(_canonical_bytes(payload)).hexdigest()
 
 
+def digest_session_windows(sessions: Sequence[SessionWindow]) -> str:
+    windows = tuple(sessions)
+    if (
+        not windows
+        or any(not isinstance(window, SessionWindow) for window in windows)
+        or any(left.end > right.start for left, right in zip(windows, windows[1:]))
+    ):
+        raise SubingStrategyCacheError()
+    return sha256(
+        _canonical_bytes(
+            [
+                {
+                    "start": window.start.astimezone(UTC).isoformat(),
+                    "end": window.end.astimezone(UTC).isoformat(),
+                }
+                for window in windows
+            ]
+        )
+    ).hexdigest()
+
+
 def strategy_policy_sha256(path: Path) -> str:
     try:
         return sha256(path.read_bytes()).hexdigest()
@@ -307,7 +341,13 @@ def _identity_payload(identity: SubingStrategyCacheIdentity) -> dict[str, object
         "through",
     ):
         payload[field] = payload[field].isoformat()
-    for field in ("cutoff_5m", "cutoff_15m", "cutoff_d1", "cutoff_60m"):
+    for field in (
+        "cutoff_1m",
+        "cutoff_5m",
+        "cutoff_15m",
+        "cutoff_d1",
+        "cutoff_60m",
+    ):
         payload[field] = payload[field].astimezone(UTC).isoformat()
     return payload
 
@@ -336,6 +376,11 @@ def _action_payload(action: SubingStrategyAction) -> dict[str, object]:
         "segment_start_trading_day": action.segment_start_trading_day.isoformat(),
         "opportunity_id": action.opportunity_id,
         "decision_at": action.decision_at.astimezone(UTC).isoformat(),
+        "effective_open_at": (
+            action.effective_open_at.astimezone(UTC).isoformat()
+            if action.effective_open_at is not None
+            else None
+        ),
         "effective_bar_end": action.effective_bar_end.astimezone(UTC).isoformat(),
         "reference_price": str(action.reference_price),
         "fill_basis": action.fill_basis.value,
@@ -437,9 +482,12 @@ def _parse_action(payload: object) -> SubingStrategyAction:
             ),
             opportunity_id=str(payload["opportunity_id"]),
             decision_at=datetime.fromisoformat(str(payload["decision_at"])),
-            effective_bar_end=datetime.fromisoformat(
-                str(payload["effective_bar_end"])
+            effective_open_at=(
+                datetime.fromisoformat(str(payload["effective_open_at"]))
+                if payload["effective_open_at"] is not None
+                else None
             ),
+            effective_bar_end=datetime.fromisoformat(str(payload["effective_bar_end"])),
             reference_price=_decimal(payload["reference_price"]),
             fill_basis=SubingStrategyFillBasis(payload["fill_basis"]),
             confirmation_source=(
@@ -487,9 +535,7 @@ def _parse_episode(payload: object) -> SubingStrategyEpisode:
             current_reference_change_percent=_optional_decimal(
                 payload["current_reference_change_percent"]
             ),
-            latest_reference_price=_optional_decimal(
-                payload["latest_reference_price"]
-            ),
+            latest_reference_price=_optional_decimal(payload["latest_reference_price"]),
             exit_reason_codes=tuple(payload["exit_reason_codes"]),
             structure_exit_available=payload["structure_exit_available"],
         )

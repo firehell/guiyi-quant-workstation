@@ -26,7 +26,9 @@ def test_macd_series_replicates_web_sma_window_histogram_scale_2() -> None:
     from guiyi_quant.indicators import macd_series
 
     closes = [100.0, 102.0, 101.0, 105.0, 107.0, 103.0, 109.0, 112.0, 108.0, 113.0]
-    result = macd_series(closes, 3, 5, 3, ema_seed_policy="sma_window", histogram_scale=2)
+    result = macd_series(
+        closes, 3, 5, 3, ema_seed_policy="sma_window", histogram_scale=2
+    )
     expected = _macd_web_style(closes, fast=3, slow=5, signal=3)
 
     assert result.indicator_code == "macd"
@@ -78,11 +80,26 @@ def test_macd_12_26_9_sma_window_scale_2_has_exact_first_ready_points() -> None:
         "histogram_formula": "(DIF - DEA) * 2",
         "warmup_bars": 33,
     }
-    assert next(index for index, point in enumerate(fast_ema.points) if point.ready) == 11
-    assert next(index for index, point in enumerate(slow_ema.points) if point.ready) == 25
-    assert next(index for index, point in enumerate(result.dif.points) if point.ready) == 25
-    assert next(index for index, point in enumerate(result.dea.points) if point.ready) == 33
-    assert next(index for index, point in enumerate(result.histogram.points) if point.ready) == 33
+    assert (
+        next(index for index, point in enumerate(fast_ema.points) if point.ready) == 11
+    )
+    assert (
+        next(index for index, point in enumerate(slow_ema.points) if point.ready) == 25
+    )
+    assert (
+        next(index for index, point in enumerate(result.dif.points) if point.ready)
+        == 25
+    )
+    assert (
+        next(index for index, point in enumerate(result.dea.points) if point.ready)
+        == 33
+    )
+    assert (
+        next(
+            index for index, point in enumerate(result.histogram.points) if point.ready
+        )
+        == 33
+    )
     assert result.dif.points[33].value == 1.168673
     assert result.dea.points[33].value == 1.004891
     assert result.histogram.points[33].value == 0.327563
@@ -114,11 +131,66 @@ def test_appending_confirmed_close_does_not_change_prior_macd_12_26_9_points() -
     assert appended.histogram.points[:-1] == original.histogram.points
 
 
+def test_incremental_macd_matches_compact_dif_batch_and_exact_points() -> None:
+    """Catches DEA consuming non-ready DIFs or incremental histogram drift."""
+    from guiyi_quant.indicators import (
+        IndicatorPoint,
+        initial_macd_state,
+        macd_series,
+        step_macd,
+    )
+
+    closes = [10.0, 11.0, 12.0, 13.0, 14.0, math.nan, 20.0, 21.0, 22.0, 23.0]
+    bar_ends = [f"bar-{index}" for index in range(len(closes))]
+    batch = macd_series(
+        closes,
+        2,
+        3,
+        2,
+        ema_seed_policy="sma_window",
+        histogram_scale=2,
+        bar_ends=bar_ends,
+        round_digits=6,
+    )
+    state = initial_macd_state(
+        2,
+        3,
+        2,
+        ema_seed_policy="sma_window",
+        histogram_scale=2,
+        round_digits=6,
+    )
+    streamed = []
+
+    for close, bar_end in zip(closes, bar_ends, strict=True):
+        state, points = step_macd(state, close, bar_end=bar_end)
+        streamed.append(points)
+
+    assert [points[0] for points in streamed] == batch.dif.points
+    assert [points[1] for points in streamed] == batch.dea.points
+    assert [points[2] for points in streamed] == batch.histogram.points
+    assert streamed[2][0].value == 0.5
+    assert streamed[2][1].reason == "warming_up"
+    assert streamed[3][1].value == 0.5
+    assert streamed[3][2].value == 0.0
+    assert streamed[5] == (
+        IndicatorPoint("bar-5", None, True, False, "input_invalid"),
+        IndicatorPoint("bar-5", None, True, False, "input_invalid"),
+        IndicatorPoint("bar-5", None, True, False, "input_invalid"),
+    )
+    # The legacy sma-window policy compacts ready DIF observations, so the
+    # existing DEA recursion resumes as soon as slow EMA has reseeded.
+    assert streamed[8][1].value == 0.5
+    assert streamed[8][2].value == 0.0
+
+
 def test_macd_series_replicates_python_strategy_first_value_histogram_scale_1() -> None:
     from guiyi_quant.indicators import macd_series
 
     closes = [100.0, 101.5, 99.0, 104.0, 106.5, 103.0, 108.0, 111.0]
-    result = macd_series(closes, 3, 5, 3, ema_seed_policy="first_value", histogram_scale=1)
+    result = macd_series(
+        closes, 3, 5, 3, ema_seed_policy="first_value", histogram_scale=1
+    )
     expected = _macd_first_value_style(closes, fast=3, slow=5, signal=3)
 
     assert [point.ready for point in result.dif.points] == [True] * len(closes)
@@ -182,7 +254,14 @@ def test_atr_series_replicates_quant_core_ema_first_tr_seed() -> None:
 def test_invalid_inputs_are_marked_invalid_without_zero_fill() -> None:
     from guiyi_quant.indicators import atr_series, macd_series
 
-    macd = macd_series([10.0, 11.0, math.nan, 13.0, 14.0, 15.0, 16.0], 2, 3, 2, ema_seed_policy="sma_window", histogram_scale=2)
+    macd = macd_series(
+        [10.0, 11.0, math.nan, 13.0, 14.0, 15.0, 16.0],
+        2,
+        3,
+        2,
+        ema_seed_policy="sma_window",
+        histogram_scale=2,
+    )
 
     assert macd.dif.points[2].valid is False
     assert macd.dif.points[2].value is None
@@ -210,20 +289,34 @@ def test_invalid_parameters_raise_clear_errors() -> None:
     from guiyi_quant.indicators import atr_series, macd_series
 
     with pytest.raises(ValueError, match="fast period"):
-        macd_series([1.0, 2.0], 5, 3, 2, ema_seed_policy="sma_window", histogram_scale=2)
+        macd_series(
+            [1.0, 2.0], 5, 3, 2, ema_seed_policy="sma_window", histogram_scale=2
+        )
     with pytest.raises(ValueError, match="histogram_scale"):
-        macd_series([1.0, 2.0], 2, 3, 2, ema_seed_policy="sma_window", histogram_scale=3)  # type: ignore[arg-type]
+        macd_series(
+            [1.0, 2.0], 2, 3, 2, ema_seed_policy="sma_window", histogram_scale=3
+        )  # type: ignore[arg-type]
     with pytest.raises(ValueError, match="ema_seed_policy"):
         macd_series([1.0, 2.0], 2, 3, 2, ema_seed_policy="bad", histogram_scale=2)  # type: ignore[arg-type]
     with pytest.raises(ValueError, match="bar_ends"):
-        macd_series([1.0, 2.0], 2, 3, 2, ema_seed_policy="sma_window", histogram_scale=2, bar_ends=["x"])
+        macd_series(
+            [1.0, 2.0],
+            2,
+            3,
+            2,
+            ema_seed_policy="sma_window",
+            histogram_scale=2,
+            bar_ends=["x"],
+        )
 
     with pytest.raises(ValueError, match="length"):
         atr_series([1.0], [0.5, 0.6], [0.8], 3, smoothing_policy="wilder_sma_seed")
     with pytest.raises(ValueError, match="smoothing_policy"):
         atr_series([1.0], [0.5], [0.8], 3, smoothing_policy="bad")  # type: ignore[arg-type]
     with pytest.raises(ValueError, match="round_digits"):
-        atr_series([1.0], [0.5], [0.8], 3, smoothing_policy="wilder_sma_seed", round_digits=-1)
+        atr_series(
+            [1.0], [0.5], [0.8], 3, smoothing_policy="wilder_sma_seed", round_digits=-1
+        )
 
 
 def test_future_tail_perturbation_does_not_repaint_past_outputs() -> None:
@@ -231,15 +324,25 @@ def test_future_tail_perturbation_does_not_repaint_past_outputs() -> None:
 
     closes = [100.0, 101.0, 103.0, 102.0, 105.0, 107.0, 106.0, 108.0]
     changed_closes = [*closes[:6], 500.0, 600.0]
-    original_macd = macd_series(closes, 3, 5, 3, ema_seed_policy="sma_window", histogram_scale=2)
-    changed_macd = macd_series(changed_closes, 3, 5, 3, ema_seed_policy="sma_window", histogram_scale=2)
+    original_macd = macd_series(
+        closes, 3, 5, 3, ema_seed_policy="sma_window", histogram_scale=2
+    )
+    changed_macd = macd_series(
+        changed_closes, 3, 5, 3, ema_seed_policy="sma_window", histogram_scale=2
+    )
 
     assert _values(original_macd.dif.points[:6]) == _values(changed_macd.dif.points[:6])
     assert _values(original_macd.dea.points[:6]) == _values(changed_macd.dea.points[:6])
-    assert _values(original_macd.histogram.points[:6]) == _values(changed_macd.histogram.points[:6])
+    assert _values(original_macd.histogram.points[:6]) == _values(
+        changed_macd.histogram.points[:6]
+    )
 
     bars = _atr_bars()
-    changed_bars = [*bars[:4], AuditBar(high=800.0, low=100.0, close=500.0), AuditBar(high=900.0, low=200.0, close=600.0)]
+    changed_bars = [
+        *bars[:4],
+        AuditBar(high=800.0, low=100.0, close=500.0),
+        AuditBar(high=900.0, low=200.0, close=600.0),
+    ]
     original_atr = atr_series(
         [bar.high for bar in bars],
         [bar.low for bar in bars],
@@ -268,7 +371,9 @@ def test_macd_and_atr_are_public_functions_but_not_validated_registry_entries() 
     assert indicator_registry["ema21"].status == "validated"
 
 
-def test_indicator_kernel_numeric_modules_do_not_import_business_or_runtime_layers() -> None:
+def test_indicator_kernel_numeric_modules_do_not_import_business_or_runtime_layers() -> (
+    None
+):
     indicator_root = QUANT_CORE_ROOT / "guiyi_quant" / "indicators"
     for filename in ("ema.py", "macd.py", "atr.py"):
         source = (indicator_root / filename).read_text(encoding="utf-8")
@@ -277,12 +382,16 @@ def test_indicator_kernel_numeric_modules_do_not_import_business_or_runtime_laye
         assert "app.signal" not in source
 
 
-def _macd_web_style(closes: list[float], fast: int, slow: int, signal: int) -> dict[str, list[float | None]]:
+def _macd_web_style(
+    closes: list[float], fast: int, slow: int, signal: int
+) -> dict[str, list[float | None]]:
     fast_series = _ema_sma_window(closes, fast)
     slow_series = _ema_sma_window(closes, slow)
     dif_values: list[float] = []
     dif_indexes: list[int] = []
-    for index, (fast_value, slow_value) in enumerate(zip(fast_series, slow_series, strict=True)):
+    for index, (fast_value, slow_value) in enumerate(
+        zip(fast_series, slow_series, strict=True)
+    ):
         if fast_value is None or slow_value is None:
             continue
         dif_indexes.append(index)
@@ -302,10 +411,15 @@ def _macd_web_style(closes: list[float], fast: int, slow: int, signal: int) -> d
     return {"dif": dif, "dea": dea, "histogram": histogram}
 
 
-def _macd_first_value_style(closes: list[float], fast: int, slow: int, signal: int) -> dict[str, list[float | None]]:
+def _macd_first_value_style(
+    closes: list[float], fast: int, slow: int, signal: int
+) -> dict[str, list[float | None]]:
     fast_series = _ema_first_value(closes, fast)
     slow_series = _ema_first_value(closes, slow)
-    dif = [fast_value - slow_value for fast_value, slow_value in zip(fast_series, slow_series, strict=True)]
+    dif = [
+        fast_value - slow_value
+        for fast_value, slow_value in zip(fast_series, slow_series, strict=True)
+    ]
     dea = _ema_first_value(dif, signal)
     histogram = [diff - dea_value for diff, dea_value in zip(dif, dea, strict=True)]
     return {

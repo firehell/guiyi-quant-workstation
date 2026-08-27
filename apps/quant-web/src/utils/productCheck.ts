@@ -1,5 +1,4 @@
-import type { AlertEvent, ProductResearchResponse } from '../types/market.ts'
-import { alertResultLabel, alertRuleShortLabel } from './alertRules.ts'
+import type { ProductResearchResponse } from '../types/market.ts'
 
 export interface MarketBackgroundSummary {
   label: '同向偏多' | '同向偏空' | '中性' | '未共振' | '数据不足'
@@ -17,20 +16,4 @@ export function summarizeMarketBackground(
   if (daily === 'down' && weekly === 'down') return { label: '同向偏空', tone: 'down' }
   if (daily === 'neutral' && weekly === 'neutral') return { label: '中性', tone: 'neutral' }
   return { label: '未共振', tone: 'warning' }
-}
-
-export interface FormalEventSummary {
-  event: AlertEvent
-  headline: string
-}
-
-export function summarizeFormalEvent(
-  items: AlertEvent[],
-): FormalEventSummary | null {
-  const event = [...items].sort((left, right) => Date.parse(right.bar_end) - Date.parse(left.bar_end))[0]
-  if (!event) return null
-  return {
-    event,
-    headline: `${alertRuleShortLabel(event.rule_code)} · ${alertResultLabel(event.rule_code, event.result_codes)}`,
-  }
 }

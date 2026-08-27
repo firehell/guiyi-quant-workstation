@@ -28,6 +28,7 @@ class SubingStrategySegmentSummaryOut(BaseModel):
     start_trading_day: date
     end_trading_day: date
     loaded_through: date
+    bar_count_1m: int
     bar_count_5m: int
     bar_count_15m: int
     initial_position: str
@@ -59,6 +60,7 @@ class SubingStrategyActionOut(BaseModel):
     segment_start_trading_day: date
     opportunity_id: str
     decision_at: datetime
+    effective_open_at: datetime | None
     effective_bar_end: datetime
     reference_price: Decimal
     fill_basis: str
@@ -103,6 +105,41 @@ class SubingStrategyHistoricalResponse(BaseModel):
     episodes: list[SubingStrategyEpisodeOut]
     context_unavailable: list[SubingStrategyContextUnavailableOut]
     cache_state: Literal["hit", "miss", "mixed", "unavailable"]
+
+
+class SubingStrategyPendingSummaryOut(BaseModel):
+    kind: Literal["open_long", "open_short", "close_long", "close_short"]
+    decision_at: datetime
+    opportunity_id: str
+    reason_codes: list[str]
+
+
+class SubingStrategyCurrentContextOut(BaseModel):
+    symbol: str
+    target_trading_day: date
+    source_trading_day: date | None
+    direction: Literal["long_only", "short_only", "no_new_entry", "unavailable"]
+    reason_codes: list[str]
+    daily_bar_end: datetime | None
+    hourly_bar_end: datetime | None
+    physical_contract: str | None
+
+
+class SubingStrategyCurrentResponse(BaseModel):
+    strategy_id: Literal["subing_strategy_v1"]
+    formula_version: Literal["subing_strategy_15m_v1"]
+    series_kind: Literal["actual_dominant"]
+    symbol: str
+    frequency: Literal["15m"]
+    contract: str
+    segment_start_trading_day: date
+    source_mode: Literal["canonical", "canonical_live"]
+    cutoff: datetime
+    position_state: Literal["flat", "long", "short"]
+    pending_action: SubingStrategyPendingSummaryOut | None
+    current_episode: SubingStrategyEpisodeOut | None
+    latest_completed_episode: SubingStrategyEpisodeOut | None
+    direction_context: SubingStrategyCurrentContextOut
 
 
 class NStructureBandRequestOut(BaseModel):

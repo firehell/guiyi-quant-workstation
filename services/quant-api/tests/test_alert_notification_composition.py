@@ -1,13 +1,30 @@
 from __future__ import annotations
 
 import json
+from contextlib import nullcontext
+from datetime import UTC, date, datetime
+from decimal import Decimal
 from pathlib import Path
 
+import pytest
+
+from app.alerts.composition import _SubingStrategyRuntimeReader
+from app.alerts.subing_strategy_runtime import (
+    SubingStrategyRuntimeProductSourceError,
+)
 from app.alerts.notification_composition import (
     build_notification_sender_from_env,
     notification_transport_status_from_env,
 )
 from app.alerts.notification_config import NOTIFICATION_CONFIG_ENV
+from app.market_data.domain import CanonicalBar
+from app.market_data.subing_strategy.current_service import (
+    SubingStrategyCurrentSourceUnavailableError,
+)
+from app.market_data.subing_strategy.machine import SubingStrategySourceIdentity
+from app.market_data.subing_strategy.stream_contracts import (
+    AuthoritativeSegmentTerminal,
+)
 
 
 MESSAGE_TOKEN = "0123456789abcdef0123456789abcdef"
@@ -88,3 +105,115 @@ def test_structural_status_is_missing_or_invalid_without_private_details(
     }
     monkeypatch.setenv(NOTIFICATION_CONFIG_ENV, str(tmp_path / "private-value"))
     assert notification_transport_status_from_env()["configured"] is False
+
+
+def _terminal() -> AuthoritativeSegmentTerminal:
+    return AuthoritativeSegmentTerminal(
+        symbol="jm",
+        contract="JM2609",
+        segment_start_trading_day=date(2026, 8, 3),
+        terminal_bar=CanonicalBar(
+            bar_end=datetime(2026, 8, 14, 7, tzinfo=UTC),
+            trading_day=date(2026, 8, 14),
+            open=Decimal("100"),
+            high=Decimal("101"),
+            low=Decimal("99"),
+            close=Decimal("100"),
+            volume=Decimal("1"),
+            turnover=None,
+            open_interest=None,
+        ),
+    )
+
+
+def test_strategy_reader_construction_is_lazy_and_rollover_uses_current_restore() -> (
+    None
+):
+    calls: list[object] = []
+    restored = object()
+
+    class Service:
+        def restore_machine(self, *, symbol: str, now: datetime):
+            calls.append((symbol, now))
+            return restored
+
+    reader = _SubingStrategyRuntimeReader(
+        session_factory=lambda: nullcontext(object()),
+        service_factory=lambda _session: calls.append("factory") or Service(),
+        clock=lambda: datetime(2026, 8, 17, 1, tzinfo=UTC),
+    )
+    assert calls == []
+
+    result = reader.restore_rollover(
+        symbol="jm",
+        trading_day=date(2026, 8, 17),
+        previous_identity=SubingStrategySourceIdentity(
+            symbol="jm",
+            contract="JM2609",
+            segment_start_trading_day=date(2026, 8, 3),
+        ),
+        terminal=_terminal(),
+    )
+
+    assert result is restored
+    assert calls == [
+        "factory",
+        ("jm", datetime(2026, 8, 17, 1, tzinfo=UTC)),
+    ]
+
+
+def test_strategy_reader_wraps_known_product_source_failure_without_detail() -> None:
+    class Service:
+        def completed_live_after(self, **_kwargs):
+            raise SubingStrategyCurrentSourceUnavailableError()
+
+    reader = _SubingStrategyRuntimeReader(
+        session_factory=lambda: nullcontext(object()),
+        service_factory=lambda _session: Service(),
+    )
+    identity = SubingStrategySourceIdentity(
+        symbol="jm",
+        contract="JM2609",
+        segment_start_trading_day=date(2026, 8, 3),
+    )
+
+    with pytest.raises(SubingStrategyRuntimeProductSourceError) as raised:
+        reader.read_completed_bars(
+            symbol="jm",
+            source_identity=identity,
+            after_1m=None,
+            after_5m=None,
+            after_15m=None,
+            through=datetime(2026, 8, 17, 1, tzinfo=UTC),
+        )
+
+    assert str(raised.value) == ""
+
+
+def test_strategy_reader_does_not_reclassify_unknown_programming_failure() -> None:
+    failure = RuntimeError("programming failure")
+
+    class Service:
+        def completed_live_after(self, **_kwargs):
+            raise failure
+
+    reader = _SubingStrategyRuntimeReader(
+        session_factory=lambda: nullcontext(object()),
+        service_factory=lambda _session: Service(),
+    )
+
+    with pytest.raises(RuntimeError) as raised:
+        reader.read_completed_bars(
+            symbol="jm",
+            source_identity=SubingStrategySourceIdentity(
+                symbol="jm",
+                contract="JM2609",
+                segment_start_trading_day=date(2026, 8, 3),
+            ),
+            after_1m=None,
+            after_5m=None,
+            after_15m=None,
+            through=datetime(2026, 8, 17, 1, tzinfo=UTC),
+        )
+
+    assert raised.value is failure

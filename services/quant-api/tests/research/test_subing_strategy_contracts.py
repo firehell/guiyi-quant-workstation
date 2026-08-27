@@ -18,6 +18,7 @@ from app.market_data.subing_strategy.contracts import (
     subing_strategy_action_id,
     subing_strategy_episode_id,
 )
+from research.subing_strategy_fixtures import action_fixture, aware_dt
 
 
 STRATEGY_ID = "subing_strategy_v1"
@@ -81,6 +82,7 @@ def _action(
         segment_start_trading_day=SEGMENT_START,
         opportunity_id="subing-opportunity:test",
         decision_at=decision_at,
+        effective_open_at=effective_bar_end - timedelta(minutes=15),
         effective_bar_end=effective_bar_end,
         reference_price=reference_price,
         fill_basis=SubingStrategyFillBasis.NEXT_BAR_OPEN,
@@ -121,6 +123,29 @@ def test_action_identity_changes_for_effective_bar() -> None:
     second = _action(effective_bar_end=BASE_TIME + timedelta(minutes=30))
 
     assert first.action_id != second.action_id
+
+
+def test_next_bar_open_requires_effective_open_at() -> None:
+    with pytest.raises(SubingStrategyContractError):
+        action_fixture(
+            fill_basis=SubingStrategyFillBasis.NEXT_BAR_OPEN,
+            effective_open_at=None,
+        )
+
+
+def test_terminal_close_rejects_effective_open_at() -> None:
+    with pytest.raises(SubingStrategyContractError):
+        action_fixture(
+            fill_basis=SubingStrategyFillBasis.SEGMENT_TERMINAL_CLOSE,
+            effective_open_at=aware_dt(10, 15),
+        )
+
+
+def test_effective_open_at_does_not_change_action_identity() -> None:
+    first = action_fixture(effective_open_at=aware_dt(10, 15))
+    second = action_fixture(effective_open_at=aware_dt(10, 16))
+
+    assert first.action_id == second.action_id
 
 
 def test_episode_rejects_cross_contract_exit() -> None:

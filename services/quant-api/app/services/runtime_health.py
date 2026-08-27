@@ -66,9 +66,13 @@ def build_runtime_health(
     current_time = now or datetime.now(UTC)
     # live_runtime_enabled 保留为测试/本地装配可注入开关。
     # 真实启动状态来自项目固定 .run 标记，而非另一个 launchd job 的进程环境。
-    freshness_seconds = live_freshness_seconds or _env_positive_int("GUIYI_LIVE_FRESHNESS_SECONDS", 300)
+    freshness_seconds = live_freshness_seconds or _env_positive_int(
+        "GUIYI_LIVE_FRESHNESS_SECONDS", 300
+    )
     activation_enabled = _market_runtime_activation_enabled()
-    live_enabled = activation_enabled if live_runtime_enabled is None else live_runtime_enabled
+    live_enabled = (
+        activation_enabled if live_runtime_enabled is None else live_runtime_enabled
+    )
     after_market_enabled = (
         activation_enabled
         if after_market_automation_enabled is None
@@ -99,13 +103,13 @@ def build_runtime_health(
             "would_send": False,
         }
         transport_error_type = (
-            None
-            if transport_configured
-            else "alert_notification_transport_missing"
+            None if transport_configured else "alert_notification_transport_missing"
         )
     components: dict[str, Any] = {}
     components["db"] = _collect_db_health(session)
-    redis_connection, redis_health = _collect_redis_health(redis_factory or get_redis_connection)
+    redis_connection, redis_health = _collect_redis_health(
+        redis_factory or get_redis_connection
+    )
     components["redis"] = redis_health
 
     components["live_market"] = _collect_live_market_health(
@@ -186,6 +190,15 @@ def _collect_alert_health(
         "notification_acknowledged_at": None,
         "notification_error_type": None,
         "consecutive_notification_failures": 0,
+        "strategy_state": "warming",
+        "strategy_started_at": None,
+        "strategy_ready_at": None,
+        "strategy_product_count": 0,
+        "strategy_ready_product_count": 0,
+        "strategy_unavailable_product_count": 0,
+        "strategy_unavailable_symbols": [],
+        "last_strategy_action_at": None,
+        "last_strategy_restore_at": None,
         "error_type": None,
     }
     if not configured_enabled:
@@ -205,18 +218,14 @@ def _collect_alert_health(
         }
     runtime_status_invalid = False
     try:
-        runtime_status = _runtime_status_mapping(
-            connection.get("alert:runtime-status")
-        )
+        runtime_status = _runtime_status_mapping(connection.get("alert:runtime-status"))
         if runtime_status is not None:
             runtime_status = validate_alert_runtime_status(runtime_status)
     except Exception:  # noqa: BLE001 - public health stays sanitized
         runtime_status = None
         runtime_status_invalid = True
     observation = (
-        _alert_runtime_observation(runtime_status)
-        if runtime_status is not None
-        else {}
+        _alert_runtime_observation(runtime_status) if runtime_status is not None else {}
     )
     try:
         heartbeat = _json_mapping(connection.get("alert:heartbeat"))
@@ -252,7 +261,9 @@ def _collect_alert_health(
         "enabled_rule_count": enabled_rule_count,
         "scope_product_count": scope_product_count,
     }
-    stale = heartbeat_at > now or (now - heartbeat_at).total_seconds() > freshness_seconds
+    stale = (
+        heartbeat_at > now or (now - heartbeat_at).total_seconds() > freshness_seconds
+    )
     if stale:
         return {
             "status": RUNTIME_STATUS_DEGRADED,
@@ -277,8 +288,11 @@ def _collect_alert_health(
         return {"status": RUNTIME_STATUS_OK, **payload}
     observed_status = (
         RUNTIME_STATUS_DEGRADED
-        if "failed"
-        in {observation["processing_state"], observation["notification_state"]}
+        if (
+            "failed"
+            in {observation["processing_state"], observation["notification_state"]}
+            or observation["strategy_state"] == "degraded"
+        )
         else RUNTIME_STATUS_OK
     )
     return {"status": observed_status, **payload, **observation}
@@ -302,9 +316,7 @@ def _alert_runtime_observation(
     else:
         processing_state = "ok"
 
-    provider_accepted = _optional_timestamp(
-        runtime_status["last_provider_accepted_at"]
-    )
+    provider_accepted = _optional_timestamp(runtime_status["last_provider_accepted_at"])
     notification_failure = _optional_timestamp(
         runtime_status["last_notification_failure_at"]
     )
@@ -329,30 +341,29 @@ def _alert_runtime_observation(
         "processing_state": processing_state,
         "notification_state": notification_state,
         "last_processed_bar_at": runtime_status["last_processed_bar_at"],
-        "last_processing_success_at": runtime_status[
-            "last_processing_success_at"
-        ],
-        "last_processing_failure_at": runtime_status[
-            "last_processing_failure_at"
-        ],
+        "last_processing_success_at": runtime_status["last_processing_success_at"],
+        "last_processing_failure_at": runtime_status["last_processing_failure_at"],
         "processing_error_type": runtime_status["processing_error_type"],
         "last_event_at": runtime_status["last_event_at"],
-        "last_transport_attempt_at": runtime_status[
-            "last_transport_attempt_at"
-        ],
-        "last_provider_accepted_at": runtime_status[
-            "last_provider_accepted_at"
-        ],
-        "last_notification_failure_at": runtime_status[
-            "last_notification_failure_at"
-        ],
-        "notification_acknowledged_at": runtime_status[
-            "notification_acknowledged_at"
-        ],
+        "last_transport_attempt_at": runtime_status["last_transport_attempt_at"],
+        "last_provider_accepted_at": runtime_status["last_provider_accepted_at"],
+        "last_notification_failure_at": runtime_status["last_notification_failure_at"],
+        "notification_acknowledged_at": runtime_status["notification_acknowledged_at"],
         "notification_error_type": runtime_status["notification_error_type"],
         "consecutive_notification_failures": runtime_status[
             "consecutive_notification_failures"
         ],
+        "strategy_state": runtime_status["strategy_state"],
+        "strategy_started_at": runtime_status["strategy_started_at"],
+        "strategy_ready_at": runtime_status["strategy_ready_at"],
+        "strategy_product_count": runtime_status["strategy_product_count"],
+        "strategy_ready_product_count": runtime_status["strategy_ready_product_count"],
+        "strategy_unavailable_product_count": runtime_status[
+            "strategy_unavailable_product_count"
+        ],
+        "strategy_unavailable_symbols": runtime_status["strategy_unavailable_symbols"],
+        "last_strategy_action_at": runtime_status["last_strategy_action_at"],
+        "last_strategy_restore_at": runtime_status["last_strategy_restore_at"],
     }
 
 
@@ -376,7 +387,9 @@ def _collect_live_market_health(
     }
     if connection is None:
         return {
-            "status": RUNTIME_STATUS_DEGRADED if configured_enabled else RUNTIME_STATUS_DISABLED,
+            "status": RUNTIME_STATUS_DEGRADED
+            if configured_enabled
+            else RUNTIME_STATUS_DISABLED,
             **empty,
             "error_type": "redis_unavailable" if configured_enabled else None,
         }
@@ -384,7 +397,9 @@ def _collect_live_market_health(
         raw = connection.get("live:heartbeat")
     except Exception as exc:  # noqa: BLE001 - health reads must fail closed.
         return {
-            "status": RUNTIME_STATUS_DEGRADED if configured_enabled else RUNTIME_STATUS_DISABLED,
+            "status": RUNTIME_STATUS_DEGRADED
+            if configured_enabled
+            else RUNTIME_STATUS_DISABLED,
             **empty,
             **(_error_fields(exc) if configured_enabled else {}),
         }
@@ -392,13 +407,17 @@ def _collect_live_market_health(
         heartbeat = _json_mapping(raw)
     except UnicodeDecodeError:
         return {
-            "status": RUNTIME_STATUS_DEGRADED if configured_enabled else RUNTIME_STATUS_DISABLED,
+            "status": RUNTIME_STATUS_DEGRADED
+            if configured_enabled
+            else RUNTIME_STATUS_DISABLED,
             **empty,
             "error_type": "live_heartbeat_invalid" if configured_enabled else None,
         }
     if heartbeat is None:
         return {
-            "status": RUNTIME_STATUS_DEGRADED if configured_enabled else RUNTIME_STATUS_DISABLED,
+            "status": RUNTIME_STATUS_DEGRADED
+            if configured_enabled
+            else RUNTIME_STATUS_DISABLED,
             **empty,
             "error_type": "live_heartbeat_missing" if configured_enabled else None,
         }
@@ -411,7 +430,9 @@ def _collect_live_market_health(
         available = heartbeat.get("available") is True
     except ValueError:
         return {
-            "status": RUNTIME_STATUS_DEGRADED if configured_enabled else RUNTIME_STATUS_DISABLED,
+            "status": RUNTIME_STATUS_DEGRADED
+            if configured_enabled
+            else RUNTIME_STATUS_DISABLED,
             **empty,
             "error_type": "live_heartbeat_invalid" if configured_enabled else None,
         }
@@ -423,13 +444,23 @@ def _collect_live_market_health(
         "last_bar_at": _iso(last_bar_at),
         "phase_counts": phase_counts,
     }
-    stale = heartbeat_at > now or (now - heartbeat_at).total_seconds() > freshness_seconds
+    stale = (
+        heartbeat_at > now or (now - heartbeat_at).total_seconds() > freshness_seconds
+    )
     if not configured_enabled:
         return {"status": RUNTIME_STATUS_DISABLED, **payload}
     if stale:
-        return {"status": RUNTIME_STATUS_DEGRADED, **payload, "error_type": "live_heartbeat_stale"}
+        return {
+            "status": RUNTIME_STATUS_DEGRADED,
+            **payload,
+            "error_type": "live_heartbeat_stale",
+        }
     if not available:
-        return {"status": RUNTIME_STATUS_DEGRADED, **payload, "error_type": "live_unavailable"}
+        return {
+            "status": RUNTIME_STATUS_DEGRADED,
+            **payload,
+            "error_type": "live_unavailable",
+        }
     return {"status": RUNTIME_STATUS_OK, **payload}
 
 
@@ -483,15 +514,27 @@ def _collect_after_market_health(
                 "error_type": "after_market_run_missed",
             }
         return {
-            "status": RUNTIME_STATUS_PENDING if configured_enabled else RUNTIME_STATUS_DISABLED,
+            "status": RUNTIME_STATUS_PENDING
+            if configured_enabled
+            else RUNTIME_STATUS_DISABLED,
             **base,
         }
     try:
         raw = json.loads(status_path.read_text(encoding="utf-8"))
     except (OSError, ValueError, TypeError):
-        return {"status": RUNTIME_STATUS_DEGRADED, **base, "run_state": "degraded", "error_type": "after_market_status_invalid"}
+        return {
+            "status": RUNTIME_STATUS_DEGRADED,
+            **base,
+            "run_state": "degraded",
+            "error_type": "after_market_status_invalid",
+        }
     if not isinstance(raw, Mapping):
-        return {"status": RUNTIME_STATUS_DEGRADED, **base, "run_state": "degraded", "error_type": "after_market_status_invalid"}
+        return {
+            "status": RUNTIME_STATUS_DEGRADED,
+            **base,
+            "run_state": "degraded",
+            "error_type": "after_market_status_invalid",
+        }
     public = public_after_market_status(raw)
     if not public:
         error_type = (
@@ -499,7 +542,12 @@ def _collect_after_market_health(
             if _raw_current_run_is_invalid(raw)
             else "after_market_status_invalid"
         )
-        return {"status": RUNTIME_STATUS_DEGRADED, **base, "run_state": "degraded", "error_type": error_type}
+        return {
+            "status": RUNTIME_STATUS_DEGRADED,
+            **base,
+            "run_state": "degraded",
+            "error_type": error_type,
+        }
     if not _finalized_after_market_chronology_valid(
         public,
         now=now,
@@ -564,9 +612,13 @@ def _collect_after_market_health(
             "last_successful_trading_day": last_successful_day,
             "last_failure": public["last_failure"],
         }
-    if configured_enabled and expected_day is not None and (
-        last_successful_day is None
-        or date.fromisoformat(str(last_successful_day)) < expected_day
+    if (
+        configured_enabled
+        and expected_day is not None
+        and (
+            last_successful_day is None
+            or date.fromisoformat(str(last_successful_day)) < expected_day
+        )
     ):
         return {
             "status": RUNTIME_STATUS_DEGRADED,
@@ -586,7 +638,9 @@ def _collect_after_market_health(
             "last_failure": public["last_failure"],
             "error_type": "after_market_status_invalid",
         }
-    status = RUNTIME_STATUS_FAILED if last_run["status"] == "failed" else RUNTIME_STATUS_OK
+    status = (
+        RUNTIME_STATUS_FAILED if last_run["status"] == "failed" else RUNTIME_STATUS_OK
+    )
     run_state = "failed" if last_run["status"] == "failed" else "completed"
     return {
         "status": status,
@@ -647,9 +701,11 @@ def _finalized_after_market_chronology_valid(
         ):
             return False
         last_failure = public.get("last_failure")
-        if isinstance(last_failure, Mapping) and date.fromisoformat(
-            str(last_failure.get("trading_day"))
-        ) > latest_allowed_day:
+        if (
+            isinstance(last_failure, Mapping)
+            and date.fromisoformat(str(last_failure.get("trading_day")))
+            > latest_allowed_day
+        ):
             return False
     except (TypeError, ValueError):
         return False
@@ -665,7 +721,9 @@ def _expected_after_market_day(
     if not products or now.tzinfo is None or now.utcoffset() is None:
         raise ValueError
     normalized = tuple(product.strip().lower() for product in products)
-    if len(set(normalized)) != len(normalized) or any(not product for product in normalized):
+    if len(set(normalized)) != len(normalized) or any(
+        not product for product in normalized
+    ):
         raise ValueError
     rows = session.execute(
         select(Instrument.symbol, Instrument.exchange_code).where(
@@ -734,7 +792,9 @@ def _collect_db_health(session: Session) -> dict[str, Any]:
     }
 
 
-def _collect_redis_health(redis_factory: Callable[[], Redis]) -> tuple[Redis | None, dict[str, Any]]:
+def _collect_redis_health(
+    redis_factory: Callable[[], Redis],
+) -> tuple[Redis | None, dict[str, Any]]:
     """真实探测：PING Redis；失败时返回 (None, failed_health) 供上层跳过 Live 读取。"""
     started = perf_counter()
     try:
@@ -825,7 +885,13 @@ def _phase_counts(value: object) -> dict[str, int]:
         raise ValueError("phase counts required")
     result: dict[str, int] = {}
     for phase, count in value.items():
-        if not isinstance(phase, str) or not phase or isinstance(count, bool) or not isinstance(count, int) or count < 0:
+        if (
+            not isinstance(phase, str)
+            or not phase
+            or isinstance(count, bool)
+            or not isinstance(count, int)
+            or count < 0
+        ):
             raise ValueError("invalid phase count")
         result[phase] = count
     return result

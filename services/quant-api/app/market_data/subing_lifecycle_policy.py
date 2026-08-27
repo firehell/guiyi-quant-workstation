@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -98,6 +98,15 @@ class SubingLifecyclePolicy:
             or self.pivot_tie_policy != "reject"
         ):
             raise SubingLifecyclePolicyError()
+
+
+def is_subing_lifecycle_policy(value: object) -> bool:
+    """Return whether *value* preserves the accepted Lifecycle policy contract."""
+
+    try:
+        return isinstance(value, SubingLifecyclePolicy) and replace(value) == value
+    except (AttributeError, TypeError, ValueError):
+        return False
 
 
 def load_subing_lifecycle_policy(path: Path | None = None) -> SubingLifecyclePolicy:

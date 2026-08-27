@@ -1,10 +1,12 @@
 import type { AlertEvent, KlineMarker, MarketFrequency, SeriesKind } from '../types/market.ts'
 import {
-  ALERT_RULE_CODES,
   ALERT_RULE_PRESENTATIONS,
-  alertDirectionalTone,
-  alertResultLabel,
-  getAlertRulePresentation,
+  type AlertRuleCode,
+  alertEventDirectionalTone,
+  alertEventIdentityKey,
+  alertEventMarkerTone,
+  alertEventResultLabel,
+  isHtdyAlertEvent,
 } from './alertRules.ts'
 
 export function isPersistentAlertIdentity(
@@ -17,7 +19,7 @@ export function isPersistentAlertIdentity(
 export function markerRuleCodes(
   seriesKind: SeriesKind,
   frequency: MarketFrequency,
-): string[] {
+): AlertRuleCode[] {
   if (seriesKind !== 'actual_dominant') return []
   return ALERT_RULE_PRESENTATIONS
     .filter((presentation) => presentation.persistentFrequencies.includes(frequency))
@@ -28,44 +30,34 @@ export function alertEventsToMarkers(events: AlertEvent[]): KlineMarker[] {
   return [...events]
     .sort((left, right) => Date.parse(left.bar_end) - Date.parse(right.bar_end))
     .flatMap((event) => {
-      const label = alertResultLabel(event.rule_code, event.result_codes)
+      if (!isHtdyAlertEvent(event)) return []
+      const observations = event.result_codes.filter(
+        (item): item is 'buy' | 'sell' => item === 'buy' || item === 'sell',
+      )
+      const label = alertEventResultLabel(event, observations)
       if (label === '提醒记录') return []
       return [{
-        id: `alert:${event.rule_code}:${event.symbol}:${event.frequency}:${event.bar_end}`,
-        dedupeKey: subingEventDedupeKey(event),
+        id: `alert:${alertEventIdentityKey(event)}`,
         time: event.bar_end,
         label,
         tooltip: `持久 AlertEvent · ${event.contract} · ${label}`,
-        tone: markerTone(event.rule_code, event.result_codes),
+        tone: markerTone(event, observations),
         position: 'aboveBar' as const,
         shape: 'square' as const,
       }]
     })
 }
 
-function subingEventDedupeKey(event: AlertEvent): string | undefined {
-  if (
-    event.rule_code !== ALERT_RULE_CODES.SUBING
-    || (event.frequency !== '5m' && event.frequency !== '15m')
-    || event.result_codes.length !== 1
-  ) return undefined
-  const direction = event.result_codes[0]
-  return [
-    ALERT_RULE_CODES.SUBING,
-    event.symbol.trim().toLowerCase(),
-    event.bar_end,
-    event.frequency,
-    direction,
-  ].join(':')
-}
-
 function markerTone(
-  ruleCode: string,
-  observations: Array<'buy' | 'sell'>,
+  event: AlertEvent,
+  observations: AlertEvent['result_codes'],
 ): KlineMarker['tone'] {
-  const presentation = getAlertRulePresentation(ruleCode)
-  if (presentation?.markerTone) return presentation.markerTone
-  const direction = alertDirectionalTone(ruleCode, observations)
+  const registeredTone = alertEventMarkerTone(event)
+  if (registeredTone) return registeredTone
+  const direction = alertEventDirectionalTone(
+    event,
+    observations.filter((item): item is 'buy' | 'sell' => item === 'buy' || item === 'sell'),
+  )
   if (direction === 'buy') return 'up'
   if (direction === 'sell') return 'down'
   return 'neutral'

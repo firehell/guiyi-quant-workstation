@@ -10,17 +10,21 @@ from typing import Protocol
 from guiyi_quant.indicators import (
     FormalPolicy,
     IndicatorPoint,
+    MacdState,
     get_formal_policy,
     get_indicator,
-    macd_series,
+    initial_macd_state,
     require_formal_policy,
+    step_macd,
 )
 
 from .domain import BarFrequency, CanonicalBar
 from .subing_ema_trend import (
     PriceSide,
     SubingEmaTrendResult,
-    calculate_subing_ema_trend_series,
+    SubingEmaTrendStreamState,
+    initial_subing_ema_trend_state,
+    step_subing_ema_trend,
 )
 
 
@@ -69,6 +73,20 @@ class SubingFactorResult:
     snapshot: SubingFactorSnapshot | None
 
 
+@dataclass(frozen=True, slots=True)
+class SubingFactorStreamState:
+    timeframe: BarFrequency
+    contract: str
+    segment_start_trading_day: date
+    latest_bar_source: str
+    trend: SubingEmaTrendStreamState
+    macd: MacdState
+    previous_dif: IndicatorPoint | None
+    previous_dea: IndicatorPoint | None
+    previous_volume: Decimal | None
+    last_bar_end: datetime | None
+
+
 class SubingSignalStatus(StrEnum):
     MATCHED = "matched"
     NOT_MATCHED = "not_matched"
@@ -113,10 +131,7 @@ class SubingSignalEvaluation:
 
     def __post_init__(self) -> None:
         directional = self.direction in {SubingDirection.LONG, SubingDirection.SHORT}
-        if (
-            self.status is SubingSignalStatus.MATCHED
-            and not directional
-        ) or (
+        if (self.status is SubingSignalStatus.MATCHED and not directional) or (
             self.status
             in {SubingSignalStatus.NOT_MATCHED, SubingSignalStatus.INSUFFICIENT_DATA}
             and directional
@@ -150,6 +165,105 @@ _SUBING_MACD_EQUIVALENCE_TARGET = (
     "fast12_slow26_signal9",
     True,
 )
+
+
+def initial_subing_factor_state(
+    *,
+    timeframe: BarFrequency,
+    contract: str,
+    segment_start_trading_day: date,
+    latest_bar_source: str,
+) -> SubingFactorStreamState:
+    _validate_identity(
+        contract=contract,
+        latest_bar_source=latest_bar_source,
+    )
+    policy = require_formal_policy(
+        "web_macd_legacy_v1",
+        consumer="subing_factor_observation",
+    )
+    definition = get_indicator("macd")
+    assert policy.policy_id == definition.formal_policy_id
+    parameters = definition.default_parameters
+    assert definition.seed_policy is not None
+    assert definition.histogram_scale is not None
+    return SubingFactorStreamState(
+        timeframe=timeframe,
+        contract=contract,
+        segment_start_trading_day=segment_start_trading_day,
+        latest_bar_source=latest_bar_source,
+        trend=initial_subing_ema_trend_state(
+            timeframe=timeframe,
+            contract=contract,
+            segment_start_trading_day=segment_start_trading_day,
+        ),
+        macd=initial_macd_state(
+            int(parameters["fast"]),
+            int(parameters["slow"]),
+            int(parameters["signal"]),
+            ema_seed_policy=definition.seed_policy,
+            histogram_scale=definition.histogram_scale,
+            round_digits=int(parameters["round_digits"]),
+        ),
+        previous_dif=None,
+        previous_dea=None,
+        previous_volume=None,
+        last_bar_end=None,
+    )
+
+
+def step_subing_factor(
+    state: SubingFactorStreamState,
+    bar: CanonicalBar,
+) -> tuple[SubingFactorStreamState, SubingFactorResult]:
+    """Advance one physical-segment SuBing Factor observation."""
+
+    _validate_factor_state(state)
+    _validate_identity(
+        contract=state.contract,
+        latest_bar_source=state.latest_bar_source,
+    )
+    _validate_stream_bar(
+        bar,
+        segment_start_trading_day=state.segment_start_trading_day,
+        last_bar_end=state.last_bar_end,
+    )
+    trend, trend_result = step_subing_ema_trend(state.trend, bar)
+    macd, macd_points = step_macd(
+        state.macd,
+        float(bar.close),
+        bar_end=bar.bar_end.isoformat(),
+    )
+    dif, dea, histogram = macd_points
+    result = _result_for_step(
+        bar,
+        timeframe=state.timeframe,
+        contract=state.contract,
+        segment_start_trading_day=state.segment_start_trading_day,
+        bar_source=state.latest_bar_source,
+        trend_result=trend_result,
+        current_dif=dif,
+        previous_dif=state.previous_dif,
+        current_dea=dea,
+        previous_dea=state.previous_dea,
+        current_histogram=histogram,
+        previous_volume=state.previous_volume,
+    )
+    return (
+        SubingFactorStreamState(
+            timeframe=state.timeframe,
+            contract=state.contract,
+            segment_start_trading_day=state.segment_start_trading_day,
+            latest_bar_source=state.latest_bar_source,
+            trend=trend,
+            macd=macd,
+            previous_dif=dif,
+            previous_dea=dea,
+            previous_volume=bar.volume,
+            last_bar_end=bar.bar_end,
+        ),
+        result,
+    )
 
 
 def evaluate_subing_signal(
@@ -276,8 +390,7 @@ def evaluate_subing_signal(
         companion_snapshot,
     )
     if any(
-        condition.state is SubingConditionState.FAIL
-        for condition in known_conditions
+        condition.state is SubingConditionState.FAIL for condition in known_conditions
     ):
         return _signal_state(
             SubingSignalStatus.NOT_MATCHED,
@@ -700,54 +813,17 @@ def calculate_subing_factor_series(
         segment_start_trading_day=segment_start_trading_day,
         latest_bar_source=latest_bar_source,
     )
-    if not bars:
-        return ()
-
-    closes = [float(bar.close) for bar in bars]
-    bar_ends = [bar.bar_end.isoformat() for bar in bars]
-    trends = calculate_subing_ema_trend_series(
-        bars,
+    state = initial_subing_factor_state(
         timeframe=timeframe,
         contract=contract,
         segment_start_trading_day=segment_start_trading_day,
+        latest_bar_source=latest_bar_source,
     )
-
-    policy = require_formal_policy(
-        "web_macd_legacy_v1",
-        consumer="subing_factor_observation",
-    )
-    definition = get_indicator("macd")
-    assert policy.policy_id == definition.formal_policy_id
-    parameters = definition.default_parameters
-    assert definition.seed_policy is not None
-    assert definition.histogram_scale is not None
-    macd = macd_series(
-        closes,
-        int(parameters["fast"]),
-        int(parameters["slow"]),
-        int(parameters["signal"]),
-        ema_seed_policy=definition.seed_policy,
-        histogram_scale=definition.histogram_scale,
-        bar_ends=bar_ends,
-        round_digits=int(parameters["round_digits"]),
-    )
-
-    results = tuple(
-        _result_at(
-            bars,
-            index=index,
-            timeframe=timeframe,
-            contract=contract,
-            segment_start_trading_day=segment_start_trading_day,
-            bar_source=latest_bar_source,
-            trend_result=trends[index],
-            dif_points=macd.dif.points,
-            dea_points=macd.dea.points,
-            histogram_points=macd.histogram.points,
-        )
-        for index in range(len(bars))
-    )
-    return results
+    results: list[SubingFactorResult] = []
+    for bar in bars:
+        state, result = step_subing_factor(state, bar)
+        results.append(result)
+    return tuple(results)
 
 
 def calculate_subing_factor(
@@ -772,28 +848,25 @@ def calculate_subing_factor(
     return results[-1]
 
 
-def _result_at(
-    bars: Sequence[CanonicalBar],
+def _result_for_step(
+    bar: CanonicalBar,
     *,
-    index: int,
     timeframe: BarFrequency,
     contract: str,
     segment_start_trading_day: date,
     bar_source: str,
     trend_result: SubingEmaTrendResult,
-    dif_points: Sequence[IndicatorPoint],
-    dea_points: Sequence[IndicatorPoint],
-    histogram_points: Sequence[IndicatorPoint],
+    current_dif: IndicatorPoint,
+    previous_dif: IndicatorPoint | None,
+    current_dea: IndicatorPoint,
+    previous_dea: IndicatorPoint | None,
+    current_histogram: IndicatorPoint,
+    previous_volume: Decimal | None,
 ) -> SubingFactorResult:
     trend = trend_result.snapshot
-    if trend is None:
+    if trend is None or previous_dif is None or previous_dea is None:
         return _insufficient()
 
-    current_dif = dif_points[index]
-    previous_dif = dif_points[index - 1]
-    current_dea = dea_points[index]
-    previous_dea = dea_points[index - 1]
-    current_histogram = histogram_points[index]
     required_points = (
         current_dif,
         previous_dif,
@@ -804,9 +877,7 @@ def _result_at(
     if not all(_point_has_value(point) for point in required_points):
         return _insufficient()
 
-    bar = bars[index]
-    previous_bar = bars[index - 1]
-    if bar.close == 0:
+    if bar.close == 0 or previous_volume is None:
         return _insufficient()
 
     dif = _point_decimal(current_dif)
@@ -825,8 +896,8 @@ def _result_at(
         cross = MacdCross.NONE
 
     volume_ratio = None
-    if previous_bar.volume > 0:
-        volume_ratio = bar.volume / previous_bar.volume
+    if previous_volume > 0:
+        volume_ratio = bar.volume / previous_volume
 
     return SubingFactorResult(
         status=SubingFactorStatus.READY,
@@ -852,7 +923,7 @@ def _result_at(
             macd_zero_distance_abs=zero_distance_abs,
             macd_zero_distance_bps=zero_distance_abs / bar.close * Decimal(10000),
             volume=bar.volume,
-            previous_volume=previous_bar.volume,
+            previous_volume=previous_volume,
             volume_ratio_prev=volume_ratio,
         ),
     )
@@ -865,13 +936,45 @@ def _validate_inputs(
     segment_start_trading_day: date,
     latest_bar_source: str,
 ) -> None:
+    _validate_identity(
+        contract=contract,
+        latest_bar_source=latest_bar_source,
+    )
+    if any(bar.trading_day < segment_start_trading_day for bar in bars):
+        raise ValueError("bars before segment_start_trading_day are not allowed")
+    if any(
+        current.bar_end <= previous.bar_end
+        for previous, current in zip(bars, bars[1:], strict=False)
+    ):
+        raise ValueError("bar_end must be strictly increasing")
+
+
+def _validate_identity(*, contract: str, latest_bar_source: str) -> None:
     if not contract.strip():
         raise ValueError("contract must not be empty")
     if not latest_bar_source.strip():
         raise ValueError("latest_bar_source must not be empty")
-    if any(bar.trading_day < segment_start_trading_day for bar in bars):
+
+
+def _validate_factor_state(state: SubingFactorStreamState) -> None:
+    if (
+        state.trend.timeframe is not state.timeframe
+        or state.trend.contract != state.contract
+        or state.trend.segment_start_trading_day != state.segment_start_trading_day
+        or state.trend.last_bar_end != state.last_bar_end
+    ):
+        raise ValueError("SUBING_FACTOR_STATE_IDENTITY_MISMATCH")
+
+
+def _validate_stream_bar(
+    bar: CanonicalBar,
+    *,
+    segment_start_trading_day: date,
+    last_bar_end: datetime | None,
+) -> None:
+    if bar.trading_day < segment_start_trading_day:
         raise ValueError("bars before segment_start_trading_day are not allowed")
-    if any(current.bar_end <= previous.bar_end for previous, current in zip(bars, bars[1:], strict=False)):
+    if last_bar_end is not None and bar.bar_end <= last_bar_end:
         raise ValueError("bar_end must be strictly increasing")
 
 

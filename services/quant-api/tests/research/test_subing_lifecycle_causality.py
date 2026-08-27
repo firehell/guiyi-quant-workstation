@@ -27,6 +27,8 @@ from research.subing_lifecycle_fixtures import (
     _factor,
     _long_pivot_prefix,
     _long_trace_with_protective_pivot,
+    _stream_lifecycle_prefixes,
+    _with_lifecycle_reset,
 )
 
 
@@ -562,30 +564,37 @@ def test_pivot_confirmed_exactly_at_entry_boundary_is_not_bound() -> None:
         _bar(25, close="100", low="96"),
         _bar(30, close="101", low="97"),
     )
-    trace = _evaluate(
-        bars,
-        factors_5m=tuple(
-            _factor(
-                bar,
-                BarFrequency.M5,
-                direction=(
-                    SubingDirection.LONG
-                    if index == len(bars) - 1
-                    else SubingDirection.SHORT
-                ),
-                cross=(MacdCross.GOLDEN if index == len(bars) - 1 else MacdCross.NONE),
-                volume_ratio=(
-                    Decimal("3") if index == len(bars) - 1 else Decimal("1")
-                ),
-            )
-            for index, bar in enumerate(bars)
-        ),
-        bars_15m=(_bar(0), _bar(15), _bar(30)),
+    factors = tuple(
+        _factor(
+            bar,
+            BarFrequency.M5,
+            direction=(
+                SubingDirection.LONG
+                if index == len(bars) - 1
+                else SubingDirection.SHORT
+            ),
+            cross=(MacdCross.GOLDEN if index == len(bars) - 1 else MacdCross.NONE),
+            volume_ratio=(
+                Decimal("3") if index == len(bars) - 1 else Decimal("1")
+            ),
+        )
+        for index, bar in enumerate(bars)
     )
+    anchors = (_bar(0), _bar(15), _bar(30))
+    trace = _evaluate(bars, factors_5m=factors, bars_15m=anchors)
+    raw_bars, raw_factors = _with_lifecycle_reset(bars, factors)
+    streamed = _stream_lifecycle_prefixes(
+        raw_bars,
+        factors_5m=raw_factors,
+        bars_15m=anchors,
+        factors_15m=tuple(_factor(bar, BarFrequency.M15) for bar in anchors),
+    )[-1]
 
     assert trace.confirmed_pivots[-1].confirmed_at == bars[-1].bar_end
     assert trace.current_snapshot.stage is LifecycleStage.ENTRY_CONFIRMED
     assert trace.current_snapshot.bound_reference_pivot is None
+    assert streamed.snapshots[-1] == trace.current_snapshot
+    assert streamed.snapshots[-1].bound_reference_pivot is None
 
 
 def test_prior_day_protective_pivot_does_not_bind_to_next_day_entry() -> None:

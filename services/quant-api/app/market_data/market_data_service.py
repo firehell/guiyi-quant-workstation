@@ -23,6 +23,7 @@ from app.market_data.catalog import (
     MainMapFact,
     MarketCatalog,
 )
+from app.market_data.aggregation import SessionWindow
 from app.market_data.domain import (
     ActualDominantRecentBarsQuery,
     ActualDominantTradingDayQuery,
@@ -118,6 +119,31 @@ class MarketDataService:
             bars,
             (),
         )
+
+    def session_windows(
+        self,
+        *,
+        symbol: str,
+        trading_day: date,
+    ) -> tuple[SessionWindow, ...]:
+        """Read the authoritative Catalog TradingSession windows for one day."""
+
+        try:
+            assert_not_retired(symbol)
+            exchange = self.catalog.exchange_for_symbol(symbol)
+            windows = session_windows_for_trading_day(
+                self.catalog.session,
+                exchange=exchange,
+                symbol=symbol,
+                trading_day=trading_day,
+            )
+        except ProductRetiredError as exc:
+            raise MarketDataError("PRODUCT_RETIRED") from exc
+        except (CatalogError, SessionClockError) as exc:
+            raise MarketDataError(exc.code) from exc
+        if not windows:
+            raise MarketDataError("TRADING_SESSION_MISSING")
+        return windows
 
     def query_actual_dominant_trading_days(
         self,

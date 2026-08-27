@@ -34,8 +34,9 @@ export interface SubingStrategyRecordRow {
   disclaimer: '历史因果投影 · 模拟动作 · 非实际成交'
 }
 
-function signedPercent(value: number): string {
-  return `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`
+function signedPercent(value: string): string {
+  const displayed = Number(value)
+  return `${displayed >= 0 ? '+' : ''}${displayed.toFixed(2)}%`
 }
 
 export function buildSubingStrategyRecordRows(

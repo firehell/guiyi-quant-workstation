@@ -27,6 +27,8 @@ from research.subing_lifecycle_fixtures import (
     _factor,
     _long_pivot_prefix,
     _short_pivot_prefix,
+    _stream_lifecycle_prefixes,
+    _with_lifecycle_reset,
 )
 
 
@@ -934,3 +936,61 @@ def test_exit_risk_continues_across_trading_day_without_automatic_close() -> Non
     assert trace.current_snapshot.stage is LifecycleStage.EXIT_RISK
     assert trace.current_snapshot.crossed_trading_day is True
     assert trace.transitions[-1].to_stage is LifecycleStage.EXIT_RISK
+
+
+def test_future_stream_append_preserves_earlier_transition_ids() -> None:
+    confirmed, continuation, close_boundary = (
+        _bar(minutes) for minutes in (15, 20, 30)
+    )
+    bars = (confirmed, continuation, close_boundary)
+    factors = (
+        _factor(
+            confirmed,
+            BarFrequency.M5,
+            cross=MacdCross.GOLDEN,
+            volume_ratio=Decimal("3"),
+        ),
+        _factor(continuation, BarFrequency.M5),
+        _factor(close_boundary, BarFrequency.M5, direction=SubingDirection.SHORT),
+    )
+    anchors = (confirmed, close_boundary)
+    anchor_factors = (
+        _factor(confirmed, BarFrequency.M15),
+        _factor(close_boundary, BarFrequency.M15, direction=SubingDirection.SHORT),
+    )
+    raw_bars, raw_factors = _with_lifecycle_reset(bars, factors)
+
+    states = _stream_lifecycle_prefixes(
+        raw_bars,
+        factors_5m=raw_factors,
+        bars_15m=anchors,
+        factors_15m=anchor_factors,
+    )
+    for prefix, state in enumerate(states, start=1):
+        boundary = raw_bars[prefix - 1].bar_end
+        anchor_count = sum(bar.bar_end <= boundary for bar in anchors)
+        batch = _evaluate_raw(
+            raw_bars[:prefix],
+            factors_5m=raw_factors[:prefix],
+            bars_15m=anchors[:anchor_count],
+            factors_15m=anchor_factors[:anchor_count],
+        )
+        assert state.snapshots == batch.snapshots
+        assert state.transitions == batch.transitions
+        assert state.confirmed_pivots == batch.confirmed_pivots
+        assert state.completed_opportunities == batch.completed_opportunities
+
+    prefix_ids = tuple(
+        transition.transition_id for transition in states[-2].transitions
+    )
+    full_ids = tuple(transition.transition_id for transition in states[-1].transitions)
+
+    assert full_ids[: len(prefix_ids)] == prefix_ids
+    assert len(set(full_ids)) == len(full_ids)
+    assert tuple(
+        transition.reason_codes for transition in states[-1].transitions
+    ) == (
+        ("FORMAL_V1_MATCHED",),
+        ("CONFIRMED_TREND_CONTINUES",),
+        ("OPPOSITE_DIRECTION_CONTEXT_CONFIRMED",),
+    )

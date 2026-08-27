@@ -13,6 +13,7 @@ from .subing_lifecycle_policy import (
     _FORMULA_VERSION,
     _POLICY_ID,
     SubingLifecyclePolicy,
+    is_subing_lifecycle_policy,
 )
 from .subing_research import (
     MacdCross,
@@ -348,6 +349,106 @@ class SubingLifecycleTrace:
     @property
     def confirmed_transitions(self) -> tuple[SubingLifecycleTransition, ...]:
         return self.transitions
+
+
+@dataclass(frozen=True, slots=True)
+class _ActiveOpportunityState:
+    key: SubingOpportunityKey
+    origin_trading_day: date
+    stage: LifecycleStage = LifecycleStage.SETUP_ARMED
+    progress: EntryProgress | None = EntryProgress.WAITING_TRIGGER
+    confirmation_source: ConfirmationSource | None = None
+    confirmed_at: datetime | None = None
+    trigger_kind: str | None = None
+    trigger_timeframe: BarFrequency | None = None
+    triggered_at: datetime | None = None
+    hold_count: int = 0
+    volume_ratio_prev: Decimal | None = None
+    open_interest_delta: Decimal | None = None
+    trigger_reference_pivot: ConfirmedPivot | None = None
+    bound_reference_pivot: ConfirmedPivot | None = None
+    rebreak_reference_price: Decimal | None = None
+    retest_at: datetime | None = None
+    retest_rebreak_count: int = 0
+    last_evaluable_close: Decimal | None = None
+    current_risk_codes: tuple[str, ...] = ()
+    risk_progress: str | None = None
+    lower_tf_risk_count: int = 0
+    crossed_trading_day: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class SubingLifecycleMachineState:
+    formula_version: str
+    policy_id: str
+    symbol: str
+    contract: str
+    segment_start_trading_day: date
+    active_opportunity: _ActiveOpportunityState | None = None
+    confirmed_pivots: tuple[ConfirmedPivot, ...] = ()
+    pivot_trading_days: tuple[date, ...] = ()
+    completed_opportunities: tuple[SubingLifecycleState, ...] = ()
+    transitions: tuple[SubingLifecycleTransition, ...] = ()
+    snapshots: tuple[SubingLifecycleSnapshot, ...] = ()
+    latest_15m_factor: SubingFactorSnapshot | None = None
+    latest_5m_bar_end: datetime | None = None
+    latest_15m_bar_end: datetime | None = None
+    latest_5m_bar: CanonicalBar | None = None
+    latest_15m_bar: CanonicalBar | None = None
+    latest_15m_result: SubingFactorResult | None = None
+    latest_15m_error: str | None = None
+    pivot_window: tuple[CanonicalBar, ...] = ()
+    last_confirmed_stage: LifecycleStage = LifecycleStage.IDLE
+    last_confirmed_at: datetime | None = None
+    input_error: str | None = None
+
+    def __post_init__(self) -> None:
+        if (
+            self.formula_version != _FORMULA_VERSION
+            or self.policy_id != _POLICY_ID
+            or type(self.confirmed_pivots) is not tuple
+            or type(self.completed_opportunities) is not tuple
+            or type(self.pivot_trading_days) is not tuple
+            or type(self.transitions) is not tuple
+            or type(self.snapshots) is not tuple
+            or type(self.pivot_window) is not tuple
+            or len(self.confirmed_pivots) != len(self.pivot_trading_days)
+            or len(self.pivot_window) > 5
+            or self.latest_15m_error
+            not in {None, "SUBING_FACTOR_UNAVAILABLE", "SUBING_FACTOR_IDENTITY_MISMATCH"}
+            or (
+                self.latest_15m_error is not None
+                and (
+                    self.latest_15m_bar is None
+                    or self.latest_15m_result is not None
+                    or self.latest_15m_factor is not None
+                )
+            )
+        ):
+            raise SubingLifecycleContractError()
+
+
+def initial_subing_lifecycle_state(
+    *,
+    symbol: str,
+    contract: str,
+    segment_start_trading_day: date,
+) -> SubingLifecycleMachineState:
+    """Create an empty immutable reducer state for one physical segment."""
+
+    identity_error = _identity_contract_error(
+        symbol=symbol,
+        contract=contract,
+        segment_start_trading_day=segment_start_trading_day,
+    )
+    return SubingLifecycleMachineState(
+        formula_version=_FORMULA_VERSION,
+        policy_id=_POLICY_ID,
+        symbol=symbol,
+        contract=contract,
+        segment_start_trading_day=segment_start_trading_day,
+        input_error=identity_error,
+    )
 
 
 @dataclass(slots=True)
@@ -1005,6 +1106,663 @@ def _key_matches_trace(
     )
 
 
+def _freeze_opportunity(
+    opportunity: _ActiveOpportunity | None,
+) -> _ActiveOpportunityState | None:
+    if opportunity is None:
+        return None
+    return _ActiveOpportunityState(
+        **{
+            name: getattr(opportunity, name)
+            for name in _ActiveOpportunityState.__dataclass_fields__
+        }
+    )
+
+
+def _thaw_opportunity(
+    opportunity: _ActiveOpportunityState | None,
+) -> _ActiveOpportunity | None:
+    if opportunity is None:
+        return None
+    return _ActiveOpportunity(
+        **{
+            name: getattr(opportunity, name)
+            for name in _ActiveOpportunityState.__dataclass_fields__
+        }
+    )
+
+
+def _identity_contract_error(
+    *,
+    symbol: str,
+    contract: str,
+    segment_start_trading_day: date,
+) -> str | None:
+    if (
+        not isinstance(symbol, str)
+        or not symbol.strip()
+        or not isinstance(contract, str)
+        or not contract.strip()
+        or normalize_contract_for_symbol(symbol, contract) != contract
+        or type(segment_start_trading_day) is not date
+    ):
+        return "SUBING_LIFECYCLE_IDENTITY_INVALID"
+    return None
+
+
+def _validate_stream_boundary(
+    state: SubingLifecycleMachineState,
+    *,
+    bar: CanonicalBar,
+    latest_bar_end: datetime | None,
+) -> None:
+    if (
+        not isinstance(bar, CanonicalBar)
+        or bar.trading_day < state.segment_start_trading_day
+    ):
+        raise ValueError("SUBING_LIFECYCLE_STREAM_SEGMENT_INVALID")
+    if latest_bar_end is not None and bar.bar_end <= latest_bar_end:
+        raise ValueError("SUBING_LIFECYCLE_STREAM_ORDER_INVALID")
+
+
+def step_subing_lifecycle_15m(
+    state: SubingLifecycleMachineState,
+    *,
+    bar: CanonicalBar,
+    factor: SubingFactorResult,
+) -> SubingLifecycleMachineState:
+    """Advance the completed 15m anchor before any equal-boundary 5m clock."""
+
+    if not isinstance(state, SubingLifecycleMachineState):
+        raise SubingLifecycleContractError()
+    if state.input_error is None:
+        _validate_stream_boundary(
+            state,
+            bar=bar,
+            latest_bar_end=state.latest_15m_bar_end,
+        )
+        if (
+            state.latest_5m_bar_end is not None
+            and bar.bar_end <= state.latest_5m_bar_end
+        ):
+            raise ValueError("SUBING_LIFECYCLE_STREAM_ORDER_INVALID")
+    factor_error = _boundary_contract_error(
+        bar=bar,
+        factor=factor,
+        timeframe=BarFrequency.M15,
+        contract=state.contract,
+        segment_start_trading_day=state.segment_start_trading_day,
+    )
+    if factor_error is not None:
+        raise ValueError(factor_error)
+    return replace(
+        state,
+        latest_15m_factor=(
+            factor.snapshot if isinstance(factor, SubingFactorResult) else None
+        ),
+        latest_15m_bar_end=bar.bar_end,
+        latest_15m_bar=bar,
+        latest_15m_result=factor,
+        latest_15m_error=None,
+    )
+
+
+def _advance_batch_15m_error(
+    state: SubingLifecycleMachineState,
+    *,
+    bar: CanonicalBar,
+    error: str,
+) -> SubingLifecycleMachineState:
+    """Record an invalid batch anchor boundary without retaining its Factor."""
+
+    if state.input_error is None:
+        _validate_stream_boundary(
+            state,
+            bar=bar,
+            latest_bar_end=state.latest_15m_bar_end,
+        )
+        if (
+            state.latest_5m_bar_end is not None
+            and bar.bar_end <= state.latest_5m_bar_end
+        ):
+            raise ValueError("SUBING_LIFECYCLE_STREAM_ORDER_INVALID")
+    return replace(
+        state,
+        latest_15m_factor=None,
+        latest_15m_bar_end=bar.bar_end,
+        latest_15m_bar=bar,
+        latest_15m_result=None,
+        latest_15m_error=error,
+    )
+
+
+def step_subing_lifecycle_5m(
+    state: SubingLifecycleMachineState,
+    *,
+    bar: CanonicalBar,
+    factor: SubingFactorResult,
+    calibration: SubingCalibration,
+    policy: SubingLifecyclePolicy,
+) -> tuple[SubingLifecycleMachineState, SubingLifecycleSnapshot]:
+    """Advance one completed 5m clock and emit its immutable snapshot."""
+
+    if not isinstance(state, SubingLifecycleMachineState):
+        raise SubingLifecycleContractError()
+    if state.input_error is None:
+        _validate_stream_boundary(
+            state,
+            bar=bar,
+            latest_bar_end=state.latest_5m_bar_end,
+        )
+    if (
+        state.input_error is None
+        and state.latest_15m_bar_end is not None
+        and state.latest_15m_bar_end > bar.bar_end
+    ):
+        raise ValueError("SUBING_LIFECYCLE_STREAM_ORDER_INVALID")
+
+    input_error = state.input_error
+    if input_error is None and not is_subing_lifecycle_policy(policy):
+        input_error = "SUBING_LIFECYCLE_POLICY_INVALID"
+    if input_error is None and not is_accepted_subing_calibration(calibration):
+        input_error = "SUBING_CALIBRATION_INVALID"
+
+    pivot_window = (
+        (*state.pivot_window, bar)[-5:]
+        if state.latest_5m_bar is not None
+        and state.latest_5m_bar.trading_day == bar.trading_day
+        else (bar,)
+    )
+    pivots = state.confirmed_pivots
+    pivot_days = state.pivot_trading_days
+    pivot_trading_days: dict[str, date] = {}
+    if input_error is None:
+        try:
+            newly_confirmed = confirmed_pivots(
+                pivot_window,
+                source_timeframe=BarFrequency.M5,
+                contract=state.contract,
+                segment_start_trading_day=state.segment_start_trading_day,
+                trading_day=bar.trading_day,
+            )
+            pivots = (*pivots, *newly_confirmed)
+            pivot_days = (
+                *pivot_days,
+                *(bar.trading_day for _ in newly_confirmed),
+            )
+            pivot_trading_days = {
+                pivot.pivot_id: trading_day
+                for pivot, trading_day in zip(pivots, pivot_days)
+            }
+        except ValueError:
+            input_error = "SUBING_STRUCTURE_INVALID"
+            pivots = ()
+            pivot_days = ()
+    pivot_cursor = _ConfirmedPivotCursor(
+        pivots,
+        pivot_trading_days=pivot_trading_days,
+    )
+    transitions = list(state.transitions)
+    completed = list(state.completed_opportunities)
+    snapshots = list(state.snapshots)
+    opportunity = _thaw_opportunity(state.active_opportunity)
+    last_confirmed_stage = state.last_confirmed_stage
+    last_confirmed_at = state.last_confirmed_at
+    transition_count_before = len(transitions)
+    anchor_bar = state.latest_15m_bar
+    anchor_factor = state.latest_15m_result
+    boundary_error = input_error or _boundary_contract_error(
+        bar=bar,
+        factor=factor,
+        timeframe=BarFrequency.M5,
+        contract=state.contract,
+        segment_start_trading_day=state.segment_start_trading_day,
+    )
+    if anchor_bar is None or anchor_factor is None:
+        boundary_error = boundary_error or state.latest_15m_error
+        boundary_error = boundary_error or "SUBING_15M_ANCHOR_UNAVAILABLE"
+    elif boundary_error is None:
+        boundary_error = _boundary_contract_error(
+            bar=anchor_bar,
+            factor=anchor_factor,
+            timeframe=BarFrequency.M15,
+            contract=state.contract,
+            segment_start_trading_day=state.segment_start_trading_day,
+        )
+
+    if not snapshots:
+        snapshot = _snapshot(
+            policy=policy,
+            observed_at=bar.bar_end,
+            anchor_bar_end=(None if anchor_bar is None else anchor_bar.bar_end),
+            availability=(
+                LifecycleAvailability.UNAVAILABLE
+                if boundary_error is not None
+                else LifecycleAvailability.READY
+            ),
+            unavailable_reason=boundary_error,
+            direction=SubingDirection.NONE,
+            opportunity=None,
+            latest_transition=None,
+            last_confirmed_at=(bar.bar_end if boundary_error is None else None),
+            boundary_reset="segment_changed",
+        )
+        snapshots.append(snapshot)
+        next_state = replace(
+            state,
+            confirmed_pivots=pivots,
+            pivot_trading_days=pivot_days,
+            snapshots=tuple(snapshots),
+            latest_5m_bar_end=bar.bar_end,
+            latest_5m_bar=bar,
+            pivot_window=pivot_window,
+            last_confirmed_at=(bar.bar_end if boundary_error is None else None),
+            input_error=input_error,
+        )
+        return next_state, snapshot
+
+    if boundary_error is not None:
+        snapshot = _snapshot(
+            policy=policy,
+            observed_at=bar.bar_end,
+            anchor_bar_end=(None if anchor_bar is None else anchor_bar.bar_end),
+            availability=LifecycleAvailability.UNAVAILABLE,
+            unavailable_reason=boundary_error,
+            direction=(
+                opportunity.key.direction
+                if opportunity is not None
+                else SubingDirection.NONE
+            ),
+            opportunity=opportunity,
+            latest_transition=(transitions[-1] if transitions else None),
+            last_confirmed_stage=last_confirmed_stage,
+            last_confirmed_at=last_confirmed_at,
+        )
+        snapshots.append(snapshot)
+        next_state = replace(
+            state,
+            active_opportunity=_freeze_opportunity(opportunity),
+            confirmed_pivots=pivots,
+            pivot_trading_days=pivot_days,
+            snapshots=tuple(snapshots),
+            latest_5m_bar_end=bar.bar_end,
+            latest_5m_bar=bar,
+            pivot_window=pivot_window,
+            input_error=input_error,
+        )
+        return next_state, snapshot
+
+    symbol = state.symbol
+    contract = state.contract
+    segment_start_trading_day = state.segment_start_trading_day
+    bar_5m = bar
+    assert anchor_bar is not None and anchor_factor is not None
+    factor_5m = factor.snapshot
+    factor_15m = anchor_factor.snapshot
+    assert factor_5m is not None and factor_15m is not None
+    direction = evaluate_subing_direction_context(
+        factor_5m,
+        factor_15m,
+        calibration,
+    )
+    formal = _formal_v1_at_boundary(
+        factor_5m=factor,
+        factor_15m=anchor_factor,
+        same_boundary=anchor_bar.bar_end == bar_5m.bar_end,
+        calibration=calibration,
+    )
+    formal_match = formal.status is SubingSignalStatus.MATCHED
+
+    if opportunity is not None and opportunity.stage is LifecycleStage.CLOSED:
+        opportunity = None
+
+    if opportunity is None:
+        if formal_match:
+            opportunity = _new_opportunity(
+                policy=policy,
+                symbol=symbol,
+                contract=contract,
+                segment_start_trading_day=segment_start_trading_day,
+                direction=formal.direction,
+                origin_at=bar_5m.bar_end,
+                origin_trading_day=bar_5m.trading_day,
+            )
+            _confirm_entry(
+                opportunity,
+                source=ConfirmationSource.FORMAL_V1,
+                confirmed_at=bar_5m.bar_end,
+                boundary=bar_5m,
+                pivot_cursor=pivot_cursor,
+            )
+            transitions.append(
+                _transition(
+                    opportunity_key=opportunity.key,
+                    transition_at=bar_5m.bar_end,
+                    from_stage=LifecycleStage.IDLE,
+                    to_stage=LifecycleStage.ENTRY_CONFIRMED,
+                    reason_code="FORMAL_V1_MATCHED",
+                )
+            )
+        elif direction is not SubingDirection.NONE:
+            opportunity = _new_opportunity(
+                policy=policy,
+                symbol=symbol,
+                contract=contract,
+                segment_start_trading_day=segment_start_trading_day,
+                direction=direction,
+                origin_at=bar_5m.bar_end,
+                origin_trading_day=bar_5m.trading_day,
+            )
+            transitions.append(
+                _transition(
+                    opportunity_key=opportunity.key,
+                    transition_at=bar_5m.bar_end,
+                    from_stage=LifecycleStage.IDLE,
+                    to_stage=LifecycleStage.SETUP_ARMED,
+                    reason_code="DIRECTION_CONTEXT_ALIGNED",
+                )
+            )
+    elif opportunity.stage in {
+        LifecycleStage.ENTRY_CONFIRMED,
+        LifecycleStage.CONTINUATION,
+        LifecycleStage.EXIT_RISK,
+    }:
+        _advance_confirmed_opportunity(
+            opportunity,
+            transition_at=bar_5m.bar_end,
+            trading_day=bar_5m.trading_day,
+            factor_5m=factor_5m,
+            factor_15m=factor_15m,
+            same_boundary=anchor_bar.bar_end == bar_5m.bar_end,
+            formal=formal,
+            direction_context=direction,
+            policy=policy,
+            transitions=transitions,
+            completed=completed,
+        )
+    elif opportunity.stage is LifecycleStage.SETUP_ARMED:
+        if formal_match and formal.direction is opportunity.key.direction:
+            opportunity.crossed_trading_day = (
+                opportunity.crossed_trading_day
+                or bar_5m.trading_day > opportunity.origin_trading_day
+            )
+            _confirm_entry(
+                opportunity,
+                source=ConfirmationSource.FORMAL_V1,
+                confirmed_at=bar_5m.bar_end,
+                boundary=bar_5m,
+                pivot_cursor=pivot_cursor,
+            )
+            transitions.append(
+                _transition(
+                    opportunity_key=opportunity.key,
+                    transition_at=bar_5m.bar_end,
+                    from_stage=LifecycleStage.SETUP_ARMED,
+                    to_stage=LifecycleStage.ENTRY_CONFIRMED,
+                    reason_code="FORMAL_V1_MATCHED",
+                )
+            )
+        elif bar_5m.trading_day > opportunity.origin_trading_day:
+            _close_setup(
+                opportunity,
+                transition_at=bar_5m.bar_end,
+                reason_code="UNCONFIRMED_TRADING_DAY_ROLLOVER",
+                transitions=transitions,
+                completed=completed,
+            )
+        elif opportunity.progress is EntryProgress.RETEST_CONFIRMING:
+            pivot = opportunity.trigger_reference_pivot
+            assert pivot is not None
+            retest = assess_pivot_retest(
+                bar_5m,
+                pivot=pivot,
+                direction=opportunity.key.direction,
+            )
+            if retest.hard_invalidated or not _persistence_context(
+                factor_5m,
+                factor_15m,
+                opportunity.key.direction,
+            ):
+                _close_setup(
+                    opportunity,
+                    transition_at=bar_5m.bar_end,
+                    reason_code="PIVOT_RETEST_INVALIDATED",
+                    transitions=transitions,
+                    completed=completed,
+                )
+            else:
+                previous_close = opportunity.last_evaluable_close
+                opportunity.retest_rebreak_count += 1
+                if _rebreak_crossed(
+                    previous_close=previous_close,
+                    current_close=bar_5m.close,
+                    reference_price=opportunity.rebreak_reference_price,
+                    pivot_price=pivot.price,
+                    direction=opportunity.key.direction,
+                ):
+                    _confirm_entry(
+                        opportunity,
+                        source=ConfirmationSource.PIVOT_RETEST_REBREAK,
+                        confirmed_at=bar_5m.bar_end,
+                        boundary=bar_5m,
+                        pivot_cursor=pivot_cursor,
+                    )
+                    transitions.append(
+                        _transition(
+                            opportunity_key=opportunity.key,
+                            transition_at=bar_5m.bar_end,
+                            from_stage=LifecycleStage.SETUP_ARMED,
+                            to_stage=LifecycleStage.ENTRY_CONFIRMED,
+                            reason_code="PIVOT_RETEST_REBREAK_CONFIRMED",
+                        )
+                    )
+                elif opportunity.retest_rebreak_count >= policy.retest_rebreak_max_bars:
+                    _close_setup(
+                        opportunity,
+                        transition_at=bar_5m.bar_end,
+                        reason_code="RETEST_REBREAK_TIMEOUT",
+                        transitions=transitions,
+                        completed=completed,
+                    )
+                opportunity.last_evaluable_close = bar_5m.close
+        elif opportunity.progress is EntryProgress.HOLD_CONFIRMING and (
+            opportunity.trigger_kind == "pivot_break"
+        ):
+            pivot = opportunity.trigger_reference_pivot
+            assert pivot is not None
+            retest = assess_pivot_retest(
+                bar_5m,
+                pivot=pivot,
+                direction=opportunity.key.direction,
+            )
+            if retest.hard_invalidated:
+                _close_setup(
+                    opportunity,
+                    transition_at=bar_5m.bar_end,
+                    reason_code="PIVOT_RETEST_INVALIDATED",
+                    transitions=transitions,
+                    completed=completed,
+                )
+            elif retest.touched_reference and retest.close_preserved_side:
+                opportunity.progress = EntryProgress.RETEST_CONFIRMING
+                opportunity.retest_at = bar_5m.bar_end
+                opportunity.retest_rebreak_count = 0
+                opportunity.last_evaluable_close = bar_5m.close
+            elif not _persistence_context(
+                factor_5m,
+                factor_15m,
+                opportunity.key.direction,
+            ):
+                _close_setup(
+                    opportunity,
+                    transition_at=bar_5m.bar_end,
+                    reason_code="PIVOT_BREAK_HOLD_FAILED",
+                    transitions=transitions,
+                    completed=completed,
+                )
+            else:
+                opportunity.hold_count += 1
+                opportunity.last_evaluable_close = bar_5m.close
+                if opportunity.hold_count >= policy.hold_required_bars:
+                    _confirm_entry(
+                        opportunity,
+                        source=ConfirmationSource.PIVOT_BREAK_HOLD,
+                        confirmed_at=bar_5m.bar_end,
+                        boundary=bar_5m,
+                        pivot_cursor=pivot_cursor,
+                    )
+                    transitions.append(
+                        _transition(
+                            opportunity_key=opportunity.key,
+                            transition_at=bar_5m.bar_end,
+                            from_stage=LifecycleStage.SETUP_ARMED,
+                            to_stage=LifecycleStage.ENTRY_CONFIRMED,
+                            reason_code="PIVOT_BREAK_HOLD_CONFIRMED",
+                        )
+                    )
+        elif opportunity.progress is EntryProgress.HOLD_CONFIRMING:
+            if _momentum_hold_failed(
+                opportunity,
+                factor_5m,
+                factor_15m,
+                same_boundary=anchor_bar.bar_end == bar_5m.bar_end,
+                formal=formal,
+            ):
+                _close_setup(
+                    opportunity,
+                    transition_at=bar_5m.bar_end,
+                    reason_code="MOMENTUM_HOLD_FAILED",
+                    transitions=transitions,
+                    completed=completed,
+                )
+            else:
+                opportunity.hold_count += 1
+                if opportunity.hold_count >= policy.hold_required_bars:
+                    _confirm_entry(
+                        opportunity,
+                        source=ConfirmationSource.MOMENTUM_HOLD,
+                        confirmed_at=bar_5m.bar_end,
+                        boundary=bar_5m,
+                        pivot_cursor=pivot_cursor,
+                    )
+                    transitions.append(
+                        _transition(
+                            opportunity_key=opportunity.key,
+                            transition_at=bar_5m.bar_end,
+                            from_stage=LifecycleStage.SETUP_ARMED,
+                            to_stage=LifecycleStage.ENTRY_CONFIRMED,
+                            reason_code="MOMENTUM_HOLD_CONFIRMED",
+                        )
+                    )
+        elif direction is not opportunity.key.direction:
+            _close_setup(
+                opportunity,
+                transition_at=bar_5m.bar_end,
+                reason_code="DIRECTION_CONTEXT_INVALIDATED",
+                transitions=transitions,
+                completed=completed,
+            )
+        else:
+            pivot_trigger = (
+                _pivot_breakout_at(
+                    pivot_cursor.latest_before(
+                        boundary=bar_5m,
+                        kind=(
+                            PivotKind.HIGH
+                            if opportunity.key.direction is SubingDirection.LONG
+                            else PivotKind.LOW
+                        ),
+                    ),
+                    previous=state.latest_5m_bar,
+                    current=bar_5m,
+                    direction=opportunity.key.direction,
+                )
+                if state.latest_5m_bar is not None
+                else None
+            )
+            if pivot_trigger is not None:
+                pivot, assessment = pivot_trigger
+                opportunity.progress = EntryProgress.HOLD_CONFIRMING
+                opportunity.trigger_kind = "pivot_break"
+                opportunity.trigger_timeframe = BarFrequency.M5
+                opportunity.triggered_at = bar_5m.bar_end
+                opportunity.hold_count = 1
+                opportunity.trigger_reference_pivot = pivot
+                opportunity.rebreak_reference_price = (
+                    bar_5m.high
+                    if opportunity.key.direction is SubingDirection.LONG
+                    else bar_5m.low
+                )
+                opportunity.last_evaluable_close = bar_5m.close
+                opportunity.volume_ratio_prev = assessment.volume_ratio_prev
+                opportunity.open_interest_delta = assessment.open_interest_delta
+            else:
+                trigger_timeframe = _same_direction_macd_trigger(
+                    factor_5m,
+                    factor_15m,
+                    same_boundary=anchor_bar.bar_end == bar_5m.bar_end,
+                    direction=opportunity.key.direction,
+                )
+                if trigger_timeframe is not None:
+                    opportunity.progress = EntryProgress.HOLD_CONFIRMING
+                    opportunity.trigger_kind = "macd_cross"
+                    opportunity.trigger_timeframe = trigger_timeframe
+                    opportunity.triggered_at = bar_5m.bar_end
+                    opportunity.hold_count = 1
+                    opportunity.volume_ratio_prev = factor_5m.volume_ratio_prev
+                    if state.latest_5m_bar is not None:
+                        previous = state.latest_5m_bar
+                        if (
+                            previous.open_interest is not None
+                            and bar_5m.open_interest is not None
+                        ):
+                            opportunity.open_interest_delta = (
+                                bar_5m.open_interest - previous.open_interest
+                            )
+    assert len(transitions) - transition_count_before <= 1
+    last_confirmed_stage = (
+        opportunity.stage if opportunity is not None else LifecycleStage.IDLE
+    )
+    last_confirmed_at = bar_5m.bar_end
+    snapshots.append(
+        _snapshot(
+            policy=policy,
+            observed_at=bar_5m.bar_end,
+            anchor_bar_end=anchor_bar.bar_end,
+            availability=LifecycleAvailability.READY,
+            unavailable_reason=None,
+            direction=(
+                opportunity.key.direction
+                if opportunity is not None
+                else SubingDirection.NONE
+            ),
+            opportunity=opportunity,
+            latest_transition=(transitions[-1] if transitions else None),
+            formal_v1_matched=formal_match,
+            last_confirmed_stage=last_confirmed_stage,
+            last_confirmed_at=last_confirmed_at,
+        )
+    )
+
+    snapshot = snapshots[-1]
+    next_state = replace(
+        state,
+        active_opportunity=_freeze_opportunity(opportunity),
+        confirmed_pivots=pivots,
+        pivot_trading_days=pivot_days,
+        completed_opportunities=tuple(completed),
+        transitions=tuple(transitions),
+        snapshots=tuple(snapshots),
+        latest_5m_bar_end=bar.bar_end,
+        latest_5m_bar=bar,
+        pivot_window=pivot_window,
+        last_confirmed_stage=last_confirmed_stage,
+        last_confirmed_at=last_confirmed_at,
+        input_error=input_error,
+    )
+    return next_state, snapshot
+
+
 def evaluate_subing_lifecycle(
     *,
     symbol: str,
@@ -1017,15 +1775,8 @@ def evaluate_subing_lifecycle(
     calibration: SubingCalibration,
     policy: SubingLifecyclePolicy,
 ) -> SubingLifecycleTrace:
-    """Reduce aligned completed 5m/15m facts into a research-only trace."""
+    """Reduce aligned completed 5m/15m facts through the public step reducer."""
 
-    snapshots: list[SubingLifecycleSnapshot] = []
-    transitions: list[SubingLifecycleTransition] = []
-    completed: list[SubingLifecycleState] = []
-    opportunity: _ActiveOpportunity | None = None
-    last_confirmed_stage = LifecycleStage.IDLE
-    last_confirmed_at: datetime | None = None
-    anchor_index = -1
     input_error = _input_contract_error(
         symbol=symbol,
         contract=contract,
@@ -1037,471 +1788,69 @@ def evaluate_subing_lifecycle(
         calibration=calibration,
         policy=policy,
     )
-    pivots: tuple[ConfirmedPivot, ...] = ()
-    pivot_trading_days: dict[str, date] = {}
-    if input_error is None:
-        try:
-            pivots = _all_confirmed_pivots(
-                bars_5m,
-                contract=contract,
-                segment_start_trading_day=segment_start_trading_day,
-            )
-            trading_day_by_bar_end = {
-                bar.bar_end: bar.trading_day for bar in bars_5m
-            }
-            pivot_trading_days = {
-                pivot.pivot_id: trading_day_by_bar_end[pivot.pivot_time]
-                for pivot in pivots
-            }
-        except ValueError:
-            input_error = "SUBING_STRUCTURE_INVALID"
-    pivot_cursor = _ConfirmedPivotCursor(
-        pivots,
-        pivot_trading_days=pivot_trading_days,
+    state = initial_subing_lifecycle_state(
+        symbol=symbol,
+        contract=contract,
+        segment_start_trading_day=segment_start_trading_day,
     )
-
+    state = replace(state, input_error=input_error)
+    unavailable_factor = SubingFactorResult(
+        status=SubingFactorStatus.INSUFFICIENT_DATA,
+        snapshot=None,
+    )
+    anchor_index = 0
     for index, bar_5m in enumerate(bars_5m):
-        transition_count_before = len(transitions)
         while (
-            anchor_index + 1 < len(bars_15m)
-            and bars_15m[anchor_index + 1].bar_end <= bar_5m.bar_end
+            anchor_index < len(bars_15m)
+            and bars_15m[anchor_index].bar_end <= bar_5m.bar_end
         ):
+            if anchor_index < len(factors_15m):
+                anchor_bar = bars_15m[anchor_index]
+                anchor_factor = factors_15m[anchor_index]
+                anchor_error = _boundary_contract_error(
+                    bar=anchor_bar,
+                    factor=anchor_factor,
+                    timeframe=BarFrequency.M15,
+                    contract=state.contract,
+                    segment_start_trading_day=state.segment_start_trading_day,
+                )
+                if anchor_error is None:
+                    state = step_subing_lifecycle_15m(
+                        state,
+                        bar=anchor_bar,
+                        factor=anchor_factor,
+                    )
+                else:
+                    state = _advance_batch_15m_error(
+                        state,
+                        bar=anchor_bar,
+                        error=anchor_error,
+                    )
             anchor_index += 1
-        anchor_bar = (
-            bars_15m[anchor_index]
-            if 0 <= anchor_index < len(bars_15m)
-            else None
-        )
-        anchor_factor = (
-            factors_15m[anchor_index]
-            if 0 <= anchor_index < len(factors_15m)
-            else None
-        )
-        boundary_error = input_error or _boundary_contract_error(
+        state, _ = step_subing_lifecycle_5m(
+            state,
             bar=bar_5m,
-            factor=factors_5m[index] if index < len(factors_5m) else None,
-            timeframe=BarFrequency.M5,
-            contract=contract,
-            segment_start_trading_day=segment_start_trading_day,
-        )
-        if anchor_bar is None or anchor_factor is None:
-            boundary_error = boundary_error or "SUBING_15M_ANCHOR_UNAVAILABLE"
-        elif boundary_error is None:
-            boundary_error = _boundary_contract_error(
-                bar=anchor_bar,
-                factor=anchor_factor,
-                timeframe=BarFrequency.M15,
-                contract=contract,
-                segment_start_trading_day=segment_start_trading_day,
-            )
-
-        if index == 0:
-            snapshots.append(
-                _snapshot(
-                    policy=policy,
-                    observed_at=bar_5m.bar_end,
-                    anchor_bar_end=(None if anchor_bar is None else anchor_bar.bar_end),
-                    availability=(
-                        LifecycleAvailability.UNAVAILABLE
-                        if boundary_error is not None
-                        else LifecycleAvailability.READY
-                    ),
-                    unavailable_reason=boundary_error,
-                    direction=SubingDirection.NONE,
-                    opportunity=None,
-                    latest_transition=None,
-                    last_confirmed_at=(
-                        bar_5m.bar_end if boundary_error is None else None
-                    ),
-                    boundary_reset="segment_changed",
-                )
-            )
-            assert len(transitions) == transition_count_before
-            continue
-
-        if boundary_error is not None:
-            snapshots.append(
-                _snapshot(
-                    policy=policy,
-                    observed_at=bar_5m.bar_end,
-                    anchor_bar_end=(None if anchor_bar is None else anchor_bar.bar_end),
-                    availability=LifecycleAvailability.UNAVAILABLE,
-                    unavailable_reason=boundary_error,
-                    direction=(
-                        opportunity.key.direction
-                        if opportunity is not None
-                        else SubingDirection.NONE
-                    ),
-                    opportunity=opportunity,
-                    latest_transition=(transitions[-1] if transitions else None),
-                    last_confirmed_stage=last_confirmed_stage,
-                    last_confirmed_at=last_confirmed_at,
-                )
-            )
-            assert len(transitions) == transition_count_before
-            continue
-
-        assert anchor_bar is not None and anchor_factor is not None
-        factor_5m = factors_5m[index].snapshot
-        factor_15m = anchor_factor.snapshot
-        assert factor_5m is not None and factor_15m is not None
-        direction = evaluate_subing_direction_context(
-            factor_5m,
-            factor_15m,
-            calibration,
-        )
-        formal = _formal_v1_at_boundary(
-            factor_5m=factors_5m[index],
-            factor_15m=anchor_factor,
-            same_boundary=anchor_bar.bar_end == bar_5m.bar_end,
+            factor=(
+                factors_5m[index] if index < len(factors_5m) else unavailable_factor
+            ),
             calibration=calibration,
-        )
-        formal_match = formal.status is SubingSignalStatus.MATCHED
-
-        if opportunity is not None and opportunity.stage is LifecycleStage.CLOSED:
-            opportunity = None
-
-        if opportunity is None:
-            if formal_match:
-                opportunity = _new_opportunity(
-                    policy=policy,
-                    symbol=symbol,
-                    contract=contract,
-                    segment_start_trading_day=segment_start_trading_day,
-                    direction=formal.direction,
-                    origin_at=bar_5m.bar_end,
-                    origin_trading_day=bar_5m.trading_day,
-                )
-                _confirm_entry(
-                    opportunity,
-                    source=ConfirmationSource.FORMAL_V1,
-                    confirmed_at=bar_5m.bar_end,
-                    boundary=bar_5m,
-                    pivot_cursor=pivot_cursor,
-                )
-                transitions.append(
-                    _transition(
-                        opportunity_key=opportunity.key,
-                        transition_at=bar_5m.bar_end,
-                        from_stage=LifecycleStage.IDLE,
-                        to_stage=LifecycleStage.ENTRY_CONFIRMED,
-                        reason_code="FORMAL_V1_MATCHED",
-                    )
-                )
-            elif direction is not SubingDirection.NONE:
-                opportunity = _new_opportunity(
-                    policy=policy,
-                    symbol=symbol,
-                    contract=contract,
-                    segment_start_trading_day=segment_start_trading_day,
-                    direction=direction,
-                    origin_at=bar_5m.bar_end,
-                    origin_trading_day=bar_5m.trading_day,
-                )
-                transitions.append(
-                    _transition(
-                        opportunity_key=opportunity.key,
-                        transition_at=bar_5m.bar_end,
-                        from_stage=LifecycleStage.IDLE,
-                        to_stage=LifecycleStage.SETUP_ARMED,
-                        reason_code="DIRECTION_CONTEXT_ALIGNED",
-                    )
-                )
-        elif opportunity.stage in {
-            LifecycleStage.ENTRY_CONFIRMED,
-            LifecycleStage.CONTINUATION,
-            LifecycleStage.EXIT_RISK,
-        }:
-            _advance_confirmed_opportunity(
-                opportunity,
-                transition_at=bar_5m.bar_end,
-                trading_day=bar_5m.trading_day,
-                factor_5m=factor_5m,
-                factor_15m=factor_15m,
-                same_boundary=anchor_bar.bar_end == bar_5m.bar_end,
-                formal=formal,
-                direction_context=direction,
-                policy=policy,
-                transitions=transitions,
-                completed=completed,
-            )
-        elif opportunity.stage is LifecycleStage.SETUP_ARMED:
-            if formal_match and formal.direction is opportunity.key.direction:
-                opportunity.crossed_trading_day = (
-                    opportunity.crossed_trading_day
-                    or bar_5m.trading_day > opportunity.origin_trading_day
-                )
-                _confirm_entry(
-                    opportunity,
-                    source=ConfirmationSource.FORMAL_V1,
-                    confirmed_at=bar_5m.bar_end,
-                    boundary=bar_5m,
-                    pivot_cursor=pivot_cursor,
-                )
-                transitions.append(
-                    _transition(
-                        opportunity_key=opportunity.key,
-                        transition_at=bar_5m.bar_end,
-                        from_stage=LifecycleStage.SETUP_ARMED,
-                        to_stage=LifecycleStage.ENTRY_CONFIRMED,
-                        reason_code="FORMAL_V1_MATCHED",
-                    )
-                )
-            elif bar_5m.trading_day > opportunity.origin_trading_day:
-                _close_setup(
-                    opportunity,
-                    transition_at=bar_5m.bar_end,
-                    reason_code="UNCONFIRMED_TRADING_DAY_ROLLOVER",
-                    transitions=transitions,
-                    completed=completed,
-                )
-            elif opportunity.progress is EntryProgress.RETEST_CONFIRMING:
-                pivot = opportunity.trigger_reference_pivot
-                assert pivot is not None
-                retest = assess_pivot_retest(
-                    bar_5m,
-                    pivot=pivot,
-                    direction=opportunity.key.direction,
-                )
-                if retest.hard_invalidated or not _persistence_context(
-                    factor_5m,
-                    factor_15m,
-                    opportunity.key.direction,
-                ):
-                    _close_setup(
-                        opportunity,
-                        transition_at=bar_5m.bar_end,
-                        reason_code="PIVOT_RETEST_INVALIDATED",
-                        transitions=transitions,
-                        completed=completed,
-                    )
-                else:
-                    previous_close = opportunity.last_evaluable_close
-                    opportunity.retest_rebreak_count += 1
-                    if _rebreak_crossed(
-                        previous_close=previous_close,
-                        current_close=bar_5m.close,
-                        reference_price=opportunity.rebreak_reference_price,
-                        pivot_price=pivot.price,
-                        direction=opportunity.key.direction,
-                    ):
-                        _confirm_entry(
-                            opportunity,
-                            source=ConfirmationSource.PIVOT_RETEST_REBREAK,
-                            confirmed_at=bar_5m.bar_end,
-                            boundary=bar_5m,
-                            pivot_cursor=pivot_cursor,
-                        )
-                        transitions.append(
-                            _transition(
-                                opportunity_key=opportunity.key,
-                                transition_at=bar_5m.bar_end,
-                                from_stage=LifecycleStage.SETUP_ARMED,
-                                to_stage=LifecycleStage.ENTRY_CONFIRMED,
-                                reason_code="PIVOT_RETEST_REBREAK_CONFIRMED",
-                            )
-                        )
-                    elif (
-                        opportunity.retest_rebreak_count
-                        >= policy.retest_rebreak_max_bars
-                    ):
-                        _close_setup(
-                            opportunity,
-                            transition_at=bar_5m.bar_end,
-                            reason_code="RETEST_REBREAK_TIMEOUT",
-                            transitions=transitions,
-                            completed=completed,
-                        )
-                    opportunity.last_evaluable_close = bar_5m.close
-            elif opportunity.progress is EntryProgress.HOLD_CONFIRMING and (
-                opportunity.trigger_kind == "pivot_break"
-            ):
-                pivot = opportunity.trigger_reference_pivot
-                assert pivot is not None
-                retest = assess_pivot_retest(
-                    bar_5m,
-                    pivot=pivot,
-                    direction=opportunity.key.direction,
-                )
-                if retest.hard_invalidated:
-                    _close_setup(
-                        opportunity,
-                        transition_at=bar_5m.bar_end,
-                        reason_code="PIVOT_RETEST_INVALIDATED",
-                        transitions=transitions,
-                        completed=completed,
-                    )
-                elif retest.touched_reference and retest.close_preserved_side:
-                    opportunity.progress = EntryProgress.RETEST_CONFIRMING
-                    opportunity.retest_at = bar_5m.bar_end
-                    opportunity.retest_rebreak_count = 0
-                    opportunity.last_evaluable_close = bar_5m.close
-                elif not _persistence_context(
-                    factor_5m,
-                    factor_15m,
-                    opportunity.key.direction,
-                ):
-                    _close_setup(
-                        opportunity,
-                        transition_at=bar_5m.bar_end,
-                        reason_code="PIVOT_BREAK_HOLD_FAILED",
-                        transitions=transitions,
-                        completed=completed,
-                    )
-                else:
-                    opportunity.hold_count += 1
-                    opportunity.last_evaluable_close = bar_5m.close
-                    if opportunity.hold_count >= policy.hold_required_bars:
-                        _confirm_entry(
-                            opportunity,
-                            source=ConfirmationSource.PIVOT_BREAK_HOLD,
-                            confirmed_at=bar_5m.bar_end,
-                            boundary=bar_5m,
-                            pivot_cursor=pivot_cursor,
-                        )
-                        transitions.append(
-                            _transition(
-                                opportunity_key=opportunity.key,
-                                transition_at=bar_5m.bar_end,
-                                from_stage=LifecycleStage.SETUP_ARMED,
-                                to_stage=LifecycleStage.ENTRY_CONFIRMED,
-                                reason_code="PIVOT_BREAK_HOLD_CONFIRMED",
-                            )
-                        )
-            elif opportunity.progress is EntryProgress.HOLD_CONFIRMING:
-                if _momentum_hold_failed(
-                    opportunity,
-                    factor_5m,
-                    factor_15m,
-                    same_boundary=anchor_bar.bar_end == bar_5m.bar_end,
-                    formal=formal,
-                ):
-                    _close_setup(
-                        opportunity,
-                        transition_at=bar_5m.bar_end,
-                        reason_code="MOMENTUM_HOLD_FAILED",
-                        transitions=transitions,
-                        completed=completed,
-                    )
-                else:
-                    opportunity.hold_count += 1
-                    if opportunity.hold_count >= policy.hold_required_bars:
-                        _confirm_entry(
-                            opportunity,
-                            source=ConfirmationSource.MOMENTUM_HOLD,
-                            confirmed_at=bar_5m.bar_end,
-                            boundary=bar_5m,
-                            pivot_cursor=pivot_cursor,
-                        )
-                        transitions.append(
-                            _transition(
-                                opportunity_key=opportunity.key,
-                                transition_at=bar_5m.bar_end,
-                                from_stage=LifecycleStage.SETUP_ARMED,
-                                to_stage=LifecycleStage.ENTRY_CONFIRMED,
-                                reason_code="MOMENTUM_HOLD_CONFIRMED",
-                            )
-                        )
-            elif direction is not opportunity.key.direction:
-                _close_setup(
-                    opportunity,
-                    transition_at=bar_5m.bar_end,
-                    reason_code="DIRECTION_CONTEXT_INVALIDATED",
-                    transitions=transitions,
-                    completed=completed,
-                )
-            else:
-                pivot_trigger = (
-                    _pivot_breakout_at(
-                        pivot_cursor.latest_before(
-                            boundary=bar_5m,
-                            kind=(
-                                PivotKind.HIGH
-                                if opportunity.key.direction is SubingDirection.LONG
-                                else PivotKind.LOW
-                            ),
-                        ),
-                        previous=bars_5m[index - 1],
-                        current=bar_5m,
-                        direction=opportunity.key.direction,
-                    )
-                    if index > 0
-                    else None
-                )
-                if pivot_trigger is not None:
-                    pivot, assessment = pivot_trigger
-                    opportunity.progress = EntryProgress.HOLD_CONFIRMING
-                    opportunity.trigger_kind = "pivot_break"
-                    opportunity.trigger_timeframe = BarFrequency.M5
-                    opportunity.triggered_at = bar_5m.bar_end
-                    opportunity.hold_count = 1
-                    opportunity.trigger_reference_pivot = pivot
-                    opportunity.rebreak_reference_price = (
-                        bar_5m.high
-                        if opportunity.key.direction is SubingDirection.LONG
-                        else bar_5m.low
-                    )
-                    opportunity.last_evaluable_close = bar_5m.close
-                    opportunity.volume_ratio_prev = assessment.volume_ratio_prev
-                    opportunity.open_interest_delta = assessment.open_interest_delta
-                else:
-                    trigger_timeframe = _same_direction_macd_trigger(
-                        factor_5m,
-                        factor_15m,
-                        same_boundary=anchor_bar.bar_end == bar_5m.bar_end,
-                        direction=opportunity.key.direction,
-                    )
-                    if trigger_timeframe is not None:
-                        opportunity.progress = EntryProgress.HOLD_CONFIRMING
-                        opportunity.trigger_kind = "macd_cross"
-                        opportunity.trigger_timeframe = trigger_timeframe
-                        opportunity.triggered_at = bar_5m.bar_end
-                        opportunity.hold_count = 1
-                        opportunity.volume_ratio_prev = factor_5m.volume_ratio_prev
-                        if index > 0:
-                            previous = bars_5m[index - 1]
-                            if (
-                                previous.open_interest is not None
-                                and bar_5m.open_interest is not None
-                            ):
-                                opportunity.open_interest_delta = (
-                                    bar_5m.open_interest - previous.open_interest
-                                )
-        assert len(transitions) - transition_count_before <= 1
-        last_confirmed_stage = (
-            opportunity.stage if opportunity is not None else LifecycleStage.IDLE
-        )
-        last_confirmed_at = bar_5m.bar_end
-        snapshots.append(
-            _snapshot(
-                policy=policy,
-                observed_at=bar_5m.bar_end,
-                anchor_bar_end=anchor_bar.bar_end,
-                availability=LifecycleAvailability.READY,
-                unavailable_reason=None,
-                direction=(
-                    opportunity.key.direction
-                    if opportunity is not None
-                    else SubingDirection.NONE
-                ),
-                opportunity=opportunity,
-                latest_transition=(transitions[-1] if transitions else None),
-                formal_v1_matched=formal_match,
-                last_confirmed_stage=last_confirmed_stage,
-                last_confirmed_at=last_confirmed_at,
-            )
+            policy=policy,
         )
 
-    current_snapshot = snapshots[-1] if snapshots else _snapshot(
-        policy=policy,
-        observed_at=None,
-        anchor_bar_end=None,
-        availability=LifecycleAvailability.UNAVAILABLE,
-        unavailable_reason=input_error or "SUBING_5M_CLOCK_UNAVAILABLE",
-        direction=SubingDirection.NONE,
-        opportunity=None,
-        latest_transition=None,
-        boundary_reset="segment_changed",
+    current_snapshot = (
+        state.snapshots[-1]
+        if state.snapshots
+        else _snapshot(
+            policy=policy,
+            observed_at=None,
+            anchor_bar_end=None,
+            availability=LifecycleAvailability.UNAVAILABLE,
+            unavailable_reason=input_error or "SUBING_5M_CLOCK_UNAVAILABLE",
+            direction=SubingDirection.NONE,
+            opportunity=None,
+            latest_transition=None,
+            boundary_reset="segment_changed",
+        )
     )
     identity_invalid = input_error == "SUBING_LIFECYCLE_IDENTITY_INVALID"
     return SubingLifecycleTrace(
@@ -1512,10 +1861,10 @@ def evaluate_subing_lifecycle(
         segment_start_trading_day=(
             None if identity_invalid else segment_start_trading_day
         ),
-        confirmed_pivots=pivots,
-        completed_opportunities=tuple(completed),
-        transitions=tuple(transitions),
-        snapshots=tuple(snapshots),
+        confirmed_pivots=state.confirmed_pivots,
+        completed_opportunities=state.completed_opportunities,
+        transitions=state.transitions,
+        snapshots=state.snapshots,
         current_snapshot=current_snapshot,
     )
 

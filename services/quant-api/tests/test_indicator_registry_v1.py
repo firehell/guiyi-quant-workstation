@@ -96,7 +96,7 @@ def test_registry_uses_per_indicator_frequency_contracts() -> None:
 
 
 def test_alert_rule_capabilities_keep_stable_identity_and_exact_frequencies() -> None:
-    """Catches HTDY frequency expansion renaming the Rule or widening SuBing."""
+    """Catches Rule identity or authoritative-input frequency drift."""
     from app.alerts.registry import HTDY_RULE, SUBING_RULE
 
     assert HTDY_RULE.input_frequencies == (
@@ -108,7 +108,8 @@ def test_alert_rule_capabilities_keep_stable_identity_and_exact_frequencies() ->
         "1d",
         "1w",
     )
-    assert SUBING_RULE.input_frequencies == ("5m", "15m")
+    assert SUBING_RULE.input_frequencies == ("1m", "5m", "15m")
+    assert SUBING_RULE.rule_code == "subing_strategy_v1"
     assert HTDY_RULE.rule_code == "htdy_original_15m"
 
 

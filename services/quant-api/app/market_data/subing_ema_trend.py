@@ -7,7 +7,13 @@ from decimal import Decimal
 from enum import StrEnum
 from typing import Literal
 
-from guiyi_quant.indicators import IndicatorPoint, ema_series
+from guiyi_quant.indicators import (
+    EmaState,
+    IndicatorPoint,
+    ema_series,
+    initial_ema_state,
+    step_ema,
+)
 
 from .domain import BarFrequency, CanonicalBar, ResolvedContractSegment
 
@@ -47,6 +53,16 @@ class SubingEmaTrendResult:
 
 
 @dataclass(frozen=True, slots=True)
+class SubingEmaTrendStreamState:
+    timeframe: BarFrequency
+    contract: str
+    segment_start_trading_day: date
+    ema: EmaState
+    ema_points: tuple[IndicatorPoint, ...]
+    last_bar_end: datetime | None
+
+
+@dataclass(frozen=True, slots=True)
 class SubingStitchedEmaTrendSnapshot:
     timeframe: BarFrequency
     bar_end: datetime
@@ -82,6 +98,74 @@ class _EmaTrendFacts:
     slope_10_bps_per_bar: Decimal
 
 
+def initial_subing_ema_trend_state(
+    *,
+    timeframe: BarFrequency,
+    contract: str,
+    segment_start_trading_day: date,
+) -> SubingEmaTrendStreamState:
+    _validate_identity(contract=contract)
+    return SubingEmaTrendStreamState(
+        timeframe=timeframe,
+        contract=contract,
+        segment_start_trading_day=segment_start_trading_day,
+        ema=initial_ema_state(
+            21,
+            seed_policy="sma_window",
+            round_digits=6,
+        ),
+        ema_points=(),
+        last_bar_end=None,
+    )
+
+
+def step_subing_ema_trend(
+    state: SubingEmaTrendStreamState,
+    bar: CanonicalBar,
+) -> tuple[SubingEmaTrendStreamState, SubingEmaTrendResult]:
+    """Advance one segment-local EMA21 trend observation."""
+
+    _validate_stream_bar(
+        bar,
+        segment_start_trading_day=state.segment_start_trading_day,
+        last_bar_end=state.last_bar_end,
+    )
+    ema, point = step_ema(
+        state.ema,
+        float(bar.close),
+        bar_end=bar.bar_end.isoformat(),
+    )
+    ema_points = (*state.ema_points, point)[-10:]
+    next_state = SubingEmaTrendStreamState(
+        timeframe=state.timeframe,
+        contract=state.contract,
+        segment_start_trading_day=state.segment_start_trading_day,
+        ema=ema,
+        ema_points=ema_points,
+        last_bar_end=bar.bar_end,
+    )
+    facts = _trend_facts_for_bar(bar, ema_points=ema_points)
+    if facts is None:
+        return next_state, _insufficient()
+    return next_state, SubingEmaTrendResult(
+        status=SubingEmaTrendStatus.READY,
+        snapshot=SubingEmaTrendSnapshot(
+            timeframe=state.timeframe,
+            bar_end=bar.bar_end,
+            trading_day=bar.trading_day,
+            contract=state.contract,
+            segment_start_trading_day=state.segment_start_trading_day,
+            close=bar.close,
+            ema21=facts.ema21,
+            price_side=facts.price_side,
+            slope_5_raw=facts.slope_5_raw,
+            slope_10_raw=facts.slope_10_raw,
+            slope_5_bps_per_bar=facts.slope_5_bps_per_bar,
+            slope_10_bps_per_bar=facts.slope_10_bps_per_bar,
+        ),
+    )
+
+
 def calculate_subing_ema_trend_series(
     bars: Sequence[CanonicalBar],
     *,
@@ -96,27 +180,16 @@ def calculate_subing_ema_trend_series(
         contract=contract,
         segment_start_trading_day=segment_start_trading_day,
     )
-    if not bars:
-        return ()
-
-    ema = ema_series(
-        [float(bar.close) for bar in bars],
-        21,
-        bar_ends=[bar.bar_end.isoformat() for bar in bars],
-        seed_policy="sma_window",
-        indicator_code="ema21",
+    state = initial_subing_ema_trend_state(
+        timeframe=timeframe,
+        contract=contract,
+        segment_start_trading_day=segment_start_trading_day,
     )
-    return tuple(
-        _result_at(
-            bars,
-            index=index,
-            timeframe=timeframe,
-            contract=contract,
-            segment_start_trading_day=segment_start_trading_day,
-            ema_points=ema.points,
-        )
-        for index in range(len(bars))
-    )
+    results: list[SubingEmaTrendResult] = []
+    for bar in bars:
+        state, result = step_subing_ema_trend(state, bar)
+        results.append(result)
+    return tuple(results)
 
 
 def calculate_subing_ema_trend(
@@ -177,9 +250,7 @@ def calculate_subing_ema_trend_stitched(
     latest = bars[-1]
     warmup_segment_count = sum(
         any(
-            segment.start_trading_day
-            <= bar.trading_day
-            <= segment.end_trading_day
+            segment.start_trading_day <= bar.trading_day <= segment.end_trading_day
             for bar in bars
         )
         for segment in segments
@@ -191,47 +262,12 @@ def calculate_subing_ema_trend_stitched(
             bar_end=latest.bar_end,
             trading_day=latest.trading_day,
             contract=current_contract,
-            current_segment_start_trading_day=(
-                current_segment_start_trading_day
-            ),
+            current_segment_start_trading_day=(current_segment_start_trading_day),
             warmup_start_trading_day=bars[0].trading_day,
             warmup_bar_count=len(bars),
             warmup_segment_count=warmup_segment_count,
             history_mode="rank1_stitched_raw",
             close=latest.close,
-            ema21=facts.ema21,
-            price_side=facts.price_side,
-            slope_5_raw=facts.slope_5_raw,
-            slope_10_raw=facts.slope_10_raw,
-            slope_5_bps_per_bar=facts.slope_5_bps_per_bar,
-            slope_10_bps_per_bar=facts.slope_10_bps_per_bar,
-        ),
-    )
-
-
-def _result_at(
-    bars: Sequence[CanonicalBar],
-    *,
-    index: int,
-    timeframe: BarFrequency,
-    contract: str,
-    segment_start_trading_day: date,
-    ema_points: Sequence[IndicatorPoint],
-) -> SubingEmaTrendResult:
-    facts = _trend_facts_at(bars, index=index, ema_points=ema_points)
-    if facts is None:
-        return _insufficient()
-
-    bar = bars[index]
-    return SubingEmaTrendResult(
-        status=SubingEmaTrendStatus.READY,
-        snapshot=SubingEmaTrendSnapshot(
-            timeframe=timeframe,
-            bar_end=bar.bar_end,
-            trading_day=bar.trading_day,
-            contract=contract,
-            segment_start_trading_day=segment_start_trading_day,
-            close=bar.close,
             ema21=facts.ema21,
             price_side=facts.price_side,
             slope_5_raw=facts.slope_5_raw,
@@ -252,12 +288,20 @@ def _trend_facts_at(
         return None
 
     ema_window = ema_points[index - 9 : index + 1]
-    if len(ema_window) != 10 or not all(
-        _point_has_value(point) for point in ema_window
+    return _trend_facts_for_bar(bars[index], ema_points=ema_window)
+
+
+def _trend_facts_for_bar(
+    bar: CanonicalBar,
+    *,
+    ema_points: Sequence[IndicatorPoint],
+) -> _EmaTrendFacts | None:
+    if len(ema_points) != 10 or not all(
+        _point_has_value(point) for point in ema_points
     ):
         return None
 
-    ema_values = tuple(_point_decimal(point) for point in ema_window)
+    ema_values = tuple(_point_decimal(point) for point in ema_points)
     ema21 = ema_values[-1]
     slope_5_raw = _regression_slope(ema_values[-5:])
     slope_10_raw = _regression_slope(ema_values)
@@ -266,7 +310,6 @@ def _trend_facts_at(
     if ema_5_mean == 0 or ema_10_mean == 0:
         return None
 
-    bar = bars[index]
     if bar.close > ema21:
         price_side = PriceSide.ABOVE
     elif bar.close < ema21:
@@ -290,14 +333,30 @@ def _validate_inputs(
     contract: str,
     segment_start_trading_day: date,
 ) -> None:
-    if not contract.strip():
-        raise ValueError("contract must not be empty")
+    _validate_identity(contract=contract)
     if any(bar.trading_day < segment_start_trading_day for bar in bars):
         raise ValueError("bars before segment_start_trading_day are not allowed")
     if any(
         current.bar_end <= previous.bar_end
         for previous, current in zip(bars, bars[1:], strict=False)
     ):
+        raise ValueError("bar_end must be strictly increasing")
+
+
+def _validate_identity(*, contract: str) -> None:
+    if not contract.strip():
+        raise ValueError("contract must not be empty")
+
+
+def _validate_stream_bar(
+    bar: CanonicalBar,
+    *,
+    segment_start_trading_day: date,
+    last_bar_end: datetime | None,
+) -> None:
+    if bar.trading_day < segment_start_trading_day:
+        raise ValueError("bars before segment_start_trading_day are not allowed")
+    if last_bar_end is not None and bar.bar_end <= last_bar_end:
         raise ValueError("bar_end must be strictly increasing")
 
 
@@ -322,9 +381,7 @@ def _validate_stitched_inputs(
         tuple(
             segment
             for segment in resolved_contract_segments
-            if segment.start_trading_day
-            <= bar.trading_day
-            <= segment.end_trading_day
+            if segment.start_trading_day <= bar.trading_day <= segment.end_trading_day
         )
         for bar in bars
     )
@@ -334,10 +391,7 @@ def _validate_stitched_inputs(
         )
 
     latest_segment = owners_by_bar[-1][0]
-    if (
-        latest_segment.start_trading_day
-        != current_segment_start_trading_day
-    ):
+    if latest_segment.start_trading_day != current_segment_start_trading_day:
         raise ValueError("current segment must contain latest trading day")
     if latest_segment.contract != current_contract:
         raise ValueError("latest segment owner must equal current_contract")

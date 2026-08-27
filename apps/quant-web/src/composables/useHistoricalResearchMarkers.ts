@@ -36,6 +36,7 @@ interface Dependencies {
 export function useHistoricalResearchMarkers(dependencies: Dependencies) {
   const markers = ref<KlineMarker[]>([])
   const subingStrategyEpisodes = ref<SubingStrategyEpisode[]>([])
+  const subingStrategyActions = ref<SubingStrategyAction[]>([])
   const loading = ref(false)
   const error = ref<string | null>(null)
   const markersByEventId = new Map<string, KlineMarker>()
@@ -90,6 +91,9 @@ export function useHistoricalResearchMarkers(dependencies: Dependencies) {
         || identityKey(identity) !== identityKey(activeIdentity)
       ) return
       mergeStrategyEpisodes(episodesById, loaded.episodes)
+      const actionsById = new Map(subingStrategyActions.value.map((action) => [action.action_id, action]))
+      for (const action of loaded.actions) actionsById.set(action.action_id, action)
+      subingStrategyActions.value = [...actionsById.values()]
       subingStrategyEpisodes.value = [...episodesById.values()]
         .sort((left, right) => Date.parse(left.entry_action.effective_bar_end)
           - Date.parse(right.entry_action.effective_bar_end))
@@ -121,6 +125,7 @@ export function useHistoricalResearchMarkers(dependencies: Dependencies) {
     episodesById.clear()
     markers.value = []
     subingStrategyEpisodes.value = []
+    subingStrategyActions.value = []
     error.value = null
     loadedSince = null
   }
@@ -132,12 +137,21 @@ export function useHistoricalResearchMarkers(dependencies: Dependencies) {
     episodesById.clear()
     markers.value = []
     subingStrategyEpisodes.value = []
+    subingStrategyActions.value = []
     loading.value = false
     error.value = null
     loadedSince = null
   }
 
-  return { markers, subingStrategyEpisodes, loading, error, sync, dispose }
+  return {
+    markers,
+    subingStrategyActions,
+    subingStrategyEpisodes,
+    loading,
+    error,
+    sync,
+    dispose,
+  }
 }
 
 function confirmedRange(

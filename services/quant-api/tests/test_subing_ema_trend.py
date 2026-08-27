@@ -17,6 +17,8 @@ from app.market_data.subing_ema_trend import (
     calculate_subing_ema_trend,
     calculate_subing_ema_trend_series,
     calculate_subing_ema_trend_stitched,
+    initial_subing_ema_trend_state,
+    step_subing_ema_trend,
 )
 from app.market_data.subing_research import (
     PriceSide,
@@ -185,9 +187,7 @@ def test_stitched_trend_uses_raw_cross_roll_closes_and_records_lineage() -> None
         * Decimal(10000)
     )
     assert snapshot.slope_10_bps_per_bar == (
-        expected_slope_10
-        / (sum(ema_values, Decimal(0)) / Decimal(10))
-        * Decimal(10000)
+        expected_slope_10 / (sum(ema_values, Decimal(0)) / Decimal(10)) * Decimal(10000)
     )
     assert snapshot.contract == "RB2610"
     assert snapshot.current_segment_start_trading_day == date(2026, 8, 12)
@@ -227,15 +227,11 @@ def test_stitched_trend_rejects_non_increasing_bar_end() -> None:
     "segments",
     (
         (
-            ResolvedContractSegment(
-                "RB2605", date(2026, 7, 23), date(2026, 8, 10)
-            ),
+            ResolvedContractSegment("RB2605", date(2026, 7, 23), date(2026, 8, 10)),
             _STITCHED_SEGMENTS[1],
         ),
         (
-            ResolvedContractSegment(
-                "RB2605", date(2026, 7, 23), date(2026, 8, 12)
-            ),
+            ResolvedContractSegment("RB2605", date(2026, 7, 23), date(2026, 8, 12)),
             _STITCHED_SEGMENTS[1],
         ),
     ),
@@ -253,12 +249,8 @@ def test_stitched_trend_requires_every_bar_covered_exactly_once(
 
 def test_stitched_trend_requires_current_segment_lineage_to_own_latest_bar() -> None:
     segments = (
-        ResolvedContractSegment(
-            "RB2605", date(2026, 7, 23), date(2026, 8, 12)
-        ),
-        ResolvedContractSegment(
-            "RB2610", date(2026, 8, 13), date(2026, 8, 31)
-        ),
+        ResolvedContractSegment("RB2605", date(2026, 7, 23), date(2026, 8, 12)),
+        ResolvedContractSegment("RB2610", date(2026, 8, 13), date(2026, 8, 31)),
     )
 
     with pytest.raises(
@@ -271,9 +263,7 @@ def test_stitched_trend_requires_current_segment_lineage_to_own_latest_bar() -> 
 def test_stitched_trend_requires_latest_owner_to_equal_current_contract() -> None:
     segments = (
         _STITCHED_SEGMENTS[0],
-        ResolvedContractSegment(
-            "RB2701", date(2026, 8, 12), date(2026, 8, 31)
-        ),
+        ResolvedContractSegment("RB2701", date(2026, 8, 12), date(2026, 8, 31)),
     )
 
     with pytest.raises(
@@ -285,9 +275,7 @@ def test_stitched_trend_requires_latest_owner_to_equal_current_contract() -> Non
 
 def test_rising_ema_trend_is_ready_above_with_positive_slopes() -> None:
     """Catches reversed price-side or slope direction on a rising series."""
-    bars = _bars_from_closes(
-        [Decimal("100") + Decimal(index) for index in range(40)]
-    )
+    bars = _bars_from_closes([Decimal("100") + Decimal(index) for index in range(40)])
 
     result = _calculate(bars)
 
@@ -300,9 +288,7 @@ def test_rising_ema_trend_is_ready_above_with_positive_slopes() -> None:
 
 def test_descending_ema_trend_is_ready_below_with_negative_slopes() -> None:
     """Catches reversed price-side or slope direction on a falling series."""
-    bars = _bars_from_closes(
-        [Decimal("200") - Decimal(index) for index in range(40)]
-    )
+    bars = _bars_from_closes([Decimal("200") - Decimal(index) for index in range(40)])
 
     result = _calculate(bars)
 
@@ -330,9 +316,7 @@ def test_flat_ema_trend_is_equal_with_exact_zero_slopes() -> None:
 
 def test_series_stays_insufficient_until_ten_ready_ema_points_exist() -> None:
     """Catches exposing trend facts before the EMA21 plus 10-point warm-up."""
-    bars = _bars_from_closes(
-        [Decimal("100") + Decimal(index) for index in range(30)]
-    )
+    bars = _bars_from_closes([Decimal("100") + Decimal(index) for index in range(30)])
 
     series = calculate_subing_ema_trend_series(
         bars,
@@ -347,6 +331,50 @@ def test_series_stays_insufficient_until_ten_ready_ema_points_exist() -> None:
         for result in series[:-1]
     )
     assert series[-1].status is SubingEmaTrendStatus.READY
+
+
+def test_incremental_ema_trend_matches_every_batch_prefix() -> None:
+    """Catches a rolling-window or watermark drift in EMA-trend streaming."""
+    bars = _pre_refactor_golden_bars(BarFrequency.M15)
+
+    for prefix in range(1, len(bars) + 1):
+        batch = calculate_subing_ema_trend_series(
+            bars[:prefix],
+            timeframe=BarFrequency.M15,
+            contract="JM2609",
+            segment_start_trading_day=bars[0].trading_day,
+        )
+        state = initial_subing_ema_trend_state(
+            timeframe=BarFrequency.M15,
+            contract="JM2609",
+            segment_start_trading_day=bars[0].trading_day,
+        )
+        streamed = []
+        for bar in bars[:prefix]:
+            state, result = step_subing_ema_trend(state, bar)
+            streamed.append(result)
+            assert len(state.ema_points) <= 10
+
+        assert tuple(streamed) == batch
+
+
+def test_incremental_ema_trend_append_does_not_change_prior_results() -> None:
+    """Catches an appended future Bar repainting prior rolling observations."""
+    bars = _pre_refactor_golden_bars(BarFrequency.M5)
+    original = calculate_subing_ema_trend_series(
+        bars[:-1],
+        timeframe=BarFrequency.M5,
+        contract="JM2609",
+        segment_start_trading_day=bars[0].trading_day,
+    )
+    appended = calculate_subing_ema_trend_series(
+        bars,
+        timeframe=BarFrequency.M5,
+        contract="JM2609",
+        segment_start_trading_day=bars[0].trading_day,
+    )
+
+    assert appended[:-1] == original
 
 
 def test_empty_contract_is_rejected() -> None:
@@ -394,9 +422,7 @@ def test_segment_local_v1_rejects_bar_before_segment_start() -> None:
 
 def test_existing_factor_and_frequency_neutral_trend_have_exact_ema_parity() -> None:
     """Catches any EMA, price-side, slope, or normalization semantic drift."""
-    bars = _bars_from_closes(
-        [Decimal("100") + Decimal(index) for index in range(48)]
-    )
+    bars = _bars_from_closes([Decimal("100") + Decimal(index) for index in range(48)])
 
     factor = calculate_subing_factor(
         bars,
@@ -415,14 +441,8 @@ def test_existing_factor_and_frequency_neutral_trend_have_exact_ema_parity() -> 
     assert factor.snapshot.price_side is trend.snapshot.price_side
     assert factor.snapshot.slope_5_raw == trend.snapshot.slope_5_raw
     assert factor.snapshot.slope_10_raw == trend.snapshot.slope_10_raw
-    assert (
-        factor.snapshot.slope_5_bps_per_bar
-        == trend.snapshot.slope_5_bps_per_bar
-    )
-    assert (
-        factor.snapshot.slope_10_bps_per_bar
-        == trend.snapshot.slope_10_bps_per_bar
-    )
+    assert factor.snapshot.slope_5_bps_per_bar == trend.snapshot.slope_5_bps_per_bar
+    assert factor.snapshot.slope_10_bps_per_bar == trend.snapshot.slope_10_bps_per_bar
 
 
 @pytest.mark.parametrize(

@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc -b && vite build && node scripts/checkProductionBundleTopology.mjs dist",
+    "check:alert-rules": "node scripts/checkAlertRuleOwnership.mjs",
     "test": "node --test tests/*.test.ts",
     "test:indicators": "node --test tests/indicators.test.ts",
     "test:e2e": "playwright test -c playwright.config.mjs",
@@ -22,6 +23,7 @@
     "@playwright/test": "^1.62.1",
     "@types/node": "^24.12.3",
     "@vitejs/plugin-vue": "^6.0.6",
+    "@vue/compiler-sfc": "^3.5.38",
     "@vue/tsconfig": "^0.9.1",
     "typescript": "~6.0.2",
     "vite": "^8.0.12",
