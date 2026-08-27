@@ -1,6 +1,6 @@
 [project]
 name = "quant-api"
-version = "1.8.5"
+version = "1.8.7"
 description = "Local-first domestic futures market data and Runtime API"
 readme = "README.md"
 requires-python = ">=3.13"
