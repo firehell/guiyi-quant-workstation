@@ -56,8 +56,8 @@ export function subingStrategyActionToMarker(
           || episode?.reference_change_percent === undefined
           ? []
           : [
-              `参考变动 ${episode.reference_change_percent >= 0 ? '+' : ''}`
-                + `${episode.reference_change_percent.toFixed(2)}%`,
+              `参考变动 ${Number(episode.reference_change_percent) >= 0 ? '+' : ''}`
+                + `${Number(episode.reference_change_percent).toFixed(2)}%`,
             ]),
       ]
   return {

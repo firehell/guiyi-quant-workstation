@@ -1136,8 +1136,16 @@ class FakeMessageSource:
     def subscribe(self, *patterns: str) -> None:
         self.subscribe_calls.append(patterns)
 
+    def drain_startup_messages(self) -> tuple[tuple[object, object], ...]:
+        messages: list[tuple[object, object]] = []
+        while True:
+            message = self.get_message(timeout_seconds=0.0)
+            if message is None:
+                return tuple(messages)
+            messages.append(message)
+
     def get_message(self, *, timeout_seconds: float):
-        assert timeout_seconds == 1.0
+        assert timeout_seconds in {0.0, 1.0}
         return None
 
     def close(self) -> None:
@@ -1174,8 +1182,68 @@ def test_redis_message_source_uses_one_pubsub_connection_for_both_patterns() -> 
 
     source.subscribe("live:bar:*:*", "market:state")
 
-    assert redis.pubsub_calls == [{"ignore_subscribe_messages": True}]
+    assert redis.pubsub_calls == [{"ignore_subscribe_messages": False}]
     assert redis.active.calls == [("live:bar:*:*", "market:state")]
+
+
+def test_redis_message_source_cuts_startup_queue_at_pubsub_pong() -> None:
+    startup = {
+        "type": "pmessage",
+        "channel": b"market:state",
+        "data": b"startup",
+    }
+    post_ready = {
+        "type": "pmessage",
+        "channel": b"market:state",
+        "data": b"post-ready",
+    }
+
+    class FakePubSub:
+        def __init__(self) -> None:
+            self.messages: list[dict[str, object]] = [
+                {"type": "psubscribe", "data": 1},
+                startup,
+            ]
+            self.pings: list[object] = []
+
+        def psubscribe(self, *_patterns: str) -> None:
+            return None
+
+        def ping(self, payload: object) -> None:
+            self.pings.append(payload)
+            self.messages.extend(
+                (
+                    {"type": "pong", "data": payload},
+                    post_ready,
+                )
+            )
+
+        def get_message(self, *, timeout: float):
+            assert timeout == 1.0
+            return self.messages.pop(0) if self.messages else None
+
+        def close(self) -> None:
+            return None
+
+    class FakeRedis:
+        def __init__(self) -> None:
+            self.active = FakePubSub()
+
+        def pubsub(self, **_kwargs):
+            return self.active
+
+    redis = FakeRedis()
+    source = RedisAlertMessageSource(redis)
+    source.subscribe("live:bar:*:*", "market:state")
+
+    assert source.drain_startup_messages() == (
+        (b"market:state", b"startup"),
+    )
+    assert len(redis.active.pings) == 1
+    assert source.get_message(timeout_seconds=1.0) == (
+        b"market:state",
+        b"post-ready",
+    )
 
 
 class RuntimeStatusPipeline:
@@ -2025,7 +2093,7 @@ def test_run_forever_uses_single_transport_and_fixed_heartbeat_contract(
     _seed_rule(session, "subing_strategy_v1", scope=())
     moments = iter(
         datetime(2026, 8, 14, 0, 0, second, tzinfo=UTC)
-        for second in (0, 0, 0, 0, 5, 10, 15, 20, 20)
+        for second in (0, 0, 0, 0, 0, 5, 10, 15, 20, 20)
     )
     checks = iter((False, False, False, False, False, False, True))
     source = FakeMessageSource()
@@ -2448,6 +2516,80 @@ def test_strategy_startup_subscribes_before_restore_and_catch_up(
     assert sender.messages == []
 
 
+def test_startup_queue_cutoff_recovers_canonical_without_backfill(
+    session: Session,
+) -> None:
+    """Catches a subscribed-before-ready terminal being emitted after readiness."""
+
+    _seed_rule(session, "htdy_original_15m", scope=())
+    _seed_rule(session, "subing_strategy_v1")
+    order: list[str] = []
+    startup_close, startup_episode = _task9_terminal_close()
+    post_ready_open = _task9_open_action()
+    strategy = _Task9ActionEvaluator(
+        order,
+        startup_close,
+        episode=startup_episode,
+    )
+
+    class BoundarySource(FakeMessageSource):
+        def __init__(self) -> None:
+            super().__init__()
+            self.startup_message = (
+                "market:state",
+                _canonical_updated_payload(),
+            )
+            self.post_ready_delivered = False
+            self.timeouts: list[float] = []
+
+        def get_message(self, *, timeout_seconds: float):
+            self.timeouts.append(timeout_seconds)
+            if self.startup_message is not None:
+                message, self.startup_message = self.startup_message, None
+                return message
+            if timeout_seconds == 0.0:
+                return None
+            assert timeout_seconds == 1.0
+            if not self.post_ready_delivered:
+                self.post_ready_delivered = True
+                strategy.action = post_ready_open
+                strategy.episode = None
+                return "market:state", _canonical_updated_payload()
+            return None
+
+    stop_checks = iter((False, False, True))
+    source = BoundarySource()
+    sender = FakeSender()
+    runtime = AlertRuntime(
+        session_factory=lambda: nullcontext(session),
+        market_read_factory=lambda _session: FakeRead(_window(bar_end=ORDINARY_END)),
+        strategy_evaluator=strategy,
+        htdy_evaluator=FakeHtdyEvaluator(()),
+        sender=sender,
+        operational_products=("jm",),
+        taxonomy={"jm": ProductTaxonomyEntry(name="焦煤", sector="coal")},
+        message_source=source,
+        heartbeat_store=FakeHeartbeatStore(),
+        runtime_status_store=AtomicRuntimeStatusStore(),
+        clock=lambda: BOUNDARY_END + timedelta(seconds=2),
+        stop_requested=lambda: next(stop_checks),
+    )
+
+    runtime.run_forever()
+
+    events = _event_rows(session)
+    assert [event.action_id for event in events] == [post_ready_open.action_id]
+    assert len(sender.messages) == 1
+    assert order == [
+        "restore",
+        "catch_up",
+        f"terminal:{DAY.isoformat()}",
+        f"terminal:{DAY.isoformat()}",
+    ]
+    assert source.timeouts[:2] == [0.0, 0.0]
+    assert source.timeouts.count(1.0) == 2
+
+
 def test_pending_action_can_notify_only_from_a_post_ready_live_bar(
     session: Session,
 ) -> None:
@@ -2465,6 +2607,8 @@ def test_pending_action_can_notify_only_from_a_post_ready_live_bar(
             )
 
         def get_message(self, *, timeout_seconds: float):
+            if timeout_seconds == 0.0:
+                return None
             assert timeout_seconds == 1.0
             message, self.message = self.message, None
             return message

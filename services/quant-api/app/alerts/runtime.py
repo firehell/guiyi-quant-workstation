@@ -74,6 +74,7 @@ class AlertNotificationAcknowledgeError(RuntimeError):
 
 class AlertMessageSource(Protocol):
     def subscribe(self, *patterns: str) -> None: ...
+    def drain_startup_messages(self) -> tuple[tuple[object, object], ...]: ...
     def get_message(
         self, *, timeout_seconds: float
     ) -> tuple[object, object] | None: ...
@@ -290,16 +291,18 @@ class AlertRuntime:
         self._strategy_evaluator.restore_all(
             started_at=strategy_started_at,
         )
-        ready_at = self._aware_now()
-        caught_up = self._strategy_evaluator.final_catch_up(ready_at=ready_at)
+        catch_up_at = self._aware_now()
+        caught_up = self._strategy_evaluator.final_catch_up(ready_at=catch_up_at)
         self._strategy_product_statuses.clear()
         self._refresh_strategy_runtime_status(
             caught_up,
             expected_products=self._strategy_products,
         )
+        self._drain_startup_messages()
+        ready_at = self._aware_now()
         self._update_runtime_status(
             strategy_ready_at=_iso_timestamp(ready_at),
-            last_strategy_restore_at=_iso_timestamp(ready_at),
+            last_strategy_restore_at=_iso_timestamp(catch_up_at),
         )
         next_heartbeat = self._aware_now()
         try:
@@ -342,13 +345,27 @@ class AlertRuntime:
         except Exception:
             raise RuntimeError("ALERT_RUNTIME_COMPOSITION_INVALID") from None
 
-    def process_message(self, channel: object, payload: object) -> None:
+    def _drain_startup_messages(self) -> None:
+        assert self.message_source is not None
+        for message in self.message_source.drain_startup_messages():
+            self.process_message(*message, emit_events=False)
+
+    def process_message(
+        self,
+        channel: object,
+        payload: object,
+        *,
+        emit_events: bool = True,
+    ) -> None:
         """处理单条强类型触发；Rule 故障隔离，Event 提交后只发送一次。"""
         trigger = _parse_live_bar_trigger(channel, payload)
         if trigger is None:
             canonical_trigger = _parse_canonical_updated_trigger(channel, payload)
             if canonical_trigger is not None:
-                self._process_canonical_updated(canonical_trigger)
+                self._process_canonical_updated(
+                    canonical_trigger,
+                    emit_events=emit_events,
+                )
             return
         symbol = trigger.symbol
         event_frequency = trigger.frequency
@@ -380,6 +397,8 @@ class AlertRuntime:
             )
             strategy_action_facts = strategy_result.action_facts
 
+        if not emit_events:
+            return
         if symbol not in self._operational_products:
             return
 
@@ -533,6 +552,8 @@ class AlertRuntime:
     def _process_canonical_updated(
         self,
         trigger: _CanonicalUpdatedTrigger,
+        *,
+        emit_events: bool = True,
     ) -> None:
         try:
             processing_now = self._aware_now()
@@ -551,6 +572,8 @@ class AlertRuntime:
         strategy_action_facts = tuple(
             fact for result in strategy_results for fact in result.action_facts
         )
+        if not emit_events:
+            return
 
         messages: list[AlertNotificationMessage] = []
         event_count = 0

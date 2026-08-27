@@ -146,7 +146,7 @@ function wireActionFacts(action: SubingStrategyAction) {
   }
 }
 
-function decimal(value: number | string): string {
+function decimal(value: string): string {
   const text = String(value).trim()
   const match = /^(-?)(\d+)(?:\.(\d*))?$/.exec(text)
   if (!match) return text

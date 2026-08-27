@@ -175,11 +175,36 @@ class _SubingStrategyRuntimeReader:
 
 
 class RedisAlertMessageSource:
+    _STARTUP_BOUNDARY = "alert-runtime-startup-boundary-v1"
+
     def __init__(self, redis: Any) -> None:
-        self._pubsub = redis.pubsub(ignore_subscribe_messages=True)
+        self._pubsub = redis.pubsub(ignore_subscribe_messages=False)
 
     def subscribe(self, *patterns: str) -> None:
         self._pubsub.psubscribe(*patterns)
+
+    def drain_startup_messages(self) -> tuple[tuple[object, object], ...]:
+        self._pubsub.ping(self._STARTUP_BOUNDARY)
+        messages: list[tuple[object, object]] = []
+        while True:
+            message = self._pubsub.get_message(timeout=1.0)
+            if not isinstance(message, Mapping):
+                raise RuntimeError("ALERT_RUNTIME_STARTUP_BOUNDARY_UNAVAILABLE")
+            if message.get("type") == "pmessage":
+                messages.append((message.get("channel"), message.get("data")))
+                continue
+            if message.get("type") != "pong":
+                continue
+            payload = message.get("data")
+            if isinstance(payload, bytes):
+                try:
+                    payload = payload.decode("utf-8")
+                except UnicodeError:
+                    raise RuntimeError(
+                        "ALERT_RUNTIME_STARTUP_BOUNDARY_UNAVAILABLE"
+                    ) from None
+            if payload == self._STARTUP_BOUNDARY:
+                return tuple(messages)
 
     def get_message(self, *, timeout_seconds: float) -> tuple[object, object] | None:
         message = self._pubsub.get_message(timeout=timeout_seconds)

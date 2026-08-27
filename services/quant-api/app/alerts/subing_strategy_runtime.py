@@ -485,17 +485,17 @@ class SubingStrategyRuntimeEvaluator:
         )
         if len(matches) > 1:
             raise SubingStrategyMachineError("INTERVAL_IDENTITY_INVALID")
+        authoritative_open = (
+            event.bar.bar_end == first_1m
+            or isinstance(event, Completed15mBar)
+            and event.bar.bar_end == bucket.end
+            or isinstance(event, Completed5mBar)
+            and event.bar.bar_end == bucket.start + timedelta(minutes=5)
+        )
         if matches:
             interval = matches[0]
             if interval.first_1m_bar_end != first_1m:
                 raise SubingStrategyMachineError("INTERVAL_IDENTITY_INVALID")
-            authoritative_open = (
-                event.bar.bar_end == first_1m
-                or isinstance(event, Completed15mBar)
-                and event.bar.bar_end == bucket.end
-                or isinstance(event, Completed5mBar)
-                and event.bar.bar_end == bucket.start + timedelta(minutes=5)
-            )
             if authoritative_open and interval.expected_open != event.bar.open:
                 raise SubingStrategyMachineError("SOURCE_IDENTITY_INCONSISTENT")
             return state
@@ -503,6 +503,10 @@ class SubingStrategyRuntimeEvaluator:
             pending = state.pending_action
             if pending is not None and pending.decision_at < bucket.end:
                 return replace(state, pending_action=None)
+            return state
+        if not authoritative_open:
+            if isinstance(event, Completed5mBar) and event.bar.bar_end == bucket.end:
+                return replace(state, pending_boundary_5m=event)
             return state
         interval = SubingStrategyInterval(
             effective_bar_end=bucket.end,

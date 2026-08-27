@@ -80,6 +80,61 @@ describe('Alert Rule AST ownership guard', () => {
     )
   })
 
+  test('rejects local assignment and destructuring aliases in TS, TSX, and Vue', () => {
+    const attacks = {
+      'apps/quant-web/src/alias.ts': [
+        "const target = 'subing' + '_strategy_v1'",
+        'const code = event.rule_code',
+        'code === target',
+      ].join('\n'),
+      'apps/quant-web/src/Alias.tsx': [
+        "const target = 'subing' + '_strategy_v1'",
+        'let code',
+        'code = event.rule_code',
+        'export const view = <p>{target !== code}</p>',
+      ].join('\n'),
+      'apps/quant-web/src/Alias.vue': [
+        '<script lang="ts">',
+        "const target = 'subing' + '_strategy_v1'",
+        'const { rule_code: code } = event',
+        'target === code',
+        '</script>',
+        '<script setup lang="ts">',
+        "const target = 'htdy_' + 'original_15m'",
+        'let code',
+        '({ rule_code: code } = event)',
+        'code !== target',
+        '</script>',
+      ].join('\n'),
+    }
+
+    const violations = inspectAlertRuleOwnership(validSources(attacks), EXPECTED_OWNERSHIP)
+    assert.deepEqual(
+      violations.map(({ code, path }) => ({ code, path })),
+      [
+        { code: 'ALERT_RULE_DIRECT_ROUTING', path: 'apps/quant-web/src/Alias.tsx' },
+        { code: 'ALERT_RULE_DIRECT_ROUTING', path: 'apps/quant-web/src/Alias.vue' },
+        { code: 'ALERT_RULE_DIRECT_ROUTING', path: 'apps/quant-web/src/Alias.vue' },
+        { code: 'ALERT_RULE_DIRECT_ROUTING', path: 'apps/quant-web/src/alias.ts' },
+      ],
+    )
+  })
+
+  test('allows local rule_code aliases inside the routing owner helper', () => {
+    const sources = validSources({
+      [ALERT_RULES_PATH]: [
+        "export const HTDY = 'htdy_original_15m'",
+        "export const SUBING = 'subing_strategy_v1'",
+        'export function matchesAlertRuleCode(event, ruleCode) {',
+        '  const code = event.rule_code',
+        '  return code === ruleCode',
+        '}',
+      ].join('\n'),
+    })
+
+    assert.deepEqual(inspectAlertRuleOwnership(sources, EXPECTED_OWNERSHIP), [])
+  })
+
   test('rejects rule_code routing through every transparent TypeScript wrapper', () => {
     const attacks = [
       '(event.rule_code) === target',

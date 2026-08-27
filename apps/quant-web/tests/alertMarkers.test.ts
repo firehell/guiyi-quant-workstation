@@ -7,6 +7,7 @@ import type {
   SubingStrategyAction,
   SubingStrategyActionPayloadWire,
   SubingStrategyCurrentResponse,
+  SubingStrategyEpisode,
 } from '../src/types/market.ts'
 import {
   STRATEGY_ACTION_FACT_MISMATCH,
@@ -76,6 +77,94 @@ it('does not collapse a higher-precision live Decimal into an equal historical n
   assert.deepEqual(result.mismatchActionIds, [action.action_id])
 })
 
+it('dedupes exact high-precision price facts and detects a last-digit change', () => {
+  const referencePrice = '12345678901234567890.1234567890123456789'
+  const pivotPrice = '12345678901234567000.0000000000000000001'
+  const action = {
+    ...historicalAction(),
+    reference_price: referencePrice,
+    bound_reference_pivot: {
+      pivot_id: 'pivot:exact',
+      kind: 'low' as const,
+      source_timeframe: '5m' as const,
+      pivot_time: '2026-08-14T13:00:00Z',
+      confirmed_at: '2026-08-14T13:10:00Z',
+      price: pivotPrice,
+      contract: 'JM2609',
+      segment_start_trading_day: '2026-08-01',
+    },
+  }
+  const same = reconcileSubingStrategyActions([action], [], [liveEvent(action)])
+  const changedEvent = liveEvent(action)
+  changedEvent.strategy_action = {
+    ...changedEvent.strategy_action!,
+    reference_price: '12345678901234567890.1234567890123456788',
+  }
+  const changed = reconcileSubingStrategyActions([action], [], [changedEvent])
+
+  assert.deepEqual(same.mismatchActionIds, [])
+  assert.deepEqual(same.errorCodes, [])
+  assert.deepEqual(changed.mismatchActionIds, [action.action_id])
+  assert.deepEqual(changed.errorCodes, [STRATEGY_ACTION_FACT_MISMATCH])
+})
+
+it('compares exact high-precision reference changes without Number rounding', () => {
+  const change = '0.08100445524503847711624139328'
+  const entry = historicalAction()
+  const close: SubingStrategyAction = {
+    ...entry,
+    action_id: 'subing-action:close-exact',
+    kind: 'close_long',
+    decision_at: '2026-08-14T13:30:00Z',
+    effective_open_at: '2026-08-14T13:30:00Z',
+    effective_bar_end: '2026-08-14T13:45:00Z',
+    reference_price: '100.08100445524503847711624139328',
+    confirmation_source: null,
+    reason_codes: ['EMA21_BREACH_LONG'],
+    direction_context_source_day: null,
+    direction_context_target_day: null,
+  }
+  const episode: SubingStrategyEpisode = {
+    episode_id: entry.episode_id,
+    direction: 'long',
+    entry_action: entry,
+    exit_action: close,
+    state: 'closed',
+    holding_bar_count: 2,
+    reference_change_percent: change,
+    current_reference_change_percent: null,
+    latest_reference_price: null,
+    exit_reason_codes: [...close.reason_codes],
+    structure_exit_available: false,
+  }
+  const sameEvent = liveEvent(close)
+  sameEvent.strategy_action = {
+    ...sameEvent.strategy_action!,
+    entry: {
+      action_id: entry.action_id,
+      kind: 'open_long',
+      effective_bar_end: entry.effective_bar_end,
+      reference_price: entry.reference_price,
+      confirmation_source: 'formal_v1',
+    },
+    holding_bar_count: 2,
+    reference_change_percent: change,
+  } as SubingStrategyActionPayloadWire
+  const changedEvent = {
+    ...sameEvent,
+    strategy_action: {
+      ...sameEvent.strategy_action!,
+      reference_change_percent: '0.08100445524503847711624139329',
+    } as SubingStrategyActionPayloadWire,
+  }
+
+  const same = reconcileSubingStrategyActions([close], [episode], [sameEvent])
+  const changed = reconcileSubingStrategyActions([close], [episode], [changedEvent])
+
+  assert.deepEqual(same.mismatchActionIds, [])
+  assert.deepEqual(changed.mismatchActionIds, [close.action_id])
+})
+
 
 it('normalizes both Pivot timestamps before comparing exact Strategy facts', () => {
   const action = historicalAction()
@@ -85,7 +174,7 @@ it('normalizes both Pivot timestamps before comparing exact Strategy facts', () 
     source_timeframe: '5m',
     pivot_time: '2026-08-14T13:00:00Z',
     confirmed_at: '2026-08-14T13:10:00Z',
-    price: 99,
+    price: '99',
     contract: 'JM2609',
     segment_start_trading_day: '2026-08-01',
   }
@@ -150,7 +239,7 @@ function historicalAction(): SubingStrategyAction {
     decision_at: '2026-08-14T13:15:00Z',
     effective_open_at: '2026-08-14T13:15:00Z',
     effective_bar_end: '2026-08-14T13:30:00Z',
-    reference_price: 100,
+    reference_price: '100',
     fill_basis: 'next_bar_open',
     confirmation_source: 'formal_v1',
     reason_codes: [],
@@ -227,8 +316,8 @@ function currentResponse(contract: string): SubingStrategyCurrentResponse {
       state: 'open',
       holding_bar_count: 1,
       reference_change_percent: null,
-      current_reference_change_percent: 0,
-      latest_reference_price: 100,
+      current_reference_change_percent: '0',
+      latest_reference_price: '100',
       exit_reason_codes: [],
       structure_exit_available: false,
     },

@@ -808,9 +808,7 @@ export interface SubingStrategyBoundPivotWire {
   segment_start_trading_day: string
 }
 
-export interface SubingStrategyBoundPivot extends Omit<SubingStrategyBoundPivotWire, 'price'> {
-  price: number
-}
+export type SubingStrategyBoundPivot = SubingStrategyBoundPivotWire
 
 export interface SubingStrategyBoundLowPivotWire extends Omit<SubingStrategyBoundPivotWire, 'kind'> {
   kind: 'low'
@@ -845,9 +843,8 @@ export interface SubingStrategyActionWire {
 
 export interface SubingStrategyAction extends Omit<
   SubingStrategyActionWire,
-  'reference_price' | 'bound_reference_pivot'
+  'bound_reference_pivot'
 > {
-  reference_price: number
   bound_reference_pivot: SubingStrategyBoundPivot | null
 }
 
@@ -959,14 +956,10 @@ export interface SubingStrategyEpisodeWire {
 
 export interface SubingStrategyEpisode extends Omit<
   SubingStrategyEpisodeWire,
-  | 'entry_action' | 'exit_action' | 'reference_change_percent'
-  | 'current_reference_change_percent' | 'latest_reference_price'
+  'entry_action' | 'exit_action'
 > {
   entry_action: SubingStrategyAction
   exit_action: SubingStrategyAction | null
-  reference_change_percent: number | null
-  current_reference_change_percent: number | null
-  latest_reference_price: number | null
 }
 
 export interface SubingStrategyHistoricalWireResponse {
@@ -1099,14 +1092,32 @@ function strategyNullableTimestamp(value: unknown): string | null {
   return value === null ? null : strategyTimestamp(value)
 }
 
-function strategyDecimal(value: unknown): number {
-  if (typeof value !== 'string' || value.trim() === '') invalidSubingStrategyResponse()
-  const number = Number(value)
-  if (!Number.isFinite(number)) invalidSubingStrategyResponse()
-  return number
+function strategyDecimal(value: unknown): string {
+  if (typeof value !== 'string' || value === '' || value !== value.trim()) {
+    invalidSubingStrategyResponse()
+  }
+  const match = /^([+-]?)(\d+)(?:\.(\d*))?(?:[eE]([+-]?\d+))?$/.exec(value)
+  if (!match) invalidSubingStrategyResponse()
+  const exponent = Number(match[4] ?? '0')
+  if (!Number.isSafeInteger(exponent)) invalidSubingStrategyResponse()
+  const fraction = match[3] ?? ''
+  const digits = `${match[2]}${fraction}`
+  const decimalIndex = match[2].length + exponent
+  if (digits.length + Math.abs(exponent) > 10_000) invalidSubingStrategyResponse()
+  const expanded = decimalIndex <= 0
+    ? `0.${'0'.repeat(-decimalIndex)}${digits}`
+    : decimalIndex >= digits.length
+      ? `${digits}${'0'.repeat(decimalIndex - digits.length)}`
+      : `${digits.slice(0, decimalIndex)}.${digits.slice(decimalIndex)}`
+  const [rawInteger, rawFraction = ''] = expanded.split('.')
+  const integer = rawInteger.replace(/^0+(?=\d)/, '')
+  const canonicalFraction = rawFraction.replace(/0+$/, '')
+  const nonZero = integer !== '0' || canonicalFraction !== ''
+  return `${match[1] === '-' && nonZero ? '-' : ''}${integer}`
+    + `${canonicalFraction ? `.${canonicalFraction}` : ''}`
 }
 
-function strategyNullableDecimal(value: unknown): number | null {
+function strategyNullableDecimal(value: unknown): string | null {
   return value === null ? null : strategyDecimal(value)
 }
 

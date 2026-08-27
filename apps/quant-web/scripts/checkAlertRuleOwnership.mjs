@@ -90,7 +90,96 @@ function inspectTypeScriptUnit({
   occurrences,
   violations,
 }) {
+  const scopes = [new Map()]
+
+  const isTrackedRuleCode = (node) => {
+    const expression = ts.skipOuterExpressions(node, ts.OuterExpressionKinds.All)
+    if (isRuleCodeProperty(expression)) return true
+    if (!ts.isIdentifier(expression)) return false
+    for (let index = scopes.length - 1; index >= 0; index -= 1) {
+      if (scopes[index].has(expression.text)) return scopes[index].get(expression.text)
+    }
+    return false
+  }
+
+  const bindIdentifier = (name, alias, assignment = false) => {
+    if (assignment) {
+      for (let index = scopes.length - 1; index >= 0; index -= 1) {
+        if (!scopes[index].has(name)) continue
+        if (alias) scopes[index].set(name, true)
+        return
+      }
+    }
+    scopes[scopes.length - 1].set(name, alias)
+  }
+
+  const bindName = (name, alias, assignment = false) => {
+    if (ts.isIdentifier(name)) {
+      bindIdentifier(name.text, alias, assignment)
+      return
+    }
+    if (ts.isObjectBindingPattern(name) || ts.isArrayBindingPattern(name)) {
+      for (const element of name.elements) {
+        if (!ts.isBindingElement(element)) continue
+        bindName(element.name, alias, assignment)
+      }
+    }
+  }
+
+  const recordObjectBinding = (pattern, assignment = false) => {
+    for (const element of pattern.elements) {
+      if (!ts.isBindingElement(element)) continue
+      const property = element.propertyName ?? element.name
+      bindName(element.name, propertyNameText(property) === 'rule_code', assignment)
+    }
+  }
+
+  const recordObjectAssignment = (expression) => {
+    for (const property of expression.properties) {
+      if (ts.isShorthandPropertyAssignment(property)) {
+        bindIdentifier(property.name.text, property.name.text === 'rule_code', true)
+      } else if (
+        ts.isPropertyAssignment(property)
+        && propertyNameText(property.name) === 'rule_code'
+      ) {
+        bindName(property.initializer, true, true)
+      }
+    }
+  }
+
+  const recordAliases = (node) => {
+    if (ts.isVariableDeclaration(node)) {
+      if (ts.isObjectBindingPattern(node.name)) {
+        recordObjectBinding(node.name)
+      } else {
+        bindName(node.name, node.initializer ? isTrackedRuleCode(node.initializer) : false)
+      }
+      return
+    }
+    if (
+      !ts.isBinaryExpression(node)
+      || node.operatorToken.kind !== ts.SyntaxKind.EqualsToken
+    ) return
+    const left = ts.skipOuterExpressions(node.left, ts.OuterExpressionKinds.All)
+    if (ts.isObjectLiteralExpression(left)) {
+      recordObjectAssignment(left)
+    } else {
+      bindName(left, isTrackedRuleCode(node.right), true)
+    }
+  }
+
   const visit = (node) => {
+    const ownsScope = node !== unit.sourceFile && (
+      ts.isBlock(node) || ts.isFunctionLike(node) || ts.isCatchClause(node)
+    )
+    if (ownsScope) scopes.push(new Map())
+    if (ts.isFunctionLike(node)) {
+      for (const parameter of node.parameters) bindName(parameter.name, false)
+    } else if (ts.isCatchClause(node) && node.variableDeclaration) {
+      bindName(node.variableDeclaration.name, false)
+    }
+    recordAliases(node)
+
     if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
       const location = sourceLocation(fullSource, unit.baseOffset + node.getStart(unit.sourceFile))
       if (node.text === RETIRED_RULE_CODE) {
@@ -108,16 +197,26 @@ function inspectTypeScriptUnit({
       path !== RULE_ROUTING_OWNER
       && ts.isBinaryExpression(node)
       && EQUALITY_OPERATORS.has(node.operatorToken.kind)
-      && (isRuleCodeProperty(node.left) || isRuleCodeProperty(node.right))
+      && (isTrackedRuleCode(node.left) || isTrackedRuleCode(node.right))
     ) {
       const location = sourceLocation(fullSource, unit.baseOffset + node.getStart(unit.sourceFile))
       violations.push({ path, ...location, code: 'ALERT_RULE_DIRECT_ROUTING' })
     }
 
     ts.forEachChild(node, visit)
+    if (ownsScope) scopes.pop()
   }
 
   visit(unit.sourceFile)
+}
+
+function propertyNameText(node) {
+  if (
+    ts.isIdentifier(node)
+    || ts.isStringLiteral(node)
+    || ts.isNoSubstitutionTemplateLiteral(node)
+  ) return node.text
+  return null
 }
 
 function parseSource(path, source) {

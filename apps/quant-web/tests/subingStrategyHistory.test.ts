@@ -71,10 +71,40 @@ function strategyWireResponse() {
 test('normalizes Decimal strings while preserving deterministic identities', () => {
   const normalized = normalizeSubingStrategyHistory(strategyWireResponse())
 
-  assert.equal(normalized.actions[0].reference_price, 108.50985)
-  assert.equal(normalized.episodes[0].reference_change_percent, 7.97)
+  assert.equal(normalized.actions[0].reference_price, '108.50985')
+  assert.equal(normalized.episodes[0].reference_change_percent, '7.97')
   assert.equal(normalized.actions[0].action_id, 'subing-action:exit')
   assert.equal(normalized.episodes[0].entry_action.action_id, 'subing-action:entry')
+})
+
+test('preserves exact high-precision Decimal facts through the HTTP boundary', () => {
+  const payload = strategyWireResponse()
+  const price = '12345678901234567890.1234567890123456789'
+  const entryPrice = '12345678901234567889.9999999999999999999'
+  const change = '0.08100445524503847711624139328'
+  const pivotPrice = '12345678901234567000.0000000000000000001'
+  payload.actions[0].reference_price = price
+  payload.actions[0].bound_reference_pivot = {
+    pivot_id: 'pivot:exact',
+    kind: 'low',
+    source_timeframe: '5m',
+    pivot_time: '2026-08-07T02:00:00Z',
+    confirmed_at: '2026-08-07T02:10:00Z',
+    price: pivotPrice,
+    contract: 'JM2609',
+    segment_start_trading_day: '2026-08-01',
+  }
+  payload.episodes[0].entry_action.reference_price = entryPrice
+  payload.episodes[0].exit_action.reference_price = price
+  payload.episodes[0].reference_change_percent = change
+
+  const normalized = normalizeSubingStrategyHistory(payload)
+
+  assert.equal(normalized.actions[0].reference_price, price)
+  assert.equal(normalized.actions[0].bound_reference_pivot?.price, pivotPrice)
+  assert.equal(normalized.episodes[0].entry_action.reference_price, entryPrice)
+  assert.equal(normalized.episodes[0].exit_action?.reference_price, price)
+  assert.equal(normalized.episodes[0].reference_change_percent, change)
 })
 
 test('rejects a nested entry whose episode identity conflicts', () => {

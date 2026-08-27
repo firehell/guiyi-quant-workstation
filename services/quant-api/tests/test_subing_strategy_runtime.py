@@ -481,6 +481,67 @@ def test_completed_15m_creates_pending_but_does_not_emit_action() -> None:
     assert current.pending_action.kind is SubingStrategyActionKind.OPEN_LONG
 
 
+def test_shared_boundary_order_cannot_use_final_5m_as_interval_open() -> None:
+    """Catches the final 5m open becoming the next authoritative 15m open."""
+
+    state, identity, events = _recorded_machine(event_count=758)
+    final_5m = events[758]
+    closing_15m = events[759]
+    assert isinstance(final_5m, Completed5mBar)
+    assert isinstance(closing_15m, Completed15mBar)
+    assert final_5m.bar.bar_end == closing_15m.bar.bar_end
+    assert final_5m.bar.open != closing_15m.bar.open
+    boundary = closing_15m.bar.bar_end
+    state = replace(
+        state,
+        intervals=tuple(
+            interval
+            for interval in state.intervals
+            if interval.effective_bar_end != boundary
+        ),
+    )
+
+    def process(order: tuple[RuntimeEvent, RuntimeEvent]):
+        evaluator, _ = _ready_evaluator(state)
+        first = evaluator.process_completed_bar(
+            order[0].bar,
+            BarFrequency.M5
+            if isinstance(order[0], Completed5mBar)
+            else BarFrequency.M15,
+            source_identity=identity,
+        )
+        after_first = evaluator.current_state("jm")
+        assert after_first is not None
+        if isinstance(order[0], Completed5mBar):
+            assert all(
+                interval.effective_bar_end != boundary
+                for interval in after_first.intervals
+            )
+        second = evaluator.process_completed_bar(
+            order[1].bar,
+            BarFrequency.M5
+            if isinstance(order[1], Completed5mBar)
+            else BarFrequency.M15,
+            source_identity=identity,
+        )
+        assert first.action_facts == ()
+        return second, evaluator.current_state("jm")
+
+    five_first = process((final_5m, closing_15m))
+    fifteen_first = process((closing_15m, final_5m))
+
+    assert five_first == fifteen_first
+    assert five_first[0].product_status.state == "ready"
+    assert five_first[0].action_facts == fifteen_first[0].action_facts
+    resolved = five_first[1]
+    assert resolved is not None
+    interval = next(
+        item for item in resolved.intervals if item.effective_bar_end == boundary
+    )
+    assert interval.expected_open == closing_15m.bar.open
+    assert interval.expected_open != final_5m.bar.open
+
+
 def test_exact_first_completed_1m_applies_pending_action() -> None:
     pending, _, events = _recorded_machine(event_count=760)
     evaluator, identity = _ready_evaluator(pending)
