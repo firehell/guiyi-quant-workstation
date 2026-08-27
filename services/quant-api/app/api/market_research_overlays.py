@@ -377,7 +377,10 @@ def subing_strategy_history(
             since=since,
             through=through,
         )
-        result = build_subing_strategy_historical_service(session).history(request)
+        result = build_subing_strategy_historical_service(session).history(
+            request,
+            publish_cache=False,
+        )
     except (
         SubingStrategyPolicyError,
         SubingCalibrationError,

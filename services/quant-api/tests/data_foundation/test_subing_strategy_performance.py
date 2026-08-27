@@ -137,7 +137,7 @@ def test_performance_service_uses_fixed_actual_dominant_15m_full_window(tmp_path
             self,
             request: SubingStrategyHistoricalRequest,
             *,
-            publish_cache: bool = True,
+            publish_cache: bool = False,
         ):
             observed.append((request, publish_cache))
             return projection

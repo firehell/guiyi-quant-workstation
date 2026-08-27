@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import replace
 from datetime import date, timedelta
+import json
+from pathlib import Path
 from types import MappingProxyType
 
 import pytest
@@ -19,6 +21,7 @@ from app.market_data.subing_strategy.contracts import (
     SubingStrategyPositionState,
 )
 from app.market_data.subing_strategy.cache import (
+    SubingStrategyCache,
     SubingStrategyCacheError,
 )
 from app.market_data.subing_strategy.engine import SubingStrategySegmentResult
@@ -329,10 +332,14 @@ def test_service_rejects_symbol_outside_active_products() -> None:
         )
 
 
-@pytest.mark.parametrize("failure", ("read", "write"))
+@pytest.mark.parametrize(
+    ("failure", "expected_state"),
+    (("read", "miss"), ("write", "unavailable")),
+)
 def test_cache_failure_recomputes_without_changing_result(
     monkeypatch: pytest.MonkeyPatch,
     failure: str,
+    expected_state: str,
 ) -> None:
     bar = _bar(1)
     segment = ResolvedContractSegment(CONTRACT, SEGMENT_START, SEGMENT_START)
@@ -377,11 +384,14 @@ def test_cache_failure_recomputes_without_changing_result(
         cache=FailingCache(),
     )
 
-    result = service.history(_request(since=SEGMENT_START, through=SEGMENT_START))
+    result = service.history(
+        _request(since=SEGMENT_START, through=SEGMENT_START),
+        publish_cache=True,
+    )
 
     assert result.actions == expected.actions
     assert result.episodes == expected.episodes
-    assert result.cache_state == "unavailable"
+    assert result.cache_state == expected_state
 
 
 def test_read_only_history_never_writes_a_missing_segment_cache(
@@ -435,6 +445,60 @@ def test_read_only_history_never_writes_a_missing_segment_cache(
 
     assert result.cache_state == "miss"
     assert writes == []
+
+
+def test_explicit_warm_repairs_a_corrupt_segment_cache(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    bar = _bar(1)
+    segment = ResolvedContractSegment(CONTRACT, SEGMENT_START, SEGMENT_START)
+    loader = FakeSegmentLoader(
+        loaded_series(segments=(segment,), bars_5m=(bar,), bars_15m=(bar,))
+    )
+    resolver = FakeDirectionContextResolver(
+        {SEGMENT_START: _context(bar, SubingStrategyDirection.NO_NEW_ENTRY)}
+    )
+    expected = SubingStrategySegmentResult(
+        actions=(),
+        episodes=(),
+        consumed_opportunity_ids=(),
+        canceled_pending=(),
+        pending_action=None,
+        final_position=SubingStrategyPositionState.FLAT,
+    )
+    replay_count = 0
+
+    def replay(**_kwargs):
+        nonlocal replay_count
+        replay_count += 1
+        return expected
+
+    monkeypatch.setattr(
+        "app.market_data.subing_strategy.service.replay_subing_strategy_segment",
+        replay,
+    )
+    cache = SubingStrategyCache(tmp_path, root_validator=lambda: tmp_path)
+    service = SubingStrategyHistoricalProjectionService(
+        loader,
+        products=("jm",),
+        direction_context_resolver=resolver,
+        calibration=_accepted_calibration(),
+        lifecycle_policy=load_subing_lifecycle_policy(),
+        strategy_policy=load_subing_strategy_policy(),
+        cache=cache,
+    )
+    request = _request(since=SEGMENT_START, through=SEGMENT_START)
+
+    assert service.history(request, publish_cache=True).cache_state == "miss"
+    cache_path = next(tmp_path.rglob("*.json"))
+    envelope = json.loads(cache_path.read_text(encoding="utf-8"))
+    envelope["schema_version"] = 0
+    cache_path.write_text(json.dumps(envelope), encoding="utf-8")
+
+    assert service.history(request, publish_cache=True).cache_state == "miss"
+    assert service.history(request, publish_cache=False).cache_state == "hit"
+    assert replay_count == 2
 
 
 def test_cache_identity_uses_current_lifecycle_formula_version(

@@ -115,7 +115,7 @@ class _HistoricalService(Protocol):
         self,
         request: SubingStrategyHistoricalRequest,
         *,
-        publish_cache: bool = True,
+        publish_cache: bool = False,
     ) -> SubingStrategyHistoricalProjection: ...
 
 

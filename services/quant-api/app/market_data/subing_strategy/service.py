@@ -244,7 +244,7 @@ class SubingStrategyHistoricalProjectionService:
         self,
         request: SubingStrategyHistoricalRequest,
         *,
-        publish_cache: bool = True,
+        publish_cache: bool = False,
     ) -> SubingStrategyHistoricalProjection:
         if not isinstance(request, SubingStrategyHistoricalRequest):
             raise TypeError("request must be SubingStrategyHistoricalRequest")
@@ -395,11 +395,12 @@ class SubingStrategyHistoricalProjectionService:
                 )
                 if (
                     publish_cache
-                    and cache_state == "miss"
+                    and cache_state in {"miss", "unavailable"}
                     and cache_identity is not None
                 ):
                     try:
                         self._cache.write(cache_identity, cached)
+                        cache_state = "miss"
                     except SubingStrategyCacheError:
                         cache_state = "unavailable"
             all_actions.extend(cached.actions)
