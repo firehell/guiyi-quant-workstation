@@ -43,6 +43,7 @@ uv run --project services/quant-api guiyi research n-structure --help
 ## Web
 
 ```bash
+pnpm --dir apps/quant-web run check:alert-rules
 pnpm --dir apps/quant-web test
 pnpm --dir apps/quant-web test:e2e
 pnpm --dir apps/quant-web build

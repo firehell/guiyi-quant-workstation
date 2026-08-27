@@ -1,10 +1,11 @@
 import type { AlertEvent, KlineMarker, MarketFrequency, SeriesKind } from '../types/market.ts'
 import {
   ALERT_RULE_PRESENTATIONS,
-  HTDY_ALERT_RULE_CODE,
+  type AlertRuleCode,
   alertDirectionalTone,
   alertResultLabel,
   getAlertRulePresentation,
+  isHtdyAlertEvent,
 } from './alertRules.ts'
 
 export function isPersistentAlertIdentity(
@@ -17,7 +18,7 @@ export function isPersistentAlertIdentity(
 export function markerRuleCodes(
   seriesKind: SeriesKind,
   frequency: MarketFrequency,
-): string[] {
+): AlertRuleCode[] {
   if (seriesKind !== 'actual_dominant') return []
   return ALERT_RULE_PRESENTATIONS
     .filter((presentation) => presentation.persistentFrequencies.includes(frequency))
@@ -28,7 +29,7 @@ export function alertEventsToMarkers(events: AlertEvent[]): KlineMarker[] {
   return [...events]
     .sort((left, right) => Date.parse(left.bar_end) - Date.parse(right.bar_end))
     .flatMap((event) => {
-      if (event.rule_code !== HTDY_ALERT_RULE_CODE) return []
+      if (!isHtdyAlertEvent(event)) return []
       const observations = event.result_codes.filter(
         (item): item is 'buy' | 'sell' => item === 'buy' || item === 'sell',
       )

@@ -5,7 +5,7 @@ import type {
   ProductAlertStateResponse,
 } from '../api/alerts.ts'
 import { isCurrentAlertMutation } from '../utils/alertControl.ts'
-import { ALERT_RULE_CODES } from '../utils/alertRules.ts'
+import { ALERT_RULE_CODES, matchesAlertRuleCode } from '../utils/alertRules.ts'
 import type { MarketFrequency } from '../types/market.ts'
 
 
@@ -98,7 +98,7 @@ export function useProductAlertScope(dependencies: Dependencies) {
         updatedRuleCode: updated.rule_code,
       })) {
         alertRules.value = alertRules.value.map((rule) => (
-          rule.rule_code === ruleCode ? updated : rule
+          matchesAlertRuleCode(rule, ruleCode) ? updated : rule
         ))
       }
     } catch {

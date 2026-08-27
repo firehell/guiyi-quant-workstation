@@ -16,7 +16,12 @@ import {
   type SubingSignal,
 } from '@/types/market'
 import { alertRuntimeLabel } from '@/utils/alertControl'
-import { ALERT_RULE_CODES, strategyActionLabel } from '@/utils/alertRules'
+import {
+  ALERT_RULE_CODES,
+  isSubingStrategyAlertEvent,
+  matchesAlertRuleCode,
+  strategyActionLabel,
+} from '@/utils/alertRules'
 import { buildSubingLifecyclePivotFacts } from '@/utils/subingLifecycleFacts'
 
 const props = defineProps<{
@@ -46,7 +51,7 @@ const emit = defineEmits<{
   'toggle-subing-alert': [ruleCode: string, enabled: boolean]
 }>()
 
-const subingEvents = computed(() => props.currentEvents.filter((event) => event.rule_code === ALERT_RULE_CODES.SUBING))
+const subingEvents = computed(() => props.currentEvents.filter(isSubingStrategyAlertEvent))
 const strategyEvent = computed(() => [...subingEvents.value]
   .filter((event) => event.strategy_action !== null)
   .sort((left, right) => Date.parse(right.bar_end) - Date.parse(left.bar_end))[0] ?? null)
@@ -56,7 +61,9 @@ const remainingEvents = computed(() => {
     ? []
     : subingEvents.value.filter((event) => event.id !== selectedId)
 })
-const subingRule = computed(() => props.rules.find((rule) => rule.rule_code === ALERT_RULE_CODES.SUBING) ?? null)
+const subingRule = computed(() => (
+  props.rules.find((rule) => matchesAlertRuleCode(rule, ALERT_RULE_CODES.SUBING)) ?? null
+))
 const displayedSignal = computed(() => props.snapshot?.resolved_signal ?? props.snapshot?.primary_signal ?? null)
 const runtimeLabel = computed(() => alertRuntimeLabel(props.runtimeStatus))
 const runtimeTagType = computed(() => props.runtimeStatus === 'ok'

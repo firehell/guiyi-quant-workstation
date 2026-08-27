@@ -99,7 +99,8 @@ describe('Product Alert server-side scope', () => {
       ALERT_RULE_CODES.HTDY,
       ALERT_RULE_CODES.SUBING,
     ])
-    assert.match(rulesSource, /rule_code === ALERT_RULE_CODES\.HTDY/)
+    assert.match(rulesSource, /matchesAlertRuleCode\(rule, ALERT_RULE_CODES\.HTDY\)/)
+    assert.doesNotMatch(rulesSource, /\.rule_code\s*[!=]==?/)
     assert.match(rulesSource, /htdyRule\.value\?\.enabled_frequencies\.includes\(props\.frequency\)/)
     assert.match(rulesSource, /`\$\{rule\.display_name\} · \$\{props\.frequency\}`/)
     assert.doesNotMatch(rulesSource, /ALERT_RULE_CODES\.SUBING|enabled_for_product/)

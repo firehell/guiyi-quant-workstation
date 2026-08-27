@@ -1,4 +1,10 @@
-import { MARKET_FREQUENCIES, type MarketFrequency } from '../types/market.ts'
+import {
+  MARKET_FREQUENCIES,
+  type AlertEvent,
+  type HtdyAlertEvent,
+  type MarketFrequency,
+  type SubingStrategyAlertEvent,
+} from '../types/market.ts'
 
 export const HTDY_ALERT_RULE_CODE = 'htdy_original_15m'
 export const SUBING_STRATEGY_RULE_CODE = 'subing_strategy_v1'
@@ -10,6 +16,10 @@ export const ALERT_RULE_CODES = {
 
 export type AlertRuleCode = typeof ALERT_RULE_CODES[keyof typeof ALERT_RULE_CODES]
 export type AlertDirection = 'buy' | 'sell'
+
+interface AlertRuleIdentity {
+  readonly rule_code: string
+}
 
 export interface AlertRulePresentation {
   ruleCode: AlertRuleCode
@@ -42,6 +52,23 @@ const PRESENTATION_BY_CODE = new Map(
 
 export function getAlertRulePresentation(ruleCode: string): AlertRulePresentation | null {
   return PRESENTATION_BY_CODE.get(ruleCode as AlertRuleCode) ?? null
+}
+
+export function matchesAlertRuleCode(
+  event: AlertRuleIdentity,
+  ruleCode: string,
+): boolean {
+  return event.rule_code === ruleCode
+}
+
+export function isHtdyAlertEvent(event: AlertEvent): event is HtdyAlertEvent {
+  return matchesAlertRuleCode(event, ALERT_RULE_CODES.HTDY)
+}
+
+export function isSubingStrategyAlertEvent(
+  event: AlertEvent,
+): event is SubingStrategyAlertEvent {
+  return matchesAlertRuleCode(event, ALERT_RULE_CODES.SUBING)
 }
 
 export function alertRuleShortLabel(ruleCode: string): string {

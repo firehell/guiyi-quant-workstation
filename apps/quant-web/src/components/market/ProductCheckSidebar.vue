@@ -17,7 +17,11 @@ import {
   type SubingStrategyEpisode,
   type SubingStrategyCurrentResponse,
 } from '@/types/market'
-import { ALERT_RULE_CODES } from '@/utils/alertRules'
+import {
+  ALERT_RULE_CODES,
+  isSubingStrategyAlertEvent,
+  matchesAlertRuleCode,
+} from '@/utils/alertRules'
 import { summarizeMarketBackground } from '@/utils/productCheck'
 
 const props = defineProps<{
@@ -66,10 +70,10 @@ const background = computed(() => props.research
   ? summarizeMarketBackground(props.research.daily_trend, props.research.weekly_trend)
   : null)
 const subingEvents = computed(() => props.currentEvents.filter((event) => (
-  event.rule_code === ALERT_RULE_CODES.SUBING
+  isSubingStrategyAlertEvent(event)
 )))
 const subingRules = computed(() => props.alertRules.filter((rule) => (
-  rule.rule_code === ALERT_RULE_CODES.SUBING
+  matchesAlertRuleCode(rule, ALERT_RULE_CODES.SUBING)
 )))
 const seriesLabel = computed(() => {
   if (props.seriesKind === 'actual_dominant') return '真实主力'
