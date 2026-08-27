@@ -505,7 +505,7 @@ all N-specific watchers and mutation sync calls
 N-specific props/events passed to toolbar and KlineChart
 ```
 
-Preserve `getSubingStrategyHistory`, Stage 2 current Strategy calls/composables, `useHistoricalResearchMarkers`, Alert markers and Subing current/history reconciliation.
+Preserve `getSubingStrategyHistory`, `getSubingStrategyCurrent`, `useSubingStrategyCurrent`, Stage 2 current/history reconciliation, `useHistoricalResearchMarkers`, Alert markers and Subing current/history records.
 
 In `ProductWorkspaceToolbar.vue`, remove the N props/emits/switch/help/error/loading UI. The chart-settings popover keeps optional EMA, SuBing internal-process control, contract controls and all other retained UI.
 
@@ -703,11 +703,11 @@ Expected: PASS. Do not invoke any research command against real data; help is su
 - [ ] **Step 8: Commit.**
 
 ```bash
-git add \
+git add -A \
   services/quant-api/app/main.py \
   services/quant-api/app/schemas/research_overlays.py \
   services/quant-api/app/guiyi_cli \
-  services/quant-api/app/research/historical_overlay_api.py \
+  services/quant-api/app/research \
   services/quant-api/tests/test_market_research_overlays_api.py \
   services/quant-api/tests/test_research_cli_boundaries.py \
   services/quant-api/tests/research/test_research_cli_parser_requests.py \
@@ -800,15 +800,10 @@ Expected: PASS.
 - [ ] **Step 6: Commit.**
 
 ```bash
-git add \
-  services/quant-api/app/research/composition.py \
-  services/quant-api/app/research/robustness \
-  data/research_protocols/multi_candidate_robustness_v1.json \
-  services/quant-api/tests/test_research_composition.py \
-  services/quant-api/tests/test_multi_candidate_events.py \
-  services/quant-api/tests/test_multi_candidate_robustness.py \
-  services/quant-api/tests/test_multi_candidate_robustness_policy.py \
-  services/quant-api/tests/research/test_multi_candidate_robustness_service.py
+git add -A \
+  services/quant-api/app/research \
+  services/quant-api/tests \
+  data/research_protocols
 git diff --cached --check
 git commit -m 'refactor(research): remove multi-candidate robustness'
 ```
@@ -859,8 +854,10 @@ Do not delete shared candidate schedule helpers, `price_outcome.py`, `actual_dom
 - [ ] **Step 3: Delete N-only tests from the exact tracked glob inventory captured in Task 0.**
 
 ```bash
-git rm services/quant-api/tests/test_n_structure_*.py
-git rm services/quant-api/tests/test_n_candidate_validation*.py
+git ls-files -z 'services/quant-api/tests/test_n_structure_*.py' \
+  | xargs -0 -r git rm --
+git ls-files -z 'services/quant-api/tests/test_n_candidate_validation*.py' \
+  | xargs -0 -r git rm --
 git rm \
   services/quant-api/tests/research/test_n_structure_research_service.py \
   services/quant-api/tests/research/test_n_candidate_validation_service.py
@@ -909,14 +906,12 @@ Expected: no matches. If matches remain, classify and remove only N/Multi active
 - [ ] **Step 7: Commit.**
 
 ```bash
-git add \
-  services/quant-api/app/research/n_structure \
-  data/research_policies/n_structure_5m_v1.json \
-  data/research_candidates/n_structure_5m_candidate_v1.json \
-  data/research_protocols/n_structure_validation_v1.json \
+git add -A \
+  services/quant-api/app/research \
   services/quant-api/tests \
-  apps/quant-web/tests \
-  apps/quant-web/e2e
+  data/research_policies \
+  data/research_candidates \
+  data/research_protocols
 git diff --cached --check
 git commit -m 'refactor(research): retire N structure core'
 ```
@@ -1177,17 +1172,18 @@ git status --short
 
 Expected: all checks pass; only intentional committed changes exist; task worktree is clean before Review.
 
-- [ ] **Step 8: If a regression fix was required, commit only that fix and rerun the affected gate.**
+- [ ] **Step 8: If a regression fix was required, keep it tracked-only and rerun the affected gate.**
 
-Example:
+A regression fix in this task must not add a new module or abstraction. Starting from the clean worktree produced by Step 7:
 
 ```bash
-git add <only-the-regression-files>
+git status --short
+git add -u
 git diff --cached --check
 git commit -m 'fix: preserve retained surface after N retirement'
 ```
 
-Do not hide a failing retained test by deleting or weakening causality, strict-before, prefix-invariance, golden-parity or fail-closed coverage.
+If a fix appears to require a new file, new abstraction, strategy change or expanded scope, stop and return to design review instead of committing it.
 
 ---
 
@@ -1244,11 +1240,13 @@ If Review requests changes, continue the same task branch/session only for scope
 
 - [ ] **Step 5: Merge task → `develop` only after the Lane 2 gate is satisfied.**
 
-This is a normal repository integration, not a release. After merge, verify:
+This is a normal repository integration, not a release. After merge, from any worktree where the local task branch still exists:
 
 ```bash
 git fetch origin
-git merge-base --is-ancestor <TASK_HEAD_SHA> origin/develop
+git merge-base --is-ancestor \
+  refactor/retire-n-structure \
+  origin/develop
 ```
 
 Expected: exit `0`.
@@ -1271,7 +1269,7 @@ Allowed repository conclusion after merge and fresh verification:
 ```text
 CODE_COMPLETE
 TEST_COMPLETE
-允许集成 develop / 已集成 develop
+已集成 develop
 EXTERNAL_GATE_PENDING: release + Runtime promotion
 ```
 
