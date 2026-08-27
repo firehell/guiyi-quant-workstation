@@ -1,6 +1,6 @@
 # SuBing Performance Incremental Snapshots Design
 
-**Status:** Approved in chat; written Spec pending user review
+**Status:** Approved by user on 2026-08-27
 
 **Date:** 2026-08-27
 
