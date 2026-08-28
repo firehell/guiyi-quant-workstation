@@ -89,7 +89,7 @@ class AfterMarketUpdater:
         sleep: Callable[[float], None],
         notification_transport: NotificationTransport | None,
         now: Callable[[], datetime],
-        derived_refresh: Callable[[], object] | None = None,
+        derived_refresh: Callable[[date, tuple[str, ...]], object] | None = None,
     ) -> None:
         self.manager = manager
         self.rqdata = rqdata
@@ -278,15 +278,60 @@ class AfterMarketUpdater:
             return "UPDATE_FAILED"
         if self.derived_refresh is not None:
             try:
-                derived = self.derived_refresh()
+                derived = self.derived_refresh(trading_day, products)
                 status = getattr(derived, "status", None)
                 completed = tuple(getattr(derived, "completed_products", ()))
                 failed = tuple(getattr(derived, "failed_products", ()))
+                cache_hit_count = getattr(derived, "cache_hit_count", None)
+                cache_published_count = getattr(
+                    derived, "cache_published_count", None
+                )
+                batch_identity_sha256 = getattr(
+                    derived, "batch_identity_sha256", None
+                )
                 if status not in {"passed", "degraded"}:
+                    raise ValueError("DERIVED_RESULT_INVALID")
+                if (
+                    type(cache_hit_count) is not int
+                    or cache_hit_count < 0
+                    or type(cache_published_count) is not int
+                    or cache_published_count < 0
+                    or not isinstance(batch_identity_sha256, str)
+                    or len(batch_identity_sha256) != 64
+                    or any(
+                        character not in "0123456789abcdef"
+                        for character in batch_identity_sha256
+                    )
+                ):
+                    raise ValueError("DERIVED_RESULT_INVALID")
+                if (
+                    any(not isinstance(symbol, str) for symbol in completed)
+                    or any(
+                        not isinstance(item, tuple)
+                        or len(item) != 2
+                        or not isinstance(item[0], str)
+                        or not isinstance(item[1], str)
+                        or not item[1].startswith("SUBING_STRATEGY_")
+                        for item in failed
+                    )
+                ):
+                    raise ValueError("DERIVED_RESULT_INVALID")
+                failed_symbols = tuple(item[0] for item in failed)
+                if (
+                    len(set(completed)) != len(completed)
+                    or len(set(failed_symbols)) != len(failed_symbols)
+                    or set(completed) & set(failed_symbols)
+                    or set(completed) | set(failed_symbols) != set(products)
+                    or cache_hit_count + cache_published_count != len(completed)
+                    or (status == "passed") != (not failed)
+                ):
                     raise ValueError("DERIVED_RESULT_INVALID")
                 self._derived_performance = {
                     "status": status,
                     "completed_count": len(completed),
+                    "cache_hit_count": cache_hit_count,
+                    "cache_published_count": cache_published_count,
+                    "batch_identity_sha256": batch_identity_sha256,
                     "failed_products": [
                         {"symbol": symbol, "code": code}
                         for symbol, code in failed
@@ -300,6 +345,9 @@ class AfterMarketUpdater:
                 self._derived_performance = {
                     "status": "degraded",
                     "completed_count": 0,
+                    "cache_hit_count": 0,
+                    "cache_published_count": 0,
+                    "batch_identity_sha256": None,
                     "failed_products": [],
                 }
         return None
@@ -335,6 +383,9 @@ class AfterMarketUpdater:
             payload["subing_strategy_performance"] = self._derived_performance or {
                 "status": "skipped",
                 "completed_count": 0,
+                "cache_hit_count": 0,
+                "cache_published_count": 0,
+                "batch_identity_sha256": None,
                 "failed_products": [],
             }
         if result.status == "passed":
@@ -387,6 +438,9 @@ class AfterMarketUpdater:
             payload["subing_strategy_performance"] = {
                 "status": "skipped",
                 "completed_count": 0,
+                "cache_hit_count": 0,
+                "cache_published_count": 0,
+                "batch_identity_sha256": None,
                 "failed_products": [],
             }
         _atomic_write_status(self.status_path, payload)
@@ -404,8 +458,9 @@ def build_after_market_updater(
         raise RuntimeError("AFTER_MARKET_RQDATA_CLIENT_UNAVAILABLE")
     from app.market_data.live_market import RedisClient
     from app.redis_connections import get_redis_connection
-    from app.market_data.composition import build_subing_strategy_performance_service
-    from app.market_data.subing_strategy.performance import warm_active_performance_cache
+    from app.market_data.composition import (
+        build_subing_strategy_performance_incremental_batch_refresher,
+    )
     from typing import cast
 
     notification_transport: NotificationTransport | None = None
@@ -419,9 +474,10 @@ def build_after_market_updater(
         sleep=time.sleep,
         notification_transport=notification_transport,
         now=lambda: datetime.now(SHANGHAI),
-        derived_refresh=lambda: warm_active_performance_cache(
-            build_subing_strategy_performance_service(manager.catalog.session),
-            expected_products=load_operational_products(),
+        derived_refresh=lambda trading_day, products: (
+            build_subing_strategy_performance_incremental_batch_refresher(
+                manager.catalog.session
+            ).refresh(trading_day, products)
         ),
     )
 
@@ -544,7 +600,10 @@ def public_after_market_status(value: object) -> dict[str, object]:
     last_success = _public_trading_day(value.get("last_successful_trading_day"))
     last_failure = _public_last_failure(value.get("last_failure"))
     if (
-        (schema_version == 2 and _present_nonnull_invalid(value, "current_run", current_run))
+        (
+            schema_version in {2, 3}
+            and _present_nonnull_invalid(value, "current_run", current_run)
+        )
         or _present_nonnull_invalid(value, "last_run", last_run)
         or _present_nonnull_invalid(
             value,
@@ -653,12 +712,32 @@ def _public_derived_performance(value: object) -> dict[str, object] | None:
         return None
     status = value.get("status")
     completed_count = value.get("completed_count")
+    cache_hit_count = value.get("cache_hit_count")
+    cache_published_count = value.get("cache_published_count")
+    batch_identity_sha256 = value.get("batch_identity_sha256")
     failed = value.get("failed_products")
     if (
         status not in {"passed", "degraded", "skipped"}
         or type(completed_count) is not int
         or completed_count < 0
         or not isinstance(failed, list)
+    ):
+        return None
+    has_cache_counts = "cache_hit_count" in value or "cache_published_count" in value
+    if has_cache_counts and (
+        type(cache_hit_count) is not int
+        or cache_hit_count < 0
+        or type(cache_published_count) is not int
+        or cache_published_count < 0
+    ):
+        return None
+    if "batch_identity_sha256" in value and batch_identity_sha256 is not None and (
+        not isinstance(batch_identity_sha256, str)
+        or len(batch_identity_sha256) != 64
+        or any(
+            character not in "0123456789abcdef"
+            for character in batch_identity_sha256
+        )
     ):
         return None
     normalized: list[dict[str, str]] = []
@@ -675,11 +754,17 @@ def _public_derived_performance(value: object) -> dict[str, object] | None:
         ):
             return None
         normalized.append({"symbol": symbol, "code": code})
-    return {
+    public: dict[str, object] = {
         "status": status,
         "completed_count": completed_count,
         "failed_products": normalized,
     }
+    if has_cache_counts:
+        public["cache_hit_count"] = cache_hit_count
+        public["cache_published_count"] = cache_published_count
+    if "batch_identity_sha256" in value:
+        public["batch_identity_sha256"] = batch_identity_sha256
+    return public
 
 
 def _public_current_run(value: object) -> dict[str, object] | None:

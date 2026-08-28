@@ -203,7 +203,12 @@ def test_subing_strategy_cache_is_sibling_of_daily_watch_v2(
     base.mkdir()
     market_data = SimpleNamespace(
         list_latest_dominants=lambda: (
-            SimpleNamespace(symbol="jm", product_name="焦煤", sector="black"),
+            SimpleNamespace(
+                symbol="jm",
+                product_name="焦煤",
+                sector="black",
+                dominant_mapping_date=date(2026, 8, 25),
+            ),
         )
     )
     monkeypatch.setattr(
@@ -230,18 +235,26 @@ def test_subing_strategy_cache_is_sibling_of_daily_watch_v2(
 
 
 def test_subing_strategy_performance_uses_effective_history_floor_for_context(
+    tmp_path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    base = (tmp_path / "observations").resolve()
+    base.mkdir()
     market_data = SimpleNamespace(
         list_latest_dominants=lambda: (
-            SimpleNamespace(symbol="jm", product_name="焦煤", sector="black"),
+            SimpleNamespace(
+                symbol="jm",
+                product_name="焦煤",
+                sector="black",
+                dominant_mapping_date=date(2026, 8, 25),
+            ),
         )
     )
 
     class Coverage:
         product_start_calls = 0
 
-        def __init__(self, session, starts, *, history_floor_path) -> None:
+        def __init__(self, session, starts, *, history_floor_path, now=None) -> None:
             pass
 
         def product_start(self, symbol: str) -> date:
@@ -265,8 +278,15 @@ def test_subing_strategy_performance_uses_effective_history_floor_for_context(
         "app.market_data.coverage_source.DatabaseCoverageSource",
         Coverage,
     )
+    monkeypatch.setattr(
+        "app.market_data.composition.resolve_subing_observation_root",
+        lambda *, environ, inspector: base,
+    )
 
     service = build_subing_strategy_performance_service(object())
+
+    assert service._performance_cache._root == base / "cache" / "subing-strategy-v1"
+    assert service.plan().windows[0].through == date(2026, 8, 25)
 
     resolver = service._historical._direction_context_resolver
     resolver._previous_trading_day = lambda target: date(2023, 12, 29)
@@ -288,3 +308,271 @@ def test_subing_strategy_performance_uses_effective_history_floor_for_context(
         for context in contexts.values()
     )
     assert projector_calls == []
+
+
+def test_lineage_resolver_builder_uses_catalog_adapter_without_historical(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from datetime import UTC, datetime
+
+    from app.market_data.catalog import CatalogPartition
+    from app.market_data.composition import (
+        build_subing_strategy_performance_lineage_resolver,
+    )
+    from app.market_data.domain import DatasetKey, ResolvedContractSegment
+    from app.market_data.subing_strategy.performance_lineage import (
+        CatalogSubingStrategyPerformanceLineageResolver,
+    )
+
+    root = tmp_path / "canonical"
+    root.mkdir()
+    historical_calls: list[object] = []
+    query_calls: list[object] = []
+
+    class Coverage:
+        def __init__(self, session, starts, *, history_floor_path, now=None) -> None:
+            del session, starts, history_floor_path, now
+
+        def product_start(self, symbol: str) -> date:
+            assert symbol == "jm"
+            return date(2025, 1, 2)
+
+        def latest_complete_day(self, products: tuple[str, ...]) -> date:
+            assert products == ("jm",)
+            return date(2025, 1, 8)
+
+    class MarketData:
+        def __init__(self) -> None:
+            self.catalog = SimpleNamespace(
+                canonical_root=root.resolve(),
+                main_map_before=lambda symbol, before: (
+                    SimpleNamespace(trade_date=date(2025, 1, 8)),
+                ),
+                main_map=lambda symbol, start, end: (
+                    SimpleNamespace(trade_date=date(2025, 1, 2), contract="JM2505"),
+                    SimpleNamespace(trade_date=date(2025, 1, 8), contract="JM2505"),
+                ),
+                partitions=self._partitions,
+            )
+            self.store = SimpleNamespace(
+                read_month=lambda *args, **kwargs: (_ for _ in ()).throw(
+                    AssertionError("Canonical Bar read")
+                )
+            )
+
+        def actual_dominant_segments(self, symbol, since, through):
+            assert symbol == "jm"
+            assert since == date(2025, 1, 2)
+            assert through == date(2025, 1, 8)
+            return (
+                ResolvedContractSegment("JM2505", date(2025, 1, 2), date(2025, 1, 8)),
+            )
+
+        def query(self, request):
+            query_calls.append(request)
+            raise AssertionError("Canonical query invoked")
+
+        def query_actual_dominant_trading_days(self, request):
+            query_calls.append(request)
+            raise AssertionError("Canonical actual-dominant read invoked")
+
+        def _partitions(self, key: DatasetKey, start, end):
+            relative = key.relative_root / "year=2025/month=01/part.parquet"
+            path = (root.resolve() / relative).resolve()
+            return (
+                CatalogPartition(
+                    dataset=key,
+                    year=2025,
+                    month=1,
+                    coverage_start=datetime(2025, 1, 1, tzinfo=UTC),
+                    coverage_end=datetime(2025, 1, 31, tzinfo=UTC),
+                    file_path=path,
+                    row_count=4,
+                ),
+            )
+
+    monkeypatch.setattr(
+        "app.market_data.composition.build_subing_strategy_historical_service",
+        lambda *args, **kwargs: historical_calls.append((args, kwargs)) or None,
+    )
+    monkeypatch.setattr(
+        "app.market_data.composition.build_market_data_service",
+        lambda _session: MarketData(),
+    )
+    monkeypatch.setattr(
+        "app.market_data.coverage_source.DatabaseCoverageSource",
+        Coverage,
+    )
+
+    session = _session()
+    resolver = build_subing_strategy_performance_lineage_resolver(session)
+    lineage = resolver.resolve("jm")
+
+    assert historical_calls == []
+    assert query_calls == []
+    assert isinstance(resolver, CatalogSubingStrategyPerformanceLineageResolver)
+    assert lineage.symbol == "jm"
+    assert lineage.coverage_through == date(2025, 1, 8)
+    assert lineage.ordered_segments[0].contract == "JM2505"
+    session.close()
+
+
+def test_snapshot_query_builder_does_not_construct_historical(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from datetime import UTC, datetime
+
+    from app.market_data.composition import (
+        build_subing_strategy_performance_snapshot_query,
+    )
+    from app.market_data.subing_strategy.performance import (
+        SubingStrategyPerformanceProjection,
+        SubingStrategyPerformanceStats,
+        SubingStrategyPerformanceSummary,
+    )
+    from app.market_data.subing_strategy.performance_snapshot import (
+        SubingStrategyPerformancePrefixCounts,
+        SubingStrategyPerformanceSegmentFact,
+        subing_strategy_performance_snapshot_from_projection,
+    )
+    from app.market_data.subing_strategy.performance_snapshot_store import (
+        SubingStrategyPerformanceFileSnapshotStore,
+    )
+    from app.market_data.domain import BarFrequency, SeriesKind
+
+    base = (tmp_path / "observations").resolve()
+    base.mkdir()
+    performance_root = base / "cache" / "subing-strategy-v1" / "performance"
+    historical_calls: list[object] = []
+    query_calls: list[object] = []
+    adoption_calls: list[object] = []
+
+    class Coverage:
+        def __init__(self, session, starts, *, history_floor_path, now=None) -> None:
+            del session, starts, history_floor_path, now
+
+        def product_start(self, symbol: str) -> date:
+            assert symbol == "jm"
+            return date(2020, 1, 2)
+
+        def latest_complete_day(self, products: tuple[str, ...]) -> date:
+            assert products == ("jm",)
+            return date(2026, 8, 26)
+
+    class MarketData:
+        def __init__(self) -> None:
+            self.catalog = SimpleNamespace(
+                canonical_root=base,
+                main_map_before=lambda symbol, before: (
+                    SimpleNamespace(trade_date=date(2026, 8, 26)),
+                ),
+            )
+            self.store = SimpleNamespace(
+                read_month=lambda *args, **kwargs: (_ for _ in ()).throw(
+                    AssertionError("Canonical Bar read")
+                )
+            )
+
+        def actual_dominant_segments(self, symbol, since, through):
+            raise AssertionError("HTTP query must not resolve segments")
+
+        def query(self, request):
+            query_calls.append(request)
+            raise AssertionError("Canonical query invoked")
+
+        def query_actual_dominant_trading_days(self, request):
+            query_calls.append(request)
+            raise AssertionError("Canonical actual-dominant read invoked")
+
+    monkeypatch.setattr(
+        "app.market_data.composition.build_subing_strategy_historical_service",
+        lambda *args, **kwargs: historical_calls.append((args, kwargs)) or None,
+    )
+    monkeypatch.setattr(
+        "app.market_data.composition.build_market_data_service",
+        lambda _session: MarketData(),
+    )
+    monkeypatch.setattr(
+        "app.market_data.coverage_source.DatabaseCoverageSource",
+        Coverage,
+    )
+    monkeypatch.setattr(
+        "app.market_data.composition.load_active_products",
+        lambda: ("jm",),
+    )
+    monkeypatch.setattr(
+        "app.market_data.composition.resolve_subing_observation_root",
+        lambda *, environ, inspector: base,
+    )
+    monkeypatch.setattr(
+        "app.market_data.subing_strategy.performance_adoption.SubingStrategyPerformanceAdopter.adopt",
+        lambda *args, **kwargs: adoption_calls.append((args, kwargs)),
+        raising=False,
+    )
+
+    empty = SubingStrategyPerformanceStats(0, 0, 0, 0, None, None, None, None, None, None)
+    snapshot = subing_strategy_performance_snapshot_from_projection(
+        SubingStrategyPerformanceProjection(
+            strategy_id="subing_strategy_v1",
+            formula_version="subing_strategy_15m_v1",
+            symbol="jm",
+            series_kind=SeriesKind.ACTUAL_DOMINANT,
+            frequency=BarFrequency.M15,
+            coverage_since=date(2020, 1, 2),
+            coverage_through=date(2026, 8, 26),
+            resolved_cutoff=datetime(2026, 8, 26, 7, tzinfo=UTC),
+            segment_count=1,
+            bar_count_15m=12,
+            context_unavailable_count=0,
+            cache_state="hit",
+            summary=SubingStrategyPerformanceSummary(empty, empty, empty, 0, ()),
+            episodes=(),
+        ),
+        immutable_prefix_segment_count=0,
+        immutable_prefix_counts=SubingStrategyPerformancePrefixCounts(0, 0, 0, 0),
+        segment_facts=(
+            SubingStrategyPerformanceSegmentFact(
+                contract="jm2609",
+                effective_start=date(2020, 1, 2),
+                effective_end=date(2026, 8, 26),
+                loaded_through=date(2026, 8, 26),
+                bar_count_1m=1,
+                bar_count_5m=1,
+                bar_count_15m=12,
+                context_unavailable_count=0,
+                source_identity="a" * 64,
+            ),
+        ),
+        source_manifest_sha256="b" * 64,
+        generated_at=datetime(2026, 8, 27, 8, tzinfo=UTC),
+        engine_identity_sha256="e" * 64,
+    )
+    SubingStrategyPerformanceFileSnapshotStore(
+        performance_root,
+        root_validator=lambda: performance_root,
+        trusted_base_validator=lambda: base,
+    ).publish_current(snapshot)
+    before = {
+        str(path.relative_to(base)): path.read_bytes()
+        for path in sorted(base.rglob("*"))
+        if path.is_file()
+    }
+
+    query = build_subing_strategy_performance_snapshot_query(object())
+    projection = query.current("jm")
+
+    assert historical_calls == []
+    assert query_calls == []
+    assert adoption_calls == []
+    assert projection.symbol == "jm"
+    assert projection.cache_state == "hit"
+    assert projection.cache_identity_sha256 == snapshot.identity_sha256
+    assert projection.cache_generated_at == snapshot.generated_at
+    assert projection.coverage_through == date(2026, 8, 26)
+    assert {
+        str(path.relative_to(base)): path.read_bytes()
+        for path in sorted(base.rglob("*"))
+        if path.is_file()
+    } == before

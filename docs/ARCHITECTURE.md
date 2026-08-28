@@ -33,7 +33,10 @@ flowchart LR
   MREAD --> CURRENT
   DAILY --> MARKET
   CURRENT --> MARKET
-  SSP --> MARKET
+  SSP --> INCR[after-market segment-tail refresh]
+  INCR --> SNAP[schema-v3 snapshot<br/>+ current manifest]
+  SNAP --> QUERY[HTTP snapshot query]
+  QUERY --> MARKET
 
   MDS --> RS[SuBing calibration/lifecycle<br/>research]
   SRC[SuBing lifecycle research +<br/>candidate manifest/protocol] --> CV[SuBing Candidate Validation]
@@ -50,6 +53,7 @@ flowchart LR
   MR --> HEALTH
   LIVE --> MREAD
   EOD --> CP
+  EOD --> INCR
 
   LIVE --> AE[Alert evaluators]
   EOD --> AE
@@ -66,7 +70,7 @@ flowchart LR
 - `MarketDataService` is the only Historical Bar reader for Market, SuBing and validation services. `actual_dominant` is resolved only through `MainContractMap rank=1`; incomplete identity, coverage or physical readability fails closed.
 - Web consumes typed Market APIs. It may compose Daily Context, Current Signal State, Formal Event and Historical projections, but does not calculate strategy formulas or mutate Scope.
 - SuBing Strategy V1 Historical 与 completed-Live 共享同一个增量状态机；公开身份为 `actual_dominant + 15m`，1m/5m 仅为内部权威输入。其 active60 Runtime state 独立于 Alert Scope，production promotion 仍是外部 Gate。
-- SuBing 全历史效果 API、active60 cache warm 与 Web 底部面板都复用 Historical Projection；盘后只在 Canonical 更新和 Live reconciliation 成功后刷新这一可删除派生 cache。派生失败进入 after-market schema v3 的 degraded stage，不回滚 Canonical、不发送通知、不重试。
+- SuBing 全历史效果 HTTP 只走只读 snapshot query：校验当前 schema-v3 快照与 current manifest，不构造 Historical replay、不写 cache。盘后 derived 阶段在 Canonical 更新和 Live reconciliation 成功后走 segment-tail incremental refresh，复用同一 Historical Projection 只重放受影响物理段尾并原子发布完整当前快照；CLI `--warm-cache` 仍是明确全历史 bootstrap。批次窗口先冻结，按产品以完整 engine/source identity 原子发布并读回。派生失败进入 after-market schema v3 的 degraded stage，不回滚 Canonical、不发送通知、不重试、不自动全量回退。
 - `active_products.txt` is consumed by Market/research APIs, the two retained research CLI services, SuBing Candidate Validation, Daily Watch, SuBing Strategy and data CLI active-universe selection. It defines capability, not sustained Runtime authority.
 - SuBing lifecycle research plus an explicit candidate manifest/protocol feed SuBing Candidate Validation. It is neither a Runtime evaluator nor an automatic promotion path.
 - `operational_products.txt` is consumed by Market Runtime, `MarketReadService`/Live, Daily Watch, Alert API/Runtime and Runtime health. Its outer Runtime-universe boundary is applied in addition to, not instead of, each Alert Rule Scope.

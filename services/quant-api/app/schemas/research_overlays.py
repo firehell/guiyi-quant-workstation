@@ -183,7 +183,9 @@ class SubingStrategyPerformanceResponse(BaseModel):
     series_kind: Literal["actual_dominant"]
     frequency: Literal["15m"]
     coverage: SubingStrategyPerformanceCoverageOut
-    cache_state: Literal["hit", "miss", "mixed", "unavailable"]
+    cache_state: Literal["hit", "refreshed", "unavailable"]
+    cache_identity_sha256: str | None
+    cache_generated_at: datetime | None
     summary: SubingStrategyPerformanceSummaryOut
     exit_reason_counts: list[SubingStrategyExitReasonCountOut]
     episodes: list[SubingStrategyEpisodeOut]

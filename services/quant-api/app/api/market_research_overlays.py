@@ -19,7 +19,7 @@ from app.market_data.subing_lifecycle_policy import SubingLifecyclePolicyError
 from app.market_data.composition import (
     build_subing_strategy_current_service,
     build_subing_strategy_historical_service,
-    build_subing_strategy_performance_service,
+    build_subing_strategy_performance_snapshot_query,
 )
 from app.market_data.subing_strategy.contracts import (
     SUBING_STRATEGY_ID,
@@ -48,6 +48,9 @@ from app.market_data.subing_strategy.performance import (
     SubingStrategyPerformanceError,
     SubingStrategyPerformanceProjection,
     SubingStrategyPerformanceStats,
+)
+from app.market_data.subing_strategy.performance_snapshot import (
+    SubingStrategyPerformanceSnapshotError,
 )
 from app.schemas.research_overlays import (
     SubingStrategyActionOut,
@@ -269,6 +272,8 @@ def _strategy_performance_response(
             context_unavailable_count=result.context_unavailable_count,
         ),
         cache_state=result.cache_state,
+        cache_identity_sha256=result.cache_identity_sha256,
+        cache_generated_at=result.cache_generated_at,
         summary=SubingStrategyPerformanceSummaryOut(
             overall=_performance_stats_out(result.summary.overall),
             long=_performance_stats_out(result.summary.long),
@@ -292,10 +297,13 @@ def subing_strategy_performance(
     session: Session = Depends(get_db),
 ) -> SubingStrategyPerformanceResponse:
     try:
-        result = build_subing_strategy_performance_service(session).performance(symbol)
+        result = build_subing_strategy_performance_snapshot_query(session).current(
+            symbol
+        )
     except (
         ActiveUniverseError,
         SubingStrategyPerformanceError,
+        SubingStrategyPerformanceSnapshotError,
         SubingStrategyActiveProductError,
         SubingStrategySourceUnavailableError,
         SubingStrategySegmentIdentityError,
@@ -375,7 +383,10 @@ def subing_strategy_history(
             since=since,
             through=through,
         )
-        result = build_subing_strategy_historical_service(session).history(request)
+        result = build_subing_strategy_historical_service(session).history(
+            request,
+            publish_cache=False,
+        )
     except (
         SubingStrategyPolicyError,
         SubingCalibrationError,

@@ -90,6 +90,7 @@ const strategyPerformance = ref<SubingStrategyPerformanceResponse | null>(null)
 const strategyPerformanceLoading = ref(false)
 const strategyPerformanceError = ref<string | null>(null)
 let strategyPerformanceGeneration = 0
+let strategyPerformanceController: AbortController | null = null
 const symbol = ref(dailyWatchEntry?.symbol ?? resolveInitialSymbol())
 const contract = ref(String(route.query.contract || '').toUpperCase())
 const seriesKind = ref<SeriesKind>(dailyWatchEntry?.seriesKind ?? resolveInitialSeriesKind())
@@ -419,6 +420,8 @@ watch(mutation, (nextMutation) => {
 })
 
 onUnmounted(() => {
+  strategyPerformanceController?.abort()
+  strategyPerformanceController = null
   document.removeEventListener('fullscreenchange', syncFullscreen)
   disposeSymbolIdentityCoordinator()
   disposeSubingObservation()
@@ -549,6 +552,8 @@ function invalidateSymbolFacts(): void {
   invalidateAlertIdentity()
   invalidateCurrentEventsIdentity()
   invalidateSubingStrategyCurrent()
+  strategyPerformanceController?.abort()
+  strategyPerformanceController = null
   strategyPerformanceGeneration += 1
   strategyPerformance.value = null
   strategyPerformanceLoading.value = true
@@ -561,6 +566,9 @@ function rejectSymbolFacts(): void {
   markAlertsUnavailable()
   markCurrentEventsUnavailable()
   markSubingStrategyCurrentUnavailable()
+  strategyPerformanceController?.abort()
+  strategyPerformanceController = null
+  strategyPerformanceGeneration += 1
   strategyPerformance.value = null
   strategyPerformanceLoading.value = false
   strategyPerformanceError.value = 'SUBING_STRATEGY_PERFORMANCE_UNAVAILABLE'
@@ -589,17 +597,22 @@ function refreshSymbolFacts(): readonly Promise<void>[] {
 async function refreshStrategyPerformance(): Promise<void> {
   const requestSymbol = symbol.value
   const generation = ++strategyPerformanceGeneration
+  strategyPerformanceController?.abort()
+  const controller = new AbortController()
+  strategyPerformanceController = controller
   strategyPerformanceLoading.value = true
   strategyPerformanceError.value = null
   try {
-    const result = await getSubingStrategyPerformance({ symbol: requestSymbol })
+    const result = await getSubingStrategyPerformance({ symbol: requestSymbol, signal: controller.signal })
     if (generation !== strategyPerformanceGeneration || requestSymbol !== symbol.value) return
     strategyPerformance.value = result
   } catch {
+    if (controller.signal.aborted) return
     if (generation !== strategyPerformanceGeneration || requestSymbol !== symbol.value) return
     strategyPerformance.value = null
     strategyPerformanceError.value = 'SUBING_STRATEGY_PERFORMANCE_UNAVAILABLE'
   } finally {
+    if (strategyPerformanceController === controller) strategyPerformanceController = null
     if (generation === strategyPerformanceGeneration) strategyPerformanceLoading.value = false
   }
 }

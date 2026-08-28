@@ -1,6 +1,6 @@
 # 归一量化稳定产品面
 
-更新时间：2026-08-27
+更新时间：2026-08-29
 
 归一量化是本地、单用户的国内期货研究工作站。稳定闭环是可信行情、Market Web、研究观察、Alert 与人工判断；不做自动交易、实盘下单、账户/委托/持仓管理、SaaS、多用户权限或 AI 自动晋升。所有信号、图表和通知都是研究观察，`auto_order=false`。
 
@@ -22,9 +22,9 @@ SuBing 是一个产品，保留三种不可互相替代的事实：
 
 SuBing Strategy V1 的 Stage 1 Historical Projection 与 Stage 2 completed-Live evaluator 共享唯一增量状态机。公开身份始终为 active universe 中单品种 `actual_dominant + 15m`；1m/5m 仅为内部权威输入。Historical 从每个 rank1 物理段起点确定性复算 Daily Context、Factor、Lifecycle、Strategy Action 与 Episode；普通动作只在下一实际同物理合约 15m 区间第一根 completed 1m 的 open 生效。退出仅来自 EMA21、上一根 15m 极值、绑定 Pivot 与 MACD 高低位反向交叉。不加减仓、不反手、不跨物理段、不在同 Bar 重建仓；只有覆盖权威段末时才以旧段最后一根 15m close 清仓。
 
-Stage 2 代码为 active60 在内存恢复和维护相互隔离的策略状态，计算范围独立于 Alert Scope；`scope_products` 只控制 immutable Strategy Action Event 与 owner one-shot PushPlus。启动恢复/catch-up 不补 Event、不补通知；Current Strategy 从 Canonical + completed Live 只读重建，不以 AlertEvent 作为仓位权威。具体 release、production migration、Runtime 与 enable 状态只在 `STATUS.md` 记录。
+Stage 2 代码为 active60 在内存恢复和维护相互隔离的策略状态，计算范围独立于 Alert Scope；`scope_products` 只控制 immutable Strategy Action Event 与 owner one-shot PushPlus。启动恢复/catch-up 不补 Event、不补通知；Current Strategy 从 Canonical + completed Live 只读重建，不以 AlertEvent 作为仓位权威。当 Daily Watch 期望日或下一交易日尚无 rank1 occupancy 时，restore 回退到上一已映射占用日并只合并同一交易日的 completed Live，不把下一交易日 Live 混入该段。具体 release、production migration、Runtime 与 enable 状态只在 `STATUS.md` 记录。
 
-产品详情另有固定的 `actual_dominant + 15m` 全历史策略效果视图：仍复用唯一 Historical Strategy Projection，只统计完整 Episode 的参考价变动、持有 Bar 与退出原因；未完成 Episode 仅展示、不进入完成统计。有效历史下界同时约束 Daily Context source；首个 target 的上一共同交易日早于该下界时只形成 `PREVIOUS_TRADING_DAY_UNAVAILABLE` causal warm-up，范围内的主力段或数据身份异常仍 fail-closed。该视图不引入本金、仓位、费用、资金曲线、回撤或订单语义。结果使用可删除的 Git 外 cache；首次 active60 预热和盘后刷新均是派生步骤，单品失败只令派生状态 degraded，不撤销已成功的 Canonical 更新，也不触发通知或 retry。
+产品详情另有固定的 `actual_dominant + 15m` 全历史策略效果视图：仍复用唯一 Historical Strategy Projection，只统计完整 Episode 的参考价变动、持有 Bar 与退出原因；未完成 Episode 仅展示、不进入完成统计。有效历史下界同时约束 Daily Context source；首个 target 的上一共同交易日早于该下界时只形成 `PREVIOUS_TRADING_DAY_UNAVAILABLE` causal warm-up，范围内的主力段或数据身份异常仍 fail-closed。该视图不引入本金、仓位、费用、资金曲线、回撤或订单语义。HTTP 只读校验并返回当前 schema-v3 快照，不在请求路径重放 Historical、不写 cache、不采纳或修复产物；盘后 derived 阶段只对受影响 rank1 物理段尾做增量刷新，并原子发布一份完整当前快照；CLI `--warm-cache` 仍是明确的全历史 bootstrap，须独立数据写入 Gate。批次在计算前冻结每个产品的窗口，产品快照绑定完整引擎与源事实 identity，只有原子发布和物理读回均通过才计为完成。首次 active60 预热和盘后刷新均是派生步骤，单品失败只令派生状态 degraded，不撤销已成功的 Canonical 更新，也不触发通知或 retry。
 
 ## 保留研究能力
 
@@ -49,7 +49,7 @@ RQData -> staging + hard validation -> Canonical Parquet
 - 物理 Dataset 只有 `continuous` 与 `contract`；`actual_dominant` 是按 `MainContractMap rank=1` 有效区间拼接的查询模式。
 - `MarketDataService` 是 Historical consumer 的唯一入口；Redis Live 只承载当日 observation，不能提升为 Canonical。
 
-稳定 HTTP 面为 `/api/v1/market/*`、`/api/alerts/*` 与只读 `/api/runtime/*`。统一 CLI 为 `uv run --project services/quant-api guiyi`；research 子命令仅保留 `subing-calibration`、`subing-lifecycle`。
+稳定 HTTP 面为 `/api/v1/market/*`、`/api/alerts/*` 与只读 `/api/runtime/*`。统一 CLI 为 `uv run --project services/quant-api guiyi`；research 子命令保留 `subing-calibration`、`subing-lifecycle` 与受独立数据写入 Gate 约束的 `subing-strategy-performance` cache warm。
 
 ## Retired surface
 
