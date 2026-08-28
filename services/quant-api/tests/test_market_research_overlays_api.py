@@ -72,8 +72,6 @@ _PERFORMANCE_WIRE = {
         "context_unavailable_count": 3,
     },
     "cache_state": "hit",
-    "cache_identity_sha256": None,
-    "cache_generated_at": None,
     "summary": {
         "overall": _EMPTY_STATS,
         "long": _EMPTY_STATS,
@@ -272,7 +270,8 @@ def test_subing_strategy_performance_returns_current_snapshot_wire(
     store, lineage, root, historical_calls, adoption_calls, canonical_calls = (
         _install_performance_snapshot_query(monkeypatch, tmp_path)
     )
-    store.publish_current(_performance_snapshot())
+    snapshot = _performance_snapshot()
+    store.publish_current(snapshot)
     before = _file_tree(root)
     try:
         response = TestClient(app).get(
@@ -283,7 +282,15 @@ def test_subing_strategy_performance_returns_current_snapshot_wire(
         _clear_db_override()
 
     assert response.status_code == 200
-    assert response.json() == _PERFORMANCE_WIRE
+    expected = {
+        **_PERFORMANCE_WIRE,
+        "cache_identity_sha256": snapshot.identity_sha256,
+        "cache_generated_at": snapshot.generated_at.astimezone(UTC).isoformat().replace(
+            "+00:00", "Z"
+        ),
+    }
+    assert response.json() == expected
+    assert re.fullmatch(r"[0-9a-f]{64}", snapshot.identity_sha256)
     assert historical_calls == []
     assert adoption_calls == []
     assert canonical_calls == []

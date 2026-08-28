@@ -163,10 +163,16 @@ class SubingStrategyPerformanceSnapshotQuery:
             )
         try:
             expected_through = self._lineage.expected_complete_through(normalized)
-            return self._store.read_current(
+            snapshot = self._store.read_current(
                 symbol=normalized,
                 expected_through=expected_through,
-            ).projection
+            )
+            return replace(
+                snapshot.projection,
+                cache_state="hit",
+                cache_identity_sha256=snapshot.identity_sha256,
+                cache_generated_at=snapshot.generated_at,
+            )
         except SubingStrategyPerformanceSnapshotError:
             raise
         except SubingStrategyPerformanceLineageError:

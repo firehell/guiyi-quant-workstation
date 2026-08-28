@@ -568,6 +568,8 @@ def test_snapshot_query_builder_does_not_construct_historical(
     assert adoption_calls == []
     assert projection.symbol == "jm"
     assert projection.cache_state == "hit"
+    assert projection.cache_identity_sha256 == snapshot.identity_sha256
+    assert projection.cache_generated_at == snapshot.generated_at
     assert projection.coverage_through == date(2026, 8, 26)
     assert {
         str(path.relative_to(base)): path.read_bytes()
