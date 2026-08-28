@@ -1495,6 +1495,78 @@ def test_mutable_tail_partition_identity_drift_replays_without_full_rebuild(
     session.close()
 
 
+def test_mutable_tail_partition_growth_same_through_replays_not_cache_hit(
+    tmp_path: Path,
+) -> None:
+    day_t = date(2025, 1, 8)
+    session = _session()
+    catalog = MarketCatalog(session, tmp_path)
+    canonical = SpyCanonicalStore(tmp_path)
+    _seed_two_segments(session, catalog, last_day=8)
+    resolver = _resolver(session, catalog, canonical, through=day_t)
+    store = _store(tmp_path)
+    snapshot = _catalog_published_snapshot(store, resolver.resolve("jm", through=day_t))
+    _bump_contract_partitions(
+        session,
+        catalog,
+        "JM2509",
+        row_count=99,
+        coverage_end=datetime(2025, 2, 1, tzinfo=UTC),
+    )
+    live = resolver.resolve("jm", through=day_t)
+    assert live.source_manifest_sha256 != snapshot.source_manifest_sha256
+    tail_segment = live.ordered_segments[-1]
+    historical = FakeHistorical(
+        _tail(
+            summaries=(
+                _summary(
+                    contract=tail_segment.contract,
+                    start=tail_segment.effective_start,
+                    end=day_t,
+                    loaded_through=day_t,
+                    source=tail_segment.source_identity,
+                    bar_count_1m=520,
+                    bar_count_5m=104,
+                    bar_count_15m=13,
+                ),
+            ),
+            episodes=(
+                _episode_at(
+                    change="3",
+                    contract=tail_segment.contract,
+                    segment_start=tail_segment.effective_start,
+                    trading_day=day_t,
+                    hour=10,
+                ),
+            ),
+            resolved_cutoff=datetime(2025, 1, 8, 7, tzinfo=UTC),
+        )
+    )
+    refresher = _refresher(
+        lineage=resolver,
+        historical=historical,
+        store=store,
+        now=lambda: datetime(2025, 1, 9, 8, tzinfo=UTC),
+    )
+
+    result = refresher.refresh(symbol="jm", through=day_t)
+
+    assert result.cache_state != "hit"
+    assert historical.calls == [
+        (
+            SubingStrategyHistoricalRequest(
+                series_kind=SeriesKind.ACTUAL_DOMINANT,
+                symbol="jm",
+                frequency=BarFrequency.M15,
+                since=tail_segment.effective_start,
+                through=day_t,
+            ),
+            True,
+        )
+    ]
+    session.close()
+
+
 def test_prefix_occupancy_drift_requires_full_rebuild_and_preserves_manifest(
     tmp_path: Path,
 ) -> None:

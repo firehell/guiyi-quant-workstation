@@ -102,11 +102,14 @@ class SubingStrategyPerformanceIncrementalRefresher:
         if current_lineage.coverage_through != through:
             raise SubingStrategyPerformanceFullRebuildRequired()
         snapshot = self._current_or_adopt(symbol=symbol, through=through)
-        previous_lineage = self._lineage.resolve(
+        live_prefix_lineage = self._lineage.resolve(
             symbol,
             through=snapshot.coverage_through,
         )
-        _require_immutable_prefix_matches_snapshot(snapshot, previous_lineage)
+        _require_immutable_prefix_matches_snapshot(snapshot, live_prefix_lineage)
+        previous_lineage = _snapshot_era_previous_lineage(
+            snapshot, live_prefix_lineage
+        )
         previous_identity = _identity_from_snapshot(snapshot)
         current_identity = _identity_from_current(
             historical=self._historical,
@@ -184,6 +187,23 @@ class SubingStrategyPerformanceIncrementalRefresher:
         )
         self._store.publish_current(merged)
         return merged.projection
+
+
+def _snapshot_era_previous_lineage(
+    snapshot: SubingStrategyPerformanceSnapshot,
+    live_lineage: SubingStrategyPerformanceLineage,
+) -> SubingStrategyPerformanceLineage:
+    prefix_count = snapshot.immutable_prefix_segment_count
+    return SubingStrategyPerformanceLineage(
+        symbol=snapshot.symbol,
+        coverage_since=snapshot.coverage_since,
+        coverage_through=snapshot.coverage_through,
+        ordered_segments=(
+            *live_lineage.ordered_segments[:prefix_count],
+            *_source_segments_from_facts(snapshot.segment_facts),
+        ),
+        source_manifest_sha256=snapshot.source_manifest_sha256,
+    )
 
 
 def _require_immutable_prefix_matches_snapshot(
