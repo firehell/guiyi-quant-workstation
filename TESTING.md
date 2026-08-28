@@ -72,8 +72,10 @@ PYTHONPATH=services/quant-api:packages/quant-core \
 
 ## Contract and static checks
 
+本地 Homebrew 或 PATH 中的 `openspec` CLI（`uv run --with openspec` 不可执行，PyPI 无对应包）：
+
 ```bash
-uv run --with openspec openspec validate --specs --strict --no-interactive
+openspec validate --specs --strict --no-interactive
 python3 scripts/engineering/secret_scan.py --json
 git diff --check
 ```
