@@ -67,6 +67,13 @@ from app.market_data.subing_strategy.service import (
 from app.market_data.subing_strategy.performance import (
     SubingStrategyPerformanceService,
 )
+from app.market_data.subing_strategy.performance_snapshot import (
+    SubingStrategyPerformanceSnapshotError,
+    SubingStrategyPerformanceSnapshotQuery,
+)
+from app.market_data.subing_strategy.performance_snapshot_store import (
+    SubingStrategyPerformanceFileSnapshotStore,
+)
 from app.market_data.domain import RQDATA_INTRADAY_HISTORY_START
 from app.market_data.subing_read_service import SubingReadService
 from app.market_data.subing_daily_watch import (
@@ -364,6 +371,36 @@ def build_subing_strategy_performance_lineage_resolver(
     return CatalogSubingStrategyPerformanceLineageResolver(
         market_data=build_market_data_service(session),
         coverage=coverage,
+    )
+
+
+def _subing_strategy_performance_snapshot_root() -> Path:
+    return _subing_strategy_cache_root() / "performance"
+
+
+class _DeferredSubingStrategyPerformanceSnapshotStore:
+    """Defer Git-external root validation until the read-only request executes."""
+
+    def read_current(self, *, symbol: str, expected_through: date):
+        try:
+            root = _subing_strategy_performance_snapshot_root()
+        except SubingDailyWatchStoreError:
+            raise SubingStrategyPerformanceSnapshotError() from None
+        return SubingStrategyPerformanceFileSnapshotStore(
+            root,
+            root_validator=_subing_strategy_performance_snapshot_root,
+            trusted_base_validator=_subing_observation_base_root,
+        ).read_current(symbol=symbol, expected_through=expected_through)
+
+
+def build_subing_strategy_performance_snapshot_query(
+    session: Session,
+) -> SubingStrategyPerformanceSnapshotQuery:
+    """Compose a read-only current snapshot query without Historical replay."""
+    return SubingStrategyPerformanceSnapshotQuery(
+        store=_DeferredSubingStrategyPerformanceSnapshotStore(),
+        lineage=build_subing_strategy_performance_lineage_resolver(session),
+        products=load_active_products(),
     )
 
 

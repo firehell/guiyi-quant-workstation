@@ -1,10 +1,16 @@
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from hashlib import sha256
+from pathlib import Path
 from types import SimpleNamespace
+import json
+import os
+import re
 
 import pytest
 from fastapi.testclient import TestClient
 
+from app.db.session import get_db
 from app.main import app
 from app.market_data.domain import BarFrequency, SeriesKind
 from app.market_data.operational_universe import ActiveUniverseError
@@ -29,62 +35,345 @@ from app.market_data.subing_strategy.performance import (
     SubingStrategyPerformanceStats,
     SubingStrategyPerformanceSummary,
 )
+from app.market_data.subing_strategy.performance_snapshot import (
+    SubingStrategyPerformancePrefixCounts,
+    SubingStrategyPerformanceSegmentFact,
+    subing_strategy_performance_snapshot_from_projection,
+)
+from app.market_data.subing_strategy.performance_snapshot_store import (
+    SubingStrategyPerformanceFileSnapshotStore,
+)
 
 
-def test_subing_strategy_performance_returns_fixed_full_history_contract(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    empty = SubingStrategyPerformanceStats(0, 0, 0, 0, None, None, None, None, None, None)
-    projection = SubingStrategyPerformanceProjection(
-        strategy_id="subing_strategy_v1",
-        formula_version="subing_strategy_15m_v1",
-        symbol="jm",
-        series_kind=SeriesKind.ACTUAL_DOMINANT,
-        frequency=BarFrequency.M15,
-        coverage_since=date(2020, 1, 2),
-        coverage_through=date(2026, 8, 26),
-        resolved_cutoff=datetime(2026, 8, 26, 7, 0, tzinfo=UTC),
-        segment_count=12,
-        bar_count_15m=12345,
-        context_unavailable_count=3,
-        cache_state="hit",
-        summary=SubingStrategyPerformanceSummary(empty, empty, empty, 0, (("EMA21", 2),)),
-        episodes=(),
-        cache_identity_sha256="1" * 64,
-        cache_generated_at=datetime(2026, 8, 27, 8, 0, tzinfo=UTC),
-    )
-    service = SimpleNamespace(performance=lambda symbol: projection)
-    monkeypatch.setattr(
-        "app.api.market_research_overlays.build_subing_strategy_performance_service",
-        lambda _session: service,
-        raising=False,
-    )
-
-    response = TestClient(app).get(
-        "/api/v1/market/research/subing-strategy/performance",
-        params={"symbol": "JM"},
-    )
-
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["strategy_id"] == "subing_strategy_v1"
-    assert payload["series_kind"] == "actual_dominant"
-    assert payload["frequency"] == "15m"
-    assert payload["coverage"] == {
+_EMPTY_STATS = {
+    "completed": 0,
+    "positive": 0,
+    "negative": 0,
+    "flat": 0,
+    "positive_rate_percent": None,
+    "mean_reference_change_percent": None,
+    "median_reference_change_percent": None,
+    "best_reference_change_percent": None,
+    "worst_reference_change_percent": None,
+    "mean_holding_15m_bars": None,
+}
+_PERFORMANCE_WIRE = {
+    "strategy_id": "subing_strategy_v1",
+    "formula_version": "subing_strategy_15m_v1",
+    "symbol": "jm",
+    "series_kind": "actual_dominant",
+    "frequency": "15m",
+    "coverage": {
         "since": "2020-01-02",
         "through": "2026-08-26",
         "resolved_cutoff": "2026-08-26T07:00:00Z",
         "segment_count": 12,
         "bar_count_15m": 12345,
         "context_unavailable_count": 3,
+    },
+    "cache_state": "hit",
+    "cache_identity_sha256": None,
+    "cache_generated_at": None,
+    "summary": {
+        "overall": _EMPTY_STATS,
+        "long": _EMPTY_STATS,
+        "short": _EMPTY_STATS,
+        "open_episodes": 0,
+    },
+    "exit_reason_counts": [{"reason_code": "EMA21", "count": 2}],
+    "episodes": [],
+}
+
+
+def _empty_stats() -> SubingStrategyPerformanceStats:
+    return SubingStrategyPerformanceStats(0, 0, 0, 0, None, None, None, None, None, None)
+
+
+def _performance_snapshot():
+    empty = _empty_stats()
+    return subing_strategy_performance_snapshot_from_projection(
+        SubingStrategyPerformanceProjection(
+            strategy_id="subing_strategy_v1",
+            formula_version="subing_strategy_15m_v1",
+            symbol="jm",
+            series_kind=SeriesKind.ACTUAL_DOMINANT,
+            frequency=BarFrequency.M15,
+            coverage_since=date(2020, 1, 2),
+            coverage_through=date(2026, 8, 26),
+            resolved_cutoff=datetime(2026, 8, 26, 7, 0, tzinfo=UTC),
+            segment_count=12,
+            bar_count_15m=12345,
+            context_unavailable_count=3,
+            cache_state="hit",
+            summary=SubingStrategyPerformanceSummary(
+                empty, empty, empty, 0, (("EMA21", 2),)
+            ),
+            episodes=(),
+        ),
+        immutable_prefix_segment_count=1,
+        immutable_prefix_counts=SubingStrategyPerformancePrefixCounts(0, 0, 0, 0),
+        segment_facts=(
+            SubingStrategyPerformanceSegmentFact(
+                contract="jm2609",
+                effective_start=date(2020, 1, 2),
+                effective_end=date(2026, 8, 26),
+                loaded_through=date(2026, 8, 26),
+                bar_count_1m=1,
+                bar_count_5m=1,
+                bar_count_15m=12345,
+                context_unavailable_count=3,
+                source_identity="a" * 64,
+            ),
+        ),
+        source_manifest_sha256="b" * 64,
+        generated_at=datetime(2026, 8, 27, 8, 0, tzinfo=UTC),
+        engine_identity_sha256="e" * 64,
+    )
+
+
+def _file_tree(root: Path) -> dict[str, bytes]:
+    return {
+        str(path.relative_to(root)): path.read_bytes()
+        for path in sorted(root.rglob("*"))
+        if path.is_file()
     }
-    assert payload["summary"]["overall"]["completed"] == 0
-    assert payload["summary"]["overall"]["mean_reference_change_percent"] is None
-    assert payload["cache_state"] == "hit"
-    assert payload["cache_identity_sha256"] == "1" * 64
-    assert payload["cache_generated_at"] == "2026-08-27T08:00:00Z"
-    assert payload["exit_reason_counts"] == [{"reason_code": "EMA21", "count": 2}]
-    assert payload["episodes"] == []
+
+
+def _canonical_bytes(payload: object) -> bytes:
+    return json.dumps(
+        payload,
+        ensure_ascii=True,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+
+
+class _Lineage:
+    def __init__(self, through: date) -> None:
+        self.through = through
+        self.resolve_calls: list[object] = []
+
+    def expected_complete_through(self, symbol: str) -> date:
+        assert symbol == "jm"
+        return self.through
+
+    def resolve(self, symbol: str, *, through: date | None = None):
+        self.resolve_calls.append((symbol, through))
+        raise AssertionError("HTTP must not resolve full lineage")
+
+
+def _install_performance_snapshot_query(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    *,
+    through: date = date(2026, 8, 26),
+    products: tuple[str, ...] = ("jm",),
+):
+    root = (tmp_path / "performance").resolve()
+    root.mkdir()
+    store = SubingStrategyPerformanceFileSnapshotStore(
+        root,
+        root_validator=lambda: root,
+    )
+    lineage = _Lineage(through)
+    historical_calls: list[object] = []
+    adoption_calls: list[object] = []
+    canonical_calls: list[object] = []
+
+    def fail_historical(*args, **kwargs):
+        historical_calls.append((args, kwargs))
+        raise AssertionError("Historical construction")
+
+    def fail_old_service(_session):
+        raise AssertionError("old performance service")
+
+    def fail_adoption(*args, **kwargs):
+        adoption_calls.append((args, kwargs))
+        raise AssertionError("adoption")
+
+    def fail_canonical(*args, **kwargs):
+        canonical_calls.append((args, kwargs))
+        raise AssertionError("Canonical Bar read")
+
+    monkeypatch.setattr(
+        "app.api.market_research_overlays.build_subing_strategy_performance_service",
+        fail_old_service,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "app.api.market_research_overlays.build_subing_strategy_historical_service",
+        fail_historical,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "app.market_data.composition.build_subing_strategy_historical_service",
+        fail_historical,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "app.market_data.subing_strategy.performance_adoption.SubingStrategyPerformanceAdopter.adopt",
+        fail_adoption,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "app.market_data.storage.CanonicalMonthlyStore.read_month",
+        fail_canonical,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "app.market_data.market_data_service.MarketDataService.query",
+        fail_canonical,
+        raising=False,
+    )
+
+    def build(_session):
+        from app.market_data.subing_strategy.performance_snapshot import (
+            SubingStrategyPerformanceSnapshotQuery,
+        )
+
+        return SubingStrategyPerformanceSnapshotQuery(
+            store=store,
+            lineage=lineage,
+            products=products,
+        )
+
+    monkeypatch.setattr(
+        "app.api.market_research_overlays.build_subing_strategy_performance_snapshot_query",
+        build,
+        raising=False,
+    )
+    app.dependency_overrides[get_db] = lambda: SimpleNamespace()
+    return store, lineage, root, historical_calls, adoption_calls, canonical_calls
+
+
+def _clear_db_override() -> None:
+    app.dependency_overrides.pop(get_db, None)
+
+
+def _assert_public_409(response, root: Path) -> None:
+    assert response.status_code == 409
+    assert response.json() == {
+        "detail": {"code": "SUBING_STRATEGY_CACHE_UNAVAILABLE"}
+    }
+    body = response.text
+    assert str(root) not in body
+    assert "traceback" not in body.lower()
+    assert "file \"" not in body.lower()
+    assert ".py" not in body
+    assert "select " not in body.lower()
+    assert "insert " not in body.lower()
+    assert re.search(r"[0-9a-f]{64}", body) is None
+
+
+def test_subing_strategy_performance_returns_current_snapshot_wire(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store, lineage, root, historical_calls, adoption_calls, canonical_calls = (
+        _install_performance_snapshot_query(monkeypatch, tmp_path)
+    )
+    store.publish_current(_performance_snapshot())
+    before = _file_tree(root)
+    try:
+        response = TestClient(app).get(
+            "/api/v1/market/research/subing-strategy/performance",
+            params={"symbol": "JM"},
+        )
+    finally:
+        _clear_db_override()
+
+    assert response.status_code == 200
+    assert response.json() == _PERFORMANCE_WIRE
+    assert historical_calls == []
+    assert adoption_calls == []
+    assert canonical_calls == []
+    assert lineage.resolve_calls == []
+    assert _file_tree(root) == before
+
+
+@pytest.mark.parametrize(
+    "kind",
+    ("missing", "stale", "future", "corrupt", "hash_mismatched", "symlinked"),
+)
+def test_subing_strategy_performance_rejects_invalid_snapshots(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    kind: str,
+) -> None:
+    through = date(2026, 8, 26)
+    if kind == "stale":
+        through = date(2026, 8, 27)
+    elif kind == "future":
+        through = date(2026, 8, 25)
+    store, _lineage, root, historical_calls, adoption_calls, canonical_calls = (
+        _install_performance_snapshot_query(monkeypatch, tmp_path, through=through)
+    )
+    if kind != "missing":
+        snapshot = _performance_snapshot()
+        store.publish_current(snapshot)
+        manifest = root / "current" / "jm.json"
+        if kind == "corrupt":
+            manifest.write_bytes(b"{")
+            os.chmod(manifest, 0o600)
+        elif kind == "hash_mismatched":
+            body = json.loads(manifest.read_text())
+            body.pop("manifest_sha256")
+            body["payload_sha256"] = "0" * 64
+            envelope = dict(body)
+            envelope["manifest_sha256"] = sha256(_canonical_bytes(body)).hexdigest()
+            manifest.write_bytes(_canonical_bytes(envelope))
+            os.chmod(manifest, 0o600)
+        elif kind == "symlinked":
+            elsewhere = root / "elsewhere.json"
+            elsewhere.write_bytes(manifest.read_bytes())
+            os.chmod(elsewhere, 0o600)
+            manifest.unlink()
+            manifest.symlink_to(elsewhere)
+    before = _file_tree(root)
+    try:
+        response = TestClient(app).get(
+            "/api/v1/market/research/subing-strategy/performance",
+            params={"symbol": "jm"},
+        )
+    finally:
+        _clear_db_override()
+
+    _assert_public_409(response, root)
+    assert historical_calls == []
+    assert adoption_calls == []
+    assert canonical_calls == []
+    assert _file_tree(root) == before
+
+
+@pytest.mark.parametrize("symbol", ("rb", "1"))
+def test_subing_strategy_performance_rejects_invalid_or_inactive_products(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    symbol: str,
+) -> None:
+    store, _lineage, root, historical_calls, adoption_calls, canonical_calls = (
+        _install_performance_snapshot_query(monkeypatch, tmp_path)
+    )
+    store.publish_current(_performance_snapshot())
+    before = _file_tree(root)
+    try:
+        response = TestClient(app).get(
+            "/api/v1/market/research/subing-strategy/performance",
+            params={"symbol": symbol},
+        )
+    finally:
+        _clear_db_override()
+
+    assert response.status_code == 409
+    assert response.json() == {
+        "detail": {"code": "SUBING_STRATEGY_ACTIVE_PRODUCT_INVALID"}
+    }
+    assert str(root) not in response.text
+    assert "traceback" not in response.text.lower()
+    assert historical_calls == []
+    assert adoption_calls == []
+    assert canonical_calls == []
+    assert _file_tree(root) == before
 
 
 class _StrategyService:

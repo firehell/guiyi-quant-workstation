@@ -8,16 +8,19 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 from hashlib import sha256
 import json
+from typing import Protocol
 
 from ..domain import BarFrequency, SeriesKind
 from .cache import subing_strategy_episode_payload
 from .contracts import SUBING_STRATEGY_ID
 from .contracts import SubingStrategyEpisode
 from .performance import (
+    SubingStrategyPerformanceError,
     SubingStrategyPerformanceProjection,
     SubingStrategyPerformanceStats,
     SubingStrategyPerformanceSummary,
 )
+from .performance_lineage import SubingStrategyPerformanceLineageError
 
 
 SCHEMA_VERSION = 3
@@ -120,6 +123,54 @@ class SubingStrategyPerformanceSnapshotMissingError(
     SubingStrategyPerformanceSnapshotError
 ):
     pass
+
+
+class _SnapshotStore(Protocol):
+    def read_current(
+        self,
+        *,
+        symbol: str,
+        expected_through: date,
+    ) -> SubingStrategyPerformanceSnapshot: ...
+
+
+class _LineageResolver(Protocol):
+    def expected_complete_through(self, symbol: str) -> date: ...
+
+
+class SubingStrategyPerformanceSnapshotQuery:
+    def __init__(
+        self,
+        *,
+        store: _SnapshotStore,
+        lineage: _LineageResolver,
+        products: tuple[str, ...],
+    ) -> None:
+        normalized = tuple(product.strip().lower() for product in products)
+        if not normalized or len(normalized) != len(set(normalized)):
+            raise SubingStrategyPerformanceError(
+                "SUBING_STRATEGY_ACTIVE_PRODUCT_INVALID"
+            )
+        self._store = store
+        self._lineage = lineage
+        self._products = normalized
+
+    def current(self, symbol: str) -> SubingStrategyPerformanceProjection:
+        normalized = symbol.strip().lower()
+        if normalized not in self._products:
+            raise SubingStrategyPerformanceError(
+                "SUBING_STRATEGY_ACTIVE_PRODUCT_INVALID"
+            )
+        try:
+            expected_through = self._lineage.expected_complete_through(normalized)
+            return self._store.read_current(
+                symbol=normalized,
+                expected_through=expected_through,
+            ).projection
+        except SubingStrategyPerformanceSnapshotError:
+            raise
+        except SubingStrategyPerformanceLineageError:
+            raise SubingStrategyPerformanceSnapshotError() from None
 
 
 @dataclass(frozen=True, slots=True)
