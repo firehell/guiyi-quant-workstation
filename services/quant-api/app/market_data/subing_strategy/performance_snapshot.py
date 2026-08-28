@@ -195,8 +195,7 @@ class SubingStrategyPerformanceSnapshot:
             or self.projection.resolved_cutoff != self.resolved_cutoff
             or (
                 self.segment_facts
-                and max(fact.loaded_through for fact in self.segment_facts)
-                != self.coverage_through
+                and self.segment_facts[-1].loaded_through != self.coverage_through
             )
         ):
             raise SubingStrategyPerformanceSnapshotError()
