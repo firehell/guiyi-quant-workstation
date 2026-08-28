@@ -50,7 +50,11 @@ class SubingStrategyPerformanceSnapshotReceipt:
 
 class SubingStrategyPerformanceSnapshotStore(Protocol):
     def read_current(
-        self, *, symbol: str, expected_through: date
+        self,
+        *,
+        symbol: str,
+        expected_through: date,
+        allow_older: bool = False,
     ) -> SubingStrategyPerformanceSnapshot: ...
 
     def publish_current(
@@ -71,10 +75,18 @@ class SubingStrategyPerformanceFileSnapshotStore:
         self._trusted_base_validator = trusted_base_validator or root_validator
 
     def read_current(
-        self, *, symbol: str, expected_through: date
+        self,
+        *,
+        symbol: str,
+        expected_through: date,
+        allow_older: bool = False,
     ) -> SubingStrategyPerformanceSnapshot:
         try:
-            if not _is_valid_symbol(symbol) or type(expected_through) is not date:
+            if (
+                not _is_valid_symbol(symbol)
+                or type(expected_through) is not date
+                or type(allow_older) is not bool
+            ):
                 raise SubingStrategyPerformanceSnapshotError()
             manifest_path = self._contained_path(f"current/{symbol}.json")
             self._preflight(manifest_path)
@@ -83,15 +95,18 @@ class SubingStrategyPerformanceFileSnapshotStore:
             self._assert_path_secure(manifest_path)
             manifest = _parse_manifest(self._read_bytes(manifest_path))
             self._preflight(manifest_path)
-            if (
-                manifest["symbol"] != symbol
-                or manifest["through"] != expected_through
-            ):
+            manifest_through = manifest["through"]
+            if manifest["symbol"] != symbol:
+                raise SubingStrategyPerformanceSnapshotError()
+            if allow_older:
+                if manifest_through > expected_through:
+                    raise SubingStrategyPerformanceSnapshotError()
+            elif manifest_through != expected_through:
                 raise SubingStrategyPerformanceSnapshotError()
             snapshot_path_text = manifest["snapshot_path"]
             expected_relative = _snapshot_relative_path(
                 symbol=symbol,
-                through=expected_through,
+                through=manifest_through,
                 snapshot_sha256=str(manifest["snapshot_sha256"]),
             )
             if snapshot_path_text != expected_relative:
@@ -107,7 +122,7 @@ class SubingStrategyPerformanceFileSnapshotStore:
             self._preflight(snapshot_path)
             if (
                 snapshot.symbol != symbol
-                or snapshot.coverage_through != expected_through
+                or snapshot.coverage_through != manifest_through
                 or snapshot.snapshot_sha256 != manifest["snapshot_sha256"]
                 or snapshot.identity_sha256 != manifest["identity_sha256"]
                 or snapshot.payload_sha256 != manifest["payload_sha256"]
