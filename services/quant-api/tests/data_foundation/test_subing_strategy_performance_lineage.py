@@ -262,6 +262,57 @@ def test_expected_complete_through_is_min_of_coverage_and_last_rank1_day(
     session.close()
 
 
+def test_prefix_interior_rank1_occupancy_drift_requires_full_rebuild(
+    tmp_path: Path,
+) -> None:
+    session = _session()
+    catalog = MarketCatalog(session, tmp_path)
+    store = SpyCanonicalStore(tmp_path)
+    _add_calendar(session, {day: day not in {4, 5} for day in range(1, 9)})
+    catalog.upsert_main_contracts(
+        (
+            ("jm", date(2025, 1, 2), "JM2505"),
+            ("jm", date(2025, 1, 3), "JM2505"),
+            ("jm", date(2025, 1, 6), "JM2505"),
+            ("jm", date(2025, 1, 7), "JM2509"),
+            ("jm", date(2025, 1, 8), "JM2509"),
+        )
+    )
+    _register_partitions(catalog, contract="JM2505", row_count=10)
+    _register_partitions(catalog, contract="JM2509", row_count=20)
+    session.commit()
+
+    resolver = _resolver(session, catalog, store)
+    previous = resolver.resolve("jm")
+    catalog.upsert_main_contracts((("jm", date(2025, 1, 4), "JM2505"),))
+    session.commit()
+    current = resolver.resolve("jm")
+    session.close()
+
+    prefix_previous = previous.ordered_segments[0]
+    prefix_current = current.ordered_segments[0]
+    assert (
+        prefix_previous.contract,
+        prefix_previous.effective_start,
+        prefix_previous.effective_end,
+    ) == (
+        prefix_current.contract,
+        prefix_current.effective_start,
+        prefix_current.effective_end,
+    ) == ("JM2505", date(2025, 1, 2), date(2025, 1, 6))
+    assert prefix_previous.source_identity != prefix_current.source_identity
+    assert previous.ordered_segments[1].source_identity == (
+        current.ordered_segments[1].source_identity
+    )
+    assert decide_subing_strategy_performance_tail(
+        previous=previous,
+        current=current,
+        previous_identity=_identity(),
+        current_identity=_identity(),
+    ) == FULL_REBUILD_REQUIRED
+    assert store.bar_reads == []
+
+
 def test_canonical_partition_lineage_changes_segment_source_identity(
     tmp_path: Path,
 ) -> None:

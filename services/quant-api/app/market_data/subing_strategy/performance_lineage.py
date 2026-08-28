@@ -195,6 +195,12 @@ class CatalogSubingStrategyPerformanceLineageResolver:
         segment: ResolvedContractSegment,
     ) -> SubingStrategyPerformanceSourceSegment:
         catalog = self._market_data.catalog
+        occupancy = _ordered_occupancy_facts(
+            catalog,
+            symbol=symbol,
+            start=segment.start_trading_day,
+            end=segment.end_trading_day,
+        )
         partitions = _ordered_partition_facts(
             catalog,
             symbol=symbol,
@@ -208,6 +214,7 @@ class CatalogSubingStrategyPerformanceLineageResolver:
                     "contract": segment.contract,
                     "effective_start": segment.start_trading_day.isoformat(),
                     "effective_end": segment.end_trading_day.isoformat(),
+                    "occupancy": occupancy,
                     "partitions": partitions,
                 }
             )
@@ -280,6 +287,22 @@ def _segments_well_formed(
             return False
         previous = segment
     return True
+
+
+def _ordered_occupancy_facts(
+    catalog: MarketCatalog,
+    *,
+    symbol: str,
+    start: date,
+    end: date,
+) -> list[dict[str, str]]:
+    return [
+        {
+            "trade_date": fact.trade_date.isoformat(),
+            "contract": fact.contract,
+        }
+        for fact in catalog.main_map(symbol, start, end)
+    ]
 
 
 def _ordered_partition_facts(

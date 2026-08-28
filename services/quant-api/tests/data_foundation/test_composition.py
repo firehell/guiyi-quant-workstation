@@ -349,6 +349,10 @@ def test_lineage_resolver_builder_uses_catalog_adapter_without_historical(
                 main_map_before=lambda symbol, before: (
                     SimpleNamespace(trade_date=date(2025, 1, 8)),
                 ),
+                main_map=lambda symbol, start, end: (
+                    SimpleNamespace(trade_date=date(2025, 1, 2), contract="JM2505"),
+                    SimpleNamespace(trade_date=date(2025, 1, 8), contract="JM2505"),
+                ),
                 partitions=self._partitions,
             )
             self.store = SimpleNamespace(
