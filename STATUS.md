@@ -8,12 +8,12 @@
 
 | 项目 | 当前事实 |
 |---|---|
-| Release | `v1.8.8@10b92488e8a174202a90e7317110828564b5d3be`；Release PR `#242`、annotated tag peeled commit 与 GitHub Release target 一致。Release 已通过 PR `#243` 回流 `develop`。本机当前 Runtime 已离开该 tag，不等于新的 `RELEASED`。 |
-| Runtime | 2026-08-29 00:08 起本机已绑定 clean/detached `/Volumes/扩展盘/guiyi-quant-runtime-develop-17a7a6598@17a7a6598b29f561f857c309b090cd0e0a64bfcd`（`develop` HEAD，含 SuBing 效果增量快照与 v2→v3 adopt 修正）。API `/api/health` 仍报告 `version=1.8.8 / readonly=true`，因 `pyproject` 未升版；身份以 `GUIYI_RUNTIME_COMMIT=17a7a6598…` 为准。旧 `/Volumes/扩展盘/guiyi-quant-runtime-v1.8.8` 保留未改。Market Runtime 保持 enabled。Alert Runtime 已 enabled：`com.guiyi.quant-alert` loaded/running，marker 为 owner-only `enabled`。只读 `/api/runtime/health` 为 `status=degraded`：DB/Redis/Live/after-market `ok`；Alert `configured_enabled=true`、HTDY `processing_state=ok`；`strategy_state=degraded`（active60 restore 后 `0 ready / 60 unavailable`）。根因已定位：restore 以 Daily Watch 下一交易日 `2026-08-31` 查 rank1 occupancy，而 MainContractMap 只覆盖到 `2026-08-28`，60/60 均为 `MAIN_CONTRACT_MAP_MISSING`。occupancy-capped restore 已进入仓库，待随 v1.9.0 部署后重启 Alert 验收。health 探针的 `would_send_notifications=false` 只表示该只读检查不发送。 |
+| Release | `v1.9.0` release candidate（`release/v1.9.0`，含 occupancy-capped SuBing Stage 2 restore、SuBing 效果增量快照与 v2→v3 adopt）。当前 annotated tag 仍为 `v1.8.8@10b92488e8a174202a90e7317110828564b5d3be`，合入 `main` / tag / GitHub Release 完成前不声明 `RELEASED`。 |
+| Runtime | 本机当前仍绑定 `/Volumes/扩展盘/guiyi-quant-runtime-develop-17a7a6598@17a7a6598…`；Alert enabled 但 Stage 2 restore 因 `MAIN_CONTRACT_MAP_MISSING`（目标 `2026-08-31` / occupancy 止于 `2026-08-28`）为 `0 ready / 60 unavailable`。v1.9.0 Runtime promotion 完成后才验收 occupancy-capped restore。 |
 | Database | production Alembic 为 `20260826_0042 (head)`。Rule 已原子收敛为 `htdy_original_15m` 与 `subing_strategy_v1`；旧 SuBing Rule/Event 不保留。四张空的退役 `trade_*` 表已删除。 |
-| Market Runtime Scope | `operational_products.txt` 的 60 个品种。Promotion 后即时 Live 读回为 `subscribed_count=11 / phase_counts.TRADING=11 / CLOSED=49`（周六凌晨夜盘品种）。 |
-| Alert Scope | HTDY 唯一 production Scope 为 `jm × 15m`（`1 symbol / 1 pair`）；SuBing 唯一 production Scope 为 `jm`。两种授权边界不合并。DB 中 2 个 Rule 均 enabled；Alert Runtime marker 已 enabled；heartbeat `enabled_rule_count=2 / scope_product_count=1`；audience count 2。通知配置结构 health 为 `ready`（parent `0700` / file `0600` / 当前用户所有），不含成员清单。 |
-| v1.8.8 Runtime 能力 | N Structure 与专用于 SuBing↔N 的 Multi-Candidate Robustness 已从 active Web/API/CLI/research/candidate/code surface 删除；SuBing Strategy Stage 2、HTDY、Market、Alert 与 canonical lineage 保持。该 release 未新增 migration、未修改 Scope；当时未启用 Alert Runtime。 |
+| Market Runtime Scope | `operational_products.txt` 的 60 个品种。 |
+| Alert Scope | HTDY 唯一 production Scope 为 `jm × 15m`（`1 symbol / 1 pair`）；SuBing 唯一 production Scope 为 `jm`。两种授权边界不合并。DB 中 2 个 Rule 均 enabled；Alert Runtime marker 已 enabled；audience count 2。 |
+| v1.9.0 release candidate | 含 SuBing 效果增量快照、v2→v3 adopt 修正、occupancy-capped Stage 2 restore；不新增 migration、不修改 Scope。Alert 保持 enabled。 |
 | N Structure / Multi-Candidate retirement | release 与当时的 v1.8.8 Runtime promotion 均已完成；旧 `GET /api/v1/market/research/n-structure/bands` 在 production 返回 `404`，不保留 410、feature-disabled 或兼容 reader。Git/Alembic history 只保留 lineage。 |
 
 Alert transport 为 PushPlus；provider accepted 不等于微信送达。2026-08-26 21:33，operator 已按当次明确请求对 `last_notification_failure_at=2026-08-25T11:40:05.182316+00:00` 执行一次精确 CAS acknowledgment；读回 `notification_state=acknowledged`、`notification_acknowledged_at=2026-08-26T13:33:29.088633+00:00`。原 failure、`notification_transport_failed` 与连续失败计数保留，`event_replayed=false / notification_sent=false`；该操作不证明 provider accepted 或微信送达。
@@ -39,7 +39,8 @@ Alert transport 为 PushPlus；provider accepted 不等于微信送达。2026-08
 
 - HTDY 的真实 PushPlus/微信送达，以及 D1/W1 `canonical_updated` 的自然 Event identity/evidence，仍须分别核验；不以测试、synthetic event、replay 或手工发送补证。
 - SuBing 自然 Live seam evidence pending；Daily Watch V2 自然盘后 artifact pending，不以既有 V1 artifact、手工触发或回填替代。
-- SuBing Strategy V1 Stage 2 的 production migration `20260826_0042` 与 Alert enable 已完成；occupancy-capped restore 待 v1.9.0 Runtime 部署后重启 Alert 验收 ready 计数。一次 owner PushPlus canary 仍是独立 Gate。
+- SuBing Strategy V1 Stage 2 occupancy-capped restore 已进入 `v1.9.0` candidate；production Runtime promotion、Alert 重启验收与自然 Action/通知仍独立。一次 owner PushPlus canary 仍是独立 Gate。
+- v1.9.0 的 release/main/tag 与 Runtime promotion 完成前不声明 `RELEASED`。
 - SuBing Candidate 的 prospective OOS 按其 protocol 独立累积，retrospective 不回填 OOS。
 - SuBing 全历史效果的真实 schema-v2→v3 current-manifest 采纳（`through=2026-08-27`、active60）与含该派生阶段的本机 Runtime promotion 已完成；第一次自然盘后 derived 增量刷新（把效果 `through` 从 `2026-08-27` 推到最新完整交易日）仍须单独发生。不声明 `RELEASED`。
 - HTDY `jm × 15m` 在 Alert 关闭期间不会发通知。2026-08-29 00:08 启用后 evaluator 已在跑，但当时为周六凌晨，焦煤夜盘已结束；下一次自然 15m completed Live bar 与 one-shot transport evidence 仍 pending，不以 canary、replay 或手工发送替代。
