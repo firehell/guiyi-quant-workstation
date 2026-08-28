@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from datetime import UTC, date, datetime
+from pathlib import Path
 from typing import Protocol
 
 from ..domain import BarFrequency, SeriesKind
@@ -21,7 +22,10 @@ from .performance_snapshot import (
     subing_strategy_performance_snapshot_from_projection,
 )
 from .performance_snapshot_store import SubingStrategyPerformanceSnapshotStore
-from .service import SubingStrategyHistoricalRequest
+from .service import (
+    SubingStrategyHistoricalProjection,
+    SubingStrategyHistoricalRequest,
+)
 
 
 class SubingStrategyPerformanceFullRebuildRequired(RuntimeError):
@@ -37,7 +41,7 @@ class _HistoricalTail(Protocol):
         request: SubingStrategyHistoricalRequest,
         *,
         publish_cache: bool = False,
-    ) -> object: ...
+    ) -> SubingStrategyHistoricalProjection: ...
 
 
 class _LineageResolver(Protocol):
@@ -131,7 +135,7 @@ class SubingStrategyPerformanceAdopter:
             raise SubingStrategyPerformanceFullRebuildRequired() from None
 
 
-def _exactly_one_regular_json(directory) -> object:
+def _exactly_one_regular_json(directory: Path) -> Path:
     if not directory.is_dir() or directory.is_symlink():
         raise SubingStrategyPerformanceFullRebuildRequired()
     entries = tuple(directory.iterdir())
@@ -151,7 +155,7 @@ def _snapshot_from_legacy(
     payload: Mapping[str, object],
     *,
     lineage: SubingStrategyPerformanceLineage,
-    tail: object,
+    tail: SubingStrategyHistoricalProjection,
     generated_at: datetime,
     engine_identity_sha256: str,
 ) -> SubingStrategyPerformanceSnapshot:
@@ -159,7 +163,7 @@ def _snapshot_from_legacy(
 
     if generated_at.tzinfo is None or generated_at.utcoffset() is None:
         raise SubingStrategyPerformanceFullRebuildRequired()
-    summaries = getattr(tail, "segment_summaries", ())
+    summaries = tail.segment_summaries
     if len(summaries) != 1:
         raise SubingStrategyPerformanceFullRebuildRequired()
     summary = summaries[0]

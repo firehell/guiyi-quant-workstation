@@ -8,7 +8,7 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 from hashlib import sha256
 import json
-from typing import Protocol
+from typing import Literal, Protocol
 
 from ..domain import BarFrequency, SeriesKind
 from .cache import subing_strategy_episode_payload
@@ -24,7 +24,7 @@ from .performance_lineage import SubingStrategyPerformanceLineageError
 
 
 SCHEMA_VERSION = 3
-_FIXED_FORMULA_VERSION = "subing_strategy_15m_v1"
+_FIXED_FORMULA_VERSION: Literal["subing_strategy_15m_v1"] = "subing_strategy_15m_v1"
 _FIXED_SERIES_KIND = SeriesKind.ACTUAL_DOMINANT
 _FIXED_FREQUENCY = BarFrequency.M15
 
@@ -653,10 +653,10 @@ def _parse_projection_payload(
     resolved_cutoff: datetime,
 ) -> SubingStrategyPerformanceProjection:
     summary = _parse_summary(payload["summary"])
-    episodes = tuple(
-        _parse_episode(item)
-        for item in payload["episodes"]  # type: ignore[arg-type]
-    )
+    episodes_payload = payload["episodes"]
+    if not isinstance(episodes_payload, list):
+        raise SubingStrategyPerformanceSnapshotError()
+    episodes = tuple(_parse_episode(item) for item in episodes_payload)
     return SubingStrategyPerformanceProjection(
         strategy_id=SUBING_STRATEGY_ID,
         formula_version=_FIXED_FORMULA_VERSION,
@@ -666,9 +666,9 @@ def _parse_projection_payload(
         coverage_since=coverage_since,
         coverage_through=coverage_through,
         resolved_cutoff=resolved_cutoff.astimezone(UTC),
-        segment_count=int(payload["segment_count"]),
-        bar_count_15m=int(payload["bar_count_15m"]),
-        context_unavailable_count=int(payload["context_unavailable_count"]),
+        segment_count=_require_int(payload["segment_count"]),
+        bar_count_15m=_require_int(payload["bar_count_15m"]),
+        context_unavailable_count=_require_int(payload["context_unavailable_count"]),
         cache_state="hit",
         summary=summary,
         episodes=episodes,
@@ -721,6 +721,12 @@ def _parse_stats(payload: object) -> SubingStrategyPerformanceStats:
         ),
         mean_holding_15m_bars=_optional_decimal(payload["mean_holding_15m_bars"]),
     )
+
+
+def _require_int(value: object) -> int:
+    if type(value) is not int:
+        raise SubingStrategyPerformanceSnapshotError()
+    return value
 
 
 def _parse_episode(payload: object) -> SubingStrategyEpisode:

@@ -6,7 +6,7 @@ from collections.abc import Callable, Sequence
 from datetime import UTC, date, datetime
 from hashlib import sha256
 import json
-from typing import Protocol
+from typing import Literal, Protocol
 
 from ..domain import BarFrequency, SeriesKind
 from .contracts import (
@@ -25,6 +25,7 @@ from .performance_lineage import (
     UNCHANGED,
     SubingStrategyPerformanceLineage,
     SubingStrategyPerformanceSemanticIdentity,
+    SubingStrategyPerformanceSourceSegment,
     decide_subing_strategy_performance_tail,
 )
 from .performance_snapshot import (
@@ -37,10 +38,14 @@ from .performance_snapshot import (
     subing_strategy_performance_snapshot_from_projection,
 )
 from .performance_snapshot_store import SubingStrategyPerformanceSnapshotStore
-from .service import SubingStrategyHistoricalRequest
+from .service import (
+    SubingStrategyHistoricalProjection,
+    SubingStrategyHistoricalRequest,
+    SubingStrategySegmentSummary,
+)
 
 
-_FIXED_FORMULA_VERSION = "subing_strategy_15m_v1"
+_FIXED_FORMULA_VERSION: Literal["subing_strategy_15m_v1"] = "subing_strategy_15m_v1"
 
 
 class _HistoricalTail(Protocol):
@@ -49,7 +54,7 @@ class _HistoricalTail(Protocol):
         request: SubingStrategyHistoricalRequest,
         *,
         publish_cache: bool = False,
-    ) -> object: ...
+    ) -> SubingStrategyHistoricalProjection: ...
 
 
 class _LineageResolver(Protocol):
@@ -212,19 +217,19 @@ def _merge_snapshot(
     *,
     snapshot: SubingStrategyPerformanceSnapshot,
     current_lineage: SubingStrategyPerformanceLineage,
-    tail: object,
+    tail: SubingStrategyHistoricalProjection,
     seam_index: int,
     generated_at: datetime,
     engine_identity_sha256: str,
 ) -> SubingStrategyPerformanceSnapshot:
-    summaries = tuple(getattr(tail, "segment_summaries", ()))
+    summaries = tail.segment_summaries
     tail_segments = current_lineage.ordered_segments[seam_index:]
     if len(summaries) != len(tail_segments):
         raise SubingStrategyPerformanceFullRebuildRequired()
     if len(summaries) > 1:
         _require_isolated_rollover(summaries)
     unavailable_counts = _unavailable_counts_by_segment(
-        tuple(getattr(tail, "context_unavailable", ())),
+        tail.context_unavailable,
         summaries,
     )
     facts: list[SubingStrategyPerformanceSegmentFact] = []
@@ -259,7 +264,7 @@ def _merge_snapshot(
         old_tail_facts=snapshot.segment_facts,
         tail_segments=tail_segments,
     )
-    tail_episodes = tuple(getattr(tail, "episodes", ()))
+    tail_episodes = tail.episodes
     _validate_tail_episodes(tail_episodes, tail_segments)
     merged_episodes = prefix_episodes + tail_episodes
     prefix_counts = snapshot.immutable_prefix_counts
@@ -285,7 +290,7 @@ def _merge_snapshot(
         frequency=BarFrequency.M15,
         coverage_since=current_lineage.coverage_since,
         coverage_through=current_lineage.coverage_through,
-        resolved_cutoff=getattr(tail, "resolved_cutoff"),
+        resolved_cutoff=tail.resolved_cutoff,
         segment_count=len(current_lineage.ordered_segments),
         bar_count_15m=prefix_counts.bar_count_15m + remaining_15m,
         context_unavailable_count=(
@@ -309,14 +314,15 @@ def _merge_snapshot(
     )
 
 
-def _require_isolated_rollover(summaries: Sequence[object]) -> None:
+def _require_isolated_rollover(
+    summaries: Sequence[SubingStrategySegmentSummary],
+) -> None:
     closed = summaries[0]
     incoming = summaries[-1]
     if (
-        getattr(closed, "final_position", None) is not SubingStrategyPositionState.FLAT
-        or bool(getattr(closed, "pending_action", False))
-        or getattr(incoming, "initial_position", None)
-        is not SubingStrategyPositionState.FLAT
+        closed.final_position is not SubingStrategyPositionState.FLAT
+        or bool(closed.pending_action)
+        or incoming.initial_position is not SubingStrategyPositionState.FLAT
     ):
         raise SubingStrategyPerformanceFullRebuildRequired()
 
@@ -331,7 +337,7 @@ def _segment_key(item: object) -> tuple[object, object]:
 
 def _unavailable_counts_by_segment(
     context_unavailable: Sequence[object],
-    summaries: Sequence[object],
+    summaries: Sequence[SubingStrategySegmentSummary],
 ) -> tuple[int, ...]:
     counts = [0] * len(summaries)
     for item in context_unavailable:
@@ -347,7 +353,7 @@ def _unavailable_counts_by_segment(
 
 def _index_for_unavailable(
     item: object,
-    summaries: Sequence[object],
+    summaries: Sequence[SubingStrategySegmentSummary],
 ) -> int | None:
     day = getattr(item, "target_trading_day", None)
     contract = getattr(item, "physical_contract", None)
@@ -369,9 +375,9 @@ def _index_for_unavailable(
 def _prefix_episodes(
     episodes: Sequence[SubingStrategyEpisode],
     *,
-    prefix_segments: Sequence[object],
-    old_tail_facts: Sequence[object],
-    tail_segments: Sequence[object],
+    prefix_segments: Sequence[SubingStrategyPerformanceSourceSegment],
+    old_tail_facts: Sequence[SubingStrategyPerformanceSegmentFact],
+    tail_segments: Sequence[SubingStrategyPerformanceSourceSegment],
 ) -> tuple[SubingStrategyEpisode, ...]:
     prefix_keys = {_segment_key(segment) for segment in prefix_segments}
     old_tail_keys = {_segment_key(fact) for fact in old_tail_facts}
@@ -394,7 +400,7 @@ def _prefix_episodes(
 
 def _validate_tail_episodes(
     episodes: Sequence[SubingStrategyEpisode],
-    segments: Sequence[object],
+    segments: Sequence[SubingStrategyPerformanceSourceSegment],
 ) -> None:
     keys = {(segment.contract, segment.effective_start) for segment in segments}
     seen: set[str] = set()
@@ -436,7 +442,7 @@ class SubingStrategyPerformanceIncrementalBatchRefresher:
         *,
         refresher: _ProductRefresher,
         products: tuple[str, ...],
-        store: object | None = None,
+        store: SubingStrategyPerformanceSnapshotStore | None = None,
         now: Callable[[], datetime] | None = None,
     ) -> None:
         self._refresher = refresher
@@ -451,7 +457,9 @@ class SubingStrategyPerformanceIncrementalBatchRefresher:
     ) -> SubingStrategyPerformanceWarmResult:
         created_at = self._now()
         if expected_products != self._products:
-            identities = {symbol: None for symbol in expected_products}
+            identities: dict[str, str | None] = {
+                symbol: None for symbol in expected_products
+            }
             return SubingStrategyPerformanceWarmResult(
                 status="degraded",
                 completed_products=(),

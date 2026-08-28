@@ -125,6 +125,8 @@ class SubingStrategyPerformanceFileSnapshotStore:
             manifest = _parse_manifest(self._read_bytes(manifest_path))
             self._preflight(manifest_path)
             manifest_through = manifest["through"]
+            if type(manifest_through) is not date:
+                raise SubingStrategyPerformanceSnapshotError()
             if manifest["symbol"] != symbol:
                 raise SubingStrategyPerformanceSnapshotError()
             if match_through:
