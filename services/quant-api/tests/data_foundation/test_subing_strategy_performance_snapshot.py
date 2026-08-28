@@ -5,6 +5,9 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 from hashlib import sha256
 import json
+import os
+from pathlib import Path
+from stat import S_IMODE
 
 import pytest
 
@@ -36,6 +39,10 @@ from app.market_data.subing_strategy.performance_snapshot import (
     parse_subing_strategy_performance_snapshot,
     subing_strategy_performance_projection_from_snapshot,
     subing_strategy_performance_snapshot_from_projection,
+)
+from app.market_data.subing_strategy.performance_snapshot_store import (
+    SubingStrategyPerformanceFileSnapshotStore,
+    SubingStrategyPerformanceSnapshotReceipt,
 )
 
 from research.subing_strategy_fixtures import action_fixture
@@ -480,3 +487,559 @@ def test_round_trip_projection_reports_cache_hit() -> None:
     assert projection.cache_identity_sha256 is None
     assert projection.cache_generated_at is None
     assert "cache_state" not in encoded.decode("utf-8")
+
+
+_STORE_MODULE = "app.market_data.subing_strategy.performance_snapshot_store"
+
+
+def _file_store(root: Path) -> SubingStrategyPerformanceFileSnapshotStore:
+    return SubingStrategyPerformanceFileSnapshotStore(
+        root,
+        root_validator=lambda: root,
+    )
+
+
+def _snapshot_relative_path(snapshot: SubingStrategyPerformanceSnapshot) -> str:
+    return (
+        f"snapshots/{snapshot.symbol}/"
+        f"{snapshot.coverage_through.isoformat()}/"
+        f"{snapshot.snapshot_sha256}.json"
+    )
+
+
+def _file_tree(root: Path) -> dict[str, bytes]:
+    return {
+        str(path.relative_to(root)): path.read_bytes()
+        for path in sorted(root.rglob("*"))
+        if path.is_file()
+    }
+
+
+def _assert_public_error(exc: BaseException) -> None:
+    assert str(exc) == "SUBING_STRATEGY_CACHE_UNAVAILABLE"
+    assert getattr(exc, "code") == "SUBING_STRATEGY_CACHE_UNAVAILABLE"
+
+
+def _assert_same_snapshot(
+    restored: SubingStrategyPerformanceSnapshot,
+    original: SubingStrategyPerformanceSnapshot,
+) -> None:
+    assert restored.snapshot_sha256 == original.snapshot_sha256
+    assert restored.identity_sha256 == original.identity_sha256
+    assert restored.payload_sha256 == original.payload_sha256
+    assert restored.symbol == original.symbol
+    assert restored.coverage_through == original.coverage_through
+    assert restored.segment_facts == original.segment_facts
+    assert restored.projection.episodes == original.projection.episodes
+    assert restored.projection.summary == original.projection.summary
+    assert restored.projection.cache_state == "hit"
+
+
+def _manifest_body(
+    snapshot: SubingStrategyPerformanceSnapshot,
+    *,
+    snapshot_path: str | None = None,
+) -> dict[str, object]:
+    return {
+        "generated_at": snapshot.generated_at.astimezone(UTC).isoformat(),
+        "identity_sha256": snapshot.identity_sha256,
+        "payload_sha256": snapshot.payload_sha256,
+        "schema_version": 1,
+        "snapshot_path": snapshot_path or _snapshot_relative_path(snapshot),
+        "snapshot_sha256": snapshot.snapshot_sha256,
+        "symbol": snapshot.symbol,
+        "through": snapshot.coverage_through.isoformat(),
+    }
+
+
+def _write_manifest(path: Path, body: dict[str, object]) -> None:
+    envelope = dict(body)
+    envelope["manifest_sha256"] = sha256(_canonical_bytes(body)).hexdigest()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(_canonical_bytes(envelope))
+    os.chmod(path.parent, 0o700)
+    os.chmod(path, 0o600)
+
+
+def test_publish_writes_immutable_snapshot_before_current_manifest(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = _file_store(tmp_path)
+    snapshot = _snapshot()
+    replaced: list[str] = []
+    real_replace = os.replace
+
+    def track_replace(source: str | os.PathLike[str], target: str | os.PathLike[str]) -> None:
+        replaced.append(Path(target).relative_to(tmp_path).as_posix())
+        real_replace(source, target)
+
+    monkeypatch.setattr(f"{_STORE_MODULE}.os.replace", track_replace)
+
+    receipt = store.publish_current(snapshot)
+
+    assert replaced == [
+        _snapshot_relative_path(snapshot),
+        "current/jm.json",
+    ]
+    assert isinstance(receipt, SubingStrategyPerformanceSnapshotReceipt)
+    assert receipt.symbol == "jm"
+    assert receipt.through == date(2026, 8, 26)
+    assert receipt.snapshot_path == _snapshot_relative_path(snapshot)
+    assert receipt.snapshot_sha256 == snapshot.snapshot_sha256
+    assert receipt.identity_sha256 == snapshot.identity_sha256
+    assert receipt.payload_sha256 == snapshot.payload_sha256
+    assert len(receipt.manifest_sha256) == 64
+    assert receipt.generated_at == snapshot.generated_at
+    snapshot_path = tmp_path / _snapshot_relative_path(snapshot)
+    manifest_path = tmp_path / "current" / "jm.json"
+    assert snapshot_path.is_file()
+    assert manifest_path.is_file()
+    assert not snapshot_path.is_symlink()
+    assert not manifest_path.is_symlink()
+    assert S_IMODE(snapshot_path.stat().st_mode) == 0o600
+    assert S_IMODE(manifest_path.stat().st_mode) == 0o600
+    assert snapshot_path.stat().st_uid == os.getuid()
+    assert manifest_path.stat().st_uid == os.getuid()
+    for directory in (
+        tmp_path / "snapshots",
+        tmp_path / "snapshots" / "jm",
+        tmp_path / "snapshots" / "jm" / "2026-08-26",
+        tmp_path / "current",
+    ):
+        assert directory.is_dir()
+        assert not directory.is_symlink()
+        assert S_IMODE(directory.stat().st_mode) == 0o700
+        assert directory.stat().st_uid == os.getuid()
+    manifest = json.loads(manifest_path.read_bytes())
+    assert manifest["schema_version"] == 1
+    assert manifest["symbol"] == "jm"
+    assert manifest["through"] == "2026-08-26"
+    assert manifest["snapshot_path"] == _snapshot_relative_path(snapshot)
+    assert manifest["snapshot_sha256"] == snapshot.snapshot_sha256
+    assert manifest["identity_sha256"] == snapshot.identity_sha256
+    assert manifest["payload_sha256"] == snapshot.payload_sha256
+    assert manifest["generated_at"] == "2026-08-27T08:00:00+00:00"
+    assert manifest["manifest_sha256"] == receipt.manifest_sha256
+    body = {key: value for key, value in manifest.items() if key != "manifest_sha256"}
+    assert sha256(_canonical_bytes(body)).hexdigest() == receipt.manifest_sha256
+
+
+def test_publish_then_read_current_uses_same_parser(tmp_path: Path) -> None:
+    store = _file_store(tmp_path)
+    snapshot = _snapshot()
+
+    store.publish_current(snapshot)
+    restored = store.read_current(symbol="jm", expected_through=date(2026, 8, 26))
+
+    _assert_same_snapshot(restored, snapshot)
+    encoded = (tmp_path / _snapshot_relative_path(snapshot)).read_bytes()
+    assert parse_subing_strategy_performance_snapshot(encoded) == restored
+
+
+def test_read_current_performs_no_write(tmp_path: Path) -> None:
+    store = _file_store(tmp_path)
+    store.publish_current(_snapshot())
+    before = _file_tree(tmp_path)
+
+    store.read_current(symbol="jm", expected_through=date(2026, 8, 26))
+
+    assert _file_tree(tmp_path) == before
+
+
+def test_read_current_does_not_select_by_glob_or_mtime(tmp_path: Path) -> None:
+    store = _file_store(tmp_path)
+    snapshot = _snapshot()
+    store.publish_current(snapshot)
+    decoy_dir = tmp_path / "snapshots" / "jm" / "2026-08-27"
+    decoy_dir.mkdir(parents=True)
+    os.chmod(decoy_dir, 0o700)
+    decoy = decoy_dir / f"{'f' * 64}.json"
+    decoy.write_bytes(b'{"schema_version":3}')
+    os.chmod(decoy, 0o600)
+    os.utime(decoy, None)
+
+    restored = store.read_current(symbol="jm", expected_through=date(2026, 8, 26))
+
+    assert restored.snapshot_sha256 == snapshot.snapshot_sha256
+    assert restored.coverage_through == date(2026, 8, 26)
+
+
+def test_read_current_rejects_missing_current_snapshot(tmp_path: Path) -> None:
+    store = _file_store(tmp_path)
+
+    with pytest.raises(SubingStrategyPerformanceSnapshotError) as exc_info:
+        store.read_current(symbol="jm", expected_through=date(2026, 8, 26))
+
+    _assert_public_error(exc_info.value)
+    assert str(tmp_path) not in str(exc_info.value)
+
+
+@pytest.mark.parametrize(
+    "expected_through",
+    [date(2026, 8, 25), date(2026, 8, 27)],
+)
+def test_read_current_rejects_stale_or_future_expected_through(
+    tmp_path: Path,
+    expected_through: date,
+) -> None:
+    store = _file_store(tmp_path)
+    store.publish_current(_snapshot())
+
+    with pytest.raises(SubingStrategyPerformanceSnapshotError) as exc_info:
+        store.read_current(symbol="jm", expected_through=expected_through)
+
+    _assert_public_error(exc_info.value)
+
+
+def test_read_current_rejects_symbol_mismatch(tmp_path: Path) -> None:
+    store = _file_store(tmp_path)
+    store.publish_current(_snapshot())
+
+    with pytest.raises(SubingStrategyPerformanceSnapshotError) as exc_info:
+        store.read_current(symbol="rb", expected_through=date(2026, 8, 26))
+
+    _assert_public_error(exc_info.value)
+
+
+def test_read_current_rejects_symlink_manifest_and_snapshot(tmp_path: Path) -> None:
+    store = _file_store(tmp_path)
+    snapshot = _snapshot()
+    store.publish_current(snapshot)
+    manifest = tmp_path / "current" / "jm.json"
+    snapshot_path = tmp_path / _snapshot_relative_path(snapshot)
+    elsewhere = tmp_path / "elsewhere.json"
+    elsewhere.write_bytes(manifest.read_bytes())
+    os.chmod(elsewhere, 0o600)
+    manifest.unlink()
+    manifest.symlink_to(elsewhere)
+
+    with pytest.raises(SubingStrategyPerformanceSnapshotError) as exc_info:
+        store.read_current(symbol="jm", expected_through=date(2026, 8, 26))
+
+    _assert_public_error(exc_info.value)
+
+    manifest.unlink()
+    store.publish_current(snapshot)
+    shadow = tmp_path / "shadow-snapshot.json"
+    shadow.write_bytes(snapshot_path.read_bytes())
+    os.chmod(shadow, 0o600)
+    snapshot_path.unlink()
+    snapshot_path.symlink_to(shadow)
+
+    with pytest.raises(SubingStrategyPerformanceSnapshotError) as exc_info:
+        store.read_current(symbol="jm", expected_through=date(2026, 8, 26))
+
+    _assert_public_error(exc_info.value)
+
+
+def test_read_current_rejects_absolute_or_parent_snapshot_path(tmp_path: Path) -> None:
+    store = _file_store(tmp_path)
+    snapshot = _snapshot()
+    store.publish_current(snapshot)
+    snapshot_path = tmp_path / _snapshot_relative_path(snapshot)
+    manifest = tmp_path / "current" / "jm.json"
+    outside = tmp_path / "escape.json"
+    outside.write_bytes(snapshot_path.read_bytes())
+    os.chmod(outside, 0o600)
+
+    _write_manifest(manifest, _manifest_body(snapshot, snapshot_path=str(outside)))
+    with pytest.raises(SubingStrategyPerformanceSnapshotError) as exc_info:
+        store.read_current(symbol="jm", expected_through=date(2026, 8, 26))
+    _assert_public_error(exc_info.value)
+    assert str(outside) not in str(exc_info.value)
+
+    _write_manifest(
+        manifest,
+        _manifest_body(snapshot, snapshot_path="../escape.json"),
+    )
+    with pytest.raises(SubingStrategyPerformanceSnapshotError) as exc_info:
+        store.read_current(symbol="jm", expected_through=date(2026, 8, 26))
+    _assert_public_error(exc_info.value)
+
+
+def test_read_current_rejects_non_regular_manifest(tmp_path: Path) -> None:
+    store = _file_store(tmp_path)
+    store.publish_current(_snapshot())
+    manifest = tmp_path / "current" / "jm.json"
+    manifest.unlink()
+    manifest.mkdir(mode=0o700)
+
+    with pytest.raises(SubingStrategyPerformanceSnapshotError) as exc_info:
+        store.read_current(symbol="jm", expected_through=date(2026, 8, 26))
+
+    _assert_public_error(exc_info.value)
+
+
+def test_read_current_rejects_insecure_file_mode(tmp_path: Path) -> None:
+    store = _file_store(tmp_path)
+    snapshot = _snapshot()
+    store.publish_current(snapshot)
+    os.chmod(tmp_path / _snapshot_relative_path(snapshot), 0o644)
+
+    with pytest.raises(SubingStrategyPerformanceSnapshotError) as exc_info:
+        store.read_current(symbol="jm", expected_through=date(2026, 8, 26))
+
+    _assert_public_error(exc_info.value)
+
+
+def test_read_current_rejects_corrupt_or_hash_mismatched_manifest(
+    tmp_path: Path,
+) -> None:
+    store = _file_store(tmp_path)
+    snapshot = _snapshot()
+    store.publish_current(snapshot)
+    manifest = tmp_path / "current" / "jm.json"
+
+    manifest.write_bytes(b"{")
+    os.chmod(manifest, 0o600)
+    with pytest.raises(SubingStrategyPerformanceSnapshotError) as exc_info:
+        store.read_current(symbol="jm", expected_through=date(2026, 8, 26))
+    _assert_public_error(exc_info.value)
+
+    body = _manifest_body(snapshot)
+    envelope = dict(body)
+    envelope["manifest_sha256"] = "0" * 64
+    manifest.write_bytes(_canonical_bytes(envelope))
+    os.chmod(manifest, 0o600)
+    with pytest.raises(SubingStrategyPerformanceSnapshotError) as exc_info:
+        store.read_current(symbol="jm", expected_through=date(2026, 8, 26))
+    _assert_public_error(exc_info.value)
+
+    mismatched = _manifest_body(snapshot)
+    mismatched["payload_sha256"] = "0" * 64
+    _write_manifest(manifest, mismatched)
+    with pytest.raises(SubingStrategyPerformanceSnapshotError) as exc_info:
+        store.read_current(symbol="jm", expected_through=date(2026, 8, 26))
+    _assert_public_error(exc_info.value)
+
+
+def test_read_current_rejects_duplicate_manifest_keys(tmp_path: Path) -> None:
+    store = _file_store(tmp_path)
+    snapshot = _snapshot()
+    store.publish_current(snapshot)
+    manifest = tmp_path / "current" / "jm.json"
+    body = _manifest_body(snapshot)
+    digest = sha256(_canonical_bytes(body)).hexdigest()
+    raw = (
+        b'{"generated_at":"'
+        + str(body["generated_at"]).encode()
+        + b'","generated_at":"'
+        + str(body["generated_at"]).encode()
+        + b'","identity_sha256":"'
+        + str(body["identity_sha256"]).encode()
+        + b'","manifest_sha256":"'
+        + digest.encode()
+        + b'","payload_sha256":"'
+        + str(body["payload_sha256"]).encode()
+        + b'","schema_version":1,"snapshot_path":"'
+        + str(body["snapshot_path"]).encode()
+        + b'","snapshot_sha256":"'
+        + str(body["snapshot_sha256"]).encode()
+        + b'","symbol":"jm","through":"2026-08-26"}'
+    )
+    manifest.write_bytes(raw)
+    os.chmod(manifest, 0o600)
+
+    with pytest.raises(SubingStrategyPerformanceSnapshotError) as exc_info:
+        store.read_current(symbol="jm", expected_through=date(2026, 8, 26))
+
+    _assert_public_error(exc_info.value)
+
+
+def test_publish_collision_requires_byte_identical_content(tmp_path: Path) -> None:
+    store = _file_store(tmp_path)
+    snapshot = _snapshot()
+    first = store.publish_current(snapshot)
+    prior_manifest = (tmp_path / "current" / "jm.json").read_bytes()
+    snapshot_path = tmp_path / _snapshot_relative_path(snapshot)
+    snapshot_path.write_bytes(b'{"not":"the-same"}')
+    os.chmod(snapshot_path, 0o600)
+
+    with pytest.raises(SubingStrategyPerformanceSnapshotError) as exc_info:
+        store.publish_current(snapshot)
+
+    _assert_public_error(exc_info.value)
+    assert (tmp_path / "current" / "jm.json").read_bytes() == prior_manifest
+    assert first.snapshot_sha256 == snapshot.snapshot_sha256
+
+
+def test_identical_collision_is_reused_without_overwrite(tmp_path: Path) -> None:
+    store = _file_store(tmp_path)
+    snapshot = _snapshot()
+    first = store.publish_current(snapshot)
+    snapshot_path = tmp_path / _snapshot_relative_path(snapshot)
+    before = snapshot_path.read_bytes()
+    inode = snapshot_path.stat().st_ino
+
+    second = store.publish_current(snapshot)
+
+    assert second.snapshot_sha256 == first.snapshot_sha256
+    assert snapshot_path.read_bytes() == before
+    assert snapshot_path.stat().st_ino == inode
+    restored = store.read_current(symbol="jm", expected_through=date(2026, 8, 26))
+    _assert_same_snapshot(restored, snapshot)
+
+
+@pytest.mark.parametrize("fail_at", ["write", "fsync", "replace", "readback", "hash"])
+def test_failed_snapshot_mutation_preserves_prior_manifest_and_cleans_tempfiles(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    fail_at: str,
+) -> None:
+    store = _file_store(tmp_path)
+    first = _snapshot()
+    store.publish_current(first)
+    prior_manifest = (tmp_path / "current" / "jm.json").read_bytes()
+    later = _snapshot(generated_at=datetime(2026, 8, 27, 9, tzinfo=UTC))
+    real_replace = os.replace
+    real_fsync = os.fsync
+    real_parse = parse_subing_strategy_performance_snapshot
+
+    if fail_at == "write":
+        def fail_mkstemp(*_args: object, **_kwargs: object) -> tuple[int, str]:
+            raise OSError("targeted test failure")
+
+        monkeypatch.setattr(f"{_STORE_MODULE}.tempfile.mkstemp", fail_mkstemp)
+    elif fail_at == "fsync":
+        def fail_fsync(_fd: int) -> None:
+            raise OSError("targeted test failure")
+
+        monkeypatch.setattr(f"{_STORE_MODULE}.os.fsync", fail_fsync)
+    elif fail_at == "replace":
+        def fail_snapshot_replace(
+            source: str | os.PathLike[str],
+            target: str | os.PathLike[str],
+        ) -> None:
+            if "snapshots" in Path(target).parts:
+                raise OSError("targeted test failure")
+            real_replace(source, target)
+
+        monkeypatch.setattr(f"{_STORE_MODULE}.os.replace", fail_snapshot_replace)
+    elif fail_at == "readback":
+        def fail_parse(content: bytes | str | object) -> SubingStrategyPerformanceSnapshot:
+            raise SubingStrategyPerformanceSnapshotError()
+
+        monkeypatch.setattr(
+            f"{_STORE_MODULE}.parse_subing_strategy_performance_snapshot",
+            fail_parse,
+        )
+    else:
+        def mismatch_parse(
+            content: bytes | str | object,
+        ) -> SubingStrategyPerformanceSnapshot:
+            if isinstance(content, (bytes, str)):
+                parsed = real_parse(content)
+                if parsed.generated_at == later.generated_at:
+                    return first
+                return parsed
+            raise SubingStrategyPerformanceSnapshotError()
+
+        monkeypatch.setattr(
+            f"{_STORE_MODULE}.parse_subing_strategy_performance_snapshot",
+            mismatch_parse,
+        )
+
+    with pytest.raises(SubingStrategyPerformanceSnapshotError) as exc_info:
+        store.publish_current(later)
+
+    _assert_public_error(exc_info.value)
+    assert str(tmp_path) not in str(exc_info.value)
+    assert later.snapshot_sha256 not in str(exc_info.value)
+    assert (tmp_path / "current" / "jm.json").read_bytes() == prior_manifest
+    assert list(tmp_path.rglob("*.tmp")) == []
+    monkeypatch.setattr(
+        f"{_STORE_MODULE}.parse_subing_strategy_performance_snapshot",
+        real_parse,
+    )
+    monkeypatch.setattr(f"{_STORE_MODULE}.os.fsync", real_fsync)
+    monkeypatch.setattr(f"{_STORE_MODULE}.os.replace", real_replace)
+    restored = store.read_current(symbol="jm", expected_through=date(2026, 8, 26))
+    _assert_same_snapshot(restored, first)
+    if fail_at in {"write", "fsync", "replace"}:
+        assert not (tmp_path / _snapshot_relative_path(later)).exists()
+
+
+def test_failed_manifest_replace_leaves_snapshot_and_preserves_prior_manifest(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = _file_store(tmp_path)
+    first = _snapshot()
+    store.publish_current(first)
+    prior_manifest = (tmp_path / "current" / "jm.json").read_bytes()
+    later = _snapshot(generated_at=datetime(2026, 8, 27, 9, tzinfo=UTC))
+    real_replace = os.replace
+
+    def fail_manifest_replace(
+        source: str | os.PathLike[str],
+        target: str | os.PathLike[str],
+    ) -> None:
+        if Path(target) == tmp_path / "current" / "jm.json":
+            raise OSError("targeted test failure")
+        real_replace(source, target)
+
+    monkeypatch.setattr(f"{_STORE_MODULE}.os.replace", fail_manifest_replace)
+
+    with pytest.raises(SubingStrategyPerformanceSnapshotError) as exc_info:
+        store.publish_current(later)
+
+    _assert_public_error(exc_info.value)
+    assert (tmp_path / "current" / "jm.json").read_bytes() == prior_manifest
+    assert (tmp_path / _snapshot_relative_path(later)).is_file()
+    assert list(tmp_path.rglob("*.tmp")) == []
+    restored = store.read_current(symbol="jm", expected_through=date(2026, 8, 26))
+    _assert_same_snapshot(restored, first)
+
+
+def test_store_rejects_symlink_root(tmp_path: Path) -> None:
+    target = tmp_path / "target"
+    target.mkdir()
+    root = tmp_path / "linked"
+    root.symlink_to(target, target_is_directory=True)
+    store = SubingStrategyPerformanceFileSnapshotStore(
+        root,
+        root_validator=lambda: root,
+    )
+
+    with pytest.raises(SubingStrategyPerformanceSnapshotError) as exc_info:
+        store.publish_current(_snapshot())
+
+    _assert_public_error(exc_info.value)
+    assert not list(target.rglob("*.json"))
+
+
+def test_store_rejects_root_validator_drift(tmp_path: Path) -> None:
+    root = tmp_path / "cache"
+    root.mkdir()
+    store = SubingStrategyPerformanceFileSnapshotStore(
+        root,
+        root_validator=lambda: tmp_path / "other",
+    )
+
+    with pytest.raises(SubingStrategyPerformanceSnapshotError) as exc_info:
+        store.read_current(symbol="jm", expected_through=date(2026, 8, 26))
+
+    _assert_public_error(exc_info.value)
+
+
+def test_publish_creates_namespace_below_trusted_base(tmp_path: Path) -> None:
+    base = tmp_path / "observation"
+    base.mkdir(mode=0o700)
+    os.chmod(base, 0o700)
+    root = base / "cache" / "subing-strategy-v1" / "performance"
+    store = SubingStrategyPerformanceFileSnapshotStore(
+        root,
+        root_validator=lambda: root,
+        trusted_base_validator=lambda: base,
+    )
+    snapshot = _snapshot()
+
+    store.publish_current(snapshot)
+    restored = store.read_current(symbol="jm", expected_through=date(2026, 8, 26))
+
+    _assert_same_snapshot(restored, snapshot)
+    assert S_IMODE(root.stat().st_mode) == 0o700
+    assert S_IMODE((root / "current" / "jm.json").stat().st_mode) == 0o600
+    assert "performance/" not in _snapshot_relative_path(snapshot)
+    assert not (root / "jm").exists()
