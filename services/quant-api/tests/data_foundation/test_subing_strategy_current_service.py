@@ -110,6 +110,7 @@ class _MarketRead:
     def __init__(self, live=None, *, contract: str = CONTRACT) -> None:
         self.live = live or {}
         self.contract = contract
+        self.trading_day = TARGET_DAY
         self.state_requests = []
         self.live_requests = []
 
@@ -119,7 +120,7 @@ class _MarketRead:
             symbol=identity.symbol,
             series_kind=identity.series_kind.value,
             frequency=identity.frequency.value,
-            trading_day=TARGET_DAY,
+            trading_day=self.trading_day,
             live_eligible=True,
             live_available=bool(self.live),
             live_contract=self.contract,
@@ -280,6 +281,48 @@ def test_runtime_restore_returns_the_shared_incremental_machine_state(
     assert captured["bars_1m"]
     assert captured["bars_5m"]
     assert captured["bars_15m"]
+
+
+def test_restore_uses_latest_mapped_day_when_expected_session_has_no_occupancy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Next-session Daily Watch day must not fail restore when rank1 occupancy
+    still ends on the last Canonical day."""
+    service, _loader, _historical, _store, market_read = _service()
+    previous_of_source = SOURCE_DAY - timedelta(days=1)
+
+    def current_segment(_symbol: str, target: date):
+        if target == TARGET_DAY:
+            raise MarketDataError("MAIN_CONTRACT_MAP_MISSING")
+        if target <= SOURCE_DAY:
+            return SimpleNamespace(
+                symbol="jm",
+                contract=CONTRACT,
+                start_trading_day=SEGMENT_START,
+                end_trading_day=SOURCE_DAY,
+            )
+        raise MarketDataError("MAIN_CONTRACT_MAP_MISSING")
+
+    service._current_segment = current_segment
+    service._previous_trading_day = (
+        lambda target: SOURCE_DAY if target == TARGET_DAY else previous_of_source
+    )
+    market_read.trading_day = TARGET_DAY
+    captured: dict[str, object] = {}
+    expected = object()
+    monkeypatch.setattr(
+        "app.market_data.subing_strategy.current_service.replay_subing_strategy_machine",
+        lambda **kwargs: captured.update(kwargs) or expected,
+    )
+
+    restored = service.restore_machine(symbol="jm", now=NOW)
+
+    assert restored is expected
+    assert captured["segment"] == ResolvedContractSegment(
+        CONTRACT, SEGMENT_START, SOURCE_DAY
+    )
+    assert captured["bars_15m"]
+    assert market_read.live_requests == []
 
 
 def test_current_reports_canonical_only_source_mode(
