@@ -56,6 +56,7 @@ NEW_SOURCE = "3" * 64
 MANIFEST_T1 = "b" * 64
 MANIFEST_T2 = "c" * 64
 MANIFEST_T3 = "d" * 64
+MANIFEST_T4 = "a" * 64
 PREFIX_START = date(2020, 1, 2)
 PREFIX_END = date(2026, 1, 4)
 TAIL_START = date(2026, 1, 5)
@@ -273,7 +274,10 @@ def _rollover_lineage(
     *,
     manifest: str,
     old_tail_end: date,
+    new_start: date | None = None,
+    new_source: str = NEW_SOURCE,
 ):
+    new_start = new_start or through
     return SubingStrategyPerformanceLineage(
         symbol="jm",
         coverage_since=PREFIX_START,
@@ -293,12 +297,19 @@ def _rollover_lineage(
             ),
             _segment(
                 contract="JM2609",
-                start=through,
+                start=new_start,
                 end=through,
-                source=NEW_SOURCE,
+                source=new_source,
             ),
         ),
         source_manifest_sha256=manifest,
+    )
+
+
+def _unavailable(*, trading_day: date, contract: str):
+    return SimpleNamespace(
+        target_trading_day=trading_day,
+        physical_contract=contract,
     )
 
 
@@ -1097,3 +1108,218 @@ def test_rollover_non_flat_or_pending_cross_segment_action_fails_closed(
         refresher.refresh(symbol="jm", through=day2)
 
     assert (tmp_path / "performance" / "current" / "jm.json").read_bytes() == before
+
+
+def test_unknown_snapshot_episode_neither_prefix_nor_tail_fails_closed(
+    tmp_path: Path,
+) -> None:
+    day1 = date(2026, 8, 26)
+    day2 = date(2026, 8, 27)
+    store = _store(tmp_path)
+    prefix_episode = _episode_at(
+        change="2",
+        contract="JM2505",
+        segment_start=PREFIX_START,
+        trading_day=date(2025, 6, 2),
+        hour=10,
+    )
+    old_tail_episode = _episode("-1")
+    unknown_episode = _episode_at(
+        change="9",
+        contract="JM9999",
+        segment_start=date(2024, 6, 1),
+        trading_day=date(2024, 6, 2),
+        hour=10,
+    )
+    _published_snapshot(
+        store,
+        day1,
+        (prefix_episode, old_tail_episode, unknown_episode),
+        manifest=MANIFEST_T1,
+        bars=24,
+    )
+    before = (tmp_path / "performance" / "current" / "jm.json").read_bytes()
+    tail = _tail(
+        summaries=(
+            _summary(
+                contract="JM2605",
+                start=TAIL_START,
+                end=day2,
+                loaded_through=day2,
+                source=TAIL_SOURCE,
+                bar_count_1m=520,
+                bar_count_5m=104,
+                bar_count_15m=13,
+            ),
+        ),
+        episodes=(
+            _episode_at(
+                change="3",
+                contract="JM2605",
+                segment_start=TAIL_START,
+                trading_day=day2,
+                hour=10,
+            ),
+        ),
+        resolved_cutoff=datetime(2026, 8, 27, 7, tzinfo=UTC),
+    )
+    historical = FakeHistorical(tail)
+    refresher = _refresher(
+        lineage=FakeLineage(
+            {
+                day1: _lineage(day1, manifest=MANIFEST_T1),
+                day2: _lineage(day2, manifest=MANIFEST_T2, tail_end=day2),
+            }
+        ),
+        historical=historical,
+        store=store,
+        now=lambda: datetime(2026, 8, 28, 8, tzinfo=UTC),
+    )
+
+    with pytest.raises(SubingStrategyPerformanceFullRebuildRequired):
+        refresher.refresh(symbol="jm", through=day2)
+
+    assert (tmp_path / "performance" / "current" / "jm.json").read_bytes() == before
+
+
+def test_rollover_compact_folds_closed_tail_unavailable_and_next_append_keeps_it(
+    tmp_path: Path,
+) -> None:
+    day1 = date(2026, 8, 26)
+    day2 = date(2026, 8, 27)
+    day3 = date(2026, 8, 28)
+    store = _store(tmp_path)
+    prefix_episode = _episode_at(
+        change="2",
+        contract="JM2505",
+        segment_start=PREFIX_START,
+        trading_day=date(2025, 6, 2),
+        hour=10,
+    )
+    old_tail_episode = _episode("-1")
+    closed_old_tail = _episode_at(
+        change="-1",
+        contract="JM2605",
+        segment_start=TAIL_START,
+        trading_day=day1,
+        hour=10,
+    )
+    new_segment_episode = _episode_at(
+        change="4",
+        contract="JM2609",
+        segment_start=day2,
+        trading_day=day2,
+        hour=11,
+    )
+    next_segment_episode = _episode_at(
+        change="5",
+        contract="JM2609",
+        segment_start=day2,
+        trading_day=day3,
+        hour=11,
+    )
+    _published_snapshot(
+        store,
+        day1,
+        (prefix_episode, old_tail_episode),
+        manifest=MANIFEST_T1,
+        bars=24,
+    )
+    closed_unavailable = (
+        _unavailable(trading_day=day1, contract="JM2605"),
+        _unavailable(trading_day=date(2026, 8, 25), contract="JM2605"),
+    )
+    new_unavailable = (_unavailable(trading_day=day2, contract="JM2609"),)
+    rollover_tail = _tail(
+        summaries=(
+            _summary(
+                contract="JM2605",
+                start=TAIL_START,
+                end=day1,
+                loaded_through=day1,
+                source=TAIL_SOURCE,
+                bar_count_1m=520,
+                bar_count_5m=104,
+                bar_count_15m=13,
+                final=SubingStrategyPositionState.FLAT,
+                pending_action=False,
+            ),
+            _summary(
+                contract="JM2609",
+                start=day2,
+                end=day2,
+                loaded_through=day2,
+                source=NEW_SOURCE,
+                bar_count_1m=40,
+                bar_count_5m=8,
+                bar_count_15m=4,
+                initial=SubingStrategyPositionState.FLAT,
+                pending_action=False,
+            ),
+        ),
+        episodes=(closed_old_tail, new_segment_episode),
+        resolved_cutoff=datetime(2026, 8, 27, 7, tzinfo=UTC),
+        context_unavailable=closed_unavailable + new_unavailable,
+    )
+    rollover = _refresher(
+        lineage=FakeLineage(
+            {
+                day1: _lineage(day1, manifest=MANIFEST_T1),
+                day2: _rollover_lineage(day2, manifest=MANIFEST_T3, old_tail_end=day1),
+            }
+        ),
+        historical=FakeHistorical(rollover_tail),
+        store=store,
+        now=lambda: datetime(2026, 8, 28, 8, tzinfo=UTC),
+    )
+
+    rollover.refresh(symbol="jm", through=day2)
+
+    compacted = store.read_current(symbol="jm", expected_through=day2)
+    assert compacted.immutable_prefix_counts.context_unavailable_count == 2
+    assert compacted.segment_facts[0].contract == "JM2609"
+    assert compacted.segment_facts[0].context_unavailable_count == 1
+    assert compacted.projection.context_unavailable_count == 3
+
+    next_tail = _tail(
+        summaries=(
+            _summary(
+                contract="JM2609",
+                start=day2,
+                end=day3,
+                loaded_through=day3,
+                source=NEW_SOURCE,
+                bar_count_1m=48,
+                bar_count_5m=10,
+                bar_count_15m=5,
+                initial=SubingStrategyPositionState.FLAT,
+                pending_action=False,
+            ),
+        ),
+        episodes=(next_segment_episode,),
+        resolved_cutoff=datetime(2026, 8, 28, 7, tzinfo=UTC),
+        context_unavailable=(_unavailable(trading_day=day3, contract="JM2609"),),
+    )
+    next_append = _refresher(
+        lineage=FakeLineage(
+            {
+                day2: _rollover_lineage(day2, manifest=MANIFEST_T3, old_tail_end=day1),
+                day3: _rollover_lineage(
+                    day3,
+                    manifest=MANIFEST_T4,
+                    old_tail_end=day1,
+                    new_start=day2,
+                ),
+            }
+        ),
+        historical=FakeHistorical(next_tail),
+        store=store,
+        now=lambda: datetime(2026, 8, 29, 8, tzinfo=UTC),
+    )
+
+    next_append.refresh(symbol="jm", through=day3)
+
+    restored = store.read_current(symbol="jm", expected_through=day3)
+    assert restored.immutable_prefix_counts.context_unavailable_count == 2
+    assert restored.segment_facts[0].context_unavailable_count == 1
+    assert restored.projection.context_unavailable_count == 3

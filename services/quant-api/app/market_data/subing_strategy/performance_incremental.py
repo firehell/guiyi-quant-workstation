@@ -220,8 +220,14 @@ def _merge_snapshot(
         raise SubingStrategyPerformanceFullRebuildRequired()
     if len(summaries) > 1:
         _require_isolated_rollover(summaries)
+    unavailable_counts = _unavailable_counts_by_segment(
+        tuple(getattr(tail, "context_unavailable", ())),
+        summaries,
+    )
     facts: list[SubingStrategyPerformanceSegmentFact] = []
-    for summary, segment in zip(summaries, tail_segments, strict=True):
+    for summary, segment, unavailable_count in zip(
+        summaries, tail_segments, unavailable_counts, strict=True
+    ):
         if (
             summary.contract != segment.contract
             or summary.start_trading_day != segment.effective_start
@@ -237,7 +243,7 @@ def _merge_snapshot(
                 bar_count_1m=summary.bar_count_1m,
                 bar_count_5m=summary.bar_count_5m,
                 bar_count_15m=summary.bar_count_15m,
-                context_unavailable_count=0,
+                context_unavailable_count=unavailable_count,
                 source_identity=segment.source_identity,
             )
         )
@@ -247,22 +253,12 @@ def _merge_snapshot(
     prefix_episodes = _prefix_episodes(
         snapshot.projection.episodes,
         prefix_segments=prefix_segments,
+        old_tail_facts=snapshot.segment_facts,
+        tail_segments=tail_segments,
     )
     tail_episodes = tuple(getattr(tail, "episodes", ()))
     _validate_tail_episodes(tail_episodes, tail_segments)
     merged_episodes = prefix_episodes + tail_episodes
-    tail_context = len(getattr(tail, "context_unavailable", ()))
-    facts[-1] = SubingStrategyPerformanceSegmentFact(
-        contract=facts[-1].contract,
-        effective_start=facts[-1].effective_start,
-        effective_end=facts[-1].effective_end,
-        loaded_through=facts[-1].loaded_through,
-        bar_count_1m=facts[-1].bar_count_1m,
-        bar_count_5m=facts[-1].bar_count_5m,
-        bar_count_15m=facts[-1].bar_count_15m,
-        context_unavailable_count=tail_context,
-        source_identity=facts[-1].source_identity,
-    )
     prefix_counts = snapshot.immutable_prefix_counts
     if len(facts) > 1:
         for closed in facts[:-1]:
@@ -322,20 +318,74 @@ def _require_isolated_rollover(summaries: Sequence[object]) -> None:
         raise SubingStrategyPerformanceFullRebuildRequired()
 
 
+def _segment_key(item: object) -> tuple[object, object]:
+    contract = getattr(item, "contract", None)
+    start = getattr(item, "effective_start", None)
+    if start is None:
+        start = getattr(item, "start_trading_day", None)
+    return (contract, start)
+
+
+def _unavailable_counts_by_segment(
+    context_unavailable: Sequence[object],
+    summaries: Sequence[object],
+) -> tuple[int, ...]:
+    counts = [0] * len(summaries)
+    for item in context_unavailable:
+        index = _index_for_unavailable(item, summaries)
+        if index is None:
+            if len(summaries) == 1:
+                counts[0] += 1
+                continue
+            raise SubingStrategyPerformanceFullRebuildRequired()
+        counts[index] += 1
+    return tuple(counts)
+
+
+def _index_for_unavailable(
+    item: object,
+    summaries: Sequence[object],
+) -> int | None:
+    day = getattr(item, "target_trading_day", None)
+    contract = getattr(item, "physical_contract", None)
+    if day is None and contract is None:
+        return None
+    matches: list[int] = []
+    for index, summary in enumerate(summaries):
+        day_ok = day is None or (
+            summary.start_trading_day <= day <= summary.end_trading_day
+        )
+        contract_ok = contract is None or contract == summary.contract
+        if day_ok and contract_ok:
+            matches.append(index)
+    if len(matches) == 1:
+        return matches[0]
+    return None
+
+
 def _prefix_episodes(
     episodes: Sequence[SubingStrategyEpisode],
     *,
     prefix_segments: Sequence[object],
+    old_tail_facts: Sequence[object],
+    tail_segments: Sequence[object],
 ) -> tuple[SubingStrategyEpisode, ...]:
-    keys = {(segment.contract, segment.effective_start) for segment in prefix_segments}
+    prefix_keys = {_segment_key(segment) for segment in prefix_segments}
+    old_tail_keys = {_segment_key(fact) for fact in old_tail_facts}
+    affected_tail_keys = {_segment_key(segment) for segment in tail_segments}
     prefix: list[SubingStrategyEpisode] = []
     for episode in episodes:
         key = (
             episode.entry_action.contract,
             episode.entry_action.segment_start_trading_day,
         )
-        if key in keys:
+        if key in prefix_keys:
             prefix.append(episode)
+        elif key in old_tail_keys:
+            if key not in affected_tail_keys:
+                raise SubingStrategyPerformanceFullRebuildRequired()
+        elif key not in affected_tail_keys:
+            raise SubingStrategyPerformanceFullRebuildRequired()
     return tuple(prefix)
 
 
