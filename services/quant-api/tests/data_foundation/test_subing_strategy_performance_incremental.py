@@ -8,7 +8,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.market_data.domain import BarFrequency, SeriesKind
+from app.market_data.catalog import MarketCatalog
+from app.market_data.domain import BarFrequency, DatasetKey, DatasetKind, SeriesKind
 from app.market_data.subing_research import SubingDirection
 from app.market_data.subing_strategy.contracts import (
     SUBING_STRATEGY_ID,
@@ -34,6 +35,15 @@ from app.market_data.subing_strategy.performance_incremental import (
 from app.market_data.subing_strategy.performance_lineage import (
     SubingStrategyPerformanceLineage,
     SubingStrategyPerformanceSourceSegment,
+    _source_manifest_sha256,
+)
+from app.models import MarketPartition
+from tests.data_foundation.test_subing_strategy_performance_lineage import (
+    SpyCanonicalStore,
+    _FREQUENCIES,
+    _resolver,
+    _seed_two_segments,
+    _session,
 )
 from app.market_data.subing_strategy.performance_snapshot import (
     SubingStrategyPerformancePrefixCounts,
@@ -245,64 +255,78 @@ def _segment(
     )
 
 
-def _lineage(through: date, *, manifest: str, tail_end: date | None = None):
+def _lineage(through: date, *, manifest: str | None = None, tail_end: date | None = None):
     tail_end = tail_end or through
+    segments = (
+        _segment(
+            contract="JM2505",
+            start=PREFIX_START,
+            end=PREFIX_END,
+            source=PREFIX_SOURCE,
+        ),
+        _segment(
+            contract="JM2605",
+            start=TAIL_START,
+            end=tail_end,
+            source=TAIL_SOURCE,
+        ),
+    )
+    _ = manifest
     return SubingStrategyPerformanceLineage(
         symbol="jm",
         coverage_since=date(2020, 1, 2),
         coverage_through=through,
-        ordered_segments=(
-            _segment(
-                contract="JM2505",
-                start=PREFIX_START,
-                end=PREFIX_END,
-                source=PREFIX_SOURCE,
-            ),
-            _segment(
-                contract="JM2605",
-                start=TAIL_START,
-                end=tail_end,
-                source=TAIL_SOURCE,
-            ),
+        ordered_segments=segments,
+        source_manifest_sha256=_source_manifest_sha256(
+            symbol="jm",
+            coverage_since=date(2020, 1, 2),
+            coverage_through=through,
+            segments=segments,
         ),
-        source_manifest_sha256=manifest,
     )
 
 
 def _rollover_lineage(
     through: date,
     *,
-    manifest: str,
+    manifest: str | None = None,
     old_tail_end: date,
     new_start: date | None = None,
     new_source: str = NEW_SOURCE,
 ):
     new_start = new_start or through
+    segments = (
+        _segment(
+            contract="JM2505",
+            start=PREFIX_START,
+            end=PREFIX_END,
+            source=PREFIX_SOURCE,
+        ),
+        _segment(
+            contract="JM2605",
+            start=TAIL_START,
+            end=old_tail_end,
+            source=TAIL_SOURCE,
+        ),
+        _segment(
+            contract="JM2609",
+            start=new_start,
+            end=through,
+            source=new_source,
+        ),
+    )
+    _ = manifest
     return SubingStrategyPerformanceLineage(
         symbol="jm",
         coverage_since=PREFIX_START,
         coverage_through=through,
-        ordered_segments=(
-            _segment(
-                contract="JM2505",
-                start=PREFIX_START,
-                end=PREFIX_END,
-                source=PREFIX_SOURCE,
-            ),
-            _segment(
-                contract="JM2605",
-                start=TAIL_START,
-                end=old_tail_end,
-                source=TAIL_SOURCE,
-            ),
-            _segment(
-                contract="JM2609",
-                start=new_start,
-                end=through,
-                source=new_source,
-            ),
+        ordered_segments=segments,
+        source_manifest_sha256=_source_manifest_sha256(
+            symbol="jm",
+            coverage_since=PREFIX_START,
+            coverage_through=through,
+            segments=segments,
         ),
-        source_manifest_sha256=manifest,
     )
 
 
@@ -447,6 +471,7 @@ def _published_snapshot(
     context_unavailable_count: int = 0,
     segment_count: int = 2,
 ):
+    _ = manifest
     snapshot = subing_strategy_performance_snapshot_from_projection(
         _projection(
             through=through,
@@ -465,7 +490,7 @@ def _published_snapshot(
             context_unavailable_count=0,
         ),
         segment_facts=segment_facts or (_fact(through),),
-        source_manifest_sha256=manifest,
+        source_manifest_sha256=_lineage(through).source_manifest_sha256,
         generated_at=datetime(2026, 8, 27, 8, tzinfo=UTC),
         engine_identity_sha256=engine_identity_sha256,
     )
@@ -664,7 +689,7 @@ def test_merged_incremental_equals_independent_full_replay_fields(
     assert result.context_unavailable_count == independent.context_unavailable_count
     assert result.resolved_cutoff == cutoff
     restored = store.read_current(symbol="jm", expected_through=day2)
-    assert restored.source_manifest_sha256 == MANIFEST_T2
+    assert restored.source_manifest_sha256 == _lineage(day2).source_manifest_sha256
     assert restored.segment_facts[0].source_identity == TAIL_SOURCE
 
 
@@ -1323,3 +1348,215 @@ def test_rollover_compact_folds_closed_tail_unavailable_and_next_append_keeps_it
     assert restored.immutable_prefix_counts.context_unavailable_count == 2
     assert restored.segment_facts[0].context_unavailable_count == 1
     assert restored.projection.context_unavailable_count == 3
+
+
+def _bump_contract_partitions(
+    session,
+    catalog: MarketCatalog,
+    contract: str,
+    *,
+    row_count: int,
+    coverage_end: datetime,
+) -> None:
+    for frequency in _FREQUENCIES:
+        key = DatasetKey(DatasetKind.CONTRACT, "jm", contract, frequency)
+        dataset = catalog.dataset_row(key)
+        assert dataset is not None
+        partition = session.query(MarketPartition).filter_by(dataset_id=dataset.id).one()
+        partition.row_count = row_count
+        partition.coverage_end = coverage_end
+    session.commit()
+
+
+def _catalog_published_snapshot(
+    store,
+    lineage: SubingStrategyPerformanceLineage,
+    *,
+    bars: int = 24,
+):
+    through = lineage.coverage_through
+    tail = lineage.ordered_segments[-1]
+    episode = _episode_at(
+        change="-1",
+        contract=tail.contract,
+        segment_start=tail.effective_start,
+        trading_day=through,
+        hour=10,
+    )
+    snapshot = subing_strategy_performance_snapshot_from_projection(
+        replace(
+            _projection(
+                through=through,
+                episodes=(episode,),
+                bar_count_15m=bars,
+                segment_count=len(lineage.ordered_segments),
+            ),
+            coverage_since=lineage.coverage_since,
+        ),
+        immutable_prefix_segment_count=len(lineage.ordered_segments) - 1,
+        immutable_prefix_counts=SubingStrategyPerformancePrefixCounts(
+            bar_count_1m=1000,
+            bar_count_5m=200,
+            bar_count_15m=12,
+            context_unavailable_count=0,
+        ),
+        segment_facts=(
+            _fact(
+                through,
+                contract=tail.contract,
+                start=tail.effective_start,
+                source=tail.source_identity,
+            ),
+        ),
+        source_manifest_sha256=lineage.source_manifest_sha256,
+        generated_at=datetime(2026, 8, 27, 8, tzinfo=UTC),
+        engine_identity_sha256=ENGINE,
+    )
+    store.publish_current(snapshot)
+    return snapshot
+
+
+def test_mutable_tail_partition_identity_drift_replays_without_full_rebuild(
+    tmp_path: Path,
+) -> None:
+    day_t = date(2025, 1, 8)
+    day_next = date(2025, 1, 9)
+    session = _session()
+    catalog = MarketCatalog(session, tmp_path)
+    canonical = SpyCanonicalStore(tmp_path)
+    _seed_two_segments(session, catalog, last_day=9)
+    resolver = _resolver(session, catalog, canonical, through=day_next)
+    store = _store(tmp_path)
+    published = resolver.resolve("jm", through=day_t)
+    snapshot = _catalog_published_snapshot(store, published)
+    before = (tmp_path / "performance" / "current" / "jm.json").read_bytes()
+    _bump_contract_partitions(
+        session,
+        catalog,
+        "JM2509",
+        row_count=99,
+        coverage_end=datetime(2025, 2, 1, tzinfo=UTC),
+    )
+    assert (
+        resolver.resolve("jm", through=day_t).source_manifest_sha256
+        != snapshot.source_manifest_sha256
+    )
+    current = resolver.resolve("jm", through=day_next)
+    tail_segment = current.ordered_segments[-1]
+    historical = FakeHistorical(
+        _tail(
+            summaries=(
+                _summary(
+                    contract=tail_segment.contract,
+                    start=tail_segment.effective_start,
+                    end=day_next,
+                    loaded_through=day_next,
+                    source=tail_segment.source_identity,
+                    bar_count_1m=520,
+                    bar_count_5m=104,
+                    bar_count_15m=13,
+                ),
+            ),
+            episodes=(
+                _episode_at(
+                    change="3",
+                    contract=tail_segment.contract,
+                    segment_start=tail_segment.effective_start,
+                    trading_day=day_next,
+                    hour=10,
+                ),
+            ),
+            resolved_cutoff=datetime(2025, 1, 9, 7, tzinfo=UTC),
+        )
+    )
+    refresher = _refresher(
+        lineage=resolver,
+        historical=historical,
+        store=store,
+        now=lambda: datetime(2025, 1, 10, 8, tzinfo=UTC),
+    )
+
+    result = refresher.refresh(symbol="jm", through=day_next)
+
+    assert result.coverage_through == day_next
+    assert historical.calls == [
+        (
+            SubingStrategyHistoricalRequest(
+                series_kind=SeriesKind.ACTUAL_DOMINANT,
+                symbol="jm",
+                frequency=BarFrequency.M15,
+                since=tail_segment.effective_start,
+                through=day_next,
+            ),
+            True,
+        )
+    ]
+    assert (tmp_path / "performance" / "current" / "jm.json").read_bytes() != before
+    session.close()
+
+
+def test_prefix_occupancy_drift_requires_full_rebuild_and_preserves_manifest(
+    tmp_path: Path,
+) -> None:
+    day_t = date(2025, 1, 8)
+    day_next = date(2025, 1, 9)
+    session = _session()
+    catalog = MarketCatalog(session, tmp_path)
+    canonical = SpyCanonicalStore(tmp_path)
+    _seed_two_segments(session, catalog, last_day=9)
+    resolver = _resolver(session, catalog, canonical, through=day_next)
+    store = _store(tmp_path)
+    _catalog_published_snapshot(store, resolver.resolve("jm", through=day_t))
+    before = (tmp_path / "performance" / "current" / "jm.json").read_bytes()
+    catalog.upsert_main_contracts((("jm", date(2025, 1, 3), "JM2509"),))
+    session.commit()
+    historical = FakeHistorical(object())
+    refresher = _refresher(
+        lineage=resolver,
+        historical=historical,
+        store=store,
+        now=lambda: datetime(2025, 1, 10, 8, tzinfo=UTC),
+    )
+
+    with pytest.raises(SubingStrategyPerformanceFullRebuildRequired):
+        refresher.refresh(symbol="jm", through=day_next)
+
+    assert historical.calls == []
+    assert (tmp_path / "performance" / "current" / "jm.json").read_bytes() == before
+    session.close()
+
+
+def test_prefix_partition_identity_drift_requires_full_rebuild_and_preserves_manifest(
+    tmp_path: Path,
+) -> None:
+    day_t = date(2025, 1, 8)
+    day_next = date(2025, 1, 9)
+    session = _session()
+    catalog = MarketCatalog(session, tmp_path)
+    canonical = SpyCanonicalStore(tmp_path)
+    _seed_two_segments(session, catalog, last_day=9)
+    resolver = _resolver(session, catalog, canonical, through=day_next)
+    store = _store(tmp_path)
+    _catalog_published_snapshot(store, resolver.resolve("jm", through=day_t))
+    before = (tmp_path / "performance" / "current" / "jm.json").read_bytes()
+    _bump_contract_partitions(
+        session,
+        catalog,
+        "JM2505",
+        row_count=99,
+        coverage_end=datetime(2025, 2, 1, tzinfo=UTC),
+    )
+    historical = FakeHistorical(object())
+    refresher = _refresher(
+        lineage=resolver,
+        historical=historical,
+        store=store,
+        now=lambda: datetime(2025, 1, 10, 8, tzinfo=UTC),
+    )
+
+    with pytest.raises(SubingStrategyPerformanceFullRebuildRequired):
+        refresher.refresh(symbol="jm", through=day_next)
+
+    assert historical.calls == []
+    assert (tmp_path / "performance" / "current" / "jm.json").read_bytes() == before
+    session.close()

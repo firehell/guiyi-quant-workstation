@@ -26,6 +26,7 @@ from .performance_lineage import (
     SubingStrategyPerformanceLineage,
     SubingStrategyPerformanceSemanticIdentity,
     SubingStrategyPerformanceSourceSegment,
+    _source_manifest_sha256,
     decide_subing_strategy_performance_tail,
 )
 from .performance_snapshot import (
@@ -105,8 +106,7 @@ class SubingStrategyPerformanceIncrementalRefresher:
             symbol,
             through=snapshot.coverage_through,
         )
-        if previous_lineage.source_manifest_sha256 != snapshot.source_manifest_sha256:
-            raise SubingStrategyPerformanceFullRebuildRequired()
+        _require_immutable_prefix_matches_snapshot(snapshot, previous_lineage)
         previous_identity = _identity_from_snapshot(snapshot)
         current_identity = _identity_from_current(
             historical=self._historical,
@@ -184,6 +184,40 @@ class SubingStrategyPerformanceIncrementalRefresher:
         )
         self._store.publish_current(merged)
         return merged.projection
+
+
+def _require_immutable_prefix_matches_snapshot(
+    snapshot: SubingStrategyPerformanceSnapshot,
+    lineage: SubingStrategyPerformanceLineage,
+) -> None:
+    prefix_count = snapshot.immutable_prefix_segment_count
+    if prefix_count > len(lineage.ordered_segments):
+        raise SubingStrategyPerformanceFullRebuildRequired()
+    reconstructed = _source_manifest_sha256(
+        symbol=snapshot.symbol,
+        coverage_since=snapshot.coverage_since,
+        coverage_through=snapshot.coverage_through,
+        segments=(
+            *lineage.ordered_segments[:prefix_count],
+            *_source_segments_from_facts(snapshot.segment_facts),
+        ),
+    )
+    if reconstructed != snapshot.source_manifest_sha256:
+        raise SubingStrategyPerformanceFullRebuildRequired()
+
+
+def _source_segments_from_facts(
+    facts: Sequence[SubingStrategyPerformanceSegmentFact],
+) -> tuple[SubingStrategyPerformanceSourceSegment, ...]:
+    return tuple(
+        SubingStrategyPerformanceSourceSegment(
+            contract=fact.contract,
+            effective_start=fact.effective_start,
+            effective_end=fact.effective_end,
+            source_identity=fact.source_identity,
+        )
+        for fact in facts
+    )
 
 
 def _identity_from_snapshot(
