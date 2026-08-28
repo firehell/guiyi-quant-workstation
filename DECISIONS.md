@@ -1,6 +1,6 @@
 # 架构决策记录
 
-更新时间：2026-08-27
+更新时间：2026-08-28
 
 本文件只记录长期决策；当前版本、部署、Scope、evidence 与 Gate 只看 `STATUS.md`，历史过程只从 Git history 追溯。
 
@@ -14,6 +14,7 @@
 | Historical replay | SuBing 15m Strategy Projection 保持 source-specific | 不创建 UniversalStrategyAdapter、统一 Opportunity 模型、正式回测 worker/queue 或订单域 |
 | SuBing Strategy engine | Historical 与 completed-Live 只使用同一个增量状态机；公开身份保持 `actual_dominant + 15m` | 1m/5m 只作内部输入；普通 Action 只认下一实际同合约 15m 区间第一根 1m open；状态不跨 rank1 物理段 |
 | SuBing 全历史效果 | 以完整 Episode 的 reference change 统计为唯一效果口径，并复用 Historical Projection | 产品快照必须绑定策略政策、校准、Lifecycle、Daily Context、源 Bar 与主力段 identity 并原子发布后读回；open Episode 不进入完成统计，不建设账户、资金曲线、复利收益、正式 backtest worker 或结果表 |
+| SuBing 效果快照 | 不可变 schema-v3 快照加每产品一份 current manifest；盘后只按物理段尾决策 | 决策仅 `UNCHANGED` / `REPLAY_FROM_SEGMENT` / `FULL_REBUILD_REQUIRED`；HTTP 只读校验当前快照；identity 或不可变前缀漂移 fail-closed，不自动全量回退 |
 | SuBing Runtime/Scope | active60 计算状态与 `scope_products` 通知授权分离；当前状态从市场事实重建 | restore/catch-up 不补 Event 或通知；Scope 不创建、删除、重置状态；AlertEvent 不是仓位权威 |
 | SuBing Rule replacement | `20260826_0042` forward-only 直接将 `subing_entry_signal_v1` 替换为 `subing_strategy_v1` | 删除旧 SuBing Event，保留 Rule `id/enabled/scope_products`；无 archive、双 Rule、兼容 reader、replay 或 downgrade；production 执行另需 Gate |
 | HTDY | operational universe × 七周期 observation | Scope 只认 symbol × frequency；D1/W1 只走 `canonical_updated` seam |

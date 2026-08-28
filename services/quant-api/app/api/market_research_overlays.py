@@ -19,7 +19,7 @@ from app.market_data.subing_lifecycle_policy import SubingLifecyclePolicyError
 from app.market_data.composition import (
     build_subing_strategy_current_service,
     build_subing_strategy_historical_service,
-    build_subing_strategy_performance_service,
+    build_subing_strategy_performance_snapshot_query,
 )
 from app.market_data.subing_strategy.contracts import (
     SUBING_STRATEGY_ID,
@@ -48,6 +48,9 @@ from app.market_data.subing_strategy.performance import (
     SubingStrategyPerformanceError,
     SubingStrategyPerformanceProjection,
     SubingStrategyPerformanceStats,
+)
+from app.market_data.subing_strategy.performance_snapshot import (
+    SubingStrategyPerformanceSnapshotError,
 )
 from app.schemas.research_overlays import (
     SubingStrategyActionOut,
@@ -294,10 +297,13 @@ def subing_strategy_performance(
     session: Session = Depends(get_db),
 ) -> SubingStrategyPerformanceResponse:
     try:
-        result = build_subing_strategy_performance_service(session).performance(symbol)
+        result = build_subing_strategy_performance_snapshot_query(session).current(
+            symbol
+        )
     except (
         ActiveUniverseError,
         SubingStrategyPerformanceError,
+        SubingStrategyPerformanceSnapshotError,
         SubingStrategyActiveProductError,
         SubingStrategySourceUnavailableError,
         SubingStrategySegmentIdentityError,

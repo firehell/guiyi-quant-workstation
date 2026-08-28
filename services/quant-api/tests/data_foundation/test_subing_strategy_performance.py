@@ -308,3 +308,169 @@ def test_batch_plan_freezes_every_product_window_before_performance_runs() -> No
     )
     assert plan.created_at == datetime(2026, 8, 27, 6, 59, tzinfo=UTC)
     assert len(plan.batch_identity_sha256) == 64
+
+
+def _incremental_batch(*, refresher, products, store=None):
+    from app.market_data.subing_strategy.performance_incremental import (
+        SubingStrategyPerformanceIncrementalBatchRefresher,
+    )
+
+    return SubingStrategyPerformanceIncrementalBatchRefresher(
+        refresher=refresher,
+        products=products,
+        store=store,
+        now=lambda: datetime(2026, 8, 10, 10, 6, tzinfo=UTC),
+    )
+
+
+def test_incremental_batch_refresh_is_serial_and_covers_exact_products() -> None:
+    calls: list[tuple[str, date]] = []
+    products = ("ag", "jm", "rb")
+    through = date(2026, 8, 10)
+
+    class Refresher:
+        def refresh(self, *, symbol: str, through: date):
+            calls.append((symbol, through))
+            return type("Result", (), {"cache_state": "refreshed"})()
+
+    result = _incremental_batch(refresher=Refresher(), products=products).refresh(
+        through,
+        products,
+    )
+
+    assert calls == [(symbol, through) for symbol in products]
+    assert result.status == "passed"
+    assert result.completed_products == products
+    assert result.failed_products == ()
+    assert result.cache_hit_count == 0
+    assert result.cache_published_count == 3
+    assert result.authoritative_writes is False
+    assert result.batch_identity_sha256 is not None
+    assert len(result.batch_identity_sha256) == 64
+    assert result.batch_created_at == datetime(2026, 8, 10, 10, 6, tzinfo=UTC)
+
+
+def test_incremental_batch_counts_hits_and_publications() -> None:
+    class Refresher:
+        def refresh(self, *, symbol: str, through: date):
+            del through
+            return type(
+                "Result",
+                (),
+                {"cache_state": "hit" if symbol == "ag" else "refreshed"},
+            )()
+
+    result = _incremental_batch(
+        refresher=Refresher(),
+        products=("ag", "jm"),
+    ).refresh(date(2026, 8, 10), ("ag", "jm"))
+
+    assert result.status == "passed"
+    assert result.completed_products == ("ag", "jm")
+    assert result.cache_hit_count == 1
+    assert result.cache_published_count == 1
+
+
+def test_incremental_batch_one_product_failure_degrades_and_continues() -> None:
+    calls: list[str] = []
+
+    class Refresher:
+        def refresh(self, *, symbol: str, through: date):
+            del through
+            calls.append(symbol)
+            if symbol == "jm":
+                raise RuntimeError("private")
+            return type("Result", (), {"cache_state": "hit"})()
+
+    result = _incremental_batch(
+        refresher=Refresher(),
+        products=("ag", "jm", "rb"),
+    ).refresh(date(2026, 8, 10), ("ag", "jm", "rb"))
+
+    assert calls == ["ag", "jm", "rb"]
+    assert result.status == "degraded"
+    assert result.completed_products == ("ag", "rb")
+    assert result.failed_products == (
+        ("jm", "SUBING_STRATEGY_PERFORMANCE_UNAVAILABLE"),
+    )
+    assert result.cache_hit_count == 2
+    assert result.cache_published_count == 0
+
+
+def test_incremental_batch_full_rebuild_required_is_public_code() -> None:
+    from app.market_data.subing_strategy.performance_adoption import (
+        SubingStrategyPerformanceFullRebuildRequired,
+    )
+
+    class Refresher:
+        def refresh(self, *, symbol: str, through: date):
+            del through
+            if symbol == "jm":
+                raise SubingStrategyPerformanceFullRebuildRequired()
+            return type("Result", (), {"cache_state": "hit"})()
+
+    result = _incremental_batch(
+        refresher=Refresher(),
+        products=("ag", "jm"),
+    ).refresh(date(2026, 8, 10), ("ag", "jm"))
+
+    assert result.status == "degraded"
+    assert result.completed_products == ("ag",)
+    assert result.failed_products == (
+        ("jm", "SUBING_STRATEGY_PERFORMANCE_FULL_REBUILD_REQUIRED"),
+    )
+
+
+def test_incremental_batch_exact_product_mismatch_does_not_refresh() -> None:
+    calls: list[str] = []
+
+    class Refresher:
+        def refresh(self, *, symbol: str, through: date):
+            calls.append(symbol)
+            raise AssertionError("mismatch must not refresh")
+
+    result = _incremental_batch(
+        refresher=Refresher(),
+        products=("ag", "jm"),
+    ).refresh(date(2026, 8, 10), ("ag",))
+
+    assert calls == []
+    assert result.status == "degraded"
+    assert result.completed_products == ()
+    assert result.failed_products == (
+        ("ag", "SUBING_STRATEGY_ACTIVE_OPERATIONAL_SCOPE_MISMATCH"),
+    )
+    assert result.cache_hit_count == 0
+    assert result.cache_published_count == 0
+    assert result.batch_identity_sha256 is not None
+    assert len(result.batch_identity_sha256) == 64
+
+
+def test_incremental_batch_identity_binds_products_through_and_snapshots() -> None:
+    identities = {"ag": "a" * 64, "jm": "b" * 64}
+
+    class Store:
+        def read_current_for_refresh(self, *, symbol: str, expected_through: date):
+            del expected_through
+            return type("Snapshot", (), {"identity_sha256": identities[symbol]})()
+
+    class Hits:
+        def refresh(self, *, symbol: str, through: date):
+            del symbol, through
+            return type("Result", (), {"cache_state": "hit"})()
+
+    products = ("ag", "jm")
+    through = date(2026, 8, 10)
+    batch = _incremental_batch(refresher=Hits(), products=products, store=Store())
+    first = batch.refresh(through, products)
+    second = batch.refresh(through, products)
+
+    assert first.batch_identity_sha256 == second.batch_identity_sha256
+    assert first.batch_identity_sha256 != batch.refresh(
+        date(2026, 8, 11),
+        products,
+    ).batch_identity_sha256
+
+    identities["ag"] = "c" * 64
+    changed = batch.refresh(through, products)
+    assert changed.batch_identity_sha256 != first.batch_identity_sha256
