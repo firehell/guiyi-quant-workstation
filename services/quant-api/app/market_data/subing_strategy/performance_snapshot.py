@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from hashlib import sha256
@@ -193,6 +193,11 @@ class SubingStrategyPerformanceSnapshot:
             or self.projection.coverage_since != self.coverage_since
             or self.projection.coverage_through != self.coverage_through
             or self.projection.resolved_cutoff != self.resolved_cutoff
+            or (
+                self.segment_facts
+                and max(fact.loaded_through for fact in self.segment_facts)
+                != self.coverage_through
+            )
         ):
             raise SubingStrategyPerformanceSnapshotError()
 
@@ -217,11 +222,6 @@ def subing_strategy_performance_snapshot_from_projection(
         or immutable_prefix_segment_count < 0
         or not _is_sha256(source_manifest_sha256)
         or not _is_utc_aware(generated_at)
-        or (
-            segment_facts
-            and max(fact.loaded_through for fact in segment_facts)
-            != projection.coverage_through
-        )
     ):
         raise SubingStrategyPerformanceSnapshotError()
     identity_payload = _identity_payload(
@@ -265,7 +265,7 @@ def subing_strategy_performance_snapshot_from_projection(
 def subing_strategy_performance_projection_from_snapshot(
     snapshot: SubingStrategyPerformanceSnapshot,
 ) -> SubingStrategyPerformanceProjection:
-    return snapshot.projection
+    return replace(snapshot.projection, cache_state="hit")
 
 
 def encode_subing_strategy_performance_snapshot(
@@ -578,7 +578,7 @@ def _parse_projection_payload(
         segment_count=int(payload["segment_count"]),
         bar_count_15m=int(payload["bar_count_15m"]),
         context_unavailable_count=int(payload["context_unavailable_count"]),
-        cache_state="unavailable",
+        cache_state="hit",
         summary=summary,
         episodes=episodes,
     )

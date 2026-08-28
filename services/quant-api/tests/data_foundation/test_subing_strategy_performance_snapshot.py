@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from hashlib import sha256
 import json
 
 import pytest
@@ -27,6 +28,10 @@ from app.market_data.subing_strategy.performance_snapshot import (
     SubingStrategyPerformanceSegmentFact,
     SubingStrategyPerformanceSnapshot,
     SubingStrategyPerformanceSnapshotError,
+    _canonical_bytes,
+    _identity_payload,
+    _payload_payload,
+    _snapshot_sha256,
     encode_subing_strategy_performance_snapshot,
     parse_subing_strategy_performance_snapshot,
     subing_strategy_performance_projection_from_snapshot,
@@ -309,3 +314,80 @@ def test_prefix_counts_reject_negative_values() -> None:
             bar_count_15m=0,
             context_unavailable_count=0,
         )
+
+
+def _stale_tail_artifact_bytes() -> bytes:
+    snapshot = _snapshot()
+    envelope = json.loads(encode_subing_strategy_performance_snapshot(snapshot))
+    envelope["payload"]["segment_facts"][0]["loaded_through"] = "2026-08-25"
+    identity = envelope["identity"]
+    identity_payload = _identity_payload(
+        symbol=str(identity["symbol"]),
+        coverage_since=date.fromisoformat(str(identity["coverage_since"])),
+        coverage_through=date.fromisoformat(str(identity["coverage_through"])),
+        resolved_cutoff=datetime.fromisoformat(str(identity["resolved_cutoff"])),
+        source_manifest_sha256=str(identity["source_manifest_sha256"]),
+    )
+    identity_sha256 = sha256(_canonical_bytes(identity_payload)).hexdigest()
+    projection = _projection()
+    stale_fact = replace(_segment_fact(), loaded_through=date(2026, 8, 25))
+    payload_payload = _payload_payload(
+        projection=projection,
+        immutable_prefix_segment_count=snapshot.immutable_prefix_segment_count,
+        immutable_prefix_counts=snapshot.immutable_prefix_counts,
+        segment_facts=(stale_fact,),
+    )
+    payload_sha256 = sha256(_canonical_bytes(payload_payload)).hexdigest()
+    generated_at_text = str(envelope["generated_at"])
+    snapshot_sha256 = _snapshot_sha256(
+        identity_sha256=identity_sha256,
+        generated_at=generated_at_text,
+        payload_sha256=payload_sha256,
+    )
+    envelope["identity"] = identity_payload
+    envelope["identity_sha256"] = identity_sha256
+    envelope["payload"] = payload_payload
+    envelope["payload_sha256"] = payload_sha256
+    envelope["snapshot_sha256"] = snapshot_sha256
+    return _canonical_bytes(envelope)
+
+
+def test_snapshot_post_init_rejects_stale_tail_loaded_through() -> None:
+    projection = _projection()
+    with pytest.raises(SubingStrategyPerformanceSnapshotError) as exc_info:
+        SubingStrategyPerformanceSnapshot(
+            symbol=projection.symbol,
+            coverage_since=projection.coverage_since,
+            coverage_through=projection.coverage_through,
+            resolved_cutoff=projection.resolved_cutoff,
+            projection=projection,
+            immutable_prefix_segment_count=1,
+            immutable_prefix_counts=_prefix_counts(),
+            segment_facts=(replace(_segment_fact(), loaded_through=date(2026, 8, 25)),),
+            source_manifest_sha256="b" * 64,
+            identity_sha256="a" * 64,
+            payload_sha256="c" * 64,
+            snapshot_sha256="d" * 64,
+            generated_at=datetime(2026, 8, 27, 8, tzinfo=UTC),
+        )
+
+    assert str(exc_info.value) == "SUBING_STRATEGY_CACHE_UNAVAILABLE"
+
+
+def test_parse_rejects_hash_consistent_stale_tail_loaded_through() -> None:
+    with pytest.raises(SubingStrategyPerformanceSnapshotError) as exc_info:
+        parse_subing_strategy_performance_snapshot(_stale_tail_artifact_bytes())
+
+    assert str(exc_info.value) == "SUBING_STRATEGY_CACHE_UNAVAILABLE"
+
+
+def test_round_trip_projection_reports_cache_hit() -> None:
+    snapshot = _snapshot()
+    encoded = encode_subing_strategy_performance_snapshot(snapshot)
+    restored = parse_subing_strategy_performance_snapshot(encoded)
+    projection = subing_strategy_performance_projection_from_snapshot(restored)
+
+    assert projection.cache_state == "hit"
+    assert projection.cache_identity_sha256 is None
+    assert projection.cache_generated_at is None
+    assert "cache_state" not in encoded.decode("utf-8")
