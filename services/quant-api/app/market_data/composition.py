@@ -345,6 +345,28 @@ def build_subing_strategy_performance_service(
     )
 
 
+def build_subing_strategy_performance_lineage_resolver(
+    session: Session,
+):
+    """Compose Catalog coverage + rank1 mapping lineage without Historical replay."""
+    from app.market_data.coverage_source import DatabaseCoverageSource
+    from app.market_data.subing_strategy.performance_lineage import (
+        CatalogSubingStrategyPerformanceLineageResolver,
+    )
+
+    frozen_now = datetime.now(UTC)
+    coverage = DatabaseCoverageSource(
+        session,
+        _PRODUCT_STARTS,
+        history_floor_path=_HISTORY_FLOOR,
+        now=lambda: frozen_now,
+    )
+    return CatalogSubingStrategyPerformanceLineageResolver(
+        market_data=build_market_data_service(session),
+        coverage=coverage,
+    )
+
+
 def build_subing_strategy_current_service(
     session: Session,
 ) -> SubingStrategyCurrentProjectionService:

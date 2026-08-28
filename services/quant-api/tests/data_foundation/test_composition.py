@@ -308,3 +308,107 @@ def test_subing_strategy_performance_uses_effective_history_floor_for_context(
         for context in contexts.values()
     )
     assert projector_calls == []
+
+
+def test_lineage_resolver_builder_uses_catalog_adapter_without_historical(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from datetime import UTC, datetime
+
+    from app.market_data.catalog import CatalogPartition
+    from app.market_data.composition import (
+        build_subing_strategy_performance_lineage_resolver,
+    )
+    from app.market_data.domain import DatasetKey, ResolvedContractSegment
+    from app.market_data.subing_strategy.performance_lineage import (
+        CatalogSubingStrategyPerformanceLineageResolver,
+    )
+
+    root = tmp_path / "canonical"
+    root.mkdir()
+    historical_calls: list[object] = []
+    query_calls: list[object] = []
+
+    class Coverage:
+        def __init__(self, session, starts, *, history_floor_path, now=None) -> None:
+            del session, starts, history_floor_path, now
+
+        def product_start(self, symbol: str) -> date:
+            assert symbol == "jm"
+            return date(2025, 1, 2)
+
+        def latest_complete_day(self, products: tuple[str, ...]) -> date:
+            assert products == ("jm",)
+            return date(2025, 1, 8)
+
+    class MarketData:
+        def __init__(self) -> None:
+            self.catalog = SimpleNamespace(
+                canonical_root=root.resolve(),
+                main_map_before=lambda symbol, before: (
+                    SimpleNamespace(trade_date=date(2025, 1, 8)),
+                ),
+                partitions=self._partitions,
+            )
+            self.store = SimpleNamespace(
+                read_month=lambda *args, **kwargs: (_ for _ in ()).throw(
+                    AssertionError("Canonical Bar read")
+                )
+            )
+
+        def actual_dominant_segments(self, symbol, since, through):
+            assert symbol == "jm"
+            assert since == date(2025, 1, 2)
+            assert through == date(2025, 1, 8)
+            return (
+                ResolvedContractSegment("JM2505", date(2025, 1, 2), date(2025, 1, 8)),
+            )
+
+        def query(self, request):
+            query_calls.append(request)
+            raise AssertionError("Canonical query invoked")
+
+        def query_actual_dominant_trading_days(self, request):
+            query_calls.append(request)
+            raise AssertionError("Canonical actual-dominant read invoked")
+
+        def _partitions(self, key: DatasetKey, start, end):
+            relative = key.relative_root / "year=2025/month=01/part.parquet"
+            path = (root.resolve() / relative).resolve()
+            return (
+                CatalogPartition(
+                    dataset=key,
+                    year=2025,
+                    month=1,
+                    coverage_start=datetime(2025, 1, 1, tzinfo=UTC),
+                    coverage_end=datetime(2025, 1, 31, tzinfo=UTC),
+                    file_path=path,
+                    row_count=4,
+                ),
+            )
+
+    monkeypatch.setattr(
+        "app.market_data.composition.build_subing_strategy_historical_service",
+        lambda *args, **kwargs: historical_calls.append((args, kwargs)) or None,
+    )
+    monkeypatch.setattr(
+        "app.market_data.composition.build_market_data_service",
+        lambda _session: MarketData(),
+    )
+    monkeypatch.setattr(
+        "app.market_data.coverage_source.DatabaseCoverageSource",
+        Coverage,
+    )
+
+    session = _session()
+    resolver = build_subing_strategy_performance_lineage_resolver(session)
+    lineage = resolver.resolve("jm")
+
+    assert historical_calls == []
+    assert query_calls == []
+    assert isinstance(resolver, CatalogSubingStrategyPerformanceLineageResolver)
+    assert lineage.symbol == "jm"
+    assert lineage.coverage_through == date(2025, 1, 8)
+    assert lineage.ordered_segments[0].contract == "JM2505"
+    session.close()

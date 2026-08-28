@@ -823,6 +823,36 @@ class MarketDataService:
             end_trading_day=segment_days[-1],
         )
 
+    def actual_dominant_segments(
+        self,
+        symbol: str,
+        since: date,
+        through: date,
+    ) -> tuple[ResolvedContractSegment, ...]:
+        """Return ordered rank-1 segments for a trading-day window without reading bars."""
+        try:
+            assert_not_retired(symbol)
+        except ProductRetiredError as exc:
+            raise MarketDataError("PRODUCT_RETIRED") from exc
+        if (
+            type(since) is not date
+            or type(through) is not date
+            or since > through
+        ):
+            raise MarketDataError("TRADING_CALENDAR_MISSING")
+        try:
+            trading_days = self.catalog.trading_days(symbol, since, through)
+        except CatalogError as exc:
+            raise MarketDataError(exc.code) from exc
+        if not trading_days:
+            raise MarketDataError("TRADING_CALENDAR_MISSING")
+        mappings = self.catalog.main_map(symbol, trading_days[0], trading_days[-1])
+        mapping_by_day = {row.trade_date: row for row in mappings}
+        if any(day not in mapping_by_day for day in trading_days):
+            raise MarketDataError("MAIN_CONTRACT_MAP_MISSING")
+        selected = tuple(mapping_by_day[day] for day in trading_days)
+        return _segments(selected)
+
     def contract_bars_for_trading_day(
         self,
         *,
