@@ -16,23 +16,26 @@ from typing import Protocol
 from .performance_snapshot import (
     SubingStrategyPerformanceSnapshot,
     SubingStrategyPerformanceSnapshotError,
+    SubingStrategyPerformanceSnapshotMissingError,
     encode_subing_strategy_performance_snapshot,
     parse_subing_strategy_performance_snapshot,
 )
 
 
 _MANIFEST_SCHEMA_VERSION = 1
-_MANIFEST_FIELDS = frozenset({
-    "generated_at",
-    "identity_sha256",
-    "manifest_sha256",
-    "payload_sha256",
-    "schema_version",
-    "snapshot_path",
-    "snapshot_sha256",
-    "symbol",
-    "through",
-})
+_MANIFEST_FIELDS = frozenset(
+    {
+        "generated_at",
+        "identity_sha256",
+        "manifest_sha256",
+        "payload_sha256",
+        "schema_version",
+        "snapshot_path",
+        "snapshot_sha256",
+        "symbol",
+        "through",
+    }
+)
 _MANIFEST_HASH_FIELDS = _MANIFEST_FIELDS - {"manifest_sha256"}
 
 
@@ -54,7 +57,13 @@ class SubingStrategyPerformanceSnapshotStore(Protocol):
         *,
         symbol: str,
         expected_through: date,
-        allow_older: bool = False,
+    ) -> SubingStrategyPerformanceSnapshot: ...
+
+    def read_current_for_refresh(
+        self,
+        *,
+        symbol: str,
+        expected_through: date,
     ) -> SubingStrategyPerformanceSnapshot: ...
 
     def publish_current(
@@ -79,30 +88,48 @@ class SubingStrategyPerformanceFileSnapshotStore:
         *,
         symbol: str,
         expected_through: date,
-        allow_older: bool = False,
+    ) -> SubingStrategyPerformanceSnapshot:
+        return self._read_current(
+            symbol=symbol,
+            expected_through=expected_through,
+            match_through=True,
+        )
+
+    def read_current_for_refresh(
+        self,
+        *,
+        symbol: str,
+        expected_through: date,
+    ) -> SubingStrategyPerformanceSnapshot:
+        return self._read_current(
+            symbol=symbol,
+            expected_through=expected_through,
+            match_through=False,
+        )
+
+    def _read_current(
+        self,
+        *,
+        symbol: str,
+        expected_through: date,
+        match_through: bool,
     ) -> SubingStrategyPerformanceSnapshot:
         try:
-            if (
-                not _is_valid_symbol(symbol)
-                or type(expected_through) is not date
-                or type(allow_older) is not bool
-            ):
+            if not _is_valid_symbol(symbol) or type(expected_through) is not date:
                 raise SubingStrategyPerformanceSnapshotError()
             manifest_path = self._contained_path(f"current/{symbol}.json")
             self._preflight(manifest_path)
             if not manifest_path.exists():
-                raise SubingStrategyPerformanceSnapshotError()
+                raise SubingStrategyPerformanceSnapshotMissingError()
             self._assert_path_secure(manifest_path)
             manifest = _parse_manifest(self._read_bytes(manifest_path))
             self._preflight(manifest_path)
             manifest_through = manifest["through"]
             if manifest["symbol"] != symbol:
                 raise SubingStrategyPerformanceSnapshotError()
-            if allow_older:
-                if manifest_through > expected_through:
+            if match_through:
+                if manifest_through != expected_through:
                     raise SubingStrategyPerformanceSnapshotError()
-            elif manifest_through != expected_through:
-                raise SubingStrategyPerformanceSnapshotError()
             snapshot_path_text = manifest["snapshot_path"]
             expected_relative = _snapshot_relative_path(
                 symbol=symbol,
@@ -133,7 +160,13 @@ class SubingStrategyPerformanceFileSnapshotStore:
             return snapshot
         except SubingStrategyPerformanceSnapshotError:
             raise
-        except (OSError, TypeError, ValueError, json.JSONDecodeError, UnicodeDecodeError):
+        except (
+            OSError,
+            TypeError,
+            ValueError,
+            json.JSONDecodeError,
+            UnicodeDecodeError,
+        ):
             raise SubingStrategyPerformanceSnapshotError() from None
 
     def publish_current(
@@ -411,12 +444,7 @@ def _parse_manifest(content: bytes) -> dict[str, object]:
 
 
 def _is_safe_relative_path(value: str) -> bool:
-    if (
-        not value
-        or value.startswith("/")
-        or ".." in value
-        or "\\" in value
-    ):
+    if not value or value.startswith("/") or ".." in value or "\\" in value:
         return False
     path = Path(value)
     return (
@@ -428,16 +456,15 @@ def _is_safe_relative_path(value: str) -> bool:
 
 def _is_valid_symbol(value: str) -> bool:
     return bool(
-        value
-        and value.isascii()
-        and value.isalpha()
-        and value == value.lower()
+        value and value.isascii() and value.isalpha() and value == value.lower()
     )
 
 
 def _is_sha256(value: object) -> bool:
-    return isinstance(value, str) and len(value) == 64 and all(
-        character in "0123456789abcdef" for character in value
+    return (
+        isinstance(value, str)
+        and len(value) == 64
+        and all(character in "0123456789abcdef" for character in value)
     )
 
 

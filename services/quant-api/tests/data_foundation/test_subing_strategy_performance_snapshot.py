@@ -152,6 +152,7 @@ def _snapshot(
         segment_facts=(_segment_fact(),),
         source_manifest_sha256="b" * 64,
         generated_at=generated_at or datetime(2026, 8, 27, 8, tzinfo=UTC),
+        engine_identity_sha256="e" * 64,
     )
 
 
@@ -201,6 +202,7 @@ def test_encode_hash_is_independent_of_dict_insertion_order() -> None:
         segment_facts=(_segment_fact(),),
         source_manifest_sha256="b" * 64,
         generated_at=datetime(2026, 8, 27, 8, tzinfo=UTC),
+        engine_identity_sha256="e" * 64,
     )
 
     assert encode_subing_strategy_performance_snapshot(first) == (
@@ -239,7 +241,11 @@ def test_encoded_artifact_excludes_sensitive_or_internal_fields() -> None:
         (lambda envelope: envelope["identity"].update({"unknown": "x"}),),
         (lambda envelope: envelope["payload"].update({"unknown": "x"}),),
         (lambda envelope: envelope.update({"unknown": "x"}),),
-        (lambda envelope: envelope["payload"]["segment_facts"][0].update({"unknown": "x"}),),
+        (
+            lambda envelope: envelope["payload"]["segment_facts"][0].update(
+                {"unknown": "x"}
+            ),
+        ),
         (lambda envelope: envelope.update({"identity_sha256": "0" * 64}),),
         (lambda envelope: envelope.update({"payload_sha256": "0" * 64}),),
         (lambda envelope: envelope.update({"snapshot_sha256": "0" * 64}),),
@@ -290,6 +296,7 @@ def test_snapshot_constructor_rejects_invalid_symbol_or_dates() -> None:
             segment_facts=(_segment_fact(),),
             source_manifest_sha256="b" * 64,
             generated_at=datetime(2026, 8, 27, 8, tzinfo=UTC),
+            engine_identity_sha256="e" * 64,
         )
 
     with pytest.raises(SubingStrategyPerformanceSnapshotError):
@@ -300,6 +307,7 @@ def test_snapshot_constructor_rejects_invalid_symbol_or_dates() -> None:
             segment_facts=(_segment_fact(),),
             source_manifest_sha256="b" * 64,
             generated_at=datetime(2026, 8, 27, 8, tzinfo=UTC),
+            engine_identity_sha256="e" * 64,
         )
 
     with pytest.raises(SubingStrategyPerformanceSnapshotError):
@@ -310,6 +318,7 @@ def test_snapshot_constructor_rejects_invalid_symbol_or_dates() -> None:
             segment_facts=(_segment_fact(),),
             source_manifest_sha256="b" * 64,
             generated_at=datetime(2026, 8, 27, 8, tzinfo=UTC).replace(tzinfo=None),
+            engine_identity_sha256="e" * 64,
         )
 
 
@@ -334,6 +343,7 @@ def _stale_tail_artifact_bytes() -> bytes:
         coverage_through=date.fromisoformat(str(identity["coverage_through"])),
         resolved_cutoff=datetime.fromisoformat(str(identity["resolved_cutoff"])),
         source_manifest_sha256=str(identity["source_manifest_sha256"]),
+        engine_identity_sha256=str(identity["engine_identity_sha256"]),
     )
     identity_sha256 = sha256(_canonical_bytes(identity_payload)).hexdigest()
     projection = _projection()
@@ -372,6 +382,7 @@ def test_snapshot_post_init_rejects_stale_tail_loaded_through() -> None:
             immutable_prefix_counts=_prefix_counts(),
             segment_facts=(replace(_segment_fact(), loaded_through=date(2026, 8, 25)),),
             source_manifest_sha256="b" * 64,
+            engine_identity_sha256="e" * 64,
             identity_sha256="a" * 64,
             payload_sha256="c" * 64,
             snapshot_sha256="d" * 64,
@@ -420,6 +431,7 @@ def _stale_ordered_tail_artifact_bytes() -> bytes:
         coverage_through=date.fromisoformat(str(identity["coverage_through"])),
         resolved_cutoff=datetime.fromisoformat(str(identity["resolved_cutoff"])),
         source_manifest_sha256=str(identity["source_manifest_sha256"]),
+        engine_identity_sha256=str(identity["engine_identity_sha256"]),
     )
     identity_sha256 = sha256(_canonical_bytes(identity_payload)).hexdigest()
     projection = _projection()
@@ -459,6 +471,7 @@ def test_snapshot_post_init_rejects_stale_last_segment_when_earlier_segment_is_c
             immutable_prefix_counts=_prefix_counts(),
             segment_facts=_ordered_segment_facts_with_stale_tail(),
             source_manifest_sha256="b" * 64,
+            engine_identity_sha256="e" * 64,
             identity_sha256="a" * 64,
             payload_sha256="c" * 64,
             snapshot_sha256="d" * 64,
@@ -570,7 +583,9 @@ def test_publish_writes_immutable_snapshot_before_current_manifest(
     replaced: list[str] = []
     real_replace = os.replace
 
-    def track_replace(source: str | os.PathLike[str], target: str | os.PathLike[str]) -> None:
+    def track_replace(
+        source: str | os.PathLike[str], target: str | os.PathLike[str]
+    ) -> None:
         replaced.append(Path(target).relative_to(tmp_path).as_posix())
         real_replace(source, target)
 
@@ -689,6 +704,25 @@ def test_read_current_rejects_stale_or_future_expected_through(
     with pytest.raises(SubingStrategyPerformanceSnapshotError) as exc_info:
         store.read_current(symbol="jm", expected_through=expected_through)
 
+    _assert_public_error(exc_info.value)
+
+
+def test_read_current_for_refresh_allows_older_through_and_http_read_stays_strict(
+    tmp_path: Path,
+) -> None:
+    store = _file_store(tmp_path)
+    snapshot = _snapshot()
+    store.publish_current(snapshot)
+
+    restored = store.read_current_for_refresh(
+        symbol="jm",
+        expected_through=date(2026, 8, 27),
+    )
+    assert restored.coverage_through == date(2026, 8, 26)
+    assert restored.snapshot_sha256 == snapshot.snapshot_sha256
+
+    with pytest.raises(SubingStrategyPerformanceSnapshotError) as exc_info:
+        store.read_current(symbol="jm", expected_through=date(2026, 8, 27))
     _assert_public_error(exc_info.value)
 
 
@@ -897,16 +931,19 @@ def test_failed_snapshot_mutation_preserves_prior_manifest_and_cleans_tempfiles(
     real_parse = parse_subing_strategy_performance_snapshot
 
     if fail_at == "write":
+
         def fail_mkstemp(*_args: object, **_kwargs: object) -> tuple[int, str]:
             raise OSError("targeted test failure")
 
         monkeypatch.setattr(f"{_STORE_MODULE}.tempfile.mkstemp", fail_mkstemp)
     elif fail_at == "fsync":
+
         def fail_fsync(_fd: int) -> None:
             raise OSError("targeted test failure")
 
         monkeypatch.setattr(f"{_STORE_MODULE}.os.fsync", fail_fsync)
     elif fail_at == "replace":
+
         def fail_snapshot_replace(
             source: str | os.PathLike[str],
             target: str | os.PathLike[str],
@@ -917,7 +954,10 @@ def test_failed_snapshot_mutation_preserves_prior_manifest_and_cleans_tempfiles(
 
         monkeypatch.setattr(f"{_STORE_MODULE}.os.replace", fail_snapshot_replace)
     elif fail_at == "readback":
-        def fail_parse(content: bytes | str | object) -> SubingStrategyPerformanceSnapshot:
+
+        def fail_parse(
+            content: bytes | str | object,
+        ) -> SubingStrategyPerformanceSnapshot:
             raise SubingStrategyPerformanceSnapshotError()
 
         monkeypatch.setattr(
@@ -925,6 +965,7 @@ def test_failed_snapshot_mutation_preserves_prior_manifest_and_cleans_tempfiles(
             fail_parse,
         )
     else:
+
         def mismatch_parse(
             content: bytes | str | object,
         ) -> SubingStrategyPerformanceSnapshot:
@@ -1163,12 +1204,21 @@ class _RecordingStore:
         *,
         symbol: str,
         expected_through: date,
-        allow_older: bool = False,
     ):
         return self.inner.read_current(
             symbol=symbol,
             expected_through=expected_through,
-            allow_older=allow_older,
+        )
+
+    def read_current_for_refresh(
+        self,
+        *,
+        symbol: str,
+        expected_through: date,
+    ):
+        return self.inner.read_current_for_refresh(
+            symbol=symbol,
+            expected_through=expected_through,
         )
 
 
@@ -1213,17 +1263,24 @@ def _adopter(
     )
     store = _RecordingStore(inner_store)
     published_identity = identity or _legacy_identity()
-    cache.publish(published_identity, payload if payload is not None else _legacy_payload())
+    cache.publish(
+        published_identity, payload if payload is not None else _legacy_payload()
+    )
     hist = historical or _Historical(_tail_projection())
-    return SubingStrategyPerformanceAdopter(
-        cache=cache,
-        store=store,
-        lineage=lineage or _LineageResolver(_legacy_lineage()),
-        historical=hist,
-        now=lambda: datetime(2026, 8, 27, 9, tzinfo=UTC),
-        engine_identity_sha256=engine_identity_sha256
-        or published_identity.engine_identity_sha256,
-    ), cache, store, hist
+    return (
+        SubingStrategyPerformanceAdopter(
+            cache=cache,
+            store=store,
+            lineage=lineage or _LineageResolver(_legacy_lineage()),
+            historical=hist,
+            now=lambda: datetime(2026, 8, 27, 9, tzinfo=UTC),
+            engine_identity_sha256=engine_identity_sha256
+            or published_identity.engine_identity_sha256,
+        ),
+        cache,
+        store,
+        hist,
+    )
 
 
 def _assert_rebuild(exc: BaseException) -> None:
@@ -1259,7 +1316,9 @@ def test_adoption_publishes_schema_v3_and_leaves_legacy_bytes_unchanged(
     assert prefix.context_unavailable_count == 0
     assert prefix.bar_count_1m + tail.bar_count_1m == 1500
     assert prefix.bar_count_5m + tail.bar_count_5m == 300
-    assert prefix.bar_count_15m + tail.bar_count_15m == snapshot.projection.bar_count_15m
+    assert (
+        prefix.bar_count_15m + tail.bar_count_15m == snapshot.projection.bar_count_15m
+    )
     assert (
         prefix.context_unavailable_count + tail.context_unavailable_count
         == snapshot.projection.context_unavailable_count

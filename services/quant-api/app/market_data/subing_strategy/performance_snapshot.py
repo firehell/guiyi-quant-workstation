@@ -25,72 +25,87 @@ _FIXED_FORMULA_VERSION = "subing_strategy_15m_v1"
 _FIXED_SERIES_KIND = SeriesKind.ACTUAL_DOMINANT
 _FIXED_FREQUENCY = BarFrequency.M15
 
-_IDENTITY_FIELDS = frozenset({
-    "strategy_id",
-    "formula_version",
-    "symbol",
-    "series_kind",
-    "frequency",
-    "coverage_since",
-    "coverage_through",
-    "resolved_cutoff",
-    "source_manifest_sha256",
-})
-_PAYLOAD_FIELDS = frozenset({
-    "segment_count",
-    "bar_count_15m",
-    "context_unavailable_count",
-    "immutable_prefix_segment_count",
-    "immutable_prefix_counts",
-    "segment_facts",
-    "summary",
-    "episodes",
-})
-_ENVELOPE_FIELDS = frozenset({
-    "schema_version",
-    "identity",
-    "identity_sha256",
-    "generated_at",
-    "payload",
-    "payload_sha256",
-    "snapshot_sha256",
-})
-_PREFIX_COUNT_FIELDS = frozenset({
-    "bar_count_1m",
-    "bar_count_5m",
-    "bar_count_15m",
-    "context_unavailable_count",
-})
-_SEGMENT_FACT_FIELDS = frozenset({
-    "contract",
-    "effective_start",
-    "effective_end",
-    "loaded_through",
-    "bar_count_1m",
-    "bar_count_5m",
-    "bar_count_15m",
-    "context_unavailable_count",
-    "source_identity",
-})
-_SUMMARY_FIELDS = frozenset({
-    "overall",
-    "long",
-    "short",
-    "open_episodes",
-    "exit_reason_counts",
-})
-_STATS_FIELDS = frozenset({
-    "completed",
-    "positive",
-    "negative",
-    "flat",
-    "positive_rate_percent",
-    "mean_reference_change_percent",
-    "median_reference_change_percent",
-    "best_reference_change_percent",
-    "worst_reference_change_percent",
-    "mean_holding_15m_bars",
-})
+_IDENTITY_FIELDS = frozenset(
+    {
+        "strategy_id",
+        "formula_version",
+        "engine_identity_sha256",
+        "symbol",
+        "series_kind",
+        "frequency",
+        "coverage_since",
+        "coverage_through",
+        "resolved_cutoff",
+        "source_manifest_sha256",
+    }
+)
+_PAYLOAD_FIELDS = frozenset(
+    {
+        "segment_count",
+        "bar_count_15m",
+        "context_unavailable_count",
+        "immutable_prefix_segment_count",
+        "immutable_prefix_counts",
+        "segment_facts",
+        "summary",
+        "episodes",
+    }
+)
+_ENVELOPE_FIELDS = frozenset(
+    {
+        "schema_version",
+        "identity",
+        "identity_sha256",
+        "generated_at",
+        "payload",
+        "payload_sha256",
+        "snapshot_sha256",
+    }
+)
+_PREFIX_COUNT_FIELDS = frozenset(
+    {
+        "bar_count_1m",
+        "bar_count_5m",
+        "bar_count_15m",
+        "context_unavailable_count",
+    }
+)
+_SEGMENT_FACT_FIELDS = frozenset(
+    {
+        "contract",
+        "effective_start",
+        "effective_end",
+        "loaded_through",
+        "bar_count_1m",
+        "bar_count_5m",
+        "bar_count_15m",
+        "context_unavailable_count",
+        "source_identity",
+    }
+)
+_SUMMARY_FIELDS = frozenset(
+    {
+        "overall",
+        "long",
+        "short",
+        "open_episodes",
+        "exit_reason_counts",
+    }
+)
+_STATS_FIELDS = frozenset(
+    {
+        "completed",
+        "positive",
+        "negative",
+        "flat",
+        "positive_rate_percent",
+        "mean_reference_change_percent",
+        "median_reference_change_percent",
+        "best_reference_change_percent",
+        "worst_reference_change_percent",
+        "mean_holding_15m_bars",
+    }
+)
 _EXIT_REASON_FIELDS = frozenset({"reason_code", "count"})
 
 
@@ -99,6 +114,12 @@ class SubingStrategyPerformanceSnapshotError(RuntimeError):
 
     def __init__(self) -> None:
         super().__init__(self.code)
+
+
+class SubingStrategyPerformanceSnapshotMissingError(
+    SubingStrategyPerformanceSnapshotError
+):
+    pass
 
 
 @dataclass(frozen=True, slots=True)
@@ -166,6 +187,7 @@ class SubingStrategyPerformanceSnapshot:
     immutable_prefix_counts: SubingStrategyPerformancePrefixCounts
     segment_facts: tuple[SubingStrategyPerformanceSegmentFact, ...]
     source_manifest_sha256: str
+    engine_identity_sha256: str
     identity_sha256: str
     payload_sha256: str
     snapshot_sha256: str
@@ -182,6 +204,7 @@ class SubingStrategyPerformanceSnapshot:
             or type(self.immutable_prefix_segment_count) is not int
             or self.immutable_prefix_segment_count < 0
             or not _is_sha256(self.source_manifest_sha256)
+            or not _is_sha256(self.engine_identity_sha256)
             or not _is_sha256(self.identity_sha256)
             or not _is_sha256(self.payload_sha256)
             or not _is_sha256(self.snapshot_sha256)
@@ -209,6 +232,7 @@ def subing_strategy_performance_snapshot_from_projection(
     segment_facts: tuple[SubingStrategyPerformanceSegmentFact, ...],
     source_manifest_sha256: str,
     generated_at: datetime,
+    engine_identity_sha256: str,
 ) -> SubingStrategyPerformanceSnapshot:
     if (
         projection.strategy_id != SUBING_STRATEGY_ID
@@ -220,6 +244,7 @@ def subing_strategy_performance_snapshot_from_projection(
         or type(immutable_prefix_segment_count) is not int
         or immutable_prefix_segment_count < 0
         or not _is_sha256(source_manifest_sha256)
+        or not _is_sha256(engine_identity_sha256)
         or not _is_utc_aware(generated_at)
     ):
         raise SubingStrategyPerformanceSnapshotError()
@@ -229,6 +254,7 @@ def subing_strategy_performance_snapshot_from_projection(
         coverage_through=projection.coverage_through,
         resolved_cutoff=projection.resolved_cutoff,
         source_manifest_sha256=source_manifest_sha256,
+        engine_identity_sha256=engine_identity_sha256,
     )
     payload_payload = _payload_payload(
         projection=projection,
@@ -254,6 +280,7 @@ def subing_strategy_performance_snapshot_from_projection(
         immutable_prefix_counts=immutable_prefix_counts,
         segment_facts=segment_facts,
         source_manifest_sha256=source_manifest_sha256,
+        engine_identity_sha256=engine_identity_sha256,
         identity_sha256=identity_sha256,
         payload_sha256=payload_sha256,
         snapshot_sha256=snapshot_sha256,
@@ -276,6 +303,7 @@ def encode_subing_strategy_performance_snapshot(
         coverage_through=snapshot.coverage_through,
         resolved_cutoff=snapshot.resolved_cutoff,
         source_manifest_sha256=snapshot.source_manifest_sha256,
+        engine_identity_sha256=snapshot.engine_identity_sha256,
     )
     payload_payload = _payload_payload(
         projection=snapshot.projection,
@@ -347,18 +375,22 @@ def parse_subing_strategy_performance_snapshot(
         if not _is_utc_aware(resolved_cutoff):
             raise SubingStrategyPerformanceSnapshotError()
         source_manifest_sha256 = str(identity["source_manifest_sha256"])
+        engine_identity_sha256 = str(identity["engine_identity_sha256"])
         identity_payload = _identity_payload(
             symbol=symbol,
             coverage_since=coverage_since,
             coverage_through=coverage_through,
             resolved_cutoff=resolved_cutoff,
             source_manifest_sha256=source_manifest_sha256,
+            engine_identity_sha256=engine_identity_sha256,
         )
         identity_sha256 = sha256(_canonical_bytes(identity_payload)).hexdigest()
         if envelope.get("identity_sha256") != identity_sha256:
             raise SubingStrategyPerformanceSnapshotError()
         immutable_prefix_segment_count = int(payload["immutable_prefix_segment_count"])
-        immutable_prefix_counts = _parse_prefix_counts(payload["immutable_prefix_counts"])
+        immutable_prefix_counts = _parse_prefix_counts(
+            payload["immutable_prefix_counts"]
+        )
         segment_facts = _parse_segment_facts(payload["segment_facts"])
         projection = _parse_projection_payload(
             payload,
@@ -397,6 +429,7 @@ def parse_subing_strategy_performance_snapshot(
             immutable_prefix_counts=immutable_prefix_counts,
             segment_facts=segment_facts,
             source_manifest_sha256=source_manifest_sha256,
+            engine_identity_sha256=engine_identity_sha256,
             identity_sha256=identity_sha256,
             payload_sha256=payload_sha256,
             snapshot_sha256=snapshot_sha256,
@@ -415,10 +448,12 @@ def _identity_payload(
     coverage_through: date,
     resolved_cutoff: datetime,
     source_manifest_sha256: str,
+    engine_identity_sha256: str,
 ) -> dict[str, object]:
     return {
         "strategy_id": SUBING_STRATEGY_ID,
         "formula_version": _FIXED_FORMULA_VERSION,
+        "engine_identity_sha256": engine_identity_sha256,
         "symbol": symbol,
         "series_kind": _FIXED_SERIES_KIND.value,
         "frequency": _FIXED_FREQUENCY.value,
@@ -442,13 +477,10 @@ def _payload_payload(
         "context_unavailable_count": projection.context_unavailable_count,
         "immutable_prefix_segment_count": immutable_prefix_segment_count,
         "immutable_prefix_counts": _prefix_counts_payload(immutable_prefix_counts),
-        "segment_facts": [
-            _segment_fact_payload(fact) for fact in segment_facts
-        ],
+        "segment_facts": [_segment_fact_payload(fact) for fact in segment_facts],
         "summary": _summary_payload(projection.summary),
         "episodes": [
-            subing_strategy_episode_payload(episode)
-            for episode in projection.episodes
+            subing_strategy_episode_payload(episode) for episode in projection.episodes
         ],
     }
 
@@ -539,17 +571,19 @@ def _parse_segment_facts(
             raise SubingStrategyPerformanceSnapshotError()
         _reject_unknown_keys(item, _SEGMENT_FACT_FIELDS)
         _reject_path_tokens(item)
-        facts.append(SubingStrategyPerformanceSegmentFact(
-            contract=str(item["contract"]),
-            effective_start=date.fromisoformat(str(item["effective_start"])),
-            effective_end=date.fromisoformat(str(item["effective_end"])),
-            loaded_through=date.fromisoformat(str(item["loaded_through"])),
-            bar_count_1m=int(item["bar_count_1m"]),
-            bar_count_5m=int(item["bar_count_5m"]),
-            bar_count_15m=int(item["bar_count_15m"]),
-            context_unavailable_count=int(item["context_unavailable_count"]),
-            source_identity=str(item["source_identity"]),
-        ))
+        facts.append(
+            SubingStrategyPerformanceSegmentFact(
+                contract=str(item["contract"]),
+                effective_start=date.fromisoformat(str(item["effective_start"])),
+                effective_end=date.fromisoformat(str(item["effective_end"])),
+                loaded_through=date.fromisoformat(str(item["loaded_through"])),
+                bar_count_1m=int(item["bar_count_1m"]),
+                bar_count_5m=int(item["bar_count_5m"]),
+                bar_count_15m=int(item["bar_count_15m"]),
+                context_unavailable_count=int(item["context_unavailable_count"]),
+                source_identity=str(item["source_identity"]),
+            )
+        )
     return tuple(facts)
 
 
@@ -563,7 +597,8 @@ def _parse_projection_payload(
 ) -> SubingStrategyPerformanceProjection:
     summary = _parse_summary(payload["summary"])
     episodes = tuple(
-        _parse_episode(item) for item in payload["episodes"]  # type: ignore[arg-type]
+        _parse_episode(item)
+        for item in payload["episodes"]  # type: ignore[arg-type]
     )
     return SubingStrategyPerformanceProjection(
         strategy_id=SUBING_STRATEGY_ID,
@@ -648,6 +683,7 @@ def _validate_fixed_identity(identity: Mapping[str, object]) -> None:
         or identity.get("frequency") != _FIXED_FREQUENCY.value
         or not _is_valid_symbol(str(identity.get("symbol", "")))
         or not _is_sha256(str(identity.get("source_manifest_sha256", "")))
+        or not _is_sha256(identity.get("engine_identity_sha256"))
     ):
         raise SubingStrategyPerformanceSnapshotError()
 
@@ -658,11 +694,15 @@ def _snapshot_sha256(
     generated_at: str,
     payload_sha256: str,
 ) -> str:
-    return sha256(_canonical_bytes({
-        "identity_sha256": identity_sha256,
-        "generated_at": generated_at,
-        "payload_sha256": payload_sha256,
-    })).hexdigest()
+    return sha256(
+        _canonical_bytes(
+            {
+                "identity_sha256": identity_sha256,
+                "generated_at": generated_at,
+                "payload_sha256": payload_sha256,
+            }
+        )
+    ).hexdigest()
 
 
 def _reject_duplicate_keys(pairs: list[tuple[str, object]]) -> dict[str, object]:
@@ -672,7 +712,9 @@ def _reject_duplicate_keys(pairs: list[tuple[str, object]]) -> dict[str, object]
     return dict(pairs)
 
 
-def _reject_unknown_keys(payload: Mapping[str, object], allowed: frozenset[str]) -> None:
+def _reject_unknown_keys(
+    payload: Mapping[str, object], allowed: frozenset[str]
+) -> None:
     if set(payload) - allowed:
         raise SubingStrategyPerformanceSnapshotError()
 
@@ -697,16 +739,15 @@ def _contains_path_token(value: str) -> bool:
 
 def _is_valid_symbol(value: str) -> bool:
     return bool(
-        value
-        and value.isascii()
-        and value.isalpha()
-        and value == value.lower()
+        value and value.isascii() and value.isalpha() and value == value.lower()
     )
 
 
 def _is_sha256(value: object) -> bool:
-    return isinstance(value, str) and len(value) == 64 and all(
-        character in "0123456789abcdef" for character in value
+    return (
+        isinstance(value, str)
+        and len(value) == 64
+        and all(character in "0123456789abcdef" for character in value)
     )
 
 

@@ -92,7 +92,9 @@ class SubingStrategyPerformanceAdopter:
                 or identity.formula_version != "subing_strategy_15m_v1"
                 or identity.engine_identity_sha256 != self._engine_identity_sha256
                 or identity.segment_identity_sha256s
-                != tuple(segment.source_identity for segment in lineage.ordered_segments)
+                != tuple(
+                    segment.source_identity for segment in lineage.ordered_segments
+                )
             ):
                 raise SubingStrategyPerformanceFullRebuildRequired()
             cached = self._cache.read(identity)
@@ -110,16 +112,14 @@ class SubingStrategyPerformanceAdopter:
                 publish_cache=True,
             )
             tail_engine = getattr(tail, "engine_identity_sha256", None)
-            if (
-                tail_engine is not None
-                and tail_engine != self._engine_identity_sha256
-            ):
+            if tail_engine is not None and tail_engine != self._engine_identity_sha256:
                 raise SubingStrategyPerformanceFullRebuildRequired()
             snapshot = _snapshot_from_legacy(
                 cached.payload,
                 lineage=lineage,
                 tail=tail,
                 generated_at=self._now(),
+                engine_identity_sha256=self._engine_identity_sha256,
             )
             if candidate.read_bytes() != source_bytes:
                 raise SubingStrategyPerformanceFullRebuildRequired()
@@ -136,8 +136,7 @@ def _exactly_one_regular_json(directory) -> object:
         raise SubingStrategyPerformanceFullRebuildRequired()
     entries = tuple(directory.iterdir())
     if any(
-        entry.name.endswith(".tmp") or entry.name.startswith(".")
-        for entry in entries
+        entry.name.endswith(".tmp") or entry.name.startswith(".") for entry in entries
     ):
         raise SubingStrategyPerformanceFullRebuildRequired()
     json_files = tuple(
@@ -154,6 +153,7 @@ def _snapshot_from_legacy(
     lineage: SubingStrategyPerformanceLineage,
     tail: object,
     generated_at: datetime,
+    engine_identity_sha256: str,
 ) -> SubingStrategyPerformanceSnapshot:
     from .performance_snapshot import _parse_projection_payload
 
@@ -238,6 +238,7 @@ def _snapshot_from_legacy(
         segment_facts=(fact,),
         source_manifest_sha256=lineage.source_manifest_sha256,
         generated_at=generated_at.astimezone(UTC),
+        engine_identity_sha256=engine_identity_sha256,
     )
 
 

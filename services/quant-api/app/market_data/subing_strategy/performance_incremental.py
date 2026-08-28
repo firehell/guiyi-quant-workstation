@@ -7,7 +7,11 @@ from datetime import UTC, date, datetime
 from typing import Protocol
 
 from ..domain import BarFrequency, SeriesKind
-from .contracts import SUBING_STRATEGY_ID, SubingStrategyEpisode
+from .contracts import (
+    SUBING_STRATEGY_ID,
+    SubingStrategyEpisode,
+    SubingStrategyPositionState,
+)
 from .performance import (
     SubingStrategyPerformanceProjection,
     summarize_subing_strategy_episodes,
@@ -25,6 +29,8 @@ from .performance_snapshot import (
     SubingStrategyPerformanceSegmentFact,
     SubingStrategyPerformanceSnapshot,
     SubingStrategyPerformanceSnapshotError,
+    SubingStrategyPerformanceSnapshotMissingError,
+    subing_strategy_performance_projection_from_snapshot,
     subing_strategy_performance_snapshot_from_projection,
 )
 from .performance_snapshot_store import SubingStrategyPerformanceSnapshotStore
@@ -68,16 +74,14 @@ class SubingStrategyPerformanceIncrementalRefresher:
         lineage: _LineageResolver,
         historical: _HistoricalTail,
         store: SubingStrategyPerformanceSnapshotStore,
-        identity: SubingStrategyPerformanceSemanticIdentity,
-        now: Callable[[], datetime],
         adopter: _Adopter | None = None,
+        now: Callable[[], datetime] | None = None,
     ) -> None:
         self._lineage = lineage
         self._historical = historical
         self._store = store
-        self._identity = identity
-        self._now = now
         self._adopter = adopter
+        self._now = now or (lambda: datetime.now(UTC))
 
     def refresh(
         self,
@@ -95,26 +99,27 @@ class SubingStrategyPerformanceIncrementalRefresher:
         )
         if previous_lineage.source_manifest_sha256 != snapshot.source_manifest_sha256:
             raise SubingStrategyPerformanceFullRebuildRequired()
-        if (
-            snapshot.projection.strategy_id != self._identity.strategy_id
-            or snapshot.projection.formula_version != self._identity.formula_version
-        ):
-            raise SubingStrategyPerformanceFullRebuildRequired()
+        previous_identity = _identity_from_snapshot(snapshot)
+        current_identity = _identity_from_current(
+            historical=self._historical,
+            previous=previous_identity,
+        )
         decision = decide_subing_strategy_performance_tail(
             previous=previous_lineage,
             current=current_lineage,
-            previous_identity=self._identity,
-            current_identity=self._identity,
+            previous_identity=previous_identity,
+            current_identity=current_identity,
         )
         if decision.kind == FULL_REBUILD_REQUIRED.kind:
             raise SubingStrategyPerformanceFullRebuildRequired()
         if decision.kind == UNCHANGED.kind:
-            return snapshot.projection
+            return subing_strategy_performance_projection_from_snapshot(snapshot)
         if decision.index is None:
             raise SubingStrategyPerformanceFullRebuildRequired()
         return self._replay_from(
             snapshot=snapshot,
             current_lineage=current_lineage,
+            previous_identity=previous_identity,
             index=decision.index,
         )
 
@@ -125,21 +130,23 @@ class SubingStrategyPerformanceIncrementalRefresher:
         through: date,
     ) -> SubingStrategyPerformanceSnapshot:
         try:
-            return self._store.read_current(
+            return self._store.read_current_for_refresh(
                 symbol=symbol,
                 expected_through=through,
-                allow_older=True,
             )
-        except SubingStrategyPerformanceSnapshotError:
+        except SubingStrategyPerformanceSnapshotMissingError:
             if self._adopter is None:
                 raise SubingStrategyPerformanceFullRebuildRequired() from None
             return self._adopter.adopt(symbol=symbol, through=through)
+        except SubingStrategyPerformanceSnapshotError:
+            raise SubingStrategyPerformanceFullRebuildRequired() from None
 
     def _replay_from(
         self,
         *,
         snapshot: SubingStrategyPerformanceSnapshot,
         current_lineage: SubingStrategyPerformanceLineage,
+        previous_identity: SubingStrategyPerformanceSemanticIdentity,
         index: int,
     ) -> SubingStrategyPerformanceProjection:
         seam = current_lineage.ordered_segments[index]
@@ -153,15 +160,49 @@ class SubingStrategyPerformanceIncrementalRefresher:
             ),
             publish_cache=True,
         )
+        tail_engine = getattr(tail, "engine_identity_sha256", None)
+        if (
+            isinstance(tail_engine, str)
+            and tail_engine != previous_identity.engine_identity_sha256
+        ):
+            raise SubingStrategyPerformanceFullRebuildRequired()
         merged = _merge_snapshot(
             snapshot=snapshot,
             current_lineage=current_lineage,
             tail=tail,
             seam_index=index,
             generated_at=self._now(),
+            engine_identity_sha256=previous_identity.engine_identity_sha256,
         )
         self._store.publish_current(merged)
         return merged.projection
+
+
+def _identity_from_snapshot(
+    snapshot: SubingStrategyPerformanceSnapshot,
+) -> SubingStrategyPerformanceSemanticIdentity:
+    return SubingStrategyPerformanceSemanticIdentity(
+        strategy_id=snapshot.projection.strategy_id,
+        formula_version=snapshot.projection.formula_version,
+        engine_identity_sha256=snapshot.engine_identity_sha256,
+    )
+
+
+def _identity_from_current(
+    *,
+    historical: object,
+    previous: SubingStrategyPerformanceSemanticIdentity,
+) -> SubingStrategyPerformanceSemanticIdentity:
+    engine = getattr(historical, "engine_identity_sha256", None)
+    if engine is None:
+        engine = getattr(historical, "_engine_identity_sha256", None)
+    if not isinstance(engine, str):
+        engine = previous.engine_identity_sha256
+    return SubingStrategyPerformanceSemanticIdentity(
+        strategy_id=SUBING_STRATEGY_ID,
+        formula_version=_FIXED_FORMULA_VERSION,
+        engine_identity_sha256=engine,
+    )
 
 
 def _merge_snapshot(
@@ -171,11 +212,14 @@ def _merge_snapshot(
     tail: object,
     seam_index: int,
     generated_at: datetime,
+    engine_identity_sha256: str,
 ) -> SubingStrategyPerformanceSnapshot:
     summaries = tuple(getattr(tail, "segment_summaries", ()))
     tail_segments = current_lineage.ordered_segments[seam_index:]
     if len(summaries) != len(tail_segments):
         raise SubingStrategyPerformanceFullRebuildRequired()
+    if len(summaries) > 1:
+        _require_isolated_rollover(summaries)
     facts: list[SubingStrategyPerformanceSegmentFact] = []
     for summary, segment in zip(summaries, tail_segments, strict=True):
         if (
@@ -199,14 +243,14 @@ def _merge_snapshot(
         )
     if not facts or facts[-1].loaded_through != current_lineage.coverage_through:
         raise SubingStrategyPerformanceFullRebuildRequired()
+    prefix_segments = current_lineage.ordered_segments[:seam_index]
     prefix_episodes = _prefix_episodes(
         snapshot.projection.episodes,
-        seam_start=tail_segments[0].effective_start,
+        prefix_segments=prefix_segments,
     )
     tail_episodes = tuple(getattr(tail, "episodes", ()))
     _validate_tail_episodes(tail_episodes, tail_segments)
     merged_episodes = prefix_episodes + tail_episodes
-    tail_15m = sum(fact.bar_count_15m for fact in facts)
     tail_context = len(getattr(tail, "context_unavailable", ()))
     facts[-1] = SubingStrategyPerformanceSegmentFact(
         contract=facts[-1].contract,
@@ -220,19 +264,20 @@ def _merge_snapshot(
         source_identity=facts[-1].source_identity,
     )
     prefix_counts = snapshot.immutable_prefix_counts
-    if seam_index > snapshot.immutable_prefix_segment_count:
-        closed = facts[0]
-        prefix_counts = SubingStrategyPerformancePrefixCounts(
-            bar_count_1m=prefix_counts.bar_count_1m + closed.bar_count_1m,
-            bar_count_5m=prefix_counts.bar_count_5m + closed.bar_count_5m,
-            bar_count_15m=prefix_counts.bar_count_15m + closed.bar_count_15m,
-            context_unavailable_count=(
-                prefix_counts.context_unavailable_count
-                + closed.context_unavailable_count
-            ),
-        )
-        facts = facts[1:]
-        seam_index = snapshot.immutable_prefix_segment_count + 1
+    if len(facts) > 1:
+        for closed in facts[:-1]:
+            prefix_counts = SubingStrategyPerformancePrefixCounts(
+                bar_count_1m=prefix_counts.bar_count_1m + closed.bar_count_1m,
+                bar_count_5m=prefix_counts.bar_count_5m + closed.bar_count_5m,
+                bar_count_15m=prefix_counts.bar_count_15m + closed.bar_count_15m,
+                context_unavailable_count=(
+                    prefix_counts.context_unavailable_count
+                    + closed.context_unavailable_count
+                ),
+            )
+        facts = facts[-1:]
+    remaining_15m = sum(fact.bar_count_15m for fact in facts)
+    remaining_context = sum(fact.context_unavailable_count for fact in facts)
     projection = SubingStrategyPerformanceProjection(
         strategy_id=SUBING_STRATEGY_ID,
         formula_version=_FIXED_FORMULA_VERSION,
@@ -243,9 +288,9 @@ def _merge_snapshot(
         coverage_through=current_lineage.coverage_through,
         resolved_cutoff=getattr(tail, "resolved_cutoff"),
         segment_count=len(current_lineage.ordered_segments),
-        bar_count_15m=prefix_counts.bar_count_15m + tail_15m,
+        bar_count_15m=prefix_counts.bar_count_15m + remaining_15m,
         context_unavailable_count=(
-            prefix_counts.context_unavailable_count + tail_context
+            prefix_counts.context_unavailable_count + remaining_context
         ),
         cache_state="refreshed",
         summary=summarize_subing_strategy_episodes(merged_episodes),
@@ -255,25 +300,42 @@ def _merge_snapshot(
         raise SubingStrategyPerformanceFullRebuildRequired()
     return subing_strategy_performance_snapshot_from_projection(
         projection,
-        immutable_prefix_segment_count=len(current_lineage.ordered_segments) - len(facts),
+        immutable_prefix_segment_count=len(current_lineage.ordered_segments)
+        - len(facts),
         immutable_prefix_counts=prefix_counts,
         segment_facts=tuple(facts),
         source_manifest_sha256=current_lineage.source_manifest_sha256,
         generated_at=generated_at.astimezone(UTC),
+        engine_identity_sha256=engine_identity_sha256,
     )
+
+
+def _require_isolated_rollover(summaries: Sequence[object]) -> None:
+    closed = summaries[0]
+    incoming = summaries[-1]
+    if (
+        getattr(closed, "final_position", None) is not SubingStrategyPositionState.FLAT
+        or bool(getattr(closed, "pending_action", False))
+        or getattr(incoming, "initial_position", None)
+        is not SubingStrategyPositionState.FLAT
+    ):
+        raise SubingStrategyPerformanceFullRebuildRequired()
 
 
 def _prefix_episodes(
     episodes: Sequence[SubingStrategyEpisode],
     *,
-    seam_start: date,
+    prefix_segments: Sequence[object],
 ) -> tuple[SubingStrategyEpisode, ...]:
+    keys = {(segment.contract, segment.effective_start) for segment in prefix_segments}
     prefix: list[SubingStrategyEpisode] = []
     for episode in episodes:
-        entry_day = episode.entry_action.trading_day
-        if entry_day >= seam_start:
-            continue
-        prefix.append(episode)
+        key = (
+            episode.entry_action.contract,
+            episode.entry_action.segment_start_trading_day,
+        )
+        if key in keys:
+            prefix.append(episode)
     return tuple(prefix)
 
 
@@ -281,16 +343,24 @@ def _validate_tail_episodes(
     episodes: Sequence[SubingStrategyEpisode],
     segments: Sequence[object],
 ) -> None:
-    contracts = {segment.contract for segment in segments}
+    keys = {(segment.contract, segment.effective_start) for segment in segments}
     seen: set[str] = set()
     previous_end = None
     for episode in episodes:
         episode_id = episode.episode_id
-        if episode_id in seen:
+        if episode_id in seen or episode_id != episode.entry_action.episode_id:
             raise SubingStrategyPerformanceFullRebuildRequired()
         seen.add(episode_id)
-        contract = episode.entry_action.contract
-        if contract not in contracts:
+        key = (
+            episode.entry_action.contract,
+            episode.entry_action.segment_start_trading_day,
+        )
+        if key not in keys:
+            raise SubingStrategyPerformanceFullRebuildRequired()
+        if (
+            episode.exit_action is not None
+            and episode.exit_action.contract != episode.entry_action.contract
+        ):
             raise SubingStrategyPerformanceFullRebuildRequired()
         end = episode.entry_action.effective_bar_end
         if previous_end is not None and end < previous_end:
