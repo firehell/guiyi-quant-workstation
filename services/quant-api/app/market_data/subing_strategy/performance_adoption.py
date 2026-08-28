@@ -95,10 +95,8 @@ class SubingStrategyPerformanceAdopter:
                 or identity.strategy_id != SUBING_STRATEGY_ID
                 or identity.formula_version != "subing_strategy_15m_v1"
                 or identity.engine_identity_sha256 != self._engine_identity_sha256
-                or identity.segment_identity_sha256s
-                != tuple(
-                    segment.source_identity for segment in lineage.ordered_segments
-                )
+                or len(identity.segment_identity_sha256s)
+                != len(lineage.ordered_segments)
             ):
                 raise SubingStrategyPerformanceFullRebuildRequired()
             cached = self._cache.read(identity)
@@ -172,7 +170,6 @@ def _snapshot_from_legacy(
         summary.contract != tail_segment.contract
         or summary.start_trading_day != tail_segment.effective_start
         or summary.loaded_through != lineage.coverage_through
-        or summary.source_identity_sha256 != tail_segment.source_identity
     ):
         raise SubingStrategyPerformanceFullRebuildRequired()
     projection = _parse_projection_payload(
@@ -190,29 +187,29 @@ def _snapshot_from_legacy(
     ):
         raise SubingStrategyPerformanceFullRebuildRequired()
     tail_context = len(getattr(tail, "context_unavailable", ()))
-    full_1m = _required_count(payload, "bar_count_1m")
-    full_5m = _required_count(payload, "bar_count_5m")
+    full_1m = _optional_count(payload, "bar_count_1m")
+    full_5m = _optional_count(payload, "bar_count_5m")
     full_15m = _required_count(payload, "bar_count_15m")
     full_context = _required_count(payload, "context_unavailable_count")
     if (
         projection.bar_count_15m != full_15m
         or projection.context_unavailable_count != full_context
-        or full_1m < summary.bar_count_1m
-        or full_5m < summary.bar_count_5m
+        or (full_1m is not None and full_1m < summary.bar_count_1m)
+        or (full_5m is not None and full_5m < summary.bar_count_5m)
         or full_15m < summary.bar_count_15m
         or full_context < tail_context
     ):
         raise SubingStrategyPerformanceFullRebuildRequired()
     prefix_counts = SubingStrategyPerformancePrefixCounts(
-        bar_count_1m=full_1m - summary.bar_count_1m,
-        bar_count_5m=full_5m - summary.bar_count_5m,
+        bar_count_1m=(0 if full_1m is None else full_1m - summary.bar_count_1m),
+        bar_count_5m=(0 if full_5m is None else full_5m - summary.bar_count_5m),
         bar_count_15m=full_15m - summary.bar_count_15m,
         context_unavailable_count=full_context - tail_context,
     )
     fact = SubingStrategyPerformanceSegmentFact(
-        contract=summary.contract,
-        effective_start=summary.start_trading_day,
-        effective_end=summary.end_trading_day,
+        contract=tail_segment.contract,
+        effective_start=tail_segment.effective_start,
+        effective_end=tail_segment.effective_end,
         loaded_through=summary.loaded_through,
         bar_count_1m=summary.bar_count_1m,
         bar_count_5m=summary.bar_count_5m,
@@ -221,8 +218,14 @@ def _snapshot_from_legacy(
         source_identity=tail_segment.source_identity,
     )
     if (
-        prefix_counts.bar_count_1m + fact.bar_count_1m != full_1m
-        or prefix_counts.bar_count_5m + fact.bar_count_5m != full_5m
+        (
+            full_1m is not None
+            and prefix_counts.bar_count_1m + fact.bar_count_1m != full_1m
+        )
+        or (
+            full_5m is not None
+            and prefix_counts.bar_count_5m + fact.bar_count_5m != full_5m
+        )
         or prefix_counts.bar_count_15m + fact.bar_count_15m != full_15m
         or prefix_counts.context_unavailable_count + fact.context_unavailable_count
         != full_context
@@ -231,8 +234,10 @@ def _snapshot_from_legacy(
     from .cache import _canonical_bytes
 
     expected_payload = dict(_performance_snapshot_payload(projection))
-    expected_payload["bar_count_1m"] = full_1m
-    expected_payload["bar_count_5m"] = full_5m
+    if full_1m is not None:
+        expected_payload["bar_count_1m"] = full_1m
+    if full_5m is not None:
+        expected_payload["bar_count_5m"] = full_5m
     if _canonical_bytes(dict(payload)) != _canonical_bytes(expected_payload):
         raise SubingStrategyPerformanceFullRebuildRequired()
     return subing_strategy_performance_snapshot_from_projection(
@@ -251,3 +256,9 @@ def _required_count(payload: Mapping[str, object], key: str) -> int:
     if type(value) is not int or value < 0:
         raise SubingStrategyPerformanceFullRebuildRequired()
     return value
+
+
+def _optional_count(payload: Mapping[str, object], key: str) -> int | None:
+    if key not in payload:
+        return None
+    return _required_count(payload, key)

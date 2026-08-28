@@ -1424,21 +1424,102 @@ def _tamper_legacy_envelope(path: Path, mutator) -> None:
     os.chmod(path, 0o600)
 
 
-def test_adoption_rejects_missing_1m_5m_full_totals(tmp_path: Path) -> None:
-    from app.market_data.subing_strategy.performance_adoption import (
-        SubingStrategyPerformanceFullRebuildRequired,
+def test_adoption_uses_catalog_tail_end_when_historical_loaded_through_differs(
+    tmp_path: Path,
+) -> None:
+    from app.market_data.subing_strategy.performance_incremental import (
+        _require_immutable_prefix_matches_snapshot,
+    )
+    from app.market_data.subing_strategy.performance_lineage import (
+        SubingStrategyPerformanceSourceSegment,
+        _source_manifest_sha256,
     )
 
+    original = _legacy_lineage()
+    catalog_tail = original.ordered_segments[-1]
+    extended_tail = SubingStrategyPerformanceSourceSegment(
+        contract=catalog_tail.contract,
+        effective_start=catalog_tail.effective_start,
+        effective_end=date(2026, 9, 15),
+        source_identity=catalog_tail.source_identity,
+    )
+    segments = (*original.ordered_segments[:-1], extended_tail)
+    lineage = replace(
+        original,
+        ordered_segments=segments,
+        source_manifest_sha256=_source_manifest_sha256(
+            symbol=original.symbol,
+            coverage_since=original.coverage_since,
+            coverage_through=original.coverage_through,
+            segments=segments,
+        ),
+    )
+    historical_tail = _tail_projection()
+    summary = historical_tail.segment_summaries[0]
+    mismatched = type(
+        "Tail",
+        (),
+        {
+            "segment_summaries": (
+                type(
+                    "Segment",
+                    (),
+                    {
+                        "contract": summary.contract,
+                        "start_trading_day": summary.start_trading_day,
+                        "end_trading_day": date(2026, 8, 26),
+                        "loaded_through": summary.loaded_through,
+                        "bar_count_1m": summary.bar_count_1m,
+                        "bar_count_5m": summary.bar_count_5m,
+                        "bar_count_15m": summary.bar_count_15m,
+                        "source_identity_sha256": summary.source_identity_sha256,
+                    },
+                )(),
+            ),
+            "context_unavailable": historical_tail.context_unavailable,
+            "engine_identity_sha256": historical_tail.engine_identity_sha256,
+        },
+    )()
     adopter, _cache, store, _hist = _adopter(
+        tmp_path,
+        lineage=_LineageResolver(lineage),
+        historical=_Historical(mismatched),
+    )
+
+    snapshot = adopter.adopt(symbol="jm", through=date(2026, 8, 26))
+
+    assert snapshot.segment_facts[0].effective_end == date(2026, 9, 15)
+    assert snapshot.segment_facts[0].loaded_through == date(2026, 8, 26)
+    _require_immutable_prefix_matches_snapshot(snapshot, lineage)
+    restored = store.read_current(symbol="jm", expected_through=date(2026, 8, 26))
+    _assert_same_snapshot(restored, snapshot)
+
+
+def test_adoption_derives_prefix_from_v2_and_tail_without_legacy_1m_5m_totals(
+    tmp_path: Path,
+) -> None:
+    adopter, cache, store, _hist = _adopter(
         tmp_path,
         payload=_legacy_payload(include_intraday_totals=False),
     )
+    identity = _legacy_identity()
+    legacy_path = cache.path_for(identity)
+    before = legacy_path.read_bytes()
 
-    with pytest.raises(SubingStrategyPerformanceFullRebuildRequired) as exc_info:
-        adopter.adopt(symbol="jm", through=date(2026, 8, 26))
+    snapshot = adopter.adopt(symbol="jm", through=date(2026, 8, 26))
+    restored = store.read_current(symbol="jm", expected_through=date(2026, 8, 26))
 
-    _assert_rebuild(exc_info.value)
-    _assert_no_current(store)
+    assert legacy_path.read_bytes() == before
+    prefix = snapshot.immutable_prefix_counts
+    tail = snapshot.segment_facts[0]
+    assert prefix.bar_count_15m == 12
+    assert prefix.context_unavailable_count == 0
+    assert prefix.bar_count_1m == 0
+    assert prefix.bar_count_5m == 0
+    assert prefix.bar_count_15m + tail.bar_count_15m == snapshot.projection.bar_count_15m
+    assert tail.bar_count_1m == 500
+    assert tail.bar_count_5m == 100
+    _assert_same_snapshot(restored, snapshot)
 
 
 def test_adoption_rejects_different_engine_identity(tmp_path: Path) -> None:
@@ -1525,6 +1606,51 @@ def test_adoption_rejects_bad_payload(tmp_path: Path) -> None:
 
     _assert_rebuild(exc_info.value)
     _assert_no_current(store)
+
+
+def test_adoption_keeps_catalog_source_identity_when_historical_digests_differ(
+    tmp_path: Path,
+) -> None:
+    historical_ids = ("a" * 64, "b" * 64)
+    identity = replace(_legacy_identity(), segment_identity_sha256s=historical_ids)
+    source_tail = _tail_projection()
+    summary = source_tail.segment_summaries[0]
+    mismatched_tail = type(
+        "Tail",
+        (),
+        {
+            "segment_summaries": (
+                type(
+                    "Segment",
+                    (),
+                    {
+                        "contract": summary.contract,
+                        "start_trading_day": summary.start_trading_day,
+                        "end_trading_day": summary.end_trading_day,
+                        "loaded_through": summary.loaded_through,
+                        "bar_count_1m": summary.bar_count_1m,
+                        "bar_count_5m": summary.bar_count_5m,
+                        "bar_count_15m": summary.bar_count_15m,
+                        "source_identity_sha256": historical_ids[1],
+                    },
+                )(),
+            ),
+            "context_unavailable": source_tail.context_unavailable,
+            "engine_identity_sha256": source_tail.engine_identity_sha256,
+        },
+    )()
+    adopter, _cache, store, _hist = _adopter(
+        tmp_path,
+        identity=identity,
+        historical=_Historical(mismatched_tail),
+    )
+
+    snapshot = adopter.adopt(symbol="jm", through=date(2026, 8, 26))
+    restored = store.read_current(symbol="jm", expected_through=date(2026, 8, 26))
+
+    assert snapshot.segment_facts[0].source_identity == _tail_source()
+    assert snapshot.segment_facts[0].source_identity != historical_ids[1]
+    _assert_same_snapshot(restored, snapshot)
 
 
 def test_adoption_rejects_missing_segments(tmp_path: Path) -> None:
