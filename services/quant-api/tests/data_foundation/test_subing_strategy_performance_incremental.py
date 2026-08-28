@@ -611,6 +611,65 @@ def test_new_day_replays_only_mutable_tail_and_matches_full_counts(
     assert restored.segment_facts[0].bar_count_15m == 13
 
 
+def test_new_day_replay_keeps_catalog_source_identity_when_historical_digest_differs(
+    tmp_path: Path,
+) -> None:
+    day1 = date(2026, 8, 26)
+    day2 = date(2026, 8, 27)
+    historical_tail_digest = "9" * 64
+    store = _store(tmp_path)
+    new_tail_episode = _episode_at(
+        change="3",
+        contract="JM2605",
+        segment_start=TAIL_START,
+        trading_day=day2,
+        hour=10,
+    )
+    _published_snapshot(
+        store,
+        day1,
+        (_episode("-1"),),
+        manifest=MANIFEST_T1,
+        bars=24,
+    )
+    tail = _tail(
+        summaries=(
+            _summary(
+                contract="JM2605",
+                start=TAIL_START,
+                end=day2,
+                loaded_through=day2,
+                source=historical_tail_digest,
+                bar_count_1m=520,
+                bar_count_5m=104,
+                bar_count_15m=13,
+            ),
+        ),
+        episodes=(new_tail_episode,),
+        resolved_cutoff=datetime(2026, 8, 27, 7, tzinfo=UTC),
+    )
+    historical = FakeHistorical(tail)
+    refresher = _refresher(
+        lineage=FakeLineage(
+            {
+                day1: _lineage(day1, manifest=MANIFEST_T1),
+                day2: _lineage(day2, manifest=MANIFEST_T2, tail_end=day2),
+            }
+        ),
+        historical=historical,
+        store=store,
+        now=lambda: datetime(2026, 8, 28, 8, tzinfo=UTC),
+    )
+
+    result = refresher.refresh(symbol="jm", through=day2)
+
+    assert result.coverage_through == day2
+    restored = store.read_current(symbol="jm", expected_through=day2)
+    assert restored.segment_facts[0].source_identity == TAIL_SOURCE
+    assert restored.segment_facts[0].source_identity != historical_tail_digest
+    assert historical_tail_digest != TAIL_SOURCE
+
+
 def test_merged_incremental_equals_independent_full_replay_fields(
     tmp_path: Path,
 ) -> None:

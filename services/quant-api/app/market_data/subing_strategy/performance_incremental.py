@@ -293,14 +293,13 @@ def _merge_snapshot(
         if (
             summary.contract != segment.contract
             or summary.start_trading_day != segment.effective_start
-            or summary.source_identity_sha256 != segment.source_identity
         ):
             raise SubingStrategyPerformanceFullRebuildRequired()
         facts.append(
             SubingStrategyPerformanceSegmentFact(
-                contract=summary.contract,
-                effective_start=summary.start_trading_day,
-                effective_end=summary.end_trading_day,
+                contract=segment.contract,
+                effective_start=segment.effective_start,
+                effective_end=segment.effective_end,
                 loaded_through=summary.loaded_through,
                 bar_count_1m=summary.bar_count_1m,
                 bar_count_5m=summary.bar_count_5m,

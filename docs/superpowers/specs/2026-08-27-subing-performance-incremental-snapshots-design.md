@@ -172,8 +172,8 @@ For each exact active product and exact expected through date, the adopter:
 1. resolves the exact legacy directory under the validated root;
 2. requires exactly one owner-controlled regular JSON candidate and no temporary files;
 3. parses the schema-v2 envelope and verifies symbol, through, fixed product identity, identity hash, payload hash, snapshot hash, and payload structure;
-4. resolves the ordered rank1 segment list from Catalog and requires its count/order to agree with the legacy segment identity list;
-5. replays only the legacy mutable tail through the legacy cutoff to establish tail counts and derive prefix aggregates;
+4. resolves the ordered rank1 segment list from Catalog and requires its count to equal the legacy Historical `segment_identity_sha256s` length; occupancy is matched by contract and effective interval, not by equating Historical bar-digest identities with Catalog occupancy/partition hashes. Schema-v3 `segment_facts.source_identity` remains the Catalog metadata hash;
+5. replays only the legacy mutable tail through the legacy cutoff to establish tail counts and derive prefix aggregates. Schema-v2 warm payloads omit `bar_count_1m` / `bar_count_5m`; prefix 15m and context counts are `legacy_total - tail`, while prefix 1m/5m are subtracted only when those legacy totals exist, otherwise 0. Tail 1m/5m still come from the Historical tail summary. Segment occupancy in schema-v3 facts uses Catalog contract/start/end, not Historical `end_trading_day`. The canonical payload check must match the legacy shape and must not invent 1m/5m keys;
 6. publishes a schema-v3 immutable snapshot and current manifest;
 7. leaves the schema-v2 artifact untouched.
 
