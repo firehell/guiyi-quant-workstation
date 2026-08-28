@@ -883,6 +883,36 @@ def test_catch_up_product_source_failure_uses_fixed_public_code() -> None:
     assert private not in repr(result)
 
 
+def test_next_session_live_bar_without_occupancy_keeps_ready_product() -> None:
+    """Friday occupancy-capped restore must ignore Monday overnight Live."""
+    state, identity, events = _recorded_machine(event_count=18)
+    current = _CurrentReader(
+        session_error=SubingStrategyRuntimeProductSourceError(
+            "MAIN_CONTRACT_MAP_MISSING"
+        )
+    )
+    evaluator, identity = _ready_evaluator(state, current=current)
+    restored = evaluator.current_state("jm")
+    assert restored is not None
+    latest = restored.watermarks.latest_15m or restored.watermarks.latest_1m
+    assert latest is not None
+    future = replace(
+        events[0].bar,
+        trading_day=latest.trading_day + timedelta(days=3),
+        bar_end=latest.bar_end + timedelta(days=3),
+    )
+
+    result = evaluator.process_completed_bar(
+        future,
+        BarFrequency.M1,
+        source_identity=identity,
+    )
+
+    assert result.product_status.state == "ready"
+    assert result.product_status.reason_codes == ()
+    assert result.action_facts == ()
+
+
 def test_completed_bar_product_source_failure_uses_fixed_public_code() -> None:
     state, identity, events = _recorded_machine()
     private = "secret=session-private-value"

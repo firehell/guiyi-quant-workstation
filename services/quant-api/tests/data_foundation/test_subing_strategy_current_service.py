@@ -325,6 +325,52 @@ def test_restore_uses_latest_mapped_day_when_expected_session_has_no_occupancy(
     assert market_read.live_requests == []
 
 
+def test_restore_ignores_next_session_live_contract_when_occupancy_is_capped(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Overnight Live may already point at the next session contract."""
+    service, _loader, _historical, _store, market_read = _service()
+    previous_of_source = SOURCE_DAY - timedelta(days=1)
+
+    def current_segment(_symbol: str, target: date):
+        if target == TARGET_DAY:
+            raise MarketDataError("MAIN_CONTRACT_MAP_MISSING")
+        if target <= SOURCE_DAY:
+            return SimpleNamespace(
+                symbol="jm",
+                contract=CONTRACT,
+                start_trading_day=SEGMENT_START,
+                end_trading_day=SOURCE_DAY,
+            )
+        raise MarketDataError("MAIN_CONTRACT_MAP_MISSING")
+
+    service._current_segment = current_segment
+    service._previous_trading_day = (
+        lambda target: SOURCE_DAY if target == TARGET_DAY else previous_of_source
+    )
+    market_read.trading_day = TARGET_DAY
+    market_read.contract = "JM9999"
+    market_read.live = {
+        BarFrequency.M1: (_bar(9),),
+        BarFrequency.M5: (_bar(9),),
+        BarFrequency.M15: (_bar(9),),
+    }
+    captured: dict[str, object] = {}
+    expected = object()
+    monkeypatch.setattr(
+        "app.market_data.subing_strategy.current_service.replay_subing_strategy_machine",
+        lambda **kwargs: captured.update(kwargs) or expected,
+    )
+
+    restored = service.restore_machine(symbol="jm", now=NOW)
+
+    assert restored is expected
+    assert captured["segment"] == ResolvedContractSegment(
+        CONTRACT, SEGMENT_START, SOURCE_DAY
+    )
+    assert market_read.live_requests == []
+
+
 def test_current_reports_canonical_only_source_mode(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

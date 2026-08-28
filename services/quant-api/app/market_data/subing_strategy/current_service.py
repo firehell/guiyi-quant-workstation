@@ -410,6 +410,7 @@ class SubingStrategyCurrentProjectionService:
                     state,
                     identity=identity,
                     contract=segment.contract,
+                    target_day=target_day,
                 )
                 bars = (
                     self._market_read.live_snapshot(identity, after, through)
@@ -739,6 +740,7 @@ class SubingStrategyCurrentProjectionService:
                 state,
                 identity=identity,
                 contract=segment.contract,
+                target_day=target_day,
             )
             historical = canonical[frequency]
             live: tuple[CanonicalBar, ...] = ()
@@ -773,13 +775,17 @@ class SubingStrategyCurrentProjectionService:
         *,
         identity: SeriesPageQuery,
         contract: str,
+        target_day: date,
     ) -> None:
         if (
             state.symbol != identity.symbol
             or state.series_kind != identity.series_kind.value
             or state.frequency != identity.frequency.value
-            or (state.live_contract is not None and state.live_contract != contract)
             or (state.live_available and not state.live_eligible)
+        ):
+            raise SubingStrategyCurrentSourceIdentityError()
+        if _live_matches_target(state, target_day) and (
+            state.live_contract is not None and state.live_contract != contract
         ):
             raise SubingStrategyCurrentSourceIdentityError()
 
