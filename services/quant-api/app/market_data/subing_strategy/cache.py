@@ -183,12 +183,20 @@ class SubingStrategyPerformanceCache:
             _canonical_bytes(_performance_identity_payload(identity))
         ).hexdigest()
         return (
-            self._root
-            / "performance"
-            / identity.symbol
-            / identity.through.isoformat()
+            self.directory_for(symbol=identity.symbol, through=identity.through)
             / f"{digest}.json"
         )
+
+    def directory_for(self, *, symbol: str, through: date) -> Path:
+        if (
+            not symbol
+            or not symbol.isascii()
+            or not symbol.isalpha()
+            or symbol != symbol.lower()
+            or type(through) is not date
+        ):
+            raise SubingStrategyCacheError()
+        return self._root / "performance" / symbol / through.isoformat()
 
     def read(
         self,
@@ -199,39 +207,12 @@ class SubingStrategyPerformanceCache:
         if not path.exists():
             return None
         try:
-            envelope = json.loads(path.read_bytes())
-            identity_payload = _performance_identity_payload(identity)
-            identity_sha256 = sha256(_canonical_bytes(identity_payload)).hexdigest()
-            if (
-                not isinstance(envelope, dict)
-                or envelope.get("schema_version") != 2
-                or envelope.get("identity") != identity_payload
-                or envelope.get("identity_sha256") != identity_sha256
-                or not isinstance(envelope.get("payload"), dict)
-            ):
-                raise SubingStrategyCacheError()
-            payload_sha256 = sha256(_canonical_bytes(envelope["payload"])).hexdigest()
-            generated_at_text = envelope.get("generated_at")
-            snapshot_sha256 = _performance_snapshot_sha256(
-                identity_sha256=identity_sha256,
-                generated_at=generated_at_text,
-                payload_sha256=payload_sha256,
+            snapshot = parse_subing_strategy_performance_cache_envelope(
+                path.read_bytes(),
+                identity,
             )
-            if (
-                envelope.get("payload_sha256") != payload_sha256
-                or envelope.get("snapshot_sha256") != snapshot_sha256
-            ):
-                raise SubingStrategyCacheError()
-            generated_at = datetime.fromisoformat(str(generated_at_text))
-            if generated_at.tzinfo is None or generated_at.utcoffset() is None:
-                raise SubingStrategyCacheError()
             self._preflight(path)
-            return CachedSubingStrategyPerformanceSnapshot(
-                identity_sha256=identity_sha256,
-                payload_sha256=payload_sha256,
-                generated_at=generated_at,
-                payload=envelope["payload"],
-            )
+            return snapshot
         except SubingStrategyCacheError:
             raise
         except (OSError, UnicodeDecodeError, json.JSONDecodeError, KeyError, ValueError):
@@ -672,6 +653,80 @@ def subing_strategy_performance_cache_identity_sha256(
     identity: SubingStrategyPerformanceCacheIdentity,
 ) -> str:
     return sha256(_canonical_bytes(_performance_identity_payload(identity))).hexdigest()
+
+
+def parse_subing_strategy_performance_cache_envelope(
+    content: bytes,
+    identity: SubingStrategyPerformanceCacheIdentity,
+) -> CachedSubingStrategyPerformanceSnapshot:
+    try:
+        envelope = json.loads(content)
+        identity_payload = _performance_identity_payload(identity)
+        identity_sha256 = sha256(_canonical_bytes(identity_payload)).hexdigest()
+        if (
+            not isinstance(envelope, dict)
+            or envelope.get("schema_version") != 2
+            or envelope.get("identity") != identity_payload
+            or envelope.get("identity_sha256") != identity_sha256
+            or not isinstance(envelope.get("payload"), dict)
+        ):
+            raise SubingStrategyCacheError()
+        payload_sha256 = sha256(_canonical_bytes(envelope["payload"])).hexdigest()
+        generated_at_text = envelope.get("generated_at")
+        snapshot_sha256 = _performance_snapshot_sha256(
+            identity_sha256=identity_sha256,
+            generated_at=generated_at_text,
+            payload_sha256=payload_sha256,
+        )
+        if (
+            envelope.get("payload_sha256") != payload_sha256
+            or envelope.get("snapshot_sha256") != snapshot_sha256
+        ):
+            raise SubingStrategyCacheError()
+        generated_at = datetime.fromisoformat(str(generated_at_text))
+        if generated_at.tzinfo is None or generated_at.utcoffset() is None:
+            raise SubingStrategyCacheError()
+        return CachedSubingStrategyPerformanceSnapshot(
+            identity_sha256=identity_sha256,
+            payload_sha256=payload_sha256,
+            generated_at=generated_at,
+            payload=envelope["payload"],
+        )
+    except SubingStrategyCacheError:
+        raise
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, KeyError, TypeError, ValueError):
+        raise SubingStrategyCacheError() from None
+
+
+def subing_strategy_performance_cache_identity_from_envelope(
+    content: bytes,
+) -> SubingStrategyPerformanceCacheIdentity:
+    try:
+        envelope = json.loads(content)
+        if not isinstance(envelope, dict):
+            raise SubingStrategyCacheError()
+        payload = envelope.get("identity")
+        if not isinstance(payload, dict):
+            raise SubingStrategyCacheError()
+        segments = payload.get("segment_identity_sha256s")
+        if not isinstance(segments, list):
+            raise SubingStrategyCacheError()
+        identity = SubingStrategyPerformanceCacheIdentity(
+            strategy_id=str(payload["strategy_id"]),
+            formula_version=str(payload["formula_version"]),
+            engine_identity_sha256=str(payload["engine_identity_sha256"]),
+            symbol=str(payload["symbol"]),
+            since=date.fromisoformat(str(payload["since"])),
+            through=date.fromisoformat(str(payload["through"])),
+            resolved_cutoff=datetime.fromisoformat(str(payload["resolved_cutoff"])),
+            segment_identity_sha256s=tuple(str(item) for item in segments),
+        )
+        parse_subing_strategy_performance_cache_envelope(content, identity)
+        return identity
+    except SubingStrategyCacheError:
+        raise
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, KeyError, TypeError, ValueError):
+        raise SubingStrategyCacheError() from None
 
 
 def _performance_snapshot_sha256(

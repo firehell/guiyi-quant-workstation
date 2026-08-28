@@ -1043,3 +1043,267 @@ def test_publish_creates_namespace_below_trusted_base(tmp_path: Path) -> None:
     assert S_IMODE((root / "current" / "jm.json").stat().st_mode) == 0o600
     assert "performance/" not in _snapshot_relative_path(snapshot)
     assert not (root / "jm").exists()
+
+
+def _prefix_source() -> str:
+    return "1" * 64
+
+
+def _tail_source() -> str:
+    return "2" * 64
+
+
+def _legacy_identity():
+    from app.market_data.subing_strategy.cache import (
+        SubingStrategyPerformanceCacheIdentity,
+    )
+
+    projection = _projection()
+    return SubingStrategyPerformanceCacheIdentity(
+        strategy_id=SUBING_STRATEGY_ID,
+        formula_version="subing_strategy_15m_v1",
+        engine_identity_sha256="e" * 64,
+        symbol=projection.symbol,
+        since=projection.coverage_since,
+        through=projection.coverage_through,
+        resolved_cutoff=projection.resolved_cutoff,
+        segment_identity_sha256s=(_prefix_source(), _tail_source()),
+    )
+
+
+def _legacy_lineage():
+    from app.market_data.subing_strategy.performance_lineage import (
+        SubingStrategyPerformanceLineage,
+        SubingStrategyPerformanceSourceSegment,
+    )
+
+    projection = _projection()
+    return SubingStrategyPerformanceLineage(
+        symbol=projection.symbol,
+        coverage_since=projection.coverage_since,
+        coverage_through=projection.coverage_through,
+        ordered_segments=(
+            SubingStrategyPerformanceSourceSegment(
+                contract="jm2505",
+                effective_start=date(2020, 1, 2),
+                effective_end=date(2026, 1, 4),
+                source_identity=_prefix_source(),
+            ),
+            SubingStrategyPerformanceSourceSegment(
+                contract="jm2605",
+                effective_start=date(2026, 1, 5),
+                effective_end=date(2026, 8, 26),
+                source_identity=_tail_source(),
+            ),
+        ),
+        source_manifest_sha256="b" * 64,
+    )
+
+
+def _tail_projection():
+    lineage = _legacy_lineage()
+    tail = lineage.ordered_segments[-1]
+    return type(
+        "Tail",
+        (),
+        {
+            "segment_summaries": (
+                type(
+                    "Segment",
+                    (),
+                    {
+                        "contract": tail.contract,
+                        "start_trading_day": tail.effective_start,
+                        "end_trading_day": tail.effective_end,
+                        "loaded_through": lineage.coverage_through,
+                        "bar_count_1m": 500,
+                        "bar_count_5m": 100,
+                        "bar_count_15m": 12,
+                        "source_identity_sha256": tail.source_identity,
+                    },
+                )(),
+            ),
+            "context_unavailable": (object(),),
+            "engine_identity_sha256": "e" * 64,
+        },
+    )()
+
+
+class _LineageResolver:
+    def __init__(self, lineage) -> None:
+        self.lineage = lineage
+
+    def resolve(self, symbol: str, *, through: date | None = None):
+        assert symbol == self.lineage.symbol
+        assert through == self.lineage.coverage_through
+        return self.lineage
+
+
+class _Historical:
+    def __init__(self, tail) -> None:
+        self.tail = tail
+        self.calls: list[tuple[object, bool]] = []
+
+    def history(self, request, *, publish_cache: bool = False):
+        self.calls.append((request, publish_cache))
+        return self.tail
+
+
+def _adopter(tmp_path: Path, *, historical=None, lineage=None):
+    from app.market_data.subing_strategy.cache import SubingStrategyPerformanceCache
+    from app.market_data.subing_strategy.performance import (
+        _performance_snapshot_payload,
+    )
+    from app.market_data.subing_strategy.performance_adoption import (
+        SubingStrategyPerformanceAdopter,
+    )
+
+    cache_root = tmp_path / "cache"
+    cache_root.mkdir(parents=True)
+    store_root = cache_root / "performance"
+    cache = SubingStrategyPerformanceCache(
+        cache_root,
+        root_validator=lambda: cache_root,
+        now=lambda: datetime(2026, 8, 27, 8, tzinfo=UTC),
+    )
+    store = SubingStrategyPerformanceFileSnapshotStore(
+        store_root,
+        root_validator=lambda: store_root,
+        trusted_base_validator=lambda: cache_root,
+    )
+    identity = _legacy_identity()
+    cache.publish(identity, _performance_snapshot_payload(_projection()))
+    hist = historical or _Historical(_tail_projection())
+    return SubingStrategyPerformanceAdopter(
+        cache=cache,
+        store=store,
+        lineage=lineage or _LineageResolver(_legacy_lineage()),
+        historical=hist,
+        now=lambda: datetime(2026, 8, 27, 9, tzinfo=UTC),
+    ), cache, store, hist
+
+
+def _assert_rebuild(exc: BaseException) -> None:
+    assert str(exc) == "SUBING_STRATEGY_PERFORMANCE_FULL_REBUILD_REQUIRED"
+    assert getattr(exc, "code") == "SUBING_STRATEGY_PERFORMANCE_FULL_REBUILD_REQUIRED"
+
+
+def test_adoption_publishes_schema_v3_and_leaves_legacy_bytes_unchanged(
+    tmp_path: Path,
+) -> None:
+    from app.market_data.subing_strategy.performance_adoption import (
+        SubingStrategyPerformanceAdopter,
+    )
+    from app.market_data.subing_strategy.service import SubingStrategyHistoricalRequest
+
+    adopter, cache, store, historical = _adopter(tmp_path)
+    identity = _legacy_identity()
+    legacy_path = cache.path_for(identity)
+    before = legacy_path.read_bytes()
+    lineage = _legacy_lineage()
+
+    snapshot = adopter.adopt(symbol="jm", through=date(2026, 8, 26))
+    restored = store.read_current(symbol="jm", expected_through=date(2026, 8, 26))
+
+    assert isinstance(adopter, SubingStrategyPerformanceAdopter)
+    assert legacy_path.read_bytes() == before
+    assert snapshot.immutable_prefix_segment_count == 1
+    assert snapshot.immutable_prefix_counts.bar_count_15m == 12
+    assert snapshot.immutable_prefix_counts.context_unavailable_count == 0
+    assert (
+        snapshot.immutable_prefix_counts.bar_count_15m
+        + snapshot.segment_facts[0].bar_count_15m
+        == snapshot.projection.bar_count_15m
+    )
+    assert snapshot.segment_facts[0].source_identity == _tail_source()
+    assert historical.calls == [
+        (
+            SubingStrategyHistoricalRequest(
+                series_kind=SeriesKind.ACTUAL_DOMINANT,
+                symbol="jm",
+                frequency=BarFrequency.M15,
+                since=lineage.ordered_segments[-1].effective_start,
+                through=date(2026, 8, 26),
+            ),
+            True,
+        )
+    ]
+    _assert_same_snapshot(restored, snapshot)
+
+
+def test_adoption_rejects_temporary_or_multiple_candidates(tmp_path: Path) -> None:
+    from app.market_data.subing_strategy.performance_adoption import (
+        SubingStrategyPerformanceFullRebuildRequired,
+    )
+
+    adopter, cache, _store, _hist = _adopter(tmp_path)
+    directory = cache.directory_for(symbol="jm", through=date(2026, 8, 26))
+    (directory / ".partial.json.tmp").write_text("{}", encoding="utf-8")
+
+    with pytest.raises(SubingStrategyPerformanceFullRebuildRequired) as exc_info:
+        adopter.adopt(symbol="jm", through=date(2026, 8, 26))
+    _assert_rebuild(exc_info.value)
+
+    (directory / ".partial.json.tmp").unlink()
+    (directory / "extra.json").write_text("{}", encoding="utf-8")
+    with pytest.raises(SubingStrategyPerformanceFullRebuildRequired) as extra:
+        adopter.adopt(symbol="jm", through=date(2026, 8, 26))
+    _assert_rebuild(extra.value)
+
+
+def test_adoption_rejects_symlink_and_segment_mismatch(tmp_path: Path) -> None:
+    from app.market_data.subing_strategy.performance_adoption import (
+        SubingStrategyPerformanceFullRebuildRequired,
+    )
+    from app.market_data.subing_strategy.performance_lineage import (
+        SubingStrategyPerformanceSourceSegment,
+    )
+
+    adopter, cache, _store, _hist = _adopter(tmp_path)
+    identity = _legacy_identity()
+    legacy_path = cache.path_for(identity)
+    sibling = legacy_path.with_name("link.json")
+    sibling.symlink_to(legacy_path)
+    legacy_path.unlink()
+    with pytest.raises(SubingStrategyPerformanceFullRebuildRequired) as linked:
+        adopter.adopt(symbol="jm", through=date(2026, 8, 26))
+    _assert_rebuild(linked.value)
+
+    sibling.unlink()
+    cache.publish(identity, _projection_payload())
+    original = _legacy_lineage()
+    drifted = replace(
+        original,
+        ordered_segments=(
+            original.ordered_segments[1],
+            SubingStrategyPerformanceSourceSegment(
+                contract="jm2505",
+                effective_start=date(2020, 1, 2),
+                effective_end=date(2026, 1, 4),
+                source_identity=_prefix_source(),
+            ),
+        ),
+    )
+    adopter, _cache, _store, _hist = _adopter(
+        tmp_path / "drift",
+        lineage=_LineageResolver(drifted),
+    )
+    with pytest.raises(SubingStrategyPerformanceFullRebuildRequired) as mismatch:
+        adopter.adopt(symbol="jm", through=date(2026, 8, 26))
+    _assert_rebuild(mismatch.value)
+
+
+def _projection_payload():
+    from app.market_data.subing_strategy.performance import (
+        _performance_snapshot_payload,
+    )
+
+    return _performance_snapshot_payload(_projection())
+
+
+def test_snapshot_store_does_not_import_or_call_adopter() -> None:
+    import app.market_data.subing_strategy.performance_snapshot_store as store_module
+
+    source = Path(store_module.__file__).read_text(encoding="utf-8")
+    assert "performance_adoption" not in source
+    assert "SubingStrategyPerformanceAdopter" not in source
