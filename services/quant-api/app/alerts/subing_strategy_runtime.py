@@ -323,6 +323,9 @@ class SubingStrategyRuntimeEvaluator:
             if source_identity != _source_identity(state):
                 raise SubingStrategyMachineError("SOURCE_IDENTITY_MISMATCH")
             event = _completed_event(bar, frequency)
+            restored_day = _latest_observed_trading_day(state)
+            if restored_day is not None and event.bar.trading_day > restored_day:
+                return self._result(product)
             state = self._with_authoritative_interval(
                 state,
                 event,
@@ -622,6 +625,19 @@ def _cutoffs(
         if state.watermarks.latest_15m is not None
         else None,
     )
+
+
+def _latest_observed_trading_day(
+    state: SubingStrategyMachineState,
+) -> date | None:
+    for bar in (
+        state.watermarks.latest_15m,
+        state.watermarks.latest_5m,
+        state.watermarks.latest_1m,
+    ):
+        if bar is not None:
+            return bar.trading_day
+    return None
 
 
 def _completed_event(

@@ -19,7 +19,7 @@ Root cause: restore used the next-session Daily Watch day as the current rank1 t
 
 When the expected target day has no rank1 occupancy, restore and catch-up fall back to the previous common mapped day (the last Canonical occupancy day) and replay Canonical through that day inclusive.
 
-Live overlay is used only when `MarketReadState.trading_day` equals that replay target. Next-session Live bars are not mixed into the last occupancy segment and are not an identity error.
+Live overlay is used only when `MarketReadState.trading_day` equals that replay target. Next-session Live bars are not mixed into the last occupancy segment and are not an identity error: a different `live_contract` does not fail restore, and `process_completed_bar` ignores a completed Live bar whose `trading_day` is after the restored watermark day until occupancy exists and `canonical_updated` rolls over.
 
 This does not invent Monday occupancy, does not write Catalog, and does not backfill Events or notifications. After the next natural after-market writes `2026-08-31` occupancy, `canonical_updated` remains the existing rollover seam.
 
