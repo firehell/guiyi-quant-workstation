@@ -58,12 +58,14 @@ class SubingStrategyPerformanceAdopter:
         lineage: _LineageResolver,
         historical: _HistoricalTail,
         now: Callable[[], datetime],
+        engine_identity_sha256: str,
     ) -> None:
         self._cache = cache
         self._store = store
         self._lineage = lineage
         self._historical = historical
         self._now = now
+        self._engine_identity_sha256 = engine_identity_sha256
 
     def adopt(
         self,
@@ -88,6 +90,7 @@ class SubingStrategyPerformanceAdopter:
                 or identity.since != lineage.coverage_since
                 or identity.strategy_id != SUBING_STRATEGY_ID
                 or identity.formula_version != "subing_strategy_15m_v1"
+                or identity.engine_identity_sha256 != self._engine_identity_sha256
                 or identity.segment_identity_sha256s
                 != tuple(segment.source_identity for segment in lineage.ordered_segments)
             ):
@@ -106,17 +109,21 @@ class SubingStrategyPerformanceAdopter:
                 ),
                 publish_cache=True,
             )
+            tail_engine = getattr(tail, "engine_identity_sha256", None)
+            if (
+                tail_engine is not None
+                and tail_engine != self._engine_identity_sha256
+            ):
+                raise SubingStrategyPerformanceFullRebuildRequired()
             snapshot = _snapshot_from_legacy(
                 cached.payload,
                 lineage=lineage,
                 tail=tail,
                 generated_at=self._now(),
             )
-            published = self._store.publish_current(snapshot)
-            if published.snapshot_sha256 != snapshot.snapshot_sha256:
-                raise SubingStrategyPerformanceFullRebuildRequired()
             if candidate.read_bytes() != source_bytes:
                 raise SubingStrategyPerformanceFullRebuildRequired()
+            self._store.publish_current(snapshot)
             return snapshot
         except SubingStrategyPerformanceFullRebuildRequired:
             raise
@@ -179,18 +186,24 @@ def _snapshot_from_legacy(
     ):
         raise SubingStrategyPerformanceFullRebuildRequired()
     tail_context = len(getattr(tail, "context_unavailable", ()))
+    full_1m = _required_count(payload, "bar_count_1m")
+    full_5m = _required_count(payload, "bar_count_5m")
+    full_15m = _required_count(payload, "bar_count_15m")
+    full_context = _required_count(payload, "context_unavailable_count")
     if (
-        projection.bar_count_15m < summary.bar_count_15m
-        or projection.context_unavailable_count < tail_context
+        projection.bar_count_15m != full_15m
+        or projection.context_unavailable_count != full_context
+        or full_1m < summary.bar_count_1m
+        or full_5m < summary.bar_count_5m
+        or full_15m < summary.bar_count_15m
+        or full_context < tail_context
     ):
         raise SubingStrategyPerformanceFullRebuildRequired()
     prefix_counts = SubingStrategyPerformancePrefixCounts(
-        bar_count_1m=0,
-        bar_count_5m=0,
-        bar_count_15m=projection.bar_count_15m - summary.bar_count_15m,
-        context_unavailable_count=(
-            projection.context_unavailable_count - tail_context
-        ),
+        bar_count_1m=full_1m - summary.bar_count_1m,
+        bar_count_5m=full_5m - summary.bar_count_5m,
+        bar_count_15m=full_15m - summary.bar_count_15m,
+        context_unavailable_count=full_context - tail_context,
     )
     fact = SubingStrategyPerformanceSegmentFact(
         contract=summary.contract,
@@ -203,9 +216,19 @@ def _snapshot_from_legacy(
         context_unavailable_count=tail_context,
         source_identity=tail_segment.source_identity,
     )
+    if (
+        prefix_counts.bar_count_1m + fact.bar_count_1m != full_1m
+        or prefix_counts.bar_count_5m + fact.bar_count_5m != full_5m
+        or prefix_counts.bar_count_15m + fact.bar_count_15m != full_15m
+        or prefix_counts.context_unavailable_count + fact.context_unavailable_count
+        != full_context
+    ):
+        raise SubingStrategyPerformanceFullRebuildRequired()
     from .cache import _canonical_bytes
 
-    expected_payload = _performance_snapshot_payload(projection)
+    expected_payload = dict(_performance_snapshot_payload(projection))
+    expected_payload["bar_count_1m"] = full_1m
+    expected_payload["bar_count_5m"] = full_5m
     if _canonical_bytes(dict(payload)) != _canonical_bytes(expected_payload):
         raise SubingStrategyPerformanceFullRebuildRequired()
     return subing_strategy_performance_snapshot_from_projection(
@@ -216,3 +239,10 @@ def _snapshot_from_legacy(
         source_manifest_sha256=lineage.source_manifest_sha256,
         generated_at=generated_at.astimezone(UTC),
     )
+
+
+def _required_count(payload: Mapping[str, object], key: str) -> int:
+    value = payload.get(key)
+    if type(value) is not int or value < 0:
+        raise SubingStrategyPerformanceFullRebuildRequired()
+    return value
