@@ -379,9 +379,9 @@ def _subing_strategy_performance_snapshot_root() -> Path:
 
 
 class _DeferredSubingStrategyPerformanceSnapshotStore:
-    """Defer Git-external root validation until the read-only request executes."""
+    """Defer Git-external root validation until a snapshot read or publish executes."""
 
-    def read_current(self, *, symbol: str, expected_through: date):
+    def _store(self) -> SubingStrategyPerformanceFileSnapshotStore:
         try:
             root = _subing_strategy_performance_snapshot_root()
         except SubingDailyWatchStoreError:
@@ -390,7 +390,22 @@ class _DeferredSubingStrategyPerformanceSnapshotStore:
             root,
             root_validator=_subing_strategy_performance_snapshot_root,
             trusted_base_validator=_subing_observation_base_root,
-        ).read_current(symbol=symbol, expected_through=expected_through)
+        )
+
+    def read_current(self, *, symbol: str, expected_through: date):
+        return self._store().read_current(
+            symbol=symbol,
+            expected_through=expected_through,
+        )
+
+    def read_current_for_refresh(self, *, symbol: str, expected_through: date):
+        return self._store().read_current_for_refresh(
+            symbol=symbol,
+            expected_through=expected_through,
+        )
+
+    def publish_current(self, snapshot):
+        return self._store().publish_current(snapshot)
 
 
 def build_subing_strategy_performance_snapshot_query(
@@ -401,6 +416,48 @@ def build_subing_strategy_performance_snapshot_query(
         store=_DeferredSubingStrategyPerformanceSnapshotStore(),
         lineage=build_subing_strategy_performance_lineage_resolver(session),
         products=load_active_products(),
+    )
+
+
+def build_subing_strategy_performance_incremental_batch_refresher(
+    session: Session,
+):
+    """Compose after-market serial incremental refresh without starting I/O."""
+    from app.market_data.subing_strategy.performance_adoption import (
+        SubingStrategyPerformanceAdopter,
+    )
+    from app.market_data.subing_strategy.performance_incremental import (
+        SubingStrategyPerformanceIncrementalBatchRefresher,
+        SubingStrategyPerformanceIncrementalRefresher,
+    )
+
+    frozen_now = datetime.now(UTC)
+    historical = build_subing_strategy_historical_service(session)
+    lineage = build_subing_strategy_performance_lineage_resolver(session)
+    store = _DeferredSubingStrategyPerformanceSnapshotStore()
+    cache = _build_subing_strategy_performance_cache_or_null()
+    engine = getattr(historical, "_engine_identity_sha256", None)
+    adopter = None
+    if isinstance(cache, SubingStrategyPerformanceCache) and isinstance(engine, str):
+        adopter = SubingStrategyPerformanceAdopter(
+            cache=cache,
+            store=store,
+            lineage=lineage,
+            historical=historical,
+            now=lambda: frozen_now,
+            engine_identity_sha256=engine,
+        )
+    return SubingStrategyPerformanceIncrementalBatchRefresher(
+        refresher=SubingStrategyPerformanceIncrementalRefresher(
+            lineage=lineage,
+            historical=historical,
+            store=store,
+            adopter=adopter,
+            now=lambda: frozen_now,
+        ),
+        products=load_operational_products(),
+        store=store,
+        now=lambda: frozen_now,
     )
 
 

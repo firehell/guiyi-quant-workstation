@@ -458,8 +458,9 @@ def build_after_market_updater(
         raise RuntimeError("AFTER_MARKET_RQDATA_CLIENT_UNAVAILABLE")
     from app.market_data.live_market import RedisClient
     from app.redis_connections import get_redis_connection
-    from app.market_data.composition import build_subing_strategy_performance_service
-    from app.market_data.subing_strategy.performance import warm_active_performance_cache
+    from app.market_data.composition import (
+        build_subing_strategy_performance_incremental_batch_refresher,
+    )
     from typing import cast
 
     notification_transport: NotificationTransport | None = None
@@ -473,10 +474,10 @@ def build_after_market_updater(
         sleep=time.sleep,
         notification_transport=notification_transport,
         now=lambda: datetime.now(SHANGHAI),
-        derived_refresh=lambda trading_day, products: warm_active_performance_cache(
-            build_subing_strategy_performance_service(manager.catalog.session),
-            expected_products=products,
-            through=trading_day,
+        derived_refresh=lambda trading_day, products: (
+            build_subing_strategy_performance_incremental_batch_refresher(
+                manager.catalog.session
+            ).refresh(trading_day, products)
         ),
     )
 

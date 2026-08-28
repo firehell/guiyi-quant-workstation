@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from datetime import UTC, date, datetime
+from hashlib import sha256
+import json
 from typing import Protocol
 
 from ..domain import BarFrequency, SeriesKind
@@ -14,6 +16,7 @@ from .contracts import (
 )
 from .performance import (
     SubingStrategyPerformanceProjection,
+    SubingStrategyPerformanceWarmResult,
     summarize_subing_strategy_episodes,
 )
 from .performance_adoption import SubingStrategyPerformanceFullRebuildRequired
@@ -416,3 +419,141 @@ def _validate_tail_episodes(
         if previous_end is not None and end < previous_end:
             raise SubingStrategyPerformanceFullRebuildRequired()
         previous_end = end
+
+
+class _ProductRefresher(Protocol):
+    def refresh(
+        self,
+        *,
+        symbol: str,
+        through: date,
+    ) -> object: ...
+
+
+class SubingStrategyPerformanceIncrementalBatchRefresher:
+    def __init__(
+        self,
+        *,
+        refresher: _ProductRefresher,
+        products: tuple[str, ...],
+        store: object | None = None,
+        now: Callable[[], datetime] | None = None,
+    ) -> None:
+        self._refresher = refresher
+        self._products = products
+        self._store = store
+        self._now = now or (lambda: datetime.now(UTC))
+
+    def refresh(
+        self,
+        through: date,
+        expected_products: tuple[str, ...],
+    ) -> SubingStrategyPerformanceWarmResult:
+        created_at = self._now()
+        if expected_products != self._products:
+            identities = {symbol: None for symbol in expected_products}
+            return SubingStrategyPerformanceWarmResult(
+                status="degraded",
+                completed_products=(),
+                failed_products=tuple(
+                    (symbol, "SUBING_STRATEGY_ACTIVE_OPERATIONAL_SCOPE_MISMATCH")
+                    for symbol in expected_products
+                ),
+                cache_hit_count=0,
+                cache_published_count=0,
+                batch_identity_sha256=_batch_identity_sha256(
+                    products=expected_products,
+                    through=through,
+                    current_identities=identities,
+                    resulting_identities=identities,
+                ),
+                batch_created_at=created_at,
+            )
+        completed: list[str] = []
+        failed: list[tuple[str, str]] = []
+        cache_hit_count = 0
+        cache_published_count = 0
+        current_identities: dict[str, str | None] = {}
+        resulting_identities: dict[str, str | None] = {}
+        for symbol in expected_products:
+            current_identities[symbol] = self._peek(symbol, through)
+            try:
+                projection = self._refresher.refresh(symbol=symbol, through=through)
+                cache_state = getattr(projection, "cache_state", None)
+                if cache_state not in {"hit", "refreshed"}:
+                    raise RuntimeError("SUBING_STRATEGY_CACHE_UNAVAILABLE")
+            except Exception as exc:  # noqa: BLE001 - fixed public error boundary
+                failed.append((symbol, _public_performance_code(exc)))
+                resulting_identities[symbol] = None
+                continue
+            completed.append(symbol)
+            if cache_state == "hit":
+                cache_hit_count += 1
+                resulting_identities[symbol] = current_identities[symbol]
+            else:
+                cache_published_count += 1
+                resulting_identities[symbol] = self._peek(symbol, through)
+        return SubingStrategyPerformanceWarmResult(
+            status="degraded" if failed else "passed",
+            completed_products=tuple(completed),
+            failed_products=tuple(failed),
+            cache_hit_count=cache_hit_count,
+            cache_published_count=cache_published_count,
+            batch_identity_sha256=_batch_identity_sha256(
+                products=expected_products,
+                through=through,
+                current_identities=current_identities,
+                resulting_identities=resulting_identities,
+            ),
+            batch_created_at=created_at,
+        )
+
+    def _peek(self, symbol: str, through: date) -> str | None:
+        if self._store is None:
+            return None
+        try:
+            snapshot = self._store.read_current_for_refresh(
+                symbol=symbol,
+                expected_through=through,
+            )
+        except Exception:  # noqa: BLE001 - identity peek is observational
+            return None
+        identity = getattr(snapshot, "identity_sha256", None)
+        if not isinstance(identity, str) or len(identity) != 64:
+            return None
+        if any(character not in "0123456789abcdef" for character in identity):
+            return None
+        return identity
+
+
+def _public_performance_code(exc: BaseException) -> str:
+    code = getattr(exc, "code", None)
+    if isinstance(code, str) and code.startswith("SUBING_STRATEGY_"):
+        return code
+    if str(exc) == "SUBING_STRATEGY_CACHE_UNAVAILABLE":
+        return "SUBING_STRATEGY_CACHE_UNAVAILABLE"
+    return "SUBING_STRATEGY_PERFORMANCE_UNAVAILABLE"
+
+
+def _batch_identity_sha256(
+    *,
+    products: tuple[str, ...],
+    through: date,
+    current_identities: dict[str, str | None],
+    resulting_identities: dict[str, str | None],
+) -> str:
+    payload = {
+        "products": list(products),
+        "through": through.isoformat(),
+        "current_snapshot_identities": [
+            {"symbol": symbol, "identity_sha256": current_identities.get(symbol)}
+            for symbol in products
+        ],
+        "resulting_snapshot_identities": [
+            {"symbol": symbol, "identity_sha256": resulting_identities.get(symbol)}
+            for symbol in products
+        ],
+    }
+    return sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
