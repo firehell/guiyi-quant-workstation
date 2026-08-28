@@ -373,8 +373,9 @@ class SubingStrategyCurrentProjectionService:
             or through.utcoffset() is None
         ):
             raise SubingStrategyCurrentSourceIdentityError()
-        target_day, _ = self._resolve_days(through)
-        segment = self._resolve_segment(symbol, target_day)
+        target_day, _source_day, segment, _occupancy_capped = (
+            self._resolve_replay_window(symbol, through)
+        )
         if (
             segment.contract != source_identity.contract
             or segment.start_trading_day != source_identity.segment_start_trading_day
@@ -409,11 +410,10 @@ class SubingStrategyCurrentProjectionService:
                     state,
                     identity=identity,
                     contract=segment.contract,
-                    target_day=target_day,
                 )
                 bars = (
                     self._market_read.live_snapshot(identity, after, through)
-                    if state.live_available
+                    if _live_matches_target(state, target_day)
                     else ()
                 )
             except SubingStrategyCurrentSourceIdentityError:
@@ -535,13 +535,15 @@ class SubingStrategyCurrentProjectionService:
         request: SubingStrategyCurrentRequest,
         now: datetime,
     ) -> _CurrentInputs:
-        target_day, source_day = self._resolve_days(now)
-        segment = self._resolve_segment(request.symbol, target_day)
+        target_day, source_day, segment, occupancy_capped = self._resolve_replay_window(
+            request.symbol,
+            now,
+        )
         source_segment = self._resolve_segment(request.symbol, source_day)
         canonical = self._load_canonical(
             symbol=request.symbol,
             segment=segment,
-            through=source_day,
+            through=target_day if occupancy_capped else source_day,
         )
         merged, live_ends = self._merge_completed_live(
             symbol=request.symbol,
@@ -610,14 +612,39 @@ class SubingStrategyCurrentProjectionService:
             raise SubingStrategyCurrentSourceIdentityError()
         return target, source
 
-    def _resolve_segment(
+    def _resolve_replay_window(
+        self,
+        symbol: str,
+        now: datetime,
+    ) -> tuple[date, date, ResolvedContractSegment, bool]:
+        target_day, source_day = self._resolve_days(now)
+        occupancy_capped = False
+        try:
+            segment = self._load_segment_summary(symbol, target_day)
+        except MarketDataError as exc:
+            if exc.code != "MAIN_CONTRACT_MAP_MISSING":
+                raise SubingStrategyCurrentSourceUnavailableError() from None
+            try:
+                segment = self._load_segment_summary(symbol, source_day)
+            except MarketDataError:
+                raise SubingStrategyCurrentSourceUnavailableError() from None
+            occupancy_capped = True
+            target_day = source_day
+            source_day = self._previous_trading_day(target_day)
+            if type(source_day) is not date or source_day >= target_day:
+                raise SubingStrategyCurrentSourceIdentityError()
+            if not segment.start_trading_day <= target_day <= segment.end_trading_day:
+                raise SubingStrategyCurrentSourceIdentityError()
+        return target_day, source_day, segment, occupancy_capped
+
+    def _load_segment_summary(
         self, symbol: str, target_day: date
     ) -> ResolvedContractSegment:
         try:
             summary = self._current_segment(symbol, target_day)
             contract = normalize_contract_for_symbol(symbol, summary.contract)
         except MarketDataError:
-            raise SubingStrategyCurrentSourceUnavailableError() from None
+            raise
         except (AttributeError, TypeError, ValueError):
             raise SubingStrategyCurrentSourceIdentityError() from None
         if (
@@ -633,6 +660,14 @@ class SubingStrategyCurrentProjectionService:
             summary.start_trading_day,
             summary.end_trading_day,
         )
+
+    def _resolve_segment(
+        self, symbol: str, target_day: date
+    ) -> ResolvedContractSegment:
+        try:
+            return self._load_segment_summary(symbol, target_day)
+        except MarketDataError:
+            raise SubingStrategyCurrentSourceUnavailableError() from None
 
     def _load_canonical(
         self,
@@ -704,11 +739,10 @@ class SubingStrategyCurrentProjectionService:
                 state,
                 identity=identity,
                 contract=segment.contract,
-                target_day=target_day,
             )
             historical = canonical[frequency]
             live: tuple[CanonicalBar, ...] = ()
-            if state.live_available:
+            if _live_matches_target(state, target_day):
                 try:
                     live = self._market_read.live_snapshot(
                         identity,
@@ -739,13 +773,11 @@ class SubingStrategyCurrentProjectionService:
         *,
         identity: SeriesPageQuery,
         contract: str,
-        target_day: date,
     ) -> None:
         if (
             state.symbol != identity.symbol
             or state.series_kind != identity.series_kind.value
             or state.frequency != identity.frequency.value
-            or (state.trading_day is not None and state.trading_day != target_day)
             or (state.live_contract is not None and state.live_contract != contract)
             or (state.live_available and not state.live_eligible)
         ):
@@ -844,6 +876,13 @@ class SubingStrategyCurrentProjectionService:
                 key=lambda window: window.start,
             )
         )
+
+
+def _live_matches_target(state: object, target_day: date) -> bool:
+    return (
+        getattr(state, "live_available", False) is True
+        and getattr(state, "trading_day", None) == target_day
+    )
 
 
 def _context_from_item(
