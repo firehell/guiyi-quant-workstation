@@ -28,8 +28,10 @@ export interface HistoricalResearchMarkerIdentity {
 }
 
 interface Dependencies {
+  debounceMs?: number
   fetchSubingStrategy: (
     request: SubingStrategyHistoricalRequest,
+    signal?: AbortSignal,
   ) => Promise<SubingStrategyHistoricalResponse>
 }
 
@@ -41,9 +43,37 @@ export function useHistoricalResearchMarkers(dependencies: Dependencies) {
   const error = ref<string | null>(null)
   const markersByEventId = new Map<string, KlineMarker>()
   const episodesById = new Map<string, SubingStrategyEpisode>()
+  const debounceMs = dependencies.debounceMs ?? 400
   let generation = 0
   let activeIdentity: HistoricalResearchMarkerIdentity | null = null
   let loadedSince: string | null = null
+  let debounceTimer: ReturnType<typeof setTimeout> | null = null
+  let pendingDebounceResolve: (() => void) | null = null
+  let abortController: AbortController | null = null
+
+  function clearDebounce(): void {
+    if (debounceTimer !== null) {
+      clearTimeout(debounceTimer)
+      debounceTimer = null
+    }
+    if (pendingDebounceResolve !== null) {
+      const resolve = pendingDebounceResolve
+      pendingDebounceResolve = null
+      resolve()
+    }
+  }
+
+  function abortInFlight(): void {
+    if (abortController !== null) {
+      abortController.abort()
+      abortController = null
+    }
+  }
+
+  function clearDebounceAndAbort(): void {
+    clearDebounce()
+    abortInFlight()
+  }
 
   async function sync(
     identity: HistoricalResearchMarkerIdentity,
@@ -52,7 +82,10 @@ export function useHistoricalResearchMarkers(dependencies: Dependencies) {
     mutation: 'replace' | 'prepend' | 'live',
   ): Promise<void> {
     const changed = identityKey(identity) !== identityKey(activeIdentity)
-    if (changed || mutation === 'replace') reset(identity)
+    if (changed || mutation === 'replace') {
+      clearDebounceAndAbort()
+      reset(identity)
+    }
     if (mutation === 'live') return
 
     const capability = researchOverlayCapability(
@@ -66,6 +99,7 @@ export function useHistoricalResearchMarkers(dependencies: Dependencies) {
       || historicalSource !== 'subing_strategy'
       || !subingStrategyHistoricalCapability(identity.seriesKind, identity.frequency)
     ) {
+      clearDebounceAndAbort()
       reset(identity)
       return
     }
@@ -78,14 +112,52 @@ export function useHistoricalResearchMarkers(dependencies: Dependencies) {
       return
     }
     if (mutation === 'prepend' && loadedSince !== null && range.since >= loadedSince) return
-    const through = mutation === 'prepend' && loadedSince !== null
-      ? loadedSince
-      : range.through
-    const requestGeneration = generation
+
+    if (mutation === 'prepend') {
+      return schedulePrependFetch(identity, range)
+    }
+
+    return executeFetch(identity, range)
+  }
+
+  function schedulePrependFetch(
+    identity: HistoricalResearchMarkerIdentity,
+    range: { since: string; through: string },
+  ): Promise<void> {
+    clearDebounce()
+
     loading.value = true
     error.value = null
+    const requestGeneration = generation
+
+    return new Promise<void>((resolve) => {
+      pendingDebounceResolve = resolve
+      debounceTimer = setTimeout(() => {
+        debounceTimer = null
+        pendingDebounceResolve = null
+        void executeFetch(identity, range, requestGeneration).then(resolve)
+      }, debounceMs)
+    })
+  }
+
+  async function executeFetch(
+    identity: HistoricalResearchMarkerIdentity,
+    range: { since: string; through: string },
+    requestGeneration = generation,
+  ): Promise<void> {
+    loading.value = true
+    error.value = null
+    abortInFlight()
+    const controller = new AbortController()
+    abortController = controller
     try {
-      const loaded = await loadSubingStrategy(dependencies, identity, range.since, through)
+      const loaded = await loadSubingStrategy(
+        dependencies,
+        identity,
+        range.since,
+        range.through,
+        controller.signal,
+      )
       if (
         requestGeneration !== generation
         || identityKey(identity) !== identityKey(activeIdentity)
@@ -107,6 +179,7 @@ export function useHistoricalResearchMarkers(dependencies: Dependencies) {
         loadedSince = range.since
       }
     } catch (caught) {
+      if (isAbortError(caught)) return
       if (
         requestGeneration === generation
         && identityKey(identity) === identityKey(activeIdentity)
@@ -114,11 +187,15 @@ export function useHistoricalResearchMarkers(dependencies: Dependencies) {
         error.value = 'HISTORICAL_RESEARCH_UNAVAILABLE'
       }
     } finally {
-      if (requestGeneration === generation) loading.value = false
+      if (abortController === controller) {
+        abortController = null
+        loading.value = false
+      }
     }
   }
 
   function reset(identity: HistoricalResearchMarkerIdentity) {
+    clearDebounceAndAbort()
     generation += 1
     activeIdentity = { ...identity }
     markersByEventId.clear()
@@ -126,11 +203,13 @@ export function useHistoricalResearchMarkers(dependencies: Dependencies) {
     markers.value = []
     subingStrategyEpisodes.value = []
     subingStrategyActions.value = []
+    loading.value = false
     error.value = null
     loadedSince = null
   }
 
   function dispose() {
+    clearDebounceAndAbort()
     generation += 1
     activeIdentity = null
     markersByEventId.clear()
@@ -152,6 +231,12 @@ export function useHistoricalResearchMarkers(dependencies: Dependencies) {
     sync,
     dispose,
   }
+}
+
+function isAbortError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false
+  if (error.name === 'AbortError') return true
+  return (error as { code?: string }).code === 'ERR_CANCELED'
 }
 
 function confirmedRange(
@@ -204,6 +289,7 @@ async function loadSubingStrategy(
   identity: HistoricalResearchMarkerIdentity,
   since: string,
   through: string,
+  signal?: AbortSignal,
 ): Promise<LoadedHistoricalResult> {
   const request: SubingStrategyHistoricalRequest = {
     series_kind: 'actual_dominant',
@@ -212,7 +298,7 @@ async function loadSubingStrategy(
     since,
     through,
   }
-  const response = await dependencies.fetchSubingStrategy(request)
+  const response = await dependencies.fetchSubingStrategy(request, signal)
   if (!matchesRequest(response, request)) {
     throw new Error('HISTORICAL_RESEARCH_IDENTITY_MISMATCH')
   }

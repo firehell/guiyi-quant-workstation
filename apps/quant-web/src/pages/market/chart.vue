@@ -42,6 +42,7 @@ import type {
 import { MARKET_FREQUENCIES } from '@/types/market'
 import { lifecycleSnapshotToMarkers } from '@/utils/subingLifecycleMarkers'
 import { ALERT_RULE_CODES } from '@/utils/alertRules'
+import { earlierHistoryLoadError } from '@/utils/errorRedaction'
 import { alertMarkersForOverlay, mergeKlineMarkers } from '@/utils/alertMarkers'
 import { reconcileSubingStrategyActions } from '@/utils/subingStrategyReconciliation'
 import { buildKlineDerivedData } from '@/utils/klineViewModel'
@@ -624,8 +625,8 @@ async function refreshStrategyPerformance(): Promise<void> {
 async function loadEarlierBars() {
   try {
     await loadMoreBefore()
-  } catch {
-    error.value = '读取更早历史失败：数据集、月分区或主力映射不完整'
+  } catch (caught) {
+    error.value = earlierHistoryLoadError(caught)
     message.error(error.value)
   }
 }

@@ -55,6 +55,8 @@ test('Web keeps the retained SuBing history/current and internal-process surface
   const toolbarSource = read('../src/components/market/ProductWorkspaceToolbar.vue')
 
   assert.match(apiSource, /export function getSubingStrategyHistory/)
+  assert.match(apiSource, /timeout: 120_000/)
+  assert.match(apiSource, /signal/)
   assert.match(apiSource, /export function getSubingStrategyCurrent/)
   assert.match(chartSource, /useSubingStrategyCurrent/)
   assert.match(toolbarSource, /显示苏冰内部研究过程/)

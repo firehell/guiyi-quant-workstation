@@ -575,3 +575,176 @@ def test_request_supports_only_actual_dominant_15m(
             since=SEGMENT_START,
             through=SEGMENT_START,
         )
+
+
+def test_history_uses_matching_snapshot_without_loading_or_replay(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from tests.data_foundation.test_subing_strategy_history_snapshot_slice import (
+        _closed,
+        _snapshot,
+    )
+
+    june = _closed(date(2026, 6, 4), date(2026, 6, 4), "june")
+    july = _closed(date(2026, 7, 10), date(2026, 7, 13), "july")
+    snapshot = _snapshot(
+        since=date(2024, 1, 1),
+        through=date(2026, 8, 28),
+        episodes=(june, july),
+    )
+
+    class BoomLoader:
+        def load(self, **_kwargs):
+            raise AssertionError("snapshot hit must not load 1m/5m/15m")
+
+        def sessions(self, **_kwargs):
+            raise AssertionError("snapshot hit must not load sessions")
+
+    class SnapshotQuery:
+        def current(self, symbol: str):
+            assert symbol == "jm"
+            return snapshot
+
+    monkeypatch.setattr(
+        "app.market_data.subing_strategy.service.replay_subing_strategy_segment",
+        lambda **_kwargs: (_ for _ in ()).throw(AssertionError("must not replay")),
+    )
+    service = SubingStrategyHistoricalProjectionService(
+        BoomLoader(),
+        products=("jm",),
+        direction_context_resolver=FakeDirectionContextResolver({}),
+        calibration=_accepted_calibration(),
+        lifecycle_policy=load_subing_lifecycle_policy(),
+        strategy_policy=load_subing_strategy_policy(),
+        snapshot_query=SnapshotQuery(),
+    )
+
+    result = service.history(
+        _request(since=date(2026, 6, 15), through=date(2026, 8, 28)),
+        publish_cache=False,
+    )
+
+    assert result.cache_state == "hit"
+    assert result.actions
+    assert [episode.episode_id for episode in result.episodes] == [july.episode_id]
+
+
+def test_history_replays_when_request_through_is_older_than_snapshot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from tests.data_foundation.test_subing_strategy_history_snapshot_slice import (
+        _closed,
+        _snapshot,
+    )
+
+    snapshot = _snapshot(
+        since=date(2024, 1, 1),
+        through=date(2026, 8, 28),
+        episodes=(_closed(date(2026, 6, 4), date(2026, 6, 4), "june"),),
+    )
+
+    class SnapshotQuery:
+        def current(self, symbol: str):
+            assert symbol == "jm"
+            return snapshot
+
+    bar = _bar(1)
+    segment = ResolvedContractSegment(CONTRACT, SEGMENT_START, SEGMENT_START)
+    loader = FakeSegmentLoader(
+        loaded_series(segments=(segment,), bars_5m=(bar,), bars_15m=(bar,))
+    )
+    resolver = FakeDirectionContextResolver(
+        {SEGMENT_START: _context(bar, SubingStrategyDirection.NO_NEW_ENTRY)}
+    )
+    expected = SubingStrategySegmentResult(
+        actions=(),
+        episodes=(),
+        consumed_opportunity_ids=(),
+        canceled_pending=(),
+        pending_action=None,
+        final_position=SubingStrategyPositionState.FLAT,
+    )
+    replay_calls: list[object] = []
+
+    def replay(**_kwargs):
+        replay_calls.append(True)
+        return expected
+
+    monkeypatch.setattr(
+        "app.market_data.subing_strategy.service.replay_subing_strategy_segment",
+        replay,
+    )
+    service = SubingStrategyHistoricalProjectionService(
+        loader,
+        products=("jm",),
+        direction_context_resolver=resolver,
+        calibration=_accepted_calibration(),
+        lifecycle_policy=load_subing_lifecycle_policy(),
+        strategy_policy=load_subing_strategy_policy(),
+        snapshot_query=SnapshotQuery(),
+    )
+
+    result = service.history(
+        _request(since=date(2026, 6, 1), through=date(2026, 8, 11)),
+        publish_cache=False,
+    )
+
+    assert replay_calls == [True]
+    assert loader.requests
+
+
+def test_history_replays_when_snapshot_current_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.market_data.subing_strategy.performance_snapshot import (
+        SubingStrategyPerformanceSnapshotError,
+    )
+
+    class SnapshotQuery:
+        def current(self, symbol: str):
+            assert symbol == "jm"
+            raise SubingStrategyPerformanceSnapshotError()
+
+    bar = _bar(1)
+    segment = ResolvedContractSegment(CONTRACT, SEGMENT_START, SEGMENT_START)
+    loader = FakeSegmentLoader(
+        loaded_series(segments=(segment,), bars_5m=(bar,), bars_15m=(bar,))
+    )
+    resolver = FakeDirectionContextResolver(
+        {SEGMENT_START: _context(bar, SubingStrategyDirection.NO_NEW_ENTRY)}
+    )
+    expected = SubingStrategySegmentResult(
+        actions=(),
+        episodes=(),
+        consumed_opportunity_ids=(),
+        canceled_pending=(),
+        pending_action=None,
+        final_position=SubingStrategyPositionState.FLAT,
+    )
+    replay_calls: list[object] = []
+
+    def replay(**_kwargs):
+        replay_calls.append(True)
+        return expected
+
+    monkeypatch.setattr(
+        "app.market_data.subing_strategy.service.replay_subing_strategy_segment",
+        replay,
+    )
+    service = SubingStrategyHistoricalProjectionService(
+        loader,
+        products=("jm",),
+        direction_context_resolver=resolver,
+        calibration=_accepted_calibration(),
+        lifecycle_policy=load_subing_lifecycle_policy(),
+        strategy_policy=load_subing_strategy_policy(),
+        snapshot_query=SnapshotQuery(),
+    )
+
+    result = service.history(
+        _request(since=SEGMENT_START, through=SEGMENT_START),
+        publish_cache=False,
+    )
+
+    assert replay_calls == [True]
+    assert loader.requests

@@ -6,7 +6,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
-from typing import Literal, Protocol
+from typing import TYPE_CHECKING, Literal, Protocol
 
 from app.core.env import PROJECT_ROOT
 
@@ -54,6 +54,9 @@ from .direction_context import (
     SubingStrategyDirectionContext,
 )
 from .policy import SubingStrategyPolicy
+
+if TYPE_CHECKING:
+    from .performance import SubingStrategyPerformanceProjection
 from .replay import SubingStrategyReplayError, replay_subing_strategy_segment
 
 
@@ -117,6 +120,10 @@ class _StrategyCache(Protocol):
         identity: SubingStrategyCacheIdentity,
         projection: CachedSubingStrategySegmentProjection,
     ) -> None: ...
+
+
+class _SnapshotQuery(Protocol):
+    def current(self, symbol: str) -> SubingStrategyPerformanceProjection: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -192,6 +199,7 @@ class SubingStrategyHistoricalProjectionService:
         strategy_policy: SubingStrategyPolicy,
         cache: _StrategyCache | None = None,
         strategy_policy_path: Path | None = None,
+        snapshot_query: _SnapshotQuery | None = None,
     ) -> None:
         normalized = tuple(product.strip().lower() for product in products)
         if (
@@ -216,6 +224,7 @@ class SubingStrategyHistoricalProjectionService:
         self._lifecycle_policy = lifecycle_policy
         self._strategy_policy = strategy_policy
         self._cache = cache or NullSubingStrategyCache()
+        self._snapshot_query = snapshot_query
         self._strategy_policy_sha256: str | None
         try:
             self._strategy_policy_sha256 = strategy_policy_sha256(
@@ -252,6 +261,27 @@ class SubingStrategyHistoricalProjectionService:
             raise TypeError("publish_cache must be bool")
         if request.symbol not in self._products:
             raise SubingStrategyActiveProductError()
+        if self._snapshot_query is not None:
+            from app.market_data.subing_strategy.history_snapshot_slice import (
+                try_slice_history_from_snapshot,
+            )
+            from app.market_data.subing_strategy.performance_snapshot import (
+                SubingStrategyPerformanceSnapshotError,
+            )
+
+            try:
+                snapshot = self._snapshot_query.current(request.symbol)
+            except SubingStrategyPerformanceSnapshotError:
+                snapshot = None
+            if snapshot is not None:
+                sliced = try_slice_history_from_snapshot(
+                    request,
+                    snapshot,
+                    policy=self._strategy_policy,
+                    engine_identity_sha256=self._engine_identity_sha256,
+                )
+                if sliced is not None:
+                    return sliced
         try:
             loaded = self._segment_loader.load(
                 symbol=request.symbol,

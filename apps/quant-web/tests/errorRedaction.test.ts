@@ -5,6 +5,7 @@ import {
   redactSensitiveText,
   toSafeApiError,
   toSafeErrorInfo,
+  earlierHistoryLoadError,
 } from '../src/utils/errorRedaction.ts'
 
 test('redactSensitiveText removes absolute unix paths', () => {
@@ -52,6 +53,17 @@ test('toSafeApiError does not leak file paths from axios detail', () => {
   assert.equal(msg.includes('/Users/'), false)
   assert.equal(msg.includes('hunter2'), false)
   assert.match(msg, /HTTP_500/)
+})
+
+test('earlierHistoryLoadError does not treat timeout as incomplete mapping', () => {
+  assert.equal(
+    earlierHistoryLoadError({ code: 'ECONNABORTED', message: 'timeout of 30000ms exceeded' }),
+    '读取更早历史失败：请求超时，请缩小查询范围后重试。',
+  )
+  assert.equal(
+    earlierHistoryLoadError({ response: { status: 409, data: { detail: { code: 'MAIN_CONTRACT_MAP_MISSING' } } } }),
+    '读取更早历史失败：数据集、月分区或主力映射不完整',
+  )
 })
 
 test('formatApiLogSummary stays free of query bodies', () => {

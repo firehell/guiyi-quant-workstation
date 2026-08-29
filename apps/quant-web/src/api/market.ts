@@ -67,10 +67,13 @@ export function getSubingResearch(params: { symbol: string; frequency: SubingFre
   }).then(normalizeSubingResearch)
 }
 
-export function getSubingStrategyHistory(params: SubingStrategyHistoricalRequest) {
+export function getSubingStrategyHistory(
+  params: SubingStrategyHistoricalRequest,
+  signal?: AbortSignal,
+) {
   return request.get<never, SubingStrategyHistoricalWireResponse>(
     '/market/research/subing-strategy/history',
-    { params },
+    { params, timeout: 120_000, signal },
   ).then(normalizeSubingStrategyHistory) as Promise<SubingStrategyHistoricalResponse>
 }
 

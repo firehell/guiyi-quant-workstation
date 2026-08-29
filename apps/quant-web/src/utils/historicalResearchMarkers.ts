@@ -31,6 +31,20 @@ export function subingStrategyResultTone(
   return numeric >= 0 ? 'profit' : 'loss'
 }
 
+export function subingStrategyChartLabelLines(input: {
+  open: boolean
+  kindLabel: string
+  price: string
+  percentLabel: string | null
+}): string {
+  const detail = input.open
+    ? `建仓价：${input.price}`
+    : input.percentLabel
+      ? `${input.price}(${input.percentLabel})`
+      : input.price
+  return `${input.kindLabel}\n${detail}`
+}
+
 export function subingStrategyActionToMarker(
   action: SubingStrategyAction,
   episodeById: ReadonlyMap<string, SubingStrategyEpisode>,
@@ -47,11 +61,12 @@ export function subingStrategyActionToMarker(
   const kindLabel = open
     ? long ? '建多' : '建空'
     : long ? '清多' : '清空'
-  const label = open
-    ? `${kindLabel} ${price}`
-    : percentLabel
-      ? `${kindLabel} ${price}(${percentLabel})`
-      : `${kindLabel} ${price}`
+  const label = subingStrategyChartLabelLines({
+    open,
+    kindLabel,
+    price,
+    percentLabel,
+  })
   const resultTone = open ? null : subingStrategyResultTone(percentRaw)
   const reasons = action.reason_codes.map(subingStrategyExitReasonLabel)
   const context = entry?.direction_context_source_day
