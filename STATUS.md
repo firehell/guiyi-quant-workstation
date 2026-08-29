@@ -1,6 +1,6 @@
 # 当前状态
 
-更新时间：2026-08-29
+更新时间：2026-08-30
 
 本文件只记录当前 release、production Runtime、Scope、自然 evidence 与尚未完成的 Gate。稳定产品面见 `PROJECT_SOURCE.md`，长期决策见 `DECISIONS.md`，active 依赖见 `docs/ARCHITECTURE.md`。
 
@@ -8,12 +8,12 @@
 
 | 项目 | 当前事实 |
 |---|---|
-| Release | `v1.9.1` `RELEASED`。annotated tag / GitHub Release 指向 `main` merge `f6cae9f79872e895290af72beca375ba8bb17242`（PR #251）。前一 tag `v1.9.0@a4d9a7b02bb4fd9b3bafefb719c579c0f0a184bc` 保留。 |
-| Runtime | 本机当前绑定 `/Volumes/扩展盘/guiyi-quant-runtime-v1.9.1@f6cae9f79…`。`/api/health` 读回 `version=1.9.1 / readonly=true`。2026-08-29 02:32 验收 Alert restore `strategy_state=ready`、`60 ready / 0 unavailable`、`processing_state=ok`、overall `ok`。Market Runtime `phase_counts.CLOSED=60`（夜盘已结束）。HTDY Scope 与 Rule 未改。 |
+| Release | `v1.9.2` release candidate（确认首屏、EMA ribbon、策略事件深链、效果面板默认关闭）。前一 tag `v1.9.1@f6cae9f79872e895290af72beca375ba8bb17242` 保留。合入 `main` / tag / GitHub Release 完成前不把 `v1.9.2` 标为 `RELEASED`。 |
+| Runtime | 本机当前仍绑定 `/Volumes/扩展盘/guiyi-quant-runtime-v1.9.1@f6cae9f79…`。`/api/health` 读回 `version=1.9.1 / readonly=true`。v1.9.2 Runtime promotion 完成后再验收新 checkout。 |
 | Database | production Alembic 为 `20260826_0042 (head)`。Rule 已原子收敛为 `htdy_original_15m` 与 `subing_strategy_v1`；旧 SuBing Rule/Event 不保留。四张空的退役 `trade_*` 表已删除。 |
 | Market Runtime Scope | `operational_products.txt` 的 60 个品种。 |
 | Alert Scope | HTDY 唯一 production Scope 仍为 `jm × 15m`（`1 symbol / 1 pair`）。2026-08-29 当次明确授权已把 `subing_strategy_v1` 的 `scope_products` 扩到 `operational_products.txt` 全部 60 个品种；逐品种 PUT 60/60 成功，读回集合与清单一致。两种授权边界不合并。DB 中 2 个 Rule 均 enabled；Alert Runtime marker 已 enabled；audience count 2。`/api/runtime/health` 读回 `enabled_rule_count=2`、`scope_product_count=60`、`strategy_ready_product_count=60`。Scope 变化不补 Event、不补发历史通知；此后各品种新的 completed 15m 策略动作才会 one-shot 推 owner（非 Topic）。 |
-| v1.9.1 | 含 SuBing 效果增量快照、v2→v3 adopt、occupancy-capped Stage 2 restore，以及 restore 后忽略尚未映射 occupancy 的下一交易日 Live。不新增 migration、不修改 Scope。 |
+| v1.9.2 release candidate | 含图表确认首屏、EMA10/21 默认画带、策略事件深链，以及全历史效果面板默认关闭。不新增 migration。HTDY Scope 仍为 `jm × 15m`；SuBing `scope_products` 已是 operational 60，本 release 不重做 PUT。 |
 | N Structure / Multi-Candidate retirement | release 与当时的 v1.8.8 Runtime promotion 均已完成；旧 `GET /api/v1/market/research/n-structure/bands` 在 production 返回 `404`，不保留 410、feature-disabled 或兼容 reader。Git/Alembic history 只保留 lineage。 |
 
 Alert transport 为 PushPlus；provider accepted 不等于微信送达。2026-08-26 21:33，operator 已按当次明确请求对 `last_notification_failure_at=2026-08-25T11:40:05.182316+00:00` 执行一次精确 CAS acknowledgment；读回 `notification_state=acknowledged`、`notification_acknowledged_at=2026-08-26T13:33:29.088633+00:00`。原 failure、`notification_transport_failed` 与连续失败计数保留，`event_replayed=false / notification_sent=false`；该操作不证明 provider accepted 或微信送达。

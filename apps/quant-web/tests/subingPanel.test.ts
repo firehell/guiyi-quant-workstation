@@ -16,7 +16,7 @@ test('contains presentation formatting only and no browser Factor Signal or Life
   )
 })
 
-test('moves Strategy records to bottom while sidebar keeps current state and Lifecycle opt-in', () => {
+test('moves Strategy records behind chart settings while sidebar keeps confirm facts and Lifecycle opt-in', () => {
   const chartSource = readFileSync(
     new URL('../src/pages/market/chart.vue', import.meta.url),
     'utf-8',
@@ -27,8 +27,13 @@ test('moves Strategy records to bottom while sidebar keeps current state and Lif
   )
 
   assert.doesNotMatch(panelSource, /<SubingStrategyRecords/)
-  assert.match(panelSource, /data-testid="subing-current-strategy-state"/)
+  assert.match(panelSource, /data-testid="subing-strategy-event"/)
+  assert.match(panelSource, /formatConfirmEffectiveTime/)
+  assert.match(panelSource, /confirmValidityLabel/)
+  assert.doesNotMatch(panelSource, /data-testid="subing-current-strategy-state"/)
   assert.match(chartSource, /<SubingStrategyPerformancePanel/)
+  assert.match(chartSource, /v-if="showSubingStrategyPerformance"/)
+  assert.match(toolbarSource, /显示全历史策略效果/)
   assert.match(panelSource, /data-testid="subing-research-details"/)
   assert.match(panelSource, /<summary>当前研究 \/ 数据身份 \/ 详细信息<\/summary>/)
   assert.doesNotMatch(

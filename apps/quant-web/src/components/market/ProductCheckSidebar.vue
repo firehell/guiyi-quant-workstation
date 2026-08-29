@@ -14,7 +14,6 @@ import {
   type ResearchOverlayId,
   type SeriesKind,
   type SubingResearchResponse,
-  type SubingStrategyEpisode,
   type SubingStrategyCurrentResponse,
 } from '@/types/market'
 import {
@@ -49,9 +48,6 @@ const props = defineProps<{
   currentEventsStatus: 'ready' | 'unavailable' | null
   currentEvents: AlertEvent[]
   htdyObservation: KlineMarker | null
-  subingStrategyEpisodes: SubingStrategyEpisode[]
-  subingStrategyLoading: boolean
-  subingStrategyError: string | null
   subingStrategySupported: boolean
   subingStrategyCurrent: SubingStrategyCurrentResponse | null
   subingStrategyCurrentLoading: boolean
@@ -138,9 +134,6 @@ function updateDataDetailsOpen(event: Event) {
         :runtime-status="alertRuntimeStatus"
         :alert-loading="alertLoading"
         :saving-rule-codes="savingRuleCodes"
-        :strategy-episodes="subingStrategyEpisodes"
-        :strategy-loading="subingStrategyLoading"
-        :strategy-error="subingStrategyError"
         :strategy-supported="subingStrategySupported"
         :strategy-current="subingStrategyCurrent"
         :strategy-current-loading="subingStrategyCurrentLoading"

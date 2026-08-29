@@ -60,6 +60,7 @@ test('Web keeps the retained SuBing history/current and internal-process surface
   assert.match(apiSource, /export function getSubingStrategyCurrent/)
   assert.match(chartSource, /useSubingStrategyCurrent/)
   assert.match(toolbarSource, /显示苏冰内部研究过程/)
+  assert.match(toolbarSource, /显示全历史策略效果/)
 })
 
 test('Web exposes Strategy V1 facts while the retired SuBing single-signal seam stays absent', () => {
@@ -87,7 +88,7 @@ test('Web exposes Strategy V1 facts while the retired SuBing single-signal seam 
   assert.match(apiSource, /export function getSubingStrategyHistory/)
   assert.match(markerSource, /export function subingStrategyActionToMarker/)
   assert.match(loaderSource, /subingStrategyEpisodes/)
-  assert.match(sidebarSource, /:strategy-episodes="subingStrategyEpisodes"/)
+  assert.doesNotMatch(sidebarSource, /:strategy-episodes="subingStrategyEpisodes"/)
 })
 
 test('visible product copy retains the approved SuBing name', () => {

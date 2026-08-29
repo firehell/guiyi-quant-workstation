@@ -61,6 +61,7 @@ test('research overlay defaults to SuBing and exposes exactly one overlay indica
     selectedOverlay: 'subing',
     optionalEmaIndicators: [],
     showSubingInternalProcess: false,
+    showSubingStrategyPerformance: false,
     period: null,
     realtimeFollow: false,
   })
@@ -188,6 +189,7 @@ test('preference v7 saves and loads overlays plus the internal-process toggle', 
       selectedOverlay: 'none',
       optionalEmaIndicators: ['ema_60', 'ema_10'],
       showSubingInternalProcess: true,
+      showSubingStrategyPerformance: false,
       period: '15m',
       realtimeFollow: true,
     },
@@ -198,6 +200,7 @@ test('preference v7 saves and loads overlays plus the internal-process toggle', 
   assert.equal(loaded.selectedOverlay, 'none')
   assert.deepEqual(loaded.optionalEmaIndicators, ['ema_10', 'ema_60'])
   assert.equal(loaded.showSubingInternalProcess, true)
+  assert.equal(loaded.showSubingStrategyPerformance, false)
   assert.equal(loaded.period, '15m')
   assert.equal(loaded.realtimeFollow, true)
   const saved = JSON.parse(values.get(MAIN_CHART_PREFERENCES_KEY)!)
@@ -222,6 +225,7 @@ test('preference v6 migrates only retained fields to v7 and clears the v6 key', 
     selectedOverlay: 'htdy',
     optionalEmaIndicators: ['ema_60', 'ema_10'],
     showSubingInternalProcess: true,
+    showSubingStrategyPerformance: false,
     period: '15m',
     realtimeFollow: true,
     retiredField: true,
@@ -232,6 +236,7 @@ test('preference v6 migrates only retained fields to v7 and clears the v6 key', 
     selectedOverlay: 'htdy',
     optionalEmaIndicators: ['ema_10', 'ema_60'],
     showSubingInternalProcess: true,
+    showSubingStrategyPerformance: false,
     period: '15m',
     realtimeFollow: true,
   })
@@ -242,6 +247,7 @@ test('preference v6 migrates only retained fields to v7 and clears the v6 key', 
     selectedOverlay: 'htdy',
     optionalEmaIndicators: ['ema_10', 'ema_60'],
     showSubingInternalProcess: true,
+    showSubingStrategyPerformance: false,
     period: '15m',
     realtimeFollow: true,
   })
@@ -253,6 +259,7 @@ test('preference v6 migration retains readable fields when v7 persistence is una
     selectedOverlay: 'htdy',
     optionalEmaIndicators: ['ema_60'],
     showSubingInternalProcess: true,
+    showSubingStrategyPerformance: false,
     period: '15m',
     realtimeFollow: true,
   })
@@ -267,6 +274,7 @@ test('preference v6 migration retains readable fields when v7 persistence is una
     selectedOverlay: 'htdy',
     optionalEmaIndicators: ['ema_60'],
     showSubingInternalProcess: true,
+    showSubingStrategyPerformance: false,
     period: '15m',
     realtimeFollow: true,
   })
@@ -286,6 +294,7 @@ test('preference v5 migrates retained fields, maps retired overlay to none, and 
     selectedOverlay: 'jdj_strategy',
     optionalEmaIndicators: ['ema_60', 'ema_10'],
     showSubingInternalProcess: true,
+    showSubingStrategyPerformance: false,
     period: '1m',
     realtimeFollow: true,
   }))
@@ -295,6 +304,7 @@ test('preference v5 migrates retained fields, maps retired overlay to none, and 
     selectedOverlay: 'none',
     optionalEmaIndicators: ['ema_10', 'ema_60'],
     showSubingInternalProcess: true,
+    showSubingStrategyPerformance: false,
     period: '1m',
     realtimeFollow: true,
   })
@@ -311,9 +321,27 @@ test('preference v5 migrates retained fields, maps retired overlay to none, and 
     selectedOverlay: 'none',
     optionalEmaIndicators: ['ema_10', 'ema_60'],
     showSubingInternalProcess: true,
+    showSubingStrategyPerformance: false,
     period: '1m',
     realtimeFollow: true,
   })
+})
+
+test('v7 preferences without a performance flag default to collapsed', () => {
+  const storage = {
+    getItem: (key: string) => key === MAIN_CHART_PREFERENCES_KEY
+      ? JSON.stringify({
+        version: 7,
+        selectedOverlay: 'subing',
+        optionalEmaIndicators: [],
+        showSubingInternalProcess: false,
+        period: '15m',
+        realtimeFollow: false,
+      })
+      : null,
+    setItem() {},
+  }
+  assert.equal(loadMainChartPreferences(storage).showSubingStrategyPerformance, false)
 })
 
 test('preference v1 through v4 are discarded without restoration', () => {

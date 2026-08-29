@@ -10,7 +10,6 @@ import {
   type AlertEvent,
   type SubingFactorSnapshot,
   type SubingResearchResponse,
-  type SubingStrategyEpisode,
   type SubingStrategyCurrentResponse,
   type SubingSignal,
 } from '@/types/market'
@@ -21,6 +20,7 @@ import {
   matchesAlertRuleCode,
   strategyActionLabel,
 } from '@/utils/alertRules'
+import { confirmValidityLabel, formatConfirmEffectiveTime } from '@/utils/subingConfirmFacts'
 import { buildSubingLifecyclePivotFacts } from '@/utils/subingLifecycleFacts'
 
 const props = defineProps<{
@@ -35,9 +35,6 @@ const props = defineProps<{
   runtimeStatus: AlertRuntimeStatus | null
   alertLoading: boolean
   savingRuleCodes: Set<string>
-  strategyEpisodes: SubingStrategyEpisode[]
-  strategyLoading: boolean
-  strategyError: string | null
   strategySupported: boolean
   strategyCurrent: SubingStrategyCurrentResponse | null
   strategyCurrentLoading: boolean
@@ -143,23 +140,22 @@ function toggleSubing(ruleCode: string, enabled: boolean) {
 <template>
   <section class="subing-panel" data-testid="subing-panel">
     <header class="subing-panel__header">
-      <div><span>苏冰</span><h3>品种研究面板</h3></div>
+      <div><span>苏冰</span><h3>当前确认</h3></div>
       <NTag size="small" type="info">Research only</NTag>
     </header>
 
-    <section v-if="strategySupported" class="subing-panel__section" data-testid="subing-current-strategy-state">
-      <h4>当前策略状态</h4>
-      <p v-if="strategyCurrentLoading">正在读取当前策略状态…</p>
-      <p v-else-if="strategyCurrentError" class="subing-panel__warning">当前策略状态暂不可用</p>
-      <p v-else-if="strategyCurrent">{{ strategyCurrent.position_state }} · {{ strategyCurrent.contract }}</p>
-      <p v-else>暂无当前策略状态</p>
-    </section>
-    <p v-else data-testid="subing-strategy-guidance" class="subing-panel__warning">
+    <p v-if="!strategySupported" data-testid="subing-strategy-guidance" class="subing-panel__warning">
       当前 5m 仅保留苏冰观察；历史策略投影仅支持真实主力 15m。
     </p>
 
     <section class="subing-panel__section" data-testid="subing-strategy-event">
-      <h4>苏冰策略事件</h4>
+      <h4>当前确认</h4>
+      <template v-if="strategySupported">
+        <p v-if="strategyCurrentLoading">正在读取当前策略状态…</p>
+        <p v-else-if="strategyCurrentError" class="subing-panel__warning">当前策略状态暂不可用</p>
+        <p v-else-if="strategyCurrent">当前仓位 {{ strategyCurrent.position_state }} · {{ strategyCurrent.contract }}</p>
+        <p v-else>暂无当前策略状态</p>
+      </template>
       <p v-if="eventLoading">正在读取苏冰策略事件…</p>
       <p v-else-if="eventStatus === 'unavailable'" class="subing-panel__warning">苏冰策略事件暂不可用</p>
       <p v-else-if="eventStatus !== 'ready'">苏冰策略事件尚未读取</p>
@@ -171,7 +167,10 @@ function toggleSubing(ruleCode: string, enabled: boolean) {
         :data-focused-action-id="focusedActionId === strategyEvent.action_id ? strategyEvent.action_id : undefined"
       >
         <strong>{{ strategyActionLabel(strategyEvent.strategy_action!.kind) }}</strong>
-        <p>不可变通知事实 · {{ strategyEvent.strategy_action!.contract }}</p>
+        <p>{{ strategyEvent.strategy_action!.contract }}</p>
+        <p>参考价 {{ strategyEvent.strategy_action!.reference_price }}</p>
+        <p>{{ formatConfirmEffectiveTime(strategyEvent.strategy_action!.effective_bar_end) }}</p>
+        <p data-testid="subing-confirm-validity">{{ confirmValidityLabel(strategyEvent.strategy_action!, strategyCurrent) }}</p>
       </div>
       <p v-else>当前无可展示的苏冰策略事件记录</p>
       <p v-if="strategyReconciliationErrors.includes('STRATEGY_ACTION_FACT_MISMATCH')" class="subing-panel__warning">

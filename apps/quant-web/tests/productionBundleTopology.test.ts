@@ -31,6 +31,14 @@ test('router registers only Market workspace routes', () => {
   assert.match(routerSource, /name: 'market'/)
   assert.match(routerSource, /name: 'market-chart'/)
   assert.match(routerSource, /redirect: '\/market'/)
+  assert.doesNotMatch(routerSource, /icon:/)
+  const iconSource = readFileSync(join(projectRoot, 'src/components/common/UiIcon.vue'), 'utf8')
+  assert.match(iconSource, /name === 'market'/)
+  assert.match(iconSource, /name === 'shield'/)
+  assert.match(iconSource, /name === 'refresh'/)
+  for (const retiredIcon of ['dashboard', 'signal', 'strategy', 'data', 'runtime', 'arrow-up', 'arrow-down']) {
+    assert.equal(iconSource.includes(`name === '${retiredIcon}'`), false, retiredIcon)
+  }
 })
 
 test('production charting vendor chunks have no static import cycle', () => {
