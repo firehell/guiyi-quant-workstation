@@ -8,12 +8,12 @@
 
 | 项目 | 当前事实 |
 |---|---|
-| Release | `v1.9.2` release candidate（确认首屏、EMA ribbon、策略事件深链、效果面板默认关闭）。前一 tag `v1.9.1@f6cae9f79872e895290af72beca375ba8bb17242` 保留。合入 `main` / tag / GitHub Release 完成前不把 `v1.9.2` 标为 `RELEASED`。 |
-| Runtime | 本机当前仍绑定 `/Volumes/扩展盘/guiyi-quant-runtime-v1.9.1@f6cae9f79…`。`/api/health` 读回 `version=1.9.1 / readonly=true`。v1.9.2 Runtime promotion 完成后再验收新 checkout。 |
+| Release | `v1.9.2` `RELEASED`。annotated tag / GitHub Release 指向 `main` merge `db75a1e381469f0f8584ff931de26451d23fc8d9`（PR #254）。前一 tag `v1.9.1@f6cae9f79872e895290af72beca375ba8bb17242` 保留。 |
+| Runtime | 本机当前绑定 `/Volumes/扩展盘/guiyi-quant-runtime-v1.9.2@db75a1e38…`。`/api/health` 读回 `version=1.9.2 / readonly=true`。2026-08-30 00:31 验收 Alert restore `strategy_state=ready`、`60 ready / 0 unavailable`、`processing_state=ok`、overall `ok`。Market Runtime `phase_counts.CLOSED=60`（周末）。`local-services-status` overall `passed`。旧 `guiyi-quant-runtime-v1.9.1` worktree 已删除。HTDY Scope 与 Rule 未改。 |
 | Database | production Alembic 为 `20260826_0042 (head)`。Rule 已原子收敛为 `htdy_original_15m` 与 `subing_strategy_v1`；旧 SuBing Rule/Event 不保留。四张空的退役 `trade_*` 表已删除。 |
 | Market Runtime Scope | `operational_products.txt` 的 60 个品种。 |
 | Alert Scope | HTDY 唯一 production Scope 仍为 `jm × 15m`（`1 symbol / 1 pair`）。2026-08-29 当次明确授权已把 `subing_strategy_v1` 的 `scope_products` 扩到 `operational_products.txt` 全部 60 个品种；逐品种 PUT 60/60 成功，读回集合与清单一致。两种授权边界不合并。DB 中 2 个 Rule 均 enabled；Alert Runtime marker 已 enabled；audience count 2。`/api/runtime/health` 读回 `enabled_rule_count=2`、`scope_product_count=60`、`strategy_ready_product_count=60`。Scope 变化不补 Event、不补发历史通知；此后各品种新的 completed 15m 策略动作才会 one-shot 推 owner（非 Topic）。 |
-| v1.9.2 release candidate | 含图表确认首屏、EMA10/21 默认画带、策略事件深链，以及全历史效果面板默认关闭。不新增 migration。HTDY Scope 仍为 `jm × 15m`；SuBing `scope_products` 已是 operational 60，本 release 不重做 PUT。 |
+| v1.9.2 | 含图表确认首屏、EMA10/21 默认画带、策略事件深链，以及全历史效果面板默认关闭。不新增 migration。HTDY Scope 仍为 `jm × 15m`；SuBing `scope_products` 已是 operational 60，本 release 不重做 PUT。 |
 | N Structure / Multi-Candidate retirement | release 与当时的 v1.8.8 Runtime promotion 均已完成；旧 `GET /api/v1/market/research/n-structure/bands` 在 production 返回 `404`，不保留 410、feature-disabled 或兼容 reader。Git/Alembic history 只保留 lineage。 |
 
 Alert transport 为 PushPlus；provider accepted 不等于微信送达。2026-08-26 21:33，operator 已按当次明确请求对 `last_notification_failure_at=2026-08-25T11:40:05.182316+00:00` 执行一次精确 CAS acknowledgment；读回 `notification_state=acknowledged`、`notification_acknowledged_at=2026-08-26T13:33:29.088633+00:00`。原 failure、`notification_transport_failed` 与连续失败计数保留，`event_replayed=false / notification_sent=false`；该操作不证明 provider accepted 或微信送达。
@@ -26,6 +26,7 @@ Alert transport 为 PushPlus；provider accepted 不等于微信送达。2026-08
 - HTDY 在既有 420-pair Scope 下形成的 6 条 D1 Event 保持 immutable；一次 W1 transport failure 后 processing 已自然恢复，但这不证明微信送达，也不替代 D1/W1 各自的自然身份核验。
 - 2026-08-27 v1.8.8 Runtime promotion 前，只读校验 v1.8.7 的 schema-v2 `after-market-status.json` 为 owner-only `0600`，随后按相同 SHA-256 `7a4b25554fc63e377bb53ed6d3d38f6774d6da9b2905174c33d964dfb8592023` 迁入新 Runtime 根。13:32:10 首次读回 `status=ok / subscribed_count=60 / phase_counts.TRADING=60 / last_bar_at=2026-08-27T05:32:00Z`，支持当时 Market Runtime promotion acceptance；它不构成 Alert、Strategy Action 或通知 evidence。
 - 2026-08-29 只读校验当时 v1.8.8 根的 schema-v2 `after-market-status.json`（2026-08-28 自然盘后 `passed`）为 owner-only `0600`，随后按相同 SHA-256 `d5e9db417b09ae8c38f5ad63cdabeb20d89281fb42c972fac1fb83b9012e65fc` 迁入后续 Runtime 根（含 v1.9.1）。`after_market.subing_strategy_performance` 在 health 中仍为 `null`，要等下一次自然盘后 derived 阶段写入 schema v3。该迁入不构成 derived 刷新、Alert 通知或微信送达 evidence。
+- 2026-08-30 只读校验当时 v1.9.1 根的 `after-market-status.json` 为 owner-only `0600`，随后按相同 SHA-256 `0701fc4bcdf72eb3cbf7be31a74ac5f1dff38a45aec44cdbe777aeb806f6805f` 迁入 v1.9.2 Runtime 根。该迁入不构成 derived 刷新、Alert 通知或微信送达 evidence。
 - 2026-08-29 v1.9.0 Runtime 在 occupancy-capped restore 后读回 `57 ready / 3 unavailable`（`ag`/`au`/`sc`）。只读 `restore_machine(jm|sc)` 成功；这 3 个夜盘品种随后被 `trading_day=2026-08-31` 且尚无 rank1 occupancy 的 completed Live degrade。v1.9.1 promotion 后 `60/60 ready`。该 60/60 发生在夜盘结束后（`CLOSED=60`），不以自然盘中 Live Action 或 owner 通知替代。
 
 ## 仓库验收 evidence
