@@ -1,4 +1,10 @@
-import type { AlertEvent, KlineMarker, MarketFrequency, SeriesKind } from '../types/market.ts'
+import type {
+  AlertEvent,
+  KlineMarker,
+  MarketFrequency,
+  ResearchOverlayId,
+  SeriesKind,
+} from '../types/market.ts'
 import {
   ALERT_RULE_PRESENTATIONS,
   type AlertRuleCode,
@@ -46,6 +52,14 @@ export function alertEventsToMarkers(events: AlertEvent[]): KlineMarker[] {
         shape: 'square' as const,
       }]
     })
+}
+
+/** HTDY persistent observation markers are display-only under the HTDY overlay. */
+export function alertMarkersForOverlay(
+  overlay: ResearchOverlayId,
+  markers: readonly KlineMarker[],
+): KlineMarker[] {
+  return overlay === 'htdy' ? [...markers] : []
 }
 
 function markerTone(

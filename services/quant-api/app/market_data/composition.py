@@ -302,6 +302,7 @@ def build_subing_strategy_historical_service(
         lifecycle_policy=load_subing_lifecycle_policy(_SUBING_LIFECYCLE_POLICY),
         strategy_policy=load_subing_strategy_policy(),
         cache=_build_subing_strategy_cache_or_null(),
+        snapshot_query=build_subing_strategy_performance_snapshot_query(session),
     )
 
 

@@ -767,6 +767,8 @@ export interface KlineMarker {
   label: string
   tooltip?: string
   tone: 'up' | 'down' | 'htdy' | 'neutral'
+  /** SuBing close-label PnL color; independent of direction tone. */
+  resultTone?: 'profit' | 'loss' | null
   position: 'aboveBar' | 'belowBar' | 'inBar'
   shape: 'circle' | 'square' | 'arrowUp' | 'arrowDown'
 }
@@ -1696,7 +1698,7 @@ export interface ChartOverlay {
 
 export type IndicatorPanelType = 'macd' | 'atr' | 'volume_ratio' | 'signal_score'
 export type MainIndicatorId = 'ema_10' | 'ema_21' | 'ema_60' | 'htdy'
-export type OptionalEmaIndicatorId = 'ema_10' | 'ema_60'
+export type OptionalEmaIndicatorId = 'ema_10' | 'ema_21' | 'ema_60'
 
 export interface MainIndicatorDefinition {
   id: MainIndicatorId

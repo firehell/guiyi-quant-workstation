@@ -108,6 +108,15 @@ export function toSafeApiError(err: unknown, fallback: string): string {
   return `${info.message}（${info.errorType}）。${info.suggestion}`
 }
 
+/** Canonical 更早分页：409 才表示映射/分区不完整，超时不得冒充数据缺口。 */
+export function earlierHistoryLoadError(err: unknown): string {
+  const info = toSafeErrorInfo(err, '读取更早历史失败')
+  if (info.errorType === 'HTTP_409') {
+    return '读取更早历史失败：数据集、月分区或主力映射不完整'
+  }
+  return `读取更早历史失败：${info.suggestion}`
+}
+
 /** 开发环境日志摘要：仅方法、路径、类型与耗时，不含 body / 密钥。 */
 export function formatApiLogSummary(parts: {
   method: string

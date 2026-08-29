@@ -144,7 +144,12 @@ test('loads and presents the all-product current SuBing Strategy Event surface',
   await surface.getByRole('button', { name: '查看 JM 建多' }).click()
   await expect(page).toHaveURL(/\/market\/chart\?/)
   expect(Object.fromEntries(new URL(page.url()).searchParams)).toEqual({
-    symbol: 'jm', series_kind: 'actual_dominant', frequency: '15m', overlay: 'subing',
+    symbol: 'jm',
+    series_kind: 'actual_dominant',
+    frequency: '15m',
+    overlay: 'subing',
+    entry: 'subing-strategy-action',
+    action_id: currentStrategyActions().items[0].action_id,
   })
 })
 

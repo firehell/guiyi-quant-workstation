@@ -71,10 +71,12 @@ test('SuBing Strategy marker anchors effective bars and preserves simulated-acti
   const close = subingStrategyActionToMarker(response.actions[1], episodes)
 
   assert.equal(open.time, '2026-08-03T01:10:00Z')
-  assert.equal(open.label, '▲ 建多')
+  assert.equal(open.label, '建多\n建仓价：100')
+  assert.equal(open.resultTone, null)
   assert.equal(open.position, 'belowBar')
   assert.doesNotMatch(open.tooltip!, /持有/)
-  assert.equal(close.label, '× 清多')
+  assert.equal(close.label, '清多\n107.97(+7.97%)')
+  assert.equal(close.resultTone, 'profit')
   assert.equal(close.position, 'aboveBar')
   assert.match(close.tooltip!, /EMA21 跌破/)
   assert.match(close.tooltip!, /MACD 高位死叉/)
@@ -86,11 +88,31 @@ test('SuBing Strategy marker anchors effective bars and preserves simulated-acti
   assert.match(close.tooltip!, /持有 2 根 15m Bar/)
   assert.match(close.tooltip!, /生效口径 下一根同合约 15m open/)
 
+  const lossEpisode = {
+    ...response.episodes[0],
+    reference_change_percent: '-1.25',
+  }
+  const lossClose = subingStrategyActionToMarker(
+    response.actions[1],
+    new Map([[lossEpisode.episode_id, lossEpisode]]),
+  )
+  assert.equal(lossClose.label, '清多\n107.97(-1.25%)')
+  assert.equal(lossClose.resultTone, 'loss')
+
+  const openShort = subingStrategyActionToMarker(
+    { ...response.actions[0], kind: 'open_short' },
+    episodes,
+  )
+  assert.equal(openShort.label, '建空\n建仓价：100')
+  assert.equal(openShort.resultTone, null)
+
   const closeShort = subingStrategyActionToMarker(
     { ...response.actions[1], kind: 'close_short' },
     new Map(),
   )
   assert.equal(closeShort.position, 'belowBar')
+  assert.equal(closeShort.label, '清空\n107.97')
+  assert.equal(closeShort.resultTone, null)
 })
 
 test('SuBing Strategy marker keeps entry and terminal fill bases distinct', () => {
@@ -109,6 +131,7 @@ test('SuBing Strategy marker keeps entry and terminal fill bases distinct', () =
 test('SuBing Strategy history requests only actual-dominant 15m', async () => {
   const requests: Array<Record<string, string>> = []
   const controller = useHistoricalResearchMarkers({
+    debounceMs: 0,
     fetchSubingStrategy: async (request) => {
       requests.push(request)
       return strategyResponse(request.symbol, request.since, request.through)
@@ -123,6 +146,7 @@ test('SuBing Strategy history requests only actual-dominant 15m', async () => {
 
 test('complete SuBing Episode survives when only its exit Action is visible', async () => {
   const controller = useHistoricalResearchMarkers({
+    debounceMs: 0,
     fetchSubingStrategy: async (request) => {
       const result = strategyResponse(request.symbol, request.since, request.through)
       result.actions = [result.episodes[0].exit_action!]
@@ -134,13 +158,42 @@ test('complete SuBing Episode survives when only its exit Action is visible', as
     canonicalBars, { start: canonicalBars[0].time, end: canonicalBars[1].time }, 'replace',
   )
 
-  assert.deepEqual(controller.markers.value.map((marker) => marker.label), ['× 清多'])
+  assert.deepEqual(controller.markers.value.map((marker) => marker.label), ['清多\n107.97(+7.97%)'])
   assert.equal(controller.subingStrategyEpisodes.value[0].entry_action.action_id, 'subing-action:jm:entry')
+})
+
+test('SuBing Strategy prepend expands since and keeps the latest through', async () => {
+  const requests: Array<Record<string, string>> = []
+  const laterBars: BarData[] = [
+    { time: '2026-08-10T01:05:00Z', trading_day: '2026-08-10', physicalContract: 'JM2609', open: 100, high: 101, low: 99, close: 100, volume: 10 },
+    { time: '2026-08-20T01:05:00Z', trading_day: '2026-08-20', physicalContract: 'JM2701', open: 100, high: 101, low: 99, close: 100, volume: 10 },
+  ]
+  const controller = useHistoricalResearchMarkers({
+    debounceMs: 0,
+    fetchSubingStrategy: async (request) => {
+      requests.push({ ...request })
+      return strategyResponse(request.symbol, request.since, request.through)
+    },
+  })
+  const identity = { overlay: 'subing' as const, seriesKind: 'actual_dominant' as const, symbol: 'jm', frequency: '15m' as const }
+  await controller.sync(identity, laterBars, {
+    start: laterBars[0].time, end: laterBars[1].time,
+  }, 'replace')
+  const earlier = { ...laterBars[0], time: '2026-08-01T01:05:00Z', trading_day: '2026-08-01' }
+  await controller.sync(identity, [earlier, ...laterBars], {
+    start: earlier.time, end: laterBars[1].time,
+  }, 'prepend')
+
+  assert.deepEqual(requests, [
+    { series_kind: 'actual_dominant', symbol: 'jm', frequency: '15m', since: '2026-08-10', through: '2026-08-20' },
+    { series_kind: 'actual_dominant', symbol: 'jm', frequency: '15m', since: '2026-08-01', through: '2026-08-20' },
+  ])
 })
 
 test('SuBing Strategy prepend upgrades an open Episode without duplicate markers', async () => {
   let calls = 0
   const controller = useHistoricalResearchMarkers({
+    debounceMs: 0,
     fetchSubingStrategy: async (request) => {
       calls += 1
       const result = strategyResponse(request.symbol, request.since, request.through)
@@ -174,6 +227,7 @@ test('SuBing Strategy ignores stale responses and preserves markers after a prep
   let fail = false
   const bars = canonicalBars.map((bar) => ({ ...bar }))
   const controller = useHistoricalResearchMarkers({
+    debounceMs: 0,
     fetchSubingStrategy: async (request) => {
       calls += 1
       if (calls === 1) return stale.promise
@@ -199,4 +253,82 @@ test('SuBing Strategy ignores stale responses and preserves markers after a prep
   assert.deepEqual(controller.subingStrategyEpisodes.value, previousEpisodes)
   assert.deepEqual(bars, canonicalBars)
   assert.equal(controller.error.value, 'HISTORICAL_RESEARCH_UNAVAILABLE')
+})
+
+test('prepend debounce coalesces to one history request with latest through', async () => {
+  const requests: Array<Record<string, string>> = []
+  const later = { time: '2026-08-20T01:05:00Z', trading_day: '2026-08-20', physicalContract: 'JM2701', open: 100, high: 101, low: 99, close: 100, volume: 10 }
+  const mid = { ...later, time: '2026-07-01T01:05:00Z', trading_day: '2026-07-01' }
+  const early = { ...later, time: '2026-06-01T01:05:00Z', trading_day: '2026-06-01' }
+  const controller = useHistoricalResearchMarkers({
+    debounceMs: 20,
+    fetchSubingStrategy: async (request) => {
+      requests.push({ ...request })
+      return strategyResponse(request.symbol, request.since, request.through)
+    },
+  })
+  const identity = { overlay: 'subing' as const, seriesKind: 'actual_dominant' as const, symbol: 'jm', frequency: '15m' as const }
+  await controller.sync(identity, [later], { start: later.time, end: later.time }, 'replace')
+  const p1 = controller.sync(identity, [mid, later], { start: mid.time, end: later.time }, 'prepend')
+  const p2 = controller.sync(identity, [early, mid, later], { start: early.time, end: later.time }, 'prepend')
+  await Promise.all([p1, p2])
+  assert.deepEqual(requests, [
+    { series_kind: 'actual_dominant', symbol: 'jm', frequency: '15m', since: '2026-08-20', through: '2026-08-20' },
+    { series_kind: 'actual_dominant', symbol: 'jm', frequency: '15m', since: '2026-06-01', through: '2026-08-20' },
+  ])
+})
+
+test('aborted prepend does not set historical unavailable or replace markers', async () => {
+  const firstFetchStarted = deferred<void>()
+  let firstAborted = false
+  let prependCalls = 0
+  const controller = useHistoricalResearchMarkers({
+    debounceMs: 0,
+    fetchSubingStrategy: async (request, signal) => {
+      if (request.since === '2026-08-02' || request.since === '2026-08-01') {
+        prependCalls += 1
+        if (prependCalls === 1) {
+          firstFetchStarted.resolve()
+          return new Promise((_resolve, reject) => {
+            const onAbort = () => {
+              firstAborted = true
+              const err = new Error('aborted')
+              err.name = 'AbortError'
+              reject(err)
+            }
+            if (signal?.aborted) onAbort()
+            else signal?.addEventListener('abort', onAbort, { once: true })
+          })
+        }
+        return strategyResponse(request.symbol, request.since, request.through)
+      }
+      return strategyResponse(request.symbol, request.since, request.through)
+    },
+  })
+  const identity = { overlay: 'subing' as const, seriesKind: 'actual_dominant' as const, symbol: 'jm', frequency: '15m' as const }
+  const latest = canonicalBars
+  await controller.sync(identity, latest, { start: latest[0].time, end: latest[1].time }, 'replace')
+  assert.match(controller.markers.value[0].id, /jm/)
+  const earlier = { ...latest[0], time: '2026-08-02T01:05:00Z', trading_day: '2026-08-02' }
+  const evenEarlier = { ...latest[0], time: '2026-08-01T01:05:00Z', trading_day: '2026-08-01' }
+  const hungPrepend = controller.sync(
+    identity,
+    [earlier, ...latest],
+    { start: earlier.time, end: latest[1].time },
+    'prepend',
+  )
+  await firstFetchStarted.promise
+  assert.equal(prependCalls, 1)
+  const secondPrepend = controller.sync(
+    identity,
+    [evenEarlier, earlier, ...latest],
+    { start: evenEarlier.time, end: latest[1].time },
+    'prepend',
+  )
+  await secondPrepend
+  await hungPrepend
+  assert.equal(firstAborted, true)
+  assert.equal(prependCalls, 2)
+  assert.match(controller.markers.value[0].id, /jm/)
+  assert.equal(controller.error.value, null)
 })

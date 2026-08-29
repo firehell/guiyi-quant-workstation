@@ -8,12 +8,11 @@ description: Use when 任务涉及归一量化 Vue 3、Vite、TypeScript、Naive
 ## Current surface
 
 - 路由只保留 `/market`、`/market/chart`。
-- 主图 Overlay 精确为 `none | subing | htdy`。
-- N 字区间是独立、默认关闭的 `actual_dominant + 5m` Historical 投影，不是第五个 Overlay。
+- 主图 Overlay 精确为 `none | subing | htdy`。苏冰 Historical 投影只服务 `actual_dominant + 15m`；火天大有覆盖七个正式周期。
 - Market 展示 Canonical 历史、允许范围内的 Redis Live observation、server-side Alert Scope 和
-  persistent Event。
+  persistent Event。火天大有 Scope 按品种 × 当前周期；苏冰 Scope 按品种，不按周期。
 
-已退役 Dashboard、数据中心、策略中心、旧信号/Review Center、RQAlpha、Execution Review 不得恢复。
+已退役 Dashboard、数据中心、策略中心、旧信号/Review Center、N Structure、日进斗金、RQAlpha、Execution Review 不得恢复。
 
 ## 实现边界
 

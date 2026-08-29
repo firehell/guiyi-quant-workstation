@@ -865,7 +865,7 @@ async function openSubingResearchDetails(page) {
 
 async function enableSubingInternalProcess(page) {
   await page.getByRole('button', { name: '图表设置', exact: true }).click()
-  await expect(page.getByRole('group', { name: 'EMA' }).getByRole('button')).toHaveText(['EMA10', 'EMA60'])
+  await expect(page.getByRole('group', { name: 'EMA' }).getByRole('button')).toHaveText(['EMA10', 'EMA21', 'EMA60'])
   const toggle = page.getByRole('switch', { name: '显示苏冰内部研究过程', exact: true })
   await expect(toggle).toBeVisible()
   if (!(await toggle.isChecked())) await toggle.click()
@@ -1072,6 +1072,8 @@ test('exact Daily Watch chart entry is one-shot and leaves saved chart preferenc
     symbol: 'ag',
     series_kind: 'actual_dominant',
     frequency: '15m',
+    overlay: 'subing',
+    entry: 'subing-daily-watch',
   })
   expect(await page.evaluate(() => JSON.parse(
     window.localStorage.getItem('guiyi.market.chart.preferences.v7'),
@@ -1086,9 +1088,43 @@ test('exact Daily Watch chart entry is one-shot and leaves saved chart preferenc
 
   await overlays.getByRole('button', { name: '无', exact: true }).click()
   await expect(overlays.getByRole('button', { name: '无', exact: true })).toHaveClass(/n-button--primary-type/)
+  expect(Object.fromEntries(new URL(page.url()).searchParams)).toEqual({
+    symbol: 'ag',
+    series_kind: 'actual_dominant',
+    frequency: '15m',
+  })
   await expect.poll(() => page.evaluate(() => JSON.parse(
     window.localStorage.getItem('guiyi.market.chart.preferences.v7'),
   ).selectedOverlay)).toBe('none')
+})
+
+test('strategy action chart entry keeps SuBing overlay and focuses the action', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem('guiyi.market.chart.preferences.v7', JSON.stringify({
+      version: 7,
+      selectedOverlay: 'htdy',
+      optionalEmaIndicators: [],
+      showSubingInternalProcess: false,
+      period: '5m',
+      realtimeFollow: false,
+    }))
+  })
+  await mockWorkspace(page, { json: research() })
+  await mockAlertMarkerSurface(page)
+
+  await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=15m&overlay=subing&entry=subing-strategy-action&action_id=subing-action:test')
+
+  const overlays = page.getByRole('group', { name: 'Overlay' })
+  await expect(overlays.getByRole('button', { name: '苏冰', exact: true })).toHaveClass(/n-button--primary-type/)
+  await expect(page.locator('.product-workspace__kline')).toHaveAttribute('data-focused-action-id', 'subing-action:test')
+  expect(Object.fromEntries(new URL(page.url()).searchParams)).toEqual({
+    symbol: 'ag',
+    series_kind: 'actual_dominant',
+    frequency: '15m',
+    overlay: 'subing',
+    entry: 'subing-strategy-action',
+    action_id: 'subing-action:test',
+  })
 })
 
 test('normal Market chart URL still loads the saved non-SuBing overlay', async ({ page }) => {
@@ -1125,7 +1161,38 @@ test('SuBing keeps the Market display identity separate from current-dominant re
   await expect(page.locator('.product-workspace__kline')).toHaveAttribute('data-visible-start-trading-day', '2026-01-01')
   await expect(page.locator('.product-workspace__kline')).toHaveAttribute('data-visible-main-indicators', '')
   await expect(page.getByRole('button', { name: '主连', exact: true })).toBeVisible()
-  await expect(page.locator('.toolbar__subing-basis')).toHaveText('苏冰计算 AG2601')
+  const toolbar = page.locator('.product-workspace-toolbar')
+  const identityRow = toolbar.getByRole('group', { name: '对象与视图' })
+  const analysisRow = toolbar.getByRole('group', { name: '研究视角' })
+  const actions = toolbar.getByRole('group', { name: '图表操作' })
+  const basis = toolbar.locator('.toolbar__subing-basis')
+  await expect(basis).toContainText('基准 AG2601')
+  await expect(basis).toContainText('ⓘ')
+  await expect(basis).toHaveAttribute(
+    'title',
+    '苏冰始终以当前真实主力 AG2601 计算；主图可独立切换。',
+  )
+  await expect(analysisRow.getByRole('group', { name: '周期' })).toContainText('1m5m15m30m60mDW')
+  await expect(analysisRow.getByRole('group', { name: 'Overlay' }).getByRole('button')).toHaveText(['无', '苏冰', '火天大有'])
+  await expect(actions).toContainText('检查图表设置全屏')
+  const [identityBox, analysisBox, actionsBox, overlayBox, basisBox] = await Promise.all([
+    identityRow.boundingBox(),
+    analysisRow.boundingBox(),
+    actions.boundingBox(),
+    overlay.boundingBox(),
+    basis.boundingBox(),
+  ])
+  expect(identityBox).not.toBeNull()
+  expect(analysisBox).not.toBeNull()
+  expect(actionsBox).not.toBeNull()
+  expect(overlayBox).not.toBeNull()
+  expect(basisBox).not.toBeNull()
+  expect(analysisBox.y).toBeGreaterThan(identityBox.y)
+  expect(Math.abs(actionsBox.y - identityBox.y)).toBeLessThan(2)
+  expect(Math.abs(
+    basisBox.y + basisBox.height / 2 - (overlayBox.y + overlayBox.height / 2),
+  )).toBeLessThan(2)
+  expect(basisBox.x).toBeGreaterThan(overlayBox.x)
   expect(marketRequests.some((request) => request.series_kind === 'continuous' && !request.contract)).toBe(true)
   expect(subingRequests).toEqual([{ symbol: 'ag', frequency: '5m' }])
   await expect.poll(() => researchRequests.length).toBe(1)
@@ -1332,28 +1399,37 @@ test('shared EMA switches persist across SuBing and HTDY while none hides every 
   await page.getByRole('button', { name: '图表设置', exact: true }).click()
   const ema = page.getByRole('group', { name: 'EMA' })
   const ema10 = ema.getByRole('button', { name: 'EMA10', exact: true })
+  const ema21 = ema.getByRole('button', { name: 'EMA21', exact: true })
   const ema60 = ema.getByRole('button', { name: 'EMA60', exact: true })
   await expect(ema10).toBeVisible()
+  await expect(ema21).toBeVisible()
   await expect(ema60).toBeVisible()
   await expect(page.getByText('指定真实合约', { exact: true })).toBeVisible()
   const kline = page.locator('.product-workspace__kline')
   const overlay = page.getByRole('group', { name: 'Overlay' })
 
   await expect(ema10).toHaveAttribute('aria-pressed', 'false')
+  await expect(ema21).toHaveAttribute('aria-pressed', 'false')
   await expect(ema60).toHaveAttribute('aria-pressed', 'false')
-  await expect(kline).toHaveAttribute('data-visible-main-indicators', 'ema_21')
+  await expect(kline).toHaveAttribute('data-visible-main-indicators', '')
+  await expect(kline).toHaveAttribute('data-subing-ema-ribbon', 'true')
   await ema10.click()
+  await ema21.click()
   await ema60.click()
   await expect(kline).toHaveAttribute('data-visible-main-indicators', 'ema_10,ema_21,ema_60')
   await overlay.getByRole('button', { name: '火天大有', exact: true }).click()
-  await expect(kline).toHaveAttribute('data-visible-main-indicators', 'ema_10,ema_60,htdy')
+  await expect(kline).toHaveAttribute('data-visible-main-indicators', 'ema_10,ema_21,ema_60,htdy')
+  await expect(kline).toHaveAttribute('data-subing-ema-ribbon', 'false')
   await overlay.getByRole('button', { name: '无', exact: true }).click()
   await expect(kline).toHaveAttribute('data-visible-main-indicators', '')
+  await expect(kline).toHaveAttribute('data-subing-ema-ribbon', 'false')
   await expect(ema10).toHaveAttribute('aria-pressed', 'true')
+  await expect(ema21).toHaveAttribute('aria-pressed', 'true')
   await expect(ema60).toHaveAttribute('aria-pressed', 'true')
   await overlay.getByRole('button', { name: '苏冰', exact: true }).click()
   await page.reload()
   await expect(kline).toHaveAttribute('data-visible-main-indicators', 'ema_10,ema_21,ema_60')
+  await expect(kline).toHaveAttribute('data-subing-ema-ribbon', 'true')
 })
 
 test('SuBing keeps the full Market display history and renders the requested primary Signal', async ({ page }) => {
@@ -1373,7 +1449,7 @@ test('SuBing keeps the full Market display history and renders the requested pri
   await expect(page.getByTestId('product-check-data-details')).not.toHaveAttribute('open')
   await expect(page.getByTestId('subing-panel')).toHaveCount(1)
   await expect(page.getByRole('button', { name: '真实主力', exact: true })).toBeVisible()
-  await expect(page.locator('.toolbar__subing-basis')).toHaveText('苏冰计算 AG2601')
+  await expect(page.locator('.toolbar__subing-basis')).toContainText('基准 AG2601')
   await expect(page.locator('body')).not.toContainText('买入')
   await expect(page.locator('body')).not.toContainText('卖出')
   await expect(page.locator('body')).not.toContainText('formal signal')
@@ -1778,6 +1854,7 @@ test('SuBing public frequency keeps unsupported 30m explicit and does not reques
   await expect(page.getByText('苏冰公开当前观察仅支持 5m / 15m；D1 / 60m 请查看每日观察。', { exact: true })).toBeVisible()
   await expect(page.getByText('120 bars', { exact: true })).toBeVisible()
   await expect(page.locator('.product-workspace__kline')).toHaveAttribute('data-visible-main-indicators', '')
+  await expect(page.locator('.product-workspace__kline')).toHaveAttribute('data-subing-ema-ribbon', 'false')
   await openDataDetails(page)
   await expect(page.getByText('可继续向左加载', { exact: true })).toBeVisible()
   expect(subingRequests).toEqual([])
@@ -1816,7 +1893,7 @@ test('SuBing refreshes dominant metadata without changing the Market display ide
   await expect.poll(() => marketRequests.length).toBeGreaterThanOrEqual(2)
   expect(marketRequests.every((request) => request.series_kind === 'continuous' && !request.contract)).toBe(true)
   await expect(page.getByText('120 bars', { exact: true })).toBeVisible()
-  await expect(page.locator('.toolbar__subing-basis')).toHaveText('苏冰计算 AG2602')
+  await expect(page.locator('.toolbar__subing-basis')).toContainText('基准 AG2602')
   await expect(page).toHaveURL(/series_kind=continuous/)
   expect(dominantRequests).toHaveLength(2)
 })

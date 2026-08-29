@@ -44,6 +44,7 @@ const props = defineProps<{
   strategyCurrentError: string | null
   strategyReconciliationErrors: string[]
   showInternalProcess: boolean
+  focusedActionId?: string | null
 }>()
 
 const emit = defineEmits<{
@@ -51,9 +52,14 @@ const emit = defineEmits<{
 }>()
 
 const subingEvents = computed(() => props.currentEvents.filter(isSubingStrategyAlertEvent))
-const strategyEvent = computed(() => [...subingEvents.value]
-  .filter((event) => event.strategy_action !== null)
-  .sort((left, right) => Date.parse(right.bar_end) - Date.parse(left.bar_end))[0] ?? null)
+const strategyEvent = computed(() => {
+  const withAction = [...subingEvents.value].filter((event) => event.strategy_action !== null)
+  const focused = props.focusedActionId
+    ? withAction.find((event) => event.action_id === props.focusedActionId) ?? null
+    : null
+  if (focused) return focused
+  return withAction.sort((left, right) => Date.parse(right.bar_end) - Date.parse(left.bar_end))[0] ?? null
+})
 const remainingEvents = computed(() => {
   const selectedId = strategyEvent.value?.id
   return selectedId === undefined
@@ -160,7 +166,9 @@ function toggleSubing(ruleCode: string, enabled: boolean) {
       <div
         v-else-if="strategyEvent"
         class="subing-panel__formal-summary"
+        :class="{ 'subing-panel__formal-summary--focused': focusedActionId === strategyEvent.action_id }"
         :data-strategy-event-id="String(strategyEvent.id)"
+        :data-focused-action-id="focusedActionId === strategyEvent.action_id ? strategyEvent.action_id : undefined"
       >
         <strong>{{ strategyActionLabel(strategyEvent.strategy_action!.kind) }}</strong>
         <p>不可变通知事实 · {{ strategyEvent.strategy_action!.contract }}</p>
@@ -254,6 +262,11 @@ function toggleSubing(ruleCode: string, enabled: boolean) {
 .subing-panel { display: grid; gap: 12px; min-width: 0; }
 .subing-panel__header, .subing-panel__lifecycle-header, .subing-panel__switch-row { display: flex; align-items: start; justify-content: space-between; gap: 10px; }
 .subing-panel__formal-summary { display: grid; gap: 8px; }
+.subing-panel__formal-summary--focused {
+  padding: 8px;
+  border: 1px solid var(--gy-accent);
+  border-radius: var(--gy-radius-sm);
+}
 .subing-panel__header span, .subing-panel__lifecycle-header span { display: block; color: var(--gy-text-muted); font-size: var(--gy-font-size-xs); }
 .subing-panel__header h3, .subing-panel__section h4 { margin: 2px 0 0; font-size: var(--gy-font-size-sm); }
 .subing-panel__section { display: grid; gap: 8px; padding-top: 11px; border-top: 1px solid var(--gy-border); }

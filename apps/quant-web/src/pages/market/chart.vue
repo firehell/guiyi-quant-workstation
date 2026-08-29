@@ -42,7 +42,8 @@ import type {
 import { MARKET_FREQUENCIES } from '@/types/market'
 import { lifecycleSnapshotToMarkers } from '@/utils/subingLifecycleMarkers'
 import { ALERT_RULE_CODES } from '@/utils/alertRules'
-import { mergeKlineMarkers } from '@/utils/alertMarkers'
+import { earlierHistoryLoadError } from '@/utils/errorRedaction'
+import { alertMarkersForOverlay, mergeKlineMarkers } from '@/utils/alertMarkers'
 import { reconcileSubingStrategyActions } from '@/utils/subingStrategyReconciliation'
 import { buildKlineDerivedData } from '@/utils/klineViewModel'
 import {
@@ -58,13 +59,18 @@ import {
   loadMarketWorkspacePreferences,
   saveMarketWorkspacePreferences,
 } from '@/utils/marketWorkspacePreferences'
-import { resolveSubingDailyWatchChartEntry } from '@/utils/marketChartEntry'
+import {
+  resolveSubingConfirmChartEntry,
+  resolveSubingDailyWatchChartEntry,
+  seriesRefreshQuery,
+} from '@/utils/marketChartEntry'
 
 const route = useRoute()
 const router = useRouter()
 const message = useMessage()
 const initialWorkspacePreferences = loadMarketWorkspacePreferences()
 const initialMainChartPreferences = loadMainChartPreferences()
+const initialConfirmEntry = resolveSubingConfirmChartEntry(route.query)
 const dailyWatchEntry = resolveSubingDailyWatchChartEntry(route.query)
 const metadataLoading = ref(false)
 const error = ref<string | null>(null)
@@ -75,7 +81,7 @@ const fullscreen = ref(false)
 const researchDrawerOpen = ref(false)
 const researchSidebarOpen = ref(initialWorkspacePreferences.researchSidebarOpen)
 const selectedOverlay = ref<ResearchOverlayId>(
-  dailyWatchEntry?.overlay ?? initialMainChartPreferences.selectedOverlay,
+  initialConfirmEntry?.overlay ?? initialMainChartPreferences.selectedOverlay,
 )
 const optionalEmaIndicators = ref<OptionalEmaIndicatorId[]>([
   ...initialMainChartPreferences.optionalEmaIndicators,
@@ -91,11 +97,16 @@ const strategyPerformanceLoading = ref(false)
 const strategyPerformanceError = ref<string | null>(null)
 let strategyPerformanceGeneration = 0
 let strategyPerformanceController: AbortController | null = null
-const symbol = ref(dailyWatchEntry?.symbol ?? resolveInitialSymbol())
+const symbol = ref(initialConfirmEntry?.symbol ?? dailyWatchEntry?.symbol ?? resolveInitialSymbol())
 const contract = ref(String(route.query.contract || '').toUpperCase())
-const seriesKind = ref<SeriesKind>(dailyWatchEntry?.seriesKind ?? resolveInitialSeriesKind())
-const frequency = ref<MarketFrequency>(dailyWatchEntry?.frequency ?? resolveInitialFrequency())
-const followLatest = ref(true)
+const seriesKind = ref<SeriesKind>(
+  initialConfirmEntry?.seriesKind ?? dailyWatchEntry?.seriesKind ?? resolveInitialSeriesKind(),
+)
+const frequency = ref<MarketFrequency>(
+  initialConfirmEntry?.frequency ?? dailyWatchEntry?.frequency ?? resolveInitialFrequency(),
+)
+const followLatest = ref(initialConfirmEntry?.actionId ? false : true)
+const focusedActionRevealed = ref(false)
 const selectedDominant = computed(() => dominants.value.find((item) => item.product === symbol.value))
 const {
   bars,
@@ -212,6 +223,11 @@ const overlayCapability = computed(() => researchOverlayCapability(
   effectiveIdentity.value.seriesKind,
   frequency.value,
 ))
+const showSubingEmaRibbon = computed(() => (
+  selectedOverlay.value === 'subing' && overlayCapability.value.supported
+))
+const confirmEntry = computed(() => resolveSubingConfirmChartEntry(route.query))
+const focusedActionId = computed(() => confirmEntry.value?.actionId ?? null)
 const visibleBars = computed(() => bars.value)
 const subingStrategySupported = computed(() => subingStrategyHistoricalCapability(
   effectiveIdentity.value.seriesKind,
@@ -268,6 +284,10 @@ const afterMarketFailed = computed(() => {
   return !!afterMarket && typeof afterMarket === 'object' && afterMarket.last_failure != null
 })
 const htdyVisible = computed(() => selectedOverlay.value === 'htdy')
+const visibleAlertMarkers = computed(() => alertMarkersForOverlay(
+  selectedOverlay.value,
+  persistentAlertMarkers.value,
+))
 const latestHtdyObservation = computed(() => {
   if (!htdyVisible.value || !overlayCapability.value.supported) return null
   return buildKlineDerivedData(visibleBars.value, ['htdy']).htdy?.markers.at(-1) ?? null
@@ -306,6 +326,7 @@ const productCheckSidebarProps = computed(() => ({
   subingStrategyCurrentError: subingStrategyCurrentError.value,
   subingStrategyReconciliationErrors: strategyReconciliation.value.errorCodes,
   showSubingInternalProcess: showSubingInternalProcess.value,
+  focusedActionId: focusedActionId.value,
 }))
 
 onMounted(async () => {
@@ -365,6 +386,7 @@ watch(selectedOverlay, () => {
   } else {
     invalidateSubingStrategyCurrent()
   }
+  void syncChartLocationQuery()
 })
 
 watch([symbol, seriesKind, contract], () => {
@@ -409,6 +431,7 @@ watch(mutation, (nextMutation) => {
   if (!chart.value) return
   if (nextMutation.kind === 'replace') {
     chart.value.replaceBars(bars.value, !followLatest.value)
+    void tryRevealFocusedAction()
     return
   }
   if (nextMutation.kind === 'prepend') {
@@ -417,6 +440,15 @@ watch(mutation, (nextMutation) => {
   }
   for (const bar of nextMutation.bars) chart.value.updateBar(bar)
   if (followLatest.value) chart.value.scrollToLatest()
+})
+
+watch(focusedActionId, () => {
+  focusedActionRevealed.value = false
+  tryRevealFocusedAction()
+})
+
+watch([currentEvents, historicalResearchMarkers, visibleBars], () => {
+  tryRevealFocusedAction()
 })
 
 onUnmounted(() => {
@@ -477,6 +509,35 @@ function currentSubingStrategyIdentity() {
   }
 }
 
+function syncChartLocationQuery() {
+  return router.replace({
+    query: seriesRefreshQuery({
+      symbol: symbol.value,
+      contract: contract.value,
+      seriesKind: seriesKind.value,
+      frequency: frequency.value,
+      overlay: selectedOverlay.value,
+      confirm: confirmEntry.value,
+    }),
+  })
+}
+
+function focusedActionTime(actionId: string): string | null {
+  const live = liveStrategyEvents.value.find((event) => event.action_id === actionId)
+  if (live?.strategy_action?.effective_bar_end) return live.strategy_action.effective_bar_end
+  if (live?.bar_end) return live.bar_end
+  const historical = subingStrategyActions.value.find((action) => action.action_id === actionId)
+  return historical?.effective_bar_end ?? null
+}
+
+function tryRevealFocusedAction() {
+  const actionId = focusedActionId.value
+  if (!actionId || focusedActionRevealed.value || !chart.value) return
+  const time = focusedActionTime(actionId)
+  if (!time) return
+  if (chart.value.revealTime(time)) focusedActionRevealed.value = true
+}
+
 async function refreshSeries() {
   const replacementGeneration = ++canonicalReplacementGeneration
   if (!symbol.value) {
@@ -490,16 +551,11 @@ async function refreshSeries() {
     return false
   }
   error.value = null
-  followLatest.value = true
+  followLatest.value = focusedActionId.value === null
   try {
     await replaceSeries(requested)
     if (replacementGeneration !== canonicalReplacementGeneration || !isCurrentIdentity(requested)) return false
-    await router.replace({ query: {
-      symbol: requested.symbol,
-      contract: contract.value || undefined,
-      series_kind: seriesKind.value,
-      frequency: requested.frequency,
-    } })
+    await syncChartLocationQuery()
     if (replacementGeneration !== canonicalReplacementGeneration || !isCurrentIdentity(requested)) return false
     return true
   } catch {
@@ -620,8 +676,8 @@ async function refreshStrategyPerformance(): Promise<void> {
 async function loadEarlierBars() {
   try {
     await loadMoreBefore()
-  } catch {
-    error.value = '读取更早历史失败：数据集、月分区或主力映射不完整'
+  } catch (caught) {
+    error.value = earlierHistoryLoadError(caught)
     message.error(error.value)
   }
 }
@@ -782,6 +838,8 @@ function normalizeSymbol(value: unknown): string | null {
             class="product-workspace__kline"
             :data-visible-start-trading-day="visibleStartTradingDay"
             :data-visible-main-indicators="visibleMainIndicators.join(',')"
+            :data-subing-ema-ribbon="showSubingEmaRibbon ? 'true' : 'false'"
+            :data-focused-action-id="focusedActionId || undefined"
           >
             <KlineChart
               ref="chart"
@@ -791,7 +849,8 @@ function normalizeSymbol(value: unknown): string | null {
               :period="frequency"
               :series-kind="effectiveIdentity.seriesKind"
               :visible-main-indicators="visibleMainIndicators"
-              :alert-markers="persistentAlertMarkers"
+              :show-subing-ema-ribbon="showSubingEmaRibbon"
+              :alert-markers="visibleAlertMarkers"
               :research-markers="researchMarkers"
               :data-historical-research-loading="historicalResearchLoading"
               @need-more-before="loadEarlierBars"
@@ -848,13 +907,20 @@ function normalizeSymbol(value: unknown): string | null {
 .product-workspace:fullscreen .product-workspace__sidebar-wrap { display: none; }
 
 @media (min-width: 980px) {
-  .chart-page { height: 100%; min-height: 0; overflow-y: auto; }
-  .chart-page > :deep(.n-spin-container) { display: flex; flex: 0 0 calc(100vh - 120px); min-height: 620px; flex-direction: column; }
-  .chart-page :deep(.n-spin-content) { display: flex; flex: 1 1 0; min-height: 0; flex-direction: column; }
-  .product-workspace, .product-workspace__main { flex: 1 1 0; min-height: 0; }
+  .chart-page { height: 100%; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }
+  .chart-page > :deep(.n-spin-container) { display: flex; flex: 0 0 auto; min-height: 0; flex-direction: column; width: 100%; }
+  .chart-page :deep(.n-spin-content) { display: flex; flex: 0 0 auto; min-height: 0; flex-direction: column; width: 100%; }
+  .product-workspace, .product-workspace__main { flex: 0 0 auto; min-height: 0; width: 100%; min-width: 0; }
   .product-workspace { display: flex; }
-  .product-workspace__kline { display: flex; min-height: 0; }
-  .product-workspace__kline :deep(.kline-shell) { flex: 1 1 0; min-width: 0; height: 100%; }
+  .product-workspace__kline { display: flex; min-width: 0; width: 100%; }
+  .product-workspace__kline :deep(.kline-shell) {
+    flex: none;
+    width: 100%;
+    min-width: 0;
+    min-height: 480px;
+    height: clamp(480px, calc(100vh - 320px), 900px);
+  }
+  .chart-page :deep([data-testid='subing-strategy-performance']) { flex: 0 0 auto; width: 100%; }
 }
 
 @media (min-width: 980px) and (max-width: 1199px) {

@@ -1,6 +1,7 @@
 import type { BarData, HoverKlineContext, KlineMarker, MainIndicatorId, MainIndicatorValue } from '../types/market.ts'
 import { calculateEMA, calculateHuoTianDaYou, calculateMACD } from './indicators.ts'
 import { MAIN_INDICATOR_DEFINITIONS } from './mainIndicators.ts'
+import { buildSubingEmaRibbon, type SubingEmaRibbon } from './subingEmaRibbon.ts'
 
 type EmaIndicatorId = 'ema_10' | 'ema_21' | 'ema_60'
 
@@ -17,6 +18,11 @@ export interface KlineDerivedData {
     histogram: KlineValuePoint[]
   }
   htdy: HtdyDerivedData | null
+  subingEmaRibbon: SubingEmaRibbon | null
+}
+
+export interface KlineDerivedOptions {
+  showSubingEmaRibbon?: boolean
 }
 
 export interface HtdyDerivedData {
@@ -45,11 +51,17 @@ const EMA_PERIODS: Record<EmaIndicatorId, number> = {
 export function buildKlineDerivedData(
   bars: BarData[],
   visibleMainIndicators: MainIndicatorId[],
+  options: KlineDerivedOptions = {},
 ): KlineDerivedData {
   const ema: KlineDerivedData['ema'] = {}
+  const ribbon = options.showSubingEmaRibbon ? buildSubingEmaRibbon(bars) : null
+  if (ribbon) {
+    ema.ema_10 = ribbon.ema10
+    ema.ema_21 = ribbon.ema21
+  }
 
   for (const indicator of visibleMainIndicators) {
-    if (!isEmaIndicator(indicator)) continue
+    if (!isEmaIndicator(indicator) || ema[indicator]) continue
     ema[indicator] = calculateEMA(bars, EMA_PERIODS[indicator]).map(toKlineValuePoint)
   }
 
@@ -62,6 +74,7 @@ export function buildKlineDerivedData(
       histogram: macd.histogram.map(toKlineValuePoint),
     },
     htdy: visibleMainIndicators.includes('htdy') ? buildHtdyDerivedData(bars) : null,
+    subingEmaRibbon: ribbon,
   }
 }
 
@@ -113,9 +126,9 @@ export function resolveKlineHoverContext(
   return {
     time,
     bar,
-    mainIndicators: visibleMainIndicators
-      .filter(isEmaIndicator)
-      .map((indicator) => toHoverIndicatorValue(indicator, pointValue(derived.ema[indicator], time))),
+    mainIndicators: hoverEmaIndicators(visibleMainIndicators, derived).map((indicator) => (
+      toHoverIndicatorValue(indicator, pointValue(derived.ema[indicator], time))
+    )),
     macd: {
       dif: pointValue(derived.macd.dif, time),
       dea: pointValue(derived.macd.dea, time),
@@ -132,6 +145,18 @@ function sameMarkerTime(left: string, right: string): boolean {
     return leftTimestamp === rightTimestamp
   }
   return left === right
+}
+
+function hoverEmaIndicators(
+  visibleMainIndicators: MainIndicatorId[],
+  derived: KlineDerivedData,
+): EmaIndicatorId[] {
+  const ids: EmaIndicatorId[] = derived.subingEmaRibbon ? ['ema_10', 'ema_21'] : []
+  for (const indicator of visibleMainIndicators) {
+    if (!isEmaIndicator(indicator) || ids.includes(indicator)) continue
+    ids.push(indicator)
+  }
+  return ids
 }
 
 function isEmaIndicator(indicator: MainIndicatorId): indicator is EmaIndicatorId {

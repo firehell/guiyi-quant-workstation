@@ -8,7 +8,7 @@
 
 - 唯一 Web 产品为 Market，route 仅 `/market` 与 `/market/chart`。
 - Market Radar 的 Summary、Scatter、Detail 是唯一全市场研究入口。
-- 主图 Overlay 仅 `none | subing | htdy`。
+- 主图 Overlay 仅 `none | subing | htdy`。苏冰 overlay 默认显示 EMA10/21 趋势线带；独立 EMA21 仅图表设置可选。
 
 ## SuBing
 

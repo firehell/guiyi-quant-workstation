@@ -5,17 +5,69 @@ import type {
 } from '../types/market.ts'
 import { subingStrategyExitReasonLabel } from './subingStrategyRecords.ts'
 
+export function formatSubingMarkerPrice(value: string): string {
+  const trimmed = value.trim()
+  if (!trimmed) return trimmed
+  const numeric = Number(trimmed)
+  if (!Number.isFinite(numeric)) return trimmed
+  if (Number.isInteger(numeric)) return String(numeric)
+  return trimmed
+    .replace(/(\.\d*?[1-9])0+$/, '$1')
+    .replace(/\.0+$/, '')
+}
+
+export function formatSubingMarkerPercent(value: string): string {
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric)) return value
+  return `${numeric >= 0 ? '+' : ''}${numeric.toFixed(2)}%`
+}
+
+export function subingStrategyResultTone(
+  percent: string | null | undefined,
+): 'profit' | 'loss' | null {
+  if (percent === null || percent === undefined || percent === '') return null
+  const numeric = Number(percent)
+  if (!Number.isFinite(numeric)) return null
+  return numeric >= 0 ? 'profit' : 'loss'
+}
+
+export function subingStrategyChartLabelLines(input: {
+  open: boolean
+  kindLabel: string
+  price: string
+  percentLabel: string | null
+}): string {
+  const detail = input.open
+    ? `建仓价：${input.price}`
+    : input.percentLabel
+      ? `${input.price}(${input.percentLabel})`
+      : input.price
+  return `${input.kindLabel}\n${detail}`
+}
+
 export function subingStrategyActionToMarker(
   action: SubingStrategyAction,
   episodeById: ReadonlyMap<string, SubingStrategyEpisode>,
 ): KlineMarker {
   const long = action.kind.endsWith('_long')
   const open = action.kind.startsWith('open_')
-  const label = open
-    ? long ? '▲ 建多' : '▼ 建空'
-    : long ? '× 清多' : '× 清空'
   const episode = episodeById.get(action.episode_id)
   const entry = episode?.entry_action ?? (open ? action : null)
+  const price = formatSubingMarkerPrice(action.reference_price)
+  const percentRaw = open ? null : episode?.reference_change_percent ?? null
+  const percentLabel = percentRaw === null || percentRaw === undefined
+    ? null
+    : formatSubingMarkerPercent(percentRaw)
+  const kindLabel = open
+    ? long ? '建多' : '建空'
+    : long ? '清多' : '清空'
+  const label = subingStrategyChartLabelLines({
+    open,
+    kindLabel,
+    price,
+    percentLabel,
+  })
+  const resultTone = open ? null : subingStrategyResultTone(percentRaw)
   const reasons = action.reason_codes.map(subingStrategyExitReasonLabel)
   const context = entry?.direction_context_source_day
     && entry.direction_context_target_day
@@ -75,6 +127,7 @@ export function subingStrategyActionToMarker(
       ...actionFacts,
     ].join(' · '),
     tone: long ? 'up' : 'down',
+    resultTone,
     position: open
       ? long ? 'belowBar' : 'aboveBar'
       : long ? 'aboveBar' : 'belowBar',

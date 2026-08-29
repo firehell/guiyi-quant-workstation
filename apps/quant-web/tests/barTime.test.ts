@@ -15,17 +15,38 @@ import {
 } from '../src/utils/barTime.ts'
 
 describe('barTime', () => {
-  it('formats intraday chart times in Asia/Shanghai for the axis and crosshair', () => {
+  it('formats intraday chart times in Asia/Shanghai for the axis and crosshair', async () => {
     const timestamp = Math.floor(new Date('2026-08-11T14:07:00Z').getTime() / 1000)
+    const { TickMarkType } = await import('lightweight-charts')
 
     assert.equal(typeof barTime.formatChartAxisTimeInShanghai, 'function')
     assert.equal(typeof barTime.formatChartTimeInShanghai, 'function')
-    assert.equal(barTime.formatChartAxisTimeInShanghai!(timestamp), '08-11 22:07')
+    assert.equal(
+      barTime.formatChartAxisTimeInShanghai!(timestamp, TickMarkType.Time),
+      '22:07',
+    )
+    assert.equal(
+      barTime.formatChartAxisTimeInShanghai!(timestamp, TickMarkType.DayOfMonth),
+      '11日',
+    )
+    assert.equal(
+      barTime.formatChartAxisTimeInShanghai!(timestamp, TickMarkType.Month),
+      '8月',
+    )
     assert.equal(barTime.formatChartTimeInShanghai!(timestamp), '2026-08-11 22:07')
+    assert.equal(barTime.formatChartTimeInShanghai!('2026-08-11T14:07:00Z'), '2026-08-11 22:07')
   })
 
-  it('keeps BusinessDay values date-only when formatting chart times', () => {
-    assert.equal(barTime.formatChartAxisTimeInShanghai!({ year: 2026, month: 8, day: 12 }), '2026-08-12')
+  it('keeps BusinessDay values date-only when formatting chart times', async () => {
+    const { TickMarkType } = await import('lightweight-charts')
+    assert.equal(
+      barTime.formatChartAxisTimeInShanghai!({ year: 2026, month: 8, day: 12 }, TickMarkType.DayOfMonth),
+      '12日',
+    )
+    assert.equal(
+      barTime.formatChartAxisTimeInShanghai!({ year: 2026, month: 8, day: 12 }, TickMarkType.Month),
+      '8月',
+    )
     assert.equal(barTime.formatChartTimeInShanghai!({ year: 2026, month: 8, day: 12 }), '2026-08-12')
   })
 

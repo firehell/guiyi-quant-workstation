@@ -12,6 +12,7 @@ import {
   type ISeriesApi,
   type LogicalRange,
   type MouseEventParams,
+  type TickMarkType,
   type Time,
   type UTCTimestamp,
 } from 'lightweight-charts'
@@ -33,6 +34,14 @@ import {
   type KlineValuePoint,
 } from '@/utils/klineViewModel'
 import { mergeKlineMarkers } from '@/utils/alertMarkers'
+import {
+  estimateSubingLabelBoxWidth,
+  isSubingStrategyMarker,
+  layoutSubingStrategyLabels,
+  preferredSideFromMarker,
+  type SubingStrategyLabelLayout,
+} from '@/utils/subingStrategyLabels'
+import { SubingEmaRibbonPrimitive } from '@/components/kline/subingEmaRibbonPrimitive'
 
 const props = withDefaults(defineProps<{
   bars: BarData[]
@@ -41,6 +50,7 @@ const props = withDefaults(defineProps<{
   period?: string
   seriesKind: SeriesKind
   visibleMainIndicators?: MainIndicatorId[]
+  showSubingEmaRibbon?: boolean
   alertMarkers?: KlineMarker[]
   researchMarkers?: KlineMarker[]
 }>(), {
@@ -48,6 +58,7 @@ const props = withDefaults(defineProps<{
   error: null,
   period: '15m',
   visibleMainIndicators: () => [],
+  showSubingEmaRibbon: false,
   alertMarkers: () => [],
   researchMarkers: () => [],
 })
@@ -70,6 +81,7 @@ let htdyZd1: ISeriesApi<'Line'> | null = null
 let htdyZd2: ISeriesApi<'Line'> | null = null
 let htdyMarkers: ISeriesMarkersPluginApi<Time> | null = null
 const emaLines: Partial<Record<EmaIndicatorId, ISeriesApi<'Line'>>> = {}
+const ribbonPrimitive = new SubingEmaRibbonPrimitive()
 let observer: ResizeObserver | null = null
 let renderedBars: BarData[] = []
 let isNearLeftBoundary = false
@@ -78,6 +90,8 @@ let followLatest = true
 const hoverContext = ref<HoverKlineContext | null>(null)
 const macdLabelTop = ref<number | null>(null)
 const renderedResearchMarkerCount = ref(0)
+const strategyLabelLayouts = ref<SubingStrategyLabelLayout[]>([])
+let strategyLabelLayoutFrame: number | null = null
 let derivedData = buildKlineDerivedData([], [])
 
 type EmaIndicatorId = 'ema_10' | 'ema_21' | 'ema_60'
@@ -100,10 +114,22 @@ onMounted(async () => {
     },
     rightPriceScale: { borderColor: theme.axis },
     localization: { timeFormatter: formatChartTimeInShanghai },
+    crosshair: {
+      vertLine: {
+        labelBackgroundColor: '#1F2937',
+        labelVisible: true,
+      },
+      horzLine: {
+        labelBackgroundColor: '#1F2937',
+        labelVisible: true,
+      },
+    },
     timeScale: {
       borderColor: theme.axis,
       timeVisible: !isDaily(),
-      tickMarkFormatter: (time: Time) => formatChartAxisTimeInShanghai(time),
+      tickMarkFormatter: (time: Time, tickMarkType: TickMarkType) => (
+        formatChartAxisTimeInShanghai(time, tickMarkType)
+      ),
     },
   })
   chart.panes()[0].setStretchFactor(6)
@@ -120,6 +146,7 @@ onMounted(async () => {
   emaLines.ema_10 = chart.addSeries(LineSeries, { color: theme.ema10, lineWidth: 1, lastValueVisible: false }, 0)
   emaLines.ema_21 = chart.addSeries(LineSeries, { color: theme.ema21, lineWidth: 2, lastValueVisible: false }, 0)
   emaLines.ema_60 = chart.addSeries(LineSeries, { color: theme.ema60, lineWidth: 1, lastValueVisible: false }, 0)
+  candles.attachPrimitive(ribbonPrimitive)
   htdyZk1 = chart.addSeries(LineSeries, { color: theme.htdyZk1, lineWidth: 2, lineStyle: 0, lastValueVisible: false }, 0)
   htdyZd1 = chart.addSeries(LineSeries, { color: theme.htdyZd1, lineWidth: 2, lineStyle: 2, lastValueVisible: false }, 0)
   htdyZd2 = chart.addSeries(LineSeries, { color: theme.htdyZd2, lineWidth: 2, lineStyle: 0, lastValueVisible: false }, 0)
@@ -141,6 +168,10 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  if (strategyLabelLayoutFrame !== null) {
+    cancelAnimationFrame(strategyLabelLayoutFrame)
+    strategyLabelLayoutFrame = null
+  }
   chart?.timeScale().unsubscribeVisibleLogicalRangeChange(onVisibleLogicalRangeChange)
   chart?.unsubscribeCrosshairMove(onCrosshairMove)
   observer?.disconnect()
@@ -156,12 +187,20 @@ watch(() => props.visibleMainIndicators, () => {
   renderDerivedSeries()
 }, { deep: true })
 
+watch(() => props.showSubingEmaRibbon, () => {
+  renderDerivedSeries()
+})
+
 watch(() => props.alertMarkers, () => {
   renderDerivedSeries()
 }, { deep: true })
 
 watch(() => props.researchMarkers, () => {
   renderDerivedSeries()
+}, { deep: true })
+
+watch(() => props.bars, () => {
+  scheduleStrategyLabelLayout()
 }, { deep: true })
 
 function barValues(bars: BarData[]) {
@@ -237,8 +276,27 @@ function scrollToLatest(): void {
   }
 }
 
+function revealTime(iso: string): boolean {
+  if (!chart || isDaily() || !props.bars.length) return false
+  const parsed = Date.parse(iso)
+  if (!Number.isFinite(parsed)) return false
+  const unix = Math.floor(parsed / 1000) as UTCTimestamp
+  const index = props.bars.findIndex((bar) => chartTime(bar) === unix)
+  if (index < 0) return false
+  if (followLatest) {
+    followLatest = false
+    emit('follow-latest-change', false)
+  }
+  chart.timeScale().setVisibleLogicalRange({
+    from: Math.max(0, index - 48),
+    to: Math.min(props.bars.length - 1, index + 8),
+  })
+  return true
+}
+
 function onVisibleLogicalRangeChange(range: LogicalRange | null) {
   if (!range || !renderedBars.length) return
+  scheduleStrategyLabelLayout()
   const isFollowing = range.to >= renderedBars.length - 3
   if (isFollowing !== followLatest) {
     followLatest = isFollowing
@@ -269,7 +327,7 @@ function onCrosshairMove(param: MouseEventParams<Time>) {
       derivedData,
       props.visibleMainIndicators,
       bar.time,
-      mergedDisplayMarkers(),
+      markersForHoverContext(),
     )
     : null
   hoverContext.value = nextContext
@@ -286,12 +344,19 @@ function renderAllSeries(): void {
 function renderDerivedSeries(): void {
   renderedResearchMarkerCount.value = 0
   if (!chart || !macdHistogram || !macdDif || !macdDea) return
-  derivedData = buildKlineDerivedData(renderedBars, props.visibleMainIndicators)
+  derivedData = buildKlineDerivedData(renderedBars, props.visibleMainIndicators, {
+    showSubingEmaRibbon: props.showSubingEmaRibbon,
+  })
   const theme = resolveChartTheme()
 
   EMA_INDICATORS.forEach((indicator) => {
-    emaLines[indicator]?.setData(chartValues(derivedData.ema[indicator]))
+    const visible = props.visibleMainIndicators.includes(indicator)
+    emaLines[indicator]?.setData(chartValues(visible ? derivedData.ema[indicator] : undefined))
   })
+  ribbonPrimitive.setData(
+    props.showSubingEmaRibbon ? derivedData.subingEmaRibbon?.bands ?? [] : [],
+    ribbonTime,
+  )
 
   macdDif.setData(chartValues(derivedData.macd.dif))
   macdDea.setData(chartValues(derivedData.macd.dea))
@@ -303,16 +368,73 @@ function renderDerivedSeries(): void {
   htdyZk1?.setData(chartValues(derivedData.htdy?.zk1))
   htdyZd1?.setData(chartValues(derivedData.htdy?.zd1))
   htdyZd2?.setData(chartValues(derivedData.htdy?.zd2))
-  renderedResearchMarkerCount.value = chartMarkers(props.researchMarkers).length
   const renderedMarkers = chartMarkers(mergedDisplayMarkers())
   htdyMarkers?.setMarkers(renderedMarkers)
+  scheduleStrategyLabelLayout()
 }
 
 function mergedDisplayMarkers(): KlineMarker[] {
   return mergeKlineMarkers(
     mergeKlineMarkers(derivedData.htdy?.markers ?? [], props.alertMarkers),
-    props.researchMarkers,
+    props.researchMarkers.filter((marker) => !isSubingStrategyMarker(marker)),
   )
+}
+
+function markersForHoverContext(): KlineMarker[] {
+  // SuBing historical labels stay on-chart; long action facts belong in 历史策略效果, not hover.
+  return mergeKlineMarkers(
+    mergeKlineMarkers(derivedData.htdy?.markers ?? [], props.alertMarkers),
+    props.researchMarkers.filter((marker) => !isSubingStrategyMarker(marker)),
+  )
+}
+
+function scheduleStrategyLabelLayout(): void {
+  if (strategyLabelLayoutFrame !== null) return
+  strategyLabelLayoutFrame = requestAnimationFrame(() => {
+    strategyLabelLayoutFrame = null
+    syncStrategyLabelLayout()
+  })
+}
+
+function syncStrategyLabelLayout(): void {
+  if (!chart || !candles || !container.value) {
+    strategyLabelLayouts.value = []
+    renderedResearchMarkerCount.value = 0
+    return
+  }
+  const paneHeight = chart.panes()[0]?.getHeight() ?? container.value.clientHeight
+  const pane = { left: 0, top: 0, width: chart.timeScale().width(), height: paneHeight }
+  const barsByTime = new Map(renderedBars.map((bar) => [markerTimeKey(bar.time), bar]))
+  const anchors = props.researchMarkers
+    .filter(isSubingStrategyMarker)
+    .flatMap((marker) => {
+      const bar = barsByTime.get(markerTimeKey(marker.time))
+      if (!bar) return []
+      const x = chart!.timeScale().timeToCoordinate(chartTime(bar))
+      const wickPrice = preferredSideFromMarker(marker) === 'above' ? bar.high : bar.low
+      const wickY = candles!.priceToCoordinate(wickPrice)
+      if (x === null || wickY === null) return []
+      return [{
+        id: marker.id,
+        label: marker.label,
+        x,
+        wickY,
+        preferredSide: preferredSideFromMarker(marker),
+        boxWidth: estimateSubingLabelBoxWidth(marker.label),
+        resultTone: marker.resultTone ?? null,
+      }]
+    })
+  const clusterX = anchors.length
+    ? Math.max(...anchors.map((anchor) => anchor.boxWidth))
+    : 40
+  strategyLabelLayouts.value = layoutSubingStrategyLabels(anchors, {
+    pane,
+    boxHeight: 32,
+    gap: 4,
+    stackGap: 2,
+    clusterX,
+  })
+  renderedResearchMarkerCount.value = strategyLabelLayouts.value.length
 }
 
 function chartValues(points: KlineValuePoint[] | undefined): Array<{ time: Time; value: number }> {
@@ -355,6 +477,15 @@ function chartTime(bar: BarData): Time {
   return Math.floor(new Date(bar.time).getTime() / 1000) as UTCTimestamp
 }
 
+function ribbonTime(iso: string): Time | null {
+  if (isDaily()) {
+    const day = iso.slice(0, 10)
+    return /^\d{4}-\d{2}-\d{2}$/.test(day) ? day as Time : null
+  }
+  const parsed = Date.parse(iso)
+  return Number.isFinite(parsed) ? Math.floor(parsed / 1000) as UTCTimestamp : null
+}
+
 function sameChartTime(left: Time, right: Time): boolean {
   return chartTimeKey(left) === chartTimeKey(right)
 }
@@ -379,6 +510,7 @@ function resize() {
   if (!container.value || !chart) return
   chart.resize(container.value.clientWidth, container.value.clientHeight)
   requestAnimationFrame(syncMacdLabelTop)
+  scheduleStrategyLabelLayout()
 }
 
 defineExpose({
@@ -386,6 +518,7 @@ defineExpose({
   prependBars,
   updateBar,
   scrollToLatest,
+  revealTime,
 })
 </script>
 
@@ -400,6 +533,39 @@ defineExpose({
     :data-research-marker-times="researchMarkers.map((marker) => marker.time).join(',')"
   >
     <div ref="container" class="chart" />
+    <div
+      class="kline-strategy-labels"
+      data-testid="kline-strategy-labels"
+      aria-hidden="true"
+    >
+      <div
+        v-for="item in strategyLabelLayouts"
+        :key="item.id"
+        class="kline-strategy-label"
+        :class="{
+          'kline-strategy-label--profit': item.resultTone === 'profit',
+          'kline-strategy-label--loss': item.resultTone === 'loss',
+        }"
+        :style="{
+          left: `${item.left}px`,
+          top: `${item.top}px`,
+          width: `${item.width}px`,
+          height: `${item.height}px`,
+        }"
+      >
+        <span
+          class="kline-strategy-label__leader"
+          :style="{
+            top: `${Math.min(item.leaderFromY, item.leaderToY) - item.top}px`,
+            height: `${Math.abs(item.leaderToY - item.leaderFromY)}px`,
+          }"
+        />
+        <span class="kline-strategy-label__text">
+          <span>{{ item.title }}</span>
+          <span>{{ item.detail }}</span>
+        </span>
+      </div>
+    </div>
     <KlineHoverLegend
       :context="hoverContext"
       :show-macd="true"
@@ -439,6 +605,15 @@ defineExpose({
 .htdy-legend__line--zd2 { border-color: var(--gy-chart-htdy-zd2); }
 .overlay { position: absolute; inset: 0; display: grid; place-items: center; color: var(--gy-text-muted); background: rgba(11, 17, 27, .48); pointer-events: none; }
 .overlay.error { color: var(--gy-status-error); }
+.kline-strategy-labels { pointer-events: none; position: absolute; inset: 0; z-index: 3; overflow: hidden; }
+.kline-strategy-label { position: absolute; box-sizing: border-box; border: 1px solid #4B5563; background: #FBF8F1; color: #111827; font-size: 11px; line-height: 1.15; }
+.kline-strategy-label--profit { border-color: var(--gy-up); color: var(--gy-up); }
+.kline-strategy-label--profit .kline-strategy-label__leader { background: var(--gy-up); }
+.kline-strategy-label--loss { border-color: var(--gy-down); color: var(--gy-down); }
+.kline-strategy-label--loss .kline-strategy-label__leader { background: var(--gy-down); }
+.kline-strategy-label__text { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; overflow: hidden; padding: 0 4px; }
+.kline-strategy-label__text > span { white-space: nowrap; }
+.kline-strategy-label__leader { position: absolute; left: 50%; width: 1px; margin-left: -.5px; background: #4B5563; pointer-events: none; }
 
 @media (max-width: 980px) {
   .secondary-panel-label { right: 10px; }
