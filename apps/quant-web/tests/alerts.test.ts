@@ -6,6 +6,7 @@ import { alertRuntimeLabel, isCurrentAlertMutation } from '../src/utils/alertCon
 import { ALERT_RULE_CODES, ALERT_RULE_PRESENTATIONS } from '../src/utils/alertRules.ts'
 import {
   alertEventsToMarkers,
+  alertMarkersForOverlay,
   isPersistentAlertIdentity,
   markerRuleCodes,
   mergeKlineMarkers,
@@ -447,6 +448,22 @@ describe('Product Alert server-side scope', () => {
     ])
   })
 
+  it('shows HTDY persistent observation markers only when HTDY overlay is selected', () => {
+    const markers = alertEventsToMarkers([
+      event(1, ['buy']),
+      event(3, ['sell']),
+    ])
+    assert.equal(markers.length, 2)
+    assert.deepEqual(alertMarkersForOverlay('htdy', markers), markers)
+    assert.deepEqual(alertMarkersForOverlay('subing', markers), [])
+    assert.deepEqual(alertMarkersForOverlay('none', markers), [])
+    assert.match(chartSource, /:alert-markers="visibleAlertMarkers"/)
+    assert.match(
+      chartSource,
+      /alertMarkersForOverlay\(\s*selectedOverlay\.value,\s*persistentAlertMarkers\.value,?\s*\)/,
+    )
+  })
+
   it('keeps same-rule same-bar HTDY events distinct by frequency', () => {
     const fifteenMinute = event(1, ['buy'])
     const sixtyMinute = { ...fifteenMinute, id: 60, frequency: '60m' as const }
@@ -572,6 +589,60 @@ describe('Product Alert server-side scope', () => {
     assert.deepEqual(fiveMinuteRequests, ['htdy_original_15m'])
     assert.equal(fiveMinute.markers.value.length, 1)
     fiveMinute.dispose()
+  })
+})
+
+describe('KlineChart SuBing strategy label overlay', () => {
+  const klineChartSource = read('../src/components/kline/KlineChart.vue')
+  const chartPageSource = read('../src/pages/market/chart.vue')
+  const hoverLegendSource = read('../src/components/kline/KlineHoverLegend.vue')
+
+  it('lays out SuBing strategy labels via HTML overlay', () => {
+    assert.match(klineChartSource, /layoutSubingStrategyLabels/)
+    assert.match(klineChartSource, /isSubingStrategyMarker/)
+    assert.match(klineChartSource, /estimateSubingLabelBoxWidth/)
+    assert.match(klineChartSource, /data-testid="kline-strategy-labels"/)
+    assert.match(klineChartSource, /pointer-events:\s*none/)
+    assert.match(klineChartSource, /kline-strategy-label--profit/)
+    assert.match(klineChartSource, /kline-strategy-label--loss/)
+    assert.match(
+      klineChartSource,
+      /mergedDisplayMarkers[\s\S]*filter\([\s\S]*isSubingStrategyMarker/,
+    )
+    assert.match(klineChartSource, /markersForHoverContext/)
+    assert.match(
+      klineChartSource,
+      /onCrosshairMove[\s\S]*markersForHoverContext/,
+    )
+    assert.match(
+      klineChartSource,
+      /markersForHoverContext[\s\S]*filter\([\s\S]*!isSubingStrategyMarker/,
+    )
+  })
+
+  it('styles crosshair time labels dark and keeps volume red-up green-down tokens', () => {
+    assert.match(klineChartSource, /labelBackgroundColor:\s*'#1F2937'/)
+    assert.match(klineChartSource, /tickMarkFormatter:\s*\(time:\s*Time,\s*tickMarkType:\s*TickMarkType\)/)
+    const tokensSource = read('../src/styles/tokens.css')
+    const chartThemeSource = read('../src/styles/chartTheme.ts')
+    assert.match(tokensSource, /--gy-chart-volume-up:\s*rgba\(220,\s*38,\s*38,\s*0\.5\)/)
+    assert.match(tokensSource, /--gy-chart-volume-down:\s*rgba\(22,\s*163,\s*74,\s*0\.5\)/)
+    assert.match(chartThemeSource, /volumeUp:\s*'rgba\(220,\s*38,\s*38,\s*0\.5\)'/)
+    assert.match(chartThemeSource, /volumeDown:\s*'rgba\(22,\s*163,\s*74,\s*0\.5\)'/)
+  })
+
+  it('keeps chart shell inside the viewport flex chain so crosshair time stays visible', () => {
+    assert.doesNotMatch(chartPageSource, /flex:\s*0\s+0\s+calc\(100vh\s*-\s*120px\)/)
+    assert.match(
+      chartPageSource,
+      /\.chart-page\s*>\s*:deep\(\.n-spin-container\)[^}]*flex:\s*1\s+1\s+0/,
+    )
+    assert.match(
+      chartPageSource,
+      /\.product-workspace__kline\s+:deep\(\.kline-shell\)[^}]*min-height:\s*0/,
+    )
+    assert.match(hoverLegendSource, /formatChartTimeInShanghai/)
+    assert.match(hoverLegendSource, /data-testid="kline-hover-time"/)
   })
 })
 

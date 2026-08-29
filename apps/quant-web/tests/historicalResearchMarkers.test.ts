@@ -71,10 +71,12 @@ test('SuBing Strategy marker anchors effective bars and preserves simulated-acti
   const close = subingStrategyActionToMarker(response.actions[1], episodes)
 
   assert.equal(open.time, '2026-08-03T01:10:00Z')
-  assert.equal(open.label, '▲ 建多')
+  assert.equal(open.label, '建多 100')
+  assert.equal(open.resultTone, null)
   assert.equal(open.position, 'belowBar')
   assert.doesNotMatch(open.tooltip!, /持有/)
-  assert.equal(close.label, '× 清多')
+  assert.equal(close.label, '清多 107.97(+7.97%)')
+  assert.equal(close.resultTone, 'profit')
   assert.equal(close.position, 'aboveBar')
   assert.match(close.tooltip!, /EMA21 跌破/)
   assert.match(close.tooltip!, /MACD 高位死叉/)
@@ -86,11 +88,31 @@ test('SuBing Strategy marker anchors effective bars and preserves simulated-acti
   assert.match(close.tooltip!, /持有 2 根 15m Bar/)
   assert.match(close.tooltip!, /生效口径 下一根同合约 15m open/)
 
+  const lossEpisode = {
+    ...response.episodes[0],
+    reference_change_percent: '-1.25',
+  }
+  const lossClose = subingStrategyActionToMarker(
+    response.actions[1],
+    new Map([[lossEpisode.episode_id, lossEpisode]]),
+  )
+  assert.equal(lossClose.label, '清多 107.97(-1.25%)')
+  assert.equal(lossClose.resultTone, 'loss')
+
+  const openShort = subingStrategyActionToMarker(
+    { ...response.actions[0], kind: 'open_short' },
+    episodes,
+  )
+  assert.equal(openShort.label, '建空 100')
+  assert.equal(openShort.resultTone, null)
+
   const closeShort = subingStrategyActionToMarker(
     { ...response.actions[1], kind: 'close_short' },
     new Map(),
   )
   assert.equal(closeShort.position, 'belowBar')
+  assert.equal(closeShort.label, '清空 107.97')
+  assert.equal(closeShort.resultTone, null)
 })
 
 test('SuBing Strategy marker keeps entry and terminal fill bases distinct', () => {
@@ -134,7 +156,7 @@ test('complete SuBing Episode survives when only its exit Action is visible', as
     canonicalBars, { start: canonicalBars[0].time, end: canonicalBars[1].time }, 'replace',
   )
 
-  assert.deepEqual(controller.markers.value.map((marker) => marker.label), ['× 清多'])
+  assert.deepEqual(controller.markers.value.map((marker) => marker.label), ['清多 107.97(+7.97%)'])
   assert.equal(controller.subingStrategyEpisodes.value[0].entry_action.action_id, 'subing-action:jm:entry')
 })
 

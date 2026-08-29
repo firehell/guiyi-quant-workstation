@@ -767,6 +767,8 @@ export interface KlineMarker {
   label: string
   tooltip?: string
   tone: 'up' | 'down' | 'htdy' | 'neutral'
+  /** SuBing close-label PnL color; independent of direction tone. */
+  resultTone?: 'profit' | 'loss' | null
   position: 'aboveBar' | 'belowBar' | 'inBar'
   shape: 'circle' | 'square' | 'arrowUp' | 'arrowDown'
 }

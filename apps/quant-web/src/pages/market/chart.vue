@@ -42,7 +42,7 @@ import type {
 import { MARKET_FREQUENCIES } from '@/types/market'
 import { lifecycleSnapshotToMarkers } from '@/utils/subingLifecycleMarkers'
 import { ALERT_RULE_CODES } from '@/utils/alertRules'
-import { mergeKlineMarkers } from '@/utils/alertMarkers'
+import { alertMarkersForOverlay, mergeKlineMarkers } from '@/utils/alertMarkers'
 import { reconcileSubingStrategyActions } from '@/utils/subingStrategyReconciliation'
 import { buildKlineDerivedData } from '@/utils/klineViewModel'
 import {
@@ -268,6 +268,10 @@ const afterMarketFailed = computed(() => {
   return !!afterMarket && typeof afterMarket === 'object' && afterMarket.last_failure != null
 })
 const htdyVisible = computed(() => selectedOverlay.value === 'htdy')
+const visibleAlertMarkers = computed(() => alertMarkersForOverlay(
+  selectedOverlay.value,
+  persistentAlertMarkers.value,
+))
 const latestHtdyObservation = computed(() => {
   if (!htdyVisible.value || !overlayCapability.value.supported) return null
   return buildKlineDerivedData(visibleBars.value, ['htdy']).htdy?.markers.at(-1) ?? null
@@ -791,7 +795,7 @@ function normalizeSymbol(value: unknown): string | null {
               :period="frequency"
               :series-kind="effectiveIdentity.seriesKind"
               :visible-main-indicators="visibleMainIndicators"
-              :alert-markers="persistentAlertMarkers"
+              :alert-markers="visibleAlertMarkers"
               :research-markers="researchMarkers"
               :data-historical-research-loading="historicalResearchLoading"
               @need-more-before="loadEarlierBars"
@@ -848,13 +852,13 @@ function normalizeSymbol(value: unknown): string | null {
 .product-workspace:fullscreen .product-workspace__sidebar-wrap { display: none; }
 
 @media (min-width: 980px) {
-  .chart-page { height: 100%; min-height: 0; overflow-y: auto; }
-  .chart-page > :deep(.n-spin-container) { display: flex; flex: 0 0 calc(100vh - 120px); min-height: 620px; flex-direction: column; }
+  .chart-page { height: 100%; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
+  .chart-page > :deep(.n-spin-container) { display: flex; flex: 1 1 0; min-height: 0; flex-direction: column; }
   .chart-page :deep(.n-spin-content) { display: flex; flex: 1 1 0; min-height: 0; flex-direction: column; }
   .product-workspace, .product-workspace__main { flex: 1 1 0; min-height: 0; }
   .product-workspace { display: flex; }
   .product-workspace__kline { display: flex; min-height: 0; }
-  .product-workspace__kline :deep(.kline-shell) { flex: 1 1 0; min-width: 0; height: 100%; }
+  .product-workspace__kline :deep(.kline-shell) { flex: 1 1 0; min-width: 0; min-height: 0; height: 100%; max-height: 100%; }
 }
 
 @media (min-width: 980px) and (max-width: 1199px) {

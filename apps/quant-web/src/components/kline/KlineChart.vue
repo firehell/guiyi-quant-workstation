@@ -12,6 +12,7 @@ import {
   type ISeriesApi,
   type LogicalRange,
   type MouseEventParams,
+  type TickMarkType,
   type Time,
   type UTCTimestamp,
 } from 'lightweight-charts'
@@ -33,6 +34,13 @@ import {
   type KlineValuePoint,
 } from '@/utils/klineViewModel'
 import { mergeKlineMarkers } from '@/utils/alertMarkers'
+import {
+  estimateSubingLabelBoxWidth,
+  isSubingStrategyMarker,
+  layoutSubingStrategyLabels,
+  preferredSideFromMarker,
+  type SubingStrategyLabelLayout,
+} from '@/utils/subingStrategyLabels'
 
 const props = withDefaults(defineProps<{
   bars: BarData[]
@@ -78,6 +86,8 @@ let followLatest = true
 const hoverContext = ref<HoverKlineContext | null>(null)
 const macdLabelTop = ref<number | null>(null)
 const renderedResearchMarkerCount = ref(0)
+const strategyLabelLayouts = ref<SubingStrategyLabelLayout[]>([])
+let strategyLabelLayoutFrame: number | null = null
 let derivedData = buildKlineDerivedData([], [])
 
 type EmaIndicatorId = 'ema_10' | 'ema_21' | 'ema_60'
@@ -100,10 +110,22 @@ onMounted(async () => {
     },
     rightPriceScale: { borderColor: theme.axis },
     localization: { timeFormatter: formatChartTimeInShanghai },
+    crosshair: {
+      vertLine: {
+        labelBackgroundColor: '#1F2937',
+        labelVisible: true,
+      },
+      horzLine: {
+        labelBackgroundColor: '#1F2937',
+        labelVisible: true,
+      },
+    },
     timeScale: {
       borderColor: theme.axis,
       timeVisible: !isDaily(),
-      tickMarkFormatter: (time: Time) => formatChartAxisTimeInShanghai(time),
+      tickMarkFormatter: (time: Time, tickMarkType: TickMarkType) => (
+        formatChartAxisTimeInShanghai(time, tickMarkType)
+      ),
     },
   })
   chart.panes()[0].setStretchFactor(6)
@@ -141,6 +163,10 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  if (strategyLabelLayoutFrame !== null) {
+    cancelAnimationFrame(strategyLabelLayoutFrame)
+    strategyLabelLayoutFrame = null
+  }
   chart?.timeScale().unsubscribeVisibleLogicalRangeChange(onVisibleLogicalRangeChange)
   chart?.unsubscribeCrosshairMove(onCrosshairMove)
   observer?.disconnect()
@@ -162,6 +188,10 @@ watch(() => props.alertMarkers, () => {
 
 watch(() => props.researchMarkers, () => {
   renderDerivedSeries()
+}, { deep: true })
+
+watch(() => props.bars, () => {
+  scheduleStrategyLabelLayout()
 }, { deep: true })
 
 function barValues(bars: BarData[]) {
@@ -239,6 +269,7 @@ function scrollToLatest(): void {
 
 function onVisibleLogicalRangeChange(range: LogicalRange | null) {
   if (!range || !renderedBars.length) return
+  scheduleStrategyLabelLayout()
   const isFollowing = range.to >= renderedBars.length - 3
   if (isFollowing !== followLatest) {
     followLatest = isFollowing
@@ -269,7 +300,7 @@ function onCrosshairMove(param: MouseEventParams<Time>) {
       derivedData,
       props.visibleMainIndicators,
       bar.time,
-      mergedDisplayMarkers(),
+      markersForHoverContext(),
     )
     : null
   hoverContext.value = nextContext
@@ -303,16 +334,73 @@ function renderDerivedSeries(): void {
   htdyZk1?.setData(chartValues(derivedData.htdy?.zk1))
   htdyZd1?.setData(chartValues(derivedData.htdy?.zd1))
   htdyZd2?.setData(chartValues(derivedData.htdy?.zd2))
-  renderedResearchMarkerCount.value = chartMarkers(props.researchMarkers).length
   const renderedMarkers = chartMarkers(mergedDisplayMarkers())
   htdyMarkers?.setMarkers(renderedMarkers)
+  scheduleStrategyLabelLayout()
 }
 
 function mergedDisplayMarkers(): KlineMarker[] {
   return mergeKlineMarkers(
     mergeKlineMarkers(derivedData.htdy?.markers ?? [], props.alertMarkers),
-    props.researchMarkers,
+    props.researchMarkers.filter((marker) => !isSubingStrategyMarker(marker)),
   )
+}
+
+function markersForHoverContext(): KlineMarker[] {
+  // SuBing historical labels stay on-chart; long action facts belong in 历史策略效果, not hover.
+  return mergeKlineMarkers(
+    mergeKlineMarkers(derivedData.htdy?.markers ?? [], props.alertMarkers),
+    props.researchMarkers.filter((marker) => !isSubingStrategyMarker(marker)),
+  )
+}
+
+function scheduleStrategyLabelLayout(): void {
+  if (strategyLabelLayoutFrame !== null) return
+  strategyLabelLayoutFrame = requestAnimationFrame(() => {
+    strategyLabelLayoutFrame = null
+    syncStrategyLabelLayout()
+  })
+}
+
+function syncStrategyLabelLayout(): void {
+  if (!chart || !candles || !container.value) {
+    strategyLabelLayouts.value = []
+    renderedResearchMarkerCount.value = 0
+    return
+  }
+  const paneHeight = chart.panes()[0]?.getHeight() ?? container.value.clientHeight
+  const pane = { left: 0, top: 0, width: chart.timeScale().width(), height: paneHeight }
+  const barsByTime = new Map(renderedBars.map((bar) => [markerTimeKey(bar.time), bar]))
+  const anchors = props.researchMarkers
+    .filter(isSubingStrategyMarker)
+    .flatMap((marker) => {
+      const bar = barsByTime.get(markerTimeKey(marker.time))
+      if (!bar) return []
+      const x = chart!.timeScale().timeToCoordinate(chartTime(bar))
+      const wickPrice = preferredSideFromMarker(marker) === 'above' ? bar.high : bar.low
+      const wickY = candles!.priceToCoordinate(wickPrice)
+      if (x === null || wickY === null) return []
+      return [{
+        id: marker.id,
+        label: marker.label,
+        x,
+        wickY,
+        preferredSide: preferredSideFromMarker(marker),
+        boxWidth: estimateSubingLabelBoxWidth(marker.label),
+        resultTone: marker.resultTone ?? null,
+      }]
+    })
+  const clusterX = anchors.length
+    ? Math.max(...anchors.map((anchor) => anchor.boxWidth))
+    : 40
+  strategyLabelLayouts.value = layoutSubingStrategyLabels(anchors, {
+    pane,
+    boxHeight: 18,
+    gap: 4,
+    stackGap: 2,
+    clusterX,
+  })
+  renderedResearchMarkerCount.value = strategyLabelLayouts.value.length
 }
 
 function chartValues(points: KlineValuePoint[] | undefined): Array<{ time: Time; value: number }> {
@@ -379,6 +467,7 @@ function resize() {
   if (!container.value || !chart) return
   chart.resize(container.value.clientWidth, container.value.clientHeight)
   requestAnimationFrame(syncMacdLabelTop)
+  scheduleStrategyLabelLayout()
 }
 
 defineExpose({
@@ -400,6 +489,36 @@ defineExpose({
     :data-research-marker-times="researchMarkers.map((marker) => marker.time).join(',')"
   >
     <div ref="container" class="chart" />
+    <div
+      class="kline-strategy-labels"
+      data-testid="kline-strategy-labels"
+      aria-hidden="true"
+    >
+      <div
+        v-for="item in strategyLabelLayouts"
+        :key="item.id"
+        class="kline-strategy-label"
+        :class="{
+          'kline-strategy-label--profit': item.resultTone === 'profit',
+          'kline-strategy-label--loss': item.resultTone === 'loss',
+        }"
+        :style="{
+          left: `${item.left}px`,
+          top: `${item.top}px`,
+          width: `${item.width}px`,
+          height: `${item.height}px`,
+        }"
+      >
+        <span
+          class="kline-strategy-label__leader"
+          :style="{
+            top: `${Math.min(item.leaderFromY, item.leaderToY) - item.top}px`,
+            height: `${Math.abs(item.leaderToY - item.leaderFromY)}px`,
+          }"
+        />
+        <span class="kline-strategy-label__text">{{ item.label }}</span>
+      </div>
+    </div>
     <KlineHoverLegend
       :context="hoverContext"
       :show-macd="true"
@@ -439,6 +558,14 @@ defineExpose({
 .htdy-legend__line--zd2 { border-color: var(--gy-chart-htdy-zd2); }
 .overlay { position: absolute; inset: 0; display: grid; place-items: center; color: var(--gy-text-muted); background: rgba(11, 17, 27, .48); pointer-events: none; }
 .overlay.error { color: var(--gy-status-error); }
+.kline-strategy-labels { pointer-events: none; position: absolute; inset: 0; z-index: 3; overflow: hidden; }
+.kline-strategy-label { position: absolute; box-sizing: border-box; border: 1px solid #4B5563; background: #FBF8F1; color: #111827; font-size: 11px; line-height: 1; }
+.kline-strategy-label--profit { border-color: var(--gy-up); color: var(--gy-up); }
+.kline-strategy-label--profit .kline-strategy-label__leader { background: var(--gy-up); }
+.kline-strategy-label--loss { border-color: var(--gy-down); color: var(--gy-down); }
+.kline-strategy-label--loss .kline-strategy-label__leader { background: var(--gy-down); }
+.kline-strategy-label__text { position: absolute; inset: 0; display: grid; place-items: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 4px; }
+.kline-strategy-label__leader { position: absolute; left: 50%; width: 1px; margin-left: -.5px; background: #4B5563; pointer-events: none; }
 
 @media (max-width: 980px) {
   .secondary-panel-label { right: 10px; }

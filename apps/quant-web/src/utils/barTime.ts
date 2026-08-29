@@ -1,5 +1,5 @@
 import type { BarData } from '@/types/market'
-import type { Time } from 'lightweight-charts'
+import { TickMarkType, type Time } from 'lightweight-charts'
 
 /** 日线、周线类周期集合 */
 const DAILY_WEEKLY_PERIODS = new Set(['1d', '1w'])
@@ -49,13 +49,35 @@ function parseChartInstant(time: Time): Date | null {
   return null
 }
 
-/** 将分钟级横轴刻度格式化为北京时间；交易日保持日期语义。 */
-export function formatChartAxisTimeInShanghai(time: Time): string {
-  if (isBusinessDay(time)) return formatBusinessDay(time)
+/**
+ * 将横轴刻度格式化为北京时间，并按 LWC TickMarkType 分级缩短文案
+ *（对齐参考图：日刻度用「13日」、分钟刻度用「HH:mm」）。
+ */
+export function formatChartAxisTimeInShanghai(
+  time: Time,
+  tickMarkType: TickMarkType = TickMarkType.Time,
+): string {
+  if (isBusinessDay(time)) {
+    if (tickMarkType === TickMarkType.Year) return String(time.year)
+    if (tickMarkType === TickMarkType.Month) return `${time.month}月`
+    return `${time.day}日`
+  }
   const instant = parseChartInstant(time)
   if (!instant) return ''
   const parts = datePartsInShanghai(instant)
-  return `${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`
+  switch (tickMarkType) {
+    case TickMarkType.Year:
+      return parts.year ?? ''
+    case TickMarkType.Month:
+      return `${Number(parts.month)}月`
+    case TickMarkType.DayOfMonth:
+      return `${Number(parts.day)}日`
+    case TickMarkType.TimeWithSeconds:
+      return `${parts.hour}:${parts.minute}:00`
+    case TickMarkType.Time:
+    default:
+      return `${parts.hour}:${parts.minute}`
+  }
 }
 
 /** 将 crosshair 时间格式化为完整北京时间；交易日保持日期语义。 */
