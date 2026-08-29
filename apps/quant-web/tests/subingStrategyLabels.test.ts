@@ -108,17 +108,33 @@ test('drops anchors with non-finite coordinates', () => {
   assert.deepEqual(laid, [])
 })
 
-test('estimates wider boxes for price and percent labels', () => {
-  const openWidth = estimateSubingLabelBoxWidth('建多 1343')
-  const closeWidth = estimateSubingLabelBoxWidth('清多 1485(+2.41%)')
+test('estimates two-line width from the longest line', () => {
+  const open = '建多\n建仓价：1343'
+  const close = '清多\n1485(+2.41%)'
+  const openWidth = estimateSubingLabelBoxWidth(open)
+  const closeWidth = estimateSubingLabelBoxWidth(close)
+  assert.equal(openWidth, estimateSubingLabelBoxWidth('建仓价：1343'))
+  assert.equal(closeWidth, estimateSubingLabelBoxWidth('1485(+2.41%)'))
+  assert.ok(openWidth > estimateSubingLabelBoxWidth('建多'))
   assert.ok(openWidth > 40)
-  assert.ok(closeWidth > openWidth)
+  assert.ok(closeWidth !== openWidth)
 })
 
-test('stacks rich-width labels when delta-x is within max box width', () => {
+test('open-price detail fits in one line inside the border-box', () => {
+  const line = '建仓价：1348'
+  const width = estimateSubingLabelBoxWidth(`建多\n${line}`)
+  let content = 0
+  for (const char of line) {
+    content += /[\u3400-\u9FFF\uF900-\uFAFF\uFF00-\uFFEF]/.test(char) ? 11 : 6.5
+  }
+  const inner = width - 2 - 8
+  assert.ok(inner >= content, `inner ${inner} must fit content ${content} in width ${width}`)
+})
+
+test('layouts two-line labels with title, detail, and boxHeight 32 stack gap', () => {
   const pane = { left: 0, top: 0, width: 500, height: 300 }
-  const open = '建多 1343'
-  const close = '清多 1485(+2.41%)'
+  const open = '建多\n建仓价：1343'
+  const close = '清多\n1485(+2.41%)'
   const openWidth = estimateSubingLabelBoxWidth(open)
   const closeWidth = estimateSubingLabelBoxWidth(close)
   const clusterX = Math.max(openWidth, closeWidth)
@@ -127,7 +143,7 @@ test('stacks rich-width labels when delta-x is within max box width', () => {
       id: 'a',
       label: close,
       x: 100,
-      wickY: 60,
+      wickY: 120,
       preferredSide: 'above',
       boxWidth: closeWidth,
       resultTone: 'profit',
@@ -136,14 +152,14 @@ test('stacks rich-width labels when delta-x is within max box width', () => {
       id: 'b',
       label: open,
       x: 100 + clusterX - 10,
-      wickY: 55,
+      wickY: 115,
       preferredSide: 'above',
       boxWidth: openWidth,
       resultTone: null,
     },
   ], {
     pane,
-    boxHeight: 18,
+    boxHeight: 32,
     gap: 4,
     stackGap: 2,
     clusterX,
@@ -152,6 +168,11 @@ test('stacks rich-width labels when delta-x is within max box width', () => {
   assert.ok(laid.every((item) => item.side === 'above'))
   assert.equal(laid.find((item) => item.id === 'a')?.resultTone, 'profit')
   assert.ok((laid.find((item) => item.id === 'a')?.width ?? 0) >= closeWidth)
+  assert.equal(laid.find((item) => item.id === 'a')?.title, '清多')
+  assert.equal(laid.find((item) => item.id === 'a')?.detail, '1485(+2.41%)')
+  assert.equal(laid.find((item) => item.id === 'b')?.title, '建多')
+  assert.equal(laid.find((item) => item.id === 'b')?.detail, '建仓价：1343')
   const tops = laid.map((item) => item.top).sort((l, r) => l - r)
-  assert.ok(tops[1] - tops[0] >= 18)
+  assert.ok(tops[1] - tops[0] >= 32)
+  assert.equal(laid[0]?.height, 32)
 })

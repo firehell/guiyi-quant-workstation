@@ -30,8 +30,9 @@ const bars: BarData[] = Array.from({ length: 80 }, (_, index) => {
 })
 
 test('main indicator registry keeps EMA overlays available and HTDY original observation-only', () => {
-  assert.deepEqual(DEFAULT_VISIBLE_MAIN_INDICATORS, ['ema_21'])
+  assert.deepEqual(DEFAULT_VISIBLE_MAIN_INDICATORS, [])
   assert.equal(MAIN_INDICATOR_DEFINITIONS.find((item) => item.id === 'ema_10')?.available, true)
+  assert.equal(MAIN_INDICATOR_DEFINITIONS.find((item) => item.id === 'ema_21')?.defaultVisible, false)
   assert.equal(MAIN_INDICATOR_DEFINITIONS.find((item) => item.id === 'ema_60')?.available, true)
   const htdy = MAIN_INDICATOR_DEFINITIONS.find((item) => item.id === 'htdy')
   assert.equal(htdy?.available, true)
@@ -51,7 +52,7 @@ test('main indicator registry keeps EMA overlays available and HTDY original obs
 test('normalizeVisibleMainIndicators keeps available indicators without a second access language', () => {
   assert.deepEqual(normalizeVisibleMainIndicators(['ema_60', 'unknown', 'htdy', 'ema_10', 'ema_10']), ['ema_60', 'htdy', 'ema_10'])
   assert.deepEqual(normalizeVisibleMainIndicators([]), [])
-  assert.deepEqual(normalizeVisibleMainIndicators('bad'), ['ema_21'])
+  assert.deepEqual(normalizeVisibleMainIndicators('bad'), [])
 })
 
 test('research overlay defaults to SuBing and exposes exactly one overlay indicator set', () => {
@@ -63,11 +64,13 @@ test('research overlay defaults to SuBing and exposes exactly one overlay indica
     period: null,
     realtimeFollow: false,
   })
-  assert.deepEqual(normalizeOptionalEmaIndicators(['ema_60', 'ema_21', 'ema_10', 'ema_60', 'htdy']), ['ema_10', 'ema_60'])
-  assert.deepEqual(visibleMainIndicatorsForOverlay('subing', []), ['ema_21'])
-  assert.deepEqual(visibleMainIndicatorsForOverlay('subing', ['ema_10', 'ema_60']), ['ema_10', 'ema_21', 'ema_60'])
+  assert.deepEqual(normalizeOptionalEmaIndicators(['ema_60', 'ema_21', 'ema_10', 'ema_60', 'htdy']), ['ema_10', 'ema_21', 'ema_60'])
+  assert.deepEqual(visibleMainIndicatorsForOverlay('subing', []), [])
+  assert.deepEqual(visibleMainIndicatorsForOverlay('subing', ['ema_10', 'ema_60']), ['ema_10', 'ema_60'])
+  assert.deepEqual(visibleMainIndicatorsForOverlay('subing', ['ema_10', 'ema_21', 'ema_60']), ['ema_10', 'ema_21', 'ema_60'])
   assert.deepEqual(visibleMainIndicatorsForOverlay('htdy', ['ema_10', 'ema_60']), ['ema_10', 'ema_60', 'htdy'])
-  assert.deepEqual(visibleMainIndicatorsForOverlay('none', ['ema_10', 'ema_60']), [])
+  assert.deepEqual(visibleMainIndicatorsForOverlay('htdy', ['ema_10', 'ema_21', 'ema_60']), ['ema_10', 'ema_21', 'ema_60', 'htdy'])
+  assert.deepEqual(visibleMainIndicatorsForOverlay('none', ['ema_10', 'ema_21', 'ema_60']), [])
 })
 
 test('SuBing Strategy history is independently restricted to actual-dominant 15m', () => {

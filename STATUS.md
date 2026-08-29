@@ -31,7 +31,7 @@ Alert transport 为 PushPlus；provider accepted 不等于微信送达。2026-08
 ## 仓库验收 evidence
 
 - Stage 2 recorded production-format shadow 使用 sealed Null Event/notification/cache/status 依赖与 committed deterministic fake readers，故意注入 1 个 source unavailable 后验证 active60 为 `59 ready / 1 bounded unavailable`、相同输入前缀的 Historical/Live Action 一致、Action 精确绑定下一实际 15m 区间第一根 1m open、跨 contract/segment identity 拒绝，以及无 Action 前缀不制造 Action。真实 read-only shadow 未获本轮授权，保持 skipped；该证据不构成 Runtime、自然 Event 或通知证据。
-- SuBing active60 全历史效果：2026-08-28 第三次单次授权生产 warm 以 `status=passed` 完成：`planned_count=60 / completed_count=60 / failed_products=[] / cache_published_count=60 / authoritative_writes=false`；物理回读 `through=2026-08-27` 为 active60 各 1 份 schema-v2 效果文件、无 `.tmp`。增量快照真实 schema-v2→v3 adopt 为 `through=2026-08-27`、active60 `60/60 UNCHANGED`。
+- SuBing active60 全历史效果：2026-08-28 第三次单次授权生产 warm 以 `status=passed` 完成：`planned_count=60 / completed_count=60 / failed_products=[] / cache_published_count=60 / authoritative_writes=false`；当时物理回读 `through=2026-08-27`。2026-08-29 按当次明确请求对 schema-v3 快照做一次 operator 增量刷新（只读 Catalog、不跑 RQData/Canonical/通知）：`status=passed / completed_count=60 / failed_products=[] / cache_published_count=60`，`through=2026-08-28`，无 `.tmp`。只读 HTTP `GET /api/v1/market/research/subing-strategy/performance?symbol=jm|rb` 为 `200` / `cache_state=hit`（JM `20186` 根 15m / `79` 完成 Episode）。该写入不是自然盘后 derived，health `after_market.subing_strategy_performance` 仍待下一次自然盘后 schema v3 写入。
 - SuBing Stage 2 occupancy-capped restore 与下一交易日 Live skip 已进入 `v1.9.1`：expected Daily Watch / 下一交易日无 rank1 occupancy 时，回退到上一共同已映射日并只读 Canonical 到该日（含当日），只在 Live `trading_day` 与该日一致时合并 completed Live；不同 `live_contract` 不使 restore 失败；`process_completed_bar` 忽略 watermark 日之后、尚无 occupancy 的 completed Live。仓库定向 `test_subing_strategy_current_service`、`test_subing_strategy_runtime`、`test_alert_runtime` 共 159 passed。该证据不构成自然 Action 或微信送达。
 
 ## Pending Gate
@@ -40,5 +40,5 @@ Alert transport 为 PushPlus；provider accepted 不等于微信送达。2026-08
 - SuBing 自然 Live seam evidence pending；Daily Watch V2 自然盘后 artifact pending，不以既有 V1 artifact、手工触发或回填替代。
 - 一次 owner PushPlus canary 仍是独立 Gate。
 - SuBing Candidate 的 prospective OOS 按其 protocol 独立累积，retrospective 不回填 OOS。
-- 第一次自然盘后 derived 增量刷新（把效果 `through` 从 `2026-08-27` 推到最新完整交易日）仍须单独发生。
+- 第一次自然盘后 derived 增量刷新仍须单独发生；2026-08-29 operator 已把效果快照 `through` 推到 `2026-08-28`，但不替代自然盘后 schema v3 status 写入。
 - HTDY `jm × 15m` 下一次自然 15m completed Live bar 与 one-shot transport evidence 仍 pending（下次交易时段），不以 canary、replay 或手工发送替代。

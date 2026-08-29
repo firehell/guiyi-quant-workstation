@@ -13,6 +13,8 @@ export interface SubingStrategyLabelAnchor {
 export interface SubingStrategyLabelLayout {
   id: string
   label: string
+  title: string
+  detail: string
   left: number
   top: number
   width: number
@@ -23,13 +25,26 @@ export interface SubingStrategyLabelLayout {
   resultTone?: 'profit' | 'loss' | null
 }
 
-/** Approximate pixel width for 11px Chinese UI labels (padding included). */
-export function estimateSubingLabelBoxWidth(label: string): number {
-  let content = 0
-  for (const char of label) {
-    content += /[\u3400-\u9FFF\uF900-\uFAFF\uFF00-\uFFEF]/.test(char) ? 11 : 6.5
+export function splitSubingStrategyChartLabel(label: string): { title: string; detail: string } {
+  const newline = label.indexOf('\n')
+  if (newline < 0) return { title: label, detail: '' }
+  return {
+    title: label.slice(0, newline),
+    detail: label.slice(newline + 1),
   }
-  return Math.max(32, Math.ceil(content + 8))
+}
+
+/** Approximate pixel width for 11px Chinese UI labels (padding and 1px border included). */
+export function estimateSubingLabelBoxWidth(label: string): number {
+  let maxContent = 0
+  for (const line of label.split('\n')) {
+    let content = 0
+    for (const char of line) {
+      content += /[\u3400-\u9FFF\uF900-\uFAFF\uFF00-\uFFEF]/.test(char) ? 11 : 6.5
+    }
+    maxContent = Math.max(maxContent, content)
+  }
+  return Math.max(32, Math.ceil(maxContent + 12))
 }
 
 export function isSubingStrategyMarker(marker: Pick<KlineMarker, 'id'>): boolean {
@@ -75,7 +90,7 @@ export function layoutSubingStrategyLabels(
   for (const anchor of sorted) {
     const current = clusters.at(-1)
     const lastX = current?.at(-1)?.x
-    if (lastX === undefined || Math.abs(anchor.x - lastX) > clusterX) {
+    if (!current || lastX === undefined || Math.abs(anchor.x - lastX) > clusterX) {
       clusters.push([anchor])
       continue
     }
@@ -152,6 +167,7 @@ function layoutClusterOnSide(
     result.push({
       id: anchor.id,
       label: anchor.label,
+      ...splitSubingStrategyChartLabel(anchor.label),
       left: x - width / 2,
       top,
       width,

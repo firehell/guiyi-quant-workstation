@@ -605,6 +605,11 @@ describe('KlineChart SuBing strategy label overlay', () => {
     assert.match(klineChartSource, /pointer-events:\s*none/)
     assert.match(klineChartSource, /kline-strategy-label--profit/)
     assert.match(klineChartSource, /kline-strategy-label--loss/)
+    assert.match(klineChartSource, /boxHeight:\s*32/)
+    assert.match(klineChartSource, /item\.title/)
+    assert.match(klineChartSource, /item\.detail/)
+    assert.match(klineChartSource, /flex-direction:\s*column/)
+    assert.match(klineChartSource, /white-space:\s*nowrap/)
     assert.match(
       klineChartSource,
       /mergedDisplayMarkers[\s\S]*filter\([\s\S]*isSubingStrategyMarker/,
@@ -631,15 +636,27 @@ describe('KlineChart SuBing strategy label overlay', () => {
     assert.match(chartThemeSource, /volumeDown:\s*'rgba\(22,\s*163,\s*74,\s*0\.5\)'/)
   })
 
-  it('keeps chart shell inside the viewport flex chain so crosshair time stays visible', () => {
+  it('keeps chart shell sized so K-line stays visible above performance panel', () => {
     assert.doesNotMatch(chartPageSource, /flex:\s*0\s+0\s+calc\(100vh\s*-\s*120px\)/)
     assert.match(
       chartPageSource,
-      /\.chart-page\s*>\s*:deep\(\.n-spin-container\)[^}]*flex:\s*1\s+1\s+0/,
+      /\.chart-page\s*\{[^}]*overflow-y:\s*auto/,
     )
     assert.match(
       chartPageSource,
-      /\.product-workspace__kline\s+:deep\(\.kline-shell\)[^}]*min-height:\s*0/,
+      /\.chart-page\s*>\s*:deep\(\.n-spin-container\)[^}]*flex:\s*0\s+0\s+auto/,
+    )
+    assert.match(
+      chartPageSource,
+      /\.product-workspace,\s*\.product-workspace__main\s*\{[^}]*width:\s*100%/,
+    )
+    assert.match(
+      chartPageSource,
+      /\.product-workspace__kline\s+:deep\(\.kline-shell\)[^}]*min-height:\s*480px/,
+    )
+    assert.match(
+      chartPageSource,
+      /\.product-workspace__kline\s+:deep\(\.kline-shell\)[^}]*clamp\(480px,\s*calc\(100vh\s*-\s*320px\),\s*900px\)/,
     )
     assert.match(hoverLegendSource, /formatChartTimeInShanghai/)
     assert.match(hoverLegendSource, /data-testid="kline-hover-time"/)

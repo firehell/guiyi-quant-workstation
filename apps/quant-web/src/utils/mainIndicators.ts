@@ -45,7 +45,7 @@ export interface MainChartPreferences {
   realtimeFollow?: boolean
 }
 
-const OPTIONAL_EMA_INDICATORS: OptionalEmaIndicatorId[] = ['ema_10', 'ema_60']
+const OPTIONAL_EMA_INDICATORS: OptionalEmaIndicatorId[] = ['ema_10', 'ema_21', 'ema_60']
 
 export const RESEARCH_OVERLAY_DEFINITIONS: readonly ResearchOverlayDefinition[] = [
   {
@@ -61,7 +61,7 @@ export const RESEARCH_OVERLAY_DEFINITIONS: readonly ResearchOverlayDefinition[] 
     label: '苏冰',
     supportedSeriesKinds: ['actual_dominant'],
     supportedFrequencies: SUBING_PUBLIC_FREQUENCIES,
-    mainIndicators: ['ema_21'],
+    mainIndicators: [],
     historicalSource: 'subing_strategy',
   },
   {
@@ -122,7 +122,7 @@ export const MAIN_INDICATOR_DEFINITIONS: MainIndicatorDefinition[] = [
     pane: 'main',
     renderer: 'line',
     capability: 'standard_overlay',
-    defaultVisible: true,
+    defaultVisible: false,
     parameters: { period: 21 },
     lookbackBars: 21,
     alertCapable: false,
@@ -212,13 +212,8 @@ export function visibleMainIndicatorsForOverlay(
 ): MainIndicatorId[] {
   const optional = normalizeOptionalEmaIndicators(optionalEmaIndicators)
   const definition = overlayDefinitionsById.get(overlay)
-  if (definition?.id === 'subing') return [
-    ...(optional.includes('ema_10') ? ['ema_10' as const] : []),
-    'ema_21',
-    ...(optional.includes('ema_60') ? ['ema_60' as const] : []),
-  ]
-  if (definition?.id === 'htdy') return [...optional, ...definition.mainIndicators]
-  return []
+  if (!definition || definition.id === 'none') return []
+  return [...optional, ...definition.mainIndicators]
 }
 
 /** Research overlays do not own the Market display dataset identity. */

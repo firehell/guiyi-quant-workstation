@@ -213,6 +213,9 @@ const overlayCapability = computed(() => researchOverlayCapability(
   effectiveIdentity.value.seriesKind,
   frequency.value,
 ))
+const showSubingEmaRibbon = computed(() => (
+  selectedOverlay.value === 'subing' && overlayCapability.value.supported
+))
 const visibleBars = computed(() => bars.value)
 const subingStrategySupported = computed(() => subingStrategyHistoricalCapability(
   effectiveIdentity.value.seriesKind,
@@ -787,6 +790,7 @@ function normalizeSymbol(value: unknown): string | null {
             class="product-workspace__kline"
             :data-visible-start-trading-day="visibleStartTradingDay"
             :data-visible-main-indicators="visibleMainIndicators.join(',')"
+            :data-subing-ema-ribbon="showSubingEmaRibbon ? 'true' : 'false'"
           >
             <KlineChart
               ref="chart"
@@ -796,6 +800,7 @@ function normalizeSymbol(value: unknown): string | null {
               :period="frequency"
               :series-kind="effectiveIdentity.seriesKind"
               :visible-main-indicators="visibleMainIndicators"
+              :show-subing-ema-ribbon="showSubingEmaRibbon"
               :alert-markers="visibleAlertMarkers"
               :research-markers="researchMarkers"
               :data-historical-research-loading="historicalResearchLoading"
@@ -853,13 +858,20 @@ function normalizeSymbol(value: unknown): string | null {
 .product-workspace:fullscreen .product-workspace__sidebar-wrap { display: none; }
 
 @media (min-width: 980px) {
-  .chart-page { height: 100%; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
-  .chart-page > :deep(.n-spin-container) { display: flex; flex: 1 1 0; min-height: 0; flex-direction: column; }
-  .chart-page :deep(.n-spin-content) { display: flex; flex: 1 1 0; min-height: 0; flex-direction: column; }
-  .product-workspace, .product-workspace__main { flex: 1 1 0; min-height: 0; }
+  .chart-page { height: 100%; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }
+  .chart-page > :deep(.n-spin-container) { display: flex; flex: 0 0 auto; min-height: 0; flex-direction: column; width: 100%; }
+  .chart-page :deep(.n-spin-content) { display: flex; flex: 0 0 auto; min-height: 0; flex-direction: column; width: 100%; }
+  .product-workspace, .product-workspace__main { flex: 0 0 auto; min-height: 0; width: 100%; min-width: 0; }
   .product-workspace { display: flex; }
-  .product-workspace__kline { display: flex; min-height: 0; }
-  .product-workspace__kline :deep(.kline-shell) { flex: 1 1 0; min-width: 0; min-height: 0; height: 100%; max-height: 100%; }
+  .product-workspace__kline { display: flex; min-width: 0; width: 100%; }
+  .product-workspace__kline :deep(.kline-shell) {
+    flex: none;
+    width: 100%;
+    min-width: 0;
+    min-height: 480px;
+    height: clamp(480px, calc(100vh - 320px), 900px);
+  }
+  .chart-page :deep([data-testid='subing-strategy-performance']) { flex: 0 0 auto; width: 100%; }
 }
 
 @media (min-width: 980px) and (max-width: 1199px) {

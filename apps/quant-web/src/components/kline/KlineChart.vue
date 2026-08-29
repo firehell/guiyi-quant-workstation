@@ -41,6 +41,7 @@ import {
   preferredSideFromMarker,
   type SubingStrategyLabelLayout,
 } from '@/utils/subingStrategyLabels'
+import { SubingEmaRibbonPrimitive } from '@/components/kline/subingEmaRibbonPrimitive'
 
 const props = withDefaults(defineProps<{
   bars: BarData[]
@@ -49,6 +50,7 @@ const props = withDefaults(defineProps<{
   period?: string
   seriesKind: SeriesKind
   visibleMainIndicators?: MainIndicatorId[]
+  showSubingEmaRibbon?: boolean
   alertMarkers?: KlineMarker[]
   researchMarkers?: KlineMarker[]
 }>(), {
@@ -56,6 +58,7 @@ const props = withDefaults(defineProps<{
   error: null,
   period: '15m',
   visibleMainIndicators: () => [],
+  showSubingEmaRibbon: false,
   alertMarkers: () => [],
   researchMarkers: () => [],
 })
@@ -78,6 +81,7 @@ let htdyZd1: ISeriesApi<'Line'> | null = null
 let htdyZd2: ISeriesApi<'Line'> | null = null
 let htdyMarkers: ISeriesMarkersPluginApi<Time> | null = null
 const emaLines: Partial<Record<EmaIndicatorId, ISeriesApi<'Line'>>> = {}
+const ribbonPrimitive = new SubingEmaRibbonPrimitive()
 let observer: ResizeObserver | null = null
 let renderedBars: BarData[] = []
 let isNearLeftBoundary = false
@@ -142,6 +146,7 @@ onMounted(async () => {
   emaLines.ema_10 = chart.addSeries(LineSeries, { color: theme.ema10, lineWidth: 1, lastValueVisible: false }, 0)
   emaLines.ema_21 = chart.addSeries(LineSeries, { color: theme.ema21, lineWidth: 2, lastValueVisible: false }, 0)
   emaLines.ema_60 = chart.addSeries(LineSeries, { color: theme.ema60, lineWidth: 1, lastValueVisible: false }, 0)
+  candles.attachPrimitive(ribbonPrimitive)
   htdyZk1 = chart.addSeries(LineSeries, { color: theme.htdyZk1, lineWidth: 2, lineStyle: 0, lastValueVisible: false }, 0)
   htdyZd1 = chart.addSeries(LineSeries, { color: theme.htdyZd1, lineWidth: 2, lineStyle: 2, lastValueVisible: false }, 0)
   htdyZd2 = chart.addSeries(LineSeries, { color: theme.htdyZd2, lineWidth: 2, lineStyle: 0, lastValueVisible: false }, 0)
@@ -181,6 +186,10 @@ watch(() => props.period, () => {
 watch(() => props.visibleMainIndicators, () => {
   renderDerivedSeries()
 }, { deep: true })
+
+watch(() => props.showSubingEmaRibbon, () => {
+  renderDerivedSeries()
+})
 
 watch(() => props.alertMarkers, () => {
   renderDerivedSeries()
@@ -317,12 +326,19 @@ function renderAllSeries(): void {
 function renderDerivedSeries(): void {
   renderedResearchMarkerCount.value = 0
   if (!chart || !macdHistogram || !macdDif || !macdDea) return
-  derivedData = buildKlineDerivedData(renderedBars, props.visibleMainIndicators)
+  derivedData = buildKlineDerivedData(renderedBars, props.visibleMainIndicators, {
+    showSubingEmaRibbon: props.showSubingEmaRibbon,
+  })
   const theme = resolveChartTheme()
 
   EMA_INDICATORS.forEach((indicator) => {
-    emaLines[indicator]?.setData(chartValues(derivedData.ema[indicator]))
+    const visible = props.visibleMainIndicators.includes(indicator)
+    emaLines[indicator]?.setData(chartValues(visible ? derivedData.ema[indicator] : undefined))
   })
+  ribbonPrimitive.setData(
+    props.showSubingEmaRibbon ? derivedData.subingEmaRibbon?.bands ?? [] : [],
+    ribbonTime,
+  )
 
   macdDif.setData(chartValues(derivedData.macd.dif))
   macdDea.setData(chartValues(derivedData.macd.dea))
@@ -395,7 +411,7 @@ function syncStrategyLabelLayout(): void {
     : 40
   strategyLabelLayouts.value = layoutSubingStrategyLabels(anchors, {
     pane,
-    boxHeight: 18,
+    boxHeight: 32,
     gap: 4,
     stackGap: 2,
     clusterX,
@@ -441,6 +457,15 @@ function markerTimeKey(value: string): string {
 function chartTime(bar: BarData): Time {
   if (isDaily()) return (bar.trading_day || bar.time.slice(0, 10)) as Time
   return Math.floor(new Date(bar.time).getTime() / 1000) as UTCTimestamp
+}
+
+function ribbonTime(iso: string): Time | null {
+  if (isDaily()) {
+    const day = iso.slice(0, 10)
+    return /^\d{4}-\d{2}-\d{2}$/.test(day) ? day as Time : null
+  }
+  const parsed = Date.parse(iso)
+  return Number.isFinite(parsed) ? Math.floor(parsed / 1000) as UTCTimestamp : null
 }
 
 function sameChartTime(left: Time, right: Time): boolean {
@@ -516,7 +541,10 @@ defineExpose({
             height: `${Math.abs(item.leaderToY - item.leaderFromY)}px`,
           }"
         />
-        <span class="kline-strategy-label__text">{{ item.label }}</span>
+        <span class="kline-strategy-label__text">
+          <span>{{ item.title }}</span>
+          <span>{{ item.detail }}</span>
+        </span>
       </div>
     </div>
     <KlineHoverLegend
@@ -559,12 +587,13 @@ defineExpose({
 .overlay { position: absolute; inset: 0; display: grid; place-items: center; color: var(--gy-text-muted); background: rgba(11, 17, 27, .48); pointer-events: none; }
 .overlay.error { color: var(--gy-status-error); }
 .kline-strategy-labels { pointer-events: none; position: absolute; inset: 0; z-index: 3; overflow: hidden; }
-.kline-strategy-label { position: absolute; box-sizing: border-box; border: 1px solid #4B5563; background: #FBF8F1; color: #111827; font-size: 11px; line-height: 1; }
+.kline-strategy-label { position: absolute; box-sizing: border-box; border: 1px solid #4B5563; background: #FBF8F1; color: #111827; font-size: 11px; line-height: 1.15; }
 .kline-strategy-label--profit { border-color: var(--gy-up); color: var(--gy-up); }
 .kline-strategy-label--profit .kline-strategy-label__leader { background: var(--gy-up); }
 .kline-strategy-label--loss { border-color: var(--gy-down); color: var(--gy-down); }
 .kline-strategy-label--loss .kline-strategy-label__leader { background: var(--gy-down); }
-.kline-strategy-label__text { position: absolute; inset: 0; display: grid; place-items: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 4px; }
+.kline-strategy-label__text { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; overflow: hidden; padding: 0 4px; }
+.kline-strategy-label__text > span { white-space: nowrap; }
 .kline-strategy-label__leader { position: absolute; left: 50%; width: 1px; margin-left: -.5px; background: #4B5563; pointer-events: none; }
 
 @media (max-width: 980px) {
