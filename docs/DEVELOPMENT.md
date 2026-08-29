@@ -58,3 +58,5 @@ pending Gate 只看 `STATUS.md`。本页不复制业务合同。
 - active OpenSpec：`openspec/specs/`
 - 验证命令：`TESTING.md`
 - 本机部署导航：`deploy/README.md`
+
+已完成的实现笔记只从 Git history 追溯，不把 `docs/superpowers/` 当当前设计源。
