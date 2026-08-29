@@ -41,6 +41,7 @@ export interface MainChartPreferences {
   selectedOverlay: ResearchOverlayId
   optionalEmaIndicators: OptionalEmaIndicatorId[]
   showSubingInternalProcess: boolean
+  showSubingStrategyPerformance: boolean
   period?: string | null
   realtimeFollow?: boolean
 }
@@ -249,6 +250,7 @@ export function loadMainChartPreferences(
       selectedOverlay: normalizeResearchOverlay(parsed.selectedOverlay),
       optionalEmaIndicators: normalizeOptionalEmaIndicators(parsed.optionalEmaIndicators),
       showSubingInternalProcess: Boolean(parsed.showSubingInternalProcess),
+      showSubingStrategyPerformance: Boolean(parsed.showSubingStrategyPerformance),
       period: typeof parsed.period === 'string' ? parsed.period : null,
       realtimeFollow: Boolean(parsed.realtimeFollow),
     }
@@ -273,6 +275,7 @@ export function saveMainChartPreferences(
         selectedOverlay: normalizeResearchOverlay(preferences.selectedOverlay),
         optionalEmaIndicators: normalizeOptionalEmaIndicators(preferences.optionalEmaIndicators),
         showSubingInternalProcess: Boolean(preferences.showSubingInternalProcess),
+        showSubingStrategyPerformance: Boolean(preferences.showSubingStrategyPerformance),
         period: preferences.period || null,
         realtimeFollow: Boolean(preferences.realtimeFollow),
       }),
@@ -291,6 +294,7 @@ export function defaultMainChartPreferences(): MainChartPreferences {
     selectedOverlay: 'subing',
     optionalEmaIndicators: [],
     showSubingInternalProcess: false,
+    showSubingStrategyPerformance: false,
     period: null,
     realtimeFollow: false,
   }
@@ -310,6 +314,7 @@ function migrateV6MainChartPreferences(
       selectedOverlay: normalizeResearchOverlay(parsed.selectedOverlay),
       optionalEmaIndicators: normalizeOptionalEmaIndicators(parsed.optionalEmaIndicators),
       showSubingInternalProcess: Boolean(parsed.showSubingInternalProcess),
+      showSubingStrategyPerformance: false,
       period: typeof parsed.period === 'string' ? parsed.period : null,
       realtimeFollow: Boolean(parsed.realtimeFollow),
     }
@@ -341,6 +346,7 @@ function migrateV5MainChartPreferences(
       selectedOverlay: normalizeResearchOverlay(parsed.selectedOverlay),
       optionalEmaIndicators: normalizeOptionalEmaIndicators(parsed.optionalEmaIndicators),
       showSubingInternalProcess: Boolean(parsed.showSubingInternalProcess),
+      showSubingStrategyPerformance: false,
       period: typeof parsed.period === 'string' ? parsed.period : null,
       realtimeFollow: Boolean(parsed.realtimeFollow),
     }

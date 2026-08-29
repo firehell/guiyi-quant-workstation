@@ -873,6 +873,14 @@ async function enableSubingInternalProcess(page) {
   await openSubingResearchDetails(page)
 }
 
+async function enableSubingStrategyPerformance(page) {
+  await page.getByRole('button', { name: '图表设置', exact: true }).click()
+  const toggle = page.getByRole('switch', { name: '显示全历史策略效果', exact: true })
+  await expect(toggle).toBeVisible()
+  if (!(await toggle.isChecked())) await toggle.click()
+  await page.keyboard.press('Escape')
+}
+
 test('Product Workspace identity invalidates AG facts before delayed JM Market acceptance', async ({ page }) => {
   const { calls, gates } = await mockProductIdentityWorkspace(page)
   releaseIdentityFacts(gates, 'initialAg')
@@ -937,6 +945,8 @@ test('Product Workspace aborts the old full-history performance request on symbo
   }
 
   await expect.poll(() => calls.performance).toEqual(['ag', 'jm'])
+  await expect(page.getByTestId('subing-strategy-performance')).toHaveCount(0)
+  await enableSubingStrategyPerformance(page)
   await expect(page.getByTestId('subing-strategy-performance')).toContainText('JM')
   await expect.poll(() => failedPerformanceRequests.some((url) => url.includes('symbol=ag'))).toBe(true)
 })
@@ -1053,6 +1063,7 @@ test('exact Daily Watch chart entry is one-shot and leaves saved chart preferenc
       selectedOverlay: 'htdy',
       optionalEmaIndicators: [],
       showSubingInternalProcess: false,
+      showSubingStrategyPerformance: false,
       period: '5m',
       realtimeFollow: false,
     }))
@@ -1082,6 +1093,7 @@ test('exact Daily Watch chart entry is one-shot and leaves saved chart preferenc
     selectedOverlay: 'htdy',
     optionalEmaIndicators: [],
     showSubingInternalProcess: false,
+    showSubingStrategyPerformance: false,
     period: '5m',
     realtimeFollow: false,
   })
@@ -1105,6 +1117,7 @@ test('strategy action chart entry keeps SuBing overlay and focuses the action', 
       selectedOverlay: 'htdy',
       optionalEmaIndicators: [],
       showSubingInternalProcess: false,
+      showSubingStrategyPerformance: false,
       period: '5m',
       realtimeFollow: false,
     }))
@@ -1134,6 +1147,7 @@ test('normal Market chart URL still loads the saved non-SuBing overlay', async (
       selectedOverlay: 'htdy',
       optionalEmaIndicators: [],
       showSubingInternalProcess: false,
+      showSubingStrategyPerformance: false,
       period: '5m',
       realtimeFollow: false,
     }))
@@ -1243,6 +1257,8 @@ test('SuBing Strategy anchors Action times, shows complete records, and keeps in
     'historical:subing-action:e2e-entry,historical:subing-action:e2e-exit',
   )
   await expect(shell).toHaveAttribute('data-research-marker-times', `${entryTime},${exitTime}`)
+  await expect(page.getByTestId('subing-strategy-records')).toHaveCount(0)
+  await enableSubingStrategyPerformance(page)
   const records = page.getByTestId('subing-strategy-records')
   await expect(records.locator('[data-episode-id="subing-episode:e2e"]')).toHaveCount(1)
   await expect(records).toContainText('建多 → 清多')
@@ -1292,6 +1308,8 @@ test('SuBing full-history performance expands episodes by twenty and shows exit 
     ),
   })
   await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=15m')
+  await expect(page.getByTestId('subing-strategy-performance')).toHaveCount(0)
+  await enableSubingStrategyPerformance(page)
 
   const panel = page.getByTestId('subing-strategy-performance')
   await expect(panel.locator('[data-episode-id]')).toHaveCount(20)
@@ -1338,6 +1356,7 @@ test('SuBing Strategy renders the current open episode from the current endpoint
   })
 
   await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=15m')
+  await enableSubingStrategyPerformance(page)
 
   const records = page.getByTestId('subing-strategy-records')
   const episode = records.locator('[data-episode-id="subing-episode:e2e-current"]')
@@ -1383,7 +1402,9 @@ test('SuBing Strategy keeps the canonical marker and exposes an immutable Event 
   )
   const event = page.getByTestId('subing-strategy-event')
   await expect(event).toContainText('建多')
-  await expect(event).toContainText('不可变通知事实 · AG2601')
+  await expect(event).toContainText('AG2601')
+  await expect(event).toContainText('参考价 999')
+  await expect(event).toContainText('生效')
   await expect(event).toContainText('STRATEGY_ACTION_FACT_MISMATCH')
   await expect(event).toContainText('图表采用 Canonical Historical 事实')
 })
@@ -1469,7 +1490,10 @@ test('current AlertEvent remains an immutable strategy action event', async ({ p
 
   const strategyEvent = page.getByTestId('subing-strategy-event')
   await expect(strategyEvent).toContainText('建多')
-  await expect(strategyEvent).toContainText('不可变通知事实 · AG2601')
+  await expect(strategyEvent).toContainText('AG2601')
+  await expect(strategyEvent).toContainText('参考价 101.5')
+  await expect(strategyEvent).toContainText('生效')
+  await expect(strategyEvent.getByTestId('subing-confirm-validity')).toContainText('已不是当前仓位')
   await expect(strategyEvent.getByRole('button')).toHaveCount(0)
 })
 

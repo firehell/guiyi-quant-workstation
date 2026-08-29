@@ -309,7 +309,7 @@ test('switches series and period from the workspace shell and opens research wit
   await expect.poll(() => page.evaluate(() => JSON.parse(window.localStorage.getItem('guiyi.market.workspace.preferences.v1')).watchlist)).toBeUndefined()
 })
 
-test('keeps chart and check rail aligned above the full-history performance panel', async ({ page }) => {
+test('keeps chart and check rail aligned without a default full-history performance panel', async ({ page }) => {
   const requests = []
   await installFakeWebSocket(page)
   await mockMarketApi(page, requests)
@@ -317,25 +317,20 @@ test('keeps chart and check rail aligned above the full-history performance pane
 
   await page.goto('/market/chart?symbol=jm&series_kind=actual_dominant&frequency=15m')
   await expect(page.getByTestId('kline-shell')).toBeVisible()
+  await expect(page.getByTestId('subing-strategy-performance')).toHaveCount(0)
 
   const layout = await page.evaluate(() => {
     const content = document.querySelector('.content')?.getBoundingClientRect()
     const shell = document.querySelector('[data-testid="kline-shell"]')?.getBoundingClientRect()
     const sidebar = document.querySelector('[data-testid="product-check-sidebar"]')?.getBoundingClientRect()
-    const performance = document.querySelector('[data-testid="subing-strategy-performance"]')?.getBoundingClientRect()
-    if (!content || !shell || !sidebar || !performance) throw new Error('chart layout is missing')
+    if (!content || !shell || !sidebar) throw new Error('chart layout is missing')
     return {
-      performanceGap: performance.top - shell.bottom,
-      performanceBottomGap: content.bottom - performance.bottom,
       chartHeight: shell.height,
       sidebarChartGap: sidebar.bottom - shell.bottom,
       sidebarHeight: sidebar.height,
     }
   })
 
-  expect(layout.performanceGap).toBeGreaterThanOrEqual(0)
-  expect(layout.performanceGap).toBeLessThanOrEqual(20)
-  expect(layout.performanceBottomGap).toBeLessThanOrEqual(20)
   expect(Math.abs(layout.sidebarChartGap)).toBeLessThanOrEqual(1)
   expect(layout.sidebarHeight).toBe(layout.chartHeight)
 })

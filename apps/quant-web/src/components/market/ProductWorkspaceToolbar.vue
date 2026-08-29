@@ -22,6 +22,7 @@ const props = defineProps<{
   selectedOverlay: ResearchOverlayId
   optionalEmaIndicators: OptionalEmaIndicatorId[]
   showSubingInternalProcess: boolean
+  showSubingStrategyPerformance: boolean
   fullscreen: boolean
 }>()
 
@@ -33,6 +34,7 @@ const emit = defineEmits<{
   'update:selected-overlay': [value: ResearchOverlayId]
   'update:optional-ema-indicators': [value: OptionalEmaIndicatorId[]]
   'update:show-subing-internal-process': [value: boolean]
+  'update:show-subing-strategy-performance': [value: boolean]
   'open-research': []
   'toggle-fullscreen': []
   back: []
@@ -118,6 +120,18 @@ function toggleOptionalEma(value: OptionalEmaIndicatorId) {
           </div>
           <small v-if="selectedOverlay === 'subing'" class="toolbar__settings-help">
             默认关闭；仅显示当前准备 / 研究确认 / 风险 / 结束事实
+          </small>
+          <div v-if="selectedOverlay === 'subing'" class="toolbar__settings-title">
+            <span>显示全历史策略效果</span>
+            <NSwitch
+              :value="showSubingStrategyPerformance"
+              size="small"
+              aria-label="显示全历史策略效果"
+              @update:value="emit('update:show-subing-strategy-performance', $event)"
+            />
+          </div>
+          <small v-if="selectedOverlay === 'subing'" class="toolbar__settings-help">
+            默认关闭；不占确认首屏
           </small>
           <span>指定真实合约</span>
           <NInput

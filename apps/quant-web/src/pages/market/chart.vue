@@ -89,6 +89,9 @@ const optionalEmaIndicators = ref<OptionalEmaIndicatorId[]>([
 const showSubingInternalProcess = ref(
   initialMainChartPreferences.showSubingInternalProcess,
 )
+const showSubingStrategyPerformance = ref(
+  initialMainChartPreferences.showSubingStrategyPerformance,
+)
 const research = ref<ProductResearchResponse | null>(null)
 const researchLoading = ref(false)
 const researchError = ref(false)
@@ -317,9 +320,6 @@ const productCheckSidebarProps = computed(() => ({
   currentEventsStatus: currentEventsStatus.value,
   currentEvents: currentEvents.value,
   htdyObservation: latestHtdyObservation.value,
-  subingStrategyEpisodes: subingStrategyEpisodes.value,
-  subingStrategyLoading: historicalResearchLoading.value,
-  subingStrategyError: historicalResearchError.value,
   subingStrategySupported: subingStrategySupported.value,
   subingStrategyCurrent: subingStrategyCurrent.value,
   subingStrategyCurrentLoading: subingStrategyCurrentLoading.value,
@@ -361,9 +361,13 @@ watch([contract, seriesKind, frequency], async () => {
   if (await refreshSeries()) void refreshSubing()
 })
 
-watch(showSubingInternalProcess, (value) => {
+watch([showSubingInternalProcess, showSubingStrategyPerformance], () => {
   const current = loadMainChartPreferences()
-  saveMainChartPreferences({ ...current, showSubingInternalProcess: value })
+  saveMainChartPreferences({
+    ...current,
+    showSubingInternalProcess: showSubingInternalProcess.value,
+    showSubingStrategyPerformance: showSubingStrategyPerformance.value,
+  })
 })
 
 watch(selectedOverlay, () => {
@@ -706,6 +710,10 @@ function updateShowSubingInternalProcess(value: boolean) {
   showSubingInternalProcess.value = value
 }
 
+function updateShowSubingStrategyPerformance(value: boolean) {
+  showSubingStrategyPerformance.value = value
+}
+
 function persistWorkspacePreferences() {
   saveMarketWorkspacePreferences({
     version: 1,
@@ -793,6 +801,7 @@ function normalizeSymbol(value: unknown): string | null {
       :selected-overlay="selectedOverlay"
       :optional-ema-indicators="optionalEmaIndicators"
       :show-subing-internal-process="showSubingInternalProcess"
+      :show-subing-strategy-performance="showSubingStrategyPerformance"
       :fullscreen="fullscreen"
       @update:symbol="symbol = $event"
       @update:series-kind="seriesKind = $event"
@@ -801,6 +810,7 @@ function normalizeSymbol(value: unknown): string | null {
       @update:selected-overlay="updateSelectedOverlay"
       @update:optional-ema-indicators="updateOptionalEmaIndicators"
       @update:show-subing-internal-process="updateShowSubingInternalProcess"
+      @update:show-subing-strategy-performance="updateShowSubingStrategyPerformance"
       @open-research="openResearchDrawer"
       @toggle-fullscreen="toggleFullscreen"
       @back="router.push({ name: 'market' })"
@@ -869,6 +879,7 @@ function normalizeSymbol(value: unknown): string | null {
     </NSpin>
 
     <SubingStrategyPerformancePanel
+      v-if="showSubingStrategyPerformance"
       :symbol="symbol"
       :result="strategyPerformance"
       :loading="strategyPerformanceLoading"
