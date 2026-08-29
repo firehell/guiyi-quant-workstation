@@ -78,6 +78,8 @@ function openStrategyAction(item: CurrentStrategyActionItem) {
       series_kind: 'actual_dominant',
       frequency: '15m',
       overlay: 'subing',
+      entry: 'subing-strategy-action',
+      action_id: item.action_id,
     },
   })
 }

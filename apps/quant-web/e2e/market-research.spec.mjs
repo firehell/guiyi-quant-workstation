@@ -1072,6 +1072,8 @@ test('exact Daily Watch chart entry is one-shot and leaves saved chart preferenc
     symbol: 'ag',
     series_kind: 'actual_dominant',
     frequency: '15m',
+    overlay: 'subing',
+    entry: 'subing-daily-watch',
   })
   expect(await page.evaluate(() => JSON.parse(
     window.localStorage.getItem('guiyi.market.chart.preferences.v7'),
@@ -1086,9 +1088,43 @@ test('exact Daily Watch chart entry is one-shot and leaves saved chart preferenc
 
   await overlays.getByRole('button', { name: '无', exact: true }).click()
   await expect(overlays.getByRole('button', { name: '无', exact: true })).toHaveClass(/n-button--primary-type/)
+  expect(Object.fromEntries(new URL(page.url()).searchParams)).toEqual({
+    symbol: 'ag',
+    series_kind: 'actual_dominant',
+    frequency: '15m',
+  })
   await expect.poll(() => page.evaluate(() => JSON.parse(
     window.localStorage.getItem('guiyi.market.chart.preferences.v7'),
   ).selectedOverlay)).toBe('none')
+})
+
+test('strategy action chart entry keeps SuBing overlay and focuses the action', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem('guiyi.market.chart.preferences.v7', JSON.stringify({
+      version: 7,
+      selectedOverlay: 'htdy',
+      optionalEmaIndicators: [],
+      showSubingInternalProcess: false,
+      period: '5m',
+      realtimeFollow: false,
+    }))
+  })
+  await mockWorkspace(page, { json: research() })
+  await mockAlertMarkerSurface(page)
+
+  await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=15m&overlay=subing&entry=subing-strategy-action&action_id=subing-action:test')
+
+  const overlays = page.getByRole('group', { name: 'Overlay' })
+  await expect(overlays.getByRole('button', { name: '苏冰', exact: true })).toHaveClass(/n-button--primary-type/)
+  await expect(page.locator('.product-workspace__kline')).toHaveAttribute('data-focused-action-id', 'subing-action:test')
+  expect(Object.fromEntries(new URL(page.url()).searchParams)).toEqual({
+    symbol: 'ag',
+    series_kind: 'actual_dominant',
+    frequency: '15m',
+    overlay: 'subing',
+    entry: 'subing-strategy-action',
+    action_id: 'subing-action:test',
+  })
 })
 
 test('normal Market chart URL still loads the saved non-SuBing overlay', async ({ page }) => {

@@ -58,6 +58,7 @@ const props = defineProps<{
   subingStrategyCurrentError: string | null
   subingStrategyReconciliationErrors: string[]
   showSubingInternalProcess: boolean
+  focusedActionId?: string | null
 }>()
 
 const emit = defineEmits<{
@@ -146,6 +147,7 @@ function updateDataDetailsOpen(event: Event) {
         :strategy-current-error="subingStrategyCurrentError"
         :strategy-reconciliation-errors="subingStrategyReconciliationErrors"
         :show-internal-process="showSubingInternalProcess"
+        :focused-action-id="focusedActionId ?? null"
         @toggle-subing-alert="(ruleCode, enabled) => emit('toggle-subing-alert', ruleCode, enabled)"
       />
       <template v-else-if="selectedOverlay === 'htdy'">

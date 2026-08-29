@@ -276,6 +276,24 @@ function scrollToLatest(): void {
   }
 }
 
+function revealTime(iso: string): boolean {
+  if (!chart || isDaily() || !props.bars.length) return false
+  const parsed = Date.parse(iso)
+  if (!Number.isFinite(parsed)) return false
+  const unix = Math.floor(parsed / 1000) as UTCTimestamp
+  const index = props.bars.findIndex((bar) => chartTime(bar) === unix)
+  if (index < 0) return false
+  if (followLatest) {
+    followLatest = false
+    emit('follow-latest-change', false)
+  }
+  chart.timeScale().setVisibleLogicalRange({
+    from: Math.max(0, index - 48),
+    to: Math.min(props.bars.length - 1, index + 8),
+  })
+  return true
+}
+
 function onVisibleLogicalRangeChange(range: LogicalRange | null) {
   if (!range || !renderedBars.length) return
   scheduleStrategyLabelLayout()
@@ -500,6 +518,7 @@ defineExpose({
   prependBars,
   updateBar,
   scrollToLatest,
+  revealTime,
 })
 </script>
 

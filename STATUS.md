@@ -12,7 +12,7 @@
 | Runtime | 本机当前绑定 `/Volumes/扩展盘/guiyi-quant-runtime-v1.9.1@f6cae9f79…`。`/api/health` 读回 `version=1.9.1 / readonly=true`。2026-08-29 02:32 验收 Alert restore `strategy_state=ready`、`60 ready / 0 unavailable`、`processing_state=ok`、overall `ok`。Market Runtime `phase_counts.CLOSED=60`（夜盘已结束）。HTDY Scope 与 Rule 未改。 |
 | Database | production Alembic 为 `20260826_0042 (head)`。Rule 已原子收敛为 `htdy_original_15m` 与 `subing_strategy_v1`；旧 SuBing Rule/Event 不保留。四张空的退役 `trade_*` 表已删除。 |
 | Market Runtime Scope | `operational_products.txt` 的 60 个品种。 |
-| Alert Scope | HTDY 唯一 production Scope 为 `jm × 15m`（`1 symbol / 1 pair`）；SuBing 唯一 production Scope 为 `jm`。两种授权边界不合并。DB 中 2 个 Rule 均 enabled；Alert Runtime marker 已 enabled；audience count 2。 |
+| Alert Scope | HTDY 唯一 production Scope 仍为 `jm × 15m`（`1 symbol / 1 pair`）。2026-08-29 当次明确授权已把 `subing_strategy_v1` 的 `scope_products` 扩到 `operational_products.txt` 全部 60 个品种；逐品种 PUT 60/60 成功，读回集合与清单一致。两种授权边界不合并。DB 中 2 个 Rule 均 enabled；Alert Runtime marker 已 enabled；audience count 2。`/api/runtime/health` 读回 `enabled_rule_count=2`、`scope_product_count=60`、`strategy_ready_product_count=60`。Scope 变化不补 Event、不补发历史通知；此后各品种新的 completed 15m 策略动作才会 one-shot 推 owner（非 Topic）。 |
 | v1.9.1 | 含 SuBing 效果增量快照、v2→v3 adopt、occupancy-capped Stage 2 restore，以及 restore 后忽略尚未映射 occupancy 的下一交易日 Live。不新增 migration、不修改 Scope。 |
 | N Structure / Multi-Candidate retirement | release 与当时的 v1.8.8 Runtime promotion 均已完成；旧 `GET /api/v1/market/research/n-structure/bands` 在 production 返回 `404`，不保留 410、feature-disabled 或兼容 reader。Git/Alembic history 只保留 lineage。 |
 
