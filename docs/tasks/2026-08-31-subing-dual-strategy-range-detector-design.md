@@ -108,28 +108,36 @@ flowchart LR
 仓库实现必须：
 
 - 使用 clean-room Python/TypeScript 实现，不复制第三方 Pine Script 文件或大段源码；
-- 在 Indicator metadata 和文档中记录来源、参数与差异；
+- 在 Indicator metadata 和文档中记录来源、参数与已知差异；
 - 通过独立构造的 fixture 和公开示例验证行为，不把第三方源码作为 Runtime 依赖；
 - 不宣称与第三方品牌存在授权、合作或完全字节级等同。
 
-### 5.2 身份与定位
+### 5.2 身份与 Registry 合同
 
 ```text
 indicator_code: range_detector_lux_v1
 indicator_version: v1
 formal_policy_id: range_detector_lux_v1
 显示名称: 箱体识别（Lux Range）
-类型: main-pane observation overlay
-repainting_risk: visual_backpaint_only
+display_type: overlay
+output_schema: channel
+status: strategy_candidate
+repainting_risk: none
+visual_behavior: retrospective_box_shading_from_visual_start
 closed_bar_only: true
 confirmed_only: true
 web_capable: true
 backtest_capable: true
-live_capable: false  # V1 不消费未完成 D1
-alert_capable: false # 指标本身不直接发 Alert
+live_capable: false
+alert_capable: false
 ```
 
-`visual_backpaint_only` 表示：箱体为了还原阅读效果可以从确认时点向左绘制，但任何策略判断只允许从 `confirmed_at` 开始使用。视觉回画不得改写历史策略状态。
+解释：
+
+- Kernel 只在当前 completed Bar 输出新 confirmation/revision/break，不回写旧 Bar 的因果输出，因此 Registry 的 `repainting_risk` 为 `none`。
+- Web primitive 可以在 confirmation 后把箱体向左画到 `visual_start_at`，这是显示行为，不是可供策略消费的历史事实。
+- `status=strategy_candidate` 允许 Historical 策略研究，但不授予 formal Live、Alert 或 Runtime 能力。
+- Web 可以对当前已加载的 completed Live Bar 做观察镜像；`live_capable=false` 表示没有正式 Live 策略 consumer，不禁止 Web 观察。
 
 ### 5.3 固定默认参数
 
@@ -166,22 +174,26 @@ candidate_valid_t =
   对 i = 0 ... L-1，均满足 abs(close[t-i] - center_t) <= width_t
 ```
 
-只有 EMA/SMA/ATR warm-up 均完整且输入 Bar 单调、有限、已确认时才可形成 candidate。任一输入异常返回显式 unavailable，不使用 0、前值或跨周期回退。
+只有 SMA/ATR warm-up 均完整且输入 Bar 单调、有限、已确认时才可形成 candidate。任一输入异常返回显式 unavailable，不使用 0、前值或跨周期回退。
 
-### 5.5 确认、回画与合并
+### 5.5 确认、回画、延伸与合并
 
-- 当 `candidate_valid_t=true` 且上一 Bar 不为有效 candidate 时，形成一次新的 range confirmation。
+- 当 `candidate_valid_t=true` 且 `candidate_valid_(t-1)!=true` 时，形成一次新的 range confirmation。
 - `confirmed_at = bar_end[t]`。
-- 为对齐公开指标的阅读方式，`visual_start_at = bar_end[t-L]`；若该 Bar 不存在则尚不可确认。
+- 为对齐公开指标的阅读方式，`visual_start_at = bar_end[t-L]`；candidate 检查本身仍只使用 `t-L+1 ... t` 的 L 根 close。
 - 初始边界：`initial_upper=upper_t`、`initial_lower=lower_t`、`initial_mid=(upper_t+lower_t)/2`。
-- 当新的 candidate 与上一箱体的可视区间重叠时，不创建第二个并列箱体，而是生成同一 `range_id` 的新 revision：
-  - `current_upper = max(previous_upper, candidate_upper)`
-  - `current_lower = min(previous_lower, candidate_lower)`
-  - `current_mid = (current_upper + current_lower) / 2`
-  - `merged_count += 1`
-  - `revision += 1`
+- 新 candidate 的 `visual_start_index <= previous_detection_right_index` 时视为与上一箱体重叠：
+  - 保留同一个 `range_id`；
+  - `current_upper = max(previous_upper, candidate_upper)`；
+  - `current_lower = min(previous_lower, candidate_lower)`；
+  - `current_mid = (current_upper + current_lower) / 2`；
+  - `merged_count += 1`；
+  - `revision += 1`；
+  - 新 revision 从本次 `confirmed_at` 起把状态重置为 `intact`。
+- 不重叠时创建新的 `range_id`，上一箱体结束 active levels。
+- candidate 连续有效时更新 `detection_right_at=bar_end[t]`。
+- candidate 失效后，半透明 box 停在最后一个 `detection_right_at`；上下沿和中线作为 active levels 继续向右显示，直到下一次新 confirmation。
 - revision 只从本次 `confirmed_at` 向后生效；不得用扩展后的边界重算此前策略决策。
-- candidate 持续有效时更新 `last_extended_at`；箱体上下沿和中线可继续绘制。
 
 ### 5.6 突破状态
 
@@ -190,24 +202,33 @@ Range 生命周期：
 ```text
 intact -> broken_up
 intact -> broken_down
-broken_up / broken_down -> 等待下一次新 range confirmation
+broken_up / broken_down -> 下一次新 confirmation 或 overlap revision 后重新 intact
 ```
 
 - `close_t > current_upper`：`broken_up`。
 - `close_t < current_lower`：`broken_down`。
 - 等于边界仍视为箱体内。
-- 突破方向一旦形成，在下一次新 range confirmation 前不因价格重新进入箱体而自动恢复 `intact`。
-- 单个 `range_id` 最多生成一次可供趋势策略消费的突破机会。
+- 突破方向一旦形成，在下一次新 confirmation/revision 前不因价格重新进入箱体而自动恢复 `intact`。
+- 单个 `range_id + revision` 最多生成一次可供趋势策略消费的突破机会。
+
+每根 Bar 的 Range 处理顺序固定为：
+
+1. 校验输入并计算 candidate；
+2. 处理新 confirmation、new range 或 overlap revision；
+3. 处理连续 candidate 的 detection right extension；
+4. 以本 Bar 处理后的当前边界判定 break；
+5. 输出只属于本 Bar 的 snapshot/transition。
 
 ### 5.7 因果边界
 
 这是实现的硬约束：
 
-1. 策略在决策 Bar `t` 只能读取截至 `t-1` 已确认、当时为 `intact` 的 range snapshot 和边界。
+1. 策略在决策 Bar `t` 只能读取截至 `t-1` 已确认、当时为 `intact` 的 range snapshot 和冻结边界。
 2. `t` 自身形成的新箱体或 merge revision 不能被 `t` 的入场判断使用。
 3. `visual_start_at` 仅用于绘图；`confirmed_at` 才是策略可见时间。
-4. prepend 更早历史后，只允许填充原先 unavailable 的 warm-up 区；任何已经拥有完整 warm-up 的已确认前缀不得漂移。
-5. Historical 批量计算、逐 Bar 增量计算和浏览器镜像必须在相同输入前缀上给出相同 range identity、边界、revision、confirmation 和 break 状态。
+4. overlap revision 只能影响其 `confirmed_at` 之后的决策；不得反向扩大旧决策所见边界。
+5. prepend 更早历史后，只允许填充原先 unavailable 的 warm-up 区；任何已经拥有完整 warm-up 的已确认前缀不得漂移。
+6. Historical 批量计算、逐 Bar 增量计算和浏览器镜像必须在相同输入前缀上给出相同 range identity、边界、revision、confirmation 和 break 状态。
 
 ### 5.8 输出合同
 
@@ -221,18 +242,20 @@ RangeDetectorSnapshot
 - revision
 - visual_start_at
 - confirmed_at
-- last_extended_at
+- detection_right_at
+- levels_active_from
 - initial_upper / initial_lower
 - current_upper / current_lower / current_mid
 - state: intact | broken_up | broken_down
 - broken_at
 - merged_count
+- candidate_valid
 - source_bar_end
 - source_trading_day
 - source_identity
 ```
 
-`range_id` 必须由稳定的 source identity、首次 `confirmed_at` 和公式版本确定性生成，不使用随机 UUID。
+`range_id` 必须由稳定的 source identity、首次 `confirmed_at` 和公式版本确定性生成，不使用随机 UUID。`levels_active_until` 在下一次新 confirmation 已知后由 Historical projector 派生，增量 state 不使用未来时间预填。
 
 ### 5.9 图表表现
 
@@ -265,7 +288,7 @@ reference_fill: next actual same-physical-contract D1 open
 
 - Historical 只通过 `MarketDataService` 读取 `actual_dominant + 1d`。
 - EMA21、MACD、ATR14 和 Range Detector 使用 rank1 stitched raw D1 历史计算，避免每次换月都丢失长周期 warm-up。
-- Action、pending fill 和持仓状态不得跨物理主力段。
+- stitched 指标可以包含上一物理段历史；Action、pending fill、持仓状态和 Episode 不得跨物理主力段。
 - 新物理段第一根 completed D1 禁止开仓；从第二根开始才可判断。
 - 当前段、source Bar、MainContractMap 和物理可读性任一异常时 fail-closed。
 
@@ -298,7 +321,7 @@ Range
 - L=20, multiplier=1.0, ATR length=500
 ```
 
-ATR14 只用于 MACD 零轴距离和 EMA 距离归一化；ATR500 只用于 Range width。两者身份不得混用。
+ATR14 只用于 MACD 零轴距离和 EMA 距离归一化；ATR500 只用于 Range width。两者身份不得混用。ATR14 必须大于 0，否则当根策略事实 unavailable。
 
 ### 6.4 多头入场真值表
 
@@ -332,12 +355,12 @@ ATR14 只用于 MACD 零轴距离和 EMA 距离归一化；ATR500 只用于 Rang
 
 Range 突破、EMA21 突破、EMA21 斜率、MACD 交叉、零轴距离和 EMA 距离必须在同一根 completed D1 上共同成立。
 
-若某个 range 已发生向上或向下突破，但该突破 Bar 未同时满足其余条件：
+若某个 `range_id + revision` 已发生向上或向下突破，但该突破 Bar 未同时满足其余条件：
 
 - 不允许在后续 Bar 追认该次突破；
 - 不建立 delayed window；
-- 不从同一 `range_id` 生成第二次机会；
-- 必须等待新的已确认 range。
+- 不从同一 `range_id + revision` 生成第二次机会；
+- 必须等待新的 range confirmation 或 overlap revision。
 
 这条规则优先保证公式清晰和可验证，即使第一版信号较少也不放宽。
 
@@ -372,7 +395,23 @@ short exit:
 - 物理段结束时仍持有，则在旧段最后一根 D1 close 形成 `CONTRACT_SEGMENT_END` 终止，不迁移到新主力。
 - 反向完整入场信号只先触发退出；不得在同一决策 Bar 或同一 effective open 反手。退出后等待新的完整 range 和入场信号。
 
-### 6.9 状态机
+### 6.9 每 Bar 处理优先级
+
+对每根 completed D1，顺序固定：
+
+1. 在 Bar open 应用前一决策 Bar 已确认、且属于同一物理合约的 pending entry/exit；
+2. 计算本 Bar close 的 Range、EMA21、MACD 和 ATR14 事实；
+3. 若本 Bar 是当前物理段终点：
+   - 已持有 Episode 以本 Bar close 和 `CONTRACT_SEGMENT_END` 终止；
+   - 取消尚未生效的 pending entry；
+   - 不在终点 Bar 创建新的 entry；
+4. 非终点且当前持有时，只评估退出，不评估任何入场；
+5. 非终点且 flat 时，才评估完整入场真值表；
+6. 同一 decision Bar 最多产生一个普通策略 Action。
+
+若 EMA21 opposite cross 与物理段终点同 Bar，`CONTRACT_SEGMENT_END` 优先，避免生成无法在下一同合约 open 生效的普通退出。
+
+### 6.10 状态机
 
 内部状态：
 
@@ -393,11 +432,14 @@ PENDING_SHORT_EXIT
 ```mermaid
 stateDiagram-v2
   [*] --> FLAT_NO_RANGE
-  FLAT_NO_RANGE --> FLAT_RANGE_INTACT: range confirmed
+  FLAT_NO_RANGE --> FLAT_RANGE_INTACT: range confirmed/revised intact
+  FLAT_RANGE_INTACT --> FLAT_NO_RANGE: range broken without full entry
   FLAT_RANGE_INTACT --> PENDING_LONG_ENTRY: long conditions confirmed
   FLAT_RANGE_INTACT --> PENDING_SHORT_ENTRY: short conditions confirmed
   PENDING_LONG_ENTRY --> LONG: next same-contract D1 open
   PENDING_SHORT_ENTRY --> SHORT: next same-contract D1 open
+  PENDING_LONG_ENTRY --> FLAT_NO_RANGE: no same-contract effective bar
+  PENDING_SHORT_ENTRY --> FLAT_NO_RANGE: no same-contract effective bar
   LONG --> PENDING_LONG_EXIT: opposite EMA21 cross
   SHORT --> PENDING_SHORT_EXIT: opposite EMA21 cross
   PENDING_LONG_EXIT --> FLAT_NO_RANGE: next same-contract D1 open
@@ -405,6 +447,8 @@ stateDiagram-v2
   LONG --> FLAT_NO_RANGE: contract segment end close
   SHORT --> FLAT_NO_RANGE: contract segment end close
 ```
+
+任何 flat 状态在新的 range confirmation/revision 后都可进入 `FLAT_RANGE_INTACT`；`UNAVAILABLE` 只在完整 identity 与 warm-up 恢复后进入相应 flat/position 重建状态，不静默猜测。
 
 UI 映射：
 
@@ -418,7 +462,7 @@ UI 映射：
 
 退出 Action 作为一次性事实显示，不增加长期“退出风险”页面状态。
 
-### 6.10 Action 与 Episode
+### 6.11 Action 与 Episode
 
 每个 Action 至少包含：
 
@@ -427,13 +471,14 @@ action_id
 strategy_id / formula_version / policy_id
 symbol / actual_contract / segment_start_trading_day
 signal_bar_end / signal_trading_day
-action_type
+action_type / action_status
 range_id / range_revision / range_confirmed_at
 range_upper / range_lower
 ema21 / slope_5_bps_per_bar
 macd_dif / macd_dea / macd_cross
 atr14 / macd_zero_distance_atr / ema_distance_atr
 effective_bar_end / reference_price
+cancel_reason
 source_identity_digest
 ```
 
@@ -449,12 +494,19 @@ Episode：
 
 ### 7.1 Historical Projection
 
-- 每个 rank1 物理段确定性重放；指标可以使用 stitched raw warm-up，但状态在段边界重置。
+- 每个 rank1 物理段确定性重放；指标可以使用 stitched raw warm-up，但策略状态在段边界重置。
 - 批量重放与逐 Bar state machine 必须 golden parity。
 - first valid lower bound 同时满足 Range ATR500、EMA21 slope、MACD、ATR14 warm-up。
 - 数据身份、segment coverage、时间单调、物理可读性异常显式失败，不缩短窗口冒充成功。
 
-### 7.2 Current State
+### 7.2 Retrospective holdout 与 prospective OOS
+
+- 公式冻结后，每个品种按交易日做 chronological 80% development / 20% retrospective holdout。
+- holdout 可以读取分割点之前的指标 warm-up，但只有 entry trading day 位于 holdout 的 Episode 才进入 holdout 统计；跨分割点且在 development 开仓的 Episode 不计入 holdout。
+- 不使用 holdout 结果回调 V1 参数；需要修改公式时发布新 candidate/version。
+- 用户接受历史结果后，prospective OOS 从接受日之后独立积累，不回填过去日期。
+
+### 7.3 Current State
 
 第一版 Current 只基于最新 Canonical completed D1 重建：
 
@@ -464,7 +516,7 @@ Episode：
 - 返回当前简化状态、方向、最新条件事实、pending Action、active range 和 source identity；
 - 只读 HTTP 不在请求路径写 cache、修复数据或重放全历史。
 
-### 7.3 独立 API
+### 7.4 独立 API
 
 不把两个策略塞进同一个 DTO。新增独立路径：
 
@@ -477,14 +529,14 @@ GET /api/v1/market/research/subing-daily-trend/performance
 现有路径保持不变：
 
 ```text
-/market/research/subing-strategy/current
-/market/research/subing-strategy/history
-/market/research/subing-strategy/performance
+GET /api/v1/market/research/subing-strategy/current
+GET /api/v1/market/research/subing-strategy/history
+GET /api/v1/market/research/subing-strategy/performance
 ```
 
 可以复用 source identity、snapshot publication 和 query validation 的基础设施，但不得建立通用 Strategy Adapter 或用一个 `strategy_id` 参数驱动任意公式。
 
-### 7.4 Performance
+### 7.5 Performance
 
 趋势策略独立 snapshot 和 manifest，不与现行策略合并。
 
@@ -498,6 +550,7 @@ GET /api/v1/market/research/subing-daily-trend/performance
 - 持有 D1 Bar 数；
 - `EMA21_OPPOSITE_CROSS` 与 `CONTRACT_SEGMENT_END` 次数；
 - entry gap 分布；
+- development / retrospective holdout 分组；
 - 按年份、品种、方向分组。
 
 不输出本金、仓位、手续费、资金曲线、复利收益或订单结论。
@@ -544,7 +597,8 @@ GET /api/v1/market/research/subing-daily-trend/performance
 - 前两个是 `overlay=subing` 内部的 `strategy_view`；
 - 火天大有切换到 `overlay=htdy`；
 - 不新增 `subing_range` 或 `subing_trend` Overlay；
-- URL 可增加稳定参数 `strategy_view=range|daily_trend`，但现有苏冰 Action/Daily Watch 深链保持兼容。
+- URL 增加稳定参数 `strategy_view=range|daily_trend`；缺失时按现有苏冰视图 `range` 处理；
+- 现有苏冰 Action/Daily Watch 深链保持兼容并显式落到 `strategy_view=range`。
 
 ### 8.4 周期行为
 
@@ -581,6 +635,8 @@ GET /api/v1/market/research/subing-daily-trend/performance
 
 规则：
 
+- Web `MainIndicatorId` 使用 `range_detector`，其公式 metadata 必须指向 `range_detector_lux_v1`；
+- 支持七个标准 Market 周期和 `continuous | actual_dominant | contract` 三种只读图表序列；
 - 全局默认关闭；
 - 用户可在任意标准 Market 周期/序列上作为观察指标开启；
 - 选择趋势策略时，页面的 effective display 强制显示 EMA21、箱体和 MACD，但不覆盖用户持久化偏好；离开趋势策略后恢复用户设置；
@@ -606,7 +662,7 @@ GET /api/v1/market/research/subing-daily-trend/performance
 ### 9.1 当前生产面
 
 - `subing_strategy_v1` Rule、Scope、Event、Runtime 和自然 evidence 全部保持不变。
-- 本设计和前三阶段实现不得修改现有 production migration、Rule code、`scope_products` 或真实 PushPlus。
+- 本设计和前四阶段实现不得修改现有 production migration、Rule code、`scope_products` 或真实 PushPlus。
 
 ### 9.2 “历史结果通过后启用”的精确定义
 
@@ -615,7 +671,7 @@ GET /api/v1/market/research/subing-daily-trend/performance
 1. 公式、边界和参数已冻结为 `subing_daily_trend_v1`；
 2. causality、strict-before、future-leak、prefix invariance、batch/incremental golden parity 全部通过；
 3. JM/AG/RB/EG 详细案例和 active60 Historical 报告完成；
-4. 固定最后一段 retrospective holdout 与开发样本分离，未用 holdout 反调参数；
+4. chronological 80/20 retrospective holdout 与 development 分离，未用 holdout 反调参数；
 5. 样本不足品种被明确标记，不以聚合结果掩盖；
 6. 用户审阅历史结果后明确接受该公式进入 Alert 实现；
 7. 独立 Lane 3 Review 批准 Alert contract、migration 和 completed-D1 seam。
@@ -639,7 +695,7 @@ prospective OOS 继续独立积累且不得回填，但不作为第一次 Alert 
 
 ### 阶段 1：Range Detector 指标
 
-- Quant-core Kernel、registry metadata、batch/incremental API；
+- Quant-core Kernel、registry metadata、batch/incremental pure functions；
 - Browser golden mirror；
 - Lightweight Charts primitive；
 - 图表设置开关和 preference v8 migration；
@@ -679,12 +735,14 @@ prospective OOS 继续独立积累且不得回填，但不作为第一次 Alert 
 
 必须覆盖：
 
+- Registry lifecycle/capability 合法性；
 - 参数、warm-up 和非法输入；
 - 20-bar candidate、500-bar ATR；
 - exact-boundary 仍为 intact；
 - 向上/向下突破；
-- overlapping merge 和 revision 生效时间；
+- overlapping merge 的精确索引条件和 revision 生效时间；
 - visual start 与 confirmed_at 分离；
+- box detection right 与 active levels 延伸分离；
 - broken 状态不自动恢复；
 - deterministic range_id；
 - batch = incremental；
@@ -700,7 +758,8 @@ prospective OOS 继续独立积累且不得回填，但不作为第一次 Alert 
 - 多头/空头完整真值表；
 - 只有 5-bar EMA slope，10-bar slope 不参与；
 - Range/EMA/MACD 必须同一 D1；
-- near-zero 和 not-far 边界；
+- near-zero 和 not-far exact boundary；
+- ATR14=0 或 unavailable 时 fail-closed；
 - breakout Bar 条件不完整时不得后续追认；
 - 新物理段第一根禁止入场；
 - next same-contract D1 open 生效；
@@ -708,8 +767,8 @@ prospective OOS 继续独立积累且不得回填，但不作为第一次 Alert 
 - 无下一同合约 Bar 时 pending entry 取消；
 - EMA21 opposite cross 是唯一普通退出；
 - 反向 MACD 不退出；
-- 不同 Bar 不反手；
-- segment end close；
+- 同一 decision Bar 不反手；
+- segment terminal priority 和 close；
 - open Episode 不进统计；
 - Historical = incremental current engine；
 - strict-before、future-leak、prefix invariance、golden parity、fail-closed。
