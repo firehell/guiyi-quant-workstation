@@ -8,12 +8,12 @@
 
 | 项目 | 当前事实 |
 |---|---|
-| Release | `v1.9.3` release candidate（仓库收敛与 SuBing EMA10/21 per-bar ribbon）。前一 tag `v1.9.2@db75a1e381469f0f8584ff931de26451d23fc8d9` 保留。合入 `main` / tag / GitHub Release 完成前不把 `v1.9.3` 标为 `RELEASED`。 |
-| Runtime | 本机当前绑定 `/Volumes/扩展盘/guiyi-quant-runtime-v1.9.2@db75a1e38…`。`/api/health` 读回 `version=1.9.2 / readonly=true`。2026-08-30 00:31 验收 Alert restore `strategy_state=ready`、`60 ready / 0 unavailable`、`processing_state=ok`、overall `ok`。Market Runtime `phase_counts.CLOSED=60`（周末）。`local-services-status` overall `passed`。 |
+| Release | `v1.9.3` `RELEASED`。annotated tag / GitHub Release 指向 `main` merge `0ff83f2704e554f44b8505a744f9060288ca3440`。前一 tag `v1.9.2@db75a1e381469f0f8584ff931de26451d23fc8d9` 保留。 |
+| Runtime | 本机已切到 `/Volumes/扩展盘/guiyi-quant-runtime-v1.9.3@0ff83f27…`；API/Web/Live/after-market/Alert 的 loaded commit 均为 `0ff83f27`，`/api/health` 读回 `version=1.9.3 / readonly=true`。但 Alert restore 持续 `strategy_state=warming / 0 ready / 0 unavailable / alert_heartbeat_missing`，`/api/runtime/health=degraded`；v1.9.3 Runtime acceptance 尚未通过，旧 `guiyi-quant-runtime-v1.9.2` worktree 保留供明确的后续恢复或回滚决定。 |
 | Database | production Alembic 为 `20260826_0042 (head)`。当前 Rule 为 `htdy_original_15m` 与 `subing_strategy_v1`。 |
 | Market Runtime Scope | `operational_products.txt` 的 60 个品种。 |
-| Alert Scope | HTDY Scope 为 `jm × 15m`；SuBing `scope_products` 为 operational 60。两种 authority 不合并。两条 Rule 均 enabled，Alert Runtime marker 已 enabled，audience count 2；health 读回 `enabled_rule_count=2`、`scope_product_count=60`、`strategy_ready_product_count=60`。 |
-| v1.9.3 release candidate | 删除无消费者的仓库产物与重复测试；苏冰 EMA10/21 ribbon 改为 per-bar 独立柱并保持两条固定身份边界线。无 migration，不改变数据、策略、HTTP、Scope、Alert 或 Runtime 合同。 |
+| Alert Scope | HTDY Scope 为 `jm × 15m`；SuBing `scope_products` 为 operational 60。两种 authority 不合并。两条 Rule 均 enabled，Alert Runtime marker 已 enabled，audience count 2；未发生 Scope、Rule 或 audience 变更。当前 Alert health 以本表 Runtime 行的 v1.9.3 restore pending 为准。 |
+| v1.9.3 | 删除无消费者的仓库产物与重复测试；苏冰 EMA10/21 ribbon 改为 per-bar 独立柱并保持两条固定身份边界线。无 migration，不改变数据、策略、HTTP、Scope、Alert 或 Runtime 合同。 |
 
 Alert transport 为 PushPlus；provider accepted 不等于微信送达。
 
@@ -26,6 +26,7 @@ Alert transport 为 PushPlus；provider accepted 不等于微信送达。
 
 ## Pending Gate
 
+- v1.9.3 Runtime acceptance pending：Alert restore 未产出 heartbeat 或 active60 状态；在新的明确恢复或回滚意图前，不删除 v1.9.2 Runtime checkout、不把 v1.9.3 标为 `RUNTIME_READY`，也不重启或重放。
 - HTDY 的真实 PushPlus/微信送达，以及 D1/W1 `canonical_updated` 的自然 Event identity/evidence，仍须分别核验；不以测试、synthetic event、replay 或手工发送补证。
 - SuBing 自然 Live seam evidence pending；Daily Watch V2 自然盘后 artifact pending，不以既有 V1 artifact、手工触发或回填替代。
 - 一次 owner PushPlus canary 仍是独立 Gate。
