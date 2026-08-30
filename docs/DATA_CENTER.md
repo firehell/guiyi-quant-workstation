@@ -103,7 +103,7 @@ coverage/RQData/update 尝试之前写入
 只允许 `{attempted_at,state=provider_accepted|failed,error_type}` 公开字段，不保存 provider reference。
 
 schema v3 额外公开 `subing_strategy_performance` derived stage；该 stage 只报告已验证的 snapshot
-增量结果或固定 degraded 分类，不回滚 Canonical、不发送通知，也不自动全量回退。
+增量结果、合法 `skipped` 状态或固定 degraded 分类，不回滚 Canonical、不发送通知，也不自动全量回退。
 
 只读 Runtime health 从 `operational_products.txt` 对应的 `Instrument.exchange_code` 与权威
 `TradingCalendar` 唯一解析 expected trading day：上海时间 18:20 前只考虑先前交易日，18:20
