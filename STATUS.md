@@ -8,12 +8,12 @@
 
 | 项目 | 当前事实 |
 |---|---|
-| Release | `v1.9.2` `RELEASED`。annotated tag / GitHub Release 指向 `main` merge `db75a1e381469f0f8584ff931de26451d23fc8d9`（PR #254）。 |
+| Release | `v1.9.3` release candidate（仓库收敛与 SuBing EMA10/21 per-bar ribbon）。前一 tag `v1.9.2@db75a1e381469f0f8584ff931de26451d23fc8d9` 保留。合入 `main` / tag / GitHub Release 完成前不把 `v1.9.3` 标为 `RELEASED`。 |
 | Runtime | 本机当前绑定 `/Volumes/扩展盘/guiyi-quant-runtime-v1.9.2@db75a1e38…`。`/api/health` 读回 `version=1.9.2 / readonly=true`。2026-08-30 00:31 验收 Alert restore `strategy_state=ready`、`60 ready / 0 unavailable`、`processing_state=ok`、overall `ok`。Market Runtime `phase_counts.CLOSED=60`（周末）。`local-services-status` overall `passed`。 |
 | Database | production Alembic 为 `20260826_0042 (head)`。当前 Rule 为 `htdy_original_15m` 与 `subing_strategy_v1`。 |
 | Market Runtime Scope | `operational_products.txt` 的 60 个品种。 |
 | Alert Scope | HTDY Scope 为 `jm × 15m`；SuBing `scope_products` 为 operational 60。两种 authority 不合并。两条 Rule 均 enabled，Alert Runtime marker 已 enabled，audience count 2；health 读回 `enabled_rule_count=2`、`scope_product_count=60`、`strategy_ready_product_count=60`。 |
-| Release 内容 | `v1.9.2` 包含图表确认首屏、EMA10/21 默认画带、策略事件深链，以及默认关闭的全历史效果面板；无 migration。 |
+| v1.9.3 release candidate | 删除无消费者的仓库产物与重复测试；苏冰 EMA10/21 ribbon 改为 per-bar 独立柱并保持两条固定身份边界线。无 migration，不改变数据、策略、HTTP、Scope、Alert 或 Runtime 合同。 |
 
 Alert transport 为 PushPlus；provider accepted 不等于微信送达。
 
