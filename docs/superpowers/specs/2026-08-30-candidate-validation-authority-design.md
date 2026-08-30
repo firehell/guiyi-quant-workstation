@@ -3,6 +3,7 @@
 Date: 2026-08-30
 Status: draft / incomplete / implementation not authorized
 Scope: SuBing Candidate Validation 的 manifest、protocol 与 typed loading seam；design-only
+Review disposition: user-review-only branch artifact; MUST NOT be merged or cherry-picked into `develop`
 
 ## 1. 结论
 
@@ -26,6 +27,8 @@ data/research_protocols/candidate_validation_v1.json
 SHA-256 pin 不解释任何业务字段，不是第二份字段 authority。它只回答“这个已冻结 ID 对应的原始 bytes 是否仍是审核过的 bytes”，从而保留 same-ID byte drift fail-closed。
 
 本设计不授权实现，不修改现有 JSON、policy、loader、Candidate reducer、Strategy Action、Canonical reader、Alert、Runtime 或 OOS 边界。
+
+本文件只存在于 `refactor/research-policy-authority` review branch，供用户和独立 reviewer 判断取舍。它不是 tracked current fact、accepted canonical 或 implementation plan，绝不合入或 cherry-pick 到 `develop`；若设计被接受，后续任务从 review commit 读取结论，但在新的 implementation branch 以代码、测试和既有 current documents 交付，不搬运本 draft。
 
 ## 2. 当前仓库事实
 
@@ -142,41 +145,114 @@ source module 自己的 formula/policy identity 仍由 source module 与 lifecyc
 
 ## 6. 逐字段等价证明
 
-实施前后必须以同一 baseline bytes、typed values、service requests 和 report facts 做 field-by-field comparison；不能只比较“测试通过”或最终 JSON 大对象。
+实施前后必须以同一 baseline bytes、typed values、service calls、consumer-visible report facts 和字段缺席集合做 field-by-field comparison；不能只比较“测试通过”、dataclass equality 或最终 JSON 大对象。
 
-| Invariant | Before value/meaning | Required proof after authorized implementation |
+### 6.1 Candidate manifest 全字段
+
+| JSON field | Before JSON / typed value | Required after typed value | Service parity proof | Consumer/report parity proof |
+|---|---|---|---|---|
+| `schema_version` | JSON number `1` -> exact Python `int(1)`；`bool` 不接受 | `authority.manifest.schema_version` 的 exact type/value 仍为 `int(1)` | authority 构造前拒绝 `true`、`1.0`、缺失或其他版本 | `CandidateValidationReport.schema_version` 仍为 exact `int(1)`；serialized report 不增 manifest schema wrapper |
+| `candidate_id` | string `subing_lifecycle_v2_candidate_v1` | 同一 string；filename stem equality 成立 | request 的 `candidate_id` 必须逐字相等，mismatch 在任何 source call 前返回 identity error | report `candidate_id` 逐字相等；CLI/Web surface 仍不存在 |
+| `source_kind` | string `subing_lifecycle` | 同一 string | composition 仍只构造 `SubingCandidateValidationService` + lifecycle producer；不增加 source dispatch/fallback | report 继续不含 `source_kind` 字段；consumer-visible payload 零新增 |
+| `policy_id` | string `subing_lifecycle_v2_research_v1` | 同一 string | 与 loaded `SubingLifecyclePolicy.policy_id` 逐字 equality；wrong policy 在 validation 前 fail-closed | report `policy_id` 逐字相等 |
+| `formula_version` | string `subing_lifecycle_v2` | 同一 string | 与 producer `candidate_projection_formula_version` 逐字 equality；不得替换成 policy-internal `subing_lifecycle_v2_structure_binding_v1` | report `formula_version` 逐字相等 |
+| `research_only` | JSON boolean `true` -> exact Python `bool(True)` | exact type/value 仍为 `bool(True)` | authority 与 protocol 均须为 true，false/1/missing 均 fail-closed；不产生 promotion consumer | report `research_only is True`；不新增 KEEP/DROP/PROMOTE |
+
+Candidate manifest 的 before/after exact key tuple 都必须是：
+
+```text
+schema_version, candidate_id, source_kind, policy_id, formula_version, research_only
+```
+
+### 6.2 Validation Protocol 全字段
+
+| JSON field | Before JSON / typed value | Required after typed value | Service/window parity proof | Consumer/report parity proof |
+|---|---|---|---|---|
+| `schema_version` | JSON number `1` -> exact Python `int(1)` | `authority.protocol.schema_version == 1` 且 exact type 为 `int` | invalid version/bool/float 在 schedule 构造前 fail-closed | report schema 仍为 exact `int(1)`；不新增 protocol schema wrapper |
+| `protocol_id` | string `candidate_validation_v1` | 同一 string；filename stem equality 成立 | request `protocol_id` 必须逐字相等，mismatch 时 source calls 为空 | report `protocol_id` 逐字相等 |
+| `research_only` | JSON boolean `true` -> exact Python `bool(True)` | exact type/value仍为 `bool(True)` | 与 manifest `research_only` 同为 true；false/1/missing fail-closed | report `research_only is True`，无 promotion/Runtime side effect |
+| `candidate_frozen_at` | RFC3339 string `2026-08-19T20:57:00+08:00` -> aware `datetime`，相同 offset | exact aware datetime 与 `.isoformat()` string 均相等 | 不被重解释为 request cutoff、UTC naive time 或 source window；freeze 后第一 OOS trading day关系保持 | report 当前不输出 freeze field，after 也不得新增；evidence lineage 仍由 protocol identity表达 |
+| `retrospective.since` | ISO date string `2023-01-01` -> exact `date(2023, 1, 1)` | 同一 exact `date` | 第一个 lifecycle source request `since` 逐项相等 | retrospective result/report `since` 逐项相等 |
+| `retrospective.through` | ISO date string `2026-08-18` -> exact `date(2026, 8, 18)` | 同一 exact `date` | 第一个 source request `through` 相等；request `through` 更早时仍 window error 且零 source call | retrospective result/report `through` 相等；不进入 prospective counts |
+| `rolling_stability.reference_months` | JSON number `12` -> exact Python `int(12)` | 同一 exact `int` | 每个 fold reference 从 test start 回退 12 calendar months；10 个 reference source requests逐项相等 | report 中 10 个 `reference.since/through` 全序列相等；不新增参数字段 |
+| `rolling_stability.test_months` | JSON number `3` -> exact Python `int(3)` | 同一 exact `int` | 每个 test window 为连续 3 calendar months；10 个 test source requests逐项相等 | report 中 10 个 `test.since/through` 全序列相等 |
+| `rolling_stability.step_months` | JSON number `3` -> exact Python `int(3)` | 同一 exact `int` | 相邻 test fold start 前进 3 calendar months，fold IDs 仍 `fold_01..fold_10` | report fold order/count/IDs 逐项相等 |
+| `rolling_stability.first_test_since` | ISO date `2024-01-01` -> exact `date(2024, 1, 1)` | 同一 exact `date` | `fold_01.test.since` 与首个 test source request相等 | report `fold_01` reference/test dates相等 |
+| `rolling_stability.last_test_through` | ISO date `2026-06-30` -> exact `date(2026, 6, 30)` | 同一 exact `date` | `fold_10.test.through` 与最后 test source request相等；不生成第 11 fold | report `fold_10` dates相等且 fold count 仍 10 |
+| `prospective_oos.first_trading_day` | ISO date `2026-08-20` -> exact `date(2026, 8, 20)` | 同一 exact `date` | through=2026-08-18/19 时 pending 且不调用 prospective source；through=2026-08-20 时 source request精确为 `2026-08-20..2026-08-20` | `ProspectiveOosResult.first_trading_day/status/through/result` 逐项相等；不回填 freeze 前事实 |
+| `horizons_bars` | JSON array `[3, 5, 8]` -> exact tuple `(3, 5, 8)` | 同一有序 `tuple[int, ...]`；元素不得为 bool/float，增删/重排 fail-closed | lifecycle source horizon keys、projection validation keys与 protocol tuple逐项相等 | 每个 retrospective/reference/test/prospective window 的 `horizon_summary` key order/value逐项相等 |
+
+Protocol 的 top-level before/after exact key tuple 必须是：
+
+```text
+schema_version, protocol_id, research_only, candidate_frozen_at,
+retrospective, rolling_stability, prospective_oos, horizons_bars
+```
+
+Nested exact key tuples 必须分别是：
+
+```text
+retrospective: since, through
+rolling_stability: reference_months, test_months, step_months,
+                   first_test_since, last_test_through
+prospective_oos: first_trading_day
+```
+
+### 6.3 字段缺席等价
+
+字段缺席也是 frozen contract；typed loader 的 exact-key validation 和 report serialization 都必须证明 before/after 缺席集合一致。
+
+| Absent field/category | Before meaning | Required service/consumer/report parity proof |
 |---|---|---|
-| Candidate ID | `subing_lifecycle_v2_candidate_v1` | loader typed value、request equality check、report field逐项相等；same ID 任一 byte 改动拒绝 |
-| Formula/policy identity | Candidate projection=`subing_lifecycle_v2`; lifecycle policy ID=`subing_lifecycle_v2_research_v1`; policy-internal formula=`subing_lifecycle_v2_structure_binding_v1` | authority 与 producer property、loaded lifecycle policy 逐项 equality；三者不改名、不互相替代 |
-| Validation threshold | Candidate Validation 没有 pass/score/profit threshold；quality flags 仅为 factual flags | 证明 protocol 无 threshold/score/rank key，`test_quality_flags_are_factual_and_threshold_free` 语义保持；不从 policy/calibration复制阈值进 protocol |
-| Horizons | `(3, 5, 8)` | protocol typed tuple、source result keys、window result keys逐项相等；增删/重排同 ID fail-closed |
-| Embargo | JSON 无可调 `embargo` 字段；rolling reference 与 test 相邻且不调参；prospective fence 由 freeze 与 `first_trading_day=2026-08-20` 形成，freeze 前事实仅可作 causal warm-up、不得进入 prospective counts | 证明无新 embargo 参数；`reference_through + 1 day == test_since`；2026-08-18/19 为 pending 且无 prospective source call；首次 eligible request 精确从 2026-08-20 开始 |
-| OOS boundary | freeze=`2026-08-19T20:57:00+08:00`; first trading day=`2026-08-20`; retrospective 不回填 OOS | raw fields、aware datetime、pending/evaluated transition、source request ranges逐项相等 |
-| Cohort | authority 不绑定产品列表；一次 validation request 是一个 lowercase ASCII symbol，source result 必须是同一 `(symbol,)`; 历史 baseline 的 `jm` 不等于 Candidate scope | 证明 manifest/protocol 没有 products/cohort key；request normalization、active scope validation及 exact source products check 保持 |
-| Source identity | `subing_lifecycle` + projection formula equality + lifecycle policy ID；source path保持 `SubingLifecycleResearchService -> ActualDominantResearchSegmentLoader -> MarketDataService` | composition dependency graph、formula/policy equality tests、wrong products/source failure tests；不新增 reader、fallback 或 source digest substitute |
-| Error codes | 见下节 | 对每类现有 failure 逐一断言 exact code；不把所有失败折叠成新的 generic code |
+| Manifest 中无 `protocol_id`、freeze、retrospective、rolling、OOS、horizons | Candidate identity 不拥有 validation schedule | authority 仍以两个 typed values分工；不把 schedule 填入 manifest，不合并 JSON |
+| Protocol 中无 `candidate_id`、`source_kind`、`policy_id`、`formula_version` | Protocol 不拥有 Candidate/source formula identity | atomic loader 只配对当前固定文件，不把 Candidate fields 注入/序列化到 protocol |
+| 两文件均无 `threshold`、`score`、`pass`、`rank`、`winner` | Candidate Validation 无 acceptance/profit threshold | `test_quality_flags_are_factual_and_threshold_free` 语义保持；report 只含 factual flags |
+| 两文件均无可调 `embargo` | rolling reference/test 相邻且不调参；prospective fence由 freeze + first trading day表达 | `reference_through + 1 day == test_since`；2026-08-18/19 pending，2026-08-20 首次 eligible；report 不新增 embargo field |
+| 两文件均无 `products`、`cohort`、`symbols` | Candidate 不绑定 product cohort；一次 request只处理一个 symbol | active-scope validation、lowercase ASCII normalization与 source `products == (symbol,)` 保持；report `symbol` 单值和 window `products` 单元素保持 |
+| 两文件均无 source path/reader/fallback override | source path由 application composition与 producer identity约束 | dependency graph仍是 `SubingLifecycleResearchService -> ActualDominantResearchSegmentLoader -> MarketDataService`；report 不暴露可选 source |
+| 两文件均无 digest/self-hash field | raw-byte pin 是 code-side acceptance lock，不是可随 JSON 同步改写的 self-attestation | JSON bytes/key sets零变化；authority object可持有 digest，但 manifest/protocol/report payload不新增 digest field |
+| 两文件均无 KEEP/DROP/PROMOTE/Runtime/Alert state | 人工审阅与运行授权独立 | report payload、composition consumer、side-effect surface零新增 |
+| Report 中无 `source_kind`、`candidate_frozen_at`、schedule parameters、digest | 当前 report只输出研究事实和必要 identity | before/after serialized key set逐项相等；不得因 authority consolidation扩展 report schema |
 
-“字段不变”也包括字段缺席不变。不得借 authority refactor 新增 acceptance threshold、cohort list、embargo tunable、promotion state 或 source override。
+Candidate report top-level before/after field sequence 必须逐项保持：
+
+```text
+schema_version, candidate_id, policy_id, formula_version, protocol_id,
+research_only, symbol, retrospective, rolling_folds, rolling_stability,
+prospective_oos, quality_flags
+```
+
+`source_kind`、freeze、rolling parameters 与 authority digests 只参与 identity/编排验证，不得借本重构扩展 report 或创建新 consumer。
+
+### 6.4 Identity、window、OOS 与 error parity
+
+- formula/policy 三身份逐项保持：Candidate projection=`subing_lifecycle_v2`、lifecycle policy ID=`subing_lifecycle_v2_research_v1`、policy-internal formula=`subing_lifecycle_v2_structure_binding_v1`；三者不改名、不互相替代。
+- source identity 保持 `subing_lifecycle` + producer formula equality + exact single-symbol products；source failure仍不返回 partial report。
+- window parity 以完整 source request sequence证明：1 retrospective + 20 rolling requests，pre-OOS 共 21 次；首个 prospective day共 22 次。只核对最终 fold count不充分。
+- prefix determinism、source-specific causality、strict-before、prefix invariance 与 golden parity tests不得由 document digest tests替代。
+- 下节列出的每个 exact error string before/after逐项相等；manifest/protocol atomic loading不引入 generic authority error，不泄露半加载对象。
+
+不得借 authority refactor新增 acceptance threshold、cohort list、embargo tunable、promotion state、source override或 consumer-visible report字段。
 
 ## 7. Error contract
 
-以下 application-facing codes 必须保持：
+以下 application-facing codes、before trigger 与 after observable behavior 必须逐项保持：
 
-```text
-CANDIDATE_MANIFEST_INVALID
-CANDIDATE_VALIDATION_PROTOCOL_INVALID
-CANDIDATE_VALIDATION_REQUEST_INVALID
-CANDIDATE_VALIDATION_IDENTITY_MISMATCH
-CANDIDATE_VALIDATION_WINDOW_INVALID
-CANDIDATE_VALIDATION_SOURCE_UNAVAILABLE
-CANDIDATE_WINDOW_INVALID
-CANDIDATE_ROLLING_FOLD_INVALID
-CANDIDATE_STABILITY_INVALID
-CANDIDATE_PROSPECTIVE_OOS_INVALID
-CANDIDATE_VALIDATION_REPORT_INVALID
-```
+| Exact code | Before trigger | Required after parity proof |
+|---|---|---|
+| `CANDIDATE_MANIFEST_INVALID` | Candidate missing/malformed/non-UTF-8、wrong type/key/value、same-ID semantic drift | 相同输入仍返回 exact code；新增 raw-byte-only drift也复用此 code；不暴露 protocol half-object |
+| `CANDIDATE_VALIDATION_PROTOCOL_INVALID` | Protocol missing/malformed/non-UTF-8、wrong type/key/value、same-ID semantic drift | 相同输入仍返回 exact code；新增 raw-byte-only drift也复用此 code；不暴露 manifest half-object |
+| `CANDIDATE_VALIDATION_REQUEST_INVALID` | candidate/protocol identifier syntax、symbol syntax 或 through type invalid | request dataclass在 service/source call前返回 exact code；normalization行为相等 |
+| `CANDIDATE_VALIDATION_IDENTITY_MISMATCH` | request candidate/protocol ID不等或 producer formula不等 | exact code、零 source calls与无 report行为相等 |
+| `CANDIDATE_VALIDATION_WINDOW_INVALID` | through早于 retrospective through，或 rolling/prospective date math invalid | exact code、零/停止后续 source calls与无 partial report行为相等 |
+| `CANDIDATE_VALIDATION_SOURCE_UNAVAILABLE` | lifecycle producer exception、wrong result type 或 products identity mismatch | exception继续被包裹成 exact code；不泄露内部 source message，不返回 partial report |
+| `CANDIDATE_WINDOW_INVALID` | projected window ID/kind/date/products/count/maps/horizons invalid | exact ValueError string与拒绝时点相等 |
+| `CANDIDATE_ROLLING_FOLD_INVALID` | fold ID 或 reference/test kind invalid | exact ValueError string与无 report行为相等 |
+| `CANDIDATE_STABILITY_INVALID` | fold summary count/median contract invalid | exact ValueError string与 Decimal semantics相等 |
+| `CANDIDATE_PROSPECTIVE_OOS_INVALID` | pending/evaluated status、date或 result presence/kind不一致 | exact ValueError string；pending/evaluated边界行为相等 |
+| `CANDIDATE_VALIDATION_REPORT_INVALID` | report identity/schema/symbol/folds/summary/prospective/flags invalid | exact ValueError string；authority-bound construction不削弱 direct report invariant |
 
-Candidate 文件失败只返回 `CANDIDATE_MANIFEST_INVALID`；Protocol 文件失败只返回 `CANDIDATE_VALIDATION_PROTOCOL_INVALID`。atomic authority loader 不得新增“半成功”对象。source exception 仍包裹为 `CANDIDATE_VALIDATION_SOURCE_UNAVAILABLE`，不返回 partial report。
+Candidate 文件失败只返回 manifest code；Protocol 文件失败只返回 protocol code。atomic authority loader 不得新增 generic authority error 或“半成功”对象。source exception 仍映射为 source-unavailable code，不返回 partial report。
 
 ## 8. Digest 与 drift 测试合同
 
@@ -241,4 +317,6 @@ services/quant-api/tests/research/test_subing_candidate_validation_service.py
 
 状态保持：`DESIGN_DRAFT_INCOMPLETE`。
 
-本文件可供独立 Review，但没有授权写 implementation plan、修改 application code、更新 digest pin、变更 JSON、合入 `develop`、发布或 Runtime promotion。唯一下一步是由用户/主任务 reviewer 审阅“保持分离 + 原子 authority loader”的取舍及 field-equivalence proof；只有明确批准后才能规划实现。
+本文件只供用户与独立 reviewer 在未合入 branch 审阅；无论 review 结论如何，本 draft commit 都不得 merge、squash merge 或 cherry-pick 到 `develop`，也不得复制进 `STATUS.md`、`AGENTS.md`、`PROJECT_SOURCE.md`、`DECISIONS.md` 或 `docs/ARCHITECTURE.md`。
+
+当前没有授权写 implementation plan、修改 application code、更新 digest pin、变更 JSON、发布或 Runtime promotion。唯一下一步是审阅“保持分离 + 原子 authority loader”的取舍及上述逐字段 proof；若用户明确批准设计，应另开 implementation task/branch，以既有 current facts为准执行，不合入本 draft。
