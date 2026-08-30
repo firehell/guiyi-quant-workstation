@@ -7,8 +7,10 @@ interface EmaPoint {
 }
 
 export const SUBING_EMA_RIBBON_STYLE = {
-  bull: { fill: 'rgba(245, 197, 66, 0.30)', stroke: '#E8B923' },
-  bear: { fill: 'rgba(125, 211, 252, 0.32)', stroke: '#38BDF8' },
+  bullFill: '#FFE2A0',
+  bearFill: '#AFCBFF',
+  ema10Line: '#E8B923',
+  ema21Line: '#38BDF8',
 } as const
 
 export type SubingEmaRibbonTone = 'bull' | 'bear'
@@ -48,7 +50,7 @@ export function buildRibbonPoints(
     const ema21 = slowByTime.get(item.time)
     if (ema21 === undefined) continue
 
-    const tone = item.value > ema21
+    const tone: SubingEmaRibbonTone | null = item.value > ema21
       ? 'bull'
       : item.value < ema21
         ? 'bear'

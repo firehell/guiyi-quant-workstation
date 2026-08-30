@@ -354,7 +354,7 @@ function renderDerivedSeries(): void {
     emaLines[indicator]?.setData(chartValues(visible ? derivedData.ema[indicator] : undefined))
   })
   ribbonPrimitive.setData(
-    props.showSubingEmaRibbon ? derivedData.subingEmaRibbon?.bands ?? [] : [],
+    props.showSubingEmaRibbon ? derivedData.subingEmaRibbon?.points ?? [] : [],
     ribbonTime,
   )
 
