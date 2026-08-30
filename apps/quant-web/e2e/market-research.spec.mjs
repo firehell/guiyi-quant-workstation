@@ -1313,6 +1313,9 @@ test('SuBing full-history performance expands episodes by twenty and shows exit 
 
   const panel = page.getByTestId('subing-strategy-performance')
   await expect(panel.locator('[data-episode-id]')).toHaveCount(20)
+  await expect(page.getByTestId('subing-performance-kpis')).toContainText('累计参考变动')
+  await expect(page.getByTestId('subing-performance-exit-reasons')).toHaveCount(0)
+  await page.getByTestId('subing-performance-tab-analysis').click()
   await expect(page.getByTestId('subing-performance-exit-reasons')).toContainText('MACD 高位死叉')
   await page.getByTestId('subing-performance-show-more').click()
   await expect(panel.locator('[data-episode-id]')).toHaveCount(40)
