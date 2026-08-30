@@ -14,6 +14,7 @@ from app.alerts.subing_strategy_runtime import (
 )
 from app.market_data.aggregation import SessionWindow, bucket_window_for_bar
 from app.market_data.domain import BarFrequency, CanonicalBar
+from app.market_data.operational_universe import load_active_products
 from app.market_data.subing_calibration import load_subing_calibration
 from app.market_data.subing_lifecycle_policy import load_subing_lifecycle_policy
 from app.market_data.subing_strategy.contracts import (
@@ -654,6 +655,39 @@ def test_one_restore_failure_does_not_stop_other_active_products() -> None:
     assert _result_for(ready, "jm").product_status.state == "ready"
     assert evaluator.current_state("jm") == jm
     assert evaluator.current_state("ag") is None
+
+
+def test_active60_restore_bounds_one_source_failure_without_emitting_actions() -> None:
+    active_products = load_active_products()
+    unavailable_symbol = active_products[-1]
+    states: dict[str, SubingStrategyMachineState | Exception] = {
+        symbol: _recorded_machine(symbol=symbol)[0]
+        for symbol in active_products
+        if symbol != unavailable_symbol
+    }
+    states[unavailable_symbol] = SubingStrategyRuntimeProductSourceError(
+        "private restore fixture unavailable"
+    )
+    evaluator = SubingStrategyRuntimeEvaluator(
+        active_products,
+        restore_reader=_RestoreReader(states),
+        current_reader=_CurrentReader(),
+    )
+
+    restored = evaluator.restore_all(started_at=STARTED_AT)
+    ready = evaluator.final_catch_up(ready_at=READY_AT)
+
+    assert len(restored) == len(ready) == 60
+    assert sum(item.product_status.state == "ready" for item in ready) == 59
+    unavailable = tuple(
+        item.product_status
+        for item in ready
+        if item.product_status.state == "unavailable"
+    )
+    assert len(unavailable) == 1
+    assert unavailable[0].symbol == unavailable_symbol
+    assert unavailable[0].reason_codes == ("RESTORE_UNAVAILABLE",)
+    assert not any(item.action_facts for item in ready)
 
 
 @pytest.mark.parametrize(

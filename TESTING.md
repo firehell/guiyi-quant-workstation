@@ -48,28 +48,6 @@ pnpm --dir apps/quant-web test:e2e
 pnpm --dir apps/quant-web build
 ```
 
-## SuBing Strategy Stage 2 no-write shadow
-
-默认命令不构成真实 read-only scope 授权，且 manual acceptance 必须 skipped：
-
-```bash
-PYTHONPATH=services/quant-api:packages/quant-core \
-  uv run --project services/quant-api pytest -q \
-  -m manual_acceptance \
-  services/quant-api/tests/acceptance/test_subing_strategy_stage2_shadow.py
-```
-
-以下 recorded production-format stream 仅使用提交内 fixture、sealed Null Event/notification/cache/status 依赖与只读 fake readers，属于普通仓库验证：
-
-```bash
-PYTHONPATH=services/quant-api:packages/quant-core \
-  uv run --project services/quant-api pytest -q \
-  services/quant-api/tests/acceptance/test_subing_strategy_stage2_shadow.py \
-  -k recorded_stream
-```
-
-真实 read-only shadow 只有在用户对目标 PostgreSQL、Canonical 与 completed-Live reader 给出当次精确只读授权后，operator 才可为同一 `-m manual_acceptance` 命令同时选择 `GUIYI_SUBING_STAGE2_SHADOW=1` 与 `GUIYI_SUBING_STAGE2_SHADOW_COMPOSITION=local_readonly`。只有 enable marker 但没有精确 composition 时必须明确 skip/fail `SHADOW_COMPOSITION_NOT_CONFIGURED`；两个环境变量本身也不是授权。composition 将 PostgreSQL `SET TRANSACTION READ ONLY`/`SHOW transaction_read_only` 与实际 Catalog read 绑定在同一 session/transaction，只暴露窄 Canonical/completed-Live read methods，并固定 sealed Null Event/notification 与 no cache/status sinks。该命令不创建 AlertEvent、不改 Scope/Redis/Canonical、不发送 PushPlus、不启动 Runtime。Task 11 没有获得该真实只读授权，所以实际只运行上述默认 skipped 和 recorded/fakes 命令。
-
 ## Contract and static checks
 
 本地 Homebrew 或 PATH 中的 `openspec` CLI（`uv run --with openspec` 不可执行，PyPI 无对应包）：

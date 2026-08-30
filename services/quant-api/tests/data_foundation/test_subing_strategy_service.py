@@ -684,7 +684,7 @@ def test_history_replays_when_request_through_is_older_than_snapshot(
         snapshot_query=SnapshotQuery(),
     )
 
-    result = service.history(
+    service.history(
         _request(since=date(2026, 6, 1), through=date(2026, 8, 11)),
         publish_cache=False,
     )
@@ -741,7 +741,7 @@ def test_history_replays_when_snapshot_current_raises(
         snapshot_query=SnapshotQuery(),
     )
 
-    result = service.history(
+    service.history(
         _request(since=SEGMENT_START, through=SEGMENT_START),
         publish_cache=False,
     )

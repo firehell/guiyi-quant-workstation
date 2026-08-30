@@ -1,22 +1,34 @@
 from __future__ import annotations
 
+from collections import defaultdict
+from collections.abc import Mapping
 from dataclasses import asdict
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from enum import Enum
 import json
 
 import pytest
 
-from app.market_data.aggregation import aggregate_from_1m, bucket_window_for_bar
-from app.market_data.domain import BarFrequency, ResolvedContractSegment
+from app.alerts.subing_strategy_runtime import (
+    SubingStrategyRuntimeActionFact,
+    SubingStrategyRuntimeEvaluator,
+)
+from app.market_data.aggregation import (
+    SessionWindow,
+    aggregate_from_1m,
+    bucket_window_for_bar,
+)
+from app.market_data.domain import BarFrequency, CanonicalBar, ResolvedContractSegment
 from app.market_data.subing_calibration import load_subing_calibration
 from app.market_data.subing_lifecycle import ConfirmationSource
 from app.market_data.subing_lifecycle_policy import load_subing_lifecycle_policy
 from app.market_data.subing_strategy.contracts import SubingStrategyDirection
 from app.market_data.subing_strategy.machine import (
     SubingStrategyInterval,
+    SubingStrategyMachineState,
     SubingStrategySourceIdentity,
+    authoritative_subing_strategy_intervals,
     initial_subing_strategy_machine,
     step_subing_strategy_machine,
     subing_strategy_segment_result,
@@ -34,6 +46,63 @@ from research.test_subing_strategy_engine import _context
 
 
 CONTRACT = "JM2701"
+STARTED_AT = datetime(2026, 8, 3, 9, 59, 30, tzinfo=UTC)
+READY_AT = datetime(2026, 8, 3, 10, 1, 30, tzinfo=UTC)
+
+
+class _RuntimeRestoreReader:
+    def __init__(self, state: SubingStrategyMachineState) -> None:
+        self.state = state
+
+    def restore(
+        self,
+        *,
+        symbol: str,
+        started_at: datetime,
+    ) -> SubingStrategyMachineState:
+        assert symbol == self.state.symbol
+        assert started_at == STARTED_AT
+        return self.state
+
+
+class _RuntimeCurrentReader:
+    def __init__(self, sessions: tuple[SessionWindow, ...]) -> None:
+        self.sessions = sessions
+
+    def read_completed_bars(
+        self,
+        *,
+        symbol: str,
+        source_identity: SubingStrategySourceIdentity,
+        after_1m: datetime | None,
+        after_5m: datetime | None,
+        after_15m: datetime | None,
+        through: datetime,
+    ) -> Mapping[BarFrequency, tuple[CanonicalBar, ...]]:
+        del symbol, source_identity, after_1m, after_5m, after_15m
+        assert through == READY_AT
+        return {}
+
+    def read_session_windows(
+        self,
+        *,
+        symbol: str,
+        trading_day: date,
+        source_identity: SubingStrategySourceIdentity,
+    ) -> tuple[SessionWindow, ...]:
+        assert symbol == source_identity.symbol
+        assert trading_day == source_identity.segment_start_trading_day
+        return self.sessions
+
+    def read_authoritative_terminal(
+        self,
+        *,
+        symbol: str,
+        trading_day: date,
+        source_identity: SubingStrategySourceIdentity,
+    ) -> AuthoritativeSegmentTerminal | None:
+        del symbol, trading_day, source_identity
+        return None
 
 
 def test_recorded_stream_has_authoritative_cross_frequency_bytes() -> None:
@@ -55,6 +124,86 @@ def test_recorded_stream_has_authoritative_cross_frequency_bytes() -> None:
         )
         == recorded.bars_15m
     )
+
+
+@pytest.mark.parametrize("boundary_order", ("5m_first", "15m_first"))
+def test_runtime_evaluator_matches_historical_for_every_completed_15m_prefix(
+    boundary_order: str,
+) -> None:
+    recorded = recorded_strategy_stream(18, SubingStrategyDirection.LONG_ONLY)
+    trading_day = recorded.bars_15m[0].trading_day
+    context = _context(recorded.bars_15m[0], SubingStrategyDirection.LONG_ONLY)
+    identity = SubingStrategySourceIdentity("jm", CONTRACT, trading_day)
+    state = initial_subing_strategy_machine(
+        symbol="jm",
+        contract=CONTRACT,
+        segment_start_trading_day=trading_day,
+        calibration=load_subing_calibration(),
+        lifecycle_policy=load_subing_lifecycle_policy(),
+        strategy_policy=load_subing_strategy_policy(),
+        direction_contexts={trading_day: context},
+        intervals=authoritative_subing_strategy_intervals(
+            bars_1m=recorded.bars_1m,
+            bars_15m=recorded.bars_15m,
+            sessions=recorded.sessions,
+        ),
+    )
+    evaluator = SubingStrategyRuntimeEvaluator(
+        ("jm",),
+        restore_reader=_RuntimeRestoreReader(state),
+        current_reader=_RuntimeCurrentReader(recorded.sessions),
+    )
+    evaluator.restore_all(started_at=STARTED_AT)
+    ready = evaluator.final_catch_up(ready_at=READY_AT)
+    assert ready[0].product_status.state == "ready"
+    assert ready[0].action_facts == ()
+
+    events_by_end: dict[datetime, list[tuple[BarFrequency, CanonicalBar]]] = defaultdict(
+        list
+    )
+    for frequency, bars in (
+        (BarFrequency.M1, recorded.bars_1m),
+        (BarFrequency.M5, recorded.bars_5m),
+        (BarFrequency.M15, recorded.bars_15m),
+    ):
+        for bar in bars:
+            events_by_end[bar.bar_end].append((frequency, bar))
+    rank = {
+        BarFrequency.M1: 0,
+        BarFrequency.M5: 1 if boundary_order == "5m_first" else 2,
+        BarFrequency.M15: 2 if boundary_order == "5m_first" else 1,
+    }
+
+    emitted: list[SubingStrategyRuntimeActionFact] = []
+    boundary_count = 0
+    for bar_end in sorted(events_by_end):
+        group = sorted(events_by_end[bar_end], key=lambda item: rank[item[0]])
+        for frequency, bar in group:
+            result = evaluator.process_completed_bar(
+                bar,
+                frequency,
+                source_identity=identity,
+            )
+            assert result.product_status.state == "ready"
+            emitted.extend(result.action_facts)
+        if any(frequency is BarFrequency.M15 for frequency, _ in group):
+            boundary_count += 1
+            historical = replay_subing_strategy_segment(
+                symbol="jm",
+                segment=ResolvedContractSegment(CONTRACT, trading_day, trading_day),
+                bars_1m=recorded.bars_1m[: boundary_count * 15],
+                bars_5m=recorded.bars_5m[: boundary_count * 3],
+                bars_15m=recorded.bars_15m[:boundary_count],
+                sessions=recorded.sessions,
+                direction_contexts={trading_day: context},
+                calibration=load_subing_calibration(),
+                lifecycle_policy=load_subing_lifecycle_policy(),
+                strategy_policy=load_subing_strategy_policy(),
+                terminal_bar_end=None,
+            ).actions
+            assert tuple(fact.action for fact in emitted) == historical
+            if boundary_count <= 12:
+                assert emitted == []
 
 
 def _json_default(value: object) -> object:

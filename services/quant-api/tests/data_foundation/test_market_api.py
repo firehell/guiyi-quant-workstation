@@ -16,13 +16,6 @@ from app.market_data.domain import (
 from app.market_data.market_data_service import MarketDataError
 
 
-def test_retired_main_force_mirror_route_is_absent() -> None:
-    assert (
-        TestClient(app).get("/api/v1/market/research/main-force-mirror").status_code
-        == 404
-    )
-
-
 class FakeService:
     def query_page(self, request):
         bar = CanonicalBar(

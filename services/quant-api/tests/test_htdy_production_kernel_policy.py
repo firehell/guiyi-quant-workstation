@@ -11,7 +11,7 @@ import pytest
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-GOLDEN_PATH = Path(__file__).resolve().parent / "fixtures" / "htdy_original_realtime_v1_golden.json"
+GOLDEN_PATH = REPO_ROOT / "tests/fixtures/htdy_original_realtime_v1_golden.json"
 
 
 def _bars(length: int, *, body: tuple[float, float] = (9.9, 10.1)) -> dict[str, list[float | str]]:

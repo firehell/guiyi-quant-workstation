@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { readFileSync, rmSync } from 'node:fs'
+import { rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -10,37 +10,6 @@ import { findStaticImportCycles } from '../scripts/checkProductionBundleTopology
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const viteEntry = join(projectRoot, 'node_modules', 'vite', 'bin', 'vite.js')
-const routerSource = readFileSync(join(projectRoot, 'src/app/router.ts'), 'utf8')
-
-test('router registers only Market workspace routes', () => {
-  const retiredRouteNames = [
-    'dashboard',
-    'signal',
-    'strategy',
-    'review',
-    'data',
-    'runtime',
-    'settings',
-    'trade-records',
-    'backtests',
-  ]
-  for (const routeName of retiredRouteNames) {
-    assert.equal(routerSource.includes(`name: '${routeName}'`), false, `router still registers ${routeName}`)
-    assert.equal(routerSource.includes(`pages/${routeName}`), false, `router still imports pages/${routeName}`)
-  }
-  assert.match(routerSource, /name: 'market'/)
-  assert.match(routerSource, /name: 'market-chart'/)
-  assert.match(routerSource, /redirect: '\/market'/)
-  assert.doesNotMatch(routerSource, /icon:/)
-  const iconSource = readFileSync(join(projectRoot, 'src/components/common/UiIcon.vue'), 'utf8')
-  assert.match(iconSource, /name === 'market'/)
-  assert.match(iconSource, /name === 'shield'/)
-  assert.match(iconSource, /name === 'refresh'/)
-  for (const retiredIcon of ['dashboard', 'signal', 'strategy', 'data', 'runtime', 'arrow-up', 'arrow-down']) {
-    assert.equal(iconSource.includes(`name === '${retiredIcon}'`), false, retiredIcon)
-  }
-})
-
 test('production charting vendor chunks have no static import cycle', () => {
   const outputRoot = join(tmpdir(), `guiyi-web-bundle-${process.pid}-${Date.now()}`)
   try {

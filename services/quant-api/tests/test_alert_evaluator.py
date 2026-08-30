@@ -145,7 +145,10 @@ def test_composition_uses_generalized_evaluator_and_keeps_activation_gate(
 
 def test_32_bar_contract_matches_full_history_current_observation() -> None:
     fixture = json.loads(
-        (Path(__file__).parent / "fixtures" / "htdy_original_realtime_v1_golden.json").read_text(
+        (
+            Path(__file__).resolve().parents[3]
+            / "tests/fixtures/htdy_original_realtime_v1_golden.json"
+        ).read_text(
             encoding="utf-8"
         )
     )

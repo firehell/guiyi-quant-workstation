@@ -343,11 +343,6 @@ function normalizeSubingFactorResult(result: SubingFactorResult): SubingFactorRe
   }
 }
 
-/** Keep chart-derived EMA/MACD state local to the current rank1 segment. */
-export function filterBarsToSubingSegment(bars: BarData[], segmentStart: string): BarData[] {
-  return bars.filter((bar) => (bar.trading_day || '') >= segmentStart)
-}
-
 export function isSubingSupportedFrequency(frequency: MarketFrequency): frequency is SubingFrequency {
   return SUBING_PUBLIC_FREQUENCIES.includes(frequency as SubingFrequency)
 }
@@ -1687,16 +1682,6 @@ export type SubingStrategyAlertEvent = SubingStrategyAlertEventCommon & (
 /** Exact Alert HTTP union discriminated by the registered Rule identity. */
 export type AlertEvent = HtdyAlertEvent | SubingStrategyAlertEvent
 
-export interface ChartOverlay {
-  id: string
-  type: 'price_line' | 'signal_marker' | 'trade_marker' | 'risk_band'
-  price?: number
-  label: string
-  color: string
-  lineStyle?: 'solid' | 'dashed' | 'dotted'
-}
-
-export type IndicatorPanelType = 'macd' | 'atr' | 'volume_ratio' | 'signal_score'
 export type MainIndicatorId = 'ema_10' | 'ema_21' | 'ema_60' | 'htdy'
 export type OptionalEmaIndicatorId = 'ema_10' | 'ema_21' | 'ema_60'
 

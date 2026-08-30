@@ -3,13 +3,11 @@ import assert from 'node:assert/strict'
 import { computed, ref } from 'vue'
 import { useSubingObservation } from '../src/composables/useSubingObservation.ts'
 import {
-  filterBarsToSubingSegment,
   isSubingSupportedFrequency,
   shouldScheduleSubingCompanionRefresh,
   subingLifecycleStageLabel,
   subingSignalLabel,
   normalizeSubingResearch,
-  type BarData,
   type SubingResearchResponse,
 } from '../src/types/market.ts'
 import { lifecycleSnapshotToMarkers } from '../src/utils/subingLifecycleMarkers.ts'
@@ -118,19 +116,6 @@ test('maps a confirmed hard close to its immutable entry and close facts', () =>
     { id: `lifecycle:${key}:entry`, time: '2026-01-12T02:00:00Z', label: '研究确认', tooltip: 'SuBing 生命周期研究 · 研究确认', tone: 'neutral', position: 'belowBar', shape: 'circle' },
     { id: `lifecycle:${key}:transition:${transitionId}`, time: '2026-01-12T02:15:00Z', label: '结束', tooltip: 'SuBing 生命周期研究 · 结束', tone: 'neutral', position: 'belowBar', shape: 'circle' },
   ])
-})
-
-test('filters old same-contract bars before the current dominant segment', () => {
-  const bars: BarData[] = [
-    bar('2026-07-15T02:25:00Z', '2026-07-15'),
-    bar('2026-08-11T02:25:00Z', '2026-08-11'),
-    bar('2026-08-12T02:25:00Z', '2026-08-12'),
-    bar('2026-08-13T02:25:00Z', '2026-08-13'),
-  ]
-
-  const result = filterBarsToSubingSegment(bars, '2026-08-12')
-
-  assert.deepEqual(result.map((item) => item.trading_day), ['2026-08-12', '2026-08-13'])
 })
 
 test('keeps an insufficient companion explicit without inventing a Factor snapshot', () => {
@@ -250,15 +235,3 @@ test('SuBing observation composable preserves current dominant identity without 
   assert.equal(controller.subingLoading.value, false)
   controller.dispose()
 })
-
-function bar(time: string, tradingDay: string): BarData {
-  return {
-    time,
-    trading_day: tradingDay,
-    open: 99,
-    high: 102,
-    low: 98,
-    close: 100,
-    volume: 1_000,
-  }
-}
