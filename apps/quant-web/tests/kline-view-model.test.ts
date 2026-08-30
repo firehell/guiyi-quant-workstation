@@ -40,8 +40,8 @@ test('SuBing ribbon derives EMA10/21 and hover values even when optional lines a
 
   assert.ok(result.ema.ema_10?.length)
   assert.ok(result.ema.ema_21?.length)
-  assert.ok(result.subingEmaRibbon?.bands.length)
-  assert.equal(result.subingEmaRibbon?.bands[0].leftTone, 'bull')
+  assert.ok(result.subingEmaRibbon?.points.length)
+  assert.equal(result.subingEmaRibbon?.points[0].tone, 'bull')
   assert.deepEqual(hover?.mainIndicators.map((item) => item.id), ['ema_10', 'ema_21'])
   assert.ok(hover?.mainIndicators[0]?.value)
   assert.ok(hover?.mainIndicators[1]?.value)
