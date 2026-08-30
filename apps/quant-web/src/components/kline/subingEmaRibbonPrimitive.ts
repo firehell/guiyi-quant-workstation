@@ -10,8 +10,7 @@ import type {
 } from 'lightweight-charts'
 import {
   SUBING_EMA_RIBBON_STYLE,
-  splitRibbonCoordinates,
-  type SubingEmaRibbonBand,
+  type SubingEmaRibbonPoint,
   type SubingEmaRibbonTone,
 } from '@/utils/subingEmaRibbon'
 
@@ -19,14 +18,7 @@ interface RibbonCoordinate {
   x: number
   y10: number
   y21: number
-}
-
-interface RibbonViewBand {
-  left: RibbonCoordinate
-  right: RibbonCoordinate
-  leftTone: SubingEmaRibbonTone
-  rightTone: SubingEmaRibbonTone
-  splitT: number | null
+  tone: SubingEmaRibbonTone
 }
 
 interface MediaTarget {
@@ -37,16 +29,16 @@ export class SubingEmaRibbonPrimitive implements ISeriesPrimitive<Time> {
   private chart: IChartApi | null = null
   private series: ISeriesApi<SeriesType, Time> | null = null
   private requestUpdate: (() => void) | null = null
-  private bands: readonly SubingEmaRibbonBand[] = []
+  private points: readonly SubingEmaRibbonPoint[] = []
   private timeOf: ((iso: string) => Time | null) | null = null
   private readonly paneView = new SubingEmaRibbonPaneView()
   private readonly paneViewList: IPrimitivePaneView[] = [this.paneView]
 
   setData(
-    bands: readonly SubingEmaRibbonBand[],
+    points: readonly SubingEmaRibbonPoint[],
     timeOf: (iso: string) => Time | null,
   ): void {
-    this.bands = bands
+    this.points = points
     this.timeOf = timeOf
     this.requestUpdate?.()
   }
@@ -64,37 +56,24 @@ export class SubingEmaRibbonPrimitive implements ISeriesPrimitive<Time> {
   }
 
   updateAllViews(): void {
-    this.paneView.update(this.projectBands())
+    this.paneView.update(this.projectPoints())
   }
 
   paneViews(): readonly IPrimitivePaneView[] {
     return this.paneViewList
   }
 
-  private projectBands(): RibbonViewBand[] {
+  private projectPoints(): RibbonCoordinate[] {
     if (!this.chart || !this.series || !this.timeOf) return []
-    return this.bands.flatMap((band) => {
-      const left = this.projectPoint(band.left)
-      const right = this.projectPoint(band.right)
-      if (!left || !right) return []
-      return [{
-        left,
-        right,
-        leftTone: band.leftTone,
-        rightTone: band.rightTone,
-        splitT: band.splitT,
-      }]
+    return this.points.flatMap((point) => {
+      const time = this.timeOf!(point.time)
+      if (time === null) return []
+      const x = this.chart!.timeScale().timeToCoordinate(time)
+      const y10 = this.series!.priceToCoordinate(point.ema10)
+      const y21 = this.series!.priceToCoordinate(point.ema21)
+      if (x === null || y10 === null || y21 === null) return []
+      return [{ x, y10, y21, tone: point.tone }]
     })
-  }
-
-  private projectPoint(point: SubingEmaRibbonBand['left']): RibbonCoordinate | null {
-    const time = this.timeOf!(point.time)
-    if (time === null) return null
-    const x = this.chart!.timeScale().timeToCoordinate(time)
-    const y10 = this.series!.priceToCoordinate(point.ema10)
-    const y21 = this.series!.priceToCoordinate(point.ema21)
-    if (x === null || y10 === null || y21 === null) return null
-    return { x, y10, y21 }
   }
 }
 
@@ -105,8 +84,8 @@ class SubingEmaRibbonPaneView implements IPrimitivePaneView {
     return 'bottom' as const
   }
 
-  update(bands: RibbonViewBand[]): void {
-    this.paneRenderer = new SubingEmaRibbonRenderer(bands)
+  update(points: readonly RibbonCoordinate[]): void {
+    this.paneRenderer = new SubingEmaRibbonRenderer(points)
   }
 
   renderer(): IPrimitivePaneRenderer {
@@ -115,64 +94,71 @@ class SubingEmaRibbonPaneView implements IPrimitivePaneView {
 }
 
 class SubingEmaRibbonRenderer {
-  private readonly bands: readonly RibbonViewBand[]
+  private readonly points: readonly RibbonCoordinate[]
 
-  constructor(bands: readonly RibbonViewBand[]) {
-    this.bands = bands
+  constructor(points: readonly RibbonCoordinate[]) {
+    this.points = points
   }
 
   draw(target: MediaTarget): void {
     target.useMediaCoordinateSpace(({ context }) => {
-      for (const band of this.bands) {
-        const mid = band.splitT === null || band.leftTone === band.rightTone
-          ? null
-          : splitRibbonCoordinates(band.left, band.right, band.splitT)
-        if (mid === null) {
-          fillRibbonQuad(context, band.left, band.right, band.leftTone)
-          strokeRibbonEdges(context, band.left, band.right, band.leftTone)
-          continue
-        }
-        if (band.splitT! > 0) {
-          fillRibbonQuad(context, band.left, mid, band.leftTone)
-          strokeRibbonEdges(context, band.left, mid, band.leftTone)
-        }
-        if (band.splitT! < 1) {
-          fillRibbonQuad(context, mid, band.right, band.rightTone)
-          strokeRibbonEdges(context, mid, band.right, band.rightTone)
-        }
-      }
+      this.points.forEach((point, index) => {
+        drawRibbonColumn(context, point, deriveColumnWidth(this.points, index))
+      })
+      drawEmaLine(context, this.points, 'y10', SUBING_EMA_RIBBON_STYLE.ema10Line)
+      drawEmaLine(context, this.points, 'y21', SUBING_EMA_RIBBON_STYLE.ema21Line)
     })
   }
 }
 
-function fillRibbonQuad(
-  context: CanvasRenderingContext2D,
-  left: RibbonCoordinate,
-  right: RibbonCoordinate,
-  tone: SubingEmaRibbonTone,
-): void {
-  context.beginPath()
-  context.moveTo(left.x, left.y10)
-  context.lineTo(right.x, right.y10)
-  context.lineTo(right.x, right.y21)
-  context.lineTo(left.x, left.y21)
-  context.closePath()
-  context.fillStyle = SUBING_EMA_RIBBON_STYLE[tone].fill
-  context.fill()
+function deriveColumnWidth(
+  points: readonly Pick<RibbonCoordinate, 'x'>[],
+  index: number,
+): number {
+  const current = points[index]
+  if (!current) return 1
+
+  const previousGap = index > 0 ? current.x - points[index - 1]!.x : null
+  const nextGap = index + 1 < points.length ? points[index + 1]!.x - current.x : null
+  const gaps = [previousGap, nextGap].filter(
+    (gap): gap is number => gap !== null && Number.isFinite(gap) && gap > 0,
+  )
+
+  if (gaps.length === 0) return 1
+  const spacing = Math.min(...gaps)
+  return Math.max(1, Math.min(spacing - 1, Math.floor(spacing * 0.8)))
 }
 
-function strokeRibbonEdges(
+function drawRibbonColumn(
   context: CanvasRenderingContext2D,
-  left: RibbonCoordinate,
-  right: RibbonCoordinate,
-  tone: SubingEmaRibbonTone,
+  point: RibbonCoordinate,
+  width: number,
 ): void {
+  const top = Math.min(point.y10, point.y21)
+  const bottom = Math.max(point.y10, point.y21)
+  const left = Math.round(point.x - width / 2)
+  const drawWidth = Math.max(1, Math.round(width))
+  const height = Math.max(1, Math.round(bottom - top))
+
+  context.fillStyle = point.tone === 'bull'
+    ? SUBING_EMA_RIBBON_STYLE.bullFill
+    : SUBING_EMA_RIBBON_STYLE.bearFill
+  context.fillRect(left, Math.round(top), drawWidth, height)
+}
+
+function drawEmaLine(
+  context: CanvasRenderingContext2D,
+  points: readonly RibbonCoordinate[],
+  key: 'y10' | 'y21',
+  color: string,
+): void {
+  if (points.length < 2) return
   context.beginPath()
-  context.moveTo(left.x, left.y10)
-  context.lineTo(right.x, right.y10)
-  context.moveTo(left.x, left.y21)
-  context.lineTo(right.x, right.y21)
-  context.strokeStyle = SUBING_EMA_RIBBON_STYLE[tone].stroke
+  context.moveTo(points[0]!.x, points[0]![key])
+  for (let index = 1; index < points.length; index += 1) {
+    context.lineTo(points[index]!.x, points[index]![key])
+  }
+  context.strokeStyle = color
   context.lineWidth = 1
   context.stroke()
 }

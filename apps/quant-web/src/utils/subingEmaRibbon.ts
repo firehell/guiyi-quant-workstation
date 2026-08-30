@@ -7,30 +7,25 @@ interface EmaPoint {
 }
 
 export const SUBING_EMA_RIBBON_STYLE = {
-  bull: { fill: 'rgba(245, 197, 66, 0.30)', stroke: '#E8B923' },
-  bear: { fill: 'rgba(125, 211, 252, 0.32)', stroke: '#38BDF8' },
+  bullFill: '#FFE2A0',
+  bearFill: '#AFCBFF',
+  ema10Line: '#E8B923',
+  ema21Line: '#38BDF8',
 } as const
 
 export type SubingEmaRibbonTone = 'bull' | 'bear'
 
-export interface SubingEmaRibbonAlignedPoint {
+export interface SubingEmaRibbonPoint {
   time: string
   ema10: number
   ema21: number
-}
-
-export interface SubingEmaRibbonBand {
-  left: SubingEmaRibbonAlignedPoint
-  right: SubingEmaRibbonAlignedPoint
-  leftTone: SubingEmaRibbonTone
-  rightTone: SubingEmaRibbonTone
-  splitT: number | null
+  tone: SubingEmaRibbonTone
 }
 
 export interface SubingEmaRibbon {
   ema10: EmaPoint[]
   ema21: EmaPoint[]
-  bands: SubingEmaRibbonBand[]
+  points: SubingEmaRibbonPoint[]
 }
 
 export function buildSubingEmaRibbon(bars: BarData[]): SubingEmaRibbon {
@@ -39,85 +34,34 @@ export function buildSubingEmaRibbon(bars: BarData[]): SubingEmaRibbon {
   return {
     ema10,
     ema21,
-    bands: segmentSubingEmaRibbon(ema10, ema21),
+    points: buildRibbonPoints(ema10, ema21),
   }
 }
 
-export function segmentSubingEmaRibbon(
+export function buildRibbonPoints(
   fast: readonly EmaPoint[],
   slow: readonly EmaPoint[],
-): SubingEmaRibbonBand[] {
-  const aligned = alignEmaPoints(fast, slow)
-  const bands: SubingEmaRibbonBand[] = []
-  let inherited: SubingEmaRibbonTone | null = null
+): SubingEmaRibbonPoint[] {
+  const slowByTime = new Map(slow.map((item) => [item.time, item.value]))
+  const points: SubingEmaRibbonPoint[] = []
+  let previousTone: SubingEmaRibbonTone | null = null
 
-  for (let index = 0; index < aligned.length - 1; index += 1) {
-    const left = aligned[index]
-    const right = aligned[index + 1]
-    const observedLeft = toneOf(left)
-    const observedRight = toneOf(right)
-    const resolvedLeft: SubingEmaRibbonTone | null = observedLeft ?? inherited ?? observedRight
-    const resolvedRight: SubingEmaRibbonTone | null = observedRight ?? resolvedLeft
-    if (!resolvedLeft || !resolvedRight) continue
-    inherited = resolvedRight
-    bands.push({
-      left,
-      right,
-      leftTone: resolvedLeft,
-      rightTone: resolvedRight,
-      splitT: resolvedLeft === resolvedRight ? null : crossingSplitT(left, right),
-    })
+  for (const item of fast) {
+    const ema21 = slowByTime.get(item.time)
+    if (ema21 === undefined) continue
+
+    const tone: SubingEmaRibbonTone | null = item.value > ema21
+      ? 'bull'
+      : item.value < ema21
+        ? 'bear'
+        : previousTone
+
+    if (!tone) continue
+    previousTone = tone
+    points.push({ time: item.time, ema10: item.value, ema21, tone })
   }
 
-  return bands
-}
-
-export function crossingSplitT(
-  left: Pick<SubingEmaRibbonAlignedPoint, 'ema10' | 'ema21'>,
-  right: Pick<SubingEmaRibbonAlignedPoint, 'ema10' | 'ema21'>,
-): number {
-  const previousDiff = left.ema10 - left.ema21
-  const nextDiff = right.ema10 - right.ema21
-  const denominator = previousDiff - nextDiff
-  return denominator === 0 ? 0.5 : clamp01(previousDiff / denominator)
-}
-
-export function splitRibbonCoordinates(
-  left: { x: number; y10: number; y21: number },
-  right: { x: number; y10: number; y21: number },
-  splitT: number,
-): { x: number; y10: number; y21: number } {
-  const t = clamp01(splitT)
-  return {
-    x: left.x + t * (right.x - left.x),
-    y10: left.y10 + t * (right.y10 - left.y10),
-    y21: left.y21 + t * (right.y21 - left.y21),
-  }
-}
-
-function alignEmaPoints(
-  fast: readonly EmaPoint[],
-  slow: readonly EmaPoint[],
-): SubingEmaRibbonAlignedPoint[] {
-  const slowByTime = new Map(slow.map((point) => [point.time, point.value]))
-  return fast.flatMap((point) => {
-    const ema21 = slowByTime.get(point.time)
-    return ema21 === undefined
-      ? []
-      : [{ time: point.time, ema10: point.value, ema21 }]
-  })
-}
-
-function toneOf(point: SubingEmaRibbonAlignedPoint): SubingEmaRibbonTone | null {
-  if (point.ema10 > point.ema21) return 'bull'
-  if (point.ema10 < point.ema21) return 'bear'
-  return null
-}
-
-function clamp01(value: number): number {
-  if (value <= 0) return 0
-  if (value >= 1) return 1
-  return value
+  return points
 }
 
 function toKlinePoint(point: { time: unknown; value: number }): EmaPoint {
