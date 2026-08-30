@@ -10,8 +10,7 @@ from app.research.common import candidate_validation_schedule as shared_schedule
 from app.research.subing import subing_candidate_validation_service as service_module
 from app.research.subing.candidate_validation import ProspectiveOosStatus
 from app.research.subing.candidate_validation_policy import (
-    load_candidate_manifest,
-    load_candidate_validation_protocol,
+    load_candidate_validation_authority,
 )
 from app.market_data.subing_calibration import HorizonEvaluation
 from app.research.subing.subing_candidate_validation_service import (
@@ -103,8 +102,7 @@ class _Runner:
 def _service(runner: _Runner) -> SubingCandidateValidationService:
     return SubingCandidateValidationService(
         runner,
-        manifest=load_candidate_manifest(),
-        protocol=load_candidate_validation_protocol(),
+        authority=load_candidate_validation_authority(),
     )
 
 
@@ -128,8 +126,6 @@ def _request(*, through: date = date(2026, 8, 19)) -> CandidateValidationRequest
         symbol="jm",
         through=through,
     )
-
-
 
 
 def test_service_delegates_rolling_and_prospective_date_math(
@@ -283,6 +279,17 @@ def test_service_emits_exact_retrospective_and_ten_rolling_folds() -> None:
         (date(2026, 4, 1), date(2026, 6, 30)),
     )
     assert len(report.rolling_folds) == 10
+    assert (
+        report.candidate_id,
+        report.policy_id,
+        report.formula_version,
+        report.protocol_id,
+    ) == (
+        "subing_lifecycle_v2_candidate_v1",
+        "subing_lifecycle_v2_research_v1",
+        "subing_lifecycle_v2",
+        "candidate_validation_v1",
+    )
     assert tuple(fold.fold_id for fold in report.rolling_folds) == tuple(
         f"fold_{index:02d}" for index in range(1, 11)
     )
@@ -348,6 +355,22 @@ def test_horizon_quality_flag_also_covers_retrospective() -> None:
         "PROSPECTIVE_OOS_PENDING",
         "HORIZON_WITHOUT_SAMPLE",
     )
+
+
+def test_source_horizons_must_match_authority() -> None:
+    result = replace(
+        _result(),
+        horizon_summary={2: _horizon(), 4: _horizon()},
+    )
+    runner = _Runner(results=[result])
+
+    with pytest.raises(
+        CandidateValidationSourceError,
+        match="CANDIDATE_VALIDATION_SOURCE_UNAVAILABLE",
+    ):
+        _service(runner).run(_request())
+
+    assert len(runner.requests) == 1
 
 
 def test_source_failure_is_wrapped_and_never_returns_partial_report() -> None:

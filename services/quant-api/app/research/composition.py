@@ -6,13 +6,14 @@ from __future__ import annotations
 from sqlalchemy.orm import Session
 
 from app.research.subing.candidate_validation_policy import (
-    load_candidate_manifest,
-    load_candidate_validation_protocol,
+    load_candidate_validation_authority,
 )
 from app.market_data.composition import build_market_data_service
 from app.market_data.operational_universe import load_active_products
 from app.market_data.subing_calibration import load_accepted_subing_calibration
-from app.research.subing.subing_calibration_service import SubingCalibrationResearchService
+from app.research.subing.subing_calibration_service import (
+    SubingCalibrationResearchService,
+)
 from app.research.subing.subing_candidate_validation_service import (
     SubingCandidateValidationService,
 )
@@ -50,6 +51,5 @@ def build_subing_candidate_validation_service(
     """Compose Candidate validation around the single Lifecycle research path."""
     return SubingCandidateValidationService(
         build_subing_lifecycle_research_service(session),
-        manifest=load_candidate_manifest(),
-        protocol=load_candidate_validation_protocol(),
+        authority=load_candidate_validation_authority(),
     )

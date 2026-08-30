@@ -91,7 +91,9 @@ def _window(
 def _fold(fold_id: str, entries: int) -> RollingCandidateFold:
     return RollingCandidateFold(
         fold_id=fold_id,
-        reference=_window(f"{fold_id}_reference", CandidateWindowKind.ROLLING_REFERENCE),
+        reference=_window(
+            f"{fold_id}_reference", CandidateWindowKind.ROLLING_REFERENCE
+        ),
         test=_window(f"{fold_id}_test", CandidateWindowKind.ROLLING_TEST, entries),
     )
 
@@ -106,9 +108,7 @@ def _report(**changes: object) -> CandidateValidationReport:
         "protocol_id": "candidate_validation_v1",
         "research_only": True,
         "symbol": "jm",
-        "retrospective": _window(
-            "retrospective", CandidateWindowKind.RETROSPECTIVE
-        ),
+        "retrospective": _window("retrospective", CandidateWindowKind.RETROSPECTIVE),
         "rolling_folds": folds,
         "rolling_stability": summarize_rolling_stability(folds),
         "prospective_oos": ProspectiveOosResult(
@@ -170,10 +170,7 @@ def test_projection_defensively_freezes_source_mappings() -> None:
 
 @pytest.mark.parametrize(
     "source",
-    (
-        replace(_source(), funnel_counts={"ENTRY_CONFIRMED": 3}),
-        replace(_source(), horizon_summary={3: _horizon(), 5: _horizon()}),
-    ),
+    (replace(_source(), funnel_counts={"ENTRY_CONFIRMED": 3}),),
 )
 def test_projection_rejects_incomplete_source_contract(
     source: SubingLifecycleResearchResult,
@@ -198,7 +195,10 @@ def test_fold_requires_reference_and_test_kinds() -> None:
 
 
 def test_stability_uses_only_test_entry_counts_and_decimal_even_median() -> None:
-    folds = tuple(_fold(f"fold_{index:02d}", entries) for index, entries in enumerate((1, 3, 7, 9), 1))
+    folds = tuple(
+        _fold(f"fold_{index:02d}", entries)
+        for index, entries in enumerate((1, 3, 7, 9), 1)
+    )
 
     summary = summarize_rolling_stability(folds)
 
@@ -229,15 +229,39 @@ def test_prospective_status_requires_matching_result_presence() -> None:
         )
 
 
-def test_report_rejects_identity_drift_and_duplicate_fold_ids() -> None:
+def test_report_accepts_authority_owned_identities_and_rejects_duplicate_fold_ids() -> (
+    None
+):
+    report = _report(
+        candidate_id="candidate_v2",
+        policy_id="policy_v2",
+        formula_version="formula_v2",
+        protocol_id="protocol_v2",
+    )
+
+    assert report.candidate_id == "candidate_v2"
+    assert report.policy_id == "policy_v2"
+    assert report.formula_version == "formula_v2"
+    assert report.protocol_id == "protocol_v2"
+
     with pytest.raises(ValueError):
-        _report(candidate_id="different")
+        _report(candidate_id="")
     duplicate = (_fold("fold_01", 1), _fold("fold_01", 2))
     with pytest.raises(ValueError):
         _report(
             rolling_folds=duplicate,
             rolling_stability=summarize_rolling_stability(duplicate),
         )
+
+
+def test_window_accepts_generic_horizons_before_authority_projection() -> None:
+    window = _window("generic", CandidateWindowKind.RETROSPECTIVE)
+    generic = {
+        2: _horizon(),
+        4: _horizon(),
+    }
+
+    assert replace(window, horizon_summary=generic).horizon_summary == generic
 
 
 def test_report_and_window_are_immutable() -> None:

@@ -23,8 +23,7 @@ from app.research.common.candidate_validation_schedule import (
     prospective_window,
 )
 from .candidate_validation_policy import (
-    CandidateManifest,
-    CandidateValidationProtocol,
+    CandidateValidationAuthority,
 )
 from app.research.subing.subing_lifecycle_research_service import (
     LifecycleResearchRequest,
@@ -49,13 +48,12 @@ class SubingCandidateValidationService:
         self,
         lifecycle_research: _LifecycleResearchRunner,
         *,
-        manifest: CandidateManifest,
-        protocol: CandidateValidationProtocol,
+        authority: CandidateValidationAuthority,
     ) -> None:
-        if not isinstance(manifest, CandidateManifest) or not isinstance(
-            protocol, CandidateValidationProtocol
-        ):
-            raise TypeError("manifest and protocol must use Candidate contracts")
+        if not isinstance(authority, CandidateValidationAuthority):
+            raise TypeError("authority must use CandidateValidationAuthority")
+        manifest = authority.manifest
+        protocol = authority.protocol
         if (
             lifecycle_research.candidate_projection_formula_version
             != manifest.formula_version
@@ -174,13 +172,19 @@ class SubingCandidateValidationService:
             LifecycleResearchRequest(since=since, through=through, symbol=symbol),
             symbol=symbol,
         )
-        return project_lifecycle_window(
-            window_id=window_id,
-            window_kind=window_kind,
-            since=since,
-            through=through,
-            source=source,
-        )
+        try:
+            window = project_lifecycle_window(
+                window_id=window_id,
+                window_kind=window_kind,
+                since=since,
+                through=through,
+                source=source,
+            )
+            if tuple(window.horizon_summary) != self._protocol.horizons_bars:
+                raise ValueError("lifecycle horizons do not match authority")
+            return window
+        except ValueError as exc:
+            raise CandidateValidationSourceError() from exc
 
     def _run_source(
         self,

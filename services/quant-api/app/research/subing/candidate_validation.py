@@ -9,7 +9,9 @@ from types import MappingProxyType
 
 from app.market_data.subing_calibration import HorizonEvaluation
 from app.market_data.subing_lifecycle import ConfirmationSource
-from app.research.subing.subing_lifecycle_research_service import SubingLifecycleResearchResult
+from app.research.subing.subing_lifecycle_research_service import (
+    SubingLifecycleResearchResult,
+)
 
 
 _FUNNEL_KEYS = (
@@ -22,11 +24,6 @@ _FUNNEL_KEYS = (
 _CONFIRMATION_KEYS = tuple(source.name for source in ConfirmationSource)
 _OVERLAP_KEYS = ("V1_AND_V2", "V2_ONLY", "V1_ONLY")
 _TRADING_DAY_SPAN_KEYS = ("SAME_DAY", "CROSS_DAY")
-_HORIZONS = (3, 5, 8)
-_CANDIDATE_ID = "subing_lifecycle_v2_candidate_v1"
-_POLICY_ID = "subing_lifecycle_v2_research_v1"
-_FORMULA_VERSION = "subing_lifecycle_v2"
-_PROTOCOL_ID = "candidate_validation_v1"
 _QUALITY_FLAGS = frozenset(
     {
         "PROSPECTIVE_OOS_PENDING",
@@ -116,9 +113,7 @@ class CandidateWindowResult:
         if any(not _nonnegative_int(value) for value in lead_bars):
             raise ValueError("CANDIDATE_WINDOW_INVALID")
         horizons = dict(self.horizon_summary)
-        if tuple(horizons) != _HORIZONS or any(
-            not isinstance(value, HorizonEvaluation) for value in horizons.values()
-        ):
+        if not _valid_horizon_summary(horizons):
             raise ValueError("CANDIDATE_WINDOW_INVALID")
         object.__setattr__(self, "window_id", self.window_id.strip())
         object.__setattr__(self, "window_kind", kind)
@@ -225,10 +220,10 @@ class CandidateValidationReport:
         if (
             type(self.schema_version) is not int
             or self.schema_version != 1
-            or self.candidate_id != _CANDIDATE_ID
-            or self.policy_id != _POLICY_ID
-            or self.formula_version != _FORMULA_VERSION
-            or self.protocol_id != _PROTOCOL_ID
+            or not _nonempty_string(self.candidate_id)
+            or not _nonempty_string(self.policy_id)
+            or not _nonempty_string(self.formula_version)
+            or not _nonempty_string(self.protocol_id)
             or self.research_only is not True
             or not isinstance(self.symbol, str)
             or not self.symbol
@@ -286,7 +281,9 @@ def summarize_rolling_stability(
     folds: Sequence[RollingCandidateFold],
 ) -> CandidateStabilitySummary:
     normalized = tuple(folds)
-    if not normalized or any(not isinstance(fold, RollingCandidateFold) for fold in normalized):
+    if not normalized or any(
+        not isinstance(fold, RollingCandidateFold) for fold in normalized
+    ):
         raise ValueError("CANDIDATE_STABILITY_INVALID")
     counts = sorted(fold.test.funnel_counts["ENTRY_CONFIRMED"] for fold in normalized)
     midpoint = len(counts) // 2
@@ -330,6 +327,20 @@ def _freeze_units(
     ):
         raise ValueError("CANDIDATE_WINDOW_INVALID")
     return MappingProxyType(copied)
+
+
+def _valid_horizon_summary(horizons: Mapping[int, HorizonEvaluation]) -> bool:
+    keys = tuple(horizons)
+    return (
+        bool(keys)
+        and all(type(key) is int and key > 0 for key in keys)
+        and keys == tuple(sorted(keys))
+        and all(isinstance(value, HorizonEvaluation) for value in horizons.values())
+    )
+
+
+def _nonempty_string(value: object) -> bool:
+    return isinstance(value, str) and bool(value.strip())
 
 
 def _nonnegative_int(value: object) -> bool:

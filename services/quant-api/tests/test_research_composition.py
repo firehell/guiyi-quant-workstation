@@ -67,16 +67,12 @@ def _offline_research_imports(path: Path) -> tuple[str, ...]:
                 module = relative_name
             imported_modules.append(module)
             imported_modules.extend(
-                f"{module}.{alias.name}"
-                for alias in node.names
-                if alias.name != "*"
+                f"{module}.{alias.name}" for alias in node.names if alias.name != "*"
             )
     return tuple(
         module
         for module in imported_modules
-        if (
-            module == "app.research" or module.startswith("app.research.")
-        )
+        if (module == "app.research" or module.startswith("app.research."))
     )
 
 
@@ -268,19 +264,18 @@ def test_subing_candidate_builder_reuses_lifecycle_research_service(
     monkeypatch.setattr(
         research_composition,
         "SubingCandidateValidationService",
-        lambda source, **kwargs: (
-            captured.update(source=source, **kwargs) or result
-        ),
+        lambda source, **kwargs: captured.update(source=source, **kwargs) or result,
     )
-    monkeypatch.setattr(research_composition, "load_candidate_manifest", object)
+    authority = object()
     monkeypatch.setattr(
-        research_composition, "load_candidate_validation_protocol", object
+        research_composition, "load_candidate_validation_authority", lambda: authority
     )
 
     built = research_composition.build_subing_candidate_validation_service(object())
 
     assert built is result
     assert captured["source"] is research
+    assert captured["authority"] is authority
 
 
 def test_current_strategy_builder_uses_read_only_authoritative_seams(
