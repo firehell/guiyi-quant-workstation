@@ -24,7 +24,7 @@ interface Step1Golden {
   payload_sha256: string
 }
 
-const fixturePath = new URL('./fixtures/htdy_original_realtime_v1_golden.json', import.meta.url)
+const fixturePath = new URL('../../../tests/fixtures/htdy_original_realtime_v1_golden.json', import.meta.url)
 
 test('HTDY Web exact output agrees with the tracked Step 1 production golden', () => {
   const fixture = JSON.parse(readFileSync(fixturePath, 'utf8')) as Step1Golden

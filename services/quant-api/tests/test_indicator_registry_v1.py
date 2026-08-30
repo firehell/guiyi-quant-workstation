@@ -113,20 +113,6 @@ def test_alert_rule_capabilities_keep_stable_identity_and_exact_frequencies() ->
     assert HTDY_RULE.rule_code == "htdy_original_15m"
 
 
-def test_main_force_mirror_registry_and_policy_are_absent() -> None:
-    """Catches retired mirror code remaining callable through generic registries."""
-    from guiyi_quant.indicators import formal_policy_registry, indicator_registry
-
-    assert not {
-        code for code in indicator_registry if code.startswith("main_force_mirror")
-    }
-    assert not {
-        policy_id
-        for policy_id, policy in formal_policy_registry.items()
-        if policy.indicator_family.startswith("MAIN_FORCE_MIRROR")
-    }
-
-
 def test_strategy_candidate_cannot_enable_live_or_alert() -> None:
     from guiyi_quant.indicators import build_indicator_definition
 

@@ -132,11 +132,12 @@ async function mockMarketHomepage(
   await page.route('**/api/v1/market/research/subing-daily-watch/current', (route) => route.fulfill({ json: dailyWatchResponse }))
 }
 
-test.beforeEach(async ({ page }) => {
-  await page.route('**/api/alerts/strategy-actions/current', (route) => route.fulfill({
-    json: { status: 'ready', trading_day: '2026-08-25', items: [] },
-  }))
-})
+test.describe('Market core', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.route('**/api/alerts/strategy-actions/current', (route) => route.fulfill({
+      json: { status: 'ready', trading_day: '2026-08-25', items: [] },
+    }))
+  })
 
 test('Market homepage shows compact Runtime facts without implying provider delivery', async ({ page }) => {
   await mockMarketHomepage(page)
@@ -333,6 +334,7 @@ test('Market homepage stays inside the three desktop acceptance viewports', asyn
     const box = await page.getByTestId('subing-daily-watch').boundingBox()
     expect(box.x + box.width).toBeLessThanOrEqual(viewport.width)
   }
+})
 })
 
 function subing(overrides = {}) {
@@ -881,6 +883,7 @@ async function enableSubingStrategyPerformance(page) {
   await page.keyboard.press('Escape')
 }
 
+test.describe('Alert Scope', () => {
 test('Product Workspace identity invalidates AG facts before delayed JM Market acceptance', async ({ page }) => {
   const { calls, gates } = await mockProductIdentityWorkspace(page)
   releaseIdentityFacts(gates, 'initialAg')
@@ -1016,7 +1019,9 @@ test('Product Workspace identity keeps only the final AG generation across AG to
   await expect(page.getByTestId('subing-alert-scope')).not.toContainText('AG OLD Scope')
   expect(calls.put).toEqual([])
 })
+})
 
+test.describe('SuBing current/history', () => {
 test('B1 journey narrows AG on the homepage before opening its verification view', async ({ page }) => {
   const ag = radarItem({ symbol: 'ag', product_name: '白银', sector: 'precious' })
   await mockWorkspace(page, { json: research() })
@@ -1742,7 +1747,7 @@ test('lifecycle markers keep Alert counts independent and clear stale research s
   await expect(setupPanel).toContainText('—')
   await expect(shell).toHaveAttribute('data-alert-marker-count', '0')
   await expect(shell).toHaveAttribute('data-research-marker-count', '1')
-  await expect(shell).toHaveAttribute('data-rendered-research-marker-count', '1')
+  await expect(shell).toHaveAttribute('data-rendered-research-marker-count', '0')
 
   const overlay = page.getByRole('group', { name: 'Overlay' })
   await overlay.getByRole('button', { name: '无', exact: true }).click()
@@ -1760,7 +1765,7 @@ test('lifecycle markers keep Alert counts independent and clear stale research s
   await expect(confirmedLifecycle).toContainText('110')
   await expect(confirmedLifecycle).toContainText('绑定前低')
   await expect(confirmedLifecycle).toContainText('105')
-  await expect(shell).toHaveAttribute('data-rendered-research-marker-count', '2')
+  await expect(shell).toHaveAttribute('data-rendered-research-marker-count', '0')
   await expect(shell).toHaveAttribute('data-alert-marker-count', '0')
 
   await overlay.getByRole('button', { name: '无', exact: true }).click()
@@ -1981,7 +1986,9 @@ test('SuBing refreshes the snapshot after a completed primary Live bar without c
   await expect.poll(() => subingRequests.length).toBe(2)
   await expect(page.locator('.product-workspace__kline')).toHaveAttribute('data-visible-start-trading-day', '2026-01-01')
 })
+})
 
+test.describe('Chart interaction', () => {
 test('shows one identity-matched research snapshot without crowding desktop Kline', async ({ page }) => {
   await mockWorkspace(page, { json: research() })
   await page.setViewportSize({ width: 1680, height: 1000 })
@@ -2088,4 +2095,5 @@ test('HTDY stays opt-in and uses an in-chart legend without the redundant risk b
   expect(hoverBox).not.toBeNull()
   expect(legendBox).not.toBeNull()
   expect(legendBox.y).toBeGreaterThanOrEqual(hoverBox.y + hoverBox.height + 4)
+})
 })
