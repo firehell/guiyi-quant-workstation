@@ -1,21 +1,4 @@
 import { expect, test } from '@playwright/test'
-import { readFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
-
-
-test('retired Main Force Mirror is absent from shared chart consumers', () => {
-  const readSource = (path) => readFileSync(fileURLToPath(new URL(path, import.meta.url)), 'utf8')
-  const chartSource = readSource('../src/pages/market/chart.vue')
-  const hoverLegendSource = readSource('../src/components/kline/KlineHoverLegend.vue')
-  const klineViewModelSource = readSource('../src/utils/klineViewModel.ts')
-
-  expect(chartSource.includes('useMainForceMirrorV2')).toBe(false)
-  expect(chartSource.includes('main_force_mirror_v2')).toBe(false)
-  expect(hoverLegendSource.includes('mainForceMirror')).toBe(false)
-  expect(klineViewModelSource.includes('mainForceMirror')).toBe(false)
-})
-
-
 function bars(frequency) {
   if (frequency === '1d' || frequency === '1w') {
     const dayStep = frequency === '1d' ? 1 : 7

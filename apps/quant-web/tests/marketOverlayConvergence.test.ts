@@ -9,17 +9,6 @@ import {
 } from '../src/utils/mainIndicators.ts'
 
 
-test('public Market Overlay definitions expose only none, SuBing, and HTDY', () => {
-  assert.deepEqual(
-    RESEARCH_OVERLAY_DEFINITIONS.map(({ id, label }) => ({ id, label })),
-    [
-      { id: 'none', label: '无' },
-      { id: 'subing', label: '苏冰' },
-      { id: 'htdy', label: '火天大有' },
-    ],
-  )
-})
-
 test('HTDY retains all seven formal frequencies after Overlay convergence', () => {
   assert.deepEqual(
     RESEARCH_OVERLAY_DEFINITIONS.find(({ id }) => id === 'htdy')?.supportedFrequencies,
@@ -63,26 +52,12 @@ test('Web keeps the retained SuBing history/current and internal-process surface
   assert.match(toolbarSource, /显示全历史策略效果/)
 })
 
-test('Web exposes Strategy V1 facts while the retired SuBing single-signal seam stays absent', () => {
+test('Web exposes Strategy V1 historical and current facts', () => {
   const typesSource = read('../src/types/market.ts')
   const apiSource = read('../src/api/market.ts')
   const markerSource = read('../src/utils/historicalResearchMarkers.ts')
   const loaderSource = read('../src/composables/useHistoricalResearchMarkers.ts')
   const sidebarSource = read('../src/components/market/ProductCheckSidebar.vue')
-
-  for (const retiredName of [
-    'SubingHistoricalSignal',
-    'getSubingHistoricalSignals',
-    'historicalResearchEventToMarker',
-    'subingMarkerDedupeKey',
-    '/subing/history',
-  ]) {
-    assert.equal(
-      [typesSource, apiSource, markerSource, loaderSource].some((source) => source.includes(retiredName)),
-      false,
-      retiredName,
-    )
-  }
 
   assert.match(typesSource, /export interface SubingStrategyHistoricalResponse/)
   assert.match(apiSource, /export function getSubingStrategyHistory/)

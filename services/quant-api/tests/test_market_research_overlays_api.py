@@ -677,13 +677,6 @@ def test_subing_strategy_history_returns_actions_complete_episodes_and_context(
     assert payload["cache_state"] == "miss"
 
 
-def test_old_subing_historical_signal_route_is_retired() -> None:
-    path = "/api/v1/market/research/" + "subing/history"
-
-    assert path not in app.openapi()["paths"]
-    assert TestClient(app).get(path).status_code == 404
-
-
 @pytest.mark.parametrize(
     "params",
     (

@@ -10,8 +10,11 @@ import subprocess
 import tomllib
 from pathlib import Path
 
+from fastapi.testclient import TestClient
+
 ROOT = Path(__file__).resolve().parents[2]
 
+PUBLIC_WEB_ROUTES = {"/market", "/market/chart"}
 PUBLIC_OVERLAYS = {"none", "subing", "htdy"}
 RESEARCH_COMMANDS = {
     "subing-calibration",
@@ -29,6 +32,20 @@ MARKET_TABLES = {
     "market_partitions",
 }
 RETIRED_ENTRYPOINTS = (
+    "services/quant-api/app/api/dashboard.py",
+    "services/quant-api/app/api/signals.py",
+    "services/quant-api/app/api/reviews.py",
+    "services/quant-api/app/api/strategies.py",
+    "services/quant-api/app/api/watchlists.py",
+    "services/quant-api/app/api/futures_research.py",
+    "services/quant-api/app/api/data_center.py",
+    "services/quant-api/app/repositories/data_center.py",
+    "services/quant-api/app/models/signal.py",
+    "services/quant-api/app/models/review.py",
+    "services/quant-api/app/models/watchlist.py",
+    "services/quant-api/app/signal",
+    "services/quant-api/app/review",
+    "services/quant-api/app/strategy",
     "services/quant-api/app/backtest",
     "services/quant-api/app/execution_review",
     "services/quant-api/app/api/execution_review.py",
@@ -45,6 +62,85 @@ RETIRED_ENTRYPOINTS = (
     "reports/research/candidate_relationships",
     "apps/quant-web/package-lock.json",
 )
+RETIRED_HTTP_404_PATHS = (
+    "/api/dashboard/summary",
+    "/api/signals/latest",
+    "/api/signals/events",
+    "/api/v1/strategies/registry",
+    "/api/reviews",
+    "/api/watchlists",
+    "/api/v1/market/research/panels",
+    "/api/v1/data/summary",
+    "/api/v1/data/profiles",
+    "/api/v1/data/coverage",
+    "/api/v1/market/bars/canonical",
+    "/api/v1/market/coverage/canonical",
+    "/api/v1/market/research/main-force-mirror",
+    "/api/v1/market/research/subing/history",
+    "/api/v1/backtests/health",
+    "/api/execution-review/items",
+    "/api/symbols",
+)
+ACTIVE_PUBLIC_SOURCES = (
+    "services/quant-api/app/market_data/market_data_service.py",
+    "apps/quant-web/src/api/market.ts",
+    "apps/quant-web/src/pages/market/index.vue",
+)
+RETIRED_SOURCE_NAMES = {
+    "apps/quant-web/src/pages/market/index.vue": (
+        "MarketAttentionList",
+        "MarketFocusList",
+        "radar.attention",
+    ),
+    "apps/quant-web/src/types/market.ts": (
+        "attention_count",
+        "SubingHistoricalSignal",
+    ),
+    "apps/quant-web/src/api/market.ts": (
+        "getSubingHistoricalSignals",
+        "/subing/history",
+    ),
+    "apps/quant-web/src/utils/historicalResearchMarkers.ts": (
+        "historicalResearchEventToMarker",
+        "subingMarkerDedupeKey",
+    ),
+    "apps/quant-web/src/composables/useHistoricalResearchMarkers.ts": (
+        "historicalResearchEventToMarker",
+        "subingMarkerDedupeKey",
+    ),
+    "apps/quant-web/src/components/market/SubingPanel.vue": (
+        "SubingLifecyclePanel",
+        "SubingResearchSection",
+    ),
+    "apps/quant-web/src/pages/market/chart.vue": (
+        "useMainForceMirrorV2",
+        "main_force_mirror_v2",
+    ),
+    "apps/quant-web/src/components/kline/KlineHoverLegend.vue": (
+        "mainForceMirror",
+    ),
+    "apps/quant-web/src/utils/klineViewModel.ts": ("mainForceMirror",),
+    "apps/quant-web/src/components/common/UiIcon.vue": (
+        "name === 'dashboard'",
+        "name === 'signal'",
+        "name === 'strategy'",
+        "name === 'data'",
+        "name === 'runtime'",
+        "name === 'arrow-up'",
+        "name === 'arrow-down'",
+    ),
+}
+RETIRED_MODULE_ATTRIBUTES = {
+    "app.research.composition": (
+        "build_main_force_mirror_v2_research_service",
+        "build_five_candidate_dossier_service",
+        "build_five_candidate_relationship_service",
+    ),
+    "app.market_data.composition": (
+        "build_main_force_mirror_v2_service",
+        "build_member_rank_snapshot_builder",
+    ),
+}
 ALERT_RULE_CODES = frozenset({"htdy_original_15m", "subing_strategy_v1"})
 # The SuBing Rule and Strategy identities intentionally share a public value.
 # Exact file/count ownership keeps those typed strategy uses narrow as well.
@@ -94,6 +190,15 @@ def _active_backend_alert_rule_sources() -> dict[str, str]:
 
 
 def test_public_entrypoints_are_exact() -> None:
+    router_source = (ROOT / "apps/quant-web/src/app/router.ts").read_text(
+        encoding="utf-8"
+    )
+    declared_paths = set(re.findall(r"^\s+path: '([^']+)'", router_source, re.MULTILINE))
+    product_routes = {
+        f"/{path}" for path in declared_paths if not path.startswith(('/', ':'))
+    }
+    assert product_routes == PUBLIC_WEB_ROUTES
+
     indicator_source = (
         ROOT / "apps/quant-web/src/utils/mainIndicators.ts"
     ).read_text(encoding="utf-8")
@@ -121,13 +226,44 @@ def test_public_entrypoints_are_exact() -> None:
     )
 
 
-def test_retired_rqalpha_and_execution_review_are_not_mounted() -> None:
+def test_retired_http_surfaces_return_404_and_are_not_mounted() -> None:
     main_module = importlib.import_module("app.main")
     route_paths = {
         route.path for route in main_module.app.routes if hasattr(route, "path")
     }
-    assert not any("backtest" in path for path in route_paths)
-    assert not any("execution-review" in path for path in route_paths)
+    client = TestClient(main_module.app)
+
+    for path in RETIRED_HTTP_404_PATHS:
+        assert path not in route_paths, path
+        assert client.get(path).status_code == 404, path
+    assert "/ws/signals" not in route_paths
+
+
+def test_active_public_sources_do_not_name_retired_backtesting() -> None:
+    forbidden_terms = ("回测", "backtest")
+    for relative in ACTIVE_PUBLIC_SOURCES:
+        source = (ROOT / relative).read_text(encoding="utf-8").lower()
+        assert all(term not in source for term in forbidden_terms), relative
+
+
+def test_retired_names_remain_absent_from_active_sources_and_registries() -> None:
+    for relative, names in RETIRED_SOURCE_NAMES.items():
+        source = (ROOT / relative).read_text(encoding="utf-8")
+        assert all(name not in source for name in names), relative
+
+    for module_name, names in RETIRED_MODULE_ATTRIBUTES.items():
+        module = importlib.import_module(module_name)
+        assert all(not hasattr(module, name) for name in names), module_name
+
+    indicators = importlib.import_module("guiyi_quant.indicators")
+    assert not any(
+        code.startswith("main_force_mirror")
+        for code in indicators.indicator_registry
+    )
+    assert not any(
+        policy.indicator_family.startswith("MAIN_FORCE_MIRROR")
+        for policy in indicators.formal_policy_registry.values()
+    )
 
 
 def test_market_identity_and_no_order_contracts_are_executable() -> None:
