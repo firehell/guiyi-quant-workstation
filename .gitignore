@@ -17,6 +17,7 @@ __pycache__/
 
 # node
 node_modules/
+.pnpm-store/
 dist/
 build/
 .vite/
