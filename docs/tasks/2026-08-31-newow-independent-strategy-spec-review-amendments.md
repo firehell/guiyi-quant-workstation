@@ -95,13 +95,13 @@ price_storage             = Decimal
 边界：
 
 ```text
-ATR <= epsilon                 -> ATR_NORMALIZATION_UNAVAILABLE
-m2 <= epsilon                  -> MOMENTS_UNAVAILABLE
-ER denominator <= epsilon      -> ER20 = 0
-RV40 <= epsilon and RV10 <= epsilon -> VolatilityRatio = 0
-RV40 <= epsilon and RV10 > epsilon  -> VOLATILITY_RATIO_UNAVAILABLE
-previous volume median <= 0    -> VOLUME_RATIO_UNAVAILABLE
-previous OI missing or <= 0    -> OI_DELTA_UNAVAILABLE
+ATR <= epsilon                       -> ATR_NORMALIZATION_UNAVAILABLE
+m2 <= epsilon                        -> MOMENTS_UNAVAILABLE
+ER denominator <= epsilon            -> ER20 = 0
+RV40 <= epsilon and RV10 <= epsilon  -> VolatilityRatio = 0
+RV40 <= epsilon and RV10 > epsilon   -> VOLATILITY_RATIO_UNAVAILABLE
+previous volume median <= 0          -> VOLUME_RATIO_UNAVAILABLE
+previous OI missing or <= 0          -> OI_DELTA_UNAVAILABLE
 ```
 
 `sample_std` 固定使用 `ddof=1`。不得由 pandas / SciPy 默认参数决定生产结果。
@@ -168,7 +168,7 @@ candidate_valid_t =
 ### 3.3 时间与 revision
 
 ```text
-confirmed_at   = bar_end[t]
+confirmed_at    = bar_end[t]
 visual_start_at = bar_end[t-L]
 ```
 
@@ -370,27 +370,88 @@ NewowAdministrativeClosure
 
 ---
 
-## 8. Marketability 最小 Gate
+## 8. Open-only Reference 与最小 Marketability
 
-V1 不建完整撮合模型，但 entry reference 至少满足：
+### 8.1 信号确认时可知的 Gate
+
+在 completed signal Bar 上，只允许使用：
 
 ```text
 signal bar volume > 0
 previous volume median > 0
-next reference bar volume > 0
 signal bar 非 ONE_PRICE_BAR
-next reference bar 非 ONE_PRICE_BAR
-open/high/low/close 有限且合法
+signal bar OHLC 有限且合法
 ```
 
-不满足时分别输出：
+不满足时输出：
 
 ```text
 MARKETABILITY_UNAVAILABLE
-NEXT_REFERENCE_BAR_UNMARKETABLE
 ```
 
-Range 策略即使不把高 VolumeRatio 设为硬条件，也必须通过上述最小 Gate。OI 缺失仍按主 Spec 的策略 policy 处理，不用 OI 缺失替代零成交量判断。
+Range 策略即使不把高 VolumeRatio 设为硬条件，也必须通过上述最小 Gate。
+
+### 8.2 下一 Bar open 应用 pending
+
+`engine.step(current_completed_bar)` 的第一步可以读取当前 Bar 的：
+
+```text
+contract
+segment_id
+frequency
+trading_day
+bar_start / bar_end identity
+open
+```
+
+只用这些字段应用上一 Bar 的 pending Action。此时严禁读取当前 Bar 最终的：
+
+```text
+high
+low
+close
+volume
+open_interest
+ONE_PRICE_BAR 判断
+```
+
+因为这些值在 open 时尚不可知。
+
+下一 reference open 只要求：
+
+```text
+同 physical contract
+同 frequency / profile
+属于权威下一 Session Bar
+open 有限且 > 0
+gap / stop / target / RR 的 open-only 复核通过
+```
+
+Reference Action 必须标记：
+
+```text
+marketability = REFERENCE_OPEN_ONLY_UNVERIFIED
+```
+
+该标记明确表示 OHLC Bar open 只是研究参考，不证明真实委托在该价格可成交。
+
+### 8.3 Bar 完成后的 ex-post diagnostics
+
+当前 Bar 完成后可以记录：
+
+```text
+BAR_COMPLETED_ZERO_VOLUME
+BAR_COMPLETED_ONE_PRICE
+```
+
+但这些 ex-post diagnostics：
+
+- 不得反向取消已在 open 应用的 Action；
+- 不得改写 entry reference；
+- 不得单独把 Episode 从主 OOS 中删除；
+- 必须作为 marketability stratum 单独报告。
+
+必须增加因果 fixture：保持当前 Bar identity/open 不变，只修改其 high/low/close/volume/OI，pending Action 的应用结果必须完全一致。
 
 ---
 
@@ -416,7 +477,51 @@ Target milestone：
 
 ---
 
-## 10. Outcome 公式与成本边界
+## 10. Intraday 主力映射 Authority
+
+项目现有 `actual_dominant` 由 `MainContractMap` 按 `trading_day` 选择物理合约。Newow 不自行改写映射算法，但 15m 的因果报告必须区分“Bar 因果”与“合约 owner 因果”。
+
+每个 `NewowSourceSegment` 增加：
+
+```text
+mapping_policy_id
+mapping_trade_date
+mapping_source_identity
+mapping_observed_at
+mapping_availability_status
+```
+
+V1 固定：
+
+- Historical 只能消费项目 accepted MainContractMap；
+- 不根据当日 Newow 信号、成交量或持仓量重新选择合约；
+- 每个交易日 owner 与 MarketDataService 返回结果 golden parity；
+- retrospective 报告必须显示 `mapping_availability_status`；
+- 若 source metadata 无法证明该 15m trading_day owner 在相应 Bar 前已经可知，则状态为：
+
+```text
+HISTORICAL_MAPPING_AVAILABILITY_UNPROVEN
+```
+
+此状态不阻止 Historical 图表和公式研究，但：
+
+- 不得将该段计为 prospective OOS；
+- 不得作为未来 completed-Live parity 证据；
+- 不得支持 Alert / Runtime promotion。
+
+Prospective OOS 和未来 Stage 2 必须在首根 session Bar 前冻结当天 physical contract authority；冻结后当日内不可因后续 volume/OI 变化改 owner。若冻结 authority 与后续 Canonical MainContractMap 不一致，整日进入：
+
+```text
+MAPPING_AUTHORITY_CONFLICT
+```
+
+并从 prospective strategy outcome 中 fail-closed，不回填另一合约结果。
+
+本节不改变项目全局 `actual_dominant`，只给 Newow 15m 的证据强度增加显式边界。
+
+---
+
+## 11. Outcome 公式与成本边界
 
 方向符号：
 
@@ -471,7 +576,7 @@ gross / pre-cost / reference-only
 
 ---
 
-## 11. Spec 自审结论
+## 12. Spec 自审结论
 
 经本修正覆盖后：
 
@@ -479,6 +584,8 @@ gross / pre-cost / reference-only
 - 没有把主力换月 terminal close 冒充策略成交；
 - Range、Pattern 枚举和 primary 选择具备单一确定性规则；
 - 数值边界、零方差、零成交量和尾部 pending 行为明确；
+- pending Action 只使用 open 时可知字段，不读取当前 Bar future tail；
+- Intraday contract owner 的可知性与 Bar 公式因果分开审计；
 - completed-Bar 与 intrabar diagnostic 不再混淆；
 - OOS 明确为税费前 reference outcome；
 - 新周期和 Kernel 变化不会污染旧策略身份。
