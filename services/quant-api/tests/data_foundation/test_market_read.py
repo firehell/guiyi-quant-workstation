@@ -573,12 +573,22 @@ def test_bars_until_hard_cutoff_dedup_limit_and_event_day_contract(
     canonical = tuple(_bar_at(start + timedelta(minutes=minutes * index)) for index in range(40))
     cutoff = canonical[-2].bar_end
     live = (
-        _bar_at(canonical[-3].bar_end, close="101"),
-        _bar_at(cutoff, close="102"),
+        _bar_at(canonical[-3].bar_end),
+        _bar_at(cutoff),
         _bar_at(cutoff + timedelta(minutes=minutes), close="103"),
     )
+    owner = ResolvedContractSegment(
+        contract="J2505",
+        start_trading_day=date(2025, 1, 2),
+        end_trading_day=date(2025, 1, 2),
+    )
 
-    window = _window_service(canonical, live, frequency=frequency).bars_until(
+    window = _window_service(
+        canonical,
+        live,
+        frequency=frequency,
+        segments=(owner,),
+    ).bars_until(
         SeriesPageQuery("actual_dominant", "j", frequency),
         trading_day=date(2025, 1, 2),
         end=cutoff,
@@ -589,13 +599,14 @@ def test_bars_until_hard_cutoff_dedup_limit_and_event_day_contract(
     assert window.frequency == frequency
     assert window.cutoff == cutoff
     assert len(window.bars) == 32
+    assert window.bar_contracts == ("J2505",) * 32
     assert window.bars[-1].bar_end == cutoff
     assert len({bar.bar_end for bar in window.bars}) == 32
     assert all(bar.bar_end <= cutoff for bar in window.bars)
 
 
-def test_bars_until_contract_comes_from_current_day_live_snapshot() -> None:
-    """Catches historical segment ownership replacing event-day Live rank1 identity."""
+def test_bars_until_rejects_latest_historical_owner_mismatching_live_snapshot() -> None:
+    """Catches assigning the trigger contract to a Historical Bar owned by another rank1."""
     cutoff = datetime(2025, 1, 2, 2, 45, tzinfo=UTC)
     historical_owner = ResolvedContractSegment(
         contract="J2509",
@@ -603,18 +614,17 @@ def test_bars_until_contract_comes_from_current_day_live_snapshot() -> None:
         end_trading_day=date(2025, 1, 2),
     )
 
-    window = _window_service(
-        (_bar_at(cutoff),),
-        (),
-        subscription="J2505",
-        segments=(historical_owner,),
-    ).bars_until(
-        SeriesPageQuery("actual_dominant", "j", "15m"),
-        trading_day=date(2025, 1, 2),
-        end=cutoff,
-    )
-
-    assert window.contract == "J2505"
+    with pytest.raises(MarketReadWindowError, match="MARKET_READ_CONTRACT_UNAVAILABLE"):
+        _window_service(
+            (_bar_at(cutoff),),
+            (),
+            subscription="J2505",
+            segments=(historical_owner,),
+        ).bars_until(
+            SeriesPageQuery("actual_dominant", "j", "15m"),
+            trading_day=date(2025, 1, 2),
+            end=cutoff,
+        )
 
 
 @pytest.mark.parametrize("subscription", (None, "", "AG2505", "J-INVALID"))
@@ -631,7 +641,12 @@ def test_bars_until_rejects_missing_invalid_or_cross_symbol_contract(subscriptio
 
 def test_bars_until_requires_exact_event_bar_and_alert_identity() -> None:
     cutoff = datetime(2025, 1, 2, 2, 45, tzinfo=UTC)
-    service = _window_service((_bar_at(cutoff - timedelta(minutes=15)),), ())
+    owner = ResolvedContractSegment("J2505", date(2025, 1, 2), date(2025, 1, 2))
+    service = _window_service(
+        (_bar_at(cutoff - timedelta(minutes=15)),),
+        (),
+        segments=(owner,),
+    )
 
     with pytest.raises(MarketReadWindowError, match="MARKET_READ_CUTOFF_BAR_MISSING"):
         service.bars_until(

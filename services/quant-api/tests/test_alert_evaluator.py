@@ -43,6 +43,7 @@ def _window(length: int = 32, *, frequency: str = "15m") -> MarketReadWindow:
         contract="J2505",
         cutoff=bars[-1].bar_end,
         bars=bars,
+        bar_contracts=("J2505",) * length,
     )
 
 

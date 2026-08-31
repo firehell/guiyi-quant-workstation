@@ -122,6 +122,7 @@ def _window(
         contract=contract,
         cutoff=cutoff or bar_end,
         bars=(event_bar,) * 32,
+        bar_contracts=(contract,) * 32,
     )
 
 
@@ -646,6 +647,7 @@ def test_htdy_same_cutoff_with_different_bar_values_creates_no_event(
         contract="JM2609",
         cutoff=BOUNDARY_END,
         bars=(_bar(BOUNDARY_END),) * 31 + (mismatched,),
+        bar_contracts=("JM2609",) * 32,
     )
     harness = _runtime(
         session,
