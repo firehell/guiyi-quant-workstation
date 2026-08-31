@@ -6,7 +6,7 @@
 
 **Architecture:** Keep the existing Alert Runtime triggers and persistence domain. Extend the Alert market-read window with per-Bar rank1 contract ownership, add a bounded HTDY prefix-diff evaluator that compares `previous_prefix` with `current_prefix`, freeze first-seen candidates into the existing `alert_events` identity, and expose the already-persisted `detected_at` truth in PushPlus/Web presentation. No migration or new subsystem is introduced.
 
-**Tech Stack:** Python 3 / FastAPI / SQLAlchemy / NumPy / pytest, Vue 3 / TypeScript / Vitest, existing `MarketDataService`, `MarketReadService`, Alert Runtime V2, PushPlus transport.
+**Tech Stack:** Python 3 / FastAPI / SQLAlchemy / NumPy / pytest, Vue 3 / TypeScript / Node test runner, existing `MarketDataService`, `MarketReadService`, Alert Runtime V2, PushPlus transport.
 
 **Spec:** `docs/superpowers/specs/2026-08-31-htdy-first-seen-alert-design.md`
 
@@ -27,7 +27,7 @@
 
 ## File Structure
 
-The implementation should stay within existing boundaries:
+Implementation stays within existing boundaries:
 
 - `services/quant-api/app/market_data/market_read_service.py`
   - Extend `MarketReadWindow` so every returned Bar has an authoritative aligned rank1 contract owner.
@@ -41,17 +41,18 @@ The implementation should stay within existing boundaries:
   - Render observation time separately from first-seen detection time.
 - `apps/quant-web/src/utils/alertMarkers.ts`
   - Keep persistent square markers but make the tooltip explicitly show first-seen timing.
-- Active canonical docs: `AGENTS.md`, `PROJECT_SOURCE.md`, `DECISIONS.md`; `TESTING.md` only if commands change.
+- Active canonical docs: `AGENTS.md`, `PROJECT_SOURCE.md`, `DECISIONS.md`; `TESTING.md` only if commands genuinely change.
 
-Tests remain in the existing suites:
+Focused tests:
 
-- `services/quant-api/tests/test_alert_evaluator.py`
-- `services/quant-api/tests/test_alert_runtime.py`
-- `services/quant-api/tests/test_alert_notification.py`
-- `services/quant-api/tests/test_alert_notification_dispatcher.py` when the dispatcher fixture requires the new message field
-- existing MarketReadService tests discovered by repository search; if no dedicated file exists, place focused ownership tests in `services/quant-api/tests/test_alert_runtime.py` only if they exercise the real `MarketReadService`, otherwise create `services/quant-api/tests/test_market_read_service.py`
-- `apps/quant-web/tests/alerts.test.ts`
-- `tests/engineering/test_canonical_consistency.py`
+- Create: `services/quant-api/tests/test_market_read_service.py`
+- Modify: `services/quant-api/tests/test_alert_evaluator.py`
+- Modify: `services/quant-api/tests/test_alert_service.py`
+- Modify: `services/quant-api/tests/test_alert_runtime.py`
+- Modify: `services/quant-api/tests/test_alert_notification.py`
+- Modify if constructor fixtures require it: `services/quant-api/tests/test_alert_notification_dispatcher.py`
+- Modify: `apps/quant-web/tests/alerts.test.ts`
+- Modify when stable contract assertions are appropriate: `tests/engineering/test_canonical_consistency.py`
 
 ---
 
@@ -59,15 +60,18 @@ Tests remain in the existing suites:
 
 **Files:**
 - Modify: `services/quant-api/app/market_data/market_read_service.py`
-- Test: existing MarketReadService test file discovered in the repository; create `services/quant-api/tests/test_market_read_service.py` only if no focused file exists
+- Create: `services/quant-api/tests/test_market_read_service.py`
+- Modify fixture callers as required: `services/quant-api/tests/test_alert_runtime.py`, `services/quant-api/tests/test_alert_evaluator.py`
 
 **Interfaces:**
 - Consumes: `MarketSeriesPageResult.resolved_contract_segments`, current Live subscription contract, `CanonicalBar.trading_day`.
 - Produces: `MarketReadWindow.bar_contracts: tuple[str, ...]`, aligned 1:1 with `MarketReadWindow.bars`; invariant `bar_contracts[-1] == contract` for the latest Bar.
 
-- [ ] **Step 1: Write failing tests for historical and Live ownership alignment**
+- [ ] **Step 1: Write the failing historical/Live ownership tests**
 
-Add tests that construct an actual-dominant page spanning two `ResolvedContractSegment`s plus one Live Bar. Assert exact alignment:
+Create `services/quant-api/tests/test_market_read_service.py`. Build a fake `MarketPageReader`, phase reader and live store around the real `MarketReadService`. Use an actual-dominant historical page with two resolved contract segments and a current Live Bar.
+
+Assert exact alignment:
 
 ```python
 window = service.bars_until(
@@ -86,22 +90,26 @@ assert tuple(zip((bar.trading_day for bar in window.bars), window.bar_contracts)
 assert window.bar_contracts[-1] == window.contract == "JM2705"
 ```
 
-Also add a test where the Historical segment says `JM2701` for the same Bar while a duplicate Live Bar claims current subscription `JM2705`; expected result is `MarketReadWindowError`, not silent preference.
+Add a second test where a historical Bar is owned by `JM2701` while the same `bar_end` arrives from Live under subscription `JM2705`. Expected:
 
-- [ ] **Step 2: Run the focused tests and verify RED**
+```python
+with pytest.raises(MarketReadWindowError, match="MARKET_READ_CONTRACT_UNAVAILABLE"):
+    service.bars_until(...)
+```
 
-Run the exact test file with:
+- [ ] **Step 2: Run the focused tests and confirm RED**
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
-uv run --project services/quant-api pytest -q <market-read-test-file>
+uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/test_market_read_service.py
 ```
 
-Expected: failure because `MarketReadWindow` has no `bar_contracts` and/or ownership conflict is not checked.
+Expected: failure because `MarketReadWindow` has no `bar_contracts` and duplicate ownership disagreement is not yet rejected.
 
-- [ ] **Step 3: Extend `MarketReadWindow` and add one ownership resolver**
+- [ ] **Step 3: Extend `MarketReadWindow` with aligned ownership**
 
-Use an aligned field, not a second lookup service:
+Add:
 
 ```python
 @dataclass(frozen=True, slots=True)
@@ -116,7 +124,7 @@ class MarketReadWindow:
     bar_contracts: tuple[str, ...]
 ```
 
-Add a focused helper that maps each historical Bar by `resolved_contract_segments` and validates exactly one owner:
+Import `ResolvedContractSegment` into `market_read_service.py` and add a single helper:
 
 ```python
 def _resolved_contract_for_bar(
@@ -137,25 +145,37 @@ def _resolved_contract_for_bar(
     return contract
 ```
 
-In `bars_until`, keep the `MarketSeriesPageResult` object rather than discarding it to `.bars`, derive ownership before merging Live, and reject duplicate Bar ownership disagreement. In `latest_canonical_window`, derive aligned ownership from its page segments. Preserve the existing singular `window.contract` for current/latest compatibility.
+In `bars_until`:
 
-- [ ] **Step 4: Run focused tests and verify GREEN**
+1. retain the complete `MarketSeriesPageResult` instead of immediately discarding it to `.bars`;
+2. derive each Historical Bar owner from `resolved_contract_segments`;
+3. assign every accepted Live Bar to the validated current subscription contract;
+4. when Historical and Live contain the same `bar_end`, require both Bar value equality under the existing dedupe contract **and** owner equality; ownership disagreement fails closed;
+5. sort and truncate bars and owners together;
+6. require final lengths to match and final owner to equal the existing singular `window.contract`.
 
-Use the same command from Step 2. Expected: PASS.
+In `latest_canonical_window`, derive `bar_contracts` for every returned canonical Bar from its page `resolved_contract_segments` and keep the existing latest singular `contract` compatibility field.
 
-- [ ] **Step 5: Run current Alert Runtime tests to catch fixture breakage**
+- [ ] **Step 4: Run Task 1 tests and confirm GREEN**
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
-uv run --project services/quant-api pytest -q services/quant-api/tests/test_alert_runtime.py
+uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/test_market_read_service.py \
+  services/quant-api/tests/test_alert_evaluator.py \
+  services/quant-api/tests/test_alert_runtime.py
 ```
 
-Update fake `MarketReadWindow` builders to provide aligned `bar_contracts`; do not use an empty default that lets production first-seen evaluation bypass contract identity.
+Update fake `MarketReadWindow` builders in existing tests with a real aligned `bar_contracts` tuple; do not introduce an empty/default ownership value.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 5: Commit Task 1**
 
 ```bash
-git add services/quant-api/app/market_data/market_read_service.py services/quant-api/tests
+git add \
+  services/quant-api/app/market_data/market_read_service.py \
+  services/quant-api/tests/test_market_read_service.py \
+  services/quant-api/tests/test_alert_evaluator.py \
+  services/quant-api/tests/test_alert_runtime.py
 
 git commit -m "feat: preserve alert bar contract ownership"
 ```
@@ -166,10 +186,10 @@ git commit -m "feat: preserve alert bar contract ownership"
 
 **Files:**
 - Modify: `services/quant-api/app/alerts/evaluators.py`
-- Test: `services/quant-api/tests/test_alert_evaluator.py`
+- Modify: `services/quant-api/tests/test_alert_evaluator.py`
 
 **Interfaces:**
-- Consumes: `MarketReadWindow.bars`, `MarketReadWindow.bar_contracts`, production `CONFIGURED_REPAINT_SCAN_ZONE_BARS` from the HTDY kernel.
+- Consumes: `MarketReadWindow.bars`, `MarketReadWindow.bar_contracts`, production `CONFIGURED_REPAINT_SCAN_ZONE_BARS`.
 - Produces:
 
 ```python
@@ -186,65 +206,73 @@ and:
 ```python
 class AlertEvaluator(Protocol):
     indicator_code: str
+
     def evaluate(self, window: MarketReadWindow) -> AlertEvaluation: ...
+
     def evaluate_first_seen(
-        self, window: MarketReadWindow
+        self,
+        window: MarketReadWindow,
     ) -> tuple[HtdyFirstSeenObservation, ...]: ...
 ```
 
 Keep `evaluate()` as the current-Bar compatibility primitive.
 
-- [ ] **Step 1: Write RED tests for current Bar and historical False→True**
+- [ ] **Step 1: Write RED tests for current-Bar and historical empty→observation**
 
-Use a monkeypatched `compute_htdy_original` returning controlled arrays. Cover:
+Monkeypatch `compute_htdy_original` with controlled arrays. Prove a latest-Bar sell returns:
 
 ```python
-assert evaluator.evaluate_first_seen(window)[0] == HtdyFirstSeenObservation(
-    bar_end=window.bars[-1].bar_end,
-    trading_day=window.bars[-1].trading_day,
-    contract=window.bar_contracts[-1],
-    observation_types=("sell",),
+assert evaluator.evaluate_first_seen(window) == (
+    HtdyFirstSeenObservation(
+        bar_end=window.bars[-1].bar_end,
+        trading_day=window.bars[-1].trading_day,
+        contract=window.bar_contracts[-1],
+        observation_types=("sell",),
+    ),
 )
 ```
 
-Then simulate an append where a prior Bar changes from no observation to sell and assert the candidate uses that old Bar's `bar_end`, `trading_day` and `bar_contracts[index]`, not the latest trigger's contract.
+Then append one Bar and make an old overlapping Bar change from empty to sell. Assert the candidate uses that old Bar's `bar_end`, `trading_day`, and `bar_contracts[index]`, not the trigger Bar's contract.
 
-- [ ] **Step 2: Write RED tests for no-retraction/no-direction-revision candidate rules**
+- [ ] **Step 2: Write RED tests for transition rules**
 
-Test the prefix detector itself:
+Test the pure prefix transition behavior:
 
 ```text
-sell -> empty      => no new first-seen candidate
-buy  -> sell       => no new first-seen candidate
-sell -> buy        => no new first-seen candidate
-buy  -> buy+sell   => no new first-seen candidate
+sell -> empty      => no candidate
+buy  -> sell       => no candidate
+sell -> buy        => no candidate
+buy  -> buy+sell   => no candidate
 empty -> buy+sell  => one candidate with ("buy", "sell")
 ```
 
-The reappearance case `sell -> empty -> sell` may again produce a prefix transition on the third prefix; persistence in Task 3 is the authoritative first-seen dedupe. Do not add a stateful evaluator ledger.
+Do not add a stateful evaluator ledger. A later `sell -> empty -> sell` prefix can surface again at the evaluator layer; Task 3's immutable Event identity is the authoritative first-seen dedupe.
 
-- [ ] **Step 3: Run the focused evaluator tests and verify RED**
+- [ ] **Step 3: Run evaluator tests and confirm RED**
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
-uv run --project services/quant-api pytest -q services/quant-api/tests/test_alert_evaluator.py
+uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/test_alert_evaluator.py
 ```
 
-Expected: missing `evaluate_first_seen` / candidate type.
+Expected: missing `HtDyFirstSeenObservation` / `evaluate_first_seen`.
 
 - [ ] **Step 4: Implement the minimal pure evaluator**
 
-Add constants:
+Use:
 
 ```python
 CURRENT_BAR_CONTEXT_BARS = 32
 HTDY_FIRST_SEEN_CONTEXT_BARS = 64
 ```
 
-Import the production repaint constant rather than copying 27 into a second business authority:
+Import the production repaint authority rather than duplicating 27:
 
 ```python
-from guiyi_quant.indicators.htdy_original import CONFIGURED_REPAINT_SCAN_ZONE_BARS
+from guiyi_quant.indicators.htdy_original import (
+    CONFIGURED_REPAINT_SCAN_ZONE_BARS,
+)
 ```
 
 Implementation shape:
@@ -255,6 +283,7 @@ def evaluate_first_seen(
     window: MarketReadWindow,
 ) -> tuple[HtdyFirstSeenObservation, ...]:
     self._validate_window(window, minimum=CURRENT_BAR_CONTEXT_BARS)
+
     if len(window.bars) < HTDY_FIRST_SEEN_CONTEXT_BARS:
         current = self.evaluate(window)
         return self._latest_candidate(window, current.observation_types)
@@ -264,42 +293,61 @@ def evaluate_first_seen(
     previous = self._compute(bars[:-1])
     current = self._compute(bars)
 
-    candidates = self._prefix_diff_candidates(
+    return self._prefix_diff_candidates(
         bars=bars,
         contracts=contracts,
         previous=previous,
         current=current,
         scan_bars=CONFIGURED_REPAINT_SCAN_ZONE_BARS,
     )
-    return tuple(sorted(candidates, key=lambda item: item.bar_end))
 ```
 
-`_prefix_diff_candidates` must include the current latest Bar when it has an observation, plus only overlapping previous bars whose prior observation tuple was empty and current tuple is non-empty.
+`_prefix_diff_candidates` must:
 
-- [ ] **Step 5: Add and prove the 64-Bar/full-history parity test**
+- include the current newest Bar when its current observation tuple is non-empty;
+- compare only overlapping previous Bars within the last 27 previous-Bar positions;
+- emit only prior empty -> current non-empty;
+- return candidates sorted by `bar_end`;
+- require `len(bars) == len(contracts)` and fail closed otherwise.
 
-Use real `compute_htdy_original`, not a monkeypatch. Generate a sufficiently long deterministic series, append one Bar at a time, and compare the prefix-diff candidates from full history against the bounded 64-Bar window for the overlapping last 27 previous Bars plus current Bar.
+- [ ] **Step 5: Prove 64-Bar bounded parity against full history**
 
-Core assertion:
+Use the real production kernel. Generate a deterministic long series and iterate multiple append cutoffs. For each cutoff:
+
+1. calculate previous/full history and current/full history;
+2. derive full-history first-seen candidates restricted to the same last-27 previous-Bar scan plus latest Bar;
+3. call production `evaluate_first_seen()` on the last 64 Bars with aligned contracts;
+4. compare exact candidate `bar_end` + result tuples.
+
+Assertion:
 
 ```python
 assert bounded_candidates == full_history_candidates
 ```
 
-Run across enough cutoffs to cover changes near both edges of the repaint zone. If this fails, stop and revise the context length; do not weaken the assertion.
+Cover transitions at both edges of the 27-Bar scan zone. If this test fails, stop and increase/reason about context length; do not weaken the test or retain 64 by assumption.
 
-- [ ] **Step 6: Verify 32–63 Bar compatibility**
+- [ ] **Step 6: Prove 32–63 Bar compatibility**
 
-Add a test proving that a 32–63 Bar window can still emit a current-Bar observation but does not scan historical repaint candidates.
+For each representative length `32`, `40`, `63`, prove:
 
-- [ ] **Step 7: Run evaluator tests and verify GREEN**
+- a current latest-Bar observation can still be returned;
+- an old repaint transition is not scanned before the 64-Bar context threshold.
 
-Use the Step 3 command. Expected: PASS.
-
-- [ ] **Step 8: Commit**
+- [ ] **Step 7: Run evaluator tests and confirm GREEN**
 
 ```bash
-git add services/quant-api/app/alerts/evaluators.py services/quant-api/tests/test_alert_evaluator.py
+PYTHONPATH=services/quant-api:packages/quant-core \
+uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/test_alert_evaluator.py
+```
+
+- [ ] **Step 8: Commit Task 2**
+
+```bash
+git add \
+  services/quant-api/app/alerts/evaluators.py \
+  services/quant-api/tests/test_alert_evaluator.py
 
 git commit -m "feat: detect HTDY first-seen repaint observations"
 ```
@@ -310,24 +358,25 @@ git commit -m "feat: detect HTDY first-seen repaint observations"
 
 **Files:**
 - Modify: `services/quant-api/app/alerts/service.py`
-- Test: existing AlertService tests discovered by repository search, primarily `services/quant-api/tests/test_alert_registry.py` only if service persistence is already covered there; otherwise use the existing service-focused test file found by `AlertService.create_event` search
+- Modify: `services/quant-api/tests/test_alert_service.py`
 
 **Interfaces:**
 - Consumes: existing `AlertEventCreate` and HTDY indicator-observation unique identity.
-- Produces: an explicit first-seen persistence method for indicator observations, for example:
+- Produces:
 
 ```python
 def create_first_seen_observation_event(
-    self, request: AlertEventCreate
+    self,
+    request: AlertEventCreate,
 ) -> AlertEvent | None:
     ...
 ```
 
-Do not change SuBing Strategy Action persistence semantics.
+SuBing Strategy Action persistence remains on the existing strict path.
 
 - [ ] **Step 1: Write RED tests for first create and repaint no-op**
 
-Test sequence:
+Add to `test_alert_service.py`:
 
 ```python
 first = service.create_first_seen_observation_event(
@@ -341,53 +390,64 @@ again = service.create_first_seen_observation_event(
 assert again is None
 
 stored = session.scalar(select(AlertEvent).where(AlertEvent.id == first.id))
+assert stored is not None
 assert stored.result_codes == ["sell"]
-assert stored.detected_at == FIRST_DETECTED_AT
+assert _utc(stored.detected_at) == FIRST_DETECTED_AT
 ```
 
-Also assert same identity with `buy+sell` after first create is a no-op, not `AlertConsistencyError`.
+Also assert a later `("buy", "sell")` request for the same HTDY identity is a no-op, not `AlertConsistencyError`.
 
-- [ ] **Step 2: Write RED test that Strategy Action consistency remains strict**
+- [ ] **Step 2: Write a Strategy Action non-regression test**
 
-Create a SuBing Event with the existing path, then try the same Strategy identity with mismatched immutable facts. Expected: existing `AlertConsistencyError`. This protects the rule-kind boundary.
+Using the existing SuBing fixtures, create one Strategy Action Event through `create_event`, then submit the same action identity with changed immutable facts. Keep the existing expected `AlertConsistencyError`.
 
-- [ ] **Step 3: Run focused persistence tests and verify RED**
-
-Run the exact discovered service test file with the repository-standard pytest command.
-
-- [ ] **Step 4: Implement an indicator-only first-seen wrapper**
-
-The wrapper must:
-
-1. resolve the Rule and require `AlertRuleKind.INDICATOR_OBSERVATION`;
-2. normalize symbol/frequency/time/contract using the same validation as `create_event`;
-3. query existing identity `(rule_id, symbol, frequency, bar_end)`;
-4. if an existing valid indicator Event is found, return `None` without comparing future repaint `result_codes`;
-5. otherwise create through the same commit/error handling path;
-6. on `IntegrityError`, read back the same indicator identity and return `None` if it now exists;
-7. never apply this relaxed first-seen no-op to Strategy Action Events.
-
-Prefer extracting shared validation from `create_event` only if it reduces duplication without widening the task. Do not redesign AlertService.
-
-- [ ] **Step 5: Run focused tests and verify GREEN**
-
-Expected: first-seen tests pass and existing Strategy Action mismatch tests still pass.
-
-- [ ] **Step 6: Commit**
+- [ ] **Step 3: Run service tests and confirm RED**
 
 ```bash
-git add services/quant-api/app/alerts/service.py services/quant-api/tests
+PYTHONPATH=services/quant-api:packages/quant-core \
+uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/test_alert_service.py
+```
+
+- [ ] **Step 4: Implement indicator-only first-seen persistence**
+
+`create_first_seen_observation_event()` must:
+
+1. resolve the Rule and require `AlertRuleKind.INDICATOR_OBSERVATION`;
+2. validate symbol, contract, trading day, frequency, aware times and HTDY result codes with the same validation rules as `create_event`;
+3. query `(rule_id, symbol, frequency, bar_end)` before insert;
+4. if an existing valid indicator Event exists, return `None` without comparing later repaint `result_codes`, `contract`, or detection time for rewrite purposes;
+5. if not, insert and commit the immutable initial facts;
+6. on an insert race/`IntegrityError`, rollback, read back the same indicator identity, return `None` if it now exists, otherwise raise `AlertEventPersistenceError`;
+7. never route Strategy Action Events through this relaxed first-seen method.
+
+Do not loosen the existing `create_event()` Strategy Action consistency contract.
+
+- [ ] **Step 5: Run service tests and confirm GREEN**
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/test_alert_service.py
+```
+
+- [ ] **Step 6: Commit Task 3**
+
+```bash
+git add \
+  services/quant-api/app/alerts/service.py \
+  services/quant-api/tests/test_alert_service.py
 
 git commit -m "feat: freeze HTDY first-seen alert events"
 ```
 
 ---
 
-### Task 4: Wire multiple first-seen candidates into Alert Runtime
+### Task 4: Wire zero-or-many first-seen candidates into Alert Runtime
 
 **Files:**
 - Modify: `services/quant-api/app/alerts/runtime.py`
-- Test: `services/quant-api/tests/test_alert_runtime.py`
+- Modify: `services/quant-api/tests/test_alert_runtime.py`
 
 **Interfaces:**
 - Consumes: `AlertEvaluator.evaluate_first_seen()`, `AlertService.create_first_seen_observation_event()`.
@@ -395,21 +455,21 @@ git commit -m "feat: freeze HTDY first-seen alert events"
 
 - [ ] **Step 1: Write RED intraday Runtime tests**
 
-Add tests proving:
+Cover all of these exact outcomes:
 
 ```text
-Scope OFF                       -> no market read, no evaluator, no Event/send
+Scope OFF                       -> no MarketRead, no evaluator, no Event/send
 current Bar first-seen          -> one Event/send
-old Bar False→sell              -> Event.bar_end == old observation time
+old Bar empty→sell              -> Event.bar_end == old observation time
                                   Event.detected_at == processing_now
                                   Event.contract == old Bar owner
-multiple candidates             -> chronological Event/message order
-existing Event, repaint reentry -> no Event/send and no processing failure
+multiple candidates             -> Event/message order by observation bar_end
+existing Event after reappearance -> no Event/send and no processing failure
 ```
 
-- [ ] **Step 2: Write RED startup/restart tests**
+- [ ] **Step 2: Write RED startup/drain tests**
 
-Use the current startup drain path:
+Prove current startup semantics stay zero-write:
 
 ```python
 runtime.process_message(channel, payload, emit_events=False)
@@ -417,22 +477,23 @@ assert _event_rows(session) == []
 assert sender.messages == []
 ```
 
-Then process the first genuine new completed Bar and ensure only False→True transitions caused by that Bar are considered. Existing observations already present in `previous_prefix` are not emitted.
+Then process one genuinely new completed Bar. If a historical observation already existed in the previous prefix, it must not be emitted merely because Runtime just restarted.
 
 - [ ] **Step 3: Write RED D1/W1 canonical tests**
 
-Keep `market:state(reason=canonical_updated)` as the only trigger. Provide a 64-Bar canonical window with aligned contracts and verify old-Bar False→True can create a first-seen Event. Assert no new scheduler or live D1/W1 path is used.
+Keep `market:state(reason=canonical_updated)` as the only D1/W1 trigger. Provide a 64-Bar canonical `MarketReadWindow` with aligned `bar_contracts`; make one old Bar transition empty→sell and assert one immutable first-seen Event. Also retain tests that D1/W1 live channels are rejected.
 
-- [ ] **Step 4: Run Runtime tests and verify RED**
+- [ ] **Step 4: Run Runtime tests and confirm RED**
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
-uv run --project services/quant-api pytest -q services/quant-api/tests/test_alert_runtime.py
+uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/test_alert_runtime.py
 ```
 
-- [ ] **Step 5: Replace single `_RuleResult` HTDY flow with candidate iteration**
+- [ ] **Step 5: Replace HTDY single-result flow with candidate iteration**
 
-Do not alter SuBing Strategy flow. For HTDY, change the evaluation boundary so Runtime receives zero-or-many first-seen candidates:
+Leave SuBing Strategy flow intact. For HTDY:
 
 ```python
 candidates = self._htdy_evaluator.evaluate_first_seen(window)
@@ -442,13 +503,13 @@ for candidate in candidates:
         taxonomy=self._taxonomy,
         rule=rule,
         symbol=symbol,
+        frequency=event_frequency.value,
         candidate=candidate,
         processing_now=processing_now,
     )
-    ...
 ```
 
-The prepared Event uses candidate facts:
+The Event request uses the candidate's observation facts:
 
 ```python
 AlertEventCreate(
@@ -456,7 +517,7 @@ AlertEventCreate(
     symbol=symbol,
     contract=candidate.contract,
     trading_day=candidate.trading_day,
-    frequency=event_frequency.value,
+    frequency=frequency,
     bar_end=candidate.bar_end,
     result_codes=candidate.observation_types,
     action_id=None,
@@ -466,24 +527,39 @@ AlertEventCreate(
 )
 ```
 
-For D1/W1 use `frequency.value` from the canonical pair and the candidate's own observation facts. Keep existing per-pair exception isolation.
+Call `service.create_first_seen_observation_event()` rather than generic strict indicator persistence.
 
-- [ ] **Step 6: Increase HTDY MarketRead limits only where required**
+For D1/W1 use the pair frequency and the candidate's own observation Bar contract/trading day/time. Keep existing per-pair exception isolation.
 
-Change HTDY intraday and D1/W1 window requests from `limit=32` to `limit=64`. Do not change unrelated SuBing reads.
+- [ ] **Step 6: Increase only HTDY Alert windows from 32 to 64**
 
-- [ ] **Step 7: Keep Runtime status semantics truthful**
+Change HTDY intraday `bars_until(... limit=64)` and D1/W1 `latest_canonical_window(... limit=64)`. Do not change SuBing reads or strategy warm-up.
 
-`last_event_at` is updated when at least one Event is newly created. `last_processed_bar_at` remains the incoming trigger Bar for intraday. `last_transport_attempt_at` / `last_provider_accepted_at` remain processing/transport facts. Do not reinterpret them as observation `bar_end`.
+- [ ] **Step 7: Preserve Runtime status meaning**
 
-- [ ] **Step 8: Run Runtime tests and verify GREEN**
+Keep:
 
-Use Step 4 command. Expected: PASS.
+- `last_event_at`: processing time when at least one **new Event** was created;
+- `last_processed_bar_at`: incoming intraday trigger Bar time;
+- `last_transport_attempt_at`: transport attempt processing time;
+- `last_provider_accepted_at`: provider acceptance processing time.
 
-- [ ] **Step 9: Commit**
+Do not replace any of these with historical observation `bar_end`.
+
+- [ ] **Step 8: Run Runtime tests and confirm GREEN**
 
 ```bash
-git add services/quant-api/app/alerts/runtime.py services/quant-api/tests/test_alert_runtime.py
+PYTHONPATH=services/quant-api:packages/quant-core \
+uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/test_alert_runtime.py
+```
+
+- [ ] **Step 9: Commit Task 4**
+
+```bash
+git add \
+  services/quant-api/app/alerts/runtime.py \
+  services/quant-api/tests/test_alert_runtime.py
 
 git commit -m "feat: emit HTDY first-seen repaint alerts"
 ```
@@ -494,16 +570,17 @@ git commit -m "feat: emit HTDY first-seen repaint alerts"
 
 **Files:**
 - Modify: `services/quant-api/app/alerts/notification.py`
-- Test: `services/quant-api/tests/test_alert_notification.py`
-- Test if required by constructor coverage: `services/quant-api/tests/test_alert_notification_dispatcher.py`
+- Modify: `services/quant-api/tests/test_alert_notification.py`
+- Modify if constructor fixtures require it: `services/quant-api/tests/test_alert_notification_dispatcher.py`
+- Modify message construction tests/callers only as required by the new mandatory field.
 
 **Interfaces:**
-- Consumes: candidate/Event `bar_end` and Runtime `detected_at`.
-- Produces: `AlertNotificationMessage.detected_at` and the frozen HTDY copy.
+- Consumes: candidate/Event `bar_end` and Runtime processing `detected_at`.
+- Produces: `AlertNotificationMessage.detected_at` and exact HTDY copy.
 
-- [ ] **Step 1: Write RED formatting test**
+- [ ] **Step 1: Write RED HTDY formatting tests**
 
-Construct a HTDY message where observation and detection differ:
+Create:
 
 ```python
 message = AlertNotificationMessage(
@@ -518,16 +595,16 @@ message = AlertNotificationMessage(
 )
 ```
 
-Assert the exact rendered lines contain:
+Assert exact lines:
 
 ```text
 观察K线：15m · 09:45
 首次识别：10:15
 ```
 
-Also test current-Bar first-seen where both times are equal.
+Also add a current-Bar case where observation and detection are the same instant.
 
-- [ ] **Step 2: Run notification tests and verify RED**
+- [ ] **Step 2: Run notification tests and confirm RED**
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
@@ -554,28 +631,55 @@ class AlertNotificationMessage:
     strategy_payload: SubingStrategyActionPayload | None = None
 ```
 
-Update both HTDY and SuBing message construction call sites to pass the real processing/Event detection time. Do not change SuBing rendered text.
+Every runtime message constructor passes `processing_now`/Event detection time. SuBing must receive the required field but keep its existing rendered copy unchanged.
 
-In `_format_htdy_message`, require timezone-aware `detected_at`, convert both times to Asia/Shanghai and render the exact two-line distinction.
+In `_format_htdy_message`:
 
-- [ ] **Step 4: Run notification tests and verify GREEN**
+```python
+observation_time = message.bar_end.astimezone(_SHANGHAI).strftime("%H:%M")
+first_seen_time = message.detected_at.astimezone(_SHANGHAI).strftime("%H:%M")
+```
 
-Use Step 2 command. Expected: PASS.
+Render:
 
-- [ ] **Step 5: Run Runtime tests once because message construction changed**
+```python
+return (
+    f"【归一量化】{message.symbol.strip().upper()} {message.product_name.strip()}\n\n"
+    f"火天大有 · {observation}\n"
+    f"主力：{message.contract.strip().upper()}\n"
+    f"观察K线：{message.frequency} · {observation_time}\n"
+    f"首次识别：{first_seen_time}\n"
+    "研究观察，非交易指令"
+)
+```
+
+Require both timestamps to be timezone-aware.
+
+- [ ] **Step 4: Run notification tests and confirm GREEN**
+
+Use Step 2 command.
+
+- [ ] **Step 5: Re-run Runtime tests because message construction changed**
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
-uv run --project services/quant-api pytest -q services/quant-api/tests/test_alert_runtime.py
+uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/test_alert_runtime.py
 ```
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 6: Commit Task 5**
 
 ```bash
-git add services/quant-api/app/alerts/notification.py services/quant-api/tests
+git add \
+  services/quant-api/app/alerts/notification.py \
+  services/quant-api/tests/test_alert_notification.py \
+  services/quant-api/tests/test_alert_notification_dispatcher.py \
+  services/quant-api/tests/test_alert_runtime.py
 
 git commit -m "feat: show HTDY first-seen notification time"
 ```
+
+If a listed test file was not modified, omit it from staging.
 
 ---
 
@@ -583,65 +687,82 @@ git commit -m "feat: show HTDY first-seen notification time"
 
 **Files:**
 - Modify: `apps/quant-web/src/utils/alertMarkers.ts`
-- Test: `apps/quant-web/tests/alerts.test.ts`
+- Modify: `apps/quant-web/tests/alerts.test.ts`
 
 **Interfaces:**
 - Consumes: existing `HtdyAlertEvent.detected_at`, `bar_end`, `contract`, `result_codes`.
-- Produces: unchanged square marker identity/shape with a truthful tooltip.
+- Produces: unchanged persistent square identity/shape/time with a truthful tooltip.
 
-- [ ] **Step 1: Write RED Web test for the two times**
+- [ ] **Step 1: Write RED Web test for observation/detection time distinction**
 
-Build an HTDY Event fixture with different `bar_end` and `detected_at`, call `alertEventsToMarkers`, and assert:
+Build an HTDY Event fixture with different `bar_end` and `detected_at`, call `alertEventsToMarkers()`, and assert:
 
 ```ts
-expect(marker.shape).toBe('square')
-expect(marker.time).toBe(event.bar_end)
-expect(marker.tooltip).toContain('实时首次识别')
-expect(marker.tooltip).toContain('观察K线')
-expect(marker.tooltip).toContain('首次识别')
+const [marker] = alertEventsToMarkers([event])
+assert.equal(marker.shape, 'square')
+assert.equal(marker.time, event.bar_end)
+assert.match(marker.tooltip, /实时首次识别/)
+assert.match(marker.tooltip, /观察K线/)
+assert.match(marker.tooltip, /首次识别/)
 ```
 
-Also preserve the retrospective marker test showing its existing repaint-risk tooltip and non-Alert identity.
+Retain a separate test for the retrospective HTDY arrow's existing repaint-risk tooltip and non-Alert identity.
 
-- [ ] **Step 2: Run Web unit test and verify RED**
+- [ ] **Step 2: Run the exact Node focused test and confirm RED**
 
 ```bash
-pnpm --dir apps/quant-web test -- alerts.test.ts
+pnpm --dir apps/quant-web exec node --test tests/alerts.test.ts
 ```
 
-If the project test runner does not accept a filename after `--`, use the existing Vitest invocation from `package.json`; do not change package scripts just for this task.
+Expected: persistent tooltip lacks first-seen language/times.
 
 - [ ] **Step 3: Update only the persistent marker tooltip**
 
-Keep:
+Keep these fields unchanged:
 
 ```ts
 id: `alert:${alertEventIdentityKey(event)}`
+time: event.bar_end
 position: 'aboveBar'
 shape: 'square'
-time: event.bar_end
 ```
 
-Format observation and detection timestamps through an existing shared date/time formatter if one already exists. If none exists in the Alert utilities, add a small local formatter in `alertMarkers.ts`; do not create a new date formatting subsystem.
+Use an existing shared formatter if one already fits this UI. Otherwise add a tiny local formatter in `alertMarkers.ts`, for example:
 
-Suggested semantic text:
+```ts
+function shanghaiHm(value: string): string {
+  return new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(new Date(value))
+}
+```
+
+Persistent tooltip semantics:
 
 ```text
 实时首次识别 · 持久 AlertEvent · JM2701 · 卖出观察 · 观察K线 09:45 · 首次识别 10:15
 ```
 
-- [ ] **Step 4: Run Web test and verify GREEN**
+Do not hide a persistent Event because the current retrospective repaint calculation later differs.
 
-Use Step 2 command, then:
+- [ ] **Step 4: Run Web focused tests and Alert ownership check**
 
 ```bash
+pnpm --dir apps/quant-web exec node --test tests/alerts.test.ts
 pnpm --dir apps/quant-web run check:alert-rules
 ```
 
-- [ ] **Step 5: Commit**
+Expected: PASS.
+
+- [ ] **Step 5: Commit Task 6**
 
 ```bash
-git add apps/quant-web/src/utils/alertMarkers.ts apps/quant-web/tests/alerts.test.ts
+git add \
+  apps/quant-web/src/utils/alertMarkers.ts \
+  apps/quant-web/tests/alerts.test.ts
 
 git commit -m "feat(web): clarify HTDY first-seen alert markers"
 ```
@@ -654,67 +775,77 @@ git commit -m "feat(web): clarify HTDY first-seen alert markers"
 - Modify: `AGENTS.md`
 - Modify: `PROJECT_SOURCE.md`
 - Modify: `DECISIONS.md`
-- Modify only if commands change: `TESTING.md`
-- Test: `tests/engineering/test_canonical_consistency.py`
+- Modify only if validation commands genuinely change: `TESTING.md`
+- Modify when stable guard coverage belongs there: `tests/engineering/test_canonical_consistency.py`
 
 **Interfaces:**
-- Consumes: implemented code behavior from Tasks 1–6.
-- Produces: active canonical language matching the code; no transient Runtime claims.
+- Consumes: implemented behavior from Tasks 1–6.
+- Produces: active canonical wording matching code, without transient Runtime claims.
 
 - [ ] **Step 1: Update `AGENTS.md` Alert Runtime boundary**
 
-State exactly:
+Record this semantic contract without changing SuBing rules:
 
 ```text
-HTDY uses forward-only first-seen observation semantics. Existing same-frequency completed Live / canonical_updated triggers compare only previous/current prefixes; historical repaint candidates are limited to the kernel repaint zone. AlertEvent bar_end is the observation Bar, detected_at is first-seen time. Once frozen, repaint disappearance/reappearance/direction changes do not revise or resend the Event. Startup/repair/replay/backfill/EOD recalculation do not create historical HTDY Events or notifications.
+HTDY uses forward-only first-seen observation semantics. Existing same-frequency completed Live / canonical_updated triggers compare only previous/current prefixes; historical repaint candidates are limited to the kernel repaint zone. AlertEvent bar_end is the observation Bar and detected_at is first-seen time. Once frozen, repaint disappearance/reappearance/direction changes do not revise or resend the Event. Startup/repair/replay/backfill/EOD recalculation do not create historical HTDY Events or notifications.
 ```
 
-Do not modify SuBing continuation rules.
+- [ ] **Step 2: Update `PROJECT_SOURCE.md` HTDY stable product description**
 
-- [ ] **Step 2: Update `PROJECT_SOURCE.md` stable HTDY product description**
+State concisely that persistent HTDY AlertEvent is a forward-only first-seen fact while the retrospective Web overlay can later differ because the indicator repaints.
 
-Add the same product-level fact concisely: HTDY persistent AlertEvent is forward-only first-seen; retrospective overlay may later differ because the indicator repaints.
+- [ ] **Step 3: Update `DECISIONS.md` long-term HTDY/Alert identity**
 
-- [ ] **Step 3: Update `DECISIONS.md` HTDY/Alert long-term decision**
-
-Freeze these identities:
+Freeze:
 
 ```text
 bar_end = observation Bar time
 
 detected_at = first-seen Runtime time
 
-same identity after repaint = immutable no-op
+same HTDY Event identity after repaint = immutable no-op
 ```
 
-Preserve the two-table / one-shot / no replay decision.
+Retain the two-table, commit-first, one-shot, no-replay/no-retry decision.
 
-- [ ] **Step 4: Add/adjust canonical consistency assertions only for stable text/behavior contracts already covered by that test**
+- [ ] **Step 4: Add a narrow canonical-consistency guard only if it protects a durable invariant**
 
-Do not create brittle whole-document snapshots. Prefer checks for stable Rule/Scope names and forbidden reintroduction of replay/new persistence surfaces.
+Appropriate checks include:
 
-- [ ] **Step 5: Run canonical and document checks**
+- Rule code remains `htdy_original_15m`;
+- HTDY Scope authority remains `scope_product_frequencies`;
+- no new active Alert persistence table is referenced;
+- replay/backfill remains forbidden.
+
+Do not snapshot whole documents.
+
+- [ ] **Step 5: Run canonical/document validation**
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
-uv run --project services/quant-api pytest -q tests/engineering/test_canonical_consistency.py
+uv run --project services/quant-api pytest -q \
+  tests/engineering/test_canonical_consistency.py
 
 openspec validate --specs --strict --no-interactive
 python3 scripts/engineering/secret_scan.py --json
 git diff --check
 ```
 
-Expected: all pass, secret scan 0 findings.
+Expected: all pass, secret scan reports zero findings.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 6: Commit Task 7**
 
 ```bash
-git add AGENTS.md PROJECT_SOURCE.md DECISIONS.md TESTING.md tests/engineering/test_canonical_consistency.py
+git add AGENTS.md PROJECT_SOURCE.md DECISIONS.md
+```
 
+Add `TESTING.md` and/or `tests/engineering/test_canonical_consistency.py` only if they actually changed, then:
+
+```bash
 git commit -m "docs: freeze HTDY first-seen alert contract"
 ```
 
-If `TESTING.md` or the engineering test did not need changes, do not stage them.
+Do not modify `STATUS.md` in this task.
 
 ---
 
@@ -725,7 +856,7 @@ If `TESTING.md` or the engineering test did not need changes, do not stage them.
 - Review the complete task-branch diff only.
 
 **Interfaces:**
-- Consumes: exact task branch head from Tasks 1–7.
+- Consumes: exact implementation branch head from Tasks 1–7.
 - Produces: verified implementation candidate and an explicit human Gate; no release/Runtime actions.
 
 - [ ] **Step 1: Run focused HTDY/Alert backend tests**
@@ -733,15 +864,15 @@ If `TESTING.md` or the engineering test did not need changes, do not stage them.
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
 uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/test_market_read_service.py \
   services/quant-api/tests/test_alert_evaluator.py \
+  services/quant-api/tests/test_alert_service.py \
   services/quant-api/tests/test_alert_runtime.py \
   services/quant-api/tests/test_alert_notification.py \
   services/quant-api/tests/test_alert_notification_dispatcher.py
 ```
 
-Add the MarketReadService focused test file to this command if Task 1 created or modified one.
-
-- [ ] **Step 2: Run full non-production backend verification**
+- [ ] **Step 2: Run the full non-production backend suite**
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
@@ -757,7 +888,7 @@ uv run --project services/quant-api python -m ruff check \
   services/quant-api/app services/quant-api/tests packages/quant-core/guiyi_quant tests/engineering
 ```
 
-- [ ] **Step 3: Run full Web verification**
+- [ ] **Step 3: Run the full Web suite**
 
 ```bash
 pnpm --dir apps/quant-web run check:alert-rules
@@ -770,7 +901,8 @@ pnpm --dir apps/quant-web build
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
-uv run --project services/quant-api pytest -q tests/engineering/test_canonical_consistency.py
+uv run --project services/quant-api pytest -q \
+  tests/engineering/test_canonical_consistency.py
 
 openspec validate --specs --strict --no-interactive
 python3 scripts/engineering/secret_scan.py --json
@@ -779,55 +911,92 @@ git diff --check
 
 - [ ] **Step 5: Perform exact-head self-review against the Spec**
 
-Verify all of the following from code/tests, not assumption:
+Verify from code/tests, not assumption:
 
 ```text
-formula unchanged
-Rule/Scope/audience unchanged
-no migration/new table
-27-bar scan uses production constant
-64-bar/full-history parity proven
+HTDY formula unchanged
+indicator/rule identity unchanged
+Scope/audience/Topic unchanged
+no Alembic migration/new table
+27-bar scan uses production kernel constant
+64-bar/full-history parity is proven
 candidate contract belongs to observation Bar
-bar_end/detected_at are distinct facts
-first Event freezes later repaint revision
-startup/catch-up no backfill
-transport remains one-shot/no retry
+bar_end and detected_at are distinct facts
+first Event freezes later repaint revisions
+startup/catch-up do not backfill
+transport remains one-shot/no retry/no replay
 D1/W1 still canonical_updated only
-SuBing unchanged
+SuBing behavior unchanged
 STATUS.md not prematurely updated
 ```
 
-- [ ] **Step 6: Open an independent Lane 3 Review session**
+- [ ] **Step 6: Push the implementation branch and open a PR to `develop`**
 
-Review the exact branch head against:
+The PR description must state:
+
+- exact implementation head SHA;
+- Spec and Plan paths;
+- focused/full test results;
+- no production DB/Scope/Redis/PushPlus/Runtime/main/tag operation occurred;
+- Lane 3 independent Review still required before integration.
+
+Do not enable auto-merge.
+
+- [ ] **Step 7: Open a fresh independent Lane 3 Review session**
+
+Review the exact PR head against:
 
 - `STATUS.md`
 - `AGENTS.md`
 - `docs/DEVELOPMENT.md`
 - `PROJECT_SOURCE.md`
 - `DECISIONS.md`
-- this Spec and Plan
+- `docs/superpowers/specs/2026-08-31-htdy-first-seen-alert-design.md`
+- `docs/superpowers/plans/2026-08-31-htdy-first-seen-alert.md`
 
-Review specifically for future-leak semantics, prefix comparison, rollover contract ownership, Event idempotency, notification one-shot behavior, and accidental Scope/Runtime changes.
+Review specifically for centered-XMA future dependency, prefix-diff correctness, 27/64 boundaries, rank1 rollover ownership, Event idempotency, one-shot notification behavior, startup backfill prevention, and accidental Scope/Runtime changes.
 
-- [ ] **Step 7: Stop at the develop-integration Gate**
+- [ ] **Step 8: Stop at the human develop-integration Gate**
 
 Report:
 
 ```text
-CODE_COMPLETE / TEST_COMPLETE / REVIEW_RESULT
+CODE_COMPLETE
+TEST_COMPLETE
+REVIEW_RESULT=<independent review verdict>
+HEAD=<exact SHA>
 ```
 
-and the exact commit SHA. Do not merge to `develop` until the user explicitly gives the project-required integration approval. Even after develop integration, do not merge `main`, create a tag, promote Runtime, mutate real Scope, or send a real PushPlus notification without their separate Gates.
-
----
-
-## Implementation Completion Definition
-
-The implementation task is complete only when all tests and independent Review support:
+The only successful integration verdict at this stage is:
 
 ```text
 允许集成 develop
 ```
 
-That verdict is not release approval and not Runtime promotion approval. The first real proof remains a later, separately authorized Runtime release/promotion followed by a natural enabled `symbol × frequency` trigger; the current production `jm × 15m` Scope must not be changed just to manufacture evidence.
+Do not merge the PR until the user explicitly gives that approval. After integration, do not merge `main`, create a tag, promote Runtime, mutate real Scope, acknowledge production state, or send real PushPlus without separate explicit Gates.
+
+---
+
+## Implementation Completion Definition
+
+The implementation branch is ready for the project integration Gate only when all of these hold:
+
+```text
+formula unchanged
+Rule/Scope/audience unchanged
+no migration/new persistence domain
+forward-only previous/current prefix diff
+27-bar repaint scan
+64-bar bounded parity proven
+per-Bar rank1 contract ownership proven
+immutable first-seen AlertEvent/no retraction
+no startup backfill/replay/retry
+bar_end = observation time
+detected_at = first-seen time
+Web retrospective arrow and persistent Event square remain distinct
+SuBing unchanged
+full verification passes
+independent Lane 3 Review passes
+```
+
+This does not authorize release or Runtime promotion. The first real evidence remains a later separately approved release/Runtime promotion followed by a natural enabled `symbol × frequency` trigger; the production `jm × 15m` Scope must not be changed merely to manufacture evidence.
