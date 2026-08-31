@@ -95,11 +95,14 @@ def run_after_market(
 
     with session_factory() as session:
         manager = manager_factory(session)
-        market_result = after_market_factory(
+        updater = after_market_factory(
             manager,
             failure_notification=failure_notification,
-        ).run(
-            post_update=(post_update if daily_watch_generator_factory is not None else None)
+        )
+        market_result = (
+            updater.run(post_update=post_update)
+            if daily_watch_generator_factory is not None
+            else updater.run()
         )
     return market_result.as_payload()
 
