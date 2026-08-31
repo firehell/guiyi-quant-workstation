@@ -301,7 +301,7 @@ near_zero_ratio = max(abs(current_dif), abs(current_dea)) / ATR14
 ATR14 not-ready, invalid or <= 0 -> DATA_UNAVAILABLE
 ```
 
-Segment reset必须保留 stitched EMA21、MACD、ATR14、Range ATR500 的 warm-up state，只调用 Task 1 helper 清空 Range segment-local regime。
+Segment reset 必须保留 stitched EMA21、MACD、ATR14、Range ATR500 的 warm-up state，只调用 Task 1 helper 清空 Range segment-local regime。
 
 - [ ] **Step 1: 先写失败测试**
 
@@ -360,14 +360,16 @@ Machine state 只包含：symbol、policy、indicator state、current segment、
 
 ```text
 1 validate monotonic Bar + exactly-one physical segment ownership
-2 on segment transition: require previous segment position/pending already terminal/canceled; preserve stitched indicators; reset Range regime and segment-local strategy state
+2 if first Bar of a new segment: require prior segment has no live position/pending after its authoritative terminal handling; preserve stitched EMA/MACD/ATR states; reset only Range regime and new-segment counters
 3 apply previous pending action at current same-segment D1 open before reading current close facts
 4 advance current completed-D1 indicators
-5 if current Bar is authoritative segment terminal: close open position at current close with CONTRACT_SEGMENT_END; cancel pending open; prohibit new decision
-6 else if LONG/SHORT: evaluate only EMA21 opposite-cross and create pending close for next same-segment D1 open
+5 if current Bar is authoritative segment terminal: close open position at current close with CONTRACT_SEGMENT_END; cancel any pending open created earlier; prohibit a new decision
+6 else if position LONG/SHORT: evaluate only EMA21 opposite-cross and create pending close for next same-segment D1 open
 7 else FLAT: require segment_bar_count > 1, TREND_ELIGIBLE, EMA side/slope, near-zero golden/dead cross; create one pending open
 8 store current facts as previous facts
 ```
+
+**Segment transition fail-closed rule:** Machine does not guess a missed previous terminal. If a new `ResolvedContractSegment` arrives while the prior state still contains an open position or any pending action, raise a typed segment-transition error. Historical replay is responsible for feeding the previous segment's authoritative terminal Bar before the first Bar of the next segment.
 
 Long predicate：`TREND_ELIGIBLE && ABOVE && slope5>0 && GOLDEN && zero_distance<=0.25`。Short 完全对称。
 
@@ -375,7 +377,7 @@ Long predicate：`TREND_ELIGIBLE && ABOVE && slope5>0 && GOLDEN && zero_distance
 
 - [ ] **Step 1: 先写 machine 失败测试**
 
-至少独立覆盖：首个 segment D1 不入场、CHOP 阻断、ready/no box 允许检查入场、long/short、无 cross 不入场、错误 EMA side/slope 不入场、signal close 不作为 fill、pending 只在下一同合约 D1 open 生效、gap 不取消且记录、EMA-only exit、反向 MACD 不退出、Range 重新 intact 不退出、不同 Bar 不自动反手、terminal close precedence、不同 segment 不携带 position/pending、duplicate/stale input fail-closed。
+至少独立覆盖：首个 segment D1 不入场、CHOP 阻断、ready/no box 允许检查入场、long/short、无 cross 不入场、错误 EMA side/slope 不入场、signal close 不作为 fill、pending 只在下一同合约 D1 open 生效、gap 不取消且记录、EMA-only exit、反向 MACD 不退出、Range 重新 intact 不退出、不同 Bar 不自动反手、terminal close precedence、segment transition with uncleared position/pending fails closed、duplicate/stale input fail-closed。
 
 - [ ] **Step 2: 运行并确认缺少 machine**
 
@@ -422,9 +424,11 @@ Result 固定包含：strategy ID、symbol、source first/last day、source bar 
 
 Replay 开始前必须验证：bars 严格递增；每根 D1 Bar 被 exactly one `ResolvedContractSegment` 覆盖；segments 不重叠；segment contract 与 actual-dominant restored identity 一致。随后只循环调用 Task 4 machine，不增加第二套 batch 公式。
 
+**Terminal handling:** 对每个权威 `ResolvedContractSegment`，只有当输入 bars 覆盖该 segment 的权威 `end_trading_day` 时，才允许把该段最后一根 D1 标记为 terminal 并产生 `CONTRACT_SEGMENT_END`。若 Historical 查询窗口在一个仍继续的 segment 中途结束，最后一根 queried D1 不是 terminal，open Episode 保持 open。若 segment end 在请求窗口内但缺少该日 D1 Bar，replay 必须 fail-closed，不允许把更早一根 Bar 当 terminal。
+
 - [ ] **Step 1: 先写 replay invariance tests**
 
-锁定：batch replay == 手工逐 Bar step；每个完整 warm-up 前缀与 full run 对应 Action prefix 一致；future tail 不改旧 Action/ref price；prepend 只补 warm-up、稳定前缀不漂移；`visual_start_at` 不提前产生 Action；segment reset 防止旧合约 box 压制新合约；Action/Episode 不跨段。
+锁定：batch replay == 手工逐 Bar step；每个完整 warm-up 前缀与 full run 对应 Action prefix 一致；future tail 不改旧 Action/ref price；prepend 只补 warm-up、稳定前缀不漂移；`visual_start_at` 不提前产生 Action；segment reset 防止旧合约 box 压制新合约；Action/Episode 不跨段；mid-segment query end 保留 open Episode；covered authoritative segment end 才 terminal；missing covered terminal Bar fail-closed。
 
 - [ ] **Step 2: 运行并确认 replay 缺失**
 
@@ -484,15 +488,17 @@ git commit -m "feat(subing): add daily trend historical replay"
 
 **80/20 split:** 按 closed Episode 的 sorted unique entry trading day 切分；`cut=max(1,min(len(days)-1,int(len(days)*0.8)))`，`holdout_start=days[cut]`，同一 entry day 永不跨 split。少于两个 unique entry day 时 holdout 显式 unavailable。
 
+**Aggregate scope:** active60 aggregate 只聚合成功产品的 closed Episodes，并额外返回 `requested_product_count / completed_product_count / failed_products`。任何失败产品都令整个 response `status=degraded`；不得以成功子集的 aggregate 冒充完整 active60 结果。只有 `failed_products` 为空时才能称 active-universe aggregate complete。
+
 **Metrics:** closed/open count、long/short、positive ratio、mean/median/q25/q75/min/max reference change、mean/median holding D1 bars、两类 exit count、entry gap abs/ATR14 distribution、按年份/方向、development/holdout。closed Episode `<30` 标 `INSUFFICIENT_SAMPLE`。Quantile 使用 Decimal 排序和线性插值，不转换 float。
 
 - [ ] **Step 1: 先写 report 数学测试**
 
-使用手算 Decimal Episode 锁定 mean/median/q25/q75、same-day split、sample status。
+使用手算 Decimal Episode 锁定 mean/median/q25/q75、same-day split、sample status、partial-product aggregate 标记。
 
 - [ ] **Step 2: 写 fake reader/service 测试**
 
-锁定分页 progress、no-progress fail-closed、只读 D1/actual_dominant、representative 精确四品种、active universe、单产品失败隔离、无任何 write method 调用。
+锁定分页 progress、no-progress fail-closed、只读 D1/actual_dominant、representative 精确四品种、active universe、单产品失败隔离、degraded aggregate 不冒充 complete active60、无任何 write method 调用。
 
 - [ ] **Step 3: 运行并确认模块缺失**
 
@@ -633,7 +639,7 @@ uv run --project services/quant-api --no-sync mypy \
 
 - [ ] **Step 5: 独立 Sol/high Review**
 
-Reviewer 必须逐项检查：Range reset 保留 ATR500；ready/no active box 为 TREND_ELIGIBLE；intact Range 阻断；EMA21 side + 5-bar slope only；MACD near-zero cross 是唯一 entry trigger；next same-contract D1 open；EMA-only ordinary exit；segment terminal；deterministic IDs；batch/incremental、prefix、future-tail、prepend invariance；80/20 split；无 Current/API/Web/Alert/DB-write 扩张。
+Reviewer 必须逐项检查：Range reset 保留 ATR500；ready/no active box 为 TREND_ELIGIBLE；intact Range 阻断；EMA21 side + 5-bar slope only；MACD near-zero cross 是唯一 entry trigger；next same-contract D1 open；EMA-only ordinary exit；segment terminal only with covered authoritative end；segment transition fail-closed；deterministic IDs；batch/incremental、prefix、future-tail、prepend invariance；80/20 split；degraded aggregate semantics；无 Current/API/Web/Alert/DB-write 扩张。
 
 Review 只允许：`允许进入 Historical evidence run`、`要求修正后再 Review`、`阻塞`。
 
@@ -671,7 +677,7 @@ uv run --project services/quant-api --no-sync guiyi research subing-daily-trend 
 
 - [ ] **Step 9: 写版本化 evidence**
 
-在同一 implementation branch 新增 `docs/tasks/2026-08-31-subing-trend-daily-historical-evidence.md`，记录 code SHA、policy SHA-256、exact through date、两条实际命令、每产品 source window/bar/segment counts、JM/AG/RB/EG episode/sample status、active60 aggregate/product failures、development/holdout，以及“gross reference change，不是账户 PnL；不自动 promotion”。
+在同一 implementation branch 新增 `docs/tasks/2026-08-31-subing-trend-daily-historical-evidence.md`，记录 code SHA、policy SHA-256、exact through date、两条实际命令、每产品 source window/bar/segment counts、JM/AG/RB/EG episode/sample status、active60 requested/completed/failed counts、成功产品 aggregate、development/holdout，以及“gross reference change，不是账户 PnL；有失败产品时不得称完整 active60；不自动 promotion”。
 
 - [ ] **Step 10: 停在 Historical Gate**
 
@@ -692,9 +698,11 @@ HISTORICAL_REPORT_READY
 - 没有 runtime-adjustable strategy threshold。
 - `subing_strategy_v1` 不在修改清单中；只允许作为回归测试对象。
 - Range segment reset 明确只清 regime-local state，ATR500 继续 stitched warm-up。
+- 新 segment 若旧 position/pending 未完成权威 terminal/cancel，明确 fail-closed，不隐式清仓。
+- 只有覆盖权威 segment end 时才能产生 `CONTRACT_SEGMENT_END`；查询窗口中途结束不伪造 terminal。
 - Historical replay 与未来增量语义共享 Task 4 的唯一 step function。
 - Research loader 只走 MarketDataService/public research loader seam。
-- 报告统计保持 Decimal；同一 entry trading day 不跨 development/holdout。
+- 报告统计保持 Decimal；同一 entry trading day 不跨 development/holdout；有产品失败时 aggregate 明确 degraded。
 - 真实 Historical 读取位于独立 owner Gate 之后。
 - 本计划不授权 main/tag、Runtime、生产写入、Scope 或通知。
 - 文档中不存在未解析的源码实现占位；Historical 日期通过 owner 批准后设置的受控环境变量进入命令。
