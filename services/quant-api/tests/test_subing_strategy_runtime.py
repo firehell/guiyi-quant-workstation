@@ -150,7 +150,7 @@ class _CurrentReader:
         ] = []
         self.terminal_calls: list[tuple[str, date, SubingStrategySourceIdentity]] = []
 
-    def read_completed_bars(
+    def read_final_catch_up_bars(
         self,
         *,
         symbol: str,
@@ -490,6 +490,9 @@ def test_final_catch_up_uses_same_contract_continuation_authority() -> None:
         physical_contract=identity.contract,
     )
     current = _CurrentReader(
+        continuation_kinds={
+            next_day: SubingLiveContinuationKind.STALE_OR_IDENTITY_INVALID,
+        },
         completed_result=SubingLiveCompletedBars(
             decision=SubingLiveContinuationDecision(
                 kind=SubingLiveContinuationKind.CONTINUE_SAME_SEGMENT,
