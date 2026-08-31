@@ -26,6 +26,28 @@ review: independent Sol/high formula checkpoint
 human Gate: 允许集成 develop
 ```
 
+## Numeric Boundary
+
+现有 Quant Core `step_ema`、`step_macd`、`step_atr` 使用 finite `float | int` 数值。本任务不得为了 Watch 全局改写这些公共接口。
+
+固定边界：
+
+```text
+CanonicalBar / application domain price and volume = Decimal
+single adapter to kernel = validated finite float
+Quant Core rolling state and points = float, round_digits=6
+application SubingWatchEvaluation = Decimal restored from canonical rounded text
+identity, candidate_id and dedupe = never derived from float values
+```
+
+因此：
+
+- `SubingWatchKernelBar` 和 `SubingWatchKernelEvaluation` 位于 Quant Core，数值字段使用 `float`；
+- `SubingWatchEvaluation` 位于应用层 `contracts.py`，公开数值字段使用 `Decimal`；
+- 唯一转换函数 `to_subing_watch_kernel_bar(CanonicalBar)` 校验 Decimal 有限、OHLC 顺序和范围后转换；
+- `from_kernel_evaluation` 使用固定六位十进制文本恢复 `Decimal`；
+- 不允许多个调用点各自做 float/Decimal 转换。
+
 ## File Map
 
 ### New
@@ -62,14 +84,9 @@ services/quant-api/tests/research/test_research_cli_parser_requests.py
 
 ## Task 1 — Freeze exact policy and typed contracts
 
-### Files
-
-- Create: `data/research_policies/subing_watch_15m_v1.json`
-- Create: `packages/quant-core/guiyi_quant/indicators/subing_watch_15m.py`
-- Modify: `packages/quant-core/guiyi_quant/indicators/__init__.py`
-- Test: `services/quant-api/tests/test_subing_watch_formula.py`
-
 ### Exact policy
+
+Create `data/research_policies/subing_watch_15m_v1.json`:
 
 ```json
 {
@@ -110,11 +127,79 @@ Any missing/extra field, type drift or value drift raises:
 SubingWatchPolicyError("SUBING_WATCH_POLICY_INVALID")
 ```
 
-### Public contracts
+### Quant Core contracts
+
+Create in `packages/quant-core/guiyi_quant/indicators/subing_watch_15m.py`:
 
 ```python
 SUBING_WATCH_FORMULA_VERSION = "subing_watch_15m_v1"
 
+@dataclass(frozen=True, slots=True)
+class SubingWatchKernelIdentity:
+    symbol: str
+    contract: str
+    segment_start_trading_day: str
+    series_kind: Literal["actual_dominant"] = "actual_dominant"
+    frequency: Literal["15m"] = "15m"
+
+@dataclass(frozen=True, slots=True)
+class SubingWatchKernelBar:
+    bar_end: str
+    trading_day: str
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: float
+
+@dataclass(frozen=True, slots=True)
+class SubingWatchKernelHigherTimeframe:
+    bar_end: str
+    close: float | None
+    ma21: float | None
+    ma21_slope_5_bps_per_bar: float | None
+    ready: bool
+    valid: bool
+
+@dataclass(frozen=True, slots=True)
+class SubingWatchKernelContext:
+    ma21_slope_5_bps_per_bar: float | None
+    distance_to_ma21_atr14: float | None
+    macd_zero_distance_atr14: float | None
+    volume_ratio_20: float | None
+    range_state: Literal[
+        "range_unavailable", "no_active_range", "intact", "broken_up", "broken_down"
+    ]
+    higher_timeframe_alignment: Literal[
+        "aligned", "opposed", "neutral", "unavailable"
+    ]
+
+@dataclass(frozen=True, slots=True)
+class SubingWatchKernelEvaluation:
+    formula_version: str
+    identity: SubingWatchKernelIdentity
+    trading_day: str
+    bar_end: str
+    outcome: Literal[
+        "evaluated_no_signal", "evaluated_candidate", "source_unavailable"
+    ]
+    observation_types: tuple[Literal["buy", "sell"], ...]
+    close: float | None
+    ma21: float | None
+    dif: float | None
+    dea: float | None
+    macd_histogram: float | None
+    context: SubingWatchKernelContext
+    public_reason_codes: tuple[str, ...]
+```
+
+`SubingWatchKernelState` is immutable and bounded. It may contain only policy/identity, rolling SMA21, latest five valid SMA21 values, existing Quant Core MACD/ATR/Range states, previous ready DIF/DEA, previous 20 volumes, last Bar fingerprint/evaluation and a fail-closed blocked reason.
+
+### Application contracts
+
+Create in `services/quant-api/app/market_data/subing_watch/contracts.py`:
+
+```python
 @dataclass(frozen=True, slots=True)
 class SubingWatchSourceIdentity:
     symbol: str
@@ -122,38 +207,6 @@ class SubingWatchSourceIdentity:
     segment_start_trading_day: date
     series_kind: Literal["actual_dominant"] = "actual_dominant"
     frequency: Literal["15m"] = "15m"
-
-@dataclass(frozen=True, slots=True)
-class SubingWatchBarInput:
-    bar_end: datetime
-    trading_day: date
-    open: Decimal
-    high: Decimal
-    low: Decimal
-    close: Decimal
-    volume: Decimal
-
-@dataclass(frozen=True, slots=True)
-class SubingWatchHigherTimeframeInput:
-    bar_end: datetime
-    close: Decimal | None
-    ma21: Decimal | None
-    ma21_slope_5_bps_per_bar: Decimal | None
-    ready: bool
-    valid: bool
-
-@dataclass(frozen=True, slots=True)
-class SubingWatchContext:
-    ma21_slope_5_bps_per_bar: Decimal | None
-    distance_to_ma21_atr14: Decimal | None
-    macd_zero_distance_atr14: Decimal | None
-    volume_ratio_20: Decimal | None
-    range_state: Literal[
-        "range_unavailable", "no_active_range", "intact", "broken_up", "broken_down"
-    ]
-    higher_timeframe_alignment: Literal[
-        "aligned", "opposed", "neutral", "unavailable"
-    ]
 
 @dataclass(frozen=True, slots=True)
 class SubingWatchEvaluation:
@@ -177,7 +230,16 @@ class SubingWatchEvaluation:
     public_reason_codes: tuple[str, ...]
 ```
 
-`SubingWatchState` must be immutable and bounded. It may contain only policy/identity, rolling SMA21 state, latest five valid MA21 values, existing Quant Core MACD/ATR/Range states, previous ready DIF/DEA, previous 20 volumes, last Bar fingerprint/evaluation and a fail-closed blocked reason.
+Add exactly one adapter pair:
+
+```python
+def to_subing_watch_kernel_bar(bar: CanonicalBar) -> SubingWatchKernelBar: ...
+def from_kernel_evaluation(
+    evaluation: SubingWatchKernelEvaluation,
+    *,
+    source_mode: Literal["canonical", "canonical_live"],
+) -> SubingWatchEvaluation: ...
+```
 
 ### RED tests
 
@@ -199,82 +261,69 @@ def test_policy_rejects_ema21_drift(tmp_path: Path) -> None:
     path.write_text(json.dumps(payload))
     with pytest.raises(SubingWatchPolicyError, match="SUBING_WATCH_POLICY_INVALID"):
         load_subing_watch_policy(path)
+
+
+def test_decimal_float_boundary_is_single_and_deterministic() -> None:
+    kernel = to_subing_watch_kernel_bar(canonical_bar(close=Decimal("123.4567894")))
+    assert kernel.close == 123.4567894
+    app = from_kernel_evaluation(kernel_evaluation(ma21=123.456789), source_mode="canonical")
+    assert app.ma21 == Decimal("123.456789")
 ```
 
-Also cover invalid symbol, contract/symbol mismatch, non-aware time, non-15m frequency, `auto_order=true`, unknown fields and wrong numeric types.
+Also cover invalid symbol, contract mismatch, non-aware time, non-15m frequency, `auto_order=true`, unknown policy field, NaN/Inf conversion and OHLC ordering.
 
-### Run RED
+### RED / GREEN / commit
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
 uv run --project services/quant-api --no-sync pytest -q \
   services/quant-api/tests/test_subing_watch_formula.py \
-  -k "policy or identity"
+  -k "policy or identity or decimal_float"
 ```
 
-Expected: module/contracts missing.
-
-### GREEN implementation
-
-- Implement exact JSON validation and stable digest.
-- Implement a private bounded rolling SMA state; do not create a second general indicator platform.
-- Export only Watch public contracts/functions from `indicators/__init__.py`.
-- Do not change generic MACD Registry `live_capable/alert_capable`; Watch policy is the scoped authority.
-
-### Verify and commit
+Implement exact JSON validation, private bounded rolling SMA state and the single numeric adapter. Do not change generic EMA/MACD/ATR public types or Registry capabilities.
 
 ```bash
-PYTHONPATH=services/quant-api:packages/quant-core \
-uv run --project services/quant-api --no-sync pytest -q \
-  services/quant-api/tests/test_subing_watch_formula.py \
-  -k "policy or identity"
-
 git add \
   data/research_policies/subing_watch_15m_v1.json \
   packages/quant-core/guiyi_quant/indicators/subing_watch_15m.py \
   packages/quant-core/guiyi_quant/indicators/__init__.py \
+  services/quant-api/app/market_data/subing_watch/contracts.py \
   services/quant-api/tests/test_subing_watch_formula.py
 git commit -m "feat(indicators): freeze SuBing Watch policy"
 ```
 
 ## Task 2 — Implement the only completed-15m incremental formula
 
-### Files
-
-- Modify: `packages/quant-core/guiyi_quant/indicators/subing_watch_15m.py`
-- Create: `services/quant-api/tests/fixtures/subing_watch_15m_v1_golden.json`
-- Modify: `services/quant-api/tests/test_subing_watch_formula.py`
-
 ### Public interface
 
 ```python
-def initial_subing_watch_state(
-    identity: SubingWatchSourceIdentity,
+def initial_subing_watch_kernel_state(
+    identity: SubingWatchKernelIdentity,
     policy: SubingWatchPolicy,
-) -> SubingWatchState: ...
+) -> SubingWatchKernelState: ...
 
 def step_subing_watch_15m(
-    state: SubingWatchState,
-    bar: SubingWatchBarInput,
+    state: SubingWatchKernelState,
+    bar: SubingWatchKernelBar,
     *,
-    source_mode: Literal["canonical", "canonical_live"],
-    higher_timeframe: SubingWatchHigherTimeframeInput | None = None,
-) -> tuple[SubingWatchState, SubingWatchEvaluation]: ...
+    higher_timeframe: SubingWatchKernelHigherTimeframe | None = None,
+) -> tuple[SubingWatchKernelState, SubingWatchKernelEvaluation]: ...
 ```
 
 ### Fixed per-Bar order
 
 ```text
-1. validate exact identity, timezone, finite OHLCV and OHLC ordering;
+1. validate identity, aware ISO bar_end, finite OHLCV and OHLC ordering;
 2. detect same-Bar duplicate before mutation;
-3. reject/return unavailable when state is blocked;
-4. advance SMA21 using close;
+3. return unavailable when state is blocked;
+4. advance private SMA21 using close;
 5. advance MACD 12/26/9 via existing step_macd;
 6. derive exact golden/dead cross from previous ready DIF/DEA and current values;
 7. derive BUY/SELL using current close versus current SMA21;
 8. calculate context separately;
 9. save current ready DIF/DEA for the next Bar;
-10. freeze rounded output and candidate_id.
+10. freeze rounded output.
 ```
 
 Exact truth table:
@@ -288,69 +337,38 @@ sell   = dead and close < sma21
 
 `close == SMA21` produces no Candidate. BUY and SELL cannot both be true.
 
-Invalid completed input cannot be skipped. It produces `source_unavailable`, sets a blocked reason and prevents recursive continuation until deterministic restore or new physical-segment initialization.
+Invalid completed input cannot be skipped. It produces `source_unavailable`, sets a blocked reason and prevents recursive continuation until deterministic restore or a new physical-segment state.
 
 Same `bar_end` + same fingerprint is idempotent and returns the frozen prior evaluation. Same `bar_end` + different OHLCV raises `SUBING_WATCH_DUPLICATE_CONFLICT`.
 
 ### RED matrix
 
-- first ready golden cross;
-- first ready dead cross;
+- first ready golden/dead cross;
 - previous equality allowed, current equality not cross;
 - close above/below/equal SMA21;
-- warm-up and first physical-segment Bar;
-- invalid/non-finite OHLCV;
-- same duplicate and conflicting duplicate;
+- warm-up and first segment Bar;
+- invalid/non-finite input;
+- duplicate/conflict;
 - identity mismatch;
-- cross-contract previous Bar forbidden;
-- source mode validation;
-- candidate ID stability and field sensitivity.
+- cross-contract comparison forbidden;
+- batch/incremental parity;
+- every prefix stable;
+- future-tail invariance;
+- candidate ID stability at application boundary.
 
-Candidate ID uses stable SHA-256 over:
+Candidate ID is generated after application conversion from identity/time/type only:
 
 ```text
-formula_version
-symbol
-contract
-segment_start_trading_day
-frequency
-bar_end
-observation_type
+sha256(formula_version + symbol + contract + segment_start_trading_day + frequency + bar_end + observation_type)
 ```
+
+No float value participates in the ID.
 
 ### Golden fixture
 
-`subing_watch_15m_v1_golden.json` contains complete values for:
+`services/quant-api/tests/fixtures/subing_watch_15m_v1_golden.json` contains complete policy, identity, input bars, expected kernel points, expected application evaluations and a real `payload_sha256`. Include warm-up, no-signal, buy, sell, equality and duplicate cases. Expected values are committed, not generated by the code under test.
 
-```text
-schema_version
-formula_version
-parameters
-source_identity
-bars
-expected evaluations
-payload_sha256
-```
-
-The digest is computed over every top-level field except `payload_sha256`, stable sorted-key compact UTF-8 JSON. Include complete warm-up, no-signal, buy, sell, equality and duplicate cases. No ellipsis or generated-at-test expected values.
-
-### Prefix tests
-
-```python
-@pytest.mark.parametrize("prefix_length", range(1, GOLDEN_BAR_COUNT + 1))
-def test_each_prefix_is_stable(prefix_length: int) -> None:
-    full = run_incremental(FIXTURE)
-    prefix = run_incremental(FIXTURE, stop=prefix_length)
-    assert prefix == full[:prefix_length]
-
-
-def test_future_tail_cannot_change_frozen_prefix() -> None:
-    original = run_incremental(FIXTURE)
-    mutated = run_incremental(mutate_only_future_tail(FIXTURE))
-    assert mutated[:FROZEN_PREFIX] == original[:FROZEN_PREFIX]
-```
-
-### Verification
+### Verification and commit
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
@@ -358,13 +376,10 @@ uv run --project services/quant-api --no-sync pytest -q \
   services/quant-api/tests/test_subing_watch_formula.py \
   services/quant-api/tests/test_indicator_kernel_v1c_macd_atr.py \
   services/quant-api/tests/test_range_detector_lux.py
-```
 
-Commit:
-
-```bash
 git add \
   packages/quant-core/guiyi_quant/indicators/subing_watch_15m.py \
+  services/quant-api/app/market_data/subing_watch/contracts.py \
   services/quant-api/tests/fixtures/subing_watch_15m_v1_golden.json \
   services/quant-api/tests/test_subing_watch_formula.py
 git commit -m "feat(indicators): add SuBing Watch kernel"
@@ -372,12 +387,7 @@ git commit -m "feat(indicators): add SuBing Watch kernel"
 
 ## Task 3 — Implement context-only facts and prove non-suppression
 
-### Files
-
-- Modify: `packages/quant-core/guiyi_quant/indicators/subing_watch_15m.py`
-- Modify: `services/quant-api/tests/test_subing_watch_formula.py`
-
-### Exact context formulas
+Exact formulas:
 
 ```text
 ma21_slope_5_bps_per_bar
@@ -393,7 +403,7 @@ volume_ratio_20
 = current volume / mean(previous 20 completed 15m volumes)
 ```
 
-`range_state` reads the existing causal Range Detector state and maps to:
+Range maps existing causal state to:
 
 ```text
 range_unavailable
@@ -403,16 +413,16 @@ broken_up
 broken_down
 ```
 
-60m alignment uses the latest completed same-contract 60m Bar whose `bar_end <= 15m cutoff`:
+60m alignment uses latest completed same-contract 60m Bar with `bar_end <= 15m cutoff`:
 
 ```text
-aligned: price side and SMA21 slope both support Candidate direction
+aligned: price side and SMA21 slope support Candidate direction
 opposed: both support opposite direction
 neutral: any other ready combination
 unavailable: missing/not-ready/invalid/identity mismatch
 ```
 
-### Required non-suppression test
+Required test:
 
 ```python
 @pytest.mark.parametrize(
@@ -428,20 +438,14 @@ unavailable: missing/not-ready/invalid/identity mismatch
 )
 def test_context_never_suppresses_base_candidate(case: str) -> None:
     state, bar, higher = candidate_fixture(case)
-    _, evaluation = step_subing_watch_15m(
-        state, bar, source_mode="canonical", higher_timeframe=higher
-    )
+    _, evaluation = step_subing_watch_15m(state, bar, higher_timeframe=higher)
     assert evaluation.outcome == "evaluated_candidate"
     assert evaluation.observation_types == ("buy",)
 ```
 
-A 60m Bar after the Candidate cutoff raises `SUBING_WATCH_HIGHER_TIMEFRAME_FUTURE`. Missing context renders `None`/`unavailable`; it never becomes false alignment or no active range.
+A 60m Bar after cutoff raises `SUBING_WATCH_HIGHER_TIMEFRAME_FUTURE`. Missing context renders unavailable. `volume_ratio_20` excludes current volume and zero denominator is unavailable.
 
-`volume_ratio_20` excludes current volume from the denominator. Zero denominator yields unavailable, not zero or infinity.
-
-Calculate `observation_types` before context projection. Context exceptions are mapped to unavailable context without changing Candidate.
-
-### Verification and commit
+Calculate observation before context projection. Context exceptions cannot change Candidate.
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
@@ -458,13 +462,14 @@ git commit -m "feat(indicators): add Watch context facts"
 
 ### Files
 
-- Create: `services/quant-api/app/market_data/subing_watch/__init__.py`
-- Create: `services/quant-api/app/market_data/subing_watch/contracts.py`
-- Create: `services/quant-api/app/market_data/subing_watch/replay.py`
-- Create: `services/quant-api/app/market_data/subing_watch/current_service.py`
-- Modify: `services/quant-api/app/market_data/composition.py`
-- Test: `services/quant-api/tests/research/test_subing_watch_replay.py`
-- Test: `services/quant-api/tests/data_foundation/test_subing_watch_current_service.py`
+```text
+services/quant-api/app/market_data/subing_watch/__init__.py
+services/quant-api/app/market_data/subing_watch/replay.py
+services/quant-api/app/market_data/subing_watch/current_service.py
+services/quant-api/app/market_data/composition.py
+services/quant-api/tests/research/test_subing_watch_replay.py
+services/quant-api/tests/data_foundation/test_subing_watch_current_service.py
+```
 
 ### Interfaces
 
@@ -481,34 +486,32 @@ class SubingWatchCurrentProjectionService:
     def restore_state(self, symbol: str, now: datetime) -> SubingWatchRestoreState: ...
 ```
 
-Replay loops over the exact kernel step. It must not use pandas, `ewm`, `rolling`, a second CROSS or a Web formula.
+Replay is a thin physical-segment loop over `to_subing_watch_kernel_bar -> step_subing_watch_15m -> from_kernel_evaluation`. It must not use pandas, `ewm`, `rolling`, a second CROSS or Web formula.
 
-For each MainContractMap rank1 physical segment:
+For each MainContractMap rank1 segment:
 
 ```text
-initialize new Watch state
-iterate completed 15m in order
-select latest same-contract completed 60m strict-before/equal cutoff
-call step_subing_watch_15m
-append immutable evaluation
+new state
+completed 15m in order
+latest same-contract completed 60m strict-before/equal cutoff
+one kernel step
+immutable application evaluation
 ```
 
-Do not prepend an earlier contract for warm-up. Every Candidate carries exact contract and `segment_start_trading_day`.
+Do not prepend an earlier contract for warm-up.
 
-Current projection merges Canonical and completed Live only through existing services. Live contract must match frozen current physical segment. It never writes state, Event, cache or Canonical.
+Current merges Canonical/completed Live only through existing services. Live contract must match frozen physical segment. It never writes Event/cache/Canonical.
 
-### Parity tests
+Tests:
 
-- replay calls one incremental step per Bar;
-- two physical segments reset state;
-- current at cutoff equals Historical replay at same cutoff;
+- one kernel step per Bar;
+- two segments reset state;
+- current at cutoff equals Historical replay;
 - restore then Live append equals full replay;
-- future 60m unavailable but does not suppress Candidate;
-- duplicated Canonical/Live same Bar is idempotent;
-- conflicting overlap fails closed;
-- missing MainContractMap/partition/source identity fails closed.
-
-### Verification and commit
+- 60m future/mismatch unavailable but non-gating;
+- Canonical/Live duplicate idempotency;
+- conflicting overlap fail-closed;
+- missing MainContractMap/partition/identity fail-closed.
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
@@ -528,20 +531,7 @@ git commit -m "feat(market): add SuBing Watch projections"
 
 ## Task 5 — Read-only diagnostics and CLI
 
-### Files
-
-- Create: `services/quant-api/app/research/subing/subing_watch_research_service.py`
-- Modify: `services/quant-api/app/research/composition.py`
-- Modify: `services/quant-api/app/guiyi_cli/research_parser.py`
-- Modify: `services/quant-api/app/guiyi_cli/research_requests.py`
-- Modify: `services/quant-api/app/guiyi_cli/research_commands.py`
-- Modify: `services/quant-api/app/guiyi_cli/main.py`
-- Test: `services/quant-api/tests/research/test_subing_watch_report.py`
-- Test: `services/quant-api/tests/research/test_subing_watch_research_service.py`
-- Test: `services/quant-api/tests/research/test_subing_watch_cli.py`
-- Modify: `services/quant-api/tests/research/test_research_cli_parser_requests.py`
-
-### CLI
+CLI:
 
 ```bash
 guiyi research subing-watch \
@@ -554,33 +544,16 @@ guiyi research subing-watch \
 
 Rules:
 
-- explicit `through` required;
-- default stdout JSON;
+- explicit through required;
+- stdout JSON by default;
 - no cache/publish/write flag;
 - no RQData connection;
-- `--symbols active` only reads `active_products.txt`;
-- output sorted and deterministic.
+- `--symbols active` reads only active_products;
+- sorted deterministic output.
 
-Report includes:
+Report includes Candidate counts, direction, daily clustering, session distribution, context availability, Range/60m distributions and optional retrospective 1/2/4/8-Bar close change/MFE/MAE. Forward diagnostics never enter Candidate, Runtime or policy and do not create PnL/winner/promotion claims.
 
-```text
-formula_version
-source_identity_digest
-window
-per-product Candidate count
-buy/sell count
-candidates per trading day
-same-direction clustering
-session distribution
-context availability rate
-range_state distribution
-higher_timeframe_alignment distribution
-optional retrospective 1/2/4/8-Bar close change, MFE and MAE
-```
-
-Forward diagnostics never enter Candidate, Runtime or policy. They do not create thresholds, rank, winner, promotion or PnL claims. Truncating the future tail removes diagnostics only; Candidate identities remain unchanged.
-
-### Verification
+Tests cover exact shape, deterministic order, empty sample, denominator zero, future-tail truncation and forbidden CLI mutation flags.
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
@@ -589,11 +562,7 @@ uv run --project services/quant-api --no-sync pytest -q \
   services/quant-api/tests/research/test_subing_watch_research_service.py \
   services/quant-api/tests/research/test_subing_watch_cli.py \
   services/quant-api/tests/research/test_research_cli_parser_requests.py
-```
 
-Commit:
-
-```bash
 git add \
   services/quant-api/app/research/subing/subing_watch_research_service.py \
   services/quant-api/app/research/composition.py \
@@ -634,17 +603,18 @@ uv run --project services/quant-api ruff check \
 
 ## Independent Formula Review
 
-Independent Sol/high reviewer pins exact head and checks:
+Pin exact head and check:
 
 - SMA21 vs EMA21;
-- MACD seed and exact CROSS equality boundaries;
-- invalid input poisoning/restore behavior;
-- physical-segment reset and no cross-contract warm-up;
+- Decimal/application versus float/Quant Core boundary is single and deterministic;
+- MACD seed and CROSS equality;
+- invalid input blocking/restore;
+- physical-segment reset;
 - context-only non-suppression;
 - 60m strict-before;
 - batch/incremental/prefix/future-tail/restore parity;
-- golden fixture and policy digest;
-- no second formula in replay, CLI or Web;
+- golden/policy digests;
+- no second formula in replay/CLI/Web;
 - no Alert/Runtime/migration/send change.
 
-PR stops at `允许集成 develop`. After integration, delete task worktree/branch. No production data read is required for code completion; any real Historical run needs a separately defined read-only environment and through-date permission.
+PR stops at `允许集成 develop`. Any real Historical run needs a separately defined read-only environment and through-date permission.
