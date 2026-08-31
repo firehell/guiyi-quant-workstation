@@ -103,7 +103,7 @@ class _SubingStrategyRuntimeReader:
             )
         )
 
-    def read_completed_bars(
+    def read_final_catch_up_bars(
         self,
         *,
         symbol: str,
@@ -121,6 +121,7 @@ class _SubingStrategyRuntimeReader:
                 after_5m=after_5m,
                 after_15m=after_15m,
                 through=through,
+                allow_post_close_frozen=True,
             )
         )
 

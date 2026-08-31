@@ -48,7 +48,16 @@ reason remains fail-closed.
 
 Restart and final catch-up use the same continuation seam as natural Live.
 They may advance a same-contract new day or enter pending, but never backfill
-ordinary actions, AlertEvents, or notifications.
+ordinary actions, AlertEvents, or notifications.  If final catch-up completes
+only after the market has closed, it may use the existing operational,
+same-trading-day `post_close` display snapshot as a frozen completed-Live
+authority.  Every 1m/5m/15m snapshot must retain the exact
+`actual_dominant` identity, be `CLOSED`, have the same frozen subscription
+contract, and contain only bars at or before the catch-up cutoff.  This path is
+limited to final catch-up; it does not make post-close data ordinary Live input.
+Missing, mixed-contract, mixed-day, non-operational, or malformed snapshots
+remain fail-closed; a different valid frozen contract is still
+`LIVE_CONTRACT_AUTHORITY_PENDING`.
 
 ## Event/no-backfill contract
 
@@ -63,6 +72,8 @@ non-natural reconciliation create no Event and send nothing.
 - missing/stale Daily Watch blocks entries while exits continue;
 - different Live contract is isolated pending until formal canonical rollover;
 - restart/final catch-up has identical authority and no backfill;
+- post-close final catch-up uses only the same-contract frozen completed-Live
+  boundary; missing or inconsistent frozen snapshots fail closed;
 - only pending products reconcile on `canonical_updated`;
 - historical/Live parity, prefix invariance, causality, and Active60 isolation
   remain intact.

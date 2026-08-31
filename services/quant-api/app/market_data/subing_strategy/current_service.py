@@ -21,7 +21,7 @@ from ..domain import (
     normalize_contract_for_symbol,
 )
 from ..market_data_service import MarketDataError
-from ..market_read_service import MarketReadState
+from ..market_read_service import MarketDisplaySnapshot, MarketReadState
 from ..subing_calibration import SubingCalibration, is_accepted_subing_calibration
 from ..subing_daily_watch import (
     SubingDailyWatchDecision,
@@ -124,6 +124,13 @@ class _MarketRead(Protocol):
         after: datetime | None,
         now: datetime,
     ) -> tuple[CanonicalBar, ...]: ...
+
+    def display_snapshot(
+        self,
+        identity: SeriesPageQuery,
+        after: datetime | None,
+        now: datetime,
+    ) -> MarketDisplaySnapshot: ...
 
 
 class _DirectionContextResolver(Protocol):
@@ -368,6 +375,7 @@ class SubingStrategyCurrentProjectionService:
         after_5m: datetime | None,
         after_15m: datetime | None,
         through: datetime,
+        allow_post_close_frozen: bool = False,
     ) -> SubingLiveCompletedBars:
         if (
             symbol not in self._products
@@ -376,6 +384,7 @@ class SubingStrategyCurrentProjectionService:
             or not isinstance(through, datetime)
             or through.tzinfo is None
             or through.utcoffset() is None
+            or type(allow_post_close_frozen) is not bool
         ):
             raise SubingStrategyCurrentSourceIdentityError()
         probe_identity = SeriesPageQuery(
@@ -390,14 +399,6 @@ class SubingStrategyCurrentProjectionService:
         target_day = getattr(probe_state, "trading_day", None)
         if type(target_day) is not date:
             raise SubingStrategyCurrentSourceUnavailableError()
-        decision = self.resolve_live_continuation(
-            symbol=symbol,
-            source_identity=source_identity,
-            incoming_trading_day=target_day,
-            now=through,
-        )
-        if decision.kind is not SubingLiveContinuationKind.CONTINUE_SAME_SEGMENT:
-            return SubingLiveCompletedBars(decision=decision, bars={})
         cutoffs = {
             BarFrequency.M1: after_1m,
             BarFrequency.M5: after_5m,
@@ -414,6 +415,43 @@ class SubingStrategyCurrentProjectionService:
             for after in cutoffs.values()
         ):
             raise SubingStrategyCurrentSourceIdentityError()
+
+        frozen_post_close = (
+            self._post_close_completed_live(
+                symbol=symbol,
+                target_day=target_day,
+                cutoffs=cutoffs,
+                through=through,
+            )
+            if allow_post_close_frozen and getattr(probe_state, "phase", None) == "CLOSED"
+            else None
+        )
+        if frozen_post_close is not None:
+            frozen_contract, frozen_bars = frozen_post_close
+            decision = self._resolve_available_live_continuation(
+                symbol=symbol,
+                source_identity=source_identity,
+                incoming_trading_day=target_day,
+                frozen_contract=frozen_contract,
+            )
+            return SubingLiveCompletedBars(
+                decision=decision,
+                bars=(
+                    frozen_bars
+                    if decision.kind
+                    is SubingLiveContinuationKind.CONTINUE_SAME_SEGMENT
+                    else {}
+                ),
+            )
+
+        decision = self.resolve_live_continuation(
+            symbol=symbol,
+            source_identity=source_identity,
+            incoming_trading_day=target_day,
+            now=through,
+        )
+        if decision.kind is not SubingLiveContinuationKind.CONTINUE_SAME_SEGMENT:
+            return SubingLiveCompletedBars(decision=decision, bars={})
         completed: dict[BarFrequency, tuple[CanonicalBar, ...]] = {}
         for frequency, after in cutoffs.items():
             identity = SeriesPageQuery(
@@ -448,6 +486,70 @@ class SubingStrategyCurrentProjectionService:
                 raise SubingStrategyCurrentSourceIdentityError()
             completed[frequency] = tuple(bars)
         return SubingLiveCompletedBars(decision=decision, bars=completed)
+
+    def _post_close_completed_live(
+        self,
+        *,
+        symbol: str,
+        target_day: date,
+        cutoffs: Mapping[BarFrequency, datetime | None],
+        through: datetime,
+    ) -> tuple[str, Mapping[BarFrequency, tuple[CanonicalBar, ...]]] | None:
+        """Read only the frozen completed-Live boundary used by final catch-up.
+
+        This is deliberately narrower than ``live_snapshot``: it accepts only
+        MarketReadService's existing operational, same-day ``post_close``
+        snapshot.  Normal completed-Live processing never calls this path.
+        """
+        completed: dict[BarFrequency, tuple[CanonicalBar, ...]] = {}
+        frozen_contract: str | None = None
+        for frequency, after in cutoffs.items():
+            identity = SeriesPageQuery(
+                SeriesKind.ACTUAL_DOMINANT,
+                symbol,
+                frequency,
+            )
+            try:
+                snapshot = self._market_read.display_snapshot(identity, after, through)
+            except Exception:  # noqa: BLE001 - frozen boundary is fail-closed
+                return None
+            state = getattr(snapshot, "state", None)
+            contract = normalize_contract_for_symbol(
+                symbol,
+                getattr(snapshot, "contract", None),
+            )
+            bars = getattr(snapshot, "bars", None)
+            if (
+                getattr(snapshot, "source", None) != "post_close"
+                or getattr(snapshot, "trading_day", None) != target_day
+                or contract is None
+                or type(bars) is not tuple
+                or getattr(state, "symbol", None) != symbol
+                or getattr(state, "series_kind", None)
+                != SeriesKind.ACTUAL_DOMINANT.value
+                or getattr(state, "frequency", None) != frequency.value
+                or getattr(state, "phase", None) != "CLOSED"
+                or getattr(state, "trading_day", None) != target_day
+                or getattr(state, "operational", None) is not True
+                or getattr(state, "live_eligible", None) is not False
+                or getattr(state, "live_available", None) is not False
+                or any(
+                    type(bar) is not CanonicalBar
+                    or bar.trading_day != target_day
+                    or bar.bar_end > through
+                    or (after is not None and bar.bar_end <= after)
+                    for bar in bars
+                )
+            ):
+                return None
+            if frozen_contract is None:
+                frozen_contract = contract
+            elif frozen_contract != contract:
+                return None
+            completed[frequency] = bars
+        if frozen_contract is None:
+            return None
+        return frozen_contract, completed
 
     def resolve_live_continuation(
         self,
@@ -498,6 +600,21 @@ class SubingStrategyCurrentProjectionService:
                 live_eligible=live_eligible,
                 live_available=live_available,
             )
+        return self._resolve_available_live_continuation(
+            symbol=symbol,
+            source_identity=source_identity,
+            incoming_trading_day=incoming_trading_day,
+            frozen_contract=frozen_contract,
+        )
+
+    def _resolve_available_live_continuation(
+        self,
+        *,
+        symbol: str,
+        source_identity: SubingStrategySourceIdentity,
+        incoming_trading_day: date,
+        frozen_contract: str,
+    ) -> SubingLiveContinuationDecision:
         try:
             occupancy = self._load_segment_summary(symbol, incoming_trading_day)
         except MarketDataError as exc:
@@ -505,10 +622,10 @@ class SubingStrategyCurrentProjectionService:
                 return _stale_live_continuation(
                     source_identity,
                     incoming_trading_day,
-                    market_trading_day=market_day,
+                    market_trading_day=incoming_trading_day,
                     frozen_live_contract=frozen_contract,
-                    live_eligible=live_eligible,
-                    live_available=live_available,
+                    live_eligible=True,
+                    live_available=True,
                 )
             occupancy = None
 
@@ -521,10 +638,10 @@ class SubingStrategyCurrentProjectionService:
                 return _stale_live_continuation(
                     source_identity,
                     incoming_trading_day,
-                    market_trading_day=market_day,
+                    market_trading_day=incoming_trading_day,
                     frozen_live_contract=frozen_contract,
-                    live_eligible=live_eligible,
-                    live_available=live_available,
+                    live_eligible=True,
+                    live_available=True,
                 )
             try:
                 source_day = self._previous_trading_day(incoming_trading_day)
@@ -543,28 +660,31 @@ class SubingStrategyCurrentProjectionService:
                 return _stale_live_continuation(
                     source_identity,
                     incoming_trading_day,
-                    market_trading_day=market_day,
+                    market_trading_day=incoming_trading_day,
                     frozen_live_contract=frozen_contract,
-                    live_eligible=live_eligible,
-                    live_available=live_available,
+                    live_eligible=True,
+                    live_available=True,
                 )
             return SubingLiveContinuationDecision(
                 kind=SubingLiveContinuationKind.CONTINUE_SAME_SEGMENT,
                 machine_identity=source_identity,
                 incoming_trading_day=incoming_trading_day,
-                market_trading_day=market_day,
+                market_trading_day=incoming_trading_day,
                 frozen_live_contract=frozen_contract,
                 live_eligible=True,
                 live_available=True,
                 direction_context=context,
             )
 
-        if occupancy is None or occupancy.contract == frozen_contract:
+        if occupancy is None or occupancy.contract in {
+            frozen_contract,
+            source_identity.contract,
+        }:
             return SubingLiveContinuationDecision(
                 kind=SubingLiveContinuationKind.LIVE_CONTRACT_AUTHORITY_PENDING,
                 machine_identity=source_identity,
                 incoming_trading_day=incoming_trading_day,
-                market_trading_day=market_day,
+                market_trading_day=incoming_trading_day,
                 frozen_live_contract=frozen_contract,
                 live_eligible=True,
                 live_available=True,
@@ -573,7 +693,7 @@ class SubingStrategyCurrentProjectionService:
         return _stale_live_continuation(
             source_identity,
             incoming_trading_day,
-            market_trading_day=market_day,
+            market_trading_day=incoming_trading_day,
             frozen_live_contract=frozen_contract,
             live_eligible=True,
             live_available=True,
