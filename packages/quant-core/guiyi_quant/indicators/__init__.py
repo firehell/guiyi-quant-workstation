@@ -1,4 +1,4 @@
-from .atr import atr_series
+from .atr import atr_series, initial_atr_state, step_atr
 from .ema import ema_series, initial_ema_state, step_ema
 from .htdy_original import (
     HtdyOriginalResult,
@@ -13,6 +13,7 @@ from .htdy_strict import compute_strict_fields
 from .macd import initial_macd_state, macd_series, step_macd
 from .models import (
     AtrSmoothingPolicy,
+    AtrState,
     EmaState,
     FormalPolicy,
     HistogramScale,
@@ -49,6 +50,7 @@ from .realtime_observation_policy import (
 
 __all__ = [
     "AtrSmoothingPolicy",
+    "AtrState",
     "EmaState",
     "FormalPolicy",
     "HtdyOriginalResult",
@@ -67,6 +69,7 @@ __all__ = [
     "RepaintingRisk",
     "SeedPolicy",
     "atr_series",
+    "initial_atr_state",
     "build_indicator_definition",
     "definition_to_metadata",
     "compute_htdy_original",
@@ -91,6 +94,7 @@ __all__ = [
     "require_formal_policy",
     "resolve_indicator_code",
     "step_ema",
+    "step_atr",
     "step_macd",
     "validate_definition_capabilities",
     "xma",
