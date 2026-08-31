@@ -16,24 +16,38 @@
 
 ## Global Constraints
 
-- 任务车道为 **Lane 3**，策略公式和可信口径必须由 Sol/high 独立 Review。
-- 开工前必须确认 Spec 与本 Plan 已进入执行时最新 `origin/develop`；计划文档中的 baseline 只记录设计时事实。
-- 正式名称固定为 `苏冰趋势策略-日`，内部 `strategy_id/formula_version/policy_id` 固定为 `subing_daily_trend_v1`。
-- 正式数据身份固定 `actual_dominant + 1d`，只消费 completed D1。
-- Range：`range_detector_lux_v1 / length=20 / width=1.0×ATR500 / wilder_sma_seed`，仅做 CHOP gate。
-- EMA：EMA21、`sma_window` seed，最近 5 个 EMA21 点做线性回归 slope；只使用 5-bar slope。
-- MACD：`12/26/9`、`sma_window` seed、histogram scale 2；near-zero 固定 `max(abs(DIF), abs(DEA)) / ATR14 <= 0.25`。
-- 多头只要求 `TREND_ELIGIBLE + close>EMA21 + slope5>0 + near-zero golden cross`；空头完全对称。
-- 不要求 Range breakout、EMA crossover、1.5 ATR 距离、成交量、持仓量、BOLL、3-Bar confirmation、前高前低、多周期共振或二次确认。
-- completed D1 `t` 只做 decision；参考生效价固定下一根同物理合约 D1 open。
+- 本任务为 **Lane 3**；公式、成交时序和研究口径必须由 Sol/high 独立 Review。
+- 开工前必须确认 Spec 与本 Plan 已进入执行时最新 `origin/develop`；本页 baseline 只记录计划编写时事实。
+- 正式名称固定为 `苏冰趋势策略-日`；`strategy_id / formula_version / policy_id` 均固定为 `subing_daily_trend_v1`。
+- 正式数据身份固定为 `actual_dominant + 1d`，只消费 completed D1。
+- Range 固定 `range_detector_lux_v1 / length=20 / width=1.0×ATR500 / wilder_sma_seed`，只做 CHOP gate。
+- EMA 固定 EMA21、`sma_window` seed、最近 5 个 EMA21 点的线性回归 slope；10-bar slope 不参与。
+- MACD 固定 `12/26/9`、`sma_window` seed、histogram scale 2；near-zero 固定 `max(abs(DIF), abs(DEA)) / ATR14 <= 0.25`。
+- 多头只认 `TREND_ELIGIBLE + close>EMA21 + slope5>0 + near-zero golden cross`；空头完全对称。
+- 不加入 Range breakout、EMA crossover、1.5 ATR 距离、成交量、持仓量、BOLL、3-Bar confirmation、前高前低、多周期共振或二次确认。
+- completed D1 `t` 只做 decision；普通参考生效价固定下一根同物理合约 D1 open。
 - 普通退出只有 EMA21 opposite cross；物理段终止使用旧段最后一根 D1 close。
-- 不加仓、不减仓、不反手、不跨物理段、不建设账户/订单/资金曲线。
+- 不加仓、不减仓、不反手、不跨物理段，不建设账户、订单、仓位或资金曲线。
 - Stage A 不实现 Current、HTTP API、Market Web、Alert Rule、migration、Scope、PushPlus、main/tag、release 或 Runtime。
 - 不写 RQData、Canonical、production PostgreSQL、Redis 或 Git 外生产状态。
-- 真实 Historical 效果运行如果需要连接本机正式 Catalog/Canonical 环境，必须在运行前再次确认 read-only 环境和范围；测试和 fake fixtures 不构成该授权。
-- 所有必要检查失败时只能报告失败，不得声明完成。
+- 真实 Historical 效果运行若读取本机正式 Catalog/Canonical，必须在运行前另取一次明确的 read-only 环境与 through-date 授权；单元测试和 fake fixture 不构成该授权。
+- 必要检查失败时只报告失败，不声明完成。
 
----
+## Execution Topology
+
+```text
+latest origin/develop
+→ feature/subing-daily-trend-v1-historical task worktree
+→ Task 1..7 小步 TDD / commit
+→ Draft PR to develop
+→ 独立 Sol/high Review
+→ owner 批准只读 Historical 环境与 through date
+→ JM/AG/RB/EG evidence
+→ active60 evidence
+→ owner Historical Gate
+```
+
+源码实现不得复用文档分支。实现 PR 在独立 Review 和 owner 明确批准前不得自动合入 `develop`；合入 `develop` 也不授权 main/tag、Runtime、生产写入或通知。
 
 ## File Map
 
@@ -75,68 +89,42 @@ services/quant-api/tests/research/test_research_cli_parser_requests.py
 TESTING.md
 ```
 
-Do not create a generic strategy adapter, universal replay engine, account model, database table, snapshot store, worker, queue, scheduler or Alert Rule.
+禁止新增 generic strategy adapter、universal replay engine、账户模型、数据库表、snapshot store、worker、queue、scheduler 或 Alert Rule。
 
 ---
 
-## Task 1: Add the Range physical-segment regime reset seam
+## Task 1: Range physical-segment regime reset seam
 
 **Files:**
 - Modify: `packages/quant-core/guiyi_quant/indicators/range_detector_lux.py`
 - Modify: `packages/quant-core/guiyi_quant/indicators/__init__.py`
 - Test: `services/quant-api/tests/test_range_detector_lux.py`
 
-**Interfaces:**
-- Consumes: existing `RangeDetectorLuxState`.
-- Produces:
+**Produces:** `reset_range_detector_lux_regime(state: RangeDetectorLuxState) -> RangeDetectorLuxState`。
+
+其唯一语义是：保留 `parameters / source_identity / atr / index / last_bar_end`，清空 `close_window / previous_candidate_valid / active_snapshot / active_detection_right_index`。
+
+- [ ] **Step 1: 先写失败测试**
+
+新增测试，构造已 ready 且存在 active range 的状态，调用尚不存在的 reset helper，并断言：
 
 ```python
-def reset_range_detector_lux_regime(
-    state: RangeDetectorLuxState,
-) -> RangeDetectorLuxState:
-    return replace(
-        state,
-        close_window=(),
-        previous_candidate_valid=False,
-        active_snapshot=None,
-        active_detection_right_index=None,
-    )
+before_atr = state.atr
+reset = reset_range_detector_lux_regime(state)
+assert reset.atr == before_atr
+assert reset.parameters == state.parameters
+assert reset.source_identity == state.source_identity
+assert reset.index == state.index
+assert reset.last_bar_end == state.last_bar_end
+assert reset.close_window == ()
+assert reset.previous_candidate_valid is False
+assert reset.active_snapshot is None
+assert reset.active_detection_right_index is None
 ```
 
-The function must preserve `parameters`, `source_identity`, `atr`, `index`, and `last_bar_end` exactly.
+再继续喂当前新物理段 Bar，证明 ATR 已 ready 也不能提前产生 Range regime；必须重新积累 `minimum_range_length + 1` 根当前段 close。
 
-- [ ] **Step 1: Write the failing segment-reset tests**
-
-Add tests proving:
-
-```python
-def test_range_regime_reset_keeps_atr_but_drops_box_state() -> None:
-    state = initial_range_detector_lux_state(
-        source_identity="subing_daily_trend_v1|jm|actual_dominant|1d",
-        minimum_range_length=4,
-        range_atr_length=5,
-    )
-    for index in range(6):
-        state, _ = step_range_detector_lux(
-            state,
-            high=101,
-            low=99,
-            close=100,
-            bar_end=f"2026-01-0{index + 1}T07:00:00+00:00",
-            trading_day=f"2026-01-0{index + 1}",
-        )
-    assert state.atr.previous_atr is not None
-    before_atr = state.atr
-    reset = reset_range_detector_lux_regime(state)
-    assert reset.atr == before_atr
-    assert reset.close_window == ()
-    assert reset.active_snapshot is None
-    assert reset.previous_candidate_valid is False
-```
-
-Also prove that after reset Range remains not-ready until `minimum_range_length + 1` current-segment closes have accumulated even though ATR is already ready.
-
-- [ ] **Step 2: Run the focused tests and confirm the expected import failure**
+- [ ] **Step 2: 运行测试，确认因缺少 reset helper 而失败**
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
@@ -144,13 +132,11 @@ uv run --project services/quant-api --no-sync pytest -q \
   services/quant-api/tests/test_range_detector_lux.py
 ```
 
-Expected before implementation: import/name failure for `reset_range_detector_lux_regime`.
+- [ ] **Step 3: 实现最小 helper 并导出**
 
-- [ ] **Step 3: Implement only the regime reset helper and export it**
+实现只使用 `dataclasses.replace` 清理四个 regime-local 字段；不得修改 candidate、confirmation、revision、break、ATR 或 Web display 语义。
 
-Do not change candidate, confirmation, revision, break, ATR or display semantics.
-
-- [ ] **Step 4: Run Range and indicator regression tests**
+- [ ] **Step 4: 回归 Range 与 ATR/MACD kernel**
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
@@ -171,7 +157,7 @@ git commit -m "feat(indicators): add Range regime segment reset"
 
 ---
 
-## Task 2: Freeze the exact daily-trend policy and immutable contracts
+## Task 2: Exact policy and immutable strategy contracts
 
 **Files:**
 - Create: `data/research_policies/subing_daily_trend_v1.json`
@@ -230,44 +216,24 @@ git commit -m "feat(indicators): add Range regime segment reset"
 }
 ```
 
-**Required public contracts:**
+**Contracts:**
 
-```python
-SUBING_DAILY_TREND_ID = "subing_daily_trend_v1"
-
-class SubingDailyTrendRegime(StrEnum):
-    DATA_UNAVAILABLE = "data_unavailable"
-    CHOP = "chop"
-    TREND_ELIGIBLE = "trend_eligible"
-
-class SubingDailyTrendMacdCross(StrEnum):
-    NONE = "none"
-    GOLDEN = "golden"
-    DEAD = "dead"
-
-class SubingDailyTrendPositionState(StrEnum):
-    FLAT = "flat"
-    LONG = "long"
-    SHORT = "short"
-
-class SubingDailyTrendActionKind(StrEnum):
-    OPEN_LONG = "open_long"
-    OPEN_SHORT = "open_short"
-    CLOSE_LONG = "close_long"
-    CLOSE_SHORT = "close_short"
-
-class SubingDailyTrendFillBasis(StrEnum):
-    NEXT_D1_OPEN = "next_d1_open"
-    SEGMENT_TERMINAL_CLOSE = "segment_terminal_close"
+```text
+SUBING_DAILY_TREND_ID = subing_daily_trend_v1
+Regime = data_unavailable | chop | trend_eligible
+MacdCross = none | golden | dead
+Position = flat | long | short
+ActionKind = open_long | open_short | close_long | close_short
+FillBasis = next_d1_open | segment_terminal_close
 ```
 
-Add frozen dataclasses for `SubingDailyTrendFacts`, `SubingDailyTrendPendingAction`, `SubingDailyTrendAction`, `SubingDailyTrendCancellation`, and `SubingDailyTrendEpisode`. Prices, ratios and reference changes are `Decimal`. IDs are deterministic SHA-256 canonical IDs with prefixes `subing-daily-trend-action:` and `subing-daily-trend-episode:`.
+新增 frozen dataclass：`SubingDailyTrendFacts`、`SubingDailyTrendPendingAction`、`SubingDailyTrendAction`、`SubingDailyTrendCancellation`、`SubingDailyTrendEpisode`。价格、比率、gap、reference change 使用 `Decimal`。Action/Episode ID 对排序后的稳定 identity JSON 做 SHA-256，前缀固定 `subing-daily-trend-action:` / `subing-daily-trend-episode:`。
 
-- [ ] **Step 1: Write policy and contract tests first**
+- [ ] **Step 1: 先写 policy drift 与 ID 测试**
 
-Tests must reject policy drift in every fixed parameter and verify identical identity fields produce identical IDs while any material identity field change produces a different ID.
+逐字段篡改固定 policy，必须得到统一 typed policy error；相同 identity 必须生成相同 ID，修改 symbol、contract、segment、kind、decision/effective time 任一 identity 字段必须改变 ID。
 
-- [ ] **Step 2: Run and confirm failures**
+- [ ] **Step 2: 运行测试并确认缺少模块/合同而失败**
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
@@ -275,11 +241,11 @@ uv run --project services/quant-api --no-sync pytest -q \
   services/quant-api/tests/research/test_subing_daily_trend_policy_contracts.py
 ```
 
-- [ ] **Step 3: Implement the exact policy loader using `load_exact_json` and immutable contracts**
+- [ ] **Step 3: 用现有 `load_exact_json` 实现 policy loader 和 frozen contracts**
 
-Do not add runtime-adjustable thresholds.
+不得提供运行时可修改阈值的入口。
 
-- [ ] **Step 4: Re-run tests and run the existing SuBing contract/policy suite**
+- [ ] **Step 4: 回归新合同与现行 SuBing strategy engine**
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
@@ -300,7 +266,7 @@ git commit -m "feat(subing): freeze daily trend policy and contracts"
 
 ---
 
-## Task 3: Build one stitched daily indicator stream
+## Task 3: One stitched daily indicator stream
 
 **Files:**
 - Modify: `services/quant-api/app/market_data/subing_ema_trend.py`
@@ -308,89 +274,40 @@ git commit -m "feat(subing): freeze daily trend policy and contracts"
 - Create: `services/quant-api/app/market_data/subing_daily_trend/indicators.py`
 - Test: `services/quant-api/tests/research/test_subing_daily_trend_indicators.py`
 
-**Interfaces:**
+**Produces:**
+- `ema_regression_slope_bps(values: Sequence[Decimal]) -> Decimal`，公开现有 regression slope bps 数学，不改变现有 5/10-bar snapshot。
+- `initial_subing_daily_trend_indicator_state(source_identity: str) -> SubingDailyTrendIndicatorState`。
+- `reset_subing_daily_trend_segment(state: SubingDailyTrendIndicatorState) -> SubingDailyTrendIndicatorState`。
+- `step_subing_daily_trend_indicators(state: SubingDailyTrendIndicatorState, bar: CanonicalBar) -> tuple[SubingDailyTrendIndicatorState, SubingDailyTrendFacts]`。
 
-Expose the existing slope math without changing its semantics:
+`SubingDailyTrendIndicatorState` 只保存：EMA21 state、最近 5 个 ready EMA21 Decimal、MACD state、上一组 ready DIF/DEA、ATR14 state、Range state 和 last bar timestamp。
 
-```python
-def ema_regression_slope_bps(values: Sequence[Decimal]) -> Decimal:
-    if len(values) < 2:
-        raise ValueError("EMA_REGRESSION_WINDOW_INVALID")
-    raw = _regression_slope(values)
-    mean = sum(values, Decimal(0)) / Decimal(len(values))
-    if mean == 0:
-        raise ValueError("EMA_REGRESSION_MEAN_ZERO")
-    return raw / mean * Decimal(10000)
-```
-
-Refactor existing `subing_ema_trend.py` to call this helper for its 5/10-bar bps fields and prove old snapshots are unchanged.
-
-Create:
-
-```python
-@dataclass(frozen=True, slots=True)
-class SubingDailyTrendIndicatorState:
-    ema21: EmaState
-    ema21_values: tuple[Decimal, ...]
-    macd: MacdState
-    previous_dif: Decimal | None
-    previous_dea: Decimal | None
-    atr14: AtrState
-    range_state: RangeDetectorLuxState
-    last_bar_end: datetime | None
-```
-
-Public functions:
-
-```python
-def initial_subing_daily_trend_indicator_state(
-    *,
-    source_identity: str,
-) -> SubingDailyTrendIndicatorState:
-    ...
-
-def reset_subing_daily_trend_segment(
-    state: SubingDailyTrendIndicatorState,
-) -> SubingDailyTrendIndicatorState:
-    ...
-
-def step_subing_daily_trend_indicators(
-    state: SubingDailyTrendIndicatorState,
-    bar: CanonicalBar,
-) -> tuple[SubingDailyTrendIndicatorState, SubingDailyTrendFacts]:
-    ...
-```
-
-The committed implementation must contain complete function bodies; the signatures above define interfaces only.
-
-**Fact rules:**
+**Facts algorithm:**
 
 ```text
-Range point not ready/invalid => regime DATA_UNAVAILABLE
-Range ready + active snapshot state intact => CHOP
-Range ready + no active snapshot => TREND_ELIGIBLE
-Range ready + active snapshot broken_up/broken_down => TREND_ELIGIBLE
+Range point not-ready / invalid -> DATA_UNAVAILABLE
+Range ready + active snapshot intact -> CHOP
+Range ready + no active snapshot -> TREND_ELIGIBLE
+Range ready + active snapshot broken_up/down -> TREND_ELIGIBLE
 
-price_side = ABOVE / BELOW / EQUAL
-slope_5_bps = EMA21 last 5 ready values
-MACD cross uses previous ready DIF/DEA versus current ready DIF/DEA
-near_zero_ratio = max(abs(current DIF), abs(current DEA)) / ATR14
-ATR14 unavailable or <= 0 => facts unavailable
+close > EMA21 -> ABOVE
+close < EMA21 -> BELOW
+close == EMA21 -> EQUAL
+
+slope5 = existing EMA21 regression slope bps over last 5 ready EMA21 values
+GOLDEN = previous_dif <= previous_dea and current_dif > current_dea
+DEAD   = previous_dif >= previous_dea and current_dif < current_dea
+near_zero_ratio = max(abs(current_dif), abs(current_dea)) / ATR14
+ATR14 not-ready, invalid or <= 0 -> DATA_UNAVAILABLE
 ```
 
-- [ ] **Step 1: Write failing parity and boundary tests**
+Segment reset必须保留 stitched EMA21、MACD、ATR14、Range ATR500 的 warm-up state，只调用 Task 1 helper 清空 Range segment-local regime。
 
-Must cover:
-- existing EMA slope parity after refactor;
-- exactly zero slope;
-- close exactly EMA21;
-- golden/dead cross equality boundary;
-- near-zero ratio exactly `0.25` accepted and `0.2500001` rejected;
-- Range ready with no active snapshot => `TREND_ELIGIBLE`;
-- intact Range => `CHOP`;
-- segment reset keeps EMA/MACD/ATR14/Range ATR warm-up but clears Range close-window/active box.
+- [ ] **Step 1: 先写失败测试**
 
-- [ ] **Step 2: Run tests and confirm expected missing-interface failures**
+锁定：现有 EMA slope parity、zero slope、close exactly EMA21、golden/dead equality boundary、near-zero `0.25` 接受而 `0.2500001` 拒绝、Range ready/no box 为 TREND_ELIGIBLE、intact Range 为 CHOP、segment reset 不清 EMA/MACD/ATR warm-up。
+
+- [ ] **Step 2: 运行测试并确认新接口缺失**
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
@@ -399,11 +316,11 @@ uv run --project services/quant-api --no-sync pytest -q \
   services/quant-api/tests/research/test_subing_daily_trend_indicators.py
 ```
 
-- [ ] **Step 3: Implement the minimal indicator stream**
+- [ ] **Step 3: 实现 indicator stream**
 
-Use Quant Core `initial_ema_state/step_ema`, `initial_macd_state/step_macd`, `initial_atr_state/step_atr`, `initial_range_detector_lux_state/step_range_detector_lux/reset_range_detector_lux_regime`. Do not reimplement EMA, MACD, ATR or Range formulas.
+只能调用 Quant Core `initial_ema_state/step_ema`、`initial_macd_state/step_macd`、`initial_atr_state/step_atr`、Range state/step/reset；不得复制 EMA、MACD、ATR 或 Range 公式。
 
-- [ ] **Step 4: Run focused and kernel regression tests**
+- [ ] **Step 4: 运行 focused + kernel regression**
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
@@ -427,106 +344,40 @@ git commit -m "feat(subing): add daily trend indicator stream"
 
 ---
 
-## Task 4: Implement the single completed-D1 strategy state machine
+## Task 4: Single completed-D1 strategy machine
 
 **Files:**
 - Create: `services/quant-api/app/market_data/subing_daily_trend/machine.py`
 - Test: `services/quant-api/tests/research/test_subing_daily_trend_machine.py`
 
-**Core state:**
+**Produces:**
+- `initial_subing_daily_trend_machine(symbol: str, policy: SubingDailyTrendPolicy) -> SubingDailyTrendMachineState`。
+- `step_subing_daily_trend_machine(state: SubingDailyTrendMachineState, bar: CanonicalBar, segment: ResolvedContractSegment) -> SubingDailyTrendMachineState`。
 
-```python
-@dataclass(frozen=True, slots=True)
-class SubingDailyTrendMachineState:
-    symbol: str
-    policy: SubingDailyTrendPolicy
-    indicators: SubingDailyTrendIndicatorState
-    current_segment: ResolvedContractSegment | None
-    segment_bar_count: int
-    position: SubingDailyTrendPositionState
-    pending_action: SubingDailyTrendPendingAction | None
-    current_episode: SubingDailyTrendEpisode | None
-    closed_episodes: tuple[SubingDailyTrendEpisode, ...]
-    actions: tuple[SubingDailyTrendAction, ...]
-    cancellations: tuple[SubingDailyTrendCancellation, ...]
-    previous_facts: SubingDailyTrendFacts | None
-    last_bar_end: datetime | None
-```
+Machine state 只包含：symbol、policy、indicator state、current segment、segment bar count、position、pending action、current/open Episode、closed Episodes、Actions、cancellations、previous facts、last bar end。
 
-Public API:
-
-```python
-def initial_subing_daily_trend_machine(
-    *,
-    symbol: str,
-    policy: SubingDailyTrendPolicy,
-) -> SubingDailyTrendMachineState:
-    ...
-
-def step_subing_daily_trend_machine(
-    state: SubingDailyTrendMachineState,
-    *,
-    bar: CanonicalBar,
-    segment: ResolvedContractSegment,
-) -> SubingDailyTrendMachineState:
-    ...
-```
-
-**Per-bar order is fixed:**
+**Per-Bar order is authoritative:**
 
 ```text
-1. Validate bar timestamp and exactly-one segment ownership.
-2. Detect physical segment transition; preserve stitched EMA/MACD/ATR states but reset Range regime and strategy segment-local state.
-3. Apply previous pending action at current same-segment D1 open before reading current close facts.
-4. Advance current completed-D1 indicators.
-5. If current Bar is authoritative segment terminal: close any open position at current close with CONTRACT_SEGMENT_END and prohibit new decision.
-6. Else if position LONG/SHORT: evaluate only EMA21 opposite-cross exit and create pending close for next same-segment D1 open.
-7. Else if FLAT: require segment_bar_count > 1, TREND_ELIGIBLE, correct EMA side/slope, near-zero golden/dead cross; create one pending open.
-8. Store current facts as previous facts.
+1 validate monotonic Bar + exactly-one physical segment ownership
+2 on segment transition: require previous segment position/pending already terminal/canceled; preserve stitched indicators; reset Range regime and segment-local strategy state
+3 apply previous pending action at current same-segment D1 open before reading current close facts
+4 advance current completed-D1 indicators
+5 if current Bar is authoritative segment terminal: close open position at current close with CONTRACT_SEGMENT_END; cancel pending open; prohibit new decision
+6 else if LONG/SHORT: evaluate only EMA21 opposite-cross and create pending close for next same-segment D1 open
+7 else FLAT: require segment_bar_count > 1, TREND_ELIGIBLE, EMA side/slope, near-zero golden/dead cross; create one pending open
+8 store current facts as previous facts
 ```
 
-**Long entry predicate:**
+Long predicate：`TREND_ELIGIBLE && ABOVE && slope5>0 && GOLDEN && zero_distance<=0.25`。Short 完全对称。
 
-```python
-long_entry = (
-    facts.regime is SubingDailyTrendRegime.TREND_ELIGIBLE
-    and facts.price_side is PriceSide.ABOVE
-    and facts.ema21_slope_5_bps_per_bar > 0
-    and facts.macd_cross is SubingDailyTrendMacdCross.GOLDEN
-    and facts.macd_zero_distance_atr14 <= Decimal("0.25")
-)
-```
+普通退出：LONG 仅 `previous_close >= previous_ema21 && current_close < current_ema21`；SHORT 仅反向条件。
 
-Short is exactly symmetric.
+- [ ] **Step 1: 先写 machine 失败测试**
 
-**Exit predicates:**
+至少独立覆盖：首个 segment D1 不入场、CHOP 阻断、ready/no box 允许检查入场、long/short、无 cross 不入场、错误 EMA side/slope 不入场、signal close 不作为 fill、pending 只在下一同合约 D1 open 生效、gap 不取消且记录、EMA-only exit、反向 MACD 不退出、Range 重新 intact 不退出、不同 Bar 不自动反手、terminal close precedence、不同 segment 不携带 position/pending、duplicate/stale input fail-closed。
 
-```text
-LONG exit: previous_close >= previous_ema21 and current_close < current_ema21
-SHORT exit: previous_close <= previous_ema21 and current_close > current_ema21
-```
-
-- [ ] **Step 1: Write failing machine tests**
-
-Tests must independently cover:
-- first segment D1 never enters;
-- CHOP blocks an otherwise valid golden/dead cross;
-- Range ready/no box permits entry;
-- long and short signals;
-- no MACD cross => no entry;
-- wrong EMA side or slope => no entry;
-- signal at `t` never uses `t` close as reference fill;
-- pending open becomes effective only at next same-segment D1 open;
-- gap never cancels entry and is recorded;
-- ordinary exit only on EMA opposite cross;
-- reverse MACD does not exit;
-- Range becoming intact while holding does not exit;
-- no same-Bar reversal;
-- terminal close precedence and `CONTRACT_SEGMENT_END`;
-- no cross-segment position/pending state;
-- duplicate/stale input fails closed.
-
-- [ ] **Step 2: Run and confirm failures**
+- [ ] **Step 2: 运行并确认缺少 machine**
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
@@ -534,11 +385,11 @@ uv run --project services/quant-api --no-sync pytest -q \
   services/quant-api/tests/research/test_subing_daily_trend_machine.py
 ```
 
-- [ ] **Step 3: Implement the pure machine**
+- [ ] **Step 3: 实现 pure machine**
 
-No MarketDataService calls, filesystem access, DB access, HTTP or Alert code belongs in `machine.py`.
+`machine.py` 不允许 MarketDataService、filesystem、DB、HTTP、Alert 依赖。
 
-- [ ] **Step 4: Run Task 2–4 tests together**
+- [ ] **Step 4: 联跑 Task 2–4**
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
@@ -559,55 +410,23 @@ git commit -m "feat(subing): add daily trend D1 state machine"
 
 ---
 
-## Task 5: Build deterministic Historical Projection over rank1 physical segments
+## Task 5: Deterministic rank1 Historical Projection
 
 **Files:**
 - Create: `services/quant-api/app/market_data/subing_daily_trend/replay.py`
 - Test: `services/quant-api/tests/research/test_subing_daily_trend_replay.py`
 
-**Interfaces:**
+**Produces:** `replay_subing_daily_trend(symbol, bars, segments, policy) -> SubingDailyTrendHistoricalResult`。
 
-```python
-@dataclass(frozen=True, slots=True)
-class SubingDailyTrendHistoricalResult:
-    strategy_id: str
-    symbol: str
-    through: date
-    source_bar_count: int
-    source_first_trading_day: date
-    source_last_trading_day: date
-    segments: tuple[ResolvedContractSegment, ...]
-    actions: tuple[SubingDailyTrendAction, ...]
-    cancellations: tuple[SubingDailyTrendCancellation, ...]
-    open_episode: SubingDailyTrendEpisode | None
-    closed_episodes: tuple[SubingDailyTrendEpisode, ...]
-    final_state: SubingDailyTrendMachineState
+Result 固定包含：strategy ID、symbol、source first/last day、source bar count、resolved segments、Actions、cancellations、open Episode、closed Episodes、final machine state。
 
+Replay 开始前必须验证：bars 严格递增；每根 D1 Bar 被 exactly one `ResolvedContractSegment` 覆盖；segments 不重叠；segment contract 与 actual-dominant restored identity 一致。随后只循环调用 Task 4 machine，不增加第二套 batch 公式。
 
-def replay_subing_daily_trend(
-    *,
-    symbol: str,
-    bars: Sequence[CanonicalBar],
-    segments: Sequence[ResolvedContractSegment],
-    policy: SubingDailyTrendPolicy,
-) -> SubingDailyTrendHistoricalResult:
-    ...
-```
+- [ ] **Step 1: 先写 replay invariance tests**
 
-Replay must map every D1 Bar to exactly one segment. Missing coverage, overlapping segments, non-monotonic bars or wrong symbol/contract identity fails closed before replay.
+锁定：batch replay == 手工逐 Bar step；每个完整 warm-up 前缀与 full run 对应 Action prefix 一致；future tail 不改旧 Action/ref price；prepend 只补 warm-up、稳定前缀不漂移；`visual_start_at` 不提前产生 Action；segment reset 防止旧合约 box 压制新合约；Action/Episode 不跨段。
 
-- [ ] **Step 1: Write replay invariance tests**
-
-Required tests:
-- batch replay equals manually stepping every Bar;
-- replay of every prefix equals the corresponding prefix of full replay actions/closed episodes;
-- appending future tail does not alter previously effective Action identity/reference price;
-- prepend history only fills prior warm-up; once the compared prefix has full EMA/MACD/ATR/Range warm-up, stable Action identity does not drift;
-- `visual_start_at` cannot cause an Action before Range causal readiness;
-- segment close-window reset prevents old contract Range box from suppressing the new contract;
-- no Action/Episode crosses segment boundary.
-
-- [ ] **Step 2: Run and confirm missing replay failures**
+- [ ] **Step 2: 运行并确认 replay 缺失**
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
@@ -615,11 +434,11 @@ uv run --project services/quant-api --no-sync pytest -q \
   services/quant-api/tests/research/test_subing_daily_trend_replay.py
 ```
 
-- [ ] **Step 3: Implement replay as a thin loop around the machine**
+- [ ] **Step 3: 实现 thin replay**
 
-Do not add a separate batch formula path.
+不得实现独立批量 entry/exit evaluator。
 
-- [ ] **Step 4: Run replay + machine + Range causality tests**
+- [ ] **Step 4: 联跑 replay/machine/Range causality**
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
@@ -640,7 +459,7 @@ git commit -m "feat(subing): add daily trend historical replay"
 
 ---
 
-## Task 6: Add read-only full-history research loading and effect metrics
+## Task 6: Read-only full-history loading and effect report
 
 **Files:**
 - Create: `services/quant-api/app/market_data/subing_daily_trend/report.py`
@@ -648,79 +467,34 @@ git commit -m "feat(subing): add daily trend historical replay"
 - Test: `services/quant-api/tests/research/test_subing_daily_trend_report.py`
 - Test: `services/quant-api/tests/research/test_subing_daily_trend_research_service.py`
 
-**Research service request:**
+**Request contract:** scope 仅 `representative | active`，through 为 exact trading day，`include_episodes` 默认 false。Representative 固定 `jm/ag/rb/eg`；Active 只读取 `active_products.txt`，不得偷换成 `operational_products.txt`。
 
-```python
-class SubingDailyTrendScope(StrEnum):
-    REPRESENTATIVE = "representative"
-    ACTIVE = "active"
+**Earliest-history algorithm:**
 
-@dataclass(frozen=True, slots=True)
-class SubingDailyTrendResearchRequest:
-    scope: SubingDailyTrendScope
-    through: date
-    include_episodes: bool = False
+```text
+1 query_actual_dominant_recent_bars(symbol, D1, through, limit=2000)
+2 while has_more_before: query_page(ACTUAL_DOMINANT, symbol, D1, before=next_before, limit=2000)
+3 每一页必须严格向更早 next_before 前进，并实际增加更早 Bar；否则 fail-closed
+4 记录最早 discovered trading_day
+5 调现有 ActualDominantResearchSegmentLoader.load(symbol, (D1,), earliest, through) 一次
+6 使用 loader 返回的 authoritative full bars + restored true segments 调 replay
 ```
 
-Representative scope is fixed to `("jm", "ag", "rb", "eg")`. Active scope uses `active_products.txt` and never `operational_products.txt` as a research-capability shortcut.
+不直接查询 Catalog 表，不直接读 Parquet，不自建第二个 Market reader。
 
-**Earliest-history discovery:**
+**80/20 split:** 按 closed Episode 的 sorted unique entry trading day 切分；`cut=max(1,min(len(days)-1,int(len(days)*0.8)))`，`holdout_start=days[cut]`，同一 entry day 永不跨 split。少于两个 unique entry day 时 holdout 显式 unavailable。
 
-For each symbol:
-1. call `query_actual_dominant_recent_bars(... D1, through, limit=2000)`;
-2. while `has_more_before`, call public `query_page(SeriesPageQuery(ACTUAL_DOMINANT, symbol, D1, before=next_before, limit=2000))`;
-3. require each page to move `next_before` strictly backward and expose at least one earlier Bar;
-4. record the minimum discovered trading day;
-5. call existing `ActualDominantResearchSegmentLoader.load(symbol, (D1,), earliest_day, through)` once to obtain the authoritative full bars and restored true segments;
-6. pass those bars/segments to `replay_subing_daily_trend`.
+**Metrics:** closed/open count、long/short、positive ratio、mean/median/q25/q75/min/max reference change、mean/median holding D1 bars、两类 exit count、entry gap abs/ATR14 distribution、按年份/方向、development/holdout。closed Episode `<30` 标 `INSUFFICIENT_SAMPLE`。Quantile 使用 Decimal 排序和线性插值，不转换 float。
 
-This deliberately trades one extra read pass for simpler identity correctness; do not reach into Catalog/Parquet directly.
+- [ ] **Step 1: 先写 report 数学测试**
 
-**80/20 split rule:**
+使用手算 Decimal Episode 锁定 mean/median/q25/q75、same-day split、sample status。
 
-For closed Episodes, collect sorted unique `entry_trading_day` values. When at least two unique entry days exist:
+- [ ] **Step 2: 写 fake reader/service 测试**
 
-```python
-cut = max(1, min(len(days) - 1, int(len(days) * 0.8)))
-holdout_start = days[cut]
-development = episode.entry_trading_day < holdout_start
-holdout = episode.entry_trading_day >= holdout_start
-```
+锁定分页 progress、no-progress fail-closed、只读 D1/actual_dominant、representative 精确四品种、active universe、单产品失败隔离、无任何 write method 调用。
 
-All Episodes from the same entry day stay in the same split. If fewer than two unique entry days exist, report holdout as unavailable instead of fabricating a split.
-
-**Metrics:**
-
-Per product and aggregate:
-- closed/open Episode counts;
-- long/short counts;
-- positive ratio;
-- mean, median, q25, q75, min and max reference change;
-- mean/median holding D1 bars;
-- `EMA21_OPPOSITE_CROSS` and `CONTRACT_SEGMENT_END` counts;
-- entry gap absolute and ATR14-normalized distributions;
-- by year and direction;
-- development and holdout summaries;
-- `INSUFFICIENT_SAMPLE` when closed Episodes < 30.
-
-Quantiles must use Decimal linear interpolation over sorted values, not float conversion.
-
-- [ ] **Step 1: Write report math tests**
-
-Use hand-calculated Decimal Episode values to lock mean/median/q25/q75, same-day split grouping and sample-status behavior.
-
-- [ ] **Step 2: Write fake-reader service tests**
-
-Prove:
-- paging to earliest history makes progress;
-- no-progress cursor fails closed;
-- loader is D1/actual_dominant only;
-- representative scope is exactly JM/AG/RB/EG;
-- active scope reads active universe;
-- one product failure is reported as product failure and does not mutate other product results;
-- service performs no write calls.
-
-- [ ] **Step 3: Run and confirm failures**
+- [ ] **Step 3: 运行并确认模块缺失**
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
@@ -729,11 +503,11 @@ uv run --project services/quant-api --no-sync pytest -q \
   services/quant-api/tests/research/test_subing_daily_trend_research_service.py
 ```
 
-- [ ] **Step 4: Implement report and research service**
+- [ ] **Step 4: 实现 report/service**
 
-Response must carry `strategy_id`, policy digest, through date, per-product source first/last day, source-bar count and segment count so results remain tied to exact formula/data identity.
+输出必须绑定 strategy ID、policy SHA-256、through、每产品 source first/last day、bar count、segment count；不写 cache 或文件。
 
-- [ ] **Step 5: Re-run focused tests**
+- [ ] **Step 5: 联跑 report/research/replay**
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
@@ -756,7 +530,7 @@ git commit -m "feat(subing): add daily trend research reporting"
 
 ---
 
-## Task 7: Wire one read-only `guiyi research subing-daily-trend` command
+## Task 7: One read-only research CLI
 
 **Files:**
 - Modify: `services/quant-api/app/research/composition.py`
@@ -768,38 +542,20 @@ git commit -m "feat(subing): add daily trend research reporting"
 - Create: `services/quant-api/tests/research/test_subing_daily_trend_cli.py`
 - Modify: `TESTING.md`
 
-**CLI contract:**
+**CLI:**
 
 ```text
-guiyi research subing-daily-trend \
-  --scope representative|active \
-  --through YYYY-MM-DD \
-  [--include-episodes]
+guiyi research subing-daily-trend --scope representative --through YYYY-MM-DD --include-episodes
+guiyi research subing-daily-trend --scope active --through YYYY-MM-DD
 ```
 
-Rules:
-- `--include-episodes` is accepted only with `--scope representative`;
-- command is classified read-only;
-- stdout is one JSON payload; no report cache or filesystem publish occurs;
-- response status is `passed` only when requested products all complete; product failures yield `degraded` with stable public codes;
-- never expose storage path, SQL, stack trace, token or environment details.
+`include-episodes` 只允许 representative；命令必须被 `_execution_is_readonly` 识别为只读；stdout 只返回 JSON，不发布 report cache/file。全部请求品种成功才 `passed`，部分产品失败返回 `degraded` + stable public code；不得输出 storage path、SQL、stack、token 或 env。
 
-- [ ] **Step 1: Write parser/request/CLI output tests**
+- [ ] **Step 1: 先写 parser/request/output 失败测试**
 
-Expected parser registry after the change:
+`RESEARCH_COMMAND_NAMES` 在现有三个命令后增加 `subing-daily-trend`。测试 representative/active request、invalid `include_episodes + active`、safe exception mapping、readonly flag、injected fake service payload。
 
-```python
-RESEARCH_COMMAND_NAMES = (
-    "subing-calibration",
-    "subing-lifecycle",
-    "subing-strategy-performance",
-    "subing-daily-trend",
-)
-```
-
-Test representative and active request construction, invalid `include_episodes + active`, safe exception mapping, read-only flag and injected fake service output.
-
-- [ ] **Step 2: Run and confirm failures**
+- [ ] **Step 2: 运行并确认新 command 缺失**
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
@@ -808,11 +564,11 @@ uv run --project services/quant-api --no-sync pytest -q \
   services/quant-api/tests/research/test_subing_daily_trend_cli.py
 ```
 
-- [ ] **Step 3: Implement CLI wiring and composition**
+- [ ] **Step 3: 实现 CLI/composition**
 
-Reuse existing `MarketDataService` composition; do not construct a second data reader.
+复用既有 MarketDataService composition，不构造第二套 data reader。
 
-- [ ] **Step 4: Run all Stage A focused tests**
+- [ ] **Step 4: 运行全部 Stage A focused tests**
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
@@ -846,128 +602,80 @@ git commit -m "feat(cli): expose daily trend historical research"
 
 ---
 
-## Task 8: Full verification, independent Review, then Historical evidence Gate
+## Task 8: Full verification, independent Review, Historical evidence Gate
 
-**Files:**
-- No source expansion unless verification exposes a defect within Stage A scope.
-- After explicit read-only environment approval only: create `docs/tasks/2026-08-31-subing-trend-daily-historical-evidence.md` with the exact run evidence.
+### Part A — code verification
 
-### Part A — code verification before real-data execution
-
-- [ ] **Step 1: Run the full non-isolated backend suite**
+- [ ] **Step 1: Full non-isolated backend**
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
 uv run --project services/quant-api --no-sync pytest -q \
-  -m "not isolated_postgresql" \
-  services/quant-api/tests
+  -m "not isolated_postgresql" services/quant-api/tests
 ```
 
-- [ ] **Step 2: Ruff and Mypy**
+- [ ] **Step 2: Ruff + Mypy**
 
 ```bash
 uv run --project services/quant-api --no-sync ruff check \
-  packages/quant-core/guiyi_quant \
-  services/quant-api/app \
-  services/quant-api/tests
-
+  packages/quant-core/guiyi_quant services/quant-api/app services/quant-api/tests
 uv run --project services/quant-api --no-sync mypy \
-  packages/quant-core/guiyi_quant \
-  services/quant-api/app
+  packages/quant-core/guiyi_quant services/quant-api/app
 ```
 
-- [ ] **Step 3: Contract and repository checks**
+- [ ] **Step 3: Repository contract checks**
 
-Run the repository-prescribed commands from `TESTING.md` for:
-- OpenSpec strict validation if the implementation adds/changes an active spec;
-- canonical consistency;
-- secret scan;
-- `git diff --check`.
+严格使用执行时 `TESTING.md` 中的 authoritative commands 运行适用 OpenSpec strict validation、canonical consistency、secret scan 和 `git diff --check`。不得自造替代命令后宣称通过。
 
-Do not invent alternate commands if `TESTING.md` has an authoritative command.
+- [ ] **Step 4: 创建/更新一个 Draft implementation PR to `develop`**
 
-- [ ] **Step 4: Create/update one Draft implementation PR to `develop`**
+标题固定：`feat: add 苏冰趋势策略-日 Historical Projection`。正文记录真实命令/结果、strategy/policy identity、固定公式，并明确 Current/API/Web/Alert 未实现。
 
-PR title:
+- [ ] **Step 5: 独立 Sol/high Review**
 
-```text
-feat: add 苏冰趋势策略-日 Historical Projection
+Reviewer 必须逐项检查：Range reset 保留 ATR500；ready/no active box 为 TREND_ELIGIBLE；intact Range 阻断；EMA21 side + 5-bar slope only；MACD near-zero cross 是唯一 entry trigger；next same-contract D1 open；EMA-only ordinary exit；segment terminal；deterministic IDs；batch/incremental、prefix、future-tail、prepend invariance；80/20 split；无 Current/API/Web/Alert/DB-write 扩张。
+
+Review 只允许：`允许进入 Historical evidence run`、`要求修正后再 Review`、`阻塞`。
+
+### Part B — real Historical effect run，单独 read-only Gate
+
+- [ ] **Step 6: 向 owner 请求明确的只读环境与 exact through date**
+
+获批后由 operator 明确设置：
+
+```bash
+export APPROVED_TRADING_DAY='YYYY-MM-DD'
+python -c "from datetime import date; import os; date.fromisoformat(os.environ['APPROVED_TRADING_DAY'])"
 ```
 
-PR body must record exact commands/results, strategy identity, policy digest, fixed formula, and explicitly state Current/API/Web/Alert are not implemented.
+第二行必须成功后才允许运行研究命令。该环境变量只能来自当次 owner 授权，不得从旧日志或默认值推断。
 
-- [ ] **Step 5: Dispatch independent Sol/high Review**
-
-Reviewer must inspect, not merely rerun tests:
-- Range reset preserves ATR500 but clears segment-local regime;
-- Range ready/no active box means TREND_ELIGIBLE;
-- intact Range blocks entries;
-- EMA21 side + exact 5-bar slope only;
-- MACD near-zero cross is the only entry trigger;
-- next same-contract D1 open causality;
-- EMA-only ordinary exit;
-- segment terminal and no cross-segment state;
-- deterministic Action/Episode identity;
-- batch/incremental, prefix, future-tail, prepend invariance;
-- 80/20 split isolation;
-- no Current/API/Web/Alert/DB write scope expansion.
-
-Allowed Review conclusions:
-
-```text
-允许进入 Historical evidence run
-要求修正后再 Review
-阻塞
-```
-
-### Part B — real Historical effect run, separate read-only Gate
-
-Do not execute this part merely because code Review passed.
-
-- [ ] **Step 6: Ask owner to identify/approve the read-only Historical environment and exact `through` date**
-
-The approval must identify that the run may read local Catalog/Canonical facts but will not write DB/Redis/Canonical/RQData or notify.
-
-- [ ] **Step 7: Run representative scope first**
-
-After approval:
+- [ ] **Step 7: 先跑 representative**
 
 ```bash
 uv run --project services/quant-api --no-sync guiyi research subing-daily-trend \
   --scope representative \
-  --through <APPROVED_TRADING_DAY> \
+  --through "$APPROVED_TRADING_DAY" \
   --include-episodes
 ```
 
-Replace `<APPROVED_TRADING_DAY>` with the exact owner-approved trading day before execution; never commit this placeholder into source code or generated evidence.
+先人工检查 JM/AG/RB/EG 的 Action/Episode 时序、segment、reference fill 和样本状态；结构不正确时停止，不跑 active60。
 
-Review JM/AG/RB/EG episode-by-episode before active60.
-
-- [ ] **Step 8: Run active scope only if representative evidence is structurally correct**
+- [ ] **Step 8: representative 结构正确后才跑 active**
 
 ```bash
 uv run --project services/quant-api --no-sync guiyi research subing-daily-trend \
   --scope active \
-  --through <APPROVED_TRADING_DAY>
+  --through "$APPROVED_TRADING_DAY"
 ```
 
-- [ ] **Step 9: Write versioned Historical evidence**
+- [ ] **Step 9: 写版本化 evidence**
 
-`docs/tasks/2026-08-31-subing-trend-daily-historical-evidence.md` must contain:
-- code commit SHA;
-- policy SHA-256;
-- exact through date;
-- representative and active scope commands;
-- per-product source window and segment counts;
-- JM/AG/RB/EG episode counts and sample status;
-- active60 aggregate and product failures;
-- development/holdout summaries;
-- explicit note that results are gross reference changes, not account PnL;
-- no automatic promotion conclusion.
+在同一 implementation branch 新增 `docs/tasks/2026-08-31-subing-trend-daily-historical-evidence.md`，记录 code SHA、policy SHA-256、exact through date、两条实际命令、每产品 source window/bar/segment counts、JM/AG/RB/EG episode/sample status、active60 aggregate/product failures、development/holdout，以及“gross reference change，不是账户 PnL；不自动 promotion”。
 
-- [ ] **Step 10: Stop at Historical Gate**
+- [ ] **Step 10: 停在 Historical Gate**
 
-The highest allowed completion state is:
+最高只能声明：
 
 ```text
 CODE_COMPLETE
@@ -975,41 +683,18 @@ TEST_COMPLETE
 HISTORICAL_REPORT_READY
 ```
 
-Do not implement Current/API/Web/Alert until the owner reads the evidence and explicitly says to continue.
+用户读完 evidence 并明确决定继续之前，不实现 Current/API/Web/Alert。
 
----
+## Plan Self-Review Result
 
-## Implementation PR / Worktree Topology
-
-After this plan is approved and merged to `develop`:
-
-```text
-latest origin/develop
-→ feature/subing-daily-trend-v1-historical task worktree
-→ Task 1..7 with small commits
-→ Draft PR to develop
-→ independent Formula/Spec Review
-→ separate read-only Historical environment Gate
-→ representative evidence
-→ active60 evidence
-→ owner Historical Gate
-```
-
-Do not reuse the docs branch for source implementation.
-
-The implementation branch may be merged to `develop` only after independent Review and explicit owner integration approval. Merge to `develop` does not authorize `main`, tag, release, Runtime, production data mutation or notification.
-
-## Plan Self-Review Checklist
-
-Before implementation starts, verify all of the following remain true against the merged Spec:
-
-- Every Stage A Spec requirement maps to Task 1–8.
-- No task implements Current/API/Web/Alert.
-- No strategy threshold is runtime-adjustable.
-- `subing_strategy_v1` is untouched except shared tests may be run.
-- Range segment reset keeps ATR500 stitched warm-up while clearing only regime-local fields.
-- Machine and Historical replay share one step function.
-- Historical service reads only through MarketDataService/public research loader seams.
-- Effect reporting uses Decimal and keeps same-day entries in one development/holdout partition.
-- Real Historical environment execution is a separate read-only Gate after code Review.
-- No plan step authorizes main/tag/Runtime/production write/notification.
+- Spec Stage A 的 policy、指标、状态机、Historical、Action/Episode、代表品种、active60、80/20、因果测试均有对应 Task。
+- 没有 Current/API/Web/Alert 实现任务。
+- 没有 runtime-adjustable strategy threshold。
+- `subing_strategy_v1` 不在修改清单中；只允许作为回归测试对象。
+- Range segment reset 明确只清 regime-local state，ATR500 继续 stitched warm-up。
+- Historical replay 与未来增量语义共享 Task 4 的唯一 step function。
+- Research loader 只走 MarketDataService/public research loader seam。
+- 报告统计保持 Decimal；同一 entry trading day 不跨 development/holdout。
+- 真实 Historical 读取位于独立 owner Gate 之后。
+- 本计划不授权 main/tag、Runtime、生产写入、Scope 或通知。
+- 文档中不存在未解析的源码实现占位；Historical 日期通过 owner 批准后设置的受控环境变量进入命令。
