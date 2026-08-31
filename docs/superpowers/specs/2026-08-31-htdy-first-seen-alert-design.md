@@ -4,7 +4,7 @@
 
 状态：Design approved for planning
 
-基线：`develop@6aad39299f2da6dca9db3d8bbae75fcb61e86989`
+最终文档基线：`develop@774e0dd16e6614877d19886627878751190d78ce`
 
 ## 1. 背景与问题
 
@@ -108,9 +108,9 @@ current_prefix  = 当前读取窗口
 
 不得读取未来 trigger，不得扫描启动前完整历史，不得通过 Event 表反推指标状态。
 
-### 5.3 Candidate 规则
+### 5.3 Candidate 与最终 First-Seen 规则
 
-First-Seen candidate 由两部分组成：
+Prefix detector 由两部分产生本次候选：
 
 **A. 当前最新 Bar**
 
@@ -123,23 +123,29 @@ First-Seen candidate 由两部分组成：
 ```text
 previous observation = empty
 current observation  = buy / sell / buy+sell
-=> first-seen candidate
+=> prefix transition candidate
 ```
 
-以下都不是新 candidate：
+以下不会产生新的 prefix transition candidate：
 
 - buy -> empty；
 - sell -> empty；
 - buy -> sell；
 - sell -> buy；
-- buy -> buy+sell；
-- 已有 observation 后消失再恢复。
+- buy -> buy+sell。
 
-First-Seen 的定义是“这一 observation bar 第一次从无观察变成有观察”，不是方向 revision ledger。
+“已有 observation -> 消失 -> 后来再次出现”需要单独区分两层语义：
+
+- 纯 prefix detector 在再次出现的那一次可能再次看到 `empty -> non-empty` transition；
+- 但现有 `AlertEvent` identity `(rule_id, symbol, frequency, bar_end)` 是最终 First-Seen authority；只要该 observation Bar 已有 Event，Persistence 必须 immutable no-op，不修改、不撤回、不再次通知。
+
+因此系统级 First-Seen 的定义始终是：
+
+> 同一 observation Bar 第一次从无持久 Event 进入有持久 Event；不是方向 revision ledger，也不是每次重绘 transition ledger。
 
 ### 5.4 多 candidate
 
-一次 incoming Bar 可能让多根旧 Bar 同时首次出现观察。Runtime 按 `observation bar_end` 升序确定性处理；每个 candidate 对应一条独立 Event 和现有 one-shot notification attempt，不做聚合通知。
+一次 incoming Bar 可能让多根旧 Bar 同时首次出现观察。Runtime 按 `observation bar_end` 升序确定性处理；每个尚无持久 Event 的 candidate 对应一条独立 Event 和现有 one-shot notification attempt，不做聚合通知。已存在 Event 的 candidate 由 Persistence no-op 丢弃，不进入 transport。
 
 ## 6. 计算窗口与 parity
 
@@ -351,7 +357,7 @@ Forward-only prefix-diff first-seen
 Observation contract identity preserved
 Event first-seen freeze/no retraction
 No startup backfill/replay/retry
-bar_end != detected_at semantics explicit
+bar_end / detected_at semantics explicit
 Web retrospective vs persistent Event distinct
 SuBing unchanged
 ```
