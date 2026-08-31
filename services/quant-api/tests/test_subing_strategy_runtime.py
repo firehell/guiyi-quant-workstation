@@ -1198,6 +1198,38 @@ def test_different_live_contract_isolated_as_pending_until_canonical_rollover() 
     assert evaluator.current_state("jm") == before
 
 
+def test_night_first_completed_1m_isolated_pending_without_actions() -> None:
+    state, identity, events = _recorded_machine(event_count=18)
+    night_trading_day = TRADING_DAY + timedelta(days=1)
+    evaluator, identity = _ready_evaluator(
+        state,
+        current=_CurrentReader(
+            continuation_by_product={
+                ("jm", night_trading_day): (
+                    SubingLiveContinuationKind.LIVE_CONTRACT_AUTHORITY_PENDING
+                )
+            }
+        ),
+    )
+    before = evaluator.current_state("jm")
+    first_night_1m = replace(
+        events[19].bar,
+        bar_end=datetime(2026, 8, 3, 13, 1, tzinfo=UTC),
+        trading_day=night_trading_day,
+    )
+
+    result = evaluator.process_completed_bar(
+        first_night_1m,
+        BarFrequency.M1,
+        source_identity=identity,
+    )
+
+    assert result.action_facts == ()
+    assert result.product_status.state == "unavailable"
+    assert result.product_status.reason_codes == ("LIVE_CONTRACT_AUTHORITY_PENDING",)
+    assert evaluator.current_state("jm") == before
+
+
 def test_pending_contract_isolated_to_one_product() -> None:
     jm, jm_identity, jm_events = _recorded_machine(symbol="jm", event_count=19)
     ag, ag_identity, ag_events = _recorded_machine(symbol="ag", event_count=19)
