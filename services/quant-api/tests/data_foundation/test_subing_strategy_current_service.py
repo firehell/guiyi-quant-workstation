@@ -108,12 +108,20 @@ class _Store:
 
 
 class _MarketRead:
-    def __init__(self, live=None, *, contract: str = CONTRACT) -> None:
+    def __init__(
+        self,
+        live=None,
+        *,
+        contract: str = CONTRACT,
+        post_close: bool = False,
+    ) -> None:
         self.live = live or {}
         self.contract = contract
+        self.post_close = post_close
         self.trading_day = TARGET_DAY
         self.state_requests = []
         self.live_requests = []
+        self.display_requests = []
 
     def state(self, identity, now):
         self.state_requests.append((identity, now))
@@ -121,15 +129,31 @@ class _MarketRead:
             symbol=identity.symbol,
             series_kind=identity.series_kind.value,
             frequency=identity.frequency.value,
+            operational=True,
+            phase="CLOSED" if self.post_close else "TRADING",
             trading_day=self.trading_day,
-            live_eligible=True,
-            live_available=bool(self.live),
-            live_contract=self.contract,
+            live_eligible=not self.post_close,
+            live_available=not self.post_close and bool(self.live),
+            live_contract=None if self.post_close else self.contract,
         )
 
     def live_snapshot(self, identity, after, now):
         self.live_requests.append((identity, after, now))
         return self.live.get(identity.frequency, ())
+
+    def display_snapshot(self, identity, after, now):
+        self.display_requests.append((identity, after, now))
+        return SimpleNamespace(
+            state=self.state(identity, now),
+            source="post_close" if self.post_close else "none",
+            trading_day=self.trading_day if self.post_close else None,
+            contract=self.contract if self.post_close else None,
+            bars=tuple(
+                bar
+                for bar in self.live.get(identity.frequency, ())
+                if after is None or bar.bar_end > after
+            ),
+        )
 
 
 class _CurrentLoader(FakeSegmentLoader):
@@ -163,7 +187,12 @@ def _canonical_stream():
     )
 
 
-def _service(*, live=None, snapshot: SubingDailyWatchSnapshot | None = None):
+def _service(
+    *,
+    live=None,
+    snapshot: SubingDailyWatchSnapshot | None = None,
+    post_close: bool = False,
+):
     module = _current_module()
     bars, loaded = _canonical_stream()
     loader = _CurrentLoader(loaded)
@@ -176,7 +205,7 @@ def _service(*, live=None, snapshot: SubingDailyWatchSnapshot | None = None):
         }
     )
     store = _Store(_snapshot() if snapshot is None else snapshot)
-    market_read = _MarketRead(live)
+    market_read = _MarketRead(live, post_close=post_close)
     service = module.SubingStrategyCurrentProjectionService(
         loader,
         products=("jm",),
@@ -355,6 +384,207 @@ def test_completed_live_after_uses_same_contract_new_day_continuation() -> None:
     assert result.bars[BarFrequency.M1] == (live_bar,)
     assert result.bars[BarFrequency.M5] == (live_bar,)
     assert result.bars[BarFrequency.M15] == (live_bar,)
+
+
+def test_completed_live_after_uses_frozen_post_close_same_contract_authority() -> None:
+    module = _current_module()
+    canonical = _canonical_stream()[0][-1]
+    live_bar = replace(
+        canonical,
+        bar_end=canonical.bar_end + timedelta(minutes=15),
+        trading_day=TARGET_DAY,
+    )
+    service, _loader, _historical, _store, market_read = _service(
+        live={
+            BarFrequency.M1: (live_bar,),
+            BarFrequency.M5: (live_bar,),
+            BarFrequency.M15: (live_bar,),
+        },
+        post_close=True,
+    )
+
+    def current_segment(_symbol: str, target: date) -> ResolvedContractSegment:
+        if target == TARGET_DAY:
+            raise MarketDataError("MAIN_CONTRACT_MAP_MISSING")
+        return ResolvedContractSegment(CONTRACT, SEGMENT_START, SOURCE_DAY)
+
+    service._current_segment = current_segment
+    result = service.completed_live_after(
+        symbol="jm",
+        source_identity=SubingStrategySourceIdentity(
+            "jm", CONTRACT, SEGMENT_START
+        ),
+        after_1m=canonical.bar_end,
+        after_5m=canonical.bar_end,
+        after_15m=canonical.bar_end,
+        through=NOW,
+        allow_post_close_frozen=True,
+    )
+
+    assert result.decision.kind is module.SubingLiveContinuationKind.CONTINUE_SAME_SEGMENT
+    assert result.decision.frozen_live_contract == CONTRACT
+    assert result.bars[BarFrequency.M1] == (live_bar,)
+    assert result.bars[BarFrequency.M5] == (live_bar,)
+    assert result.bars[BarFrequency.M15] == (live_bar,)
+    assert len(market_read.display_requests) == 3
+
+
+def test_completed_live_after_keeps_frozen_post_close_different_contract_pending() -> None:
+    module = _current_module()
+    canonical = _canonical_stream()[0][-1]
+    live_bar = replace(
+        canonical,
+        bar_end=canonical.bar_end + timedelta(minutes=15),
+        trading_day=TARGET_DAY,
+    )
+    service, _loader, _historical, _store, _market_read = _service(
+        live={
+            BarFrequency.M1: (live_bar,),
+            BarFrequency.M5: (live_bar,),
+            BarFrequency.M15: (live_bar,),
+        },
+        post_close=True,
+    )
+    _market_read.contract = "JM2705"
+    service._current_segment = lambda _symbol, _target: (_ for _ in ()).throw(
+        MarketDataError("MAIN_CONTRACT_MAP_MISSING")
+    )
+
+    result = service.completed_live_after(
+        symbol="jm",
+        source_identity=SubingStrategySourceIdentity(
+            "jm", CONTRACT, SEGMENT_START
+        ),
+        after_1m=canonical.bar_end,
+        after_5m=canonical.bar_end,
+        after_15m=canonical.bar_end,
+        through=NOW,
+        allow_post_close_frozen=True,
+    )
+
+    assert (
+        result.decision.kind
+        is module.SubingLiveContinuationKind.LIVE_CONTRACT_AUTHORITY_PENDING
+    )
+    assert result.decision.frozen_live_contract == "JM2705"
+    assert result.bars == {}
+
+
+def test_completed_live_after_rejects_post_close_without_final_catch_up_authority() -> None:
+    module = _current_module()
+    canonical = _canonical_stream()[0][-1]
+    live_bar = replace(
+        canonical,
+        bar_end=canonical.bar_end + timedelta(minutes=15),
+        trading_day=TARGET_DAY,
+    )
+    service, _loader, _historical, _store, _market_read = _service(
+        live={
+            BarFrequency.M1: (live_bar,),
+            BarFrequency.M5: (live_bar,),
+            BarFrequency.M15: (live_bar,),
+        },
+        post_close=True,
+    )
+
+    result = service.completed_live_after(
+        symbol="jm",
+        source_identity=SubingStrategySourceIdentity(
+            "jm", CONTRACT, SEGMENT_START
+        ),
+        after_1m=canonical.bar_end,
+        after_5m=canonical.bar_end,
+        after_15m=canonical.bar_end,
+        through=NOW,
+    )
+
+    assert result.decision.kind is module.SubingLiveContinuationKind.STALE_OR_IDENTITY_INVALID
+    assert result.bars == {}
+
+
+@pytest.mark.parametrize("corruption", ("mixed_contract", "wrong_day"))
+def test_completed_live_after_fails_closed_for_inconsistent_frozen_post_close_snapshot(
+    corruption: str,
+) -> None:
+    module = _current_module()
+    canonical = _canonical_stream()[0][-1]
+    live_bar = replace(
+        canonical,
+        bar_end=canonical.bar_end + timedelta(minutes=15),
+        trading_day=TARGET_DAY,
+    )
+    service, _loader, _historical, _store, market_read = _service(
+        live={
+            BarFrequency.M1: (live_bar,),
+            BarFrequency.M5: (live_bar,),
+            BarFrequency.M15: (live_bar,),
+        },
+        post_close=True,
+    )
+    original_snapshot = market_read.display_snapshot
+
+    def inconsistent_snapshot(identity, after, now):
+        snapshot = original_snapshot(identity, after, now)
+        if identity.frequency is BarFrequency.M5:
+            if corruption == "mixed_contract":
+                snapshot.contract = "JM2705"
+            else:
+                snapshot.trading_day = SOURCE_DAY
+        return snapshot
+
+    market_read.display_snapshot = inconsistent_snapshot
+    result = service.completed_live_after(
+        symbol="jm",
+        source_identity=SubingStrategySourceIdentity(
+            "jm", CONTRACT, SEGMENT_START
+        ),
+        after_1m=canonical.bar_end,
+        after_5m=canonical.bar_end,
+        after_15m=canonical.bar_end,
+        through=NOW,
+        allow_post_close_frozen=True,
+    )
+
+    assert result.decision.kind is module.SubingLiveContinuationKind.STALE_OR_IDENTITY_INVALID
+    assert result.bars == {}
+
+
+def test_completed_live_after_keeps_frozen_post_close_different_contract_pending_against_old_formal_segment() -> None:
+    module = _current_module()
+    canonical = _canonical_stream()[0][-1]
+    live_bar = replace(
+        canonical,
+        bar_end=canonical.bar_end + timedelta(minutes=15),
+        trading_day=TARGET_DAY,
+    )
+    service, _loader, _historical, _store, market_read = _service(
+        live={
+            BarFrequency.M1: (live_bar,),
+            BarFrequency.M5: (live_bar,),
+            BarFrequency.M15: (live_bar,),
+        },
+        post_close=True,
+    )
+    market_read.contract = "JM2705"
+
+    result = service.completed_live_after(
+        symbol="jm",
+        source_identity=SubingStrategySourceIdentity(
+            "jm", CONTRACT, SEGMENT_START
+        ),
+        after_1m=canonical.bar_end,
+        after_5m=canonical.bar_end,
+        after_15m=canonical.bar_end,
+        through=NOW,
+        allow_post_close_frozen=True,
+    )
+
+    assert (
+        result.decision.kind
+        is module.SubingLiveContinuationKind.LIVE_CONTRACT_AUTHORITY_PENDING
+    )
+    assert result.decision.frozen_live_contract == "JM2705"
+    assert result.bars == {}
 
 
 def test_current_request_supports_only_actual_dominant_15m() -> None:

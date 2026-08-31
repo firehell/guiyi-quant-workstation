@@ -147,7 +147,7 @@ class _RestoreReader(Protocol):
 
 
 class _CurrentReader(Protocol):
-    def read_completed_bars(
+    def read_final_catch_up_bars(
         self,
         *,
         symbol: str,
@@ -288,7 +288,7 @@ class SubingStrategyRuntimeEvaluator:
             identity = _source_identity(state)
             cutoffs = _cutoffs(state)
             try:
-                current = self._current_reader.read_completed_bars(
+                current = self._current_reader.read_final_catch_up_bars(
                     symbol=product.symbol,
                     source_identity=identity,
                     after_1m=cutoffs[0],
@@ -296,6 +296,7 @@ class SubingStrategyRuntimeEvaluator:
                     after_15m=cutoffs[2],
                     through=ready_at,
                 )
+                catch_up_continuation: SubingLiveContinuationDecision | None = None
                 if isinstance(current, SubingLiveCompletedBars):
                     _validate_live_continuation(
                         current.decision,
@@ -322,15 +323,17 @@ class SubingStrategyRuntimeEvaluator:
                         self._degrade(product, "STALE_OR_IDENTITY_INVALID")
                         results.append(self._result(product))
                         continue
+                    catch_up_continuation = current.decision
                     current_bars = current.bars
                 else:
                     current_bars = current
                 events = _completed_events(current_bars, through=ready_at)
                 for event in events:
-                    self.process_completed_bar(
+                    self._process_completed_bar(
                         event.bar,
                         _event_frequency(event),
                         source_identity=identity,
+                        catch_up_continuation=catch_up_continuation,
                     )
                     state = product.state
                     if product.availability == "unavailable" or state is None:
@@ -366,6 +369,21 @@ class SubingStrategyRuntimeEvaluator:
         *,
         source_identity: SubingStrategySourceIdentity,
     ) -> SubingStrategyRuntimeResult:
+        return self._process_completed_bar(
+            bar,
+            frequency,
+            source_identity=source_identity,
+            catch_up_continuation=None,
+        )
+
+    def _process_completed_bar(
+        self,
+        bar: CanonicalBar,
+        frequency: BarFrequency,
+        *,
+        source_identity: SubingStrategySourceIdentity,
+        catch_up_continuation: SubingLiveContinuationDecision | None,
+    ) -> SubingStrategyRuntimeResult:
         if not isinstance(source_identity, SubingStrategySourceIdentity):
             raise ValueError("SUBING_STRATEGY_RUNTIME_SOURCE_IDENTITY_INVALID")
         product = self._products.get(source_identity.symbol)
@@ -378,12 +396,14 @@ class SubingStrategyRuntimeEvaluator:
             if source_identity != _source_identity(state):
                 raise SubingStrategyMachineError("SOURCE_IDENTITY_MISMATCH")
             event = _completed_event(bar, frequency)
-            continuation = self._current_reader.resolve_live_continuation(
-                symbol=product.symbol,
-                source_identity=source_identity,
-                incoming_trading_day=event.bar.trading_day,
-                now=event.bar.bar_end,
-            )
+            continuation = catch_up_continuation
+            if continuation is None:
+                continuation = self._current_reader.resolve_live_continuation(
+                    symbol=product.symbol,
+                    source_identity=source_identity,
+                    incoming_trading_day=event.bar.trading_day,
+                    now=event.bar.bar_end,
+                )
             _validate_live_continuation(
                 continuation,
                 source_identity=source_identity,
