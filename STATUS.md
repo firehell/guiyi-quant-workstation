@@ -8,12 +8,12 @@
 
 | 项目 | 当前事实 |
 |---|---|
-| Release | `v1.9.4` release candidate：SuBing completed-Live trading-day continuation。前一 tag `v1.9.3@0ff83f2704e554f44b8505a744f9060288ca3440` 保留；main/tag/GitHub Release 完成前不标为 `RELEASED`。 |
-| Runtime | 本机仍绑定 `/Volumes/扩展盘/guiyi-quant-runtime-v1.9.3@0ff83f27…`；`v1.9.4` 尚未 promotion。2026-08-31 只读 health 读回 Live 60/60、Alert `strategy_state=ready / 60 ready / 0 unavailable / processing_state=ok`，最近 completed Live bar 为 `2026-08-31T06:15:00Z`。 |
+| Release | `v1.9.4@1ee01c4d717e164eda03ec5404390fbf63573b16` 已发布；main、annotated tag 与 GitHub Release 均指向该 commit。前一 tag `v1.9.3@0ff83f2704e554f44b8505a744f9060288ca3440` 保留。 |
+| Runtime | 本机已绑定 detached `/Volumes/扩展盘/guiyi-quant-runtime-v1.9.4@1ee01c4d`；API、Web、Live 与 Alert 均从该 root 运行。promotion 期间交易时段的 Live health 为 operational `60` / subscribed `60`；15:00 收盘后按正常 phase 变为 `CLOSED / 0 subscribed`，最后 completed Live bar 为 `2026-08-31T07:00:00Z`。Alert 在 14:52 启动，60 个产品 restore 及 final catch-up 在 15:06 完成；此时 Live 已关闭，故全部按 `STALE_OR_IDENTITY_INVALID` fail-closed，状态为 `strategy_state=degraded / 0 ready / 60 unavailable`。未回滚、未回填 Event、未发送通知。 |
 | Database | production Alembic 为 `20260826_0042 (head)`。当前 Rule 为 `htdy_original_15m` 与 `subing_strategy_v1`。 |
 | Market Runtime Scope | `operational_products.txt` 的 60 个品种。 |
 | Alert Scope | HTDY Scope 为 `jm × 15m`；SuBing `scope_products` 为 operational 60。两种 authority 不合并。两条 Rule 均 enabled，Alert Runtime marker 已 enabled，audience count 2；未发生 Scope、Rule 或 audience 变更。 |
-| v1.9.4 release candidate | 以 typed identity seam 继续同一 Live physical contract 的跨交易日 completed 1m/5m/15m；不同 Live contract 仅对该产品进入 `LIVE_CONTRACT_AUTHORITY_PENDING`，由 `canonical_updated` 的 formal rollover reconciliation 处理。restart/final catch-up 复用同一 authority 且不回填 Event/通知。无 migration、Scope、transport 或策略公式变化。 |
+| v1.9.4 | 以 typed identity seam 继续同一 Live physical contract 的跨交易日 completed 1m/5m/15m；不同 Live contract 仅对该产品进入 `LIVE_CONTRACT_AUTHORITY_PENDING`，由 `canonical_updated` 的 formal rollover reconciliation 处理。restart/final catch-up 复用同一 authority 且不回填 Event/通知。无 migration、Scope、transport 或策略公式变化。当前 Runtime 暴露出一个独立启动时序缺口：restore 完成跨过收盘时，final catch-up 把 closed Live 判为 stale，导致全品种 unavailable。 |
 
 Alert transport 为 PushPlus；provider accepted 不等于微信送达。
 
@@ -28,6 +28,7 @@ Alert transport 为 PushPlus；provider accepted 不等于微信送达。
 
 - HTDY 的真实 PushPlus/微信送达，以及 D1/W1 `canonical_updated` 的自然 Event identity/evidence，仍须分别核验；不以测试、synthetic event、replay 或手工发送补证。
 - SuBing `v1.9.4` 自然 Live continuation seam evidence pending；不以测试、startup replay、手工触发或回填替代。
+- SuBing Alert 当前 `0 ready / 60 unavailable`；须在新任务中修复“收盘后 final catch-up”与 Live continuation authority 的启动时序语义，并在下一交易时段重新取得 60 ready 与自然 continuation evidence；不得以重新启动、回滚、回填或手工通知掩盖。
 - 一次 owner PushPlus canary 仍是独立 Gate。
 - SuBing Candidate 的 prospective OOS 按其 protocol 独立累积，retrospective 不回填 OOS。
 - 第一次自然盘后 derived 增量刷新仍须单独发生；2026-08-29 operator 已把效果快照 `through` 推到 `2026-08-28`，但不替代自然盘后 schema v3 status 写入。
