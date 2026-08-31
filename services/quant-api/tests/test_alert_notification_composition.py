@@ -178,7 +178,7 @@ def test_strategy_reader_wraps_known_product_source_failure_without_detail() -> 
     )
 
     with pytest.raises(SubingStrategyRuntimeProductSourceError) as raised:
-        reader.read_completed_bars(
+        reader.read_final_catch_up_bars(
             symbol="jm",
             source_identity=identity,
             after_1m=None,
@@ -188,6 +188,36 @@ def test_strategy_reader_wraps_known_product_source_failure_without_detail() -> 
         )
 
     assert str(raised.value) == ""
+
+
+def test_strategy_reader_marks_only_final_catch_up_for_post_close_authority() -> None:
+    captured: dict[str, object] = {}
+    expected = object()
+
+    class Service:
+        def completed_live_after(self, **kwargs):
+            captured.update(kwargs)
+            return expected
+
+    reader = _SubingStrategyRuntimeReader(
+        session_factory=lambda: nullcontext(object()),
+        service_factory=lambda _session: Service(),
+    )
+    identity = SubingStrategySourceIdentity(
+        symbol="jm",
+        contract="JM2609",
+        segment_start_trading_day=date(2026, 8, 3),
+    )
+
+    assert reader.read_final_catch_up_bars(
+        symbol="jm",
+        source_identity=identity,
+        after_1m=None,
+        after_5m=None,
+        after_15m=None,
+        through=datetime(2026, 8, 17, 1, tzinfo=UTC),
+    ) is expected
+    assert captured["allow_post_close_frozen"] is True
 
 
 def test_strategy_reader_resolves_live_continuation_at_event_time() -> None:
@@ -234,7 +264,7 @@ def test_strategy_reader_does_not_reclassify_unknown_programming_failure() -> No
     )
 
     with pytest.raises(RuntimeError) as raised:
-        reader.read_completed_bars(
+        reader.read_final_catch_up_bars(
             symbol="jm",
             source_identity=SubingStrategySourceIdentity(
                 symbol="jm",
