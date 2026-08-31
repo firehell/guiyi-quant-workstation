@@ -556,6 +556,110 @@ def test_duplicate_htdy_event_with_changed_facts_fails_closed(
         service.create_event(replace(request, **{changed_field: changed_value}))
 
 
+def test_first_seen_htdy_event_freezes_initial_facts_across_repaint_revisions(
+    session: Session,
+) -> None:
+    from app.alerts.service import AlertService
+
+    rule = seed_rule(session, "htdy_original_15m")
+    service = AlertService(session, operational_products=("jm",))
+    first_request = event_request(rule.id, result_codes=("sell",))
+
+    first = service.create_first_seen_observation_event(first_request)
+    direction_revision = service.create_first_seen_observation_event(
+        replace(
+            first_request,
+            contract="JM2701",
+            trading_day=date(2026, 8, 16),
+            result_codes=("buy",),
+            detected_at=first_request.detected_at + timedelta(hours=1),
+        )
+    )
+    conflict_revision = service.create_first_seen_observation_event(
+        replace(first_request, result_codes=("buy", "sell"))
+    )
+
+    assert first is not None
+    assert direction_revision is None
+    assert conflict_revision is None
+    stored = session.scalar(select(AlertEvent).where(AlertEvent.id == first.id))
+    assert stored is not None
+    assert stored.contract == "JM2609"
+    assert stored.trading_day == TRADING_DAY
+    assert stored.result_codes == ["sell"]
+    assert stored.detected_at == first_request.detected_at.replace(tzinfo=None)
+    assert len(session.scalars(select(AlertEvent)).all()) == 1
+
+
+def test_first_seen_observation_seam_rejects_strategy_actions_and_keeps_strict_path(
+    session: Session,
+) -> None:
+    from app.alerts.service import AlertConsistencyError, AlertService
+
+    rule = seed_rule(session, "subing_strategy_v1")
+    service = AlertService(session, operational_products=("jm",))
+    action = strategy_action()
+    request = strategy_request(rule.id, action=action)
+
+    with pytest.raises(AlertConsistencyError, match="ALERT_EVENT_CONSISTENCY_ERROR"):
+        service.create_first_seen_observation_event(request)
+
+    assert service.create_event(request) is not None
+    changed_action = strategy_action(reference_price=Decimal("101"))
+    assert changed_action.action_id == action.action_id
+    with pytest.raises(AlertConsistencyError, match="ALERT_EVENT_CONSISTENCY_ERROR"):
+        service.create_event(strategy_request(rule.id, action=changed_action))
+
+
+def test_first_seen_htdy_integrity_race_reads_back_existing_identity(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    from app.alerts.service import AlertService
+
+    engine = create_engine(f"sqlite+pysqlite:///{tmp_path / 'alerts.db'}")
+    AlertRule.__table__.create(engine)
+    AlertEvent.__table__.create(engine)
+    try:
+        with Session(engine) as primary:
+            seed_v2_rules(primary, htdy_scope=["jm"], subing_scope=[])
+            rule = seed_rule(primary, "htdy_original_15m")
+            request = event_request(rule.id, result_codes=("sell",))
+
+            def competing_commit() -> None:
+                with Session(engine) as competitor:
+                    competitor.add(
+                        AlertEvent(
+                            rule_id=rule.id,
+                            symbol="jm",
+                            contract="JM2609",
+                            trading_day=TRADING_DAY,
+                            frequency="15m",
+                            bar_end=BAR_END,
+                            result_codes=["sell"],
+                            action_id=None,
+                            strategy_payload=None,
+                            detected_at=request.detected_at,
+                            notification_attempted_at=request.notification_attempted_at,
+                        )
+                    )
+                    competitor.commit()
+                raise IntegrityError("INSERT", {}, RuntimeError("unique race"))
+
+            monkeypatch.setattr(primary, "commit", competing_commit)
+
+            assert (
+                AlertService(
+                    primary,
+                    operational_products=("jm",),
+                ).create_first_seen_observation_event(request)
+                is None
+            )
+            assert len(primary.scalars(select(AlertEvent)).all()) == 1
+    finally:
+        engine.dispose()
+
+
 def test_strategy_payload_round_trips_exact_open_contract() -> None:
     from app.alerts.strategy_payload import (
         parse_subing_strategy_payload,

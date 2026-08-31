@@ -58,6 +58,7 @@ class AlertNotificationMessage:
     contract: str
     frequency: str
     bar_end: datetime
+    detected_at: datetime
     result_codes: tuple[str, ...]
     strategy_payload: SubingStrategyActionPayload | None = None
 
@@ -130,7 +131,10 @@ class AlertNotificationDispatcher:
 
 
 def format_alert_message(message: AlertNotificationMessage) -> str:
-    if message.bar_end.tzinfo is None or message.bar_end.utcoffset() is None:
+    if any(
+        value.tzinfo is None or value.utcoffset() is None
+        for value in (message.bar_end, message.detected_at)
+    ):
         raise ValueError("ALERT_NOTIFICATION_TIMEZONE_REQUIRED")
     if (
         not message.symbol.strip()
@@ -166,12 +170,14 @@ def _format_htdy_message(message: AlertNotificationMessage) -> str:
         observation = "买入观察 + 卖出观察"
     else:
         raise ValueError("ALERT_NOTIFICATION_RESULT_INVALID")
-    local_time = message.bar_end.astimezone(_SHANGHAI).strftime("%H:%M")
+    observation_time = message.bar_end.astimezone(_SHANGHAI).strftime("%H:%M")
+    first_seen_time = message.detected_at.astimezone(_SHANGHAI).strftime("%H:%M")
     return (
         f"【归一量化】{message.symbol.strip().upper()} {message.product_name.strip()}\n\n"
         f"火天大有 · {observation}\n"
         f"主力：{message.contract.strip().upper()}\n"
-        f"{message.frequency} · {local_time} 收线\n"
+        f"观察K线：{message.frequency} · {observation_time}\n"
+        f"首次识别：{first_seen_time}\n"
         "研究观察，非交易指令"
     )
 

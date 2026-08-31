@@ -14,7 +14,7 @@ from typing import Protocol, cast
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.alerts.evaluators import AlertEvaluation, AlertEvaluator
+from app.alerts.evaluators import AlertEvaluator, HtdyFirstSeenObservation
 from app.alerts.models import AlertRule
 from app.alerts.notification import (
     AlertNotificationMessage,
@@ -95,13 +95,6 @@ AlertMarketReadFactory = Callable[[Session], MarketReadService]
 
 
 @dataclass(frozen=True, slots=True)
-class _RuleResult:
-    contract: str
-    frequency: str
-    result_codes: tuple[str, ...]
-
-
-@dataclass(frozen=True, slots=True)
 class _LiveBarTrigger:
     symbol: str
     frequency: BarFrequency
@@ -120,26 +113,25 @@ class _PreparedEvent:
     notification_error_type: str | None
 
 
-def _persist_event_and_prepare_notification(
+def _persist_first_seen_htdy_and_prepare_notification(
     service: AlertService,
     *,
     taxonomy: Mapping[str, ProductTaxonomyEntry],
     rule: AlertRule,
     symbol: str,
-    trading_day: date,
-    bar_end: datetime,
-    result: _RuleResult,
+    frequency: str,
+    candidate: HtdyFirstSeenObservation,
     processing_now: datetime,
 ) -> _PreparedEvent:
-    created = service.create_event(
+    created = service.create_first_seen_observation_event(
         AlertEventCreate(
             rule_id=rule.id,
             symbol=symbol,
-            contract=result.contract,
-            trading_day=trading_day,
-            frequency=result.frequency,
-            bar_end=bar_end,
-            result_codes=result.result_codes,
+            contract=candidate.contract,
+            trading_day=candidate.trading_day,
+            frequency=frequency,
+            bar_end=candidate.bar_end,
+            result_codes=candidate.observation_types,
             action_id=None,
             strategy_payload=None,
             detected_at=processing_now,
@@ -162,10 +154,11 @@ def _persist_event_and_prepare_notification(
             rule_code=rule.rule_code,
             symbol=symbol,
             product_name=taxonomy_entry.name,
-            contract=result.contract,
-            frequency=result.frequency,
-            bar_end=bar_end,
-            result_codes=result.result_codes,
+            contract=candidate.contract,
+            frequency=frequency,
+            bar_end=candidate.bar_end,
+            detected_at=processing_now,
+            result_codes=candidate.observation_types,
         ),
         None,
     )
@@ -211,6 +204,7 @@ def _persist_strategy_action_and_prepare_notification(
             contract=action.contract,
             frequency=BarFrequency.M15.value,
             bar_end=action.decision_at,
+            detected_at=processing_now,
             result_codes=(action.kind.value,),
             strategy_payload=payload,
         ),
@@ -436,34 +430,43 @@ class AlertRuntime:
                                 frequency=event_frequency.value,
                             ):
                                 continue
-                            result = self._evaluate_rule(
+                            candidates = self._evaluate_rule(
                                 session,
                                 rule_code=definition.rule_code,
                                 symbol=symbol,
                                 event_frequency=event_frequency,
                                 event_bar=event_bar,
                             )
-                            if result is None:
+                            if not candidates:
                                 continue
-                            prepared = _persist_event_and_prepare_notification(
-                                service,
-                                taxonomy=self._taxonomy,
-                                rule=rule,
-                                symbol=symbol,
-                                trading_day=event_bar.trading_day,
-                                bar_end=event_bar.bar_end,
-                                result=result,
-                                processing_now=processing_now,
-                            )
-                            if not prepared.event_created:
-                                continue
-                            event_count += 1
-                            if prepared.notification_error_type is not None:
-                                notification_preparation_failures.append(
-                                    prepared.notification_error_type
-                                )
-                            if prepared.message is not None:
-                                messages.append(prepared.message)
+                            for candidate in candidates:
+                                try:
+                                    prepared = (
+                                        _persist_first_seen_htdy_and_prepare_notification(
+                                            service,
+                                            taxonomy=self._taxonomy,
+                                            rule=rule,
+                                            symbol=symbol,
+                                            frequency=event_frequency.value,
+                                            candidate=candidate,
+                                            processing_now=processing_now,
+                                        )
+                                    )
+                                except Exception:  # noqa: BLE001 - isolate each candidate
+                                    if session.in_transaction():
+                                        session.rollback()
+                                    processing_error_type = PROCESSING_FAILURE
+                                    _LOGGER.warning("ALERT_RULE_PROCESSING_FAILED")
+                                    continue
+                                if not prepared.event_created:
+                                    continue
+                                event_count += 1
+                                if prepared.notification_error_type is not None:
+                                    notification_preparation_failures.append(
+                                        prepared.notification_error_type
+                                    )
+                                if prepared.message is not None:
+                                    messages.append(prepared.message)
                         except Exception:  # noqa: BLE001 - isolate each fixed rule
                             if session.in_transaction():
                                 session.rollback()
@@ -628,7 +631,7 @@ class AlertRuntime:
                                         frequency,
                                     ),
                                     trading_day=trigger.trading_day,
-                                    limit=32,
+                                    limit=64,
                                 )
                                 stage = "window_validate"
                                 if not _canonical_window_matches_trigger(
@@ -639,36 +642,47 @@ class AlertRuntime:
                                 ):
                                     continue
                                 stage = "evaluate"
-                                evaluation = self._htdy_evaluator.evaluate(window)
-                                if (
-                                    not isinstance(evaluation, AlertEvaluation)
-                                    or not evaluation.observation_types
-                                ):
-                                    continue
-                                stage = "event_persist"
-                                prepared = _persist_event_and_prepare_notification(
-                                    service,
-                                    taxonomy=self._taxonomy,
-                                    rule=rule,
-                                    symbol=symbol,
-                                    trading_day=trigger.trading_day,
-                                    bar_end=window.cutoff,
-                                    result=_RuleResult(
-                                        contract=window.contract,
-                                        frequency=frequency.value,
-                                        result_codes=evaluation.observation_types,
-                                    ),
-                                    processing_now=processing_now,
+                                candidates = _validated_first_seen_candidates(
+                                    self._htdy_evaluator.evaluate_first_seen(window),
+                                    window=window,
                                 )
-                                if not prepared.event_created:
+                                if not candidates:
                                     continue
-                                event_count += 1
-                                if prepared.notification_error_type is not None:
-                                    notification_preparation_failures.append(
-                                        prepared.notification_error_type
-                                    )
-                                if prepared.message is not None:
-                                    messages.append(prepared.message)
+                                for candidate in candidates:
+                                    stage = "event_persist"
+                                    try:
+                                        prepared = (
+                                            _persist_first_seen_htdy_and_prepare_notification(
+                                                service,
+                                                taxonomy=self._taxonomy,
+                                                rule=rule,
+                                                symbol=symbol,
+                                                frequency=frequency.value,
+                                                candidate=candidate,
+                                                processing_now=processing_now,
+                                            )
+                                        )
+                                    except Exception:  # noqa: BLE001 - isolate each candidate
+                                        if session.in_transaction():
+                                            session.rollback()
+                                        processing_error_type = PROCESSING_FAILURE
+                                        _LOGGER.warning(
+                                            "ALERT_RULE_PROCESSING_FAILED "
+                                            "symbol=%s frequency=%s stage=%s",
+                                            symbol,
+                                            frequency.value,
+                                            stage,
+                                        )
+                                        continue
+                                    if not prepared.event_created:
+                                        continue
+                                    event_count += 1
+                                    if prepared.notification_error_type is not None:
+                                        notification_preparation_failures.append(
+                                            prepared.notification_error_type
+                                        )
+                                    if prepared.message is not None:
+                                        messages.append(prepared.message)
                             except Exception:  # noqa: BLE001 - isolate each exact pair
                                 if session.in_transaction():
                                     session.rollback()
@@ -797,7 +811,7 @@ class AlertRuntime:
         symbol: str,
         event_frequency: BarFrequency,
         event_bar: CanonicalBar,
-    ) -> _RuleResult | None:
+    ) -> tuple[HtdyFirstSeenObservation, ...]:
         if rule_code == HTDY_RULE.rule_code:
             return self._evaluate_htdy(
                 session,
@@ -805,7 +819,7 @@ class AlertRuntime:
                 event_frequency=event_frequency,
                 event_bar=event_bar,
             )
-        return None
+        return ()
 
     def _evaluate_htdy(
         self,
@@ -814,7 +828,7 @@ class AlertRuntime:
         symbol: str,
         event_frequency: BarFrequency,
         event_bar: CanonicalBar,
-    ) -> _RuleResult | None:
+    ) -> tuple[HtdyFirstSeenObservation, ...]:
         window = self._market_read_factory(session).bars_until(
             SeriesPageQuery(
                 SeriesKind.ACTUAL_DOMINANT,
@@ -823,7 +837,7 @@ class AlertRuntime:
             ),
             trading_day=event_bar.trading_day,
             end=event_bar.bar_end,
-            limit=32,
+            limit=64,
         )
         if not _window_matches_event(
             window,
@@ -831,17 +845,10 @@ class AlertRuntime:
             event_frequency=event_frequency,
             event_bar=event_bar,
         ):
-            return None
-        evaluation = self._htdy_evaluator.evaluate(window)
-        if (
-            not isinstance(evaluation, AlertEvaluation)
-            or not evaluation.observation_types
-        ):
-            return None
-        return _RuleResult(
-            contract=window.contract,
-            frequency=event_frequency.value,
-            result_codes=evaluation.observation_types,
+            return ()
+        return _validated_first_seen_candidates(
+            self._htdy_evaluator.evaluate_first_seen(window),
+            window=window,
         )
 
     def _write_heartbeat(self, now: datetime) -> None:
@@ -1318,7 +1325,9 @@ def _window_matches_event(
         and window.trading_day == event_bar.trading_day
         and window.cutoff == event_bar.bar_end
         and window.bars
+        and len(window.bar_contracts) == len(window.bars)
         and window.bars[-1] == event_bar
+        and window.bar_contracts[-1] == window.contract
         and normalize_contract_for_symbol(symbol, window.contract) == window.contract
     )
 
@@ -1336,7 +1345,48 @@ def _canonical_window_matches_trigger(
         and window.frequency == frequency.value
         and window.trading_day == trading_day
         and window.bars
+        and len(window.bar_contracts) == len(window.bars)
         and window.bars[-1].trading_day == trading_day
         and window.cutoff == window.bars[-1].bar_end
+        and window.bar_contracts[-1] == window.contract
         and normalize_contract_for_symbol(symbol, window.contract) == window.contract
     )
+
+
+def _validated_first_seen_candidates(
+    value: object,
+    *,
+    window: MarketReadWindow,
+) -> tuple[HtdyFirstSeenObservation, ...]:
+    if type(value) is not tuple:
+        raise ValueError("ALERT_EVALUATION_OUTPUT_INVALID")
+    candidates = cast(tuple[object, ...], value)
+    validated: list[HtdyFirstSeenObservation] = []
+    seen_bar_ends: set[datetime] = set()
+    for item in candidates:
+        if not isinstance(item, HtdyFirstSeenObservation):
+            raise ValueError("ALERT_EVALUATION_OUTPUT_INVALID")
+        if (
+            item.bar_end in seen_bar_ends
+            or type(item.observation_types) is not tuple
+            or not item.observation_types
+            or len(set(item.observation_types)) != len(item.observation_types)
+            or any(value not in {"buy", "sell"} for value in item.observation_types)
+        ):
+            raise ValueError("ALERT_EVALUATION_OUTPUT_INVALID")
+        matches = tuple(
+            (bar, contract)
+            for bar, contract in zip(window.bars, window.bar_contracts, strict=True)
+            if bar.bar_end == item.bar_end
+        )
+        if (
+            len(matches) != 1
+            or matches[0][0].trading_day != item.trading_day
+            or matches[0][1] != item.contract
+            or normalize_contract_for_symbol(window.symbol, item.contract)
+            != item.contract
+        ):
+            raise ValueError("ALERT_EVALUATION_OUTPUT_INVALID")
+        seen_bar_ends.add(item.bar_end)
+        validated.append(item)
+    return tuple(sorted(validated, key=lambda candidate: candidate.bar_end))

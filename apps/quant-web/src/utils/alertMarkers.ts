@@ -46,12 +46,28 @@ export function alertEventsToMarkers(events: AlertEvent[]): KlineMarker[] {
         id: `alert:${alertEventIdentityKey(event)}`,
         time: event.bar_end,
         label,
-        tooltip: `持久 AlertEvent · ${event.contract} · ${label}`,
+        tooltip: [
+          '实时首次识别',
+          '持久 AlertEvent',
+          event.contract,
+          label,
+          `观察K线 ${shanghaiHm(event.bar_end)}`,
+          `首次识别 ${shanghaiHm(event.detected_at)}`,
+        ].join(' · '),
         tone: markerTone(event, observations),
         position: 'aboveBar' as const,
         shape: 'square' as const,
       }]
     })
+}
+
+function shanghaiHm(value: string): string {
+  return new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).format(new Date(value))
 }
 
 /** HTDY persistent observation markers are display-only under the HTDY overlay. */

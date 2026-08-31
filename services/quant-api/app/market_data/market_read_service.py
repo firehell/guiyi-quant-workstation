@@ -17,6 +17,7 @@ from app.market_data.domain import (
     BarFrequency,
     INTRADAY_FREQUENCIES,
     MarketSeriesPageResult,
+    ResolvedContractSegment,
     SeriesKind,
     SeriesPageQuery,
     normalize_contract_for_symbol,
@@ -83,6 +84,7 @@ class MarketReadWindow:
     contract: str
     cutoff: datetime
     bars: tuple[CanonicalBar, ...]
+    bar_contracts: tuple[str, ...]
 
 
 class MarketReadWindowError(RuntimeError):
@@ -145,9 +147,10 @@ class MarketReadService:
         if contract is None:
             raise MarketReadWindowError("MARKET_READ_CONTRACT_UNAVAILABLE")
 
-        historical = self.history_page(
+        historical_page = self.history_page(
             replace(identity, before=cutoff + timedelta(microseconds=1), limit=limit)
-        ).bars
+        )
+        historical = historical_page.bars
         try:
             live = self._live_store.bars_after(
                 trading_day,
@@ -158,13 +161,34 @@ class MarketReadService:
         except Exception as exc:  # noqa: BLE001 - incomplete Alert input must not degrade
             raise MarketReadWindowError("MARKET_READ_LIVE_UNAVAILABLE") from exc
 
-        deduped = {bar.bar_end: bar for bar in historical if bar.bar_end <= cutoff}
+        deduped: dict[datetime, tuple[CanonicalBar, str]] = {}
+        for bar in historical:
+            if bar.bar_end > cutoff:
+                continue
+            owner = _resolved_contract_for_bar(
+                identity.symbol,
+                bar,
+                historical_page.resolved_contract_segments,
+            )
+            deduped[bar.bar_end] = (bar, owner)
         for bar in live:
             if bar.bar_end <= cutoff:
-                deduped.setdefault(bar.bar_end, bar)
-        bars = tuple(deduped[key] for key in sorted(deduped))[-limit:]
+                existing = deduped.get(bar.bar_end)
+                if existing is not None:
+                    historical_bar, historical_owner = existing
+                    if historical_bar != bar:
+                        raise MarketReadWindowError("MARKET_READ_LIVE_UNAVAILABLE")
+                    if historical_owner != contract:
+                        raise MarketReadWindowError("MARKET_READ_CONTRACT_UNAVAILABLE")
+                    continue
+                deduped[bar.bar_end] = (bar, contract)
+        aligned = tuple(deduped[key] for key in sorted(deduped))[-limit:]
+        bars = tuple(bar for bar, _owner in aligned)
+        bar_contracts = tuple(owner for _bar, owner in aligned)
         if not bars or bars[-1].bar_end != cutoff:
             raise MarketReadWindowError("MARKET_READ_CUTOFF_BAR_MISSING")
+        if len(bar_contracts) != len(bars) or bar_contracts[-1] != contract:
+            raise MarketReadWindowError("MARKET_READ_CONTRACT_UNAVAILABLE")
         return MarketReadWindow(
             symbol=identity.symbol,
             series_kind=identity.series_kind.value,
@@ -173,6 +197,7 @@ class MarketReadService:
             contract=contract,
             cutoff=cutoff,
             bars=bars,
+            bar_contracts=bar_contracts,
         )
 
     def latest_canonical_window(
@@ -198,16 +223,15 @@ class MarketReadService:
             or latest.trading_day > trading_day
         ):
             raise MarketReadWindowError("MARKET_READ_CUTOFF_BAR_MISSING")
-        owners = tuple(
-            segment
-            for segment in page.resolved_contract_segments
-            if segment.start_trading_day <= latest.trading_day <= segment.end_trading_day
+        bar_contracts = tuple(
+            _resolved_contract_for_bar(
+                identity.symbol,
+                bar,
+                page.resolved_contract_segments,
+            )
+            for bar in page.bars[-limit:]
         )
-        if len(owners) != 1:
-            raise MarketReadWindowError("MARKET_READ_CONTRACT_UNAVAILABLE")
-        contract = normalize_contract_for_symbol(identity.symbol, owners[0].contract)
-        if contract is None:
-            raise MarketReadWindowError("MARKET_READ_CONTRACT_UNAVAILABLE")
+        contract = bar_contracts[-1]
         return MarketReadWindow(
             symbol=identity.symbol,
             series_kind=identity.series_kind.value,
@@ -216,6 +240,7 @@ class MarketReadService:
             contract=contract,
             cutoff=latest.bar_end,
             bars=page.bars[-limit:],
+            bar_contracts=bar_contracts,
         )
 
     def state(self, identity: SeriesPageQuery, now: datetime) -> MarketReadState:
@@ -381,6 +406,24 @@ class MarketReadService:
             and (cutoff is None or bar.bar_end > cutoff)
         }
         return tuple(deduped[key] for key in sorted(deduped))
+
+
+def _resolved_contract_for_bar(
+    symbol: str,
+    bar: CanonicalBar,
+    segments: tuple[ResolvedContractSegment, ...],
+) -> str:
+    owners = tuple(
+        segment.contract
+        for segment in segments
+        if segment.start_trading_day <= bar.trading_day <= segment.end_trading_day
+    )
+    if len(owners) != 1:
+        raise MarketReadWindowError("MARKET_READ_CONTRACT_UNAVAILABLE")
+    contract = normalize_contract_for_symbol(symbol, owners[0])
+    if contract is None:
+        raise MarketReadWindowError("MARKET_READ_CONTRACT_UNAVAILABLE")
+    return contract
 
 
 def _later(first: datetime | None, second: datetime | None) -> datetime | None:

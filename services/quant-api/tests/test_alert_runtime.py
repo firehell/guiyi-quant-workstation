@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 import app.alerts.runtime as alert_runtime_module
 from app.alerts.composition import RedisAlertHeartbeatStore, RedisAlertMessageSource
-from app.alerts.evaluators import AlertEvaluation
+from app.alerts.evaluators import AlertEvaluation, HtdyFirstSeenObservation
 from app.alerts.models import AlertEvent, AlertRule
 from app.alerts.notification import AlertNotificationMessage, ProviderAcceptance
 from app.alerts.runtime import (
@@ -113,7 +113,10 @@ def _window(
     cutoff: datetime | None = None,
     frequency: str = "15m",
 ) -> MarketReadWindow:
-    event_bar = _bar(bar_end, trading_day)
+    bars = tuple(
+        _bar(bar_end - timedelta(minutes=15 * (63 - index)), trading_day)
+        for index in range(64)
+    )
     return MarketReadWindow(
         symbol="jm",
         series_kind="actual_dominant",
@@ -121,7 +124,29 @@ def _window(
         trading_day=trading_day,
         contract=contract,
         cutoff=cutoff or bar_end,
-        bars=(event_bar,) * 32,
+        bars=bars,
+        bar_contracts=(contract,) * 64,
+    )
+
+
+def _rollover_window(*, frequency: str = "15m") -> MarketReadWindow:
+    bars = tuple(
+        _bar(
+            BOUNDARY_END - timedelta(minutes=15 * (63 - index)),
+            PRIOR_DAY if index < 32 else DAY,
+        )
+        for index in range(64)
+    )
+    contracts = ("JM2609",) * 32 + ("JM2701",) * 32
+    return MarketReadWindow(
+        symbol="jm",
+        series_kind="actual_dominant",
+        frequency=frequency,
+        trading_day=DAY,
+        contract="JM2701",
+        cutoff=bars[-1].bar_end,
+        bars=bars,
+        bar_contracts=contracts,
     )
 
 
@@ -264,17 +289,43 @@ class FakeHtdyEvaluator:
     def __init__(
         self,
         observations: tuple[str, ...] = ("buy",),
+        candidates: tuple[HtdyFirstSeenObservation, ...] | None = None,
         error: Exception | None = None,
     ) -> None:
         self.observations = observations
+        self.candidates = candidates
         self.error = error
         self.calls: list[MarketReadWindow] = []
+        self.current_calls = 0
+        self.first_seen_calls = 0
 
     def evaluate(self, window: MarketReadWindow) -> AlertEvaluation:
         self.calls.append(window)
+        self.current_calls += 1
         if self.error is not None:
             raise self.error
         return AlertEvaluation(self.observations)
+
+    def evaluate_first_seen(
+        self,
+        window: MarketReadWindow,
+    ) -> tuple[HtdyFirstSeenObservation, ...]:
+        self.calls.append(window)
+        self.first_seen_calls += 1
+        if self.error is not None:
+            raise self.error
+        if self.candidates is not None:
+            return self.candidates
+        if not self.observations:
+            return ()
+        return (
+            HtdyFirstSeenObservation(
+                bar_end=window.bars[-1].bar_end,
+                trading_day=window.bars[-1].trading_day,
+                contract=window.bar_contracts[-1],
+                observation_types=self.observations,
+            ),
+        )
 
 
 class FakeSender:
@@ -315,6 +366,7 @@ def _runtime(
     canonical_read_results: dict[BarFrequency, MarketReadWindow | Exception]
     | None = None,
     htdy_observations: tuple[str, ...] = ("buy",),
+    htdy_candidates: tuple[HtdyFirstSeenObservation, ...] | None = None,
     htdy_error: Exception | None = None,
     sender_error: Exception | None = None,
     sender_acceptance: ProviderAcceptance | None = ProviderAcceptance(
@@ -330,7 +382,11 @@ def _runtime(
         canonical_results=canonical_read_results,
     )
     active_strategy = strategy_evaluator or _Task9StrategyEvaluator([])
-    htdy_evaluator = FakeHtdyEvaluator(htdy_observations, htdy_error)
+    htdy_evaluator = FakeHtdyEvaluator(
+        htdy_observations,
+        htdy_candidates,
+        htdy_error,
+    )
     sender = FakeSender(sender_error, sender_acceptance)
     runtime = AlertRuntime(
         session_factory=lambda: nullcontext(session),
@@ -507,7 +563,7 @@ def test_htdy_keeps_exact_event_cutoff_market_read_path(session: Session) -> Non
     assert request.series_kind.value == "actual_dominant"
     assert request.symbol == "jm"
     assert request.frequency is BarFrequency.M15
-    assert kwargs == {"trading_day": DAY, "end": BOUNDARY_END, "limit": 32}
+    assert kwargs == {"trading_day": DAY, "end": BOUNDARY_END, "limit": 64}
     events = _event_rows(session)
     assert events[0].result_codes == ["buy", "sell"]
 
@@ -646,6 +702,7 @@ def test_htdy_same_cutoff_with_different_bar_values_creates_no_event(
         contract="JM2609",
         cutoff=BOUNDARY_END,
         bars=(_bar(BOUNDARY_END),) * 31 + (mismatched,),
+        bar_contracts=("JM2609",) * 32,
     )
     harness = _runtime(
         session,
@@ -671,6 +728,225 @@ def test_duplicate_pubsub_creates_one_event_and_sends_once(session: Session) -> 
 
     assert len(_event_rows(session)) == 1
     assert len(harness.sender.messages) == 1
+
+
+def test_htdy_old_bar_first_seen_uses_observation_identity_and_processing_time(
+    session: Session,
+) -> None:
+    _seed_rule(session, "htdy_original_15m")
+    window = _rollover_window()
+    observation_index = 30
+    candidate = HtdyFirstSeenObservation(
+        bar_end=window.bars[observation_index].bar_end,
+        trading_day=window.bars[observation_index].trading_day,
+        contract=window.bar_contracts[observation_index],
+        observation_types=("sell",),
+    )
+    processing_now = BOUNDARY_END + timedelta(seconds=2)
+    harness = _runtime(
+        session,
+        event_end=BOUNDARY_END,
+        market_read_result=window,
+        htdy_candidates=(candidate,),
+        clock=processing_now,
+    )
+
+    harness.runtime.process_message(
+        "live:bar:jm:15m",
+        _payload(bar_end=BOUNDARY_END),
+    )
+
+    events = _event_rows(session)
+    assert len(events) == 1
+    assert events[0].bar_end == candidate.bar_end.replace(tzinfo=None)
+    assert events[0].trading_day == PRIOR_DAY
+    assert events[0].contract == "JM2609"
+    assert events[0].detected_at == processing_now.replace(tzinfo=None)
+    assert harness.htdy_evaluator.first_seen_calls == 1
+    assert [message.bar_end for message in harness.sender.messages] == [candidate.bar_end]
+    assert [message.contract for message in harness.sender.messages] == ["JM2609"]
+
+
+def test_htdy_multiple_first_seen_candidates_persist_and_send_in_bar_order(
+    session: Session,
+) -> None:
+    _seed_rule(session, "htdy_original_15m")
+    window = _rollover_window()
+    early_index = 30
+    late_index = 45
+    early = HtdyFirstSeenObservation(
+        bar_end=window.bars[early_index].bar_end,
+        trading_day=window.bars[early_index].trading_day,
+        contract=window.bar_contracts[early_index],
+        observation_types=("sell",),
+    )
+    late = HtdyFirstSeenObservation(
+        bar_end=window.bars[late_index].bar_end,
+        trading_day=window.bars[late_index].trading_day,
+        contract=window.bar_contracts[late_index],
+        observation_types=("buy",),
+    )
+    harness = _runtime(
+        session,
+        event_end=BOUNDARY_END,
+        market_read_result=window,
+        htdy_candidates=(late, early),
+    )
+
+    harness.runtime.process_message(
+        "live:bar:jm:15m",
+        _payload(bar_end=BOUNDARY_END),
+    )
+
+    assert [event.bar_end for event in _event_rows(session)] == [
+        early.bar_end.replace(tzinfo=None),
+        late.bar_end.replace(tzinfo=None),
+    ]
+    assert [message.bar_end for message in harness.sender.messages] == [
+        early.bar_end,
+        late.bar_end,
+    ]
+
+
+def test_htdy_candidate_persistence_failure_does_not_block_later_candidate(
+    session: Session,
+) -> None:
+    rule = _seed_rule(session, "htdy_original_15m")
+    window = _rollover_window()
+    early = HtdyFirstSeenObservation(
+        bar_end=window.bars[30].bar_end,
+        trading_day=window.bars[30].trading_day,
+        contract=window.bar_contracts[30],
+        observation_types=("sell",),
+    )
+    late = HtdyFirstSeenObservation(
+        bar_end=window.bars[45].bar_end,
+        trading_day=window.bars[45].trading_day,
+        contract=window.bar_contracts[45],
+        observation_types=("buy",),
+    )
+    session.add(
+        AlertEvent(
+            rule_id=rule.id,
+            symbol="jm",
+            contract="INVALID",
+            trading_day=early.trading_day,
+            frequency="15m",
+            bar_end=early.bar_end,
+            result_codes=["sell"],
+            action_id=None,
+            strategy_payload=None,
+            detected_at=early.bar_end,
+            notification_attempted_at=early.bar_end,
+        )
+    )
+    session.commit()
+    harness = _runtime(
+        session,
+        event_end=BOUNDARY_END,
+        market_read_result=window,
+        htdy_candidates=(early, late),
+    )
+
+    harness.runtime.process_message(
+        "live:bar:jm:15m",
+        _payload(bar_end=BOUNDARY_END),
+    )
+
+    assert [event.bar_end for event in _event_rows(session)] == [
+        early.bar_end.replace(tzinfo=None),
+        late.bar_end.replace(tzinfo=None),
+    ]
+    assert [message.bar_end for message in harness.sender.messages] == [late.bar_end]
+
+
+def test_htdy_reappearing_existing_bar_is_immutable_noop_without_send(
+    session: Session,
+) -> None:
+    from app.alerts.service import AlertEventCreate, AlertService
+
+    rule = _seed_rule(session, "htdy_original_15m")
+    window = _rollover_window()
+    observation_index = 30
+    candidate = HtdyFirstSeenObservation(
+        bar_end=window.bars[observation_index].bar_end,
+        trading_day=window.bars[observation_index].trading_day,
+        contract=window.bar_contracts[observation_index],
+        observation_types=("buy",),
+    )
+    initial_detected_at = candidate.bar_end + timedelta(minutes=30)
+    AlertService(session, operational_products=("jm",)).create_first_seen_observation_event(
+        AlertEventCreate(
+            rule_id=rule.id,
+            symbol="jm",
+            contract=candidate.contract,
+            trading_day=candidate.trading_day,
+            frequency="15m",
+            bar_end=candidate.bar_end,
+            result_codes=("sell",),
+            action_id=None,
+            strategy_payload=None,
+            detected_at=initial_detected_at,
+            notification_attempted_at=initial_detected_at,
+        )
+    )
+    harness = _runtime(
+        session,
+        event_end=BOUNDARY_END,
+        market_read_result=window,
+        htdy_observations=(),
+        htdy_candidates=(candidate,),
+    )
+
+    harness.runtime.process_message(
+        "live:bar:jm:15m",
+        _payload(bar_end=BOUNDARY_END),
+    )
+
+    events = _event_rows(session)
+    assert len(events) == 1
+    assert events[0].result_codes == ["sell"]
+    assert events[0].detected_at == initial_detected_at.replace(tzinfo=None)
+    assert harness.htdy_evaluator.first_seen_calls == 1
+    assert harness.sender.messages == []
+
+
+def test_startup_drain_never_emits_historical_first_seen_candidates(
+    session: Session,
+) -> None:
+    _seed_rule(session, "htdy_original_15m")
+    window = _rollover_window()
+    candidate = HtdyFirstSeenObservation(
+        bar_end=window.bars[30].bar_end,
+        trading_day=window.bars[30].trading_day,
+        contract=window.bar_contracts[30],
+        observation_types=("sell",),
+    )
+    harness = _runtime(
+        session,
+        event_end=BOUNDARY_END,
+        market_read_result=window,
+        htdy_observations=(),
+        htdy_candidates=(candidate,),
+    )
+
+    harness.runtime.process_message(
+        "live:bar:jm:15m",
+        _payload(bar_end=BOUNDARY_END),
+        emit_events=False,
+    )
+    assert _event_rows(session) == []
+    assert harness.sender.messages == []
+
+    harness.htdy_evaluator.candidates = ()
+    harness.runtime.process_message(
+        "live:bar:jm:15m",
+        _payload(bar_end=BOUNDARY_END),
+    )
+
+    assert harness.htdy_evaluator.first_seen_calls == 1
+    assert _event_rows(session) == []
+    assert harness.sender.messages == []
 
 
 def test_canonical_event_commits_before_missing_taxonomy_stops_notification(
@@ -739,7 +1015,7 @@ def test_canonical_updated_reads_only_the_exact_enabled_daily_or_weekly_pair(
     assert request.series_kind.value == "actual_dominant"
     assert request.symbol == "jm"
     assert request.frequency is frequency
-    assert kwargs == {"trading_day": DAY, "limit": 32}
+    assert kwargs == {"trading_day": DAY, "limit": 64}
     assert [window.frequency for window in harness.htdy_evaluator.calls] == [
         enabled_frequency
     ]
@@ -747,6 +1023,46 @@ def test_canonical_updated_reads_only_the_exact_enabled_daily_or_weekly_pair(
     assert [message.frequency for message in harness.sender.messages] == [
         enabled_frequency
     ]
+
+
+@pytest.mark.parametrize(
+    ("frequency", "enabled_frequency"),
+    ((BarFrequency.D1, "1d"), (BarFrequency.W1, "1w")),
+)
+def test_canonical_updated_persists_old_bar_first_seen_candidate(
+    session: Session,
+    frequency: BarFrequency,
+    enabled_frequency: str,
+) -> None:
+    _seed_rule(
+        session,
+        "htdy_original_15m",
+        frequency_scope={"jm": [enabled_frequency]},
+    )
+    window = _rollover_window(frequency=enabled_frequency)
+    candidate = HtdyFirstSeenObservation(
+        bar_end=window.bars[30].bar_end,
+        trading_day=window.bars[30].trading_day,
+        contract=window.bar_contracts[30],
+        observation_types=("sell",),
+    )
+    harness = _runtime(
+        session,
+        event_end=CANONICAL_END,
+        canonical_read_results={frequency: window},
+        htdy_observations=(),
+        htdy_candidates=(candidate,),
+    )
+
+    harness.runtime.process_message("market:state", _canonical_updated_payload())
+
+    events = _event_rows(session)
+    assert len(events) == 1
+    assert events[0].frequency == enabled_frequency
+    assert events[0].bar_end == candidate.bar_end.replace(tzinfo=None)
+    assert events[0].trading_day == PRIOR_DAY
+    assert events[0].contract == "JM2609"
+    assert harness.htdy_evaluator.first_seen_calls == 1
 
 
 def test_canonical_updated_evaluates_daily_and_weekly_pairs_independently(
