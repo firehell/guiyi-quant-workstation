@@ -1,0 +1,83 @@
+{
+  "formula_version": "range_detector_lux_v1",
+  "rounding_contract": "finite_ieee_canonical_decimal_half_even",
+  "cases": [
+    {
+      "name": "positive_negative_ties_and_rounded_boundary_break",
+      "source_identity": "golden:rounding:ties",
+      "parameters": {
+        "minimum_range_length": 2,
+        "range_width_atr_multiplier": 1.0,
+        "range_atr_length": 1,
+        "round_digits": 6
+      },
+      "bars": [
+        {"bar_end": "2026-06-01T00:00:00Z", "high": 1.2345645, "low": 0.0, "close": 0.0},
+        {"bar_end": "2026-06-02T00:00:00Z", "high": 1.2345645, "low": 0.0, "close": 0.0},
+        {"bar_end": "2026-06-03T00:00:00Z", "high": 1.2345645, "low": 0.0, "close": 0.0},
+        {"bar_end": "2026-06-04T00:00:00Z", "high": 1.23456425, "low": 0.0, "close": 1.23456425}
+      ],
+      "expected": {
+        "confirmation_index": 2,
+        "current_upper": 1.234564,
+        "current_lower": -1.234564,
+        "current_mid": 0.0,
+        "confirmation_transition": "confirmed",
+        "break_index": 3,
+        "break_state": "broken_up",
+        "break_transition": "broken_up"
+      }
+    },
+    {
+      "name": "positive_negative_ties_round_up_to_even",
+      "source_identity": "golden:rounding:ties-up",
+      "parameters": {
+        "minimum_range_length": 2,
+        "range_width_atr_multiplier": 1.0,
+        "range_atr_length": 1,
+        "round_digits": 6
+      },
+      "bars": [
+        {"bar_end": "2026-06-11T00:00:00Z", "high": 1.2345655, "low": 0.0, "close": 0.0},
+        {"bar_end": "2026-06-12T00:00:00Z", "high": 1.2345655, "low": 0.0, "close": 0.0},
+        {"bar_end": "2026-06-13T00:00:00Z", "high": 1.2345655, "low": 0.0, "close": 0.0}
+      ],
+      "expected": {
+        "confirmation_index": 2,
+        "current_upper": 1.234566,
+        "current_lower": -1.234566,
+        "current_mid": 0.0,
+        "confirmation_transition": "confirmed",
+        "break_index": null,
+        "break_state": null,
+        "break_transition": null
+      }
+    },
+    {
+      "name": "canonical_decimal_exponent_normalization",
+      "source_identity": "golden:rounding:exponent",
+      "parameters": {
+        "minimum_range_length": 2,
+        "range_width_atr_multiplier": 1.0,
+        "range_atr_length": 1,
+        "round_digits": 6
+      },
+      "bars": [
+        {"bar_end": "2026-07-01T00:00:00Z", "high": 100000000000000000000, "low": 0.0, "close": 0.0},
+        {"bar_end": "2026-07-02T00:00:00Z", "high": 100000000000000000000, "low": 0.0, "close": 0.0},
+        {"bar_end": "2026-07-03T00:00:00Z", "high": 100000000000000000000, "low": 0.0, "close": 0.0}
+      ],
+      "expected": {
+        "confirmation_index": 2,
+        "current_upper": 100000000000000000000,
+        "current_lower": -100000000000000000000,
+        "current_mid": 0.0,
+        "confirmation_transition": "confirmed",
+        "break_index": null,
+        "break_state": null,
+        "break_transition": null
+      }
+    }
+  ],
+  "payload_sha256": "3e3ae9b4c3e421adecd0cedb6f8294adacd02eacea505dc6458bff530831f005"
+}

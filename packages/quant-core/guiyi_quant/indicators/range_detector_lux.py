@@ -514,7 +514,34 @@ def _finite_float(value: float | int | None) -> float | None:
 
 
 def _round(value: float, round_digits: int) -> float:
-    return round(value, round_digits)
+    if not math.isfinite(value):
+        raise ValueError("rounding value must be finite")
+    coefficient, decimal_exponent = _canonical_decimal_components(abs(value))
+    target_exponent = -round_digits
+    if decimal_exponent >= target_exponent:
+        rounded_coefficient = coefficient * 10 ** (
+            decimal_exponent - target_exponent
+        )
+    else:
+        divisor = 10 ** (target_exponent - decimal_exponent)
+        rounded_coefficient, remainder = divmod(coefficient, divisor)
+        halfway = divisor // 2
+        if remainder > halfway or (
+            remainder == halfway and rounded_coefficient % 2 == 1
+        ):
+            rounded_coefficient += 1
+    if value < 0:
+        rounded_coefficient = -rounded_coefficient
+    rounded = float(f"{rounded_coefficient}e{-round_digits}")
+    return 0.0 if rounded == 0 else rounded
+
+
+def _canonical_decimal_components(value: float) -> tuple[int, int]:
+    mantissa, separator, raw_exponent = str(value).lower().partition("e")
+    exponent = int(raw_exponent) if separator else 0
+    whole, dot, fraction = mantissa.partition(".")
+    digits = f"{whole}{fraction}" if dot else whole
+    return int(digits), exponent - len(fraction)
 
 
 def _range_id(source_identity: str, first_confirmed_at: str) -> str:

@@ -10,7 +10,9 @@
 ### Requirement: 固定公式与 completed 输入
 
 Range Detector SHALL 使用 `minimum_range_length=20`、`range_width_atr_multiplier=1.0`、
-`range_atr_length=500`、close source、Wilder SMA-seed ATR 与 six-decimal rounding。输入 MUST 是按
+`range_atr_length=500`、close source、Wilder SMA-seed ATR 与 six-decimal rounding。舍入 MUST 以有限
+IEEE 值的 canonical decimal representation 为输入，先把定点或指数形式归一为十进制整数系数与十进制
+指数，再执行 decimal half-even；不得使用语言默认的 binary `round`、`toFixed` 或 locale。输入 MUST 是按
 严格递增 ISO-8601 时间排列的 completed Bar；无效 OHLC MUST fail-closed 并 reset ATR、候选窗口和 active range。
 
 #### Scenario: 默认参数
@@ -22,6 +24,11 @@ Range Detector SHALL 使用 `minimum_range_length=20`、`range_width_atr_multipl
 
 - **WHEN** high、low 或 close 缺失、非有限或不满足 OHLC 边界
 - **THEN** 输出 `invalid_reset`，历史箱体不得跨越该 Bar
+
+#### Scenario: 六位 half-even 舍入与突破边界
+
+- **WHEN** 上下沿落在正或负的六位 decimal tie，或 close 只严格越过舍入后的边界
+- **THEN** Python 与 TypeScript MUST 得到同一 half-even 边界和 break；定点/指数 canonical 表示不得改变结果
 
 ### Requirement: 回画与因果可见性分离
 
@@ -56,7 +63,7 @@ MUST 保持 intact，严格越界才形成一次 break。
 
 #### Scenario: 共享 golden
 
-- **WHEN** Python 或 TypeScript 读取 `range_detector_lux_v1_golden.json`
+- **WHEN** Python 或 TypeScript 读取 `range_detector_lux_v1_golden.json` 与舍入边界 golden
 - **THEN** 两者验证除 `payload_sha256` 外所有顶层字段的稳定 SHA-256，并匹配 points 与 visual ranges
 
 ### Requirement: scoped consumer policy

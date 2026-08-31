@@ -86,6 +86,19 @@ export function useRangeDetectorOverlayWarmup(options: RangeDetectorOverlayWarmu
     },
     { immediate: true },
   )
+  watch(
+    () => options.bars.value.length,
+    (barCount) => {
+      if (
+        options.enabled.value
+        && activeIdentity === options.identityKey.value
+        && unavailableReason.value === RANGE_DETECTOR_WARMUP_INSUFFICIENT
+        && barCount >= 500
+      ) {
+        unavailableReason.value = null
+      }
+    },
+  )
 
   return { anchorTime, loading, unavailableReason, ensureReady, reset }
 }

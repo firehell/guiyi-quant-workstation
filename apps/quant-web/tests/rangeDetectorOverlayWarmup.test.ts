@@ -5,6 +5,7 @@ import { nextTick, ref } from 'vue'
 import type { BarData } from '../src/types/market.ts'
 import {
   RANGE_DETECTOR_REQUIRED_BARS,
+  RANGE_DETECTOR_WARMUP_INSUFFICIENT,
   RANGE_DETECTOR_WARMUP_LOAD_FAILED,
   useRangeDetectorOverlayWarmup,
 } from '../src/composables/useRangeDetectorOverlayWarmup.ts'
@@ -64,6 +65,31 @@ test('reports an explicit unavailable reason when available history is below ATR
 
   assert.equal(warmup.anchorTime.value, bars.value[0].time)
   assert.equal(warmup.unavailableReason.value, 'RANGE_DETECTOR_WARMUP_INSUFFICIENT')
+})
+
+test('same identity becomes ready at 500 bars without moving its frozen anchor', async () => {
+  const bars = ref(barSeries(499))
+  let loadCalls = 0
+  const warmup = useRangeDetectorOverlayWarmup({
+    bars,
+    hasMoreBefore: ref(false),
+    enabled: ref(true),
+    identityKey: ref('continuous|jm||15m'),
+    async loadMoreBefore() {
+      loadCalls += 1
+    },
+  })
+
+  await warmup.ensureReady()
+  const frozenAnchor = warmup.anchorTime.value
+  assert.equal(warmup.unavailableReason.value, RANGE_DETECTOR_WARMUP_INSUFFICIENT)
+
+  bars.value = barSeries(500)
+  await nextTick()
+
+  assert.equal(warmup.anchorTime.value, frozenAnchor)
+  assert.equal(warmup.unavailableReason.value, null)
+  assert.equal(loadCalls, 0)
 })
 
 test('fails closed when a successful older-page request makes no history progress', async () => {

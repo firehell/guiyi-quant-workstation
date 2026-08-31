@@ -197,12 +197,20 @@ def test_range_detector_rejects_non_monotonic_or_invalid_timestamps() -> None:
             close=10.0,
             bar_end="not-a-time",
         )
+    with pytest.raises(ValueError, match="timezone"):
+        step_range_detector_lux(
+            state,
+            high=11.0,
+            low=9.0,
+            close=10.0,
+            bar_end="2026-01-02T00:00:00",
+        )
     state, _ = step_range_detector_lux(
         state,
         high=11.0,
         low=9.0,
         close=10.0,
-        bar_end=_bar_end(1),
+        bar_end="2026-01-02T08:00:00+08:00",
     )
     with pytest.raises(ValueError, match="strictly increasing"):
         step_range_detector_lux(
@@ -377,3 +385,49 @@ def test_range_detector_golden_fixture_has_canonical_hash_and_exact_python_outpu
         "ranges": [_json_value(asdict(item)) for item in result.ranges],
     }
     assert actual == fixture["expected"]
+
+
+def test_range_detector_rounding_golden_uses_canonical_decimal_half_even() -> None:
+    from guiyi_quant.indicators import range_detector_lux_series
+
+    fixture = json.loads(
+        (
+            REPO_ROOT
+            / "tests/fixtures/range_detector_lux_v1_rounding_golden.json"
+        ).read_text(encoding="utf-8")
+    )
+    payload = {
+        key: value for key, value in fixture.items() if key != "payload_sha256"
+    }
+    canonical = json.dumps(
+        _canonical_hash_value(payload), sort_keys=True, separators=(",", ":")
+    )
+    assert hashlib.sha256(canonical.encode("utf-8")).hexdigest() == fixture[
+        "payload_sha256"
+    ]
+
+    for case in fixture["cases"]:
+        bars = case["bars"]
+        result = range_detector_lux_series(
+            [bar["high"] for bar in bars],
+            [bar["low"] for bar in bars],
+            [bar["close"] for bar in bars],
+            bar_ends=[bar["bar_end"] for bar in bars],
+            source_identity=case["source_identity"],
+            **case["parameters"],
+        )
+        expected = case["expected"]
+        confirmed = result.points[expected["confirmation_index"]]
+        assert confirmed.snapshot is not None, case["name"]
+        assert confirmed.snapshot.current_upper == expected["current_upper"], case["name"]
+        assert confirmed.snapshot.current_lower == expected["current_lower"], case["name"]
+        assert confirmed.snapshot.current_mid == expected["current_mid"], case["name"]
+        assert confirmed.transition is not None, case["name"]
+        assert confirmed.transition.kind == expected["confirmation_transition"], case["name"]
+        break_index = expected["break_index"]
+        if break_index is not None:
+            broken = result.points[break_index]
+            assert broken.snapshot is not None, case["name"]
+            assert broken.snapshot.state == expected["break_state"], case["name"]
+            assert broken.transition is not None, case["name"]
+            assert broken.transition.kind == expected["break_transition"], case["name"]

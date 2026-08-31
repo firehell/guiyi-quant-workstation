@@ -14,7 +14,11 @@ from typing import Protocol, cast
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.alerts.evaluators import AlertEvaluator, HtdyFirstSeenObservation
+from app.alerts.evaluators import (
+    HTDY_FIRST_SEEN_CONTEXT_BARS,
+    AlertEvaluator,
+    HtdyFirstSeenObservation,
+)
 from app.alerts.models import AlertRule
 from app.alerts.notification import (
     AlertNotificationMessage,
@@ -51,6 +55,7 @@ from app.market_data.subing_strategy.contracts import (
     SubingStrategyEpisode,
 )
 from app.market_data.subing_strategy.machine import SubingStrategySourceIdentity
+from guiyi_quant.indicators.htdy_original import CONFIGURED_REPAINT_SCAN_ZONE_BARS
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -1369,20 +1374,25 @@ def _validated_first_seen_candidates(
         if (
             item.bar_end in seen_bar_ends
             or type(item.observation_types) is not tuple
-            or not item.observation_types
-            or len(set(item.observation_types)) != len(item.observation_types)
-            or any(value not in {"buy", "sell"} for value in item.observation_types)
+            or item.observation_types
+            not in (("buy",), ("sell",), ("buy", "sell"))
         ):
             raise ValueError("ALERT_EVALUATION_OUTPUT_INVALID")
         matches = tuple(
-            (bar, contract)
-            for bar, contract in zip(window.bars, window.bar_contracts, strict=True)
+            (index, bar, contract)
+            for index, (bar, contract) in enumerate(
+                zip(window.bars, window.bar_contracts, strict=True)
+            )
             if bar.bar_end == item.bar_end
         )
         if (
             len(matches) != 1
-            or matches[0][0].trading_day != item.trading_day
-            or matches[0][1] != item.contract
+            or not _first_seen_candidate_is_in_repaint_authority(
+                candidate_index=matches[0][0],
+                window_size=len(window.bars),
+            )
+            or matches[0][1].trading_day != item.trading_day
+            or matches[0][2] != item.contract
             or normalize_contract_for_symbol(window.symbol, item.contract)
             != item.contract
         ):
@@ -1390,3 +1400,18 @@ def _validated_first_seen_candidates(
         seen_bar_ends.add(item.bar_end)
         validated.append(item)
     return tuple(sorted(validated, key=lambda candidate: candidate.bar_end))
+
+
+def _first_seen_candidate_is_in_repaint_authority(
+    *,
+    candidate_index: int,
+    window_size: int,
+) -> bool:
+    latest_index = window_size - 1
+    if candidate_index == latest_index:
+        return True
+    return bool(
+        window_size >= HTDY_FIRST_SEEN_CONTEXT_BARS
+        and candidate_index
+        >= latest_index - CONFIGURED_REPAINT_SCAN_ZONE_BARS
+    )
