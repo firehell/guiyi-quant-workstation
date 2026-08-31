@@ -89,6 +89,7 @@ def test_registry_uses_per_indicator_frequency_contracts() -> None:
             "ema60",
             "macd",
             "atr",
+            "range_detector_lux_v1",
             "huotian_dayou_original_v0",
             "huotian_dayou_strict_v1",
         )
@@ -118,6 +119,56 @@ def test_strategy_candidate_cannot_enable_live_or_alert() -> None:
 
     with pytest.raises(ValueError, match="strategy_candidate"):
         build_indicator_definition(**_base_kwargs(status="strategy_candidate", live_capable=True, backtest_capable=True))
+
+
+def test_range_detector_registry_and_policy_are_scoped_to_display_and_research() -> None:
+    from guiyi_quant.indicators import (
+        FORMAL_BACKTEST_CONSUMER,
+        RANGE_DETECTOR_DISPLAY_CONSUMER,
+        RANGE_DETECTOR_RESEARCH_CONSUMER,
+        get_indicator,
+        require_formal_policy,
+    )
+
+    definition = get_indicator("range_detector_lux_v1")
+    assert definition.indicator_version == "v1"
+    assert definition.supported_intervals == (
+        "1m",
+        "5m",
+        "15m",
+        "30m",
+        "60m",
+        "1d",
+        "1w",
+    )
+    assert definition.default_parameters == {
+        "minimum_range_length": 20,
+        "range_width_atr_multiplier": 1.0,
+        "range_atr_length": 500,
+        "source": "close",
+        "atr_smoothing_policy": "wilder_sma_seed",
+        "round_digits": 6,
+    }
+    assert definition.status == "strategy_candidate"
+    assert definition.confirmed_only is True
+    assert definition.backtest_capable is True
+    assert definition.live_capable is False
+    assert definition.alert_capable is False
+
+    for consumer in (
+        RANGE_DETECTOR_DISPLAY_CONSUMER,
+        RANGE_DETECTOR_RESEARCH_CONSUMER,
+    ):
+        assert require_formal_policy("range_detector_lux_v1", consumer=consumer).policy_id == "range_detector_lux_v1"
+    for consumer in (
+        FORMAL_BACKTEST_CONSUMER,
+        "generic_strategy",
+        "generic_live",
+        "alert",
+        "notification",
+    ):
+        with pytest.raises(ValueError, match="FORMAL_POLICY_CONSUMER_BLOCKED"):
+            require_formal_policy("range_detector_lux_v1", consumer=consumer)
 
 
 def test_validated_requires_confirmed_and_no_repaint() -> None:
