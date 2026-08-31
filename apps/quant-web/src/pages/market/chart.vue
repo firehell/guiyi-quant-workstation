@@ -37,6 +37,7 @@ import { useSubingObservation } from '@/composables/useSubingObservation'
 import { useSubingStrategyCurrent } from '@/composables/useSubingStrategyCurrent'
 import type {
   DominantContractItem,
+  MainIndicatorId,
   MarketFrequency,
   OptionalEmaIndicatorId,
   ProductResearchResponse,
@@ -222,7 +223,7 @@ const {
 })
 
 const loading = computed(() => loadingInitial.value || loadingBefore.value)
-const visibleMainIndicators = computed(() => {
+const visibleMainIndicators = computed<MainIndicatorId[]>(() => {
   if (!overlayCapability.value.supported) {
     return showRangeDetector.value ? ['range_detector'] : []
   }
