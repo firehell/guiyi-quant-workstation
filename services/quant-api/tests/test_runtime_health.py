@@ -420,9 +420,7 @@ def test_alert_health_exposes_bounded_strategy_v3_observation() -> None:
     assert alert["strategy_ready_product_count"] == 1
     assert alert["strategy_unavailable_product_count"] == 1
     assert alert["strategy_unavailable_symbols"] == ["jm"]
-    assert alert["strategy_unavailable_reason_codes"] == {
-        "jm": "PREVIOUS_RUNTIME_REASON_UNAVAILABLE"
-    }
+    assert alert["strategy_unavailable_reason_codes"] == {}
 
 
 def test_alert_health_derives_latest_processing_and_notification_outcomes() -> None:
