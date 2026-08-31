@@ -25,7 +25,11 @@ import type {
   SeriesKind,
 } from '@/types/market'
 import { resolveChartTheme } from '@/styles/chartTheme'
-import { formatChartAxisTimeInShanghai, formatChartTimeInShanghai } from '@/utils/barTime'
+import {
+  formatChartAxisTimeInShanghai,
+  formatChartTimeInShanghai,
+  toKlineDisplayTimeForPeriod,
+} from '@/utils/barTime'
 import { normalizeBarSeries } from '@/utils/barSeries'
 import { initialChartLogicalRange } from '@/utils/chartViewport'
 import {
@@ -292,8 +296,7 @@ function revealTime(iso: string): boolean {
   if (!chart || isDaily() || !props.bars.length) return false
   const parsed = Date.parse(iso)
   if (!Number.isFinite(parsed)) return false
-  const unix = Math.floor(parsed / 1000) as UTCTimestamp
-  const index = props.bars.findIndex((bar) => chartTime(bar) === unix)
+  const index = renderedBars.findIndex((bar) => Date.parse(bar.time) === parsed)
   if (index < 0) return false
   if (followLatest) {
     followLatest = false
@@ -504,8 +507,7 @@ function markerTimeKey(value: string): string {
 }
 
 function chartTime(bar: BarData): Time {
-  if (isDaily()) return (bar.trading_day || bar.time.slice(0, 10)) as Time
-  return Math.floor(new Date(bar.time).getTime() / 1000) as UTCTimestamp
+  return toKlineDisplayTimeForPeriod(bar, props.period) as Time
 }
 
 function ribbonTime(iso: string): Time | null {
@@ -513,8 +515,8 @@ function ribbonTime(iso: string): Time | null {
     const day = iso.slice(0, 10)
     return /^\d{4}-\d{2}-\d{2}$/.test(day) ? day as Time : null
   }
-  const parsed = Date.parse(iso)
-  return Number.isFinite(parsed) ? Math.floor(parsed / 1000) as UTCTimestamp : null
+  const time = toKlineDisplayTimeForPeriod({ time: iso }, props.period)
+  return time === 0 ? null : time as UTCTimestamp
 }
 
 function sameChartTime(left: Time, right: Time): boolean {
@@ -600,6 +602,7 @@ defineExpose({
     </div>
     <KlineHoverLegend
       :context="hoverContext"
+      :period="period"
       :show-macd="true"
     />
     <div

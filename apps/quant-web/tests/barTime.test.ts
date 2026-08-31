@@ -11,6 +11,7 @@ import {
   mergeBarsByPeriod,
   BarMergeConflictError,
   normalizePeriod,
+  toKlineDisplayTimeForPeriod,
   toChartTimeForPeriod,
 } from '../src/utils/barTime.ts'
 
@@ -35,6 +36,40 @@ describe('barTime', () => {
     )
     assert.equal(barTime.formatChartTimeInShanghai!(timestamp), '2026-08-11 22:07')
     assert.equal(barTime.formatChartTimeInShanghai!('2026-08-11T14:07:00Z'), '2026-08-11 22:07')
+  })
+
+  it('positions every intraday K-line at its opening time', () => {
+    const cases = [
+      ['1m', '2026-08-11T01:31:00Z', '2026-08-11T01:30:00Z'],
+      ['5m', '2026-08-11T01:35:00Z', '2026-08-11T01:30:00Z'],
+      ['15m', '2026-08-11T01:45:00Z', '2026-08-11T01:30:00Z'],
+      ['30m', '2026-08-11T02:00:00Z', '2026-08-11T01:30:00Z'],
+      ['60m', '2026-08-11T02:30:00Z', '2026-08-11T01:30:00Z'],
+    ] as const
+
+    for (const [period, barEnd, expectedStart] of cases) {
+      assert.equal(
+        toKlineDisplayTimeForPeriod({ time: barEnd }, period),
+        Math.floor(Date.parse(expectedStart) / 1000),
+      )
+    }
+  })
+
+  it('keeps daily and weekly K-lines at their canonical trading day', () => {
+    assert.deepEqual(
+      toKlineDisplayTimeForPeriod(
+        { time: '2026-08-11T07:00:00Z', trading_day: '2026-08-11' },
+        '1d',
+      ),
+      { year: 2026, month: 8, day: 11 },
+    )
+    assert.deepEqual(
+      toKlineDisplayTimeForPeriod(
+        { time: '2026-08-14T07:00:00Z', trading_day: '2026-08-14' },
+        '1w',
+      ),
+      { year: 2026, month: 8, day: 14 },
+    )
   })
 
   it('keeps BusinessDay values date-only when formatting chart times', async () => {

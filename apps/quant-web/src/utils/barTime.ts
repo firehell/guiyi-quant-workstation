@@ -3,6 +3,13 @@ import { TickMarkType, type Time } from 'lightweight-charts'
 
 /** 日线、周线类周期集合 */
 const DAILY_WEEKLY_PERIODS = new Set(['1d', '1w'])
+const INTRADAY_KLINE_PERIOD_SECONDS: Readonly<Record<string, number>> = {
+  '1m': 60,
+  '5m': 5 * 60,
+  '15m': 15 * 60,
+  '30m': 30 * 60,
+  '60m': 60 * 60,
+}
 const SHANGHAI_TIME_ZONE = 'Asia/Shanghai'
 
 /** Lightweight Charts 业务日时间（无时分秒） */
@@ -202,6 +209,21 @@ export function toChartTimeForPeriod(bar: BarTimeInput, period?: string | null):
   const parsed = parseBarLocalDate(bar.time)
   if (!parsed) return 0
   return Math.floor(parsed.getTime() / 1000)
+}
+
+/**
+ * K 线在主图上的展示坐标：分钟周期以区间开端定位，日/周保持交易日语义。
+ * 原始 ``bar.time`` 始终是 Canonical/Live 的正式 ``bar_end``，不得在此改写。
+ */
+export function toKlineDisplayTimeForPeriod(
+  bar: BarTimeInput,
+  period?: string | null,
+): ChartTimeValue {
+  if (isDailyLikePeriod(period)) return toChartTimeForPeriod(bar, period)
+  const instant = Date.parse(bar.time)
+  if (!Number.isFinite(instant)) return 0
+  const offset = INTRADAY_KLINE_PERIOD_SECONDS[normalizePeriod(period) ?? ''] ?? 0
+  return Math.floor(instant / 1000) - offset
 }
 
 /**

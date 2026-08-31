@@ -1,17 +1,25 @@
 <script setup lang="ts">
+import type { Time } from 'lightweight-charts'
 import type { HoverKlineContext } from '@/types/market'
-import { formatChartTimeInShanghai } from '@/utils/barTime'
+import { formatChartTimeInShanghai, toKlineDisplayTimeForPeriod } from '@/utils/barTime'
 import { formatKlineHoverValue } from '@/utils/klineViewModel'
 
-defineProps<{
+const props = defineProps<{
   context: HoverKlineContext | null
+  period: string
   showMacd: boolean
 }>()
+
+function displayTime(context: HoverKlineContext): string {
+  return formatChartTimeInShanghai(
+    toKlineDisplayTimeForPeriod(context.bar, props.period) as Time,
+  )
+}
 </script>
 
 <template>
   <div v-if="context" class="kline-hover-legend" aria-live="polite">
-    <span data-testid="kline-hover-time">{{ formatChartTimeInShanghai(context.time) }}</span>
+    <span data-testid="kline-hover-time">{{ displayTime(context) }}</span>
     <span>O {{ formatKlineHoverValue(context.bar.open) }}</span>
     <span>H {{ formatKlineHoverValue(context.bar.high) }}</span>
     <span>L {{ formatKlineHoverValue(context.bar.low) }}</span>
