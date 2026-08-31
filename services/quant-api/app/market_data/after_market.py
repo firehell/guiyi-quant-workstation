@@ -43,6 +43,8 @@ _PUBLIC_ERROR_CODES = frozenset(
         "PROVIDER_QUOTA_EXHAUSTED",
         "RQDATA_NOT_READY",
         "RQDATA_READY_CHECK_FAILED",
+        "SUBING_DAILY_WATCH_FAILED",
+        "SUBING_STRATEGY_PERFORMANCE_DEGRADED",
         "UPDATE_FAILED",
     }
 )
@@ -101,7 +103,11 @@ class AfterMarketUpdater:
         self.derived_refresh = derived_refresh
         self._derived_performance: dict[str, object] | None = None
 
-    def run(self) -> AfterMarketResult:
+    def run(
+        self,
+        *,
+        post_update: Callable[[date], None] | None = None,
+    ) -> AfterMarketResult:
         """执行一次受限盘后维护，并写入仅含公开字段的状态。"""
         started_at = _local_timestamp(self.now())
         products = load_operational_products()
@@ -121,7 +127,12 @@ class AfterMarketUpdater:
 
         error_code: str | None = None
         for attempt in (1, 2):
-            error_code = self._attempt(products, trading_day, attempt=attempt)
+            error_code = self._attempt(
+                products,
+                trading_day,
+                attempt=attempt,
+                post_update=post_update,
+            )
             if error_code is None:
                 result = AfterMarketResult("passed", trading_day, attempt, None)
                 self._write_status(result, started_at, products)
@@ -187,6 +198,7 @@ class AfterMarketUpdater:
         trading_day: date,
         *,
         attempt: int,
+        post_update: Callable[[date], None] | None,
     ) -> str | None:
         try:
             ready = self.rqdata.is_future_data_ready(trading_day)
@@ -350,6 +362,19 @@ class AfterMarketUpdater:
                     "batch_identity_sha256": None,
                     "failed_products": [],
                 }
+            if self._derived_performance["status"] != "passed":
+                return "SUBING_STRATEGY_PERFORMANCE_DEGRADED"
+        if post_update is not None:
+            try:
+                post_update(trading_day)
+            except Exception as exc:  # noqa: BLE001 - public outcome stays sanitized
+                _LOGGER.warning(
+                    "after_market_attempt_failed stage=post_update attempt=%s "
+                    "detail_code=SUBING_DAILY_WATCH_FAILED exception_type=%s",
+                    attempt,
+                    type(exc).__name__,
+                )
+                return "SUBING_DAILY_WATCH_FAILED"
         return None
 
     def _write_status(

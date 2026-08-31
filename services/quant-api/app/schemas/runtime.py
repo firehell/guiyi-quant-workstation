@@ -113,6 +113,7 @@ class RuntimeAlertHealth(BaseModel):
     strategy_ready_product_count: int = 0
     strategy_unavailable_product_count: int = 0
     strategy_unavailable_symbols: list[str] = Field(default_factory=list)
+    strategy_unavailable_reason_codes: dict[str, str] = Field(default_factory=dict)
     last_strategy_action_at: str | None = None
     last_strategy_restore_at: str | None = None
     error_type: str | None = None

@@ -955,7 +955,7 @@ def test_schema_v3_rejects_malformed_nonnull_current_run() -> None:
     assert payload == {}
 
 
-def test_successful_canonical_run_records_degraded_performance_without_failing_run(
+def test_degraded_performance_marks_after_market_failed_without_retrying_canonical(
     tmp_path,
 ) -> None:
     from app.market_data.subing_strategy.performance import (
@@ -991,13 +991,14 @@ def test_successful_canonical_run_records_degraded_performance_without_failing_r
     result = updater.run()
     status = _status(tmp_path / "after-market-status.json")
 
-    assert result.status == "passed"
+    assert result.status == "failed"
+    assert result.error_code == "SUBING_STRATEGY_PERFORMANCE_DEGRADED"
     assert sleeps == []
-    assert notices == []
+    assert _notice_error_codes(notices) == ["SUBING_STRATEGY_PERFORMANCE_DEGRADED"]
     assert live_store.cleaned == [date(2026, 8, 10)]
     assert derived_calls == [(date(2026, 8, 10), _ACTIVE_PRODUCTS)]
     assert status["schema_version"] == 3
-    assert status["last_successful_trading_day"] == "2026-08-10"
+    assert status["last_successful_trading_day"] is None
     assert status["subing_strategy_performance"] == {
         "status": "degraded",
         "completed_count": 1,
@@ -1071,7 +1072,7 @@ def test_after_market_incremental_success_records_hits_and_publications(
     assert len(status["subing_strategy_performance"]["batch_identity_sha256"]) == 64
 
 
-def test_after_market_incremental_one_product_failure_is_derived_only(
+def test_after_market_incremental_one_product_failure_marks_run_failed_without_retry(
     tmp_path,
 ) -> None:
     from app.market_data.subing_strategy.performance_adoption import (
@@ -1100,10 +1101,11 @@ def test_after_market_incremental_one_product_failure_is_derived_only(
     result = updater.run()
     status = _status(tmp_path / "after-market-status.json")
 
-    assert result.status == "passed"
+    assert result.status == "failed"
+    assert result.error_code == "SUBING_STRATEGY_PERFORMANCE_DEGRADED"
     assert result.attempts == 1
     assert sleeps == []
-    assert notices == []
+    assert _notice_error_codes(notices) == ["SUBING_STRATEGY_PERFORMANCE_DEGRADED"]
     assert live_store.cleaned == [date(2026, 8, 10)]
     assert calls == list(_ACTIVE_PRODUCTS)
     assert len(manager.calls) == 1
@@ -1118,6 +1120,36 @@ def test_after_market_incremental_one_product_failure_is_derived_only(
             "code": "SUBING_STRATEGY_PERFORMANCE_FULL_REBUILD_REQUIRED",
         }
     ]
+
+
+def test_after_market_daily_watch_failure_marks_run_failed_without_reapplying_canonical(
+    tmp_path,
+) -> None:
+    updater, manager, _rqdata, sleeps, notices, live_store = _updater(
+        tmp_path,
+        trading_day=date(2026, 8, 10),
+        readiness=[True],
+        results=[_result("passed")],
+    )
+    calls: list[date] = []
+
+    def daily_watch(trading_day: date) -> None:
+        calls.append(trading_day)
+        raise RuntimeError("daily watch unavailable")
+
+    result = updater.run(post_update=daily_watch)
+    status = _status(tmp_path / "after-market-status.json")
+
+    assert result.status == "failed"
+    assert result.error_code == "SUBING_DAILY_WATCH_FAILED"
+    assert result.attempts == 1
+    assert calls == [date(2026, 8, 10)]
+    assert len(manager.calls) == 1
+    assert sleeps == []
+    assert live_store.cleaned == [date(2026, 8, 10)]
+    assert _notice_error_codes(notices) == ["SUBING_DAILY_WATCH_FAILED"]
+    assert status["last_run"]["status"] == "failed"
+    assert status["last_run"]["error_code"] == "SUBING_DAILY_WATCH_FAILED"
 
 
 def test_after_market_incremental_mismatch_is_derived_degraded_without_refresh(
@@ -1144,9 +1176,10 @@ def test_after_market_incremental_mismatch_is_derived_degraded_without_refresh(
     result = updater.run()
     status = _status(tmp_path / "after-market-status.json")
 
-    assert result.status == "passed"
+    assert result.status == "failed"
+    assert result.error_code == "SUBING_STRATEGY_PERFORMANCE_DEGRADED"
     assert sleeps == []
-    assert notices == []
+    assert _notice_error_codes(notices) == ["SUBING_STRATEGY_PERFORMANCE_DEGRADED"]
     assert live_store.cleaned == [date(2026, 8, 10)]
     assert calls == []
     derived = status["subing_strategy_performance"]
@@ -1245,7 +1278,9 @@ def test_after_market_rejects_derived_result_that_does_not_cover_exact_products(
         )
     )
 
-    assert updater.run().status == "passed"
+    result = updater.run()
+    assert result.status == "failed"
+    assert result.error_code == "SUBING_STRATEGY_PERFORMANCE_DEGRADED"
     assert _status(tmp_path / "after-market-status.json")[
         "subing_strategy_performance"
     ] == {

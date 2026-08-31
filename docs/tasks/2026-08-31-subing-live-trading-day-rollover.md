@@ -75,10 +75,14 @@ non-natural reconciliation create no Event and send nothing.
 - post-close final catch-up uses only the same-contract frozen completed-Live
   boundary; missing or inconsistent frozen snapshots fail closed;
 - only pending products reconcile on `canonical_updated`;
+- each unavailable product retains only its fixed public reason code, and that
+  code clears when the product returns ready;
 - historical/Live parity, prefix invariance, causality, and Active60 isolation
   remain intact.
 
 ## Non-goals
 
-No HTTP, database, Alembic, Scope, Runtime-health, stale/grace monitoring,
+No new HTTP endpoint, database, Alembic, Scope, new stale/grace monitoring,
 Live-enable, notification configuration, release, or Runtime-promotion change.
+The existing read-only Runtime health projection may expose the fixed public
+per-product reason code; it does not alter Runtime behavior or UI actions.

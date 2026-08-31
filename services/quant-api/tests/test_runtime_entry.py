@@ -64,8 +64,20 @@ def _after_market_factory(
     events: list[str],
 ):
     class Updater:
-        def run(self) -> _MarketResult:
+        def run(self, *, post_update=None) -> _MarketResult:
             events.append("market_run")
+            if result.status == "passed" and post_update is not None:
+                try:
+                    post_update(result.trading_day)
+                except Exception:
+                    return _MarketResult(
+                        "failed",
+                        {
+                            **result.as_payload(),
+                            "status": "failed",
+                            "error_code": "SUBING_DAILY_WATCH_FAILED",
+                        },
+                    )
             return result
 
     return lambda _manager, **_kwargs: Updater()
@@ -147,15 +159,15 @@ def test_passed_after_market_runs_daily_watch_once_in_a_fresh_session() -> None:
         "enter:session-1",
         "manager:session-1",
         "market_run",
-        "exit:session-1",
         "enter:session-2",
         "daily_watch_factory:session-2",
         "daily_watch:2026-08-21",
         "exit:session-2",
+        "exit:session-1",
     ]
 
 
-def test_daily_watch_exception_preserves_payload_and_logs_only_stable_marker(
+def test_daily_watch_exception_marks_runtime_after_market_failed(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     events: list[str] = []
@@ -166,7 +178,7 @@ def test_daily_watch_exception_preserves_payload_and_logs_only_stable_marker(
 
     stdout = io.StringIO()
     stderr = io.StringIO()
-    caplog.set_level(logging.WARNING, logger="app.runtime_entry")
+    caplog.set_level(logging.WARNING)
     exit_code = main(
         ["after-market"],
         session_factory=_TrackedSessionFactory(events),
@@ -180,12 +192,14 @@ def test_daily_watch_exception_preserves_payload_and_logs_only_stable_marker(
         stderr=stderr,
     )
 
-    assert exit_code == 0
-    assert json.loads(stdout.getvalue()) == _PASSED_PAYLOAD
+    assert exit_code == 1
+    assert json.loads(stdout.getvalue()) == {
+        **_PASSED_PAYLOAD,
+        "status": "failed",
+        "error_code": "SUBING_DAILY_WATCH_FAILED",
+    }
     assert stderr.getvalue() == ""
-    assert [record.message for record in caplog.records] == [
-        "SUBING_DAILY_WATCH_FOLLOWUP_FAILED"
-    ]
+    assert caplog.records == []
     assert all(record.exc_info is None for record in caplog.records)
     assert "private" not in caplog.text
     assert "/Volumes/" not in caplog.text

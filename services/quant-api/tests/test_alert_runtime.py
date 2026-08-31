@@ -1772,7 +1772,7 @@ class AtomicRuntimeStatusStore:
 
 
 @pytest.mark.parametrize("schema_version", (1, 2))
-def test_runtime_status_v1_v2_is_normalized_to_v3(
+def test_runtime_status_v1_v2_is_normalized_to_v4(
     schema_version: int,
 ) -> None:
     payload = _runtime_status_payload()
@@ -1784,11 +1784,25 @@ def test_runtime_status_v1_v2_is_normalized_to_v3(
         }
     normalized = validate_alert_runtime_status(payload)
 
-    assert normalized["schema_version"] == 3
+    assert normalized["schema_version"] == 4
     assert normalized["notification_acknowledged_at"] is None
     assert normalized["strategy_state"] == "warming"
     assert normalized["strategy_product_count"] == 0
     assert normalized["strategy_unavailable_symbols"] == []
+    assert normalized["strategy_unavailable_reason_codes"] == {}
+
+
+def test_runtime_status_v3_is_normalized_to_v4_with_empty_public_reason_codes() -> None:
+    v3 = {
+        **alert_runtime_module.empty_alert_runtime_status(),
+        "schema_version": 3,
+    }
+    v3.pop("strategy_unavailable_reason_codes")
+
+    normalized = validate_alert_runtime_status(v3)
+
+    assert normalized["schema_version"] == 4
+    assert normalized["strategy_unavailable_reason_codes"] == {}
 
 
 def test_runtime_status_rejects_strategy_counts_above_active60_bound() -> None:
@@ -1796,6 +1810,20 @@ def test_runtime_status_rejects_strategy_counts_above_active60_bound() -> None:
         **alert_runtime_module.empty_alert_runtime_status(),
         "strategy_product_count": 61,
         "strategy_ready_product_count": 61,
+    }
+
+    with pytest.raises(ValueError, match="^ALERT_RUNTIME_STATUS_INVALID$"):
+        validate_alert_runtime_status(payload)
+
+
+def test_runtime_status_rejects_non_public_product_reason_code() -> None:
+    payload = {
+        **alert_runtime_module.empty_alert_runtime_status(),
+        "strategy_state": "degraded",
+        "strategy_product_count": 1,
+        "strategy_unavailable_product_count": 1,
+        "strategy_unavailable_symbols": ["jm"],
+        "strategy_unavailable_reason_codes": {"jm": "private exception detail"},
     }
 
     with pytest.raises(ValueError, match="^ALERT_RUNTIME_STATUS_INVALID$"):
@@ -1827,7 +1855,7 @@ def test_acknowledge_notification_failure_preserves_failure_facts() -> None:
         acknowledged_at=datetime(2026, 8, 14, 2, 45, tzinfo=UTC),
     )
 
-    assert acknowledged["schema_version"] == 3
+    assert acknowledged["schema_version"] == 4
     assert acknowledged["last_notification_failure_at"] == failure_at
     assert acknowledged["notification_error_type"] == "notification_transport_failed"
     assert acknowledged["consecutive_notification_failures"] == 1
@@ -1945,7 +1973,7 @@ def test_redis_heartbeat_store_sets_value_and_ttl_atomically() -> None:
     assert redis.calls[0][1] == {"ex": 30}
 
 
-def test_redis_runtime_status_store_upgrades_v1_to_v3_without_ttl() -> None:
+def test_redis_runtime_status_store_upgrades_v1_to_v4_without_ttl() -> None:
     from app.alerts import composition
 
     class FakeRedis:
@@ -1975,7 +2003,7 @@ def test_redis_runtime_status_store_upgrades_v1_to_v3_without_ttl() -> None:
 
     expected = {
         **payload,
-        "schema_version": 3,
+        "schema_version": 4,
         "notification_acknowledged_at": None,
         "strategy_state": "warming",
         "strategy_started_at": None,
@@ -1984,6 +2012,7 @@ def test_redis_runtime_status_store_upgrades_v1_to_v3_without_ttl() -> None:
         "strategy_ready_product_count": 0,
         "strategy_unavailable_product_count": 0,
         "strategy_unavailable_symbols": [],
+        "strategy_unavailable_reason_codes": {},
         "last_strategy_action_at": None,
         "last_strategy_restore_at": None,
     }
@@ -2047,7 +2076,7 @@ def test_redis_runtime_status_acknowledgement_is_compare_and_set() -> None:
 
     persisted = json.loads(redis.values["alert:runtime-status"])
     assert acknowledged == persisted
-    assert persisted["schema_version"] == 3
+    assert persisted["schema_version"] == 4
     assert persisted["last_notification_failure_at"] == failure_at
     assert persisted["notification_error_type"] == "notification_transport_failed"
     assert persisted["notification_acknowledged_at"] == ("2026-08-14T02:45:00+00:00")
@@ -2327,7 +2356,7 @@ def test_runtime_status_records_processing_event_and_provider_acceptance(
     status = json.loads(redis.values["alert:runtime-status"])
     observed_at = (ORDINARY_END + timedelta(seconds=2)).isoformat()
     assert status == {
-        "schema_version": 3,
+        "schema_version": 4,
         "last_processed_bar_at": ORDINARY_END.isoformat(),
         "last_processing_success_at": observed_at,
         "last_processing_failure_at": None,
@@ -2346,6 +2375,7 @@ def test_runtime_status_records_processing_event_and_provider_acceptance(
         "strategy_ready_product_count": 1,
         "strategy_unavailable_product_count": 0,
         "strategy_unavailable_symbols": [],
+        "strategy_unavailable_reason_codes": {},
         "last_strategy_action_at": None,
         "last_strategy_restore_at": None,
     }
@@ -2950,7 +2980,7 @@ def test_strategy_startup_subscribes_before_restore_and_catch_up(
     runtime.run_forever()
 
     assert order == ["subscribe", "restore", "catch_up"]
-    assert status.status["schema_version"] == 3
+    assert status.status["schema_version"] == 4
     assert status.status["strategy_state"] == "ready"
     assert _event_rows(session) == []
     assert sender.messages == []
@@ -3475,12 +3505,60 @@ def test_completed_bar_refreshes_strategy_v3_degrade_and_recovery(
     assert status.status["strategy_product_count"] == 1
     assert status.status["strategy_ready_product_count"] == 0
     assert status.status["strategy_unavailable_symbols"] == ["jm"]
+    assert status.status["strategy_unavailable_reason_codes"] == {
+        "jm": "CURRENT_UNAVAILABLE"
+    }
 
     harness.runtime.process_message("live:bar:jm:1m", _payload())
     assert status.status["strategy_state"] == "ready"
     assert status.status["strategy_ready_product_count"] == 1
     assert status.status["strategy_unavailable_product_count"] == 0
     assert status.status["strategy_unavailable_symbols"] == []
+    assert status.status["strategy_unavailable_reason_codes"] == {}
+
+
+def test_night_first_completed_1m_pending_is_public_and_sends_nothing(
+    session: Session,
+) -> None:
+    night_trading_day = DAY + timedelta(days=1)
+
+    class PendingNightStrategy(_Task9StrategyEvaluator):
+        def process_completed_bar(self, bar, _frequency, *, source_identity):
+            assert bar.bar_end == datetime(2026, 8, 14, 13, 1, tzinfo=UTC)
+            assert bar.trading_day == night_trading_day
+            return SubingStrategyRuntimeResult(
+                action_facts=(),
+                product_status=SubingStrategyRuntimeProductStatus(
+                    symbol=source_identity.symbol,
+                    state="unavailable",
+                    cutoff_1m=None,
+                    cutoff_5m=None,
+                    cutoff_15m=None,
+                    reason_codes=("LIVE_CONTRACT_AUTHORITY_PENDING",),
+                ),
+            )
+
+    status = AtomicRuntimeStatusStore()
+    harness = _runtime(
+        session,
+        strategy_evaluator=PendingNightStrategy([]),
+        runtime_status_store=status,
+    )
+
+    harness.runtime.process_message(
+        "live:bar:jm:1m",
+        _payload(
+            bar_end=datetime(2026, 8, 14, 13, 1, tzinfo=UTC),
+            trading_day=night_trading_day,
+        ),
+    )
+
+    assert status.status["strategy_unavailable_symbols"] == ["jm"]
+    assert status.status["strategy_unavailable_reason_codes"] == {
+        "jm": "LIVE_CONTRACT_AUTHORITY_PENDING"
+    }
+    assert _event_rows(session) == []
+    assert harness.sender.messages == []
 
 
 def test_canonical_result_refreshes_strategy_v3_product_aggregate(
@@ -3515,6 +3593,9 @@ def test_canonical_result_refreshes_strategy_v3_product_aggregate(
     assert status.status["strategy_product_count"] == 1
     assert status.status["strategy_unavailable_product_count"] == 1
     assert status.status["strategy_unavailable_symbols"] == ["jm"]
+    assert status.status["strategy_unavailable_reason_codes"] == {
+        "jm": "TERMINAL_UNAVAILABLE"
+    }
 
 
 def test_canonical_terminal_action_uses_the_same_event_path(session: Session) -> None:

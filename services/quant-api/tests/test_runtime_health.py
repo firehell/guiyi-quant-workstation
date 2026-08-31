@@ -121,9 +121,10 @@ def test_runtime_health_endpoint_exposes_market_runtime_components(
         "strategy_ready_at": None,
         "strategy_product_count": 0,
         "strategy_ready_product_count": 0,
-        "strategy_unavailable_product_count": 0,
-        "strategy_unavailable_symbols": [],
-        "last_strategy_action_at": None,
+            "strategy_unavailable_product_count": 0,
+            "strategy_unavailable_symbols": [],
+            "strategy_unavailable_reason_codes": {},
+            "last_strategy_action_at": None,
         "last_strategy_restore_at": None,
         "error_type": None,
     }
@@ -258,9 +259,10 @@ def test_alert_health_missing_stale_and_fresh_heartbeat(monkeypatch, tmp_path) -
         "strategy_ready_at": None,
         "strategy_product_count": 0,
         "strategy_ready_product_count": 0,
-        "strategy_unavailable_product_count": 0,
-        "strategy_unavailable_symbols": [],
-        "last_strategy_action_at": None,
+            "strategy_unavailable_product_count": 0,
+            "strategy_unavailable_symbols": [],
+            "strategy_unavailable_reason_codes": {},
+            "last_strategy_action_at": None,
         "last_strategy_restore_at": None,
         "error_type": None,
     }
@@ -418,6 +420,9 @@ def test_alert_health_exposes_bounded_strategy_v3_observation() -> None:
     assert alert["strategy_ready_product_count"] == 1
     assert alert["strategy_unavailable_product_count"] == 1
     assert alert["strategy_unavailable_symbols"] == ["jm"]
+    assert alert["strategy_unavailable_reason_codes"] == {
+        "jm": "PREVIOUS_RUNTIME_REASON_UNAVAILABLE"
+    }
 
 
 def test_alert_health_derives_latest_processing_and_notification_outcomes() -> None:
