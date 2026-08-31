@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import sys
+from dataclasses import asdict
 from pathlib import Path
 
 import pytest
@@ -51,6 +53,10 @@ def _run_streamed(bars: list[dict[str, object]]):
         state, point = step_range_detector_lux(state, **bar)
         points.append(point)
     return state, tuple(points)
+
+
+def _json_value(value: object) -> object:
+    return json.loads(json.dumps(value, sort_keys=True, separators=(",", ":")))
 
 
 def test_range_detector_requires_valid_parameters_and_source_identity() -> None:
@@ -326,3 +332,36 @@ def test_ranges_use_a_visual_type_with_future_derived_level_end() -> None:
     assert series.ranges[0].levels_active_until is None or isinstance(
         series.ranges[0].levels_active_until, str
     )
+
+
+def test_range_detector_golden_fixture_has_canonical_hash_and_exact_python_output() -> None:
+    from guiyi_quant.indicators import range_detector_lux_series
+
+    fixture = json.loads(
+        (REPO_ROOT / "tests/fixtures/range_detector_lux_v1_golden.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    payload = {
+        key: value for key, value in fixture.items() if key != "payload_sha256"
+    }
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    assert hashlib.sha256(canonical.encode("utf-8")).hexdigest() == fixture[
+        "payload_sha256"
+    ]
+
+    bars = fixture["bars"]
+    result = range_detector_lux_series(
+        [bar["high"] for bar in bars],
+        [bar["low"] for bar in bars],
+        [bar["close"] for bar in bars],
+        bar_ends=[bar["bar_end"] for bar in bars],
+        trading_days=[bar.get("trading_day") for bar in bars],
+        source_identity=fixture["source_identity"],
+        **fixture["parameters"],
+    )
+    actual = {
+        "points": [_json_value(asdict(point)) for point in result.points],
+        "ranges": [_json_value(asdict(item)) for item in result.ranges],
+    }
+    assert actual == fixture["expected"]
