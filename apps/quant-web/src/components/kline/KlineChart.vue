@@ -562,6 +562,7 @@ defineExpose({
     :data-rendered-research-marker-count="renderedResearchMarkerCount"
     :data-research-marker-ids="researchMarkers.map((marker) => marker.id).join(',')"
     :data-research-marker-times="researchMarkers.map((marker) => marker.time).join(',')"
+    :data-range-detector-range-count="derivedData.rangeDetector?.ranges.length ?? 0"
   >
     <div ref="container" class="chart" />
     <div

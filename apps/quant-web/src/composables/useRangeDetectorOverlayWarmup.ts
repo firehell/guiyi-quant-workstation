@@ -5,6 +5,7 @@ import type { BarData } from '@/types/market'
 
 export const RANGE_DETECTOR_REQUIRED_BARS = 520
 export const RANGE_DETECTOR_WARMUP_INSUFFICIENT = 'RANGE_DETECTOR_WARMUP_INSUFFICIENT'
+export const RANGE_DETECTOR_WARMUP_LOAD_FAILED = 'RANGE_DETECTOR_WARMUP_LOAD_FAILED'
 
 export interface RangeDetectorOverlayWarmupOptions {
   bars: Readonly<Ref<BarData[]>>
@@ -44,19 +45,26 @@ export function useRangeDetectorOverlayWarmup(options: RangeDetectorOverlayWarmu
     unavailableReason.value = null
     loading.value = true
     activeRun = (async () => {
-      while (
-        currentGeneration === generation
-        && options.enabled.value
-        && options.bars.value.length < RANGE_DETECTOR_REQUIRED_BARS
-        && options.hasMoreBefore.value
-      ) {
-        await options.loadMoreBefore()
+      try {
+        while (
+          currentGeneration === generation
+          && options.enabled.value
+          && options.bars.value.length < RANGE_DETECTOR_REQUIRED_BARS
+          && options.hasMoreBefore.value
+        ) {
+          await options.loadMoreBefore()
+        }
+        if (currentGeneration !== generation || !options.enabled.value) return
+        if (options.bars.value.length > 0) anchorTime.value = options.bars.value[0].time
+        unavailableReason.value = options.bars.value.length < 500
+          ? RANGE_DETECTOR_WARMUP_INSUFFICIENT
+          : null
+      } catch {
+        if (currentGeneration === generation && options.enabled.value) {
+          anchorTime.value = null
+          unavailableReason.value = RANGE_DETECTOR_WARMUP_LOAD_FAILED
+        }
       }
-      if (currentGeneration !== generation || !options.enabled.value) return
-      if (options.bars.value.length > 0) anchorTime.value = options.bars.value[0].time
-      unavailableReason.value = options.bars.value.length < 500
-        ? RANGE_DETECTOR_WARMUP_INSUFFICIENT
-        : null
     })().finally(() => {
       if (currentGeneration === generation) loading.value = false
     })
