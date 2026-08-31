@@ -59,6 +59,16 @@ def _json_value(value: object) -> object:
     return json.loads(json.dumps(value, sort_keys=True, separators=(",", ":")))
 
 
+def _canonical_hash_value(value: object) -> object:
+    if isinstance(value, list):
+        return [_canonical_hash_value(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _canonical_hash_value(item) for key, item in value.items()}
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    return value
+
+
 def test_range_detector_requires_valid_parameters_and_source_identity() -> None:
     from guiyi_quant.indicators import initial_range_detector_lux_state
 
@@ -345,7 +355,9 @@ def test_range_detector_golden_fixture_has_canonical_hash_and_exact_python_outpu
     payload = {
         key: value for key, value in fixture.items() if key != "payload_sha256"
     }
-    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    canonical = json.dumps(
+        _canonical_hash_value(payload), sort_keys=True, separators=(",", ":")
+    )
     assert hashlib.sha256(canonical.encode("utf-8")).hexdigest() == fixture[
         "payload_sha256"
     ]
