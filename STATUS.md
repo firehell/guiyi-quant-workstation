@@ -19,13 +19,12 @@ Alert transport 为 PushPlus；provider accepted 不等于微信送达。
 
 ## 自然 evidence
 
-- 2026-08-26 自然 after-market 于 18:05:01 开始、19:48:41 以 `passed` 完成，`attempts=1 / error_code=null`，覆盖 active60，未发生 retry。盘后只读验收确认六个当日周期 60/60 推进到 `2026-08-26T07:00:00Z`、最近完整周 60/60 为 `2026-08-21T07:00:00Z`，420 个最新 Continuous 分区物理回读与 60 个 actual-dominant 1m 正式读取均零错误；未手工启动、补跑或回填。
-- 2026-08-31 只读 `subing-daily-watch/current` 读回 V2 target `2026-08-31`：60 个产品、23 long、3 short、34 excluded、0 unavailable；该日事实只支持当前 direction context，不替代 `v1.9.5` 的自然 Live seam evidence。
-- SuBing Strategy V1 Stage 1 在只读 `2024-01-01..2026-08-25` 自然窗口对 AG/JM/RB/EG 得到 `89/58/48/58` 个完整 Episode，共 `253` 个；自然语料覆盖 long/short、四种 entry source、四类 exit、gap、terminal close 与 prefix/pan invariance。该证据只支持 Historical Strategy Projection，不构成自然 Live Action。
-- HTDY 在既有 420-pair Scope 下形成的 6 条 D1 Event 保持 immutable；一次 W1 transport failure 后 processing 已自然恢复，但这不证明微信送达，也不替代 D1/W1 各自的自然身份核验。
+- 2026-08-31 只读 Runtime health 显示自然 after-market 本轮已以 `passed` 完成：开始 `18:05:07 +08:00`、结束 `20:10:21 +08:00`、`attempts=1 / error_code=null`、覆盖 operational 60；未手工启动、补跑或回填。
+- 同一 readback 显示 Alert processing 当前为 `ok`，但最近已持久 Event 与 transport attempt 仍是 `2026-08-27`；provider accepted 不等于微信送达，也不替代下一次自然 first-seen evidence。
 
 ## Pending Gate
 
+- v1.9.6 已发布但尚未 Runtime promotion；须在独立 Runtime Gate 下准备 clean、detached 的 exact-tag root，验证最小连续状态后切换五项 launchd 服务并回读。当前 v1.9.5 Runtime 是唯一回滚根，必须保留。
 - HTDY 的真实 PushPlus/微信送达，以及 D1/W1 `canonical_updated` 的自然 Event identity/evidence，仍须分别核验；不以测试、synthetic event、replay 或手工发送补证。
 - v1.9.7 Runtime promotion 已因 fresh Live `last_bar_at=null` fail-closed 回滚；本轮不再尝试切换。下一次 promotion 须由新的明确授权开始，并先取得切换后的 completed Live bar、ready heartbeat 与连续状态读回。
 - SuBing v1.9.7 自然 Live continuation seam 与严格盘后完成制 evidence pending；不以测试、startup replay、手工触发或回填替代。
