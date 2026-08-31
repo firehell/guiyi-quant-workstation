@@ -1,6 +1,6 @@
 # 苏冰趋势策略-日 Strategy Spec
 
-状态：`SPEC_REVIEW_PENDING`
+状态：`SPEC_READY_FOR_USER_REVIEW`
 
 日期：2026-08-31
 
@@ -133,12 +133,13 @@ EMA21、MACD、ATR14 和 Range ATR500 可以使用 rank1 stitched raw D1 历史�
 但：
 
 - position、pending action、Episode 不跨物理主力段；
-- 策略可用的 Range regime 必须在当前物理主力段内重新形成；
-- Range ATR500 可继承 stitched warm-up，但 Range close-window/active range 在物理段起点重置；
-- 当前物理段至少形成一个当前段内 causal Range confirmation 后，Range regime 才可用于入场；
+- Range ATR500 可继承 stitched warm-up；
+- Range close-window、previous-candidate 状态和 active range 在物理段起点重置；
+- Range regime 只有在当前物理段的 close-window 达到 `minimum_range_length + 1` 且 ATR500 ready 后才可判定；
+- 不要求当前物理段必须先确认过一个箱体；Range ready 后如果没有 active intact range，本身就表示“当前没有检测到震荡箱体”；
 - 主力段第一根 completed D1 永远禁止新开仓。
 
-这样既保留长周期指标 warm-up，又避免旧合约的震荡箱体直接作用于新主力价格。
+这样既保留长周期 ATR/EMA/MACD warm-up，又避免旧合约箱体直接作用于新主力，同时不会把“必须先形成箱体再突破”偷偷加回 V1。
 
 ## 5. 指标政策
 
@@ -225,29 +226,41 @@ source = close
 atr_smoothing_policy = wilder_sma_seed
 ```
 
-Range 只负责 regime，不负责方向。
+Range 只负责 regime，不负责方向，也不是入场触发器。
 
 对决策 Bar `t`，在完成本 Bar 的 Range causal step 后定义：
 
 ```text
 CHOP:
-当前段存在 active Range snapshot
+Range engine ready
+and 当前段存在 active Range snapshot
 and state == intact
 
 TREND_ELIGIBLE:
-当前段存在 active Range snapshot
-and state in {broken_up, broken_down}
+Range engine ready
+and (
+  当前段不存在 active Range snapshot
+  or state in {broken_up, broken_down}
+)
 
 RANGE_UNAVAILABLE:
-当前段尚无 causal Range confirmation
-or Range warm-up / source identity 不完整
+Range engine 尚未 ready
+or source identity / 输入异常
 ```
 
 含义：
 
 - `CHOP`：禁止新开仓；
-- `TREND_ELIGIBLE`：允许继续检查 EMA/MACD；
-- `RANGE_UNAVAILABLE`：不把“没有箱体”猜成“趋势”，fail-closed 禁止新开仓。
+- `TREND_ELIGIBLE`：只表示“当前没有检测到 intact 震荡箱体”，允许继续检查 EMA/MACD；
+- `RANGE_UNAVAILABLE`：数据不足或异常，fail-closed 禁止新开仓。
+
+这里必须特别区分：
+
+```text
+没有 active Range != Range unavailable
+```
+
+当 Range 已完成 warm-up 且当前没有 active intact range 时，V1 按“非震荡”处理；不要求此前必须发生过一个 Range breakout。
 
 Range 的 `broken_up` / `broken_down` 方向不约束最终多空方向。最终方向只由 EMA21 位置/斜率和 MACD 金死叉决定。
 
@@ -292,6 +305,7 @@ ENTRY_LONG_CONFIRMED
 入场不要求：
 
 - 当日刚刚突破 Range 上/下沿；
+- 此前必须存在一个已确认 Range；
 - Range break 与 MACD cross 同 Bar；
 - 当日刚刚穿越 EMA21；
 - previous close 在 EMA21 另一侧；
@@ -539,6 +553,17 @@ cancel_reason
 source_identity_digest
 ```
 
+当 `TREND_ELIGIBLE` 来自“Range ready 但当前无 active snapshot”时：
+
+```text
+range_id = null
+range_revision = null
+range_confirmed_at = null
+range_state = none
+```
+
+这不是 unavailable，而是明确的“没有检测到 active 震荡箱体”。
+
 ID 必须确定性生成，不使用随机 UUID。
 
 ### 11.2 Episode
@@ -580,7 +605,9 @@ stitched raw indicator warm-up
 - stitched MACD 12/26/9；
 - stitched ATR14；
 - Range ATR500；
-- 当前物理段 Range close-window 已完成并形成当前段 causal confirmation。
+- 当前物理段 Range close-window 达到 `minimum_range_length + 1`，使 Range engine 可以明确输出 CHOP 或 TREND_ELIGIBLE。
+
+不要求当前段先形成一个 Range confirmation。
 
 任何一项 unavailable 时不得缩短 lookback、使用 0 或静默替代。
 
@@ -595,7 +622,9 @@ stitched raw indicator warm-up
 - future-tail invariance；
 - prepend invariance（完整 warm-up 后稳定前缀不漂移）；
 - Range visual_start_at 不参与策略过去事实；
-- current-segment Range gate 不继承旧物理段 active range；
+- 当前物理段 Range close-window/active range 不继承旧物理段；
+- Range ready + no active snapshot 可以进入 TREND_ELIGIBLE；
+- active intact Range 必须阻断 entry；
 - no cross-contract fill；
 - segment terminal；
 - no same-Bar reversal；
@@ -762,7 +791,7 @@ Alert 设计仍必须单独 Lane 3 Review；Historical 接受不能自动授权 
 - 修改 `subing_strategy_v1`；
 - 把两个策略合并成一个 strategy_id；
 - 把 Lux Range 方向当作多空方向；
-- 以“没有 Range”自动判为趋势；
+- 把 Range unavailable 当作非震荡；
 - 未完成 D1 产生正式信号；
 - 同 Bar 使用未来 open；
 - 物理主力段跨仓；
@@ -785,6 +814,7 @@ Alert 设计仍必须单独 Lane 3 Review；Historical 接受不能自动授权 
 
 - 名称和 identity 与本 Spec 一致；
 - Range 只做震荡 gate；
+- Range ready 且无 active intact box 时属于非震荡，不要求先出现 breakout；
 - EMA21 position + slope 只做方向 filter；
 - MACD near-zero cross 是唯一 entry trigger；
 - EMA21 opposite cross 是唯一普通 exit；
@@ -794,7 +824,7 @@ Alert 设计仍必须单独 Lane 3 Review；Historical 接受不能自动授权 
 
 - completed D1 only；
 - next same-contract D1 open；
-- current-segment Range confirmation；
+- current-segment Range state；
 - no future leak；
 - no prefix drift；
 - no cross-contract state/fill；
@@ -820,7 +850,7 @@ Alert 设计仍必须单独 Lane 3 Review；Historical 接受不能自动授权 
 `苏冰趋势策略-日 / subing_daily_trend_v1` V1 被定义为一套极简日线趋势研究策略：
 
 ```text
-非震荡
+Range 已 ready 且当前没有 intact 震荡箱体
 + EMA21 上/下方
 + EMA21 5-bar 斜率同方向
 + MACD 零轴附近金/死叉
