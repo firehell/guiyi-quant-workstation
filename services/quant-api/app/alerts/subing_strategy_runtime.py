@@ -70,6 +70,19 @@ _PUBLIC_PRODUCT_MACHINE_REASONS = frozenset(
         "UNSCHEDULED_15M_BOUNDARY",
     }
 )
+PUBLIC_SUBING_STRATEGY_RUNTIME_REASON_CODES = (
+    _PUBLIC_PRODUCT_MACHINE_REASONS
+    | frozenset(
+        {
+            "COMPLETED_BAR_UNAVAILABLE",
+            "CURRENT_UNAVAILABLE",
+            "LIVE_CONTRACT_AUTHORITY_PENDING",
+            "PREVIOUS_RUNTIME_REASON_UNAVAILABLE",
+            "RESTORE_UNAVAILABLE",
+            "TERMINAL_UNAVAILABLE",
+        }
+    )
+)
 
 
 class SubingStrategyRuntimeProductSourceError(RuntimeError):

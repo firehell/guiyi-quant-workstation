@@ -81,6 +81,16 @@ export interface RuntimeAlertHealth {
   last_notification_failure_at: string | null
   notification_error_type: string | null
   consecutive_notification_failures: number
+  strategy_state: 'warming' | 'ready' | 'degraded'
+  strategy_started_at: string | null
+  strategy_ready_at: string | null
+  strategy_product_count: number
+  strategy_ready_product_count: number
+  strategy_unavailable_product_count: number
+  strategy_unavailable_symbols: string[]
+  strategy_unavailable_reason_codes: Record<string, string>
+  last_strategy_action_at: string | null
+  last_strategy_restore_at: string | null
   error_type: string | null
 }
 
