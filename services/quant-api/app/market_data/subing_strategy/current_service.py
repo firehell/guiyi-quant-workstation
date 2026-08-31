@@ -46,6 +46,11 @@ from .machine import (
     SubingStrategyMachineState,
     SubingStrategySourceIdentity,
 )
+from .live_continuation import (
+    SubingLiveCompletedBars,
+    SubingLiveContinuationDecision,
+    SubingLiveContinuationKind,
+)
 from .policy import SubingStrategyPolicy
 from .replay import (
     SubingStrategyReplayError,
@@ -363,7 +368,7 @@ class SubingStrategyCurrentProjectionService:
         after_5m: datetime | None,
         after_15m: datetime | None,
         through: datetime,
-    ) -> Mapping[BarFrequency, tuple[CanonicalBar, ...]]:
+    ) -> SubingLiveCompletedBars:
         if (
             symbol not in self._products
             or not isinstance(source_identity, SubingStrategySourceIdentity)
@@ -373,14 +378,26 @@ class SubingStrategyCurrentProjectionService:
             or through.utcoffset() is None
         ):
             raise SubingStrategyCurrentSourceIdentityError()
-        target_day, _source_day, segment, _occupancy_capped = (
-            self._resolve_replay_window(symbol, through)
+        probe_identity = SeriesPageQuery(
+            SeriesKind.ACTUAL_DOMINANT,
+            symbol,
+            BarFrequency.M15,
         )
-        if (
-            segment.contract != source_identity.contract
-            or segment.start_trading_day != source_identity.segment_start_trading_day
-        ):
-            raise SubingStrategyCurrentSourceIdentityError()
+        try:
+            probe_state = self._market_read.state(probe_identity, through)
+        except Exception as exc:  # noqa: BLE001 - typed Live boundary
+            raise SubingStrategyCurrentSourceUnavailableError() from exc
+        target_day = getattr(probe_state, "trading_day", None)
+        if type(target_day) is not date:
+            raise SubingStrategyCurrentSourceUnavailableError()
+        decision = self.resolve_live_continuation(
+            symbol=symbol,
+            source_identity=source_identity,
+            incoming_trading_day=target_day,
+            now=through,
+        )
+        if decision.kind is not SubingLiveContinuationKind.CONTINUE_SAME_SEGMENT:
+            return SubingLiveCompletedBars(decision=decision, bars={})
         cutoffs = {
             BarFrequency.M1: after_1m,
             BarFrequency.M5: after_5m,
@@ -409,7 +426,7 @@ class SubingStrategyCurrentProjectionService:
                 self._validate_live_state(
                     state,
                     identity=identity,
-                    contract=segment.contract,
+                    contract=source_identity.contract,
                     target_day=target_day,
                 )
                 bars = (
@@ -430,7 +447,137 @@ class SubingStrategyCurrentProjectionService:
             ):
                 raise SubingStrategyCurrentSourceIdentityError()
             completed[frequency] = tuple(bars)
-        return completed
+        return SubingLiveCompletedBars(decision=decision, bars=completed)
+
+    def resolve_live_continuation(
+        self,
+        *,
+        symbol: str,
+        source_identity: SubingStrategySourceIdentity,
+        incoming_trading_day: date,
+        now: datetime,
+    ) -> SubingLiveContinuationDecision:
+        """Classify one Live day before it may enter an in-memory machine."""
+        if (
+            symbol not in self._products
+            or not isinstance(source_identity, SubingStrategySourceIdentity)
+            or source_identity.symbol != symbol
+            or type(incoming_trading_day) is not date
+            or not isinstance(now, datetime)
+            or now.tzinfo is None
+            or now.utcoffset() is None
+        ):
+            raise SubingStrategyCurrentSourceIdentityError()
+        identity = SeriesPageQuery(SeriesKind.ACTUAL_DOMINANT, symbol, BarFrequency.M15)
+        try:
+            state = self._market_read.state(identity, now)
+        except Exception:  # noqa: BLE001 - continuation is a typed Live boundary
+            return _stale_live_continuation(source_identity, incoming_trading_day)
+        market_day = getattr(state, "trading_day", None)
+        frozen_contract = normalize_contract_for_symbol(
+            symbol,
+            getattr(state, "live_contract", None),
+        )
+        live_eligible = getattr(state, "live_eligible", False) is True
+        live_available = getattr(state, "live_available", False) is True
+        if (
+            getattr(state, "symbol", None) != symbol
+            or getattr(state, "series_kind", None) != SeriesKind.ACTUAL_DOMINANT.value
+            or getattr(state, "frequency", None) != BarFrequency.M15.value
+            or type(market_day) is not date
+            or market_day != incoming_trading_day
+            or not live_eligible
+            or not live_available
+            or frozen_contract is None
+        ):
+            return _stale_live_continuation(
+                source_identity,
+                incoming_trading_day,
+                market_trading_day=market_day if type(market_day) is date else None,
+                frozen_live_contract=frozen_contract,
+                live_eligible=live_eligible,
+                live_available=live_available,
+            )
+        try:
+            occupancy = self._load_segment_summary(symbol, incoming_trading_day)
+        except MarketDataError as exc:
+            if exc.code != "MAIN_CONTRACT_MAP_MISSING":
+                return _stale_live_continuation(
+                    source_identity,
+                    incoming_trading_day,
+                    market_trading_day=market_day,
+                    frozen_live_contract=frozen_contract,
+                    live_eligible=live_eligible,
+                    live_available=live_available,
+                )
+            occupancy = None
+
+        if frozen_contract == source_identity.contract:
+            if occupancy is not None and (
+                occupancy.contract != source_identity.contract
+                or occupancy.start_trading_day
+                != source_identity.segment_start_trading_day
+            ):
+                return _stale_live_continuation(
+                    source_identity,
+                    incoming_trading_day,
+                    market_trading_day=market_day,
+                    frozen_live_contract=frozen_contract,
+                    live_eligible=live_eligible,
+                    live_available=live_available,
+                )
+            try:
+                source_day = self._previous_trading_day(incoming_trading_day)
+                source_segment = self._resolve_segment(symbol, source_day)
+                context = self._current_context(
+                    symbol=symbol,
+                    target_day=incoming_trading_day,
+                    source_day=source_day,
+                    expected_source_contract=source_segment.contract,
+                )
+            except (
+                SubingDailyWatchCalendarError,
+                SubingStrategyCurrentSourceUnavailableError,
+                SubingStrategyCurrentSourceIdentityError,
+            ):
+                return _stale_live_continuation(
+                    source_identity,
+                    incoming_trading_day,
+                    market_trading_day=market_day,
+                    frozen_live_contract=frozen_contract,
+                    live_eligible=live_eligible,
+                    live_available=live_available,
+                )
+            return SubingLiveContinuationDecision(
+                kind=SubingLiveContinuationKind.CONTINUE_SAME_SEGMENT,
+                machine_identity=source_identity,
+                incoming_trading_day=incoming_trading_day,
+                market_trading_day=market_day,
+                frozen_live_contract=frozen_contract,
+                live_eligible=True,
+                live_available=True,
+                direction_context=context,
+            )
+
+        if occupancy is None or occupancy.contract == frozen_contract:
+            return SubingLiveContinuationDecision(
+                kind=SubingLiveContinuationKind.LIVE_CONTRACT_AUTHORITY_PENDING,
+                machine_identity=source_identity,
+                incoming_trading_day=incoming_trading_day,
+                market_trading_day=market_day,
+                frozen_live_contract=frozen_contract,
+                live_eligible=True,
+                live_available=True,
+                direction_context=None,
+            )
+        return _stale_live_continuation(
+            source_identity,
+            incoming_trading_day,
+            market_trading_day=market_day,
+            frozen_live_contract=frozen_contract,
+            live_eligible=True,
+            live_available=True,
+        )
 
     def session_windows(
         self,
@@ -444,12 +591,6 @@ class SubingStrategyCurrentProjectionService:
             or type(trading_day) is not date
             or not isinstance(source_identity, SubingStrategySourceIdentity)
             or source_identity.symbol != symbol
-        ):
-            raise SubingStrategyCurrentSourceIdentityError()
-        segment = self._resolve_segment(symbol, trading_day)
-        if (
-            segment.contract != source_identity.contract
-            or segment.start_trading_day != source_identity.segment_start_trading_day
         ):
             raise SubingStrategyCurrentSourceIdentityError()
         try:
@@ -946,4 +1087,25 @@ def _unavailable_context(
         daily_bar_end=None,
         hourly_bar_end=None,
         physical_contract=None,
+    )
+
+
+def _stale_live_continuation(
+    source_identity: SubingStrategySourceIdentity,
+    incoming_trading_day: date,
+    *,
+    market_trading_day: date | None = None,
+    frozen_live_contract: str | None = None,
+    live_eligible: bool = False,
+    live_available: bool = False,
+) -> SubingLiveContinuationDecision:
+    return SubingLiveContinuationDecision(
+        kind=SubingLiveContinuationKind.STALE_OR_IDENTITY_INVALID,
+        machine_identity=source_identity,
+        incoming_trading_day=incoming_trading_day,
+        market_trading_day=market_trading_day,
+        frozen_live_contract=frozen_live_contract,
+        live_eligible=live_eligible,
+        live_available=live_available,
+        direction_context=None,
     )

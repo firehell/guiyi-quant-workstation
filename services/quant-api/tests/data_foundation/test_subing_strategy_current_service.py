@@ -25,6 +25,7 @@ from app.market_data.subing_strategy.contracts import (
 from app.market_data.subing_strategy.direction_context import (
     SubingStrategyDirectionContext,
 )
+from app.market_data.subing_strategy.machine import SubingStrategySourceIdentity
 from app.market_data.subing_strategy.engine import SubingStrategySegmentResult
 from app.market_data.subing_strategy.policy import load_subing_strategy_policy
 
@@ -212,6 +213,148 @@ def _empty_result(*, final=SubingStrategyPositionState.FLAT):
         pending_action=None,
         final_position=final,
     )
+
+
+def test_live_continuation_allows_same_contract_new_day_without_occupancy() -> None:
+    module = _current_module()
+    live_bar = replace(_bar(3), trading_day=TARGET_DAY)
+    service, _loader, _historical, _store, _market_read = _service(
+        live={BarFrequency.M1: (live_bar,)}
+    )
+
+    def current_segment(_symbol: str, target: date) -> ResolvedContractSegment:
+        if target == TARGET_DAY:
+            raise MarketDataError("MAIN_CONTRACT_MAP_MISSING")
+        return ResolvedContractSegment(CONTRACT, SEGMENT_START, SOURCE_DAY)
+
+    service._current_segment = current_segment
+
+    decision = service.resolve_live_continuation(
+        symbol="jm",
+        source_identity=SubingStrategySourceIdentity(
+            "jm", CONTRACT, SEGMENT_START
+        ),
+        incoming_trading_day=TARGET_DAY,
+        now=NOW,
+    )
+
+    assert decision.kind is module.SubingLiveContinuationKind.CONTINUE_SAME_SEGMENT
+    assert decision.machine_identity.contract == CONTRACT
+    assert decision.incoming_trading_day == TARGET_DAY
+    assert decision.market_trading_day == TARGET_DAY
+    assert decision.frozen_live_contract == CONTRACT
+    assert decision.live_eligible is True
+    assert decision.live_available is True
+    assert decision.direction_context is not None
+    assert decision.direction_context.target_trading_day == TARGET_DAY
+
+
+def test_live_continuation_injects_unavailable_daily_watch_context() -> None:
+    module = _current_module()
+    live_bar = replace(_bar(3), trading_day=TARGET_DAY)
+    service, _loader, _historical, store, _market_read = _service(
+        live={BarFrequency.M1: (live_bar,)}
+    )
+    store.value = None
+
+    decision = service.resolve_live_continuation(
+        symbol="jm",
+        source_identity=SubingStrategySourceIdentity(
+            "jm", CONTRACT, SEGMENT_START
+        ),
+        incoming_trading_day=TARGET_DAY,
+        now=NOW,
+    )
+
+    assert decision.kind is module.SubingLiveContinuationKind.CONTINUE_SAME_SEGMENT
+    assert decision.direction_context is not None
+    assert decision.direction_context.direction is SubingStrategyDirection.UNAVAILABLE
+    assert decision.direction_context.reason_codes == (
+        "SUBING_DAILY_WATCH_NOT_GENERATED",
+    )
+
+
+def test_live_continuation_marks_different_contract_without_occupancy_pending() -> None:
+    module = _current_module()
+    live_bar = replace(_bar(3), trading_day=TARGET_DAY)
+    service, _loader, _historical, _store, market_read = _service(
+        live={BarFrequency.M1: (live_bar,)}
+    )
+    market_read.contract = "JM2705"
+    service._current_segment = lambda _symbol, _target: (_ for _ in ()).throw(
+        MarketDataError("MAIN_CONTRACT_MAP_MISSING")
+    )
+
+    decision = service.resolve_live_continuation(
+        symbol="jm",
+        source_identity=SubingStrategySourceIdentity(
+            "jm", CONTRACT, SEGMENT_START
+        ),
+        incoming_trading_day=TARGET_DAY,
+        now=NOW,
+    )
+
+    assert (
+        decision.kind
+        is module.SubingLiveContinuationKind.LIVE_CONTRACT_AUTHORITY_PENDING
+    )
+    assert decision.frozen_live_contract == "JM2705"
+    assert decision.direction_context is None
+
+
+def test_live_continuation_rejects_unavailable_live_state() -> None:
+    module = _current_module()
+    service, _loader, _historical, _store, _market_read = _service()
+
+    decision = service.resolve_live_continuation(
+        symbol="jm",
+        source_identity=SubingStrategySourceIdentity(
+            "jm", CONTRACT, SEGMENT_START
+        ),
+        incoming_trading_day=TARGET_DAY,
+        now=NOW,
+    )
+
+    assert decision.kind is module.SubingLiveContinuationKind.STALE_OR_IDENTITY_INVALID
+
+
+def test_completed_live_after_uses_same_contract_new_day_continuation() -> None:
+    module = _current_module()
+    canonical = _canonical_stream()[0][-1]
+    live_bar = replace(
+        canonical,
+        bar_end=canonical.bar_end + timedelta(minutes=15),
+        trading_day=TARGET_DAY,
+    )
+    service, _loader, _historical, _store, _market_read = _service(
+        live={
+            BarFrequency.M1: (live_bar,),
+            BarFrequency.M5: (live_bar,),
+            BarFrequency.M15: (live_bar,),
+        }
+    )
+
+    def current_segment(_symbol: str, target: date) -> ResolvedContractSegment:
+        if target == TARGET_DAY:
+            raise MarketDataError("MAIN_CONTRACT_MAP_MISSING")
+        return ResolvedContractSegment(CONTRACT, SEGMENT_START, SOURCE_DAY)
+
+    service._current_segment = current_segment
+    result = service.completed_live_after(
+        symbol="jm",
+        source_identity=SubingStrategySourceIdentity(
+            "jm", CONTRACT, SEGMENT_START
+        ),
+        after_1m=canonical.bar_end,
+        after_5m=canonical.bar_end,
+        after_15m=canonical.bar_end,
+        through=NOW,
+    )
+
+    assert result.decision.kind is module.SubingLiveContinuationKind.CONTINUE_SAME_SEGMENT
+    assert result.bars[BarFrequency.M1] == (live_bar,)
+    assert result.bars[BarFrequency.M5] == (live_bar,)
+    assert result.bars[BarFrequency.M15] == (live_bar,)
 
 
 def test_current_request_supports_only_actual_dominant_15m() -> None:

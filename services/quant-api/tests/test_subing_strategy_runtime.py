@@ -29,6 +29,14 @@ from app.market_data.subing_strategy.machine import (
     initial_subing_strategy_machine,
     step_subing_strategy_machine,
 )
+from app.market_data.subing_strategy.live_continuation import (
+    SubingLiveCompletedBars,
+    SubingLiveContinuationDecision,
+    SubingLiveContinuationKind,
+)
+from app.market_data.subing_strategy.direction_context import (
+    SubingStrategyDirectionContext,
+)
 from app.market_data.subing_strategy.policy import load_subing_strategy_policy
 from app.market_data.subing_strategy.stream_contracts import (
     AuthoritativeSegmentTerminal,
@@ -112,6 +120,12 @@ class _CurrentReader:
         completed_error: Exception | None = None,
         session_error: Exception | None = None,
         terminal_error: Exception | None = None,
+        continuation_kinds: Mapping[date, SubingLiveContinuationKind] | None = None,
+        continuation_by_product: Mapping[
+            tuple[str, date], SubingLiveContinuationKind
+        ]
+        | None = None,
+        completed_result: SubingLiveCompletedBars | None = None,
     ) -> None:
         self.streams = {
             symbol: dict(stream) for symbol, stream in (streams or {}).items()
@@ -121,6 +135,9 @@ class _CurrentReader:
         self.completed_error = completed_error
         self.session_error = session_error
         self.terminal_error = terminal_error
+        self.continuation_kinds = dict(continuation_kinds or {})
+        self.continuation_by_product = dict(continuation_by_product or {})
+        self.completed_result = completed_result
         self.catch_up_calls: list[
             tuple[
                 str,
@@ -155,6 +172,8 @@ class _CurrentReader:
         )
         if self.completed_error is not None:
             raise self.completed_error
+        if self.completed_result is not None:
+            return self.completed_result
         return self.streams.get(symbol, {})
 
     def read_authoritative_terminal(
@@ -200,6 +219,53 @@ class _CurrentReader:
                         UTC,
                     ),
                 ),
+            ),
+        )
+
+    def resolve_live_continuation(
+        self,
+        *,
+        symbol: str,
+        source_identity: SubingStrategySourceIdentity,
+        incoming_trading_day: date,
+        now: datetime,
+    ) -> SubingLiveContinuationDecision:
+        kind = self.continuation_by_product.get(
+            (symbol, incoming_trading_day),
+            self.continuation_kinds.get(
+                incoming_trading_day,
+                SubingLiveContinuationKind.CONTINUE_SAME_SEGMENT,
+            ),
+        )
+        return SubingLiveContinuationDecision(
+            kind=kind,
+            machine_identity=source_identity,
+            incoming_trading_day=incoming_trading_day,
+            market_trading_day=incoming_trading_day,
+            frozen_live_contract=(
+                source_identity.contract
+                if kind is SubingLiveContinuationKind.CONTINUE_SAME_SEGMENT
+                else "JM2705"
+            ),
+            live_eligible=True,
+            live_available=True,
+            direction_context=(
+                SubingStrategyDirectionContext(
+                    symbol=symbol,
+                    target_trading_day=incoming_trading_day,
+                    source_trading_day=incoming_trading_day - timedelta(days=1),
+                    direction=SubingStrategyDirection.LONG_ONLY,
+                    reason_codes=("TEST_CONTEXT",),
+                    daily_bar_end=None,
+                    hourly_bar_end=None,
+                    physical_contract=source_identity.contract,
+                )
+                if (
+                    kind is SubingLiveContinuationKind.CONTINUE_SAME_SEGMENT
+                    and incoming_trading_day
+                    != source_identity.segment_start_trading_day
+                )
+                else None
             ),
         )
 
@@ -403,6 +469,133 @@ def test_final_catch_up_closes_restore_race_without_emitting_past_action() -> No
             READY_AT,
         )
     ]
+
+
+def test_final_catch_up_uses_same_contract_continuation_authority() -> None:
+    state, identity, events = _recorded_machine(event_count=19)
+    next_day = TRADING_DAY + timedelta(days=1)
+    next_bar = replace(
+        events[19].bar,
+        trading_day=next_day,
+        bar_end=events[19].bar.bar_end + timedelta(days=1),
+    )
+    context = SubingStrategyDirectionContext(
+        symbol="jm",
+        target_trading_day=next_day,
+        source_trading_day=TRADING_DAY,
+        direction=SubingStrategyDirection.LONG_ONLY,
+        reason_codes=("TEST_CONTEXT",),
+        daily_bar_end=None,
+        hourly_bar_end=None,
+        physical_contract=identity.contract,
+    )
+    current = _CurrentReader(
+        completed_result=SubingLiveCompletedBars(
+            decision=SubingLiveContinuationDecision(
+                kind=SubingLiveContinuationKind.CONTINUE_SAME_SEGMENT,
+                machine_identity=identity,
+                incoming_trading_day=next_day,
+                market_trading_day=next_day,
+                frozen_live_contract=identity.contract,
+                live_eligible=True,
+                live_available=True,
+                direction_context=context,
+            ),
+            bars={BarFrequency.M1: (next_bar,)},
+        )
+    )
+    evaluator = SubingStrategyRuntimeEvaluator(
+        ("jm",),
+        restore_reader=_RestoreReader({"jm": state}),
+        current_reader=current,
+    )
+
+    evaluator.restore_all(started_at=STARTED_AT)
+    result = evaluator.final_catch_up(ready_at=READY_AT + timedelta(days=1))[0]
+
+    advanced = evaluator.current_state("jm")
+    assert result.product_status.state == "ready"
+    assert result.action_facts == ()
+    assert advanced is not None
+    assert advanced.segment_start_trading_day == TRADING_DAY
+    assert advanced.watermarks.latest_1m == next_bar
+    assert dict(advanced.direction_contexts)[next_day] == context
+
+
+def test_final_catch_up_isolates_pending_contract_without_backfill() -> None:
+    state, identity, _events = _recorded_machine(event_count=19)
+    next_day = TRADING_DAY + timedelta(days=1)
+    current = _CurrentReader(
+        completed_result=SubingLiveCompletedBars(
+            decision=SubingLiveContinuationDecision(
+                kind=SubingLiveContinuationKind.LIVE_CONTRACT_AUTHORITY_PENDING,
+                machine_identity=identity,
+                incoming_trading_day=next_day,
+                market_trading_day=next_day,
+                frozen_live_contract="JM2705",
+                live_eligible=True,
+                live_available=True,
+                direction_context=None,
+            ),
+            bars={},
+        )
+    )
+    evaluator = SubingStrategyRuntimeEvaluator(
+        ("jm",),
+        restore_reader=_RestoreReader({"jm": state}),
+        current_reader=current,
+    )
+
+    evaluator.restore_all(started_at=STARTED_AT)
+    result = evaluator.final_catch_up(ready_at=READY_AT)[0]
+
+    assert result.product_status.state == "unavailable"
+    assert result.product_status.reason_codes == ("LIVE_CONTRACT_AUTHORITY_PENDING",)
+    assert result.action_facts == ()
+    assert evaluator.current_state("jm") == state
+
+
+def test_final_catch_up_pending_contract_reconciles_on_canonical_updated() -> None:
+    state, identity, events = _recorded_machine(event_count=779)
+    next_day = TRADING_DAY + timedelta(days=1)
+    terminal = AuthoritativeSegmentTerminal(
+        symbol="jm",
+        contract=identity.contract,
+        segment_start_trading_day=identity.segment_start_trading_day,
+        terminal_bar=events[778].bar,
+    )
+    next_state, _next_identity, _next_bar = _new_flat_segment()
+    current = _CurrentReader(
+        completed_result=SubingLiveCompletedBars(
+            decision=SubingLiveContinuationDecision(
+                kind=SubingLiveContinuationKind.LIVE_CONTRACT_AUTHORITY_PENDING,
+                machine_identity=identity,
+                incoming_trading_day=next_day,
+                market_trading_day=next_day,
+                frozen_live_contract=next_state.contract,
+                live_eligible=True,
+                live_available=True,
+                direction_context=None,
+            ),
+            bars={},
+        ),
+        terminals={("jm", next_day): terminal},
+    )
+    restore = _RestoreReader({"jm": state}, rollovers={"jm": next_state})
+    evaluator = SubingStrategyRuntimeEvaluator(
+        ("jm",),
+        restore_reader=restore,
+        current_reader=current,
+    )
+
+    evaluator.restore_all(started_at=STARTED_AT)
+    pending = evaluator.final_catch_up(ready_at=READY_AT + timedelta(days=1))[0]
+    reconciled = evaluator.process_canonical_updated(next_day)[0]
+
+    assert pending.product_status.reason_codes == ("LIVE_CONTRACT_AUTHORITY_PENDING",)
+    assert reconciled.product_status.state == "ready"
+    assert evaluator.current_state("jm") == next_state
+    assert restore.rollover_calls == [("jm", next_day, identity, terminal)]
 
 
 def test_pending_action_with_future_first_1m_remains_eligible_after_ready() -> None:
@@ -917,9 +1110,8 @@ def test_catch_up_product_source_failure_uses_fixed_public_code() -> None:
     assert private not in repr(result)
 
 
-def test_next_session_live_bar_without_occupancy_keeps_ready_product() -> None:
-    """Friday occupancy-capped restore must ignore Monday overnight Live."""
-    state, identity, events = _recorded_machine(event_count=18)
+def test_same_contract_continuation_requires_a_trading_session() -> None:
+    state, identity, events = _recorded_machine(event_count=19)
     current = _CurrentReader(
         session_error=SubingStrategyRuntimeProductSourceError(
             "MAIN_CONTRACT_MAP_MISSING"
@@ -942,9 +1134,210 @@ def test_next_session_live_bar_without_occupancy_keeps_ready_product() -> None:
         source_identity=identity,
     )
 
-    assert result.product_status.state == "ready"
-    assert result.product_status.reason_codes == ()
+    assert result.product_status.state == "unavailable"
+    assert result.product_status.reason_codes == ("COMPLETED_BAR_UNAVAILABLE",)
     assert result.action_facts == ()
+
+
+def test_same_contract_new_day_advances_the_existing_machine_segment() -> None:
+    state, identity, events = _recorded_machine(event_count=19)
+    evaluator, identity = _ready_evaluator(state, current=_CurrentReader())
+    latest = evaluator.current_state("jm")
+    assert latest is not None
+    future = replace(
+        events[19].bar,
+        trading_day=TRADING_DAY + timedelta(days=1),
+        bar_end=events[19].bar.bar_end + timedelta(days=1),
+    )
+
+    result = evaluator.process_completed_bar(
+        future,
+        BarFrequency.M1,
+        source_identity=identity,
+    )
+
+    advanced = evaluator.current_state("jm")
+    assert result.product_status.state == "ready"
+    assert advanced is not None
+    assert advanced.segment_start_trading_day == TRADING_DAY
+    assert advanced.watermarks.latest_1m == future
+    assert dict(advanced.direction_contexts)[future.trading_day].direction is (
+        SubingStrategyDirection.LONG_ONLY
+    )
+
+
+def test_different_live_contract_isolated_as_pending_until_canonical_rollover() -> None:
+    state, identity, events = _recorded_machine(event_count=18)
+    next_day = TRADING_DAY + timedelta(days=1)
+    evaluator, identity = _ready_evaluator(
+        state,
+        current=_CurrentReader(
+            continuation_kinds={
+                next_day: SubingLiveContinuationKind.LIVE_CONTRACT_AUTHORITY_PENDING
+            }
+        ),
+    )
+    before = evaluator.current_state("jm")
+    future = replace(
+        events[19].bar,
+        trading_day=next_day,
+        bar_end=events[19].bar.bar_end + timedelta(days=1),
+    )
+
+    result = evaluator.process_completed_bar(
+        future,
+        BarFrequency.M1,
+        source_identity=identity,
+    )
+
+    assert result.product_status.state == "unavailable"
+    assert result.product_status.reason_codes == ("LIVE_CONTRACT_AUTHORITY_PENDING",)
+    assert evaluator.current_state("jm") == before
+
+
+def test_pending_contract_isolated_to_one_product() -> None:
+    jm, jm_identity, jm_events = _recorded_machine(symbol="jm", event_count=19)
+    ag, ag_identity, ag_events = _recorded_machine(symbol="ag", event_count=19)
+    next_day = TRADING_DAY + timedelta(days=1)
+    current = _CurrentReader(
+        continuation_by_product={
+            ("jm", next_day): SubingLiveContinuationKind.LIVE_CONTRACT_AUTHORITY_PENDING
+        }
+    )
+    evaluator = SubingStrategyRuntimeEvaluator(
+        ("jm", "ag"),
+        restore_reader=_RestoreReader({"jm": jm, "ag": ag}),
+        current_reader=current,
+    )
+    evaluator.restore_all(started_at=STARTED_AT)
+    evaluator.final_catch_up(ready_at=READY_AT)
+    jm_bar = replace(
+        jm_events[19].bar,
+        trading_day=next_day,
+        bar_end=jm_events[19].bar.bar_end + timedelta(days=1),
+    )
+    ag_bar = replace(
+        ag_events[19].bar,
+        trading_day=next_day,
+        bar_end=ag_events[19].bar.bar_end + timedelta(days=1),
+    )
+
+    jm_result = evaluator.process_completed_bar(
+        jm_bar,
+        BarFrequency.M1,
+        source_identity=jm_identity,
+    )
+    ag_result = evaluator.process_completed_bar(
+        ag_bar,
+        BarFrequency.M1,
+        source_identity=ag_identity,
+    )
+
+    assert jm_result.product_status.reason_codes == ("LIVE_CONTRACT_AUTHORITY_PENDING",)
+    assert ag_result.product_status.state == "ready"
+    advanced_ag = evaluator.current_state("ag")
+    assert advanced_ag is not None
+    assert advanced_ag.watermarks.latest_1m == ag_bar
+
+
+def test_stale_live_identity_is_explicitly_unavailable() -> None:
+    state, identity, events = _recorded_machine(event_count=19)
+    next_day = TRADING_DAY + timedelta(days=1)
+    evaluator, identity = _ready_evaluator(
+        state,
+        current=_CurrentReader(
+            continuation_kinds={
+                next_day: SubingLiveContinuationKind.STALE_OR_IDENTITY_INVALID
+            }
+        ),
+    )
+    future = replace(
+        events[19].bar,
+        trading_day=next_day,
+        bar_end=events[19].bar.bar_end + timedelta(days=1),
+    )
+
+    result = evaluator.process_completed_bar(
+        future,
+        BarFrequency.M1,
+        source_identity=identity,
+    )
+
+    assert result.product_status.state == "unavailable"
+    assert result.product_status.reason_codes == ("STALE_OR_IDENTITY_INVALID",)
+
+
+def test_only_pending_product_reconciles_at_canonical_rollover() -> None:
+    holding, identity, events = _recorded_machine(event_count=779)
+    next_day = TRADING_DAY + timedelta(days=1)
+    terminal = AuthoritativeSegmentTerminal(
+        symbol="jm",
+        contract=identity.contract,
+        segment_start_trading_day=identity.segment_start_trading_day,
+        terminal_bar=events[778].bar,
+    )
+    next_state, next_identity, _new_bar = _new_flat_segment()
+    current = _CurrentReader(
+        terminals={("jm", next_day): terminal},
+        continuation_kinds={
+            next_day: SubingLiveContinuationKind.LIVE_CONTRACT_AUTHORITY_PENDING
+        },
+    )
+    restore = _RestoreReader({"jm": holding}, rollovers={"jm": next_state})
+    evaluator = SubingStrategyRuntimeEvaluator(
+        ("jm",),
+        restore_reader=restore,
+        current_reader=current,
+    )
+    evaluator.restore_all(started_at=STARTED_AT)
+    evaluator.final_catch_up(ready_at=READY_AT)
+    pending_bar = replace(
+        events[779].bar,
+        trading_day=next_day,
+        bar_end=events[779].bar.bar_end + timedelta(days=1),
+    )
+
+    pending = evaluator.process_completed_bar(
+        pending_bar,
+        BarFrequency.M1,
+        source_identity=identity,
+    )
+    reconciled = evaluator.process_canonical_updated(next_day)[0]
+
+    assert pending.product_status.reason_codes == ("LIVE_CONTRACT_AUTHORITY_PENDING",)
+    assert len(reconciled.action_facts) == 1
+    assert reconciled.action_facts[0].action.kind is SubingStrategyActionKind.CLOSE_LONG
+    assert reconciled.product_status.state == "ready"
+    assert evaluator.current_state("jm") == next_state
+    assert restore.rollover_calls == [("jm", next_day, identity, terminal)]
+    assert next_identity.contract != identity.contract
+
+
+def test_canonical_updated_does_not_restore_other_unavailable_product() -> None:
+    state, identity, events = _recorded_machine(event_count=19)
+    terminal = AuthoritativeSegmentTerminal(
+        symbol="jm",
+        contract=identity.contract,
+        segment_start_trading_day=identity.segment_start_trading_day,
+        terminal_bar=events[18].bar,
+    )
+    current = _CurrentReader(
+        session_error=SubingStrategyRuntimeProductSourceError("session unavailable"),
+        terminals={("jm", TRADING_DAY): terminal},
+    )
+    evaluator, identity = _ready_evaluator(state, current=current)
+
+    unavailable = evaluator.process_completed_bar(
+        events[19].bar,
+        BarFrequency.M1,
+        source_identity=identity,
+    )
+    result = evaluator.process_canonical_updated(TRADING_DAY)[0]
+
+    assert unavailable.product_status.reason_codes == ("COMPLETED_BAR_UNAVAILABLE",)
+    assert result.product_status.state == "unavailable"
+    assert result.product_status.reason_codes == ("COMPLETED_BAR_UNAVAILABLE",)
+    assert current.terminal_calls == []
 
 
 def test_completed_bar_product_source_failure_uses_fixed_public_code() -> None:

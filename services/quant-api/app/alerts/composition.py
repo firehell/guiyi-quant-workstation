@@ -29,7 +29,6 @@ from app.market_data.composition import (
     build_subing_strategy_current_service,
 )
 from app.market_data.aggregation import SessionWindow
-from app.market_data.domain import BarFrequency, CanonicalBar
 from app.market_data.operational_universe import load_active_products
 from app.market_data.operational_universe import load_operational_products
 from app.market_data.product_taxonomy import load_product_taxonomy
@@ -38,6 +37,10 @@ from app.market_data.subing_strategy.current_service import (
     SubingStrategyCurrentProjectionService,
     SubingStrategyCurrentSourceIdentityError,
     SubingStrategyCurrentSourceUnavailableError,
+)
+from app.market_data.subing_strategy.live_continuation import (
+    SubingLiveCompletedBars,
+    SubingLiveContinuationDecision,
 )
 from app.market_data.subing_strategy.machine import (
     SubingStrategyMachineState,
@@ -109,17 +112,32 @@ class _SubingStrategyRuntimeReader:
         after_5m: datetime | None,
         after_15m: datetime | None,
         through: datetime,
-    ) -> dict[BarFrequency, tuple[CanonicalBar, ...]]:
-        return dict(
-            self._read(
-                lambda service: service.completed_live_after(
-                    symbol=symbol,
-                    source_identity=source_identity,
-                    after_1m=after_1m,
-                    after_5m=after_5m,
-                    after_15m=after_15m,
-                    through=through,
-                )
+    ) -> SubingLiveCompletedBars:
+        return self._read(
+            lambda service: service.completed_live_after(
+                symbol=symbol,
+                source_identity=source_identity,
+                after_1m=after_1m,
+                after_5m=after_5m,
+                after_15m=after_15m,
+                through=through,
+            )
+        )
+
+    def resolve_live_continuation(
+        self,
+        *,
+        symbol: str,
+        source_identity: SubingStrategySourceIdentity,
+        incoming_trading_day: date,
+        now: datetime,
+    ) -> SubingLiveContinuationDecision:
+        return self._read(
+            lambda service: service.resolve_live_continuation(
+                symbol=symbol,
+                source_identity=source_identity,
+                incoming_trading_day=incoming_trading_day,
+                now=now,
             )
         )
 
