@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from contextlib import AbstractContextManager
+from datetime import date
 import logging
 import sys
 from typing import Any, TextIO
@@ -86,22 +87,21 @@ def run_after_market(
 
     The Daily Watch factory is injected only by the supervised Runtime entrypoint.
     """
+    def post_update(trading_day: date) -> None:
+        if daily_watch_generator_factory is None:
+            return
+        with session_factory() as daily_watch_session:
+            daily_watch_generator_factory(daily_watch_session).run(trading_day)
+
     with session_factory() as session:
         manager = manager_factory(session)
         market_result = after_market_factory(
             manager,
             failure_notification=failure_notification,
-        ).run()
-    payload = market_result.as_payload()
-    if market_result.status == "passed" and daily_watch_generator_factory is not None:
-        try:
-            with session_factory() as daily_watch_session:
-                daily_watch_generator_factory(daily_watch_session).run(
-                    market_result.trading_day,
-                )
-        except Exception:  # noqa: BLE001 - sanitized, isolated follow-up
-            _LOGGER.warning("SUBING_DAILY_WATCH_FOLLOWUP_FAILED")
-    return payload
+        ).run(
+            post_update=(post_update if daily_watch_generator_factory is not None else None)
+        )
+    return market_result.as_payload()
 
 
 def main(
