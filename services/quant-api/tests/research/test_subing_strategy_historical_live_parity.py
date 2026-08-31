@@ -73,7 +73,7 @@ class _RuntimeCurrentReader:
     def __init__(self, sessions: tuple[SessionWindow, ...]) -> None:
         self.sessions = sessions
 
-    def read_completed_bars(
+    def read_final_catch_up_bars(
         self,
         *,
         symbol: str,
