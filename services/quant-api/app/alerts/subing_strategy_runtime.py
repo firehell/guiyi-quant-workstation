@@ -13,6 +13,14 @@ from app.market_data.aggregation import (
     bucket_window_for_bar,
 )
 from app.market_data.domain import BarFrequency, CanonicalBar
+from app.market_data.subing_strategy.live_continuation import (
+    SubingLiveCompletedBars,
+    SubingLiveContinuationDecision,
+    SubingLiveContinuationKind,
+)
+from app.market_data.subing_strategy.direction_context import (
+    SubingStrategyDirectionContext,
+)
 from app.market_data.subing_strategy.contracts import (
     SubingStrategyAction,
     SubingStrategyActionKind,
@@ -56,6 +64,7 @@ _PUBLIC_PRODUCT_MACHINE_REASONS = frozenset(
         "SOURCE_IDENTITY_INVALID",
         "SOURCE_IDENTITY_MISMATCH",
         "STALE_INPUT",
+        "STALE_OR_IDENTITY_INVALID",
         "STALE_SEGMENT_INPUT",
         "TERMINAL_IDENTITY_INVALID",
         "UNSCHEDULED_15M_BOUNDARY",
@@ -147,7 +156,7 @@ class _CurrentReader(Protocol):
         after_5m: datetime | None,
         after_15m: datetime | None,
         through: datetime,
-    ) -> Mapping[BarFrequency, tuple[CanonicalBar, ...]]: ...
+    ) -> Mapping[BarFrequency, tuple[CanonicalBar, ...]] | SubingLiveCompletedBars: ...
 
     def read_session_windows(
         self,
@@ -165,6 +174,15 @@ class _CurrentReader(Protocol):
         source_identity: SubingStrategySourceIdentity,
     ) -> AuthoritativeSegmentTerminal | None: ...
 
+    def resolve_live_continuation(
+        self,
+        *,
+        symbol: str,
+        source_identity: SubingStrategySourceIdentity,
+        incoming_trading_day: date,
+        now: datetime,
+    ) -> SubingLiveContinuationDecision: ...
+
 
 @dataclass(slots=True)
 class _ProductRuntime:
@@ -175,6 +193,8 @@ class _ProductRuntime:
     ready_cutoff_1m: datetime | None = None
     ready_cutoff_5m: datetime | None = None
     ready_cutoff_15m: datetime | None = None
+    pending_live_contract: str | None = None
+    pending_trading_day: date | None = None
 
 
 class SubingStrategyRuntimeEvaluator:
@@ -226,6 +246,8 @@ class SubingStrategyRuntimeEvaluator:
             product.ready_cutoff_1m = None
             product.ready_cutoff_5m = None
             product.ready_cutoff_15m = None
+            product.pending_live_contract = None
+            product.pending_trading_day = None
             try:
                 restored = self._restore_reader.restore(
                     symbol=product.symbol,
@@ -274,25 +296,57 @@ class SubingStrategyRuntimeEvaluator:
                     after_15m=cutoffs[2],
                     through=ready_at,
                 )
-                events = _completed_events(current, through=ready_at)
+                if isinstance(current, SubingLiveCompletedBars):
+                    _validate_live_continuation(
+                        current.decision,
+                        source_identity=identity,
+                        incoming_trading_day=current.decision.incoming_trading_day,
+                    )
+                    if (
+                        current.decision.kind
+                        is SubingLiveContinuationKind.LIVE_CONTRACT_AUTHORITY_PENDING
+                    ):
+                        product.pending_live_contract = (
+                            current.decision.frozen_live_contract
+                        )
+                        product.pending_trading_day = (
+                            current.decision.incoming_trading_day
+                        )
+                        self._degrade(product, "LIVE_CONTRACT_AUTHORITY_PENDING")
+                        results.append(self._result(product))
+                        continue
+                    if (
+                        current.decision.kind
+                        is SubingLiveContinuationKind.STALE_OR_IDENTITY_INVALID
+                    ):
+                        self._degrade(product, "STALE_OR_IDENTITY_INVALID")
+                        results.append(self._result(product))
+                        continue
+                    current_bars = current.bars
+                else:
+                    current_bars = current
+                events = _completed_events(current_bars, through=ready_at)
                 for event in events:
-                    state = self._with_authoritative_interval(
-                        state,
-                        event,
+                    self.process_completed_bar(
+                        event.bar,
+                        _event_frequency(event),
                         source_identity=identity,
                     )
-                    state, _ = step_subing_strategy_machine(
-                        state,
-                        event,
-                        source_identity=identity,
-                    )
-                product.state = state
-                (
-                    product.ready_cutoff_1m,
-                    product.ready_cutoff_5m,
-                    product.ready_cutoff_15m,
-                ) = _cutoffs(state)
-                product.availability = "ready"
+                    state = product.state
+                    if product.availability == "unavailable" or state is None:
+                        results.append(self._result(product))
+                        break
+                else:
+                    assert state is not None
+                    product.state = state
+                    (
+                        product.ready_cutoff_1m,
+                        product.ready_cutoff_5m,
+                        product.ready_cutoff_15m,
+                    ) = _cutoffs(state)
+                    product.availability = "ready"
+                    results.append(self._result(product))
+                    continue
             except (
                 SubingStrategyRuntimeProductSourceError,
                 SubingStrategyMachineError,
@@ -301,7 +355,8 @@ class SubingStrategyRuntimeEvaluator:
                     product,
                     _public_reason(exc, "CURRENT_UNAVAILABLE"),
                 )
-            results.append(self._result(product))
+            if not results or results[-1].product_status.symbol != product.symbol:
+                results.append(self._result(product))
         return tuple(results)
 
     def process_completed_bar(
@@ -323,9 +378,38 @@ class SubingStrategyRuntimeEvaluator:
             if source_identity != _source_identity(state):
                 raise SubingStrategyMachineError("SOURCE_IDENTITY_MISMATCH")
             event = _completed_event(bar, frequency)
-            restored_day = _latest_observed_trading_day(state)
-            if restored_day is not None and event.bar.trading_day > restored_day:
+            continuation = self._current_reader.resolve_live_continuation(
+                symbol=product.symbol,
+                source_identity=source_identity,
+                incoming_trading_day=event.bar.trading_day,
+                now=event.bar.bar_end,
+            )
+            _validate_live_continuation(
+                continuation,
+                source_identity=source_identity,
+                incoming_trading_day=event.bar.trading_day,
+            )
+            if (
+                continuation.kind
+                is SubingLiveContinuationKind.LIVE_CONTRACT_AUTHORITY_PENDING
+            ):
+                product.pending_live_contract = continuation.frozen_live_contract
+                product.pending_trading_day = continuation.incoming_trading_day
+                self._degrade(product, "LIVE_CONTRACT_AUTHORITY_PENDING")
                 return self._result(product)
+            if (
+                continuation.kind
+                is SubingLiveContinuationKind.STALE_OR_IDENTITY_INVALID
+            ):
+                self._degrade(product, "STALE_OR_IDENTITY_INVALID")
+                return self._result(product)
+            context = continuation.direction_context
+            if context is None and event.bar.trading_day not in dict(
+                state.direction_contexts
+            ):
+                raise SubingStrategyMachineError("DIRECTION_CONTEXT_UNAVAILABLE")
+            if context is not None:
+                state = _with_direction_context(state, context)
             state = self._with_authoritative_interval(
                 state,
                 event,
@@ -365,7 +449,15 @@ class SubingStrategyRuntimeEvaluator:
         results: list[SubingStrategyRuntimeResult] = []
         for product in self._products.values():
             state = product.state
-            if product.availability == "unavailable" or state is None:
+            pending_reconciliation = (
+                product.availability == "unavailable"
+                and product.reason_codes == ("LIVE_CONTRACT_AUTHORITY_PENDING",)
+                and product.pending_trading_day == trading_day
+                and product.pending_live_contract is not None
+            )
+            if state is None or (
+                product.availability == "unavailable" and not pending_reconciliation
+            ):
                 results.append(self._result(product))
                 continue
             identity = _source_identity(state)
@@ -380,7 +472,11 @@ class SubingStrategyRuntimeEvaluator:
                     continue
                 if (
                     type(terminal) is not AuthoritativeSegmentTerminal
-                    or terminal.terminal_bar.trading_day != trading_day
+                    or (
+                        terminal.terminal_bar.trading_day >= trading_day
+                        if pending_reconciliation
+                        else terminal.terminal_bar.trading_day != trading_day
+                    )
                 ):
                     raise SubingStrategyMachineError("TERMINAL_IDENTITY_INVALID")
                 if state.watermarks.terminal_at is not None:
@@ -407,6 +503,8 @@ class SubingStrategyRuntimeEvaluator:
                     symbol=product.symbol,
                     previous_identity=identity,
                 )
+                if _source_identity(next_state).contract != product.pending_live_contract and pending_reconciliation:
+                    raise SubingStrategyMachineError("STALE_OR_IDENTITY_INVALID")
                 state, output = step_subing_strategy_machine(
                     state,
                     terminal,
@@ -414,18 +512,19 @@ class SubingStrategyRuntimeEvaluator:
                 )
                 action_facts = _action_facts(state, output.actions)
                 product.state = next_state
-                if product.availability == "ready":
-                    (
-                        product.ready_cutoff_1m,
-                        product.ready_cutoff_5m,
-                        product.ready_cutoff_15m,
-                    ) = _cutoffs(next_state)
+                product.availability = "ready"
+                product.reason_codes = ()
+                product.pending_live_contract = None
+                product.pending_trading_day = None
+                (
+                    product.ready_cutoff_1m,
+                    product.ready_cutoff_5m,
+                    product.ready_cutoff_15m,
+                ) = _cutoffs(next_state)
                 results.append(
                     self._result(
                         product,
-                        action_facts=(
-                            action_facts if product.availability == "ready" else ()
-                        ),
+                        action_facts=action_facts,
                     )
                 )
             except (
@@ -627,6 +726,53 @@ def _cutoffs(
     )
 
 
+def _with_direction_context(
+    state: SubingStrategyMachineState,
+    context: SubingStrategyDirectionContext,
+) -> SubingStrategyMachineState:
+    if (
+        context.symbol != state.symbol
+        or context.target_trading_day < state.segment_start_trading_day
+    ):
+        raise SubingStrategyMachineError("SOURCE_IDENTITY_INVALID")
+    contexts = dict(state.direction_contexts)
+    existing = contexts.get(context.target_trading_day)
+    if existing is not None:
+        if existing != context:
+            raise SubingStrategyMachineError("SOURCE_IDENTITY_INCONSISTENT")
+        return state
+    contexts[context.target_trading_day] = context
+    return replace(state, direction_contexts=tuple(sorted(contexts.items())))
+
+
+def _validate_live_continuation(
+    continuation: SubingLiveContinuationDecision,
+    *,
+    source_identity: SubingStrategySourceIdentity,
+    incoming_trading_day: date,
+) -> None:
+    if (
+        not isinstance(continuation, SubingLiveContinuationDecision)
+        or continuation.machine_identity != source_identity
+        or continuation.incoming_trading_day != incoming_trading_day
+        or continuation.market_trading_day != incoming_trading_day
+        or continuation.kind
+        not in {
+            SubingLiveContinuationKind.CONTINUE_SAME_SEGMENT,
+            SubingLiveContinuationKind.LIVE_CONTRACT_AUTHORITY_PENDING,
+            SubingLiveContinuationKind.STALE_OR_IDENTITY_INVALID,
+        }
+    ):
+        raise SubingStrategyMachineError("SOURCE_IDENTITY_INVALID")
+    if continuation.kind is SubingLiveContinuationKind.CONTINUE_SAME_SEGMENT:
+        if (
+            continuation.frozen_live_contract != source_identity.contract
+            or not continuation.live_eligible
+            or not continuation.live_available
+        ):
+            raise SubingStrategyMachineError("SOURCE_IDENTITY_INVALID")
+
+
 def _latest_observed_trading_day(
     state: SubingStrategyMachineState,
 ) -> date | None:
@@ -657,6 +803,16 @@ def _completed_event(
     if normalized is BarFrequency.M15:
         return Completed15mBar(bar)
     raise ValueError("SUBING_STRATEGY_RUNTIME_FREQUENCY_INVALID")
+
+
+def _event_frequency(event: _RuntimeCompletedBar) -> BarFrequency:
+    if isinstance(event, Completed1mBar):
+        return BarFrequency.M1
+    if isinstance(event, Completed5mBar):
+        return BarFrequency.M5
+    if isinstance(event, Completed15mBar):
+        return BarFrequency.M15
+    raise ValueError("SUBING_STRATEGY_RUNTIME_CURRENT_INVALID")
 
 
 def _completed_events(

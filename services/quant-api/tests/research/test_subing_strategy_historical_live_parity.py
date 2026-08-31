@@ -33,6 +33,10 @@ from app.market_data.subing_strategy.machine import (
     step_subing_strategy_machine,
     subing_strategy_segment_result,
 )
+from app.market_data.subing_strategy.live_continuation import (
+    SubingLiveContinuationDecision,
+    SubingLiveContinuationKind,
+)
 from app.market_data.subing_strategy.policy import load_subing_strategy_policy
 from app.market_data.subing_strategy.replay import replay_subing_strategy_segment
 from app.market_data.subing_strategy.stream_contracts import (
@@ -82,6 +86,27 @@ class _RuntimeCurrentReader:
         del symbol, source_identity, after_1m, after_5m, after_15m
         assert through == READY_AT
         return {}
+
+    def resolve_live_continuation(
+        self,
+        *,
+        symbol: str,
+        source_identity: SubingStrategySourceIdentity,
+        incoming_trading_day: date,
+        now: datetime,
+    ) -> SubingLiveContinuationDecision:
+        del now
+        assert symbol == source_identity.symbol
+        return SubingLiveContinuationDecision(
+            kind=SubingLiveContinuationKind.CONTINUE_SAME_SEGMENT,
+            machine_identity=source_identity,
+            incoming_trading_day=incoming_trading_day,
+            market_trading_day=incoming_trading_day,
+            frozen_live_contract=source_identity.contract,
+            live_eligible=True,
+            live_available=True,
+            direction_context=None,
+        )
 
     def read_session_windows(
         self,

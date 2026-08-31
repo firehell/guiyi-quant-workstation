@@ -190,6 +190,37 @@ def test_strategy_reader_wraps_known_product_source_failure_without_detail() -> 
     assert str(raised.value) == ""
 
 
+def test_strategy_reader_resolves_live_continuation_at_event_time() -> None:
+    captured: dict[str, object] = {}
+
+    class Service:
+        def resolve_live_continuation(self, **kwargs):
+            captured.update(kwargs)
+            return object()
+
+    processing_clock = datetime(2026, 8, 17, 2, tzinfo=UTC)
+    event_time = datetime(2026, 8, 14, 7, tzinfo=UTC)
+    reader = _SubingStrategyRuntimeReader(
+        session_factory=lambda: nullcontext(object()),
+        service_factory=lambda _session: Service(),
+        clock=lambda: processing_clock,
+    )
+    identity = SubingStrategySourceIdentity(
+        symbol="jm",
+        contract="JM2609",
+        segment_start_trading_day=date(2026, 8, 3),
+    )
+
+    reader.resolve_live_continuation(
+        symbol="jm",
+        source_identity=identity,
+        incoming_trading_day=date(2026, 8, 14),
+        now=event_time,
+    )
+
+    assert captured["now"] == event_time
+
+
 def test_strategy_reader_does_not_reclassify_unknown_programming_failure() -> None:
     failure = RuntimeError("programming failure")
 
