@@ -42,6 +42,7 @@ import {
   type SubingStrategyLabelLayout,
 } from '@/utils/subingStrategyLabels'
 import { SubingEmaRibbonPrimitive } from '@/components/kline/subingEmaRibbonPrimitive'
+import { RangeDetectorPrimitive } from '@/components/kline/rangeDetectorPrimitive'
 
 const props = withDefaults(defineProps<{
   bars: BarData[]
@@ -51,6 +52,8 @@ const props = withDefaults(defineProps<{
   seriesKind: SeriesKind
   visibleMainIndicators?: MainIndicatorId[]
   showSubingEmaRibbon?: boolean
+  rangeDetectorSourceIdentity?: string
+  rangeDetectorAnchorTime?: string | null
   alertMarkers?: KlineMarker[]
   researchMarkers?: KlineMarker[]
 }>(), {
@@ -59,6 +62,8 @@ const props = withDefaults(defineProps<{
   period: '15m',
   visibleMainIndicators: () => [],
   showSubingEmaRibbon: false,
+  rangeDetectorSourceIdentity: '',
+  rangeDetectorAnchorTime: null,
   alertMarkers: () => [],
   researchMarkers: () => [],
 })
@@ -82,6 +87,7 @@ let htdyZd2: ISeriesApi<'Line'> | null = null
 let htdyMarkers: ISeriesMarkersPluginApi<Time> | null = null
 const emaLines: Partial<Record<EmaIndicatorId, ISeriesApi<'Line'>>> = {}
 const ribbonPrimitive = new SubingEmaRibbonPrimitive()
+const rangeDetectorPrimitive = new RangeDetectorPrimitive()
 let observer: ResizeObserver | null = null
 let renderedBars: BarData[] = []
 let isNearLeftBoundary = false
@@ -147,6 +153,7 @@ onMounted(async () => {
   emaLines.ema_21 = chart.addSeries(LineSeries, { color: theme.ema21, lineWidth: 2, lastValueVisible: false }, 0)
   emaLines.ema_60 = chart.addSeries(LineSeries, { color: theme.ema60, lineWidth: 1, lastValueVisible: false }, 0)
   candles.attachPrimitive(ribbonPrimitive)
+  candles.attachPrimitive(rangeDetectorPrimitive)
   htdyZk1 = chart.addSeries(LineSeries, { color: theme.htdyZk1, lineWidth: 2, lineStyle: 0, lastValueVisible: false }, 0)
   htdyZd1 = chart.addSeries(LineSeries, { color: theme.htdyZd1, lineWidth: 2, lineStyle: 2, lastValueVisible: false }, 0)
   htdyZd2 = chart.addSeries(LineSeries, { color: theme.htdyZd2, lineWidth: 2, lineStyle: 0, lastValueVisible: false }, 0)
@@ -190,6 +197,11 @@ watch(() => props.visibleMainIndicators, () => {
 watch(() => props.showSubingEmaRibbon, () => {
   renderDerivedSeries()
 })
+
+watch(
+  () => [props.rangeDetectorSourceIdentity, props.rangeDetectorAnchorTime],
+  () => { renderDerivedSeries() },
+)
 
 watch(() => props.alertMarkers, () => {
   renderDerivedSeries()
@@ -346,6 +358,13 @@ function renderDerivedSeries(): void {
   if (!chart || !macdHistogram || !macdDif || !macdDea) return
   derivedData = buildKlineDerivedData(renderedBars, props.visibleMainIndicators, {
     showSubingEmaRibbon: props.showSubingEmaRibbon,
+    rangeDetector: {
+      enabled: props.visibleMainIndicators.includes('range_detector')
+        && Boolean(props.rangeDetectorSourceIdentity)
+        && Boolean(props.rangeDetectorAnchorTime),
+      sourceIdentity: props.rangeDetectorSourceIdentity,
+      anchorTime: props.rangeDetectorAnchorTime,
+    },
   })
   const theme = resolveChartTheme()
 
@@ -355,6 +374,18 @@ function renderDerivedSeries(): void {
   })
   ribbonPrimitive.setData(
     props.showSubingEmaRibbon ? derivedData.subingEmaRibbon?.points ?? [] : [],
+    ribbonTime,
+  )
+  rangeDetectorPrimitive.setStyle({
+    rangeIntact: theme.rangeIntact,
+    rangeBrokenUp: theme.rangeBrokenUp,
+    rangeBrokenDown: theme.rangeBrokenDown,
+    rangeFill: theme.rangeFill,
+    rangeMid: theme.rangeMid,
+  })
+  rangeDetectorPrimitive.setData(
+    derivedData.rangeDetector?.ranges ?? [],
+    renderedBars.at(-1)?.time ?? null,
     ribbonTime,
   )
 

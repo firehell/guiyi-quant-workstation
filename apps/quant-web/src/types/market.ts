@@ -1716,6 +1716,16 @@ export interface HoverKlineContext {
   time: string
   bar: BarData
   mainIndicators?: MainIndicatorValue[]
+  rangeDetector?: {
+    rangeId: string
+    revision: number
+    state: 'intact' | 'broken_up' | 'broken_down'
+    upper: number
+    lower: number
+    mid: number
+    confirmedAt: string
+    visualStartAt: string
+  } | null
   macd?: { dif?: number | null; dea?: number | null; histogram?: number | null } | null
   atr?: number | null
   marker?: KlineMarker | null
