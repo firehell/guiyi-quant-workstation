@@ -42,3 +42,16 @@ test('Range Detector rejects invalid timestamps and does not rewrite an appended
     sourceIdentity: 'test:actual_dominant:jm:1d', minimumRangeLength: 4, rangeAtrLength: 5,
   }), /ISO-8601/)
 })
+
+test('Range Detector requires an explicit timestamp timezone', () => {
+  const source = bars([10])
+  assert.equal(calculateRangeDetectorLux(source, {
+    sourceIdentity: 'test:actual_dominant:jm:1d', minimumRangeLength: 4, rangeAtrLength: 5,
+  }).points.length, 1)
+  assert.equal(calculateRangeDetectorLux([{ ...source[0], time: '2026-05-01T08:00:00+08:00' }], {
+    sourceIdentity: 'test:actual_dominant:jm:1d', minimumRangeLength: 4, rangeAtrLength: 5,
+  }).points.length, 1)
+  assert.throws(() => calculateRangeDetectorLux([{ ...source[0], time: '2026-05-01T00:00:00' }], {
+    sourceIdentity: 'test:actual_dominant:jm:1d', minimumRangeLength: 4, rangeAtrLength: 5,
+  }), /timezone/)
+})

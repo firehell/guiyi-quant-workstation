@@ -83,9 +83,43 @@ function visualRanges(points: RangeDetectorPoint[]): RangeDetectorVisualRange[] 
   }
   return order.map((key) => { const item = snapshots.get(key)!; return { key, rangeId: item.rangeId, revision: item.revision, visualStartAt: item.visualStartAt, detectionRightAt: item.detectionRightAt, levelsActiveFrom: item.levelsActiveFrom, levelsActiveUntil: terminal.get(key) ?? null, confirmedAt: item.confirmedAt, upper: item.currentUpper, lower: item.currentLower, mid: item.currentMid, state: item.state, brokenAt: item.brokenAt } })
 }
-function parseTime(value: string): number { if (!value.includes('T') || Number.isNaN(Date.parse(value))) throw new Error('bar time must be ISO-8601'); return Date.parse(value) }
+function parseTime(value: string): number {
+  if (!value.includes('T')) throw new Error('bar time must be ISO-8601')
+  if (!value.endsWith('Z') && !/[+-]\d{2}:?\d{2}$/.test(value)) throw new Error('bar time must be ISO-8601 with timezone')
+  const timestamp = Date.parse(value)
+  if (Number.isNaN(timestamp)) throw new Error('bar time must be ISO-8601')
+  return timestamp
+}
 function average(values: number[]): number { return values.reduce((sum, value) => sum + value, 0) / values.length }
-function rounded(value: number, digits: number): number { return Number(value.toFixed(digits)) }
+function rounded(value: number, digits: number): number {
+  if (!Number.isFinite(value)) throw new Error('rounding value must be finite')
+  const { coefficient, decimalExponent } = canonicalDecimalComponents(Math.abs(value))
+  const targetExponent = -digits
+  let roundedCoefficient: bigint
+  if (decimalExponent >= targetExponent) {
+    roundedCoefficient = coefficient * 10n ** BigInt(decimalExponent - targetExponent)
+  } else {
+    const divisor = 10n ** BigInt(targetExponent - decimalExponent)
+    roundedCoefficient = coefficient / divisor
+    const remainder = coefficient % divisor
+    const halfway = divisor / 2n
+    if (remainder > halfway || (remainder === halfway && roundedCoefficient % 2n === 1n)) roundedCoefficient += 1n
+  }
+  if (value < 0) roundedCoefficient = -roundedCoefficient
+  const result = Number(`${roundedCoefficient}e${-digits}`)
+  return Object.is(result, -0) ? 0 : result
+}
+
+function canonicalDecimalComponents(value: number): { coefficient: bigint; decimalExponent: number } {
+  const canonical = value.toString().toLowerCase()
+  const exponentMarker = canonical.indexOf('e')
+  const mantissa = exponentMarker === -1 ? canonical : canonical.slice(0, exponentMarker)
+  const exponent = exponentMarker === -1 ? 0 : Number(canonical.slice(exponentMarker + 1))
+  const decimalPoint = mantissa.indexOf('.')
+  const whole = decimalPoint === -1 ? mantissa : mantissa.slice(0, decimalPoint)
+  const fraction = decimalPoint === -1 ? '' : mantissa.slice(decimalPoint + 1)
+  return { coefficient: BigInt(`${whole}${fraction}`), decimalExponent: exponent - fraction.length }
+}
 
 function sha256(input: string): string {
   const bytes = Array.from(new TextEncoder().encode(input)); const bitLength = bytes.length * 8; bytes.push(0x80); while ((bytes.length % 64) !== 56) bytes.push(0); for (let shift = 56; shift >= 0; shift -= 8) bytes.push((bitLength / 2 ** shift) & 255)

@@ -730,6 +730,25 @@ def test_duplicate_pubsub_creates_one_event_and_sends_once(session: Session) -> 
     assert len(harness.sender.messages) == 1
 
 
+def test_htdy_reverse_observation_tuple_creates_no_event_or_transport(
+    session: Session,
+) -> None:
+    _seed_rule(session, "htdy_original_15m")
+    harness = _runtime(
+        session,
+        event_end=BOUNDARY_END,
+        htdy_observations=("sell", "buy"),
+    )
+
+    harness.runtime.process_message(
+        "live:bar:jm:15m",
+        _payload(bar_end=BOUNDARY_END),
+    )
+
+    assert _event_rows(session) == []
+    assert harness.sender.messages == []
+
+
 def test_htdy_live_rejects_first_seen_candidate_outside_repaint_zone(
     session: Session,
 ) -> None:

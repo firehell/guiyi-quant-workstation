@@ -1374,9 +1374,8 @@ def _validated_first_seen_candidates(
         if (
             item.bar_end in seen_bar_ends
             or type(item.observation_types) is not tuple
-            or not item.observation_types
-            or len(set(item.observation_types)) != len(item.observation_types)
-            or any(value not in {"buy", "sell"} for value in item.observation_types)
+            or item.observation_types
+            not in (("buy",), ("sell",), ("buy", "sell"))
         ):
             raise ValueError("ALERT_EVALUATION_OUTPUT_INVALID")
         matches = tuple(
