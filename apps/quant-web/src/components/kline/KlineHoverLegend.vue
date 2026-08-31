@@ -24,6 +24,12 @@ defineProps<{
     <span v-if="context.marker?.tooltip" data-testid="kline-hover-marker">
       {{ context.marker.tooltip }}
     </span>
+    <template v-if="context.rangeDetector">
+      <span data-testid="kline-hover-range-detector">
+        箱体 上沿 {{ formatKlineHoverValue(context.rangeDetector.upper) }} / 中线 {{ formatKlineHoverValue(context.rangeDetector.mid) }} / 下沿 {{ formatKlineHoverValue(context.rangeDetector.lower) }} / 状态 {{ context.rangeDetector.state }}
+      </span>
+      <span>箱体起点为回画展示；策略自确认时刻起才可使用</span>
+    </template>
     <template v-if="showMacd">
       <span>DIF {{ formatKlineHoverValue(context.macd?.dif) }}</span>
       <span>DEA {{ formatKlineHoverValue(context.macd?.dea) }}</span>

@@ -23,6 +23,32 @@ GUIYI_ISOLATED_MIGRATION_DATABASE_URL='postgresql+psycopg://USER:PASSWORD@HOST:5
   uv run --project services/quant-api pytest -q -m isolated_postgresql services/quant-api/tests
 ```
 
+## Range Detector Lux V1
+
+以下定向命令覆盖 causal kernel、golden parity、v8 图表偏好、固定 warm-up anchor、
+Lightweight Charts primitive 与浏览器交互。它们仅验证代码和本地只读行为，**不授权**
+数据写入、Alert、release 或 Runtime promotion。
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+  uv run --project services/quant-api --no-sync pytest -q \
+  services/quant-api/tests/test_indicator_kernel_v1c_macd_atr.py \
+  services/quant-api/tests/test_indicator_registry_v1.py \
+  services/quant-api/tests/test_range_detector_lux.py
+
+pnpm -C apps/quant-web exec node --test \
+  tests/rangeDetectorLux.test.ts \
+  tests/rangeDetectorGolden.test.ts \
+  tests/rangeDetectorOverlayWarmup.test.ts \
+  tests/rangeDetectorPrimitive.test.ts \
+  tests/mainIndicators.test.ts \
+  tests/kline-view-model.test.ts
+
+pnpm -C apps/quant-web exec playwright test \
+  -c playwright.config.mjs \
+  e2e/market-range-detector.spec.mjs
+```
+
 ## 工程一致性与静态检查
 
 ```bash

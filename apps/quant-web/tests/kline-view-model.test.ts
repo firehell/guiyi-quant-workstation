@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import type { BarData } from '../src/types/market.ts'
+import type { RangeDetectorLuxResult } from '../src/utils/rangeDetectorLux.ts'
 import {
   buildKlineDerivedData,
   formatKlineHoverValue,
@@ -69,6 +70,32 @@ test('HTDY is only derived when its observation overlay is explicitly visible', 
   assert.ok(visible.htdy?.markers.every((marker) => marker.tone === 'htdy'))
 })
 
+test('Range Detector remains absent until its calculation anchor is frozen', () => {
+  const result = buildKlineDerivedData(bars, ['range_detector'], {
+    rangeDetector: { enabled: true, sourceIdentity: 'continuous|jm||15m', anchorTime: null },
+  })
+
+  assert.equal(result.rangeDetector, null)
+})
+
+test('Range Detector calculates only from its anchored bars and ignores later prepends', () => {
+  const anchored = flatBars(530, 200)
+  const anchorTime = anchored[0]!.time
+  const withPrependedHistory = [...flatBars(40, 0), ...anchored]
+  const options = {
+    rangeDetector: { enabled: true, sourceIdentity: 'continuous|jm||15m', anchorTime },
+  }
+
+  const first = buildKlineDerivedData(anchored, ['range_detector'], options)
+  const prepended = buildKlineDerivedData(withPrependedHistory, ['range_detector'], options)
+  const appended = buildKlineDerivedData([...anchored, ...flatBars(1, 730)], ['range_detector'], options)
+
+  assert.ok(first.rangeDetector)
+  assert.deepEqual(prepended.rangeDetector, first.rangeDetector)
+  assert.equal(appended.rangeDetector?.points.length, first.rangeDetector?.points.length + 1)
+  assert.ok(first.rangeDetector?.ranges.length)
+})
+
 test('crosshair context keeps OHLCV OI EMA and MACD on the hovered bar timestamp', () => {
   const result = buildKlineDerivedData(bars, ['ema_21'])
   const target = bars[79]
@@ -107,6 +134,62 @@ test('crosshair exposes the exact marker tooltip at its evidence bar', () => {
   assert.deepEqual(hover?.marker, marker)
 })
 
+test('crosshair reports a causal Range Detector fact without treating visual start as confirmation', () => {
+  const result = buildKlineDerivedData(bars, [])
+  const visualStartAt = bars[60]!.time
+  const confirmedAt = bars[70]!.time
+  const rangeDetector: RangeDetectorLuxResult = {
+    points: [{
+      time: confirmedAt,
+      ready: true,
+      valid: true,
+      reason: null,
+      snapshot: {
+        formulaVersion: 'range_detector_lux_v1',
+        policyId: 'range_detector_lux_v1',
+        rangeId: 'range-1',
+        revision: 2,
+        visualStartAt,
+        confirmedAt,
+        detectionRightAt: confirmedAt,
+        levelsActiveFrom: confirmedAt,
+        initialUpper: 110,
+        initialLower: 90,
+        currentUpper: 111,
+        currentLower: 89,
+        currentMid: 100,
+        state: 'intact',
+        brokenAt: null,
+        mergedCount: 1,
+        candidateValid: true,
+        sourceBarEnd: confirmedAt,
+        sourceTradingDay: null,
+        sourceIdentity: 'continuous|jm||15m',
+      },
+      transition: null,
+    }],
+    ranges: [],
+  }
+  const hover = resolveKlineHoverContext(
+    bars,
+    { ...result, rangeDetector },
+    ['range_detector'],
+    bars[79]!.time,
+  )
+
+  assert.deepEqual(hover?.rangeDetector, {
+    rangeId: 'range-1',
+    revision: 2,
+    state: 'intact',
+    upper: 111,
+    lower: 89,
+    mid: 100,
+    confirmedAt,
+    visualStartAt,
+  })
+  assert.notEqual(hover?.rangeDetector?.confirmedAt, hover?.rangeDetector?.visualStartAt)
+})
+
 test('missing hover values render as unavailable instead of a fabricated zero', () => {
   assert.equal(formatKlineHoverValue(undefined), '—')
   assert.equal(formatKlineHoverValue(null), '—')
@@ -137,5 +220,16 @@ function makeDeterministicHtdyBars(seed: number, length = 100): BarData[] {
     low: low[index],
     close: item,
     volume: 1000,
+  }))
+}
+
+function flatBars(count: number, start: number): BarData[] {
+  return Array.from({ length: count }, (_, index) => ({
+    time: new Date(Date.UTC(2026, 2, 1, 0, start + index)).toISOString(),
+    open: 100,
+    high: 101,
+    low: 99,
+    close: 100,
+    volume: 1,
   }))
 }

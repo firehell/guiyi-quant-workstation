@@ -18,6 +18,11 @@ export interface ChartTheme {
   htdyZk1: string
   htdyZd1: string
   htdyZd2: string
+  rangeIntact: string
+  rangeBrokenUp: string
+  rangeBrokenDown: string
+  rangeFill: string
+  rangeMid: string
 }
 
 /** SSR 或无 CSS 变量时的默认配色（与亮色 tokens.css 对齐） */
@@ -40,6 +45,11 @@ const FALLBACK: ChartTheme = {
   htdyZk1: '#0F766E',
   htdyZd1: '#0891B2',
   htdyZd2: '#D97706',
+  rangeIntact: '#2563EB',
+  rangeBrokenUp: '#16A34A',
+  rangeBrokenDown: '#DC2626',
+  rangeFill: 'rgba(37, 99, 235, 0.10)',
+  rangeMid: 'rgba(37, 99, 235, 0.65)',
 }
 
 function cssValue(style: CSSStyleDeclaration, name: string, fallback: string) {
@@ -69,5 +79,10 @@ export function resolveChartTheme(root: Element = document.documentElement): Cha
     htdyZk1: cssValue(style, '--gy-chart-htdy-zk1', FALLBACK.htdyZk1),
     htdyZd1: cssValue(style, '--gy-chart-htdy-zd1', FALLBACK.htdyZd1),
     htdyZd2: cssValue(style, '--gy-chart-htdy-zd2', FALLBACK.htdyZd2),
+    rangeIntact: cssValue(style, '--gy-chart-range-intact', FALLBACK.rangeIntact),
+    rangeBrokenUp: cssValue(style, '--gy-chart-range-broken-up', FALLBACK.rangeBrokenUp),
+    rangeBrokenDown: cssValue(style, '--gy-chart-range-broken-down', FALLBACK.rangeBrokenDown),
+    rangeFill: cssValue(style, '--gy-chart-range-fill', FALLBACK.rangeFill),
+    rangeMid: cssValue(style, '--gy-chart-range-mid', FALLBACK.rangeMid),
   }
 }

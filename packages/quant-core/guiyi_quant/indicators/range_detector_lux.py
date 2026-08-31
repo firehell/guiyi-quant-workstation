@@ -180,7 +180,7 @@ def step_range_detector_lux(
         bar_end=bar_end,
     )
     if not input_valid:
-        transition = RangeDetectorTransition(
+        invalid_transition = RangeDetectorTransition(
             kind="invalid_reset",
             range_id=None,
             revision=None,
@@ -203,7 +203,7 @@ def step_range_detector_lux(
                 valid=False,
                 reason="input_invalid",
                 snapshot=None,
-                transition=transition,
+                transition=invalid_transition,
             ),
         )
 
@@ -249,12 +249,11 @@ def step_range_detector_lux(
         candidate_lower = _round(center - width, state.parameters.round_digits)
         visual_start_at = close_window[0][0]
         visual_start_index = next_index - state.parameters.minimum_range_length
-        overlaps = (
+        if (
             snapshot is not None
             and active_detection_right_index is not None
             and visual_start_index <= active_detection_right_index
-        )
-        if overlaps:
+        ):
             current_upper = max(snapshot.current_upper, candidate_upper)
             current_lower = min(snapshot.current_lower, candidate_lower)
             snapshot = RangeDetectorSnapshot(

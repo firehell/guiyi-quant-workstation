@@ -21,6 +21,7 @@ const props = defineProps<{
   dominants: DominantContractItem[]
   selectedOverlay: ResearchOverlayId
   optionalEmaIndicators: OptionalEmaIndicatorId[]
+  showRangeDetector: boolean
   showSubingInternalProcess: boolean
   showSubingStrategyPerformance: boolean
   fullscreen: boolean
@@ -33,6 +34,7 @@ const emit = defineEmits<{
   'update:contract': [value: string]
   'update:selected-overlay': [value: ResearchOverlayId]
   'update:optional-ema-indicators': [value: OptionalEmaIndicatorId[]]
+  'update:show-range-detector': [value: boolean]
   'update:show-subing-internal-process': [value: boolean]
   'update:show-subing-strategy-performance': [value: boolean]
   'open-research': []
@@ -109,6 +111,18 @@ function toggleOptionalEma(value: OptionalEmaIndicatorId) {
               @click="toggleOptionalEma(item.value)"
             >{{ item.label }}</NButton>
           </NButtonGroup>
+          <div class="toolbar__settings-title">
+            <span>箱体识别</span>
+            <NSwitch
+              :value="showRangeDetector"
+              size="small"
+              aria-label="显示箱体识别"
+              @update:value="emit('update:show-range-detector', $event)"
+            />
+          </div>
+          <small class="toolbar__settings-help">
+            使用已完成 K 线；箱体左端为回画展示，确认前不可用于策略判断
+          </small>
           <div v-if="selectedOverlay === 'subing'" class="toolbar__settings-title">
             <span>显示苏冰内部研究过程</span>
             <NSwitch
