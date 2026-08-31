@@ -477,6 +477,24 @@ describe('Product Alert server-side scope', () => {
     )
   })
 
+  it('renders HTDY first-seen events at the observation bar with both Shanghai times', () => {
+    const firstSeenEvent: AlertEvent = {
+      ...event(1, ['sell']),
+      contract: 'JM2701',
+      bar_end: '2026-08-13T01:45:00Z',
+      detected_at: '2026-08-13T02:15:00Z',
+    }
+
+    const [marker] = alertEventsToMarkers([firstSeenEvent])
+
+    assert.equal(marker.shape, 'square')
+    assert.equal(marker.time, firstSeenEvent.bar_end)
+    assert.equal(
+      marker.tooltip,
+      '实时首次识别 · 持久 AlertEvent · JM2701 · 卖出观察 · 观察K线 09:45 · 首次识别 10:15',
+    )
+  })
+
   it('renders only HTDY observation tone in the generic path', () => {
     assert.deepEqual(alertEventsToMarkers([
       event(0, ['buy'], 'subing_strategy_v1'),
@@ -494,6 +512,16 @@ describe('Product Alert server-side scope', () => {
       ['htdy:old', persistent[0].id],
     )
     assert.deepEqual(mergeKlineMarkers([], persistent), persistent)
+  })
+
+  it('keeps retrospective HTDY arrows repaint-risk-only and outside AlertEvent identity', () => {
+    const retrospectiveSource = read('../src/utils/klineViewModel.ts')
+
+    assert.match(retrospectiveSource, /id: `htdy:\$\{label\}:\$\{String\(time\)\}`/)
+    assert.match(retrospectiveSource, /未来引用\/重绘风险，仅供人工观察/)
+    assert.match(retrospectiveSource, /'belowBar', 'arrowUp'/)
+    assert.match(retrospectiveSource, /'aboveBar', 'arrowDown'/)
+    assert.doesNotMatch(retrospectiveSource, /id: `alert:/)
   })
 
   it('sorts merged current and persistent markers by bar time and stable id', () => {

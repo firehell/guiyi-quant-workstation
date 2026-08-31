@@ -4,6 +4,7 @@
  */
 import type { Time } from 'lightweight-charts'
 import type { BarData } from '@/types/market'
+export { calculateRangeDetectorLux } from './rangeDetectorLux.ts'
 
 /** 指标序列单点：时间与数值 */
 export interface IndicatorPoint {

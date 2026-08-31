@@ -41,6 +41,47 @@ def test_canary_text_is_channel_neutral() -> None:
     assert ALERT_CANARY_TEXT == "【归一量化】微信通知测试\n\nAlert 通知通道正常"
 
 
+def test_htdy_message_distinguishes_observation_and_first_seen_time() -> None:
+    message = AlertNotificationMessage(
+        rule_code="htdy_original_15m",
+        symbol="jm",
+        product_name="焦煤",
+        contract="JM2701",
+        frequency="15m",
+        bar_end=datetime(2026, 8, 31, 1, 45, tzinfo=UTC),
+        detected_at=datetime(2026, 8, 31, 2, 15, tzinfo=UTC),
+        result_codes=("sell",),
+    )
+
+    assert format_alert_message(message) == (
+        "【归一量化】JM 焦煤\n\n"
+        "火天大有 · 卖出观察\n"
+        "主力：JM2701\n"
+        "观察K线：15m · 09:45\n"
+        "首次识别：10:15\n"
+        "研究观察，非交易指令"
+    )
+
+
+def test_htdy_current_bar_message_can_have_same_observation_and_detection_time() -> None:
+    instant = datetime(2026, 8, 31, 2, 15, tzinfo=UTC)
+    message = AlertNotificationMessage(
+        rule_code="htdy_original_15m",
+        symbol="jm",
+        product_name="焦煤",
+        contract="JM2701",
+        frequency="15m",
+        bar_end=instant,
+        detected_at=instant,
+        result_codes=("buy",),
+    )
+
+    rendered = format_alert_message(message)
+
+    assert "观察K线：15m · 10:15" in rendered
+    assert "首次识别：10:15" in rendered
+
+
 @pytest.mark.parametrize(
     ("result_codes", "observation"),
     (
@@ -65,6 +106,7 @@ def test_htdy_message_keeps_exact_copy(
         contract="AG2610",
         frequency=frequency,
         bar_end=datetime(2026, 8, 13, 2, 45, tzinfo=UTC),
+        detected_at=datetime(2026, 8, 13, 3, 15, tzinfo=UTC),
         result_codes=result_codes,
         strategy_payload=None,
     )
@@ -73,7 +115,8 @@ def test_htdy_message_keeps_exact_copy(
         "【归一量化】AG 白银\n\n"
         f"火天大有 · {observation}\n"
         "主力：AG2610\n"
-        f"{frequency} · 10:45 收线\n"
+        f"观察K线：{frequency} · 10:45\n"
+        "首次识别：11:15\n"
         "研究观察，非交易指令"
     )
 
@@ -257,6 +300,7 @@ def test_notification_boundary_rejects_opposite_side_pivot_in_typed_payload() ->
                 contract="JM2601",
                 frequency="30m",
                 bar_end=BAR_END,
+                detected_at=BAR_END,
                 result_codes=("open_long",),
                 strategy_payload=None,
             ),
@@ -270,6 +314,7 @@ def test_notification_boundary_rejects_opposite_side_pivot_in_typed_payload() ->
                 contract="JM2601",
                 frequency="2m",
                 bar_end=BAR_END,
+                detected_at=BAR_END,
                 result_codes=("buy",),
                 strategy_payload=None,
             ),
@@ -283,6 +328,7 @@ def test_notification_boundary_rejects_opposite_side_pivot_in_typed_payload() ->
                 contract="JM2601",
                 frequency="15m",
                 bar_end=BAR_END,
+                detected_at=BAR_END,
                 result_codes=("buy",),
                 strategy_payload=None,
             ),
@@ -296,6 +342,7 @@ def test_notification_boundary_rejects_opposite_side_pivot_in_typed_payload() ->
                 contract=" ",
                 frequency="15m",
                 bar_end=BAR_END,
+                detected_at=BAR_END,
                 result_codes=("buy",),
                 strategy_payload=None,
             ),
@@ -319,6 +366,24 @@ def test_formatter_requires_timezone_aware_bar_end() -> None:
         contract="JM2601",
         frequency="15m",
         bar_end=datetime(2026, 8, 14, 10, 30),
+        detected_at=BAR_END,
+        result_codes=("buy",),
+        strategy_payload=None,
+    )
+
+    with pytest.raises(ValueError, match="^ALERT_NOTIFICATION_TIMEZONE_REQUIRED$"):
+        format_alert_message(message)
+
+
+def test_formatter_requires_timezone_aware_detected_at() -> None:
+    message = AlertNotificationMessage(
+        rule_code="htdy_original_15m",
+        symbol="jm",
+        product_name="焦煤",
+        contract="JM2601",
+        frequency="15m",
+        bar_end=BAR_END,
+        detected_at=datetime(2026, 8, 14, 10, 30),
         result_codes=("buy",),
         strategy_payload=None,
     )
@@ -335,6 +400,7 @@ def _message(payload: SubingStrategyActionPayload) -> AlertNotificationMessage:
         contract=payload.contract,
         frequency="15m",
         bar_end=payload.decision_at,
+        detected_at=payload.decision_at,
         result_codes=(payload.kind.value,),
         strategy_payload=payload,
     )

@@ -79,6 +79,7 @@ def _message(rule_code: str = "htdy_original_15m") -> AlertNotificationMessage:
             contract="JM2609",
             frequency="15m",
             bar_end=decision_at,
+            detected_at=decision_at,
             result_codes=("open_long",),
             strategy_payload=serialize_subing_strategy_payload(action),
         )
@@ -89,6 +90,7 @@ def _message(rule_code: str = "htdy_original_15m") -> AlertNotificationMessage:
         contract="JM2609",
         frequency="15m",
         bar_end=datetime(2026, 8, 20, 10, 30, tzinfo=UTC),
+        detected_at=datetime(2026, 8, 20, 10, 30, tzinfo=UTC),
         result_codes=("buy",),
         strategy_payload=None,
     )

@@ -175,6 +175,106 @@ class AlertService:
         self._require_product_scope_authority(rule, definition)
         return normalized_symbol in set(rule.scope_products or [])
 
+    def create_first_seen_observation_event(
+        self,
+        request: AlertEventCreate,
+    ) -> AlertEvent | None:
+        """Freeze the first valid HTDY observation for one immutable Bar identity."""
+        symbol = self._require_operational_symbol(request.symbol)
+        rule = self._session.get(AlertRule, request.rule_id)
+        if rule is None:
+            raise AlertRuleNotFoundError()
+        definition = _definition(rule.rule_code)
+        if definition.kind is not AlertRuleKind.INDICATOR_OBSERVATION:
+            raise AlertConsistencyError()
+        frequency = request.frequency.strip()
+        if frequency not in definition.input_frequencies:
+            raise AlertConsistencyError()
+        contract = normalize_contract_for_symbol(symbol, request.contract)
+        if contract is None:
+            raise AlertConsistencyError()
+        if not isinstance(request.trading_day, date) or isinstance(
+            request.trading_day, datetime
+        ):
+            raise AlertScopeError("ALERT_TRADING_DAY_REQUIRED")
+        result_codes = _normalize_result_codes(definition, request.result_codes)
+        for value in (
+            request.bar_end,
+            request.detected_at,
+            request.notification_attempted_at,
+        ):
+            _require_aware(value)
+        if request.action_id is not None or request.strategy_payload is not None:
+            raise AlertConsistencyError()
+
+        existing = self._event_by_identity(
+            definition=definition,
+            rule_id=rule.id,
+            symbol=symbol,
+            frequency=frequency,
+            bar_end=request.bar_end,
+            action_id=None,
+        )
+        if existing is not None:
+            if _valid_first_seen_indicator_event(
+                existing,
+                definition=definition,
+                rule_id=rule.id,
+                symbol=symbol,
+                frequency=frequency,
+                bar_end=request.bar_end,
+            ):
+                return None
+            raise AlertConsistencyError()
+
+        event = AlertEvent(
+            rule_id=rule.id,
+            symbol=symbol,
+            contract=contract,
+            trading_day=request.trading_day,
+            frequency=frequency,
+            bar_end=request.bar_end,
+            result_codes=list(result_codes),
+            action_id=None,
+            strategy_payload=None,
+            detected_at=request.detected_at,
+            notification_attempted_at=request.notification_attempted_at,
+        )
+        self._session.add(event)
+        try:
+            self._session.commit()
+        except IntegrityError:
+            self._session.rollback()
+            try:
+                existing = self._event_by_identity(
+                    definition=definition,
+                    rule_id=rule.id,
+                    symbol=symbol,
+                    frequency=frequency,
+                    bar_end=request.bar_end,
+                    action_id=None,
+                )
+            except SQLAlchemyError:
+                self._session.rollback()
+                raise AlertEventPersistenceError() from None
+            if existing is not None and _valid_first_seen_indicator_event(
+                existing,
+                definition=definition,
+                rule_id=rule.id,
+                symbol=symbol,
+                frequency=frequency,
+                bar_end=request.bar_end,
+            ):
+                self._session.rollback()
+                return None
+            self._session.rollback()
+            raise AlertEventPersistenceError() from None
+        except SQLAlchemyError:
+            self._session.rollback()
+            raise AlertEventPersistenceError() from None
+        self._session.refresh(event)
+        return event
+
     def create_event(self, request: AlertEventCreate) -> AlertEvent | None:
         symbol = self._require_operational_symbol(request.symbol)
         rule = self._session.get(AlertRule, request.rule_id)
@@ -543,6 +643,33 @@ def _normalize_result_codes(
     }:
         raise AlertScopeError("ALERT_RESULT_CODES_INVALID")
     return values
+
+
+def _valid_first_seen_indicator_event(
+    event: AlertEvent,
+    *,
+    definition: AlertRuleDefinition,
+    rule_id: int,
+    symbol: str,
+    frequency: str,
+    bar_end: datetime,
+) -> bool:
+    try:
+        result_codes = _normalize_result_codes(definition, tuple(event.result_codes))
+    except (AlertScopeError, TypeError):
+        return False
+    return (
+        event.rule_id == rule_id
+        and event.symbol == symbol
+        and event.frequency == frequency
+        and _same_utc_instant(event.bar_end, bar_end)
+        and normalize_contract_for_symbol(symbol, event.contract) == event.contract
+        and isinstance(event.trading_day, date)
+        and not isinstance(event.trading_day, datetime)
+        and bool(result_codes)
+        and event.action_id is None
+        and event.strategy_payload is None
+    )
 
 
 def _require_aware(value: datetime) -> None:

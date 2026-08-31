@@ -8,6 +8,8 @@ from .models import FormalPolicy
 FORMAL_BACKTEST_CONSUMER = "formal_backtest"
 FROZEN_LEGACY_BACKTEST_CONSUMER = "frozen_legacy_backtest"
 HTDY_ALERT_OBSERVATION_CONSUMER = "htdy_alert_observation"
+RANGE_DETECTOR_DISPLAY_CONSUMER = "range_detector_readonly_display"
+RANGE_DETECTOR_RESEARCH_CONSUMER = "subing_daily_trend_research"
 
 
 _POLICIES: dict[str, FormalPolicy] = {
@@ -122,6 +124,31 @@ _POLICIES: dict[str, FormalPolicy] = {
         allowed_consumers=("versioned_legacy_strategy_compatibility", FROZEN_LEGACY_BACKTEST_CONSUMER),
         blocked_consumers=("wilder_policy_substitution",),
         notes="quant-core / JM V1-B ATR compatibility policy.",
+    ),
+    "range_detector_lux_v1": FormalPolicy(
+        policy_id="range_detector_lux_v1",
+        indicator_family="RANGE_DETECTOR",
+        seed_policy=None,
+        smoothing_policy="wilder_sma_seed",
+        histogram_scale=None,
+        lookback="range20_atr500_multiplier1",
+        confirmed_only=True,
+        frozen_legacy=False,
+        allowed_consumers=(
+            RANGE_DETECTOR_DISPLAY_CONSUMER,
+            RANGE_DETECTOR_RESEARCH_CONSUMER,
+        ),
+        blocked_consumers=(
+            FORMAL_BACKTEST_CONSUMER,
+            "generic_strategy",
+            "generic_live",
+            "alert",
+            "notification",
+        ),
+        notes=(
+            "Clean-room causal Lux Range behavior for readonly display and the "
+            "versioned SuBing daily-trend research candidate only."
+        ),
     ),
     "huotian_dayou_original_v0": FormalPolicy(
         policy_id="huotian_dayou_original_v0",

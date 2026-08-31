@@ -1,4 +1,4 @@
-from .atr import atr_series
+from .atr import atr_series, initial_atr_state, step_atr
 from .ema import ema_series, initial_ema_state, step_ema
 from .htdy_original import (
     HtdyOriginalResult,
@@ -11,8 +11,26 @@ from .htdy_strict import BOOLEAN_FIELDS as HTDY_STRICT_BOOLEAN_FIELDS
 from .htdy_strict import NUMERIC_FIELDS as HTDY_STRICT_NUMERIC_FIELDS
 from .htdy_strict import compute_strict_fields
 from .macd import initial_macd_state, macd_series, step_macd
+from .range_detector_lux import (
+    RANGE_DETECTOR_LUX_CODE,
+    RANGE_DETECTOR_LUX_POLICY_ID,
+    RANGE_DETECTOR_LUX_VERSION,
+    RangeDetectorLuxParameters,
+    RangeDetectorLuxState,
+    RangeDetectorPoint,
+    RangeDetectorSeries,
+    RangeDetectorSnapshot,
+    RangeDetectorState,
+    RangeDetectorTransition,
+    RangeDetectorTransitionKind,
+    RangeDetectorVisualRange,
+    initial_range_detector_lux_state,
+    range_detector_lux_series,
+    step_range_detector_lux,
+)
 from .models import (
     AtrSmoothingPolicy,
+    AtrState,
     EmaState,
     FormalPolicy,
     HistogramScale,
@@ -33,6 +51,8 @@ from .policy import (
     FORMAL_BACKTEST_CONSUMER,
     FROZEN_LEGACY_BACKTEST_CONSUMER,
     HTDY_ALERT_OBSERVATION_CONSUMER,
+    RANGE_DETECTOR_DISPLAY_CONSUMER,
+    RANGE_DETECTOR_RESEARCH_CONSUMER,
     formal_policy_registry,
     get_formal_policy,
     require_formal_policy,
@@ -49,6 +69,7 @@ from .realtime_observation_policy import (
 
 __all__ = [
     "AtrSmoothingPolicy",
+    "AtrState",
     "EmaState",
     "FormalPolicy",
     "HtdyOriginalResult",
@@ -64,9 +85,24 @@ __all__ = [
     "IndicatorStatus",
     "MacdSeries",
     "MacdState",
+    "RANGE_DETECTOR_LUX_CODE",
+    "RANGE_DETECTOR_LUX_POLICY_ID",
+    "RANGE_DETECTOR_LUX_VERSION",
+    "RangeDetectorLuxParameters",
+    "RangeDetectorLuxState",
+    "RangeDetectorPoint",
+    "RangeDetectorSeries",
+    "RangeDetectorSnapshot",
+    "RangeDetectorState",
+    "RangeDetectorTransition",
+    "RangeDetectorTransitionKind",
+    "RangeDetectorVisualRange",
+    "RANGE_DETECTOR_DISPLAY_CONSUMER",
+    "RANGE_DETECTOR_RESEARCH_CONSUMER",
     "RepaintingRisk",
     "SeedPolicy",
     "atr_series",
+    "initial_atr_state",
     "build_indicator_definition",
     "definition_to_metadata",
     "compute_htdy_original",
@@ -74,6 +110,7 @@ __all__ = [
     "ema_series",
     "initial_ema_state",
     "initial_macd_state",
+    "initial_range_detector_lux_state",
     "formal_policy_registry",
     "get_formal_policy",
     "get_indicator",
@@ -86,12 +123,15 @@ __all__ = [
     "ClosedBarRealtimeObservationPolicy",
     "closed_bar_observation_policy_sha256",
     "realtime_observation_policy_sha256",
+    "range_detector_lux_series",
     "require_closed_bar_realtime_observation_policy",
     "require_realtime_repainting_observation_policy",
     "require_formal_policy",
     "resolve_indicator_code",
     "step_ema",
+    "step_atr",
     "step_macd",
+    "step_range_detector_lux",
     "validate_definition_capabilities",
     "xma",
 ]

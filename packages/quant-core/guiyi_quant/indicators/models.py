@@ -51,6 +51,17 @@ class EmaState:
 
 
 @dataclass(frozen=True, slots=True)
+class AtrState:
+    period: int
+    smoothing_policy: AtrSmoothingPolicy
+    count: int
+    seed_values: tuple[float, ...]
+    previous_close: float | None
+    previous_atr: float | None
+    round_digits: int = 6
+
+
+@dataclass(frozen=True, slots=True)
 class MacdState:
     fast: EmaState
     slow: EmaState

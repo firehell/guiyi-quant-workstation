@@ -396,7 +396,8 @@ export async function mockWorkspace(page, researchResponse, options = {}) {
     if (url.pathname.endsWith('/bars/page')) {
       const request = Object.fromEntries(url.searchParams)
       marketRequests.push(request)
-      const bars = options.bars || Array.from({ length: 120 }, (_, index) => bar(index))
+      const paged = options.barsPage?.(request)
+      const bars = paged?.bars || options.bars || Array.from({ length: 120 }, (_, index) => bar(index))
       const resolvedContractSegments = options.resolvedContractSegments || (
         request.series_kind === 'actual_dominant' && bars.length > 0
           ? [{
@@ -410,7 +411,7 @@ export async function mockWorkspace(page, researchResponse, options = {}) {
         request: { series_kind: request.series_kind, symbol: workspaceSymbol, contract: request.contract || null, frequency: request.frequency, before: null, limit: 1200 },
         bars,
         canonical_coverage: options.canonicalCoverage || null,
-        page: options.pageMeta || { has_more_before: false, next_before: null },
+        page: paged?.page || options.pageMeta || { has_more_before: false, next_before: null },
         resolved_contract_segments: resolvedContractSegments,
       } })
     }

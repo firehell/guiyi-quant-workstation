@@ -1,6 +1,7 @@
 import type { BarData, HoverKlineContext, KlineMarker, MainIndicatorId, MainIndicatorValue } from '../types/market.ts'
 import { calculateEMA, calculateHuoTianDaYou, calculateMACD } from './indicators.ts'
 import { MAIN_INDICATOR_DEFINITIONS } from './mainIndicators.ts'
+import { calculateRangeDetectorLux, type RangeDetectorLuxResult, type RangeDetectorSnapshot } from './rangeDetectorLux.ts'
 import { buildSubingEmaRibbon, type SubingEmaRibbon } from './subingEmaRibbon.ts'
 
 type EmaIndicatorId = 'ema_10' | 'ema_21' | 'ema_60'
@@ -19,10 +20,16 @@ export interface KlineDerivedData {
   }
   htdy: HtdyDerivedData | null
   subingEmaRibbon: SubingEmaRibbon | null
+  rangeDetector: RangeDetectorLuxResult | null
 }
 
 export interface KlineDerivedOptions {
   showSubingEmaRibbon?: boolean
+  rangeDetector?: {
+    enabled: boolean
+    sourceIdentity: string
+    anchorTime: string | null
+  }
 }
 
 export interface HtdyDerivedData {
@@ -66,6 +73,12 @@ export function buildKlineDerivedData(
   }
 
   const macd = calculateMACD(bars)
+  const anchoredBars = options.rangeDetector?.anchorTime
+    ? bars.filter((bar) => Date.parse(bar.time) >= Date.parse(options.rangeDetector!.anchorTime!))
+    : []
+  const rangeDetector = options.rangeDetector?.enabled && options.rangeDetector.anchorTime
+    ? calculateRangeDetectorLux(anchoredBars, { sourceIdentity: options.rangeDetector.sourceIdentity })
+    : null
   return {
     ema,
     macd: {
@@ -75,6 +88,7 @@ export function buildKlineDerivedData(
     },
     htdy: visibleMainIndicators.includes('htdy') ? buildHtdyDerivedData(bars) : null,
     subingEmaRibbon: ribbon,
+    rangeDetector,
   }
 }
 
@@ -134,8 +148,49 @@ export function resolveKlineHoverContext(
       dea: pointValue(derived.macd.dea, time),
       histogram: pointValue(derived.macd.histogram, time),
     },
+    rangeDetector: resolveRangeDetectorHoverFact(derived.rangeDetector, time),
     marker: markers.find((marker) => sameMarkerTime(marker.time, time)) ?? null,
   }
+}
+
+function resolveRangeDetectorHoverFact(
+  rangeDetector: RangeDetectorLuxResult | null,
+  time: string,
+): HoverKlineContext['rangeDetector'] {
+  if (!rangeDetector) return null
+  const hoverAt = Date.parse(time)
+  if (!Number.isFinite(hoverAt)) return null
+  const rangesByKey = new Map(rangeDetector.ranges.map((range) => [range.key, range]))
+  for (let index = rangeDetector.points.length - 1; index >= 0; index -= 1) {
+    const point = rangeDetector.points[index]!
+    const snapshot = point.snapshot
+    if (!snapshot || Date.parse(point.time) > hoverAt) continue
+    const visualRange = rangesByKey.get(`${snapshot.rangeId}:${snapshot.revision}`)
+    if (!isActiveRangeSnapshot(snapshot, visualRange?.levelsActiveUntil ?? null, hoverAt)) continue
+    return {
+      rangeId: snapshot.rangeId,
+      revision: snapshot.revision,
+      state: snapshot.state,
+      upper: snapshot.currentUpper,
+      lower: snapshot.currentLower,
+      mid: snapshot.currentMid,
+      confirmedAt: snapshot.confirmedAt,
+      visualStartAt: snapshot.visualStartAt,
+    }
+  }
+  return null
+}
+
+function isActiveRangeSnapshot(
+  snapshot: RangeDetectorSnapshot,
+  levelsActiveUntil: string | null,
+  hoverAt: number,
+): boolean {
+  const startsAt = Date.parse(snapshot.levelsActiveFrom)
+  if (!Number.isFinite(startsAt) || hoverAt < startsAt) return false
+  if (!levelsActiveUntil) return true
+  const endsAt = Date.parse(levelsActiveUntil)
+  return Number.isFinite(endsAt) && hoverAt <= endsAt
 }
 
 function sameMarkerTime(left: string, right: string): boolean {

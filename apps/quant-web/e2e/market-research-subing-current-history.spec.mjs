@@ -96,11 +96,12 @@ test('exact Daily Watch chart entry is one-shot and leaves saved chart preferenc
     entry: 'subing-daily-watch',
   })
   expect(await page.evaluate(() => JSON.parse(
-    window.localStorage.getItem('guiyi.market.chart.preferences.v7'),
+    window.localStorage.getItem('guiyi.market.chart.preferences.v8'),
   ))).toEqual({
-    version: 7,
+    version: 8,
     selectedOverlay: 'htdy',
     optionalEmaIndicators: [],
+    showRangeDetector: false,
     showSubingInternalProcess: false,
     showSubingStrategyPerformance: false,
     period: '5m',
@@ -115,7 +116,7 @@ test('exact Daily Watch chart entry is one-shot and leaves saved chart preferenc
     frequency: '15m',
   })
   await expect.poll(() => page.evaluate(() => JSON.parse(
-    window.localStorage.getItem('guiyi.market.chart.preferences.v7'),
+    window.localStorage.getItem('guiyi.market.chart.preferences.v8'),
   ).selectedOverlay)).toBe('none')
 })
 

@@ -23,6 +23,11 @@ import {
   setAlertProductFrequencyEnabled,
 } from '@/api/alerts'
 import { useMarketSeries } from '@/composables/useMarketSeries'
+import {
+  RANGE_DETECTOR_WARMUP_INSUFFICIENT,
+  RANGE_DETECTOR_WARMUP_LOAD_FAILED,
+  useRangeDetectorOverlayWarmup,
+} from '@/composables/useRangeDetectorOverlayWarmup'
 import { usePersistentAlertMarkers } from '@/composables/usePersistentAlertMarkers'
 import { useHistoricalResearchMarkers } from '@/composables/useHistoricalResearchMarkers'
 import { useProductAlertScope } from '@/composables/useProductAlertScope'
@@ -32,6 +37,7 @@ import { useSubingObservation } from '@/composables/useSubingObservation'
 import { useSubingStrategyCurrent } from '@/composables/useSubingStrategyCurrent'
 import type {
   DominantContractItem,
+  MainIndicatorId,
   MarketFrequency,
   OptionalEmaIndicatorId,
   ProductResearchResponse,
@@ -86,6 +92,7 @@ const selectedOverlay = ref<ResearchOverlayId>(
 const optionalEmaIndicators = ref<OptionalEmaIndicatorId[]>([
   ...initialMainChartPreferences.optionalEmaIndicators,
 ])
+const showRangeDetector = ref(initialMainChartPreferences.showRangeDetector)
 const showSubingInternalProcess = ref(
   initialMainChartPreferences.showSubingInternalProcess,
 )
@@ -216,11 +223,47 @@ const {
 })
 
 const loading = computed(() => loadingInitial.value || loadingBefore.value)
-const visibleMainIndicators = computed(() => {
-  if (!overlayCapability.value.supported) return []
-  return visibleMainIndicatorsForOverlay(selectedOverlay.value, optionalEmaIndicators.value)
+const visibleMainIndicators = computed<MainIndicatorId[]>(() => {
+  if (!overlayCapability.value.supported) {
+    return showRangeDetector.value ? ['range_detector'] : []
+  }
+  return visibleMainIndicatorsForOverlay(
+    selectedOverlay.value,
+    optionalEmaIndicators.value,
+    showRangeDetector.value,
+  )
 })
 const effectiveIdentity = computed(() => currentIdentity())
+const rangeDetectorSourceIdentity = computed(() => [
+  effectiveIdentity.value.seriesKind,
+  effectiveIdentity.value.symbol,
+  effectiveIdentity.value.contract ?? '',
+  frequency.value,
+].join(':'))
+const rangeDetectorWarmup = useRangeDetectorOverlayWarmup({
+  bars,
+  hasMoreBefore,
+  enabled: showRangeDetector,
+  identityKey: rangeDetectorSourceIdentity,
+  loadMoreBefore,
+})
+const rangeDetectorReadyAnchor = computed(() => (
+  rangeDetectorWarmup.unavailableReason.value === null
+    ? rangeDetectorWarmup.anchorTime.value
+    : null
+))
+const rangeDetectorWarmupState = computed(() => {
+  if (!showRangeDetector.value) return 'disabled'
+  if (rangeDetectorWarmup.loading.value) return 'loading'
+  return rangeDetectorWarmup.unavailableReason.value === null && rangeDetectorReadyAnchor.value
+    ? 'ready'
+    : 'insufficient'
+})
+const rangeDetectorWarning = computed(() => {
+  if (rangeDetectorWarmup.unavailableReason.value === RANGE_DETECTOR_WARMUP_LOAD_FAILED) return '箱体历史预载失败'
+  if (rangeDetectorWarmup.unavailableReason.value === RANGE_DETECTOR_WARMUP_INSUFFICIENT) return '箱体历史预载不足'
+  return null
+})
 const overlayCapability = computed(() => researchOverlayCapability(
   selectedOverlay.value,
   effectiveIdentity.value.seriesKind,
@@ -361,10 +404,11 @@ watch([contract, seriesKind, frequency], async () => {
   if (await refreshSeries()) void refreshSubing()
 })
 
-watch([showSubingInternalProcess, showSubingStrategyPerformance], () => {
+watch([showRangeDetector, showSubingInternalProcess, showSubingStrategyPerformance], () => {
   const current = loadMainChartPreferences()
   saveMainChartPreferences({
     ...current,
+    showRangeDetector: showRangeDetector.value,
     showSubingInternalProcess: showSubingInternalProcess.value,
     showSubingStrategyPerformance: showSubingStrategyPerformance.value,
   })
@@ -418,6 +462,10 @@ watch(frequency, (period) => {
 })
 
 watch(mutation, (nextMutation) => {
+  if (showRangeDetector.value && rangeDetectorWarmup.anchorTime.value === null) {
+    rangeDetectorWarmup.reset()
+    void rangeDetectorWarmup.ensureReady()
+  }
   void syncPersistentAlertMarkers(currentAlertMarkerIdentity(), bars.value, nextMutation.kind)
   void syncHistoricalResearchMarkers(
     currentHistoricalMarkerIdentity(),
@@ -706,6 +754,11 @@ function updateOptionalEmaIndicators(value: OptionalEmaIndicatorId[]) {
   saveMainChartPreferences({ ...current, optionalEmaIndicators: optionalEmaIndicators.value })
 }
 
+function updateShowRangeDetector(value: boolean) {
+  showRangeDetector.value = value
+  if (!value) rangeDetectorWarmup.reset()
+}
+
 function updateShowSubingInternalProcess(value: boolean) {
   showSubingInternalProcess.value = value
 }
@@ -800,6 +853,7 @@ function normalizeSymbol(value: unknown): string | null {
       :dominants="dominants"
       :selected-overlay="selectedOverlay"
       :optional-ema-indicators="optionalEmaIndicators"
+      :show-range-detector="showRangeDetector"
       :show-subing-internal-process="showSubingInternalProcess"
       :show-subing-strategy-performance="showSubingStrategyPerformance"
       :fullscreen="fullscreen"
@@ -809,6 +863,7 @@ function normalizeSymbol(value: unknown): string | null {
       @update:contract="contract = $event"
       @update:selected-overlay="updateSelectedOverlay"
       @update:optional-ema-indicators="updateOptionalEmaIndicators"
+      @update:show-range-detector="updateShowRangeDetector"
       @update:show-subing-internal-process="updateShowSubingInternalProcess"
       @update:show-subing-strategy-performance="updateShowSubingStrategyPerformance"
       @open-research="openResearchDrawer"
@@ -830,6 +885,7 @@ function normalizeSymbol(value: unknown): string | null {
       >{{ selectedOverlay === 'subing'
           ? '历史因果投影暂不可用；Canonical K 线与当前苏冰观察仍可正常查看。'
           : '历史因果投影暂不可用；Canonical K 线仍可正常查看。' }}</NAlert>
+      <NAlert v-if="rangeDetectorWarning" type="warning" :show-icon="true">{{ rangeDetectorWarning }}</NAlert>
       <div class="product-status-strip" data-testid="product-status-strip">
         <strong>{{ effectiveIdentity.contract || selectedDominant?.actual_contract || symbol.toUpperCase() }}</strong>
         <NTag
@@ -849,6 +905,10 @@ function normalizeSymbol(value: unknown): string | null {
             :data-visible-start-trading-day="visibleStartTradingDay"
             :data-visible-main-indicators="visibleMainIndicators.join(',')"
             :data-subing-ema-ribbon="showSubingEmaRibbon ? 'true' : 'false'"
+            :data-range-detector-enabled="showRangeDetector ? 'true' : 'false'"
+            :data-range-detector-anchor="rangeDetectorReadyAnchor || undefined"
+            :data-range-detector-warmup="rangeDetectorWarmupState"
+            :data-range-detector-source-identity="rangeDetectorSourceIdentity"
             :data-focused-action-id="focusedActionId || undefined"
           >
             <KlineChart
@@ -860,6 +920,8 @@ function normalizeSymbol(value: unknown): string | null {
               :series-kind="effectiveIdentity.seriesKind"
               :visible-main-indicators="visibleMainIndicators"
               :show-subing-ema-ribbon="showSubingEmaRibbon"
+              :range-detector-source-identity="rangeDetectorSourceIdentity"
+              :range-detector-anchor-time="rangeDetectorReadyAnchor"
               :alert-markers="visibleAlertMarkers"
               :research-markers="researchMarkers"
               :data-historical-research-loading="historicalResearchLoading"

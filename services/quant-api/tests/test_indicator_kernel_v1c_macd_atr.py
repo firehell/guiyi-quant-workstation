@@ -251,6 +251,41 @@ def test_atr_series_replicates_quant_core_ema_first_tr_seed() -> None:
     assert _values(result.points) == _atr_ema_first_tr(bars, 3)
 
 
+def test_incremental_atr_matches_batch_for_all_supported_policies() -> None:
+    from guiyi_quant.indicators import atr_series, initial_atr_state, step_atr
+
+    highs = [10.0, 11.0, 12.0, 13.0, math.nan, 20.0, 21.0, 22.0]
+    lows = [8.0, 9.0, 10.0, 11.0, 12.0, 18.0, 19.0, 20.0]
+    closes = [9.0, 10.0, 11.0, 12.0, 12.5, 19.0, 20.0, 21.0]
+    bar_ends = [f"bar-{index}" for index in range(len(closes))]
+
+    for policy in ("wilder_sma_seed", "wilder_first_tr", "ema_first_tr"):
+        batch = atr_series(
+            highs,
+            lows,
+            closes,
+            3,
+            smoothing_policy=policy,
+            bar_ends=bar_ends,
+        )
+        state = initial_atr_state(3, smoothing_policy=policy)
+        streamed = []
+        for high, low, close, bar_end in zip(highs, lows, closes, bar_ends, strict=True):
+            state, point = step_atr(
+                state,
+                high=high,
+                low=low,
+                close=close,
+                bar_end=bar_end,
+            )
+            streamed.append(point)
+
+        assert streamed == batch.points
+        assert streamed[4].valid is False
+        assert streamed[4].reason == "input_invalid"
+        assert state.count == len(closes)
+
+
 def test_invalid_inputs_are_marked_invalid_without_zero_fill() -> None:
     from guiyi_quant.indicators import atr_series, macd_series
 

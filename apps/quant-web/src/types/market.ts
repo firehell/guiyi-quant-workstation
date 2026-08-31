@@ -1682,7 +1682,7 @@ export type SubingStrategyAlertEvent = SubingStrategyAlertEventCommon & (
 /** Exact Alert HTTP union discriminated by the registered Rule identity. */
 export type AlertEvent = HtdyAlertEvent | SubingStrategyAlertEvent
 
-export type MainIndicatorId = 'ema_10' | 'ema_21' | 'ema_60' | 'htdy'
+export type MainIndicatorId = 'ema_10' | 'ema_21' | 'ema_60' | 'range_detector' | 'htdy'
 export type OptionalEmaIndicatorId = 'ema_10' | 'ema_21' | 'ema_60'
 
 export interface MainIndicatorDefinition {
@@ -1716,6 +1716,16 @@ export interface HoverKlineContext {
   time: string
   bar: BarData
   mainIndicators?: MainIndicatorValue[]
+  rangeDetector?: {
+    rangeId: string
+    revision: number
+    state: 'intact' | 'broken_up' | 'broken_down'
+    upper: number
+    lower: number
+    mid: number
+    confirmedAt: string
+    visualStartAt: string
+  } | null
   macd?: { dif?: number | null; dea?: number | null; histogram?: number | null } | null
   atr?: number | null
   marker?: KlineMarker | null
