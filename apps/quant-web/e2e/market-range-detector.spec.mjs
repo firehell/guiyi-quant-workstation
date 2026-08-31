@@ -149,6 +149,17 @@ test.describe('Range Detector chart overlay', () => {
     await expect(page.getByTestId('htdy-chart-legend')).toBeVisible()
   })
 
+  test('keeps the independent range layer on a valid series unsupported by the selected overlay', async ({ page }) => {
+    await mockRangeWorkspace(page)
+    await page.goto('/market/chart?symbol=ag&series_kind=continuous&frequency=30m')
+    await enableRangeDetector(page)
+
+    const kline = page.locator('.product-workspace__kline')
+    await expect(kline).toHaveAttribute('data-range-detector-warmup', 'ready')
+    await expect(kline).toHaveAttribute('data-visible-main-indicators', 'range_detector')
+    await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-range-detector-range-count', /[1-9]/)
+  })
+
   test('retains the range layer at narrow width and fullscreen toggle', async ({ page }) => {
     await mockRangeWorkspace(page)
     await page.setViewportSize({ width: 820, height: 720 })

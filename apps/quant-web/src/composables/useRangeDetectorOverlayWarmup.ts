@@ -52,7 +52,14 @@ export function useRangeDetectorOverlayWarmup(options: RangeDetectorOverlayWarmu
           && options.bars.value.length < RANGE_DETECTOR_REQUIRED_BARS
           && options.hasMoreBefore.value
         ) {
+          const barCountBeforeLoad = options.bars.value.length
           await options.loadMoreBefore()
+          if (currentGeneration !== generation || !options.enabled.value) return
+          if (options.bars.value.length <= barCountBeforeLoad) {
+            anchorTime.value = null
+            unavailableReason.value = RANGE_DETECTOR_WARMUP_LOAD_FAILED
+            return
+          }
         }
         if (currentGeneration !== generation || !options.enabled.value) return
         if (options.bars.value.length > 0) anchorTime.value = options.bars.value[0].time

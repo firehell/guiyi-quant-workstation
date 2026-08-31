@@ -5,6 +5,7 @@ import { nextTick, ref } from 'vue'
 import type { BarData } from '../src/types/market.ts'
 import {
   RANGE_DETECTOR_REQUIRED_BARS,
+  RANGE_DETECTOR_WARMUP_LOAD_FAILED,
   useRangeDetectorOverlayWarmup,
 } from '../src/composables/useRangeDetectorOverlayWarmup.ts'
 
@@ -63,6 +64,26 @@ test('reports an explicit unavailable reason when available history is below ATR
 
   assert.equal(warmup.anchorTime.value, bars.value[0].time)
   assert.equal(warmup.unavailableReason.value, 'RANGE_DETECTOR_WARMUP_INSUFFICIENT')
+})
+
+test('fails closed when a successful older-page request makes no history progress', async () => {
+  const bars = ref(barSeries(300, 220))
+  let calls = 0
+  const warmup = useRangeDetectorOverlayWarmup({
+    bars,
+    hasMoreBefore: ref(true),
+    enabled: ref(true),
+    identityKey: ref('continuous|jm||15m'),
+    async loadMoreBefore() {
+      calls += 1
+    },
+  })
+
+  await warmup.ensureReady()
+
+  assert.equal(calls, 1)
+  assert.equal(warmup.anchorTime.value, null)
+  assert.equal(warmup.unavailableReason.value, RANGE_DETECTOR_WARMUP_LOAD_FAILED)
 })
 
 test('identity change discards a stale warm-up generation', async () => {

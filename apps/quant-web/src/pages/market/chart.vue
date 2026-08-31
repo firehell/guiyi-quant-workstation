@@ -223,7 +223,9 @@ const {
 
 const loading = computed(() => loadingInitial.value || loadingBefore.value)
 const visibleMainIndicators = computed(() => {
-  if (!overlayCapability.value.supported) return []
+  if (!overlayCapability.value.supported) {
+    return showRangeDetector.value ? ['range_detector'] : []
+  }
   return visibleMainIndicatorsForOverlay(
     selectedOverlay.value,
     optionalEmaIndicators.value,
