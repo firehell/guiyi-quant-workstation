@@ -1682,7 +1682,7 @@ export type SubingStrategyAlertEvent = SubingStrategyAlertEventCommon & (
 /** Exact Alert HTTP union discriminated by the registered Rule identity. */
 export type AlertEvent = HtdyAlertEvent | SubingStrategyAlertEvent
 
-export type MainIndicatorId = 'ema_10' | 'ema_21' | 'ema_60' | 'htdy'
+export type MainIndicatorId = 'ema_10' | 'ema_21' | 'ema_60' | 'range_detector' | 'htdy'
 export type OptionalEmaIndicatorId = 'ema_10' | 'ema_21' | 'ema_60'
 
 export interface MainIndicatorDefinition {

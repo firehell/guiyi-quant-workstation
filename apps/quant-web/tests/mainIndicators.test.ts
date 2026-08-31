@@ -47,6 +47,24 @@ test('main indicator registry keeps EMA overlays available and HTDY original obs
   assert.ok(htdy?.riskMessages?.includes('不进入严格研究、回测、正式 live 或交易'))
   assert.equal(HTDY_REPAINT_SCAN_ZONE_BARS, 27)
   assert.equal(htdy?.unstableTailBars, HTDY_REPAINT_SCAN_ZONE_BARS)
+  const rangeDetector = MAIN_INDICATOR_DEFINITIONS.find((item) => item.id === 'range_detector')
+  assert.deepEqual(rangeDetector, {
+    id: 'range_detector',
+    name: 'range_detector_lux_v1',
+    displayName: '箱体识别（Lux Range）',
+    pane: 'main',
+    renderer: 'band',
+    capability: 'standard_overlay',
+    defaultVisible: false,
+    parameters: {
+      minimumRangeLength: 20,
+      rangeWidthAtrMultiplier: 1,
+      rangeAtrLength: 500,
+    },
+    lookbackBars: 500,
+    alertCapable: false,
+    available: true,
+  })
 })
 
 test('normalizeVisibleMainIndicators keeps available indicators without a second access language', () => {
@@ -57,9 +75,10 @@ test('normalizeVisibleMainIndicators keeps available indicators without a second
 
 test('research overlay defaults to SuBing and exposes exactly one overlay indicator set', () => {
   assert.deepEqual(defaultMainChartPreferences(), {
-    version: 7,
+    version: 8,
     selectedOverlay: 'subing',
     optionalEmaIndicators: [],
+    showRangeDetector: false,
     showSubingInternalProcess: false,
     showSubingStrategyPerformance: false,
     period: null,
@@ -68,10 +87,13 @@ test('research overlay defaults to SuBing and exposes exactly one overlay indica
   assert.deepEqual(normalizeOptionalEmaIndicators(['ema_60', 'ema_21', 'ema_10', 'ema_60', 'htdy']), ['ema_10', 'ema_21', 'ema_60'])
   assert.deepEqual(visibleMainIndicatorsForOverlay('subing', []), [])
   assert.deepEqual(visibleMainIndicatorsForOverlay('subing', ['ema_10', 'ema_60']), ['ema_10', 'ema_60'])
+  assert.deepEqual(visibleMainIndicatorsForOverlay('subing', ['ema_10', 'ema_60'], true), ['ema_10', 'ema_60', 'range_detector'])
   assert.deepEqual(visibleMainIndicatorsForOverlay('subing', ['ema_10', 'ema_21', 'ema_60']), ['ema_10', 'ema_21', 'ema_60'])
   assert.deepEqual(visibleMainIndicatorsForOverlay('htdy', ['ema_10', 'ema_60']), ['ema_10', 'ema_60', 'htdy'])
+  assert.deepEqual(visibleMainIndicatorsForOverlay('htdy', ['ema_10', 'ema_60'], true), ['ema_10', 'ema_60', 'range_detector', 'htdy'])
   assert.deepEqual(visibleMainIndicatorsForOverlay('htdy', ['ema_10', 'ema_21', 'ema_60']), ['ema_10', 'ema_21', 'ema_60', 'htdy'])
   assert.deepEqual(visibleMainIndicatorsForOverlay('none', ['ema_10', 'ema_21', 'ema_60']), [])
+  assert.deepEqual(visibleMainIndicatorsForOverlay('none', ['ema_10', 'ema_21', 'ema_60'], true), ['range_detector'])
 })
 
 test('SuBing Strategy history is independently restricted to actual-dominant 15m', () => {
@@ -176,7 +198,7 @@ test('preference loading purges and ignores legacy schemas', () => {
   assert.equal(values.size, 0)
 })
 
-test('preference v7 saves and loads overlays plus the internal-process toggle', () => {
+test('preference v8 saves and loads overlays plus the Range Detector toggle', () => {
   const values = new Map<string, string>()
   const storage = {
     getItem: (key: string) => values.get(key) || null,
@@ -185,9 +207,10 @@ test('preference v7 saves and loads overlays plus the internal-process toggle', 
 
   saveMainChartPreferences(
     {
-      version: 7,
+      version: 8,
       selectedOverlay: 'none',
       optionalEmaIndicators: ['ema_60', 'ema_10'],
+      showRangeDetector: true,
       showSubingInternalProcess: true,
       showSubingStrategyPerformance: false,
       period: '15m',
@@ -196,9 +219,10 @@ test('preference v7 saves and loads overlays plus the internal-process toggle', 
     storage,
   )
   const loaded = loadMainChartPreferences(storage)
-  assert.equal(loaded.version, 7)
+  assert.equal(loaded.version, 8)
   assert.equal(loaded.selectedOverlay, 'none')
   assert.deepEqual(loaded.optionalEmaIndicators, ['ema_10', 'ema_60'])
+  assert.equal(loaded.showRangeDetector, true)
   assert.equal(loaded.showSubingInternalProcess, true)
   assert.equal(loaded.showSubingStrategyPerformance, false)
   assert.equal(loaded.period, '15m')
@@ -211,7 +235,59 @@ test('preference v7 saves and loads overlays plus the internal-process toggle', 
   assert.deepEqual(loadMainChartPreferences(storage), defaultMainChartPreferences())
 })
 
-test('preference v6 migrates only retained fields to v7 and clears the v6 key', () => {
+test('preference v7 migrates retained fields to v8 and clears the v7 key only after persistence', () => {
+  const values = new Map<string, string>()
+  const removed: string[] = []
+  const storage = {
+    getItem: (key: string) => values.get(key) || null,
+    setItem: (key: string, value: string) => values.set(key, value),
+    removeItem: (key: string) => { removed.push(key); values.delete(key) },
+  }
+  values.set('guiyi.market.chart.preferences.v7', JSON.stringify({
+    version: 7,
+    selectedOverlay: 'htdy',
+    optionalEmaIndicators: ['ema_60', 'ema_10'],
+    showSubingInternalProcess: true,
+    showSubingStrategyPerformance: true,
+    period: '15m',
+    realtimeFollow: true,
+  }))
+
+  assert.deepEqual(loadMainChartPreferences(storage), {
+    version: 8,
+    selectedOverlay: 'htdy',
+    optionalEmaIndicators: ['ema_10', 'ema_60'],
+    showRangeDetector: false,
+    showSubingInternalProcess: true,
+    showSubingStrategyPerformance: true,
+    period: '15m',
+    realtimeFollow: true,
+  })
+  assert.equal(values.has('guiyi.market.chart.preferences.v7'), false)
+  assert.ok(removed.includes('guiyi.market.chart.preferences.v7'))
+})
+
+test('preference v7 migration preserves source data when v8 persistence fails', () => {
+  const source = JSON.stringify({ version: 7, selectedOverlay: 'subing', optionalEmaIndicators: [] })
+  const removed: string[] = []
+  assert.deepEqual(loadMainChartPreferences({
+    getItem: (key: string) => key === 'guiyi.market.chart.preferences.v7' ? source : null,
+    setItem() { throw new Error('SecurityError') },
+    removeItem(key: string) { removed.push(key) },
+  }), {
+    version: 8,
+    selectedOverlay: 'subing',
+    optionalEmaIndicators: [],
+    showRangeDetector: false,
+    showSubingInternalProcess: false,
+    showSubingStrategyPerformance: false,
+    period: null,
+    realtimeFollow: false,
+  })
+  assert.equal(removed.includes('guiyi.market.chart.preferences.v7'), false)
+})
+
+test('preference v6 migrates only retained fields to v8 and clears the v6 key', () => {
   const values = new Map<string, string>()
   const removed: string[] = []
   const storage = {
@@ -232,9 +308,10 @@ test('preference v6 migrates only retained fields to v7 and clears the v6 key', 
   }))
 
   assert.deepEqual(loadMainChartPreferences(storage), {
-    version: 7,
+    version: 8,
     selectedOverlay: 'htdy',
     optionalEmaIndicators: ['ema_10', 'ema_60'],
+    showRangeDetector: false,
     showSubingInternalProcess: true,
     showSubingStrategyPerformance: false,
     period: '15m',
@@ -243,9 +320,10 @@ test('preference v6 migrates only retained fields to v7 and clears the v6 key', 
   assert.equal(values.has('guiyi.market.chart.preferences.v6'), false)
   assert.ok(removed.includes('guiyi.market.chart.preferences.v6'))
   assert.deepEqual(JSON.parse(values.get(MAIN_CHART_PREFERENCES_KEY)!), {
-    version: 7,
+    version: 8,
     selectedOverlay: 'htdy',
     optionalEmaIndicators: ['ema_10', 'ema_60'],
+    showRangeDetector: false,
     showSubingInternalProcess: true,
     showSubingStrategyPerformance: false,
     period: '15m',
@@ -270,9 +348,10 @@ test('preference v6 migration retains readable fields when v7 persistence is una
       throw new Error('SecurityError')
     },
   }), {
-    version: 7,
+    version: 8,
     selectedOverlay: 'htdy',
     optionalEmaIndicators: ['ema_60'],
+    showRangeDetector: false,
     showSubingInternalProcess: true,
     showSubingStrategyPerformance: false,
     period: '15m',
@@ -300,9 +379,10 @@ test('preference v5 migrates retained fields, maps retired overlay to none, and 
   }))
 
   assert.deepEqual(loadMainChartPreferences(storage), {
-    version: 7,
+    version: 8,
     selectedOverlay: 'none',
     optionalEmaIndicators: ['ema_10', 'ema_60'],
+    showRangeDetector: false,
     showSubingInternalProcess: true,
     showSubingStrategyPerformance: false,
     period: '1m',
@@ -317,9 +397,10 @@ test('preference v5 migrates retained fields, maps retired overlay to none, and 
     'guiyi.market.chart.preferences.v5',
   ])
   assert.deepEqual(JSON.parse(values.get(MAIN_CHART_PREFERENCES_KEY)!), {
-    version: 7,
+    version: 8,
     selectedOverlay: 'none',
     optionalEmaIndicators: ['ema_10', 'ema_60'],
+    showRangeDetector: false,
     showSubingInternalProcess: true,
     showSubingStrategyPerformance: false,
     period: '1m',
@@ -327,11 +408,11 @@ test('preference v5 migrates retained fields, maps retired overlay to none, and 
   })
 })
 
-test('v7 preferences without a performance flag default to collapsed', () => {
+test('v8 preferences without optional flags default to collapsed and Range Detector disabled', () => {
   const storage = {
     getItem: (key: string) => key === MAIN_CHART_PREFERENCES_KEY
       ? JSON.stringify({
-        version: 7,
+        version: 8,
         selectedOverlay: 'subing',
         optionalEmaIndicators: [],
         showSubingInternalProcess: false,
@@ -342,6 +423,7 @@ test('v7 preferences without a performance flag default to collapsed', () => {
     setItem() {},
   }
   assert.equal(loadMainChartPreferences(storage).showSubingStrategyPerformance, false)
+  assert.equal(loadMainChartPreferences(storage).showRangeDetector, false)
 })
 
 test('preference v1 through v4 are discarded without restoration', () => {
