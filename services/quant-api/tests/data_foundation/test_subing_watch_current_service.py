@@ -25,6 +25,7 @@ from app.market_data.market_data_service import MarketDataError
 from app.market_data.market_phase import MarketPhase, ProductMarketPhase
 from app.market_data.market_read_service import (
     MarketObservationSnapshot,
+    MarketObservationSnapshotError,
     MarketReadService,
     MarketReadState,
 )
@@ -411,6 +412,20 @@ def test_malformed_typed_snapshot_fails_closed() -> None:
         _service(
             canonical,
             market_read=_MalformedMarketRead(),
+        ).current(_request(), canonical[-1].bar_end)
+
+
+def test_observation_snapshot_drift_maps_to_source_unavailable() -> None:
+    canonical = tuple(_bar(index) for index in range(1, 5))
+
+    class _ChangedMarketRead:
+        def observation_snapshot(self, *_args, **_kwargs):
+            raise MarketObservationSnapshotError()
+
+    with pytest.raises(SubingWatchCurrentSourceUnavailableError):
+        _service(
+            canonical,
+            market_read=_ChangedMarketRead(),
         ).current(_request(), canonical[-1].bar_end)
 
 

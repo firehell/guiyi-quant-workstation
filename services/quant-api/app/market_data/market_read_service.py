@@ -111,6 +111,13 @@ class MarketReadWindowError(RuntimeError):
     """Alert 窗口不能被唯一、完整解析时的稳定失败。"""
 
 
+class MarketObservationSnapshotError(RuntimeError):
+    """Live observation authority changed while its Bars were being read."""
+
+    def __init__(self) -> None:
+        super().__init__("MARKET_OBSERVATION_SNAPSHOT_CHANGED")
+
+
 class MarketReadService:
     """展示查询 facade；历史始终经 ``MarketDataService``，Live 只读 Redis。"""
 
@@ -390,11 +397,17 @@ class MarketReadService:
                 contract=state.live_contract,
                 bars=(),
             )
+        try:
+            post_read_state = self.state(identity, now_utc)
+        except Exception as exc:  # noqa: BLE001 - a stable snapshot cannot be proven
+            raise MarketObservationSnapshotError() from exc
+        if _observation_authority(state) != _observation_authority(post_read_state):
+            raise MarketObservationSnapshotError()
         return MarketObservationSnapshot(
-            state=state,
+            state=post_read_state,
             source="realtime",
-            trading_day=state.trading_day,
-            contract=state.live_contract,
+            trading_day=post_read_state.trading_day,
+            contract=post_read_state.live_contract,
             bars=tuple(bars),
         )
 
@@ -533,6 +546,21 @@ def _later(first: datetime | None, second: datetime | None) -> datetime | None:
     if second is None:
         return first
     return max(first, second)
+
+
+def _observation_authority(state: MarketReadState) -> tuple[object, ...]:
+    return (
+        state.symbol,
+        state.series_kind,
+        state.frequency,
+        state.operational,
+        state.phase,
+        state.trading_day,
+        state.live_eligible,
+        state.live_available,
+        state.live_contract,
+        state.canonical_end,
+    )
 
 
 def _empty_display_snapshot(state: MarketReadState) -> MarketDisplaySnapshot:

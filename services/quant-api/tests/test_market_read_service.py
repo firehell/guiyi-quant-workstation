@@ -12,7 +12,11 @@ from app.market_data.domain import (
     ResolvedContractSegment,
     SeriesPageQuery,
 )
-from app.market_data.market_read_service import MarketReadService, MarketReadWindowError
+from app.market_data.market_read_service import (
+    MarketObservationSnapshotError,
+    MarketReadService,
+    MarketReadWindowError,
+)
 from app.market_data.market_phase import MarketPhase, ProductMarketPhase
 
 
@@ -109,6 +113,42 @@ class _LiveStore:
         return tuple(bar for bar in self._bars if start <= bar.bar_end <= end)
 
 
+class _MutatingLiveStore(_LiveStore):
+    def __init__(
+        self,
+        bars: tuple[CanonicalBar, ...],
+        *,
+        drift: str,
+    ) -> None:
+        super().__init__(bars, "JM2701")
+        self._drift = drift
+        self._available = True
+
+    def heartbeat(self) -> dict[str, bool]:
+        return {"available": self._available}
+
+    def bars_between(
+        self,
+        trading_day: date,
+        symbol: str,
+        frequency: str,
+        start: datetime,
+        end: datetime,
+    ) -> tuple[CanonicalBar, ...]:
+        bars = super().bars_between(
+            trading_day,
+            symbol,
+            frequency,
+            start,
+            end,
+        )
+        if self._drift == "subscription":
+            self._contract = "JM2705"
+        elif self._drift == "heartbeat":
+            self._available = False
+        return bars
+
+
 class _ForbiddenPhaseReader:
     def resolve(self, symbol: str, now: datetime) -> object:
         raise AssertionError("bars_until must not inspect the current phase")
@@ -150,6 +190,23 @@ def _observation_service(
     )
 
 
+def _mutating_observation_service(
+    *,
+    historical: tuple[CanonicalBar, ...],
+    live: tuple[CanonicalBar, ...],
+    drift: str,
+) -> MarketReadService:
+    return MarketReadService(
+        market_data=_MarketPageReader(
+            historical,
+            (ResolvedContractSegment("JM2701", DAY_2, DAY_2),),
+        ),
+        phase_resolver=_TradingPhaseReader(),
+        operational_products=("jm",),
+        live_store=_MutatingLiveStore(live, drift=drift),
+    )
+
+
 def test_observation_snapshot_includes_exact_canonical_boundary() -> None:
     boundary = _bar(HISTORICAL_END_2, DAY_2)
     service = _observation_service(historical=(boundary,), live=(boundary,))
@@ -185,6 +242,29 @@ def test_observation_snapshot_preserves_any_field_boundary_conflict() -> None:
 
     assert snapshot.bars == (live_conflict,)
     assert snapshot.bars[0] != canonical
+
+
+@pytest.mark.parametrize("drift", ["subscription", "heartbeat"])
+def test_observation_snapshot_fails_when_authority_changes_during_bar_read(
+    drift: str,
+) -> None:
+    boundary = _bar(HISTORICAL_END_2, DAY_2)
+    service = _mutating_observation_service(
+        historical=(boundary,),
+        live=(boundary,),
+        drift=drift,
+    )
+
+    with pytest.raises(
+        MarketObservationSnapshotError,
+        match="MARKET_OBSERVATION_SNAPSHOT_CHANGED",
+    ):
+        service.observation_snapshot(
+            SeriesPageQuery("actual_dominant", "jm", "15m"),
+            after=boundary.bar_end,
+            now=LIVE_END,
+            inclusive_after=True,
+        )
 
 
 def test_bars_until_aligns_historical_and_live_rank1_contract_owners() -> None:
