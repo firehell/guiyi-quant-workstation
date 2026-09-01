@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime
 import math
 import re
-from typing import Literal
+from typing import Literal, Protocol
 
 from .atr import initial_atr_state
-from .macd import initial_macd_state
+from .macd import initial_macd_state, step_macd
 from .models import AtrState, MacdState
 from .range_detector_lux import (
     RangeDetectorLuxState,
@@ -38,6 +38,32 @@ class SubingWatchKernelError(ValueError):
 
     def __init__(self) -> None:
         super().__init__(self.code)
+
+
+class SubingWatchDuplicateConflictError(SubingWatchKernelError):
+    code = "SUBING_WATCH_DUPLICATE_CONFLICT"
+
+
+class SubingWatchPolicy(Protocol):
+    policy_id: str
+    formula_version: str
+    series_kind: str
+    frequency: str
+    completed_bar_only: bool
+    ma_type: str
+    ma_period: int
+    ma_source: str
+    macd: tuple[int, int, int]
+    ema_seed_policy: str
+    histogram_scale: int
+    atr_period: int
+    atr_smoothing_policy: str
+    ma_slope_points: int
+    volume_previous_bars: int
+    range_indicator_code: str
+    higher_timeframe: str
+    round_digits: int
+    auto_order: bool
 
 
 def _rfc3339(value: object) -> str:
@@ -288,10 +314,11 @@ class SubingWatchKernelState:
 
 def initial_subing_watch_kernel_state(
     identity: SubingWatchKernelIdentity,
+    policy: SubingWatchPolicy,
 ) -> SubingWatchKernelState:
-    """Create the one bounded, frozen state shape consumed by later kernel work."""
+    """Create the one bounded, frozen state for the exact accepted policy."""
 
-    if type(identity) is not SubingWatchKernelIdentity:
+    if type(identity) is not SubingWatchKernelIdentity or not _policy_is_exact(policy):
         raise SubingWatchKernelError()
     source_identity = "|".join(
         (
@@ -327,4 +354,253 @@ def initial_subing_watch_kernel_state(
         last_bar_fingerprint=None,
         last_evaluation=None,
         blocked_reason=None,
+    )
+
+
+def step_subing_watch_15m(
+    state: SubingWatchKernelState,
+    bar: SubingWatchKernelBar,
+    *,
+    higher_timeframe: SubingWatchKernelHigherTimeframe | None = None,
+) -> tuple[SubingWatchKernelState, SubingWatchKernelEvaluation]:
+    """Advance the only completed-15m SuBing Watch formula state."""
+
+    _validate_step_state(state)
+    bar_valid = _bar_is_valid(bar)
+    if bar_valid and state.last_evaluation is not None:
+        if bar.bar_end == state.last_evaluation.bar_end:
+            if bar.source_fingerprint == state.last_bar_fingerprint:
+                return state, state.last_evaluation
+            raise SubingWatchDuplicateConflictError()
+
+    if state.blocked_reason is not None:
+        return state, _unavailable_evaluation(state, bar, state.blocked_reason)
+
+    if not bar_valid:
+        return _block_state(state, bar, "SUBING_WATCH_SOURCE_INVALID")
+    if bar.trading_day < state.identity.segment_start_trading_day:
+        return _block_state(state, bar, "SUBING_WATCH_SEGMENT_MISMATCH")
+    if (
+        state.last_evaluation is not None
+        and _parse_instant(bar.bar_end) < _parse_instant(state.last_evaluation.bar_end)
+    ):
+        return _block_state(state, bar, "SUBING_WATCH_SOURCE_INVALID", retain_last=True)
+
+    sma21_window = (*state.sma21_window, bar.close)[-21:]
+    ma21 = round(sum(sma21_window) / 21, 6) if len(sma21_window) == 21 else None
+    macd_state, (dif_point, dea_point, histogram_point) = step_macd(
+        state.macd_state,
+        bar.close,
+        bar_end=bar.bar_end,
+    )
+    current_dif = (
+        dif_point.value
+        if dif_point.ready and dif_point.valid and dif_point.value is not None
+        else None
+    )
+    current_dea = (
+        dea_point.value
+        if dea_point.ready and dea_point.valid and dea_point.value is not None
+        else None
+    )
+    current_ready = current_dif is not None and current_dea is not None
+    if (
+        current_dif is not None
+        and current_dea is not None
+        and state.previous_ready_dif is not None
+        and state.previous_ready_dea is not None
+    ):
+        golden = (
+            state.previous_ready_dif <= state.previous_ready_dea
+            and current_dif > current_dea
+        )
+        dead = (
+            state.previous_ready_dif >= state.previous_ready_dea
+            and current_dif < current_dea
+        )
+    else:
+        golden = False
+        dead = False
+    observations: tuple[Literal["buy", "sell"], ...] = ()
+    if golden and ma21 is not None and bar.close > ma21:
+        observations = ("buy",)
+    elif dead and ma21 is not None and bar.close < ma21:
+        observations = ("sell",)
+
+    evaluation = SubingWatchKernelEvaluation(
+        formula_version=SUBING_WATCH_FORMULA_VERSION,
+        identity=state.identity,
+        trading_day=bar.trading_day,
+        bar_end=bar.bar_end,
+        outcome="evaluated_candidate" if observations else "evaluated_no_signal",
+        observation_types=observations,
+        close=round(bar.close, 6),
+        ma21=ma21,
+        dif=current_dif,
+        dea=current_dea,
+        macd_histogram=(
+            histogram_point.value
+            if histogram_point.ready and histogram_point.valid
+            else None
+        ),
+        context=_task2_context(higher_timeframe),
+        public_reason_codes=(),
+    )
+    return (
+        replace(
+            state,
+            sma21_window=sma21_window,
+            macd_state=macd_state,
+            previous_ready_dif=(
+                current_dif if current_ready else state.previous_ready_dif
+            ),
+            previous_ready_dea=(
+                current_dea if current_ready else state.previous_ready_dea
+            ),
+            last_bar_fingerprint=bar.source_fingerprint,
+            last_evaluation=evaluation,
+        ),
+        evaluation,
+    )
+
+
+def _policy_is_exact(policy: object) -> bool:
+    expected = {
+        "policy_id": SUBING_WATCH_FORMULA_VERSION,
+        "formula_version": SUBING_WATCH_FORMULA_VERSION,
+        "series_kind": "actual_dominant",
+        "frequency": "15m",
+        "completed_bar_only": True,
+        "ma_type": "simple_moving_average",
+        "ma_period": 21,
+        "ma_source": "close",
+        "macd": (12, 26, 9),
+        "ema_seed_policy": "sma_window",
+        "histogram_scale": 2,
+        "atr_period": 14,
+        "atr_smoothing_policy": "wilder_sma_seed",
+        "ma_slope_points": 5,
+        "volume_previous_bars": 20,
+        "range_indicator_code": "range_detector_lux_v1",
+        "higher_timeframe": "60m",
+        "round_digits": 6,
+        "auto_order": False,
+    }
+    return all(
+        type(getattr(policy, key, None)) is type(value)
+        and getattr(policy, key, None) == value
+        for key, value in expected.items()
+    )
+
+
+def _validate_step_state(state: object) -> None:
+    if type(state) is not SubingWatchKernelState:
+        raise SubingWatchKernelError()
+    if (state.previous_ready_dif is None) != (state.previous_ready_dea is None):
+        raise SubingWatchKernelError()
+    if state.last_evaluation is not None and state.last_evaluation.identity != state.identity:
+        raise SubingWatchKernelError()
+
+
+def _bar_is_valid(bar: object) -> bool:
+    if type(bar) is not SubingWatchKernelBar:
+        return False
+    try:
+        _rfc3339(bar.bar_end)
+        _trading_day(bar.trading_day)
+        open_value = _finite_float(bar.open)
+        high = _finite_float(bar.high)
+        low = _finite_float(bar.low)
+        close = _finite_float(bar.close)
+        volume = _finite_float(bar.volume)
+        _source_fingerprint(bar.source_fingerprint)
+    except SubingWatchKernelError:
+        return False
+    assert open_value is not None and high is not None and low is not None
+    assert close is not None and volume is not None
+    return low <= high and low <= open_value <= high and low <= close <= high and volume >= 0
+
+
+def _parse_instant(value: str) -> datetime:
+    return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(UTC)
+
+
+def _task2_context(
+    higher_timeframe: SubingWatchKernelHigherTimeframe | None,
+) -> SubingWatchKernelContext:
+    if higher_timeframe is not None and type(higher_timeframe) is not SubingWatchKernelHigherTimeframe:
+        raise SubingWatchKernelError()
+    return SubingWatchKernelContext(
+        ma21_slope_5_bps_per_bar=None,
+        distance_to_ma21_atr14=None,
+        macd_zero_distance_atr14=None,
+        volume_ratio_20=None,
+        range_state="range_unavailable",
+        higher_timeframe_alignment="unavailable",
+    )
+
+
+def _unavailable_evaluation(
+    state: SubingWatchKernelState,
+    bar: object,
+    reason: str,
+) -> SubingWatchKernelEvaluation:
+    if type(bar) is SubingWatchKernelBar:
+        try:
+            bar_end = _rfc3339(bar.bar_end)
+            trading_day = _trading_day(bar.trading_day)
+        except SubingWatchKernelError:
+            bar_end, trading_day = _fallback_source_coordinates(state)
+    else:
+        bar_end, trading_day = _fallback_source_coordinates(state)
+    if trading_day < state.identity.segment_start_trading_day:
+        trading_day = state.identity.segment_start_trading_day
+    return SubingWatchKernelEvaluation(
+        formula_version=SUBING_WATCH_FORMULA_VERSION,
+        identity=state.identity,
+        trading_day=trading_day,
+        bar_end=bar_end,
+        outcome="source_unavailable",
+        observation_types=(),
+        close=None,
+        ma21=None,
+        dif=None,
+        dea=None,
+        macd_histogram=None,
+        context=_task2_context(None),
+        public_reason_codes=(reason,),
+    )
+
+
+def _fallback_source_coordinates(state: SubingWatchKernelState) -> tuple[str, str]:
+    if state.last_evaluation is not None:
+        return state.last_evaluation.bar_end, state.last_evaluation.trading_day
+    return (
+        f"{state.identity.segment_start_trading_day}T00:00:00+00:00",
+        state.identity.segment_start_trading_day,
+    )
+
+
+def _block_state(
+    state: SubingWatchKernelState,
+    bar: object,
+    reason: str,
+    *,
+    retain_last: bool = False,
+) -> tuple[SubingWatchKernelState, SubingWatchKernelEvaluation]:
+    evaluation = _unavailable_evaluation(state, bar, reason)
+    if retain_last or type(bar) is not SubingWatchKernelBar:
+        return replace(state, blocked_reason=reason), evaluation
+    try:
+        _source_fingerprint(bar.source_fingerprint)
+    except SubingWatchKernelError:
+        return replace(state, blocked_reason=reason), evaluation
+    return (
+        replace(
+            state,
+            last_bar_fingerprint=bar.source_fingerprint,
+            last_evaluation=evaluation,
+            blocked_reason=reason,
+        ),
+        evaluation,
     )

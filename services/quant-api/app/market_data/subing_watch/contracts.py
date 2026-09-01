@@ -374,6 +374,25 @@ def from_kernel_evaluation(
         range_state=evaluation.context.range_state,
         higher_timeframe_alignment=evaluation.context.higher_timeframe_alignment,
     )
+    if evaluation.outcome == "evaluated_candidate":
+        if len(evaluation.observation_types) != 1:
+            raise SubingWatchContractError()
+        observation_type = evaluation.observation_types[0]
+        candidate_id = sha256(
+            (
+                evaluation.formula_version
+                + identity.symbol
+                + identity.contract
+                + identity.segment_start_trading_day.isoformat()
+                + identity.frequency
+                + evaluation.bar_end
+                + observation_type
+            ).encode("utf-8")
+        ).hexdigest()
+    else:
+        if evaluation.observation_types:
+            raise SubingWatchContractError()
+        candidate_id = None
     return SubingWatchEvaluation(
         formula_version=evaluation.formula_version,
         source_identity=identity,
@@ -389,6 +408,6 @@ def from_kernel_evaluation(
         dea=_kernel_float_to_decimal(evaluation.dea),
         macd_histogram=_kernel_float_to_decimal(evaluation.macd_histogram),
         context=context,
-        candidate_id=None,
+        candidate_id=candidate_id,
         public_reason_codes=evaluation.public_reason_codes,
     )
