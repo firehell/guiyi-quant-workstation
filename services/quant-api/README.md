@@ -4,7 +4,7 @@
 
 ## Current mounted surface
 
-- `/api/v1/market`：Canonical bars、dominants、product/SuBing/Daily Context/Radar 与 Historical overlays。
+- `/api/v1/market`：Canonical bars、dominants、product/SuBing/Daily Context 与 Historical overlays。
 - `/api/alerts`：两条 code-defined Rule 的 server-side Scope、Event 与当前视图。
 - `/api/runtime`：DB、Redis、Live、after-market 与 Alert 的只读状态。
 - CLI：`guiyi data update|refresh|audit|after-market`；只读 `guiyi research subing-calibration`、`guiyi research subing-lifecycle`；`guiyi runtime status|live|alert|acknowledge-alert-notification`。
@@ -17,7 +17,7 @@
 
 ## Unmounted / retired
 
-旧 signal/review/strategy/backtest HTTP、RQAlpha、Execution Review、worker/queue、poll Live、`guiyi data live` 与 `guiyi runtime plan` 已退役。
+旧 signal/review/strategy/backtest HTTP、Market Radar、RQAlpha、Execution Review、worker/queue、poll Live、`guiyi data live` 与 `guiyi runtime plan` 已退役。
 
 ## 本地验证
 

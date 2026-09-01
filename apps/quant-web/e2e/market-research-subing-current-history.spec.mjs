@@ -2,9 +2,6 @@ import { expect, test } from '@playwright/test'
 import {
   bar,
   research,
-  radarItem,
-  sectorSummary,
-  radar,
   dailyWatchItem,
   dailyWatch,
   mockMarketHomepage,
@@ -26,14 +23,10 @@ import {
 } from './market-research.helpers.mjs'
 
 test.describe('SuBing current/history', () => {
-test('B1 journey narrows AG on the homepage before opening its verification view', async ({ page }) => {
-  const ag = radarItem({ symbol: 'ag', product_name: '白银', sector: 'precious' })
+test('B1 journey opens AG Daily Watch verification view from the homepage', async ({ page }) => {
   await mockWorkspace(page, { json: research() })
   await mockAlertMarkerSurface(page)
-  await mockMarketHomepage(page, radar({
-    items: [ag],
-    sector_summary: [sectorSummary('precious', 0.012)],
-  }), dailyWatch({
+  await mockMarketHomepage(page, dailyWatch({
     long_watch: [dailyWatchItem('ag', '白银')],
     excluded: 59,
   }))
@@ -47,10 +40,6 @@ test('B1 journey narrows AG on the homepage before opening its verification view
   await expect(page.getByTestId('subing-daily-watch')).toBeVisible()
   const focus = page.getByTestId('subing-daily-watch')
   await expect(focus).toContainText('AG 白银')
-  await expect(page.getByTestId('market-full-research')).not.toHaveAttribute('open')
-  await page.getByText('展开全市场研究', { exact: true }).click()
-  await expect(page.getByTestId('market-full-research')).toHaveAttribute('open', '')
-  await page.getByText('展开全市场研究', { exact: true }).click()
   await focus.getByRole('button', { name: '检查 AG 15m', exact: true }).click()
 
   await expect(page).toHaveURL(/\/market\/chart\?symbol=ag/)

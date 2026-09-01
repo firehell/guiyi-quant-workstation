@@ -14,7 +14,7 @@ flowchart LR
   CAT --> MDS
   MCM --> MDS
 
-  ACTIVE[active_products.txt<br/>research capability] --> MARKET[Market API / Radar / Kline]
+  ACTIVE[active_products.txt<br/>research capability] --> MARKET[Market API / Kline]
   ACTIVE --> DAILY
   ACTIVE --> SSP
   ACTIVE --> RS

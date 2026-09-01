@@ -27,34 +27,6 @@ export function research(oiChange = 0.06) {
   }
 }
 
-export function radarItem(overrides = {}) {
-  return {
-    symbol: 'jm', product_name: '焦煤', sector: 'black', price_change_1d: 0.012,
-    price_change_5d: 0.032, volume_ratio20: 1.4, oi_change_1d: 0.021,
-    atr14_percentile252: 0.72, position20: 0.84, turnover: 12_000,
-    reason_codes: ['ema21_up', 'price_move_up', 'oi_increase'],
-    ...overrides,
-  }
-}
-
-export function sectorSummary(sector, median) {
-  return {
-    sector, total_count: 1, participant_count: 1, up_count: median > 0 ? 1 : 0,
-    down_count: median < 0 ? 1 : 0, median_price_change_1d: median,
-  }
-}
-
-export function radar(overrides = {}) {
-  return {
-    status: 'ready', expected_as_of: '2026-08-15', target_as_of: '2026-08-15', data_as_of: '2026-08-15',
-    freshness_state: 'current', freshness_message: '当前完整', active_count: 60, participant_count: 60,
-    stale: [], unavailable: [],
-    summary: { up_count: 20, down_count: 18, volume_expansion_count: 12, oi_increase_count: 9, high_volatility_count: 7 },
-    items: [], sector_summary: [],
-    ...overrides,
-  }
-}
-
 export function dailyWatchItem(symbol, productName = symbol.toUpperCase()) {
   const trend = {
     bar_end: '2026-08-24T07:00:00Z', trading_day: '2026-08-24', physical_contract: `${symbol.toUpperCase()}2701`,
@@ -123,12 +95,10 @@ export function runtimeHealth(overrides = {}) {
 
 export async function mockMarketHomepage(
   page,
-  radarResponse = radar(),
   dailyWatchResponse = dailyWatch(),
   runtimeResponse = runtimeHealth(),
 ) {
   await page.route('**/api/runtime/health', (route) => route.fulfill({ json: runtimeResponse }))
-  await page.route('**/api/v1/market/research/radar', (route) => route.fulfill({ json: radarResponse }))
   await page.route('**/api/v1/market/research/subing-daily-watch/current', (route) => route.fulfill({ json: dailyWatchResponse }))
 }
 

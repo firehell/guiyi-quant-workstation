@@ -255,61 +255,6 @@ class SubingResearchResponse(BaseModel):
     lifecycle: SubingLifecycleSnapshotOut
 
 
-class MarketRadarSummaryOut(BaseModel):
-    """Radar 第一屏需要的聚合计数，不包含综合分数。"""
-
-    up_count: int
-    down_count: int
-    volume_expansion_count: int
-    oi_increase_count: int
-    high_volatility_count: int
-
-
-class MarketRadarItemOut(BaseModel):
-    """单个参与 Radar 的 actual-dominant 日线研究事实。"""
-
-    symbol: str
-    product_name: str
-    sector: str
-    price_change_1d: Decimal | None
-    price_change_5d: Decimal | None
-    volume_ratio20: Decimal | None
-    oi_change_1d: Decimal | None
-    atr14_percentile252: Decimal | None
-    position20: Decimal | None
-    turnover: Decimal | None
-    reason_codes: list[str]
-
-
-class MarketRadarSectorOut(BaseModel):
-    """复用 active taxonomy 的板块汇总。"""
-
-    sector: str
-    total_count: int
-    participant_count: int
-    up_count: int
-    down_count: int
-    median_price_change_1d: Decimal | None
-
-
-class MarketRadarResponse(BaseModel):
-    """``/research/radar`` 全 active universe 的 freshness-aware 只读快照。"""
-
-    status: Literal["ready", "degraded"]
-    expected_as_of: date
-    target_as_of: date
-    data_as_of: date
-    freshness_state: Literal["current", "pending_after_market", "degraded"]
-    freshness_message: str
-    active_count: int
-    participant_count: int
-    stale: list[str]
-    unavailable: list[str]
-    summary: MarketRadarSummaryOut
-    items: list[MarketRadarItemOut]
-    sector_summary: list[MarketRadarSectorOut]
-
-
 class SubingDailyWatchCountsOut(BaseModel):
     universe: int
     long_watch: int

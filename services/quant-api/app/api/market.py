@@ -15,7 +15,6 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.market_data.composition import (
     build_market_data_service,
-    build_market_radar_service,
     build_market_research_service,
     build_subing_daily_watch_current_service,
     build_subing_read_service,
@@ -51,10 +50,6 @@ from app.schemas.market import (
     MarketBarOut,
     MarketBarsPageResponse,
     MarketPageMetaOut,
-    MarketRadarItemOut,
-    MarketRadarResponse,
-    MarketRadarSectorOut,
-    MarketRadarSummaryOut,
     ProductResearchResponse,
     SubingConditionOut,
     SubingDailyWatchCountsOut,
@@ -318,75 +313,6 @@ def subing_daily_watch_current(
             if result.snapshot is not None
             else None
         ),
-    )
-
-
-@router.get("/research/radar", response_model=MarketRadarResponse)
-def market_radar(session: Session = Depends(get_db)) -> MarketRadarResponse:
-    """返回完整 active universe 的只读 Radar；freshness 异常显式降级。"""
-    snapshot = build_market_radar_service(session).snapshot()
-    items = [_radar_item(item) for item in snapshot.items]
-    return MarketRadarResponse(
-        status=snapshot.status,
-        expected_as_of=snapshot.expected_as_of,
-        target_as_of=snapshot.target_as_of,
-        data_as_of=snapshot.data_as_of,
-        freshness_state=snapshot.freshness_state,
-        freshness_message=snapshot.freshness_message,
-        active_count=snapshot.active_count,
-        participant_count=snapshot.participant_count,
-        stale=list(snapshot.stale),
-        unavailable=list(snapshot.unavailable),
-        summary=MarketRadarSummaryOut(
-            up_count=sum(
-                item.metrics.price_change_1d is not None
-                and item.metrics.price_change_1d > 0
-                for item in snapshot.items
-            ),
-            down_count=sum(
-                item.metrics.price_change_1d is not None
-                and item.metrics.price_change_1d < 0
-                for item in snapshot.items
-            ),
-            volume_expansion_count=sum(
-                "volume_expansion" in item.reason_codes for item in snapshot.items
-            ),
-            oi_increase_count=sum(
-                "oi_increase" in item.reason_codes for item in snapshot.items
-            ),
-            high_volatility_count=sum(
-                "high_volatility" in item.reason_codes for item in snapshot.items
-            ),
-        ),
-        items=items,
-        sector_summary=[
-            MarketRadarSectorOut(
-                sector=item.sector,
-                total_count=item.total_count,
-                participant_count=item.participant_count,
-                up_count=item.up_count,
-                down_count=item.down_count,
-                median_price_change_1d=item.median_price_change_1d,
-            )
-            for item in snapshot.sector_summary
-        ],
-    )
-
-
-def _radar_item(item) -> MarketRadarItemOut:
-    metrics = item.metrics
-    return MarketRadarItemOut(
-        symbol=item.symbol,
-        product_name=item.product_name,
-        sector=item.sector,
-        price_change_1d=metrics.price_change_1d,
-        price_change_5d=metrics.price_change_5d,
-        volume_ratio20=metrics.volume_ratio20,
-        oi_change_1d=metrics.oi_change_1d,
-        atr14_percentile252=metrics.atr14_percentile252,
-        position20=metrics.position20,
-        turnover=item.turnover,
-        reason_codes=list(item.reason_codes),
     )
 
 

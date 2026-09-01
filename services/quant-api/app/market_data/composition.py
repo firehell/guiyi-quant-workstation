@@ -36,7 +36,6 @@ from app.market_data.operational_universe import (
     load_operational_products,
 )
 from app.market_data.market_data_service import MarketDataService
-from app.market_data.market_radar import MarketRadarService
 from app.market_data.market_research_service import MarketResearchService
 from app.market_data.actual_dominant_research import (
     ActualDominantResearchSegmentLoader,
@@ -99,7 +98,6 @@ from app.market_data.subing_daily_watch_store import (
     SubingDailyWatchStore,
     resolve_subing_observation_root,
 )
-from app.market_data.product_taxonomy import load_product_taxonomy
 from app.market_data.storage import CanonicalMonthlyStore
 from app.redis_connections import get_redis_connection
 
@@ -592,23 +590,6 @@ def build_subing_daily_watch_current_service(
             _subing_daily_watch_v2_root(),
             root_validator=_subing_daily_watch_v2_root,
         ),
-    )
-
-
-def build_market_radar_service(session: Session) -> MarketRadarService:
-    """构造完整 active 60 的只读 Radar，不注入 provider、Redis 或写入能力。"""
-    from app.market_data.coverage_source import DatabaseCoverageSource
-
-    coverage = DatabaseCoverageSource(
-        session,
-        _PRODUCT_STARTS,
-        history_floor_path=_HISTORY_FLOOR,
-    )
-    return MarketRadarService(
-        build_market_data_service(session),
-        products=load_active_products(),
-        taxonomy=load_product_taxonomy(),
-        latest_complete_day=coverage.latest_complete_day,
     )
 
 

@@ -5,7 +5,6 @@ import type {
   MarketBarsPageResponse,
   MarketReadState,
   MarketFrequency,
-  MarketRadarResponse,
   ProductResearchResponse,
   SeriesKind,
   SubingFrequency,
@@ -19,7 +18,6 @@ import type {
   SubingResearchResponse,
 } from '@/types/market'
 import {
-  normalizeMarketRadar,
   normalizeSubingDailyWatchCurrent,
   normalizeSubingResearch,
   normalizeSubingStrategyHistory,
@@ -29,11 +27,6 @@ import {
 
 export function getMarketDominants() {
   return request.get<never, DominantContractListResponse>('/market/dominants')
-}
-
-export function getMarketRadar() {
-  return request.get<never, MarketRadarResponse>('/market/research/radar')
-    .then(normalizeMarketRadar)
 }
 
 export function getSubingDailyWatchCurrent() {
