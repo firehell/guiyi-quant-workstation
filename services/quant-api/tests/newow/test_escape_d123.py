@@ -86,6 +86,7 @@ def test_zero_span_reuses_non50_previous_finite_rsv() -> None:
     state = EscapeState(
         closes=(100.0,), highs=(100.0,), lows=(100.0,), ma120_values=(),
         previous_rsv9=73.0, previous_var4=73.0, history_count=1,
+        physical_contract="RB2701", segment_id="rb:RB2701:2026-01-01",
     )
     result = step_escape_d123(state, make_bar(1, 100, high=100, low=100))
     assert result.rsv9 == 73.0
@@ -214,6 +215,21 @@ def test_malformed_restored_derived_state_fails_closed() -> None:
     assert marker_types(step_escape_d123(stale_ma, bar)) == ()
     assert marker_types(step_escape_d123(mismatched_rsv, bar)) == ()
     assert marker_types(step_escape_d123(mismatched_var4, bar)) == ()
+
+
+@pytest.mark.parametrize(
+    ("physical_contract", "segment_id"),
+    [(None, None), (None, "rb:RB2701:2026-01-01"), ("RB2701", None), ("", "rb:RB2701:2026-01-01")],
+)
+def test_restored_history_without_complete_identity_fails_closed(
+    physical_contract: str | None, segment_id: str | None
+) -> None:
+    malformed = replace(
+        state_for(previous_var4=96.0), physical_contract=physical_contract, segment_id=segment_id
+    )
+    result = step_escape_d123(malformed, make_bar(120, 131, high=140, low=100))
+    assert marker_types(result) == ()
+    assert result.ma120 is None
 
 
 def test_prefix_tail_batch_incremental_and_serialization_parity() -> None:

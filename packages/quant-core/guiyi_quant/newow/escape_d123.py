@@ -71,6 +71,10 @@ def _valid_state(state: EscapeState, profile: NewowTrendProfile) -> bool:
         return False
     if state.history_count == 0:
         return state.previous_rsv9 is None and state.previous_var4 is None and state.prior_var4 is None
+    if not isinstance(state.physical_contract, str) or not state.physical_contract:
+        return False
+    if not isinstance(state.segment_id, str) or not state.segment_id:
+        return False
     if state.previous_rsv9 is None or state.previous_var4 is None:
         return False
     denominator = max(state.highs[-profile.var4_lookback :]) - min(state.lows[-profile.var4_lookback :])
