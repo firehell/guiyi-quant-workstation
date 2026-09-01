@@ -58,6 +58,12 @@ def _freeze_mapping(values: Mapping[str, object]) -> Mapping[str, object]:
 
 @dataclass(frozen=True, slots=True)
 class NewowDailyBar:
+    """A completed actual-dominant D1 bar supplied by the application layer.
+
+    ``observation_eligible`` is the upstream rank-1 formal-output eligibility
+    flag. The pure core preserves it and does not query ``MainContractMap``.
+    """
+
     product: str
     physical_contract: str
     segment_id: str
@@ -72,10 +78,16 @@ class NewowDailyBar:
     source_identity: str
     observation_eligible: bool
     completed: bool
+    series_kind: str = "actual_dominant"
+    frequency: str = "1d"
 
     def __post_init__(self) -> None:
         if not self.completed:
             raise ValueError("NEWOW_BAR_NOT_COMPLETED")
+        if self.series_kind != "actual_dominant":
+            raise ValueError("NEWOW_BAR_INVALID_SERIES_KIND")
+        if self.frequency != "1d":
+            raise ValueError("NEWOW_BAR_INVALID_FREQUENCY")
         if not self.product or self.product != self.product.lower():
             raise ValueError("NEWOW_BAR_INVALID_PRODUCT")
         if not self.physical_contract or self.physical_contract != self.physical_contract.upper():
@@ -120,6 +132,7 @@ class NewowMainMarker:
     formula_version: str = ""
 
     def __post_init__(self) -> None:
+        object.__setattr__(self, "related_marker_ids", tuple(self.related_marker_ids))
         object.__setattr__(self, "trigger_facts", _freeze_mapping(self.trigger_facts))
 
 
@@ -144,6 +157,7 @@ class NewowCupHandleOverlay:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "score_breakdown", _freeze_mapping(self.score_breakdown))
+        object.__setattr__(self, "hard_failures", tuple(self.hard_failures))
         object.__setattr__(self, "volume_facts", _freeze_mapping(self.volume_facts))
 
 
@@ -153,3 +167,6 @@ class NewowTrendFrame:
     trend_band: NewowTrendBandPoint
     markers: tuple[NewowMainMarker, ...]
     cup_handle: NewowCupHandleOverlay | None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "markers", tuple(self.markers))
