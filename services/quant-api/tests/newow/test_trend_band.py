@@ -1,0 +1,181 @@
+from __future__ import annotations
+
+from dataclasses import asdict, replace
+from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
+from hashlib import sha256
+
+import pytest
+
+from guiyi_quant.newow.models import (
+    NewowDailyBar,
+    NewowMarkerType,
+    TrendBandState,
+    TrendTransition,
+)
+from guiyi_quant.newow.profile import NEWOW_TREND_D1_V1
+from guiyi_quant.newow.trend_band import (
+    TrendBandStateValue,
+    calculate_trend_band,
+    initial_trend_band_state,
+    step_trend_band,
+)
+
+
+def make_bar(
+    index: int,
+    close: str | int | float,
+    *,
+    eligible: bool = True,
+) -> NewowDailyBar:
+    close_decimal = Decimal(str(close))
+    trading_day = date(2026, 1, 1) + timedelta(days=index)
+    return NewowDailyBar(
+        product="rb",
+        physical_contract="RB2701",
+        segment_id="rb:RB2701:2026-01-01",
+        trading_day=trading_day,
+        bar_end=datetime.combine(trading_day, datetime.min.time(), tzinfo=UTC),
+        open=close_decimal - Decimal("1"),
+        high=close_decimal + Decimal("2"),
+        low=close_decimal - Decimal("3"),
+        close=close_decimal,
+        volume=100 + index,
+        open_interest=None,
+        source_identity="fixture:rb:RB2701:1d",
+        observation_eligible=eligible,
+        completed=True,
+    )
+
+
+def fixture_bars(*, eligibility_start: int = 0) -> tuple[NewowDailyBar, ...]:
+    closes = tuple(range(130, 100, -1)) + tuple(range(100, 141)) + tuple(range(140, 99, -1))
+    return tuple(
+        make_bar(index, close, eligible=index >= eligibility_start)
+        for index, close in enumerate(closes)
+    )
+
+
+def manual_typical(bar: NewowDailyBar) -> float:
+    return (
+        3.0 * float(bar.close)
+        + float(bar.open)
+        + float(bar.high)
+        + float(bar.low)
+    ) / 6.0
+
+
+def manual_values(bars: tuple[NewowDailyBar, ...]) -> tuple[list[float | None], list[float | None]]:
+    typicals = [manual_typical(bar) for bar in bars]
+    b_values: list[float | None] = []
+    for index in range(len(typicals)):
+        window = typicals[index - 19 : index + 1]
+        b_values.append(
+            None if len(window) < 20 else sum((offset + 1) * value for offset, value in enumerate(window)) / 210.0
+        )
+    c_values: list[float | None] = []
+    for index in range(len(b_values)):
+        window = b_values[index - 4 : index + 1]
+        c_values.append(None if len(window) < 5 or any(value is None for value in window) else sum(window) / 5.0)  # type: ignore[arg-type]
+    return b_values, c_values
+
+
+def run_steps(bars: tuple[NewowDailyBar, ...]):
+    state = initial_trend_band_state()
+    results = []
+    for bar in bars:
+        result = step_trend_band(state, bar)
+        results.append(result)
+        state = result.state
+    return tuple(results)
+
+
+def test_formula_warmup_weights_and_equality_state_are_exact() -> None:
+    bars = fixture_bars()[:30]
+    points = calculate_trend_band(bars)
+    expected_b, expected_c = manual_values(bars)
+
+    assert [point.b_value for point in points] == expected_b
+    assert [point.c_value for point in points] == expected_c
+    assert all(point.b_value is None for point in points[:19])
+    assert points[19].b_value is not None
+    assert all(point.c_value is None for point in points[:23])
+    assert points[23].c_value is not None
+
+    equal_bars = tuple(make_bar(index, 100) for index in range(24))
+    equal_point = calculate_trend_band(equal_bars)[-1]
+    assert equal_point.b_value == equal_point.c_value
+    assert equal_point.state is TrendBandState.YELLOW
+
+
+def test_transitions_emit_one_build_and_one_clear_with_reference_change_copy() -> None:
+    results = run_steps(fixture_bars())
+    markers = tuple(result.marker for result in results if result.marker is not None)
+    transitions = tuple(result.point.transition for result in results if result.point.transition is not None)
+
+    assert transitions == (TrendTransition.BUILD, TrendTransition.CLEAR)
+    assert [marker.marker_type for marker in markers] == [NewowMarkerType.BUILD, NewowMarkerType.CLEAR]
+    assert markers[1].trigger_facts["reference_basis"] == "signal_close"
+    assert "策略信号参考变化" in markers[1].label
+    assert "非真实成交" in markers[1].label
+    assert "未计手续费、滑点、涨跌停和换月" in markers[1].label
+
+    clear_after_build = markers[1]
+    assert clear_after_build.trigger_facts["reference_basis"] == "signal_close"
+    assert clear_after_build.trigger_facts["reference_change_pct"] == pytest.approx(
+        (float(clear_after_build.price) / float(markers[0].price) - 1.0) * 100.0
+    )
+
+
+def test_transition_marker_id_is_deterministic_and_hold_empty_do_not_duplicate() -> None:
+    bars = fixture_bars()
+    results = run_steps(bars)
+    markers = tuple(result.marker for result in results if result.marker is not None)
+
+    assert len(markers) == 2
+    for marker in markers:
+        expected = sha256(
+            "|".join(("newow_trend_v1", NEWOW_TREND_D1_V1.trend_band_formula, "RB2701", marker.marker_type.value, marker.bar_end.isoformat())).encode()
+        ).hexdigest()
+        assert marker.marker_id == expected
+    assert all(result.marker is None for result in results if result.point.transition is None)
+
+
+def test_pre_rank1_warmup_emits_no_marker_and_first_eligible_transition_uses_warmed_state() -> None:
+    baseline = run_steps(fixture_bars())
+    build_index = next(index for index, result in enumerate(baseline) if result.point.transition is TrendTransition.BUILD)
+    results = run_steps(fixture_bars(eligibility_start=build_index))
+
+    assert all(result.marker is None for result in results[:build_index])
+    assert results[build_index].point.transition is TrendTransition.BUILD
+    assert results[build_index].marker is not None
+
+
+def test_prefix_and_step_serialized_state_parity() -> None:
+    bars = fixture_bars()
+    full = calculate_trend_band(bars)
+    for length in range(1, len(bars) + 1):
+        assert calculate_trend_band(bars[:length]) == full[:length]
+
+    continuous = run_steps(bars)
+    state = initial_trend_band_state()
+    for bar in bars[:-10]:
+        state = step_trend_band(state, bar).state
+    restored = TrendBandStateValue(**asdict(state))
+    resumed = []
+    for bar in bars[-10:]:
+        result = step_trend_band(restored, bar)
+        resumed.append(result)
+        restored = result.state
+    assert tuple(resumed) == continuous[-10:]
+
+
+@pytest.mark.parametrize("invalid", [float("nan"), float("inf"), -float("inf")])
+def test_nonfinite_prior_state_fails_closed_without_transition_or_marker(invalid: float) -> None:
+    state = replace(initial_trend_band_state(), weighted_window=(invalid,) * 20)
+    result = step_trend_band(state, make_bar(0, 100))
+
+    assert result.point.state is TrendBandState.UNAVAILABLE
+    assert result.point.transition is None
+    assert result.marker is None
+    assert result.state == initial_trend_band_state()

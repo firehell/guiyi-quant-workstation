@@ -12,6 +12,13 @@ from .models import (
     TrendTransition,
 )
 from .profile import NEWOW_TREND_D1_V1, NewowTrendProfile
+from .trend_band import (
+    TrendBandStateValue,
+    TrendBandStepResult,
+    calculate_trend_band,
+    initial_trend_band_state,
+    step_trend_band,
+)
 
 __all__ = [
     "NEWOW_TREND_D1_V1",
@@ -26,5 +33,10 @@ __all__ = [
     "NewowTrendFrame",
     "NewowTrendProfile",
     "TrendBandState",
+    "TrendBandStateValue",
+    "TrendBandStepResult",
     "TrendTransition",
+    "calculate_trend_band",
+    "initial_trend_band_state",
+    "step_trend_band",
 ]
