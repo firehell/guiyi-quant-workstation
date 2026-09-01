@@ -8,12 +8,13 @@
 
 | 项目 | 当前事实 |
 |---|---|
-| Release | `v1.9.8` 最小热修 release candidate：从 `main@66c3be8035774a510e914e80a11e4669b15d42ab` 仅纳入 `dd0eb643b964cdabf79e6c5aa047eaca595cab4f` 的 Alert startup causal snapshot 与 schema-v4 readiness 修复，并把 API/Web release identity 收敛到 `1.9.8`；main、annotated tag 与 GitHub Release 完成前不标为 `RELEASED`。 |
+| Release | `v1.9.9` 最小热修 release candidate：从 `main@7c074ab41e05b6056e08323cf111655765a9bfa5` 仅纳入 `fbf468cba1b094609639b61103270589466042e9` 的 Alert startup queue reconciliation 修复，并把 API/Web release identity 收敛到 `1.9.9`；main、annotated tag 与 GitHub Release 完成前不标为 `RELEASED`。 |
 | Runtime | 当前五项 launchd 服务绑定 clean、detached 的 `/Volumes/扩展盘/guiyi-quant-runtime-v1.9.7-r3@66c3be8035774a510e914e80a11e4669b15d42ab`；`/api/health` 版本为 `1.9.7`，`live_market=ok`，但 Alert SuBing 为 `0 ready / 60 unavailable`，当前非 `RUNTIME_READY`。v1.9.8 尚未 promotion，未回填 Event、未发送通知。 |
 | Database | production Alembic 为 `20260826_0042 (head)`。当前 Rule 为 `htdy_original_15m` 与 `subing_strategy_v1`。 |
 | Market Runtime Scope | `operational_products.txt` 的 60 个品种。 |
 | Alert Scope | HTDY Scope 为 `jm × 15m`；SuBing `scope_products` 为 operational 60。两种 authority 不合并。两条 Rule 均 enabled，Alert Runtime marker 已 enabled，audience count 2；未发生 Scope、Rule 或 audience 变更。 |
-| v1.9.8 release candidate | Alert startup/final catch-up 的 Live snapshot 冻结在 causal `through` 上界，避免批量 restore 期间新到达 Bar 污染较早产品；Runtime status 写 schema v4，保留每个 unavailable 产品的固定公开 reason，并兼容读取 v1/v2/v3。无 migration、Scope、Rule、audience、transport 或策略公式变化。 |
+| v1.9.8 | Alert startup/final catch-up 的 Live snapshot 冻结在 causal `through` 上界，避免批量 restore 期间新到达 Bar 污染较早产品；Runtime status 写 schema v4，保留每个 unavailable 产品的固定公开 reason，并兼容读取 v1/v2/v3。无 migration、Scope、Rule、audience、transport 或策略公式变化。 |
+| v1.9.9 release candidate | frozen final-catch-up watermark 完成后，startup PubSub queue 会严格丢弃更旧 Bar、保留相同 watermark 的 idempotency/conflict 校验、只以无 Event/Push 的方式推进更新 Bar；reconciliation 结束前保持 warming，只有 active60 全 ready 才写 `strategy_ready_at`。无 migration、Scope、Rule、audience、transport 或策略公式变化。 |
 
 Alert transport 为 PushPlus；provider accepted 不等于微信送达。
 
@@ -24,7 +25,7 @@ Alert transport 为 PushPlus；provider accepted 不等于微信送达。
 
 ## Pending Gate
 
-- v1.9.8 尚待完整回归、独立 Review、main merge、annotated tag 与 GitHub Release；正式 Runtime 仍保持 v1.9.7-r3，release candidate 不授权或证明 Runtime promotion。
+- v1.9.9 尚待重新验证、main merge、annotated tag 与 GitHub Release；正式 Runtime 仍保持 v1.9.7-r3，release candidate 不授权或证明 Runtime promotion。
 - HTDY 的真实 PushPlus/微信送达，以及 D1/W1 `canonical_updated` 的自然 Event identity/evidence，仍须分别核验；不以测试、synthetic event、replay 或手工发送补证。
 - v1.9.7 Runtime promotion 已因 fresh Live `last_bar_at=null` fail-closed 回滚；本轮不再尝试切换。下一次 promotion 须由新的明确授权开始，并先取得切换后的 completed Live bar、ready heartbeat 与连续状态读回。
 - SuBing v1.9.7 自然 Live continuation seam 与严格盘后完成制 evidence pending；不以测试、startup replay、手工触发或回填替代。
