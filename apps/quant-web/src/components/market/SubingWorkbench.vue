@@ -135,7 +135,7 @@ function itemTitle(item: SubingDailyWatchItem) {
 
       <div v-if="!snapshot" class="daily-watch__unavailable">
         <strong>{{ dailyLoading && !dailyStale ? '苏冰今日观察读取中' : '苏冰今日观察暂不可用' }}</strong>
-        <span>{{ dailyLoading && !dailyStale ? '正在读取已发布的当前观察。' : '当前没有可用候选；策略事件与全市场研究仍可独立使用。' }}</span>
+        <span>{{ dailyLoading && !dailyStale ? '正在读取已发布的当前观察。' : '当前没有可用候选；Runtime 与当前策略事件仍可独立使用。' }}</span>
       </div>
 
       <template v-else>
