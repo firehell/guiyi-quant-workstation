@@ -8,12 +8,13 @@ import math
 import re
 from typing import Literal, Protocol
 
-from .atr import initial_atr_state
+from .atr import initial_atr_state, step_atr
 from .macd import initial_macd_state, step_macd
 from .models import AtrState, MacdState
 from .range_detector_lux import (
     RangeDetectorLuxState,
     initial_range_detector_lux_state,
+    step_range_detector_lux,
 )
 
 
@@ -42,6 +43,10 @@ class SubingWatchKernelError(ValueError):
 
 class SubingWatchDuplicateConflictError(SubingWatchKernelError):
     code = "SUBING_WATCH_DUPLICATE_CONFLICT"
+
+
+class SubingWatchHigherTimeframeFutureError(SubingWatchKernelError):
+    code = "SUBING_WATCH_HIGHER_TIMEFRAME_FUTURE"
 
 
 class SubingWatchPolicy(Protocol):
@@ -175,9 +180,17 @@ class SubingWatchKernelHigherTimeframe:
     ma21_slope_5_bps_per_bar: float | None
     ready: bool
     valid: bool
+    identity: SubingWatchKernelIdentity | None = None
 
     def __post_init__(self) -> None:
-        if type(self.ready) is not bool or type(self.valid) is not bool:
+        if (
+            type(self.ready) is not bool
+            or type(self.valid) is not bool
+            or (
+                self.identity is not None
+                and type(self.identity) is not SubingWatchKernelIdentity
+            )
+        ):
             raise SubingWatchKernelError()
         object.__setattr__(self, "bar_end", _rfc3339(self.bar_end))
         for field in ("close", "ma21", "ma21_slope_5_bps_per_bar"):
@@ -432,12 +445,31 @@ def step_subing_watch_15m(
     elif dead and raw_ma21 is not None and bar.close < raw_ma21:
         observations = ("sell",)
 
+    outcome: Literal["evaluated_no_signal", "evaluated_candidate"] = (
+        "evaluated_candidate" if observations else "evaluated_no_signal"
+    )
+    (
+        latest_five_valid_sma21,
+        atr_state,
+        range_state,
+        previous_twenty_volumes,
+        context,
+    ) = _project_context(
+        state,
+        bar,
+        raw_ma21=raw_ma21,
+        current_dif=current_dif,
+        current_dea=current_dea,
+        observations=observations,
+        higher_timeframe=higher_timeframe,
+    )
+
     evaluation = SubingWatchKernelEvaluation(
         formula_version=SUBING_WATCH_FORMULA_VERSION,
         identity=state.identity,
         trading_day=bar.trading_day,
         bar_end=bar.bar_end,
-        outcome="evaluated_candidate" if observations else "evaluated_no_signal",
+        outcome=outcome,
         observation_types=observations,
         close=round(bar.close, 6),
         ma21=round(raw_ma21, 6) if raw_ma21 is not None else None,
@@ -448,20 +480,24 @@ def step_subing_watch_15m(
             if histogram_point.ready and histogram_point.valid
             else None
         ),
-        context=_task2_context(higher_timeframe),
+        context=context,
         public_reason_codes=(),
     )
     return (
         replace(
             state,
             sma21_window=sma21_window,
+            latest_five_valid_sma21=latest_five_valid_sma21,
             macd_state=macd_state,
+            atr_state=atr_state,
+            range_state=range_state,
             previous_ready_dif=(
                 current_dif if current_ready else state.previous_ready_dif
             ),
             previous_ready_dea=(
                 current_dea if current_ready else state.previous_ready_dea
             ),
+            previous_twenty_volumes=previous_twenty_volumes,
             last_bar_fingerprint=bar.source_fingerprint,
             last_evaluation=evaluation,
         ),
@@ -532,11 +568,7 @@ def _parse_instant(value: str) -> datetime:
     return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(UTC)
 
 
-def _task2_context(
-    higher_timeframe: SubingWatchKernelHigherTimeframe | None,
-) -> SubingWatchKernelContext:
-    if higher_timeframe is not None and type(higher_timeframe) is not SubingWatchKernelHigherTimeframe:
-        raise SubingWatchKernelError()
+def _unavailable_context() -> SubingWatchKernelContext:
     return SubingWatchKernelContext(
         ma21_slope_5_bps_per_bar=None,
         distance_to_ma21_atr14=None,
@@ -545,6 +577,188 @@ def _task2_context(
         range_state="range_unavailable",
         higher_timeframe_alignment="unavailable",
     )
+
+
+def _project_context(
+    state: SubingWatchKernelState,
+    bar: SubingWatchKernelBar,
+    *,
+    raw_ma21: float | None,
+    current_dif: float | None,
+    current_dea: float | None,
+    observations: tuple[Literal["buy", "sell"], ...],
+    higher_timeframe: SubingWatchKernelHigherTimeframe | None,
+) -> tuple[
+    tuple[float, ...],
+    AtrState,
+    RangeDetectorLuxState,
+    tuple[float, ...],
+    SubingWatchKernelContext,
+]:
+    latest_five_valid_sma21 = state.latest_five_valid_sma21
+    if raw_ma21 is not None:
+        latest_five_valid_sma21 = (*latest_five_valid_sma21, raw_ma21)[-5:]
+
+    ma21_slope = _ma21_regression_slope(latest_five_valid_sma21, raw_ma21)
+
+    atr_state = state.atr_state
+    atr14: float | None = None
+    try:
+        advanced_atr_state, atr_point = step_atr(
+            state.atr_state,
+            high=bar.high,
+            low=bar.low,
+            close=bar.close,
+            bar_end=bar.bar_end,
+        )
+        atr_state = advanced_atr_state
+        if atr_point.ready and atr_point.valid:
+            atr14 = _finite_context_value(advanced_atr_state.previous_atr)
+    except Exception:
+        atr_state = state.atr_state
+
+    distance_to_ma21 = (
+        _context_ratio(bar.close - raw_ma21, atr14)
+        if raw_ma21 is not None
+        else None
+    )
+    macd_zero_distance = (
+        _context_ratio(max(abs(current_dif), abs(current_dea)), atr14)
+        if current_dif is not None and current_dea is not None
+        else None
+    )
+
+    volume_ratio = None
+    if len(state.previous_twenty_volumes) == 20:
+        previous_mean = _finite_context_value(
+            sum(state.previous_twenty_volumes) / 20
+        )
+        volume_ratio = _context_ratio(bar.volume, previous_mean)
+    previous_twenty_volumes = (*state.previous_twenty_volumes, bar.volume)[-20:]
+
+    range_state = state.range_state
+    projected_range_state: Literal[
+        "range_unavailable", "no_active_range", "intact", "broken_up", "broken_down"
+    ] = "range_unavailable"
+    try:
+        advanced_range_state, range_point = step_range_detector_lux(
+            state.range_state,
+            high=bar.high,
+            low=bar.low,
+            close=bar.close,
+            bar_end=bar.bar_end,
+            trading_day=bar.trading_day,
+        )
+        range_state = advanced_range_state
+        if range_point.ready and range_point.valid:
+            projected_range_state = (
+                "no_active_range"
+                if range_point.snapshot is None
+                else range_point.snapshot.state
+            )
+    except Exception:
+        range_state = state.range_state
+
+    higher_alignment = _higher_timeframe_alignment(
+        state.identity,
+        cutoff=bar.bar_end,
+        observations=observations,
+        higher_timeframe=higher_timeframe,
+    )
+    return (
+        latest_five_valid_sma21,
+        atr_state,
+        range_state,
+        previous_twenty_volumes,
+        SubingWatchKernelContext(
+            ma21_slope_5_bps_per_bar=ma21_slope,
+            distance_to_ma21_atr14=distance_to_ma21,
+            macd_zero_distance_atr14=macd_zero_distance,
+            volume_ratio_20=volume_ratio,
+            range_state=projected_range_state,
+            higher_timeframe_alignment=higher_alignment,
+        ),
+    )
+
+
+def _ma21_regression_slope(
+    latest_five_valid_sma21: tuple[float, ...],
+    current_ma21: float | None,
+) -> float | None:
+    if len(latest_five_valid_sma21) != 5 or current_ma21 is None:
+        return None
+    try:
+        slope = sum(
+            (index - 2) * value
+            for index, value in enumerate(latest_five_valid_sma21)
+        ) / 10
+        return _context_ratio(slope * 10_000, current_ma21)
+    except Exception:
+        return None
+
+
+def _context_ratio(numerator: float, denominator: float | None) -> float | None:
+    if denominator is None or denominator == 0:
+        return None
+    try:
+        return _rounded_context_value(numerator / denominator)
+    except (ArithmeticError, TypeError, ValueError):
+        return None
+
+
+def _finite_context_value(value: object) -> float | None:
+    try:
+        return _optional_finite_float(value)
+    except SubingWatchKernelError:
+        return None
+
+
+def _rounded_context_value(value: object) -> float | None:
+    finite = _finite_context_value(value)
+    return round(finite, 6) if finite is not None else None
+
+
+def _higher_timeframe_alignment(
+    identity: SubingWatchKernelIdentity,
+    *,
+    cutoff: str,
+    observations: tuple[Literal["buy", "sell"], ...],
+    higher_timeframe: SubingWatchKernelHigherTimeframe | None,
+) -> Literal["aligned", "opposed", "neutral", "unavailable"]:
+    if type(higher_timeframe) is not SubingWatchKernelHigherTimeframe:
+        return "unavailable"
+    try:
+        higher_bar_end = _rfc3339(higher_timeframe.bar_end)
+    except SubingWatchKernelError:
+        return "unavailable"
+    if _parse_instant(higher_bar_end) > _parse_instant(cutoff):
+        raise SubingWatchHigherTimeframeFutureError()
+    if (
+        higher_timeframe.identity != identity
+        or higher_timeframe.ready is not True
+        or higher_timeframe.valid is not True
+    ):
+        return "unavailable"
+    close = _finite_context_value(higher_timeframe.close)
+    ma21 = _finite_context_value(higher_timeframe.ma21)
+    slope = _finite_context_value(higher_timeframe.ma21_slope_5_bps_per_bar)
+    if close is None or ma21 is None or slope is None:
+        return "unavailable"
+    if len(observations) != 1:
+        return "neutral"
+    direction = observations[0]
+    opposite = "sell" if direction == "buy" else "buy"
+    price_side: Literal["buy", "sell"] | None = (
+        "buy" if close > ma21 else "sell" if close < ma21 else None
+    )
+    slope_side: Literal["buy", "sell"] | None = (
+        "buy" if slope > 0 else "sell" if slope < 0 else None
+    )
+    if price_side == direction and slope_side == direction:
+        return "aligned"
+    if price_side == opposite and slope_side == opposite:
+        return "opposed"
+    return "neutral"
 
 
 def _unavailable_evaluation(
@@ -574,7 +788,7 @@ def _unavailable_evaluation(
         dif=None,
         dea=None,
         macd_histogram=None,
-        context=_task2_context(None),
+        context=_unavailable_context(),
         public_reason_codes=(reason,),
     )
 

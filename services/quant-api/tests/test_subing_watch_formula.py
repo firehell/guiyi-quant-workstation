@@ -4,7 +4,7 @@ import json
 import math
 import re
 from dataclasses import FrozenInstanceError, replace
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from hashlib import sha256
 from pathlib import Path
@@ -27,6 +27,7 @@ from guiyi_quant.indicators.subing_watch_15m import (
     SubingWatchKernelContext,
     SubingWatchKernelError,
     SubingWatchKernelEvaluation,
+    SubingWatchKernelHigherTimeframe,
     SubingWatchKernelIdentity,
     initial_subing_watch_kernel_state,
 )
@@ -119,20 +120,19 @@ def watch_bar(
     fingerprint: str | None = None,
     trading_day: str = "2026-09-01",
     identity: SubingWatchKernelIdentity | None = None,
+    high_low_width: float = 0.0,
+    volume: float | None = None,
 ) -> SubingWatchKernelBar:
-    bar_end = datetime(2026, 9, 1, tzinfo=UTC).replace(
-        hour=(index * 15) // 60,
-        minute=(index * 15) % 60,
-    )
+    bar_end = datetime(2026, 9, 1, tzinfo=UTC) + timedelta(minutes=index * 15)
     return SubingWatchKernelBar(
         identity=identity or watch_identity(),
         bar_end=bar_end.isoformat(),
         trading_day=trading_day,
         open=close,
-        high=close,
-        low=close,
+        high=close + high_low_width,
+        low=close - high_low_width,
         close=close,
-        volume=100.0 + index,
+        volume=100.0 + index if volume is None else volume,
         source_fingerprint=fingerprint
         or sha256(f"subing-watch-test-{index}-{close}".encode()).hexdigest(),
     )
@@ -161,6 +161,110 @@ def stream_closes(closes: list[float]) -> tuple[Any, list[Any]]:
         state, evaluation = required_step(state, watch_bar(index, close))
         evaluations.append(evaluation)
     return state, evaluations
+
+
+def watch_higher_timeframe(
+    *,
+    alignment: str = "aligned",
+    bar_end: str = "2026-09-01T08:00:00+00:00",
+    identity: SubingWatchKernelIdentity | None = None,
+    ready: bool = True,
+    valid: bool = True,
+) -> SubingWatchKernelHigherTimeframe:
+    close, slope = {
+        "aligned": (110.0, 5.0),
+        "opposed": (90.0, -5.0),
+        "neutral": (110.0, -5.0),
+    }[alignment]
+    return SubingWatchKernelHigherTimeframe(
+        bar_end=bar_end,
+        close=close,
+        ma21=100.0,
+        ma21_slope_5_bps_per_bar=slope,
+        ready=ready,
+        valid=valid,
+        identity=identity or watch_identity(),
+    )
+
+
+def candidate_prefix_state() -> Any:
+    state = required_initial_state()
+    for index in range(1, 35):
+        state, _ = required_step(
+            state,
+            watch_bar(index, 100.0, high_low_width=1.0),
+        )
+    return state
+
+
+def ready_range_state(kind: str) -> Any:
+    from guiyi_quant.indicators import (
+        initial_range_detector_lux_state,
+        step_range_detector_lux,
+    )
+
+    source_identity = "jm|JM2601|2026-09-01|actual_dominant|15m"
+    multiplier = (
+        100.0
+        if kind == "intact"
+        else 0.01
+        if kind == "no_active_range"
+        else 0.1
+    )
+    closes = [100.0] * 4 if kind != "no_active_range" else [100.0, 110.0, 100.0, 110.0]
+    state = initial_range_detector_lux_state(
+        source_identity=source_identity,
+        minimum_range_length=3,
+        range_width_atr_multiplier=multiplier,
+        range_atr_length=3,
+    )
+    for index, close in enumerate(closes, start=1):
+        state, _ = step_range_detector_lux(
+            state,
+            high=close + 1.0,
+            low=close - 1.0,
+            close=close,
+            bar_end=watch_bar(index, close).bar_end,
+            trading_day="2026-09-01",
+        )
+    if kind in {"broken_up", "broken_down"}:
+        close = 110.0 if kind == "broken_up" else 90.0
+        state, _ = step_range_detector_lux(
+            state,
+            high=close + 1.0,
+            low=close - 1.0,
+            close=close,
+            bar_end=watch_bar(5, close).bar_end,
+            trading_day="2026-09-01",
+        )
+    return state
+
+
+def candidate_fixture(
+    case: str,
+) -> tuple[Any, SubingWatchKernelBar, SubingWatchKernelHigherTimeframe | None]:
+    state = candidate_prefix_state()
+    higher: SubingWatchKernelHigherTimeframe | None = watch_higher_timeframe()
+    if case != "range_unavailable":
+        state = replace(state, range_state=ready_range_state("intact"))
+    if case == "atr_unavailable":
+        from guiyi_quant.indicators import initial_atr_state
+
+        state = replace(
+            state,
+            atr_state=initial_atr_state(
+                14,
+                smoothing_policy="wilder_sma_seed",
+                round_digits=6,
+            ),
+        )
+    elif case == "volume_denominator_zero":
+        state = replace(state, previous_twenty_volumes=(0.0,) * 20)
+    elif case == "higher_timeframe_missing":
+        higher = None
+    elif case == "higher_timeframe_opposed":
+        higher = watch_higher_timeframe(alignment="opposed")
+    return state, watch_bar(35, 110.0, high_low_width=1.0), higher
 
 
 def test_policy_pins_sma21_and_macd_seed() -> None:
@@ -927,8 +1031,8 @@ def test_task2_candidate_id_uses_only_frozen_application_identity() -> None:
     ).candidate_id is None
 
 
-def test_task2_golden_fixture_has_fixed_payload_and_complete_parity() -> None:
-    """Catches formula, rounding, adapter, ID, or fixture drift together."""
+def test_task2_golden_fixture_has_fixed_payload_and_base_formula_parity() -> None:
+    """Catches Task 2 formula, rounding, adapter, ID, or fixture drift."""
 
     fixture = json.loads(GOLDEN_PATH.read_text(encoding="utf-8"))
     payload = {key: value for key, value in fixture.items() if key != "payload_sha256"}
@@ -992,14 +1096,6 @@ def test_task2_golden_fixture_has_fixed_payload_and_complete_parity() -> None:
                 "dif": evaluation.dif,
                 "dea": evaluation.dea,
                 "macd_histogram": evaluation.macd_histogram,
-                "context": {
-                    "ma21_slope_5_bps_per_bar": evaluation.context.ma21_slope_5_bps_per_bar,
-                    "distance_to_ma21_atr14": evaluation.context.distance_to_ma21_atr14,
-                    "macd_zero_distance_atr14": evaluation.context.macd_zero_distance_atr14,
-                    "volume_ratio_20": evaluation.context.volume_ratio_20,
-                    "range_state": evaluation.context.range_state,
-                    "higher_timeframe_alignment": evaluation.context.higher_timeframe_alignment,
-                },
                 "public_reason_codes": list(evaluation.public_reason_codes),
             }
         )
@@ -1023,34 +1119,331 @@ def test_task2_golden_fixture_has_fixed_payload_and_complete_parity() -> None:
                     if app.macd_histogram is not None
                     else None
                 ),
-                "context": {
-                    "ma21_slope_5_bps_per_bar": (
-                        str(app.context.ma21_slope_5_bps_per_bar)
-                        if app.context.ma21_slope_5_bps_per_bar is not None
-                        else None
-                    ),
-                    "distance_to_ma21_atr14": (
-                        str(app.context.distance_to_ma21_atr14)
-                        if app.context.distance_to_ma21_atr14 is not None
-                        else None
-                    ),
-                    "macd_zero_distance_atr14": (
-                        str(app.context.macd_zero_distance_atr14)
-                        if app.context.macd_zero_distance_atr14 is not None
-                        else None
-                    ),
-                    "volume_ratio_20": (
-                        str(app.context.volume_ratio_20)
-                        if app.context.volume_ratio_20 is not None
-                        else None
-                    ),
-                    "range_state": app.context.range_state,
-                    "higher_timeframe_alignment": app.context.higher_timeframe_alignment,
-                },
                 "candidate_id": app.candidate_id,
                 "public_reason_codes": list(app.public_reason_codes),
             }
         )
 
-    assert actual_kernel == fixture["expected_kernel_points"]
-    assert actual_application == fixture["expected_application_evaluations"]
+    expected_kernel = [
+        {key: value for key, value in point.items() if key != "context"}
+        for point in fixture["expected_kernel_points"]
+    ]
+    expected_application = [
+        {key: value for key, value in point.items() if key != "context"}
+        for point in fixture["expected_application_evaluations"]
+    ]
+    assert actual_kernel == expected_kernel
+    assert actual_application == expected_application
+
+
+def test_task3_sma21_regression_slope_uses_latest_five_points_and_current_denominator() -> None:
+    """Catches endpoint slope or mean-SMA normalization replacing OLS/current SMA21."""
+
+    state, bar, higher = candidate_fixture("all_ready")
+
+    next_state, evaluation = subing_watch_kernel.step_subing_watch_15m(
+        state,
+        bar,
+        higher_timeframe=higher,
+    )
+
+    assert evaluation.context.ma21_slope_5_bps_per_bar == 9.478673
+    assert next_state.latest_five_valid_sma21 == (
+        100.0,
+        100.0,
+        100.0,
+        100.0,
+        100.47619047619048,
+    )
+
+
+def test_task3_sma21_slope_zero_current_denominator_is_unavailable() -> None:
+    """Catches division by zero or an invented substitute slope denominator."""
+
+    state = replace(
+        required_initial_state(),
+        sma21_window=(0.0,) * 20,
+        latest_five_valid_sma21=(-4.0, -3.0, -2.0, -1.0),
+    )
+
+    next_state, evaluation = required_step(state, watch_bar(1, 0.0))
+
+    assert evaluation.context.ma21_slope_5_bps_per_bar is None
+    assert next_state.latest_five_valid_sma21 == (-4.0, -3.0, -2.0, -1.0, 0.0)
+
+
+def test_task3_atr14_normalizes_price_and_macd_distances() -> None:
+    """Catches wrong ATR timing, absolute-price distance, or histogram normalization."""
+
+    state, bar, higher = candidate_fixture("all_ready")
+
+    _, evaluation = subing_watch_kernel.step_subing_watch_15m(
+        state,
+        bar,
+        higher_timeframe=higher,
+    )
+
+    assert evaluation.context.distance_to_ma21_atr14 == 3.603604
+    assert evaluation.context.macd_zero_distance_atr14 == 0.30184
+
+
+def test_task3_zero_atr_denominator_makes_both_distances_unavailable() -> None:
+    """Catches zero ATR being emitted as infinity or a fabricated zero distance."""
+
+    state = candidate_prefix_state()
+    zero_atr = replace(
+        state.atr_state,
+        count=14,
+        seed_values=(0.0,) * 14,
+        previous_close=100.0,
+        previous_atr=0.0,
+    )
+    state = replace(state, atr_state=zero_atr)
+
+    next_state, evaluation = required_step(state, watch_bar(35, 100.0))
+
+    assert evaluation.context.distance_to_ma21_atr14 is None
+    assert evaluation.context.macd_zero_distance_atr14 is None
+    assert next_state.atr_state.count == 15
+
+
+def test_task3_volume_ratio_uses_previous_twenty_and_excludes_current() -> None:
+    """Catches adding the current Bar to its own denominator."""
+
+    state = replace(candidate_prefix_state(), previous_twenty_volumes=(10.0,) * 20)
+
+    next_state, evaluation = required_step(
+        state,
+        watch_bar(35, 110.0, high_low_width=1.0, volume=1000.0),
+    )
+
+    assert evaluation.context.volume_ratio_20 == 100.0
+    assert next_state.previous_twenty_volumes == (10.0,) * 19 + (1000.0,)
+
+
+def test_task3_zero_previous_volume_denominator_is_unavailable() -> None:
+    """Catches zero prior mean being emitted as infinity or normalized with current volume."""
+
+    state = replace(candidate_prefix_state(), previous_twenty_volumes=(0.0,) * 20)
+
+    next_state, evaluation = required_step(
+        state,
+        watch_bar(35, 110.0, high_low_width=1.0),
+    )
+
+    assert evaluation.context.volume_ratio_20 is None
+    assert next_state.previous_twenty_volumes == (0.0,) * 19 + (135.0,)
+
+
+@pytest.mark.parametrize(
+    ("source_range", "expected"),
+    (
+        ("range_unavailable", "range_unavailable"),
+        ("no_active_range", "no_active_range"),
+        ("intact", "intact"),
+        ("broken_up", "broken_up"),
+        ("broken_down", "broken_down"),
+    ),
+)
+def test_task3_maps_existing_causal_range_state(
+    source_range: str,
+    expected: str,
+) -> None:
+    """Catches recomputing or collapsing the existing Range Detector state."""
+
+    state = candidate_prefix_state()
+    if source_range != "range_unavailable":
+        state = replace(state, range_state=ready_range_state(source_range))
+
+    next_state, evaluation = required_step(
+        state,
+        watch_bar(35, 110.0, high_low_width=1.0),
+    )
+
+    assert evaluation.context.range_state == expected
+    assert next_state.range_state.index == state.range_state.index + 1
+
+
+@pytest.mark.parametrize(
+    ("alignment", "expected"),
+    (("aligned", "aligned"), ("opposed", "opposed"), ("neutral", "neutral")),
+)
+def test_task3_higher_timeframe_alignment_uses_candidate_direction(
+    alignment: str,
+    expected: str,
+) -> None:
+    """Catches one-sided or direction-free 60m alignment labels."""
+
+    state = candidate_prefix_state()
+
+    _, evaluation = subing_watch_kernel.step_subing_watch_15m(
+        state,
+        watch_bar(35, 110.0, high_low_width=1.0),
+        higher_timeframe=watch_higher_timeframe(alignment=alignment),
+    )
+
+    assert evaluation.observation_types == ("buy",)
+    assert evaluation.context.higher_timeframe_alignment == expected
+
+
+def test_task3_higher_timeframe_equal_cutoff_is_completed_and_allowed() -> None:
+    """Catches using strict-before when the accepted cutoff contract is before-or-equal."""
+
+    state = candidate_prefix_state()
+
+    _, evaluation = subing_watch_kernel.step_subing_watch_15m(
+        state,
+        watch_bar(35, 110.0, high_low_width=1.0),
+        higher_timeframe=watch_higher_timeframe(
+            bar_end="2026-09-01T08:45:00+00:00"
+        ),
+    )
+
+    assert evaluation.context.higher_timeframe_alignment == "aligned"
+
+
+def test_task3_higher_timeframe_after_cutoff_raises_fixed_future_error() -> None:
+    """Catches future 60m facts leaking into a completed 15m Candidate."""
+
+    state = candidate_prefix_state()
+
+    with pytest.raises(
+        SubingWatchKernelError,
+        match="SUBING_WATCH_HIGHER_TIMEFRAME_FUTURE",
+    ):
+        subing_watch_kernel.step_subing_watch_15m(
+            state,
+            watch_bar(35, 110.0, high_low_width=1.0),
+            higher_timeframe=watch_higher_timeframe(
+                bar_end="2026-09-01T09:00:00+00:00"
+            ),
+        )
+
+
+@pytest.mark.parametrize("case", ("missing_identity", "mismatched_identity", "not_ready", "invalid"))
+def test_task3_missing_invalid_or_wrong_60m_identity_is_non_gating_unavailable(
+    case: str,
+) -> None:
+    """Catches accepting an unproven 60m physical source or suppressing the base Candidate."""
+
+    if case == "missing_identity":
+        higher = SubingWatchKernelHigherTimeframe(
+            bar_end="2026-09-01T08:00:00+00:00",
+            close=110.0,
+            ma21=100.0,
+            ma21_slope_5_bps_per_bar=5.0,
+            ready=True,
+            valid=True,
+        )
+    else:
+        higher = watch_higher_timeframe(
+            identity=(
+                watch_identity(contract="RB2601")
+                if case == "mismatched_identity"
+                else watch_identity()
+            ),
+            ready=case != "not_ready",
+            valid=case != "invalid",
+        )
+    state = candidate_prefix_state()
+
+    _, evaluation = subing_watch_kernel.step_subing_watch_15m(
+        state,
+        watch_bar(35, 110.0, high_low_width=1.0),
+        higher_timeframe=higher,
+    )
+
+    assert evaluation.outcome == "evaluated_candidate"
+    assert evaluation.observation_types == ("buy",)
+    assert evaluation.context.ma21_slope_5_bps_per_bar == 9.478673
+    assert evaluation.context.higher_timeframe_alignment == "unavailable"
+
+
+@pytest.mark.parametrize(
+    "case",
+    (
+        "all_ready",
+        "atr_unavailable",
+        "volume_denominator_zero",
+        "range_unavailable",
+        "higher_timeframe_missing",
+        "higher_timeframe_opposed",
+    ),
+)
+def test_context_never_suppresses_base_candidate(case: str) -> None:
+    """Catches any explanation-only fact entering the Task 2 Candidate truth table."""
+
+    state, bar, higher = candidate_fixture(case)
+
+    _, evaluation = subing_watch_kernel.step_subing_watch_15m(
+        state,
+        bar,
+        higher_timeframe=higher,
+    )
+
+    assert evaluation.outcome == "evaluated_candidate"
+    assert evaluation.observation_types == ("buy",)
+    assert evaluation.context.ma21_slope_5_bps_per_bar == 9.478673
+    assert evaluation.context.volume_ratio_20 == (
+        None if case == "volume_denominator_zero" else 1.084337
+    )
+    assert evaluation.context.distance_to_ma21_atr14 == (
+        None if case == "atr_unavailable" else 3.603604
+    )
+    assert evaluation.context.macd_zero_distance_atr14 == (
+        None if case == "atr_unavailable" else 0.30184
+    )
+    assert evaluation.context.range_state == (
+        "range_unavailable" if case == "range_unavailable" else "intact"
+    )
+    assert evaluation.context.higher_timeframe_alignment == {
+        "higher_timeframe_missing": "unavailable",
+        "higher_timeframe_opposed": "opposed",
+    }.get(case, "aligned")
+
+
+def test_task3_context_exception_preserves_candidate_and_other_ready_facts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Catches an ATR context failure aborting or suppressing the frozen observation."""
+
+    state, bar, higher = candidate_fixture("all_ready")
+
+    def raise_context_error(*args: object, **kwargs: object) -> None:
+        raise RuntimeError("synthetic context failure")
+
+    monkeypatch.setattr(subing_watch_kernel, "step_atr", raise_context_error, raising=False)
+
+    next_state, evaluation = subing_watch_kernel.step_subing_watch_15m(
+        state,
+        bar,
+        higher_timeframe=higher,
+    )
+
+    assert evaluation.outcome == "evaluated_candidate"
+    assert evaluation.observation_types == ("buy",)
+    assert evaluation.context.ma21_slope_5_bps_per_bar == 9.478673
+    assert evaluation.context.distance_to_ma21_atr14 is None
+    assert evaluation.context.macd_zero_distance_atr14 is None
+    assert evaluation.context.volume_ratio_20 == 1.084337
+    assert evaluation.context.range_state == "intact"
+    assert evaluation.context.higher_timeframe_alignment == "aligned"
+    assert next_state.atr_state is state.atr_state
+
+
+def test_task3_context_state_remains_frozen_and_bounded_after_progression() -> None:
+    """Catches retaining unbounded SMA or volume history in the Watch state."""
+
+    state, bar, higher = candidate_fixture("all_ready")
+
+    next_state, _ = subing_watch_kernel.step_subing_watch_15m(
+        state,
+        bar,
+        higher_timeframe=higher,
+    )
+
+    assert len(next_state.sma21_window) == 21
+    assert len(next_state.latest_five_valid_sma21) == 5
+    assert len(next_state.previous_twenty_volumes) == 20
+    with pytest.raises(FrozenInstanceError):
+        next_state.previous_twenty_volumes = ()  # type: ignore[misc]
