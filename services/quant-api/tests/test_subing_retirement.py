@@ -51,3 +51,14 @@ def test_alert_models_have_only_htdy_scope_and_event_fields() -> None:
     assert "scope_product_frequencies" in AlertRule.__table__.columns
     assert "action_id" not in AlertEvent.__table__.columns
     assert "strategy_payload" not in AlertEvent.__table__.columns
+
+
+def test_indicator_policies_expose_no_strategy_compatibility() -> None:
+    from guiyi_quant.indicators import formal_policy_registry
+
+    assert "fastapi_atr_wilder_first_tr_v1" not in formal_policy_registry
+    assert all(
+        consumer != "legacy_strategy_compatibility"
+        for policy in formal_policy_registry.values()
+        for consumer in policy.allowed_consumers
+    )

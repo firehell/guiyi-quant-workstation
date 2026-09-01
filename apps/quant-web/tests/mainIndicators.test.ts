@@ -53,7 +53,7 @@ test('effective series identity never changes for an overlay', () => {
   }), { seriesKind: 'contract', contract: 'JM2601' })
 })
 
-test('v8 preferences migrate to v9 and retired overlay values normalize to none', () => {
+test('v8 preferences are purged without a compatibility migration', () => {
   const values = new Map<string, string>([[
     'guiyi.market.chart.preferences.v8',
     JSON.stringify({
@@ -68,15 +68,8 @@ test('v8 preferences migrate to v9 and retired overlay values normalize to none'
     setItem: (key: string, value: string) => values.set(key, value),
     removeItem: (key: string) => values.delete(key),
   }
-  assert.deepEqual(loadMainChartPreferences(storage), {
-    version: 9,
-    selectedOverlay: 'none',
-    optionalEmaIndicators: ['ema_21'],
-    showRangeDetector: true,
-    period: null,
-    realtimeFollow: false,
-  })
-  assert.ok(values.has(MAIN_CHART_PREFERENCES_KEY))
+  assert.deepEqual(loadMainChartPreferences(storage), defaultMainChartPreferences())
+  assert.equal(values.has(MAIN_CHART_PREFERENCES_KEY), false)
   assert.equal(values.has('guiyi.market.chart.preferences.v8'), false)
 })
 

@@ -158,23 +158,12 @@ export function loadMainChartPreferences(
 ): MainChartPreferences {
   if (!storage) return defaultMainChartPreferences()
   try {
+    purgeLegacy(storage)
     const current = storage.getItem(MAIN_CHART_PREFERENCES_KEY)
     if (current) {
       const parsed = JSON.parse(current) as Record<string, unknown>
       if (parsed.version === 9) return normalizePreferences(parsed)
     }
-    const legacyV8 = storage.getItem('guiyi.market.chart.preferences.v8')
-    if (legacyV8) {
-      const parsed = JSON.parse(legacyV8) as Record<string, unknown>
-      if (parsed.version === 8) {
-        const migrated = normalizePreferences(parsed)
-        storage.setItem?.(MAIN_CHART_PREFERENCES_KEY, JSON.stringify(migrated))
-        storage.removeItem?.('guiyi.market.chart.preferences.v8')
-        purgeLegacy(storage)
-        return migrated
-      }
-    }
-    purgeLegacy(storage)
   } catch {
     return defaultMainChartPreferences()
   }
@@ -202,7 +191,6 @@ function normalizePreferences(value: Record<string, unknown>): MainChartPreferen
 
 function purgeLegacy(storage: Partial<Pick<Storage, 'removeItem'>>) {
   for (const key of LEGACY_KEYS) {
-    if (key === 'guiyi.market.chart.preferences.v8') continue
     try { storage.removeItem?.(key) } catch { /* noop */ }
   }
 }

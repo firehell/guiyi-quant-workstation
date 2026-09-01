@@ -164,15 +164,27 @@ class AlertService:
             bar_end=request.bar_end,
         )
         if existing is not None:
-            if first_seen or _event_matches(
-                existing,
-                rule_id=rule.id,
-                symbol=symbol,
-                contract=contract,
-                trading_day=request.trading_day,
-                frequency=frequency,
-                bar_end=request.bar_end,
-                result_codes=result_codes,
+            if (
+                first_seen
+                and _valid_first_seen_event(
+                    existing,
+                    rule_id=rule.id,
+                    symbol=symbol,
+                    frequency=frequency,
+                    bar_end=request.bar_end,
+                )
+            ) or (
+                not first_seen
+                and _event_matches(
+                    existing,
+                    rule_id=rule.id,
+                    symbol=symbol,
+                    contract=contract,
+                    trading_day=request.trading_day,
+                    frequency=frequency,
+                    bar_end=request.bar_end,
+                    result_codes=result_codes,
+                )
             ):
                 return None
             raise AlertConsistencyError()
@@ -203,16 +215,28 @@ class AlertService:
                 self._session.rollback()
                 raise AlertEventPersistenceError() from None
             if existing is not None and (
-                first_seen
-                or _event_matches(
-                    existing,
-                    rule_id=rule.id,
-                    symbol=symbol,
-                    contract=contract,
-                    trading_day=request.trading_day,
-                    frequency=frequency,
-                    bar_end=request.bar_end,
-                    result_codes=result_codes,
+                (
+                    first_seen
+                    and _valid_first_seen_event(
+                        existing,
+                        rule_id=rule.id,
+                        symbol=symbol,
+                        frequency=frequency,
+                        bar_end=request.bar_end,
+                    )
+                )
+                or (
+                    not first_seen
+                    and _event_matches(
+                        existing,
+                        rule_id=rule.id,
+                        symbol=symbol,
+                        contract=contract,
+                        trading_day=request.trading_day,
+                        frequency=frequency,
+                        bar_end=request.bar_end,
+                        result_codes=result_codes,
+                    )
                 )
             ):
                 return None
@@ -339,6 +363,30 @@ def _event_matches(
         and event.trading_day == trading_day
         and event.frequency == frequency
         and _same_utc_instant(event.bar_end, bar_end)
+        and tuple(event.result_codes) == result_codes
+    )
+
+
+def _valid_first_seen_event(
+    event: AlertEvent,
+    *,
+    rule_id: int,
+    symbol: str,
+    frequency: str,
+    bar_end: datetime,
+) -> bool:
+    try:
+        result_codes = _normalize_result_codes(tuple(event.result_codes))
+    except (AlertScopeError, TypeError):
+        return False
+    return (
+        event.rule_id == rule_id
+        and event.symbol == symbol
+        and event.frequency == frequency
+        and _same_utc_instant(event.bar_end, bar_end)
+        and normalize_contract_for_symbol(symbol, event.contract) == event.contract
+        and isinstance(event.trading_day, date)
+        and not isinstance(event.trading_day, datetime)
         and tuple(event.result_codes) == result_codes
     )
 

@@ -76,7 +76,7 @@ Migration `20260902_0043` forward-only 删除全部已退役策略 Event、Rule 
 8. 已退役策略域不得保留 active API、CLI、Web、Runtime、Alert Rule、Scope、派生 cache 或兼容 reader。未来新策略必须使用新身份、新合同与新版本，不能恢复或复用已退役实现。
 9. EMA21 斜率只保留通用 10K primitive：恰好使用 10 个 EMA21 值，按首尾差除以 9 个 bar interval，再除以当前 EMA21 并换算为 bps/bar；不得恢复 5m/15m 正式因子或方向过滤。
 10. Alert 不属于八表 Market Catalog。HTDY 使用 symbol × frequency Scope；repair、replay、backfill、migration 或 EOD recalculation 不补评、不补发历史通知。
-11. causality、strict-before、prefix-invariance、future-leak、golden parity 与 fail-closed 测试不得删除。已有 Alembic history 只作 lineage；新 migration 必须前向、可审计且真实 production 执行仍需独立授权。
+11. active 策略与指标的 causality、strict-before、prefix-invariance、future-leak、golden parity 与 fail-closed 测试不得删除；整体退役的实现及其专用测试应同步删除。已有 Alembic history 只作 lineage；新 migration 必须前向、可审计且真实 production 执行仍需独立授权。
 
 ## 验证与交付
 

@@ -113,6 +113,20 @@ def test_first_seen_duplicate_freezes_original_facts(session: Session) -> None:
     assert stored.result_codes == ["buy"]
 
 
+def test_first_seen_duplicate_rejects_a_corrupt_stored_event(session: Session) -> None:
+    service = AlertService(session, operational_products=("jm",))
+    rule = session.scalar(select(AlertRule))
+    assert rule is not None
+    assert service.create_first_seen_observation_event(request(rule.id)) is not None
+    stored = session.scalar(select(AlertEvent))
+    assert stored is not None
+    stored.contract = "CORRUPT"
+    session.commit()
+
+    with pytest.raises(AlertConsistencyError):
+        service.create_first_seen_observation_event(request(rule.id))
+
+
 @pytest.mark.parametrize("result_codes", [(), ("hold",), ("buy", "buy")])
 def test_result_codes_are_strict(session: Session, result_codes: tuple[str, ...]) -> None:
     rule = session.scalar(select(AlertRule))
