@@ -15,6 +15,7 @@ from guiyi_quant.indicators.subing_watch_15m import (
     SUBING_WATCH_FORMULA_VERSION,
     SubingWatchKernelBar,
     SubingWatchKernelEvaluation,
+    SubingWatchKernelIdentity,
 )
 
 from app.core.env import PROJECT_ROOT
@@ -120,9 +121,21 @@ def _canonical_decimal_text(value: Decimal) -> str:
     return str(value)
 
 
-def _canonical_bar_fingerprint(bar: CanonicalBar) -> str:
+def _canonical_bar_fingerprint(
+    bar: CanonicalBar,
+    source_identity: SubingWatchSourceIdentity,
+) -> str:
     payload = json.dumps(
         {
+            "identity": {
+                "symbol": source_identity.symbol,
+                "contract": source_identity.contract,
+                "segment_start_trading_day": (
+                    source_identity.segment_start_trading_day.isoformat()
+                ),
+                "series_kind": source_identity.series_kind,
+                "frequency": source_identity.frequency,
+            },
             "bar_end": bar.bar_end.astimezone(UTC).isoformat(),
             "trading_day": bar.trading_day.isoformat(),
             "open": _canonical_decimal_text(bar.open),
@@ -333,12 +346,29 @@ class SubingWatchEvaluation:
             object.__setattr__(self, field, _decimal(getattr(self, field), optional=True))
 
 
-def to_subing_watch_kernel_bar(bar: CanonicalBar) -> SubingWatchKernelBar:
+def to_subing_watch_kernel_bar(
+    bar: CanonicalBar,
+    *,
+    source_identity: SubingWatchSourceIdentity,
+) -> SubingWatchKernelBar:
     """Cross the only Decimal-to-float boundary for a completed canonical bar."""
 
-    if type(bar) is not CanonicalBar:
+    if (
+        type(bar) is not CanonicalBar
+        or type(source_identity) is not SubingWatchSourceIdentity
+    ):
         raise SubingWatchContractError()
+    kernel_identity = SubingWatchKernelIdentity(
+        symbol=source_identity.symbol,
+        contract=source_identity.contract,
+        segment_start_trading_day=(
+            source_identity.segment_start_trading_day.isoformat()
+        ),
+        series_kind=source_identity.series_kind,
+        frequency=source_identity.frequency,
+    )
     return SubingWatchKernelBar(
+        identity=kernel_identity,
         bar_end=bar.bar_end.isoformat(),
         trading_day=bar.trading_day.isoformat(),
         open=_decimal_to_kernel_float(bar.open),
@@ -346,7 +376,7 @@ def to_subing_watch_kernel_bar(bar: CanonicalBar) -> SubingWatchKernelBar:
         low=_decimal_to_kernel_float(bar.low),
         close=_decimal_to_kernel_float(bar.close),
         volume=_decimal_to_kernel_float(bar.volume),
-        source_fingerprint=_canonical_bar_fingerprint(bar),
+        source_fingerprint=_canonical_bar_fingerprint(bar, source_identity),
     )
 
 

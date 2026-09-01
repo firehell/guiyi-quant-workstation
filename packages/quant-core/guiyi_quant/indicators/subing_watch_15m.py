@@ -133,6 +133,7 @@ class SubingWatchKernelIdentity:
 
 @dataclass(frozen=True, slots=True)
 class SubingWatchKernelBar:
+    identity: SubingWatchKernelIdentity
     bar_end: str
     trading_day: str
     open: float
@@ -143,6 +144,8 @@ class SubingWatchKernelBar:
     source_fingerprint: str
 
     def __post_init__(self) -> None:
+        if type(self.identity) is not SubingWatchKernelIdentity:
+            raise SubingWatchKernelError()
         bar_end = _rfc3339(self.bar_end)
         trading_day = _trading_day(self.trading_day)
         open_value = _finite_float(self.open)
@@ -367,7 +370,11 @@ def step_subing_watch_15m(
 
     _validate_step_state(state)
     bar_valid = _bar_is_valid(bar)
-    if bar_valid and state.last_evaluation is not None:
+    if not bar_valid:
+        return _block_state(state, bar, "SUBING_WATCH_SOURCE_INVALID")
+    if bar.identity != state.identity:
+        return _block_state(state, bar, "SUBING_WATCH_IDENTITY_MISMATCH")
+    if state.last_evaluation is not None:
         if bar.bar_end == state.last_evaluation.bar_end:
             if bar.source_fingerprint == state.last_bar_fingerprint:
                 return state, state.last_evaluation
@@ -376,8 +383,6 @@ def step_subing_watch_15m(
     if state.blocked_reason is not None:
         return state, _unavailable_evaluation(state, bar, state.blocked_reason)
 
-    if not bar_valid:
-        return _block_state(state, bar, "SUBING_WATCH_SOURCE_INVALID")
     if bar.trading_day < state.identity.segment_start_trading_day:
         return _block_state(state, bar, "SUBING_WATCH_SEGMENT_MISMATCH")
     if (
@@ -387,7 +392,7 @@ def step_subing_watch_15m(
         return _block_state(state, bar, "SUBING_WATCH_SOURCE_INVALID", retain_last=True)
 
     sma21_window = (*state.sma21_window, bar.close)[-21:]
-    ma21 = round(sum(sma21_window) / 21, 6) if len(sma21_window) == 21 else None
+    raw_ma21 = sum(sma21_window) / 21 if len(sma21_window) == 21 else None
     macd_state, (dif_point, dea_point, histogram_point) = step_macd(
         state.macd_state,
         bar.close,
@@ -422,9 +427,9 @@ def step_subing_watch_15m(
         golden = False
         dead = False
     observations: tuple[Literal["buy", "sell"], ...] = ()
-    if golden and ma21 is not None and bar.close > ma21:
+    if golden and raw_ma21 is not None and bar.close > raw_ma21:
         observations = ("buy",)
-    elif dead and ma21 is not None and bar.close < ma21:
+    elif dead and raw_ma21 is not None and bar.close < raw_ma21:
         observations = ("sell",)
 
     evaluation = SubingWatchKernelEvaluation(
@@ -435,7 +440,7 @@ def step_subing_watch_15m(
         outcome="evaluated_candidate" if observations else "evaluated_no_signal",
         observation_types=observations,
         close=round(bar.close, 6),
-        ma21=ma21,
+        ma21=round(raw_ma21, 6) if raw_ma21 is not None else None,
         dif=current_dif,
         dea=current_dea,
         macd_histogram=(
@@ -506,6 +511,8 @@ def _bar_is_valid(bar: object) -> bool:
     if type(bar) is not SubingWatchKernelBar:
         return False
     try:
+        if type(bar.identity) is not SubingWatchKernelIdentity:
+            return False
         _rfc3339(bar.bar_end)
         _trading_day(bar.trading_day)
         open_value = _finite_float(bar.open)

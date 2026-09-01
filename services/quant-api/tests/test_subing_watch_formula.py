@@ -39,7 +39,7 @@ POLICY_PATH = (
 OPAQUE_FINGERPRINT = "0" * 64
 GOLDEN_PATH = Path(__file__).parent / "fixtures/subing_watch_15m_v1_golden.json"
 GOLDEN_PAYLOAD_SHA256 = (
-    "8ea52a0f86beeea27172971bb5448d8c9ba1e11ad98881fe547c214d3af68267"
+    "8423e85c5e0cd4c9abaad89e4a59bbaa1a9468544f031d68b7878bd5341bfec0"
 )
 
 
@@ -102,18 +102,30 @@ def watch_identity(
     )
 
 
+def watch_source_identity(
+    *, contract: str = "JM2601", segment_start: date = date(2026, 9, 1)
+) -> SubingWatchSourceIdentity:
+    return SubingWatchSourceIdentity(
+        symbol=contract.rstrip("0123456789").lower(),
+        contract=contract,
+        segment_start_trading_day=segment_start,
+    )
+
+
 def watch_bar(
     index: int,
     close: float,
     *,
     fingerprint: str | None = None,
     trading_day: str = "2026-09-01",
+    identity: SubingWatchKernelIdentity | None = None,
 ) -> SubingWatchKernelBar:
     bar_end = datetime(2026, 9, 1, tzinfo=UTC).replace(
         hour=(index * 15) // 60,
         minute=(index * 15) % 60,
     )
     return SubingWatchKernelBar(
+        identity=identity or watch_identity(),
         bar_end=bar_end.isoformat(),
         trading_day=trading_day,
         open=close,
@@ -222,7 +234,9 @@ def test_policy_rejects_missing_field(tmp_path: Path) -> None:
 
 
 def test_decimal_float_boundary_is_single_and_deterministic() -> None:
-    kernel = to_subing_watch_kernel_bar(canonical_bar())
+    kernel = to_subing_watch_kernel_bar(
+        canonical_bar(), source_identity=watch_source_identity()
+    )
     app = from_kernel_evaluation(kernel_evaluation(), source_mode="canonical")
 
     assert kernel.close == 123.4567894
@@ -239,10 +253,12 @@ def test_decimal_float_boundary_is_single_and_deterministic() -> None:
 
 def test_adapter_uses_distinct_opaque_fingerprints_before_float_boundary() -> None:
     first = to_subing_watch_kernel_bar(
-        canonical_bar(close=Decimal("9007199254740992"))
+        canonical_bar(close=Decimal("9007199254740992")),
+        source_identity=watch_source_identity(),
     )
     second = to_subing_watch_kernel_bar(
-        canonical_bar(close=Decimal("9007199254740993"))
+        canonical_bar(close=Decimal("9007199254740993")),
+        source_identity=watch_source_identity(),
     )
 
     assert first.close == second.close
@@ -293,6 +309,7 @@ def test_source_identity_rejects_invalid_symbol_contract_or_frequency(
 def test_kernel_bar_rejects_non_aware_time() -> None:
     with pytest.raises(SubingWatchKernelError, match="SUBING_WATCH_KERNEL_INVALID"):
         SubingWatchKernelBar(
+            identity=watch_identity(),
             bar_end="2026-09-01T02:15:00",
             trading_day="2026-09-01",
             open=10.0,
@@ -307,6 +324,7 @@ def test_kernel_bar_rejects_non_aware_time() -> None:
 def test_kernel_bar_rejects_invalid_ohlc_after_aware_time_validation() -> None:
     with pytest.raises(SubingWatchKernelError, match="SUBING_WATCH_KERNEL_INVALID"):
         SubingWatchKernelBar(
+            identity=watch_identity(),
             bar_end="2026-09-01T02:15:00+00:00",
             trading_day="2026-09-01",
             open=10.0,
@@ -321,6 +339,7 @@ def test_kernel_bar_rejects_invalid_ohlc_after_aware_time_validation() -> None:
 def test_kernel_bar_rejects_malformed_opaque_digest() -> None:
     with pytest.raises(SubingWatchKernelError, match="SUBING_WATCH_KERNEL_INVALID"):
         SubingWatchKernelBar(
+            identity=watch_identity(),
             bar_end="2026-09-01T02:15:00+00:00",
             trading_day="2026-09-01",
             open=10.0,
@@ -343,7 +362,10 @@ def test_adapter_rejects_non_finite_kernel_numbers(value: float) -> None:
 
 def test_adapter_rejects_decimal_to_float_overflow() -> None:
     with pytest.raises(SubingWatchContractError, match="SUBING_WATCH_CONTRACT_INVALID"):
-        to_subing_watch_kernel_bar(canonical_bar(close=Decimal("1e9999")))
+        to_subing_watch_kernel_bar(
+            canonical_bar(close=Decimal("1e9999")),
+            source_identity=watch_source_identity(),
+        )
 
 
 def test_kernel_state_is_frozen_and_accepts_one_matching_stable_fingerprint() -> None:
@@ -353,7 +375,9 @@ def test_kernel_state_is_frozen_and_accepts_one_matching_stable_fingerprint() ->
         segment_start_trading_day="2026-09-01",
     )
     state = initial_subing_watch_kernel_state(identity, load_subing_watch_policy(POLICY_PATH))
-    bar = to_subing_watch_kernel_bar(canonical_bar())
+    bar = to_subing_watch_kernel_bar(
+        canonical_bar(), source_identity=watch_source_identity()
+    )
     evaluation = kernel_evaluation(identity=identity)
     populated = replace(
         state,
@@ -400,7 +424,9 @@ def test_kernel_state_rejects_mismatched_identity_fingerprint_or_blocked_reason(
         segment_start_trading_day="2026-09-01",
     )
     state = initial_subing_watch_kernel_state(identity, load_subing_watch_policy(POLICY_PATH))
-    fingerprint = to_subing_watch_kernel_bar(canonical_bar()).source_fingerprint
+    fingerprint = to_subing_watch_kernel_bar(
+        canonical_bar(), source_identity=watch_source_identity()
+    ).source_fingerprint
     different_identity = SubingWatchKernelIdentity(
         symbol="rb",
         contract="RB2601",
@@ -515,6 +541,96 @@ def test_task2_close_equal_sma21_blocks_candidate_even_on_golden_cross() -> None
     assert current.observation_types == ()
 
 
+def test_fix1_candidate_uses_unrounded_sma21_for_strict_price_comparison() -> None:
+    """Catches rounding SMA21 before the strict BUY/SELL decision."""
+
+    closes = [
+        100.0,
+        99.0,
+        96.0,
+        101.0,
+        101.0,
+        106.0,
+        107.0,
+        106.0,
+        109.0,
+        109.0,
+        108.0,
+        111.0,
+        111.0,
+        108.0,
+        105.00000981,
+        100.0,
+        97.0,
+        94.0,
+        91.0,
+        94.0,
+        91.0,
+        86.0,
+        86.0,
+        91.0,
+        92.0,
+        89.0,
+        88.0,
+        87.0,
+        82.0,
+        79.0,
+        79.0,
+        80.0,
+        79.0,
+        80.0,
+        88.50000048,
+    ]
+    _, evaluations = stream_closes(closes)
+    previous, current = evaluations[-2:]
+
+    assert previous.dif == -7.107306
+    assert previous.dea == -6.862888
+    assert current.dif == -6.225074
+    assert current.dea == -6.735325
+    assert current.close == current.ma21 == 88.5
+    assert current.observation_types == ()
+    assert current.outcome == "evaluated_no_signal"
+
+
+def test_fix1_adapter_binds_explicit_physical_identity_into_fingerprint() -> None:
+    """Catches an adapter/fingerprint that cannot distinguish physical segments."""
+
+    source = canonical_bar()
+    jm = watch_source_identity()
+    rb = watch_source_identity(contract="RB2601")
+    try:
+        jm_kernel = to_subing_watch_kernel_bar(source, source_identity=jm)
+        rb_kernel = to_subing_watch_kernel_bar(source, source_identity=rb)
+    except TypeError:
+        pytest.fail("Task 2 adapter does not require explicit source identity")
+
+    assert jm_kernel.identity == watch_identity()
+    assert rb_kernel.identity == watch_identity(contract="RB2601")
+    assert jm_kernel.source_fingerprint != rb_kernel.source_fingerprint
+
+
+def test_fix1_wrong_contract_incoming_bar_blocks_before_formula_progression() -> None:
+    """Catches comparing the state MACD/SMA against another physical contract."""
+
+    state = required_initial_state(watch_identity())
+    try:
+        wrong_contract = to_subing_watch_kernel_bar(
+            canonical_bar(),
+            source_identity=watch_source_identity(contract="RB2601"),
+        )
+    except TypeError:
+        pytest.fail("Task 2 kernel Bar cannot carry incoming physical identity")
+
+    blocked, evaluation = required_step(state, wrong_contract)
+
+    assert evaluation.outcome == "source_unavailable"
+    assert evaluation.public_reason_codes == ("SUBING_WATCH_IDENTITY_MISMATCH",)
+    assert blocked.blocked_reason == "SUBING_WATCH_IDENTITY_MISMATCH"
+    assert blocked.sma21_window == ()
+    assert blocked.macd_state == state.macd_state
+
+
 def test_task2_first_segment_bar_is_bounded_warmup_without_candidate() -> None:
     """Catches accidental signal evaluation before SMA/MACD readiness."""
 
@@ -563,8 +679,11 @@ def test_task2_invalid_completed_bar_blocks_instead_of_skipping(
 def test_task2_bar_before_physical_segment_blocks_source() -> None:
     """Catches cross-segment recursion before the frozen segment start."""
 
-    state = required_initial_state(watch_identity(segment_start="2026-09-02"))
-    blocked, evaluation = required_step(state, watch_bar(1, 100.0))
+    identity = watch_identity(segment_start="2026-09-02")
+    state = required_initial_state(identity)
+    blocked, evaluation = required_step(
+        state, watch_bar(1, 100.0, identity=identity)
+    )
 
     assert evaluation.outcome == "source_unavailable"
     assert evaluation.public_reason_codes == ("SUBING_WATCH_SEGMENT_MISMATCH",)
@@ -589,6 +708,24 @@ def test_task2_same_bar_same_fingerprint_is_idempotent_even_if_float_view_drifts
 
     assert duplicate_state is accepted
     assert duplicate_evaluation is evaluation
+
+
+def test_fix1_invalid_float_view_precedes_duplicate_even_with_same_fingerprint() -> None:
+    """Catches duplicate handling bypassing finite/OHLC validation."""
+
+    state = required_initial_state()
+    bar = watch_bar(1, 100.0)
+    accepted, accepted_evaluation = required_step(state, bar)
+    object.__setattr__(bar, "close", math.nan)
+
+    blocked, unavailable = required_step(accepted, bar)
+
+    assert unavailable is not accepted_evaluation
+    assert unavailable.outcome == "source_unavailable"
+    assert unavailable.public_reason_codes == ("SUBING_WATCH_SOURCE_INVALID",)
+    assert blocked.blocked_reason == "SUBING_WATCH_SOURCE_INVALID"
+    assert blocked.sma21_window == accepted.sma21_window
+    assert blocked.macd_state == accepted.macd_state
 
 
 def test_task2_same_bar_different_fingerprint_raises_fixed_conflict() -> None:
@@ -647,17 +784,113 @@ def test_task2_batch_and_incremental_formula_points_match() -> None:
         assert evaluation.macd_histogram == batch_macd.histogram.points[index].value
 
 
-def test_task2_every_prefix_and_future_tail_are_stable() -> None:
-    """Catches future-tail mutation, repainting, or hidden unbounded batch dependence."""
+def test_fix1_independent_replays_with_different_tails_freeze_common_prefix() -> None:
+    """Catches future-tail mutation of kernel/application evaluations or IDs."""
 
-    closes = [100.0 + ((index * 11) % 23) for index in range(40)]
-    _, full_evaluations = stream_closes(closes)
-    frozen_prefix = tuple(full_evaluations[:35])
+    common_prefix = [100.0] * 34 + [110.0]
+    _, first_kernel = stream_closes([*common_prefix, 80.0, 120.0])
+    _, second_kernel = stream_closes([*common_prefix, 140.0, 60.0])
+    first_application = tuple(
+        from_kernel_evaluation(item, source_mode="canonical")
+        for item in first_kernel[: len(common_prefix)]
+    )
+    second_application = tuple(
+        from_kernel_evaluation(item, source_mode="canonical")
+        for item in second_kernel[: len(common_prefix)]
+    )
 
-    for end in range(1, len(closes) + 1):
-        _, prefix = stream_closes(closes[:end])
-        assert prefix[-1] == full_evaluations[end - 1]
-    assert tuple(full_evaluations[:35]) == frozen_prefix
+    assert tuple(first_kernel[: len(common_prefix)]) == tuple(
+        second_kernel[: len(common_prefix)]
+    )
+    assert first_application == second_application
+    assert first_application[-1].candidate_id == (
+        "b9ca9144652972a43e8b87346fcf95b9cdaabd9dccc66042ed878200b5267905"
+    )
+
+
+def test_fix1_full_incremental_application_matches_hand_frozen_batch_points() -> None:
+    """Catches application rounding, identity, or Candidate ID parity drift."""
+
+    from guiyi_quant.indicators import macd_series
+
+    closes = [100.0] * 34 + [110.0, 80.0]
+    _, kernel = stream_closes(closes)
+    batch = macd_series(
+        closes,
+        12,
+        26,
+        9,
+        ema_seed_policy="sma_window",
+        histogram_scale=2,
+        round_digits=6,
+    )
+    application = [
+        from_kernel_evaluation(item, source_mode="canonical") for item in kernel[-2:]
+    ]
+    assert [item.dif for item in application] == [
+        Decimal(str(point.value)).quantize(Decimal("0.000001"))
+        for point in batch.dif.points[-2:]
+    ]
+    assert [item.dea for item in application] == [
+        Decimal(str(point.value)).quantize(Decimal("0.000001"))
+        for point in batch.dea.points[-2:]
+    ]
+    assert [item.macd_histogram for item in application] == [
+        Decimal(str(point.value)).quantize(Decimal("0.000001"))
+        for point in batch.histogram.points[-2:]
+    ]
+    actual = [
+        {
+            "source_identity_digest": item.source_identity_digest,
+            "bar_end": item.bar_end.isoformat(),
+            "outcome": item.outcome,
+            "observation_types": item.observation_types,
+            "close": item.close,
+            "ma21": item.ma21,
+            "dif": item.dif,
+            "dea": item.dea,
+            "macd_histogram": item.macd_histogram,
+            "candidate_id": item.candidate_id,
+        }
+        for item in application
+    ]
+
+    assert actual == [
+        {
+            "source_identity_digest": (
+                "subing-watch-source:"
+                "e796df38831a949b367fb11232a788979ca097bacdfc64fb29b1e0aa988c2cea"
+            ),
+            "bar_end": "2026-09-01T08:45:00+00:00",
+            "outcome": "evaluated_candidate",
+            "observation_types": ("buy",),
+            "close": Decimal("110.000000"),
+            "ma21": Decimal("100.476190"),
+            "dif": Decimal("0.797721"),
+            "dea": Decimal("0.159544"),
+            "macd_histogram": Decimal("1.276353"),
+            "candidate_id": (
+                "b9ca9144652972a43e8b87346fcf95b9cdaabd9dccc66042ed878200b5267905"
+            ),
+        },
+        {
+            "source_identity_digest": (
+                "subing-watch-source:"
+                "e796df38831a949b367fb11232a788979ca097bacdfc64fb29b1e0aa988c2cea"
+            ),
+            "bar_end": "2026-09-01T09:00:00+00:00",
+            "outcome": "evaluated_candidate",
+            "observation_types": ("sell",),
+            "close": Decimal("80.000000"),
+            "ma21": Decimal("99.523810"),
+            "dif": Decimal("-0.979538"),
+            "dea": Decimal("-0.068272"),
+            "macd_histogram": Decimal("-1.822531"),
+            "candidate_id": (
+                "7e73fcfde76cc9920e06a7e5d7cc7cc7434f732c25603b9a3830aa3a2c3e0489"
+            ),
+        },
+    ]
 
 
 def test_task2_candidate_id_uses_only_frozen_application_identity() -> None:
@@ -738,7 +971,10 @@ def test_task2_golden_fixture_has_fixed_payload_and_complete_parity() -> None:
             turnover=None,
             open_interest=None,
         )
-        kernel_bar = to_subing_watch_kernel_bar(canonical)
+        kernel_bar = to_subing_watch_kernel_bar(
+            canonical,
+            source_identity=watch_source_identity(),
+        )
         assert kernel_bar.source_fingerprint == item["source_fingerprint"]
         state, evaluation = required_step(state, kernel_bar)
         if input_index not in expected_indexes:
