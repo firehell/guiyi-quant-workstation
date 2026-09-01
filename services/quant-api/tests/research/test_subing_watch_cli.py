@@ -10,6 +10,7 @@ import pytest
 
 from app.guiyi_cli.main import build_parser, main
 from app.guiyi_cli.research_requests import build_research_request
+from app.market_data.subing_watch.contracts import load_subing_watch_policy
 
 
 def _module():
@@ -101,6 +102,52 @@ def test_cli_routes_only_to_watch_service_and_prints_json_stdout() -> None:
     assert payload["readonly"] is True
     assert payload["symbols"] == ["jm"]
     assert payload["products"][0]["symbol"] == "jm"
+
+
+def test_symbol_outside_active_scope_returns_exact_public_readonly_error() -> None:
+    module = _module()
+
+    class _NoReadMarketData:
+        def query_actual_dominant_trading_days(self, _request):
+            raise AssertionError("invalid scope must fail before market read")
+
+    service = module.SubingWatchResearchService(
+        _NoReadMarketData(),
+        products=("jm",),
+        policy=load_subing_watch_policy(),
+    )
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+
+    code = main(
+        [
+            "research",
+            "subing-watch",
+            "--symbols",
+            "ag",
+            "--since",
+            "2026-08-01",
+            "--through",
+            "2026-08-31",
+        ],
+        session_factory=lambda: nullcontext(object()),
+        watch_research_service_factory=lambda _session: service,
+        stdout=stdout,
+        stderr=stderr,
+    )
+
+    assert code == 1
+    assert stdout.getvalue() == ""
+    assert json.loads(stderr.getvalue()) == {
+        "schema_version": 1,
+        "command": "research.subing-watch",
+        "status": "error",
+        "readonly": True,
+        "error": {
+            "code": "SUBING_WATCH_RESEARCH_SYMBOL_INVALID",
+            "type": "SubingWatchResearchError",
+        },
+    }
 
 
 @pytest.mark.parametrize(

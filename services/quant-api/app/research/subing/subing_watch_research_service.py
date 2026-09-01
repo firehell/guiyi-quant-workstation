@@ -7,7 +7,6 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
-from statistics import median
 from types import MappingProxyType
 from typing import Literal
 
@@ -18,6 +17,12 @@ from app.market_data.actual_dominant_research import (
     ActualDominantResearchSegmentLoader,
 )
 from app.market_data.domain import BarFrequency, CanonicalBar, ResolvedContractSegment
+from app.market_data.price_outcome import (
+    PriceDirection,
+    PriceDirectionalOutcome,
+    build_price_outcomes_at,
+    summarize_price_outcomes,
+)
 from app.market_data.subing_watch.contracts import (
     SubingWatchEvaluation,
     SubingWatchPolicy,
@@ -45,7 +50,6 @@ _HIGHER_TIMEFRAME_ALIGNMENTS: tuple[HigherTimeframeAlignment, ...] = (
     "neutral",
     "unavailable",
 )
-_BPS = Decimal("10000")
 _METRIC_QUANTUM = Decimal("0.000001")
 FORMULA_VERSION = SUBING_WATCH_FORMULA_VERSION
 
@@ -54,7 +58,8 @@ class SubingWatchResearchError(ValueError):
     code = "SUBING_WATCH_RESEARCH_INVALID"
 
     def __init__(self, code: str | None = None) -> None:
-        super().__init__(code or self.code)
+        self.code = code or type(self).code
+        super().__init__(self.code)
 
 
 @dataclass(frozen=True, slots=True)
@@ -159,7 +164,6 @@ class SubingWatchResearchResult:
 @dataclass(frozen=True, slots=True)
 class _Candidate:
     evaluation: SubingWatchEvaluation
-    bar: CanonicalBar
     segment_bars: tuple[CanonicalBar, ...]
     segment_bar_index: int
 
@@ -207,7 +211,9 @@ class SubingWatchResearchService:
         if requested == "active":
             return self._products
         if any(symbol not in self._products for symbol in requested):
-            raise ValueError("SUBING_WATCH_RESEARCH_SYMBOL_INVALID")
+            raise SubingWatchResearchError(
+                "SUBING_WATCH_RESEARCH_SYMBOL_INVALID"
+            )
         return tuple(sorted(requested))
 
     def _diagnose_product(
@@ -241,7 +247,7 @@ class SubingWatchResearchService:
                 self._policy,
             )
             bars_by_identity = {
-                (bar.bar_end, bar.trading_day): (index, bar)
+                (bar.bar_end, bar.trading_day): index
                 for index, bar in enumerate(segment_15m)
             }
             for evaluation in projection.evaluations:
@@ -257,9 +263,8 @@ class SubingWatchResearchService:
                 )
                 if located is None:
                     raise SubingWatchResearchError()
-                index, bar = located
                 candidates.append(
-                    _Candidate(evaluation, bar, segment_15m, index)
+                    _Candidate(evaluation, segment_15m, located)
                 )
         return self._summarize(symbol, candidates, request.forward_bars)
 
@@ -325,10 +330,7 @@ class SubingWatchResearchService:
                 {key: higher_counts[key] for key in _HIGHER_TIMEFRAME_ALIGNMENTS}
             ),
             forward_diagnostics=MappingProxyType(
-                {
-                    horizon: _forward_diagnostics(ordered, horizon)
-                    for horizon in forward_bars
-                }
+                _forward_diagnostics(ordered, forward_bars)
             ),
         )
 
@@ -435,43 +437,45 @@ def _context_available(evaluation: SubingWatchEvaluation) -> bool:
 
 def _forward_diagnostics(
     candidates: Sequence[_Candidate],
-    horizon: int,
-) -> SubingWatchForwardDiagnostics:
-    close_changes: list[Decimal] = []
-    favorable: list[Decimal] = []
-    adverse: list[Decimal] = []
+    horizons: tuple[int, ...],
+) -> dict[int, SubingWatchForwardDiagnostics]:
+    if not horizons:
+        return {}
+    outcomes: dict[int, list[PriceDirectionalOutcome]] = {
+        horizon: [] for horizon in horizons
+    }
     for candidate in candidates:
-        future = candidate.segment_bars[
-            candidate.segment_bar_index + 1 : candidate.segment_bar_index + horizon + 1
-        ]
-        if len(future) != horizon:
-            continue
-        if candidate.bar.close == 0:
-            raise SubingWatchResearchError()
-        base = candidate.bar.close
-        if candidate.direction == "buy":
-            close_change = (future[-1].close / base - 1) * _BPS
-            mfe = (max(bar.high for bar in future) / base - 1) * _BPS
-            mae = (min(bar.low for bar in future) / base - 1) * _BPS
-        else:
-            close_change = (1 - future[-1].close / base) * _BPS
-            mfe = (1 - min(bar.low for bar in future) / base) * _BPS
-            mae = (1 - max(bar.high for bar in future) / base) * _BPS
-        close_changes.append(close_change)
-        favorable.append(mfe)
-        adverse.append(mae)
-    sample_count = len(close_changes)
-    return SubingWatchForwardDiagnostics(
-        horizon=horizon,
-        sample_count=sample_count,
-        truncated_count=len(candidates) - sample_count,
-        median_directional_close_change_bps=_median_metric(close_changes),
-        median_mfe_bps=_median_metric(favorable),
-        median_mae_bps=_median_metric(adverse),
-    )
+        projected = build_price_outcomes_at(
+            candidate.segment_bars,
+            index=candidate.segment_bar_index,
+            direction=(
+                PriceDirection.LONG
+                if candidate.direction == "buy"
+                else PriceDirection.SHORT
+            ),
+            horizons=horizons,
+            same_trading_day_only=False,
+        )
+        for horizon, outcome in projected.items():
+            if outcome is not None:
+                outcomes[horizon].append(outcome)
+    result: dict[int, SubingWatchForwardDiagnostics] = {}
+    for horizon in horizons:
+        summary = summarize_price_outcomes(outcomes[horizon])
+        result[horizon] = SubingWatchForwardDiagnostics(
+            horizon=horizon,
+            sample_count=summary.sample_count,
+            truncated_count=len(candidates) - summary.sample_count,
+            median_directional_close_change_bps=_quantize_metric(
+                summary.median_directional_return_bps
+            ),
+            median_mfe_bps=_quantize_metric(summary.median_mfe_bps),
+            median_mae_bps=_quantize_metric(summary.median_mae_bps),
+        )
+    return result
 
 
-def _median_metric(values: Sequence[Decimal]) -> Decimal | None:
-    if not values:
+def _quantize_metric(value: Decimal | None) -> Decimal | None:
+    if value is None:
         return None
-    return median(values).quantize(_METRIC_QUANTUM)
+    return value.quantize(_METRIC_QUANTUM)
