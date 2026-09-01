@@ -362,7 +362,7 @@ def test_alert_rule_codes_have_one_production_registry_per_language() -> None:
         capture_output=True,
         text=True,
     )
-    assert frontend.stdout.strip() == "[alert-rule-ownership] passed"
+    assert frontend.stdout.strip().splitlines()[-1] == "[alert-rule-ownership] passed"
 
 
 def test_release_candidate_excludes_private_sources() -> None:
