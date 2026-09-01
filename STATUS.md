@@ -9,7 +9,7 @@
 | 项目 | 当前事实 |
 |---|---|
 | Release | `v1.9.9@c211b01e325726202f733fea2aa33ae2cf76b232` 是当前最新 GitHub Release；`main`、annotated tag 的 peeled commit 与该 GitHub Release 精确一致，API 与 Web release identity 均为 `1.9.9`。该最小热修从 `main/v1.9.8@7c074ab41` 只纳入 `fbf468cba` 的 Alert startup queue reconciliation 修复及必要 release 元数据；未夹带其余 `main..develop` Web/文档提交。 |
-| Runtime | 2026-09-01 将五项 launchd 服务一次切换到 clean、detached 的 `/Volumes/扩展盘/guiyi-quant-runtime-v1.9.8-r1@7c074ab41`；Live 在首个完整 1m 边界后达到 `60 subscribed / live_market=ok / last_bar_at=2026-09-01T02:32:00Z`，Alert restore 于 `2026-09-01T02:44:58Z` 完成并写出 schema-v4 reason，但结果为 `0 ready / 60 unavailable`，60 个 reason 均为 `STALE_INPUT`，未达到 `RUNTIME_READY`。已按 fail-closed 规则只回滚一次；当前五项服务重新绑定 clean、detached 的 `/Volumes/扩展盘/guiyi-quant-runtime-v1.9.7-r3@66c3be80`，回滚后 Live 已恢复到 `last_bar_at=2026-09-01T02:47:00Z`。startup/promotion 未新增 Event、未调用 transport、未发送 canary。 |
+| Runtime | 2026-09-01 将五项 launchd 服务一次切换到 clean、detached 的 `/Volumes/扩展盘/guiyi-quant-runtime-v1.9.9-r1@c211b01e`；API/Web 为 `1.9.9`，五项 exact root/commit 一致，本地 status `overall=passed`。Alert 于 `12:06:44 +08:00` 完成 restore/reconciliation，达到 `60/60 ready / 0 unavailable / strategy_state=ready`，startup 未新增 Event 或 transport attempt。切换发生在午间 `BREAK`，Live heartbeat 为 `ok` 但尚无本次进程启动后的 completed Live（`subscribed_count=0 / last_bar_at=null`），因此首根自然 Live Gate 尚待 13:30 后回读；`v1.9.7-r3@66c3be80` 保留为 clean、detached rollback root。 |
 | Database | production Alembic 为 `20260826_0042 (head)`。当前 Rule 为 `htdy_original_15m` 与 `subing_strategy_v1`。 |
 | Market Runtime Scope | `operational_products.txt` 的 60 个品种。 |
 | Alert Scope | HTDY Scope 为 `jm × 15m`；SuBing `scope_products` 为 operational 60。两种 authority 不合并。两条 Rule 均 enabled，Alert Runtime marker 已 enabled，audience count 2；未发生 Scope、Rule 或 audience 变更。 |
@@ -25,9 +25,9 @@ Alert transport 为 PushPlus；provider accepted 不等于微信送达。
 
 ## Pending Gate
 
-- v1.9.9 已 `RELEASED`；正式 Runtime 仍保持 v1.9.7-r3，当前不是 `RUNTIME_READY`。下一次 exact-tag Runtime promotion 仍需独立明确授权，不以 Release、测试或 tag 替代该 Gate。
+- v1.9.9 已 `RELEASED` 并完成一次 exact-tag Runtime 切换，Alert 已 `60/60 ready`；由于切换发生在午间 `BREAK`，仍须取得 13:30 后本次进程的首根 completed Live，才能标记最终 `RUNTIME_READY`。
 - HTDY 的真实 PushPlus/微信送达，以及 D1/W1 `canonical_updated` 的自然 Event identity/evidence，仍须分别核验；不以测试、synthetic event、replay 或手工发送补证。
-- 当前 v1.9.7-r3 仅是已恢复的回滚根，不是 ready promotion；回滚后 Alert 正在重新 restore，已知该旧版本此前为 `0 ready / 60 unavailable` 且未保存 reason map。
+- v1.9.7-r3 当前仅作为 clean、detached rollback root 保留，已不再承载五项正式服务。
 - SuBing v1.9.9 自然 Live continuation seam 与严格盘后完成制 evidence pending；不以测试、startup replay、手工触发或回填替代。
 - 一次 owner PushPlus canary 仍是独立 Gate。
 - SuBing Candidate 的 prospective OOS 按其 protocol 独立累积，retrospective 不回填 OOS。
