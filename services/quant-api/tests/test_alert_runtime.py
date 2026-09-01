@@ -43,6 +43,10 @@ from app.db.base import Base
 from app.market_data.aggregation import SessionWindow
 from app.market_data.domain import BarFrequency, CanonicalBar
 from app.market_data.market_read_service import MarketReadWindow
+from app.market_data.operational_universe import (
+    load_active_products,
+    load_operational_products,
+)
 from app.market_data.product_taxonomy import ProductTaxonomyEntry
 from app.market_data.session_clock import SHANGHAI
 from app.models import Exchange, Instrument, TradingCalendar, TradingSession
@@ -1771,16 +1775,15 @@ class AtomicRuntimeStatusStore:
         return dict(self.status)
 
 
-def test_runtime_status_output_remains_readable_by_v1_9_6_rollback() -> None:
-    """The shared Redis payload must retain the previous Runtime's v3 contract."""
+def test_runtime_status_output_uses_v4_reason_contract() -> None:
     normalized = validate_alert_runtime_status(_runtime_status_payload())
 
-    assert normalized["schema_version"] == 3
-    assert "strategy_unavailable_reason_codes" not in normalized
+    assert normalized["schema_version"] == 4
+    assert normalized["strategy_unavailable_reason_codes"] == {}
 
 
 @pytest.mark.parametrize("schema_version", (1, 2))
-def test_runtime_status_v1_v2_is_normalized_to_v3(
+def test_runtime_status_v1_v2_is_normalized_to_v4(
     schema_version: int,
 ) -> None:
     payload = _runtime_status_payload()
@@ -1792,15 +1795,15 @@ def test_runtime_status_v1_v2_is_normalized_to_v3(
         }
     normalized = validate_alert_runtime_status(payload)
 
-    assert normalized["schema_version"] == 3
+    assert normalized["schema_version"] == 4
     assert normalized["notification_acknowledged_at"] is None
     assert normalized["strategy_state"] == "warming"
     assert normalized["strategy_product_count"] == 0
     assert normalized["strategy_unavailable_symbols"] == []
-    assert "strategy_unavailable_reason_codes" not in normalized
+    assert normalized["strategy_unavailable_reason_codes"] == {}
 
 
-def test_runtime_status_v4_is_normalized_to_v3_for_safe_rollback() -> None:
+def test_runtime_status_v4_preserves_public_reason_contract() -> None:
     v4 = {
         **alert_runtime_module.empty_alert_runtime_status(),
         "schema_version": 4,
@@ -1809,8 +1812,27 @@ def test_runtime_status_v4_is_normalized_to_v3_for_safe_rollback() -> None:
 
     normalized = validate_alert_runtime_status(v4)
 
-    assert normalized["schema_version"] == 3
-    assert "strategy_unavailable_reason_codes" not in normalized
+    assert normalized["schema_version"] == 4
+    assert normalized["strategy_unavailable_reason_codes"] == {}
+
+
+def test_runtime_status_v3_is_normalized_to_v4_with_public_legacy_reason() -> None:
+    v3 = {
+        **alert_runtime_module.empty_alert_runtime_status(),
+        "schema_version": 3,
+        "strategy_state": "degraded",
+        "strategy_product_count": 1,
+        "strategy_unavailable_product_count": 1,
+        "strategy_unavailable_symbols": ["jm"],
+    }
+    v3.pop("strategy_unavailable_reason_codes")
+
+    normalized = validate_alert_runtime_status(v3)
+
+    assert normalized["schema_version"] == 4
+    assert normalized["strategy_unavailable_reason_codes"] == {
+        "jm": "PREVIOUS_RUNTIME_REASON_UNAVAILABLE"
+    }
 
 
 def test_runtime_status_rejects_strategy_counts_above_active60_bound() -> None:
@@ -1824,7 +1846,7 @@ def test_runtime_status_rejects_strategy_counts_above_active60_bound() -> None:
         validate_alert_runtime_status(payload)
 
 
-def test_runtime_status_v4_drops_reason_codes_before_rewriting_v3() -> None:
+def test_runtime_status_v4_rejects_non_public_reason_code() -> None:
     payload = {
         **alert_runtime_module.empty_alert_runtime_status(),
         "strategy_state": "degraded",
@@ -1834,10 +1856,8 @@ def test_runtime_status_v4_drops_reason_codes_before_rewriting_v3() -> None:
         "strategy_unavailable_reason_codes": {"jm": "private exception detail"},
     }
 
-    normalized = validate_alert_runtime_status({**payload, "schema_version": 4})
-
-    assert normalized["schema_version"] == 3
-    assert "strategy_unavailable_reason_codes" not in normalized
+    with pytest.raises(ValueError, match="^ALERT_RUNTIME_STATUS_INVALID$"):
+        validate_alert_runtime_status({**payload, "schema_version": 4})
 
 
 def test_runtime_status_rejects_acknowledgement_without_prior_failure() -> None:
@@ -1865,7 +1885,7 @@ def test_acknowledge_notification_failure_preserves_failure_facts() -> None:
         acknowledged_at=datetime(2026, 8, 14, 2, 45, tzinfo=UTC),
     )
 
-    assert acknowledged["schema_version"] == 3
+    assert acknowledged["schema_version"] == 4
     assert acknowledged["last_notification_failure_at"] == failure_at
     assert acknowledged["notification_error_type"] == "notification_transport_failed"
     assert acknowledged["consecutive_notification_failures"] == 1
@@ -1983,7 +2003,7 @@ def test_redis_heartbeat_store_sets_value_and_ttl_atomically() -> None:
     assert redis.calls[0][1] == {"ex": 30}
 
 
-def test_redis_runtime_status_store_upgrades_v1_to_v3_without_ttl() -> None:
+def test_redis_runtime_status_store_upgrades_v1_to_v4_without_ttl() -> None:
     from app.alerts import composition
 
     class FakeRedis:
@@ -2013,7 +2033,7 @@ def test_redis_runtime_status_store_upgrades_v1_to_v3_without_ttl() -> None:
 
     expected = {
         **payload,
-        "schema_version": 3,
+        "schema_version": 4,
         "notification_acknowledged_at": None,
         "strategy_state": "warming",
         "strategy_started_at": None,
@@ -2022,6 +2042,7 @@ def test_redis_runtime_status_store_upgrades_v1_to_v3_without_ttl() -> None:
         "strategy_ready_product_count": 0,
         "strategy_unavailable_product_count": 0,
         "strategy_unavailable_symbols": [],
+        "strategy_unavailable_reason_codes": {},
         "last_strategy_action_at": None,
         "last_strategy_restore_at": None,
     }
@@ -2085,7 +2106,7 @@ def test_redis_runtime_status_acknowledgement_is_compare_and_set() -> None:
 
     persisted = json.loads(redis.values["alert:runtime-status"])
     assert acknowledged == persisted
-    assert persisted["schema_version"] == 3
+    assert persisted["schema_version"] == 4
     assert persisted["last_notification_failure_at"] == failure_at
     assert persisted["notification_error_type"] == "notification_transport_failed"
     assert persisted["notification_acknowledged_at"] == ("2026-08-14T02:45:00+00:00")
@@ -2365,7 +2386,7 @@ def test_runtime_status_records_processing_event_and_provider_acceptance(
     status = json.loads(redis.values["alert:runtime-status"])
     observed_at = (ORDINARY_END + timedelta(seconds=2)).isoformat()
     assert status == {
-        "schema_version": 3,
+        "schema_version": 4,
         "last_processed_bar_at": ORDINARY_END.isoformat(),
         "last_processing_success_at": observed_at,
         "last_processing_failure_at": None,
@@ -2384,6 +2405,7 @@ def test_runtime_status_records_processing_event_and_provider_acceptance(
         "strategy_ready_product_count": 1,
         "strategy_unavailable_product_count": 0,
         "strategy_unavailable_symbols": [],
+        "strategy_unavailable_reason_codes": {},
         "last_strategy_action_at": None,
         "last_strategy_restore_at": None,
     }
@@ -2988,10 +3010,351 @@ def test_strategy_startup_subscribes_before_restore_and_catch_up(
     runtime.run_forever()
 
     assert order == ["subscribe", "restore", "catch_up"]
-    assert status.status["schema_version"] == 3
+    assert status.status["schema_version"] == 4
     assert status.status["strategy_state"] == "ready"
     assert _event_rows(session) == []
     assert sender.messages == []
+
+
+def test_startup_drain_skips_live_bar_already_covered_by_final_catch_up(
+    session: Session,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A queued pre-catch-up Bar must not degrade the restored machine as stale."""
+
+    _seed_rule(session, "htdy_original_15m")
+    _seed_rule(session, "subing_strategy_v1", scope=())
+    order: list[str] = []
+
+    class StaleOnCoveredStrategy(_Task9StrategyEvaluator):
+        def process_completed_bar(self, bar, frequency, *, source_identity):
+            self.order.append(f"stale:{frequency.value}")
+            return SubingStrategyRuntimeResult(
+                action_facts=(),
+                product_status=SubingStrategyRuntimeProductStatus(
+                    symbol=source_identity.symbol,
+                    state="unavailable",
+                    cutoff_1m=ORDINARY_END,
+                    cutoff_5m=ORDINARY_END,
+                    cutoff_15m=BOUNDARY_END,
+                    reason_codes=("STALE_INPUT",),
+                ),
+            )
+
+    class CoveredMessageSource(FakeMessageSource):
+        def __init__(self) -> None:
+            super().__init__()
+            self.message = (
+                "live:bar:jm:1m",
+                _payload(bar_end=ORDINARY_END - timedelta(minutes=1)),
+            )
+
+        def get_message(self, *, timeout_seconds: float):
+            assert timeout_seconds in {0.0, 1.0}
+            if timeout_seconds == 1.0:
+                return None
+            message, self.message = self.message, None
+            return message
+
+    source = CoveredMessageSource()
+    status = AtomicRuntimeStatusStore()
+    caplog.set_level("INFO", logger="app.alerts.runtime")
+    runtime = AlertRuntime(
+        session_factory=lambda: nullcontext(session),
+        market_read_factory=lambda _session: FakeRead(_window(bar_end=ORDINARY_END)),
+        strategy_evaluator=StaleOnCoveredStrategy(order),
+        htdy_evaluator=FakeHtdyEvaluator(()),
+        sender=FakeSender(),
+        operational_products=("jm",),
+        taxonomy={"jm": ProductTaxonomyEntry(name="焦煤", sector="coal")},
+        message_source=source,
+        heartbeat_store=FakeHeartbeatStore(),
+        runtime_status_store=status,
+        clock=lambda: BOUNDARY_END + timedelta(seconds=2),
+        stop_requested=lambda: True,
+    )
+
+    runtime.run_forever()
+
+    assert order == ["restore", "catch_up"]
+    assert status.status["strategy_state"] == "ready"
+    assert status.status["strategy_ready_product_count"] == 1
+    assert status.status["strategy_unavailable_product_count"] == 0
+    assert "ALERT_STARTUP_QUEUE_RECONCILED covered=1 processed=0" in caplog.messages
+
+
+def test_startup_drain_keeps_active60_ready_with_distinct_operational_authority(
+    session: Session,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    active_products = load_active_products()
+    operational_products = load_operational_products()
+    assert len(active_products) == 60
+    assert set(active_products).issubset(operational_products)
+    _seed_rule(session, "htdy_original_15m", scope=())
+    _seed_rule(session, "subing_strategy_v1", scope=())
+
+    class Active60Strategy:
+        def __init__(self) -> None:
+            self.products = active_products
+            self.processed: list[str] = []
+
+        def restore_all(self, *, started_at: datetime):
+            return tuple(
+                SubingStrategyRuntimeResult(
+                    action_facts=(),
+                    product_status=SubingStrategyRuntimeProductStatus(
+                        symbol=symbol,
+                        state="warming",
+                        cutoff_1m=None,
+                        cutoff_5m=None,
+                        cutoff_15m=None,
+                        reason_codes=(),
+                    ),
+                )
+                for symbol in active_products
+            )
+
+        def final_catch_up(self, *, ready_at: datetime):
+            return tuple(
+                SubingStrategyRuntimeResult(
+                    action_facts=(),
+                    product_status=SubingStrategyRuntimeProductStatus(
+                        symbol=symbol,
+                        state="ready",
+                        cutoff_1m=ORDINARY_END,
+                        cutoff_5m=ORDINARY_END,
+                        cutoff_15m=BOUNDARY_END,
+                        reason_codes=(),
+                    ),
+                )
+                for symbol in active_products
+            )
+
+        def process_completed_bar(self, bar, frequency, *, source_identity):
+            self.processed.append(source_identity.symbol)
+            raise AssertionError("covered startup Bar reached active60 machine")
+
+        def process_canonical_updated(self, trading_day: date):
+            raise AssertionError("unexpected canonical update")
+
+        def current_state(self, symbol: str):
+            raise AssertionError("covered startup Bar requested machine state")
+
+    class Active60CoveredSource(FakeMessageSource):
+        def drain_startup_messages(self):
+            return tuple(
+                (
+                    f"live:bar:{symbol}:1m",
+                    _payload(bar_end=ORDINARY_END - timedelta(minutes=1)),
+                )
+                for symbol in active_products
+            )
+
+    strategy = Active60Strategy()
+    status = AtomicRuntimeStatusStore()
+    caplog.set_level("INFO", logger="app.alerts.runtime")
+    runtime = AlertRuntime(
+        session_factory=lambda: nullcontext(session),
+        market_read_factory=lambda _session: FakeRead(_window(bar_end=ORDINARY_END)),
+        strategy_evaluator=strategy,
+        htdy_evaluator=FakeHtdyEvaluator(()),
+        sender=FakeSender(),
+        operational_products=operational_products,
+        taxonomy={
+            symbol: ProductTaxonomyEntry(name=symbol, sector="test")
+            for symbol in active_products
+        },
+        message_source=Active60CoveredSource(),
+        heartbeat_store=FakeHeartbeatStore(),
+        runtime_status_store=status,
+        clock=lambda: BOUNDARY_END + timedelta(seconds=2),
+        stop_requested=lambda: True,
+    )
+
+    runtime.run_forever()
+
+    assert strategy.processed == []
+    assert status.status["strategy_state"] == "ready"
+    assert status.status["strategy_product_count"] == 60
+    assert status.status["strategy_ready_product_count"] == 60
+    assert status.status["strategy_unavailable_product_count"] == 0
+    assert "ALERT_STARTUP_QUEUE_RECONCILED covered=60 processed=0" in caplog.messages
+
+
+def test_startup_drain_validates_bar_at_exact_catch_up_watermark(
+    session: Session,
+) -> None:
+    _seed_rule(session, "htdy_original_15m")
+    _seed_rule(session, "subing_strategy_v1", scope=())
+    order: list[str] = []
+
+    class EqualWatermarkSource(FakeMessageSource):
+        def __init__(self) -> None:
+            super().__init__()
+            self.message = (
+                "live:bar:jm:1m",
+                _payload(bar_end=ORDINARY_END),
+            )
+
+        def get_message(self, *, timeout_seconds: float):
+            assert timeout_seconds in {0.0, 1.0}
+            if timeout_seconds == 1.0:
+                return None
+            message, self.message = self.message, None
+            return message
+
+    runtime = AlertRuntime(
+        session_factory=lambda: nullcontext(session),
+        market_read_factory=lambda _session: FakeRead(_window(bar_end=ORDINARY_END)),
+        strategy_evaluator=_Task9StrategyEvaluator(order),
+        htdy_evaluator=FakeHtdyEvaluator(()),
+        sender=FakeSender(),
+        operational_products=("jm",),
+        taxonomy={"jm": ProductTaxonomyEntry(name="焦煤", sector="coal")},
+        message_source=EqualWatermarkSource(),
+        heartbeat_store=FakeHeartbeatStore(),
+        runtime_status_store=AtomicRuntimeStatusStore(),
+        clock=lambda: BOUNDARY_END + timedelta(seconds=2),
+        stop_requested=lambda: True,
+    )
+
+    runtime.run_forever()
+
+    assert order == ["restore", "catch_up", "strategy:1m"]
+    assert _event_rows(session) == []
+
+
+def test_startup_drain_keeps_frozen_catch_up_watermark_after_newer_bar(
+    session: Session,
+) -> None:
+    _seed_rule(session, "htdy_original_15m")
+    _seed_rule(session, "subing_strategy_v1", scope=())
+    order: list[str] = []
+
+    class NewerThenBoundarySource(FakeMessageSource):
+        def drain_startup_messages(self):
+            return (
+                (
+                    "live:bar:jm:1m",
+                    _payload(bar_end=BOUNDARY_END),
+                ),
+                (
+                    "live:bar:jm:1m",
+                    _payload(bar_end=ORDINARY_END),
+                ),
+            )
+
+    sender = FakeSender()
+    runtime = AlertRuntime(
+        session_factory=lambda: nullcontext(session),
+        market_read_factory=lambda _session: FakeRead(_window(bar_end=ORDINARY_END)),
+        strategy_evaluator=_Task9StrategyEvaluator(order),
+        htdy_evaluator=FakeHtdyEvaluator(()),
+        sender=sender,
+        operational_products=("jm",),
+        taxonomy={"jm": ProductTaxonomyEntry(name="焦煤", sector="coal")},
+        message_source=NewerThenBoundarySource(),
+        heartbeat_store=FakeHeartbeatStore(),
+        runtime_status_store=AtomicRuntimeStatusStore(),
+        clock=lambda: BOUNDARY_END + timedelta(seconds=2),
+        stop_requested=lambda: True,
+    )
+
+    runtime.run_forever()
+
+    assert order == ["restore", "catch_up", "strategy:1m", "strategy:1m"]
+    assert _event_rows(session) == []
+    assert sender.messages == []
+
+
+def test_startup_keeps_strategy_warming_until_queue_reconciliation_finishes(
+    session: Session,
+) -> None:
+    _seed_rule(session, "htdy_original_15m")
+    _seed_rule(session, "subing_strategy_v1", scope=())
+    order: list[str] = []
+
+    class RecordingStatusStore(AtomicRuntimeStatusStore):
+        def update(self, changes: dict[str, object]) -> dict[str, object]:
+            result = super().update(changes)
+            order.append(f"status:{result['strategy_state']}")
+            return result
+
+    class RecordingSource(FakeMessageSource):
+        def get_message(self, *, timeout_seconds: float):
+            assert timeout_seconds in {0.0, 1.0}
+            if timeout_seconds == 0.0:
+                order.append("drain")
+            return None
+
+    runtime = AlertRuntime(
+        session_factory=lambda: nullcontext(session),
+        market_read_factory=lambda _session: FakeRead(_window(bar_end=ORDINARY_END)),
+        strategy_evaluator=_Task9StrategyEvaluator(order),
+        htdy_evaluator=FakeHtdyEvaluator(()),
+        sender=FakeSender(),
+        operational_products=("jm",),
+        taxonomy={"jm": ProductTaxonomyEntry(name="焦煤", sector="coal")},
+        message_source=RecordingSource(),
+        heartbeat_store=FakeHeartbeatStore(),
+        runtime_status_store=RecordingStatusStore(),
+        clock=lambda: BOUNDARY_END + timedelta(seconds=2),
+        stop_requested=lambda: True,
+    )
+
+    runtime.run_forever()
+
+    drain_index = order.index("drain")
+    ready_index = order.index("status:ready")
+    assert ready_index > drain_index
+    assert order.count("status:ready") == 1
+
+
+def test_startup_degraded_result_never_sets_strategy_ready_at(
+    session: Session,
+) -> None:
+    _seed_rule(session, "htdy_original_15m")
+    _seed_rule(session, "subing_strategy_v1", scope=())
+
+    class DegradedCatchUp(_Task9StrategyEvaluator):
+        def final_catch_up(self, *, ready_at: datetime):
+            self.order.append("catch_up")
+            return (
+                SubingStrategyRuntimeResult(
+                    action_facts=(),
+                    product_status=SubingStrategyRuntimeProductStatus(
+                        symbol="jm",
+                        state="unavailable",
+                        cutoff_1m=ORDINARY_END,
+                        cutoff_5m=ORDINARY_END,
+                        cutoff_15m=BOUNDARY_END,
+                        reason_codes=("STALE_INPUT",),
+                    ),
+                ),
+            )
+
+    status = AtomicRuntimeStatusStore()
+    runtime = AlertRuntime(
+        session_factory=lambda: nullcontext(session),
+        market_read_factory=lambda _session: FakeRead(_window(bar_end=ORDINARY_END)),
+        strategy_evaluator=DegradedCatchUp([]),
+        htdy_evaluator=FakeHtdyEvaluator(()),
+        sender=FakeSender(),
+        operational_products=("jm",),
+        taxonomy={"jm": ProductTaxonomyEntry(name="焦煤", sector="coal")},
+        message_source=FakeMessageSource(),
+        heartbeat_store=FakeHeartbeatStore(),
+        runtime_status_store=status,
+        clock=lambda: BOUNDARY_END + timedelta(seconds=2),
+        stop_requested=lambda: True,
+    )
+
+    runtime.run_forever()
+
+    assert status.status["strategy_state"] == "degraded"
+    assert status.status["strategy_ready_at"] is None
+    assert status.status["last_strategy_restore_at"] is not None
 
 
 def test_startup_queue_cutoff_recovers_canonical_without_backfill(
@@ -3479,7 +3842,7 @@ def test_canonical_result_product_set_mismatch_fails_before_session(
     assert harness.sender.messages == []
 
 
-def test_completed_bar_refreshes_strategy_v3_degrade_and_recovery(
+def test_completed_bar_refreshes_strategy_v4_degrade_and_recovery(
     session: Session,
 ) -> None:
     states = iter(("unavailable", "ready"))
@@ -3513,14 +3876,16 @@ def test_completed_bar_refreshes_strategy_v3_degrade_and_recovery(
     assert status.status["strategy_product_count"] == 1
     assert status.status["strategy_ready_product_count"] == 0
     assert status.status["strategy_unavailable_symbols"] == ["jm"]
-    assert "strategy_unavailable_reason_codes" not in status.status
+    assert status.status["strategy_unavailable_reason_codes"] == {
+        "jm": "CURRENT_UNAVAILABLE"
+    }
 
     harness.runtime.process_message("live:bar:jm:1m", _payload())
     assert status.status["strategy_state"] == "ready"
     assert status.status["strategy_ready_product_count"] == 1
     assert status.status["strategy_unavailable_product_count"] == 0
     assert status.status["strategy_unavailable_symbols"] == []
-    assert "strategy_unavailable_reason_codes" not in status.status
+    assert status.status["strategy_unavailable_reason_codes"] == {}
 
 
 def test_night_first_completed_1m_pending_is_public_and_sends_nothing(
@@ -3560,12 +3925,14 @@ def test_night_first_completed_1m_pending_is_public_and_sends_nothing(
     )
 
     assert status.status["strategy_unavailable_symbols"] == ["jm"]
-    assert "strategy_unavailable_reason_codes" not in status.status
+    assert status.status["strategy_unavailable_reason_codes"] == {
+        "jm": "LIVE_CONTRACT_AUTHORITY_PENDING"
+    }
     assert _event_rows(session) == []
     assert harness.sender.messages == []
 
 
-def test_canonical_result_refreshes_strategy_v3_product_aggregate(
+def test_canonical_result_refreshes_strategy_v4_product_aggregate(
     session: Session,
 ) -> None:
     class DegradedTerminalStrategy(_Task9StrategyEvaluator):
@@ -3597,7 +3964,9 @@ def test_canonical_result_refreshes_strategy_v3_product_aggregate(
     assert status.status["strategy_product_count"] == 1
     assert status.status["strategy_unavailable_product_count"] == 1
     assert status.status["strategy_unavailable_symbols"] == ["jm"]
-    assert "strategy_unavailable_reason_codes" not in status.status
+    assert status.status["strategy_unavailable_reason_codes"] == {
+        "jm": "TERMINAL_UNAVAILABLE"
+    }
 
 
 def test_canonical_terminal_action_uses_the_same_event_path(session: Session) -> None:

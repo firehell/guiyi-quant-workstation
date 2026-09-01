@@ -59,6 +59,15 @@ Missing, mixed-contract, mixed-day, non-operational, or malformed snapshots
 remain fail-closed; a different valid frozen contract is still
 `LIVE_CONTRACT_AUTHORITY_PENDING`.
 
+The final catch-up watermarks are also the authority for the subscribed
+startup queue.  A queued Bar strictly older than its frequency watermark was
+already covered and is discarded.  A Bar exactly at the watermark is still
+fed to the machine so an identical duplicate is idempotent and a conflicting
+duplicate fails closed.  A newer queued Bar advances the machine with startup
+emission disabled.  Runtime status remains `warming` during this
+reconciliation and records `strategy_ready_at` only after every active product
+is ready.
+
 ## Event/no-backfill contract
 
 Natural Live actions keep the existing Event-first/one-shot transport path.
@@ -72,6 +81,9 @@ non-natural reconciliation create no Event and send nothing.
 - missing/stale Daily Watch blocks entries while exits continue;
 - different Live contract is isolated pending until formal canonical rollover;
 - restart/final catch-up has identical authority and no backfill;
+- startup queue reconciliation discards only Bars strictly older than the
+  frequency watermark, validates equal-boundary duplicates, and leaves
+  active60 ready before publishing `strategy_ready_at`;
 - post-close final catch-up uses only the same-contract frozen completed-Live
   boundary; missing or inconsistent frozen snapshots fail closed;
 - only pending products reconcile on `canonical_updated`;

@@ -34,6 +34,7 @@ from app.alerts.registry import (
 from app.alerts.service import AlertEventCreate, AlertScopeError, AlertService
 from app.alerts.strategy_payload import serialize_subing_strategy_payload
 from app.alerts.subing_strategy_runtime import (
+    PUBLIC_SUBING_STRATEGY_RUNTIME_REASON_CODES,
     SubingStrategyRuntimeActionFact,
     SubingStrategyRuntimeEvaluator,
     SubingStrategyRuntimeProductStatus,
@@ -267,6 +268,7 @@ class AlertRuntime:
         self._strategy_product_statuses: dict[
             str, SubingStrategyRuntimeProductStatus
         ] = {}
+        self._strategy_status_publish_suppressed = False
         self.clock = clock or (lambda: datetime.now(UTC))
         self.stop_requested = stop_requested or (lambda: False)
 
@@ -286,6 +288,7 @@ class AlertRuntime:
             strategy_ready_product_count=0,
             strategy_unavailable_product_count=0,
             strategy_unavailable_symbols=[],
+            strategy_unavailable_reason_codes={},
         )
         self._strategy_evaluator.restore_all(
             started_at=strategy_started_at,
@@ -293,14 +296,29 @@ class AlertRuntime:
         catch_up_at = self._aware_now()
         caught_up = self._strategy_evaluator.final_catch_up(ready_at=catch_up_at)
         self._strategy_product_statuses.clear()
-        self._refresh_strategy_runtime_status(
-            caught_up,
-            expected_products=self._strategy_products,
+        self._strategy_status_publish_suppressed = True
+        try:
+            self._refresh_strategy_runtime_status(
+                caught_up,
+                expected_products=self._strategy_products,
+            )
+            self._drain_startup_messages(
+                catch_up_statuses=dict(self._strategy_product_statuses)
+            )
+        finally:
+            self._strategy_status_publish_suppressed = False
+        strategy_ready = (
+            set(self._strategy_product_statuses) == self._strategy_products
+            and all(
+                status.state == "ready"
+                for status in self._strategy_product_statuses.values()
+            )
         )
-        self._drain_startup_messages()
-        ready_at = self._aware_now()
-        self._update_runtime_status(
-            strategy_ready_at=_iso_timestamp(ready_at),
+        ready_at = self._aware_now() if strategy_ready else None
+        self._publish_strategy_runtime_status(
+            strategy_ready_at=(
+                _iso_timestamp(ready_at) if ready_at is not None else None
+            ),
             last_strategy_restore_at=_iso_timestamp(catch_up_at),
         )
         next_heartbeat = self._aware_now()
@@ -344,10 +362,52 @@ class AlertRuntime:
         except Exception:
             raise RuntimeError("ALERT_RUNTIME_COMPOSITION_INVALID") from None
 
-    def _drain_startup_messages(self) -> None:
+    def _drain_startup_messages(
+        self,
+        *,
+        catch_up_statuses: Mapping[str, SubingStrategyRuntimeProductStatus],
+    ) -> None:
         assert self.message_source is not None
+        covered = 0
+        processed = 0
         for message in self.message_source.drain_startup_messages():
+            if self._startup_live_bar_is_covered(
+                *message,
+                catch_up_statuses=catch_up_statuses,
+            ):
+                covered += 1
+                continue
             self.process_message(*message, emit_events=False)
+            processed += 1
+        _LOGGER.info(
+            "ALERT_STARTUP_QUEUE_RECONCILED covered=%d processed=%d",
+            covered,
+            processed,
+        )
+
+    def _startup_live_bar_is_covered(
+        self,
+        channel: object,
+        payload: object,
+        *,
+        catch_up_statuses: Mapping[str, SubingStrategyRuntimeProductStatus],
+    ) -> bool:
+        trigger = _parse_live_bar_trigger(channel, payload)
+        if trigger is None:
+            return False
+        status = catch_up_statuses.get(trigger.symbol)
+        if status is None:
+            return False
+        cutoff = (
+            status.cutoff_1m
+            if trigger.frequency is BarFrequency.M1
+            else status.cutoff_5m
+            if trigger.frequency is BarFrequency.M5
+            else status.cutoff_15m
+            if trigger.frequency is BarFrequency.M15
+            else None
+        )
+        return cutoff is not None and trigger.bar.bar_end < cutoff
 
     def process_message(
         self,
@@ -921,7 +981,15 @@ class AlertRuntime:
         for result in results:
             status = result.product_status
             self._strategy_product_statuses[status.symbol] = status
+        if self._strategy_status_publish_suppressed:
+            return
+        self._publish_strategy_runtime_status()
+
+    def _publish_strategy_runtime_status(self, **changes: object) -> None:
         summary = _strategy_runtime_summary(
+            tuple(self._strategy_product_statuses.values())
+        )
+        unavailable_reason_codes = _strategy_unavailable_reason_codes(
             tuple(self._strategy_product_statuses.values())
         )
         self._update_runtime_status(
@@ -930,6 +998,8 @@ class AlertRuntime:
             strategy_ready_product_count=summary[1],
             strategy_unavailable_product_count=len(summary[2]),
             strategy_unavailable_symbols=list(summary[2]),
+            strategy_unavailable_reason_codes=unavailable_reason_codes,
+            **changes,
         )
 
     def _record_notification_failure(
@@ -1005,8 +1075,8 @@ _RUNTIME_STATUS_V3_FIELDS = _RUNTIME_STATUS_V2_FIELDS | _RUNTIME_STATUS_STRATEGY
 _RUNTIME_STATUS_V4_FIELDS = _RUNTIME_STATUS_V3_FIELDS | {
     "strategy_unavailable_reason_codes"
 }
-_RUNTIME_STATUS_FIELDS = _RUNTIME_STATUS_V3_FIELDS
-_RUNTIME_STATUS_TIMESTAMP_FIELDS = _RUNTIME_STATUS_V3_FIELDS - {
+_RUNTIME_STATUS_FIELDS = _RUNTIME_STATUS_V4_FIELDS
+_RUNTIME_STATUS_TIMESTAMP_FIELDS = _RUNTIME_STATUS_V4_FIELDS - {
     "schema_version",
     "processing_error_type",
     "notification_error_type",
@@ -1016,6 +1086,7 @@ _RUNTIME_STATUS_TIMESTAMP_FIELDS = _RUNTIME_STATUS_V3_FIELDS - {
     "strategy_ready_product_count",
     "strategy_unavailable_product_count",
     "strategy_unavailable_symbols",
+    "strategy_unavailable_reason_codes",
 }
 _RUNTIME_STATUS_ERROR_TYPES = {
     "processing_error_type": frozenset({PROCESSING_FAILURE}),
@@ -1031,7 +1102,7 @@ _RUNTIME_STATUS_ERROR_TYPES = {
 
 def empty_alert_runtime_status() -> dict[str, object]:
     return {
-        "schema_version": 3,
+        "schema_version": 4,
         "last_processed_bar_at": None,
         "last_processing_success_at": None,
         "last_processing_failure_at": None,
@@ -1050,6 +1121,7 @@ def empty_alert_runtime_status() -> dict[str, object]:
         "strategy_ready_product_count": 0,
         "strategy_unavailable_product_count": 0,
         "strategy_unavailable_symbols": [],
+        "strategy_unavailable_reason_codes": {},
         "last_strategy_action_at": None,
         "last_strategy_restore_at": None,
     }
@@ -1071,14 +1143,19 @@ def validate_alert_runtime_status(
     elif schema_version == 2 and fields == _RUNTIME_STATUS_V2_FIELDS:
         normalized = dict(payload)
     elif schema_version == 3 and fields == _RUNTIME_STATUS_V3_FIELDS:
-        normalized = dict(payload)
-    elif schema_version == 4 and fields == _RUNTIME_STATUS_V4_FIELDS:
+        unavailable_symbols = payload["strategy_unavailable_symbols"]
         normalized = {
-            key: value
-            for key, value in payload.items()
-            if key != "strategy_unavailable_reason_codes"
+            **payload,
+            "schema_version": 4,
+            "strategy_unavailable_reason_codes": {
+                symbol: "PREVIOUS_RUNTIME_REASON_UNAVAILABLE"
+                for symbol in unavailable_symbols
+            }
+            if type(unavailable_symbols) is list
+            else {},
         }
-        normalized["schema_version"] = 3
+    elif schema_version == 4 and fields == _RUNTIME_STATUS_V4_FIELDS:
+        normalized = dict(payload)
     else:
         raise ValueError("ALERT_RUNTIME_STATUS_INVALID")
     if normalized["schema_version"] in {1, 2}:
@@ -1087,9 +1164,13 @@ def validate_alert_runtime_status(
             **{
                 key: value
                 for key, value in empty_alert_runtime_status().items()
-                if key in _RUNTIME_STATUS_STRATEGY_FIELDS
+                if key
+                in (
+                    _RUNTIME_STATUS_STRATEGY_FIELDS
+                    | {"strategy_unavailable_reason_codes"}
+                )
             },
-            "schema_version": 3,
+            "schema_version": 4,
         }
     for field in _RUNTIME_STATUS_TIMESTAMP_FIELDS:
         value = normalized[field]
@@ -1144,6 +1225,18 @@ def validate_alert_runtime_status(
         or ready_count + unavailable_count > product_count
     ):
         raise ValueError("ALERT_RUNTIME_STATUS_INVALID")
+    unavailable_reason_codes = normalized["strategy_unavailable_reason_codes"]
+    if (
+        type(unavailable_reason_codes) is not dict
+        or set(unavailable_reason_codes) != set(unavailable_symbols)
+        or any(
+            type(symbol) is not str
+            or type(reason_code) is not str
+            or reason_code not in PUBLIC_SUBING_STRATEGY_RUNTIME_REASON_CODES
+            for symbol, reason_code in unavailable_reason_codes.items()
+        )
+    ):
+        raise ValueError("ALERT_RUNTIME_STATUS_INVALID")
     return normalized
 
 
@@ -1174,6 +1267,27 @@ def _strategy_runtime_summary(
     if ready + len(unavailable) != len(statuses):
         raise ValueError("ALERT_RUNTIME_STRATEGY_RESULT_INVALID")
     return len(statuses), ready, unavailable
+
+
+def _strategy_unavailable_reason_codes(
+    statuses: tuple[SubingStrategyRuntimeProductStatus, ...],
+) -> dict[str, str]:
+    return {
+        status.symbol: _single_public_reason_code(status.reason_codes)
+        for status in sorted(statuses, key=lambda item: item.symbol)
+        if status.state == "unavailable"
+    }
+
+
+def _single_public_reason_code(reason_codes: tuple[str, ...]) -> str:
+    if (
+        type(reason_codes) is not tuple
+        or len(reason_codes) != 1
+        or type(reason_codes[0]) is not str
+        or reason_codes[0] not in PUBLIC_SUBING_STRATEGY_RUNTIME_REASON_CODES
+    ):
+        raise ValueError("ALERT_RUNTIME_STRATEGY_RESULT_INVALID")
+    return reason_codes[0]
 
 
 def _validate_strategy_runtime_results(

@@ -334,7 +334,7 @@ class MarketReadService:
         state = self.state(identity, now)
         if not state.live_eligible or not state.live_available or state.trading_day is None:
             return ()
-        bars = self._snapshot_bars(identity, state, after=after)
+        bars = self._snapshot_bars(identity, state, after=after, through=now)
         return () if bars is None else bars
 
     def observation_snapshot(
@@ -439,7 +439,7 @@ class MarketReadService:
             and state.trading_day is not None
             and state.live_contract is not None
         ):
-            bars = self._snapshot_bars(identity, state, after=after)
+            bars = self._snapshot_bars(identity, state, after=after, through=now)
             if bars is None:
                 return _empty_display_snapshot(state)
             return MarketDisplaySnapshot(
@@ -471,7 +471,7 @@ class MarketReadService:
         ):
             return _empty_display_snapshot(state)
 
-        bars = self._snapshot_bars(identity, state, after=after)
+        bars = self._snapshot_bars(identity, state, after=after, through=now)
         if bars is None:
             return _empty_display_snapshot(state)
         return MarketDisplaySnapshot(
@@ -515,6 +515,7 @@ class MarketReadService:
         state: MarketReadState,
         *,
         after: datetime | None,
+        through: datetime,
     ) -> tuple[CanonicalBar, ...] | None:
         assert state.trading_day is not None
         cutoff = _later(after, state.canonical_end)
@@ -532,6 +533,7 @@ class MarketReadService:
             for bar in source
             if bar.trading_day == state.trading_day
             and (cutoff is None or bar.bar_end > cutoff)
+            and bar.bar_end <= through
         }
         return tuple(deduped[key] for key in sorted(deduped))
 

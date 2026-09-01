@@ -364,7 +364,7 @@ def test_alert_health_accepts_v2_heartbeat_counts() -> None:
     assert alert["scope_product_count"] == 1
 
 
-def test_alert_health_exposes_bounded_strategy_v3_observation() -> None:
+def test_alert_health_exposes_bounded_strategy_v4_observation() -> None:
     now = datetime(2026, 8, 14, 2, 45, tzinfo=UTC)
     heartbeat = {
         "generated_at": now.isoformat(),
@@ -420,7 +420,9 @@ def test_alert_health_exposes_bounded_strategy_v3_observation() -> None:
     assert alert["strategy_ready_product_count"] == 1
     assert alert["strategy_unavailable_product_count"] == 1
     assert alert["strategy_unavailable_symbols"] == ["jm"]
-    assert alert["strategy_unavailable_reason_codes"] == {}
+    assert alert["strategy_unavailable_reason_codes"] == {
+        "jm": "PREVIOUS_RUNTIME_REASON_UNAVAILABLE"
+    }
 
 
 def test_alert_health_derives_latest_processing_and_notification_outcomes() -> None:
