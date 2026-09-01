@@ -390,6 +390,10 @@ def step_subing_watch_15m(
     if state.last_evaluation is not None:
         if bar.bar_end == state.last_evaluation.bar_end:
             if bar.source_fingerprint == state.last_bar_fingerprint:
+                _guard_higher_timeframe_future(
+                    cutoff=bar.bar_end,
+                    higher_timeframe=higher_timeframe,
+                )
                 return state, state.last_evaluation
             raise SubingWatchDuplicateConflictError()
 
@@ -725,14 +729,12 @@ def _higher_timeframe_alignment(
     observations: tuple[Literal["buy", "sell"], ...],
     higher_timeframe: SubingWatchKernelHigherTimeframe | None,
 ) -> Literal["aligned", "opposed", "neutral", "unavailable"]:
-    if type(higher_timeframe) is not SubingWatchKernelHigherTimeframe:
+    if not _guard_higher_timeframe_future(
+        cutoff=cutoff,
+        higher_timeframe=higher_timeframe,
+    ):
         return "unavailable"
-    try:
-        higher_bar_end = _rfc3339(higher_timeframe.bar_end)
-    except SubingWatchKernelError:
-        return "unavailable"
-    if _parse_instant(higher_bar_end) > _parse_instant(cutoff):
-        raise SubingWatchHigherTimeframeFutureError()
+    assert type(higher_timeframe) is SubingWatchKernelHigherTimeframe
     if (
         higher_timeframe.identity != identity
         or higher_timeframe.ready is not True
@@ -759,6 +761,24 @@ def _higher_timeframe_alignment(
     if price_side == opposite and slope_side == opposite:
         return "opposed"
     return "neutral"
+
+
+def _guard_higher_timeframe_future(
+    *,
+    cutoff: str,
+    higher_timeframe: SubingWatchKernelHigherTimeframe | None,
+) -> bool:
+    """Reject future context without consulting or mutating any formula state."""
+
+    if type(higher_timeframe) is not SubingWatchKernelHigherTimeframe:
+        return False
+    try:
+        higher_bar_end = _rfc3339(higher_timeframe.bar_end)
+    except SubingWatchKernelError:
+        return False
+    if _parse_instant(higher_bar_end) > _parse_instant(cutoff):
+        raise SubingWatchHigherTimeframeFutureError()
+    return True
 
 
 def _unavailable_evaluation(

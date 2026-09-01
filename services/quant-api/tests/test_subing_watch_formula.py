@@ -1447,3 +1447,64 @@ def test_task3_context_state_remains_frozen_and_bounded_after_progression() -> N
     assert len(next_state.previous_twenty_volumes) == 20
     with pytest.raises(FrozenInstanceError):
         next_state.previous_twenty_volumes = ()  # type: ignore[misc]
+
+
+@pytest.mark.parametrize(
+    "case",
+    ("ready", "not_ready_and_invalid", "identity_mismatch"),
+)
+def test_task3_fix1_duplicate_still_rejects_future_higher_timeframe(case: str) -> None:
+    """Catches the duplicate fast-path bypassing the future-context guard."""
+
+    state, bar, higher = candidate_fixture("all_ready")
+    accepted_state, _ = subing_watch_kernel.step_subing_watch_15m(
+        state,
+        bar,
+        higher_timeframe=higher,
+    )
+    duplicate_higher = watch_higher_timeframe(
+        bar_end="2026-09-01T09:00:00+00:00",
+        identity=(
+            watch_identity(contract="RB2601")
+            if case == "identity_mismatch"
+            else watch_identity()
+        ),
+        ready=case != "not_ready_and_invalid",
+        valid=case != "not_ready_and_invalid",
+    )
+
+    with pytest.raises(
+        SubingWatchKernelError,
+        match="SUBING_WATCH_HIGHER_TIMEFRAME_FUTURE",
+    ):
+        subing_watch_kernel.step_subing_watch_15m(
+            accepted_state,
+            bar,
+            higher_timeframe=duplicate_higher,
+        )
+
+
+@pytest.mark.parametrize(
+    "higher_bar_end",
+    ("2026-09-01T08:45:00+00:00", "2026-09-01T08:00:00+00:00"),
+)
+def test_task3_fix1_duplicate_equal_or_past_higher_timeframe_is_exact_noop(
+    higher_bar_end: str,
+) -> None:
+    """Catches the future guard recomputing context or mutating an allowed duplicate."""
+
+    state, bar, higher = candidate_fixture("all_ready")
+    accepted_state, accepted_evaluation = subing_watch_kernel.step_subing_watch_15m(
+        state,
+        bar,
+        higher_timeframe=higher,
+    )
+
+    duplicate_state, duplicate_evaluation = subing_watch_kernel.step_subing_watch_15m(
+        accepted_state,
+        bar,
+        higher_timeframe=watch_higher_timeframe(bar_end=higher_bar_end),
+    )
+
+    assert duplicate_state is accepted_state
+    assert duplicate_evaluation is accepted_evaluation
