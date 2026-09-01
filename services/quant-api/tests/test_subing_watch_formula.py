@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import math
+from dataclasses import FrozenInstanceError, replace
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -20,8 +21,10 @@ from app.market_data.subing_watch.contracts import (
 from guiyi_quant.indicators.subing_watch_15m import (
     SubingWatchKernelBar,
     SubingWatchKernelContext,
+    SubingWatchKernelError,
     SubingWatchKernelEvaluation,
     SubingWatchKernelIdentity,
+    initial_subing_watch_kernel_state,
 )
 
 
@@ -45,8 +48,35 @@ def canonical_bar(*, close: Decimal = Decimal("123.4567894")) -> CanonicalBar:
     )
 
 
-def kernel_evaluation(*, ma21: float = 123.456789) -> SubingWatchKernelEvaluation:
-    identity = SubingWatchKernelIdentity(
+def source_fingerprint(
+    *,
+    bar_end: str = "2026-09-01T02:15:00+00:00",
+    open: str = "10",
+    high: str = "10",
+    low: str = "8",
+    close: str = "10",
+    volume: str = "20",
+) -> str:
+    return "|".join(
+        (
+            "subing-watch-bar:v1",
+            bar_end,
+            "2026-09-01",
+            open,
+            high,
+            low,
+            close,
+            volume,
+        )
+    )
+
+
+def kernel_evaluation(
+    *,
+    ma21: float = 123.456789,
+    identity: SubingWatchKernelIdentity | None = None,
+) -> SubingWatchKernelEvaluation:
+    source_identity = identity or SubingWatchKernelIdentity(
         symbol="jm",
         contract="JM2601",
         segment_start_trading_day="2026-09-01",
@@ -61,7 +91,7 @@ def kernel_evaluation(*, ma21: float = 123.456789) -> SubingWatchKernelEvaluatio
     )
     return SubingWatchKernelEvaluation(
         formula_version="subing_watch_15m_v1",
-        identity=identity,
+        identity=source_identity,
         trading_day="2026-09-01",
         bar_end="2026-09-01T02:15:00+00:00",
         outcome="evaluated_no_signal",
@@ -136,11 +166,25 @@ def test_policy_rejects_unknown_field(tmp_path: Path) -> None:
         load_subing_watch_policy(invalid_path)
 
 
+def test_policy_rejects_missing_field(tmp_path: Path) -> None:
+    payload = json.loads(POLICY_PATH.read_text(encoding="utf-8"))
+    del payload["context"]["atr_period"]
+    invalid_path = tmp_path / "policy.json"
+    invalid_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(SubingWatchPolicyError, match="SUBING_WATCH_POLICY_INVALID"):
+        load_subing_watch_policy(invalid_path)
+
+
 def test_decimal_float_boundary_is_single_and_deterministic() -> None:
     kernel = to_subing_watch_kernel_bar(canonical_bar())
     app = from_kernel_evaluation(kernel_evaluation(), source_mode="canonical")
 
     assert kernel.close == 123.4567894
+    assert kernel.source_fingerprint == (
+        "subing-watch-bar:v1|2026-09-01T02:15:00+00:00|2026-09-01|"
+        "123.4567894|123.4567894|123.4567894|123.4567894|20"
+    )
     assert app.ma21 == Decimal("123.456789")
     assert app.close == Decimal("123.456789")
     assert app.source_identity == SubingWatchSourceIdentity(
@@ -149,6 +193,25 @@ def test_decimal_float_boundary_is_single_and_deterministic() -> None:
         segment_start_trading_day=date(2026, 9, 1),
     )
     assert app.source_identity_digest.startswith("subing-watch-source:")
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    (
+        (1.2, Decimal("1.200000")),
+        (1.2345674, Decimal("1.234567")),
+        (1.2345678, Decimal("1.234568")),
+    ),
+)
+def test_adapter_restores_kernel_numbers_as_fixed_six_decimal_text(
+    value: float, expected: Decimal
+) -> None:
+    app = from_kernel_evaluation(
+        kernel_evaluation(ma21=value), source_mode="canonical"
+    )
+
+    assert app.ma21 == expected
+    assert app.ma21.as_tuple().exponent == -6
 
 
 @pytest.mark.parametrize(
@@ -171,20 +234,121 @@ def test_source_identity_rejects_invalid_symbol_contract_or_frequency(
         )
 
 
-def test_kernel_bar_rejects_non_aware_time_and_invalid_ohlc() -> None:
-    with pytest.raises(ValueError, match="SUBING_WATCH_KERNEL_INVALID"):
+def test_kernel_bar_rejects_non_aware_time() -> None:
+    with pytest.raises(SubingWatchKernelError, match="SUBING_WATCH_KERNEL_INVALID"):
         SubingWatchKernelBar(
             bar_end="2026-09-01T02:15:00",
+            trading_day="2026-09-01",
+            open=10.0,
+            high=10.0,
+            low=8.0,
+            close=10.0,
+            volume=20.0,
+            source_fingerprint=source_fingerprint(),
+        )
+
+
+def test_kernel_bar_rejects_invalid_ohlc_after_aware_time_validation() -> None:
+    with pytest.raises(SubingWatchKernelError, match="SUBING_WATCH_KERNEL_INVALID"):
+        SubingWatchKernelBar(
+            bar_end="2026-09-01T02:15:00+00:00",
             trading_day="2026-09-01",
             open=10.0,
             high=9.0,
             low=8.0,
             close=10.0,
             volume=20.0,
+            source_fingerprint=source_fingerprint(high="9"),
         )
 
 
 @pytest.mark.parametrize("value", (math.nan, math.inf, -math.inf))
 def test_adapter_rejects_non_finite_kernel_numbers(value: float) -> None:
-    with pytest.raises(ValueError, match="SUBING_WATCH_KERNEL_INVALID"):
-        kernel_evaluation(ma21=value)
+    evaluation = kernel_evaluation()
+    object.__setattr__(evaluation, "ma21", value)
+
+    with pytest.raises(SubingWatchContractError, match="SUBING_WATCH_CONTRACT_INVALID"):
+        from_kernel_evaluation(evaluation, source_mode="canonical")
+
+
+def test_adapter_rejects_decimal_to_float_overflow() -> None:
+    with pytest.raises(SubingWatchContractError, match="SUBING_WATCH_CONTRACT_INVALID"):
+        to_subing_watch_kernel_bar(canonical_bar(close=Decimal("1e9999")))
+
+
+def test_kernel_state_is_frozen_and_accepts_one_matching_stable_fingerprint() -> None:
+    identity = SubingWatchKernelIdentity(
+        symbol="jm",
+        contract="JM2601",
+        segment_start_trading_day="2026-09-01",
+    )
+    state = initial_subing_watch_kernel_state(identity)
+    bar = to_subing_watch_kernel_bar(canonical_bar())
+    evaluation = kernel_evaluation(identity=identity)
+    populated = replace(
+        state,
+        last_bar_fingerprint=bar.source_fingerprint,
+        last_evaluation=evaluation,
+        blocked_reason="SOURCE_UNAVAILABLE",
+    )
+
+    assert populated.last_bar_fingerprint == bar.source_fingerprint
+    with pytest.raises(FrozenInstanceError):
+        populated.blocked_reason = "MUTATED"  # type: ignore[misc]
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (
+        ("sma21_window", (1.0,) * 22),
+        ("latest_five_valid_sma21", (1.0,) * 6),
+        ("previous_twenty_volumes", (1.0,) * 21),
+    ),
+)
+def test_kernel_state_rejects_values_beyond_each_bounded_window(
+    field: str, value: tuple[float, ...]
+) -> None:
+    identity = SubingWatchKernelIdentity(
+        symbol="jm",
+        contract="JM2601",
+        segment_start_trading_day="2026-09-01",
+    )
+
+    with pytest.raises(SubingWatchKernelError, match="SUBING_WATCH_KERNEL_INVALID"):
+        replace(initial_subing_watch_kernel_state(identity), **{field: value})
+
+
+def test_kernel_state_rejects_mismatched_identity_fingerprint_or_blocked_reason() -> None:
+    identity = SubingWatchKernelIdentity(
+        symbol="jm",
+        contract="JM2601",
+        segment_start_trading_day="2026-09-01",
+    )
+    state = initial_subing_watch_kernel_state(identity)
+    fingerprint = to_subing_watch_kernel_bar(canonical_bar()).source_fingerprint
+    different_identity = SubingWatchKernelIdentity(
+        symbol="rb",
+        contract="RB2601",
+        segment_start_trading_day="2026-09-01",
+    )
+
+    with pytest.raises(SubingWatchKernelError, match="SUBING_WATCH_KERNEL_INVALID"):
+        replace(
+            state,
+            last_bar_fingerprint=fingerprint,
+            last_evaluation=kernel_evaluation(identity=different_identity),
+        )
+    with pytest.raises(SubingWatchKernelError, match="SUBING_WATCH_KERNEL_INVALID"):
+        replace(
+            state,
+            last_bar_fingerprint="subing-watch-bar:v1|invalid",
+            last_evaluation=kernel_evaluation(identity=identity),
+        )
+    with pytest.raises(SubingWatchKernelError, match="SUBING_WATCH_KERNEL_INVALID"):
+        replace(
+            state,
+            last_bar_fingerprint=("not", "a", "fingerprint"),  # type: ignore[arg-type]
+            last_evaluation=kernel_evaluation(identity=identity),
+        )
+    with pytest.raises(SubingWatchKernelError, match="SUBING_WATCH_KERNEL_INVALID"):
+        replace(state, blocked_reason="")

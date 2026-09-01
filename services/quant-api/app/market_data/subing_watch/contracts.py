@@ -60,6 +60,8 @@ _RANGE_STATES = frozenset(
 _HIGHER_TIMEFRAME_ALIGNMENTS = frozenset(
     {"aligned", "opposed", "neutral", "unavailable"}
 )
+_ROUND_DIGITS = 6
+_SOURCE_FINGERPRINT_PREFIX = "subing-watch-bar:v1"
 
 
 class SubingWatchPolicyError(ValueError):
@@ -96,7 +98,7 @@ def _kernel_float_to_decimal(value: float | None) -> Decimal | None:
     if not isinstance(value, float) or not math.isfinite(value):
         raise SubingWatchContractError()
     try:
-        result = Decimal(str(value))
+        result = Decimal(format(value, f".{_ROUND_DIGITS}f"))
     except (InvalidOperation, ValueError):
         raise SubingWatchContractError() from None
     if not result.is_finite():
@@ -111,6 +113,27 @@ def _decimal_to_kernel_float(value: Decimal) -> float:
     if not math.isfinite(result):
         raise SubingWatchContractError()
     return result
+
+
+def _canonical_decimal_text(value: Decimal) -> str:
+    if not isinstance(value, Decimal) or not value.is_finite():
+        raise SubingWatchContractError()
+    return str(value)
+
+
+def _canonical_bar_fingerprint(bar: CanonicalBar) -> str:
+    return "|".join(
+        (
+            _SOURCE_FINGERPRINT_PREFIX,
+            bar.bar_end.astimezone(UTC).isoformat(),
+            bar.trading_day.isoformat(),
+            _canonical_decimal_text(bar.open),
+            _canonical_decimal_text(bar.high),
+            _canonical_decimal_text(bar.low),
+            _canonical_decimal_text(bar.close),
+            _canonical_decimal_text(bar.volume),
+        )
+    )
 
 
 def _kernel_instant(value: str) -> datetime:
@@ -321,6 +344,7 @@ def to_subing_watch_kernel_bar(bar: CanonicalBar) -> SubingWatchKernelBar:
         low=_decimal_to_kernel_float(bar.low),
         close=_decimal_to_kernel_float(bar.close),
         volume=_decimal_to_kernel_float(bar.volume),
+        source_fingerprint=_canonical_bar_fingerprint(bar),
     )
 
 

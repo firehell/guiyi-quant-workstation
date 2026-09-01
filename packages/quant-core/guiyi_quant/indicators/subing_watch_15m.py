@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
+from decimal import Decimal, InvalidOperation
 import math
 import re
 from typing import Literal
@@ -30,6 +31,7 @@ _RANGE_STATES = frozenset(
 _HIGHER_TIMEFRAME_ALIGNMENTS = frozenset(
     {"aligned", "opposed", "neutral", "unavailable"}
 )
+_SOURCE_FINGERPRINT_PREFIX = "subing-watch-bar:v1"
 
 
 class SubingWatchKernelError(ValueError):
@@ -75,6 +77,26 @@ def _optional_finite_float(value: object) -> float | None:
     return _finite_float(value, optional=True)
 
 
+def _source_fingerprint(value: object) -> tuple[str, str, tuple[Decimal, ...]]:
+    if not isinstance(value, str):
+        raise SubingWatchKernelError()
+    fields = value.split("|")
+    if len(fields) != 8 or fields[0] != _SOURCE_FINGERPRINT_PREFIX:
+        raise SubingWatchKernelError()
+    bar_end = _rfc3339(fields[1])
+    trading_day = _trading_day(fields[2])
+    try:
+        decimals = tuple(Decimal(item) for item in fields[3:])
+    except (InvalidOperation, ValueError):
+        raise SubingWatchKernelError() from None
+    if (
+        len(decimals) != 5
+        or any(not item.is_finite() or str(item) != raw for item, raw in zip(decimals, fields[3:], strict=True))
+    ):
+        raise SubingWatchKernelError()
+    return bar_end, trading_day, decimals
+
+
 @dataclass(frozen=True, slots=True)
 class SubingWatchKernelIdentity:
     symbol: str
@@ -107,6 +129,7 @@ class SubingWatchKernelBar:
     low: float
     close: float
     volume: float
+    source_fingerprint: str
 
     def __post_init__(self) -> None:
         bar_end = _rfc3339(self.bar_end)
@@ -119,6 +142,22 @@ class SubingWatchKernelBar:
         assert open_value is not None and high is not None and low is not None
         assert close is not None and volume is not None
         if low > high or not low <= open_value <= high or not low <= close <= high or volume < 0:
+            raise SubingWatchKernelError()
+        fingerprint_bar_end, fingerprint_day, fingerprint_values = _source_fingerprint(
+            self.source_fingerprint
+        )
+        if (
+            fingerprint_bar_end != bar_end
+            or fingerprint_day != trading_day
+            or any(
+                float(source) != actual
+                for source, actual in zip(
+                    fingerprint_values,
+                    (open_value, high, low, close, volume),
+                    strict=True,
+                )
+            )
+        ):
             raise SubingWatchKernelError()
         object.__setattr__(self, "bar_end", bar_end)
         object.__setattr__(self, "trading_day", trading_day)
@@ -229,7 +268,7 @@ class SubingWatchKernelState:
     previous_ready_dif: float | None
     previous_ready_dea: float | None
     previous_twenty_volumes: tuple[float, ...]
-    last_bar_fingerprint: tuple[str, str, float, float, float, float, float] | None
+    last_bar_fingerprint: str | None
     last_evaluation: SubingWatchKernelEvaluation | None
     blocked_reason: str | None
 
@@ -237,6 +276,9 @@ class SubingWatchKernelState:
         if (
             self.policy_id != SUBING_WATCH_FORMULA_VERSION
             or type(self.identity) is not SubingWatchKernelIdentity
+            or type(self.sma21_window) is not tuple
+            or type(self.latest_five_valid_sma21) is not tuple
+            or type(self.previous_twenty_volumes) is not tuple
             or not 0 <= len(self.sma21_window) <= 21
             or not 0 <= len(self.latest_five_valid_sma21) <= 5
             or not 0 <= len(self.previous_twenty_volumes) <= 20
@@ -247,7 +289,15 @@ class SubingWatchKernelState:
                 self.last_evaluation is not None
                 and type(self.last_evaluation) is not SubingWatchKernelEvaluation
             )
-            or (self.blocked_reason is not None and not isinstance(self.blocked_reason, str))
+            or (
+                self.blocked_reason is not None
+                and (
+                    not isinstance(self.blocked_reason, str)
+                    or not self.blocked_reason
+                    or self.blocked_reason != self.blocked_reason.strip()
+                )
+            )
+            or ((self.last_bar_fingerprint is None) != (self.last_evaluation is None))
         ):
             raise SubingWatchKernelError()
         for values in (
@@ -255,10 +305,19 @@ class SubingWatchKernelState:
             self.latest_five_valid_sma21,
             self.previous_twenty_volumes,
         ):
-            if type(values) is not tuple or any(_finite_float(value) is None for value in values):
+            if any(_finite_float(value) is None for value in values):
                 raise SubingWatchKernelError()
         object.__setattr__(self, "previous_ready_dif", _optional_finite_float(self.previous_ready_dif))
         object.__setattr__(self, "previous_ready_dea", _optional_finite_float(self.previous_ready_dea))
+        if self.last_bar_fingerprint is not None:
+            assert self.last_evaluation is not None
+            bar_end, trading_day, _ = _source_fingerprint(self.last_bar_fingerprint)
+            if (
+                self.last_evaluation.identity != self.identity
+                or self.last_evaluation.bar_end != bar_end
+                or self.last_evaluation.trading_day != trading_day
+            ):
+                raise SubingWatchKernelError()
 
 
 def initial_subing_watch_kernel_state(
