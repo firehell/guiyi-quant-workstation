@@ -21,6 +21,10 @@ from app.market_data.subing_lifecycle_policy import load_subing_lifecycle_policy
 from app.research.subing.subing_lifecycle_research_service import (
     SubingLifecycleResearchService,
 )
+from app.market_data.subing_watch.contracts import load_subing_watch_policy
+from app.research.subing.subing_watch_research_service import (
+    SubingWatchResearchService,
+)
 
 
 def build_subing_calibration_research_service(
@@ -52,4 +56,15 @@ def build_subing_candidate_validation_service(
     return SubingCandidateValidationService(
         build_subing_lifecycle_research_service(session),
         authority=load_candidate_validation_authority(),
+    )
+
+
+def build_subing_watch_research_service(
+    session: Session,
+) -> SubingWatchResearchService:
+    """Construct read-only Watch diagnostics over MarketDataService."""
+    return SubingWatchResearchService(
+        build_market_data_service(session),
+        products=load_active_products(),
+        policy=load_subing_watch_policy(),
     )

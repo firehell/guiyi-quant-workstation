@@ -10,6 +10,7 @@ RESEARCH_COMMAND_NAMES = (
     "subing-calibration",
     "subing-lifecycle",
     "subing-strategy-performance",
+    "subing-watch",
 )
 
 
@@ -39,6 +40,13 @@ def add_research_commands(
     performance = commands.add_parser("subing-strategy-performance")
     performance.add_argument("--scope", choices=("active",), required=True)
     performance.add_argument("--warm-cache", action="store_true", required=True)
+
+    watch = commands.add_parser("subing-watch")
+    watch.add_argument("--symbols", required=True)
+    watch.add_argument("--since", required=True)
+    watch.add_argument("--through", required=True)
+    watch.add_argument("--forward-bars", default="")
+    watch.add_argument("--format", choices=("json",), default="json")
 
     if tuple(commands.choices) != RESEARCH_COMMAND_NAMES:
         raise RuntimeError("CLI_RESEARCH_COMMAND_REGISTRY_INVALID")

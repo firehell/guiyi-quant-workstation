@@ -49,6 +49,7 @@ from app.market_data.product_retirement import ProductRetiredError
 from app.research.composition import (
     build_subing_calibration_research_service,
     build_subing_lifecycle_research_service,
+    build_subing_watch_research_service,
 )
 from app.services.runtime_health import build_runtime_health
 from app.runtime_entry import run_after_market, run_alert, run_live
@@ -137,6 +138,9 @@ def main(
     performance_service_factory: ResearchServiceFactory = (
         build_subing_strategy_performance_service
     ),
+    watch_research_service_factory: ResearchServiceFactory = (
+        build_subing_watch_research_service
+    ),
     runtime_health_builder=build_runtime_health,
     stdout: TextIO = sys.stdout,
     stderr: TextIO = sys.stderr,
@@ -212,6 +216,8 @@ def main(
                     service = lifecycle_research_service_factory(session)
                 elif args.research_command == "subing-calibration":
                     service = research_service_factory(session)
+                elif args.research_command == "subing-watch":
+                    service = watch_research_service_factory(session)
                 else:
                     raise ValueError("CLI_RESEARCH_COMMAND_INVALID")
                 if args.research_command != "subing-strategy-performance":

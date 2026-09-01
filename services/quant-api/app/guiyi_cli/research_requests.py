@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 from datetime import date
 from decimal import Decimal, InvalidOperation
-from typing import TypeAlias
+from typing import Literal, TypeAlias
 
 from app.market_data.domain import BarFrequency
 from app.research.subing.subing_calibration_service import (
@@ -17,9 +17,16 @@ from app.research.subing.subing_calibration_service import (
 from app.research.subing.subing_lifecycle_research_service import (
     LifecycleResearchRequest,
 )
+from app.research.subing.subing_watch_research_service import (
+    SubingWatchResearchRequest,
+)
 
 
-ResearchRequest: TypeAlias = CalibrationResearchRequest | LifecycleResearchRequest
+ResearchRequest: TypeAlias = (
+    CalibrationResearchRequest
+    | LifecycleResearchRequest
+    | SubingWatchResearchRequest
+)
 
 
 def build_research_request(args: argparse.Namespace) -> ResearchRequest:
@@ -29,6 +36,13 @@ def build_research_request(args: argparse.Namespace) -> ResearchRequest:
             since=_day(args.since),
             through=_day(args.through),
             symbol=args.symbol,
+        )
+    if args.research_command == "subing-watch":
+        return SubingWatchResearchRequest(
+            since=_day(args.since),
+            through=_day(args.through),
+            symbols=_symbols(args.symbols),
+            forward_bars=_forward_bars(args.forward_bars),
         )
     if args.research_command != "subing-calibration":
         raise ValueError("CLI_RESEARCH_COMMAND_INVALID")
@@ -66,3 +80,22 @@ def _decimal(value: str | None) -> Decimal | None:
         return Decimal(value)
     except InvalidOperation as exc:
         raise ValueError("CLI_THRESHOLD_INVALID") from exc
+
+
+def _symbols(value: str) -> tuple[str, ...] | Literal["active"]:
+    if value == "active":
+        return "active"
+    raw = value.split(",")
+    symbols = tuple(item.strip().lower() for item in raw)
+    if any(not symbol for symbol in symbols):
+        raise ValueError("CLI_SYMBOLS_INVALID")
+    return tuple(sorted(symbols))
+
+
+def _forward_bars(value: str) -> tuple[int, ...]:
+    if not value:
+        return ()
+    raw = value.split(",")
+    if any(not item or not item.isascii() or not item.isdigit() for item in raw):
+        raise ValueError("CLI_FORWARD_BARS_INVALID")
+    return tuple(int(item) for item in raw)
