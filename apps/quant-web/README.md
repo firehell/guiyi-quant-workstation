@@ -2,7 +2,7 @@
 
 Vue 3 + TypeScript 的 Market Web，仅包含 `/market` 与 `/market/chart`。
 
-- Market 首页：Radar、市场状态与 Runtime 健康。
+- Market 首页：Runtime 状态与健康。
 - 图表页：Canonical/Live K 线、成交量、OI、通用 EMA/MACD、Range Detector、HTDY retrospective overlay、HTDY Scope/Event。
 - Overlay 仅 `none | htdy`；旧偏好值读取时归一为 `none`。
 - 不计算策略，不显示建仓、清仓、持仓或全历史策略效果。
