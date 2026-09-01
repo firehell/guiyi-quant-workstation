@@ -604,6 +604,27 @@ def test_missing_map_partition_or_identity_fails_closed(
         ).current(_request(), _bar(1).bar_end)
 
 
+def test_main_contract_summary_requires_explicit_symbol_identity() -> None:
+    bars = (_bar(1),)
+    service = SubingWatchCurrentProjectionService(
+        _Loader(_result(bars, ())),
+        products=("jm",),
+        market_read=_MarketRead(),
+        current_segment=lambda _symbol, _target: SimpleNamespace(
+            contract=CONTRACT,
+            start_trading_day=DAY,
+            end_trading_day=DAY,
+        ),
+        policy=load_subing_watch_policy(),
+    )
+
+    with pytest.raises(
+        SubingWatchCurrentSourceIdentityError,
+        match="SUBING_WATCH_CURRENT_SOURCE_IDENTITY_INVALID",
+    ):
+        service.current(_request(), bars[-1].bar_end)
+
+
 def test_composition_builds_only_the_read_only_current_projection(monkeypatch) -> None:
     from app.market_data import composition
 

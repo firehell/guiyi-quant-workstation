@@ -342,7 +342,7 @@ class SubingWatchCurrentProjectionService:
         except (AttributeError, TypeError, ValueError):
             raise SubingWatchCurrentSourceIdentityError() from None
         if (
-            getattr(summary, "symbol", symbol) != symbol
+            getattr(summary, "symbol", None) != symbol
             or contract is None
             or type(summary.start_trading_day) is not date
             or type(summary.end_trading_day) is not date

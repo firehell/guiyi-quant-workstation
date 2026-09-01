@@ -8,6 +8,7 @@ import pytest
 
 from app.market_data.domain import CanonicalBar
 from app.market_data.subing_watch.contracts import (
+    SubingWatchContractError,
     SubingWatchSourceIdentity,
     load_subing_watch_policy,
 )
@@ -180,3 +181,70 @@ def test_replay_rejects_trading_day_regression_even_when_bar_end_increases() -> 
 
     with pytest.raises(SubingWatchReplayError, match="SUBING_WATCH_REPLAY_INVALID"):
         replay_subing_watch_segment(_identity(), bars, (), load_subing_watch_policy())
+
+
+@pytest.mark.parametrize(
+    "invalid_higher",
+    (
+        (
+            replace(
+                _bar(1, minutes=60),
+                bar_end=START + timedelta(days=1, hours=1),
+                trading_day=DAY + timedelta(days=1),
+            ),
+            replace(
+                _bar(2, minutes=60),
+                bar_end=START + timedelta(days=1, hours=2),
+                trading_day=DAY,
+            ),
+        ),
+        (replace(_bar(1, minutes=60), trading_day=DAY - timedelta(days=1)),),
+        (_bar(1, minutes=60, close="1E+9999"),),
+        (_bar(2, minutes=60), _bar(1, minutes=60)),
+    ),
+    ids=(
+        "trading-day-regression",
+        "before-segment-identity",
+        "nonfinite-float-view",
+        "bar-end-regression",
+    ),
+)
+def test_invalid_optional_60m_degrades_to_unavailable_without_changing_candidate(
+    invalid_higher: tuple[CanonicalBar, ...],
+) -> None:
+    bars_15m = (*(_bar(index) for index in range(1, 35)), _bar(35, close="110"))
+    expected = replay_subing_watch_segment(
+        _identity(), bars_15m, (), load_subing_watch_policy()
+    )
+
+    projected = replay_subing_watch_segment(
+        _identity(), bars_15m, invalid_higher, load_subing_watch_policy()
+    )
+
+    assert projected.evaluations == expected.evaluations
+    assert projected.evaluations[-1].outcome == "evaluated_candidate"
+    assert projected.evaluations[-1].observation_types == ("buy",)
+    assert projected.evaluations[-1].context.higher_timeframe_alignment == "unavailable"
+    assert projected.latest_higher_timeframe is None
+
+
+@pytest.mark.parametrize(
+    ("invalid_15m", "expected_error"),
+    (
+        (
+            (replace(_bar(1), trading_day=DAY - timedelta(days=1)),),
+            SubingWatchReplayError,
+        ),
+        ((_bar(1, close="1E+9999"),), SubingWatchContractError),
+        ((_bar(2), _bar(1)), SubingWatchReplayError),
+    ),
+    ids=("before-segment-identity", "nonfinite-float-view", "bar-end-regression"),
+)
+def test_same_invalidity_remains_strict_for_base_15m(
+    invalid_15m: tuple[CanonicalBar, ...],
+    expected_error: type[ValueError],
+) -> None:
+    with pytest.raises(expected_error):
+        replay_subing_watch_segment(
+            _identity(), invalid_15m, (), load_subing_watch_policy()
+        )

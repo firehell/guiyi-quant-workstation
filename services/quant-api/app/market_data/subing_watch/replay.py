@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Literal, cast
 
 from guiyi_quant.indicators.subing_watch_15m import (
+    SubingWatchKernelError,
     SubingWatchKernelHigherTimeframe,
     SubingWatchPolicy as SubingWatchKernelPolicy,
     SubingWatchKernelState,
@@ -17,6 +18,7 @@ from guiyi_quant.indicators.subing_watch_15m import (
 
 from ..domain import CanonicalBar
 from .contracts import (
+    SubingWatchContractError,
     SubingWatchEvaluation,
     SubingWatchPolicy,
     SubingWatchSourceIdentity,
@@ -63,7 +65,7 @@ def replay_subing_watch_segment(
     ):
         raise SubingWatchReplayError()
     unique_15m = _unique_segment_bars(identity, bars_15m)
-    higher = _project_completed_60m(identity, completed_60m)
+    higher = _optional_completed_60m(identity, completed_60m)
 
     first_kernel_bar = to_subing_watch_kernel_bar(
         unique_15m[0],
@@ -155,3 +157,17 @@ def _project_completed_60m(
             )
         )
     return tuple(projected)
+
+
+def _optional_completed_60m(
+    identity: SubingWatchSourceIdentity,
+    bars: tuple[CanonicalBar, ...],
+) -> tuple[SubingWatchKernelHigherTimeframe, ...]:
+    try:
+        return _project_completed_60m(identity, bars)
+    except (
+        SubingWatchReplayError,
+        SubingWatchContractError,
+        SubingWatchKernelError,
+    ):
+        return ()
