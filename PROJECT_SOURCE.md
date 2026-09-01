@@ -7,7 +7,7 @@
 ## Market Web
 
 - 唯一 Web 产品为 Market，route 仅 `/market` 与 `/market/chart`。
-- `/market` 是行情看板，只展示 Runtime、Daily Watch 与当前策略动作；不提供全市场 Radar 研究入口。
+- `/market` 是行情看板，只展示 Runtime；不提供全市场 Radar、Daily Watch 或策略事件研究入口。
 - 主图 Overlay 仅 `none | subing | htdy`。苏冰 overlay 默认以每根 K 线独立黄/蓝柱显示 EMA10/21 趋势带；独立 EMA21 仅图表设置可选。
 - 苏冰图表侧栏钉顶确认事实：动作、合约、参考价、生效、仍有效。全历史策略效果面板默认关闭，仅图表设置开启。
 - 策略事件入口 `entry=subing-strategy-action` 落到 `actual_dominant + 15m` 并保留 overlay；Daily Watch 入口仍为 `entry=subing-daily-watch`。

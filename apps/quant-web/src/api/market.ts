@@ -14,11 +14,9 @@ import type {
   SubingStrategyCurrentResponse,
   SubingStrategyCurrentWireResponse,
   SubingStrategyPerformanceResponse,
-  SubingDailyWatchCurrentWireResponse,
   SubingResearchResponse,
 } from '@/types/market'
 import {
-  normalizeSubingDailyWatchCurrent,
   normalizeSubingResearch,
   normalizeSubingStrategyHistory,
   normalizeSubingStrategyCurrent,
@@ -27,14 +25,6 @@ import {
 
 export function getMarketDominants() {
   return request.get<never, DominantContractListResponse>('/market/dominants')
-}
-
-export function getSubingDailyWatchCurrent() {
-  return request
-    .get<never, SubingDailyWatchCurrentWireResponse>(
-      '/market/research/subing-daily-watch/current',
-    )
-    .then(normalizeSubingDailyWatchCurrent)
 }
 
 export function getProductResearch(params: {

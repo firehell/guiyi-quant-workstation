@@ -149,11 +149,10 @@ test('series refresh keeps confirm query only while still on SuBing 15m dominant
   })
 })
 
-test('home and chart wire the shared confirm query instead of overlay-only navigation', () => {
+test('chart retains confirm-query handling while the homepage has no SuBing entry', () => {
   const home = readFileSync(new URL('../src/pages/market/index.vue', import.meta.url), 'utf8')
   const chart = readFileSync(new URL('../src/pages/market/chart.vue', import.meta.url), 'utf8')
-  assert.match(home, /entry: 'subing-strategy-action'/)
-  assert.match(home, /action_id: item.action_id/)
+  assert.doesNotMatch(home, /subing-strategy-action|subing-daily-watch/)
   assert.match(chart, /seriesRefreshQuery\(/)
   assert.match(chart, /data-focused-action-id/)
 })

@@ -37,11 +37,7 @@ describe('Product Alert server-side scope', () => {
     assert.doesNotMatch(chartSource, /localStorage.*alert|alert.*localStorage/i)
   })
 
-  it('uses the exact V2 current-view endpoints', () => {
-    assert.match(
-      apiSource,
-      /getCurrentStrategyActions\(\)\s*\{\s*return request\.get<never, CurrentStrategyActionsResponse>\('\/api\/alerts\/strategy-actions\/current'\)/,
-    )
+  it('uses the exact product current-view endpoint', () => {
     assert.match(
       apiSource,
       /getProductCurrentAlertEvents\(symbol: string\)\s*\{\s*return request\.get<never, ProductCurrentAlertEventsResponse>\(\s*`\/api\/alerts\/products\/\$\{symbol\}\/current-events`,/,
@@ -74,12 +70,6 @@ describe('Product Alert server-side scope', () => {
     assert.match(marketTypesSource, /reason_codes: \[SubingStrategyLongExitReason, \.\.\.SubingStrategyLongExitReason\[\]\]/)
     assert.match(marketTypesSource, /reason_codes: \[SubingStrategyShortExitReason, \.\.\.SubingStrategyShortExitReason\[\]\]/)
     assert.match(marketTypesSource, /export type AlertEvent = HtdyAlertEvent \| SubingStrategyAlertEvent/)
-    assert.match(apiSource, /export type CurrentStrategyActionItem = SubingStrategyAlertEvent & \{/)
-    assert.deepEqual(interfaceFields(apiSource, 'CurrentStrategyActionsResponse'), [
-      "status: 'ready' | 'unavailable'",
-      'trading_day: string | null',
-      'items: CurrentStrategyActionItem[]',
-    ])
     assert.deepEqual(interfaceFields(apiSource, 'ProductCurrentAlertEventsResponse'), [
       "status: 'ready' | 'unavailable'",
       'trading_day: string | null',

@@ -6,7 +6,7 @@
 
 日常看盘走 Market Web（本机 launchd，或见 [deploy/README.md](deploy/README.md) 的 HTTPS 入口）：
 
-- `/market`：行情看板，展示 Runtime 健康、苏冰 Daily Watch、当日苏冰策略动作。
+- `/market`：行情看板，仅展示 Runtime 健康。
 - `/market/chart`：主力连续 K 线、当日 Live、主图 Overlay、提醒开关、苏冰当前状态与全历史效果、当日 Formal Event。
 
 主图 Overlay 只有 **无 / 苏冰 / 火天大有**。

@@ -2,9 +2,6 @@ import { expect, test } from '@playwright/test'
 import {
   bar,
   research,
-  dailyWatchItem,
-  dailyWatch,
-  mockMarketHomepage,
   subing,
   panelEvent,
   subingStrategyCurrent,
@@ -23,37 +20,6 @@ import {
 } from './market-research.helpers.mjs'
 
 test.describe('SuBing current/history', () => {
-test('B1 journey opens AG Daily Watch verification view from the homepage', async ({ page }) => {
-  await mockWorkspace(page, { json: research() })
-  await mockAlertMarkerSurface(page)
-  await mockMarketHomepage(page, dailyWatch({
-    long_watch: [dailyWatchItem('ag', '白银')],
-    excluded: 59,
-  }))
-  await page.route('**/api/alerts/strategy-actions/current', (route) => route.fulfill({
-    json: { status: 'ready', trading_day: '2026-08-25', items: [] },
-  }))
-  await page.setViewportSize({ width: 1440, height: 900 })
-  await page.goto('/market')
-
-  await expect(page.getByRole('region', { name: '苏冰', exact: true })).toHaveCount(1)
-  await expect(page.getByTestId('subing-daily-watch')).toBeVisible()
-  const focus = page.getByTestId('subing-daily-watch')
-  await expect(focus).toContainText('AG 白银')
-  await focus.getByRole('button', { name: '检查 AG 15m', exact: true }).click()
-
-  await expect(page).toHaveURL(/\/market\/chart\?symbol=ag/)
-  expect(Object.fromEntries(new URL(page.url()).searchParams)).toMatchObject({
-    symbol: 'ag', series_kind: 'actual_dominant', frequency: '15m',
-  })
-  await expect(page.getByRole('button', { name: '真实主力', exact: true })).toHaveClass(/n-button--primary-type/)
-  await expect(page.getByRole('group', { name: '周期' }).getByRole('button', { name: '15m', exact: true })).toHaveClass(/n-button--primary-type/)
-  await expect(page.getByRole('group', { name: 'Overlay' }).getByRole('button', { name: '苏冰', exact: true })).toHaveClass(/n-button--primary-type/)
-  await expect(page.getByTestId('product-check-observation')).toBeVisible()
-  await expect(page.getByTestId('product-check-background')).toBeVisible()
-  await expect(page.getByTestId('product-check-data-details')).not.toHaveAttribute('open')
-})
-
 test('exact Daily Watch chart entry is one-shot and leaves saved chart preferences unchanged', async ({ page }) => {
   await page.addInitScript(() => {
     window.localStorage.setItem('guiyi.market.chart.preferences.v5', JSON.stringify({

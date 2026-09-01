@@ -1,6 +1,6 @@
 import request from './request'
 import { getRuntimeHealth } from './runtime'
-import type { AlertEvent, MarketFrequency, SubingStrategyAlertEvent } from '@/types/market'
+import type { AlertEvent, MarketFrequency } from '@/types/market'
 
 export type { AlertRuntimeStatus } from '@/utils/alertControl'
 export type { AlertEvent } from '@/types/market'
@@ -23,17 +23,6 @@ export interface ProductAlertStateResponse {
 
 export interface AlertEventListResponse {
   items: AlertEvent[]
-}
-
-export type CurrentStrategyActionItem = SubingStrategyAlertEvent & {
-  display_name: string
-  product_name: string
-}
-
-export interface CurrentStrategyActionsResponse {
-  status: 'ready' | 'unavailable'
-  trading_day: string | null
-  items: CurrentStrategyActionItem[]
 }
 
 export interface ProductCurrentAlertEventsResponse {
@@ -71,10 +60,6 @@ export function setAlertProductFrequencyEnabled(
 
 export function getAlertRuntimeStatus() {
   return getRuntimeHealth().then((response) => response.components.alert.status)
-}
-
-export function getCurrentStrategyActions() {
-  return request.get<never, CurrentStrategyActionsResponse>('/api/alerts/strategy-actions/current')
 }
 
 export function getProductCurrentAlertEvents(symbol: string) {

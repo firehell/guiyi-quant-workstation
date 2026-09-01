@@ -27,34 +27,6 @@ export function research(oiChange = 0.06) {
   }
 }
 
-export function dailyWatchItem(symbol, productName = symbol.toUpperCase()) {
-  const trend = {
-    bar_end: '2026-08-24T07:00:00Z', trading_day: '2026-08-24', physical_contract: `${symbol.toUpperCase()}2701`,
-    current_segment_start_trading_day: '2026-07-20', warmup_start_trading_day: '2026-07-01',
-    warmup_bar_count: 30, warmup_segment_count: 2, history_mode: 'rank1_stitched_raw',
-    close: '3512.125', ema21: '3478.2468', price_side: 'above',
-    slope_5_bps_per_bar: '8.6214', slope_10_bps_per_bar: '5.9173',
-  }
-  return {
-    symbol, product_name: productName, sector: 'black', decision: 'long_watch',
-    reason_codes: ['D1_H1_LONG_ALIGNED'], daily: trend, hourly: trend, unavailable_reasons: [],
-  }
-}
-
-export function dailyWatch({ long_watch = [], short_watch = [], unavailable = [], excluded = 60 } = {}) {
-  return {
-    projection_version: 'subing_daily_watch_v2',
-    formula_version: 'subing_ema21_rank1_stitched_raw_v2',
-    history_mode: 'rank1_stitched_raw',
-    status: 'ready', expected_target_trading_day: '2026-08-25', latest_target_trading_day: '2026-08-25', error_code: null,
-    snapshot: {
-      source_trading_day: '2026-08-24', target_trading_day: '2026-08-25', generated_at: '2026-08-24T10:24:13Z',
-      counts: { universe: long_watch.length + short_watch.length + unavailable.length + excluded, long_watch: long_watch.length, short_watch: short_watch.length, excluded, unavailable: unavailable.length },
-      long_watch, short_watch, unavailable,
-    },
-  }
-}
-
 export function runtimeHealth(overrides = {}) {
   return {
     status: 'ok', generated_at: '2026-08-24T10:15:00+00:00', readonly: true,
@@ -91,15 +63,6 @@ export function runtimeHealth(overrides = {}) {
     },
     ...overrides,
   }
-}
-
-export async function mockMarketHomepage(
-  page,
-  dailyWatchResponse = dailyWatch(),
-  runtimeResponse = runtimeHealth(),
-) {
-  await page.route('**/api/runtime/health', (route) => route.fulfill({ json: runtimeResponse }))
-  await page.route('**/api/v1/market/research/subing-daily-watch/current', (route) => route.fulfill({ json: dailyWatchResponse }))
 }
 
 export function subing(overrides = {}) {
