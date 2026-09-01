@@ -248,3 +248,63 @@ def test_same_invalidity_remains_strict_for_base_15m(
         replay_subing_watch_segment(
             _identity(), invalid_15m, (), load_subing_watch_policy()
         )
+
+
+def test_future_malformed_60m_tail_cannot_contaminate_valid_historical_prefix() -> None:
+    bars_15m = tuple(_bar(index) for index in range(1, 121))
+    valid_60m = tuple(_bar(index, minutes=60) for index in range(1, 26))
+    future_malformed = replace(
+        _bar(1, minutes=60, close="1E+9999"),
+        bar_end=bars_15m[-1].bar_end + timedelta(minutes=15),
+    )
+    expected = replay_subing_watch_segment(
+        _identity(), bars_15m, valid_60m, load_subing_watch_policy()
+    )
+
+    projected = replay_subing_watch_segment(
+        _identity(),
+        bars_15m,
+        (*valid_60m, future_malformed),
+        load_subing_watch_policy(),
+    )
+
+    assert expected.evaluations[-1].context.higher_timeframe_alignment == "neutral"
+    assert projected.evaluations == expected.evaluations
+    assert projected.latest_higher_timeframe == expected.latest_higher_timeframe
+
+
+def test_malformed_60m_only_degrades_context_from_its_visible_cutoff() -> None:
+    prefix_15m = tuple(_bar(index) for index in range(1, 121))
+    candidate_bar = _bar(121, close="110")
+    after_candidate = _bar(122, close="110")
+    bars_15m = (*prefix_15m, candidate_bar, after_candidate)
+    valid_60m = tuple(_bar(index, minutes=60) for index in range(1, 26))
+    malformed_at_candidate = replace(
+        _bar(1, minutes=60, close="1E+9999"),
+        bar_end=candidate_bar.bar_end,
+    )
+    expected = replay_subing_watch_segment(
+        _identity(), bars_15m, valid_60m, load_subing_watch_policy()
+    )
+
+    projected = replay_subing_watch_segment(
+        _identity(),
+        bars_15m,
+        (*valid_60m, malformed_at_candidate),
+        load_subing_watch_policy(),
+    )
+
+    assert projected.evaluations[:120] == expected.evaluations[:120]
+    candidate = projected.evaluations[120]
+    expected_candidate = expected.evaluations[120]
+    assert candidate.outcome == expected_candidate.outcome
+    assert candidate.observation_types == ("buy",)
+    assert candidate.close == expected_candidate.close
+    assert candidate.ma21 == expected_candidate.ma21
+    assert candidate.dif == expected_candidate.dif
+    assert candidate.dea == expected_candidate.dea
+    assert all(
+        evaluation.context.higher_timeframe_alignment == "unavailable"
+        for evaluation in projected.evaluations[120:]
+    )
+    assert projected.latest_higher_timeframe is None

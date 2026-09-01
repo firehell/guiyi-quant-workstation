@@ -317,7 +317,7 @@ class SubingWatchCurrentProjectionService:
                 contract=segment.contract,
             ):
                 return (), False
-            return _merge_canonical_live(
+            return _append_optional_higher_live(
                 canonical,
                 snapshot.bars,
                 target_day=target_day,
@@ -491,3 +491,23 @@ def _merge_canonical_live(
         by_end[bar.bar_end] = bar
         used_live = True
     return tuple(by_end[key] for key in sorted(by_end)), used_live
+
+
+def _append_optional_higher_live(
+    canonical: tuple[CanonicalBar, ...],
+    live: tuple[CanonicalBar, ...],
+    *,
+    target_day: date,
+    cutoff: datetime,
+) -> tuple[tuple[CanonicalBar, ...], bool]:
+    """Preserve raw H1 tail causality so future invalid context stays invisible."""
+
+    if type(live) is not tuple or any(
+        type(bar) is not CanonicalBar or bar.trading_day != target_day
+        for bar in live
+    ):
+        raise SubingWatchCurrentSourceIdentityError()
+    visible_live = tuple(bar for bar in live if bar.bar_end <= cutoff)
+    canonical_by_end = {bar.bar_end: bar for bar in canonical}
+    used_live = any(canonical_by_end.get(bar.bar_end) != bar for bar in visible_live)
+    return (*canonical, *live), used_live

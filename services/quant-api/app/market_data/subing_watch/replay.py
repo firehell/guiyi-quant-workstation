@@ -65,7 +65,6 @@ def replay_subing_watch_segment(
     ):
         raise SubingWatchReplayError()
     unique_15m = _unique_segment_bars(identity, bars_15m)
-    higher = _optional_completed_60m(identity, completed_60m)
 
     first_kernel_bar = to_subing_watch_kernel_bar(
         unique_15m[0],
@@ -76,12 +75,11 @@ def replay_subing_watch_segment(
         cast(SubingWatchKernelPolicy, policy),
     )
     evaluations: list[SubingWatchEvaluation] = []
-    higher_index = 0
     latest_higher: SubingWatchKernelHigherTimeframe | None = None
     for bar in unique_15m:
-        while higher_index < len(higher) and higher[higher_index].bar_end <= bar.bar_end.isoformat():
-            latest_higher = higher[higher_index]
-            higher_index += 1
+        visible_higher = _visible_completed_60m(completed_60m, cutoff=bar.bar_end)
+        projected_higher = _optional_completed_60m(identity, visible_higher)
+        latest_higher = projected_higher[-1] if projected_higher else None
         kernel_bar = to_subing_watch_kernel_bar(bar, source_identity=identity)
         state, evaluation = step_subing_watch_15m(
             state,
@@ -157,6 +155,16 @@ def _project_completed_60m(
             )
         )
     return tuple(projected)
+
+
+def _visible_completed_60m(
+    bars: tuple[CanonicalBar, ...],
+    *,
+    cutoff: datetime,
+) -> tuple[CanonicalBar, ...]:
+    if any(type(bar) is not CanonicalBar for bar in bars):
+        return ()
+    return tuple(bar for bar in bars if bar.bar_end <= cutoff)
 
 
 def _optional_completed_60m(

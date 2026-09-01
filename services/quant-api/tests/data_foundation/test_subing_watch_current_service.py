@@ -30,6 +30,7 @@ from app.market_data.market_read_service import (
     MarketReadState,
 )
 from app.market_data.subing_watch.contracts import (
+    SubingWatchSourceIdentity,
     from_kernel_evaluation,
     load_subing_watch_policy,
     to_subing_watch_kernel_bar,
@@ -581,6 +582,30 @@ def test_future_60m_snapshot_preserves_15m_candidate_with_empty_context() -> Non
 
     assert projected.evaluations[-1].outcome == "evaluated_candidate"
     assert projected.evaluations[-1].context.higher_timeframe_alignment == "unavailable"
+
+
+def test_future_malformed_60m_live_tail_preserves_current_historical_parity() -> None:
+    bars_15m = tuple(_bar(index) for index in range(1, 121))
+    canonical_60m = tuple(_bar(index, minutes=60) for index in range(1, 26))
+    future_malformed = replace(
+        _bar(1, minutes=60, close="1E+9999"),
+        bar_end=bars_15m[-1].bar_end + timedelta(minutes=15),
+    )
+    historical = replay_subing_watch_segment(
+        SubingWatchSourceIdentity("jm", CONTRACT, DAY),
+        bars_15m,
+        canonical_60m,
+        load_subing_watch_policy(),
+    )
+
+    current = _service(
+        bars_15m,
+        canonical_60m=canonical_60m,
+        live={BarFrequency.H1: (future_malformed,)},
+    ).current(_request(), bars_15m[-1].bar_end)
+
+    assert current.evaluations == historical.evaluations
+    assert current.latest_higher_timeframe == historical.latest_higher_timeframe
 
 
 @pytest.mark.parametrize(
