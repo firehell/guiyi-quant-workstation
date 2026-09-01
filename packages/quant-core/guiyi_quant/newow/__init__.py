@@ -19,12 +19,15 @@ from .trend_band import (
     initial_trend_band_state,
     step_trend_band,
 )
+from .escape_d123 import EscapeState, EscapeStepResult, calculate_escape_series, initial_escape_state, step_escape_d123
 
 __all__ = [
     "NEWOW_TREND_D1_V1",
     "CupHandleDirection",
     "CupHandleState",
     "EscapeSeverity",
+    "EscapeState",
+    "EscapeStepResult",
     "NewowCupHandleOverlay",
     "NewowDailyBar",
     "NewowMainMarker",
@@ -37,6 +40,9 @@ __all__ = [
     "TrendBandStepResult",
     "TrendTransition",
     "calculate_trend_band",
+    "calculate_escape_series",
+    "initial_escape_state",
+    "step_escape_d123",
     "initial_trend_band_state",
     "step_trend_band",
 ]
