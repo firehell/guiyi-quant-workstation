@@ -23,6 +23,7 @@ from app.market_data.domain import (
     normalize_contract_for_symbol,
 )
 from app.market_data.market_phase import MarketPhase, ProductMarketPhase
+from app.market_data.live_market import LiveBarObservation
 
 
 class MarketPageReader(Protocol):
@@ -54,6 +55,18 @@ class LiveReadStore(Protocol):
         start: datetime,
         end: datetime,
     ) -> tuple[CanonicalBar, ...]: ...
+
+    def bar_observations(
+        self,
+        trading_day: date,
+        symbol: str,
+        frequency: str,
+        after: datetime | None,
+        until: datetime,
+        *,
+        inclusive_after: bool,
+        expected_contract: str,
+    ) -> tuple[LiveBarObservation, ...]: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -369,26 +382,27 @@ class MarketReadService:
             state.canonical_end,
         )
         try:
-            if inclusive_after and boundary is not None:
-                bars = (
-                    self._live_store.bars_between(
-                        state.trading_day,
-                        identity.symbol,
-                        identity.frequency.value,
-                        boundary,
-                        now_utc,
-                    )
-                    if boundary <= now_utc
-                    else ()
-                )
-            else:
-                bars = self._live_store.bars_after(
+            observations = (
+                self._live_store.bar_observations(
                     state.trading_day,
                     identity.symbol,
                     identity.frequency.value,
                     boundary,
+                    now_utc,
+                    inclusive_after=inclusive_after,
+                    expected_contract=state.live_contract,
                 )
-                bars = tuple(bar for bar in bars if bar.bar_end <= now_utc)
+                if boundary is None or boundary <= now_utc
+                else ()
+            )
+            if any(
+                type(item) is not LiveBarObservation
+                or type(item.bar) is not CanonicalBar
+                or item.contract != state.live_contract
+                for item in observations
+            ):
+                raise ValueError("LIVE_BAR_PROVENANCE_INVALID")
+            bars = tuple(item.bar for item in observations)
         except Exception:  # noqa: BLE001 - typed read failure, no write or fallback
             return MarketObservationSnapshot(
                 state=state,

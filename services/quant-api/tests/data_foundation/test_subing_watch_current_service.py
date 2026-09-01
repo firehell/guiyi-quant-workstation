@@ -200,6 +200,30 @@ class _LiveStore:
             else ()
         )
 
+    def bar_observations(
+        self,
+        _day,
+        _symbol,
+        frequency,
+        after,
+        until,
+        *,
+        inclusive_after,
+        expected_contract,
+    ):
+        from app.market_data.live_market import LiveBarObservation
+
+        return (
+            tuple(
+                LiveBarObservation(bar=bar, contract=expected_contract)
+                for bar in self.bars
+                if (after is None or bar.bar_end > after or (inclusive_after and bar.bar_end == after))
+                and bar.bar_end <= until
+            )
+            if frequency == "15m"
+            else ()
+        )
+
 
 def _real_market_read(
     canonical: tuple[CanonicalBar, ...],
