@@ -83,6 +83,7 @@ def test_offline_research_builders_have_one_composition_entrypoint() -> None:
         "build_subing_calibration_research_service",
         "build_subing_lifecycle_research_service",
         "build_subing_candidate_validation_service",
+        "build_subing_watch_research_service",
     )
     assert all(hasattr(research_composition, name) for name in builders)
     assert not any(hasattr(market_data_composition, name) for name in builders)

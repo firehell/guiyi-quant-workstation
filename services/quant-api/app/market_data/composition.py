@@ -74,6 +74,10 @@ from app.market_data.subing_strategy.performance_snapshot import (
 from app.market_data.subing_strategy.performance_snapshot_store import (
     SubingStrategyPerformanceFileSnapshotStore,
 )
+from app.market_data.subing_watch.contracts import load_subing_watch_policy
+from app.market_data.subing_watch.current_service import (
+    SubingWatchCurrentProjectionService,
+)
 from app.market_data.domain import RQDATA_INTRADAY_HISTORY_START
 from app.market_data.subing_read_service import SubingReadService
 from app.market_data.subing_daily_watch import (
@@ -496,6 +500,23 @@ def build_subing_strategy_current_service(
         calibration=load_accepted_subing_calibration(_SUBING_CALIBRATION),
         lifecycle_policy=load_subing_lifecycle_policy(_SUBING_LIFECYCLE_POLICY),
         strategy_policy=load_subing_strategy_policy(),
+    )
+
+
+def build_subing_watch_current_service(
+    session: Session,
+) -> SubingWatchCurrentProjectionService:
+    """Compose the read-only Watch projection without Event, cache or write I/O."""
+    market_data = build_market_data_service(session)
+    return SubingWatchCurrentProjectionService(
+        ActualDominantResearchSegmentLoader(market_data),
+        products=load_active_products(),
+        market_read=build_market_read_service(session),
+        current_segment=lambda symbol, target: market_data.dominant_segment_for_day(
+            symbol,
+            target,
+        ),
+        policy=load_subing_watch_policy(),
     )
 
 

@@ -12,4 +12,5 @@ def test_research_cli_modules_own_one_boundary_each() -> None:
     assert commands.run_research_command.__module__ == commands.__name__
     assert payloads._calibration_payload.__module__ == payloads.__name__
     assert payloads._lifecycle_payload.__module__ == payloads.__name__
+    assert payloads._subing_watch_payload.__module__ == payloads.__name__
     assert not hasattr(commands, "build_research_request")

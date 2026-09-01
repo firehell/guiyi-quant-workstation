@@ -19,6 +19,12 @@ from app.research.subing.subing_lifecycle_research_service import (
     LifecycleResearchRequest,
     SubingLifecycleResearchResult,
 )
+from app.research.subing.subing_watch_research_service import (
+    FORMULA_VERSION,
+    SubingWatchRate,
+    SubingWatchResearchRequest,
+    SubingWatchResearchResult,
+)
 
 
 def _calibration_payload(
@@ -76,6 +82,91 @@ def _lifecycle_payload(
             str(horizon): _horizon_payload(evaluation)
             for horizon, evaluation in result.horizon_summary.items()
         },
+    }
+
+
+def _subing_watch_payload(
+    request: SubingWatchResearchRequest,
+    result: SubingWatchResearchResult,
+) -> dict[str, object]:
+    return {
+        "schema_version": 1,
+        "command": "research.subing-watch",
+        "status": "ok",
+        "readonly": True,
+        "formula_version": FORMULA_VERSION,
+        "since": request.since.isoformat(),
+        "through": request.through.isoformat(),
+        "symbols": (
+            "active"
+            if request.symbols == "active"
+            else list(sorted(request.symbols))
+        ),
+        "forward_bars": list(request.forward_bars),
+        "products": [
+            {
+                "symbol": product.symbol,
+                "candidate_count": product.candidate_count,
+                "direction_counts": dict(sorted(product.direction_counts.items())),
+                "candidates_per_trading_day": dict(
+                    sorted(product.candidates_per_trading_day.items())
+                ),
+                "same_direction_clustering": {
+                    "adjacent_pair_count": (
+                        product.same_direction_clustering.adjacent_pair_count
+                    ),
+                    "same_direction_pair_count": (
+                        product.same_direction_clustering.same_direction_pair_count
+                    ),
+                    "rate": _watch_rate_payload(
+                        product.same_direction_clustering.rate
+                    ),
+                },
+                "session_distribution": dict(
+                    sorted(product.session_distribution.items())
+                ),
+                "context_availability": {
+                    "available_count": product.context_availability.available_count,
+                    "candidate_count": product.context_availability.candidate_count,
+                    "rate": _watch_rate_payload(
+                        product.context_availability.rate
+                    ),
+                },
+                "range_state_distribution": dict(
+                    product.range_state_distribution
+                ),
+                "higher_timeframe_alignment_distribution": dict(
+                    product.higher_timeframe_alignment_distribution
+                ),
+                "forward_diagnostics": {
+                    str(horizon): {
+                        "sample_count": diagnostics.sample_count,
+                        "truncated_count": diagnostics.truncated_count,
+                        "median_directional_close_change_bps": _optional_decimal(
+                            diagnostics.median_directional_close_change_bps
+                        ),
+                        "median_mfe_bps": _optional_decimal(
+                            diagnostics.median_mfe_bps
+                        ),
+                        "median_mae_bps": _optional_decimal(
+                            diagnostics.median_mae_bps
+                        ),
+                    }
+                    for horizon, diagnostics in sorted(
+                        product.forward_diagnostics.items()
+                    )
+                },
+            }
+            for product in sorted(result.products, key=lambda item: item.symbol)
+        ],
+    }
+
+
+def _watch_rate_payload(rate: SubingWatchRate) -> dict[str, object]:
+    return {
+        "numerator": rate.numerator,
+        "denominator": rate.denominator,
+        "value": _optional_decimal(rate.value),
     }
 
 

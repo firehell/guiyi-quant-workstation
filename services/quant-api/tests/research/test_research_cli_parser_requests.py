@@ -79,6 +79,7 @@ def test_research_parser_exposes_only_the_retained_readonly_commands() -> None:
         "subing-calibration",
         "subing-lifecycle",
         "subing-strategy-performance",
+        "subing-watch",
     )
 
 

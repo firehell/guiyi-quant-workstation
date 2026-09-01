@@ -6,6 +6,7 @@ import json
 from collections import Counter
 from collections import deque
 from collections.abc import Callable, Iterable, Mapping as MappingABC
+from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from threading import Lock
@@ -26,6 +27,12 @@ _LIVE_BAR_FRESHNESS = timedelta(minutes=5)
 _SHANGHAI = ZoneInfo("Asia/Shanghai")
 LIVE_BAR_CHANNEL_PREFIX = "live:bar"
 LIVE_STATE_CHANNEL = "market:state"
+
+
+@dataclass(frozen=True, slots=True)
+class LiveBarObservation:
+    bar: CanonicalBar
+    contract: str
 
 
 class RedisClient(Protocol):
@@ -60,11 +67,19 @@ class RedisLiveStore:
         symbol: str,
         frequency: BarFrequency | str,
         bar: CanonicalBar,
+        *,
+        contract: str,
     ) -> None:
+        normalized_contract = normalize_contract_for_symbol(symbol, contract)
+        if normalized_contract is None:
+            raise ValueError("LIVE_BAR_PROVENANCE_INVALID")
         key = self._bars_key(trading_day, symbol, frequency)
         score = _epoch_millis(bar.bar_end)
         self._redis.zremrangebyscore(key, score, score)
-        self._redis.zadd(key, {_compact_json(_bar_payload(bar)): score})
+        self._redis.zadd(
+            key,
+            {_compact_json(_bar_payload(bar, contract=normalized_contract)): score},
+        )
         self._redis.expire(key, _LIVE_TTL_SECONDS)
 
     def bars_after(
@@ -89,6 +104,40 @@ class RedisLiveStore:
             self._bars_key(trading_day, symbol, frequency),
             _epoch_millis(start),
             _epoch_millis(end),
+        )
+
+    def bar_observations(
+        self,
+        trading_day: date,
+        symbol: str,
+        frequency: BarFrequency | str,
+        after: datetime | None,
+        until: datetime,
+        *,
+        inclusive_after: bool,
+        expected_contract: str,
+    ) -> tuple[LiveBarObservation, ...]:
+        normalized_expected = normalize_contract_for_symbol(symbol, expected_contract)
+        if normalized_expected is None or expected_contract != normalized_expected:
+            raise ValueError("LIVE_BAR_PROVENANCE_INVALID")
+        if after is None:
+            minimum: str | int = "-inf"
+        elif inclusive_after:
+            minimum = _epoch_millis(after)
+        else:
+            minimum = f"({_epoch_millis(after)}"
+        members = self._redis.zrangebyscore(
+            self._bars_key(trading_day, symbol, frequency),
+            minimum,
+            _epoch_millis(until),
+        )
+        return tuple(
+            _bar_observation_from_payload(
+                _as_text(member),
+                symbol=symbol,
+                expected_contract=normalized_expected,
+            )
+            for member in members
         )
 
     def set_subscriptions(self, trading_day: date, mapping: Mapping[str, Any]) -> None:
@@ -143,8 +192,12 @@ def live_bar_channel(symbol: str, frequency: BarFrequency | str) -> str:
     return f"{LIVE_BAR_CHANNEL_PREFIX}:{symbol}:{BarFrequency(frequency).value}"
 
 
-def _bar_payload(bar: CanonicalBar) -> dict[str, str | None]:
-    return {
+def _bar_payload(
+    bar: CanonicalBar,
+    *,
+    contract: str | None = None,
+) -> dict[str, str | None]:
+    payload = {
         "bar_end": bar.bar_end.isoformat(),
         "trading_day": bar.trading_day.isoformat(),
         "open": str(bar.open),
@@ -155,6 +208,9 @@ def _bar_payload(bar: CanonicalBar) -> dict[str, str | None]:
         "turnover": None if bar.turnover is None else str(bar.turnover),
         "open_interest": None if bar.open_interest is None else str(bar.open_interest),
     }
+    if contract is not None:
+        payload["contract"] = contract
+    return payload
 
 
 def _bar_from_payload(raw: str) -> CanonicalBar:
@@ -169,6 +225,30 @@ def _bar_from_payload(raw: str) -> CanonicalBar:
         volume=Decimal(payload["volume"]),
         turnover=None if payload["turnover"] is None else Decimal(payload["turnover"]),
         open_interest=None if payload["open_interest"] is None else Decimal(payload["open_interest"]),
+    )
+
+
+def _bar_observation_from_payload(
+    raw: str,
+    *,
+    symbol: str,
+    expected_contract: str,
+) -> LiveBarObservation:
+    payload = json.loads(raw)
+    if not isinstance(payload, dict):
+        raise ValueError("LIVE_BAR_PROVENANCE_INVALID")
+    stored_contract = payload.get("contract")
+    normalized_contract = normalize_contract_for_symbol(symbol, stored_contract)
+    if (
+        not isinstance(stored_contract, str)
+        or normalized_contract is None
+        or stored_contract != normalized_contract
+        or normalized_contract != expected_contract
+    ):
+        raise ValueError("LIVE_BAR_PROVENANCE_INVALID")
+    return LiveBarObservation(
+        bar=_bar_from_payload(raw),
+        contract=normalized_contract,
     )
 
 
@@ -387,7 +467,10 @@ class LiveMarketService:
         self._trading_day: date | None = None
         self._contracts: dict[str, str] = {}
         self._channels: set[str] = set()
-        self._pending: dict[tuple[str, datetime], tuple[CanonicalBar, SessionWindow]] = {}
+        self._pending: dict[
+            tuple[str, datetime],
+            tuple[CanonicalBar, SessionWindow, str],
+        ] = {}
         self._finalized: set[tuple[str, datetime]] = set()
         self._known_sessions: dict[tuple[str, date], tuple[SessionWindow, ...]] = {}
         self._last_bar_at: datetime | None = None
@@ -476,6 +559,9 @@ class LiveMarketService:
         )
         if symbol is None:
             return self._reject("LIVE_CONTRACT_NOT_SUBSCRIBED")
+        frozen_contract = normalize_contract_for_symbol(symbol, contract)
+        if frozen_contract is None or frozen_contract != self._contracts[symbol]:
+            return self._reject("LIVE_CONTRACT_NOT_SUBSCRIBED")
         phase = self._phase_resolver.resolve(symbol, now)
         window = self._session_for_bar(symbol, bar, phase, now)
         if window is None:
@@ -491,18 +577,24 @@ class LiveMarketService:
         key = (symbol, bar.bar_end)
         if key in self._finalized:
             return self._reject("LIVE_BAR_FINALIZED")
-        self._pending[key] = (bar, window)
+        self._pending[key] = (bar, window, frozen_contract)
         return None
 
     def flush_due(self, now: datetime) -> tuple[CanonicalBar, ...]:
         """仅在 bar_end 两秒后发布一次 completed 1m，并增量生成派生频率。"""
         finalized: list[CanonicalBar] = []
-        for key, (bar, window) in tuple(self._pending.items()):
+        for key, (bar, window, frozen_contract) in tuple(self._pending.items()):
             if now < bar.bar_end + _FINALIZATION_DELAY:
                 continue
             symbol, _ = key
             try:
-                self._store.put_bar(bar.trading_day, symbol, BarFrequency.M1, bar)
+                self._store.put_bar(
+                    bar.trading_day,
+                    symbol,
+                    BarFrequency.M1,
+                    bar,
+                    contract=frozen_contract,
+                )
                 self._store.publish_bar(symbol, BarFrequency.M1, bar)
             except Exception:  # noqa: BLE001 - Redis is an explicit unavailable boundary
                 self._available = False
@@ -514,7 +606,7 @@ class LiveMarketService:
             self._last_bar_at = max(self._last_bar_at, bar.bar_end) if self._last_bar_at else bar.bar_end
             finalized.append(bar)
             try:
-                self._derive(symbol, bar, window)
+                self._derive(symbol, bar, window, contract=frozen_contract)
             except Exception:  # noqa: BLE001 - Derived only reads/writes transient Redis state
                 self._available = False
                 self._reject("LIVE_REDIS_UNAVAILABLE")
@@ -583,17 +675,29 @@ class LiveMarketService:
             self.poll(self._clock())
             self._sleep(1)
 
-    def _derive(self, symbol: str, bar: CanonicalBar, session: SessionWindow) -> None:
+    def _derive(
+        self,
+        symbol: str,
+        bar: CanonicalBar,
+        session: SessionWindow,
+        *,
+        contract: str,
+    ) -> None:
         for frequency in (BarFrequency.M5, BarFrequency.M15, BarFrequency.M30, BarFrequency.H1):
             bucket = bucket_window_for_bar(session, frequency, bar.bar_end)
             if bar.bar_end != bucket.end:
                 continue
             source = tuple(
-                item
-                for item in self._store.bars_between(
-                    bar.trading_day, symbol, BarFrequency.M1, bucket.start, bucket.end
+                item.bar
+                for item in self._store.bar_observations(
+                    bar.trading_day,
+                    symbol,
+                    BarFrequency.M1,
+                    bucket.start,
+                    bucket.end,
+                    inclusive_after=False,
+                    expected_contract=contract,
                 )
-                if bucket.start < item.bar_end <= bucket.end
             )
             expected_ends = tuple(
                 bucket.start + timedelta(minutes=minute)
@@ -604,7 +708,13 @@ class LiveMarketService:
             derived = aggregate_from_1m(
                 source, target_frequency=frequency, sessions=(bucket,)
             )[0]
-            self._store.put_bar(bar.trading_day, symbol, frequency, derived)
+            self._store.put_bar(
+                bar.trading_day,
+                symbol,
+                frequency,
+                derived,
+                contract=contract,
+            )
             self._store.publish_bar(symbol, frequency, derived)
 
     def _phases(self, now: datetime) -> dict[str, ProductMarketPhase]:
