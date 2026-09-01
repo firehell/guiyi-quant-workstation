@@ -6,6 +6,7 @@ from decimal import Decimal
 
 import pytest
 
+import app.market_data.subing_watch.replay as replay_module
 from app.market_data.domain import CanonicalBar
 from app.market_data.subing_watch.contracts import (
     SubingWatchContractError,
@@ -308,3 +309,28 @@ def test_malformed_60m_only_degrades_context_from_its_visible_cutoff() -> None:
         for evaluation in projected.evaluations[120:]
     )
     assert projected.latest_higher_timeframe is None
+
+
+def test_replay_consumes_each_15m_and_60m_bar_at_most_once(monkeypatch) -> None:
+    bars_15m = tuple(_bar(index) for index in range(1, 401))
+    bars_60m = tuple(_bar(index, minutes=60) for index in range(1, 101))
+    real_adapter = replay_module.to_subing_watch_kernel_bar
+    adapter_calls = 0
+
+    def counting_adapter(bar, *, source_identity):
+        nonlocal adapter_calls
+        adapter_calls += 1
+        return real_adapter(bar, source_identity=source_identity)
+
+    monkeypatch.setattr(
+        replay_module,
+        "to_subing_watch_kernel_bar",
+        counting_adapter,
+    )
+
+    projected = replay_subing_watch_segment(
+        _identity(), bars_15m, bars_60m, load_subing_watch_policy()
+    )
+
+    assert len(projected.evaluations) == len(bars_15m)
+    assert adapter_calls == len(bars_15m) + len(bars_60m)

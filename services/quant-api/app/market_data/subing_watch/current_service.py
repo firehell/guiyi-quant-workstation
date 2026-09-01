@@ -149,6 +149,8 @@ class _PreparedProjection:
     source_mode: Literal["canonical", "canonical_live"]
     bars_15m: tuple[CanonicalBar, ...]
     bars_60m: tuple[CanonicalBar, ...]
+    higher_timeframe_live_start_index: int | None
+    higher_timeframe_live_trading_day: date | None
 
 
 class SubingWatchCurrentProjectionService:
@@ -165,7 +167,10 @@ class SubingWatchCurrentProjectionService:
         if (
             not normalized
             or len(set(normalized)) != len(normalized)
-            or any(not item or not item.isascii() or not item.isalpha() for item in normalized)
+            or any(
+                not item or not item.isascii() or not item.isalpha()
+                for item in normalized
+            )
             or type(policy) is not SubingWatchPolicy
         ):
             raise SubingWatchCurrentSourceIdentityError()
@@ -192,6 +197,12 @@ class SubingWatchCurrentProjectionService:
                 prepared.bars_60m,
                 self._policy,
                 source_mode=prepared.source_mode,
+                higher_timeframe_live_start_index=(
+                    prepared.higher_timeframe_live_start_index
+                ),
+                higher_timeframe_live_trading_day=(
+                    prepared.higher_timeframe_live_trading_day
+                ),
             )
         except (SubingWatchReplayError, ValueError):
             raise SubingWatchCurrentSourceIdentityError() from None
@@ -199,7 +210,7 @@ class SubingWatchCurrentProjectionService:
             policy=self._policy,
             request=request,
             source_identity=prepared.source_identity,
-            source_mode=prepared.source_mode,
+            source_mode=replayed.source_mode,
             coverage=replayed.coverage,
             cutoff=replayed.coverage[1],
             evaluations=replayed.evaluations,
@@ -226,7 +237,11 @@ class SubingWatchCurrentProjectionService:
         )
 
     def _prepare(self, symbol: str, now: datetime) -> _PreparedProjection:
-        if not isinstance(now, datetime) or now.tzinfo is None or now.utcoffset() is None:
+        if (
+            not isinstance(now, datetime)
+            or now.tzinfo is None
+            or now.utcoffset() is None
+        ):
             raise SubingWatchCurrentSourceIdentityError()
         cutoff = now.astimezone(UTC)
         identity_15m = SeriesPageQuery(
@@ -267,7 +282,7 @@ class SubingWatchCurrentProjectionService:
         )
         if not bars_15m:
             raise SubingWatchCurrentSourceUnavailableError()
-        bars_60m, used_live_60m = self._prepare_optional_higher_timeframe(
+        bars_60m, higher_live_start = self._prepare_optional_higher_timeframe(
             symbol=symbol,
             segment=segment,
             target_day=target_day,
@@ -275,11 +290,13 @@ class SubingWatchCurrentProjectionService:
         )
         return _PreparedProjection(
             source_identity=source_identity,
-            source_mode=(
-                "canonical_live" if used_live_15m or used_live_60m else "canonical"
-            ),
+            source_mode=("canonical_live" if used_live_15m else "canonical"),
             bars_15m=bars_15m,
             bars_60m=bars_60m,
+            higher_timeframe_live_start_index=higher_live_start,
+            higher_timeframe_live_trading_day=(
+                target_day if higher_live_start is not None else None
+            ),
         )
 
     def _prepare_optional_higher_timeframe(
@@ -289,7 +306,7 @@ class SubingWatchCurrentProjectionService:
         segment: ResolvedContractSegment,
         target_day: date,
         cutoff: datetime,
-    ) -> tuple[tuple[CanonicalBar, ...], bool]:
+    ) -> tuple[tuple[CanonicalBar, ...], int | None]:
         """Return only causally valid H1 context; every H1-only failure is non-gating."""
 
         try:
@@ -316,18 +333,17 @@ class SubingWatchCurrentProjectionService:
                 target_day=target_day,
                 contract=segment.contract,
             ):
-                return (), False
+                return (), None
             return _append_optional_higher_live(
                 canonical,
                 snapshot.bars,
-                target_day=target_day,
                 cutoff=cutoff,
             )
         except (
             SubingWatchCurrentSourceIdentityError,
             SubingWatchCurrentSourceUnavailableError,
         ):
-            return (), False
+            return (), None
 
     def _resolve_segment(
         self,
@@ -376,10 +392,7 @@ class SubingWatchCurrentProjectionService:
             raise SubingWatchCurrentSourceUnavailableError() from None
         except MarketDataError:
             raise SubingWatchCurrentSourceUnavailableError() from None
-        if (
-            loaded.segments != (segment,)
-            or loaded.results.get(frequency) is None
-        ):
+        if loaded.segments != (segment,) or loaded.results.get(frequency) is None:
             raise SubingWatchCurrentSourceIdentityError()
         bars = loaded.results[frequency].bars
         if any(
@@ -449,10 +462,18 @@ class SubingWatchCurrentProjectionService:
             ):
                 raise SubingWatchCurrentSourceIdentityError()
             return True
-        if snapshot.source != "realtime" or not state.live_available or not state.live_eligible:
+        if (
+            snapshot.source != "realtime"
+            or not state.live_available
+            or not state.live_eligible
+        ):
             raise SubingWatchCurrentSourceIdentityError()
-        state_contract = normalize_contract_for_symbol(identity.symbol, state.live_contract)
-        snapshot_contract = normalize_contract_for_symbol(identity.symbol, snapshot.contract)
+        state_contract = normalize_contract_for_symbol(
+            identity.symbol, state.live_contract
+        )
+        snapshot_contract = normalize_contract_for_symbol(
+            identity.symbol, snapshot.contract
+        )
         if state_contract is None or snapshot_contract != state_contract:
             raise SubingWatchCurrentSourceIdentityError()
         if snapshot_contract != contract:
@@ -497,17 +518,22 @@ def _append_optional_higher_live(
     canonical: tuple[CanonicalBar, ...],
     live: tuple[CanonicalBar, ...],
     *,
-    target_day: date,
     cutoff: datetime,
-) -> tuple[tuple[CanonicalBar, ...], bool]:
+) -> tuple[tuple[CanonicalBar, ...], int]:
     """Preserve raw H1 tail causality so future invalid context stays invisible."""
 
-    if type(live) is not tuple or any(
-        type(bar) is not CanonicalBar or bar.trading_day != target_day
-        for bar in live
-    ):
+    if type(live) is not tuple:
         raise SubingWatchCurrentSourceIdentityError()
-    visible_live = tuple(bar for bar in live if bar.bar_end <= cutoff)
-    canonical_by_end = {bar.bar_end: bar for bar in canonical}
-    used_live = any(canonical_by_end.get(bar.bar_end) != bar for bar in visible_live)
-    return (*canonical, *live), used_live
+    visible_live: list[CanonicalBar] = []
+    for bar in live:
+        bar_end = getattr(bar, "bar_end", None)
+        if (
+            isinstance(bar_end, datetime)
+            and bar_end.tzinfo is not None
+            and bar_end.utcoffset() is not None
+            and bar_end > cutoff
+        ):
+            continue
+        visible_live.append(bar)
+    combined = (*canonical, *visible_live)
+    return combined, len(canonical)

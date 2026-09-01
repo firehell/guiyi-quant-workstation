@@ -222,7 +222,11 @@ class _LiveStore:
             tuple(
                 LiveBarObservation(bar=bar, contract=expected_contract)
                 for bar in self.bars
-                if (after is None or bar.bar_end > after or (inclusive_after and bar.bar_end == after))
+                if (
+                    after is None
+                    or bar.bar_end > after
+                    or (inclusive_after and bar.bar_end == after)
+                )
                 and bar.bar_end <= until
             )
             if frequency == "15m"
@@ -325,10 +329,13 @@ def test_restore_then_same_contract_live_append_equals_full_replay() -> None:
     )
 
     assert continued_state == full.final_state
-    assert from_kernel_evaluation(
-        continued_evaluation,
-        source_mode="canonical_live",
-    ) == full.evaluations[-1]
+    assert (
+        from_kernel_evaluation(
+            continued_evaluation,
+            source_mode="canonical_live",
+        )
+        == full.evaluations[-1]
+    )
 
 
 def test_restore_preserves_ready_60m_context_for_next_15m_without_new_60m() -> None:
@@ -358,10 +365,13 @@ def test_restore_preserves_ready_60m_context_for_next_15m_without_new_60m() -> N
 
     assert restored.latest_higher_timeframe is not None
     assert continued_state == full.final_state
-    assert from_kernel_evaluation(
-        continued_evaluation,
-        source_mode="canonical_live",
-    ) == full.evaluations[-1]
+    assert (
+        from_kernel_evaluation(
+            continued_evaluation,
+            source_mode="canonical_live",
+        )
+        == full.evaluations[-1]
+    )
 
 
 def test_canonical_live_exact_overlap_is_an_idempotent_noop() -> None:
@@ -609,11 +619,145 @@ def test_future_malformed_60m_live_tail_preserves_current_historical_parity() ->
 
 
 @pytest.mark.parametrize(
+    "malformed_kind", ("wrong-day", "wrong-day-type", "wrong-type")
+)
+def test_future_identity_malformed_60m_is_filtered_before_identity_validation(
+    malformed_kind: str,
+) -> None:
+    bars_15m = tuple(_bar(index) for index in range(1, 121))
+    canonical_60m = tuple(_bar(index, minutes=60) for index in range(1, 26))
+    future_end = bars_15m[-1].bar_end + timedelta(minutes=15)
+    future: object = replace(_bar(1, minutes=60), bar_end=future_end)
+    if malformed_kind == "wrong-day":
+        object.__setattr__(future, "trading_day", DAY + timedelta(days=1))
+    elif malformed_kind == "wrong-day-type":
+        object.__setattr__(future, "trading_day", "not-a-date")
+    else:
+        future = SimpleNamespace(bar_end=future_end, trading_day="not-a-date")
+    historical = replay_subing_watch_segment(
+        SubingWatchSourceIdentity("jm", CONTRACT, DAY),
+        bars_15m,
+        canonical_60m,
+        load_subing_watch_policy(),
+    )
+
+    current = _service(
+        bars_15m,
+        canonical_60m=canonical_60m,
+        live={BarFrequency.H1: (future,)},  # type: ignore[dict-item]
+    ).current(_request(), bars_15m[-1].bar_end)
+
+    assert current.source_mode == "canonical"
+    assert current.evaluations == historical.evaluations
+    assert current.latest_higher_timeframe == historical.latest_higher_timeframe
+
+
+@pytest.mark.parametrize("first_bad", ("conflict", "nonfinite"))
+def test_first_visible_rejected_60m_live_fact_does_not_change_source_mode(
+    first_bad: str,
+) -> None:
+    bars_15m = (*(_bar(index) for index in range(1, 121)), _bar(121, close="110"))
+    canonical_60m = tuple(_bar(index, minutes=60) for index in range(1, 26))
+    if first_bad == "conflict":
+        bad = replace(
+            canonical_60m[-1],
+            open=Decimal("101"),
+            high=Decimal("101"),
+            low=Decimal("101"),
+            close=Decimal("101"),
+        )
+    else:
+        bad = replace(
+            _bar(1, minutes=60, close="1E+9999"),
+            bar_end=canonical_60m[-1].bar_end + timedelta(hours=1),
+        )
+
+    current = _service(
+        bars_15m,
+        canonical_60m=canonical_60m,
+        live={BarFrequency.H1: (bad,)},
+    ).current(_request(), bars_15m[-1].bar_end)
+
+    assert current.source_mode == "canonical"
+    assert all(
+        evaluation.source_mode == "canonical" for evaluation in current.evaluations
+    )
+    assert current.evaluations[-1].outcome == "evaluated_candidate"
+    assert current.evaluations[-1].context.higher_timeframe_alignment == "unavailable"
+
+
+def test_valid_live_60m_before_visible_bad_fact_retains_live_provenance() -> None:
+    bars_15m = tuple(_bar(index) for index in range(1, 121))
+    canonical_60m = tuple(_bar(index, minutes=60) for index in range(1, 26))
+    valid_live = _bar(26, minutes=60)
+    bad_live = _bar(27, minutes=60, close="1E+9999")
+
+    current = _service(
+        bars_15m,
+        canonical_60m=canonical_60m,
+        live={BarFrequency.H1: (valid_live, bad_live)},
+    ).current(_request(), bars_15m[-1].bar_end)
+
+    earlier = next(
+        evaluation
+        for evaluation in current.evaluations
+        if evaluation.bar_end == valid_live.bar_end
+    )
+    assert current.source_mode == "canonical_live"
+    assert earlier.context.higher_timeframe_alignment == "neutral"
+    assert current.evaluations[-1].context.higher_timeframe_alignment == "unavailable"
+
+
+@pytest.mark.parametrize("malformed_kind", ("day-regression", "day-type", "bar-type"))
+def test_visible_identity_malformed_60m_preserves_current_historical_prefix_parity(
+    malformed_kind: str,
+) -> None:
+    bars_15m = tuple(_bar(index) for index in range(1, 121))
+    canonical_60m = tuple(_bar(index, minutes=60) for index in range(1, 26))
+    valid_live = _bar(26, minutes=60)
+    bad_end = _bar(27, minutes=60).bar_end
+    bad: object = replace(_bar(27, minutes=60), trading_day=DAY - timedelta(days=1))
+    if malformed_kind == "day-type":
+        object.__setattr__(bad, "trading_day", "not-a-date")
+    elif malformed_kind == "bar-type":
+        bad = SimpleNamespace(bar_end=bad_end, trading_day=DAY)
+    historical = replay_subing_watch_segment(
+        SubingWatchSourceIdentity("jm", CONTRACT, DAY),
+        bars_15m,
+        (*canonical_60m, valid_live, bad),  # type: ignore[arg-type]
+        load_subing_watch_policy(),
+        source_mode="canonical_live",
+    )
+
+    current = _service(
+        bars_15m,
+        canonical_60m=canonical_60m,
+        live={BarFrequency.H1: (valid_live, bad)},  # type: ignore[dict-item]
+    ).current(_request(), bars_15m[-1].bar_end)
+
+    assert current.source_mode == "canonical_live"
+    assert current.evaluations == historical.evaluations
+    assert current.latest_higher_timeframe == historical.latest_higher_timeframe is None
+
+
+@pytest.mark.parametrize(
     ("loader_error", "segment_error", "expected"),
     [
-        (None, MarketDataError("MAIN_CONTRACT_MAP_MISSING"), SubingWatchCurrentSourceUnavailableError),
-        (MarketDataError("MARKET_PARTITION_MISSING"), None, SubingWatchCurrentSourceUnavailableError),
-        (ActualDominantResearchSegmentIdentityError(), None, SubingWatchCurrentSourceIdentityError),
+        (
+            None,
+            MarketDataError("MAIN_CONTRACT_MAP_MISSING"),
+            SubingWatchCurrentSourceUnavailableError,
+        ),
+        (
+            MarketDataError("MARKET_PARTITION_MISSING"),
+            None,
+            SubingWatchCurrentSourceUnavailableError,
+        ),
+        (
+            ActualDominantResearchSegmentIdentityError(),
+            None,
+            SubingWatchCurrentSourceIdentityError,
+        ),
     ],
 )
 def test_missing_map_partition_or_identity_fails_closed(
@@ -663,8 +807,12 @@ def test_composition_builds_only_the_read_only_current_projection(monkeypatch) -
             end_trading_day=DAY,
         )
     )
-    monkeypatch.setattr(composition, "build_market_data_service", lambda _session: market_data)
-    monkeypatch.setattr(composition, "build_market_read_service", lambda _session: _MarketRead())
+    monkeypatch.setattr(
+        composition, "build_market_data_service", lambda _session: market_data
+    )
+    monkeypatch.setattr(
+        composition, "build_market_read_service", lambda _session: _MarketRead()
+    )
     monkeypatch.setattr(composition, "load_active_products", lambda: ("jm",))
     monkeypatch.setattr(
         composition,
