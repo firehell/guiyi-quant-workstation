@@ -1,0 +1,430 @@
+"""Read-only current and restore projections for SuBing Watch 15m."""
+
+from __future__ import annotations
+
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass
+from datetime import UTC, date, datetime
+from typing import Literal, Protocol
+
+from guiyi_quant.indicators.subing_watch_15m import SubingWatchKernelState
+
+from ..actual_dominant_research import (
+    ActualDominantResearchSegmentIdentityError,
+    ActualDominantResearchSeries,
+)
+from ..domain import (
+    BarFrequency,
+    CanonicalBar,
+    ResolvedContractSegment,
+    SeriesKind,
+    SeriesPageQuery,
+    normalize_contract_for_symbol,
+)
+from ..market_data_service import MarketDataError
+from ..market_read_service import MarketReadState
+from .contracts import (
+    SubingWatchEvaluation,
+    SubingWatchPolicy,
+    SubingWatchSourceIdentity,
+)
+from .replay import SubingWatchReplayError, replay_subing_watch_segment
+
+
+_FREQUENCIES = (BarFrequency.M15, BarFrequency.H1)
+
+
+class SubingWatchCurrentSourceUnavailableError(RuntimeError):
+    code = "SUBING_WATCH_CURRENT_SOURCE_UNAVAILABLE"
+
+    def __init__(self) -> None:
+        super().__init__(self.code)
+
+
+class SubingWatchCurrentSourceIdentityError(RuntimeError):
+    code = "SUBING_WATCH_CURRENT_SOURCE_IDENTITY_INVALID"
+
+    def __init__(self) -> None:
+        super().__init__(self.code)
+
+
+class SubingWatchCurrentActiveProductError(ValueError):
+    code = "SUBING_WATCH_CURRENT_ACTIVE_PRODUCT_INVALID"
+
+    def __init__(self) -> None:
+        super().__init__(self.code)
+
+
+class _ResearchSegmentLoader(Protocol):
+    def load(
+        self,
+        *,
+        symbol: str,
+        frequencies: Sequence[BarFrequency],
+        since: date,
+        through: date,
+    ) -> ActualDominantResearchSeries: ...
+
+
+class _MarketRead(Protocol):
+    def state(self, identity: SeriesPageQuery, now: datetime) -> MarketReadState: ...
+
+    def live_snapshot(
+        self,
+        identity: SeriesPageQuery,
+        after: datetime | None,
+        now: datetime,
+    ) -> tuple[CanonicalBar, ...]: ...
+
+
+class _SegmentSummary(Protocol):
+    @property
+    def symbol(self) -> str: ...
+
+    @property
+    def contract(self) -> str: ...
+
+    @property
+    def start_trading_day(self) -> date: ...
+
+    @property
+    def end_trading_day(self) -> date: ...
+
+
+@dataclass(frozen=True, slots=True)
+class SubingWatchCurrentRequest:
+    series_kind: SeriesKind
+    symbol: str
+    frequency: BarFrequency
+
+    def __post_init__(self) -> None:
+        try:
+            series_kind = SeriesKind(self.series_kind)
+            frequency = BarFrequency(self.frequency)
+        except (TypeError, ValueError):
+            raise ValueError("INVALID_SUBING_WATCH_CURRENT_REQUEST") from None
+        symbol = self.symbol
+        if (
+            not isinstance(symbol, str)
+            or symbol != symbol.strip().lower()
+            or not symbol.isascii()
+            or not symbol.isalpha()
+            or series_kind is not SeriesKind.ACTUAL_DOMINANT
+            or frequency is not BarFrequency.M15
+        ):
+            raise ValueError("INVALID_SUBING_WATCH_CURRENT_REQUEST")
+        object.__setattr__(self, "series_kind", series_kind)
+        object.__setattr__(self, "frequency", frequency)
+
+
+@dataclass(frozen=True, slots=True)
+class SubingWatchProjection:
+    policy: SubingWatchPolicy
+    request: SubingWatchCurrentRequest
+    source_identity: SubingWatchSourceIdentity
+    source_mode: Literal["canonical", "canonical_live"]
+    coverage: tuple[datetime, datetime]
+    cutoff: datetime
+    evaluations: tuple[SubingWatchEvaluation, ...]
+    final_state: SubingWatchKernelState
+
+
+@dataclass(frozen=True, slots=True)
+class SubingWatchRestoreState:
+    policy: SubingWatchPolicy
+    source_identity: SubingWatchSourceIdentity
+    source_mode: Literal["canonical", "canonical_live"]
+    coverage: tuple[datetime, datetime]
+    cutoff: datetime
+    state: SubingWatchKernelState
+    last_evaluation: SubingWatchEvaluation
+
+
+@dataclass(frozen=True, slots=True)
+class _PreparedProjection:
+    source_identity: SubingWatchSourceIdentity
+    source_mode: Literal["canonical", "canonical_live"]
+    bars_15m: tuple[CanonicalBar, ...]
+    bars_60m: tuple[CanonicalBar, ...]
+
+
+class SubingWatchCurrentProjectionService:
+    def __init__(
+        self,
+        segment_loader: _ResearchSegmentLoader,
+        *,
+        products: tuple[str, ...],
+        market_read: _MarketRead,
+        current_segment: Callable[[str, date], _SegmentSummary],
+        policy: SubingWatchPolicy,
+    ) -> None:
+        normalized = tuple(item.strip().lower() for item in products)
+        if (
+            not normalized
+            or len(set(normalized)) != len(normalized)
+            or any(not item or not item.isascii() or not item.isalpha() for item in normalized)
+            or type(policy) is not SubingWatchPolicy
+        ):
+            raise SubingWatchCurrentSourceIdentityError()
+        self._segment_loader = segment_loader
+        self._products = frozenset(normalized)
+        self._market_read = market_read
+        self._current_segment = current_segment
+        self._policy = policy
+
+    def current(
+        self,
+        request: SubingWatchCurrentRequest,
+        now: datetime,
+    ) -> SubingWatchProjection:
+        if type(request) is not SubingWatchCurrentRequest:
+            raise TypeError("request must be SubingWatchCurrentRequest")
+        if request.symbol not in self._products:
+            raise SubingWatchCurrentActiveProductError()
+        prepared = self._prepare(request.symbol, now)
+        try:
+            replayed = replay_subing_watch_segment(
+                prepared.source_identity,
+                prepared.bars_15m,
+                prepared.bars_60m,
+                self._policy,
+                source_mode=prepared.source_mode,
+            )
+        except (SubingWatchReplayError, ValueError):
+            raise SubingWatchCurrentSourceIdentityError() from None
+        return SubingWatchProjection(
+            policy=self._policy,
+            request=request,
+            source_identity=prepared.source_identity,
+            source_mode=prepared.source_mode,
+            coverage=replayed.coverage,
+            cutoff=replayed.coverage[1],
+            evaluations=replayed.evaluations,
+            final_state=replayed.final_state,
+        )
+
+    def restore_state(self, symbol: str, now: datetime) -> SubingWatchRestoreState:
+        request = SubingWatchCurrentRequest(
+            SeriesKind.ACTUAL_DOMINANT,
+            symbol,
+            BarFrequency.M15,
+        )
+        projected = self.current(request, now)
+        return SubingWatchRestoreState(
+            policy=projected.policy,
+            source_identity=projected.source_identity,
+            source_mode=projected.source_mode,
+            coverage=projected.coverage,
+            cutoff=projected.cutoff,
+            state=projected.final_state,
+            last_evaluation=projected.evaluations[-1],
+        )
+
+    def _prepare(self, symbol: str, now: datetime) -> _PreparedProjection:
+        if not isinstance(now, datetime) or now.tzinfo is None or now.utcoffset() is None:
+            raise SubingWatchCurrentSourceIdentityError()
+        cutoff = now.astimezone(UTC)
+        identity_15m = SeriesPageQuery(
+            SeriesKind.ACTUAL_DOMINANT,
+            symbol,
+            BarFrequency.M15,
+        )
+        state_15m = self._read_state(identity_15m, cutoff)
+        target_day = state_15m.trading_day
+        if type(target_day) is not date:
+            raise SubingWatchCurrentSourceUnavailableError()
+        segment = self._resolve_segment(symbol, target_day)
+        source_identity = SubingWatchSourceIdentity(
+            symbol,
+            segment.contract,
+            segment.start_trading_day,
+        )
+        canonical = self._load_canonical(symbol, segment, target_day, cutoff)
+
+        merged: dict[BarFrequency, tuple[CanonicalBar, ...]] = {}
+        used_live = False
+        higher_identity_available = True
+        for frequency in _FREQUENCIES:
+            identity = SeriesPageQuery(
+                SeriesKind.ACTUAL_DOMINANT,
+                symbol,
+                frequency,
+            )
+            state = state_15m if frequency is BarFrequency.M15 else self._read_state(identity, cutoff)
+            identity_matches = self._validate_live_state(
+                state,
+                identity=identity,
+                target_day=target_day,
+                contract=segment.contract,
+            )
+            if not identity_matches and frequency is BarFrequency.H1:
+                merged[frequency] = ()
+                higher_identity_available = False
+                continue
+            live = self._read_live(identity, state, canonical[frequency], cutoff)
+            merged_bars, frequency_used_live = _merge_canonical_live(
+                canonical[frequency],
+                live,
+                target_day=target_day,
+                cutoff=cutoff,
+                future_is_unavailable=frequency is BarFrequency.H1,
+            )
+            merged[frequency] = merged_bars
+            used_live = used_live or frequency_used_live
+
+        bars_15m = merged[BarFrequency.M15]
+        if not bars_15m:
+            raise SubingWatchCurrentSourceUnavailableError()
+        return _PreparedProjection(
+            source_identity=source_identity,
+            source_mode="canonical_live" if used_live else "canonical",
+            bars_15m=bars_15m,
+            bars_60m=merged[BarFrequency.H1] if higher_identity_available else (),
+        )
+
+    def _resolve_segment(
+        self,
+        symbol: str,
+        target_day: date,
+    ) -> ResolvedContractSegment:
+        try:
+            summary = self._current_segment(symbol, target_day)
+            contract = normalize_contract_for_symbol(symbol, summary.contract)
+        except MarketDataError:
+            raise SubingWatchCurrentSourceUnavailableError() from None
+        except (AttributeError, TypeError, ValueError):
+            raise SubingWatchCurrentSourceIdentityError() from None
+        if (
+            getattr(summary, "symbol", symbol) != symbol
+            or contract is None
+            or type(summary.start_trading_day) is not date
+            or type(summary.end_trading_day) is not date
+            or not summary.start_trading_day <= target_day <= summary.end_trading_day
+        ):
+            raise SubingWatchCurrentSourceIdentityError()
+        return ResolvedContractSegment(
+            contract,
+            summary.start_trading_day,
+            summary.end_trading_day,
+        )
+
+    def _load_canonical(
+        self,
+        symbol: str,
+        segment: ResolvedContractSegment,
+        target_day: date,
+        cutoff: datetime,
+    ) -> dict[BarFrequency, tuple[CanonicalBar, ...]]:
+        try:
+            loaded = self._segment_loader.load(
+                symbol=symbol,
+                frequencies=_FREQUENCIES,
+                since=segment.start_trading_day,
+                through=target_day,
+            )
+        except ActualDominantResearchSegmentIdentityError:
+            raise SubingWatchCurrentSourceIdentityError() from None
+        except MarketDataError:
+            raise SubingWatchCurrentSourceUnavailableError() from None
+        if (
+            loaded.segments != (segment,)
+            or any(loaded.results.get(frequency) is None for frequency in _FREQUENCIES)
+        ):
+            raise SubingWatchCurrentSourceIdentityError()
+        canonical: dict[BarFrequency, tuple[CanonicalBar, ...]] = {}
+        for frequency in _FREQUENCIES:
+            bars = loaded.results[frequency].bars
+            if any(
+                type(bar) is not CanonicalBar
+                or not segment.start_trading_day <= bar.trading_day <= target_day
+                for bar in bars
+            ):
+                raise SubingWatchCurrentSourceIdentityError()
+            canonical[frequency] = tuple(bar for bar in bars if bar.bar_end <= cutoff)
+        return canonical
+
+    def _read_state(self, identity: SeriesPageQuery, now: datetime) -> MarketReadState:
+        try:
+            state = self._market_read.state(identity, now)
+        except Exception as exc:  # noqa: BLE001 - typed external read boundary
+            raise SubingWatchCurrentSourceUnavailableError() from exc
+        if not isinstance(state, MarketReadState):
+            raise SubingWatchCurrentSourceIdentityError()
+        return state
+
+    @staticmethod
+    def _validate_live_state(
+        state: MarketReadState,
+        *,
+        identity: SeriesPageQuery,
+        target_day: date,
+        contract: str,
+    ) -> bool:
+        if (
+            state.symbol != identity.symbol
+            or state.series_kind != identity.series_kind.value
+            or state.frequency != identity.frequency.value
+            or (state.live_available and not state.live_eligible)
+            or (state.trading_day is not None and state.trading_day != target_day)
+        ):
+            raise SubingWatchCurrentSourceIdentityError()
+        if not state.live_available:
+            return True
+        live_contract = normalize_contract_for_symbol(identity.symbol, state.live_contract)
+        if live_contract != contract:
+            if identity.frequency is BarFrequency.H1:
+                return False
+            raise SubingWatchCurrentSourceIdentityError()
+        return True
+
+    def _read_live(
+        self,
+        identity: SeriesPageQuery,
+        state: MarketReadState,
+        canonical: tuple[CanonicalBar, ...],
+        now: datetime,
+    ) -> tuple[CanonicalBar, ...]:
+        if not state.live_eligible or not state.live_available:
+            return ()
+        try:
+            return self._market_read.live_snapshot(
+                identity,
+                canonical[-1].bar_end if canonical else None,
+                now,
+            )
+        except Exception as exc:  # noqa: BLE001 - typed external read boundary
+            raise SubingWatchCurrentSourceUnavailableError() from exc
+
+
+def _merge_canonical_live(
+    canonical: tuple[CanonicalBar, ...],
+    live: tuple[CanonicalBar, ...],
+    *,
+    target_day: date,
+    cutoff: datetime,
+    future_is_unavailable: bool,
+) -> tuple[tuple[CanonicalBar, ...], bool]:
+    by_end: dict[datetime, CanonicalBar] = {}
+    for bar in canonical:
+        existing = by_end.get(bar.bar_end)
+        if existing is not None and existing != bar:
+            raise SubingWatchCurrentSourceIdentityError()
+        by_end[bar.bar_end] = bar
+    used_live = False
+    if type(live) is not tuple:
+        raise SubingWatchCurrentSourceIdentityError()
+    for bar in live:
+        if type(bar) is not CanonicalBar or bar.trading_day != target_day:
+            raise SubingWatchCurrentSourceIdentityError()
+        if bar.bar_end > cutoff:
+            if future_is_unavailable:
+                continue
+            raise SubingWatchCurrentSourceIdentityError()
+        existing = by_end.get(bar.bar_end)
+        if existing is not None:
+            if existing != bar:
+                raise SubingWatchCurrentSourceIdentityError()
+            continue
+        by_end[bar.bar_end] = bar
+        used_live = True
+    return tuple(by_end[key] for key in sorted(by_end)), used_live
