@@ -7,7 +7,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 在不影响当前版本、SuBing、HTDY、Alert 或 Runtime 的前提下，实现一套独立的“牛哇版本 · 趋势策略 · 日线详情页”，完整呈现牛哇黄蓝趋势带、建仓/清仓状态、D1/D2/D3、杯柄和牛哇式主图交互。
+**Goal:** 在不影响当前版本、已退役策略边界、HTDY、Alert 或 Runtime 的前提下，实现一套独立的“牛哇版本 · 趋势策略 · 日线详情页”，完整呈现牛哇黄蓝趋势带、建仓/清仓状态、D1/D2/D3、杯柄和牛哇式主图交互。
 
 **Architecture:** `quant-core` 保存 NumPy-only 的 Newow 权威公式；`quant-api` 只通过 `MarketDataService` 读取 `actual_dominant + completed D1`，按真实物理合约段驱动同一个 `NewowTrendD1Engine.step()`；Web 使用独立 `NewowTrendDetailView` 和独立图表组件，现有 `chart.vue` 仅负责 `current/newow` 子页面分流。V1 不建立通用策略平台、数据库表、Redis 状态、Worker、全市场扫描、通知或自动交易。
 
@@ -19,7 +19,7 @@
 
 - 唯一产品身份：`display_name=牛哇趋势策略`、`strategy_code=newow_trend_v1`、`profile_id=newow_trend_d1_v1`。
 - 唯一数据身份：`series_kind=actual_dominant`、`frequency=1d`、`bar_policy=completed_only`。
-- Newow 只复用数据底座，不读取或继承 SuBing、HTDY、现有趋势 Overlay、Alert、Episode、Context 或前端指标结果。
+- Newow 只复用数据底座，不读取或继承已退役策略、HTDY、现有趋势 Overlay、Alert、Episode、Context 或前端指标结果。
 - 黄蓝主趋势带使用 `newow_trend_band_cleanroom_v1`；D1/D2/D3 使用 `newow_escape_d123_v1`；杯柄使用 `newow_cup_handle_v1`。
 - 蓝色只表示牛哇原始语义中的“空仓/风险阶段”，V1 不生成期货空单。
 - V1 不实现底部三个副图、目标价、吸筹价、点阵、收益曲线、综合决策、仓位建议、震荡策略、其他形态、active60、Shadow、PushPlus 或 Runtime。
@@ -345,7 +345,7 @@ git add \
 git commit -m "feat(newow): add immutable D1 contracts and reference matrix"
 ```
 
-**Review Gate:** reject if the contracts contain SuBing/HTDY fields, generic strategy registration, OPEN/CLOSE/position semantics, mutable event objects, or frequency branches.
+**Review Gate:** reject if the contracts contain retired-strategy/HTDY fields, generic strategy registration, OPEN/CLOSE/position semantics, mutable event objects, or frequency branches.
 
 ---
 
@@ -1511,7 +1511,7 @@ Move the complete existing page implementation to `CurrentMarketDetailView.vue` 
 ```
 
 The shell owns only route normalization and the `当前版本 / 牛哇版本` switch. Because only the selected child is mounted:
-- Newow mode must not initialize SuBing/HTDY/Alert composables;
+- Newow mode must not initialize retired-strategy/HTDY/Alert composables;
 - current mode must not request the Newow endpoint;
 - current-view DOM and API behavior remain unchanged apart from the explicit version switch.
 

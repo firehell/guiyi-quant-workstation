@@ -98,7 +98,7 @@ def test_registry_uses_per_indicator_frequency_contracts() -> None:
 
 def test_alert_rule_capabilities_keep_stable_identity_and_exact_frequencies() -> None:
     """Catches Rule identity or authoritative-input frequency drift."""
-    from app.alerts.registry import HTDY_RULE, SUBING_RULE
+    from app.alerts.registry import HTDY_RULE, alert_rule_definitions
 
     assert HTDY_RULE.input_frequencies == (
         "1m",
@@ -109,9 +109,8 @@ def test_alert_rule_capabilities_keep_stable_identity_and_exact_frequencies() ->
         "1d",
         "1w",
     )
-    assert SUBING_RULE.input_frequencies == ("1m", "5m", "15m")
-    assert SUBING_RULE.rule_code == "subing_strategy_v1"
     assert HTDY_RULE.rule_code == "htdy_original_15m"
+    assert alert_rule_definitions() == (HTDY_RULE,)
 
 
 def test_strategy_candidate_cannot_enable_live_or_alert() -> None:
@@ -121,11 +120,10 @@ def test_strategy_candidate_cannot_enable_live_or_alert() -> None:
         build_indicator_definition(**_base_kwargs(status="strategy_candidate", live_capable=True, backtest_capable=True))
 
 
-def test_range_detector_registry_and_policy_are_scoped_to_display_and_research() -> None:
+def test_range_detector_registry_and_policy_are_scoped_to_display() -> None:
     from guiyi_quant.indicators import (
         FORMAL_BACKTEST_CONSUMER,
         RANGE_DETECTOR_DISPLAY_CONSUMER,
-        RANGE_DETECTOR_RESEARCH_CONSUMER,
         get_indicator,
         require_formal_policy,
     )
@@ -155,11 +153,9 @@ def test_range_detector_registry_and_policy_are_scoped_to_display_and_research()
     assert definition.live_capable is False
     assert definition.alert_capable is False
 
-    for consumer in (
-        RANGE_DETECTOR_DISPLAY_CONSUMER,
-        RANGE_DETECTOR_RESEARCH_CONSUMER,
-    ):
-        assert require_formal_policy("range_detector_lux_v1", consumer=consumer).policy_id == "range_detector_lux_v1"
+    assert require_formal_policy(
+        "range_detector_lux_v1", consumer=RANGE_DETECTOR_DISPLAY_CONSUMER
+    ).policy_id == "range_detector_lux_v1"
     for consumer in (
         FORMAL_BACKTEST_CONSUMER,
         "generic_strategy",
@@ -341,53 +337,6 @@ def test_macd_and_atr_are_compatibility_validated_not_validated() -> None:
     assert macd.alert_capable is False
     assert atr.live_capable is False
     assert atr.alert_capable is False
-
-
-def test_subing_signal_macd_policy_is_scoped_and_math_equivalent() -> None:
-    """Catches widening SuBing MACD approval or drifting from Factor math."""
-    from guiyi_quant.indicators import (
-        FORMAL_BACKTEST_CONSUMER,
-        get_formal_policy,
-        require_formal_policy,
-    )
-
-    observation = get_formal_policy("web_macd_legacy_v1")
-    signal = require_formal_policy(
-        "subing_macd_sma_window_scale2_v1",
-        consumer="subing_signal",
-    )
-
-    assert signal.policy_id == "subing_macd_sma_window_scale2_v1"
-    assert signal.indicator_family == "MACD"
-    assert (
-        (
-            signal.seed_policy,
-            signal.histogram_scale,
-            signal.lookback,
-            signal.confirmed_only,
-        )
-        == (
-            observation.seed_policy,
-            observation.histogram_scale,
-            observation.lookback,
-            observation.confirmed_only,
-        )
-        == ("sma_window", 2, "fast12_slow26_signal9", True)
-    )
-    assert signal.allowed_consumers == ("subing_signal",)
-    assert signal.blocked_consumers == (
-        FORMAL_BACKTEST_CONSUMER,
-        "alert",
-        "notification",
-        "generic_live",
-    )
-    assert signal.frozen_legacy is False
-
-    for consumer in signal.blocked_consumers:
-        with pytest.raises(ValueError, match="FORMAL_POLICY_CONSUMER_BLOCKED"):
-            require_formal_policy(signal.policy_id, consumer=consumer)
-    with pytest.raises(ValueError, match="FORMAL_POLICY_CONSUMER_NOT_ALLOWED"):
-        require_formal_policy(signal.policy_id, consumer="Market_readonly_display")
 
 
 def test_htdy_original_is_alert_capable_but_not_live_or_backtest_capable() -> None:

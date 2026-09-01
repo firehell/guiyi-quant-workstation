@@ -7,7 +7,6 @@ import {
   NPopover,
   NSelect,
   NSwitch,
-  NTag,
 } from 'naive-ui'
 import type { DominantContractItem, MarketFrequency, OptionalEmaIndicatorId, ResearchOverlayId, SeriesKind } from '@/types/market'
 import { MARKET_FREQUENCIES } from '@/types/market'
@@ -22,8 +21,6 @@ const props = defineProps<{
   selectedOverlay: ResearchOverlayId
   optionalEmaIndicators: OptionalEmaIndicatorId[]
   showRangeDetector: boolean
-  showSubingInternalProcess: boolean
-  showSubingStrategyPerformance: boolean
   fullscreen: boolean
 }>()
 
@@ -35,8 +32,6 @@ const emit = defineEmits<{
   'update:selected-overlay': [value: ResearchOverlayId]
   'update:optional-ema-indicators': [value: OptionalEmaIndicatorId[]]
   'update:show-range-detector': [value: boolean]
-  'update:show-subing-internal-process': [value: boolean]
-  'update:show-subing-strategy-performance': [value: boolean]
   'open-research': []
   'toggle-fullscreen': []
   back: []
@@ -46,10 +41,6 @@ const symbolOptions = computed(() => props.dominants.map((item) => ({
   label: `${item.product.toUpperCase()} ${item.product_name}`,
   value: item.product,
 })))
-const currentDominant = computed(() => props.dominants.find((item) => item.product === props.symbol)?.actual_contract)
-const subingBasisTitle = computed(() => currentDominant.value
-  ? `苏冰始终以当前真实主力 ${currentDominant.value} 计算；主图可独立切换。`
-  : '苏冰等待当前真实主力映射；主图可独立切换。')
 const overlayOptions: Array<{ label: string; value: ResearchOverlayId }> = RESEARCH_OVERLAY_DEFINITIONS
   .map((definition) => ({ label: definition.label, value: definition.id }))
 const optionalEmaOptions: Array<{ label: string; value: OptionalEmaIndicatorId }> = [
@@ -123,30 +114,6 @@ function toggleOptionalEma(value: OptionalEmaIndicatorId) {
           <small class="toolbar__settings-help">
             使用已完成 K 线；箱体左端为回画展示，确认前不可用于策略判断
           </small>
-          <div v-if="selectedOverlay === 'subing'" class="toolbar__settings-title">
-            <span>显示苏冰内部研究过程</span>
-            <NSwitch
-              :value="showSubingInternalProcess"
-              size="small"
-              aria-label="显示苏冰内部研究过程"
-              @update:value="emit('update:show-subing-internal-process', $event)"
-            />
-          </div>
-          <small v-if="selectedOverlay === 'subing'" class="toolbar__settings-help">
-            默认关闭；仅显示当前准备 / 研究确认 / 风险 / 结束事实
-          </small>
-          <div v-if="selectedOverlay === 'subing'" class="toolbar__settings-title">
-            <span>显示全历史策略效果</span>
-            <NSwitch
-              :value="showSubingStrategyPerformance"
-              size="small"
-              aria-label="显示全历史策略效果"
-              @update:value="emit('update:show-subing-strategy-performance', $event)"
-            />
-          </div>
-          <small v-if="selectedOverlay === 'subing'" class="toolbar__settings-help">
-            默认关闭；不占确认首屏
-          </small>
           <span>指定真实合约</span>
           <NInput
             :value="contract"
@@ -181,16 +148,6 @@ function toggleOptionalEma(value: OptionalEmaIndicatorId) {
           @click="emit('update:selected-overlay', item.value)"
         >{{ item.label }}</NButton>
       </NButtonGroup>
-      <NTag
-        v-if="selectedOverlay === 'subing'"
-        size="small"
-        type="info"
-        class="toolbar__subing-basis"
-        :title="subingBasisTitle"
-        :aria-label="subingBasisTitle"
-      >
-        基准 {{ currentDominant || '等待映射' }} <span aria-hidden="true">ⓘ</span>
-      </NTag>
     </div>
   </div>
 </template>
@@ -210,7 +167,7 @@ function toggleOptionalEma(value: OptionalEmaIndicatorId) {
 .toolbar__actions { grid-area: actions; display: flex; align-items: center; justify-self: end; gap: 8px; white-space: nowrap; }
 .toolbar__analysis-row { grid-area: analysis; display: flex; align-items: center; gap: 12px; min-width: 0; flex-wrap: wrap; }
 .toolbar__symbol { width: 184px; }
-.toolbar__series, .toolbar__periods, .toolbar__overlay, .toolbar__subing-basis { white-space: nowrap; }
+.toolbar__series, .toolbar__periods, .toolbar__overlay { white-space: nowrap; }
 .toolbar__settings { display: grid; gap: 8px; width: 196px; padding: 4px; }
 .toolbar__settings > span { color: var(--gy-text-muted); font-size: var(--gy-font-size-sm); }
 .toolbar__settings-title { display: flex; align-items: center; justify-content: space-between; color: var(--gy-text-primary); font-size: var(--gy-font-size-sm); }

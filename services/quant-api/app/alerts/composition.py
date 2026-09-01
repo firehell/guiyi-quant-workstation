@@ -1,11 +1,11 @@
-"""Alert Runtime 的默认关闭 composition；构造不启动消费循环。"""
+"""Default-off composition for the HTDY-only Alert Runtime."""
 
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from datetime import UTC, date, datetime
+from datetime import UTC, datetime
 import json
-from typing import Any, TypeVar
+from typing import Any
 
 from redis.exceptions import WatchError
 
@@ -18,179 +18,15 @@ from app.alerts.runtime import (
     empty_alert_runtime_status,
     validate_alert_runtime_status,
 )
-from app.alerts.subing_strategy_runtime import (
-    SubingStrategyRuntimeEvaluator,
-    SubingStrategyRuntimeProductSourceError,
-)
 from app.core.env import PROJECT_ROOT
 from app.db.session import SessionLocal
-from app.market_data.composition import (
-    build_market_read_service,
-    build_subing_strategy_current_service,
-)
-from app.market_data.aggregation import SessionWindow
-from app.market_data.operational_universe import load_active_products
+from app.market_data.composition import build_market_read_service
 from app.market_data.operational_universe import load_operational_products
 from app.market_data.product_taxonomy import load_product_taxonomy
-from app.market_data.subing_strategy.current_service import (
-    SubingStrategyCurrentActiveProductError,
-    SubingStrategyCurrentProjectionService,
-    SubingStrategyCurrentSourceIdentityError,
-    SubingStrategyCurrentSourceUnavailableError,
-)
-from app.market_data.subing_strategy.live_continuation import (
-    SubingLiveCompletedBars,
-    SubingLiveContinuationDecision,
-)
-from app.market_data.subing_strategy.machine import (
-    SubingStrategyMachineState,
-    SubingStrategySourceIdentity,
-)
-from app.market_data.subing_strategy.stream_contracts import (
-    AuthoritativeSegmentTerminal,
-)
 from app.redis_connections import get_redis_connection
 
 
 ALERT_RUNTIME_ACTIVATION_MARKER = PROJECT_ROOT / ".run" / "alert-runtime-enabled"
-_ReadResult = TypeVar("_ReadResult")
-
-
-class _SubingStrategyRuntimeReader:
-    """Open one read-only session per active-product reconstruction operation."""
-
-    def __init__(
-        self,
-        *,
-        session_factory=SessionLocal,
-        service_factory=build_subing_strategy_current_service,
-        clock: Callable[[], datetime] | None = None,
-    ) -> None:
-        self._session_factory = session_factory
-        self._service_factory = service_factory
-        self._clock = clock or (lambda: datetime.now(UTC))
-
-    def restore(
-        self,
-        *,
-        symbol: str,
-        started_at: datetime,
-    ) -> SubingStrategyMachineState:
-        return self._read(
-            lambda service: service.restore_machine(symbol=symbol, now=started_at)
-        )
-
-    def restore_rollover(
-        self,
-        *,
-        symbol: str,
-        trading_day: date,
-        previous_identity: SubingStrategySourceIdentity,
-        terminal: AuthoritativeSegmentTerminal,
-    ) -> SubingStrategyMachineState:
-        if (
-            terminal.symbol != symbol
-            or terminal.contract != previous_identity.contract
-            or terminal.segment_start_trading_day
-            != previous_identity.segment_start_trading_day
-            or terminal.terminal_bar.trading_day >= trading_day
-        ):
-            raise SubingStrategyRuntimeProductSourceError()
-        return self._read(
-            lambda service: service.restore_machine(
-                symbol=symbol,
-                now=self._clock(),
-            )
-        )
-
-    def read_final_catch_up_bars(
-        self,
-        *,
-        symbol: str,
-        source_identity: SubingStrategySourceIdentity,
-        after_1m: datetime | None,
-        after_5m: datetime | None,
-        after_15m: datetime | None,
-        through: datetime,
-    ) -> SubingLiveCompletedBars:
-        return self._read(
-            lambda service: service.completed_live_after(
-                symbol=symbol,
-                source_identity=source_identity,
-                after_1m=after_1m,
-                after_5m=after_5m,
-                after_15m=after_15m,
-                through=through,
-                allow_post_close_frozen=True,
-            )
-        )
-
-    def resolve_live_continuation(
-        self,
-        *,
-        symbol: str,
-        source_identity: SubingStrategySourceIdentity,
-        incoming_trading_day: date,
-        now: datetime,
-    ) -> SubingLiveContinuationDecision:
-        return self._read(
-            lambda service: service.resolve_live_continuation(
-                symbol=symbol,
-                source_identity=source_identity,
-                incoming_trading_day=incoming_trading_day,
-                now=now,
-            )
-        )
-
-    def read_session_windows(
-        self,
-        *,
-        symbol: str,
-        trading_day: date,
-        source_identity: SubingStrategySourceIdentity,
-    ) -> tuple[SessionWindow, ...]:
-        return self._read(
-            lambda service: service.session_windows(
-                symbol=symbol,
-                trading_day=trading_day,
-                source_identity=source_identity,
-            )
-        )
-
-    def read_authoritative_terminal(
-        self,
-        *,
-        symbol: str,
-        trading_day: date,
-        source_identity: SubingStrategySourceIdentity,
-    ) -> AuthoritativeSegmentTerminal | None:
-        return self._read(
-            lambda service: service.authoritative_terminal(
-                symbol=symbol,
-                trading_day=trading_day,
-                source_identity=source_identity,
-            )
-        )
-
-    def _read(
-        self,
-        operation: Callable[
-            [SubingStrategyCurrentProjectionService],
-            _ReadResult,
-        ],
-    ) -> _ReadResult:
-        try:
-            with self._session_factory() as session:
-                service: SubingStrategyCurrentProjectionService = self._service_factory(
-                    session
-                )
-                return operation(service)
-        except (
-            SubingStrategyCurrentActiveProductError,
-            SubingStrategyCurrentSourceIdentityError,
-            SubingStrategyCurrentSourceUnavailableError,
-        ) as exc:
-            raise SubingStrategyRuntimeProductSourceError() from exc
 
 
 class RedisAlertMessageSource:
@@ -216,12 +52,7 @@ class RedisAlertMessageSource:
                 continue
             payload = message.get("data")
             if isinstance(payload, bytes):
-                try:
-                    payload = payload.decode("utf-8")
-                except UnicodeError:
-                    raise RuntimeError(
-                        "ALERT_RUNTIME_STARTUP_BOUNDARY_UNAVAILABLE"
-                    ) from None
+                payload = payload.decode("utf-8")
             if payload == self._STARTUP_BOUNDARY:
                 return tuple(messages)
 
@@ -264,11 +95,10 @@ class RedisAlertRuntimeStatusStore:
 
     def write(self, payload: dict[str, object]) -> None:
         normalized = validate_alert_runtime_status(payload)
-        persisted = self._redis.set(
+        if self._redis.set(
             "alert:runtime-status",
             json.dumps(normalized, ensure_ascii=False, separators=(",", ":")),
-        )
-        if persisted is not True:
+        ) is not True:
             raise RuntimeError("ALERT_RUNTIME_STATUS_WRITE_FAILED")
 
     def acknowledge_notification_failure(
@@ -311,11 +141,7 @@ class RedisAlertRuntimeStatusStore:
             pipeline.multi()
             pipeline.set(
                 "alert:runtime-status",
-                json.dumps(
-                    updated,
-                    ensure_ascii=False,
-                    separators=(",", ":"),
-                ),
+                json.dumps(updated, ensure_ascii=False, separators=(",", ":")),
             )
             if pipeline.execute() != [True]:
                 raise RuntimeError("ALERT_RUNTIME_STATUS_WRITE_FAILED")
@@ -328,9 +154,7 @@ class RedisAlertRuntimeStatusStore:
             pipeline.reset()
 
 
-def acknowledge_alert_notification_failure(
-    expected_failure_at: str,
-) -> dict[str, object]:
+def acknowledge_alert_notification_failure(expected_failure_at: str) -> dict[str, object]:
     return RedisAlertRuntimeStatusStore(
         get_redis_connection()
     ).acknowledge_notification_failure(
@@ -340,32 +164,21 @@ def acknowledge_alert_notification_failure(
 
 
 def build_alert_runtime() -> AlertRuntime:
-    """构造已显式 activation 的 Alert Runtime；缺 Gate 时保持关闭。"""
     try:
-        enabled = (
-            ALERT_RUNTIME_ACTIVATION_MARKER.read_text(encoding="utf-8") == "enabled\n"
-        )
+        enabled = ALERT_RUNTIME_ACTIVATION_MARKER.read_text(encoding="utf-8") == "enabled\n"
     except (OSError, UnicodeDecodeError):
         enabled = False
     if not enabled:
         raise RuntimeError("ALERT_RUNTIME_NOT_ENABLED")
     operational_products = load_operational_products()
-    taxonomy = load_product_taxonomy()
-    sender = build_notification_sender_from_env()
     redis = get_redis_connection()
-    strategy_reader = _SubingStrategyRuntimeReader()
     return AlertRuntime(
         session_factory=SessionLocal,
         market_read_factory=build_market_read_service,
-        strategy_evaluator=SubingStrategyRuntimeEvaluator(
-            load_active_products(),
-            restore_reader=strategy_reader,
-            current_reader=strategy_reader,
-        ),
         htdy_evaluator=HtdyOriginalEvaluator(),
-        sender=sender,
+        sender=build_notification_sender_from_env(),
         operational_products=operational_products,
-        taxonomy=taxonomy,
+        taxonomy=load_product_taxonomy(),
         message_source=RedisAlertMessageSource(redis),
         heartbeat_store=RedisAlertHeartbeatStore(redis),
         runtime_status_store=RedisAlertRuntimeStatusStore(redis),

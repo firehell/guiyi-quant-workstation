@@ -28,31 +28,9 @@ test('only enabled EMA is derived while MACD is always available', () => {
   assert.equal(result.ema.ema_10, undefined)
   assert.equal(result.ema.ema_60, undefined)
   assert.equal(result.ema.ema_21?.length, 80)
-  assert.equal(result.subingEmaRibbon, null)
   assert.ok(result.macd.dif.length > 0)
   assert.equal(result.macd.dif.length, result.macd.dea.length)
   assert.equal(result.macd.dea.length, result.macd.histogram.length)
-})
-
-test('SuBing ribbon derives EMA10/21 and hover values even when optional lines are hidden', () => {
-  const result = buildKlineDerivedData(bars, [], { showSubingEmaRibbon: true })
-  const target = bars[79]
-  const hover = resolveKlineHoverContext(bars, result, [], target.time)
-
-  assert.ok(result.ema.ema_10?.length)
-  assert.ok(result.ema.ema_21?.length)
-  assert.ok(result.subingEmaRibbon?.points.length)
-  assert.equal(result.subingEmaRibbon?.points[0].tone, 'bull')
-  assert.deepEqual(hover?.mainIndicators.map((item) => item.id), ['ema_10', 'ema_21'])
-  assert.ok(hover?.mainIndicators[0]?.value)
-  assert.ok(hover?.mainIndicators[1]?.value)
-})
-
-test('SuBing ribbon hover deduplicates optional EMA21', () => {
-  const result = buildKlineDerivedData(bars, ['ema_21', 'ema_60'], { showSubingEmaRibbon: true })
-  const hover = resolveKlineHoverContext(bars, result, ['ema_21', 'ema_60'], bars[79].time)
-
-  assert.deepEqual(hover?.mainIndicators.map((item) => item.id), ['ema_10', 'ema_21', 'ema_60'])
 })
 
 test('HTDY is only derived when its observation overlay is explicitly visible', () => {
@@ -120,10 +98,10 @@ test('crosshair exposes the exact marker tooltip at its evidence bar', () => {
   const result = buildKlineDerivedData(bars, [])
   const target = bars[79]
   const marker = {
-    id: 'historical:subing-1',
+    id: 'research:marker-1',
     time: target.time,
     label: '跟随多',
-    tooltip: 'SuBing strategy detail',
+    tooltip: 'Research marker detail',
     tone: 'up' as const,
     position: 'belowBar' as const,
     shape: 'arrowUp' as const,

@@ -4,8 +4,7 @@ import type { AlertEvent, MarketFrequency } from '@/types/market'
 
 export type { AlertRuntimeStatus } from '@/utils/alertControl'
 export type { AlertEvent } from '@/types/market'
-
-export type AlertRuleKind = 'indicator_observation' | 'strategy_action'
+export type AlertRuleKind = 'indicator_observation'
 
 export interface ProductAlertRuleState {
   rule_code: string
@@ -16,15 +15,8 @@ export interface ProductAlertRuleState {
   enabled_frequencies: MarketFrequency[]
 }
 
-export interface ProductAlertStateResponse {
-  symbol: string
-  rules: ProductAlertRuleState[]
-}
-
-export interface AlertEventListResponse {
-  items: AlertEvent[]
-}
-
+export interface ProductAlertStateResponse { symbol: string; rules: ProductAlertRuleState[] }
+export interface AlertEventListResponse { items: AlertEvent[] }
 export interface ProductCurrentAlertEventsResponse {
   status: 'ready' | 'unavailable'
   trading_day: string | null
@@ -33,17 +25,6 @@ export interface ProductCurrentAlertEventsResponse {
 
 export function getProductAlerts(symbol: string) {
   return request.get<never, ProductAlertStateResponse>(`/api/alerts/products/${symbol}`)
-}
-
-export function setAlertProductEnabled(
-  ruleCode: string,
-  symbol: string,
-  enabled: boolean,
-) {
-  return request.put<never, ProductAlertRuleState>(
-    `/api/alerts/rules/${ruleCode}/scope/${symbol}`,
-    { enabled },
-  )
 }
 
 export function setAlertProductFrequencyEnabled(
@@ -68,18 +49,8 @@ export function getProductCurrentAlertEvents(symbol: string) {
   )
 }
 
-export function getAlertEvents(params: {
-  symbol: string
-  start: string
-  end: string
-  ruleCode: string
-}) {
+export function getAlertEvents(params: { symbol: string; start: string; end: string; ruleCode: string }) {
   return request.get<never, AlertEventListResponse>('/api/alerts/events', {
-    params: {
-      symbol: params.symbol,
-      rule_code: params.ruleCode,
-      start: params.start,
-      end: params.end,
-    },
+    params: { symbol: params.symbol, rule_code: params.ruleCode, start: params.start, end: params.end },
   })
 }

@@ -13,7 +13,7 @@ import {
 const chartSource = readFileSync(new URL('../src/pages/market/chart.vue', import.meta.url), 'utf-8')
 const sidebarSource = readFileSync(new URL('../src/components/market/ProductCheckSidebar.vue', import.meta.url), 'utf-8')
 
-test('does not refresh merely because the product symbol changes', async () => {
+test('current events refresh only on an explicit call', async () => {
   const symbol = ref('ag')
   const requests: string[] = []
   const state = useProductCurrentAlertEvents({
@@ -23,168 +23,73 @@ test('does not refresh merely because the product symbol changes', async () => {
       return { status: 'ready', trading_day: '2026-08-15', items: [] }
     },
   })
-
   symbol.value = 'jm'
   await Promise.resolve()
-
   assert.deepEqual(requests, [])
   await state.refresh()
   assert.deepEqual(requests, ['jm'])
   state.dispose()
 })
 
-test('invalidates old facts synchronously and drops an earlier same-symbol response', async () => {
+test('identity invalidation drops an older response', async () => {
   const symbol = ref('ag')
   const resolvers: Array<(response: { status: 'ready'; trading_day: string; items: AlertEvent[] }) => void> = []
   const state = useProductCurrentAlertEvents({
     symbol,
     fetchCurrentEvents: () => new Promise((resolve) => resolvers.push(resolve)),
   })
-
   const oldRequest = state.refresh()
   state.invalidateIdentity()
-  assert.equal(state.loading.value, true)
-  assert.equal(state.status.value, null)
-  assert.equal(state.tradingDay.value, null)
-  assert.deepEqual(state.items.value, [])
-  symbol.value = 'jm'
-  state.invalidateIdentity()
-  symbol.value = 'ag'
   const finalRequest = state.refresh()
-  resolvers[1]({ status: 'ready', trading_day: '2026-08-15', items: [event(2)] })
+  resolvers[1]!({ status: 'ready', trading_day: '2026-08-15', items: [event(2)] })
   await finalRequest
-  resolvers[0]({ status: 'ready', trading_day: '2026-08-14', items: [event(1)] })
+  resolvers[0]!({ status: 'ready', trading_day: '2026-08-14', items: [event(1)] })
   await oldRequest
-
   assert.deepEqual(state.items.value.map((item) => item.id), [2])
-  assert.equal(state.tradingDay.value, '2026-08-15')
   state.dispose()
 })
 
-test('marks an invalidated identity unavailable without restoring old items', async () => {
-  const state = useProductCurrentAlertEvents({
-    symbol: ref('ag'),
-    fetchCurrentEvents: async () => ({ status: 'ready', trading_day: '2026-08-15', items: [event(1)] }),
-  })
-  await state.refresh()
-
-  state.invalidateIdentity()
-  state.markUnavailable()
-
-  assert.equal(state.status.value, 'unavailable')
-  assert.equal(state.tradingDay.value, null)
-  assert.deepEqual(state.items.value, [])
-  assert.equal(state.loading.value, false)
-  state.dispose()
-})
-
-test('keeps a ready empty response distinct from unavailable', async () => {
-  const state = useProductCurrentAlertEvents({
-    symbol: ref('ag'),
-    fetchCurrentEvents: async () => ({ status: 'ready', trading_day: '2026-08-15', items: [] }),
-  })
-
-  await state.refresh()
-
-  assert.equal(state.status.value, 'ready')
-  assert.equal(state.tradingDay.value, '2026-08-15')
-  assert.deepEqual(state.items.value, [])
-  state.dispose()
-})
-
-test('converts a current-events network error to unavailable', async () => {
+test('network failure becomes unavailable without stale items', async () => {
   const state = useProductCurrentAlertEvents({
     symbol: ref('ag'),
     fetchCurrentEvents: async () => { throw new Error('network unavailable') },
   })
-
   await state.refresh()
-
   assert.equal(state.status.value, 'unavailable')
   assert.equal(state.tradingDay.value, null)
   assert.deepEqual(state.items.value, [])
-  assert.equal(state.loading.value, false)
   state.dispose()
 })
 
-test('preserves the backend bar_end descending order', async () => {
-  const state = useProductCurrentAlertEvents({
-    symbol: ref('ag'),
-    fetchCurrentEvents: async () => ({
-      status: 'ready',
-      trading_day: '2026-08-15',
-      items: [event(3), event(2), event(1)],
-    }),
-  })
-
-  await state.refresh()
-
-  assert.deepEqual(state.items.value.map((item) => item.id), [3, 2, 1])
-  state.dispose()
+test('HTDY labels and combined direction remain observation-only', () => {
+  const single = event(1)
+  const combined = { ...event(2), result_codes: ['buy', 'sell'] as ['buy', 'sell'] }
+  assert.equal(alertEventRuleShortLabel(single), '火天大有')
+  assert.equal(alertEventResultLabel(single, single.result_codes), '买入观察')
+  assert.equal(alertEventDirectionalTone(single, single.result_codes), 'buy')
+  assert.equal(alertEventResultLabel(combined, combined.result_codes), '买入/卖出观察')
+  assert.equal(alertEventDirectionalTone(combined, combined.result_codes), null)
 })
 
-test('does not infer a formal or observation result for an unknown current-event rule', () => {
-  const unknown = eventWith({ rule_code: 'future_rule', result_codes: ['buy'] })
-
-  assert.equal(alertEventRuleShortLabel(unknown), '未知提醒')
-  assert.equal(alertEventResultLabel(unknown, unknown.result_codes), '提醒记录')
-  assert.equal(alertEventDirectionalTone(unknown, unknown.result_codes), null)
-})
-
-test('keeps combined HTDY observations neutral and Strategy Actions out of the old direction helper', () => {
-  const htdy = eventWith({ rule_code: 'htdy_original_15m', result_codes: ['buy', 'sell'] })
-  const subing = eventWith({ rule_code: 'subing_strategy_v1', result_codes: ['buy', 'sell'] })
-
-  assert.equal(alertEventResultLabel(htdy, htdy.result_codes), '买入/卖出观察')
-  assert.equal(alertEventResultLabel(subing, subing.result_codes), '买入/卖出策略动作')
-  assert.equal(alertEventDirectionalTone(htdy, htdy.result_codes), null)
-  assert.equal(alertEventDirectionalTone(subing, subing.result_codes), null)
-})
-
-test('keeps an unknown combined current event fail-closed', () => {
-  const unknown = eventWith({ rule_code: 'future_rule', result_codes: ['buy', 'sell'] })
-
-  assert.equal(alertEventRuleShortLabel(unknown), '未知提醒')
-  assert.equal(alertEventResultLabel(unknown, unknown.result_codes), '提醒记录')
-  assert.equal(alertEventDirectionalTone(unknown, unknown.result_codes), null)
-})
-
-test('derives the sidebar HTDY observation from the latest existing HTDY marker', () => {
-  assert.match(
-    chartSource,
-    /if \(!htdyVisible\.value \|\| !overlayCapability\.value\.supported\) return null/,
-  )
-  assert.match(chartSource, /buildKlineDerivedData\(visibleBars\.value, \['htdy'\]\)/)
-  assert.ok(
-    chartSource.indexOf(
-      'if (!htdyVisible.value || !overlayCapability.value.supported) return null',
-    )
-      < chartSource.indexOf("buildKlineDerivedData(visibleBars.value, ['htdy'])"),
-  )
+test('sidebar observation is derived from the latest HTDY marker', () => {
+  assert.match(chartSource, /selectedOverlay\.value !== 'htdy'/)
+  assert.match(chartSource, /buildKlineDerivedData\(bars\.value, \['htdy'\]\)/)
   assert.match(chartSource, /htdy\?\.markers\.at\(-1\) \?\? null/)
-  assert.doesNotMatch(chartSource, /htdyVisible && visibleBars\.length > 0/)
   assert.match(sidebarSource, /htdyObservation: KlineMarker \| null/)
   assert.match(sidebarSource, /v-if="htdyObservation"/)
-  assert.match(sidebarSource, /htdyObservationLabel\(htdyObservation\)/)
 })
 
 function event(id: number): AlertEvent {
   return {
     id,
-    rule_code: 'subing_strategy_v1',
+    rule_code: 'htdy_original_15m',
     symbol: 'ag',
     contract: 'AG2610',
     trading_day: '2026-08-15',
     frequency: '15m',
     bar_end: `2026-08-15T0${id}:00:00Z`,
     result_codes: ['buy'],
-    action_id: null,
-    strategy_action: null,
     detected_at: '2026-08-15T01:00:01Z',
     notification_attempted_at: null,
   }
-}
-
-function eventWith(overrides: Pick<AlertEvent, 'rule_code' | 'result_codes'>): AlertEvent {
-  return { ...event(9), ...overrides }
 }

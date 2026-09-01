@@ -1,5 +1,5 @@
 from .atr import atr_series, initial_atr_state, step_atr
-from .ema import ema_series, initial_ema_state, step_ema
+from .ema import ema21_slope_10_bps_per_bar, ema_series, initial_ema_state, step_ema
 from .htdy_original import (
     HtdyOriginalResult,
     compute_htdy_original,
@@ -11,18 +11,6 @@ from .htdy_strict import BOOLEAN_FIELDS as HTDY_STRICT_BOOLEAN_FIELDS
 from .htdy_strict import NUMERIC_FIELDS as HTDY_STRICT_NUMERIC_FIELDS
 from .htdy_strict import compute_strict_fields
 from .macd import initial_macd_state, macd_series, step_macd
-from .subing_watch_15m import (
-    SUBING_WATCH_FORMULA_VERSION,
-    SubingWatchKernelBar,
-    SubingWatchKernelContext,
-    SubingWatchKernelError,
-    SubingWatchKernelEvaluation,
-    SubingWatchKernelHigherTimeframe,
-    SubingWatchKernelIdentity,
-    SubingWatchKernelState,
-    initial_subing_watch_kernel_state,
-    subing_watch_ma21_slope_5_bps_per_bar,
-)
 from .range_detector_lux import (
     RANGE_DETECTOR_LUX_CODE,
     RANGE_DETECTOR_LUX_POLICY_ID,
@@ -64,7 +52,6 @@ from .policy import (
     FROZEN_LEGACY_BACKTEST_CONSUMER,
     HTDY_ALERT_OBSERVATION_CONSUMER,
     RANGE_DETECTOR_DISPLAY_CONSUMER,
-    RANGE_DETECTOR_RESEARCH_CONSUMER,
     formal_policy_registry,
     get_formal_policy,
     require_formal_policy,
@@ -97,7 +84,6 @@ __all__ = [
     "IndicatorStatus",
     "MacdSeries",
     "MacdState",
-    "SUBING_WATCH_FORMULA_VERSION",
     "RANGE_DETECTOR_LUX_CODE",
     "RANGE_DETECTOR_LUX_POLICY_ID",
     "RANGE_DETECTOR_LUX_VERSION",
@@ -111,7 +97,6 @@ __all__ = [
     "RangeDetectorTransitionKind",
     "RangeDetectorVisualRange",
     "RANGE_DETECTOR_DISPLAY_CONSUMER",
-    "RANGE_DETECTOR_RESEARCH_CONSUMER",
     "RepaintingRisk",
     "SeedPolicy",
     "atr_series",
@@ -121,10 +106,9 @@ __all__ = [
     "compute_htdy_original",
     "compute_strict_fields",
     "ema_series",
+    "ema21_slope_10_bps_per_bar",
     "initial_ema_state",
     "initial_macd_state",
-    "initial_subing_watch_kernel_state",
-    "subing_watch_ma21_slope_5_bps_per_bar",
     "initial_range_detector_lux_state",
     "formal_policy_registry",
     "get_formal_policy",
@@ -147,13 +131,6 @@ __all__ = [
     "step_atr",
     "step_macd",
     "step_range_detector_lux",
-    "SubingWatchKernelBar",
-    "SubingWatchKernelContext",
-    "SubingWatchKernelError",
-    "SubingWatchKernelEvaluation",
-    "SubingWatchKernelHigherTimeframe",
-    "SubingWatchKernelIdentity",
-    "SubingWatchKernelState",
     "validate_definition_capabilities",
     "xma",
 ]

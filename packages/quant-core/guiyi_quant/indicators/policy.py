@@ -9,7 +9,6 @@ FORMAL_BACKTEST_CONSUMER = "formal_backtest"
 FROZEN_LEGACY_BACKTEST_CONSUMER = "frozen_legacy_backtest"
 HTDY_ALERT_OBSERVATION_CONSUMER = "htdy_alert_observation"
 RANGE_DETECTOR_DISPLAY_CONSUMER = "range_detector_readonly_display"
-RANGE_DETECTOR_RESEARCH_CONSUMER = "subing_daily_trend_research"
 
 
 _POLICIES: dict[str, FormalPolicy] = {
@@ -48,30 +47,9 @@ _POLICIES: dict[str, FormalPolicy] = {
         lookback="fast12_slow26_signal9",
         confirmed_only=True,
         frozen_legacy=False,
-        allowed_consumers=("Market_readonly_display", "subing_factor_observation"),
+        allowed_consumers=("Market_readonly_display",),
         blocked_consumers=("formal_strategy_signal_until_validated", FORMAL_BACKTEST_CONSUMER),
         notes="Web/Market MACD display compatibility policy; not strategy-validated.",
-    ),
-    "subing_macd_sma_window_scale2_v1": FormalPolicy(
-        policy_id="subing_macd_sma_window_scale2_v1",
-        indicator_family="MACD",
-        seed_policy="sma_window",
-        smoothing_policy=None,
-        histogram_scale=2,
-        lookback="fast12_slow26_signal9",
-        confirmed_only=True,
-        frozen_legacy=False,
-        allowed_consumers=("subing_signal",),
-        blocked_consumers=(
-            FORMAL_BACKTEST_CONSUMER,
-            "alert",
-            "notification",
-            "generic_live",
-        ),
-        notes=(
-            "Scoped confirmed MACD policy approved only for SuBing V1 entry-signal "
-            "evaluation; generic MACD registry capability remains unchanged."
-        ),
     ),
     "strategy_macd_first_value_scale1_v1": FormalPolicy(
         policy_id="strategy_macd_first_value_scale1_v1",
@@ -110,7 +88,7 @@ _POLICIES: dict[str, FormalPolicy] = {
         frozen_legacy=True,
         allowed_consumers=("legacy_strategy_compatibility", FROZEN_LEGACY_BACKTEST_CONSUMER),
         blocked_consumers=("unversioned_formal_replacement",),
-        notes="FastAPI su_bing ATR compatibility policy.",
+        notes="FastAPI legacy ATR compatibility policy.",
     ),
     "quantcore_atr_ema_first_tr_v1": FormalPolicy(
         policy_id="quantcore_atr_ema_first_tr_v1",
@@ -136,7 +114,6 @@ _POLICIES: dict[str, FormalPolicy] = {
         frozen_legacy=False,
         allowed_consumers=(
             RANGE_DETECTOR_DISPLAY_CONSUMER,
-            RANGE_DETECTOR_RESEARCH_CONSUMER,
         ),
         blocked_consumers=(
             FORMAL_BACKTEST_CONSUMER,
@@ -146,8 +123,7 @@ _POLICIES: dict[str, FormalPolicy] = {
             "notification",
         ),
         notes=(
-            "Clean-room causal Lux Range behavior for readonly display and the "
-            "versioned SuBing daily-trend research candidate only."
+            "Clean-room causal Lux Range behavior for readonly display only."
         ),
     ),
     "huotian_dayou_original_v0": FormalPolicy(

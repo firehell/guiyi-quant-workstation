@@ -15,6 +15,28 @@ from .models import (
 EMA_VERSION = "v1"
 
 
+def ema21_slope_10_bps_per_bar(
+    values: Sequence[float | int | None],
+) -> float | None:
+    """Return the 10-point EMA21 endpoint slope in basis points per bar."""
+
+    if len(values) != 10:
+        raise ValueError("exactly 10 EMA21 values are required")
+
+    normalized = [_finite_float(value) for value in values]
+    if any(value is None for value in normalized):
+        return None
+
+    first = normalized[0]
+    current = normalized[-1]
+    assert first is not None and current is not None
+    if current == 0:
+        return None
+
+    per_bar_delta = (current - first) / 9
+    return round(per_bar_delta / current * 10_000, 6)
+
+
 def initial_ema_state(
     period: int,
     *,

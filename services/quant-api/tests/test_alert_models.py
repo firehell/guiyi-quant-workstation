@@ -13,14 +13,11 @@ def test_alert_rule_uses_application_domain_columns_and_array_scope() -> None:
         "id",
         "rule_code",
         "enabled",
-        "scope_products",
         "scope_product_frequencies",
         "created_at",
         "updated_at",
     }
     assert table.c.rule_code.unique is True
-    assert isinstance(table.c.scope_products.type, ARRAY)
-    assert table.c.scope_products.nullable is False
     assert isinstance(table.c.scope_product_frequencies.type, JSON)
     assert table.c.scope_product_frequencies.nullable is False
     assert table.c.scope_product_frequencies.default is not None
@@ -42,8 +39,6 @@ def test_alert_event_enforces_identity_fk_and_range_index() -> None:
         "frequency",
         "bar_end",
         "result_codes",
-        "action_id",
-        "strategy_payload",
         "detected_at",
         "notification_attempted_at",
         "created_at",
@@ -52,9 +47,6 @@ def test_alert_event_enforces_identity_fk_and_range_index() -> None:
     assert table.c.trading_day.nullable is True
     assert isinstance(table.c.result_codes.type, ARRAY)
     assert table.c.result_codes.nullable is False
-    assert table.c.action_id.nullable is True
-    assert isinstance(table.c.strategy_payload.type, JSON)
-    assert table.c.strategy_payload.nullable is True
     assert {fk.target_fullname for fk in table.c.rule_id.foreign_keys} == {
         "alert_rules.id"
     }
@@ -67,16 +59,6 @@ def test_alert_event_enforces_identity_fk_and_range_index() -> None:
     assert _index_columns(table, "ix_alert_events_symbol_bar_end") == (
         "symbol",
         "bar_end",
-    )
-    assert _index_columns(table, "ux_alert_events_action_id_not_null") == ("action_id",)
-    action_index = next(
-        item
-        for item in table.indexes
-        if item.name == "ux_alert_events_action_id_not_null"
-    )
-    assert action_index.unique is True
-    assert str(action_index.dialect_options["postgresql"]["where"]) == (
-        "action_id IS NOT NULL"
     )
     assert _check_names(table) == {
         "ck_alert_events_frequency",

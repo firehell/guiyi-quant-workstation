@@ -1,60 +1,48 @@
 # 归一量化稳定产品面
 
-更新时间：2026-08-31
+更新时间：2026-09-02
 
-归一量化是本地、单用户的国内期货研究工作站。稳定闭环是可信行情、Market Web、研究观察、Alert 与人工判断；不做自动交易、实盘下单、账户/委托/持仓管理、SaaS、多用户权限或 AI 自动晋升。所有信号、图表和通知都是研究观察，`auto_order=false`。
+归一量化是本地、单用户的国内期货研究工作站。稳定闭环是可信行情、Market Web、通用指标、HTDY 研究观察、Alert 与人工判断；不做自动交易、实盘下单、账户/委托/持仓管理、SaaS、多用户权限或 AI 自动晋升。所有图表和通知都是研究观察，`auto_order=false`。
 
 ## Market Web
 
 - 唯一 Web 产品为 Market，route 仅 `/market` 与 `/market/chart`。
-- `/market` 是行情看板，只展示 Runtime；不提供全市场 Radar、Daily Watch 或策略事件研究入口。
-- 主图 Overlay 仅 `none | subing | htdy`。苏冰 overlay 默认以每根 K 线独立黄/蓝柱显示 EMA10/21 趋势带；独立 EMA21 仅图表设置可选。
-- 苏冰图表侧栏钉顶确认事实：动作、合约、参考价、生效、仍有效。全历史策略效果面板默认关闭，仅图表设置开启。
-- 策略事件入口 `entry=subing-strategy-action` 落到 `actual_dominant + 15m` 并保留 overlay；Daily Watch 入口仍为 `entry=subing-daily-watch`。
+- Market 首页只展示 Runtime 状态；品种详情页是行情与研究观察入口。
+- 主图 Overlay 仅 `none | htdy`；图表设置保留通用 EMA、MACD、Range Detector 与合约控制。
+- Web 不显示策略建仓、清仓、持仓、全历史策略效果或已退役策略事件。
 
-## SuBing
+## 指标
 
-SuBing 是一个产品，保留三种不可互相替代的事实：
-
-- Daily Context：盘后 immutable artifact，回答“今天看什么”；
-- Current Signal State：Canonical 与 completed Live 的当前状态，回答“现在是什么状态”；
-- Formal Event：immutable `AlertEvent`，回答“是否需要处理”。
-
-三类事实共享权威 Factor、Signal、Calibration、Lifecycle 与 policy，但不合并成 mega endpoint、表或 DTO。SuBing Alert 的唯一授权面是 product-level `scope_products`。
-
-SuBing Strategy V1 的 Stage 1 Historical Projection 与 Stage 2 completed-Live evaluator 共享唯一增量状态机。公开身份始终为 active universe 中单品种 `actual_dominant + 15m`；1m/5m 仅为内部权威输入。Historical 从每个 rank1 物理段起点确定性复算 Daily Context、Factor、Lifecycle、Strategy Action 与 Episode；普通动作只在下一实际同物理合约 15m 区间第一根 completed 1m 的 open 生效。退出仅来自 EMA21、上一根 15m 极值、绑定 Pivot 与 MACD 高低位反向交叉。不加减仓、不反手、不跨物理段、不在同 Bar 重建仓；只有覆盖权威段末时才以旧段最后一根 15m close 清仓。
-
-Stage 2 代码为 active60 在内存恢复和维护相互隔离的策略状态，计算范围独立于 Alert Scope；`scope_products` 只控制 immutable Strategy Action Event 与 owner one-shot PushPlus。启动恢复/catch-up 不补 Event、不补通知；final catch-up 的每周期 watermark 是启动队列 reconciliation 权威，更旧的已覆盖 Bar 直接丢弃，相同 watermark 的 Bar 仍必须经状态机校验幂等或冲突，更新的 Bar 只推进状态且不补发。只有该 reconciliation 结束且 active60 全部 ready 后才写 `strategy_ready_at`。Current Strategy 从 Canonical + completed Live 只读重建，不以 AlertEvent 作为仓位权威。Live continuation 同时校验 machine identity、incoming trading day、冻结 `MarketReadState`、Live contract 与 availability：同合约可跨交易日推进同一 physical segment，`segment_start_trading_day` 不变，不 terminal、不建新 segment；Daily Watch 缺失或 stale 注入 typed UNAVAILABLE context，只禁新 entry，不阻断 Factor/Lifecycle 或已有 position exit。不同 Live contract 不得混入旧段，标为 `LIVE_CONTRACT_AUTHORITY_PENDING`，只由 `canonical_updated` 的 MainContractMap formal rollover reconciliation 处理；其他 unavailable 原因不得被顺便恢复。final catch-up 若在收盘后才完成，只能以现有 operational、same-day、internally single-contract 的 `post_close` completed 1m/5m/15m snapshot 作为冻结 causal authority；它不扩张普通 Live 输入，snapshot 缺失或身份不一致仍 fail-closed，different frozen contract 仍只进入 pending。具体 release、production migration、Runtime 与 enable 状态只在 `STATUS.md` 记录。
-
-产品详情另有固定的 `actual_dominant + 15m` 全历史策略效果视图：仍复用唯一 Historical Strategy Projection，只统计完整 Episode 的参考价变动、持有 Bar 与退出原因；未完成 Episode 仅展示、不进入完成统计。有效历史下界同时约束 Daily Context source；首个 target 的上一共同交易日早于该下界时只形成 `PREVIOUS_TRADING_DAY_UNAVAILABLE` causal warm-up，范围内的主力段或数据身份异常仍 fail-closed。该视图不引入本金、仓位、费用、资金曲线、回撤或订单语义。HTTP 只读校验并返回当前 schema-v3 快照，不在请求路径重放 Historical、不写 cache、不采纳或修复产物；CLI `--warm-cache` 是明确的全历史 bootstrap，须独立数据写入 Gate。批次在计算前冻结每个产品的窗口，产品快照绑定完整引擎与源事实 identity，只有原子发布和物理读回均通过才计为完成。盘后 Runtime 不刷新该快照，也不以该快照状态改变 Canonical 维护结果。
-
-## 保留研究能力
-
-- SuBing Candidate Validation 保留 source-specific causality、strict-before、embargo、prefix invariance、golden parity 与 prospective OOS 分离；retrospective 不生成自动 rank、winner、promotion、盈利或可交易结论。
+- EMA、MACD、ATR 与 Range Detector 是通用指标，不拥有策略、下单或 Alert 语义。
+- EMA21 斜率只保留 10K primitive：输入恰好 10 个 EMA21 值，以首尾差除以 9 个 bar interval，再除以当前 EMA21，输出 bps/bar。
+- 不保留 Daily Watch 大方向过滤，也不保留 5m/15m 正式因子。
+- Range Detector 只允许 `range_detector_readonly_display`，不能作为正式策略、Alert 或 Runtime 输入。
 
 ## HTDY 与 Alert
 
-HTDY 是 observation-only/repainting 产品，能力覆盖七个正式周期 `1m/5m/15m/30m/60m/1d/1w`。稳定 Rule code 为 `htdy_original_15m`，唯一 Scope authority 是 `scope_product_frequencies` 的 symbol × frequency；SuBing 唯一 Rule code 为 `subing_strategy_v1`，唯一 Scope authority 是 `scope_products`。Migration `20260826_0042` 以 forward-only 原子步骤删除旧 SuBing Event、保留旧 Rule row 的 `id/enabled/scope_products` 并将 `subing_entry_signal_v1` 直接替换为 `subing_strategy_v1`；不保留 archive、双 Rule、兼容 reader、replay 或 downgrade。两种 Scope 不混用、不合并。
+HTDY 是 observation-only/repainting 产品，能力覆盖七个正式周期 `1m/5m/15m/30m/60m/1d/1w`。稳定 Rule code 为 `htdy_original_15m`，唯一 Scope authority 是 `scope_product_frequencies` 的 symbol × frequency。
 
-持久 HTDY `AlertEvent` 是 forward-only first-seen 事实，但只接受触发窗口的最新 completed Bar：repaint zone 中的历史 Bar 仅供 Web retrospective 研究展示，不创建 Event 或触发通知。`bar_end` 固定为该最新观察 Bar 时间，`detected_at` 记录 Runtime 首次识别时间；同一 Rule × symbol × frequency × `bar_end` 一旦存在即不可变 no-op，不因后续重绘消失、重现或方向/合约变化而改写或重发。Web retrospective 箭头仍按当前完整前缀展示重绘型研究观察，因此可与持久 first-seen 方块不同；两者不互相覆盖。
+持久 HTDY `AlertEvent` 是 forward-only first-seen 事实，只接受触发窗口的最新 completed Bar。repaint zone 中的历史 Bar 只供 Web retrospective 研究展示，不创建 Event 或通知。Event 创建后不可变，不因后续重绘消失、重现或方向变化而改写或重发。
 
-Alert 是独立 Application Domain，只含 `alert_rules` 与 `alert_events` 两张表。Event 先提交，随后最多一次 transport；无逐收件人状态、retry、queue、replay、backfill、fallback 或订单路径。provider accepted 不等于送达。
+Alert 是独立 Application Domain。0043 之后 schema 只保留 HTDY 所需 Rule/Event 字段；Event 先提交，随后最多一次 transport，无 retry、queue、replay、backfill、fallback 或订单路径。provider accepted 不等于送达。
 
 ## 数据与稳定入口
 
 ```text
 RQData -> staging + hard validation -> Canonical Parquet
        -> 八表 Catalog + MainContractMap -> MarketDataService
-       -> Market Web / indicators / read-only research
+       -> Market Web / indicators / HTDY observation
 ```
 
 - RQData 是唯一外部行情事实源，Canonical Parquet 是唯一 active Historical Bar 存储，PostgreSQL 不存 Bar。
-- active research universe 由 `data/universe/active_products.txt` 定义；持续 Runtime 授权由 `data/universe/operational_products.txt` 定义。即使内容相同，两者也不合并。
-- 物理 Dataset 只有 `continuous` 与 `contract`；`actual_dominant` 是按 `MainContractMap rank=1` 有效区间拼接的查询模式。
+- `active_products.txt` 定义研究能力；`operational_products.txt` 定义持续 Runtime 授权。即使内容相同也不合并。
+- 物理 Dataset 只有 `continuous` 与 `contract`；`actual_dominant` 只通过 `MainContractMap rank=1` 有效区间拼接。
 - `MarketDataService` 是 Historical consumer 的唯一入口；Redis Live 只承载当日 observation，不能提升为 Canonical。
 
-稳定 HTTP 面为 `/api/v1/market/*`、`/api/alerts/*` 与只读 `/api/runtime/*`。统一 CLI 为 `uv run --project services/quant-api guiyi`；research 子命令保留 `subing-calibration`、`subing-lifecycle` 与受独立数据写入 Gate 约束的 `subing-strategy-performance` cache warm。
+稳定 HTTP 面为 `/api/v1/market/*`、`/api/alerts/*` 与只读 `/api/runtime/*`。统一 CLI 为 `uv run --project services/quant-api guiyi`，active domain 仅 `data` 与 `runtime`。
 
 ## Retired surface
 
-Attention、Trend Focus、Main Force Mirror、Five-Candidate phase assets、N Structure、专用于 SuBing↔N 的 Multi-Candidate Robustness、RQAlpha 与 Execution Review 均不属于 active 产品、API、CLI、Web 或 Runtime。Alembic history 与 Git history 只保留 lineage；恢复任何退役能力必须由新任务重新定义 consumer、formula、value、evidence、事实合同与数据边界，不能直接恢复旧模块。
+全部既有策略域（包括其 Daily Watch、5m/15m 因子、Historical Projection、Current State、Formal Event、Runtime、Scope、CLI、API、Web 和派生 cache）均退出 active 产品面。旧身份只允许存在于不可变 Git/Alembic lineage 和 0043 删除迁移的断言中。未来策略必须定义新身份、新合同与新版本，不能直接恢复旧模块或旧数据。
+
+Attention、Trend Focus、Main Force Mirror、Five-Candidate phase assets、N Structure、Multi-Candidate Robustness、RQAlpha 与 Execution Review 同样不属于 active 产品、API、CLI、Web 或 Runtime。

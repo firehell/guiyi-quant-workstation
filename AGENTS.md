@@ -43,20 +43,17 @@ Alert Runtime 的授权与 Market Runtime 独立。代码、launchd 模板与 en
 
 ```text
 htdy_original_15m × scope_product_frequencies × htdy_observers × pushplus-wechat-topic
-+
-subing_strategy_v1 × scope_products × owner × pushplus-wechat
 ```
 
-Migration `20260826_0042` 定义 forward-only Rule lineage：保留原 Rule row 的 `id/enabled/scope_products`，将旧 SuBing Rule 直接替换为 `subing_strategy_v1`，并删除旧 SuBing Event；不得建立 archive、双 Rule、兼容 reader、replay 或 downgrade。当前 release、production migration、Runtime 与 enable 状态只以 `STATUS.md` 为准；任何一次状态变化都不能替代下一项受控操作的明确授权。
+Migration `20260902_0043` forward-only 删除全部已退役策略 Event、Rule 与专用列，只保留 HTDY Rule/Event 事实；不得建立 archive、兼容 reader、replay 或 downgrade。当前 release、production migration、Runtime 与 enable 状态只以 `STATUS.md` 为准；任何一次状态变化都不能替代下一项受控操作的明确授权。
 
-- HTDY Scope 只能按 symbol × frequency；SuBing Scope 只能按 product。两种 authority 不混用、不合并。
-- HTDY 最多发起一次 Topic 请求，Topic 成员由 PushPlus 外部人工管理且不超过 owner + 三位朋友；SuBing 不传 Topic。系统不读取成员清单，不声明精确送达人数。
+- HTDY Scope 只能按 symbol × frequency。
+- HTDY 最多发起一次 Topic 请求，Topic 成员由 PushPlus 外部人工管理且不超过 owner + 三位朋友。系统不读取成员清单，不声明精确送达人数。
 - Git 外通知配置只含 message token 与 HTDY Topic code；parent 必须为当前用户所有的 `0700` 目录，file 必须为当前用户所有的 `0600` 普通文件。结构 health 不联网、不发送。
 - `alert_rules` 与 `alert_events` 是独立 Application Domain。Event 先提交，再最多调用一次 transport；无逐收件人状态、retry、queue、replay、backfill、fallback 或订单。
-- Stage 2 Runtime 对 active60 恢复和维护内存策略状态，`scope_products` 只控制 Strategy Event 与 owner PushPlus；Scope 变化不得创建、删除或重置策略状态。启动 restore/catch-up 不补 Event、不补通知，AlertEvent 不得作为策略仓位权威。
 - HTDY 日内五周期只消费同周期 completed Live Bar；D1/W1 只响应 `market:state(reason=canonical_updated)` 并读取 Canonical，不新增 scheduler、Scope 表或 Live 日/周聚合。
 - HTDY 使用 forward-only first-seen observation 语义：已有同周期 completed Live / `canonical_updated` 触发只比较 previous/current prefix，历史重绘候选只限于 kernel repaint zone。`AlertEvent.bar_end` 是观察 Bar 时间，`detected_at` 是 Runtime 首次识别时间；Event 冻结后，重绘消失、重现或方向变化都不改写、不重发。startup、repair、replay、backfill 与 EOD recalculation 不创建历史 HTDY Event 或通知。
-- Stage 2 `alert:runtime-status` 写 schema v4，兼容读 v1/v2/v3，并在下一次代码写入时规范化为 v4；missing 只表示 `unobserved`。`strategy_unavailable_reason_codes` 必须与 unavailable products 一一对应，且只保存固定公开 SuBing reason code；v3 遗留 unavailable 只能标作 `PREVIOUS_RUNTIME_REASON_UNAVAILABLE`，不得伪造机器原因或保存 provider reference。notification acknowledgment 必须精确匹配当前 failure timestamp 做一次 CAS；保留原失败、公开分类与计数，不重放、不补发。同一 timestamp 内的任何新 failure 都必须原子清空 acknowledgment；状态写失败或并发变化时 fail-closed。
+- `alert:runtime-status` 写 schema v5，只保留通用 Alert/HTDY 状态；兼容读取 v1-v4 时直接丢弃已退役策略字段。notification acknowledgment 必须精确匹配当前 failure timestamp 做一次 CAS；保留原失败、公开分类与计数，不重放、不补发。同一 timestamp 内的任何新 failure 都必须原子清空 acknowledgment；状态写失败或并发变化时 fail-closed。
 - provider accepted 只表示请求被接受，不表示微信送达。代码、测试、配置或历史 canary 不授权真实 send、Scope 变更或 Runtime switch。
 
 ## 安全规则
@@ -76,10 +73,10 @@ Migration `20260826_0042` 定义 forward-only Rule lineage：保留原 Rule row 
 5. RQData 必须先进入 staging，通过 schema/session/duplicate/OHLCV/coverage、identity、row-count 与物理可读性校验后再原子发布；失败保留最后有效 Canonical。
 6. 映射、分区、coverage 或物理完整性异常必须显式失败，不得静默填充、缩短、替换或另建第二套缺口事实。
 7. 策略与研究必须保护 causality、strict-before、future-leak、prefix invariance、golden parity、fail-closed、warm-up、合约切换、成交时序和 OOS/Walk-forward 边界。交易相关价格、成本、仓位、资金、盈亏和费用使用 `Decimal`。
-8. SuBing 15m Historical Strategy Projection 保持 source-specific、deterministic、read-only，只输出模拟动作/参考变动。不得创建 UniversalStrategyAdapter、统一 Opportunity 模型、通用策略平台、正式回测 worker/queue、账户或订单域。
-9. SuBing Strategy 普通动作只在下一根同物理合约 15m open 生效；退出只认 accepted policy 的四类来源；不加减仓、不反手、不跨物理段、不在同 Bar 重建仓。任何公式变化必须新版本，不能以文档收敛修改策略语义。
-10. Alert 不属于八表 Market Catalog。HTDY 与 SuBing 的 Rule、Scope、current-event cutoff 和 audience boundary 保持分离；repair、replay、backfill、migration 或 EOD recalculation 不补评、不补发历史通知。SuBing continuation 同时校验 machine source identity、incoming completed Bar trading_day、冻结 `MarketReadState.trading_day`、frozen Live contract 与 `live_available/live_eligible`；同合约允许跨交易日推进同一 physical segment，trading_day 变化不等于 physical segment rollover。不同 Live contract 不得进入旧段：等待 `canonical_updated` 的 MainContractMap formal rollover 时使用 `LIVE_CONTRACT_AUTHORITY_PENDING`，只有该 reason 的 unavailable product 可以在该 seam reconciliation；其他 identity/stale 异常 fail-closed 且不得自动恢复。Daily Watch 缺失/stale 只能注入 typed UNAVAILABLE context 禁止新 entry，不阻断 Factor/Lifecycle 和已有 position exit；final Session Bar 只在共享 Live arrival grace 内可见，5m 在同一 15m boundary 按 TradingSession bucket 延后。final catch-up 若晚于收盘，只能用 existing operational、same-day、internally single-contract `post_close` completed 1m/5m/15m snapshot 的最后可见边界作一次冻结 causal authority；它不成为普通 Live 输入，snapshot 缺失/错身份仍 fail-closed，different frozen contract 仍只进入 pending。current trading day 只通过 `MarketPhaseResolver + operational_products.txt` 解析，不可用时 fail-closed。
-11. causality、strict-before、prefix-invariance、future-leak、golden parity 与 fail-closed 测试不得删除。Alembic chain 只允许审计；除非新任务明确要求并授权，不修改 migration。
+8. 已退役策略域不得保留 active API、CLI、Web、Runtime、Alert Rule、Scope、派生 cache 或兼容 reader。未来新策略必须使用新身份、新合同与新版本，不能恢复或复用已退役实现。
+9. EMA21 斜率只保留通用 10K primitive：恰好使用 10 个 EMA21 值，按首尾差除以 9 个 bar interval，再除以当前 EMA21 并换算为 bps/bar；不得恢复 5m/15m 正式因子或方向过滤。
+10. Alert 不属于八表 Market Catalog。HTDY 使用 symbol × frequency Scope；repair、replay、backfill、migration 或 EOD recalculation 不补评、不补发历史通知。
+11. causality、strict-before、prefix-invariance、future-leak、golden parity 与 fail-closed 测试不得删除。已有 Alembic history 只作 lineage；新 migration 必须前向、可审计且真实 production 执行仍需独立授权。
 
 ## 验证与交付
 

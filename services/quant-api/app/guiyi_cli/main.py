@@ -1,7 +1,7 @@
 """归一量化统一 CLI 入口（``uv run guiyi``）。
 
-子域：``data``（历史数据 audit/update/refresh）、``research``（只读研究）与
-``runtime``（健康、前台 Live、Alert 与显式 canary）。
+子域：``data``（历史数据 audit/update/refresh）与 ``runtime``（健康、前台
+Live、Alert 与显式 canary）。
 默认 JSON 输出至 stdout；参数错误与异常经 output 模块脱敏后写 stderr。
 """
 
@@ -31,26 +31,12 @@ from app.guiyi_cli.output import (
     exception_error_payload,
     print_json,
 )
-from app.guiyi_cli.research_parser import add_research_commands
-from app.guiyi_cli.research_commands import run_research_command
-from app.guiyi_cli.research_requests import (
-    ResearchRequest,
-    build_research_request,
-)
 from app.market_data.composition import (
     build_historical_data_manager,
     build_live_market_service,
-    build_subing_strategy_performance_service,
 )
-from app.market_data.subing_strategy.performance import warm_active_performance_cache
 from app.market_data.after_market import build_after_market_updater
 from app.market_data.historical_data_manager import HistoricalDataManager
-from app.market_data.product_retirement import ProductRetiredError
-from app.research.composition import (
-    build_subing_calibration_research_service,
-    build_subing_lifecycle_research_service,
-    build_subing_watch_research_service,
-)
 from app.services.runtime_health import build_runtime_health
 from app.runtime_entry import run_after_market, run_alert, run_live
 
@@ -61,11 +47,8 @@ LiveServiceFactory = Callable[[Any], Any]
 AlertRuntimeFactory = Callable[[], Any]
 AlertCanarySenderFactory = Callable[[], Any]
 AlertNotificationAcknowledger = Callable[[str], dict[str, object]]
-ResearchServiceFactory = Callable[[Any], Any]
 
 def _execution_is_readonly(args: argparse.Namespace) -> bool:
-    if args.domain == "research":
-        return args.research_command != "subing-strategy-performance"
     if args.domain == "runtime":
         if args.runtime_command == "status":
             return True
@@ -88,15 +71,12 @@ def _parse_error_is_readonly(raw: Sequence[str]) -> bool:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """构建 guiyi 根解析器：data、research 与 runtime。"""
+    """构建 guiyi 根解析器：data 与 runtime。"""
     parser = JsonArgumentParser(prog="guiyi")
     domains = parser.add_subparsers(dest="domain", required=True)
     data = domains.add_parser("data")
     commands = data.add_subparsers(dest="data_command", required=True)
     add_data_commands(commands)
-    research = domains.add_parser("research")
-    research_commands = research.add_subparsers(dest="research_command", required=True)
-    add_research_commands(research_commands)
     runtime = domains.add_parser("runtime")
     runtime_commands = runtime.add_subparsers(dest="runtime_command", required=True)
     runtime_commands.add_parser("status")
@@ -129,18 +109,6 @@ def main(
     alert_notification_acknowledger: AlertNotificationAcknowledger = (
         acknowledge_alert_notification_failure
     ),
-    research_service_factory: ResearchServiceFactory = (
-        build_subing_calibration_research_service
-    ),
-    lifecycle_research_service_factory: ResearchServiceFactory = (
-        build_subing_lifecycle_research_service
-    ),
-    performance_service_factory: ResearchServiceFactory = (
-        build_subing_strategy_performance_service
-    ),
-    watch_research_service_factory: ResearchServiceFactory = (
-        build_subing_watch_research_service
-    ),
     runtime_health_builder=build_runtime_health,
     stdout: TextIO = sys.stdout,
     stderr: TextIO = sys.stderr,
@@ -148,24 +116,10 @@ def main(
     """CLI 主流程：解析 → 执行 → JSON 输出；返回进程退出码（0 成功，2 参数，1 执行错误）。"""
     raw = list(argv) if argv is not None else sys.argv[1:]
     command = ".".join(raw[:2]) if raw else "guiyi"
-    research_request: ResearchRequest | None = None
     try:
         args = build_parser().parse_args(raw)
         if args.domain == "data":
             build_request(args)
-        elif args.domain == "research":
-            if args.research_command != "subing-strategy-performance":
-                research_request = build_research_request(args)
-    except ProductRetiredError as exc:
-        print_json(
-            exception_error_payload(
-                command=command,
-                exc=exc,
-                readonly=True,
-            ),
-            stderr,
-        )
-        return 1
     except (CliUsageError, ValueError):
         # 参数/用法错误：固定 CLI_ARGUMENT_INVALID，不写 stack trace
         payload = argument_error_payload(command)
@@ -182,47 +136,6 @@ def main(
                 after_market_factory,
                 stderr,
             )
-        elif args.domain == "research":
-            with session_factory() as session:
-                if args.research_command == "subing-strategy-performance":
-                    warm = warm_active_performance_cache(
-                        performance_service_factory(session)
-                    )
-                    payload = {
-                        "schema_version": 2,
-                        "command": "research.subing-strategy-performance",
-                        "status": warm.status,
-                        "scope": "active",
-                        "authoritative_writes": warm.authoritative_writes,
-                        "batch_identity_sha256": warm.batch_identity_sha256,
-                        "batch_created_at": (
-                            warm.batch_created_at.isoformat()
-                            if warm.batch_created_at is not None
-                            else None
-                        ),
-                        "planned_count": len(warm.completed_products)
-                        + len(warm.failed_products),
-                        "completed_count": len(warm.completed_products),
-                        "cache_hit_count": warm.cache_hit_count,
-                        "cache_published_count": warm.cache_published_count,
-                        "completed_products": list(warm.completed_products),
-                        "failed_products": [
-                            {"symbol": symbol, "code": code}
-                            for symbol, code in warm.failed_products
-                        ],
-                    }
-                    service = None
-                elif args.research_command == "subing-lifecycle":
-                    service = lifecycle_research_service_factory(session)
-                elif args.research_command == "subing-calibration":
-                    service = research_service_factory(session)
-                elif args.research_command == "subing-watch":
-                    service = watch_research_service_factory(session)
-                else:
-                    raise ValueError("CLI_RESEARCH_COMMAND_INVALID")
-                if args.research_command != "subing-strategy-performance":
-                    assert research_request is not None
-                    payload = run_research_command(research_request, service)
         elif args.runtime_command == "status":
             # runtime status：只读聚合健康，与 HTTP /api/runtime/health 同源
             with session_factory() as session:

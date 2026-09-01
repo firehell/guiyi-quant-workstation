@@ -447,8 +447,8 @@ def test_audit_rejects_retired_symbol_before_manager_call() -> None:
 
     code, payload = _run(["data", "audit", "--symbol", "ic"], manager)
 
-    assert code == 1
-    assert payload["error"]["code"] == "PRODUCT_RETIRED"
+    assert code == 2
+    assert payload["error"]["code"] == "CLI_ARGUMENT_INVALID"
     assert manager.calls == []
 
 
@@ -480,8 +480,8 @@ def test_update_rejects_retired_symbol() -> None:
         FakeManager(),
     )
 
-    assert code == 1
-    assert payload["error"]["code"] == "PRODUCT_RETIRED"
+    assert code == 2
+    assert payload["error"]["code"] == "CLI_ARGUMENT_INVALID"
 
 
 def test_cli_internal_error_does_not_expose_sqlalchemy_documentation_code() -> None:
@@ -512,7 +512,7 @@ def test_root_parser_exposes_only_active_domains() -> None:
     parser = build_parser()
     domain_action = next(action for action in parser._actions if action.dest == "domain")
 
-    assert set(domain_action.choices) == {"data", "research", "runtime"}
+    assert set(domain_action.choices) == {"data", "runtime"}
 
 
 def test_data_cli_omits_retired_member_rank_parser_dispatch_and_factory() -> None:
