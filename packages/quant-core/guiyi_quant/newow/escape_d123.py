@@ -22,6 +22,7 @@ class EscapeState:
     previous_rsv9: float | None
     previous_var4: float | None
     history_count: int = 0
+    ma120_prior_closes: tuple[float, ...] = ()
     prior_var4: float | None = None
     physical_contract: str | None = None
     segment_id: str | None = None
@@ -53,8 +54,29 @@ def _finite_decimal(value: Decimal) -> float | None:
     return numeric if isfinite(numeric) else None
 
 
+def _smoothed_var4(
+    rsv9: float,
+    previous_var4: float | None,
+    profile: NewowTrendProfile,
+) -> float | None:
+    n = profile.var4_smoothing_n
+    m = profile.var4_smoothing_m
+    if n <= 0 or m <= 0 or m > n:
+        return None
+    value = rsv9 if previous_var4 is None else (m * rsv9 + (n - m) * previous_var4) / n
+    return value if isfinite(value) else None
+
+
 def _valid_state(state: EscapeState, profile: NewowTrendProfile) -> bool:
-    windows = (state.closes, state.highs, state.lows, state.ma120_values)
+    windows = (
+        state.closes,
+        state.highs,
+        state.lows,
+        state.ma120_values,
+        state.ma120_prior_closes,
+    )
+    if profile.ma120_period <= 0 or profile.ma120_slope_window <= 0:
+        return False
     if len(state.closes) != len(state.highs) or len(state.closes) != len(state.lows):
         return False
     if not 0 <= state.history_count <= profile.ma120_period:
@@ -63,7 +85,7 @@ def _valid_state(state: EscapeState, profile: NewowTrendProfile) -> bool:
         return False
     if len(state.closes) > profile.ma120_period or len(state.ma120_values) > profile.ma120_slope_window:
         return False
-    if state.ma120_values and state.history_count < profile.ma120_period:
+    if (state.ma120_values or state.ma120_prior_closes) and state.history_count < profile.ma120_period:
         return False
     if not all(isfinite(value) for window in windows for value in window) or not all(
         value is None or isfinite(value) for value in (state.previous_rsv9, state.previous_var4, state.prior_var4)
@@ -77,6 +99,22 @@ def _valid_state(state: EscapeState, profile: NewowTrendProfile) -> bool:
         return False
     if state.previous_rsv9 is None or state.previous_var4 is None:
         return False
+    if state.history_count == profile.ma120_period:
+        if not state.ma120_values:
+            return False
+        if len(state.ma120_prior_closes) != len(state.ma120_values) - 1:
+            return False
+        ma_source = state.ma120_prior_closes + state.closes
+        for index, stored_ma in enumerate(state.ma120_values):
+            close_window = ma_source[index : index + profile.ma120_period]
+            expected_ma = sum(close_window) / profile.ma120_period
+            if len(close_window) != profile.ma120_period or not isclose(
+                stored_ma,
+                expected_ma,
+                rel_tol=1e-12,
+                abs_tol=1e-12,
+            ):
+                return False
     denominator = max(state.highs[-profile.var4_lookback :]) - min(state.lows[-profile.var4_lookback :])
     if denominator < 0.0 or not isfinite(denominator):
         return False
@@ -84,15 +122,13 @@ def _valid_state(state: EscapeState, profile: NewowTrendProfile) -> bool:
         expected_rsv9 = 100.0 * (state.closes[-1] - min(state.lows[-profile.var4_lookback :])) / denominator
         if not isclose(state.previous_rsv9, expected_rsv9, rel_tol=1e-12, abs_tol=1e-12):
             return False
-    if state.history_count == 1:
-        return state.prior_var4 is None and isclose(state.previous_var4, state.previous_rsv9, rel_tol=1e-12, abs_tol=1e-12)
-    if state.prior_var4 is None:
+    if state.history_count == 1 and state.prior_var4 is not None:
         return False
-    return isclose(
-        state.previous_var4,
-        (state.previous_rsv9 + 2.0 * state.prior_var4) / 3.0,
-        rel_tol=1e-12,
-        abs_tol=1e-12,
+    if state.history_count > 1 and state.prior_var4 is None:
+        return False
+    expected_var4 = _smoothed_var4(state.previous_rsv9, state.prior_var4, profile)
+    return expected_var4 is not None and isclose(
+        state.previous_var4, expected_var4, rel_tol=1e-12, abs_tol=1e-12
     )
 
 
@@ -168,15 +204,23 @@ def step_escape_d123(
         rsv9 = 100.0 * (close - llv) / denominator
     if not isfinite(rsv9):
         return _unavailable()
-    var4 = rsv9 if state.previous_var4 is None else (rsv9 + 2.0 * state.previous_var4) / 3.0
-    if not isfinite(var4):
+    var4 = _smoothed_var4(rsv9, state.previous_var4, profile)
+    if var4 is None:
         return _unavailable()
 
     ma120 = sum(closes) / profile.ma120_period if len(closes) == profile.ma120_period else None
     ma_values = state.ma120_values
+    prior_closes = state.ma120_prior_closes
     if ma120 is not None:
         if not isfinite(ma120):
             return _unavailable()
+        if len(state.closes) == profile.ma120_period:
+            prior_limit = profile.ma120_slope_window - 1
+            prior_closes = (
+                ()
+                if prior_limit == 0
+                else (prior_closes + (state.closes[0],))[-prior_limit:]
+            )
         ma_values = (ma_values + (ma120,))[-profile.ma120_slope_window :]
     slope = _slope(ma_values, ma120) if ma120 is not None else None
     amplitude = None
@@ -189,8 +233,17 @@ def step_escape_d123(
             return _unavailable()
 
     next_state = EscapeState(
-        closes, highs, lows, ma_values, rsv9, var4, min(state.history_count + 1, profile.ma120_period),
-        state.previous_var4, bar.physical_contract, bar.segment_id,
+        closes=closes,
+        highs=highs,
+        lows=lows,
+        ma120_values=ma_values,
+        previous_rsv9=rsv9,
+        previous_var4=var4,
+        history_count=min(state.history_count + 1, profile.ma120_period),
+        ma120_prior_closes=prior_closes,
+        prior_var4=state.previous_var4,
+        physical_contract=bar.physical_contract,
+        segment_id=bar.segment_id,
     )
     if not bar.observation_eligible or ma120 is None or slope is None or amplitude is None or state.previous_var4 is None:
         return EscapeStepResult(next_state, ma120, slope, amplitude, rsv9, var4, ())
@@ -198,12 +251,24 @@ def step_escape_d123(
     cross93 = state.previous_var4 >= 93.0 and var4 < 93.0
     cross90 = state.previous_var4 >= 90.0 and var4 < 90.0
     deviation = (close - ma120) / ma120 if ma120 != 0.0 else None
+    flat_ma120 = abs(slope) < profile.ma120_flat_threshold or isclose(
+        abs(slope),
+        profile.ma120_flat_threshold,
+        rel_tol=1e-12,
+        abs_tol=1e-12,
+    )
+    falling_ma120 = slope < -profile.ma120_flat_threshold and not isclose(
+        slope,
+        -profile.ma120_flat_threshold,
+        rel_tol=1e-12,
+        abs_tol=1e-12,
+    )
     hits: list[NewowMainMarker] = []
     if cross95 and close > ma120 and deviation is not None and deviation >= 0.30:
         hits.append(_marker(bar, NewowMarkerType.ESCAPE_D1, profile, var4=var4, ma120=ma120, slope=slope, amplitude=amplitude))
-    if cross93 and amplitude > 0.10 and abs(slope) <= profile.ma120_flat_threshold:
+    if cross93 and amplitude > 0.10 and flat_ma120:
         hits.append(_marker(bar, NewowMarkerType.ESCAPE_D2, profile, var4=var4, ma120=ma120, slope=slope, amplitude=amplitude))
-    if close < ma120 and slope < -profile.ma120_flat_threshold and cross90:
+    if close < ma120 and falling_ma120 and cross90:
         hits.append(_marker(bar, NewowMarkerType.ESCAPE_D3, profile, var4=var4, ma120=ma120, slope=slope, amplitude=amplitude))
     return EscapeStepResult(next_state, ma120, slope, amplitude, rsv9, var4, tuple(hits))
 

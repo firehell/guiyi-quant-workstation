@@ -98,6 +98,10 @@ class NewowDailyBar:
             raise ValueError("NEWOW_BAR_NAIVE_TIMESTAMP")
         if not all(isinstance(value, Decimal) for value in self._prices):
             raise ValueError("NEWOW_BAR_PRICE_MUST_BE_DECIMAL")
+        if not all(value.is_finite() for value in self._prices):
+            raise ValueError("NEWOW_BAR_INVALID_OHLC")
+        if any(value <= 0 for value in self._prices):
+            raise ValueError("NEWOW_BAR_NONPOSITIVE_PRICE")
         if self.low > self.high or not self.low <= self.open <= self.high or not self.low <= self.close <= self.high:
             raise ValueError("NEWOW_BAR_INVALID_OHLC")
         if self.volume < 0 or (self.open_interest is not None and self.open_interest < 0):

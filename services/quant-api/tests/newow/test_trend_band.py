@@ -110,6 +110,27 @@ def test_formula_warmup_weights_and_equality_state_are_exact() -> None:
     assert equal_point.state is TrendBandState.YELLOW
 
 
+def test_typical_price_uses_frozen_profile_close_weight() -> None:
+    """A profile close-weight change must flow through the one formula authority."""
+
+    profile = replace(NEWOW_TREND_D1_V1, typical_price_close_weight=1.0)
+    bars = tuple(make_bar(index, 100 + index) for index in range(20))
+    point = calculate_trend_band(bars, profile=profile)[-1]
+    typicals = [
+        (
+            float(bar.close)
+            + float(bar.open)
+            + float(bar.high)
+            + float(bar.low)
+        )
+        / 4.0
+        for bar in bars
+    ]
+    expected = sum((index + 1) * value for index, value in enumerate(typicals)) / 210.0
+
+    assert point.b_value == pytest.approx(expected)
+
+
 def test_transitions_emit_one_build_and_one_clear_with_reference_change_copy() -> None:
     results = run_steps(fixture_bars())
     markers = tuple(result.marker for result in results if result.marker is not None)
@@ -266,6 +287,61 @@ def test_invalid_build_reference_fails_closed_without_clear(invalid_reference: D
 def test_nonfinite_prior_state_fails_closed_without_transition_or_marker(invalid: float) -> None:
     state = replace(initial_trend_band_state(), weighted_window=(invalid,) * 20)
     result = step_trend_band(state, make_bar(0, 100))
+
+    assert result.point.state is TrendBandState.UNAVAILABLE
+    assert result.point.transition is None
+    assert result.marker is None
+    assert result.state == initial_trend_band_state()
+
+
+def test_restored_trend_history_requires_complete_physical_identity() -> None:
+    """Identity-free restored windows must not calculate or emit a transition."""
+
+    valid = run_steps(fixture_bars()[:60])[-1].state
+    malformed = replace(valid, physical_contract=None, segment_id=None)
+
+    result = step_trend_band(malformed, make_bar(60, 200))
+
+    assert result.point.state is TrendBandState.UNAVAILABLE
+    assert result.point.transition is None
+    assert result.marker is None
+    assert result.state == initial_trend_band_state()
+
+
+@pytest.mark.parametrize(
+    "malformed",
+    [
+        TrendBandStateValue(
+            weighted_window=(100.0,),
+            signal_window=(100.0,),
+            previous_state=None,
+            physical_contract="RB2701",
+            segment_id="rb:RB2701:2026-01-01",
+        ),
+        TrendBandStateValue(
+            weighted_window=(100.0,) * 20,
+            signal_window=(100.0,),
+            previous_state=TrendBandState.YELLOW,
+            physical_contract="RB2701",
+            segment_id="rb:RB2701:2026-01-01",
+        ),
+        TrendBandStateValue(
+            weighted_window=(100.0,) * 20,
+            signal_window=(100.0,) * 5,
+            previous_state=TrendBandState.YELLOW,
+            last_build_close=Decimal("100"),
+            last_build_marker_id=None,
+            physical_contract="RB2701",
+            segment_id="rb:RB2701:2026-01-01",
+        ),
+    ],
+)
+def test_structurally_incoherent_restored_trend_state_fails_closed(
+    malformed: TrendBandStateValue,
+) -> None:
+    """Impossible warm-up stages or half-built marker facts cannot be resumed."""
+
+    result = step_trend_band(malformed, make_bar(60, 100))
 
     assert result.point.state is TrendBandState.UNAVAILABLE
     assert result.point.transition is None

@@ -50,21 +50,55 @@ def run_steps(bars: tuple[NewowDailyBar, ...]):
 
 
 def state_for(
-    *, previous_var4: float, ma120: tuple[float, ...] = (100.0,) * 10,
+    *, previous_var4: float,
+    closes: tuple[float, ...] = (100.0,) * 119 + (120.0,),
+    prior_closes: tuple[float, ...] = (100.0,) * 9,
     highs: tuple[float, ...] = (120.0,) * 120, lows: tuple[float, ...] = (100.0,) * 120,
 ) -> EscapeState:
+    ma_source = prior_closes + closes
+    ma120 = tuple(
+        sum(ma_source[index : index + 120]) / 120.0
+        for index in range(10)
+    )
+    denominator = max(highs[-9:]) - min(lows[-9:])
+    previous_rsv9 = (
+        100.0
+        if denominator == 0.0
+        else 100.0 * (closes[-1] - min(lows[-9:])) / denominator
+    )
     return EscapeState(
-        closes=(100.0,) * 119 + (120.0,),
+        closes=closes,
         highs=highs,
         lows=lows,
         ma120_values=ma120,
-        previous_rsv9=100.0,
+        previous_rsv9=previous_rsv9,
         previous_var4=previous_var4,
         history_count=120,
-        prior_var4=(3.0 * previous_var4 - 100.0) / 2.0,
+        ma120_prior_closes=prior_closes,
+        prior_var4=(3.0 * previous_var4 - previous_rsv9) / 2.0,
         physical_contract="RB2701",
         segment_id="rb:RB2701:2026-01-01",
     )
+
+
+def linear_state_and_bar(
+    *, previous_var4: float, normalized_slope: float, base: float, spread: float
+) -> tuple[EscapeState, NewowDailyBar]:
+    daily_change = normalized_slope * base / (1.0 - 69.5 * normalized_slope)
+    history = tuple(base + daily_change * index for index in range(130))
+    prior_closes = history[:9]
+    closes = history[9:129]
+    highs = tuple(value + spread for value in closes)
+    lows = tuple(value - spread for value in closes)
+    state = state_for(
+        previous_var4=previous_var4,
+        closes=closes,
+        prior_closes=prior_closes,
+        highs=highs,
+        lows=lows,
+    )
+    next_close = history[129]
+    return state, make_bar(120, next_close, high=next_close + spread, low=next_close - spread)
 
 
 def marker(result, marker_type: NewowMarkerType):
@@ -101,6 +135,20 @@ def test_var4_uses_exact_sma_cn_recursion() -> None:
     assert results[2].var4 == pytest.approx((0.0 + 2.0 * results[1].var4) / 3.0)
 
 
+def test_var4_uses_frozen_profile_smoothing_parameters() -> None:
+    """VAR4 must read N/M from the profile instead of a parallel literal."""
+
+    profile = replace(NEWOW_TREND_D1_V1, var4_smoothing_n=4, var4_smoothing_m=2)
+    first = step_escape_d123(
+        initial_escape_state(), make_bar(0, 100, high=100, low=100), profile=profile
+    )
+    second = step_escape_d123(first.state, make_bar(1, 110, high=110, low=100), profile=profile)
+
+    assert first.var4 == 50.0
+    assert second.rsv9 == 100.0
+    assert second.var4 == 75.0
+
+
 def test_d1_requires_cross_below_95_and_30_percent_above_ma120() -> None:
     result = step_escape_d123(state_for(previous_var4=96.0), make_bar(120, 131, high=140, low=100))
     item = marker(result, NewowMarkerType.ESCAPE_D1)
@@ -124,10 +172,13 @@ def test_d2_requires_amplitude_and_flat_ma120() -> None:
 
 
 def test_d3_requires_below_falling_ma120_and_cross_below_90() -> None:
-    result = step_escape_d123(
-        state_for(previous_var4=91.0, ma120=tuple(110.0 - value for value in range(10))),
-        make_bar(120, 80, high=100, low=80),
+    state, bar = linear_state_and_bar(
+        previous_var4=91.0,
+        normalized_slope=-0.001,
+        base=200.0,
+        spread=1.0,
     )
+    result = step_escape_d123(state, bar)
     item = marker(result, NewowMarkerType.ESCAPE_D3)
     assert item.label == "★S跑"
     assert item.trigger_facts["close_below_ma120"] is True
@@ -144,16 +195,20 @@ def test_strict_negative_thresholds_and_no_duplicate_cross() -> None:
     d2_amplitude = step_escape_d123(
         state_for(previous_var4=94.0, highs=(100.0,) * 120), make_bar(120, 105, high=110, low=100)
     )
-    d2_last_ma = (11800.0 + 120.0 + 105.0) / 120.0
-    d2_slope = step_escape_d123(
-        state_for(previous_var4=94.0, ma120=ma_history_ending_at(d2_last_ma, d2_last_ma * 0.0005001)),
-        make_bar(120, 105, high=120, low=100),
+    d2_state, d2_bar = linear_state_and_bar(
+        previous_var4=94.0,
+        normalized_slope=0.0005001,
+        base=100.0,
+        spread=20.0,
     )
-    d3_last_ma = (11800.0 + 120.0 + 80.0) / 120.0
-    d3_slope = step_escape_d123(
-        state_for(previous_var4=91.0, ma120=ma_history_ending_at(d3_last_ma, -d3_last_ma * 0.0005)),
-        make_bar(120, 80, high=100, low=80),
+    d2_slope = step_escape_d123(d2_state, d2_bar)
+    d3_state, d3_bar = linear_state_and_bar(
+        previous_var4=91.0,
+        normalized_slope=-0.0005,
+        base=200.0,
+        spread=1.0,
     )
+    d3_slope = step_escape_d123(d3_state, d3_bar)
     already_below = step_escape_d123(state_for(previous_var4=92.0), make_bar(120, 105, high=120, low=100))
     assert NewowMarkerType.ESCAPE_D1 not in marker_types(d1_boundary)
     assert d1_boundary.ma120 is not None
@@ -168,11 +223,6 @@ def test_strict_negative_thresholds_and_no_duplicate_cross() -> None:
 
 def marker_types(result) -> tuple[NewowMarkerType, ...]:
     return tuple(item.marker_type for item in result.markers)
-
-
-def ma_history_ending_at(last: float, slope: float) -> tuple[float, ...]:
-    """Nine prior values that become the specified OLS slope after ``last``."""
-    return tuple(last - slope * (9 - index) for index in range(9))
 
 
 def test_same_bar_retains_hits_with_d1_d2_d3_priority_metadata() -> None:
@@ -195,6 +245,7 @@ def test_warmup_eligibility_reset_and_bounded_state() -> None:
     bounded = run_steps(tuple(make_bar(index, 100 + index % 5) for index in range(180)))[-1].state
     assert len(bounded.closes) == len(bounded.highs) == len(bounded.lows) == 120
     assert len(bounded.ma120_values) == 10
+    assert len(bounded.ma120_prior_closes) == 9
 
 
 @pytest.mark.parametrize("invalid", [float("nan"), float("inf"), -float("inf")])
@@ -215,6 +266,20 @@ def test_malformed_restored_derived_state_fails_closed() -> None:
     assert marker_types(step_escape_d123(stale_ma, bar)) == ()
     assert marker_types(step_escape_d123(mismatched_rsv, bar)) == ()
     assert marker_types(step_escape_d123(mismatched_var4, bar)) == ()
+
+
+def test_finite_incorrect_stored_ma120_history_cannot_fabricate_d3() -> None:
+    """A finite but non-recomputable MA sequence must fail closed before D3."""
+
+    malformed = replace(
+        state_for(previous_var4=91.0),
+        ma120_values=tuple(110.0 - value for value in range(10)),
+    )
+    result = step_escape_d123(malformed, make_bar(120, 80, high=100, low=80))
+
+    assert result.ma120 is None
+    assert result.ma120_slope10 is None
+    assert marker_types(result) == ()
 
 
 @pytest.mark.parametrize(

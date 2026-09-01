@@ -221,6 +221,19 @@ def test_newow_daily_bar_rejects_invalid_ohlc_envelope() -> None:
         )
 
 
+@pytest.mark.parametrize("price", [Decimal("0"), Decimal("-1")])
+def test_newow_daily_bar_rejects_nonpositive_ohlc_prices(price: Decimal) -> None:
+    """Zero or negative market prices must fail closed before any formula runs."""
+
+    with pytest.raises(ValueError, match="NEWOW_BAR_NONPOSITIVE_PRICE"):
+        NewowDailyBar(
+            **(
+                valid_bar_kwargs()
+                | {"open": price, "high": price, "low": price, "close": price}
+            )
+        )  # type: ignore[arg-type]
+
+
 def test_enum_values_are_stable() -> None:
     """Payload consumers rely on the documented enum values."""
 
