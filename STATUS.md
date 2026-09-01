@@ -1,6 +1,6 @@
 # 当前状态
 
-更新时间：2026-08-31
+更新时间：2026-09-01
 
 本文件只记录当前 release、production Runtime、Scope、自然 evidence 与尚未完成的 Gate。稳定产品面见 `PROJECT_SOURCE.md`，长期决策见 `DECISIONS.md`，active 依赖见 `docs/ARCHITECTURE.md`。
 
@@ -9,7 +9,7 @@
 | 项目 | 当前事实 |
 |---|---|
 | Release | `v1.9.7@b3efda13347570d25ddb25b41c0737b6751fb37f` 是唯一 GitHub Release；`main`、annotated tag 与 GitHub Release 均精确指向该 commit，API 与 Web release identity 均为 `1.9.7`。历史 Git tag 保留作可复算引用，但旧 GitHub Release 已删除。 |
-| Runtime | 2026-08-31 晚间曾将五项 launchd 服务切换到 clean、detached 的 `/Volumes/扩展盘/guiyi-quant-runtime-v1.9.7-r2@b3efda13`；公开 health 读回 `live_unavailable / last_bar_at=null`，未取得首根 completed Live bar，已按 fail-closed 规则回滚一次。当前五项服务重新绑定 clean、detached 的 `/Volumes/扩展盘/guiyi-quant-runtime-v1.9.6@8c149463`；未回填 Event、未发送通知。 |
+| Runtime | 2026-08-31 晚间曾将五项 launchd 服务切换到 clean、detached 的 `/Volumes/扩展盘/guiyi-quant-runtime-v1.9.7-r2@b3efda13`；公开 health 读回 `live_unavailable / last_bar_at=null`，未取得首根 completed Live bar，已按 fail-closed 规则回滚一次。当前五项服务重新绑定 clean、detached 的 `/Volumes/扩展盘/guiyi-quant-runtime-v1.9.7-r3@66c3be80`；`health.api=000`、`health.web=000`、`health.runtime=failed`，未回填 Event、未发送通知。 |
 | Database | production Alembic 为 `20260826_0042 (head)`。当前 Rule 为 `htdy_original_15m` 与 `subing_strategy_v1`。 |
 | Market Runtime Scope | `operational_products.txt` 的 60 个品种。 |
 | Alert Scope | HTDY Scope 为 `jm × 15m`；SuBing `scope_products` 为 operational 60。两种 authority 不合并。两条 Rule 均 enabled，Alert Runtime marker 已 enabled，audience count 2；未发生 Scope、Rule 或 audience 变更。 |
@@ -24,7 +24,7 @@ Alert transport 为 PushPlus；provider accepted 不等于微信送达。
 
 ## Pending Gate
 
-- v1.9.6 已发布但尚未 Runtime promotion；须在独立 Runtime Gate 下准备 clean、detached 的 exact-tag root，验证最小连续状态后切换五项 launchd 服务并回读。当前 v1.9.5 Runtime 是唯一回滚根，必须保留。
+- v1.9.7 已发布但当前 Runtime promotion 仍是独立 Gate；须在独立 Runtime Gate 下准备 clean、detached 的 exact-tag root，验证最小连续状态后切换五项 launchd 服务并回读。当前 clean、detached root 以 `/Volumes/扩展盘/guiyi-quant-runtime-v1.9.7-r3@66c3be80` 为准；历史 r2 fail-closed 回滚保留。
 - HTDY 的真实 PushPlus/微信送达，以及 D1/W1 `canonical_updated` 的自然 Event identity/evidence，仍须分别核验；不以测试、synthetic event、replay 或手工发送补证。
 - v1.9.7 Runtime promotion 已因 fresh Live `last_bar_at=null` fail-closed 回滚；本轮不再尝试切换。下一次 promotion 须由新的明确授权开始，并先取得切换后的 completed Live bar、ready heartbeat 与连续状态读回。
 - SuBing v1.9.7 自然 Live continuation seam 与严格盘后完成制 evidence pending；不以测试、startup replay、手工触发或回填替代。
