@@ -324,7 +324,7 @@ class BridgeRedis:
         self.values: dict[str, str] = {}
         self.published: list[tuple[str, str]] = []
 
-    def set(self, key: str, value: str) -> bool:
+    def set(self, key: str, value: str, *, ex: int | None = None) -> bool:
         self.values[key] = value
         return True
 

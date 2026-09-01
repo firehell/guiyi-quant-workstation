@@ -27,7 +27,8 @@ class FakeRedis:
         self.published: list[tuple[str, str]] = []
         self.fail_zadd = 0
         self.fail_heartbeat_set = 0
-        self.fail_live_bar_publish = 0
+        self.fail_live_bar_publish_at: int | None = None
+        self.live_bar_publish_attempts = 0
 
     def zadd(self, key: str, mapping: dict[str, int]) -> int:
         if self.fail_zadd:
@@ -83,9 +84,10 @@ class FakeRedis:
         return deleted
 
     def publish(self, channel: str, message: str) -> int:
-        if channel.startswith("live:bar:") and self.fail_live_bar_publish:
-            self.fail_live_bar_publish -= 1
-            raise ConnectionError("fake redis unavailable")
+        if channel.startswith("live:bar:"):
+            self.live_bar_publish_attempts += 1
+            if self.fail_live_bar_publish_at == self.live_bar_publish_attempts:
+                raise ConnectionError("fake redis unavailable")
         self.published.append((channel, message))
         return 1
 
@@ -751,7 +753,32 @@ def test_batch_persistence_failure_blocks_every_due_bar_until_a_later_retry() ->
     assert json.loads(fake.values["live:heartbeat"])["available"] is False
 
 
-def test_batch_publish_failure_stops_later_due_bar_publication() -> None:
+def test_poll_does_not_retry_failed_due_bar_within_the_same_cycle() -> None:
+    """Catches poll's second flush making a transient Redis failure visible to Alert."""
+    module = importlib.import_module("app.market_data.live_market")
+    day = date(2025, 1, 2)
+    window = SessionWindow(
+        datetime(2025, 1, 2, 1, tzinfo=UTC), datetime(2025, 1, 2, 2, tzinfo=UTC)
+    )
+    fake = FakeRedis()
+    service = _live_service(
+        client=FakeLiveClient(),
+        dominants=FakeDominants({("j", day): "J2505"}),
+        phases=FakePhases({"j": _phase("j", day, window)}),
+        store=module.RedisLiveStore(fake),
+        products=("j",),
+    )
+    bar = _bar(1)
+    service.reconcile(bar.bar_end)
+    assert service.ingest("J2505", bar, now=bar.bar_end + timedelta(seconds=1)) is None
+    fake.fail_zadd = 1
+
+    assert service.poll(bar.bar_end + timedelta(seconds=2)) == "LIVE_REDIS_UNAVAILABLE"
+    assert [event for event in fake.published if event[0].startswith("live:bar:")] == []
+    assert len(service._pending) == 1
+
+
+def test_mid_batch_publish_failure_stops_later_due_bar_publication() -> None:
     """Catches a failed PubSub write being masked by a later Bar in the same flush."""
     module = importlib.import_module("app.market_data.live_market")
     day = date(2025, 1, 2)
@@ -766,14 +793,17 @@ def test_batch_publish_failure_stops_later_due_bar_publication() -> None:
         store=module.RedisLiveStore(fake),
         products=("j",),
     )
-    first, second = _bar(1), _bar(2)
+    first, second, third = _bar(1), _bar(2), _bar(3)
     service.reconcile(first.bar_end)
     assert service.ingest("J2505", first, now=first.bar_end + timedelta(seconds=1)) is None
     assert service.ingest("J2505", second, now=second.bar_end + timedelta(seconds=1)) is None
-    fake.fail_live_bar_publish = 1
+    assert service.ingest("J2505", third, now=third.bar_end + timedelta(seconds=1)) is None
+    fake.fail_live_bar_publish_at = 2
 
-    assert service.flush_due(second.bar_end + timedelta(seconds=2)) == ()
-    assert [event for event in fake.published if event[0].startswith("live:bar:")] == []
+    assert service.flush_due(third.bar_end + timedelta(seconds=2)) == (first,)
+    assert [event for event in fake.published if event[0].startswith("live:bar:")] == [
+        ("live:bar:j:1m", json.dumps(_bar_payload(first), separators=(",", ":")))
+    ]
     assert len(service._pending) == 2
     assert json.loads(fake.values["live:heartbeat"])["available"] is False
 
