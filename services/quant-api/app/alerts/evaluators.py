@@ -15,14 +15,10 @@ from guiyi_quant.indicators import (
     get_indicator,
     require_formal_policy,
 )
-from guiyi_quant.indicators.htdy_original import (
-    CONFIGURED_REPAINT_SCAN_ZONE_BARS,
-    HtdyOriginalResult,
-)
+from guiyi_quant.indicators.htdy_original import HtdyOriginalResult
 
 
 CURRENT_BAR_CONTEXT_BARS = 32
-HTDY_FIRST_SEEN_CONTEXT_BARS = 64
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,22 +65,8 @@ class HtdyOriginalEvaluator:
     ) -> tuple[HtdyFirstSeenObservation, ...]:
         self._validate_policy()
         self._validate_window(window, minimum=CURRENT_BAR_CONTEXT_BARS)
-        if len(window.bars) < HTDY_FIRST_SEEN_CONTEXT_BARS:
-            current = self._compute(window.bars[-CURRENT_BAR_CONTEXT_BARS:])
-            observations = _observation_types(current, -1)
-            return self._latest_candidate(window, observations)
-
-        bars = window.bars[-HTDY_FIRST_SEEN_CONTEXT_BARS:]
-        contracts = window.bar_contracts[-HTDY_FIRST_SEEN_CONTEXT_BARS:]
-        previous = self._compute(bars[:-1])
-        current = self._compute(bars)
-        return self._prefix_diff_candidates(
-            bars=bars,
-            contracts=contracts,
-            previous=previous,
-            current=current,
-            scan_bars=CONFIGURED_REPAINT_SCAN_ZONE_BARS,
-        )
+        current = self._compute(window.bars[-CURRENT_BAR_CONTEXT_BARS:])
+        return self._latest_candidate(window, _observation_types(current, -1))
 
     def _validate_policy(self) -> None:
         definition = get_indicator(self.indicator_code)
@@ -138,48 +120,6 @@ class HtdyOriginalEvaluator:
                 observation_types=observations,
             ),
         )
-
-    @staticmethod
-    def _prefix_diff_candidates(
-        *,
-        bars: tuple[CanonicalBar, ...],
-        contracts: tuple[str, ...],
-        previous: HtdyOriginalResult,
-        current: HtdyOriginalResult,
-        scan_bars: int,
-    ) -> tuple[HtdyFirstSeenObservation, ...]:
-        if len(bars) != len(contracts):
-            raise AlertEvaluationError("ALERT_EVALUATION_INPUT_INVALID")
-        candidates: list[HtdyFirstSeenObservation] = []
-        previous_length = len(bars) - 1
-        for index in range(max(0, previous_length - scan_bars), previous_length):
-            previous_types = _observation_types(previous, index)
-            current_types = _observation_types(current, index)
-            if previous_types or not current_types:
-                continue
-            bar = bars[index]
-            candidates.append(
-                HtdyFirstSeenObservation(
-                    bar_end=bar.bar_end,
-                    trading_day=bar.trading_day,
-                    contract=contracts[index],
-                    observation_types=current_types,
-                )
-            )
-
-        latest_types = _observation_types(current, -1)
-        if latest_types:
-            latest = bars[-1]
-            candidates.append(
-                HtdyFirstSeenObservation(
-                    bar_end=latest.bar_end,
-                    trading_day=latest.trading_day,
-                    contract=contracts[-1],
-                    observation_types=latest_types,
-                )
-            )
-        return tuple(sorted(candidates, key=lambda candidate: candidate.bar_end))
-
 
 def _observation_types(result: HtdyOriginalResult, index: int) -> tuple[str, ...]:
     observations: list[str] = []
