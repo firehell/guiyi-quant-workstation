@@ -43,6 +43,10 @@ from app.db.base import Base
 from app.market_data.aggregation import SessionWindow
 from app.market_data.domain import BarFrequency, CanonicalBar
 from app.market_data.market_read_service import MarketReadWindow
+from app.market_data.operational_universe import (
+    load_active_products,
+    load_operational_products,
+)
 from app.market_data.product_taxonomy import ProductTaxonomyEntry
 from app.market_data.session_clock import SHANGHAI
 from app.models import Exchange, Instrument, TradingCalendar, TradingSession
@@ -3010,6 +3014,347 @@ def test_strategy_startup_subscribes_before_restore_and_catch_up(
     assert status.status["strategy_state"] == "ready"
     assert _event_rows(session) == []
     assert sender.messages == []
+
+
+def test_startup_drain_skips_live_bar_already_covered_by_final_catch_up(
+    session: Session,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A queued pre-catch-up Bar must not degrade the restored machine as stale."""
+
+    _seed_rule(session, "htdy_original_15m")
+    _seed_rule(session, "subing_strategy_v1", scope=())
+    order: list[str] = []
+
+    class StaleOnCoveredStrategy(_Task9StrategyEvaluator):
+        def process_completed_bar(self, bar, frequency, *, source_identity):
+            self.order.append(f"stale:{frequency.value}")
+            return SubingStrategyRuntimeResult(
+                action_facts=(),
+                product_status=SubingStrategyRuntimeProductStatus(
+                    symbol=source_identity.symbol,
+                    state="unavailable",
+                    cutoff_1m=ORDINARY_END,
+                    cutoff_5m=ORDINARY_END,
+                    cutoff_15m=BOUNDARY_END,
+                    reason_codes=("STALE_INPUT",),
+                ),
+            )
+
+    class CoveredMessageSource(FakeMessageSource):
+        def __init__(self) -> None:
+            super().__init__()
+            self.message = (
+                "live:bar:jm:1m",
+                _payload(bar_end=ORDINARY_END - timedelta(minutes=1)),
+            )
+
+        def get_message(self, *, timeout_seconds: float):
+            assert timeout_seconds in {0.0, 1.0}
+            if timeout_seconds == 1.0:
+                return None
+            message, self.message = self.message, None
+            return message
+
+    source = CoveredMessageSource()
+    status = AtomicRuntimeStatusStore()
+    caplog.set_level("INFO", logger="app.alerts.runtime")
+    runtime = AlertRuntime(
+        session_factory=lambda: nullcontext(session),
+        market_read_factory=lambda _session: FakeRead(_window(bar_end=ORDINARY_END)),
+        strategy_evaluator=StaleOnCoveredStrategy(order),
+        htdy_evaluator=FakeHtdyEvaluator(()),
+        sender=FakeSender(),
+        operational_products=("jm",),
+        taxonomy={"jm": ProductTaxonomyEntry(name="焦煤", sector="coal")},
+        message_source=source,
+        heartbeat_store=FakeHeartbeatStore(),
+        runtime_status_store=status,
+        clock=lambda: BOUNDARY_END + timedelta(seconds=2),
+        stop_requested=lambda: True,
+    )
+
+    runtime.run_forever()
+
+    assert order == ["restore", "catch_up"]
+    assert status.status["strategy_state"] == "ready"
+    assert status.status["strategy_ready_product_count"] == 1
+    assert status.status["strategy_unavailable_product_count"] == 0
+    assert "ALERT_STARTUP_QUEUE_RECONCILED covered=1 processed=0" in caplog.messages
+
+
+def test_startup_drain_keeps_active60_ready_with_distinct_operational_authority(
+    session: Session,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    active_products = load_active_products()
+    operational_products = load_operational_products()
+    assert len(active_products) == 60
+    assert set(active_products).issubset(operational_products)
+    _seed_rule(session, "htdy_original_15m", scope=())
+    _seed_rule(session, "subing_strategy_v1", scope=())
+
+    class Active60Strategy:
+        def __init__(self) -> None:
+            self.products = active_products
+            self.processed: list[str] = []
+
+        def restore_all(self, *, started_at: datetime):
+            return tuple(
+                SubingStrategyRuntimeResult(
+                    action_facts=(),
+                    product_status=SubingStrategyRuntimeProductStatus(
+                        symbol=symbol,
+                        state="warming",
+                        cutoff_1m=None,
+                        cutoff_5m=None,
+                        cutoff_15m=None,
+                        reason_codes=(),
+                    ),
+                )
+                for symbol in active_products
+            )
+
+        def final_catch_up(self, *, ready_at: datetime):
+            return tuple(
+                SubingStrategyRuntimeResult(
+                    action_facts=(),
+                    product_status=SubingStrategyRuntimeProductStatus(
+                        symbol=symbol,
+                        state="ready",
+                        cutoff_1m=ORDINARY_END,
+                        cutoff_5m=ORDINARY_END,
+                        cutoff_15m=BOUNDARY_END,
+                        reason_codes=(),
+                    ),
+                )
+                for symbol in active_products
+            )
+
+        def process_completed_bar(self, bar, frequency, *, source_identity):
+            self.processed.append(source_identity.symbol)
+            raise AssertionError("covered startup Bar reached active60 machine")
+
+        def process_canonical_updated(self, trading_day: date):
+            raise AssertionError("unexpected canonical update")
+
+        def current_state(self, symbol: str):
+            raise AssertionError("covered startup Bar requested machine state")
+
+    class Active60CoveredSource(FakeMessageSource):
+        def drain_startup_messages(self):
+            return tuple(
+                (
+                    f"live:bar:{symbol}:1m",
+                    _payload(bar_end=ORDINARY_END - timedelta(minutes=1)),
+                )
+                for symbol in active_products
+            )
+
+    strategy = Active60Strategy()
+    status = AtomicRuntimeStatusStore()
+    caplog.set_level("INFO", logger="app.alerts.runtime")
+    runtime = AlertRuntime(
+        session_factory=lambda: nullcontext(session),
+        market_read_factory=lambda _session: FakeRead(_window(bar_end=ORDINARY_END)),
+        strategy_evaluator=strategy,
+        htdy_evaluator=FakeHtdyEvaluator(()),
+        sender=FakeSender(),
+        operational_products=operational_products,
+        taxonomy={
+            symbol: ProductTaxonomyEntry(name=symbol, sector="test")
+            for symbol in active_products
+        },
+        message_source=Active60CoveredSource(),
+        heartbeat_store=FakeHeartbeatStore(),
+        runtime_status_store=status,
+        clock=lambda: BOUNDARY_END + timedelta(seconds=2),
+        stop_requested=lambda: True,
+    )
+
+    runtime.run_forever()
+
+    assert strategy.processed == []
+    assert status.status["strategy_state"] == "ready"
+    assert status.status["strategy_product_count"] == 60
+    assert status.status["strategy_ready_product_count"] == 60
+    assert status.status["strategy_unavailable_product_count"] == 0
+    assert "ALERT_STARTUP_QUEUE_RECONCILED covered=60 processed=0" in caplog.messages
+
+
+def test_startup_drain_validates_bar_at_exact_catch_up_watermark(
+    session: Session,
+) -> None:
+    _seed_rule(session, "htdy_original_15m")
+    _seed_rule(session, "subing_strategy_v1", scope=())
+    order: list[str] = []
+
+    class EqualWatermarkSource(FakeMessageSource):
+        def __init__(self) -> None:
+            super().__init__()
+            self.message = (
+                "live:bar:jm:1m",
+                _payload(bar_end=ORDINARY_END),
+            )
+
+        def get_message(self, *, timeout_seconds: float):
+            assert timeout_seconds in {0.0, 1.0}
+            if timeout_seconds == 1.0:
+                return None
+            message, self.message = self.message, None
+            return message
+
+    runtime = AlertRuntime(
+        session_factory=lambda: nullcontext(session),
+        market_read_factory=lambda _session: FakeRead(_window(bar_end=ORDINARY_END)),
+        strategy_evaluator=_Task9StrategyEvaluator(order),
+        htdy_evaluator=FakeHtdyEvaluator(()),
+        sender=FakeSender(),
+        operational_products=("jm",),
+        taxonomy={"jm": ProductTaxonomyEntry(name="焦煤", sector="coal")},
+        message_source=EqualWatermarkSource(),
+        heartbeat_store=FakeHeartbeatStore(),
+        runtime_status_store=AtomicRuntimeStatusStore(),
+        clock=lambda: BOUNDARY_END + timedelta(seconds=2),
+        stop_requested=lambda: True,
+    )
+
+    runtime.run_forever()
+
+    assert order == ["restore", "catch_up", "strategy:1m"]
+    assert _event_rows(session) == []
+
+
+def test_startup_drain_keeps_frozen_catch_up_watermark_after_newer_bar(
+    session: Session,
+) -> None:
+    _seed_rule(session, "htdy_original_15m")
+    _seed_rule(session, "subing_strategy_v1", scope=())
+    order: list[str] = []
+
+    class NewerThenBoundarySource(FakeMessageSource):
+        def drain_startup_messages(self):
+            return (
+                (
+                    "live:bar:jm:1m",
+                    _payload(bar_end=BOUNDARY_END),
+                ),
+                (
+                    "live:bar:jm:1m",
+                    _payload(bar_end=ORDINARY_END),
+                ),
+            )
+
+    sender = FakeSender()
+    runtime = AlertRuntime(
+        session_factory=lambda: nullcontext(session),
+        market_read_factory=lambda _session: FakeRead(_window(bar_end=ORDINARY_END)),
+        strategy_evaluator=_Task9StrategyEvaluator(order),
+        htdy_evaluator=FakeHtdyEvaluator(()),
+        sender=sender,
+        operational_products=("jm",),
+        taxonomy={"jm": ProductTaxonomyEntry(name="焦煤", sector="coal")},
+        message_source=NewerThenBoundarySource(),
+        heartbeat_store=FakeHeartbeatStore(),
+        runtime_status_store=AtomicRuntimeStatusStore(),
+        clock=lambda: BOUNDARY_END + timedelta(seconds=2),
+        stop_requested=lambda: True,
+    )
+
+    runtime.run_forever()
+
+    assert order == ["restore", "catch_up", "strategy:1m", "strategy:1m"]
+    assert _event_rows(session) == []
+    assert sender.messages == []
+
+
+def test_startup_keeps_strategy_warming_until_queue_reconciliation_finishes(
+    session: Session,
+) -> None:
+    _seed_rule(session, "htdy_original_15m")
+    _seed_rule(session, "subing_strategy_v1", scope=())
+    order: list[str] = []
+
+    class RecordingStatusStore(AtomicRuntimeStatusStore):
+        def update(self, changes: dict[str, object]) -> dict[str, object]:
+            result = super().update(changes)
+            order.append(f"status:{result['strategy_state']}")
+            return result
+
+    class RecordingSource(FakeMessageSource):
+        def get_message(self, *, timeout_seconds: float):
+            assert timeout_seconds in {0.0, 1.0}
+            if timeout_seconds == 0.0:
+                order.append("drain")
+            return None
+
+    runtime = AlertRuntime(
+        session_factory=lambda: nullcontext(session),
+        market_read_factory=lambda _session: FakeRead(_window(bar_end=ORDINARY_END)),
+        strategy_evaluator=_Task9StrategyEvaluator(order),
+        htdy_evaluator=FakeHtdyEvaluator(()),
+        sender=FakeSender(),
+        operational_products=("jm",),
+        taxonomy={"jm": ProductTaxonomyEntry(name="焦煤", sector="coal")},
+        message_source=RecordingSource(),
+        heartbeat_store=FakeHeartbeatStore(),
+        runtime_status_store=RecordingStatusStore(),
+        clock=lambda: BOUNDARY_END + timedelta(seconds=2),
+        stop_requested=lambda: True,
+    )
+
+    runtime.run_forever()
+
+    drain_index = order.index("drain")
+    ready_index = order.index("status:ready")
+    assert ready_index > drain_index
+    assert order.count("status:ready") == 1
+
+
+def test_startup_degraded_result_never_sets_strategy_ready_at(
+    session: Session,
+) -> None:
+    _seed_rule(session, "htdy_original_15m")
+    _seed_rule(session, "subing_strategy_v1", scope=())
+
+    class DegradedCatchUp(_Task9StrategyEvaluator):
+        def final_catch_up(self, *, ready_at: datetime):
+            self.order.append("catch_up")
+            return (
+                SubingStrategyRuntimeResult(
+                    action_facts=(),
+                    product_status=SubingStrategyRuntimeProductStatus(
+                        symbol="jm",
+                        state="unavailable",
+                        cutoff_1m=ORDINARY_END,
+                        cutoff_5m=ORDINARY_END,
+                        cutoff_15m=BOUNDARY_END,
+                        reason_codes=("STALE_INPUT",),
+                    ),
+                ),
+            )
+
+    status = AtomicRuntimeStatusStore()
+    runtime = AlertRuntime(
+        session_factory=lambda: nullcontext(session),
+        market_read_factory=lambda _session: FakeRead(_window(bar_end=ORDINARY_END)),
+        strategy_evaluator=DegradedCatchUp([]),
+        htdy_evaluator=FakeHtdyEvaluator(()),
+        sender=FakeSender(),
+        operational_products=("jm",),
+        taxonomy={"jm": ProductTaxonomyEntry(name="焦煤", sector="coal")},
+        message_source=FakeMessageSource(),
+        heartbeat_store=FakeHeartbeatStore(),
+        runtime_status_store=status,
+        clock=lambda: BOUNDARY_END + timedelta(seconds=2),
+        stop_requested=lambda: True,
+    )
+
+    runtime.run_forever()
+
+    assert status.status["strategy_state"] == "degraded"
+    assert status.status["strategy_ready_at"] is None
+    assert status.status["last_strategy_restore_at"] is not None
 
 
 def test_startup_queue_cutoff_recovers_canonical_without_backfill(
