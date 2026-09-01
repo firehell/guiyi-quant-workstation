@@ -27,13 +27,15 @@ def make_bar(
     close: str | int | float,
     *,
     eligible: bool = True,
+    physical_contract: str = "RB2701",
+    segment_id: str = "rb:RB2701:2026-01-01",
 ) -> NewowDailyBar:
     close_decimal = Decimal(str(close))
     trading_day = date(2026, 1, 1) + timedelta(days=index)
     return NewowDailyBar(
         product="rb",
-        physical_contract="RB2701",
-        segment_id="rb:RB2701:2026-01-01",
+        physical_contract=physical_contract,
+        segment_id=segment_id,
         trading_day=trading_day,
         bar_end=datetime.combine(trading_day, datetime.min.time(), tzinfo=UTC),
         open=close_decimal - Decimal("1"),
@@ -125,6 +127,7 @@ def test_transitions_emit_one_build_and_one_clear_with_reference_change_copy() -
     assert clear_after_build.trigger_facts["reference_change_pct"] == pytest.approx(
         (float(clear_after_build.price) / float(markers[0].price) - 1.0) * 100.0
     )
+    assert clear_after_build.related_marker_ids == (markers[0].marker_id,)
 
 
 def test_transition_marker_id_is_deterministic_and_hold_empty_do_not_duplicate() -> None:
@@ -168,6 +171,95 @@ def test_prefix_and_step_serialized_state_parity() -> None:
         resumed.append(result)
         restored = result.state
     assert tuple(resumed) == continuous[-10:]
+
+
+def test_future_tail_mutation_cannot_change_existing_prefix_outputs() -> None:
+    bars = fixture_bars()
+    prefix_length = 70
+    mutated_tail = tuple(
+        make_bar(index, bar.close + Decimal("1000"))
+        for index, bar in enumerate(bars[prefix_length:], start=prefix_length)
+    )
+
+    assert calculate_trend_band(bars[:prefix_length]) == calculate_trend_band(
+        bars[:prefix_length] + mutated_tail
+    )[:prefix_length]
+
+
+@pytest.mark.parametrize(
+    ("physical_contract", "segment_id"),
+    [
+        ("RB2705", "rb:RB2705:2026-03-01"),
+        ("RB2701", "rb:RB2701:2026-03-01"),
+    ],
+)
+def test_rollover_resets_bound_state_without_cross_segment_transition_or_marker(
+    physical_contract: str, segment_id: str
+) -> None:
+    warmed = run_steps(fixture_bars()[:60])
+    prior_state = warmed[-1].state
+    rollover = make_bar(
+        60,
+        200,
+        physical_contract=physical_contract,
+        segment_id=segment_id,
+    )
+
+    result = step_trend_band(prior_state, rollover)
+
+    assert result.point.state is TrendBandState.UNAVAILABLE
+    assert result.point.b_value is None
+    assert result.point.c_value is None
+    assert result.point.transition is None
+    assert result.marker is None
+    assert result.state.physical_contract == physical_contract
+    assert result.state.segment_id == segment_id
+    assert result.state.weighted_window == (manual_typical(rollover),)
+    assert result.state.signal_window == ()
+    assert result.state.previous_state is None
+    assert result.state.last_build_close is None
+    assert result.state.last_build_marker_id is None
+
+
+def test_suppressed_build_cannot_later_produce_formal_clear() -> None:
+    baseline = run_steps(fixture_bars())
+    build_index = next(
+        index for index, result in enumerate(baseline) if result.point.transition is TrendTransition.BUILD
+    )
+    clear_index = next(
+        index
+        for index, result in enumerate(baseline)
+        if result.point.transition is TrendTransition.CLEAR
+    )
+    bars = fixture_bars(eligibility_start=clear_index)
+    results = run_steps(bars)
+
+    assert results[build_index].point.state is TrendBandState.YELLOW
+    assert results[build_index].marker is None
+    assert results[clear_index].point.state is TrendBandState.BLUE
+    assert results[clear_index].point.transition is None
+    assert results[clear_index].marker is None
+    assert all(result.marker is None for result in results[: clear_index + 1])
+
+
+@pytest.mark.parametrize("invalid_reference", [Decimal("0"), Decimal("NaN"), Decimal("Infinity")])
+def test_invalid_build_reference_fails_closed_without_clear(invalid_reference: Decimal) -> None:
+    state = TrendBandStateValue(
+        weighted_window=(200.0,) * 20,
+        signal_window=(200.0,) * 4,
+        previous_state=TrendBandState.YELLOW,
+        last_build_close=invalid_reference,
+        last_build_marker_id="build-marker",
+        physical_contract="RB2701",
+        segment_id="rb:RB2701:2026-01-01",
+    )
+
+    result = step_trend_band(state, make_bar(0, 100))
+
+    assert result.point.state is TrendBandState.UNAVAILABLE
+    assert result.point.transition is None
+    assert result.marker is None
+    assert result.state == initial_trend_band_state()
 
 
 @pytest.mark.parametrize("invalid", [float("nan"), float("inf"), -float("inf")])
