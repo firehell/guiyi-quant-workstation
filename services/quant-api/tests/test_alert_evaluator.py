@@ -16,7 +16,6 @@ from app.alerts.evaluators import AlertEvaluationError
 from app.market_data.domain import CanonicalBar
 from app.market_data.market_read_service import MarketReadWindow
 from guiyi_quant.indicators import compute_htdy_original
-from guiyi_quant.indicators.htdy_original import CONFIGURED_REPAINT_SCAN_ZONE_BARS
 
 
 def _bar(index: int) -> CanonicalBar:
@@ -251,7 +250,7 @@ def test_first_seen_returns_latest_bar_observation(
     )
 
 
-def test_first_seen_uses_old_observation_bar_identity_after_repaint(
+def test_first_seen_ignores_old_observation_bar_after_repaint(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     old_index = 50
@@ -266,96 +265,39 @@ def test_first_seen_uses_old_observation_bar_identity_after_repaint(
         length = len(datetimes)
         return (
             _observation_result(length)
-            if length == 63
+            if length in (32, 63)
             else _observation_result(length, sells=(old_index,))
         )
 
     monkeypatch.setattr(evaluator_module, "compute_htdy_original", compute)
 
-    assert evaluator_module.HtdyOriginalEvaluator().evaluate_first_seen(window) == (
-        evaluator_module.HtdyFirstSeenObservation(
-            bar_end=window.bars[old_index].bar_end,
-            trading_day=previous_day,
-            contract="J2501",
-            observation_types=("sell",),
-        ),
-    )
+    assert evaluator_module.HtdyOriginalEvaluator().evaluate_first_seen(window) == ()
 
 
-@pytest.mark.parametrize(
-    ("previous_types", "current_types", "expected"),
-    (
-        (("sell",), (), ()),
-        (("buy",), ("sell",), ()),
-        (("sell",), ("buy",), ()),
-        (("buy",), ("buy", "sell"), ()),
-        ((), ("buy", "sell"), ("buy", "sell")),
-    ),
-)
-def test_first_seen_emits_only_empty_to_observation_transition(
-    monkeypatch: pytest.MonkeyPatch,
-    previous_types: tuple[str, ...],
-    current_types: tuple[str, ...],
-    expected: tuple[str, ...],
-) -> None:
-    candidate_index = 50
-    window = _window(64)
-
-    def result(length: int, observation_types: tuple[str, ...]) -> SimpleNamespace:
-        return _observation_result(
-            length,
-            buys=(candidate_index,) if "buy" in observation_types else (),
-            sells=(candidate_index,) if "sell" in observation_types else (),
-        )
-
-    monkeypatch.setattr(
-        evaluator_module,
-        "compute_htdy_original",
-        lambda datetimes, *_args: result(
-            len(datetimes),
-            previous_types if len(datetimes) == 63 else current_types,
-        ),
-    )
-
-    candidates = evaluator_module.HtdyOriginalEvaluator().evaluate_first_seen(window)
-
-    if expected:
-        assert len(candidates) == 1
-        assert candidates[0].bar_end == window.bars[candidate_index].bar_end
-        assert candidates[0].observation_types == expected
-    else:
-        assert candidates == ()
-
-
-def test_first_seen_scans_exact_last_27_previous_bars_and_sorts_candidates(
+def test_first_seen_uses_only_latest_bar_when_old_candidate_appears(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     window = _window(64)
-    first_scanned = 63 - CONFIGURED_REPAINT_SCAN_ZONE_BARS
 
     def compute(datetimes, *_args):
         length = len(datetimes)
+        if length == 32:
+            return _observation_result(length, buys=(31,), sells=(31,))
         if length == 63:
             return _observation_result(length)
-        return _observation_result(
-            length,
-            buys=(first_scanned - 1, 62, 63),
-            sells=(first_scanned, 63),
-        )
+        return _observation_result(length, buys=(50, 63), sells=(63,))
 
     monkeypatch.setattr(evaluator_module, "compute_htdy_original", compute)
 
     candidates = evaluator_module.HtdyOriginalEvaluator().evaluate_first_seen(window)
 
-    assert tuple(candidate.bar_end for candidate in candidates) == (
-        window.bars[first_scanned].bar_end,
-        window.bars[62].bar_end,
-        window.bars[63].bar_end,
-    )
-    assert tuple(candidate.observation_types for candidate in candidates) == (
-        ("sell",),
-        ("buy",),
-        ("buy", "sell"),
+    assert candidates == (
+        evaluator_module.HtdyFirstSeenObservation(
+            bar_end=window.bars[-1].bar_end,
+            trading_day=window.bars[-1].trading_day,
+            contract=window.bar_contracts[-1],
+            observation_types=("buy", "sell"),
+        ),
     )
 
 
@@ -385,7 +327,7 @@ def test_first_seen_rejects_misaligned_bar_contract_ownership() -> None:
         evaluator_module.HtdyOriginalEvaluator().evaluate_first_seen(window)
 
 
-def test_64_bar_first_seen_matches_full_history_prefix_diff() -> None:
+def test_first_seen_matches_latest_32_bar_observation() -> None:
     bars: list[CanonicalBar] = []
     start = datetime(2025, 1, 2, 0, 15, tzinfo=UTC)
     for index in range(150):
@@ -425,31 +367,13 @@ def test_64_bar_first_seen_matches_full_history_prefix_diff() -> None:
             [float(bar.volume) for bar in source],
         )
 
-    observed_candidate_count = 0
     for cutoff in range(64, len(bars) + 1):
-        previous = compute(bars[: cutoff - 1])
-        current = compute(bars[:cutoff])
-        expected: list[tuple[datetime, tuple[str, ...]]] = []
-        for index in range(
-            max(0, cutoff - 1 - CONFIGURED_REPAINT_SCAN_ZONE_BARS),
-            cutoff - 1,
-        ):
-            previous_types = (
-                *(("buy",) if bool(previous.buy_observation[index]) else ()),
-                *(("sell",) if bool(previous.sell_observation[index]) else ()),
-            )
-            current_types = (
-                *(("buy",) if bool(current.buy_observation[index]) else ()),
-                *(("sell",) if bool(current.sell_observation[index]) else ()),
-            )
-            if not previous_types and current_types:
-                expected.append((bars[index].bar_end, current_types))
+        current = compute(bars[cutoff - 32 : cutoff])
         latest_types = (
-            *(("buy",) if bool(current.buy_observation[cutoff - 1]) else ()),
-            *(("sell",) if bool(current.sell_observation[cutoff - 1]) else ()),
+            *(("buy",) if bool(current.buy_observation[-1]) else ()),
+            *(("sell",) if bool(current.sell_observation[-1]) else ()),
         )
-        if latest_types:
-            expected.append((bars[cutoff - 1].bar_end, latest_types))
+        expected = () if not latest_types else ((bars[cutoff - 1].bar_end, latest_types),)
 
         bounded_bars = tuple(bars[cutoff - 64 : cutoff])
         window = MarketReadWindow(
@@ -464,9 +388,4 @@ def test_64_bar_first_seen_matches_full_history_prefix_diff() -> None:
         )
         actual = evaluator_module.HtdyOriginalEvaluator().evaluate_first_seen(window)
 
-        assert tuple((candidate.bar_end, candidate.observation_types) for candidate in actual) == tuple(
-            expected
-        )
-        observed_candidate_count += len(expected)
-
-    assert observed_candidate_count > 0
+        assert tuple((candidate.bar_end, candidate.observation_types) for candidate in actual) == expected

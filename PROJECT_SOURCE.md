@@ -36,7 +36,7 @@ Stage 2 代码为 active60 在内存恢复和维护相互隔离的策略状态�
 
 HTDY 是 observation-only/repainting 产品，能力覆盖七个正式周期 `1m/5m/15m/30m/60m/1d/1w`。稳定 Rule code 为 `htdy_original_15m`，唯一 Scope authority 是 `scope_product_frequencies` 的 symbol × frequency；SuBing 唯一 Rule code 为 `subing_strategy_v1`，唯一 Scope authority 是 `scope_products`。Migration `20260826_0042` 以 forward-only 原子步骤删除旧 SuBing Event、保留旧 Rule row 的 `id/enabled/scope_products` 并将 `subing_entry_signal_v1` 直接替换为 `subing_strategy_v1`；不保留 archive、双 Rule、兼容 reader、replay 或 downgrade。两种 Scope 不混用、不合并。
 
-持久 HTDY `AlertEvent` 是 forward-only first-seen 事实：每次触发只比较 previous/current prefix，`bar_end` 固定为首次出现观察的 Bar 时间，`detected_at` 记录 Runtime 首次识别时间；同一 Rule × symbol × frequency × `bar_end` 一旦存在即不可变 no-op，不因后续重绘消失、重现或方向/合约变化而改写或重发。Web retrospective 箭头仍按当前完整前缀展示重绘型研究观察，因此可与持久 first-seen 方块不同；两者不互相覆盖。
+持久 HTDY `AlertEvent` 是 forward-only first-seen 事实，但只接受触发窗口的最新 completed Bar：repaint zone 中的历史 Bar 仅供 Web retrospective 研究展示，不创建 Event 或触发通知。`bar_end` 固定为该最新观察 Bar 时间，`detected_at` 记录 Runtime 首次识别时间；同一 Rule × symbol × frequency × `bar_end` 一旦存在即不可变 no-op，不因后续重绘消失、重现或方向/合约变化而改写或重发。Web retrospective 箭头仍按当前完整前缀展示重绘型研究观察，因此可与持久 first-seen 方块不同；两者不互相覆盖。
 
 Alert 是独立 Application Domain，只含 `alert_rules` 与 `alert_events` 两张表。Event 先提交，随后最多一次 transport；无逐收件人状态、retry、queue、replay、backfill、fallback 或订单路径。provider accepted 不等于送达。
 
