@@ -268,6 +268,7 @@ class AlertRuntime:
         self._strategy_product_statuses: dict[
             str, SubingStrategyRuntimeProductStatus
         ] = {}
+        self._strategy_status_publish_suppressed = False
         self.clock = clock or (lambda: datetime.now(UTC))
         self.stop_requested = stop_requested or (lambda: False)
 
@@ -295,14 +296,29 @@ class AlertRuntime:
         catch_up_at = self._aware_now()
         caught_up = self._strategy_evaluator.final_catch_up(ready_at=catch_up_at)
         self._strategy_product_statuses.clear()
-        self._refresh_strategy_runtime_status(
-            caught_up,
-            expected_products=self._strategy_products,
+        self._strategy_status_publish_suppressed = True
+        try:
+            self._refresh_strategy_runtime_status(
+                caught_up,
+                expected_products=self._strategy_products,
+            )
+            self._drain_startup_messages(
+                catch_up_statuses=dict(self._strategy_product_statuses)
+            )
+        finally:
+            self._strategy_status_publish_suppressed = False
+        strategy_ready = (
+            set(self._strategy_product_statuses) == self._strategy_products
+            and all(
+                status.state == "ready"
+                for status in self._strategy_product_statuses.values()
+            )
         )
-        self._drain_startup_messages()
-        ready_at = self._aware_now()
-        self._update_runtime_status(
-            strategy_ready_at=_iso_timestamp(ready_at),
+        ready_at = self._aware_now() if strategy_ready else None
+        self._publish_strategy_runtime_status(
+            strategy_ready_at=(
+                _iso_timestamp(ready_at) if ready_at is not None else None
+            ),
             last_strategy_restore_at=_iso_timestamp(catch_up_at),
         )
         next_heartbeat = self._aware_now()
@@ -346,10 +362,52 @@ class AlertRuntime:
         except Exception:
             raise RuntimeError("ALERT_RUNTIME_COMPOSITION_INVALID") from None
 
-    def _drain_startup_messages(self) -> None:
+    def _drain_startup_messages(
+        self,
+        *,
+        catch_up_statuses: Mapping[str, SubingStrategyRuntimeProductStatus],
+    ) -> None:
         assert self.message_source is not None
+        covered = 0
+        processed = 0
         for message in self.message_source.drain_startup_messages():
+            if self._startup_live_bar_is_covered(
+                *message,
+                catch_up_statuses=catch_up_statuses,
+            ):
+                covered += 1
+                continue
             self.process_message(*message, emit_events=False)
+            processed += 1
+        _LOGGER.info(
+            "ALERT_STARTUP_QUEUE_RECONCILED covered=%d processed=%d",
+            covered,
+            processed,
+        )
+
+    def _startup_live_bar_is_covered(
+        self,
+        channel: object,
+        payload: object,
+        *,
+        catch_up_statuses: Mapping[str, SubingStrategyRuntimeProductStatus],
+    ) -> bool:
+        trigger = _parse_live_bar_trigger(channel, payload)
+        if trigger is None:
+            return False
+        status = catch_up_statuses.get(trigger.symbol)
+        if status is None:
+            return False
+        cutoff = (
+            status.cutoff_1m
+            if trigger.frequency is BarFrequency.M1
+            else status.cutoff_5m
+            if trigger.frequency is BarFrequency.M5
+            else status.cutoff_15m
+            if trigger.frequency is BarFrequency.M15
+            else None
+        )
+        return cutoff is not None and trigger.bar.bar_end < cutoff
 
     def process_message(
         self,
@@ -923,6 +981,11 @@ class AlertRuntime:
         for result in results:
             status = result.product_status
             self._strategy_product_statuses[status.symbol] = status
+        if self._strategy_status_publish_suppressed:
+            return
+        self._publish_strategy_runtime_status()
+
+    def _publish_strategy_runtime_status(self, **changes: object) -> None:
         summary = _strategy_runtime_summary(
             tuple(self._strategy_product_statuses.values())
         )
@@ -936,6 +999,7 @@ class AlertRuntime:
             strategy_unavailable_product_count=len(summary[2]),
             strategy_unavailable_symbols=list(summary[2]),
             strategy_unavailable_reason_codes=unavailable_reason_codes,
+            **changes,
         )
 
     def _record_notification_failure(
