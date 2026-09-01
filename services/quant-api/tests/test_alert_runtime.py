@@ -784,7 +784,7 @@ def test_htdy_live_rejects_first_seen_candidate_outside_repaint_zone(
     assert harness.sender.messages == []
 
 
-def test_htdy_zone_old_bar_uses_observation_identity_and_processing_time(
+def test_htdy_live_ignores_zone_old_bar_candidate(
     session: Session,
 ) -> None:
     _seed_rule(session, "htdy_original_15m")
@@ -810,15 +810,9 @@ def test_htdy_zone_old_bar_uses_observation_identity_and_processing_time(
         _payload(bar_end=BOUNDARY_END),
     )
 
-    events = _event_rows(session)
-    assert len(events) == 1
-    assert events[0].bar_end == candidate.bar_end.replace(tzinfo=None)
-    assert events[0].trading_day == DAY
-    assert events[0].contract == "JM2701"
-    assert events[0].detected_at == processing_now.replace(tzinfo=None)
+    assert _event_rows(session) == []
     assert harness.htdy_evaluator.first_seen_calls == 1
-    assert [message.bar_end for message in harness.sender.messages] == [candidate.bar_end]
-    assert [message.contract for message in harness.sender.messages] == ["JM2701"]
+    assert harness.sender.messages == []
 
 
 def test_htdy_live_short_window_rejects_old_first_seen_candidate(
@@ -859,7 +853,7 @@ def test_htdy_live_short_window_rejects_old_first_seen_candidate(
     assert harness.htdy_evaluator.first_seen_calls == 1
 
 
-def test_htdy_multiple_first_seen_candidates_persist_and_send_in_bar_order(
+def test_htdy_rejects_multiple_old_first_seen_candidates(
     session: Session,
 ) -> None:
     _seed_rule(session, "htdy_original_15m")
@@ -890,17 +884,11 @@ def test_htdy_multiple_first_seen_candidates_persist_and_send_in_bar_order(
         _payload(bar_end=BOUNDARY_END),
     )
 
-    assert [event.bar_end for event in _event_rows(session)] == [
-        early.bar_end.replace(tzinfo=None),
-        late.bar_end.replace(tzinfo=None),
-    ]
-    assert [message.bar_end for message in harness.sender.messages] == [
-        early.bar_end,
-        late.bar_end,
-    ]
+    assert _event_rows(session) == []
+    assert harness.sender.messages == []
 
 
-def test_htdy_candidate_persistence_failure_does_not_block_later_candidate(
+def test_htdy_rejects_old_candidates_even_when_an_old_event_exists(
     session: Session,
 ) -> None:
     rule = _seed_rule(session, "htdy_original_15m")
@@ -946,10 +934,9 @@ def test_htdy_candidate_persistence_failure_does_not_block_later_candidate(
     )
 
     assert [event.bar_end for event in _event_rows(session)] == [
-        early.bar_end.replace(tzinfo=None),
-        late.bar_end.replace(tzinfo=None),
+        early.bar_end.replace(tzinfo=None)
     ]
-    assert [message.bar_end for message in harness.sender.messages] == [late.bar_end]
+    assert harness.sender.messages == []
 
 
 def test_htdy_reappearing_existing_bar_is_immutable_noop_without_send(
@@ -1121,7 +1108,7 @@ def test_canonical_updated_reads_only_the_exact_enabled_daily_or_weekly_pair(
     ("frequency", "enabled_frequency"),
     ((BarFrequency.D1, "1d"), (BarFrequency.W1, "1w")),
 )
-def test_canonical_updated_persists_zone_old_bar_first_seen_candidate(
+def test_canonical_updated_ignores_zone_old_bar_first_seen_candidate(
     session: Session,
     frequency: BarFrequency,
     enabled_frequency: str,
@@ -1148,12 +1135,8 @@ def test_canonical_updated_persists_zone_old_bar_first_seen_candidate(
 
     harness.runtime.process_message("market:state", _canonical_updated_payload())
 
-    events = _event_rows(session)
-    assert len(events) == 1
-    assert events[0].frequency == enabled_frequency
-    assert events[0].bar_end == candidate.bar_end.replace(tzinfo=None)
-    assert events[0].trading_day == DAY
-    assert events[0].contract == "JM2701"
+    assert _event_rows(session) == []
+    assert harness.sender.messages == []
     assert harness.htdy_evaluator.first_seen_calls == 1
 
 
