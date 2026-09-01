@@ -8,8 +8,8 @@
 
 | 项目 | 当前事实 |
 |---|---|
-| Release | `v1.9.7@b3efda13347570d25ddb25b41c0737b6751fb37f` 是唯一 GitHub Release；`main`、annotated tag 与 GitHub Release 均精确指向该 commit，API 与 Web release identity 均为 `1.9.7`。历史 Git tag 保留作可复算引用，但旧 GitHub Release 已删除。 |
-| Runtime | 2026-08-31 晚间曾将五项 launchd 服务切换到 clean、detached 的 `/Volumes/扩展盘/guiyi-quant-runtime-v1.9.7-r2@b3efda13`；公开 health 读回 `live_unavailable / last_bar_at=null`，未取得首根 completed Live bar，已按 fail-closed 规则回滚一次。当前五项服务重新绑定 clean、detached 的 `/Volumes/扩展盘/guiyi-quant-runtime-v1.9.7-r3@66c3be80`；`health.api=000`、`health.web=000`、`health.runtime=failed`，未回填 Event、未发送通知。 |
+| Release | `v1.9.7@66c3be8035774a510e914e80a11e4669b15d42ab` 是唯一 GitHub Release；`main`、annotated tag 与 GitHub Release 精确一致并共同指向该 40 字符 commit，API 与 Web release identity 均为 `1.9.7`。历史 Git tag 保留作可复算引用，但旧 GitHub Release 已删除。 |
+| Runtime | 2026-08-31 晚间曾将五项 launchd 服务切换到 clean、detached 的 `/Volumes/扩展盘/guiyi-quant-runtime-v1.9.7-r2@b3efda13`；公开 health 读回 `live_unavailable / last_bar_at=null`，未取得首根 completed Live bar，已按 fail-closed 规则回滚一次。当前五项服务重新绑定 clean、detached 的 `/Volumes/扩展盘/guiyi-quant-runtime-v1.9.7-r3@66c3be80`；`/api/health` 返回 `200` 且版本为 `1.9.7`，`/api/runtime/health` 为 `degraded`，其中 `live_market=ok`、`alert=degraded`，当前仍非 `RUNTIME_READY`，未回填 Event、未发送通知。 |
 | Database | production Alembic 为 `20260826_0042 (head)`。当前 Rule 为 `htdy_original_15m` 与 `subing_strategy_v1`。 |
 | Market Runtime Scope | `operational_products.txt` 的 60 个品种。 |
 | Alert Scope | HTDY Scope 为 `jm × 15m`；SuBing `scope_products` 为 operational 60。两种 authority 不合并。两条 Rule 均 enabled，Alert Runtime marker 已 enabled，audience count 2；未发生 Scope、Rule 或 audience 变更。 |
