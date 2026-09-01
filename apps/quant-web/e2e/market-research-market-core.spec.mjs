@@ -140,7 +140,13 @@ test.describe('Market dashboard', () => {
   })
 
   test('keeps unavailable Daily Watch items non-clickable', async ({ page }) => {
-    await mockMarketHomepage(page)
+    await mockMarketHomepage(page, dailyWatch({
+      unavailable: [{
+        symbol: 'sc', product_name: '原油', sector: 'energy', decision: 'unavailable',
+        reason_codes: [], daily: null, hourly: null, unavailable_reasons: ['H1_HISTORY_INSUFFICIENT'],
+      }],
+      excluded: 59,
+    }))
     await page.goto('/market')
     const watch = page.getByTestId('subing-daily-watch')
     await watch.getByRole('button', { name: '展开 1 个数据不可用品种' }).click()
