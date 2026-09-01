@@ -8,13 +8,13 @@
 
 | 项目 | 当前事实 |
 |---|---|
-| Release | `v1.9.8@7c074ab41e05b6056e08323cf111655765a9bfa5` 是当前最新 GitHub Release；`main`、annotated tag 的 peeled commit 与该 GitHub Release 精确一致，API 与 Web release identity 均为 `1.9.8`。该最小热修从旧 `main@66c3be80` 只纳入 `dd0eb643b` 的 Alert startup causal snapshot/schema-v4 readiness 修复及必要 release 元数据；未夹带其余 `main..develop` Web/文档提交。 |
+| Release | `v1.9.9@c211b01e325726202f733fea2aa33ae2cf76b232` 是当前最新 GitHub Release；`main`、annotated tag 的 peeled commit 与该 GitHub Release 精确一致，API 与 Web release identity 均为 `1.9.9`。该最小热修从 `main/v1.9.8@7c074ab41` 只纳入 `fbf468cba` 的 Alert startup queue reconciliation 修复及必要 release 元数据；未夹带其余 `main..develop` Web/文档提交。 |
 | Runtime | 2026-09-01 将五项 launchd 服务一次切换到 clean、detached 的 `/Volumes/扩展盘/guiyi-quant-runtime-v1.9.8-r1@7c074ab41`；Live 在首个完整 1m 边界后达到 `60 subscribed / live_market=ok / last_bar_at=2026-09-01T02:32:00Z`，Alert restore 于 `2026-09-01T02:44:58Z` 完成并写出 schema-v4 reason，但结果为 `0 ready / 60 unavailable`，60 个 reason 均为 `STALE_INPUT`，未达到 `RUNTIME_READY`。已按 fail-closed 规则只回滚一次；当前五项服务重新绑定 clean、detached 的 `/Volumes/扩展盘/guiyi-quant-runtime-v1.9.7-r3@66c3be80`，回滚后 Live 已恢复到 `last_bar_at=2026-09-01T02:47:00Z`。startup/promotion 未新增 Event、未调用 transport、未发送 canary。 |
 | Database | production Alembic 为 `20260826_0042 (head)`。当前 Rule 为 `htdy_original_15m` 与 `subing_strategy_v1`。 |
 | Market Runtime Scope | `operational_products.txt` 的 60 个品种。 |
 | Alert Scope | HTDY Scope 为 `jm × 15m`；SuBing `scope_products` 为 operational 60。两种 authority 不合并。两条 Rule 均 enabled，Alert Runtime marker 已 enabled，audience count 2；未发生 Scope、Rule 或 audience 变更。 |
 | v1.9.8 | Alert startup/final catch-up 的 Live snapshot 冻结在 causal `through` 上界，避免批量 restore 期间新到达 Bar 污染较早产品；Runtime status 写 schema v4，保留每个 unavailable 产品的固定公开 reason，并兼容读取 v1/v2/v3。无 migration、Scope、Rule、audience、transport 或策略公式变化。 |
-| Alert startup fix | `fbf468cba1b094609639b61103270589466042e9` 已合入并 push `develop`，实现 frozen final-catch-up watermark 队列 reconciliation：严格更旧 Bar 丢弃，相同 watermark 仍校验，更新 Bar 只推进且不补发；reconciliation 结束前保持 warming，只有 active60 全 ready 才写 `strategy_ready_at`。完整后端、Web、Ruff、Mypy、canonical、OpenSpec 与 secret scan 已通过，Standards/Spec 复审均 no findings；当前仅 `CODE_COMPLETE / TEST_COMPLETE`，未 release、未 Runtime promotion、未发送 canary。 |
+| v1.9.9 | frozen final-catch-up watermark 队列 reconciliation：严格更旧 Bar 丢弃，相同 watermark 仍校验，更新 Bar 只推进且不补发；reconciliation 结束前保持 warming，只有 active60 全 ready 才写 `strategy_ready_at`。完整后端、Web、Ruff、Mypy、canonical、OpenSpec 与 secret scan 已通过，Standards/Spec 复审均 no findings；当前已 `RELEASED`，未 Runtime promotion、未发送 canary。 |
 
 Alert transport 为 PushPlus；provider accepted 不等于微信送达。
 
@@ -25,10 +25,10 @@ Alert transport 为 PushPlus；provider accepted 不等于微信送达。
 
 ## Pending Gate
 
-- v1.9.8 已 `RELEASED`，但 Runtime promotion 因 active60 全部 `STALE_INPUT` fail-closed 回滚，当前不是 `RUNTIME_READY`。共同根因已在 `fbf468cba` 修复并通过完整验证；后续仍需新的 Release 批准，再需独立 Runtime promotion 授权，不以 develop 提交或测试替代两个 Gate。
+- v1.9.9 已 `RELEASED`；正式 Runtime 仍保持 v1.9.7-r3，当前不是 `RUNTIME_READY`。下一次 exact-tag Runtime promotion 仍需独立明确授权，不以 Release、测试或 tag 替代该 Gate。
 - HTDY 的真实 PushPlus/微信送达，以及 D1/W1 `canonical_updated` 的自然 Event identity/evidence，仍须分别核验；不以测试、synthetic event、replay 或手工发送补证。
 - 当前 v1.9.7-r3 仅是已恢复的回滚根，不是 ready promotion；回滚后 Alert 正在重新 restore，已知该旧版本此前为 `0 ready / 60 unavailable` 且未保存 reason map。
-- SuBing v1.9.8 自然 Live continuation seam 与严格盘后完成制 evidence pending；不以测试、startup replay、手工触发或回填替代。
+- SuBing v1.9.9 自然 Live continuation seam 与严格盘后完成制 evidence pending；不以测试、startup replay、手工触发或回填替代。
 - 一次 owner PushPlus canary 仍是独立 Gate。
 - SuBing Candidate 的 prospective OOS 按其 protocol 独立累积，retrospective 不回填 OOS。
 - 第一次自然盘后 derived 增量刷新仍须单独发生；2026-08-29 operator 已把效果快照 `through` 推到 `2026-08-28`，但不替代自然盘后 schema v3 status 写入。
