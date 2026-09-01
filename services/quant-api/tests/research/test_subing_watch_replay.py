@@ -111,6 +111,8 @@ def test_latest_completed_same_segment_60m_context_is_used_at_cutoff() -> None:
     )
 
     assert projected.evaluations[-1].context.higher_timeframe_alignment == "neutral"
+    assert projected.latest_higher_timeframe is not None
+    assert projected.latest_higher_timeframe.bar_end == bars_60m[-1].bar_end.isoformat()
 
 
 def test_exact_duplicate_is_a_deterministic_noop() -> None:
@@ -120,11 +122,30 @@ def test_exact_duplicate_is_a_deterministic_noop() -> None:
         _identity(), (bar, bar), (), load_subing_watch_policy()
     )
 
-    assert projected.evaluations == (
-        projected.evaluations[0],
-        projected.evaluations[0],
-    )
+    assert len(projected.evaluations) == 1
+    assert projected.evaluations[0].bar_end == bar.bar_end
     assert projected.final_state.sma21_window == (100.0,)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("turnover", Decimal("1000")),
+        ("open_interest", Decimal("20")),
+        ("trading_day", DAY + timedelta(days=1)),
+    ],
+)
+def test_same_bar_end_with_any_canonical_field_conflict_fails_closed(
+    field: str,
+    value: object,
+) -> None:
+    bar = _bar(1)
+    conflict = replace(bar, **{field: value})
+
+    with pytest.raises(SubingWatchReplayError, match="SUBING_WATCH_REPLAY_INVALID"):
+        replay_subing_watch_segment(
+            _identity(), (bar, conflict), (), load_subing_watch_policy()
+        )
 
 
 def test_replay_rejects_empty_or_out_of_segment_coverage() -> None:

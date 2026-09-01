@@ -16,12 +16,18 @@ from app.market_data.actual_dominant_research import (
 from app.market_data.domain import (
     BarFrequency,
     CanonicalBar,
+    MarketSeriesPageResult,
     MarketSeriesResult,
     ResolvedContractSegment,
     SeriesKind,
 )
 from app.market_data.market_data_service import MarketDataError
-from app.market_data.market_read_service import MarketReadState
+from app.market_data.market_phase import MarketPhase, ProductMarketPhase
+from app.market_data.market_read_service import (
+    MarketObservationSnapshot,
+    MarketReadService,
+    MarketReadState,
+)
 from app.market_data.subing_watch.contracts import (
     from_kernel_evaluation,
     load_subing_watch_policy,
@@ -99,14 +105,26 @@ class _MarketRead:
         *,
         live: dict[BarFrequency, tuple[CanonicalBar, ...]] | None = None,
         contracts: dict[BarFrequency, str] | None = None,
+        snapshot_contracts: dict[BarFrequency, str] | None = None,
+        snapshot_days: dict[BarFrequency, date] | None = None,
     ) -> None:
         self.live = live or {}
         self.contracts = contracts or {}
+        self.snapshot_contracts = snapshot_contracts or {}
+        self.snapshot_days = snapshot_days or {}
 
-    def state(self, identity, _now) -> MarketReadState:
+    def observation_snapshot(
+        self,
+        identity,
+        _after,
+        _now,
+        *,
+        inclusive_after=False,
+    ) -> MarketObservationSnapshot:
+        assert inclusive_after is True
         bars = self.live.get(identity.frequency, ())
         contract = self.contracts.get(identity.frequency, CONTRACT)
-        return MarketReadState(
+        state = MarketReadState(
             symbol=identity.symbol,
             series_kind=identity.series_kind.value,
             frequency=identity.frequency.value,
@@ -119,9 +137,79 @@ class _MarketRead:
             canonical_end=None,
             after_market=MappingProxyType({}),
         )
+        return MarketObservationSnapshot(
+            state=state,
+            source="realtime" if bars else "none",
+            trading_day=self.snapshot_days.get(identity.frequency, DAY),
+            contract=(
+                self.snapshot_contracts.get(identity.frequency, contract)
+                if bars
+                else None
+            ),
+            bars=bars,
+        )
 
-    def live_snapshot(self, identity, _after, _now) -> tuple[CanonicalBar, ...]:
-        return self.live.get(identity.frequency, ())
+
+class _MarketPageReader:
+    def __init__(self, bars: tuple[CanonicalBar, ...]) -> None:
+        self.bars = bars
+
+    def query_page(self, request) -> MarketSeriesPageResult:
+        bars = tuple(
+            bar
+            for bar in self.bars
+            if request.before is None or bar.bar_end < request.before
+        )[-request.limit :]
+        return MarketSeriesPageResult(
+            request_identity={"symbol": request.symbol},
+            bars=bars,
+            canonical_coverage=None,
+            has_more_before=False,
+            next_before=None,
+            resolved_contract_segments=(SEGMENT,),
+        )
+
+
+class _PhaseReader:
+    def resolve(self, symbol: str, _now: datetime) -> ProductMarketPhase:
+        return ProductMarketPhase(symbol, MarketPhase.TRADING, DAY, None, None)
+
+
+class _LiveStore:
+    def __init__(self, bars: tuple[CanonicalBar, ...]) -> None:
+        self.bars = bars
+
+    def subscriptions(self, _trading_day: date) -> dict[str, str]:
+        return {"jm": CONTRACT}
+
+    def heartbeat(self) -> dict[str, bool]:
+        return {"available": True}
+
+    def bars_after(self, _day, _symbol, frequency, after):
+        return (
+            tuple(bar for bar in self.bars if after is None or bar.bar_end > after)
+            if frequency == "15m"
+            else ()
+        )
+
+    def bars_between(self, _day, _symbol, frequency, start, end):
+        return (
+            tuple(bar for bar in self.bars if start <= bar.bar_end <= end)
+            if frequency == "15m"
+            else ()
+        )
+
+
+def _real_market_read(
+    canonical: tuple[CanonicalBar, ...],
+    live: tuple[CanonicalBar, ...],
+) -> MarketReadService:
+    return MarketReadService(
+        market_data=_MarketPageReader(canonical),
+        phase_resolver=_PhaseReader(),
+        operational_products=("jm",),
+        live_store=_LiveStore(live),
+    )
 
 
 def _service(
@@ -130,6 +218,9 @@ def _service(
     canonical_60m: tuple[CanonicalBar, ...] = (),
     live: dict[BarFrequency, tuple[CanonicalBar, ...]] | None = None,
     contracts: dict[BarFrequency, str] | None = None,
+    snapshot_contracts: dict[BarFrequency, str] | None = None,
+    snapshot_days: dict[BarFrequency, date] | None = None,
+    market_read=None,
     loader_error: Exception | None = None,
     segment_error: MarketDataError | None = None,
 ) -> SubingWatchCurrentProjectionService:
@@ -146,7 +237,13 @@ def _service(
     return SubingWatchCurrentProjectionService(
         _Loader(loader_error or _result(canonical_15m, canonical_60m)),
         products=("jm",),
-        market_read=_MarketRead(live=live, contracts=contracts),
+        market_read=market_read
+        or _MarketRead(
+            live=live,
+            contracts=contracts,
+            snapshot_contracts=snapshot_contracts,
+            snapshot_days=snapshot_days,
+        ),
         current_segment=current_segment,
         policy=load_subing_watch_policy(),
     )
@@ -203,12 +300,45 @@ def test_restore_then_same_contract_live_append_equals_full_replay() -> None:
     ) == full.evaluations[-1]
 
 
+def test_restore_preserves_ready_60m_context_for_next_15m_without_new_60m() -> None:
+    canonical_15m = tuple(_bar(index) for index in range(1, 121))
+    canonical_60m = tuple(_bar(index, minutes=60) for index in range(1, 26))
+    live_bar = _bar(121, close="105")
+    restored = _service(
+        canonical_15m,
+        canonical_60m=canonical_60m,
+    ).restore_state("jm", canonical_15m[-1].bar_end)
+    full = replay_subing_watch_segment(
+        restored.source_identity,
+        (*canonical_15m, live_bar),
+        canonical_60m,
+        restored.policy,
+        source_mode="canonical_live",
+    )
+
+    continued_state, continued_evaluation = step_subing_watch_15m(
+        restored.state,
+        to_subing_watch_kernel_bar(
+            live_bar,
+            source_identity=restored.source_identity,
+        ),
+        higher_timeframe=restored.latest_higher_timeframe,
+    )
+
+    assert restored.latest_higher_timeframe is not None
+    assert continued_state == full.final_state
+    assert from_kernel_evaluation(
+        continued_evaluation,
+        source_mode="canonical_live",
+    ) == full.evaluations[-1]
+
+
 def test_canonical_live_exact_overlap_is_an_idempotent_noop() -> None:
     canonical = tuple(_bar(index) for index in range(1, 5))
 
     projected = _service(
         canonical,
-        live={BarFrequency.M15: (canonical[-1],)},
+        market_read=_real_market_read(canonical, (canonical[-1],)),
     ).current(_request(), canonical[-1].bar_end)
 
     assert projected.source_mode == "canonical"
@@ -216,15 +346,25 @@ def test_canonical_live_exact_overlap_is_an_idempotent_noop() -> None:
     assert projected.final_state.sma21_window == (100.0,) * len(canonical)
 
 
-def test_canonical_live_conflicting_overlap_fails_closed() -> None:
+@pytest.mark.parametrize(
+    ("changes"),
+    [
+        {
+            "open": Decimal("101"),
+            "high": Decimal("101"),
+            "low": Decimal("101"),
+            "close": Decimal("101"),
+        },
+        {"turnover": Decimal("1001")},
+        {"open_interest": Decimal("21")},
+        {"trading_day": DAY + timedelta(days=1)},
+    ],
+)
+def test_canonical_live_any_field_conflicting_overlap_fails_closed(
+    changes: dict[str, object],
+) -> None:
     canonical = tuple(_bar(index) for index in range(1, 5))
-    conflict = replace(
-        canonical[-1],
-        open=Decimal("101"),
-        high=Decimal("101"),
-        low=Decimal("101"),
-        close=Decimal("101"),
-    )
+    conflict = replace(canonical[-1], **changes)
 
     with pytest.raises(
         SubingWatchCurrentSourceIdentityError,
@@ -232,7 +372,45 @@ def test_canonical_live_conflicting_overlap_fails_closed() -> None:
     ):
         _service(
             canonical,
-            live={BarFrequency.M15: (conflict,)},
+            market_read=_real_market_read(canonical, (conflict,)),
+        ).current(_request(), canonical[-1].bar_end)
+
+
+def test_typed_snapshot_contract_drift_fails_closed() -> None:
+    canonical = tuple(_bar(index) for index in range(1, 5))
+    live_bar = _bar(5)
+
+    with pytest.raises(SubingWatchCurrentSourceIdentityError):
+        _service(
+            canonical,
+            live={BarFrequency.M15: (live_bar,)},
+            snapshot_contracts={BarFrequency.M15: "JM2605"},
+        ).current(_request(), live_bar.bar_end)
+
+
+def test_typed_snapshot_trading_day_drift_fails_closed() -> None:
+    canonical = tuple(_bar(index) for index in range(1, 5))
+    live_bar = _bar(5)
+
+    with pytest.raises(SubingWatchCurrentSourceIdentityError):
+        _service(
+            canonical,
+            live={BarFrequency.M15: (live_bar,)},
+            snapshot_days={BarFrequency.M15: DAY + timedelta(days=1)},
+        ).current(_request(), live_bar.bar_end)
+
+
+def test_malformed_typed_snapshot_fails_closed() -> None:
+    canonical = tuple(_bar(index) for index in range(1, 5))
+
+    class _MalformedMarketRead:
+        def observation_snapshot(self, *_args, **_kwargs):
+            return SimpleNamespace()
+
+    with pytest.raises(SubingWatchCurrentSourceIdentityError):
+        _service(
+            canonical,
+            market_read=_MalformedMarketRead(),
         ).current(_request(), canonical[-1].bar_end)
 
 

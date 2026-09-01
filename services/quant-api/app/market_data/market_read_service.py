@@ -46,6 +46,15 @@ class LiveReadStore(Protocol):
         after: datetime | None,
     ) -> tuple[CanonicalBar, ...]: ...
 
+    def bars_between(
+        self,
+        trading_day: date,
+        symbol: str,
+        frequency: str,
+        start: datetime,
+        end: datetime,
+    ) -> tuple[CanonicalBar, ...]: ...
+
 
 @dataclass(frozen=True, slots=True)
 class MarketReadState:
@@ -68,6 +77,17 @@ class MarketDisplaySnapshot:
 
     state: MarketReadState
     source: Literal["none", "realtime", "post_close"]
+    trading_day: date | None
+    contract: str | None
+    bars: tuple[CanonicalBar, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class MarketObservationSnapshot:
+    """One frozen read of completed Live observation identity and Bars."""
+
+    state: MarketReadState
+    source: Literal["none", "realtime", "unavailable"]
     trading_day: date | None
     contract: str | None
     bars: tuple[CanonicalBar, ...]
@@ -296,6 +316,87 @@ class MarketReadService:
             return ()
         bars = self._snapshot_bars(identity, state, after=after)
         return () if bars is None else bars
+
+    def observation_snapshot(
+        self,
+        identity: SeriesPageQuery,
+        after: datetime | None,
+        now: datetime,
+        *,
+        inclusive_after: bool = False,
+    ) -> MarketObservationSnapshot:
+        """Freeze state, contract and completed Live Bars in one typed read."""
+
+        if (
+            (
+                after is not None
+                and (
+                    not isinstance(after, datetime)
+                    or after.tzinfo is None
+                    or after.utcoffset() is None
+                )
+            )
+            or not isinstance(now, datetime)
+            or now.tzinfo is None
+            or now.utcoffset() is None
+            or type(inclusive_after) is not bool
+        ):
+            raise ValueError("MARKET_OBSERVATION_SNAPSHOT_INVALID")
+        now_utc = now.astimezone(UTC)
+        state = self.state(identity, now_utc)
+        if (
+            not state.live_eligible
+            or not state.live_available
+            or state.trading_day is None
+            or state.live_contract is None
+        ):
+            return MarketObservationSnapshot(
+                state=state,
+                source="none",
+                trading_day=state.trading_day,
+                contract=state.live_contract,
+                bars=(),
+            )
+        boundary = _later(
+            after.astimezone(UTC) if after is not None else None,
+            state.canonical_end,
+        )
+        try:
+            if inclusive_after and boundary is not None:
+                bars = (
+                    self._live_store.bars_between(
+                        state.trading_day,
+                        identity.symbol,
+                        identity.frequency.value,
+                        boundary,
+                        now_utc,
+                    )
+                    if boundary <= now_utc
+                    else ()
+                )
+            else:
+                bars = self._live_store.bars_after(
+                    state.trading_day,
+                    identity.symbol,
+                    identity.frequency.value,
+                    boundary,
+                )
+                bars = tuple(bar for bar in bars if bar.bar_end <= now_utc)
+        except Exception:  # noqa: BLE001 - typed read failure, no write or fallback
+            return MarketObservationSnapshot(
+                state=state,
+                source="unavailable",
+                trading_day=state.trading_day,
+                contract=state.live_contract,
+                bars=(),
+            )
+        return MarketObservationSnapshot(
+            state=state,
+            source="realtime",
+            trading_day=state.trading_day,
+            contract=state.live_contract,
+            bars=tuple(bars),
+        )
 
     def display_snapshot(
         self,

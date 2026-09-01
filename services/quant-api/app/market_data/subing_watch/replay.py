@@ -39,6 +39,7 @@ class SubingWatchSegmentProjection:
     coverage: tuple[datetime, datetime]
     evaluations: tuple[SubingWatchEvaluation, ...]
     final_state: SubingWatchKernelState
+    latest_higher_timeframe: SubingWatchKernelHigherTimeframe | None
 
 
 def replay_subing_watch_segment(
@@ -60,11 +61,11 @@ def replay_subing_watch_segment(
         or source_mode not in {"canonical", "canonical_live"}
     ):
         raise SubingWatchReplayError()
-    _validate_segment_bars(identity, bars_15m)
+    unique_15m = _unique_segment_bars(identity, bars_15m)
     higher = _project_completed_60m(identity, completed_60m)
 
     first_kernel_bar = to_subing_watch_kernel_bar(
-        bars_15m[0],
+        unique_15m[0],
         source_identity=identity,
     )
     state = initial_subing_watch_kernel_state(
@@ -74,7 +75,7 @@ def replay_subing_watch_segment(
     evaluations: list[SubingWatchEvaluation] = []
     higher_index = 0
     latest_higher: SubingWatchKernelHigherTimeframe | None = None
-    for bar in bars_15m:
+    for bar in unique_15m:
         while higher_index < len(higher) and higher[higher_index].bar_end <= bar.bar_end.isoformat():
             latest_higher = higher[higher_index]
             higher_index += 1
@@ -91,16 +92,18 @@ def replay_subing_watch_segment(
         identity=identity,
         policy=policy,
         source_mode=source_mode,
-        coverage=(bars_15m[0].bar_end, bars_15m[-1].bar_end),
+        coverage=(unique_15m[0].bar_end, unique_15m[-1].bar_end),
         evaluations=tuple(evaluations),
         final_state=state,
+        latest_higher_timeframe=latest_higher,
     )
 
 
-def _validate_segment_bars(
+def _unique_segment_bars(
     identity: SubingWatchSourceIdentity,
     bars: tuple[CanonicalBar, ...],
-) -> None:
+) -> tuple[CanonicalBar, ...]:
+    unique: list[CanonicalBar] = []
     previous: CanonicalBar | None = None
     for bar in bars:
         if (
@@ -109,7 +112,13 @@ def _validate_segment_bars(
             or (previous is not None and bar.bar_end < previous.bar_end)
         ):
             raise SubingWatchReplayError()
+        if previous is not None and bar.bar_end == previous.bar_end:
+            if bar != previous:
+                raise SubingWatchReplayError()
+            continue
+        unique.append(bar)
         previous = bar
+    return tuple(unique)
 
 
 def _project_completed_60m(
@@ -120,14 +129,7 @@ def _project_completed_60m(
 
     if not bars:
         return ()
-    _validate_segment_bars(identity, bars)
-    deduped: list[CanonicalBar] = []
-    for bar in bars:
-        if deduped and bar.bar_end == deduped[-1].bar_end:
-            if bar != deduped[-1]:
-                raise SubingWatchReplayError()
-            continue
-        deduped.append(bar)
+    deduped = _unique_segment_bars(identity, bars)
 
     closes: tuple[float, ...] = ()
     latest_ma21: tuple[float, ...] = ()

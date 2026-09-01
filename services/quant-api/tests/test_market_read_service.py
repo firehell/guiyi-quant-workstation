@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, date, datetime
 from decimal import Decimal
 
@@ -12,6 +13,7 @@ from app.market_data.domain import (
     SeriesPageQuery,
 )
 from app.market_data.market_read_service import MarketReadService, MarketReadWindowError
+from app.market_data.market_phase import MarketPhase, ProductMarketPhase
 
 
 DAY_1 = date(2026, 8, 30)
@@ -95,10 +97,26 @@ class _LiveStore:
         assert (trading_day, symbol, frequency) == (DAY_2, "jm", "15m")
         return tuple(bar for bar in self._bars if after is None or bar.bar_end > after)
 
+    def bars_between(
+        self,
+        trading_day: date,
+        symbol: str,
+        frequency: str,
+        start: datetime,
+        end: datetime,
+    ) -> tuple[CanonicalBar, ...]:
+        assert (trading_day, symbol, frequency) == (DAY_2, "jm", "15m")
+        return tuple(bar for bar in self._bars if start <= bar.bar_end <= end)
+
 
 class _ForbiddenPhaseReader:
     def resolve(self, symbol: str, now: datetime) -> object:
         raise AssertionError("bars_until must not inspect the current phase")
+
+
+class _TradingPhaseReader:
+    def resolve(self, symbol: str, _now: datetime) -> ProductMarketPhase:
+        return ProductMarketPhase(symbol, MarketPhase.TRADING, DAY_2, None, None)
 
 
 def _service(
@@ -114,6 +132,59 @@ def _service(
         operational_products=("jm",),
         live_store=_LiveStore(live, live_contract),
     )
+
+
+def _observation_service(
+    *,
+    historical: tuple[CanonicalBar, ...],
+    live: tuple[CanonicalBar, ...],
+) -> MarketReadService:
+    return MarketReadService(
+        market_data=_MarketPageReader(
+            historical,
+            (ResolvedContractSegment("JM2705", DAY_2, DAY_2),),
+        ),
+        phase_resolver=_TradingPhaseReader(),
+        operational_products=("jm",),
+        live_store=_LiveStore(live, "JM2705"),
+    )
+
+
+def test_observation_snapshot_includes_exact_canonical_boundary() -> None:
+    boundary = _bar(HISTORICAL_END_2, DAY_2)
+    service = _observation_service(historical=(boundary,), live=(boundary,))
+
+    snapshot = service.observation_snapshot(
+        SeriesPageQuery("actual_dominant", "jm", "15m"),
+        after=boundary.bar_end,
+        now=LIVE_END,
+        inclusive_after=True,
+    )
+
+    assert snapshot.state.live_available is True
+    assert snapshot.source == "realtime"
+    assert snapshot.trading_day == DAY_2
+    assert snapshot.contract == "JM2705"
+    assert snapshot.bars == (boundary,)
+
+
+def test_observation_snapshot_preserves_any_field_boundary_conflict() -> None:
+    canonical = _bar(HISTORICAL_END_2, DAY_2)
+    live_conflict = replace(canonical, turnover=Decimal("1001"))
+    service = _observation_service(
+        historical=(canonical,),
+        live=(live_conflict,),
+    )
+
+    snapshot = service.observation_snapshot(
+        SeriesPageQuery("actual_dominant", "jm", "15m"),
+        after=canonical.bar_end,
+        now=LIVE_END,
+        inclusive_after=True,
+    )
+
+    assert snapshot.bars == (live_conflict,)
+    assert snapshot.bars[0] != canonical
 
 
 def test_bars_until_aligns_historical_and_live_rank1_contract_owners() -> None:
