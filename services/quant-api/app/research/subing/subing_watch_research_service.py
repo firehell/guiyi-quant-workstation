@@ -15,8 +15,11 @@ from guiyi_quant.indicators.subing_watch_15m import SUBING_WATCH_FORMULA_VERSION
 from app.market_data.actual_dominant_research import (
     ActualDominantResearchReader,
     ActualDominantResearchSegmentLoader,
+    ActualDominantResearchSegmentIdentityError,
+    ActualDominantResearchSourceTradingDayMissingError,
 )
 from app.market_data.domain import BarFrequency, CanonicalBar, ResolvedContractSegment
+from app.market_data.market_data_service import MarketDataError
 from app.market_data.price_outcome import (
     PriceDirection,
     PriceDirectionalOutcome,
@@ -223,12 +226,16 @@ class SubingWatchResearchService:
     ) -> SubingWatchProductDiagnostics:
         resolved = self._loader.load(
             symbol=symbol,
-            frequencies=(BarFrequency.M15, BarFrequency.H1),
+            frequencies=(BarFrequency.M15,),
             since=request.since,
             through=request.through,
         )
         bars_15m = resolved.results[BarFrequency.M15].bars
-        bars_60m = resolved.results[BarFrequency.H1].bars
+        bars_60m = self._load_optional_higher_timeframe(
+            symbol,
+            request,
+            expected_segments=resolved.segments,
+        )
         candidates: list[_Candidate] = []
         for segment in resolved.segments:
             segment_15m = _segment_bars(bars_15m, segment)
@@ -267,6 +274,31 @@ class SubingWatchResearchService:
                     _Candidate(evaluation, segment_15m, located)
                 )
         return self._summarize(symbol, candidates, request.forward_bars)
+
+    def _load_optional_higher_timeframe(
+        self,
+        symbol: str,
+        request: SubingWatchResearchRequest,
+        *,
+        expected_segments: tuple[ResolvedContractSegment, ...],
+    ) -> tuple[CanonicalBar, ...]:
+        try:
+            resolved = self._loader.load(
+                symbol=symbol,
+                frequencies=(BarFrequency.H1,),
+                since=request.since,
+                through=request.through,
+            )
+        except (
+            ActualDominantResearchSegmentIdentityError,
+            ActualDominantResearchSourceTradingDayMissingError,
+            MarketDataError,
+        ):
+            return ()
+        if resolved.segments != expected_segments:
+            return ()
+        result = resolved.results.get(BarFrequency.H1)
+        return result.bars if result is not None else ()
 
     def _summarize(
         self,

@@ -21,6 +21,7 @@ from .subing_watch_15m import (
     SubingWatchKernelIdentity,
     SubingWatchKernelState,
     initial_subing_watch_kernel_state,
+    subing_watch_ma21_slope_5_bps_per_bar,
 )
 from .range_detector_lux import (
     RANGE_DETECTOR_LUX_CODE,
@@ -123,6 +124,7 @@ __all__ = [
     "initial_ema_state",
     "initial_macd_state",
     "initial_subing_watch_kernel_state",
+    "subing_watch_ma21_slope_5_bps_per_bar",
     "initial_range_detector_lux_state",
     "formal_policy_registry",
     "get_formal_policy",

@@ -8,6 +8,9 @@ from types import SimpleNamespace
 import pytest
 
 from app.market_data.aggregation import SessionWindow
+from app.market_data.actual_dominant_research import (
+    ActualDominantResearchSegmentIdentityError,
+)
 from app.market_data.domain import (
     BarFrequency,
     CanonicalBar,
@@ -15,6 +18,7 @@ from app.market_data.domain import (
     ResolvedContractSegment,
 )
 from app.market_data.price_outcome import PriceOutcomeError
+from app.market_data.market_data_service import MarketDataError
 from app.market_data.subing_watch.contracts import load_subing_watch_policy
 
 
@@ -145,6 +149,36 @@ class _MarketData:
         raise AssertionError("diagnostics must not publish or write")
 
 
+class _FrequencyFailureMarketData(_MarketData):
+    def __init__(
+        self,
+        bars_by_symbol: dict[str, tuple[CanonicalBar, ...]],
+        *,
+        frequency: BarFrequency,
+        failure: str,
+    ) -> None:
+        super().__init__(bars_by_symbol)
+        self._frequency = frequency
+        self._failure = failure
+
+    def query_actual_dominant_trading_days(self, request) -> MarketSeriesResult:
+        if request.frequency is self._frequency:
+            if self._failure == "read":
+                raise MarketDataError("MARKET_PARTITION_MISSING")
+            return MarketSeriesResult(
+                request_identity={
+                    "series_kind": "actual_dominant",
+                    "symbol": request.symbol,
+                    "frequency": request.frequency.value,
+                },
+                bars=(),
+                coverage=None,
+                resolved_contract_segments=(),
+                requested_trading_day_window=(request.since, request.through),
+            )
+        return super().query_actual_dominant_trading_days(request)
+
+
 FIRST_DAY = date(2026, 8, 31)
 SECOND_DAY = date(2026, 9, 1)
 AFTER_THROUGH = date(2026, 9, 2)
@@ -270,6 +304,72 @@ def test_service_replays_actual_dominant_segments_and_sorts_products() -> None:
     assert sum(jm.session_distribution.values()) == 2
 
 
+@pytest.mark.parametrize("failure", ("read", "identity"))
+def test_higher_timeframe_only_failure_is_empty_non_gating_context(
+    failure: str,
+) -> None:
+    module = _module()
+    market_data = _FrequencyFailureMarketData(
+        {"jm": _candidate_bars()},
+        frequency=BarFrequency.H1,
+        failure=failure,
+    )
+    service = module.SubingWatchResearchService(
+        market_data,
+        products=("jm",),
+        policy=load_subing_watch_policy(),
+    )
+
+    result = service.run(
+        module.SubingWatchResearchRequest(
+            since=DAY,
+            through=DAY,
+            symbols=("jm",),
+            forward_bars=(),
+        )
+    )
+
+    product = result.products[0]
+    assert product.candidate_count == 2
+    assert product.higher_timeframe_alignment_distribution == {
+        "aligned": 0,
+        "neutral": 0,
+        "opposed": 0,
+        "unavailable": 2,
+    }
+
+
+@pytest.mark.parametrize(
+    ("failure", "expected"),
+    (
+        ("read", MarketDataError),
+        ("identity", ActualDominantResearchSegmentIdentityError),
+    ),
+)
+def test_base_15m_failure_remains_fail_closed(
+    failure: str,
+    expected: type[Exception],
+) -> None:
+    module = _module()
+    service = module.SubingWatchResearchService(
+        _FrequencyFailureMarketData(
+            {"jm": _candidate_bars()},
+            frequency=BarFrequency.M15,
+            failure=failure,
+        ),
+        products=("jm",),
+        policy=load_subing_watch_policy(),
+    )
+
+    with pytest.raises(expected):
+        service.run(
+            module.SubingWatchResearchRequest(
+                since=DAY,
+                through=DAY,
+                symbols=("jm",),
+                forward_bars=(),
+            )
+        )
 def test_forward_diagnostics_truncate_at_physical_segment_tail() -> None:
     module = _module()
     result = _service({"jm": _candidate_bars()}).run(

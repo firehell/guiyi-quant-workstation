@@ -124,6 +124,10 @@ def test_exact_duplicate_is_a_deterministic_noop() -> None:
 
     assert len(projected.evaluations) == 1
     assert projected.evaluations[0].bar_end == bar.bar_end
+    assert projected.evaluations[0].outcome == "source_unavailable"
+    assert projected.evaluations[0].public_reason_codes == (
+        "SOURCE_WINDOW_UNAVAILABLE",
+    )
     assert projected.final_state.sma21_window == (100.0,)
 
 
@@ -156,3 +160,23 @@ def test_replay_rejects_empty_or_out_of_segment_coverage() -> None:
     before_segment = replace(_bar(1), trading_day=DAY - timedelta(days=1))
     with pytest.raises(SubingWatchReplayError, match="SUBING_WATCH_REPLAY_INVALID"):
         replay_subing_watch_segment(_identity(), (before_segment,), (), policy)
+
+
+def test_replay_rejects_trading_day_regression_even_when_bar_end_increases() -> None:
+    day_two = DAY + timedelta(days=1)
+    bars = (
+        _bar(1),
+        replace(
+            _bar(2),
+            bar_end=START + timedelta(days=1, minutes=15),
+            trading_day=day_two,
+        ),
+        replace(
+            _bar(3),
+            bar_end=START + timedelta(days=1, minutes=30),
+            trading_day=DAY,
+        ),
+    )
+
+    with pytest.raises(SubingWatchReplayError, match="SUBING_WATCH_REPLAY_INVALID"):
+        replay_subing_watch_segment(_identity(), bars, (), load_subing_watch_policy())

@@ -12,6 +12,7 @@ from guiyi_quant.indicators.subing_watch_15m import (
     SubingWatchKernelState,
     initial_subing_watch_kernel_state,
     step_subing_watch_15m,
+    subing_watch_ma21_slope_5_bps_per_bar,
 )
 
 from ..domain import CanonicalBar
@@ -110,6 +111,7 @@ def _unique_segment_bars(
             type(bar) is not CanonicalBar
             or bar.trading_day < identity.segment_start_trading_day
             or (previous is not None and bar.bar_end < previous.bar_end)
+            or (previous is not None and bar.trading_day < previous.trading_day)
         ):
             raise SubingWatchReplayError()
         if previous is not None and bar.bar_end == previous.bar_end:
@@ -140,7 +142,7 @@ def _project_completed_60m(
         ma21 = sum(closes) / 21 if len(closes) == 21 else None
         if ma21 is not None:
             latest_ma21 = (*latest_ma21, ma21)[-5:]
-        slope = _ma21_slope(latest_ma21, ma21)
+        slope = subing_watch_ma21_slope_5_bps_per_bar(latest_ma21, ma21)
         projected.append(
             SubingWatchKernelHigherTimeframe(
                 identity=kernel_bar.identity,
@@ -153,11 +155,3 @@ def _project_completed_60m(
             )
         )
     return tuple(projected)
-
-
-def _ma21_slope(values: tuple[float, ...], current: float | None) -> float | None:
-    if len(values) != 5 or current in {None, 0.0}:
-        return None
-    assert current is not None
-    slope = sum((index - 2) * value for index, value in enumerate(values)) / 10
-    return round(slope / current * 10_000, 6)

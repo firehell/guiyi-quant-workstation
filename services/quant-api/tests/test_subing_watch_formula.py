@@ -40,7 +40,7 @@ POLICY_PATH = (
 OPAQUE_FINGERPRINT = "0" * 64
 GOLDEN_PATH = Path(__file__).parent / "fixtures/subing_watch_15m_v1_golden.json"
 GOLDEN_PAYLOAD_SHA256 = (
-    "8423e85c5e0cd4c9abaad89e4a59bbaa1a9468544f031d68b7878bd5341bfec0"
+    "e63c0480a0910a461268e35adf59a6adb39b4f2998bc42ce1c97f65059bd8b56"
 )
 
 
@@ -410,6 +410,16 @@ def test_source_identity_rejects_invalid_symbol_contract_or_frequency(
         )
 
 
+@pytest.mark.parametrize("contract", (None, 2601, "", " JM2601", "JM2601 "))
+def test_source_identity_requires_a_nonempty_string_contract(contract: object) -> None:
+    with pytest.raises(SubingWatchContractError, match="SUBING_WATCH_CONTRACT_INVALID"):
+        SubingWatchSourceIdentity(
+            symbol="jm",
+            contract=contract,  # type: ignore[arg-type]
+            segment_start_trading_day=date(2026, 9, 1),
+        )
+
+
 def test_kernel_bar_rejects_non_aware_time() -> None:
     with pytest.raises(SubingWatchKernelError, match="SUBING_WATCH_KERNEL_INVALID"):
         SubingWatchKernelBar(
@@ -741,7 +751,8 @@ def test_task2_first_segment_bar_is_bounded_warmup_without_candidate() -> None:
     state = required_initial_state()
     next_state, evaluation = required_step(state, watch_bar(1, 100.0))
 
-    assert evaluation.outcome == "evaluated_no_signal"
+    assert evaluation.outcome == "source_unavailable"
+    assert evaluation.public_reason_codes == ("SOURCE_WINDOW_UNAVAILABLE",)
     assert evaluation.observation_types == ()
     assert evaluation.close == 100.0
     assert evaluation.ma21 is None
@@ -751,6 +762,52 @@ def test_task2_first_segment_bar_is_bounded_warmup_without_candidate() -> None:
     assert len(next_state.sma21_window) <= 21
     assert next_state.previous_ready_dif is None
     assert next_state.previous_ready_dea is None
+    assert next_state.blocked_reason is None
+
+
+def test_task2_every_pre_ready_bar_is_unavailable_then_no_cross_is_evaluated() -> None:
+    """Warm-up advances recursion without pretending the current source is ready."""
+
+    state = required_initial_state()
+    evaluations = []
+    for index in range(1, 35):
+        state, evaluation = required_step(state, watch_bar(index, 100.0))
+        evaluations.append(evaluation)
+
+    assert all(item.outcome == "source_unavailable" for item in evaluations[:33])
+    assert all(
+        item.public_reason_codes == ("SOURCE_WINDOW_UNAVAILABLE",)
+        for item in evaluations[:33]
+    )
+    assert evaluations[33].outcome == "evaluated_no_signal"
+    assert evaluations[33].public_reason_codes == ()
+    assert state.blocked_reason is None
+
+
+def test_task2_trading_day_regression_blocks_without_recursive_mutation() -> None:
+    state = required_initial_state()
+    state, _ = required_step(state, watch_bar(1, 100.0))
+    second = replace(
+        watch_bar(2, 101.0),
+        bar_end="2026-09-02T00:15:00+00:00",
+        trading_day="2026-09-02",
+    )
+    accepted, _ = required_step(state, second)
+    regressed = replace(
+        watch_bar(3, 102.0),
+        bar_end="2026-09-02T00:30:00+00:00",
+        trading_day="2026-09-01",
+    )
+
+    blocked, evaluation = required_step(accepted, regressed)
+
+    assert evaluation.outcome == "source_unavailable"
+    assert evaluation.public_reason_codes == ("SUBING_WATCH_SOURCE_INVALID",)
+    assert blocked.blocked_reason == "SUBING_WATCH_SOURCE_INVALID"
+    assert blocked.sma21_window == accepted.sma21_window
+    assert blocked.macd_state == accepted.macd_state
+    assert blocked.latest_five_valid_sma21 == accepted.latest_five_valid_sma21
+    assert blocked.last_evaluation == accepted.last_evaluation
 
 
 @pytest.mark.parametrize(
@@ -1058,9 +1115,8 @@ def test_task2_golden_fixture_has_fixed_payload_and_base_formula_parity() -> Non
         frequency=source["frequency"],
     )
     state = required_initial_state(identity)
-    expected_indexes = {
-        point["input_index"] for point in fixture["expected_kernel_points"]
-    }
+    assert len(fixture["expected_kernel_points"]) == len(fixture["input_bars"]) == 37
+    assert len(fixture["expected_application_evaluations"]) == 37
     actual_kernel = []
     actual_application = []
     for input_index, item in enumerate(fixture["input_bars"]):
@@ -1081,8 +1137,6 @@ def test_task2_golden_fixture_has_fixed_payload_and_base_formula_parity() -> Non
         )
         assert kernel_bar.source_fingerprint == item["source_fingerprint"]
         state, evaluation = required_step(state, kernel_bar)
-        if input_index not in expected_indexes:
-            continue
         actual_kernel.append(
             {
                 "input_index": input_index,
@@ -1096,6 +1150,14 @@ def test_task2_golden_fixture_has_fixed_payload_and_base_formula_parity() -> Non
                 "dif": evaluation.dif,
                 "dea": evaluation.dea,
                 "macd_histogram": evaluation.macd_histogram,
+                "context": {
+                    "ma21_slope_5_bps_per_bar": evaluation.context.ma21_slope_5_bps_per_bar,
+                    "distance_to_ma21_atr14": evaluation.context.distance_to_ma21_atr14,
+                    "macd_zero_distance_atr14": evaluation.context.macd_zero_distance_atr14,
+                    "volume_ratio_20": evaluation.context.volume_ratio_20,
+                    "range_state": evaluation.context.range_state,
+                    "higher_timeframe_alignment": evaluation.context.higher_timeframe_alignment,
+                },
                 "public_reason_codes": list(evaluation.public_reason_codes),
             }
         )
@@ -1120,20 +1182,36 @@ def test_task2_golden_fixture_has_fixed_payload_and_base_formula_parity() -> Non
                     else None
                 ),
                 "candidate_id": app.candidate_id,
+                "context": {
+                    "ma21_slope_5_bps_per_bar": (
+                        str(app.context.ma21_slope_5_bps_per_bar)
+                        if app.context.ma21_slope_5_bps_per_bar is not None
+                        else None
+                    ),
+                    "distance_to_ma21_atr14": (
+                        str(app.context.distance_to_ma21_atr14)
+                        if app.context.distance_to_ma21_atr14 is not None
+                        else None
+                    ),
+                    "macd_zero_distance_atr14": (
+                        str(app.context.macd_zero_distance_atr14)
+                        if app.context.macd_zero_distance_atr14 is not None
+                        else None
+                    ),
+                    "volume_ratio_20": (
+                        str(app.context.volume_ratio_20)
+                        if app.context.volume_ratio_20 is not None
+                        else None
+                    ),
+                    "range_state": app.context.range_state,
+                    "higher_timeframe_alignment": app.context.higher_timeframe_alignment,
+                },
                 "public_reason_codes": list(app.public_reason_codes),
             }
         )
 
-    expected_kernel = [
-        {key: value for key, value in point.items() if key != "context"}
-        for point in fixture["expected_kernel_points"]
-    ]
-    expected_application = [
-        {key: value for key, value in point.items() if key != "context"}
-        for point in fixture["expected_application_evaluations"]
-    ]
-    assert actual_kernel == expected_kernel
-    assert actual_application == expected_application
+    assert actual_kernel == fixture["expected_kernel_points"]
+    assert actual_application == fixture["expected_application_evaluations"]
 
 
 def test_task3_sma21_regression_slope_uses_latest_five_points_and_current_denominator() -> None:

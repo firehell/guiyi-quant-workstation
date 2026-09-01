@@ -1,1 +1,2299 @@
-{"policy":{"schema_version":1,"formula_version":"subing_watch_15m_v1","policy_id":"subing_watch_15m_v1","series_kind":"actual_dominant","frequency":"15m","completed_bar_only":true,"ma":{"type":"simple_moving_average","period":21,"source":"close"},"macd":{"fast":12,"slow":26,"signal":9,"ema_seed_policy":"sma_window","histogram_scale":2},"context":{"atr_period":14,"atr_smoothing_policy":"wilder_sma_seed","ma_slope_points":5,"volume_previous_bars":20,"range_indicator_code":"range_detector_lux_v1","higher_timeframe":"60m"},"round_digits":6,"auto_order":false},"identity":{"symbol":"jm","contract":"JM2601","segment_start_trading_day":"2026-09-01","series_kind":"actual_dominant","frequency":"15m"},"input_bars":[{"bar_end":"2026-09-01T00:15:00+00:00","trading_day":"2026-09-01","open":"100.0","high":"100.0","low":"100.0","close":"100.0","volume":"101.0","source_fingerprint":"62b5c56a01f61e9586d326e7bc0e4d6b76e7a150084da8f2302007e89ab6229a"},{"bar_end":"2026-09-01T00:30:00+00:00","trading_day":"2026-09-01","open":"100.0","high":"100.0","low":"100.0","close":"100.0","volume":"102.0","source_fingerprint":"c078451479584a350b9a7324d1ceb173923e1bcdaecefabfe4c2204dce0e7063"},{"bar_end":"2026-09-01T00:45:00+00:00","trading_day":"2026-09-01","open":"100.0","high":"100.0","low":"100.0","close":"100.0","volume":"103.0","source_fingerprint":"497d7f8dc8b024d290f3fcf2a489619fbb3792129e956d294fd9c5be773665b2"},{"bar_end":"2026-09-01T01:00:00+00:00","trading_day":"2026-09-01","open":"100.0","high":"100.0","low":"100.0","close":"100.0","volume":"104.0","source_fingerprint":"cecefc2d60ed6059d4f48f27fa819537aa442c44ecebe049285c1f5c876a27ac"},{"bar_end":"2026-09-01T01:15:00+00:00","trading_day":"2026-09-01","open":"100.0","high":"100.0","low":"100.0","close":"100.0","volume":"105.0","source_fingerprint":"b32f5713e8f5662ea552e40c3615cbefea3960446d700fd48594602e58d56ed1"},{"bar_end":"2026-09-01T01:30:00+00:00","trading_day":"2026-09-01","open":"100.0","high":"100.0","low":"100.0","close":"100.0","volume":"106.0","source_fingerprint":"fa0cce3c71de18f2b542389c80fa97fed9f15399061d12d0de4b53a02311ec3c"},{"bar_end":"2026-09-01T01:45:00+00:00","trading_day":"2026-09-01","open":"100.0","high":"100.0","low":"100.0","close":"100.0","volume":"107.0","source_fingerprint":"13372fc2d597c60244d6b1e572b9765bace3df1fd0b5256f7bef867046dc0552"},{"bar_end":"2026-09-01T02:00:00+00:00","trading_day":"2026-09-01","open":"100.0","high":"100.0","low":"100.0","close":"100.0","volume":"108.0","source_fingerprint":"d9d984a66506cdb3a297773c043a1d720431c723ace06ed2f51a153d1efd1fd8"},{"bar_end":"2026-09-01T02:15:00+00:00","trading_day":"2026-09-01","open":"100.0","high":"100.0","low":"100.0","close":"100.0","volume":"109.0","source_fingerprint":"8fe4fddcf4e814818b5e81c4aedd5ae72f7f011ff11165c67fcb2104956f6c97"},{"bar_end":"2026-09-01T02:30:00+00:00","trading_day":"2026-09-01","open":"100.0","high":"100.0","low":"100.0","close":"100.0","volume":"110.0","source_fingerprint":"79966883111198cc7a016c172b8425bd92bb423687447ea64a0af9230d6bf1a3"},{"bar_end":"2026-09-01T02:45:00+00:00","trading_day":"2026-09-01","open":"100.0","high":"100.0","low":"100.0","close":"100.0","volume":"111.0","source_fingerprint":"732a0f2bdce2ec7aa11ed4f84c6672c8357349be6c69e86e8b858965e41e5a08"},{"bar_end":"2026-09-01T03:00:00+00:00","trading_day":"2026-09-01","open":"100.0","high":"100.0","low":"100.0","close":"100.0","volume":"112.0","source_fingerprint":"9417fdb52c4421aaf9933e325c7dc9d6e558f57c5a51a761e70a81d18f2aa929"},{"bar_end":"2026-09-01T03:15:00+00:00","trading_day":"2026-09-01","open":"100.0","high":"100.0","low":"100.0","close":"100.0","volume":"113.0","source_fingerprint":"70236af4e1746908bc6db5439af0cfdaf7f87e82d54e59101d460a043817d753"},{"bar_end":"2026-09-01T03:30:00+00:00","trading_day":"2026-09-01","open":"100.0","high":"100.0","low":"100.0","close":"100.0","volume":"114.0","source_fingerprint":"ccf81eed88e5f2bc7f7a9ea003e944c3c0d912122c8d2a4156e7a9528ac3c8f3"},{"bar_end":"2026-09-01T03:45:00+00:00","trading_day":"2026-09-01","open":"100.0","high":"100.0","low":"100.0","close":"100.0","volume":"115.0","source_fingerprint":"1ea681f6c288e9f2bec56f907764cdb297dbd6e301ba01ab755faff894536788"},{"bar_end":"2026-09-01T04:00:00+00:00","trading_day":"2026-09-01","open":"100.0","high":"100.0","low":"100.0","close":"100.0","volume":"116.0","source_fingerprint":"20347520de0501df1abe32d975e67c71a96f5ac2f22dc771cc82224c03c61856"},{"bar_end":"2026-09-01T04:15:00+00:00","trading_day":"2026-09-01","open":"100.0","high":"100.0","low":"100.0","close":"100.0","volume":"117.0","source_fingerprint":"ff691bd80fa9d4f0a01376f7848961cfaf41f75b79d3716fd0e498449294029a"},{"bar_end":"2026-09-01T04:30:00+00:00","trading_day":"2026-09-01","open":"100.0","high":"100.0","low":"100.0","close":"100.0","volume":"118.0","source_fingerprint":"79d600133c0cf5ae8998fd53f58a2bdeefd8541d3598323bcae25e4aea9c5b0d"},{"bar_end":"2026-09-01T04:45:00+00:00","trading_day":"2026-09-01","open":"100.0","high":"100.0","low":"100.0","close":"100.0","volume":"119.0","source_fingerprint":"467dd04734fc7b0dc125947a212539bb4b0d46b823c257007ec9b0513219c688"},{"bar_end":"2026-09-01T05:00:00+00:00","trading_day":"2026-09-01","open":"100.0","high":"100.0","low":"100.0","close":"100.0","volume":"120.0","source_fingerprint":"fda686cafb0938bde4ba61c08663db7c9bfab691a2f46888acd3556746fc165b"},{"bar_end":"2026-09-01T05:15:00+00:00","trading_day":"2026-09-01","open":"100.0","high":"100.0","low":"100.0","close":"100.0","volume":"121.0","source_fingerprint":"39416acde6a659e415147395a61d6dd4aea8f17eec20611eda7d3c88e42ab8e7"},{"bar_end":"2026-09-01T05:30:00+00:00","trading_day":"2026-09-01","open":"100.0","high":"100.0","low":"100.0","close":"100.0","volume":"122.0","source_fingerprint":"0bbc54d1aeb283d1180ec216170f2ce895f319ed3dea801619f9be805f3b2c05"},{"bar_end":"2026-09-01T05:45:00+00:00","trading_day":"2026-09-01","open":"100.0","high":"100.0","low":"100.0","close":"100.0","volume":"123.0","source_fingerprint":"253904a1317c948c20d0da862a6b40d93a059edee54b69f13369631f1e6f1be3"},{"bar_end":"2026-09-01T06:00:00+00:00","trading_day":"2026-09-01","open":"100.0","high":"100.0","low":"100.0","close":"100.0","volume":"124.0","source_fingerprint":"f1456405cc5844e4f629516775e18fae64dd734ce48e0d3ae85e8b52fe7954b4"},{"bar_end":"2026-09-01T06:15:00+00:00","trading_day":"2026-09-01","open":"100.0","high":"100.0","low":"100.0","close":"100.0","volume":"125.0","source_fingerprint":"4bdb0345800673993155afe18f8e3fd9915ee442670c3b03960dd4661b7a2b4d"},{"bar_end":"2026-09-01T06:30:00+00:00","trading_day":"2026-09-01","open":"100.0","high":"100.0","low":"100.0","close":"100.0","volume":"126.0","source_fingerprint":"c5a6df3ed977708508381985187238c0c614c51c8251c779fe46f504f3ccca24"},{"bar_end":"2026-09-01T06:45:00+00:00","trading_day":"2026-09-01","open":"100.0","high":"100.0","low":"100.0","close":"100.0","volume":"127.0","source_fingerprint":"24c66abb265fa36170ebefd6bea895efd8f68be6a9581d4372321e28b9d7552a"},{"bar_end":"2026-09-01T07:00:00+00:00","trading_day":"2026-09-01","open":"100.0","high":"100.0","low":"100.0","close":"100.0","volume":"128.0","source_fingerprint":"87ce3dcb9e6d8316b88dbaa3bedc3174ba37e2715ad981ae88091f0a67eb7395"},{"bar_end":"2026-09-01T07:15:00+00:00","trading_day":"2026-09-01","open":"100.0","high":"100.0","low":"100.0","close":"100.0","volume":"129.0","source_fingerprint":"6275d6f4f6654337994d48d1093ae5d44c0f7244517439e4bbfaff98cb96b7a0"},{"bar_end":"2026-09-01T07:30:00+00:00","trading_day":"2026-09-01","open":"100.0","high":"100.0","low":"100.0","close":"100.0","volume":"130.0","source_fingerprint":"68dbe117ec733fd3440e0384a76e41d9da3d635e75f399f49a9354812420910c"},{"bar_end":"2026-09-01T07:45:00+00:00","trading_day":"2026-09-01","open":"100.0","high":"100.0","low":"100.0","close":"100.0","volume":"131.0","source_fingerprint":"0f1973d116e50c4d88fa5fc321a9aff2d5d148eafd2c7c5a28c8086ef347f1bc"},{"bar_end":"2026-09-01T08:00:00+00:00","trading_day":"2026-09-01","open":"100.0","high":"100.0","low":"100.0","close":"100.0","volume":"132.0","source_fingerprint":"489370f6cb2c9e72151f6c6c1d250f407c8d7b8c356001ff57bb3bc58093f18f"},{"bar_end":"2026-09-01T08:15:00+00:00","trading_day":"2026-09-01","open":"100.0","high":"100.0","low":"100.0","close":"100.0","volume":"133.0","source_fingerprint":"5bec05661c65888427ebbe243a73c2dc21da62b7e922790328691dbef43ee3ad"},{"bar_end":"2026-09-01T08:30:00+00:00","trading_day":"2026-09-01","open":"100.0","high":"100.0","low":"100.0","close":"100.0","volume":"134.0","source_fingerprint":"756237fa27741a42a1706b0b7d573f11365fee86c6013f06b86a9f969f3f9566"},{"bar_end":"2026-09-01T08:45:00+00:00","trading_day":"2026-09-01","open":"110.0","high":"110.0","low":"110.0","close":"110.0","volume":"135.0","source_fingerprint":"25994f95367d837c7d87590155de46a212a776e47c15657c19991cdf1861c4f5"},{"bar_end":"2026-09-01T08:45:00+00:00","trading_day":"2026-09-01","open":"110.0","high":"110.0","low":"110.0","close":"110.0","volume":"135.0","source_fingerprint":"25994f95367d837c7d87590155de46a212a776e47c15657c19991cdf1861c4f5"},{"bar_end":"2026-09-01T09:00:00+00:00","trading_day":"2026-09-01","open":"80.0","high":"80.0","low":"80.0","close":"80.0","volume":"136.0","source_fingerprint":"4fc9213ec6452b5fa9a03a40641179c23b8156e52762d20fdd036ed6e47bbcf9"}],"expected_kernel_points":[{"input_index":0,"formula_version":"subing_watch_15m_v1","trading_day":"2026-09-01","bar_end":"2026-09-01T00:15:00+00:00","outcome":"evaluated_no_signal","observation_types":[],"close":100.0,"ma21":null,"dif":null,"dea":null,"macd_histogram":null,"context":{"ma21_slope_5_bps_per_bar":null,"distance_to_ma21_atr14":null,"macd_zero_distance_atr14":null,"volume_ratio_20":null,"range_state":"range_unavailable","higher_timeframe_alignment":"unavailable"},"public_reason_codes":[]},{"input_index":20,"formula_version":"subing_watch_15m_v1","trading_day":"2026-09-01","bar_end":"2026-09-01T05:15:00+00:00","outcome":"evaluated_no_signal","observation_types":[],"close":100.0,"ma21":100.0,"dif":null,"dea":null,"macd_histogram":null,"context":{"ma21_slope_5_bps_per_bar":null,"distance_to_ma21_atr14":null,"macd_zero_distance_atr14":null,"volume_ratio_20":null,"range_state":"range_unavailable","higher_timeframe_alignment":"unavailable"},"public_reason_codes":[]},{"input_index":33,"formula_version":"subing_watch_15m_v1","trading_day":"2026-09-01","bar_end":"2026-09-01T08:30:00+00:00","outcome":"evaluated_no_signal","observation_types":[],"close":100.0,"ma21":100.0,"dif":0.0,"dea":0.0,"macd_histogram":0.0,"context":{"ma21_slope_5_bps_per_bar":null,"distance_to_ma21_atr14":null,"macd_zero_distance_atr14":null,"volume_ratio_20":null,"range_state":"range_unavailable","higher_timeframe_alignment":"unavailable"},"public_reason_codes":[]},{"input_index":34,"formula_version":"subing_watch_15m_v1","trading_day":"2026-09-01","bar_end":"2026-09-01T08:45:00+00:00","outcome":"evaluated_candidate","observation_types":["buy"],"close":110.0,"ma21":100.47619,"dif":0.797721,"dea":0.159544,"macd_histogram":1.276353,"context":{"ma21_slope_5_bps_per_bar":null,"distance_to_ma21_atr14":null,"macd_zero_distance_atr14":null,"volume_ratio_20":null,"range_state":"range_unavailable","higher_timeframe_alignment":"unavailable"},"public_reason_codes":[]},{"input_index":35,"formula_version":"subing_watch_15m_v1","trading_day":"2026-09-01","bar_end":"2026-09-01T08:45:00+00:00","outcome":"evaluated_candidate","observation_types":["buy"],"close":110.0,"ma21":100.47619,"dif":0.797721,"dea":0.159544,"macd_histogram":1.276353,"context":{"ma21_slope_5_bps_per_bar":null,"distance_to_ma21_atr14":null,"macd_zero_distance_atr14":null,"volume_ratio_20":null,"range_state":"range_unavailable","higher_timeframe_alignment":"unavailable"},"public_reason_codes":[]},{"input_index":36,"formula_version":"subing_watch_15m_v1","trading_day":"2026-09-01","bar_end":"2026-09-01T09:00:00+00:00","outcome":"evaluated_candidate","observation_types":["sell"],"close":80.0,"ma21":99.52381,"dif":-0.979538,"dea":-0.068272,"macd_histogram":-1.822531,"context":{"ma21_slope_5_bps_per_bar":null,"distance_to_ma21_atr14":null,"macd_zero_distance_atr14":null,"volume_ratio_20":null,"range_state":"range_unavailable","higher_timeframe_alignment":"unavailable"},"public_reason_codes":[]}],"expected_application_evaluations":[{"input_index":0,"formula_version":"subing_watch_15m_v1","source_identity_digest":"subing-watch-source:e796df38831a949b367fb11232a788979ca097bacdfc64fb29b1e0aa988c2cea","trading_day":"2026-09-01","bar_end":"2026-09-01T00:15:00+00:00","source_mode":"canonical","outcome":"evaluated_no_signal","observation_types":[],"close":"100.000000","ma21":null,"dif":null,"dea":null,"macd_histogram":null,"context":{"ma21_slope_5_bps_per_bar":null,"distance_to_ma21_atr14":null,"macd_zero_distance_atr14":null,"volume_ratio_20":null,"range_state":"range_unavailable","higher_timeframe_alignment":"unavailable"},"candidate_id":null,"public_reason_codes":[]},{"input_index":20,"formula_version":"subing_watch_15m_v1","source_identity_digest":"subing-watch-source:e796df38831a949b367fb11232a788979ca097bacdfc64fb29b1e0aa988c2cea","trading_day":"2026-09-01","bar_end":"2026-09-01T05:15:00+00:00","source_mode":"canonical","outcome":"evaluated_no_signal","observation_types":[],"close":"100.000000","ma21":"100.000000","dif":null,"dea":null,"macd_histogram":null,"context":{"ma21_slope_5_bps_per_bar":null,"distance_to_ma21_atr14":null,"macd_zero_distance_atr14":null,"volume_ratio_20":null,"range_state":"range_unavailable","higher_timeframe_alignment":"unavailable"},"candidate_id":null,"public_reason_codes":[]},{"input_index":33,"formula_version":"subing_watch_15m_v1","source_identity_digest":"subing-watch-source:e796df38831a949b367fb11232a788979ca097bacdfc64fb29b1e0aa988c2cea","trading_day":"2026-09-01","bar_end":"2026-09-01T08:30:00+00:00","source_mode":"canonical","outcome":"evaluated_no_signal","observation_types":[],"close":"100.000000","ma21":"100.000000","dif":"0.000000","dea":"0.000000","macd_histogram":"0.000000","context":{"ma21_slope_5_bps_per_bar":null,"distance_to_ma21_atr14":null,"macd_zero_distance_atr14":null,"volume_ratio_20":null,"range_state":"range_unavailable","higher_timeframe_alignment":"unavailable"},"candidate_id":null,"public_reason_codes":[]},{"input_index":34,"formula_version":"subing_watch_15m_v1","source_identity_digest":"subing-watch-source:e796df38831a949b367fb11232a788979ca097bacdfc64fb29b1e0aa988c2cea","trading_day":"2026-09-01","bar_end":"2026-09-01T08:45:00+00:00","source_mode":"canonical","outcome":"evaluated_candidate","observation_types":["buy"],"close":"110.000000","ma21":"100.476190","dif":"0.797721","dea":"0.159544","macd_histogram":"1.276353","context":{"ma21_slope_5_bps_per_bar":null,"distance_to_ma21_atr14":null,"macd_zero_distance_atr14":null,"volume_ratio_20":null,"range_state":"range_unavailable","higher_timeframe_alignment":"unavailable"},"candidate_id":"b9ca9144652972a43e8b87346fcf95b9cdaabd9dccc66042ed878200b5267905","public_reason_codes":[]},{"input_index":35,"formula_version":"subing_watch_15m_v1","source_identity_digest":"subing-watch-source:e796df38831a949b367fb11232a788979ca097bacdfc64fb29b1e0aa988c2cea","trading_day":"2026-09-01","bar_end":"2026-09-01T08:45:00+00:00","source_mode":"canonical","outcome":"evaluated_candidate","observation_types":["buy"],"close":"110.000000","ma21":"100.476190","dif":"0.797721","dea":"0.159544","macd_histogram":"1.276353","context":{"ma21_slope_5_bps_per_bar":null,"distance_to_ma21_atr14":null,"macd_zero_distance_atr14":null,"volume_ratio_20":null,"range_state":"range_unavailable","higher_timeframe_alignment":"unavailable"},"candidate_id":"b9ca9144652972a43e8b87346fcf95b9cdaabd9dccc66042ed878200b5267905","public_reason_codes":[]},{"input_index":36,"formula_version":"subing_watch_15m_v1","source_identity_digest":"subing-watch-source:e796df38831a949b367fb11232a788979ca097bacdfc64fb29b1e0aa988c2cea","trading_day":"2026-09-01","bar_end":"2026-09-01T09:00:00+00:00","source_mode":"canonical","outcome":"evaluated_candidate","observation_types":["sell"],"close":"80.000000","ma21":"99.523810","dif":"-0.979538","dea":"-0.068272","macd_histogram":"-1.822531","context":{"ma21_slope_5_bps_per_bar":null,"distance_to_ma21_atr14":null,"macd_zero_distance_atr14":null,"volume_ratio_20":null,"range_state":"range_unavailable","higher_timeframe_alignment":"unavailable"},"candidate_id":"7e73fcfde76cc9920e06a7e5d7cc7cc7434f732c25603b9a3830aa3a2c3e0489","public_reason_codes":[]}],"payload_sha256":"8423e85c5e0cd4c9abaad89e4a59bbaa1a9468544f031d68b7878bd5341bfec0"}
+{
+  "policy": {
+    "schema_version": 1,
+    "formula_version": "subing_watch_15m_v1",
+    "policy_id": "subing_watch_15m_v1",
+    "series_kind": "actual_dominant",
+    "frequency": "15m",
+    "completed_bar_only": true,
+    "ma": {
+      "type": "simple_moving_average",
+      "period": 21,
+      "source": "close"
+    },
+    "macd": {
+      "fast": 12,
+      "slow": 26,
+      "signal": 9,
+      "ema_seed_policy": "sma_window",
+      "histogram_scale": 2
+    },
+    "context": {
+      "atr_period": 14,
+      "atr_smoothing_policy": "wilder_sma_seed",
+      "ma_slope_points": 5,
+      "volume_previous_bars": 20,
+      "range_indicator_code": "range_detector_lux_v1",
+      "higher_timeframe": "60m"
+    },
+    "round_digits": 6,
+    "auto_order": false
+  },
+  "identity": {
+    "symbol": "jm",
+    "contract": "JM2601",
+    "segment_start_trading_day": "2026-09-01",
+    "series_kind": "actual_dominant",
+    "frequency": "15m"
+  },
+  "input_bars": [
+    {
+      "bar_end": "2026-09-01T00:15:00+00:00",
+      "trading_day": "2026-09-01",
+      "open": "100.0",
+      "high": "100.0",
+      "low": "100.0",
+      "close": "100.0",
+      "volume": "101.0",
+      "source_fingerprint": "62b5c56a01f61e9586d326e7bc0e4d6b76e7a150084da8f2302007e89ab6229a"
+    },
+    {
+      "bar_end": "2026-09-01T00:30:00+00:00",
+      "trading_day": "2026-09-01",
+      "open": "100.0",
+      "high": "100.0",
+      "low": "100.0",
+      "close": "100.0",
+      "volume": "102.0",
+      "source_fingerprint": "c078451479584a350b9a7324d1ceb173923e1bcdaecefabfe4c2204dce0e7063"
+    },
+    {
+      "bar_end": "2026-09-01T00:45:00+00:00",
+      "trading_day": "2026-09-01",
+      "open": "100.0",
+      "high": "100.0",
+      "low": "100.0",
+      "close": "100.0",
+      "volume": "103.0",
+      "source_fingerprint": "497d7f8dc8b024d290f3fcf2a489619fbb3792129e956d294fd9c5be773665b2"
+    },
+    {
+      "bar_end": "2026-09-01T01:00:00+00:00",
+      "trading_day": "2026-09-01",
+      "open": "100.0",
+      "high": "100.0",
+      "low": "100.0",
+      "close": "100.0",
+      "volume": "104.0",
+      "source_fingerprint": "cecefc2d60ed6059d4f48f27fa819537aa442c44ecebe049285c1f5c876a27ac"
+    },
+    {
+      "bar_end": "2026-09-01T01:15:00+00:00",
+      "trading_day": "2026-09-01",
+      "open": "100.0",
+      "high": "100.0",
+      "low": "100.0",
+      "close": "100.0",
+      "volume": "105.0",
+      "source_fingerprint": "b32f5713e8f5662ea552e40c3615cbefea3960446d700fd48594602e58d56ed1"
+    },
+    {
+      "bar_end": "2026-09-01T01:30:00+00:00",
+      "trading_day": "2026-09-01",
+      "open": "100.0",
+      "high": "100.0",
+      "low": "100.0",
+      "close": "100.0",
+      "volume": "106.0",
+      "source_fingerprint": "fa0cce3c71de18f2b542389c80fa97fed9f15399061d12d0de4b53a02311ec3c"
+    },
+    {
+      "bar_end": "2026-09-01T01:45:00+00:00",
+      "trading_day": "2026-09-01",
+      "open": "100.0",
+      "high": "100.0",
+      "low": "100.0",
+      "close": "100.0",
+      "volume": "107.0",
+      "source_fingerprint": "13372fc2d597c60244d6b1e572b9765bace3df1fd0b5256f7bef867046dc0552"
+    },
+    {
+      "bar_end": "2026-09-01T02:00:00+00:00",
+      "trading_day": "2026-09-01",
+      "open": "100.0",
+      "high": "100.0",
+      "low": "100.0",
+      "close": "100.0",
+      "volume": "108.0",
+      "source_fingerprint": "d9d984a66506cdb3a297773c043a1d720431c723ace06ed2f51a153d1efd1fd8"
+    },
+    {
+      "bar_end": "2026-09-01T02:15:00+00:00",
+      "trading_day": "2026-09-01",
+      "open": "100.0",
+      "high": "100.0",
+      "low": "100.0",
+      "close": "100.0",
+      "volume": "109.0",
+      "source_fingerprint": "8fe4fddcf4e814818b5e81c4aedd5ae72f7f011ff11165c67fcb2104956f6c97"
+    },
+    {
+      "bar_end": "2026-09-01T02:30:00+00:00",
+      "trading_day": "2026-09-01",
+      "open": "100.0",
+      "high": "100.0",
+      "low": "100.0",
+      "close": "100.0",
+      "volume": "110.0",
+      "source_fingerprint": "79966883111198cc7a016c172b8425bd92bb423687447ea64a0af9230d6bf1a3"
+    },
+    {
+      "bar_end": "2026-09-01T02:45:00+00:00",
+      "trading_day": "2026-09-01",
+      "open": "100.0",
+      "high": "100.0",
+      "low": "100.0",
+      "close": "100.0",
+      "volume": "111.0",
+      "source_fingerprint": "732a0f2bdce2ec7aa11ed4f84c6672c8357349be6c69e86e8b858965e41e5a08"
+    },
+    {
+      "bar_end": "2026-09-01T03:00:00+00:00",
+      "trading_day": "2026-09-01",
+      "open": "100.0",
+      "high": "100.0",
+      "low": "100.0",
+      "close": "100.0",
+      "volume": "112.0",
+      "source_fingerprint": "9417fdb52c4421aaf9933e325c7dc9d6e558f57c5a51a761e70a81d18f2aa929"
+    },
+    {
+      "bar_end": "2026-09-01T03:15:00+00:00",
+      "trading_day": "2026-09-01",
+      "open": "100.0",
+      "high": "100.0",
+      "low": "100.0",
+      "close": "100.0",
+      "volume": "113.0",
+      "source_fingerprint": "70236af4e1746908bc6db5439af0cfdaf7f87e82d54e59101d460a043817d753"
+    },
+    {
+      "bar_end": "2026-09-01T03:30:00+00:00",
+      "trading_day": "2026-09-01",
+      "open": "100.0",
+      "high": "100.0",
+      "low": "100.0",
+      "close": "100.0",
+      "volume": "114.0",
+      "source_fingerprint": "ccf81eed88e5f2bc7f7a9ea003e944c3c0d912122c8d2a4156e7a9528ac3c8f3"
+    },
+    {
+      "bar_end": "2026-09-01T03:45:00+00:00",
+      "trading_day": "2026-09-01",
+      "open": "100.0",
+      "high": "100.0",
+      "low": "100.0",
+      "close": "100.0",
+      "volume": "115.0",
+      "source_fingerprint": "1ea681f6c288e9f2bec56f907764cdb297dbd6e301ba01ab755faff894536788"
+    },
+    {
+      "bar_end": "2026-09-01T04:00:00+00:00",
+      "trading_day": "2026-09-01",
+      "open": "100.0",
+      "high": "100.0",
+      "low": "100.0",
+      "close": "100.0",
+      "volume": "116.0",
+      "source_fingerprint": "20347520de0501df1abe32d975e67c71a96f5ac2f22dc771cc82224c03c61856"
+    },
+    {
+      "bar_end": "2026-09-01T04:15:00+00:00",
+      "trading_day": "2026-09-01",
+      "open": "100.0",
+      "high": "100.0",
+      "low": "100.0",
+      "close": "100.0",
+      "volume": "117.0",
+      "source_fingerprint": "ff691bd80fa9d4f0a01376f7848961cfaf41f75b79d3716fd0e498449294029a"
+    },
+    {
+      "bar_end": "2026-09-01T04:30:00+00:00",
+      "trading_day": "2026-09-01",
+      "open": "100.0",
+      "high": "100.0",
+      "low": "100.0",
+      "close": "100.0",
+      "volume": "118.0",
+      "source_fingerprint": "79d600133c0cf5ae8998fd53f58a2bdeefd8541d3598323bcae25e4aea9c5b0d"
+    },
+    {
+      "bar_end": "2026-09-01T04:45:00+00:00",
+      "trading_day": "2026-09-01",
+      "open": "100.0",
+      "high": "100.0",
+      "low": "100.0",
+      "close": "100.0",
+      "volume": "119.0",
+      "source_fingerprint": "467dd04734fc7b0dc125947a212539bb4b0d46b823c257007ec9b0513219c688"
+    },
+    {
+      "bar_end": "2026-09-01T05:00:00+00:00",
+      "trading_day": "2026-09-01",
+      "open": "100.0",
+      "high": "100.0",
+      "low": "100.0",
+      "close": "100.0",
+      "volume": "120.0",
+      "source_fingerprint": "fda686cafb0938bde4ba61c08663db7c9bfab691a2f46888acd3556746fc165b"
+    },
+    {
+      "bar_end": "2026-09-01T05:15:00+00:00",
+      "trading_day": "2026-09-01",
+      "open": "100.0",
+      "high": "100.0",
+      "low": "100.0",
+      "close": "100.0",
+      "volume": "121.0",
+      "source_fingerprint": "39416acde6a659e415147395a61d6dd4aea8f17eec20611eda7d3c88e42ab8e7"
+    },
+    {
+      "bar_end": "2026-09-01T05:30:00+00:00",
+      "trading_day": "2026-09-01",
+      "open": "100.0",
+      "high": "100.0",
+      "low": "100.0",
+      "close": "100.0",
+      "volume": "122.0",
+      "source_fingerprint": "0bbc54d1aeb283d1180ec216170f2ce895f319ed3dea801619f9be805f3b2c05"
+    },
+    {
+      "bar_end": "2026-09-01T05:45:00+00:00",
+      "trading_day": "2026-09-01",
+      "open": "100.0",
+      "high": "100.0",
+      "low": "100.0",
+      "close": "100.0",
+      "volume": "123.0",
+      "source_fingerprint": "253904a1317c948c20d0da862a6b40d93a059edee54b69f13369631f1e6f1be3"
+    },
+    {
+      "bar_end": "2026-09-01T06:00:00+00:00",
+      "trading_day": "2026-09-01",
+      "open": "100.0",
+      "high": "100.0",
+      "low": "100.0",
+      "close": "100.0",
+      "volume": "124.0",
+      "source_fingerprint": "f1456405cc5844e4f629516775e18fae64dd734ce48e0d3ae85e8b52fe7954b4"
+    },
+    {
+      "bar_end": "2026-09-01T06:15:00+00:00",
+      "trading_day": "2026-09-01",
+      "open": "100.0",
+      "high": "100.0",
+      "low": "100.0",
+      "close": "100.0",
+      "volume": "125.0",
+      "source_fingerprint": "4bdb0345800673993155afe18f8e3fd9915ee442670c3b03960dd4661b7a2b4d"
+    },
+    {
+      "bar_end": "2026-09-01T06:30:00+00:00",
+      "trading_day": "2026-09-01",
+      "open": "100.0",
+      "high": "100.0",
+      "low": "100.0",
+      "close": "100.0",
+      "volume": "126.0",
+      "source_fingerprint": "c5a6df3ed977708508381985187238c0c614c51c8251c779fe46f504f3ccca24"
+    },
+    {
+      "bar_end": "2026-09-01T06:45:00+00:00",
+      "trading_day": "2026-09-01",
+      "open": "100.0",
+      "high": "100.0",
+      "low": "100.0",
+      "close": "100.0",
+      "volume": "127.0",
+      "source_fingerprint": "24c66abb265fa36170ebefd6bea895efd8f68be6a9581d4372321e28b9d7552a"
+    },
+    {
+      "bar_end": "2026-09-01T07:00:00+00:00",
+      "trading_day": "2026-09-01",
+      "open": "100.0",
+      "high": "100.0",
+      "low": "100.0",
+      "close": "100.0",
+      "volume": "128.0",
+      "source_fingerprint": "87ce3dcb9e6d8316b88dbaa3bedc3174ba37e2715ad981ae88091f0a67eb7395"
+    },
+    {
+      "bar_end": "2026-09-01T07:15:00+00:00",
+      "trading_day": "2026-09-01",
+      "open": "100.0",
+      "high": "100.0",
+      "low": "100.0",
+      "close": "100.0",
+      "volume": "129.0",
+      "source_fingerprint": "6275d6f4f6654337994d48d1093ae5d44c0f7244517439e4bbfaff98cb96b7a0"
+    },
+    {
+      "bar_end": "2026-09-01T07:30:00+00:00",
+      "trading_day": "2026-09-01",
+      "open": "100.0",
+      "high": "100.0",
+      "low": "100.0",
+      "close": "100.0",
+      "volume": "130.0",
+      "source_fingerprint": "68dbe117ec733fd3440e0384a76e41d9da3d635e75f399f49a9354812420910c"
+    },
+    {
+      "bar_end": "2026-09-01T07:45:00+00:00",
+      "trading_day": "2026-09-01",
+      "open": "100.0",
+      "high": "100.0",
+      "low": "100.0",
+      "close": "100.0",
+      "volume": "131.0",
+      "source_fingerprint": "0f1973d116e50c4d88fa5fc321a9aff2d5d148eafd2c7c5a28c8086ef347f1bc"
+    },
+    {
+      "bar_end": "2026-09-01T08:00:00+00:00",
+      "trading_day": "2026-09-01",
+      "open": "100.0",
+      "high": "100.0",
+      "low": "100.0",
+      "close": "100.0",
+      "volume": "132.0",
+      "source_fingerprint": "489370f6cb2c9e72151f6c6c1d250f407c8d7b8c356001ff57bb3bc58093f18f"
+    },
+    {
+      "bar_end": "2026-09-01T08:15:00+00:00",
+      "trading_day": "2026-09-01",
+      "open": "100.0",
+      "high": "100.0",
+      "low": "100.0",
+      "close": "100.0",
+      "volume": "133.0",
+      "source_fingerprint": "5bec05661c65888427ebbe243a73c2dc21da62b7e922790328691dbef43ee3ad"
+    },
+    {
+      "bar_end": "2026-09-01T08:30:00+00:00",
+      "trading_day": "2026-09-01",
+      "open": "100.0",
+      "high": "100.0",
+      "low": "100.0",
+      "close": "100.0",
+      "volume": "134.0",
+      "source_fingerprint": "756237fa27741a42a1706b0b7d573f11365fee86c6013f06b86a9f969f3f9566"
+    },
+    {
+      "bar_end": "2026-09-01T08:45:00+00:00",
+      "trading_day": "2026-09-01",
+      "open": "110.0",
+      "high": "110.0",
+      "low": "110.0",
+      "close": "110.0",
+      "volume": "135.0",
+      "source_fingerprint": "25994f95367d837c7d87590155de46a212a776e47c15657c19991cdf1861c4f5"
+    },
+    {
+      "bar_end": "2026-09-01T08:45:00+00:00",
+      "trading_day": "2026-09-01",
+      "open": "110.0",
+      "high": "110.0",
+      "low": "110.0",
+      "close": "110.0",
+      "volume": "135.0",
+      "source_fingerprint": "25994f95367d837c7d87590155de46a212a776e47c15657c19991cdf1861c4f5"
+    },
+    {
+      "bar_end": "2026-09-01T09:00:00+00:00",
+      "trading_day": "2026-09-01",
+      "open": "80.0",
+      "high": "80.0",
+      "low": "80.0",
+      "close": "80.0",
+      "volume": "136.0",
+      "source_fingerprint": "4fc9213ec6452b5fa9a03a40641179c23b8156e52762d20fdd036ed6e47bbcf9"
+    }
+  ],
+  "expected_kernel_points": [
+    {
+      "input_index": 0,
+      "formula_version": "subing_watch_15m_v1",
+      "trading_day": "2026-09-01",
+      "bar_end": "2026-09-01T00:15:00+00:00",
+      "outcome": "source_unavailable",
+      "observation_types": [],
+      "close": 100.0,
+      "ma21": null,
+      "dif": null,
+      "dea": null,
+      "macd_histogram": null,
+      "context": {
+        "ma21_slope_5_bps_per_bar": null,
+        "distance_to_ma21_atr14": null,
+        "macd_zero_distance_atr14": null,
+        "volume_ratio_20": null,
+        "range_state": "range_unavailable",
+        "higher_timeframe_alignment": "unavailable"
+      },
+      "public_reason_codes": [
+        "SOURCE_WINDOW_UNAVAILABLE"
+      ]
+    },
+    {
+      "input_index": 1,
+      "formula_version": "subing_watch_15m_v1",
+      "trading_day": "2026-09-01",
+      "bar_end": "2026-09-01T00:30:00+00:00",
+      "outcome": "source_unavailable",
+      "observation_types": [],
+      "close": 100.0,
+      "ma21": null,
+      "dif": null,
+      "dea": null,
+      "macd_histogram": null,
+      "context": {
+        "ma21_slope_5_bps_per_bar": null,
+        "distance_to_ma21_atr14": null,
+        "macd_zero_distance_atr14": null,
+        "volume_ratio_20": null,
+        "range_state": "range_unavailable",
+        "higher_timeframe_alignment": "unavailable"
+      },
+      "public_reason_codes": [
+        "SOURCE_WINDOW_UNAVAILABLE"
+      ]
+    },
+    {
+      "input_index": 2,
+      "formula_version": "subing_watch_15m_v1",
+      "trading_day": "2026-09-01",
+      "bar_end": "2026-09-01T00:45:00+00:00",
+      "outcome": "source_unavailable",
+      "observation_types": [],
+      "close": 100.0,
+      "ma21": null,
+      "dif": null,
+      "dea": null,
+      "macd_histogram": null,
+      "context": {
+        "ma21_slope_5_bps_per_bar": null,
+        "distance_to_ma21_atr14": null,
+        "macd_zero_distance_atr14": null,
+        "volume_ratio_20": null,
+        "range_state": "range_unavailable",
+        "higher_timeframe_alignment": "unavailable"
+      },
+      "public_reason_codes": [
+        "SOURCE_WINDOW_UNAVAILABLE"
+      ]
+    },
+    {
+      "input_index": 3,
+      "formula_version": "subing_watch_15m_v1",
+      "trading_day": "2026-09-01",
+      "bar_end": "2026-09-01T01:00:00+00:00",
+      "outcome": "source_unavailable",
+      "observation_types": [],
+      "close": 100.0,
+      "ma21": null,
+      "dif": null,
+      "dea": null,
+      "macd_histogram": null,
+      "context": {
+        "ma21_slope_5_bps_per_bar": null,
+        "distance_to_ma21_atr14": null,
+        "macd_zero_distance_atr14": null,
+        "volume_ratio_20": null,
+        "range_state": "range_unavailable",
+        "higher_timeframe_alignment": "unavailable"
+      },
+      "public_reason_codes": [
+        "SOURCE_WINDOW_UNAVAILABLE"
+      ]
+    },
+    {
+      "input_index": 4,
+      "formula_version": "subing_watch_15m_v1",
+      "trading_day": "2026-09-01",
+      "bar_end": "2026-09-01T01:15:00+00:00",
+      "outcome": "source_unavailable",
+      "observation_types": [],
+      "close": 100.0,
+      "ma21": null,
+      "dif": null,
+      "dea": null,
+      "macd_histogram": null,
+      "context": {
+        "ma21_slope_5_bps_per_bar": null,
+        "distance_to_ma21_atr14": null,
+        "macd_zero_distance_atr14": null,
+        "volume_ratio_20": null,
+        "range_state": "range_unavailable",
+        "higher_timeframe_alignment": "unavailable"
+      },
+      "public_reason_codes": [
+        "SOURCE_WINDOW_UNAVAILABLE"
+      ]
+    },
+    {
+      "input_index": 5,
+      "formula_version": "subing_watch_15m_v1",
+      "trading_day": "2026-09-01",
+      "bar_end": "2026-09-01T01:30:00+00:00",
+      "outcome": "source_unavailable",
+      "observation_types": [],
+      "close": 100.0,
+      "ma21": null,
+      "dif": null,
+      "dea": null,
+      "macd_histogram": null,
+      "context": {
+        "ma21_slope_5_bps_per_bar": null,
+        "distance_to_ma21_atr14": null,
+        "macd_zero_distance_atr14": null,
+        "volume_ratio_20": null,
+        "range_state": "range_unavailable",
+        "higher_timeframe_alignment": "unavailable"
+      },
+      "public_reason_codes": [
+        "SOURCE_WINDOW_UNAVAILABLE"
+      ]
+    },
+    {
+      "input_index": 6,
+      "formula_version": "subing_watch_15m_v1",
+      "trading_day": "2026-09-01",
+      "bar_end": "2026-09-01T01:45:00+00:00",
+      "outcome": "source_unavailable",
+      "observation_types": [],
+      "close": 100.0,
+      "ma21": null,
+      "dif": null,
+      "dea": null,
+      "macd_histogram": null,
+      "context": {
+        "ma21_slope_5_bps_per_bar": null,
+        "distance_to_ma21_atr14": null,
+        "macd_zero_distance_atr14": null,
+        "volume_ratio_20": null,
+        "range_state": "range_unavailable",
+        "higher_timeframe_alignment": "unavailable"
+      },
+      "public_reason_codes": [
+        "SOURCE_WINDOW_UNAVAILABLE"
+      ]
+    },
+    {
+      "input_index": 7,
+      "formula_version": "subing_watch_15m_v1",
+      "trading_day": "2026-09-01",
+      "bar_end": "2026-09-01T02:00:00+00:00",
+      "outcome": "source_unavailable",
+      "observation_types": [],
+      "close": 100.0,
+      "ma21": null,
+      "dif": null,
+      "dea": null,
+      "macd_histogram": null,
+      "context": {
+        "ma21_slope_5_bps_per_bar": null,
+        "distance_to_ma21_atr14": null,
+        "macd_zero_distance_atr14": null,
+        "volume_ratio_20": null,
+        "range_state": "range_unavailable",
+        "higher_timeframe_alignment": "unavailable"
+      },
+      "public_reason_codes": [
+        "SOURCE_WINDOW_UNAVAILABLE"
+      ]
+    },
+    {
+      "input_index": 8,
+      "formula_version": "subing_watch_15m_v1",
+      "trading_day": "2026-09-01",
+      "bar_end": "2026-09-01T02:15:00+00:00",
+      "outcome": "source_unavailable",
+      "observation_types": [],
+      "close": 100.0,
+      "ma21": null,
+      "dif": null,
+      "dea": null,
+      "macd_histogram": null,
+      "context": {
+        "ma21_slope_5_bps_per_bar": null,
+        "distance_to_ma21_atr14": null,
+        "macd_zero_distance_atr14": null,
+        "volume_ratio_20": null,
+        "range_state": "range_unavailable",
+        "higher_timeframe_alignment": "unavailable"
+      },
+      "public_reason_codes": [
+        "SOURCE_WINDOW_UNAVAILABLE"
+      ]
+    },
+    {
+      "input_index": 9,
+      "formula_version": "subing_watch_15m_v1",
+      "trading_day": "2026-09-01",
+      "bar_end": "2026-09-01T02:30:00+00:00",
+      "outcome": "source_unavailable",
+      "observation_types": [],
+      "close": 100.0,
+      "ma21": null,
+      "dif": null,
+      "dea": null,
+      "macd_histogram": null,
+      "context": {
+        "ma21_slope_5_bps_per_bar": null,
+        "distance_to_ma21_atr14": null,
+        "macd_zero_distance_atr14": null,
+        "volume_ratio_20": null,
+        "range_state": "range_unavailable",
+        "higher_timeframe_alignment": "unavailable"
+      },
+      "public_reason_codes": [
+        "SOURCE_WINDOW_UNAVAILABLE"
+      ]
+    },
+    {
+      "input_index": 10,
+      "formula_version": "subing_watch_15m_v1",
+      "trading_day": "2026-09-01",
+      "bar_end": "2026-09-01T02:45:00+00:00",
+      "outcome": "source_unavailable",
+      "observation_types": [],
+      "close": 100.0,
+      "ma21": null,
+      "dif": null,
+      "dea": null,
+      "macd_histogram": null,
+      "context": {
+        "ma21_slope_5_bps_per_bar": null,
+        "distance_to_ma21_atr14": null,
+        "macd_zero_distance_atr14": null,
+        "volume_ratio_20": null,
+        "range_state": "range_unavailable",
+        "higher_timeframe_alignment": "unavailable"
+      },
+      "public_reason_codes": [
+        "SOURCE_WINDOW_UNAVAILABLE"
+      ]
+    },
+    {
+      "input_index": 11,
+      "formula_version": "subing_watch_15m_v1",
+      "trading_day": "2026-09-01",
+      "bar_end": "2026-09-01T03:00:00+00:00",
+      "outcome": "source_unavailable",
+      "observation_types": [],
+      "close": 100.0,
+      "ma21": null,
+      "dif": null,
+      "dea": null,
+      "macd_histogram": null,
+      "context": {
+        "ma21_slope_5_bps_per_bar": null,
+        "distance_to_ma21_atr14": null,
+        "macd_zero_distance_atr14": null,
+        "volume_ratio_20": null,
+        "range_state": "range_unavailable",
+        "higher_timeframe_alignment": "unavailable"
+      },
+      "public_reason_codes": [
+        "SOURCE_WINDOW_UNAVAILABLE"
+      ]
+    },
+    {
+      "input_index": 12,
+      "formula_version": "subing_watch_15m_v1",
+      "trading_day": "2026-09-01",
+      "bar_end": "2026-09-01T03:15:00+00:00",
+      "outcome": "source_unavailable",
+      "observation_types": [],
+      "close": 100.0,
+      "ma21": null,
+      "dif": null,
+      "dea": null,
+      "macd_histogram": null,
+      "context": {
+        "ma21_slope_5_bps_per_bar": null,
+        "distance_to_ma21_atr14": null,
+        "macd_zero_distance_atr14": null,
+        "volume_ratio_20": null,
+        "range_state": "range_unavailable",
+        "higher_timeframe_alignment": "unavailable"
+      },
+      "public_reason_codes": [
+        "SOURCE_WINDOW_UNAVAILABLE"
+      ]
+    },
+    {
+      "input_index": 13,
+      "formula_version": "subing_watch_15m_v1",
+      "trading_day": "2026-09-01",
+      "bar_end": "2026-09-01T03:30:00+00:00",
+      "outcome": "source_unavailable",
+      "observation_types": [],
+      "close": 100.0,
+      "ma21": null,
+      "dif": null,
+      "dea": null,
+      "macd_histogram": null,
+      "context": {
+        "ma21_slope_5_bps_per_bar": null,
+        "distance_to_ma21_atr14": null,
+        "macd_zero_distance_atr14": null,
+        "volume_ratio_20": null,
+        "range_state": "range_unavailable",
+        "higher_timeframe_alignment": "unavailable"
+      },
+      "public_reason_codes": [
+        "SOURCE_WINDOW_UNAVAILABLE"
+      ]
+    },
+    {
+      "input_index": 14,
+      "formula_version": "subing_watch_15m_v1",
+      "trading_day": "2026-09-01",
+      "bar_end": "2026-09-01T03:45:00+00:00",
+      "outcome": "source_unavailable",
+      "observation_types": [],
+      "close": 100.0,
+      "ma21": null,
+      "dif": null,
+      "dea": null,
+      "macd_histogram": null,
+      "context": {
+        "ma21_slope_5_bps_per_bar": null,
+        "distance_to_ma21_atr14": null,
+        "macd_zero_distance_atr14": null,
+        "volume_ratio_20": null,
+        "range_state": "range_unavailable",
+        "higher_timeframe_alignment": "unavailable"
+      },
+      "public_reason_codes": [
+        "SOURCE_WINDOW_UNAVAILABLE"
+      ]
+    },
+    {
+      "input_index": 15,
+      "formula_version": "subing_watch_15m_v1",
+      "trading_day": "2026-09-01",
+      "bar_end": "2026-09-01T04:00:00+00:00",
+      "outcome": "source_unavailable",
+      "observation_types": [],
+      "close": 100.0,
+      "ma21": null,
+      "dif": null,
+      "dea": null,
+      "macd_histogram": null,
+      "context": {
+        "ma21_slope_5_bps_per_bar": null,
+        "distance_to_ma21_atr14": null,
+        "macd_zero_distance_atr14": null,
+        "volume_ratio_20": null,
+        "range_state": "range_unavailable",
+        "higher_timeframe_alignment": "unavailable"
+      },
+      "public_reason_codes": [
+        "SOURCE_WINDOW_UNAVAILABLE"
+      ]
+    },
+    {
+      "input_index": 16,
+      "formula_version": "subing_watch_15m_v1",
+      "trading_day": "2026-09-01",
+      "bar_end": "2026-09-01T04:15:00+00:00",
+      "outcome": "source_unavailable",
+      "observation_types": [],
+      "close": 100.0,
+      "ma21": null,
+      "dif": null,
+      "dea": null,
+      "macd_histogram": null,
+      "context": {
+        "ma21_slope_5_bps_per_bar": null,
+        "distance_to_ma21_atr14": null,
+        "macd_zero_distance_atr14": null,
+        "volume_ratio_20": null,
+        "range_state": "range_unavailable",
+        "higher_timeframe_alignment": "unavailable"
+      },
+      "public_reason_codes": [
+        "SOURCE_WINDOW_UNAVAILABLE"
+      ]
+    },
+    {
+      "input_index": 17,
+      "formula_version": "subing_watch_15m_v1",
+      "trading_day": "2026-09-01",
+      "bar_end": "2026-09-01T04:30:00+00:00",
+      "outcome": "source_unavailable",
+      "observation_types": [],
+      "close": 100.0,
+      "ma21": null,
+      "dif": null,
+      "dea": null,
+      "macd_histogram": null,
+      "context": {
+        "ma21_slope_5_bps_per_bar": null,
+        "distance_to_ma21_atr14": null,
+        "macd_zero_distance_atr14": null,
+        "volume_ratio_20": null,
+        "range_state": "range_unavailable",
+        "higher_timeframe_alignment": "unavailable"
+      },
+      "public_reason_codes": [
+        "SOURCE_WINDOW_UNAVAILABLE"
+      ]
+    },
+    {
+      "input_index": 18,
+      "formula_version": "subing_watch_15m_v1",
+      "trading_day": "2026-09-01",
+      "bar_end": "2026-09-01T04:45:00+00:00",
+      "outcome": "source_unavailable",
+      "observation_types": [],
+      "close": 100.0,
+      "ma21": null,
+      "dif": null,
+      "dea": null,
+      "macd_histogram": null,
+      "context": {
+        "ma21_slope_5_bps_per_bar": null,
+        "distance_to_ma21_atr14": null,
+        "macd_zero_distance_atr14": null,
+        "volume_ratio_20": null,
+        "range_state": "range_unavailable",
+        "higher_timeframe_alignment": "unavailable"
+      },
+      "public_reason_codes": [
+        "SOURCE_WINDOW_UNAVAILABLE"
+      ]
+    },
+    {
+      "input_index": 19,
+      "formula_version": "subing_watch_15m_v1",
+      "trading_day": "2026-09-01",
+      "bar_end": "2026-09-01T05:00:00+00:00",
+      "outcome": "source_unavailable",
+      "observation_types": [],
+      "close": 100.0,
+      "ma21": null,
+      "dif": null,
+      "dea": null,
+      "macd_histogram": null,
+      "context": {
+        "ma21_slope_5_bps_per_bar": null,
+        "distance_to_ma21_atr14": null,
+        "macd_zero_distance_atr14": null,
+        "volume_ratio_20": null,
+        "range_state": "range_unavailable",
+        "higher_timeframe_alignment": "unavailable"
+      },
+      "public_reason_codes": [
+        "SOURCE_WINDOW_UNAVAILABLE"
+      ]
+    },
+    {
+      "input_index": 20,
+      "formula_version": "subing_watch_15m_v1",
+      "trading_day": "2026-09-01",
+      "bar_end": "2026-09-01T05:15:00+00:00",
+      "outcome": "source_unavailable",
+      "observation_types": [],
+      "close": 100.0,
+      "ma21": 100.0,
+      "dif": null,
+      "dea": null,
+      "macd_histogram": null,
+      "context": {
+        "ma21_slope_5_bps_per_bar": null,
+        "distance_to_ma21_atr14": null,
+        "macd_zero_distance_atr14": null,
+        "volume_ratio_20": 1.095023,
+        "range_state": "range_unavailable",
+        "higher_timeframe_alignment": "unavailable"
+      },
+      "public_reason_codes": [
+        "SOURCE_WINDOW_UNAVAILABLE"
+      ]
+    },
+    {
+      "input_index": 21,
+      "formula_version": "subing_watch_15m_v1",
+      "trading_day": "2026-09-01",
+      "bar_end": "2026-09-01T05:30:00+00:00",
+      "outcome": "source_unavailable",
+      "observation_types": [],
+      "close": 100.0,
+      "ma21": 100.0,
+      "dif": null,
+      "dea": null,
+      "macd_histogram": null,
+      "context": {
+        "ma21_slope_5_bps_per_bar": null,
+        "distance_to_ma21_atr14": null,
+        "macd_zero_distance_atr14": null,
+        "volume_ratio_20": 1.09417,
+        "range_state": "range_unavailable",
+        "higher_timeframe_alignment": "unavailable"
+      },
+      "public_reason_codes": [
+        "SOURCE_WINDOW_UNAVAILABLE"
+      ]
+    },
+    {
+      "input_index": 22,
+      "formula_version": "subing_watch_15m_v1",
+      "trading_day": "2026-09-01",
+      "bar_end": "2026-09-01T05:45:00+00:00",
+      "outcome": "source_unavailable",
+      "observation_types": [],
+      "close": 100.0,
+      "ma21": 100.0,
+      "dif": null,
+      "dea": null,
+      "macd_histogram": null,
+      "context": {
+        "ma21_slope_5_bps_per_bar": null,
+        "distance_to_ma21_atr14": null,
+        "macd_zero_distance_atr14": null,
+        "volume_ratio_20": 1.093333,
+        "range_state": "range_unavailable",
+        "higher_timeframe_alignment": "unavailable"
+      },
+      "public_reason_codes": [
+        "SOURCE_WINDOW_UNAVAILABLE"
+      ]
+    },
+    {
+      "input_index": 23,
+      "formula_version": "subing_watch_15m_v1",
+      "trading_day": "2026-09-01",
+      "bar_end": "2026-09-01T06:00:00+00:00",
+      "outcome": "source_unavailable",
+      "observation_types": [],
+      "close": 100.0,
+      "ma21": 100.0,
+      "dif": null,
+      "dea": null,
+      "macd_histogram": null,
+      "context": {
+        "ma21_slope_5_bps_per_bar": null,
+        "distance_to_ma21_atr14": null,
+        "macd_zero_distance_atr14": null,
+        "volume_ratio_20": 1.092511,
+        "range_state": "range_unavailable",
+        "higher_timeframe_alignment": "unavailable"
+      },
+      "public_reason_codes": [
+        "SOURCE_WINDOW_UNAVAILABLE"
+      ]
+    },
+    {
+      "input_index": 24,
+      "formula_version": "subing_watch_15m_v1",
+      "trading_day": "2026-09-01",
+      "bar_end": "2026-09-01T06:15:00+00:00",
+      "outcome": "source_unavailable",
+      "observation_types": [],
+      "close": 100.0,
+      "ma21": 100.0,
+      "dif": null,
+      "dea": null,
+      "macd_histogram": null,
+      "context": {
+        "ma21_slope_5_bps_per_bar": 0.0,
+        "distance_to_ma21_atr14": null,
+        "macd_zero_distance_atr14": null,
+        "volume_ratio_20": 1.091703,
+        "range_state": "range_unavailable",
+        "higher_timeframe_alignment": "unavailable"
+      },
+      "public_reason_codes": [
+        "SOURCE_WINDOW_UNAVAILABLE"
+      ]
+    },
+    {
+      "input_index": 25,
+      "formula_version": "subing_watch_15m_v1",
+      "trading_day": "2026-09-01",
+      "bar_end": "2026-09-01T06:30:00+00:00",
+      "outcome": "source_unavailable",
+      "observation_types": [],
+      "close": 100.0,
+      "ma21": 100.0,
+      "dif": 0.0,
+      "dea": null,
+      "macd_histogram": null,
+      "context": {
+        "ma21_slope_5_bps_per_bar": 0.0,
+        "distance_to_ma21_atr14": null,
+        "macd_zero_distance_atr14": null,
+        "volume_ratio_20": 1.090909,
+        "range_state": "range_unavailable",
+        "higher_timeframe_alignment": "unavailable"
+      },
+      "public_reason_codes": [
+        "SOURCE_WINDOW_UNAVAILABLE"
+      ]
+    },
+    {
+      "input_index": 26,
+      "formula_version": "subing_watch_15m_v1",
+      "trading_day": "2026-09-01",
+      "bar_end": "2026-09-01T06:45:00+00:00",
+      "outcome": "source_unavailable",
+      "observation_types": [],
+      "close": 100.0,
+      "ma21": 100.0,
+      "dif": 0.0,
+      "dea": null,
+      "macd_histogram": null,
+      "context": {
+        "ma21_slope_5_bps_per_bar": 0.0,
+        "distance_to_ma21_atr14": null,
+        "macd_zero_distance_atr14": null,
+        "volume_ratio_20": 1.090129,
+        "range_state": "range_unavailable",
+        "higher_timeframe_alignment": "unavailable"
+      },
+      "public_reason_codes": [
+        "SOURCE_WINDOW_UNAVAILABLE"
+      ]
+    },
+    {
+      "input_index": 27,
+      "formula_version": "subing_watch_15m_v1",
+      "trading_day": "2026-09-01",
+      "bar_end": "2026-09-01T07:00:00+00:00",
+      "outcome": "source_unavailable",
+      "observation_types": [],
+      "close": 100.0,
+      "ma21": 100.0,
+      "dif": 0.0,
+      "dea": null,
+      "macd_histogram": null,
+      "context": {
+        "ma21_slope_5_bps_per_bar": 0.0,
+        "distance_to_ma21_atr14": null,
+        "macd_zero_distance_atr14": null,
+        "volume_ratio_20": 1.089362,
+        "range_state": "range_unavailable",
+        "higher_timeframe_alignment": "unavailable"
+      },
+      "public_reason_codes": [
+        "SOURCE_WINDOW_UNAVAILABLE"
+      ]
+    },
+    {
+      "input_index": 28,
+      "formula_version": "subing_watch_15m_v1",
+      "trading_day": "2026-09-01",
+      "bar_end": "2026-09-01T07:15:00+00:00",
+      "outcome": "source_unavailable",
+      "observation_types": [],
+      "close": 100.0,
+      "ma21": 100.0,
+      "dif": 0.0,
+      "dea": null,
+      "macd_histogram": null,
+      "context": {
+        "ma21_slope_5_bps_per_bar": 0.0,
+        "distance_to_ma21_atr14": null,
+        "macd_zero_distance_atr14": null,
+        "volume_ratio_20": 1.088608,
+        "range_state": "range_unavailable",
+        "higher_timeframe_alignment": "unavailable"
+      },
+      "public_reason_codes": [
+        "SOURCE_WINDOW_UNAVAILABLE"
+      ]
+    },
+    {
+      "input_index": 29,
+      "formula_version": "subing_watch_15m_v1",
+      "trading_day": "2026-09-01",
+      "bar_end": "2026-09-01T07:30:00+00:00",
+      "outcome": "source_unavailable",
+      "observation_types": [],
+      "close": 100.0,
+      "ma21": 100.0,
+      "dif": 0.0,
+      "dea": null,
+      "macd_histogram": null,
+      "context": {
+        "ma21_slope_5_bps_per_bar": 0.0,
+        "distance_to_ma21_atr14": null,
+        "macd_zero_distance_atr14": null,
+        "volume_ratio_20": 1.087866,
+        "range_state": "range_unavailable",
+        "higher_timeframe_alignment": "unavailable"
+      },
+      "public_reason_codes": [
+        "SOURCE_WINDOW_UNAVAILABLE"
+      ]
+    },
+    {
+      "input_index": 30,
+      "formula_version": "subing_watch_15m_v1",
+      "trading_day": "2026-09-01",
+      "bar_end": "2026-09-01T07:45:00+00:00",
+      "outcome": "source_unavailable",
+      "observation_types": [],
+      "close": 100.0,
+      "ma21": 100.0,
+      "dif": 0.0,
+      "dea": null,
+      "macd_histogram": null,
+      "context": {
+        "ma21_slope_5_bps_per_bar": 0.0,
+        "distance_to_ma21_atr14": null,
+        "macd_zero_distance_atr14": null,
+        "volume_ratio_20": 1.087137,
+        "range_state": "range_unavailable",
+        "higher_timeframe_alignment": "unavailable"
+      },
+      "public_reason_codes": [
+        "SOURCE_WINDOW_UNAVAILABLE"
+      ]
+    },
+    {
+      "input_index": 31,
+      "formula_version": "subing_watch_15m_v1",
+      "trading_day": "2026-09-01",
+      "bar_end": "2026-09-01T08:00:00+00:00",
+      "outcome": "source_unavailable",
+      "observation_types": [],
+      "close": 100.0,
+      "ma21": 100.0,
+      "dif": 0.0,
+      "dea": null,
+      "macd_histogram": null,
+      "context": {
+        "ma21_slope_5_bps_per_bar": 0.0,
+        "distance_to_ma21_atr14": null,
+        "macd_zero_distance_atr14": null,
+        "volume_ratio_20": 1.08642,
+        "range_state": "range_unavailable",
+        "higher_timeframe_alignment": "unavailable"
+      },
+      "public_reason_codes": [
+        "SOURCE_WINDOW_UNAVAILABLE"
+      ]
+    },
+    {
+      "input_index": 32,
+      "formula_version": "subing_watch_15m_v1",
+      "trading_day": "2026-09-01",
+      "bar_end": "2026-09-01T08:15:00+00:00",
+      "outcome": "source_unavailable",
+      "observation_types": [],
+      "close": 100.0,
+      "ma21": 100.0,
+      "dif": 0.0,
+      "dea": null,
+      "macd_histogram": null,
+      "context": {
+        "ma21_slope_5_bps_per_bar": 0.0,
+        "distance_to_ma21_atr14": null,
+        "macd_zero_distance_atr14": null,
+        "volume_ratio_20": 1.085714,
+        "range_state": "range_unavailable",
+        "higher_timeframe_alignment": "unavailable"
+      },
+      "public_reason_codes": [
+        "SOURCE_WINDOW_UNAVAILABLE"
+      ]
+    },
+    {
+      "input_index": 33,
+      "formula_version": "subing_watch_15m_v1",
+      "trading_day": "2026-09-01",
+      "bar_end": "2026-09-01T08:30:00+00:00",
+      "outcome": "evaluated_no_signal",
+      "observation_types": [],
+      "close": 100.0,
+      "ma21": 100.0,
+      "dif": 0.0,
+      "dea": 0.0,
+      "macd_histogram": 0.0,
+      "context": {
+        "ma21_slope_5_bps_per_bar": 0.0,
+        "distance_to_ma21_atr14": null,
+        "macd_zero_distance_atr14": null,
+        "volume_ratio_20": 1.08502,
+        "range_state": "range_unavailable",
+        "higher_timeframe_alignment": "unavailable"
+      },
+      "public_reason_codes": []
+    },
+    {
+      "input_index": 34,
+      "formula_version": "subing_watch_15m_v1",
+      "trading_day": "2026-09-01",
+      "bar_end": "2026-09-01T08:45:00+00:00",
+      "outcome": "evaluated_candidate",
+      "observation_types": [
+        "buy"
+      ],
+      "close": 110.0,
+      "ma21": 100.47619,
+      "dif": 0.797721,
+      "dea": 0.159544,
+      "macd_histogram": 1.276353,
+      "context": {
+        "ma21_slope_5_bps_per_bar": 9.478673,
+        "distance_to_ma21_atr14": 13.333333,
+        "macd_zero_distance_atr14": 1.116809,
+        "volume_ratio_20": 1.084337,
+        "range_state": "range_unavailable",
+        "higher_timeframe_alignment": "unavailable"
+      },
+      "public_reason_codes": []
+    },
+    {
+      "input_index": 35,
+      "formula_version": "subing_watch_15m_v1",
+      "trading_day": "2026-09-01",
+      "bar_end": "2026-09-01T08:45:00+00:00",
+      "outcome": "evaluated_candidate",
+      "observation_types": [
+        "buy"
+      ],
+      "close": 110.0,
+      "ma21": 100.47619,
+      "dif": 0.797721,
+      "dea": 0.159544,
+      "macd_histogram": 1.276353,
+      "context": {
+        "ma21_slope_5_bps_per_bar": 9.478673,
+        "distance_to_ma21_atr14": 13.333333,
+        "macd_zero_distance_atr14": 1.116809,
+        "volume_ratio_20": 1.084337,
+        "range_state": "range_unavailable",
+        "higher_timeframe_alignment": "unavailable"
+      },
+      "public_reason_codes": []
+    },
+    {
+      "input_index": 36,
+      "formula_version": "subing_watch_15m_v1",
+      "trading_day": "2026-09-01",
+      "bar_end": "2026-09-01T09:00:00+00:00",
+      "outcome": "evaluated_candidate",
+      "observation_types": [
+        "sell"
+      ],
+      "close": 80.0,
+      "ma21": 99.52381,
+      "dif": -0.979538,
+      "dea": -0.068272,
+      "macd_histogram": -1.822531,
+      "context": {
+        "ma21_slope_5_bps_per_bar": -4.784689,
+        "distance_to_ma21_atr14": -6.957576,
+        "macd_zero_distance_atr14": 0.349072,
+        "volume_ratio_20": 1.083665,
+        "range_state": "range_unavailable",
+        "higher_timeframe_alignment": "unavailable"
+      },
+      "public_reason_codes": []
+    }
+  ],
+  "expected_application_evaluations": [
+    {
+      "input_index": 0,
+      "formula_version": "subing_watch_15m_v1",
+      "source_identity_digest": "subing-watch-source:e796df38831a949b367fb11232a788979ca097bacdfc64fb29b1e0aa988c2cea",
+      "trading_day": "2026-09-01",
+      "bar_end": "2026-09-01T00:15:00+00:00",
+      "source_mode": "canonical",
+      "outcome": "source_unavailable",
+      "observation_types": [],
+      "close": "100.000000",
+      "ma21": null,
+      "dif": null,
+      "dea": null,
+      "macd_histogram": null,
+      "candidate_id": null,
+      "context": {
+        "ma21_slope_5_bps_per_bar": null,
+        "distance_to_ma21_atr14": null,
+        "macd_zero_distance_atr14": null,
+        "volume_ratio_20": null,
+        "range_state": "range_unavailable",
+        "higher_timeframe_alignment": "unavailable"
+      },
+      "public_reason_codes": [
+        "SOURCE_WINDOW_UNAVAILABLE"
+      ]
+    },
+    {
+      "input_index": 1,
+      "formula_version": "subing_watch_15m_v1",
+      "source_identity_digest": "subing-watch-source:e796df38831a949b367fb11232a788979ca097bacdfc64fb29b1e0aa988c2cea",
+      "trading_day": "2026-09-01",
+      "bar_end": "2026-09-01T00:30:00+00:00",
+      "source_mode": "canonical",
+      "outcome": "source_unavailable",
+      "observation_types": [],
+      "close": "100.000000",
+      "ma21": null,
+      "dif": null,
+      "dea": null,
+      "macd_histogram": null,
+      "candidate_id": null,
+      "context": {
+        "ma21_slope_5_bps_per_bar": null,
+        "distance_to_ma21_atr14": null,
+        "macd_zero_distance_atr14": null,
+        "volume_ratio_20": null,
+        "range_state": "range_unavailable",
+        "higher_timeframe_alignment": "unavailable"
+      },
+      "public_reason_codes": [
+        "SOURCE_WINDOW_UNAVAILABLE"
+      ]
+    },
+    {
+      "input_index": 2,
+      "formula_version": "subing_watch_15m_v1",
+      "source_identity_digest": "subing-watch-source:e796df38831a949b367fb11232a788979ca097bacdfc64fb29b1e0aa988c2cea",
+      "trading_day": "2026-09-01",
+      "bar_end": "2026-09-01T00:45:00+00:00",
+      "source_mode": "canonical",
+      "outcome": "source_unavailable",
+      "observation_types": [],
+      "close": "100.000000",
+      "ma21": null,
+      "dif": null,
+      "dea": null,
+      "macd_histogram": null,
+      "candidate_id": null,
+      "context": {
+        "ma21_slope_5_bps_per_bar": null,
+        "distance_to_ma21_atr14": null,
+        "macd_zero_distance_atr14": null,
+        "volume_ratio_20": null,
+        "range_state": "range_unavailable",
+        "higher_timeframe_alignment": "unavailable"
+      },
+      "public_reason_codes": [
+        "SOURCE_WINDOW_UNAVAILABLE"
+      ]
+    },
+    {
+      "input_index": 3,
+      "formula_version": "subing_watch_15m_v1",
+      "source_identity_digest": "subing-watch-source:e796df38831a949b367fb11232a788979ca097bacdfc64fb29b1e0aa988c2cea",
+      "trading_day": "2026-09-01",
+      "bar_end": "2026-09-01T01:00:00+00:00",
+      "source_mode": "canonical",
+      "outcome": "source_unavailable",
+      "observation_types": [],
+      "close": "100.000000",
+      "ma21": null,
+      "dif": null,
+      "dea": null,
+      "macd_histogram": null,
+      "candidate_id": null,
+      "context": {
+        "ma21_slope_5_bps_per_bar": null,
+        "distance_to_ma21_atr14": null,
+        "macd_zero_distance_atr14": null,
+        "volume_ratio_20": null,
+        "range_state": "range_unavailable",
+        "higher_timeframe_alignment": "unavailable"
+      },
+      "public_reason_codes": [
+        "SOURCE_WINDOW_UNAVAILABLE"
+      ]
+    },
+    {
+      "input_index": 4,
+      "formula_version": "subing_watch_15m_v1",
+      "source_identity_digest": "subing-watch-source:e796df38831a949b367fb11232a788979ca097bacdfc64fb29b1e0aa988c2cea",
+      "trading_day": "2026-09-01",
+      "bar_end": "2026-09-01T01:15:00+00:00",
+      "source_mode": "canonical",
+      "outcome": "source_unavailable",
+      "observation_types": [],
+      "close": "100.000000",
+      "ma21": null,
+      "dif": null,
+      "dea": null,
+      "macd_histogram": null,
+      "candidate_id": null,
+      "context": {
+        "ma21_slope_5_bps_per_bar": null,
+        "distance_to_ma21_atr14": null,
+        "macd_zero_distance_atr14": null,
+        "volume_ratio_20": null,
+        "range_state": "range_unavailable",
+        "higher_timeframe_alignment": "unavailable"
+      },
+      "public_reason_codes": [
+        "SOURCE_WINDOW_UNAVAILABLE"
+      ]
+    },
+    {
+      "input_index": 5,
+      "formula_version": "subing_watch_15m_v1",
+      "source_identity_digest": "subing-watch-source:e796df38831a949b367fb11232a788979ca097bacdfc64fb29b1e0aa988c2cea",
+      "trading_day": "2026-09-01",
+      "bar_end": "2026-09-01T01:30:00+00:00",
+      "source_mode": "canonical",
+      "outcome": "source_unavailable",
+      "observation_types": [],
+      "close": "100.000000",
+      "ma21": null,
+      "dif": null,
+      "dea": null,
+      "macd_histogram": null,
+      "candidate_id": null,
+      "context": {
+        "ma21_slope_5_bps_per_bar": null,
+        "distance_to_ma21_atr14": null,
+        "macd_zero_distance_atr14": null,
+        "volume_ratio_20": null,
+        "range_state": "range_unavailable",
+        "higher_timeframe_alignment": "unavailable"
+      },
+      "public_reason_codes": [
+        "SOURCE_WINDOW_UNAVAILABLE"
+      ]
+    },
+    {
+      "input_index": 6,
+      "formula_version": "subing_watch_15m_v1",
+      "source_identity_digest": "subing-watch-source:e796df38831a949b367fb11232a788979ca097bacdfc64fb29b1e0aa988c2cea",
+      "trading_day": "2026-09-01",
+      "bar_end": "2026-09-01T01:45:00+00:00",
+      "source_mode": "canonical",
+      "outcome": "source_unavailable",
+      "observation_types": [],
+      "close": "100.000000",
+      "ma21": null,
+      "dif": null,
+      "dea": null,
+      "macd_histogram": null,
+      "candidate_id": null,
+      "context": {
+        "ma21_slope_5_bps_per_bar": null,
+        "distance_to_ma21_atr14": null,
+        "macd_zero_distance_atr14": null,
+        "volume_ratio_20": null,
+        "range_state": "range_unavailable",
+        "higher_timeframe_alignment": "unavailable"
+      },
+      "public_reason_codes": [
+        "SOURCE_WINDOW_UNAVAILABLE"
+      ]
+    },
+    {
+      "input_index": 7,
+      "formula_version": "subing_watch_15m_v1",
+      "source_identity_digest": "subing-watch-source:e796df38831a949b367fb11232a788979ca097bacdfc64fb29b1e0aa988c2cea",
+      "trading_day": "2026-09-01",
+      "bar_end": "2026-09-01T02:00:00+00:00",
+      "source_mode": "canonical",
+      "outcome": "source_unavailable",
+      "observation_types": [],
+      "close": "100.000000",
+      "ma21": null,
+      "dif": null,
+      "dea": null,
+      "macd_histogram": null,
+      "candidate_id": null,
+      "context": {
+        "ma21_slope_5_bps_per_bar": null,
+        "distance_to_ma21_atr14": null,
+        "macd_zero_distance_atr14": null,
+        "volume_ratio_20": null,
+        "range_state": "range_unavailable",
+        "higher_timeframe_alignment": "unavailable"
+      },
+      "public_reason_codes": [
+        "SOURCE_WINDOW_UNAVAILABLE"
+      ]
+    },
+    {
+      "input_index": 8,
+      "formula_version": "subing_watch_15m_v1",
+      "source_identity_digest": "subing-watch-source:e796df38831a949b367fb11232a788979ca097bacdfc64fb29b1e0aa988c2cea",
+      "trading_day": "2026-09-01",
+      "bar_end": "2026-09-01T02:15:00+00:00",
+      "source_mode": "canonical",
+      "outcome": "source_unavailable",
+      "observation_types": [],
+      "close": "100.000000",
+      "ma21": null,
+      "dif": null,
+      "dea": null,
+      "macd_histogram": null,
+      "candidate_id": null,
+      "context": {
+        "ma21_slope_5_bps_per_bar": null,
+        "distance_to_ma21_atr14": null,
+        "macd_zero_distance_atr14": null,
+        "volume_ratio_20": null,
+        "range_state": "range_unavailable",
+        "higher_timeframe_alignment": "unavailable"
+      },
+      "public_reason_codes": [
+        "SOURCE_WINDOW_UNAVAILABLE"
+      ]
+    },
+    {
+      "input_index": 9,
+      "formula_version": "subing_watch_15m_v1",
+      "source_identity_digest": "subing-watch-source:e796df38831a949b367fb11232a788979ca097bacdfc64fb29b1e0aa988c2cea",
+      "trading_day": "2026-09-01",
+      "bar_end": "2026-09-01T02:30:00+00:00",
+      "source_mode": "canonical",
+      "outcome": "source_unavailable",
+      "observation_types": [],
+      "close": "100.000000",
+      "ma21": null,
+      "dif": null,
+      "dea": null,
+      "macd_histogram": null,
+      "candidate_id": null,
+      "context": {
+        "ma21_slope_5_bps_per_bar": null,
+        "distance_to_ma21_atr14": null,
+        "macd_zero_distance_atr14": null,
+        "volume_ratio_20": null,
+        "range_state": "range_unavailable",
+        "higher_timeframe_alignment": "unavailable"
+      },
+      "public_reason_codes": [
+        "SOURCE_WINDOW_UNAVAILABLE"
+      ]
+    },
+    {
+      "input_index": 10,
+      "formula_version": "subing_watch_15m_v1",
+      "source_identity_digest": "subing-watch-source:e796df38831a949b367fb11232a788979ca097bacdfc64fb29b1e0aa988c2cea",
+      "trading_day": "2026-09-01",
+      "bar_end": "2026-09-01T02:45:00+00:00",
+      "source_mode": "canonical",
+      "outcome": "source_unavailable",
+      "observation_types": [],
+      "close": "100.000000",
+      "ma21": null,
+      "dif": null,
+      "dea": null,
+      "macd_histogram": null,
+      "candidate_id": null,
+      "context": {
+        "ma21_slope_5_bps_per_bar": null,
+        "distance_to_ma21_atr14": null,
+        "macd_zero_distance_atr14": null,
+        "volume_ratio_20": null,
+        "range_state": "range_unavailable",
+        "higher_timeframe_alignment": "unavailable"
+      },
+      "public_reason_codes": [
+        "SOURCE_WINDOW_UNAVAILABLE"
+      ]
+    },
+    {
+      "input_index": 11,
+      "formula_version": "subing_watch_15m_v1",
+      "source_identity_digest": "subing-watch-source:e796df38831a949b367fb11232a788979ca097bacdfc64fb29b1e0aa988c2cea",
+      "trading_day": "2026-09-01",
+      "bar_end": "2026-09-01T03:00:00+00:00",
+      "source_mode": "canonical",
+      "outcome": "source_unavailable",
+      "observation_types": [],
+      "close": "100.000000",
+      "ma21": null,
+      "dif": null,
+      "dea": null,
+      "macd_histogram": null,
+      "candidate_id": null,
+      "context": {
+        "ma21_slope_5_bps_per_bar": null,
+        "distance_to_ma21_atr14": null,
+        "macd_zero_distance_atr14": null,
+        "volume_ratio_20": null,
+        "range_state": "range_unavailable",
+        "higher_timeframe_alignment": "unavailable"
+      },
+      "public_reason_codes": [
+        "SOURCE_WINDOW_UNAVAILABLE"
+      ]
+    },
+    {
+      "input_index": 12,
+      "formula_version": "subing_watch_15m_v1",
+      "source_identity_digest": "subing-watch-source:e796df38831a949b367fb11232a788979ca097bacdfc64fb29b1e0aa988c2cea",
+      "trading_day": "2026-09-01",
+      "bar_end": "2026-09-01T03:15:00+00:00",
+      "source_mode": "canonical",
+      "outcome": "source_unavailable",
+      "observation_types": [],
+      "close": "100.000000",
+      "ma21": null,
+      "dif": null,
+      "dea": null,
+      "macd_histogram": null,
+      "candidate_id": null,
+      "context": {
+        "ma21_slope_5_bps_per_bar": null,
+        "distance_to_ma21_atr14": null,
+        "macd_zero_distance_atr14": null,
+        "volume_ratio_20": null,
+        "range_state": "range_unavailable",
+        "higher_timeframe_alignment": "unavailable"
+      },
+      "public_reason_codes": [
+        "SOURCE_WINDOW_UNAVAILABLE"
+      ]
+    },
+    {
+      "input_index": 13,
+      "formula_version": "subing_watch_15m_v1",
+      "source_identity_digest": "subing-watch-source:e796df38831a949b367fb11232a788979ca097bacdfc64fb29b1e0aa988c2cea",
+      "trading_day": "2026-09-01",
+      "bar_end": "2026-09-01T03:30:00+00:00",
+      "source_mode": "canonical",
+      "outcome": "source_unavailable",
+      "observation_types": [],
+      "close": "100.000000",
+      "ma21": null,
+      "dif": null,
+      "dea": null,
+      "macd_histogram": null,
+      "candidate_id": null,
+      "context": {
+        "ma21_slope_5_bps_per_bar": null,
+        "distance_to_ma21_atr14": null,
+        "macd_zero_distance_atr14": null,
+        "volume_ratio_20": null,
+        "range_state": "range_unavailable",
+        "higher_timeframe_alignment": "unavailable"
+      },
+      "public_reason_codes": [
+        "SOURCE_WINDOW_UNAVAILABLE"
+      ]
+    },
+    {
+      "input_index": 14,
+      "formula_version": "subing_watch_15m_v1",
+      "source_identity_digest": "subing-watch-source:e796df38831a949b367fb11232a788979ca097bacdfc64fb29b1e0aa988c2cea",
+      "trading_day": "2026-09-01",
+      "bar_end": "2026-09-01T03:45:00+00:00",
+      "source_mode": "canonical",
+      "outcome": "source_unavailable",
+      "observation_types": [],
+      "close": "100.000000",
+      "ma21": null,
+      "dif": null,
+      "dea": null,
+      "macd_histogram": null,
+      "candidate_id": null,
+      "context": {
+        "ma21_slope_5_bps_per_bar": null,
+        "distance_to_ma21_atr14": null,
+        "macd_zero_distance_atr14": null,
+        "volume_ratio_20": null,
+        "range_state": "range_unavailable",
+        "higher_timeframe_alignment": "unavailable"
+      },
+      "public_reason_codes": [
+        "SOURCE_WINDOW_UNAVAILABLE"
+      ]
+    },
+    {
+      "input_index": 15,
+      "formula_version": "subing_watch_15m_v1",
+      "source_identity_digest": "subing-watch-source:e796df38831a949b367fb11232a788979ca097bacdfc64fb29b1e0aa988c2cea",
+      "trading_day": "2026-09-01",
+      "bar_end": "2026-09-01T04:00:00+00:00",
+      "source_mode": "canonical",
+      "outcome": "source_unavailable",
+      "observation_types": [],
+      "close": "100.000000",
+      "ma21": null,
+      "dif": null,
+      "dea": null,
+      "macd_histogram": null,
+      "candidate_id": null,
+      "context": {
+        "ma21_slope_5_bps_per_bar": null,
+        "distance_to_ma21_atr14": null,
+        "macd_zero_distance_atr14": null,
+        "volume_ratio_20": null,
+        "range_state": "range_unavailable",
+        "higher_timeframe_alignment": "unavailable"
+      },
+      "public_reason_codes": [
+        "SOURCE_WINDOW_UNAVAILABLE"
+      ]
+    },
+    {
+      "input_index": 16,
+      "formula_version": "subing_watch_15m_v1",
+      "source_identity_digest": "subing-watch-source:e796df38831a949b367fb11232a788979ca097bacdfc64fb29b1e0aa988c2cea",
+      "trading_day": "2026-09-01",
+      "bar_end": "2026-09-01T04:15:00+00:00",
+      "source_mode": "canonical",
+      "outcome": "source_unavailable",
+      "observation_types": [],
+      "close": "100.000000",
+      "ma21": null,
+      "dif": null,
+      "dea": null,
+      "macd_histogram": null,
+      "candidate_id": null,
+      "context": {
+        "ma21_slope_5_bps_per_bar": null,
+        "distance_to_ma21_atr14": null,
+        "macd_zero_distance_atr14": null,
+        "volume_ratio_20": null,
+        "range_state": "range_unavailable",
+        "higher_timeframe_alignment": "unavailable"
+      },
+      "public_reason_codes": [
+        "SOURCE_WINDOW_UNAVAILABLE"
+      ]
+    },
+    {
+      "input_index": 17,
+      "formula_version": "subing_watch_15m_v1",
+      "source_identity_digest": "subing-watch-source:e796df38831a949b367fb11232a788979ca097bacdfc64fb29b1e0aa988c2cea",
+      "trading_day": "2026-09-01",
+      "bar_end": "2026-09-01T04:30:00+00:00",
+      "source_mode": "canonical",
+      "outcome": "source_unavailable",
+      "observation_types": [],
+      "close": "100.000000",
+      "ma21": null,
+      "dif": null,
+      "dea": null,
+      "macd_histogram": null,
+      "candidate_id": null,
+      "context": {
+        "ma21_slope_5_bps_per_bar": null,
+        "distance_to_ma21_atr14": null,
+        "macd_zero_distance_atr14": null,
+        "volume_ratio_20": null,
+        "range_state": "range_unavailable",
+        "higher_timeframe_alignment": "unavailable"
+      },
+      "public_reason_codes": [
+        "SOURCE_WINDOW_UNAVAILABLE"
+      ]
+    },
+    {
+      "input_index": 18,
+      "formula_version": "subing_watch_15m_v1",
+      "source_identity_digest": "subing-watch-source:e796df38831a949b367fb11232a788979ca097bacdfc64fb29b1e0aa988c2cea",
+      "trading_day": "2026-09-01",
+      "bar_end": "2026-09-01T04:45:00+00:00",
+      "source_mode": "canonical",
+      "outcome": "source_unavailable",
+      "observation_types": [],
+      "close": "100.000000",
+      "ma21": null,
+      "dif": null,
+      "dea": null,
+      "macd_histogram": null,
+      "candidate_id": null,
+      "context": {
+        "ma21_slope_5_bps_per_bar": null,
+        "distance_to_ma21_atr14": null,
+        "macd_zero_distance_atr14": null,
+        "volume_ratio_20": null,
+        "range_state": "range_unavailable",
+        "higher_timeframe_alignment": "unavailable"
+      },
+      "public_reason_codes": [
+        "SOURCE_WINDOW_UNAVAILABLE"
+      ]
+    },
+    {
+      "input_index": 19,
+      "formula_version": "subing_watch_15m_v1",
+      "source_identity_digest": "subing-watch-source:e796df38831a949b367fb11232a788979ca097bacdfc64fb29b1e0aa988c2cea",
+      "trading_day": "2026-09-01",
+      "bar_end": "2026-09-01T05:00:00+00:00",
+      "source_mode": "canonical",
+      "outcome": "source_unavailable",
+      "observation_types": [],
+      "close": "100.000000",
+      "ma21": null,
+      "dif": null,
+      "dea": null,
+      "macd_histogram": null,
+      "candidate_id": null,
+      "context": {
+        "ma21_slope_5_bps_per_bar": null,
+        "distance_to_ma21_atr14": null,
+        "macd_zero_distance_atr14": null,
+        "volume_ratio_20": null,
+        "range_state": "range_unavailable",
+        "higher_timeframe_alignment": "unavailable"
+      },
+      "public_reason_codes": [
+        "SOURCE_WINDOW_UNAVAILABLE"
+      ]
+    },
+    {
+      "input_index": 20,
+      "formula_version": "subing_watch_15m_v1",
+      "source_identity_digest": "subing-watch-source:e796df38831a949b367fb11232a788979ca097bacdfc64fb29b1e0aa988c2cea",
+      "trading_day": "2026-09-01",
+      "bar_end": "2026-09-01T05:15:00+00:00",
+      "source_mode": "canonical",
+      "outcome": "source_unavailable",
+      "observation_types": [],
+      "close": "100.000000",
+      "ma21": "100.000000",
+      "dif": null,
+      "dea": null,
+      "macd_histogram": null,
+      "candidate_id": null,
+      "context": {
+        "ma21_slope_5_bps_per_bar": null,
+        "distance_to_ma21_atr14": null,
+        "macd_zero_distance_atr14": null,
+        "volume_ratio_20": "1.095023",
+        "range_state": "range_unavailable",
+        "higher_timeframe_alignment": "unavailable"
+      },
+      "public_reason_codes": [
+        "SOURCE_WINDOW_UNAVAILABLE"
+      ]
+    },
+    {
+      "input_index": 21,
+      "formula_version": "subing_watch_15m_v1",
+      "source_identity_digest": "subing-watch-source:e796df38831a949b367fb11232a788979ca097bacdfc64fb29b1e0aa988c2cea",
+      "trading_day": "2026-09-01",
+      "bar_end": "2026-09-01T05:30:00+00:00",
+      "source_mode": "canonical",
+      "outcome": "source_unavailable",
+      "observation_types": [],
+      "close": "100.000000",
+      "ma21": "100.000000",
+      "dif": null,
+      "dea": null,
+      "macd_histogram": null,
+      "candidate_id": null,
+      "context": {
+        "ma21_slope_5_bps_per_bar": null,
+        "distance_to_ma21_atr14": null,
+        "macd_zero_distance_atr14": null,
+        "volume_ratio_20": "1.094170",
+        "range_state": "range_unavailable",
+        "higher_timeframe_alignment": "unavailable"
+      },
+      "public_reason_codes": [
+        "SOURCE_WINDOW_UNAVAILABLE"
+      ]
+    },
+    {
+      "input_index": 22,
+      "formula_version": "subing_watch_15m_v1",
+      "source_identity_digest": "subing-watch-source:e796df38831a949b367fb11232a788979ca097bacdfc64fb29b1e0aa988c2cea",
+      "trading_day": "2026-09-01",
+      "bar_end": "2026-09-01T05:45:00+00:00",
+      "source_mode": "canonical",
+      "outcome": "source_unavailable",
+      "observation_types": [],
+      "close": "100.000000",
+      "ma21": "100.000000",
+      "dif": null,
+      "dea": null,
+      "macd_histogram": null,
+      "candidate_id": null,
+      "context": {
+        "ma21_slope_5_bps_per_bar": null,
+        "distance_to_ma21_atr14": null,
+        "macd_zero_distance_atr14": null,
+        "volume_ratio_20": "1.093333",
+        "range_state": "range_unavailable",
+        "higher_timeframe_alignment": "unavailable"
+      },
+      "public_reason_codes": [
+        "SOURCE_WINDOW_UNAVAILABLE"
+      ]
+    },
+    {
+      "input_index": 23,
+      "formula_version": "subing_watch_15m_v1",
+      "source_identity_digest": "subing-watch-source:e796df38831a949b367fb11232a788979ca097bacdfc64fb29b1e0aa988c2cea",
+      "trading_day": "2026-09-01",
+      "bar_end": "2026-09-01T06:00:00+00:00",
+      "source_mode": "canonical",
+      "outcome": "source_unavailable",
+      "observation_types": [],
+      "close": "100.000000",
+      "ma21": "100.000000",
+      "dif": null,
+      "dea": null,
+      "macd_histogram": null,
+      "candidate_id": null,
+      "context": {
+        "ma21_slope_5_bps_per_bar": null,
+        "distance_to_ma21_atr14": null,
+        "macd_zero_distance_atr14": null,
+        "volume_ratio_20": "1.092511",
+        "range_state": "range_unavailable",
+        "higher_timeframe_alignment": "unavailable"
+      },
+      "public_reason_codes": [
+        "SOURCE_WINDOW_UNAVAILABLE"
+      ]
+    },
+    {
+      "input_index": 24,
+      "formula_version": "subing_watch_15m_v1",
+      "source_identity_digest": "subing-watch-source:e796df38831a949b367fb11232a788979ca097bacdfc64fb29b1e0aa988c2cea",
+      "trading_day": "2026-09-01",
+      "bar_end": "2026-09-01T06:15:00+00:00",
+      "source_mode": "canonical",
+      "outcome": "source_unavailable",
+      "observation_types": [],
+      "close": "100.000000",
+      "ma21": "100.000000",
+      "dif": null,
+      "dea": null,
+      "macd_histogram": null,
+      "candidate_id": null,
+      "context": {
+        "ma21_slope_5_bps_per_bar": "0.000000",
+        "distance_to_ma21_atr14": null,
+        "macd_zero_distance_atr14": null,
+        "volume_ratio_20": "1.091703",
+        "range_state": "range_unavailable",
+        "higher_timeframe_alignment": "unavailable"
+      },
+      "public_reason_codes": [
+        "SOURCE_WINDOW_UNAVAILABLE"
+      ]
+    },
+    {
+      "input_index": 25,
+      "formula_version": "subing_watch_15m_v1",
+      "source_identity_digest": "subing-watch-source:e796df38831a949b367fb11232a788979ca097bacdfc64fb29b1e0aa988c2cea",
+      "trading_day": "2026-09-01",
+      "bar_end": "2026-09-01T06:30:00+00:00",
+      "source_mode": "canonical",
+      "outcome": "source_unavailable",
+      "observation_types": [],
+      "close": "100.000000",
+      "ma21": "100.000000",
+      "dif": "0.000000",
+      "dea": null,
+      "macd_histogram": null,
+      "candidate_id": null,
+      "context": {
+        "ma21_slope_5_bps_per_bar": "0.000000",
+        "distance_to_ma21_atr14": null,
+        "macd_zero_distance_atr14": null,
+        "volume_ratio_20": "1.090909",
+        "range_state": "range_unavailable",
+        "higher_timeframe_alignment": "unavailable"
+      },
+      "public_reason_codes": [
+        "SOURCE_WINDOW_UNAVAILABLE"
+      ]
+    },
+    {
+      "input_index": 26,
+      "formula_version": "subing_watch_15m_v1",
+      "source_identity_digest": "subing-watch-source:e796df38831a949b367fb11232a788979ca097bacdfc64fb29b1e0aa988c2cea",
+      "trading_day": "2026-09-01",
+      "bar_end": "2026-09-01T06:45:00+00:00",
+      "source_mode": "canonical",
+      "outcome": "source_unavailable",
+      "observation_types": [],
+      "close": "100.000000",
+      "ma21": "100.000000",
+      "dif": "0.000000",
+      "dea": null,
+      "macd_histogram": null,
+      "candidate_id": null,
+      "context": {
+        "ma21_slope_5_bps_per_bar": "0.000000",
+        "distance_to_ma21_atr14": null,
+        "macd_zero_distance_atr14": null,
+        "volume_ratio_20": "1.090129",
+        "range_state": "range_unavailable",
+        "higher_timeframe_alignment": "unavailable"
+      },
+      "public_reason_codes": [
+        "SOURCE_WINDOW_UNAVAILABLE"
+      ]
+    },
+    {
+      "input_index": 27,
+      "formula_version": "subing_watch_15m_v1",
+      "source_identity_digest": "subing-watch-source:e796df38831a949b367fb11232a788979ca097bacdfc64fb29b1e0aa988c2cea",
+      "trading_day": "2026-09-01",
+      "bar_end": "2026-09-01T07:00:00+00:00",
+      "source_mode": "canonical",
+      "outcome": "source_unavailable",
+      "observation_types": [],
+      "close": "100.000000",
+      "ma21": "100.000000",
+      "dif": "0.000000",
+      "dea": null,
+      "macd_histogram": null,
+      "candidate_id": null,
+      "context": {
+        "ma21_slope_5_bps_per_bar": "0.000000",
+        "distance_to_ma21_atr14": null,
+        "macd_zero_distance_atr14": null,
+        "volume_ratio_20": "1.089362",
+        "range_state": "range_unavailable",
+        "higher_timeframe_alignment": "unavailable"
+      },
+      "public_reason_codes": [
+        "SOURCE_WINDOW_UNAVAILABLE"
+      ]
+    },
+    {
+      "input_index": 28,
+      "formula_version": "subing_watch_15m_v1",
+      "source_identity_digest": "subing-watch-source:e796df38831a949b367fb11232a788979ca097bacdfc64fb29b1e0aa988c2cea",
+      "trading_day": "2026-09-01",
+      "bar_end": "2026-09-01T07:15:00+00:00",
+      "source_mode": "canonical",
+      "outcome": "source_unavailable",
+      "observation_types": [],
+      "close": "100.000000",
+      "ma21": "100.000000",
+      "dif": "0.000000",
+      "dea": null,
+      "macd_histogram": null,
+      "candidate_id": null,
+      "context": {
+        "ma21_slope_5_bps_per_bar": "0.000000",
+        "distance_to_ma21_atr14": null,
+        "macd_zero_distance_atr14": null,
+        "volume_ratio_20": "1.088608",
+        "range_state": "range_unavailable",
+        "higher_timeframe_alignment": "unavailable"
+      },
+      "public_reason_codes": [
+        "SOURCE_WINDOW_UNAVAILABLE"
+      ]
+    },
+    {
+      "input_index": 29,
+      "formula_version": "subing_watch_15m_v1",
+      "source_identity_digest": "subing-watch-source:e796df38831a949b367fb11232a788979ca097bacdfc64fb29b1e0aa988c2cea",
+      "trading_day": "2026-09-01",
+      "bar_end": "2026-09-01T07:30:00+00:00",
+      "source_mode": "canonical",
+      "outcome": "source_unavailable",
+      "observation_types": [],
+      "close": "100.000000",
+      "ma21": "100.000000",
+      "dif": "0.000000",
+      "dea": null,
+      "macd_histogram": null,
+      "candidate_id": null,
+      "context": {
+        "ma21_slope_5_bps_per_bar": "0.000000",
+        "distance_to_ma21_atr14": null,
+        "macd_zero_distance_atr14": null,
+        "volume_ratio_20": "1.087866",
+        "range_state": "range_unavailable",
+        "higher_timeframe_alignment": "unavailable"
+      },
+      "public_reason_codes": [
+        "SOURCE_WINDOW_UNAVAILABLE"
+      ]
+    },
+    {
+      "input_index": 30,
+      "formula_version": "subing_watch_15m_v1",
+      "source_identity_digest": "subing-watch-source:e796df38831a949b367fb11232a788979ca097bacdfc64fb29b1e0aa988c2cea",
+      "trading_day": "2026-09-01",
+      "bar_end": "2026-09-01T07:45:00+00:00",
+      "source_mode": "canonical",
+      "outcome": "source_unavailable",
+      "observation_types": [],
+      "close": "100.000000",
+      "ma21": "100.000000",
+      "dif": "0.000000",
+      "dea": null,
+      "macd_histogram": null,
+      "candidate_id": null,
+      "context": {
+        "ma21_slope_5_bps_per_bar": "0.000000",
+        "distance_to_ma21_atr14": null,
+        "macd_zero_distance_atr14": null,
+        "volume_ratio_20": "1.087137",
+        "range_state": "range_unavailable",
+        "higher_timeframe_alignment": "unavailable"
+      },
+      "public_reason_codes": [
+        "SOURCE_WINDOW_UNAVAILABLE"
+      ]
+    },
+    {
+      "input_index": 31,
+      "formula_version": "subing_watch_15m_v1",
+      "source_identity_digest": "subing-watch-source:e796df38831a949b367fb11232a788979ca097bacdfc64fb29b1e0aa988c2cea",
+      "trading_day": "2026-09-01",
+      "bar_end": "2026-09-01T08:00:00+00:00",
+      "source_mode": "canonical",
+      "outcome": "source_unavailable",
+      "observation_types": [],
+      "close": "100.000000",
+      "ma21": "100.000000",
+      "dif": "0.000000",
+      "dea": null,
+      "macd_histogram": null,
+      "candidate_id": null,
+      "context": {
+        "ma21_slope_5_bps_per_bar": "0.000000",
+        "distance_to_ma21_atr14": null,
+        "macd_zero_distance_atr14": null,
+        "volume_ratio_20": "1.086420",
+        "range_state": "range_unavailable",
+        "higher_timeframe_alignment": "unavailable"
+      },
+      "public_reason_codes": [
+        "SOURCE_WINDOW_UNAVAILABLE"
+      ]
+    },
+    {
+      "input_index": 32,
+      "formula_version": "subing_watch_15m_v1",
+      "source_identity_digest": "subing-watch-source:e796df38831a949b367fb11232a788979ca097bacdfc64fb29b1e0aa988c2cea",
+      "trading_day": "2026-09-01",
+      "bar_end": "2026-09-01T08:15:00+00:00",
+      "source_mode": "canonical",
+      "outcome": "source_unavailable",
+      "observation_types": [],
+      "close": "100.000000",
+      "ma21": "100.000000",
+      "dif": "0.000000",
+      "dea": null,
+      "macd_histogram": null,
+      "candidate_id": null,
+      "context": {
+        "ma21_slope_5_bps_per_bar": "0.000000",
+        "distance_to_ma21_atr14": null,
+        "macd_zero_distance_atr14": null,
+        "volume_ratio_20": "1.085714",
+        "range_state": "range_unavailable",
+        "higher_timeframe_alignment": "unavailable"
+      },
+      "public_reason_codes": [
+        "SOURCE_WINDOW_UNAVAILABLE"
+      ]
+    },
+    {
+      "input_index": 33,
+      "formula_version": "subing_watch_15m_v1",
+      "source_identity_digest": "subing-watch-source:e796df38831a949b367fb11232a788979ca097bacdfc64fb29b1e0aa988c2cea",
+      "trading_day": "2026-09-01",
+      "bar_end": "2026-09-01T08:30:00+00:00",
+      "source_mode": "canonical",
+      "outcome": "evaluated_no_signal",
+      "observation_types": [],
+      "close": "100.000000",
+      "ma21": "100.000000",
+      "dif": "0.000000",
+      "dea": "0.000000",
+      "macd_histogram": "0.000000",
+      "candidate_id": null,
+      "context": {
+        "ma21_slope_5_bps_per_bar": "0.000000",
+        "distance_to_ma21_atr14": null,
+        "macd_zero_distance_atr14": null,
+        "volume_ratio_20": "1.085020",
+        "range_state": "range_unavailable",
+        "higher_timeframe_alignment": "unavailable"
+      },
+      "public_reason_codes": []
+    },
+    {
+      "input_index": 34,
+      "formula_version": "subing_watch_15m_v1",
+      "source_identity_digest": "subing-watch-source:e796df38831a949b367fb11232a788979ca097bacdfc64fb29b1e0aa988c2cea",
+      "trading_day": "2026-09-01",
+      "bar_end": "2026-09-01T08:45:00+00:00",
+      "source_mode": "canonical",
+      "outcome": "evaluated_candidate",
+      "observation_types": [
+        "buy"
+      ],
+      "close": "110.000000",
+      "ma21": "100.476190",
+      "dif": "0.797721",
+      "dea": "0.159544",
+      "macd_histogram": "1.276353",
+      "candidate_id": "b9ca9144652972a43e8b87346fcf95b9cdaabd9dccc66042ed878200b5267905",
+      "context": {
+        "ma21_slope_5_bps_per_bar": "9.478673",
+        "distance_to_ma21_atr14": "13.333333",
+        "macd_zero_distance_atr14": "1.116809",
+        "volume_ratio_20": "1.084337",
+        "range_state": "range_unavailable",
+        "higher_timeframe_alignment": "unavailable"
+      },
+      "public_reason_codes": []
+    },
+    {
+      "input_index": 35,
+      "formula_version": "subing_watch_15m_v1",
+      "source_identity_digest": "subing-watch-source:e796df38831a949b367fb11232a788979ca097bacdfc64fb29b1e0aa988c2cea",
+      "trading_day": "2026-09-01",
+      "bar_end": "2026-09-01T08:45:00+00:00",
+      "source_mode": "canonical",
+      "outcome": "evaluated_candidate",
+      "observation_types": [
+        "buy"
+      ],
+      "close": "110.000000",
+      "ma21": "100.476190",
+      "dif": "0.797721",
+      "dea": "0.159544",
+      "macd_histogram": "1.276353",
+      "candidate_id": "b9ca9144652972a43e8b87346fcf95b9cdaabd9dccc66042ed878200b5267905",
+      "context": {
+        "ma21_slope_5_bps_per_bar": "9.478673",
+        "distance_to_ma21_atr14": "13.333333",
+        "macd_zero_distance_atr14": "1.116809",
+        "volume_ratio_20": "1.084337",
+        "range_state": "range_unavailable",
+        "higher_timeframe_alignment": "unavailable"
+      },
+      "public_reason_codes": []
+    },
+    {
+      "input_index": 36,
+      "formula_version": "subing_watch_15m_v1",
+      "source_identity_digest": "subing-watch-source:e796df38831a949b367fb11232a788979ca097bacdfc64fb29b1e0aa988c2cea",
+      "trading_day": "2026-09-01",
+      "bar_end": "2026-09-01T09:00:00+00:00",
+      "source_mode": "canonical",
+      "outcome": "evaluated_candidate",
+      "observation_types": [
+        "sell"
+      ],
+      "close": "80.000000",
+      "ma21": "99.523810",
+      "dif": "-0.979538",
+      "dea": "-0.068272",
+      "macd_histogram": "-1.822531",
+      "candidate_id": "7e73fcfde76cc9920e06a7e5d7cc7cc7434f732c25603b9a3830aa3a2c3e0489",
+      "context": {
+        "ma21_slope_5_bps_per_bar": "-4.784689",
+        "distance_to_ma21_atr14": "-6.957576",
+        "macd_zero_distance_atr14": "0.349072",
+        "volume_ratio_20": "1.083665",
+        "range_state": "range_unavailable",
+        "higher_timeframe_alignment": "unavailable"
+      },
+      "public_reason_codes": []
+    }
+  ],
+  "payload_sha256": "e63c0480a0910a461268e35adf59a6adb39b4f2998bc42ce1c97f65059bd8b56"
+}

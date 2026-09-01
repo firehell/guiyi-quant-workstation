@@ -407,25 +407,35 @@ def step_subing_watch_15m(
         and _parse_instant(bar.bar_end) < _parse_instant(state.last_evaluation.bar_end)
     ):
         return _block_state(state, bar, "SUBING_WATCH_SOURCE_INVALID", retain_last=True)
+    if (
+        state.last_evaluation is not None
+        and bar.trading_day < state.last_evaluation.trading_day
+    ):
+        return _block_state(state, bar, "SUBING_WATCH_SOURCE_INVALID", retain_last=True)
 
     sma21_window = (*state.sma21_window, bar.close)[-21:]
-    raw_ma21 = sum(sma21_window) / 21 if len(sma21_window) == 21 else None
+    raw_ma21 = (
+        _finite_context_value(sum(sma21_window) / 21)
+        if len(sma21_window) == 21
+        else None
+    )
     macd_state, (dif_point, dea_point, histogram_point) = step_macd(
         state.macd_state,
         bar.close,
         bar_end=bar.bar_end,
     )
     current_dif = (
-        dif_point.value
+        _finite_context_value(dif_point.value)
         if dif_point.ready and dif_point.valid and dif_point.value is not None
         else None
     )
     current_dea = (
-        dea_point.value
+        _finite_context_value(dea_point.value)
         if dea_point.ready and dea_point.valid and dea_point.value is not None
         else None
     )
-    current_ready = current_dif is not None and current_dea is not None
+    macd_ready = current_dif is not None and current_dea is not None
+    source_window_ready = macd_ready and raw_ma21 is not None
     if (
         current_dif is not None
         and current_dea is not None
@@ -449,8 +459,14 @@ def step_subing_watch_15m(
     elif dead and raw_ma21 is not None and bar.close < raw_ma21:
         observations = ("sell",)
 
-    outcome: Literal["evaluated_no_signal", "evaluated_candidate"] = (
-        "evaluated_candidate" if observations else "evaluated_no_signal"
+    outcome: Literal[
+        "evaluated_no_signal", "evaluated_candidate", "source_unavailable"
+    ] = (
+        "source_unavailable"
+        if not source_window_ready
+        else "evaluated_candidate"
+        if observations
+        else "evaluated_no_signal"
     )
     (
         latest_five_valid_sma21,
@@ -480,12 +496,14 @@ def step_subing_watch_15m(
         dif=current_dif,
         dea=current_dea,
         macd_histogram=(
-            histogram_point.value
+            _finite_context_value(histogram_point.value)
             if histogram_point.ready and histogram_point.valid
             else None
         ),
         context=context,
-        public_reason_codes=(),
+        public_reason_codes=("SOURCE_WINDOW_UNAVAILABLE",)
+        if not source_window_ready
+        else (),
     )
     return (
         replace(
@@ -496,10 +514,10 @@ def step_subing_watch_15m(
             atr_state=atr_state,
             range_state=range_state,
             previous_ready_dif=(
-                current_dif if current_ready else state.previous_ready_dif
+                current_dif if macd_ready else state.previous_ready_dif
             ),
             previous_ready_dea=(
-                current_dea if current_ready else state.previous_ready_dea
+                current_dea if macd_ready else state.previous_ready_dea
             ),
             previous_twenty_volumes=previous_twenty_volumes,
             last_bar_fingerprint=bar.source_fingerprint,
@@ -603,7 +621,9 @@ def _project_context(
     if raw_ma21 is not None:
         latest_five_valid_sma21 = (*latest_five_valid_sma21, raw_ma21)[-5:]
 
-    ma21_slope = _ma21_regression_slope(latest_five_valid_sma21, raw_ma21)
+    ma21_slope = subing_watch_ma21_slope_5_bps_per_bar(
+        latest_five_valid_sma21, raw_ma21
+    )
 
     atr_state = state.atr_state
     atr14: float | None = None
@@ -685,10 +705,12 @@ def _project_context(
     )
 
 
-def _ma21_regression_slope(
+def subing_watch_ma21_slope_5_bps_per_bar(
     latest_five_valid_sma21: tuple[float, ...],
     current_ma21: float | None,
 ) -> float | None:
+    """Return the frozen five-point OLS SMA21 slope normalized by current SMA21."""
+
     if len(latest_five_valid_sma21) != 5 or current_ma21 is None:
         return None
     try:

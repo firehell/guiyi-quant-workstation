@@ -249,6 +249,8 @@ class SubingWatchSourceIdentity:
             or self.symbol != self.symbol.strip().lower()
             or not self.symbol.isascii()
             or not self.symbol.isalpha()
+            or not isinstance(self.contract, str)
+            or not self.contract
             or normalize_contract_for_symbol(self.symbol, self.contract) != self.contract
             or type(self.segment_start_trading_day) is not date
             or self.series_kind != "actual_dominant"

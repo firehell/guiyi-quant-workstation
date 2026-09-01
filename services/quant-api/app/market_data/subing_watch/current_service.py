@@ -15,6 +15,7 @@ from guiyi_quant.indicators.subing_watch_15m import (
 from ..actual_dominant_research import (
     ActualDominantResearchSegmentIdentityError,
     ActualDominantResearchSeries,
+    ActualDominantResearchSourceTradingDayMissingError,
 )
 from ..domain import (
     BarFrequency,
@@ -32,9 +33,6 @@ from .contracts import (
     SubingWatchSourceIdentity,
 )
 from .replay import SubingWatchReplayError, replay_subing_watch_segment
-
-
-_FREQUENCIES = (BarFrequency.M15, BarFrequency.H1)
 
 
 class SubingWatchCurrentSourceUnavailableError(RuntimeError):
@@ -248,57 +246,88 @@ class SubingWatchCurrentProjectionService:
             segment.contract,
             segment.start_trading_day,
         )
-        canonical = self._load_canonical(symbol, segment, target_day, cutoff)
+        canonical_15m = self._load_canonical_frequency(
+            symbol,
+            segment,
+            target_day,
+            cutoff,
+            BarFrequency.M15,
+        )
+        self._validate_observation_snapshot(
+            snapshot_15m,
+            identity=identity_15m,
+            target_day=target_day,
+            contract=segment.contract,
+        )
+        bars_15m, used_live_15m = _merge_canonical_live(
+            canonical_15m,
+            snapshot_15m.bars,
+            target_day=target_day,
+            cutoff=cutoff,
+        )
+        if not bars_15m:
+            raise SubingWatchCurrentSourceUnavailableError()
+        bars_60m, used_live_60m = self._prepare_optional_higher_timeframe(
+            symbol=symbol,
+            segment=segment,
+            target_day=target_day,
+            cutoff=cutoff,
+        )
+        return _PreparedProjection(
+            source_identity=source_identity,
+            source_mode=(
+                "canonical_live" if used_live_15m or used_live_60m else "canonical"
+            ),
+            bars_15m=bars_15m,
+            bars_60m=bars_60m,
+        )
 
-        merged: dict[BarFrequency, tuple[CanonicalBar, ...]] = {}
-        used_live = False
-        higher_identity_available = True
-        for frequency in _FREQUENCIES:
+    def _prepare_optional_higher_timeframe(
+        self,
+        *,
+        symbol: str,
+        segment: ResolvedContractSegment,
+        target_day: date,
+        cutoff: datetime,
+    ) -> tuple[tuple[CanonicalBar, ...], bool]:
+        """Return only causally valid H1 context; every H1-only failure is non-gating."""
+
+        try:
+            canonical = self._load_canonical_frequency(
+                symbol,
+                segment,
+                target_day,
+                cutoff,
+                BarFrequency.H1,
+            )
             identity = SeriesPageQuery(
                 SeriesKind.ACTUAL_DOMINANT,
                 symbol,
-                frequency,
+                BarFrequency.H1,
             )
-            snapshot = (
-                snapshot_15m
-                if frequency is BarFrequency.M15
-                else self._read_observation(
-                    identity,
-                    canonical[frequency][-1].bar_end
-                    if canonical[frequency]
-                    else None,
-                    cutoff,
-                )
+            snapshot = self._read_observation(
+                identity,
+                canonical[-1].bar_end if canonical else None,
+                cutoff,
             )
-            identity_matches = self._validate_observation_snapshot(
+            if not self._validate_observation_snapshot(
                 snapshot,
                 identity=identity,
                 target_day=target_day,
                 contract=segment.contract,
-            )
-            if not identity_matches and frequency is BarFrequency.H1:
-                merged[frequency] = ()
-                higher_identity_available = False
-                continue
-            merged_bars, frequency_used_live = _merge_canonical_live(
-                canonical[frequency],
+            ):
+                return (), False
+            return _merge_canonical_live(
+                canonical,
                 snapshot.bars,
                 target_day=target_day,
                 cutoff=cutoff,
-                future_is_unavailable=frequency is BarFrequency.H1,
             )
-            merged[frequency] = merged_bars
-            used_live = used_live or frequency_used_live
-
-        bars_15m = merged[BarFrequency.M15]
-        if not bars_15m:
-            raise SubingWatchCurrentSourceUnavailableError()
-        return _PreparedProjection(
-            source_identity=source_identity,
-            source_mode="canonical_live" if used_live else "canonical",
-            bars_15m=bars_15m,
-            bars_60m=merged[BarFrequency.H1] if higher_identity_available else (),
-        )
+        except (
+            SubingWatchCurrentSourceIdentityError,
+            SubingWatchCurrentSourceUnavailableError,
+        ):
+            return (), False
 
     def _resolve_segment(
         self,
@@ -326,40 +355,40 @@ class SubingWatchCurrentProjectionService:
             summary.end_trading_day,
         )
 
-    def _load_canonical(
+    def _load_canonical_frequency(
         self,
         symbol: str,
         segment: ResolvedContractSegment,
         target_day: date,
         cutoff: datetime,
-    ) -> dict[BarFrequency, tuple[CanonicalBar, ...]]:
+        frequency: BarFrequency,
+    ) -> tuple[CanonicalBar, ...]:
         try:
             loaded = self._segment_loader.load(
                 symbol=symbol,
-                frequencies=_FREQUENCIES,
+                frequencies=(frequency,),
                 since=segment.start_trading_day,
                 through=target_day,
             )
         except ActualDominantResearchSegmentIdentityError:
             raise SubingWatchCurrentSourceIdentityError() from None
+        except ActualDominantResearchSourceTradingDayMissingError:
+            raise SubingWatchCurrentSourceUnavailableError() from None
         except MarketDataError:
             raise SubingWatchCurrentSourceUnavailableError() from None
         if (
             loaded.segments != (segment,)
-            or any(loaded.results.get(frequency) is None for frequency in _FREQUENCIES)
+            or loaded.results.get(frequency) is None
         ):
             raise SubingWatchCurrentSourceIdentityError()
-        canonical: dict[BarFrequency, tuple[CanonicalBar, ...]] = {}
-        for frequency in _FREQUENCIES:
-            bars = loaded.results[frequency].bars
-            if any(
-                type(bar) is not CanonicalBar
-                or not segment.start_trading_day <= bar.trading_day <= target_day
-                for bar in bars
-            ):
-                raise SubingWatchCurrentSourceIdentityError()
-            canonical[frequency] = tuple(bar for bar in bars if bar.bar_end <= cutoff)
-        return canonical
+        bars = loaded.results[frequency].bars
+        if any(
+            type(bar) is not CanonicalBar
+            or not segment.start_trading_day <= bar.trading_day <= target_day
+            for bar in bars
+        ):
+            raise SubingWatchCurrentSourceIdentityError()
+        return tuple(bar for bar in bars if bar.bar_end <= cutoff)
 
     def _read_observation(
         self,
@@ -439,7 +468,6 @@ def _merge_canonical_live(
     *,
     target_day: date,
     cutoff: datetime,
-    future_is_unavailable: bool,
 ) -> tuple[tuple[CanonicalBar, ...], bool]:
     by_end: dict[datetime, CanonicalBar] = {}
     for bar in canonical:
@@ -454,8 +482,6 @@ def _merge_canonical_live(
         if type(bar) is not CanonicalBar or bar.trading_day != target_day:
             raise SubingWatchCurrentSourceIdentityError()
         if bar.bar_end > cutoff:
-            if future_is_unavailable:
-                continue
             raise SubingWatchCurrentSourceIdentityError()
         existing = by_end.get(bar.bar_end)
         if existing is not None:

@@ -64,6 +64,10 @@ def _bar(index: int, *, minutes: int = 15, close: str = "100") -> CanonicalBar:
     )
 
 
+def _candidate_bars() -> tuple[CanonicalBar, ...]:
+    return (*(_bar(index) for index in range(1, 35)), _bar(35, close="110"))
+
+
 def _result(
     bars_15m: tuple[CanonicalBar, ...],
     bars_60m: tuple[CanonicalBar, ...],
@@ -248,6 +252,7 @@ def _service(
     market_read=None,
     loader_error: Exception | None = None,
     segment_error: MarketDataError | None = None,
+    loader=None,
 ) -> SubingWatchCurrentProjectionService:
     def current_segment(symbol: str, _target: date):
         if segment_error is not None:
@@ -260,7 +265,7 @@ def _service(
         )
 
     return SubingWatchCurrentProjectionService(
-        _Loader(loader_error or _result(canonical_15m, canonical_60m)),
+        loader or _Loader(loader_error or _result(canonical_15m, canonical_60m)),
         products=("jm",),
         market_read=market_read
         or _MarketRead(
@@ -466,7 +471,7 @@ def test_15m_live_contract_must_match_frozen_physical_segment() -> None:
 
 
 def test_60m_live_identity_mismatch_is_unavailable_but_non_gating() -> None:
-    bars_15m = tuple(_bar(index) for index in range(1, 121))
+    bars_15m = _candidate_bars()
     bars_60m = tuple(_bar(index, minutes=60) for index in range(1, 26))
     live_60m = _bar(26, minutes=60)
 
@@ -477,10 +482,104 @@ def test_60m_live_identity_mismatch_is_unavailable_but_non_gating() -> None:
         contracts={BarFrequency.H1: "JM2605"},
     ).current(_request(), bars_15m[-1].bar_end)
 
-    assert projected.evaluations[-1].outcome in {
-        "evaluated_no_signal",
-        "evaluated_candidate",
-    }
+    assert projected.evaluations[-1].outcome == "evaluated_candidate"
+    assert projected.evaluations[-1].observation_types == ("buy",)
+    assert projected.evaluations[-1].context.higher_timeframe_alignment == "unavailable"
+
+
+@pytest.mark.parametrize(
+    "higher_error",
+    (
+        MarketDataError("MARKET_PARTITION_MISSING"),
+        ActualDominantResearchSegmentIdentityError(),
+    ),
+)
+def test_missing_or_invalid_canonical_60m_preserves_15m_candidate(
+    higher_error: Exception,
+) -> None:
+    bars_15m = _candidate_bars()
+
+    class _MissingHigherLoader:
+        def load(self, *, frequencies, **_kwargs):
+            if BarFrequency.H1 in frequencies:
+                raise higher_error
+            return _result(bars_15m, ())
+
+    projected = _service(
+        bars_15m,
+        loader=_MissingHigherLoader(),
+    ).current(_request(), bars_15m[-1].bar_end)
+
+    assert projected.evaluations[-1].outcome == "evaluated_candidate"
+    assert projected.evaluations[-1].observation_types == ("buy",)
+    assert projected.evaluations[-1].context.higher_timeframe_alignment == "unavailable"
+
+
+def test_unavailable_60m_snapshot_preserves_15m_candidate() -> None:
+    bars_15m = _candidate_bars()
+
+    class _UnavailableHigherRead(_MarketRead):
+        def observation_snapshot(self, identity, *args, **kwargs):
+            if identity.frequency is BarFrequency.H1:
+                state = MarketReadState(
+                    symbol="jm",
+                    series_kind="actual_dominant",
+                    frequency="60m",
+                    operational=True,
+                    phase="TRADING",
+                    trading_day=DAY,
+                    live_eligible=False,
+                    live_available=False,
+                    live_contract=None,
+                    canonical_end=None,
+                    after_market=MappingProxyType({}),
+                )
+                return MarketObservationSnapshot(state, "unavailable", DAY, None, ())
+            return super().observation_snapshot(identity, *args, **kwargs)
+
+    projected = _service(
+        bars_15m,
+        market_read=_UnavailableHigherRead(),
+    ).current(_request(), bars_15m[-1].bar_end)
+
+    assert projected.evaluations[-1].outcome == "evaluated_candidate"
+    assert projected.evaluations[-1].context.higher_timeframe_alignment == "unavailable"
+
+
+def test_conflicting_60m_overlap_preserves_15m_candidate() -> None:
+    bars_15m = _candidate_bars()
+    canonical_60m = (_bar(1, minutes=60),)
+    conflict = replace(
+        canonical_60m[0],
+        open=Decimal("101"),
+        high=Decimal("101"),
+        low=Decimal("101"),
+        close=Decimal("101"),
+    )
+
+    projected = _service(
+        bars_15m,
+        canonical_60m=canonical_60m,
+        live={BarFrequency.H1: (conflict,)},
+    ).current(_request(), bars_15m[-1].bar_end)
+
+    assert projected.evaluations[-1].outcome == "evaluated_candidate"
+    assert projected.evaluations[-1].context.higher_timeframe_alignment == "unavailable"
+
+
+def test_future_60m_snapshot_preserves_15m_candidate_with_empty_context() -> None:
+    bars_15m = _candidate_bars()
+    future = replace(
+        _bar(1, minutes=60),
+        bar_end=bars_15m[-1].bar_end + timedelta(hours=1),
+    )
+
+    projected = _service(
+        bars_15m,
+        live={BarFrequency.H1: (future,)},
+    ).current(_request(), bars_15m[-1].bar_end)
+
+    assert projected.evaluations[-1].outcome == "evaluated_candidate"
     assert projected.evaluations[-1].context.higher_timeframe_alignment == "unavailable"
 
 
