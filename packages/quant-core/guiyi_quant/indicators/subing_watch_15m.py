@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
-from decimal import Decimal, InvalidOperation
 import math
 import re
 from typing import Literal
@@ -31,7 +30,7 @@ _RANGE_STATES = frozenset(
 _HIGHER_TIMEFRAME_ALIGNMENTS = frozenset(
     {"aligned", "opposed", "neutral", "unavailable"}
 )
-_SOURCE_FINGERPRINT_PREFIX = "subing-watch-bar:v1"
+_SOURCE_FINGERPRINT = re.compile(r"[0-9a-f]{64}\Z")
 
 
 class SubingWatchKernelError(ValueError):
@@ -77,24 +76,10 @@ def _optional_finite_float(value: object) -> float | None:
     return _finite_float(value, optional=True)
 
 
-def _source_fingerprint(value: object) -> tuple[str, str, tuple[Decimal, ...]]:
-    if not isinstance(value, str):
+def _source_fingerprint(value: object) -> str:
+    if not isinstance(value, str) or _SOURCE_FINGERPRINT.fullmatch(value) is None:
         raise SubingWatchKernelError()
-    fields = value.split("|")
-    if len(fields) != 8 or fields[0] != _SOURCE_FINGERPRINT_PREFIX:
-        raise SubingWatchKernelError()
-    bar_end = _rfc3339(fields[1])
-    trading_day = _trading_day(fields[2])
-    try:
-        decimals = tuple(Decimal(item) for item in fields[3:])
-    except (InvalidOperation, ValueError):
-        raise SubingWatchKernelError() from None
-    if (
-        len(decimals) != 5
-        or any(not item.is_finite() or str(item) != raw for item, raw in zip(decimals, fields[3:], strict=True))
-    ):
-        raise SubingWatchKernelError()
-    return bar_end, trading_day, decimals
+    return value
 
 
 @dataclass(frozen=True, slots=True)
@@ -143,22 +128,7 @@ class SubingWatchKernelBar:
         assert close is not None and volume is not None
         if low > high or not low <= open_value <= high or not low <= close <= high or volume < 0:
             raise SubingWatchKernelError()
-        fingerprint_bar_end, fingerprint_day, fingerprint_values = _source_fingerprint(
-            self.source_fingerprint
-        )
-        if (
-            fingerprint_bar_end != bar_end
-            or fingerprint_day != trading_day
-            or any(
-                float(source) != actual
-                for source, actual in zip(
-                    fingerprint_values,
-                    (open_value, high, low, close, volume),
-                    strict=True,
-                )
-            )
-        ):
-            raise SubingWatchKernelError()
+        _source_fingerprint(self.source_fingerprint)
         object.__setattr__(self, "bar_end", bar_end)
         object.__setattr__(self, "trading_day", trading_day)
         object.__setattr__(self, "open", open_value)
@@ -311,12 +281,8 @@ class SubingWatchKernelState:
         object.__setattr__(self, "previous_ready_dea", _optional_finite_float(self.previous_ready_dea))
         if self.last_bar_fingerprint is not None:
             assert self.last_evaluation is not None
-            bar_end, trading_day, _ = _source_fingerprint(self.last_bar_fingerprint)
-            if (
-                self.last_evaluation.identity != self.identity
-                or self.last_evaluation.bar_end != bar_end
-                or self.last_evaluation.trading_day != trading_day
-            ):
+            _source_fingerprint(self.last_bar_fingerprint)
+            if self.last_evaluation.identity != self.identity:
                 raise SubingWatchKernelError()
 
 

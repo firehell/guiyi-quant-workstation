@@ -61,7 +61,6 @@ _HIGHER_TIMEFRAME_ALIGNMENTS = frozenset(
     {"aligned", "opposed", "neutral", "unavailable"}
 )
 _ROUND_DIGITS = 6
-_SOURCE_FINGERPRINT_PREFIX = "subing-watch-bar:v1"
 
 
 class SubingWatchPolicyError(ValueError):
@@ -122,18 +121,21 @@ def _canonical_decimal_text(value: Decimal) -> str:
 
 
 def _canonical_bar_fingerprint(bar: CanonicalBar) -> str:
-    return "|".join(
-        (
-            _SOURCE_FINGERPRINT_PREFIX,
-            bar.bar_end.astimezone(UTC).isoformat(),
-            bar.trading_day.isoformat(),
-            _canonical_decimal_text(bar.open),
-            _canonical_decimal_text(bar.high),
-            _canonical_decimal_text(bar.low),
-            _canonical_decimal_text(bar.close),
-            _canonical_decimal_text(bar.volume),
-        )
-    )
+    payload = json.dumps(
+        {
+            "bar_end": bar.bar_end.astimezone(UTC).isoformat(),
+            "trading_day": bar.trading_day.isoformat(),
+            "open": _canonical_decimal_text(bar.open),
+            "high": _canonical_decimal_text(bar.high),
+            "low": _canonical_decimal_text(bar.low),
+            "close": _canonical_decimal_text(bar.close),
+            "volume": _canonical_decimal_text(bar.volume),
+        },
+        ensure_ascii=True,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return sha256(payload).hexdigest()
 
 
 def _kernel_instant(value: str) -> datetime:

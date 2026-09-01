@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from dataclasses import FrozenInstanceError, replace
 from datetime import UTC, date, datetime
 from decimal import Decimal
@@ -32,6 +33,7 @@ POLICY_PATH = (
     Path(__file__).resolve().parents[3]
     / "data/research_policies/subing_watch_15m_v1.json"
 )
+OPAQUE_FINGERPRINT = "0" * 64
 
 
 def canonical_bar(*, close: Decimal = Decimal("123.4567894")) -> CanonicalBar:
@@ -45,29 +47,6 @@ def canonical_bar(*, close: Decimal = Decimal("123.4567894")) -> CanonicalBar:
         volume=Decimal("20"),
         turnover=None,
         open_interest=None,
-    )
-
-
-def source_fingerprint(
-    *,
-    bar_end: str = "2026-09-01T02:15:00+00:00",
-    open: str = "10",
-    high: str = "10",
-    low: str = "8",
-    close: str = "10",
-    volume: str = "20",
-) -> str:
-    return "|".join(
-        (
-            "subing-watch-bar:v1",
-            bar_end,
-            "2026-09-01",
-            open,
-            high,
-            low,
-            close,
-            volume,
-        )
     )
 
 
@@ -181,10 +160,7 @@ def test_decimal_float_boundary_is_single_and_deterministic() -> None:
     app = from_kernel_evaluation(kernel_evaluation(), source_mode="canonical")
 
     assert kernel.close == 123.4567894
-    assert kernel.source_fingerprint == (
-        "subing-watch-bar:v1|2026-09-01T02:15:00+00:00|2026-09-01|"
-        "123.4567894|123.4567894|123.4567894|123.4567894|20"
-    )
+    assert re.fullmatch(r"[0-9a-f]{64}", kernel.source_fingerprint)
     assert app.ma21 == Decimal("123.456789")
     assert app.close == Decimal("123.456789")
     assert app.source_identity == SubingWatchSourceIdentity(
@@ -193,6 +169,20 @@ def test_decimal_float_boundary_is_single_and_deterministic() -> None:
         segment_start_trading_day=date(2026, 9, 1),
     )
     assert app.source_identity_digest.startswith("subing-watch-source:")
+
+
+def test_adapter_uses_distinct_opaque_fingerprints_before_float_boundary() -> None:
+    first = to_subing_watch_kernel_bar(
+        canonical_bar(close=Decimal("9007199254740992"))
+    )
+    second = to_subing_watch_kernel_bar(
+        canonical_bar(close=Decimal("9007199254740993"))
+    )
+
+    assert first.close == second.close
+    assert first.source_fingerprint != second.source_fingerprint
+    assert re.fullmatch(r"[0-9a-f]{64}", first.source_fingerprint)
+    assert re.fullmatch(r"[0-9a-f]{64}", second.source_fingerprint)
 
 
 @pytest.mark.parametrize(
@@ -244,7 +234,7 @@ def test_kernel_bar_rejects_non_aware_time() -> None:
             low=8.0,
             close=10.0,
             volume=20.0,
-            source_fingerprint=source_fingerprint(),
+            source_fingerprint=OPAQUE_FINGERPRINT,
         )
 
 
@@ -258,7 +248,21 @@ def test_kernel_bar_rejects_invalid_ohlc_after_aware_time_validation() -> None:
             low=8.0,
             close=10.0,
             volume=20.0,
-            source_fingerprint=source_fingerprint(high="9"),
+            source_fingerprint=OPAQUE_FINGERPRINT,
+        )
+
+
+def test_kernel_bar_rejects_malformed_opaque_digest() -> None:
+    with pytest.raises(SubingWatchKernelError, match="SUBING_WATCH_KERNEL_INVALID"):
+        SubingWatchKernelBar(
+            bar_end="2026-09-01T02:15:00+00:00",
+            trading_day="2026-09-01",
+            open=10.0,
+            high=10.0,
+            low=8.0,
+            close=10.0,
+            volume=20.0,
+            source_fingerprint="0" * 63,
         )
 
 
