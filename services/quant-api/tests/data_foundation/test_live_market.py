@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib
 import json
 from collections import deque
+from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from fnmatch import fnmatch
@@ -25,6 +26,9 @@ class FakeRedis:
         self.ttls: dict[str, int] = {}
         self.published: list[tuple[str, str]] = []
         self.fail_zadd = 0
+        self.fail_heartbeat_set = 0
+        self.fail_live_bar_publish_at: int | None = None
+        self.live_bar_publish_attempts = 0
 
     def zadd(self, key: str, mapping: dict[str, int]) -> int:
         if self.fail_zadd:
@@ -50,8 +54,13 @@ class FakeRedis:
             if (score > lower if lower_exclusive else score >= lower) and score <= upper
         ]
 
-    def set(self, key: str, value: str) -> bool:
+    def set(self, key: str, value: str, *, ex: int | None = None) -> bool:
+        if key == "live:heartbeat" and self.fail_heartbeat_set:
+            self.fail_heartbeat_set -= 1
+            return False
         self.values[key] = value
+        if ex is not None:
+            self.ttls[key] = ex
         return True
 
     def get(self, key: str) -> str | None:
@@ -75,6 +84,10 @@ class FakeRedis:
         return deleted
 
     def publish(self, channel: str, message: str) -> int:
+        if channel.startswith("live:bar:"):
+            self.live_bar_publish_attempts += 1
+            if self.fail_live_bar_publish_at == self.live_bar_publish_attempts:
+                raise ConnectionError("fake redis unavailable")
         self.published.append((channel, message))
         return 1
 
@@ -202,6 +215,7 @@ def test_public_pubsub_channel_contract_and_compact_payloads() -> None:
     assert module.live_bar_channel("RB", "1m") == "live:bar:RB:1m"
     assert module.LIVE_STATE_CHANNEL == "market:state"
     assert store.heartbeat() == {"state": "healthy"}
+    assert fake.ttls["live:heartbeat"] == 30
     assert fake.published == [
         (
             "live:bar:RB:1m",
@@ -584,6 +598,213 @@ def test_trading_heartbeat_becomes_unavailable_when_completed_bars_are_stale() -
     assert json.loads(fake.values["live:heartbeat"])["available"] is True
 
     service.reconcile(bar.bar_end + timedelta(minutes=5, seconds=1))
+    assert json.loads(fake.values["live:heartbeat"])["available"] is False
+
+
+def test_first_completed_bar_is_published_only_after_live_heartbeat_is_ready() -> None:
+    """The Alert consumer must never observe a completed Bar before readiness."""
+    module = importlib.import_module("app.market_data.live_market")
+    day = date(2025, 1, 2)
+    window = SessionWindow(
+        datetime(2025, 1, 2, 1, tzinfo=UTC), datetime(2025, 1, 2, 2, tzinfo=UTC)
+    )
+
+    class HeartbeatObservingRedis(FakeRedis):
+        def __init__(self) -> None:
+            super().__init__()
+            self.heartbeat_at_completed_bar_publish: list[dict[str, Any]] = []
+
+        def publish(self, channel: str, message: str) -> int:
+            if channel == module.live_bar_channel("j", "1m"):
+                self.heartbeat_at_completed_bar_publish.append(
+                    json.loads(self.values["live:heartbeat"])
+                )
+            return super().publish(channel, message)
+
+    fake = HeartbeatObservingRedis()
+    client = FakeLiveClient()
+    bar = _bar(1)
+    client.payloads = [_raw_payload("J2505", bar)]
+    service = _live_service(
+        client=client,
+        dominants=FakeDominants({("j", day): "J2505"}),
+        phases=FakePhases({"j": _phase("j", day, window)}),
+        store=module.RedisLiveStore(fake),
+        products=("j",),
+    )
+
+    assert service.poll(bar.bar_end + timedelta(seconds=1)) is None
+    assert service.poll(bar.bar_end + timedelta(seconds=2)) is None
+
+    assert fake.heartbeat_at_completed_bar_publish == [
+        {
+            "generated_at": (bar.bar_end + timedelta(seconds=2)).isoformat(),
+            "operational_count": 1,
+            "subscribed_count": 1,
+            "last_bar_at": bar.bar_end.isoformat(),
+            "phase_counts": {"TRADING": 1},
+            "available": True,
+        }
+    ]
+
+
+def test_break_resume_first_completed_bar_is_published_after_heartbeat_recovers() -> None:
+    """Catches the first post-break Bar being published against a stale heartbeat."""
+    module = importlib.import_module("app.market_data.live_market")
+    day = date(2025, 1, 2)
+    morning = SessionWindow(
+        datetime(2025, 1, 2, 1, tzinfo=UTC), datetime(2025, 1, 2, 2, tzinfo=UTC)
+    )
+    afternoon = SessionWindow(
+        datetime(2025, 1, 2, 3, tzinfo=UTC), datetime(2025, 1, 2, 4, tzinfo=UTC)
+    )
+
+    class HeartbeatObservingRedis(FakeRedis):
+        def __init__(self) -> None:
+            super().__init__()
+            self.heartbeat_at_completed_bar_publish: list[dict[str, Any]] = []
+
+        def publish(self, channel: str, message: str) -> int:
+            if channel == module.live_bar_channel("j", "1m"):
+                self.heartbeat_at_completed_bar_publish.append(
+                    json.loads(self.values["live:heartbeat"])
+                )
+            return super().publish(channel, message)
+
+    fake = HeartbeatObservingRedis()
+    phases = FakePhases({"j": _phase("j", day, morning)})
+    service = _live_service(
+        client=FakeLiveClient(),
+        dominants=FakeDominants({("j", day): "J2505"}),
+        phases=phases,
+        store=module.RedisLiveStore(fake),
+        products=("j",),
+    )
+    first = _bar(1)
+    service.reconcile(first.bar_end)
+    assert service.ingest("J2505", first, now=first.bar_end + timedelta(seconds=1)) is None
+    assert service.flush_due(first.bar_end + timedelta(seconds=2)) == (first,)
+
+    phases.phases["j"] = _phase("j", day, None, MarketPhase.BREAK)
+    service.reconcile(datetime(2025, 1, 2, 2, 30, tzinfo=UTC))
+    phases.phases["j"] = _phase("j", day, afternoon)
+    resumed = replace(first, bar_end=datetime(2025, 1, 2, 3, 1, tzinfo=UTC))
+    service.reconcile(resumed.bar_end + timedelta(seconds=1))
+    assert json.loads(fake.values["live:heartbeat"])["available"] is False
+    assert service.ingest("J2505", resumed, now=resumed.bar_end + timedelta(seconds=1)) is None
+
+    assert service.flush_due(resumed.bar_end + timedelta(seconds=2)) == (resumed,)
+    assert fake.heartbeat_at_completed_bar_publish[-1]["available"] is True
+    assert fake.heartbeat_at_completed_bar_publish[-1]["last_bar_at"] == resumed.bar_end.isoformat()
+
+
+def test_heartbeat_write_failure_blocks_completed_and_derived_bar_publication() -> None:
+    """Catches an unconfirmed readiness write being treated as safe to publish."""
+    module = importlib.import_module("app.market_data.live_market")
+    day = date(2025, 1, 2)
+    window = SessionWindow(
+        datetime(2025, 1, 2, 1, tzinfo=UTC), datetime(2025, 1, 2, 2, tzinfo=UTC)
+    )
+    fake = FakeRedis()
+    service = _live_service(
+        client=FakeLiveClient(),
+        dominants=FakeDominants({("j", day): "J2505"}),
+        phases=FakePhases({"j": _phase("j", day, window)}),
+        store=module.RedisLiveStore(fake),
+        products=("j",),
+    )
+    bar = _bar(1)
+    service.reconcile(bar.bar_end)
+    assert service.ingest("J2505", bar, now=bar.bar_end + timedelta(seconds=1)) is None
+    fake.fail_heartbeat_set = 1
+
+    assert service.flush_due(bar.bar_end + timedelta(seconds=2)) == ()
+    assert [event for event in fake.published if event[0].startswith("live:bar:")] == []
+    store = module.RedisLiveStore(fake)
+    assert store.bars_after(day, "j", "5m", None) == ()
+    assert store.bars_after(day, "j", "15m", None) == ()
+    assert json.loads(fake.values["live:heartbeat"])["available"] is False
+
+
+def test_batch_persistence_failure_blocks_every_due_bar_until_a_later_retry() -> None:
+    """Catches a failed due Bar being masked by a later successful Bar in the same flush."""
+    module = importlib.import_module("app.market_data.live_market")
+    day = date(2025, 1, 2)
+    window = SessionWindow(
+        datetime(2025, 1, 2, 1, tzinfo=UTC), datetime(2025, 1, 2, 2, tzinfo=UTC)
+    )
+    fake = FakeRedis()
+    service = _live_service(
+        client=FakeLiveClient(),
+        dominants=FakeDominants({("j", day): "J2505"}),
+        phases=FakePhases({"j": _phase("j", day, window)}),
+        store=module.RedisLiveStore(fake),
+        products=("j",),
+    )
+    first, second = _bar(1), _bar(2)
+    service.reconcile(first.bar_end)
+    assert service.ingest("J2505", first, now=first.bar_end + timedelta(seconds=1)) is None
+    assert service.ingest("J2505", second, now=second.bar_end + timedelta(seconds=1)) is None
+    fake.fail_zadd = 1
+
+    assert service.flush_due(second.bar_end + timedelta(seconds=2)) == ()
+    assert [event for event in fake.published if event[0].startswith("live:bar:")] == []
+    assert len(service._pending) == 2
+    assert json.loads(fake.values["live:heartbeat"])["available"] is False
+
+
+def test_poll_does_not_retry_failed_due_bar_within_the_same_cycle() -> None:
+    """Catches poll's second flush making a transient Redis failure visible to Alert."""
+    module = importlib.import_module("app.market_data.live_market")
+    day = date(2025, 1, 2)
+    window = SessionWindow(
+        datetime(2025, 1, 2, 1, tzinfo=UTC), datetime(2025, 1, 2, 2, tzinfo=UTC)
+    )
+    fake = FakeRedis()
+    service = _live_service(
+        client=FakeLiveClient(),
+        dominants=FakeDominants({("j", day): "J2505"}),
+        phases=FakePhases({"j": _phase("j", day, window)}),
+        store=module.RedisLiveStore(fake),
+        products=("j",),
+    )
+    bar = _bar(1)
+    service.reconcile(bar.bar_end)
+    assert service.ingest("J2505", bar, now=bar.bar_end + timedelta(seconds=1)) is None
+    fake.fail_zadd = 1
+
+    assert service.poll(bar.bar_end + timedelta(seconds=2)) == "LIVE_REDIS_UNAVAILABLE"
+    assert [event for event in fake.published if event[0].startswith("live:bar:")] == []
+    assert len(service._pending) == 1
+
+
+def test_mid_batch_publish_failure_stops_later_due_bar_publication() -> None:
+    """Catches a failed PubSub write being masked by a later Bar in the same flush."""
+    module = importlib.import_module("app.market_data.live_market")
+    day = date(2025, 1, 2)
+    window = SessionWindow(
+        datetime(2025, 1, 2, 1, tzinfo=UTC), datetime(2025, 1, 2, 2, tzinfo=UTC)
+    )
+    fake = FakeRedis()
+    service = _live_service(
+        client=FakeLiveClient(),
+        dominants=FakeDominants({("j", day): "J2505"}),
+        phases=FakePhases({"j": _phase("j", day, window)}),
+        store=module.RedisLiveStore(fake),
+        products=("j",),
+    )
+    first, second, third = _bar(1), _bar(2), _bar(3)
+    service.reconcile(first.bar_end)
+    assert service.ingest("J2505", first, now=first.bar_end + timedelta(seconds=1)) is None
+    assert service.ingest("J2505", second, now=second.bar_end + timedelta(seconds=1)) is None
+    assert service.ingest("J2505", third, now=third.bar_end + timedelta(seconds=1)) is None
+    fake.fail_live_bar_publish_at = 2
+
+    assert service.flush_due(third.bar_end + timedelta(seconds=2)) == (first,)
+    assert [event for event in fake.published if event[0].startswith("live:bar:")] == [
+        ("live:bar:j:1m", json.dumps(_bar_payload(first), separators=(",", ":")))
+    ]
+    assert len(service._pending) == 2
     assert json.loads(fake.values["live:heartbeat"])["available"] is False
 
 
@@ -1161,8 +1382,8 @@ def test_trading_provider_failure_retries_after_ten_seconds_but_break_staleness_
     assert service.next_provider_retry_at is None
 
 
-def test_provider_failure_immediately_publishes_unavailable_and_recovery_restores_it() -> None:
-    """Catches a disconnected provider remaining publicly available until a later bar or heartbeat."""
+def test_provider_failure_immediately_publishes_unavailable_and_first_recovery_bar_restores_it() -> None:
+    """A recovered completed Bar must restore readiness before its PubSub visibility."""
     module = importlib.import_module("app.market_data.live_market")
     day = date(2025, 1, 2)
     window = SessionWindow(
@@ -1193,8 +1414,6 @@ def test_provider_failure_immediately_publishes_unavailable_and_recovery_restore
     assert json.loads(fake.values["live:heartbeat"])["available"] is False
 
     assert service.poll(started + timedelta(seconds=10)) is None
-    assert json.loads(fake.values["live:heartbeat"])["available"] is False
-    assert service.poll(started + timedelta(seconds=11)) is None
     assert json.loads(fake.values["live:heartbeat"])["available"] is True
 
 

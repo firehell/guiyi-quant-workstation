@@ -35,7 +35,7 @@ class RedisClient(Protocol):
 
     def zrangebyscore(self, key: str, minimum: str | int, maximum: str | int) -> list[str | bytes]: ...
 
-    def set(self, key: str, value: str) -> bool: ...
+    def set(self, key: str, value: str, *, ex: int | None = None) -> bool: ...
 
     def get(self, key: str) -> str | bytes | None: ...
 
@@ -65,7 +65,8 @@ class RedisLiveStore:
         score = _epoch_millis(bar.bar_end)
         self._redis.zremrangebyscore(key, score, score)
         self._redis.zadd(key, {_compact_json(_bar_payload(bar)): score})
-        self._redis.expire(key, _LIVE_TTL_SECONDS)
+        if self._redis.expire(key, _LIVE_TTL_SECONDS) is not True:
+            raise ConnectionError("LIVE_REDIS_UNAVAILABLE")
 
     def bars_after(
         self,
@@ -101,8 +102,12 @@ class RedisLiveStore:
         return None if raw is None else _decode_mapping(raw)
 
     def set_heartbeat(self, payload: Mapping[str, Any]) -> None:
-        self._redis.set("live:heartbeat", _compact_json(dict(payload)))
-        self._redis.expire("live:heartbeat", _HEARTBEAT_TTL_SECONDS)
+        if self._redis.set(
+            "live:heartbeat",
+            _compact_json(dict(payload)),
+            ex=_HEARTBEAT_TTL_SECONDS,
+        ) is not True:
+            raise ConnectionError("LIVE_REDIS_UNAVAILABLE")
 
     def heartbeat(self) -> dict[str, Any] | None:
         raw = self._redis.get("live:heartbeat")
@@ -391,6 +396,7 @@ class LiveMarketService:
         self._finalized: set[tuple[str, datetime]] = set()
         self._known_sessions: dict[tuple[str, date], tuple[SessionWindow, ...]] = {}
         self._last_bar_at: datetime | None = None
+        self._last_flush_failed = False
         self._available = True
         self._provider_available = True
         self.next_provider_retry_at: datetime | None = None
@@ -494,30 +500,65 @@ class LiveMarketService:
         self._pending[key] = (bar, window)
         return None
 
-    def flush_due(self, now: datetime) -> tuple[CanonicalBar, ...]:
+    def flush_due(
+        self,
+        now: datetime,
+        *,
+        phases: Mapping[str, ProductMarketPhase] | None = None,
+    ) -> tuple[CanonicalBar, ...]:
         """仅在 bar_end 两秒后发布一次 completed 1m，并增量生成派生频率。"""
-        finalized: list[CanonicalBar] = []
+        self._last_flush_failed = False
+        due: list[tuple[tuple[str, datetime], CanonicalBar, SessionWindow]] = []
         for key, (bar, window) in tuple(self._pending.items()):
             if now < bar.bar_end + _FINALIZATION_DELAY:
                 continue
             symbol, _ = key
             try:
                 self._store.put_bar(bar.trading_day, symbol, BarFrequency.M1, bar)
+            except Exception:  # noqa: BLE001 - Redis is an explicit unavailable boundary
+                self._mark_redis_unavailable(now, phases)
+                self._last_flush_failed = True
+                return ()
+            due.append((key, bar, window))
+
+        if not due:
+            return ()
+
+        previous_last_bar_at = self._last_bar_at
+        self._available = True
+        self._last_bar_at = max(
+            (bar.bar_end for _, bar, _ in due),
+            default=previous_last_bar_at,
+        )
+        if previous_last_bar_at is not None and self._last_bar_at is not None:
+            self._last_bar_at = max(previous_last_bar_at, self._last_bar_at)
+        try:
+            self._publish_heartbeat(now, phases or self._phases(now))
+        except Exception:  # noqa: BLE001 - Redis readiness must precede PubSub visibility
+            self._available = False
+            self._last_bar_at = previous_last_bar_at
+            self._reject("LIVE_REDIS_UNAVAILABLE")
+            self._last_flush_failed = True
+            return ()
+
+        finalized: list[CanonicalBar] = []
+        for key, bar, window in due:
+            symbol, _ = key
+            try:
                 self._store.publish_bar(symbol, BarFrequency.M1, bar)
             except Exception:  # noqa: BLE001 - Redis is an explicit unavailable boundary
-                self._available = False
-                self._reject("LIVE_REDIS_UNAVAILABLE")
-                continue
+                self._mark_redis_unavailable(now, phases)
+                self._last_flush_failed = True
+                return tuple(finalized)
             self._pending.pop(key)
             self._finalized.add(key)
-            self._available = True
-            self._last_bar_at = max(self._last_bar_at, bar.bar_end) if self._last_bar_at else bar.bar_end
             finalized.append(bar)
             try:
                 self._derive(symbol, bar, window)
             except Exception:  # noqa: BLE001 - Derived only reads/writes transient Redis state
-                self._available = False
-                self._reject("LIVE_REDIS_UNAVAILABLE")
+                self._mark_redis_unavailable(now, phases)
+                self._last_flush_failed = True
+                return tuple(finalized)
         return tuple(finalized)
 
     def poll(self, now: datetime) -> str | None:
@@ -527,7 +568,9 @@ class LiveMarketService:
             self.next_provider_retry_at = None
             try:
                 self._drain_session_grace(now)
-                self.flush_due(now)
+                self.flush_due(now, phases=phases)
+                if self._last_flush_failed:
+                    return "LIVE_REDIS_UNAVAILABLE"
                 self._sync_provider_channels(
                     self._channels_in_session_grace(now),
                     create_if_missing=False,
@@ -547,7 +590,9 @@ class LiveMarketService:
                 return self._reject("LIVE_REDIS_UNAVAILABLE")
             return None
         if self.next_provider_retry_at is not None and now < self.next_provider_retry_at:
-            self.flush_due(now)
+            self.flush_due(now, phases=phases)
+            if self._last_flush_failed:
+                return "LIVE_REDIS_UNAVAILABLE"
             return None
         try:
             result = self.reconcile(now)
@@ -556,7 +601,9 @@ class LiveMarketService:
         except Exception:  # noqa: BLE001 - Redis is a fail-closed Live boundary
             self._available = False
             return self._reject("LIVE_REDIS_UNAVAILABLE")
-        self.flush_due(now)
+        self.flush_due(now, phases=phases)
+        if self._last_flush_failed:
+            return "LIVE_REDIS_UNAVAILABLE"
         if result is not None:
             return result
         if not self._channels:
@@ -565,7 +612,9 @@ class LiveMarketService:
             provider = self._provider_or_create()
             for contract, bar in provider.poll():
                 self.ingest(contract, bar, now=now)
-            self.flush_due(now)
+            self.flush_due(now, phases=phases)
+            if self._last_flush_failed:
+                return "LIVE_REDIS_UNAVAILABLE"
             if not self._provider_available:
                 self._provider_available = True
                 self._publish_heartbeat(now, phases)
@@ -740,6 +789,18 @@ class LiveMarketService:
                 "available": self._available and self._provider_available and bar_feed_fresh,
             }
         )
+
+    def _mark_redis_unavailable(
+        self,
+        now: datetime,
+        phases: Mapping[str, ProductMarketPhase] | None,
+    ) -> None:
+        self._available = False
+        self._reject("LIVE_REDIS_UNAVAILABLE")
+        try:
+            self._publish_heartbeat(now, phases or self._phases(now))
+        except Exception:  # noqa: BLE001 - Redis is already unavailable; do not publish a Bar
+            pass
 
     def _reject(self, code: str) -> str:
         self.rejections.append(code)
