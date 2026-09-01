@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 import pytest
@@ -12,6 +12,7 @@ from app.market_data.domain import (
     SeriesPageQuery,
 )
 from app.market_data.market_read_service import MarketReadService, MarketReadWindowError
+from app.market_data.market_phase import MarketPhase, ProductMarketPhase
 
 
 DAY_1 = date(2026, 8, 30)
@@ -101,6 +102,18 @@ class _ForbiddenPhaseReader:
         raise AssertionError("bars_until must not inspect the current phase")
 
 
+class _TradingPhaseReader:
+    def resolve(self, symbol: str, now: datetime) -> ProductMarketPhase:
+        assert symbol == "jm"
+        return ProductMarketPhase(
+            symbol=symbol,
+            phase=MarketPhase.TRADING,
+            trading_day=DAY_2,
+            current_session=None,
+            next_session_start=None,
+        )
+
+
 def _service(
     *,
     historical: tuple[CanonicalBar, ...],
@@ -145,6 +158,28 @@ def test_bars_until_aligns_historical_and_live_rank1_contract_owners() -> None:
         (DAY_2, "JM2705"),
     )
     assert window.bar_contracts[-1] == window.contract == "JM2705"
+
+
+def test_live_snapshot_excludes_bars_after_observation_time() -> None:
+    observed = _bar(LIVE_END, DAY_2)
+    future = _bar(LIVE_END + timedelta(minutes=15), DAY_2)
+    service = MarketReadService(
+        market_data=_MarketPageReader(
+            (_bar(HISTORICAL_END_2, DAY_2),),
+            (ResolvedContractSegment("JM2705", DAY_2, DAY_2),),
+        ),
+        phase_resolver=_TradingPhaseReader(),
+        operational_products=("jm",),
+        live_store=_LiveStore((observed, future), "JM2705"),
+    )
+
+    snapshot = service.live_snapshot(
+        SeriesPageQuery("actual_dominant", "jm", "15m"),
+        after=HISTORICAL_END_2,
+        now=LIVE_END,
+    )
+
+    assert snapshot == (observed,)
 
 
 def test_bars_until_rejects_historical_live_owner_conflict_at_same_bar_end() -> None:
