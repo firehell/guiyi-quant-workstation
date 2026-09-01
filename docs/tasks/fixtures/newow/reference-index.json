@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "references": [
+    {
+      "id": "NEWOW-DETAIL-VIDEO-20260901",
+      "kind": "user_video",
+      "sha256": "204176376e0df5679b4ab45d511818b3a8130dbaa175136ca35eb06f0567bd63",
+      "description": "牛哇详情页纵向录屏：顶部、趋势策略、主图、标记、弹层、历史入口",
+      "required_for": ["layout", "interaction", "trend_band", "markers"]
+    },
+    {
+      "id": "NEWOW-DETAIL-HEADER-20260901",
+      "kind": "user_screenshot",
+      "sha256": "a3e634e64b116f1b245de2c6cddfc4677edfd9ae8e04bd86ea6ab1817466de01",
+      "description": "详情页顶部信息、日K胶囊、收藏/历史入口与趋势策略选中态",
+      "required_for": ["header", "spacing", "strategy_chip"]
+    },
+    {
+      "id": "NEWOW-CONTROL-SHEET-20260901",
+      "kind": "user_screenshot",
+      "sha256": "e2a8b9eb0707c98c3cc825ac167a4a91d5dde1791dfce0674c4fb76f197ae13c",
+      "description": "主力控盘指标解读弹层；V1只参考弹层结构，副图公式明确后移",
+      "required_for": ["modal_shell"]
+    },
+    {
+      "id": "NEWOW-DYNAMIC-SHEET-20260901",
+      "kind": "user_screenshot",
+      "sha256": "81a0b5580081d0e1d14b1401532d876c221ba7a58d7635449df38136718904e6",
+      "description": "主力动态指标解读弹层；V1只参考弹层结构，副图公式明确后移",
+      "required_for": ["modal_shell"]
+    },
+    {
+      "id": "NEWOW-D123-MODAL-20260901",
+      "kind": "user_screenshot",
+      "sha256": "7fdde4f233fd51928c306907445c4ee65949af49c4e0ded3a787350acbf827ac",
+      "description": "首页 D1/D2/D3 逃顶条件、文案、颜色和排列顺序",
+      "required_for": ["escape_d123", "copy", "colors"]
+    },
+    {
+      "id": "NEWOW-MOMENTUM-SHEET-20260901",
+      "kind": "user_screenshot",
+      "sha256": "e18e0ce2344a57531159baad0ff6a9f4c99599b007d7149573373c33b3c9d975",
+      "description": "涨跌动能指标解读弹层；V1只参考弹层结构，副图公式明确后移",
+      "required_for": ["modal_shell"]
+    },
+    {
+      "id": "NEWOW-CUPHANDLE-V36-20260901",
+      "kind": "user_screenshot",
+      "sha256": "5b42ac554b2376bbba1616be24a2a6844d88beb6c40310df19c7c4e26105323e",
+      "description": "v3.6 杯柄成交量、V形扣分、前置趋势、柄长和10%杯深说明",
+      "required_for": ["cup_handle"]
+    }
+  ]
+}
