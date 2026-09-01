@@ -95,15 +95,11 @@ contract 的基础 provider `1m/1d` 和日线派生 `1w`，再由 1m 重建四�
 
 ### 盘后 Runtime 状态合同
 
-`.run/after-market-status.json` 在未装配 derived refresh 时写 schema v2，装配 derived refresh 时写
-schema v3；读取兼容旧 schema v1/v2。v2/v3 都在受监督自然盘后运行开始、任何
+`.run/after-market-status.json` 写 schema v2；读取兼容旧 schema v1。schema v2 在受监督自然盘后运行开始、任何
 coverage/RQData/update 尝试之前写入
 `current_run={scheduled_date,started_at,products}`，只在 run 完成终态写入时清除。每次写入都在同目录创建
 临时文件后 `os.replace`；中途崩溃保留 `current_run`，不冒充已完成。`last_run.failure_notification`
 只允许 `{attempted_at,state=provider_accepted|failed,error_type}` 公开字段，不保存 provider reference。
-
-schema v3 额外公开 `subing_strategy_performance` derived stage；该 stage 只报告已验证的 snapshot
-增量结果、合法 `skipped` 状态或固定 degraded 分类，不回滚 Canonical、不发送通知，也不自动全量回退。
 
 只读 Runtime health 从 `operational_products.txt` 对应的 `Instrument.exchange_code` 与权威
 `TradingCalendar` 唯一解析 expected trading day：上海时间 18:20 前只考虑先前交易日，18:20
@@ -199,5 +195,4 @@ base 根中既有 V1 文件保持原字节，不移动、覆盖、重新序列�
 
 同一 target identity 冲突、current regression、snapshot identity 不一致或物理根异常必须
 fail-closed。current 只能在 expected target trading day 精确匹配时投影；没有 stale candidate 或
-V1 fallback。盘后任务的 Daily Watch follow-up 与主盘后结果隔离，follow-up 失败不回写主任务；
-不得手工 backfill、触发或用历史 artifact 补造自然 evidence。
+V1 fallback。不得手工 backfill、触发或用历史 artifact 补造自然 evidence。

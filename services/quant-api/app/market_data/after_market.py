@@ -43,8 +43,6 @@ _PUBLIC_ERROR_CODES = frozenset(
         "PROVIDER_QUOTA_EXHAUSTED",
         "RQDATA_NOT_READY",
         "RQDATA_READY_CHECK_FAILED",
-        "SUBING_DAILY_WATCH_FAILED",
-        "SUBING_STRATEGY_PERFORMANCE_DEGRADED",
         "UPDATE_FAILED",
     }
 )
@@ -91,7 +89,6 @@ class AfterMarketUpdater:
         sleep: Callable[[float], None],
         notification_transport: NotificationTransport | None,
         now: Callable[[], datetime],
-        derived_refresh: Callable[[date, tuple[str, ...]], object] | None = None,
     ) -> None:
         self.manager = manager
         self.rqdata = rqdata
@@ -100,14 +97,8 @@ class AfterMarketUpdater:
         self.sleep = sleep
         self.notification_transport = notification_transport
         self.now = now
-        self.derived_refresh = derived_refresh
-        self._derived_performance: dict[str, object] | None = None
 
-    def run(
-        self,
-        *,
-        post_update: Callable[[date], None] | None = None,
-    ) -> AfterMarketResult:
+    def run(self) -> AfterMarketResult:
         """执行一次受限盘后维护，并写入仅含公开字段的状态。"""
         started_at = _local_timestamp(self.now())
         products = load_operational_products()
@@ -131,7 +122,6 @@ class AfterMarketUpdater:
                 products,
                 trading_day,
                 attempt=attempt,
-                post_update=post_update,
             )
             if error_code is None:
                 result = AfterMarketResult("passed", trading_day, attempt, None)
@@ -198,7 +188,6 @@ class AfterMarketUpdater:
         trading_day: date,
         *,
         attempt: int,
-        post_update: Callable[[date], None] | None,
     ) -> str | None:
         try:
             ready = self.rqdata.is_future_data_ready(trading_day)
@@ -272,7 +261,9 @@ class AfterMarketUpdater:
                     "reason": "canonical_updated",
                 }
             )
-            if not _rank1_matches_live_snapshot(self.manager, self.live_store, products, trading_day):
+            if not _rank1_matches_live_snapshot(
+                self.manager, self.live_store, products, trading_day
+            ):
                 _LOGGER.warning(
                     "after_market_attempt_failed stage=live_reconciliation attempt=%s "
                     "detail_code=LIVE_DOMINANT_MISMATCH",
@@ -288,93 +279,6 @@ class AfterMarketUpdater:
                 type(exc).__name__,
             )
             return "UPDATE_FAILED"
-        if self.derived_refresh is not None:
-            try:
-                derived = self.derived_refresh(trading_day, products)
-                status = getattr(derived, "status", None)
-                completed = tuple(getattr(derived, "completed_products", ()))
-                failed = tuple(getattr(derived, "failed_products", ()))
-                cache_hit_count = getattr(derived, "cache_hit_count", None)
-                cache_published_count = getattr(
-                    derived, "cache_published_count", None
-                )
-                batch_identity_sha256 = getattr(
-                    derived, "batch_identity_sha256", None
-                )
-                if status not in {"passed", "degraded"}:
-                    raise ValueError("DERIVED_RESULT_INVALID")
-                if (
-                    type(cache_hit_count) is not int
-                    or cache_hit_count < 0
-                    or type(cache_published_count) is not int
-                    or cache_published_count < 0
-                    or not isinstance(batch_identity_sha256, str)
-                    or len(batch_identity_sha256) != 64
-                    or any(
-                        character not in "0123456789abcdef"
-                        for character in batch_identity_sha256
-                    )
-                ):
-                    raise ValueError("DERIVED_RESULT_INVALID")
-                if (
-                    any(not isinstance(symbol, str) for symbol in completed)
-                    or any(
-                        not isinstance(item, tuple)
-                        or len(item) != 2
-                        or not isinstance(item[0], str)
-                        or not isinstance(item[1], str)
-                        or not item[1].startswith("SUBING_STRATEGY_")
-                        for item in failed
-                    )
-                ):
-                    raise ValueError("DERIVED_RESULT_INVALID")
-                failed_symbols = tuple(item[0] for item in failed)
-                if (
-                    len(set(completed)) != len(completed)
-                    or len(set(failed_symbols)) != len(failed_symbols)
-                    or set(completed) & set(failed_symbols)
-                    or set(completed) | set(failed_symbols) != set(products)
-                    or cache_hit_count + cache_published_count != len(completed)
-                    or (status == "passed") != (not failed)
-                ):
-                    raise ValueError("DERIVED_RESULT_INVALID")
-                self._derived_performance = {
-                    "status": status,
-                    "completed_count": len(completed),
-                    "cache_hit_count": cache_hit_count,
-                    "cache_published_count": cache_published_count,
-                    "batch_identity_sha256": batch_identity_sha256,
-                    "failed_products": [
-                        {"symbol": symbol, "code": code}
-                        for symbol, code in failed
-                    ],
-                }
-            except Exception as exc:  # noqa: BLE001 - Canonical success remains authoritative
-                _LOGGER.warning(
-                    "after_market_derived_degraded stage=subing_strategy_performance exception_type=%s",
-                    type(exc).__name__,
-                )
-                self._derived_performance = {
-                    "status": "degraded",
-                    "completed_count": 0,
-                    "cache_hit_count": 0,
-                    "cache_published_count": 0,
-                    "batch_identity_sha256": None,
-                    "failed_products": [],
-                }
-            if self._derived_performance["status"] != "passed":
-                return "SUBING_STRATEGY_PERFORMANCE_DEGRADED"
-        if post_update is not None:
-            try:
-                post_update(trading_day)
-            except Exception as exc:  # noqa: BLE001 - public outcome stays sanitized
-                _LOGGER.warning(
-                    "after_market_attempt_failed stage=post_update attempt=%s "
-                    "detail_code=SUBING_DAILY_WATCH_FAILED exception_type=%s",
-                    attempt,
-                    type(exc).__name__,
-                )
-                return "SUBING_DAILY_WATCH_FAILED"
         return None
 
     def _write_status(
@@ -385,7 +289,7 @@ class AfterMarketUpdater:
     ) -> None:
         previous = _load_status(self.status_path)
         finished_at = _local_timestamp(self.now())
-        schema_version = 3 if self.derived_refresh is not None else 2
+        schema_version = 2
         payload: dict[str, Any] = {
             "schema_version": schema_version,
             "current_run": None,
@@ -404,15 +308,6 @@ class AfterMarketUpdater:
             ),
             "last_failure": _public_last_failure(previous.get("last_failure")),
         }
-        if schema_version == 3:
-            payload["subing_strategy_performance"] = self._derived_performance or {
-                "status": "skipped",
-                "completed_count": 0,
-                "cache_hit_count": 0,
-                "cache_published_count": 0,
-                "batch_identity_sha256": None,
-                "failed_products": [],
-            }
         if result.status == "passed":
             payload["last_successful_trading_day"] = result.trading_day.isoformat()
             payload["last_failure"] = None
@@ -439,10 +334,10 @@ class AfterMarketUpdater:
         previous = _load_status(self.status_path)
         previous_schema_version = (
             int(previous["schema_version"])
-            if previous.get("schema_version") in {2, 3}
+            if previous.get("schema_version") == 2
             else 1
         )
-        schema_version = 3 if self.derived_refresh is not None else 2
+        schema_version = 2
         payload: dict[str, Any] = {
             "schema_version": schema_version,
             "current_run": {
@@ -459,15 +354,6 @@ class AfterMarketUpdater:
             ),
             "last_failure": _public_last_failure(previous.get("last_failure")),
         }
-        if schema_version == 3:
-            payload["subing_strategy_performance"] = {
-                "status": "skipped",
-                "completed_count": 0,
-                "cache_hit_count": 0,
-                "cache_published_count": 0,
-                "batch_identity_sha256": None,
-                "failed_products": [],
-            }
         _atomic_write_status(self.status_path, payload)
 
 
@@ -483,9 +369,6 @@ def build_after_market_updater(
         raise RuntimeError("AFTER_MARKET_RQDATA_CLIENT_UNAVAILABLE")
     from app.market_data.live_market import RedisClient
     from app.redis_connections import get_redis_connection
-    from app.market_data.composition import (
-        build_subing_strategy_performance_incremental_batch_refresher,
-    )
     from typing import cast
 
     notification_transport: NotificationTransport | None = None
@@ -499,11 +382,6 @@ def build_after_market_updater(
         sleep=time.sleep,
         notification_transport=notification_transport,
         now=lambda: datetime.now(SHANGHAI),
-        derived_refresh=lambda trading_day, products: (
-            build_subing_strategy_performance_incremental_batch_refresher(
-                manager.catalog.session
-            ).refresh(trading_day, products)
-        ),
     )
 
 
@@ -569,7 +447,10 @@ def _rank1_matches_live_snapshot(
     live = {
         symbol.strip().lower(): contract.strip().upper()
         for symbol, contract in snapshot.items()
-        if isinstance(symbol, str) and isinstance(contract, str) and symbol.strip() and contract.strip()
+        if isinstance(symbol, str)
+        and isinstance(contract, str)
+        and symbol.strip()
+        and contract.strip()
     }
     if set(live) != set(products):
         return False
@@ -613,20 +494,18 @@ def public_after_market_status(value: object) -> dict[str, object]:
     if not isinstance(value, Mapping):
         return {}
     raw_schema_version = value.get("schema_version", 1)
-    if type(raw_schema_version) is not int or raw_schema_version not in {1, 2, 3}:
+    if type(raw_schema_version) is not int or raw_schema_version not in {1, 2}:
         return {}
     schema_version = raw_schema_version
     current_run = (
-        _public_current_run(value.get("current_run"))
-        if schema_version in {2, 3}
-        else None
+        _public_current_run(value.get("current_run")) if schema_version == 2 else None
     )
     last_run = _public_last_run(value.get("last_run"), schema_version=schema_version)
     last_success = _public_trading_day(value.get("last_successful_trading_day"))
     last_failure = _public_last_failure(value.get("last_failure"))
     if (
         (
-            schema_version in {2, 3}
+            schema_version == 2
             and _present_nonnull_invalid(value, "current_run", current_run)
         )
         or _present_nonnull_invalid(value, "last_run", last_run)
@@ -638,30 +517,23 @@ def public_after_market_status(value: object) -> dict[str, object]:
         or _present_nonnull_invalid(value, "last_failure", last_failure)
     ):
         return {}
-    if current_run is None and last_run is None and last_success is None and last_failure is None:
+    if (
+        current_run is None
+        and last_run is None
+        and last_success is None
+        and last_failure is None
+    ):
         return {}
     public: dict[str, object] = {
         "last_run": last_run,
         "last_successful_trading_day": last_success,
         "last_failure": last_failure,
     }
-    if schema_version in {2, 3}:
-        derived = (
-            _public_derived_performance(value.get("subing_strategy_performance"))
-            if schema_version == 3
-            else None
-        )
-        if schema_version == 3 and derived is None:
-            return {}
+    if schema_version == 2:
         return {
             "schema_version": schema_version,
             "current_run": current_run,
             **public,
-            **(
-                {"subing_strategy_performance": derived}
-                if schema_version == 3
-                else {}
-            ),
         }
     return public
 
@@ -690,7 +562,8 @@ def _public_last_run(
     error_code = value.get("error_code")
     normalized_products = (
         [product.strip().lower() for product in products]
-        if isinstance(products, list) and all(isinstance(product, str) for product in products)
+        if isinstance(products, list)
+        and all(isinstance(product, str) for product in products)
         else []
     )
     valid_attempts = isinstance(attempts, int) and not isinstance(attempts, bool)
@@ -710,7 +583,10 @@ def _public_last_run(
         or finished_at is None
         or not valid_outcome
         or not normalized_products
-        or any(_PUBLIC_PRODUCT_CODE.fullmatch(product) is None for product in normalized_products)
+        or any(
+            _PUBLIC_PRODUCT_CODE.fullmatch(product) is None
+            for product in normalized_products
+        )
     ):
         return None
     public = {
@@ -722,73 +598,16 @@ def _public_last_run(
         "products": normalized_products,
         "error_code": error_code,
     }
-    if schema_version in {2, 3}:
+    if schema_version == 2:
         failure_notification = _public_failure_notification(
             value.get("failure_notification")
         )
-        if value.get("failure_notification") is not None and failure_notification is None:
-            return None
-        public["failure_notification"] = failure_notification
-    return public
-
-
-def _public_derived_performance(value: object) -> dict[str, object] | None:
-    if not isinstance(value, Mapping):
-        return None
-    status = value.get("status")
-    completed_count = value.get("completed_count")
-    cache_hit_count = value.get("cache_hit_count")
-    cache_published_count = value.get("cache_published_count")
-    batch_identity_sha256 = value.get("batch_identity_sha256")
-    failed = value.get("failed_products")
-    if (
-        status not in {"passed", "degraded", "skipped"}
-        or type(completed_count) is not int
-        or completed_count < 0
-        or not isinstance(failed, list)
-    ):
-        return None
-    has_cache_counts = "cache_hit_count" in value or "cache_published_count" in value
-    if has_cache_counts and (
-        type(cache_hit_count) is not int
-        or cache_hit_count < 0
-        or type(cache_published_count) is not int
-        or cache_published_count < 0
-    ):
-        return None
-    if "batch_identity_sha256" in value and batch_identity_sha256 is not None and (
-        not isinstance(batch_identity_sha256, str)
-        or len(batch_identity_sha256) != 64
-        or any(
-            character not in "0123456789abcdef"
-            for character in batch_identity_sha256
-        )
-    ):
-        return None
-    normalized: list[dict[str, str]] = []
-    for item in failed:
-        if not isinstance(item, Mapping):
-            return None
-        symbol = item.get("symbol")
-        code = item.get("code")
         if (
-            not isinstance(symbol, str)
-            or _PUBLIC_PRODUCT_CODE.fullmatch(symbol) is None
-            or not isinstance(code, str)
-            or not code.startswith("SUBING_STRATEGY_")
+            value.get("failure_notification") is not None
+            and failure_notification is None
         ):
             return None
-        normalized.append({"symbol": symbol, "code": code})
-    public: dict[str, object] = {
-        "status": status,
-        "completed_count": completed_count,
-        "failed_products": normalized,
-    }
-    if has_cache_counts:
-        public["cache_hit_count"] = cache_hit_count
-        public["cache_published_count"] = cache_published_count
-    if "batch_identity_sha256" in value:
-        public["batch_identity_sha256"] = batch_identity_sha256
+        public["failure_notification"] = failure_notification
     return public
 
 
@@ -828,15 +647,12 @@ def _public_failure_notification(value: object) -> dict[str, object] | None:
     attempted_at = _public_timestamp(value.get("attempted_at"))
     state = value.get("state")
     error_type = value.get("error_type")
-    valid = (
-        (state == "provider_accepted" and error_type is None)
-        or (
-            state == "failed"
-            and isinstance(error_type, str)
-            and error_type
-            in _PUBLIC_NOTIFICATION_ERROR_TYPES
-            | {"AFTER_MARKET_FAILURE_NOTIFICATION_FAILED"}
-        )
+    valid = (state == "provider_accepted" and error_type is None) or (
+        state == "failed"
+        and isinstance(error_type, str)
+        and error_type
+        in _PUBLIC_NOTIFICATION_ERROR_TYPES
+        | {"AFTER_MARKET_FAILURE_NOTIFICATION_FAILED"}
     )
     if attempted_at is None or not valid:
         return None

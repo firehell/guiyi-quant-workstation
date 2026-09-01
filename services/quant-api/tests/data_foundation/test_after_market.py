@@ -4,7 +4,7 @@ import json
 import logging
 import io
 import os
-from datetime import UTC, date, datetime
+from datetime import date, datetime
 
 import pytest
 
@@ -92,7 +92,9 @@ class _Metadata:
     def __init__(self) -> None:
         self.calls: list[tuple[tuple[str, ...], date]] = []
 
-    def synchronize_current_day(self, products: tuple[str, ...], trading_day: date) -> date:
+    def synchronize_current_day(
+        self, products: tuple[str, ...], trading_day: date
+    ) -> date:
         self.calls.append((products, trading_day))
         return trading_day
 
@@ -203,7 +205,9 @@ def _notice_error_codes(notices: list[NotificationDelivery]) -> list[str]:
     ]
 
 
-def test_public_manual_after_market_does_not_grant_failure_notification_capability() -> None:
+def test_public_manual_after_market_does_not_grant_failure_notification_capability() -> (
+    None
+):
     capabilities: list[bool] = []
 
     class Updater:
@@ -227,7 +231,9 @@ def test_public_manual_after_market_does_not_grant_failure_notification_capabili
     assert capabilities == [False]
 
 
-def test_supervised_runtime_after_market_grants_one_shot_failure_notification_capability() -> None:
+def test_supervised_runtime_after_market_grants_one_shot_failure_notification_capability() -> (
+    None
+):
     capabilities: list[bool] = []
 
     class Updater:
@@ -435,7 +441,9 @@ def test_new_current_run_preserves_previous_v2_failure_notification(tmp_path) ->
     }
 
 
-def test_every_status_write_uses_same_directory_atomic_replace(tmp_path, monkeypatch) -> None:
+def test_every_status_write_uses_same_directory_atomic_replace(
+    tmp_path, monkeypatch
+) -> None:
     status_path = tmp_path / "after-market-status.json"
     updater, *_ = _updater(
         tmp_path,
@@ -457,7 +465,9 @@ def test_every_status_write_uses_same_directory_atomic_replace(tmp_path, monkeyp
     updater.run()
 
     assert len(replacements) == 2
-    assert all(os.fspath(target) == os.fspath(status_path) for _, target in replacements)
+    assert all(
+        os.fspath(target) == os.fspath(status_path) for _, target in replacements
+    )
 
 
 def test_current_day_metadata_is_delegated_to_the_locked_update(tmp_path) -> None:
@@ -499,7 +509,10 @@ def test_does_not_retry_after_provider_quota_failure(tmp_path) -> None:
         tmp_path,
         trading_day=date(2026, 8, 10),
         readiness=[True, True],
-        results=[_result("failed", stop_reason="PROVIDER_QUOTA_EXHAUSTED"), _result("passed")],
+        results=[
+            _result("failed", stop_reason="PROVIDER_QUOTA_EXHAUSTED"),
+            _result("passed"),
+        ],
     )
 
     result = updater.run()
@@ -533,7 +546,10 @@ def test_records_final_failure_and_notifies_once(tmp_path) -> None:
     assert sleeps == []
     assert _notice_error_codes(notices) == ["UPDATE_FAILED"]
     assert public_status["last_run"]["attempts"] == 1
-    assert status["last_failure"] == {"trading_day": "2026-08-10", "error_code": "UPDATE_FAILED"}
+    assert status["last_failure"] == {
+        "trading_day": "2026-08-10",
+        "error_code": "UPDATE_FAILED",
+    }
     assert "exception" not in json.dumps(status).lower()
     assert "path" not in json.dumps(status).lower()
 
@@ -630,7 +646,9 @@ def test_readiness_failure_logs_only_sanitized_diagnostics(tmp_path, caplog) -> 
     assert "credential-secret-provider-message" not in caplog.text
 
 
-def test_update_exception_logs_only_sanitized_stage_diagnostics(tmp_path, caplog) -> None:
+def test_update_exception_logs_only_sanitized_stage_diagnostics(
+    tmp_path, caplog
+) -> None:
     updater, manager, _rqdata, _sleeps, notices, _live_store = _updater(
         tmp_path,
         trading_day=date(2026, 8, 10),
@@ -680,9 +698,7 @@ def test_next_trading_session_not_ready_is_retried_with_stable_public_code(
     assert result.status == "failed"
     assert result.attempts == 2
     assert result.error_code == "NEXT_TRADING_SESSION_NOT_READY"
-    assert public_status["last_run"]["error_code"] == (
-        "NEXT_TRADING_SESSION_NOT_READY"
-    )
+    assert public_status["last_run"]["error_code"] == ("NEXT_TRADING_SESSION_NOT_READY")
     assert public_status["last_failure"]["error_code"] == (
         "NEXT_TRADING_SESSION_NOT_READY"
     )
@@ -745,7 +761,16 @@ def test_preserves_whitelisted_maintenance_stop_code_on_final_failure(tmp_path) 
 def test_success_clears_previous_last_failure(tmp_path) -> None:
     status_path = tmp_path / "after-market-status.json"
     status_path.write_text(
-        json.dumps({"last_run": None, "last_successful_trading_day": None, "last_failure": {"trading_day": "2026-08-09", "error_code": "UPDATE_FAILED"}}),
+        json.dumps(
+            {
+                "last_run": None,
+                "last_successful_trading_day": None,
+                "last_failure": {
+                    "trading_day": "2026-08-09",
+                    "error_code": "UPDATE_FAILED",
+                },
+            }
+        ),
         encoding="utf-8",
     )
     updater, *_ = _updater(
@@ -765,7 +790,13 @@ def test_weekend_skip_preserves_unresolved_failure(tmp_path) -> None:
     status_path = tmp_path / "after-market-status.json"
     previous_failure = {"trading_day": "2026-08-09", "error_code": "UPDATE_FAILED"}
     status_path.write_text(
-        json.dumps({"last_run": None, "last_successful_trading_day": None, "last_failure": previous_failure}),
+        json.dumps(
+            {
+                "last_run": None,
+                "last_successful_trading_day": None,
+                "last_failure": previous_failure,
+            }
+        ),
         encoding="utf-8",
     )
     updater, *_ = _updater(
@@ -831,8 +862,7 @@ def test_success_reconciles_rank1_publishes_state_and_cleans_live(tmp_path) -> N
     assert manager.metadata.calls == []
     assert manager.calls[0].sync_current_day_metadata is True
     assert manager.catalog.calls == [
-        (symbol, date(2026, 8, 10), date(2026, 8, 10))
-        for symbol in _ACTIVE_PRODUCTS
+        (symbol, date(2026, 8, 10), date(2026, 8, 10)) for symbol in _ACTIVE_PRODUCTS
     ]
     assert live_store.published == [
         {
@@ -927,11 +957,11 @@ def test_public_status_rejects_boolean_attempt_count() -> None:
     assert payload == {}
 
 
-def test_schema_v3_rejects_malformed_nonnull_current_run() -> None:
+def test_public_status_rejects_removed_schema_v3() -> None:
     payload = public_after_market_status(
         {
             "schema_version": 3,
-            "current_run": {"status": "private-corrupt"},
+            "current_run": None,
             "last_run": {
                 "trading_day": "2026-08-10",
                 "status": "passed",
@@ -940,357 +970,14 @@ def test_schema_v3_rejects_malformed_nonnull_current_run() -> None:
                 "finished_at": "2026-08-10T17:05:00+08:00",
                 "products": list(_ACTIVE_PRODUCTS),
                 "error_code": None,
+                "failure_notification": None,
             },
-            "subing_strategy_performance": {
-                "status": "skipped",
-                "completed_count": 0,
-                "cache_hit_count": 0,
-                "cache_published_count": 0,
-                "batch_identity_sha256": None,
-                "failed_products": [],
-            },
+            "last_successful_trading_day": "2026-08-10",
+            "last_failure": None,
         }
     )
 
     assert payload == {}
-
-
-def test_degraded_performance_marks_after_market_failed_without_retrying_canonical(
-    tmp_path,
-) -> None:
-    from app.market_data.subing_strategy.performance import (
-        SubingStrategyPerformanceWarmResult,
-    )
-
-    updater, _manager, _rqdata, sleeps, notices, live_store = _updater(
-        tmp_path,
-        trading_day=date(2026, 8, 10),
-        readiness=[True],
-        results=[_result("passed")],
-    )
-    derived_calls: list[tuple[date, tuple[str, ...]]] = []
-
-    def refresh(trading_day: date, products: tuple[str, ...]):
-        derived_calls.append((trading_day, products))
-        return SubingStrategyPerformanceWarmResult(
-            status="degraded",
-            completed_products=("ag",),
-            failed_products=tuple(
-                (symbol, "SUBING_STRATEGY_SOURCE_UNAVAILABLE")
-                for symbol in _ACTIVE_PRODUCTS
-                if symbol != "ag"
-            ),
-            cache_hit_count=1,
-            cache_published_count=0,
-            batch_identity_sha256="1" * 64,
-            batch_created_at=datetime.fromisoformat("2026-08-10T18:06:00+08:00"),
-        )
-
-    updater.derived_refresh = refresh
-
-    result = updater.run()
-    status = _status(tmp_path / "after-market-status.json")
-
-    assert result.status == "failed"
-    assert result.error_code == "SUBING_STRATEGY_PERFORMANCE_DEGRADED"
-    assert sleeps == []
-    assert _notice_error_codes(notices) == ["SUBING_STRATEGY_PERFORMANCE_DEGRADED"]
-    assert live_store.cleaned == [date(2026, 8, 10)]
-    assert derived_calls == [(date(2026, 8, 10), _ACTIVE_PRODUCTS)]
-    assert status["schema_version"] == 3
-    assert status["last_successful_trading_day"] is None
-    assert status["subing_strategy_performance"] == {
-        "status": "degraded",
-        "completed_count": 1,
-        "cache_hit_count": 1,
-        "cache_published_count": 0,
-        "batch_identity_sha256": "1" * 64,
-        "failed_products": [
-            {"symbol": symbol, "code": "SUBING_STRATEGY_SOURCE_UNAVAILABLE"}
-            for symbol in _ACTIVE_PRODUCTS
-            if symbol != "ag"
-        ],
-    }
-    assert public_after_market_status(status)["subing_strategy_performance"]["status"] == "degraded"
-
-
-def _incremental_derived_refresh(refresher, *, products=_ACTIVE_PRODUCTS, store=None):
-    from app.market_data.subing_strategy.performance_incremental import (
-        SubingStrategyPerformanceIncrementalBatchRefresher,
-    )
-
-    return SubingStrategyPerformanceIncrementalBatchRefresher(
-        refresher=refresher,
-        products=products,
-        store=store,
-        now=lambda: datetime(2026, 8, 10, 10, 6, tzinfo=UTC),
-    ).refresh
-
-
-def test_after_market_incremental_success_records_hits_and_publications(
-    tmp_path,
-) -> None:
-    calls: list[tuple[str, date]] = []
-    published = {symbol: False for symbol in _ACTIVE_PRODUCTS}
-    published[_ACTIVE_PRODUCTS[0]] = True
-
-    class Refresher:
-        def refresh(self, *, symbol: str, through: date):
-            calls.append((symbol, through))
-            return type(
-                "Result",
-                (),
-                {"cache_state": "refreshed" if published[symbol] else "hit"},
-            )()
-
-    updater, _manager, _rqdata, sleeps, notices, live_store = _updater(
-        tmp_path,
-        trading_day=date(2026, 8, 10),
-        readiness=[True],
-        results=[_result("passed")],
-    )
-    updater.derived_refresh = _incremental_derived_refresh(Refresher())
-
-    result = updater.run()
-    status = _status(tmp_path / "after-market-status.json")
-
-    assert result.status == "passed"
-    assert sleeps == []
-    assert notices == []
-    assert live_store.cleaned == [date(2026, 8, 10)]
-    assert calls == [(symbol, date(2026, 8, 10)) for symbol in _ACTIVE_PRODUCTS]
-    assert status["subing_strategy_performance"] == {
-        "status": "passed",
-        "completed_count": len(_ACTIVE_PRODUCTS),
-        "cache_hit_count": len(_ACTIVE_PRODUCTS) - 1,
-        "cache_published_count": 1,
-        "batch_identity_sha256": status["subing_strategy_performance"][
-            "batch_identity_sha256"
-        ],
-        "failed_products": [],
-    }
-    assert len(status["subing_strategy_performance"]["batch_identity_sha256"]) == 64
-
-
-def test_after_market_incremental_one_product_failure_marks_run_failed_without_retry(
-    tmp_path,
-) -> None:
-    from app.market_data.subing_strategy.performance_adoption import (
-        SubingStrategyPerformanceFullRebuildRequired,
-    )
-
-    calls: list[str] = []
-    failed_symbol = _ACTIVE_PRODUCTS[1]
-
-    class Refresher:
-        def refresh(self, *, symbol: str, through: date):
-            del through
-            calls.append(symbol)
-            if symbol == failed_symbol:
-                raise SubingStrategyPerformanceFullRebuildRequired()
-            return type("Result", (), {"cache_state": "hit"})()
-
-    updater, manager, _rqdata, sleeps, notices, live_store = _updater(
-        tmp_path,
-        trading_day=date(2026, 8, 10),
-        readiness=[True],
-        results=[_result("passed")],
-    )
-    updater.derived_refresh = _incremental_derived_refresh(Refresher())
-
-    result = updater.run()
-    status = _status(tmp_path / "after-market-status.json")
-
-    assert result.status == "failed"
-    assert result.error_code == "SUBING_STRATEGY_PERFORMANCE_DEGRADED"
-    assert result.attempts == 1
-    assert sleeps == []
-    assert _notice_error_codes(notices) == ["SUBING_STRATEGY_PERFORMANCE_DEGRADED"]
-    assert live_store.cleaned == [date(2026, 8, 10)]
-    assert calls == list(_ACTIVE_PRODUCTS)
-    assert len(manager.calls) == 1
-    derived = status["subing_strategy_performance"]
-    assert derived["status"] == "degraded"
-    assert derived["completed_count"] == len(_ACTIVE_PRODUCTS) - 1
-    assert derived["cache_hit_count"] == len(_ACTIVE_PRODUCTS) - 1
-    assert derived["cache_published_count"] == 0
-    assert derived["failed_products"] == [
-        {
-            "symbol": failed_symbol,
-            "code": "SUBING_STRATEGY_PERFORMANCE_FULL_REBUILD_REQUIRED",
-        }
-    ]
-
-
-def test_after_market_daily_watch_failure_marks_run_failed_without_reapplying_canonical(
-    tmp_path,
-) -> None:
-    updater, manager, _rqdata, sleeps, notices, live_store = _updater(
-        tmp_path,
-        trading_day=date(2026, 8, 10),
-        readiness=[True],
-        results=[_result("passed")],
-    )
-    calls: list[date] = []
-
-    def daily_watch(trading_day: date) -> None:
-        calls.append(trading_day)
-        raise RuntimeError("daily watch unavailable")
-
-    result = updater.run(post_update=daily_watch)
-    status = _status(tmp_path / "after-market-status.json")
-
-    assert result.status == "failed"
-    assert result.error_code == "SUBING_DAILY_WATCH_FAILED"
-    assert result.attempts == 1
-    assert calls == [date(2026, 8, 10)]
-    assert len(manager.calls) == 1
-    assert sleeps == []
-    assert live_store.cleaned == [date(2026, 8, 10)]
-    assert _notice_error_codes(notices) == ["SUBING_DAILY_WATCH_FAILED"]
-    assert status["last_run"]["status"] == "failed"
-    assert status["last_run"]["error_code"] == "SUBING_DAILY_WATCH_FAILED"
-
-
-def test_after_market_incremental_mismatch_is_derived_degraded_without_refresh(
-    tmp_path,
-) -> None:
-    calls: list[str] = []
-
-    class Refresher:
-        def refresh(self, *, symbol: str, through: date):
-            calls.append(symbol)
-            raise AssertionError("mismatch must not refresh")
-
-    updater, _manager, _rqdata, sleeps, notices, live_store = _updater(
-        tmp_path,
-        trading_day=date(2026, 8, 10),
-        readiness=[True],
-        results=[_result("passed")],
-    )
-    updater.derived_refresh = _incremental_derived_refresh(
-        Refresher(),
-        products=_ACTIVE_PRODUCTS[1:],
-    )
-
-    result = updater.run()
-    status = _status(tmp_path / "after-market-status.json")
-
-    assert result.status == "failed"
-    assert result.error_code == "SUBING_STRATEGY_PERFORMANCE_DEGRADED"
-    assert sleeps == []
-    assert _notice_error_codes(notices) == ["SUBING_STRATEGY_PERFORMANCE_DEGRADED"]
-    assert live_store.cleaned == [date(2026, 8, 10)]
-    assert calls == []
-    derived = status["subing_strategy_performance"]
-    assert derived["status"] == "degraded"
-    assert derived["completed_count"] == 0
-    assert derived["cache_hit_count"] == 0
-    assert derived["cache_published_count"] == 0
-    assert derived["failed_products"] == [
-        {
-            "symbol": symbol,
-            "code": "SUBING_STRATEGY_ACTIVE_OPERATIONAL_SCOPE_MISMATCH",
-        }
-        for symbol in _ACTIVE_PRODUCTS
-    ]
-
-
-def test_build_after_market_updater_wires_incremental_batch_not_full_warm(
-    monkeypatch,
-) -> None:
-    from types import SimpleNamespace
-
-    from app.market_data.after_market import AfterMarketUpdater, build_after_market_updater
-    from app.market_data.subing_strategy.performance import (
-        SubingStrategyPerformanceWarmResult,
-    )
-
-    sessions: list[object] = []
-    warm_calls: list[object] = []
-    refresh_calls: list[tuple[date, tuple[str, ...]]] = []
-
-    class Batch:
-        def refresh(self, through: date, expected_products: tuple[str, ...]):
-            refresh_calls.append((through, expected_products))
-            return SubingStrategyPerformanceWarmResult(
-                status="passed",
-                completed_products=expected_products,
-                failed_products=(),
-                cache_hit_count=len(expected_products),
-                cache_published_count=0,
-                batch_identity_sha256="a" * 64,
-            )
-
-    monkeypatch.setattr(
-        "app.market_data.composition.build_subing_strategy_performance_incremental_batch_refresher",
-        lambda session: sessions.append(session) or Batch(),
-        raising=False,
-    )
-    monkeypatch.setattr(
-        "app.market_data.subing_strategy.performance.warm_active_performance_cache",
-        lambda *args, **kwargs: warm_calls.append((args, kwargs)),
-    )
-    monkeypatch.setattr(
-        "app.redis_connections.get_redis_connection",
-        lambda: object(),
-    )
-
-    session = object()
-    updater = build_after_market_updater(
-        SimpleNamespace(
-            provider=SimpleNamespace(client=object()),
-            catalog=SimpleNamespace(session=session),
-        ),
-        failure_notification=False,
-    )
-    derived = updater.derived_refresh(date(2026, 8, 10), ("jm",))
-
-    assert isinstance(updater, AfterMarketUpdater)
-    assert sessions == [session]
-    assert refresh_calls == [(date(2026, 8, 10), ("jm",))]
-    assert warm_calls == []
-    assert derived.status == "passed"
-    assert derived.batch_identity_sha256 == "a" * 64
-
-
-def test_after_market_rejects_derived_result_that_does_not_cover_exact_products(
-    tmp_path,
-) -> None:
-    from app.market_data.subing_strategy.performance import (
-        SubingStrategyPerformanceWarmResult,
-    )
-
-    updater, _manager, _rqdata, _sleeps, _notices, _live_store = _updater(
-        tmp_path,
-        trading_day=date(2026, 8, 10),
-        readiness=[True],
-        results=[_result("passed")],
-    )
-    updater.derived_refresh = lambda _day, _products: (
-        SubingStrategyPerformanceWarmResult(
-            status="passed",
-            completed_products=("ag",),
-            failed_products=(),
-            cache_hit_count=1,
-            cache_published_count=0,
-            batch_identity_sha256="1" * 64,
-        )
-    )
-
-    result = updater.run()
-    assert result.status == "failed"
-    assert result.error_code == "SUBING_STRATEGY_PERFORMANCE_DEGRADED"
-    assert _status(tmp_path / "after-market-status.json")[
-        "subing_strategy_performance"
-    ] == {
-        "status": "degraded",
-        "completed_count": 0,
-        "cache_hit_count": 0,
-        "cache_published_count": 0,
-        "batch_identity_sha256": None,
-        "failed_products": [],
-    }
 
 
 def test_public_status_rejects_non_string_error_codes() -> None:

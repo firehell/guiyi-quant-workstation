@@ -70,7 +70,6 @@ class RuntimeAfterMarketHealth(BaseModel):
     last_run: RuntimeAfterMarketRun | None = None
     last_successful_trading_day: str | None = None
     last_failure: dict[str, str] | None = None
-    subing_strategy_performance: dict[str, object] | None = None
     error_type: str | None = None
     error_message: str | None = None
 

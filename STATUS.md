@@ -35,5 +35,4 @@ Alert transport 为 PushPlus；provider accepted 不等于微信送达。
 - 修复后的 SuBing 自然 Live continuation seam 与严格盘后完成制 evidence 必须重新取得；不以测试、startup replay、手工触发或回填替代。
 - 一次 owner PushPlus canary 仍是独立 Gate。
 - SuBing Candidate 的 prospective OOS 按其 protocol 独立累积，retrospective 不回填 OOS。
-- 第一次自然盘后 derived 增量刷新仍须单独发生；2026-08-29 operator 已把效果快照 `through` 推到 `2026-08-28`，但不替代自然盘后 schema v3 status 写入。
 - HTDY `jm × 15m` 下一次自然 15m completed Live bar 与 one-shot transport evidence 仍 pending（下次交易时段），不以 canary、replay 或手工发送替代。
