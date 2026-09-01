@@ -363,7 +363,9 @@ def _alert_runtime_observation(
             "strategy_unavailable_product_count"
         ],
         "strategy_unavailable_symbols": runtime_status["strategy_unavailable_symbols"],
-        "strategy_unavailable_reason_codes": {},
+        "strategy_unavailable_reason_codes": runtime_status[
+            "strategy_unavailable_reason_codes"
+        ],
         "last_strategy_action_at": runtime_status["last_strategy_action_at"],
         "last_strategy_restore_at": runtime_status["last_strategy_restore_at"],
     }
