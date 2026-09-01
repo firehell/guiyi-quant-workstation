@@ -5,11 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Decimal
 from hashlib import sha256
-from math import isfinite
+from math import isclose, isfinite
 
 import numpy as np
 
-from .models import NewowDailyBar, NewowMainMarker, NewowMarkerType
+from .models import EscapeSeverity, NewowDailyBar, NewowMainMarker, NewowMarkerType
 from .profile import NEWOW_TREND_D1_V1, NewowTrendProfile
 
 
@@ -21,6 +21,8 @@ class EscapeState:
     ma120_values: tuple[float, ...]
     previous_rsv9: float | None
     previous_var4: float | None
+    history_count: int = 0
+    prior_var4: float | None = None
     physical_contract: str | None = None
     segment_id: str | None = None
 
@@ -55,10 +57,38 @@ def _valid_state(state: EscapeState, profile: NewowTrendProfile) -> bool:
     windows = (state.closes, state.highs, state.lows, state.ma120_values)
     if len(state.closes) != len(state.highs) or len(state.closes) != len(state.lows):
         return False
+    if not 0 <= state.history_count <= profile.ma120_period:
+        return False
+    if len(state.closes) != state.history_count:
+        return False
     if len(state.closes) > profile.ma120_period or len(state.ma120_values) > profile.ma120_slope_window:
         return False
-    return all(isfinite(value) for window in windows for value in window) and all(
-        value is None or isfinite(value) for value in (state.previous_rsv9, state.previous_var4)
+    if state.ma120_values and state.history_count < profile.ma120_period:
+        return False
+    if not all(isfinite(value) for window in windows for value in window) or not all(
+        value is None or isfinite(value) for value in (state.previous_rsv9, state.previous_var4, state.prior_var4)
+    ):
+        return False
+    if state.history_count == 0:
+        return state.previous_rsv9 is None and state.previous_var4 is None and state.prior_var4 is None
+    if state.previous_rsv9 is None or state.previous_var4 is None:
+        return False
+    denominator = max(state.highs[-profile.var4_lookback :]) - min(state.lows[-profile.var4_lookback :])
+    if denominator < 0.0 or not isfinite(denominator):
+        return False
+    if denominator != 0.0:
+        expected_rsv9 = 100.0 * (state.closes[-1] - min(state.lows[-profile.var4_lookback :])) / denominator
+        if not isclose(state.previous_rsv9, expected_rsv9, rel_tol=1e-12, abs_tol=1e-12):
+            return False
+    if state.history_count == 1:
+        return state.prior_var4 is None and isclose(state.previous_var4, state.previous_rsv9, rel_tol=1e-12, abs_tol=1e-12)
+    if state.prior_var4 is None:
+        return False
+    return isclose(
+        state.previous_var4,
+        (state.previous_rsv9 + 2.0 * state.prior_var4) / 3.0,
+        rel_tol=1e-12,
+        abs_tol=1e-12,
     )
 
 
@@ -85,11 +115,11 @@ def _marker(
     amplitude: float | None,
 ) -> NewowMainMarker:
     definitions = {
-        NewowMarkerType.ESCAPE_D1: ("★S逃命", "newow-d1-red", 300, 95),
-        NewowMarkerType.ESCAPE_D2: ("★S逃", "newow-d2-green", 200, 93),
-        NewowMarkerType.ESCAPE_D3: ("★S跑", "newow-d3-blue", 100, 90),
+        NewowMarkerType.ESCAPE_D1: ("★S逃命", "newow-d1-red", 300, 95, EscapeSeverity.CRITICAL),
+        NewowMarkerType.ESCAPE_D2: ("★S逃", "newow-d2-green", 200, 93, EscapeSeverity.WARNING),
+        NewowMarkerType.ESCAPE_D3: ("★S跑", "newow-d3-blue", 100, 90, EscapeSeverity.BEAR_CONFIRMATION),
     }
-    label, color, priority, level = definitions[kind]
+    label, color, priority, level, severity = definitions[kind]
     close = float(bar.close)
     return NewowMainMarker(
         marker_id=_marker_id(bar, kind, profile), marker_type=kind, bar_end=bar.bar_end,
@@ -102,7 +132,7 @@ def _marker(
             "amplitude30": amplitude,
             "ma120_slope10": slope,
             "close_below_ma120": close < ma120,
-        }, formula_version=profile.escape_formula,
+        }, formula_version=profile.escape_formula, severity=severity,
     )
 
 
@@ -154,7 +184,10 @@ def step_escape_d123(
         if not isfinite(amplitude):
             return _unavailable()
 
-    next_state = EscapeState(closes, highs, lows, ma_values, rsv9, var4, bar.physical_contract, bar.segment_id)
+    next_state = EscapeState(
+        closes, highs, lows, ma_values, rsv9, var4, min(state.history_count + 1, profile.ma120_period),
+        state.previous_var4, bar.physical_contract, bar.segment_id,
+    )
     if not bar.observation_eligible or ma120 is None or slope is None or amplitude is None or state.previous_var4 is None:
         return EscapeStepResult(next_state, ma120, slope, amplitude, rsv9, var4, ())
     cross95 = state.previous_var4 >= 95.0 and var4 < 95.0

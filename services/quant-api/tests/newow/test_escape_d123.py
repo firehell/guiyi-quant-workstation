@@ -12,7 +12,7 @@ from guiyi_quant.newow.escape_d123 import (
     initial_escape_state,
     step_escape_d123,
 )
-from guiyi_quant.newow.models import NewowDailyBar, NewowMarkerType
+from guiyi_quant.newow.models import EscapeSeverity, NewowDailyBar, NewowMarkerType
 from guiyi_quant.newow.profile import NEWOW_TREND_D1_V1
 
 
@@ -54,12 +54,14 @@ def state_for(
     highs: tuple[float, ...] = (120.0,) * 120, lows: tuple[float, ...] = (100.0,) * 120,
 ) -> EscapeState:
     return EscapeState(
-        closes=(100.0,) * 120,
+        closes=(100.0,) * 119 + (120.0,),
         highs=highs,
         lows=lows,
         ma120_values=ma120,
         previous_rsv9=100.0,
         previous_var4=previous_var4,
+        history_count=120,
+        prior_var4=(3.0 * previous_var4 - 100.0) / 2.0,
         physical_contract="RB2701",
         segment_id="rb:RB2701:2026-01-01",
     )
@@ -80,6 +82,16 @@ def test_rsv9_normal_and_zero_span_reuses_previous_then_50() -> None:
     assert second_flat.rsv9 == 50.0
 
 
+def test_zero_span_reuses_non50_previous_finite_rsv() -> None:
+    state = EscapeState(
+        closes=(100.0,), highs=(100.0,), lows=(100.0,), ma120_values=(),
+        previous_rsv9=73.0, previous_var4=73.0, history_count=1,
+    )
+    result = step_escape_d123(state, make_bar(1, 100, high=100, low=100))
+    assert result.rsv9 == 73.0
+    assert result.var4 == 73.0
+
+
 def test_var4_uses_exact_sma_cn_recursion() -> None:
     bars = (make_bar(0, 100, high=100, low=100), make_bar(1, 110, high=110, low=100), make_bar(2, 100, high=110, low=100))
     results = run_steps(bars)
@@ -94,6 +106,9 @@ def test_d1_requires_cross_below_95_and_30_percent_above_ma120() -> None:
     assert item.label == "★S逃命"
     assert item.trigger_facts["var4_cross_level"] == 95
     assert item.trigger_facts["ma120_deviation"] >= 0.30
+    assert item.severity is EscapeSeverity.CRITICAL
+    assert item.color_token == "newow-d1-red"
+    assert item.priority == 300
 
 
 def test_d2_requires_amplitude_and_flat_ma120() -> None:
@@ -102,6 +117,9 @@ def test_d2_requires_amplitude_and_flat_ma120() -> None:
     assert item.label == "★S逃"
     assert item.trigger_facts["amplitude30"] > 0.10
     assert abs(item.trigger_facts["ma120_slope10"]) <= 0.0005
+    assert item.severity is EscapeSeverity.WARNING
+    assert item.color_token == "newow-d2-green"
+    assert item.priority == 200
 
 
 def test_d3_requires_below_falling_ma120_and_cross_below_90() -> None:
@@ -113,25 +131,32 @@ def test_d3_requires_below_falling_ma120_and_cross_below_90() -> None:
     assert item.label == "★S跑"
     assert item.trigger_facts["close_below_ma120"] is True
     assert item.trigger_facts["ma120_slope10"] < -0.0005
+    assert item.severity is EscapeSeverity.BEAR_CONFIRMATION
+    assert item.color_token == "newow-d3-blue"
+    assert item.priority == 100
 
 
 def test_strict_negative_thresholds_and_no_duplicate_cross() -> None:
-    d1_boundary = step_escape_d123(state_for(previous_var4=96.0), make_bar(120, 130, high=140, low=100))
+    d1_boundary = step_escape_d123(
+        state_for(previous_var4=96.0), make_bar(120, 130.53744689347354, high=140, low=100)
+    )
     d2_amplitude = step_escape_d123(
         state_for(previous_var4=94.0, highs=(100.0,) * 120), make_bar(120, 105, high=110, low=100)
     )
-    d2_last_ma = (11900.0 + 105.0) / 120.0
+    d2_last_ma = (11800.0 + 120.0 + 105.0) / 120.0
     d2_slope = step_escape_d123(
         state_for(previous_var4=94.0, ma120=ma_history_ending_at(d2_last_ma, d2_last_ma * 0.0005001)),
         make_bar(120, 105, high=120, low=100),
     )
-    d3_last_ma = (11900.0 + 80.0) / 120.0
+    d3_last_ma = (11800.0 + 120.0 + 80.0) / 120.0
     d3_slope = step_escape_d123(
         state_for(previous_var4=91.0, ma120=ma_history_ending_at(d3_last_ma, -d3_last_ma * 0.0005)),
         make_bar(120, 80, high=100, low=80),
     )
     already_below = step_escape_d123(state_for(previous_var4=92.0), make_bar(120, 105, high=120, low=100))
     assert NewowMarkerType.ESCAPE_D1 not in marker_types(d1_boundary)
+    assert d1_boundary.ma120 is not None
+    assert (130.53744689347354 - d1_boundary.ma120) / d1_boundary.ma120 == pytest.approx(0.2999)
     assert marker_types(d2_amplitude) == ()
     assert marker_types(d2_slope) == ()
     assert marker_types(d3_slope) == ()
@@ -152,7 +177,9 @@ def ma_history_ending_at(last: float, slope: float) -> tuple[float, ...]:
 def test_same_bar_retains_hits_with_d1_d2_d3_priority_metadata() -> None:
     result = step_escape_d123(state_for(previous_var4=96.0), make_bar(120, 131, high=140, low=100))
     assert marker_types(result) == (NewowMarkerType.ESCAPE_D1, NewowMarkerType.ESCAPE_D2)
-    assert [item.priority for item in result.markers] == sorted((item.priority for item in result.markers), reverse=True)
+    assert [(item.marker_type, item.priority) for item in result.markers] == [
+        (NewowMarkerType.ESCAPE_D1, 300), (NewowMarkerType.ESCAPE_D2, 200)
+    ]
 
 
 def test_warmup_eligibility_reset_and_bounded_state() -> None:
@@ -161,9 +188,12 @@ def test_warmup_eligibility_reset_and_bounded_state() -> None:
     reset = step_escape_d123(suppressed.state, make_bar(121, 100, physical_contract="RB2705", segment_id="rb:RB2705:2026-06-01"))
     assert marker_types(no_output) == ()
     assert marker_types(suppressed) == ()
+    assert suppressed.state.previous_var4 != state_for(previous_var4=96.0).previous_var4
     assert marker_types(reset) == ()
     assert reset.state.closes == (100.0,)
-    assert len(run_steps(tuple(make_bar(index, 100 + index % 5) for index in range(180)))[-1].state.closes) == 120
+    bounded = run_steps(tuple(make_bar(index, 100 + index % 5) for index in range(180)))[-1].state
+    assert len(bounded.closes) == len(bounded.highs) == len(bounded.lows) == 120
+    assert len(bounded.ma120_values) == 10
 
 
 @pytest.mark.parametrize("invalid", [float("nan"), float("inf"), -float("inf")])
@@ -173,6 +203,17 @@ def test_invalid_state_and_empty_window_fail_closed(invalid: float) -> None:
     bar = make_bar(120, 131, high=140, low=100)
     assert marker_types(step_escape_d123(corrupt, bar)) == ()
     assert marker_types(step_escape_d123(malformed, bar)) == ()
+
+
+def test_malformed_restored_derived_state_fails_closed() -> None:
+    valid = state_for(previous_var4=96.0)
+    stale_ma = replace(valid, history_count=119)
+    mismatched_rsv = replace(valid, previous_rsv9=99.0)
+    mismatched_var4 = replace(valid, prior_var4=0.0)
+    bar = make_bar(120, 131, high=140, low=100)
+    assert marker_types(step_escape_d123(stale_ma, bar)) == ()
+    assert marker_types(step_escape_d123(mismatched_rsv, bar)) == ()
+    assert marker_types(step_escape_d123(mismatched_var4, bar)) == ()
 
 
 def test_prefix_tail_batch_incremental_and_serialization_parity() -> None:

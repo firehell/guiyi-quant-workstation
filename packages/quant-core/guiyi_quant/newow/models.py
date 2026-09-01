@@ -130,6 +130,7 @@ class NewowMainMarker:
     related_marker_ids: tuple[str, ...]
     trigger_facts: Mapping[str, object] = field(default_factory=dict)
     formula_version: str = ""
+    severity: EscapeSeverity | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "related_marker_ids", tuple(self.related_marker_ids))
