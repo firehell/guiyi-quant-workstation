@@ -1,6 +1,7 @@
 import request from './request'
 import { getRuntimeHealth } from './runtime'
 import type { AlertEvent, MarketFrequency } from '@/types/market'
+import { normalizeCurrentHtdyEventsResponse } from '@/utils/marketHomeTypes'
 
 export type { AlertRuntimeStatus } from '@/utils/alertControl'
 export type { AlertEvent } from '@/types/market'
@@ -21,6 +22,13 @@ export interface ProductCurrentAlertEventsResponse {
   status: 'ready' | 'unavailable'
   trading_day: string | null
   items: AlertEvent[]
+}
+
+export type { CurrentHtdyEventsResponse } from '@/types/market'
+
+export function getCurrentHtdyEvents() {
+  return request.get<never, unknown>('/api/alerts/current-events', { params: { limit: 30 } })
+    .then(normalizeCurrentHtdyEventsResponse)
 }
 
 export function getProductAlerts(symbol: string) {

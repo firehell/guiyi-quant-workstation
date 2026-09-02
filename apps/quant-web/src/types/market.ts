@@ -23,6 +23,51 @@ export interface DominantContractItem {
 
 export interface DominantContractListResponse { items: DominantContractItem[] }
 
+export type MarketHomeTrend = 'up' | 'down' | 'neutral' | 'unavailable'
+
+export interface MarketHomeOverviewItem {
+  symbol: string
+  product_name: string
+  sector: string
+  exchange: string
+  actual_contract: string
+  dominant_mapping_date: string
+  data_as_of: string
+  close: number
+  price_change_1d: number | null
+  price_change_5d: number | null
+  volume_ratio20: number | null
+  oi_change_1d: number | null
+  atr14_percentile252: number | null
+  daily_trend: MarketHomeTrend
+  weekly_trend: MarketHomeTrend
+  reason_codes: string[]
+}
+
+export interface MarketHomeOverviewResponse {
+  status: 'ready' | 'degraded'
+  target_as_of: string
+  data_as_of: string
+  freshness: 'fresh' | 'stale' | 'unavailable'
+  active_count: number
+  participant_count: number
+  stale_count: number
+  unavailable_count: number
+  summary: {
+    price_up_count: number
+    price_down_count: number
+    price_flat_count: number
+    daily_up_count: number
+    daily_down_count: number
+    daily_neutral_count: number
+    daily_unavailable_count: number
+    aligned_up_count: number
+    aligned_down_count: number
+  }
+  items: MarketHomeOverviewItem[]
+  sectors: Array<{ sector: string; active_count: number; participant_count: number; median_price_change_1d: number | null }>
+}
+
 export interface CanonicalBarDto {
   bar_end: string
   trading_day: string
@@ -151,6 +196,12 @@ export interface HtdyAlertEvent extends AlertEventCommon {
 }
 
 export type AlertEvent = HtdyAlertEvent
+
+export interface CurrentHtdyEventsResponse {
+  status: 'ready' | 'unavailable'
+  trading_day: string | null
+  items: AlertEvent[]
+}
 export type MainIndicatorId = 'ema_10' | 'ema_21' | 'ema_60' | 'range_detector' | 'htdy'
 export type OptionalEmaIndicatorId = 'ema_10' | 'ema_21' | 'ema_60'
 
