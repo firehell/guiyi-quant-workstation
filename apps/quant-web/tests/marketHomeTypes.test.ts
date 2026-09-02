@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   normalizeMarketHomeOverviewResponse,
+  normalizeAlertEventListResponse,
   normalizeCurrentAlertEventsResponse,
 } from '../src/utils/marketHomeTypes.ts'
 
@@ -158,4 +159,11 @@ test('fails closed for a calendar-invalid HTDY instant that Date.parse would nor
   const payload = structuredClone(currentEvents)
   payload.items[0].bar_end = '2026-02-30T01:00:00Z'
   assert.throws(() => normalizeCurrentAlertEventsResponse(payload), /bar_end/)
+})
+
+test('fails closed for malformed historical Alert Event facts', () => {
+  const malformed = structuredClone(currentEvents)
+  malformed.items[0].rule_code = 'subing_ths_alert_15m_v1'
+  malformed.items[0].result_codes = ['bad']
+  assert.throws(() => normalizeAlertEventListResponse({ items: malformed.items }), /result_codes/)
 })

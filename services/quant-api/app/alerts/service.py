@@ -12,7 +12,6 @@ from sqlalchemy.orm import Session
 from app.alerts.models import AlertEvent, AlertRule
 from app.alerts.registry import (
     AlertRuleDefinition,
-    alert_rule_definitions,
     get_alert_rule_definition,
 )
 from app.market_data.domain import normalize_contract_for_symbol
@@ -251,12 +250,10 @@ class AlertService:
         self, *, symbol: str, trading_day: date
     ) -> tuple[AlertEvent, ...]:
         normalized = self._require_operational_symbol(symbol)
-        codes = tuple(definition.rule_code for definition in alert_rule_definitions())
         statement = (
             select(AlertEvent)
             .join(AlertRule, AlertEvent.rule_id == AlertRule.id)
             .where(
-                AlertRule.rule_code.in_(codes),
                 AlertEvent.symbol == normalized,
                 AlertEvent.trading_day == trading_day,
             )
@@ -271,14 +268,12 @@ class AlertService:
     def list_current_events(
         self, *, trading_day: date, limit: int
     ) -> tuple[AlertEvent, ...]:
-        """Read current-day Events for registry-owned HTDY Rules only."""
+        """Read every current-day Event so API serialization can fail closed."""
 
-        codes = tuple(definition.rule_code for definition in alert_rule_definitions())
         statement = (
             select(AlertEvent)
             .join(AlertRule, AlertEvent.rule_id == AlertRule.id)
             .where(
-                AlertRule.rule_code.in_(codes),
                 AlertEvent.trading_day == trading_day,
             )
             .order_by(

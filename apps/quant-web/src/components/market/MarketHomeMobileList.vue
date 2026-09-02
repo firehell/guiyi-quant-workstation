@@ -2,7 +2,7 @@
 import MarketStateIcon from './MarketStateIcon.vue'
 import type { MarketHomeIconState } from '@/utils/marketHomeIcons'
 import type { MarketHomeAvailability, MarketHomeRow } from '@/utils/marketHomeViewModel'
-import { alertEventDirectionalTone, alertEventHomeResultLabel } from '@/utils/alertRules'
+import { alertEventHomeIconState, alertEventHomeResultLabel } from '@/utils/alertRules'
 
 const props = defineProps<{ rows: MarketHomeRow[]; eventAvailability: MarketHomeAvailability }>()
 defineEmits<{ open: [row: MarketHomeRow] }>()
@@ -11,10 +11,7 @@ const percentage = (value: number | null) => value === null ? '—' : `${(value 
 const eventState = (row: MarketHomeRow): MarketHomeIconState | null => {
   if (props.eventAvailability === 'unavailable') return 'unavailable'
   if (!row.event) return null
-  const direction = alertEventDirectionalTone(row.event, row.event.result_codes)
-  if (direction === 'buy') return 'up'
-  if (direction === 'sell') return 'down'
-  return row.event.result_codes.length === 2 ? 'aligned' : 'neutral'
+  return alertEventHomeIconState(row.event)
 }
 const eventLabel = (row: MarketHomeRow) => props.eventAvailability === 'unavailable' ? 'Event 不可用' : !row.event ? '—' : alertEventHomeResultLabel(row.event)
 </script>

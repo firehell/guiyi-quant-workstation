@@ -104,17 +104,24 @@ def test_event_range_returns_actual_subing_rule_fact() -> None:
 
 def test_current_event_endpoints_return_mixed_rules_in_deterministic_order() -> None:
     factory = session_factory()
-    htdy_id = seed_event(factory)
-    subing_id = seed_subing_event(factory)
+    detected_at = BAR_END + timedelta(seconds=10)
+    htdy_id = seed_event(factory, detected_at=detected_at)
+    subing_id = seed_subing_event(factory, detected_at=detected_at)
+    later_bar_htdy_id = seed_event(
+        factory,
+        bar_end=BAR_END + timedelta(minutes=15),
+        detected_at=detected_at,
+    )
     with client(factory) as value:
         current = value.get("/api/alerts/current-events")
         product = value.get("/api/alerts/products/jm/current-events")
 
     assert current.status_code == product.status_code == 200
-    expected_ids = [subing_id, htdy_id]
+    expected_ids = [later_bar_htdy_id, subing_id, htdy_id]
     assert [item["id"] for item in current.json()["items"]] == expected_ids
     assert [item["id"] for item in product.json()["items"]] == expected_ids
     assert [item["rule_code"] for item in current.json()["items"]] == [
+        "htdy_original_15m",
         "subing_ths_alert_15m_v1",
         "htdy_original_15m",
     ]
@@ -127,6 +134,18 @@ def test_current_events_fail_closed_for_invalid_subing_event_facts() -> None:
         response = value.get("/api/alerts/current-events")
     assert response.status_code == 409
     assert response.json() == {"detail": {"code": "ALERT_EVENT_FACTS_INVALID"}}
+
+
+def test_current_events_fail_closed_for_unknown_persisted_rule() -> None:
+    factory = session_factory()
+    seed_unknown_event(factory)
+    with client(factory) as value:
+        current = value.get("/api/alerts/current-events")
+        product = value.get("/api/alerts/products/jm/current-events")
+    assert current.status_code == product.status_code == 409
+    assert current.json() == product.json() == {
+        "detail": {"code": "ALERT_EVENT_FACTS_INVALID"}
+    }
 
 
 def test_current_events_resolve_rule_codes_in_a_bounded_number_of_queries() -> None:
@@ -242,7 +261,12 @@ def client(
         factory.kw["bind"].dispose()
 
 
-def seed_event(factory: sessionmaker[Session]) -> int:
+def seed_event(
+    factory: sessionmaker[Session],
+    *,
+    bar_end: datetime = BAR_END,
+    detected_at: datetime | None = None,
+) -> int:
     with factory() as session:
         rule = session.scalar(
             select(AlertRule).where(AlertRule.rule_code == "htdy_original_15m")
@@ -254,10 +278,10 @@ def seed_event(factory: sessionmaker[Session]) -> int:
             contract="JM2609",
             trading_day=TRADING_DAY,
             frequency="15m",
-            bar_end=BAR_END,
+            bar_end=bar_end,
             result_codes=["sell"],
-            detected_at=BAR_END + timedelta(seconds=1),
-            notification_attempted_at=BAR_END + timedelta(seconds=2),
+            detected_at=detected_at or bar_end + timedelta(seconds=1),
+            notification_attempted_at=(detected_at or bar_end + timedelta(seconds=1)) + timedelta(seconds=1),
         )
         session.add(event)
         session.commit()
@@ -270,6 +294,8 @@ def seed_subing_event(
     *,
     frequency: str = "15m",
     result_codes: list[str] | None = None,
+    bar_end: datetime = BAR_END,
+    detected_at: datetime | None = None,
 ) -> int:
     with factory() as session:
         rule = AlertRule(
@@ -285,10 +311,36 @@ def seed_subing_event(
             contract="JM2609",
             trading_day=TRADING_DAY,
             frequency=frequency,
-            bar_end=BAR_END,
+            bar_end=bar_end,
             result_codes=result_codes or ["buy"],
-            detected_at=BAR_END + timedelta(seconds=3),
-            notification_attempted_at=BAR_END + timedelta(seconds=4),
+            detected_at=detected_at or bar_end + timedelta(seconds=3),
+            notification_attempted_at=(detected_at or bar_end + timedelta(seconds=3)) + timedelta(seconds=1),
+        )
+        session.add(alert_event)
+        session.commit()
+        assert alert_event.id is not None
+        return alert_event.id
+
+
+def seed_unknown_event(factory: sessionmaker[Session]) -> int:
+    with factory() as session:
+        rule = AlertRule(
+            rule_code="future_rule",
+            enabled=True,
+            scope_product_frequencies={},
+        )
+        session.add(rule)
+        session.flush()
+        alert_event = AlertEvent(
+            rule_id=rule.id,
+            symbol="jm",
+            contract="JM2609",
+            trading_day=TRADING_DAY,
+            frequency="15m",
+            bar_end=BAR_END,
+            result_codes=["buy"],
+            detected_at=BAR_END,
+            notification_attempted_at=None,
         )
         session.add(alert_event)
         session.commit()

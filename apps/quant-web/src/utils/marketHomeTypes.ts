@@ -1,4 +1,5 @@
 import type {
+  AlertEvent,
   CurrentAlertEventsResponse,
   MarketFrequency,
   MarketHomeOverviewResponse,
@@ -49,13 +50,23 @@ export function normalizeMarketHomeOverviewResponse(payload: unknown): MarketHom
 export function normalizeCurrentAlertEventsResponse(payload: unknown): CurrentAlertEventsResponse {
   const value = record(payload, 'current Alert events')
   const status = literal(value.status, ['ready', 'unavailable'], 'status')
-  const items = array(value.items, 'items').map((item, index) => normalizeEvent(item, index))
+  const items = normalizeAlertEventList(value.items)
   const tradingDay = nullableDay(value.trading_day, 'trading_day')
-  if (new Set(items.map((item) => item.id)).size !== items.length) throw new Error('current Alert events contain duplicate ids')
   if (status === 'unavailable') {
     if (tradingDay !== null || items.length) throw new Error('unavailable current Alert events must be empty')
   } else if (tradingDay === null || items.some((item) => item.trading_day !== tradingDay)) throw new Error('ready current Alert events must use one trading day')
   return { status, trading_day: tradingDay, items }
+}
+
+export function normalizeAlertEventList(payload: unknown): AlertEvent[] {
+  const items = array(payload, 'items').map((item, index) => normalizeAlertEvent(item, index))
+  if (new Set(items.map((item) => item.id)).size !== items.length) throw new Error('Alert events contain duplicate ids')
+  return items
+}
+
+export function normalizeAlertEventListResponse(payload: unknown): { items: AlertEvent[] } {
+  const value = record(payload, 'Alert events')
+  return { items: normalizeAlertEventList(value.items) }
 }
 
 function normalizeItem(payload: unknown, index: number): MarketHomeOverviewResponse['items'][number] {
@@ -93,11 +104,11 @@ function normalizeSector(payload: unknown, index: number): MarketHomeOverviewRes
   return { sector: text(value.sector, 'sector'), active_count: activeCount, participant_count: participantCount, median_price_change_1d: decimal(value.median_price_change_1d, 'median_price_change_1d') }
 }
 
-function normalizeEvent(payload: unknown, index: number): CurrentAlertEventsResponse['items'][number] {
+export function normalizeAlertEvent(payload: unknown, index = 0): AlertEvent {
   const value = record(payload, `items[${index}]`)
   const frequency = literal(value.frequency, [...MARKET_FREQUENCIES], 'frequency')
   const facts = normalizeAlertEventFacts(field(value, 'rule_code'), frequency, array(value.result_codes, 'result_codes'))
-  return { id: positiveId(value.id), rule_code: facts.ruleCode, symbol: text(value.symbol, 'symbol').toLowerCase(), contract: text(value.contract, 'contract'), trading_day: nullableDay(value.trading_day, 'trading_day'), frequency, bar_end: instant(value.bar_end, 'bar_end'), result_codes: facts.resultCodes, detected_at: instant(value.detected_at, 'detected_at'), notification_attempted_at: nullableInstant(value.notification_attempted_at, 'notification_attempted_at') } as CurrentAlertEventsResponse['items'][number]
+  return { id: positiveId(value.id), rule_code: facts.ruleCode, symbol: text(value.symbol, 'symbol').toLowerCase(), contract: text(value.contract, 'contract'), trading_day: nullableDay(value.trading_day, 'trading_day'), frequency, bar_end: instant(value.bar_end, 'bar_end'), result_codes: facts.resultCodes, detected_at: instant(value.detected_at, 'detected_at'), notification_attempted_at: nullableInstant(value.notification_attempted_at, 'notification_attempted_at') } as AlertEvent
 }
 
 function record(value: unknown, field: string): Record<string, unknown> { if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`${field} must be an object`); return value as Record<string, unknown> }

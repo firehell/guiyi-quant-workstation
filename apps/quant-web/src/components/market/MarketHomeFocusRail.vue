@@ -1,9 +1,8 @@
 <script setup lang="ts">
 import MarketStateIcon from './MarketStateIcon.vue'
-import type { MarketHomeIconState } from '@/utils/marketHomeIcons'
 import type { AlertEvent } from '@/types/market'
 import {
-  alertEventDirectionalTone,
+  alertEventHomeIconState,
   alertEventHomeResultLabel,
   alertEventRuleShortLabel,
 } from '@/utils/alertRules'
@@ -11,12 +10,7 @@ import { formatChartTimeInShanghai } from '@/utils/barTime'
 defineProps<{ availability: string; events: AlertEvent[]; collapsed: boolean }>()
 defineEmits<{ open: [event: AlertEvent]; 'update:collapsed': [value: boolean] }>()
 const label = (event: AlertEvent) => alertEventHomeResultLabel(event)
-const state = (event: AlertEvent): MarketHomeIconState => {
-  const direction = alertEventDirectionalTone(event, event.result_codes)
-  if (direction === 'buy') return 'up'
-  if (direction === 'sell') return 'down'
-  return event.result_codes.length === 2 ? 'aligned' : 'neutral'
-}
+const state = (event: AlertEvent) => alertEventHomeIconState(event)
 const barTime = (event: AlertEvent) => formatChartTimeInShanghai(event.bar_end)
 </script>
 

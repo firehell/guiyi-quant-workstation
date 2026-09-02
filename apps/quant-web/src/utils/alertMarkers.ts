@@ -41,6 +41,7 @@ export function alertEventsToMarkers(events: AlertEvent[]): KlineMarker[] {
     .flatMap<KlineMarker>((event): KlineMarker[] => {
       if (isSubingThsAlertEvent(event)) {
         const direction = event.result_codes[0]
+        if (direction !== 'buy' && direction !== 'sell') return []
         const rising = direction === 'buy'
         return [{
           id: `alert:${alertEventIdentityKey(event)}`,

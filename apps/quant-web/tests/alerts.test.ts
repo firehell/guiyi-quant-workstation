@@ -118,6 +118,11 @@ describe('persistent Alert markers', () => {
     assert.match(markers[1]!.tooltip ?? '', /EMA21 下方/)
   })
 
+  test('does not reinterpret malformed SuBing facts as a sell marker', () => {
+    const malformed = { ...subingEvent(5, 'buy'), result_codes: ['bad'] } as unknown as AlertEvent
+    assert.deepEqual(alertEventsToMarkers([malformed]), [])
+  })
+
   test('keeps SuBing markers visible without an overlay while retaining HTDY visibility', () => {
     const htdy = alertEventsToMarkers([event(1, ['buy'])])
     const subing = alertEventsToMarkers([subingEvent(2, 'buy')])

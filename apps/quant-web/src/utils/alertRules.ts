@@ -7,6 +7,7 @@ import {
   type MarketFrequency,
   type SubingThsAlertEvent,
 } from '../types/market.ts'
+import type { MarketHomeIconState } from './marketHomeIcons.ts'
 
 export const HTDY_ALERT_RULE_CODE = 'htdy_original_15m'
 export const SUBING_THS_ALERT_RULE_CODE = 'subing_ths_alert_15m_v1'
@@ -96,6 +97,13 @@ export function alertEventHomeResultLabel(event: AlertEvent): string {
   if (values.has('buy')) return '买观察'
   if (values.has('sell')) return '卖观察'
   return '提醒记录'
+}
+
+export function alertEventHomeIconState(event: AlertEvent): MarketHomeIconState {
+  const direction = alertEventDirectionalTone(event, event.result_codes)
+  if (direction === 'buy') return 'up'
+  if (direction === 'sell') return 'down'
+  return event.result_codes.length === 2 ? 'aligned' : 'neutral'
 }
 
 export function alertEventResultLabel(event: AlertRuleIdentity, directions: readonly AlertDirection[]): string {
