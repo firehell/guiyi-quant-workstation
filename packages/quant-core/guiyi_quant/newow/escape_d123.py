@@ -182,10 +182,10 @@ def step_escape_d123(
     """Advance one completed D1 bar without crossing a physical-contract segment."""
     identity = (state.physical_contract, state.segment_id)
     incoming = (bar.physical_contract, bar.segment_id)
-    if identity != (None, None) and identity != incoming:
-        state = initial_escape_state()
     if not _valid_state(state, profile):
         return _unavailable()
+    if identity != (None, None) and identity != incoming:
+        state = initial_escape_state()
     close, high, low = (_finite_decimal(value) for value in (bar.close, bar.high, bar.low))
     if close is None or high is None or low is None:
         return _unavailable()

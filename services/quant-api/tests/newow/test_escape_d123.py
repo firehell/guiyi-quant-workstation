@@ -268,6 +268,22 @@ def test_malformed_restored_derived_state_fails_closed() -> None:
     assert marker_types(step_escape_d123(mismatched_var4, bar)) == ()
 
 
+def test_malformed_restored_state_with_changed_segment_fails_closed() -> None:
+    malformed = replace(state_for(previous_var4=96.0), previous_rsv9=99.0)
+    result = step_escape_d123(
+        malformed,
+        make_bar(120, 131, high=140, low=100, physical_contract="RB2705", segment_id="rb:RB2705:2026-06-01"),
+    )
+
+    assert result.state == initial_escape_state()
+    assert result.ma120 is None
+    assert result.ma120_slope10 is None
+    assert result.amplitude30 is None
+    assert result.rsv9 is None
+    assert result.var4 is None
+    assert marker_types(result) == ()
+
+
 def test_finite_incorrect_stored_ma120_history_cannot_fabricate_d3() -> None:
     """A finite but non-recomputable MA sequence must fail closed before D3."""
 
@@ -300,6 +316,7 @@ def test_restored_history_without_complete_identity_fails_closed(
 def test_prefix_tail_batch_incremental_and_serialization_parity() -> None:
     bars = tuple(make_bar(index, 100 + (index % 17)) for index in range(145))
     full = calculate_escape_series(bars)
+    assert full == run_steps(bars)
     assert calculate_escape_series(bars[:130]) == full[:130]
     mutated_tail = tuple(make_bar(index, 300 + index) for index in range(130, 145))
     assert calculate_escape_series(bars[:130]) == calculate_escape_series(bars[:130] + mutated_tail)[:130]
