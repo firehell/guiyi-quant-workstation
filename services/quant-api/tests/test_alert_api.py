@@ -34,6 +34,35 @@ def test_product_alert_state_contains_only_htdy() -> None:
     assert rules[0]["kind"] == "indicator_observation"
 
 
+def test_product_alert_state_exposes_subing_public_name() -> None:
+    factory = session_factory()
+    with factory() as session:
+        session.add(AlertRule(
+            rule_code="subing_ths_alert_15m_v1",
+            enabled=False,
+            scope_product_frequencies={},
+        ))
+        session.commit()
+
+    with client(factory) as value:
+        response = value.get("/api/alerts/products/jm")
+
+    assert response.status_code == 200
+    subing = next(
+        rule
+        for rule in response.json()["rules"]
+        if rule["rule_code"] == "subing_ths_alert_15m_v1"
+    )
+    assert subing == {
+        "rule_code": "subing_ths_alert_15m_v1",
+        "display_name": "苏冰预警",
+        "kind": "indicator_observation",
+        "input_frequencies": ["15m"],
+        "enabled_frequencies": [],
+        "enabled_for_product": False,
+    }
+
+
 def test_frequency_scope_put_and_removed_product_scope_path() -> None:
     with client() as value:
         enabled = value.put(
