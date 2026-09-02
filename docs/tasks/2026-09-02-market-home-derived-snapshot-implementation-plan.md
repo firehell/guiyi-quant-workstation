@@ -6,7 +6,7 @@
 
 **Architecture:** `MarketHomeOverviewService` 继续作为唯一 compute authority。Projection 固定在 `<canonical_root>/.derived/market-home-overview.json`。正式 `data update/refresh --apply` 与自然 after-market 在 manager action 前先失效旧 projection；API projection hit 直接返回，miss 回退现有 compute 且永不写；自然 after-market 仅在 `canonical_updated + rank1/Live reconciliation + cleanup` 全部完成后 best-effort 重建 projection。
 
-**Tech Stack:** Python 3.13、FastAPI、Pydantic v2、SHA-256、UTF-8 JSON、`tempfile + fsync + os.replace`、pytest、Ruff、Mypy、OpenSpec。
+**Tech Stack:** Python 3.13、FastAPI、Pydantic v2、SHA-256、UTF-8 JSON、trusted directory fd + `O_NOFOLLOW` + `O_EXCL` + `fsync` + `os.replace`、pytest、Ruff、Mypy、OpenSpec。
 
 **Spec:** `docs/tasks/2026-09-02-market-home-derived-snapshot-spec.md`
 
@@ -159,11 +159,12 @@ payload target/data_as_of match envelope
 ```text
 validate
 → mkdir .derived
-→ reject symlink parent
-→ same-dir mkstemp
+→ open trusted .derived directory descriptor (O_DIRECTORY | O_NOFOLLOW)
+→ same-dir temporary file relative to descriptor (O_EXCL | O_NOFOLLOW)
 → write UTF-8
-→ flush/fsync
-→ os.replace
+→ fsync temporary file
+→ os.replace through descriptor
+→ fsync directory descriptor
 → cleanup temp
 ```
 

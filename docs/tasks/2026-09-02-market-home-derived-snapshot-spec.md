@@ -294,12 +294,12 @@ Projection 自身为 symlink时 read 不接受；invalidate 可安全 unlink 该
 ```text
 validate envelope
 → mkdir .derived
-→ reject symlink parent
-→ mkstemp(same parent)
+→ open trusted .derived directory descriptor (O_DIRECTORY | O_NOFOLLOW)
+→ create same-directory temporary file relative to that descriptor (O_EXCL | O_NOFOLLOW)
 → UTF-8 write
-→ flush
-→ fsync
-→ os.replace(temp, current)
+→ fsync temporary file
+→ os.replace(temp, current, dir_fd)
+→ fsync directory descriptor
 → cleanup temp
 ```
 
@@ -465,6 +465,6 @@ Spec → Plan → code/test implementation → review/fix → submit PR
 
 该授权只覆盖仓库代码、测试、文档、task branch 和 PR。
 
-当前执行环境没有可用的仓库 shell/test runner，且仓库没有 GitHub Actions workflow。因此提交前可以完成代码级/static diff Review，但不得声称 pytest/Ruff/Mypy/OpenSpec 已实际通过。
+pytest/Ruff/Mypy/OpenSpec/secret scan 与 projection-hit benchmark 必须在实际可运行的本地环境完成；未实际执行时 PR 必须明确保留 pending，不能以静态 Review 代替。
 
-真实测试验证、真实 projection-hit benchmark、production projection 首次生成、release 与 Runtime promotion 仍是独立 Gate。
+production projection 首次生成、release 与 Runtime promotion 仍是独立 Gate。
