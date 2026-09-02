@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` or `superpowers:executing-plans` to execute this plan task-by-task. Every behavior change follows RED → GREEN → REFACTOR, and every completion claim requires fresh verification.
 
-**Goal:** 在不恢复任何旧苏冰策略域的前提下，实现 `subing_ths_alert_15m_v1`：对 operational universe 的 completed `actual_dominant + 15m` 按同花顺 MACD CROSS + SMA21 公式产生不可变 AlertEvent、one-shot PushPlus，并在 Market Web 显示最近预警和 `S↑/S↓` marker，最终由用户人工判断是否交易。
+**Goal:** 在不恢复任何旧苏冰策略域的前提下，实现 `subing_ths_alert_15m_v1`：对 operational universe 的 completed `actual_dominant + 15m` 按同花顺 MACD CROSS + EMA21 公式产生不可变 AlertEvent、one-shot PushPlus，并在 Market Web 显示最近预警和 `S↑/S↓` marker，最终由用户人工判断是否交易。
 
-**Architecture:** 公式 authority 放在纯 Quant Core `SubingThs15mKernel`。Alert Runtime 仍为单进程，但由当前单 HTDY evaluator 收敛为精确 `rule_code → evaluator → event mode → notification policy`。SuBing evaluator 只维护最小的每品种 MACD/SMA 递归 cursor，并通过 `MarketReadService` 的 typed physical-contract replay seam 在首次触发、重启、漏中间 Bar 或主力换月时因果重建。API、notification formatter 和 Web 只消费 AlertEvent，不复制正式 BUY/SELL 公式。
+**Architecture:** 公式 authority 放在纯 Quant Core `SubingThs15mKernel`。Alert Runtime 仍为单进程，但由当前单 HTDY evaluator 收敛为精确 `rule_code → evaluator → event mode → notification policy`。SuBing evaluator 只维护最小的每品种 MACD/EMA 递归 cursor，并通过 `MarketReadService` 的 typed physical-contract replay seam 在首次触发、重启、漏中间 Bar 或主力换月时因果重建。API、notification formatter 和 Web 只消费 AlertEvent，不复制正式 BUY/SELL 公式。
 
 **Tech Stack:** Python 3.12、SQLAlchemy/Alembic、PostgreSQL、Redis、FastAPI/Pydantic、Quant Core dataclass kernels、Vue 3 + TypeScript + Naive UI + Lightweight Charts、Node test runner、Playwright。
 
@@ -22,26 +22,26 @@
 
 ## 1. Global Constraints
 
-- 正式身份固定：`rule_code=subing_ths_alert_15m_v1`、`formula_version=subing_ths_15m_v1`、`kind=indicator_observation`、`series_kind=actual_dominant`、`frequency=15m`、`completed_only=true`、`auto_order=false`。
+- 正式身份固定：`rule_code=subing_ths_alert_15m_v1`、`formula_version=subing_ths_15m_v2`、`kind=indicator_observation`、`series_kind=actual_dominant`、`frequency=15m`、`completed_only=true`、`auto_order=false`。
 - 唯一 Candidate 公式固定：
 
 ```text
 DIFF = EMA(CLOSE, 12) - EMA(CLOSE, 26)
 DEA  = EMA(DIFF, 9)
 MACD = 2 * (DIFF - DEA)
-MA21 = SMA(CLOSE, 21)
+EMA21 = EMA(CLOSE, 21)
 
 BUY  = previous_DIF <= previous_DEA
        AND current_DIF > current_DEA
-       AND CLOSE > MA21
+       AND CLOSE > EMA21
 
 SELL = previous_DIF >= previous_DEA
        AND current_DIF < current_DEA
-       AND CLOSE < MA21
+       AND CLOSE < EMA21
 ```
 
-- `MA21` 必须是 SMA21，不是 EMA21。
-- 工程参数固定：`ema_seed_policy=sma_window`、`histogram_scale=2`、`round_digits=6`。正式 Candidate 比较使用 Quant Core 对每根 Bar 输出的六位确定性 DIF/DEA/MA21 projection；隐藏递归状态只用于下一步计算。
+- `EMA21` 必须是 `EMA(CLOSE, 21)`，并使用 `sma_window` seed。
+- 工程参数固定：`ema_seed_policy=sma_window`、`histogram_scale=2`、`round_digits=6`。正式 Candidate 比较使用 Quant Core 对每根 Bar 输出的六位确定性 DIF/DEA/EMA21 projection；隐藏递归状态只用于下一步计算。
 - V1 不允许零轴、Range、量能/OI、ATR、斜率、5m/30m/60m/D1、Daily Watch、评分、胜率或其它隐藏过滤。
 - 不恢复 `subing_strategy_v1`、旧 `subing_watch_15m_v1`、Strategy Runtime、Action/Episode/Position、`scope_products`、`action_id`、`strategy_payload` 或任何旧 cache/API/CLI/Web。
 - 不新增第二 Alert 进程、scheduler、queue、outbox、retry、replay、backfill、fallback 或订单路径。
@@ -98,7 +98,7 @@ Gate 名称沿用批准 Spec，只调整执行顺序。批准本 Plan 即表示�
 
 | Packet | Branch | 目标 | 不包含 |
 |---|---|---|---|
-| S1 | `feature/subing-ths-s1-kernel` | SMA21 + `SubingThs15mKernel` + current-contract replay | Rule/Event/Push/Web/DB mutation |
+| S1 | `feature/subing-ths-s1-kernel` | EMA21 + `SubingThs15mKernel` + current-contract replay | Rule/Event/Push/Web/DB mutation |
 | S2 | `feature/subing-ths-s2-alert-runtime` | evaluator dispatch + exact Event + notification policy + rule health | 0044 migration/Web/prod send |
 | S3 | `feature/subing-ths-s3-web` | generic Alert API + recent alerts + S markers + deep link | formula duplication/migration |
 | S4 | `feature/subing-ths-s4-migration-scope` | 0044 + dry-run/atomic Scope activation seam | production migration/apply |
@@ -112,167 +112,11 @@ Gate 名称沿用批准 Spec，只调整执行顺序。批准本 Plan 即表示�
 
 **Deliverable:** 一个无 I/O 的精确 `SubingThs15mKernel`，以及一个只读 typed physical-contract replay seam。S1 不注册 Alert Rule，不写 DB，不接 Runtime/Push/Web。
 
-## 4.1 Add a generic incremental SMA primitive
+## 4.1 Reuse the existing incremental EMA primitive
 
-**Files:**
+EMA21 directly reuses the existing `initial_ema_state()` / `step_ema()` with `period=21`、`seed_policy=sma_window` and `round_digits=6`.
 
-- Modify `packages/quant-core/guiyi_quant/indicators/models.py`
-- Create `packages/quant-core/guiyi_quant/indicators/sma.py`
-- Modify `packages/quant-core/guiyi_quant/indicators/__init__.py`
-- Create `services/quant-api/tests/test_subing_ths_kernel.py`
-
-- [ ] **Step 1: Write failing SMA tests**
-
-```python
-from guiyi_quant.indicators import initial_sma_state, step_sma
-
-
-def test_sma_warms_then_rolls_exactly() -> None:
-    state = initial_sma_state(3, round_digits=6)
-    for value in (1.0, 2.0):
-        state, point = step_sma(state, value, bar_end=None)
-        assert point.ready is False
-        assert point.valid is True
-        assert point.value is None
-        assert point.reason == "warming_up"
-
-    state, point = step_sma(state, 3.0, bar_end=None)
-    assert point.ready is True
-    assert point.valid is True
-    assert point.value == 2.0
-    assert point.reason is None
-
-    state, point = step_sma(state, 6.0, bar_end=None)
-    assert point.value == 3.666667
-
-
-def test_sma_invalid_input_breaks_continuity() -> None:
-    state = initial_sma_state(3)
-    for value in (1.0, 2.0, 3.0):
-        state, _ = step_sma(state, value, bar_end=None)
-
-    state, invalid = step_sma(state, None, bar_end=None)
-    assert invalid.ready is False
-    assert invalid.valid is False
-    assert invalid.reason == "input_invalid"
-
-    state, next_point = step_sma(state, 4.0, bar_end=None)
-    assert next_point.ready is False
-    assert next_point.valid is True
-    assert next_point.reason == "warming_up"
-```
-
-- [ ] **Step 2: Run focused test and confirm RED**
-
-```bash
-PYTHONPATH=services/quant-api:packages/quant-core \
-  uv run --project services/quant-api pytest -q \
-  services/quant-api/tests/test_subing_ths_kernel.py -k sma
-```
-
-Expected RED reason: import/definition failure for `initial_sma_state` or `step_sma`.
-
-- [ ] **Step 3: Implement `SmaState` and the complete minimal primitive**
-
-Add to `models.py`:
-
-```python
-@dataclass(frozen=True, slots=True)
-class SmaState:
-    period: int
-    values: tuple[float, ...]
-    round_digits: int = 6
-```
-
-Create `sma.py` with behavior equivalent to:
-
-```python
-from __future__ import annotations
-
-import math
-
-from .models import IndicatorPoint, SmaState
-
-
-def initial_sma_state(period: int, *, round_digits: int = 6) -> SmaState:
-    if period <= 0:
-        raise ValueError("SMA period must be positive")
-    if round_digits < 0:
-        raise ValueError("round_digits must be non-negative")
-    return SmaState(period=period, values=(), round_digits=round_digits)
-
-
-def step_sma(
-    state: SmaState,
-    value: float | int | None,
-    *,
-    bar_end: str | None,
-) -> tuple[SmaState, IndicatorPoint]:
-    if value is None:
-        number = None
-    else:
-        candidate = float(value)
-        number = candidate if math.isfinite(candidate) else None
-
-    if number is None:
-        return (
-            SmaState(period=state.period, values=(), round_digits=state.round_digits),
-            IndicatorPoint(
-                bar_end=bar_end,
-                value=None,
-                ready=False,
-                valid=False,
-                reason="input_invalid",
-            ),
-        )
-
-    values = (*state.values, number)[-state.period :]
-    next_state = SmaState(
-        period=state.period,
-        values=values,
-        round_digits=state.round_digits,
-    )
-    if len(values) < state.period:
-        return (
-            next_state,
-            IndicatorPoint(
-                bar_end=bar_end,
-                value=None,
-                ready=False,
-                valid=True,
-                reason="warming_up",
-            ),
-        )
-    return (
-        next_state,
-        IndicatorPoint(
-            bar_end=bar_end,
-            value=round(sum(values) / state.period, state.round_digits),
-            ready=True,
-            valid=True,
-        ),
-    )
-```
-
-Do not add pandas/numpy or an unbounded history.
-
-- [ ] **Step 4: Export the primitive and make focused tests GREEN**
-
-```bash
-PYTHONPATH=services/quant-api:packages/quant-core \
-  uv run --project services/quant-api pytest -q \
-  services/quant-api/tests/test_subing_ths_kernel.py -k sma
-```
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add packages/quant-core/guiyi_quant/indicators/models.py \
-        packages/quant-core/guiyi_quant/indicators/sma.py \
-        packages/quant-core/guiyi_quant/indicators/__init__.py \
-        services/quant-api/tests/test_subing_ths_kernel.py
-git commit -m "feat(indicators): add incremental SMA primitive"
-```
+S1 must not add a second SMA primitive, state type, export, or strategy-local rolling implementation. The Kernel owns only the frozen EMA21 state needed by this formula.
 
 ## 4.2 Implement `SubingThs15mKernel` as the only Candidate authority
 
@@ -281,7 +125,7 @@ git commit -m "feat(indicators): add incremental SMA primitive"
 - Create `packages/quant-core/guiyi_quant/indicators/subing_ths.py`
 - Modify `packages/quant-core/guiyi_quant/indicators/__init__.py`
 - Modify `services/quant-api/tests/test_subing_ths_kernel.py`
-- Create `tests/fixtures/subing_ths_15m_v1_golden.json`
+- Create `tests/fixtures/subing_ths_15m_v2_golden.json`
 
 - [ ] **Step 1: Write RED tests for identity and formula edges**
 
@@ -289,11 +133,11 @@ Committed tests must construct state only through ordinary `initial_state()` + `
 
 ```python
 kernel = SubingThs15mKernel()
-assert kernel.formula_version == "subing_ths_15m_v1"
+assert kernel.formula_version == "subing_ths_15m_v2"
 assert kernel.fast == 12
 assert kernel.slow == 26
 assert kernel.signal == 9
-assert kernel.sma_period == 21
+assert kernel.ema_period == 21
 assert kernel.ema_seed_policy == "sma_window"
 assert kernel.histogram_scale == 2
 assert kernel.round_digits == 6
@@ -305,7 +149,7 @@ Tests must cover:
 previous DIF == previous DEA then current DIF > DEA can be golden CROSS
 previous DIF == previous DEA then current DIF < DEA can be dead CROSS
 current DIF == DEA is not a completed CROSS
-close == SMA21 never triggers
+close == EMA21 never triggers
 buy and sell can never coexist on one Bar
 invalid input breaks CROSS continuity
 ```
@@ -323,12 +167,12 @@ Expected RED reason: `SubingThs15mKernel` does not exist.
 - [ ] **Step 3: Add frozen state/result contracts**
 
 ```python
-SUBING_THS_FORMULA_VERSION = "subing_ths_15m_v1"
+SUBING_THS_FORMULA_VERSION = "subing_ths_15m_v2"
 
 @dataclass(frozen=True, slots=True)
 class SubingThs15mState:
     macd: MacdState
-    ma21: SmaState
+    ema21: EmaState
     previous_dif: float | None
     previous_dea: float | None
 
@@ -342,13 +186,13 @@ class SubingThs15mResult:
     dif: float | None
     dea: float | None
     macd: float | None
-    ma21: float | None
+    ema21: float | None
     result_codes: tuple[Literal["buy", "sell"], ...]
 ```
 
 The `tuple[Literal[...], ...]` syntax above is a Python variadic tuple type and is not an unresolved implementation marker.
 
-`SubingThs15mKernel` constants are exactly the values in Step 1. `initial_state()` creates MACD/SMA state only; symbol、contract、frequency and Runtime identity do not enter Quant Core state.
+`SubingThs15mKernel` constants are exactly the values in Step 1. `initial_state()` creates MACD/EMA state only; symbol、contract、frequency and Runtime identity do not enter Quant Core state.
 
 - [ ] **Step 4: Implement exact step semantics**
 
@@ -356,17 +200,17 @@ The code path must be equivalent to this sequence:
 
 ```text
 macd_state, (dif_point, dea_point, histogram_point) = step_macd(current state, close)
-sma_state, ma21_point = step_sma(current state, close)
+ema_state, ema21_point = step_ema(current state, close)
 
 if any required current point is invalid:
     emit valid=false, no result code
     set previous_dif=None and previous_dea=None
-elif MACD or SMA21 is not ready:
+elif MACD or EMA21 is not ready:
     emit ready=false, no result code
 else:
-    use dif_point.value, dea_point.value, ma21_point.value and rounded close
-    golden = previous_dif <= previous_dea and dif > dea and close > ma21
-    dead   = previous_dif >= previous_dea and dif < dea and close < ma21
+    use dif_point.value, dea_point.value, ema21_point.value and rounded close
+    golden = previous_dif <= previous_dea and dif > dea and close > ema21
+    dead   = previous_dif >= previous_dea and dif < dea and close < ema21
     emit only buy, only sell, or no result
     update previous_dif/dea to current projected values
 ```
@@ -379,12 +223,12 @@ Fixture top-level schema:
 
 ```json
 {
-  "formula_version": "subing_ths_15m_v1",
+  "formula_version": "subing_ths_15m_v2",
   "parameters": {
     "fast": 12,
     "slow": 26,
     "signal": 9,
-    "sma_period": 21,
+    "ema_period": 21,
     "ema_seed_policy": "sma_window",
     "histogram_scale": 2,
     "round_digits": 6
@@ -393,7 +237,7 @@ Fixture top-level schema:
 }
 ```
 
-The committed fixture must populate `bars` with a deterministic synthetic sequence containing warm-up、equality/no-cross、at least one buy、at least one sell and a future tail. Each Bar record freezes `bar_end`、close、DIF、DEA、MA21 and result codes. Expected fixture values must be computed independently during test authoring and committed as literals; the test must never call the production kernel to create its own expected values.
+The committed fixture must populate `bars` with a deterministic synthetic sequence containing warm-up、equality/no-cross、at least one buy、at least one sell and a future tail. Each Bar record freezes `bar_end`、close、DIF、DEA、EMA21 and result codes. Expected fixture values must be computed independently during test authoring and committed as literals; the test must never call the production kernel to create its own expected values.
 
 Required parity assertions:
 
@@ -417,7 +261,7 @@ PYTHONPATH=services/quant-api:packages/quant-core \
 git add packages/quant-core/guiyi_quant/indicators/subing_ths.py \
         packages/quant-core/guiyi_quant/indicators/__init__.py \
         services/quant-api/tests/test_subing_ths_kernel.py \
-        tests/fixtures/subing_ths_15m_v1_golden.json
+        tests/fixtures/subing_ths_15m_v2_golden.json
 git commit -m "feat(indicators): add SuBing THS 15m kernel"
 ```
 
@@ -758,14 +602,14 @@ SuBing buy copy contains:
 15m 多头预警
 触发：
 MACD 金叉
-收盘价位于 MA21 上方
+收盘价位于 EMA21 上方
 当前主力：<contract>
 信号K线：<Asia/Shanghai timestamp>
 请打开归一量化图表复核。
 研究观察，非交易指令
 ```
 
-Sell is symmetrical with `空头预警 / MACD 死叉 / MA21 下方`。Formatter 不读取 DIFF/DEA 数值，不重新计算公式。
+Sell is symmetrical with `空头预警 / MACD 死叉 / EMA21 下方`。Formatter 不读取 DIFF/DEA 数值，不重新计算公式。
 
 - [ ] **Step 2: Implement exact policy lookup**
 
@@ -1118,11 +962,11 @@ Freeze:
 ```text
 SuBing buy → label S↑, shape arrowUp, position belowBar
 SuBing sell → label S↓, shape arrowDown, position aboveBar
-SuBing tooltip → 苏冰预警 + MACD 金叉/死叉 + Close >/< MA21 (SMA21) + contract + signal time
+SuBing tooltip → 苏冰预警 + MACD 金叉/死叉 + Close >/< EMA21 + contract + signal time
 HTDY persistent marker remains its current square/first-seen presentation
 ```
 
-The wording above derives only from Event direction and the frozen Rule definition; it does not recompute DIFF/DEA/SMA。
+The wording above derives only from Event direction and the frozen Rule definition; it does not recompute DIFF/DEA/EMA。
 
 - [ ] **Step 2: Freeze visibility rules**
 
@@ -1509,7 +1353,7 @@ Tests must require active code/document facts equivalent to:
 ```text
 post-0044 stable Rule identities = HTDY + subing_ths_alert_15m_v1
 SuBing = observation-only, completed actual_dominant 15m
-MA21 = SMA21
+EMA21 = EMA(CLOSE, 21)
 old subing_strategy_v1 implementation remains retired
 Event-first one-shot transport remains
 Range/zero-axis/multi-timeframe are not SuBing V1 gates
@@ -1559,7 +1403,7 @@ It must freeze:
 ```text
 rule/formula identity
 completed actual_dominant 15m only
-exact CROSS + SMA21
+exact CROSS + EMA21
 same-physical-contract state isolation
 no hidden filters
 Event identity/idempotency

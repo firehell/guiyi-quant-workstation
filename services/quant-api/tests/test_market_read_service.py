@@ -15,6 +15,7 @@ from app.market_data.domain import (
 from app.market_data.market_read_service import (
     MarketObservationSnapshotError,
     MarketReadService,
+    MarketReadWindow,
     MarketReadWindowError,
 )
 from app.market_data.market_phase import MarketPhase, ProductMarketPhase
@@ -589,3 +590,244 @@ def test_latest_canonical_window_preserves_each_bar_rank1_owner() -> None:
     assert window.bars == canonical
     assert window.bar_contracts == ("JM2701", "JM2705")
     assert window.bar_contracts[-1] == window.contract == "JM2705"
+
+
+class _ContractReplayPageReader:
+    def __init__(self, bars: tuple[CanonicalBar, ...], *, stalled: bool = False) -> None:
+        self._bars = bars
+        self._stalled = stalled
+        self.requests: list[SeriesPageQuery] = []
+
+    def query_page(self, request: SeriesPageQuery) -> MarketSeriesPageResult:
+        assert request.series_kind.value == "contract"
+        assert request.symbol == "rb"
+        assert request.contract == "RB2610"
+        assert request.frequency.value == "15m"
+        assert request.limit == 2000
+        self.requests.append(request)
+        eligible = tuple(
+            bar
+            for bar in self._bars
+            if request.before is None or bar.bar_end < request.before
+        )
+        page = eligible[-request.limit :]
+        has_more_before = len(eligible) > len(page)
+        return MarketSeriesPageResult(
+            request_identity={"symbol": request.symbol},
+            bars=page,
+            canonical_coverage=None,
+            has_more_before=has_more_before or self._stalled,
+            next_before=request.before if self._stalled else (page[0].bar_end if has_more_before else None),
+            resolved_contract_segments=(),
+        )
+
+
+class _ContractReplayLiveStore:
+    def __init__(
+        self,
+        bars: tuple[CanonicalBar, ...],
+        *,
+        bar_contracts: tuple[str, ...] | None = None,
+    ) -> None:
+        self._bars = bars
+        self._bar_contracts = bar_contracts or ("RB2610",) * len(bars)
+
+    def subscriptions(self, trading_day: date) -> dict[str, str]:
+        return {"rb": "RB2610"}
+
+    def heartbeat(self) -> dict[str, bool]:
+        return {"available": True}
+
+    def bars_after(
+        self,
+        trading_day: date,
+        symbol: str,
+        frequency: str,
+        after: datetime | None,
+    ) -> tuple[CanonicalBar, ...]:
+        assert (trading_day, symbol, frequency) == (DAY_2, "rb", "15m")
+        return tuple(bar for bar in self._bars if after is None or bar.bar_end > after)
+
+    def bars_between(
+        self,
+        trading_day: date,
+        symbol: str,
+        frequency: str,
+        start: datetime,
+        end: datetime,
+    ) -> tuple[CanonicalBar, ...]:
+        return tuple(
+            bar
+            for bar in self._bars
+            if start <= bar.bar_end <= end
+        )
+
+    def bar_observations(
+        self,
+        trading_day: date,
+        symbol: str,
+        frequency: str,
+        after: datetime | None,
+        until: datetime,
+        *,
+        inclusive_after: bool,
+        expected_contract: str,
+    ) -> tuple[object, ...]:
+        from app.market_data.live_market import LiveBarObservation
+
+        assert (trading_day, symbol, frequency) == (DAY_2, "rb", "15m")
+        assert expected_contract == "RB2610"
+        bars = tuple(
+            bar
+            for bar in self._bars
+            if (after is None or bar.bar_end > after or (inclusive_after and bar.bar_end == after))
+            and bar.bar_end <= until
+        )
+        return tuple(
+            LiveBarObservation(bar=bar, contract=contract)
+            for bar, contract in zip(bars, self._bar_contracts, strict=True)
+        )
+
+
+def _replay_window(cutoff: datetime = LIVE_END) -> MarketReadWindow:
+    cutoff_bar = _bar(cutoff, DAY_2)
+    return MarketReadWindow(
+        symbol="rb",
+        series_kind="actual_dominant",
+        frequency="15m",
+        trading_day=DAY_2,
+        contract="RB2610",
+        cutoff=cutoff,
+        bars=(cutoff_bar,),
+        bar_contracts=("RB2610",),
+    )
+
+
+def _replay_service(
+    historical: tuple[CanonicalBar, ...],
+    live: tuple[CanonicalBar, ...],
+    *,
+    stalled: bool = False,
+    live_contracts: tuple[str, ...] | None = None,
+) -> tuple[MarketReadService, _ContractReplayPageReader]:
+    reader = _ContractReplayPageReader(historical, stalled=stalled)
+    return (
+        MarketReadService(
+            market_data=reader,
+            phase_resolver=_ForbiddenPhaseReader(),
+            operational_products=("rb",),
+            live_store=_ContractReplayLiveStore(live, bar_contracts=live_contracts),
+        ),
+        reader,
+    )
+
+
+def test_current_contract_replay_includes_predominant_same_contract_only() -> None:
+    predom = _bar(HISTORICAL_END_1, DAY_1)
+    canonical = _bar(HISTORICAL_END_2, DAY_2)
+    cutoff = _bar(LIVE_END, DAY_2)
+    service, reader = _replay_service((predom, canonical, cutoff), (cutoff,))
+
+    replay = service.current_contract_replay_window(_replay_window(), after=None)
+
+    assert replay.contract == "RB2610"
+    assert replay.bars == (predom, canonical, cutoff)
+    assert replay.bars[-1].bar_end == LIVE_END
+    assert all(request.contract == "RB2610" for request in reader.requests)
+
+
+def test_current_contract_replay_pages_back_to_all_same_contract_history() -> None:
+    start = datetime(2024, 1, 1, tzinfo=UTC)
+    historical = tuple(
+        _bar(start + timedelta(minutes=15 * index), DAY_1)
+        for index in range(2001)
+    ) + (_bar(LIVE_END, DAY_2),)
+    service, reader = _replay_service(historical, ())
+
+    replay = service.current_contract_replay_window(
+        _replay_window(),
+        after=None,
+    )
+
+    assert replay.bars == historical
+    assert len(reader.requests) == 2
+    assert reader.requests[1].before is not None
+    assert reader.requests[1].before < reader.requests[0].before  # type: ignore[operator]
+
+
+def test_current_contract_replay_filters_after() -> None:
+    historical = (
+        _bar(HISTORICAL_END_1, DAY_1),
+        _bar(HISTORICAL_END_2, DAY_2),
+        _bar(LIVE_END, DAY_2),
+    )
+    service, _reader = _replay_service(historical, ())
+
+    replay = service.current_contract_replay_window(
+        _replay_window(),
+        after=HISTORICAL_END_1,
+    )
+
+    assert replay.bars == historical[1:]
+
+
+def test_current_contract_replay_allows_duplicate_cutoff_and_rejects_conflict() -> None:
+    canonical = _bar(LIVE_END, DAY_2)
+    service, _reader = _replay_service((canonical,), (canonical,))
+
+    assert service.current_contract_replay_window(_replay_window(), after=None).bars == (
+        canonical,
+    )
+
+    conflict = replace(canonical, turnover=Decimal("1001"))
+    conflicted, _reader = _replay_service((canonical,), (conflict,))
+    with pytest.raises(MarketReadWindowError, match="MARKET_READ_LIVE_UNAVAILABLE"):
+        conflicted.current_contract_replay_window(_replay_window(), after=None)
+
+
+def test_current_contract_replay_rejects_live_bar_from_another_contract() -> None:
+    predom = _bar(HISTORICAL_END_2, DAY_2)
+    cutoff = _bar(LIVE_END, DAY_2)
+    service, _reader = _replay_service(
+        (predom,),
+        (cutoff,),
+        live_contracts=("RB2605",),
+    )
+
+    with pytest.raises(MarketReadWindowError, match="MARKET_READ_LIVE_UNAVAILABLE"):
+        service.current_contract_replay_window(_replay_window(), after=None)
+
+
+@pytest.mark.parametrize(
+    ("after", "error"),
+    [
+        (LIVE_END + timedelta(microseconds=1), "MARKET_READ_AFTER_EXCEEDS_CUTOFF"),
+        (datetime(2026, 8, 31, 2, 0), "MARKET_READ_AFTER_TIMEZONE_REQUIRED"),
+    ],
+)
+def test_current_contract_replay_rejects_invalid_after(
+    after: datetime,
+    error: str,
+) -> None:
+    service, _reader = _replay_service((_bar(LIVE_END, DAY_2),), ())
+
+    with pytest.raises(MarketReadWindowError, match=error):
+        service.current_contract_replay_window(_replay_window(), after=after)
+
+
+def test_current_contract_replay_allows_stale_duplicate_cutoff() -> None:
+    service, _reader = _replay_service((_bar(LIVE_END, DAY_2),), ())
+
+    replay = service.current_contract_replay_window(_replay_window(), after=LIVE_END)
+
+    assert replay.bars == ()
+
+
+def test_current_contract_replay_fails_closed_for_missing_cutoff_and_stalled_cursor() -> None:
+    missing, _reader = _replay_service((_bar(HISTORICAL_END_2, DAY_2),), ())
+    with pytest.raises(MarketReadWindowError, match="MARKET_READ_CUTOFF_BAR_MISSING"):
+        missing.current_contract_replay_window(_replay_window(), after=None)
+
+    stalled, _reader = _replay_service((_bar(HISTORICAL_END_2, DAY_2),), (), stalled=True)
+    with pytest.raises(MarketReadWindowError, match="MARKET_READ_PAGINATION_STALLED"):
+        stalled.current_contract_replay_window(_replay_window(), after=None)
