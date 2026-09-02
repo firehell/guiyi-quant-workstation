@@ -112,167 +112,11 @@ Gate 名称沿用批准 Spec，只调整执行顺序。批准本 Plan 即表示�
 
 **Deliverable:** 一个无 I/O 的精确 `SubingThs15mKernel`，以及一个只读 typed physical-contract replay seam。S1 不注册 Alert Rule，不写 DB，不接 Runtime/Push/Web。
 
-## 4.1 Add a generic incremental SMA primitive
+## 4.1 Reuse the existing incremental EMA primitive
 
-**Files:**
+EMA21 directly reuses the existing `initial_ema_state()` / `step_ema()` with `period=21`、`seed_policy=sma_window` and `round_digits=6`.
 
-- Modify `packages/quant-core/guiyi_quant/indicators/models.py`
-- Create `packages/quant-core/guiyi_quant/indicators/sma.py`
-- Modify `packages/quant-core/guiyi_quant/indicators/__init__.py`
-- Create `services/quant-api/tests/test_subing_ths_kernel.py`
-
-- [ ] **Step 1: Write failing SMA tests**
-
-```python
-from guiyi_quant.indicators import initial_sma_state, step_sma
-
-
-def test_sma_warms_then_rolls_exactly() -> None:
-    state = initial_sma_state(3, round_digits=6)
-    for value in (1.0, 2.0):
-        state, point = step_sma(state, value, bar_end=None)
-        assert point.ready is False
-        assert point.valid is True
-        assert point.value is None
-        assert point.reason == "warming_up"
-
-    state, point = step_sma(state, 3.0, bar_end=None)
-    assert point.ready is True
-    assert point.valid is True
-    assert point.value == 2.0
-    assert point.reason is None
-
-    state, point = step_sma(state, 6.0, bar_end=None)
-    assert point.value == 3.666667
-
-
-def test_sma_invalid_input_breaks_continuity() -> None:
-    state = initial_sma_state(3)
-    for value in (1.0, 2.0, 3.0):
-        state, _ = step_sma(state, value, bar_end=None)
-
-    state, invalid = step_sma(state, None, bar_end=None)
-    assert invalid.ready is False
-    assert invalid.valid is False
-    assert invalid.reason == "input_invalid"
-
-    state, next_point = step_sma(state, 4.0, bar_end=None)
-    assert next_point.ready is False
-    assert next_point.valid is True
-    assert next_point.reason == "warming_up"
-```
-
-- [ ] **Step 2: Run focused test and confirm RED**
-
-```bash
-PYTHONPATH=services/quant-api:packages/quant-core \
-  uv run --project services/quant-api pytest -q \
-  services/quant-api/tests/test_subing_ths_kernel.py -k sma
-```
-
-Expected RED reason: import/definition failure for `initial_sma_state` or `step_sma`.
-
-- [ ] **Step 3: Implement `SmaState` and the complete minimal primitive**
-
-Add to `models.py`:
-
-```python
-@dataclass(frozen=True, slots=True)
-class SmaState:
-    period: int
-    values: tuple[float, ...]
-    round_digits: int = 6
-```
-
-Create `sma.py` with behavior equivalent to:
-
-```python
-from __future__ import annotations
-
-import math
-
-from .models import IndicatorPoint, SmaState
-
-
-def initial_sma_state(period: int, *, round_digits: int = 6) -> SmaState:
-    if period <= 0:
-        raise ValueError("SMA period must be positive")
-    if round_digits < 0:
-        raise ValueError("round_digits must be non-negative")
-    return SmaState(period=period, values=(), round_digits=round_digits)
-
-
-def step_sma(
-    state: SmaState,
-    value: float | int | None,
-    *,
-    bar_end: str | None,
-) -> tuple[SmaState, IndicatorPoint]:
-    if value is None:
-        number = None
-    else:
-        candidate = float(value)
-        number = candidate if math.isfinite(candidate) else None
-
-    if number is None:
-        return (
-            SmaState(period=state.period, values=(), round_digits=state.round_digits),
-            IndicatorPoint(
-                bar_end=bar_end,
-                value=None,
-                ready=False,
-                valid=False,
-                reason="input_invalid",
-            ),
-        )
-
-    values = (*state.values, number)[-state.period :]
-    next_state = SmaState(
-        period=state.period,
-        values=values,
-        round_digits=state.round_digits,
-    )
-    if len(values) < state.period:
-        return (
-            next_state,
-            IndicatorPoint(
-                bar_end=bar_end,
-                value=None,
-                ready=False,
-                valid=True,
-                reason="warming_up",
-            ),
-        )
-    return (
-        next_state,
-        IndicatorPoint(
-            bar_end=bar_end,
-            value=round(sum(values) / state.period, state.round_digits),
-            ready=True,
-            valid=True,
-        ),
-    )
-```
-
-Do not add pandas/numpy or an unbounded history.
-
-- [ ] **Step 4: Export the primitive and make focused tests GREEN**
-
-```bash
-PYTHONPATH=services/quant-api:packages/quant-core \
-  uv run --project services/quant-api pytest -q \
-  services/quant-api/tests/test_subing_ths_kernel.py -k sma
-```
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add packages/quant-core/guiyi_quant/indicators/models.py \
-        packages/quant-core/guiyi_quant/indicators/sma.py \
-        packages/quant-core/guiyi_quant/indicators/__init__.py \
-        services/quant-api/tests/test_subing_ths_kernel.py
-git commit -m "feat(indicators): add incremental SMA primitive"
-```
+S1 must not add a second SMA primitive, state type, export, or strategy-local rolling implementation. The Kernel owns only the frozen EMA21 state needed by this formula.
 
 ## 4.2 Implement `SubingThs15mKernel` as the only Candidate authority
 
@@ -281,7 +125,7 @@ git commit -m "feat(indicators): add incremental SMA primitive"
 - Create `packages/quant-core/guiyi_quant/indicators/subing_ths.py`
 - Modify `packages/quant-core/guiyi_quant/indicators/__init__.py`
 - Modify `services/quant-api/tests/test_subing_ths_kernel.py`
-- Create `tests/fixtures/subing_ths_15m_v1_golden.json`
+- Create `tests/fixtures/subing_ths_15m_v2_golden.json`
 
 - [ ] **Step 1: Write RED tests for identity and formula edges**
 
@@ -417,7 +261,7 @@ PYTHONPATH=services/quant-api:packages/quant-core \
 git add packages/quant-core/guiyi_quant/indicators/subing_ths.py \
         packages/quant-core/guiyi_quant/indicators/__init__.py \
         services/quant-api/tests/test_subing_ths_kernel.py \
-        tests/fixtures/subing_ths_15m_v1_golden.json
+        tests/fixtures/subing_ths_15m_v2_golden.json
 git commit -m "feat(indicators): add SuBing THS 15m kernel"
 ```
 

@@ -11,7 +11,6 @@ from .htdy_strict import BOOLEAN_FIELDS as HTDY_STRICT_BOOLEAN_FIELDS
 from .htdy_strict import NUMERIC_FIELDS as HTDY_STRICT_NUMERIC_FIELDS
 from .htdy_strict import compute_strict_fields
 from .macd import initial_macd_state, macd_series, step_macd
-from .sma import initial_sma_state, step_sma
 from .subing_ths import (
     SUBING_THS_FORMULA_VERSION,
     SubingThs15mKernel,
@@ -49,7 +48,6 @@ from .models import (
     MacdState,
     RepaintingRisk,
     SeedPolicy,
-    SmaState,
     build_indicator_definition,
     definition_to_metadata,
     parameters_hash,
@@ -107,7 +105,6 @@ __all__ = [
     "RANGE_DETECTOR_DISPLAY_CONSUMER",
     "RepaintingRisk",
     "SeedPolicy",
-    "SmaState",
     "SUBING_THS_FORMULA_VERSION",
     "SubingThs15mKernel",
     "SubingThs15mResult",
@@ -143,8 +140,6 @@ __all__ = [
     "step_ema",
     "step_atr",
     "step_macd",
-    "initial_sma_state",
-    "step_sma",
     "step_range_detector_lux",
     "validate_definition_capabilities",
     "xma",
