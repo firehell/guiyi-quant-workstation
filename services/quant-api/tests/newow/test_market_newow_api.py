@@ -111,6 +111,10 @@ def _result() -> SimpleNamespace:
         first_seen_at=stamp,
         state_changed_at=stamp,
         score=88.0,
+        score_breakdown={"shape": 42.0},
+        hard_failures=(),
+        diagnostics=("formed",),
+        volume_facts={"ratio": 1.25},
         formula_version="cup",
     )
     return SimpleNamespace(
@@ -165,8 +169,8 @@ def test_get_newow_trend_detail_maps_safe_typed_facts(monkeypatch) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["meta"] == {
-        "strategy": "newow_trend_v1",
-        "profile": "newow_trend_d1_v1",
+        "strategy_code": "newow_trend_v1",
+        "profile_id": "newow_trend_d1_v1",
         "frequency": "1d",
         "series_kind": "actual_dominant",
         "calculation_identity": "calculation",
@@ -180,6 +184,11 @@ def test_get_newow_trend_detail_maps_safe_typed_facts(monkeypatch) -> None:
         "NEWOW_ESCAPE_D3",
     ]
     assert body["cup_handles"][0]["confirmed_at"].endswith("Z")
+    assert body["cup_handles"][0]["score_breakdown"] == {"shape": 42.0}
+    assert body["cup_handles"][0]["hard_failures"] == []
+    assert body["cup_handles"][0]["diagnostics"] == ["formed"]
+    assert body["cup_handles"][0]["volume_facts"] == {"ratio": 1.25}
+    assert body["bar_policy"] == "completed_only"
 
 
 def test_newow_route_rejects_nonfixed_params_and_is_get_only(monkeypatch) -> None:
@@ -247,3 +256,49 @@ def test_newow_invalid_product_and_range_are_public_422_codes(monkeypatch) -> No
 
     assert product.json() == {"detail": {"code": "NEWOW_INVALID_PRODUCT"}}
     assert window.json() == {"detail": {"code": "NEWOW_INVALID_RANGE"}}
+
+
+def test_newow_marker_facts_recursively_serialize_safe_values(monkeypatch) -> None:
+    result = _result()
+    stamp = datetime(2026, 1, 5, 7, tzinfo=UTC)
+    result.markers[0].trigger_facts = {
+        "decimal": Decimal("1.2300"),
+        "day": date(2026, 1, 5),
+        "at": stamp,
+        "nested": [True, {"price": Decimal("2.50")}],
+    }
+
+    with _client(monkeypatch, result) as client:
+        response = client.get(
+            "/api/v1/market/newow/trend-detail?product=rb&from=2026-01-05&through=2026-01-05"
+        )
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["trend_markers"][0]["trigger_facts"] == {
+        "decimal": "1.2300",
+        "day": "2026-01-05",
+        "at": "2026-01-05T07:00:00Z",
+        "nested": [True, {"price": "2.50"}],
+    }
+
+
+def test_newow_rejects_unsafe_marker_facts_without_repr_or_path_leak(
+    monkeypatch,
+) -> None:
+    result = _result()
+
+    class _Unsafe:
+        def __repr__(self) -> str:
+            return "Unsafe(/private/secret)"
+
+    result.markers[0].trigger_facts = {"unsafe": _Unsafe()}
+    with _client(monkeypatch, result) as client:
+        response = client.get(
+            "/api/v1/market/newow/trend-detail?product=rb&from=2026-01-05&through=2026-01-05"
+        )
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": {"code": "NEWOW_DATA_IDENTITY_INVALID"}}
+    assert "/private/secret" not in response.text

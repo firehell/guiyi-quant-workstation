@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
@@ -13,8 +14,8 @@ class _Out(BaseModel):
 
 
 class NewowMetaOut(_Out):
-    strategy: str
-    profile: str
+    strategy_code: str
+    profile_id: str
     frequency: str
     series_kind: str
     calculation_identity: str
@@ -84,6 +85,10 @@ class NewowCupHandleOut(_Out):
     first_seen_at: datetime
     state_changed_at: datetime
     score: float
+    score_breakdown: dict[str, float]
+    hard_failures: list[str]
+    diagnostics: list[str]
+    volume_facts: dict[str, float]
     formula_version: str
 
 
@@ -101,6 +106,7 @@ class NewowTrendDetailResponse(_Out):
     meta: NewowMetaOut
     instrument: NewowInstrumentOut
     bars: list[NewowBarOut]
+    bar_policy: Literal["completed_only"]
     trend_band: list[NewowTrendBandOut]
     trend_markers: list[NewowMarkerOut]
     escape_markers: list[NewowMarkerOut]

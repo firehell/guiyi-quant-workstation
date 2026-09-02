@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, date, datetime
+from decimal import Decimal
+from math import isfinite
 from typing import Literal
+from collections.abc import Mapping
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from guiyi_quant.newow.models import CupPivot, NewowCupHandleOverlay, NewowMainMarker
@@ -50,6 +53,7 @@ def newow_trend_detail(
         result = NewowTrendDetailService(build_market_data_service(session)).query(
             NewowTrendDetailQuery(product, from_, through)
         )
+        return _response(result)
     except NewowTrendDetailError as exc:
         raise HTTPException(
             status_code=422 if exc.code in _CLIENT_ERRORS else 409,
@@ -60,15 +64,14 @@ def newow_trend_detail(
         if code not in _CLIENT_ERRORS:
             code = "NEWOW_DATA_UNAVAILABLE"
         raise HTTPException(status_code=422, detail={"code": code}) from exc
-    return _response(result)
 
 
 def _response(result: NewowTrendDetailResult) -> NewowTrendDetailResponse:
     markers = tuple(_marker(marker) for marker in result.markers)
     return NewowTrendDetailResponse(
         meta=NewowMetaOut(
-            strategy="newow_trend_v1",
-            profile=result.instrument.profile_id,
+            strategy_code="newow_trend_v1",
+            profile_id=result.instrument.profile_id,
             frequency=result.instrument.frequency,
             series_kind=result.instrument.series_kind,
             calculation_identity=result.calculation_identity,
@@ -95,6 +98,7 @@ def _response(result: NewowTrendDetailResult) -> NewowTrendDetailResponse:
             )
             for bar in result.bars
         ],
+        bar_policy="completed_only",
         trend_band=[
             NewowTrendBandOut(
                 bar_end=frame.bar.bar_end,
@@ -157,7 +161,7 @@ def _marker(marker: NewowMainMarker) -> NewowMarkerOut:
         color_token=marker.color_token,
         priority=marker.priority,
         related_marker_ids=tuple(marker.related_marker_ids),
-        trigger_facts=dict(marker.trigger_facts),
+        trigger_facts=_safe_mapping(marker.trigger_facts),
         formula_version=marker.formula_version,
     )
 
@@ -186,5 +190,63 @@ def _cup_handle(value: NewowCupHandleOverlay) -> NewowCupHandleOut:
         first_seen_at=value.first_seen_at,
         state_changed_at=value.state_changed_at,
         score=value.score,
+        score_breakdown=_safe_float_mapping(value.score_breakdown),
+        hard_failures=_safe_strings(value.hard_failures),
+        diagnostics=_safe_strings(value.diagnostics),
+        volume_facts=_safe_float_mapping(value.volume_facts),
         formula_version=value.formula_version,
     )
+
+
+def _safe_mapping(values: Mapping[str, object]) -> dict[str, object]:
+    return {key: _safe_value(value) for key, value in values.items() if _safe_key(key)}
+
+
+def _safe_key(value: object) -> bool:
+    if not isinstance(value, str):
+        raise NewowTrendDetailError("NEWOW_DATA_IDENTITY_INVALID")
+    return True
+
+
+def _safe_value(value: object) -> object:
+    if value is None or isinstance(value, (str, bool, int)):
+        return value
+    if isinstance(value, float):
+        if isfinite(value):
+            return value
+        raise NewowTrendDetailError("NEWOW_DATA_IDENTITY_INVALID")
+    if isinstance(value, Decimal):
+        if value.is_finite():
+            return format(value, "f")
+        raise NewowTrendDetailError("NEWOW_DATA_IDENTITY_INVALID")
+    if isinstance(value, datetime):
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise NewowTrendDetailError("NEWOW_DATA_IDENTITY_INVALID")
+        return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
+    if isinstance(value, date):
+        return value.isoformat()
+    if isinstance(value, Mapping):
+        return _safe_mapping(value)
+    if isinstance(value, (list, tuple)):
+        return [_safe_value(item) for item in value]
+    raise NewowTrendDetailError("NEWOW_DATA_IDENTITY_INVALID")
+
+
+def _safe_float_mapping(values: Mapping[str, float]) -> dict[str, float]:
+    mapped: dict[str, float] = {}
+    for key, value in values.items():
+        _safe_key(key)
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not isfinite(value)
+        ):
+            raise NewowTrendDetailError("NEWOW_DATA_IDENTITY_INVALID")
+        mapped[key] = float(value)
+    return mapped
+
+
+def _safe_strings(values: tuple[str, ...]) -> list[str]:
+    if any(not isinstance(value, str) for value in values):
+        raise NewowTrendDetailError("NEWOW_DATA_IDENTITY_INVALID")
+    return list(values)
