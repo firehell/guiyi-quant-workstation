@@ -8,7 +8,6 @@ from decimal import Decimal
 from fractions import Fraction
 from hashlib import sha256
 from math import isfinite
-from statistics import median
 from typing import Mapping
 
 from .models import (
@@ -348,11 +347,33 @@ def _decimal_ratio_below(
 
 
 def _decimal_over_fraction(
-    numerator: Decimal | Fraction, denominator: float
+    numerator: Decimal | Fraction, denominator: Fraction | None
 ) -> Fraction | None:
-    if not isfinite(denominator) or denominator <= 0:
+    if denominator is None or denominator <= 0:
         return None
-    return Fraction(numerator) / Fraction(Decimal(str(denominator)))
+    return Fraction(numerator) / denominator
+
+
+def _exact_atr_median(values: list[float]) -> Fraction | None:
+    """Interpret stored float ATRs by their public decimal spellings."""
+
+    exact: list[Fraction] = []
+    for value in values:
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not isfinite(value)
+            or value <= 0
+        ):
+            return None
+        exact.append(Fraction(Decimal(str(value))))
+    if not exact:
+        return None
+    exact.sort()
+    middle = len(exact) // 2
+    if len(exact) % 2:
+        return exact[middle]
+    return (exact[middle - 1] + exact[middle]) / 2
 
 
 def _finite_fact_values(
@@ -1495,7 +1516,7 @@ def _pretrend_score(
         close_start = Fraction(snapshots[0].bar.close)
         move = sign * (Fraction(left.price) - close_start)
         return_pct = move / close_start
-        atr_median = median(item.atr for item in snapshots)
+        atr_median = _exact_atr_median([item.atr for item in snapshots])
         move_atr = _decimal_over_fraction(move, atr_median)
         if move_atr is None:
             continue
@@ -1608,7 +1629,7 @@ def _body_facts(
     right_price = _normal_fraction(direction, right.price)
     rim_price = (left_price + right_price) / 2
     cup_depth = rim_price - bottom_price
-    atr_median = median(item.atr for item in snapshots)
+    atr_median = _exact_atr_median([item.atr for item in snapshots])
     if cup_depth <= 0 or rim_price == 0:
         diagnostics.append("CUP_DEPTH_BELOW_10_PERCENT")
         return None, _unique(diagnostics)

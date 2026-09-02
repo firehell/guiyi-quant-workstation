@@ -12,6 +12,8 @@ from guiyi_quant.newow.cup_handle import (
     CupBarSnapshot,
     CupPivotTrackerState,
     WilderAtrState,
+    _body_facts,
+    _pretrend_score,
     calculate_cup_handle_series,
     initial_cup_handle_state,
     step_cup_handle,
@@ -341,6 +343,63 @@ def _with_exact_pivot_snapshot_prices(case: RestoredCupCase) -> RestoredCupCase:
     return replace(
         case,
         state=replace(case.state, eligible_bars=tuple(snapshots)),
+    )
+
+
+def _with_even_atr_values(
+    snapshots: tuple[CupBarSnapshot, ...],
+    *,
+    start: int,
+    end: int,
+    lower: float,
+    upper: float,
+) -> tuple[CupBarSnapshot, ...]:
+    """Replace one even-sized ATR window without changing its Bar facts."""
+
+    count = end - start + 1
+    assert count > 0 and count % 2 == 0
+    values = [lower] * (count // 2) + [upper] * (count // 2)
+    changed = list(snapshots)
+    for index, atr in zip(range(start, end + 1), values, strict=True):
+        changed[index] = replace(changed[index], atr=atr)
+    return tuple(changed)
+
+
+def _even_atr_body_facts(
+    *,
+    left_price: Decimal = Decimal("100"),
+    bottom_price: Decimal,
+    right_price: Decimal = Decimal("100"),
+    lower_atr: float = 10.0,
+    upper_atr: float = 10.000000000000002,
+    profile=NEWOW_TREND_D1_V1,
+) -> tuple[object | None, tuple[str, ...]]:
+    case = restored_cup_case(
+        left_index=30,
+        bottom_index=44,
+        right_index=59,
+        handle_index=64,
+        handle_confirmed_index=67,
+        left_price=left_price,
+        bottom_price=bottom_price,
+        right_price=right_price,
+    )
+    snapshots = _with_even_atr_values(
+        case.state.eligible_bars,
+        start=30,
+        end=59,
+        lower=lower_atr,
+        upper=upper_atr,
+    )
+    by_index = {snapshot.eligible_index: snapshot for snapshot in snapshots}
+    left, bottom, right = case.state.confirmed_pivots[:3]
+    return _body_facts(
+        CupHandleDirection.BULLISH,
+        left,
+        bottom,
+        right,
+        by_index,
+        profile,
     )
 
 
@@ -1035,6 +1094,126 @@ def test_decimal_exact_geometry_boundaries_survive_float_cancellation(
 
     assert rounded_failure not in result.diagnostics
     assert result.active_overlay is not None
+
+
+def test_even_atr_median_rejects_depth_below_three_exact_atr() -> None:
+    """A rounded-down float median must not admit a sub-3-ATR cup body."""
+
+    facts, diagnostics = _even_atr_body_facts(
+        bottom_price=Decimal("69.9999999999999985"),
+    )
+
+    assert facts is None
+    assert "CUP_DEPTH_BELOW_3_ATR" in diagnostics
+
+
+def test_even_atr_median_keeps_depth_below_four_in_lower_score_bucket() -> None:
+    """The exact even median keeps a sub-4-ATR body out of the five-point bucket."""
+
+    facts, diagnostics = _even_atr_body_facts(
+        bottom_price=Decimal("59.999999999999998"),
+    )
+
+    assert diagnostics == ()
+    assert facts is not None
+    assert facts.breakdown["cup_geometry"] == 17.0
+
+
+def test_even_atr_median_keeps_rim_gap_inside_one_point_five_atr() -> None:
+    """A rounded-down float median must not reject an exact legal rim gap."""
+
+    facts, diagnostics = _even_atr_body_facts(
+        left_price=Decimal("107.5000000000000005"),
+        bottom_price=Decimal("60"),
+        right_price=Decimal("92.4999999999999995"),
+        profile=replace(NEWOW_TREND_D1_V1, cup_rim_gap_max_pct=1.0),
+    )
+
+    assert "RIM_GAP_ATR_EXCEEDED" not in diagnostics
+    assert facts is not None
+
+
+def test_even_atr_median_keeps_rim_gap_in_zero_point_seven_five_bucket() -> None:
+    """The exact even median preserves the inclusive 0.75-ATR rim score."""
+
+    facts, diagnostics = _even_atr_body_facts(
+        left_price=Decimal("100.375000000000000025"),
+        bottom_price=Decimal("65"),
+        right_price=Decimal("99.624999999999999975"),
+        lower_atr=1.0,
+        upper_atr=1.0000000000000002,
+        profile=replace(NEWOW_TREND_D1_V1, cup_rim_gap_max_pct=1.0),
+    )
+
+    assert diagnostics == ()
+    assert facts is not None
+    assert facts.breakdown["cup_geometry"] == 23.0
+
+
+def test_finite_large_even_atr_median_does_not_overflow() -> None:
+    """Two finite large middle values remain a finite exact median."""
+
+    facts, diagnostics = _even_atr_body_facts(
+        bottom_price=Decimal("60"),
+        lower_atr=1e308,
+        upper_atr=1e308,
+    )
+
+    assert facts is None
+    assert "CUP_DEPTH_BELOW_3_ATR" in diagnostics
+    assert "CUP_ATR_UNAVAILABLE" not in diagnostics
+
+
+@pytest.mark.parametrize(
+    ("start_close", "left_price", "expected_score"),
+    (
+        (Decimal("96"), Decimal("100.00000000000000015"), None),
+        (Decimal("94"), Decimal("100.0000000000000002"), 10.0),
+    ),
+)
+def test_even_atr_median_preserves_pretrend_four_atr_and_strength_buckets(
+    start_close: Decimal,
+    left_price: Decimal,
+    expected_score: float | None,
+) -> None:
+    """Pretrend uses the same exact median for its 4-ATR gate and 1.5 bucket."""
+
+    case = restored_cup_case()
+    snapshots = list(
+        _with_even_atr_values(
+            case.state.eligible_bars,
+            start=1,
+            end=30,
+            lower=1.0,
+            upper=1.0000000000000002,
+        )
+    )
+    final_close = left_price - Decimal("1")
+    for offset, index in enumerate(range(1, 31)):
+        close = start_close + (final_close - start_close) * Decimal(offset) / Decimal(29)
+        snapshots[index] = replace(
+            snapshots[index],
+            bar=replace(
+                snapshots[index].bar,
+                open=close,
+                high=close + Decimal("1"),
+                low=close - Decimal("1"),
+                close=close,
+            ),
+        )
+    left = replace(case.state.confirmed_pivots[0], price=left_price)
+    score = _pretrend_score(
+        CupHandleDirection.BULLISH,
+        left,
+        {snapshot.eligible_index: snapshot for snapshot in snapshots},
+        replace(
+            NEWOW_TREND_D1_V1,
+            cup_pretrend_min_bars=29,
+            cup_pretrend_max_bars=29,
+        ),
+    )
+
+    assert score == expected_score
 
 
 def test_pretrend_move_below_four_atr_is_rejected_before_float_rounding() -> None:
