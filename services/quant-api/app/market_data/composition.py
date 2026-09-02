@@ -24,9 +24,9 @@ from app.market_data.market_home_overview import (
     MarketHomeOverviewService,
 )
 from app.market_data.market_home_projection import (
-    DEFAULT_MARKET_HOME_PROJECTION_PATH,
     MarketHomeProjection,
     MarketHomeProjectionStore,
+    market_home_projection_path,
 )
 from app.market_data.market_phase import MarketPhaseResolver
 from app.market_data.market_read_service import MarketReadService
@@ -127,11 +127,12 @@ def build_market_home_overview_service(session: Session) -> MarketHomeOverviewSe
 
 
 def build_market_home_projection(session: Session) -> MarketHomeProjection:
-    """Compose the runtime-local derived overview projection."""
+    """Compose the shared-root derived overview projection."""
 
+    root = canonical_root()
     return MarketHomeProjection(
         service=build_market_home_overview_service(session),
-        store=MarketHomeProjectionStore(DEFAULT_MARKET_HOME_PROJECTION_PATH),
+        store=MarketHomeProjectionStore(market_home_projection_path(root)),
     )
 
 
