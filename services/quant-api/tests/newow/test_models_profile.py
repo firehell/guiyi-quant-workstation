@@ -1,4 +1,4 @@
-from dataclasses import FrozenInstanceError
+from dataclasses import FrozenInstanceError, replace
 from datetime import UTC, date, datetime
 from decimal import Decimal
 
@@ -6,8 +6,10 @@ import pytest
 
 from guiyi_quant.newow.models import (
     CupHandleDirection,
-    NewowCupHandleOverlay,
     CupHandleState,
+    CupPivot,
+    CupPivotKind,
+    NewowCupHandleOverlay,
     NewowDailyBar,
     NewowMainMarker,
     NewowMarkerType,
@@ -49,6 +51,35 @@ def test_newow_profile_is_exact_and_immutable() -> None:
     assert profile.cup_handle_formula == "newow_cup_handle_v1"
     with pytest.raises(FrozenInstanceError):
         profile.frequency = "60m"  # type: ignore[misc]
+
+
+def test_cup_profile_and_pivot_contract_reject_invalid_values() -> None:
+    """Invalid cup thresholds or a non-causal pivot would admit non-reproducible setups."""
+
+    profile = NEWOW_TREND_D1_V1
+    assert profile.cup_atr_period == 14
+    assert profile.cup_pretrend_min_bars == 20
+    assert profile.cup_pretrend_max_bars == 60
+    assert profile.cup_depth_min_pct == 0.10
+    assert profile.cup_depth_hard_max_pct == 0.50
+    assert profile.cup_handle_min_bars == 5
+    assert profile.cup_handle_max_bars == 15
+    assert profile.cup_breakout_volume20_min_ratio == 1.20
+    assert profile.cup_ready_expiry_bars == 20
+    with pytest.raises(ValueError, match="NEWOW_PROFILE_INVALID"):
+        replace(profile, cup_depth_min_pct=float("nan"))
+
+    pivot_at = datetime(2026, 1, 5, 7, tzinfo=UTC)
+    with pytest.raises(ValueError, match="NEWOW_CUP_PIVOT_INVALID"):
+        CupPivot(
+            kind=CupPivotKind.HIGH,
+            price=Decimal("100"),
+            pivot_at=pivot_at,
+            confirmed_at=pivot_at,
+            pivot_index=3,
+            confirmed_index=2,
+            atr_at_pivot=1.0,
+        )
 
 
 def test_newow_daily_bar_requires_completed_d1_and_valid_ohlc() -> None:
@@ -146,20 +177,50 @@ def test_immutable_output_sequences_copy_caller_lists() -> None:
         priority=1,
         related_marker_ids=related,  # type: ignore[arg-type]
     )
+    pivot_at = datetime(2026, 1, 5, 7, tzinfo=UTC)
+    pivot = CupPivot(
+        kind=CupPivotKind.HIGH,
+        price=Decimal("3510"),
+        pivot_at=pivot_at,
+        confirmed_at=pivot_at,
+        pivot_index=0,
+        confirmed_index=0,
+        atr_at_pivot=1.0,
+    )
     overlay = NewowCupHandleOverlay(
         candidate_id="candidate-1",
         direction=CupHandleDirection.BULLISH,
         state=CupHandleState.FORMING,
-        left_rim=None,
-        bottom=None,
-        right_rim=None,
-        handle_start=None,
+        left_rim=pivot,
+        bottom=CupPivot(
+            kind=CupPivotKind.LOW,
+            price=Decimal("3480"),
+            pivot_at=pivot_at,
+            confirmed_at=pivot_at,
+            pivot_index=1,
+            confirmed_index=1,
+            atr_at_pivot=1.0,
+        ),
+        right_rim=CupPivot(
+            kind=CupPivotKind.HIGH,
+            price=Decimal("3510"),
+            pivot_at=pivot_at,
+            confirmed_at=pivot_at,
+            pivot_index=2,
+            confirmed_index=2,
+            atr_at_pivot=1.0,
+        ),
+        handle_start_at=pivot_at,
         handle_extreme=None,
         pivot_price=None,
-        confirmed_at=None,
-        first_seen_at=None,
-        score=None,
+        pivot_frozen_at=None,
+        confirmed_at=pivot_at,
+        first_seen_at=pivot_at,
+        state_changed_at=pivot_at,
+        score=45.0,
         hard_failures=failures,  # type: ignore[arg-type]
+        diagnostics=(),
+        formula_version="newow_cup_handle_v1",
     )
     markers = [marker]
     frame = NewowTrendFrame(

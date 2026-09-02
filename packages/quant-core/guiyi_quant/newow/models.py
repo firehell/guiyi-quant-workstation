@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
+from math import isfinite
 from types import MappingProxyType
 from typing import Mapping
 
@@ -29,6 +30,7 @@ class NewowMarkerType(StrEnum):
     CUP_HANDLE_BREAKOUT = "CUP_HANDLE_BREAKOUT"
     CUP_HANDLE_WEAKENED = "CUP_HANDLE_WEAKENED"
     CUP_HANDLE_INVALIDATED = "CUP_HANDLE_INVALIDATED"
+    CUP_HANDLE_EXPIRED = "CUP_HANDLE_EXPIRED"
 
 
 class EscapeSeverity(StrEnum):
@@ -50,6 +52,11 @@ class CupHandleState(StrEnum):
     WEAKENED = "WEAKENED"
     INVALIDATED = "INVALIDATED"
     EXPIRED = "EXPIRED"
+
+
+class CupPivotKind(StrEnum):
+    HIGH = "HIGH"
+    LOW = "LOW"
 
 
 def _freeze_mapping(values: Mapping[str, object]) -> Mapping[str, object]:
@@ -142,28 +149,67 @@ class NewowMainMarker:
 
 
 @dataclass(frozen=True, slots=True)
+class CupPivot:
+    kind: CupPivotKind
+    price: Decimal
+    pivot_at: datetime
+    confirmed_at: datetime
+    pivot_index: int
+    confirmed_index: int
+    atr_at_pivot: float
+
+    def __post_init__(self) -> None:
+        if (
+            not self.price.is_finite()
+            or self.price <= 0
+            or not isfinite(self.atr_at_pivot)
+            or self.atr_at_pivot <= 0
+            or self.confirmed_at < self.pivot_at
+            or self.confirmed_index < self.pivot_index
+            or self.pivot_index < 0
+        ):
+            raise ValueError("NEWOW_CUP_PIVOT_INVALID")
+
+
+@dataclass(frozen=True, slots=True)
 class NewowCupHandleOverlay:
     candidate_id: str
     direction: CupHandleDirection
     state: CupHandleState
-    left_rim: datetime | None
-    bottom: datetime | None
-    right_rim: datetime | None
-    handle_start: datetime | None
-    handle_extreme: datetime | None
+    left_rim: CupPivot
+    bottom: CupPivot
+    right_rim: CupPivot
+    handle_start_at: datetime
+    handle_extreme: CupPivot | None
     pivot_price: Decimal | None
-    confirmed_at: datetime | None
-    first_seen_at: datetime | None
-    score: float | None
+    pivot_frozen_at: datetime | None
+    confirmed_at: datetime
+    first_seen_at: datetime
+    state_changed_at: datetime
+    score: float
     score_breakdown: Mapping[str, float] = field(default_factory=dict)
     hard_failures: tuple[str, ...] = ()
+    diagnostics: tuple[str, ...] = ()
     volume_facts: Mapping[str, float] = field(default_factory=dict)
     formula_version: str = ""
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "score_breakdown", _freeze_mapping(self.score_breakdown))
         object.__setattr__(self, "hard_failures", tuple(self.hard_failures))
+        object.__setattr__(self, "diagnostics", tuple(self.diagnostics))
         object.__setattr__(self, "volume_facts", _freeze_mapping(self.volume_facts))
+        if not self.candidate_id or not self.formula_version or not isfinite(self.score):
+            raise ValueError("NEWOW_CUP_OVERLAY_INVALID")
+        if self.left_rim.kind != self.right_rim.kind or self.bottom.kind == self.left_rim.kind:
+            raise ValueError("NEWOW_CUP_OVERLAY_INVALID")
+        if self.state in {
+            CupHandleState.READY,
+            CupHandleState.BREAKOUT,
+            CupHandleState.WEAKENED,
+            CupHandleState.INVALIDATED,
+            CupHandleState.EXPIRED,
+        } and (self.handle_extreme is None or self.pivot_price is None or self.pivot_frozen_at is None):
+            raise ValueError("NEWOW_CUP_OVERLAY_INVALID")
 
 
 @dataclass(frozen=True, slots=True)
@@ -172,6 +218,9 @@ class NewowTrendFrame:
     trend_band: NewowTrendBandPoint
     markers: tuple[NewowMainMarker, ...]
     cup_handle: NewowCupHandleOverlay | None
+    rollover_started: bool = False
+    diagnostics: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "markers", tuple(self.markers))
+        object.__setattr__(self, "diagnostics", tuple(self.diagnostics))

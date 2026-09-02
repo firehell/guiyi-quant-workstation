@@ -1,6 +1,8 @@
 from .models import (
     CupHandleDirection,
     CupHandleState,
+    CupPivot,
+    CupPivotKind,
     EscapeSeverity,
     NewowCupHandleOverlay,
     NewowDailyBar,
@@ -20,11 +22,16 @@ from .trend_band import (
     step_trend_band,
 )
 from .escape_d123 import EscapeState, EscapeStepResult, calculate_escape_series, initial_escape_state, step_escape_d123
+from .cup_handle import CupHandleStateValue, CupHandleStepResult, calculate_cup_handle_series, initial_cup_handle_state, step_cup_handle
 
 __all__ = [
     "NEWOW_TREND_D1_V1",
     "CupHandleDirection",
     "CupHandleState",
+    "CupHandleStateValue",
+    "CupHandleStepResult",
+    "CupPivot",
+    "CupPivotKind",
     "EscapeSeverity",
     "EscapeState",
     "EscapeStepResult",
@@ -41,8 +48,11 @@ __all__ = [
     "TrendTransition",
     "calculate_trend_band",
     "calculate_escape_series",
+    "calculate_cup_handle_series",
     "initial_escape_state",
+    "initial_cup_handle_state",
     "step_escape_d123",
+    "step_cup_handle",
     "initial_trend_band_state",
     "step_trend_band",
 ]

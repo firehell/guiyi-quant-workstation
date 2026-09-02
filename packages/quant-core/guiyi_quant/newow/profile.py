@@ -1,4 +1,5 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
+from math import isfinite
 
 
 @dataclass(frozen=True, slots=True)
@@ -22,6 +23,66 @@ class NewowTrendProfile:
     cup_history_limit: int
     cup_max_confirmed_pivots: int
     cup_max_candidate_checks_per_step: int
+    cup_atr_period: int
+    cup_pretrend_min_bars: int
+    cup_pretrend_max_bars: int
+    cup_pretrend_min_return: float
+    cup_pretrend_min_move_atr: float
+    cup_min_bars: int
+    cup_max_bars: int
+    cup_depth_min_pct: float
+    cup_depth_preferred_max_pct: float
+    cup_depth_hard_max_pct: float
+    cup_depth_min_atr: float
+    cup_rim_gap_max_pct: float
+    cup_rim_gap_max_atr: float
+    cup_bottom_zone_ratio: float
+    cup_bottom_span_ready_min: int
+    cup_leg_ratio_soft_min: float
+    cup_leg_ratio_soft_max: float
+    cup_leg_ratio_hard_min: float
+    cup_leg_ratio_hard_max: float
+    cup_midline_crossings_soft_max: int
+    cup_midline_crossings_hard_max: int
+    cup_handle_min_bars: int
+    cup_handle_max_bars: int
+    cup_handle_depth_max_pct: float
+    cup_handle_retrace_max_ratio: float
+    cup_handle_upper_half_ratio: float
+    cup_handle_right_volume_max_ratio: float
+    cup_handle_baseline_volume_max_ratio: float
+    cup_breakout_buffer_atr: float
+    cup_breakout_volume20_min_ratio: float
+    cup_breakout_handle_volume_min_ratio: float
+    cup_forming_min_body_score: int
+    cup_ready_min_score: int
+    cup_breakout_min_score: int
+    cup_ready_expiry_bars: int
+    cup_post_breakout_archive_bars: int
+    cup_recent_terminal_ids_limit: int
+
+    def __post_init__(self) -> None:
+        values = tuple(
+            value
+            for field in fields(self)
+            if isinstance(value := getattr(self, field.name), (float, int))
+        )
+        if not all(isfinite(value) for value in values):
+            raise ValueError("NEWOW_PROFILE_INVALID")
+        if (
+            self.cup_atr_period <= 0
+            or self.cup_pretrend_min_bars <= 0
+            or self.cup_pretrend_min_bars > self.cup_pretrend_max_bars
+            or self.cup_min_bars <= 0
+            or self.cup_min_bars > self.cup_max_bars
+            or self.cup_handle_min_bars <= 0
+            or self.cup_handle_min_bars > self.cup_handle_max_bars
+            or not 0 < self.cup_depth_min_pct <= self.cup_depth_hard_max_pct
+            or self.cup_depth_hard_max_pct > 1
+            or not 0 < self.cup_handle_depth_max_pct < 1
+            or not 0 < self.cup_handle_retrace_max_ratio <= 1
+        ):
+            raise ValueError("NEWOW_PROFILE_INVALID")
 
 
 NEWOW_TREND_D1_V1 = NewowTrendProfile(
@@ -44,4 +105,41 @@ NEWOW_TREND_D1_V1 = NewowTrendProfile(
     cup_history_limit=220,
     cup_max_confirmed_pivots=32,
     cup_max_candidate_checks_per_step=256,
+    cup_atr_period=14,
+    cup_pretrend_min_bars=20,
+    cup_pretrend_max_bars=60,
+    cup_pretrend_min_return=0.10,
+    cup_pretrend_min_move_atr=4.0,
+    cup_min_bars=25,
+    cup_max_bars=90,
+    cup_depth_min_pct=0.10,
+    cup_depth_preferred_max_pct=0.35,
+    cup_depth_hard_max_pct=0.50,
+    cup_depth_min_atr=3.0,
+    cup_rim_gap_max_pct=0.05,
+    cup_rim_gap_max_atr=1.50,
+    cup_bottom_zone_ratio=0.25,
+    cup_bottom_span_ready_min=3,
+    cup_leg_ratio_soft_min=0.50,
+    cup_leg_ratio_soft_max=2.00,
+    cup_leg_ratio_hard_min=1 / 3,
+    cup_leg_ratio_hard_max=3.00,
+    cup_midline_crossings_soft_max=3,
+    cup_midline_crossings_hard_max=5,
+    cup_handle_min_bars=5,
+    cup_handle_max_bars=15,
+    cup_handle_depth_max_pct=0.15,
+    cup_handle_retrace_max_ratio=1 / 3,
+    cup_handle_upper_half_ratio=0.50,
+    cup_handle_right_volume_max_ratio=0.80,
+    cup_handle_baseline_volume_max_ratio=0.90,
+    cup_breakout_buffer_atr=0.10,
+    cup_breakout_volume20_min_ratio=1.20,
+    cup_breakout_handle_volume_min_ratio=1.50,
+    cup_forming_min_body_score=45,
+    cup_ready_min_score=80,
+    cup_breakout_min_score=85,
+    cup_ready_expiry_bars=20,
+    cup_post_breakout_archive_bars=20,
+    cup_recent_terminal_ids_limit=32,
 )
