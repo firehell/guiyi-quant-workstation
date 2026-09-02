@@ -12,7 +12,7 @@ Issue：#307
 
 产品身份：`subing_ths_alert_15m_v1`
 
-公式身份：`subing_ths_15m_v1`
+公式身份：`subing_ths_15m_v2`
 
 ---
 
@@ -20,7 +20,7 @@ Issue：#307
 
 本 Spec 定义一个全新的、最小化的苏冰预警产品。它只解决一个问题：
 
-> 对 `operational_products.txt` 授权的国内期货品种持续盯盘；每根正式 completed 15m K 完成后，按用户正在同花顺期货通使用的 MACD + MA21 公式判断；出现信号时创建正式 AlertEvent、最多尝试一次 PushPlus，并在 Market Web 中显示，最终是否交易由用户人工判断。
+> 对 `operational_products.txt` 授权的国内期货品种持续盯盘；每根正式 completed 15m K 完成后，按用户正在同花顺期货通使用的 MACD + EMA21 公式判断；出现信号时创建正式 AlertEvent、最多尝试一次 PushPlus，并在 Market Web 中显示，最终是否交易由用户人工判断。
 
 稳定闭环只有：
 
@@ -62,7 +62,7 @@ operational products
 ```text
 public_name      = 苏冰预警
 rule_code        = subing_ths_alert_15m_v1
-formula_version  = subing_ths_15m_v1
+formula_version  = subing_ths_15m_v2
 kind             = indicator_observation
 series_kind      = actual_dominant
 frequency        = 15m
@@ -85,25 +85,25 @@ auto_order       = false
 
 ## 4. 唯一正式公式
 
-用户提供的同花顺期货通公式是 V1 唯一业务来源：
+用户确认的同花顺期货通公式是当前冻结的唯一业务来源：
 
 ```text
 DIFF = EMA(CLOSE, 12) - EMA(CLOSE, 26)
 DEA  = EMA(DIFF, 9)
 MACD = 2 * (DIFF - DEA)
-MA21 = MA(CLOSE, 21)
+EMA21 = EMA(CLOSE, 21)
 
-BUY  = CROSS(DIFF, DEA) AND CLOSE > MA21
-SELL = CROSS(DEA, DIFF) AND CLOSE < MA21
+BUY  = CROSS(DIFF, DEA) AND CLOSE > EMA21
+SELL = CROSS(DEA, DIFF) AND CLOSE < EMA21
 ```
 
 其中：
 
 ```text
-MA(CLOSE, 21) = SMA21
+EMA(CLOSE, 21) = EMA21
 ```
 
-不是 EMA21。
+EMA21 是 EMA(CLOSE, 21)，并使用 sma_window seed。
 
 原公式中的 `幅度`、`偏移`、`DRAWTEXT` 和零轴绘制只服务于图形展示，不属于预警 Gate。
 
@@ -122,13 +122,13 @@ dead_cross[t] =
 正式 Candidate：
 
 ```text
-LONG_ALERT[t] = golden_cross[t] AND close[t] > SMA21[t]
-SHORT_ALERT[t] = dead_cross[t] AND close[t] < SMA21[t]
+LONG_ALERT[t] = golden_cross[t] AND close[t] > EMA21[t]
+SHORT_ALERT[t] = dead_cross[t] AND close[t] < EMA21[t]
 ```
 
 边界固定：
 
-- `close == SMA21`：不触发；
+- `close == EMA21`：不触发；
 - 当前 `DIFF == DEA`：不算完成 CROSS；
 - 上一根或当前任一必需指标未 ready / invalid：不触发；
 - 同一 completed 15m Bar 不允许同时生成 long 和 short；若实现产生双向结果，视为公式一致性错误并 fail-closed。
@@ -144,8 +144,7 @@ SHORT_ALERT[t] = dead_cross[t] AND close[t] < SMA21[t]
 ```text
 MACD 是否靠近零轴
 MACD 柱强弱
-EMA21
-MA21 斜率
+EMA21 斜率
 5m / 30m / 60m / D1 共振
 Daily Watch
 Range Detector
@@ -159,7 +158,7 @@ ATR 距离
 历史胜率
 ```
 
-未来如需增加过滤，必须建立新的 `formula_version`，不能静默修改 `subing_ths_15m_v1`。
+未来如需增加过滤，必须建立新的 `formula_version`，不能静默修改 `subing_ths_15m_v2`。
 
 ---
 
@@ -167,17 +166,17 @@ ATR 距离
 
 ### 6.1 单一正式 authority
 
-新增一个纯计算、无 I/O 的 `SubingThs15mKernel`，作为 `subing_ths_15m_v1` 唯一正式公式 authority。
+新增一个纯计算、无 I/O 的 `SubingThs15mKernel`，作为 `subing_ths_15m_v2` 唯一正式公式 authority。
 
 Kernel 内部复用现有 Quant Core：
 
 - `initial_ema_state` / `step_ema`；
 - `initial_macd_state` / `step_macd`；
-- 一个最小通用 SMA21 incremental primitive（若实现时已有等价 primitive 则直接复用）。
+- EMA21 使用现有通用 EMA incremental primitive。
 
 Alert evaluator 只负责输入身份校验和调用 Kernel；API、Web、notification formatter 不得复制公式。
 
-这样避免把当前通用 `MACD_VERSION` 或 evaluator 内部实现本身当成苏冰产品 identity；正式版本仍由 `formula_version=subing_ths_15m_v1` 冻结。
+这样避免把当前通用 `MACD_VERSION` 或 evaluator 内部实现本身当成苏冰产品 identity；正式版本仍由 `formula_version=subing_ths_15m_v2` 冻结。
 
 ### 6.2 V1 工程参数
 
@@ -190,7 +189,7 @@ signal           = 9
 ema_seed_policy  = sma_window
 histogram_scale  = 2
 round_digits     = 6
-sma_period       = 21
+ema_period       = 21
 ```
 
 说明：
@@ -238,10 +237,10 @@ Candidate 决策 Bar 必须属于当前 rank1 物理合约，指标递归状态�
 - warm-up Bar 严格早于当前决策 Bar；
 - 不使用未来 Bar；
 - pre-dominant Bar 本身不能生成 Candidate / Event；
-- 不跨合约拼接 EMA/MACD/SMA state；
+- 不跨合约拼接 EMA/MACD/EMA state；
 - 数据仍经 MarketDataService / Catalog 身份读取。
 
-如果同一物理合约历史不足以使 MACD/SMA ready，则返回 `warming_up`，不猜测、不跨合约补齐。
+如果同一物理合约历史不足以使 MACD/EMA ready，则返回 `warming_up`，不猜测、不跨合约补齐。
 
 ---
 
@@ -471,7 +470,7 @@ rule_code → title / formatter / audience
 
 触发：
 MACD 金叉
-收盘价位于 MA21 上方
+收盘价位于 EMA21 上方
 
 当前主力：RBxxxx
 信号K线：2026-09-02 10:45
@@ -489,7 +488,7 @@ MACD 金叉
 
 触发：
 MACD 死叉
-收盘价位于 MA21 下方
+收盘价位于 EMA21 下方
 
 当前主力：RBxxxx
 信号K线：2026-09-02 10:45
@@ -622,7 +621,7 @@ S↑  多头预警
 S↓  空头预警
 ```
 
-Marker 必须来自 AlertEvent。Web 不允许通过 MACD/SMA 自己创建正式 marker。
+Marker 必须来自 AlertEvent。Web 不允许通过 MACD/EMA 自己创建正式 marker。
 
 Tooltip：
 
@@ -630,18 +629,18 @@ Tooltip：
 苏冰预警
 15m 多头预警
 MACD 金叉
-Close > MA21 (SMA21)
+Close > EMA21
 2026-09-02 10:45
 RBxxxx
 ```
 
 HTDY 与苏冰 marker tone 必须区分。
 
-### 15.3 MA21 图线
+### 15.3 EMA21 图线
 
-V1 不强制新增 SMA21 主图线。
+V1 不强制新增 EMA21 主图线。
 
-本轮用户要求是“信号 Push + Web 显示”；正式价值先由 Event list + marker + deep link 完成。若后续需要可视化 `MA21 (SMA)`，作为通用只读指标单独实现，不能成为第二 Candidate authority。
+本轮用户要求是“信号 Push + Web 显示”；正式价值先由 Event list + marker + deep link 完成。若后续需要可视化 `EMA21`，作为通用只读指标单独实现，不能成为第二 Candidate authority。
 
 ---
 
@@ -714,7 +713,7 @@ release main/tag
 - actual_dominant 身份不可证明；
 - rank1 contract 不匹配；
 - warm-up 不足；
-- SMA/MACD invalid；
+- EMA/MACD invalid；
 - evaluator mapping 缺失；
 - Event facts 冲突。
 
@@ -749,12 +748,12 @@ Event 已持久化后，taxonomy / formatter / transport / provider acceptance �
 
 必须覆盖：
 
-- SMA21 arithmetic mean；
+- EMA21 的 sma_window seed 与递归计算；
 - EMA12 / EMA26 / DEA9；
 - histogram scale 2；
 - golden/dead cross；
 - equality edge；
-- `close == SMA21`；
+- `close == EMA21`；
 - warming / invalid；
 - batch-incremental parity；
 - prefix invariance；
@@ -825,7 +824,7 @@ isolated disposable PostgreSQL 必须覆盖：
 - 至少 2 个品种；
 - 至少 5 个金叉预警；
 - 至少 5 个死叉预警；
-- 核对 direction、completed 15m Bar 时间、CROSS、Close 相对 MA21、主力合约身份。
+- 核对 direction、completed 15m Bar 时间、CROSS、Close 相对 EMA21、主力合约身份。
 
 无法导出逐 Bar 指标值时可以用截图/时间点人工核验，但必须记录来源与判断依据。
 
@@ -889,7 +888,7 @@ G12 用户人工微信送达确认
 
 ```text
 S1 Formula Kernel
-   SMA21 + SubingThs15mKernel + same-contract warm-up + golden tests
+   EMA21 + SubingThs15mKernel + same-contract warm-up + golden tests
 
 S2 Alert Runtime
    rule evaluator registry + notification policy + Event + per-rule health
@@ -946,7 +945,7 @@ Web 复制正式公式
 8. **0043 成功而 0044 失败无法 downgrade**：明确保持 HTDY-only、服务停止、只允许 forward fix，retry 需新授权。
 9. **为解决漏推再次建设 Boundary Ledger**：只增加 bounded per-rule last-evaluated 状态，不增加新 Redis key/PG history。
 10. **PushPlus 为苏冰新增第二 Topic 配置会扩大私有配置面**：V1 复用现有 observers Topic；未来不同 audience 单独版本化。
-11. **Web 为复核复制 SMA/MACD 公式**：正式 marker 只读 Event，V1 不强制新增 SMA21 图线。
+11. **Web 为复核复制 EMA/MACD 公式**：正式 marker 只读 Event，V1 不强制新增 EMA21 图线。
 12. **直接声称同花顺逐 Bar 完全一致但 source formula 没给 seed**：工程 seed 固定、对外不夸大，真实通知前增加 source compatibility Gate。
 13. **通用 MACD primitive 版本名不应冒充产品 identity**：新增 `SubingThs15mKernel` 封装正式 formula identity，底层 primitive 只是数学依赖。
 
@@ -962,7 +961,7 @@ Placeholder、未决产品选择和需要实现者自行猜测的核心语义：
 
 - 新身份 `subing_ths_alert_15m_v1`；
 - completed actual_dominant 15m only；
-- MACD CROSS + SMA21 是唯一 Gate；
+- MACD CROSS + EMA21 是唯一 Gate；
 - `SubingThs15mKernel` 是唯一公式 authority；
 - 复用 0043 后通用 Alert schema；
 - 稳定生产 Rule 为 HTDY + 新苏冰；

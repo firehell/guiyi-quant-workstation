@@ -4,19 +4,19 @@ import math
 from dataclasses import dataclass
 from typing import Literal
 
+from .ema import initial_ema_state, step_ema
 from .macd import initial_macd_state, step_macd
-from .models import MacdState, SmaState
-from .sma import initial_sma_state, step_sma
+from .models import EmaState, MacdState
 
 
-SUBING_THS_FORMULA_VERSION = "subing_ths_15m_v1"
+SUBING_THS_FORMULA_VERSION = "subing_ths_15m_v2"
 SubingThsResultCode = Literal["buy", "sell"]
 
 
 @dataclass(frozen=True, slots=True)
 class SubingThs15mState:
     macd: MacdState
-    ma21: SmaState
+    ema21: EmaState
     previous_dif: float | None
     previous_dea: float | None
 
@@ -31,18 +31,18 @@ class SubingThs15mResult:
     dif: float | None
     dea: float | None
     macd: float | None
-    ma21: float | None
+    ema21: float | None
     result_codes: tuple[SubingThsResultCode, ...]
 
 
 class SubingThs15mKernel:
-    """Pure, incremental authority for ``subing_ths_15m_v1`` candidates."""
+    """Pure, incremental authority for ``subing_ths_15m_v2`` candidates."""
 
     formula_version = SUBING_THS_FORMULA_VERSION
     fast = 12
     slow = 26
     signal = 9
-    sma_period = 21
+    ema_period = 21
     ema_seed_policy: Literal["sma_window"] = "sma_window"
     histogram_scale: Literal[2] = 2
     round_digits = 6
@@ -57,7 +57,11 @@ class SubingThs15mKernel:
                 histogram_scale=self.histogram_scale,
                 round_digits=self.round_digits,
             ),
-            ma21=initial_sma_state(self.sma_period, round_digits=self.round_digits),
+            ema21=initial_ema_state(
+                self.ema_period,
+                seed_policy=self.ema_seed_policy,
+                round_digits=self.round_digits,
+            ),
             previous_dif=None,
             previous_dea=None,
         )
@@ -74,14 +78,14 @@ class SubingThs15mKernel:
             close,
             bar_end=bar_end,
         )
-        ma21_state, ma21_point = step_sma(state.ma21, close, bar_end=bar_end)
+        ema21_state, ema21_point = step_ema(state.ema21, close, bar_end=bar_end)
 
         if not all(
-            point.valid for point in (dif_point, dea_point, histogram_point, ma21_point)
+            point.valid for point in (dif_point, dea_point, histogram_point, ema21_point)
         ):
             return self._result(
                 macd_state,
-                ma21_state,
+                ema21_state,
                 bar_end=bar_end,
                 ready=False,
                 valid=False,
@@ -89,15 +93,15 @@ class SubingThs15mKernel:
                 dif=dif_point.value,
                 dea=dea_point.value,
                 macd=histogram_point.value,
-                ma21=ma21_point.value,
+                ema21=ema21_point.value,
             )
 
         if not all(
-            point.ready for point in (dif_point, dea_point, histogram_point, ma21_point)
+            point.ready for point in (dif_point, dea_point, histogram_point, ema21_point)
         ):
             return self._result(
                 macd_state,
-                ma21_state,
+                ema21_state,
                 bar_end=bar_end,
                 ready=False,
                 valid=True,
@@ -105,24 +109,24 @@ class SubingThs15mKernel:
                 dif=dif_point.value,
                 dea=dea_point.value,
                 macd=histogram_point.value,
-                ma21=ma21_point.value,
+                ema21=ema21_point.value,
             )
 
         dif = dif_point.value
         dea = dea_point.value
-        ma21 = ma21_point.value
+        ema21 = ema21_point.value
         macd = histogram_point.value
         rounded_close = _rounded_finite(close, self.round_digits)
         if (
             dif is None
             or dea is None
-            or ma21 is None
+            or ema21 is None
             or macd is None
             or rounded_close is None
         ):
             return self._result(
                 macd_state,
-                ma21_state,
+                ema21_state,
                 bar_end=bar_end,
                 ready=False,
                 valid=False,
@@ -130,7 +134,7 @@ class SubingThs15mKernel:
                 dif=dif,
                 dea=dea,
                 macd=macd,
-                ma21=ma21,
+                ema21=ema21,
             )
 
         golden = (
@@ -138,19 +142,19 @@ class SubingThs15mKernel:
             and state.previous_dea is not None
             and state.previous_dif <= state.previous_dea
             and dif > dea
-            and rounded_close > ma21
+            and rounded_close > ema21
         )
         dead = (
             state.previous_dif is not None
             and state.previous_dea is not None
             and state.previous_dif >= state.previous_dea
             and dif < dea
-            and rounded_close < ma21
+            and rounded_close < ema21
         )
         if golden and dead:
             return self._result(
                 macd_state,
-                ma21_state,
+                ema21_state,
                 bar_end=bar_end,
                 ready=False,
                 valid=False,
@@ -158,7 +162,7 @@ class SubingThs15mKernel:
                 dif=dif,
                 dea=dea,
                 macd=macd,
-                ma21=ma21,
+                ema21=ema21,
             )
 
         result_codes: tuple[SubingThsResultCode, ...]
@@ -170,7 +174,7 @@ class SubingThs15mKernel:
             result_codes = ()
         next_state = SubingThs15mState(
             macd=macd_state,
-            ma21=ma21_state,
+            ema21=ema21_state,
             previous_dif=dif,
             previous_dea=dea,
         )
@@ -183,14 +187,14 @@ class SubingThs15mKernel:
             dif=dif,
             dea=dea,
             macd=macd,
-            ma21=ma21,
+            ema21=ema21,
             result_codes=result_codes,
         )
 
     def _result(
         self,
         macd_state: MacdState,
-        ma21_state: SmaState,
+        ema21_state: EmaState,
         *,
         bar_end: str | None,
         ready: bool,
@@ -199,12 +203,12 @@ class SubingThs15mKernel:
         dif: float | None,
         dea: float | None,
         macd: float | None,
-        ma21: float | None,
+        ema21: float | None,
     ) -> tuple[SubingThs15mState, SubingThs15mResult]:
         return (
             SubingThs15mState(
                 macd=macd_state,
-                ma21=ma21_state,
+                ema21=ema21_state,
                 previous_dif=None,
                 previous_dea=None,
             ),
@@ -217,7 +221,7 @@ class SubingThs15mKernel:
                 dif=dif,
                 dea=dea,
                 macd=macd,
-                ma21=ma21,
+                ema21=ema21,
                 result_codes=(),
             ),
         )
