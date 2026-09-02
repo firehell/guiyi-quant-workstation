@@ -11,7 +11,11 @@ from statistics import median
 from typing import Literal
 
 from app.market_data.domain import BarFrequency, CanonicalBar, SeriesKind, SeriesPageQuery
-from app.market_data.market_data_service import DominantContractSummary, MarketDataService
+from app.market_data.market_data_service import (
+    DominantContractSummary,
+    MarketDataError,
+    MarketDataService,
+)
 from app.market_data.product_retirement import normalize_symbol
 from app.market_data.product_taxonomy import ProductTaxonomyEntry
 from app.market_data.research_metrics import Trend, calculate_research_metrics
@@ -115,27 +119,19 @@ class MarketHomeOverviewService:
         stale_count = 0
         unavailable_count = 0
         for symbol in self._products:
-            daily = _through_target(
-                self._market_data.query_page(
-                    SeriesPageQuery(
-                        series_kind=SeriesKind.ACTUAL_DOMINANT,
-                        symbol=symbol,
-                        frequency=BarFrequency.D1,
-                        limit=300,
-                    )
-                ).bars,
-                target_as_of,
+            daily = _query_through_target(
+                self._market_data,
+                symbol=symbol,
+                frequency=BarFrequency.D1,
+                limit=300,
+                target_as_of=target_as_of,
             )
-            weekly = _through_target(
-                self._market_data.query_page(
-                    SeriesPageQuery(
-                        series_kind=SeriesKind.ACTUAL_DOMINANT,
-                        symbol=symbol,
-                        frequency=BarFrequency.W1,
-                        limit=80,
-                    )
-                ).bars,
-                target_as_of,
+            weekly = _query_through_target(
+                self._market_data,
+                symbol=symbol,
+                frequency=BarFrequency.W1,
+                limit=80,
+                target_as_of=target_as_of,
             )
             if not daily:
                 unavailable_count += 1
@@ -145,11 +141,12 @@ class MarketHomeOverviewService:
                 continue
             metrics = calculate_research_metrics(daily, weekly)
             dominant = dominants[symbol]
+            taxonomy = self._taxonomy[symbol]
             items.append(
                 MarketHomeItem(
                     symbol=symbol,
-                    product_name=dominant.product_name,
-                    sector=dominant.sector,
+                    product_name=taxonomy.name,
+                    sector=taxonomy.sector,
                     exchange=dominant.exchange,
                     actual_contract=dominant.actual_contract,
                     dominant_mapping_date=dominant.dominant_mapping_date,
@@ -211,6 +208,30 @@ def _through_target(
     bars: tuple[CanonicalBar, ...], target_as_of: date
 ) -> tuple[CanonicalBar, ...]:
     return tuple(bar for bar in bars if bar.trading_day <= target_as_of)
+
+
+def _query_through_target(
+    market_data: MarketDataService,
+    *,
+    symbol: str,
+    frequency: BarFrequency,
+    limit: int,
+    target_as_of: date,
+) -> tuple[CanonicalBar, ...]:
+    try:
+        result = market_data.query_page(
+            SeriesPageQuery(
+                series_kind=SeriesKind.ACTUAL_DOMINANT,
+                symbol=symbol,
+                frequency=frequency,
+                limit=limit,
+            )
+        )
+    except MarketDataError as exc:
+        if exc.code in {"QUERY_WINDOW_EMPTY", "DATASET_OR_PARTITION_MISSING"}:
+            return ()
+        raise MarketHomeOverviewError("MARKET_HOME_DATA_INTEGRITY_ERROR") from exc
+    return _through_target(result.bars, target_as_of)
 
 
 def _reason_codes(metrics) -> tuple[str, ...]:
