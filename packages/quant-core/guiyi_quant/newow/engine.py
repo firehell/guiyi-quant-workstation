@@ -4,9 +4,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime
+from decimal import Decimal
+from math import isclose, isfinite
 
 from .cup_handle import (
     CupHandleStateValue,
+    WilderAtrState,
     _state_is_valid as _cup_state_is_valid,
     initial_cup_handle_state,
     step_cup_handle,
@@ -45,6 +48,8 @@ class NewowTrendD1EngineState:
     last_bar_end: datetime | None
     last_trading_day: date | None
     eligibility_started: bool
+    source_bars: tuple[NewowDailyBar, ...] = ()
+    source_atr_before: WilderAtrState = WilderAtrState()
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,6 +68,8 @@ def _initial_state() -> NewowTrendD1EngineState:
         last_bar_end=None,
         last_trading_day=None,
         eligibility_started=False,
+        source_bars=(),
+        source_atr_before=WilderAtrState(),
     )
 
 
@@ -119,6 +126,8 @@ def _state_is_valid(state: object, profile: NewowTrendProfile) -> bool:
             state.last_bar_end is None
             and state.last_trading_day is None
             and not state.eligibility_started
+            and state.source_bars == ()
+            and state.source_atr_before == WilderAtrState()
             and all(identity == (None, None) for identity in identities)
         )
     return (
@@ -128,6 +137,155 @@ def _state_is_valid(state: object, profile: NewowTrendProfile) -> bool:
         and state.eligibility_started == state.cup_handle_state.eligible_started
         and _substate_history_is_coherent(state, profile)
     )
+
+
+def _source_history_limit(profile: NewowTrendProfile) -> int:
+    """Keep exactly the raw facts required by the bounded trend/escape states."""
+
+    return max(
+        profile.trend_weight_period + profile.trend_signal_period - 1,
+        profile.ma120_period + profile.ma120_slope_window - 1,
+        profile.var4_lookback,
+    )
+
+
+def _atr_state_is_valid(state: object) -> bool:
+    if not isinstance(state, WilderAtrState):
+        return False
+    if (
+        not isinstance(state.count, int)
+        or state.count < 0
+        or not isinstance(state.tr_total, float)
+        or not isfinite(state.tr_total)
+        or state.tr_total < 0.0
+    ):
+        return False
+    if state.atr is not None and (
+        not isinstance(state.atr, float) or not isfinite(state.atr) or state.atr <= 0.0
+    ):
+        return False
+    return state.previous_close is None or (
+        isinstance(state.previous_close, Decimal)
+        and state.previous_close.is_finite()
+        and state.previous_close > 0
+    )
+
+
+def _advance_atr(
+    state: WilderAtrState, bar: NewowDailyBar, period: int
+) -> WilderAtrState | None:
+    """Replay the Cup ATR transition from retained raw facts only."""
+
+    if not _atr_state_is_valid(state) or period <= 0:
+        return None
+    if not all(value.is_finite() for value in (bar.high, bar.low, bar.close)):
+        return None
+    previous_close = state.previous_close
+    tr = max(
+        float(bar.high - bar.low),
+        abs(float(bar.high - previous_close)) if previous_close is not None else 0.0,
+        abs(float(bar.low - previous_close)) if previous_close is not None else 0.0,
+    )
+    if not isfinite(tr) or tr < 0.0:
+        return None
+    count = state.count + 1
+    if state.atr is None and count < period:
+        return WilderAtrState(count, state.tr_total + tr, None, bar.close)
+    if state.atr is None:
+        total = state.tr_total + tr
+        atr = total / period
+        return (
+            None
+            if not isfinite(atr) or atr <= 0.0
+            else WilderAtrState(count, total, atr, bar.close)
+        )
+    atr = ((period - 1) * state.atr + tr) / period
+    return (
+        None
+        if not isfinite(atr) or atr <= 0.0
+        else WilderAtrState(count, 0.0, atr, bar.close)
+    )
+
+
+def _atr_states_match(left: WilderAtrState, right: WilderAtrState) -> bool:
+    return (
+        left.count == right.count
+        and left.previous_close == right.previous_close
+        and (left.atr is None) == (right.atr is None)
+        and isclose(left.tr_total, right.tr_total, rel_tol=1e-12, abs_tol=1e-12)
+        and (
+            left.atr is None
+            or right.atr is not None
+            and isclose(left.atr, right.atr, rel_tol=1e-12, abs_tol=1e-12)
+        )
+    )
+
+
+def _source_history_is_valid(
+    state: NewowTrendD1EngineState,
+    profile: NewowTrendProfile,
+) -> bool:
+    source = state.source_bars
+    processed_count = state.cup_handle_state.atr_state.count
+    if (
+        not isinstance(source, tuple)
+        or not _atr_state_is_valid(state.source_atr_before)
+        or len(source) != min(processed_count, _source_history_limit(profile))
+        or state.source_atr_before.count != processed_count - len(source)
+        or not source
+    ):
+        return False
+    prior_end: datetime | None = None
+    prior_day: date | None = None
+    for bar in source:
+        if (
+            not isinstance(bar, NewowDailyBar)
+            or bar.physical_contract != state.physical_contract
+            or bar.segment_id != state.segment_id
+            or not isinstance(bar.bar_end, datetime)
+            or bar.bar_end.tzinfo is None
+            or bar.bar_end.utcoffset() is None
+            or not isinstance(bar.trading_day, date)
+            or isinstance(bar.trading_day, datetime)
+            or (prior_end is not None and bar.bar_end <= prior_end)
+            or (prior_day is not None and bar.trading_day <= prior_day)
+        ):
+            return False
+        prior_end, prior_day = bar.bar_end, bar.trading_day
+    return (
+        source[-1].bar_end == state.last_bar_end
+        and source[-1].trading_day == state.last_trading_day
+    )
+
+
+def _source_atr_is_coherent(
+    state: NewowTrendD1EngineState,
+    profile: NewowTrendProfile,
+) -> bool:
+    replayed = state.source_atr_before
+    for bar in state.source_bars:
+        advanced = _advance_atr(replayed, bar, profile.cup_atr_period)
+        if advanced is None:
+            return False
+        replayed = advanced
+    return _atr_states_match(replayed, state.cup_handle_state.atr_state)
+
+
+def _next_source_basis(
+    state: NewowTrendD1EngineState,
+    bar: NewowDailyBar,
+    profile: NewowTrendProfile,
+) -> tuple[tuple[NewowDailyBar, ...], WilderAtrState]:
+    """Advance the bounded factual basis in lockstep with the three kernels."""
+
+    source = state.source_bars
+    before = state.source_atr_before
+    if len(source) == _source_history_limit(profile):
+        advanced = _advance_atr(before, source[0], profile.cup_atr_period)
+        assert advanced is not None
+        before = advanced
+        source = source[1:]
+    return source + (bar,), before
 
 
 def _substate_history_is_coherent(
@@ -150,64 +308,58 @@ def _substate_history_is_coherent(
         or len(state.trend_band_state.signal_window) != expected_signal_count
     ):
         return False
-    if not state.eligibility_started:
-        return True
-    snapshots = state.cup_handle_state.eligible_bars
-    if not snapshots:
-        return processed_count < profile.cup_atr_period
-    latest_bar = snapshots[-1].bar
-    latest_matches = (
-        latest_bar.bar_end == state.last_bar_end
-        and latest_bar.trading_day == state.last_trading_day
-        and latest_bar.physical_contract == state.physical_contract
-        and latest_bar.segment_id == state.segment_id
-    )
-    if not latest_matches:
+    if not _source_history_is_valid(state, profile) or not _source_atr_is_coherent(
+        state, profile
+    ):
         return False
 
-    typical_values = tuple(
-        _trend_typical_price(snapshot.bar, profile) for snapshot in snapshots
-    )
-    if any(value is None for value in typical_values):
+    source = state.source_bars
+    source_typicals = tuple(_trend_typical_price(bar, profile) for bar in source)
+    if any(value is None for value in source_typicals):
         return False
-    actual_typicals = tuple(value for value in typical_values if value is not None)
-    trend_overlap = min(
-        len(state.trend_band_state.weighted_window), len(actual_typicals)
-    )
-    if trend_overlap and state.trend_band_state.weighted_window[-trend_overlap:] != actual_typicals[-trend_overlap:]:
+    typicals = tuple(value for value in source_typicals if value is not None)
+    if state.trend_band_state.weighted_window != typicals[
+        -expected_weighted_count:
+    ]:
         return False
 
-    expected_signal: list[float] = []
-    for end in range(profile.trend_weight_period - 1, len(snapshots)):
-        window = snapshots[end - profile.trend_weight_period + 1 : end + 1]
-        if any(
-            right.eligible_index != left.eligible_index + 1
-            for left, right in zip(window, window[1:])
-        ):
-            continue
-        values = actual_typicals[
-            end - profile.trend_weight_period + 1 : end + 1
-        ]
-        expected_signal.append(
-            sum((index + 1) * value for index, value in enumerate(values))
-            / sum(range(1, profile.trend_weight_period + 1))
+    signal_source_count = profile.trend_weight_period + expected_signal_count - 1
+    signal_source = typicals[-signal_source_count:]
+    expected_signal = tuple(
+        sum((index + 1) * value for index, value in enumerate(window))
+        / sum(range(1, profile.trend_weight_period + 1))
+        for window in (
+            signal_source[index : index + profile.trend_weight_period]
+            for index in range(expected_signal_count)
         )
-    signal_overlap = min(len(state.trend_band_state.signal_window), len(expected_signal))
-    if signal_overlap and state.trend_band_state.signal_window[-signal_overlap:] != tuple(expected_signal[-signal_overlap:]):
+    )
+    if state.trend_band_state.signal_window != expected_signal:
         return False
 
-    escape_overlap = min(len(snapshots), len(state.escape_state.closes))
-    if not escape_overlap:
-        return True
-    recent_bars = tuple(snapshot.bar for snapshot in snapshots[-escape_overlap:])
-    return (
-        state.escape_state.closes[-escape_overlap:]
-        == tuple(float(bar.close) for bar in recent_bars)
-        and state.escape_state.highs[-escape_overlap:]
-        == tuple(float(bar.high) for bar in recent_bars)
-        and state.escape_state.lows[-escape_overlap:]
-        == tuple(float(bar.low) for bar in recent_bars)
-    )
+    escape = state.escape_state
+    if (
+        len(source) < escape.history_count + len(escape.ma120_prior_closes)
+        or escape.closes
+        != tuple(float(bar.close) for bar in source[-escape.history_count:])
+        or escape.highs
+        != tuple(float(bar.high) for bar in source[-escape.history_count:])
+        or escape.lows
+        != tuple(float(bar.low) for bar in source[-escape.history_count:])
+    ):
+        return False
+    if escape.ma120_prior_closes:
+        prior_end = -escape.history_count
+        prior_start = prior_end - len(escape.ma120_prior_closes)
+        if escape.ma120_prior_closes != tuple(
+            float(bar.close) for bar in source[prior_start:prior_end]
+        ):
+            return False
+
+    snapshots = state.cup_handle_state.eligible_bars
+    snapshot_overlap = min(len(snapshots), len(source))
+    return not snapshot_overlap or tuple(
+        snapshot.bar for snapshot in snapshots[-snapshot_overlap:]
+    ) == source[-snapshot_overlap:]
 
 
 def _unavailable_frame(bar: NewowDailyBar) -> NewowTrendFrame:
@@ -331,6 +483,9 @@ class NewowTrendD1Engine:
                 trend_result.marker, escape_result.markers, cup_result.markers
             )
         )
+        source_bars, source_atr_before = _next_source_basis(
+            state, bar, self._profile
+        )
         next_state = NewowTrendD1EngineState(
             trend_band_state=trend_result.state,
             escape_state=escape_result.state,
@@ -340,6 +495,8 @@ class NewowTrendD1Engine:
             last_bar_end=bar.bar_end,
             last_trading_day=bar.trading_day,
             eligibility_started=state.eligibility_started or bar.observation_eligible,
+            source_bars=source_bars,
+            source_atr_before=source_atr_before,
         )
         frame = NewowTrendFrame(
             bar=bar,

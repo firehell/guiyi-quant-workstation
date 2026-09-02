@@ -144,6 +144,14 @@ def _assert_real_kernel_parity(bars: tuple[NewowDailyBar, ...]):
         assert step.state.eligibility_started == (
             cup_state.eligible_started or bar.observation_eligible
         )
+        assert step.state.source_bars[-1] is bar
+        assert (
+            step.state.source_atr_before.count + len(step.state.source_bars)
+            == step.state.cup_handle_state.atr_state.count
+        )
+        if rollover:
+            assert step.state.source_bars == (bar,)
+            assert step.state.source_atr_before == WilderAtrState()
         assert step.state.escape_state.previous_rsv9 == escape.rsv9
         assert step.state.escape_state.previous_var4 == escape.var4
         if escape.ma120 is not None:
@@ -270,6 +278,12 @@ def _restore_engine_state_from_dict(data: dict[str, object]) -> NewowTrendD1Engi
         last_bar_end=data["last_bar_end"],  # type: ignore[arg-type]
         last_trading_day=data["last_trading_day"],  # type: ignore[arg-type]
         eligibility_started=data["eligibility_started"],  # type: ignore[arg-type]
+        source_bars=tuple(
+            _restore_bar(item) for item in data["source_bars"]  # type: ignore[arg-type]
+        ),
+        source_atr_before=WilderAtrState(
+            **data["source_atr_before"]  # type: ignore[arg-type]
+        ),
     )
 
 
@@ -502,6 +516,57 @@ def test_restore_rejects_foreign_escape_facts_that_disagree_with_cup_history() -
     assert result.state == NewowTrendD1Engine.initial().state
 
 
+@pytest.mark.parametrize("eligible", (False, True))
+def test_restore_rejects_foreign_escape_during_snapshot_free_warmup(eligible: bool) -> None:
+    """No Cup snapshot must not make cross-kernel OHLC coherence optional."""
+
+    primary = tuple(_bar(index, 100, eligible=eligible) for index in range(5))
+    foreign = tuple(_bar(index, 117, eligible=eligible) for index in range(5))
+    state = _run_incremental(primary)[-1].state
+    foreign_escape = _run_incremental(foreign)[-1].state.escape_state
+    restored = NewowTrendD1Engine(
+        state=replace(state, escape_state=foreign_escape)
+    )
+
+    result = restored.step(_bar(5, 101, eligible=eligible))
+
+    assert result.frame.trend_band.state is TrendBandState.UNAVAILABLE
+    assert result.frame.markers == ()
+    assert result.frame.diagnostics == ("NEWOW_ENGINE_STATE_INVALID",)
+    assert result.state == NewowTrendD1Engine.initial().state
+
+
+@pytest.mark.parametrize("eligible", (False, True))
+def test_snapshot_free_typed_and_plain_dict_restore_resume_exactly(eligible: bool) -> None:
+    """The factual basis survives both pre-eligibility and early-eligible restores."""
+
+    bars = tuple(_bar(index, 100 + index, eligible=eligible) for index in range(8))
+    full_steps = _run_incremental(bars)
+    full_frames = tuple(step.frame for step in full_steps)
+    for cut in (1, 5):
+        state = full_steps[cut - 1].state
+        assert state.cup_handle_state.eligible_bars == ()
+        assert state.cup_handle_state.atr_state.atr is None
+        dataclass_state = NewowTrendD1EngineState(
+            trend_band_state=state.trend_band_state,
+            escape_state=state.escape_state,
+            cup_handle_state=state.cup_handle_state,
+            physical_contract=state.physical_contract,
+            segment_id=state.segment_id,
+            last_bar_end=state.last_bar_end,
+            last_trading_day=state.last_trading_day,
+            eligibility_started=state.eligibility_started,
+            source_bars=state.source_bars,
+            source_atr_before=state.source_atr_before,
+        )
+        plain_dict_state = _restore_engine_state_from_dict(asdict(state))
+
+        for restored_state in (dataclass_state, plain_dict_state):
+            restored = NewowTrendD1Engine(state=restored_state)
+            assert tuple(restored.step(bar).frame for bar in bars[cut:]) == full_frames[cut:]
+            assert restored.state == full_steps[-1].state
+
+
 def test_dataclass_and_plain_dict_reconstruction_resume_same_shared_state() -> None:
     """Both explicit dataclass and plain-dict reconstructions preserve a genuine shared cut."""
 
@@ -518,6 +583,8 @@ def test_dataclass_and_plain_dict_reconstruction_resume_same_shared_state() -> N
             last_bar_end=state.last_bar_end,
             last_trading_day=state.last_trading_day,
             eligibility_started=state.eligibility_started,
+            source_bars=state.source_bars,
+            source_atr_before=state.source_atr_before,
         )
         plain_dict_state = _restore_engine_state_from_dict(asdict(state))
 
@@ -548,6 +615,8 @@ def test_batch_incremental_prefix_restore_and_future_tail_are_invariant() -> Non
                 last_bar_end=state.last_bar_end,
                 last_trading_day=state.last_trading_day,
                 eligibility_started=state.eligibility_started,
+                source_bars=state.source_bars,
+                source_atr_before=state.source_atr_before,
             )
         )
         resumed = tuple(restored.step(bar).frame for bar in bars[cut:])
@@ -613,6 +682,8 @@ def test_every_prefix_and_genuine_dataclass_plain_dict_restore_matches_full_run(
                 last_bar_end=state.last_bar_end,
                 last_trading_day=state.last_trading_day,
                 eligibility_started=state.eligibility_started,
+                source_bars=state.source_bars,
+                source_atr_before=state.source_atr_before,
             )
             plain_dict_state = _restore_engine_state_from_dict(asdict(state))
             for restored_state in (dataclass_state, plain_dict_state):
