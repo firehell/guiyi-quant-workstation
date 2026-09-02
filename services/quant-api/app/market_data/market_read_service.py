@@ -297,12 +297,21 @@ class MarketReadService:
             after=normalized_after,
         )
         try:
-            live = self._live_store.bars_after(
+            observations = self._live_store.bar_observations(
                 decision_window.trading_day,
                 decision_window.symbol,
                 frequency.value,
                 None,
+                cutoff,
+                inclusive_after=False,
+                expected_contract=contract,
             )
+            if any(
+                type(item) is not LiveBarObservation or item.contract != contract
+                for item in observations
+            ):
+                raise ValueError("LIVE_BAR_PROVENANCE_INVALID")
+            live = tuple(item.bar for item in observations)
         except Exception as exc:  # noqa: BLE001 - Alert input must be complete
             raise MarketReadWindowError("MARKET_READ_LIVE_UNAVAILABLE") from exc
 
