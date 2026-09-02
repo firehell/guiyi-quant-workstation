@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime
-from hashlib import sha256
-import pickle
 
 from .cup_handle import (
     CupHandleStateValue,
@@ -30,6 +28,7 @@ from .models import (
 from .profile import NEWOW_TREND_D1_V1, NewowTrendProfile
 from .trend_band import (
     TrendBandStateValue,
+    _typical_price as _trend_typical_price,
     _valid_state as _trend_band_state_is_valid,
     initial_trend_band_state,
     step_trend_band,
@@ -46,9 +45,6 @@ class NewowTrendD1EngineState:
     last_bar_end: datetime | None
     last_trading_day: date | None
     eligibility_started: bool
-    trend_band_receipt: str | None = None
-    escape_receipt: str | None = None
-    cup_handle_receipt: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,9 +63,6 @@ def _initial_state() -> NewowTrendD1EngineState:
         last_bar_end=None,
         last_trading_day=None,
         eligibility_started=False,
-        trend_band_receipt=None,
-        escape_receipt=None,
-        cup_handle_receipt=None,
     )
 
 
@@ -127,92 +120,20 @@ def _state_is_valid(state: object, profile: NewowTrendProfile) -> bool:
             and state.last_trading_day is None
             and not state.eligibility_started
             and all(identity == (None, None) for identity in identities)
-            and state.trend_band_receipt is None
-            and state.escape_receipt is None
-            and state.cup_handle_receipt is None
         )
     return (
         state.last_bar_end is not None
         and state.last_trading_day is not None
         and all(identity == engine_identity for identity in identities)
         and state.eligibility_started == state.cup_handle_state.eligible_started
-        and _substate_progress_is_coherent(state, profile)
-        and _substate_receipts_are_coherent(state)
+        and _substate_history_is_coherent(state, profile)
     )
 
 
-def _receipt(
-    kind: str,
-    substate: object,
-    bar_end: datetime,
-    trading_day: date,
-    physical_contract: str,
-    segment_id: str,
-) -> str:
-    payload = (
-        "newow_trend_d1_engine_state_v1",
-        kind,
-        substate,
-        bar_end,
-        trading_day,
-        physical_contract,
-        segment_id,
-    )
-    return sha256(pickle.dumps(payload, protocol=5)).hexdigest()
-
-
-def _substate_receipts_are_coherent(state: NewowTrendD1EngineState) -> bool:
-    if not all(
-        isinstance(receipt, str) and receipt
-        for receipt in (
-            state.trend_band_receipt,
-            state.escape_receipt,
-            state.cup_handle_receipt,
-        )
-    ):
-        return False
-    assert state.last_bar_end is not None
-    assert state.last_trading_day is not None
-    assert state.physical_contract is not None
-    assert state.segment_id is not None
-    try:
-        return (
-            state.trend_band_receipt
-            == _receipt(
-                "trend_band",
-                state.trend_band_state,
-                state.last_bar_end,
-                state.last_trading_day,
-                state.physical_contract,
-                state.segment_id,
-            )
-            and state.escape_receipt
-            == _receipt(
-                "escape",
-                state.escape_state,
-                state.last_bar_end,
-                state.last_trading_day,
-                state.physical_contract,
-                state.segment_id,
-            )
-            and state.cup_handle_receipt
-            == _receipt(
-                "cup_handle",
-                state.cup_handle_state,
-                state.last_bar_end,
-                state.last_trading_day,
-                state.physical_contract,
-                state.segment_id,
-            )
-        )
-    except (pickle.PickleError, TypeError, ValueError):
-        return False
-
-
-def _substate_progress_is_coherent(
+def _substate_history_is_coherent(
     state: NewowTrendD1EngineState, profile: NewowTrendProfile
 ) -> bool:
-    """Require one physical-segment processing cut across the three kernels."""
+    """Require shared retained market facts, not caller-supplied provenance claims."""
 
     processed_count = state.cup_handle_state.atr_state.count
     if processed_count <= 0:
@@ -235,11 +156,57 @@ def _substate_progress_is_coherent(
     if not snapshots:
         return processed_count < profile.cup_atr_period
     latest_bar = snapshots[-1].bar
-    return (
+    latest_matches = (
         latest_bar.bar_end == state.last_bar_end
         and latest_bar.trading_day == state.last_trading_day
         and latest_bar.physical_contract == state.physical_contract
         and latest_bar.segment_id == state.segment_id
+    )
+    if not latest_matches:
+        return False
+
+    typical_values = tuple(
+        _trend_typical_price(snapshot.bar, profile) for snapshot in snapshots
+    )
+    if any(value is None for value in typical_values):
+        return False
+    actual_typicals = tuple(value for value in typical_values if value is not None)
+    trend_overlap = min(
+        len(state.trend_band_state.weighted_window), len(actual_typicals)
+    )
+    if trend_overlap and state.trend_band_state.weighted_window[-trend_overlap:] != actual_typicals[-trend_overlap:]:
+        return False
+
+    expected_signal: list[float] = []
+    for end in range(profile.trend_weight_period - 1, len(snapshots)):
+        window = snapshots[end - profile.trend_weight_period + 1 : end + 1]
+        if any(
+            right.eligible_index != left.eligible_index + 1
+            for left, right in zip(window, window[1:])
+        ):
+            continue
+        values = actual_typicals[
+            end - profile.trend_weight_period + 1 : end + 1
+        ]
+        expected_signal.append(
+            sum((index + 1) * value for index, value in enumerate(values))
+            / sum(range(1, profile.trend_weight_period + 1))
+        )
+    signal_overlap = min(len(state.trend_band_state.signal_window), len(expected_signal))
+    if signal_overlap and state.trend_band_state.signal_window[-signal_overlap:] != tuple(expected_signal[-signal_overlap:]):
+        return False
+
+    escape_overlap = min(len(snapshots), len(state.escape_state.closes))
+    if not escape_overlap:
+        return True
+    recent_bars = tuple(snapshot.bar for snapshot in snapshots[-escape_overlap:])
+    return (
+        state.escape_state.closes[-escape_overlap:]
+        == tuple(float(bar.close) for bar in recent_bars)
+        and state.escape_state.highs[-escape_overlap:]
+        == tuple(float(bar.high) for bar in recent_bars)
+        and state.escape_state.lows[-escape_overlap:]
+        == tuple(float(bar.low) for bar in recent_bars)
     )
 
 
@@ -373,30 +340,6 @@ class NewowTrendD1Engine:
             last_bar_end=bar.bar_end,
             last_trading_day=bar.trading_day,
             eligibility_started=state.eligibility_started or bar.observation_eligible,
-            trend_band_receipt=_receipt(
-                "trend_band",
-                trend_result.state,
-                bar.bar_end,
-                bar.trading_day,
-                bar.physical_contract,
-                bar.segment_id,
-            ),
-            escape_receipt=_receipt(
-                "escape",
-                escape_result.state,
-                bar.bar_end,
-                bar.trading_day,
-                bar.physical_contract,
-                bar.segment_id,
-            ),
-            cup_handle_receipt=_receipt(
-                "cup_handle",
-                cup_result.state,
-                bar.bar_end,
-                bar.trading_day,
-                bar.physical_contract,
-                bar.segment_id,
-            ),
         )
         frame = NewowTrendFrame(
             bar=bar,

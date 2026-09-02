@@ -1,20 +1,24 @@
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import asdict, replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
-import pickle
 
 import pytest
 
 from guiyi_quant.newow.cup_handle import (
+    CupBarSnapshot,
+    CupHandleStateValue,
+    CupMilestoneFact,
+    CupPivotTrackerState,
+    WilderAtrState,
     calculate_cup_handle_series,
     initial_cup_handle_state,
     step_cup_handle,
 )
 from guiyi_quant.newow.engine import (
     NewowTrendD1Engine,
-    _receipt,
+    NewowTrendD1EngineState,
     calculate_newow_trend_frames,
 )
 from guiyi_quant.newow.escape_d123 import (
@@ -23,8 +27,15 @@ from guiyi_quant.newow.escape_d123 import (
     initial_escape_state,
     step_escape_d123,
 )
-from guiyi_quant.newow.models import NewowDailyBar, NewowMarkerType, TrendBandState
+from guiyi_quant.newow.models import (
+    CupPivot,
+    NewowCupHandleOverlay,
+    NewowDailyBar,
+    NewowMarkerType,
+    TrendBandState,
+)
 from guiyi_quant.newow.trend_band import (
+    TrendBandStateValue,
     calculate_trend_band,
     initial_trend_band_state,
     step_trend_band,
@@ -155,61 +166,110 @@ def _assert_real_kernel_parity(bars: tuple[NewowDailyBar, ...]):
     return tuple(frames), tuple(steps)
 
 
-def _escape_state_for(
-    *,
-    previous_var4: float,
-    closes: tuple[float, ...] = (100.0,) * 119 + (120.0,),
-    prior_closes: tuple[float, ...] = (100.0,) * 9,
-    highs: tuple[float, ...] = (120.0,) * 120,
-    lows: tuple[float, ...] = (100.0,) * 120,
-) -> EscapeState:
-    """Build an internally authenticated 120-bar D123 state for Engine integration."""
-
-    ma_source = prior_closes + closes
-    ma_values = tuple(
-        sum(ma_source[index : index + 120]) / 120.0 for index in range(10)
-    )
-    denominator = max(highs[-9:]) - min(lows[-9:])
-    previous_rsv9 = (
-        100.0
-        if denominator == 0.0
-        else 100.0 * (closes[-1] - min(lows[-9:])) / denominator
-    )
-    return EscapeState(
-        closes=closes,
-        highs=highs,
-        lows=lows,
-        ma120_values=ma_values,
-        previous_rsv9=previous_rsv9,
-        previous_var4=previous_var4,
-        history_count=120,
-        ma120_prior_closes=prior_closes,
-        prior_var4=(3.0 * previous_var4 - previous_rsv9) / 2.0,
-        physical_contract="RB2701",
-        segment_id="rb:RB2701:2026-01-01",
+def _ohlc_bar(index: int, close: float, high: float, low: float) -> NewowDailyBar:
+    close_value = Decimal(str(close))
+    return replace(
+        _bar(index, int(close_value)),
+        open=close_value,
+        high=Decimal(str(high)),
+        low=Decimal(str(low)),
+        close=close_value,
     )
 
 
-def _d3_escape_state_and_bar() -> tuple[EscapeState, NewowDailyBar]:
-    normalized_slope = -0.001
-    base = 200.0
-    spread = 1.0
-    daily_change = normalized_slope * base / (1.0 - 69.5 * normalized_slope)
-    history = tuple(base + daily_change * index for index in range(130))
-    state = _escape_state_for(
-        previous_var4=91.0,
-        closes=history[9:129],
-        prior_closes=history[:9],
-        highs=tuple(value + spread for value in history[9:129]),
-        lows=tuple(value - spread for value in history[9:129]),
+def _real_d123_sequences() -> tuple[tuple[tuple[NewowDailyBar, ...], NewowMarkerType], ...]:
+    high_rsv_history = tuple(_ohlc_bar(index, 100.0, 100.0, 80.0) for index in range(129))
+    d3_history = tuple(_ohlc_bar(index, 100.0, 100.0, 80.0) for index in range(120)) + tuple(
+        _ohlc_bar(index, 90.0, 100.0, 1.0) for index in range(120, 128)
     )
-    close = Decimal(str(history[129]))
-    return state, replace(
-        _bar(120, int(close)),
-        open=close,
-        high=close + Decimal(str(spread)),
-        low=close - Decimal(str(spread)),
-        close=close,
+    return (
+        (
+            high_rsv_history + (_ohlc_bar(129, 131.0, 150.0, 80.0),),
+            NewowMarkerType.ESCAPE_D1,
+        ),
+        (
+            high_rsv_history + (_ohlc_bar(129, 85.0, 120.0, 80.0),),
+            NewowMarkerType.ESCAPE_D2,
+        ),
+        (
+            d3_history + (_ohlc_bar(128, 80.0, 100.0, 1.0),),
+            NewowMarkerType.ESCAPE_D3,
+        ),
+    )
+
+
+def _restore_bar(data: dict[str, object]) -> NewowDailyBar:
+    return NewowDailyBar(**data)  # type: ignore[arg-type]
+
+
+def _restore_pivot(data: dict[str, object] | None) -> CupPivot | None:
+    return None if data is None else CupPivot(**data)  # type: ignore[arg-type]
+
+
+def _restore_snapshot(data: dict[str, object] | None) -> CupBarSnapshot | None:
+    if data is None:
+        return None
+    return CupBarSnapshot(
+        bar=_restore_bar(data["bar"]),  # type: ignore[arg-type]
+        eligible_index=data["eligible_index"],  # type: ignore[arg-type]
+        atr=data["atr"],  # type: ignore[arg-type]
+    )
+
+
+def _restore_cup_state(data: dict[str, object]) -> CupHandleStateValue:
+    tracker = data["pivot_tracker"]
+    active = data["active_candidate"]
+    return CupHandleStateValue(
+        atr_state=WilderAtrState(**data["atr_state"]),  # type: ignore[arg-type]
+        pivot_tracker=CupPivotTrackerState(
+            leg=tracker["leg"],  # type: ignore[index,arg-type]
+            extreme_high=_restore_snapshot(tracker["extreme_high"]),  # type: ignore[index,arg-type]
+            extreme_low=_restore_snapshot(tracker["extreme_low"]),  # type: ignore[index,arg-type]
+            last_pivot=_restore_pivot(tracker["last_pivot"]),  # type: ignore[index,arg-type]
+            eligible_index=tracker["eligible_index"],  # type: ignore[index,arg-type]
+        ),
+        eligible_bars=tuple(
+            _restore_snapshot(item) for item in data["eligible_bars"]  # type: ignore[arg-type]
+        ),
+        confirmed_pivots=tuple(
+            _restore_pivot(item) for item in data["confirmed_pivots"]  # type: ignore[arg-type]
+        ),
+        active_candidate=(
+            None
+            if active is None
+            else NewowCupHandleOverlay(
+                **{
+                    **active,
+                    "left_rim": _restore_pivot(active["left_rim"]),
+                    "bottom": _restore_pivot(active["bottom"]),
+                    "right_rim": _restore_pivot(active["right_rim"]),
+                    "handle_extreme": _restore_pivot(active["handle_extreme"]),
+                    "score_breakdown": dict(active["score_breakdown"]),
+                    "volume_facts": dict(active["volume_facts"]),
+                }
+            )
+        ),
+        emitted_milestones=tuple(data["emitted_milestones"]),  # type: ignore[arg-type]
+        recent_terminal_candidate_ids=tuple(data["recent_terminal_candidate_ids"]),  # type: ignore[arg-type]
+        physical_contract=data["physical_contract"],  # type: ignore[arg-type]
+        segment_id=data["segment_id"],  # type: ignore[arg-type]
+        eligible_started=data["eligible_started"],  # type: ignore[arg-type]
+        emitted_milestone_facts=tuple(
+            CupMilestoneFact(**item) for item in data["emitted_milestone_facts"]  # type: ignore[arg-type]
+        ),
+    )
+
+
+def _restore_engine_state_from_dict(data: dict[str, object]) -> NewowTrendD1EngineState:
+    return NewowTrendD1EngineState(
+        trend_band_state=TrendBandStateValue(**data["trend_band_state"]),  # type: ignore[arg-type]
+        escape_state=EscapeState(**data["escape_state"]),  # type: ignore[arg-type]
+        cup_handle_state=_restore_cup_state(data["cup_handle_state"]),  # type: ignore[arg-type]
+        physical_contract=data["physical_contract"],  # type: ignore[arg-type]
+        segment_id=data["segment_id"],  # type: ignore[arg-type]
+        last_bar_end=data["last_bar_end"],  # type: ignore[arg-type]
+        last_trading_day=data["last_trading_day"],  # type: ignore[arg-type]
+        eligibility_started=data["eligibility_started"],  # type: ignore[arg-type]
     )
 
 
@@ -423,6 +483,50 @@ def test_restore_rejects_stale_engine_watermark_before_duplicate_replay() -> Non
     assert result.state == NewowTrendD1Engine.initial().state
 
 
+def test_restore_rejects_foreign_escape_facts_that_disagree_with_cup_history() -> None:
+    """Individually valid peers from different bar sequences cannot share one Engine state."""
+
+    primary = tuple(_ohlc_bar(index, 100.0, 100.0, 80.0) for index in range(129))
+    foreign = tuple(_ohlc_bar(index, 90.0, 100.0, 1.0) for index in range(129))
+    state = _run_incremental(primary)[-1].state
+    foreign_escape = _run_incremental(foreign)[-1].state.escape_state
+    restored = NewowTrendD1Engine(
+        state=replace(state, escape_state=foreign_escape)
+    )
+
+    result = restored.step(_ohlc_bar(129, 100.0, 100.0, 80.0))
+
+    assert result.frame.trend_band.state is TrendBandState.UNAVAILABLE
+    assert result.frame.markers == ()
+    assert result.frame.diagnostics == ("NEWOW_ENGINE_STATE_INVALID",)
+    assert result.state == NewowTrendD1Engine.initial().state
+
+
+def test_dataclass_and_plain_dict_reconstruction_resume_same_shared_state() -> None:
+    """Both explicit dataclass and plain-dict reconstructions preserve a genuine shared cut."""
+
+    bars = bullish_true_cup_handle()
+    full = calculate_newow_trend_frames(bars)
+    for cut in (1, 5, 14, 20, 45, len(bars) - 1):
+        state = _run_incremental(bars[:cut])[-1].state
+        dataclass_state = NewowTrendD1EngineState(
+            trend_band_state=state.trend_band_state,
+            escape_state=state.escape_state,
+            cup_handle_state=state.cup_handle_state,
+            physical_contract=state.physical_contract,
+            segment_id=state.segment_id,
+            last_bar_end=state.last_bar_end,
+            last_trading_day=state.last_trading_day,
+            eligibility_started=state.eligibility_started,
+        )
+        plain_dict_state = _restore_engine_state_from_dict(asdict(state))
+
+        for restored_state in (dataclass_state, plain_dict_state):
+            restored = NewowTrendD1Engine(state=restored_state)
+            resumed = tuple(restored.step(bar).frame for bar in bars[cut:])
+            assert resumed == full[cut:]
+
+
 def test_batch_incremental_prefix_restore_and_future_tail_are_invariant() -> None:
     """Recomputing history or restoring at a cut point must not change a completed prefix."""
 
@@ -434,7 +538,18 @@ def test_batch_incremental_prefix_restore_and_future_tail_are_invariant() -> Non
     for cut in (1, 14, 45, len(bars) - 1):
         assert calculate_newow_trend_frames(bars[:cut]) == full[:cut]
         state = _run_incremental(bars[:cut])[-1].state
-        restored = NewowTrendD1Engine(state=pickle.loads(pickle.dumps(state)))
+        restored = NewowTrendD1Engine(
+            state=NewowTrendD1EngineState(
+                trend_band_state=state.trend_band_state,
+                escape_state=state.escape_state,
+                cup_handle_state=state.cup_handle_state,
+                physical_contract=state.physical_contract,
+                segment_id=state.segment_id,
+                last_bar_end=state.last_bar_end,
+                last_trading_day=state.last_trading_day,
+                eligibility_started=state.eligibility_started,
+            )
+        )
         resumed = tuple(restored.step(bar).frame for bar in bars[cut:])
         assert resumed == full[cut:]
 
@@ -472,17 +587,50 @@ def test_real_kernel_harness_matches_all_fields_across_bull_bear_negative_and_ro
         assert steps[-1].state == _run_incremental(bars)[-1].state
 
 
-def test_every_prefix_and_genuine_serialized_restore_cut_matches_full_run() -> None:
-    """Every completed prefix and shared-cut pickle restore must reproduce the full suffix."""
+def test_every_prefix_and_genuine_dataclass_plain_dict_restore_matches_full_run() -> None:
+    """Every named sequence preserves prefixes, both restore forms, and immutable history."""
 
-    bars = bullish_true_cup_handle()
-    full, _ = _assert_real_kernel_parity(bars)
-    for cut in range(1, len(bars) + 1):
-        assert calculate_newow_trend_frames(bars[:cut]) == full[:cut]
-    for cut in (1, 14, 20, 45, len(bars) - 1):
-        state = _run_incremental(bars[:cut])[-1].state
-        restored = NewowTrendD1Engine(state=pickle.loads(pickle.dumps(state)))
-        assert tuple(restored.step(bar).frame for bar in bars[cut:]) == full[cut:]
+    for bars in (
+        bullish_true_cup_handle(),
+        bearish_true_cup_handle(),
+        downtrend_rebound_rejected(),
+        rollover_split_candidate(),
+    ):
+        full, full_steps = _assert_real_kernel_parity(bars)
+        assert calculate_newow_trend_frames(bars) == full
+        assert tuple(step.frame for step in _run_incremental(bars)) == full
+        for cut in range(1, len(bars) + 1):
+            assert calculate_newow_trend_frames(bars[:cut]) == full[:cut]
+        cut_points = sorted({1, min(5, len(bars) - 1), min(14, len(bars) - 1), len(bars) // 2, len(bars) - 1})
+        for cut in cut_points:
+            state = _run_incremental(bars[:cut])[-1].state
+            dataclass_state = NewowTrendD1EngineState(
+                trend_band_state=state.trend_band_state,
+                escape_state=state.escape_state,
+                cup_handle_state=state.cup_handle_state,
+                physical_contract=state.physical_contract,
+                segment_id=state.segment_id,
+                last_bar_end=state.last_bar_end,
+                last_trading_day=state.last_trading_day,
+                eligibility_started=state.eligibility_started,
+            )
+            plain_dict_state = _restore_engine_state_from_dict(asdict(state))
+            for restored_state in (dataclass_state, plain_dict_state):
+                restored = NewowTrendD1Engine(state=restored_state)
+                assert tuple(restored.step(bar).frame for bar in bars[cut:]) == full[cut:]
+                assert restored.state == full_steps[-1].state
+        mutation_start = len(bars) // 2
+        mutated_tail = tuple(
+            replace(
+                bar,
+                open=bar.open + Decimal("20"),
+                high=bar.high + Decimal("20"),
+                low=bar.low + Decimal("20"),
+                close=bar.close + Decimal("20"),
+            )
+            for bar in bars[mutation_start:]
+        )
+        assert calculate_newow_trend_frames(bars[:mutation_start] + mutated_tail)[:mutation_start] == full[:mutation_start]
 
 
 @pytest.mark.parametrize(
@@ -526,54 +674,23 @@ def test_cup_diagnostic_coexists_with_valid_slice_a_frame() -> None:
 def test_real_kernel_family_coverage_keeps_d123_facts_and_cup_lifecycle_ordered() -> None:
     """Every Engine marker family is exercised by real Kernel output, never a mock marker."""
 
-    seeded_bars = tuple(_bar(index, 100) for index in range(120))
-    seed = _run_incremental(seeded_bars)[-1].state
-    d3_state, d3_bar = _d3_escape_state_and_bar()
-    cases = (
-        (
-            _escape_state_for(previous_var4=96.0),
-            replace(_bar(120, 131), high=Decimal("140"), low=Decimal("100")),
-            NewowMarkerType.ESCAPE_D1,
-        ),
-        (
-            _escape_state_for(previous_var4=94.0),
-            replace(_bar(120, 105), high=Decimal("120"), low=Decimal("100")),
-            NewowMarkerType.ESCAPE_D2,
-        ),
-        (d3_state, d3_bar, NewowMarkerType.ESCAPE_D3),
-    )
     observed = set()
-    for escape_state, bar, marker_type in cases:
-        direct = step_escape_d123(escape_state, bar)
-        engine_state = replace(
-            seed,
-            escape_state=escape_state,
-            escape_receipt=_receipt(
-                "escape",
-                escape_state,
-                seed.last_bar_end,
-                seed.last_trading_day,
-                seed.physical_contract,
-                seed.segment_id,
-            ),
-        )
-        result = NewowTrendD1Engine(
-            state=engine_state
-        ).step(bar)
+    for bars, marker_type in _real_d123_sequences():
+        frames, steps = _assert_real_kernel_parity(bars)
         engine_escape = tuple(
             marker
-            for marker in result.frame.markers
-            if marker.marker_type in {
+            for frame in frames
+            for marker in frame.markers
+            if marker.marker_type
+            in {
                 NewowMarkerType.ESCAPE_D1,
                 NewowMarkerType.ESCAPE_D2,
                 NewowMarkerType.ESCAPE_D3,
             }
         )
 
-        assert result.state.escape_state == direct.state
-        assert engine_escape == direct.markers
-        assert engine_escape[0].marker_type is marker_type
-        assert engine_escape[0].trigger_facts == direct.markers[0].trigger_facts
+        assert marker_type in {marker.marker_type for marker in engine_escape}
+        assert steps[-1].state.escape_state.previous_var4 == engine_escape[-1].trigger_facts["var4"]
         observed.add(marker_type)
 
     for bars in (
