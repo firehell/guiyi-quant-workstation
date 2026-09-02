@@ -72,6 +72,9 @@ test('uses exactly three all-ready top-level reads and opens immutable HTDY actu
   await mockMarketHomeApi(page, requests, events(), overview(), runtime('ready'))
   await page.goto('/market')
 
+  await expect(page.locator('.n-layout-sider')).toHaveCount(0)
+  await expect(page.locator('.n-layout-header')).toHaveCount(0)
+  await expect.poll(() => page.evaluate(() => ({ width: document.querySelector('.content')?.clientWidth, height: document.querySelector('.content')?.clientHeight, viewportWidth: window.innerWidth, viewportHeight: window.innerHeight }))).toEqual({ width: 1440, height: 900, viewportWidth: 1440, viewportHeight: 900 })
   await expect(page.getByText('非实时行情')).toBeVisible()
   await expect(page.getByText('Runtime ready')).toBeVisible()
   await expect(page.getByText('HTDY Focus')).toBeVisible()

@@ -12,6 +12,9 @@ test('shows one identity-matched research snapshot without crowding desktop Klin
   await page.setViewportSize({ width: 1680, height: 1000 })
   await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=15m')
 
+  await expect(page.locator('.n-layout-sider')).toHaveCount(0)
+  await expect(page.locator('.n-layout-header')).toHaveCount(0)
+  await expect.poll(() => page.evaluate(() => ({ width: document.querySelector('.content')?.clientWidth, height: document.querySelector('.content')?.clientHeight, viewportWidth: window.innerWidth, viewportHeight: window.innerHeight }))).toEqual({ width: 1680, height: 1000, viewportWidth: 1680, viewportHeight: 1000 })
   await expect(page.getByTestId('product-status-strip')).toContainText('Historical')
   await expect(page.getByTestId('product-status-strip')).toContainText('已收盘')
   await expect(page.getByTestId('product-status-strip')).toContainText('数据正常')
