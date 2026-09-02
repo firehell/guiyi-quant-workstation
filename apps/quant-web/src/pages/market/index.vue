@@ -36,6 +36,7 @@ const home = useMarketHome({ fetchOverview: getMarketHomeOverview, fetchRuntime:
 const model = computed(() => buildMarketHomeViewModel({ overview: home.overview.data.value ?? null, overviewStale: home.overview.stale.value ?? false, runtime: home.runtime.data.value ?? null, runtimeStale: home.runtime.stale.value ?? false, events: home.events.data.value ?? null, eventsStale: home.events.stale.value ?? false }))
 const loading = computed(() => home.overview.loading.value || home.runtime.loading.value || home.events.loading.value)
 const rows = computed(() => filterAndSortMarketHomeRows(model.value.rows, { query: query.value, sector: sector.value, filter: summaryFilter.value, sort: sort.value, daily: daily.value, weekly: weekly.value, alignment: alignment.value, event: event.value, data: data.value }))
+const latestEventTime = computed(() => home.events.data.value?.items[0]?.detected_at ?? null)
 
 async function refreshAll() {
   await home.refreshAll()
@@ -69,7 +70,7 @@ onBeforeUnmount(() => {
     <MarketHomeSectorTicker class="market-dashboard-page__ticker" :sectors="home.overview.data.value?.sectors??[]" @select="sector=$event"/>
     <MarketHomeLegend class="market-dashboard-page__legend"/>
     <MarketHomeTrustStrip class="market-dashboard-page__trust" :target-as-of="home.overview.data.value?.target_as_of??null" :as-of="home.overview.data.value?.data_as_of??null" :participants="home.overview.data.value?.participant_count??0" :active="home.overview.data.value?.active_count??0" :stale-count="home.overview.data.value?.stale_count??0" :unavailable-count="home.overview.data.value?.unavailable_count??0" :overview="model.overview.availability" :runtime="model.runtime.status" :event-state="model.events.availability" :overview-stale="model.overview.cachedStale" :runtime-stale="model.runtime.cachedStale" :event-stale="model.events.cachedStale"/>
-    <MarketHomeSummary class="market-dashboard-page__summary" :summary="home.overview.data.value?.summary??null" :active="summaryFilter" @filter="summaryFilter=$event"/>
+    <MarketHomeSummary class="market-dashboard-page__summary" :summary="home.overview.data.value?.summary??null" :active="summaryFilter" :event-count="home.events.data.value?.items.length??0" :latest-event-time="latestEventTime" @filter="summaryFilter=$event"/>
     <p v-if="home.overview.unavailable.value" class="market-dashboard-page__error" role="alert">Market Home overview 暂不可用；没有可展示的上一份成功快照。</p>
     <MarketHomeSkeleton v-if="loading&&!home.overview.data.value"/>
     <template v-else><div class="market-dashboard-page__workspace"><div><MarketHomeToolbar v-model:query="query" v-model:sort="sort" v-model:daily="daily" v-model:weekly="weekly" v-model:alignment="alignment" v-model:event="event" v-model:data="data"/><MarketHomeTable :rows="rows" @open="openProduct"/><MarketHomeMobileList :rows="rows" @open="openProduct"/></div><MarketHomeFocusRail :availability="model.events.availability" :events="home.events.data.value?.items??[]" @open="openEvent"/></div></template>

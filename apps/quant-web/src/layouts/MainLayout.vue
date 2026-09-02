@@ -65,6 +65,7 @@ const activeKey = computed(() => {
   const name = route.name as string
   return CHILD_ROUTE_MENU_KEY[name] || name
 })
+const showSidebarTrigger = computed(() => route.name !== 'market')
 
 const breadcrumbItems = computed(() => {
   if (route.name === 'market-chart') return ['行情看板', '品种行情']
@@ -123,7 +124,7 @@ onUnmounted(() => {
       :collapsed-width="64"
       :width="220"
       :collapsed="collapsed"
-      show-trigger
+      :show-trigger="showSidebarTrigger"
       class="sidebar"
       @collapse="setCollapsed(true)"
       @expand="setCollapsed(false)"
