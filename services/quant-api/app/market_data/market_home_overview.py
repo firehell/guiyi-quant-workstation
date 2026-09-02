@@ -11,6 +11,7 @@ from statistics import median
 from typing import Literal
 
 from app.market_data.domain import BarFrequency, CanonicalBar, SeriesKind, SeriesPageQuery
+from app.market_data.errors import InfrastructureError
 from app.market_data.market_data_service import (
     DominantContractSummary,
     MarketDataError,
@@ -110,7 +111,12 @@ class MarketHomeOverviewService:
         self._latest_complete_day = latest_complete_day
 
     def snapshot(self) -> MarketHomeOverviewSnapshot:
-        target_as_of = self._latest_complete_day(self._products)
+        try:
+            target_as_of = self._latest_complete_day(self._products)
+        except InfrastructureError as exc:
+            raise MarketHomeOverviewError(
+                "MARKET_HOME_TARGET_AS_OF_UNAVAILABLE"
+            ) from exc
         dominants = _dominants_by_symbol(
             self._market_data.list_latest_dominants(), self._products
         )

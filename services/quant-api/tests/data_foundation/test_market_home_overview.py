@@ -6,6 +6,7 @@ from decimal import Decimal
 import pytest
 
 from app.market_data.domain import CanonicalBar, MarketSeriesPageResult
+from app.market_data.errors import InfrastructureError
 from app.market_data.market_data_service import DominantContractSummary, MarketDataError
 from app.market_data.product_taxonomy import ProductTaxonomyEntry
 
@@ -339,6 +340,40 @@ def test_snapshot_reconciles_summary_and_sector_medians() -> None:
         ("black", 2, 2, Decimal("0")),
         ("nonferrous", 1, 1, Decimal("0")),
     ]
+
+
+def test_snapshot_maps_target_day_infrastructure_failure_to_typed_error() -> None:
+    from app.market_data.market_home_overview import (
+        MarketHomeOverviewError,
+        MarketHomeOverviewService,
+    )
+
+    market_data = _FakeMarketDataService(
+        daily={"jm": _bars(30, end=TARGET)},
+        weekly={"jm": _bars(22, end=TARGET)},
+        dominants=(
+            DominantContractSummary(
+                symbol="jm",
+                product_name="焦煤",
+                sector="black",
+                exchange="DCE",
+                actual_contract="JM2505",
+                dominant_mapping_date=TARGET,
+            ),
+        ),
+    )
+
+    with pytest.raises(MarketHomeOverviewError, match="MARKET_HOME_TARGET_AS_OF_UNAVAILABLE"):
+        MarketHomeOverviewService(
+            market_data=market_data,
+            products=("jm",),
+            taxonomy={"jm": ProductTaxonomyEntry(name="焦煤", sector="black")},
+            latest_complete_day=_unavailable_target_day,
+        ).snapshot()
+
+
+def _unavailable_target_day(_products: tuple[str, ...]) -> date:
+    raise InfrastructureError("TRADING_CALENDAR_MISSING")
 
 
 class _TargetDay:
