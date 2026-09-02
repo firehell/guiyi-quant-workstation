@@ -49,11 +49,15 @@ SuBing S1-S4 公式、同物理合约 replay、Alert dispatch/Event/notification
 PYTHONPATH=services/quant-api:packages/quant-core \
   uv run --project services/quant-api pytest -q \
   services/quant-api/tests/test_subing_ths_kernel.py \
+  services/quant-api/tests/test_market_read_service.py \
   services/quant-api/tests/test_alert_registry.py \
   services/quant-api/tests/test_alert_evaluator.py \
   services/quant-api/tests/test_alert_service.py \
   services/quant-api/tests/test_alert_notification.py \
+  services/quant-api/tests/test_alert_notification_config.py \
+  services/quant-api/tests/test_alert_pushplus.py \
   services/quant-api/tests/test_alert_runtime.py \
+  services/quant-api/tests/test_runtime_health.py \
   services/quant-api/tests/test_alert_api.py \
   services/quant-api/tests/test_alert_cli.py \
   services/quant-api/tests/test_subing_scope_activation.py

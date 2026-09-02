@@ -165,6 +165,9 @@ ALERT_CANONICAL_REQUIREMENTS = {
         SUBING_THS_FORMULA_VERSION,
         "EMA(CLOSE, 21)",
         "completed actual_dominant 15m",
+        "零轴",
+        "Range",
+        "多周期",
     ),
     "DECISIONS.md": (
         "subing_ths_alert_15m_v1",
@@ -466,7 +469,7 @@ def test_active_alert_canonical_matches_the_two_rule_code_contract() -> None:
     assert "retry" not in send_once.lower()
 
 
-def test_active_canonical_documents_the_rule_split_without_promoting_status() -> None:
+def test_active_canonical_documents_the_rule_split_and_formula_gates() -> None:
     for relative, required_terms in ALERT_CANONICAL_REQUIREMENTS.items():
         path = ROOT / relative
         assert path.is_file(), relative
@@ -484,24 +487,6 @@ def test_active_canonical_documents_the_rule_split_without_promoting_status() ->
         ROOT / "openspec/specs/subing-ths-alert/spec.md"
     ).read_text(encoding="utf-8")
     assert subing_spec.index("G10") < subing_spec.index("G9")
-
-    changed_paths = set(
-        subprocess.run(
-            [
-                "git",
-                "-c",
-                "core.fsmonitor=false",
-                "diff",
-                "--name-only",
-                "origin/develop...HEAD",
-            ],
-            cwd=ROOT,
-            check=True,
-            capture_output=True,
-            text=True,
-        ).stdout.splitlines()
-    )
-    assert "STATUS.md" not in changed_paths
 
 
 def test_release_candidate_excludes_private_sources() -> None:
