@@ -88,95 +88,120 @@ def _updater(
     *,
     status: str = "passed",
     ready: bool = True,
+    invalidate=None,
     refresh=None,
 ):
     events: list[str] = []
     live_store = _LiveStore(events)
+    manager = _Manager(_maintenance(status))
     updater = AfterMarketUpdater(
-        manager=_Manager(_maintenance(status)),
+        manager=manager,
         rqdata=_RQData(ready),
         live_store=live_store,
         status_path=tmp_path / "after-market-status.json",
         sleep=lambda _seconds: None,
         notification_transport=None,
+        market_home_projection_invalidate=invalidate,
         market_home_projection_refresh=refresh,
         now=lambda: datetime(2026, 9, 2, 18, 5),
     )
-    return updater, events, live_store
+    return updater, events, live_store, manager
 
 
 @pytest.mark.parametrize("status", ["passed", "noop"])
-def test_successful_or_noop_maintenance_refreshes_projection_before_publish_state(
+def test_successful_or_noop_maintenance_invalidates_before_apply_and_refreshes_after_core(
     tmp_path,
     status: str,
 ) -> None:
     events: list[str] = []
 
-    def refresh() -> None:
-        events.append("projection")
-
-    updater, live_events, live_store = _updater(
+    updater, _live_events, live_store, manager = _updater(
         tmp_path,
         status=status,
-        refresh=refresh,
+        invalidate=lambda: events.append("invalidate"),
+        refresh=lambda: events.append("projection"),
     )
     live_store.events = events
 
     result = updater.run()
 
     assert result.status == "passed"
-    assert events == ["projection", "canonical_updated"]
+    assert manager.calls == 1
+    assert events == ["invalidate", "canonical_updated", "projection"]
     assert live_store.cleaned == [_DAY]
-    assert live_events == []
 
 
-def test_provider_not_ready_does_not_refresh_projection(tmp_path) -> None:
+def test_provider_not_ready_does_not_invalidate_or_refresh_projection(tmp_path) -> None:
     calls: list[str] = []
-    updater, events, _live_store = _updater(
+    updater, events, _live_store, manager = _updater(
         tmp_path,
         ready=False,
+        invalidate=lambda: calls.append("invalidate"),
         refresh=lambda: calls.append("projection"),
     )
 
     result = updater.run()
 
     assert result.status == "failed"
+    assert manager.calls == 0
     assert calls == []
     assert events == []
 
 
-def test_update_failure_does_not_refresh_projection(tmp_path) -> None:
+def test_update_failure_keeps_projection_invalidated_and_does_not_refresh(tmp_path) -> None:
     calls: list[str] = []
-    updater, events, _live_store = _updater(
+    updater, events, _live_store, manager = _updater(
         tmp_path,
         status="failed",
+        invalidate=lambda: calls.append("invalidate"),
         refresh=lambda: calls.append("projection"),
     )
 
     result = updater.run()
 
     assert result.status == "failed"
-    assert calls == []
+    assert manager.calls == 1
+    assert calls == ["invalidate"]
     assert events == []
 
 
-def test_projection_failure_is_performance_only_and_does_not_change_passed_result(
+def test_invalidation_failure_blocks_manager_before_authoritative_mutation(tmp_path) -> None:
+    def fail_invalidation() -> None:
+        raise RuntimeError("private invalidation detail")
+
+    updater, events, _live_store, manager = _updater(
+        tmp_path,
+        invalidate=fail_invalidation,
+        refresh=lambda: events.append("projection"),
+    )
+
+    result = updater.run()
+
+    assert result.status == "failed"
+    assert manager.calls == 0
+    assert events == []
+
+
+def test_projection_refresh_failure_is_performance_only_after_core_success(
     tmp_path,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     def fail_projection() -> None:
         raise RuntimeError("private projection detail must stay out of logs")
 
-    updater, events, live_store = _updater(
+    updater, events, live_store, manager = _updater(
         tmp_path,
+        invalidate=lambda: events.append("invalidate"),
         refresh=fail_projection,
     )
+    live_store.events = events
 
     with caplog.at_level(logging.WARNING, logger="app.market_data.after_market"):
         result = updater.run()
 
     assert result.status == "passed"
-    assert events == ["canonical_updated"]
+    assert manager.calls == 1
+    assert events == ["invalidate", "canonical_updated"]
     assert live_store.cleaned == [_DAY]
     assert "market_home_projection_refresh_failed" in caplog.text
     assert "RuntimeError" in caplog.text
