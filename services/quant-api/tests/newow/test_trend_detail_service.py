@@ -310,6 +310,34 @@ def test_detail_is_overlap_invariant_and_returns_immutable_stable_tuples() -> No
     )
 
 
+def test_cross_rollover_overlap_keeps_calculation_identity_and_engine_facts_stable() -> (
+    None
+):
+    service, _ = _service(split=True)
+    wide = service.query(
+        NewowTrendDetailQuery(
+            "rb", _START + timedelta(days=3), _START + timedelta(days=7)
+        )
+    )
+    narrow = service.query(
+        NewowTrendDetailQuery(
+            "rb", _START + timedelta(days=5), _START + timedelta(days=7)
+        )
+    )
+
+    assert wide.calculation_identity == narrow.calculation_identity
+    assert wide.request_identity != narrow.request_identity
+    assert tuple(bar.source_identity for bar in wide.bars[-3:]) == tuple(
+        bar.source_identity for bar in narrow.bars
+    )
+    assert wide.frames[-3:] == narrow.frames
+    assert (
+        tuple(marker for frame in wide.frames[-3:] for marker in frame.markers)
+        == narrow.markers
+    )
+    assert wide.cup_handles == narrow.cup_handles
+
+
 def test_detail_stops_after_actual_read_when_visible_actual_bars_exceed_1500() -> None:
     days = tuple(_START + timedelta(days=index) for index in range(1501))
     segment = ResolvedContractSegment("RB2605", days[0], days[-1])

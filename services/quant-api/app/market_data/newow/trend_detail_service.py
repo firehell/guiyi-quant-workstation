@@ -33,6 +33,7 @@ from .trend_detail_query import MAX_VISIBLE_TRADING_DAYS, NewowTrendDetailQuery
 
 _PREFIX_LIMIT = 2000
 _CANONICAL_AUTHORITY = "market_data_service:canonical_v2"
+_RANK1_MAPPING_AUTHORITY = "main_contract_map:rank1:canonical_v1"
 
 
 class NewowTrendDetailError(ValueError):
@@ -106,7 +107,7 @@ class NewowTrendDetailService:
             > MAX_VISIBLE_TRADING_DAYS
         ):
             raise NewowTrendDetailError("NEWOW_RANGE_TOO_LARGE")
-        calculation_identity = _calculation_identity(query.product, loaded.segments)
+        calculation_identity = _calculation_identity(query.product)
         all_frames: list[NewowTrendFrame] = []
         all_seams: list[NewowRolloverSeam] = []
         previous: tuple[NewowDailyBar, ResolvedContractSegment] | None = None
@@ -319,22 +320,17 @@ def _formula_versions() -> tuple[str, ...]:
     )
 
 
-def _calculation_identity(
-    product: str, segments: tuple[ResolvedContractSegment, ...]
-) -> str:
-    mapping = ",".join(
-        f"{segment.contract}@{segment.start_trading_day.isoformat()}-{segment.end_trading_day.isoformat()}"
-        for segment in segments
-    )
+def _calculation_identity(product: str) -> str:
+    """Identity binds stable Canonical/rank-1 authorities, never a request window."""
     return "|".join(
         (
             _CANONICAL_AUTHORITY,
+            _RANK1_MAPPING_AUTHORITY,
             product,
             "actual_dominant",
             "1d",
             NEWOW_TREND_D1_V1.profile_id,
             *_formula_versions(),
-            mapping,
         )
     )
 
