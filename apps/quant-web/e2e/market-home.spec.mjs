@@ -15,13 +15,13 @@ function item(symbol, product_name, sector, daily_trend, weekly_trend) {
 function runtime() { return { status: 'degraded', generated_at: '2026-09-02T01:00:00Z', readonly: true, would_start_services: false, would_enqueue_jobs: false, would_send_notifications: false, components: {} } }
 function events() { return { status: 'ready', trading_day: '2026-09-02', items: [{ id: 1, rule_code: 'htdy_original_15m', symbol: 'ag', contract: 'AG2601', trading_day: '2026-09-02', frequency: '15m', bar_end: '2026-09-02T02:45:00Z', result_codes: ['buy'], detected_at: '2026-09-02T02:45:01Z', notification_attempted_at: null }] } }
 
-async function mockMarketHomeApi(page, requests) {
+async function mockMarketHomeApi(page, requests, currentEvents = events()) {
   await page.route(/\/api\/(?:v1\/market\/research\/home-overview|runtime\/health|alerts\/current-events)/, async (route) => {
     const url = new URL(route.request().url())
     requests.push(url.pathname)
     if (url.pathname.endsWith('/market/research/home-overview')) return route.fulfill({ json: overview() })
     if (url.pathname === '/api/runtime/health') return route.fulfill({ json: runtime() })
-    return route.fulfill({ json: events() })
+    return route.fulfill({ json: currentEvents })
   })
 }
 
@@ -43,6 +43,7 @@ test('uses exactly three top-level reads and opens immutable HTDY actual-dominan
   await expect(page.getByText('非实时行情')).toBeVisible()
   await expect(page.getByText('HTDY Focus')).toBeVisible()
   await expect(page.getByText('AG · 买观察 · 15m')).toBeVisible()
+  await expect(page.locator('.n-layout-sider__toggle')).toHaveCount(0)
   await expectFrozenIconContracts(page)
   await expect.poll(() => requests.filter((path) => path.endsWith('/home-overview')).length).toBe(1)
   expect(requests.filter((path) => path === '/api/runtime/health')).toHaveLength(1)
@@ -50,6 +51,18 @@ test('uses exactly three top-level reads and opens immutable HTDY actual-dominan
 
   await page.getByText('AG · 买观察 · 15m').click()
   await expect(page).toHaveURL(/symbol=ag.*series_kind=actual_dominant.*frequency=15m.*overlay=htdy/)
+})
+
+test('distinguishes an empty current Event projection from an unavailable projection', async ({ page }) => {
+  const emptyRequests = []
+  await mockMarketHomeApi(page, emptyRequests, { status: 'ready', trading_day: '2026-09-02', items: [] })
+  await page.goto('/market')
+  await expect(page.getByText('当前交易日暂无 HTDY 正式观察 Event')).toBeVisible()
+
+  const unavailableRequests = []
+  await mockMarketHomeApi(page, unavailableRequests, { status: 'unavailable', trading_day: null, items: [] })
+  await page.reload()
+  await expect(page.getByText('HTDY 当前 Event 暂不可用；不能据此判断本时段无观察。')).toBeVisible()
 })
 
 test('keeps each accepted viewport free of page-level horizontal overflow', async ({ page }) => {
