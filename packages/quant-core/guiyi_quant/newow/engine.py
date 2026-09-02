@@ -225,6 +225,13 @@ def _source_history_is_valid(
     state: NewowTrendD1EngineState,
     profile: NewowTrendProfile,
 ) -> bool:
+    """Validate the bounded source basis, including its eligibility witness.
+
+    Eligibility can only move from False to True within a segment.  Therefore,
+    after the first True Bar is evicted, every later retained Bar is still True;
+    a non-empty valid suffix never loses the fact that eligibility has started.
+    """
+
     source = state.source_bars
     processed_count = state.cup_handle_state.atr_state.count
     if (
@@ -237,6 +244,7 @@ def _source_history_is_valid(
         return False
     prior_end: datetime | None = None
     prior_day: date | None = None
+    source_eligibility_started = False
     for bar in source:
         if (
             not isinstance(bar, NewowDailyBar)
@@ -249,12 +257,18 @@ def _source_history_is_valid(
             or isinstance(bar.trading_day, datetime)
             or (prior_end is not None and bar.bar_end <= prior_end)
             or (prior_day is not None and bar.trading_day <= prior_day)
+            or (source_eligibility_started and not bar.observation_eligible)
         ):
             return False
         prior_end, prior_day = bar.bar_end, bar.trading_day
+        source_eligibility_started = (
+            source_eligibility_started or bar.observation_eligible
+        )
     return (
         source[-1].bar_end == state.last_bar_end
         and source[-1].trading_day == state.last_trading_day
+        and state.eligibility_started == source_eligibility_started
+        and state.cup_handle_state.eligible_started == source_eligibility_started
     )
 
 

@@ -536,6 +536,61 @@ def test_restore_rejects_foreign_escape_during_snapshot_free_warmup(eligible: bo
     assert result.state == NewowTrendD1Engine.initial().state
 
 
+def test_restore_rejects_source_eligibility_hidden_by_false_state() -> None:
+    """A retained True observation cannot be erased by swapping snapshot-free state."""
+
+    bars = tuple(
+        _bar(index, 100 + index, eligible=index >= 2) for index in range(5)
+    )
+    eligible_state = _run_incremental(bars)[-1].state
+    pre_eligibility_state = _run_incremental(
+        tuple(replace(bar, observation_eligible=False) for bar in bars)
+    )[-1].state
+    assert eligible_state.cup_handle_state.eligible_bars == ()
+    assert any(bar.observation_eligible for bar in eligible_state.source_bars)
+    assert pre_eligibility_state.eligibility_started is False
+    assert pre_eligibility_state.cup_handle_state.eligible_started is False
+    mixed_state = replace(
+        eligible_state,
+        cup_handle_state=pre_eligibility_state.cup_handle_state,
+        eligibility_started=False,
+    )
+
+    result = NewowTrendD1Engine(state=mixed_state).step(
+        _bar(5, 105, eligible=False)
+    )
+
+    assert result.frame.trend_band.state is TrendBandState.UNAVAILABLE
+    assert result.frame.markers == ()
+    assert result.frame.diagnostics == ("NEWOW_ENGINE_STATE_INVALID",)
+    assert result.state == NewowTrendD1Engine.initial().state
+
+
+def test_restore_rejects_nonmonotonic_source_eligibility_sequence() -> None:
+    """A True-to-False transition inside the retained basis is corrupted history."""
+
+    state = _run_incremental(
+        tuple(_bar(index, 100 + index, eligible=True) for index in range(5))
+    )[-1].state
+    flags = (False, True, False, True, True)
+    corrupted_state = replace(
+        state,
+        source_bars=tuple(
+            replace(bar, observation_eligible=eligible)
+            for bar, eligible in zip(state.source_bars, flags, strict=True)
+        ),
+    )
+
+    result = NewowTrendD1Engine(state=corrupted_state).step(
+        _bar(5, 105, eligible=True)
+    )
+
+    assert result.frame.trend_band.state is TrendBandState.UNAVAILABLE
+    assert result.frame.markers == ()
+    assert result.frame.diagnostics == ("NEWOW_ENGINE_STATE_INVALID",)
+    assert result.state == NewowTrendD1Engine.initial().state
+
+
 @pytest.mark.parametrize("eligible", (False, True))
 def test_snapshot_free_typed_and_plain_dict_restore_resume_exactly(eligible: bool) -> None:
     """The factual basis survives both pre-eligibility and early-eligible restores."""
@@ -547,6 +602,11 @@ def test_snapshot_free_typed_and_plain_dict_restore_resume_exactly(eligible: boo
         state = full_steps[cut - 1].state
         assert state.cup_handle_state.eligible_bars == ()
         assert state.cup_handle_state.atr_state.atr is None
+        assert tuple(
+            bar.observation_eligible for bar in state.source_bars
+        ) == (eligible,) * cut
+        assert state.eligibility_started is eligible
+        assert state.cup_handle_state.eligible_started is eligible
         dataclass_state = NewowTrendD1EngineState(
             trend_band_state=state.trend_band_state,
             escape_state=state.escape_state,
