@@ -1,4 +1,4 @@
-"""Runtime-local derived projection for the Market Home overview."""
+"""Derived read projection for the Market Home overview."""
 
 from __future__ import annotations
 
@@ -12,7 +12,6 @@ from typing import Literal, Self
 
 from pydantic import BaseModel, ConfigDict, ValidationError, model_validator
 
-from app.core.env import PROJECT_ROOT
 from app.market_data.market_home_overview import (
     MarketHomeAuthorityIdentity,
     MarketHomeOverviewService,
@@ -26,9 +25,6 @@ from app.schemas.market import (
 )
 
 
-DEFAULT_MARKET_HOME_PROJECTION_PATH = (
-    PROJECT_ROOT / ".run" / "market-home-overview.json"
-)
 _MAX_PROJECTION_BYTES = 2 * 1024 * 1024
 _AUTHORITY_DIGEST = re.compile(r"[0-9a-f]{64}\Z")
 
@@ -39,6 +35,12 @@ class MarketHomeProjectionError(RuntimeError):
     def __init__(self, code: str) -> None:
         self.code = code
         super().__init__(code)
+
+
+def market_home_projection_path(canonical_root: Path) -> Path:
+    """Place the removable projection beside the shared Canonical root."""
+
+    return canonical_root.resolve() / ".derived" / "market-home-overview.json"
 
 
 class MarketHomeProjectionEnvelope(BaseModel):
@@ -92,6 +94,16 @@ class MarketHomeProjectionStore:
             return None
         return envelope.payload
 
+    def invalidate(self) -> None:
+        """Remove the current projection before any authoritative apply mutation."""
+
+        try:
+            self.path.unlink(missing_ok=True)
+        except OSError as exc:
+            raise MarketHomeProjectionError(
+                "MARKET_HOME_PROJECTION_INVALIDATION_FAILED"
+            ) from exc
+
     def publish(
         self,
         identity: MarketHomeAuthorityIdentity,
@@ -99,20 +111,25 @@ class MarketHomeProjectionStore:
         *,
         generated_at: datetime,
     ) -> None:
-        envelope = MarketHomeProjectionEnvelope(
-            generated_at=generated_at,
-            target_as_of=identity.target_as_of,
-            authority_digest=identity.authority_digest,
-            payload=payload,
-        )
-        encoded = (envelope.model_dump_json() + "\n").encode("utf-8")
+        try:
+            envelope = MarketHomeProjectionEnvelope(
+                generated_at=generated_at,
+                target_as_of=identity.target_as_of,
+                authority_digest=identity.authority_digest,
+                payload=payload,
+            )
+            encoded = (envelope.model_dump_json() + "\n").encode("utf-8")
+        except (TypeError, ValueError, ValidationError) as exc:
+            raise MarketHomeProjectionError(
+                "MARKET_HOME_PROJECTION_INVALID"
+            ) from exc
         if len(encoded) > _MAX_PROJECTION_BYTES:
             raise MarketHomeProjectionError("MARKET_HOME_PROJECTION_TOO_LARGE")
 
-        self.path.parent.mkdir(parents=True, exist_ok=True)
         descriptor: int | None = None
         temporary_path: Path | None = None
         try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
             descriptor, temporary_name = tempfile.mkstemp(
                 dir=self.path.parent,
                 prefix=f".{self.path.name}.",
