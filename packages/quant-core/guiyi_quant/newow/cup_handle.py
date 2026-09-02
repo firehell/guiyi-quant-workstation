@@ -48,6 +48,16 @@ class CupPivotTrackerState:
 
 
 @dataclass(frozen=True, slots=True)
+class CupMilestoneFact:
+    fact_id: str
+    marker_id: str
+    marker_type: NewowMarkerType
+    bar_end: datetime
+    eligible_index: int
+    source_identity: str
+
+
+@dataclass(frozen=True, slots=True)
 class CupHandleStateValue:
     atr_state: WilderAtrState
     pivot_tracker: CupPivotTrackerState
@@ -59,6 +69,7 @@ class CupHandleStateValue:
     physical_contract: str | None
     segment_id: str | None
     eligible_started: bool
+    emitted_milestone_facts: tuple[CupMilestoneFact, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -126,9 +137,53 @@ def _marker_identity(
     ).hexdigest()
 
 
-def _is_sha256_identity(value: str) -> bool:
-    return len(value) == 64 and all(
-        character in "0123456789abcdef" for character in value
+def _milestone_fact_identity(
+    candidate_id: str,
+    marker_id: str,
+    marker_type: NewowMarkerType,
+    bar_end: datetime,
+    eligible_index: int,
+    source_identity: str,
+    physical_contract: str,
+    segment_id: str,
+) -> str:
+    source = "|".join(
+        (
+            "newow_cup_milestone_state_v1",
+            candidate_id,
+            marker_id,
+            marker_type.value,
+            bar_end.isoformat(),
+            str(eligible_index),
+            source_identity,
+            physical_contract,
+            segment_id,
+        )
+    )
+    return sha256(source.encode()).hexdigest()
+
+
+def _milestone_fact(
+    marker: NewowMainMarker,
+    snapshot: CupBarSnapshot,
+    candidate_id: str,
+) -> CupMilestoneFact:
+    return CupMilestoneFact(
+        fact_id=_milestone_fact_identity(
+            candidate_id,
+            marker.marker_id,
+            marker.marker_type,
+            marker.bar_end,
+            snapshot.eligible_index,
+            snapshot.bar.source_identity,
+            snapshot.bar.physical_contract,
+            snapshot.bar.segment_id,
+        ),
+        marker_id=marker.marker_id,
+        marker_type=marker.marker_type,
+        bar_end=marker.bar_end,
+        eligible_index=snapshot.eligible_index,
+        source_identity=snapshot.bar.source_identity,
     )
 
 
@@ -144,6 +199,7 @@ def initial_cup_handle_state() -> CupHandleStateValue:
         physical_contract=None,
         segment_id=None,
         eligible_started=False,
+        emitted_milestone_facts=(),
     )
 
 
@@ -404,55 +460,133 @@ def _milestones_are_authentic(
     state: CupHandleStateValue,
     profile: NewowTrendProfile,
 ) -> bool:
-    ready_id = _marker_identity(
-        active.candidate_id,
-        NewowMarkerType.CUP_HANDLE_READY,
-        active.confirmed_at,
-    )
     milestones = state.emitted_milestones
+    milestone_facts = state.emitted_milestone_facts
+    if state.physical_contract is None or state.segment_id is None:
+        return False
+    if len(milestones) != len(milestone_facts) or milestones != tuple(
+        fact.marker_id for fact in milestone_facts
+    ):
+        return False
     if active.state == CupHandleState.FORMING:
-        return milestones == ()
-    if active.state == CupHandleState.READY:
-        return milestones == (ready_id,)
-    if active.state == CupHandleState.BREAKOUT:
-        breakout_id = _marker_identity(
-            active.candidate_id,
+        expected_types: tuple[NewowMarkerType, ...] = ()
+    elif active.state == CupHandleState.READY:
+        expected_types = (NewowMarkerType.CUP_HANDLE_READY,)
+    elif active.state == CupHandleState.BREAKOUT:
+        expected_types = (
+            NewowMarkerType.CUP_HANDLE_READY,
             NewowMarkerType.CUP_HANDLE_BREAKOUT,
-            active.state_changed_at,
         )
-        breakout_snapshot = next(
-            (
-                snapshot
-                for snapshot in state.eligible_bars
-                if snapshot.bar.bar_end == active.state_changed_at
-            ),
-            None,
+    elif active.state == CupHandleState.WEAKENED:
+        expected_types = (
+            NewowMarkerType.CUP_HANDLE_READY,
+            NewowMarkerType.CUP_HANDLE_BREAKOUT,
+            NewowMarkerType.CUP_HANDLE_WEAKENED,
         )
-        return (
-            breakout_snapshot is not None
-            and _breakout_facts(
-                active, state.eligible_bars, breakout_snapshot, profile
-            )[0]
-            is not None
-            and milestones == (ready_id, breakout_id)
-        )
-    if active.state != CupHandleState.WEAKENED or len(milestones) != 3:
+    else:
         return False
-    weakened_id = _marker_identity(
-        active.candidate_id,
-        NewowMarkerType.CUP_HANDLE_WEAKENED,
-        active.state_changed_at,
-    )
-    weakened_snapshot = next(
-        (
-            snapshot
-            for snapshot in state.eligible_bars
-            if snapshot.bar.bar_end == active.state_changed_at
-        ),
-        None,
-    )
-    if active.pivot_price is None or active.handle_extreme is None:
+    if tuple(fact.marker_type for fact in milestone_facts) != expected_types:
         return False
+
+    by_index = {snapshot.eligible_index: snapshot for snapshot in state.eligible_bars}
+    first_retained = state.eligible_bars[0] if state.eligible_bars else None
+    previous_fact: CupMilestoneFact | None = None
+    for fact in milestone_facts:
+        if (
+            not isinstance(fact, CupMilestoneFact)
+            or not isinstance(fact.fact_id, str)
+            or not fact.fact_id
+            or not isinstance(fact.marker_type, NewowMarkerType)
+            or not isinstance(fact.marker_id, str)
+            or not isinstance(fact.bar_end, datetime)
+            or fact.bar_end.tzinfo is None
+            or fact.bar_end.utcoffset() is None
+            or not isinstance(fact.eligible_index, int)
+            or isinstance(fact.eligible_index, bool)
+            or fact.eligible_index < 0
+            or fact.eligible_index > state.pivot_tracker.eligible_index
+            or not isinstance(fact.source_identity, str)
+            or not fact.source_identity
+            or fact.marker_id
+            != _marker_identity(
+                active.candidate_id,
+                fact.marker_type,
+                fact.bar_end,
+            )
+            or fact.fact_id
+            != _milestone_fact_identity(
+                active.candidate_id,
+                fact.marker_id,
+                fact.marker_type,
+                fact.bar_end,
+                fact.eligible_index,
+                fact.source_identity,
+                state.physical_contract,
+                state.segment_id,
+            )
+        ):
+            return False
+        retained = by_index.get(fact.eligible_index)
+        if retained is not None:
+            if (
+                retained.bar.bar_end != fact.bar_end
+                or retained.bar.source_identity != fact.source_identity
+            ):
+                return False
+        elif first_retained is not None and (
+            fact.eligible_index >= first_retained.eligible_index
+            or fact.bar_end >= first_retained.bar.bar_end
+        ):
+            return False
+        if previous_fact is not None and (
+            fact.eligible_index < previous_fact.eligible_index
+            or fact.bar_end < previous_fact.bar_end
+            or (
+                fact.eligible_index == previous_fact.eligible_index
+                and fact.bar_end != previous_fact.bar_end
+            )
+        ):
+            return False
+        previous_fact = fact
+
+    if active.state == CupHandleState.FORMING:
+        return not milestones
+    ready_fact = milestone_facts[0]
+    if ready_fact.bar_end != active.confirmed_at:
+        return False
+    if active.state == CupHandleState.READY:
+        return True
+
+    breakout_fact = milestone_facts[1]
+    breakout_snapshot = by_index.get(breakout_fact.eligible_index)
+    breakout_history_complete = all(
+        index in by_index
+        for index in range(
+            breakout_fact.eligible_index - 20,
+            breakout_fact.eligible_index + 1,
+        )
+    )
+    if breakout_history_complete:
+        assert breakout_snapshot is not None
+        if (
+            _breakout_facts(active, state.eligible_bars, breakout_snapshot, profile)[0]
+            is None
+        ):
+            return False
+    elif active.state == CupHandleState.BREAKOUT:
+        return False
+    if active.state == CupHandleState.BREAKOUT:
+        return breakout_fact.bar_end == active.state_changed_at
+
+    weakened_fact = milestone_facts[2]
+    if (
+        weakened_fact.bar_end != active.state_changed_at
+        or weakened_fact.eligible_index <= breakout_fact.eligible_index
+        or active.pivot_price is None
+        or active.handle_extreme is None
+    ):
+        return False
+    weakened_snapshot = by_index.get(weakened_fact.eligible_index)
     if weakened_snapshot is not None:
         normalized_close = _normal(active.direction, weakened_snapshot.bar.close)
         normalized_pivot = _normal(active.direction, active.pivot_price)
@@ -463,47 +597,7 @@ def _milestones_are_authentic(
         )
         if not invalidation <= normalized_close < normalized_pivot:
             return False
-    elif state.eligible_bars and (
-        active.state_changed_at >= state.eligible_bars[0].bar.bar_end
-    ):
-        return False
-    actual_breakout_id = next(
-        (
-            _marker_identity(
-                active.candidate_id,
-                NewowMarkerType.CUP_HANDLE_BREAKOUT,
-                snapshot.bar.bar_end,
-            )
-            for snapshot in state.eligible_bars
-            if active.confirmed_at <= snapshot.bar.bar_end <= active.state_changed_at
-            and _breakout_facts(active, state.eligible_bars, snapshot, profile)[0]
-            is not None
-        ),
-        None,
-    )
-    ready_snapshot = next(
-        (
-            snapshot
-            for snapshot in state.eligible_bars
-            if snapshot.bar.bar_end == active.confirmed_at
-        ),
-        None,
-    )
-    history_covers_breakout_search = bool(
-        ready_snapshot is not None
-        and state.eligible_bars
-        and state.eligible_bars[0].eligible_index
-        <= ready_snapshot.eligible_index - 20
-    )
-    return (
-        milestones[0] == ready_id
-        and (
-            milestones[1] == actual_breakout_id
-            if actual_breakout_id is not None or history_covers_breakout_search
-            else _is_sha256_identity(milestones[1])
-        )
-        and milestones[2] == weakened_id
-    )
+    return True
 
 
 def _active_candidate_is_coherent(
@@ -628,6 +722,8 @@ def _state_is_valid(state: CupHandleStateValue, profile: NewowTrendProfile) -> b
         or not isinstance(state.emitted_milestones, tuple)
         or len(state.emitted_milestones) > 3
         or not all(isinstance(marker_id, str) and marker_id for marker_id in state.emitted_milestones)
+        or not isinstance(state.emitted_milestone_facts, tuple)
+        or len(state.emitted_milestone_facts) > 3
         or not isinstance(state.recent_terminal_candidate_ids, tuple)
         or len(state.recent_terminal_candidate_ids) > profile.cup_recent_terminal_ids_limit
         or len(set(state.recent_terminal_candidate_ids))
@@ -736,7 +832,9 @@ def _state_is_valid(state: CupHandleStateValue, profile: NewowTrendProfile) -> b
                 return False
         except (ArithmeticError, AttributeError, TypeError, ValueError):
             return False
-    if active is None and state.emitted_milestones:
+    if active is None and (
+        state.emitted_milestones or state.emitted_milestone_facts
+    ):
         return False
     return True
 
@@ -1483,6 +1581,7 @@ def step_cup_handle(
     bars = state.eligible_bars
     pivots = state.confirmed_pivots
     emitted = state.emitted_milestones
+    milestone_facts = state.emitted_milestone_facts
     terminals = state.recent_terminal_candidate_ids
     eligible_started = state.eligible_started
     if not bar.observation_eligible:
@@ -1497,6 +1596,7 @@ def step_cup_handle(
             bar.physical_contract,
             bar.segment_id,
             eligible_started,
+            milestone_facts,
         )
         return CupHandleStepResult(next_state, active, (), tuple(diagnostics), 0)
 
@@ -1515,6 +1615,7 @@ def step_cup_handle(
             bar.physical_contract,
             bar.segment_id,
             eligible_started,
+            milestone_facts,
         )
         return CupHandleStepResult(
             next_state, active, (), tuple(diagnostics + ["CUP_ATR_UNAVAILABLE"]), 0
@@ -1564,6 +1665,9 @@ def step_cup_handle(
                 )
                 markers.append(ready_marker)
                 emitted = (ready_marker.marker_id,)
+                milestone_facts = (
+                    _milestone_fact(ready_marker, snapshot, active.candidate_id),
+                )
         result_overlay = active
 
     if active is not None and active.state in {
@@ -1598,6 +1702,7 @@ def step_cup_handle(
             result_overlay = terminal_overlay
             active = None
             emitted = ()
+            milestone_facts = ()
         elif active.state == CupHandleState.BREAKOUT and normalized_close < normalized_pivot:
             active = replace(
                 active,
@@ -1613,6 +1718,9 @@ def step_cup_handle(
             )
             markers.append(marker)
             emitted += (marker.marker_id,)
+            milestone_facts += (
+                _milestone_fact(marker, snapshot, active.candidate_id),
+            )
             result_overlay = active
         elif active.state == CupHandleState.READY:
             breakout_facts, crossed = _breakout_facts(active, bars, snapshot, profile)
@@ -1632,6 +1740,9 @@ def step_cup_handle(
                 )
                 markers.append(marker)
                 emitted += (marker.marker_id,)
+                milestone_facts += (
+                    _milestone_fact(marker, snapshot, active.candidate_id),
+                )
                 result_overlay = active
             elif crossed:
                 diagnostics.append("BREAKOUT_VOLUME_UNCONFIRMED")
@@ -1669,6 +1780,7 @@ def step_cup_handle(
                     result_overlay = active
                     active = None
                     emitted = ()
+                    milestone_facts = ()
         elif active.state == CupHandleState.BREAKOUT:
             breakout_snapshot = next(
                 (
@@ -1689,6 +1801,7 @@ def step_cup_handle(
                 active = None
                 result_overlay = None
                 emitted = ()
+                milestone_facts = ()
 
     next_state = CupHandleStateValue(
         atr_state,
@@ -1701,6 +1814,7 @@ def step_cup_handle(
         bar.physical_contract,
         bar.segment_id,
         eligible_started,
+        milestone_facts,
     )
     return CupHandleStepResult(
         next_state, result_overlay, tuple(markers), _unique(diagnostics), checks

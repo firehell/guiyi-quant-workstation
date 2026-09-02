@@ -936,6 +936,136 @@ def test_long_lived_weakened_state_survives_bounded_history_rollover() -> None:
     assert state.active_candidate.state == CupHandleState.WEAKENED
 
 
+def test_aged_weakened_state_rejects_a_shape_only_breakout_hash() -> None:
+    """A 64-hex impostor cannot become a relation after its source Bar ages out."""
+
+    bars = breakout_then_weakened()
+    results = calculate_cup_handle_series(bars)
+    breakout = next(
+        marker
+        for marker in _markers(results)
+        if marker.marker_type == NewowMarkerType.CUP_HANDLE_BREAKOUT
+    )
+    state = results[-1].state
+    prior = bars[-1]
+    last_bar = prior
+    for offset in range(1, 231):
+        day = prior.trading_day + timedelta(days=offset)
+        last_bar = replace(
+            prior,
+            trading_day=day,
+            bar_end=datetime.combine(day, datetime.min.time(), tzinfo=UTC),
+            source_identity=f"fixture:aged-weakened:{offset}",
+        )
+        state = step_cup_handle(state, last_bar).state
+
+    assert state.active_candidate is not None
+    assert state.active_candidate.state == CupHandleState.WEAKENED
+    assert breakout.bar_end < state.eligible_bars[0].bar.bar_end
+    facts = list(state.emitted_milestone_facts)
+    facts[1] = replace(facts[1], marker_id="a" * 64)
+    malformed = replace(
+        state,
+        emitted_milestones=(
+            state.emitted_milestones[0],
+            "a" * 64,
+            state.emitted_milestones[2],
+        ),
+        emitted_milestone_facts=tuple(facts),
+    )
+    day = last_bar.trading_day + timedelta(days=1)
+    next_bar = replace(
+        last_bar,
+        trading_day=day,
+        bar_end=datetime.combine(day, datetime.min.time(), tzinfo=UTC),
+        source_identity="fixture:aged-weakened:corrupt",
+    )
+
+    result = step_cup_handle(malformed, next_bar)
+
+    assert result.diagnostics == ("NEWOW_CUP_STATE_INVALID",)
+    assert result.markers == ()
+    assert result.active_overlay is None
+    assert result.state == initial_cup_handle_state()
+
+
+def test_weakened_state_preserves_bounded_typed_milestone_facts() -> None:
+    """The bounded state keeps enough immutable facts to authenticate old IDs."""
+
+    bars = breakout_then_weakened()
+    results = calculate_cup_handle_series(bars)
+    state = results[-1].state
+    markers = _markers(results)
+
+    facts = state.emitted_milestone_facts
+    assert len(facts) == 3
+    assert tuple(fact.marker_id for fact in facts) == tuple(
+        marker.marker_id for marker in markers
+    )
+    assert tuple(fact.marker_type for fact in facts) == (
+        NewowMarkerType.CUP_HANDLE_READY,
+        NewowMarkerType.CUP_HANDLE_BREAKOUT,
+        NewowMarkerType.CUP_HANDLE_WEAKENED,
+    )
+    assert tuple(fact.bar_end for fact in facts) == tuple(
+        marker.bar_end for marker in markers
+    )
+    by_time = {snapshot.bar.bar_end: snapshot for snapshot in state.eligible_bars}
+    assert tuple(fact.eligible_index for fact in facts) == tuple(
+        by_time[marker.bar_end].eligible_index for marker in markers
+    )
+    assert tuple(fact.source_identity for fact in facts) == tuple(
+        by_time[marker.bar_end].bar.source_identity for marker in markers
+    )
+
+
+@pytest.mark.parametrize("corruption", ["eligible_index", "source_identity"])
+def test_aged_milestone_fact_authenticates_its_original_bar_identity(
+    corruption: str,
+) -> None:
+    """Aged milestone provenance cannot be changed independently of its proof."""
+
+    bars = breakout_then_weakened()
+    state = calculate_cup_handle_series(bars)[-1].state
+    prior = bars[-1]
+    last_bar = prior
+    for offset in range(1, 231):
+        day = prior.trading_day + timedelta(days=offset)
+        last_bar = replace(
+            prior,
+            trading_day=day,
+            bar_end=datetime.combine(day, datetime.min.time(), tzinfo=UTC),
+            source_identity=f"fixture:aged-proof:{offset}",
+        )
+        state = step_cup_handle(state, last_bar).state
+
+    facts = list(state.emitted_milestone_facts)
+    breakout_fact = facts[1]
+    facts[1] = (
+        replace(breakout_fact, eligible_index=breakout_fact.eligible_index - 1)
+        if corruption == "eligible_index"
+        else replace(
+            breakout_fact,
+            source_identity=f"{breakout_fact.source_identity}:forged",
+        )
+    )
+    malformed = replace(state, emitted_milestone_facts=tuple(facts))
+    day = last_bar.trading_day + timedelta(days=1)
+    next_bar = replace(
+        last_bar,
+        trading_day=day,
+        bar_end=datetime.combine(day, datetime.min.time(), tzinfo=UTC),
+        source_identity=f"fixture:aged-proof:corrupt:{corruption}",
+    )
+
+    result = step_cup_handle(malformed, next_bar)
+
+    assert result.diagnostics == ("NEWOW_CUP_STATE_INVALID",)
+    assert result.markers == ()
+    assert result.active_overlay is None
+    assert result.state == initial_cup_handle_state()
+
+
 def test_ready_invalidates_directly_and_terminal_candidate_cannot_rebirth() -> None:
     """A broken H ends the L/B/R identity; another H cannot resurrect it."""
 
