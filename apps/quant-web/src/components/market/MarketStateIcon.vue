@@ -17,6 +17,7 @@ const pixels = computed(() => MARKET_HOME_ICON_SIZES[props.size])
   <span
     class="market-state-icon"
     :class="`market-state-icon--${state}`"
+    :data-testid="`market-state-icon-${state}-${size}`"
     :style="{ '--market-state-icon-size': `${pixels}px` }"
     role="img"
     :aria-label="meta.label"

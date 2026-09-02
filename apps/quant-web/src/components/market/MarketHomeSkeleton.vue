@@ -1,0 +1,1 @@
+<template><section class="skeleton" aria-label="Market Home 加载中"><i v-for="n in 6" :key="n"/></section></template><style scoped>.skeleton{display:grid;gap:8px}.skeleton i{height:42px;border-radius:var(--gy-radius-sm);background:linear-gradient(90deg,var(--gy-gray-100),var(--gy-gray-50),var(--gy-gray-100));animation:pulse 1.2s infinite}@keyframes pulse{50%{opacity:.55}}</style>

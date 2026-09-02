@@ -1,0 +1,3 @@
+<script setup lang="ts">defineProps<{asOf:string|null;participants:number;active:number;overview:string;runtime:string|null;eventState:string;stale:boolean}>()</script>
+<template><section class="trust" role="status"><strong>非实时行情 · 最近完整交易日收盘快照截至 {{asOf??'—'}}</strong><span>{{participants}} / {{active}} participant / active</span><span>overview {{overview}}</span><span>Runtime {{runtime??'暂不可用'}}</span><span>HTDY Event {{eventState}}</span><span v-if="stale">cached stale</span></section></template>
+<style scoped>.trust{display:flex;gap:12px;flex-wrap:wrap;padding:10px 14px;border-radius:var(--gy-radius-md);background:var(--gy-surface-warning);font-size:var(--gy-font-size-sm)}.trust span{color:var(--gy-text-muted)}</style>
