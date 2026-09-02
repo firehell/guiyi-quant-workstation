@@ -20,7 +20,7 @@ const mainGlyphTransform = computed(() => {
 <template>
   <span
     class="market-state-icon"
-    :class="`market-state-icon--${state}`"
+    :class="[`market-state-icon--${state}`, `market-state-icon--${size}`]"
     :data-testid="`market-state-icon-${state}-${size}`"
     :style="{ '--market-state-icon-size': `${pixels}px` }"
     role="img"
@@ -49,5 +49,7 @@ const mainGlyphTransform = computed(() => {
 .market-state-icon--neutral { background: var(--gy-market-icon-neutral); }
 .market-state-icon--unavailable { background: var(--gy-market-icon-unavailable); }
 .market-state-icon:has(svg) { position: relative; }
+.market-state-icon--micro.market-state-icon--up { background: var(--gy-market-pill-up-soft); color: var(--gy-market-icon-up); }
+.market-state-icon--micro.market-state-icon--down { background: var(--gy-market-pill-down-soft); color: var(--gy-market-icon-down); }
 .market-state-icon__sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 </style>

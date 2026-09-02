@@ -81,6 +81,18 @@ test('withholds cached Event facts from rows while the current Event projection 
   assert.equal(value.rows[0]!.event, null)
 })
 
+test('keeps a server-degraded overview distinct from a cached client snapshot', () => {
+  const value = buildMarketHomeViewModel({
+    overview: overview([item('ag', 'up', 'up')], { status: 'degraded', freshness: 'stale' }), overviewStale: false,
+    runtime, runtimeStale: false,
+    events: { status: 'ready', trading_day: '2026-09-02', items: [] }, eventsStale: false,
+  })
+
+  assert.equal(value.overview.availability, 'degraded')
+  assert.equal(value.overview.cachedStale, false)
+  assert.equal(value.rows[0]!.dailyState, 'up')
+})
+
 function event(id: number, symbol: string, detectedAt: string) {
   return { id, rule_code: 'htdy_original_15m' as const, symbol, contract: `${symbol.toUpperCase()}2601`, trading_day: '2026-09-02', frequency: '15m' as const, bar_end: detectedAt, result_codes: ['buy'] as Array<'buy'>, detected_at: detectedAt, notification_attempted_at: null }
 }

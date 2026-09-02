@@ -97,3 +97,9 @@ test('distinguishes ready HTDY events from an unavailable current-event projecti
   assert.equal(unavailable.status, 'unavailable')
   assert.equal(unavailable.trading_day, null)
 })
+
+test('fails closed for a calendar-invalid HTDY instant that Date.parse would normalize', () => {
+  const payload = structuredClone(currentEvents)
+  payload.items[0].bar_end = '2026-02-30T01:00:00Z'
+  assert.throws(() => normalizeCurrentHtdyEventsResponse(payload), /bar_end/)
+})

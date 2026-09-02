@@ -38,7 +38,7 @@ export function buildMarketHomeViewModel(input: MarketHomeViewModelInput) {
       ? 'unavailable'
       : input.events.items.length ? 'ready' : 'empty'
   const latestEvents = eventAvailability === 'unavailable' ? new Map<string, AlertEvent>() : latestEventsBySymbol(input.events?.items ?? [])
-  const staleOverviewFacts = Boolean(input.overviewStale || input.overview?.freshness !== 'fresh')
+  const staleOverviewFacts = Boolean(input.overviewStale)
   const rows = (input.overview?.items ?? []).map((item) => ({
     ...item,
     alignment: staleOverviewFacts ? 'unavailable' : alignmentFor(item.daily_trend, item.weekly_trend),
@@ -48,7 +48,7 @@ export function buildMarketHomeViewModel(input: MarketHomeViewModelInput) {
   }))
 
   return {
-    overview: { availability: overviewAvailability, cachedStale: staleOverviewFacts },
+    overview: { availability: overviewAvailability, cachedStale: Boolean(input.overviewStale) },
     runtime: { availability: input.runtime ? 'ready' : 'unavailable', status: input.runtime?.status ?? null, cachedStale: Boolean(input.runtimeStale) },
     events: { availability: eventAvailability, cachedStale: Boolean(input.eventsStale), tradingDay: input.events?.trading_day ?? null },
     rows,

@@ -12,6 +12,20 @@ function overview() {
 function item(symbol, product_name, sector, daily_trend, weekly_trend) {
   return { symbol, product_name, sector, exchange: 'DCE', actual_contract: `${symbol.toUpperCase()}2601`, dominant_mapping_date: '2026-09-02', data_as_of: '2026-09-02', close: '100', price_change_1d: daily_trend === 'up' ? '0.01' : '-0.01', price_change_5d: null, volume_ratio20: '1.2', oi_change_1d: null, atr14_percentile252: null, daily_trend, weekly_trend, reason_codes: [] }
 }
+function allTableStatesOverview() {
+  const value = overview()
+  value.items = [
+    item('ag', '白银', 'black', 'up', 'up'),
+    item('jm', '焦煤', 'black', 'down', 'down'),
+    item('au', '黄金', 'black', 'neutral', 'neutral'),
+    item('rb', '螺纹钢', 'black', 'unavailable', 'unavailable'),
+    item('cu', '沪铜', 'black', 'up', 'down'),
+  ]
+  value.active_count = value.participant_count = 5
+  value.summary = { price_up_count: 2, price_down_count: 3, price_flat_count: 0, daily_up_count: 2, daily_down_count: 1, daily_neutral_count: 1, daily_unavailable_count: 1, aligned_up_count: 1, aligned_down_count: 1 }
+  value.sectors = [{ sector: 'black', active_count: 5, participant_count: 5, median_price_change_1d: '0.01' }]
+  return value
+}
 function runtime(status = 'degraded') { return { status, generated_at: '2026-09-02T01:00:00Z', readonly: true, would_start_services: false, would_enqueue_jobs: false, would_send_notifications: false, components: {} } }
 function events() { return { status: 'ready', trading_day: '2026-09-02', items: [{ id: 1, rule_code: 'htdy_original_15m', symbol: 'ag', contract: 'AG2601', trading_day: '2026-09-02', frequency: '15m', bar_end: '2026-09-02T02:45:00Z', result_codes: ['buy'], detected_at: '2026-09-02T02:45:01Z', notification_attempted_at: null }] } }
 
@@ -42,12 +56,13 @@ async function expectFrozenIconContracts(page) {
   expect(tableGlyphWidth).toBeLessThanOrEqual(13)
 }
 
-test('uses exactly three top-level reads and opens immutable HTDY actual-dominant chart', async ({ page }) => {
+test('uses exactly three all-ready top-level reads and opens immutable HTDY actual-dominant chart', async ({ page }) => {
   const requests = []
-  await mockMarketHomeApi(page, requests)
+  await mockMarketHomeApi(page, requests, events(), overview(), runtime('ready'))
   await page.goto('/market')
 
   await expect(page.getByText('非实时行情')).toBeVisible()
+  await expect(page.getByText('Runtime ready')).toBeVisible()
   await expect(page.getByText('HTDY Focus')).toBeVisible()
   await expect(page.getByText('AG · 买观察 · 15m')).toBeVisible()
   await expect(page.locator('.n-layout-sider__toggle')).toHaveCount(0)
@@ -58,6 +73,17 @@ test('uses exactly three top-level reads and opens immutable HTDY actual-dominan
 
   await page.getByText('AG · 买观察 · 15m').click()
   await expect(page).toHaveURL(/symbol=ag.*series_kind=actual_dominant.*frequency=15m.*overlay=htdy/)
+})
+
+test('renders all five frozen table state icons at 28px', async ({ page }) => {
+  const requests = []
+  await mockMarketHomeApi(page, requests, events(), allTableStatesOverview(), runtime('ready'))
+  await page.goto('/market')
+  for (const [state, color] of [['up', 'rgb(230, 57, 53)'], ['aligned', 'rgb(255, 150, 1)'], ['down', 'rgb(53, 199, 89)'], ['neutral', 'rgb(1, 122, 255)'], ['unavailable', 'rgb(152, 162, 179)']]) {
+    const icon = page.getByTestId(`market-state-icon-${state}-table`).first()
+    await expect(icon).toHaveCSS('width', '28px')
+    await expect(icon).toHaveCSS('background-color', color)
+  }
 })
 
 test('distinguishes an empty current Event projection from an unavailable projection', async ({ page }) => {
@@ -126,6 +152,7 @@ test('retains a cached snapshot and surfaces overview and Runtime degradation', 
   await expect(page.getByText('overview degraded')).toBeVisible()
   await page.getByText('全部刷新').click()
   await expect(page.getByText('overview cached stale')).toBeVisible()
+  await expect(page.getByText('Market Home overview 刷新失败；正在展示上一份成功快照。')).toBeVisible()
 })
 
 test('does not invent participant counts when the initial overview request has no snapshot', async ({ page }) => {
@@ -160,6 +187,7 @@ test('keeps Event unavailable semantics and local summary filters on mobile', as
   await expect(page.getByText('HTDY 当前 Event 暂不可用；不能据此判断本时段无观察。')).toBeVisible()
   await expect(page.getByLabel('移动端品种列表')).toContainText('HTDY')
   await expect(page.getByLabel('移动端品种列表')).toContainText('Event 不可用')
+  await expect(page.getByLabel('移动端品种列表').locator('.htdy .market-state-icon').first()).toHaveCSS('width', '28px')
   await expect(page.getByText('Runtime ready')).toBeVisible()
 })
 
@@ -175,4 +203,11 @@ test('applies every summary choice locally and makes compact density visible', a
   await page.getByText('紧凑密度').click()
   await expect.poll(async () => page.locator('tbody tr').first().locator('th').evaluate((element) => getComputedStyle(element).paddingTop)).not.toBe(regularPadding)
   expect(requests.filter((path) => path.endsWith('/home-overview'))).toHaveLength(1)
+})
+
+test('gives keyboard rows an explicit chart-review label', async ({ page }) => {
+  const requests = []
+  await mockMarketHomeApi(page, requests)
+  await page.goto('/market')
+  await expect(page.locator('tbody tr').first()).toHaveAttribute('aria-label', /按 Enter 进入品种复核/)
 })
