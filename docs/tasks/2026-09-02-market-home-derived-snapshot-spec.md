@@ -1,6 +1,6 @@
 # Market Home 盘后派生快照 Spec
 
-状态：`SPEC_APPROVED_BY_OWNER / IMPLEMENTATION_AUTHORIZED`
+状态：`SPEC_APPROVED_BY_OWNER / REVIEW_AMENDED / IMPLEMENTATION_AUTHORIZED`
 
 日期：2026-09-02
 
@@ -8,106 +8,142 @@ Issue：`#315`
 
 事实基线：`develop@fa04c5524b57a3512d7163612972099eda96e0c4`
 
-任务车道：`Lane 3 / derived Runtime write path / code-only implementation`
+任务车道：`Lane 3 / derived data write seam / repository implementation only`
 
 ## 1. 目的
 
-Market Home 的产品设计已经稳定：首页通过三个 O(1) 只读资源展示 completed D1/W1 generic overview、Runtime health 与 current HTDY Event。当前性能问题只存在于 overview 的后端生成时机。
+Market Home 产品设计已经稳定：首页通过三个 O(1) 只读资源展示 completed D1/W1 generic overview、Runtime health 与 current HTDY Event。当前性能问题只存在于 overview 后端的生成时机。
 
-现有 `MarketHomeOverviewService.snapshot()` 每次请求都遍历 active universe，并对每个品种分别读取：
+现有 `MarketHomeOverviewService.snapshot()` 每次请求都遍历 active universe，对每个品种分别执行：
 
 ```text
 actual_dominant D1 limit=300
 actual_dominant W1 limit=80
 ```
 
-当前 active universe 为 60，因此一次首页 overview 至少形成约 120 次 `MarketDataService.query_page()` 调用；每次 actual-dominant 读取还会重复经过 MainContractMap、Catalog、具体合约月分区、Parquet 解码和完整性检查。既有 benchmark 约为：
+当前 active universe 为 60，因此一次 overview 约形成 120 次 `MarketDataService.query_page()`；每次 actual-dominant 查询继续经过 MainContractMap、Catalog、具体合约月分区、Parquet 解码和完整性检查。既有本地 benchmark：
 
 ```text
 cold ≈ 4.816s
 warm ≈ 4.812s
 ```
 
-completed D1 通常每日变化一次，W1 通常每周变化一次，因此“每次 HTTP 读取时重新生成”与事实变化频率不匹配。
+completed D1 通常每日变化一次，W1 通常每周变化一次。对一个 Dashboard read model 而言，“每次 HTTP 请求现场重算”与事实变化频率不匹配。
 
-本 Spec 将 Market Home overview 从常态的 read-time compute 改为极简的 update-time derived projection，同时保留现有 compute 作为 correctness fallback。
+本 Spec 将常态路径改为 update-time derived projection，同时保留原现场 compute 作为 correctness fallback。
 
-## 2. 核心结论
-
-目标架构：
+## 2. 最终架构
 
 ```text
 RQData
-→ Canonical Parquet
-→ Catalog + MainContractMap
+→ HistoricalDataManager
+→ Canonical Parquet + Catalog + MainContractMap
 → MarketDataService
-→ MarketHomeOverviewService          唯一计算 authority
-→ Market Home derived projection     性能派生，可删除、可重建
+→ MarketHomeOverviewService                唯一 overview compute authority
+→ <canonical_root>/.derived/market-home-overview.json
 → GET /api/v1/market/research/home-overview
 → Web
 ```
 
-生成时机：
+API：
 
 ```text
-after-market
-→ HistoricalDataManager.update() = passed / noop
-→ MarketHome projection refresh
-→ same-directory temporary file
-→ fsync
-→ os.replace
-→ .run/market-home-overview.json
+current authority identity
+→ valid projection ?
+   ├─ yes → 直接返回 projection
+   └─ no  → MarketHomeOverviewService.snapshot()
 ```
 
-读取时机：
+自然盘后：
 
 ```text
-GET home-overview
-→ 计算廉价 authority identity
-→ projection identity exact match ?
-   ├─ yes → 直接返回 projection payload
-   └─ no  → 调用现有 MarketHomeOverviewService.snapshot()
+provider ready
+→ 失效旧 projection
+→ HistoricalDataManager.update(apply=True)
+→ canonical_updated
+→ rank1 / Live reconciliation
+→ Live cleanup
+→ best-effort refresh Market Home projection
+→ after-market status
 ```
 
-API fallback 不写 snapshot。
+人工正式维护：
 
-## 3. Authority 不变量
+```text
+guiyi data update/refresh --apply
+→ 失效旧 projection
+→ HistoricalDataManager action
+→ 不同步重建 projection
+→ API 暂时走 authoritative compute fallback
+```
 
-`MarketHomeOverviewService` 仍是 completed D1/W1 overview 的唯一计算 authority。
+下一次自然 after-market 再重建 projection。
 
-Derived projection：
+## 3. Review Amendment
 
-- 不是 Canonical；
-- 不是 MarketDataService 替代品；
-- 不拥有 MainContractMap authority；
-- 不拥有 taxonomy / active universe authority；
-- 不拥有策略、Alert、Runtime 或交易语义；
-- 文件删除后必须可以仅通过现有 authority 完整重建；
-- projection 内容与现场 compute 内容必须使用同一个 pure response mapper。
-
-禁止形成第二套指标计算或第二套 actual-dominant 读取算法。
-
-## 4. V1 存储合同
-
-默认路径固定为：
+首稿设计曾使用：
 
 ```text
 PROJECT_ROOT/.run/market-home-overview.json
 ```
 
+并仅以 `target_as_of + universe/taxonomy` 判定 freshness。提交前架构 Review 发现两个问题：
+
+1. 同一 trading day 的 Canonical/MainContractMap 可以被合法 refresh/update；日期不变时旧 projection 会继续误命中；
+2. 若 projection refresh 放在 `canonical_updated` 前，会把约 4.8 秒历史计算插入 HTDY D1/W1 Web/Alert seam 前面。
+
+最终修正为：
+
+- projection 跟随共享 `canonical_root`，跨 checkout/Runtime root 共享；
+- 所有正式 apply 入口在 manager action 前先删除旧 projection；
+- invalidation 失败在 authoritative mutation 前 fail-closed；
+- after-market projection refresh 移到 `canonical_updated + reconciliation + cleanup` 全部成功之后；
+- refresh 失败只导致 API compute fallback，不改变已完成的核心 maintenance 结论。
+
+这两个 amendment 以 correctness 和现有 Alert seam 优先于缓存命中率。
+
+## 4. Authority 不变量
+
+`MarketHomeOverviewService` 始终是 completed D1/W1 overview 的唯一计算 authority。
+
+Projection：
+
+- 不是 Canonical；
+- 不是 MarketDataService 替代品；
+- 不拥有 MainContractMap authority；
+- 不拥有 active universe / taxonomy authority；
+- 不拥有策略、Alert、Runtime 或交易语义；
+- 删除后必须能仅用原 authority 完整重建；
+- payload 必须由与 API fallback 共用的 pure mapper 产生。
+
+禁止创建第二套 EMA/ATR/趋势/actual-dominant 逻辑。
+
+## 5. 存储合同
+
+唯一默认位置：
+
+```text
+<GUIYI_CANONICAL_DATA_ROOT>/.derived/market-home-overview.json
+```
+
+未配置外部 Canonical root 时等价于：
+
+```text
+<PROJECT_ROOT>/data/parquet/canonical/.derived/market-home-overview.json
+```
+
 原因：
 
-1. `.run/` 已是当前项目 runtime-local、Git ignored 状态目录；
-2. 与 `after-market-status.json` 一样属于可重建运行派生，而不是长期事实；
-3. 不污染 `GUIYI_CANONICAL_DATA_ROOT`；
-4. 不增加 Redis、PostgreSQL、Alembic、外部 derived root 或新环境变量；
-5. Runtime promotion 到新 checkout 后允许文件暂时不存在，API compute fallback 保证 correctness，下一次自然 after-market 会重新生成。
+- 与权威 Canonical root 共享生命周期和 checkout 无关身份；
+- 不污染 Catalog 的 physical Dataset taxonomy；`.derived` 不是 Bar Dataset；
+- 不增加 PostgreSQL、Redis、Alembic、queue、worker 或新环境变量；
+- 人工维护和 Runtime after-market 无论从哪个 checkout 执行，只要指向同一 canonical root，就操作同一 projection。
 
-V1 不保留历史 projection，只保留一个 `current` 文件。
+V1 只保留一个 current projection，不做历史版本、LRU 或 TTL。
 
-## 5. Projection Envelope
+## 6. Projection Envelope
 
-文件必须是单个 UTF-8 JSON object：
+单个 UTF-8 JSON object：
 
 ```json
 {
@@ -131,32 +167,38 @@ V1 不保留历史 projection，只保留一个 `current` 文件。
 }
 ```
 
-`payload` 必须严格复用现有 `MarketHomeOverviewResponse` wire contract；Decimal 继续按 Pydantic JSON 规则输出字符串，null 保持 null。
+规则：
 
-Envelope 使用 `extra="forbid"`。`generated_at` 必须是 timezone-aware datetime，仅供诊断，不参与市场事实判断。
+- envelope `extra="forbid"`；
+- `schema_version == 1`；
+- `generated_at` 必须 timezone-aware，只用于诊断；
+- `authority_digest` 必须是 lowercase SHA-256 hex；
+- `payload` 严格复用现有 `MarketHomeOverviewResponse`；
+- Decimal wire 继续为字符串，null 保持 null；
+- `payload.target_as_of == payload.data_as_of == envelope.target_as_of`。
 
-## 6. Authority Identity
+## 7. Authority Identity
 
-新增 `MarketHomeAuthorityIdentity`：
+`MarketHomeAuthorityIdentity`：
 
 ```text
-target_as_of: date
-authority_digest: sha256 hex
+target_as_of
+authority_digest
 ```
 
-`target_as_of` 继续来自现有 `DatabaseCoverageSource.latest_complete_day(active_products)`。
+`target_as_of` 继续由 `DatabaseCoverageSource.latest_complete_day(active_products)` 提供。
 
 `authority_digest` 精确绑定：
 
 ```text
 active product 顺序
 +
-每个 product 的 taxonomy.name
+每个 product taxonomy.name
 +
-每个 product 的 taxonomy.sector
+每个 product taxonomy.sector
 ```
 
-确定性编码固定为：
+确定性编码：
 
 ```python
 records = [
@@ -167,265 +209,254 @@ json.dumps(records, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
 sha256(encoded_utf8).hexdigest()
 ```
 
-任何 active universe 数量、顺序、名称或 sector 变化都必须造成 digest 变化。
+Market-data source revision 不通过昂贵文件扫描加入 digest；由 §10 的 apply invalidation seam 保证任何 authoritative mutation 之前旧 projection 已不可读。
 
-## 7. Projection 命中规则
+## 8. Projection Read Contract
 
 `MarketHomeProjectionStore.load(identity)` 只有以下全部成立才返回 payload：
 
-1. path 存在且是普通文件，不接受 symlink；
-2. 文件大小 `> 0` 且 `<= 2 MiB`；
-3. JSON / Pydantic strict validation 通过；
-4. `schema_version == 1`；
-5. `envelope.target_as_of == identity.target_as_of`；
-6. `envelope.authority_digest == identity.authority_digest`；
-7. `payload.target_as_of == envelope.target_as_of`；
-8. `payload.data_as_of == envelope.target_as_of`。
+1. `.derived` parent 不是 symlink；
+2. projection 自身不是 symlink 且是普通文件；
+3. `0 < size <= 2 MiB`；
+4. JSON / Pydantic validation 通过；
+5. schema == 1；
+6. target 与 authority digest 精确匹配；
+7. payload target/data_as_of 与 envelope target 一致。
 
-任一不满足：视为 cache miss，不向 HTTP 泄露内部文件错误，不把旧 projection 冒充当前事实。
+任一失败：返回 miss，不向 HTTP 泄露文件路径或解析细节。
 
-## 8. API 读取合同
+## 9. API Contract
 
-`GET /api/v1/market/research/home-overview` 保持原 URL、response schema 和 HTTP error contract。
-
-新路径：
+URL 与 response schema 不变：
 
 ```text
-build MarketHomeProjection
-→ service.authority_identity()
-→ store.load(identity)
-→ hit: return cached MarketHomeOverviewResponse
-→ miss: service.snapshot() + pure mapper + return
+GET /api/v1/market/research/home-overview
 ```
 
-### Hit
+Hit：
 
-Hit 时禁止调用：
+- 不调用 `MarketHomeOverviewService.snapshot()`；
+- 不调用 `MarketDataService.query_page()`；
+- 不调用 `list_latest_dominants()`；
+- 不访问 Redis/provider；
+- 不执行任何写入。
 
-- `MarketHomeOverviewService.snapshot()`；
-- `MarketDataService.query_page()`；
-- `list_latest_dominants()`；
-- Redis / provider / write service。
+Miss：
 
-允许的廉价 identity 工作只有 active/taxonomy 已加载事实、`latest_complete_day()` 与一个小 JSON 文件读取/validation。
+- 调用现有 authoritative compute；
+- 保持原 typed 409 error code；
+- HTTP endpoint 不创建目录、不修复文件、不 publish projection。
 
-### Miss
+因此 HTTP endpoint 始终只读。
 
-Miss 时完全保留现有现场计算行为和错误语义。
+## 10. Apply Invalidation Contract
 
-API miss/fallback：
-
-- 不创建目录；
-- 不创建临时文件；
-- 不更新 projection；
-- 不写 Redis、DB、Canonical 或其他 runtime state。
-
-因此 overview HTTP endpoint 仍是纯只读入口。
-
-## 9. After-market 刷新合同
-
-Projection refresh 只允许发生在：
+正式 apply 写入口当前只有：
 
 ```text
-HistoricalDataManager.update() result.status in {"passed", "noop"}
+guiyi data update --apply
+guiyi data refresh --apply
+natural after-market -> manager.update(apply=True)
 ```
 
-顺序固定为：
+代码搜索确认 metadata synchronization 的 active application 写入口也只由 `HistoricalDataManager` 维护链调用。
 
-```text
-Canonical maintenance success/noop
-→ attempt Market Home projection refresh
-→ existing market:state(canonical_updated)
-→ existing rank1/live reconciliation
-→ existing cleanup
-```
+规则：
 
-不在以下情况 refresh：
+- CLI update/refresh：`run_data_command()` 在调用 manager 前 invalidates projection；
+- after-market：provider readiness 通过后、manager.update 前 invalidates projection；
+- dry-run/audit 不触碰 projection；
+- provider readiness 未通过时不触碰 projection；
+- invalidation 失败时 manager action 不得开始。
 
-- NON_TRADING_DAY skipped；
-- provider not ready；
-- provider readiness error；
-- HistoricalDataManager update failed/blocked；
-- Canonical update 抛异常。
+为什么必须先失效：同一日期的 MainContractMap 或 Parquet 可以被修正，`target_as_of` 不变。删除旧 projection 后，任何中途失败都只会使首页暂时回退现场 compute，不会显示旧快照。
 
-## 10. Projection refresh 失败语义
+## 11. Invalidation Path Safety
 
-Projection 是性能派生，不是 Canonical maintenance 的成功条件。
+Projection path 由 `canonical_root.resolve()` 推导。
 
-如果 `service.snapshot()`、serialization、fsync 或 `os.replace()` 失败：
+`.derived` parent 不允许为 symlink：
 
-1. 只记录安全 warning：
+- read：视为 miss；
+- invalidate：fail closed；
+- publish：fail closed。
 
-```text
-market_home_projection_refresh_failed exception_type=<ClassName>
-```
+Projection 自身为 symlink时 read 不接受；invalidate 可安全 unlink 该 symlink 本身。
 
-2. 不记录异常 message、路径、SQL 或 stack detail 到公开状态；
-3. 不改变已成功的 `AfterMarketResult`；
-4. 不发送 PushPlus；
-5. 不 retry；
-6. 若旧 projection 已存在，必须保持原文件不变；
-7. 后续 API 按 identity 检查，旧文件失配时自动走现场 compute。
+## 12. Atomic Publish
 
-这样 projection failure 只能造成性能退化，不能污染数据 correctness 或核心 Runtime maintenance 结论。
-
-## 11. Atomic Publish
-
-`MarketHomeProjectionStore.publish()` 必须：
+`MarketHomeProjectionStore.publish()`：
 
 ```text
 validate envelope
-→ mkdir parent
-→ tempfile.mkstemp(same parent)
+→ mkdir .derived
+→ reject symlink parent
+→ mkstemp(same parent)
 → UTF-8 write
 → flush
-→ os.fsync
+→ fsync
 → os.replace(temp, current)
-→ finally cleanup temp
+→ cleanup temp
 ```
 
-临时文件必须与目标文件同目录，确保 `os.replace` 的原子语义。
+禁止 append、in-place truncate 或 delete-current-then-write。
 
-不得使用 append、in-place truncate 或先删除 current 再写。
+写失败统一映射内部 projection error；after-market refresh 会隔离该错误。
 
-## 12. Pure Response Mapper
+## 13. After-market Ordering
 
-当前 `app/api/market.py` 中从 `MarketHomeOverviewSnapshot` 到 `MarketHomeOverviewResponse` 的映射必须抽取为一个 pure function，并由：
+Projection refresh 只在 `_attempt()` 已经完整返回 success 后执行，也就是：
 
-- API compute fallback；
-- after-market projection refresh；
+```text
+HistoricalDataManager status passed/noop
+AND canonical_updated 已 publish
+AND rank1/live reconciliation passed
+AND cleanup passed
+```
 
-共同调用。
+然后：
 
-不允许复制两份 response mapping。
+```text
+try projection.refresh()
+except:
+    log warning(exception_type only)
+    keep AfterMarketResult passed
+```
 
-## 13. 并发和竞态
+Refresh failure：
 
-V1 不引入锁服务、Redis mutex、线程池或文件锁。
+- 不 retry；
+- 不发 projection-specific PushPlus；
+- 不更改 Alert Rule/Scope/Event；
+- 不把 core maintenance 改判 failed；
+- 旧 projection 已在 manager apply 前失效，因此 API 走 compute fallback。
+
+Invalidation failure 与 refresh failure 不同：invalidation failure 发生在 authority mutation 前，必须阻塞本次 apply，并沿 existing after-market failure contract 处理。
+
+## 14. Pure Response Mapper
+
+原 `app/api/market.py` 的 Snapshot → `MarketHomeOverviewResponse` 映射抽到：
+
+```text
+market_home_response(snapshot)
+```
+
+仅做 pure projection，无 I/O。
+
+API compute fallback 和 after-market refresh 共用该 mapper；禁止复制两份 wire mapping。
+
+## 15. 并发
+
+V1 不引入 Redis lock、线程池或文件锁。
 
 原因：
 
-- after-market 是单个受监督任务；
-- API 只读 projection；
-- atomic replace 保证 reader 只看到完整旧文件或完整新文件。
+- authoritative maintenance 已有 maintenance lease；
+- apply 前 invalidation 与 shared canonical root 避免跨 checkout stale projection；
+- API 只读；
+- atomic replace 保证 reader 只看到完整文件或 miss。
 
-如果 projection identity 在 `authority_identity()` 与 `snapshot()` 之间发生变化，refresh 必须检测：
+Projection refresh 如果 `authority_identity()` 与 `snapshot()` 之间 target day 变化，必须拒绝 publish。
 
-```text
-response.target_as_of != identity.target_as_of
-```
+## 16. 性能合同
 
-并拒绝 publish，保留旧文件。下一次自然 refresh 重试。
+本任务不优化 4.8s compute fallback；只把常态读路径改成小 JSON validation。
 
-## 14. 性能合同
-
-本任务不优化 compute miss 的 4.8s 路径；它只改变常态读取路径。
-
-目标：
+Manual acceptance 目标：
 
 ```text
-projection store decode + strict validation < 50ms
-projection-hit HTTP endpoint             < 200ms
+projection decode + validation < 50ms
+projection-hit HTTP endpoint  < 200ms
 ```
 
-以上为本地真实环境 manual acceptance 目标，不用 sleep-based unit test 伪造。
+不得用 sleep/timing unit test伪造。自动测试通过行为断言证明 hit 没有调用 expensive compute。
 
-自动测试必须用行为证明 hit 不调用 expensive compute，而不是用微秒级 timing assertion。
+## 17. 测试合同
 
-## 15. 测试合同
+### Identity / store
 
-### Domain / identity
-
-必须覆盖：
+覆盖：
 
 - digest deterministic；
-- product order 变化 → digest 变化；
-- taxonomy name/sector 变化 → digest 变化；
-- target_as_of 由现有 coverage authority 提供。
-
-### Store
-
-必须覆盖：
-
-- publish/read round trip；
-- Decimal/date wire round trip；
-- missing file → miss；
-- symlink → miss；
-- empty/oversize/corrupt JSON → miss；
-- schema/target/digest mismatch → miss；
-- payload target/data_as_of mismatch → validation failure/miss；
-- replace failure 保留 last-good + 清理 temp。
+- product order、taxonomy name、sector 变化 → digest 变化；
+- round trip；
+- Decimal/null wire 保持；
+- missing/symlink/empty/oversize/corrupt → miss；
+- schema/target/digest/payload identity mismatch → miss；
+- parent symlink → read miss / invalidation fail；
+- atomic replace failure 保持原文件并清临时文件；
+- refresh target race 拒绝 publish。
 
 ### API
 
-必须覆盖：
+覆盖：
 
-- exact projection hit 返回 payload 且 `snapshot()` 未调用；
-- miss 调用现有 compute；
-- corrupt/mismatched projection 调用 compute；
-- compute failure 仍映射原 409 code；
-- fallback 不调用 store.publish。
+- hit 不调用 snapshot；
+- miss compute 但不写；
+- corrupt/mismatch compute fallback；
+- typed 409 不变；
+- router 只调用 projection read。
 
-### After-market
+### Apply invalidation
 
-必须覆盖：
+覆盖：
 
-- passed refresh exactly once；
-- noop refresh exactly once；
-- skipped / provider not ready / update failure 不 refresh；
-- projection refresh exception 不改变 passed result；
-- projection refresh exception 不发送 notification；
-- projection refresh 发生在 `canonical_updated` publish 之前。
+- CLI update/refresh apply：manager action 前 projection 已不存在；
+- CLI dry-run：projection 保留；
+- symlink/失效失败：manager action 未调用；
+- after-market provider not ready：不 invalidate；
+- after-market manager failure：projection 保持失效，不 refresh；
+- after-market success/noop：顺序 `invalidate → canonical_updated/core success → projection refresh`。
 
-## 16. Canonical / 文档同步
+### Failure isolation
 
-源码测试完成后同步：
+覆盖：
 
-- `DECISIONS.md`：Market Home 使用 update-time runtime-local derived projection；projection 可删除、可重建、非 authority；
-- `docs/ARCHITECTURE.md`：增加 after-market → Market Home projection → overview API read 边；
-- `openspec/specs/market-home-overview/spec.md`：把原“每次 endpoint 直接 compose”改为“projection hit 优先，compute fallback”，同时保持 HTTP endpoint read-only；
-- `TESTING.md`：增加 targeted projection/after-market/API 测试命令。
+- projection refresh exception → AfterMarketResult 仍 passed；
+- log 只含 exception type，不含 private message；
+- refresh failure 不触发 notification。
 
-`PROJECT_SOURCE.md` 的产品能力和用户语义不变，不因内部性能实现重复扩写。
+## 18. Canonical / 文档同步
 
-`STATUS.md` 不修改：代码实现不等于 release、Runtime promotion 或自然 after-market evidence。
+源码完成后同步：
 
-## 17. 禁止范围
+- `DECISIONS.md`；
+- `docs/ARCHITECTURE.md`；
+- `openspec/specs/market-home-overview/spec.md`；
+- `TESTING.md`。
 
-本任务明确不做：
+不修改：
+
+- `PROJECT_SOURCE.md`：用户产品语义未变化；
+- `STATUS.md`：代码进入 branch/develop 不等于 release/Runtime/evidence。
+
+## 19. 禁止范围
+
+本任务不做：
 
 - Redis cache；
 - PostgreSQL / Alembic；
-- 外部 derived data root；
+- 新外部 derived root/env；
 - background worker / queue / scheduler；
-- thread pool / parallel Parquet read；
-- `MarketDataService` actual-dominant 性能重构；
+- thread pool / parallel Parquet reader；
+- MarketDataService 性能重构；
 - 指标公式变化；
 - HTDY / Alert Rule / Event / Scope / audience / transport 变化；
 - Web UI 变化；
 - production RQData / Canonical / DB / Redis 写入；
-- 真实 after-market 执行；
-- main、tag、Release、Runtime promotion。
+- 手工真实 after-market；
+- main/tag/Release/Runtime promotion。
 
-## 18. Gate
+## 20. Gate
 
-用户已经明确授权：
+用户已明确授权：
 
 ```text
 Spec → Plan → code/test implementation → review/fix → submit PR
 ```
 
-该授权仅覆盖仓库内代码、测试、文档、task branch 和 PR。
+该授权只覆盖仓库代码、测试、文档、task branch 和 PR。
 
-它不授权任何真实 projection 文件在 production Runtime 中首次生成，因为那需要包含本代码的未来 Runtime promotion 和自然 after-market 运行；也不授权当前 production after-market 手工执行。
+当前执行环境没有可用的仓库 shell/test runner，且仓库没有 GitHub Actions workflow。因此提交前可以完成代码级/static diff Review，但不得声称 pytest/Ruff/Mypy/OpenSpec 已实际通过。
 
-完成状态最多为：
-
-```text
-CODE_COMPLETE
-TEST_COMPLETE（仅在真实命令已执行并通过时）
-REVIEW_COMPLETE
-EXTERNAL_GATE_PENDING
-```
-
-不得因此声明 `RELEASED` 或 `RUNTIME_READY`。
+真实测试验证、真实 projection-hit benchmark、production projection 首次生成、release 与 Runtime promotion 仍是独立 Gate。
