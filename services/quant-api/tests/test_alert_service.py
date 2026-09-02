@@ -49,6 +49,26 @@ def test_product_rules_exposes_only_htdy_frequency_scope(session: Session) -> No
     assert state.enabled_for_product is True
 
 
+def test_product_rules_exposes_subing_public_name_from_registry(session: Session) -> None:
+    session.add(AlertRule(
+        rule_code="subing_ths_alert_15m_v1",
+        enabled=False,
+        scope_product_frequencies={},
+    ))
+    session.commit()
+
+    states = AlertService(session, operational_products=("jm",)).product_rules("jm")
+    subing = next(
+        state for state in states if state.rule_code == "subing_ths_alert_15m_v1"
+    )
+
+    assert subing.display_name == "苏冰预警"
+    assert subing.kind == "indicator_observation"
+    assert subing.input_frequencies == ("15m",)
+    assert subing.enabled_frequencies == ()
+    assert subing.enabled_for_product is False
+
+
 def test_frequency_scope_mutation_is_normalized_and_idempotent(session: Session) -> None:
     service = AlertService(session, operational_products=("jm",))
     enabled = service.set_product_frequency_enabled(

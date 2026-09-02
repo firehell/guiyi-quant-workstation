@@ -43,7 +43,7 @@ HTDY_RULE = AlertRuleDefinition(
 
 SUBING_THS_RULE = AlertRuleDefinition(
     rule_code=SUBING_THS_ALERT_RULE_CODE,
-    display_name="苏冰同花顺 15m",
+    display_name="苏冰预警",
     kind=AlertRuleKind.INDICATOR_OBSERVATION,
     event_mode=AlertEventMode.EXACT,
     input_frequencies=("15m",),
