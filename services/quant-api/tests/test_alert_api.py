@@ -148,6 +148,21 @@ def test_current_events_fail_closed_for_unknown_persisted_rule() -> None:
     }
 
 
+def test_current_events_validate_unknown_rule_beyond_the_response_limit() -> None:
+    factory = session_factory()
+    seed_unknown_event(factory)
+    for minute in range(1, 32):
+        seed_event(
+            factory,
+            bar_end=BAR_END + timedelta(minutes=minute),
+            detected_at=BAR_END + timedelta(minutes=minute),
+        )
+    with client(factory) as value:
+        response = value.get("/api/alerts/current-events", params={"limit": 30})
+    assert response.status_code == 409
+    assert response.json() == {"detail": {"code": "ALERT_EVENT_FACTS_INVALID"}}
+
+
 def test_current_events_resolve_rule_codes_in_a_bounded_number_of_queries() -> None:
     factory = session_factory()
     seed_event(factory)

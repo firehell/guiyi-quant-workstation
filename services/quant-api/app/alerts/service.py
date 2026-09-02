@@ -266,7 +266,7 @@ class AlertService:
         return tuple(self._session.scalars(statement).all())
 
     def list_current_events(
-        self, *, trading_day: date, limit: int
+        self, *, trading_day: date, limit: int | None
     ) -> tuple[AlertEvent, ...]:
         """Read every current-day Event so API serialization can fail closed."""
 
@@ -281,8 +281,9 @@ class AlertService:
                 AlertEvent.bar_end.desc(),
                 AlertEvent.id.desc(),
             )
-            .limit(limit)
         )
+        if limit is not None:
+            statement = statement.limit(limit)
         return tuple(self._session.scalars(statement).all())
 
     def _rule_by_code(self, rule_code: str, *, for_update: bool = False) -> AlertRule:

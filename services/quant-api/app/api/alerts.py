@@ -129,12 +129,12 @@ def current_alert_events(
     assert current_day.trading_day is not None
     events = _service(session).list_current_events(
         trading_day=current_day.trading_day,
-        limit=limit,
+        limit=None,
     )
     return CurrentAlertEventsResponse(
         status="ready",
         trading_day=current_day.trading_day,
-        items=_event_outs(session, events),
+        items=_event_outs(session, events)[:limit],
     )
 
 
