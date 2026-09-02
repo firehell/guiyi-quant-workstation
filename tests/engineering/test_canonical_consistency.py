@@ -165,9 +165,7 @@ ALERT_CANONICAL_REQUIREMENTS = {
         SUBING_THS_FORMULA_VERSION,
         "EMA(CLOSE, 21)",
         "completed actual_dominant 15m",
-        "零轴",
-        "Range",
-        "多周期",
+        "零轴、Range、量能/OI、ATR、EMA 斜率与多周期共振都不是 V1 Gate",
     ),
     "DECISIONS.md": (
         "subing_ths_alert_15m_v1",
