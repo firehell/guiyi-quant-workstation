@@ -23,7 +23,7 @@ import { filterAndSortMarketHomeRows, type MarketHomeAlignmentFilter, type Marke
 
 const router = useRouter()
 const initialPreferences = loadMarketHomePreferences()
-const query = ref(initialPreferences.query)
+const query = ref('')
 const sector = ref(initialPreferences.sector)
 const summaryFilter = ref<MarketHomeLocalFilter>('all')
 const sort = ref<MarketHomeSort>(initialPreferences.sort)
@@ -45,12 +45,12 @@ async function refreshAll() {
 function openProduct(item: MarketHomeRow) {
   void router.push({
     name: 'market-chart',
-    query: marketHomeProductChartQuery(item.symbol),
+    query: { ...marketHomeProductChartQuery(item.symbol), frequency: initialPreferences.detailFrequency },
   })
 }
 
 function openEvent(event: AlertEvent) { void router.push({ name: 'market-chart', query: marketHomeEventChartQuery(event) }) }
-watch([query,sector,sort], () => saveMarketHomePreferences({ version: 1, query: query.value, sector: sector.value, sort: sort.value }))
+watch([sector,sort], () => saveMarketHomePreferences({ version: 1, sector: sector.value, sort: sort.value, compactDensity: initialPreferences.compactDensity, detailFrequency: initialPreferences.detailFrequency, focusRailCollapsed: initialPreferences.focusRailCollapsed }))
 
 onMounted(() => {
   home.start()

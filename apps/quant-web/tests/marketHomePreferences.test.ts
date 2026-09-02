@@ -8,7 +8,7 @@ test('falls back to Market Home defaults when local preference is corrupt or inv
   Object.assign(globalThis, { localStorage: { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => values.set(key, value) } })
 
   values.set(MARKET_HOME_PREFERENCES_KEY, '{not-json')
-  assert.deepEqual(loadMarketHomePreferences(), { version: 1, sector: '', query: '', sort: 'default' })
-  values.set(MARKET_HOME_PREFERENCES_KEY, JSON.stringify({ version: 2, sector: 'black', query: '', sort: 'event' }))
-  assert.deepEqual(loadMarketHomePreferences(), { version: 1, sector: '', query: '', sort: 'default' })
+  assert.deepEqual(loadMarketHomePreferences(), { version: 1, sector: '', sort: 'default', compactDensity: false, detailFrequency: '1d', focusRailCollapsed: false })
+  values.set(MARKET_HOME_PREFERENCES_KEY, JSON.stringify({ version: 2, sector: 'black', sort: 'event' }))
+  assert.deepEqual(loadMarketHomePreferences(), { version: 1, sector: '', sort: 'default', compactDensity: false, detailFrequency: '1d', focusRailCollapsed: false })
 })
