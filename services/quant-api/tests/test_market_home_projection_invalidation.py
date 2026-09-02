@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -7,6 +8,7 @@ import pytest
 
 from app.guiyi_cli import data_commands
 from app.market_data.historical_data_manager import RefreshRequest, UpdateRequest
+from app.market_data.market_home_overview import MarketHomeAuthorityIdentity
 from app.market_data.market_home_projection import (
     MarketHomeProjectionError,
     MarketHomeProjectionStore,
@@ -19,14 +21,15 @@ class _Manager:
         self.catalog = SimpleNamespace(canonical_root=canonical_root)
         self.calls: list[str] = []
         self.projection_path = market_home_projection_path(canonical_root)
+        self.projection_exists_at_action: list[bool] = []
 
     def update(self, _request):
-        assert not self.projection_path.exists()
+        self.projection_exists_at_action.append(self.projection_path.exists())
         self.calls.append("update")
         return "updated"
 
     def refresh(self, _request):
-        assert not self.projection_path.exists()
+        self.projection_exists_at_action.append(self.projection_path.exists())
         self.calls.append("refresh")
         return "refreshed"
 
@@ -41,7 +44,7 @@ class _Manager:
         ),
         (
             "refresh",
-            RefreshRequest("jm", __import__("datetime").date(2026, 9, 1), __import__("datetime").date(2026, 9, 2), apply=True),
+            RefreshRequest("jm", date(2026, 9, 1), date(2026, 9, 2), apply=True),
             "refreshed",
         ),
     ],
@@ -50,7 +53,7 @@ def test_apply_data_command_invalidates_projection_before_manager_action(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     command: str,
-    request,
+    request: UpdateRequest | RefreshRequest,
     expected: str,
 ) -> None:
     canonical_root = tmp_path / "canonical"
@@ -65,6 +68,7 @@ def test_apply_data_command_invalidates_projection_before_manager_action(
 
     assert result == expected
     assert manager.calls == [command]
+    assert manager.projection_exists_at_action == [False]
     assert not projection.exists()
 
 
@@ -85,10 +89,11 @@ def test_dry_run_does_not_invalidate_projection(
 
     assert result == "updated"
     assert manager.calls == ["update"]
+    assert manager.projection_exists_at_action == [True]
     assert projection.read_text(encoding="utf-8") == "old projection"
 
 
-def test_projection_store_rejects_symlink_parent_for_read_write_and_invalidation(
+def test_projection_store_rejects_symlink_parent_for_read_and_invalidation(
     tmp_path: Path,
 ) -> None:
     canonical_root = tmp_path / "canonical"
@@ -98,12 +103,9 @@ def test_projection_store_rejects_symlink_parent_for_read_write_and_invalidation
     derived = canonical_root / ".derived"
     derived.symlink_to(outside, target_is_directory=True)
     store = MarketHomeProjectionStore(market_home_projection_path(canonical_root))
+    identity = MarketHomeAuthorityIdentity(date(2026, 9, 2), "a" * 64)
 
-    assert store.load(
-        __import__("app.market_data.market_home_overview", fromlist=["MarketHomeAuthorityIdentity"]).MarketHomeAuthorityIdentity(
-            __import__("datetime").date(2026, 9, 2), "a" * 64
-        )
-    ) is None
+    assert store.load(identity) is None
     with pytest.raises(
         MarketHomeProjectionError,
         match="MARKET_HOME_PROJECTION_INVALIDATION_FAILED",
