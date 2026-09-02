@@ -77,6 +77,8 @@ class MarketHomeProjectionStore:
         identity: MarketHomeAuthorityIdentity,
     ) -> MarketHomeOverviewResponse | None:
         try:
+            if self.path.parent.is_symlink():
+                return None
             if self.path.is_symlink() or not self.path.is_file():
                 return None
             size = self.path.stat().st_size
@@ -98,6 +100,8 @@ class MarketHomeProjectionStore:
         """Remove the current projection before any authoritative apply mutation."""
 
         try:
+            if self.path.parent.is_symlink():
+                raise OSError("projection parent is symlink")
             self.path.unlink(missing_ok=True)
         except OSError as exc:
             raise MarketHomeProjectionError(
@@ -130,6 +134,8 @@ class MarketHomeProjectionStore:
         temporary_path: Path | None = None
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
+            if self.path.parent.is_symlink():
+                raise OSError("projection parent is symlink")
             descriptor, temporary_name = tempfile.mkstemp(
                 dir=self.path.parent,
                 prefix=f".{self.path.name}.",
