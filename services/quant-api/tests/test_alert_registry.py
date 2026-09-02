@@ -25,7 +25,7 @@ def test_registry_contains_htdy_and_subing_ths_with_distinct_event_modes() -> No
         "1m", "5m", "15m", "30m", "60m", "1d", "1w"
     )
     assert htdy.series_kind == "actual_dominant"
-    assert subing.display_name == "苏冰同花顺 15m"
+    assert subing.display_name == "苏冰预警"
     assert subing.kind is AlertRuleKind.INDICATOR_OBSERVATION
     assert subing.event_mode is AlertEventMode.EXACT
     assert subing.input_frequencies == ("15m",)
