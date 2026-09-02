@@ -298,6 +298,7 @@ class AlertRuntime:
                             window=window,
                             event_mode=definition.event_mode,
                         )
+                        rule_event_created = False
                         for candidate in candidates:
                             prepared = _persist_candidate_and_prepare_notification(
                                 service,
@@ -310,6 +311,7 @@ class AlertRuntime:
                             )
                             if prepared.event_created:
                                 event_count += 1
+                                rule_event_created = True
                             if prepared.notification_error_type is not None:
                                 self._record_notification_failure(
                                     at=processing_now,
@@ -321,11 +323,7 @@ class AlertRuntime:
                             rule.rule_code,
                             evaluated_bar_at=window.cutoff,
                             at=processing_now,
-                            event_created=any(
-                                message.rule_code == rule.rule_code
-                                and message.bar_end == window.cutoff
-                                for message in messages
-                            ),
+                            event_created=rule_event_created,
                             error_type=None,
                         )
                     except AlertEvaluationError as exc:
@@ -414,6 +412,7 @@ class AlertRuntime:
                                     window=window,
                                     event_mode=definition.event_mode,
                                 )
+                                rule_event_created = False
                                 for candidate in candidates:
                                     prepared = _persist_candidate_and_prepare_notification(
                                         service,
@@ -426,6 +425,7 @@ class AlertRuntime:
                                     )
                                     if prepared.event_created:
                                         event_count += 1
+                                        rule_event_created = True
                                     if prepared.notification_error_type is not None:
                                         self._record_notification_failure(
                                             at=processing_now,
@@ -437,11 +437,7 @@ class AlertRuntime:
                                     rule.rule_code,
                                     evaluated_bar_at=window.cutoff,
                                     at=processing_now,
-                                    event_created=any(
-                                        message.rule_code == rule.rule_code
-                                        and message.bar_end == window.cutoff
-                                        for message in messages
-                                    ),
+                                    event_created=rule_event_created,
                                     error_type=None,
                                 )
                             except AlertEvaluationError as exc:
