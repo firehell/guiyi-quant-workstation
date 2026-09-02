@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import date
 
 
-MAX_VISIBLE_TRADING_DAYS = 366
+MAX_VISIBLE_TRADING_DAYS = 1500
 
 
 @dataclass(frozen=True, slots=True)
@@ -20,11 +20,14 @@ class NewowTrendDetailQuery:
             not isinstance(self.product, str)
             or not self.product.strip().islower()
             or not self.product.strip().isalpha()
-            or type(self.since) is not date
+        ):
+            raise ValueError("NEWOW_INVALID_PRODUCT")
+        if (
+            type(self.since) is not date
             or type(self.through) is not date
             or self.since > self.through
         ):
-            raise ValueError("NEWOW_DETAIL_QUERY_INVALID")
+            raise ValueError("NEWOW_INVALID_RANGE")
         object.__setattr__(self, "product", self.product.strip())
 
     @classmethod
