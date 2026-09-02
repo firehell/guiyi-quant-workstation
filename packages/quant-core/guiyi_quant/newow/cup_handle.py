@@ -786,34 +786,8 @@ def _ready_facts_are_valid(
         right_volume <= 0
         or handle_volume < 0
         or baseline_volume <= 0
-        or _decimal_ratio_exceeds(
-            right_ratio,
-            Decimal(1),
-            profile.cup_handle_right_volume_max_ratio,
-        )
-        or _decimal_ratio_exceeds(
-            baseline_ratio,
-            Decimal(1),
-            profile.cup_handle_baseline_volume_max_ratio,
-        )
-    ):
-        return False
-    right_volume_score = (
-        7.0
-        if right_ratio <= Decimal("0.65")
-        else 5.0
-        if right_ratio <= Decimal("0.75")
-        else 3.0
-    )
-    baseline_volume_score = (
-        7.0
-        if baseline_ratio <= Decimal("0.75")
-        else 5.0
-        if baseline_ratio <= Decimal("0.85")
-        else 3.0
-    )
-    if float(active.score_breakdown["volume_structure"]) != (
-        right_volume_score + baseline_volume_score
+        or right_ratio < 0
+        or baseline_ratio < 0
     ):
         return False
 
@@ -868,6 +842,11 @@ def _ready_facts_are_valid(
                 expected_handle,
                 expected_baseline,
                 profile.cup_handle_baseline_volume_max_ratio,
+            )
+            or float(active.score_breakdown["volume_structure"])
+            != _ready_volume_structure_score(
+                expected_handle / expected_right,
+                expected_handle / expected_baseline,
             )
         ):
             return False
@@ -1849,6 +1828,27 @@ def _float_volume_facts(
     return {key: value for key, value in facts.items() if value is not None}
 
 
+def _ready_volume_structure_score(
+    right_ratio: Fraction,
+    baseline_ratio: Fraction,
+) -> float:
+    right_score = (
+        7.0
+        if right_ratio <= Fraction(65, 100)
+        else 5.0
+        if right_ratio <= Fraction(75, 100)
+        else 3.0
+    )
+    baseline_score = (
+        7.0
+        if baseline_ratio <= Fraction(75, 100)
+        else 5.0
+        if baseline_ratio <= Fraction(85, 100)
+        else 3.0
+    )
+    return right_score + baseline_score
+
+
 def _ready_candidate(
     forming: NewowCupHandleOverlay,
     body_facts: _BodyFacts,
@@ -1993,23 +1993,12 @@ def _ready_candidate(
         else 1.0
     )
     handle_score = length_score + depth_score + retrace_score + 4.0
-    right_volume_score = (
-        7.0
-        if right_ratio <= Fraction(65, 100)
-        else 5.0
-        if right_ratio <= Fraction(75, 100)
-        else 3.0
-    )
-    baseline_volume_score = (
-        7.0
-        if baseline_ratio <= Fraction(75, 100)
-        else 5.0
-        if baseline_ratio <= Fraction(85, 100)
-        else 3.0
-    )
     breakdown = dict(forming.score_breakdown)
     breakdown["handle_quality"] = handle_score
-    breakdown["volume_structure"] = right_volume_score + baseline_volume_score
+    breakdown["volume_structure"] = _ready_volume_structure_score(
+        right_ratio,
+        baseline_ratio,
+    )
     score = sum(breakdown.values())
     if score < profile.cup_ready_min_score:
         return None, "CUP_READY_SCORE_INSUFFICIENT"

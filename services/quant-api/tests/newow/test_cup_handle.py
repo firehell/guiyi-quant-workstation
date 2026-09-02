@@ -1485,6 +1485,40 @@ def test_large_integer_volume_boundaries_are_exactly_inclusive(
     assert "NEWOW_CUP_STATE_INVALID" not in continued.diagnostics
 
 
+def test_ready_restore_scores_retained_volume_windows_exactly() -> None:
+    """Display rounding cannot invalidate the exact READY score on the next Bar."""
+
+    scale = 10**30
+    case = restored_cup_case(
+        right_volume=20 * scale,
+        baseline_volume=20 * scale,
+        handle_volume=13 * scale + 1,
+    )
+    ready = step_cup_handle(case.state, case.next_bar)
+    frozen = ready.state.active_candidate
+    assert frozen is not None
+    assert frozen.state == CupHandleState.READY
+    assert frozen.score_breakdown["volume_structure"] == 12.0
+    assert frozen.volume_facts["handle_right_ratio"] == 0.65
+    assert frozen.volume_facts["handle_baseline_ratio"] == 0.65
+
+    next_day = case.next_bar.trading_day + timedelta(days=1)
+    resumed = step_cup_handle(
+        ready.state,
+        replace(
+            case.next_bar,
+            trading_day=next_day,
+            bar_end=datetime.combine(next_day, datetime.min.time(), tzinfo=UTC),
+            source_identity="fixture:exact-ready-volume:continued",
+        ),
+    )
+
+    assert "NEWOW_CUP_STATE_INVALID" not in resumed.diagnostics
+    assert resumed.active_overlay == frozen
+    assert resumed.state.active_candidate == frozen
+    assert resumed.state.ready_witness == ready.state.ready_witness
+
+
 @pytest.mark.parametrize(
     ("denominator", "handle_volume"),
     (
