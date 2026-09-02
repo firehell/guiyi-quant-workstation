@@ -9,7 +9,7 @@
 | 项目 | 当前事实 |
 |---|---|
 | Release | `v1.9.12@4de1b5d8d8c69f24fa84fe1e25f85818ce7724c0` 是当前最新 GitHub Release；`main`、annotated tag 的 peeled commit 与 GitHub Release target 精确一致，API 与 Web release identity 均为 `1.9.12`。它包含 forward-only `20260902_0043` compatibility code，并保留 v1.9.11 的 Live ready-heartbeat fail-closed 修复。 |
-| Runtime | 当前五项服务均绑定 clean、detached 的 `/Volumes/扩展盘/guiyi-quant-runtime-v1.9.11-r1@64c689a3`：API/Web/Live/Alert running，盘后服务按调度 `not_running`。2026-09-02 开盘只读读回为 Live `60/60`、全部 `TRADING`，但已部署旧 SuBing Runtime 状态仍为 `0/60 ready`、`60 unavailable`，故整体 health 为 degraded，不能标记 `RUNTIME_READY`。旧 `/Volumes/扩展盘/guiyi-quant-runtime-v1.9.10-r1` 已在所有服务脱离后移除。未执行盘后、未改 Scope/Rule、未手工发送通知。 |
+| Runtime | v1.9.12 的一次五项切换已加载 clean、detached 的 `/Volumes/扩展盘/guiyi-quant-runtime-v1.9.12-r1@4de1b5d8`。API/Web/Live 已 running，盘后服务按调度 `not_running`；Alert 因公开回退码 `CLI_INTERNAL_ERROR` 停在 `spawn_scheduled`，未写新 heartbeat，整体 health 为 degraded，不能标记 `RUNTIME_READY`。目标 root 的锁定 Python/Web 依赖与 build 已就绪；本任务未重试、未 rollback、未执行盘后、未改 Scope/Rule、未手工发送通知。 |
 | Database | production Alembic 为 `20260826_0042 (head)`。当前 Rule 为 `htdy_original_15m` 与 `subing_strategy_v1`。 |
 | Market Runtime Scope | `operational_products.txt` 的 60 个品种。 |
 | Alert Scope | production 尚未执行 0043，因此 HTDY Scope 仍为 `jm × 15m`，已退役 Rule 的旧 `scope_products` 数据仍在库中。两条旧库 Rule 均 enabled，Alert Runtime marker 已 enabled，audience count 2；本任务未发生 production Scope、Rule 或 audience mutation。 |
@@ -18,7 +18,7 @@
 | v1.9.9 | frozen final-catch-up watermark 队列 reconciliation：严格更旧 Bar 丢弃，相同 watermark 仍校验，更新 Bar 只推进且不补发；reconciliation 结束前保持 warming，只有 active60 全 ready 才写 `strategy_ready_at`。完整后端、Web、Ruff、Mypy、canonical、OpenSpec 与 secret scan 已通过，Standards/Spec 复审均 no findings；当前已 `RELEASED`，已完成 exact-tag Runtime 切换；首根自然 completed Live Gate 与 canary 均未完成。 |
 | v1.9.10 | completed 1m Bar 仅在 atomic ready heartbeat 写入确认后才 PubSub；Redis 持久化、heartbeat、PubSub 或派生失败均 fail-closed，且同一 poll 不重试发布。完整非隔离后端、Mypy、Ruff、canonical、OpenSpec、secret scan 与 Web check/test/build 已通过，Standards/Spec 复审通过。该版本仍为 `RELEASED`；其 Runtime checkout 已在 v1.9.11 五项服务读回后移除，不再是现役或本地 rollback root。 |
 | v1.9.11 | HTDY immutable Event 与 one-shot PushPlus 只接受触发窗口最新 completed Bar；repaint zone 中的旧 Bar 仅保留 Web retrospective 观察，不创建 Event/通知，既有 Event 不变。后端 `2234 passed, 3 skipped, 6 deselected`、Web `347 passed, 1 skipped`、Ruff、Mypy、OpenSpec、secret scan 与 release identity 检查均通过。当前为 `RELEASED`，并实际承载五项服务；2026-09-02 开盘 Live 为 `60/60 TRADING`，Alert 有新 heartbeat 且 processing 为 `ok`，但 legacy SuBing 状态 `0/60 ready` 使 Runtime 仍为 degraded，不能标记 `RUNTIME_READY`。 |
-| v1.9.12 | 已 `RELEASED`：后端 `880 passed, 3 skipped, 7 deselected`、engineering `10 passed`、0043 targeted `22 passed, 1 isolated PostgreSQL skipped`、Mypy、Ruff、OpenSpec、secret scan、Web unit/build 与 Playwright `25 passed` 均通过。release 与 production migration / Runtime switch 是独立 Gate；本任务未执行后两者。 |
+| v1.9.12 | 已 `RELEASED`：后端 `880 passed, 3 skipped, 7 deselected`、engineering `10 passed`、0043 targeted `22 passed, 1 isolated PostgreSQL skipped`、Mypy、Ruff、OpenSpec、secret scan、Web unit/build 与 Playwright `25 passed` 均通过。已执行一次 Runtime 切换；API/Web/Live 已加载 exact tag，Alert 未能建立 heartbeat，production migration 仍未执行。 |
 
 Alert transport 为 PushPlus；provider accepted 不等于微信送达。
 
@@ -30,7 +30,7 @@ Alert transport 为 PushPlus；provider accepted 不等于微信送达。
 
 ## Pending Gate
 
-- v1.9.12 已 `RELEASED`，但当前五项服务仍承载 v1.9.11；v1.9.10 Runtime root 已删除。当前 Live 开盘 `60/60 TRADING` 与 Alert heartbeat 不足以证明 `RUNTIME_READY`：legacy SuBing 仍为 `0/60 ready`、整体 health degraded。v1.9.12 Runtime 切换与首根自然 completed Live Gate仍须独立授权。
+- v1.9.12 已 `RELEASED`，且 API/Web/Live 已加载 exact tag；Alert 尚未建立 heartbeat，整体 health degraded。已完成本次单次 Runtime 切换尝试，任何 Alert 重启、rollback 或后续 Runtime mutation 都须新的独立授权；首根自然 completed Live Gate也仍未开始。
 - `20260902_0043` 的 production PostgreSQL migration 尚未授权或执行；旧策略 Event、Rule、Scope 与列仍是 production 事实。执行前必须独立只读 preflight，并取得一次范围明确的真实 DB 删除授权。
 - Git 外旧策略派生目录尚未删除；删除前必须解析配置得到精确绝对路径、验证挂载根与 deletion manifest，并取得一次范围明确的真实删除授权。
 - v1.9.10 仍为 `RELEASED` 的历史版本，但不再承载服务，也不保留本地 Runtime checkout；不得将其历史 startup restore Gate 当作当前 Runtime 状态。
