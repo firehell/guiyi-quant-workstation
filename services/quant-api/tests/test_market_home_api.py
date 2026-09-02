@@ -13,19 +13,21 @@ from app.market_data.market_home_overview import (
     MarketHomeSectorSummary,
     MarketHomeSummary,
 )
+from app.market_data.market_home_projection import market_home_response
+from app.schemas.market import MarketHomeOverviewResponse
 
 
 def test_home_overview_is_one_bulk_typed_response(monkeypatch) -> None:
-    service = _FakeOverviewService(_snapshot())
+    projection = _FakeProjection(market_home_response(_snapshot()))
     monkeypatch.setattr(
-        "app.api.market.build_market_home_overview_service", lambda _session: service,
+        "app.api.market.build_market_home_projection", lambda _session: projection,
         raising=False,
     )
 
     response = TestClient(app).get("/api/v1/market/research/home-overview")
 
     assert response.status_code == 200
-    assert service.calls == 1
+    assert projection.calls == 1
     assert response.json() == {
         "status": "ready",
         "target_as_of": "2025-02-11",
@@ -63,7 +65,12 @@ def test_home_overview_is_one_bulk_typed_response(monkeypatch) -> None:
                 "atr14_percentile252": None,
                 "daily_trend": "up",
                 "weekly_trend": "up",
-                "reason_codes": ["price_up", "daily_up", "weekly_up", "periods_aligned_up"],
+                "reason_codes": [
+                    "price_up",
+                    "daily_up",
+                    "weekly_up",
+                    "periods_aligned_up",
+                ],
             }
         ],
         "sectors": [
@@ -78,40 +85,46 @@ def test_home_overview_is_one_bulk_typed_response(monkeypatch) -> None:
 
 
 def test_home_overview_maps_domain_failure_to_typed_409(monkeypatch) -> None:
-    service = _FakeOverviewService(MarketHomeOverviewError("MARKET_HOME_DATA_INTEGRITY_ERROR"))
+    projection = _FakeProjection(
+        MarketHomeOverviewError("MARKET_HOME_DATA_INTEGRITY_ERROR")
+    )
     monkeypatch.setattr(
-        "app.api.market.build_market_home_overview_service", lambda _session: service,
+        "app.api.market.build_market_home_projection", lambda _session: projection,
         raising=False,
     )
 
     response = TestClient(app).get("/api/v1/market/research/home-overview")
 
     assert response.status_code == 409
-    assert response.json() == {"detail": {"code": "MARKET_HOME_DATA_INTEGRITY_ERROR"}}
+    assert response.json() == {
+        "detail": {"code": "MARKET_HOME_DATA_INTEGRITY_ERROR"}
+    }
 
 
 def test_home_overview_maps_authority_loader_failure_to_typed_409(monkeypatch) -> None:
-    service = _FakeOverviewService(
+    projection = _FakeProjection(
         MarketHomeOverviewError("MARKET_HOME_AUTHORITY_UNAVAILABLE")
     )
     monkeypatch.setattr(
-        "app.api.market.build_market_home_overview_service",
-        lambda _session: service,
+        "app.api.market.build_market_home_projection",
+        lambda _session: projection,
         raising=False,
     )
 
     response = TestClient(app).get("/api/v1/market/research/home-overview")
 
     assert response.status_code == 409
-    assert response.json() == {"detail": {"code": "MARKET_HOME_AUTHORITY_UNAVAILABLE"}}
+    assert response.json() == {
+        "detail": {"code": "MARKET_HOME_AUTHORITY_UNAVAILABLE"}
+    }
 
 
-class _FakeOverviewService:
-    def __init__(self, value: MarketHomeOverviewSnapshot | Exception) -> None:
+class _FakeProjection:
+    def __init__(self, value: MarketHomeOverviewResponse | Exception) -> None:
         self.value = value
         self.calls = 0
 
-    def snapshot(self) -> MarketHomeOverviewSnapshot:
+    def read(self) -> MarketHomeOverviewResponse:
         self.calls += 1
         if isinstance(self.value, Exception):
             raise self.value
@@ -157,7 +170,12 @@ def _snapshot() -> MarketHomeOverviewSnapshot:
                 atr14_percentile252=None,
                 daily_trend="up",
                 weekly_trend="up",
-                reason_codes=("price_up", "daily_up", "weekly_up", "periods_aligned_up"),
+                reason_codes=(
+                    "price_up",
+                    "daily_up",
+                    "weekly_up",
+                    "periods_aligned_up",
+                ),
             ),
         ),
         sectors=(

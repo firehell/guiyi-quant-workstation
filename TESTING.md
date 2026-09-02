@@ -17,6 +17,22 @@ uv run --project services/quant-api python -m ruff check \
   services/quant-api/app services/quant-api/tests packages/quant-core/guiyi_quant tests/engineering
 ```
 
+Market Home derived projection、API fallback 与 apply invalidation：
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+  uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/data_foundation/test_market_home_overview.py \
+  services/quant-api/tests/data_foundation/test_market_home_projection.py \
+  services/quant-api/tests/data_foundation/test_market_home_projection_after_market.py \
+  services/quant-api/tests/data_foundation/test_historical_data_manager.py \
+  services/quant-api/tests/test_market_home_projection_invalidation.py \
+  services/quant-api/tests/test_market_home_api.py \
+  services/quant-api/tests/test_market_home_projection_api.py
+```
+
+这组测试只使用临时目录/fake service，验证 projection identity、strict/atomic file、API projection-hit/miss、`data update/refresh --apply` 在 maintenance lease 内的失效、after-market 顺序、default-off projection activation marker 与 maintenance lease；不得以测试为理由执行真实 `guiyi data ... --apply` 或创建 marker。真实 projection-hit 性能 `<200ms` 属于后续明确授权的本地 Runtime read-only manual acceptance，不在普通 pytest 中用 timing sleep 伪造。
+
 EMA21 10K slope 与整体退役合同：
 
 ```bash

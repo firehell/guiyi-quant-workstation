@@ -769,6 +769,198 @@ def test_update_syncs_current_day_metadata_inside_the_maintenance_lease(
     assert events == ["acquire", "current_day", "release"]
 
 
+def test_update_runs_before_apply_callback_inside_maintenance_lease(
+    session, tmp_path, monkeypatch
+) -> None:
+    key = DatasetKey("continuous", "jm", "MAIN", "1d")
+    bar = _daily(2, 100)
+    coverage = FakeCoverage({key.as_tuple(): (bar.bar_end,)})
+    manager = _manager(session, tmp_path, coverage, FakeProvider({key.as_tuple(): (bar,)}))
+    events: list[str] = []
+
+    class Lease(_TrackingLease):
+        def release(self) -> None:
+            events.append("release")
+            super().release()
+
+    lease = Lease()
+
+    def acquire() -> Lease:
+        events.append("acquire")
+        return lease
+
+    monkeypatch.setattr(manager.catalog, "acquire_maintenance_lock", acquire)
+    original_synchronize = manager.metadata.synchronize
+
+    def synchronize(*args, **kwargs):
+        events.append("mutation")
+        return original_synchronize(*args, **kwargs)
+
+    monkeypatch.setattr(manager.metadata, "synchronize", synchronize)
+
+    def before_apply() -> None:
+        events.append("invalidate")
+
+    result = manager.update(
+        UpdateRequest(("jm",), None, date(2025, 1, 3), True),
+        before_apply=before_apply,
+    )
+
+    assert result.status == "passed"
+    assert events == ["acquire", "invalidate", "mutation", "release"]
+    assert lease.released is True
+
+
+def test_update_apply_rejects_explicit_invalid_window_before_lease_or_invalidation(
+    session, tmp_path, monkeypatch
+) -> None:
+    key = DatasetKey("continuous", "jm", "MAIN", "1d")
+    metadata = FakeMetadata()
+    provider = FakeProvider({key.as_tuple(): ()})
+    manager = _manager(session, tmp_path, FakeCoverage({key.as_tuple(): ()}), provider, metadata)
+    events: list[str] = []
+
+    monkeypatch.setattr(
+        manager.catalog,
+        "acquire_maintenance_lock",
+        lambda: events.append("acquire") or _TrackingLease(),
+    )
+
+    with pytest.raises(ValueError, match="UPDATE_WINDOW_INVALID"):
+        manager.update(
+            UpdateRequest(("jm",), date(2025, 1, 4), date(2025, 1, 3), True),
+            before_apply=lambda: events.append("invalidate"),
+        )
+
+    assert events == []
+    assert metadata.calls == []
+    assert provider.calls == []
+
+
+def test_refresh_runs_before_apply_callback_inside_maintenance_lease(
+    session, tmp_path, monkeypatch
+) -> None:
+    key = DatasetKey("continuous", "jm", "MAIN", "1d")
+    coverage = FakeCoverage({key.as_tuple(): ()})
+    manager = _manager(session, tmp_path, coverage, FakeProvider({}))
+    events: list[str] = []
+
+    class Lease(_TrackingLease):
+        def release(self) -> None:
+            events.append("release")
+            super().release()
+
+    lease = Lease()
+    monkeypatch.setattr(
+        manager.catalog,
+        "acquire_maintenance_lock",
+        lambda: events.append("acquire") or lease,
+    )
+    monkeypatch.setattr(manager.coverage, "metadata_complete", lambda *_args: True)
+    monkeypatch.setattr(manager.catalog, "missing_main_map_days", lambda *_args: [])
+    monkeypatch.setattr(manager, "_iter_targets", lambda *_args, **_kwargs: iter(()))
+    monkeypatch.setattr(
+        manager,
+        "_execute",
+        lambda *_args, **_kwargs: events.append("mutation") or "refreshed",
+    )
+
+    result = manager.refresh(
+        RefreshRequest("jm", date(2025, 1, 2), date(2025, 1, 3), True),
+        before_apply=lambda: events.append("invalidate"),
+    )
+
+    assert result == "refreshed"
+    assert events == ["acquire", "invalidate", "mutation", "release"]
+    assert lease.released is True
+
+
+@pytest.mark.parametrize(
+    ("action", "data_request"),
+    [
+        ("update", UpdateRequest(("jm",), None, date(2025, 1, 3), True)),
+        ("refresh", RefreshRequest("jm", date(2025, 1, 2), date(2025, 1, 3), True)),
+    ],
+)
+def test_apply_does_not_invalidate_when_maintenance_lock_is_unavailable(
+    session,
+    tmp_path,
+    monkeypatch,
+    action: str,
+    data_request: UpdateRequest | RefreshRequest,
+) -> None:
+    key = DatasetKey("continuous", "jm", "MAIN", "1d")
+    manager = _manager(session, tmp_path, FakeCoverage({key.as_tuple(): ()}), FakeProvider({}))
+    invalidations: list[str] = []
+    monkeypatch.setattr(manager.catalog, "acquire_maintenance_lock", lambda: None)
+
+    result = getattr(manager, action)(
+        data_request,
+        before_apply=lambda: invalidations.append("invalidate"),
+    )
+
+    assert result.status == "blocked"
+    assert invalidations == []
+
+
+def test_update_before_apply_failure_stops_before_metadata_or_provider_mutation(
+    session, tmp_path, monkeypatch
+) -> None:
+    key = DatasetKey("continuous", "jm", "MAIN", "1d")
+    bar = _daily(2, 100)
+    coverage = FakeCoverage({key.as_tuple(): (bar.bar_end,)})
+    metadata = FakeMetadata()
+    provider = FakeProvider({key.as_tuple(): (bar,)})
+    manager = _manager(session, tmp_path, coverage, provider, metadata)
+    lease = _TrackingLease()
+    monkeypatch.setattr(manager.catalog, "acquire_maintenance_lock", lambda: lease)
+
+    def fail_before_apply() -> None:
+        raise RuntimeError("projection invalidation failed")
+
+    with pytest.raises(RuntimeError, match="projection invalidation failed"):
+        manager.update(
+            UpdateRequest(("jm",), None, date(2025, 1, 3), True),
+            before_apply=fail_before_apply,
+        )
+
+    assert metadata.calls == []
+    assert provider.calls == []
+    assert lease.released is True
+
+
+def test_refresh_before_apply_failure_stops_before_metadata_or_provider_mutation(
+    session, tmp_path, monkeypatch
+) -> None:
+    key = DatasetKey("continuous", "jm", "MAIN", "1d")
+    coverage = FakeCoverage({key.as_tuple(): ()})
+    metadata = FakeMetadata()
+    provider = FakeProvider({})
+    manager = _manager(session, tmp_path, coverage, provider, metadata)
+    lease = _TrackingLease()
+    main_map_calls: list[str] = []
+    monkeypatch.setattr(manager.catalog, "acquire_maintenance_lock", lambda: lease)
+    monkeypatch.setattr(
+        manager.catalog,
+        "missing_main_map_days",
+        lambda *_args: main_map_calls.append("checked") or [],
+    )
+
+    def fail_before_apply() -> None:
+        raise RuntimeError("projection invalidation failed")
+
+    with pytest.raises(RuntimeError, match="projection invalidation failed"):
+        manager.refresh(
+            RefreshRequest("jm", date(2025, 1, 2), date(2025, 1, 3), True),
+            before_apply=fail_before_apply,
+        )
+
+    assert metadata.calls == []
+    assert provider.calls == []
+    assert main_map_calls == []
+    assert lease.released is True
+
+
 def test_since_is_check_lower_bound_and_does_not_replace_covered_partition(
     session, tmp_path
 ) -> None:
