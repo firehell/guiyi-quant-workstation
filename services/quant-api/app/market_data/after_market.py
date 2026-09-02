@@ -6,16 +6,16 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
-from dataclasses import dataclass
-from datetime import date, datetime
 import json
 import logging
 import os
-from pathlib import Path
 import re
 import tempfile
 import time
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass
+from datetime import date, datetime
+from pathlib import Path
 from typing import Any
 
 from app.alerts.notification import (
@@ -24,13 +24,13 @@ from app.alerts.notification import (
     NotificationTransport,
     ProviderAcceptance,
 )
+from app.core.env import PROJECT_ROOT
 from app.market_data.errors import InfrastructureError
+from app.market_data.historical_data_manager import HistoricalDataManager, UpdateRequest
+from app.market_data.live_market import RedisLiveStore
+from app.market_data.operational_universe import load_operational_products
 from app.market_data.rqdata_adapter import RQDataClient
 from app.market_data.session_clock import SHANGHAI
-from app.market_data.live_market import RedisLiveStore
-from app.market_data.historical_data_manager import HistoricalDataManager, UpdateRequest
-from app.market_data.operational_universe import load_operational_products
-from app.core.env import PROJECT_ROOT
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -77,7 +77,7 @@ class AfterMarketResult:
 
 
 class AfterMarketUpdater:
-    """18:05 本地盘后维护：最多两次尝试，唯一写入口仍为 HistoricalDataManager。"""
+    """18:05 本地盘后维护；Canonical 写入仍只经过 HistoricalDataManager。"""
 
     def __init__(
         self,
@@ -89,6 +89,7 @@ class AfterMarketUpdater:
         sleep: Callable[[float], None],
         notification_transport: NotificationTransport | None,
         now: Callable[[], datetime],
+        market_home_projection_refresh: Callable[[], object] | None = None,
     ) -> None:
         self.manager = manager
         self.rqdata = rqdata
@@ -97,6 +98,7 @@ class AfterMarketUpdater:
         self.sleep = sleep
         self.notification_transport = notification_transport
         self.now = now
+        self.market_home_projection_refresh = market_home_projection_refresh
 
     def run(self) -> AfterMarketResult:
         """执行一次受限盘后维护，并写入仅含公开字段的状态。"""
@@ -252,6 +254,8 @@ class AfterMarketUpdater:
                 result.status,
             )
             return error_code
+
+        self._refresh_market_home_projection()
         try:
             # A successful Canonical write must notify the Web seam even when the
             # temporary intraday snapshot disagrees with the formal map.
@@ -280,6 +284,17 @@ class AfterMarketUpdater:
             )
             return "UPDATE_FAILED"
         return None
+
+    def _refresh_market_home_projection(self) -> None:
+        if self.market_home_projection_refresh is None:
+            return
+        try:
+            self.market_home_projection_refresh()
+        except Exception as exc:  # noqa: BLE001 - performance projection is isolated
+            _LOGGER.warning(
+                "market_home_projection_refresh_failed exception_type=%s",
+                type(exc).__name__,
+            )
 
     def _write_status(
         self,
@@ -371,6 +386,11 @@ def build_after_market_updater(
     from app.redis_connections import get_redis_connection
     from typing import cast
 
+    def refresh_market_home_projection() -> object:
+        from app.market_data.composition import build_market_home_projection
+
+        return build_market_home_projection(manager.catalog.session).refresh()
+
     notification_transport: NotificationTransport | None = None
     if failure_notification:
         notification_transport = _ConfiguredNotificationTransport()
@@ -382,6 +402,7 @@ def build_after_market_updater(
         sleep=time.sleep,
         notification_transport=notification_transport,
         now=lambda: datetime.now(SHANGHAI),
+        market_home_projection_refresh=refresh_market_home_projection,
     )
 
 
