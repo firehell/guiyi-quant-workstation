@@ -12,6 +12,12 @@ from .htdy_strict import NUMERIC_FIELDS as HTDY_STRICT_NUMERIC_FIELDS
 from .htdy_strict import compute_strict_fields
 from .macd import initial_macd_state, macd_series, step_macd
 from .sma import initial_sma_state, step_sma
+from .subing_ths import (
+    SUBING_THS_FORMULA_VERSION,
+    SubingThs15mKernel,
+    SubingThs15mResult,
+    SubingThs15mState,
+)
 from .range_detector_lux import (
     RANGE_DETECTOR_LUX_CODE,
     RANGE_DETECTOR_LUX_POLICY_ID,
@@ -102,6 +108,10 @@ __all__ = [
     "RepaintingRisk",
     "SeedPolicy",
     "SmaState",
+    "SUBING_THS_FORMULA_VERSION",
+    "SubingThs15mKernel",
+    "SubingThs15mResult",
+    "SubingThs15mState",
     "atr_series",
     "initial_atr_state",
     "build_indicator_definition",
