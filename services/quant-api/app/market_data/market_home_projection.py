@@ -31,6 +31,7 @@ from app.schemas.market import (
 _MAX_PROJECTION_BYTES = 2 * 1024 * 1024
 _AUTHORITY_DIGEST = re.compile(r"[0-9a-f]{64}\Z")
 _NOFOLLOW = getattr(os, "O_NOFOLLOW", None)
+_NONBLOCK = getattr(os, "O_NONBLOCK", None)
 
 
 class MarketHomeProjectionError(RuntimeError):
@@ -88,7 +89,7 @@ class MarketHomeProjectionStore:
             try:
                 descriptor = os.open(
                     self.path.name,
-                    os.O_RDONLY | _required_nofollow(),
+                    os.O_RDONLY | _required_nofollow() | _required_nonblock(),
                     dir_fd=parent_descriptor,
                 )
             except FileNotFoundError:
@@ -316,6 +317,12 @@ def _required_nofollow() -> int:
     if _NOFOLLOW is None:
         raise OSError("O_NOFOLLOW_UNAVAILABLE")
     return _NOFOLLOW
+
+
+def _required_nonblock() -> int:
+    if _NONBLOCK is None:
+        raise OSError("O_NONBLOCK_UNAVAILABLE")
+    return _NONBLOCK
 
 
 def _open_projection_parent(path: Path, *, create: bool) -> int | None:

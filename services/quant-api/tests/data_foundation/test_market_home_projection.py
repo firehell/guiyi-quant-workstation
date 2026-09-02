@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
+import signal
+import time
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -213,6 +216,26 @@ def test_projection_store_deeply_nested_json_is_a_miss(tmp_path: Path) -> None:
     path.write_text("[" * 10_000 + "]" * 10_000, encoding="utf-8")
 
     assert store.load(IDENTITY) is None
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="requires POSIX FIFO support")
+def test_projection_store_fifo_is_a_nonblocking_miss(tmp_path: Path) -> None:
+    path = tmp_path / "market-home-overview.json"
+    store = MarketHomeProjectionStore(path)
+    os.mkfifo(path)
+
+    def timeout(_signal: int, _frame: object) -> None:
+        raise TimeoutError("FIFO read blocked")
+
+    previous_handler = signal.signal(signal.SIGALRM, timeout)
+    signal.setitimer(signal.ITIMER_REAL, 0.2)
+    try:
+        started = time.monotonic()
+        assert store.load(IDENTITY) is None
+        assert time.monotonic() - started < 0.1
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous_handler)
 
 
 def test_projection_store_rejects_schema_target_digest_and_payload_identity_mismatch(
