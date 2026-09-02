@@ -11,6 +11,7 @@ import app.alerts.composition as alert_composition
 from app.alerts.composition import build_alert_runtime
 from app.alerts.notification import NotificationTransportError, ProviderAcceptance
 from app.alerts.runtime import AlertNotificationAcknowledgeError
+from app.alerts.subing_scope_activation import SubingScopeActivationResult
 from app.guiyi_cli.main import build_parser, main
 
 
@@ -43,6 +44,7 @@ def test_parser_exposes_only_active_runtime_domains_and_commands() -> None:
         "alert",
         "alert-canary",
         "acknowledge-alert-notification",
+        "subing-ths-scope",
     }
 
 
@@ -140,6 +142,97 @@ def test_runtime_acknowledgement_mismatch_is_public_and_not_readonly() -> None:
             "code": "ALERT_NOTIFICATION_FAILURE_MISMATCH",
             "type": "AlertNotificationAcknowledgeError",
         },
+    }
+
+
+@pytest.mark.parametrize(
+    ("arguments", "apply", "expected"),
+    [
+        (
+            ["runtime", "subing-ths-scope"],
+            False,
+            {
+                "schema_version": 1,
+                "command": "runtime.subing-ths-scope",
+                "status": "planned",
+                "readonly": True,
+                "rule_code": "subing_ths_alert_15m_v1",
+                "symbol_count": 2,
+                "scope_sha256": "747b4506c773dce5264e57a32077375e8990bed308ba81ce435bc1ac130ee9f3",
+                "enabled": False,
+            },
+        ),
+        (
+            ["runtime", "subing-ths-scope", "--apply"],
+            True,
+            {
+                "schema_version": 1,
+                "command": "runtime.subing-ths-scope",
+                "status": "published",
+                "readonly": False,
+                "rule_code": "subing_ths_alert_15m_v1",
+                "symbol_count": 2,
+                "scope_sha256": "747b4506c773dce5264e57a32077375e8990bed308ba81ce435bc1ac130ee9f3",
+                "enabled": True,
+            },
+        ),
+    ],
+)
+def test_runtime_subing_scope_uses_execution_time_injected_dependencies(
+    arguments: list[str],
+    apply: bool,
+    expected: dict[str, object],
+) -> None:
+    calls: list[object] = []
+
+    def load_operational_products() -> tuple[str, ...]:
+        calls.append("load")
+        return ("JM", "al")
+
+    def activate(session, *, operational_products: tuple[str, ...], apply: bool):
+        calls.append((session, operational_products, apply))
+        return SubingScopeActivationResult(
+            status="published" if apply else "planned",
+            readonly=not apply,
+            rule_code="subing_ths_alert_15m_v1",
+            symbol_count=2,
+            scope_sha256="747b4506c773dce5264e57a32077375e8990bed308ba81ce435bc1ac130ee9f3",
+            enabled=apply,
+        )
+
+    sentinel_session = object()
+    code, payload = _run(
+        arguments,
+        session_factory=lambda: nullcontext(sentinel_session),
+        operational_products_loader=load_operational_products,
+        subing_scope_activator=activate,
+    )
+
+    assert code == 0
+    assert payload == expected
+    assert calls == ["load", (sentinel_session, ("JM", "al"), apply)]
+
+
+@pytest.mark.parametrize(
+    ("arguments", "readonly"),
+    [
+        (["runtime", "subing-ths-scope", "--unexpected"], True),
+        (["runtime", "subing-ths-scope", "--apply", "--unexpected"], False),
+    ],
+)
+def test_subing_scope_parse_errors_reflect_requested_apply(
+    arguments: list[str],
+    readonly: bool,
+) -> None:
+    code, payload = _run(arguments)
+
+    assert code == 2
+    assert payload == {
+        "schema_version": 1,
+        "command": "runtime.subing-ths-scope",
+        "status": "error",
+        "readonly": readonly,
+        "error": {"code": "CLI_ARGUMENT_INVALID", "type": "CliUsageError"},
     }
 
 
