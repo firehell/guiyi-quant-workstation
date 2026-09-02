@@ -188,7 +188,7 @@ def _preflight(session: Session) -> tuple[_RuleSnapshot, AlertRule]:
         _rules(
             session,
             for_update=False,
-            populate_existing=False,
+            populate_existing=True,
             error_code="SUBING_SCOPE_ACTIVATION_PREFLIGHT_FAILED",
         ),
         error_code="SUBING_SCOPE_ACTIVATION_PREFLIGHT_FAILED",
