@@ -293,7 +293,9 @@ class AlertService:
         _definition(normalized)
         statement = select(AlertRule).where(AlertRule.rule_code == normalized)
         if for_update:
-            statement = statement.with_for_update()
+            statement = statement.with_for_update().execution_options(
+                populate_existing=True
+            )
         rule = self._session.scalar(statement)
         if rule is None:
             raise AlertRuleNotFoundError()

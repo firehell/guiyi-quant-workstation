@@ -86,6 +86,30 @@ def test_disabled_rule_rejects_scope_mutation_before_commit(session: Session) ->
     assert commits == []
 
 
+def test_scope_mutation_refreshes_locked_rule_before_disabled_check(session: Session) -> None:
+    session.scalar(select(AlertRule).where(AlertRule.rule_code == "htdy_original_15m"))
+    with Session(session.get_bind()) as competing_session:
+        competing_rule = competing_session.scalar(select(AlertRule).where(
+            AlertRule.rule_code == "htdy_original_15m"
+        ))
+        assert competing_rule is not None
+        competing_rule.enabled = False
+        competing_session.commit()
+
+    with pytest.raises(AlertScopeError, match="ALERT_SCOPE_RULE_DISABLED"):
+        AlertService(session, operational_products=("jm",)).set_product_frequency_enabled(
+            "htdy_original_15m", "jm", "5m", True
+        )
+
+    session.expire_all()
+    stored = session.scalar(select(AlertRule).where(
+        AlertRule.rule_code == "htdy_original_15m"
+    ))
+    assert stored is not None
+    assert stored.enabled is False
+    assert stored.scope_product_frequencies == {"jm": ["15m"]}
+
+
 @pytest.mark.parametrize("frequency", ["", "4h"])
 def test_frequency_scope_rejects_noncanonical_frequency(
     session: Session, frequency: str

@@ -73,9 +73,24 @@ def activate_subing_ths_scope(
                 enabled=False,
             )
         _require_alembic_0044(session)
-        locked_rules = _rules(session, for_update=True, populate_existing=True)
-        htdy, subing = _exact_rules(locked_rules)
-        if _snapshot(htdy) != htdy_before or not _subing_is_disabled_empty(subing):
+        locked_rules = _rules(
+            session,
+            for_update=True,
+            populate_existing=True,
+            error_code="SUBING_SCOPE_ACTIVATION_PREFLIGHT_FAILED",
+        )
+        htdy, subing = _exact_rules(
+            locked_rules,
+            error_code="SUBING_SCOPE_ACTIVATION_PREFLIGHT_FAILED",
+        )
+        if (
+            _snapshot(
+                htdy,
+                error_code="SUBING_SCOPE_ACTIVATION_PREFLIGHT_FAILED",
+            )
+            != htdy_before
+            or not _subing_is_disabled_empty(subing)
+        ):
             raise SubingScopeActivationError("SUBING_SCOPE_ACTIVATION_PREFLIGHT_FAILED")
 
         subing.scope_product_frequencies = scope
@@ -87,9 +102,16 @@ def activate_subing_ths_scope(
             .order_by(AlertRule.rule_code)
             .execution_options(populate_existing=True)
         ).all())
-        persisted_htdy, persisted_subing = _exact_rules(persisted_rules)
+        persisted_htdy, persisted_subing = _exact_rules(
+            persisted_rules,
+            error_code="SUBING_SCOPE_ACTIVATION_PERSIST_FAILED",
+        )
         if (
-            _snapshot(persisted_htdy) != htdy_before
+            _snapshot(
+                persisted_htdy,
+                error_code="SUBING_SCOPE_ACTIVATION_PERSIST_FAILED",
+            )
+            != htdy_before
             or persisted_subing.enabled is not True
             or persisted_subing.scope_product_frequencies != scope
         ):
@@ -97,10 +119,20 @@ def activate_subing_ths_scope(
         session.commit()
         session.expire_all()
         readback_htdy, readback_subing = _exact_rules(
-            _rules(session, for_update=False, populate_existing=True)
+            _rules(
+                session,
+                for_update=False,
+                populate_existing=True,
+                error_code="SUBING_SCOPE_ACTIVATION_PERSIST_FAILED",
+            ),
+            error_code="SUBING_SCOPE_ACTIVATION_PERSIST_FAILED",
         )
         if (
-            _snapshot(readback_htdy) != htdy_before
+            _snapshot(
+                readback_htdy,
+                error_code="SUBING_SCOPE_ACTIVATION_PERSIST_FAILED",
+            )
+            != htdy_before
             or readback_subing.enabled is not True
             or readback_subing.scope_product_frequencies != scope
         ):
@@ -153,11 +185,20 @@ def _scope_sha256(scope: dict[str, list[str]]) -> str:
 def _preflight(session: Session) -> tuple[_RuleSnapshot, AlertRule]:
     _require_alembic_0044(session)
     htdy, subing = _exact_rules(
-        _rules(session, for_update=False, populate_existing=False)
+        _rules(
+            session,
+            for_update=False,
+            populate_existing=False,
+            error_code="SUBING_SCOPE_ACTIVATION_PREFLIGHT_FAILED",
+        ),
+        error_code="SUBING_SCOPE_ACTIVATION_PREFLIGHT_FAILED",
     )
     if not _valid_htdy_rule(htdy) or not _subing_is_disabled_empty(subing):
         raise SubingScopeActivationError("SUBING_SCOPE_ACTIVATION_PREFLIGHT_FAILED")
-    return _snapshot(htdy), subing
+    return _snapshot(
+        htdy,
+        error_code="SUBING_SCOPE_ACTIVATION_PREFLIGHT_FAILED",
+    ), subing
 
 
 def _require_alembic_0044(session: Session) -> None:
@@ -176,6 +217,7 @@ def _rules(
     *,
     for_update: bool,
     populate_existing: bool,
+    error_code: str,
 ) -> tuple[AlertRule, ...]:
     statement = select(AlertRule).order_by(AlertRule.rule_code)
     if for_update:
@@ -185,17 +227,21 @@ def _rules(
     try:
         return tuple(session.scalars(statement).all())
     except SQLAlchemyError:
-        raise SubingScopeActivationError("SUBING_SCOPE_ACTIVATION_PREFLIGHT_FAILED") from None
+        raise SubingScopeActivationError(error_code) from None
 
 
-def _exact_rules(rules: Sequence[AlertRule]) -> tuple[AlertRule, AlertRule]:
+def _exact_rules(
+    rules: Sequence[AlertRule],
+    *,
+    error_code: str,
+) -> tuple[AlertRule, AlertRule]:
     by_code = {rule.rule_code: rule for rule in rules}
     if (
         len(rules) != 2
         or frozenset(by_code) != {_HTDY_RULE, _SUBING_RULE}
         or len(by_code) != 2
     ):
-        raise SubingScopeActivationError("SUBING_SCOPE_ACTIVATION_PREFLIGHT_FAILED")
+        raise SubingScopeActivationError(error_code)
     return by_code[_HTDY_RULE], by_code[_SUBING_RULE]
 
 
@@ -207,10 +253,10 @@ def _subing_is_disabled_empty(rule: AlertRule) -> bool:
     return rule.enabled is False and rule.scope_product_frequencies == {}
 
 
-def _snapshot(rule: AlertRule) -> _RuleSnapshot:
+def _snapshot(rule: AlertRule, *, error_code: str) -> _RuleSnapshot:
     scope = rule.scope_product_frequencies
     if not isinstance(scope, dict):
-        raise SubingScopeActivationError("SUBING_SCOPE_ACTIVATION_PREFLIGHT_FAILED")
+        raise SubingScopeActivationError(error_code)
     return _RuleSnapshot(
         id=rule.id,
         rule_code=rule.rule_code,

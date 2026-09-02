@@ -189,6 +189,27 @@ def test_apply_rejects_post_commit_readback_mismatch(session: Session) -> None:
         )
 
 
+def test_apply_reports_persist_failure_when_post_commit_readback_query_fails(
+    session: Session,
+) -> None:
+    def drop_rules_after_commit(_session: Session) -> None:
+        with Session(session.get_bind()) as competing_session:
+            competing_session.execute(text("DROP TABLE alert_rules"))
+            competing_session.commit()
+
+    event.listen(session, "after_commit", drop_rules_after_commit)
+
+    with pytest.raises(
+        SubingScopeActivationError,
+        match="^SUBING_SCOPE_ACTIVATION_PERSIST_FAILED$",
+    ):
+        activate_subing_ths_scope(
+            session,
+            operational_products=("jm",),
+            apply=True,
+        )
+
+
 def test_preflight_database_failure_rolls_back_session(session: Session) -> None:
     session.execute(text("DROP TABLE alembic_version"))
     session.commit()
