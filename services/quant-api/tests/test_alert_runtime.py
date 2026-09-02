@@ -5,6 +5,8 @@ import json
 
 import pytest
 
+from app.alerts.notification import ALERT_NOTIFICATION_POLICIES
+from app.alerts.registry import HTDY_ALERT_RULE_CODE, SUBING_THS_ALERT_RULE_CODE
 from app.alerts.runtime import (
     AlertRuntime,
     AlertNotificationAcknowledgeError,
@@ -28,6 +30,33 @@ def test_startup_composition_requires_exact_registry_evaluator_and_policy_covera
         session_factory=session_factory,
         market_read_factory=lambda _session: None,  # type: ignore[arg-type]
         evaluators={},
+        sender=None,  # type: ignore[arg-type]
+        operational_products=(),
+        taxonomy={},
+    )
+    with pytest.raises(RuntimeError, match="ALERT_RUNTIME_COMPOSITION_INVALID"):
+        runtime._validate_startup_composition()
+    assert called is False
+
+
+def test_startup_composition_rejects_malformed_policy_before_db(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    called = False
+
+    def session_factory():
+        nonlocal called
+        called = True
+        raise AssertionError("policy validation must precede DB access")
+
+    monkeypatch.setitem(ALERT_NOTIFICATION_POLICIES, SUBING_THS_ALERT_RULE_CODE, object())
+    runtime = AlertRuntime(
+        session_factory=session_factory,
+        market_read_factory=lambda _session: None,  # type: ignore[arg-type]
+        evaluators={
+            HTDY_ALERT_RULE_CODE: object(),  # type: ignore[dict-item]
+            SUBING_THS_ALERT_RULE_CODE: object(),  # type: ignore[dict-item]
+        },
         sender=None,  # type: ignore[arg-type]
         operational_products=(),
         taxonomy={},
