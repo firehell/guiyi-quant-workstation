@@ -15,12 +15,7 @@ from fastapi.testclient import TestClient
 ROOT = Path(__file__).resolve().parents[2]
 
 PUBLIC_WEB_ROUTES = {"/market", "/market/chart"}
-PUBLIC_OVERLAYS = {"none", "subing", "htdy"}
-RESEARCH_COMMANDS = {
-    "subing-calibration",
-    "subing-lifecycle",
-    "subing-strategy-performance",
-}
+PUBLIC_OVERLAYS = {"none", "htdy"}
 MARKET_TABLES = {
     "exchanges",
     "instruments",
@@ -57,7 +52,18 @@ RETIRED_ENTRYPOINTS = (
     "services/quant-api/app/worker.py",
     "services/quant-api/app/queue.py",
     "services/quant-api/app/market_data/market_trend_focus.py",
+    "services/quant-api/app/market_data/market_radar.py",
     "services/quant-api/app/research/main_force_mirror_v2_service.py",
+    "services/quant-api/app/research",
+    "services/quant-api/app/alerts/subing_strategy_runtime.py",
+    "services/quant-api/app/alerts/strategy_payload.py",
+    "services/quant-api/app/market_data/subing_strategy",
+    "services/quant-api/app/market_data/subing_watch",
+    "services/quant-api/app/guiyi_cli/research_parser.py",
+    "services/quant-api/app/guiyi_cli/research_commands.py",
+    "apps/quant-web/src/components/market/SubingPanel.vue",
+    "apps/quant-web/src/composables/useSubingWorkbench.ts",
+    "apps/quant-web/src/utils/subingDailyWatch.ts",
     "reports/research/candidate_dossier",
     "reports/research/candidate_relationships",
     "apps/quant-web/package-lock.json",
@@ -76,7 +82,14 @@ RETIRED_HTTP_404_PATHS = (
     "/api/v1/market/bars/canonical",
     "/api/v1/market/coverage/canonical",
     "/api/v1/market/research/main-force-mirror",
+    "/api/v1/market/research/radar",
     "/api/v1/market/research/subing/history",
+    "/api/v1/market/research/subing",
+    "/api/v1/market/research/subing-daily-watch/current",
+    "/api/v1/market/research/subing-strategy/historical",
+    "/api/v1/market/research/subing-strategy/current",
+    "/api/v1/market/research/subing-strategy/performance",
+    "/api/alerts/strategy-actions/current",
     "/api/v1/backtests/health",
     "/api/execution-review/items",
     "/api/symbols",
@@ -100,18 +113,6 @@ RETIRED_SOURCE_NAMES = {
         "getSubingHistoricalSignals",
         "/subing/history",
     ),
-    "apps/quant-web/src/utils/historicalResearchMarkers.ts": (
-        "historicalResearchEventToMarker",
-        "subingMarkerDedupeKey",
-    ),
-    "apps/quant-web/src/composables/useHistoricalResearchMarkers.ts": (
-        "historicalResearchEventToMarker",
-        "subingMarkerDedupeKey",
-    ),
-    "apps/quant-web/src/components/market/SubingPanel.vue": (
-        "SubingLifecyclePanel",
-        "SubingResearchSection",
-    ),
     "apps/quant-web/src/pages/market/chart.vue": (
         "useMainForceMirrorV2",
         "main_force_mirror_v2",
@@ -131,31 +132,18 @@ RETIRED_SOURCE_NAMES = {
     ),
 }
 RETIRED_MODULE_ATTRIBUTES = {
-    "app.research.composition": (
-        "build_main_force_mirror_v2_research_service",
-        "build_five_candidate_dossier_service",
-        "build_five_candidate_relationship_service",
-    ),
     "app.market_data.composition": (
         "build_main_force_mirror_v2_service",
         "build_member_rank_snapshot_builder",
+        "build_subing_read_service",
+        "build_subing_strategy_service",
     ),
 }
-ALERT_RULE_CODES = frozenset({"htdy_original_15m", "subing_strategy_v1"})
-# The SuBing Rule and Strategy identities intentionally share a public value.
-# Exact file/count ownership keeps those typed strategy uses narrow as well.
+ALERT_RULE_CODES = frozenset({"htdy_original_15m"})
 BACKEND_ALERT_RULE_LITERAL_EXPECTED = {
     "htdy_original_15m": {
         "services/quant-api/app/alerts/registry.py": 2,
         "services/quant-api/app/schemas/alerts.py": 1,
-    },
-    "subing_strategy_v1": {
-        "services/quant-api/app/alerts/registry.py": 2,
-        "services/quant-api/app/alerts/strategy_payload.py": 1,
-        "services/quant-api/app/market_data/subing_strategy/contracts.py": 2,
-        "services/quant-api/app/market_data/subing_strategy/engine.py": 3,
-        "services/quant-api/app/schemas/alerts.py": 2,
-        "services/quant-api/app/schemas/research_overlays.py": 1,
     },
 }
 
@@ -171,7 +159,6 @@ def _assert_backend_alert_rule_literal_ownership(
             if isinstance(node, ast.Constant) and isinstance(node.value, str)
         )
         counts = {code: values.count(code) for code in ALERT_RULE_CODES}
-        assert "subing_entry_signal_v1" not in values
         for code, count in counts.items():
             if count:
                 actual[code][path] = count
@@ -208,22 +195,10 @@ def test_public_entrypoints_are_exact() -> None:
     overlay_ids = set(re.findall(r"^\s+id: '([^']+)'", overlay_block, re.MULTILINE))
     assert overlay_ids == PUBLIC_OVERLAYS
 
-    parser_module = importlib.import_module("app.guiyi_cli.research_parser")
     main_module = importlib.import_module("app.guiyi_cli.main")
     parser = main_module.build_parser()
     domain_action = next(action for action in parser._actions if action.dest == "domain")
-    research_parser = domain_action.choices["research"]
-    command_action = next(
-        action
-        for action in research_parser._actions
-        if action.dest == "research_command"
-    )
-    assert set(parser_module.RESEARCH_COMMAND_NAMES) == RESEARCH_COMMANDS
-    assert tuple(command_action.choices) == (
-        "subing-calibration",
-        "subing-lifecycle",
-        "subing-strategy-performance",
-    )
+    assert set(domain_action.choices) == {"data", "runtime"}
 
 
 def test_retired_http_surfaces_return_404_and_are_not_mounted() -> None:
@@ -292,7 +267,17 @@ def test_market_identity_and_no_order_contracts_are_executable() -> None:
 
 
 def test_retired_entrypoints_remain_absent() -> None:
-    assert all(not (ROOT / relative).exists() for relative in RETIRED_ENTRYPOINTS)
+    for relative in RETIRED_ENTRYPOINTS:
+        path = ROOT / relative
+        if path.is_file():
+            raise AssertionError(relative)
+        if path.is_dir():
+            active_files = [
+                child
+                for child in path.rglob("*")
+                if child.is_file() and "__pycache__" not in child.parts
+            ]
+            assert not active_files, (relative, active_files)
 
 
 def test_public_websocket_route_matches_nginx() -> None:
@@ -341,7 +326,7 @@ def test_release_versions_are_consistent() -> None:
         web["version"],
         *lock_versions,
         *app_versions,
-    } == {"1.9.11"}
+    } == {"1.9.12"}
     assert "version=APP_VERSION" in api
     assert '"version": APP_VERSION' in api
 

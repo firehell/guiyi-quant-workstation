@@ -1,4 +1,4 @@
-"""Alert V2 scope, historical-event, and current-view HTTP API."""
+"""HTDY Alert scope, history, and current-view API."""
 
 from __future__ import annotations
 
@@ -16,16 +16,7 @@ from app.alerts.current_trading_day import (
     resolve_current_trading_day,
 )
 from app.alerts.models import AlertEvent, AlertRule
-from app.alerts.registry import (
-    HTDY_ALERT_RULE_CODE,
-    SUBING_STRATEGY_RULE_CODE,
-    get_alert_rule_definition,
-)
-from app.alerts.strategy_payload import (
-    StrategyPayloadError,
-    parse_subing_strategy_payload,
-    validate_subing_strategy_event_facts,
-)
+from app.alerts.registry import HTDY_ALERT_RULE_CODE, get_alert_rule_definition
 from app.alerts.service import (
     AlertRuleNotFoundError,
     AlertScopeError,
@@ -36,39 +27,24 @@ from app.db.session import get_db
 from app.market_data.market_phase import MarketPhaseResolver
 from app.market_data.operational_universe import load_operational_products
 from app.market_data.product_retirement import normalize_symbol
-from app.market_data.product_taxonomy import load_product_taxonomy
 from app.schemas.alerts import (
     AlertEventListResponse,
-    AlertEventOut,
     AlertScopeUpdate,
     CurrentAlertEventsResponse,
-    CurrentStrategyActionEventsResponse,
+    CurrentHtdyEventsResponse,
     HtdyAlertEventOut,
     ProductAlertRuleStateOut,
     ProductAlertStateResponse,
-    StrategyActionAlertEventOut,
-    StrategyAlertEventOut,
-    SubingStrategyActionOut,
 )
 
 
 router = APIRouter(prefix="/api/alerts", tags=["alerts"])
-_STRATEGY_ACTION_ADAPTER: TypeAdapter[SubingStrategyActionOut] = TypeAdapter(
-    SubingStrategyActionOut
-)
-_HTDY_RESULT_CODES_ADAPTER: TypeAdapter[list[Literal["buy", "sell"]]] = TypeAdapter(
-    list[Literal["buy", "sell"]]
-)
-_STRATEGY_RESULT_CODES_ADAPTER: TypeAdapter[
-    list[Literal["open_long", "open_short", "close_long", "close_short"]]
-] = TypeAdapter(list[Literal["open_long", "open_short", "close_long", "close_short"]])
+_RESULT_CODES = TypeAdapter(list[Literal["buy", "sell"]])
 
 
 def get_current_alert_trading_day(
     session: Session = Depends(get_db),
 ) -> CurrentTradingDayResult:
-    """Resolve the current day only from the Task 3 phase-based resolver."""
-
     return resolve_current_trading_day(
         MarketPhaseResolver(session),
         products=load_operational_products(),
@@ -81,8 +57,6 @@ def product_alert_state(
     symbol: str,
     session: Session = Depends(get_db),
 ) -> ProductAlertStateResponse:
-    """Return code-defined rules and server-side scope state for one product."""
-
     try:
         rules = _service(session).product_rules(symbol)
     except AlertScopeError as exc:
@@ -104,34 +78,9 @@ def set_product_frequency_alert_scope(
     request: AlertScopeUpdate,
     session: Session = Depends(get_db),
 ) -> ProductAlertRuleStateOut:
-    """Add or remove one operational product/frequency pair from HTDY scope."""
-
     try:
         state = _service(session).set_product_frequency_enabled(
             rule_code, symbol, frequency, request.enabled
-        )
-    except AlertRuleNotFoundError as exc:
-        raise HTTPException(status_code=404, detail={"code": exc.code}) from exc
-    except AlertScopeError as exc:
-        raise _scope_http_error(exc) from exc
-    return _state_out(state)
-
-
-@router.put(
-    "/rules/{rule_code}/scope/{symbol}",
-    response_model=ProductAlertRuleStateOut,
-)
-def set_product_alert_scope(
-    rule_code: str,
-    symbol: str,
-    request: AlertScopeUpdate,
-    session: Session = Depends(get_db),
-) -> ProductAlertRuleStateOut:
-    """Add or remove one operational product from one existing rule scope."""
-
-    try:
-        state = _service(session).set_product_enabled(
-            rule_code, symbol, request.enabled
         )
     except AlertRuleNotFoundError as exc:
         raise HTTPException(status_code=404, detail={"code": exc.code}) from exc
@@ -148,8 +97,6 @@ def alert_events(
     end: datetime = Query(...),
     session: Session = Depends(get_db),
 ) -> AlertEventListResponse:
-    """Read persistent AlertEvent markers for one rule/product/time range."""
-
     try:
         events = _list_events(
             session,
@@ -162,47 +109,28 @@ def alert_events(
         raise HTTPException(status_code=404, detail={"code": exc.code}) from exc
     except AlertScopeError as exc:
         raise _scope_http_error(exc) from exc
-    return AlertEventListResponse(
-        items=[_event_out(event, rule_code=rule_code) for event in events]
-    )
+    return AlertEventListResponse(items=[_event_out(event) for event in events])
 
 
-@router.get(
-    "/strategy-actions/current",
-    response_model=CurrentStrategyActionEventsResponse,
-)
-def current_strategy_action_events(
+@router.get("/current-events", response_model=CurrentHtdyEventsResponse)
+def current_alert_events(
+    limit: int = Query(default=30, ge=1, le=100),
     current_day: CurrentTradingDayResult = Depends(get_current_alert_trading_day),
     session: Session = Depends(get_db),
-) -> CurrentStrategyActionEventsResponse:
-    """Return current-trading-day immutable Strategy Action events."""
-
+) -> CurrentHtdyEventsResponse:
     if current_day.status is CurrentTradingDayStatus.UNAVAILABLE:
-        return CurrentStrategyActionEventsResponse(
-            status="unavailable",
-            trading_day=None,
-            items=[],
+        return CurrentHtdyEventsResponse(
+            status="unavailable", trading_day=None, items=[]
         )
     assert current_day.trading_day is not None
-    taxonomy = load_product_taxonomy()
-    events = _service(session).list_current_strategy_action_events(
-        trading_day=current_day.trading_day
+    events = _service(session).list_current_events(
+        trading_day=current_day.trading_day,
+        limit=limit,
     )
-    return CurrentStrategyActionEventsResponse(
+    return CurrentHtdyEventsResponse(
         status="ready",
         trading_day=current_day.trading_day,
-        items=[
-            StrategyActionAlertEventOut(
-                **_strategy_event_out(
-                    event, rule_code=event.rule.rule_code
-                ).model_dump(),
-                display_name=get_alert_rule_definition(
-                    event.rule.rule_code
-                ).display_name,
-                product_name=taxonomy[event.symbol].name,
-            )
-            for event in events
-        ],
+        items=[_event_out(event) for event in events],
     )
 
 
@@ -215,13 +143,9 @@ def current_product_alert_events(
     current_day: CurrentTradingDayResult = Depends(get_current_alert_trading_day),
     session: Session = Depends(get_db),
 ) -> CurrentAlertEventsResponse:
-    """Return one product's current-trading-day Alert events."""
-
     if current_day.status is CurrentTradingDayStatus.UNAVAILABLE:
         return CurrentAlertEventsResponse(
-            status="unavailable",
-            trading_day=None,
-            items=[],
+            status="unavailable", trading_day=None, items=[]
         )
     assert current_day.trading_day is not None
     try:
@@ -234,7 +158,7 @@ def current_product_alert_events(
     return CurrentAlertEventsResponse(
         status="ready",
         trading_day=current_day.trading_day,
-        items=[_event_out(event, rule_code=event.rule.rule_code) for event in events],
+        items=[_event_out(event) for event in events],
     )
 
 
@@ -261,8 +185,6 @@ def _list_events(
     start: datetime,
     end: datetime,
 ) -> tuple[AlertEvent, ...]:
-    """Preserve the bounded legacy range view while serializing its V2 fields."""
-
     service = _service(session)
     service.product_rules(symbol)
     if start.tzinfo is None or start.utcoffset() is None:
@@ -278,102 +200,44 @@ def _list_events(
     rule = session.scalar(select(AlertRule).where(AlertRule.rule_code == rule_code))
     if rule is None:
         raise AlertRuleNotFoundError()
-    statement = (
-        select(AlertEvent)
-        .where(
-            AlertEvent.rule_id == rule.id,
-            AlertEvent.symbol == normalize_symbol(symbol),
-            AlertEvent.bar_end >= start,
-            AlertEvent.bar_end <= end,
-        )
-        .order_by(AlertEvent.bar_end)
+    return tuple(
+        session.scalars(
+            select(AlertEvent)
+            .where(
+                AlertEvent.rule_id == rule.id,
+                AlertEvent.symbol == normalize_symbol(symbol),
+                AlertEvent.bar_end >= start,
+                AlertEvent.bar_end <= end,
+            )
+            .order_by(AlertEvent.bar_end)
+        ).all()
     )
-    return tuple(session.scalars(statement).all())
 
 
-def _event_out(event: AlertEvent, *, rule_code: str) -> AlertEventOut:
-    definition = get_alert_rule_definition(rule_code)
-    bar_end = _utc(event.bar_end)
+def _event_out(event: AlertEvent) -> HtdyAlertEventOut:
     try:
-        if definition.kind.value == "indicator_observation":
-            if event.action_id is not None or event.strategy_payload is not None:
-                raise StrategyPayloadError()
-            return HtdyAlertEventOut(
-                id=event.id,
-                rule_code=HTDY_ALERT_RULE_CODE,
-                symbol=event.symbol,
-                contract=event.contract,
-                trading_day=event.trading_day,
-                frequency=event.frequency,
-                bar_end=bar_end,
-                result_codes=_HTDY_RESULT_CODES_ADAPTER.validate_python(
-                    event.result_codes
-                ),
-                action_id=None,
-                strategy_action=None,
-                detected_at=_utc(event.detected_at),
-                notification_attempted_at=(
-                    _utc(event.notification_attempted_at)
-                    if event.notification_attempted_at is not None
-                    else None
-                ),
-            )
-        else:
-            if (
-                event.action_id is None
-                or event.strategy_payload is None
-                or event.trading_day is None
-            ):
-                raise StrategyPayloadError()
-            payload = parse_subing_strategy_payload(event.strategy_payload)
-            validate_subing_strategy_event_facts(
-                payload,
-                action_id=event.action_id,
-                symbol=event.symbol,
-                contract=event.contract,
-                trading_day=event.trading_day,
-                frequency=event.frequency,
-                bar_end=bar_end,
-                result_codes=tuple(event.result_codes),
-            )
-            strategy_action = _STRATEGY_ACTION_ADAPTER.validate_python(
-                payload.to_json()
-            )
-            return StrategyAlertEventOut(
-                id=event.id,
-                rule_code=SUBING_STRATEGY_RULE_CODE,
-                symbol=event.symbol,
-                contract=event.contract,
-                trading_day=event.trading_day,
-                frequency="15m",
-                bar_end=bar_end,
-                result_codes=_STRATEGY_RESULT_CODES_ADAPTER.validate_python(
-                    event.result_codes
-                ),
-                action_id=event.action_id,
-                strategy_action=strategy_action,
-                detected_at=_utc(event.detected_at),
-                notification_attempted_at=(
-                    _utc(event.notification_attempted_at)
-                    if event.notification_attempted_at is not None
-                    else None
-                ),
-            )
-    except (StrategyPayloadError, ValidationError) as exc:
+        result_codes = _RESULT_CODES.validate_python(event.result_codes)
+    except ValidationError as exc:
         raise HTTPException(
             status_code=409,
             detail={"code": "ALERT_EVENT_FACTS_INVALID"},
         ) from exc
-
-
-def _strategy_event_out(event: AlertEvent, *, rule_code: str) -> StrategyAlertEventOut:
-    result = _event_out(event, rule_code=rule_code)
-    if not isinstance(result, StrategyAlertEventOut):
-        raise HTTPException(
-            status_code=409,
-            detail={"code": "ALERT_EVENT_FACTS_INVALID"},
-        )
-    return result
+    return HtdyAlertEventOut(
+        id=event.id,
+        rule_code=HTDY_ALERT_RULE_CODE,
+        symbol=event.symbol,
+        contract=event.contract,
+        trading_day=event.trading_day,
+        frequency=event.frequency,
+        bar_end=_utc(event.bar_end),
+        result_codes=result_codes,
+        detected_at=_utc(event.detected_at),
+        notification_attempted_at=(
+            _utc(event.notification_attempted_at)
+            if event.notification_attempted_at is not None
+            else None
+        ),
+    )
 
 
 def _utc(value: datetime) -> datetime:

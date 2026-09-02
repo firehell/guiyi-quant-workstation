@@ -9,46 +9,21 @@ from app.alerts.registry import (
 )
 
 
-def test_registry_has_exact_two_v2_rules() -> None:
+def test_registry_contains_only_htdy() -> None:
     definitions = alert_rule_definitions()
-    assert tuple(item.rule_code for item in definitions) == (
-        "htdy_original_15m",
-        "subing_strategy_v1",
+    assert tuple(item.rule_code for item in definitions) == ("htdy_original_15m",)
+    rule = definitions[0]
+    assert rule.display_name == "火天大有"
+    assert rule.kind is AlertRuleKind.INDICATOR_OBSERVATION
+    assert rule.input_frequencies == (
+        "1m", "5m", "15m", "30m", "60m", "1d", "1w"
     )
+    assert rule.series_kind == "actual_dominant"
 
-    htdy = get_alert_rule_definition("htdy_original_15m")
-    assert htdy.display_name == "火天大有"
-    assert htdy.kind is AlertRuleKind.INDICATOR_OBSERVATION
-    assert htdy.input_frequencies == (
-        "1m",
-        "5m",
-        "15m",
-        "30m",
-        "60m",
-        "1d",
-        "1w",
+
+def test_registry_lookup_strips_whitespace_and_rejects_unknown() -> None:
+    assert get_alert_rule_definition(" htdy_original_15m ").rule_code == (
+        "htdy_original_15m"
     )
-    assert htdy.series_kind == "actual_dominant"
-
-    subing = get_alert_rule_definition("subing_strategy_v1")
-    assert subing.display_name == "苏冰策略"
-    assert subing.kind is AlertRuleKind.STRATEGY_ACTION
-    assert subing.input_frequencies == ("1m", "5m", "15m")
-    assert subing.series_kind == "actual_dominant"
-
-
-def test_rule_lookup_normalizes_surrounding_whitespace() -> None:
-    definition = get_alert_rule_definition("  subing_strategy_v1  ")
-
-    assert definition.rule_code == "subing_strategy_v1"
-
-
-def test_removed_formal_signal_kind_and_old_rule_code_fail_closed() -> None:
-    assert "FORMAL_SIGNAL" not in AlertRuleKind.__members__
     with pytest.raises(KeyError):
-        get_alert_rule_definition("subing_entry_signal_v1")
-
-
-def test_unknown_rule_definition_fails_closed() -> None:
-    with pytest.raises(KeyError):
-        get_alert_rule_definition("unknown_rule")
+        get_alert_rule_definition("future_rule")

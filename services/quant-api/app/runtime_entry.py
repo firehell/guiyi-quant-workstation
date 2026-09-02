@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from contextlib import AbstractContextManager
-from datetime import date
 import logging
 import sys
 from typing import Any, TextIO
@@ -25,7 +24,6 @@ from app.market_data.after_market import build_after_market_updater
 from app.market_data.composition import (
     build_historical_data_manager,
     build_live_market_service,
-    build_subing_daily_watch_generator,
 )
 from app.market_data.historical_data_manager import HistoricalDataManager
 
@@ -35,7 +33,6 @@ ManagerFactory = Callable[[Any], HistoricalDataManager]
 AfterMarketFactory = Callable[..., Any]
 LiveServiceFactory = Callable[[Any], Any]
 AlertRuntimeFactory = Callable[[], Any]
-DailyWatchGeneratorFactory = Callable[[Any], Any]
 
 _LOGGER = logging.getLogger(__name__)
 _COMMANDS = {
@@ -81,29 +78,15 @@ def run_after_market(
     manager_factory: ManagerFactory,
     after_market_factory: AfterMarketFactory,
     failure_notification: bool,
-    daily_watch_generator_factory: DailyWatchGeneratorFactory | None = None,
 ) -> dict[str, object]:
-    """Run Market maintenance, then optional isolated follow-ups.
-
-    The Daily Watch factory is injected only by the supervised Runtime entrypoint.
-    """
-    def post_update(trading_day: date) -> None:
-        if daily_watch_generator_factory is None:
-            return
-        with session_factory() as daily_watch_session:
-            daily_watch_generator_factory(daily_watch_session).run(trading_day)
-
+    """Run Market maintenance through the supervised Runtime entrypoint."""
     with session_factory() as session:
         manager = manager_factory(session)
         updater = after_market_factory(
             manager,
             failure_notification=failure_notification,
         )
-        market_result = (
-            updater.run(post_update=post_update)
-            if daily_watch_generator_factory is not None
-            else updater.run()
-        )
+        market_result = updater.run()
     return market_result.as_payload()
 
 
@@ -115,9 +98,6 @@ def main(
     after_market_factory: AfterMarketFactory = build_after_market_updater,
     live_service_factory: LiveServiceFactory = build_live_market_service,
     alert_runtime_factory: AlertRuntimeFactory = build_alert_runtime,
-    daily_watch_generator_factory: DailyWatchGeneratorFactory = (
-        build_subing_daily_watch_generator
-    ),
     stdout: TextIO = sys.stdout,
     stderr: TextIO = sys.stderr,
 ) -> int:
@@ -142,7 +122,6 @@ def main(
                 manager_factory=manager_factory,
                 after_market_factory=after_market_factory,
                 failure_notification=True,
-                daily_watch_generator_factory=daily_watch_generator_factory,
             )
     except Exception as exc:  # noqa: BLE001 - safe process boundary
         print_json(

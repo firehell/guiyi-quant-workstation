@@ -1,5 +1,5 @@
 from .atr import atr_series, initial_atr_state, step_atr
-from .ema import ema_series, initial_ema_state, step_ema
+from .ema import ema21_slope_10_bps_per_bar, ema_series, initial_ema_state, step_ema
 from .htdy_original import (
     HtdyOriginalResult,
     compute_htdy_original,
@@ -52,7 +52,6 @@ from .policy import (
     FROZEN_LEGACY_BACKTEST_CONSUMER,
     HTDY_ALERT_OBSERVATION_CONSUMER,
     RANGE_DETECTOR_DISPLAY_CONSUMER,
-    RANGE_DETECTOR_RESEARCH_CONSUMER,
     formal_policy_registry,
     get_formal_policy,
     require_formal_policy,
@@ -98,7 +97,6 @@ __all__ = [
     "RangeDetectorTransitionKind",
     "RangeDetectorVisualRange",
     "RANGE_DETECTOR_DISPLAY_CONSUMER",
-    "RANGE_DETECTOR_RESEARCH_CONSUMER",
     "RepaintingRisk",
     "SeedPolicy",
     "atr_series",
@@ -108,6 +106,7 @@ __all__ = [
     "compute_htdy_original",
     "compute_strict_fields",
     "ema_series",
+    "ema21_slope_10_bps_per_bar",
     "initial_ema_state",
     "initial_macd_state",
     "initial_range_detector_lux_state",

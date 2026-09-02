@@ -160,6 +160,32 @@ async function mockMarketApi(page, requests, controls = {}) {
   })
 }
 
+test('lists backend products on the Market homepage and opens their actual-dominant chart', async ({ page }) => {
+  const requests = []
+  await installFakeWebSocket(page)
+  await page.addInitScript(() => {
+    window.localStorage.setItem('guiyi.market.workspace.preferences.v1', JSON.stringify({
+      version: 1,
+      symbol: null,
+      seriesKind: 'actual_dominant',
+      frequency: '60m',
+      researchSidebarOpen: true,
+    }))
+  })
+  await mockMarketApi(page, requests)
+
+  await page.goto('/market')
+
+  await expect(page.getByTestId('market-product-directory')).toBeVisible()
+  await expect(page.getByTestId('market-product-ag')).toContainText('白银')
+  await expect(page.getByTestId('market-product-ag')).toContainText('AG2601')
+  await expect(page.getByTestId('market-product-ag')).toContainText('2026-08-07')
+  await expect(page.getByTestId('market-product-jm')).toBeVisible()
+
+  await page.getByTestId('market-product-ag').click()
+  await expect(page).toHaveURL(/\/market\/chart\?symbol=ag&series_kind=actual_dominant&frequency=60m/)
+})
+
 test('renders the latest canonical page first, paginates left, and overlays actual-dominant Live bars at the seam', async ({ page }) => {
   const requests = []
   await installFakeWebSocket(page)
@@ -317,7 +343,6 @@ test('keeps chart and check rail aligned without a default full-history performa
 
   await page.goto('/market/chart?symbol=jm&series_kind=actual_dominant&frequency=15m')
   await expect(page.getByTestId('kline-shell')).toBeVisible()
-  await expect(page.getByTestId('subing-strategy-performance')).toHaveCount(0)
 
   const layout = await page.evaluate(() => {
     const content = document.querySelector('.content')?.getBoundingClientRect()

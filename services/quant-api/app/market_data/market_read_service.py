@@ -23,6 +23,7 @@ from app.market_data.domain import (
     normalize_contract_for_symbol,
 )
 from app.market_data.market_phase import MarketPhase, ProductMarketPhase
+from app.market_data.live_market import LiveBarObservation
 
 
 class MarketPageReader(Protocol):
@@ -45,6 +46,27 @@ class LiveReadStore(Protocol):
         frequency: str,
         after: datetime | None,
     ) -> tuple[CanonicalBar, ...]: ...
+
+    def bars_between(
+        self,
+        trading_day: date,
+        symbol: str,
+        frequency: str,
+        start: datetime,
+        end: datetime,
+    ) -> tuple[CanonicalBar, ...]: ...
+
+    def bar_observations(
+        self,
+        trading_day: date,
+        symbol: str,
+        frequency: str,
+        after: datetime | None,
+        until: datetime,
+        *,
+        inclusive_after: bool,
+        expected_contract: str,
+    ) -> tuple[LiveBarObservation, ...]: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,6 +96,17 @@ class MarketDisplaySnapshot:
 
 
 @dataclass(frozen=True, slots=True)
+class MarketObservationSnapshot:
+    """One frozen read of completed Live observation identity and Bars."""
+
+    state: MarketReadState
+    source: Literal["none", "realtime", "unavailable"]
+    trading_day: date | None
+    contract: str | None
+    bars: tuple[CanonicalBar, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class MarketReadWindow:
     """以事件 Bar 为硬截止点的 Alert 只读窗口。"""
 
@@ -89,6 +122,13 @@ class MarketReadWindow:
 
 class MarketReadWindowError(RuntimeError):
     """Alert 窗口不能被唯一、完整解析时的稳定失败。"""
+
+
+class MarketObservationSnapshotError(RuntimeError):
+    """Live observation authority changed while its Bars were being read."""
+
+    def __init__(self) -> None:
+        super().__init__("MARKET_OBSERVATION_SNAPSHOT_CHANGED")
 
 
 class MarketReadService:
@@ -297,6 +337,94 @@ class MarketReadService:
         bars = self._snapshot_bars(identity, state, after=after, through=now)
         return () if bars is None else bars
 
+    def observation_snapshot(
+        self,
+        identity: SeriesPageQuery,
+        after: datetime | None,
+        now: datetime,
+        *,
+        inclusive_after: bool = False,
+    ) -> MarketObservationSnapshot:
+        """Freeze state, contract and completed Live Bars in one typed read."""
+
+        if (
+            (
+                after is not None
+                and (
+                    not isinstance(after, datetime)
+                    or after.tzinfo is None
+                    or after.utcoffset() is None
+                )
+            )
+            or not isinstance(now, datetime)
+            or now.tzinfo is None
+            or now.utcoffset() is None
+            or type(inclusive_after) is not bool
+        ):
+            raise ValueError("MARKET_OBSERVATION_SNAPSHOT_INVALID")
+        now_utc = now.astimezone(UTC)
+        state = self.state(identity, now_utc)
+        if (
+            not state.live_eligible
+            or not state.live_available
+            or state.trading_day is None
+            or state.live_contract is None
+        ):
+            return MarketObservationSnapshot(
+                state=state,
+                source="none",
+                trading_day=state.trading_day,
+                contract=state.live_contract,
+                bars=(),
+            )
+        boundary = _later(
+            after.astimezone(UTC) if after is not None else None,
+            state.canonical_end,
+        )
+        try:
+            observations = (
+                self._live_store.bar_observations(
+                    state.trading_day,
+                    identity.symbol,
+                    identity.frequency.value,
+                    boundary,
+                    now_utc,
+                    inclusive_after=inclusive_after,
+                    expected_contract=state.live_contract,
+                )
+                if boundary is None or boundary <= now_utc
+                else ()
+            )
+            if any(
+                type(item) is not LiveBarObservation
+                or type(item.bar) is not CanonicalBar
+                or item.contract != state.live_contract
+                for item in observations
+            ):
+                raise ValueError("LIVE_BAR_PROVENANCE_INVALID")
+            bars = tuple(item.bar for item in observations)
+        except Exception:  # noqa: BLE001 - typed read failure, no write or fallback
+            return MarketObservationSnapshot(
+                state=state,
+                source="unavailable",
+                trading_day=state.trading_day,
+                contract=state.live_contract,
+                bars=(),
+            )
+        try:
+            post_read_state = self.state(identity, now_utc)
+        except Exception as exc:  # noqa: BLE001 - a stable snapshot cannot be proven
+            raise MarketObservationSnapshotError() from exc
+        if _observation_authority(state) != _observation_authority(post_read_state):
+            raise MarketObservationSnapshotError()
+        return MarketObservationSnapshot(
+            state=post_read_state,
+            source="realtime",
+            trading_day=post_read_state.trading_day,
+            contract=post_read_state.live_contract,
+            bars=tuple(bars),
+        )
+
     def display_snapshot(
         self,
         identity: SeriesPageQuery,
@@ -434,6 +562,21 @@ def _later(first: datetime | None, second: datetime | None) -> datetime | None:
     if second is None:
         return first
     return max(first, second)
+
+
+def _observation_authority(state: MarketReadState) -> tuple[object, ...]:
+    return (
+        state.symbol,
+        state.series_kind,
+        state.frequency,
+        state.operational,
+        state.phase,
+        state.trading_day,
+        state.live_eligible,
+        state.live_available,
+        state.live_contract,
+        state.canonical_end,
+    )
 
 
 def _empty_display_snapshot(state: MarketReadState) -> MarketDisplaySnapshot:

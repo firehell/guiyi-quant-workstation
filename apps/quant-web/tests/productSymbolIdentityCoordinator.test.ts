@@ -16,9 +16,7 @@ test('invalidates facts synchronously and waits for the accepted Market identity
     },
     refreshFacts: () => [
       Promise.resolve().then(() => { calls.push('research') }),
-      Promise.resolve().then(() => { calls.push('subing') }),
       Promise.resolve().then(() => { calls.push('alerts') }),
-      Promise.resolve().then(() => { calls.push('events') }),
     ],
     rejectFacts: () => calls.push('reject'),
   })
@@ -30,7 +28,7 @@ test('invalidates facts synchronously and waits for the accepted Market identity
   market.resolve(true)
   await synchronization
 
-  assert.deepEqual(calls, ['invalidate', 'market', 'research', 'subing', 'alerts', 'events'])
+  assert.deepEqual(calls, ['invalidate', 'market', 'research', 'alerts'])
   assert.equal(coordinator.synchronizing.value, false)
   coordinator.dispose()
 })

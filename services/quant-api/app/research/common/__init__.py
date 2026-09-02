@@ -1,1 +1,0 @@
-"""Shared offline-research contracts."""

@@ -70,7 +70,6 @@ class RuntimeAfterMarketHealth(BaseModel):
     last_run: RuntimeAfterMarketRun | None = None
     last_successful_trading_day: str | None = None
     last_failure: dict[str, str] | None = None
-    subing_strategy_performance: dict[str, object] | None = None
     error_type: str | None = None
     error_message: str | None = None
 
@@ -106,16 +105,6 @@ class RuntimeAlertHealth(BaseModel):
     notification_acknowledged_at: str | None = None
     notification_error_type: str | None = None
     consecutive_notification_failures: int = 0
-    strategy_state: Literal["warming", "ready", "degraded"] = "warming"
-    strategy_started_at: str | None = None
-    strategy_ready_at: str | None = None
-    strategy_product_count: int = 0
-    strategy_ready_product_count: int = 0
-    strategy_unavailable_product_count: int = 0
-    strategy_unavailable_symbols: list[str] = Field(default_factory=list)
-    strategy_unavailable_reason_codes: dict[str, str] = Field(default_factory=dict)
-    last_strategy_action_at: str | None = None
-    last_strategy_restore_at: str | None = None
     error_type: str | None = None
 
 

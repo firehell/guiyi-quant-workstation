@@ -87,7 +87,6 @@ def test_runtime_health_endpoint_exposes_market_runtime_components(
         "last_run": None,
         "last_successful_trading_day": None,
         "last_failure": None,
-        "subing_strategy_performance": None,
         "error_type": None,
         "error_message": None,
     }
@@ -116,16 +115,6 @@ def test_runtime_health_endpoint_exposes_market_runtime_components(
         "notification_acknowledged_at": None,
         "notification_error_type": None,
         "consecutive_notification_failures": 0,
-        "strategy_state": "warming",
-        "strategy_started_at": None,
-        "strategy_ready_at": None,
-        "strategy_product_count": 0,
-        "strategy_ready_product_count": 0,
-            "strategy_unavailable_product_count": 0,
-            "strategy_unavailable_symbols": [],
-            "strategy_unavailable_reason_codes": {},
-            "last_strategy_action_at": None,
-        "last_strategy_restore_at": None,
         "error_type": None,
     }
 
@@ -254,16 +243,6 @@ def test_alert_health_missing_stale_and_fresh_heartbeat(monkeypatch, tmp_path) -
         "notification_acknowledged_at": None,
         "notification_error_type": None,
         "consecutive_notification_failures": 0,
-        "strategy_state": "warming",
-        "strategy_started_at": None,
-        "strategy_ready_at": None,
-        "strategy_product_count": 0,
-        "strategy_ready_product_count": 0,
-            "strategy_unavailable_product_count": 0,
-            "strategy_unavailable_symbols": [],
-            "strategy_unavailable_reason_codes": {},
-            "last_strategy_action_at": None,
-        "last_strategy_restore_at": None,
         "error_type": None,
     }
     rendered = json.dumps(fresh, ensure_ascii=False)
@@ -362,67 +341,6 @@ def test_alert_health_accepts_v2_heartbeat_counts() -> None:
     assert alert["status"] == "ok"
     assert alert["enabled_rule_count"] == 2
     assert alert["scope_product_count"] == 1
-
-
-def test_alert_health_exposes_bounded_strategy_v4_observation() -> None:
-    now = datetime(2026, 8, 14, 2, 45, tzinfo=UTC)
-    heartbeat = {
-        "generated_at": now.isoformat(),
-        "available": True,
-        "enabled_rule_count": 2,
-        "scope_product_count": 1,
-    }
-    runtime_status = {
-        "schema_version": 3,
-        "last_processed_bar_at": None,
-        "last_processing_success_at": None,
-        "last_processing_failure_at": None,
-        "processing_error_type": None,
-        "last_event_at": None,
-        "last_transport_attempt_at": None,
-        "last_provider_accepted_at": None,
-        "last_notification_failure_at": None,
-        "notification_acknowledged_at": None,
-        "notification_error_type": None,
-        "consecutive_notification_failures": 0,
-        "strategy_state": "degraded",
-        "strategy_started_at": (now - timedelta(seconds=4)).isoformat(),
-        "strategy_ready_at": (now - timedelta(seconds=1)).isoformat(),
-        "strategy_product_count": 2,
-        "strategy_ready_product_count": 1,
-        "strategy_unavailable_product_count": 1,
-        "strategy_unavailable_symbols": ["jm"],
-        "last_strategy_action_at": None,
-        "last_strategy_restore_at": (now - timedelta(seconds=1)).isoformat(),
-    }
-    TestingSessionLocal = _session_factory()
-
-    with TestingSessionLocal() as session:
-        health = build_runtime_health(
-            session,
-            redis_factory=lambda: FakeRedis(
-                values={
-                    "alert:heartbeat": json.dumps(heartbeat),
-                    "alert:runtime-status": json.dumps(runtime_status),
-                }
-            ),
-            now=now,
-            live_runtime_enabled=False,
-            alert_runtime_enabled=True,
-            notification_transport_configured=True,
-            after_market_status_path=None,
-        )
-
-    alert = health["components"]["alert"]
-    assert alert["status"] == "degraded"
-    assert alert["strategy_state"] == "degraded"
-    assert alert["strategy_product_count"] == 2
-    assert alert["strategy_ready_product_count"] == 1
-    assert alert["strategy_unavailable_product_count"] == 1
-    assert alert["strategy_unavailable_symbols"] == ["jm"]
-    assert alert["strategy_unavailable_reason_codes"] == {
-        "jm": "PREVIOUS_RUNTIME_REASON_UNAVAILABLE"
-    }
 
 
 def test_alert_health_derives_latest_processing_and_notification_outcomes() -> None:

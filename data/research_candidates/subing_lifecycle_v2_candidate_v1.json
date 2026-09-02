@@ -1,8 +1,0 @@
-{
-  "schema_version": 1,
-  "candidate_id": "subing_lifecycle_v2_candidate_v1",
-  "source_kind": "subing_lifecycle",
-  "policy_id": "subing_lifecycle_v2_research_v1",
-  "formula_version": "subing_lifecycle_v2",
-  "research_only": true
-}

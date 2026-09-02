@@ -1,0 +1,1 @@
+"""Shared Newow test configuration."""

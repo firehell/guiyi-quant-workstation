@@ -3,105 +3,24 @@ import type {
   DominantContractListResponse,
   MarketBarsPageRequest,
   MarketBarsPageResponse,
-  MarketReadState,
   MarketFrequency,
-  MarketRadarResponse,
+  MarketReadState,
   ProductResearchResponse,
   SeriesKind,
-  SubingFrequency,
-  SubingStrategyHistoricalRequest,
-  SubingStrategyHistoricalResponse,
-  SubingStrategyHistoricalWireResponse,
-  SubingStrategyCurrentResponse,
-  SubingStrategyCurrentWireResponse,
-  SubingStrategyPerformanceResponse,
-  SubingDailyWatchCurrentWireResponse,
-  SubingResearchResponse,
-} from '@/types/market'
-import {
-  normalizeMarketRadar,
-  normalizeSubingDailyWatchCurrent,
-  normalizeSubingResearch,
-  normalizeSubingStrategyHistory,
-  normalizeSubingStrategyCurrent,
-  normalizeSubingStrategyPerformance,
 } from '@/types/market'
 
 export function getMarketDominants() {
   return request.get<never, DominantContractListResponse>('/market/dominants')
 }
 
-export function getMarketRadar() {
-  return request.get<never, MarketRadarResponse>('/market/research/radar')
-    .then(normalizeMarketRadar)
-}
-
-export function getSubingDailyWatchCurrent() {
-  return request
-    .get<never, SubingDailyWatchCurrentWireResponse>(
-      '/market/research/subing-daily-watch/current',
-    )
-    .then(normalizeSubingDailyWatchCurrent)
-}
-
-export function getProductResearch(params: {
-  symbol: string
-  seriesKind: SeriesKind
-  contract?: string
-}) {
+export function getProductResearch(params: { symbol: string; seriesKind: SeriesKind; contract?: string }) {
   return request.get<never, ProductResearchResponse>('/market/research/product', {
     params: {
       symbol: params.symbol,
       series_kind: params.seriesKind,
       contract: params.seriesKind === 'contract' ? params.contract : undefined,
     },
-  }).then(normalizeProductResearch)
-}
-
-export function getSubingResearch(params: { symbol: string; frequency: SubingFrequency }) {
-  return request.get<never, SubingResearchResponse>('/market/research/subing', {
-    params: {
-      symbol: params.symbol,
-      frequency: params.frequency,
-    },
-  }).then(normalizeSubingResearch)
-}
-
-export function getSubingStrategyHistory(
-  params: SubingStrategyHistoricalRequest,
-  signal?: AbortSignal,
-) {
-  return request.get<never, SubingStrategyHistoricalWireResponse>(
-    '/market/research/subing-strategy/history',
-    { params, timeout: 120_000, signal },
-  ).then(normalizeSubingStrategyHistory) as Promise<SubingStrategyHistoricalResponse>
-}
-
-export function getSubingStrategyCurrent(params: {
-  seriesKind: 'actual_dominant'
-  symbol: string
-  frequency: '15m'
-}) {
-  return request.get<never, SubingStrategyCurrentWireResponse>(
-    '/market/research/subing-strategy/current',
-    { params: {
-      series_kind: params.seriesKind,
-      symbol: params.symbol,
-      frequency: params.frequency,
-    } },
-  ).then(normalizeSubingStrategyCurrent) as Promise<SubingStrategyCurrentResponse>
-}
-
-export function getSubingStrategyPerformance(params: { symbol: string; signal?: AbortSignal }) {
-  return request.get<never, unknown>(
-    '/market/research/subing-strategy/performance',
-    { params: { symbol: params.symbol }, signal: params.signal },
-  ).then(normalizeSubingStrategyPerformance) as Promise<SubingStrategyPerformanceResponse>
-}
-
-/** FastAPI serializes Decimal as strings; convert only at the display HTTP boundary. */
-function normalizeProductResearch(payload: ProductResearchResponse): ProductResearchResponse {
-  return {
+  }).then((payload) => ({
     ...payload,
     position20: toNumber(payload.position20),
     distance_to_20d_high: toNumber(payload.distance_to_20d_high),
@@ -112,21 +31,16 @@ function normalizeProductResearch(payload: ProductResearchResponse): ProductRese
     atr14_percentile252: toNumber(payload.atr14_percentile252),
     recent_daily: payload.recent_daily.map((bar) => ({
       ...bar,
-      open: Number(bar.open),
-      high: Number(bar.high),
-      low: Number(bar.low),
-      close: Number(bar.close),
-      volume: Number(bar.volume),
-      turnover: toNumber(bar.turnover),
-      open_interest: toNumber(bar.open_interest),
+      open: Number(bar.open), high: Number(bar.high), low: Number(bar.low),
+      close: Number(bar.close), volume: Number(bar.volume),
+      turnover: toNumber(bar.turnover), open_interest: toNumber(bar.open_interest),
     })),
-  }
+  }))
 }
 
 function toNumber(value: number | string | null): number | null {
   return value === null ? null : Number(value)
 }
-
 
 export function getMarketBarsPage(params: MarketBarsPageRequest) {
   return request.get<never, MarketBarsPageResponse>('/market/bars/page', { params })

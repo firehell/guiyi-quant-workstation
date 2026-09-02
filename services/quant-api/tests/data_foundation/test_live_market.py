@@ -149,8 +149,8 @@ def test_live_bars_are_score_ordered_after_exclusive_and_decimal_lossless() -> N
     day = date(2025, 1, 2)
     later, earlier = _bar(2), _bar(1)
 
-    store.put_bar(day, "RB", "1m", later)
-    store.put_bar(day, "RB", "1m", earlier)
+    store.put_bar(day, "RB", "1m", later, contract="RB2505")
+    store.put_bar(day, "RB", "1m", earlier, contract="RB2505")
 
     assert store.bars_after(day, "RB", "1m", None) == (earlier, later)
     assert store.bars_after(day, "RB", "1m", earlier.bar_end) == (later,)
@@ -165,6 +165,59 @@ def test_live_bars_are_score_ordered_after_exclusive_and_decimal_lossless() -> N
     payload = json.loads(member)
     assert payload["open"] == "100.1250"
     assert payload["volume"] == "12.500"
+
+
+def test_live_bar_provenance_is_normalized_without_changing_generic_reads() -> None:
+    fake = FakeRedis()
+    store = _store(fake)
+    day = date(2025, 1, 2)
+    bar = _bar(1)
+
+    store.put_bar(day, "j", "1m", bar, contract="j2505")
+
+    assert store.bars_after(day, "j", "1m", None) == (bar,)
+    observations = store.bar_observations(
+        day,
+        "j",
+        "1m",
+        None,
+        bar.bar_end,
+        inclusive_after=False,
+        expected_contract="J2505",
+    )
+    assert tuple(item.bar for item in observations) == (bar,)
+    assert tuple(item.contract for item in observations) == ("J2505",)
+    member = next(iter(fake.zsets["live:bars:2025-01-02:j:1m"]))
+    assert json.loads(member)["contract"] == "J2505"
+
+
+@pytest.mark.parametrize("provenance", [None, "invalid", "J2509"], ids=("missing", "invalid", "mismatch"))
+def test_provenance_read_rejects_legacy_invalid_or_mismatched_rows(
+    provenance: str | None,
+) -> None:
+    fake = FakeRedis()
+    store = _store(fake)
+    day = date(2025, 1, 2)
+    bar = _bar(1)
+    payload = _bar_payload(bar)
+    if provenance is not None:
+        payload["contract"] = provenance
+    key = "live:bars:2025-01-02:j:1m"
+    fake.zadd(
+        key,
+        {json.dumps(payload, separators=(",", ":")): int(bar.bar_end.timestamp() * 1000)},
+    )
+
+    with pytest.raises(ValueError, match="LIVE_BAR_PROVENANCE_INVALID"):
+        store.bar_observations(
+            day,
+            "j",
+            "1m",
+            None,
+            bar.bar_end,
+            inclusive_after=False,
+            expected_contract="J2505",
+        )
 
 
 def test_subscriptions_are_trading_day_isolated_and_expire() -> None:
@@ -188,9 +241,9 @@ def test_cleanup_removes_only_requested_trading_day() -> None:
     store = _store(fake)
     first_day = date(2025, 1, 2)
     next_day = date(2025, 1, 3)
-    store.put_bar(first_day, "RB", "1m", _bar(1))
+    store.put_bar(first_day, "RB", "1m", _bar(1), contract="RB2505")
     store.set_subscriptions(first_day, {"RB": ["1m"]})
-    store.put_bar(next_day, "RB", "1m", _bar(1))
+    store.put_bar(next_day, "RB", "1m", _bar(1), contract="RB2505")
     store.set_subscriptions(next_day, {"RB": ["1m"]})
 
     store.cleanup_trading_day(first_day)
@@ -1327,6 +1380,40 @@ def test_redis_failure_keeps_due_bar_pending_for_exact_recovery_retry() -> None:
     assert live_events == [("live:bar:j:1m", json.dumps(_bar_payload(bar), separators=(",", ":")))]
 
 
+def test_due_bar_retains_ingested_contract_if_mapping_changes_before_flush() -> None:
+    module = importlib.import_module("app.market_data.live_market")
+    day = date(2025, 1, 2)
+    window = SessionWindow(
+        datetime(2025, 1, 2, 1, tzinfo=UTC), datetime(2025, 1, 2, 2, tzinfo=UTC)
+    )
+    fake = FakeRedis()
+    service = _live_service(
+        client=FakeLiveClient(),
+        dominants=FakeDominants({("j", day): "J2505"}),
+        phases=FakePhases({"j": _phase("j", day, window)}),
+        store=module.RedisLiveStore(fake),
+        products=("j",),
+    )
+    service.reconcile(window.start + timedelta(minutes=1))
+    bar = _bar(1)
+    service.ingest("J2505", bar, now=bar.bar_end + timedelta(seconds=1))
+    service._contracts["j"] = "J2509"
+
+    assert service.flush_due(bar.bar_end + timedelta(seconds=2)) == (bar,)
+    member = next(iter(fake.zsets["live:bars:2025-01-02:j:1m"]))
+    assert json.loads(member)["contract"] == "J2505"
+    observations = module.RedisLiveStore(fake).bar_observations(
+        day,
+        "j",
+        "1m",
+        None,
+        bar.bar_end,
+        inclusive_after=False,
+        expected_contract="J2505",
+    )
+    assert tuple(item.bar for item in observations) == (bar,)
+
+
 def test_live_derived_buckets_match_shared_historical_aggregation_exactly() -> None:
     module = importlib.import_module("app.market_data.live_market")
     day = date(2025, 1, 2)
@@ -1358,6 +1445,70 @@ def test_live_derived_buckets_match_shared_historical_aggregation_exactly() -> N
         assert store.bars_after(day, "j", frequency, None) == aggregate_from_1m(
             source, target_frequency=frequency, sessions=(window,)
         )
+    observations = store.bar_observations(
+        day,
+        "j",
+        "15m",
+        None,
+        source[-1].bar_end,
+        inclusive_after=False,
+        expected_contract="J2505",
+    )
+    assert tuple(item.contract for item in observations) == ("J2505",) * 4
+    assert tuple(item.bar for item in observations) == aggregate_from_1m(
+        source,
+        target_frequency="15m",
+        sessions=(window,),
+    )
+
+
+def test_live_derived_bucket_rejects_legacy_source_without_provenance() -> None:
+    module = importlib.import_module("app.market_data.live_market")
+    day = date(2025, 1, 2)
+    window = SessionWindow(
+        datetime(2025, 1, 2, 1, tzinfo=UTC), datetime(2025, 1, 2, 2, tzinfo=UTC)
+    )
+    source = tuple(
+        CanonicalBar(
+            bar_end=window.start + timedelta(minutes=index),
+            trading_day=day,
+            open=Decimal(index),
+            high=Decimal(index + 2),
+            low=Decimal(index - 1),
+            close=Decimal(index + 1),
+            volume=Decimal(index),
+            turnover=Decimal(index * 10),
+            open_interest=Decimal(index * 100),
+        )
+        for index in range(1, 16)
+    )
+    fake = FakeRedis()
+    client = FakeLiveClient()
+    service = _live_service(
+        client=client,
+        dominants=FakeDominants({("j", day): "J2505"}),
+        phases=FakePhases({"j": _phase("j", day, window)}),
+        store=module.RedisLiveStore(fake),
+        products=("j",),
+    )
+    service.reconcile(window.start + timedelta(minutes=1))
+    key = "live:bars:2025-01-02:j:1m"
+    for bar in source[:-1]:
+        fake.zadd(
+            key,
+            {
+                json.dumps(_bar_payload(bar), separators=(",", ":")): int(
+                    bar.bar_end.timestamp() * 1000
+                )
+            },
+        )
+    final = source[-1]
+    service.ingest("J2505", final, now=final.bar_end + timedelta(seconds=2))
+    service.flush_due(final.bar_end + timedelta(seconds=2))
+
+    store = module.RedisLiveStore(fake)
+    assert store.bars_after(day, "j", "5m", None) == ()
+    assert store.bars_after(day, "j", "15m", None) == ()
 
 
 def test_trading_provider_failure_retries_after_ten_seconds_but_break_staleness_does_not() -> None:

@@ -21,7 +21,7 @@ Trend = Literal["up", "down", "neutral", "unavailable"]
 
 @dataclass(frozen=True, slots=True)
 class ResearchMetrics:
-    """Product Research 与 Radar 复用的一组冻结研究指标。"""
+    """Product Research 复用的一组冻结研究指标。"""
 
     price_change_1d: Decimal | None
     price_change_5d: Decimal | None

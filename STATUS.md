@@ -1,6 +1,6 @@
 # 当前状态
 
-更新时间：2026-09-01
+更新时间：2026-09-02
 
 本文件只记录当前 release、production Runtime、Scope、自然 evidence 与尚未完成的 Gate。稳定产品面见 `PROJECT_SOURCE.md`，长期决策见 `DECISIONS.md`，active 依赖见 `docs/ARCHITECTURE.md`。
 
@@ -8,28 +8,33 @@
 
 | 项目 | 当前事实 |
 |---|---|
-| Release | `v1.9.9@c211b01e325726202f733fea2aa33ae2cf76b232` 是当前最新 GitHub Release；`main`、annotated tag 的 peeled commit 与该 GitHub Release 精确一致，API 与 Web release identity 均为 `1.9.9`。该最小热修从 `main/v1.9.8@7c074ab41` 只纳入 `fbf468cba` 的 Alert startup queue reconciliation 修复及必要 release 元数据；未夹带其余 `main..develop` Web/文档提交。 |
-| Runtime | 2026-09-01 将五项 launchd 服务一次切换到 clean、detached 的 `/Volumes/扩展盘/guiyi-quant-runtime-v1.9.9-r1@c211b01e`；API/Web 为 `1.9.9`，五项 exact root/commit 一致，本地 status `overall=passed`。Alert 于 `12:06:44 +08:00` 完成 restore/reconciliation，达到 `60/60 ready / 0 unavailable / strategy_state=ready`，startup 未新增 Event 或 transport attempt。切换发生在午间 `BREAK`，Live heartbeat 为 `ok` 但尚无本次进程启动后的 completed Live（`subscribed_count=0 / last_bar_at=null`），因此首根自然 Live Gate 尚待 13:30 后回读；`v1.9.7-r3@66c3be80` 保留为 clean、detached rollback root。 |
+| Release | `v1.9.11@64c689a3b73c27ea30397ca370acbbdc11522dda` 是当前最新 GitHub Release；`main`、annotated tag 的 peeled commit 与 GitHub Release target 精确一致，API 与 Web release identity 均为 `1.9.11`。它只包含 HTDY 当前 completed Bar Event/Push 修复与版本身份更新。 |
+| Runtime | 当前五项服务均绑定 clean、detached 的 `/Volumes/扩展盘/guiyi-quant-runtime-v1.9.11-r1@64c689a3`：API/Web/Live/Alert running，盘后服务按调度 `not_running`。2026-09-02 开盘只读读回为 Live `60/60`、全部 `TRADING`，但已部署旧 SuBing Runtime 状态仍为 `0/60 ready`、`60 unavailable`，故整体 health 为 degraded，不能标记 `RUNTIME_READY`。旧 `/Volumes/扩展盘/guiyi-quant-runtime-v1.9.10-r1` 已在所有服务脱离后移除。未执行盘后、未改 Scope/Rule、未手工发送通知。 |
 | Database | production Alembic 为 `20260826_0042 (head)`。当前 Rule 为 `htdy_original_15m` 与 `subing_strategy_v1`。 |
 | Market Runtime Scope | `operational_products.txt` 的 60 个品种。 |
-| Alert Scope | HTDY Scope 为 `jm × 15m`；SuBing `scope_products` 为 operational 60。两种 authority 不合并。两条 Rule 均 enabled，Alert Runtime marker 已 enabled，audience count 2；未发生 Scope、Rule 或 audience 变更。 |
+| Alert Scope | production 尚未执行 0043，因此 HTDY Scope 仍为 `jm × 15m`，已退役 Rule 的旧 `scope_products` 数据仍在库中。两条旧库 Rule 均 enabled，Alert Runtime marker 已 enabled，audience count 2；本任务未发生 production Scope、Rule 或 audience mutation。 |
+| Retirement code | task branch 已加入 forward-only `20260902_0043`：删除全部旧策略 Event/Rule 与专用列；应用、CLI、Web、Alert Runtime、研究配置均只保留通用市场能力与 HTDY。production migration、Git 外派生数据删除、release 与 Runtime 切换仍未执行。 |
 | v1.9.8 | Alert startup/final catch-up 的 Live snapshot 冻结在 causal `through` 上界，避免批量 restore 期间新到达 Bar 污染较早产品；Runtime status 写 schema v4，保留每个 unavailable 产品的固定公开 reason，并兼容读取 v1/v2/v3。无 migration、Scope、Rule、audience、transport 或策略公式变化。 |
 | v1.9.9 | frozen final-catch-up watermark 队列 reconciliation：严格更旧 Bar 丢弃，相同 watermark 仍校验，更新 Bar 只推进且不补发；reconciliation 结束前保持 warming，只有 active60 全 ready 才写 `strategy_ready_at`。完整后端、Web、Ruff、Mypy、canonical、OpenSpec 与 secret scan 已通过，Standards/Spec 复审均 no findings；当前已 `RELEASED`，已完成 exact-tag Runtime 切换；首根自然 completed Live Gate 与 canary 均未完成。 |
+| v1.9.10 | completed 1m Bar 仅在 atomic ready heartbeat 写入确认后才 PubSub；Redis 持久化、heartbeat、PubSub 或派生失败均 fail-closed，且同一 poll 不重试发布。完整非隔离后端、Mypy、Ruff、canonical、OpenSpec、secret scan 与 Web check/test/build 已通过，Standards/Spec 复审通过。该版本仍为 `RELEASED`；其 Runtime checkout 已在 v1.9.11 五项服务读回后移除，不再是现役或本地 rollback root。 |
+| v1.9.11 | HTDY immutable Event 与 one-shot PushPlus 只接受触发窗口最新 completed Bar；repaint zone 中的旧 Bar 仅保留 Web retrospective 观察，不创建 Event/通知，既有 Event 不变。后端 `2234 passed, 3 skipped, 6 deselected`、Web `347 passed, 1 skipped`、Ruff、Mypy、OpenSpec、secret scan 与 release identity 检查均通过。当前为 `RELEASED`，并实际承载五项服务；2026-09-02 开盘 Live 为 `60/60 TRADING`，Alert 有新 heartbeat 且 processing 为 `ok`，但 legacy SuBing 状态 `0/60 ready` 使 Runtime 仍为 degraded，不能标记 `RUNTIME_READY`。 |
 
 Alert transport 为 PushPlus；provider accepted 不等于微信送达。
 
 ## 自然 evidence
 
 - 2026-08-31 只读 Runtime health 显示自然 after-market 本轮已以 `passed` 完成：开始 `18:05:07 +08:00`、结束 `20:10:21 +08:00`、`attempts=1 / error_code=null`、覆盖 operational 60；未手工启动、补跑或回填。
-- 同一 readback 显示 Alert processing 当前为 `ok`，但最近已持久 Event 与 transport attempt 仍是 `2026-08-27`；provider accepted 不等于微信送达，也不替代下一次自然 first-seen evidence。
+- 2026-09-01 `13:46:05 +08:00`，JM 的 HTDY 15m 自然 first-seen buy Event 已持久化并触发一次 PushPlus transport；provider accepted 仅表示服务端受理，不等于微信送达。
+- 2026-09-02 开盘只读 Runtime health 显示 Live `60/60`、全部 `TRADING`，且 Live 与 Alert heartbeat 均为新鲜；Alert processing 为 `ok`，但 legacy SuBing `0/60 ready` 使整体 health 仍为 degraded。
 
 ## Pending Gate
 
-- v1.9.9 已 `RELEASED` 并完成一次 exact-tag Runtime 切换，Alert 已 `60/60 ready`；由于切换发生在午间 `BREAK`，仍须取得 13:30 后本次进程的首根 completed Live，才能标记最终 `RUNTIME_READY`。
-- HTDY 的真实 PushPlus/微信送达，以及 D1/W1 `canonical_updated` 的自然 Event identity/evidence，仍须分别核验；不以测试、synthetic event、replay 或手工发送补证。
+- v1.9.11 已 `RELEASED` 且当前承载五项服务；v1.9.10 Runtime root 已删除。当前 Live 开盘 `60/60 TRADING` 与 Alert heartbeat 不足以证明 `RUNTIME_READY`：legacy SuBing 仍为 `0/60 ready`、整体 health degraded。任何后续 production migration、release 或 Runtime 切换仍须独立授权。
+- `20260902_0043` 的 production PostgreSQL migration 尚未授权或执行；旧策略 Event、Rule、Scope 与列仍是 production 事实。执行前必须独立只读 preflight，并取得一次范围明确的真实 DB 删除授权。
+- Git 外旧策略派生目录尚未删除；删除前必须解析配置得到精确绝对路径、验证挂载根与 deletion manifest，并取得一次范围明确的真实删除授权。
+- v1.9.10 仍为 `RELEASED` 的历史版本，但不再承载服务，也不保留本地 Runtime checkout；不得将其历史 startup restore Gate 当作当前 Runtime 状态。
+- v1.9.9 已 `RELEASED` 并完成一次 exact-tag Runtime 切换，但首根自然 completed Live Gate 已失败：Alert 为 `19/60 ready`、`41/60 unavailable`，不得标记 `RUNTIME_READY`。修复后的 release 必须重新完成该 Gate。
+- HTDY 的 2026-09-01 JM 15m natural Event 已取得 provider acceptance；微信实际送达，以及 D1/W1 `canonical_updated` 的自然 Event identity/evidence，仍须分别核验；不以测试、synthetic event、replay 或手工发送补证。
 - v1.9.7-r3 当前仅作为 clean、detached rollback root 保留，已不再承载五项正式服务。
-- SuBing v1.9.9 自然 Live continuation seam 与严格盘后完成制 evidence pending；不以测试、startup replay、手工触发或回填替代。
 - 一次 owner PushPlus canary 仍是独立 Gate。
-- SuBing Candidate 的 prospective OOS 按其 protocol 独立累积，retrospective 不回填 OOS。
-- 第一次自然盘后 derived 增量刷新仍须单独发生；2026-08-29 operator 已把效果快照 `through` 推到 `2026-08-28`，但不替代自然盘后 schema v3 status 写入。
 - HTDY `jm × 15m` 下一次自然 15m completed Live bar 与 one-shot transport evidence 仍 pending（下次交易时段），不以 canary、replay 或手工发送替代。

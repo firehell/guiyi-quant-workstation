@@ -3,24 +3,15 @@ import { computed, ref } from 'vue'
 import { NTag } from 'naive-ui'
 import PriceVolumeOiPanel from '@/components/market/PriceVolumeOiPanel.vue'
 import ProductAlertRules from '@/components/market/ProductAlertRules.vue'
-import SubingPanel from '@/components/market/SubingPanel.vue'
 import type { AlertRuntimeStatus, ProductAlertRuleState } from '@/api/alerts'
 import {
-  type AlertEvent,
   type DominantContractItem,
   type KlineMarker,
   type MarketFrequency,
   type ProductResearchResponse,
   type ResearchOverlayId,
   type SeriesKind,
-  type SubingResearchResponse,
-  type SubingStrategyCurrentResponse,
 } from '@/types/market'
-import {
-  ALERT_RULE_CODES,
-  isSubingStrategyAlertEvent,
-  matchesAlertRuleCode,
-} from '@/utils/alertRules'
 import { summarizeMarketBackground } from '@/utils/productCheck'
 
 const props = defineProps<{
@@ -36,29 +27,14 @@ const props = defineProps<{
   researchLoading: boolean
   researchError: boolean
   selectedOverlay: ResearchOverlayId
-  subing: SubingResearchResponse | null
-  subingLoading: boolean
-  subingError: boolean
-  subingSupported: boolean
   alertRules: ProductAlertRuleState[]
   alertRuntimeStatus: AlertRuntimeStatus | null
   alertLoading: boolean
   savingRuleCodes: Set<string>
-  currentEventsLoading: boolean
-  currentEventsStatus: 'ready' | 'unavailable' | null
-  currentEvents: AlertEvent[]
   htdyObservation: KlineMarker | null
-  subingStrategySupported: boolean
-  subingStrategyCurrent: SubingStrategyCurrentResponse | null
-  subingStrategyCurrentLoading: boolean
-  subingStrategyCurrentError: string | null
-  subingStrategyReconciliationErrors: string[]
-  showSubingInternalProcess: boolean
-  focusedActionId?: string | null
 }>()
 
 const emit = defineEmits<{
-  'toggle-subing-alert': [ruleCode: string, enabled: boolean]
   'toggle-htdy-alert': [ruleCode: string, enabled: boolean]
 }>()
 
@@ -66,12 +42,6 @@ const dataDetailsOpen = ref(false)
 const background = computed(() => props.research
   ? summarizeMarketBackground(props.research.daily_trend, props.research.weekly_trend)
   : null)
-const subingEvents = computed(() => props.currentEvents.filter((event) => (
-  isSubingStrategyAlertEvent(event)
-)))
-const subingRules = computed(() => props.alertRules.filter((rule) => (
-  matchesAlertRuleCode(rule, ALERT_RULE_CODES.SUBING)
-)))
 const seriesLabel = computed(() => {
   if (props.seriesKind === 'actual_dominant') return '真实主力'
   if (props.seriesKind === 'continuous') return '主连'
@@ -121,28 +91,6 @@ function updateDataDetailsOpen(event: Event) {
     <section class="product-check-sidebar__section" data-testid="product-check-observation">
       <h3>1. 当前观察</h3>
       <p v-if="selectedOverlay === 'none'">当前未选择策略观察</p>
-      <SubingPanel
-        v-else-if="selectedOverlay === 'subing'"
-        :snapshot="subing"
-        :supported="subingSupported"
-        :loading="subingLoading"
-        :error="subingError"
-        :event-loading="currentEventsLoading"
-        :event-status="currentEventsStatus"
-        :current-events="subingEvents"
-        :rules="subingRules"
-        :runtime-status="alertRuntimeStatus"
-        :alert-loading="alertLoading"
-        :saving-rule-codes="savingRuleCodes"
-        :strategy-supported="subingStrategySupported"
-        :strategy-current="subingStrategyCurrent"
-        :strategy-current-loading="subingStrategyCurrentLoading"
-        :strategy-current-error="subingStrategyCurrentError"
-        :strategy-reconciliation-errors="subingStrategyReconciliationErrors"
-        :show-internal-process="showSubingInternalProcess"
-        :focused-action-id="focusedActionId ?? null"
-        @toggle-subing-alert="(ruleCode, enabled) => emit('toggle-subing-alert', ruleCode, enabled)"
-      />
       <template v-else-if="selectedOverlay === 'htdy'">
         <strong v-if="htdyObservation">火天大有 · {{ htdyObservationLabel(htdyObservation) }} · {{ observationTime(htdyObservation.time) }}</strong>
         <p v-else>火天大有暂无当前观察</p>
