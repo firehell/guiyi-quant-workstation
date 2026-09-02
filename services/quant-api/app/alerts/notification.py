@@ -137,15 +137,31 @@ ALERT_NOTIFICATION_POLICIES: Final = {
     ),
 }
 
+_EXPECTED_POLICY_BINDINGS: Final = {
+    HTDY_ALERT_RULE_CODE: (
+        "归一量化 · 火天大有",
+        ALERT_AUDIENCE_HTDY_OBSERVERS,
+        _format_htdy_message,
+    ),
+    SUBING_THS_ALERT_RULE_CODE: (
+        "归一量化 · 苏冰预警",
+        ALERT_AUDIENCE_HTDY_OBSERVERS,
+        _format_subing_message,
+    ),
+}
+
 
 def _validate_policy_entry(rule_code: str, policy: object) -> AlertNotificationPolicy:
+    expected = _EXPECTED_POLICY_BINDINGS.get(rule_code)
     if (
         not isinstance(policy, AlertNotificationPolicy)
+        or expected is None
         or policy.rule_code != rule_code
         or not isinstance(policy.title, str)
         or not policy.title.strip()
-        or policy.audience not in ALERT_AUDIENCES
-        or not callable(policy.formatter)
+        or policy.title != expected[0]
+        or policy.audience != expected[1]
+        or policy.formatter is not expected[2]
     ):
         raise ValueError("ALERT_NOTIFICATION_POLICY_INVALID")
     return policy

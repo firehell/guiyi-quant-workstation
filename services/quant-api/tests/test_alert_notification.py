@@ -51,26 +51,31 @@ def test_notification_policies_bind_exact_rule_code_and_formatter() -> None:
         assert callable(policy.formatter)
 
 
-def test_dispatcher_uses_rule_bound_formatter(monkeypatch: pytest.MonkeyPatch) -> None:
-    transport = Transport()
-
-    def formatter(value: AlertNotificationMessage) -> str:
-        return f"policy:{value.rule_code}"
-
+def test_notification_policy_rejects_rule_bound_audience_or_formatter_mismatch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setitem(
         ALERT_NOTIFICATION_POLICIES,
         "htdy_original_15m",
         AlertNotificationPolicy(
             rule_code="htdy_original_15m",
-            title="custom",
-            audience=ALERT_AUDIENCE_HTDY_OBSERVERS,
-            formatter=formatter,
+            title="归一量化 · 火天大有",
+            audience=ALERT_AUDIENCE_OWNER,
+            formatter=lambda _message: "wrong formatter",
         ),
     )
+    with pytest.raises(ValueError, match="ALERT_NOTIFICATION_POLICY_INVALID"):
+        format_alert_message(message())
+
+
+def test_dispatcher_uses_selected_frozen_policy_formatter() -> None:
+    transport = Transport()
+    value = message()
+    policy = ALERT_NOTIFICATION_POLICIES[value.rule_code]
     dispatcher = AlertNotificationDispatcher(transport)
-    dispatcher.send(message())
-    assert transport.deliveries[-1].title == "custom"
-    assert transport.deliveries[-1].content == "policy:htdy_original_15m"
+    dispatcher.send(value)
+    assert transport.deliveries[-1].title == policy.title
+    assert transport.deliveries[-1].content == policy.formatter(value)
 
 
 def test_htdy_message_is_observation_only() -> None:
