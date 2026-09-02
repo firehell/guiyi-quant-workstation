@@ -39,6 +39,11 @@ function degradedStaleOverview() {
 }
 function runtime(status = 'degraded') { return { status, generated_at: '2026-09-02T01:00:00Z', readonly: true, would_start_services: false, would_enqueue_jobs: false, would_send_notifications: false, components: {} } }
 function events() { return { status: 'ready', trading_day: '2026-09-02', items: [{ id: 1, rule_code: 'htdy_original_15m', symbol: 'ag', contract: 'AG2601', trading_day: '2026-09-02', frequency: '15m', bar_end: '2026-09-02T02:45:00Z', result_codes: ['buy'], detected_at: '2026-09-02T02:45:01Z', notification_attempted_at: null }] } }
+function mixedEvents() {
+  const value = events()
+  value.items.push({ id: 2, rule_code: 'subing_ths_alert_15m_v1', symbol: 'jm', contract: 'JM2601', trading_day: '2026-09-02', frequency: '15m', bar_end: '2026-09-02T02:45:00Z', result_codes: ['sell'], detected_at: '2026-09-02T02:45:02Z', notification_attempted_at: null })
+  return value
+}
 
 async function mockMarketHomeApi(page, requests, currentEvents = events(), currentOverview = overview(), currentRuntime = runtime()) {
   await page.route(/\/api\/(?:v1\/market\/research\/home-overview|runtime\/health|alerts\/current-events)/, async (route) => {
@@ -77,16 +82,31 @@ test('uses exactly three all-ready top-level reads and opens immutable HTDY actu
   await expect.poll(() => page.evaluate(() => ({ width: document.querySelector('.content')?.clientWidth, height: document.querySelector('.content')?.clientHeight, viewportWidth: window.innerWidth, viewportHeight: window.innerHeight }))).toEqual({ width: 1440, height: 900, viewportWidth: 1440, viewportHeight: 900 })
   await expect(page.getByText('非实时行情')).toBeVisible()
   await expect(page.getByText('Runtime ready')).toBeVisible()
-  await expect(page.getByText('HTDY Focus')).toBeVisible()
-  await expect(page.getByText('AG · 买观察 · 15m')).toBeVisible()
+  await expect(page.getByText('观察 Focus')).toBeVisible()
+  await expect(page.getByText('AG · 火天大有 · 买观察 · 15m')).toBeVisible()
   await expect(page.locator('.n-layout-sider__toggle')).toHaveCount(0)
   await expectFrozenIconContracts(page)
   await expect.poll(() => requests.filter((path) => path.endsWith('/home-overview')).length).toBe(1)
   expect(requests.filter((path) => path === '/api/runtime/health')).toHaveLength(1)
   expect(requests.filter((path) => path === '/api/alerts/current-events')).toHaveLength(1)
 
-  await page.getByText('AG · 买观察 · 15m').click()
+  await page.getByText('AG · 火天大有 · 买观察 · 15m').click()
   await expect(page).toHaveURL(/symbol=ag.*series_kind=actual_dominant.*frequency=15m.*overlay=htdy/)
+})
+
+test('keeps mixed Rule Events in the single Focus Rail and deep-links SuBing without a new request', async ({ page }) => {
+  const requests = []
+  await mockMarketHomeApi(page, requests, mixedEvents(), overview(), runtime('ready'))
+  await page.goto('/market')
+
+  await expect(page.getByText('AG · 火天大有 · 买观察 · 15m')).toBeVisible()
+  await expect(page.getByText('JM · 苏冰预警 · 空头预警 · 15m')).toBeVisible()
+  expect(requests.filter((path) => path.endsWith('/home-overview'))).toHaveLength(1)
+  expect(requests.filter((path) => path === '/api/runtime/health')).toHaveLength(1)
+  expect(requests.filter((path) => path === '/api/alerts/current-events')).toHaveLength(1)
+
+  await page.getByText('JM · 苏冰预警 · 空头预警 · 15m').click()
+  await expect(page).toHaveURL(/symbol=jm.*series_kind=actual_dominant.*frequency=15m.*focus_bar_end=2026-09-02T02:45:00Z/)
 })
 
 test('renders all five frozen table state icons at 28px', async ({ page }) => {
@@ -109,12 +129,12 @@ test('distinguishes an empty current Event projection from an unavailable projec
   const emptyRequests = []
   await mockMarketHomeApi(page, emptyRequests, { status: 'ready', trading_day: '2026-09-02', items: [] })
   await page.goto('/market')
-  await expect(page.getByText('当前交易日暂无 HTDY 正式观察 Event')).toBeVisible()
+  await expect(page.getByText('当前交易日暂无正式研究观察 Event')).toBeVisible()
 
   const unavailableRequests = []
   await mockMarketHomeApi(page, unavailableRequests, { status: 'unavailable', trading_day: null, items: [] })
   await page.reload()
-  await expect(page.getByText('HTDY 当前 Event 暂不可用；不能据此判断本时段无观察。')).toBeVisible()
+  await expect(page.getByText('当前 Alert Event 暂不可用；不能据此判断本时段无研究观察。')).toBeVisible()
 })
 
 test('keeps each accepted viewport free of page-level horizontal overflow', async ({ page }) => {
@@ -191,10 +211,10 @@ test('marks a cached Event snapshot unavailable instead of presenting it as a cu
     return attempts === 1 ? events() : { status: 'unavailable', trading_day: null, items: [] }
   })
   await page.goto('/market')
-  await expect(page.getByText('AG · 买观察 · 15m')).toBeVisible()
+  await expect(page.getByText('AG · 火天大有 · 买观察 · 15m')).toBeVisible()
   await page.getByText('全部刷新').click()
-  await expect(page.getByText('HTDY 当前 Event 暂不可用；不能据此判断本时段无观察。')).toBeVisible()
-  await expect(page.getByText('AG · 买观察 · 15m')).toHaveCount(0)
+  await expect(page.getByText('当前 Alert Event 暂不可用；不能据此判断本时段无研究观察。')).toBeVisible()
+  await expect(page.getByText('AG · 火天大有 · 买观察 · 15m')).toHaveCount(0)
   await expect(page.locator('tbody tr .market-state-icon--unavailable')).toHaveCount(2)
 })
 
@@ -203,10 +223,10 @@ test('keeps Event unavailable semantics and local summary filters on mobile', as
   await mockMarketHomeApi(page, requests, { status: 'unavailable', trading_day: null, items: [] }, overview(), runtime('ready'))
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/market')
-  await expect(page.getByText('HTDY 当前 Event 暂不可用；不能据此判断本时段无观察。')).toBeVisible()
-  await expect(page.getByLabel('移动端品种列表')).toContainText('HTDY')
+  await expect(page.getByText('当前 Alert Event 暂不可用；不能据此判断本时段无研究观察。')).toBeVisible()
+  await expect(page.getByLabel('移动端品种列表')).toContainText('观察')
   await expect(page.getByLabel('移动端品种列表')).toContainText('Event 不可用')
-  await expect(page.getByLabel('移动端品种列表').locator('.htdy .market-state-icon').first()).toHaveCSS('width', '28px')
+  await expect(page.getByLabel('移动端品种列表').locator('.event .market-state-icon').first()).toHaveCSS('width', '28px')
   await expect(page.getByText('Runtime ready')).toBeVisible()
 })
 

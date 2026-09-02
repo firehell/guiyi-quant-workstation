@@ -5,7 +5,7 @@ from datetime import UTC, date, datetime, timedelta
 from collections.abc import Iterator
 
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, event, select
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -70,6 +70,123 @@ def test_event_range_returns_typed_htdy_event() -> None:
         "id", "rule_code", "symbol", "contract", "trading_day", "frequency",
         "bar_end", "result_codes", "detected_at", "notification_attempted_at",
     }
+
+
+def test_event_range_returns_actual_subing_rule_fact() -> None:
+    factory = session_factory()
+    event_id = seed_subing_event(factory)
+    with client(factory) as value:
+        response = value.get(
+            "/api/alerts/events",
+            params={
+                "symbol": "jm",
+                "rule_code": "subing_ths_alert_15m_v1",
+                "start": (BAR_END - timedelta(minutes=1)).isoformat(),
+                "end": (BAR_END + timedelta(minutes=1)).isoformat(),
+            },
+        )
+    assert response.status_code == 200
+    assert response.json()["items"] == [
+        {
+            "id": event_id,
+            "rule_code": "subing_ths_alert_15m_v1",
+            "symbol": "jm",
+            "contract": "JM2609",
+            "trading_day": "2026-08-15",
+            "frequency": "15m",
+            "bar_end": "2026-08-14T13:15:00Z",
+            "result_codes": ["buy"],
+            "detected_at": "2026-08-14T13:15:03Z",
+            "notification_attempted_at": "2026-08-14T13:15:04Z",
+        }
+    ]
+
+
+def test_current_event_endpoints_return_mixed_rules_in_deterministic_order() -> None:
+    factory = session_factory()
+    detected_at = BAR_END + timedelta(seconds=10)
+    htdy_id = seed_event(factory, detected_at=detected_at)
+    subing_id = seed_subing_event(factory, detected_at=detected_at)
+    later_bar_htdy_id = seed_event(
+        factory,
+        bar_end=BAR_END + timedelta(minutes=15),
+        detected_at=detected_at,
+    )
+    with client(factory) as value:
+        current = value.get("/api/alerts/current-events")
+        product = value.get("/api/alerts/products/jm/current-events")
+
+    assert current.status_code == product.status_code == 200
+    expected_ids = [later_bar_htdy_id, subing_id, htdy_id]
+    assert [item["id"] for item in current.json()["items"]] == expected_ids
+    assert [item["id"] for item in product.json()["items"]] == expected_ids
+    assert [item["rule_code"] for item in current.json()["items"]] == [
+        "htdy_original_15m",
+        "subing_ths_alert_15m_v1",
+        "htdy_original_15m",
+    ]
+
+
+def test_current_events_fail_closed_for_invalid_subing_event_facts() -> None:
+    factory = session_factory()
+    seed_subing_event(factory, frequency="5m", result_codes=["buy", "sell"])
+    with client(factory) as value:
+        response = value.get("/api/alerts/current-events")
+    assert response.status_code == 409
+    assert response.json() == {"detail": {"code": "ALERT_EVENT_FACTS_INVALID"}}
+
+
+def test_current_events_fail_closed_for_unknown_persisted_rule() -> None:
+    factory = session_factory()
+    seed_unknown_event(factory)
+    with client(factory) as value:
+        current = value.get("/api/alerts/current-events")
+        product = value.get("/api/alerts/products/jm/current-events")
+    assert current.status_code == product.status_code == 409
+    assert current.json() == product.json() == {
+        "detail": {"code": "ALERT_EVENT_FACTS_INVALID"}
+    }
+
+
+def test_current_events_validate_unknown_rule_beyond_the_response_limit() -> None:
+    factory = session_factory()
+    seed_unknown_event(factory)
+    for minute in range(1, 32):
+        seed_event(
+            factory,
+            bar_end=BAR_END + timedelta(minutes=minute),
+            detected_at=BAR_END + timedelta(minutes=minute),
+        )
+    with client(factory) as value:
+        response = value.get("/api/alerts/current-events", params={"limit": 30})
+    assert response.status_code == 409
+    assert response.json() == {"detail": {"code": "ALERT_EVENT_FACTS_INVALID"}}
+
+
+def test_current_events_resolve_rule_codes_in_a_bounded_number_of_queries() -> None:
+    factory = session_factory()
+    seed_event(factory)
+    seed_subing_event(factory)
+    statements: list[str] = []
+
+    @event.listens_for(factory.kw["bind"], "before_cursor_execute")
+    def _capture(_conn, _cursor, statement, _parameters, _context, _executemany) -> None:
+        if statement.lstrip().upper().startswith("SELECT"):
+            statements.append(statement)
+
+    try:
+        with client(factory) as value:
+            response = value.get("/api/alerts/current-events")
+    finally:
+        event.remove(factory.kw["bind"], "before_cursor_execute", _capture)
+
+    assert response.status_code == 200
+    alert_selects = [
+        statement
+        for statement in statements
+        if "alert_events" in statement or "alert_rules" in statement
+    ]
+    assert len(alert_selects) <= 2
 
 
 def test_current_events_are_ready_or_typed_unavailable() -> None:
@@ -159,21 +276,88 @@ def client(
         factory.kw["bind"].dispose()
 
 
-def seed_event(factory: sessionmaker[Session]) -> None:
+def seed_event(
+    factory: sessionmaker[Session],
+    *,
+    bar_end: datetime = BAR_END,
+    detected_at: datetime | None = None,
+) -> int:
     with factory() as session:
         rule = session.scalar(
             select(AlertRule).where(AlertRule.rule_code == "htdy_original_15m")
         )
         assert rule is not None
-        session.add(AlertEvent(
+        event = AlertEvent(
+            rule_id=rule.id,
+            symbol="jm",
+            contract="JM2609",
+            trading_day=TRADING_DAY,
+            frequency="15m",
+            bar_end=bar_end,
+            result_codes=["sell"],
+            detected_at=detected_at or bar_end + timedelta(seconds=1),
+            notification_attempted_at=(detected_at or bar_end + timedelta(seconds=1)) + timedelta(seconds=1),
+        )
+        session.add(event)
+        session.commit()
+        assert event.id is not None
+        return event.id
+
+
+def seed_subing_event(
+    factory: sessionmaker[Session],
+    *,
+    frequency: str = "15m",
+    result_codes: list[str] | None = None,
+    bar_end: datetime = BAR_END,
+    detected_at: datetime | None = None,
+) -> int:
+    with factory() as session:
+        rule = AlertRule(
+            rule_code="subing_ths_alert_15m_v1",
+            enabled=True,
+            scope_product_frequencies={},
+        )
+        session.add(rule)
+        session.flush()
+        alert_event = AlertEvent(
+            rule_id=rule.id,
+            symbol="jm",
+            contract="JM2609",
+            trading_day=TRADING_DAY,
+            frequency=frequency,
+            bar_end=bar_end,
+            result_codes=result_codes or ["buy"],
+            detected_at=detected_at or bar_end + timedelta(seconds=3),
+            notification_attempted_at=(detected_at or bar_end + timedelta(seconds=3)) + timedelta(seconds=1),
+        )
+        session.add(alert_event)
+        session.commit()
+        assert alert_event.id is not None
+        return alert_event.id
+
+
+def seed_unknown_event(factory: sessionmaker[Session]) -> int:
+    with factory() as session:
+        rule = AlertRule(
+            rule_code="future_rule",
+            enabled=True,
+            scope_product_frequencies={},
+        )
+        session.add(rule)
+        session.flush()
+        alert_event = AlertEvent(
             rule_id=rule.id,
             symbol="jm",
             contract="JM2609",
             trading_day=TRADING_DAY,
             frequency="15m",
             bar_end=BAR_END,
-            result_codes=["sell"],
-            detected_at=BAR_END + timedelta(seconds=1),
-            notification_attempted_at=BAR_END + timedelta(seconds=2),
-        ))
+            result_codes=["buy"],
+            detected_at=BAR_END,
+            notification_attempted_at=None,
+        )
+        session.add(alert_event)
         session.commit()
+        assert alert_event.id is not None
+        return alert_event.id

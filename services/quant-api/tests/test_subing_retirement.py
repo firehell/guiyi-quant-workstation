@@ -3,11 +3,12 @@ from __future__ import annotations
 import argparse
 
 
-def test_alert_registry_is_htdy_only() -> None:
+def test_alert_registry_keeps_only_the_two_active_rules() -> None:
     from app.alerts.registry import alert_rule_definitions, get_alert_rule_definition
 
     assert [definition.rule_code for definition in alert_rule_definitions()] == [
-        "htdy_original_15m"
+        "htdy_original_15m",
+        "subing_ths_alert_15m_v1",
     ]
 
     try:

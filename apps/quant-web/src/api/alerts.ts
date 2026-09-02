@@ -1,7 +1,10 @@
 import request from './request'
 import { getRuntimeHealth } from './runtime'
-import type { AlertEvent, MarketFrequency } from '@/types/market'
-import { normalizeCurrentHtdyEventsResponse } from '@/utils/marketHomeTypes'
+import type { AlertEvent, AlertRuleCode, CurrentAlertEventsResponse, MarketFrequency } from '@/types/market'
+import {
+  normalizeAlertEventListResponse,
+  normalizeCurrentAlertEventsResponse,
+} from '@/utils/marketHomeTypes'
 
 export type { AlertRuntimeStatus } from '@/utils/alertControl'
 export type { AlertEvent } from '@/types/market'
@@ -18,17 +21,13 @@ export interface ProductAlertRuleState {
 
 export interface ProductAlertStateResponse { symbol: string; rules: ProductAlertRuleState[] }
 export interface AlertEventListResponse { items: AlertEvent[] }
-export interface ProductCurrentAlertEventsResponse {
-  status: 'ready' | 'unavailable'
-  trading_day: string | null
-  items: AlertEvent[]
-}
+export type ProductCurrentAlertEventsResponse = CurrentAlertEventsResponse
 
-export type { CurrentHtdyEventsResponse } from '@/types/market'
+export type { CurrentAlertEventsResponse } from '@/types/market'
 
-export function getCurrentHtdyEvents() {
+export function getCurrentAlertEvents() {
   return request.get<never, unknown>('/api/alerts/current-events', { params: { limit: 30 } })
-    .then(normalizeCurrentHtdyEventsResponse)
+    .then(normalizeCurrentAlertEventsResponse)
 }
 
 export function getProductAlerts(symbol: string) {
@@ -52,13 +51,13 @@ export function getAlertRuntimeStatus() {
 }
 
 export function getProductCurrentAlertEvents(symbol: string) {
-  return request.get<never, ProductCurrentAlertEventsResponse>(
+  return request.get<never, unknown>(
     `/api/alerts/products/${symbol}/current-events`,
-  )
+  ).then(normalizeCurrentAlertEventsResponse)
 }
 
-export function getAlertEvents(params: { symbol: string; start: string; end: string; ruleCode: string }) {
-  return request.get<never, AlertEventListResponse>('/api/alerts/events', {
+export function getAlertEvents(params: { symbol: string; start: string; end: string; ruleCode: AlertRuleCode }) {
+  return request.get<never, unknown>('/api/alerts/events', {
     params: { symbol: params.symbol, rule_code: params.ruleCode, start: params.start, end: params.end },
-  })
+  }).then(normalizeAlertEventListResponse)
 }
