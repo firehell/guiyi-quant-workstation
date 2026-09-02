@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
+import re
 
 
 MAX_VISIBLE_TRADING_DAYS = 1500
@@ -18,8 +19,7 @@ class NewowTrendDetailQuery:
     def __post_init__(self) -> None:
         if (
             not isinstance(self.product, str)
-            or not self.product.strip().islower()
-            or not self.product.strip().isalpha()
+            or re.fullmatch(r"[a-z]+", self.product.strip()) is None
         ):
             raise ValueError("NEWOW_INVALID_PRODUCT")
         if (

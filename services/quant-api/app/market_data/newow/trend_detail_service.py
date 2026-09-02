@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
+import re
 
 from guiyi_quant.newow.engine import NewowTrendD1Engine
 from guiyi_quant.newow.models import (
@@ -43,8 +44,8 @@ class NewowTrendDetailError(ValueError):
 @dataclass(frozen=True, slots=True)
 class NewowInstrumentContext:
     product: str
-    display_name: str
-    latest_physical_contract: str
+    display_name: str | None
+    latest_physical_contract: str | None
     frequency: str
     series_kind: str
     profile_id: str
@@ -156,8 +157,8 @@ class NewowTrendDetailService:
         )
         context = NewowInstrumentContext(
             query.product,
-            query.product.upper(),
-            frames[-1].bar.physical_contract,
+            None,
+            None,
             "1d",
             "actual_dominant",
             NEWOW_TREND_D1_V1.profile_id,
@@ -191,8 +192,7 @@ class NewowTrendDetailService:
             raise NewowTrendDetailError("NEWOW_INVALID_RANGE")
         if (
             not isinstance(query.product, str)
-            or not query.product.strip().islower()
-            or not query.product.strip().isalpha()
+            or re.fullmatch(r"[a-z]+", query.product.strip()) is None
         ):
             raise NewowTrendDetailError("NEWOW_INVALID_PRODUCT")
         if (
@@ -219,7 +219,7 @@ class NewowTrendDetailService:
         except (MarketDataError, ValueError) as exc:
             raise NewowTrendDetailError("NEWOW_DATA_UNAVAILABLE") from exc
         if page.has_more_before:
-            raise NewowTrendDetailError("NEWOW_DATA_UNAVAILABLE")
+            raise NewowTrendDetailError("NEWOW_DATA_IDENTITY_INVALID")
         self._validate_canonical_order(page.bars)
         if not page.bars:
             raise NewowTrendDetailError("NEWOW_DATA_IDENTITY_INVALID")
@@ -241,21 +241,30 @@ class NewowTrendDetailService:
         matched = 0
         for bar in physical:
             ranked = expected.get((bar.trading_day, bar.bar_end))
-            eligible = ranked is not None
-            if eligible and not _same_ohlcv(bar, ranked):
+            if ranked is not None and not _same_ohlcv(bar, ranked):
                 raise NewowTrendDetailError("NEWOW_DATA_IDENTITY_INVALID")
-            frames.append(
-                engine.step(
-                    _to_newow_bar(
-                        product,
-                        segment.contract,
-                        _segment_id(segment),
-                        calculation_identity,
-                        bar,
-                        eligible,
-                    )
-                ).frame
-            )
+            eligible = ranked is not None
+            try:
+                frames.append(
+                    engine.step(
+                        _to_newow_bar(
+                            product,
+                            segment.contract,
+                            _segment_id(segment),
+                            calculation_identity,
+                            bar,
+                            eligible,
+                        )
+                    ).frame
+                )
+            except (
+                ArithmeticError,
+                AttributeError,
+                LookupError,
+                TypeError,
+                ValueError,
+            ) as exc:
+                raise NewowTrendDetailError("NEWOW_DATA_IDENTITY_INVALID") from exc
             matched += int(eligible)
         if matched != len(rank_bars):
             raise NewowTrendDetailError("NEWOW_DATA_IDENTITY_INVALID")

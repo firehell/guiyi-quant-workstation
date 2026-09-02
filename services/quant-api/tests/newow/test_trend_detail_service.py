@@ -46,6 +46,8 @@ def test_detail_query_uses_public_invalid_product_and_range_codes() -> None:
         NewowTrendDetailQuery("RB", _START, _START)
     with pytest.raises(ValueError, match="NEWOW_INVALID_RANGE"):
         NewowTrendDetailQuery("rb", _START + timedelta(days=1), _START)
+    with pytest.raises(ValueError, match="NEWOW_INVALID_PRODUCT"):
+        NewowTrendDetailQuery("r钢", _START, _START)
 
 
 class _FakeMarketData:
@@ -238,6 +240,33 @@ def test_detail_rejects_noncanonical_physical_prefix_order(bad_index: int) -> No
         )
 
 
+def test_detail_normalizes_core_converter_value_error_to_public_identity_error() -> (
+    None
+):
+    service, market_data = _service()
+    bad = list(market_data.physical["RB2605"])
+    source = bad[0]
+    bad[0] = CanonicalBar(
+        source.bar_end,
+        source.trading_day,
+        Decimal("0"),
+        source.high,
+        Decimal("0"),
+        Decimal("0"),
+        source.volume,
+        source.turnover,
+        source.open_interest,
+    )
+    market_data.physical["RB2605"] = tuple(bad)
+
+    with pytest.raises(NewowTrendDetailError, match="NEWOW_DATA_IDENTITY_INVALID"):
+        service.query(
+            NewowTrendDetailQuery(
+                "rb", _START + timedelta(days=3), _START + timedelta(days=7)
+            )
+        )
+
+
 def test_detail_is_overlap_invariant_and_returns_immutable_stable_tuples() -> None:
     service, _ = _service(split=True)
 
@@ -311,7 +340,7 @@ def test_detail_fails_closed_when_same_contract_prefix_exceeds_one_2000_bar_page
         physical={"RB2605": physical},
     )
 
-    with pytest.raises(NewowTrendDetailError, match="NEWOW_DATA_UNAVAILABLE"):
+    with pytest.raises(NewowTrendDetailError, match="NEWOW_DATA_IDENTITY_INVALID"):
         NewowTrendDetailService(market_data).query(
             NewowTrendDetailQuery("rb", days[-1], days[-1])
         )
