@@ -13,6 +13,7 @@ from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
 from app.models import Exchange, Instrument, TradingCalendar
+from app.alerts.runtime import empty_alert_runtime_status
 from app.services.runtime_health import build_runtime_health
 
 
@@ -243,6 +244,7 @@ def test_alert_health_missing_stale_and_fresh_heartbeat(monkeypatch, tmp_path) -
         "notification_acknowledged_at": None,
         "notification_error_type": None,
         "consecutive_notification_failures": 0,
+        "rule_status": empty_alert_runtime_status()["rule_status"],
         "error_type": None,
     }
     rendered = json.dumps(fresh, ensure_ascii=False)

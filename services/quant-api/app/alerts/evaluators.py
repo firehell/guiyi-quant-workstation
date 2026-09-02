@@ -60,15 +60,6 @@ class AlertEvaluationError(RuntimeError):
 
 
 class AlertEvaluator(Protocol):
-    indicator_code: str
-
-    def evaluate(self, window: MarketReadWindow) -> AlertEvaluation: ...
-
-    def evaluate_first_seen(
-        self,
-        window: MarketReadWindow,
-    ) -> tuple[HtdyFirstSeenObservation, ...]: ...
-
     def evaluate_candidates(
         self,
         market_read: MarketReadService,

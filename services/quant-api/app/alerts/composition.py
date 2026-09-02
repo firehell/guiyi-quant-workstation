@@ -1,4 +1,4 @@
-"""Default-off composition for the HTDY-only Alert Runtime."""
+"""Default-off composition for the Alert Runtime."""
 
 from __future__ import annotations
 
@@ -9,7 +9,8 @@ from typing import Any
 
 from redis.exceptions import WatchError
 
-from app.alerts.evaluators import HtdyOriginalEvaluator
+from app.alerts.evaluators import HtdyOriginalEvaluator, SubingThs15mEvaluator
+from app.alerts.registry import HTDY_ALERT_RULE_CODE, SUBING_THS_ALERT_RULE_CODE
 from app.alerts.notification_composition import build_notification_sender_from_env
 from app.alerts.runtime import (
     AlertNotificationAcknowledgeError,
@@ -175,7 +176,10 @@ def build_alert_runtime() -> AlertRuntime:
     return AlertRuntime(
         session_factory=SessionLocal,
         market_read_factory=build_market_read_service,
-        htdy_evaluator=HtdyOriginalEvaluator(),
+        evaluators={
+            HTDY_ALERT_RULE_CODE: HtdyOriginalEvaluator(),
+            SUBING_THS_ALERT_RULE_CODE: SubingThs15mEvaluator(),
+        },
         sender=build_notification_sender_from_env(),
         operational_products=operational_products,
         taxonomy=load_product_taxonomy(),

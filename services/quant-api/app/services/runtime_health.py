@@ -27,7 +27,7 @@ from sqlalchemy.orm import Session
 from app.alerts.notification_composition import notification_transport_status_from_env
 from app.alerts.notification_config import NOTIFICATION_CONFIG_ENV
 from app.alerts.pushplus import PUSHPLUS_TRANSPORT
-from app.alerts.runtime import validate_alert_runtime_status
+from app.alerts.runtime import empty_alert_runtime_status, validate_alert_runtime_status
 from app.redis_connections import get_redis_connection
 from app.core.env import PROJECT_ROOT
 from app.market_data.after_market import public_after_market_status
@@ -190,6 +190,7 @@ def _collect_alert_health(
         "notification_acknowledged_at": None,
         "notification_error_type": None,
         "consecutive_notification_failures": 0,
+        "rule_status": empty_alert_runtime_status()["rule_status"],
         "error_type": None,
     }
     if not configured_enabled:
@@ -343,6 +344,7 @@ def _alert_runtime_observation(
         "consecutive_notification_failures": runtime_status[
             "consecutive_notification_failures"
         ],
+        "rule_status": runtime_status["rule_status"],
     }
 
 
