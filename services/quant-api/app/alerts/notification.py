@@ -112,6 +112,8 @@ def format_alert_message(message: AlertNotificationMessage) -> str:
     ):
         raise ValueError("ALERT_NOTIFICATION_RESULT_INVALID")
     if definition.rule_code == SUBING_THS_ALERT_RULE_CODE:
+        if message.frequency != "15m":
+            raise ValueError("ALERT_NOTIFICATION_RESULT_INVALID")
         if message.result_codes == ("buy",):
             direction, cross, position = "多头预警", "MACD 金叉", "EMA21 上方"
         elif message.result_codes == ("sell",):
@@ -123,7 +125,7 @@ def format_alert_message(message: AlertNotificationMessage) -> str:
             f"合约：{message.contract}　周期：15m\n"
             f"{direction}：{cross}，收盘价位于 {position}\n"
             f"Bar：{message.bar_end.isoformat()}\n"
-            "仅供研究观察，不是交易指令。"
+            "请打开图表复核；仅供研究观察，不是交易指令。"
         )
     if definition.rule_code != HTDY_ALERT_RULE_CODE:
         raise ValueError("ALERT_NOTIFICATION_RULE_INVALID")

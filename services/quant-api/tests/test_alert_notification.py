@@ -68,6 +68,13 @@ def test_subing_message_uses_frozen_candidate_facts_only(
     assert "SMA21" not in content
 
 
+def test_subing_message_rejects_non_15m_identity() -> None:
+    with pytest.raises(ValueError, match="ALERT_NOTIFICATION_RESULT_INVALID"):
+        format_alert_message(
+            message(rule_code="subing_ths_alert_15m_v1", frequency="5m")
+        )
+
+
 @pytest.mark.parametrize(
     ("field", "value", "code"),
     [

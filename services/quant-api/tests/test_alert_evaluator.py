@@ -430,3 +430,79 @@ def test_subing_evaluator_replays_only_current_contract_and_uses_incremental_cur
 def test_subing_evaluator_rejects_non_15m_actual_dominant_input() -> None:
     with pytest.raises(AlertEvaluationError, match="ALERT_EVALUATION_INPUT_INVALID"):
         SubingThs15mEvaluator().evaluate_candidates(object(), _window(frequency="5m"))
+
+
+def test_subing_rollover_restarts_with_after_none_and_emits_only_final_candidate() -> None:
+    class Kernel:
+        def initial_state(self):
+            return 0
+
+        def step(self, state, close, *, bar_end):
+            del close, bar_end
+            return state + 1, SimpleNamespace(
+                valid=True, ready=True, result_codes=("buy",)
+            )
+
+    class Reader:
+        def __init__(self) -> None:
+            self.afters: list[datetime | None] = []
+
+        def current_contract_replay_window(self, window, *, after):
+            self.afters.append(after)
+            return CurrentContractReplayWindow(
+                symbol=window.symbol,
+                frequency=window.frequency,
+                trading_day=window.trading_day,
+                contract=window.contract,
+                cutoff=window.cutoff,
+                after=after,
+                bars=window.bars,
+            )
+
+    first = _window(32)
+    rollover = replace(
+        _window(33), contract="J2509", bar_contracts=("J2509",) * 33
+    )
+    reader = Reader()
+    evaluator = SubingThs15mEvaluator(kernel=Kernel())
+    candidates = evaluator.evaluate_candidates(reader, first)
+    assert len(candidates) == 1
+    assert candidates[0].bar_end == first.cutoff
+    assert evaluator.evaluate_candidates(reader, first) == ()
+    assert evaluator.evaluate_candidates(reader, rollover)[0].contract == "J2509"
+    assert reader.afters == [None, None]
+
+
+def test_subing_invalid_continuity_break_updates_cursor_without_candidate() -> None:
+    class Kernel:
+        def initial_state(self):
+            return 0
+
+        def step(self, state, close, *, bar_end):
+            del close, bar_end
+            return state + 1, SimpleNamespace(valid=False, ready=False, result_codes=())
+
+    class Reader:
+        def __init__(self) -> None:
+            self.afters: list[datetime | None] = []
+
+        def current_contract_replay_window(self, window, *, after):
+            self.afters.append(after)
+            return CurrentContractReplayWindow(
+                symbol=window.symbol,
+                frequency=window.frequency,
+                trading_day=window.trading_day,
+                contract=window.contract,
+                cutoff=window.cutoff,
+                after=after,
+                bars=(window.bars[-1],),
+            )
+
+    first, second = _window(32), _window(33)
+    reader = Reader()
+    evaluator = SubingThs15mEvaluator(kernel=Kernel())
+    with pytest.raises(AlertEvaluationError, match="ALERT_EVALUATION_INPUT_INVALID"):
+        evaluator.evaluate_candidates(reader, first)
+    with pytest.raises(AlertEvaluationError, match="ALERT_EVALUATION_INPUT_INVALID"):
+        evaluator.evaluate_candidates(reader, second)
+    assert reader.afters == [None, first.cutoff]

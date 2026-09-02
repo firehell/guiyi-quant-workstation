@@ -6,6 +6,7 @@ import json
 import pytest
 
 from app.alerts.runtime import (
+    AlertRuntime,
     AlertNotificationAcknowledgeError,
     _parse_canonical_updated_trigger,
     _parse_live_bar_trigger,
@@ -13,6 +14,27 @@ from app.alerts.runtime import (
     empty_alert_runtime_status,
     validate_alert_runtime_status,
 )
+
+
+def test_startup_composition_requires_exact_registry_evaluator_and_policy_coverage() -> None:
+    called = False
+
+    def session_factory():
+        nonlocal called
+        called = True
+        raise AssertionError("not reached")
+
+    runtime = AlertRuntime(
+        session_factory=session_factory,
+        market_read_factory=lambda _session: None,  # type: ignore[arg-type]
+        evaluators={},
+        sender=None,  # type: ignore[arg-type]
+        operational_products=(),
+        taxonomy={},
+    )
+    with pytest.raises(RuntimeError, match="ALERT_RUNTIME_COMPOSITION_INVALID"):
+        runtime._validate_startup_composition()
+    assert called is False
 
 
 def test_empty_status_is_generic_schema_v6_with_fixed_per_rule_health() -> None:
