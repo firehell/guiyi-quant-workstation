@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import logging
+import os
+import signal
+import time
 from datetime import date, datetime
 from types import SimpleNamespace
 
@@ -266,6 +269,39 @@ def test_projection_refresh_activation_is_default_off(
 
     marker.write_text("enabled\n", encoding="utf-8")
     assert after_market._market_home_projection_refresh_enabled() is True
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="requires POSIX FIFO support")
+def test_projection_refresh_activation_marker_rejects_fifo_and_symlink(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    marker = tmp_path / "market-home-projection-enabled"
+    monkeypatch.setattr(
+        after_market,
+        "_MARKET_HOME_PROJECTION_ACTIVATION_MARKER",
+        marker,
+    )
+    os.mkfifo(marker)
+
+    def timeout(_signal: int, _frame: object) -> None:
+        raise TimeoutError("activation marker read blocked")
+
+    previous_handler = signal.signal(signal.SIGALRM, timeout)
+    signal.setitimer(signal.ITIMER_REAL, 0.2)
+    try:
+        started = time.monotonic()
+        assert after_market._market_home_projection_refresh_enabled() is False
+        assert time.monotonic() - started < 0.1
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous_handler)
+
+    marker.unlink()
+    target = tmp_path / "enabled-marker"
+    target.write_text("enabled\n", encoding="utf-8")
+    marker.symlink_to(target)
+    assert after_market._market_home_projection_refresh_enabled() is False
 
 
 def test_after_market_factory_only_composes_refresh_when_projection_is_enabled(

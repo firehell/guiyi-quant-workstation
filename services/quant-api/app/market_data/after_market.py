@@ -10,6 +10,7 @@ import json
 import logging
 import os
 import re
+import stat
 import tempfile
 import time
 from collections.abc import Callable, Mapping
@@ -37,6 +38,7 @@ _LOGGER = logging.getLogger(__name__)
 _MARKET_HOME_PROJECTION_ACTIVATION_MARKER = (
     PROJECT_ROOT / ".run" / "market-home-projection-enabled"
 )
+_MARKET_HOME_PROJECTION_ACTIVATION_MARKER_MAX_BYTES = 32
 _PUBLIC_ERROR_CODES = frozenset(
     {
         "MAINTENANCE_LOCKED",
@@ -439,13 +441,34 @@ def build_after_market_updater(
 
 
 def _market_home_projection_refresh_enabled() -> bool:
-    try:
-        return (
-            _MARKET_HOME_PROJECTION_ACTIVATION_MARKER.read_text(encoding="utf-8")
-            == "enabled\n"
-        )
-    except (OSError, UnicodeDecodeError):
+    nofollow = getattr(os, "O_NOFOLLOW", None)
+    nonblock = getattr(os, "O_NONBLOCK", None)
+    if nofollow is None or nonblock is None:
         return False
+    descriptor: int | None = None
+    try:
+        descriptor = os.open(
+            _MARKET_HOME_PROJECTION_ACTIVATION_MARKER,
+            os.O_RDONLY | nofollow | nonblock,
+        )
+        metadata = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(metadata.st_mode)
+            or metadata.st_size > _MARKET_HOME_PROJECTION_ACTIVATION_MARKER_MAX_BYTES
+        ):
+            return False
+        return (
+            os.read(
+                descriptor,
+                _MARKET_HOME_PROJECTION_ACTIVATION_MARKER_MAX_BYTES + 1,
+            )
+            == b"enabled\n"
+        )
+    except OSError:
+        return False
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
 
 
 def _refresh_market_home_projection_with_lease(
