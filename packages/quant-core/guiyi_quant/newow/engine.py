@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime
+from hashlib import sha256
+import pickle
 
 from .cup_handle import (
     CupHandleStateValue,
@@ -44,6 +46,9 @@ class NewowTrendD1EngineState:
     last_bar_end: datetime | None
     last_trading_day: date | None
     eligibility_started: bool
+    trend_band_receipt: str | None = None
+    escape_receipt: str | None = None
+    cup_handle_receipt: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,6 +67,9 @@ def _initial_state() -> NewowTrendD1EngineState:
         last_bar_end=None,
         last_trading_day=None,
         eligibility_started=False,
+        trend_band_receipt=None,
+        escape_receipt=None,
+        cup_handle_receipt=None,
     )
 
 
@@ -119,12 +127,119 @@ def _state_is_valid(state: object, profile: NewowTrendProfile) -> bool:
             and state.last_trading_day is None
             and not state.eligibility_started
             and all(identity == (None, None) for identity in identities)
+            and state.trend_band_receipt is None
+            and state.escape_receipt is None
+            and state.cup_handle_receipt is None
         )
     return (
         state.last_bar_end is not None
         and state.last_trading_day is not None
         and all(identity == engine_identity for identity in identities)
         and state.eligibility_started == state.cup_handle_state.eligible_started
+        and _substate_progress_is_coherent(state, profile)
+        and _substate_receipts_are_coherent(state)
+    )
+
+
+def _receipt(
+    kind: str,
+    substate: object,
+    bar_end: datetime,
+    trading_day: date,
+    physical_contract: str,
+    segment_id: str,
+) -> str:
+    payload = (
+        "newow_trend_d1_engine_state_v1",
+        kind,
+        substate,
+        bar_end,
+        trading_day,
+        physical_contract,
+        segment_id,
+    )
+    return sha256(pickle.dumps(payload, protocol=5)).hexdigest()
+
+
+def _substate_receipts_are_coherent(state: NewowTrendD1EngineState) -> bool:
+    if not all(
+        isinstance(receipt, str) and receipt
+        for receipt in (
+            state.trend_band_receipt,
+            state.escape_receipt,
+            state.cup_handle_receipt,
+        )
+    ):
+        return False
+    assert state.last_bar_end is not None
+    assert state.last_trading_day is not None
+    assert state.physical_contract is not None
+    assert state.segment_id is not None
+    try:
+        return (
+            state.trend_band_receipt
+            == _receipt(
+                "trend_band",
+                state.trend_band_state,
+                state.last_bar_end,
+                state.last_trading_day,
+                state.physical_contract,
+                state.segment_id,
+            )
+            and state.escape_receipt
+            == _receipt(
+                "escape",
+                state.escape_state,
+                state.last_bar_end,
+                state.last_trading_day,
+                state.physical_contract,
+                state.segment_id,
+            )
+            and state.cup_handle_receipt
+            == _receipt(
+                "cup_handle",
+                state.cup_handle_state,
+                state.last_bar_end,
+                state.last_trading_day,
+                state.physical_contract,
+                state.segment_id,
+            )
+        )
+    except (pickle.PickleError, TypeError, ValueError):
+        return False
+
+
+def _substate_progress_is_coherent(
+    state: NewowTrendD1EngineState, profile: NewowTrendProfile
+) -> bool:
+    """Require one physical-segment processing cut across the three kernels."""
+
+    processed_count = state.cup_handle_state.atr_state.count
+    if processed_count <= 0:
+        return False
+    expected_escape_count = min(processed_count, profile.ma120_period)
+    expected_weighted_count = min(processed_count, profile.trend_weight_period)
+    expected_signal_count = min(
+        max(processed_count - profile.trend_weight_period + 1, 0),
+        profile.trend_signal_period,
+    )
+    if (
+        state.escape_state.history_count != expected_escape_count
+        or len(state.trend_band_state.weighted_window) != expected_weighted_count
+        or len(state.trend_band_state.signal_window) != expected_signal_count
+    ):
+        return False
+    if not state.eligibility_started:
+        return True
+    snapshots = state.cup_handle_state.eligible_bars
+    if not snapshots:
+        return processed_count < profile.cup_atr_period
+    latest_bar = snapshots[-1].bar
+    return (
+        latest_bar.bar_end == state.last_bar_end
+        and latest_bar.trading_day == state.last_trading_day
+        and latest_bar.physical_contract == state.physical_contract
+        and latest_bar.segment_id == state.segment_id
     )
 
 
@@ -258,6 +373,30 @@ class NewowTrendD1Engine:
             last_bar_end=bar.bar_end,
             last_trading_day=bar.trading_day,
             eligibility_started=state.eligibility_started or bar.observation_eligible,
+            trend_band_receipt=_receipt(
+                "trend_band",
+                trend_result.state,
+                bar.bar_end,
+                bar.trading_day,
+                bar.physical_contract,
+                bar.segment_id,
+            ),
+            escape_receipt=_receipt(
+                "escape",
+                escape_result.state,
+                bar.bar_end,
+                bar.trading_day,
+                bar.physical_contract,
+                bar.segment_id,
+            ),
+            cup_handle_receipt=_receipt(
+                "cup_handle",
+                cup_result.state,
+                bar.bar_end,
+                bar.trading_day,
+                bar.physical_contract,
+                bar.segment_id,
+            ),
         )
         frame = NewowTrendFrame(
             bar=bar,
