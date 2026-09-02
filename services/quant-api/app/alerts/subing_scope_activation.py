@@ -21,6 +21,7 @@ from app.market_data.product_retirement import normalize_symbol
 _ALEMBIC_REVISION = "20260902_0044"
 _HTDY_RULE = HTDY_ALERT_RULE_CODE
 _SUBING_RULE = SUBING_THS_ALERT_RULE_CODE
+_HTDY_FREQUENCIES = frozenset({"1m", "5m", "15m", "30m", "60m", "1d", "1w"})
 _SYMBOL_PATTERN = re.compile(r"[a-z]+\Z")
 
 
@@ -80,6 +81,7 @@ def activate_subing_ths_scope(
             populate_existing=True,
             error_code="SUBING_SCOPE_ACTIVATION_PREFLIGHT_FAILED",
         )
+        _require_alembic_0044(session)
         htdy, subing = _exact_rules(
             locked_rules,
             error_code="SUBING_SCOPE_ACTIVATION_PREFLIGHT_FAILED",
@@ -247,7 +249,23 @@ def _exact_rules(
 
 
 def _valid_htdy_rule(rule: AlertRule) -> bool:
-    return type(rule.enabled) is bool and isinstance(rule.scope_product_frequencies, dict)
+    scope = rule.scope_product_frequencies
+    return (
+        type(rule.enabled) is bool
+        and isinstance(scope, dict)
+        and all(
+            type(symbol) is str
+            and _SYMBOL_PATTERN.fullmatch(symbol) is not None
+            and isinstance(frequencies, list)
+            and bool(frequencies)
+            and all(
+                type(frequency) is str and frequency in _HTDY_FREQUENCIES
+                for frequency in frequencies
+            )
+            and len(frequencies) == len(set(frequencies))
+            for symbol, frequencies in scope.items()
+        )
+    )
 
 
 def _subing_is_disabled_empty(rule: AlertRule) -> bool:
