@@ -236,6 +236,19 @@ def test_subing_scope_parse_errors_reflect_requested_apply(
     }
 
 
+def test_subing_scope_rejects_abbreviated_apply_as_readonly_parse_error() -> None:
+    code, payload = _run(["runtime", "subing-ths-scope", "--app"])
+
+    assert code == 2
+    assert payload == {
+        "schema_version": 1,
+        "command": "runtime.subing-ths-scope",
+        "status": "error",
+        "readonly": True,
+        "error": {"code": "CLI_ARGUMENT_INVALID", "type": "CliUsageError"},
+    }
+
+
 @pytest.mark.parametrize(
     "arguments",
     [

@@ -60,24 +60,20 @@ def activate_subing_ths_scope(
     symbols = _normalize_operational_products(operational_products)
     scope = {symbol: ["15m"] for symbol in symbols}
     scope_sha256 = _scope_sha256(scope)
-    htdy_before, _subing_before = _preflight(session)
-    if not apply:
-        return SubingScopeActivationResult(
-            status="planned",
-            readonly=True,
-            rule_code=_SUBING_RULE,
-            symbol_count=len(symbols),
-            scope_sha256=scope_sha256,
-            enabled=False,
-        )
 
     try:
+        htdy_before, _subing_before = _preflight(session)
+        if not apply:
+            return SubingScopeActivationResult(
+                status="planned",
+                readonly=True,
+                rule_code=_SUBING_RULE,
+                symbol_count=len(symbols),
+                scope_sha256=scope_sha256,
+                enabled=False,
+            )
         _require_alembic_0044(session)
-        locked_rules = tuple(session.scalars(
-            select(AlertRule)
-            .order_by(AlertRule.rule_code)
-            .with_for_update()
-        ).all())
+        locked_rules = _rules(session, for_update=True, populate_existing=True)
         htdy, subing = _exact_rules(locked_rules)
         if _snapshot(htdy) != htdy_before or not _subing_is_disabled_empty(subing):
             raise SubingScopeActivationError("SUBING_SCOPE_ACTIVATION_PREFLIGHT_FAILED")
@@ -99,11 +95,24 @@ def activate_subing_ths_scope(
         ):
             raise SubingScopeActivationError("SUBING_SCOPE_ACTIVATION_PERSIST_FAILED")
         session.commit()
-    except SubingScopeActivationError:
+        session.expire_all()
+        readback_htdy, readback_subing = _exact_rules(
+            _rules(session, for_update=False, populate_existing=True)
+        )
+        if (
+            _snapshot(readback_htdy) != htdy_before
+            or readback_subing.enabled is not True
+            or readback_subing.scope_product_frequencies != scope
+        ):
+            raise SubingScopeActivationError("SUBING_SCOPE_ACTIVATION_PERSIST_FAILED")
         session.rollback()
+    except SubingScopeActivationError:
+        if session.in_transaction():
+            session.rollback()
         raise
     except SQLAlchemyError:
-        session.rollback()
+        if session.in_transaction():
+            session.rollback()
         raise SubingScopeActivationError(
             "SUBING_SCOPE_ACTIVATION_PERSIST_FAILED"
         ) from None
@@ -143,7 +152,9 @@ def _scope_sha256(scope: dict[str, list[str]]) -> str:
 
 def _preflight(session: Session) -> tuple[_RuleSnapshot, AlertRule]:
     _require_alembic_0044(session)
-    htdy, subing = _exact_rules(_rules(session, for_update=False))
+    htdy, subing = _exact_rules(
+        _rules(session, for_update=False, populate_existing=False)
+    )
     if not _valid_htdy_rule(htdy) or not _subing_is_disabled_empty(subing):
         raise SubingScopeActivationError("SUBING_SCOPE_ACTIVATION_PREFLIGHT_FAILED")
     return _snapshot(htdy), subing
@@ -160,10 +171,17 @@ def _require_alembic_0044(session: Session) -> None:
         raise SubingScopeActivationError("SUBING_SCOPE_ACTIVATION_PREFLIGHT_FAILED")
 
 
-def _rules(session: Session, *, for_update: bool) -> tuple[AlertRule, ...]:
+def _rules(
+    session: Session,
+    *,
+    for_update: bool,
+    populate_existing: bool,
+) -> tuple[AlertRule, ...]:
     statement = select(AlertRule).order_by(AlertRule.rule_code)
     if for_update:
         statement = statement.with_for_update()
+    if populate_existing:
+        statement = statement.execution_options(populate_existing=True)
     try:
         return tuple(session.scalars(statement).all())
     except SQLAlchemyError:

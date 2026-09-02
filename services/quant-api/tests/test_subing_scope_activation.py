@@ -143,6 +143,71 @@ def test_apply_rejects_nonexact_0044_state_before_mutation(session: Session) -> 
     assert commits == []
 
 
+def test_apply_locked_reread_rejects_concurrent_first_activation(session: Session) -> None:
+    _rule(session, _SUBING_RULE)
+    with Session(session.get_bind()) as competing_session:
+        competing_rule = _rule(competing_session, _SUBING_RULE)
+        competing_rule.scope_product_frequencies = {"jm": ["15m"]}
+        competing_rule.enabled = True
+        competing_session.commit()
+
+    with pytest.raises(
+        SubingScopeActivationError,
+        match="^SUBING_SCOPE_ACTIVATION_PREFLIGHT_FAILED$",
+    ):
+        activate_subing_ths_scope(
+            session,
+            operational_products=("al",),
+            apply=True,
+        )
+
+    session.expire_all()
+    assert _rule_snapshot(session, _SUBING_RULE) == {
+        "enabled": True,
+        "scope_product_frequencies": {"jm": ["15m"]},
+    }
+
+
+def test_apply_rejects_post_commit_readback_mismatch(session: Session) -> None:
+    def corrupt_after_commit(_session: Session) -> None:
+        with Session(session.get_bind()) as competing_session:
+            competing_rule = _rule(competing_session, _SUBING_RULE)
+            competing_rule.scope_product_frequencies = {"ag": ["15m"]}
+            competing_rule.enabled = True
+            competing_session.commit()
+
+    event.listen(session, "after_commit", corrupt_after_commit)
+
+    with pytest.raises(
+        SubingScopeActivationError,
+        match="^SUBING_SCOPE_ACTIVATION_PERSIST_FAILED$",
+    ):
+        activate_subing_ths_scope(
+            session,
+            operational_products=("jm",),
+            apply=True,
+        )
+
+
+def test_preflight_database_failure_rolls_back_session(session: Session) -> None:
+    session.execute(text("DROP TABLE alembic_version"))
+    session.commit()
+    rollbacks: list[object] = []
+    event.listen(session, "after_rollback", lambda value: rollbacks.append(value))
+
+    with pytest.raises(
+        SubingScopeActivationError,
+        match="^SUBING_SCOPE_ACTIVATION_PREFLIGHT_FAILED$",
+    ):
+        activate_subing_ths_scope(
+            session,
+            operational_products=("jm",),
+            apply=True,
+        )
+
+    assert rollbacks == [session]
+
+
 def test_apply_rolls_back_when_database_flush_fails(session: Session) -> None:
     def fail_scope_flush(_session, _flush_context, _instances) -> None:
         subing = _rule(session, _SUBING_RULE)

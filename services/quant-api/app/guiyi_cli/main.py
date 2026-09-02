@@ -91,7 +91,10 @@ def build_parser() -> argparse.ArgumentParser:
     runtime_commands.add_parser("status")
     runtime_commands.add_parser("live")
     runtime_commands.add_parser("alert")
-    subing_scope = runtime_commands.add_parser("subing-ths-scope")
+    subing_scope = runtime_commands.add_parser(
+        "subing-ths-scope",
+        allow_abbrev=False,
+    )
     subing_scope.add_argument("--apply", action="store_true")
     alert_canary = runtime_commands.add_parser("alert-canary")
     alert_canary.add_argument(
