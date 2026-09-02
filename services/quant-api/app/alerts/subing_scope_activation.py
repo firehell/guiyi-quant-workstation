@@ -14,12 +14,13 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.alerts.models import AlertRule
+from app.alerts.registry import HTDY_ALERT_RULE_CODE, SUBING_THS_ALERT_RULE_CODE
 from app.market_data.product_retirement import normalize_symbol
 
 
 _ALEMBIC_REVISION = "20260902_0044"
-_HTDY_RULE = "htdy_original_15m"
-_SUBING_RULE = "subing_ths_alert_15m_v1"
+_HTDY_RULE = HTDY_ALERT_RULE_CODE
+_SUBING_RULE = SUBING_THS_ALERT_RULE_CODE
 _SYMBOL_PATTERN = re.compile(r"[a-z]+\Z")
 
 
