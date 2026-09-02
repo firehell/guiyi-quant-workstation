@@ -7,8 +7,10 @@ import pytest
 from app.alerts.notification import (
     ALERT_AUDIENCE_HTDY_OBSERVERS,
     ALERT_AUDIENCE_OWNER,
+    ALERT_NOTIFICATION_POLICIES,
     AlertNotificationDispatcher,
     AlertNotificationMessage,
+    AlertNotificationPolicy,
     NotificationDelivery,
     ProviderAcceptance,
     format_alert_message,
@@ -37,6 +39,38 @@ def message(**overrides: object) -> AlertNotificationMessage:
     }
     values.update(overrides)
     return AlertNotificationMessage(**values)  # type: ignore[arg-type]
+
+
+def test_notification_policies_bind_exact_rule_code_and_formatter() -> None:
+    assert tuple(sorted(ALERT_NOTIFICATION_POLICIES)) == (
+        "htdy_original_15m",
+        "subing_ths_alert_15m_v1",
+    )
+    for rule_code, policy in ALERT_NOTIFICATION_POLICIES.items():
+        assert policy.rule_code == rule_code
+        assert callable(policy.formatter)
+
+
+def test_dispatcher_uses_rule_bound_formatter(monkeypatch: pytest.MonkeyPatch) -> None:
+    transport = Transport()
+
+    def formatter(value: AlertNotificationMessage) -> str:
+        return f"policy:{value.rule_code}"
+
+    monkeypatch.setitem(
+        ALERT_NOTIFICATION_POLICIES,
+        "htdy_original_15m",
+        AlertNotificationPolicy(
+            rule_code="htdy_original_15m",
+            title="custom",
+            audience=ALERT_AUDIENCE_HTDY_OBSERVERS,
+            formatter=formatter,
+        ),
+    )
+    dispatcher = AlertNotificationDispatcher(transport)
+    dispatcher.send(message())
+    assert transport.deliveries[-1].title == "custom"
+    assert transport.deliveries[-1].content == "policy:htdy_original_15m"
 
 
 def test_htdy_message_is_observation_only() -> None:
