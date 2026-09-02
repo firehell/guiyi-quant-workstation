@@ -134,6 +134,7 @@ def _marker(
     marker_type: NewowMarkerType,
     profile: NewowTrendProfile,
     state: TrendBandStateValue,
+    state_after: TrendBandState,
     reference_change_pct: float | None = None,
 ) -> NewowMainMarker:
     marker_id = _marker_id(bar, marker_type, profile)
@@ -148,6 +149,8 @@ def _marker(
             priority=100,
             related_marker_ids=(),
             trigger_facts={
+                "state_before": state.previous_state.value,
+                "state_after": state_after.value,
                 "signal_close": bar.close,
                 "reference_basis": "signal_close",
                 "reference_change_pct": None,
@@ -172,6 +175,8 @@ def _marker(
         if state.last_build_marker_id is None
         else (state.last_build_marker_id,),
         trigger_facts={
+            "state_before": state.previous_state.value,
+            "state_after": state_after.value,
             "signal_close": bar.close,
             "reference_basis": "signal_close",
             "reference_change_pct": reference_change_pct,
@@ -288,7 +293,7 @@ def step_trend_band(
     if bar.observation_eligible and state_before is not None and current_state is not state_before:
         if current_state is TrendBandState.YELLOW:
             transition = TrendTransition.BUILD
-            marker = _marker(bar, NewowMarkerType.BUILD, profile, state)
+            marker = _marker(bar, NewowMarkerType.BUILD, profile, state, TrendBandState.YELLOW)
         elif state.last_build_marker_id is not None:
             reference_change_pct = _clear_reference_change_pct(bar, state)
             if reference_change_pct is None:
@@ -299,6 +304,7 @@ def step_trend_band(
                 NewowMarkerType.CLEAR,
                 profile,
                 state,
+                TrendBandState.BLUE,
                 reference_change_pct,
             )
     next_build_close = state.last_build_close

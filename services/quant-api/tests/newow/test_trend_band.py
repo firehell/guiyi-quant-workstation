@@ -151,6 +151,16 @@ def test_transitions_emit_one_build_and_one_clear_with_reference_change_copy() -
     assert clear_after_build.related_marker_ids == (markers[0].marker_id,)
 
 
+def test_transition_marker_facts_freeze_state_before_and_after() -> None:
+    results = run_steps(fixture_bars())
+    markers = tuple(result.marker for result in results if result.marker is not None)
+
+    assert markers[0].trigger_facts["state_before"] == TrendBandState.BLUE.value
+    assert markers[0].trigger_facts["state_after"] == TrendBandState.YELLOW.value
+    assert markers[1].trigger_facts["state_before"] == TrendBandState.YELLOW.value
+    assert markers[1].trigger_facts["state_after"] == TrendBandState.BLUE.value
+
+
 def test_transition_marker_id_is_deterministic_and_hold_empty_do_not_duplicate() -> None:
     bars = fixture_bars()
     results = run_steps(bars)

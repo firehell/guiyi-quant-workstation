@@ -240,3 +240,9 @@ def test_enum_values_are_stable() -> None:
     assert TrendBandState.YELLOW.value == "YELLOW"
     assert TrendBandState.BLUE.value == "BLUE"
     assert CupHandleState.READY.value == "READY"
+
+
+def test_escape_marker_contract_codes_are_spec_stable() -> None:
+    assert NewowMarkerType.ESCAPE_D1.value == "NEWOW_ESCAPE_D1"
+    assert NewowMarkerType.ESCAPE_D2.value == "NEWOW_ESCAPE_D2"
+    assert NewowMarkerType.ESCAPE_D3.value == "NEWOW_ESCAPE_D3"
