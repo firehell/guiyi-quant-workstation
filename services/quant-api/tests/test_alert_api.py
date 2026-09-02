@@ -49,6 +49,33 @@ def test_frequency_scope_put_and_removed_product_scope_path() -> None:
     assert removed.status_code == 404
 
 
+def test_disabled_rule_scope_put_returns_public_error_without_writing_scope() -> None:
+    factory = session_factory()
+    with factory() as session:
+        session.add(AlertRule(
+            rule_code="subing_ths_alert_15m_v1",
+            enabled=False,
+            scope_product_frequencies={},
+        ))
+        session.commit()
+
+    with client(factory) as value:
+        response = value.put(
+            "/api/alerts/rules/subing_ths_alert_15m_v1/scope/jm/15m",
+            json={"enabled": True},
+        )
+        with factory() as session:
+            stored = session.scalar(select(AlertRule).where(
+                AlertRule.rule_code == "subing_ths_alert_15m_v1"
+            ))
+            assert stored is not None
+            assert stored.enabled is False
+            assert stored.scope_product_frequencies == {}
+
+    assert response.status_code == 422
+    assert response.json() == {"detail": {"code": "ALERT_SCOPE_RULE_DISABLED"}}
+
+
 def test_event_range_returns_typed_htdy_event() -> None:
     factory = session_factory()
     seed_event(factory)
