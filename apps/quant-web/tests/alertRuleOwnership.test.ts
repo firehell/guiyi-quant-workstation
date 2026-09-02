@@ -17,6 +17,10 @@ const EXPECTED_OWNERSHIP = {
     [ALERT_RULES_PATH]: 1,
     [MARKET_TYPES_PATH]: 1,
   },
+  subing_ths_alert_15m_v1: {
+    [ALERT_RULES_PATH]: 1,
+    [MARKET_TYPES_PATH]: 1,
+  },
 }
 
 describe('Alert Rule AST ownership guard', () => {
@@ -70,8 +74,8 @@ describe('Alert Rule AST ownership guard', () => {
 
 function validSources(overrides: Record<string, string> = {}): Record<string, string> {
   return {
-    [ALERT_RULES_PATH]: "export const HTDY = 'htdy_original_15m'",
-    [MARKET_TYPES_PATH]: "export type HtdyRule = 'htdy_original_15m'",
+    [ALERT_RULES_PATH]: "export const HTDY = 'htdy_original_15m'; export const SUBING = 'subing_ths_alert_15m_v1'",
+    [MARKET_TYPES_PATH]: "export type HtdyRule = 'htdy_original_15m'; export type SubingRule = 'subing_ths_alert_15m_v1'",
     ...overrides,
   }
 }

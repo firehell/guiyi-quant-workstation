@@ -1,4 +1,4 @@
-"""Pydantic contracts for the HTDY-only Alert API."""
+"""Pydantic contracts for the two-Rule Alert API."""
 
 from __future__ import annotations
 
@@ -8,8 +8,11 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict
 
 
+AlertRuleCode = Literal["htdy_original_15m", "subing_ths_alert_15m_v1"]
+
+
 class ProductAlertRuleStateOut(BaseModel):
-    rule_code: str
+    rule_code: AlertRuleCode
     display_name: str
     kind: str
     input_frequencies: list[str]
@@ -26,11 +29,11 @@ class AlertScopeUpdate(BaseModel):
     enabled: bool
 
 
-class HtdyAlertEventOut(BaseModel):
+class AlertEventOut(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     id: int
-    rule_code: Literal["htdy_original_15m"]
+    rule_code: AlertRuleCode
     symbol: str
     contract: str
     trading_day: date | None
@@ -40,23 +43,11 @@ class HtdyAlertEventOut(BaseModel):
     detected_at: datetime
     notification_attempted_at: datetime | None
 
-
-AlertEventOut = HtdyAlertEventOut
-
-
 class AlertEventListResponse(BaseModel):
-    items: list[HtdyAlertEventOut]
+    items: list[AlertEventOut]
 
 
 class CurrentAlertEventsResponse(BaseModel):
     status: Literal["ready", "unavailable"]
     trading_day: date | None
-    items: list[HtdyAlertEventOut]
-
-
-class CurrentHtdyEventsResponse(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    status: Literal["ready", "unavailable"]
-    trading_day: date | None
-    items: list[HtdyAlertEventOut]
+    items: list[AlertEventOut]

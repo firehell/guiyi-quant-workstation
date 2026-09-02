@@ -7,8 +7,10 @@ import pytest
 from app.alerts.notification import (
     ALERT_AUDIENCE_HTDY_OBSERVERS,
     ALERT_AUDIENCE_OWNER,
+    ALERT_NOTIFICATION_POLICIES,
     AlertNotificationDispatcher,
     AlertNotificationMessage,
+    AlertNotificationPolicy,
     NotificationDelivery,
     ProviderAcceptance,
     format_alert_message,
@@ -39,11 +41,77 @@ def message(**overrides: object) -> AlertNotificationMessage:
     return AlertNotificationMessage(**values)  # type: ignore[arg-type]
 
 
+def test_notification_policies_bind_exact_rule_code_and_formatter() -> None:
+    assert tuple(sorted(ALERT_NOTIFICATION_POLICIES)) == (
+        "htdy_original_15m",
+        "subing_ths_alert_15m_v1",
+    )
+    for rule_code, policy in ALERT_NOTIFICATION_POLICIES.items():
+        assert policy.rule_code == rule_code
+        assert callable(policy.formatter)
+
+
+def test_notification_policy_rejects_rule_bound_audience_or_formatter_mismatch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setitem(
+        ALERT_NOTIFICATION_POLICIES,
+        "htdy_original_15m",
+        AlertNotificationPolicy(
+            rule_code="htdy_original_15m",
+            title="归一量化 · 火天大有",
+            audience=ALERT_AUDIENCE_OWNER,
+            formatter=lambda _message: "wrong formatter",
+        ),
+    )
+    with pytest.raises(ValueError, match="ALERT_NOTIFICATION_POLICY_INVALID"):
+        format_alert_message(message())
+
+
+def test_dispatcher_uses_selected_frozen_policy_formatter() -> None:
+    transport = Transport()
+    value = message()
+    policy = ALERT_NOTIFICATION_POLICIES[value.rule_code]
+    dispatcher = AlertNotificationDispatcher(transport)
+    dispatcher.send(value)
+    assert transport.deliveries[-1].title == policy.title
+    assert transport.deliveries[-1].content == policy.formatter(value)
+
+
 def test_htdy_message_is_observation_only() -> None:
     content = format_alert_message(message(result_codes=("buy", "sell")))
     assert "火天大有" in content
     assert "买入观察、卖出观察" in content
     assert "仅供研究观察，不是交易指令" in content
+
+
+@pytest.mark.parametrize(
+    ("result_codes", "direction", "cross", "position"),
+    [
+        (("buy",), "多头预警", "MACD 金叉", "EMA21 上方"),
+        (("sell",), "空头预警", "MACD 死叉", "EMA21 下方"),
+    ],
+)
+def test_subing_message_uses_frozen_candidate_facts_only(
+    result_codes: tuple[str, ...], direction: str, cross: str, position: str
+) -> None:
+    content = format_alert_message(
+        message(rule_code="subing_ths_alert_15m_v1", result_codes=result_codes)
+    )
+    assert "【苏冰预警】" in content
+    assert "15m" in content
+    assert direction in content
+    assert cross in content
+    assert position in content
+    assert "SMA" not in content
+    assert "SMA21" not in content
+
+
+def test_subing_message_rejects_non_15m_identity() -> None:
+    with pytest.raises(ValueError, match="ALERT_NOTIFICATION_RESULT_INVALID"):
+        format_alert_message(
+            message(rule_code="subing_ths_alert_15m_v1", frequency="5m")
+        )
 
 
 @pytest.mark.parametrize(

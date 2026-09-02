@@ -73,7 +73,9 @@ class _Manager:
         self.metadata = _Metadata()
         self.catalog = _Catalog(trading_day)
 
-    def update(self, request):
+    def update(self, request, *, before_apply=None):
+        if before_apply is not None:
+            before_apply()
         self.calls.append(request)
         return self._results.pop(0)
 
@@ -656,7 +658,7 @@ def test_update_exception_logs_only_sanitized_stage_diagnostics(
         results=[],
     )
 
-    def fail_update(_request):
+    def fail_update(_request, *, before_apply=None):
         raise RuntimeError("credential-secret-provider-message")
 
     manager.update = fail_update
@@ -684,7 +686,7 @@ def test_next_trading_session_not_ready_is_retried_with_stable_public_code(
         results=[],
     )
 
-    def fail_update(_request):
+    def fail_update(_request, *, before_apply=None):
         raise InfrastructureError("NEXT_TRADING_SESSION_NOT_READY")
 
     manager.update = fail_update

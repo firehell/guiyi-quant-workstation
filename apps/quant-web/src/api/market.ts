@@ -8,9 +8,14 @@ import type {
   ProductResearchResponse,
   SeriesKind,
 } from '@/types/market'
+import { normalizeMarketHomeOverviewResponse } from '@/utils/marketHomeTypes'
 
 export function getMarketDominants() {
   return request.get<never, DominantContractListResponse>('/market/dominants')
+}
+
+export function getMarketHomeOverview() {
+  return request.get<never, unknown>('/market/research/home-overview').then(normalizeMarketHomeOverviewResponse)
 }
 
 export function getProductResearch(params: { symbol: string; seriesKind: SeriesKind; contract?: string }) {

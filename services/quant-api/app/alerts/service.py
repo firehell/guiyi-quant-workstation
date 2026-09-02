@@ -12,7 +12,6 @@ from sqlalchemy.orm import Session
 from app.alerts.models import AlertEvent, AlertRule
 from app.alerts.registry import (
     AlertRuleDefinition,
-    alert_rule_definitions,
     get_alert_rule_definition,
 )
 from app.market_data.domain import normalize_contract_for_symbol
@@ -90,6 +89,8 @@ class AlertService:
     ) -> ProductAlertRuleState:
         normalized_symbol = self._require_operational_symbol(symbol)
         rule = self._rule_by_code(rule_code, for_update=True)
+        if not rule.enabled:
+            raise AlertScopeError("ALERT_SCOPE_RULE_DISABLED")
         definition = _definition(rule.rule_code)
         normalized_frequency = str(frequency).strip()
         if normalized_frequency not in definition.input_frequencies:
@@ -251,30 +252,11 @@ class AlertService:
         self, *, symbol: str, trading_day: date
     ) -> tuple[AlertEvent, ...]:
         normalized = self._require_operational_symbol(symbol)
-        codes = tuple(definition.rule_code for definition in alert_rule_definitions())
         statement = (
             select(AlertEvent)
             .join(AlertRule, AlertEvent.rule_id == AlertRule.id)
             .where(
-                AlertRule.rule_code.in_(codes),
                 AlertEvent.symbol == normalized,
-                AlertEvent.trading_day == trading_day,
-            )
-            .order_by(AlertEvent.bar_end.desc())
-        )
-        return tuple(self._session.scalars(statement).all())
-
-    def list_current_events(
-        self, *, trading_day: date, limit: int
-    ) -> tuple[AlertEvent, ...]:
-        """Read current-day Events for registry-owned HTDY Rules only."""
-
-        codes = tuple(definition.rule_code for definition in alert_rule_definitions())
-        statement = (
-            select(AlertEvent)
-            .join(AlertRule, AlertEvent.rule_id == AlertRule.id)
-            .where(
-                AlertRule.rule_code.in_(codes),
                 AlertEvent.trading_day == trading_day,
             )
             .order_by(
@@ -282,8 +264,28 @@ class AlertService:
                 AlertEvent.bar_end.desc(),
                 AlertEvent.id.desc(),
             )
-            .limit(limit)
         )
+        return tuple(self._session.scalars(statement).all())
+
+    def list_current_events(
+        self, *, trading_day: date, limit: int | None
+    ) -> tuple[AlertEvent, ...]:
+        """Read every current-day Event so API serialization can fail closed."""
+
+        statement = (
+            select(AlertEvent)
+            .join(AlertRule, AlertEvent.rule_id == AlertRule.id)
+            .where(
+                AlertEvent.trading_day == trading_day,
+            )
+            .order_by(
+                AlertEvent.detected_at.desc(),
+                AlertEvent.bar_end.desc(),
+                AlertEvent.id.desc(),
+            )
+        )
+        if limit is not None:
+            statement = statement.limit(limit)
         return tuple(self._session.scalars(statement).all())
 
     def _rule_by_code(self, rule_code: str, *, for_update: bool = False) -> AlertRule:
@@ -291,7 +293,9 @@ class AlertService:
         _definition(normalized)
         statement = select(AlertRule).where(AlertRule.rule_code == normalized)
         if for_update:
-            statement = statement.with_for_update()
+            statement = statement.with_for_update().execution_options(
+                populate_existing=True
+            )
         rule = self._session.scalar(statement)
         if rule is None:
             raise AlertRuleNotFoundError()

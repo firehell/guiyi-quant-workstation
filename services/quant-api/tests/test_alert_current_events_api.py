@@ -20,7 +20,7 @@ TRADING_DAY = date(2026, 8, 15)
 BAR_END = datetime(2026, 8, 14, 13, 15, tzinfo=UTC)
 
 
-def test_current_events_returns_only_current_htdy_events_in_descending_order() -> None:
+def test_current_events_returns_current_active_events_in_descending_order() -> None:
     factory = _session_factory()
     _seed_events(factory)
 
@@ -76,11 +76,6 @@ def _session_factory() -> sessionmaker[Session]:
                     enabled=True,
                     scope_product_frequencies={},
                 ),
-                AlertRule(
-                    rule_code="retired_rule",
-                    enabled=True,
-                    scope_product_frequencies={},
-                ),
             ]
         )
         session.commit()
@@ -90,9 +85,7 @@ def _session_factory() -> sessionmaker[Session]:
 def _seed_events(factory: sessionmaker[Session]) -> None:
     with factory() as session:
         active = session.scalar(select(AlertRule).where(AlertRule.rule_code == "htdy_original_15m"))
-        legacy = session.scalar(select(AlertRule).where(AlertRule.rule_code == "retired_rule"))
         assert active is not None
-        assert legacy is not None
         session.add_all(
             [
                 _event(active.id, frequency="15m", detected_at=BAR_END + timedelta(seconds=5)),
@@ -101,11 +94,6 @@ def _seed_events(factory: sessionmaker[Session]) -> None:
                     frequency="30m",
                     bar_end=BAR_END + timedelta(minutes=15),
                     detected_at=BAR_END + timedelta(seconds=10),
-                ),
-                _event(
-                    legacy.id,
-                    frequency="60m",
-                    detected_at=BAR_END + timedelta(seconds=20),
                 ),
                 _event(
                     active.id,

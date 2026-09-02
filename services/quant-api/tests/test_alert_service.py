@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, date, datetime, timedelta
 
 import pytest
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, event, select
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
@@ -49,6 +49,26 @@ def test_product_rules_exposes_only_htdy_frequency_scope(session: Session) -> No
     assert state.enabled_for_product is True
 
 
+def test_product_rules_exposes_subing_public_name_from_registry(session: Session) -> None:
+    session.add(AlertRule(
+        rule_code="subing_ths_alert_15m_v1",
+        enabled=False,
+        scope_product_frequencies={},
+    ))
+    session.commit()
+
+    states = AlertService(session, operational_products=("jm",)).product_rules("jm")
+    subing = next(
+        state for state in states if state.rule_code == "subing_ths_alert_15m_v1"
+    )
+
+    assert subing.display_name == "苏冰预警"
+    assert subing.kind == "indicator_observation"
+    assert subing.input_frequencies == ("15m",)
+    assert subing.enabled_frequencies == ()
+    assert subing.enabled_for_product is False
+
+
 def test_frequency_scope_mutation_is_normalized_and_idempotent(session: Session) -> None:
     service = AlertService(session, operational_products=("jm",))
     enabled = service.set_product_frequency_enabled(
@@ -59,6 +79,55 @@ def test_frequency_scope_mutation_is_normalized_and_idempotent(session: Session)
         "htdy_original_15m", "jm", "5m", False
     )
     assert disabled.enabled_frequencies == ("15m",)
+
+
+def test_disabled_rule_rejects_scope_mutation_before_commit(session: Session) -> None:
+    session.add(AlertRule(
+        rule_code="subing_ths_alert_15m_v1",
+        enabled=False,
+        scope_product_frequencies={},
+    ))
+    session.commit()
+    commits: list[object] = []
+    event.listen(session, "after_commit", lambda value: commits.append(value))
+
+    with pytest.raises(AlertScopeError, match="ALERT_SCOPE_RULE_DISABLED"):
+        AlertService(session, operational_products=("jm",)).set_product_frequency_enabled(
+            "subing_ths_alert_15m_v1", "jm", "15m", True
+        )
+
+    session.expire_all()
+    stored = session.scalar(select(AlertRule).where(
+        AlertRule.rule_code == "subing_ths_alert_15m_v1"
+    ))
+    assert stored is not None
+    assert stored.enabled is False
+    assert stored.scope_product_frequencies == {}
+    assert commits == []
+
+
+def test_scope_mutation_refreshes_locked_rule_before_disabled_check(session: Session) -> None:
+    session.scalar(select(AlertRule).where(AlertRule.rule_code == "htdy_original_15m"))
+    with Session(session.get_bind()) as competing_session:
+        competing_rule = competing_session.scalar(select(AlertRule).where(
+            AlertRule.rule_code == "htdy_original_15m"
+        ))
+        assert competing_rule is not None
+        competing_rule.enabled = False
+        competing_session.commit()
+
+    with pytest.raises(AlertScopeError, match="ALERT_SCOPE_RULE_DISABLED"):
+        AlertService(session, operational_products=("jm",)).set_product_frequency_enabled(
+            "htdy_original_15m", "jm", "5m", True
+        )
+
+    session.expire_all()
+    stored = session.scalar(select(AlertRule).where(
+        AlertRule.rule_code == "htdy_original_15m"
+    ))
+    assert stored is not None
+    assert stored.enabled is False
+    assert stored.scope_product_frequencies == {"jm": ["15m"]}
 
 
 @pytest.mark.parametrize("frequency", ["", "4h"])
@@ -97,6 +166,21 @@ def test_changed_duplicate_facts_fail_closed(session: Session) -> None:
     assert service.create_event(request(rule.id)) is not None
     with pytest.raises(AlertConsistencyError):
         service.create_event(request(rule.id, contract="JM2611"))
+
+
+def test_subing_exact_event_requires_matching_duplicate_facts(session: Session) -> None:
+    rule = AlertRule(
+        rule_code="subing_ths_alert_15m_v1",
+        enabled=True,
+        scope_product_frequencies={"jm": ["15m"]},
+    )
+    session.add(rule)
+    session.commit()
+    service = AlertService(session, operational_products=("jm",))
+    assert service.create_event(request(rule.id, result_codes=("buy",))) is not None
+    assert service.create_event(request(rule.id, result_codes=("buy",))) is None
+    with pytest.raises(AlertConsistencyError):
+        service.create_event(request(rule.id, result_codes=("sell",)))
 
 
 def test_first_seen_duplicate_freezes_original_facts(session: Session) -> None:
@@ -150,7 +234,7 @@ def test_current_events_are_product_and_trading_day_scoped(session: Session) -> 
     ) == ()
 
 
-def test_global_current_events_are_registry_only_sorted_and_limited(session: Session) -> None:
+def test_global_current_events_keep_unknown_rules_for_api_fail_closed_validation(session: Session) -> None:
     service = AlertService(session, operational_products=("jm",))
     active_rule = session.scalar(select(AlertRule).where(AlertRule.rule_code == "htdy_original_15m"))
     assert active_rule is not None
@@ -224,7 +308,7 @@ def test_global_current_events_are_registry_only_sorted_and_limited(session: Ses
 
     events = service.list_current_events(trading_day=TRADING_DAY, limit=2)
 
-    assert [event.frequency for event in events] == ["30m", "5m"]
+    assert [event.frequency for event in events] == ["60m", "30m"]
 
 
 def request(

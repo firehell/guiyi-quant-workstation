@@ -6,16 +6,17 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
-from dataclasses import dataclass
-from datetime import date, datetime
 import json
 import logging
 import os
-from pathlib import Path
 import re
+import stat
 import tempfile
 import time
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass
+from datetime import date, datetime
+from pathlib import Path
 from typing import Any
 
 from app.alerts.notification import (
@@ -24,16 +25,20 @@ from app.alerts.notification import (
     NotificationTransport,
     ProviderAcceptance,
 )
+from app.core.env import PROJECT_ROOT
 from app.market_data.errors import InfrastructureError
+from app.market_data.historical_data_manager import HistoricalDataManager, UpdateRequest
+from app.market_data.live_market import RedisLiveStore
+from app.market_data.operational_universe import load_operational_products
 from app.market_data.rqdata_adapter import RQDataClient
 from app.market_data.session_clock import SHANGHAI
-from app.market_data.live_market import RedisLiveStore
-from app.market_data.historical_data_manager import HistoricalDataManager, UpdateRequest
-from app.market_data.operational_universe import load_operational_products
-from app.core.env import PROJECT_ROOT
 
 
 _LOGGER = logging.getLogger(__name__)
+_MARKET_HOME_PROJECTION_ACTIVATION_MARKER = (
+    PROJECT_ROOT / ".run" / "market-home-projection-enabled"
+)
+_MARKET_HOME_PROJECTION_ACTIVATION_MARKER_MAX_BYTES = 32
 _PUBLIC_ERROR_CODES = frozenset(
     {
         "MAINTENANCE_LOCKED",
@@ -77,7 +82,7 @@ class AfterMarketResult:
 
 
 class AfterMarketUpdater:
-    """18:05 本地盘后维护：最多两次尝试，唯一写入口仍为 HistoricalDataManager。"""
+    """18:05 本地盘后维护；Canonical 写入仍只经过 HistoricalDataManager。"""
 
     def __init__(
         self,
@@ -89,6 +94,8 @@ class AfterMarketUpdater:
         sleep: Callable[[float], None],
         notification_transport: NotificationTransport | None,
         now: Callable[[], datetime],
+        market_home_projection_invalidate: Callable[[], None] | None = None,
+        market_home_projection_refresh: Callable[[], object] | None = None,
     ) -> None:
         self.manager = manager
         self.rqdata = rqdata
@@ -97,6 +104,8 @@ class AfterMarketUpdater:
         self.sleep = sleep
         self.notification_transport = notification_transport
         self.now = now
+        self.market_home_projection_invalidate = market_home_projection_invalidate
+        self.market_home_projection_refresh = market_home_projection_refresh
 
     def run(self) -> AfterMarketResult:
         """执行一次受限盘后维护，并写入仅含公开字段的状态。"""
@@ -124,6 +133,10 @@ class AfterMarketUpdater:
                 attempt=attempt,
             )
             if error_code is None:
+                # Projection is a performance-only derived read model. Refresh only
+                # after Canonical publication, canonical_updated, reconciliation and
+                # Live cleanup have all completed successfully.
+                self._refresh_market_home_projection()
                 result = AfterMarketResult("passed", trading_day, attempt, None)
                 self._write_status(result, started_at, products)
                 return result
@@ -215,7 +228,8 @@ class AfterMarketUpdater:
                     through=trading_day,
                     apply=True,
                     sync_current_day_metadata=True,
-                )
+                ),
+                before_apply=self._invalidate_market_home_projection,
             )
         except InfrastructureError as exc:
             if exc.code == "NEXT_TRADING_SESSION_NOT_READY":
@@ -252,6 +266,7 @@ class AfterMarketUpdater:
                 result.status,
             )
             return error_code
+
         try:
             # A successful Canonical write must notify the Web seam even when the
             # temporary intraday snapshot disagrees with the formal map.
@@ -280,6 +295,21 @@ class AfterMarketUpdater:
             )
             return "UPDATE_FAILED"
         return None
+
+    def _invalidate_market_home_projection(self) -> None:
+        if self.market_home_projection_invalidate is not None:
+            self.market_home_projection_invalidate()
+
+    def _refresh_market_home_projection(self) -> None:
+        if self.market_home_projection_refresh is None:
+            return
+        try:
+            self.market_home_projection_refresh()
+        except Exception as exc:  # noqa: BLE001 - performance projection is isolated
+            _LOGGER.warning(
+                "market_home_projection_refresh_failed exception_type=%s",
+                type(exc).__name__,
+            )
 
     def _write_status(
         self,
@@ -368,8 +398,31 @@ def build_after_market_updater(
     if client is None:
         raise RuntimeError("AFTER_MARKET_RQDATA_CLIENT_UNAVAILABLE")
     from app.market_data.live_market import RedisClient
+    from app.market_data.market_home_projection import (
+        MarketHomeProjectionStore,
+        market_home_projection_path,
+    )
     from app.redis_connections import get_redis_connection
     from typing import cast
+
+    projection_store = MarketHomeProjectionStore(
+        market_home_projection_path(manager.catalog.canonical_root)
+    )
+
+    projection_refresh: Callable[[], object] | None = None
+    if _market_home_projection_refresh_enabled():
+
+        def refresh_market_home_projection() -> object | None:
+            from app.market_data.composition import build_market_home_projection
+
+            return _refresh_market_home_projection_with_lease(
+                manager,
+                lambda: build_market_home_projection(
+                    manager.catalog.session
+                ).refresh(),
+            )
+
+        projection_refresh = refresh_market_home_projection
 
     notification_transport: NotificationTransport | None = None
     if failure_notification:
@@ -382,7 +435,61 @@ def build_after_market_updater(
         sleep=time.sleep,
         notification_transport=notification_transport,
         now=lambda: datetime.now(SHANGHAI),
+        market_home_projection_invalidate=projection_store.invalidate,
+        market_home_projection_refresh=projection_refresh,
     )
+
+
+def _market_home_projection_refresh_enabled() -> bool:
+    nofollow = getattr(os, "O_NOFOLLOW", None)
+    nonblock = getattr(os, "O_NONBLOCK", None)
+    if nofollow is None or nonblock is None:
+        return False
+    parent_descriptor: int | None = None
+    descriptor: int | None = None
+    try:
+        parent_descriptor = os.open(
+            _MARKET_HOME_PROJECTION_ACTIVATION_MARKER.parent,
+            os.O_RDONLY | os.O_DIRECTORY | nofollow,
+        )
+        descriptor = os.open(
+            _MARKET_HOME_PROJECTION_ACTIVATION_MARKER.name,
+            os.O_RDONLY | nofollow | nonblock,
+            dir_fd=parent_descriptor,
+        )
+        metadata = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(metadata.st_mode)
+            or metadata.st_size > _MARKET_HOME_PROJECTION_ACTIVATION_MARKER_MAX_BYTES
+        ):
+            return False
+        return (
+            os.read(
+                descriptor,
+                _MARKET_HOME_PROJECTION_ACTIVATION_MARKER_MAX_BYTES + 1,
+            )
+            == b"enabled\n"
+        )
+    except OSError:
+        return False
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+        if parent_descriptor is not None:
+            os.close(parent_descriptor)
+
+
+def _refresh_market_home_projection_with_lease(
+    manager: HistoricalDataManager,
+    refresh: Callable[[], object],
+) -> object | None:
+    lease = manager.catalog.acquire_maintenance_lock()
+    if lease is None:
+        return None
+    try:
+        return refresh()
+    finally:
+        lease.release()
 
 
 class _ConfiguredNotificationTransport:
