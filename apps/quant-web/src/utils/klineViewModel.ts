@@ -2,7 +2,6 @@ import type { BarData, HoverKlineContext, KlineMarker, MainIndicatorId, MainIndi
 import { calculateEMA, calculateHuoTianDaYou, calculateMACD } from './indicators.ts'
 import { MAIN_INDICATOR_DEFINITIONS } from './mainIndicators.ts'
 import { calculateRangeDetectorLux, type RangeDetectorLuxResult, type RangeDetectorSnapshot } from './rangeDetectorLux.ts'
-import { buildSubingEmaRibbon, type SubingEmaRibbon } from './subingEmaRibbon.ts'
 
 type EmaIndicatorId = 'ema_10' | 'ema_21' | 'ema_60'
 
@@ -19,12 +18,10 @@ export interface KlineDerivedData {
     histogram: KlineValuePoint[]
   }
   htdy: HtdyDerivedData | null
-  subingEmaRibbon: SubingEmaRibbon | null
   rangeDetector: RangeDetectorLuxResult | null
 }
 
 export interface KlineDerivedOptions {
-  showSubingEmaRibbon?: boolean
   rangeDetector?: {
     enabled: boolean
     sourceIdentity: string
@@ -61,12 +58,6 @@ export function buildKlineDerivedData(
   options: KlineDerivedOptions = {},
 ): KlineDerivedData {
   const ema: KlineDerivedData['ema'] = {}
-  const ribbon = options.showSubingEmaRibbon ? buildSubingEmaRibbon(bars) : null
-  if (ribbon) {
-    ema.ema_10 = ribbon.ema10
-    ema.ema_21 = ribbon.ema21
-  }
-
   for (const indicator of visibleMainIndicators) {
     if (!isEmaIndicator(indicator) || ema[indicator]) continue
     ema[indicator] = calculateEMA(bars, EMA_PERIODS[indicator]).map(toKlineValuePoint)
@@ -87,7 +78,6 @@ export function buildKlineDerivedData(
       histogram: macd.histogram.map(toKlineValuePoint),
     },
     htdy: visibleMainIndicators.includes('htdy') ? buildHtdyDerivedData(bars) : null,
-    subingEmaRibbon: ribbon,
     rangeDetector,
   }
 }
@@ -204,9 +194,9 @@ function sameMarkerTime(left: string, right: string): boolean {
 
 function hoverEmaIndicators(
   visibleMainIndicators: MainIndicatorId[],
-  derived: KlineDerivedData,
+  _derived: KlineDerivedData,
 ): EmaIndicatorId[] {
-  const ids: EmaIndicatorId[] = derived.subingEmaRibbon ? ['ema_10', 'ema_21'] : []
+  const ids: EmaIndicatorId[] = []
   for (const indicator of visibleMainIndicators) {
     if (!isEmaIndicator(indicator) || ids.includes(indicator)) continue
     ids.push(indicator)

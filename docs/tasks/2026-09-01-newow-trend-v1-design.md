@@ -36,7 +36,7 @@ trading_day / Session / Calendar
 主力换月边界
 ```
 
-Newow 不消费或继承任何 SuBing、HTDY、现有趋势观察、Alert、Episode、Context 或前端指标结果。
+Newow 不消费或继承任何已退役策略、HTDY、现有趋势观察、Alert、Episode、Context 或前端指标结果。
 
 ## 2. 产品价值
 
@@ -77,7 +77,7 @@ V1 当前参考集合包括：
 任何尚未被参考资料支持的内容不得通过下列方式补齐：
 
 ```text
-不得用 SuBing 或当前版本逻辑补齐
+不得用已退役策略或当前版本逻辑补齐
 不得用“常见指标”静默替换
 不得根据历史收益调参
 不得为了视觉更好自行增加功能

@@ -14,7 +14,6 @@ import os
 from app.api.alerts import router as alerts_router
 from app.api.market import router as market_router
 from app.api.market_live import router as market_live_router
-from app.api.market_research_overlays import router as market_research_overlays_router
 from app.api.runtime import router as runtime_router
 from app.middleware.request_timing import RequestTimingMiddleware
 from app.version import APP_VERSION
@@ -57,7 +56,6 @@ app.add_middleware(
 # Market + Alert + Runtime 运维面
 app.include_router(market_router)
 app.include_router(market_live_router)
-app.include_router(market_research_overlays_router)
 app.include_router(alerts_router)
 app.include_router(runtime_router)
 

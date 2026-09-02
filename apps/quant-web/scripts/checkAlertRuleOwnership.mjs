@@ -12,15 +12,10 @@ const WEB_ROOT = resolve(dirname(SCRIPT_PATH), '..')
 const REPOSITORY_ROOT = resolve(WEB_ROOT, '../..')
 const SOURCE_ROOT = resolve(WEB_ROOT, 'src')
 const RULE_ROUTING_OWNER = 'apps/quant-web/src/utils/alertRules.ts'
-const RETIRED_RULE_CODE = 'subing_entry_signal_v1'
 
 const DEFAULT_EXPECTED_OWNERSHIP = {
   htdy_original_15m: {
     'apps/quant-web/src/types/market.ts': 1,
-    [RULE_ROUTING_OWNER]: 1,
-  },
-  subing_strategy_v1: {
-    'apps/quant-web/src/types/market.ts': 8,
     [RULE_ROUTING_OWNER]: 1,
   },
 }
@@ -141,9 +136,6 @@ function inspectTypeScriptUnit({
   const visit = (node) => {
     if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
       const location = sourceLocation(fullSource, unit.baseOffset + node.getStart(unit.sourceFile))
-      if (node.text === RETIRED_RULE_CODE) {
-        violations.push({ path, ...location, code: 'ALERT_RULE_RETIRED_LITERAL' })
-      }
       if (activeRuleCodes.includes(node.text)) {
         const byPath = occurrences.get(node.text)
         const pathOccurrences = byPath.get(path) ?? []

@@ -1,9 +1,0 @@
-{
-  "schema_version": 1,
-  "calibration_id": "subing_intraday_v1",
-  "accepted_timeframes": ["5m", "15m"],
-  "slope_flat_threshold_bps_per_bar": {
-    "5m": "0.688190651160584793944957992",
-    "15m": "1.329531078893356968545882036"
-  }
-}

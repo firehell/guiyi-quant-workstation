@@ -18,11 +18,6 @@ interface Dependencies {
   frequency: Ref<MarketFrequency>
   fetchProductAlerts: (symbol: string) => Promise<ProductAlertStateResponse>
   fetchRuntimeStatus: () => Promise<AlertRuntimeStatus>
-  setProductEnabled: (
-    ruleCode: string,
-    symbol: string,
-    enabled: boolean,
-  ) => Promise<ProductAlertRuleState>
   setProductFrequencyEnabled: (
     ruleCode: string,
     symbol: string,
@@ -116,17 +111,6 @@ export function useProductAlertScope(dependencies: Dependencies) {
     }
   }
 
-  function toggleSubingProduct(ruleCode: string, enabled: boolean): Promise<void> {
-    if (ruleCode !== ALERT_RULE_CODES.SUBING) return Promise.resolve()
-    return mutateExactRule(ruleCode, (requestedSymbol) => (
-      dependencies.setProductEnabled(
-        ALERT_RULE_CODES.SUBING,
-        requestedSymbol,
-        enabled,
-      )
-    ))
-  }
-
   function toggleHtdyCurrentFrequency(ruleCode: string, enabled: boolean): Promise<void> {
     if (ruleCode !== ALERT_RULE_CODES.HTDY) return Promise.resolve()
     return mutateExactRule(ruleCode, (requestedSymbol, requestedFrequency) => (
@@ -158,7 +142,6 @@ export function useProductAlertScope(dependencies: Dependencies) {
     refresh,
     invalidateIdentity,
     markUnavailable,
-    toggleSubingProduct,
     toggleHtdyCurrentFrequency,
     dispose,
   }

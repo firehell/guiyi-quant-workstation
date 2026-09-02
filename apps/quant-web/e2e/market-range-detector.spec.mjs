@@ -121,7 +121,7 @@ test.describe('Range Detector chart overlay', () => {
     await expect(page.getByText('箱体起点为回画展示；策略自确认时刻起才可使用')).toBeVisible()
   })
 
-  test('persists the enabled switch through v8 localStorage', async ({ page }) => {
+  test('persists the enabled switch through v9 localStorage', async ({ page }) => {
     await mockRangeWorkspace(page)
     await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=15m')
     await enableRangeDetector(page)
@@ -140,11 +140,9 @@ test.describe('Range Detector chart overlay', () => {
     expect(await kline.getAttribute('data-range-detector-source-identity')).not.toBe(prior)
   })
 
-  test('keeps SuBing ribbon and HTDY paths available', async ({ page }) => {
+  test('keeps the HTDY observation path available', async ({ page }) => {
     await mockRangeWorkspace(page)
     await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=15m')
-    await page.getByRole('group', { name: 'Overlay' }).getByRole('button', { name: '苏冰', exact: true }).click()
-    await expect(page.locator('.product-workspace__kline')).toHaveAttribute('data-subing-ema-ribbon', 'true')
     await page.getByRole('group', { name: 'Overlay' }).getByRole('button', { name: '火天大有', exact: true }).click()
     await expect(page.getByTestId('htdy-chart-legend')).toBeVisible()
   })

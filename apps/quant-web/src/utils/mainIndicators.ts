@@ -1,26 +1,25 @@
-import { MARKET_FREQUENCIES, SUBING_PUBLIC_FREQUENCIES } from '../types/market.ts'
+import { MARKET_FREQUENCIES } from '../types/market.ts'
 import type {
   MainIndicatorDefinition,
   MainIndicatorId,
-  OptionalEmaIndicatorId,
-  ResearchOverlayId,
-  ResearchOverlayDefinition,
-  SeriesKind,
   MarketFrequency,
+  OptionalEmaIndicatorId,
+  ResearchOverlayDefinition,
+  ResearchOverlayId,
+  SeriesKind,
 } from '@/types/market'
 
-/** 主图指标偏好 localStorage 键 */
-export const MAIN_CHART_PREFERENCES_KEY = 'guiyi.market.chart.preferences.v8'
-/** 主图指标偏好 schema 版本 */
-export const MAIN_CHART_PREFERENCES_VERSION = 8
-const MAIN_CHART_PREFERENCES_V7_KEY = 'guiyi.market.chart.preferences.v7'
-const MAIN_CHART_PREFERENCES_V6_KEY = 'guiyi.market.chart.preferences.v6'
-const MAIN_CHART_PREFERENCES_V5_KEY = 'guiyi.market.chart.preferences.v5'
-const RETIRED_MAIN_CHART_PREFERENCE_KEYS = [
+export const MAIN_CHART_PREFERENCES_KEY = 'guiyi.market.chart.preferences.v9'
+export const MAIN_CHART_PREFERENCES_VERSION = 9
+const LEGACY_KEYS = [
   'guiyi.market.chart.preferences.v1',
   'guiyi.market.chart.preferences.v2',
   'guiyi.market.chart.preferences.v3',
   'guiyi.market.chart.preferences.v4',
+  'guiyi.market.chart.preferences.v5',
+  'guiyi.market.chart.preferences.v6',
+  'guiyi.market.chart.preferences.v7',
+  'guiyi.market.chart.preferences.v8',
 ] as const
 export const HTDY_REPAINT_SCAN_ZONE_BARS = 27
 export const HTDY_WEB_OBSERVATION_METADATA = {
@@ -36,14 +35,11 @@ export const HTDY_WEB_OBSERVATION_METADATA = {
   xma6_oracle_status: 'externally_unresolved',
 } as const
 
-/** 主图指标显示偏好（可见指标、周期、实时跟随） */
 export interface MainChartPreferences {
-  version: 8
+  version: 9
   selectedOverlay: ResearchOverlayId
   optionalEmaIndicators: OptionalEmaIndicatorId[]
   showRangeDetector: boolean
-  showSubingInternalProcess: boolean
-  showSubingStrategyPerformance: boolean
   period?: string | null
   realtimeFollow?: boolean
 }
@@ -52,42 +48,27 @@ const OPTIONAL_EMA_INDICATORS: OptionalEmaIndicatorId[] = ['ema_10', 'ema_21', '
 
 export const RESEARCH_OVERLAY_DEFINITIONS: readonly ResearchOverlayDefinition[] = [
   {
-    id: 'none',
-    label: '无',
-    supportedSeriesKinds: ['continuous', 'actual_dominant', 'contract'],
-    supportedFrequencies: ['1m', '5m', '15m', '30m', '60m', '1d', '1w'],
-    mainIndicators: [],
-    historicalSource: 'none',
-  },
-  {
-    id: 'subing',
-    label: '苏冰',
-    supportedSeriesKinds: ['actual_dominant'],
-    supportedFrequencies: SUBING_PUBLIC_FREQUENCIES,
-    mainIndicators: [],
-    historicalSource: 'subing_strategy',
-  },
-  {
-    id: 'htdy',
-    label: '火天大有',
+    id: 'none', label: '无',
     supportedSeriesKinds: ['continuous', 'actual_dominant', 'contract'],
     supportedFrequencies: MARKET_FREQUENCIES,
-    mainIndicators: ['htdy'],
-    historicalSource: 'local',
+    mainIndicators: [], historicalSource: 'none',
+  },
+  {
+    id: 'htdy', label: '火天大有',
+    supportedSeriesKinds: ['continuous', 'actual_dominant', 'contract'],
+    supportedFrequencies: MARKET_FREQUENCIES,
+    mainIndicators: ['htdy'], historicalSource: 'local',
   },
 ]
 
-const overlayDefinitionsById = new Map(
-  RESEARCH_OVERLAY_DEFINITIONS.map((definition) => [definition.id, definition]),
-)
+const overlayDefinitionsById = new Map(RESEARCH_OVERLAY_DEFINITIONS.map((item) => [item.id, item]))
 
 export function researchOverlayCapability(
   overlay: ResearchOverlayId,
   seriesKind: SeriesKind,
   frequency: MarketFrequency,
 ): { supported: boolean; definition: ResearchOverlayDefinition } {
-  const definition = overlayDefinitionsById.get(overlay)
-    ?? overlayDefinitionsById.get('none')!
+  const definition = overlayDefinitionsById.get(overlay) ?? overlayDefinitionsById.get('none')!
   return {
     definition,
     supported: definition.supportedSeriesKinds.includes(seriesKind)
@@ -95,129 +76,45 @@ export function researchOverlayCapability(
   }
 }
 
-/** SuBing 当前观察仍支持 5m；Strategy Historical 只支持 15m。 */
-export function subingStrategyHistoricalCapability(
-  seriesKind: SeriesKind,
-  frequency: MarketFrequency,
-): boolean {
-  return seriesKind === 'actual_dominant' && frequency === '15m'
-}
-
-/** 主图可叠加指标定义表（EMA、火天大有等） */
 export const MAIN_INDICATOR_DEFINITIONS: MainIndicatorDefinition[] = [
+  { id: 'ema_10', name: 'ema10', displayName: 'EMA10', pane: 'main', renderer: 'line', capability: 'standard_overlay', defaultVisible: false, parameters: { period: 10 }, lookbackBars: 10, alertCapable: false, available: true },
+  { id: 'ema_21', name: 'ema21', displayName: 'EMA21', pane: 'main', renderer: 'line', capability: 'standard_overlay', defaultVisible: false, parameters: { period: 21 }, lookbackBars: 21, alertCapable: false, available: true },
+  { id: 'ema_60', name: 'ema60', displayName: 'EMA60', pane: 'main', renderer: 'line', capability: 'standard_overlay', defaultVisible: false, parameters: { period: 60 }, lookbackBars: 60, alertCapable: false, available: true },
   {
-    id: 'ema_10',
-    name: 'ema10',
-    displayName: 'EMA10',
-    pane: 'main',
-    renderer: 'line',
-    capability: 'standard_overlay',
-    defaultVisible: false,
-    parameters: { period: 10 },
-    lookbackBars: 10,
-    alertCapable: false,
-    available: true,
+    id: 'range_detector', name: 'range_detector_lux_v1', displayName: '箱体识别（Lux Range）',
+    pane: 'main', renderer: 'band', capability: 'standard_overlay', defaultVisible: false,
+    parameters: { minimumRangeLength: 20, rangeWidthAtrMultiplier: 1, rangeAtrLength: 500 },
+    lookbackBars: 500, alertCapable: false, available: true,
   },
   {
-    id: 'ema_21',
-    name: 'ema21',
-    displayName: 'EMA21',
-    pane: 'main',
-    renderer: 'line',
-    capability: 'standard_overlay',
-    defaultVisible: false,
-    parameters: { period: 21 },
-    lookbackBars: 21,
-    alertCapable: false,
-    available: true,
-  },
-  {
-    id: 'ema_60',
-    name: 'ema60',
-    displayName: 'EMA60',
-    pane: 'main',
-    renderer: 'line',
-    capability: 'standard_overlay',
-    defaultVisible: false,
-    parameters: { period: 60 },
-    lookbackBars: 60,
-    alertCapable: false,
-    available: true,
-  },
-  {
-    id: 'range_detector',
-    name: 'range_detector_lux_v1',
-    displayName: '箱体识别（Lux Range）',
-    pane: 'main',
-    renderer: 'band',
-    capability: 'standard_overlay',
-    defaultVisible: false,
-    parameters: {
-      minimumRangeLength: 20,
-      rangeWidthAtrMultiplier: 1,
-      rangeAtrLength: 500,
-    },
-    lookbackBars: 500,
-    alertCapable: false,
-    available: true,
-  },
-  {
-    id: 'htdy',
-    name: 'htdy',
-    displayName: '火天大有（原始观察）',
-    pane: 'main',
-    renderer: 'mixed',
-    capability: 'observation_overlay',
-    defaultVisible: false,
-    parameters: {},
-    lookbackBars: 0,
-    alertCapable: true,
-    available: true,
-    repaintingRisk: 'known',
-    riskMessages: [
-      '未来引用 / 重绘风险',
-      '公式语义尚未完全对齐',
-      '仅供人工观察',
-      '只允许当前已收线 Bar 的预警观察',
-      '不进入严格研究、回测、正式 live 或交易',
-    ],
-    unstableTailBars: HTDY_REPAINT_SCAN_ZONE_BARS,
+    id: 'htdy', name: 'htdy', displayName: '火天大有（原始观察）', pane: 'main',
+    renderer: 'mixed', capability: 'observation_overlay', defaultVisible: false,
+    parameters: {}, lookbackBars: 0, alertCapable: true, available: true,
+    repaintingRisk: 'known', unstableTailBars: HTDY_REPAINT_SCAN_ZONE_BARS,
+    riskMessages: ['未来引用 / 重绘风险', '公式语义尚未完全对齐', '仅供人工观察', '只允许当前已收线 Bar 的预警观察', '不进入严格研究、回测、正式 live 或交易'],
   },
 ]
 
-/** 默认可见的主图指标 id 列表 */
 export const DEFAULT_VISIBLE_MAIN_INDICATORS = MAIN_INDICATOR_DEFINITIONS
-  .filter((definition) => definition.available && definition.defaultVisible)
-  .map((definition) => definition.id)
+  .filter((item) => item.available && item.defaultVisible).map((item) => item.id)
+const definitionsById = new Map(MAIN_INDICATOR_DEFINITIONS.map((item) => [item.id, item]))
 
-const definitionsById = new Map(MAIN_INDICATOR_DEFINITIONS.map((definition) => [definition.id, definition]))
-
-/**
- * 类型守卫：判断值是否为已注册的主图指标 id。
- */
 export function isMainIndicatorId(value: unknown): value is MainIndicatorId {
   return typeof value === 'string' && definitionsById.has(value as MainIndicatorId)
 }
 
-/**
- * 按 id 获取主图指标定义，未注册时返回 null。
- */
 export function mainIndicatorDefinition(id: MainIndicatorId) {
   return definitionsById.get(id) || null
 }
 
-/**
- * 规范化可见主图指标 id：去重并过滤非法 id。
- */
 export function normalizeVisibleMainIndicators(value: unknown): MainIndicatorId[] {
   if (!Array.isArray(value)) return [...DEFAULT_VISIBLE_MAIN_INDICATORS]
   const result: MainIndicatorId[] = []
-  value.forEach((item) => {
-    if (!isMainIndicatorId(item)) return
-    const definition = mainIndicatorDefinition(item)
-    if (!definition?.available || result.includes(item)) return
+  for (const item of value) {
+    if (!isMainIndicatorId(item)) continue
+    if (!definitionsById.get(item)?.available || result.includes(item)) continue
     result.push(item)
-  })
+  }
   return result
 }
 
@@ -231,18 +128,15 @@ export function visibleMainIndicatorsForOverlay(
   optionalEmaIndicators: OptionalEmaIndicatorId[] = [],
   showRangeDetector = false,
 ): MainIndicatorId[] {
-  const optional = normalizeOptionalEmaIndicators(optionalEmaIndicators)
   const definition = overlayDefinitionsById.get(overlay)
   if (!definition) return []
-  if (definition.id === 'none') return showRangeDetector ? ['range_detector'] : []
   return [
-    ...optional,
+    ...normalizeOptionalEmaIndicators(optionalEmaIndicators),
     ...(showRangeDetector ? ['range_detector' as const] : []),
     ...definition.mainIndicators,
   ]
 }
 
-/** Research overlays do not own the Market display dataset identity. */
 export function resolveEffectiveSeriesIdentity(input: {
   overlay: ResearchOverlayId
   userSeriesKind: SeriesKind
@@ -255,165 +149,53 @@ export function resolveEffectiveSeriesIdentity(input: {
   }
 }
 
-/**
- * 从 localStorage 加载主图偏好；版本不匹配或解析失败时返回默认值。
- */
+export function defaultMainChartPreferences(): MainChartPreferences {
+  return { version: 9, selectedOverlay: 'none', optionalEmaIndicators: [], showRangeDetector: false, period: null, realtimeFollow: false }
+}
+
 export function loadMainChartPreferences(
-  storage: Pick<Storage, 'getItem'>
-    & Partial<Pick<Storage, 'setItem' | 'removeItem'>> | null = browserStorage(),
+  storage: Pick<Storage, 'getItem'> & Partial<Pick<Storage, 'setItem' | 'removeItem'>> | null = browserStorage(),
 ): MainChartPreferences {
   if (!storage) return defaultMainChartPreferences()
-  purgeRetiredMainChartPreferences(storage)
   try {
-    const raw = storage.getItem(MAIN_CHART_PREFERENCES_KEY)
-    if (!raw) return migrateV7MainChartPreferences(storage)
-      ?? migrateV6MainChartPreferences(storage)
-      ?? migrateV5MainChartPreferences(storage)
-    const parsed = JSON.parse(raw) as Partial<MainChartPreferences> | null
-    if (!parsed || parsed.version !== MAIN_CHART_PREFERENCES_VERSION) return defaultMainChartPreferences()
-    return {
-      version: 8,
-      selectedOverlay: normalizeResearchOverlay(parsed.selectedOverlay),
-      optionalEmaIndicators: normalizeOptionalEmaIndicators(parsed.optionalEmaIndicators),
-      showRangeDetector: Boolean(parsed.showRangeDetector),
-      showSubingInternalProcess: Boolean(parsed.showSubingInternalProcess),
-      showSubingStrategyPerformance: Boolean(parsed.showSubingStrategyPerformance),
-      period: typeof parsed.period === 'string' ? parsed.period : null,
-      realtimeFollow: Boolean(parsed.realtimeFollow),
+    purgeLegacy(storage)
+    const current = storage.getItem(MAIN_CHART_PREFERENCES_KEY)
+    if (current) {
+      const parsed = JSON.parse(current) as Record<string, unknown>
+      if (parsed.version === 9) return normalizePreferences(parsed)
     }
   } catch {
     return defaultMainChartPreferences()
   }
+  return defaultMainChartPreferences()
 }
 
-/**
- * 保存主图偏好到 localStorage；持久化失败不得阻塞图表打开。
- */
 export function saveMainChartPreferences(
   preferences: MainChartPreferences,
   storage: Pick<Storage, 'setItem'> | null = browserStorage(),
 ) {
   if (!storage) return
-  try {
-    storage.setItem(
-      MAIN_CHART_PREFERENCES_KEY,
-      JSON.stringify({
-        version: MAIN_CHART_PREFERENCES_VERSION,
-        selectedOverlay: normalizeResearchOverlay(preferences.selectedOverlay),
-        optionalEmaIndicators: normalizeOptionalEmaIndicators(preferences.optionalEmaIndicators),
-        showRangeDetector: Boolean(preferences.showRangeDetector),
-        showSubingInternalProcess: Boolean(preferences.showSubingInternalProcess),
-        showSubingStrategyPerformance: Boolean(preferences.showSubingStrategyPerformance),
-        period: preferences.period || null,
-        realtimeFollow: Boolean(preferences.realtimeFollow),
-      }),
-    )
-  } catch {
-    // 偏好持久化失败不得阻塞图表打开
-  }
+  try { storage.setItem(MAIN_CHART_PREFERENCES_KEY, JSON.stringify(normalizePreferences(preferences as unknown as Record<string, unknown>))) } catch { /* noop */ }
 }
 
-/**
- * 返回默认主图偏好。
- */
-export function defaultMainChartPreferences(): MainChartPreferences {
+function normalizePreferences(value: Record<string, unknown>): MainChartPreferences {
   return {
-    version: 8,
-    selectedOverlay: 'subing',
-    optionalEmaIndicators: [],
-    showRangeDetector: false,
-    showSubingInternalProcess: false,
-    showSubingStrategyPerformance: false,
-    period: null,
-    realtimeFollow: false,
+    version: 9,
+    selectedOverlay: value.selectedOverlay === 'htdy' ? 'htdy' : 'none',
+    optionalEmaIndicators: normalizeOptionalEmaIndicators(value.optionalEmaIndicators),
+    showRangeDetector: Boolean(value.showRangeDetector),
+    period: typeof value.period === 'string' ? value.period : null,
+    realtimeFollow: Boolean(value.realtimeFollow),
   }
 }
 
-function migrateV7MainChartPreferences(
-  storage: Pick<Storage, 'getItem'>
-    & Partial<Pick<Storage, 'setItem' | 'removeItem'>>,
-): MainChartPreferences | null {
-  return migratePreferences(storage, MAIN_CHART_PREFERENCES_V7_KEY, 7)
-}
-
-function migrateV6MainChartPreferences(
-  storage: Pick<Storage, 'getItem'>
-    & Partial<Pick<Storage, 'setItem' | 'removeItem'>>,
-): MainChartPreferences | null {
-  return migratePreferences(storage, MAIN_CHART_PREFERENCES_V6_KEY, 6)
-}
-
-function migrateV5MainChartPreferences(
-  storage: Pick<Storage, 'getItem'>
-    & Partial<Pick<Storage, 'setItem' | 'removeItem'>>,
-): MainChartPreferences {
-  return migratePreferences(storage, MAIN_CHART_PREFERENCES_V5_KEY, 5)
-    ?? defaultMainChartPreferences()
-}
-
-function migratePreferences(
-  storage: Pick<Storage, 'getItem'>
-    & Partial<Pick<Storage, 'setItem' | 'removeItem'>>,
-  sourceKey: string,
-  sourceVersion: 5 | 6 | 7,
-): MainChartPreferences | null {
-  try {
-    const raw = storage.getItem(sourceKey)
-    if (!raw) return null
-    const parsed = JSON.parse(raw) as Record<string, unknown> | null
-    if (!parsed || parsed.version !== sourceVersion) return null
-    const migrated: MainChartPreferences = {
-      version: 8,
-      selectedOverlay: normalizeResearchOverlay(parsed.selectedOverlay),
-      optionalEmaIndicators: normalizeOptionalEmaIndicators(parsed.optionalEmaIndicators),
-      showRangeDetector: false,
-      showSubingInternalProcess: Boolean(parsed.showSubingInternalProcess),
-      showSubingStrategyPerformance: sourceVersion === 7
-        ? Boolean(parsed.showSubingStrategyPerformance)
-        : false,
-      period: typeof parsed.period === 'string' ? parsed.period : null,
-      realtimeFollow: Boolean(parsed.realtimeFollow),
-    }
-    if (storage.setItem) {
-      try {
-        storage.setItem(MAIN_CHART_PREFERENCES_KEY, JSON.stringify(migrated))
-        storage.removeItem?.(sourceKey)
-      } catch {
-        // 已读取的偏好仍可使用；新 schema 未成功写入前不得删除 source。
-      }
-    }
-    return migrated
-  } catch {
-    return null
+function purgeLegacy(storage: Partial<Pick<Storage, 'removeItem'>>) {
+  for (const key of LEGACY_KEYS) {
+    try { storage.removeItem?.(key) } catch { /* noop */ }
   }
 }
 
 function browserStorage(): Storage | null {
   if (typeof window === 'undefined') return null
-  try {
-    return window.localStorage
-  } catch {
-    return null
-  }
-}
-
-function purgeRetiredMainChartPreferences(
-  storage: Partial<Pick<Storage, 'removeItem'>>,
-): void {
-  if (!storage.removeItem) return
-  for (const key of RETIRED_MAIN_CHART_PREFERENCE_KEYS) {
-    try {
-      storage.removeItem(key)
-    } catch {
-      // 旧偏好清理失败不阻塞当前 schema。
-    }
-  }
-}
-
-function normalizeResearchOverlay(value: unknown): ResearchOverlayId {
-  return value === 'none'
-    || value === 'subing'
-    || value === 'htdy'
-    ? value
-    : 'none'
+  try { return window.localStorage } catch { return null }
 }

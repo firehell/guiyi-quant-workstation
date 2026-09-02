@@ -1,13 +1,8 @@
-"""Market 行情只读 HTTP API。
-
-所有数据经 ``MarketDataService`` 查询 Canonical Parquet 与八表 Catalog；消费者不得
-绕过完整性校验。合同类错误映射为 422，数据可用性/冲突类错误映射为 409。
-"""
+"""Read-only Market API backed by the canonical MarketDataService."""
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
-from typing import Literal, cast
+from typing import cast
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
@@ -16,8 +11,6 @@ from app.db.session import get_db
 from app.market_data.composition import (
     build_market_data_service,
     build_market_research_service,
-    build_subing_daily_watch_current_service,
-    build_subing_read_service,
 )
 from app.market_data.domain import (
     BarFrequency,
@@ -27,21 +20,7 @@ from app.market_data.domain import (
     parse_rfc3339_instant,
 )
 from app.market_data.market_data_service import MarketDataError
-from app.market_data.operational_universe import (
-    ActiveUniverseError,
-    OperationalUniverseError,
-)
 from app.market_data.market_research_service import ResearchSeriesIdentity
-from app.market_data.subing_calibration import SubingCalibrationError
-from app.market_data.subing_lifecycle import SubingLifecycleSnapshot
-from app.market_data.subing_read_service import SubingReadRequest
-from app.market_data.subing_research import SubingFactorResult, SubingSignalEvaluation
-from app.market_data.subing_structure import ConfirmedPivot
-from app.market_data.subing_daily_watch import (
-    SubingDailyWatchItem,
-    SubingDailyWatchWebSnapshot,
-)
-from app.market_data.subing_ema_trend import SubingStitchedEmaTrendSnapshot
 from app.schemas.market import (
     ContractSegmentOut,
     CoverageOut,
@@ -51,19 +30,6 @@ from app.schemas.market import (
     MarketBarsPageResponse,
     MarketPageMetaOut,
     ProductResearchResponse,
-    SubingConditionOut,
-    SubingDailyWatchCountsOut,
-    SubingDailyWatchCurrentResponse,
-    SubingDailyWatchItemOut,
-    SubingDailyWatchTrendOut,
-    SubingDailyWatchWebSnapshotOut,
-    SubingFactorResultOut,
-    SubingFactorSnapshotOut,
-    SubingLifecyclePivotOut,
-    SubingLifecycleSnapshotOut,
-    SubingLifecycleTransitionOut,
-    SubingResearchResponse,
-    SubingSignalOut,
 )
 
 router = APIRouter(prefix="/api/v1/market", tags=["market"])
@@ -79,7 +45,6 @@ def canonical_market_bars_page(
     contract: str | None = Query(default=None),
     session: Session = Depends(get_db),
 ) -> MarketBarsPageResponse:
-    """按独占历史游标读取 Canonical K 线页。"""
     try:
         request = SeriesPageQuery(
             series_kind=cast(SeriesKind, series_kind),
@@ -118,10 +83,7 @@ def canonical_market_bars_page(
             for bar in result.bars
         ],
         canonical_coverage=(
-            CoverageOut(
-                start=result.canonical_coverage[0],
-                end=result.canonical_coverage[1],
-            )
+            CoverageOut(start=result.canonical_coverage[0], end=result.canonical_coverage[1])
             if result.canonical_coverage
             else None
         ),
@@ -141,10 +103,7 @@ def canonical_market_bars_page(
 
 
 @router.get("/dominants", response_model=DominantContractListResponse)
-def market_dominants(
-    session: Session = Depends(get_db),
-) -> DominantContractListResponse:
-    """列出各品种最新主力合约映射（来自 MainContractMap）。"""
+def market_dominants(session: Session = Depends(get_db)) -> DominantContractListResponse:
     items = build_market_data_service(session).list_latest_dominants()
     return DominantContractListResponse(
         items=[
@@ -168,7 +127,6 @@ def product_research(
     contract: str | None = Query(default=None),
     session: Session = Depends(get_db),
 ) -> ProductResearchResponse:
-    """按当前图表 identity 返回只读 Product Research 快照。"""
     try:
         snapshot = build_market_research_service(session).product_snapshot(
             ResearchSeriesIdentity(
@@ -218,312 +176,4 @@ def product_research(
             )
             for bar in snapshot.recent_daily
         ],
-    )
-
-
-@router.get("/research/subing", response_model=SubingResearchResponse)
-def subing_research(
-    symbol: str = Query(...),
-    frequency: str = Query(...),
-    session: Session = Depends(get_db),
-) -> SubingResearchResponse:
-    """返回 current-rank1 SuBing Factor Observation 只读快照。"""
-    try:
-        request = SubingReadRequest(
-            symbol=symbol,
-            frequency=cast(BarFrequency, frequency),
-        )
-    except (TypeError, ValueError) as exc:
-        raise HTTPException(
-            status_code=422,
-            detail={"code": "INVALID_SUBING_REQUEST"},
-        ) from exc
-
-    try:
-        snapshot = build_subing_read_service(session).snapshot(
-            request,
-            datetime.now(UTC),
-        )
-    except (MarketDataError, SubingCalibrationError) as exc:
-        raise HTTPException(status_code=409, detail={"code": exc.code}) from exc
-
-    return SubingResearchResponse(
-        symbol=snapshot.symbol,
-        product_name=snapshot.product_name,
-        frequency=snapshot.frequency.value,
-        actual_contract=snapshot.actual_contract,
-        dominant_mapping_date=snapshot.dominant_mapping_date,
-        segment_start_trading_day=snapshot.segment_start_trading_day,
-        source_mode=snapshot.source_mode,
-        live_observation=snapshot.live_observation,
-        live_reason=snapshot.live_reason,
-        macd_policy_id=snapshot.macd_policy_id,
-        signal_macd_policy_id=snapshot.signal_macd_policy_id,
-        calibration_state=snapshot.calibration_state,
-        calibration_id=snapshot.calibration_id,
-        primary=_subing_factor_result(snapshot.primary),
-        companion=(
-            _subing_factor_result(snapshot.companion)
-            if snapshot.companion is not None
-            else None
-        ),
-        primary_signal=_subing_signal(snapshot.primary_signal),
-        resolved_signal=(
-            _subing_signal(snapshot.resolved_signal)
-            if snapshot.resolved_signal is not None
-            else None
-        ),
-        lifecycle=_subing_lifecycle(snapshot.lifecycle),
-    )
-
-
-@router.get(
-    "/research/subing-daily-watch/current",
-    response_model=SubingDailyWatchCurrentResponse,
-)
-def subing_daily_watch_current(
-    session: Session = Depends(get_db),
-) -> SubingDailyWatchCurrentResponse:
-    """Return the current validated Daily Watch projection only."""
-    try:
-        result = build_subing_daily_watch_current_service(session).current(
-            datetime.now(UTC)
-        )
-    except (ActiveUniverseError, OperationalUniverseError):
-        return SubingDailyWatchCurrentResponse(
-            status="unavailable",
-            projection_version="subing_daily_watch_v2",
-            formula_version="subing_ema21_rank1_stitched_raw_v2",
-            history_mode="rank1_stitched_raw",
-            expected_target_trading_day=None,
-            latest_target_trading_day=None,
-            error_code="SUBING_DAILY_WATCH_INVALID",
-            snapshot=None,
-        )
-    return SubingDailyWatchCurrentResponse(
-        status=result.status,
-        projection_version="subing_daily_watch_v2",
-        formula_version="subing_ema21_rank1_stitched_raw_v2",
-        history_mode="rank1_stitched_raw",
-        expected_target_trading_day=result.expected_target_trading_day,
-        latest_target_trading_day=result.latest_target_trading_day,
-        error_code=result.error_code,
-        snapshot=(
-            _subing_daily_watch_snapshot(result.snapshot)
-            if result.snapshot is not None
-            else None
-        ),
-    )
-
-
-def _subing_daily_watch_snapshot(
-    snapshot: SubingDailyWatchWebSnapshot,
-) -> SubingDailyWatchWebSnapshotOut:
-    return SubingDailyWatchWebSnapshotOut(
-        source_trading_day=snapshot.source_trading_day,
-        target_trading_day=snapshot.target_trading_day,
-        generated_at=snapshot.generated_at,
-        counts=SubingDailyWatchCountsOut(**snapshot.counts),
-        long_watch=[_subing_daily_watch_item(item) for item in snapshot.long_watch],
-        short_watch=[_subing_daily_watch_item(item) for item in snapshot.short_watch],
-        unavailable=[_subing_daily_watch_item(item) for item in snapshot.unavailable],
-    )
-
-
-def _subing_daily_watch_item(
-    item: SubingDailyWatchItem,
-) -> SubingDailyWatchItemOut:
-    if item.decision.value == "excluded":
-        raise ValueError("excluded Daily Watch item cannot enter Web projection")
-    return SubingDailyWatchItemOut(
-        symbol=item.symbol,
-        product_name=item.product_name,
-        sector=item.sector,
-        decision=cast(
-            Literal["long_watch", "short_watch", "unavailable"],
-            item.decision.value,
-        ),
-        reason_codes=list(item.reason_codes),
-        daily=(
-            _subing_daily_watch_trend(item.daily) if item.daily is not None else None
-        ),
-        hourly=(
-            _subing_daily_watch_trend(item.hourly) if item.hourly is not None else None
-        ),
-        unavailable_reasons=list(item.unavailable_reasons),
-    )
-
-
-def _subing_daily_watch_trend(
-    trend: SubingStitchedEmaTrendSnapshot,
-) -> SubingDailyWatchTrendOut:
-    if not isinstance(trend, SubingStitchedEmaTrendSnapshot):
-        raise ValueError("V2 Daily Watch requires stitched trend lineage")
-    return SubingDailyWatchTrendOut(
-        bar_end=trend.bar_end,
-        trading_day=trend.trading_day,
-        physical_contract=trend.contract,
-        current_segment_start_trading_day=(trend.current_segment_start_trading_day),
-        warmup_start_trading_day=trend.warmup_start_trading_day,
-        warmup_bar_count=trend.warmup_bar_count,
-        warmup_segment_count=trend.warmup_segment_count,
-        history_mode=trend.history_mode,
-        close=trend.close,
-        ema21=trend.ema21,
-        price_side=trend.price_side.value,
-        slope_5_bps_per_bar=trend.slope_5_bps_per_bar,
-        slope_10_bps_per_bar=trend.slope_10_bps_per_bar,
-    )
-
-
-def _subing_factor_result(result: SubingFactorResult) -> SubingFactorResultOut:
-    snapshot = result.snapshot
-    return SubingFactorResultOut(
-        status=result.status.value,
-        snapshot=(
-            SubingFactorSnapshotOut(
-                timeframe=snapshot.timeframe.value,
-                bar_end=snapshot.bar_end,
-                trading_day=snapshot.trading_day,
-                contract=snapshot.contract,
-                segment_start_trading_day=snapshot.segment_start_trading_day,
-                bar_source=snapshot.bar_source,
-                close=snapshot.close,
-                ema21=snapshot.ema21,
-                price_side=snapshot.price_side.value,
-                slope_5_raw=snapshot.slope_5_raw,
-                slope_10_raw=snapshot.slope_10_raw,
-                slope_5_bps_per_bar=snapshot.slope_5_bps_per_bar,
-                slope_10_bps_per_bar=snapshot.slope_10_bps_per_bar,
-                macd_dif=snapshot.macd_dif,
-                macd_dea=snapshot.macd_dea,
-                macd_histogram=snapshot.macd_histogram,
-                macd_cross=snapshot.macd_cross.value,
-                macd_cross_level=snapshot.macd_cross_level,
-                macd_zero_distance_abs=snapshot.macd_zero_distance_abs,
-                macd_zero_distance_bps=snapshot.macd_zero_distance_bps,
-                volume=snapshot.volume,
-                previous_volume=snapshot.previous_volume,
-                volume_ratio_prev=snapshot.volume_ratio_prev,
-            )
-            if snapshot is not None
-            else None
-        ),
-    )
-
-
-def _subing_signal(signal: SubingSignalEvaluation) -> SubingSignalOut:
-    return SubingSignalOut(
-        status=signal.status.value,
-        direction=signal.direction.value,
-        trigger_timeframe=(
-            signal.trigger_timeframe.value
-            if signal.trigger_timeframe is not None
-            else None
-        ),
-        lower_tf_confirmation=signal.lower_tf_confirmation,
-        resolution=signal.resolution.value if signal.resolution is not None else None,
-        conditions=[
-            SubingConditionOut(code=condition.code, state=condition.state.value)
-            for condition in signal.conditions
-        ],
-        error_code=signal.error_code,
-    )
-
-
-def _subing_lifecycle(snapshot: SubingLifecycleSnapshot) -> SubingLifecycleSnapshotOut:
-    """Project the immutable research snapshot without evaluating lifecycle logic."""
-    transition = snapshot.latest_transition
-    return SubingLifecycleSnapshotOut(
-        formula_version=snapshot.formula_version,
-        policy_id=snapshot.policy_id,
-        research_only=snapshot.research_only,
-        observed_at=snapshot.observed_at,
-        anchor_bar_end=snapshot.anchor_bar_end,
-        availability=snapshot.availability.value,
-        unavailable_reason=snapshot.unavailable_reason,
-        direction=snapshot.direction.value,
-        stage=snapshot.stage.value,
-        opportunity_key=_subing_opportunity_key(snapshot),
-        entry_progress=(
-            snapshot.entry_progress.value
-            if snapshot.entry_progress is not None
-            else None
-        ),
-        trigger_kind=snapshot.trigger_kind,
-        trigger_timeframe=(
-            snapshot.trigger_timeframe.value
-            if snapshot.trigger_timeframe is not None
-            else None
-        ),
-        triggered_at=snapshot.triggered_at,
-        confirmation_source=(
-            snapshot.confirmation_source.value
-            if snapshot.confirmation_source is not None
-            else None
-        ),
-        confirmed_at=snapshot.confirmed_at,
-        hold_count=snapshot.hold_count,
-        hold_required=snapshot.hold_required,
-        trigger_reference_pivot=_subing_lifecycle_pivot(
-            snapshot.trigger_reference_pivot
-        ),
-        bound_reference_pivot=_subing_lifecycle_pivot(snapshot.bound_reference_pivot),
-        rebreak_reference_price=snapshot.rebreak_reference_price,
-        retest_at=snapshot.retest_at,
-        retest_rebreak_count=snapshot.retest_rebreak_count,
-        volume_ratio_prev=snapshot.volume_ratio_prev,
-        open_interest_delta=snapshot.open_interest_delta,
-        current_risk_codes=list(snapshot.current_risk_codes),
-        risk_progress=snapshot.risk_progress,
-        lower_tf_risk_count=snapshot.lower_tf_risk_count,
-        last_confirmed_stage=snapshot.last_confirmed_stage.value,
-        last_confirmed_at=snapshot.last_confirmed_at,
-        latest_transition=(
-            SubingLifecycleTransitionOut(
-                transition_id=transition.transition_id,
-                transition_at=transition.transition_at,
-                from_stage=transition.from_stage.value,
-                to_stage=transition.to_stage.value,
-                reason_codes=list(transition.reason_codes),
-            )
-            if transition is not None
-            else None
-        ),
-        crossed_trading_day=snapshot.crossed_trading_day,
-        boundary_reset=snapshot.boundary_reset,
-        formal_v1_matched=snapshot.formal_v1_matched,
-    )
-
-
-def _subing_lifecycle_pivot(
-    pivot: ConfirmedPivot | None,
-) -> SubingLifecyclePivotOut | None:
-    if pivot is None:
-        return None
-    return SubingLifecyclePivotOut(
-        pivot_id=pivot.pivot_id,
-        kind=pivot.kind.value,
-        timeframe=pivot.source_timeframe.value,
-        pivot_time=pivot.pivot_time,
-        confirmed_at=pivot.confirmed_at,
-        price=pivot.price,
-        contract=pivot.contract,
-        segment_start_trading_day=pivot.segment_start_trading_day,
-    )
-
-
-def _subing_opportunity_key(snapshot: SubingLifecycleSnapshot) -> str | None:
-    key = snapshot.opportunity_key
-    if key is None:
-        return None
-    return ":".join(
-        (
-            key.policy_id,
-            key.symbol,
-            key.contract,
-            key.segment_start_trading_day.isoformat(),
-            key.direction.value,
-            key.origin_at.isoformat(),
-        )
     )

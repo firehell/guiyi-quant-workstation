@@ -190,16 +190,6 @@ def _collect_alert_health(
         "notification_acknowledged_at": None,
         "notification_error_type": None,
         "consecutive_notification_failures": 0,
-        "strategy_state": "warming",
-        "strategy_started_at": None,
-        "strategy_ready_at": None,
-        "strategy_product_count": 0,
-        "strategy_ready_product_count": 0,
-        "strategy_unavailable_product_count": 0,
-        "strategy_unavailable_symbols": [],
-        "strategy_unavailable_reason_codes": {},
-        "last_strategy_action_at": None,
-        "last_strategy_restore_at": None,
         "error_type": None,
     }
     if not configured_enabled:
@@ -292,7 +282,6 @@ def _collect_alert_health(
         if (
             "failed"
             in {observation["processing_state"], observation["notification_state"]}
-            or observation["strategy_state"] == "degraded"
         )
         else RUNTIME_STATUS_OK
     )
@@ -354,20 +343,6 @@ def _alert_runtime_observation(
         "consecutive_notification_failures": runtime_status[
             "consecutive_notification_failures"
         ],
-        "strategy_state": runtime_status["strategy_state"],
-        "strategy_started_at": runtime_status["strategy_started_at"],
-        "strategy_ready_at": runtime_status["strategy_ready_at"],
-        "strategy_product_count": runtime_status["strategy_product_count"],
-        "strategy_ready_product_count": runtime_status["strategy_ready_product_count"],
-        "strategy_unavailable_product_count": runtime_status[
-            "strategy_unavailable_product_count"
-        ],
-        "strategy_unavailable_symbols": runtime_status["strategy_unavailable_symbols"],
-        "strategy_unavailable_reason_codes": runtime_status[
-            "strategy_unavailable_reason_codes"
-        ],
-        "last_strategy_action_at": runtime_status["last_strategy_action_at"],
-        "last_strategy_restore_at": runtime_status["last_strategy_restore_at"],
     }
 
 

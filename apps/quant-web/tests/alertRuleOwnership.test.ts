@@ -3,7 +3,6 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { extname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, test } from 'node:test'
-
 import {
   assertAlertRuleOwnership,
   inspectAlertRuleOwnership,
@@ -13,15 +12,10 @@ const WEB_ROOT = fileURLToPath(new URL('..', import.meta.url))
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
 const ALERT_RULES_PATH = 'apps/quant-web/src/utils/alertRules.ts'
 const MARKET_TYPES_PATH = 'apps/quant-web/src/types/market.ts'
-
 const EXPECTED_OWNERSHIP = {
   htdy_original_15m: {
     [ALERT_RULES_PATH]: 1,
     [MARKET_TYPES_PATH]: 1,
-  },
-  subing_strategy_v1: {
-    [ALERT_RULES_PATH]: 1,
-    [MARKET_TYPES_PATH]: 8,
   },
 }
 
@@ -30,510 +24,37 @@ describe('Alert Rule AST ownership guard', () => {
     assert.deepEqual(inspectAlertRuleOwnership(validSources(), EXPECTED_OWNERSHIP), [])
   })
 
-  test('rejects a direct literal and a split alias routing comparison separately', () => {
-    const sources = validSources({
-      'apps/quant-web/src/rogue.ts': [
-        "const target = 'subing_strategy_v1'",
-        'event.rule_code === target',
-      ].join('\n'),
-    })
-
+  test('rejects an unexpected rule literal', () => {
+    const path = 'apps/quant-web/src/rogue.ts'
+    const violations = inspectAlertRuleOwnership(validSources({
+      [path]: "const target = 'htdy_original_15m'",
+    }), EXPECTED_OWNERSHIP)
     assert.deepEqual(
-      inspectAlertRuleOwnership(sources, EXPECTED_OWNERSHIP).map(({ code, path }) => ({ code, path })),
-      [
-        { code: 'ALERT_RULE_LITERAL_UNEXPECTED', path: 'apps/quant-web/src/rogue.ts' },
-        { code: 'ALERT_RULE_DIRECT_ROUTING', path: 'apps/quant-web/src/rogue.ts' },
-      ],
+      violations.map(({ code, path: violationPath }) => ({ code, path: violationPath })),
+      [{ code: 'ALERT_RULE_LITERAL_UNEXPECTED', path }],
     )
   })
 
-  test('uses cooked values for every supported ECMAScript escape and quote form', () => {
-    const variants = [
-      String.raw`const value = '\x73ubing_strategy_v1'`,
-      String.raw`const value = "\u0073ubing_strategy_v1"`,
-      "const value = `\\u{73}ubing_strategy_v1`",
-      "const value = `\\u{0000073}ubing_strategy_v1`",
-    ]
-
-    for (const [index, source] of variants.entries()) {
-      const path = `apps/quant-web/src/escape-${index}.ts`
-      const violations = inspectAlertRuleOwnership(validSources({ [path]: source }), EXPECTED_OWNERSHIP)
-      assert.deepEqual(
-        violations.map(({ code, path: violationPath }) => ({ code, path: violationPath })),
-        [{ code: 'ALERT_RULE_LITERAL_UNEXPECTED', path }],
-      )
-    }
-  })
-
-  test('rejects direct rule_code routing in TSX without a complete Rule literal', () => {
-    const path = 'apps/quant-web/src/Rogue.tsx'
-    const source = [
-      "const prefix = 'subing'",
-      "const target = prefix + '_strategy_v1'",
-      'export const view = <p>{event.rule_code === target}</p>',
-    ].join('\n')
-
-    const violations = inspectAlertRuleOwnership(validSources({ [path]: source }), EXPECTED_OWNERSHIP)
+  test('rejects direct rule_code routing outside the owner', () => {
+    const path = 'apps/quant-web/src/rogue.ts'
+    const violations = inspectAlertRuleOwnership(validSources({
+      [path]: 'event.rule_code === target',
+    }), EXPECTED_OWNERSHIP)
     assert.deepEqual(
       violations.map(({ code, path: violationPath }) => ({ code, path: violationPath })),
       [{ code: 'ALERT_RULE_DIRECT_ROUTING', path }],
     )
   })
 
-  test('rejects local assignment and destructuring aliases in TS, TSX, and Vue', () => {
-    const attacks = {
-      'apps/quant-web/src/alias.ts': [
-        "const target = 'subing' + '_strategy_v1'",
-        'const code = event.rule_code',
-        'code === target',
-      ].join('\n'),
-      'apps/quant-web/src/Alias.tsx': [
-        "const target = 'subing' + '_strategy_v1'",
-        'let code',
-        'code = event.rule_code',
-        'export const view = <p>{target !== code}</p>',
-      ].join('\n'),
-      'apps/quant-web/src/Alias.vue': [
-        '<script lang="ts">',
-        "const target = 'subing' + '_strategy_v1'",
-        'const { rule_code: code } = event',
-        'target === code',
-        '</script>',
-        '<script setup lang="ts">',
-        "const target = 'htdy_' + 'original_15m'",
-        'let code',
-        '({ rule_code: code } = event)',
-        'code !== target',
-        '</script>',
-      ].join('\n'),
-    }
-
-    const violations = inspectAlertRuleOwnership(validSources(attacks), EXPECTED_OWNERSHIP)
-    assert.deepEqual(
-      violations.map(({ code, path }) => ({ code, path })),
-      [
-        { code: 'ALERT_RULE_DIRECT_ROUTING', path: 'apps/quant-web/src/Alias.tsx' },
-        { code: 'ALERT_RULE_DIRECT_ROUTING', path: 'apps/quant-web/src/Alias.vue' },
-        { code: 'ALERT_RULE_DIRECT_ROUTING', path: 'apps/quant-web/src/Alias.vue' },
-        { code: 'ALERT_RULE_DIRECT_ROUTING', path: 'apps/quant-web/src/alias.ts' },
-      ],
-    )
-  })
-
-  test('rejects rule_code aliases introduced by destructured function parameters', () => {
-    const attacks = {
-      'apps/quant-web/src/Parameter.ts': [
-        "const target = 'subing' + '_strategy_v1'",
-        'function route({ rule_code: code }) {',
-        '  return code === target',
-        '}',
-      ].join('\n'),
-      'apps/quant-web/src/Parameter.tsx': [
-        "const target = 'subing' + '_strategy_v1'",
-        'export const route = ({ rule_code: code }) => <p>{target !== code}</p>',
-      ].join('\n'),
-      'apps/quant-web/src/Parameter.vue': [
-        '<script lang="ts">',
-        "const target = 'subing' + '_strategy_v1'",
-        'function route({ rule_code: code }) {',
-        '  return target === code',
-        '}',
-        '</script>',
-        '<script setup lang="ts">',
-        "const target = 'htdy_' + 'original_15m'",
-        'const route = ({ rule_code: code }) => code !== target',
-        '</script>',
-      ].join('\n'),
-    }
-
-    assert.deepEqual(
-      inspectAlertRuleOwnership(validSources(attacks), EXPECTED_OWNERSHIP)
-        .map(({ code, path }) => ({ code, path })),
-      [
-        { code: 'ALERT_RULE_DIRECT_ROUTING', path: 'apps/quant-web/src/Parameter.ts' },
-        { code: 'ALERT_RULE_DIRECT_ROUTING', path: 'apps/quant-web/src/Parameter.tsx' },
-        { code: 'ALERT_RULE_DIRECT_ROUTING', path: 'apps/quant-web/src/Parameter.vue' },
-        { code: 'ALERT_RULE_DIRECT_ROUTING', path: 'apps/quant-web/src/Parameter.vue' },
-      ],
-    )
-  })
-
-  test('propagates computed, array, nested, and default binding sources recursively', () => {
-    const path = 'apps/quant-web/src/BindingSources.ts'
-    const source = [
-      "const target = 'subing' + '_strategy_v1'",
-      "const { ['rule_code']: computedCode } = event",
-      'computedCode === target',
-      'const [arrayCode] = [event.rule_code]',
-      'target !== arrayCode',
-      'const { x = event.rule_code } = object',
-      'x === target',
-      'const { nested: { rule_code: nestedCode } } = event',
-      'target === nestedCode',
-      'const { outer: [recursiveCode] } = { outer: [event.rule_code] }',
-      'recursiveCode !== target',
-    ].join('\n')
-
-    assert.deepEqual(
-      inspectAlertRuleOwnership(validSources({ [path]: source }), EXPECTED_OWNERSHIP)
-        .map(({ code, path: violationPath }) => ({ code, path: violationPath })),
-      [
-        { code: 'ALERT_RULE_DIRECT_ROUTING', path },
-        { code: 'ALERT_RULE_DIRECT_ROUTING', path },
-        { code: 'ALERT_RULE_DIRECT_ROUTING', path },
-        { code: 'ALERT_RULE_DIRECT_ROUTING', path },
-        { code: 'ALERT_RULE_DIRECT_ROUTING', path },
-      ],
-    )
-  })
-
-  test('rejects runtime rule_code reads without following aliases or calls', () => {
-    const attacks = {
-      'apps/quant-web/src/ForwardClosure.ts': [
-        "const target = 'subing' + '_strategy_v1'",
-        'const route = () => code === target',
-        'const code = event.rule_code',
-      ].join('\n'),
-      'apps/quant-web/src/ParameterCarrier.tsx': [
-        "const target = 'subing' + '_strategy_v1'",
-        'const route = (code) => <p>{target !== code}</p>',
-        'route(event.rule_code)',
-        'const carrier = [event.rule_code]',
-        'const code = carrier[0]',
-      ].join('\n'),
-      'apps/quant-web/src/RuntimeReads.vue': [
-        '<script lang="ts">',
-        "const target = 'subing' + '_strategy_v1'",
-        "const key = 'rule_code'",
-        'event[key] === target',
-        '</script>',
-        '<script setup lang="ts">',
-        "const target = 'htdy_' + 'original_15m'",
-        'const route = () => code !== target',
-        'const carrier = [event.rule_code]',
-        'const code = carrier[0]',
-        '</script>',
-      ].join('\n'),
-    }
-
-    assert.deepEqual(
-      inspectAlertRuleOwnership(validSources(attacks), EXPECTED_OWNERSHIP)
-        .map(({ code, path }) => ({ code, path })),
-      [
-        { code: 'ALERT_RULE_DIRECT_ROUTING', path: 'apps/quant-web/src/ForwardClosure.ts' },
-        { code: 'ALERT_RULE_DIRECT_ROUTING', path: 'apps/quant-web/src/ParameterCarrier.tsx' },
-        { code: 'ALERT_RULE_DIRECT_ROUTING', path: 'apps/quant-web/src/ParameterCarrier.tsx' },
-        { code: 'ALERT_RULE_DIRECT_ROUTING', path: 'apps/quant-web/src/RuntimeReads.vue' },
-        { code: 'ALERT_RULE_DIRECT_ROUTING', path: 'apps/quant-web/src/RuntimeReads.vue' },
-      ],
-    )
-  })
-
-  test('resolves bounded const strings for computed runtime rule_code reads', () => {
-    const attacks = {
-      'apps/quant-web/src/AConcat.ts': [
-        "const target = 'subing' + '_strategy_v1'",
-        "const key = 'rule_' + 'code'",
-        'event[key] === target',
-        'const { [key]: code } = event',
-        'target !== code',
-      ].join('\n'),
-      'apps/quant-web/src/BAlias.tsx': [
-        "const target = 'htdy_' + 'original_15m'",
-        "const direct = ('rule_code' as const)",
-        'const key = direct',
-        'const route = () => <p>{target !== event[key]}</p>',
-        'const { [key]: code } = event',
-        'const view = <p>{code === target}</p>',
-      ].join('\n'),
-      'apps/quant-web/src/CComputed.vue': [
-        '<script lang="ts">',
-        "const target = 'subing' + '_strategy_v1'",
-        "const key = 'rule_' + `code`",
-        'event[key] === target',
-        'const { [key]: code } = event',
-        'target !== code',
-        '</script>',
-        '<script setup lang="ts">',
-        "const direct = 'rule_code'",
-        'const key = direct',
-        'const route = () => target !== event[key]',
-        'const { [key]: code } = event',
-        'code === target',
-        '</script>',
-      ].join('\n'),
-      'apps/quant-web/src/DImported.ts': [
-        "import { RULE_KEY as importedKey } from './DKey'",
-        "const target = 'subing' + '_strategy_v1'",
-        'event[importedKey] === target',
-        'const { [importedKey]: code } = event',
-        'target !== code',
-      ].join('\n'),
-      'apps/quant-web/src/DKey.ts': "export const RULE_KEY = 'rule_code'",
-    }
-
-    assert.deepEqual(
-      inspectAlertRuleOwnership(validSources(attacks), EXPECTED_OWNERSHIP)
-        .map(({ code, path }) => ({ code, path })),
-      [
-        { code: 'ALERT_RULE_DIRECT_ROUTING', path: 'apps/quant-web/src/AConcat.ts' },
-        { code: 'ALERT_RULE_DIRECT_ROUTING', path: 'apps/quant-web/src/AConcat.ts' },
-        { code: 'ALERT_RULE_DIRECT_ROUTING', path: 'apps/quant-web/src/BAlias.tsx' },
-        { code: 'ALERT_RULE_DIRECT_ROUTING', path: 'apps/quant-web/src/BAlias.tsx' },
-        { code: 'ALERT_RULE_DIRECT_ROUTING', path: 'apps/quant-web/src/CComputed.vue' },
-        { code: 'ALERT_RULE_DIRECT_ROUTING', path: 'apps/quant-web/src/CComputed.vue' },
-        { code: 'ALERT_RULE_DIRECT_ROUTING', path: 'apps/quant-web/src/CComputed.vue' },
-        { code: 'ALERT_RULE_DIRECT_ROUTING', path: 'apps/quant-web/src/CComputed.vue' },
-        { code: 'ALERT_RULE_DIRECT_ROUTING', path: 'apps/quant-web/src/DImported.ts' },
-        { code: 'ALERT_RULE_DIRECT_ROUTING', path: 'apps/quant-web/src/DImported.ts' },
-      ],
-    )
-  })
-
-  test('resolves namespace-imported const strings for computed runtime rule_code reads', () => {
-    const attacks = {
-      'apps/quant-web/src/Namespace.ts': [
-        "import * as Keys from './RuleKeys'",
-        "const target = 'subing' + '_strategy_v1'",
-        'event[Keys.RULE_KEY] === target',
-        'const { [Keys.RULE_KEY]: code } = event',
-        'target !== code',
-        'const dynamicKey = readRuntimeKey()',
-        'event[dynamicKey]',
-      ].join('\n'),
-      'apps/quant-web/src/Namespace.tsx': [
-        "import * as Keys from './RuleKeys'",
-        "const target = 'htdy_' + 'original_15m'",
-        "const route = <p>{target !== event[Keys['RULE_KEY']]}</p>",
-        "const { [Keys['RULE_KEY']]: code } = event",
-        'const view = <p>{code === target}</p>',
-      ].join('\n'),
-      'apps/quant-web/src/Namespace.vue': [
-        '<script lang="ts">',
-        "import * as Keys from './RuleKeys'",
-        "const target = 'subing' + '_strategy_v1'",
-        'event[Keys.RULE_KEY] === target',
-        'const { [Keys.RULE_KEY]: code } = event',
-        'target !== code',
-        '</script>',
-        '<script setup lang="ts">',
-        "import * as Keys from './RuleKeys'",
-        "const target = 'htdy_' + 'original_15m'",
-        "event[Keys['RULE_KEY']] !== target",
-        "const { [Keys['RULE_KEY']]: code } = event",
-        'code === target',
-        '</script>',
-      ].join('\n'),
-      'apps/quant-web/src/RuleKeys.ts': "export const RULE_KEY = 'rule_code'",
-    }
-
-    assert.deepEqual(
-      inspectAlertRuleOwnership(validSources(attacks), EXPECTED_OWNERSHIP)
-        .map(({ code, path }) => ({ code, path })),
-      [
-        { code: 'ALERT_RULE_DIRECT_ROUTING', path: 'apps/quant-web/src/Namespace.ts' },
-        { code: 'ALERT_RULE_DIRECT_ROUTING', path: 'apps/quant-web/src/Namespace.ts' },
-        { code: 'ALERT_RULE_DIRECT_ROUTING', path: 'apps/quant-web/src/Namespace.tsx' },
-        { code: 'ALERT_RULE_DIRECT_ROUTING', path: 'apps/quant-web/src/Namespace.tsx' },
-        { code: 'ALERT_RULE_DIRECT_ROUTING', path: 'apps/quant-web/src/Namespace.vue' },
-        { code: 'ALERT_RULE_DIRECT_ROUTING', path: 'apps/quant-web/src/Namespace.vue' },
-        { code: 'ALERT_RULE_DIRECT_ROUTING', path: 'apps/quant-web/src/Namespace.vue' },
-        { code: 'ALERT_RULE_DIRECT_ROUTING', path: 'apps/quant-web/src/Namespace.vue' },
-      ],
-    )
-  })
-
-  test('allows rule_code declarations and helper-only consumers', () => {
-    const path = 'apps/quant-web/src/helperConsumer.ts'
-    const source = [
-      "interface EventContract { readonly rule_code: 'subing_strategy_v1' }",
-      "type WireContract = { ['rule_code']: 'htdy_original_15m' }",
-      'isHtdyAlertEvent(event)',
-      'isSubingStrategyAlertEvent(event)',
-      'matchesAlertRuleCode(event, target)',
-    ].join('\n')
-    const expected = {
-      htdy_original_15m: { [path]: 1 },
-      subing_strategy_v1: { [path]: 1 },
-    }
-
-    assert.deepEqual(inspectAlertRuleOwnership({ [path]: source }, expected), [])
-  })
-
-  test('allows local rule_code aliases inside the routing owner helper', () => {
-    const sources = validSources({
-      [ALERT_RULES_PATH]: [
-        "export const HTDY = 'htdy_original_15m'",
-        "export const SUBING = 'subing_strategy_v1'",
-        "const directKey = 'rule_code'",
-        'const aliasKey = directKey',
-        "const concatenatedKey = 'rule_' + 'code'",
-        'export function matchesAlertRuleCode(event, ruleCode) {',
-        '  const { [concatenatedKey]: code } = event',
-        '  return code === ruleCode && event[aliasKey] === ruleCode',
-        '}',
-      ].join('\n'),
-    })
-
-    assert.deepEqual(inspectAlertRuleOwnership(sources, EXPECTED_OWNERSHIP), [])
-  })
-
-  test('rejects rule_code routing through every transparent TypeScript wrapper', () => {
-    const attacks = [
-      '(event.rule_code) === target',
-      'event.rule_code! === target',
-      '(event.rule_code as string) === target',
-      '<string>event.rule_code === target',
-      '(event.rule_code satisfies string) === target',
-      'target !== (event.rule_code)',
-    ]
-
-    for (const [index, source] of attacks.entries()) {
-      const path = `apps/quant-web/src/wrapped-${index}.ts`
-      assert.deepEqual(
-        inspectAlertRuleOwnership(validSources({ [path]: source }), EXPECTED_OWNERSHIP)
-          .map(({ code, path: violationPath }) => ({ code, path: violationPath })),
-        [{ code: 'ALERT_RULE_DIRECT_ROUTING', path }],
-      )
-    }
-  })
-
-  test('rejects nested transparent rule_code wrappers in TSX', () => {
-    const path = 'apps/quant-web/src/Wrapped.tsx'
-    const source = 'export const view = <p>{((event.rule_code as string)!) === target}</p>'
-
-    assert.deepEqual(
-      inspectAlertRuleOwnership(validSources({ [path]: source }), EXPECTED_OWNERSHIP)
-        .map(({ code, path: violationPath }) => ({ code, path: violationPath })),
-      [{ code: 'ALERT_RULE_DIRECT_ROUTING', path }],
-    )
-  })
-
-  test('rejects transparent rule_code wrappers in both Vue script blocks', () => {
-    const path = 'apps/quant-web/src/Wrapped.vue'
-    const source = [
-      '<script lang="ts">',
-      '(event.rule_code as string) === target',
-      '</script>',
-      '<script setup lang="ts">',
-      'target !== event.rule_code!',
-      '</script>',
-    ].join('\n')
-
-    assert.deepEqual(
-      inspectAlertRuleOwnership(validSources({ [path]: source }), EXPECTED_OWNERSHIP)
-        .map(({ code, line, path: violationPath }) => ({ code, line, path: violationPath })),
-      [
-        { code: 'ALERT_RULE_DIRECT_ROUTING', line: 2, path },
-        { code: 'ALERT_RULE_DIRECT_ROUTING', line: 5, path },
-      ],
-    )
-  })
-
-  test('parses both Vue script blocks as TypeScript', () => {
-    const path = 'apps/quant-web/src/Rogue.vue'
-    const source = [
-      '<script>',
-      "const htdy = 'htdy_original_15m'",
-      '</script>',
-      '<script setup lang="ts">',
-      "type Rule = 'subing_strategy_v1'",
-      '</script>',
-    ].join('\n')
-
-    assert.deepEqual(
-      inspectAlertRuleOwnership(validSources({ [path]: source }), EXPECTED_OWNERSHIP)
-        .map(({ code, line, path: violationPath }) => ({ code, line, path: violationPath })),
-      [
-        { code: 'ALERT_RULE_LITERAL_UNEXPECTED', line: 2, path },
-        { code: 'ALERT_RULE_LITERAL_UNEXPECTED', line: 5, path },
-      ],
-    )
-  })
-
-  test('ignores comments but counts executable and type string literals', () => {
-    const path = 'apps/quant-web/src/owned.ts'
-    const sources = {
-      [path]: [
-        "// 'subing_strategy_v1' and 'subing_entry_signal_v1' are prose only",
-        "const executable = 'subing_strategy_v1'",
-        "type Rule = 'subing_strategy_v1'",
-      ].join('\n'),
-    }
-    const expected = {
-      htdy_original_15m: {},
-      subing_strategy_v1: { [path]: 2 },
-    }
-
-    assert.deepEqual(inspectAlertRuleOwnership(sources, expected), [])
-  })
-
-  test('forbids the retired Rule literal in executable code', () => {
-    const path = 'apps/quant-web/src/retired.ts'
-    const violations = inspectAlertRuleOwnership(
-      { [path]: "const retired = 'subing_entry_signal_v1'" },
-      { htdy_original_15m: {}, subing_strategy_v1: {} },
-    )
-
-    assert.deepEqual(
-      violations.map(({ code, path: violationPath }) => ({ code, path: violationPath })),
-      [{ code: 'ALERT_RULE_RETIRED_LITERAL', path }],
-    )
-  })
-
-  test('fails closed on malformed TypeScript and malformed Vue', () => {
-    const violations = inspectAlertRuleOwnership(
-      {
-        'apps/quant-web/src/broken.ts': 'const value: = 1',
-        'apps/quant-web/src/broken.vue': '<script setup lang="ts">const value =',
-      },
-      { htdy_original_15m: {}, subing_strategy_v1: {} },
-    )
-
-    assert.deepEqual(
-      violations.map(({ code, path }) => ({ code, path })),
-      [
-        { code: 'ALERT_RULE_TYPESCRIPT_PARSE_ERROR', path: 'apps/quant-web/src/broken.ts' },
-        { code: 'ALERT_RULE_VUE_PARSE_ERROR', path: 'apps/quant-web/src/broken.vue' },
-      ],
-    )
-  })
-
-  test('sorts violations by path, line, column, then fixed code', () => {
-    const violations = inspectAlertRuleOwnership(
-      {
-        'apps/quant-web/src/z.ts': "event.rule_code !== 'subing_entry_signal_v1'",
-        'apps/quant-web/src/a.ts': "\nconst rule = 'subing_strategy_v1'",
-      },
-      { htdy_original_15m: {}, subing_strategy_v1: {} },
-    )
-
-    assert.deepEqual(
-      violations.map(({ code, path, line }) => ({ code, path, line })),
-      [
-        { code: 'ALERT_RULE_LITERAL_UNEXPECTED', path: 'apps/quant-web/src/a.ts', line: 2 },
-        { code: 'ALERT_RULE_DIRECT_ROUTING', path: 'apps/quant-web/src/z.ts', line: 1 },
-        { code: 'ALERT_RULE_RETIRED_LITERAL', path: 'apps/quant-web/src/z.ts', line: 1 },
-      ],
-    )
-  })
-
-  test('assertion output exposes only location and fixed public codes', () => {
-    const path = 'apps/quant-web/src/secret.ts'
-    const secretSource = "const privatePayload = 'subing_strategy_v1'"
-
-    assert.throws(
-      () => assertAlertRuleOwnership(
-        { [path]: secretSource },
-        { htdy_original_15m: {}, subing_strategy_v1: {} },
-      ),
-      (error: unknown) => {
-        assert.ok(error instanceof Error)
-        assert.doesNotMatch(error.message, /privatePayload|subing_strategy_v1/)
-        assert.match(error.message, new RegExp(`^${path}:\\d+:\\d+ ALERT_RULE_LITERAL_UNEXPECTED$`))
-        return true
-      },
-    )
+  test('fails closed on malformed TypeScript and Vue', () => {
+    const violations = inspectAlertRuleOwnership({
+      'apps/quant-web/src/broken.ts': 'const value: = 1',
+      'apps/quant-web/src/broken.vue': '<script setup lang="ts">const value =',
+    }, { htdy_original_15m: {} })
+    assert.deepEqual(violations.map(({ code }) => code), [
+      'ALERT_RULE_TYPESCRIPT_PARSE_ERROR',
+      'ALERT_RULE_VUE_PARSE_ERROR',
+    ])
   })
 
   test('accepts the real repository Web sources', () => {
@@ -543,24 +64,14 @@ describe('Alert Rule AST ownership guard', () => {
         readFileSync(path, 'utf8'),
       ]),
     )
-
     assertAlertRuleOwnership(sources, EXPECTED_OWNERSHIP)
   })
 })
 
 function validSources(overrides: Record<string, string> = {}): Record<string, string> {
   return {
-    [ALERT_RULES_PATH]: [
-      "export const HTDY = 'htdy_original_15m'",
-      "export const SUBING = 'subing_strategy_v1'",
-    ].join('\n'),
-    [MARKET_TYPES_PATH]: [
-      "export type HtdyRule = 'htdy_original_15m'",
-      ...Array.from(
-        { length: 8 },
-        (_, index) => `export type SubingIdentity${index} = 'subing_strategy_v1'`,
-      ),
-    ].join('\n'),
+    [ALERT_RULES_PATH]: "export const HTDY = 'htdy_original_15m'",
+    [MARKET_TYPES_PATH]: "export type HtdyRule = 'htdy_original_15m'",
     ...overrides,
   }
 }

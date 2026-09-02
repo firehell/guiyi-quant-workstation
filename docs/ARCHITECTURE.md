@@ -1,6 +1,6 @@
 # 归一量化 Active Architecture
 
-本文件只描述当前 active 模块和消费者依赖；产品边界见 `PROJECT_SOURCE.md`，业务公式见 deep canonical，当前部署与 Gate 见 `STATUS.md`。
+本文件只描述当前 active 模块和消费者依赖；产品边界见 `PROJECT_SOURCE.md`，当前部署与 Gate 见 `STATUS.md`。
 
 ## Dependency graph
 
@@ -15,50 +15,23 @@ flowchart LR
   MCM --> MDS
 
   ACTIVE[active_products.txt<br/>research capability] --> MARKET[Market API / Kline]
-  ACTIVE --> DAILY
-  ACTIVE --> SSP
-  ACTIVE --> RS
-  ACTIVE --> CV
   ACTIVE --> DCLI[data CLI<br/>--universe active]
   MDS --> MARKET
+  MDS --> IND[generic EMA / MACD / ATR / Range]
   MARKET --> WEB[Market Web<br/>/market + /market/chart]
-
-  MDS --> SF[SuBing Factor / Signal /<br/>Calibration / Lifecycle]
-  MDS --> DWP[Daily Watch V2 pure<br/>projector / classification]
-  MDS --> MREAD[MarketReadService]
-  DWP --> DAILY[Daily Context artifact]
-  DWP --> SSP
-  SF --> CURRENT[Current Signal State]
-  SF --> SSP[SuBing Strategy V1<br/>15m Historical Projection]
-  MREAD --> CURRENT
-  DAILY --> MARKET
-  CURRENT --> MARKET
-  WARM[CLI --warm-cache<br/>explicit bootstrap] --> SSP
-  SSP --> SNAP[schema-v3 snapshot<br/>+ current manifest]
-  SNAP --> QUERY[HTTP snapshot query]
-  QUERY --> MARKET
-
-  MDS --> RS[SuBing calibration/lifecycle<br/>research]
-  SRC[SuBing lifecycle research +<br/>candidate manifest/protocol] --> CV[SuBing Candidate Validation]
-  MDS --> CV
-  RS --> RCLI[research CLI]
+  IND --> WEB
 
   OPS[operational_products.txt<br/>Runtime authorization] --> MR[Market Runtime]
-  OPS --> MREAD
-  OPS --> DAILY
-  OPS --> AE
+  OPS --> AE[HTDY Alert evaluator]
   OPS --> HEALTH[Runtime health]
   MR --> LIVE[Redis completed Live overlay]
   MR --> EOD[after-market Canonical update]
   MR --> HEALTH
-  LIVE --> MREAD
+  LIVE --> MARKET
+  LIVE --> AE
   EOD --> CP
-  EOD --> INCR
-
-  LIVE --> AE[Alert evaluators]
   EOD --> AE
-  SF --> AE
-  RULE[alert_rules + distinct Scope authorities] --> AE
+  RULE[HTDY Rule + symbol-frequency Scope] --> AE
   AE --> HEALTH
   AE --> EVENT[alert_events]
   EVENT --> PUSH[one-shot PushPlus]
@@ -67,15 +40,12 @@ flowchart LR
 
 ## Consumer boundaries
 
-- `MarketDataService` is the only Historical Bar reader for Market, SuBing and validation services. `actual_dominant` is resolved only through `MainContractMap rank=1`; incomplete identity, coverage or physical readability fails closed.
-- Web consumes typed Market APIs. It may compose Daily Context, Current Signal State, Formal Event and Historical projections, but does not calculate strategy formulas or mutate Scope.
-- SuBing Strategy V1 Historical 与 completed-Live 共享同一个增量状态机；公开身份为 `actual_dominant + 15m`，1m/5m 仅为内部权威输入。其 active60 Runtime state 独立于 Alert Scope，production promotion 仍是外部 Gate。
-- SuBing 全历史效果 HTTP 只走只读 snapshot query：校验当前 schema-v3 快照与 current manifest，不构造 Historical replay、不写 cache。CLI `--warm-cache` 是明确的全历史 bootstrap，须独立数据写入 Gate；批次窗口先冻结，按产品以完整 engine/source identity 原子发布并读回。盘后 Runtime 不刷新该快照，也不以该快照状态改变 Canonical 维护结果。
-- `active_products.txt` is consumed by Market/research APIs, the two retained research CLI services, SuBing Candidate Validation, Daily Watch, SuBing Strategy and data CLI active-universe selection. It defines capability, not sustained Runtime authority.
-- SuBing lifecycle research plus an explicit candidate manifest/protocol feed SuBing Candidate Validation. It is neither a Runtime evaluator nor an automatic promotion path.
-- `operational_products.txt` is consumed by Market Runtime, `MarketReadService`/Live, Daily Watch, Alert API/Runtime and Runtime health. Its outer Runtime-universe boundary is applied in addition to, not instead of, each Alert Rule Scope.
-- Alert is independent from the Market Catalog. HTDY uses `scope_product_frequencies`; SuBing uses `scope_products`. Event persistence precedes at most one transport attempt.
+- `MarketDataService` 是唯一 Historical Bar reader；`actual_dominant` 只通过 `MainContractMap rank=1` 解析，identity、coverage 或物理可读性异常 fail-closed。
+- Web 只消费 typed Market/Alert API，不计算策略、建仓或清仓。
+- `active_products.txt` 是研究能力边界；`operational_products.txt` 是 Market/Alert Runtime 外层授权边界。
+- Alert 独立于 Market Catalog。HTDY 使用 `scope_product_frequencies`；Event 持久化后最多尝试一次 transport。
+- EMA21 10K slope 是纯函数 primitive，不连接 Runtime、Alert 或周期级正式因子。
 
 ## Preserved seams
 
-Canonical/Catalog, `DatasetKey`, Trading Calendar/Session, `MainContractMap`, Live/Historical isolation, Alert Application Domain and Runtime authorization remain separate modules. Alembic migrations are schema lineage and are not active application dependencies once their domains retire.
+Canonical/Catalog、`DatasetKey`、Trading Calendar/Session、`MainContractMap`、Live/Historical isolation、Alert Application Domain 与 Runtime authorization 保持分离。Alembic migrations 是 schema lineage，不是已退役域的 active application dependency。

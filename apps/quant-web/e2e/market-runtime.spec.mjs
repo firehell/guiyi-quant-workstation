@@ -317,7 +317,6 @@ test('keeps chart and check rail aligned without a default full-history performa
 
   await page.goto('/market/chart?symbol=jm&series_kind=actual_dominant&frequency=15m')
   await expect(page.getByTestId('kline-shell')).toBeVisible()
-  await expect(page.getByTestId('subing-strategy-performance')).toHaveCount(0)
 
   const layout = await page.evaluate(() => {
     const content = document.querySelector('.content')?.getBoundingClientRect()

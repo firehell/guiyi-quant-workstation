@@ -3,7 +3,7 @@
 ## Purpose
 
 定义 `range_detector_lux_v1` 的纯计算、因果可见性和受限 consumer 合同。它是只读显示和
-`subing_daily_trend_research` 的策略候选输入，不授予现有策略、Alert、Runtime、数据写入或订单能力。
+任何策略候选输入，不授予 Alert、Runtime、数据写入或订单能力。
 
 ## Requirements
 
@@ -68,7 +68,7 @@ MUST 保持 intact，严格越界才形成一次 break。
 
 ### Requirement: scoped consumer policy
 
-FormalPolicy SHALL 仅允许 `range_detector_readonly_display` 与 `subing_daily_trend_research`。它 MUST block
+FormalPolicy SHALL 仅允许 `range_detector_readonly_display`。它 MUST block
 formal backtest、generic strategy/live、Alert 与 notification consumer。
 
 #### Scenario: 未授权 consumer

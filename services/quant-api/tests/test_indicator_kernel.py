@@ -97,6 +97,46 @@ def test_ema_series_future_tail_does_not_repaint_past_values() -> None:
     assert original_result.points[4].value != changed_result.points[4].value
 
 
+def test_ema21_slope_10_uses_endpoint_change_per_bar_in_bps() -> None:
+    from guiyi_quant.indicators import ema21_slope_10_bps_per_bar
+
+    assert ema21_slope_10_bps_per_bar(range(100, 110)) == 91.743119
+    assert ema21_slope_10_bps_per_bar([109, 108, 107, 106, 105, 104, 103, 102, 101, 100]) == -100.0
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        [1.0] * 9,
+        [1.0] * 11,
+    ],
+)
+def test_ema21_slope_10_requires_exactly_ten_values(
+    values: list[float],
+) -> None:
+    from guiyi_quant.indicators import ema21_slope_10_bps_per_bar
+
+    with pytest.raises(ValueError, match="exactly 10 EMA21 values"):
+        ema21_slope_10_bps_per_bar(values)
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        [None, *([1.0] * 9)],
+        [math.nan, *([1.0] * 9)],
+        [math.inf, *([1.0] * 9)],
+        [*([1.0] * 9), 0.0],
+    ],
+)
+def test_ema21_slope_10_returns_none_for_invalid_or_zero_current_value(
+    values: list[float | None],
+) -> None:
+    from guiyi_quant.indicators import ema21_slope_10_bps_per_bar
+
+    assert ema21_slope_10_bps_per_bar(values) is None
+
+
 def test_incremental_ema_matches_batch_seed_reset_rounding_and_warmup() -> None:
     """Catches incremental EMA drifting from the public batch contract."""
     from guiyi_quant.indicators import (

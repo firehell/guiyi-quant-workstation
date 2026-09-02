@@ -40,14 +40,14 @@ def test_owner_uses_wechat_txt_without_topic_and_returns_hidden_short_code() -> 
     client = RecordingClient()
     accepted = _transport(client).send(
         NotificationDelivery(
-            ALERT_AUDIENCE_OWNER,
-            "归一量化 苏冰",
-            "fixture content",
+            title="归一量化提醒",
+            content="fixture content",
+            audience=ALERT_AUDIENCE_OWNER,
         )
     )
 
     request = client.requests[0]
-    assert request.title == "归一量化 苏冰"
+    assert request.title == "归一量化提醒"
     assert request.content == "fixture content"
     assert request.template.value == "txt"
     assert request.channel.value == "wechat"
@@ -63,9 +63,9 @@ def test_htdy_observers_uses_exact_dedicated_topic_once() -> None:
     client = RecordingClient()
     _transport(client).send(
         NotificationDelivery(
-            ALERT_AUDIENCE_HTDY_OBSERVERS,
-            "归一量化 火天大有",
-            "fixture content",
+            title="归一量化 火天大有",
+            content="fixture content",
+            audience=ALERT_AUDIENCE_HTDY_OBSERVERS,
         )
     )
 
@@ -86,9 +86,9 @@ def test_rejects_malformed_provider_acceptance_without_leaking(
     ) as captured:
         transport.send(
             NotificationDelivery(
-                ALERT_AUDIENCE_OWNER,
-                "title",
-                "private content",
+                title="title",
+                content="private content",
+                audience=ALERT_AUDIENCE_OWNER,
             )
         )
 
@@ -102,7 +102,7 @@ def test_unexpected_client_bug_is_not_swallowed() -> None:
 
     with pytest.raises(AttributeError, match="implementation bug"):
         transport.send(
-            NotificationDelivery(ALERT_AUDIENCE_OWNER, "title", "content")
+            NotificationDelivery(title="title", content="content", audience=ALERT_AUDIENCE_OWNER)
         )
 
 
@@ -116,7 +116,7 @@ def test_sdk_error_is_mapped_without_leaking_provider_details() -> None:
         match="^ALERT_NOTIFICATION_TRANSPORT_FAILED$",
     ) as captured:
         transport.send(
-            NotificationDelivery(ALERT_AUDIENCE_OWNER, "title", "content")
+            NotificationDelivery(title="title", content="content", audience=ALERT_AUDIENCE_OWNER)
         )
 
     assert "provider rejected" not in str(captured.value)
