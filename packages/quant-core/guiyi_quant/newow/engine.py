@@ -181,7 +181,9 @@ def _step_substates(
     return trend, escape, cup
 
 
-def _unavailable_frame(bar: NewowDailyBar) -> NewowTrendFrame:
+def _unavailable_frame(
+    bar: NewowDailyBar, *, rollover_started: bool = False
+) -> NewowTrendFrame:
     return NewowTrendFrame(
         bar=bar,
         trend_band=NewowTrendBandPoint(
@@ -193,6 +195,7 @@ def _unavailable_frame(bar: NewowDailyBar) -> NewowTrendFrame:
         ),
         markers=(),
         cup_handle=None,
+        rollover_started=rollover_started,
         diagnostics=("NEWOW_ENGINE_STATE_INVALID",),
     )
 
@@ -303,7 +306,10 @@ class NewowTrendD1Engine:
         stepped = _step_substates(state, bar, self._profile)
         if stepped is None:
             next_state = _initial_state()
-            result = NewowTrendD1StepResult(next_state, _unavailable_frame(bar))
+            result = NewowTrendD1StepResult(
+                next_state,
+                _unavailable_frame(bar, rollover_started=rollover_started),
+            )
             self._state = next_state
             return result
 

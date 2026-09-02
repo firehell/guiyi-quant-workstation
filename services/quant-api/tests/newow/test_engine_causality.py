@@ -390,6 +390,32 @@ def test_rollover_resets_all_substates_and_suppresses_current_bar_markers() -> N
     assert step.state.cup_handle_state.confirmed_pivots == ()
 
 
+def test_rollover_fact_survives_new_segment_kernel_numeric_failure() -> None:
+    """A failed new-segment first bar must not erase the detected rollover seam."""
+
+    bars = bullish_true_cup_handle()
+    engine = NewowTrendD1Engine(state=_run_incremental(bars[:20])[-1].state)
+    huge = Decimal("1e1000")
+    incoming = replace(
+        bars[20],
+        physical_contract="RB2705",
+        segment_id="rb:RB2705:2026-05-01",
+        open=huge,
+        high=huge,
+        low=huge,
+        close=huge,
+        source_identity="fixture:rollover:new-segment-numeric-failure",
+    )
+
+    result = engine.step(incoming)
+
+    assert result.frame.trend_band.state is TrendBandState.UNAVAILABLE
+    assert result.frame.rollover_started is True
+    assert result.frame.markers == ()
+    assert result.frame.diagnostics == ("NEWOW_ENGINE_STATE_INVALID",)
+    assert result.state == NewowTrendD1Engine.initial().state
+
+
 def test_engine_rejects_duplicate_out_of_order_trading_day_and_eligibility_regression() -> None:
     """Accepting replayed or regressed observations makes the state non-causal."""
 

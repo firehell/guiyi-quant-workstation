@@ -317,8 +317,8 @@ def _safe_finite_float(value: Decimal | Fraction | int | float) -> float | None:
     return numeric if isfinite(numeric) else None
 
 
-def _decimal_parameter(value: int | float) -> Decimal:
-    return Decimal(str(value))
+def _rational_parameter(value: int | float) -> Fraction:
+    return Fraction(value).limit_denominator()
 
 
 def _decimal_ratio_exceeds(
@@ -328,7 +328,7 @@ def _decimal_ratio_exceeds(
 ) -> bool:
     """Compare a Decimal ratio to the profile's human-authored rational value."""
 
-    rational = Fraction(threshold).limit_denominator()
+    rational = _rational_parameter(threshold)
     return (
         Fraction(numerator) * rational.denominator
         > Fraction(denominator) * rational.numerator
@@ -340,7 +340,7 @@ def _decimal_ratio_below(
     denominator: Decimal | Fraction,
     threshold: float,
 ) -> bool:
-    rational = Fraction(threshold).limit_denominator()
+    rational = _rational_parameter(threshold)
     return (
         Fraction(numerator) * rational.denominator
         < Fraction(denominator) * rational.numerator
@@ -348,11 +348,13 @@ def _decimal_ratio_below(
 
 
 def _decimal_over_finite_float(
-    numerator: Decimal, denominator: float
+    numerator: Decimal | Fraction, denominator: float
 ) -> float | None:
     if not isfinite(denominator) or denominator <= 0:
         return None
-    return _safe_finite_float(numerator / Decimal(str(denominator)))
+    return _safe_finite_float(
+        Fraction(numerator) / Fraction(Decimal(str(denominator)))
+    )
 
 
 def _finite_fact_values(
@@ -521,10 +523,10 @@ def _tracker_is_coherent(
                 if pivot.kind == CupPivotKind.HIGH
                 else confirmed.bar.close - pivot.price
             )
-            reversal_threshold = _decimal_parameter(
+            reversal_threshold = _rational_parameter(
                 profile.cup_reversal_atr
-            ) * _decimal_parameter(pivot.atr_at_pivot)
-            if reversal_distance < reversal_threshold:
+            ) * Fraction(Decimal(str(pivot.atr_at_pivot)))
+            if Fraction(reversal_distance) < reversal_threshold:
                 return False
         if previous_pivot is not None:
             if (
@@ -703,16 +705,16 @@ def _ready_facts_are_valid(
     pivot_price = active.pivot_price
     if handle is None or pivot_price is None:
         return False
-    right_price = _normal(active.direction, active.right_rim.price)
-    left_price = _normal(active.direction, active.left_rim.price)
-    bottom_price = _normal(active.direction, active.bottom.price)
-    handle_price = _normal(active.direction, handle.price)
+    right_price = _normal_fraction(active.direction, active.right_rim.price)
+    left_price = _normal_fraction(active.direction, active.left_rim.price)
+    bottom_price = _normal_fraction(active.direction, active.bottom.price)
+    handle_price = _normal_fraction(active.direction, handle.price)
     handle_bars = handle.confirmed_index - active.right_rim.pivot_index
     handle_depth = right_price - handle_price
     right_leg = right_price - bottom_price
     cup_depth = (left_price + right_price) / 2 - bottom_price
-    depth_pct = handle_depth / abs(right_price) if right_price else Decimal("Infinity")
-    handle_retrace = handle_depth / right_leg if right_leg else Decimal("Infinity")
+    depth_pct = handle_depth / abs(right_price) if right_price else None
+    handle_retrace = handle_depth / right_leg if right_leg else None
     if (
         right_leg <= 0
         or cup_depth <= 0
@@ -720,7 +722,9 @@ def _ready_facts_are_valid(
         <= handle_bars
         <= profile.cup_handle_max_bars
         or handle_depth <= 0
-        or depth_pct > _decimal_parameter(profile.cup_handle_depth_max_pct)
+        or depth_pct is None
+        or depth_pct > _rational_parameter(profile.cup_handle_depth_max_pct)
+        or handle_retrace is None
         or _decimal_ratio_exceeds(
             handle_depth,
             right_leg,
@@ -728,22 +732,22 @@ def _ready_facts_are_valid(
         )
         or handle_price
         < bottom_price
-        + _decimal_parameter(profile.cup_handle_upper_half_ratio) * cup_depth
+        + _rational_parameter(profile.cup_handle_upper_half_ratio) * cup_depth
     ):
         return False
     length_score = 6.0 if 7 <= handle_bars <= 10 else 4.0
     depth_score = (
         5.0
-        if depth_pct <= Decimal("0.08")
+        if depth_pct <= Fraction(8, 100)
         else 3.0
-        if depth_pct <= Decimal("0.12")
+        if depth_pct <= Fraction(12, 100)
         else 1.0
     )
     retrace_score = (
         5.0
-        if handle_retrace <= Decimal("0.20")
+        if handle_retrace <= Fraction(20, 100)
         else 3.0
-        if handle_retrace <= Decimal("0.28")
+        if handle_retrace <= Fraction(28, 100)
         else 1.0
     )
     if float(active.score_breakdown["handle_quality"]) != (
@@ -984,12 +988,16 @@ def _milestones_are_authentic(
         return False
     weakened_snapshot = by_index.get(weakened_fact.eligible_index)
     if weakened_snapshot is not None:
-        normalized_close = _normal(active.direction, weakened_snapshot.bar.close)
-        normalized_pivot = _normal(active.direction, active.pivot_price)
-        normalized_handle = _normal(active.direction, active.handle_extreme.price)
-        invalidation = normalized_handle - _decimal_parameter(
+        normalized_close = _normal_fraction(
+            active.direction, weakened_snapshot.bar.close
+        )
+        normalized_pivot = _normal_fraction(active.direction, active.pivot_price)
+        normalized_handle = _normal_fraction(
+            active.direction, active.handle_extreme.price
+        )
+        invalidation = normalized_handle - _rational_parameter(
             profile.cup_breakout_buffer_atr
-        ) * _decimal_parameter(weakened_snapshot.atr)
+        ) * Fraction(Decimal(str(weakened_snapshot.atr)))
         if not invalidation <= normalized_close < normalized_pivot:
             return False
     return True
@@ -1357,11 +1365,11 @@ def _track_pivot(
 
     if tracker.leg == "SEEK_DIRECTION":
         assert high is not None and low is not None
-        up_distance = snapshot.bar.close - low.bar.low
-        down_distance = high.bar.high - snapshot.bar.close
-        reversal_value = _decimal_parameter(reversal)
-        low_atr = _decimal_parameter(low.atr)
-        high_atr = _decimal_parameter(high.atr)
+        up_distance = Fraction(snapshot.bar.close) - Fraction(low.bar.low)
+        down_distance = Fraction(high.bar.high) - Fraction(snapshot.bar.close)
+        reversal_value = _rational_parameter(reversal)
+        low_atr = Fraction(Decimal(str(low.atr)))
+        high_atr = Fraction(Decimal(str(high.atr)))
         up = (
             snapshot.eligible_index - low.eligible_index >= min_leg
             and up_distance >= reversal_value * low_atr
@@ -1401,8 +1409,8 @@ def _track_pivot(
         leg_start = tracker.last_pivot.pivot_index if tracker.last_pivot else 0
         leg_bars = high.eligible_index - leg_start
         reversed_enough = (
-            high.bar.high - snapshot.bar.close
-            >= _decimal_parameter(reversal) * _decimal_parameter(high.atr)
+            Fraction(high.bar.high) - Fraction(snapshot.bar.close)
+            >= _rational_parameter(reversal) * Fraction(Decimal(str(high.atr)))
         )
         if leg_bars >= min_leg and reversed_enough:
             confirmed = _pivot(CupPivotKind.HIGH, high, snapshot)
@@ -1417,8 +1425,8 @@ def _track_pivot(
     leg_start = tracker.last_pivot.pivot_index if tracker.last_pivot else 0
     leg_bars = low.eligible_index - leg_start
     reversed_enough = (
-        snapshot.bar.close - low.bar.low
-        >= _decimal_parameter(reversal) * _decimal_parameter(low.atr)
+        Fraction(snapshot.bar.close) - Fraction(low.bar.low)
+        >= _rational_parameter(reversal) * Fraction(Decimal(str(low.atr)))
     )
     if leg_bars >= min_leg and reversed_enough:
         confirmed = _pivot(CupPivotKind.LOW, low, snapshot)
@@ -1432,6 +1440,13 @@ def _track_pivot(
 
 def _normal(direction: CupHandleDirection, value: Decimal) -> Decimal:
     return value if direction == CupHandleDirection.BULLISH else -value
+
+
+def _normal_fraction(
+    direction: CupHandleDirection, value: Decimal
+) -> Fraction:
+    normalized = Fraction(value)
+    return normalized if direction == CupHandleDirection.BULLISH else -normalized
 
 
 def _candidate_id(
@@ -1453,18 +1468,16 @@ def _candidate_id(
     )
 
 
-def _ols_slope(values: list[Decimal]) -> Decimal:
+def _ols_slope(values: list[Fraction]) -> Fraction:
     count = len(values)
-    mean_x = Decimal(count - 1) / Decimal(2)
-    mean_y = sum(values, Decimal(0)) / Decimal(count)
+    mean_x = Fraction(count - 1, 2)
+    mean_y = sum(values, Fraction()) / count
     numerator = sum(
-        (Decimal(index) - mean_x) * (value - mean_y)
+        (index - mean_x) * (value - mean_y)
         for index, value in enumerate(values)
     )
-    denominator = sum(
-        (Decimal(index) - mean_x) ** 2 for index in range(count)
-    )
-    return numerator / denominator if denominator else Decimal(0)
+    denominator = sum((index - mean_x) ** 2 for index in range(count))
+    return numerator / denominator if denominator else Fraction()
 
 
 def _pretrend_score(
@@ -1473,30 +1486,32 @@ def _pretrend_score(
     by_index: Mapping[int, CupBarSnapshot],
     profile: NewowTrendProfile,
 ) -> float | None:
-    sign = Decimal(1) if direction == CupHandleDirection.BULLISH else Decimal(-1)
-    valid: list[tuple[Decimal, Decimal, int, Decimal, Decimal]] = []
+    sign = 1 if direction == CupHandleDirection.BULLISH else -1
+    valid: list[tuple[Fraction, Fraction, int, Fraction, Fraction]] = []
     for window in range(profile.cup_pretrend_min_bars, profile.cup_pretrend_max_bars + 1):
         start_index = left.pivot_index - window
         indexes = range(start_index, left.pivot_index + 1)
         snapshots = [by_index[index] for index in indexes if index in by_index]
         if len(snapshots) != window + 1:
             continue
-        close_start = snapshots[0].bar.close
-        move = sign * (left.price - close_start)
+        close_start = Fraction(snapshots[0].bar.close)
+        move = sign * (Fraction(left.price) - close_start)
         return_pct = move / close_start
         atr_median = median(item.atr for item in snapshots)
         move_atr = _decimal_over_finite_float(move, atr_median)
         if move_atr is None:
             continue
-        slope = _ols_slope([sign * item.bar.close for item in snapshots])
-        return_strength = return_pct / _decimal_parameter(
+        slope = _ols_slope(
+            [sign * Fraction(item.bar.close) for item in snapshots]
+        )
+        return_strength = return_pct / _rational_parameter(
             profile.cup_pretrend_min_return
         )
-        atr_strength = _decimal_parameter(move_atr) / _decimal_parameter(
+        atr_strength = Fraction(Decimal(str(move_atr))) / _rational_parameter(
             profile.cup_pretrend_min_move_atr
         )
         if slope > 0 and (
-            return_strength >= Decimal(1) or atr_strength >= Decimal(1)
+            return_strength >= 1 or atr_strength >= 1
         ):
             valid.append(
                 (
@@ -1510,10 +1525,10 @@ def _pretrend_score(
     if not valid:
         return None
     _, _, _, return_strength, atr_strength = max(valid)
-    if return_strength >= Decimal(1) and atr_strength >= Decimal(1):
+    if return_strength >= 1 and atr_strength >= 1:
         return 15.0
     passing_strength = max(return_strength, atr_strength)
-    return 12.0 if passing_strength >= Decimal("1.5") else 10.0
+    return 12.0 if passing_strength >= Fraction(3, 2) else 10.0
 
 
 def _bottom_span(
@@ -1521,7 +1536,7 @@ def _bottom_span(
     bottom: CupPivot,
     left_index: int,
     right_index: int,
-    zone_top: Decimal,
+    zone_top: Fraction,
     by_index: Mapping[int, CupBarSnapshot],
 ) -> int:
     if bottom.pivot_index not in by_index:
@@ -1529,7 +1544,10 @@ def _bottom_span(
 
     def inside(index: int) -> bool:
         snapshot = by_index.get(index)
-        return snapshot is not None and _normal(direction, snapshot.bar.close) <= zone_top
+        return (
+            snapshot is not None
+            and _normal_fraction(direction, snapshot.bar.close) <= zone_top
+        )
 
     if not inside(bottom.pivot_index):
         return 0
@@ -1546,7 +1564,7 @@ def _midline_crossings(
     direction: CupHandleDirection,
     left_index: int,
     right_index: int,
-    midline: Decimal,
+    midline: Fraction,
     by_index: Mapping[int, CupBarSnapshot],
 ) -> int:
     previous_sign = 0
@@ -1555,7 +1573,7 @@ def _midline_crossings(
         snapshot = by_index.get(index)
         if snapshot is None:
             continue
-        difference = _normal(direction, snapshot.bar.close) - midline
+        difference = _normal_fraction(direction, snapshot.bar.close) - midline
         sign = 1 if difference > 0 else -1 if difference < 0 else previous_sign
         if sign and previous_sign and sign != previous_sign:
             crossings += 1
@@ -1587,10 +1605,10 @@ def _body_facts(
     if pretrend is None:
         diagnostics.append("PRETREND_NOT_CONFIRMED")
 
-    left_price = _normal(direction, left.price)
-    bottom_price = _normal(direction, bottom.price)
-    right_price = _normal(direction, right.price)
-    rim_price = (left_price + right_price) / Decimal(2)
+    left_price = _normal_fraction(direction, left.price)
+    bottom_price = _normal_fraction(direction, bottom.price)
+    right_price = _normal_fraction(direction, right.price)
+    rim_price = (left_price + right_price) / 2
     cup_depth = rim_price - bottom_price
     atr_median = median(item.atr for item in snapshots)
     if cup_depth <= 0 or rim_price == 0:
@@ -1603,18 +1621,18 @@ def _body_facts(
     rim_gap_atr = _decimal_over_finite_float(rim_gap, atr_median)
     if cup_depth_atr is None or rim_gap_atr is None:
         return None, _unique(diagnostics + ["CUP_ATR_UNAVAILABLE"])
-    if cup_depth_pct < _decimal_parameter(profile.cup_depth_min_pct):
+    if cup_depth_pct < _rational_parameter(profile.cup_depth_min_pct):
         diagnostics.append("CUP_DEPTH_BELOW_10_PERCENT")
-    if cup_depth_pct > _decimal_parameter(profile.cup_depth_hard_max_pct):
+    if cup_depth_pct > _rational_parameter(profile.cup_depth_hard_max_pct):
         diagnostics.append("CUP_DEPTH_ABOVE_50_PERCENT")
     if cup_depth_atr < profile.cup_depth_min_atr:
         diagnostics.append("CUP_DEPTH_BELOW_3_ATR")
-    if rim_gap_pct > _decimal_parameter(profile.cup_rim_gap_max_pct):
+    if rim_gap_pct > _rational_parameter(profile.cup_rim_gap_max_pct):
         diagnostics.append("RIM_GAP_PERCENT_EXCEEDED")
     if rim_gap_atr > profile.cup_rim_gap_max_atr:
         diagnostics.append("RIM_GAP_ATR_EXCEEDED")
 
-    zone_top = bottom_price + _decimal_parameter(
+    zone_top = bottom_price + _rational_parameter(
         profile.cup_bottom_zone_ratio
     ) * cup_depth
     bottom_span = _bottom_span(
@@ -1629,14 +1647,18 @@ def _body_facts(
         diagnostics.append("V_BOTTOM_SINGLE_BAR")
     left_leg = bottom.pivot_index - left.pivot_index
     right_leg = right.pivot_index - bottom.pivot_index
-    leg_ratio = left_leg / right_leg if right_leg else float("inf")
-    if not profile.cup_leg_ratio_hard_min <= leg_ratio <= profile.cup_leg_ratio_hard_max:
+    leg_ratio = Fraction(left_leg, right_leg) if right_leg else None
+    if leg_ratio is None:
+        diagnostics.append("LEG_RATIO_EXTREME")
+    elif not _rational_parameter(
+        profile.cup_leg_ratio_hard_min
+    ) <= leg_ratio <= _rational_parameter(profile.cup_leg_ratio_hard_max):
         diagnostics.append("LEG_RATIO_EXTREME")
     crossings = _midline_crossings(
         direction,
         left.pivot_index,
         right.pivot_index,
-        bottom_price + Decimal("0.5") * cup_depth,
+        bottom_price + Fraction(1, 2) * cup_depth,
         by_index,
     )
     if crossings > profile.cup_midline_crossings_hard_max:
@@ -1653,13 +1675,13 @@ def _body_facts(
     duration_score = 5.0 if 35 <= cup_bars <= 70 else 3.0
     depth_pct_score = (
         8.0
-        if cup_depth_pct <= _decimal_parameter(profile.cup_depth_preferred_max_pct)
+        if cup_depth_pct <= _rational_parameter(profile.cup_depth_preferred_max_pct)
         else 4.0
     )
     depth_atr_score = 5.0 if cup_depth_atr >= 4 else 3.0
     rim_score = (
         7.0
-        if rim_gap_pct <= Decimal("0.025") and rim_gap_atr <= 0.75
+        if rim_gap_pct <= Fraction(25, 1000) and rim_gap_atr <= 0.75
         else 5.0
     )
     geometry = duration_score + depth_pct_score + depth_atr_score + rim_score
@@ -1672,9 +1694,12 @@ def _body_facts(
         if bottom_span == 2
         else 0.0
     )
-    if 0.75 <= leg_ratio <= 1.33:
+    assert leg_ratio is not None
+    if Fraction(75, 100) <= leg_ratio <= Fraction(133, 100):
         leg_score = 6.0
-    elif profile.cup_leg_ratio_soft_min <= leg_ratio <= profile.cup_leg_ratio_soft_max:
+    elif _rational_parameter(
+        profile.cup_leg_ratio_soft_min
+    ) <= leg_ratio <= _rational_parameter(profile.cup_leg_ratio_soft_max):
         leg_score = 4.0
     else:
         leg_score = 2.0
@@ -1837,19 +1862,19 @@ def _ready_candidate(
     )
     if body_facts.bottom_span_bars < profile.cup_bottom_span_ready_min:
         return None, "BOTTOM_SPAN_BELOW_READY_MIN"
-    right_price = _normal(forming.direction, forming.right_rim.price)
-    left_price = _normal(forming.direction, forming.left_rim.price)
-    bottom_price = _normal(forming.direction, forming.bottom.price)
-    handle_price = _normal(forming.direction, handle.price)
+    right_price = _normal_fraction(forming.direction, forming.right_rim.price)
+    left_price = _normal_fraction(forming.direction, forming.left_rim.price)
+    bottom_price = _normal_fraction(forming.direction, forming.bottom.price)
+    handle_price = _normal_fraction(forming.direction, handle.price)
     handle_depth = right_price - handle_price
     cup_right_leg = right_price - bottom_price
-    cup_depth = (left_price + right_price) / Decimal(2) - bottom_price
+    cup_depth = (left_price + right_price) / 2 - bottom_price
     depth_pct = handle_depth / abs(right_price)
-    if handle_depth <= 0 or depth_pct > _decimal_parameter(
+    if handle_depth <= 0 or depth_pct > _rational_parameter(
         profile.cup_handle_depth_max_pct
     ):
         return None, "HANDLE_DEPTH_EXCEEDED"
-    if handle_price < bottom_price + _decimal_parameter(
+    if handle_price < bottom_price + _rational_parameter(
         profile.cup_handle_upper_half_ratio
     ) * cup_depth:
         return None, "HANDLE_BELOW_CUP_MID"
@@ -1935,16 +1960,16 @@ def _ready_candidate(
     length_score = 6.0 if 7 <= handle_bars <= 10 else 4.0
     depth_score = (
         5.0
-        if depth_pct <= Decimal("0.08")
+        if depth_pct <= Fraction(8, 100)
         else 3.0
-        if depth_pct <= Decimal("0.12")
+        if depth_pct <= Fraction(12, 100)
         else 1.0
     )
     retrace_score = (
         5.0
-        if handle_retrace <= Decimal("0.20")
+        if handle_retrace <= Fraction(20, 100)
         else 3.0
-        if handle_retrace <= Decimal("0.28")
+        if handle_retrace <= Fraction(28, 100)
         else 1.0
     )
     handle_score = length_score + depth_score + retrace_score + 4.0
@@ -2077,16 +2102,17 @@ def _breakout_facts(
     previous = by_index.get(current.eligible_index - 1)
     if previous is None:
         return None, False
-    pivot = _normal(active.direction, active.pivot_price)
-    current_threshold = pivot + _decimal_parameter(
+    pivot = _normal_fraction(active.direction, active.pivot_price)
+    current_threshold = pivot + _rational_parameter(
         profile.cup_breakout_buffer_atr
-    ) * _decimal_parameter(current.atr)
-    previous_threshold = pivot + _decimal_parameter(
+    ) * Fraction(Decimal(str(current.atr)))
+    previous_threshold = pivot + _rational_parameter(
         profile.cup_breakout_buffer_atr
-    ) * _decimal_parameter(previous.atr)
+    ) * Fraction(Decimal(str(previous.atr)))
     crossed = (
-        _normal(active.direction, current.bar.close) > current_threshold
-        and _normal(active.direction, previous.bar.close) <= previous_threshold
+        _normal_fraction(active.direction, current.bar.close) > current_threshold
+        and _normal_fraction(active.direction, previous.bar.close)
+        <= previous_threshold
     )
     if not crossed:
         return None, False
@@ -2302,12 +2328,14 @@ def step_cup_handle(
         CupHandleState.WEAKENED,
     }:
         assert active.handle_extreme is not None and active.pivot_price is not None
-        normalized_close = _normal(active.direction, bar.close)
-        normalized_handle = _normal(active.direction, active.handle_extreme.price)
-        normalized_pivot = _normal(active.direction, active.pivot_price)
-        invalidation = normalized_handle - _decimal_parameter(
+        normalized_close = _normal_fraction(active.direction, bar.close)
+        normalized_handle = _normal_fraction(
+            active.direction, active.handle_extreme.price
+        )
+        normalized_pivot = _normal_fraction(active.direction, active.pivot_price)
+        invalidation = normalized_handle - _rational_parameter(
             profile.cup_breakout_buffer_atr
-        ) * _decimal_parameter(snapshot.atr)
+        ) * Fraction(Decimal(str(snapshot.atr)))
         if normalized_close < invalidation:
             state_before = active.state
             terminal_overlay = replace(

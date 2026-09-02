@@ -925,6 +925,33 @@ def test_decimal_depth_just_outside_hard_limits_never_emits_ready(
     )
 
 
+def test_decimal_depth_beyond_context_precision_stays_below_ten_percent() -> None:
+    """Default Decimal division precision must not round a shallow cup into READY."""
+
+    case = restored_cup_case(
+        left_price=Decimal("100"),
+        bottom_price=Decimal("90." + "0" * 27 + "1"),
+        right_price=Decimal("100"),
+        handle_price=Decimal("97"),
+    )
+    snapshots = list(case.state.eligible_bars)
+    bottom = case.state.confirmed_pivots[1]
+    snapshots[bottom.pivot_index] = replace(
+        snapshots[bottom.pivot_index],
+        bar=replace(snapshots[bottom.pivot_index].bar, low=bottom.price),
+    )
+    case = replace(case, state=replace(case.state, eligible_bars=tuple(snapshots)))
+
+    result = step_cup_handle(case.state, case.next_bar)
+
+    assert "CUP_DEPTH_BELOW_10_PERCENT" in result.diagnostics
+    assert result.active_overlay is None
+    assert not any(
+        marker.marker_type == NewowMarkerType.CUP_HANDLE_READY
+        for marker in result.markers
+    )
+
+
 @pytest.mark.parametrize(
     ("case_kwargs", "rounded_failure"),
     (
