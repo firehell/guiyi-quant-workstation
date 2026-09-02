@@ -117,7 +117,13 @@ class MarketHomeProjectionStore:
                 encoded,
                 strict=True,
             )
-        except (TypeError, ValueError, ValidationError, UnicodeDecodeError):
+        except (
+            RecursionError,
+            TypeError,
+            ValueError,
+            ValidationError,
+            UnicodeDecodeError,
+        ):
             return None
         if (
             envelope.target_as_of != identity.target_as_of

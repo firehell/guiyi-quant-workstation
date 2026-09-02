@@ -207,6 +207,14 @@ def test_projection_store_missing_symlink_empty_oversize_and_corrupt_are_misses(
     assert store.load(IDENTITY) is None
 
 
+def test_projection_store_deeply_nested_json_is_a_miss(tmp_path: Path) -> None:
+    path = tmp_path / "market-home-overview.json"
+    store = MarketHomeProjectionStore(path)
+    path.write_text("[" * 10_000 + "]" * 10_000, encoding="utf-8")
+
+    assert store.load(IDENTITY) is None
+
+
 def test_projection_store_rejects_schema_target_digest_and_payload_identity_mismatch(
     tmp_path: Path,
 ) -> None:
