@@ -65,6 +65,20 @@ pnpm --dir apps/quant-web build
 pnpm --dir apps/quant-web test:e2e
 ```
 
+Market Home targeted contracts、四个截图视口与三资源请求约束：
+
+```bash
+pnpm -C apps/quant-web exec node --test \
+  tests/marketHomeTypes.test.ts \
+  tests/marketHomeIcons.test.ts \
+  tests/marketHomeViewModel.test.ts \
+  tests/marketHomeResource.test.ts \
+  tests/marketHomeWorkspace.test.ts \
+  tests/marketHomePreferences.test.ts \
+  tests/marketHomeRoute.test.ts
+pnpm --dir apps/quant-web exec playwright test -c playwright.config.mjs e2e/market-home.spec.mjs
+```
+
 ## 工程一致性与静态检查
 
 ```bash

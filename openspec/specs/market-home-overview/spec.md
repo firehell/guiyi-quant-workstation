@@ -87,3 +87,26 @@ registry-owned HTDY Rule 的 exact trading day `AlertEvent`。`limit` MUST 在 1
 
 - **WHEN** current trading day 已解析且没有 registry HTDY Event
 - **THEN** response 返回 `status=ready` 和空 items；这不代表 Runtime 正常静默
+
+### Requirement: Market Home Web preserves independent read authorities
+
+`/market` SHALL 在首屏并行读取且只读取一次 Market Home overview、Runtime health 和 current HTDY
+Event。页面 MUST 保留各资源最后一次成功快照，并把失败单独标识为 stale/unavailable；它不得由
+Runtime heartbeat 推导 overview/HTDY 状态，也不得由 Event 空列表推导策略正常静默。浏览器不得调用
+product dominants、发起 per-product 请求、WebSocket 或任何写请求。
+
+#### Scenario: A resource becomes unavailable after a successful snapshot
+
+- **WHEN** overview、Runtime 或 current Event 任一刷新失败
+- **THEN** 页面保留该资源的最后成功快照并仅将该资源标为 stale；其他两项事实保持独立
+
+### Requirement: Market Home uses frozen non-trading visual semantics
+
+图标色值 SHALL 为上行 `#E63935`、周期同向 `#FF9601`、下行 `#35C759`、中性 `#017AFF`、数据不足
+`#98A2B3`，对应尺寸为 Legend 40px、表格状态 28px、Trend/HTDY micro 24px。图标必须有中文可访问语义，
+业务文案只能使用上行、周期同向、下行、中性、数据不足；不得改写为买入、持股、卖出、空仓、建仓、清仓或订单语义。
+
+#### Scenario: A user reads a state icon without color
+
+- **WHEN** Market Home displays a frozen state icon
+- **THEN** it has the approved size, color and Chinese accessible label, while the adjacent Event copy remains an observation rather than a trading instruction

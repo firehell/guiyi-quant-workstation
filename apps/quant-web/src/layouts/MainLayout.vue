@@ -65,6 +65,8 @@ const activeKey = computed(() => {
   const name = route.name as string
   return CHILD_ROUTE_MENU_KEY[name] || name
 })
+const isFullscreenMarketRoute = computed(() => route.name === 'market' || route.name === 'market-chart')
+const showSidebarTrigger = computed(() => !isFullscreenMarketRoute.value)
 
 const breadcrumbItems = computed(() => {
   if (route.name === 'market-chart') return ['行情看板', '品种行情']
@@ -116,14 +118,15 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <NLayout has-sider class="main-layout">
+  <NLayout :has-sider="!isFullscreenMarketRoute" class="main-layout">
     <NLayoutSider
+      v-if="!isFullscreenMarketRoute"
       bordered
       collapse-mode="width"
       :collapsed-width="64"
       :width="220"
       :collapsed="collapsed"
-      show-trigger
+      :show-trigger="showSidebarTrigger"
       class="sidebar"
       @collapse="setCollapsed(true)"
       @expand="setCollapsed(false)"
@@ -154,8 +157,8 @@ onUnmounted(() => {
       </div>
     </NLayoutSider>
 
-    <NLayout class="workspace">
-      <NLayoutHeader bordered class="header">
+    <NLayout class="workspace" :class="{ 'workspace--fullscreen': isFullscreenMarketRoute }">
+      <NLayoutHeader v-if="!isFullscreenMarketRoute" bordered class="header">
         <NBreadcrumb class="header__breadcrumb">
           <NBreadcrumbItem v-for="item in breadcrumbItems" :key="item">{{ item }}</NBreadcrumbItem>
         </NBreadcrumb>
@@ -175,7 +178,7 @@ onUnmounted(() => {
           <time class="header__clock gy-number">{{ clockText }}</time>
         </div>
       </NLayoutHeader>
-      <NLayoutContent class="content">
+      <NLayoutContent class="content" :class="{ 'content--fullscreen': isFullscreenMarketRoute }">
         <RouteErrorFallback
           v-if="routeError"
           :error="routeError"
@@ -279,6 +282,10 @@ onUnmounted(() => {
   min-width: 0;
 }
 
+.workspace--fullscreen {
+  height: 100vh;
+}
+
 .header {
   position: relative;
   z-index: 5;
@@ -343,6 +350,10 @@ onUnmounted(() => {
   padding: var(--gy-content-padding);
   overflow: auto;
   background: var(--gy-bg-app);
+}
+
+.content--fullscreen {
+  height: 100vh;
 }
 
 @media (max-width: 1199px) {
