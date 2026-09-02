@@ -139,12 +139,59 @@ RETIRED_MODULE_ATTRIBUTES = {
         "build_subing_strategy_service",
     ),
 }
-ALERT_RULE_CODES = frozenset({"htdy_original_15m"})
+ALERT_RULE_CODES = frozenset({"htdy_original_15m", "subing_ths_alert_15m_v1"})
+SUBING_THS_FORMULA_VERSION = "subing_ths_15m_v2"
 BACKEND_ALERT_RULE_LITERAL_EXPECTED = {
     "htdy_original_15m": {
         "services/quant-api/app/alerts/registry.py": 2,
         "services/quant-api/app/schemas/alerts.py": 1,
     },
+    "subing_ths_alert_15m_v1": {
+        "services/quant-api/app/alerts/registry.py": 2,
+        "services/quant-api/app/schemas/alerts.py": 1,
+    },
+}
+
+ALERT_CANONICAL_REQUIREMENTS = {
+    "AGENTS.md": (
+        "subing_ths_alert_15m_v1",
+        "completed actual_dominant 15m",
+        "schema v6",
+        "G10",
+        "G9",
+    ),
+    "PROJECT_SOURCE.md": (
+        "苏冰预警",
+        SUBING_THS_FORMULA_VERSION,
+        "EMA(CLOSE, 21)",
+        "completed actual_dominant 15m",
+        "零轴、Range、量能/OI、ATR、EMA 斜率与多周期共振都不是 V1 Gate",
+    ),
+    "DECISIONS.md": (
+        "subing_ths_alert_15m_v1",
+        SUBING_THS_FORMULA_VERSION,
+        "exact Event",
+        "Event 先提交",
+    ),
+    "docs/ARCHITECTURE.md": (
+        "SubingThs15mEvaluator",
+        "single Alert Runtime",
+        "S↑/S↓",
+        "no SuBing overlay",
+    ),
+    "TESTING.md": (
+        "test_subing_ths_kernel.py",
+        "test_subing_scope_activation.py",
+        "test_subing_ths_alert_migration.py",
+        "GUIYI_ISOLATED_MIGRATION_DATABASE_URL",
+    ),
+    "openspec/specs/subing-ths-alert/spec.md": (
+        "subing_ths_alert_15m_v1",
+        SUBING_THS_FORMULA_VERSION,
+        "EMA(CLOSE, 21)",
+        "G10",
+        "G9",
+    ),
 }
 
 
@@ -326,7 +373,7 @@ def test_release_versions_are_consistent() -> None:
         web["version"],
         *lock_versions,
         *app_versions,
-    } == {"1.9.12"}
+    } == {"1.9.13"}
     assert "version=APP_VERSION" in api
     assert '"version": APP_VERSION' in api
 
@@ -348,6 +395,96 @@ def test_alert_rule_codes_have_one_production_registry_per_language() -> None:
         text=True,
     )
     assert frontend.stdout.strip().splitlines()[-1] == "[alert-rule-ownership] passed"
+
+
+def test_active_alert_canonical_matches_the_two_rule_code_contract() -> None:
+    registry = importlib.import_module("app.alerts.registry")
+    kernel_module = importlib.import_module("guiyi_quant.indicators.subing_ths")
+
+    definitions = {
+        definition.rule_code: definition
+        for definition in registry.alert_rule_definitions()
+    }
+    assert frozenset(definitions) == ALERT_RULE_CODES
+    assert definitions["htdy_original_15m"].event_mode.value == "first_seen"
+    subing = definitions["subing_ths_alert_15m_v1"]
+    assert subing.display_name == "苏冰预警"
+    assert subing.kind.value == "indicator_observation"
+    assert subing.event_mode.value == "exact"
+    assert subing.input_frequencies == ("15m",)
+    assert subing.series_kind == "actual_dominant"
+
+    kernel = kernel_module.SubingThs15mKernel
+    assert kernel.formula_version == SUBING_THS_FORMULA_VERSION
+    assert (kernel.fast, kernel.slow, kernel.signal) == (12, 26, 9)
+    assert kernel.ema_period == 21
+    assert kernel.ema_seed_policy == "sma_window"
+    assert kernel.histogram_scale == 2
+    assert kernel.round_digits == 6
+    kernel_source = (ROOT / "packages/quant-core/guiyi_quant/indicators/subing_ths.py").read_text(
+        encoding="utf-8"
+    )
+    assert "step_ema(state.ema21, close" in kernel_source
+
+    migration_source = (
+        ROOT
+        / "services/quant-api/alembic/versions/20260902_0044_subing_ths_alert.py"
+    ).read_text(encoding="utf-8")
+    assert "enabled=False" in migration_source
+    assert "scope_product_frequencies={}" in migration_source
+
+    service_source = (
+        ROOT / "services/quant-api/app/alerts/service.py"
+    ).read_text(encoding="utf-8")
+    scope_method = service_source.split(
+        "def set_product_frequency_enabled", maxsplit=1
+    )[1].split("def rule_allows_event", maxsplit=1)[0]
+    assert scope_method.index("if not rule.enabled:") < scope_method.index(
+        "rule.scope_product_frequencies ="
+    )
+
+    activation_source = (
+        ROOT / "services/quant-api/app/alerts/subing_scope_activation.py"
+    ).read_text(encoding="utf-8")
+    assert "def activate_subing_ths_scope(" in activation_source
+    assert "with_for_update()" in activation_source
+    assert "session.commit()" in activation_source
+    assert "session.expire_all()" in activation_source
+
+    runtime_source = (
+        ROOT / "services/quant-api/app/alerts/runtime.py"
+    ).read_text(encoding="utf-8")
+    prepare_event = runtime_source.split(
+        "def _persist_candidate_and_prepare_notification", maxsplit=1
+    )[1].split("class AlertRuntime", maxsplit=1)[0]
+    assert prepare_event.index("service.create") < prepare_event.index(
+        "AlertNotificationMessage("
+    )
+    send_once = runtime_source.split("def _send_messages_once", maxsplit=1)[1].split(
+        "def _record_notification_failure", maxsplit=1
+    )[0]
+    assert send_once.count("self._sender.send(message)") == 1
+    assert "retry" not in send_once.lower()
+
+
+def test_active_canonical_documents_the_rule_split_and_formula_gates() -> None:
+    for relative, required_terms in ALERT_CANONICAL_REQUIREMENTS.items():
+        path = ROOT / relative
+        assert path.is_file(), relative
+        source = path.read_text(encoding="utf-8")
+        for term in required_terms:
+            assert term in source, (relative, term)
+
+    market_home = (
+        ROOT / "openspec/specs/market-home-overview/spec.md"
+    ).read_text(encoding="utf-8")
+    assert "current Alert Events" in market_home
+    assert "Current Alert Events endpoint" in market_home
+
+    subing_spec = (
+        ROOT / "openspec/specs/subing-ths-alert/spec.md"
+    ).read_text(encoding="utf-8")
+    assert subing_spec.index("G10") < subing_spec.index("G9")
 
 
 def test_release_candidate_excludes_private_sources() -> None:

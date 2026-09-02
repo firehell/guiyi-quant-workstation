@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.market_data.composition import (
     build_market_data_service,
-    build_market_home_overview_service,
+    build_market_home_projection,
     build_market_research_service,
 )
 from app.market_data.domain import (
@@ -30,10 +30,7 @@ from app.schemas.market import (
     DominantContractOut,
     MarketBarOut,
     MarketBarsPageResponse,
-    MarketHomeItemOut,
     MarketHomeOverviewResponse,
-    MarketHomeSectorOut,
-    MarketHomeSummaryOut,
     MarketPageMetaOut,
     ProductResearchResponse,
 )
@@ -46,60 +43,9 @@ def market_home_overview(
     session: Session = Depends(get_db),
 ) -> MarketHomeOverviewResponse:
     try:
-        snapshot = build_market_home_overview_service(session).snapshot()
+        return build_market_home_projection(session).read()
     except MarketHomeOverviewError as exc:
         raise HTTPException(status_code=409, detail={"code": exc.code}) from exc
-    return MarketHomeOverviewResponse(
-        status=snapshot.status,
-        target_as_of=snapshot.target_as_of,
-        data_as_of=snapshot.data_as_of,
-        freshness=snapshot.freshness,
-        active_count=snapshot.active_count,
-        participant_count=snapshot.participant_count,
-        stale_count=snapshot.stale_count,
-        unavailable_count=snapshot.unavailable_count,
-        summary=MarketHomeSummaryOut(
-            price_up_count=snapshot.summary.price_up_count,
-            price_down_count=snapshot.summary.price_down_count,
-            price_flat_count=snapshot.summary.price_flat_count,
-            daily_up_count=snapshot.summary.daily_up_count,
-            daily_down_count=snapshot.summary.daily_down_count,
-            daily_neutral_count=snapshot.summary.daily_neutral_count,
-            daily_unavailable_count=snapshot.summary.daily_unavailable_count,
-            aligned_up_count=snapshot.summary.aligned_up_count,
-            aligned_down_count=snapshot.summary.aligned_down_count,
-        ),
-        items=[
-            MarketHomeItemOut(
-                symbol=item.symbol,
-                product_name=item.product_name,
-                sector=item.sector,
-                exchange=item.exchange,
-                actual_contract=item.actual_contract,
-                dominant_mapping_date=item.dominant_mapping_date,
-                data_as_of=item.data_as_of,
-                close=item.close,
-                price_change_1d=item.price_change_1d,
-                price_change_5d=item.price_change_5d,
-                volume_ratio20=item.volume_ratio20,
-                oi_change_1d=item.oi_change_1d,
-                atr14_percentile252=item.atr14_percentile252,
-                daily_trend=item.daily_trend,
-                weekly_trend=item.weekly_trend,
-                reason_codes=list(item.reason_codes),
-            )
-            for item in snapshot.items
-        ],
-        sectors=[
-            MarketHomeSectorOut(
-                sector=sector.sector,
-                active_count=sector.active_count,
-                participant_count=sector.participant_count,
-                median_price_change_1d=sector.median_price_change_1d,
-            )
-            for sector in snapshot.sectors
-        ],
-    )
 
 
 @router.get("/bars/page", response_model=MarketBarsPageResponse)

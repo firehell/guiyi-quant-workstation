@@ -8,8 +8,8 @@
 from __future__ import annotations
 
 import argparse
-from datetime import date
 import json
+from datetime import date
 from typing import TextIO
 
 from app.market_data.historical_data_manager import (
@@ -19,8 +19,12 @@ from app.market_data.historical_data_manager import (
     RefreshRequest,
     UpdateRequest,
 )
-from app.market_data.product_retirement import assert_not_retired
+from app.market_data.market_home_projection import (
+    MarketHomeProjectionStore,
+    market_home_projection_path,
+)
 from app.market_data.operational_universe import load_active_products
+from app.market_data.product_retirement import assert_not_retired
 
 
 def build_request(args: argparse.Namespace):
@@ -63,6 +67,12 @@ def run_data_command(
     if args.data_command == "audit" and bool(getattr(args, "progress", False)):
         assert progress_stream is not None
         return manager.audit(request, observer=_audit_progress_writer(progress_stream))
+    if isinstance(request, (UpdateRequest, RefreshRequest)) and request.apply:
+        projection_invalidate = MarketHomeProjectionStore(
+            market_home_projection_path(manager.catalog.canonical_root)
+        ).invalidate
+        action = getattr(manager, args.data_command)
+        return action(request, before_apply=projection_invalidate)
     action = getattr(manager, args.data_command)
     return action(request)
 

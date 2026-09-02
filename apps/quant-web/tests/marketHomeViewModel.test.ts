@@ -69,6 +69,22 @@ test('joins the latest immutable Event by exact symbol without inferring Event s
   }))
 })
 
+test('allows two Rules at the same formal Bar and keeps the latest row Event deterministic', () => {
+  const htdy = event(1, 'ag', '2026-09-02T01:00:00Z')
+  const subing = {
+    ...event(2, 'ag', '2026-09-02T01:00:01Z'),
+    rule_code: 'subing_ths_alert_15m_v1' as const,
+    result_codes: ['sell'] as ['sell'],
+    bar_end: htdy.bar_end,
+  } as never
+  const value = buildMarketHomeViewModel({
+    overview: overview(), overviewStale: false, runtime, runtimeStale: false,
+    events: { status: 'ready', trading_day: '2026-09-02', items: [htdy, subing] }, eventsStale: false,
+  })
+
+  assert.equal(value.rows[0]!.event?.id, 2)
+})
+
 test('withholds cached Event facts from rows while the current Event projection is unavailable', () => {
   const cached = event(9, 'ag', '2026-09-02T02:00:00Z')
   const value = buildMarketHomeViewModel({

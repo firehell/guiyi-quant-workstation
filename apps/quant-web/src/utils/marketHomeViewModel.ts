@@ -1,10 +1,11 @@
 import type {
   AlertEvent,
-  CurrentHtdyEventsResponse,
+  CurrentAlertEventsResponse,
   MarketHomeOverviewItem,
   MarketHomeOverviewResponse,
   MarketHomeTrend,
 } from '../types/market.ts'
+import { alertEventIdentityKey } from './alertRules.ts'
 
 export type MarketHomeAlignment = 'aligned-up' | 'aligned-down' | 'neutral' | 'unavailable' | 'mixed'
 export type MarketHomeAvailability = 'ready' | 'degraded' | 'unavailable' | 'empty'
@@ -14,7 +15,7 @@ export interface MarketHomeViewModelInput {
   overviewStale: boolean
   runtime: { status: string } | null
   runtimeStale: boolean
-  events: CurrentHtdyEventsResponse | null
+  events: CurrentAlertEventsResponse | null
   eventsStale: boolean
   eventsUnavailable?: boolean
 }
@@ -74,8 +75,8 @@ function latestEventsBySymbol(events: AlertEvent[]): Map<string, AlertEvent> {
   const identities = new Set<string>()
   const latest = new Map<string, AlertEvent>()
   for (const event of events) {
-    const identity = `${event.symbol}:${event.frequency}:${event.bar_end}`
-    if (identities.has(identity)) throw new Error('current HTDY events contain conflicting identities')
+    const identity = alertEventIdentityKey(event)
+    if (identities.has(identity)) throw new Error('current Alert events contain conflicting identities')
     identities.add(identity)
     const previous = latest.get(event.symbol)
     if (!previous || compareEvent(event, previous) > 0) latest.set(event.symbol, event)

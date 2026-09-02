@@ -7,12 +7,15 @@ import type {
 } from '../types/market.ts'
 import {
   ALERT_RULE_PRESENTATIONS,
+  ALERT_RULE_CODES,
   type AlertRuleCode,
   alertEventDirectionalTone,
   alertEventIdentityKey,
   alertEventMarkerTone,
   alertEventResultLabel,
+  alertEventRuleCode,
   isHtdyAlertEvent,
+  isSubingThsAlertEvent,
 } from './alertRules.ts'
 
 export function isPersistentAlertIdentity(
@@ -35,7 +38,28 @@ export function markerRuleCodes(
 export function alertEventsToMarkers(events: AlertEvent[]): KlineMarker[] {
   return [...events]
     .sort((left, right) => Date.parse(left.bar_end) - Date.parse(right.bar_end))
-    .flatMap((event) => {
+    .flatMap<KlineMarker>((event): KlineMarker[] => {
+      if (isSubingThsAlertEvent(event)) {
+        const direction = event.result_codes[0]
+        if (direction !== 'buy' && direction !== 'sell') return []
+        const rising = direction === 'buy'
+        return [{
+          id: `alert:${alertEventIdentityKey(event)}`,
+          time: event.bar_end,
+          label: rising ? 'S↑' : 'S↓',
+          tooltip: [
+            '苏冰预警',
+            rising ? 'MACD 金叉' : 'MACD 死叉',
+            rising ? '收盘价位于 EMA21 上方' : '收盘价位于 EMA21 下方',
+            event.contract,
+            `信号K线 ${shanghaiHm(event.bar_end)}`,
+          ].join(' · '),
+          tone: rising ? 'up' : 'down',
+          position: rising ? 'belowBar' as const : 'aboveBar' as const,
+          shape: rising ? 'arrowUp' as const : 'arrowDown' as const,
+          alertRuleCode: alertEventRuleCode(event),
+        }]
+      }
       if (!isHtdyAlertEvent(event)) return []
       const observations = event.result_codes.filter(
         (item): item is 'buy' | 'sell' => item === 'buy' || item === 'sell',
@@ -57,6 +81,7 @@ export function alertEventsToMarkers(events: AlertEvent[]): KlineMarker[] {
         tone: markerTone(event, observations),
         position: 'aboveBar' as const,
         shape: 'square' as const,
+        alertRuleCode: alertEventRuleCode(event),
       }]
     })
 }
@@ -70,12 +95,14 @@ function shanghaiHm(value: string): string {
   }).format(new Date(value))
 }
 
-/** HTDY persistent observation markers are display-only under the HTDY overlay. */
 export function alertMarkersForOverlay(
   overlay: ResearchOverlayId,
   markers: readonly KlineMarker[],
 ): KlineMarker[] {
-  return overlay === 'htdy' ? [...markers] : []
+  return markers.filter((marker) => (
+    marker.alertRuleCode === ALERT_RULE_CODES.SUBING_THS
+    || (overlay === 'htdy' && marker.alertRuleCode === ALERT_RULE_CODES.HTDY)
+  ))
 }
 
 function markerTone(
@@ -83,7 +110,7 @@ function markerTone(
   observations: AlertEvent['result_codes'],
 ): KlineMarker['tone'] {
   const registeredTone = alertEventMarkerTone(event)
-  if (registeredTone) return registeredTone
+  if (registeredTone === 'htdy') return registeredTone
   const direction = alertEventDirectionalTone(
     event,
     observations.filter((item): item is 'buy' | 'sell' => item === 'buy' || item === 'sell'),

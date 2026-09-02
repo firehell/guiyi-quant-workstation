@@ -98,7 +98,7 @@ def test_registry_uses_per_indicator_frequency_contracts() -> None:
 
 def test_alert_rule_capabilities_keep_stable_identity_and_exact_frequencies() -> None:
     """Catches Rule identity or authoritative-input frequency drift."""
-    from app.alerts.registry import HTDY_RULE, alert_rule_definitions
+    from app.alerts.registry import HTDY_RULE, SUBING_THS_RULE, alert_rule_definitions
 
     assert HTDY_RULE.input_frequencies == (
         "1m",
@@ -110,7 +110,9 @@ def test_alert_rule_capabilities_keep_stable_identity_and_exact_frequencies() ->
         "1w",
     )
     assert HTDY_RULE.rule_code == "htdy_original_15m"
-    assert alert_rule_definitions() == (HTDY_RULE,)
+    assert SUBING_THS_RULE.input_frequencies == ("15m",)
+    assert SUBING_THS_RULE.rule_code == "subing_ths_alert_15m_v1"
+    assert alert_rule_definitions() == (HTDY_RULE, SUBING_THS_RULE)
 
 
 def test_strategy_candidate_cannot_enable_live_or_alert() -> None:

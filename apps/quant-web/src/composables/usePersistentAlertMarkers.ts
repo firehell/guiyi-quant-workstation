@@ -1,6 +1,6 @@
 import { ref } from 'vue'
 import type { AlertEventListResponse } from '../api/alerts.ts'
-import type { BarData, KlineMarker, MarketFrequency, SeriesKind } from '../types/market.ts'
+import type { AlertRuleCode, BarData, KlineMarker, MarketFrequency, SeriesKind } from '../types/market.ts'
 import { alertEventsToMarkers, isPersistentAlertIdentity, markerRuleCodes } from '../utils/alertMarkers.ts'
 import { alertEventIdentityKey, matchesAlertRuleCode } from '../utils/alertRules.ts'
 
@@ -15,7 +15,7 @@ export interface AlertMarkerIdentity {
 
 interface AlertEventRequest {
   symbol: string
-  ruleCode: string
+  ruleCode: AlertRuleCode
   start: string
   end: string
 }
