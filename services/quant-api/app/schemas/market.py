@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from decimal import Decimal
-from pydantic import BaseModel
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict
 
 
 class MarketBarOut(BaseModel):
@@ -90,3 +92,63 @@ class ProductResearchResponse(BaseModel):
     turnover_change_5d: Decimal | None
     atr14_percentile252: Decimal | None
     recent_daily: list[MarketBarOut]
+
+
+class MarketHomeSummaryOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    price_up_count: int
+    price_down_count: int
+    price_flat_count: int
+    daily_up_count: int
+    daily_down_count: int
+    daily_neutral_count: int
+    daily_unavailable_count: int
+    aligned_up_count: int
+    aligned_down_count: int
+
+
+class MarketHomeItemOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    symbol: str
+    product_name: str
+    sector: str
+    exchange: str
+    actual_contract: str
+    dominant_mapping_date: date
+    data_as_of: date
+    close: Decimal
+    price_change_1d: Decimal | None
+    price_change_5d: Decimal | None
+    volume_ratio20: Decimal | None
+    oi_change_1d: Decimal | None
+    atr14_percentile252: Decimal | None
+    daily_trend: Literal["up", "down", "neutral", "unavailable"]
+    weekly_trend: Literal["up", "down", "neutral", "unavailable"]
+    reason_codes: list[str]
+
+
+class MarketHomeSectorOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    sector: str
+    active_count: int
+    participant_count: int
+    median_price_change_1d: Decimal | None
+
+
+class MarketHomeOverviewResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["ready", "degraded"]
+    target_as_of: date
+    data_as_of: date
+    freshness: Literal["fresh", "stale", "unavailable"]
+    active_count: int
+    participant_count: int
+    stale_count: int
+    unavailable_count: int
+    summary: MarketHomeSummaryOut
+    items: list[MarketHomeItemOut]
+    sectors: list[MarketHomeSectorOut]
