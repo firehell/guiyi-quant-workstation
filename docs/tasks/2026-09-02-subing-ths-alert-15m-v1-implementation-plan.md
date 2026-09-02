@@ -33,6 +33,24 @@
 - Packet 顺序固定 `S1 → S2 → S3 → S4 → S5`。前一个 Packet 未合入 `develop`，不得开始后一个。
 - 普通实现阶段不得触碰 `main`、tag、GitHub Release、production PostgreSQL/Redis/Scope、Git-external notification config、真实 PushPlus 或 Runtime promotion。
 
+### Normative safety amendment for the approved Spec
+
+批准 Spec 内部存在一个必须 fail-closed 处理的 Gate 顺序冲突：
+
+- §20 明确规定：同花顺兼容性 evidence **未通过不得启用真实 SuBing Rule**；
+- §22 的列表却把 `G9 production Scope activation + Rule enable` 排在 `G10 同花顺兼容性 evidence` 之前。
+
+本 Plan 不猜测“哪一条可以忽略”，而采用更严格且与 §20 的直接安全要求一致的执行顺序：
+
+```text
+0044 DB + exact-tag Runtime 就绪，但 SuBing Rule 保持 disabled + empty scope
+→ 先完成同花顺兼容性 evidence（Spec G10，read-only，不发送）
+→ evidence 通过后才允许 Scope activation + Rule enable（Spec G9）
+→ 再等待自然 15m Event / one-shot transport
+```
+
+因此未来执行顺序是 **G10 before G9**。Gate 名称仍沿用 Spec，只有顺序被安全收紧。本 Plan 的用户批准即视为对这一冲突处理方式的明确批准；若用户不同意，必须先修订 Spec/Plan，不能进入实现。
+
 ---
 
 ## Current Repository Facts That Drive The Plan
@@ -68,7 +86,7 @@
 
 - Modify `services/quant-api/app/alerts/registry.py`：第二 Rule、event mode。
 - Modify `services/quant-api/app/alerts/evaluators.py`：generic candidate/evaluator protocol + `SubingThs15mEvaluator`。
-- Modify `services/quant-api/app/alerts/service.py`：沿现有 exact Event 创建路径复用，不复制数据库写逻辑；必要时只增加窄 helper。
+- Modify `services/quant-api/app/alerts/service.py`：沿现有 exact Event 创建路径复用，不复制数据库写逻辑。
 - Modify `services/quant-api/app/alerts/notification.py`：rule notification policy、SuBing formatter、shared observers audience。
 - Modify `services/quant-api/app/alerts/notification_composition.py`：构造支持两条 Rule 的 dispatcher，不改变私有配置 schema。
 - Modify `services/quant-api/app/alerts/runtime.py`：evaluator map、event mode、rule status v6、SuBing 15m only。
@@ -80,25 +98,19 @@
 
 - Modify `services/quant-api/app/schemas/alerts.py`：两条 Rule 的 exact union DTO。
 - Modify `services/quant-api/app/api/alerts.py`：真实 rule_code serializer、mixed current-events。
-- Modify backend API tests：`services/quant-api/tests/test_alert_api.py`。
-- Modify `apps/quant-web/src/types/market.ts`：generic AlertEvent union。
-- Modify `apps/quant-web/src/api/alerts.ts`：增加全局 `getCurrentAlertEvents()`。
-- Modify `apps/quant-web/src/utils/alertRules.ts`：SuBing presentation。
-- Modify `apps/quant-web/src/utils/alertMarkers.ts`：`S↑/S↓`、HTDY/SuBing 可见性分离。
-- Modify `apps/quant-web/src/composables/usePersistentAlertMarkers.ts`：复用两 Rule 并保持单次按 Rule 请求，不产生 per-product O(N)。
-- Create `apps/quant-web/src/components/market/MarketRecentSubingAlerts.vue`：最近苏冰预警小组件。
-- Modify `apps/quant-web/src/pages/market/index.vue`：一次全局 current-events 读取并注入组件。
-- Modify `apps/quant-web/src/pages/market/chart.vue`：`focus_bar_end` deep link + 现有 `revealTime()`。
-- Modify `apps/quant-web/scripts/checkAlertRuleOwnership.mjs` 与 Web unit/E2E tests，保证两 Rule ownership 与“Web 不算正式公式”。
+- Modify `services/quant-api/tests/test_alert_api.py`。
+- Modify `apps/quant-web/src/types/market.ts`、`src/api/alerts.ts`、`src/utils/alertRules.ts`、`src/utils/alertMarkers.ts`、`src/composables/usePersistentAlertMarkers.ts`。
+- Create `apps/quant-web/src/components/market/MarketRecentSubingAlerts.vue`。
+- Modify `apps/quant-web/src/pages/market/index.vue`、`src/pages/market/chart.vue`。
+- Modify `apps/quant-web/scripts/checkAlertRuleOwnership.mjs` 与相关 unit/E2E tests。
 
 ### S4 — Migration 0044 + atomic Scope activation seam
 
-- Create `services/quant-api/alembic/versions/20260902_0044_subing_ths_alert.py`：0043 后 data-only Rule insertion。
-- Create `services/quant-api/tests/alembic/test_subing_ths_alert_migration.py`：0042→0043→0044、forward-only failure contract。
-- Create `services/quant-api/app/alerts/subing_scope_activation.py`：dry-run + one-transaction first activation。
-- Modify `services/quant-api/app/guiyi_cli/main.py`：`guiyi runtime subing-ths-scope [--apply]`。
-- Modify `services/quant-api/tests/test_alert_cli.py`：只读 plan / apply fake DB seam / redaction。
-- Modify `services/quant-api/tests/test_alert_service.py` only if activation helper reuses service-level validation；不要把 admin-only mutation 塞进 HTTP handler。
+- Create `services/quant-api/alembic/versions/20260902_0044_subing_ths_alert.py`。
+- Create `services/quant-api/tests/alembic/test_subing_ths_alert_migration.py`。
+- Create `services/quant-api/app/alerts/subing_scope_activation.py`。
+- Create `services/quant-api/tests/test_subing_scope_activation.py`。
+- Modify `services/quant-api/app/guiyi_cli/main.py`、`services/quant-api/tests/test_alert_cli.py`。
 
 ### S5 — Canonical / OpenSpec / full verification / RC handoff
 
@@ -133,13 +145,11 @@
 
 - [ ] **Step 1: Write the failing SMA tests**
 
-Add tests that freeze warm-up, exact arithmetic mean, rolling eviction, invalid reset and six-decimal projection:
-
 ```python
 from guiyi_quant.indicators import initial_sma_state, step_sma
 
 
-def test_sma21_warms_then_rolls_exactly() -> None:
+def test_sma_warms_then_rolls_exactly() -> None:
     state = initial_sma_state(3, round_digits=6)
     for value in (1.0, 2.0):
         state, point = step_sma(state, value, bar_end=None)
@@ -150,7 +160,7 @@ def test_sma21_warms_then_rolls_exactly() -> None:
     assert point.valid is True
     assert point.value == 2.0
     state, point = step_sma(state, 6.0, bar_end=None)
-    assert point.value == 11 / 3 if False else 3.666667
+    assert point.value == 3.666667
 
 
 def test_sma_invalid_input_breaks_continuity() -> None:
@@ -163,8 +173,6 @@ def test_sma_invalid_input_breaks_continuity() -> None:
     state, next_point = step_sma(state, 4.0, bar_end=None)
     assert next_point.ready is False
 ```
-
-The odd-looking first assertion must be written in final test as `assert point.value == 3.666667`; do not retain the dead conditional shown above when committing.
 
 - [ ] **Step 2: Run the focused test and confirm RED**
 
@@ -188,10 +196,11 @@ class SmaState:
     round_digits: int = 6
 ```
 
-Create `sma.py` with the exact public shape:
+Create `sma.py`:
 
 ```python
 def initial_sma_state(period: int, *, round_digits: int = 6) -> SmaState: ...
+
 
 def step_sma(
     state: SmaState,
@@ -220,8 +229,6 @@ PYTHONPATH=services/quant-api:packages/quant-core \
   services/quant-api/tests/test_subing_ths_kernel.py -k sma
 ```
 
-Expected: PASS.
-
 - [ ] **Step 5: Commit the primitive**
 
 ```bash
@@ -242,30 +249,17 @@ git commit -m "feat(indicators): add incremental SMA primitive"
 
 - [ ] **Step 1: Write RED tests for identity, CROSS and equality edges**
 
-Freeze the exact result API:
+Committed tests must construct state only through ordinary `initial_state()` + `step()` calls. Freeze:
 
 ```python
-from guiyi_quant.indicators import SubingThs15mKernel
-
-
-def test_subing_ths_formula_identity_is_frozen() -> None:
-    kernel = SubingThs15mKernel()
-    assert kernel.formula_version == "subing_ths_15m_v1"
-    assert kernel.ema_seed_policy == "sma_window"
-    assert kernel.histogram_scale == 2
-    assert kernel.round_digits == 6
-
-
-def test_subing_ths_never_triggers_when_close_equals_sma21(frozen_ready_state) -> None:
-    result = SubingThs15mKernel().step_from_state_for_test(
-        frozen_ready_state,
-        close=frozen_ready_state.ma21,
-        bar_end="2026-09-02T02:45:00+00:00",
-    )
-    assert result.result_codes == ()
+kernel = SubingThs15mKernel()
+assert kernel.formula_version == "subing_ths_15m_v1"
+assert kernel.ema_seed_policy == "sma_window"
+assert kernel.histogram_scale == 2
+assert kernel.round_digits == 6
 ```
 
-Do not keep a test-only production method if normal public `step()` can express the fixture; the committed tests should construct state through ordinary prior bars. The intended committed public API is only `initial_state()` + `step()`.
+Also cover `prev_dif == prev_dea` crossing, current equality no-cross, `close == ma21`, buy and sell exclusivity.
 
 - [ ] **Step 2: Run and confirm RED**
 
@@ -318,15 +312,11 @@ histogram_scale = 2
 round_digits = 6
 ```
 
-`initial_state()` must create MACD/SMA state only；no symbol/contract/time belongs in Quant Core state.
-
 - [ ] **Step 4: Implement the exact step semantics**
-
-The kernel must:
 
 ```text
 1. step MACD and SMA with current close
-2. if any required current point invalid → result valid=false, no Candidate, clear previous DIF/DEA continuity
+2. if any required current point invalid → valid=false, no Candidate, clear previous DIF/DEA continuity
 3. if MACD/SMA not ready → ready=false, no Candidate
 4. use six-decimal point.value for Candidate comparisons
 5. golden = prev_dif <= prev_dea and dif > dea and close > ma21
@@ -335,9 +325,9 @@ The kernel must:
 8. update previous DIF/DEA only from a ready+valid current MACD pair
 ```
 
-Do not use MACD histogram, zero axis, volume, Range or any other fact in Candidate logic.
+Do not read MACD histogram, zero axis, volume, Range or any other fact in Candidate logic.
 
-- [ ] **Step 5: Add a frozen golden fixture and parity tests**
+- [ ] **Step 5: Add the frozen golden fixture and parity tests**
 
 Fixture schema:
 
@@ -354,12 +344,12 @@ Fixture schema:
     "round_digits": 6
   },
   "bars": [
-    {"bar_end": "...", "close": "...", "dif": null, "dea": null, "ma21": null, "result_codes": []}
+    {"bar_end": "2026-01-01T01:00:00+00:00", "close": "100", "dif": null, "dea": null, "ma21": null, "result_codes": []}
   ]
 }
 ```
 
-Use a deterministic synthetic sequence that contains: warm-up, equality/no-cross, at least one buy, at least one sell, and a tail after both events. Expected values must be frozen in JSON rather than generated by the production kernel during the test.
+Use a deterministic synthetic sequence containing warm-up, equality/no-cross, at least one buy, at least one sell, and a tail after both events. Expected values are frozen in JSON and must not be generated by the production kernel during the test.
 
 Tests must prove:
 
@@ -376,8 +366,6 @@ PYTHONPATH=services/quant-api:packages/quant-core \
   uv run --project services/quant-api pytest -q \
   services/quant-api/tests/test_subing_ths_kernel.py
 ```
-
-Expected: PASS.
 
 - [ ] **Step 7: Commit the kernel**
 
@@ -420,26 +408,17 @@ class MarketReadService:
 Semantics:
 
 - `decision_window` must already be a valid current `actual_dominant` intraday window ending at the trigger Bar。
-- `after=None` means replay all available current physical-contract history through `cutoff`；used for first evaluation after process start or contract rollover。
-- `after=<cursor>` means return all same-contract bars with `bar_end > after && bar_end <= cutoff`；used to reconcile one or more missed intermediate bars without creating historical Events。
-- Historical pages use `SeriesKind.CONTRACT + decision_window.contract` through the existing `history_page()`/MarketDataService seam and paginate backward until the requested `after` boundary is reached or physical history is exhausted。
-- Current trading-day Live bars are merged from the existing Live store, deduped exactly；same timestamp with unequal facts is an error。
-- Returned bars are strictly increasing, all belong to the same physical contract by construction, and the last Bar must equal the decision window cutoff Bar。
-- Pagination no-progress, wrong contract, missing cutoff or non-aware `after` must fail closed with stable `MarketReadWindowError` codes。
+- `after=None` means replay all available current physical-contract history through `cutoff`；used on first evaluation after process start or contract rollover。
+- `after=<cursor>` returns all same-contract bars with `bar_end > after && bar_end <= cutoff`；used to reconcile missed intermediate bars without historical Events。
+- Historical pages use `SeriesKind.CONTRACT + decision_window.contract` through existing `history_page()`/MarketDataService and paginate backward until the requested `after` is reached or physical history is exhausted。
+- Current trading-day Live bars are merged from the existing Live store and deduped exactly；same timestamp with unequal facts is an error。
+- Returned bars are strictly increasing and the last Bar must equal the decision-window cutoff Bar。
 
 - [ ] **Step 1: Write RED tests for pre-dominant warm-up and rollover isolation**
 
-Tests must include:
+Test a current RB2610 decision window where RB2610 has Canonical 15m bars from before rank1 activation. `after=None` must include only RB2610 history and never RB2605.
 
-```text
-current contract RB2610 has Canonical 15m bars before becoming rank1
-actual_dominant decision window ends on RB2610
-replay after=None includes RB2610 pre-dominant history
-replay contains no RB2605 bars
-last replay Bar equals trigger Bar
-```
-
-Also cover `after` filtering and multi-page history.
+Also cover multi-page physical history and `after` filtering.
 
 - [ ] **Step 2: Run focused RED**
 
@@ -449,24 +428,21 @@ PYTHONPATH=services/quant-api:packages/quant-core \
   services/quant-api/tests/test_market_read_service.py -k current_contract_replay
 ```
 
-Expected: method/type missing.
-
 - [ ] **Step 3: Implement backward pagination and Live merge**
 
-Use `SeriesPageQuery(SeriesKind.CONTRACT, ..., contract=decision_window.contract, frequency=...)` with page size `2000` and `before=cutoff + 1 microsecond` for the first page. Continue only while the page reports earlier data needed to reach `after`; each next cursor must strictly decrease or raise `MARKET_READ_PAGINATION_STALLED`.
+Use `SeriesPageQuery(SeriesKind.CONTRACT, ..., contract=decision_window.contract, frequency=...)` with page size `2000` and first `before=cutoff + 1 microsecond`. Continue until `after` is reached or physical history is exhausted. Each next cursor must strictly decrease or raise `MARKET_READ_PAGINATION_STALLED`.
 
-Do not add a second storage reader and do not inspect canonical filesystem paths.
+Do not add a second storage reader or inspect canonical filesystem paths.
 
-- [ ] **Step 4: Prove `after` reconciliation and duplicate safety**
-
-Add tests for:
+- [ ] **Step 4: Prove reconciliation and duplicate safety**
 
 ```text
 after == previous processed Bar → only missing/new bars returned
-after == cutoff → empty replay is allowed and means duplicate/stale trigger
+after == cutoff → empty replay allowed; duplicate/stale trigger
 after > cutoff → fail closed
-duplicate Canonical/Live same timestamp + same facts → dedupe
-duplicate same timestamp + different facts → MARKET_READ_LIVE_UNAVAILABLE
+Canonical/Live same timestamp + same facts → dedupe
+Canonical/Live same timestamp + different facts → MARKET_READ_LIVE_UNAVAILABLE
+last non-empty replay Bar must equal cutoff
 ```
 
 - [ ] **Step 5: Run MarketRead tests GREEN**
@@ -487,7 +463,7 @@ git commit -m "feat(market): add current-contract replay window"
 
 ## S1.4 Packet verification and Review gate
 
-- [ ] **Step 1: Run the complete S1 focused set**
+- [ ] **Step 1: Run complete S1 focused set**
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
@@ -521,7 +497,7 @@ git status --short
 
 - [ ] **Step 4: Create Draft PR to `develop`, request exact-head independent Review, then STOP**
 
-S1 may be labeled `CODE_COMPLETE/TEST_COMPLETE` only after fresh commands pass. It does not authorize S2, production reads, Scope, notification, release or Runtime.
+S1 may be labeled `CODE_COMPLETE/TEST_COMPLETE` only after fresh commands pass. It does not authorize S2 or any external operation.
 
 ---
 
@@ -529,19 +505,15 @@ S1 may be labeled `CODE_COMPLETE/TEST_COMPLETE` only after fresh commands pass. 
 
 **Branch/worktree:** `feature/subing-ths-s2-alert-runtime` from latest `origin/develop` after S1 integration.
 
-**Deliverable:** 当前单进程 Alert Runtime 可以安全运行两条 Rule；HTDY 保持既有 first-seen 语义，SuBing 只在 completed 15m current Bar 上按 S1 kernel 产生 exact Event，并使用同一 observers Topic one-shot 推送。
+**Deliverable:** 当前单进程 Alert Runtime 安全运行两条 Rule；HTDY 保持 first-seen 语义，SuBing 只在 completed 15m current Bar 上按 S1 kernel 产生 exact Event，并使用同一 observers Topic one-shot 推送。
 
-**Interfaces consumed:** S1 kernel + `current_contract_replay_window()`。
-
-## S2.1 Extend the Alert registry without changing the DB schema
+## S2.1 Extend the Alert registry without changing DB schema
 
 **Files:**
 - Modify `services/quant-api/app/alerts/registry.py`
 - Modify `services/quant-api/tests/test_alert_registry.py`
 
 - [ ] **Step 1: Write RED registry tests**
-
-Freeze:
 
 ```python
 assert tuple(rule.rule_code for rule in alert_rule_definitions()) == (
@@ -578,7 +550,7 @@ git add services/quant-api/app/alerts/registry.py services/quant-api/tests/test_
 git commit -m "feat(alerts): register SuBing THS observation rule"
 ```
 
-## S2.2 Add generic evaluator dispatch and a stateful SuBing evaluator
+## S2.2 Add generic evaluator dispatch and stateful SuBing evaluation
 
 **Files:**
 - Modify `services/quant-api/app/alerts/evaluators.py`
@@ -602,7 +574,7 @@ class AlertRuleEvaluator(Protocol):
     ) -> tuple[AlertObservationCandidate, ...]: ...
 ```
 
-`SubingThs15mEvaluator` keeps only this transient cursor per symbol:
+`SubingThs15mEvaluator` only keeps this transient cursor:
 
 ```python
 @dataclass(slots=True)
@@ -612,22 +584,20 @@ class _SubingCursor:
     state: SubingThs15mState
 ```
 
-No Redis state, no DB state, no strategy cache.
+No Redis state, DB state or strategy cache.
 
-- [ ] **Step 1: Write RED tests for HTDY adapter and SuBing dispatch contract**
+- [ ] **Step 1: Write RED tests for HTDY adapter and SuBing behavior**
 
-HTDY `evaluate_candidates()` must preserve current `evaluate_first_seen()` output exactly.
-
-SuBing tests must prove:
+Prove:
 
 ```text
-frequency != 15m → ALERT_EVALUATION_INPUT_INVALID
-series_kind != actual_dominant → invalid
+HTDY evaluate_candidates preserves existing first-seen output
+SuBing non-15m / non-actual_dominant → input error
 first call / no cursor → replay after=None
 same contract next call → replay after=cursor.last_bar_end
-same contract with two missing intermediate bars → step both silently, only final Bar may emit Candidate
-contract changes → rebuild from after=None, no old state inheritance
-stale/duplicate cutoff <= cursor.last_bar_end → no Candidate, no state rewind
+same contract with missed intermediate bars → step all silently; only final cutoff may emit
+contract changes → rebuild from after=None; no old state inheritance
+stale/duplicate cutoff <= cursor.last_bar_end → no Candidate; no rewind
 warming/invalid final Bar → no Candidate and stable evaluation error
 ```
 
@@ -641,34 +611,23 @@ PYTHONPATH=services/quant-api:packages/quant-core \
 
 - [ ] **Step 3: Implement generic candidate + HTDY adapter**
 
-Keep HTDY-specific `evaluate_first_seen()` if existing focused tests still use it, but Runtime must move to `evaluate_candidates()` so the dispatcher is rule-neutral.
-
-Do not alter HTDY current-bar/repaint logic.
+Keep HTDY-specific helpers if needed by existing tests, but Runtime will use `evaluate_candidates()`.
 
 - [ ] **Step 4: Implement `SubingThs15mEvaluator`**
 
-Algorithm:
-
 ```text
-validate decision window actual_dominant + 15m + current contract
-lookup cursor by symbol
-if no cursor or cursor.contract != window.contract:
-    replay = market_read.current_contract_replay_window(window, after=None)
-    state = kernel.initial_state()
-else if window.cutoff <= cursor.last_bar_end:
-    return ()
-else:
-    replay = market_read.current_contract_replay_window(window, after=cursor.last_bar_end)
-    state = cursor.state
-
-step replay bars in chronological order
-ignore Candidate results on every replay bar except the final cutoff Bar
-require final Bar == window.cutoff
-update cursor to final state/cutoff
-return final result as () / one AlertObservationCandidate
+validate current decision window
+cursor missing/contract changed → full same-contract replay from after=None + fresh kernel state
+same contract and cutoff newer → replay after cursor cutoff using existing state
+cutoff <= cursor cutoff → return ()
+step replay bars chronologically
+ignore intermediate Candidate results
+require final replay Bar == current cutoff
+update cursor
+return only final result as zero/one candidate
 ```
 
-The evaluator may reconstruct through downtime bars, but **must never return Candidates for those intermediate replay bars**.
+If final replay is warming/invalid, preserve enough kernel state for the next Bar but raise/return the fixed unavailable outcome so `last_evaluated_bar_at` does not advance.
 
 - [ ] **Step 5: Run evaluator tests GREEN and commit**
 
@@ -685,14 +644,14 @@ git commit -m "feat(alerts): add SuBing THS evaluator"
 **Files:**
 - Modify `services/quant-api/app/alerts/notification.py`
 - Modify `services/quant-api/app/alerts/notification_composition.py`
-- Modify `services/quant-api/app/alerts/pushplus.py` only if an audience alias is required；do not change config keys.
+- Modify `services/quant-api/app/alerts/pushplus.py` only if an audience alias is needed; do not change config keys.
 - Modify `services/quant-api/tests/test_alert_notification.py`
 - Modify `services/quant-api/tests/test_alert_pushplus.py`
-- Modify `services/quant-api/tests/test_alert_notification_config.py` only for non-regression if necessary.
+- Modify `services/quant-api/tests/test_alert_notification_config.py` only for non-regression if touched.
 
 - [ ] **Step 1: Write RED policy/formatter tests**
 
-Freeze exact titles/audience:
+Freeze:
 
 ```python
 assert dispatcher.supported_rule_codes == (
@@ -701,26 +660,9 @@ assert dispatcher.supported_rule_codes == (
 )
 ```
 
-SuBing buy copy must include only:
+SuBing buy/sell copy must contain only approved V1 facts and use the existing observers audience backed by `htdy_topic`.
 
-```text
-【苏冰预警】<SYMBOL> <产品名>
-15m 多头预警
-MACD 金叉
-收盘价位于 MA21 上方
-当前主力：<contract>
-信号K线：<Asia/Shanghai time>
-请打开归一量化图表复核。
-研究观察，非交易指令
-```
-
-Sell uses `空头预警 / MACD 死叉 / MA21 下方`。
-
-Both HTDY and SuBing policy use the existing observers audience string backed by `htdy_topic`；do not add `subing_topic`.
-
-- [ ] **Step 2: Run RED and implement `AlertNotificationPolicy`**
-
-Public shape:
+- [ ] **Step 2: Implement `AlertNotificationPolicy`**
 
 ```python
 @dataclass(frozen=True, slots=True)
@@ -731,11 +673,9 @@ class AlertNotificationPolicy:
     formatter: Callable[[AlertNotificationMessage], str]
 ```
 
-`AlertNotificationDispatcher.send()` must exact-lookup by `message.rule_code`; unknown rule raises `ALERT_NOTIFICATION_RULE_INVALID` rather than falling back to HTDY.
+`AlertNotificationDispatcher.send()` exact-lookups `message.rule_code`; unknown rule raises `ALERT_NOTIFICATION_RULE_INVALID`.
 
 - [ ] **Step 3: Preserve PushPlus transport semantics**
-
-`PushPlusTransport` continues:
 
 ```text
 observers audience → existing htdy_topic
@@ -752,17 +692,11 @@ PYTHONPATH=services/quant-api:packages/quant-core \
   services/quant-api/tests/test_alert_notification.py \
   services/quant-api/tests/test_alert_pushplus.py \
   services/quant-api/tests/test_alert_notification_config.py
-
-git add services/quant-api/app/alerts/notification.py \
-        services/quant-api/app/alerts/notification_composition.py \
-        services/quant-api/app/alerts/pushplus.py \
-        services/quant-api/tests/test_alert_notification.py \
-        services/quant-api/tests/test_alert_pushplus.py \
-        services/quant-api/tests/test_alert_notification_config.py
-git commit -m "feat(alerts): dispatch notifications by rule policy"
 ```
 
-## S2.4 Replace the single evaluator runtime seam and preserve event semantics
+Commit only the files actually touched.
+
+## S2.4 Replace the single evaluator runtime seam and preserve Event semantics
 
 **Files:**
 - Modify `services/quant-api/app/alerts/runtime.py`
@@ -770,7 +704,7 @@ git commit -m "feat(alerts): dispatch notifications by rule policy"
 - Modify `services/quant-api/tests/test_alert_runtime.py`
 - Modify `services/quant-api/tests/test_alert_service.py`
 
-**Constructor after this task:**
+**Constructor:**
 
 ```python
 AlertRuntime(
@@ -787,31 +721,20 @@ AlertRuntime(
 
 - [ ] **Step 1: Write RED startup-composition tests**
 
-Fail closed when:
-
-```text
-DB Rule set != registry Rule set
-registry Rule has no evaluator
-sender.supported_rule_codes != registry Rule set
-unknown DB Rule exists
-```
+Fail closed when DB Rule set, registry Rule set, evaluator keys or sender policy keys do not match exactly.
 
 - [ ] **Step 2: Write RED live dispatch tests**
 
-Prove:
-
 ```text
-HTDY rule invokes only HtdyOriginalEvaluator
-SuBing rule invokes only SubingThs15mEvaluator
-SuBing rule ignores non-15m live triggers
-SuBing rule never runs on canonical_updated
+HTDY invokes only HtdyOriginalEvaluator
+SuBing invokes only SubingThs15mEvaluator
+SuBing ignores non-15m live triggers
+SuBing never runs on canonical_updated
 Scope disabled/no symbol-frequency → no evaluator call
-startup drain emit_events=false → no Event/no sender call
+startup drain emit_events=false → no Event/no send
 ```
 
-- [ ] **Step 3: Generalize event persistence by `AlertEventMode`**
-
-Replace `_persist_first_seen_htdy_and_prepare_notification` with a rule-neutral helper. It must call:
+- [ ] **Step 3: Generalize Event persistence by event mode**
 
 ```python
 if definition.event_mode is AlertEventMode.FIRST_SEEN:
@@ -819,40 +742,20 @@ if definition.event_mode is AlertEventMode.FIRST_SEEN:
 elif definition.event_mode is AlertEventMode.EXACT:
     created = service.create_event(request)
 else:
-    fail_closed
+    raise RuntimeError("ALERT_RUNTIME_COMPOSITION_INVALID")
 ```
 
-Do not weaken current exact conflict checks in `AlertService.create_event()`.
+Do not weaken exact conflict checks.
 
-- [ ] **Step 4: Generalize runtime evaluator lookup**
+- [ ] **Step 4: Generalize evaluator lookup and candidate validation**
 
-For each enabled Rule:
+Validate candidate bar_end/contract/trading_day/result code against the decision window before persistence.
 
-```text
-get definition
-scope check
-build/validate decision window
-lookup evaluator by exact rule_code
-evaluator.evaluate_candidates(market_read, window)
-validate candidate identity against decision window
-persist according to event_mode
-prepare notification message
-```
+- [ ] **Step 5: Preserve Event-first one-shot failure behavior**
 
-Candidate validator must reject wrong bar_end/contract/trading_day/result codes before Event persistence.
+Tests must prove Event survives taxonomy/formatter/transport failures, and repeated identity never sends twice.
 
-- [ ] **Step 5: Preserve Event-first one-shot behavior under partial failures**
-
-Tests must explicitly show:
-
-```text
-Event commit succeeds + taxonomy missing → Event remains, no transport
-Event commit succeeds + formatter fails → Event remains, failure recorded
-Event commit succeeds + transport fails → Event remains, no retry
-same Event identity repeated → no second send
-```
-
-- [ ] **Step 6: Run focused Runtime/Service tests GREEN and commit**
+- [ ] **Step 6: Run Runtime/Service tests GREEN and commit**
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
@@ -860,12 +763,6 @@ PYTHONPATH=services/quant-api:packages/quant-core \
   services/quant-api/tests/test_alert_runtime.py \
   services/quant-api/tests/test_alert_service.py \
   services/quant-api/tests/test_alert_evaluator.py
-
-git add services/quant-api/app/alerts/runtime.py \
-        services/quant-api/app/alerts/composition.py \
-        services/quant-api/tests/test_alert_runtime.py \
-        services/quant-api/tests/test_alert_service.py
-git commit -m "refactor(alerts): dispatch evaluators by rule"
 ```
 
 ## S2.5 Upgrade runtime status to schema v6 with bounded per-rule state
@@ -876,9 +773,9 @@ git commit -m "refactor(alerts): dispatch evaluators by rule"
 - Modify `services/quant-api/tests/test_alert_runtime.py`
 - Modify `services/quant-api/tests/test_runtime_health.py`
 
-- [ ] **Step 1: Write RED status-validation tests**
+- [ ] **Step 1: Write RED schema tests**
 
-Target wire:
+Target:
 
 ```python
 {
@@ -901,11 +798,9 @@ Target wire:
 }
 ```
 
-v1-v5 reads must normalize to v6 with empty fixed rule entries；unknown extra Rule key fails closed。
+v1-v5 normalize to v6; unknown Rule keys fail closed.
 
-- [ ] **Step 2: Define fixed public rule error types**
-
-Use a small set only:
+- [ ] **Step 2: Freeze rule evaluation error types**
 
 ```text
 evaluation_input_invalid
@@ -913,41 +808,29 @@ evaluation_warming_up
 evaluation_failed
 ```
 
-No symbol history and no error stack/message is stored.
+No symbol history, stack or raw error text.
 
-- [ ] **Step 3: Update runtime state at the correct point**
-
-For each Rule:
+- [ ] **Step 3: Update at the correct processing point**
 
 ```text
-scope skipped → no rule_status change
-evaluator returns successfully, even no signal → last_evaluated_bar_at advances; error_type cleared
-new Event → that Rule last_event_at advances
-evaluator/input/warmup failure → last_failure_at + fixed error_type; last_evaluated_bar_at must not advance
-notification failure remains in existing global notification fields; do not overload rule evaluation status
+scope skipped → no change
+evaluator success/no signal → last_evaluated advances and error clears
+Event created → that Rule last_event_at advances
+input/warmup/evaluator failure → last_failure/error only; last_evaluated must not advance
+notification failures stay in existing global notification fields
 ```
 
-- [ ] **Step 4: Expose status read-only through runtime health**
+- [ ] **Step 4: Expose read-only through runtime health**
 
-`runtime_health.py` may project the validated map but must not infer “business normal” from heartbeat alone.
+Do not infer business normality from heartbeat alone.
 
-- [ ] **Step 5: Run v5→v6 compatibility and health tests GREEN**
+- [ ] **Step 5: Run tests GREEN and commit**
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
   uv run --project services/quant-api pytest -q \
   services/quant-api/tests/test_alert_runtime.py \
   services/quant-api/tests/test_runtime_health.py
-```
-
-- [ ] **Step 6: Commit status v6**
-
-```bash
-git add services/quant-api/app/alerts/runtime.py \
-        services/quant-api/app/services/runtime_health.py \
-        services/quant-api/tests/test_alert_runtime.py \
-        services/quant-api/tests/test_runtime_health.py
-git commit -m "feat(alerts): expose per-rule evaluation status"
 ```
 
 ## S2.6 Packet verification and Review gate
@@ -967,7 +850,7 @@ PYTHONPATH=services/quant-api:packages/quant-core \
   services/quant-api/tests/test_runtime_health.py
 ```
 
-- [ ] **Step 2: Run adjacent Market/HTDY regression**
+- [ ] **Step 2: Run adjacent HTDY/Market regression**
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
@@ -976,18 +859,13 @@ PYTHONPATH=services/quant-api:packages/quant-core \
   services/quant-api/tests/test_market_read_service.py
 ```
 
-- [ ] **Step 3: Run Ruff/Mypy + diff check**
+- [ ] **Step 3: Ruff/Mypy/diff**
 
-Use the repository commands in `TESTING.md` narrowed to touched modules, then:
+Use current `TESTING.md` commands narrowed to touched modules, then `git diff --check origin/develop...HEAD` and `git status --short`.
 
-```bash
-git diff --check origin/develop...HEAD
-git status --short
-```
+- [ ] **Step 4: Draft PR + exact-head independent Review + STOP**
 
-- [ ] **Step 4: Create Draft PR, exact-head independent Review, STOP**
-
-S2 does not create/migrate the new DB Rule and does not send any real notification.
+S2 does not create/migrate the DB Rule and does not send real notifications.
 
 ---
 
@@ -995,7 +873,7 @@ S2 does not create/migrate the new DB Rule and does not send any real notificati
 
 **Branch/worktree:** `feature/subing-ths-s3-web` from latest `origin/develop` after S2 integration.
 
-**Deliverable:** 现有 `/api/alerts/*` 可以返回两条 Rule；`/market` 一次读取 current-events 显示最近苏冰预警；`/market/chart` 在 actual_dominant 15m 上显示 Event-backed `S↑/S↓` 并支持 deep link 聚焦。Web 不计算正式公式。
+**Deliverable:** 现有 `/api/alerts/*` 支持两条 Rule；`/market` 一次读取 current-events 显示最近苏冰预警；`/market/chart` 在 actual_dominant 15m 显示 Event-backed `S↑/S↓` 并支持 deep link 聚焦。Web 不计算正式公式。
 
 ## S3.1 Generalize backend Alert DTO and serializer
 
@@ -1004,9 +882,7 @@ S2 does not create/migrate the new DB Rule and does not send any real notificati
 - Modify `services/quant-api/app/api/alerts.py`
 - Modify `services/quant-api/tests/test_alert_api.py`
 
-- [ ] **Step 1: Write RED API tests for mixed Rules**
-
-Freeze the wire union:
+- [ ] **Step 1: Write RED mixed-Rule API tests**
 
 ```python
 AlertRuleCode = Literal[
@@ -1015,15 +891,7 @@ AlertRuleCode = Literal[
 ]
 ```
 
-Tests:
-
-```text
-GET /events?rule_code=subing_ths_alert_15m_v1 returns real rule_code
-/current-events may return HTDY + SuBing in deterministic detected/bar/id order
-/products/{symbol}/current-events may return both
-unknown rule remains 404
-existing HTDY payload fields remain unchanged
-```
+Prove SuBing `/events`, mixed `/current-events`, mixed product current-events, invalid Rule 404, and unchanged HTDY wire facts.
 
 - [ ] **Step 2: Run RED**
 
@@ -1032,22 +900,15 @@ PYTHONPATH=services/quant-api:packages/quant-core \
   uv run --project services/quant-api pytest -q services/quant-api/tests/test_alert_api.py
 ```
 
-- [ ] **Step 3: Replace HTDY-only DTO names with generic Alert DTOs**
+- [ ] **Step 3: Replace HTDY-only DTO/serializer with generic exact union**
 
-Do not create `/api/subing/*`.
+Do not add `/api/subing/*`. Derive Rule code from DB facts, not `HTDY_ALERT_RULE_CODE`; avoid N+1 Rule lookups.
 
-Serializer must derive Rule code from DB facts, never hard-code `HTDY_ALERT_RULE_CODE`. Avoid N+1 lookup by building a `rule_id → rule_code` map once per response or selecting rule code together with events.
-
-- [ ] **Step 4: Run API tests GREEN and commit**
+- [ ] **Step 4: Run GREEN and commit**
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
   uv run --project services/quant-api pytest -q services/quant-api/tests/test_alert_api.py
-
-git add services/quant-api/app/schemas/alerts.py \
-        services/quant-api/app/api/alerts.py \
-        services/quant-api/tests/test_alert_api.py
-git commit -m "refactor(api): support multiple Alert observation rules"
 ```
 
 ## S3.2 Add typed Web Rule/Event presentation
@@ -1059,118 +920,79 @@ git commit -m "refactor(api): support multiple Alert observation rules"
 - Modify `apps/quant-web/tests/alerts.test.ts`
 - Modify `apps/quant-web/tests/alertRuleOwnership.test.ts`
 
-- [ ] **Step 1: Write RED TypeScript tests**
+- [ ] **Step 1: Write RED tests**
 
-Add exact presentation:
+Add:
 
 ```ts
 export const SUBING_THS_ALERT_RULE_CODE = 'subing_ths_alert_15m_v1'
 ```
 
-Expected presentation:
+Presentation: `苏冰预警`、result noun `预警`、persistent frequencies only `15m`。`AlertEvent = HtdyAlertEvent | SubingThsAlertEvent`。
 
-```text
-shortLabel = 苏冰预警
-resultNoun = 预警
-persistentFrequencies = [15m]
-```
+- [ ] **Step 2: Add `getCurrentAlertEvents()` using existing `/api/alerts/current-events`**
 
-`AlertEvent` becomes `HtdyAlertEvent | SubingThsAlertEvent`.
+No new endpoint.
 
-- [ ] **Step 2: Add `getCurrentAlertEvents()`**
-
-Client response remains the existing `/api/alerts/current-events` shape；do not add a new endpoint.
-
-- [ ] **Step 3: Run Web unit RED→GREEN and commit**
+- [ ] **Step 3: Run focused unit GREEN and commit**
 
 ```bash
 pnpm -C apps/quant-web exec node --test \
   tests/alerts.test.ts \
   tests/alertRuleOwnership.test.ts
-
-git add apps/quant-web/src/types/market.ts \
-        apps/quant-web/src/api/alerts.ts \
-        apps/quant-web/src/utils/alertRules.ts \
-        apps/quant-web/tests/alerts.test.ts \
-        apps/quant-web/tests/alertRuleOwnership.test.ts
-git commit -m "feat(web): type SuBing Alert events"
 ```
 
-## S3.3 Render persistent `S↑/S↓` markers without adding an overlay
+## S3.3 Render persistent `S↑/S↓` without a new overlay
 
 **Files:**
 - Modify `apps/quant-web/src/utils/alertMarkers.ts`
 - Modify `apps/quant-web/src/composables/usePersistentAlertMarkers.ts`
 - Modify `apps/quant-web/src/pages/market/chart.vue`
-- Modify marker/composable tests and `KlineChart` tests only if needed.
+- Modify focused marker/composable tests.
 
 - [ ] **Step 1: Write RED marker tests**
 
-Freeze:
-
 ```text
-SuBing buy → label S↑, shape arrowUp, belowBar
-SuBing sell → label S↓, shape arrowDown, aboveBar
-Tooltip contains 苏冰预警 / MACD 金叉或死叉 / Close > or < MA21 (SMA21) / contract / 15m time
-HTDY remains square/persistent-first-seen presentation
+SuBing buy → S↑ / arrowUp / belowBar
+SuBing sell → S↓ / arrowDown / aboveBar
+Tooltip → 苏冰预警 + MACD 金/死叉 + Close >/< MA21 (SMA21) + contract + time
+HTDY remains square first-seen presentation
 ```
 
 - [ ] **Step 2: Freeze visibility rules**
 
-`alertMarkersForOverlay()` must return:
-
 ```text
-SuBing markers: visible on actual_dominant 15m regardless of overlay none/htdy
-HTDY persistent markers: visible only when overlay=htdy, preserving current behavior
-other identities: no marker
+SuBing markers visible on actual_dominant 15m under overlay none or htdy
+HTDY persistent markers visible only under overlay htdy
+other identities no marker
 ```
 
-Do not add `ResearchOverlayId='subing'`.
+Do not add a `subing` overlay.
 
-- [ ] **Step 3: Update persistent marker fetch**
+- [ ] **Step 3: Update marker fetch**
 
-At `actual_dominant + 15m`, `markerRuleCodes()` returns exactly HTDY + SuBing, so the composable makes at most two rule-range calls for the selected chart identity, not 60 product calls.
+At actual_dominant + 15m, fetch exactly the two registered rule ranges for the selected symbol/window; do not issue product-wide calls.
 
-- [ ] **Step 4: Run marker tests GREEN and commit**
+- [ ] **Step 4: Run marker tests GREEN**
 
-```bash
-pnpm -C apps/quant-web exec node --test \
-  tests/alerts.test.ts \
-  tests/marketSeries.test.ts \
-  tests/kline-view-model.test.ts
-```
+Run the exact focused marker/composable tests present after edits plus `alerts.test.ts` and `kline-view-model.test.ts`.
 
-Also run any focused marker/composable test files present at execution time.
-
-## S3.4 Add the `/market` recent SuBing alert card
+## S3.4 Add `/market` recent SuBing alerts
 
 **Files:**
 - Create `apps/quant-web/src/components/market/MarketRecentSubingAlerts.vue`
 - Modify `apps/quant-web/src/pages/market/index.vue`
-- Add/modify focused unit/E2E tests.
+- Add focused unit/E2E tests.
 
 - [ ] **Step 1: Write RED component/page tests**
 
-The component receives already-fetched events + dominant products and displays at most 20 SuBing events with:
+Display at most 20 SuBing events with Shanghai HH:mm, product name/SYMBOL, direction and 15m. Empty state: `暂无苏冰预警`。
 
-```text
-Shanghai HH:mm
-product_name + SYMBOL
-多头预警 / 空头预警
-15m
-```
+- [ ] **Step 2: Add exactly one global current-events resource**
 
-Empty state: `暂无苏冰预警`。
-
-- [ ] **Step 2: Add one global resource request**
-
-`market/index.vue` adds exactly one `useLatestResource({ fetch: getCurrentAlertEvents })` alongside runtime and dominant directory resources. `refreshAll()` / visible refresh include that resource in the existing `Promise.all`.
-
-Do not issue product-by-product requests.
+Include it in existing `Promise.all` refresh; no 60 product requests.
 
 - [ ] **Step 3: Add click navigation**
-
-The click route must be:
 
 ```ts
 {
@@ -1184,41 +1006,35 @@ The click route must be:
 }
 ```
 
-No signal values are computed in the component.
-
-- [ ] **Step 4: Run focused tests GREEN and commit**
+- [ ] **Step 4: Run focused/full unit tests GREEN**
 
 ```bash
 pnpm --dir apps/quant-web test
 ```
 
-If the full unit suite is expensive, first run the exact new test file, then the full suite before Packet completion.
-
-## S3.5 Consume `focus_bar_end` using existing `KlineChart.revealTime()`
+## S3.5 Consume `focus_bar_end` through existing `KlineChart.revealTime()`
 
 **Files:**
 - Modify `apps/quant-web/src/pages/market/chart.vue`
-- Modify `apps/quant-web/tests/marketChartEntry.test.ts` or add a focused chart-entry test.
-- Modify Playwright spec covering market chart interaction.
+- Modify `apps/quant-web/tests/marketChartEntry.test.ts` or a new exact focused test.
+- Modify the relevant Playwright chart interaction spec.
 
 - [ ] **Step 1: Write RED deep-link tests**
 
-Rules:
-
 ```text
-focus_bar_end must be timezone-aware parseable ISO
-only applies to actual_dominant + 15m
-after first matching replacement load, call chart.revealTime(focus_bar_end)
-if bar is not in loaded window, keep normal chart and do not synthesize a Bar/marker
-focus does not change Event.bar_end
-invalid focus value ignored fail-safe
+focus_bar_end is timezone-aware parseable ISO
+only actual_dominant + 15m uses it
+after matching replacement load, call revealTime once
+missing target bar does not synthesize data
+Event.bar_end is never rewritten
+invalid focus is ignored safely
 ```
 
 - [ ] **Step 2: Implement one-shot focus**
 
-Use the existing exposed `revealTime()`；do not add a second chart scrolling primitive. Preserve `focus_bar_end` through the initial query synchronization until focus is attempted once, then remove it from the URL with `router.replace()` without altering symbol/series/frequency.
+Preserve `focus_bar_end` through initial query synchronization until one focus attempt, then remove only that query parameter via `router.replace()`.
 
-- [ ] **Step 3: Run Web full checks for S3**
+- [ ] **Step 3: Run full Web checks**
 
 ```bash
 pnpm --dir apps/quant-web run check:alert-rules
@@ -1246,7 +1062,7 @@ PYTHONPATH=services/quant-api:packages/quant-core \
   services/quant-api/tests/test_alert_service.py
 ```
 
-- [ ] **Step 2: Run diff/secret checks**
+- [ ] **Step 2: Run secret/diff checks**
 
 ```bash
 python3 scripts/engineering/secret_scan.py --json
@@ -1254,9 +1070,9 @@ git diff --check origin/develop...HEAD
 git status --short
 ```
 
-- [ ] **Step 3: Create Draft PR, independent exact-head Review, STOP**
+- [ ] **Step 3: Draft PR + exact-head independent Review + STOP**
 
-No production Web deployment or Runtime mutation is authorized.
+No production deployment/Runtime mutation.
 
 ---
 
@@ -1264,7 +1080,7 @@ No production Web deployment or Runtime mutation is authorized.
 
 **Branch/worktree:** `feature/subing-ths-s4-migration-scope` from latest `origin/develop` after S3 integration.
 
-**Deliverable:** forward-only 0044 Rule insertion plus一个严格、可 dry-run、单事务的首次 `operational × 15m` Scope activation CLI seam。Implementation/test only；不得执行 production migration/Scope。
+**Deliverable:** forward-only 0044 Rule insertion + strict dry-run/one-transaction first activation seam。Implementation/test only；不得执行 production migration/Scope。
 
 ## S4.1 Add 0044 as a data-only forward migration
 
@@ -1272,29 +1088,24 @@ No production Web deployment or Runtime mutation is authorized.
 - Create `services/quant-api/alembic/versions/20260902_0044_subing_ths_alert.py`
 - Create `services/quant-api/tests/alembic/test_subing_ths_alert_migration.py`
 
-- [ ] **Step 1: Write the isolated PostgreSQL RED migration test**
+- [ ] **Step 1: Write isolated PostgreSQL RED test**
 
-The test must build the exact 0042 state, run 0043, then 0044 and assert:
+Build exact 0042, run 0043 then 0044, assert:
 
 ```text
-alembic head == 20260902_0044
-alert_rules == {htdy_original_15m, subing_ths_alert_15m_v1}
-HTDY row byte-for-byte equivalent on preserved columns
-SuBing enabled == false
-SuBing scope_product_frequencies == {}
-no scope_products column
-no action_id column
-no strategy_payload column
-legacy SuBing Event/Rule absent
+head=20260902_0044
+rules={htdy_original_15m, subing_ths_alert_15m_v1}
+HTDY preserved on retained fields
+SuBing enabled=false, scope={}
+no scope_products/action_id/strategy_payload
+legacy SuBing Rule/Event absent
 ```
 
-- [ ] **Step 2: Run RED only against a disposable DB**
+- [ ] **Step 2: Run RED only against disposable DB**
 
-Use exactly the `GUIYI_ISOLATED_MIGRATION_DATABASE_URL` mechanism in `TESTING.md`. If no disposable DB URL is configured, record this step as blocked rather than substituting production/local primary DB.
+Use `GUIYI_ISOLATED_MIGRATION_DATABASE_URL`. If absent, mark blocked; never substitute production DB.
 
-- [ ] **Step 3: Implement strict preflight/postflight**
-
-0044 constants:
+- [ ] **Step 3: Implement exact preflight/postflight**
 
 ```python
 revision = "20260902_0044"
@@ -1303,15 +1114,13 @@ _HTDY_RULE = "htdy_original_15m"
 _SUBING_RULE = "subing_ths_alert_15m_v1"
 ```
 
-Preflight must require exact 0043 schema, exactly one HTDY Rule, valid HTDY scope/events and no unexpected Rule. Insert only the new Rule row.
-
-`downgrade()` must raise a stable unsupported error.
+Preflight requires exact 0043 schema and one valid HTDY Rule. Insert only the disabled+empty SuBing Rule. `downgrade()` unsupported.
 
 - [ ] **Step 4: Test unexpected-state fail-closed and 0043-success/0044-failure safety**
 
-Tests must show no code path recreates `subing_strategy_v1` or deleted columns. A simulated 0044 insertion/postflight failure leaves the already-applied 0043 DB HTDY-only; recovery is forward-only.
+No code path may recreate old SuBing or deleted fields. Forward recovery only.
 
-- [ ] **Step 5: Run migration tests GREEN and commit**
+- [ ] **Step 5: Run migration GREEN and commit**
 
 ```bash
 GUIYI_ISOLATED_MIGRATION_DATABASE_URL='postgresql+psycopg://.../isolated_db' \
@@ -1319,17 +1128,13 @@ GUIYI_ISOLATED_MIGRATION_DATABASE_URL='postgresql+psycopg://.../isolated_db' \
   uv run --project services/quant-api pytest -q -m isolated_postgresql \
   services/quant-api/tests/alembic/test_subing_retirement_migration.py \
   services/quant-api/tests/alembic/test_subing_ths_alert_migration.py
-
-git add services/quant-api/alembic/versions/20260902_0044_subing_ths_alert.py \
-        services/quant-api/tests/alembic/test_subing_ths_alert_migration.py
-git commit -m "feat(db): add SuBing THS Alert rule migration"
 ```
 
-## S4.2 Add a narrow dry-run/apply scope activation service
+## S4.2 Add narrow dry-run/apply scope activation service
 
 **Files:**
 - Create `services/quant-api/app/alerts/subing_scope_activation.py`
-- Modify `services/quant-api/tests/test_alert_service.py` or add a focused `test_subing_scope_activation.py` if that keeps responsibility clearer.
+- Create `services/quant-api/tests/test_subing_scope_activation.py`
 
 **Interface:**
 
@@ -1354,41 +1159,21 @@ def activate_subing_ths_scope(
 
 - [ ] **Step 1: Write RED dry-run tests**
 
-Dry-run must:
-
-```text
-require alembic head 0044
-require exactly HTDY + new SuBing Rule
-require SuBing enabled=false and scope={}
-normalize/sort/unique operational symbols
-build {symbol:["15m"]}
-return count + SHA256 of stable sorted JSON
-perform no UPDATE/commit mutation
-```
-
-Do not print the full Scope unless an existing safe operator pattern requires it；count+hash is sufficient for Gate comparison.
+Require head 0044, exactly two expected Rules, SuBing disabled+empty, normalized unique operational symbols; build `{symbol:["15m"]}` and return stable SHA256/count without mutation.
 
 - [ ] **Step 2: Write RED apply tests**
 
-Apply must perform in one transaction:
+One transaction must lock/recheck SuBing row, atomically set exact Scope + enabled=true, commit once, reread exact hash/count/enabled, and leave HTDY unchanged. Any mismatch/DB failure rolls back.
 
-```text
-re-read/lock SuBing Rule
-re-check disabled + empty scope
-set exact full scope
-set enabled=true
-commit once
-re-read and verify exact scope hash/count/enabled
-HTDY row unchanged
+- [ ] **Step 3: Implement and run GREEN**
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+  uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/test_subing_scope_activation.py
 ```
 
-Any preflight mismatch fails before mutation. Any DB exception rolls back.
-
-- [ ] **Step 3: Implement and run focused GREEN**
-
-No generic workflow engine, no per-symbol loop that commits repeatedly.
-
-- [ ] **Step 4: Commit activation service**
+- [ ] **Step 4: Commit service**
 
 ```bash
 git add services/quant-api/app/alerts/subing_scope_activation.py \
@@ -1396,9 +1181,7 @@ git add services/quant-api/app/alerts/subing_scope_activation.py \
 git commit -m "feat(alerts): add atomic SuBing scope activation"
 ```
 
-If the implementation chooses to place tests in `test_alert_service.py`, stage that exact file instead of a nonexistent focused file.
-
-## S4.3 Wire a runtime CLI command with read-only default
+## S4.3 Wire runtime CLI with read-only default
 
 **Files:**
 - Modify `services/quant-api/app/guiyi_cli/main.py`
@@ -1406,14 +1189,12 @@ If the implementation chooses to place tests in `test_alert_service.py`, stage t
 
 - [ ] **Step 1: Write parser/execution RED tests**
 
-Command:
-
 ```bash
 uv run --project services/quant-api guiyi runtime subing-ths-scope
 uv run --project services/quant-api guiyi runtime subing-ths-scope --apply
 ```
 
-Default output:
+Default output shape:
 
 ```json
 {
@@ -1423,35 +1204,31 @@ Default output:
   "readonly": true,
   "rule_code": "subing_ths_alert_15m_v1",
   "symbol_count": 60,
-  "scope_sha256": "<64 hex>",
+  "scope_sha256": "<64 lowercase hex>",
   "enabled": false
 }
 ```
 
-`--apply` returns `status=published`, `readonly=false`, `enabled=true` after verified commit. Tests use fake/session fixtures only；do not hit production.
+`--apply` returns `published`, `readonly=false`, `enabled=true` only after verified commit. Tests use injected fakes/sessions, never production.
 
 - [ ] **Step 2: Correct CLI readonly classification**
 
-`_execution_is_readonly()` must return `True` for the command without `--apply`, `False` with `--apply`. Parse-error classification must likewise not label a requested `--apply` as readonly.
+Without `--apply` → readonly true；with `--apply` → false。Parse-error classification must follow requested mutation intent.
 
-- [ ] **Step 3: Inject the activation callable for tests**
+- [ ] **Step 3: Inject activation callable for tests and implement command**
 
-Follow existing CLI dependency injection; do not hard-wire an untestable global DB call.
+Follow existing dependency injection; no untestable global DB mutation.
 
-- [ ] **Step 4: Run CLI tests GREEN and commit**
+- [ ] **Step 4: Run CLI GREEN and commit**
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
   uv run --project services/quant-api pytest -q services/quant-api/tests/test_alert_cli.py
-
-git add services/quant-api/app/guiyi_cli/main.py \
-        services/quant-api/tests/test_alert_cli.py
-git commit -m "feat(cli): add SuBing scope activation command"
 ```
 
 ## S4.4 Packet verification and Review gate
 
-- [ ] **Step 1: Run migration + activation focused tests**
+- [ ] **Step 1: Run focused activation/Alert tests**
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
@@ -1461,9 +1238,7 @@ PYTHONPATH=services/quant-api:packages/quant-core \
   services/quant-api/tests/test_alert_service.py
 ```
 
-Run isolated migration tests separately only against the approved disposable DB URL.
-
-- [ ] **Step 2: Run full non-isolated backend regression**
+- [ ] **Step 2: Run full non-isolated backend**
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
@@ -1472,23 +1247,13 @@ PYTHONPATH=services/quant-api:packages/quant-core \
   services/quant-api/tests
 ```
 
-- [ ] **Step 3: Ruff/Mypy/secret/diff**
+- [ ] **Step 3: Mypy/Ruff/secret/diff**
 
-```bash
-PYTHONPATH=services/quant-api:packages/quant-core MYPYPATH=services/quant-api:packages/quant-core \
-  uv run --project services/quant-api mypy --explicit-package-bases --ignore-missing-imports \
-  services/quant-api/app packages/quant-core/guiyi_quant
-
-uv run --project services/quant-api python -m ruff check \
-  services/quant-api/app services/quant-api/tests packages/quant-core/guiyi_quant tests/engineering
-
-python3 scripts/engineering/secret_scan.py --json
-git diff --check origin/develop...HEAD
-```
+Use full commands from current `TESTING.md`, then `python3 scripts/engineering/secret_scan.py --json` and `git diff --check origin/develop...HEAD`.
 
 - [ ] **Step 4: Draft PR + exact-head independent Review + STOP**
 
-Do not execute `alembic upgrade`, `guiyi runtime subing-ths-scope --apply`, or any real DB/Scope command in this Packet.
+Never execute real `alembic upgrade` or `guiyi runtime subing-ths-scope --apply` in this Packet.
 
 ---
 
@@ -1510,16 +1275,15 @@ Do not execute `alembic upgrade`, `guiyi runtime subing-ths-scope --apply`, or a
 
 - [ ] **Step 1: Write/adjust canonical consistency tests first**
 
-Tests must require active facts equivalent to:
+Tests require:
 
 ```text
-stable Alert rules after 0044 schema: HTDY + subing_ths_alert_15m_v1
-SuBing is observation-only, 15m actual_dominant completed-only
-MA21 is SMA21
-no old subing_strategy_v1 active implementation restored
-Event-first one-shot transport remains
-Range/zero-axis/multi-timeframe are not SuBing V1 gates
-production state remains whatever STATUS.md actually says; docs cannot invent migration/Runtime completion
+0044 active-schema rule identities are HTDY + subing_ths_alert_15m_v1
+SuBing observation-only / 15m actual_dominant / SMA21
+no old subing_strategy_v1 implementation restored
+Event-first one-shot remains
+Range/zero-axis/multi-timeframe are not V1 gates
+STATUS only states real release/Runtime/DB evidence
 ```
 
 - [ ] **Step 2: Run canonical test RED**
@@ -1529,57 +1293,36 @@ PYTHONPATH=services/quant-api:packages/quant-core \
   uv run --project services/quant-api pytest -q tests/engineering/test_canonical_consistency.py
 ```
 
-Expected: fail because active docs still describe HTDY-only stable product surface.
+- [ ] **Step 3: Update each canonical according to its responsibility**
 
-- [ ] **Step 3: Update canonical responsibilities precisely**
+`PROJECT_SOURCE.md`：新增最小“苏冰预警” observation 产品。
 
-`PROJECT_SOURCE.md`：增加“苏冰预警”最小 observation 产品，不把它写成策略交易系统。
+`DECISIONS.md`：冻结新身份/公式/one-shot observation，同时保留“旧策略整体退役”。
 
-`DECISIONS.md`：增加长期冻结公式 identity/新身份/one-shot observation；保留“旧策略整体退役”，明确新苏冰不是恢复旧身份。
+`docs/ARCHITECTURE.md`：现有 Alert Runtime 中增加 SuBing evaluator branch，不新增第二 Runtime。
 
-`docs/ARCHITECTURE.md`：在现有 Alert evaluator 旁增加 SuBing 15m evaluator branch；不新增第二 Runtime。
+`AGENTS.md`：0044 后 active Alert combinations 允许 HTDY + new SuBing；真实 Scope/通知/DB/Runtime 仍独立 Gate。
 
-`AGENTS.md`：Alert Runtime active combinations 在 0044 后允许 HTDY + SuBing；真实 Scope/通知/DB/Runtime 仍需独立 Gate。
+`TESTING.md`：增加 S1-S4 focused commands、0044 isolated test、Web checks。
 
-`TESTING.md`：增加 S1/S2/S3/S4 focused commands、0044 isolated test、Web alert checks；仍注明命令不授权真实外部操作。
+`STATUS.md` 默认不改；只有新的真实运行事实才另行更新。
 
-`STATUS.md` **本 Packet 默认不改**。只有执行时已有新的真实 release/Runtime/DB evidence 才允许按事实另行更新；“代码完成”不是 STATUS 运行事实。
-
-- [ ] **Step 4: Run canonical tests GREEN and commit**
+- [ ] **Step 4: Run canonical GREEN and commit**
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
   uv run --project services/quant-api pytest -q tests/engineering/test_canonical_consistency.py
-
-git add AGENTS.md PROJECT_SOURCE.md DECISIONS.md docs/ARCHITECTURE.md TESTING.md \
-        tests/engineering/test_canonical_consistency.py
-git commit -m "docs: define active SuBing THS alert contract"
 ```
 
-## S5.2 Add strict OpenSpec contract
+## S5.2 Add strict OpenSpec
 
-**File:**
-- Create `openspec/specs/subing-ths-alert/spec.md`
+**File:** `openspec/specs/subing-ths-alert/spec.md`
 
-- [ ] **Step 1: Write the OpenSpec from the approved Spec, not from implementation convenience**
+- [ ] **Step 1: Write the OpenSpec from the approved Spec**
 
-It must freeze at least:
+Freeze rule/formula identity, completed actual_dominant 15m, exact CROSS+SMA21, same-contract isolation, no hidden filters, Event identity, one-shot transport, Event-authoritative Web, 0044 disabled+empty scope, atomic activation, external Gates and the Plan safety amendment `G10 before G9`.
 
-```text
-rule/formula identity
-completed actual_dominant 15m only
-exact CROSS + SMA21
-same-contract state isolation
-no hidden filters
-Event identity/idempotency
-one-shot transport/no retry
-Web Event authority
-0044 disabled+empty scope
-atomic first activation
-external Gate separation
-```
-
-- [ ] **Step 2: Run strict validation**
+- [ ] **Step 2: Validate strictly**
 
 ```bash
 openspec validate --specs --strict --no-interactive
@@ -1594,13 +1337,13 @@ git commit -m "docs(openspec): specify SuBing THS alert V1"
 
 ## S5.3 Run fresh full verification at exact head
 
-- [ ] **Step 1: Sync locked dependencies only; do not update them**
+- [ ] **Step 1: Sync locked dependencies only**
 
 ```bash
 uv sync --project services/quant-api --locked
 ```
 
-- [ ] **Step 2: Run full non-isolated backend**
+- [ ] **Step 2: Full non-isolated backend**
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
@@ -1609,9 +1352,9 @@ PYTHONPATH=services/quant-api:packages/quant-core \
   services/quant-api/tests
 ```
 
-- [ ] **Step 3: Run isolated PostgreSQL migration suite**
+- [ ] **Step 3: Isolated PostgreSQL suite**
 
-Only if the dedicated disposable URL is configured:
+Only with dedicated disposable DB:
 
 ```bash
 GUIYI_ISOLATED_MIGRATION_DATABASE_URL='postgresql+psycopg://.../isolated_db' \
@@ -1620,9 +1363,9 @@ GUIYI_ISOLATED_MIGRATION_DATABASE_URL='postgresql+psycopg://.../isolated_db' \
   services/quant-api/tests/alembic
 ```
 
-If unavailable, S5 is **blocked from TEST_COMPLETE**；do not substitute production DB.
+If unavailable, S5 is blocked from `TEST_COMPLETE`；do not substitute production DB.
 
-- [ ] **Step 4: Run Mypy/Ruff**
+- [ ] **Step 4: Mypy/Ruff**
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core MYPYPATH=services/quant-api:packages/quant-core \
@@ -1633,7 +1376,7 @@ uv run --project services/quant-api python -m ruff check \
   services/quant-api/app services/quant-api/tests packages/quant-core/guiyi_quant tests/engineering
 ```
 
-- [ ] **Step 5: Run full Web**
+- [ ] **Step 5: Full Web**
 
 ```bash
 pnpm --dir apps/quant-web run check:alert-rules
@@ -1642,7 +1385,7 @@ pnpm --dir apps/quant-web build
 pnpm --dir apps/quant-web test:e2e
 ```
 
-- [ ] **Step 6: Run canonical/OpenSpec/security/diff checks**
+- [ ] **Step 6: Canonical/OpenSpec/security/diff**
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
@@ -1653,53 +1396,37 @@ git diff --check origin/develop...HEAD
 git status --short
 ```
 
-- [ ] **Step 7: Record exact fresh outputs in the Draft PR body**
+- [ ] **Step 7: Record exact outputs in Draft PR**
 
-Do not summarize skipped isolated tests as passed. Distinguish `passed / skipped / deselected / not run` exactly.
+Distinguish passed/skipped/deselected/not-run exactly.
 
 ## S5.4 Independent exact-head Review
 
-- [ ] **Step 1: Freeze exact review head**
+- [ ] **Step 1: Freeze clean exact head**
 
 ```bash
 git rev-parse HEAD
 git status --short
 ```
 
-Working tree must be clean.
-
-- [ ] **Step 2: Request two-axis independent review**
-
-Reviewer must inspect exact HEAD against:
+- [ ] **Step 2: Request two-axis independent Review**
 
 ```text
-Standards axis: AGENTS / data facts / security / migration / one-shot transport / Git boundaries
-Spec axis: exact formula / no hidden filters / same-contract causality / Event authority / Web / external Gates
+Standards axis: AGENTS / data facts / security / migration / one-shot / Git boundaries
+Spec axis: exact formula / no hidden filters / same-contract causality / Event authority / Web / Gate ordering
 ```
 
-Required finding severities: Critical / High / Medium / Low with file/line evidence. Any Critical/High blocks. Medium affecting contract/causality/migration/notification also blocks until fixed and re-reviewed.
+Critical/High block；contract/causality/migration/notification Medium findings also block until fixed and re-reviewed.
 
-- [ ] **Step 3: If fixes are required, implement in S5 branch, rerun all affected verification, freeze a new exact head, and re-review**
+- [ ] **Step 3: Fix findings, rerun affected verification, freeze a new SHA, re-review**
 
-Do not carry an approval from an earlier SHA to a changed SHA.
-
-- [ ] **Step 4: Final S5 commit if Review-driven docs/tests changed**
-
-Use a narrow message such as:
-
-```bash
-git commit -m "fix: close SuBing THS release-candidate findings"
-```
+No approval carries across a changed SHA.
 
 ## S5.5 RC handoff and STOP
 
-- [ ] **Step 1: Confirm all five Packet merge ancestry in `develop`**
+- [ ] **Step 1: Confirm S1-S4 merge ancestry in S5 base `develop`**
 
-At the moment S5 is ready to integrate, show that S1–S4 merge commits are reachable from the base `develop` used by S5.
-
-- [ ] **Step 2: Create/update Draft PR to `develop` with exact evidence**
-
-The PR may conclude only:
+- [ ] **Step 2: Draft PR may conclude only**
 
 ```text
 CODE_COMPLETE
@@ -1708,96 +1435,99 @@ independent Review approved
 允许进入 release candidate（等待 owner Gate）
 ```
 
-It must not claim `RELEASED` / `RUNTIME_READY` / `BUSINESS_CLOSED`.
+Never claim `RELEASED` / `RUNTIME_READY` / `BUSINESS_CLOSED`.
 
-- [ ] **Step 3: STOP before any release or external mutation**
+- [ ] **Step 3: STOP before release/external operations**
 
-The next operations are separate future Gates from the Spec:
+Future separate Gate order, applying the Plan safety amendment:
 
 ```text
-G5 release main/tag
-G6 Runtime maintenance stop
-G7 production DB 0042→0044
-G8 exact-tag Runtime promotion
-G9 production Scope activation + Rule enable
-G10 同花顺兼容性 evidence
+G5  release main/tag
+G6  Runtime maintenance stop
+G7  production DB current head → 0044
+G8  exact-tag Runtime promotion with SuBing still disabled + empty scope
+G10 同花顺兼容性 evidence（read-only comparison; no send）
+G9  production Scope activation + Rule enable
 G11 自然 15m Event / one-shot transport
 G12 用户人工微信送达确认
 ```
 
-No Packet implementation session may cross these Gates automatically.
+The deliberate `G10 → G9` order is the fail-closed resolution of the approved Spec conflict described above.
 
 ---
 
 # Packet Integration Protocol
 
-For **each** S1–S5 Packet:
+For each S1–S5 Packet:
 
 1. `git fetch origin`。
-2. Confirm latest `origin/develop`, approved Spec, this Plan, current `STATUS.md`, and no conflicting active task touches the same files.
+2. Confirm latest `origin/develop`, approved Spec, this Plan, current `STATUS.md`, branch/worktree/dirty state and conflicting in-flight work。
 3. Use `superpowers:using-git-worktrees` to create a fresh task worktree from latest `origin/develop`。
-4. Follow TDD: RED → confirm expected failure → minimal GREEN → adjacent regression → refactor → commit。
-5. Keep commits single-purpose and do not mix another Packet or unrelated refactor。
-6. Run fresh verification and `superpowers:verification-before-completion` before claiming complete。
+4. Use TDD: RED → confirm expected failure → minimal GREEN → adjacent regression → refactor → commit。
+5. Do not mix another Packet or unrelated refactor。
+6. Use `superpowers:verification-before-completion` before completion claims。
 7. Create Draft PR to `develop` only。
-8. Self-review, then use `superpowers:requesting-code-review` for an exact-head independent Review。
+8. Self-review, then `superpowers:requesting-code-review` for exact-head independent Review。
 9. Stop and wait for owner `允许集成 develop`。
-10. After approved merge, verify the merge is reachable from `develop`, then clean the merged task worktree/branch。
-11. Start the next Packet in a **new Codex session** from the new latest `develop`。
+10. After approved merge, prove merge reachable from `develop`, then clean merged task worktree/branch。
+11. Start the next Packet in a new Codex session from the new latest `develop`。
 
 No automatic `task → develop` merge is authorized by this Plan.
 
 ---
 
-# External Operation Runbook Boundary
+# External Operation Boundary
 
-This Plan intentionally stops before external execution. Later release/operator work must be a separate Lane 3 task and re-read the then-current `STATUS.md`.
+This Plan stops before external execution. Later release/operator work must be a separate Lane 3 task and re-read the then-current `STATUS.md`.
 
-The expected *shape* is:
+Expected shape:
 
 ```text
 approved develop RC
 → separate release Gate
 → main + annotated tag + GitHub Release + identity readback
 → separate Runtime maintenance-stop Gate
-→ separate production DB Gate: forward-only current production head → 0044
+→ separate production DB Gate: current production head → 0044
 → DB postflight/readback
-→ separate exact-tag Runtime promotion Gate
+→ separate exact-tag Runtime promotion Gate, SuBing remains disabled+empty
 → health/smoke
-→ separate Scope activation Gate using `guiyi runtime subing-ths-scope --apply`
-→ source compatibility Gate against real 同花顺 samples
+→ separately authorized read-only 同花顺 compatibility evidence
+→ only after compatibility passes: separate Scope activation Gate using `guiyi runtime subing-ths-scope --apply`
 → natural completed 15m observation
 → Event + one-shot transport evidence
 → user confirms actual WeChat delivery
 ```
 
-The exact release version is **not preassigned by this Plan**. It must be selected during the future release task from then-current `main`/Release facts; this is an explicit decision, not a placeholder.
+The exact release version is **not preassigned by this Plan**. It must be selected in the future release task from then-current `main`/Release facts；this is an explicit decision, not a placeholder.
 
 ---
 
 # Implementation Plan Self-Review
 
-The completed Plan was checked against all 26 Spec sections. Corrections captured before submission:
+The Plan was checked against all 26 Spec sections. Findings fixed before submission:
 
-1. **Avoided rolling 64-Bar replay for EMA state.** A bounded sliding EMA replay would change seed history as the window moves and violate prefix invariance. The Plan instead uses a small in-memory cursor plus a typed physical-contract replay seam: full same-contract rebuild on first use/rollover, then `after=cursor` reconciliation.
-2. **Downtime reconciliation does not become backfill.** Missing intermediate Bars may advance indicator state, but only the current trigger Bar may create a Candidate/Event.
-3. **Event persistence semantics stay Rule-specific.** HTDY keeps first-seen immutable mode; SuBing uses exact fact matching. No shared helper weakens either contract.
-4. **Notification policy is explicit.** Missing evaluator or formatter cannot silently fall back to HTDY.
-5. **Private PushPlus config is not expanded.** Both observation products use the existing observers Topic in V1; no second token/Topic/member database.
-6. **Per-rule health remains bounded.** Only four timestamps/error fields per fixed Rule；no symbol ledger, no second Redis key, no PostgreSQL history table.
-7. **Web deep link reuses `KlineChart.revealTime()`.** No second chart navigation system and no Event time rewriting.
-8. **SuBing markers are not tied to a new overlay.** They remain Event-backed review facts visible on actual_dominant 15m；HTDY overlay behavior stays unchanged.
-9. **0044 does not hard-code current 60 products.** It inserts disabled+empty Rule only；first activation atomically reads the execution-time operational universe.
-10. **Scope activation has one transaction and one dry-run hash.** No 60 independent HTTP writes and no generic workflow engine.
-11. **Canonical is updated last.** S1–S4 code can be reviewed without prematurely claiming the product is active；S5 aligns stable docs only after implementation exists in `develop`.
-12. **Current production state is not rewritten.** v1.9.12 release / v1.9.11 Runtime / production 0042 remain `STATUS.md` facts until separate real operations occur.
-13. **Release version is intentionally deferred, not TBD.** The future release task chooses it from then-current facts.
-14. **No formula duplicate.** API, formatter and Web derive wording/presentation from Event direction; only `SubingThs15mKernel` decides Candidate.
-15. **No legacy strategy resurrection.** No planned file path recreates Daily Watch/Factor/Lifecycle/Action/Episode/Position/Strategy Runtime or old Scope columns.
+1. **Sliding 64-Bar EMA replay would violate prefix invariance.** Replaced with a tiny in-memory cursor plus full same-contract rebuild on first use/rollover and `after=cursor` reconciliation thereafter.
+2. **Downtime reconciliation could accidentally backfill signals.** The evaluator steps intermediate Bars for state only; only the current trigger cutoff may return a Candidate.
+3. **HTDY and SuBing need different persistence semantics.** Added `event_mode`: HTDY first-seen immutable, SuBing exact facts.
+4. **Missing evaluator/formatter could silently fall back to HTDY.** Startup composition requires exact registry/evaluator/policy key equality.
+5. **Private PushPlus config was at risk of expanding.** V1 keeps the existing observers Topic and current config keys.
+6. **Per-rule health could regrow into a ledger.** Kept exactly four bounded fields per fixed Rule and one existing Redis status key.
+7. **Deep link could create a second chart navigation system.** Reuses existing `KlineChart.revealTime()` and formal Event `bar_end`.
+8. **SuBing marker could be tied to an unnecessary new Overlay.** No new overlay；Event marker is visible on actual_dominant 15m while HTDY overlay behavior remains unchanged.
+9. **0044 could freeze today’s 60 products.** Migration inserts disabled+empty Rule only；activation reads execution-time operational universe.
+10. **First activation could leave partial Scope.** Added one-transaction dry-run/apply seam with stable count/hash readback.
+11. **Canonical could claim the product active before code exists.** Canonical sync is S5 after S1-S4 are integrated.
+12. **Current v1.9.12/v1.9.11/0042 production facts could be overwritten by implementation status.** STATUS remains evidence-only and is not automatically updated.
+13. **Release version was unnecessarily guessable.** Future release chooses the version from then-current facts；no fixed version in this Plan.
+14. **API/Web/formatter could become second formula authorities.** Only `SubingThs15mKernel` decides Candidate；other layers consume Event direction.
+15. **Old strategy paths could re-enter through convenience reuse.** No planned file recreates Daily Watch/Factor/Lifecycle/Action/Episode/Position/Strategy Runtime or old columns.
+16. **Approved Spec had contradictory compatibility/activation Gate ordering.** Explicitly resolved fail-closed as `G10 compatibility evidence → G9 Scope activation + enable`; Plan approval is required before implementation.
+17. **S4 test-file choice was ambiguous.** Fixed the plan to always create `services/quant-api/tests/test_subing_scope_activation.py`.
+18. **A sample SMA test contained dead illustrative syntax.** Replaced with the exact committed assertion `3.666667`.
 
-Placeholder scan: no `TBD`, `TODO`, `implement later`, unresolved product choice or “similar to previous task” instruction is intentionally left in this Plan.
+Placeholder scan: no `TBD`, `TODO`, unresolved product choice, “implement later”, or “similar to Task N” instruction remains intentionally in this Plan.
 
-Type/interface check: S2 consumes only S1 public interfaces; S3 consumes S2 registry/Event wire; S4 assumes S2/S3 application code plus 0043 schema lineage; S5 only synchronizes canonical after S1–S4 are integrated.
+Interface check: S2 consumes only S1 public interfaces；S3 consumes S2 registry/Event wire；S4 assumes S2/S3 code plus 0043 lineage；S5 synchronizes canonical only after S1-S4 integration。
 
 ---
 
@@ -1805,7 +1535,7 @@ Type/interface check: S2 consumes only S1 public interfaces; S3 consumes S2 regi
 
 This document is Implementation Plan only. User approval authorizes starting **S1 only** in a new Lane 3 implementation session.
 
-Plan approval does **not** authorize:
+Plan approval does not authorize:
 
 ```text
 S1 auto-merge to develop
