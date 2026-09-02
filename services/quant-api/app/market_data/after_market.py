@@ -89,6 +89,7 @@ class AfterMarketUpdater:
         sleep: Callable[[float], None],
         notification_transport: NotificationTransport | None,
         now: Callable[[], datetime],
+        market_home_projection_invalidate: Callable[[], None] | None = None,
         market_home_projection_refresh: Callable[[], object] | None = None,
     ) -> None:
         self.manager = manager
@@ -98,6 +99,7 @@ class AfterMarketUpdater:
         self.sleep = sleep
         self.notification_transport = notification_transport
         self.now = now
+        self.market_home_projection_invalidate = market_home_projection_invalidate
         self.market_home_projection_refresh = market_home_projection_refresh
 
     def run(self) -> AfterMarketResult:
@@ -126,6 +128,10 @@ class AfterMarketUpdater:
                 attempt=attempt,
             )
             if error_code is None:
+                # Projection is a performance-only derived read model. Refresh only
+                # after Canonical publication, canonical_updated, reconciliation and
+                # Live cleanup have all completed successfully.
+                self._refresh_market_home_projection()
                 result = AfterMarketResult("passed", trading_day, attempt, None)
                 self._write_status(result, started_at, products)
                 return result
@@ -210,6 +216,7 @@ class AfterMarketUpdater:
         if not ready:
             return "RQDATA_NOT_READY"
         try:
+            self._invalidate_market_home_projection()
             result = self.manager.update(
                 UpdateRequest(
                     products=products,
@@ -255,7 +262,6 @@ class AfterMarketUpdater:
             )
             return error_code
 
-        self._refresh_market_home_projection()
         try:
             # A successful Canonical write must notify the Web seam even when the
             # temporary intraday snapshot disagrees with the formal map.
@@ -284,6 +290,10 @@ class AfterMarketUpdater:
             )
             return "UPDATE_FAILED"
         return None
+
+    def _invalidate_market_home_projection(self) -> None:
+        if self.market_home_projection_invalidate is not None:
+            self.market_home_projection_invalidate()
 
     def _refresh_market_home_projection(self) -> None:
         if self.market_home_projection_refresh is None:
@@ -383,8 +393,16 @@ def build_after_market_updater(
     if client is None:
         raise RuntimeError("AFTER_MARKET_RQDATA_CLIENT_UNAVAILABLE")
     from app.market_data.live_market import RedisClient
+    from app.market_data.market_home_projection import (
+        MarketHomeProjectionStore,
+        market_home_projection_path,
+    )
     from app.redis_connections import get_redis_connection
     from typing import cast
+
+    projection_store = MarketHomeProjectionStore(
+        market_home_projection_path(manager.catalog.canonical_root)
+    )
 
     def refresh_market_home_projection() -> object:
         from app.market_data.composition import build_market_home_projection
@@ -402,6 +420,7 @@ def build_after_market_updater(
         sleep=time.sleep,
         notification_transport=notification_transport,
         now=lambda: datetime.now(SHANGHAI),
+        market_home_projection_invalidate=projection_store.invalidate,
         market_home_projection_refresh=refresh_market_home_projection,
     )
 
