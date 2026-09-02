@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { NAlert, NButton, NDrawer, NDrawerContent, NSpin, NTag, useMessage } from 'naive-ui'
 import KlineChart from '@/components/kline/KlineChart.vue'
@@ -35,7 +35,12 @@ import { ALERT_RULE_CODES } from '@/utils/alertRules'
 import { alertMarkersForOverlay } from '@/utils/alertMarkers'
 import { earlierHistoryLoadError } from '@/utils/errorRedaction'
 import { buildKlineDerivedData } from '@/utils/klineViewModel'
-import { seriesRefreshQuery } from '@/utils/marketChartEntry'
+import {
+  consumeFocusBarEnd,
+  resolveFocusBarEnd,
+  seriesRefreshQuery,
+  withoutFocusBarEnd,
+} from '@/utils/marketChartEntry'
 import {
   loadMainChartPreferences,
   normalizeOptionalEmaIndicators,
@@ -76,6 +81,10 @@ const symbol = ref(resolveInitialSymbol())
 const contract = ref(String(route.query.contract || '').toUpperCase())
 const seriesKind = ref<SeriesKind>(resolveInitialSeriesKind())
 const frequency = ref<MarketFrequency>(resolveInitialFrequency())
+const pendingFocusBarEnd = ref(resolveFocusBarEnd(route.query.focus_bar_end, {
+  seriesKind: seriesKind.value,
+  frequency: frequency.value,
+}))
 const followLatest = ref(true)
 let metadataReady = false
 let researchGeneration = 0
@@ -339,6 +348,7 @@ async function syncChartLocationQuery() {
         frequency: frequency.value,
       }),
       overlay: selectedOverlay.value === 'none' ? undefined : selectedOverlay.value,
+      focus_bar_end: pendingFocusBarEnd.value ?? undefined,
     },
   })
 }
@@ -363,6 +373,8 @@ async function refreshSeries() {
       return false
     }
     await syncChartLocationQuery()
+    await nextTick()
+    await consumePendingFocus(requested)
     return replacementGeneration === canonicalReplacementGeneration && isCurrentIdentity(requested)
   } catch {
     if (replacementGeneration !== canonicalReplacementGeneration || !isCurrentIdentity(requested)) {
@@ -372,6 +384,14 @@ async function refreshSeries() {
     message.error(error.value)
     return false
   }
+}
+
+async function consumePendingFocus(requested: ReturnType<typeof currentIdentity>) {
+  const focusBarEnd = pendingFocusBarEnd.value
+  if (focusBarEnd === null) return
+  if (!consumeFocusBarEnd(focusBarEnd, requested, (value) => chart.value?.revealTime(value) ?? false)) return
+  pendingFocusBarEnd.value = null
+  await router.replace({ query: withoutFocusBarEnd(route.query) })
 }
 
 async function refreshResearch() {
