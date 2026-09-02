@@ -69,18 +69,63 @@ class NewowTrendProfile:
         )
         if not all(isfinite(value) for value in values):
             raise ValueError("NEWOW_PROFILE_INVALID")
+        positive_integers = (
+            self.cup_atr_period,
+            self.cup_pretrend_min_bars,
+            self.cup_pretrend_max_bars,
+            self.cup_min_bars,
+            self.cup_max_bars,
+            self.cup_bottom_span_ready_min,
+            self.cup_handle_min_bars,
+            self.cup_handle_max_bars,
+            self.cup_ready_expiry_bars,
+            self.cup_post_breakout_archive_bars,
+            self.cup_recent_terminal_ids_limit,
+            self.cup_min_leg_bars,
+            self.cup_history_limit,
+            self.cup_max_confirmed_pivots,
+            self.cup_max_candidate_checks_per_step,
+        )
         if (
-            self.cup_atr_period <= 0
-            or self.cup_pretrend_min_bars <= 0
+            any(value <= 0 for value in positive_integers)
             or self.cup_pretrend_min_bars > self.cup_pretrend_max_bars
-            or self.cup_min_bars <= 0
             or self.cup_min_bars > self.cup_max_bars
-            or self.cup_handle_min_bars <= 0
             or self.cup_handle_min_bars > self.cup_handle_max_bars
-            or not 0 < self.cup_depth_min_pct <= self.cup_depth_hard_max_pct
-            or self.cup_depth_hard_max_pct > 1
+            or self.cup_reversal_atr <= 0
+            or self.cup_pretrend_min_return <= 0
+            or self.cup_pretrend_min_move_atr <= 0
+            or not (
+                0
+                < self.cup_depth_min_pct
+                <= self.cup_depth_preferred_max_pct
+                <= self.cup_depth_hard_max_pct
+                <= 1
+            )
+            or self.cup_depth_min_atr <= 0
+            or self.cup_rim_gap_max_pct <= 0
+            or self.cup_rim_gap_max_atr <= 0
+            or not 0 < self.cup_bottom_zone_ratio < 1
+            or not (
+                0
+                < self.cup_leg_ratio_hard_min
+                <= self.cup_leg_ratio_soft_min
+                <= self.cup_leg_ratio_soft_max
+                <= self.cup_leg_ratio_hard_max
+            )
+            or self.cup_midline_crossings_soft_max < 0
+            or self.cup_midline_crossings_soft_max
+            > self.cup_midline_crossings_hard_max
             or not 0 < self.cup_handle_depth_max_pct < 1
             or not 0 < self.cup_handle_retrace_max_ratio <= 1
+            or not 0 < self.cup_handle_upper_half_ratio <= 1
+            or not 0 < self.cup_handle_right_volume_max_ratio <= 1
+            or not 0 < self.cup_handle_baseline_volume_max_ratio <= 1
+            or self.cup_breakout_buffer_atr < 0
+            or self.cup_breakout_volume20_min_ratio <= 0
+            or self.cup_breakout_handle_volume_min_ratio <= 0
+            or not 0 <= self.cup_forming_min_body_score <= 60
+            or not 0 <= self.cup_ready_min_score <= 94
+            or not 0 <= self.cup_breakout_min_score <= 100
         ):
             raise ValueError("NEWOW_PROFILE_INVALID")
 

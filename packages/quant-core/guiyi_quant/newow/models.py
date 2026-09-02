@@ -5,8 +5,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
 from math import isfinite
-from types import MappingProxyType
-from typing import Mapping
+from typing import Iterator, Mapping
 
 
 class TrendBandState(StrEnum):
@@ -59,8 +58,40 @@ class CupPivotKind(StrEnum):
     LOW = "LOW"
 
 
+class _FrozenMapping(Mapping[str, object]):
+    """Small pickle-safe immutable mapping for frozen public facts."""
+
+    __slots__ = ("_values",)
+
+    def __init__(self, values: Mapping[str, object]) -> None:
+        self._values = dict(values)
+
+    def __getitem__(self, key: str) -> object:
+        return self._values[key]
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._values)
+
+    def __len__(self) -> int:
+        return len(self._values)
+
+    def __reduce__(self) -> tuple[object, tuple[dict[str, object]]]:
+        return (_FrozenMapping, (dict(self._values),))
+
+    def __deepcopy__(self, memo: dict[int, object]) -> _FrozenMapping:
+        return self
+
+
+def _freeze_value(value: object) -> object:
+    if isinstance(value, Mapping):
+        return _FrozenMapping({str(key): _freeze_value(item) for key, item in value.items()})
+    if isinstance(value, (list, tuple)):
+        return tuple(_freeze_value(item) for item in value)
+    return value
+
+
 def _freeze_mapping(values: Mapping[str, object]) -> Mapping[str, object]:
-    return MappingProxyType(dict(values))
+    return _FrozenMapping({str(key): _freeze_value(value) for key, value in values.items()})
 
 
 @dataclass(frozen=True, slots=True)
@@ -198,9 +229,35 @@ class NewowCupHandleOverlay:
         object.__setattr__(self, "hard_failures", tuple(self.hard_failures))
         object.__setattr__(self, "diagnostics", tuple(self.diagnostics))
         object.__setattr__(self, "volume_facts", _freeze_mapping(self.volume_facts))
-        if not self.candidate_id or not self.formula_version or not isfinite(self.score):
+        if (
+            not self.candidate_id
+            or not self.formula_version
+            or self.state == CupHandleState.NONE
+            or not isfinite(self.score)
+            or not 0 <= self.score <= 100
+            or self.hard_failures
+        ):
             raise ValueError("NEWOW_CUP_OVERLAY_INVALID")
-        if self.left_rim.kind != self.right_rim.kind or self.bottom.kind == self.left_rim.kind:
+        expected_rim_kind = (
+            CupPivotKind.HIGH
+            if self.direction == CupHandleDirection.BULLISH
+            else CupPivotKind.LOW
+        )
+        if (
+            self.left_rim.kind != expected_rim_kind
+            or self.right_rim.kind != expected_rim_kind
+            or self.bottom.kind == expected_rim_kind
+            or not (
+                self.left_rim.pivot_index
+                < self.bottom.pivot_index
+                < self.right_rim.pivot_index
+            )
+        ):
+            raise ValueError("NEWOW_CUP_OVERLAY_INVALID")
+        if self.handle_extreme is not None and (
+            self.handle_extreme.kind != self.bottom.kind
+            or self.handle_extreme.pivot_index <= self.right_rim.pivot_index
+        ):
             raise ValueError("NEWOW_CUP_OVERLAY_INVALID")
         if self.state in {
             CupHandleState.READY,
@@ -209,6 +266,10 @@ class NewowCupHandleOverlay:
             CupHandleState.INVALIDATED,
             CupHandleState.EXPIRED,
         } and (self.handle_extreme is None or self.pivot_price is None or self.pivot_frozen_at is None):
+            raise ValueError("NEWOW_CUP_OVERLAY_INVALID")
+        if self.pivot_price is not None and (
+            not self.pivot_price.is_finite() or self.pivot_price <= 0
+        ):
             raise ValueError("NEWOW_CUP_OVERLAY_INVALID")
 
 
