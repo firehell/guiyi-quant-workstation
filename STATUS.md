@@ -9,7 +9,7 @@
 | 项目 | 当前事实 |
 |---|---|
 | Release | `v1.9.12@4de1b5d8d8c69f24fa84fe1e25f85818ce7724c0` 是当前最新 GitHub Release；`main`、annotated tag 的 peeled commit 与 GitHub Release target 精确一致，API 与 Web release identity 均为 `1.9.12`。它包含 forward-only `20260902_0043` compatibility code，并保留 v1.9.11 的 Live ready-heartbeat fail-closed 修复。 |
-| Runtime | v1.9.12 的一次五项切换已加载 clean、detached 的 `/Volumes/扩展盘/guiyi-quant-runtime-v1.9.12-r1@4de1b5d8`。API/Web/Live 已 running，盘后服务按调度 `not_running`；Alert 因公开回退码 `CLI_INTERNAL_ERROR` 停在 `spawn_scheduled`，未写新 heartbeat，整体 health 为 degraded，不能标记 `RUNTIME_READY`。目标 root 的锁定 Python/Web 依赖与 build 已就绪；本任务未重试、未 rollback、未执行盘后、未改 Scope/Rule、未手工发送通知。 |
+| Runtime | v1.9.12 的一次五项切换已加载 clean、detached 的 `/Volumes/扩展盘/guiyi-quant-runtime-v1.9.12-r1@4de1b5d8`。API/Web/Live 已 running，盘后服务按调度 `not_running`；Alert 因公开回退码 `CLI_INTERNAL_ERROR` 停在 `spawn_scheduled`，未写新 heartbeat，整体 health 为 degraded，不能标记 `RUNTIME_READY`。目标 root 的锁定 Python/Web 依赖与 build 已就绪；后续一次仅 Alert 的受控重载仍以 exit `1` 失败。本任务未 rollback、未执行盘后、未改 Scope/Rule、未手工发送通知。 |
 | Database | production Alembic 为 `20260826_0042 (head)`。当前 Rule 为 `htdy_original_15m` 与 `subing_strategy_v1`。 |
 | Market Runtime Scope | `operational_products.txt` 的 60 个品种。 |
 | Alert Scope | production 尚未执行 0043，因此 HTDY Scope 仍为 `jm × 15m`，已退役 Rule 的旧 `scope_products` 数据仍在库中。两条旧库 Rule 均 enabled，Alert Runtime marker 已 enabled，audience count 2；本任务未发生 production Scope、Rule 或 audience mutation。 |
@@ -30,7 +30,7 @@ Alert transport 为 PushPlus；provider accepted 不等于微信送达。
 
 ## Pending Gate
 
-- v1.9.12 已 `RELEASED`，且 API/Web/Live 已加载 exact tag；Alert 尚未建立 heartbeat，整体 health degraded。已完成本次单次 Runtime 切换尝试，任何 Alert 重启、rollback 或后续 Runtime mutation 都须新的独立授权；首根自然 completed Live Gate也仍未开始。
+- v1.9.12 已 `RELEASED`，且 API/Web/Live 已加载 exact tag；Alert 在一次受控重载后仍未建立 heartbeat，整体 health degraded。任何进一步 Alert 修复/重启、rollback 或后续 Runtime mutation 都须新的独立授权；首根自然 completed Live Gate也仍未开始。
 - `20260902_0043` 的 production PostgreSQL migration 尚未授权或执行；旧策略 Event、Rule、Scope 与列仍是 production 事实。执行前必须独立只读 preflight，并取得一次范围明确的真实 DB 删除授权。
 - Git 外旧策略派生目录尚未删除；删除前必须解析配置得到精确绝对路径、验证挂载根与 deletion manifest，并取得一次范围明确的真实删除授权。
 - v1.9.10 仍为 `RELEASED` 的历史版本，但不再承载服务，也不保留本地 Runtime checkout；不得将其历史 startup restore Gate 当作当前 Runtime 状态。
