@@ -43,8 +43,8 @@ class SubingThs15mKernel:
     slow = 26
     signal = 9
     sma_period = 21
-    ema_seed_policy = "sma_window"
-    histogram_scale = 2
+    ema_seed_policy: Literal["sma_window"] = "sma_window"
+    histogram_scale: Literal[2] = 2
     round_digits = 6
 
     def initial_state(self) -> SubingThs15mState:
