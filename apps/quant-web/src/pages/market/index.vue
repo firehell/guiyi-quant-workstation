@@ -32,6 +32,8 @@ const weekly = ref<MarketHomeTrendFilter>('all')
 const alignment = ref<MarketHomeAlignmentFilter>('all')
 const event = ref<MarketHomeEventFilter>('all')
 const data = ref<MarketHomeDataFilter>('all')
+const compactDensity = ref(initialPreferences.compactDensity)
+const focusRailCollapsed = ref(initialPreferences.focusRailCollapsed)
 const home = useMarketHome({ fetchOverview: getMarketHomeOverview, fetchRuntime: getRuntimeHealth, fetchEvents: getCurrentHtdyEvents })
 const model = computed(() => buildMarketHomeViewModel({ overview: home.overview.data.value ?? null, overviewStale: home.overview.stale.value ?? false, runtime: home.runtime.data.value ?? null, runtimeStale: home.runtime.stale.value ?? false, events: home.events.data.value ?? null, eventsStale: home.events.stale.value ?? false }))
 const loading = computed(() => home.overview.loading.value || home.runtime.loading.value || home.events.loading.value)
@@ -50,7 +52,7 @@ function openProduct(item: MarketHomeRow) {
 }
 
 function openEvent(event: AlertEvent) { void router.push({ name: 'market-chart', query: marketHomeEventChartQuery(event) }) }
-watch([sector,sort], () => saveMarketHomePreferences({ version: 1, sector: sector.value, sort: sort.value, compactDensity: initialPreferences.compactDensity, detailFrequency: initialPreferences.detailFrequency, focusRailCollapsed: initialPreferences.focusRailCollapsed }))
+watch([sector,sort,compactDensity,focusRailCollapsed], () => saveMarketHomePreferences({ version: 1, sector: sector.value, sort: sort.value, compactDensity: compactDensity.value, detailFrequency: initialPreferences.detailFrequency, focusRailCollapsed: focusRailCollapsed.value }))
 
 onMounted(() => {
   home.start()
@@ -65,7 +67,7 @@ onBeforeUnmount(() => {
   <div class="market-dashboard-page">
     <header class="market-dashboard-page__intro">
       <div><h1>行情看板</h1><p>完成周期市场事实与 HTDY 观察；所有内容仅供人工复核。</p></div>
-      <NButton secondary size="small" :loading="loading" :disabled="loading" @click="refreshAll">全部刷新</NButton>
+      <div><NButton secondary size="small" @click="compactDensity=!compactDensity">{{compactDensity?'常规密度':'紧凑密度'}}</NButton><NButton secondary size="small" :loading="loading" :disabled="loading" @click="refreshAll">全部刷新</NButton></div>
     </header>
     <MarketHomeSectorTicker class="market-dashboard-page__ticker" :sectors="home.overview.data.value?.sectors??[]" @select="sector=$event"/>
     <MarketHomeLegend class="market-dashboard-page__legend"/>
@@ -73,7 +75,7 @@ onBeforeUnmount(() => {
     <MarketHomeSummary class="market-dashboard-page__summary" :summary="home.overview.data.value?.summary??null" :active="summaryFilter" :event-count="home.events.data.value?.items.length??0" :latest-event-time="latestEventTime" @filter="summaryFilter=$event"/>
     <p v-if="home.overview.unavailable.value" class="market-dashboard-page__error" role="alert">Market Home overview 暂不可用；没有可展示的上一份成功快照。</p>
     <MarketHomeSkeleton v-if="loading&&!home.overview.data.value"/>
-    <template v-else><div class="market-dashboard-page__workspace"><div><MarketHomeToolbar v-model:query="query" v-model:sort="sort" v-model:daily="daily" v-model:weekly="weekly" v-model:alignment="alignment" v-model:event="event" v-model:data="data"/><MarketHomeTable :rows="rows" @open="openProduct"/><MarketHomeMobileList :rows="rows" @open="openProduct"/></div><MarketHomeFocusRail :availability="model.events.availability" :events="home.events.data.value?.items??[]" @open="openEvent"/></div></template>
+    <template v-else><div class="market-dashboard-page__workspace" :class="{'market-dashboard-page__workspace--compact':compactDensity}"><div><MarketHomeToolbar v-model:query="query" v-model:sort="sort" v-model:daily="daily" v-model:weekly="weekly" v-model:alignment="alignment" v-model:event="event" v-model:data="data"/><MarketHomeTable :rows="rows" @open="openProduct"/><MarketHomeMobileList :rows="rows" @open="openProduct"/></div><MarketHomeFocusRail :availability="model.events.availability" :events="home.events.data.value?.items??[]" v-model:collapsed="focusRailCollapsed" @open="openEvent"/></div></template>
   </div>
 </template>
 
