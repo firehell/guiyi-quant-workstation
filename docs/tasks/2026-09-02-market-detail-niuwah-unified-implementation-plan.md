@@ -719,16 +719,19 @@ export interface DetailViewModel {
 
 类型中禁止出现 `score`、`confidence`、`positionAdvice`、`targetPrice`。
 
-- [ ] **Step 1: 写三事实和禁止字段测试**
+- [ ] **Step 1: 写共享行情头无综合字段测试**
 
 ```ts
-test('fact strip has exactly three sourced facts and no synthetic score', () => {
-  const model = buildFreeDetailViewModel(fixture)
-  assert.equal(model.facts.length, 3)
+test('shared header contains market facts and no synthetic decision fields', () => {
+  const model = buildMarketDetailHeaderModel(headerFixture)
   assert.equal('score' in model, false)
   assert.equal('confidence' in model, false)
+  assert.equal('positionAdvice' in model, false)
+  assert.equal('targetPrice' in model, false)
 })
 ```
+
+视角级“三事实恰好为 3”分别在 Task 7、8、10、13 的 ViewModel 测试中冻结，不让共享层伪造视角事实。
 
 - [ ] **Step 2: 写行情头同身份测试**
 
@@ -1045,6 +1048,7 @@ export function markersForDetailView(
 test('free exposes identity facts and never strategy markers', () => {
   const model = buildFreeDetailViewModel(fixture)
   assert.deepEqual(model.facts.map((item) => item.label), ['当前序列', '当前周期', '数据状态'])
+  assert.equal(model.facts.length, 3)
   assert.equal(model.history.length, 0)
   assert.deepEqual(markersForDetailView('free', allAlertMarkers), [])
 })
@@ -1175,6 +1179,7 @@ test('raw observation remains separate from immutable event', () => {
     rawObservation: rawBuyObservation,
     events: [savedSellEvent],
   })
+  assert.equal(model.facts.length, 3)
   assert.equal(model.facts[0].value, '买观察')
   assert.match(model.facts[1].value, /卖出观察/)
   assert.notEqual(model.facts[0].source, model.facts[1].source)
@@ -1253,7 +1258,7 @@ git commit -m "feat(web): add HTDY detail workspace"
 - Create: `apps/quant-web/src/components/market/detail/MarketDetailAlertControl.vue`
 - Create: `apps/quant-web/tests/marketDetailAlertControl.test.ts`
 - Modify: `apps/quant-web/e2e/market-detail.spec.mjs`
-- Do not modify in this Slice: backend endpoint、DB、migration、Runtime、notification transport
+- Do not modify: backend endpoint、DB、migration、Runtime、notification transport
 
 **Interface:**
 
@@ -1362,6 +1367,7 @@ export function buildSubingDetailViewModel(input: {
 ```ts
 test('no AlertEvent means no synthetic SuBing direction', () => {
   const model = buildSubingDetailViewModel({ ...fixture, events: [] })
+  assert.equal(model.facts.length, 3)
   assert.equal(model.facts[0].value, '暂无')
   assert.equal(model.history.length, 0)
   assert.doesNotMatch(JSON.stringify(model), /偏多|偏空|中性/)
@@ -1606,7 +1612,7 @@ Web 不导入或复制 Python formula，不重算黄蓝、D123、杯柄、BUILD/
 
 - [ ] **Step 4: 写并实现 Trend ViewModel**
 
-三事实：趋势状态、D1/D2/D3 风险、杯柄状态。固定提示：`建仓、持有、清仓、空仓为趋势引擎状态，不代表实际账户持仓。`
+三事实：趋势状态、D1/D2/D3 风险、杯柄状态；测试断言 `facts.length === 3`。固定提示：`建仓、持有、清仓、空仓为趋势引擎状态，不代表实际账户持仓。`
 
 不可用时显示不可用，不能根据基础 Kline 猜趋势。
 
@@ -1881,14 +1887,14 @@ git commit -m "test(web): freeze unified detail visual contract"
 - Modify: `DECISIONS.md`
 - Modify: `docs/ARCHITECTURE.md`
 - Modify: `TESTING.md`
-- Modify/create: execution-time appropriate `openspec/specs/market-*` requirement
+- Create: `openspec/specs/market-detail/spec.md`
 - Do not modify: `STATUS.md`，除非另一个被明确授权的 release/Runtime 任务产生真实状态变化
 
 - [ ] **Step 1: 更新稳定产品面**
 
 写明统一详情页、四互斥视角、各自 authority、无订单/账户/自动晋升。不得把尚未 release/Runtime 的状态写成生产事实。
 
-- [ ] **Step 2: 更新架构和测试导航**
+- [ ] **Step 2: 更新架构、OpenSpec 和测试导航**
 
 ```text
 MarketDataService → shared bars/header
@@ -1897,6 +1903,8 @@ HTDY display + AlertEvent → HTDY
 AlertEvent → SuBing
 Generic indicators → Free/HTDY/SuBing review layers
 ```
+
+新 `market-detail/spec.md` 只冻结页面、身份、authority、fail-closed 和视觉/无障碍要求，不复制 Newow/SuBing/HTDY 公式。
 
 - [ ] **Step 3: 全量验证**
 
@@ -1935,12 +1943,10 @@ git add \
   DECISIONS.md \
   docs/ARCHITECTURE.md \
   TESTING.md \
-  <本 Task 实际修改的 OpenSpec 文件>
+  openspec/specs/market-detail/spec.md
 
 git commit -m "docs(market): canonicalize unified detail surface"
 ```
-
-执行时用实际 OpenSpec 路径替换尖括号项；在暂存前用 `git status --short` 核对，不得暂存无关文件。
 
 - [ ] **Step 7: 停在用户 Gate**
 
@@ -1987,9 +1993,9 @@ VISUAL_REVIEW_READY
 ### 4.2 Placeholder scan
 
 - 没有 `TODO / TBD / FIXME`。
-- 没有空组件或虚构 API。
+- 没有空组件、条件性测试文件名或虚构 API。
 - `LegacyMarketChart` 是有创建、回归、切换和删除任务的临时 seam，不是永久兼容层。
-- Task 17 的 OpenSpec 路径必须取执行时真实 active spec；这是 canonical 选择规则，不是未定义产品需求。
+- OpenSpec 使用已冻结的精确路径 `openspec/specs/market-detail/spec.md`。
 
 ### 4.3 Type consistency
 
