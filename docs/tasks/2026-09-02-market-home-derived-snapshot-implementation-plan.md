@@ -2,24 +2,26 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 将 Market Home completed D1/W1 overview 从常态 read-time compute 改为 after-market update-time runtime-local derived projection，并在 projection miss 时保留现有只读 compute fallback。
+**Goal:** 将 Market Home completed D1/W1 overview 的常态读取从约 120 次 historical query 的 read-time compute 改为 shared Canonical-root derived projection，同时保证任何 projection 缺失、损坏、同日 refresh/update 或写失败都只能造成性能退化，不能造成旧事实误命中。
 
-**Architecture:** `MarketHomeOverviewService` 保持唯一计算 authority；新增 `.run/market-home-overview.json` strict/atomic projection store。after-market 在 Canonical maintenance `passed/noop` 后 best-effort refresh projection；overview API 先按 exact authority identity 读 projection，miss/corrupt/mismatch 时调用原 `snapshot()`，API 永不写 projection。
+**Architecture:** `MarketHomeOverviewService` 继续作为唯一 compute authority。Projection 固定在 `<canonical_root>/.derived/market-home-overview.json`。正式 `data update/refresh --apply` 与自然 after-market 在 manager action 前先失效旧 projection；API projection hit 直接返回，miss 回退现有 compute 且永不写；自然 after-market 仅在 `canonical_updated + rank1/Live reconciliation + cleanup` 全部完成后 best-effort 重建 projection。
 
-**Tech Stack:** Python 3.13、FastAPI、Pydantic v2、dataclasses、SHA-256、UTF-8 JSON、atomic `tempfile + fsync + os.replace`、pytest、Ruff、Mypy、OpenSpec。
+**Tech Stack:** Python 3.13、FastAPI、Pydantic v2、SHA-256、UTF-8 JSON、`tempfile + fsync + os.replace`、pytest、Ruff、Mypy、OpenSpec。
 
 **Spec:** `docs/tasks/2026-09-02-market-home-derived-snapshot-spec.md`
 
 ## Global Constraints
 
-- 任务基线为执行时最新 `develop`；本 Plan 起草事实基线为 `fa04c5524b57a3512d7163612972099eda96e0c4`。
-- Lane 3：代码/测试可以进入 task branch；不得执行真实 after-market、production RQData/Canonical/DB/Redis/Scope/notification、main/tag/Release/Runtime promotion。
-- `MarketHomeOverviewService` 是唯一 D1/W1 compute authority；不得复制指标或 actual-dominant 逻辑。
-- Projection 固定为 `PROJECT_ROOT/.run/market-home-overview.json`，schema_version `1`，单文件、runtime-local、可删除、可重建。
-- API projection miss 必须 compute fallback，但不得 publish/write projection。
-- Projection refresh failure 只影响性能，不得把已成功 Canonical maintenance 改判失败，不 retry、不通知。
-- 不新增 Redis cache、PostgreSQL、Alembic、derived external root、queue、worker、thread pool、Web UI 改动。
-- `STATUS.md` 不修改。
+- 事实基线：`develop@fa04c5524b57a3512d7163612972099eda96e0c4`；提交 PR 前必须重新比较最新 `develop`。
+- Lane 3：本任务只授权仓库代码、测试、文档、task branch 与 PR；不得执行真实 `data ... --apply`、after-market、RQData、Canonical、production DB/Redis/Scope/notification、main/tag/Release/Runtime promotion。
+- `MarketHomeOverviewService` 是唯一 D1/W1 compute authority；禁止复制指标或 actual-dominant 逻辑。
+- Projection 不是 Canonical/Catalog/策略事实；可删除、可重建。
+- Projection path 跟随 shared canonical root，禁止 checkout-local `.run` 方案。
+- 所有正式 apply 入口必须在 manager action 前 invalidate projection；invalidator 失败必须在真实 mutation 前停止。
+- API miss 必须保留原 compute correctness，但不得 publish/write projection。
+- after-market refresh failure只影响性能，不 retry、不发 projection-specific notification、不改变已成功 core maintenance。
+- 不新增 Redis cache、PostgreSQL/Alembic、queue、worker、线程池或 Web UI 改动。
+- `PROJECT_SOURCE.md` 与 `STATUS.md` 不修改。
 
 ---
 
@@ -27,51 +29,26 @@
 
 **Files:**
 - Modify: `services/quant-api/app/market_data/market_home_overview.py`
-- Modify: `services/quant-api/tests/data_foundation/test_market_home_overview.py`
+- Test: `services/quant-api/tests/data_foundation/test_market_home_projection.py`
 
 **Interfaces:**
-- Consumes: existing validated `products`, `taxonomy`, `latest_complete_day` dependencies inside `MarketHomeOverviewService`.
-- Produces: `MarketHomeAuthorityIdentity(target_as_of: date, authority_digest: str)` and `MarketHomeOverviewService.authority_identity() -> MarketHomeAuthorityIdentity`.
+- Consumes: existing validated products/taxonomy/latest_complete_day.
+- Produces: `MarketHomeAuthorityIdentity` and `MarketHomeOverviewService.authority_identity()`.
 
 - [ ] **Step 1: Write failing identity tests**
 
-Add tests that construct the existing fake service and assert:
-
-```python
-identity = service.authority_identity()
-assert identity.target_as_of == TARGET
-assert len(identity.authority_digest) == 64
-assert identity.authority_digest == service.authority_identity().authority_digest
-```
-
-Add independent service instances proving digest changes for:
-
-```text
-products order change
-taxonomy.name change
-taxonomy.sector change
-```
+Cover deterministic digest and changes caused by product order, taxonomy name and taxonomy sector.
 
 - [ ] **Step 2: Run RED**
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
   uv run --project services/quant-api pytest -q \
-  services/quant-api/tests/data_foundation/test_market_home_overview.py
+  services/quant-api/tests/data_foundation/test_market_home_projection.py \
+  -k authority_identity
 ```
 
-Expected: fail because `authority_identity` / `MarketHomeAuthorityIdentity` do not exist.
-
-- [ ] **Step 3: Implement deterministic identity**
-
-Add imports:
-
-```python
-from hashlib import sha256
-import json
-```
-
-Add:
+- [ ] **Step 3: Implement identity**
 
 ```python
 @dataclass(frozen=True, slots=True)
@@ -80,112 +57,61 @@ class MarketHomeAuthorityIdentity:
     authority_digest: str
 ```
 
-Refactor target resolution into:
+Digest input exactly:
 
 ```python
-def _target_as_of(self) -> date:
-    try:
-        return self._latest_complete_day(self._products)
-    except InfrastructureError as exc:
-        raise MarketHomeOverviewError("MARKET_HOME_TARGET_AS_OF_UNAVAILABLE") from exc
+records = [
+    {
+        "symbol": symbol,
+        "name": taxonomy[symbol].name,
+        "sector": taxonomy[symbol].sector,
+    }
+    for symbol in products
+]
+json.dumps(records, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+sha256(encoded).hexdigest()
 ```
 
-Add:
+Refactor target day resolution into one helper so existing public error code remains unchanged.
 
-```python
-def authority_identity(self) -> MarketHomeAuthorityIdentity:
-    records = [
-        {
-            "symbol": symbol,
-            "name": self._taxonomy[symbol].name,
-            "sector": self._taxonomy[symbol].sector,
-        }
-        for symbol in self._products
-    ]
-    encoded = json.dumps(
-        records,
-        ensure_ascii=False,
-        separators=(",", ":"),
-        sort_keys=True,
-    ).encode("utf-8")
-    return MarketHomeAuthorityIdentity(
-        target_as_of=self._target_as_of(),
-        authority_digest=sha256(encoded).hexdigest(),
-    )
-```
+- [ ] **Step 4: Run GREEN and commit**
 
-Change `snapshot()` to call `self._target_as_of()` so target error mapping remains single-source.
-
-- [ ] **Step 4: Run GREEN**
-
-Run the Task 1 command and existing `test_market_home_api.py`.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add services/quant-api/app/market_data/market_home_overview.py \
-        services/quant-api/tests/data_foundation/test_market_home_overview.py
-git commit -m "feat(market): add Market Home projection identity"
-```
+Run full Market Home overview/projection targeted tests; commit only after output is actually read.
 
 ---
 
-### Task 2: 实现 strict atomic projection store 和 read model
+### Task 2: 实现 strict shared-root projection store
 
 **Files:**
 - Create: `services/quant-api/app/market_data/market_home_projection.py`
-- Create: `services/quant-api/tests/data_foundation/test_market_home_projection.py`
 - Modify: `services/quant-api/app/market_data/composition.py`
+- Test: `services/quant-api/tests/data_foundation/test_market_home_projection.py`
+- Test: `services/quant-api/tests/test_market_home_projection_invalidation.py`
 
 **Interfaces:**
-- Consumes: `MarketHomeOverviewService.authority_identity()`, `MarketHomeOverviewService.snapshot()`, existing `MarketHomeOverviewResponse` schema.
 - Produces:
-  - `DEFAULT_MARKET_HOME_PROJECTION_PATH`
-  - `MarketHomeProjectionError`
-  - `market_home_response(snapshot) -> MarketHomeOverviewResponse`
-  - `MarketHomeProjectionStore.load(identity) -> MarketHomeOverviewResponse | None`
-  - `MarketHomeProjectionStore.publish(identity, payload, generated_at) -> None`
-  - `MarketHomeProjection.read() -> MarketHomeOverviewResponse`
-  - `MarketHomeProjection.refresh() -> MarketHomeOverviewResponse`
-  - `build_market_home_projection(session) -> MarketHomeProjection`
+  - `market_home_projection_path(canonical_root)`
+  - `MarketHomeProjectionStore.load/invalidate/publish`
+  - `MarketHomeProjection.read/refresh`
+  - `market_home_response(snapshot)` pure mapper
+  - `build_market_home_projection(session)`
 
-- [ ] **Step 1: Write failing store/read-model tests**
+- [ ] **Step 1: Write failing store tests**
 
-Tests must cover:
+Cover:
 
 ```text
 round trip
-missing file -> None
-symlink -> None
-empty file -> None
->2MiB -> None
-corrupt JSON -> None
-wrong schema -> None
-wrong target -> None
-wrong digest -> None
-payload target/data_as_of mismatch -> None
-projection hit does not call service.snapshot()
-projection miss calls snapshot()
-refresh writes valid current envelope
-refresh refuses target identity race
-os.replace failure preserves last-good file and removes temp
-```
-
-Use a fake service with counters:
-
-```python
-class _Service:
-    def __init__(self, identity, snapshot):
-        self.identity = identity
-        self.snapshot_value = snapshot
-        self.snapshot_calls = 0
-
-    def authority_identity(self):
-        return self.identity
-
-    def snapshot(self):
-        self.snapshot_calls += 1
-        return self.snapshot_value
+Decimal/null wire preservation
+missing -> miss
+projection symlink -> miss
+.derived parent symlink -> miss/invalidation failure
+empty/oversize/corrupt -> miss
+schema/target/digest/payload mismatch -> miss
+atomic replace failure preserves old file and removes temp
+projection hit -> zero snapshot calls
+miss -> one snapshot call and zero file writes
+target race -> refuse publish
 ```
 
 - [ ] **Step 2: Run RED**
@@ -193,310 +119,211 @@ class _Service:
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
   uv run --project services/quant-api pytest -q \
-  services/quant-api/tests/data_foundation/test_market_home_projection.py
+  services/quant-api/tests/data_foundation/test_market_home_projection.py \
+  services/quant-api/tests/test_market_home_projection_invalidation.py
 ```
 
-Expected: import/module missing.
+- [ ] **Step 3: Implement path and envelope**
 
-- [ ] **Step 3: Implement projection module**
+Path:
 
-Use:
-
-```python
-DEFAULT_MARKET_HOME_PROJECTION_PATH = (
-    PROJECT_ROOT / ".run" / "market-home-overview.json"
-)
-_MAX_PROJECTION_BYTES = 2 * 1024 * 1024
+```text
+canonical_root.resolve()/.derived/market-home-overview.json
 ```
 
 Envelope:
 
-```python
-class MarketHomeProjectionEnvelope(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    schema_version: Literal[1] = 1
-    generated_at: datetime
-    target_as_of: date
-    authority_digest: str
-    payload: MarketHomeOverviewResponse
-
-    @model_validator(mode="after")
-    def validate_identity(self):
-        if self.generated_at.tzinfo is None or self.generated_at.utcoffset() is None:
-            raise ValueError("generated_at must be timezone-aware")
-        if not re.fullmatch(r"[0-9a-f]{64}", self.authority_digest):
-            raise ValueError("authority_digest invalid")
-        if (
-            self.payload.target_as_of != self.target_as_of
-            or self.payload.data_as_of != self.target_as_of
-        ):
-            raise ValueError("payload identity mismatch")
-        return self
+```text
+schema_version = 1
+generated_at aware datetime
+target_as_of
+authority_digest 64 lowercase hex
+payload = strict MarketHomeOverviewResponse
 ```
 
-Pure mapper must contain the exact current API mapping for summary/items/sectors and no I/O.
+Read constraints:
 
-`load()` must reject symlink/non-file/size bounds before reading, catch only file/JSON/Pydantic validation failures and return `None`.
-
-`publish()` must construct/validate the envelope before touching disk, then same-directory `mkstemp → write → flush → fsync → os.replace`; on failure raise `MarketHomeProjectionError("MARKET_HOME_PROJECTION_WRITE_FAILED")`, preserve previous current file, and cleanup temp.
-
-`MarketHomeProjection.read()`:
-
-```python
-identity = self.service.authority_identity()
-cached = self.store.load(identity)
-if cached is not None:
-    return cached
-return market_home_response(self.service.snapshot())
+```text
+parent not symlink
+file not symlink
+regular file
+0 < size <= 2 MiB
+strict Pydantic validation
+exact target/digest
+payload target/data_as_of match envelope
 ```
 
-`refresh()`:
+- [ ] **Step 4: Implement atomic publish**
 
-```python
-identity = self.service.authority_identity()
-response = market_home_response(self.service.snapshot())
-if response.target_as_of != identity.target_as_of:
-    raise MarketHomeProjectionError("MARKET_HOME_PROJECTION_IDENTITY_CHANGED")
-self.store.publish(identity, response, generated_at=self.now())
-return response
+```text
+validate
+→ mkdir .derived
+→ reject symlink parent
+→ same-dir mkstemp
+→ write UTF-8
+→ flush/fsync
+→ os.replace
+→ cleanup temp
 ```
 
-Composition:
+- [ ] **Step 5: Implement pure response mapper/read/refresh**
 
-```python
-def build_market_home_projection(session: Session) -> MarketHomeProjection:
-    return MarketHomeProjection(
-        service=build_market_home_overview_service(session),
-        store=MarketHomeProjectionStore(DEFAULT_MARKET_HOME_PROJECTION_PATH),
-    )
-```
+`read()` is projection-first compute fallback. `refresh()` computes once and publishes only if target identity remained stable.
 
-- [ ] **Step 4: Run GREEN**
+- [ ] **Step 6: Run GREEN and commit**
 
-Run projection tests + existing overview domain/API tests + Mypy/Ruff on touched modules.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add services/quant-api/app/market_data/market_home_projection.py \
-        services/quant-api/app/market_data/composition.py \
-        services/quant-api/tests/data_foundation/test_market_home_projection.py
-git commit -m "feat(market): add atomic Market Home projection"
-```
+Include targeted Mypy/Ruff on projection module before commit.
 
 ---
 
-### Task 3: Switch overview API to projection-first read
+### Task 3: API projection-first + manual apply invalidation
 
 **Files:**
 - Modify: `services/quant-api/app/api/market.py`
+- Modify: `services/quant-api/app/guiyi_cli/data_commands.py`
 - Modify: `services/quant-api/tests/test_market_home_api.py`
+- Create: `services/quant-api/tests/test_market_home_projection_api.py`
+- Create: `services/quant-api/tests/test_market_home_projection_invalidation.py`
 
 **Interfaces:**
-- Consumes: `build_market_home_projection(session).read()`.
-- Produces: unchanged `GET /api/v1/market/research/home-overview -> MarketHomeOverviewResponse`.
+- HTTP remains `GET /api/v1/market/research/home-overview`.
+- CLI commands remain unchanged; only `update/refresh --apply` gain pre-action projection invalidation.
 
 - [ ] **Step 1: Write failing API tests**
 
-Replace API service monkeypatch with projection monkeypatch and cover:
+Router must call `build_market_home_projection(session).read()` once and preserve existing `MarketHomeOverviewError -> 409` mapping.
+
+- [ ] **Step 2: Write failing CLI invalidation tests**
+
+For update and refresh:
+
+```text
+apply=True  -> projection absent when manager action starts
+dry-run     -> projection untouched
+invalidator failure -> manager action not called
+```
+
+- [ ] **Step 3: Implement API switch**
+
+Remove duplicated Snapshot → response mapping from router and reuse `market_home_response()`.
+
+- [ ] **Step 4: Implement CLI invalidation**
+
+After `build_request()` and before manager action:
 
 ```python
-response = client.get("/api/v1/market/research/home-overview")
-assert response.status_code == 200
-assert projection.read_calls == 1
+if isinstance(request, (UpdateRequest, RefreshRequest)) and request.apply:
+    MarketHomeProjectionStore(
+        market_home_projection_path(manager.catalog.canonical_root)
+    ).invalidate()
 ```
 
-Add projection fake raising `MarketHomeOverviewError("MARKET_HOME_DATA_INTEGRITY_ERROR")` and assert existing typed 409 remains unchanged.
+Audit/dry-run remain read-only.
 
-Add a projection integration-style unit test with a real `MarketHomeProjectionStore(tmp_path/...)` and fake service showing exact hit avoids `snapshot()` and miss calls it once. This may live in Task 2 test file if already covered there; API test only proves router composition.
+- [ ] **Step 5: Run GREEN and commit**
 
-- [ ] **Step 2: Run RED**
-
-```bash
-PYTHONPATH=services/quant-api:packages/quant-core \
-  uv run --project services/quant-api pytest -q \
-  services/quant-api/tests/test_market_home_api.py
-```
-
-Expected: API still calls `build_market_home_overview_service`.
-
-- [ ] **Step 3: Implement minimal API switch**
-
-Import `build_market_home_projection` and replace endpoint body with:
-
-```python
-try:
-    return build_market_home_projection(session).read()
-except MarketHomeOverviewError as exc:
-    raise HTTPException(status_code=409, detail={"code": exc.code}) from exc
-```
-
-Remove no-longer-used `MarketHomeItemOut`, `MarketHomeSectorOut`, `MarketHomeSummaryOut` imports from the router.
-
-Do not catch `MarketHomeProjectionError` on read: `store.load()` converts invalid/missing projection to miss, while compute fallback retains existing public errors.
-
-- [ ] **Step 4: Run GREEN**
-
-Run Task 3 test and all Market Home targeted backend tests.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add services/quant-api/app/api/market.py \
-        services/quant-api/tests/test_market_home_api.py
-git commit -m "perf(api): read Market Home projection before compute"
-```
+Run API + CLI targeted regression and static checks.
 
 ---
 
-### Task 4: Refresh projection after successful/noop after-market maintenance
+### Task 4: 自然 after-market invalidation / refresh ordering
 
 **Files:**
 - Modify: `services/quant-api/app/market_data/after_market.py`
-- Modify: `services/quant-api/tests/data_foundation/test_after_market.py`
+- Create: `services/quant-api/tests/data_foundation/test_market_home_projection_after_market.py`
 
 **Interfaces:**
-- Consumes: lazy `build_market_home_projection(manager.catalog.session).refresh()` callback.
-- Produces: after-market best-effort performance refresh; existing `AfterMarketResult` contract unchanged.
+- Existing `AfterMarketResult`、status schema、`canonical_updated` payload and notification contract remain unchanged.
 
-- [ ] **Step 1: Write failing after-market tests**
+- [ ] **Step 1: Write failing ordering tests**
 
-Extend `_updater()` to inject `projection_refresh` recorder.
-
-Required assertions:
+Required behavior:
 
 ```text
-passed -> ["projection", "canonical_updated"] ordering
-noop -> projection exactly once
-NON_TRADING_DAY -> zero projection calls
-RQData not ready -> zero projection calls
-update failure -> zero projection calls
-projection exception -> result still passed, no notice, live reconciliation continues
-projection exception emits safe warning containing exception type but not exception message
+provider not ready -> no invalidate, no manager, no refresh
+provider ready -> invalidate before manager.update
+manager failed -> projection stays invalidated, no refresh
+invalidation failure -> manager not called
+passed/noop -> canonical_updated/reconcile/cleanup complete, then refresh exactly once
+refresh failure -> AfterMarketResult still passed
+refresh failure log contains exception_type only
 ```
-
-Use an event list shared by the projection recorder and fake live store so ordering is observable without implementation-specific mocks.
 
 - [ ] **Step 2: Run RED**
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
   uv run --project services/quant-api pytest -q \
-  services/quant-api/tests/data_foundation/test_after_market.py
+  services/quant-api/tests/data_foundation/test_market_home_projection_after_market.py
 ```
 
-Expected: `AfterMarketUpdater` has no projection refresh seam.
+- [ ] **Step 3: Implement testable callbacks**
 
-- [ ] **Step 3: Implement best-effort refresh**
-
-Constructor adds:
+`AfterMarketUpdater` adds optional:
 
 ```python
+market_home_projection_invalidate: Callable[[], None] | None
 market_home_projection_refresh: Callable[[], object] | None
 ```
 
-After successful/noop manager result and before existing `live_store.publish_state(...)`:
+Existing direct constructors remain compatible via default `None`.
 
-```python
-self._refresh_market_home_projection()
-```
+- [ ] **Step 4: Implement final ordering**
 
-Helper:
+`_attempt()` after provider readiness but before manager update calls invalidator. It does not refresh projection.
 
-```python
-def _refresh_market_home_projection(self) -> None:
-    if self.market_home_projection_refresh is None:
-        return
-    try:
-        self.market_home_projection_refresh()
-    except Exception as exc:  # noqa: BLE001 - derived performance projection is isolated
-        _LOGGER.warning(
-            "market_home_projection_refresh_failed exception_type=%s",
-            type(exc).__name__,
-        )
-```
+`run()` calls refresh only after `_attempt()` returns success, which proves the existing `canonical_updated` / reconciliation / cleanup path is complete.
 
-`build_after_market_updater()` must stay lazy so projection composition cannot block startup or pre-maintenance:
+- [ ] **Step 5: Factory composition**
 
-```python
-def refresh_market_home_projection():
-    from app.market_data.composition import build_market_home_projection
+Factory uses manager Catalog canonical root for invalidator and lazy `build_market_home_projection(session).refresh()` for publisher. No projection composition before provider readiness/manager success.
 
-    session = manager.catalog.session
-    build_market_home_projection(session).refresh()
-```
+- [ ] **Step 6: Run GREEN and commit**
 
-Pass the callable to `AfterMarketUpdater`.
-
-Do not alter `AfterMarketResult`, status JSON schema, notification rules, retry rules or current `canonical_updated` payload.
-
-- [ ] **Step 4: Run GREEN**
-
-Run after-market tests plus runtime-entry/CLI tests that exercise after-market factory capability boundaries.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add services/quant-api/app/market_data/after_market.py \
-        services/quant-api/tests/data_foundation/test_after_market.py
-git commit -m "perf(market): refresh home projection after maintenance"
-```
+Run after-market, runtime-entry and CLI relevant regressions.
 
 ---
 
-### Task 5: Canonical sync, regression verification, exact-head review and PR
+### Task 5: Canonical sync, verification, review, PR
 
 **Files:**
 - Modify: `DECISIONS.md`
 - Modify: `docs/ARCHITECTURE.md`
 - Modify: `openspec/specs/market-home-overview/spec.md`
 - Modify: `TESTING.md`
-- Do not modify: `STATUS.md`, `PROJECT_SOURCE.md`
+- Modify: this Spec/Plan if Review changed implementation
+- Do not modify: `PROJECT_SOURCE.md`, `STATUS.md`
 
-**Interfaces:** no new runtime interface; documents the completed architecture.
+**Interfaces:** no new product surface.
 
-- [ ] **Step 1: Update canonical docs only after source tests are green**
+- [ ] **Step 1: Synchronize canonical docs**
 
-`DECISIONS.md` Market Home row becomes conceptually:
-
-```text
-牛哇式有限图标 + update-time runtime-local derived overview projection + current HTDY Event
-```
-
-Invariant states projection is removable/rebuildable and never authority; API miss computes from existing authority.
-
-`docs/ARCHITECTURE.md` adds:
+Freeze:
 
 ```text
-EOD -> MarketHomeOverviewService -> MarketHomeProjection(.run JSON)
-MarketHomeProjection -> Market API -> Web
-Market API --miss--> MarketHomeOverviewService
+MarketHomeOverviewService = only compute authority
+shared canonical-root .derived projection = removable performance read model
+API hit read-only / miss compute-only
+all official apply paths invalidate first
+after-market refresh after core success
 ```
 
-OpenSpec replaces the old requirement that every endpoint request composes all D1/W1 reads. New requirement: exact projection hit must avoid historical bar reads; invalid/missing projection falls back compute; HTTP endpoint remains read-only.
-
-`TESTING.md` targeted command:
+- [ ] **Step 2: Run targeted verification**
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
   uv run --project services/quant-api pytest -q \
   services/quant-api/tests/data_foundation/test_market_home_overview.py \
   services/quant-api/tests/data_foundation/test_market_home_projection.py \
-  services/quant-api/tests/data_foundation/test_after_market.py \
-  services/quant-api/tests/test_market_home_api.py
+  services/quant-api/tests/data_foundation/test_market_home_projection_after_market.py \
+  services/quant-api/tests/test_market_home_projection_invalidation.py \
+  services/quant-api/tests/test_market_home_api.py \
+  services/quant-api/tests/test_market_home_projection_api.py
 ```
 
-- [ ] **Step 2: Run complete relevant verification**
+- [ ] **Step 3: Run full non-external verification**
 
 ```bash
-PYTHONPATH=services/quant-api:packages/quant-core \
-  uv run --project services/quant-api pytest -q \
-  services/quant-api/tests/data_foundation/test_market_home_overview.py \
-  services/quant-api/tests/data_foundation/test_market_home_projection.py \
-  services/quant-api/tests/data_foundation/test_after_market.py \
-  services/quant-api/tests/test_market_home_api.py
-
 PYTHONPATH=services/quant-api:packages/quant-core \
   uv run --project services/quant-api pytest -q \
   -m "not isolated_postgresql and not manual_acceptance" \
@@ -517,54 +344,55 @@ python3 scripts/engineering/secret_scan.py --json
 git diff --check
 ```
 
-No production database, Redis, RQData or real after-market command may be used for verification.
+这些命令不得连接真实 RQData、production PostgreSQL/Redis 或执行 `--apply`。
 
-- [ ] **Step 3: Manual performance Gate remains external/read-only**
+- [ ] **Step 4: Manual performance acceptance remains separate**
 
-Only in an explicitly authorized local Runtime read environment later, measure an exact projection hit. Acceptance target:
+未来仅在明确授权的本地 Runtime 环境测：
 
 ```text
-store decode/validation < 50ms
-HTTP projection hit    < 200ms
+projection decode/validation < 50ms
+projection-hit HTTP endpoint < 200ms
 ```
 
-Do not claim these targets from unit-test timing.
+普通 unit test 不用时间断言冒充真实性能证据。
 
-- [ ] **Step 4: Exact-head review**
+- [ ] **Step 5: Exact-head Review**
 
-Review axes:
+Review axes：
 
 ```text
 authority separation
-projection never becomes Canonical
-API remains read-only
-identity invalidation correctness
-atomic last-good preservation
-after-market failure isolation
+same-day rewrite invalidation
+shared-root identity
+API read-only behavior
+atomic/path safety
+after-market canonical_updated ordering
+failure isolation
 no hidden retry/notification
 no Redis/DB/cache framework
-no MarketDataService formula/read rewrite
-test coverage
-canonical consistency
+no MarketDataService rewrite
+tests/canonical scope
 ```
 
-Fix every Critical/Important finding and rerun affected verification.
+Critical/Important 全部修复并重跑受影响验证。
 
-- [ ] **Step 5: Create Draft PR to develop**
+- [ ] **Step 6: Create Draft PR to develop**
 
-PR must include:
+PR body 必须包含：
 
 ```text
 Refs #315
 exact base/head
+Review amendment (.run -> canonical-root/.derived; invalidation before apply)
 changed files
-projection file/schema/identity
 hit/miss behavior
-after-market ordering/failure behavior
-actual verification output
+manual apply invalidation
+after-market ordering
+实际运行过的验证输出；未运行的必须明确 pending
 manual benchmark status
 review findings/fixes
-no production mutation declaration
+no production mutation
 ```
 
-Do not merge automatically. No main/tag/Release/Runtime action.
+不得自动 merge；不得触碰 main/tag/Release/Runtime。
