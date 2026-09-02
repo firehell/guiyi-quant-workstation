@@ -29,7 +29,9 @@ export function buildMarketHomeViewModel(input: MarketHomeViewModelInput) {
   const overviewAvailability: Exclude<MarketHomeAvailability, 'empty'> = input.overview
     ? input.overview.status
     : 'unavailable'
-  const eventAvailability: MarketHomeAvailability = !input.events
+  const eventAvailability: MarketHomeAvailability = input.eventsStale
+    ? 'unavailable'
+    : !input.events
     ? 'unavailable'
     : input.events.status === 'unavailable'
       ? 'unavailable'
@@ -38,14 +40,14 @@ export function buildMarketHomeViewModel(input: MarketHomeViewModelInput) {
   const staleOverviewFacts = Boolean(input.overviewStale || input.overview?.freshness !== 'fresh')
   const rows = (input.overview?.items ?? []).map((item) => ({
     ...item,
-    alignment: alignmentFor(item.daily_trend, item.weekly_trend),
+    alignment: staleOverviewFacts ? 'unavailable' : alignmentFor(item.daily_trend, item.weekly_trend),
     dailyState: staleOverviewFacts ? 'unavailable' : item.daily_trend,
     weeklyState: staleOverviewFacts ? 'unavailable' : item.weekly_trend,
     event: latestEvents.get(item.symbol) ?? null,
   }))
 
   return {
-    overview: { availability: overviewAvailability, cachedStale: Boolean(input.overviewStale) },
+    overview: { availability: overviewAvailability, cachedStale: staleOverviewFacts },
     runtime: { availability: input.runtime ? 'ready' : 'unavailable', status: input.runtime?.status ?? null, cachedStale: Boolean(input.runtimeStale) },
     events: { availability: eventAvailability, cachedStale: Boolean(input.eventsStale), tradingDay: input.events?.trading_day ?? null },
     rows,

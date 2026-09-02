@@ -82,6 +82,12 @@ test('fails closed for malformed market home authority facts', () => {
   }
 })
 
+test('fails closed when a completed D1 close is null', () => {
+  const payload = structuredClone(overview)
+  payload.items[0].close = null
+  assert.throws(() => normalizeMarketHomeOverviewResponse(payload), /close must be a Decimal string/)
+})
+
 test('distinguishes ready HTDY events from an unavailable current-event projection', () => {
   const ready = normalizeCurrentHtdyEventsResponse(currentEvents)
   const unavailable = normalizeCurrentHtdyEventsResponse({ status: 'unavailable', trading_day: null, items: [] })

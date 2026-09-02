@@ -10,6 +10,7 @@ interface Resource<T> {
   data: ReturnType<typeof shallowRef<T | null>>
   loading: ReturnType<typeof shallowRef<boolean>>
   stale: ReturnType<typeof shallowRef<boolean>>
+  unavailable: ReturnType<typeof shallowRef<boolean>>
   refresh: () => Promise<void>
 }
 
@@ -62,12 +63,13 @@ function createResource<T>(fetch: () => Promise<T>): Resource<T> {
   const data = shallowRef<T | null>(null)
   const loading = shallowRef(false)
   const stale = shallowRef(false)
+  const unavailable = shallowRef(false)
   let inFlight: Promise<void> | null = null
   async function refresh() {
     if (inFlight) return inFlight
     loading.value = true
-    inFlight = fetch().then((value) => { data.value = value; stale.value = false }).catch(() => { stale.value = data.value !== null }).finally(() => { loading.value = false; inFlight = null })
+    inFlight = fetch().then((value) => { data.value = value; stale.value = false; unavailable.value = false }).catch(() => { stale.value = data.value !== null; unavailable.value = data.value === null }).finally(() => { loading.value = false; inFlight = null })
     return inFlight
   }
-  return { data, loading, stale, refresh }
+  return { data, loading, stale, unavailable, refresh }
 }

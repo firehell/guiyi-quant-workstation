@@ -66,10 +66,11 @@ onBeforeUnmount(() => {
       <div><h1>行情看板</h1><p>完成周期市场事实与 HTDY 观察；所有内容仅供人工复核。</p></div>
       <NButton secondary size="small" :loading="loading" :disabled="loading" @click="refreshAll">全部刷新</NButton>
     </header>
-    <MarketHomeSectorTicker :sectors="home.overview.data.value?.sectors??[]" @select="sector=$event"/>
-    <MarketHomeLegend/>
-    <MarketHomeTrustStrip :as-of="home.overview.data.value?.data_as_of??null" :participants="home.overview.data.value?.participant_count??0" :active="home.overview.data.value?.active_count??0" :overview="model.overview.availability" :runtime="model.runtime.status" :event-state="model.events.availability" :stale="model.overview.cachedStale||model.runtime.cachedStale||model.events.cachedStale"/>
-    <MarketHomeSummary :summary="home.overview.data.value?.summary??null" :active="summaryFilter" @filter="summaryFilter=$event"/>
+    <MarketHomeSectorTicker class="market-dashboard-page__ticker" :sectors="home.overview.data.value?.sectors??[]" @select="sector=$event"/>
+    <MarketHomeLegend class="market-dashboard-page__legend"/>
+    <MarketHomeTrustStrip class="market-dashboard-page__trust" :target-as-of="home.overview.data.value?.target_as_of??null" :as-of="home.overview.data.value?.data_as_of??null" :participants="home.overview.data.value?.participant_count??0" :active="home.overview.data.value?.active_count??0" :stale-count="home.overview.data.value?.stale_count??0" :unavailable-count="home.overview.data.value?.unavailable_count??0" :overview="model.overview.availability" :runtime="model.runtime.status" :event-state="model.events.availability" :overview-stale="model.overview.cachedStale" :runtime-stale="model.runtime.cachedStale" :event-stale="model.events.cachedStale"/>
+    <MarketHomeSummary class="market-dashboard-page__summary" :summary="home.overview.data.value?.summary??null" :active="summaryFilter" @filter="summaryFilter=$event"/>
+    <p v-if="home.overview.unavailable.value" class="market-dashboard-page__error" role="alert">Market Home overview 暂不可用；没有可展示的上一份成功快照。</p>
     <MarketHomeSkeleton v-if="loading&&!home.overview.data.value"/>
     <template v-else><div class="market-dashboard-page__workspace"><div><MarketHomeToolbar v-model:query="query" v-model:sort="sort" v-model:daily="daily" v-model:weekly="weekly" v-model:alignment="alignment" v-model:event="event" v-model:data="data"/><MarketHomeTable :rows="rows" @open="openProduct"/><MarketHomeMobileList :rows="rows" @open="openProduct"/></div><MarketHomeFocusRail :availability="model.events.availability" :events="home.events.data.value?.items??[]" @open="openEvent"/></div></template>
   </div>
@@ -80,5 +81,6 @@ onBeforeUnmount(() => {
 .market-dashboard-page__intro { display: flex; align-items: start; justify-content: space-between; gap: 16px; }
 .market-dashboard-page__intro h1 { margin: 0 0 6px; font-size: var(--gy-font-size-xl); }
 .market-dashboard-page__intro p { margin: 0; color: var(--gy-text-muted); }
-.market-dashboard-page__workspace{display:grid;grid-template-columns:minmax(0,1fr) 304px;gap:16px}.market-dashboard-page__workspace>div{min-width:0}@media(max-width:1199px){.market-dashboard-page__workspace{display:flex;flex-direction:column}.market-dashboard-page__workspace aside{order:-1}}@media(max-width:767px){.market-dashboard-page__workspace{gap:12px}.market-dashboard-page__workspace aside{order:-1}}
+.market-dashboard-page__error{margin:0;padding:12px;border-radius:var(--gy-radius-md);background:var(--gy-surface-error);color:var(--gy-text-primary)}
+.market-dashboard-page__workspace{display:grid;grid-template-columns:minmax(0,1fr) 304px;gap:16px}.market-dashboard-page__workspace>div{min-width:0}@media(max-width:1199px){.market-dashboard-page__workspace{display:flex;flex-direction:column}.market-dashboard-page__workspace aside{order:-1}}@media(max-width:767px){.market-dashboard-page{gap:12px}.market-dashboard-page__ticker,.market-dashboard-page__legend,.market-dashboard-page__summary{display:none}.market-dashboard-page__workspace{gap:12px}.market-dashboard-page__workspace aside{order:-1}}
 </style>
