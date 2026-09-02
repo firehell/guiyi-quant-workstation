@@ -388,6 +388,27 @@ def _retained_window(
     return snapshots
 
 
+def _snapshot_observable_facts_are_valid(
+    snapshot: object,
+    state: CupHandleStateValue,
+) -> bool:
+    if not isinstance(snapshot, CupBarSnapshot) or not isinstance(
+        snapshot.bar, NewowDailyBar
+    ):
+        return False
+    return (
+        type(snapshot.eligible_index) is int
+        and snapshot.eligible_index >= 0
+        and not isinstance(snapshot.atr, bool)
+        and isinstance(snapshot.atr, (int, float))
+        and isfinite(snapshot.atr)
+        and snapshot.atr > 0
+        and snapshot.bar.observation_eligible is True
+        and snapshot.bar.physical_contract == state.physical_contract
+        and snapshot.bar.segment_id == state.segment_id
+    )
+
+
 def _tracker_is_coherent(
     state: CupHandleStateValue,
     profile: NewowTrendProfile,
@@ -471,7 +492,21 @@ def _tracker_is_coherent(
             else tracker.extreme_low
         )
         assert directional_extreme is not None
-        if directional_extreme.eligible_index < tracker.last_pivot.confirmed_index:
+        if (
+            directional_extreme.eligible_index < tracker.last_pivot.confirmed_index
+            or (
+                directional_extreme.eligible_index
+                == tracker.last_pivot.confirmed_index
+                and directional_extreme.bar.bar_end
+                != tracker.last_pivot.confirmed_at
+            )
+            or (
+                directional_extreme.eligible_index
+                > tracker.last_pivot.confirmed_index
+                and directional_extreme.bar.bar_end
+                <= tracker.last_pivot.confirmed_at
+            )
+        ):
             return False
         leg_window = _retained_window(
             by_index,
@@ -506,7 +541,7 @@ def _atr_state_is_valid(state: object, period: int) -> bool:
                 isinstance(state.atr, bool)
                 or not isinstance(state.atr, (int, float))
                 or not isfinite(state.atr)
-                or state.atr <= 0
+                or state.atr < 0
             )
         )
         or (
@@ -1003,24 +1038,29 @@ def _state_is_valid(state: CupHandleStateValue, profile: NewowTrendProfile) -> b
     ):
         return False
     by_index: dict[int, CupBarSnapshot] = {}
-    previous_index: int | None = None
+    previous_snapshot: CupBarSnapshot | None = None
     for snapshot in state.eligible_bars:
         if (
-            not isinstance(snapshot, CupBarSnapshot)
-            or not isinstance(snapshot.bar, NewowDailyBar)
-            or not isfinite(snapshot.atr)
-            or snapshot.atr <= 0
-            or not snapshot.bar.observation_eligible
-            or isinstance(snapshot.eligible_index, bool)
-            or not isinstance(snapshot.eligible_index, int)
-            or snapshot.bar.physical_contract != state.physical_contract
-            or snapshot.bar.segment_id != state.segment_id
-            or (previous_index is not None and snapshot.eligible_index <= previous_index)
+            not _snapshot_observable_facts_are_valid(snapshot, state)
+            or (
+                previous_snapshot is not None
+                and (
+                    snapshot.eligible_index
+                    != previous_snapshot.eligible_index + 1
+                    or snapshot.bar.bar_end <= previous_snapshot.bar.bar_end
+                    or snapshot.bar.trading_day
+                    <= previous_snapshot.bar.trading_day
+                )
+            )
             or snapshot.eligible_index > state.pivot_tracker.eligible_index
         ):
             return False
-        previous_index = snapshot.eligible_index
+        previous_snapshot = snapshot
         by_index[snapshot.eligible_index] = snapshot
+    if state.eligible_bars and (
+        state.atr_state.previous_close != state.eligible_bars[-1].bar.close
+    ):
+        return False
     previous_pivot: CupPivot | None = None
     for pivot in state.confirmed_pivots:
         if not isinstance(pivot, CupPivot):
@@ -1066,19 +1106,25 @@ def _state_is_valid(state: CupHandleStateValue, profile: NewowTrendProfile) -> b
         state.pivot_tracker.extreme_high,
         state.pivot_tracker.extreme_low,
     ):
-        if extreme is not None and (
-            not isinstance(extreme, CupBarSnapshot)
-            or not isinstance(extreme.bar, NewowDailyBar)
+        if extreme is None:
+            continue
+        if (
+            not _snapshot_observable_facts_are_valid(extreme, state)
             or extreme.eligible_index > state.pivot_tracker.eligible_index
-            or (
-                extreme.eligible_index in by_index
-                and extreme != by_index[extreme.eligible_index]
-            )
-            or (
-                state.eligible_bars
-                and extreme.eligible_index >= state.eligible_bars[0].eligible_index
-                and extreme.eligible_index not in by_index
-            )
+        ):
+            return False
+        retained_extreme = by_index.get(extreme.eligible_index)
+        if retained_extreme is not None:
+            if extreme != retained_extreme:
+                return False
+            continue
+        if not state.eligible_bars:
+            return False
+        first_retained = state.eligible_bars[0]
+        if (
+            extreme.eligible_index >= first_retained.eligible_index
+            or extreme.bar.bar_end >= first_retained.bar.bar_end
+            or extreme.bar.trading_day >= first_retained.bar.trading_day
         ):
             return False
     if not _tracker_is_coherent(state, profile, by_index):
@@ -1882,7 +1928,11 @@ def step_cup_handle(
 
     eligible_index = tracker.eligible_index + 1
     eligible_started = True
-    if atr_state.atr is None:
+    if (
+        atr_state.atr is None
+        or not isfinite(atr_state.atr)
+        or atr_state.atr <= 0
+    ):
         tracker = _with_tracker_index(tracker, eligible_index)
         next_state = CupHandleStateValue(
             atr_state,

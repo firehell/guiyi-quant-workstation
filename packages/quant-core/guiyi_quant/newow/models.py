@@ -191,7 +191,9 @@ class CupPivot:
 
     def __post_init__(self) -> None:
         if (
-            not self.price.is_finite()
+            type(self.pivot_index) is not int
+            or type(self.confirmed_index) is not int
+            or not self.price.is_finite()
             or self.price <= 0
             or not isfinite(self.atr_at_pivot)
             or self.atr_at_pivot <= 0

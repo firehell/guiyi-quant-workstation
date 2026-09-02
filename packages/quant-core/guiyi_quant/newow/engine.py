@@ -258,7 +258,11 @@ class NewowTrendD1Engine:
 
     def step(self, bar: NewowDailyBar) -> NewowTrendD1StepResult:
         state = self._state
-        if not _state_shape_is_valid(state):
+        try:
+            restored_state_valid = _state_shape_is_valid(state)
+        except (ArithmeticError, AttributeError, LookupError, TypeError, ValueError):
+            restored_state_valid = False
+        if not restored_state_valid:
             next_state = _initial_state()
             result = NewowTrendD1StepResult(next_state, _unavailable_frame(bar))
             self._state = next_state

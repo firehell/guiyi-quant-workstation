@@ -423,6 +423,58 @@ def test_false_to_true_is_allowed_but_false_bars_only_warm_cup_atr() -> None:
     assert steps[14].state.eligibility_started is True
 
 
+@pytest.mark.parametrize("scenario", ("zero_seed", "nonfinite_update"))
+def test_unusable_current_atr_is_cup_only_unavailable_in_engine(
+    scenario: str,
+) -> None:
+    """Zero or non-finite current ATR cannot invalidate the whole Engine frame."""
+
+    flat = tuple(
+        replace(
+            _bar(index, 100),
+            open=Decimal("100"),
+            high=Decimal("100"),
+            low=Decimal("100"),
+            close=Decimal("100"),
+        )
+        for index in range(13)
+    )
+    engine = NewowTrendD1Engine.initial()
+    for bar in flat:
+        engine.step(bar)
+    current = _bar(13, 100)
+    if scenario == "zero_seed":
+        current = replace(
+            current,
+            open=Decimal("100"),
+            high=Decimal("100"),
+            low=Decimal("100"),
+            close=Decimal("100"),
+        )
+    else:
+        prior = engine.state
+        engine = NewowTrendD1Engine(
+            state=replace(
+                prior,
+                cup_handle_state=replace(
+                    prior.cup_handle_state,
+                    atr_state=replace(
+                        prior.cup_handle_state.atr_state,
+                        tr_total=1.7e308,
+                        previous_close=Decimal("1e308"),
+                    ),
+                ),
+            )
+        )
+
+    result = engine.step(current)
+
+    assert result.frame.diagnostics == ("CUP_ATR_UNAVAILABLE",)
+    assert "NEWOW_ENGINE_STATE_INVALID" not in result.frame.diagnostics
+    assert result.state.physical_contract == current.physical_contract
+    assert result.state.last_bar_end == current.bar_end
+
+
 def test_invalid_restored_substate_fails_closed_to_initial_state() -> None:
     """Continuing from one malformed substate can mix incompatible historical identities."""
 
@@ -457,6 +509,71 @@ def test_invalid_restored_substate_fails_closed_to_initial_state() -> None:
         assert result.frame.markers == ()
         assert result.frame.diagnostics == ("NEWOW_ENGINE_STATE_INVALID",)
         assert result.state == NewowTrendD1Engine.initial().state
+
+
+@pytest.mark.parametrize(
+    "malformation",
+    ("engine_mapping", "cup_bars_mapping", "cup_bars_wrong_item"),
+)
+def test_malformed_restored_state_shape_fails_closed_without_raising(
+    malformation: str,
+) -> None:
+    """Malformed reconstructed mappings must not escape as lookup/type errors."""
+
+    bars = bullish_true_cup_handle()
+    prior = _run_incremental(bars[:20])[-1].state
+    malformed: object
+    if malformation == "engine_mapping":
+        malformed = {"cup_handle_state": asdict(prior.cup_handle_state)}
+    elif malformation == "cup_bars_mapping":
+        malformed = replace(
+            prior,
+            cup_handle_state=replace(
+                prior.cup_handle_state,
+                eligible_bars={"unexpected": object()},  # type: ignore[arg-type]
+            ),
+        )
+    else:
+        malformed = replace(
+            prior,
+            cup_handle_state=replace(
+                prior.cup_handle_state,
+                eligible_bars=(object(),),  # type: ignore[arg-type]
+            ),
+        )
+
+    result = NewowTrendD1Engine(state=malformed).step(bars[20])  # type: ignore[arg-type]
+
+    assert result.frame.trend_band.state is TrendBandState.UNAVAILABLE
+    assert result.frame.markers == ()
+    assert result.frame.diagnostics == ("NEWOW_ENGINE_STATE_INVALID",)
+    assert result.state == NewowTrendD1Engine.initial().state
+
+
+def test_engine_fails_closed_when_cup_rejects_observable_restored_facts() -> None:
+    """A Cup restore-integrity failure invalidates the whole current Engine frame."""
+
+    bars = bullish_true_cup_handle()
+    prior = _run_incremental(bars[:30])[-1].state
+    previous_close = prior.cup_handle_state.atr_state.previous_close
+    assert previous_close is not None
+    malformed = replace(
+        prior,
+        cup_handle_state=replace(
+            prior.cup_handle_state,
+            atr_state=replace(
+                prior.cup_handle_state.atr_state,
+                previous_close=previous_close + Decimal("7"),
+            ),
+        ),
+    )
+
+    result = NewowTrendD1Engine(state=malformed).step(bars[30])
+
+    assert result.frame.trend_band.state is TrendBandState.UNAVAILABLE
+    assert result.frame.markers == ()
+    assert result.frame.diagnostics == ("NEWOW_ENGINE_STATE_INVALID",)
+    assert result.state == NewowTrendD1Engine.initial().state
 
 
 def test_restore_accepts_independently_valid_same_identity_substates() -> None:

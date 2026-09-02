@@ -104,6 +104,70 @@ def test_wilder_atr14_seed_and_recursive_update_are_exact() -> None:
     assert jumped.state.atr_state.atr == pytest.approx((13 * 2 + 18) / 14)
 
 
+def test_zero_wilder_seed_is_unavailable_without_invalidating_restored_state() -> None:
+    """Fourteen flat bars are a valid ATR seed, but cannot support geometry."""
+
+    flat_bars = tuple(
+        replace(
+            _bar(index, 100),
+            open=Decimal("100"),
+            high=Decimal("100"),
+            low=Decimal("100"),
+            close=Decimal("100"),
+            source_identity=f"fixture:flat-atr:{index}",
+        )
+        for index in range(15)
+    )
+
+    seeded = calculate_cup_handle_series(flat_bars[:14])[-1]
+    resumed = step_cup_handle(seeded.state, flat_bars[14])
+
+    assert seeded.diagnostics == ("CUP_ATR_UNAVAILABLE",)
+    assert seeded.state.atr_state.atr == 0.0
+    assert seeded.state.eligible_bars == ()
+    assert seeded.state.confirmed_pivots == ()
+    assert seeded.active_overlay is None
+    assert resumed.diagnostics == ("CUP_ATR_UNAVAILABLE",)
+    assert "NEWOW_CUP_STATE_INVALID" not in resumed.diagnostics
+    assert resumed.state.atr_state.atr == 0.0
+    assert resumed.state.eligible_bars == ()
+    assert resumed.state.confirmed_pivots == ()
+    assert resumed.active_overlay is None
+
+
+def test_nonfinite_current_atr_is_unavailable_without_geometry() -> None:
+    """A finite Decimal range that overflows float ATR cannot enter a pivot."""
+
+    flat_bars = tuple(
+        replace(
+            _bar(index, 100),
+            open=Decimal("100"),
+            high=Decimal("100"),
+            low=Decimal("100"),
+            close=Decimal("100"),
+            source_identity=f"fixture:finite-atr-warmup:{index}",
+        )
+        for index in range(13)
+    )
+    state = calculate_cup_handle_series(flat_bars)[-1].state
+    huge = Decimal("1e1000")
+    overflow_bar = replace(
+        _bar(13, 100),
+        open=huge,
+        high=huge,
+        low=huge,
+        close=huge,
+        source_identity="fixture:finite-decimal-float-overflow",
+    )
+
+    result = step_cup_handle(state, overflow_bar)
+
+    assert result.diagnostics == ("CUP_ATR_UNAVAILABLE",)
+    assert result.state.eligible_bars == ()
+    assert result.state.confirmed_pivots == ()
+    assert result.active_overlay is None
+
+
 def test_same_bar_confirmed_pivot_state_remains_valid_on_the_next_step() -> None:
     """Rejecting confirmed_index == pivot_index drops a legal tracker transition."""
 
@@ -1742,6 +1806,156 @@ def test_malformed_restored_scalar_type_fails_closed_without_raising() -> None:
     )
 
     result = step_cup_handle(malformed, case.next_bar)
+
+    assert result.diagnostics == ("NEWOW_CUP_STATE_INVALID",)
+    assert result.markers == ()
+    assert result.active_overlay is None
+    assert result.state == initial_cup_handle_state()
+
+
+@pytest.mark.parametrize(
+    "corruption",
+    ("duplicate_bar_end", "duplicate_trading_day", "eligible_not_bool"),
+)
+def test_restored_retained_bars_require_strict_causal_observable_facts(
+    corruption: str,
+) -> None:
+    """Retained geometry cannot contain duplicate time or non-bool eligibility."""
+
+    bars = bullish_true_cup_handle()
+    state = calculate_cup_handle_series(bars[:30])[-1].state
+    retained = list(state.eligible_bars)
+    previous = retained[4]
+    current = retained[5]
+    if corruption == "duplicate_bar_end":
+        changed_bar = replace(current.bar, bar_end=previous.bar.bar_end)
+    elif corruption == "duplicate_trading_day":
+        changed_bar = replace(current.bar, trading_day=previous.bar.trading_day)
+    else:
+        changed_bar = replace(current.bar, observation_eligible=1)  # type: ignore[arg-type]
+    retained[5] = replace(current, bar=changed_bar)
+    malformed = replace(state, eligible_bars=tuple(retained))
+
+    result = step_cup_handle(malformed, bars[30])
+
+    assert result.diagnostics == ("NEWOW_CUP_STATE_INVALID",)
+    assert result.markers == ()
+    assert result.active_overlay is None
+    assert result.state == initial_cup_handle_state()
+
+
+def test_restored_retained_window_rejects_negative_absolute_index() -> None:
+    """A reconstructed retained window cannot restart its absolute index below zero."""
+
+    state = calculate_cup_handle_series(tuple(_bar(index, 100) for index in range(14)))[
+        -1
+    ].state
+    original = state.eligible_bars[0]
+    shifted = replace(original, eligible_index=-1)
+    malformed = replace(
+        state,
+        eligible_bars=(shifted,),
+        pivot_tracker=replace(
+            state.pivot_tracker,
+            extreme_high=shifted,
+            extreme_low=shifted,
+            eligible_index=-1,
+        ),
+        eligible_started=False,
+    )
+
+    result = step_cup_handle(malformed, _bar(14, 100))
+
+    assert result.diagnostics == ("NEWOW_CUP_STATE_INVALID",)
+    assert result.markers == ()
+    assert result.active_overlay is None
+    assert result.state == initial_cup_handle_state()
+
+
+def test_restored_atr_previous_close_matches_latest_retained_bar() -> None:
+    """The next true range must start from the last observable retained close."""
+
+    bars = bullish_true_cup_handle()
+    state = calculate_cup_handle_series(bars[:30])[-1].state
+    assert state.atr_state.previous_close is not None
+    malformed = replace(
+        state,
+        atr_state=replace(
+            state.atr_state,
+            previous_close=state.atr_state.previous_close + Decimal("7"),
+        ),
+    )
+
+    result = step_cup_handle(malformed, bars[30])
+
+    assert result.diagnostics == ("NEWOW_CUP_STATE_INVALID",)
+    assert result.markers == ()
+    assert result.active_overlay is None
+    assert result.state == initial_cup_handle_state()
+
+
+@pytest.mark.parametrize(
+    "corruption",
+    (
+        "zero_atr",
+        "nonfinite_atr",
+        "ineligible",
+        "foreign_identity",
+        "future_time",
+        "negative_index",
+        "float_index",
+    ),
+)
+def test_restored_out_of_window_tracker_extreme_requires_observable_facts(
+    corruption: str,
+) -> None:
+    """An aged live extreme still carries validated ATR, identity, time, and index facts."""
+
+    bars = tuple(_bar(index, 100) for index in range(251))
+    state = calculate_cup_handle_series(bars[:250])[-1].state
+    tracker = state.pivot_tracker
+    extreme = tracker.extreme_high
+    assert tracker.leg == "SEEK_DIRECTION"
+    assert extreme is not None
+    assert extreme.eligible_index < state.eligible_bars[0].eligible_index
+    if corruption == "zero_atr":
+        changed = replace(extreme, atr=0.0)
+    elif corruption == "nonfinite_atr":
+        changed = replace(extreme, atr=float("nan"))
+    elif corruption == "ineligible":
+        changed = replace(
+            extreme,
+            bar=replace(extreme.bar, observation_eligible=False),
+        )
+    elif corruption == "foreign_identity":
+        changed = replace(
+            extreme,
+            bar=replace(
+                extreme.bar,
+                physical_contract="JM2701",
+                segment_id="jm:JM2701:2026-01-01",
+            ),
+        )
+    elif corruption == "future_time":
+        future_day = date(2030, 1, 1)
+        changed = replace(
+            extreme,
+            bar=replace(
+                extreme.bar,
+                trading_day=future_day,
+                bar_end=datetime.combine(future_day, datetime.min.time(), tzinfo=UTC),
+            ),
+        )
+    elif corruption == "negative_index":
+        changed = replace(extreme, eligible_index=-999)
+    else:
+        changed = replace(extreme, eligible_index=float(extreme.eligible_index))  # type: ignore[arg-type]
+    malformed = replace(
+        state,
+        pivot_tracker=replace(tracker, extreme_high=changed),
+    )
+
+    result = step_cup_handle(malformed, bars[250])
 
     assert result.diagnostics == ("NEWOW_CUP_STATE_INVALID",)
     assert result.markers == ()

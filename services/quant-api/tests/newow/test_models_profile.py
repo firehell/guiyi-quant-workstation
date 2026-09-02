@@ -49,6 +49,11 @@ _INTEGER_PROFILE_FIELDS = (
     "cup_post_breakout_archive_bars",
     "cup_recent_terminal_ids_limit",
 )
+_NUMERIC_PROFILE_FIELDS = tuple(
+    field.name
+    for field in fields(type(NEWOW_TREND_D1_V1))
+    if field.type in {int, float}
+)
 
 _BOOL_RELATION_COMPANIONS: dict[str, dict[str, int]] = {
     "cup_pretrend_max_bars": {"cup_pretrend_min_bars": 1},
@@ -142,6 +147,37 @@ def test_cup_pivot_is_immutable_and_rejects_every_invalid_field_class() -> None:
     ):
         with pytest.raises(ValueError, match="NEWOW_CUP_PIVOT_INVALID"):
             replace(pivot, **changes)
+
+
+@pytest.mark.parametrize(
+    ("field_name", "invalid_index"),
+    (
+        ("pivot_index", True),
+        ("pivot_index", 0.0),
+        ("confirmed_index", True),
+        ("confirmed_index", 1.0),
+    ),
+)
+def test_cup_pivot_indexes_require_exact_int(
+    field_name: str,
+    invalid_index: object,
+) -> None:
+    """Bool and float indexes cannot be trusted after state reconstruction."""
+
+    pivot_at = datetime(2026, 1, 5, 7, tzinfo=UTC)
+    values = {
+        "kind": CupPivotKind.HIGH,
+        "price": Decimal("100"),
+        "pivot_at": pivot_at,
+        "confirmed_at": pivot_at,
+        "pivot_index": 0,
+        "confirmed_index": 1,
+        "atr_at_pivot": 2.0,
+    }
+    values[field_name] = invalid_index
+
+    with pytest.raises(ValueError, match="NEWOW_CUP_PIVOT_INVALID"):
+        CupPivot(**values)  # type: ignore[arg-type]
 
 
 def test_cup_profile_freezes_every_slice_b_formula_value() -> None:
@@ -276,9 +312,9 @@ def test_integer_profile_field_matrix_covers_every_declared_int() -> None:
     ) == _INTEGER_PROFILE_FIELDS
 
 
-@pytest.mark.parametrize("field_name", _INTEGER_PROFILE_FIELDS)
-def test_every_integer_profile_field_rejects_bool(field_name: str) -> None:
-    """Python bool is numerically int-like but is never a valid window or cap."""
+@pytest.mark.parametrize("field_name", _NUMERIC_PROFILE_FIELDS)
+def test_every_numeric_profile_field_rejects_bool(field_name: str) -> None:
+    """Python bool is never a valid numeric formula parameter."""
 
     changes: dict[str, object] = dict(
         _BOOL_RELATION_COMPANIONS.get(field_name, {})
