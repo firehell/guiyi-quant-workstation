@@ -260,6 +260,28 @@ def test_projection_store_rejects_unknown_fields_and_bad_envelope_values(
         assert store.load(IDENTITY) is None
 
 
+def test_projection_store_rejects_coerced_json_types(tmp_path: Path) -> None:
+    path = tmp_path / "market-home-overview.json"
+    store = MarketHomeProjectionStore(path)
+    store.publish(
+        IDENTITY,
+        market_home_response(_snapshot()),
+        generated_at=datetime(2026, 9, 2, 9, 0, tzinfo=UTC),
+    )
+    valid = json.loads(path.read_text(encoding="utf-8"))
+
+    for mutate in (
+        lambda value: value.update(generated_at=1_788_329_600),
+        lambda value: value["payload"].update(active_count="1"),
+        lambda value: value["payload"]["items"][0].update(close=1234.5),
+    ):
+        candidate = json.loads(json.dumps(valid))
+        mutate(candidate)
+        path.write_text(json.dumps(candidate), encoding="utf-8")
+
+        assert store.load(IDENTITY) is None
+
+
 def test_projection_store_rejects_symlink_parent_on_publish(tmp_path: Path) -> None:
     canonical_root = tmp_path / "canonical"
     canonical_root.mkdir()
@@ -369,7 +391,7 @@ def test_projection_publish_replace_failure_preserves_last_good_and_cleans_temp(
     store.publish(IDENTITY, payload, generated_at=generated_at)
     before = path.read_bytes()
 
-    def fail_replace(_source, _target) -> None:
+    def fail_replace(_source, _target, **_kwargs) -> None:
         raise OSError("private replacement detail")
 
     monkeypatch.setattr(module.os, "replace", fail_replace)
@@ -381,3 +403,99 @@ def test_projection_publish_replace_failure_preserves_last_good_and_cleans_temp(
 
     assert path.read_bytes() == before
     assert not tuple(tmp_path.glob(".market-home-overview.json.*.tmp"))
+
+
+def test_projection_store_rejects_parent_symlink_swapped_during_open(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import app.market_data.market_home_projection as module
+
+    canonical_root = tmp_path / "canonical"
+    parent = canonical_root / ".derived"
+    parent.mkdir(parents=True)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    store = MarketHomeProjectionStore(parent / "market-home-overview.json")
+    real_open = module.os.open
+    swapped = False
+
+    def swap_parent(path, flags, *args, **kwargs):
+        nonlocal swapped
+        if path == parent and flags & module.os.O_DIRECTORY and not swapped:
+            swapped = True
+            parent.rmdir()
+            parent.symlink_to(outside, target_is_directory=True)
+        return real_open(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(module.os, "open", swap_parent)
+
+    assert store.load(IDENTITY) is None
+    with pytest.raises(
+        MarketHomeProjectionError,
+        match="MARKET_HOME_PROJECTION_WRITE_FAILED",
+    ):
+        store.publish(
+            IDENTITY,
+            market_home_response(_snapshot()),
+            generated_at=datetime(2026, 9, 2, 9, 0, tzinfo=UTC),
+        )
+    assert not tuple(outside.iterdir())
+
+
+def test_invalidation_requires_directory_fsync(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import app.market_data.market_home_projection as module
+
+    path = tmp_path / "market-home-overview.json"
+    store = MarketHomeProjectionStore(path)
+    store.publish(
+        IDENTITY,
+        market_home_response(_snapshot()),
+        generated_at=datetime(2026, 9, 2, 9, 0, tzinfo=UTC),
+    )
+
+    def fail_fsync(_descriptor: int) -> None:
+        raise OSError("fsync")
+
+    monkeypatch.setattr(module.os, "fsync", fail_fsync)
+    with pytest.raises(
+        MarketHomeProjectionError,
+        match="MARKET_HOME_PROJECTION_INVALIDATION_FAILED",
+    ):
+        store.invalidate()
+
+    assert not path.exists()
+
+
+def test_publish_fsyncs_directory_after_atomic_replace(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import app.market_data.market_home_projection as module
+
+    path = tmp_path / "market-home-overview.json"
+    store = MarketHomeProjectionStore(path)
+    steps: list[str] = []
+    real_fsync = module.os.fsync
+    real_replace = module.os.replace
+
+    def record_fsync(descriptor: int) -> None:
+        steps.append("fsync")
+        real_fsync(descriptor)
+
+    def record_replace(source, target, **kwargs) -> None:
+        steps.append("replace")
+        real_replace(source, target, **kwargs)
+
+    monkeypatch.setattr(module.os, "fsync", record_fsync)
+    monkeypatch.setattr(module.os, "replace", record_replace)
+    store.publish(
+        IDENTITY,
+        market_home_response(_snapshot()),
+        generated_at=datetime(2026, 9, 2, 9, 0, tzinfo=UTC),
+    )
+
+    assert steps == ["fsync", "replace", "fsync"]

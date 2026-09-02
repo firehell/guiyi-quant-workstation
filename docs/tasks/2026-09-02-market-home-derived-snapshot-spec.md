@@ -141,6 +141,10 @@ Projection：
 
 V1 只保留一个 current projection，不做历史版本、LRU 或 TTL。
 
+自然 after-market 的 projection refresh 默认关闭。只有 owner 在独立的受控 Gate 中写入
+`<PROJECT_ROOT>/.run/market-home-projection-enabled` 且内容精确为 `enabled\n` 后，factory
+才装配 refresh callback；本任务不创建、修改或验证该 marker，也不生成 production projection。
+
 ## 6. Projection Envelope
 
 单个 UTF-8 JSON object：
@@ -330,6 +334,10 @@ Refresh failure：
 - 不更改 Alert Rule/Scope/Event；
 - 不把 core maintenance 改判 failed；
 - 旧 projection 已在 manager apply 前失效，因此 API 走 compute fallback。
+
+refresh 在 compute、post-compute identity check 和 publish 的整个区间必须持有与 authoritative
+apply 共用的 maintenance lease；拿不到 lease 时跳过这次 best-effort refresh。这样同日的
+manual apply 不会与 refresh 交错发布 stale projection。
 
 Invalidation failure 与 refresh failure 不同：invalidation failure 发生在 authority mutation 前，必须阻塞本次 apply，并沿 existing after-market failure contract 处理。
 

@@ -75,11 +75,23 @@ Projection envelope MUST 使用 schema version 1，并绑定：
 `payload.target_as_of` 与 `payload.data_as_of` MUST 等于 envelope target day。文件 MUST 为普通文件，
 不得通过 symlink 读取或写出 Canonical root 的 `.derived` 边界；文件大小 MUST 大于 0 且不超过 2 MiB。
 
+Natural after-market refresh MUST default closed. The factory MAY compose a refresh callback only
+when the owner-created local activation marker contains the exact enabled value; no API request,
+test, release identity or Runtime promotion implicitly enables it. When enabled, refresh MUST hold
+the same maintenance lease as authoritative apply across compute, final identity check and publish.
+
 #### Scenario: Projection is atomically refreshed
 
 - **WHEN** after-market core maintenance 已完成 Canonical publication、`canonical_updated`、rank1/Live
-  reconciliation 与 cleanup
-- **THEN** projection writer 使用 same-directory temporary file、flush、fsync 与 `os.replace` 原子发布
+  reconciliation 与 cleanup，activation marker 已启用且 maintenance lease 可得
+- **THEN** projection writer uses a trusted same-directory descriptor, writes and fsyncs the temporary
+  file, atomically replaces the current file, and fsyncs the directory before releasing the lease
+
+#### Scenario: Projection refresh is not enabled
+
+- **WHEN** the activation marker is absent, malformed, or disabled
+- **THEN** after-market MUST NOT compose or call a projection refresh callback and MUST NOT create a
+  production projection
 
 #### Scenario: Projection refresh fails after core maintenance
 

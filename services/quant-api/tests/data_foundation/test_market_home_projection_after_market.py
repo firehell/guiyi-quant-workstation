@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import logging
 from datetime import date, datetime
+from types import SimpleNamespace
 
 import pytest
 
+import app.market_data.after_market as after_market
 from app.market_data.after_market import AfterMarketUpdater
 from app.market_data.historical_data_manager import MaintenanceResult
 from app.market_data.operational_universe import load_active_products
@@ -22,10 +24,24 @@ class _Coverage:
 
 
 class _Catalog:
+    def __init__(self) -> None:
+        self.lease: _Lease | None = _Lease()
+
     def main_map(self, symbol: str, start: date, end: date):
         assert start == _DAY
         assert end == _DAY
         return [type("Fact", (), {"contract": _CONTRACTS[symbol]})()]
+
+    def acquire_maintenance_lock(self):
+        return self.lease
+
+
+class _Lease:
+    def __init__(self) -> None:
+        self.released = False
+
+    def release(self) -> None:
+        self.released = True
 
 
 class _Manager:
@@ -233,3 +249,80 @@ def test_core_seam_failure_never_refreshes_projection(tmp_path, stage: str) -> N
     assert result.status == "failed"
     assert manager.calls == 1
     assert calls == ["invalidate"]
+
+
+def test_projection_refresh_activation_is_default_off(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    marker = tmp_path / "market-home-projection-enabled"
+    monkeypatch.setattr(
+        after_market,
+        "_MARKET_HOME_PROJECTION_ACTIVATION_MARKER",
+        marker,
+    )
+
+    assert after_market._market_home_projection_refresh_enabled() is False
+
+    marker.write_text("enabled\n", encoding="utf-8")
+    assert after_market._market_home_projection_refresh_enabled() is True
+
+
+def test_after_market_factory_only_composes_refresh_when_projection_is_enabled(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    marker = tmp_path / "market-home-projection-enabled"
+    manager = SimpleNamespace(
+        provider=SimpleNamespace(client=object()),
+        catalog=SimpleNamespace(canonical_root=tmp_path / "canonical", session=object()),
+    )
+    monkeypatch.setattr(
+        after_market,
+        "_MARKET_HOME_PROJECTION_ACTIVATION_MARKER",
+        marker,
+    )
+    monkeypatch.setattr("app.redis_connections.get_redis_connection", lambda: object())
+
+    disabled = after_market.build_after_market_updater(
+        manager,
+        failure_notification=False,
+    )
+    assert disabled.market_home_projection_invalidate is not None
+    assert disabled.market_home_projection_refresh is None
+
+    marker.write_text("enabled\n", encoding="utf-8")
+    enabled = after_market.build_after_market_updater(
+        manager,
+        failure_notification=False,
+    )
+    assert enabled.market_home_projection_refresh is not None
+
+
+def test_projection_refresh_requires_maintenance_lease(tmp_path) -> None:
+    updater, _events, _live_store, manager = _updater(tmp_path)
+    calls: list[str] = []
+    manager.catalog.lease = None
+
+    assert (
+        after_market._refresh_market_home_projection_with_lease(
+            manager,
+            lambda: calls.append("refresh"),
+        )
+        is None
+    )
+    assert calls == []
+
+    lease = _Lease()
+    manager.catalog.lease = lease
+    def refresh() -> str:
+        assert lease.released is False
+        calls.append("refresh")
+        return "refreshed"
+
+    assert (
+        after_market._refresh_market_home_projection_with_lease(manager, refresh)
+        == "refreshed"
+    )
+    assert calls == ["refresh"]
+    assert lease.released is True

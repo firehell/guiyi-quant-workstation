@@ -34,6 +34,9 @@ from app.market_data.session_clock import SHANGHAI
 
 
 _LOGGER = logging.getLogger(__name__)
+_MARKET_HOME_PROJECTION_ACTIVATION_MARKER = (
+    PROJECT_ROOT / ".run" / "market-home-projection-enabled"
+)
 _PUBLIC_ERROR_CODES = frozenset(
     {
         "MAINTENANCE_LOCKED",
@@ -404,10 +407,20 @@ def build_after_market_updater(
         market_home_projection_path(manager.catalog.canonical_root)
     )
 
-    def refresh_market_home_projection() -> object:
-        from app.market_data.composition import build_market_home_projection
+    projection_refresh: Callable[[], object] | None = None
+    if _market_home_projection_refresh_enabled():
 
-        return build_market_home_projection(manager.catalog.session).refresh()
+        def refresh_market_home_projection() -> object | None:
+            from app.market_data.composition import build_market_home_projection
+
+            return _refresh_market_home_projection_with_lease(
+                manager,
+                lambda: build_market_home_projection(
+                    manager.catalog.session
+                ).refresh(),
+            )
+
+        projection_refresh = refresh_market_home_projection
 
     notification_transport: NotificationTransport | None = None
     if failure_notification:
@@ -421,8 +434,31 @@ def build_after_market_updater(
         notification_transport=notification_transport,
         now=lambda: datetime.now(SHANGHAI),
         market_home_projection_invalidate=projection_store.invalidate,
-        market_home_projection_refresh=refresh_market_home_projection,
+        market_home_projection_refresh=projection_refresh,
     )
+
+
+def _market_home_projection_refresh_enabled() -> bool:
+    try:
+        return (
+            _MARKET_HOME_PROJECTION_ACTIVATION_MARKER.read_text(encoding="utf-8")
+            == "enabled\n"
+        )
+    except (OSError, UnicodeDecodeError):
+        return False
+
+
+def _refresh_market_home_projection_with_lease(
+    manager: HistoricalDataManager,
+    refresh: Callable[[], object],
+) -> object | None:
+    lease = manager.catalog.acquire_maintenance_lock()
+    if lease is None:
+        return None
+    try:
+        return refresh()
+    finally:
+        lease.release()
 
 
 class _ConfiguredNotificationTransport:

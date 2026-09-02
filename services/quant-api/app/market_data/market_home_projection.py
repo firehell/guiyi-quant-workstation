@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
-import tempfile
+import stat
+from collections.abc import Mapping
 from collections.abc import Callable
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Literal, Self
+from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, ValidationError, model_validator
 
@@ -27,6 +30,7 @@ from app.schemas.market import (
 
 _MAX_PROJECTION_BYTES = 2 * 1024 * 1024
 _AUTHORITY_DIGEST = re.compile(r"[0-9a-f]{64}\Z")
+_NOFOLLOW = getattr(os, "O_NOFOLLOW", None)
 
 
 class MarketHomeProjectionError(RuntimeError):
@@ -76,18 +80,44 @@ class MarketHomeProjectionStore:
         self,
         identity: MarketHomeAuthorityIdentity,
     ) -> MarketHomeOverviewResponse | None:
+        parent_descriptor: int | None = None
         try:
-            if self.path.parent.is_symlink():
+            parent_descriptor = _open_projection_parent(self.path.parent, create=False)
+            if parent_descriptor is None:
                 return None
-            if self.path.is_symlink() or not self.path.is_file():
+            try:
+                descriptor = os.open(
+                    self.path.name,
+                    os.O_RDONLY | _required_nofollow(),
+                    dir_fd=parent_descriptor,
+                )
+            except FileNotFoundError:
                 return None
-            size = self.path.stat().st_size
-            if size <= 0 or size > _MAX_PROJECTION_BYTES:
+            try:
+                metadata = os.fstat(descriptor)
+                if (
+                    not stat.S_ISREG(metadata.st_mode)
+                    or metadata.st_size <= 0
+                    or metadata.st_size > _MAX_PROJECTION_BYTES
+                ):
+                    return None
+                encoded = _bounded_read(descriptor)
+            finally:
+                os.close(descriptor)
+        except OSError:
+            return None
+        finally:
+            if parent_descriptor is not None:
+                os.close(parent_descriptor)
+        try:
+            raw = json.loads(encoded)
+            if not _has_decimal_wire_contract(raw):
                 return None
             envelope = MarketHomeProjectionEnvelope.model_validate_json(
-                self.path.read_text(encoding="utf-8")
+                encoded,
+                strict=True,
             )
-        except (OSError, TypeError, ValueError, ValidationError):
+        except (TypeError, ValueError, ValidationError, UnicodeDecodeError):
             return None
         if (
             envelope.target_as_of != identity.target_as_of
@@ -100,9 +130,17 @@ class MarketHomeProjectionStore:
         """Remove the current projection before any authoritative apply mutation."""
 
         try:
-            if self.path.parent.is_symlink():
-                raise OSError("projection parent is symlink")
-            self.path.unlink(missing_ok=True)
+            parent_descriptor = _open_projection_parent(self.path.parent, create=False)
+            if parent_descriptor is None:
+                return
+            try:
+                try:
+                    os.unlink(self.path.name, dir_fd=parent_descriptor)
+                except FileNotFoundError:
+                    return
+                os.fsync(parent_descriptor)
+            finally:
+                os.close(parent_descriptor)
         except OSError as exc:
             raise MarketHomeProjectionError(
                 "MARKET_HOME_PROJECTION_INVALIDATION_FAILED"
@@ -130,24 +168,31 @@ class MarketHomeProjectionStore:
         if len(encoded) > _MAX_PROJECTION_BYTES:
             raise MarketHomeProjectionError("MARKET_HOME_PROJECTION_TOO_LARGE")
 
+        parent_descriptor: int | None = None
         descriptor: int | None = None
-        temporary_path: Path | None = None
+        temporary_name: str | None = None
         try:
-            self.path.parent.mkdir(parents=True, exist_ok=True)
-            if self.path.parent.is_symlink():
-                raise OSError("projection parent is symlink")
-            descriptor, temporary_name = tempfile.mkstemp(
-                dir=self.path.parent,
-                prefix=f".{self.path.name}.",
-                suffix=".tmp",
+            parent_descriptor = _open_projection_parent(self.path.parent, create=True)
+            assert parent_descriptor is not None
+            temporary_name = f".{self.path.name}.{uuid4().hex}.tmp"
+            descriptor = os.open(
+                temporary_name,
+                os.O_WRONLY | os.O_CREAT | os.O_EXCL | _required_nofollow(),
+                0o600,
+                dir_fd=parent_descriptor,
             )
-            temporary_path = Path(temporary_name)
-            with os.fdopen(descriptor, "wb") as stream:
-                descriptor = None
-                stream.write(encoded)
-                stream.flush()
-                os.fsync(stream.fileno())
-            os.replace(temporary_path, self.path)
+            _write_all(descriptor, encoded)
+            os.fsync(descriptor)
+            os.close(descriptor)
+            descriptor = None
+            os.replace(
+                temporary_name,
+                self.path.name,
+                src_dir_fd=parent_descriptor,
+                dst_dir_fd=parent_descriptor,
+            )
+            temporary_name = None
+            os.fsync(parent_descriptor)
         except OSError as exc:
             raise MarketHomeProjectionError(
                 "MARKET_HOME_PROJECTION_WRITE_FAILED"
@@ -155,8 +200,13 @@ class MarketHomeProjectionStore:
         finally:
             if descriptor is not None:
                 os.close(descriptor)
-            if temporary_path is not None:
-                temporary_path.unlink(missing_ok=True)
+            if temporary_name is not None and parent_descriptor is not None:
+                try:
+                    os.unlink(temporary_name, dir_fd=parent_descriptor)
+                except FileNotFoundError:
+                    pass
+            if parent_descriptor is not None:
+                os.close(parent_descriptor)
 
 
 class MarketHomeProjection:
@@ -253,4 +303,84 @@ def market_home_response(
             )
             for sector in snapshot.sectors
         ],
+    )
+
+
+def _required_nofollow() -> int:
+    if _NOFOLLOW is None:
+        raise OSError("O_NOFOLLOW_UNAVAILABLE")
+    return _NOFOLLOW
+
+
+def _open_projection_parent(path: Path, *, create: bool) -> int | None:
+    if create:
+        path.mkdir(parents=True, exist_ok=True)
+    try:
+        return os.open(
+            path,
+            os.O_RDONLY | os.O_DIRECTORY | _required_nofollow(),
+        )
+    except FileNotFoundError:
+        if create:
+            raise
+        return None
+
+
+def _bounded_read(descriptor: int) -> bytes:
+    chunks: list[bytes] = []
+    remaining = _MAX_PROJECTION_BYTES + 1
+    while remaining:
+        chunk = os.read(descriptor, min(65_536, remaining))
+        if not chunk:
+            break
+        chunks.append(chunk)
+        remaining -= len(chunk)
+    result = b"".join(chunks)
+    if not result or len(result) > _MAX_PROJECTION_BYTES:
+        raise OSError("PROJECTION_SIZE_INVALID")
+    return result
+
+
+def _write_all(descriptor: int, encoded: bytes) -> None:
+    remaining = memoryview(encoded)
+    while remaining:
+        written = os.write(descriptor, remaining)
+        if written <= 0:
+            raise OSError("PROJECTION_SHORT_WRITE")
+        remaining = remaining[written:]
+
+
+def _has_decimal_wire_contract(raw: object) -> bool:
+    if not isinstance(raw, Mapping):
+        return False
+    payload = raw.get("payload")
+    if not isinstance(payload, Mapping):
+        return False
+    items = payload.get("items")
+    sectors = payload.get("sectors")
+    if not isinstance(items, list) or not isinstance(sectors, list):
+        return False
+    item_decimal_fields = (
+        "close",
+        "price_change_1d",
+        "price_change_5d",
+        "volume_ratio20",
+        "oi_change_1d",
+        "atr14_percentile252",
+    )
+    for item in items:
+        if not isinstance(item, Mapping) or any(
+            not isinstance(item.get(field), str) and item.get(field) is not None
+            for field in item_decimal_fields
+        ):
+            return False
+        if not isinstance(item.get("close"), str):
+            return False
+    return all(
+        isinstance(sector, Mapping)
+        and (
+            isinstance(sector.get("median_price_change_1d"), str)
+            or sector.get("median_price_change_1d") is None
+        )
+        for sector in sectors
     )

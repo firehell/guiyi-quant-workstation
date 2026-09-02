@@ -20,6 +20,7 @@
 - 所有正式 apply 入口必须在 manager action 前 invalidate projection；invalidator 失败必须在真实 mutation 前停止。
 - API miss 必须保留原 compute correctness，但不得 publish/write projection。
 - after-market refresh failure只影响性能，不 retry、不发 projection-specific notification、不改变已成功 core maintenance。
+- natural refresh 默认关闭；只有 owner-written exact activation marker 才允许 factory 装配 refresh callback，本任务不创建 marker 或 production projection。
 - 不新增 Redis cache、PostgreSQL/Alembic、queue、worker、线程池或 Web UI 改动。
 - `PROJECT_SOURCE.md` 与 `STATUS.md` 不修改。
 
@@ -273,6 +274,8 @@ Existing direct constructors remain compatible via default `None`.
 `_attempt()` after provider readiness but before manager update calls invalidator. It does not refresh projection.
 
 `run()` calls refresh only after `_attempt()` returns success, which proves the existing `canonical_updated` / reconciliation / cleanup path is complete.
+
+Factory refresh callback must acquire the existing Catalog maintenance lease for the complete compute/check/publish interval; unavailable lease skips best-effort refresh.
 
 - [ ] **Step 5: Factory composition**
 
