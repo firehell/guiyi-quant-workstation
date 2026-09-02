@@ -112,6 +112,18 @@ test('fails closed for overview status, date, and per-sector fact disagreements'
   }
 })
 
+test('fails closed when summary bins disagree with the returned item facts', () => {
+  const invalidCases: unknown[] = [
+    { ...overview, summary: { ...overview.summary, price_up_count: 0, price_down_count: 2 } },
+    { ...overview, summary: { ...overview.summary, daily_up_count: 0, daily_down_count: 2 } },
+    { ...overview, summary: { ...overview.summary, aligned_up_count: 0, aligned_down_count: 2 } },
+  ]
+
+  for (const payload of invalidCases) {
+    assert.throws(() => normalizeMarketHomeOverviewResponse(payload))
+  }
+})
+
 test('fails closed when a completed D1 close is null', () => {
   const payload = structuredClone(overview)
   payload.items[0].close = null

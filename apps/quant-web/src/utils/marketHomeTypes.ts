@@ -26,6 +26,7 @@ export function normalizeMarketHomeOverviewResponse(payload: unknown): MarketHom
   if (targetAsOf !== dataAsOf) throw new Error('market home target_as_of and data_as_of disagree')
   if (items.some((item) => item.data_as_of !== dataAsOf)) throw new Error('market home items disagree on data_as_of')
   const summary = normalizeSummary(value.summary, participantCount)
+  validateSummaryItems(summary, items)
   const sectors = array(value.sectors, 'sectors').map((sector, index) => normalizeSector(sector, index))
   const participantBySector = new Map<string, number>()
   for (const item of items) participantBySector.set(item.sector, (participantBySector.get(item.sector) ?? 0) + 1)
@@ -67,6 +68,21 @@ function normalizeSummary(payload: unknown, participantCount: number): MarketHom
   const summary = { price_up_count: count(value.price_up_count, 'price_up_count'), price_down_count: count(value.price_down_count, 'price_down_count'), price_flat_count: count(value.price_flat_count, 'price_flat_count'), daily_up_count: count(value.daily_up_count, 'daily_up_count'), daily_down_count: count(value.daily_down_count, 'daily_down_count'), daily_neutral_count: count(value.daily_neutral_count, 'daily_neutral_count'), daily_unavailable_count: count(value.daily_unavailable_count, 'daily_unavailable_count'), aligned_up_count: count(value.aligned_up_count, 'aligned_up_count'), aligned_down_count: count(value.aligned_down_count, 'aligned_down_count') }
   if (summary.price_up_count + summary.price_down_count + summary.price_flat_count !== participantCount || summary.daily_up_count + summary.daily_down_count + summary.daily_neutral_count + summary.daily_unavailable_count !== participantCount || summary.aligned_up_count + summary.aligned_down_count > participantCount) throw new Error('market home summary is inconsistent')
   return summary
+}
+
+function validateSummaryItems(summary: MarketHomeOverviewResponse['summary'], items: MarketHomeOverviewResponse['items']): void {
+  const expected: MarketHomeOverviewResponse['summary'] = {
+    price_up_count: items.filter((item) => item.price_change_1d !== null && item.price_change_1d > 0).length,
+    price_down_count: items.filter((item) => item.price_change_1d !== null && item.price_change_1d < 0).length,
+    price_flat_count: items.filter((item) => item.price_change_1d === 0).length,
+    daily_up_count: items.filter((item) => item.daily_trend === 'up').length,
+    daily_down_count: items.filter((item) => item.daily_trend === 'down').length,
+    daily_neutral_count: items.filter((item) => item.daily_trend === 'neutral').length,
+    daily_unavailable_count: items.filter((item) => item.daily_trend === 'unavailable').length,
+    aligned_up_count: items.filter((item) => item.daily_trend === 'up' && item.weekly_trend === 'up').length,
+    aligned_down_count: items.filter((item) => item.daily_trend === 'down' && item.weekly_trend === 'down').length,
+  }
+  if (Object.entries(expected).some(([key, value]) => summary[key as keyof typeof summary] !== value)) throw new Error('market home summary disagrees with item facts')
 }
 
 function normalizeSector(payload: unknown, index: number): MarketHomeOverviewResponse['sectors'][number] {
