@@ -47,6 +47,35 @@ def test_htdy_message_is_observation_only() -> None:
 
 
 @pytest.mark.parametrize(
+    ("result_codes", "direction", "cross", "position"),
+    [
+        (("buy",), "多头预警", "MACD 金叉", "EMA21 上方"),
+        (("sell",), "空头预警", "MACD 死叉", "EMA21 下方"),
+    ],
+)
+def test_subing_message_uses_frozen_candidate_facts_only(
+    result_codes: tuple[str, ...], direction: str, cross: str, position: str
+) -> None:
+    content = format_alert_message(
+        message(rule_code="subing_ths_alert_15m_v1", result_codes=result_codes)
+    )
+    assert "【苏冰预警】" in content
+    assert "15m" in content
+    assert direction in content
+    assert cross in content
+    assert position in content
+    assert "SMA" not in content
+    assert "SMA21" not in content
+
+
+def test_subing_message_rejects_non_15m_identity() -> None:
+    with pytest.raises(ValueError, match="ALERT_NOTIFICATION_RESULT_INVALID"):
+        format_alert_message(
+            message(rule_code="subing_ths_alert_15m_v1", frequency="5m")
+        )
+
+
+@pytest.mark.parametrize(
     ("field", "value", "code"),
     [
         ("rule_code", "future_rule", "ALERT_NOTIFICATION_RULE_INVALID"),

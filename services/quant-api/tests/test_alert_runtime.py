@@ -6,6 +6,7 @@ import json
 import pytest
 
 from app.alerts.runtime import (
+    AlertRuntime,
     AlertNotificationAcknowledgeError,
     _parse_canonical_updated_trigger,
     _parse_live_bar_trigger,
@@ -15,9 +16,30 @@ from app.alerts.runtime import (
 )
 
 
-def test_empty_status_is_generic_schema_v5() -> None:
+def test_startup_composition_requires_exact_registry_evaluator_and_policy_coverage() -> None:
+    called = False
+
+    def session_factory():
+        nonlocal called
+        called = True
+        raise AssertionError("not reached")
+
+    runtime = AlertRuntime(
+        session_factory=session_factory,
+        market_read_factory=lambda _session: None,  # type: ignore[arg-type]
+        evaluators={},
+        sender=None,  # type: ignore[arg-type]
+        operational_products=(),
+        taxonomy={},
+    )
+    with pytest.raises(RuntimeError, match="ALERT_RUNTIME_COMPOSITION_INVALID"):
+        runtime._validate_startup_composition()
+    assert called is False
+
+
+def test_empty_status_is_generic_schema_v6_with_fixed_per_rule_health() -> None:
     status = empty_alert_runtime_status()
-    assert status["schema_version"] == 5
+    assert status["schema_version"] == 6
     assert set(status) == {
         "schema_version",
         "last_processed_bar_at",
@@ -31,6 +53,11 @@ def test_empty_status_is_generic_schema_v5() -> None:
         "notification_acknowledged_at",
         "notification_error_type",
         "consecutive_notification_failures",
+        "rule_status",
+    }
+    assert set(status["rule_status"]) == {
+        "htdy_original_15m",
+        "subing_ths_alert_15m_v1",
     }
 
 
@@ -50,7 +77,7 @@ def test_legacy_status_normalizes_by_discarding_unknown_fields() -> None:
     "payload",
     [
         {},
-        {"schema_version": 6},
+        {"schema_version": 7},
         {**empty_alert_runtime_status(), "consecutive_notification_failures": -1},
         {**empty_alert_runtime_status(), "last_event_at": "naive"},
     ],

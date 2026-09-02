@@ -99,6 +99,21 @@ def test_changed_duplicate_facts_fail_closed(session: Session) -> None:
         service.create_event(request(rule.id, contract="JM2611"))
 
 
+def test_subing_exact_event_requires_matching_duplicate_facts(session: Session) -> None:
+    rule = AlertRule(
+        rule_code="subing_ths_alert_15m_v1",
+        enabled=True,
+        scope_product_frequencies={"jm": ["15m"]},
+    )
+    session.add(rule)
+    session.commit()
+    service = AlertService(session, operational_products=("jm",))
+    assert service.create_event(request(rule.id, result_codes=("buy",))) is not None
+    assert service.create_event(request(rule.id, result_codes=("buy",))) is None
+    with pytest.raises(AlertConsistencyError):
+        service.create_event(request(rule.id, result_codes=("sell",)))
+
+
 def test_first_seen_duplicate_freezes_original_facts(session: Session) -> None:
     service = AlertService(session, operational_products=("jm",))
     rule = session.scalar(select(AlertRule))

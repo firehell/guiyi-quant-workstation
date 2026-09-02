@@ -14,14 +14,25 @@ from typing import Protocol, cast
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.alerts.evaluators import AlertEvaluator, HtdyFirstSeenObservation
+from app.alerts.evaluators import (
+    AlertEvaluationError,
+    AlertEvaluator,
+    AlertObservationCandidate,
+)
 from app.alerts.models import AlertRule
 from app.alerts.notification import (
+    ALERT_NOTIFICATION_POLICIES,
     AlertNotificationMessage,
     AlertNotificationSender,
     ProviderAcceptance,
 )
-from app.alerts.registry import alert_rule_definitions, get_alert_rule_definition
+from app.alerts.registry import (
+    AlertEventMode,
+    HTDY_ALERT_RULE_CODE,
+    SUBING_THS_ALERT_RULE_CODE,
+    alert_rule_definitions,
+    get_alert_rule_definition,
+)
 from app.alerts.service import AlertEventCreate, AlertService
 from app.market_data.domain import (
     BarFrequency,
@@ -93,29 +104,31 @@ class _PreparedEvent:
     notification_error_type: str | None
 
 
-def _persist_first_seen_htdy_and_prepare_notification(
+def _persist_candidate_and_prepare_notification(
     service: AlertService,
     *,
     taxonomy: Mapping[str, ProductTaxonomyEntry],
     rule: AlertRule,
     symbol: str,
     frequency: str,
-    candidate: HtdyFirstSeenObservation,
+    candidate: AlertObservationCandidate,
     processing_now: datetime,
 ) -> _PreparedEvent:
-    created = service.create_first_seen_observation_event(
-        AlertEventCreate(
-            rule_id=rule.id,
-            symbol=symbol,
-            contract=candidate.contract,
-            trading_day=candidate.trading_day,
-            frequency=frequency,
-            bar_end=candidate.bar_end,
-            result_codes=candidate.observation_types,
-            detected_at=processing_now,
-            notification_attempted_at=processing_now,
-        )
+    create = AlertEventCreate(
+        rule_id=rule.id,
+        symbol=symbol,
+        contract=candidate.contract,
+        trading_day=candidate.trading_day,
+        frequency=frequency,
+        bar_end=candidate.bar_end,
+        result_codes=candidate.observation_types,
+        detected_at=processing_now,
+        notification_attempted_at=processing_now,
     )
+    if get_alert_rule_definition(rule.rule_code).event_mode is AlertEventMode.FIRST_SEEN:
+        created = service.create_first_seen_observation_event(create)
+    else:
+        created = service.create_event(create)
     if created is None:
         return _PreparedEvent(False, None, None)
     taxonomy_entry = taxonomy.get(symbol)
@@ -143,7 +156,8 @@ class AlertRuntime:
         *,
         session_factory: AlertSessionFactory,
         market_read_factory: AlertMarketReadFactory,
-        htdy_evaluator: AlertEvaluator,
+        htdy_evaluator: AlertEvaluator | None = None,
+        evaluators: Mapping[str, AlertEvaluator] | None = None,
         sender: AlertNotificationSender,
         operational_products: tuple[str, ...],
         taxonomy: Mapping[str, ProductTaxonomyEntry],
@@ -155,7 +169,10 @@ class AlertRuntime:
     ) -> None:
         self._session_factory = session_factory
         self._market_read_factory = market_read_factory
-        self._htdy_evaluator = htdy_evaluator
+        self._evaluators = dict(evaluators or {})
+        if htdy_evaluator is not None:
+            self._evaluators.setdefault(HTDY_ALERT_RULE_CODE, htdy_evaluator)
+        self._htdy_evaluator = self._evaluators.get(HTDY_ALERT_RULE_CODE)
         self._sender = sender
         self._operational_products = frozenset(
             normalize_symbol(symbol) for symbol in operational_products
@@ -193,6 +210,11 @@ class AlertRuntime:
         expected = tuple(
             sorted(definition.rule_code for definition in alert_rule_definitions())
         )
+        if (
+            tuple(sorted(self._evaluators)) != expected
+            or tuple(sorted(ALERT_NOTIFICATION_POLICIES)) != expected
+        ):
+            raise RuntimeError("ALERT_RUNTIME_COMPOSITION_INVALID")
         try:
             with self._session_factory() as session:
                 rules = session.scalars(select(AlertRule).order_by(AlertRule.rule_code)).all()
@@ -245,9 +267,13 @@ class AlertRuntime:
                     session,
                     operational_products=tuple(sorted(self._operational_products)),
                 )
+                market_read = self._market_read_factory(session)
                 for rule in rules:
                     try:
                         definition = get_alert_rule_definition(rule.rule_code)
+                        evaluator = self._evaluators.get(rule.rule_code)
+                        if evaluator is None:
+                            raise ValueError("ALERT_EVALUATOR_MISSING")
                         if trigger.frequency.value not in definition.input_frequencies:
                             continue
                         if not service.rule_allows_event(
@@ -256,7 +282,7 @@ class AlertRuntime:
                             frequency=trigger.frequency.value,
                         ):
                             continue
-                        window = self._market_read_factory(session).bars_until(
+                        window = market_read.bars_until(
                             SeriesPageQuery(
                                 SeriesKind.ACTUAL_DOMINANT,
                                 trigger.symbol,
@@ -273,12 +299,14 @@ class AlertRuntime:
                             event_bar=trigger.bar,
                         ):
                             continue
-                        candidates = _validated_first_seen_candidates(
-                            self._htdy_evaluator.evaluate_first_seen(window),
+                        candidates = _validated_candidates(
+                            evaluator.evaluate_candidates(market_read, window),
                             window=window,
+                            event_mode=definition.event_mode,
                         )
+                        rule_event_created = False
                         for candidate in candidates:
-                            prepared = _persist_first_seen_htdy_and_prepare_notification(
+                            prepared = _persist_candidate_and_prepare_notification(
                                 service,
                                 taxonomy=self._taxonomy,
                                 rule=rule,
@@ -289,6 +317,7 @@ class AlertRuntime:
                             )
                             if prepared.event_created:
                                 event_count += 1
+                                rule_event_created = True
                             if prepared.notification_error_type is not None:
                                 self._record_notification_failure(
                                     at=processing_now,
@@ -296,6 +325,23 @@ class AlertRuntime:
                                 )
                             if prepared.message is not None:
                                 messages.append(prepared.message)
+                        self._record_rule_result(
+                            rule.rule_code,
+                            evaluated_bar_at=window.cutoff,
+                            at=processing_now,
+                            event_created=rule_event_created,
+                            error_type=None,
+                        )
+                    except AlertEvaluationError as exc:
+                        if session.in_transaction():
+                            session.rollback()
+                        self._record_rule_result(
+                            rule.rule_code,
+                            evaluated_bar_at=None,
+                            at=processing_now,
+                            event_created=False,
+                            error_type=_rule_error_type(str(exc)),
+                        )
                     except Exception:
                         if session.in_transaction():
                             session.rollback()
@@ -335,10 +381,18 @@ class AlertRuntime:
                     operational_products=tuple(sorted(self._operational_products)),
                 )
                 for rule in rules:
+                    definition = get_alert_rule_definition(rule.rule_code)
+                    evaluator = self._evaluators.get(rule.rule_code)
+                    if evaluator is None:
+                        failed = True
+                        _LOGGER.warning("ALERT_RULE_PROCESSING_FAILED")
+                        continue
                     market_read = self._market_read_factory(session)
                     for symbol in sorted(self._operational_products):
                         for frequency in _CANONICAL_ALERT_FREQUENCIES:
                             try:
+                                if frequency.value not in definition.input_frequencies:
+                                    continue
                                 if not service.rule_allows_event(
                                     rule, symbol=symbol, frequency=frequency.value
                                 ):
@@ -359,12 +413,14 @@ class AlertRuntime:
                                     trading_day=trigger.trading_day,
                                 ):
                                     continue
-                                candidates = _validated_first_seen_candidates(
-                                    self._htdy_evaluator.evaluate_first_seen(window),
+                                candidates = _validated_candidates(
+                                    evaluator.evaluate_candidates(market_read, window),
                                     window=window,
+                                    event_mode=definition.event_mode,
                                 )
+                                rule_event_created = False
                                 for candidate in candidates:
-                                    prepared = _persist_first_seen_htdy_and_prepare_notification(
+                                    prepared = _persist_candidate_and_prepare_notification(
                                         service,
                                         taxonomy=self._taxonomy,
                                         rule=rule,
@@ -375,6 +431,7 @@ class AlertRuntime:
                                     )
                                     if prepared.event_created:
                                         event_count += 1
+                                        rule_event_created = True
                                     if prepared.notification_error_type is not None:
                                         self._record_notification_failure(
                                             at=processing_now,
@@ -382,6 +439,23 @@ class AlertRuntime:
                                         )
                                     if prepared.message is not None:
                                         messages.append(prepared.message)
+                                self._record_rule_result(
+                                    rule.rule_code,
+                                    evaluated_bar_at=window.cutoff,
+                                    at=processing_now,
+                                    event_created=rule_event_created,
+                                    error_type=None,
+                                )
+                            except AlertEvaluationError as exc:
+                                if session.in_transaction():
+                                    session.rollback()
+                                self._record_rule_result(
+                                    rule.rule_code,
+                                    evaluated_bar_at=None,
+                                    at=processing_now,
+                                    event_created=False,
+                                    error_type=_rule_error_type(str(exc)),
+                                )
                             except Exception:
                                 if session.in_transaction():
                                     session.rollback()
@@ -507,6 +581,29 @@ class AlertRuntime:
             ),
         )
 
+    def _record_rule_result(
+        self,
+        rule_code: str,
+        *,
+        evaluated_bar_at: datetime | None,
+        at: datetime,
+        event_created: bool,
+        error_type: str | None,
+    ) -> None:
+        status = self._current_runtime_status()
+        rule_status = dict(cast(Mapping[str, object], status["rule_status"]))
+        current = dict(cast(Mapping[str, object], rule_status[rule_code]))
+        if error_type is None:
+            current["last_evaluated_bar_at"] = _iso_timestamp(evaluated_bar_at) if evaluated_bar_at else None
+            current["error_type"] = None
+        else:
+            current["last_failure_at"] = _iso_timestamp(at)
+            current["error_type"] = error_type
+        if event_created:
+            current["last_event_at"] = _iso_timestamp(at)
+        rule_status[rule_code] = current
+        self._update_runtime_status(rule_status=rule_status)
+
     def _current_runtime_status(self) -> dict[str, object]:
         if self._runtime_status is None:
             self._runtime_status = (
@@ -549,6 +646,7 @@ _STATUS_FIELDS = frozenset(
         "notification_acknowledged_at",
         "notification_error_type",
         "consecutive_notification_failures",
+        "rule_status",
     }
 )
 _TIMESTAMP_FIELDS = _STATUS_FIELDS - {
@@ -556,12 +654,19 @@ _TIMESTAMP_FIELDS = _STATUS_FIELDS - {
     "processing_error_type",
     "notification_error_type",
     "consecutive_notification_failures",
+    "rule_status",
 }
+_RULE_STATUS_FIELDS = frozenset(
+    {"last_evaluated_bar_at", "last_event_at", "last_failure_at", "error_type"}
+)
+_RULE_ERROR_TYPES = frozenset(
+    {None, "evaluation_input_invalid", "evaluation_warming_up", "evaluation_failed"}
+)
 
 
 def empty_alert_runtime_status() -> dict[str, object]:
     return {
-        "schema_version": 5,
+        "schema_version": 6,
         "last_processed_bar_at": None,
         "last_processing_success_at": None,
         "last_processing_failure_at": None,
@@ -573,6 +678,15 @@ def empty_alert_runtime_status() -> dict[str, object]:
         "notification_acknowledged_at": None,
         "notification_error_type": None,
         "consecutive_notification_failures": 0,
+        "rule_status": {
+            rule_code: {
+                "last_evaluated_bar_at": None,
+                "last_event_at": None,
+                "last_failure_at": None,
+                "error_type": None,
+            }
+            for rule_code in (HTDY_ALERT_RULE_CODE, SUBING_THS_ALERT_RULE_CODE)
+        },
     }
 
 
@@ -580,9 +694,9 @@ def validate_alert_runtime_status(payload: Mapping[str, object]) -> dict[str, ob
     if type(payload.get("schema_version")) is not int:
         raise ValueError("ALERT_RUNTIME_STATUS_INVALID")
     version = cast(int, payload["schema_version"])
-    if version == 5 and set(payload) == _STATUS_FIELDS:
+    if version == 6 and set(payload) == _STATUS_FIELDS:
         normalized = dict(payload)
-    elif version in {1, 2, 3, 4}:
+    elif version in {1, 2, 3, 4, 5}:
         base = empty_alert_runtime_status()
         normalized = {
             **base,
@@ -590,7 +704,7 @@ def validate_alert_runtime_status(payload: Mapping[str, object]) -> dict[str, ob
         }
     else:
         raise ValueError("ALERT_RUNTIME_STATUS_INVALID")
-    normalized["schema_version"] = 5
+    normalized["schema_version"] = 6
     for field in _TIMESTAMP_FIELDS:
         value = normalized[field]
         if value is not None:
@@ -617,6 +731,30 @@ def validate_alert_runtime_status(payload: Mapping[str, object]) -> dict[str, ob
         and normalized["last_notification_failure_at"] is None
     ):
         raise ValueError("ALERT_RUNTIME_STATUS_INVALID")
+    rule_status = normalized["rule_status"]
+    if not isinstance(rule_status, Mapping) or set(rule_status) != {
+        HTDY_ALERT_RULE_CODE,
+        SUBING_THS_ALERT_RULE_CODE,
+    }:
+        raise ValueError("ALERT_RUNTIME_STATUS_INVALID")
+    normalized_rule_status: dict[str, dict[str, object]] = {}
+    for rule_code, value in rule_status.items():
+        if not isinstance(value, Mapping) or set(value) != _RULE_STATUS_FIELDS:
+            raise ValueError("ALERT_RUNTIME_STATUS_INVALID")
+        item = dict(value)
+        for field in _RULE_STATUS_FIELDS - {"error_type"}:
+            timestamp = item[field]
+            if timestamp is not None:
+                if not isinstance(timestamp, str):
+                    raise ValueError("ALERT_RUNTIME_STATUS_INVALID")
+                try:
+                    item[field] = _iso_timestamp(datetime.fromisoformat(timestamp))
+                except ValueError:
+                    raise ValueError("ALERT_RUNTIME_STATUS_INVALID") from None
+        if item["error_type"] not in _RULE_ERROR_TYPES:
+            raise ValueError("ALERT_RUNTIME_STATUS_INVALID")
+        normalized_rule_status[rule_code] = item
+    normalized["rule_status"] = normalized_rule_status
     return normalized
 
 
@@ -658,6 +796,13 @@ def _iso_timestamp(value: datetime) -> str:
     if value.tzinfo is None or value.utcoffset() is None:
         raise ValueError("ALERT_RUNTIME_STATUS_INVALID")
     return value.astimezone(UTC).isoformat()
+
+
+def _rule_error_type(code: str) -> str:
+    return {
+        "ALERT_EVALUATION_INPUT_INVALID": "evaluation_input_invalid",
+        "ALERT_EVALUATION_WARMING_UP": "evaluation_warming_up",
+    }.get(code, "evaluation_failed")
 
 
 def _parse_live_bar_trigger(channel: object, payload: object) -> _LiveBarTrigger | None:
@@ -766,21 +911,25 @@ def _canonical_window_matches_trigger(
     )
 
 
-def _validated_first_seen_candidates(
-    value: object, *, window: MarketReadWindow
-) -> tuple[HtdyFirstSeenObservation, ...]:
+def _validated_candidates(
+    value: object,
+    *,
+    window: MarketReadWindow,
+    event_mode: AlertEventMode,
+) -> tuple[AlertObservationCandidate, ...]:
     if type(value) is not tuple:
         raise ValueError("ALERT_EVALUATION_OUTPUT_INVALID")
     candidates = cast(tuple[object, ...], value)
-    validated: list[HtdyFirstSeenObservation] = []
+    validated: list[AlertObservationCandidate] = []
     seen: set[datetime] = set()
     for item in candidates:
-        if not isinstance(item, HtdyFirstSeenObservation):
+        if not isinstance(item, AlertObservationCandidate):
             raise ValueError("ALERT_EVALUATION_OUTPUT_INVALID")
         if (
             item.bar_end in seen
             or type(item.observation_types) is not tuple
             or item.observation_types not in (("buy",), ("sell",), ("buy", "sell"))
+            or (event_mode is AlertEventMode.EXACT and item.observation_types not in (("buy",), ("sell",)))
         ):
             raise ValueError("ALERT_EVALUATION_OUTPUT_INVALID")
         matches = tuple(
