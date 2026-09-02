@@ -358,6 +358,15 @@ def test_query_page_actual_dominant_rejects_missing_owner_inside_canonical_range
         service.query_page(SeriesPageQuery("actual_dominant", "jm", "1d", limit=2))
 
 
+def test_query_page_actual_dominant_distinguishes_absent_weekly_dataset(session, tmp_path) -> None:
+    catalog, service, _store = _service(session, tmp_path)
+    _calendar_and_map(session, catalog, ((2, "JM2505"),))
+    session.commit()
+
+    with pytest.raises(MarketDataError, match="WEEKLY_DATASET_ABSENT"):
+        service.query_page(SeriesPageQuery("actual_dominant", "jm", "1w", limit=2))
+
+
 def test_query_page_actual_dominant_ignores_old_same_month_bar_outside_page_boundary(session, tmp_path) -> None:
     catalog, service, store = _service(session, tmp_path)
     _publish(catalog, store, DatasetKey("contract", "jm", "JM2505", "1d"), (_bar(2, 100),))

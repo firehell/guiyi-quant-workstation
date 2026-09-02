@@ -184,7 +184,7 @@ def test_snapshot_keeps_daily_item_when_weekly_mapped_dataset_is_missing() -> No
             ),
         ),
         failures={
-            ("jm", "1w"): MarketDataError("MAPPED_CONTRACT_DATASET_MISSING"),
+            ("jm", "1w"): MarketDataError("ACTUAL_DOMINANT_WEEKLY_DATASET_ABSENT"),
         },
     )
 
@@ -204,7 +204,10 @@ def test_snapshot_keeps_daily_item_when_weekly_mapped_dataset_is_missing() -> No
 def test_snapshot_supports_universe_sizes_without_a_magic_60(size: int) -> None:
     from app.market_data.market_home_overview import MarketHomeOverviewService
 
-    products = tuple(f"p{index}" for index in range(size))
+    products = tuple(
+        f"p{chr(ord('a') + index // 26)}{chr(ord('a') + index % 26)}"
+        for index in range(size)
+    )
     taxonomy = {
         symbol: ProductTaxonomyEntry(name=f"名称{index}", sector="other")
         for index, symbol in enumerate(products)
@@ -218,7 +221,7 @@ def test_snapshot_supports_universe_sizes_without_a_magic_60(size: int) -> None:
                 product_name=f"名称{index}",
                 sector="other",
                 exchange="EX",
-                actual_contract=f"P{index}2505",
+                actual_contract=f"{symbol.upper()}2505",
                 dominant_mapping_date=TARGET,
             )
             for index, symbol in enumerate(products)
@@ -339,6 +342,22 @@ def test_snapshot_fails_closed_for_missing_or_duplicate_dominants(
             sector="black",
             exchange="",
             actual_contract="JM2505",
+            dominant_mapping_date=TARGET,
+        ),
+        DominantContractSummary(
+            symbol="jm",
+            product_name="焦煤",
+            sector="black",
+            exchange="DCE",
+            actual_contract="RB2505",
+            dominant_mapping_date=TARGET,
+        ),
+        DominantContractSummary(
+            symbol="jm",
+            product_name="焦煤",
+            sector="black",
+            exchange="DCE",
+            actual_contract="JM2513",
             dominant_mapping_date=TARGET,
         ),
         DominantContractSummary(

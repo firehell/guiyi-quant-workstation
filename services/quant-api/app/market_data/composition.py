@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.core.env import PROJECT_ROOT
 from app.market_data.catalog import MarketCatalog
+from app.market_data.errors import InfrastructureError
 from app.market_data.historical_data_manager import HistoricalDataManager
 from app.market_data.live_market import (
     LiveMarketService,
@@ -102,15 +103,15 @@ def build_market_home_overview_service(session: Session) -> MarketHomeOverviewSe
 
     from app.market_data.coverage_source import DatabaseCoverageSource
 
-    coverage = DatabaseCoverageSource(
-        session,
-        _PRODUCT_STARTS,
-        history_floor_path=_HISTORY_FLOOR,
-    )
     try:
+        coverage = DatabaseCoverageSource(
+            session,
+            _PRODUCT_STARTS,
+            history_floor_path=_HISTORY_FLOOR,
+        )
         products = load_active_products()
         taxonomy = load_product_taxonomy()
-    except (ActiveUniverseError, ProductTaxonomyError) as exc:
+    except (ActiveUniverseError, InfrastructureError, ProductTaxonomyError) as exc:
         raise MarketHomeOverviewError("MARKET_HOME_AUTHORITY_UNAVAILABLE") from exc
     return MarketHomeOverviewService(
         market_data=build_market_data_service(session),

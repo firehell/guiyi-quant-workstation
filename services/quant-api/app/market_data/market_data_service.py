@@ -395,6 +395,8 @@ class MarketDataService:
             request.before,
         )
         if not partitions:
+            if request.frequency is BarFrequency.W1:
+                raise MarketDataError("ACTUAL_DOMINANT_WEEKLY_DATASET_ABSENT")
             raise MarketDataError("MAPPED_CONTRACT_DATASET_MISSING")
         selected: list[CanonicalBar] = []
         available_contract_days: set[tuple[str, date]] = set()

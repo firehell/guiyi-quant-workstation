@@ -10,7 +10,13 @@ from decimal import Decimal
 from statistics import median
 from typing import Literal
 
-from app.market_data.domain import BarFrequency, CanonicalBar, SeriesKind, SeriesPageQuery
+from app.market_data.domain import (
+    BarFrequency,
+    CanonicalBar,
+    SeriesKind,
+    SeriesPageQuery,
+    normalize_contract_for_symbol,
+)
 from app.market_data.errors import InfrastructureError
 from app.market_data.market_data_service import (
     DominantContractSummary,
@@ -219,7 +225,8 @@ def _valid_dominant_identity(item: DominantContractSummary) -> bool:
         isinstance(item.exchange, str)
         and bool(item.exchange.strip())
         and isinstance(item.actual_contract, str)
-        and bool(item.actual_contract.strip())
+        and normalize_contract_for_symbol(item.symbol, item.actual_contract)
+        == item.actual_contract
         and isinstance(item.dominant_mapping_date, date)
     )
 
@@ -250,7 +257,7 @@ def _query_through_target(
     except MarketDataError as exc:
         if exc.code in {"QUERY_WINDOW_EMPTY", "DATASET_OR_PARTITION_MISSING"} or (
             frequency is BarFrequency.W1
-            and exc.code == "MAPPED_CONTRACT_DATASET_MISSING"
+            and exc.code == "ACTUAL_DOMINANT_WEEKLY_DATASET_ABSENT"
         ):
             return ()
         raise MarketHomeOverviewError("MARKET_HOME_DATA_INTEGRITY_ERROR") from exc

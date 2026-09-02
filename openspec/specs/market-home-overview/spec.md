@@ -35,9 +35,9 @@ immutable Event 的两个 bulk、只读 HTTP 合同。该能力只为用户复�
 #### Scenario: Weekly mapped dataset is absent
 
 - **WHEN** product 有 target-day D1，但 W1 actual-dominant query 报告
-  `MAPPED_CONTRACT_DATASET_MISSING`
+  `ACTUAL_DOMINANT_WEEKLY_DATASET_ABSENT`
 - **THEN** response MUST 保留该 product item 并返回 `weekly_trend=unavailable`；D1 的同类
-  integrity failure 仍 MUST fail closed
+  integrity failure 和 W1 的 `MAPPED_CONTRACT_DATASET_MISSING` 仍 MUST fail closed
 
 ### Requirement: Overview preserves generic market authority and transparent degradation
 
