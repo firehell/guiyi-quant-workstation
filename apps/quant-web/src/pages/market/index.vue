@@ -1,20 +1,36 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { NButton } from 'naive-ui'
+import MarketProductDirectory from '@/components/market/MarketProductDirectory.vue'
 import MarketRuntimeStatus from '@/components/market/MarketRuntimeStatus.vue'
+import { getMarketDominants } from '@/api/market'
 import { getRuntimeHealth } from '@/api/runtime'
 import { useLatestResource } from '@/composables/useLatestResource'
+import type { DominantContractItem } from '@/types/market'
+import { loadMarketWorkspacePreferences } from '@/utils/marketWorkspacePreferences'
 
+const router = useRouter()
 const runtimeState = useLatestResource({ fetch: getRuntimeHealth })
+const productDirectoryState = useLatestResource({ fetch: getMarketDominants })
 const runtime = runtimeState.data
-const loading = computed(() => runtimeState.loading.value)
+const products = computed(() => productDirectoryState.data.value?.items ?? [])
+const loading = computed(() => runtimeState.loading.value || productDirectoryState.loading.value)
 
 async function refreshAll() {
-  await runtimeState.refresh()
+  await Promise.all([runtimeState.refresh(), productDirectoryState.refresh()])
 }
 
 async function refreshVisibleOperationalState() {
-  await runtimeState.refresh()
+  await Promise.all([runtimeState.refresh(), productDirectoryState.refresh()])
+}
+
+function openProduct(item: DominantContractItem) {
+  const preferences = loadMarketWorkspacePreferences()
+  void router.push({
+    name: 'market-chart',
+    query: { symbol: item.product, series_kind: 'actual_dominant', frequency: preferences.frequency },
+  })
 }
 
 function handleVisibilityChange() {
@@ -29,19 +45,27 @@ onMounted(() => {
 onBeforeUnmount(() => {
   document.removeEventListener('visibilitychange', handleVisibilityChange)
   runtimeState.invalidate()
+  productDirectoryState.invalidate()
 })
 </script>
 
 <template>
   <div class="market-dashboard-page">
     <header class="market-dashboard-page__intro">
-      <div><h1>行情看板</h1><p>Runtime 状态；所有内容仅供人工观察。</p></div>
+      <div><h1>行情看板</h1><p>运行状态与品种目录；所有内容仅供人工观察。</p></div>
       <NButton secondary size="small" :loading="loading" :disabled="loading" @click="refreshAll">全部刷新</NButton>
     </header>
     <MarketRuntimeStatus
       :snapshot="runtime"
       :loading="runtimeState.loading.value"
       :stale="runtimeState.failed.value && Boolean(runtime)"
+    />
+    <MarketProductDirectory
+      :items="products"
+      :loading="productDirectoryState.loading.value"
+      :failed="productDirectoryState.failed.value"
+      :stale="productDirectoryState.failed.value && Boolean(products.length)"
+      @open="openProduct"
     />
   </div>
 </template>

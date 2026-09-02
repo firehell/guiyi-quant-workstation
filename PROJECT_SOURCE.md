@@ -7,7 +7,7 @@
 ## Market Web
 
 - 唯一 Web 产品为 Market，route 仅 `/market` 与 `/market/chart`。
-- Market 首页只展示 Runtime 状态；品种详情页是行情与研究观察入口。
+- Market 首页展示 Runtime 状态和按后端 taxonomy 分组的品种目录；品种详情页是行情与研究观察入口。
 - 主图 Overlay 仅 `none | htdy`；图表设置保留通用 EMA、MACD、Range Detector 与合约控制。
 - Web 不显示策略建仓、清仓、持仓、全历史策略效果或已退役策略事件。
 
