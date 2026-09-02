@@ -411,6 +411,30 @@ def test_engine_rejects_duplicate_out_of_order_trading_day_and_eligibility_regre
     assert eligibility.value.args == ("NEWOW_OBSERVATION_ELIGIBILITY_REGRESSION",)
 
 
+def test_duplicate_bar_preflight_wins_before_kernel_arithmetic_and_preserves_state() -> None:
+    """A duplicate invocation error must not be hidden by hostile but valid Decimal OHLC."""
+
+    engine = NewowTrendD1Engine.initial()
+    first = _bar(0, 100, eligible=True)
+    engine.step(first)
+    state_before = engine.state
+    huge = Decimal("1e1000")
+    duplicate = replace(
+        first,
+        open=huge,
+        high=huge,
+        low=huge,
+        close=huge,
+        source_identity="fixture:duplicate:float-overflow",
+    )
+
+    with pytest.raises(ValueError) as error:
+        engine.step(duplicate)
+
+    assert error.value.args == ("NEWOW_BAR_DUPLICATE",)
+    assert engine.state == state_before
+
+
 def test_false_to_true_is_allowed_but_false_bars_only_warm_cup_atr() -> None:
     """Letting ineligible bars enter cup geometry would manufacture observations before rank-1 eligibility."""
 
@@ -509,6 +533,49 @@ def test_invalid_restored_substate_fails_closed_to_initial_state() -> None:
         assert result.frame.markers == ()
         assert result.frame.diagnostics == ("NEWOW_ENGINE_STATE_INVALID",)
         assert result.state == NewowTrendD1Engine.initial().state
+
+
+@pytest.mark.parametrize("substate", ("trend", "escape", "cup"))
+def test_rollover_cannot_hide_an_invalid_restored_substate(substate: str) -> None:
+    """Identity rollover cannot erase corruption before Engine restore validation."""
+
+    bars = bullish_true_cup_handle()
+    prior = _run_incremental(bars[:20])[-1].state
+    if substate == "trend":
+        malformed = replace(
+            prior,
+            trend_band_state=replace(
+                prior.trend_band_state,
+                weighted_window=(float("nan"),),
+            ),
+        )
+    elif substate == "escape":
+        malformed = replace(
+            prior,
+            escape_state=replace(prior.escape_state, history_count=0),
+        )
+    else:
+        malformed = replace(
+            prior,
+            cup_handle_state=replace(
+                prior.cup_handle_state,
+                atr_state=replace(prior.cup_handle_state.atr_state, count=-1),
+            ),
+        )
+    incoming = replace(
+        bars[20],
+        physical_contract="RB2705",
+        segment_id="rb:RB2705:2026-05-01",
+        source_identity="fixture:rollover:invalid-restored-substate",
+    )
+
+    result = NewowTrendD1Engine(state=malformed).step(incoming)
+
+    assert result.frame.trend_band.state is TrendBandState.UNAVAILABLE
+    assert result.frame.rollover_started is False
+    assert result.frame.markers == ()
+    assert result.frame.diagnostics == ("NEWOW_ENGINE_STATE_INVALID",)
+    assert result.state == NewowTrendD1Engine.initial().state
 
 
 @pytest.mark.parametrize(

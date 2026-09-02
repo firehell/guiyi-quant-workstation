@@ -180,6 +180,45 @@ def test_cup_pivot_indexes_require_exact_int(
         CupPivot(**values)  # type: ignore[arg-type]
 
 
+@pytest.mark.parametrize(
+    "changes",
+    (
+        {"kind": "HIGH"},
+        {
+            "pivot_at": datetime(2026, 1, 5, 7),
+            "confirmed_at": datetime(2026, 1, 5, 7),
+        },
+        {"pivot_at": date(2026, 1, 5), "confirmed_at": date(2026, 1, 5)},
+        {"confirmed_at": datetime(2026, 1, 5, 6, tzinfo=UTC)},
+        {
+            "confirmed_at": datetime(2026, 1, 5, 8, tzinfo=UTC),
+            "confirmed_index": 0,
+        },
+    ),
+)
+def test_cup_pivot_requires_typed_kind_and_causal_aware_timestamps(
+    changes: dict[str, object],
+) -> None:
+    """A reconstructed Pivot cannot weaken its enum, time-zone, or same-Bar contract."""
+
+    pivot_at = datetime(2026, 1, 5, 7, tzinfo=UTC)
+    values: dict[str, object] = {
+        "kind": CupPivotKind.HIGH,
+        "price": Decimal("100"),
+        "pivot_at": pivot_at,
+        "confirmed_at": pivot_at,
+        "pivot_index": 0,
+        "confirmed_index": 1,
+        "atr_at_pivot": 2.0,
+    }
+    values.update(changes)
+
+    with pytest.raises(ValueError) as error:
+        CupPivot(**values)  # type: ignore[arg-type]
+
+    assert error.value.args == ("NEWOW_CUP_PIVOT_INVALID",)
+
+
 def test_cup_profile_freezes_every_slice_b_formula_value() -> None:
     """Changing any clean-room threshold without a new formula version is a versioning bug."""
 

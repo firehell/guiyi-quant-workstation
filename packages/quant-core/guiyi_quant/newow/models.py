@@ -191,14 +191,28 @@ class CupPivot:
 
     def __post_init__(self) -> None:
         if (
-            type(self.pivot_index) is not int
+            not isinstance(self.kind, CupPivotKind)
+            or not isinstance(self.price, Decimal)
+            or not isinstance(self.pivot_at, datetime)
+            or self.pivot_at.tzinfo is None
+            or self.pivot_at.utcoffset() is None
+            or not isinstance(self.confirmed_at, datetime)
+            or self.confirmed_at.tzinfo is None
+            or self.confirmed_at.utcoffset() is None
+            or type(self.pivot_index) is not int
             or type(self.confirmed_index) is not int
             or not self.price.is_finite()
             or self.price <= 0
+            or isinstance(self.atr_at_pivot, bool)
+            or not isinstance(self.atr_at_pivot, (int, float))
             or not isfinite(self.atr_at_pivot)
             or self.atr_at_pivot <= 0
             or self.confirmed_at < self.pivot_at
             or self.confirmed_index < self.pivot_index
+            or (
+                self.confirmed_index == self.pivot_index
+                and self.confirmed_at != self.pivot_at
+            )
             or self.pivot_index < 0
         ):
             raise ValueError("NEWOW_CUP_PIVOT_INVALID")

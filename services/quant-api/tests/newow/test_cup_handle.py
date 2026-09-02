@@ -2,6 +2,7 @@ from dataclasses import FrozenInstanceError, replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from hashlib import sha256
+from math import nextafter
 import pickle
 from typing import Mapping
 
@@ -135,7 +136,8 @@ def test_zero_wilder_seed_is_unavailable_without_invalidating_restored_state() -
     assert resumed.active_overlay is None
 
 
-def test_nonfinite_current_atr_is_unavailable_without_geometry() -> None:
+@pytest.mark.parametrize("huge", (Decimal("1e1000"), Decimal("1e1000000")))
+def test_nonfinite_current_atr_is_unavailable_without_geometry(huge: Decimal) -> None:
     """A finite Decimal range that overflows float ATR cannot enter a pivot."""
 
     flat_bars = tuple(
@@ -150,7 +152,6 @@ def test_nonfinite_current_atr_is_unavailable_without_geometry() -> None:
         for index in range(13)
     )
     state = calculate_cup_handle_series(flat_bars)[-1].state
-    huge = Decimal("1e1000")
     overflow_bar = replace(
         _bar(13, 100),
         open=huge,
@@ -166,6 +167,26 @@ def test_nonfinite_current_atr_is_unavailable_without_geometry() -> None:
     assert result.state.eligible_bars == ()
     assert result.state.confirmed_pivots == ()
     assert result.active_overlay is None
+
+    continued = step_cup_handle(
+        result.state,
+        replace(
+            _bar(14, 100),
+            source_identity="fixture:finite-decimal-float-overflow:continued",
+        ),
+    )
+
+    assert continued.diagnostics == ("CUP_ATR_UNAVAILABLE",)
+    assert "NEWOW_CUP_STATE_INVALID" not in continued.diagnostics
+    assert continued.state.physical_contract == overflow_bar.physical_contract
+    assert continued.state.segment_id == overflow_bar.segment_id
+    assert continued.state.eligible_started is True
+    assert continued.state.atr_state.atr is None
+    assert continued.state.atr_state.tr_total == 0.0
+    assert continued.state.pivot_tracker.eligible_index == 14
+    assert continued.state.eligible_bars == ()
+    assert continued.state.confirmed_pivots == ()
+    assert continued.active_overlay is None
 
 
 def test_same_bar_confirmed_pivot_state_remains_valid_on_the_next_step() -> None:
@@ -224,6 +245,7 @@ def test_same_bar_confirmed_pivot_state_remains_valid_on_the_next_step() -> None
         {"count": 13, "tr_total": 0.0, "atr": 2.0},
         {"count": 14, "tr_total": 28.0, "atr": None},
         {"count": 14, "tr_total": 27.0, "atr": 2.0},
+        {"count": 14, "tr_total": 28.0, "atr": nextafter(2.0, float("inf"))},
         {"count": 15, "tr_total": 28.0, "atr": 2.0},
         {
             "count": 0,
@@ -260,6 +282,42 @@ def test_restored_atr_rejects_impossible_initial_seed_and_recursive_phases(
     )
 
     assert result.diagnostics == ("NEWOW_CUP_STATE_INVALID",)
+    assert result.state == initial_cup_handle_state()
+
+
+@pytest.mark.parametrize("phase", ("warmup", "zero"))
+def test_restored_unavailable_atr_phase_cannot_retain_mature_geometry(
+    phase: str,
+) -> None:
+    """A locally valid ATR warm-up phase cannot coexist with a frozen READY setup."""
+
+    case = restored_cup_case()
+    ready = step_cup_handle(case.state, case.next_bar)
+    assert ready.state.active_candidate is not None
+    atr_state = (
+        WilderAtrState(
+            count=1,
+            tr_total=2.0,
+            atr=None,
+            previous_close=case.next_bar.close,
+        )
+        if phase == "warmup"
+        else replace(ready.state.atr_state, tr_total=0.0, atr=0.0)
+    )
+    malformed = replace(ready.state, atr_state=atr_state)
+    next_day = case.next_bar.trading_day + timedelta(days=1)
+    next_bar = replace(
+        case.next_bar,
+        trading_day=next_day,
+        bar_end=datetime.combine(next_day, datetime.min.time(), tzinfo=UTC),
+        source_identity="fixture:atr-phase-rollback",
+    )
+
+    result = step_cup_handle(malformed, next_bar)
+
+    assert result.diagnostics == ("NEWOW_CUP_STATE_INVALID",)
+    assert result.markers == ()
+    assert result.active_overlay is None
     assert result.state == initial_cup_handle_state()
 
 
@@ -832,6 +890,108 @@ def test_cup_geometry_hard_boundaries_are_inclusive(
 
 
 @pytest.mark.parametrize(
+    ("case_kwargs", "expected_diagnostic"),
+    (
+        (
+            {
+                "bottom_price": Decimal("90.000000000000001"),
+                "handle_price": Decimal("97"),
+            },
+            "CUP_DEPTH_BELOW_10_PERCENT",
+        ),
+        (
+            {
+                "bottom_price": Decimal("49.999999999999999"),
+                "handle_price": Decimal("94"),
+            },
+            "CUP_DEPTH_ABOVE_50_PERCENT",
+        ),
+    ),
+)
+def test_decimal_depth_just_outside_hard_limits_never_emits_ready(
+    case_kwargs: dict[str, object],
+    expected_diagnostic: str,
+) -> None:
+    """Float rounding must not admit a depth infinitesimally outside an exact gate."""
+
+    case = restored_cup_case(**case_kwargs)  # type: ignore[arg-type]
+    result = step_cup_handle(case.state, case.next_bar)
+
+    assert expected_diagnostic in result.diagnostics
+    assert result.active_overlay is None
+    assert not any(
+        marker.marker_type == NewowMarkerType.CUP_HANDLE_READY
+        for marker in result.markers
+    )
+
+
+@pytest.mark.parametrize(
+    ("case_kwargs", "rounded_failure"),
+    (
+        (
+            {
+                "left_price": Decimal("101"),
+                "right_price": Decimal("101"),
+                "bottom_price": Decimal("90.9"),
+                "handle_price": Decimal("98"),
+            },
+            "CUP_DEPTH_BELOW_10_PERCENT",
+        ),
+        (
+            {
+                "left_price": Decimal("90.34515"),
+                "right_price": Decimal("90.25485"),
+                "bottom_price": Decimal("45.15"),
+                "handle_price": Decimal("82"),
+            },
+            "CUP_DEPTH_ABOVE_50_PERCENT",
+        ),
+        (
+            {
+                "left_price": Decimal("103.525"),
+                "right_price": Decimal("98.475"),
+                "bottom_price": Decimal("75"),
+                "handle_price": Decimal("94"),
+                "atr": 4.0,
+            },
+            "RIM_GAP_PERCENT_EXCEEDED",
+        ),
+        (
+            {
+                "left_price": Decimal("100.15"),
+                "right_price": Decimal("99.85"),
+                "bottom_price": Decimal("80"),
+                "handle_price": Decimal("94"),
+                "atr": 0.2,
+            },
+            "RIM_GAP_ATR_EXCEEDED",
+        ),
+        (
+            {
+                "left_price": Decimal("800"),
+                "right_price": Decimal("800"),
+                "bottom_price": Decimal("719.2"),
+                "handle_price": Decimal("780"),
+                "atr": float(Decimal("80.8") / Decimal(3)),
+            },
+            "CUP_DEPTH_BELOW_3_ATR",
+        ),
+    ),
+)
+def test_decimal_exact_geometry_boundaries_survive_float_cancellation(
+    case_kwargs: dict[str, object],
+    rounded_failure: str,
+) -> None:
+    """An exactly inclusive price or ATR boundary must not fail after cancellation."""
+
+    case = restored_cup_case(**case_kwargs)  # type: ignore[arg-type]
+    result = step_cup_handle(case.state, case.next_bar)
+
+    assert rounded_failure not in result.diagnostics
+    assert result.active_overlay is not None
+
+
+@pytest.mark.parametrize(
     "case_kwargs",
     [
         {"handle_index": 63, "handle_confirmed_index": 65},
@@ -867,6 +1027,115 @@ def test_handle_and_contraction_hard_boundaries_are_inclusive(
     assert result.active_overlay.state == CupHandleState.READY
     assert tuple(marker.marker_type for marker in result.markers) == (
         NewowMarkerType.CUP_HANDLE_READY,
+    )
+
+
+@pytest.mark.parametrize(
+    "case_kwargs",
+    (
+        {
+            "right_volume": 5 * 9_007_199_254_740_999,
+            "baseline_volume": 5 * 9_007_199_254_740_999,
+            "handle_volume": 4 * 9_007_199_254_740_999,
+        },
+        {
+            "bottom_index": 50,
+            "bottom_price": Decimal("70"),
+            "right_volume": 13 * 1_125_899_906_832_627,
+            "baseline_volume": 7 * 1_125_899_906_832_627,
+            "handle_volume": 9 * 1_125_899_906_832_627,
+        },
+    ),
+)
+def test_large_integer_volume_boundaries_are_exactly_inclusive(
+    case_kwargs: dict[str, object],
+) -> None:
+    """Integer ratios at exact 0.80/0.90 remain admissible above 2**53."""
+
+    case = restored_cup_case(**case_kwargs)  # type: ignore[arg-type]
+    result = step_cup_handle(case.state, case.next_bar)
+
+    assert result.active_overlay is not None
+    assert result.active_overlay.state == CupHandleState.READY
+    assert tuple(marker.marker_type for marker in result.markers) == (
+        NewowMarkerType.CUP_HANDLE_READY,
+    )
+    assert all(
+        type(value) is float for value in result.active_overlay.volume_facts.values()
+    )
+    next_day = case.next_bar.trading_day + timedelta(days=1)
+    continued = step_cup_handle(
+        result.state,
+        replace(
+            case.next_bar,
+            trading_day=next_day,
+            bar_end=datetime.combine(next_day, datetime.min.time(), tzinfo=UTC),
+            source_identity="fixture:large-volume-boundary:continued",
+        ),
+    )
+    assert "NEWOW_CUP_STATE_INVALID" not in continued.diagnostics
+
+
+@pytest.mark.parametrize(
+    ("denominator", "handle_volume"),
+    (
+        (10 * 2**53, 8 * 2**53 + 1),
+        (10**28 + 1, 8 * 10**27 + 1),
+    ),
+)
+def test_large_integer_volume_one_unit_above_limit_never_emits_ready(
+    denominator: int,
+    handle_volume: int,
+) -> None:
+    """Float rounding must not admit a handle ratio one integer above 0.80."""
+
+    case = restored_cup_case(
+        bottom_index=50,
+        bottom_price=Decimal("70"),
+        right_volume=denominator,
+        baseline_volume=denominator,
+        handle_volume=handle_volume,
+    )
+    result = step_cup_handle(case.state, case.next_bar)
+
+    assert "HANDLE_VOLUME_NOT_CONTRACTING" in result.diagnostics
+    assert not any(
+        marker.marker_type == NewowMarkerType.CUP_HANDLE_READY
+        for marker in result.markers
+    )
+
+
+def test_unrepresentable_legal_volume_is_unavailable_without_exception() -> None:
+    """A legal integer volume outside finite float range must fail closed."""
+
+    huge = 10**1000
+    case = restored_cup_case(
+        right_volume=huge,
+        baseline_volume=huge,
+        handle_volume=huge // 2,
+    )
+    result = step_cup_handle(case.state, case.next_bar)
+
+    assert "HANDLE_VOLUME_UNAVAILABLE" in result.diagnostics
+    assert not any(
+        marker.marker_type == NewowMarkerType.CUP_HANDLE_READY
+        for marker in result.markers
+    )
+    next_day = case.next_bar.trading_day + timedelta(days=1)
+    continued = step_cup_handle(
+        result.state,
+        replace(
+            case.next_bar,
+            trading_day=next_day,
+            bar_end=datetime.combine(next_day, datetime.min.time(), tzinfo=UTC),
+            volume=100,
+            source_identity="fixture:unrepresentable-volume:continued",
+        ),
+    )
+    assert "NEWOW_CUP_STATE_INVALID" not in continued.diagnostics
+    assert not any(
+        marker.marker_type == NewowMarkerType.CUP_HANDLE_READY
+        for marker in continued.markers
     )
 
 
@@ -1956,6 +2225,74 @@ def test_restored_out_of_window_tracker_extreme_requires_observable_facts(
     )
 
     result = step_cup_handle(malformed, bars[250])
+
+    assert result.diagnostics == ("NEWOW_CUP_STATE_INVALID",)
+    assert result.markers == ()
+    assert result.active_overlay is None
+    assert result.state == initial_cup_handle_state()
+
+
+@pytest.mark.parametrize(
+    "corruption",
+    ("plain_kind", "future_confirmed_at", "same_index_different_time"),
+)
+def test_restored_aged_pivot_keeps_typed_and_causal_facts(
+    corruption: str,
+) -> None:
+    """Eviction from the 220-Bar window cannot erase a confirmed Pivot's causal bounds."""
+
+    bars = bullish_true_cup_handle()
+    state = calculate_cup_handle_series(bars)[-1].state
+    prior = bars[-1]
+    last_bar = prior
+    for offset in range(1, 231):
+        day = prior.trading_day + timedelta(days=offset)
+        last_bar = replace(
+            prior,
+            trading_day=day,
+            bar_end=datetime.combine(day, datetime.min.time(), tzinfo=UTC),
+            open=Decimal("100"),
+            high=Decimal("101"),
+            low=Decimal("99"),
+            close=Decimal("100"),
+            source_identity=f"fixture:aged-pivot:{offset}",
+        )
+        state = step_cup_handle(state, last_bar).state
+
+    aged = state.confirmed_pivots[0]
+    assert aged.pivot_index < state.eligible_bars[0].eligible_index
+    malformed_pivot = object.__new__(CupPivot)
+    values = {
+        "kind": aged.kind,
+        "price": aged.price,
+        "pivot_at": aged.pivot_at,
+        "confirmed_at": aged.confirmed_at,
+        "pivot_index": aged.pivot_index,
+        "confirmed_index": aged.confirmed_index,
+        "atr_at_pivot": aged.atr_at_pivot,
+    }
+    if corruption == "plain_kind":
+        values["kind"] = "HIGH"
+    elif corruption == "future_confirmed_at":
+        values["confirmed_at"] = last_bar.bar_end + timedelta(days=1)
+    else:
+        values["confirmed_index"] = aged.pivot_index
+        values["confirmed_at"] = aged.pivot_at + timedelta(hours=1)
+    for name, value in values.items():
+        object.__setattr__(malformed_pivot, name, value)
+    malformed = replace(
+        state,
+        confirmed_pivots=(malformed_pivot,) + state.confirmed_pivots[1:],
+    )
+    next_day = last_bar.trading_day + timedelta(days=1)
+    next_bar = replace(
+        last_bar,
+        trading_day=next_day,
+        bar_end=datetime.combine(next_day, datetime.min.time(), tzinfo=UTC),
+        source_identity=f"fixture:aged-pivot:{corruption}:next",
+    )
+
+    result = step_cup_handle(malformed, next_bar)
 
     assert result.diagnostics == ("NEWOW_CUP_STATE_INVALID",)
     assert result.markers == ()

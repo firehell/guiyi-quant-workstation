@@ -8,12 +8,14 @@ from datetime import date, datetime
 from .cup_handle import (
     CupHandleStepResult,
     CupHandleStateValue,
+    _state_is_valid as _cup_state_is_valid,
     initial_cup_handle_state,
     step_cup_handle,
 )
 from .escape_d123 import (
     EscapeState,
     EscapeStepResult,
+    _valid_state as _escape_state_is_valid,
     initial_escape_state,
     step_escape_d123,
 )
@@ -29,6 +31,7 @@ from .profile import NEWOW_TREND_D1_V1, NewowTrendProfile
 from .trend_band import (
     TrendBandStateValue,
     TrendBandStepResult,
+    _valid_state as _trend_state_is_valid,
     initial_trend_band_state,
     step_trend_band,
 )
@@ -76,7 +79,7 @@ def _identity_is_valid(
     )
 
 
-def _state_shape_is_valid(state: object) -> bool:
+def _state_shape_is_valid(state: object, profile: NewowTrendProfile) -> bool:
     if not isinstance(state, NewowTrendD1EngineState):
         return False
     if not isinstance(state.trend_band_state, TrendBandStateValue):
@@ -84,6 +87,12 @@ def _state_shape_is_valid(state: object) -> bool:
     if not isinstance(state.escape_state, EscapeState):
         return False
     if not isinstance(state.cup_handle_state, CupHandleStateValue):
+        return False
+    if (
+        not _trend_state_is_valid(state.trend_band_state, profile)
+        or not _escape_state_is_valid(state.escape_state, profile)
+        or not _cup_state_is_valid(state.cup_handle_state, profile)
+    ):
         return False
     if not _identity_is_valid(state.physical_contract, state.segment_id):
         return False
@@ -259,17 +268,10 @@ class NewowTrendD1Engine:
     def step(self, bar: NewowDailyBar) -> NewowTrendD1StepResult:
         state = self._state
         try:
-            restored_state_valid = _state_shape_is_valid(state)
+            restored_state_valid = _state_shape_is_valid(state, self._profile)
         except (ArithmeticError, AttributeError, LookupError, TypeError, ValueError):
             restored_state_valid = False
         if not restored_state_valid:
-            next_state = _initial_state()
-            result = NewowTrendD1StepResult(next_state, _unavailable_frame(bar))
-            self._state = next_state
-            return result
-
-        stepped = _step_substates(state, bar, self._profile)
-        if stepped is None:
             next_state = _initial_state()
             result = NewowTrendD1StepResult(next_state, _unavailable_frame(bar))
             self._state = next_state
@@ -289,12 +291,21 @@ class NewowTrendD1Engine:
             state.physical_contract is not None
             and incoming_identity != (state.physical_contract, state.segment_id)
         )
+        if (
+            not rollover_started
+            and state.eligibility_started
+            and not bar.observation_eligible
+        ):
+            raise ValueError("NEWOW_OBSERVATION_ELIGIBILITY_REGRESSION")
         if rollover_started:
             state = _initial_state()
-            stepped = _step_substates(state, bar, self._profile)
-            assert stepped is not None
-        elif state.eligibility_started and not bar.observation_eligible:
-            raise ValueError("NEWOW_OBSERVATION_ELIGIBILITY_REGRESSION")
+
+        stepped = _step_substates(state, bar, self._profile)
+        if stepped is None:
+            next_state = _initial_state()
+            result = NewowTrendD1StepResult(next_state, _unavailable_frame(bar))
+            self._state = next_state
+            return result
 
         trend_result, escape_result, cup_result = stepped
         markers = (
