@@ -260,7 +260,11 @@ class AlertService:
                 AlertEvent.symbol == normalized,
                 AlertEvent.trading_day == trading_day,
             )
-            .order_by(AlertEvent.bar_end.desc())
+            .order_by(
+                AlertEvent.detected_at.desc(),
+                AlertEvent.bar_end.desc(),
+                AlertEvent.id.desc(),
+            )
         )
         return tuple(self._session.scalars(statement).all())
 
