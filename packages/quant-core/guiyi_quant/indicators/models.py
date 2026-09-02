@@ -51,6 +51,13 @@ class EmaState:
 
 
 @dataclass(frozen=True, slots=True)
+class SmaState:
+    period: int
+    values: tuple[float, ...]
+    round_digits: int = 6
+
+
+@dataclass(frozen=True, slots=True)
 class AtrState:
     period: int
     smoothing_policy: AtrSmoothingPolicy
