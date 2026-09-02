@@ -25,6 +25,7 @@ PYTHONPATH=services/quant-api:packages/quant-core \
   services/quant-api/tests/data_foundation/test_market_home_overview.py \
   services/quant-api/tests/data_foundation/test_market_home_projection.py \
   services/quant-api/tests/data_foundation/test_market_home_projection_after_market.py \
+  services/quant-api/tests/data_foundation/test_historical_data_manager.py \
   services/quant-api/tests/test_market_home_projection_invalidation.py \
   services/quant-api/tests/test_market_home_api.py \
   services/quant-api/tests/test_market_home_projection_api.py

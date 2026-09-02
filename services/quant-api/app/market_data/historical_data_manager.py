@@ -319,6 +319,12 @@ class HistoricalDataManager:
     ) -> MaintenanceResult:
         """增量更新：缺省 through 为各品种最近完整交易日；apply 时持锁并先补齐元数据再写分区。"""
         assert_products_not_retired(request.products)
+        if (
+            request.since is not None
+            and request.through is not None
+            and request.since > request.through
+        ):
+            raise ValueError("UPDATE_WINDOW_INVALID")
         if request.apply:
             metadata_through = request.through or self.coverage.latest_metadata_day(
                 request.products

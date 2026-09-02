@@ -445,11 +445,17 @@ def _market_home_projection_refresh_enabled() -> bool:
     nonblock = getattr(os, "O_NONBLOCK", None)
     if nofollow is None or nonblock is None:
         return False
+    parent_descriptor: int | None = None
     descriptor: int | None = None
     try:
+        parent_descriptor = os.open(
+            _MARKET_HOME_PROJECTION_ACTIVATION_MARKER.parent,
+            os.O_RDONLY | os.O_DIRECTORY | nofollow,
+        )
         descriptor = os.open(
-            _MARKET_HOME_PROJECTION_ACTIVATION_MARKER,
+            _MARKET_HOME_PROJECTION_ACTIVATION_MARKER.name,
             os.O_RDONLY | nofollow | nonblock,
+            dir_fd=parent_descriptor,
         )
         metadata = os.fstat(descriptor)
         if (
@@ -469,6 +475,8 @@ def _market_home_projection_refresh_enabled() -> bool:
     finally:
         if descriptor is not None:
             os.close(descriptor)
+        if parent_descriptor is not None:
+            os.close(parent_descriptor)
 
 
 def _refresh_market_home_projection_with_lease(

@@ -811,6 +811,32 @@ def test_update_runs_before_apply_callback_inside_maintenance_lease(
     assert lease.released is True
 
 
+def test_update_apply_rejects_explicit_invalid_window_before_lease_or_invalidation(
+    session, tmp_path, monkeypatch
+) -> None:
+    key = DatasetKey("continuous", "jm", "MAIN", "1d")
+    metadata = FakeMetadata()
+    provider = FakeProvider({key.as_tuple(): ()})
+    manager = _manager(session, tmp_path, FakeCoverage({key.as_tuple(): ()}), provider, metadata)
+    events: list[str] = []
+
+    monkeypatch.setattr(
+        manager.catalog,
+        "acquire_maintenance_lock",
+        lambda: events.append("acquire") or _TrackingLease(),
+    )
+
+    with pytest.raises(ValueError, match="UPDATE_WINDOW_INVALID"):
+        manager.update(
+            UpdateRequest(("jm",), date(2025, 1, 4), date(2025, 1, 3), True),
+            before_apply=lambda: events.append("invalidate"),
+        )
+
+    assert events == []
+    assert metadata.calls == []
+    assert provider.calls == []
+
+
 def test_refresh_runs_before_apply_callback_inside_maintenance_lease(
     session, tmp_path, monkeypatch
 ) -> None:

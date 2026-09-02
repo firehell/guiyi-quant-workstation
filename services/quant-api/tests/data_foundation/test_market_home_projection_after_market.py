@@ -306,6 +306,26 @@ def test_projection_refresh_activation_marker_rejects_fifo_and_symlink(
     assert after_market._market_home_projection_refresh_enabled() is False
 
 
+def test_projection_refresh_activation_marker_rejects_symlink_parent(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "market-home-projection-enabled").write_text(
+        "enabled\n", encoding="utf-8"
+    )
+    run_directory = tmp_path / ".run"
+    run_directory.symlink_to(outside, target_is_directory=True)
+    monkeypatch.setattr(
+        after_market,
+        "_MARKET_HOME_PROJECTION_ACTIVATION_MARKER",
+        run_directory / "market-home-projection-enabled",
+    )
+
+    assert after_market._market_home_projection_refresh_enabled() is False
+
+
 def test_after_market_factory_only_composes_refresh_when_projection_is_enabled(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
