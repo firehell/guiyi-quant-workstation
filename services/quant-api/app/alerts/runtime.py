@@ -21,10 +21,10 @@ from app.alerts.evaluators import (
 )
 from app.alerts.models import AlertRule
 from app.alerts.notification import (
-    ALERT_NOTIFICATION_POLICIES,
     AlertNotificationMessage,
     AlertNotificationSender,
     ProviderAcceptance,
+    notification_policy_rule_codes,
 )
 from app.alerts.registry import (
     AlertEventMode,
@@ -210,10 +210,11 @@ class AlertRuntime:
         expected = tuple(
             sorted(definition.rule_code for definition in alert_rule_definitions())
         )
-        if (
-            tuple(sorted(self._evaluators)) != expected
-            or tuple(sorted(ALERT_NOTIFICATION_POLICIES)) != expected
-        ):
+        try:
+            policy_rule_codes = notification_policy_rule_codes()
+        except ValueError:
+            raise RuntimeError("ALERT_RUNTIME_COMPOSITION_INVALID") from None
+        if tuple(sorted(self._evaluators)) != expected or policy_rule_codes != expected:
             raise RuntimeError("ALERT_RUNTIME_COMPOSITION_INVALID")
         try:
             with self._session_factory() as session:
