@@ -11,7 +11,11 @@ import {
   markerRuleCodes,
   mergeKlineMarkers,
 } from '../src/utils/alertMarkers.ts'
-import { ALERT_RULE_CODES } from '../src/utils/alertRules.ts'
+import {
+  ALERT_RULE_CODES,
+  alertResultLabel,
+  alertRuleShortLabel,
+} from '../src/utils/alertRules.ts'
 
 describe('HTDY Alert scope', () => {
   test('uses only the product-frequency mutation API', () => {
@@ -62,8 +66,21 @@ describe('HTDY Alert scope', () => {
   })
 })
 
-describe('HTDY persistent markers', () => {
-  test('uses the one registered rule for every actual-dominant frequency', () => {
+describe('two-Rule Alert presentation', () => {
+  test('owns the exact SuBing observation labels', () => {
+    assert.equal(ALERT_RULE_CODES.SUBING_THS, 'subing_ths_alert_15m_v1')
+    assert.equal(alertRuleShortLabel(ALERT_RULE_CODES.SUBING_THS), '苏冰预警')
+    assert.equal(alertResultLabel(ALERT_RULE_CODES.SUBING_THS, ['buy']), '多头预警')
+    assert.equal(alertResultLabel(ALERT_RULE_CODES.SUBING_THS, ['sell']), '空头预警')
+  })
+})
+
+describe('persistent Alert markers', () => {
+  test('uses both rules only for actual-dominant 15m', () => {
+    assert.deepEqual(markerRuleCodes('actual_dominant', '15m'), [
+      ALERT_RULE_CODES.HTDY,
+      ALERT_RULE_CODES.SUBING_THS,
+    ])
     assert.deepEqual(markerRuleCodes('actual_dominant', '5m'), [ALERT_RULE_CODES.HTDY])
     assert.deepEqual(markerRuleCodes('actual_dominant', '1d'), [ALERT_RULE_CODES.HTDY])
     assert.deepEqual(markerRuleCodes('continuous', '15m'), [])
@@ -75,6 +92,38 @@ describe('HTDY persistent markers', () => {
     assert.ok(markers.every((item) => item.tone === 'htdy'))
     assert.deepEqual(alertMarkersForOverlay('none', markers), [])
     assert.deepEqual(alertMarkersForOverlay('htdy', markers), markers)
+  })
+
+  test('maps SuBing Event facts to S markers without formula recomputation', () => {
+    const markers = alertEventsToMarkers([subingEvent(3, 'buy'), subingEvent(4, 'sell')])
+    assert.deepEqual(markers.map((item) => ({
+      label: item.label,
+      shape: item.shape,
+      position: item.position,
+      tone: item.tone,
+      alertRuleCode: item.alertRuleCode,
+    })), [
+      {
+        label: 'S↑', shape: 'arrowUp', position: 'belowBar', tone: 'up',
+        alertRuleCode: ALERT_RULE_CODES.SUBING_THS,
+      },
+      {
+        label: 'S↓', shape: 'arrowDown', position: 'aboveBar', tone: 'down',
+        alertRuleCode: ALERT_RULE_CODES.SUBING_THS,
+      },
+    ])
+    assert.match(markers[0]!.tooltip ?? '', /MACD 金叉/)
+    assert.match(markers[0]!.tooltip ?? '', /EMA21 上方/)
+    assert.match(markers[1]!.tooltip ?? '', /MACD 死叉/)
+    assert.match(markers[1]!.tooltip ?? '', /EMA21 下方/)
+  })
+
+  test('keeps SuBing markers visible without an overlay while retaining HTDY visibility', () => {
+    const htdy = alertEventsToMarkers([event(1, ['buy'])])
+    const subing = alertEventsToMarkers([subingEvent(2, 'buy')])
+    assert.deepEqual(alertMarkersForOverlay('none', htdy), [])
+    assert.deepEqual(alertMarkersForOverlay('none', subing), subing)
+    assert.deepEqual(alertMarkersForOverlay('htdy', [...htdy, ...subing]), [...htdy, ...subing])
   })
 
   test('keeps current and persistent markers distinct while sorting by time', () => {
@@ -92,7 +141,7 @@ describe('HTDY persistent markers', () => {
     assert.deepEqual(merged.map((item) => item.id), ['current', persistent[0]!.id])
   })
 
-  test('fetches one rule and clears its timer on dispose', async () => {
+  test('fetches both 15m rules and clears its timer on dispose', async () => {
     const requests: string[] = []
     let cleared = false
     const controller = usePersistentAlertMarkers({
@@ -108,7 +157,7 @@ describe('HTDY persistent markers', () => {
       symbol: 'jm',
       frequency: '15m',
     }, bars(), 'replace')
-    assert.deepEqual(requests, [ALERT_RULE_CODES.HTDY])
+    assert.deepEqual(requests, [ALERT_RULE_CODES.HTDY, ALERT_RULE_CODES.SUBING_THS])
     assert.equal(controller.markers.value.length, 1)
     controller.dispose()
     assert.equal(cleared, true)
@@ -139,6 +188,21 @@ function event(id: number, resultCodes: AlertEvent['result_codes']): AlertEvent 
     detected_at: `2026-08-15T0${id}:00:01Z`,
     notification_attempted_at: null,
   }
+}
+
+function subingEvent(id: number, direction: 'buy' | 'sell'): AlertEvent {
+  return {
+    id,
+    rule_code: 'subing_ths_alert_15m_v1',
+    symbol: 'jm',
+    contract: 'JM2601',
+    trading_day: '2026-08-15',
+    frequency: '15m',
+    bar_end: `2026-08-15T0${id}:00:00Z`,
+    result_codes: [direction],
+    detected_at: `2026-08-15T0${id}:00:01Z`,
+    notification_attempted_at: null,
+  } as AlertEvent
 }
 
 function bars(): BarData[] {

@@ -1,10 +1,10 @@
 import type {
-  CurrentHtdyEventsResponse,
+  CurrentAlertEventsResponse,
   MarketFrequency,
   MarketHomeOverviewResponse,
   MarketHomeTrend,
 } from '../types/market.ts'
-import { HTDY_ALERT_RULE_CODE } from './alertRules.ts'
+import { normalizeAlertEventFacts } from './alertRules.ts'
 
 const MARKET_FREQUENCIES = new Set<MarketFrequency>(['1m', '5m', '15m', '30m', '60m', '1d', '1w'])
 const MARKET_TRENDS = new Set<MarketHomeTrend>(['up', 'down', 'neutral', 'unavailable'])
@@ -46,15 +46,15 @@ export function normalizeMarketHomeOverviewResponse(payload: unknown): MarketHom
   return { status, target_as_of: targetAsOf, data_as_of: dataAsOf, freshness, active_count: activeCount, participant_count: participantCount, stale_count: staleCount, unavailable_count: unavailableCount, summary, items, sectors }
 }
 
-export function normalizeCurrentHtdyEventsResponse(payload: unknown): CurrentHtdyEventsResponse {
-  const value = record(payload, 'current HTDY events')
+export function normalizeCurrentAlertEventsResponse(payload: unknown): CurrentAlertEventsResponse {
+  const value = record(payload, 'current Alert events')
   const status = literal(value.status, ['ready', 'unavailable'], 'status')
   const items = array(value.items, 'items').map((item, index) => normalizeEvent(item, index))
   const tradingDay = nullableDay(value.trading_day, 'trading_day')
-  if (new Set(items.map((item) => item.id)).size !== items.length) throw new Error('current HTDY events contain duplicate ids')
+  if (new Set(items.map((item) => item.id)).size !== items.length) throw new Error('current Alert events contain duplicate ids')
   if (status === 'unavailable') {
-    if (tradingDay !== null || items.length) throw new Error('unavailable current HTDY events must be empty')
-  } else if (tradingDay === null || items.some((item) => item.trading_day !== tradingDay)) throw new Error('ready current HTDY events must use one trading day')
+    if (tradingDay !== null || items.length) throw new Error('unavailable current Alert events must be empty')
+  } else if (tradingDay === null || items.some((item) => item.trading_day !== tradingDay)) throw new Error('ready current Alert events must use one trading day')
   return { status, trading_day: tradingDay, items }
 }
 
@@ -93,11 +93,11 @@ function normalizeSector(payload: unknown, index: number): MarketHomeOverviewRes
   return { sector: text(value.sector, 'sector'), active_count: activeCount, participant_count: participantCount, median_price_change_1d: decimal(value.median_price_change_1d, 'median_price_change_1d') }
 }
 
-function normalizeEvent(payload: unknown, index: number): CurrentHtdyEventsResponse['items'][number] {
+function normalizeEvent(payload: unknown, index: number): CurrentAlertEventsResponse['items'][number] {
   const value = record(payload, `items[${index}]`)
-  const resultCodes: Array<'buy' | 'sell'> = array(value.result_codes, 'result_codes').map((code) => literal(code, ['buy', 'sell'] as const, 'result_code'))
-  if (!resultCodes.length || new Set(resultCodes).size !== resultCodes.length) throw new Error('result_codes are invalid')
-  return { id: positiveId(value.id), rule_code: literal(field(value, 'rule_code'), [HTDY_ALERT_RULE_CODE], 'rule_code'), symbol: text(value.symbol, 'symbol').toLowerCase(), contract: text(value.contract, 'contract'), trading_day: nullableDay(value.trading_day, 'trading_day'), frequency: literal(value.frequency, [...MARKET_FREQUENCIES], 'frequency'), bar_end: instant(value.bar_end, 'bar_end'), result_codes: resultCodes, detected_at: instant(value.detected_at, 'detected_at'), notification_attempted_at: nullableInstant(value.notification_attempted_at, 'notification_attempted_at') }
+  const frequency = literal(value.frequency, [...MARKET_FREQUENCIES], 'frequency')
+  const facts = normalizeAlertEventFacts(field(value, 'rule_code'), frequency, array(value.result_codes, 'result_codes'))
+  return { id: positiveId(value.id), rule_code: facts.ruleCode, symbol: text(value.symbol, 'symbol').toLowerCase(), contract: text(value.contract, 'contract'), trading_day: nullableDay(value.trading_day, 'trading_day'), frequency, bar_end: instant(value.bar_end, 'bar_end'), result_codes: facts.resultCodes, detected_at: instant(value.detected_at, 'detected_at'), notification_attempted_at: nullableInstant(value.notification_attempted_at, 'notification_attempted_at') } as CurrentAlertEventsResponse['items'][number]
 }
 
 function record(value: unknown, field: string): Record<string, unknown> { if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`${field} must be an object`); return value as Record<string, unknown> }

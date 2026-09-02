@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   normalizeMarketHomeOverviewResponse,
-  normalizeCurrentHtdyEventsResponse,
+  normalizeCurrentAlertEventsResponse,
 } from '../src/utils/marketHomeTypes.ts'
 
 const overview = {
@@ -131,8 +131,8 @@ test('fails closed when a completed D1 close is null', () => {
 })
 
 test('distinguishes ready HTDY events from an unavailable current-event projection', () => {
-  const ready = normalizeCurrentHtdyEventsResponse(currentEvents)
-  const unavailable = normalizeCurrentHtdyEventsResponse({ status: 'unavailable', trading_day: null, items: [] })
+  const ready = normalizeCurrentAlertEventsResponse(currentEvents)
+  const unavailable = normalizeCurrentAlertEventsResponse({ status: 'unavailable', trading_day: null, items: [] })
 
   assert.equal(ready.status, 'ready')
   assert.deepEqual(ready.items[0]!.result_codes, ['buy'])
@@ -140,8 +140,22 @@ test('distinguishes ready HTDY events from an unavailable current-event projecti
   assert.equal(unavailable.trading_day, null)
 })
 
+test('normalizes mixed HTDY and SuBing current Event facts', () => {
+  const payload = structuredClone(currentEvents)
+  payload.items.push({
+    id: 8, rule_code: 'subing_ths_alert_15m_v1', symbol: 'ag', contract: 'AG2610',
+    trading_day: '2026-09-02', frequency: '15m', bar_end: '2026-09-02T02:45:00Z',
+    result_codes: ['sell'], detected_at: '2026-09-02T02:45:02Z', notification_attempted_at: null,
+  })
+  const value = normalizeCurrentAlertEventsResponse(payload)
+  assert.deepEqual(value.items.map((item) => item.rule_code), [
+    'htdy_original_15m',
+    'subing_ths_alert_15m_v1',
+  ])
+})
+
 test('fails closed for a calendar-invalid HTDY instant that Date.parse would normalize', () => {
   const payload = structuredClone(currentEvents)
   payload.items[0].bar_end = '2026-02-30T01:00:00Z'
-  assert.throws(() => normalizeCurrentHtdyEventsResponse(payload), /bar_end/)
+  assert.throws(() => normalizeCurrentAlertEventsResponse(payload), /bar_end/)
 })

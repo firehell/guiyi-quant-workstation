@@ -177,6 +177,7 @@ export interface KlineMarker {
   tone: 'up' | 'down' | 'htdy' | 'neutral'
   position: 'aboveBar' | 'belowBar' | 'inBar'
   shape: 'circle' | 'square' | 'arrowUp' | 'arrowDown'
+  alertRuleCode?: AlertRuleCode
 }
 
 interface AlertEventCommon {
@@ -190,14 +191,25 @@ interface AlertEventCommon {
   notification_attempted_at: string | null
 }
 
+export type AlertDirection = 'buy' | 'sell'
+export type HtdyAlertRuleCode = 'htdy_original_15m'
+export type SubingThsAlertRuleCode = 'subing_ths_alert_15m_v1'
+export type AlertRuleCode = HtdyAlertRuleCode | SubingThsAlertRuleCode
+
 export interface HtdyAlertEvent extends AlertEventCommon {
-  rule_code: 'htdy_original_15m'
-  result_codes: Array<'buy' | 'sell'>
+  rule_code: HtdyAlertRuleCode
+  result_codes: AlertDirection[]
 }
 
-export type AlertEvent = HtdyAlertEvent
+export interface SubingThsAlertEvent extends AlertEventCommon {
+  rule_code: SubingThsAlertRuleCode
+  frequency: '15m'
+  result_codes: ['buy'] | ['sell']
+}
 
-export interface CurrentHtdyEventsResponse {
+export type AlertEvent = HtdyAlertEvent | SubingThsAlertEvent
+
+export interface CurrentAlertEventsResponse {
   status: 'ready' | 'unavailable'
   trading_day: string | null
   items: AlertEvent[]
