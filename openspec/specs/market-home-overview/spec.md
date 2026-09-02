@@ -105,3 +105,8 @@ product dominants、发起 per-product 请求、WebSocket 或任何写请求。
 图标色值 SHALL 为上行 `#E63935`、周期同向 `#FF9601`、下行 `#35C759`、中性 `#017AFF`、数据不足
 `#98A2B3`，对应尺寸为 Legend 40px、表格状态 28px、Trend/HTDY micro 24px。图标必须有中文可访问语义，
 业务文案只能使用上行、周期同向、下行、中性、数据不足；不得改写为买入、持股、卖出、空仓、建仓、清仓或订单语义。
+
+#### Scenario: A user reads a state icon without color
+
+- **WHEN** Market Home displays a frozen state icon
+- **THEN** it has the approved size, color and Chinese accessible label, while the adjacent Event copy remains an observation rather than a trading instruction

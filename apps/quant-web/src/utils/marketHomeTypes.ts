@@ -4,6 +4,7 @@ import type {
   MarketHomeOverviewResponse,
   MarketHomeTrend,
 } from '../types/market.ts'
+import { HTDY_ALERT_RULE_CODE } from './alertRules.ts'
 
 const MARKET_FREQUENCIES = new Set<MarketFrequency>(['1m', '5m', '15m', '30m', '60m', '1d', '1w'])
 const MARKET_TRENDS = new Set<MarketHomeTrend>(['up', 'down', 'neutral', 'unavailable'])
@@ -63,10 +64,11 @@ function normalizeEvent(payload: unknown, index: number): CurrentHtdyEventsRespo
   const value = record(payload, `items[${index}]`)
   const resultCodes: Array<'buy' | 'sell'> = array(value.result_codes, 'result_codes').map((code) => literal(code, ['buy', 'sell'] as const, 'result_code'))
   if (!resultCodes.length || new Set(resultCodes).size !== resultCodes.length) throw new Error('result_codes are invalid')
-  return { id: positiveId(value.id), rule_code: literal(value.rule_code, ['htdy_original_15m'], 'rule_code'), symbol: text(value.symbol, 'symbol').toLowerCase(), contract: text(value.contract, 'contract'), trading_day: nullableDay(value.trading_day, 'trading_day'), frequency: literal(value.frequency, [...MARKET_FREQUENCIES], 'frequency'), bar_end: instant(value.bar_end, 'bar_end'), result_codes: resultCodes, detected_at: instant(value.detected_at, 'detected_at'), notification_attempted_at: nullableInstant(value.notification_attempted_at, 'notification_attempted_at') }
+  return { id: positiveId(value.id), rule_code: literal(field(value, 'rule_code'), [HTDY_ALERT_RULE_CODE], 'rule_code'), symbol: text(value.symbol, 'symbol').toLowerCase(), contract: text(value.contract, 'contract'), trading_day: nullableDay(value.trading_day, 'trading_day'), frequency: literal(value.frequency, [...MARKET_FREQUENCIES], 'frequency'), bar_end: instant(value.bar_end, 'bar_end'), result_codes: resultCodes, detected_at: instant(value.detected_at, 'detected_at'), notification_attempted_at: nullableInstant(value.notification_attempted_at, 'notification_attempted_at') }
 }
 
 function record(value: unknown, field: string): Record<string, unknown> { if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`${field} must be an object`); return value as Record<string, unknown> }
+function field(value: Record<string, unknown>, key: string): unknown { return value[key] }
 function array(value: unknown, field: string): unknown[] { if (!Array.isArray(value)) throw new Error(`${field} must be an array`); return value }
 function text(value: unknown, field: string): string { if (typeof value !== 'string' || !value.trim()) throw new Error(`${field} must be a non-empty string`); return value }
 function decimal(value: unknown, field: string): number | null { if (value === null) return null; if (typeof value !== 'string' || !value.trim()) throw new Error(`${field} must be a Decimal string or null`); const normalized = Number(value); if (!Number.isFinite(normalized)) throw new Error(`${field} must be finite`); return normalized }
