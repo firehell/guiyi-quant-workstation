@@ -20,6 +20,10 @@ from app.alerts.composition import (
 )
 from app.alerts.notification import ALERT_AUDIENCES
 from app.alerts.notification_composition import build_notification_sender_from_env
+from app.alerts.subing_scope_activation import (
+    SubingScopeActivationResult,
+    activate_subing_ths_scope,
+)
 from app.guiyi_cli.data_commands import build_request, run_data_command
 from app.guiyi_cli.data_parser import (
     CliUsageError,
@@ -37,6 +41,7 @@ from app.market_data.composition import (
 )
 from app.market_data.after_market import build_after_market_updater
 from app.market_data.historical_data_manager import HistoricalDataManager
+from app.market_data.operational_universe import load_operational_products
 from app.services.runtime_health import build_runtime_health
 from app.runtime_entry import run_after_market, run_alert, run_live
 
@@ -47,27 +52,31 @@ LiveServiceFactory = Callable[[Any], Any]
 AlertRuntimeFactory = Callable[[], Any]
 AlertCanarySenderFactory = Callable[[], Any]
 AlertNotificationAcknowledger = Callable[[str], dict[str, object]]
+SubingScopeActivator = Callable[..., SubingScopeActivationResult]
+OperationalProductsLoader = Callable[[], tuple[str, ...]]
 
 def _execution_is_readonly(args: argparse.Namespace) -> bool:
     if args.domain == "runtime":
         if args.runtime_command == "status":
             return True
+        if args.runtime_command == "subing-ths-scope":
+            return not args.apply
         return False
     return not bool(getattr(args, "apply", False))
 
 
 def _parse_error_is_readonly(raw: Sequence[str]) -> bool:
-    return not (
-        len(raw) >= 2
-        and raw[0] == "runtime"
-        and raw[1]
-        in {
+    if len(raw) >= 2 and raw[0] == "runtime":
+        if raw[1] == "subing-ths-scope":
+            return "--apply" not in raw[2:]
+        if raw[1] in {
             "live",
             "alert",
             "alert-canary",
             "acknowledge-alert-notification",
-        }
-    )
+        }:
+            return False
+    return True
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -82,6 +91,11 @@ def build_parser() -> argparse.ArgumentParser:
     runtime_commands.add_parser("status")
     runtime_commands.add_parser("live")
     runtime_commands.add_parser("alert")
+    subing_scope = runtime_commands.add_parser(
+        "subing-ths-scope",
+        allow_abbrev=False,
+    )
+    subing_scope.add_argument("--apply", action="store_true")
     alert_canary = runtime_commands.add_parser("alert-canary")
     alert_canary.add_argument(
         "--audience",
@@ -109,6 +123,8 @@ def main(
     alert_notification_acknowledger: AlertNotificationAcknowledger = (
         acknowledge_alert_notification_failure
     ),
+    subing_scope_activator: SubingScopeActivator = activate_subing_ths_scope,
+    operational_products_loader: OperationalProductsLoader = load_operational_products,
     runtime_health_builder=build_runtime_health,
     stdout: TextIO = sys.stdout,
     stderr: TextIO = sys.stderr,
@@ -154,6 +170,15 @@ def main(
             )
         elif args.runtime_command == "alert":
             payload = run_alert(alert_runtime_factory=alert_runtime_factory)
+        elif args.runtime_command == "subing-ths-scope":
+            operational_products = operational_products_loader()
+            with session_factory() as session:
+                result = subing_scope_activator(
+                    session,
+                    operational_products=operational_products,
+                    apply=args.apply,
+                )
+            payload = _subing_scope_payload(result)
         elif args.runtime_command == "alert-canary":
             acceptance = alert_canary_sender_factory().send_canary(args.audience)
             reference = acceptance.reference
@@ -239,6 +264,21 @@ def _run_data(
     with session_factory() as session:
         manager = manager_factory(session)
         return run_data_command(args, manager, progress_stream=stderr).as_payload()
+
+
+def _subing_scope_payload(
+    result: SubingScopeActivationResult,
+) -> dict[str, object]:
+    return {
+        "schema_version": 1,
+        "command": "runtime.subing-ths-scope",
+        "status": result.status,
+        "readonly": result.readonly,
+        "rule_code": result.rule_code,
+        "symbol_count": result.symbol_count,
+        "scope_sha256": result.scope_sha256,
+        "enabled": result.enabled,
+    }
 
 
 def entrypoint() -> None:
