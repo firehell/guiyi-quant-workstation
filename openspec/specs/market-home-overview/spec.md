@@ -3,20 +3,35 @@
 ## Purpose
 
 定义 Market 首页在不恢复任何退役策略的前提下读取 completed D1/W1 市场事实和当前 HTDY
-immutable Event 的两个 bulk、只读 HTTP 合同。该能力只为用户复核提供事实，不构成交易建议，
-且 `auto_order=false`。
+immutable Event 的只读 HTTP 合同。Market Home overview 使用可删除、可重建的 derived projection
+加速常态读取，但 `MarketHomeOverviewService -> MarketDataService` 始终是唯一计算 authority。
+该能力只为用户复核提供事实，不构成交易建议，且 `auto_order=false`。
 
 ## Requirements
 
 ### Requirement: Market Home overview uses one authoritative completed snapshot
 
-`GET /api/v1/market/research/home-overview` SHALL 从 `load_active_products()`、
-`load_product_taxonomy()`、`DatabaseCoverageSource.latest_complete_day()` 和
-`MarketDataService` 组合一个 response。Bar 查询 MUST 为每个 active product 至多一次
-`actual_dominant` D1 和一次 W1；dominant summary MUST 只读取一次；该 endpoint MUST NOT
-建立 provider、Redis Live、cache writer 或任何写服务。
+`MarketHomeOverviewService` SHALL 从 `load_active_products()`、`load_product_taxonomy()`、
+`DatabaseCoverageSource.latest_complete_day()` 和 `MarketDataService` 组合 completed D1/W1 response。
+现场 compute 时 Bar 查询 MUST 为每个 active product 至多一次 `actual_dominant` D1 和一次 W1；
+dominant summary MUST 只读取一次。该 service MUST NOT 建立 provider、Redis Live 或写服务。
 
-#### Scenario: A complete active universe is available
+`GET /api/v1/market/research/home-overview` SHALL 先读取 exact-identity derived projection；projection
+缺失、损坏或 identity 不匹配时，MUST 回退上述 authoritative compute。HTTP endpoint 本身 MUST NOT
+创建、更新、失效或修复 projection。
+
+#### Scenario: A valid projection exists
+
+- **WHEN** projection 的 schema、target day、active/taxonomy digest 与当前 authority identity 精确一致
+- **THEN** endpoint 返回 frozen `MarketHomeOverviewResponse`，且不得调用 expensive `snapshot()`、
+  `query_page()` 或 `list_latest_dominants()`
+
+#### Scenario: Projection is absent or invalid
+
+- **WHEN** projection 不存在、损坏、超限、来自 symlink、schema 不兼容或 identity 不匹配
+- **THEN** endpoint 忽略 projection 并调用现有 authoritative compute；该 fallback 不执行任何写入
+
+#### Scenario: A complete active universe is computed
 
 - **WHEN** 每个 active product 都有 target day 的 completed D1，且 dominant identity 完整唯一
 - **THEN** response 返回 `status=ready`、统一 `target_as_of/data_as_of`、全部 participants 和
@@ -36,8 +51,61 @@ immutable Event 的两个 bulk、只读 HTTP 合同。该能力只为用户复�
 
 - **WHEN** product 有 target-day D1，但 W1 actual-dominant query 报告
   `ACTUAL_DOMINANT_WEEKLY_DATASET_ABSENT`
-- **THEN** response MUST 保留该 product item 并返回 `weekly_trend=unavailable`；D1 的同类
+- **THEN** response MUST 保留该 product item并返回 `weekly_trend=unavailable`；D1 的同类
   integrity failure 和 W1 的 `MAPPED_CONTRACT_DATASET_MISSING` 仍 MUST fail closed
+
+### Requirement: Market Home derived projection is removable and never authoritative
+
+Projection SHALL 固定存放在 active Canonical root 下：
+
+```text
+<canonical_root>/.derived/market-home-overview.json
+```
+
+该文件 MUST NOT 被视为 Canonical Bar、Catalog row、MainContractMap 或策略事实。文件删除后，
+系统 MUST 能完全依赖 authoritative compute 返回同一 HTTP contract。
+
+Projection envelope MUST 使用 schema version 1，并绑定：
+
+- timezone-aware `generated_at`；
+- `target_as_of`；
+- 对 active product 顺序与 taxonomy `name/sector` 的 deterministic SHA-256 digest；
+- strict `MarketHomeOverviewResponse` payload。
+
+`payload.target_as_of` 与 `payload.data_as_of` MUST 等于 envelope target day。文件 MUST 为普通文件，
+不得通过 symlink 读取或写出 Canonical root 的 `.derived` 边界；文件大小 MUST 大于 0 且不超过 2 MiB。
+
+#### Scenario: Projection is atomically refreshed
+
+- **WHEN** after-market core maintenance 已完成 Canonical publication、`canonical_updated`、rank1/Live
+  reconciliation 与 cleanup
+- **THEN** projection writer 使用 same-directory temporary file、flush、fsync 与 `os.replace` 原子发布
+
+#### Scenario: Projection refresh fails after core maintenance
+
+- **WHEN** projection compute、serialization 或 atomic publish 失败
+- **THEN** after-market 仅记录安全 warning，不 retry、不发送 projection-specific notification，且已成功的
+  core maintenance 结论保持成功；因为旧 projection 已在 mutation 前失效，overview API 自动回退现场 compute
+
+### Requirement: Authoritative apply paths invalidate projection before mutation
+
+任何正式 `guiyi data update --apply`、`guiyi data refresh --apply` 与自然 after-market apply MUST 在调用
+`HistoricalDataManager` 的 authoritative apply action 前先失效 shared projection。Dry-run、audit 与 provider
+readiness 未通过的 after-market MUST NOT 为此触碰 projection。
+
+Projection invalidation failure MUST 在 manager action 前 fail closed，禁止让 metadata/Canonical 已变化但旧
+projection 仍可被读取。人工 apply 成功后无需同步重建 projection；在下一次自然 after-market refresh 之前，
+overview API 可以使用 authoritative compute fallback。
+
+#### Scenario: Manual refresh rewrites same trading day
+
+- **WHEN** 用户授权 `data refresh --apply` 重写了与旧 projection 相同的 target day
+- **THEN** 旧 projection 已在 manager action 前删除，因此日期未变化也不能误命中旧结果
+
+#### Scenario: Apply invalidation cannot be completed
+
+- **WHEN** projection 文件或 `.derived` 边界无法安全失效
+- **THEN** manager apply MUST NOT 被调用，真实行情/metadata mutation 不得开始
 
 ### Requirement: Overview preserves generic market authority and transparent degradation
 
@@ -48,7 +116,7 @@ position、target、order 或任何退役策略事实。
 
 构造时 universe MUST 非空、normalized、唯一，taxonomy keys MUST 精确匹配。缺失或重复
 dominant identity、coverage failure、mapping/physical integrity failure MUST fail closed as a typed
-HTTP 409; API 不得泄露内部异常。
+HTTP 409；API 不得泄露内部异常。
 
 #### Scenario: Authority configuration cannot be loaded
 
