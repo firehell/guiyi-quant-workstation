@@ -15,12 +15,12 @@ function item(symbol, product_name, sector, daily_trend, weekly_trend) {
 function runtime() { return { status: 'degraded', generated_at: '2026-09-02T01:00:00Z', readonly: true, would_start_services: false, would_enqueue_jobs: false, would_send_notifications: false, components: {} } }
 function events() { return { status: 'ready', trading_day: '2026-09-02', items: [{ id: 1, rule_code: 'htdy_original_15m', symbol: 'ag', contract: 'AG2601', trading_day: '2026-09-02', frequency: '15m', bar_end: '2026-09-02T02:45:00Z', result_codes: ['buy'], detected_at: '2026-09-02T02:45:01Z', notification_attempted_at: null }] } }
 
-async function mockMarketHomeApi(page, requests, currentEvents = events()) {
+async function mockMarketHomeApi(page, requests, currentEvents = events(), currentOverview = overview(), currentRuntime = runtime()) {
   await page.route(/\/api\/(?:v1\/market\/research\/home-overview|runtime\/health|alerts\/current-events)/, async (route) => {
     const url = new URL(route.request().url())
     requests.push(url.pathname)
-    if (url.pathname.endsWith('/market/research/home-overview')) return route.fulfill({ json: overview() })
-    if (url.pathname === '/api/runtime/health') return route.fulfill({ json: runtime() })
+    if (url.pathname.endsWith('/market/research/home-overview')) { const value = typeof currentOverview === 'function' ? currentOverview() : currentOverview; return value === null ? route.abort() : route.fulfill({ json: value }) }
+    if (url.pathname === '/api/runtime/health') return route.fulfill({ json: typeof currentRuntime === 'function' ? currentRuntime() : currentRuntime })
     return route.fulfill({ json: currentEvents })
   })
 }
@@ -75,4 +75,32 @@ test('keeps each accepted viewport free of page-level horizontal overflow', asyn
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
     await page.screenshot({ path: `test-results/market-home-${name}.png`, fullPage: true })
   }
+})
+
+test('keeps 60-product filtering local and supports keyboard chart review', async ({ page }) => {
+  const many = overview()
+  many.items = Array.from({ length: 60 }, (_, index) => item(`x${index}`, `测试品种${index}`, 'black', 'up', 'up'))
+  many.active_count = many.participant_count = 60
+  many.summary.price_up_count = many.summary.daily_up_count = many.summary.aligned_up_count = 60
+  many.summary.price_down_count = many.summary.price_flat_count = many.summary.daily_down_count = many.summary.daily_neutral_count = many.summary.daily_unavailable_count = many.summary.aligned_down_count = 0
+  many.sectors = [{ sector: 'black', active_count: 60, participant_count: 60, median_price_change_1d: '0.01' }]
+  const requests = []
+  await mockMarketHomeApi(page, requests, events(), many)
+  await page.goto('/market')
+  await page.getByPlaceholder('搜索代码或中文名').fill('测试品种59')
+  await expect(page.getByRole('rowheader', { name: 'X59 测试品种59' })).toBeVisible()
+  await expect(page.getByText('X58 测试品种58')).toHaveCount(0)
+  expect(requests.filter((path) => path.endsWith('/home-overview'))).toHaveLength(1)
+  await page.locator('tbody tr').filter({ hasText: 'X59 测试品种59' }).press('Enter')
+  await expect(page).toHaveURL(/symbol=x59.*series_kind=actual_dominant/)
+})
+
+test('retains a cached snapshot and surfaces overview and Runtime degradation', async ({ page }) => {
+  let attempts = 0
+  const requests = []
+  await mockMarketHomeApi(page, requests, events(), () => { attempts += 1; if (attempts > 1) return null; return { ...overview(), status: 'degraded', freshness: 'stale' } }, { ...runtime(), status: 'degraded' })
+  await page.goto('/market')
+  await expect(page.getByText('overview degraded')).toBeVisible()
+  await page.getByText('全部刷新').click()
+  await expect(page.getByText('overview cached stale')).toBeVisible()
 })
