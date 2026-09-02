@@ -264,6 +264,28 @@ class AlertService:
         )
         return tuple(self._session.scalars(statement).all())
 
+    def list_current_events(
+        self, *, trading_day: date, limit: int
+    ) -> tuple[AlertEvent, ...]:
+        """Read current-day Events for registry-owned HTDY Rules only."""
+
+        codes = tuple(definition.rule_code for definition in alert_rule_definitions())
+        statement = (
+            select(AlertEvent)
+            .join(AlertRule, AlertEvent.rule_id == AlertRule.id)
+            .where(
+                AlertRule.rule_code.in_(codes),
+                AlertEvent.trading_day == trading_day,
+            )
+            .order_by(
+                AlertEvent.detected_at.desc(),
+                AlertEvent.bar_end.desc(),
+                AlertEvent.id.desc(),
+            )
+            .limit(limit)
+        )
+        return tuple(self._session.scalars(statement).all())
+
     def _rule_by_code(self, rule_code: str, *, for_update: bool = False) -> AlertRule:
         normalized = str(rule_code or "").strip()
         _definition(normalized)

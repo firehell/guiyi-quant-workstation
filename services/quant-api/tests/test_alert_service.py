@@ -150,6 +150,83 @@ def test_current_events_are_product_and_trading_day_scoped(session: Session) -> 
     ) == ()
 
 
+def test_global_current_events_are_registry_only_sorted_and_limited(session: Session) -> None:
+    service = AlertService(session, operational_products=("jm",))
+    active_rule = session.scalar(select(AlertRule).where(AlertRule.rule_code == "htdy_original_15m"))
+    assert active_rule is not None
+    legacy_rule = AlertRule(
+        rule_code="retired_rule",
+        enabled=True,
+        scope_product_frequencies={},
+    )
+    session.add(legacy_rule)
+    session.flush()
+    session.add_all(
+        [
+            AlertEvent(
+                rule_id=active_rule.id,
+                symbol="jm",
+                contract="JM2609",
+                trading_day=TRADING_DAY,
+                frequency="15m",
+                bar_end=BAR_END,
+                result_codes=["buy"],
+                detected_at=BAR_END + timedelta(seconds=5),
+                notification_attempted_at=None,
+            ),
+            AlertEvent(
+                rule_id=active_rule.id,
+                symbol="jm",
+                contract="JM2609",
+                trading_day=TRADING_DAY,
+                frequency="5m",
+                bar_end=BAR_END + timedelta(minutes=5),
+                result_codes=["sell"],
+                detected_at=BAR_END + timedelta(seconds=5),
+                notification_attempted_at=None,
+            ),
+            AlertEvent(
+                rule_id=active_rule.id,
+                symbol="jm",
+                contract="JM2609",
+                trading_day=TRADING_DAY,
+                frequency="30m",
+                bar_end=BAR_END + timedelta(minutes=10),
+                result_codes=["buy"],
+                detected_at=BAR_END + timedelta(seconds=10),
+                notification_attempted_at=None,
+            ),
+            AlertEvent(
+                rule_id=legacy_rule.id,
+                symbol="jm",
+                contract="JM2609",
+                trading_day=TRADING_DAY,
+                frequency="60m",
+                bar_end=BAR_END + timedelta(minutes=15),
+                result_codes=["buy"],
+                detected_at=BAR_END + timedelta(seconds=20),
+                notification_attempted_at=None,
+            ),
+            AlertEvent(
+                rule_id=active_rule.id,
+                symbol="jm",
+                contract="JM2609",
+                trading_day=date(2026, 8, 14),
+                frequency="1m",
+                bar_end=BAR_END + timedelta(minutes=20),
+                result_codes=["buy"],
+                detected_at=BAR_END + timedelta(seconds=30),
+                notification_attempted_at=None,
+            ),
+        ]
+    )
+    session.commit()
+
+    events = service.list_current_events(trading_day=TRADING_DAY, limit=2)
+
+    assert [event.frequency for event in events] == ["30m", "5m"]
+
+
 def request(
     rule_id: int,
     *,
