@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, date, datetime, timedelta
 
 import pytest
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, event, select
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
@@ -59,6 +59,31 @@ def test_frequency_scope_mutation_is_normalized_and_idempotent(session: Session)
         "htdy_original_15m", "jm", "5m", False
     )
     assert disabled.enabled_frequencies == ("15m",)
+
+
+def test_disabled_rule_rejects_scope_mutation_before_commit(session: Session) -> None:
+    session.add(AlertRule(
+        rule_code="subing_ths_alert_15m_v1",
+        enabled=False,
+        scope_product_frequencies={},
+    ))
+    session.commit()
+    commits: list[object] = []
+    event.listen(session, "after_commit", lambda value: commits.append(value))
+
+    with pytest.raises(AlertScopeError, match="ALERT_SCOPE_RULE_DISABLED"):
+        AlertService(session, operational_products=("jm",)).set_product_frequency_enabled(
+            "subing_ths_alert_15m_v1", "jm", "15m", True
+        )
+
+    session.expire_all()
+    stored = session.scalar(select(AlertRule).where(
+        AlertRule.rule_code == "subing_ths_alert_15m_v1"
+    ))
+    assert stored is not None
+    assert stored.enabled is False
+    assert stored.scope_product_frequencies == {}
+    assert commits == []
 
 
 @pytest.mark.parametrize("frequency", ["", "4h"])

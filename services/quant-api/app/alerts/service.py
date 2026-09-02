@@ -89,6 +89,8 @@ class AlertService:
     ) -> ProductAlertRuleState:
         normalized_symbol = self._require_operational_symbol(symbol)
         rule = self._rule_by_code(rule_code, for_update=True)
+        if not rule.enabled:
+            raise AlertScopeError("ALERT_SCOPE_RULE_DISABLED")
         definition = _definition(rule.rule_code)
         normalized_frequency = str(frequency).strip()
         if normalized_frequency not in definition.input_frequencies:
