@@ -1,4 +1,4 @@
-from dataclasses import replace
+from dataclasses import FrozenInstanceError, replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from hashlib import sha256
@@ -102,6 +102,101 @@ def test_wilder_atr14_seed_and_recursive_update_are_exact() -> None:
     jumped = step_cup_handle(seeded[-1].state, _bar(14, 130))
 
     assert jumped.state.atr_state.atr == pytest.approx((13 * 2 + 18) / 14)
+
+
+def test_same_bar_confirmed_pivot_state_remains_valid_on_the_next_step() -> None:
+    """Rejecting confirmed_index == pivot_index drops a legal tracker transition."""
+
+    warmup = tuple(
+        replace(
+            _bar(index, 100, eligible=False),
+            source_identity=f"fixture:same-bar-pivot:warmup:{index}",
+        )
+        for index in range(14)
+    )
+    state = calculate_cup_handle_series(warmup)[-1].state
+    eligible_ohlc = (
+        (99, 100, 80),
+        (102, 103, 101),
+        (104, 105, 103),
+        (106, 107, 105),
+        (100, 120, 99),
+    )
+    result = None
+    for offset, (close, high, low) in enumerate(eligible_ohlc, start=14):
+        result = step_cup_handle(
+            state,
+            replace(
+                _bar(offset, close),
+                high=Decimal(high),
+                low=Decimal(low),
+                source_identity=f"fixture:same-bar-pivot:{offset}",
+            ),
+        )
+        state = result.state
+
+    assert result is not None
+    same_bar_high = result.state.confirmed_pivots[-1]
+    assert same_bar_high.kind == CupPivotKind.HIGH
+    assert same_bar_high.confirmed_index == same_bar_high.pivot_index
+
+    resumed = step_cup_handle(
+        result.state,
+        replace(
+            _bar(19, 101),
+            source_identity="fixture:same-bar-pivot:19",
+        ),
+    )
+
+    assert "NEWOW_CUP_STATE_INVALID" not in resumed.diagnostics
+    assert resumed.state.confirmed_pivots[-1] == same_bar_high
+
+
+@pytest.mark.parametrize(
+    "changes",
+    (
+        {"count": True},
+        {"count": 14.5},
+        {"count": 13, "tr_total": 0.0, "atr": 2.0},
+        {"count": 14, "tr_total": 28.0, "atr": None},
+        {"count": 14, "tr_total": 27.0, "atr": 2.0},
+        {"count": 15, "tr_total": 28.0, "atr": 2.0},
+        {
+            "count": 0,
+            "tr_total": 0.0,
+            "atr": None,
+            "previous_close": Decimal("100"),
+        },
+        {
+            "count": 1,
+            "tr_total": 2.0,
+            "atr": None,
+            "previous_close": None,
+        },
+    ),
+)
+def test_restored_atr_rejects_impossible_initial_seed_and_recursive_phases(
+    changes: dict[str, object],
+) -> None:
+    """Malformed ATR phase state must fail closed instead of silently reseeding."""
+
+    warmup = tuple(
+        replace(_bar(index, 100, eligible=False), source_identity=f"atr:{index}")
+        for index in range(14)
+    )
+    seeded = calculate_cup_handle_series(warmup)[-1].state
+    malformed = replace(
+        seeded,
+        atr_state=replace(seeded.atr_state, **changes),
+    )
+
+    result = step_cup_handle(
+        malformed,
+        replace(_bar(14, 100, eligible=False), source_identity="atr:next"),
+    )
+
+    assert result.diagnostics == ("NEWOW_CUP_STATE_INVALID",)
+    assert result.state == initial_cup_handle_state()
 
 
 def _markers(results: tuple[object, ...]) -> list[object]:
@@ -395,7 +490,7 @@ def test_single_bar_v_bottom_can_form_but_never_become_ready() -> None:
     ("case_kwargs", "expected"),
     [
         (
-            {"handle_index": 62, "handle_confirmed_index": 64},
+            {"handle_index": 63, "handle_confirmed_index": 64},
             "HANDLE_DURATION_OUT_OF_RANGE",
         ),
         (
@@ -936,6 +1031,132 @@ def test_long_lived_weakened_state_survives_bounded_history_rollover() -> None:
     assert state.active_candidate.state == CupHandleState.WEAKENED
 
 
+def test_long_lived_weakened_retains_an_immutable_typed_ready_witness() -> None:
+    """Aged READY facts need one bounded authority after source Bars are evicted."""
+
+    bars = breakout_then_weakened()
+    state = calculate_cup_handle_series(bars)[-1].state
+    prior = bars[-1]
+    for offset in range(1, 231):
+        day = prior.trading_day + timedelta(days=offset)
+        state = step_cup_handle(
+            state,
+            replace(
+                prior,
+                trading_day=day,
+                bar_end=datetime.combine(day, datetime.min.time(), tzinfo=UTC),
+                source_identity=f"fixture:ready-witness:{offset}",
+            ),
+        ).state
+
+    active = state.active_candidate
+    witness = getattr(state, "ready_witness", None)
+    assert active is not None and active.state == CupHandleState.WEAKENED
+    assert witness is not None
+    assert witness.candidate_id == active.candidate_id
+    assert witness.left_rim == active.left_rim
+    assert witness.bottom == active.bottom
+    assert witness.right_rim == active.right_rim
+    assert witness.handle_extreme == active.handle_extreme
+    assert witness.pivot_price == active.pivot_price
+    assert witness.confirmed_at == active.confirmed_at
+    assert witness.score == active.score
+    assert dict(witness.score_breakdown) == dict(active.score_breakdown)
+    assert dict(witness.volume_facts) == dict(active.volume_facts)
+    assert witness.formula_version == active.formula_version
+    with pytest.raises(FrozenInstanceError):
+        witness.score = active.score + 1  # type: ignore[misc]
+
+
+@pytest.mark.parametrize("field_name", ("score_breakdown", "volume_facts"))
+def test_restored_ready_witness_rejects_mutable_fact_containers(
+    field_name: str,
+) -> None:
+    """Frozen state cannot admit a list through an unchecked reconstructed field."""
+
+    bars = breakout_then_weakened()
+    state = calculate_cup_handle_series(bars)[-1].state
+    witness = state.ready_witness
+    assert witness is not None
+    malformed_witness = replace(
+        witness,
+        **{field_name: list(getattr(witness, field_name))},
+    )
+    malformed = replace(state, ready_witness=malformed_witness)
+    day = bars[-1].trading_day + timedelta(days=1)
+
+    result = step_cup_handle(
+        malformed,
+        replace(
+            bars[-1],
+            trading_day=day,
+            bar_end=datetime.combine(day, datetime.min.time(), tzinfo=UTC),
+            source_identity=f"fixture:mutable-ready-witness:{field_name}",
+        ),
+    )
+
+    assert result.diagnostics == ("NEWOW_CUP_STATE_INVALID",)
+    assert result.state == initial_cup_handle_state()
+
+
+@pytest.mark.parametrize("corruption", ("pivot", "score", "volume"))
+def test_aged_weakened_ready_facts_cannot_be_edited_after_source_eviction(
+    corruption: str,
+) -> None:
+    """P, score, and volume facts must stay bound to the frozen READY witness."""
+
+    bars = breakout_then_weakened()
+    state = calculate_cup_handle_series(bars)[-1].state
+    prior = bars[-1]
+    last_bar = prior
+    for offset in range(1, 231):
+        day = prior.trading_day + timedelta(days=offset)
+        last_bar = replace(
+            prior,
+            trading_day=day,
+            bar_end=datetime.combine(day, datetime.min.time(), tzinfo=UTC),
+            source_identity=f"fixture:ready-witness-corrupt:{offset}",
+        )
+        state = step_cup_handle(state, last_bar).state
+
+    active = state.active_candidate
+    assert active is not None and active.pivot_price is not None
+    if corruption == "pivot":
+        changed = replace(active, pivot_price=active.pivot_price + Decimal("1"))
+    elif corruption == "score":
+        breakdown = dict(active.score_breakdown)
+        breakdown["pretrend"] = 12.0
+        changed = replace(
+            active,
+            score=sum(breakdown.values()),
+            score_breakdown=breakdown,
+        )
+    else:
+        volumes = dict(active.volume_facts)
+        for key in (
+            "right_leg_median",
+            "handle_median",
+            "handle_baseline_median",
+        ):
+            volumes[key] = float(volumes[key]) * 2
+        changed = replace(active, volume_facts=volumes)
+    malformed = replace(state, active_candidate=changed)
+    day = last_bar.trading_day + timedelta(days=1)
+
+    result = step_cup_handle(
+        malformed,
+        replace(
+            last_bar,
+            trading_day=day,
+            bar_end=datetime.combine(day, datetime.min.time(), tzinfo=UTC),
+            source_identity=f"fixture:ready-witness-corrupt:{corruption}",
+        ),
+    )
+
+    assert result.diagnostics == ("NEWOW_CUP_STATE_INVALID",)
+    assert result.state == initial_cup_handle_state()
+
+
 def test_aged_weakened_state_rejects_a_shape_only_breakout_hash() -> None:
     """A 64-hex impostor cannot become a relation after its source Bar ages out."""
 
@@ -1247,6 +1468,31 @@ def test_pivots_alternate_and_confirmed_facts_never_move_with_future_bars() -> N
     )
 
 
+def test_restored_tracker_rejects_an_active_extreme_from_the_previous_leg() -> None:
+    """An UP leg cannot reuse a retained high from before its LOW confirmation."""
+
+    bars = bullish_true_cup_handle()
+    state = calculate_cup_handle_series(bars[:64])[-1].state
+    tracker = state.pivot_tracker
+    assert tracker.leg == "UP_LEG"
+    assert tracker.last_pivot is not None
+    assert tracker.last_pivot.kind == CupPivotKind.LOW
+    by_index = {
+        snapshot.eligible_index: snapshot for snapshot in state.eligible_bars
+    }
+    earlier_leg_extreme = by_index[tracker.last_pivot.pivot_index]
+    assert earlier_leg_extreme.eligible_index < tracker.last_pivot.confirmed_index
+    malformed = replace(
+        state,
+        pivot_tracker=replace(tracker, extreme_high=earlier_leg_extreme),
+    )
+
+    result = step_cup_handle(malformed, bars[64])
+
+    assert result.diagnostics == ("NEWOW_CUP_STATE_INVALID",)
+    assert result.state == initial_cup_handle_state()
+
+
 def test_initial_pivot_tie_break_is_stable_and_high_first() -> None:
     """Equal normalized reversal distances and timestamps must deterministically choose HIGH."""
 
@@ -1263,7 +1509,7 @@ def test_initial_pivot_tie_break_is_stable_and_high_first() -> None:
     state = replace(
         initial_cup_handle_state(),
         atr_state=WilderAtrState(
-            count=14,
+            count=15,
             atr=10.0,
             previous_close=Decimal("100"),
         ),

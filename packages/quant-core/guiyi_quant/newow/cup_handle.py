@@ -6,7 +6,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime
 from decimal import Decimal
 from hashlib import sha256
-from math import isfinite
+from math import isclose, isfinite
 from statistics import median
 from typing import Mapping
 
@@ -58,6 +58,22 @@ class CupMilestoneFact:
 
 
 @dataclass(frozen=True, slots=True)
+class CupReadyWitness:
+    witness_id: str
+    candidate_id: str
+    left_rim: CupPivot
+    bottom: CupPivot
+    right_rim: CupPivot
+    handle_extreme: CupPivot
+    pivot_price: Decimal
+    confirmed_at: datetime
+    score: float
+    score_breakdown: tuple[tuple[str, float], ...]
+    volume_facts: tuple[tuple[str, float], ...]
+    formula_version: str
+
+
+@dataclass(frozen=True, slots=True)
 class CupHandleStateValue:
     atr_state: WilderAtrState
     pivot_tracker: CupPivotTrackerState
@@ -70,6 +86,7 @@ class CupHandleStateValue:
     segment_id: str | None
     eligible_started: bool
     emitted_milestone_facts: tuple[CupMilestoneFact, ...] = ()
+    ready_witness: CupReadyWitness | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,6 +118,89 @@ _VOLUME_FACT_KEYS = (
     "handle_right_ratio",
     "handle_baseline_ratio",
 )
+
+
+def _pivot_witness_part(pivot: CupPivot) -> str:
+    return ",".join(
+        (
+            pivot.kind.value,
+            str(pivot.price),
+            pivot.pivot_at.isoformat(),
+            pivot.confirmed_at.isoformat(),
+            str(pivot.pivot_index),
+            str(pivot.confirmed_index),
+            repr(float(pivot.atr_at_pivot)),
+        )
+    )
+
+
+def _ready_witness_identity(
+    candidate_id: str,
+    left_rim: CupPivot,
+    bottom: CupPivot,
+    right_rim: CupPivot,
+    handle_extreme: CupPivot,
+    pivot_price: Decimal,
+    confirmed_at: datetime,
+    score: float,
+    score_breakdown: tuple[tuple[str, float], ...],
+    volume_facts: tuple[tuple[str, float], ...],
+    formula_version: str,
+) -> str:
+    source = "|".join(
+        (
+            "newow_cup_ready_witness_v1",
+            candidate_id,
+            _pivot_witness_part(left_rim),
+            _pivot_witness_part(bottom),
+            _pivot_witness_part(right_rim),
+            _pivot_witness_part(handle_extreme),
+            str(pivot_price),
+            confirmed_at.isoformat(),
+            repr(float(score)),
+            *(f"score:{key}={value!r}" for key, value in score_breakdown),
+            *(f"volume:{key}={value!r}" for key, value in volume_facts),
+            formula_version,
+        )
+    )
+    return sha256(source.encode()).hexdigest()
+
+
+def _ready_witness(active: NewowCupHandleOverlay) -> CupReadyWitness:
+    assert active.handle_extreme is not None
+    assert active.pivot_price is not None
+    score_breakdown = tuple(
+        (key, float(active.score_breakdown[key])) for key in _SCORE_KEYS
+    )
+    volume_facts = tuple(
+        (key, float(active.volume_facts[key])) for key in _VOLUME_FACT_KEYS
+    )
+    return CupReadyWitness(
+        witness_id=_ready_witness_identity(
+            active.candidate_id,
+            active.left_rim,
+            active.bottom,
+            active.right_rim,
+            active.handle_extreme,
+            active.pivot_price,
+            active.confirmed_at,
+            active.score,
+            score_breakdown,
+            volume_facts,
+            active.formula_version,
+        ),
+        candidate_id=active.candidate_id,
+        left_rim=active.left_rim,
+        bottom=active.bottom,
+        right_rim=active.right_rim,
+        handle_extreme=active.handle_extreme,
+        pivot_price=active.pivot_price,
+        confirmed_at=active.confirmed_at,
+        score=active.score,
+        score_breakdown=score_breakdown,
+        volume_facts=volume_facts,
+        formula_version=active.formula_version,
+    )
 
 
 def _candidate_identity(
@@ -200,6 +300,7 @@ def initial_cup_handle_state() -> CupHandleStateValue:
         segment_id=None,
         eligible_started=False,
         emitted_milestone_facts=(),
+        ready_witness=None,
     )
 
 
@@ -224,10 +325,82 @@ def _finite_fact_values(
     return values
 
 
-def _tracker_is_coherent(state: CupHandleStateValue) -> bool:
+def _ready_witness_is_valid(
+    active: NewowCupHandleOverlay,
+    witness: object,
+) -> bool:
+    if not isinstance(witness, CupReadyWitness):
+        return False
+    if (
+        not isinstance(witness.score_breakdown, tuple)
+        or not all(
+            isinstance(item, tuple) and len(item) == 2
+            for item in witness.score_breakdown
+        )
+        or not isinstance(witness.volume_facts, tuple)
+        or not all(
+            isinstance(item, tuple) and len(item) == 2
+            for item in witness.volume_facts
+        )
+        or tuple(key for key, _ in witness.score_breakdown) != _SCORE_KEYS
+        or tuple(key for key, _ in witness.volume_facts) != _VOLUME_FACT_KEYS
+    ):
+        return False
+    breakdown = _finite_fact_values(dict(witness.score_breakdown), _SCORE_KEYS)
+    volumes = _finite_fact_values(dict(witness.volume_facts), _VOLUME_FACT_KEYS)
+    if breakdown is None or volumes is None:
+        return False
+    if (
+        witness.candidate_id != active.candidate_id
+        or witness.left_rim != active.left_rim
+        or witness.bottom != active.bottom
+        or witness.right_rim != active.right_rim
+        or witness.handle_extreme != active.handle_extreme
+        or witness.pivot_price != active.pivot_price
+        or witness.confirmed_at != active.confirmed_at
+        or witness.score != active.score
+        or dict(witness.score_breakdown) != dict(active.score_breakdown)
+        or dict(witness.volume_facts) != dict(active.volume_facts)
+        or witness.formula_version != active.formula_version
+    ):
+        return False
+    return witness.witness_id == _ready_witness_identity(
+        witness.candidate_id,
+        witness.left_rim,
+        witness.bottom,
+        witness.right_rim,
+        witness.handle_extreme,
+        witness.pivot_price,
+        witness.confirmed_at,
+        witness.score,
+        witness.score_breakdown,
+        witness.volume_facts,
+        witness.formula_version,
+    )
+
+
+def _retained_window(
+    by_index: Mapping[int, CupBarSnapshot], start: int, end: int
+) -> tuple[CupBarSnapshot, ...] | None:
+    snapshots = tuple(by_index[index] for index in range(start, end + 1) if index in by_index)
+    if len(snapshots) != end - start + 1:
+        return None
+    return snapshots
+
+
+def _tracker_is_coherent(
+    state: CupHandleStateValue,
+    profile: NewowTrendProfile,
+    by_index: Mapping[int, CupBarSnapshot],
+) -> bool:
     tracker = state.pivot_tracker
     pivots = state.confirmed_pivots
     bars = state.eligible_bars
+    if (
+        isinstance(tracker.eligible_index, bool)
+        or not isinstance(tracker.eligible_index, int)
+    ):
+        return False
     if state.eligible_started != (tracker.eligible_index >= 0):
         return False
     if bars:
@@ -254,9 +427,116 @@ def _tracker_is_coherent(state: CupHandleStateValue) -> bool:
     if tracker.leg == "SEEK_DIRECTION":
         if (tracker.extreme_high is None) != (tracker.extreme_low is None):
             return False
+        if (
+            tracker.extreme_high is not None
+            and tracker.extreme_high.eligible_index in by_index
+            and tracker.extreme_high
+            != max(bars, key=lambda snapshot: snapshot.bar.high)
+        ):
+            return False
+        if (
+            tracker.extreme_low is not None
+            and tracker.extreme_low.eligible_index in by_index
+            and tracker.extreme_low
+            != min(bars, key=lambda snapshot: snapshot.bar.low)
+        ):
+            return False
     elif tracker.extreme_high is None or tracker.extreme_low is None:
         return False
+
+    previous_pivot: CupPivot | None = None
+    for pivot in pivots:
+        confirmed = by_index.get(pivot.confirmed_index)
+        if confirmed is not None:
+            reversal_distance = (
+                float(pivot.price - confirmed.bar.close)
+                if pivot.kind == CupPivotKind.HIGH
+                else float(confirmed.bar.close - pivot.price)
+            )
+            if reversal_distance < profile.cup_reversal_atr * pivot.atr_at_pivot:
+                return False
+        if previous_pivot is not None:
+            if (
+                pivot.pivot_index < previous_pivot.confirmed_index
+                or pivot.pivot_index - previous_pivot.pivot_index
+                < profile.cup_min_leg_bars
+            ):
+                return False
+        previous_pivot = pivot
+
+    if tracker.last_pivot is not None:
+        directional_extreme = (
+            tracker.extreme_high
+            if tracker.leg == "UP_LEG"
+            else tracker.extreme_low
+        )
+        assert directional_extreme is not None
+        if directional_extreme.eligible_index < tracker.last_pivot.confirmed_index:
+            return False
+        leg_window = _retained_window(
+            by_index,
+            tracker.last_pivot.confirmed_index,
+            tracker.eligible_index,
+        )
+        if leg_window is not None:
+            expected = (
+                max(leg_window, key=lambda snapshot: snapshot.bar.high)
+                if tracker.leg == "UP_LEG"
+                else min(leg_window, key=lambda snapshot: snapshot.bar.low)
+            )
+            if directional_extreme != expected:
+                return False
     return True
+
+
+def _atr_state_is_valid(state: object, period: int) -> bool:
+    if not isinstance(state, WilderAtrState):
+        return False
+    if (
+        isinstance(state.count, bool)
+        or not isinstance(state.count, int)
+        or state.count < 0
+        or isinstance(state.tr_total, bool)
+        or not isinstance(state.tr_total, (int, float))
+        or not isfinite(state.tr_total)
+        or state.tr_total < 0
+        or (
+            state.atr is not None
+            and (
+                isinstance(state.atr, bool)
+                or not isinstance(state.atr, (int, float))
+                or not isfinite(state.atr)
+                or state.atr <= 0
+            )
+        )
+        or (
+            state.previous_close is not None
+            and (
+                not isinstance(state.previous_close, Decimal)
+                or not state.previous_close.is_finite()
+                or state.previous_close <= 0
+            )
+        )
+    ):
+        return False
+    if state.count == 0:
+        return (
+            state.tr_total == 0.0
+            and state.atr is None
+            and state.previous_close is None
+        )
+    if state.previous_close is None:
+        return False
+    if state.count < period:
+        return state.atr is None
+    if state.count == period:
+        return state.atr is not None and isclose(
+            float(state.atr),
+            float(state.tr_total) / period,
+            rel_tol=1e-12,
+            abs_tol=1e-12,
+        )
+    return state.atr is not None and state.tr_total == 0.0
 
 
 def _score_facts_are_valid(
@@ -680,20 +960,8 @@ def _active_candidate_is_coherent(
 
 
 def _state_is_valid(state: CupHandleStateValue, profile: NewowTrendProfile) -> bool:
-    if not isinstance(state.atr_state, WilderAtrState) or not isinstance(
+    if not _atr_state_is_valid(state.atr_state, profile.cup_atr_period) or not isinstance(
         state.pivot_tracker, CupPivotTrackerState
-    ):
-        return False
-    atr = state.atr_state
-    if (
-        atr.count < 0
-        or not isfinite(atr.tr_total)
-        or atr.tr_total < 0
-        or (atr.atr is not None and (not isfinite(atr.atr) or atr.atr <= 0))
-        or (
-            atr.previous_close is not None
-            and (not atr.previous_close.is_finite() or atr.previous_close <= 0)
-        )
     ):
         return False
     if (state.physical_contract is None) != (state.segment_id is None):
@@ -743,6 +1011,8 @@ def _state_is_valid(state: CupHandleStateValue, profile: NewowTrendProfile) -> b
             or not isfinite(snapshot.atr)
             or snapshot.atr <= 0
             or not snapshot.bar.observation_eligible
+            or isinstance(snapshot.eligible_index, bool)
+            or not isinstance(snapshot.eligible_index, int)
             or snapshot.bar.physical_contract != state.physical_contract
             or snapshot.bar.segment_id != state.segment_id
             or (previous_index is not None and snapshot.eligible_index <= previous_index)
@@ -762,7 +1032,7 @@ def _state_is_valid(state: CupHandleStateValue, profile: NewowTrendProfile) -> b
         ):
             return False
         if (
-            pivot.confirmed_index <= pivot.pivot_index
+            pivot.confirmed_index < pivot.pivot_index
             or pivot.confirmed_index > state.pivot_tracker.eligible_index
         ):
             return False
@@ -811,7 +1081,7 @@ def _state_is_valid(state: CupHandleStateValue, profile: NewowTrendProfile) -> b
             )
         ):
             return False
-    if not _tracker_is_coherent(state):
+    if not _tracker_is_coherent(state, profile, by_index):
         return False
     active = state.active_candidate
     if active is not None and (
@@ -833,9 +1103,17 @@ def _state_is_valid(state: CupHandleStateValue, profile: NewowTrendProfile) -> b
         except (ArithmeticError, AttributeError, TypeError, ValueError):
             return False
     if active is None and (
-        state.emitted_milestones or state.emitted_milestone_facts
+        state.emitted_milestones
+        or state.emitted_milestone_facts
+        or state.ready_witness is not None
     ):
         return False
+    if active is not None:
+        if active.state == CupHandleState.FORMING:
+            if state.ready_witness is not None:
+                return False
+        elif not _ready_witness_is_valid(active, state.ready_witness):
+            return False
     return True
 
 
@@ -1582,6 +1860,7 @@ def step_cup_handle(
     pivots = state.confirmed_pivots
     emitted = state.emitted_milestones
     milestone_facts = state.emitted_milestone_facts
+    ready_witness = state.ready_witness
     terminals = state.recent_terminal_candidate_ids
     eligible_started = state.eligible_started
     if not bar.observation_eligible:
@@ -1597,6 +1876,7 @@ def step_cup_handle(
             bar.segment_id,
             eligible_started,
             milestone_facts,
+            ready_witness,
         )
         return CupHandleStepResult(next_state, active, (), tuple(diagnostics), 0)
 
@@ -1616,6 +1896,7 @@ def step_cup_handle(
             bar.segment_id,
             eligible_started,
             milestone_facts,
+            ready_witness,
         )
         return CupHandleStepResult(
             next_state, active, (), tuple(diagnostics + ["CUP_ATR_UNAVAILABLE"]), 0
@@ -1656,6 +1937,7 @@ def step_cup_handle(
                         breakout_candidate_ids.add(ready.candidate_id)
             active = _primary_candidate(evaluated, breakout_candidate_ids)
             if active is not None and active.state == CupHandleState.READY:
+                ready_witness = _ready_witness(active)
                 ready_marker = _marker(
                     active,
                     NewowMarkerType.CUP_HANDLE_READY,
@@ -1668,6 +1950,8 @@ def step_cup_handle(
                 milestone_facts = (
                     _milestone_fact(ready_marker, snapshot, active.candidate_id),
                 )
+            else:
+                ready_witness = None
         result_overlay = active
 
     if active is not None and active.state in {
@@ -1703,6 +1987,7 @@ def step_cup_handle(
             active = None
             emitted = ()
             milestone_facts = ()
+            ready_witness = None
         elif active.state == CupHandleState.BREAKOUT and normalized_close < normalized_pivot:
             active = replace(
                 active,
@@ -1781,6 +2066,7 @@ def step_cup_handle(
                     active = None
                     emitted = ()
                     milestone_facts = ()
+                    ready_witness = None
         elif active.state == CupHandleState.BREAKOUT:
             breakout_snapshot = next(
                 (
@@ -1802,6 +2088,7 @@ def step_cup_handle(
                 result_overlay = None
                 emitted = ()
                 milestone_facts = ()
+                ready_witness = None
 
     next_state = CupHandleStateValue(
         atr_state,
@@ -1815,6 +2102,7 @@ def step_cup_handle(
         bar.segment_id,
         eligible_started,
         milestone_facts,
+        ready_witness,
     )
     return CupHandleStepResult(
         next_state, result_overlay, tuple(markers), _unique(diagnostics), checks

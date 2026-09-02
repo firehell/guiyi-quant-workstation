@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import asdict, replace
+from dataclasses import asdict, fields, replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
@@ -11,6 +11,7 @@ from guiyi_quant.newow.cup_handle import (
     CupHandleStateValue,
     CupMilestoneFact,
     CupPivotTrackerState,
+    CupReadyWitness,
     WilderAtrState,
     calculate_cup_handle_series,
     initial_cup_handle_state,
@@ -144,14 +145,6 @@ def _assert_real_kernel_parity(bars: tuple[NewowDailyBar, ...]):
         assert step.state.eligibility_started == (
             cup_state.eligible_started or bar.observation_eligible
         )
-        assert step.state.source_bars[-1] is bar
-        assert (
-            step.state.source_atr_before.count + len(step.state.source_bars)
-            == step.state.cup_handle_state.atr_state.count
-        )
-        if rollover:
-            assert step.state.source_bars == (bar,)
-            assert step.state.source_atr_before == WilderAtrState()
         assert step.state.escape_state.previous_rsv9 == escape.rsv9
         assert step.state.escape_state.previous_var4 == escape.var4
         if escape.ma120 is not None:
@@ -224,6 +217,22 @@ def _restore_snapshot(data: dict[str, object] | None) -> CupBarSnapshot | None:
     )
 
 
+def _restore_ready_witness(data: dict[str, object] | None) -> CupReadyWitness | None:
+    if data is None:
+        return None
+    return CupReadyWitness(
+        **{
+            **data,
+            "left_rim": _restore_pivot(data["left_rim"]),
+            "bottom": _restore_pivot(data["bottom"]),
+            "right_rim": _restore_pivot(data["right_rim"]),
+            "handle_extreme": _restore_pivot(data["handle_extreme"]),
+            "score_breakdown": tuple(tuple(item) for item in data["score_breakdown"]),
+            "volume_facts": tuple(tuple(item) for item in data["volume_facts"]),
+        }
+    )  # type: ignore[arg-type]
+
+
 def _restore_cup_state(data: dict[str, object]) -> CupHandleStateValue:
     tracker = data["pivot_tracker"]
     active = data["active_candidate"]
@@ -265,6 +274,7 @@ def _restore_cup_state(data: dict[str, object]) -> CupHandleStateValue:
         emitted_milestone_facts=tuple(
             CupMilestoneFact(**item) for item in data["emitted_milestone_facts"]  # type: ignore[arg-type]
         ),
+        ready_witness=_restore_ready_witness(data["ready_witness"]),  # type: ignore[arg-type]
     )
 
 
@@ -278,12 +288,21 @@ def _restore_engine_state_from_dict(data: dict[str, object]) -> NewowTrendD1Engi
         last_bar_end=data["last_bar_end"],  # type: ignore[arg-type]
         last_trading_day=data["last_trading_day"],  # type: ignore[arg-type]
         eligibility_started=data["eligibility_started"],  # type: ignore[arg-type]
-        source_bars=tuple(
-            _restore_bar(item) for item in data["source_bars"]  # type: ignore[arg-type]
-        ),
-        source_atr_before=WilderAtrState(
-            **data["source_atr_before"]  # type: ignore[arg-type]
-        ),
+    )
+
+
+def test_engine_state_contract_has_exactly_the_approved_eight_fields() -> None:
+    """Adding provenance or replay state would make Engine more than an orchestrator."""
+
+    assert tuple(field.name for field in fields(NewowTrendD1EngineState)) == (
+        "trend_band_state",
+        "escape_state",
+        "cup_handle_state",
+        "physical_contract",
+        "segment_id",
+        "last_bar_end",
+        "last_trading_day",
+        "eligibility_started",
     )
 
 
@@ -440,44 +459,24 @@ def test_invalid_restored_substate_fails_closed_to_initial_state() -> None:
         assert result.state == NewowTrendD1Engine.initial().state
 
 
-def test_restore_rejects_valid_trend_state_from_an_older_cut() -> None:
-    """A valid five-bar trend window must not be combined with 20-bar peer states."""
-
-    bars = bullish_true_cup_handle()
-    current = _run_incremental(bars[:20])[-1].state
-    older_trend = _run_incremental(bars[:5])[-1].state.trend_band_state
-    restored = NewowTrendD1Engine(
-        state=replace(current, trend_band_state=older_trend)
-    )
-
-    result = restored.step(bars[20])
-
-    assert result.frame.trend_band.state is TrendBandState.UNAVAILABLE
-    assert result.frame.markers == ()
-    assert result.frame.diagnostics == ("NEWOW_ENGINE_STATE_INVALID",)
-    assert result.state == NewowTrendD1Engine.initial().state
-
-
-def test_restore_rejects_saturated_trend_state_from_an_older_cut() -> None:
-    """A 25-bar saturated trend window cannot stand in for the 30-bar processing cut."""
+def test_restore_accepts_independently_valid_same_identity_substates() -> None:
+    """Engine must not invent hidden-prefix provenance beyond its eight-field contract."""
 
     bars = bullish_true_cup_handle()
     current = _run_incremental(bars[:30])[-1].state
     older_trend = _run_incremental(bars[:25])[-1].state.trend_band_state
-    restored = NewowTrendD1Engine(
+
+    result = NewowTrendD1Engine(
         state=replace(current, trend_band_state=older_trend)
-    )
+    ).step(bars[30])
 
-    result = restored.step(bars[30])
-
-    assert result.frame.trend_band.state is TrendBandState.UNAVAILABLE
-    assert result.frame.markers == ()
-    assert result.frame.diagnostics == ("NEWOW_ENGINE_STATE_INVALID",)
-    assert result.state == NewowTrendD1Engine.initial().state
+    assert "NEWOW_ENGINE_STATE_INVALID" not in result.frame.diagnostics
+    assert result.state.physical_contract == current.physical_contract
+    assert result.state.last_bar_end == bars[30].bar_end
 
 
-def test_restore_rejects_stale_engine_watermark_before_duplicate_replay() -> None:
-    """A forged old watermark must not permit replay of a bar already in all substates."""
+def test_restore_rejects_stale_engine_watermark_visible_in_retained_cup_state() -> None:
+    """A retained Cup Bar makes a forged old Engine watermark directly observable."""
 
     bars = bullish_true_cup_handle()
     current = _run_incremental(bars[:20])[-1].state
@@ -489,101 +488,7 @@ def test_restore_rejects_stale_engine_watermark_before_duplicate_replay() -> Non
         )
     )
 
-    result = restored.step(bars[19])
-
-    assert result.frame.trend_band.state is TrendBandState.UNAVAILABLE
-    assert result.frame.markers == ()
-    assert result.frame.diagnostics == ("NEWOW_ENGINE_STATE_INVALID",)
-    assert result.state == NewowTrendD1Engine.initial().state
-
-
-def test_restore_rejects_foreign_escape_facts_that_disagree_with_cup_history() -> None:
-    """Individually valid peers from different bar sequences cannot share one Engine state."""
-
-    primary = tuple(_ohlc_bar(index, 100.0, 100.0, 80.0) for index in range(129))
-    foreign = tuple(_ohlc_bar(index, 90.0, 100.0, 1.0) for index in range(129))
-    state = _run_incremental(primary)[-1].state
-    foreign_escape = _run_incremental(foreign)[-1].state.escape_state
-    restored = NewowTrendD1Engine(
-        state=replace(state, escape_state=foreign_escape)
-    )
-
-    result = restored.step(_ohlc_bar(129, 100.0, 100.0, 80.0))
-
-    assert result.frame.trend_band.state is TrendBandState.UNAVAILABLE
-    assert result.frame.markers == ()
-    assert result.frame.diagnostics == ("NEWOW_ENGINE_STATE_INVALID",)
-    assert result.state == NewowTrendD1Engine.initial().state
-
-
-@pytest.mark.parametrize("eligible", (False, True))
-def test_restore_rejects_foreign_escape_during_snapshot_free_warmup(eligible: bool) -> None:
-    """No Cup snapshot must not make cross-kernel OHLC coherence optional."""
-
-    primary = tuple(_bar(index, 100, eligible=eligible) for index in range(5))
-    foreign = tuple(_bar(index, 117, eligible=eligible) for index in range(5))
-    state = _run_incremental(primary)[-1].state
-    foreign_escape = _run_incremental(foreign)[-1].state.escape_state
-    restored = NewowTrendD1Engine(
-        state=replace(state, escape_state=foreign_escape)
-    )
-
-    result = restored.step(_bar(5, 101, eligible=eligible))
-
-    assert result.frame.trend_band.state is TrendBandState.UNAVAILABLE
-    assert result.frame.markers == ()
-    assert result.frame.diagnostics == ("NEWOW_ENGINE_STATE_INVALID",)
-    assert result.state == NewowTrendD1Engine.initial().state
-
-
-def test_restore_rejects_source_eligibility_hidden_by_false_state() -> None:
-    """A retained True observation cannot be erased by swapping snapshot-free state."""
-
-    bars = tuple(
-        _bar(index, 100 + index, eligible=index >= 2) for index in range(5)
-    )
-    eligible_state = _run_incremental(bars)[-1].state
-    pre_eligibility_state = _run_incremental(
-        tuple(replace(bar, observation_eligible=False) for bar in bars)
-    )[-1].state
-    assert eligible_state.cup_handle_state.eligible_bars == ()
-    assert any(bar.observation_eligible for bar in eligible_state.source_bars)
-    assert pre_eligibility_state.eligibility_started is False
-    assert pre_eligibility_state.cup_handle_state.eligible_started is False
-    mixed_state = replace(
-        eligible_state,
-        cup_handle_state=pre_eligibility_state.cup_handle_state,
-        eligibility_started=False,
-    )
-
-    result = NewowTrendD1Engine(state=mixed_state).step(
-        _bar(5, 105, eligible=False)
-    )
-
-    assert result.frame.trend_band.state is TrendBandState.UNAVAILABLE
-    assert result.frame.markers == ()
-    assert result.frame.diagnostics == ("NEWOW_ENGINE_STATE_INVALID",)
-    assert result.state == NewowTrendD1Engine.initial().state
-
-
-def test_restore_rejects_nonmonotonic_source_eligibility_sequence() -> None:
-    """A True-to-False transition inside the retained basis is corrupted history."""
-
-    state = _run_incremental(
-        tuple(_bar(index, 100 + index, eligible=True) for index in range(5))
-    )[-1].state
-    flags = (False, True, False, True, True)
-    corrupted_state = replace(
-        state,
-        source_bars=tuple(
-            replace(bar, observation_eligible=eligible)
-            for bar, eligible in zip(state.source_bars, flags, strict=True)
-        ),
-    )
-
-    result = NewowTrendD1Engine(state=corrupted_state).step(
-        _bar(5, 105, eligible=True)
-    )
+    result = restored.step(bars[20])
 
     assert result.frame.trend_band.state is TrendBandState.UNAVAILABLE
     assert result.frame.markers == ()
@@ -593,7 +498,7 @@ def test_restore_rejects_nonmonotonic_source_eligibility_sequence() -> None:
 
 @pytest.mark.parametrize("eligible", (False, True))
 def test_snapshot_free_typed_and_plain_dict_restore_resume_exactly(eligible: bool) -> None:
-    """The factual basis survives both pre-eligibility and early-eligible restores."""
+    """Eight-field state resumes both pre-eligibility and early-eligible cuts."""
 
     bars = tuple(_bar(index, 100 + index, eligible=eligible) for index in range(8))
     full_steps = _run_incremental(bars)
@@ -602,9 +507,6 @@ def test_snapshot_free_typed_and_plain_dict_restore_resume_exactly(eligible: boo
         state = full_steps[cut - 1].state
         assert state.cup_handle_state.eligible_bars == ()
         assert state.cup_handle_state.atr_state.atr is None
-        assert tuple(
-            bar.observation_eligible for bar in state.source_bars
-        ) == (eligible,) * cut
         assert state.eligibility_started is eligible
         assert state.cup_handle_state.eligible_started is eligible
         dataclass_state = NewowTrendD1EngineState(
@@ -616,8 +518,6 @@ def test_snapshot_free_typed_and_plain_dict_restore_resume_exactly(eligible: boo
             last_bar_end=state.last_bar_end,
             last_trading_day=state.last_trading_day,
             eligibility_started=state.eligibility_started,
-            source_bars=state.source_bars,
-            source_atr_before=state.source_atr_before,
         )
         plain_dict_state = _restore_engine_state_from_dict(asdict(state))
 
@@ -643,8 +543,6 @@ def test_dataclass_and_plain_dict_reconstruction_resume_same_shared_state() -> N
             last_bar_end=state.last_bar_end,
             last_trading_day=state.last_trading_day,
             eligibility_started=state.eligibility_started,
-            source_bars=state.source_bars,
-            source_atr_before=state.source_atr_before,
         )
         plain_dict_state = _restore_engine_state_from_dict(asdict(state))
 
@@ -675,8 +573,6 @@ def test_batch_incremental_prefix_restore_and_future_tail_are_invariant() -> Non
                 last_bar_end=state.last_bar_end,
                 last_trading_day=state.last_trading_day,
                 eligibility_started=state.eligibility_started,
-                source_bars=state.source_bars,
-                source_atr_before=state.source_atr_before,
             )
         )
         resumed = tuple(restored.step(bar).frame for bar in bars[cut:])
@@ -742,8 +638,6 @@ def test_every_prefix_and_genuine_dataclass_plain_dict_restore_matches_full_run(
                 last_bar_end=state.last_bar_end,
                 last_trading_day=state.last_trading_day,
                 eligibility_started=state.eligibility_started,
-                source_bars=state.source_bars,
-                source_atr_before=state.source_atr_before,
             )
             plain_dict_state = _restore_engine_state_from_dict(asdict(state))
             for restored_state in (dataclass_state, plain_dict_state):

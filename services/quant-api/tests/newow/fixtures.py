@@ -17,6 +17,7 @@ from guiyi_quant.newow.models import CupPivot, CupPivotKind, NewowDailyBar
 
 _START = date(2026, 1, 5)
 _ONE = Decimal("1")
+_PIVOT_REVERSAL = Decimal("1.25")
 
 
 def _linear(start: str, end: str, count: int) -> list[Decimal]:
@@ -455,6 +456,50 @@ def restored_cup_case(
             str(min(right_price - _ONE, handle_price + Decimal("5"))),
             handle_confirmed_index - handle_index + 1,
         )
+    pivot_specs = (
+        (
+            CupPivotKind.HIGH,
+            left_price,
+            left_index,
+            min(left_index + 3, bottom_index),
+        ),
+        (
+            CupPivotKind.LOW,
+            bottom_price,
+            bottom_index,
+            min(bottom_index + 3, right_index),
+        ),
+        (
+            CupPivotKind.HIGH,
+            right_price,
+            right_index,
+            min(right_index + 3, handle_index),
+        ),
+        (
+            CupPivotKind.LOW,
+            handle_price,
+            handle_index,
+            handle_confirmed_index,
+        ),
+    )
+    for kind, price, _, confirmed in pivot_specs:
+        if kind == CupPivotKind.HIGH and closes[confirmed] >= price:
+            closes[confirmed] = price - Decimal("0.1")
+        elif kind == CupPivotKind.LOW and closes[confirmed] <= price:
+            closes[confirmed] = price + Decimal("0.1")
+
+    pivot_atrs: dict[int, float] = {}
+    for kind, price, at, confirmed in pivot_specs:
+        reversal_distance = (
+            price - closes[confirmed]
+            if kind == CupPivotKind.HIGH
+            else closes[confirmed] - price
+        )
+        pivot_atrs[at] = min(
+            atr,
+            float(reversal_distance / _PIVOT_REVERSAL) * 0.99,
+        )
+
     volumes = [baseline_volume] * len(closes)
     for index in range(bottom_index + 1, right_index + 1):
         volumes[index] = right_volume
@@ -462,7 +507,11 @@ def restored_cup_case(
         volumes[index] = handle_volume
     bars = list(_bars(closes, volumes=volumes))
     snapshots = tuple(
-        CupBarSnapshot(bar=bar, eligible_index=index, atr=atr)
+        CupBarSnapshot(
+            bar=bar,
+            eligible_index=index,
+            atr=pivot_atrs.get(index, atr),
+        )
         for index, bar in enumerate(bars)
     )
 
@@ -474,15 +523,10 @@ def restored_cup_case(
             confirmed_at=bars[confirmed].bar_end,
             pivot_index=at,
             confirmed_index=confirmed,
-            atr_at_pivot=atr,
+            atr_at_pivot=snapshots[at].atr,
         )
 
-    pivots = (
-        pivot(CupPivotKind.HIGH, left_price, left_index, min(left_index + 3, bottom_index)),
-        pivot(CupPivotKind.LOW, bottom_price, bottom_index, min(bottom_index + 3, right_index)),
-        pivot(CupPivotKind.HIGH, right_price, right_index, min(right_index + 3, handle_index)),
-        pivot(CupPivotKind.LOW, handle_price, handle_index, handle_confirmed_index),
-    )
+    pivots = tuple(pivot(*spec) for spec in pivot_specs)
     state = CupHandleStateValue(
         atr_state=WilderAtrState(
             count=len(bars), atr=atr, previous_close=bars[-1].close

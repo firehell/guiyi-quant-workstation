@@ -62,12 +62,21 @@ class NewowTrendProfile:
     cup_recent_terminal_ids_limit: int
 
     def __post_init__(self) -> None:
+        integer_values = tuple(
+            getattr(self, field.name) for field in fields(self) if field.type is int
+        )
         values = tuple(
             value
             for field in fields(self)
             if isinstance(value := getattr(self, field.name), (float, int))
         )
-        if not all(isfinite(value) for value in values):
+        if (
+            any(
+                isinstance(value, bool) or not isinstance(value, int)
+                for value in integer_values
+            )
+            or not all(isfinite(value) for value in values)
+        ):
             raise ValueError("NEWOW_PROFILE_INVALID")
         positive_integers = (
             self.cup_atr_period,

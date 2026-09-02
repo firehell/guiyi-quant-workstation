@@ -1,4 +1,4 @@
-from dataclasses import FrozenInstanceError, replace
+from dataclasses import FrozenInstanceError, fields, replace
 from datetime import UTC, date, datetime
 from decimal import Decimal
 
@@ -18,6 +18,44 @@ from guiyi_quant.newow.models import (
     TrendBandState,
 )
 from guiyi_quant.newow.profile import NEWOW_TREND_D1_V1
+
+
+_INTEGER_PROFILE_FIELDS = (
+    "trend_weight_period",
+    "trend_signal_period",
+    "var4_lookback",
+    "var4_smoothing_n",
+    "var4_smoothing_m",
+    "ma120_period",
+    "ma120_slope_window",
+    "cup_min_leg_bars",
+    "cup_history_limit",
+    "cup_max_confirmed_pivots",
+    "cup_max_candidate_checks_per_step",
+    "cup_atr_period",
+    "cup_pretrend_min_bars",
+    "cup_pretrend_max_bars",
+    "cup_min_bars",
+    "cup_max_bars",
+    "cup_bottom_span_ready_min",
+    "cup_midline_crossings_soft_max",
+    "cup_midline_crossings_hard_max",
+    "cup_handle_min_bars",
+    "cup_handle_max_bars",
+    "cup_forming_min_body_score",
+    "cup_ready_min_score",
+    "cup_breakout_min_score",
+    "cup_ready_expiry_bars",
+    "cup_post_breakout_archive_bars",
+    "cup_recent_terminal_ids_limit",
+)
+
+_BOOL_RELATION_COMPANIONS: dict[str, dict[str, int]] = {
+    "cup_pretrend_max_bars": {"cup_pretrend_min_bars": 1},
+    "cup_max_bars": {"cup_min_bars": 1},
+    "cup_midline_crossings_hard_max": {"cup_midline_crossings_soft_max": 1},
+    "cup_handle_max_bars": {"cup_handle_min_bars": 1},
+}
 
 
 def valid_bar_kwargs() -> dict[str, object]:
@@ -226,6 +264,41 @@ def test_cup_profile_rejects_invalid_window_ratio_and_score_combinations(
 
     with pytest.raises(ValueError, match="NEWOW_PROFILE_INVALID"):
         replace(NEWOW_TREND_D1_V1, **changes)
+
+
+def test_integer_profile_field_matrix_covers_every_declared_int() -> None:
+    """A new integer control cannot silently escape strict construction checks."""
+
+    assert tuple(
+        field.name
+        for field in fields(type(NEWOW_TREND_D1_V1))
+        if field.type is int
+    ) == _INTEGER_PROFILE_FIELDS
+
+
+@pytest.mark.parametrize("field_name", _INTEGER_PROFILE_FIELDS)
+def test_every_integer_profile_field_rejects_bool(field_name: str) -> None:
+    """Python bool is numerically int-like but is never a valid window or cap."""
+
+    changes: dict[str, object] = dict(
+        _BOOL_RELATION_COMPANIONS.get(field_name, {})
+    )
+    changes[field_name] = True
+
+    with pytest.raises(ValueError, match="NEWOW_PROFILE_INVALID"):
+        replace(NEWOW_TREND_D1_V1, **changes)
+
+
+@pytest.mark.parametrize("field_name", _INTEGER_PROFILE_FIELDS)
+def test_every_integer_profile_field_rejects_fractional_value(
+    field_name: str,
+) -> None:
+    """A numerically plausible fraction must not enter an integer state dimension."""
+
+    fractional = float(getattr(NEWOW_TREND_D1_V1, field_name)) + 0.5
+
+    with pytest.raises(ValueError, match="NEWOW_PROFILE_INVALID"):
+        replace(NEWOW_TREND_D1_V1, **{field_name: fractional})
 
 
 def test_cup_overlay_rejects_hard_failures_and_incomplete_ready_state() -> None:
