@@ -52,3 +52,11 @@ class CurrentAlertEventsResponse(BaseModel):
     status: Literal["ready", "unavailable"]
     trading_day: date | None
     items: list[HtdyAlertEventOut]
+
+
+class CurrentHtdyEventsResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["ready", "unavailable"]
+    trading_day: date | None
+    items: list[HtdyAlertEventOut]

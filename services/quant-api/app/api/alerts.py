@@ -31,6 +31,7 @@ from app.schemas.alerts import (
     AlertEventListResponse,
     AlertScopeUpdate,
     CurrentAlertEventsResponse,
+    CurrentHtdyEventsResponse,
     HtdyAlertEventOut,
     ProductAlertRuleStateOut,
     ProductAlertStateResponse,
@@ -109,6 +110,28 @@ def alert_events(
     except AlertScopeError as exc:
         raise _scope_http_error(exc) from exc
     return AlertEventListResponse(items=[_event_out(event) for event in events])
+
+
+@router.get("/current-events", response_model=CurrentHtdyEventsResponse)
+def current_alert_events(
+    limit: int = Query(default=30, ge=1, le=100),
+    current_day: CurrentTradingDayResult = Depends(get_current_alert_trading_day),
+    session: Session = Depends(get_db),
+) -> CurrentHtdyEventsResponse:
+    if current_day.status is CurrentTradingDayStatus.UNAVAILABLE:
+        return CurrentHtdyEventsResponse(
+            status="unavailable", trading_day=None, items=[]
+        )
+    assert current_day.trading_day is not None
+    events = _service(session).list_current_events(
+        trading_day=current_day.trading_day,
+        limit=limit,
+    )
+    return CurrentHtdyEventsResponse(
+        status="ready",
+        trading_day=current_day.trading_day,
+        items=[_event_out(event) for event in events],
+    )
 
 
 @router.get(
