@@ -139,9 +139,13 @@ RETIRED_MODULE_ATTRIBUTES = {
         "build_subing_strategy_service",
     ),
 }
-ALERT_RULE_CODES = frozenset({"htdy_original_15m"})
+ALERT_RULE_CODES = frozenset({"htdy_original_15m", "subing_ths_alert_15m_v1"})
 BACKEND_ALERT_RULE_LITERAL_EXPECTED = {
     "htdy_original_15m": {
+        "services/quant-api/app/alerts/registry.py": 2,
+        "services/quant-api/app/schemas/alerts.py": 1,
+    },
+    "subing_ths_alert_15m_v1": {
         "services/quant-api/app/alerts/registry.py": 2,
         "services/quant-api/app/schemas/alerts.py": 1,
     },
