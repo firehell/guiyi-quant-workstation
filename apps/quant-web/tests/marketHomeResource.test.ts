@@ -39,3 +39,25 @@ test('retains the previous resource snapshot and marks only that resource stale 
   assert.equal(home.events.stale.value, false)
   home.dispose()
 })
+
+test('does not replace the accepted Event snapshot with a typed unavailable projection', async () => {
+  let unavailable = false
+  const ready = { status: 'ready' as const, trading_day: '2026-09-02', items: [{ id: 7 }] }
+  const home = useMarketHome({
+    fetchOverview: async () => 'overview',
+    fetchRuntime: async () => 'runtime',
+    fetchEvents: async () => unavailable
+      ? { status: 'unavailable' as const, trading_day: null, items: [] }
+      : ready,
+    isEventUnavailable: (value) => value.status === 'unavailable',
+  })
+
+  await home.events.refresh()
+  unavailable = true
+  await home.events.refresh()
+
+  assert.deepEqual(home.events.data.value, ready)
+  assert.equal(home.events.unavailable.value, true)
+  assert.equal(home.events.stale.value, true)
+  home.dispose()
+})

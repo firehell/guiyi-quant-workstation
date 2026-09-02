@@ -1,6 +1,6 @@
 import type { MarketHomeRow } from './marketHomeViewModel.ts'
 
-export type MarketHomeLocalFilter = 'all' | 'up' | 'down' | 'aligned'
+export type MarketHomeLocalFilter = 'all' | 'up' | 'down' | 'flat' | 'aligned' | 'daily-up' | 'daily-down' | 'daily-neutral' | 'daily-unavailable' | 'with-event'
 export type MarketHomeSort = 'default' | 'change' | 'volume' | 'oi' | 'event'
 export type MarketHomeTrendFilter = 'all' | 'up' | 'down' | 'neutral' | 'unavailable'
 export type MarketHomeAlignmentFilter = 'all' | 'aligned-up' | 'aligned-down' | 'neutral' | 'mixed' | 'unavailable'
@@ -29,7 +29,13 @@ function matchesSummaryFilter(row: MarketHomeRow, filter: MarketHomeLocalFilter)
   if (filter === 'all') return true
   if (filter === 'up') return (row.price_change_1d ?? 0) > 0
   if (filter === 'down') return (row.price_change_1d ?? 0) < 0
-  return row.alignment === 'aligned-up' || row.alignment === 'aligned-down'
+  if (filter === 'flat') return row.price_change_1d === 0
+  if (filter === 'aligned') return row.alignment === 'aligned-up' || row.alignment === 'aligned-down'
+  if (filter === 'daily-up') return row.dailyState === 'up'
+  if (filter === 'daily-down') return row.dailyState === 'down'
+  if (filter === 'daily-neutral') return row.dailyState === 'neutral'
+  if (filter === 'daily-unavailable') return row.dailyState === 'unavailable'
+  return Boolean(row.event)
 }
 
 function matchesTrend(value: string, filter: MarketHomeTrendFilter): boolean { return filter === 'all' || value === filter }
@@ -45,8 +51,20 @@ function compareRows(left: MarketHomeRow, right: MarketHomeRow, sort: MarketHome
   if (sort === 'change') return nullableNumber(right.price_change_1d) - nullableNumber(left.price_change_1d) || left.symbol.localeCompare(right.symbol)
   if (sort === 'volume') return nullableNumber(right.volume_ratio20) - nullableNumber(left.volume_ratio20) || left.symbol.localeCompare(right.symbol)
   if (sort === 'oi') return nullableNumber(right.oi_change_1d) - nullableNumber(left.oi_change_1d) || left.symbol.localeCompare(right.symbol)
-  if (sort === 'event') return Number(Boolean(right.event)) - Number(Boolean(left.event)) || left.symbol.localeCompare(right.symbol)
+  if (sort === 'event') {
+    const presence = Number(Boolean(right.event)) - Number(Boolean(left.event))
+    if (presence) return presence
+    if (!left.event || !right.event) return left.symbol.localeCompare(right.symbol)
+    return latestEventFirst(left, right) || left.symbol.localeCompare(right.symbol)
+  }
   return 0
 }
 
 function nullableNumber(value: number | null): number { return value ?? Number.NEGATIVE_INFINITY }
+
+function latestEventFirst(left: MarketHomeRow, right: MarketHomeRow): number {
+  const detected = Date.parse(right.event!.detected_at) - Date.parse(left.event!.detected_at)
+  if (detected) return detected
+  const barEnd = Date.parse(right.event!.bar_end) - Date.parse(left.event!.bar_end)
+  return barEnd || right.event!.id - left.event!.id
+}

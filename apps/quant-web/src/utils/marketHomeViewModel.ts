@@ -16,6 +16,7 @@ export interface MarketHomeViewModelInput {
   runtimeStale: boolean
   events: CurrentHtdyEventsResponse | null
   eventsStale: boolean
+  eventsUnavailable?: boolean
 }
 
 export interface MarketHomeRow extends MarketHomeOverviewItem {
@@ -29,14 +30,14 @@ export function buildMarketHomeViewModel(input: MarketHomeViewModelInput) {
   const overviewAvailability: Exclude<MarketHomeAvailability, 'empty'> = input.overview
     ? input.overview.status
     : 'unavailable'
-  const eventAvailability: MarketHomeAvailability = input.eventsStale
+  const eventAvailability: MarketHomeAvailability = input.eventsUnavailable || input.eventsStale
     ? 'unavailable'
     : !input.events
     ? 'unavailable'
     : input.events.status === 'unavailable'
       ? 'unavailable'
       : input.events.items.length ? 'ready' : 'empty'
-  const latestEvents = latestEventsBySymbol(input.events?.items ?? [])
+  const latestEvents = eventAvailability === 'unavailable' ? new Map<string, AlertEvent>() : latestEventsBySymbol(input.events?.items ?? [])
   const staleOverviewFacts = Boolean(input.overviewStale || input.overview?.freshness !== 'fresh')
   const rows = (input.overview?.items ?? []).map((item) => ({
     ...item,

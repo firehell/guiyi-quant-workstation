@@ -15,4 +15,17 @@ test('filters and sorts Market Home rows locally without changing resource input
   assert.deepEqual(filterAndSortMarketHomeRows(rows, { query: '', sector: '', filter: 'all', sort: 'event' }).map((row) => row.symbol), ['jm', 'ag'])
   assert.deepEqual(filterAndSortMarketHomeRows(rows, { query: '', sector: '', filter: 'all', sort: 'change' }).map((row) => row.symbol), ['ag', 'jm'])
   assert.deepEqual(filterAndSortMarketHomeRows(rows, { query: '', sector: '', filter: 'all', sort: 'default', daily: 'down', event: 'with-event' }).map((row) => row.symbol), ['jm'])
+  assert.deepEqual(filterAndSortMarketHomeRows(rows, { query: '', sector: '', filter: 'flat', sort: 'default' }).map((row) => row.symbol), [])
+  assert.deepEqual(filterAndSortMarketHomeRows(rows, { query: '', sector: '', filter: 'daily-up', sort: 'default' }).map((row) => row.symbol), ['ag'])
+  assert.deepEqual(filterAndSortMarketHomeRows(rows, { query: '', sector: '', filter: 'with-event', sort: 'default' }).map((row) => row.symbol), ['jm'])
+})
+
+test('orders Event rows by the latest immutable detection time before symbol', () => {
+  const eventRows = [
+    { ...rows[0]!, symbol: 'ag', event: { id: 1, detected_at: '2026-09-02T01:00:00Z', bar_end: '2026-09-02T00:59:00Z' } },
+    { ...rows[1]!, symbol: 'jm', event: { id: 2, detected_at: '2026-09-02T02:00:00Z', bar_end: '2026-09-02T01:59:00Z' } },
+    { ...rows[0]!, symbol: 'au', event: null },
+  ] as unknown as MarketHomeRow[]
+
+  assert.deepEqual(filterAndSortMarketHomeRows(eventRows, { query: '', sector: '', filter: 'all', sort: 'event' }).map((row) => row.symbol), ['jm', 'ag', 'au'])
 })

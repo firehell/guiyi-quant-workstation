@@ -69,6 +69,18 @@ test('joins the latest immutable Event by exact symbol without inferring Event s
   }))
 })
 
+test('withholds cached Event facts from rows while the current Event projection is unavailable', () => {
+  const cached = event(9, 'ag', '2026-09-02T02:00:00Z')
+  const value = buildMarketHomeViewModel({
+    overview: overview([item('ag', 'up', 'up')]), overviewStale: false,
+    runtime, runtimeStale: false,
+    events: { status: 'ready', trading_day: '2026-09-02', items: [cached] }, eventsStale: true,
+  })
+
+  assert.equal(value.events.availability, 'unavailable')
+  assert.equal(value.rows[0]!.event, null)
+})
+
 function event(id: number, symbol: string, detectedAt: string) {
   return { id, rule_code: 'htdy_original_15m' as const, symbol, contract: `${symbol.toUpperCase()}2601`, trading_day: '2026-09-02', frequency: '15m' as const, bar_end: detectedAt, result_codes: ['buy'] as Array<'buy'>, detected_at: detectedAt, notification_attempted_at: null }
 }

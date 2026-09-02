@@ -12,7 +12,7 @@ function overview() {
 function item(symbol, product_name, sector, daily_trend, weekly_trend) {
   return { symbol, product_name, sector, exchange: 'DCE', actual_contract: `${symbol.toUpperCase()}2601`, dominant_mapping_date: '2026-09-02', data_as_of: '2026-09-02', close: '100', price_change_1d: daily_trend === 'up' ? '0.01' : '-0.01', price_change_5d: null, volume_ratio20: '1.2', oi_change_1d: null, atr14_percentile252: null, daily_trend, weekly_trend, reason_codes: [] }
 }
-function runtime() { return { status: 'degraded', generated_at: '2026-09-02T01:00:00Z', readonly: true, would_start_services: false, would_enqueue_jobs: false, would_send_notifications: false, components: {} } }
+function runtime(status = 'degraded') { return { status, generated_at: '2026-09-02T01:00:00Z', readonly: true, would_start_services: false, would_enqueue_jobs: false, would_send_notifications: false, components: {} } }
 function events() { return { status: 'ready', trading_day: '2026-09-02', items: [{ id: 1, rule_code: 'htdy_original_15m', symbol: 'ag', contract: 'AG2601', trading_day: '2026-09-02', frequency: '15m', bar_end: '2026-09-02T02:45:00Z', result_codes: ['buy'], detected_at: '2026-09-02T02:45:01Z', notification_attempted_at: null }] } }
 
 async function mockMarketHomeApi(page, requests, currentEvents = events(), currentOverview = overview(), currentRuntime = runtime()) {
@@ -21,7 +21,7 @@ async function mockMarketHomeApi(page, requests, currentEvents = events(), curre
     requests.push(url.pathname)
     if (url.pathname.endsWith('/market/research/home-overview')) { const value = typeof currentOverview === 'function' ? currentOverview() : currentOverview; return value === null ? route.abort() : route.fulfill({ json: value }) }
     if (url.pathname === '/api/runtime/health') return route.fulfill({ json: typeof currentRuntime === 'function' ? currentRuntime() : currentRuntime })
-    return route.fulfill({ json: currentEvents })
+    return route.fulfill({ json: typeof currentEvents === 'function' ? currentEvents() : currentEvents })
   })
 }
 
@@ -33,6 +33,13 @@ async function expectFrozenIconContracts(page) {
   }
   await expect(page.getByTestId('market-state-icon-up-table').first()).toHaveCSS('width', '28px')
   await expect(page.getByTestId('market-state-icon-up-micro').first()).toHaveCSS('width', '24px')
+  await expect(page.getByTestId('market-state-icon-down-micro').first().locator('svg > g')).toHaveAttribute('transform', 'translate(0 24) scale(1 -1)')
+  const legendGlyphWidth = await page.getByTestId('market-state-icon-up-legend').first().locator('path').evaluate((element) => element.getBoundingClientRect().width)
+  const tableGlyphWidth = await page.getByTestId('market-state-icon-up-table').first().locator('path').evaluate((element) => element.getBoundingClientRect().width)
+  expect(legendGlyphWidth).toBeGreaterThanOrEqual(14)
+  expect(legendGlyphWidth).toBeLessThanOrEqual(16)
+  expect(tableGlyphWidth).toBeGreaterThanOrEqual(11)
+  expect(tableGlyphWidth).toBeLessThanOrEqual(13)
 }
 
 test('uses exactly three top-level reads and opens immutable HTDY actual-dominant chart', async ({ page }) => {
@@ -73,7 +80,12 @@ test('keeps each accepted viewport free of page-level horizontal overflow', asyn
     await page.goto('/market')
     await expect(page.getByText('非实时行情')).toBeVisible()
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
-    await page.screenshot({ path: `test-results/market-home-${name}.png`, fullPage: true })
+    await page.locator('.content').evaluate((element) => element.scrollTo(0, 0))
+    await expect(page).toHaveScreenshot(`market-home-${name}.png`, { fullPage: true, animations: 'disabled', caret: 'hide', maxDiffPixels: 400 })
+    if (name === '390') {
+      await page.getByLabel('移动端品种列表').scrollIntoViewIfNeeded()
+      await expect(page).toHaveScreenshot('market-home-390-list.png', { fullPage: true, animations: 'disabled', caret: 'hide', maxDiffPixels: 400 })
+    }
   }
 })
 
@@ -95,6 +107,17 @@ test('keeps 60-product filtering local and supports keyboard chart review', asyn
   await expect(page).toHaveURL(/symbol=x59.*series_kind=actual_dominant/)
 })
 
+test('keeps focus visible and narrows the Focus Rail to 280px at 1280px', async ({ page }) => {
+  const requests = []
+  await mockMarketHomeApi(page, requests)
+  await page.setViewportSize({ width: 1280, height: 800 })
+  await page.goto('/market')
+  const firstRow = page.locator('tbody tr').first()
+  await firstRow.focus()
+  await expect(firstRow).toHaveCSS('outline-style', 'solid')
+  await expect(page.locator('.market-dashboard-page__workspace aside')).toHaveCSS('width', '280px')
+})
+
 test('retains a cached snapshot and surfaces overview and Runtime degradation', async ({ page }) => {
   let attempts = 0
   const requests = []
@@ -103,4 +126,53 @@ test('retains a cached snapshot and surfaces overview and Runtime degradation', 
   await expect(page.getByText('overview degraded')).toBeVisible()
   await page.getByText('全部刷新').click()
   await expect(page.getByText('overview cached stale')).toBeVisible()
+})
+
+test('does not invent participant counts when the initial overview request has no snapshot', async ({ page }) => {
+  const requests = []
+  await mockMarketHomeApi(page, requests, events(), null)
+  await page.goto('/market')
+  await expect(page.getByText('overview request-failed')).toBeVisible()
+  await expect(page.getByText('— / — participant / active')).toBeVisible()
+  await expect(page.getByText('0 / 0 participant / active')).toHaveCount(0)
+})
+
+test('marks a cached Event snapshot unavailable instead of presenting it as a current observation', async ({ page }) => {
+  let attempts = 0
+  const requests = []
+  await mockMarketHomeApi(page, requests, () => {
+    attempts += 1
+    return attempts === 1 ? events() : { status: 'unavailable', trading_day: null, items: [] }
+  })
+  await page.goto('/market')
+  await expect(page.getByText('AG · 买观察 · 15m')).toBeVisible()
+  await page.getByText('全部刷新').click()
+  await expect(page.getByText('HTDY 当前 Event 暂不可用；不能据此判断本时段无观察。')).toBeVisible()
+  await expect(page.getByText('AG · 买观察 · 15m')).toHaveCount(0)
+  await expect(page.locator('tbody tr .market-state-icon--unavailable')).toHaveCount(2)
+})
+
+test('keeps Event unavailable semantics and local summary filters on mobile', async ({ page }) => {
+  const requests = []
+  await mockMarketHomeApi(page, requests, { status: 'unavailable', trading_day: null, items: [] }, overview(), runtime('ready'))
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/market')
+  await expect(page.getByText('HTDY 当前 Event 暂不可用；不能据此判断本时段无观察。')).toBeVisible()
+  await expect(page.getByLabel('移动端品种列表')).toContainText('HTDY')
+  await expect(page.getByLabel('移动端品种列表')).toContainText('Event 不可用')
+  await expect(page.getByText('Runtime ready')).toBeVisible()
+})
+
+test('applies every summary choice locally and makes compact density visible', async ({ page }) => {
+  const requests = []
+  await mockMarketHomeApi(page, requests)
+  await page.goto('/market')
+  const row = page.locator('tbody tr').first()
+  const regularPadding = await row.locator('th').evaluate((element) => getComputedStyle(element).paddingTop)
+  await page.getByRole('button', { name: /下跌 1/ }).click()
+  await expect(page.getByText('AG 白银')).toHaveCount(0)
+  await expect(page.getByRole('rowheader', { name: 'JM 焦煤' })).toBeVisible()
+  await page.getByText('紧凑密度').click()
+  await expect.poll(async () => page.locator('tbody tr').first().locator('th').evaluate((element) => getComputedStyle(element).paddingTop)).not.toBe(regularPadding)
+  expect(requests.filter((path) => path.endsWith('/home-overview'))).toHaveLength(1)
 })
