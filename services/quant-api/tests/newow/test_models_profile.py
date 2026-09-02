@@ -476,6 +476,12 @@ def test_cup_overlay_rejects_hard_failures_and_incomplete_ready_state() -> None:
             },
         )
 
+    valid = NewowCupHandleOverlay(state=CupHandleState.FORMING, **base)
+    with pytest.raises(ValueError, match="NEWOW_CUP_OVERLAY_INVALID"):
+        replace(valid, direction="BULLISH")
+    with pytest.raises(ValueError, match="NEWOW_CUP_OVERLAY_INVALID"):
+        replace(valid, state="READY")
+
 
 def test_marker_trigger_facts_are_deeply_frozen() -> None:
     """Mutating caller-owned nested facts must not rewrite an emitted marker."""

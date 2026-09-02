@@ -248,6 +248,8 @@ class NewowCupHandleOverlay:
         if (
             not self.candidate_id
             or not self.formula_version
+            or not isinstance(self.direction, CupHandleDirection)
+            or not isinstance(self.state, CupHandleState)
             or self.state == CupHandleState.NONE
             or not isfinite(self.score)
             or not 0 <= self.score <= 100

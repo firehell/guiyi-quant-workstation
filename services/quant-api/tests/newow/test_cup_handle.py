@@ -1,6 +1,7 @@
 from dataclasses import FrozenInstanceError, replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
+from fractions import Fraction
 from hashlib import sha256
 from math import nextafter
 import pickle
@@ -1839,9 +1840,120 @@ def test_long_lived_weakened_retains_an_immutable_typed_ready_witness() -> None:
     assert witness.score == active.score
     assert dict(witness.score_breakdown) == dict(active.score_breakdown)
     assert dict(witness.volume_facts) == dict(active.volume_facts)
+    assert witness.right_leg_median_exact == Fraction(120)
+    assert witness.handle_median_exact == Fraction(60)
+    assert witness.handle_baseline_median_exact == Fraction(120)
+    assert witness.profile_identity
     assert witness.formula_version == active.formula_version
     with pytest.raises(FrozenInstanceError):
         witness.score = active.score + 1  # type: ignore[misc]
+
+
+def test_aged_ready_witness_replays_exact_volume_gates_under_current_profile() -> None:
+    """Evicted source windows cannot turn a relaxed-profile READY into V1 fact."""
+
+    relaxed = replace(
+        NEWOW_TREND_D1_V1,
+        cup_handle_right_volume_max_ratio=0.90,
+    )
+    case = restored_cup_case(
+        right_volume=20,
+        baseline_volume=20,
+        handle_volume=17,
+        next_close=Decimal("102"),
+        next_volume=30,
+    )
+    breakout = step_cup_handle(case.state, case.next_bar, profile=relaxed)
+    active = breakout.state.active_candidate
+    assert active is not None and active.state == CupHandleState.BREAKOUT
+
+    weak_day = case.next_bar.trading_day + timedelta(days=1)
+    weak_bar = replace(
+        case.next_bar,
+        trading_day=weak_day,
+        bar_end=datetime.combine(weak_day, datetime.min.time(), tzinfo=UTC),
+        open=Decimal("98"),
+        high=Decimal("99"),
+        low=Decimal("97"),
+        close=Decimal("98"),
+        volume=20,
+        source_identity="fixture:aged-exact-witness:weak",
+    )
+    state = step_cup_handle(breakout.state, weak_bar, profile=relaxed).state
+    assert state.active_candidate is not None
+    assert state.active_candidate.state == CupHandleState.WEAKENED
+
+    last_bar = weak_bar
+    for offset in range(1, 231):
+        day = weak_day + timedelta(days=offset)
+        last_bar = replace(
+            weak_bar,
+            trading_day=day,
+            bar_end=datetime.combine(day, datetime.min.time(), tzinfo=UTC),
+            source_identity=f"fixture:aged-exact-witness:{offset}",
+        )
+        state = step_cup_handle(state, last_bar, profile=relaxed).state
+
+    assert state.active_candidate is not None
+    assert state.active_candidate.state == CupHandleState.WEAKENED
+    assert state.eligible_bars[0].eligible_index > active.right_rim.pivot_index
+    assert state.ready_witness is not None
+    assert state.ready_witness.right_leg_median_exact == Fraction(20)
+    assert state.ready_witness.handle_median_exact == Fraction(17)
+    assert state.ready_witness.handle_baseline_median_exact == Fraction(20)
+    next_day = last_bar.trading_day + timedelta(days=1)
+    restored = step_cup_handle(
+        state,
+        replace(
+            last_bar,
+            trading_day=next_day,
+            bar_end=datetime.combine(next_day, datetime.min.time(), tzinfo=UTC),
+            source_identity="fixture:aged-exact-witness:v1-restore",
+        ),
+    )
+
+    assert restored.diagnostics == ("NEWOW_CUP_STATE_INVALID",)
+    assert restored.markers == ()
+    assert restored.active_overlay is None
+    assert restored.state == initial_cup_handle_state()
+
+
+@pytest.mark.parametrize(
+    ("field_name", "value"),
+    (
+        ("right_leg_median_exact", Fraction(121)),
+        ("handle_median_exact", Fraction(61)),
+        ("handle_baseline_median_exact", Fraction(121)),
+        ("profile_identity", "wrong-profile"),
+    ),
+)
+def test_restored_ready_witness_rejects_changed_exact_authority(
+    field_name: str,
+    value: Fraction | str,
+) -> None:
+    """The bounded READY authority is immutable after source-window eviction."""
+
+    bars = breakout_then_weakened()
+    state = calculate_cup_handle_series(bars)[-1].state
+    witness = state.ready_witness
+    assert witness is not None
+    malformed = replace(
+        state,
+        ready_witness=replace(witness, **{field_name: value}),
+    )
+    day = bars[-1].trading_day + timedelta(days=1)
+    result = step_cup_handle(
+        malformed,
+        replace(
+            bars[-1],
+            trading_day=day,
+            bar_end=datetime.combine(day, datetime.min.time(), tzinfo=UTC),
+            source_identity=f"fixture:changed-ready-authority:{field_name}",
+        ),
+    )
+
+    assert result.diagnostics == ("NEWOW_CUP_STATE_INVALID",)
+    assert result.state == initial_cup_handle_state()
 
 
 @pytest.mark.parametrize("field_name", ("score_breakdown", "volume_facts"))

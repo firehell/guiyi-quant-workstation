@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, fields, replace
 from datetime import datetime
 from decimal import Decimal
 from fractions import Fraction
@@ -70,6 +70,10 @@ class CupReadyWitness:
     score: float
     score_breakdown: tuple[tuple[str, float], ...]
     volume_facts: tuple[tuple[str, float], ...]
+    right_leg_median_exact: Fraction
+    handle_median_exact: Fraction
+    handle_baseline_median_exact: Fraction
+    profile_identity: str
     formula_version: str
 
 
@@ -104,6 +108,20 @@ class _BodyFacts:
     bottom_span_bars: int
 
 
+@dataclass(frozen=True, slots=True)
+class _ReadyHandleFacts:
+    score: float
+
+
+@dataclass(frozen=True, slots=True)
+class _ReadyVolumeFacts:
+    right_leg_median: Fraction
+    handle_median: Fraction
+    handle_baseline_median: Fraction
+    display: Mapping[str, float]
+    score: float
+
+
 _SCORE_KEYS = (
     "pretrend",
     "cup_geometry",
@@ -134,6 +152,19 @@ def _pivot_witness_part(pivot: CupPivot) -> str:
     )
 
 
+def _cup_profile_identity(profile: NewowTrendProfile) -> str:
+    source = "|".join(
+        f"{item.name}={getattr(profile, item.name)!r}"
+        for item in fields(profile)
+        if item.name.startswith("cup_")
+    )
+    return sha256(f"newow_cup_profile_v1|{source}".encode()).hexdigest()
+
+
+def _fraction_witness_part(value: Fraction) -> str:
+    return f"{value.numerator}/{value.denominator}"
+
+
 def _ready_witness_identity(
     candidate_id: str,
     left_rim: CupPivot,
@@ -145,6 +176,10 @@ def _ready_witness_identity(
     score: float,
     score_breakdown: tuple[tuple[str, float], ...],
     volume_facts: tuple[tuple[str, float], ...],
+    right_leg_median_exact: Fraction,
+    handle_median_exact: Fraction,
+    handle_baseline_median_exact: Fraction,
+    profile_identity: str,
     formula_version: str,
 ) -> str:
     source = "|".join(
@@ -160,13 +195,21 @@ def _ready_witness_identity(
             repr(float(score)),
             *(f"score:{key}={value!r}" for key, value in score_breakdown),
             *(f"volume:{key}={value!r}" for key, value in volume_facts),
+            f"right_exact:{_fraction_witness_part(right_leg_median_exact)}",
+            f"handle_exact:{_fraction_witness_part(handle_median_exact)}",
+            f"baseline_exact:{_fraction_witness_part(handle_baseline_median_exact)}",
+            f"profile:{profile_identity}",
             formula_version,
         )
     )
     return sha256(source.encode()).hexdigest()
 
 
-def _ready_witness(active: NewowCupHandleOverlay) -> CupReadyWitness:
+def _ready_witness(
+    active: NewowCupHandleOverlay,
+    volume: _ReadyVolumeFacts,
+    profile: NewowTrendProfile,
+) -> CupReadyWitness:
     assert active.handle_extreme is not None
     assert active.pivot_price is not None
     score_breakdown = tuple(
@@ -175,6 +218,7 @@ def _ready_witness(active: NewowCupHandleOverlay) -> CupReadyWitness:
     volume_facts = tuple(
         (key, float(active.volume_facts[key])) for key in _VOLUME_FACT_KEYS
     )
+    profile_identity = _cup_profile_identity(profile)
     return CupReadyWitness(
         witness_id=_ready_witness_identity(
             active.candidate_id,
@@ -187,6 +231,10 @@ def _ready_witness(active: NewowCupHandleOverlay) -> CupReadyWitness:
             active.score,
             score_breakdown,
             volume_facts,
+            volume.right_leg_median,
+            volume.handle_median,
+            volume.handle_baseline_median,
+            profile_identity,
             active.formula_version,
         ),
         candidate_id=active.candidate_id,
@@ -199,6 +247,10 @@ def _ready_witness(active: NewowCupHandleOverlay) -> CupReadyWitness:
         score=active.score,
         score_breakdown=score_breakdown,
         volume_facts=volume_facts,
+        right_leg_median_exact=volume.right_leg_median,
+        handle_median_exact=volume.handle_median,
+        handle_baseline_median_exact=volume.handle_baseline_median,
+        profile_identity=profile_identity,
         formula_version=active.formula_version,
     )
 
@@ -396,6 +448,7 @@ def _finite_fact_values(
 def _ready_witness_is_valid(
     active: NewowCupHandleOverlay,
     witness: object,
+    profile: NewowTrendProfile,
 ) -> bool:
     if not isinstance(witness, CupReadyWitness):
         return False
@@ -412,6 +465,13 @@ def _ready_witness_is_valid(
         )
         or tuple(key for key, _ in witness.score_breakdown) != _SCORE_KEYS
         or tuple(key for key, _ in witness.volume_facts) != _VOLUME_FACT_KEYS
+        or not isinstance(witness.right_leg_median_exact, Fraction)
+        or not isinstance(witness.handle_median_exact, Fraction)
+        or not isinstance(witness.handle_baseline_median_exact, Fraction)
+        or witness.right_leg_median_exact <= 0
+        or witness.handle_median_exact < 0
+        or witness.handle_baseline_median_exact <= 0
+        or witness.profile_identity != _cup_profile_identity(profile)
     ):
         return False
     breakdown = _finite_fact_values(dict(witness.score_breakdown), _SCORE_KEYS)
@@ -443,6 +503,10 @@ def _ready_witness_is_valid(
         witness.score,
         witness.score_breakdown,
         witness.volume_facts,
+        witness.right_leg_median_exact,
+        witness.handle_median_exact,
+        witness.handle_baseline_median_exact,
+        witness.profile_identity,
         witness.formula_version,
     )
 
@@ -724,54 +788,17 @@ def _ready_facts_are_valid(
     pivot_price = active.pivot_price
     if handle is None or pivot_price is None:
         return False
-    right_price = _normal_fraction(active.direction, active.right_rim.price)
-    left_price = _normal_fraction(active.direction, active.left_rim.price)
-    bottom_price = _normal_fraction(active.direction, active.bottom.price)
-    handle_price = _normal_fraction(active.direction, handle.price)
-    handle_bars = handle.confirmed_index - active.right_rim.pivot_index
-    handle_depth = right_price - handle_price
-    right_leg = right_price - bottom_price
-    cup_depth = (left_price + right_price) / 2 - bottom_price
-    depth_pct = handle_depth / abs(right_price) if right_price else None
-    handle_retrace = handle_depth / right_leg if right_leg else None
-    if (
-        right_leg <= 0
-        or cup_depth <= 0
-        or not profile.cup_handle_min_bars
-        <= handle_bars
-        <= profile.cup_handle_max_bars
-        or handle_depth <= 0
-        or depth_pct is None
-        or depth_pct > _rational_parameter(profile.cup_handle_depth_max_pct)
-        or handle_retrace is None
-        or _decimal_ratio_exceeds(
-            handle_depth,
-            right_leg,
-            profile.cup_handle_retrace_max_ratio,
-        )
-        or handle_price
-        < bottom_price
-        + _rational_parameter(profile.cup_handle_upper_half_ratio) * cup_depth
-    ):
+    handle_facts, _ = _ready_handle_facts(
+        active.direction,
+        active.left_rim,
+        active.bottom,
+        active.right_rim,
+        handle,
+        profile,
+    )
+    if handle_facts is None:
         return False
-    length_score = 6.0 if 7 <= handle_bars <= 10 else 4.0
-    depth_score = (
-        5.0
-        if depth_pct <= Fraction(8, 100)
-        else 3.0
-        if depth_pct <= Fraction(12, 100)
-        else 1.0
-    )
-    retrace_score = (
-        5.0
-        if handle_retrace <= Fraction(20, 100)
-        else 3.0
-        if handle_retrace <= Fraction(28, 100)
-        else 1.0
-    )
-    if float(active.score_breakdown["handle_quality"]) != (
-        length_score + depth_score + retrace_score + 4.0
-    ):
+    if float(active.score_breakdown["handle_quality"]) != handle_facts.score:
         return False
 
     volumes = _finite_fact_values(active.volume_facts, _VOLUME_FACT_KEYS)
@@ -792,11 +819,12 @@ def _ready_facts_are_valid(
         return False
 
     by_index = {snapshot.eligible_index: snapshot for snapshot in state.eligible_bars}
-    pivot_indexes = range(active.right_rim.pivot_index + 1, handle.confirmed_index)
-    if all(index in by_index for index in pivot_indexes):
-        pivot_window = [by_index[index] for index in pivot_indexes]
-        if not pivot_window:
-            return False
+    pivot_window = _retained_window(
+        by_index,
+        active.right_rim.pivot_index + 1,
+        handle.confirmed_index - 1,
+    )
+    if pivot_window is not None:
         expected_pivot = (
             max(snapshot.bar.high for snapshot in pivot_window)
             if active.direction == CupHandleDirection.BULLISH
@@ -804,53 +832,29 @@ def _ready_facts_are_valid(
         )
         if pivot_price != expected_pivot:
             return False
-    right_indexes = range(
-        active.bottom.pivot_index + 1, active.right_rim.pivot_index + 1
+    witness = state.ready_witness
+    if not isinstance(witness, CupReadyWitness):
+        return False
+    retained_medians = _ready_volume_medians(
+        active.bottom,
+        active.right_rim,
+        handle,
+        by_index,
     )
-    handle_indexes = range(active.right_rim.pivot_index + 1, handle.confirmed_index)
-    baseline_indexes = range(
-        active.right_rim.pivot_index - 19, active.right_rim.pivot_index + 1
+    witness_medians = (
+        witness.right_leg_median_exact,
+        witness.handle_median_exact,
+        witness.handle_baseline_median_exact,
     )
-    all_volume_indexes = (*right_indexes, *handle_indexes, *baseline_indexes)
-    if all(index in by_index for index in all_volume_indexes):
-        expected_right = _median_volume([by_index[index] for index in right_indexes])
-        expected_handle = _median_volume(
-            [by_index[index] for index in handle_indexes]
-        )
-        expected_baseline = _median_volume(
-            [by_index[index] for index in baseline_indexes]
-        )
-        expected_facts = (
-            _float_volume_facts(expected_right, expected_handle, expected_baseline)
-            if expected_right is not None
-            and expected_handle is not None
-            and expected_baseline is not None
-            else None
-        )
-        if (
-            expected_right is None
-            or expected_handle is None
-            or expected_baseline is None
-            or expected_facts is None
-            or dict(active.volume_facts) != expected_facts
-            or _decimal_ratio_exceeds(
-                expected_handle,
-                expected_right,
-                profile.cup_handle_right_volume_max_ratio,
-            )
-            or _decimal_ratio_exceeds(
-                expected_handle,
-                expected_baseline,
-                profile.cup_handle_baseline_volume_max_ratio,
-            )
-            or float(active.score_breakdown["volume_structure"])
-            != _ready_volume_structure_score(
-                expected_handle / expected_right,
-                expected_handle / expected_baseline,
-            )
-        ):
-            return False
-    return True
+    if retained_medians is not None and retained_medians != witness_medians:
+        return False
+    exact_medians = retained_medians or witness_medians
+    expected, _ = _ready_volume_facts(*exact_medians, profile)
+    return (
+        expected is not None
+        and dict(active.volume_facts) == dict(expected.display)
+        and float(active.score_breakdown["volume_structure"]) == expected.score
+    )
 
 
 def _milestones_are_authentic(
@@ -1074,7 +1078,14 @@ def _active_candidate_is_coherent(
         _score_facts_are_valid(active, state, profile)
         and (
             active.state == CupHandleState.FORMING
-            or _ready_facts_are_valid(active, state, profile)
+            or (
+                _ready_witness_is_valid(
+                    active,
+                    state.ready_witness,
+                    profile,
+                )
+                and _ready_facts_are_valid(active, state, profile)
+            )
         )
         and _milestones_are_authentic(active, state, profile)
     )
@@ -1288,7 +1299,7 @@ def _state_is_valid(state: CupHandleStateValue, profile: NewowTrendProfile) -> b
         if active.state == CupHandleState.FORMING:
             if state.ready_witness is not None:
                 return False
-        elif not _ready_witness_is_valid(active, state.ready_witness):
+        elif not _ready_witness_is_valid(active, state.ready_witness, profile):
             return False
     return True
 
@@ -1849,6 +1860,126 @@ def _ready_volume_structure_score(
     return right_score + baseline_score
 
 
+def _ready_handle_facts(
+    direction: CupHandleDirection,
+    left: CupPivot,
+    bottom: CupPivot,
+    right: CupPivot,
+    handle: CupPivot,
+    profile: NewowTrendProfile,
+) -> tuple[_ReadyHandleFacts | None, str | None]:
+    handle_bars = handle.confirmed_index - right.pivot_index
+    if not profile.cup_handle_min_bars <= handle_bars <= profile.cup_handle_max_bars:
+        return None, "HANDLE_DURATION_OUT_OF_RANGE"
+    right_price = _normal_fraction(direction, right.price)
+    left_price = _normal_fraction(direction, left.price)
+    bottom_price = _normal_fraction(direction, bottom.price)
+    handle_price = _normal_fraction(direction, handle.price)
+    handle_depth = right_price - handle_price
+    right_leg = right_price - bottom_price
+    cup_depth = (left_price + right_price) / 2 - bottom_price
+    if right_price == 0 or handle_depth <= 0:
+        return None, "HANDLE_DEPTH_EXCEEDED"
+    depth_pct = handle_depth / abs(right_price)
+    if depth_pct > _rational_parameter(profile.cup_handle_depth_max_pct):
+        return None, "HANDLE_DEPTH_EXCEEDED"
+    if cup_depth <= 0 or handle_price < bottom_price + _rational_parameter(
+        profile.cup_handle_upper_half_ratio
+    ) * cup_depth:
+        return None, "HANDLE_BELOW_CUP_MID"
+    if right_leg <= 0 or _decimal_ratio_exceeds(
+        handle_depth,
+        right_leg,
+        profile.cup_handle_retrace_max_ratio,
+    ):
+        return None, "HANDLE_RETRACE_EXCEEDED"
+    handle_retrace = handle_depth / right_leg
+    length_score = 6.0 if 7 <= handle_bars <= 10 else 4.0
+    depth_score = (
+        5.0
+        if depth_pct <= Fraction(8, 100)
+        else 3.0
+        if depth_pct <= Fraction(12, 100)
+        else 1.0
+    )
+    retrace_score = (
+        5.0
+        if handle_retrace <= Fraction(20, 100)
+        else 3.0
+        if handle_retrace <= Fraction(28, 100)
+        else 1.0
+    )
+    return _ReadyHandleFacts(length_score + depth_score + retrace_score + 4.0), None
+
+
+def _ready_volume_medians(
+    bottom: CupPivot,
+    right: CupPivot,
+    handle: CupPivot,
+    by_index: Mapping[int, CupBarSnapshot],
+) -> tuple[Fraction, Fraction, Fraction] | None:
+    right_window = _retained_window(
+        by_index,
+        bottom.pivot_index + 1,
+        right.pivot_index,
+    )
+    handle_window = _retained_window(
+        by_index,
+        right.pivot_index + 1,
+        handle.confirmed_index - 1,
+    )
+    baseline_window = _retained_window(
+        by_index,
+        right.pivot_index - 19,
+        right.pivot_index,
+    )
+    if right_window is None or handle_window is None or baseline_window is None:
+        return None
+    right_volume = _median_volume(list(right_window))
+    handle_volume = _median_volume(list(handle_window))
+    baseline_volume = _median_volume(list(baseline_window))
+    if right_volume is None or handle_volume is None or baseline_volume is None:
+        return None
+    return right_volume, handle_volume, baseline_volume
+
+
+def _ready_volume_facts(
+    right_volume: Fraction,
+    handle_volume: Fraction,
+    baseline_volume: Fraction,
+    profile: NewowTrendProfile,
+) -> tuple[_ReadyVolumeFacts | None, str | None]:
+    display = _float_volume_facts(right_volume, handle_volume, baseline_volume)
+    if display is None:
+        return None, "HANDLE_VOLUME_UNAVAILABLE"
+    if (
+        _decimal_ratio_exceeds(
+            handle_volume,
+            right_volume,
+            profile.cup_handle_right_volume_max_ratio,
+        )
+        or _decimal_ratio_exceeds(
+            handle_volume,
+            baseline_volume,
+            profile.cup_handle_baseline_volume_max_ratio,
+        )
+    ):
+        return None, "HANDLE_VOLUME_NOT_CONTRACTING"
+    return (
+        _ReadyVolumeFacts(
+            right_leg_median=right_volume,
+            handle_median=handle_volume,
+            handle_baseline_median=baseline_volume,
+            display=display,
+            score=_ready_volume_structure_score(
+                handle_volume / right_volume,
+                handle_volume / baseline_volume,
+            ),
+        ),
+        None,
+    )
+
+
 def _ready_candidate(
     forming: NewowCupHandleOverlay,
     body_facts: _BodyFacts,
@@ -1882,123 +2013,42 @@ def _ready_candidate(
     )
     if body_facts.bottom_span_bars < profile.cup_bottom_span_ready_min:
         return None, "BOTTOM_SPAN_BELOW_READY_MIN"
-    right_price = _normal_fraction(forming.direction, forming.right_rim.price)
-    left_price = _normal_fraction(forming.direction, forming.left_rim.price)
-    bottom_price = _normal_fraction(forming.direction, forming.bottom.price)
-    handle_price = _normal_fraction(forming.direction, handle.price)
-    handle_depth = right_price - handle_price
-    cup_right_leg = right_price - bottom_price
-    cup_depth = (left_price + right_price) / 2 - bottom_price
-    depth_pct = handle_depth / abs(right_price)
-    if handle_depth <= 0 or depth_pct > _rational_parameter(
-        profile.cup_handle_depth_max_pct
-    ):
-        return None, "HANDLE_DEPTH_EXCEEDED"
-    if handle_price < bottom_price + _rational_parameter(
-        profile.cup_handle_upper_half_ratio
-    ) * cup_depth:
-        return None, "HANDLE_BELOW_CUP_MID"
-    handle_retrace = handle_depth / cup_right_leg
-    if _decimal_ratio_exceeds(
-        handle_depth,
-        cup_right_leg,
-        profile.cup_handle_retrace_max_ratio,
-    ):
-        return None, "HANDLE_RETRACE_EXCEEDED"
     by_index = {snapshot.eligible_index: snapshot for snapshot in bars}
-    pivot_window = [
-        by_index[index]
-        for index in range(forming.right_rim.pivot_index + 1, handle.confirmed_index)
-        if index in by_index
-    ]
-    if len(pivot_window) != handle.confirmed_index - forming.right_rim.pivot_index - 1:
-        return None, "HANDLE_PIVOT_UNAVAILABLE"
-    if not pivot_window:
+    handle_facts, handle_failure = _ready_handle_facts(
+        forming.direction,
+        forming.left_rim,
+        forming.bottom,
+        forming.right_rim,
+        handle,
+        profile,
+    )
+    if handle_facts is None:
+        return None, handle_failure
+    pivot_window = _retained_window(
+        by_index,
+        forming.right_rim.pivot_index + 1,
+        handle.confirmed_index - 1,
+    )
+    if pivot_window is None:
         return None, "HANDLE_PIVOT_UNAVAILABLE"
     if forming.direction == CupHandleDirection.BULLISH:
         pivot_price = max(snapshot.bar.high for snapshot in pivot_window)
     else:
         pivot_price = min(snapshot.bar.low for snapshot in pivot_window)
-    right_leg = [
-        snapshot
-        for snapshot in bars
-        if forming.bottom.pivot_index
-        < snapshot.eligible_index
-        <= forming.right_rim.pivot_index
-    ]
-    handle_window = [
-        snapshot
-        for snapshot in bars
-        if forming.right_rim.pivot_index
-        < snapshot.eligible_index
-        < handle.confirmed_index
-    ]
-    baseline_window = [
-        snapshot
-        for snapshot in bars
-        if forming.right_rim.pivot_index - 19
-        <= snapshot.eligible_index
-        <= forming.right_rim.pivot_index
-    ]
-    if len(baseline_window) != 20:
-        return None, "HANDLE_VOLUME_UNAVAILABLE"
-    right_volume = _median_volume(right_leg)
-    handle_volume = _median_volume(handle_window)
-    baseline_volume = _median_volume(baseline_window)
-    if (
-        right_volume is None
-        or handle_volume is None
-        or baseline_volume is None
-        or right_volume <= 0
-        or baseline_volume <= 0
-    ):
-        return None, "HANDLE_VOLUME_UNAVAILABLE"
-    right_ratio = handle_volume / right_volume
-    baseline_ratio = handle_volume / baseline_volume
-    volume_facts = _float_volume_facts(
-        right_volume,
-        handle_volume,
-        baseline_volume,
+    medians = _ready_volume_medians(
+        forming.bottom,
+        forming.right_rim,
+        handle,
+        by_index,
     )
+    if medians is None:
+        return None, "HANDLE_VOLUME_UNAVAILABLE"
+    volume_facts, volume_failure = _ready_volume_facts(*medians, profile)
     if volume_facts is None:
-        return None, "HANDLE_VOLUME_UNAVAILABLE"
-    if (
-        _decimal_ratio_exceeds(
-            handle_volume,
-            right_volume,
-            profile.cup_handle_right_volume_max_ratio,
-        )
-        or _decimal_ratio_exceeds(
-            handle_volume,
-            baseline_volume,
-            profile.cup_handle_baseline_volume_max_ratio,
-        )
-    ):
-        return None, "HANDLE_VOLUME_NOT_CONTRACTING"
-
-    handle_bars = handle.confirmed_index - forming.right_rim.pivot_index
-    length_score = 6.0 if 7 <= handle_bars <= 10 else 4.0
-    depth_score = (
-        5.0
-        if depth_pct <= Fraction(8, 100)
-        else 3.0
-        if depth_pct <= Fraction(12, 100)
-        else 1.0
-    )
-    retrace_score = (
-        5.0
-        if handle_retrace <= Fraction(20, 100)
-        else 3.0
-        if handle_retrace <= Fraction(28, 100)
-        else 1.0
-    )
-    handle_score = length_score + depth_score + retrace_score + 4.0
+        return None, volume_failure
     breakdown = dict(forming.score_breakdown)
-    breakdown["handle_quality"] = handle_score
-    breakdown["volume_structure"] = _ready_volume_structure_score(
-        right_ratio,
-        baseline_ratio,
-    )
+    breakdown["handle_quality"] = handle_facts.score
+    breakdown["volume_structure"] = volume_facts.score
     score = sum(breakdown.values())
     if score < profile.cup_ready_min_score:
         return None, "CUP_READY_SCORE_INSUFFICIENT"
@@ -2013,7 +2063,7 @@ def _ready_candidate(
             state_changed_at=current.bar.bar_end,
             score=score,
             score_breakdown=breakdown,
-            volume_facts=volume_facts,
+            volume_facts=volume_facts.display,
         ),
         None,
     )
@@ -2314,7 +2364,20 @@ def step_cup_handle(
                         breakout_candidate_ids.add(ready.candidate_id)
             active = _primary_candidate(evaluated, breakout_candidate_ids)
             if active is not None and active.state == CupHandleState.READY:
-                ready_witness = _ready_witness(active)
+                assert active.handle_extreme is not None
+                exact_medians = _ready_volume_medians(
+                    active.bottom,
+                    active.right_rim,
+                    active.handle_extreme,
+                    {
+                        retained.eligible_index: retained
+                        for retained in bars
+                    },
+                )
+                assert exact_medians is not None
+                exact_volume, _ = _ready_volume_facts(*exact_medians, profile)
+                assert exact_volume is not None
+                ready_witness = _ready_witness(active, exact_volume, profile)
                 ready_marker = _marker(
                     active,
                     NewowMarkerType.CUP_HANDLE_READY,
