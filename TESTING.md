@@ -43,6 +43,26 @@ PYTHONPATH=services/quant-api:packages/quant-core \
   services/quant-api/tests/alembic/test_subing_retirement_migration.py
 ```
 
+SuBing S1-S4 公式、同物理合约 replay、Alert dispatch/Event/notification 与 Scope activation 定向合同：
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+  uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/test_subing_ths_kernel.py \
+  services/quant-api/tests/test_market_read_service.py \
+  services/quant-api/tests/test_alert_registry.py \
+  services/quant-api/tests/test_alert_evaluator.py \
+  services/quant-api/tests/test_alert_service.py \
+  services/quant-api/tests/test_alert_notification.py \
+  services/quant-api/tests/test_alert_notification_config.py \
+  services/quant-api/tests/test_alert_pushplus.py \
+  services/quant-api/tests/test_alert_runtime.py \
+  services/quant-api/tests/test_runtime_health.py \
+  services/quant-api/tests/test_alert_api.py \
+  services/quant-api/tests/test_alert_cli.py \
+  services/quant-api/tests/test_subing_scope_activation.py
+```
+
 Isolated PostgreSQL 测试只能指向专用、空白、可销毁的数据库；未设置变量时不得运行：
 
 ```bash
@@ -51,6 +71,18 @@ GUIYI_ISOLATED_MIGRATION_DATABASE_URL='postgresql+psycopg://USER:PASSWORD@HOST:5
   uv run --project services/quant-api pytest -q -m isolated_postgresql \
   services/quant-api/tests/alembic
 ```
+
+0042 → 0043 → 0044、disabled + empty-scope seed 与 forward-only failure 的专用定向命令仍必须使用同一类隔离数据库：
+
+```bash
+GUIYI_ISOLATED_MIGRATION_DATABASE_URL='postgresql+psycopg://USER:PASSWORD@HOST:5432/isolated_db' \
+  PYTHONPATH=services/quant-api:packages/quant-core \
+  uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/alembic/test_subing_retirement_migration.py \
+  services/quant-api/tests/alembic/test_subing_ths_alert_migration.py
+```
+
+不得把 `guiyi-postgres`、production URL 或任何非空共享数据库用于 isolated PostgreSQL suite。dry-run、migration 测试与 activation 测试均不授权 production migration、Scope apply 或 Rule enable。
 
 ## Range Detector Lux V1
 
@@ -73,6 +105,18 @@ pnpm -C apps/quant-web exec node --test \
 ```
 
 ## Web
+
+SuBing Alert Rule/API/Event-backed `S↑/S↓` 与 Market Home 定向检查：
+
+```bash
+pnpm -C apps/quant-web exec node --test \
+  tests/alertRuleOwnership.test.ts \
+  tests/alerts.test.ts \
+  tests/productCurrentAlertEvents.test.ts \
+  tests/marketHomeTypes.test.ts \
+  tests/marketHomeViewModel.test.ts \
+  tests/marketHomeRoute.test.ts
+```
 
 ```bash
 pnpm --dir apps/quant-web run check:alert-rules

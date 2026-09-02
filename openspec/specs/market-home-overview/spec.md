@@ -2,8 +2,8 @@
 
 ## Purpose
 
-定义 Market 首页在不恢复任何退役策略的前提下读取 completed D1/W1 市场事实和当前 HTDY
-immutable Event 的只读 HTTP 合同。Market Home overview 使用可删除、可重建的 derived projection
+定义 Market 首页在不恢复任何退役策略的前提下读取 completed D1/W1 市场事实和当前 Alert Events
+的只读 HTTP 合同。Market Home overview 使用可删除、可重建的 derived projection
 加速常态读取，但 `MarketHomeOverviewService -> MarketDataService` 始终是唯一计算 authority。
 该能力只为用户复核提供事实，不构成交易建议，且 `auto_order=false`。
 
@@ -145,34 +145,34 @@ HTTP 409；API 不得泄露内部异常。
 - **WHEN** browser 请求首页 overview
 - **THEN** 它只需一次此 bulk endpoint HTTP 请求，HTTP 请求数不随 universe size 增长
 
-### Requirement: Current HTDY Event endpoint is a global read projection
+### Requirement: Current Alert Events endpoint is a global read projection
 
 `GET /api/alerts/current-events?limit=30` SHALL 复用现有 current trading day resolver，并且只读
-registry-owned HTDY Rule 的 exact trading day `AlertEvent`。`limit` MUST 在 1 到 100（含）之间，
+registry-owned active Alert Rules 的 exact trading day `AlertEvent`。`limit` MUST 在 1 到 100（含）之间，
 结果 MUST 按 `detected_at DESC, bar_end DESC, id DESC` 排序。endpoint MUST perform SELECT only，
 不得修改 Event writer、Rule、Scope、audience、transport、Runtime 或表结构。
 
-#### Scenario: Current day has HTDY Events
+#### Scenario: Current day has mixed current Alert Events
 
-- **WHEN** registry HTDY Rule 存在当前交易日 Event
-- **THEN** response 返回 `status=ready` 和按固定排序的 typed HTDY Event items，legacy/non-registry
-  Rule Event 不出现
+- **WHEN** registry-owned HTDY 或 SuBing Rule 存在当前交易日 Event
+- **THEN** response 返回 `status=ready` 和按固定排序的 typed Alert Event items，legacy/non-registry
+  Rule Event 不出现，且不因 Rule 当前 disabled 而改写既有 Event 事实
 
 #### Scenario: Current trading day cannot be resolved
 
 - **WHEN** existing resolver 返回 unavailable
 - **THEN** response 返回 `status=unavailable`、`trading_day=null`、`items=[]`，不得伪装为 ready 空列表
 
-#### Scenario: Current day has no HTDY Event
+#### Scenario: Current day has no Alert Event
 
-- **WHEN** current trading day 已解析且没有 registry HTDY Event
+- **WHEN** current trading day 已解析且没有 registry-owned Alert Event
 - **THEN** response 返回 `status=ready` 和空 items；这不代表 Runtime 正常静默
 
 ### Requirement: Market Home Web preserves independent read authorities
 
-`/market` SHALL 在首屏并行读取且只读取一次 Market Home overview、Runtime health 和 current HTDY
-Event。页面 MUST 保留各资源最后一次成功快照，并把失败单独标识为 stale/unavailable；它不得由
-Runtime heartbeat 推导 overview/HTDY 状态，也不得由 Event 空列表推导策略正常静默。浏览器不得调用
+`/market` SHALL 在首屏并行读取且只读取一次 Market Home overview、Runtime health 和 current Alert
+Events。页面 MUST 保留各资源最后一次成功快照，并把失败单独标识为 stale/unavailable；它不得由
+Runtime heartbeat 推导 overview/Alert 状态，也不得由 Event 空列表推导 Runtime 正常静默。浏览器不得调用
 product dominants、发起 per-product 请求、WebSocket 或任何写请求。
 
 #### Scenario: A resource becomes unavailable after a successful snapshot
@@ -189,4 +189,4 @@ product dominants、发起 per-product 请求、WebSocket 或任何写请求。
 #### Scenario: A user reads a state icon without color
 
 - **WHEN** Market Home displays a frozen state icon
-- **THEN** it has the approved size, color and Chinese accessible label, while the adjacent Event copy remains an observation rather than a trading instruction
+- **THEN** it has the approved size, color and Chinese accessible label, while adjacent HTDY/SuBing Event copy remains an observation rather than a trading instruction
