@@ -120,6 +120,19 @@ class MarketReadWindow:
     bar_contracts: tuple[str, ...]
 
 
+@dataclass(frozen=True, slots=True)
+class CurrentContractReplayWindow:
+    """Typed same-physical-contract bars through one decision cutoff."""
+
+    symbol: str
+    frequency: str
+    trading_day: date
+    contract: str
+    cutoff: datetime
+    after: datetime | None
+    bars: tuple[CanonicalBar, ...]
+
+
 class MarketReadWindowError(RuntimeError):
     """Alert 窗口不能被唯一、完整解析时的稳定失败。"""
 
@@ -239,6 +252,121 @@ class MarketReadService:
             bars=bars,
             bar_contracts=bar_contracts,
         )
+
+    def current_contract_replay_window(
+        self,
+        decision_window: MarketReadWindow,
+        *,
+        after: datetime | None,
+    ) -> CurrentContractReplayWindow:
+        """Read one current physical contract through a proved decision cutoff."""
+
+        frequency = _current_contract_replay_frequency(decision_window)
+        cutoff = decision_window.cutoff.astimezone(UTC)
+        contract = normalize_contract_for_symbol(
+            decision_window.symbol,
+            decision_window.contract,
+        )
+        if contract is None:
+            raise MarketReadWindowError("MARKET_READ_CONTRACT_UNAVAILABLE")
+        if (
+            not decision_window.bars
+            or decision_window.bars[-1].bar_end != cutoff
+            or len(decision_window.bars) != len(decision_window.bar_contracts)
+            or decision_window.bar_contracts[-1] != contract
+        ):
+            raise MarketReadWindowError("MARKET_READ_CUTOFF_BAR_MISSING")
+
+        normalized_after = _replay_after(after, cutoff)
+        if normalized_after == cutoff:
+            return CurrentContractReplayWindow(
+                symbol=decision_window.symbol,
+                frequency=frequency.value,
+                trading_day=decision_window.trading_day,
+                contract=contract,
+                cutoff=cutoff,
+                after=normalized_after,
+                bars=(),
+            )
+
+        canonical = self._current_contract_history(
+            symbol=decision_window.symbol,
+            frequency=frequency,
+            contract=contract,
+            cutoff=cutoff,
+            after=normalized_after,
+        )
+        try:
+            live = self._live_store.bars_after(
+                decision_window.trading_day,
+                decision_window.symbol,
+                frequency.value,
+                None,
+            )
+        except Exception as exc:  # noqa: BLE001 - Alert input must be complete
+            raise MarketReadWindowError("MARKET_READ_LIVE_UNAVAILABLE") from exc
+
+        merged = {bar.bar_end: bar for bar in canonical}
+        for bar in live:
+            if bar.bar_end > cutoff:
+                continue
+            if normalized_after is not None and bar.bar_end <= normalized_after:
+                continue
+            existing = merged.get(bar.bar_end)
+            if existing is not None and existing != bar:
+                raise MarketReadWindowError("MARKET_READ_LIVE_UNAVAILABLE")
+            merged[bar.bar_end] = bar
+        bars = tuple(merged[bar_end] for bar_end in sorted(merged))
+        if not bars or bars[-1].bar_end != cutoff:
+            raise MarketReadWindowError("MARKET_READ_CUTOFF_BAR_MISSING")
+        return CurrentContractReplayWindow(
+            symbol=decision_window.symbol,
+            frequency=frequency.value,
+            trading_day=decision_window.trading_day,
+            contract=contract,
+            cutoff=cutoff,
+            after=normalized_after,
+            bars=bars,
+        )
+
+    def _current_contract_history(
+        self,
+        *,
+        symbol: str,
+        frequency: BarFrequency,
+        contract: str,
+        cutoff: datetime,
+        after: datetime | None,
+    ) -> tuple[CanonicalBar, ...]:
+        before = cutoff + timedelta(microseconds=1)
+        collected: dict[datetime, CanonicalBar] = {}
+        while True:
+            page = self.history_page(
+                SeriesPageQuery(
+                    series_kind=SeriesKind.CONTRACT,
+                    symbol=symbol,
+                    frequency=frequency,
+                    contract=contract,
+                    before=before,
+                    limit=2000,
+                )
+            )
+            for bar in page.bars:
+                if bar.bar_end > cutoff:
+                    continue
+                if after is not None and bar.bar_end <= after:
+                    continue
+                collected[bar.bar_end] = bar
+
+            if not page.has_more_before:
+                break
+            next_before = page.next_before
+            if next_before is None or next_before >= before:
+                raise MarketReadWindowError("MARKET_READ_PAGINATION_STALLED")
+            if after is not None and page.bars and page.bars[0].bar_end <= after:
+                break
+            before = next_before
+        return tuple(collected[bar_end] for bar_end in sorted(collected))
 
     def latest_canonical_window(
         self,
@@ -554,6 +682,36 @@ def _resolved_contract_for_bar(
     if contract is None:
         raise MarketReadWindowError("MARKET_READ_CONTRACT_UNAVAILABLE")
     return contract
+
+
+def _current_contract_replay_frequency(
+    decision_window: MarketReadWindow,
+) -> BarFrequency:
+    if decision_window.series_kind != SeriesKind.ACTUAL_DOMINANT.value:
+        raise MarketReadWindowError("MARKET_READ_IDENTITY_UNSUPPORTED")
+    try:
+        frequency = BarFrequency(decision_window.frequency)
+    except ValueError as exc:
+        raise MarketReadWindowError("MARKET_READ_IDENTITY_UNSUPPORTED") from exc
+    if frequency not in INTRADAY_FREQUENCIES:
+        raise MarketReadWindowError("MARKET_READ_IDENTITY_UNSUPPORTED")
+    if (
+        decision_window.cutoff.tzinfo is None
+        or decision_window.cutoff.utcoffset() is None
+    ):
+        raise MarketReadWindowError("MARKET_READ_CUTOFF_TIMEZONE_REQUIRED")
+    return frequency
+
+
+def _replay_after(after: datetime | None, cutoff: datetime) -> datetime | None:
+    if after is None:
+        return None
+    if not isinstance(after, datetime) or after.tzinfo is None or after.utcoffset() is None:
+        raise MarketReadWindowError("MARKET_READ_AFTER_TIMEZONE_REQUIRED")
+    normalized = after.astimezone(UTC)
+    if normalized > cutoff:
+        raise MarketReadWindowError("MARKET_READ_AFTER_EXCEEDS_CUTOFF")
+    return normalized
 
 
 def _later(first: datetime | None, second: datetime | None) -> datetime | None:
