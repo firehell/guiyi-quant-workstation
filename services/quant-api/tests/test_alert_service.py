@@ -165,7 +165,7 @@ def test_current_events_are_product_and_trading_day_scoped(session: Session) -> 
     ) == ()
 
 
-def test_global_current_events_are_registry_only_sorted_and_limited(session: Session) -> None:
+def test_global_current_events_keep_unknown_rules_for_api_fail_closed_validation(session: Session) -> None:
     service = AlertService(session, operational_products=("jm",))
     active_rule = session.scalar(select(AlertRule).where(AlertRule.rule_code == "htdy_original_15m"))
     assert active_rule is not None
@@ -239,7 +239,7 @@ def test_global_current_events_are_registry_only_sorted_and_limited(session: Ses
 
     events = service.list_current_events(trading_day=TRADING_DAY, limit=2)
 
-    assert [event.frequency for event in events] == ["30m", "5m"]
+    assert [event.frequency for event in events] == ["60m", "30m"]
 
 
 def request(
