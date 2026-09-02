@@ -13,8 +13,10 @@
 | 通用 EMA21 斜率 | 只保留 10K primitive | 恰好 10 个 EMA21 值；首尾差 / 9 / 当前 EMA21 × 10000；无周期、方向过滤或策略语义 |
 | Range Detector | 仅只读图表展示 | 不进入策略、Alert、Runtime、通知或数据写入 |
 | HTDY | operational universe × 七周期 observation；持久 Alert 只记录触发窗口最新 completed Bar 的 forward-only first-seen 事实 | Scope 只认 symbol × frequency；D1/W1 只走 `canonical_updated` seam；历史 repaint 只供 Web 展示 |
-| Alert | 两表、Event 先提交、one-shot transport | 0043 后只保留 HTDY Rule/Event 所需字段；无 retry/replay/backfill/queue/outbox/订单；provider accepted 不等于送达 |
-| Market Home | 牛哇式有限图标 + bulk read-only overview + current HTDY Event | 首页只有 overview、Runtime health、current HTDY Event 三个 O(1) 读取；图标不是策略、持仓、买卖建议或订单；详情页只作人工复核 |
+| 苏冰预警 | 新 `subing_ths_alert_15m_v1` observation，公式版本 `subing_ths_15m_v2` | completed actual_dominant 15m；MACD exact CROSS + `EMA(CLOSE, 21)`；同物理合约 warm-up/rollover；无零轴、Range、量能、斜率或多周期隐藏过滤；`exact Event` |
+| Alert | 两表、Event 先提交、one-shot transport | 0043 删除旧策略，0044 只加 disabled + empty-scope SuBing；HTDY `first_seen`、SuBing `exact`；无 retry/replay/backfill/queue/outbox/订单；provider accepted 不等于送达 |
+| Alert activation | disabled Rule 的通用 Scope 写入必须拒绝；SuBing 首次启用走专用原子 seam | dry-run 零写入；apply 只在精确 0044 和 disabled + empty scope preflight 后一次 commit/readback；先 G10 兼容性 evidence，后 G9 Scope + enable |
+| Market Home | 牛哇式有限图标 + bulk read-only overview + current Alert Events | 首页只有 overview、Runtime health、current Alert Events 三个 O(1) 读取；图标/HTDY marker/SuBing `S↑/S↓` 不是策略、持仓、买卖建议或订单；详情页只作人工复核 |
 | 既有策略整体退役 | 删除其代码、配置、API、CLI、Web、Runtime、Scope、Event 和派生 cache 能力 | 旧身份只保留 Git/Alembic lineage 与删除迁移断言；未来策略必须使用新身份、新合同和新版本 |
 | Validation | causality、strict-before、future-leak、prefix invariance、golden parity、fail-closed 是长期合同 | Retrospective 不回填 prospective OOS，不自动晋升候选 |
 | 外部操作 | 真实数据/DB、Runtime/live、Scope、通知、release/tag 需要范围明确的一次性执行意图 | 测试、dry-run、历史授权、配置存在或 health 不构成 mutation 授权 |
