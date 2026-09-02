@@ -82,6 +82,36 @@ test('fails closed for malformed market home authority facts', () => {
   }
 })
 
+test('fails closed for overview status, date, and per-sector fact disagreements', () => {
+  const degradedStale = {
+    ...structuredClone(overview),
+    status: 'degraded',
+    freshness: 'stale',
+    active_count: 3,
+    stale_count: 1,
+    sectors: [
+      { ...overview.sectors[0], active_count: 2 },
+      { ...overview.sectors[1], active_count: 1 },
+    ],
+  }
+  const invalidCases: unknown[] = [
+    { ...degradedStale, status: 'ready', freshness: 'fresh' },
+    { ...overview, status: 'degraded' },
+    { ...overview, target_as_of: '2026-09-01' },
+    {
+      ...degradedStale,
+      sectors: [
+        { ...degradedStale.sectors[0], active_count: 1, participant_count: 0 },
+        { ...degradedStale.sectors[1], active_count: 2, participant_count: 2 },
+      ],
+    },
+  ]
+
+  for (const payload of invalidCases) {
+    assert.throws(() => normalizeMarketHomeOverviewResponse(payload))
+  }
+})
+
 test('fails closed when a completed D1 close is null', () => {
   const payload = structuredClone(overview)
   payload.items[0].close = null

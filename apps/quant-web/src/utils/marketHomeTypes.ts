@@ -11,6 +11,8 @@ const MARKET_TRENDS = new Set<MarketHomeTrend>(['up', 'down', 'neutral', 'unavai
 
 export function normalizeMarketHomeOverviewResponse(payload: unknown): MarketHomeOverviewResponse {
   const value = record(payload, 'market home overview')
+  const status = literal(value.status, ['ready', 'degraded'], 'status')
+  const freshness = literal(value.freshness, ['fresh', 'stale', 'unavailable'], 'freshness')
   const items = array(value.items, 'items').map((item, index) => normalizeItem(item, index))
   const participantCount = count(value.participant_count, 'participant_count')
   const activeCount = count(value.active_count, 'active_count')
@@ -21,11 +23,26 @@ export function normalizeMarketHomeOverviewResponse(payload: unknown): MarketHom
   if (participantCount !== items.length || activeCount !== participantCount + staleCount + unavailableCount) throw new Error('market home counts are inconsistent')
   const targetAsOf = day(value.target_as_of, 'target_as_of')
   const dataAsOf = day(value.data_as_of, 'data_as_of')
+  if (targetAsOf !== dataAsOf) throw new Error('market home target_as_of and data_as_of disagree')
   if (items.some((item) => item.data_as_of !== dataAsOf)) throw new Error('market home items disagree on data_as_of')
   const summary = normalizeSummary(value.summary, participantCount)
   const sectors = array(value.sectors, 'sectors').map((sector, index) => normalizeSector(sector, index))
-  if (new Set(sectors.map((sector) => sector.sector)).size !== sectors.length || sectors.reduce((total, sector) => total + sector.active_count, 0) !== activeCount || sectors.reduce((total, sector) => total + sector.participant_count, 0) !== participantCount) throw new Error('market home sectors are inconsistent')
-  return { status: literal(value.status, ['ready', 'degraded'], 'status'), target_as_of: targetAsOf, data_as_of: dataAsOf, freshness: literal(value.freshness, ['fresh', 'stale', 'unavailable'], 'freshness'), active_count: activeCount, participant_count: participantCount, stale_count: staleCount, unavailable_count: unavailableCount, summary, items, sectors }
+  const participantBySector = new Map<string, number>()
+  for (const item of items) participantBySector.set(item.sector, (participantBySector.get(item.sector) ?? 0) + 1)
+  if (
+    new Set(sectors.map((sector) => sector.sector)).size !== sectors.length
+    || sectors.reduce((total, sector) => total + sector.active_count, 0) !== activeCount
+    || sectors.reduce((total, sector) => total + sector.participant_count, 0) !== participantCount
+    || sectors.some((sector) => sector.participant_count !== (participantBySector.get(sector.sector) ?? 0))
+  ) throw new Error('market home sectors are inconsistent')
+  if (
+    (status === 'ready' && (freshness !== 'fresh' || staleCount !== 0 || unavailableCount !== 0 || participantCount !== activeCount))
+    || (status === 'degraded' && freshness === 'fresh')
+    || (freshness === 'fresh' && (staleCount !== 0 || unavailableCount !== 0 || participantCount !== activeCount))
+    || (freshness === 'stale' && (staleCount === 0 || unavailableCount !== 0))
+    || (freshness === 'unavailable' && unavailableCount === 0)
+  ) throw new Error('market home overview status and freshness are inconsistent')
+  return { status, target_as_of: targetAsOf, data_as_of: dataAsOf, freshness, active_count: activeCount, participant_count: participantCount, stale_count: staleCount, unavailable_count: unavailableCount, summary, items, sectors }
 }
 
 export function normalizeCurrentHtdyEventsResponse(payload: unknown): CurrentHtdyEventsResponse {

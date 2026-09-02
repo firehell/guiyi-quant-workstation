@@ -26,6 +26,17 @@ function allTableStatesOverview() {
   value.sectors = [{ sector: 'black', active_count: 5, participant_count: 5, median_price_change_1d: '0.01' }]
   return value
 }
+function degradedStaleOverview() {
+  const value = overview()
+  value.status = 'degraded'
+  value.freshness = 'stale'
+  value.participant_count = 1
+  value.stale_count = 1
+  value.summary = { price_up_count: 1, price_down_count: 0, price_flat_count: 0, daily_up_count: 1, daily_down_count: 0, daily_neutral_count: 0, daily_unavailable_count: 0, aligned_up_count: 1, aligned_down_count: 0 }
+  value.items = [value.items[0]]
+  value.sectors = [{ ...value.sectors[0] }, { ...value.sectors[1], participant_count: 0 }]
+  return value
+}
 function runtime(status = 'degraded') { return { status, generated_at: '2026-09-02T01:00:00Z', readonly: true, would_start_services: false, would_enqueue_jobs: false, would_send_notifications: false, components: {} } }
 function events() { return { status: 'ready', trading_day: '2026-09-02', items: [{ id: 1, rule_code: 'htdy_original_15m', symbol: 'ag', contract: 'AG2601', trading_day: '2026-09-02', frequency: '15m', bar_end: '2026-09-02T02:45:00Z', result_codes: ['buy'], detected_at: '2026-09-02T02:45:01Z', notification_attempted_at: null }] } }
 
@@ -84,6 +95,11 @@ test('renders all five frozen table state icons at 28px', async ({ page }) => {
     await expect(icon).toHaveCSS('width', '28px')
     await expect(icon).toHaveCSS('background-color', color)
   }
+  await expect(page.locator('.table-wrap')).toHaveScreenshot('market-home-five-table-states.png', {
+    animations: 'disabled',
+    caret: 'hide',
+    maxDiffPixels: 400,
+  })
 })
 
 test('distinguishes an empty current Event projection from an unavailable projection', async ({ page }) => {
@@ -147,7 +163,7 @@ test('keeps focus visible and narrows the Focus Rail to 280px at 1280px', async 
 test('retains a cached snapshot and surfaces overview and Runtime degradation', async ({ page }) => {
   let attempts = 0
   const requests = []
-  await mockMarketHomeApi(page, requests, events(), () => { attempts += 1; if (attempts > 1) return null; return { ...overview(), status: 'degraded', freshness: 'stale' } }, { ...runtime(), status: 'degraded' })
+  await mockMarketHomeApi(page, requests, events(), () => { attempts += 1; if (attempts > 1) return null; return degradedStaleOverview() }, { ...runtime(), status: 'degraded' })
   await page.goto('/market')
   await expect(page.getByText('overview degraded')).toBeVisible()
   await page.getByText('全部刷新').click()

@@ -38,7 +38,10 @@ export function buildMarketHomeViewModel(input: MarketHomeViewModelInput) {
       ? 'unavailable'
       : input.events.items.length ? 'ready' : 'empty'
   const latestEvents = eventAvailability === 'unavailable' ? new Map<string, AlertEvent>() : latestEventsBySymbol(input.events?.items ?? [])
-  const staleOverviewFacts = Boolean(input.overviewStale)
+  // A failed refresh preserves a cached snapshot, while a successful degraded
+  // overview is current transport data whose market facts are explicitly stale.
+  // Both must withhold colored trend facts, but only the former is cached stale.
+  const staleOverviewFacts = Boolean(input.overviewStale || (input.overview && input.overview.freshness !== 'fresh'))
   const rows = (input.overview?.items ?? []).map((item) => ({
     ...item,
     alignment: staleOverviewFacts ? 'unavailable' : alignmentFor(item.daily_trend, item.weekly_trend),

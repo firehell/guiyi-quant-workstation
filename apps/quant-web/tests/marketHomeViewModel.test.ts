@@ -81,7 +81,7 @@ test('withholds cached Event facts from rows while the current Event projection 
   assert.equal(value.rows[0]!.event, null)
 })
 
-test('keeps a server-degraded overview distinct from a cached client snapshot', () => {
+test('keeps a server-degraded overview distinct from a cached client snapshot while withholding stale row facts', () => {
   const value = buildMarketHomeViewModel({
     overview: overview([item('ag', 'up', 'up')], { status: 'degraded', freshness: 'stale' }), overviewStale: false,
     runtime, runtimeStale: false,
@@ -90,7 +90,9 @@ test('keeps a server-degraded overview distinct from a cached client snapshot', 
 
   assert.equal(value.overview.availability, 'degraded')
   assert.equal(value.overview.cachedStale, false)
-  assert.equal(value.rows[0]!.dailyState, 'up')
+  assert.equal(value.rows[0]!.dailyState, 'unavailable')
+  assert.equal(value.rows[0]!.weeklyState, 'unavailable')
+  assert.equal(value.rows[0]!.alignment, 'unavailable')
 })
 
 function event(id: number, symbol: string, detectedAt: string) {
