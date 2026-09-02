@@ -7,7 +7,11 @@ from types import SimpleNamespace
 import pytest
 
 from app.guiyi_cli import data_commands
-from app.market_data.historical_data_manager import RefreshRequest, UpdateRequest
+from app.market_data.historical_data_manager import (
+    AuditRequest,
+    RefreshRequest,
+    UpdateRequest,
+)
 from app.market_data.market_home_overview import MarketHomeAuthorityIdentity
 from app.market_data.market_home_projection import (
     MarketHomeProjectionError,
@@ -22,20 +26,30 @@ class _Manager:
         self.calls: list[str] = []
         self.projection_path = market_home_projection_path(canonical_root)
         self.projection_exists_at_action: list[bool] = []
+        self.fail_after_invalidation = False
 
     def update(self, _request):
         self.projection_exists_at_action.append(self.projection_path.exists())
         self.calls.append("update")
+        if self.fail_after_invalidation:
+            raise RuntimeError("manager update failed")
         return "updated"
 
     def refresh(self, _request):
         self.projection_exists_at_action.append(self.projection_path.exists())
         self.calls.append("refresh")
+        if self.fail_after_invalidation:
+            raise RuntimeError("manager refresh failed")
         return "refreshed"
+
+    def audit(self, _request):
+        self.projection_exists_at_action.append(self.projection_path.exists())
+        self.calls.append("audit")
+        return "audited"
 
 
 @pytest.mark.parametrize(
-    ("command", "request", "expected"),
+    ("command", "data_request", "expected"),
     [
         (
             "update",
@@ -53,7 +67,7 @@ def test_apply_data_command_invalidates_projection_before_manager_action(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     command: str,
-    request: UpdateRequest | RefreshRequest,
+    data_request: UpdateRequest | RefreshRequest,
     expected: str,
 ) -> None:
     canonical_root = tmp_path / "canonical"
@@ -61,7 +75,7 @@ def test_apply_data_command_invalidates_projection_before_manager_action(
     projection = manager.projection_path
     projection.parent.mkdir(parents=True)
     projection.write_text("old projection", encoding="utf-8")
-    monkeypatch.setattr(data_commands, "build_request", lambda _args: request)
+    monkeypatch.setattr(data_commands, "build_request", lambda _args: data_request)
     args = SimpleNamespace(data_command=command)
 
     result = data_commands.run_data_command(args, manager)  # type: ignore[arg-type]
@@ -72,25 +86,61 @@ def test_apply_data_command_invalidates_projection_before_manager_action(
     assert not projection.exists()
 
 
-def test_dry_run_does_not_invalidate_projection(
+@pytest.mark.parametrize(
+    ("command", "data_request", "expected"),
+    [
+        ("update", UpdateRequest(("jm",), None, None, apply=False), "updated"),
+        (
+            "refresh",
+            RefreshRequest("jm", date(2026, 9, 1), date(2026, 9, 2), apply=False),
+            "refreshed",
+        ),
+        ("audit", AuditRequest(("jm",), through=None), "audited"),
+    ],
+)
+def test_non_apply_data_commands_do_not_invalidate_projection(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    command: str,
+    data_request: AuditRequest | RefreshRequest | UpdateRequest,
+    expected: str,
 ) -> None:
     canonical_root = tmp_path / "canonical"
     manager = _Manager(canonical_root)
     projection = manager.projection_path
     projection.parent.mkdir(parents=True)
     projection.write_text("old projection", encoding="utf-8")
-    request = UpdateRequest(("jm",), None, None, apply=False)
-    monkeypatch.setattr(data_commands, "build_request", lambda _args: request)
-    args = SimpleNamespace(data_command="update")
+    monkeypatch.setattr(data_commands, "build_request", lambda _args: data_request)
+    args = SimpleNamespace(data_command=command)
 
     result = data_commands.run_data_command(args, manager)  # type: ignore[arg-type]
 
-    assert result == "updated"
-    assert manager.calls == ["update"]
+    assert result == expected
+    assert manager.calls == [command]
     assert manager.projection_exists_at_action == [True]
     assert projection.read_text(encoding="utf-8") == "old projection"
+
+
+def test_apply_failure_keeps_projection_invalidated(tmp_path: Path, monkeypatch) -> None:
+    canonical_root = tmp_path / "canonical"
+    manager = _Manager(canonical_root)
+    manager.fail_after_invalidation = True
+    projection = manager.projection_path
+    projection.parent.mkdir(parents=True)
+    projection.write_text("old projection", encoding="utf-8")
+    monkeypatch.setattr(
+        data_commands,
+        "build_request",
+        lambda _args: UpdateRequest(("jm",), None, None, apply=True),
+    )
+
+    with pytest.raises(RuntimeError, match="manager update failed"):
+        data_commands.run_data_command(
+            SimpleNamespace(data_command="update"), manager  # type: ignore[arg-type]
+        )
+
+    assert manager.projection_exists_at_action == [False]
+    assert not projection.exists()
 
 
 def test_projection_store_rejects_symlink_parent_for_read_and_invalidation(

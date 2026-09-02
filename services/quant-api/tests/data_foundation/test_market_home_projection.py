@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -32,15 +33,20 @@ class _Service:
         self,
         *,
         identity: MarketHomeAuthorityIdentity = IDENTITY,
+        identities: tuple[MarketHomeAuthorityIdentity, ...] | None = None,
         snapshot: MarketHomeOverviewSnapshot | None = None,
     ) -> None:
         self.identity = identity
+        self.identities = identities
         self.snapshot_value = snapshot or _snapshot()
         self.identity_calls = 0
         self.snapshot_calls = 0
 
     def authority_identity(self) -> MarketHomeAuthorityIdentity:
         self.identity_calls += 1
+        if self.identities is not None:
+            index = min(self.identity_calls - 1, len(self.identities) - 1)
+            return self.identities[index]
         return self.identity
 
     def snapshot(self) -> MarketHomeOverviewSnapshot:
@@ -227,6 +233,56 @@ def test_projection_store_rejects_schema_target_digest_and_payload_identity_mism
     assert store.load(IDENTITY) is None
 
 
+def test_projection_store_rejects_unknown_fields_and_bad_envelope_values(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "market-home-overview.json"
+    store = MarketHomeProjectionStore(path)
+    payload = market_home_response(_snapshot())
+    store.publish(
+        IDENTITY,
+        payload,
+        generated_at=datetime(2026, 9, 2, 9, 0, tzinfo=UTC),
+    )
+    valid = json.loads(path.read_text(encoding="utf-8"))
+
+    for mutate in (
+        lambda value: value.update(unexpected=True),
+        lambda value: value["payload"].update(unexpected=True),
+        lambda value: value.update(generated_at="2026-09-02T09:00:00"),
+        lambda value: value.update(authority_digest="A" * 64),
+        lambda value: value.update(target_as_of="not-a-date"),
+    ):
+        candidate = json.loads(json.dumps(valid))
+        mutate(candidate)
+        path.write_text(json.dumps(candidate), encoding="utf-8")
+
+        assert store.load(IDENTITY) is None
+
+
+def test_projection_store_rejects_symlink_parent_on_publish(tmp_path: Path) -> None:
+    canonical_root = tmp_path / "canonical"
+    canonical_root.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (canonical_root / ".derived").symlink_to(outside, target_is_directory=True)
+    store = MarketHomeProjectionStore(
+        canonical_root / ".derived" / "market-home-overview.json"
+    )
+
+    with pytest.raises(
+        MarketHomeProjectionError,
+        match="MARKET_HOME_PROJECTION_WRITE_FAILED",
+    ):
+        store.publish(
+            IDENTITY,
+            market_home_response(_snapshot()),
+            generated_at=datetime(2026, 9, 2, 9, 0, tzinfo=UTC),
+        )
+
+    assert not tuple(outside.iterdir())
+
+
 def test_projection_read_hit_does_not_call_expensive_snapshot(tmp_path: Path) -> None:
     store = MarketHomeProjectionStore(tmp_path / "market-home-overview.json")
     payload = market_home_response(_snapshot())
@@ -272,6 +328,31 @@ def test_projection_refresh_rejects_identity_race_without_publishing(tmp_path: P
     ):
         projection.refresh()
 
+    assert not path.exists()
+
+
+def test_projection_refresh_rejects_same_day_authority_digest_race(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "market-home-overview.json"
+    service = _Service(
+        identities=(
+            IDENTITY,
+            MarketHomeAuthorityIdentity(TARGET, "b" * 64),
+        )
+    )
+    projection = MarketHomeProjection(
+        service=service,
+        store=MarketHomeProjectionStore(path),
+    )
+
+    with pytest.raises(
+        MarketHomeProjectionError,
+        match="MARKET_HOME_PROJECTION_IDENTITY_CHANGED",
+    ):
+        projection.refresh()
+
+    assert service.identity_calls == 2
     assert not path.exists()
 
 

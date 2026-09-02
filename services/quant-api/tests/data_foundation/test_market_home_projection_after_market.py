@@ -53,9 +53,12 @@ class _LiveStore:
     def __init__(self, events: list[str]) -> None:
         self.events = events
         self.cleaned: list[date] = []
+        self.fail_stage: str | None = None
 
     def subscriptions(self, trading_day: date):
         assert trading_day == _DAY
+        if self.fail_stage == "reconciliation":
+            return {}
         return dict(_CONTRACTS)
 
     def publish_state(self, payload: dict[str, str]) -> None:
@@ -63,9 +66,13 @@ class _LiveStore:
             "trading_day": _DAY.isoformat(),
             "reason": "canonical_updated",
         }
+        if self.fail_stage == "canonical_updated":
+            raise RuntimeError("private canonical publish detail")
         self.events.append("canonical_updated")
 
     def cleanup_trading_day(self, trading_day: date) -> None:
+        if self.fail_stage == "cleanup":
+            raise RuntimeError("private cleanup detail")
         self.cleaned.append(trading_day)
 
 
@@ -206,3 +213,23 @@ def test_projection_refresh_failure_is_performance_only_after_core_success(
     assert "market_home_projection_refresh_failed" in caplog.text
     assert "RuntimeError" in caplog.text
     assert "private projection detail" not in caplog.text
+
+
+@pytest.mark.parametrize(
+    "stage",
+    ["canonical_updated", "reconciliation", "cleanup"],
+)
+def test_core_seam_failure_never_refreshes_projection(tmp_path, stage: str) -> None:
+    calls: list[str] = []
+    updater, _events, live_store, manager = _updater(
+        tmp_path,
+        invalidate=lambda: calls.append("invalidate"),
+        refresh=lambda: calls.append("projection"),
+    )
+    live_store.fail_stage = stage
+
+    result = updater.run()
+
+    assert result.status == "failed"
+    assert manager.calls == 1
+    assert calls == ["invalidate"]

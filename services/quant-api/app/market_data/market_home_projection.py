@@ -183,7 +183,10 @@ class MarketHomeProjection:
     def refresh(self) -> MarketHomeOverviewResponse:
         identity = self.service.authority_identity()
         response = market_home_response(self.service.snapshot())
-        if response.target_as_of != identity.target_as_of:
+        if (
+            response.target_as_of != identity.target_as_of
+            or self.service.authority_identity() != identity
+        ):
             raise MarketHomeProjectionError(
                 "MARKET_HOME_PROJECTION_IDENTITY_CHANGED"
             )
