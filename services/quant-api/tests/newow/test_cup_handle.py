@@ -3,6 +3,7 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from hashlib import sha256
 import pickle
+from typing import Mapping
 
 import pytest
 
@@ -173,8 +174,10 @@ def test_true_bullish_fixture_reaches_frozen_ready_then_breakout() -> None:
 def test_bearish_fixture_is_an_exact_directional_mirror() -> None:
     """A one-sided implementation would silently omit the specified bearish risk pattern."""
 
-    bullish = calculate_cup_handle_series(bullish_true_cup_handle())
-    bearish = calculate_cup_handle_series(bearish_true_cup_handle())
+    bullish_bars = bullish_true_cup_handle()
+    bearish_bars = bearish_true_cup_handle()
+    bullish = calculate_cup_handle_series(bullish_bars)
+    bearish = calculate_cup_handle_series(bearish_bars)
     bull_overlay = next(
         result.active_overlay
         for result in bullish
@@ -200,6 +203,119 @@ def test_bearish_fixture_is_an_exact_directional_mirror() -> None:
     assert bear_overlay.left_rim.pivot_index == bull_overlay.left_rim.pivot_index
     assert bear_overlay.bottom.pivot_index == bull_overlay.bottom.pivot_index
     assert bear_overlay.right_rim.pivot_index == bull_overlay.right_rim.pivot_index
+    assert [
+        result.active_overlay.state if result.active_overlay is not None else None
+        for result in bearish
+    ] == [
+        result.active_overlay.state if result.active_overlay is not None else None
+        for result in bullish
+    ]
+
+    for bull_anchor, bear_anchor in zip(
+        (
+            bull_overlay.left_rim,
+            bull_overlay.bottom,
+            bull_overlay.right_rim,
+            bull_overlay.handle_extreme,
+        ),
+        (
+            bear_overlay.left_rim,
+            bear_overlay.bottom,
+            bear_overlay.right_rim,
+            bear_overlay.handle_extreme,
+        ),
+        strict=True,
+    ):
+        assert bull_anchor is not None and bear_anchor is not None
+        assert bull_anchor.kind != bear_anchor.kind
+        assert bull_anchor.price + bear_anchor.price == Decimal("200")
+        assert (
+            bull_anchor.pivot_at,
+            bull_anchor.confirmed_at,
+            bull_anchor.pivot_index,
+            bull_anchor.confirmed_index,
+            bull_anchor.atr_at_pivot,
+        ) == (
+            bear_anchor.pivot_at,
+            bear_anchor.confirmed_at,
+            bear_anchor.pivot_index,
+            bear_anchor.confirmed_index,
+            bear_anchor.atr_at_pivot,
+        )
+    assert bull_overlay.pivot_price is not None and bear_overlay.pivot_price is not None
+    assert bull_overlay.pivot_price + bear_overlay.pivot_price == Decimal("200")
+
+    bull_markers = _markers(bullish)
+    bear_markers = _markers(bearish)
+    assert [marker.marker_type for marker in bear_markers] == [
+        marker.marker_type for marker in bull_markers
+    ]
+    assert [marker.bar_end for marker in bear_markers] == [
+        marker.bar_end for marker in bull_markers
+    ]
+    marker_id_mirror = {
+        bull.marker_id: bear.marker_id
+        for bull, bear in zip(bull_markers, bear_markers, strict=True)
+    }
+    for bull, bear in zip(bull_markers, bear_markers, strict=True):
+        assert bull.price + bear.price == Decimal("200")
+        assert bear.related_marker_ids == tuple(
+            marker_id_mirror[marker_id] for marker_id in bull.related_marker_ids
+        )
+        assert bear.trigger_facts["direction"] == "BEARISH"
+        assert bull.trigger_facts["direction"] == "BULLISH"
+        for key in (
+            "state_before",
+            "state_after",
+            "score",
+            "score_breakdown",
+            "volume_facts",
+            "formula_version",
+            "full_score",
+            "breakout_volume20_median",
+            "breakout_volume20_ratio",
+            "breakout_handle_volume_ratio",
+        ):
+            if key in bull.trigger_facts or key in bear.trigger_facts:
+                assert bear.trigger_facts[key] == bull.trigger_facts[key]
+        for key in ("left_rim", "bottom", "right_rim", "handle_extreme"):
+            bull_facts = bull.trigger_facts[key]
+            bear_facts = bear.trigger_facts[key]
+            assert isinstance(bull_facts, Mapping)
+            assert isinstance(bear_facts, Mapping)
+            assert bull_facts["kind"] != bear_facts["kind"]
+            assert Decimal(str(bull_facts["price"])) + Decimal(
+                str(bear_facts["price"])
+            ) == Decimal("200")
+            for fact_key in (
+                "pivot_at",
+                "confirmed_at",
+                "pivot_index",
+                "confirmed_index",
+                "atr_at_pivot",
+            ):
+                assert bull_facts[fact_key] == bear_facts[fact_key]
+        assert Decimal(str(bull.trigger_facts["pivot_price"])) + Decimal(
+            str(bear.trigger_facts["pivot_price"])
+        ) == Decimal("200")
+
+    state = initial_cup_handle_state()
+    incremental = []
+    for bar in bearish_bars:
+        result = step_cup_handle(state, bar)
+        incremental.append(result)
+        state = result.state
+    assert tuple(incremental) == bearish
+    for cut in (46, 61, 76, 83, 85):
+        assert calculate_cup_handle_series(bearish_bars[:cut]) == bearish[:cut]
+    cut = 84
+    restored = pickle.loads(pickle.dumps(bearish[cut - 1].state))
+    resumed = []
+    for bar in bearish_bars[cut:]:
+        result = step_cup_handle(restored, bar)
+        resumed.append(result)
+        restored = result.state
+    assert tuple(resumed) == bearish[cut:]
 
 
 def test_ready_and_breakout_same_bar_emit_both_markers_in_order() -> None:
@@ -241,7 +357,6 @@ def test_ready_and_breakout_same_bar_emit_both_markers_in_order() -> None:
             {"right_price": Decimal("98"), "bottom_price": Decimal("78"), "atr": 1.0},
             "RIM_GAP_ATR_EXCEEDED",
         ),
-        ({"bottom_span": 1}, "V_BOTTOM_SINGLE_BAR"),
         ({"bottom_index": 36}, "LEG_RATIO_EXTREME"),
         ({"wide_crossings": True}, "MIDLINE_CROSSINGS_EXCEEDED"),
     ],
@@ -257,6 +372,23 @@ def test_each_body_hard_gate_rejects_without_a_fake_overlay(
     assert expected in result.diagnostics
     assert result.active_overlay is None
     assert result.markers == ()
+
+
+def test_single_bar_v_bottom_can_form_but_never_become_ready() -> None:
+    """A one-Bar bottom scores zero for span and remains FORMING-only."""
+
+    case = restored_cup_case(bottom_span=1)
+    result = step_cup_handle(case.state, case.next_bar)
+
+    assert "V_BOTTOM_SINGLE_BAR" in result.diagnostics
+    assert result.active_overlay is not None
+    assert result.active_overlay.state == CupHandleState.FORMING
+    assert result.active_overlay.score_breakdown["u_shape_purity"] == 10.0
+    assert result.active_overlay.score == 48.0
+    assert not any(
+        marker.marker_type == NewowMarkerType.CUP_HANDLE_READY
+        for marker in result.markers
+    )
 
 
 @pytest.mark.parametrize(
@@ -299,31 +431,33 @@ def test_each_handle_and_ready_volume_gate_blocks_promotion(
 
 
 @pytest.mark.parametrize(
-    "bars_factory",
+    ("bars_factory", "expected_diagnostic"),
     [
-        pretrend_not_confirmed,
-        downtrend_rebound_rejected,
-        shallow_cup_rejected,
-        cup_too_deep_rejected,
-        v_bottom_rejected,
-        wide_range_rejected,
-        rim_gap_rejected,
-        handle_too_short_rejected,
-        handle_too_long_rejected,
-        handle_too_deep_rejected,
-        handle_below_mid_rejected,
-        handle_volume_not_contracting,
-        rollover_split_candidate,
+        (pretrend_not_confirmed, "PRETREND_NOT_CONFIRMED"),
+        (downtrend_rebound_rejected, "PRETREND_NOT_CONFIRMED"),
+        (shallow_cup_rejected, "CUP_DEPTH_BELOW_10_PERCENT"),
+        (cup_too_deep_rejected, "CUP_DEPTH_ABOVE_50_PERCENT"),
+        (v_bottom_rejected, "V_BOTTOM_SINGLE_BAR"),
+        (wide_range_rejected, "MIDLINE_CROSSINGS_EXCEEDED"),
+        (rim_gap_rejected, "RIM_GAP_PERCENT_EXCEEDED"),
+        (handle_too_short_rejected, "HANDLE_DURATION_OUT_OF_RANGE"),
+        (handle_too_long_rejected, "HANDLE_DURATION_OUT_OF_RANGE"),
+        (handle_too_deep_rejected, "HANDLE_DEPTH_EXCEEDED"),
+        (handle_below_mid_rejected, "HANDLE_BELOW_CUP_MID"),
+        (handle_volume_not_contracting, "HANDLE_VOLUME_NOT_CONTRACTING"),
+        (rollover_split_candidate, "CUP_ROLLOVER_RESET"),
     ],
 )
 def test_approved_negative_bar_fixtures_never_emit_ready_or_breakout(
-    bars_factory: object,
+    bars_factory: object, expected_diagnostic: str
 ) -> None:
-    """The named fixture matrix protects the user-visible false-positive boundary."""
+    """Each named causal fixture must actually execute its documented Gate."""
 
     results = calculate_cup_handle_series(bars_factory())  # type: ignore[operator]
     marker_types = {marker.marker_type for marker in _markers(results)}
+    diagnostics = {diagnostic for result in results for diagnostic in result.diagnostics}
 
+    assert expected_diagnostic in diagnostics
     assert NewowMarkerType.CUP_HANDLE_READY not in marker_types
     assert NewowMarkerType.CUP_HANDLE_BREAKOUT not in marker_types
 
@@ -778,6 +912,30 @@ def test_breakout_weakened_invalidated_relations_and_frozen_facts() -> None:
     assert invalidated.trigger_facts["state_before"] == "WEAKENED"
 
 
+def test_long_lived_weakened_state_survives_bounded_history_rollover() -> None:
+    """Authentic WEAKENED state remains valid after its BREAKOUT Bar ages out."""
+
+    bars = breakout_then_weakened()
+    state = calculate_cup_handle_series(bars)[-1].state
+    prior = bars[-1]
+    diagnostics: list[str] = []
+    for offset in range(1, 231):
+        day = prior.trading_day + timedelta(days=offset)
+        bar = replace(
+            prior,
+            trading_day=day,
+            bar_end=datetime.combine(day, datetime.min.time(), tzinfo=UTC),
+            source_identity=f"fixture:long-weakened:{offset}",
+        )
+        result = step_cup_handle(state, bar)
+        diagnostics.extend(result.diagnostics)
+        state = result.state
+
+    assert "NEWOW_CUP_STATE_INVALID" not in diagnostics
+    assert state.active_candidate is not None
+    assert state.active_candidate.state == CupHandleState.WEAKENED
+
+
 def test_ready_invalidates_directly_and_terminal_candidate_cannot_rebirth() -> None:
     """A broken H ends the L/B/R identity; another H cannot resurrect it."""
 
@@ -968,6 +1126,10 @@ def test_initial_pivot_tie_break_is_stable_and_high_first() -> None:
         low=Decimal("85"),
     )
     extreme = CupBarSnapshot(extreme_bar, eligible_index=0, atr=10.0)
+    history = (extreme,) + tuple(
+        CupBarSnapshot(_bar(index, 100), eligible_index=index, atr=10.0)
+        for index in range(1, 10)
+    )
     state = replace(
         initial_cup_handle_state(),
         atr_state=WilderAtrState(
@@ -981,7 +1143,7 @@ def test_initial_pivot_tie_break_is_stable_and_high_first() -> None:
             extreme_low=extreme,
             eligible_index=9,
         ),
-        eligible_bars=(extreme,),
+        eligible_bars=history,
         physical_contract="RB2701",
         segment_id="rb:RB2701:2026-01-01",
         eligible_started=True,
@@ -1043,7 +1205,13 @@ def test_equal_price_handle_pivots_choose_the_later_pivot() -> None:
             atr=2.0,
             previous_close=snapshots[-1].bar.close,
         ),
-        pivot_tracker=replace(case.state.pivot_tracker, eligible_index=73),
+        pivot_tracker=CupPivotTrackerState(
+            leg="UP_LEG",
+            extreme_high=snapshots[73],
+            extreme_low=snapshots[70],
+            last_pivot=later_low,
+            eligible_index=73,
+        ),
         eligible_bars=tuple(snapshots),
         confirmed_pivots=case.state.confirmed_pivots + (high, later_low),
     )
@@ -1181,6 +1349,399 @@ def test_corrupt_restored_state_fails_closed_instead_of_continuing() -> None:
     )
 
     result = step_cup_handle(malformed, case.next_bar)
+
+    assert result.diagnostics == ("NEWOW_CUP_STATE_INVALID",)
+    assert result.markers == ()
+    assert result.active_overlay is None
+    assert result.state == initial_cup_handle_state()
+
+
+def test_malformed_restored_scalar_type_fails_closed_without_raising() -> None:
+    """A damaged scalar field is an invalid state, not an internal exception."""
+
+    case = restored_cup_case()
+    malformed = replace(
+        case.state,
+        atr_state=replace(case.state.atr_state, count="bad"),  # type: ignore[arg-type]
+    )
+
+    result = step_cup_handle(malformed, case.next_bar)
+
+    assert result.diagnostics == ("NEWOW_CUP_STATE_INVALID",)
+    assert result.markers == ()
+    assert result.active_overlay is None
+    assert result.state == initial_cup_handle_state()
+
+
+def test_nan_handle_volume_in_restored_ready_state_cannot_break_out() -> None:
+    """A non-finite frozen volume fact must reset before lifecycle evaluation."""
+
+    case = restored_cup_case()
+    ready = step_cup_handle(case.state, case.next_bar)
+    assert ready.state.active_candidate is not None
+    volume_facts = dict(ready.state.active_candidate.volume_facts)
+    volume_facts["handle_median"] = float("nan")
+    malformed = replace(
+        ready.state,
+        active_candidate=replace(
+            ready.state.active_candidate,
+            volume_facts=volume_facts,
+        ),
+    )
+    day = case.next_bar.trading_day + timedelta(days=1)
+    breakout_bar = replace(
+        case.next_bar,
+        trading_day=day,
+        bar_end=datetime.combine(day, datetime.min.time(), tzinfo=UTC),
+        open=Decimal("101"),
+        high=Decimal("102"),
+        low=Decimal("100"),
+        close=Decimal("101"),
+        volume=180,
+        source_identity="fixture:invalid-restored-volume",
+    )
+
+    result = step_cup_handle(malformed, breakout_bar)
+
+    assert result.diagnostics == ("NEWOW_CUP_STATE_INVALID",)
+    assert result.markers == ()
+    assert result.active_overlay is None
+    assert result.state == initial_cup_handle_state()
+
+
+@pytest.mark.parametrize(
+    "lifecycle",
+    [CupHandleState.READY, CupHandleState.BREAKOUT, CupHandleState.WEAKENED],
+)
+@pytest.mark.parametrize("corruption", ["breakdown", "volume"])
+def test_each_frozen_lifecycle_state_validates_exact_facts_on_restore(
+    lifecycle: CupHandleState, corruption: str
+) -> None:
+    """READY-derived states share the same exact frozen-fact restore contract."""
+
+    bars = (
+        breakout_then_weakened()
+        if lifecycle == CupHandleState.WEAKENED
+        else bullish_true_cup_handle()
+    )
+    states = calculate_cup_handle_series(bars)
+    restored = next(
+        result.state
+        for result in reversed(states)
+        if result.state.active_candidate is not None
+        and result.state.active_candidate.state == lifecycle
+    )
+    active = restored.active_candidate
+    assert active is not None
+    if corruption == "breakdown":
+        breakdown = dict(active.score_breakdown)
+        breakdown.pop("volume_structure")
+        active = replace(active, score_breakdown=breakdown)
+    else:
+        volume_facts = dict(active.volume_facts)
+        volume_facts["handle_median"] = float("nan")
+        active = replace(active, volume_facts=volume_facts)
+    malformed = replace(restored, active_candidate=active)
+    prior = restored.eligible_bars[-1].bar
+    day = prior.trading_day + timedelta(days=1)
+    next_bar = replace(
+        prior,
+        trading_day=day,
+        bar_end=datetime.combine(day, datetime.min.time(), tzinfo=UTC),
+        open=Decimal("99"),
+        high=Decimal("100"),
+        low=Decimal("98"),
+        close=Decimal("99"),
+        volume=100,
+        source_identity=f"fixture:invalid-{lifecycle.value.lower()}-{corruption}",
+    )
+
+    result = step_cup_handle(malformed, next_bar)
+
+    assert result.diagnostics == ("NEWOW_CUP_STATE_INVALID",)
+    assert result.markers == ()
+    assert result.active_overlay is None
+    assert result.state == initial_cup_handle_state()
+
+
+def test_bogus_restored_ready_marker_cannot_become_a_breakout_relation() -> None:
+    """Relations may reference only the deterministic READY milestone identity."""
+
+    case = restored_cup_case()
+    ready = step_cup_handle(case.state, case.next_bar)
+    malformed = replace(ready.state, emitted_milestones=("bogus-ready-marker",))
+    day = case.next_bar.trading_day + timedelta(days=1)
+    breakout_bar = replace(
+        case.next_bar,
+        trading_day=day,
+        bar_end=datetime.combine(day, datetime.min.time(), tzinfo=UTC),
+        open=Decimal("101"),
+        high=Decimal("102"),
+        low=Decimal("100"),
+        close=Decimal("101"),
+        volume=180,
+        source_identity="fixture:invalid-restored-marker",
+    )
+
+    result = step_cup_handle(malformed, breakout_bar)
+
+    assert result.diagnostics == ("NEWOW_CUP_STATE_INVALID",)
+    assert result.markers == ()
+    assert result.active_overlay is None
+    assert result.state == initial_cup_handle_state()
+
+
+def test_restored_weakened_state_requires_the_actual_breakout_marker_id() -> None:
+    """A hash for a non-breakout Bar is not an authentic BREAKOUT milestone."""
+
+    bars = breakout_then_weakened()
+    weak = calculate_cup_handle_series(bars)[-1]
+    active = weak.state.active_candidate
+    assert active is not None
+    assert active.state == CupHandleState.WEAKENED
+    fake_breakout_id = sha256(
+        (
+            f"{active.candidate_id}|{NewowMarkerType.CUP_HANDLE_BREAKOUT.value}|"
+            f"{active.confirmed_at.isoformat()}"
+        ).encode()
+    ).hexdigest()
+    malformed = replace(
+        weak.state,
+        emitted_milestones=(
+            weak.state.emitted_milestones[0],
+            fake_breakout_id,
+            weak.state.emitted_milestones[2],
+        ),
+    )
+    prior = bars[-1]
+    day = prior.trading_day + timedelta(days=1)
+    next_bar = replace(
+        prior,
+        trading_day=day,
+        bar_end=datetime.combine(day, datetime.min.time(), tzinfo=UTC),
+        source_identity="fixture:invalid-restored-breakout-id",
+    )
+
+    result = step_cup_handle(malformed, next_bar)
+
+    assert result.diagnostics == ("NEWOW_CUP_STATE_INVALID",)
+    assert result.markers == ()
+    assert result.active_overlay is None
+    assert result.state == initial_cup_handle_state()
+
+
+def test_restored_weakened_milestone_requires_a_real_weakening_bar() -> None:
+    """A deterministic ID is insufficient when its Bar did not satisfy WEAKENED."""
+
+    bars = breakout_then_weakened()
+    results = calculate_cup_handle_series(bars)
+    weak = results[-1]
+    active = weak.state.active_candidate
+    assert active is not None
+    breakout = next(
+        marker
+        for marker in _markers(results)
+        if marker.marker_type == NewowMarkerType.CUP_HANDLE_BREAKOUT
+    )
+    fake_weakened_id = sha256(
+        (
+            f"{active.candidate_id}|{NewowMarkerType.CUP_HANDLE_WEAKENED.value}|"
+            f"{breakout.bar_end.isoformat()}"
+        ).encode()
+    ).hexdigest()
+    malformed = replace(
+        weak.state,
+        active_candidate=replace(active, state_changed_at=breakout.bar_end),
+        emitted_milestones=(
+            weak.state.emitted_milestones[0],
+            weak.state.emitted_milestones[1],
+            fake_weakened_id,
+        ),
+    )
+    prior = bars[-1]
+    day = prior.trading_day + timedelta(days=1)
+    next_bar = replace(
+        prior,
+        trading_day=day,
+        bar_end=datetime.combine(day, datetime.min.time(), tzinfo=UTC),
+        source_identity="fixture:invalid-restored-weakened-id",
+    )
+
+    result = step_cup_handle(malformed, next_bar)
+
+    assert result.diagnostics == ("NEWOW_CUP_STATE_INVALID",)
+    assert result.markers == ()
+    assert result.active_overlay is None
+    assert result.state == initial_cup_handle_state()
+
+
+def test_plausible_but_wrong_restored_breakdown_fails_closed() -> None:
+    """Valid-looking component values must still match the retained causal Bars."""
+
+    bars = bullish_true_cup_handle()
+    results = calculate_cup_handle_series(bars)
+    ready_index = next(
+        index
+        for index, result in enumerate(results)
+        if any(
+            marker.marker_type == NewowMarkerType.CUP_HANDLE_READY
+            for marker in result.markers
+        )
+    )
+    ready_state = results[ready_index].state
+    active = ready_state.active_candidate
+    assert active is not None
+    breakdown = dict(active.score_breakdown)
+    breakdown["pretrend"] = 12.0
+    breakdown["cup_geometry"] = 25.0
+    malformed = replace(
+        ready_state,
+        active_candidate=replace(
+            active,
+            score=sum(breakdown.values()),
+            score_breakdown=breakdown,
+        ),
+    )
+
+    result = step_cup_handle(malformed, bars[ready_index + 1])
+
+    assert result.diagnostics == ("NEWOW_CUP_STATE_INVALID",)
+    assert result.markers == ()
+    assert result.active_overlay is None
+    assert result.state == initial_cup_handle_state()
+
+
+@pytest.mark.parametrize(
+    "corruption",
+    [
+        "breakdown_missing_key",
+        "breakdown_extra_key",
+        "breakdown_non_discrete",
+        "score_mismatch",
+        "score_tiny_mismatch",
+        "volume_missing_key",
+        "volume_ratio_mismatch",
+        "volume_ratio_tiny_mismatch",
+        "candidate_id_mismatch",
+        "candidate_first_seen_before_anchor",
+        "anchor_not_in_tracker_history",
+        "anchor_confirmation_mismatch",
+        "tracker_last_pivot_mismatch",
+        "tracker_extreme_mismatch",
+        "state_milestone_count_mismatch",
+    ],
+)
+def test_each_restored_ready_state_invariant_fails_closed(corruption: str) -> None:
+    """Every persisted READY invariant is checked before consuming the next Bar."""
+
+    case = restored_cup_case()
+    ready = step_cup_handle(case.state, case.next_bar)
+    active = ready.state.active_candidate
+    assert active is not None
+    malformed = ready.state
+
+    if corruption.startswith("breakdown_"):
+        breakdown = dict(active.score_breakdown)
+        if corruption == "breakdown_missing_key":
+            breakdown.pop("handle_quality")
+        elif corruption == "breakdown_extra_key":
+            breakdown["other"] = 0.0
+        else:
+            breakdown["pretrend"] = 11.0
+            breakdown["cup_geometry"] -= 1.0
+        malformed = replace(
+            malformed,
+            active_candidate=replace(active, score_breakdown=breakdown),
+        )
+    elif corruption in {"score_mismatch", "score_tiny_mismatch"}:
+        malformed = replace(
+            malformed,
+            active_candidate=replace(
+                active,
+                score=active.score
+                + (5e-13 if corruption == "score_tiny_mismatch" else 1.0),
+            ),
+        )
+    elif corruption.startswith("volume_"):
+        volume_facts = dict(active.volume_facts)
+        if corruption == "volume_missing_key":
+            volume_facts.pop("handle_baseline_ratio")
+        elif corruption == "volume_ratio_mismatch":
+            volume_facts["handle_right_ratio"] = 0.1
+        else:
+            volume_facts["handle_right_ratio"] += 5e-13
+        malformed = replace(
+            malformed,
+            active_candidate=replace(active, volume_facts=volume_facts),
+        )
+    elif corruption == "candidate_id_mismatch":
+        malformed = replace(
+            malformed,
+            active_candidate=replace(active, candidate_id="bogus-candidate"),
+        )
+    elif corruption == "candidate_first_seen_before_anchor":
+        malformed = replace(
+            malformed,
+            active_candidate=replace(
+                active,
+                first_seen_at=active.left_rim.pivot_at,
+            ),
+        )
+    elif corruption == "anchor_not_in_tracker_history":
+        pivots = list(malformed.confirmed_pivots)
+        pivots[2] = replace(pivots[2], price=pivots[2].price + Decimal("1"))
+        malformed = replace(malformed, confirmed_pivots=tuple(pivots))
+    elif corruption == "anchor_confirmation_mismatch":
+        right = replace(
+            active.right_rim,
+            confirmed_at=active.right_rim.confirmed_at + timedelta(hours=1),
+        )
+        pivots = tuple(
+            right if pivot == active.right_rim else pivot
+            for pivot in malformed.confirmed_pivots
+        )
+        malformed = replace(
+            malformed,
+            confirmed_pivots=pivots,
+            active_candidate=replace(active, right_rim=right),
+        )
+    elif corruption == "tracker_last_pivot_mismatch":
+        malformed = replace(
+            malformed,
+            pivot_tracker=replace(
+                malformed.pivot_tracker,
+                leg="DOWN_LEG",
+                last_pivot=malformed.confirmed_pivots[-2],
+            ),
+        )
+    elif corruption == "tracker_extreme_mismatch":
+        extreme = malformed.pivot_tracker.extreme_high
+        assert extreme is not None
+        malformed = replace(
+            malformed,
+            pivot_tracker=replace(
+                malformed.pivot_tracker,
+                extreme_high=replace(extreme, atr=extreme.atr + 1.0),
+            ),
+        )
+    else:
+        malformed = replace(
+            malformed,
+            active_candidate=replace(
+                active,
+                state=CupHandleState.BREAKOUT,
+                state_changed_at=case.next_bar.bar_end + timedelta(days=1),
+            ),
+        )
+
+    day = case.next_bar.trading_day + timedelta(days=1)
+    next_bar = replace(
+        case.next_bar,
+        trading_day=day,
+        bar_end=datetime.combine(day, datetime.min.time(), tzinfo=UTC),
+        source_identity=f"fixture:restored-invariant:{corruption}",
+    )
+    result = step_cup_handle(malformed, next_bar)
 
     assert result.diagnostics == ("NEWOW_CUP_STATE_INVALID",)
     assert result.markers == ()

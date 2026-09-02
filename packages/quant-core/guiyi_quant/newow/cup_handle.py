@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from datetime import datetime
 from decimal import Decimal
 from hashlib import sha256
 from math import isfinite
@@ -75,6 +76,62 @@ class _BodyFacts:
     bottom_span_bars: int
 
 
+_SCORE_KEYS = (
+    "pretrend",
+    "cup_geometry",
+    "u_shape_purity",
+    "handle_quality",
+    "volume_structure",
+)
+_VOLUME_FACT_KEYS = (
+    "right_leg_median",
+    "handle_median",
+    "handle_baseline_median",
+    "handle_right_ratio",
+    "handle_baseline_ratio",
+)
+
+
+def _candidate_identity(
+    direction: CupHandleDirection,
+    left: CupPivot,
+    bottom: CupPivot,
+    right: CupPivot,
+    physical_contract: str,
+    segment_id: str,
+    formula: str,
+) -> str:
+    source = "|".join(
+        (
+            "newow_trend_v1",
+            formula,
+            physical_contract,
+            segment_id,
+            direction.value,
+            left.pivot_at.isoformat(),
+            bottom.pivot_at.isoformat(),
+            right.pivot_at.isoformat(),
+        )
+    )
+    return sha256(source.encode()).hexdigest()
+
+
+def _marker_identity(
+    candidate_id: str,
+    marker_type: NewowMarkerType,
+    bar_end: datetime,
+) -> str:
+    return sha256(
+        f"{candidate_id}|{marker_type.value}|{bar_end.isoformat()}".encode()
+    ).hexdigest()
+
+
+def _is_sha256_identity(value: str) -> bool:
+    return len(value) == 64 and all(
+        character in "0123456789abcdef" for character in value
+    )
+
+
 def initial_cup_handle_state() -> CupHandleStateValue:
     return CupHandleStateValue(
         atr_state=WilderAtrState(),
@@ -92,6 +149,440 @@ def initial_cup_handle_state() -> CupHandleStateValue:
 
 def _unique(values: list[str]) -> tuple[str, ...]:
     return tuple(dict.fromkeys(values))
+
+
+def _finite_fact_values(
+    facts: Mapping[str, object], required_keys: tuple[str, ...]
+) -> dict[str, float] | None:
+    if set(facts) != set(required_keys):
+        return None
+    values: dict[str, float] = {}
+    for key in required_keys:
+        value = facts[key]
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return None
+        numeric = float(value)
+        if not isfinite(numeric):
+            return None
+        values[key] = numeric
+    return values
+
+
+def _tracker_is_coherent(state: CupHandleStateValue) -> bool:
+    tracker = state.pivot_tracker
+    pivots = state.confirmed_pivots
+    bars = state.eligible_bars
+    if state.eligible_started != (tracker.eligible_index >= 0):
+        return False
+    if bars:
+        if bars[-1].eligible_index != tracker.eligible_index:
+            return False
+        if any(
+            right.eligible_index != left.eligible_index + 1
+            for left, right in zip(bars, bars[1:])
+        ):
+            return False
+    if tracker.last_pivot is None:
+        if pivots or tracker.leg != "SEEK_DIRECTION":
+            return False
+    else:
+        if not pivots or tracker.last_pivot != pivots[-1]:
+            return False
+        expected_leg = (
+            "UP_LEG"
+            if tracker.last_pivot.kind == CupPivotKind.LOW
+            else "DOWN_LEG"
+        )
+        if tracker.leg != expected_leg:
+            return False
+    if tracker.leg == "SEEK_DIRECTION":
+        if (tracker.extreme_high is None) != (tracker.extreme_low is None):
+            return False
+    elif tracker.extreme_high is None or tracker.extreme_low is None:
+        return False
+    return True
+
+
+def _score_facts_are_valid(
+    active: NewowCupHandleOverlay,
+    state: CupHandleStateValue,
+    profile: NewowTrendProfile,
+) -> bool:
+    breakdown = _finite_fact_values(active.score_breakdown, _SCORE_KEYS)
+    if breakdown is None or active.score != sum(breakdown.values()):
+        return False
+    if breakdown["pretrend"] not in {10.0, 12.0, 15.0}:
+        return False
+    if breakdown["cup_geometry"] not in {15.0, 17.0, 19.0, 21.0, 23.0, 25.0}:
+        return False
+    if breakdown["u_shape_purity"] not in {
+        2.0,
+        4.0,
+        6.0,
+        8.0,
+        10.0,
+        12.0,
+        14.0,
+        16.0,
+        18.0,
+        20.0,
+    }:
+        return False
+    body_score = sum(breakdown[key] for key in _SCORE_KEYS[:3])
+    if body_score < profile.cup_forming_min_body_score:
+        return False
+    by_index = {snapshot.eligible_index: snapshot for snapshot in state.eligible_bars}
+    required_body_indexes = range(
+        active.left_rim.pivot_index, active.right_rim.pivot_index + 1
+    )
+    body_history_complete = all(index in by_index for index in required_body_indexes)
+    history_may_be_truncated = (
+        active.state == CupHandleState.WEAKENED
+        and len(state.eligible_bars) == profile.cup_history_limit
+    )
+    if not body_history_complete and not history_may_be_truncated:
+        return False
+    if body_history_complete and not history_may_be_truncated:
+        body_facts, _ = _body_facts(
+            active.direction,
+            active.left_rim,
+            active.bottom,
+            active.right_rim,
+            by_index,
+            profile,
+        )
+        if body_facts is None or any(
+            breakdown[key] != float(body_facts.breakdown[key])
+            for key in _SCORE_KEYS[:3]
+        ):
+            return False
+    if active.state == CupHandleState.FORMING:
+        return (
+            breakdown["handle_quality"] == 0
+            and breakdown["volume_structure"] == 0
+            and active.score == body_score
+            and active.score <= 60
+            and not active.volume_facts
+        )
+    if breakdown["handle_quality"] not in {
+        10.0,
+        12.0,
+        14.0,
+        16.0,
+        18.0,
+        20.0,
+    } or breakdown["volume_structure"] not in {6.0, 8.0, 10.0, 12.0, 14.0}:
+        return False
+    return profile.cup_ready_min_score <= active.score <= 94
+
+
+def _ready_facts_are_valid(
+    active: NewowCupHandleOverlay,
+    state: CupHandleStateValue,
+    profile: NewowTrendProfile,
+) -> bool:
+    handle = active.handle_extreme
+    pivot_price = active.pivot_price
+    if handle is None or pivot_price is None:
+        return False
+    right_price = _normal(active.direction, active.right_rim.price)
+    left_price = _normal(active.direction, active.left_rim.price)
+    bottom_price = _normal(active.direction, active.bottom.price)
+    handle_price = _normal(active.direction, handle.price)
+    handle_bars = handle.confirmed_index - active.right_rim.pivot_index
+    handle_depth = right_price - handle_price
+    right_leg = right_price - bottom_price
+    cup_depth = (left_price + right_price) / 2 - bottom_price
+    if (
+        right_leg <= 0
+        or cup_depth <= 0
+        or not profile.cup_handle_min_bars
+        <= handle_bars
+        <= profile.cup_handle_max_bars
+        or handle_depth <= 0
+        or handle_depth / abs(right_price) > profile.cup_handle_depth_max_pct
+        or handle_depth / right_leg > profile.cup_handle_retrace_max_ratio
+        or handle_price
+        < bottom_price + profile.cup_handle_upper_half_ratio * cup_depth
+    ):
+        return False
+    length_score = 6.0 if 7 <= handle_bars <= 10 else 4.0
+    depth_pct = handle_depth / abs(right_price)
+    depth_score = (
+        5.0 if depth_pct <= 0.08 else 3.0 if depth_pct <= 0.12 else 1.0
+    )
+    retrace = handle_depth / right_leg
+    retrace_score = (
+        5.0 if retrace <= 0.20 else 3.0 if retrace <= 0.28 else 1.0
+    )
+    if float(active.score_breakdown["handle_quality"]) != (
+        length_score + depth_score + retrace_score + 4.0
+    ):
+        return False
+
+    volumes = _finite_fact_values(active.volume_facts, _VOLUME_FACT_KEYS)
+    if volumes is None:
+        return False
+    right_volume = volumes["right_leg_median"]
+    handle_volume = volumes["handle_median"]
+    baseline_volume = volumes["handle_baseline_median"]
+    right_ratio = volumes["handle_right_ratio"]
+    baseline_ratio = volumes["handle_baseline_ratio"]
+    if (
+        right_volume <= 0
+        or handle_volume < 0
+        or baseline_volume <= 0
+        or right_ratio != handle_volume / right_volume
+        or baseline_ratio != handle_volume / baseline_volume
+        or right_ratio > profile.cup_handle_right_volume_max_ratio
+        or baseline_ratio > profile.cup_handle_baseline_volume_max_ratio
+    ):
+        return False
+    right_volume_score = (
+        7.0 if right_ratio <= 0.65 else 5.0 if right_ratio <= 0.75 else 3.0
+    )
+    baseline_volume_score = (
+        7.0
+        if baseline_ratio <= 0.75
+        else 5.0
+        if baseline_ratio <= 0.85
+        else 3.0
+    )
+    if float(active.score_breakdown["volume_structure"]) != (
+        right_volume_score + baseline_volume_score
+    ):
+        return False
+
+    by_index = {snapshot.eligible_index: snapshot for snapshot in state.eligible_bars}
+    pivot_indexes = range(active.right_rim.pivot_index + 1, handle.confirmed_index)
+    if all(index in by_index for index in pivot_indexes):
+        pivot_window = [by_index[index] for index in pivot_indexes]
+        if not pivot_window:
+            return False
+        expected_pivot = (
+            max(snapshot.bar.high for snapshot in pivot_window)
+            if active.direction == CupHandleDirection.BULLISH
+            else min(snapshot.bar.low for snapshot in pivot_window)
+        )
+        if pivot_price != expected_pivot:
+            return False
+    right_indexes = range(
+        active.bottom.pivot_index + 1, active.right_rim.pivot_index + 1
+    )
+    handle_indexes = range(active.right_rim.pivot_index + 1, handle.confirmed_index)
+    baseline_indexes = range(
+        active.right_rim.pivot_index - 19, active.right_rim.pivot_index + 1
+    )
+    all_volume_indexes = (*right_indexes, *handle_indexes, *baseline_indexes)
+    if all(index in by_index for index in all_volume_indexes):
+        expected_right = _median_volume([by_index[index] for index in right_indexes])
+        expected_handle = _median_volume(
+            [by_index[index] for index in handle_indexes]
+        )
+        expected_baseline = _median_volume(
+            [by_index[index] for index in baseline_indexes]
+        )
+        if (
+            expected_right is None
+            or expected_handle is None
+            or expected_baseline is None
+            or any(
+                actual != expected
+                for actual, expected in zip(
+                    (right_volume, handle_volume, baseline_volume),
+                    (expected_right, expected_handle, expected_baseline),
+                    strict=True,
+                )
+            )
+        ):
+            return False
+    return True
+
+
+def _milestones_are_authentic(
+    active: NewowCupHandleOverlay,
+    state: CupHandleStateValue,
+    profile: NewowTrendProfile,
+) -> bool:
+    ready_id = _marker_identity(
+        active.candidate_id,
+        NewowMarkerType.CUP_HANDLE_READY,
+        active.confirmed_at,
+    )
+    milestones = state.emitted_milestones
+    if active.state == CupHandleState.FORMING:
+        return milestones == ()
+    if active.state == CupHandleState.READY:
+        return milestones == (ready_id,)
+    if active.state == CupHandleState.BREAKOUT:
+        breakout_id = _marker_identity(
+            active.candidate_id,
+            NewowMarkerType.CUP_HANDLE_BREAKOUT,
+            active.state_changed_at,
+        )
+        breakout_snapshot = next(
+            (
+                snapshot
+                for snapshot in state.eligible_bars
+                if snapshot.bar.bar_end == active.state_changed_at
+            ),
+            None,
+        )
+        return (
+            breakout_snapshot is not None
+            and _breakout_facts(
+                active, state.eligible_bars, breakout_snapshot, profile
+            )[0]
+            is not None
+            and milestones == (ready_id, breakout_id)
+        )
+    if active.state != CupHandleState.WEAKENED or len(milestones) != 3:
+        return False
+    weakened_id = _marker_identity(
+        active.candidate_id,
+        NewowMarkerType.CUP_HANDLE_WEAKENED,
+        active.state_changed_at,
+    )
+    weakened_snapshot = next(
+        (
+            snapshot
+            for snapshot in state.eligible_bars
+            if snapshot.bar.bar_end == active.state_changed_at
+        ),
+        None,
+    )
+    if active.pivot_price is None or active.handle_extreme is None:
+        return False
+    if weakened_snapshot is not None:
+        normalized_close = _normal(active.direction, weakened_snapshot.bar.close)
+        normalized_pivot = _normal(active.direction, active.pivot_price)
+        normalized_handle = _normal(active.direction, active.handle_extreme.price)
+        invalidation = (
+            normalized_handle
+            - profile.cup_breakout_buffer_atr * weakened_snapshot.atr
+        )
+        if not invalidation <= normalized_close < normalized_pivot:
+            return False
+    elif state.eligible_bars and (
+        active.state_changed_at >= state.eligible_bars[0].bar.bar_end
+    ):
+        return False
+    actual_breakout_id = next(
+        (
+            _marker_identity(
+                active.candidate_id,
+                NewowMarkerType.CUP_HANDLE_BREAKOUT,
+                snapshot.bar.bar_end,
+            )
+            for snapshot in state.eligible_bars
+            if active.confirmed_at <= snapshot.bar.bar_end <= active.state_changed_at
+            and _breakout_facts(active, state.eligible_bars, snapshot, profile)[0]
+            is not None
+        ),
+        None,
+    )
+    ready_snapshot = next(
+        (
+            snapshot
+            for snapshot in state.eligible_bars
+            if snapshot.bar.bar_end == active.confirmed_at
+        ),
+        None,
+    )
+    history_covers_breakout_search = bool(
+        ready_snapshot is not None
+        and state.eligible_bars
+        and state.eligible_bars[0].eligible_index
+        <= ready_snapshot.eligible_index - 20
+    )
+    return (
+        milestones[0] == ready_id
+        and (
+            milestones[1] == actual_breakout_id
+            if actual_breakout_id is not None or history_covers_breakout_search
+            else _is_sha256_identity(milestones[1])
+        )
+        and milestones[2] == weakened_id
+    )
+
+
+def _active_candidate_is_coherent(
+    active: NewowCupHandleOverlay,
+    state: CupHandleStateValue,
+    profile: NewowTrendProfile,
+) -> bool:
+    if (
+        state.physical_contract is None
+        or state.segment_id is None
+        or not state.eligible_bars
+        or not isinstance(active.direction, CupHandleDirection)
+        or not isinstance(active.state, CupHandleState)
+        or active.formula_version != profile.cup_handle_formula
+        or active.handle_start_at != active.right_rim.pivot_at
+        or active.candidate_id
+        != _candidate_identity(
+            active.direction,
+            active.left_rim,
+            active.bottom,
+            active.right_rim,
+            state.physical_contract,
+            state.segment_id,
+            active.formula_version,
+        )
+    ):
+        return False
+    anchors = [active.left_rim, active.bottom, active.right_rim]
+    if active.handle_extreme is not None:
+        anchors.append(active.handle_extreme)
+    if any(
+        anchor not in state.confirmed_pivots
+        and (
+            not state.confirmed_pivots
+            or anchor.pivot_index >= state.confirmed_pivots[0].pivot_index
+        )
+        for anchor in anchors
+    ):
+        return False
+    anchor_confirmed_at = max(anchor.confirmed_at for anchor in anchors[:3])
+    if (
+        active.first_seen_at < anchor_confirmed_at
+        or active.confirmed_at > state.eligible_bars[-1].bar.bar_end
+        or active.first_seen_at > state.eligible_bars[-1].bar.bar_end
+        or active.state_changed_at > state.eligible_bars[-1].bar.bar_end
+    ):
+        return False
+    if active.state == CupHandleState.FORMING:
+        if (
+            active.handle_extreme is not None
+            or active.pivot_price is not None
+            or active.pivot_frozen_at is not None
+            or active.confirmed_at != anchor_confirmed_at
+            or active.first_seen_at < active.confirmed_at
+            or active.state_changed_at != active.first_seen_at
+        ):
+            return False
+    else:
+        handle = active.handle_extreme
+        if (
+            handle is None
+            or active.confirmed_at < max(anchor_confirmed_at, handle.confirmed_at)
+            or active.first_seen_at > active.confirmed_at
+            or active.pivot_frozen_at != active.confirmed_at
+            or active.state_changed_at < active.confirmed_at
+            or (
+                active.state == CupHandleState.READY
+                and active.state_changed_at != active.confirmed_at
+            )
+        ):
+            return False
+    return (
+        _score_facts_are_valid(active, state, profile)
+        and (
+            active.state == CupHandleState.FORMING
+            or _ready_facts_are_valid(active, state, profile)
+        )
+        and _milestones_are_authentic(active, state, profile)
+    )
 
 
 def _state_is_valid(state: CupHandleStateValue, profile: NewowTrendProfile) -> bool:
@@ -113,6 +604,18 @@ def _state_is_valid(state: CupHandleStateValue, profile: NewowTrendProfile) -> b
         return False
     if (state.physical_contract is None) != (state.segment_id is None):
         return False
+    if (
+        state.physical_contract is not None
+        and (
+            not isinstance(state.physical_contract, str)
+            or not state.physical_contract
+            or not isinstance(state.segment_id, str)
+            or not state.segment_id
+        )
+    ):
+        return False
+    if not isinstance(state.eligible_started, bool):
+        return False
     if state.pivot_tracker.leg not in {"SEEK_DIRECTION", "UP_LEG", "DOWN_LEG"}:
         return False
     if state.pivot_tracker.eligible_index < -1:
@@ -123,6 +626,7 @@ def _state_is_valid(state: CupHandleStateValue, profile: NewowTrendProfile) -> b
         or not isinstance(state.confirmed_pivots, tuple)
         or len(state.confirmed_pivots) > profile.cup_max_confirmed_pivots
         or not isinstance(state.emitted_milestones, tuple)
+        or len(state.emitted_milestones) > 3
         or not all(isinstance(marker_id, str) and marker_id for marker_id in state.emitted_milestones)
         or not isinstance(state.recent_terminal_candidate_ids, tuple)
         or len(state.recent_terminal_candidate_ids) > profile.cup_recent_terminal_ids_limit
@@ -134,10 +638,12 @@ def _state_is_valid(state: CupHandleStateValue, profile: NewowTrendProfile) -> b
         )
     ):
         return False
+    by_index: dict[int, CupBarSnapshot] = {}
     previous_index: int | None = None
     for snapshot in state.eligible_bars:
         if (
             not isinstance(snapshot, CupBarSnapshot)
+            or not isinstance(snapshot.bar, NewowDailyBar)
             or not isfinite(snapshot.atr)
             or snapshot.atr <= 0
             or not snapshot.bar.observation_eligible
@@ -148,6 +654,7 @@ def _state_is_valid(state: CupHandleStateValue, profile: NewowTrendProfile) -> b
         ):
             return False
         previous_index = snapshot.eligible_index
+        by_index[snapshot.eligible_index] = snapshot
     previous_pivot: CupPivot | None = None
     for pivot in state.confirmed_pivots:
         if not isinstance(pivot, CupPivot):
@@ -155,10 +662,38 @@ def _state_is_valid(state: CupHandleStateValue, profile: NewowTrendProfile) -> b
         if previous_pivot is not None and (
             pivot.kind == previous_pivot.kind
             or pivot.pivot_index <= previous_pivot.pivot_index
-            or pivot.confirmed_index < previous_pivot.confirmed_index
+            or pivot.confirmed_index <= previous_pivot.confirmed_index
         ):
             return False
-        if pivot.confirmed_index > state.pivot_tracker.eligible_index:
+        if (
+            pivot.confirmed_index <= pivot.pivot_index
+            or pivot.confirmed_index > state.pivot_tracker.eligible_index
+        ):
+            return False
+        pivot_snapshot = by_index.get(pivot.pivot_index)
+        if pivot_snapshot is not None:
+            expected_price = (
+                pivot_snapshot.bar.high
+                if pivot.kind == CupPivotKind.HIGH
+                else pivot_snapshot.bar.low
+            )
+            if (
+                pivot.price != expected_price
+                or pivot.pivot_at != pivot_snapshot.bar.bar_end
+                or pivot.atr_at_pivot != pivot_snapshot.atr
+            ):
+                return False
+        elif state.eligible_bars and (
+            pivot.pivot_index >= state.eligible_bars[0].eligible_index
+        ):
+            return False
+        confirmed_snapshot = by_index.get(pivot.confirmed_index)
+        if confirmed_snapshot is not None:
+            if pivot.confirmed_at != confirmed_snapshot.bar.bar_end:
+                return False
+        elif state.eligible_bars and (
+            pivot.confirmed_index >= state.eligible_bars[0].eligible_index
+        ):
             return False
         previous_pivot = pivot
     for extreme in (
@@ -167,9 +702,21 @@ def _state_is_valid(state: CupHandleStateValue, profile: NewowTrendProfile) -> b
     ):
         if extreme is not None and (
             not isinstance(extreme, CupBarSnapshot)
+            or not isinstance(extreme.bar, NewowDailyBar)
             or extreme.eligible_index > state.pivot_tracker.eligible_index
+            or (
+                extreme.eligible_index in by_index
+                and extreme != by_index[extreme.eligible_index]
+            )
+            or (
+                state.eligible_bars
+                and extreme.eligible_index >= state.eligible_bars[0].eligible_index
+                and extreme.eligible_index not in by_index
+            )
         ):
             return False
+    if not _tracker_is_coherent(state):
+        return False
     active = state.active_candidate
     if active is not None and (
         not isinstance(active, NewowCupHandleOverlay)
@@ -183,6 +730,12 @@ def _state_is_valid(state: CupHandleStateValue, profile: NewowTrendProfile) -> b
         or active.candidate_id in state.recent_terminal_candidate_ids
     ):
         return False
+    if active is not None:
+        try:
+            if not _active_candidate_is_coherent(active, state, profile):
+                return False
+        except (ArithmeticError, AttributeError, TypeError, ValueError):
+            return False
     if active is None and state.emitted_milestones:
         return False
     return True
@@ -314,19 +867,15 @@ def _candidate_id(
     bar: NewowDailyBar,
     formula: str,
 ) -> str:
-    source = "|".join(
-        (
-            "newow_trend_v1",
-            formula,
-            bar.physical_contract,
-            bar.segment_id,
-            direction.value,
-            left.pivot_at.isoformat(),
-            bottom.pivot_at.isoformat(),
-            right.pivot_at.isoformat(),
-        )
+    return _candidate_identity(
+        direction,
+        left,
+        bottom,
+        right,
+        bar.physical_contract,
+        bar.segment_id,
+        formula,
     )
-    return sha256(source.encode()).hexdigest()
 
 
 def _ols_slope(values: list[float]) -> float:
@@ -500,7 +1049,12 @@ def _body_facts(
     )
     if crossings > profile.cup_midline_crossings_hard_max:
         diagnostics.append("MIDLINE_CROSSINGS_EXCEEDED")
-    if diagnostics:
+    hard_diagnostics = [
+        diagnostic
+        for diagnostic in diagnostics
+        if diagnostic != "V_BOTTOM_SINGLE_BAR"
+    ]
+    if hard_diagnostics:
         return None, _unique(diagnostics)
     assert pretrend is not None
 
@@ -509,7 +1063,15 @@ def _body_facts(
     depth_atr_score = 5.0 if cup_depth_atr >= 4 else 3.0
     rim_score = 7.0 if rim_gap_pct <= 0.025 and rim_gap_atr <= 0.75 else 5.0
     geometry = duration_score + depth_pct_score + depth_atr_score + rim_score
-    span_score = 8.0 if bottom_span >= 5 else 6.0 if bottom_span >= 3 else 2.0
+    span_score = (
+        8.0
+        if bottom_span >= 5
+        else 6.0
+        if bottom_span >= 3
+        else 2.0
+        if bottom_span == 2
+        else 0.0
+    )
     if 0.75 <= leg_ratio <= 1.33:
         leg_score = 6.0
     elif profile.cup_leg_ratio_soft_min <= leg_ratio <= profile.cup_leg_ratio_soft_max:
@@ -526,8 +1088,8 @@ def _body_facts(
         "volume_structure": 0.0,
     }
     if sum(breakdown.values()) < profile.cup_forming_min_body_score:
-        return None, ("CUP_FORMING_SCORE_INSUFFICIENT",)
-    return _BodyFacts(breakdown, bottom_span), ()
+        return None, _unique(diagnostics + ["CUP_FORMING_SCORE_INSUFFICIENT"])
+    return _BodyFacts(breakdown, bottom_span), _unique(diagnostics)
 
 
 def _body_candidates(
@@ -780,9 +1342,7 @@ def _marker(
     state_before: CupHandleState,
     extra_facts: Mapping[str, object] | None = None,
 ) -> NewowMainMarker:
-    marker_id = sha256(
-        f"{overlay.candidate_id}|{marker_type.value}|{bar.bar_end.isoformat()}".encode()
-    ).hexdigest()
+    marker_id = _marker_identity(overlay.candidate_id, marker_type, bar.bar_end)
     facts: dict[str, object] = {
         "candidate_id": overlay.candidate_id,
         "direction": overlay.direction.value,
@@ -901,7 +1461,13 @@ def step_cup_handle(
     *,
     profile: NewowTrendProfile = NEWOW_TREND_D1_V1,
 ) -> CupHandleStepResult:
-    if not isinstance(state, CupHandleStateValue) or not _state_is_valid(state, profile):
+    try:
+        restored_state_valid = isinstance(
+            state, CupHandleStateValue
+        ) and _state_is_valid(state, profile)
+    except (ArithmeticError, AttributeError, LookupError, TypeError, ValueError):
+        restored_state_valid = False
+    if not restored_state_valid:
         return CupHandleStepResult(
             initial_cup_handle_state(), None, (), ("NEWOW_CUP_STATE_INVALID",), 0
         )

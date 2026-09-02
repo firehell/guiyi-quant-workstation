@@ -148,24 +148,26 @@ def ready_then_expired() -> tuple[NewowDailyBar, ...]:
 
 def v_bottom_rejected() -> tuple[NewowDailyBar, ...]:
     closes = _base_closes()
-    closes[58:64] = [Decimal(value) for value in ("88", "86", "80", "86", "88", "90")]
+    closes[46:60] = _linear("99", "86", 14)
+    closes[60] = Decimal("80")
+    closes[61:76] = _linear("86", "100", 15)
     return _bars(closes, volumes=_base_volumes(len(closes)))
 
 
 def wide_range_rejected() -> tuple[NewowDailyBar, ...]:
     closes = _base_closes()
-    closes[48:73] = [
-        Decimal("96") if index % 2 == 0 else Decimal("84") for index in range(25)
+    closes[64:71] = [
+        Decimal("89.5") if index % 2 == 0 else Decimal("90.5")
+        for index in range(7)
     ]
-    closes[60] = Decimal("80")
+    closes[71:76] = _linear("91", "100", 5)
     return _bars(closes, volumes=_base_volumes(len(closes)))
 
 
 def downtrend_rebound_rejected() -> tuple[NewowDailyBar, ...]:
     closes = _base_closes()
-    closes[:45] = _linear("99", "75", 45)
-    closes[45] = Decimal("101")
-    closes[75] = Decimal("101")
+    closes[:40] = _linear("99", "90", 40)
+    closes[39:46] = _linear("90", "100", 7)
     return _bars(closes, volumes=_base_volumes(len(closes)))
 
 
@@ -199,7 +201,9 @@ def rim_gap_rejected() -> tuple[NewowDailyBar, ...]:
 
 
 def handle_too_short_rejected() -> tuple[NewowDailyBar, ...]:
-    closes = _base_closes()[:76] + [Decimal("94"), Decimal("99")]
+    closes = _base_closes()[:76] + [
+        Decimal(value) for value in ("98", "96", "94", "99")
+    ]
     return _bars(closes, volumes=_base_volumes(len(closes)))
 
 
@@ -335,7 +339,13 @@ def competing_ready_and_breakout_candidates() -> RestoredCupCase:
             atr=2.0,
             previous_close=snapshots[-1].bar.close,
         ),
-        pivot_tracker=replace(first.state.pivot_tracker, eligible_index=98),
+        pivot_tracker=CupPivotTrackerState(
+            leg="UP_LEG",
+            extreme_high=snapshots[98],
+            extreme_low=snapshots[95],
+            last_pivot=pivots[-1],
+            eligible_index=98,
+        ),
         eligible_bars=tuple(snapshots),
         confirmed_pivots=pivots,
     )
@@ -416,6 +426,7 @@ def restored_cup_case(
         for start, end, delta in regions:
             for index in range(start, end + 1):
                 closes[index] = midline + delta
+        closes[left_index] = left_price - _ONE
     elif midline_crossings is not None:
         raise ValueError("only the documented four-crossing score fixture is supported")
     half_span = bottom_span // 2
@@ -476,7 +487,13 @@ def restored_cup_case(
         atr_state=WilderAtrState(
             count=len(bars), atr=atr, previous_close=bars[-1].close
         ),
-        pivot_tracker=CupPivotTrackerState(eligible_index=last_index),
+        pivot_tracker=CupPivotTrackerState(
+            leg="UP_LEG",
+            extreme_high=snapshots[handle_confirmed_index],
+            extreme_low=snapshots[handle_index],
+            last_pivot=pivots[-1],
+            eligible_index=last_index,
+        ),
         eligible_bars=snapshots,
         confirmed_pivots=pivots,
         active_candidate=None,
