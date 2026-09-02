@@ -769,6 +769,57 @@ def test_update_syncs_current_day_metadata_inside_the_maintenance_lease(
     assert events == ["acquire", "current_day", "release"]
 
 
+def test_update_runs_before_apply_callback_inside_maintenance_lease(
+    session, tmp_path, monkeypatch
+) -> None:
+    key = DatasetKey("continuous", "jm", "MAIN", "1d")
+    bar = _daily(2, 100)
+    coverage = FakeCoverage({key.as_tuple(): (bar.bar_end,)})
+    manager = _manager(session, tmp_path, coverage, FakeProvider({key.as_tuple(): (bar,)}))
+    lease = _TrackingLease()
+    monkeypatch.setattr(manager.catalog, "acquire_maintenance_lock", lambda: lease)
+    callbacks: list[str] = []
+
+    def before_apply() -> None:
+        assert lease.released is False
+        callbacks.append("invalidated")
+
+    result = manager.update(
+        UpdateRequest(("jm",), None, date(2025, 1, 3), True),
+        before_apply=before_apply,
+    )
+
+    assert result.status == "passed"
+    assert callbacks == ["invalidated"]
+    assert lease.released is True
+
+
+def test_update_before_apply_failure_stops_before_metadata_or_provider_mutation(
+    session, tmp_path, monkeypatch
+) -> None:
+    key = DatasetKey("continuous", "jm", "MAIN", "1d")
+    bar = _daily(2, 100)
+    coverage = FakeCoverage({key.as_tuple(): (bar.bar_end,)})
+    metadata = FakeMetadata()
+    provider = FakeProvider({key.as_tuple(): (bar,)})
+    manager = _manager(session, tmp_path, coverage, provider, metadata)
+    lease = _TrackingLease()
+    monkeypatch.setattr(manager.catalog, "acquire_maintenance_lock", lambda: lease)
+
+    def fail_before_apply() -> None:
+        raise RuntimeError("projection invalidation failed")
+
+    with pytest.raises(RuntimeError, match="projection invalidation failed"):
+        manager.update(
+            UpdateRequest(("jm",), None, date(2025, 1, 3), True),
+            before_apply=fail_before_apply,
+        )
+
+    assert metadata.calls == []
+    assert provider.calls == []
+    assert lease.released is True
+
+
 def test_since_is_check_lower_bound_and_does_not_replace_covered_partition(
     session, tmp_path
 ) -> None:

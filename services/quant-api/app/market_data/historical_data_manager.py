@@ -311,7 +311,12 @@ class HistoricalDataManager:
         # 同进程内已同步过的 (products, through) 不再重复拉 metadata，减少 RQData 调用。
         self._metadata_watermarks: set[tuple[tuple[str, ...], date]] = set()
 
-    def update(self, request: UpdateRequest) -> MaintenanceResult:
+    def update(
+        self,
+        request: UpdateRequest,
+        *,
+        before_apply: Callable[[], None] | None = None,
+    ) -> MaintenanceResult:
         """增量更新：缺省 through 为各品种最近完整交易日；apply 时持锁并先补齐元数据再写分区。"""
         assert_products_not_retired(request.products)
         if request.apply:
@@ -323,6 +328,8 @@ class HistoricalDataManager:
             if lease is None:
                 return _maintenance_locked("update", metadata_through)
             try:
+                if before_apply is not None:
+                    before_apply()
                 if request.sync_current_day_metadata:
                     self.metadata.synchronize_current_day(
                         request.products,
@@ -360,7 +367,12 @@ class HistoricalDataManager:
         targets = self._plan(request.products, request.since, through)
         return self._execute("update", targets, through, apply=False)
 
-    def refresh(self, request: RefreshRequest) -> MaintenanceResult:
+    def refresh(
+        self,
+        request: RefreshRequest,
+        *,
+        before_apply: Callable[[], None] | None = None,
+    ) -> MaintenanceResult:
         """强制重写单品种窗口：要求主力映射连续；apply 时持锁并全量 expected 重拉/重聚合。"""
         if request.since > request.through:
             raise ValueError("REFRESH_WINDOW_INVALID")
@@ -371,6 +383,8 @@ class HistoricalDataManager:
             if lease is None:
                 return _maintenance_locked("refresh", request.through)
             try:
+                if before_apply is not None:
+                    before_apply()
                 if not self.coverage.metadata_complete(products, request.through):
                     self.metadata.synchronize(
                         products,

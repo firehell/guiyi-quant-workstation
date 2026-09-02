@@ -4,7 +4,7 @@
 
 **Goal:** 将 Market Home completed D1/W1 overview 的常态读取从约 120 次 historical query 的 read-time compute 改为 shared Canonical-root derived projection，同时保证任何 projection 缺失、损坏、同日 refresh/update 或写失败都只能造成性能退化，不能造成旧事实误命中。
 
-**Architecture:** `MarketHomeOverviewService` 继续作为唯一 compute authority。Projection 固定在 `<canonical_root>/.derived/market-home-overview.json`。正式 `data update/refresh --apply` 与自然 after-market 在 manager action 前先失效旧 projection；API projection hit 直接返回，miss 回退现有 compute 且永不写；自然 after-market 仅在 `canonical_updated + rank1/Live reconciliation + cleanup` 全部完成后 best-effort 重建 projection。
+**Architecture:** `MarketHomeOverviewService` 继续作为唯一 compute authority。Projection 固定在 `<canonical_root>/.derived/market-home-overview.json`。正式 `data update/refresh --apply` 与自然 after-market 在 manager 已取得 maintenance lease 后、任何 mutation 前失效旧 projection；API projection hit 直接返回，miss 回退现有 compute 且永不写；自然 after-market 仅在 `canonical_updated + rank1/Live reconciliation + cleanup` 全部完成后 best-effort 重建 projection。
 
 **Tech Stack:** Python 3.13、FastAPI、Pydantic v2、SHA-256、UTF-8 JSON、trusted directory fd + `O_NOFOLLOW` + `O_EXCL` + `fsync` + `os.replace`、pytest、Ruff、Mypy、OpenSpec。
 
@@ -17,7 +17,7 @@
 - `MarketHomeOverviewService` 是唯一 D1/W1 compute authority；禁止复制指标或 actual-dominant 逻辑。
 - Projection 不是 Canonical/Catalog/策略事实；可删除、可重建。
 - Projection path 跟随 shared canonical root，禁止 checkout-local `.run` 方案。
-- 所有正式 apply 入口必须在 manager action 前 invalidate projection；invalidator 失败必须在真实 mutation 前停止。
+- 所有正式 apply 入口必须在 manager 已取得 maintenance lease 后、真实 mutation 前 invalidate projection；invalidator 失败必须停止该 apply。
 - API miss 必须保留原 compute correctness，但不得 publish/write projection。
 - after-market refresh failure只影响性能，不 retry、不发 projection-specific notification、不改变已成功 core maintenance。
 - natural refresh 默认关闭；只有 owner-written exact activation marker 才允许 factory 装配 refresh callback，本任务不创建 marker 或 production projection。
@@ -211,13 +211,14 @@ Remove duplicated Snapshot → response mapping from router and reuse `market_ho
 
 - [ ] **Step 4: Implement CLI invalidation**
 
-After `build_request()` and before manager action:
+Pass invalidation as the manager's `before_apply` callback. The manager invokes it only after
+acquiring its maintenance lease and before any metadata/Canonical mutation:
 
 ```python
 if isinstance(request, (UpdateRequest, RefreshRequest)) and request.apply:
-    MarketHomeProjectionStore(
+    action(request, before_apply=MarketHomeProjectionStore(
         market_home_projection_path(manager.catalog.canonical_root)
-    ).invalidate()
+    ).invalidate)
 ```
 
 Audit/dry-run remain read-only.
@@ -243,7 +244,7 @@ Required behavior:
 
 ```text
 provider not ready -> no invalidate, no manager, no refresh
-provider ready -> invalidate before manager.update
+provider ready -> manager maintenance lease -> invalidate before mutation
 manager failed -> projection stays invalidated, no refresh
 invalidation failure -> manager not called
 passed/noop -> canonical_updated/reconcile/cleanup complete, then refresh exactly once
@@ -308,7 +309,7 @@ Freeze:
 MarketHomeOverviewService = only compute authority
 shared canonical-root .derived projection = removable performance read model
 API hit read-only / miss compute-only
-all official apply paths invalidate first
+all official apply paths invalidate inside the manager maintenance lease
 after-market refresh after core success
 ```
 

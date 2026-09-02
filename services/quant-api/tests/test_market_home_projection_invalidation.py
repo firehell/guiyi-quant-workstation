@@ -26,16 +26,23 @@ class _Manager:
         self.calls: list[str] = []
         self.projection_path = market_home_projection_path(canonical_root)
         self.projection_exists_at_action: list[bool] = []
+        self.before_apply_callbacks: list[object | None] = []
         self.fail_after_invalidation = False
 
-    def update(self, _request):
+    def update(self, _request, *, before_apply=None):
+        self.before_apply_callbacks.append(before_apply)
+        if before_apply is not None:
+            before_apply()
         self.projection_exists_at_action.append(self.projection_path.exists())
         self.calls.append("update")
         if self.fail_after_invalidation:
             raise RuntimeError("manager update failed")
         return "updated"
 
-    def refresh(self, _request):
+    def refresh(self, _request, *, before_apply=None):
+        self.before_apply_callbacks.append(before_apply)
+        if before_apply is not None:
+            before_apply()
         self.projection_exists_at_action.append(self.projection_path.exists())
         self.calls.append("refresh")
         if self.fail_after_invalidation:
@@ -82,6 +89,8 @@ def test_apply_data_command_invalidates_projection_before_manager_action(
 
     assert result == expected
     assert manager.calls == [command]
+    assert len(manager.before_apply_callbacks) == 1
+    assert manager.before_apply_callbacks[0] is not None
     assert manager.projection_exists_at_action == [False]
     assert not projection.exists()
 

@@ -68,9 +68,11 @@ def run_data_command(
         assert progress_stream is not None
         return manager.audit(request, observer=_audit_progress_writer(progress_stream))
     if isinstance(request, (UpdateRequest, RefreshRequest)) and request.apply:
-        MarketHomeProjectionStore(
+        projection_invalidate = MarketHomeProjectionStore(
             market_home_projection_path(manager.catalog.canonical_root)
-        ).invalidate()
+        ).invalidate
+        action = getattr(manager, args.data_command)
+        return action(request, before_apply=projection_invalidate)
     action = getattr(manager, args.data_command)
     return action(request)
 

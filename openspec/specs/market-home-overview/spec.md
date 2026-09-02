@@ -101,11 +101,11 @@ the same maintenance lease as authoritative apply across compute, final identity
 
 ### Requirement: Authoritative apply paths invalidate projection before mutation
 
-任何正式 `guiyi data update --apply`、`guiyi data refresh --apply` 与自然 after-market apply MUST 在调用
-`HistoricalDataManager` 的 authoritative apply action 前先失效 shared projection。Dry-run、audit 与 provider
-readiness 未通过的 after-market MUST NOT 为此触碰 projection。
+任何正式 `guiyi data update --apply`、`guiyi data refresh --apply` 与自然 after-market apply MUST 在
+`HistoricalDataManager` 已取得其 authoritative apply maintenance lease 后、任何 metadata/Canonical mutation 前失效
+shared projection。Dry-run、audit 与 provider readiness 未通过的 after-market MUST NOT 为此触碰 projection。
 
-Projection invalidation failure MUST 在 manager action 前 fail closed，禁止让 metadata/Canonical 已变化但旧
+Projection invalidation failure MUST 在任何 manager apply mutation 前 fail closed，禁止让 metadata/Canonical 已变化但旧
 projection 仍可被读取。人工 apply 成功后无需同步重建 projection；在下一次自然 after-market refresh 之前，
 overview API 可以使用 authoritative compute fallback。
 
@@ -117,7 +117,7 @@ overview API 可以使用 authoritative compute fallback。
 #### Scenario: Apply invalidation cannot be completed
 
 - **WHEN** projection 文件或 `.derived` 边界无法安全失效
-- **THEN** manager apply MUST NOT 被调用，真实行情/metadata mutation 不得开始
+- **THEN** manager apply MUST NOT 开始任何真实行情/metadata mutation
 
 ### Requirement: Overview preserves generic market authority and transparent degradation
 

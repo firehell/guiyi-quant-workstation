@@ -58,8 +58,9 @@ current authority identity
 
 ```text
 provider ready
+→ HistoricalDataManager 取得 maintenance lease
 → 失效旧 projection
-→ HistoricalDataManager.update(apply=True)
+→ HistoricalDataManager.update(apply=True) mutation
 → canonical_updated
 → rank1 / Live reconciliation
 → Live cleanup
@@ -71,8 +72,9 @@ provider ready
 
 ```text
 guiyi data update/refresh --apply
+→ HistoricalDataManager 取得 maintenance lease
 → 失效旧 projection
-→ HistoricalDataManager action
+→ HistoricalDataManager action mutation
 → 不同步重建 projection
 → API 暂时走 authoritative compute fallback
 ```
@@ -267,8 +269,8 @@ natural after-market -> manager.update(apply=True)
 
 规则：
 
-- CLI update/refresh：`run_data_command()` 在调用 manager 前 invalidates projection；
-- after-market：provider readiness 通过后、manager.update 前 invalidates projection；
+- CLI update/refresh：`run_data_command()` 将 invalidator 传入 manager；manager 取得 maintenance lease 后、任何 mutation 前执行；
+- after-market：provider readiness 通过后，将 invalidator 传入 manager；manager 取得 maintenance lease 后、任何 mutation 前执行；
 - dry-run/audit 不触碰 projection；
 - provider readiness 未通过时不触碰 projection；
 - invalidation 失败时 manager action 不得开始。

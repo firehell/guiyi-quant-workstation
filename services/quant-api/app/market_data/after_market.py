@@ -221,7 +221,6 @@ class AfterMarketUpdater:
         if not ready:
             return "RQDATA_NOT_READY"
         try:
-            self._invalidate_market_home_projection()
             result = self.manager.update(
                 UpdateRequest(
                     products=products,
@@ -229,7 +228,8 @@ class AfterMarketUpdater:
                     through=trading_day,
                     apply=True,
                     sync_current_day_metadata=True,
-                )
+                ),
+                before_apply=self._invalidate_market_home_projection,
             )
         except InfrastructureError as exc:
             if exc.code == "NEXT_TRADING_SESSION_NOT_READY":
