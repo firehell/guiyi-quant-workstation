@@ -81,6 +81,17 @@
   --gy-surface-error: var(--gy-status-error-soft);
   --gy-surface-info: var(--gy-status-info-soft);
 
+  /* Market Home only: frozen Niuwah-inspired state palette. */
+  --gy-market-icon-up: #E63935;
+  --gy-market-icon-aligned: #FF9601;
+  --gy-market-icon-down: #35C759;
+  --gy-market-icon-neutral: #017AFF;
+  --gy-market-icon-unavailable: #98A2B3;
+  --gy-market-pill-up-soft: #FFE9E6;
+  --gy-market-pill-down-soft: #E9F9EB;
+  --gy-market-pill-aligned-soft: #FFF2E5;
+  --gy-market-pill-neutral-soft: #EAF1FF;
+
   /* Chart palette */
   --gy-chart-bg: #ffffff;
   --gy-chart-grid: #edf1f7;
