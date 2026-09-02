@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import Decimal
 from hashlib import sha256
 from statistics import median
@@ -15,6 +15,7 @@ from .models import (
     NewowCupHandleOverlay,
     NewowDailyBar,
     NewowMainMarker,
+    NewowMarkerType,
 )
 from .profile import NEWOW_TREND_D1_V1, NewowTrendProfile
 
@@ -199,6 +200,60 @@ def _body_overlay(
     return None, tuple(diagnostics), checks
 
 
+def _marker(overlay: NewowCupHandleOverlay, marker_type: NewowMarkerType, bar: NewowDailyBar, related: tuple[str, ...]) -> NewowMainMarker:
+    marker_id = sha256(f"{overlay.candidate_id}|{marker_type.value}|{bar.bar_end.isoformat()}".encode()).hexdigest()
+    facts = {
+        "candidate_id": overlay.candidate_id, "direction": overlay.direction.value,
+        "state_after": overlay.state.value, "left_rim": str(overlay.left_rim.price),
+        "bottom": str(overlay.bottom.price), "right_rim": str(overlay.right_rim.price),
+        "handle": str(overlay.handle_extreme.price) if overlay.handle_extreme else None,
+        "pivot_price": str(overlay.pivot_price) if overlay.pivot_price else None,
+        "score": overlay.score, "score_breakdown": dict(overlay.score_breakdown),
+        "volume_facts": dict(overlay.volume_facts), "formula_version": overlay.formula_version,
+    }
+    return NewowMainMarker(marker_id, marker_type, bar.bar_end, bar.close, marker_type.value, "cup_handle", 100, related, facts, overlay.formula_version)
+
+
+def _median_volume(items: list[CupBarSnapshot]) -> float | None:
+    values = [float(item.bar.volume) for item in items]
+    return median(values) if values and all(value > 0 for value in values) else None
+
+
+def _ready_candidate(forming: NewowCupHandleOverlay, pivots: tuple[CupPivot, ...], bars: tuple[CupBarSnapshot, ...], current: CupBarSnapshot, profile: NewowTrendProfile) -> tuple[NewowCupHandleOverlay | None, str | None]:
+    reverse_kind = CupPivotKind.LOW if forming.right_rim.kind == CupPivotKind.HIGH else CupPivotKind.HIGH
+    handles = [pivot for pivot in pivots if pivot.kind == reverse_kind and pivot.pivot_index > forming.right_rim.pivot_index and profile.cup_handle_min_bars <= pivot.confirmed_index - forming.right_rim.pivot_index <= profile.cup_handle_max_bars]
+    if not handles:
+        return None, None
+    direction = forming.direction
+    handle = min(handles, key=lambda pivot: (_normal(direction, pivot.price), -pivot.pivot_index))
+    right, bottom = _normal(direction, forming.right_rim.price), _normal(direction, forming.bottom.price)
+    handle_price = _normal(direction, handle.price)
+    depth = right - handle_price
+    if depth / abs(right) > profile.cup_handle_depth_max_pct:
+        return None, "HANDLE_DEPTH_EXCEEDED"
+    if depth / (right - bottom) > profile.cup_handle_retrace_max_ratio:
+        return None, "HANDLE_RETRACE_EXCEEDED"
+    if handle_price < bottom + profile.cup_handle_upper_half_ratio * (right - bottom):
+        return None, "HANDLE_BELOW_CUP_MID"
+    by_index = {item.eligible_index: item for item in bars}
+    pivot_window = [by_index[index] for index in range(forming.right_rim.pivot_index + 1, handle.confirmed_index) if index in by_index]
+    if not pivot_window:
+        return None, "HANDLE_PIVOT_UNAVAILABLE"
+    pivot_price = (max(item.bar.high for item in pivot_window) if direction == CupHandleDirection.BULLISH else min(item.bar.low for item in pivot_window))
+    right_volume = _median_volume([item for item in bars if forming.bottom.pivot_index < item.eligible_index <= forming.right_rim.pivot_index])
+    handle_volume = _median_volume([item for item in bars if forming.right_rim.pivot_index < item.eligible_index < handle.confirmed_index])
+    baseline = _median_volume([item for item in bars if forming.right_rim.pivot_index - 19 <= item.eligible_index <= forming.right_rim.pivot_index])
+    if right_volume is None or handle_volume is None or baseline is None:
+        return None, "HANDLE_VOLUME_UNAVAILABLE"
+    if handle_volume > profile.cup_handle_right_volume_max_ratio * right_volume or handle_volume > profile.cup_handle_baseline_volume_max_ratio * baseline:
+        return None, "HANDLE_VOLUME_NOT_CONTRACTING"
+    breakdown = {"pretrend": 15.0, "cup_geometry": 25.0, "u_shape_purity": 20.0, "handle_quality": 20.0, "volume_structure": 14.0}
+    score = sum(breakdown.values())
+    if score < profile.cup_ready_min_score:
+        return None, "CUP_READY_SCORE_INSUFFICIENT"
+    return replace(forming, state=CupHandleState.READY, handle_extreme=handle, pivot_price=pivot_price, pivot_frozen_at=current.bar.bar_end, confirmed_at=current.bar.bar_end, state_changed_at=current.bar.bar_end, score=score, score_breakdown=breakdown, volume_facts={"right_leg_median": right_volume, "handle_median": handle_volume, "baseline_median": baseline}), None
+
+
 def step_cup_handle(state: CupHandleStateValue, bar: NewowDailyBar, *, profile: NewowTrendProfile = NEWOW_TREND_D1_V1) -> CupHandleStepResult:
     if not isinstance(state, CupHandleStateValue):
         return CupHandleStepResult(initial_cup_handle_state(), None, (), ("NEWOW_CUP_STATE_INVALID",), 0)
@@ -221,8 +276,56 @@ def step_cup_handle(state: CupHandleStateValue, bar: NewowDailyBar, *, profile: 
     candidate, candidate_diagnostics, checks = _body_overlay(pivots, bars, bar, profile)
     diagnostics.extend(candidate_diagnostics)
     active = base.active_candidate or candidate
-    result = CupHandleStateValue(atr_state, tracker, bars, pivots, active, base.emitted_milestones, base.recent_terminal_candidate_ids, bar.physical_contract, bar.segment_id, True)
-    return CupHandleStepResult(result, active, (), tuple(diagnostics), checks)
+    markers: list[NewowMainMarker] = []
+    emitted = base.emitted_milestones
+    terminals = base.recent_terminal_candidate_ids
+    if active is not None and active.state == CupHandleState.FORMING:
+        ready, reason = _ready_candidate(active, pivots, bars, snapshot, profile)
+        if reason:
+            diagnostics.append(reason)
+        if ready is not None:
+            active = ready
+            ready_marker = _marker(active, NewowMarkerType.CUP_HANDLE_READY, bar, ())
+            markers.append(ready_marker)
+            emitted += (ready_marker.marker_id,)
+    if active is not None and active.state in {CupHandleState.READY, CupHandleState.BREAKOUT, CupHandleState.WEAKENED}:
+        assert active.handle_extreme is not None and active.pivot_price is not None
+        ready_handle = active.handle_extreme
+        sign_close, sign_pivot, sign_handle = (_normal(active.direction, value) for value in (bar.close, active.pivot_price, active.handle_extreme.price))
+        threshold = sign_pivot + profile.cup_breakout_buffer_atr * snapshot.atr
+        previous = bars[-2] if len(bars) > 1 else None
+        previous_above = previous is not None and _normal(active.direction, previous.bar.close) > sign_pivot + profile.cup_breakout_buffer_atr * previous.atr
+        if sign_close < sign_handle - profile.cup_breakout_buffer_atr * snapshot.atr:
+            active = replace(active, state=CupHandleState.INVALIDATED, state_changed_at=bar.bar_end)
+            related = tuple(emitted)
+            marker = _marker(active, NewowMarkerType.CUP_HANDLE_INVALIDATED, bar, related)
+            markers.append(marker)
+            emitted += (marker.marker_id,)
+            terminals = (terminals + (active.candidate_id,))[-profile.cup_recent_terminal_ids_limit:]
+        elif active.state == CupHandleState.BREAKOUT and sign_close < sign_pivot:
+            active = replace(active, state=CupHandleState.WEAKENED, state_changed_at=bar.bar_end)
+            marker = _marker(active, NewowMarkerType.CUP_HANDLE_WEAKENED, bar, tuple(emitted))
+            markers.append(marker)
+            emitted += (marker.marker_id,)
+        elif active.state == CupHandleState.READY and sign_close > threshold and not previous_above:
+            breakout_window = [item for item in bars[:-1] if item.eligible_index >= snapshot.eligible_index - 20]
+            baseline = _median_volume(breakout_window)
+            handle_volume = active.volume_facts.get("handle_median", 0.0)
+            if baseline and bar.volume >= profile.cup_breakout_volume20_min_ratio * baseline and bar.volume >= profile.cup_breakout_handle_volume_min_ratio * handle_volume:
+                active = replace(active, state=CupHandleState.BREAKOUT, state_changed_at=bar.bar_end, score=100.0, score_breakdown={**active.score_breakdown, "volume_structure": 20.0})
+                marker = _marker(active, NewowMarkerType.CUP_HANDLE_BREAKOUT, bar, tuple(emitted))
+                markers.append(marker)
+                emitted += (marker.marker_id,)
+            else:
+                diagnostics.append("BREAKOUT_VOLUME_UNCONFIRMED")
+        elif active.state == CupHandleState.READY and snapshot.eligible_index - ready_handle.confirmed_index >= profile.cup_ready_expiry_bars:
+            active = replace(active, state=CupHandleState.EXPIRED, state_changed_at=bar.bar_end)
+            marker = _marker(active, NewowMarkerType.CUP_HANDLE_EXPIRED, bar, tuple(emitted))
+            markers.append(marker)
+            emitted += (marker.marker_id,)
+            terminals = (terminals + (active.candidate_id,))[-profile.cup_recent_terminal_ids_limit:]
+    result = CupHandleStateValue(atr_state, tracker, bars, pivots, active, emitted, terminals, bar.physical_contract, bar.segment_id, True)
+    return CupHandleStepResult(result, active, tuple(markers), tuple(diagnostics), checks)
 
 
 def calculate_cup_handle_series(bars: tuple[NewowDailyBar, ...], *, profile: NewowTrendProfile = NEWOW_TREND_D1_V1) -> tuple[CupHandleStepResult, ...]:
