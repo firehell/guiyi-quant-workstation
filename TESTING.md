@@ -17,6 +17,22 @@ uv run --project services/quant-api python -m ruff check \
   services/quant-api/app services/quant-api/tests packages/quant-core/guiyi_quant tests/engineering
 ```
 
+Market Home derived projection、API fallback 与 apply invalidation：
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+  uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/data_foundation/test_market_home_overview.py \
+  services/quant-api/tests/data_foundation/test_market_home_projection.py \
+  services/quant-api/tests/data_foundation/test_market_home_projection_after_market.py \
+  services/quant-api/tests/data_foundation/test_historical_data_manager.py \
+  services/quant-api/tests/test_market_home_projection_invalidation.py \
+  services/quant-api/tests/test_market_home_api.py \
+  services/quant-api/tests/test_market_home_projection_api.py
+```
+
+这组测试只使用临时目录/fake service，验证 projection identity、strict/atomic file、API projection-hit/miss、`data update/refresh --apply` 在 maintenance lease 内的失效、after-market 顺序、default-off projection activation marker 与 maintenance lease；不得以测试为理由执行真实 `guiyi data ... --apply` 或创建 marker。真实 projection-hit 性能 `<200ms` 属于后续明确授权的本地 Runtime read-only manual acceptance，不在普通 pytest 中用 timing sleep 伪造。
+
 EMA21 10K slope 与整体退役合同：
 
 ```bash
@@ -27,6 +43,26 @@ PYTHONPATH=services/quant-api:packages/quant-core \
   services/quant-api/tests/alembic/test_subing_retirement_migration.py
 ```
 
+SuBing S1-S4 公式、同物理合约 replay、Alert dispatch/Event/notification 与 Scope activation 定向合同：
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+  uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/test_subing_ths_kernel.py \
+  services/quant-api/tests/test_market_read_service.py \
+  services/quant-api/tests/test_alert_registry.py \
+  services/quant-api/tests/test_alert_evaluator.py \
+  services/quant-api/tests/test_alert_service.py \
+  services/quant-api/tests/test_alert_notification.py \
+  services/quant-api/tests/test_alert_notification_config.py \
+  services/quant-api/tests/test_alert_pushplus.py \
+  services/quant-api/tests/test_alert_runtime.py \
+  services/quant-api/tests/test_runtime_health.py \
+  services/quant-api/tests/test_alert_api.py \
+  services/quant-api/tests/test_alert_cli.py \
+  services/quant-api/tests/test_subing_scope_activation.py
+```
+
 Isolated PostgreSQL 测试只能指向专用、空白、可销毁的数据库；未设置变量时不得运行：
 
 ```bash
@@ -35,6 +71,18 @@ GUIYI_ISOLATED_MIGRATION_DATABASE_URL='postgresql+psycopg://USER:PASSWORD@HOST:5
   uv run --project services/quant-api pytest -q -m isolated_postgresql \
   services/quant-api/tests/alembic
 ```
+
+0042 → 0043 → 0044、disabled + empty-scope seed 与 forward-only failure 的专用定向命令仍必须使用同一类隔离数据库：
+
+```bash
+GUIYI_ISOLATED_MIGRATION_DATABASE_URL='postgresql+psycopg://USER:PASSWORD@HOST:5432/isolated_db' \
+  PYTHONPATH=services/quant-api:packages/quant-core \
+  uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/alembic/test_subing_retirement_migration.py \
+  services/quant-api/tests/alembic/test_subing_ths_alert_migration.py
+```
+
+不得把 `guiyi-postgres`、production URL 或任何非空共享数据库用于 isolated PostgreSQL suite。dry-run、migration 测试与 activation 测试均不授权 production migration、Scope apply 或 Rule enable。
 
 ## Range Detector Lux V1
 
@@ -57,6 +105,18 @@ pnpm -C apps/quant-web exec node --test \
 ```
 
 ## Web
+
+SuBing Alert Rule/API/Event-backed `S↑/S↓` 与 Market Home 定向检查：
+
+```bash
+pnpm -C apps/quant-web exec node --test \
+  tests/alertRuleOwnership.test.ts \
+  tests/alerts.test.ts \
+  tests/productCurrentAlertEvents.test.ts \
+  tests/marketHomeTypes.test.ts \
+  tests/marketHomeViewModel.test.ts \
+  tests/marketHomeRoute.test.ts
+```
 
 ```bash
 pnpm --dir apps/quant-web run check:alert-rules
