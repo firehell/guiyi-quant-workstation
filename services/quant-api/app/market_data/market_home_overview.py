@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import json
 from collections import defaultdict
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
+from hashlib import sha256
 from statistics import median
 from typing import Literal
 
@@ -38,6 +40,12 @@ class MarketHomeOverviewError(RuntimeError):
     def __init__(self, code: str) -> None:
         self.code = code
         super().__init__(code)
+
+
+@dataclass(frozen=True, slots=True)
+class MarketHomeAuthorityIdentity:
+    target_as_of: date
+    authority_digest: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -116,13 +124,28 @@ class MarketHomeOverviewService:
         self._taxonomy = normalized_taxonomy
         self._latest_complete_day = latest_complete_day
 
+    def authority_identity(self) -> MarketHomeAuthorityIdentity:
+        records = [
+            {
+                "symbol": symbol,
+                "name": self._taxonomy[symbol].name,
+                "sector": self._taxonomy[symbol].sector,
+            }
+            for symbol in self._products
+        ]
+        encoded = json.dumps(
+            records,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+        return MarketHomeAuthorityIdentity(
+            target_as_of=self._target_as_of(),
+            authority_digest=sha256(encoded).hexdigest(),
+        )
+
     def snapshot(self) -> MarketHomeOverviewSnapshot:
-        try:
-            target_as_of = self._latest_complete_day(self._products)
-        except InfrastructureError as exc:
-            raise MarketHomeOverviewError(
-                "MARKET_HOME_TARGET_AS_OF_UNAVAILABLE"
-            ) from exc
+        target_as_of = self._target_as_of()
         dominants = _dominants_by_symbol(
             self._market_data.list_latest_dominants(), self._products
         )
@@ -193,12 +216,24 @@ class MarketHomeOverviewService:
             sectors=_sector_summaries(self._products, self._taxonomy, items),
         )
 
+    def _target_as_of(self) -> date:
+        try:
+            return self._latest_complete_day(self._products)
+        except InfrastructureError as exc:
+            raise MarketHomeOverviewError(
+                "MARKET_HOME_TARGET_AS_OF_UNAVAILABLE"
+            ) from exc
+
 
 def _validated_products(products: tuple[str, ...]) -> tuple[str, ...]:
     if not products or any(not isinstance(product, str) for product in products):
         raise MarketHomeOverviewError("MARKET_HOME_UNIVERSE_INVALID")
     normalized = tuple(normalize_symbol(product) for product in products)
-    if any(not product for product in normalized) or normalized != products or len(set(normalized)) != len(normalized):
+    if (
+        any(not product for product in normalized)
+        or normalized != products
+        or len(set(normalized)) != len(normalized)
+    ):
         raise MarketHomeOverviewError("MARKET_HOME_UNIVERSE_INVALID")
     return normalized
 
@@ -289,15 +324,27 @@ def _reason_codes(metrics) -> tuple[str, ...]:
 
 def _summary(items: list[MarketHomeItem]) -> MarketHomeSummary:
     return MarketHomeSummary(
-        price_up_count=sum(item.price_change_1d is not None and item.price_change_1d > 0 for item in items),
-        price_down_count=sum(item.price_change_1d is not None and item.price_change_1d < 0 for item in items),
+        price_up_count=sum(
+            item.price_change_1d is not None and item.price_change_1d > 0
+            for item in items
+        ),
+        price_down_count=sum(
+            item.price_change_1d is not None and item.price_change_1d < 0
+            for item in items
+        ),
         price_flat_count=sum(item.price_change_1d == 0 for item in items),
         daily_up_count=sum(item.daily_trend == "up" for item in items),
         daily_down_count=sum(item.daily_trend == "down" for item in items),
         daily_neutral_count=sum(item.daily_trend == "neutral" for item in items),
-        daily_unavailable_count=sum(item.daily_trend == "unavailable" for item in items),
-        aligned_up_count=sum(item.daily_trend == item.weekly_trend == "up" for item in items),
-        aligned_down_count=sum(item.daily_trend == item.weekly_trend == "down" for item in items),
+        daily_unavailable_count=sum(
+            item.daily_trend == "unavailable" for item in items
+        ),
+        aligned_up_count=sum(
+            item.daily_trend == item.weekly_trend == "up" for item in items
+        ),
+        aligned_down_count=sum(
+            item.daily_trend == item.weekly_trend == "down" for item in items
+        ),
     )
 
 
@@ -325,5 +372,7 @@ def _sector_summaries(
 
 
 def _median_change(items: list[MarketHomeItem]) -> Decimal | None:
-    values = [item.price_change_1d for item in items if item.price_change_1d is not None]
+    values = [
+        item.price_change_1d for item in items if item.price_change_1d is not None
+    ]
     return Decimal(str(median(values))) if values else None
