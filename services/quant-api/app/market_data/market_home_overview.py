@@ -255,7 +255,7 @@ def _query_through_target(
             )
         )
     except MarketDataError as exc:
-        if exc.code in {"QUERY_WINDOW_EMPTY", "DATASET_OR_PARTITION_MISSING"} or (
+        if exc.code == "QUERY_WINDOW_EMPTY" or (
             frequency is BarFrequency.W1
             and exc.code == "ACTUAL_DOMINANT_WEEKLY_DATASET_ABSENT"
         ):

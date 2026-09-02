@@ -167,6 +167,39 @@ def test_snapshot_treats_empty_daily_query_as_unavailable_and_still_reads_weekly
     ]
 
 
+def test_snapshot_fails_closed_for_partition_integrity_error() -> None:
+    from app.market_data.market_home_overview import (
+        MarketHomeOverviewError,
+        MarketHomeOverviewService,
+    )
+
+    market_data = _FakeMarketDataService(
+        daily={"jm": _bars(30, end=TARGET)},
+        weekly={"jm": _bars(22, end=TARGET)},
+        dominants=(
+            DominantContractSummary(
+                symbol="jm",
+                product_name="焦煤",
+                sector="black",
+                exchange="DCE",
+                actual_contract="JM2505",
+                dominant_mapping_date=TARGET,
+            ),
+        ),
+        failures={
+            ("jm", "1d"): MarketDataError("DATASET_OR_PARTITION_MISSING"),
+        },
+    )
+
+    with pytest.raises(MarketHomeOverviewError, match="MARKET_HOME_DATA_INTEGRITY_ERROR"):
+        MarketHomeOverviewService(
+            market_data=market_data,
+            products=("jm",),
+            taxonomy={"jm": ProductTaxonomyEntry(name="焦煤", sector="black")},
+            latest_complete_day=_TargetDay(TARGET),
+        ).snapshot()
+
+
 def test_snapshot_keeps_daily_item_when_weekly_mapped_dataset_is_missing() -> None:
     from app.market_data.market_home_overview import MarketHomeOverviewService
 
