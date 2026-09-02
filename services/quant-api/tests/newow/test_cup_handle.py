@@ -27,6 +27,7 @@ from guiyi_quant.newow.models import (
 from guiyi_quant.newow.profile import NEWOW_TREND_D1_V1
 
 from .fixtures import (
+    RestoredCupCase,
     bearish_true_cup_handle,
     breakout_then_archived,
     breakout_then_weakened,
@@ -323,6 +324,24 @@ def test_restored_unavailable_atr_phase_cannot_retain_mature_geometry(
 
 def _markers(results: tuple[object, ...]) -> list[object]:
     return [marker for result in results for marker in result.markers]  # type: ignore[attr-defined]
+
+
+def _with_exact_pivot_snapshot_prices(case: RestoredCupCase) -> RestoredCupCase:
+    """Keep sub-context Decimal pivot prices observable in restored snapshots."""
+
+    snapshots = list(case.state.eligible_bars)
+    for pivot in case.state.confirmed_pivots[:3]:
+        snapshot = snapshots[pivot.pivot_index]
+        bar = (
+            replace(snapshot.bar, high=pivot.price)
+            if pivot.kind == CupPivotKind.HIGH
+            else replace(snapshot.bar, low=pivot.price)
+        )
+        snapshots[pivot.pivot_index] = replace(snapshot, bar=bar)
+    return replace(
+        case,
+        state=replace(case.state, eligible_bars=tuple(snapshots)),
+    )
 
 
 def test_true_bullish_fixture_reaches_frozen_ready_then_breakout() -> None:
@@ -861,13 +880,13 @@ def test_handle_upper_half_uses_average_rim_cup_depth() -> None:
             "bottom_price": Decimal("50"),
             "handle_price": Decimal("85"),
         },
-        {"atr": 20 / 3},
+        {"bottom_price": Decimal("82"), "atr": 6.0},
         {
-            "left_price": Decimal("102.5"),
-            "right_price": Decimal("97.5"),
-            "bottom_price": Decimal("75"),
-            "handle_price": Decimal("90"),
-            "atr": 10 / 3,
+            "left_price": Decimal("101.5"),
+            "right_price": Decimal("98.5"),
+            "bottom_price": Decimal("78"),
+            "handle_price": Decimal("94"),
+            "atr": 2.0,
         },
     ],
 )
@@ -997,9 +1016,9 @@ def test_decimal_depth_beyond_context_precision_stays_below_ten_percent() -> Non
             {
                 "left_price": Decimal("800"),
                 "right_price": Decimal("800"),
-                "bottom_price": Decimal("719.2"),
+                "bottom_price": Decimal("719.199999999999998"),
                 "handle_price": Decimal("780"),
-                "atr": float(Decimal("80.8") / Decimal(3)),
+                "atr": 26.933333333333334,
             },
             "CUP_DEPTH_BELOW_3_ATR",
         ),
@@ -1016,6 +1035,190 @@ def test_decimal_exact_geometry_boundaries_survive_float_cancellation(
 
     assert rounded_failure not in result.diagnostics
     assert result.active_overlay is not None
+
+
+def test_pretrend_move_below_four_atr_is_rejected_before_float_rounding() -> None:
+    """A sub-float epsilon below the four-ATR hard gate must remain a failure."""
+
+    almost_100 = Decimal("99." + "9" * 28)
+    case = _with_exact_pivot_snapshot_prices(
+        restored_cup_case(
+            left_price=almost_100,
+            right_price=almost_100,
+            handle_price=Decimal("94"),
+            atr=1.0,
+            pretrend="flat",
+        )
+    )
+
+    result = step_cup_handle(case.state, case.next_bar)
+
+    assert "PRETREND_NOT_CONFIRMED" in result.diagnostics
+    assert result.active_overlay is None
+    assert not any(
+        marker.marker_type == NewowMarkerType.CUP_HANDLE_READY
+        for marker in result.markers
+    )
+
+
+def test_pretrend_strength_below_one_point_five_stays_in_lower_bucket() -> None:
+    """A sub-float epsilon below 1.5 strength earns ten, not twelve, points."""
+
+    almost_102 = Decimal("101." + "9" * 28)
+    case = _with_exact_pivot_snapshot_prices(
+        restored_cup_case(
+            left_price=almost_102,
+            right_price=almost_102,
+            handle_price=Decimal("95"),
+            atr=1.0,
+            pretrend="flat",
+        )
+    )
+
+    result = step_cup_handle(case.state, case.next_bar)
+
+    assert result.active_overlay is not None
+    assert result.active_overlay.score_breakdown["pretrend"] == 10.0
+
+
+def test_cup_depth_below_three_atr_is_rejected_before_float_rounding() -> None:
+    """A sub-float epsilon below the three-ATR hard gate must remain a failure."""
+
+    case = _with_exact_pivot_snapshot_prices(
+        restored_cup_case(
+            bottom_price=Decimal("70." + "0" * 27 + "1"),
+            atr=10.0,
+        )
+    )
+
+    result = step_cup_handle(case.state, case.next_bar)
+
+    assert "CUP_DEPTH_BELOW_3_ATR" in result.diagnostics
+    assert result.active_overlay is None
+    assert not any(
+        marker.marker_type == NewowMarkerType.CUP_HANDLE_READY
+        for marker in result.markers
+    )
+
+
+def test_cup_depth_below_four_atr_stays_in_lower_score_bucket() -> None:
+    """A sub-float epsilon below four ATR earns three, not five, points."""
+
+    case = _with_exact_pivot_snapshot_prices(
+        restored_cup_case(
+            bottom_price=Decimal("60." + "0" * 27 + "1"),
+            handle_price=Decimal("94"),
+            atr=10.0,
+        )
+    )
+
+    result = step_cup_handle(case.state, case.next_bar)
+
+    assert result.active_overlay is not None
+    assert result.active_overlay.score_breakdown["cup_geometry"] == 17.0
+
+
+def test_rim_gap_above_one_point_five_atr_is_rejected_before_float_rounding() -> None:
+    """A sub-float epsilon above the 1.5-ATR hard gate must remain a failure."""
+
+    case = _with_exact_pivot_snapshot_prices(
+        restored_cup_case(
+            right_price=Decimal("98.4" + "9" * 27),
+            bottom_price=Decimal("78"),
+            handle_price=Decimal("94"),
+            atr=1.0,
+        )
+    )
+
+    result = step_cup_handle(case.state, case.next_bar)
+
+    assert "RIM_GAP_ATR_EXCEEDED" in result.diagnostics
+    assert result.active_overlay is None
+    assert not any(
+        marker.marker_type == NewowMarkerType.CUP_HANDLE_READY
+        for marker in result.markers
+    )
+
+
+def test_rim_gap_above_zero_point_seven_five_atr_stays_in_lower_bucket() -> None:
+    """A sub-float epsilon above 0.75 ATR earns five, not seven, points."""
+
+    case = _with_exact_pivot_snapshot_prices(
+        restored_cup_case(
+            right_price=Decimal("98.4" + "9" * 27),
+            bottom_price=Decimal("78"),
+            handle_price=Decimal("94"),
+            atr=2.0,
+        )
+    )
+
+    result = step_cup_handle(case.state, case.next_bar)
+
+    assert result.active_overlay is not None
+    assert result.active_overlay.score_breakdown["cup_geometry"] == 21.0
+
+
+@pytest.mark.parametrize(
+    ("case_kwargs", "score_key", "expected_score"),
+    (
+        (
+            {
+                "left_price": Decimal("100"),
+                "right_price": Decimal("100"),
+                "handle_price": Decimal("94"),
+                "atr": 1.0,
+                "pretrend": "flat",
+            },
+            "pretrend",
+            10.0,
+        ),
+        (
+            {
+                "left_price": Decimal("102"),
+                "right_price": Decimal("102"),
+                "handle_price": Decimal("95"),
+                "atr": 1.0,
+                "pretrend": "flat",
+            },
+            "pretrend",
+            12.0,
+        ),
+        (
+            {
+                "bottom_price": Decimal("60"),
+                "handle_price": Decimal("94"),
+                "atr": 10.0,
+            },
+            "cup_geometry",
+            19.0,
+        ),
+        (
+            {
+                "right_price": Decimal("98.5"),
+                "bottom_price": Decimal("78"),
+                "handle_price": Decimal("94"),
+                "atr": 2.0,
+            },
+            "cup_geometry",
+            23.0,
+        ),
+    ),
+)
+def test_exact_atr_thresholds_enter_their_inclusive_score_bucket(
+    case_kwargs: dict[str, object],
+    score_key: str,
+    expected_score: float,
+) -> None:
+    """Exact 4/1.5/4/0.75 ATR boundaries stay on their inclusive side."""
+
+    case = _with_exact_pivot_snapshot_prices(
+        restored_cup_case(**case_kwargs)  # type: ignore[arg-type]
+    )
+
+    result = step_cup_handle(case.state, case.next_bar)
+
+    assert result.active_overlay is not None
+    assert result.active_overlay.score_breakdown[score_key] == expected_score
 
 
 @pytest.mark.parametrize(
@@ -1850,6 +2053,55 @@ def test_restored_tracker_rejects_an_active_extreme_from_the_previous_leg() -> N
     result = step_cup_handle(malformed, bars[64])
 
     assert result.diagnostics == ("NEWOW_CUP_STATE_INVALID",)
+    assert result.state == initial_cup_handle_state()
+
+
+@pytest.mark.parametrize(
+    ("pivot_position", "exact_close", "bar_high", "bar_low"),
+    (
+        (0, Decimal("98." + "0" * 27 + "1"), Decimal("99"), Decimal("97")),
+        (1, Decimal("81." + "9" * 28), Decimal("83"), Decimal("81")),
+    ),
+)
+def test_restored_pivot_reversal_below_threshold_is_rejected_exactly(
+    pivot_position: int,
+    exact_close: Decimal,
+    bar_high: Decimal,
+    bar_low: Decimal,
+) -> None:
+    """Decimal subtraction must not round a sub-threshold reversal up to two."""
+
+    case = restored_cup_case()
+    snapshots = list(case.state.eligible_bars)
+    pivots = list(case.state.confirmed_pivots)
+    pivot = pivots[pivot_position]
+    snapshots[pivot.pivot_index] = replace(
+        snapshots[pivot.pivot_index],
+        atr=1.6,
+    )
+    confirmed = snapshots[pivot.confirmed_index]
+    snapshots[pivot.confirmed_index] = replace(
+        confirmed,
+        bar=replace(
+            confirmed.bar,
+            open=exact_close,
+            high=bar_high,
+            low=bar_low,
+            close=exact_close,
+        ),
+    )
+    pivots[pivot_position] = replace(pivot, atr_at_pivot=1.6)
+    malformed = replace(
+        case.state,
+        eligible_bars=tuple(snapshots),
+        confirmed_pivots=tuple(pivots),
+    )
+
+    result = step_cup_handle(malformed, case.next_bar)
+
+    assert result.diagnostics == ("NEWOW_CUP_STATE_INVALID",)
+    assert result.markers == ()
+    assert result.active_overlay is None
     assert result.state == initial_cup_handle_state()
 
 

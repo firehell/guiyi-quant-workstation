@@ -347,14 +347,12 @@ def _decimal_ratio_below(
     )
 
 
-def _decimal_over_finite_float(
+def _decimal_over_fraction(
     numerator: Decimal | Fraction, denominator: float
-) -> float | None:
+) -> Fraction | None:
     if not isfinite(denominator) or denominator <= 0:
         return None
-    return _safe_finite_float(
-        Fraction(numerator) / Fraction(Decimal(str(denominator)))
-    )
+    return Fraction(numerator) / Fraction(Decimal(str(denominator)))
 
 
 def _finite_fact_values(
@@ -519,14 +517,14 @@ def _tracker_is_coherent(
         confirmed = by_index.get(pivot.confirmed_index)
         if confirmed is not None:
             reversal_distance = (
-                pivot.price - confirmed.bar.close
+                Fraction(pivot.price) - Fraction(confirmed.bar.close)
                 if pivot.kind == CupPivotKind.HIGH
-                else confirmed.bar.close - pivot.price
+                else Fraction(confirmed.bar.close) - Fraction(pivot.price)
             )
             reversal_threshold = _rational_parameter(
                 profile.cup_reversal_atr
             ) * Fraction(Decimal(str(pivot.atr_at_pivot)))
-            if Fraction(reversal_distance) < reversal_threshold:
+            if reversal_distance < reversal_threshold:
                 return False
         if previous_pivot is not None:
             if (
@@ -1498,7 +1496,7 @@ def _pretrend_score(
         move = sign * (Fraction(left.price) - close_start)
         return_pct = move / close_start
         atr_median = median(item.atr for item in snapshots)
-        move_atr = _decimal_over_finite_float(move, atr_median)
+        move_atr = _decimal_over_fraction(move, atr_median)
         if move_atr is None:
             continue
         slope = _ols_slope(
@@ -1507,7 +1505,7 @@ def _pretrend_score(
         return_strength = return_pct / _rational_parameter(
             profile.cup_pretrend_min_return
         )
-        atr_strength = Fraction(Decimal(str(move_atr))) / _rational_parameter(
+        atr_strength = move_atr / _rational_parameter(
             profile.cup_pretrend_min_move_atr
         )
         if slope > 0 and (
@@ -1615,21 +1613,21 @@ def _body_facts(
         diagnostics.append("CUP_DEPTH_BELOW_10_PERCENT")
         return None, _unique(diagnostics)
     cup_depth_pct = cup_depth / abs(rim_price)
-    cup_depth_atr = _decimal_over_finite_float(cup_depth, atr_median)
+    cup_depth_atr = _decimal_over_fraction(cup_depth, atr_median)
     rim_gap = abs(left_price - right_price)
     rim_gap_pct = rim_gap / abs(rim_price)
-    rim_gap_atr = _decimal_over_finite_float(rim_gap, atr_median)
+    rim_gap_atr = _decimal_over_fraction(rim_gap, atr_median)
     if cup_depth_atr is None or rim_gap_atr is None:
         return None, _unique(diagnostics + ["CUP_ATR_UNAVAILABLE"])
     if cup_depth_pct < _rational_parameter(profile.cup_depth_min_pct):
         diagnostics.append("CUP_DEPTH_BELOW_10_PERCENT")
     if cup_depth_pct > _rational_parameter(profile.cup_depth_hard_max_pct):
         diagnostics.append("CUP_DEPTH_ABOVE_50_PERCENT")
-    if cup_depth_atr < profile.cup_depth_min_atr:
+    if cup_depth_atr < _rational_parameter(profile.cup_depth_min_atr):
         diagnostics.append("CUP_DEPTH_BELOW_3_ATR")
     if rim_gap_pct > _rational_parameter(profile.cup_rim_gap_max_pct):
         diagnostics.append("RIM_GAP_PERCENT_EXCEEDED")
-    if rim_gap_atr > profile.cup_rim_gap_max_atr:
+    if rim_gap_atr > _rational_parameter(profile.cup_rim_gap_max_atr):
         diagnostics.append("RIM_GAP_ATR_EXCEEDED")
 
     zone_top = bottom_price + _rational_parameter(
@@ -1678,10 +1676,11 @@ def _body_facts(
         if cup_depth_pct <= _rational_parameter(profile.cup_depth_preferred_max_pct)
         else 4.0
     )
-    depth_atr_score = 5.0 if cup_depth_atr >= 4 else 3.0
+    depth_atr_score = 5.0 if cup_depth_atr >= Fraction(4) else 3.0
     rim_score = (
         7.0
-        if rim_gap_pct <= Fraction(25, 1000) and rim_gap_atr <= 0.75
+        if rim_gap_pct <= Fraction(25, 1000)
+        and rim_gap_atr <= Fraction(3, 4)
         else 5.0
     )
     geometry = duration_score + depth_pct_score + depth_atr_score + rim_score
