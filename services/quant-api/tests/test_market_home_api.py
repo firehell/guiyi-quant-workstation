@@ -90,6 +90,22 @@ def test_home_overview_maps_domain_failure_to_typed_409(monkeypatch) -> None:
     assert response.json() == {"detail": {"code": "MARKET_HOME_DATA_INTEGRITY_ERROR"}}
 
 
+def test_home_overview_maps_authority_loader_failure_to_typed_409(monkeypatch) -> None:
+    service = _FakeOverviewService(
+        MarketHomeOverviewError("MARKET_HOME_AUTHORITY_UNAVAILABLE")
+    )
+    monkeypatch.setattr(
+        "app.api.market.build_market_home_overview_service",
+        lambda _session: service,
+        raising=False,
+    )
+
+    response = TestClient(app).get("/api/v1/market/research/home-overview")
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": {"code": "MARKET_HOME_AUTHORITY_UNAVAILABLE"}}
+
+
 class _FakeOverviewService:
     def __init__(self, value: MarketHomeOverviewSnapshot | Exception) -> None:
         self.value = value

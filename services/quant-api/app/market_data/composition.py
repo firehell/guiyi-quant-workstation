@@ -18,12 +18,19 @@ from app.market_data.live_market import (
     RQDataLiveProvider,
 )
 from app.market_data.market_data_service import MarketDataService
-from app.market_data.market_home_overview import MarketHomeOverviewService
+from app.market_data.market_home_overview import (
+    MarketHomeOverviewError,
+    MarketHomeOverviewService,
+)
 from app.market_data.market_phase import MarketPhaseResolver
 from app.market_data.market_read_service import MarketReadService
 from app.market_data.market_research_service import MarketResearchService
-from app.market_data.operational_universe import load_active_products, load_operational_products
-from app.market_data.product_taxonomy import load_product_taxonomy
+from app.market_data.operational_universe import (
+    ActiveUniverseError,
+    load_active_products,
+    load_operational_products,
+)
+from app.market_data.product_taxonomy import ProductTaxonomyError, load_product_taxonomy
 from app.market_data.storage import CanonicalMonthlyStore
 from app.redis_connections import get_redis_connection
 
@@ -100,10 +107,15 @@ def build_market_home_overview_service(session: Session) -> MarketHomeOverviewSe
         _PRODUCT_STARTS,
         history_floor_path=_HISTORY_FLOOR,
     )
+    try:
+        products = load_active_products()
+        taxonomy = load_product_taxonomy()
+    except (ActiveUniverseError, ProductTaxonomyError) as exc:
+        raise MarketHomeOverviewError("MARKET_HOME_AUTHORITY_UNAVAILABLE") from exc
     return MarketHomeOverviewService(
         market_data=build_market_data_service(session),
-        products=load_active_products(),
-        taxonomy=load_product_taxonomy(),
+        products=products,
+        taxonomy=taxonomy,
         latest_complete_day=coverage.latest_complete_day,
     )
 

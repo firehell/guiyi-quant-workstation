@@ -167,6 +167,39 @@ def test_snapshot_treats_empty_daily_query_as_unavailable_and_still_reads_weekly
     ]
 
 
+def test_snapshot_keeps_daily_item_when_weekly_mapped_dataset_is_missing() -> None:
+    from app.market_data.market_home_overview import MarketHomeOverviewService
+
+    market_data = _FakeMarketDataService(
+        daily={"jm": _bars(30, end=TARGET)},
+        weekly={"jm": _bars(22, end=TARGET)},
+        dominants=(
+            DominantContractSummary(
+                symbol="jm",
+                product_name="焦煤",
+                sector="black",
+                exchange="DCE",
+                actual_contract="JM2505",
+                dominant_mapping_date=TARGET,
+            ),
+        ),
+        failures={
+            ("jm", "1w"): MarketDataError("MAPPED_CONTRACT_DATASET_MISSING"),
+        },
+    )
+
+    snapshot = MarketHomeOverviewService(
+        market_data=market_data,
+        products=("jm",),
+        taxonomy={"jm": ProductTaxonomyEntry(name="焦煤", sector="black")},
+        latest_complete_day=_TargetDay(TARGET),
+    ).snapshot()
+
+    assert snapshot.status == "ready"
+    assert snapshot.participant_count == 1
+    assert snapshot.items[0].weekly_trend == "unavailable"
+
+
 @pytest.mark.parametrize("size", [59, 60, 61])
 def test_snapshot_supports_universe_sizes_without_a_magic_60(size: int) -> None:
     from app.market_data.market_home_overview import MarketHomeOverviewService
@@ -286,6 +319,50 @@ def test_snapshot_fails_closed_for_missing_or_duplicate_dominants(
         daily={"jm": _bars(30, end=TARGET)},
         weekly={"jm": _bars(22, end=TARGET)},
         dominants=dominants,
+    )
+
+    with pytest.raises(MarketHomeOverviewError, match="MARKET_HOME_DOMINANT_CONTEXT_INVALID"):
+        MarketHomeOverviewService(
+            market_data=market_data,
+            products=("jm",),
+            taxonomy={"jm": ProductTaxonomyEntry(name="焦煤", sector="black")},
+            latest_complete_day=_TargetDay(TARGET),
+        ).snapshot()
+
+
+@pytest.mark.parametrize(
+    "dominant",
+    [
+        DominantContractSummary(
+            symbol="jm",
+            product_name="焦煤",
+            sector="black",
+            exchange="",
+            actual_contract="JM2505",
+            dominant_mapping_date=TARGET,
+        ),
+        DominantContractSummary(
+            symbol="jm",
+            product_name="焦煤",
+            sector="black",
+            exchange="DCE",
+            actual_contract="",
+            dominant_mapping_date=TARGET,
+        ),
+    ],
+)
+def test_snapshot_fails_closed_for_incomplete_dominant_identity(
+    dominant: DominantContractSummary,
+) -> None:
+    from app.market_data.market_home_overview import (
+        MarketHomeOverviewError,
+        MarketHomeOverviewService,
+    )
+
+    market_data = _FakeMarketDataService(
+        daily={"jm": _bars(30, end=TARGET)},
+        weekly={"jm": _bars(22, end=TARGET)},
+        dominants=(dominant,),
     )
 
     with pytest.raises(MarketHomeOverviewError, match="MARKET_HOME_DOMINANT_CONTEXT_INVALID"):

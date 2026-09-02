@@ -202,12 +202,26 @@ def _dominants_by_symbol(
 ) -> dict[str, DominantContractSummary]:
     result: dict[str, DominantContractSummary] = {}
     for item in dominants:
-        if item.symbol not in products or item.symbol in result:
+        if (
+            item.symbol not in products
+            or item.symbol in result
+            or not _valid_dominant_identity(item)
+        ):
             raise MarketHomeOverviewError("MARKET_HOME_DOMINANT_CONTEXT_INVALID")
         result[item.symbol] = item
     if set(result) != set(products):
         raise MarketHomeOverviewError("MARKET_HOME_DOMINANT_CONTEXT_INVALID")
     return result
+
+
+def _valid_dominant_identity(item: DominantContractSummary) -> bool:
+    return (
+        isinstance(item.exchange, str)
+        and bool(item.exchange.strip())
+        and isinstance(item.actual_contract, str)
+        and bool(item.actual_contract.strip())
+        and isinstance(item.dominant_mapping_date, date)
+    )
 
 
 def _through_target(
@@ -234,7 +248,10 @@ def _query_through_target(
             )
         )
     except MarketDataError as exc:
-        if exc.code in {"QUERY_WINDOW_EMPTY", "DATASET_OR_PARTITION_MISSING"}:
+        if exc.code in {"QUERY_WINDOW_EMPTY", "DATASET_OR_PARTITION_MISSING"} or (
+            frequency is BarFrequency.W1
+            and exc.code == "MAPPED_CONTRACT_DATASET_MISSING"
+        ):
             return ()
         raise MarketHomeOverviewError("MARKET_HOME_DATA_INTEGRITY_ERROR") from exc
     return _through_target(result.bars, target_as_of)

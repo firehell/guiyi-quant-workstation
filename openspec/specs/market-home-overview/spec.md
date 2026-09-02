@@ -32,6 +32,13 @@ immutable Event 的两个 bulk、只读 HTTP 合同。该能力只为用户复�
 - **WHEN** product 有 target-day D1 但 W1 EMA warm-up 不足或 W1 无数据
 - **THEN** product item 仍存在，`weekly_trend=unavailable`，并且所有缺失 metrics 保持 null
 
+#### Scenario: Weekly mapped dataset is absent
+
+- **WHEN** product 有 target-day D1，但 W1 actual-dominant query 报告
+  `MAPPED_CONTRACT_DATASET_MISSING`
+- **THEN** response MUST 保留该 product item 并返回 `weekly_trend=unavailable`；D1 的同类
+  integrity failure 仍 MUST fail closed
+
 ### Requirement: Overview preserves generic market authority and transparent degradation
 
 Overview item 的名称与 sector MUST 来自 taxonomy；dominant summary 仅提供 current actual
@@ -42,6 +49,11 @@ position、target、order 或任何退役策略事实。
 构造时 universe MUST 非空、normalized、唯一，taxonomy keys MUST 精确匹配。缺失或重复
 dominant identity、coverage failure、mapping/physical integrity failure MUST fail closed as a typed
 HTTP 409; API 不得泄露内部异常。
+
+#### Scenario: Authority configuration cannot be loaded
+
+- **WHEN** active universe 或 taxonomy loader 失败
+- **THEN** API MUST 返回 `409` 和 `MARKET_HOME_AUTHORITY_UNAVAILABLE`，不得返回内部 `500`
 
 #### Scenario: Taxonomy and dominant facts disagree
 
