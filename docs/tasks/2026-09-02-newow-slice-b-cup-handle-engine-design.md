@@ -60,6 +60,7 @@ D1 / D2 / D3 Marker
 FORMING 可以演化
 READY 后冻结
 未来数据不能改写旧事实
+杯柄 Kernel 不读取黄蓝带，二者在 Engine 中并列汇总
 牛哇蓝色仍表示空仓，不产生期货空单
 ```
 
@@ -127,9 +128,9 @@ EscapeState / step_escape_d123
 
 Slice B 不修改黄蓝趋势带和 D1/D2/D3 公式。仅在兼容前提下扩展杯柄、统一 Engine 和它们所需的 typed contracts/profile 参数。
 
-## 5. 现有父级设计 Review 后的规范性修正
+## 5. 父级设计 Review 后的规范性修正
 
-本次设计 Review 发现九个必须在实施前消除的问题：
+本次设计 Review 发现并修正十一项实现歧义：
 
 1. **FORMING 评分矛盾。** 父级设计要求 `FORMING >= 65`，但杯柄未形成时前三项满分只有 60；本文改为 `body_score >= 45 / 60`。
 2. **锚点类型不足。** 当前 `NewowCupHandleOverlay` 只保存日期，无法同时表达价格、`pivot_at`、`confirmed_at` 和 Pivot 索引；本文增加 typed `CupPivot`。
@@ -137,9 +138,11 @@ Slice B 不修改黄蓝趋势带和 D1/D2/D3 公式。仅在兼容前提下扩�
 4. **前置趋势窗口不明确。** “20–60 根”此前没有确定如何选；本文冻结候选窗口、方向斜率、强度计算与排序。
 5. **突破位 P 不明确。** 本文冻结 P 的取值区间并排除 READY 确认 Bar，防止同 Bar 自引用。
 6. **量能窗口不明确。** 本文冻结右侧上涨、柄部、柄前 20 日与突破前 20 日的精确窗口。
-7. **READY 后生命周期不完整。** 本文冻结 WEAKENED、INVALIDATED、EXPIRED 和内部 archive 行为。
-8. **Marker priority 与 Engine 顺序冲突。** Slice A 的 D1 priority 高于 BUILD；本文规定 Engine 使用 family order，不按全局 priority 混排。
-9. **杯柄 warm-up 与几何资格混淆。** 同合约 rank1 前 Bar 只预热 ATR，不得参与 Pivot、杯体或柄部几何。
+7. **柄部时长口径不完整。** 父级设计只描述柄部视觉长度；本文用 `H.confirmed_index - R.pivot_index` 作为可执行柄长，确认延迟也计入 5–15 根限制。
+8. **READY 后生命周期不完整。** 本文冻结 WEAKENED、INVALIDATED、EXPIRED 和内部 archive 行为。
+9. **Marker priority 与 Engine 顺序冲突。** Slice A 的 D1 priority 高于 BUILD；本文规定 Engine 使用 family order，不按全局 priority 混排。
+10. **杯柄 warm-up 与几何资格混淆。** 同合约 rank1 前 Bar 只预热 ATR，不得参与 Pivot、杯体、柄部或量能几何。
+11. **测试无法观察拒绝原因。** 本文增加 `CupHandleStepResult.diagnostics` 与 `candidate_checks`，硬负例无需把无效形态伪装成主图 Overlay。
 
 这些修正不改变用户已经确认的产品范围，只把不确定实现点收敛为可测试合同。
 
@@ -319,12 +322,22 @@ class NewowCupHandleOverlay:
     formula_version: str
 ```
 
+时间语义：
+
+```text
+FORMING.confirmed_at = max(L/B/R.confirmed_at)
+FORMING.first_seen_at = body Gate 首次通过的当前 Bar
+READY.confirmed_at = H、P、柄部与缩量 Gate 首次全部可知的当前 Bar
+state_changed_at = 当前状态最近一次变化的 Bar
+```
+
 约束：
 
 - FORMING 必须已有 L/B/R，但允许 `handle_extreme` 与 `pivot_price` 为 `None`；
 - READY 及以后必须已有 H 和 P；
 - READY 后锚点、P、`confirmed_at`、score、breakdown、volume facts 不得改变；
-- `state_changed_at` 随后续状态变化更新，其他冻结字段保持原值。
+- `state_changed_at` 随后续状态变化更新，其他冻结字段保持原值；
+- 进入主图的 FORMING/READY/BREAKOUT 等合法 Overlay 的 `hard_failures` 必须为空；拒绝原因只放在 Step diagnostics。
 
 ### 9.3 `NewowMarkerType`
 
@@ -351,7 +364,39 @@ class NewowTrendFrame:
     diagnostics: tuple[str, ...]
 ```
 
-## 10. 杯柄内部状态
+## 10. 杯柄公开接口与内部状态
+
+### 10.1 公开接口
+
+```python
+@dataclass(frozen=True, slots=True)
+class CupHandleStepResult:
+    state: CupHandleStateValue
+    active_overlay: NewowCupHandleOverlay | None
+    markers: tuple[NewowMainMarker, ...]
+    diagnostics: tuple[str, ...]
+    candidate_checks: int
+
+
+def initial_cup_handle_state() -> CupHandleStateValue: ...
+
+
+def step_cup_handle(
+    state: CupHandleStateValue,
+    bar: NewowDailyBar,
+    *,
+    profile: NewowTrendProfile = NEWOW_TREND_D1_V1,
+) -> CupHandleStepResult: ...
+
+
+def calculate_cup_handle_series(
+    bars: tuple[NewowDailyBar, ...],
+    *,
+    profile: NewowTrendProfile = NEWOW_TREND_D1_V1,
+) -> tuple[CupHandleStepResult, ...]: ...
+```
+
+### 10.2 内部状态
 
 `cup_handle.py` 使用私有、tuple-based、可序列化状态：
 
@@ -515,7 +560,7 @@ normalized_price = sign × actual_price
 1. 枚举同方向的 L/R rim Pivot 对；
 2. 只保留 `25 <= R.index - L.index + 1 <= 90`；
 3. B 取 L/R 之间归一化价格最低的反方向 Pivot，价格相同时取更早的 Pivot；
-4. H 取 R 之后、视觉柄长 5–15 根内归一化价格最低的已确认反方向 Pivot，价格相同时取更晚的 Pivot；
+4. H 取 R 之后、**从 R 到 H 确认 Bar 共 5–15 根**范围内归一化价格最低的已确认反方向 Pivot，价格相同时取更晚的 Pivot；
 5. 若 H 尚未确认，可以产生 FORMING，但不能产生 READY；
 6. 看涨和看跌总候选检查数不得超过 256。
 
@@ -688,11 +733,13 @@ midline = B + 0.50 × cup_depth
 
 ### 17.1 柄部时长与深度
 
-视觉柄长使用 Pivot 位置，而不是确认延迟：
+柄长以系统真正可确认 H 的时间为准：
 
 ```text
-handle_bars = H.pivot_index - R.pivot_index
+handle_bars = H.confirmed_index - R.pivot_index
 ```
+
+这样确认延迟也计入 v3.6 的“柄部长短收紧”，不会把视觉上 10 根、实际到第 18 根才确认的柄部当作合格短柄。
 
 归一化定义：
 
@@ -1000,22 +1047,22 @@ READY → EXPIRED
 
 ### 20.5 WEAKENED
 
-突破后，看涨方向归一化 close：
+突破后，在方向归一化空间：
 
 ```text
-close < P
+normalized_close < normalized_P
 AND
-close >= H.price - 0.10 × ATR_current
+normalized_close >= normalized_H - 0.10 × ATR_current
 ```
 
 首次成立生成 `CUP_HANDLE_WEAKENED`，之后不重新回到 BREAKOUT；V1 不实现“二次突破恢复”。
 
 ### 20.6 INVALIDATED
 
-READY、BREAKOUT 或 WEAKENED 后：
+READY、BREAKOUT 或 WEAKENED 后，在方向归一化空间：
 
 ```text
-normalized close < H.price - 0.10 × ATR_current
+normalized_close < normalized_H - 0.10 × ATR_current
 ```
 
 首次成立生成 `CUP_HANDLE_INVALIDATED`，并终止 active candidate。
@@ -1085,6 +1132,16 @@ formula_version
 
 ## 22. 统一 `NewowTrendD1Engine`
 
+杯柄 Kernel 与趋势带相互独立：
+
+```text
+trend_band.py 不读取 cup_handle.py
+cup_handle.py 不读取 trend_band.py
+engine.py 只负责同 Bar 编排和汇总
+```
+
+杯柄几何即使与当前黄蓝状态不一致，也按自身规则计算并返回；后续 Web 可以并列展示，不能在 Slice B 中用黄蓝带静默删除杯柄。
+
 ### 22.1 Engine State
 
 ```python
@@ -1100,14 +1157,28 @@ class NewowTrendD1EngineState:
     eligibility_started: bool
 ```
 
-### 22.2 Step Result
+### 22.2 Step / Batch 接口
 
 ```python
 @dataclass(frozen=True, slots=True)
 class NewowTrendD1StepResult:
     state: NewowTrendD1EngineState
     frame: NewowTrendFrame
+
+
+class NewowTrendD1Engine:
+    @classmethod
+    def initial(cls) -> NewowTrendD1Engine: ...
+
+    def step(self, bar: NewowDailyBar) -> NewowTrendD1StepResult: ...
+
+
+def calculate_newow_trend_frames(
+    bars: tuple[NewowDailyBar, ...],
+) -> tuple[NewowTrendFrame, ...]: ...
 ```
+
+Historical 与未来盘后增量必须调用同一 `step`。
 
 ### 22.3 固定处理顺序
 
@@ -1295,7 +1366,7 @@ BREAKOUT 20 Bar 后内部 archive
 单根 V 形底
 左右腿极端失衡
 中轴往返 >5
-柄部 <5 或 >15
+柄部 <5 或 >15（按 confirmed handle length）
 柄深 >15%
 柄部回撤 >1/3
 柄部跌入杯体下半部
@@ -1304,12 +1375,14 @@ BREAKOUT 20 Bar 后内部 archive
 跨主力合约拼接
 ```
 
+拒绝 fixture 通过 `CupHandleStepResult.diagnostics` 断言原因，不向主图返回带 hard failure 的假 Overlay。
+
 ### 25.5 边界与评分
 
 ```text
 10%、50%、3 ATR 精确边界
 5%、1.5 ATR 杯口边界
-5 / 15 柄长边界
+5 / 15 confirmed 柄长边界
 15% 柄深边界
 1/3 回撤边界
 0.80 / 0.90 缩量边界
@@ -1377,13 +1450,17 @@ Slice C 不得修改本文的杯柄公式、评分和生命周期；若真实牛
 
 ## 28. 设计自审结果
 
-本次自审按占位符、内部一致性、范围、歧义和个人维护成本检查：
+本次自审按占位符、内部一致性、范围、歧义、因果边界和个人维护成本检查，并已将问题直接修入正文：
 
 - 未保留 TODO / TBD 或未定义公式；
 - 修正 FORMING 评分不可能达到的问题；
 - 修正 Overlay 无法表达每个 Pivot 确认时间的问题；
+- 增加 StepResult，硬负例不再依赖伪 Overlay；
+- 明确 FORMING/READY 的 `confirmed_at` 与 `first_seen_at`；
 - 明确 P 与成交量窗口，消除同 Bar 自引用；
+- 将柄长改为确认口径，避免确认过晚的长柄通过；
 - 明确 READY、BREAKOUT、WEAKENED、INVALIDATED、EXPIRED 与内部 archive；
+- 明确杯柄与黄蓝带彼此独立，只由 Engine 汇总；
 - 明确 Engine family order，不复用冲突的全局 priority；
 - 明确 ineligible Bar 只预热 ATR，不进入杯柄形态；
 - 保持一个 active candidate、一个专用文件、固定内存上限，未引入平台化抽象；
