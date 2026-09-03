@@ -1,7 +1,7 @@
 # Newow 牛哇版本 · 日线趋势详情页 V1 Implementation Plan
 
 日期：2026-09-02  
-状态：`SLICE_A_B_C_IN_DEVELOP / SLICE_C_WARMUP_ACCEPTANCE_IN_PROGRESS / SLICE_D_BLOCKED`
+状态：`SLICE_A_B_C_IN_DEVELOP / SLICE_C_CONTRACT_REVIEW_PASSED / SLICE_D_READY`
 
 > 本文是 `docs/tasks/2026-09-01-newow-trend-v1-design.md` 的父级实施计划。Slice B 的精确设计源为 `docs/tasks/2026-09-02-newow-slice-b-cup-handle-engine-design.md`；本文 Task 4–5 已与该 Spec 对齐。两者冲突时，Slice B Spec 优先。
 
@@ -977,8 +977,8 @@ TypeScript 只消费后端结果，不重算趋势带、D123 或杯柄。D1/D2/D
 
 ```text
 SLICE_A_B_C_IN_DEVELOP
-SLICE_C_WARMUP_ACCEPTANCE_IN_PROGRESS
-SLICE_D_BLOCKED
+SLICE_C_CONTRACT_REVIEW_PASSED
+SLICE_D_READY
 RUNTIME_NOT_CHANGED
 ALERT_NOT_CHANGED
 DATA_NOT_CHANGED
