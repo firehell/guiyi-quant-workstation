@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import MarketDetailQuoteHeader from '@/components/market/detail/MarketDetailQuoteHeader.vue'
@@ -96,7 +96,7 @@ function goBack() {
   void router.push('/market')
 }
 
-onMounted(activateRoute)
+watch(identityKey, () => { void activateRoute() }, { immediate: true })
 onBeforeUnmount(controller.dispose)
 </script>
 

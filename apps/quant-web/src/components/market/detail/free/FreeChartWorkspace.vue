@@ -70,6 +70,20 @@ const indicators = computed(() => [
 const rangeWarning = computed(() => rangeWarmup.unavailableReason.value === RANGE_DETECTOR_WARMUP_LOAD_FAILED
   ? '箱体历史预载失败'
   : rangeWarmup.unavailableReason.value === RANGE_DETECTOR_WARMUP_INSUFFICIENT ? '箱体历史预载不足' : null)
+const semanticText = computed(() => rangeWarning.value
+  ? `${rangeWarning.value}；${model.value.semanticBanner.text}`
+  : model.value.semanticBanner.text)
+const indicatorExplanation = computed(() => {
+  const emaLabels = optionalEmaIndicators.value.map((indicator) => ({
+    ema_10: 'EMA10', ema_21: 'EMA21', ema_60: 'EMA60',
+  })[indicator])
+  const enabled = [
+    ...(emaLabels.length ? [`已开启 ${emaLabels.join('、')}。`] : []),
+    ...(showRangeDetector.value ? ['Range 仅展示当前可复算的箱体事实。'] : []),
+    '成交量与 MACD 仅用于当前行情复核。',
+  ]
+  return enabled.join('')
+})
 
 function updatePreferences(identity: MarketDetailIdentity) {
   emit('updatePreferences', {
@@ -160,9 +174,9 @@ function toggleDisclosure(id: string) {
       </details>
     </div>
 
+    <p class="free-workspace__semantic" :class="{ 'free-workspace__warning': model.semanticBanner.tone === 'warning' }" role="status">{{ semanticText }}</p>
     <MarketDetailFactStrip :facts="model.facts" />
     <p v-if="identityWarning" class="free-workspace__hint" role="status">{{ identityWarning }}</p>
-    <p class="free-workspace__semantic" :class="{ 'free-workspace__warning': model.semanticBanner.tone === 'warning' }" role="status">{{ rangeWarning ?? model.semanticBanner.text }}</p>
     <FreeChartStage
       :bars="bars"
       :mutation="mutation"
@@ -184,7 +198,7 @@ function toggleDisclosure(id: string) {
       </dl>
       <p v-else>{{ researchError ? '市场背景暂不可用' : '暂无市场背景' }}</p>
     </section>
-    <section class="free-workspace__context"><h2>指标解读</h2><p>EMA、成交量与 MACD 为通用图表事实；Range 只读回画展示，确认前不可用于策略判断。</p></section>
+    <section class="free-workspace__context"><h2>指标解读</h2><p>{{ indicatorExplanation }}</p></section>
     <section class="free-workspace__data">
       <h2>数据详情</h2>
       <MarketDetailDisclosure

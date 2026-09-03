@@ -2,6 +2,7 @@
 import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
 
 import KlineChart from '@/components/kline/KlineChart.vue'
+import MarketDetailIcon from '@/components/market/detail/MarketDetailIcon.vue'
 import type { BarData, KlineMarker, MainIndicatorId, SeriesKind } from '@/types/market'
 import type { MarketSeriesMutation } from '@/composables/useMarketSeries'
 
@@ -49,9 +50,9 @@ onBeforeUnmount(() => document.removeEventListener('fullscreenchange', syncFulls
 <template>
   <section ref="root" class="market-kline-stage" :class="{ 'market-kline-stage--fullscreen': fullscreen }">
     <div class="market-kline-stage__controls">
-      <button v-if="!followLatest" type="button" @click="chart?.scrollToLatest()">↺ 回到最新</button>
+      <button v-if="!followLatest" type="button" @click="chart?.scrollToLatest()"><MarketDetailIcon name="refresh" :size="16" />回到最新</button>
       <button type="button" :aria-label="fullscreen ? '退出全屏' : '全屏图表'" @click="toggleFullscreen">
-        {{ fullscreen ? '退出全屏' : '⛶' }}
+        <MarketDetailIcon name="fullscreen" :size="18" />
       </button>
     </div>
     <KlineChart
