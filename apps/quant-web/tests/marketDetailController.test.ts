@@ -200,6 +200,8 @@ test('keeps sourced market facts readable when optional research is unavailable'
   assert.equal(controller.state.value.header?.close, 100)
   assert.equal(controller.state.value.loading, false)
   assert.equal(controller.state.value.error, null)
+  assert.equal(controller.research.value, null)
+  assert.equal(controller.researchError.value, true)
 })
 
 test('refreshes the header from live series mutations for the active identity', async () => {

@@ -12,7 +12,7 @@ test('missing view keeps the complete legacy detail page', async ({ page }) => {
   await expect(page.locator('[data-detail-ready]')).toHaveCount(0)
 })
 
-test('explicit Free enters the ordered shell preview without the legacy sidebar', async ({ page }) => {
+test('Free mounts its generic workspace without the legacy sidebar or strategy markers', async ({ page }) => {
   await mockMarketDetail(page)
   await page.goto(freeJm)
 
@@ -21,10 +21,52 @@ test('explicit Free enters the ordered shell preview without the legacy sidebar'
   await expect(shell.getByText('焦煤', { exact: true }).first()).toBeVisible()
   await expect(page.getByTestId('product-check-sidebar')).toHaveCount(0)
   await expect(page.locator('.product-workspace__sidebar')).toHaveCount(0)
-  await expect(page.getByText('自由看盘工作区尚未接入统一详情页', { exact: true })).toBeVisible()
+  await expect(shell.locator('[data-detail-workspace="free"]')).toBeVisible()
+  await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-alert-marker-count', '0')
+  await expect(page.getByText('火天大有（原始观察）', { exact: true })).toHaveCount(0)
 
   const order = await shell.locator('[data-detail-section]').evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-detail-section')))
   expect(order.slice(0, 4)).toEqual(['topbar', 'quote', 'view-nav', 'workspace-slot'])
+})
+
+test('Free Range warm-up remains explicit and does not create a strategy marker', async ({ page }) => {
+  await mockMarketDetail(page)
+  await page.goto(freeJm)
+
+  await page.getByLabel('箱体识别（Range）').check()
+  await expect(page.getByText(/箱体历史预载不足|箱体历史预载失败/)).toBeVisible()
+  await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-alert-marker-count', '0')
+})
+
+test('Free identity controls keep the selected contract in the URL', async ({ page }) => {
+  await mockMarketDetail(page)
+  await page.goto(freeJm)
+
+  await page.getByLabel('指定合约').fill('JM2605')
+  await page.getByRole('button', { name: '指定合约' }).click()
+  await expect.poll(() => new URL(page.url()).searchParams.get('series_kind')).toBe('contract')
+  expect(new URL(page.url()).searchParams.get('contract')).toBe('JM2605')
+})
+
+test('Free clears a contract when the product changes and keeps HTDY preferences untouched', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('guiyi.market.detail.preferences.v1', JSON.stringify({
+      version: 1, lastView: 'htdy',
+      htdy: { seriesKind: 'continuous', frequency: '30m', optionalEmaIndicators: ['ema_60'], showRangeDetector: true },
+      free: { seriesKind: 'actual_dominant', frequency: '15m', optionalEmaIndicators: [], showRangeDetector: false },
+    }))
+  })
+  await mockMarketDetail(page)
+  await page.goto('/market/chart?symbol=jm&view=free&series_kind=contract&contract=JM2605&frequency=15m')
+
+  await page.getByLabel('品种代码').fill('rb')
+  await page.getByLabel('品种代码').press('Enter')
+  await expect.poll(() => new URL(page.url()).searchParams.get('series_kind')).toBe('actual_dominant')
+  expect(new URL(page.url()).searchParams.has('contract')).toBe(false)
+  await expect(page.getByText('切换品种时，指定合约会清除并回到真实主力。')).toBeVisible()
+  await page.getByLabel('箱体识别（Range）').check()
+  const preferences = await page.evaluate(() => JSON.parse(localStorage.getItem('guiyi.market.detail.preferences.v1')))
+  expect(preferences.htdy).toEqual({ seriesKind: 'continuous', frequency: '30m', optionalEmaIndicators: ['ema_60'], showRangeDetector: true })
 })
 
 test('shared quote header exposes the market phase and display source', async ({ page }) => {

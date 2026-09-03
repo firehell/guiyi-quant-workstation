@@ -79,6 +79,9 @@ export function useMarketDetailController(
   state: Readonly<Ref<MarketDetailControllerState>>
   bars: Readonly<Ref<BarData[]>>
   mutation: Readonly<Ref<MarketSeriesMutation>>
+  hasMoreBefore: Readonly<Ref<boolean>>
+  research: Readonly<Ref<ProductResearchResponse | null>>
+  researchError: Readonly<Ref<boolean>>
   switchIdentity(identity: MarketDetailIdentity): Promise<void>
   loadMoreBefore(): Promise<void>
   dispose(): void
@@ -98,10 +101,12 @@ export function useMarketDetailController(
   })
   let currentDominants: DominantContractListResponse = { items: [] }
   let currentResearch: ProductResearchResponse | null = null
+  const researchError = ref(false)
   let headerGeneration = 0
   let disposed = false
   const publicBars = computed(() => series.bars.value)
   const publicMutation = computed(() => series.mutation.value)
+  const publicResearch = computed(() => currentResearch)
 
   function rebuildHeader(identity: MarketDetailIdentity): void {
     state.value.header = buildMarketDetailHeaderModel({
@@ -146,6 +151,7 @@ export function useMarketDetailController(
     headerGeneration = 0
     currentDominants = { items: [] }
     currentResearch = null
+    researchError.value = false
     const metadataRequest = fetchDominants().then(
       (value) => ({ ok: true as const, value }),
       () => ({ ok: false as const }),
@@ -178,6 +184,7 @@ export function useMarketDetailController(
       const research = await researchRequest
       if (disposed || state.value.generation !== generation) return
       currentResearch = research
+      researchError.value = research === null
       rebuildHeader(identity)
     } catch {
       if (disposed || state.value.generation !== generation) return
@@ -208,6 +215,9 @@ export function useMarketDetailController(
     state: readonly(state),
     bars: publicBars,
     mutation: publicMutation,
+    hasMoreBefore: readonly(series.hasMoreBefore),
+    research: publicResearch,
+    researchError: readonly(researchError),
     switchIdentity,
     loadMoreBefore,
     dispose,

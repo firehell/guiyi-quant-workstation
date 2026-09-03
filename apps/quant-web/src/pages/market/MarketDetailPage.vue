@@ -6,6 +6,7 @@ import MarketDetailQuoteHeader from '@/components/market/detail/MarketDetailQuot
 import MarketDetailTopBar from '@/components/market/detail/MarketDetailTopBar.vue'
 import MarketDetailUnavailable from '@/components/market/detail/MarketDetailUnavailable.vue'
 import MarketDetailViewNav from '@/components/market/detail/MarketDetailViewNav.vue'
+import FreeChartWorkspace from '@/components/market/detail/free/FreeChartWorkspace.vue'
 import { useMarketDetailController } from '@/composables/useMarketDetailController'
 import type { MarketDetailIdentity } from '@/types/marketDetail'
 import { loadMarketDetailPreferences } from '@/utils/marketDetailPreferences'
@@ -15,6 +16,7 @@ const route = useRoute()
 const router = useRouter()
 const preferences = loadMarketDetailPreferences()
 const moreOpen = ref(false)
+const identityWarning = ref<string | null>(null)
 const controller = useMarketDetailController({ routeQuery: () => ({ ...route.query }) })
 const routeResult = computed(() => parseMarketDetailRoute({ ...route.query }))
 const explicitIdentity = computed(() => routeResult.value.kind === 'valid' ? routeResult.value.identity : null)
@@ -69,6 +71,12 @@ function recover() {
 }
 
 function selectIdentity(identity: MarketDetailIdentity) {
+  const previous = explicitIdentity.value
+  identityWarning.value = previous?.seriesKind === 'contract'
+    && previous.symbol !== identity.symbol
+    && identity.seriesKind === 'actual_dominant'
+    ? '已切换品种，指定合约已清除并回到真实主力。'
+    : null
   void router.push({ path: '/market/chart', query: serializeMarketDetailIdentity(identity) })
 }
 
@@ -132,11 +140,21 @@ onBeforeUnmount(controller.dispose)
           @select="selectIdentity"
         />
         <section class="market-detail-page__workspace" data-detail-section="workspace-slot">
-          <MarketDetailUnavailable
-            title="自由看盘工作区尚未接入统一详情页"
-            message="当前仅验证共享行情头、视角导航和 Workspace 安全过渡 seam；完整 K 线、指标、Marker 与 Range 属于 Slice B1。"
-            :can-return-legacy="true"
-            @return-legacy="returnLegacy"
+          <FreeChartWorkspace
+            :identity="routeResult.identity"
+            :header="header"
+            :bars="controller.bars.value"
+            :mutation="controller.mutation.value"
+            :loading="controller.state.value.loading"
+            :error="controller.state.value.error"
+            :research="controller.research.value"
+            :research-error="controller.researchError.value"
+            :preferences="preferences.free"
+            :htdy-preferences="preferences.htdy"
+            :has-more-before="controller.hasMoreBefore.value"
+            :identity-warning="identityWarning"
+            @select-identity="selectIdentity"
+            @load-earlier="controller.loadMoreBefore"
           />
         </section>
       </template>
