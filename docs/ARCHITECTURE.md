@@ -59,7 +59,7 @@ flowchart LR
 - `active_products.txt` 是研究能力边界；`operational_products.txt` 是 Market/Alert Runtime 外层授权边界。
 - Alert 独立于 Market Catalog。一个 `single Alert Runtime` 按 Rule dispatch 到 HTDY `first_seen` 与 `SubingThs15mEvaluator` `exact`，不新增进程。SuBing 只使用同物理 rank1 合约的 completed `actual_dominant` 15m；Event 持久化后最多尝试一次 transport。
 - Web 的 SuBing `S↑/S↓` 只来自 immutable Event，`no SuBing overlay`；API、Web 与 formatter 不复制公式。
-- 0044 只创建 disabled + empty-scope Rule；通用 Scope writer 拒绝 disabled Rule，首次 operational × 15m activation 使用专用锁定、单 commit、readback seam。
+- 0044 只创建 disabled + empty-scope Rule；0045 只把 RQData 1m 首根标签规范化为 `(start, end]` 排他 start。通用 Scope writer 拒绝 disabled Rule，首次 operational × 15m activation 只在精确 0045 使用专用锁定、单 commit、readback seam。
 - EMA21 10K slope 是纯函数 primitive，不连接 Runtime、Alert 或周期级正式因子。
 
 ## Preserved seams

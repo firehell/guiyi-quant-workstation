@@ -1,4 +1,4 @@
-from dataclasses import FrozenInstanceError
+from dataclasses import FrozenInstanceError, fields, replace
 from datetime import UTC, date, datetime
 from decimal import Decimal
 
@@ -6,8 +6,10 @@ import pytest
 
 from guiyi_quant.newow.models import (
     CupHandleDirection,
-    NewowCupHandleOverlay,
     CupHandleState,
+    CupPivot,
+    CupPivotKind,
+    NewowCupHandleOverlay,
     NewowDailyBar,
     NewowMainMarker,
     NewowMarkerType,
@@ -16,6 +18,49 @@ from guiyi_quant.newow.models import (
     TrendBandState,
 )
 from guiyi_quant.newow.profile import NEWOW_TREND_D1_V1
+
+
+_INTEGER_PROFILE_FIELDS = (
+    "trend_weight_period",
+    "trend_signal_period",
+    "var4_lookback",
+    "var4_smoothing_n",
+    "var4_smoothing_m",
+    "ma120_period",
+    "ma120_slope_window",
+    "cup_min_leg_bars",
+    "cup_history_limit",
+    "cup_max_confirmed_pivots",
+    "cup_max_candidate_checks_per_step",
+    "cup_atr_period",
+    "cup_pretrend_min_bars",
+    "cup_pretrend_max_bars",
+    "cup_min_bars",
+    "cup_max_bars",
+    "cup_bottom_span_ready_min",
+    "cup_midline_crossings_soft_max",
+    "cup_midline_crossings_hard_max",
+    "cup_handle_min_bars",
+    "cup_handle_max_bars",
+    "cup_forming_min_body_score",
+    "cup_ready_min_score",
+    "cup_breakout_min_score",
+    "cup_ready_expiry_bars",
+    "cup_post_breakout_archive_bars",
+    "cup_recent_terminal_ids_limit",
+)
+_NUMERIC_PROFILE_FIELDS = tuple(
+    field.name
+    for field in fields(type(NEWOW_TREND_D1_V1))
+    if field.type in {int, float}
+)
+
+_BOOL_RELATION_COMPANIONS: dict[str, dict[str, int]] = {
+    "cup_pretrend_max_bars": {"cup_pretrend_min_bars": 1},
+    "cup_max_bars": {"cup_min_bars": 1},
+    "cup_midline_crossings_hard_max": {"cup_midline_crossings_soft_max": 1},
+    "cup_handle_max_bars": {"cup_handle_min_bars": 1},
+}
 
 
 def valid_bar_kwargs() -> dict[str, object]:
@@ -49,6 +94,418 @@ def test_newow_profile_is_exact_and_immutable() -> None:
     assert profile.cup_handle_formula == "newow_cup_handle_v1"
     with pytest.raises(FrozenInstanceError):
         profile.frequency = "60m"  # type: ignore[misc]
+
+
+def test_cup_profile_and_pivot_contract_reject_invalid_values() -> None:
+    """Invalid cup thresholds or a non-causal pivot would admit non-reproducible setups."""
+
+    profile = NEWOW_TREND_D1_V1
+    assert profile.cup_atr_period == 14
+    assert profile.cup_pretrend_min_bars == 20
+    assert profile.cup_pretrend_max_bars == 60
+    assert profile.cup_depth_min_pct == 0.10
+    assert profile.cup_depth_hard_max_pct == 0.50
+    assert profile.cup_handle_min_bars == 5
+    assert profile.cup_handle_max_bars == 15
+    assert profile.cup_breakout_volume20_min_ratio == 1.20
+    assert profile.cup_ready_expiry_bars == 20
+    with pytest.raises(ValueError, match="NEWOW_PROFILE_INVALID"):
+        replace(profile, cup_depth_min_pct=float("nan"))
+
+    pivot_at = datetime(2026, 1, 5, 7, tzinfo=UTC)
+    with pytest.raises(ValueError, match="NEWOW_CUP_PIVOT_INVALID"):
+        CupPivot(
+            kind=CupPivotKind.HIGH,
+            price=Decimal("100"),
+            pivot_at=pivot_at,
+            confirmed_at=pivot_at,
+            pivot_index=3,
+            confirmed_index=2,
+            atr_at_pivot=1.0,
+        )
+
+
+def test_cup_pivot_is_immutable_and_rejects_every_invalid_field_class() -> None:
+    """Pivot facts must remain positive, finite, ordered, and immutable."""
+
+    pivot_at = datetime(2026, 1, 5, 7, tzinfo=UTC)
+    pivot = CupPivot(
+        CupPivotKind.HIGH,
+        Decimal("100"),
+        pivot_at,
+        pivot_at,
+        3,
+        3,
+        2.0,
+    )
+    with pytest.raises(FrozenInstanceError):
+        pivot.price = Decimal("101")  # type: ignore[misc]
+    for changes in (
+        {"price": Decimal("0")},
+        {"atr_at_pivot": float("nan")},
+        {"pivot_index": -1},
+    ):
+        with pytest.raises(ValueError, match="NEWOW_CUP_PIVOT_INVALID"):
+            replace(pivot, **changes)
+
+
+@pytest.mark.parametrize(
+    ("field_name", "invalid_index"),
+    (
+        ("pivot_index", True),
+        ("pivot_index", 0.0),
+        ("confirmed_index", True),
+        ("confirmed_index", 1.0),
+    ),
+)
+def test_cup_pivot_indexes_require_exact_int(
+    field_name: str,
+    invalid_index: object,
+) -> None:
+    """Bool and float indexes cannot be trusted after state reconstruction."""
+
+    pivot_at = datetime(2026, 1, 5, 7, tzinfo=UTC)
+    values = {
+        "kind": CupPivotKind.HIGH,
+        "price": Decimal("100"),
+        "pivot_at": pivot_at,
+        "confirmed_at": pivot_at,
+        "pivot_index": 0,
+        "confirmed_index": 1,
+        "atr_at_pivot": 2.0,
+    }
+    values[field_name] = invalid_index
+
+    with pytest.raises(ValueError, match="NEWOW_CUP_PIVOT_INVALID"):
+        CupPivot(**values)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    "changes",
+    (
+        {"kind": "HIGH"},
+        {
+            "pivot_at": datetime(2026, 1, 5, 7),
+            "confirmed_at": datetime(2026, 1, 5, 7),
+        },
+        {"pivot_at": date(2026, 1, 5), "confirmed_at": date(2026, 1, 5)},
+        {"confirmed_at": datetime(2026, 1, 5, 6, tzinfo=UTC)},
+        {
+            "confirmed_at": datetime(2026, 1, 5, 8, tzinfo=UTC),
+            "confirmed_index": 0,
+        },
+    ),
+)
+def test_cup_pivot_requires_typed_kind_and_causal_aware_timestamps(
+    changes: dict[str, object],
+) -> None:
+    """A reconstructed Pivot cannot weaken its enum, time-zone, or same-Bar contract."""
+
+    pivot_at = datetime(2026, 1, 5, 7, tzinfo=UTC)
+    values: dict[str, object] = {
+        "kind": CupPivotKind.HIGH,
+        "price": Decimal("100"),
+        "pivot_at": pivot_at,
+        "confirmed_at": pivot_at,
+        "pivot_index": 0,
+        "confirmed_index": 1,
+        "atr_at_pivot": 2.0,
+    }
+    values.update(changes)
+
+    with pytest.raises(ValueError) as error:
+        CupPivot(**values)  # type: ignore[arg-type]
+
+    assert error.value.args == ("NEWOW_CUP_PIVOT_INVALID",)
+
+
+def test_cup_profile_freezes_every_slice_b_formula_value() -> None:
+    """Changing any clean-room threshold without a new formula version is a versioning bug."""
+
+    profile = NEWOW_TREND_D1_V1
+
+    assert {
+        "cup_atr_period": profile.cup_atr_period,
+        "cup_pretrend_min_bars": profile.cup_pretrend_min_bars,
+        "cup_pretrend_max_bars": profile.cup_pretrend_max_bars,
+        "cup_pretrend_min_return": profile.cup_pretrend_min_return,
+        "cup_pretrend_min_move_atr": profile.cup_pretrend_min_move_atr,
+        "cup_min_bars": profile.cup_min_bars,
+        "cup_max_bars": profile.cup_max_bars,
+        "cup_depth_min_pct": profile.cup_depth_min_pct,
+        "cup_depth_preferred_max_pct": profile.cup_depth_preferred_max_pct,
+        "cup_depth_hard_max_pct": profile.cup_depth_hard_max_pct,
+        "cup_depth_min_atr": profile.cup_depth_min_atr,
+        "cup_rim_gap_max_pct": profile.cup_rim_gap_max_pct,
+        "cup_rim_gap_max_atr": profile.cup_rim_gap_max_atr,
+        "cup_bottom_zone_ratio": profile.cup_bottom_zone_ratio,
+        "cup_bottom_span_ready_min": profile.cup_bottom_span_ready_min,
+        "cup_leg_ratio_soft_min": profile.cup_leg_ratio_soft_min,
+        "cup_leg_ratio_soft_max": profile.cup_leg_ratio_soft_max,
+        "cup_leg_ratio_hard_min": profile.cup_leg_ratio_hard_min,
+        "cup_leg_ratio_hard_max": profile.cup_leg_ratio_hard_max,
+        "cup_midline_crossings_soft_max": profile.cup_midline_crossings_soft_max,
+        "cup_midline_crossings_hard_max": profile.cup_midline_crossings_hard_max,
+        "cup_handle_min_bars": profile.cup_handle_min_bars,
+        "cup_handle_max_bars": profile.cup_handle_max_bars,
+        "cup_handle_depth_max_pct": profile.cup_handle_depth_max_pct,
+        "cup_handle_retrace_max_ratio": profile.cup_handle_retrace_max_ratio,
+        "cup_handle_upper_half_ratio": profile.cup_handle_upper_half_ratio,
+        "cup_handle_right_volume_max_ratio": profile.cup_handle_right_volume_max_ratio,
+        "cup_handle_baseline_volume_max_ratio": profile.cup_handle_baseline_volume_max_ratio,
+        "cup_breakout_buffer_atr": profile.cup_breakout_buffer_atr,
+        "cup_breakout_volume20_min_ratio": profile.cup_breakout_volume20_min_ratio,
+        "cup_breakout_handle_volume_min_ratio": profile.cup_breakout_handle_volume_min_ratio,
+        "cup_forming_min_body_score": profile.cup_forming_min_body_score,
+        "cup_ready_min_score": profile.cup_ready_min_score,
+        "cup_breakout_min_score": profile.cup_breakout_min_score,
+        "cup_ready_expiry_bars": profile.cup_ready_expiry_bars,
+        "cup_post_breakout_archive_bars": profile.cup_post_breakout_archive_bars,
+        "cup_recent_terminal_ids_limit": profile.cup_recent_terminal_ids_limit,
+    } == {
+        "cup_atr_period": 14,
+        "cup_pretrend_min_bars": 20,
+        "cup_pretrend_max_bars": 60,
+        "cup_pretrend_min_return": 0.10,
+        "cup_pretrend_min_move_atr": 4.0,
+        "cup_min_bars": 25,
+        "cup_max_bars": 90,
+        "cup_depth_min_pct": 0.10,
+        "cup_depth_preferred_max_pct": 0.35,
+        "cup_depth_hard_max_pct": 0.50,
+        "cup_depth_min_atr": 3.0,
+        "cup_rim_gap_max_pct": 0.05,
+        "cup_rim_gap_max_atr": 1.50,
+        "cup_bottom_zone_ratio": 0.25,
+        "cup_bottom_span_ready_min": 3,
+        "cup_leg_ratio_soft_min": 0.50,
+        "cup_leg_ratio_soft_max": 2.00,
+        "cup_leg_ratio_hard_min": 1 / 3,
+        "cup_leg_ratio_hard_max": 3.00,
+        "cup_midline_crossings_soft_max": 3,
+        "cup_midline_crossings_hard_max": 5,
+        "cup_handle_min_bars": 5,
+        "cup_handle_max_bars": 15,
+        "cup_handle_depth_max_pct": 0.15,
+        "cup_handle_retrace_max_ratio": 1 / 3,
+        "cup_handle_upper_half_ratio": 0.50,
+        "cup_handle_right_volume_max_ratio": 0.80,
+        "cup_handle_baseline_volume_max_ratio": 0.90,
+        "cup_breakout_buffer_atr": 0.10,
+        "cup_breakout_volume20_min_ratio": 1.20,
+        "cup_breakout_handle_volume_min_ratio": 1.50,
+        "cup_forming_min_body_score": 45,
+        "cup_ready_min_score": 80,
+        "cup_breakout_min_score": 85,
+        "cup_ready_expiry_bars": 20,
+        "cup_post_breakout_archive_bars": 20,
+        "cup_recent_terminal_ids_limit": 32,
+    }
+    assert {
+        "cup_reversal_atr": profile.cup_reversal_atr,
+        "cup_min_leg_bars": profile.cup_min_leg_bars,
+        "cup_history_limit": profile.cup_history_limit,
+        "cup_max_confirmed_pivots": profile.cup_max_confirmed_pivots,
+        "cup_max_candidate_checks_per_step": profile.cup_max_candidate_checks_per_step,
+    } == {
+        "cup_reversal_atr": 1.25,
+        "cup_min_leg_bars": 3,
+        "cup_history_limit": 220,
+        "cup_max_confirmed_pivots": 32,
+        "cup_max_candidate_checks_per_step": 256,
+    }
+
+
+@pytest.mark.parametrize(
+    ("changes"),
+    [
+        {"cup_pretrend_min_bars": 61},
+        {"cup_depth_preferred_max_pct": 0.09},
+        {"cup_leg_ratio_hard_min": 0.6},
+        {"cup_midline_crossings_soft_max": 6},
+        {"cup_handle_upper_half_ratio": 1.1},
+        {"cup_handle_right_volume_max_ratio": 1.1},
+        {"cup_breakout_buffer_atr": -0.1},
+        {"cup_forming_min_body_score": 61},
+        {"cup_ready_min_score": 95},
+        {"cup_breakout_min_score": 101},
+        {"cup_max_candidate_checks_per_step": 0},
+    ],
+)
+def test_cup_profile_rejects_invalid_window_ratio_and_score_combinations(
+    changes: dict[str, object],
+) -> None:
+    """Malformed parameters must fail before they can change candidate admission."""
+
+    with pytest.raises(ValueError, match="NEWOW_PROFILE_INVALID"):
+        replace(NEWOW_TREND_D1_V1, **changes)
+
+
+def test_integer_profile_field_matrix_covers_every_declared_int() -> None:
+    """A new integer control cannot silently escape strict construction checks."""
+
+    assert tuple(
+        field.name
+        for field in fields(type(NEWOW_TREND_D1_V1))
+        if field.type is int
+    ) == _INTEGER_PROFILE_FIELDS
+
+
+@pytest.mark.parametrize("field_name", _NUMERIC_PROFILE_FIELDS)
+def test_every_numeric_profile_field_rejects_bool(field_name: str) -> None:
+    """Python bool is never a valid numeric formula parameter."""
+
+    changes: dict[str, object] = dict(
+        _BOOL_RELATION_COMPANIONS.get(field_name, {})
+    )
+    changes[field_name] = True
+
+    with pytest.raises(ValueError, match="NEWOW_PROFILE_INVALID"):
+        replace(NEWOW_TREND_D1_V1, **changes)
+
+
+@pytest.mark.parametrize("field_name", _INTEGER_PROFILE_FIELDS)
+def test_every_integer_profile_field_rejects_fractional_value(
+    field_name: str,
+) -> None:
+    """A numerically plausible fraction must not enter an integer state dimension."""
+
+    fractional = float(getattr(NEWOW_TREND_D1_V1, field_name)) + 0.5
+
+    with pytest.raises(ValueError, match="NEWOW_PROFILE_INVALID"):
+        replace(NEWOW_TREND_D1_V1, **{field_name: fractional})
+
+
+def test_cup_overlay_rejects_hard_failures_and_incomplete_ready_state() -> None:
+    """Rejected geometry cannot masquerade as an active overlay or READY fact."""
+
+    pivot_at = datetime(2026, 1, 5, 7, tzinfo=UTC)
+    left = CupPivot(
+        CupPivotKind.HIGH,
+        Decimal("100"),
+        pivot_at,
+        pivot_at,
+        20,
+        23,
+        2.0,
+    )
+    bottom = CupPivot(
+        CupPivotKind.LOW,
+        Decimal("80"),
+        pivot_at,
+        pivot_at,
+        35,
+        38,
+        2.0,
+    )
+    right = CupPivot(
+        CupPivotKind.HIGH,
+        Decimal("100"),
+        pivot_at,
+        pivot_at,
+        50,
+        53,
+        2.0,
+    )
+    base = {
+        "candidate_id": "candidate-1",
+        "direction": CupHandleDirection.BULLISH,
+        "left_rim": left,
+        "bottom": bottom,
+        "right_rim": right,
+        "handle_start_at": pivot_at,
+        "handle_extreme": None,
+        "pivot_price": None,
+        "pivot_frozen_at": None,
+        "confirmed_at": pivot_at,
+        "first_seen_at": pivot_at,
+        "state_changed_at": pivot_at,
+        "score": 50.0,
+        "score_breakdown": {
+            "pretrend": 15.0,
+            "cup_geometry": 20.0,
+            "u_shape_purity": 15.0,
+            "handle_quality": 0.0,
+            "volume_structure": 0.0,
+        },
+        "formula_version": "newow_cup_handle_v1",
+    }
+
+    with pytest.raises(ValueError, match="NEWOW_CUP_OVERLAY_INVALID"):
+        NewowCupHandleOverlay(
+            state=CupHandleState.FORMING,
+            hard_failures=("V_BOTTOM_SINGLE_BAR",),
+            **base,
+        )
+    with pytest.raises(ValueError, match="NEWOW_CUP_OVERLAY_INVALID"):
+        NewowCupHandleOverlay(state=CupHandleState.READY, **base)
+    with pytest.raises(ValueError, match="NEWOW_CUP_OVERLAY_INVALID"):
+        NewowCupHandleOverlay(state=CupHandleState.NONE, **base)
+    with pytest.raises(ValueError, match="NEWOW_CUP_OVERLAY_INVALID"):
+        NewowCupHandleOverlay(
+            state=CupHandleState.FORMING,
+            direction=CupHandleDirection.BEARISH,
+            **{key: value for key, value in base.items() if key != "direction"},
+        )
+    with pytest.raises(ValueError, match="NEWOW_CUP_OVERLAY_INVALID"):
+        NewowCupHandleOverlay(
+            state=CupHandleState.FORMING,
+            bottom=replace(bottom, pivot_index=51, confirmed_index=54),
+            **{key: value for key, value in base.items() if key != "bottom"},
+        )
+
+    wrong_handle = CupPivot(
+        CupPivotKind.HIGH,
+        Decimal("95"),
+        pivot_at,
+        pivot_at,
+        55,
+        58,
+        2.0,
+    )
+    with pytest.raises(ValueError, match="NEWOW_CUP_OVERLAY_INVALID"):
+        NewowCupHandleOverlay(
+            state=CupHandleState.READY,
+            handle_extreme=wrong_handle,
+            pivot_price=Decimal("99"),
+            pivot_frozen_at=pivot_at,
+            **{
+                key: value
+                for key, value in base.items()
+                if key not in {"handle_extreme", "pivot_price", "pivot_frozen_at"}
+            },
+        )
+
+    valid = NewowCupHandleOverlay(state=CupHandleState.FORMING, **base)
+    with pytest.raises(ValueError, match="NEWOW_CUP_OVERLAY_INVALID"):
+        replace(valid, direction="BULLISH")
+    with pytest.raises(ValueError, match="NEWOW_CUP_OVERLAY_INVALID"):
+        replace(valid, state="READY")
+
+
+def test_marker_trigger_facts_are_deeply_frozen() -> None:
+    """Mutating caller-owned nested facts must not rewrite an emitted marker."""
+
+    breakdown = {"pretrend": 15.0}
+    facts: dict[str, object] = {"score_breakdown": breakdown, "anchors": ["L", "B"]}
+    marker = NewowMainMarker(
+        marker_id="marker-1",
+        marker_type=NewowMarkerType.CUP_HANDLE_READY,
+        bar_end=datetime(2026, 1, 5, 7, tzinfo=UTC),
+        price=Decimal("100"),
+        label="CUP_HANDLE_READY",
+        color_token="cup_handle",
+        priority=100,
+        related_marker_ids=(),
+        trigger_facts=facts,
+        formula_version="newow_cup_handle_v1",
+    )
+
+    breakdown["pretrend"] = 0.0
+    facts["anchors"] = []
+
+    assert marker.trigger_facts["score_breakdown"] == {"pretrend": 15.0}
+    assert marker.trigger_facts["anchors"] == ("L", "B")
 
 
 def test_newow_daily_bar_requires_completed_d1_and_valid_ohlc() -> None:
@@ -135,7 +592,7 @@ def test_immutable_output_sequences_copy_caller_lists() -> None:
     """Frozen output contracts cannot retain a caller's mutable lists."""
 
     related = ["related-1"]
-    failures = ["SHALLOW_CUP"]
+    diagnostics = ["FORMING_OBSERVED"]
     marker = NewowMainMarker(
         marker_id="marker-1",
         marker_type=NewowMarkerType.BUILD,
@@ -146,20 +603,57 @@ def test_immutable_output_sequences_copy_caller_lists() -> None:
         priority=1,
         related_marker_ids=related,  # type: ignore[arg-type]
     )
+    pivot_at = datetime(2026, 1, 5, 7, tzinfo=UTC)
+    pivot = CupPivot(
+        kind=CupPivotKind.HIGH,
+        price=Decimal("3510"),
+        pivot_at=pivot_at,
+        confirmed_at=pivot_at,
+        pivot_index=0,
+        confirmed_index=0,
+        atr_at_pivot=1.0,
+    )
     overlay = NewowCupHandleOverlay(
         candidate_id="candidate-1",
         direction=CupHandleDirection.BULLISH,
         state=CupHandleState.FORMING,
-        left_rim=None,
-        bottom=None,
-        right_rim=None,
-        handle_start=None,
+        left_rim=pivot,
+        bottom=CupPivot(
+            kind=CupPivotKind.LOW,
+            price=Decimal("3480"),
+            pivot_at=pivot_at,
+            confirmed_at=pivot_at,
+            pivot_index=1,
+            confirmed_index=1,
+            atr_at_pivot=1.0,
+        ),
+        right_rim=CupPivot(
+            kind=CupPivotKind.HIGH,
+            price=Decimal("3510"),
+            pivot_at=pivot_at,
+            confirmed_at=pivot_at,
+            pivot_index=2,
+            confirmed_index=2,
+            atr_at_pivot=1.0,
+        ),
+        handle_start_at=pivot_at,
         handle_extreme=None,
         pivot_price=None,
-        confirmed_at=None,
-        first_seen_at=None,
-        score=None,
-        hard_failures=failures,  # type: ignore[arg-type]
+        pivot_frozen_at=None,
+        confirmed_at=pivot_at,
+        first_seen_at=pivot_at,
+        state_changed_at=pivot_at,
+        score=45.0,
+        score_breakdown={
+            "pretrend": 15.0,
+            "cup_geometry": 20.0,
+            "u_shape_purity": 10.0,
+            "handle_quality": 0.0,
+            "volume_structure": 0.0,
+        },
+        hard_failures=(),
+        diagnostics=diagnostics,  # type: ignore[arg-type]
+        formula_version="newow_cup_handle_v1",
     )
     markers = [marker]
     frame = NewowTrendFrame(
@@ -191,11 +685,12 @@ def test_immutable_output_sequences_copy_caller_lists() -> None:
     )
 
     related.append("related-2")
-    failures.append("V_BOTTOM")
+    diagnostics.append("LATER_DIAGNOSTIC")
     markers.clear()
 
     assert marker.related_marker_ids == ("related-1",)
-    assert overlay.hard_failures == ("SHALLOW_CUP",)
+    assert overlay.hard_failures == ()
+    assert overlay.diagnostics == ("FORMING_OBSERVED",)
     assert frame.markers == (marker,)
 
 
@@ -240,6 +735,7 @@ def test_enum_values_are_stable() -> None:
     assert TrendBandState.YELLOW.value == "YELLOW"
     assert TrendBandState.BLUE.value == "BLUE"
     assert CupHandleState.READY.value == "READY"
+    assert NewowMarkerType.CUP_HANDLE_EXPIRED.value == "CUP_HANDLE_EXPIRED"
 
 
 def test_escape_marker_contract_codes_are_spec_stable() -> None:

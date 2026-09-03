@@ -1,7 +1,7 @@
 # Newow 牛哇版本 · 日线趋势详情页 V1 Implementation Plan
 
 日期：2026-09-02  
-状态：`SLICE_A_IN_DEVELOP / SLICE_B_PLAN_ALIGNED / SLICE_B_IMPLEMENTATION_NOT_STARTED`  
+状态：`SLICE_A_B_C_IN_DEVELOP / SLICE_C_CONTRACT_REVIEW_PASSED / SLICE_D_READY`
 
 > 本文是 `docs/tasks/2026-09-01-newow-trend-v1-design.md` 的父级实施计划。Slice B 的精确设计源为 `docs/tasks/2026-09-02-newow-slice-b-cup-handle-engine-design.md`；本文 Task 4–5 已与该 Spec 对齐。两者冲突时，Slice B Spec 优先。
 
@@ -21,11 +21,10 @@ actual_dominant + completed D1
 → 后续只读数据服务 / API / Web
 ```
 
-当前实施焦点仅为 Slice B：
+当前实施焦点为 Slice C.1 API Contract Closure；它只收敛 Slice C 的公开合同，不启动 Web：
 
 ```text
-Task 4：杯柄专用 Kernel
-Task 5：统一 NewowTrendD1Engine
+cup lifecycle markers、latest-bar warm-up readiness、identity/header/HTTP 语义与测试
 ```
 
 ## 2. 总体工程边界
@@ -50,14 +49,14 @@ Slice A — 已进入 develop
   Task 2：黄蓝趋势带与 BUILD/CLEAR
   Task 3：VAR4 与 D1/D2/D3
 
-Slice B — 当前唯一可执行 Slice
+Slice B — 已进入 develop
   Task 4：杯柄专用 Kernel
   Task 5：统一 D1 Engine
 
-Slice C — Slice B 通过后才可启动
+Slice C — 已进入 develop
   Task 6–8：actual-dominant D1 数据服务、无状态 Gate、只读 API
 
-Slice D — Slice C 通过后才可启动
+Slice D — 可由后续明确指令启动；本轮不执行
   Task 9–12：Web 类型、独立详情页、主图和弹层
 
 Slice E — Slice D 通过后才可启动
@@ -977,11 +976,9 @@ TypeScript 只消费后端结果，不重算趋势带、D123 或杯柄。D1/D2/D
 # 当前计划状态
 
 ```text
-SLICE_A_IN_DEVELOP
-SLICE_B_SPEC_COMPLETE
-SLICE_B_IMPLEMENTATION_PLAN_ALIGNED
-SLICE_B_IMPLEMENTATION_NOT_STARTED
-SLICE_C_D_E_DEFERRED
+SLICE_A_B_C_IN_DEVELOP
+SLICE_C_CONTRACT_REVIEW_PASSED
+SLICE_D_READY
 RUNTIME_NOT_CHANGED
 ALERT_NOT_CHANGED
 DATA_NOT_CHANGED

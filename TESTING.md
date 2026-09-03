@@ -63,6 +63,22 @@ PYTHONPATH=services/quant-api:packages/quant-core \
   services/quant-api/tests/test_subing_scope_activation.py
 ```
 
+RQData session 首分钟锚点、0045 与 shadow repair 的定向合同：
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+  uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/data_foundation/test_infrastructure.py \
+  services/quant-api/tests/data_foundation/test_session_anchor_repair.py \
+  services/quant-api/tests/alembic/test_session_anchor_migration.py \
+  services/quant-api/tests/test_subing_ths_kernel.py \
+  services/quant-api/tests/test_subing_scope_activation.py
+```
+
+这些测试只使用 fake provider、临时 Parquet/SQLite 与可选 isolated PostgreSQL；不会调用真实 RQData、切换
+Canonical、写 production DB/Redis 或停止 Runtime。`prepare/publish --apply` 不是测试命令，分别需要新的单次
+真实数据/维护授权。
+
 Isolated PostgreSQL 测试只能指向专用、空白、可销毁的数据库；未设置变量时不得运行：
 
 ```bash
@@ -72,14 +88,15 @@ GUIYI_ISOLATED_MIGRATION_DATABASE_URL='postgresql+psycopg://USER:PASSWORD@HOST:5
   services/quant-api/tests/alembic
 ```
 
-0042 → 0043 → 0044、disabled + empty-scope seed 与 forward-only failure 的专用定向命令仍必须使用同一类隔离数据库：
+0042 → 0043 → 0044 → 0045、disabled + empty-scope seed、session anchor 与 forward-only failure 的专用定向命令仍必须使用同一类隔离数据库：
 
 ```bash
 GUIYI_ISOLATED_MIGRATION_DATABASE_URL='postgresql+psycopg://USER:PASSWORD@HOST:5432/isolated_db' \
   PYTHONPATH=services/quant-api:packages/quant-core \
   uv run --project services/quant-api pytest -q \
   services/quant-api/tests/alembic/test_subing_retirement_migration.py \
-  services/quant-api/tests/alembic/test_subing_ths_alert_migration.py
+  services/quant-api/tests/alembic/test_subing_ths_alert_migration.py \
+  services/quant-api/tests/alembic/test_session_anchor_migration.py
 ```
 
 不得把 `guiyi-postgres`、production URL 或任何非空共享数据库用于 isolated PostgreSQL suite。dry-run、migration 测试与 activation 测试均不授权 production migration、Scope apply 或 Rule enable。

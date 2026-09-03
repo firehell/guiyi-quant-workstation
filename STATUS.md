@@ -1,6 +1,6 @@
 # 当前状态
 
-更新时间：2026-09-02
+更新时间：2026-09-03
 
 本文件只记录当前 release、production Runtime、Scope、自然 evidence 与尚未完成的 Gate。稳定产品面见 `PROJECT_SOURCE.md`，长期决策见 `DECISIONS.md`，active 依赖见 `docs/ARCHITECTURE.md`。
 
@@ -8,17 +8,18 @@
 
 | 项目 | 当前事实 |
 |---|---|
-| Release | `v1.9.12@4de1b5d8d8c69f24fa84fe1e25f85818ce7724c0` 是当前最新 GitHub Release；`main`、annotated tag 的 peeled commit 与 GitHub Release target 精确一致，API 与 Web release identity 均为 `1.9.12`。它包含 forward-only `20260902_0043` compatibility code，并保留 v1.9.11 的 Live ready-heartbeat fail-closed 修复。 |
-| Runtime | v1.9.12 的一次五项切换已加载 clean、detached 的 `/Volumes/扩展盘/guiyi-quant-runtime-v1.9.12-r1@4de1b5d8`。API/Web/Live 已 running，盘后服务按调度 `not_running`；Alert 因公开回退码 `CLI_INTERNAL_ERROR` 停在 `spawn_scheduled`，未写新 heartbeat，整体 health 为 degraded，不能标记 `RUNTIME_READY`。目标 root 的锁定 Python/Web 依赖与 build 已就绪；后续一次仅 Alert 的受控重载仍以 exit `1` 失败。本任务未 rollback、未执行盘后、未改 Scope/Rule、未手工发送通知。 |
-| Database | production Alembic 为 `20260826_0042 (head)`。当前 Rule 为 `htdy_original_15m` 与 `subing_strategy_v1`。 |
+| Release | `v1.9.13@9edbdfa7da11758876bea3e2a98781c6d4ace4d2` 是当前最新正式 release；`main` 与 annotated tag peeled commit 精确一致。`release/v1.9.14` 已冻结候选 identity，包含 session-anchor/v3/0045 修复，但尚未合入 main、创建 tag 或发布 GitHub Release。 |
+| Runtime | 五项 launchd 均指向 clean、detached `/Volumes/扩展盘/guiyi-quant-runtime-v1.9.13-r1@9edbdfa7`；2026-09-03 只读 readback 为 API/Web/Live/Alert `running`，After-market 按调度 `not running`。该 exact tag 仍使用错误的一分钟 session 锚点，不能作为 G10 通过证据。 |
+| Database | 2026-09-03 只读 readback：production Alembic 为 `20260902_0044`；Rule 恰为 enabled HTDY `jm × 15m` 与 disabled、empty-scope `subing_ths_alert_15m_v1`；SuBing Event 为 0。0045 尚未执行。 |
 | Market Runtime Scope | `operational_products.txt` 的 60 个品种。 |
-| Alert Scope | production 尚未执行 0043，因此 HTDY Scope 仍为 `jm × 15m`，已退役 Rule 的旧 `scope_products` 数据仍在库中。两条旧库 Rule 均 enabled，Alert Runtime marker 已 enabled，audience count 2；本任务未发生 production Scope、Rule 或 audience mutation。 |
-| Retirement code | `v1.9.12` 已包含 forward-only `20260902_0043`：删除全部旧策略 Event/Rule 与专用列；应用、CLI、Web、Alert Runtime、研究配置均只保留通用市场能力与 HTDY。production migration、Git 外派生数据删除与 Runtime 切换仍未执行。 |
+| Alert Scope | HTDY 为 `jm × 15m`；SuBing 严格保持 `disabled + empty scope`。G10 因 session 首分钟锚点错误判定未通过，G9 不得执行。 |
+| Session anchor repair | `develop` 包含 adapter 单点规范化、forward-only 0045、三阶段 `session-anchor-repair` 与 `subing_ths_15m_v3`。这里只是代码能力；真实 RQData shadow prepare、Canonical/Catalog publish、production 0045、Redis cleanup、v1.9.14 release/Runtime 与重做 G10 均未执行。 |
 | v1.9.8 | Alert startup/final catch-up 的 Live snapshot 冻结在 causal `through` 上界，避免批量 restore 期间新到达 Bar 污染较早产品；Runtime status 写 schema v4，保留每个 unavailable 产品的固定公开 reason，并兼容读取 v1/v2/v3。无 migration、Scope、Rule、audience、transport 或策略公式变化。 |
 | v1.9.9 | frozen final-catch-up watermark 队列 reconciliation：严格更旧 Bar 丢弃，相同 watermark 仍校验，更新 Bar 只推进且不补发；reconciliation 结束前保持 warming，只有 active60 全 ready 才写 `strategy_ready_at`。完整后端、Web、Ruff、Mypy、canonical、OpenSpec 与 secret scan 已通过，Standards/Spec 复审均 no findings；当前已 `RELEASED`，已完成 exact-tag Runtime 切换；首根自然 completed Live Gate 与 canary 均未完成。 |
 | v1.9.10 | completed 1m Bar 仅在 atomic ready heartbeat 写入确认后才 PubSub；Redis 持久化、heartbeat、PubSub 或派生失败均 fail-closed，且同一 poll 不重试发布。完整非隔离后端、Mypy、Ruff、canonical、OpenSpec、secret scan 与 Web check/test/build 已通过，Standards/Spec 复审通过。该版本仍为 `RELEASED`；其 Runtime checkout 已在 v1.9.11 五项服务读回后移除，不再是现役或本地 rollback root。 |
 | v1.9.11 | HTDY immutable Event 与 one-shot PushPlus 只接受触发窗口最新 completed Bar；repaint zone 中的旧 Bar 仅保留 Web retrospective 观察，不创建 Event/通知，既有 Event 不变。后端 `2234 passed, 3 skipped, 6 deselected`、Web `347 passed, 1 skipped`、Ruff、Mypy、OpenSpec、secret scan 与 release identity 检查均通过。当前为 `RELEASED`，并实际承载五项服务；2026-09-02 开盘 Live 为 `60/60 TRADING`，Alert 有新 heartbeat 且 processing 为 `ok`，但 legacy SuBing 状态 `0/60 ready` 使 Runtime 仍为 degraded，不能标记 `RUNTIME_READY`。 |
 | v1.9.12 | 已 `RELEASED`：后端 `880 passed, 3 skipped, 7 deselected`、engineering `10 passed`、0043 targeted `22 passed, 1 isolated PostgreSQL skipped`、Mypy、Ruff、OpenSpec、secret scan、Web unit/build 与 Playwright `25 passed` 均通过。已执行一次 Runtime 切换；API/Web/Live 已加载 exact tag，Alert 未能建立 heartbeat，production migration 仍未执行。 |
+| v1.9.13 | 已 `RELEASED` 并完成 production 0043→0044 与五项 exact-tag Runtime promotion；SuBing 保持 disabled + empty scope。随后 G10 发现 RQData session 首根 1m 标签被当作排他 start，日内桶整体右移一分钟，因此 G10 未通过。 |
 
 Alert transport 为 PushPlus；provider accepted 不等于微信送达。
 
@@ -30,12 +31,9 @@ Alert transport 为 PushPlus；provider accepted 不等于微信送达。
 
 ## Pending Gate
 
-- v1.9.12 已 `RELEASED`，且 API/Web/Live 已加载 exact tag；Alert 在一次受控重载后仍未建立 heartbeat，整体 health degraded。任何进一步 Alert 修复/重启、rollback 或后续 Runtime mutation 都须新的独立授权；首根自然 completed Live Gate也仍未开始。
-- `20260902_0043` 的 production PostgreSQL migration 尚未授权或执行；旧策略 Event、Rule、Scope 与列仍是 production 事实。执行前必须独立只读 preflight，并取得一次范围明确的真实 DB 删除授权。
-- Git 外旧策略派生目录尚未删除；删除前必须解析配置得到精确绝对路径、验证挂载根与 deletion manifest，并取得一次范围明确的真实删除授权。
-- v1.9.10 仍为 `RELEASED` 的历史版本，但不再承载服务，也不保留本地 Runtime checkout；不得将其历史 startup restore Gate 当作当前 Runtime 状态。
-- v1.9.9 已 `RELEASED` 并完成一次 exact-tag Runtime 切换，但首根自然 completed Live Gate 已失败：Alert 为 `19/60 ready`、`41/60 unavailable`，不得标记 `RUNTIME_READY`。修复后的 release 必须重新完成该 Gate。
-- HTDY 的 2026-09-01 JM 15m natural Event 已取得 provider acceptance；微信实际送达，以及 D1/W1 `canonical_updated` 的自然 Event identity/evidence，仍须分别核验；不以测试、synthetic event、replay 或手工发送补证。
-- v1.9.7-r3 当前仅作为 clean、detached rollback root 保留，已不再承载五项正式服务。
-- 一次 owner PushPlus canary 仍是独立 Gate。
-- HTDY `jm × 15m` 下一次自然 15m completed Live bar 与 one-shot transport evidence 仍 pending（下次交易时段），不以 canary、replay 或手工发送替代。
+- `release/v1.9.14` RC identity 与验证完成后，main merge、annotated tag 与 GitHub Release 仍需要新的发布授权。
+- exact-tag `session-anchor-repair --phase prepare --apply` 会调用真实 RQData 并写 shadow Canonical，需要一次新的真实数据授权。
+- 停止五项 Runtime、publish shadow、reconcile Catalog、执行 production 0045 与清理最新交易日 Redis 是同一个维护 Gate，需要新的单次明确授权；0045 之后只能 forward recovery。
+- exact-tag v1.9.14 Runtime promotion 是独立 Gate。完成 identity/health/data readback 前不得重做 G10。
+- 新 G10 必须基于修正后的 exact-tag Runtime 对 RB/JM 及规定金叉/死叉样本逐条解释一致。G10 通过前 SuBing 必须保持 disabled + empty scope；G9 Scope activation 仍需另行授权。
+- G9 之后仍须等待自然 completed 15m Event、one-shot PushPlus provider acceptance 与用户微信实际送达确认；不得用 synthetic、replay、backfill 或手工发送替代。
