@@ -497,12 +497,13 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
   function loadMoreBefore(): Promise<void> {
     if (loadingBeforePromise) return loadingBeforePromise
     if (!identity || !hasMoreBefore.value || !nextBefore.value) return Promise.resolve()
+    const requestIdentity = identity
     const requestGeneration = generation
     const before = nextBefore.value
     loadingBefore.value = true
     const request = Promise.resolve().then(async () => {
       try {
-        const page = await fetchPage(toPageRequest(identity!, before))
+        const page = await fetchPage(toPageRequest(requestIdentity, before))
         if (!isCurrentGeneration(requestGeneration, generation)) return
         const merged = prependHistoricalPage(canonicalBars, page)
         const previous = canonicalBars

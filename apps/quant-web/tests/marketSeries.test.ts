@@ -218,6 +218,52 @@ describe('market historical series', () => {
     assert.equal(series.bars.value.length, 2)
   })
 
+  it('keeps the original identity when pagination and a replacement start in one tick', async () => {
+    const requests: Array<{ symbol: string; before?: string }> = []
+    const series = useMarketSeries({
+      fetchPage: async (request) => {
+        requests.push({ symbol: request.symbol, before: request.before })
+        return page(
+          [liveBar('2026-08-07T09:30:00Z', request.symbol === 'ag' ? 100 : 200)],
+          { has_more_before: request.symbol === 'ag' && !request.before, next_before: request.symbol === 'ag' && !request.before ? '2026-08-07T09:30:00Z' : null },
+        )
+      },
+      fetchState: async () => state({ live_eligible: false, live_available: false }),
+    })
+    await series.replaceSeries({ seriesKind: 'actual_dominant', symbol: 'ag', frequency: '15m' })
+
+    const older = series.loadMoreBefore()
+    const replacement = series.replaceSeries({ seriesKind: 'actual_dominant', symbol: 'rb', frequency: '15m' })
+    await Promise.all([older, replacement])
+
+    assert.deepEqual(requests, [
+      { symbol: 'ag', before: undefined },
+      { symbol: 'rb', before: undefined },
+      { symbol: 'ag', before: '2026-08-07T09:30:00Z' },
+    ])
+  })
+
+  it('binds an older-history request to the identity that started it', async () => {
+    const requests: MarketBarsPageRequest[] = []
+    const series = useMarketSeries({
+      fetchPage: async (request) => {
+        requests.push(request)
+        return page(
+          [liveBar(request.before ? '2026-08-07T09:15:00Z' : '2026-08-07T09:30:00Z', 100)],
+          { has_more_before: !request.before, next_before: request.before ? null : '2026-08-07T09:30:00Z' },
+        )
+      },
+      fetchState: async () => state({ live_eligible: false, live_available: false }),
+    })
+    await series.replaceSeries({ seriesKind: 'actual_dominant', symbol: 'ag', frequency: '15m' })
+
+    const older = series.loadMoreBefore()
+    await series.replaceSeries({ seriesKind: 'actual_dominant', symbol: 'rb', frequency: '15m' })
+    await older
+
+    assert.equal(requests.find((request) => request.before)?.symbol, 'ag')
+  })
+
   it('clears the old public series before a replacement identity can fail', async () => {
     let rejectReplacement: ((reason: Error) => void) | undefined
     const series = useMarketSeries({

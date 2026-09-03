@@ -39,13 +39,18 @@ test('Free Range warm-up remains explicit and does not create a strategy marker'
 })
 
 test('Free identity controls keep the selected contract in the URL', async ({ page }) => {
-  await mockMarketDetail(page)
+  const requests = await mockMarketDetail(page)
   await page.goto(freeJm)
 
   await page.getByLabel('指定合约').fill('JM2605')
   await page.getByRole('button', { name: '指定合约' }).click()
   await expect.poll(() => new URL(page.url()).searchParams.get('series_kind')).toBe('contract')
   expect(new URL(page.url()).searchParams.get('contract')).toBe('JM2605')
+  await expect.poll(() => requests.some((url) => (
+    url.pathname.endsWith('/bars/page')
+    && url.searchParams.get('series_kind') === 'contract'
+    && url.searchParams.get('contract') === 'JM2605'
+  ))).toBe(true)
 })
 
 test('Free clears a contract when the product changes and keeps HTDY preferences untouched', async ({ page }) => {
