@@ -193,6 +193,31 @@ describe('market historical series', () => {
     ])
   })
 
+  it('shares an in-flight older-history request with concurrent callers', async () => {
+    let resolveOlder: ((value: MarketBarsPageResponse) => void) | undefined
+    const series = useMarketSeries({
+      fetchPage: (request) => request.before
+        ? new Promise<MarketBarsPageResponse>((resolve) => { resolveOlder = resolve })
+        : Promise.resolve(page(
+            [liveBar('2026-08-07T09:30:00Z', 100)],
+            { has_more_before: true, next_before: '2026-08-07T09:30:00Z' },
+          )),
+      fetchState: async () => state({ live_eligible: false, live_available: false }),
+    })
+    await series.replaceSeries({ seriesKind: 'actual_dominant', symbol: 'ag', frequency: '15m' })
+
+    const first = series.loadMoreBefore()
+    let secondSettled = false
+    const second = series.loadMoreBefore().then(() => { secondSettled = true })
+    await Promise.resolve()
+    assert.equal(secondSettled, false)
+
+    resolveOlder?.(page([liveBar('2026-08-07T09:15:00Z', 99)], { has_more_before: false, next_before: null }))
+    await Promise.all([first, second])
+    assert.equal(secondSettled, true)
+    assert.equal(series.bars.value.length, 2)
+  })
+
   it('clears the old public series before a replacement identity can fail', async () => {
     let rejectReplacement: ((reason: Error) => void) | undefined
     const series = useMarketSeries({

@@ -9,12 +9,17 @@ import MarketDetailViewNav from '@/components/market/detail/MarketDetailViewNav.
 import FreeChartWorkspace from '@/components/market/detail/free/FreeChartWorkspace.vue'
 import { useMarketDetailController } from '@/composables/useMarketDetailController'
 import type { MarketDetailIdentity } from '@/types/marketDetail'
-import { loadMarketDetailPreferences } from '@/utils/marketDetailPreferences'
+import {
+  loadMarketDetailPreferences,
+  replaceFreeDetailPreferences,
+  saveMarketDetailPreferences,
+  type FlexibleDetailPreferences,
+} from '@/utils/marketDetailPreferences'
 import { parseMarketDetailRoute, serializeMarketDetailIdentity } from '@/utils/marketDetailRoute'
 
 const route = useRoute()
 const router = useRouter()
-const preferences = loadMarketDetailPreferences()
+const preferences = ref(loadMarketDetailPreferences())
 const moreOpen = ref(false)
 const controller = useMarketDetailController({ routeQuery: () => ({ ...route.query }) })
 const routeResult = computed(() => parseMarketDetailRoute({ ...route.query }))
@@ -80,6 +85,11 @@ function selectIdentity(identity: MarketDetailIdentity) {
 
 function selectContractCleared(identity: MarketDetailIdentity) {
   void router.push({ path: '/market/chart', query: serializeMarketDetailIdentity(identity), state: { contractCleared: true } })
+}
+
+function updateFreePreferences(free: FlexibleDetailPreferences) {
+  preferences.value = replaceFreeDetailPreferences(preferences.value, free)
+  saveMarketDetailPreferences(preferences.value)
 }
 
 function goBack() {
@@ -152,12 +162,12 @@ onBeforeUnmount(controller.dispose)
             :research="controller.research.value"
             :research-error="controller.researchError.value"
             :preferences="preferences.free"
-            :htdy-preferences="preferences.htdy"
             :has-more-before="controller.hasMoreBefore.value"
             :load-earlier="controller.loadMoreBefore"
             :identity-warning="identityWarning"
             @select-identity="selectIdentity"
             @contract-cleared="selectContractCleared"
+            @update-preferences="updateFreePreferences"
           />
         </section>
       </template>

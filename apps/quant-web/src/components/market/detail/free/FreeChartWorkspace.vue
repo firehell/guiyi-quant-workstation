@@ -13,7 +13,7 @@ import type { BarData, MarketFrequency, OptionalEmaIndicatorId, ProductResearchR
 import type { MarketSeriesMutation } from '@/composables/useMarketSeries'
 import type { DetailViewModel, MarketDetailHeaderModel, MarketDetailIdentity } from '@/types/marketDetail'
 import { MARKET_FREQUENCIES } from '@/types/market'
-import { saveMarketDetailPreferences, type FlexibleDetailPreferences } from '@/utils/marketDetailPreferences'
+import type { FlexibleDetailPreferences } from '@/utils/marketDetailPreferences'
 import { buildFreeDetailViewModel } from '@/utils/freeDetailViewModel'
 
 const props = defineProps<{
@@ -26,12 +26,15 @@ const props = defineProps<{
   research: ProductResearchResponse | null
   researchError: boolean
   preferences: FlexibleDetailPreferences
-  htdyPreferences: FlexibleDetailPreferences
   hasMoreBefore: boolean
   loadEarlier: () => Promise<void>
   identityWarning?: string | null
 }>()
-const emit = defineEmits<{ selectIdentity: [identity: MarketDetailIdentity], contractCleared: [identity: MarketDetailIdentity] }>()
+const emit = defineEmits<{
+  selectIdentity: [identity: MarketDetailIdentity]
+  contractCleared: [identity: MarketDetailIdentity]
+  updatePreferences: [preferences: FlexibleDetailPreferences]
+}>()
 
 const optionalEmaIndicators = ref<OptionalEmaIndicatorId[]>([...props.preferences.optionalEmaIndicators])
 const showRangeDetector = ref(props.preferences.showRangeDetector)
@@ -68,21 +71,34 @@ const rangeWarning = computed(() => rangeWarmup.unavailableReason.value === RANG
   ? '箱体历史预载失败'
   : rangeWarmup.unavailableReason.value === RANGE_DETECTOR_WARMUP_INSUFFICIENT ? '箱体历史预载不足' : null)
 
-function saveFreePreferences(identity: MarketDetailIdentity) {
-  saveMarketDetailPreferences({
-    version: 1, lastView: 'free', htdy: props.htdyPreferences,
-    free: { seriesKind: identity.seriesKind === 'continuous' ? 'continuous' : 'actual_dominant', frequency: identity.frequency, optionalEmaIndicators: optionalEmaIndicators.value, showRangeDetector: showRangeDetector.value },
+function updatePreferences(identity: MarketDetailIdentity) {
+  emit('updatePreferences', {
+    seriesKind: identity.seriesKind === 'continuous' ? 'continuous' : 'actual_dominant',
+    frequency: identity.frequency,
+    optionalEmaIndicators: [...optionalEmaIndicators.value],
+    showRangeDetector: showRangeDetector.value,
   })
 }
 
 watch([optionalEmaIndicators, showRangeDetector], () => {
-  saveFreePreferences(props.identity)
+  updatePreferences(props.identity)
   if (!showRangeDetector.value) rangeWarmup.reset()
 }, { deep: true })
 
 watch(() => props.identity, () => {
   contract.value = props.identity.contract ?? ''
   symbol.value = props.identity.symbol
+  updatePreferences(props.identity)
+}, { deep: true })
+
+watch(() => props.preferences, (preferences) => {
+  if (
+    preferences.optionalEmaIndicators.length !== optionalEmaIndicators.value.length
+    || preferences.optionalEmaIndicators.some((indicator, index) => indicator !== optionalEmaIndicators.value[index])
+  ) optionalEmaIndicators.value = [...preferences.optionalEmaIndicators]
+  if (preferences.showRangeDetector !== showRangeDetector.value) {
+    showRangeDetector.value = preferences.showRangeDetector
+  }
 }, { deep: true })
 
 function switchIdentity(next: Partial<Pick<MarketDetailIdentity, 'symbol' | 'seriesKind' | 'frequency' | 'contract'>>) {
@@ -94,7 +110,7 @@ function switchIdentity(next: Partial<Pick<MarketDetailIdentity, 'symbol' | 'ser
   if (symbolChanged && seriesKind === 'contract') {
     contract.value = ''
     const identity = { view: 'free' as const, symbol: nextSymbol, seriesKind: 'actual_dominant' as const, frequency: next.frequency ?? props.identity.frequency }
-    saveFreePreferences(identity)
+    updatePreferences(identity)
     emit('contractCleared', identity)
     return
   }
@@ -104,7 +120,7 @@ function switchIdentity(next: Partial<Pick<MarketDetailIdentity, 'symbol' | 'ser
     frequency: next.frequency ?? props.identity.frequency,
     ...(seriesKind === 'contract' ? { contract: selectedContract } : {}),
   }
-  saveFreePreferences(identity)
+  updatePreferences(identity)
   emit('selectIdentity', identity)
 }
 
@@ -115,6 +131,8 @@ function toggleEma(value: OptionalEmaIndicatorId) {
 }
 
 function updateSymbol() { switchIdentity({ symbol: symbol.value }) }
+
+function loadEarlier() { void props.loadEarlier() }
 
 function toggleDisclosure(id: string) {
   openDisclosureIds.value = openDisclosureIds.value.includes(id)
@@ -133,7 +151,7 @@ function toggleDisclosure(id: string) {
         <button type="button" :aria-pressed="identity.seriesKind === 'contract'" @click="switchIdentity({ seriesKind: 'contract' })">指定合约</button>
       </div>
       <div class="free-workspace__control-group" aria-label="周期">
-        <button v-for="item in MARKET_FREQUENCIES" :key="item" type="button" :aria-pressed="identity.frequency === item" @click="switchIdentity({ frequency: item as MarketFrequency })">{{ item === '1d' ? 'D' : item === '1w' ? 'W' : item }}</button>
+        <button v-for="item in MARKET_FREQUENCIES" :key="item" type="button" :aria-pressed="identity.frequency === item" @click="switchIdentity({ frequency: item as MarketFrequency })">{{ item === '1d' ? '日K' : item === '1w' ? '周K' : item }}</button>
       </div>
       <details open>
         <summary>指标设置</summary>
@@ -144,7 +162,7 @@ function toggleDisclosure(id: string) {
 
     <MarketDetailFactStrip :facts="model.facts" />
     <p v-if="identityWarning" class="free-workspace__hint" role="status">{{ identityWarning }}</p>
-    <p v-if="model.semanticBanner.tone === 'warning'" class="free-workspace__warning" role="status">{{ rangeWarning ?? model.semanticBanner.text }}</p>
+    <p class="free-workspace__semantic" :class="{ 'free-workspace__warning': model.semanticBanner.tone === 'warning' }" role="status">{{ rangeWarning ?? model.semanticBanner.text }}</p>
     <FreeChartStage
       :bars="bars"
       :mutation="mutation"
@@ -191,7 +209,8 @@ function toggleDisclosure(id: string) {
 .free-workspace details { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
 .free-workspace summary { cursor: pointer; }
 .free-workspace label { margin: 0 8px 0 0; }
-.free-workspace__warning { margin: 0; padding: var(--gy-space-2) var(--gy-space-3); border-radius: var(--gy-radius-sm); color: var(--gy-status-warning); background: color-mix(in srgb, var(--gy-status-warning) 10%, transparent); }
+.free-workspace__semantic { margin: 0; padding: var(--gy-space-2) var(--gy-space-3); border: 1px solid var(--gy-border); border-radius: var(--gy-radius-sm); color: var(--gy-text-secondary); background: var(--gy-bg-panel); }
+.free-workspace__warning { color: var(--gy-status-warning); background: color-mix(in srgb, var(--gy-status-warning) 10%, transparent); }
 .free-workspace__hint { margin: 0; color: var(--gy-text-muted); font-size: var(--gy-font-size-sm); }
 .free-workspace__context, .free-workspace__data { padding: var(--gy-space-3); border: 1px solid var(--gy-border); border-radius: var(--gy-radius-md); background: var(--gy-bg-panel); }
 .free-workspace h2 { margin: 0 0 var(--gy-space-2); font-size: var(--gy-font-size-base); }

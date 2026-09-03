@@ -242,6 +242,7 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
   let reconnectHandle: unknown = null
   let canonicalRefreshToken = 0
   let overlayIdentity: MarketOverlayIdentity | null = null
+  let loadingBeforePromise: Promise<void> | null = null
 
   function clearOverlay(): void {
     liveBars = []
@@ -285,6 +286,7 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
     marketState.value = null
     liveUnavailable.value = false
     loadingBefore.value = false
+    loadingBeforePromise = null
     publishMerged({ kind: 'replace' })
     return requestGeneration
   }
@@ -492,25 +494,31 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
     loadingInitial.value = false
   }
 
-  async function loadMoreBefore(): Promise<void> {
-    if (!identity || !hasMoreBefore.value || !nextBefore.value || loadingBefore.value) return
+  function loadMoreBefore(): Promise<void> {
+    if (loadingBeforePromise) return loadingBeforePromise
+    if (!identity || !hasMoreBefore.value || !nextBefore.value) return Promise.resolve()
     const requestGeneration = generation
     const before = nextBefore.value
     loadingBefore.value = true
-    try {
-      const page = await fetchPage(toPageRequest(identity, before))
-      if (!isCurrentGeneration(requestGeneration, generation)) return
-      const merged = prependHistoricalPage(canonicalBars, page)
-      const previous = canonicalBars
-      canonicalBars = merged.bars
-      hasMoreBefore.value = merged.hasMoreBefore
-      nextBefore.value = merged.nextBefore
-      canonicalCoverage.value = loadedCanonicalCoverage(canonicalBars)
-      const previousTimes = new Set(previous.map((bar) => bar.time))
-      publishMerged({ kind: 'prepend', bars: canonicalBars.filter((bar) => !previousTimes.has(bar.time)) })
-    } finally {
-      if (isCurrentGeneration(requestGeneration, generation)) loadingBefore.value = false
-    }
+    const request = Promise.resolve().then(async () => {
+      try {
+        const page = await fetchPage(toPageRequest(identity!, before))
+        if (!isCurrentGeneration(requestGeneration, generation)) return
+        const merged = prependHistoricalPage(canonicalBars, page)
+        const previous = canonicalBars
+        canonicalBars = merged.bars
+        hasMoreBefore.value = merged.hasMoreBefore
+        nextBefore.value = merged.nextBefore
+        canonicalCoverage.value = loadedCanonicalCoverage(canonicalBars)
+        const previousTimes = new Set(previous.map((bar) => bar.time))
+        publishMerged({ kind: 'prepend', bars: canonicalBars.filter((bar) => !previousTimes.has(bar.time)) })
+      } finally {
+        if (isCurrentGeneration(requestGeneration, generation)) loadingBefore.value = false
+        if (loadingBeforePromise === request) loadingBeforePromise = null
+      }
+    })()
+    loadingBeforePromise = request
+    return request
   }
 
   function dispose(): void {

@@ -49,6 +49,10 @@ test('Free identity controls keep the selected contract in the URL', async ({ pa
 })
 
 test('Free clears a contract when the product changes and keeps HTDY preferences untouched', async ({ page }) => {
+  const recursiveUpdates = []
+  page.on('console', (message) => {
+    if (message.text().includes('Maximum recursive updates exceeded')) recursiveUpdates.push(message.text())
+  })
   await page.addInitScript(() => {
     localStorage.setItem('guiyi.market.detail.preferences.v1', JSON.stringify({
       version: 1, lastView: 'htdy',
@@ -66,6 +70,8 @@ test('Free clears a contract when the product changes and keeps HTDY preferences
   await expect(page.getByText('已切换品种，指定合约已清除并回到真实主力。')).toBeVisible()
   await page.getByLabel('箱体识别（Range）').check()
   const preferences = await page.evaluate(() => JSON.parse(localStorage.getItem('guiyi.market.detail.preferences.v1')))
+  expect(recursiveUpdates).toEqual([])
+  expect(preferences.lastView).toBe('htdy')
   expect(preferences.htdy).toEqual({ seriesKind: 'continuous', frequency: '30m', optionalEmaIndicators: ['ema_60'], showRangeDetector: true })
 })
 
