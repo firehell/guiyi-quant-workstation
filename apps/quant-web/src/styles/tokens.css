@@ -92,6 +92,14 @@
   --gy-market-pill-aligned-soft: #FFF2E5;
   --gy-market-pill-neutral-soft: #EAF1FF;
 
+  /* Unified Market detail shell. */
+  --gy-detail-accent: var(--gy-market-icon-aligned);
+  --gy-detail-accent-soft: var(--gy-market-pill-aligned-soft);
+  --gy-detail-icon-muted: var(--gy-text-muted);
+  --gy-detail-card-bg: var(--gy-bg-panel);
+  --gy-detail-section-bg: var(--gy-gray-50);
+  --gy-detail-warning-border: color-mix(in srgb, var(--gy-status-warning) 35%, transparent);
+
   /* Chart palette */
   --gy-chart-bg: #ffffff;
   --gy-chart-grid: #edf1f7;
