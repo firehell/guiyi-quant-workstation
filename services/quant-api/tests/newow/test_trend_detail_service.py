@@ -299,9 +299,9 @@ def test_detail_is_overlap_invariant_and_returns_immutable_stable_tuples() -> No
         == (tuple,) * 6
     )
     assert wide.warnings == (
-        "NEWOW_CUP_WARMUP_INSUFFICIENT",
-        "NEWOW_D123_WARMUP_INSUFFICIENT",
         "NEWOW_TREND_WARMUP_INSUFFICIENT",
+        "NEWOW_D123_WARMUP_INSUFFICIENT",
+        "NEWOW_CUP_WARMUP_INSUFFICIENT",
     )
     assert wide == service.query(
         NewowTrendDetailQuery(
@@ -396,5 +396,5 @@ def test_detail_is_stateless_and_calculation_identity_never_binds_request_dates(
     assert first.calculation_identity == second.calculation_identity
     assert first.request_identity != second.request_identity
     assert all(bar.source_identity == first.calculation_identity for bar in first.bars)
-    assert tuple(service.__dict__) == ("_market_data",)
+    assert tuple(service.__dict__) == ("_market_data", "_taxonomy")
     assert len(market_data.page_requests) == 2

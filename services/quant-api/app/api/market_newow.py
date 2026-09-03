@@ -20,6 +20,7 @@ from app.market_data.newow.trend_detail_service import (
     NewowTrendDetailResult,
     NewowTrendDetailService,
 )
+from app.market_data.product_taxonomy import ProductTaxonomyError, load_product_taxonomy
 from app.schemas.market_newow import (
     NewowBarOut,
     NewowCupHandleOut,
@@ -34,9 +35,10 @@ from app.schemas.market_newow import (
 
 router = APIRouter(prefix="/api/v1/market/newow", tags=["market"])
 
-_CLIENT_ERRORS = frozenset({"NEWOW_INVALID_PRODUCT", "NEWOW_INVALID_RANGE"})
+_CLIENT_ERRORS = frozenset({"NEWOW_INVALID_PRODUCT", "NEWOW_INVALID_RANGE", "NEWOW_RANGE_TOO_LARGE"})
 _TREND_MARKERS = frozenset({"BUILD", "CLEAR"})
 _ESCAPE_MARKERS = frozenset({"NEWOW_ESCAPE_D1", "NEWOW_ESCAPE_D2", "NEWOW_ESCAPE_D3"})
+_CUP_MARKERS = frozenset({"CUP_HANDLE_READY", "CUP_HANDLE_BREAKOUT", "CUP_HANDLE_WEAKENED", "CUP_HANDLE_INVALIDATED", "CUP_HANDLE_EXPIRED"})
 
 
 @router.get("/trend-detail", response_model=NewowTrendDetailResponse)
@@ -50,7 +52,7 @@ def newow_trend_detail(
 ) -> NewowTrendDetailResponse:
     del frequency, series_kind
     try:
-        result = NewowTrendDetailService(build_market_data_service(session)).query(
+        result = NewowTrendDetailService(build_market_data_service(session), taxonomy=load_product_taxonomy()).query(
             NewowTrendDetailQuery(product, from_, through)
         )
         return _response(result)
@@ -59,6 +61,8 @@ def newow_trend_detail(
             status_code=422 if exc.code in _CLIENT_ERRORS else 409,
             detail={"code": exc.code},
         ) from exc
+    except ProductTaxonomyError as exc:
+        raise HTTPException(status_code=409, detail={"code": "NEWOW_DATA_UNAVAILABLE"}) from exc
     except ValueError as exc:
         code = str(exc)
         if code not in _CLIENT_ERRORS:
@@ -75,12 +79,13 @@ def _response(result: NewowTrendDetailResult) -> NewowTrendDetailResponse:
             frequency=result.instrument.frequency,
             series_kind=result.instrument.series_kind,
             calculation_identity=result.calculation_identity,
+            data_revision_identity=result.data_revision_identity,
             request_identity=result.request_identity,
         ),
         instrument=NewowInstrumentOut(
             product=result.instrument.product,
             display_name=result.instrument.display_name,
-            latest_physical_contract=result.instrument.latest_physical_contract,
+            last_visible_physical_contract=result.instrument.last_visible_physical_contract,
         ),
         bars=[
             NewowBarOut(
@@ -122,6 +127,7 @@ def _response(result: NewowTrendDetailResult) -> NewowTrendDetailResponse:
         escape_markers=[
             item for item in markers if item.marker_type in _ESCAPE_MARKERS
         ],
+        cup_markers=[item for item in markers if item.marker_type in _CUP_MARKERS],
         cup_handles=[_cup_handle(item) for item in result.cup_handles],
         rollover_seams=[
             NewowRolloverSeamOut(

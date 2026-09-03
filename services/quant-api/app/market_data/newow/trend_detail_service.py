@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 import re
 
-from guiyi_quant.newow.engine import NewowTrendD1Engine
+from guiyi_quant.newow.engine import NewowTrendD1Engine, NewowTrendD1EngineState
 from guiyi_quant.newow.models import (
     NewowCupHandleOverlay,
     NewowDailyBar,
@@ -28,6 +28,7 @@ from app.market_data.domain import (
     SeriesPageQuery,
 )
 from app.market_data.market_data_service import MarketDataError, MarketDataService
+from app.market_data.product_taxonomy import ProductTaxonomyEntry
 
 from .trend_detail_query import MAX_VISIBLE_TRADING_DAYS, NewowTrendDetailQuery
 
@@ -46,7 +47,7 @@ class NewowTrendDetailError(ValueError):
 class NewowInstrumentContext:
     product: str
     display_name: str | None
-    latest_physical_contract: str | None
+    last_visible_physical_contract: str | None
     frequency: str
     series_kind: str
     profile_id: str
@@ -67,6 +68,7 @@ class NewowRolloverSeam:
 @dataclass(frozen=True, slots=True)
 class NewowTrendDetailResult:
     calculation_identity: str
+    data_revision_identity: str | None
     request_identity: str
     instrument: NewowInstrumentContext
     bars: tuple[NewowDailyBar, ...]
@@ -77,11 +79,18 @@ class NewowTrendDetailResult:
     warnings: tuple[str, ...]
 
 
+@dataclass(frozen=True, slots=True)
+class _SegmentReplay:
+    frames: tuple[NewowTrendFrame, ...]
+    final_state: NewowTrendD1EngineState
+
+
 class NewowTrendDetailService:
     """Stateless request-scoped actual-dominant D1 replay."""
 
-    def __init__(self, market_data: MarketDataService) -> None:
+    def __init__(self, market_data: MarketDataService, *, taxonomy: Mapping[str, ProductTaxonomyEntry] | None = None) -> None:
         self._market_data = market_data
+        self._taxonomy = taxonomy
 
     def query(self, query: NewowTrendDetailQuery) -> NewowTrendDetailResult:
         self._validate_query(query)
@@ -109,6 +118,7 @@ class NewowTrendDetailService:
             raise NewowTrendDetailError("NEWOW_RANGE_TOO_LARGE")
         calculation_identity = _calculation_identity(query.product)
         all_frames: list[NewowTrendFrame] = []
+        final_state: NewowTrendD1EngineState | None = None
         all_seams: list[NewowRolloverSeam] = []
         previous: tuple[NewowDailyBar, ResolvedContractSegment] | None = None
         for segment in loaded.segments:
@@ -121,7 +131,7 @@ class NewowTrendDetailService:
             )
             if not rank_bars:
                 raise NewowTrendDetailError("NEWOW_DATA_IDENTITY_INVALID")
-            frames = self._replay_segment(
+            replay = self._replay_segment(
                 query.product,
                 segment,
                 calculation_identity,
@@ -131,7 +141,7 @@ class NewowTrendDetailService:
                 rank_bars,
             )
             eligible = tuple(
-                frame for frame in frames if frame.bar.observation_eligible
+                frame for frame in replay.frames if frame.bar.observation_eligible
             )
             if not eligible:
                 raise NewowTrendDetailError("NEWOW_DATA_IDENTITY_INVALID")
@@ -150,16 +160,18 @@ class NewowTrendDetailService:
                 )
             previous = (eligible[-1].bar, segment)
             all_frames.extend(eligible)
+            final_state = replay.final_state
 
         frames = tuple(
             frame
             for frame in all_frames
             if query.since <= frame.bar.trading_day <= query.through
         )
+        taxonomy_entry = self._taxonomy.get(query.product) if self._taxonomy else None
         context = NewowInstrumentContext(
             query.product,
-            None,
-            None,
+            taxonomy_entry.name if taxonomy_entry is not None else None,
+            frames[-1].bar.physical_contract if frames else None,
             "1d",
             "actual_dominant",
             NEWOW_TREND_D1_V1.profile_id,
@@ -167,6 +179,7 @@ class NewowTrendDetailService:
         )
         return NewowTrendDetailResult(
             calculation_identity,
+            None,  # No stable Catalog/MainContractMap revision digest is exposed; never fabricate one.
             ":".join(
                 (
                     calculation_identity,
@@ -184,7 +197,7 @@ class NewowTrendDetailService:
                 for seam in all_seams
                 if query.since <= seam.trading_day <= query.through
             ),
-            _warnings(frames),
+            _warnings(frames[-1] if frames else None, final_state),
         )
 
     @staticmethod
@@ -233,7 +246,7 @@ class NewowTrendDetailService:
         calculation_identity: str,
         physical: tuple[CanonicalBar, ...],
         rank_bars: tuple[CanonicalBar, ...],
-    ) -> tuple[NewowTrendFrame, ...]:
+    ) -> _SegmentReplay:
         expected: Mapping[tuple[date, datetime], CanonicalBar] = {
             (bar.trading_day, bar.bar_end): bar for bar in rank_bars
         }
@@ -269,7 +282,7 @@ class NewowTrendDetailService:
             matched += int(eligible)
         if matched != len(rank_bars):
             raise NewowTrendDetailError("NEWOW_DATA_IDENTITY_INVALID")
-        return tuple(frames)
+        return _SegmentReplay(tuple(frames), engine.state)
 
     @staticmethod
     def _validate_canonical_order(bars: tuple[CanonicalBar, ...]) -> None:
@@ -367,13 +380,23 @@ def _latest_overlays(
     return tuple(latest[key] for key in sorted(latest))
 
 
-def _warnings(frames: tuple[NewowTrendFrame, ...]) -> tuple[str, ...]:
-    if not any(
-        frame.trend_band.state is TrendBandState.UNAVAILABLE for frame in frames
+def _warnings(
+    latest: NewowTrendFrame | None, state: NewowTrendD1EngineState | None
+) -> tuple[str, ...]:
+    """Top-level availability is the latest visible bar only, never history."""
+    if latest is None or state is None:
+        return ("NEWOW_TREND_WARMUP_INSUFFICIENT", "NEWOW_D123_WARMUP_INSUFFICIENT", "NEWOW_CUP_WARMUP_INSUFFICIENT")
+    warnings: list[str] = []
+    if latest.trend_band.state is TrendBandState.UNAVAILABLE:
+        warnings.append("NEWOW_TREND_WARMUP_INSUFFICIENT")
+    escape = state.escape_state
+    if not (
+        escape.history_count >= NEWOW_TREND_D1_V1.ma120_period
+        and len(escape.ma120_values) >= NEWOW_TREND_D1_V1.ma120_slope_window
+        and escape.previous_var4 is not None
     ):
-        return ()
-    return (
-        "NEWOW_CUP_WARMUP_INSUFFICIENT",
-        "NEWOW_D123_WARMUP_INSUFFICIENT",
-        "NEWOW_TREND_WARMUP_INSUFFICIENT",
-    )
+        warnings.append("NEWOW_D123_WARMUP_INSUFFICIENT")
+    cup = state.cup_handle_state
+    if not (cup.eligible_started and cup.atr_state.atr is not None):
+        warnings.append("NEWOW_CUP_WARMUP_INSUFFICIENT")
+    return tuple(warnings)
