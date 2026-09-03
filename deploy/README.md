@@ -46,7 +46,8 @@ Nginx reload 都是独立受控外部操作，必须在执行前取得与目标�
 `run-local-service.sh market-runtime-preflight`。该 preflight 是只读检查，发生在外部 activation marker 准备、
 runtime script 写入、已安装 LaunchAgent plist 替换以及任何 `launchctl` mutation 之前；仓库内 plist render
 不属于这些外部 activation mutation。若 preflight 阻断，安装器非零退出，且不触碰 marker、runtime directory、
-installed plist 或 `launchctl`。
+installed plist，也不执行 `launchctl` mutation；为解析 supervised authority 而进行的只读 `launchctl print`
+可能已发生。
 
 preflight 只读取 operational universe、权威 Calendar/Session phase、既有 immutable Live subscription snapshot 与
 公开 after-market status。允许的通过原因只有：完整且 identity 有效 snapshot 的 `snapshot_ready`；所有品种真正
