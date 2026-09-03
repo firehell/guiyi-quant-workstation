@@ -9,6 +9,8 @@ import plistlib
 import shutil
 import subprocess
 
+import pytest
+
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 NOTIFICATION_CONFIG_ENV = "GUIYI_ALERT_NOTIFICATION_CONFIG_PATH"
@@ -152,7 +154,107 @@ def test_market_preflight_loads_runtime_env_without_disclosing_it(tmp_path: Path
     assert "test-only-secret" not in result.stdout + result.stderr
 
 
-def test_final_market_preflight_revalidation_blocks_before_activation_mutation(
+@pytest.mark.parametrize(
+    "contents",
+    [
+        'POSTGRES_PASSWORD="${MISSING_RUNTIME_VALUE:?missing}"\n',
+        "exit 7\n",
+        "false\n",
+        "if then\n",
+    ],
+)
+def test_market_preflight_env_source_failure_has_one_bounded_json_line(
+    tmp_path: Path, contents: str
+) -> None:
+    repo = _copy_launchd_fixture(tmp_path / "repo")
+    runtime_env = tmp_path / "runtime.env"
+    runtime_env.write_text(contents, encoding="utf-8")
+    python = repo / "services/quant-api/.venv/bin/python"
+    python.parent.mkdir(parents=True)
+    python.write_text(
+        "#!/bin/sh\n"
+        "printf '%s\\n' '{\"schema_version\":1,\"command\":\"runtime.market-promotion-preflight\",\"status\":\"passed\",\"reason\":\"non_trading_interval\",\"trading_day\":null,\"operational_count\":0,\"snapshot_count\":0}\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    python.chmod(0o700)
+
+    result = subprocess.run(
+        [str(repo / "scripts/ops/macos/run-local-service.sh"), "market-runtime-preflight"],
+        cwd=repo,
+        env={
+            **os.environ,
+            "HOME": str(tmp_path / "home"),
+            "GUIYI_PROJECT_ROOT": str(repo),
+            "GUIYI_RUNTIME_ENV": str(runtime_env),
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert result.stderr == ""
+    assert result.stdout.count("\n") == 1
+    assert json.loads(result.stdout)["reason"] == "MARKET_RUNTIME_PROMOTION_STATE_UNAVAILABLE"
+    assert "MISSING_RUNTIME_VALUE" not in result.stdout + result.stderr
+
+
+@pytest.mark.parametrize(
+    ("payload", "exit_code"),
+    [
+        (
+            '{"schema_version":1,"command":"runtime.market-promotion-preflight","status":"passed","reason":"snapshot_ready","trading_day":"2026-09-03","operational_count":2,"snapshot_count":2,"extra":"synthetic-secret"}',
+            0,
+        ),
+        (
+            '{"schema_version":1,"command":"runtime.market-promotion-preflight","status":"passed","reason":"unknown","trading_day":"2026-09-03","operational_count":2,"snapshot_count":2}',
+            0,
+        ),
+        (
+            '{"schema_version":1,"command":"runtime.market-promotion-preflight","status":"blocked","reason":"MARKET_RUNTIME_PROMOTION_STATE_UNAVAILABLE","trading_day":null,"operational_count":0,"snapshot_count":0} synthetic-secret',
+            1,
+        ),
+    ],
+)
+def test_market_preflight_rejects_noncanonical_child_payload_without_echoing_it(
+    tmp_path: Path, payload: str, exit_code: int
+) -> None:
+    repo = _copy_launchd_fixture(tmp_path / "repo")
+    runtime_env = tmp_path / "runtime.env"
+    runtime_env.write_text("POSTGRES_PASSWORD=fixture\n", encoding="utf-8")
+    python = repo / "services/quant-api/.venv/bin/python"
+    python.parent.mkdir(parents=True)
+    python.write_text(
+        "#!/bin/sh\n"
+        f"printf '%s\\n' '{payload}'\n"
+        f"exit {exit_code}\n",
+        encoding="utf-8",
+    )
+    python.chmod(0o700)
+
+    result = subprocess.run(
+        [str(repo / "scripts/ops/macos/run-local-service.sh"), "market-runtime-preflight"],
+        cwd=repo,
+        env={
+            **os.environ,
+            "HOME": str(tmp_path / "home"),
+            "GUIYI_PROJECT_ROOT": str(repo),
+            "GUIYI_RUNTIME_ENV": str(runtime_env),
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert result.stderr == ""
+    assert result.stdout.count("\n") == 1
+    assert json.loads(result.stdout)["reason"] == "MARKET_RUNTIME_PROMOTION_STATE_UNAVAILABLE"
+    assert "synthetic-secret" not in result.stdout + result.stderr
+
+
+def test_market_preflight_runs_once_before_any_activation_mutation(
     tmp_path: Path,
 ) -> None:
     repo = _copy_launchd_fixture(tmp_path / "repo")
@@ -178,19 +280,21 @@ def test_final_market_preflight_revalidation_blocks_before_activation_mutation(
     launchctl = fake_bin / "launchctl"
     launchctl.write_text(
         "#!/bin/sh\n"
-        "printf '%s\\n' \"$*\" >> \"$HOME/launchctl-calls.log\"\n"
-        "exit 90\n",
+        "case \"${1:-}\" in\n"
+        "  bootstrap|enable|kickstart) exit 0 ;;\n"
+        "  print|bootout) exit 1 ;;\n"
+        "  *) exit 2 ;;\n"
+        "esac\n",
         encoding="utf-8",
     )
     launchctl.chmod(0o755)
 
     result = _run_installer_result(repo, home, fake_bin, "--confirm-market-runtime")
 
-    assert result.returncode == 1
-    assert (python.parent / "preflight-count").read_text(encoding="utf-8") == "2", result.stdout + result.stderr
-    assert not (repo / ".run/market-runtime-enabled").exists()
-    assert not list((home / "Library/LaunchAgents").glob("*.plist"))
-    assert not (home / "launchctl-calls.log").exists()
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (python.parent / "preflight-count").read_text(encoding="utf-8") == "1"
+    assert (repo / ".run/market-runtime-enabled").exists()
+    assert list((home / "Library/LaunchAgents").glob("*.plist"))
 
 
 def test_market_runtime_launch_agents_use_project_root_as_working_directory(

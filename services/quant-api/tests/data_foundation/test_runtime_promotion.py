@@ -309,24 +309,30 @@ def test_future_or_reversed_after_market_completion_blocks_state_unavailable() -
 
 
 @pytest.mark.parametrize(
-    "status",
+    ("status", "expected_reason"),
     [
-        {
-            "schema_version": 2,
-            "last_run": {**_passed_status()["last_run"], "status": "failed", "error_code": "UPDATE_FAILED"},
-        },
-        {
-            "schema_version": 2,
-            "current_run": {
-                "scheduled_date": DAY.isoformat(),
-                "started_at": "2026-09-03T18:05:00+08:00",
-                "products": list(PRODUCTS),
+        (
+            {
+                "schema_version": 2,
+                "last_run": {**_passed_status()["last_run"], "status": "failed", "error_code": "UPDATE_FAILED"},
             },
-        },
+            PROMOTION_LIVE_SNAPSHOT_REQUIRED,
+        ),
+        (
+            {
+                "schema_version": 2,
+                "current_run": {
+                    "scheduled_date": DAY.isoformat(),
+                    "started_at": "2026-09-03T18:05:00+08:00",
+                    "products": list(PRODUCTS),
+                },
+            },
+            PROMOTION_STATE_UNAVAILABLE,
+        ),
     ],
 )
 def test_failed_or_running_after_market_status_does_not_replace_required_snapshot(
-    status: dict[str, object],
+    status: dict[str, object], expected_reason: str
 ) -> None:
     decision = evaluate_market_runtime_promotion(
         products=PRODUCTS,
@@ -338,7 +344,7 @@ def test_failed_or_running_after_market_status_does_not_replace_required_snapsho
     )
 
     assert decision.status == "blocked"
-    assert decision.reason == PROMOTION_LIVE_SNAPSHOT_REQUIRED
+    assert decision.reason == expected_reason
 
 
 @pytest.mark.parametrize(
@@ -380,6 +386,63 @@ def test_clean_non_trading_interval_allows_absent_snapshot() -> None:
     assert decision.status == "passed"
     assert decision.reason == "non_trading_interval"
     assert decision.trading_day is None
+
+
+@pytest.mark.parametrize(
+    "status",
+    [
+        {
+            "schema_version": 2,
+            "current_run": {
+                "scheduled_date": DAY.isoformat(),
+                "started_at": "2026-09-03T14:05:00+08:00",
+                "products": list(PRODUCTS),
+            },
+        },
+        {"schema_version": 99},
+    ],
+)
+def test_non_trading_interval_cannot_bypass_running_or_corrupt_status(
+    status: dict[str, object],
+) -> None:
+    decision = evaluate_market_runtime_promotion(
+        products=PRODUCTS,
+        phases={
+            symbol: _phase(symbol, MarketPhase.CLOSED, trading_day=None)
+            for symbol in PRODUCTS
+        },
+        now=NOW,
+        snapshot=None,
+        after_market_status=status,
+        first_session_starts=None,
+    )
+
+    assert decision.status == "blocked"
+    assert decision.reason == PROMOTION_STATE_UNAVAILABLE
+
+
+def test_non_trading_interval_allows_well_formed_historical_failed_status() -> None:
+    failed = _passed_status()
+    failed["last_run"] = {
+        **failed["last_run"],
+        "status": "failed",
+        "error_code": "UPDATE_FAILED",
+    }
+
+    decision = evaluate_market_runtime_promotion(
+        products=PRODUCTS,
+        phases={
+            symbol: _phase(symbol, MarketPhase.CLOSED, trading_day=None)
+            for symbol in PRODUCTS
+        },
+        now=NOW,
+        snapshot=None,
+        after_market_status=failed,
+        first_session_starts=None,
+    )
+
+    assert decision.status == "passed"
+    assert decision.reason == "non_trading_interval"
 
 
 def test_day_end_to_night_gap_is_not_before_first_session() -> None:

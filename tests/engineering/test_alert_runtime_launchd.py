@@ -35,6 +35,7 @@ def test_market_and_alert_confirmation_modes_write_only_their_own_marker(
     tmp_path: Path,
 ) -> None:
     market_repo = _copy_fixture(tmp_path / "market-repo")
+    _market_preflight_ready(market_repo)
     home, fake_bin = _fake_runtime(tmp_path / "market")
     _run(market_repo, home, fake_bin, "--confirm-market-runtime")
     assert (market_repo / ".run/market-runtime-enabled").read_text() == "enabled\n"
@@ -356,6 +357,7 @@ def test_failed_second_market_label_boots_out_every_touched_service(
     tmp_path: Path,
 ) -> None:
     repo = _copy_fixture(tmp_path / "repo")
+    _market_preflight_ready(repo)
     home, fake_bin = _fake_runtime(tmp_path)
 
     result = _run(
@@ -398,6 +400,18 @@ def _copy_fixture(destination: Path) -> Path:
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source, target)
     return destination
+
+
+def _market_preflight_ready(repo: Path) -> None:
+    (repo / ".env").write_text("POSTGRES_PASSWORD=fixture-only\n", encoding="utf-8")
+    python = repo / "services/quant-api/.venv/bin/python"
+    python.parent.mkdir(parents=True)
+    python.write_text(
+        "#!/bin/sh\n"
+        "printf '%s\\n' '{\"schema_version\":1,\"command\":\"runtime.market-promotion-preflight\",\"status\":\"passed\",\"reason\":\"non_trading_interval\",\"trading_day\":null,\"operational_count\":0,\"snapshot_count\":0}'\n",
+        encoding="utf-8",
+    )
+    python.chmod(0o700)
 
 
 def _notification_config(parent: Path) -> Path:

@@ -6,6 +6,16 @@ SERVICE="${1:-}"
 preflight_unavailable() {
   printf '%s\n' '{"schema_version":1,"command":"runtime.market-promotion-preflight","status":"blocked","reason":"MARKET_RUNTIME_PROMOTION_STATE_UNAVAILABLE","trading_day":null,"operational_count":0,"snapshot_count":0}'
 }
+is_passed_preflight_payload() {
+  local payload="$1"
+  local pattern='^\{"schema_version":1,"command":"runtime.market-promotion-preflight","status":"passed","reason":"(snapshot_ready|before_first_session|after_market_complete|non_trading_interval)","trading_day":(null|"[0-9]{4}-[0-9]{2}-[0-9]{2}"),"operational_count":[0-9]+,"snapshot_count":[0-9]+\}$'
+  [[ "$payload" =~ $pattern ]]
+}
+is_blocked_preflight_payload() {
+  local payload="$1"
+  local pattern='^\{"schema_version":1,"command":"runtime.market-promotion-preflight","status":"blocked","reason":"(MARKET_RUNTIME_PROMOTION_LIVE_SNAPSHOT_REQUIRED|MARKET_RUNTIME_PROMOTION_LIVE_SNAPSHOT_INVALID|MARKET_RUNTIME_PROMOTION_STATE_UNAVAILABLE)","trading_day":(null|"[0-9]{4}-[0-9]{2}-[0-9]{2}"),"operational_count":[0-9]+,"snapshot_count":[0-9]+\}$'
+  [[ "$payload" =~ $pattern ]]
+}
 if [[ ! -d "$PROJECT_ROOT" ]]; then
   if [[ "$SERVICE" == "market-runtime-preflight" ]]; then
     preflight_unavailable
@@ -24,30 +34,47 @@ if [[ "$SERVICE" == "market-runtime-preflight" ]]; then
     preflight_unavailable
     exit 1
   fi
-  set -a
+  preflight_env=""
   if [[ -f "$RUNTIME_ENV" ]]; then
-    if ! source "$RUNTIME_ENV" >/dev/null 2>&1; then
-      set +a
-      preflight_unavailable
-      exit 1
-    fi
+    preflight_env="$RUNTIME_ENV"
   elif [[ -f "$PROJECT_ROOT/.env" ]]; then
-    if ! source "$PROJECT_ROOT/.env" >/dev/null 2>&1; then
-      set +a
-      preflight_unavailable
-      exit 1
-    fi
+    preflight_env="$PROJECT_ROOT/.env"
   fi
-  set +a
-  if [[ -z "${POSTGRES_PASSWORD:-}" ]]; then
+  if preflight_output="$(
+    /bin/bash -euo pipefail -c '
+      runtime_env="$1"
+      python_bin="$2"
+      if [[ -n "$runtime_env" ]]; then
+        set -a
+        source "$runtime_env" >/dev/null 2>&1
+        set +a
+      fi
+      [[ -n "${POSTGRES_PASSWORD:-}" ]] || exit 64
+      export REDIS_PASSWORD="${REDIS_PASSWORD:-$POSTGRES_PASSWORD}"
+      if [[ -z "${REDIS_URL:-}" || "$REDIS_URL" == "redis://127.0.0.1:6379/0" ]]; then
+        export REDIS_URL="redis://:${REDIS_PASSWORD}@127.0.0.1:6379/0"
+      fi
+      exec "$python_bin" -m app.market_data.runtime_promotion
+    ' bash "$preflight_env" "$PYTHON_BIN" 2>/dev/null
+  )"; then
+    preflight_result=0
+  else
+    preflight_result=$?
+  fi
+  if [[ "$preflight_result" == "0" ]] && is_passed_preflight_payload "$preflight_output"; then
+    printf '%s\n' "$preflight_output"
+    exit 0
+  fi
+  if [[ "$preflight_result" != "0" ]] && is_blocked_preflight_payload "$preflight_output"; then
+    printf '%s\n' "$preflight_output"
+    exit 1
+  fi
+  if [[ -z "${preflight_output:-}" ]]; then
     preflight_unavailable
     exit 1
   fi
-  export REDIS_PASSWORD="${REDIS_PASSWORD:-$POSTGRES_PASSWORD}"
-  if [[ -z "${REDIS_URL:-}" || "$REDIS_URL" == "redis://127.0.0.1:6379/0" ]]; then
-    export REDIS_URL="redis://:${REDIS_PASSWORD}@127.0.0.1:6379/0"
-  fi
-  exec "$PYTHON_BIN" -m app.market_data.runtime_promotion
+  preflight_unavailable
+  exit 1
 fi
 
 if [[ -f "$RUNTIME_ENV" ]]; then

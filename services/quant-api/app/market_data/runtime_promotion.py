@@ -85,6 +85,19 @@ def evaluate_market_runtime_promotion(
     trading_day = _resolved_trading_day(ordered_phases)
     if isinstance(trading_day, _InvalidTradingDay):
         return unavailable()
+    status_decision = _after_market_status_decision(
+        after_market_status,
+        trading_day=trading_day,
+        products=products,
+        now=now,
+    )
+    if status_decision in {"unavailable", "running"}:
+        return _blocked(
+            PROMOTION_STATE_UNAVAILABLE,
+            trading_day,
+            len(products),
+            snapshot_count,
+        )
     if trading_day is None:
         if all(
             _phase_name(item) == "CLOSED"
@@ -98,23 +111,7 @@ def evaluate_market_runtime_promotion(
     if not _valid_first_session_starts(first_session_starts, products):
         return unavailable()
     assert first_session_starts is not None
-
-    status_decision = _after_market_status_decision(
-        after_market_status,
-        trading_day=trading_day,
-        products=products,
-        now=now,
-    )
-    if status_decision == "unavailable":
-        return _blocked(PROMOTION_STATE_UNAVAILABLE, trading_day, len(products), snapshot_count)
     if snapshot is not None:
-        if status_decision == "running":
-            return _blocked(
-                PROMOTION_STATE_UNAVAILABLE,
-                trading_day,
-                len(products),
-                snapshot_count,
-            )
         if not _valid_snapshot(snapshot, products):
             return _blocked(
                 PROMOTION_LIVE_SNAPSHOT_INVALID,
@@ -275,7 +272,7 @@ def _before_first_session(starts: Mapping[str, datetime], now: datetime) -> bool
 def _after_market_status_decision(
     value: object,
     *,
-    trading_day: date,
+    trading_day: date | None,
     products: tuple[str, ...],
     now: datetime,
 ) -> str:
@@ -295,6 +292,8 @@ def _after_market_status_decision(
     if not isinstance(last_run, Mapping):
         return "missing"
     if last_run.get("status") != "passed":
+        return "missing"
+    if trading_day is None:
         return "missing"
     if last_run.get("trading_day") != trading_day.isoformat():
         return "missing"
