@@ -4,12 +4,14 @@ import importlib.util
 import os
 from datetime import date, time
 from pathlib import Path
+from uuid import uuid4
 
 from alembic import command
 from alembic.config import Config
 import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
+from sqlalchemy.schema import CreateSchema, DropSchema
 
 from app.db.migration_test_guard import (
     MigrationTestDatabaseSafetyError,
@@ -141,13 +143,26 @@ def test_upgrade_normalizes_real_session_rows_and_preserves_alert_facts(
         )
     except MigrationTestDatabaseSafetyError as exc:
         pytest.fail(str(exc))
-    engine = create_engine(url, pool_pre_ping=True)
-    config = Config()
-    config.set_main_option("script_location", str(QUANT_API_ROOT / "alembic"))
-    config.set_main_option("sqlalchemy.url", url)
-    monkeypatch.setenv("DATABASE_URL", url)
-    _reset_public_schema(engine)
+    base_engine = create_engine(url, pool_pre_ping=True)
+    schema = f"session_anchor_migration_{uuid4().hex}"
+    sentinel_table = f"session_anchor_sentinel_{uuid4().hex}"
+    with base_engine.begin() as connection:
+        connection.execute(CreateSchema(schema))
+        connection.exec_driver_sql(
+            f'CREATE TABLE public."{sentinel_table}" (id integer PRIMARY KEY)'
+        )
+    engine: Engine | None = None
     try:
+        monkeypatch.setenv("PGOPTIONS", f"-c search_path={schema}")
+        engine = create_engine(
+            url,
+            pool_pre_ping=True,
+            connect_args={"options": f"-csearch_path={schema}"},
+        )
+        config = Config()
+        config.set_main_option("script_location", str(QUANT_API_ROOT / "alembic"))
+        config.set_main_option("sqlalchemy.url", url)
+        monkeypatch.setenv("DATABASE_URL", url)
         command.upgrade(config, "20260902_0044")
         with engine.begin() as connection:
             connection.execute(text(
@@ -160,6 +175,18 @@ def test_upgrade_normalizes_real_session_rows_and_preserves_alert_facts(
                 "INSERT INTO instruments "
                 "(symbol, name, exchange_code, is_active, created_at, updated_at) "
                 "VALUES ('jm', 'Coking Coal', 'DCE', true, now(), now())"
+            ))
+            connection.execute(text(
+                "INSERT INTO alert_events "
+                "(rule_id, symbol, contract, trading_day, frequency, bar_end, "
+                "result_codes, detected_at, notification_attempted_at) "
+                "VALUES ((SELECT id FROM alert_rules "
+                "WHERE rule_code = 'htdy_original_15m'), 'jm', 'JM2701', "
+                "DATE '2026-09-01', '15m', "
+                "TIMESTAMPTZ '2026-09-01 02:30:00+00', "
+                "ARRAY['buy']::varchar[], "
+                "TIMESTAMPTZ '2026-09-01 02:30:01+00', "
+                "TIMESTAMPTZ '2026-09-01 02:30:02+00')"
             ))
             for index, (label, end) in enumerate((
                 ("21:01", "23:00"),
@@ -188,6 +215,7 @@ def test_upgrade_normalizes_real_session_rows_and_preserves_alert_facts(
             events_before = connection.execute(text(
                 "SELECT * FROM alert_events ORDER BY id"
             )).mappings().all()
+            assert len(events_before) == 1
 
         command.upgrade(config, "20260903_0045")
         with engine.begin() as connection:
@@ -207,12 +235,17 @@ def test_upgrade_normalizes_real_session_rows_and_preserves_alert_facts(
             )).mappings().all()
             assert [dict(row) for row in rules_after] == [dict(row) for row in rules_before]
             assert [dict(row) for row in events_after] == [dict(row) for row in events_before]
+        with engine.connect() as connection:
+            assert connection.scalar(
+                text("SELECT to_regclass(:qualified_name)"),
+                {"qualified_name": f"public.{sentinel_table}"},
+            ) == f"public.{sentinel_table}"
     finally:
-        _reset_public_schema(engine)
-        engine.dispose()
-
-
-def _reset_public_schema(engine: Engine) -> None:
-    with engine.begin() as connection:
-        connection.exec_driver_sql("DROP SCHEMA IF EXISTS public CASCADE")
-        connection.exec_driver_sql("CREATE SCHEMA public")
+        if engine is not None:
+            engine.dispose()
+        with base_engine.begin() as connection:
+            connection.execute(DropSchema(schema, cascade=True, if_exists=True))
+            connection.exec_driver_sql(
+                f'DROP TABLE IF EXISTS public."{sentinel_table}"'
+            )
+        base_engine.dispose()
