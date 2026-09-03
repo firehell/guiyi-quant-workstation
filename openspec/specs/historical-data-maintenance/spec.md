@@ -13,7 +13,7 @@
 系统还 SHALL 公开一次性 `session-anchor-repair` 三阶段 seam：`plan` 只读输出精确 session、Dataset、
 分区、预计缺失首分钟与稳定 scope hash；`prepare --apply` 只在外部 shadow root 使用真实 RQData 重建完整
 Canonical；`publish --apply` 只在五项 Runtime 全部停止、manifest/基线/hash 未漂移时切换 root、reconcile
-Catalog、执行精确 0045 并清理最新交易日旧锚点 Live Bar。
+Catalog、执行精确 0045 并清理 publish 执行时由 operational phase authority 唯一解析的当前交易日旧锚点 Live Bar。
 
 #### Scenario: 已退出动作
 - **WHEN** 用户调用任何已退出的维护操作

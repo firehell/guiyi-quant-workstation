@@ -854,12 +854,17 @@ def _normalized_historical_session_periods(
         cursor = match.end()
     if trading_hours[cursor:].strip(" ,;"):
         raise InfrastructureError("RQDATA_TRADING_SESSIONS_INVALID")
-    periods = tuple(
+    provider_periods = tuple(
         (
-            _previous_minute(time.fromisoformat(match.group("start"))),
+            time.fromisoformat(match.group("start")),
             time.fromisoformat(match.group("end")),
         )
         for match in matches
+    )
+    if any(start.minute not in {1, 31} for start, _ in provider_periods):
+        raise InfrastructureError("RQDATA_TRADING_SESSIONS_INVALID")
+    periods = tuple(
+        (_previous_minute(start), end) for start, end in provider_periods
     )
     has_night = any(start >= time(18) for start, _ in periods)
     intervals: list[tuple[int, int]] = []

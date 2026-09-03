@@ -17,10 +17,10 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.market_data.aggregation import SessionWindow, aggregate_from_1m
-from app.market_data.domain import BarFrequency, DatasetKey
+from app.market_data.domain import BarFrequency, CanonicalBar, DatasetKey
 from app.market_data.historical_data_manager import BarFetchRequest
 from app.market_data.session_clock import session_windows_for_trading_day
-from app.market_data.storage import CanonicalMonthlyStore, PublishRequest
+from app.market_data.storage import CanonicalMonthlyStore, PublishRequest, StorageError
 from app.models import Instrument, MarketDataset, MarketPartition, TradingSession
 
 
@@ -58,8 +58,16 @@ def local_runtime_stopped(
             text=True,
             check=False,
         )
-        if getattr(result, "returncode", None) == 0:
+        returncode = getattr(result, "returncode", None)
+        if returncode == 0:
             return False
+        expected_absence = (
+            f'Could not find service "{label}" in domain for user gui: {user_id}'
+        )
+        if returncode != 113 or expected_absence not in str(
+            getattr(result, "stderr", "")
+        ):
+            raise SessionAnchorRepairError("RUNTIME_STOP_PREFLIGHT_FAILED")
     return True
 
 
@@ -81,6 +89,9 @@ class SessionAnchorRepairPlan:
     partition_count: int
     missing_first_minute_count: int
     scope_sha256: str
+    affected_session_ids: tuple[int, ...]
+    affected_datasets: tuple[str, ...]
+    affected_partitions: tuple[str, ...]
 
     def as_payload(self) -> dict[str, object]:
         return {
@@ -94,6 +105,9 @@ class SessionAnchorRepairPlan:
             "partition_count": self.partition_count,
             "missing_first_minute_count": self.missing_first_minute_count,
             "scope_sha256": self.scope_sha256,
+            "affected_session_ids": list(self.affected_session_ids),
+            "affected_datasets": list(self.affected_datasets),
+            "affected_partitions": list(self.affected_partitions),
         }
 
 
@@ -158,6 +172,7 @@ class SessionAnchorRepairService:
         provider: BarProvider,
         runtime_stopped: Callable[[], bool] | None = None,
         migration_runner: Callable[[], None] | None = None,
+        current_trading_day: Callable[[], date] | None = None,
         live_cleanup: Callable[[date], None] | None = None,
     ) -> None:
         self.session = session
@@ -165,11 +180,13 @@ class SessionAnchorRepairService:
         self.provider = provider
         self.runtime_stopped = runtime_stopped or (lambda: False)
         self.migration_runner = migration_runner
+        self.current_trading_day = current_trading_day
         self.live_cleanup = live_cleanup
 
     def plan(self) -> SessionAnchorRepairPlan:
         self._require_revision("20260902_0044")
         partitions = self._partitions()
+        session_scope = self._session_scope()
         one_minute = tuple(item for item in partitions if item.key.frequency is BarFrequency.M1)
         missing = 0
         store = CanonicalMonthlyStore(self.canonical_root)
@@ -188,12 +205,8 @@ class SessionAnchorRepairService:
             ):
                 raise SessionAnchorRepairError("SESSION_ANCHOR_BASE_INVALID")
             missing += len(missing_anchors)
-        session_count = int(self.session.scalar(
-            select(text("count(*)"))
-            .select_from(TradingSession)
-            .where(TradingSession.provider == "rqdata")
-        ) or 0)
-        scope_sha256 = _scope_sha(partitions)
+        session_count = len(session_scope)
+        scope_sha256 = _scope_sha(partitions, session_scope)
         return SessionAnchorRepairPlan(
             status="planned",
             readonly=True,
@@ -202,6 +215,13 @@ class SessionAnchorRepairService:
             partition_count=len(partitions),
             missing_first_minute_count=missing,
             scope_sha256=scope_sha256,
+            affected_session_ids=tuple(_int_value(row[0]) for row in session_scope),
+            affected_datasets=tuple(sorted({
+                _dataset_identity_text(item) for item in partitions
+            })),
+            affected_partitions=tuple(
+                _partition_identity_text(item) for item in partitions
+            ),
         )
 
     def prepare(
@@ -219,6 +239,8 @@ class SessionAnchorRepairService:
         if shadow.exists() or manifest.exists():
             raise SessionAnchorRepairError("SESSION_ANCHOR_TARGET_EXISTS")
         partitions = self._partitions()
+        if _scope_sha(partitions, self._session_scope()) != plan.scope_sha256:
+            raise SessionAnchorRepairError("SESSION_ANCHOR_SCOPE_DRIFT")
         by_identity = {
             (
                 item.key.kind,
@@ -238,7 +260,6 @@ class SessionAnchorRepairService:
             shadow_store = CanonicalMonthlyStore(shadow)
             entries: list[dict[str, object]] = []
             processed: set[tuple[object, ...]] = set()
-            latest_days: set[date] = set()
             one_minute = tuple(
                 item for item in partitions if item.key.frequency is BarFrequency.M1
             )
@@ -247,7 +268,6 @@ class SessionAnchorRepairService:
                 trading_days = tuple(sorted({bar.trading_day for bar in current}))
                 if not trading_days:
                     raise SessionAnchorRepairError("SESSION_ANCHOR_BASE_INVALID")
-                latest_days.add(trading_days[-1])
                 sessions = tuple(
                     window
                     for day in trading_days
@@ -333,9 +353,6 @@ class SessionAnchorRepairService:
                 "canonical_root": str(self.canonical_root),
                 "shadow_root": str(shadow),
                 "scope_sha256": plan.scope_sha256,
-                "latest_trading_days": [
-                    value.isoformat() for value in _latest_cleanup_days(latest_days)
-                ],
                 "partitions": sorted(entries, key=lambda value: str(value["identity"])),
                 "unchanged_daily_weekly_sha256": self._unchanged_hashes(shadow),
             }
@@ -364,14 +381,21 @@ class SessionAnchorRepairService:
             raise SessionAnchorRepairError("SESSION_ANCHOR_APPLY_REQUIRED")
         if not self.runtime_stopped():
             raise SessionAnchorRepairError("RUNTIME_NOT_STOPPED")
-        if self.migration_runner is None or self.live_cleanup is None:
+        if (
+            self.migration_runner is None
+            or self.current_trading_day is None
+            or self.live_cleanup is None
+        ):
             raise SessionAnchorRepairError("SESSION_ANCHOR_PUBLISH_UNAVAILABLE")
+        cleanup_day = self.current_trading_day()
+        if type(cleanup_day) is not date:
+            raise SessionAnchorRepairError("SESSION_ANCHOR_CURRENT_DAY_UNAVAILABLE")
         shadow = self._shadow_path(shadow_root)
         manifest = self._manifest_path(manifest_path, shadow)
         payload = _read_manifest(manifest)
         self._require_revision("20260902_0044")
         partitions = self._partitions()
-        scope_sha256 = _scope_sha(partitions)
+        scope_sha256 = _scope_sha(partitions, self._session_scope())
         if (
             payload.get("status") != "prepared"
             or payload.get("source_revision") != "20260902_0044"
@@ -383,17 +407,15 @@ class SessionAnchorRepairService:
         ):
             raise SessionAnchorRepairError("SESSION_ANCHOR_MANIFEST_INVALID")
         entries = payload.get("partitions")
-        latest_days = payload.get("latest_trading_days")
         unchanged = payload.get("unchanged_daily_weekly_sha256")
         if (
             not isinstance(entries, list)
             or len(entries) != len(partitions)
-            or not isinstance(latest_days, list)
             or not isinstance(unchanged, dict)
             or not shadow.is_dir()
         ):
             raise SessionAnchorRepairError("SESSION_ANCHOR_MANIFEST_INVALID")
-        self._validate_manifest_files(entries, unchanged, shadow)
+        self._validate_manifest_files(entries, unchanged, shadow, partitions)
         rollback = self.canonical_root.with_name(
             f"{self.canonical_root.name}.pre-session-anchor-0045"
         )
@@ -432,10 +454,7 @@ class SessionAnchorRepairService:
                 raise
             raise SessionAnchorRepairError("SESSION_ANCHOR_PUBLISH_FAILED") from None
         try:
-            for value in latest_days:
-                if not isinstance(value, str):
-                    raise ValueError
-                self.live_cleanup(date.fromisoformat(value))
+            self.live_cleanup(cleanup_day)
         except Exception as exc:
             raise SessionAnchorRepairError(
                 "SESSION_ANCHOR_FORWARD_RECOVERY_REQUIRED"
@@ -478,6 +497,43 @@ class SessionAnchorRepairService:
                 partition.row_count,
             )
             for dataset, partition in rows
+        )
+
+    def _session_scope(self) -> tuple[tuple[object, ...], ...]:
+        rows = self.session.execute(
+            select(
+                TradingSession.id,
+                TradingSession.exchange_code,
+                TradingSession.instrument_symbol,
+                TradingSession.session_name,
+                TradingSession.start_time,
+                TradingSession.end_time,
+                TradingSession.effective_from,
+                TradingSession.effective_to,
+                TradingSession.crosses_midnight,
+                TradingSession.is_active,
+                TradingSession.provider,
+            )
+            .where(TradingSession.provider == "rqdata")
+            .order_by(TradingSession.id)
+        ).all()
+        if not rows:
+            raise SessionAnchorRepairError("SESSION_ANCHOR_BASE_INVALID")
+        return tuple(
+            (
+                row.id,
+                row.exchange_code,
+                row.instrument_symbol,
+                row.session_name,
+                row.start_time.isoformat(),
+                row.end_time.isoformat(),
+                row.effective_from.isoformat(),
+                row.effective_to.isoformat() if row.effective_to else None,
+                row.crosses_midnight,
+                row.is_active,
+                row.provider,
+            )
+            for row in rows
         )
 
     def _minute_ends(
@@ -550,13 +606,7 @@ class SessionAnchorRepairService:
         if published.parquet_path != new_path.resolve() or not active_path.is_file():
             raise SessionAnchorRepairError("SESSION_ANCHOR_PHYSICAL_INVALID")
         return {
-            "identity": "/".join((
-                item.key.kind.value,
-                item.key.symbol,
-                item.key.series_or_contract,
-                item.key.frequency.value,
-                f"{item.year:04d}-{item.month:02d}",
-            )),
+            "identity": _partition_identity_text(item),
             "dataset_id": item.dataset_id,
             "year": item.year,
             "month": item.month,
@@ -572,17 +622,9 @@ class SessionAnchorRepairService:
         }
 
     def _unchanged_hashes(self, shadow: Path) -> dict[str, str]:
-        values: dict[str, str] = {}
-        for path in sorted(self.canonical_root.rglob("part.parquet")):
-            relative = path.relative_to(self.canonical_root)
-            text_value = relative.as_posix()
-            if "/frequency=1d/" not in f"/{text_value}" and "/frequency=1w/" not in f"/{text_value}":
-                continue
-            copied = shadow / relative
-            digest = _file_sha256(path)
-            if _file_sha256(copied) != digest:
-                raise SessionAnchorRepairError("SESSION_ANCHOR_UNCHANGED_COPY_INVALID")
-            values[text_value] = digest
+        values = _daily_weekly_hashes(self.canonical_root)
+        if _daily_weekly_hashes(shadow) != values:
+            raise SessionAnchorRepairError("SESSION_ANCHOR_UNCHANGED_COPY_INVALID")
         return values
 
     def _shadow_path(self, value: Path) -> Path:
@@ -626,10 +668,23 @@ class SessionAnchorRepairService:
         entries: list[object],
         unchanged: dict[object, object],
         shadow: Path,
+        partitions: tuple[_Partition, ...],
     ) -> None:
+        expected = {
+            _partition_identity_text(item): item for item in partitions
+        }
+        seen: set[str] = set()
+        shadow_store = CanonicalMonthlyStore(shadow)
         for raw in entries:
             if not isinstance(raw, dict):
                 raise SessionAnchorRepairError("SESSION_ANCHOR_MANIFEST_INVALID")
+            identity = raw.get("identity")
+            if not isinstance(identity, str) or identity in seen:
+                raise SessionAnchorRepairError("SESSION_ANCHOR_MANIFEST_INVALID")
+            item = expected.get(identity)
+            if item is None or not _manifest_identity_matches(item, raw):
+                raise SessionAnchorRepairError("SESSION_ANCHOR_MANIFEST_INVALID")
+            seen.add(identity)
             uri = raw.get("file_uri")
             old_digest = raw.get("old_sha256")
             new_digest = raw.get("new_sha256")
@@ -640,6 +695,15 @@ class SessionAnchorRepairService:
             shadow_path = _relative_file(shadow, uri)
             if _file_sha256(active_path) != old_digest or _file_sha256(shadow_path) != new_digest:
                 raise SessionAnchorRepairError("SESSION_ANCHOR_MANIFEST_DRIFT")
+            self._assert_catalog(self._catalog_row(raw), raw, prefix="old")
+            try:
+                bars = shadow_store.read_month(item.key, item.year, item.month)
+            except StorageError:
+                raise SessionAnchorRepairError("SESSION_ANCHOR_MANIFEST_DRIFT") from None
+            if not _manifest_matches_bars(item, raw, bars):
+                raise SessionAnchorRepairError("SESSION_ANCHOR_MANIFEST_DRIFT")
+        if seen != set(expected):
+            raise SessionAnchorRepairError("SESSION_ANCHOR_MANIFEST_INVALID")
         for raw_uri, raw_digest in unchanged.items():
             if not isinstance(raw_uri, str) or not isinstance(raw_digest, str):
                 raise SessionAnchorRepairError("SESSION_ANCHOR_MANIFEST_INVALID")
@@ -648,6 +712,16 @@ class SessionAnchorRepairService:
                 or _file_sha256(_relative_file(shadow, raw_uri)) != raw_digest
             ):
                 raise SessionAnchorRepairError("SESSION_ANCHOR_MANIFEST_DRIFT")
+        expected_unchanged = {
+            raw_uri: raw_digest
+            for raw_uri, raw_digest in unchanged.items()
+            if isinstance(raw_uri, str) and isinstance(raw_digest, str)
+        }
+        if (
+            expected_unchanged != _daily_weekly_hashes(self.canonical_root)
+            or expected_unchanged != _daily_weekly_hashes(shadow)
+        ):
+            raise SessionAnchorRepairError("SESSION_ANCHOR_MANIFEST_DRIFT")
 
     def _publish_catalog(self, entries: list[object]) -> None:
         for raw in entries:
@@ -698,20 +772,85 @@ class SessionAnchorRepairService:
             raise SessionAnchorRepairError("SESSION_ANCHOR_CATALOG_DRIFT")
 
 
-def _scope_sha(partitions: tuple[_Partition, ...]) -> str:
-    payload = [
-        [
+def _scope_sha(
+    partitions: tuple[_Partition, ...],
+    sessions: tuple[tuple[object, ...], ...],
+) -> str:
+    payload = {
+        "partitions": [
+            [
             item.key.kind.value,
             item.key.symbol,
             item.key.series_or_contract,
             item.key.frequency.value,
             item.year,
             item.month,
-        ]
-        for item in partitions
-    ]
+            ]
+            for item in partitions
+        ],
+        "sessions": sessions,
+    }
     encoded = json.dumps(payload, separators=(",", ":"), ensure_ascii=True).encode()
     return hashlib.sha256(encoded).hexdigest()
+
+
+def _dataset_identity_text(item: _Partition) -> str:
+    return "/".join((
+        item.key.kind.value,
+        item.key.symbol,
+        item.key.series_or_contract,
+        item.key.frequency.value,
+    ))
+
+
+def _partition_identity_text(item: _Partition) -> str:
+    return f"{_dataset_identity_text(item)}/{item.year:04d}-{item.month:02d}"
+
+
+def _manifest_identity_matches(
+    item: _Partition,
+    raw: dict[object, object],
+) -> bool:
+    if not isinstance(item.coverage_start, datetime) or not isinstance(
+        item.coverage_end, datetime
+    ):
+        return False
+    return (
+        raw.get("dataset_id") == item.dataset_id
+        and raw.get("year") == item.year
+        and raw.get("month") == item.month
+        and raw.get("file_uri") == item.file_uri
+        and _datetime_value(raw.get("old_coverage_start"))
+        == _aware(item.coverage_start)
+        and _datetime_value(raw.get("old_coverage_end"))
+        == _aware(item.coverage_end)
+        and raw.get("old_row_count") == item.row_count
+    )
+
+
+def _manifest_matches_bars(
+    item: _Partition,
+    raw: dict[object, object],
+    bars: tuple[CanonicalBar, ...],
+) -> bool:
+    if not bars:
+        return False
+    return (
+        raw.get("new_row_count") == len(bars)
+        and _datetime_value(raw.get("new_coverage_start"))
+        == bars[0].bar_end - _frequency_delta(item.key.frequency)
+        and _datetime_value(raw.get("new_coverage_end")) == bars[-1].bar_end
+    )
+
+
+def _frequency_delta(frequency: BarFrequency) -> timedelta:
+    return {
+        BarFrequency.M1: timedelta(minutes=1),
+        BarFrequency.M5: timedelta(minutes=5),
+        BarFrequency.M15: timedelta(minutes=15),
+        BarFrequency.M30: timedelta(minutes=30),
+        BarFrequency.H1: timedelta(hours=1),
+    }[frequency]
 
 
 def _catalog_matches_bars(
@@ -732,9 +871,14 @@ def _catalog_matches_bars(
     )
 
 
-def _latest_cleanup_days(values: set[date]) -> tuple[date, ...]:
-    """Restrict Redis cleanup to the one current trading day in the repair scope."""
-    return (max(values),) if values else ()
+def _daily_weekly_hashes(root: Path) -> dict[str, str]:
+    values: dict[str, str] = {}
+    for path in sorted(root.rglob("part.parquet")):
+        relative = path.relative_to(root)
+        uri = relative.as_posix()
+        if "/frequency=1d/" in f"/{uri}" or "/frequency=1w/" in f"/{uri}":
+            values[uri] = _file_sha256(path)
+    return values
 
 
 def _derived_ends(

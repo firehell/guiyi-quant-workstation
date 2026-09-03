@@ -182,7 +182,7 @@ Dataset/partition、预计缺失首分钟与稳定 scope hash，不调用 RQData
 只把完整 Canonical 复制到外部 shadow root，再用 RQData 真实缺失 1m 重建 `1m/5m/15m/30m/60m`；不得合成，
 且 D1/W1 hash 必须不变。manifest 必须位于 active/shadow root 之外。`publish --apply` 需要新的维护授权，
 只在五项 Runtime 均停止且 revision、Catalog、active/shadow 文件 hash 与 scope 全部未漂移时切换 root、更新
-coverage/row_count、执行精确 0045，再清理 repair scope 最新交易日的旧锚点 Redis Bar。0045 成功后失败只能
+coverage/row_count、执行精确 0045，再清理 publish 执行时由 operational phase authority 唯一解析的当前交易日旧锚点 Redis Bar。0045 成功后失败只能
 保持维护状态继续 forward recovery，不能恢复错误 session。修复继续使用唯一 Canonical V2，不创建并行
 data-version。
 

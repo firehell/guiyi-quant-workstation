@@ -1036,7 +1036,7 @@ def test_current_day_metadata_snapshot_fetches_bounded_next_day_calendar_context
 
         def get_trading_periods(self, order_book_ids, start_date, end_date, frequency):
             return pd.DataFrame(
-                {"trading_hours": ["09:00-15:00", "09:00-15:00"]},
+                {"trading_hours": ["09:01-15:00", "09:01-15:00"]},
                 index=pd.MultiIndex.from_tuples(
                     [("JM2509", current_day), ("JM2509", next_trading_day)],
                     names=("order_book_id", "date"),
@@ -1104,7 +1104,7 @@ def test_current_day_metadata_snapshot_includes_next_trading_day_sessions() -> N
             if end_date >= next_trading_day:
                 days.append(next_trading_day)
             return pd.DataFrame(
-                {"trading_hours": ["21:00-23:00,09:00-15:00"] * len(days)},
+                {"trading_hours": ["21:01-23:00,09:01-15:00"] * len(days)},
                 index=pd.MultiIndex.from_tuples(
                     [("JM2509", day) for day in days],
                     names=("order_book_id", "date"),
@@ -1168,7 +1168,7 @@ def test_current_day_metadata_snapshot_preserves_missing_next_period_for_sync() 
 
         def get_trading_periods(self, order_book_ids, start_date, end_date, frequency):
             return pd.DataFrame(
-                {"trading_hours": ["21:00-23:00,09:00-15:00"]},
+                {"trading_hours": ["21:01-23:00,09:01-15:00"]},
                 index=pd.MultiIndex.from_tuples(
                     [("JM2509", current_day)],
                     names=("order_book_id", "date"),
@@ -1261,7 +1261,7 @@ def test_current_day_metadata_snapshot_preserves_duplicate_current_rank1() -> No
 
         def get_trading_periods(self, order_book_ids, start_date, end_date, frequency):
             return pd.DataFrame(
-                {"trading_hours": ["09:00-15:00"]},
+                {"trading_hours": ["09:01-15:00"]},
                 index=pd.MultiIndex.from_tuples(
                     [("JM2509", current_day)],
                     names=("order_book_id", "date"),
@@ -1329,7 +1329,7 @@ def test_rqdata_metadata_uses_volume_open_interest_dominant_rule() -> None:
                         "listed_date": date(2025, 1, 1),
                         "de_listed_date": date(2025, 9, 25),
                         "maturity_date": date(2025, 9, 30),
-                        "trading_hours": "09:00-09:01",
+                        "trading_hours": "09:01-09:01",
                     }
                 ]
             )
@@ -1339,7 +1339,7 @@ def test_rqdata_metadata_uses_volume_open_interest_dominant_rule() -> None:
 
         def get_trading_periods(self, order_book_ids, start_date, end_date, frequency):
             return pd.DataFrame(
-                {"trading_hours": ["09:00-09:01"]},
+                {"trading_hours": ["09:01-09:01"]},
                 index=pd.MultiIndex.from_tuples(
                     [("JM2509", date(2025, 1, 2))],
                     names=("order_book_id", "date"),
@@ -1391,7 +1391,7 @@ def test_rqdata_metadata_uses_historical_trading_period_facts_not_current_hours(
                         "listed_date": date(2025, 1, 1),
                         "de_listed_date": date(2025, 9, 25),
                         "maturity_date": date(2025, 9, 30),
-                        "trading_hours": "21:00-23:00",
+                        "trading_hours": "21:01-23:00",
                     }
                 ]
             )
@@ -1500,6 +1500,21 @@ def test_rqdata_historical_sessions_reject_unparsed_provider_text() -> None:
                     "trading_hours": "09:01-10:15 unexpected",
                 },
             ),
+            [("jm", trading_day, "JM2701")],
+            {"jm": "DCE"},
+        )
+
+
+def test_rqdata_historical_sessions_reject_already_normalized_start() -> None:
+    trading_day = date(2026, 9, 1)
+
+    with pytest.raises(InfrastructureError, match="RQDATA_TRADING_SESSIONS_INVALID"):
+        rqdata_adapter._historical_session_rows(
+            ({
+                "order_book_id": "JM2701",
+                "date": trading_day,
+                "trading_hours": "09:00-10:15",
+            },),
             [("jm", trading_day, "JM2701")],
             {"jm": "DCE"},
         )

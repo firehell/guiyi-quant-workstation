@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import cast
 
@@ -39,6 +40,7 @@ from app.market_data.operational_universe import (
 from app.market_data.product_taxonomy import ProductTaxonomyError, load_product_taxonomy
 from app.market_data.storage import CanonicalMonthlyStore
 from app.market_data.session_anchor_repair import (
+    SessionAnchorRepairError,
     SessionAnchorRepairService,
     local_runtime_stopped,
     run_session_anchor_migration,
@@ -169,15 +171,34 @@ def build_live_market_service(session: Session) -> LiveMarketService:
 
 def build_session_anchor_repair_service(session: Session) -> SessionAnchorRepairService:
     """Compose the gated one-off session-anchor repair boundary."""
+    from app.alerts.current_trading_day import (
+        CurrentTradingDayStatus,
+        resolve_current_trading_day,
+    )
     from app.market_data.rqdata_adapter import RQDataMarketAdapter
 
     root = canonical_root()
     live_store = RedisLiveStore(cast(RedisClient, get_redis_connection()))
+
+    def current_trading_day() -> date:
+        result = resolve_current_trading_day(
+            MarketPhaseResolver(session),
+            products=load_operational_products(),
+            now=datetime.now(UTC),
+        )
+        if (
+            result.status is not CurrentTradingDayStatus.READY
+            or result.trading_day is None
+        ):
+            raise SessionAnchorRepairError("SESSION_ANCHOR_CURRENT_DAY_UNAVAILABLE")
+        return result.trading_day
+
     return SessionAnchorRepairService(
         session,
         canonical_root=root,
         provider=RQDataMarketAdapter(session=session),
         runtime_stopped=local_runtime_stopped,
         migration_runner=run_session_anchor_migration,
+        current_trading_day=current_trading_day,
         live_cleanup=live_store.cleanup_trading_day,
     )

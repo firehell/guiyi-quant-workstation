@@ -96,6 +96,23 @@ def test_session_anchor_migration_preflight_rejects_normalized_overlap() -> None
     assert migration._valid_sessions(rows) is False
 
 
+def test_session_anchor_migration_rejects_an_already_normalized_baseline() -> None:
+    migration = _load_migration()
+    row = {
+        "id": 1,
+        "exchange_code": "DCE",
+        "instrument_symbol": "jm",
+        "session_name": "day",
+        "start_time": time(9),
+        "end_time": time(10, 15),
+        "effective_from": date(2026, 9, 1),
+        "effective_to": date(2026, 9, 1),
+        "provider": "rqdata",
+    }
+
+    assert migration._valid_sessions((row,)) is False
+
+
 @pytest.mark.isolated_postgresql
 def test_upgrade_normalizes_real_session_rows_and_preserves_alert_facts() -> None:
     configured = os.getenv("GUIYI_ISOLATED_MIGRATION_DATABASE_URL", "").strip()

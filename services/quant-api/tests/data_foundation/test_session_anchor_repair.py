@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
+import json
 from pathlib import Path
 
 import pytest
@@ -16,7 +17,6 @@ from app.market_data.historical_data_manager import BarBatch
 from app.market_data.session_anchor_repair import (
     SessionAnchorRepairError,
     SessionAnchorRepairService,
-    _latest_cleanup_days,
     local_runtime_stopped,
 )
 from app.market_data.storage import CanonicalMonthlyStore, PublishRequest
@@ -153,6 +153,9 @@ def test_plan_reports_stable_scope_without_provider_or_file_writes(
     assert result.partition_count == 5
     assert result.missing_first_minute_count == 1
     assert len(result.scope_sha256) == 64
+    assert len(result.affected_session_ids) == 1
+    assert len(result.affected_datasets) == 5
+    assert len(result.affected_partitions) == 5
     assert provider.requests == []
     assert not shadow.exists()
 
@@ -263,6 +266,7 @@ def test_publish_switches_root_reconciles_catalog_then_crosses_forward_boundary(
         provider=provider,
         runtime_stopped=lambda: True,
         migration_runner=migrate,
+        current_trading_day=lambda: date(2026, 9, 2),
         live_cleanup=cleaned.append,
     )
     service.prepare(shadow_root=shadow, manifest_path=manifest, apply=True)
@@ -284,7 +288,7 @@ def test_publish_switches_root_reconciles_catalog_then_crosses_forward_boundary(
     )
     assert row_count == 15
     assert session.scalar(text("SELECT version_num FROM alembic_version")) == "20260903_0045"
-    assert cleaned == [date(2026, 9, 1)]
+    assert cleaned == [date(2026, 9, 2)]
 
 
 def test_runtime_stop_probe_requires_all_five_launchd_services_absent() -> None:
@@ -292,7 +296,14 @@ def test_runtime_stop_probe_requires_all_five_launchd_services_absent() -> None:
 
     def run(arguments, **kwargs):
         calls.append((arguments, kwargs))
-        return type("Result", (), {"returncode": 0 if arguments[-1].endswith("quant-web") else 113})()
+        label = arguments[-1].rsplit("/", maxsplit=1)[-1]
+        return type("Result", (), {
+            "returncode": 0 if label == "com.guiyi.quant-web" else 113,
+            "stderr": (
+                "" if label == "com.guiyi.quant-web" else
+                f'Could not find service "{label}" in domain for user gui: 501'
+            ),
+        })()
 
     assert local_runtime_stopped(run=run, uid=501) is False
     assert [call[0][-1] for call in calls] == [
@@ -301,12 +312,12 @@ def test_runtime_stop_probe_requires_all_five_launchd_services_absent() -> None:
     ]
 
 
-def test_live_cleanup_is_limited_to_the_latest_trading_day() -> None:
-    assert _latest_cleanup_days({
-        date(2026, 8, 29),
-        date(2026, 8, 31),
-        date(2026, 9, 1),
-    }) == (date(2026, 9, 1),)
+def test_runtime_stop_probe_fails_closed_on_launchctl_error() -> None:
+    def run(*_args, **_kwargs):
+        return type("Result", (), {"returncode": 1, "stderr": "permission denied"})()
+
+    with pytest.raises(SessionAnchorRepairError, match="RUNTIME_STOP_PREFLIGHT_FAILED"):
+        local_runtime_stopped(run=run, uid=501)
 
 
 def test_publish_rejects_active_file_drift_before_root_switch(
@@ -322,6 +333,7 @@ def test_publish_rejects_active_file_drift_before_root_switch(
         provider=provider,
         runtime_stopped=lambda: True,
         migration_runner=lambda: None,
+        current_trading_day=lambda: date(2026, 9, 2),
         live_cleanup=lambda _: None,
     )
     service.prepare(shadow_root=shadow, manifest_path=manifest, apply=True)
@@ -334,6 +346,69 @@ def test_publish_rejects_active_file_drift_before_root_switch(
     assert root.is_dir()
     assert shadow.is_dir()
     assert session.scalar(text("SELECT version_num FROM alembic_version")) == "20260902_0044"
+
+
+def test_publish_rejects_daily_inventory_drift_before_root_switch(
+    repair_context,
+    tmp_path: Path,
+) -> None:
+    session, root, provider = repair_context
+    shadow = tmp_path / "shadow"
+    manifest = tmp_path / "manifest.json"
+    service = SessionAnchorRepairService(
+        session,
+        canonical_root=root,
+        provider=provider,
+        runtime_stopped=lambda: True,
+        migration_runner=lambda: None,
+        current_trading_day=lambda: date(2026, 9, 2),
+        live_cleanup=lambda _: None,
+    )
+    service.prepare(shadow_root=shadow, manifest_path=manifest, apply=True)
+    added = root / "added" / "frequency=1d" / "part.parquet"
+    added.parent.mkdir(parents=True)
+    added.write_bytes(b"new-daily-fact")
+
+    with pytest.raises(SessionAnchorRepairError, match="SESSION_ANCHOR_MANIFEST_DRIFT"):
+        service.publish(shadow_root=shadow, manifest_path=manifest, apply=True)
+
+    assert root.is_dir()
+    assert shadow.is_dir()
+
+
+@pytest.mark.parametrize("corruption", ["duplicate_identity", "wrong_row_count"])
+def test_publish_rejects_manifest_identity_or_physical_metadata_tampering(
+    repair_context,
+    tmp_path: Path,
+    corruption: str,
+) -> None:
+    session, root, provider = repair_context
+    shadow = tmp_path / "shadow"
+    manifest = tmp_path / "manifest.json"
+    service = SessionAnchorRepairService(
+        session,
+        canonical_root=root,
+        provider=provider,
+        runtime_stopped=lambda: True,
+        migration_runner=lambda: None,
+        current_trading_day=lambda: date(2026, 9, 2),
+        live_cleanup=lambda _: None,
+    )
+    service.prepare(shadow_root=shadow, manifest_path=manifest, apply=True)
+    payload = json.loads(manifest.read_text(encoding="utf-8"))
+    if corruption == "duplicate_identity":
+        payload["partitions"][-1] = payload["partitions"][0]
+        expected_error = "SESSION_ANCHOR_MANIFEST_INVALID"
+    else:
+        payload["partitions"][0]["new_row_count"] += 1
+        expected_error = "SESSION_ANCHOR_MANIFEST_DRIFT"
+    manifest.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(SessionAnchorRepairError, match=expected_error):
+        service.publish(shadow_root=shadow, manifest_path=manifest, apply=True)
+
+    assert root.is_dir()
+    assert shadow.is_dir()
 
 
 def test_publish_restores_root_and_catalog_when_migration_fails_before_0045(
@@ -353,6 +428,7 @@ def test_publish_restores_root_and_catalog_when_migration_fails_before_0045(
         provider=provider,
         runtime_stopped=lambda: True,
         migration_runner=fail_migration,
+        current_trading_day=lambda: date(2026, 9, 2),
         live_cleanup=lambda _: None,
     )
     service.prepare(shadow_root=shadow, manifest_path=manifest, apply=True)
@@ -393,6 +469,7 @@ def test_publish_keeps_corrected_root_after_0045_cleanup_failure(
         provider=provider,
         runtime_stopped=lambda: True,
         migration_runner=migrate,
+        current_trading_day=lambda: date(2026, 9, 2),
         live_cleanup=fail_cleanup,
     )
     service.prepare(shadow_root=shadow, manifest_path=manifest, apply=True)

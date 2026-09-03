@@ -59,11 +59,11 @@ def _preflight(
             "SELECT id, exchange_code, instrument_symbol, session_name, "
             "start_time, end_time, effective_from, effective_to, "
             "crosses_midnight, is_active, provider, created_at "
-            "FROM trading_sessions ORDER BY id"
+            "FROM trading_sessions ORDER BY id FOR UPDATE"
         )).mappings())
         rules = tuple(dict(row) for row in bind.execute(sa.text(
             "SELECT id, rule_code, enabled, scope_product_frequencies, "
-            "created_at, updated_at FROM alert_rules ORDER BY id"
+            "created_at, updated_at FROM alert_rules ORDER BY id FOR UPDATE"
         )).mappings())
         subing_events = bind.scalar(sa.text(
             "SELECT COUNT(*) FROM alert_events e JOIN alert_rules r "
@@ -111,6 +111,8 @@ def _postflight(
 
 
 def _valid_sessions(rows: tuple[Mapping[str, object], ...]) -> bool:
+    if not rows or not any(row.get("provider") == "rqdata" for row in rows):
+        return False
     identities: set[tuple[object, ...]] = set()
     groups: dict[tuple[object, ...], list[tuple[time, time]]] = {}
     for row in rows:
@@ -119,6 +121,8 @@ def _valid_sessions(rows: tuple[Mapping[str, object], ...]) -> bool:
         if not isinstance(start, time) or not isinstance(end, time):
             return False
         if start.second or start.microsecond or end.second or end.microsecond:
+            return False
+        if row.get("provider") == "rqdata" and start.minute not in {1, 31}:
             return False
         normalized = _exclusive_start(start) if row.get("provider") == "rqdata" else start
         identity = (
