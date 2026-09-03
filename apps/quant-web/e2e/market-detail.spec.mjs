@@ -353,14 +353,37 @@ test('Trend and SuBing stay unavailable while HTDY mounts its observation-only w
   expect(new URL(page.url()).searchParams.has('view')).toBe(false)
 })
 
-test('HTDY reads immutable Event authority only for actual-dominant across every official frequency', async ({ page }) => {
+test('HTDY resolves immutable Event focus across every official frequency', async ({ page }) => {
+  const cases = [
+    ['1m', '2026-09-03T02:30:00.000Z', '2026-09-03'],
+    ['5m', '2026-09-03T02:30:00.000Z', '2026-09-03'],
+    ['15m', '2026-09-03T02:30:00.000Z', '2026-09-03'],
+    ['30m', '2026-09-03T02:30:00.000Z', '2026-09-03'],
+    ['60m', '2026-09-03T02:30:00.000Z', '2026-09-03'],
+    ['1d', '2026-07-01T07:00:00.000Z', '2026-07-01'],
+    ['1w', '2026-07-01T07:00:00.000Z', '2026-07-01'],
+  ]
+  let currentCase = null
   const requests = await mockMarketDetail(page, {
-    alertEvents: () => [htdyEvent('jm', '15m')],
+    barsPage: ({ url, symbol }) => {
+      const frequency = url.searchParams.get('frequency')
+      if (frequency === '1d' || frequency === '1w') {
+        return { bars: Array.from({ length: 60 }, (_, index) => {
+          const day = new Date(Date.UTC(2026, 6, 1 + index)).toISOString().slice(0, 10)
+          return { ...detailBar(symbol, index, 100 + index), bar_end: `${day}T07:00:00.000Z`, trading_day: day }
+        }) }
+      }
+      return { bars: Array.from({ length: 60 }, (_, index) => detailBar(symbol, index, 100 + index)) }
+    },
+    alertEvents: () => currentCase ? [htdyEvent('jm', currentCase[0], currentCase[1], currentCase[2])] : [],
   })
-  for (const frequency of ['1m', '5m', '15m', '30m', '60m', '1d', '1w']) {
-    await page.goto(`/market/chart?symbol=jm&view=htdy&series_kind=actual_dominant&frequency=${frequency}`)
+  for (const [frequency, focus, tradingDay] of cases) {
+    currentCase = [frequency, focus, tradingDay]
+    await page.goto(`/market/chart?symbol=jm&view=htdy&series_kind=actual_dominant&frequency=${frequency}&focus_bar_end=${encodeURIComponent(focus)}`)
     await expect(page.locator('[data-detail-ready="true"]')).toBeVisible()
     await expect(page.getByText('首次识别 Event', { exact: true }).first()).toBeVisible()
+    await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-alert-marker-count', '1')
+    await expect.poll(() => new URL(page.url()).searchParams.has('focus_bar_end')).toBe(false)
   }
   const eventRequests = requests.alertRequests.filter(({ url }) => url.pathname.endsWith('/events'))
   expect(eventRequests.length).toBeGreaterThanOrEqual(7)

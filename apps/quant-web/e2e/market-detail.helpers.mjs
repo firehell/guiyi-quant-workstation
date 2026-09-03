@@ -126,9 +126,9 @@ export async function mockMarketDetail(page, options = {}) {
   return requests
 }
 
-export function htdyEvent(symbol, frequency, barEnd = '2026-09-03T02:45:00.000Z') {
+export function htdyEvent(symbol, frequency, barEnd = '2026-09-03T02:45:00.000Z', tradingDay = '2026-09-03') {
   return {
-    id: 1, rule_code: 'htdy_original_15m', symbol, contract: `${symbol.toUpperCase()}2601`, trading_day: '2026-09-03',
+    id: 1, rule_code: 'htdy_original_15m', symbol, contract: `${symbol.toUpperCase()}2601`, trading_day: tradingDay,
     frequency, bar_end: barEnd, result_codes: ['buy'], detected_at: '2026-09-03T02:46:00.000Z', notification_attempted_at: null,
   }
 }
