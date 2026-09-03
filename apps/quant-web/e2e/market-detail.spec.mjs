@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-import { detailBar, installDetailFakeWebSocket, mockMarketDetail, navigateClient } from './market-detail.helpers.mjs'
+import { detailBar, htdyEvent, installDetailFakeWebSocket, mockMarketDetail, navigateClient } from './market-detail.helpers.mjs'
 
 const freeJm = '/market/chart?symbol=jm&view=free&series_kind=actual_dominant&frequency=15m'
 
@@ -351,6 +351,40 @@ test('Trend and SuBing stay unavailable while HTDY mounts its observation-only w
   await expect(page.getByTestId('product-status-strip')).toBeVisible()
   await expect(page.locator('.route-error-fallback')).toHaveCount(0)
   expect(new URL(page.url()).searchParams.has('view')).toBe(false)
+})
+
+test('HTDY reads immutable Event authority only for actual-dominant across every official frequency', async ({ page }) => {
+  const requests = await mockMarketDetail(page, {
+    alertEvents: () => [htdyEvent('jm', '15m')],
+  })
+  for (const frequency of ['1m', '5m', '15m', '30m', '60m', '1d', '1w']) {
+    await page.goto(`/market/chart?symbol=jm&view=htdy&series_kind=actual_dominant&frequency=${frequency}`)
+    await expect(page.locator('[data-detail-ready="true"]')).toBeVisible()
+    await expect(page.getByText('首次识别 Event', { exact: true }).first()).toBeVisible()
+  }
+  const eventRequests = requests.alertRequests.filter(({ url }) => url.pathname.endsWith('/events'))
+  expect(eventRequests.length).toBeGreaterThanOrEqual(7)
+  expect(requests.alertRequests.every(({ method }) => method !== 'PUT')).toBe(true)
+
+  const before = eventRequests.length
+  await page.goto('/market/chart?symbol=jm&view=htdy&series_kind=continuous&frequency=15m')
+  await expect(page.locator('[data-detail-ready="true"]')).toBeVisible()
+  await page.goto('/market/chart?symbol=jm&view=htdy&series_kind=contract&contract=JM2601&frequency=15m')
+  await expect(page.locator('[data-detail-ready="true"]')).toBeVisible()
+  expect(requests.alertRequests.filter(({ url }) => url.pathname.endsWith('/events'))).toHaveLength(before)
+})
+
+test('HTDY keeps last successful immutable Event evidence when a later Event refresh fails', async ({ page }) => {
+  let eventCalls = 0
+  await mockMarketDetail(page, {
+    alertEvents: () => (++eventCalls === 1 ? [htdyEvent('jm', '15m')] : 'error'),
+  })
+  await page.goto('/market/chart?symbol=jm&view=htdy&series_kind=actual_dominant&frequency=15m')
+  await expect(page.getByText(/买入观察/).first()).toBeVisible()
+  await expect(page.getByRole('button', { name: '历史记录' })).toBeVisible()
+  await expect(page.getByText(/最后成功快照（已旧）/)).toBeVisible({ timeout: 35_000 })
+  await page.getByRole('button', { name: '历史记录' }).click()
+  await expect(page.getByText(/Bar 2026-09-03T02:45:00.000Z/)).toBeVisible()
 })
 
 test('HTDY consumes a resolved 30m focus once before returning to legacy', async ({ page }) => {

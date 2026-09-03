@@ -100,6 +100,7 @@ export interface MarketDetailHistoryItem {
   id: string
   label: string
   occurredAt: string
+  timeLabel?: string
   source: MarketDetailSource
   barEnd?: string
   contract?: string

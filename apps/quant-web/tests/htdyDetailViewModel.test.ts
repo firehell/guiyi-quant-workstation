@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import type { HtdyAlertEvent } from '../src/types/market.ts'
+import type { BarData } from '../src/types/market.ts'
 
 const identity = {
   view: 'htdy' as const,
@@ -36,7 +37,9 @@ test('keeps current repainting observation and first-seen Event as separate fact
   assert.match(model.history[0]?.label ?? '', /首次识别/)
   assert.equal(model.history[0]?.barEnd, '2026-09-03T02:45:00Z')
   assert.equal(model.history[0]?.contract, 'JM2601')
+  assert.match(model.history[0]?.timeLabel ?? '', /首次识别/)
   assert.match(model.semanticBanner.text, /27-bar repaint scan zone/)
+  assert.deepEqual(model.disclosureSections.map((section) => section.id).slice(0, 2), ['htdy-explanation', 'htdy-alerts'])
 })
 
 test('keeps Event history unavailable explicit without fabricating a current observation', async () => {
@@ -56,6 +59,31 @@ test('keeps Event history unavailable explicit without fabricating a current obs
   assert.equal(model.facts[2].value, '运行降级')
   assert.deepEqual(model.history, [])
 })
+
+test('current repainting observation ignores an older marker when the latest completed Bar has none', async () => {
+  const { currentHtdyObservation } = await import('../src/utils/htdyDetailViewModel.ts')
+  assert.equal(currentHtdyObservation([
+    bar('2026-09-03T02:30:00Z'),
+    bar('2026-09-03T02:45:00Z'),
+  ], [{
+    id: 'raw:older', time: '2026-09-03T02:30:00Z', label: '买观察', tone: 'up', position: 'belowBar', shape: 'arrowUp',
+  }]), null)
+})
+
+test('keeps last successful Event facts and history when the Event API is stale', async () => {
+  const { buildHtdyDetailViewModel } = await import('../src/utils/htdyDetailViewModel.ts')
+  const model = buildHtdyDetailViewModel({
+    identity, header: header as never, rawObservation: null, rawUnavailable: false,
+    events: [event('buy')], alertUnavailable: true, runtime: 'healthy', ruleScope: 'HTDY Rule / Scope 暂不可用',
+  })
+  assert.match(model.facts[1].value, /买入观察/)
+  assert.match(model.facts[1].value, /已旧/)
+  assert.equal(model.history.length, 1)
+})
+
+function bar(time: string): BarData {
+  return { time, trading_day: '2026-09-03', open: 100, high: 101, low: 99, close: 100, volume: 1 }
+}
 
 function event(direction: 'buy' | 'sell'): HtdyAlertEvent {
   return {

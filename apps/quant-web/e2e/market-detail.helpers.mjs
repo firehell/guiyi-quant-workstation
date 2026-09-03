@@ -41,6 +41,7 @@ export function detailBar(symbol, index, close = 100 + index) {
 
 export async function mockMarketDetail(page, options = {}) {
   const requests = []
+  const alertRequests = []
   const delays = options.researchDelayMs || {}
   await page.route('**/api/v1/market/**', async (route) => {
     const url = new URL(route.request().url())
@@ -102,7 +103,38 @@ export async function mockMarketDetail(page, options = {}) {
     }
     return route.abort()
   })
+  await page.route('**/api/alerts/**', async (route) => {
+    const url = new URL(route.request().url())
+    alertRequests.push({ url, method: route.request().method() })
+    if (url.pathname.endsWith('/events')) {
+      const items = typeof options.alertEvents === 'function' ? options.alertEvents({ url, count: alertRequests.length }) : (options.alertEvents ?? [])
+      if (items === 'error') return route.abort('failed')
+      return route.fulfill({ json: { items } })
+    }
+    if (url.pathname.includes('/products/')) {
+      const symbol = url.pathname.split('/').at(-1)
+      const rules = typeof options.alertRules === 'function' ? options.alertRules({ symbol }) : (options.alertRules ?? [htdyRule()])
+      return route.fulfill({ json: { symbol, rules } })
+    }
+    return route.abort()
+  })
+  await page.route('**/api/runtime/health', async (route) => route.fulfill({ json: {
+    status: 'ok', generated_at: '2026-09-03T03:00:00Z', readonly: true, would_start_services: false,
+    would_enqueue_jobs: false, would_send_notifications: false, components: { alert: { status: options.alertRuntimeStatus ?? 'ok' } },
+  } }))
+  requests.alertRequests = alertRequests
   return requests
+}
+
+export function htdyEvent(symbol, frequency, barEnd = '2026-09-03T02:45:00.000Z') {
+  return {
+    id: 1, rule_code: 'htdy_original_15m', symbol, contract: `${symbol.toUpperCase()}2601`, trading_day: '2026-09-03',
+    frequency, bar_end: barEnd, result_codes: ['buy'], detected_at: '2026-09-03T02:46:00.000Z', notification_attempted_at: null,
+  }
+}
+
+function htdyRule() {
+  return { rule_code: 'htdy_original_15m', display_name: '火天大有', kind: 'indicator_observation', input_frequencies: ['1m', '5m', '15m', '30m', '60m', '1d', '1w'], enabled_for_product: true, enabled_frequencies: ['15m'] }
 }
 
 export async function installDetailFakeWebSocket(page) {
