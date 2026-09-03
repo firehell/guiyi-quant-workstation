@@ -380,7 +380,12 @@ test('HTDY keeps last successful immutable Event evidence when a later Event ref
     alertEvents: () => (++eventCalls === 1 ? [htdyEvent('jm', '15m')] : 'error'),
   })
   await page.goto('/market/chart?symbol=jm&view=htdy&series_kind=actual_dominant&frequency=15m')
-  await expect(page.getByText(/买入观察/).first()).toBeVisible()
+  const facts = page.locator('[data-detail-section="facts"]')
+  const rawFact = facts.locator('div').filter({ has: page.getByText('当前重绘观察', { exact: true }) })
+  const eventFact = facts.locator('div').filter({ has: page.getByText('首次识别 Event', { exact: true }) })
+  await expect(rawFact).toContainText('暂无')
+  await expect(eventFact).toContainText('买入观察')
+  await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-alert-marker-count', '1')
   await expect(page.getByRole('button', { name: '历史记录' })).toBeVisible()
   await expect(page.getByText(/最后成功快照（已旧）/)).toBeVisible({ timeout: 35_000 })
   await page.getByRole('button', { name: '历史记录' }).click()
