@@ -144,7 +144,7 @@ function toggleDisclosure(id: string) {
 </script>
 
 <template>
-  <section class="free-workspace" data-detail-workspace="free">
+  <section class="free-workspace" data-detail-workspace="free" :data-range-detector-warmup="rangeState">
     <div class="free-workspace__controls" aria-label="自由看盘控制">
       <div class="free-workspace__control-group" aria-label="序列">
         <input v-model="symbol" aria-label="品种代码" @change="updateSymbol">

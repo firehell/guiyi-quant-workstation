@@ -1,8 +1,29 @@
 import { expect, test } from '@playwright/test'
 
-import { installDetailFakeWebSocket, mockMarketDetail, navigateClient } from './market-detail.helpers.mjs'
+import { detailBar, installDetailFakeWebSocket, mockMarketDetail, navigateClient } from './market-detail.helpers.mjs'
 
 const freeJm = '/market/chart?symbol=jm&view=free&series_kind=actual_dominant&frequency=15m'
+
+function freeHistory(total) {
+  return Array.from({ length: total }, (_, index) => detailBar('jm', index, 100 + index))
+}
+
+async function mockPagedFreeHistory(page, total = 540) {
+  const all = freeHistory(total)
+  return mockMarketDetail(page, {
+    barsPage({ url }) {
+      const first = all.slice(-300)
+      if (!url.searchParams.get('before')) {
+        return {
+          bars: first,
+          page: { has_more_before: all.length > first.length, next_before: first[0].bar_end },
+        }
+      }
+      const older = all.slice(0, -300)
+      return { bars: older, page: { has_more_before: false, next_before: null } }
+    },
+  })
+}
 
 test('missing view keeps the complete legacy detail page', async ({ page }) => {
   await mockMarketDetail(page)
@@ -44,6 +65,62 @@ test('Free Range warm-up has a 1280 by 800 baseline and does not create a strate
   await expect(page.locator('[data-detail-workspace="free"]')).toHaveScreenshot('market-detail-free-range-1280x800.png', {
     animations: 'disabled', caret: 'hide', maxDiffPixels: 400,
   })
+})
+
+test('Free Range reaches its fixed ready boundary without strategy markers', async ({ page }) => {
+  const requests = await mockPagedFreeHistory(page)
+  await page.goto(freeJm)
+
+  await page.getByLabel('箱体识别（Range）').check()
+  await expect.poll(() => requests.filter((url) => url.pathname.endsWith('/bars/page')).length).toBeGreaterThanOrEqual(2)
+  await expect(page.locator('[data-detail-workspace="free"]')).toHaveAttribute('data-range-detector-warmup', 'ready')
+  await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-rendered-marker-count', '0')
+  await expect(page.getByText('箱体历史预载不足')).toHaveCount(0)
+})
+
+test('Free pagination keeps an away-from-latest viewport while prepending history', async ({ page }) => {
+  const requests = await mockPagedFreeHistory(page, 600)
+  await page.goto(freeJm)
+
+  const chart = page.locator('.chart')
+  await chart.scrollIntoViewIfNeeded()
+  const chartBox = await chart.boundingBox()
+  await page.mouse.move(chartBox.x + chartBox.width * 0.94, chartBox.y + chartBox.height * 0.5)
+  await page.mouse.down()
+  await page.mouse.move(chartBox.x + chartBox.width * 0.08, chartBox.y + chartBox.height * 0.5, { steps: 12 })
+  await page.mouse.up()
+  for (let index = 0; index < 2; index += 1) {
+    await page.mouse.move(chartBox.x + chartBox.width * 0.08, chartBox.y + chartBox.height * 0.5)
+    await page.mouse.down()
+    await page.mouse.move(chartBox.x + chartBox.width * 0.94, chartBox.y + chartBox.height * 0.5, { steps: 12 })
+    await page.mouse.up()
+  }
+
+  await expect.poll(() => requests.filter((url) => url.pathname.endsWith('/bars/page')).length).toBeGreaterThanOrEqual(2)
+  await expect(page.getByRole('button', { name: '回到最新', exact: true })).toBeVisible()
+})
+
+test('Free exposes fullscreen enter, exit, and return-to-latest controls', async ({ page }) => {
+  await mockPagedFreeHistory(page, 600)
+  await page.goto(freeJm)
+
+  const chart = page.locator('.chart')
+  await chart.scrollIntoViewIfNeeded()
+  const chartBox = await chart.boundingBox()
+  for (let index = 0; index < 2; index += 1) {
+    await page.mouse.move(chartBox.x + chartBox.width * 0.08, chartBox.y + chartBox.height * 0.5)
+    await page.mouse.down()
+    await page.mouse.move(chartBox.x + chartBox.width * 0.94, chartBox.y + chartBox.height * 0.5, { steps: 12 })
+    await page.mouse.up()
+  }
+  await expect(page.getByRole('button', { name: '回到最新', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '回到最新', exact: true }).click()
+  await expect(page.getByRole('button', { name: '回到最新', exact: true })).toHaveCount(0)
+
+  await page.getByRole('button', { name: '全屏图表', exact: true }).click()
+  await expect(page.getByRole('button', { name: '退出全屏', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '退出全屏', exact: true }).click()
+  await expect(page.getByRole('button', { name: '全屏图表', exact: true })).toBeVisible()
 })
 
 test('Free identity controls keep the selected contract in the URL', async ({ page }) => {
