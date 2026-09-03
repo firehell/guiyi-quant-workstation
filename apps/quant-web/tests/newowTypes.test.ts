@@ -210,11 +210,20 @@ test('fails closed when trend bands do not align exactly with bars and transitio
   rejects((value) => { value.trend_markers.shift() })
 })
 
-test('requires the exact transition and marker whenever an available trend state flips', () => {
-  rejects((value) => {
-    value.trend_band[0]!.transition = null
-    value.trend_markers.shift()
-  }, /transition/)
+test('accepts a suppressed CLEAR when the prior BUILD was never formally eligible', () => {
+  const raw = payload()
+  raw.trend_band[0]!.transition = null
+  raw.trend_markers.shift()
+
+  const value = normalizeNewowTrendDetailResponse(raw, query)
+
+  assert.equal(value.trend_band[0]!.state_before, 'YELLOW')
+  assert.equal(value.trend_band[0]!.state, 'BLUE')
+  assert.equal(value.trend_band[0]!.transition, null)
+  assert.deepEqual(value.trend_markers.map((item) => item.marker_type), ['BUILD'])
+})
+
+test('requires BUILD and its marker when the trend changes from BLUE to YELLOW', () => {
   rejects((value) => {
     value.trend_band[1]!.transition = null
     value.trend_markers.splice(1, 1)

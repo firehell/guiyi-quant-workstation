@@ -247,12 +247,9 @@ function normalizeTrendBandPoint(payload: unknown, index: number): NewowTrendBan
     (transition === 'BUILD' && (stateBefore !== 'BLUE' || state !== 'YELLOW'))
     || (transition === 'CLEAR' && (stateBefore !== 'YELLOW' || state !== 'BLUE'))
   ) throw new Error(`${field}.transition contradicts its states`)
-  const expectedTransition = stateBefore === 'BLUE' && state === 'YELLOW'
-    ? 'BUILD'
-    : stateBefore === 'YELLOW' && state === 'BLUE'
-      ? 'CLEAR'
-      : null
-  if (transition !== expectedTransition) throw new Error(`${field}.transition is incomplete for its state change`)
+  if (stateBefore === 'BLUE' && state === 'YELLOW' && transition !== 'BUILD') {
+    throw new Error(`${field}.transition is incomplete for its state change`)
+  }
   return {
     bar_end: instant(value.bar_end, `${field}.bar_end`),
     b_value: bValue,
