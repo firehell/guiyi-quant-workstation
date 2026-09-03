@@ -79,6 +79,9 @@ export function useMarketDetailController(
   state: Readonly<Ref<MarketDetailControllerState>>
   bars: Readonly<Ref<BarData[]>>
   mutation: Readonly<Ref<MarketSeriesMutation>>
+  hasMoreBefore: Readonly<Ref<boolean>>
+  research: Ref<ProductResearchResponse | null>
+  researchError: Readonly<Ref<boolean>>
   switchIdentity(identity: MarketDetailIdentity): Promise<void>
   loadMoreBefore(): Promise<void>
   dispose(): void
@@ -97,7 +100,8 @@ export function useMarketDetailController(
     error: null,
   })
   let currentDominants: DominantContractListResponse = { items: [] }
-  let currentResearch: ProductResearchResponse | null = null
+  const currentResearch = ref<ProductResearchResponse | null>(null)
+  const researchError = ref(false)
   let headerGeneration = 0
   let disposed = false
   const publicBars = computed(() => series.bars.value)
@@ -108,7 +112,7 @@ export function useMarketDetailController(
       identity,
       dominant: currentDominants.items.find((item) => item.product.toLowerCase() === identity.symbol.toLowerCase()) ?? null,
       bars: series.bars.value,
-      research: currentResearch,
+      research: currentResearch.value,
       marketState: series.marketState.value,
       overlaySource: series.overlaySource.value,
       canonicalCoverage: series.canonicalCoverage.value,
@@ -145,7 +149,8 @@ export function useMarketDetailController(
     }
     headerGeneration = 0
     currentDominants = { items: [] }
-    currentResearch = null
+    currentResearch.value = null
+    researchError.value = false
     const metadataRequest = fetchDominants().then(
       (value) => ({ ok: true as const, value }),
       () => ({ ok: false as const }),
@@ -177,7 +182,8 @@ export function useMarketDetailController(
       state.value.loading = false
       const research = await researchRequest
       if (disposed || state.value.generation !== generation) return
-      currentResearch = research
+      currentResearch.value = research
+      researchError.value = research === null
       rebuildHeader(identity)
     } catch {
       if (disposed || state.value.generation !== generation) return
@@ -208,6 +214,9 @@ export function useMarketDetailController(
     state: readonly(state),
     bars: publicBars,
     mutation: publicMutation,
+    hasMoreBefore: readonly(series.hasMoreBefore),
+    research: currentResearch,
+    researchError: readonly(researchError),
     switchIdentity,
     loadMoreBefore,
     dispose,

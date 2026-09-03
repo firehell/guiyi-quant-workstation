@@ -4,6 +4,7 @@ import test from 'node:test'
 import {
   defaultMarketDetailPreferences,
   loadMarketDetailPreferences,
+  replaceFreeDetailPreferences,
   saveMarketDetailPreferences,
 } from '../src/utils/marketDetailPreferences.ts'
 
@@ -43,5 +44,22 @@ test('saving never persists a contract or unsupported values', () => {
     version: 1, lastView: 'trend',
     htdy: defaultMarketDetailPreferences().htdy,
     free: { seriesKind: 'continuous', frequency: '1d', optionalEmaIndicators: ['ema_60'], showRangeDetector: true },
+  })
+})
+
+test('replacing Free preferences preserves HTDY and the current view', () => {
+  const current = {
+    ...defaultMarketDetailPreferences(),
+    lastView: 'htdy' as const,
+    htdy: { seriesKind: 'continuous' as const, frequency: '30m' as const, optionalEmaIndicators: ['ema_60' as const], showRangeDetector: true },
+  }
+
+  assert.deepEqual(replaceFreeDetailPreferences(current, {
+    seriesKind: 'contract', frequency: '1w', optionalEmaIndicators: ['ema_10'], showRangeDetector: true,
+  }), {
+    version: 1,
+    lastView: 'htdy',
+    htdy: current.htdy,
+    free: { seriesKind: 'actual_dominant', frequency: '1w', optionalEmaIndicators: ['ema_10'], showRangeDetector: true },
   })
 })

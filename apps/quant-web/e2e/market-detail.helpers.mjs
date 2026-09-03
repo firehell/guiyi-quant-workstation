@@ -74,14 +74,15 @@ export async function mockMarketDetail(page, options = {}) {
       } })
     }
     if (url.pathname.endsWith('/bars/page')) {
+      const customPage = options.barsPage?.({ url, symbol })
       const frequency = url.searchParams.get('frequency')
       const seed = symbol === 'jm' ? 100 : 200
-      const bars = frequency === '1d' || frequency === '1w'
+      const bars = customPage?.bars ?? (frequency === '1d' || frequency === '1w'
         ? [
             { ...detailBar(symbol, 0, seed), bar_end: '2026-09-02T07:00:00.000Z', trading_day: '2026-09-02' },
             { ...detailBar(symbol, 1, seed + 1), bar_end: '2026-09-03T07:00:00.000Z', trading_day: '2026-09-03' },
           ]
-        : [detailBar(symbol, 0, seed), detailBar(symbol, 1, seed + 1)]
+        : [detailBar(symbol, 0, seed), detailBar(symbol, 1, seed + 1)])
       return route.fulfill({ json: {
         request: {
           series_kind: url.searchParams.get('series_kind'),
@@ -93,7 +94,7 @@ export async function mockMarketDetail(page, options = {}) {
         },
         bars,
         canonical_coverage: { start: bars[0].bar_end, end: bars.at(-1).bar_end },
-        page: { has_more_before: false, next_before: null },
+        page: customPage?.page ?? { has_more_before: false, next_before: null },
         resolved_contract_segments: url.searchParams.get('series_kind') === 'actual_dominant'
           ? [{ contract: `${upper}2601`, start_trading_day: bars[0].trading_day, end_trading_day: bars.at(-1).trading_day }]
           : [],

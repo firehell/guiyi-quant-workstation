@@ -15,6 +15,7 @@ const componentNames = [
   'MarketDetailSectionTabs',
   'MarketDetailDrawer',
   'MarketDetailUnavailable',
+  'MarketKlineStage',
 ] as const
 
 function componentSource(name: (typeof componentNames)[number]): string {
@@ -94,4 +95,22 @@ test('history uses one source and mobile drawer restores focus', () => {
   assert.match(drawer.source, /onMounted\(\(\) => syncOpen\(props\.open\)\)/)
   assert.match(drawer.template, /role="dialog"/)
   assert.match(drawer.template, /aria-modal="true"/)
+})
+
+test('the shared K-line stage uses the registered clean-room action icons', () => {
+  const { source, template } = parsedComponent('MarketKlineStage')
+  assert.match(source, /MarketDetailIcon/)
+  assert.match(template, /name="refresh"/)
+  assert.match(template, /name="fullscreen"/)
+  assert.doesNotMatch(template, /↺|⛶/)
+})
+
+test('the shared K-line stage exposes an identity-bounded focus seam without view semantics', () => {
+  const { source } = parsedComponent('MarketKlineStage')
+  assert.match(source, /focusBarEnd\?:\s*string\s*\|\s*null/)
+  assert.match(source, /identityKey:\s*string/)
+  assert.match(source, /chart\.value\?\.revealTime\(props\.focusBarEnd\)/)
+  assert.match(source, /'focus-resolved':\s*\[focusBarEnd:\s*string\]/)
+  assert.match(source, /watch\(\(\) => props\.identityKey/)
+  assert.doesNotMatch(source, /htdy|subing|newow/i)
 })
