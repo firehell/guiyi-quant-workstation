@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from contextlib import nullcontext
 import json
 import os
@@ -11,7 +11,11 @@ import subprocess
 import sys
 
 import pytest
+from sqlalchemy import create_engine, delete
+from sqlalchemy.orm import Session
 
+from app.db.base import Base
+from app.market_data.runtime_promotion import _first_session_starts_for_products
 from app.market_data.market_phase import MarketPhase, ProductMarketPhase
 from app.market_data.runtime_promotion import (
     PROMOTION_STATE_UNAVAILABLE,
@@ -20,6 +24,7 @@ from app.market_data.runtime_promotion import (
     evaluate_market_runtime_promotion,
     run_market_runtime_promotion_preflight,
 )
+from app.models import Exchange, Instrument, TradingCalendar, TradingSession
 
 
 DAY = date(2026, 9, 3)
@@ -557,6 +562,97 @@ def test_sane_different_day_history_does_not_block_valid_snapshot() -> None:
     )
 
     assert decision.reason == "snapshot_ready"
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda status: status.update(
+            {"last_run": {**status["last_run"], "trading_day": "2026-09-04"}}
+        ),
+        lambda status: status.update({"last_successful_trading_day": "2026-09-04"}),
+        lambda status: status.update(
+            {"last_failure": {"trading_day": "2026-09-04", "error_code": "UPDATE_FAILED"}}
+        ),
+    ],
+)
+def test_future_public_status_day_blocks_before_snapshot_or_nontrading_pass(
+    mutate: object,
+) -> None:
+    status = _passed_status()
+    assert callable(mutate)
+    mutate(status)
+    decision = evaluate_market_runtime_promotion(
+        products=PRODUCTS,
+        phases=_phases(MarketPhase.CLOSED),
+        now=NOW,
+        snapshot={"j": "J2601", "jm": "JM2601"},
+        after_market_status=status,
+        first_session_starts=_first_session_starts(),
+    )
+    assert decision.reason == PROMOTION_STATE_UNAVAILABLE
+
+
+def test_future_last_failure_day_blocks_clean_nontrading_interval() -> None:
+    status = _passed_status()
+    status["last_failure"] = {"trading_day": "2026-09-04", "error_code": "UPDATE_FAILED"}
+    decision = evaluate_market_runtime_promotion(
+        products=PRODUCTS,
+        phases={
+            symbol: _phase(symbol, MarketPhase.CLOSED, trading_day=None)
+            for symbol in PRODUCTS
+        },
+        now=NOW,
+        snapshot=None,
+        after_market_status=status,
+        first_session_starts=None,
+    )
+    assert decision.reason == PROMOTION_STATE_UNAVAILABLE
+
+
+@pytest.mark.parametrize("products", [["jm", "j"], ["j", "jm", "rb"]])
+def test_after_market_complete_requires_exact_ordered_products(products: list[str]) -> None:
+    status = _passed_status()
+    status["last_run"] = {**status["last_run"], "products": products}
+    decision = evaluate_market_runtime_promotion(
+        products=PRODUCTS,
+        phases=_phases(MarketPhase.CLOSED),
+        now=NOW,
+        snapshot=None,
+        after_market_status=status,
+        first_session_starts=_first_session_starts(),
+    )
+    assert decision.status == "blocked"
+    assert decision.reason == PROMOTION_STATE_UNAVAILABLE
+
+
+def test_first_session_loader_uses_calendar_night_eligibility_and_fails_closed() -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    trading_day = date(2026, 9, 3)
+    with Session(engine) as session:
+        session.add_all(
+            (
+                Exchange(code="DCE", name="DCE"),
+                Instrument(symbol="j", name="J", exchange_code="DCE", is_active=True),
+                TradingCalendar(exchange_code="DCE", trade_date=date(2026, 9, 2), is_trading_day=True),
+                TradingCalendar(exchange_code="DCE", trade_date=trading_day, is_trading_day=True, has_night_session=True),
+                TradingSession(exchange_code="DCE", instrument_symbol="j", session_name="day", start_time=time(9), end_time=time(10), effective_from=date(2026, 1, 1), crosses_midnight=False, is_active=True),
+                TradingSession(exchange_code="DCE", instrument_symbol="j", session_name="night", start_time=time(21), end_time=time(23), effective_from=date(2026, 1, 1), crosses_midnight=False, is_active=True),
+            )
+        )
+        session.commit()
+        starts = _first_session_starts_for_products(session, ("j",), trading_day)
+        assert starts["j"].isoformat() == "2026-09-02T13:00:00+00:00"
+        calendar = session.get(TradingCalendar, 2)
+        assert calendar is not None
+        calendar.has_night_session = False
+        session.commit()
+        assert _first_session_starts_for_products(session, ("j",), trading_day)["j"].isoformat() == "2026-09-03T01:00:00+00:00"
+        session.execute(delete(TradingSession))
+        session.commit()
+        with pytest.raises(ValueError, match="PROMOTION_SESSION_AUTHORITY_UNAVAILABLE"):
+            _first_session_starts_for_products(session, ("j",), trading_day)
 
 
 def test_day_end_to_night_gap_is_not_before_first_session() -> None:

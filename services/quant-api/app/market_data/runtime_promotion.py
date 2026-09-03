@@ -7,9 +7,11 @@ from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 import json
+import os
 from pathlib import Path
 import sys
 from typing import Any, Protocol, TextIO, cast
+from zoneinfo import ZoneInfo
 
 
 PROMOTION_LIVE_SNAPSHOT_REQUIRED = "MARKET_RUNTIME_PROMOTION_LIVE_SNAPSHOT_REQUIRED"
@@ -23,6 +25,7 @@ class _InvalidTradingDay:
 
 
 _INVALID_TRADING_DAY = _InvalidTradingDay()
+_SHANGHAI = ZoneInfo("Asia/Shanghai")
 
 
 class PhaseResolver(Protocol):
@@ -158,7 +161,9 @@ def run_market_runtime_promotion_preflight(
         if status_path is None:
             from app.core.env import PROJECT_ROOT
 
-            status_path = PROJECT_ROOT / ".run" / "after-market-status.json"
+            status_path = _status_path_from_environment() or (
+                PROJECT_ROOT / ".run" / "after-market-status.json"
+            )
         products = products_loader()
         current_time = now()
         with session_factory() as session:
@@ -286,7 +291,15 @@ def _after_market_status_decision(
         return "unavailable"
     if not public:
         return "unavailable"
-    if public.get("current_run") is not None:
+    if not _public_status_dates_are_sane(public, now):
+        return "unavailable"
+    current_run = public.get("current_run")
+    if current_run is not None:
+        if not isinstance(current_run, Mapping):
+            return "unavailable"
+        current_started_at = _timestamp(current_run.get("started_at"))
+        if current_started_at is None or current_started_at > now.astimezone(UTC):
+            return "unavailable"
         return "running"
     last_run = public.get("last_run")
     if not isinstance(last_run, Mapping):
@@ -322,6 +335,47 @@ def _timestamp(value: object) -> datetime | None:
     if parsed.tzinfo is None or parsed.utcoffset() is None:
         return None
     return parsed.astimezone(UTC)
+
+
+def _public_status_dates_are_sane(public: Mapping[str, object], now: datetime) -> bool:
+    today = now.astimezone(_SHANGHAI).date()
+    dates: list[object] = [public.get("last_successful_trading_day")]
+    last_run = public.get("last_run")
+    if isinstance(last_run, Mapping):
+        dates.append(last_run.get("trading_day"))
+    last_failure = public.get("last_failure")
+    if isinstance(last_failure, Mapping):
+        dates.append(last_failure.get("trading_day"))
+    current_run = public.get("current_run")
+    if isinstance(current_run, Mapping):
+        dates.append(current_run.get("scheduled_date"))
+    for value in dates:
+        if value is None:
+            continue
+        if not isinstance(value, str):
+            return False
+        try:
+            if date.fromisoformat(value) > today:
+                return False
+        except ValueError:
+            return False
+    return True
+
+
+def _status_path_from_environment() -> Path | None:
+    configured = os.environ.get("GUIYI_AFTER_MARKET_STATUS_PATH")
+    if configured is None:
+        return None
+    path = Path(configured)
+    if (
+        not path.is_absolute()
+        or path.name != "after-market-status.json"
+        or path.parent.name != ".run"
+        or ".." in path.parts
+        or not path.parent.parent.is_dir()
+    ):
+        raise ValueError("PROMOTION_STATUS_PATH_UNAVAILABLE")
+    return path
 
 
 def _load_after_market_status(path: Path) -> object:

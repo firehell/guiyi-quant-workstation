@@ -6,6 +6,15 @@ SERVICE="${1:-}"
 preflight_unavailable() {
   printf '%s\n' '{"schema_version":1,"command":"runtime.market-promotion-preflight","status":"blocked","reason":"MARKET_RUNTIME_PROMOTION_STATE_UNAVAILABLE","trading_day":null,"operational_count":0,"snapshot_count":0}'
 }
+is_safe_absolute_path() {
+  local path="$1" component
+  local -a components
+  [[ "$path" == /* && "$path" != *$'\n'* && "$path" != *$'\r'* && "$path" != *$'\t'* ]] || return 1
+  IFS='/' read -r -a components <<<"${path#/}"
+  for component in "${components[@]}"; do
+    [[ "$component" != ".." ]] || return 1
+  done
+}
 is_passed_preflight_payload() {
   local payload="$1"
   local pattern='^\{"schema_version":1,"command":"runtime.market-promotion-preflight","status":"passed","reason":"(snapshot_ready|before_first_session|after_market_complete|non_trading_interval)","trading_day":(null|"[0-9]{4}-[0-9]{2}-[0-9]{2}"),"operational_count":[0-9]+,"snapshot_count":[0-9]+\}$'
@@ -35,6 +44,11 @@ if [[ "$SERVICE" == "market-runtime-preflight" ]]; then
     exit 1
   fi
   preflight_env=""
+  controlled_status_path="${GUIYI_AFTER_MARKET_STATUS_PATH:-}"
+  if [[ -n "$controlled_status_path" ]] && { ! is_safe_absolute_path "$controlled_status_path" || [[ "${controlled_status_path##*/}" != "after-market-status.json" ]]; }; then
+    preflight_unavailable
+    exit 1
+  fi
   if [[ -f "$RUNTIME_ENV" ]]; then
     preflight_env="$RUNTIME_ENV"
   elif [[ -f "$PROJECT_ROOT/.env" ]]; then
@@ -44,10 +58,16 @@ if [[ "$SERVICE" == "market-runtime-preflight" ]]; then
     /bin/bash -euo pipefail -c '
       runtime_env="$1"
       python_bin="$2"
+      controlled_status_path="$3"
       if [[ -n "$runtime_env" ]]; then
         set -a
         source "$runtime_env" >/dev/null 2>&1
         set +a
+      fi
+      if [[ -n "$controlled_status_path" ]]; then
+        export GUIYI_AFTER_MARKET_STATUS_PATH="$controlled_status_path"
+      else
+        unset GUIYI_AFTER_MARKET_STATUS_PATH
       fi
       [[ -n "${POSTGRES_PASSWORD:-}" ]] || exit 64
       export REDIS_PASSWORD="${REDIS_PASSWORD:-$POSTGRES_PASSWORD}"
@@ -55,7 +75,7 @@ if [[ "$SERVICE" == "market-runtime-preflight" ]]; then
         export REDIS_URL="redis://:${REDIS_PASSWORD}@127.0.0.1:6379/0"
       fi
       exec "$python_bin" -m app.market_data.runtime_promotion
-    ' bash "$preflight_env" "$PYTHON_BIN" 2>/dev/null
+    ' bash "$preflight_env" "$PYTHON_BIN" "$controlled_status_path" 2>/dev/null
   )"; then
     preflight_result=0
   else
