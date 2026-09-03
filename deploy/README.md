@@ -54,6 +54,12 @@ preflight 只读取 operational universe、权威 Calendar/Session phase、既�
 顺序完全一致的 `after_market_complete`；以及无 current trading day、无 active Session 的
 `non_trading_interval`。它不会把“下一段 session 尚未开始”误作 `before_first_session`。
 
+跨 checkout 时，preflight 从当前 supervised、已加载 after-market launchd root 读取 status，并与 installed
+plist 声明的 root 交叉校验，不能把 candidate checkout 当作 status authority。仅 first-install 可使用 candidate
+root，且必须同时满足 launchd domain 可读、after-market label 明确 not-found、没有 installed plist。任何
+domain/permission/label 命令错误，或 root 缺失、畸形、不一致，均以
+`MARKET_RUNTIME_PROMOTION_STATE_UNAVAILABLE` 阻断；runtime env 不能覆盖这个受控 status path。
+
 已开始后的缺失 snapshot、无效/部分 snapshot、未知或分歧的 phase/session authority，以及 running、corrupt、
 unreadable 或 chronology 不可能的 after-market state 一律阻断；公开 block reason 仅为
 `MARKET_RUNTIME_PROMOTION_LIVE_SNAPSHOT_REQUIRED`、`MARKET_RUNTIME_PROMOTION_LIVE_SNAPSHOT_INVALID`、

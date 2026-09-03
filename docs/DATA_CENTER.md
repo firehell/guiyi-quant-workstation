@@ -198,6 +198,12 @@ Live Bars 与 subscription snapshot。repair-only cleanup 不改变这条自然 
 operational universe、Calendar/Session phase authority、当前交易日 immutable Live subscription snapshot 与公开
 after-market status；不连接 RQData，不写 Catalog、Redis 或状态文件。
 
+跨 checkout promotion 时，after-market status 的 authority 来自当前 supervised 的、已加载 after-market
+launchd root，并与已安装 plist 声明的 root 交叉校验；candidate checkout 不能自行取得 status authority。只有
+launchd domain 可读、after-market label 明确为 not-found、且不存在 installed plist 的 first-install 条件下，才可
+使用 candidate root。domain/permission/label 命令错误、root 缺失、畸形或彼此不一致一律为
+`MARKET_RUNTIME_PROMOTION_STATE_UNAVAILABLE`。preflight 的受控 status path 不受 runtime env 覆盖。
+
 只有以下四种窗口可通过：有效 snapshot 与 operational symbols/contract identities 精确对应的
 `snapshot_ready`；所有 operational 产品尚未到权威 Session 的真正最早 start 的 `before_first_session`；同一
 trading day 的 after-market 已完成且 products 精确保持 operational 顺序的 `after_market_complete`；以及没有
