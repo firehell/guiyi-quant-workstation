@@ -50,6 +50,41 @@ def test_install_modes_only_confirm_market_runtime_persists_activation_marker(tm
     )
 
 
+def test_blocked_market_preflight_leaves_marker_plists_and_launchctl_untouched(
+    tmp_path: Path,
+) -> None:
+    """A promotion block must happen before any activation-side mutation."""
+    repo = _copy_launchd_fixture(tmp_path / "repo")
+    home = tmp_path / "home"
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    python = repo / "services/quant-api/.venv/bin/python"
+    python.parent.mkdir(parents=True)
+    python.write_text(
+        "#!/bin/sh\n"
+        "printf '%s\\n' '{\"schema_version\":1,\"command\":\"runtime.market-promotion-preflight\",\"status\":\"blocked\",\"reason\":\"MARKET_RUNTIME_PROMOTION_LIVE_SNAPSHOT_REQUIRED\",\"trading_day\":\"2026-09-03\",\"operational_count\":2,\"snapshot_count\":0}'\n"
+        "exit 1\n",
+        encoding="utf-8",
+    )
+    python.chmod(0o700)
+    launchctl = fake_bin / "launchctl"
+    launchctl.write_text(
+        "#!/bin/sh\n"
+        "printf '%s\\n' \"$*\" >> \"$HOME/launchctl-calls.log\"\n"
+        "exit 90\n",
+        encoding="utf-8",
+    )
+    launchctl.chmod(0o755)
+
+    result = _run_installer_result(repo, home, fake_bin, "--confirm-market-runtime")
+
+    assert result.returncode == 1
+    assert "MARKET_RUNTIME_PROMOTION_LIVE_SNAPSHOT_REQUIRED" in result.stdout
+    assert not (repo / ".run/market-runtime-enabled").exists()
+    assert not (home / "Library/LaunchAgents").exists()
+    assert not (home / "launchctl-calls.log").exists()
+
+
 def test_market_runtime_launch_agents_use_project_root_as_working_directory(
     tmp_path: Path,
 ) -> None:
@@ -304,12 +339,42 @@ def _run_installer(
             encoding="utf-8",
         )
         fake_git.chmod(0o755)
+    result = _run_installer_result(repo, home, fake_bin, mode)
+    assert result.returncode == 0, result.stderr
+    return result
+
+
+def _run_installer_result(
+    repo: Path, home: Path, fake_bin: Path, mode: str
+) -> subprocess.CompletedProcess[str]:
+    fake_git = fake_bin / "git"
+    if not fake_git.exists():
+        fake_git.write_text(
+            "#!/bin/sh\n"
+            'if [ "${1:-}" = "-C" ] && [ "${3:-}" = "rev-parse" ] && [ "${4:-}" = "HEAD" ]; then\n'
+            "  printf '1111111111111111111111111111111111111111\\n'\n"
+            "  exit 0\n"
+            "fi\n"
+            "exit 2\n",
+            encoding="utf-8",
+        )
+        fake_git.chmod(0o755)
+    python = repo / "services/quant-api/.venv/bin/python"
+    if not python.exists():
+        python.parent.mkdir(parents=True)
+        python.write_text(
+            "#!/bin/sh\n"
+            "printf '%s\\n' '{\"schema_version\":1,\"command\":\"runtime.market-promotion-preflight\",\"status\":\"passed\",\"reason\":\"non_trading_interval\",\"trading_day\":null,\"operational_count\":0,\"snapshot_count\":0}'\n",
+            encoding="utf-8",
+        )
+        python.chmod(0o700)
     environment = {
         **os.environ,
         "HOME": str(home),
         "PATH": f"{fake_bin}:/usr/bin:/bin:/usr/sbin:/sbin",
+        "POSTGRES_PASSWORD": "test-only",
     }
-    result = subprocess.run(
+    return subprocess.run(
         [str(repo / "scripts/ops/macos/install-local-services.sh"), mode],
         cwd=repo,
         env=environment,
@@ -317,8 +382,6 @@ def _run_installer(
         text=True,
         check=False,
     )
-    assert result.returncode == 0, result.stderr
-    return result
 
 
 def _status_fixture(
