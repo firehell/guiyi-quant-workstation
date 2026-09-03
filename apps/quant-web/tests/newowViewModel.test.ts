@@ -65,6 +65,71 @@ test('selects current cup by newest state change and then ascending candidate id
   assert.equal(model.facts[2].value, '就绪')
 })
 
+test('discloses exact trend, D, Cup, contract, rollover, and warning evidence from the normalized snapshot', () => {
+  const data = snapshot()
+  data.trend_band[0] = {
+    ...data.trend_band[0]!, state: 'YELLOW', state_before: 'BLUE', transition: 'BUILD',
+  }
+  data.trend_band[1] = {
+    ...data.trend_band[1]!, state: 'BLUE', state_before: 'YELLOW', transition: 'CLEAR',
+  }
+  data.trend_band[2] = {
+    ...data.trend_band[2]!, state: 'YELLOW', state_before: 'YELLOW', transition: null,
+  }
+  data.escape_markers = [
+    marker('older-d1', 'NEWOW_ESCAPE_D1', data.bars[1]!.bar_end, 'newow_escape_d123_v1'),
+    marker('current-d3', 'NEWOW_ESCAPE_D3', data.bars[2]!.bar_end, 'newow_escape_d123_v1'),
+    marker('current-d2', 'NEWOW_ESCAPE_D2', data.bars[2]!.bar_end, 'newow_escape_d123_v1'),
+  ]
+  data.cup_handles = [cup('cup-exact', 'BREAKOUT', '2026-01-07T07:00:00Z')]
+  data.rollover_seams = [{
+    trading_day: '2026-01-07', previous_contract: 'RB2605', next_contract: 'RB2610',
+    previous_bar_end: '2026-01-06T07:00:00Z', next_bar_end: '2026-01-07T07:00:00Z',
+    previous_segment_id: 'segment-1', next_segment_id: 'segment-2',
+  }]
+
+  const model = buildNewowDetailViewModel({ identity, header: header(), data })
+
+  assert.deepEqual(sectionValues(model, 'newow-trend'), {
+    当前策略状态: '持有',
+    当前趋势带: 'YELLOW',
+    最近转换: 'CLEAR',
+    转换时间: '2026-01-06T07:00:00Z',
+    当前物理合约: 'RB2610',
+    '分析截至 completed D1': '2026-01-07T07:00:00Z',
+  })
+  assert.deepEqual(sectionValues(model, 'newow-risk-shape'), {
+    '当前 Bar D Markers': 'NEWOW_ESCAPE_D2 / NEWOW_ESCAPE_D3',
+    '当前 D Bar': '2026-01-07T07:00:00Z',
+    '最近历史 D Marker': 'NEWOW_ESCAPE_D2',
+    '最近历史 D Bar': '2026-01-07T07:00:00Z',
+    '杯柄 Candidate': 'cup-exact',
+    杯柄方向: 'BULLISH',
+    杯柄当前状态: 'BREAKOUT · 突破',
+    'L 左杯沿': '{"pivot_at":"2025-11-01T07:00:00Z","confirmed_at":"2025-11-02T07:00:00Z","price":12}',
+    'B 杯底': '{"pivot_at":"2025-12-01T07:00:00Z","confirmed_at":"2025-12-02T07:00:00Z","price":8}',
+    'R 右杯沿': '{"pivot_at":"2026-01-01T07:00:00Z","confirmed_at":"2026-01-02T07:00:00Z","price":11.8}',
+    'H 柄起点': '2026-01-01T07:00:00Z',
+    'H 柄极值': '{"pivot_at":"2026-01-03T07:00:00Z","confirmed_at":"2026-01-04T07:00:00Z","price":10.8}',
+    'P 枢轴': '{"pivot_frozen_at":"2026-01-05T07:00:00Z","price":11.9}',
+    confirmed_at: '2026-01-05T07:00:00Z',
+    first_seen_at: '2026-01-03T07:00:00Z',
+    state_changed_at: '2026-01-07T07:00:00Z',
+    score: '80',
+    score_breakdown: '{"pretrend":20,"cup_geometry":20,"u_shape_purity":15,"handle_quality":15,"volume_structure":10}',
+    volume_facts: '{"right_leg_median":100,"handle_median":70,"handle_baseline_median":90,"handle_right_ratio":0.7,"handle_baseline_ratio":0.78}',
+  })
+  assert.deepEqual(sectionValues(model, 'newow-data'), {
+    序列: '真实主力',
+    当前合约: 'RB2610',
+    '当前 Segment': 'segment-2',
+    最近换月: '{"trading_day":"2026-01-07","previous_contract":"RB2605","next_contract":"RB2610","previous_bar_end":"2026-01-06T07:00:00Z","next_bar_end":"2026-01-07T07:00:00Z","previous_segment_id":"segment-1","next_segment_id":"segment-2"}',
+    warnings: '[]',
+    数据覆盖: '2026-01-05 至 2026-01-07',
+    共享行情状态: '正常',
+  })
+})
+
 test('fails each current family closed on its warmup warning and exposes no projected history without valid data', () => {
   const data = snapshot()
   data.escape_markers = [
@@ -84,9 +149,10 @@ test('fails each current family closed on its warmup warning and exposes no proj
     ['不可用', 'unavailable'],
     ['不可用', 'unavailable'],
   ])
-  assert.equal(warned.disclosureSections[1]!.rows[0]!.value, '不可用')
-  assert.equal(warned.disclosureSections[1]!.rows[1]!.value, '不可用')
-  assert.equal(warned.disclosureSections[1]!.rows[2]!.value, '不可用')
+  assert.equal(sectionValues(warned, 'newow-risk-shape')['当前 Bar D Markers'], '不可用')
+  assert.equal(sectionValues(warned, 'newow-risk-shape')['杯柄 Candidate'], '不可用')
+  assert.equal(sectionValues(warned, 'newow-risk-shape')['杯柄当前状态'], '不可用')
+  assert.equal(sectionValues(warned, 'newow-data').warnings, '["NEWOW_TREND_WARMUP_INSUFFICIENT","NEWOW_D123_WARMUP_INSUFFICIENT","NEWOW_CUP_WARMUP_INSUFFICIENT"]')
   assert.deepEqual(unavailable.facts.map((fact) => fact.value), ['不可用', '不可用', '不可用'])
   assert.deepEqual(unavailable.history, [])
   assert.equal(unavailable.dataStatus, 'unavailable')
@@ -178,6 +244,12 @@ function header(): MarketDetailHeaderModel {
     volume: 100, turnover: null, openInterest: 200, phase: 'CLOSED',
     displaySource: 'Canonical', freshness: 'fresh', extendedSections: [],
   }
+}
+
+function sectionValues(model: ReturnType<typeof buildNewowDetailViewModel>, id: string): Record<string, string> {
+  const section = model.disclosureSections.find((item) => item.id === id)
+  assert.ok(section, `missing disclosure section ${id}`)
+  return Object.fromEntries(section.rows.map((row) => [row.label, row.value]))
 }
 
 function snapshot(): MutableSnapshot {
