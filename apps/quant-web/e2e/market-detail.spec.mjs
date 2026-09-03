@@ -27,6 +27,15 @@ test('explicit Free enters the ordered shell preview without the legacy sidebar'
   expect(order.slice(0, 4)).toEqual(['topbar', 'quote', 'view-nav', 'workspace-slot'])
 })
 
+test('shared quote header exposes the market phase and display source', async ({ page }) => {
+  await mockMarketDetail(page)
+  await page.goto(freeJm)
+
+  const quote = page.locator('[data-detail-section="quote"]')
+  await expect(quote.getByText('已收盘', { exact: true })).toBeVisible()
+  await expect(quote.getByText('Historical', { exact: true })).toBeVisible()
+})
+
 test('invalid identity fails closed and only recovers after an explicit click', async ({ page }) => {
   await mockMarketDetail(page)
   await page.goto('/market/chart?symbol=jm&view=free&series_kind=actual_dominant&frequency=2m')

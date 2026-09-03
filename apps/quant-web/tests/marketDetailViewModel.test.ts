@@ -151,6 +151,29 @@ test('marks empty bars unavailable without manufacturing market prices', async (
   assert.deepEqual([model.open, model.high, model.low, model.close, model.change, model.pct], [null, null, null, null, null, null])
 })
 
+test('groups sourced facts into market extensions, identity, and data trust', async () => {
+  const { buildMarketDetailHeaderModel } = await import('../src/utils/marketDetailViewModel.ts')
+  const model = buildMarketDetailHeaderModel(input({
+    research: {
+      ...input().research,
+      position20: 0.25,
+      distance_to_20d_high: -0.1,
+      distance_to_20d_low: 0.5,
+      volume_ratio20: 1.2,
+      oi_change_1d: 0.03,
+      atr14_percentile252: 0.8,
+    },
+  }))
+
+  assert.deepEqual(model.extendedSections.map((section) => section.id), [
+    'market-extension', 'dominant-identity', 'data-trust',
+  ])
+  assert.equal(model.extendedSections[0]?.rows.find((row) => row.label === '成交额')?.value, '2,000')
+  assert.equal(model.extendedSections[1]?.rows.find((row) => row.label === '物理合约区间')?.value, 'JM2601')
+  assert.equal(model.extendedSections[2]?.rows.find((row) => row.label === '市场阶段')?.value, '交易中')
+  assert.equal(model.extendedSections[2]?.rows.find((row) => row.label === '展示来源')?.value, '实时观察')
+})
+
 test('is deterministic and does not mutate source bars', async () => {
   const { buildMarketDetailHeaderModel } = await import('../src/utils/marketDetailViewModel.ts')
   const fixture = input()

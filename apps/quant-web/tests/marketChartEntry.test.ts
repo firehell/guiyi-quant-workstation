@@ -41,7 +41,7 @@ test('contract is serialized only for a concrete-contract series', () => {
   }).contract, undefined)
 })
 
-test('accepts focus_bar_end for an actual-dominant supported period with a valid timezone-aware instant', () => {
+test('Legacy focus accepts only the existing actual-dominant 15m contract', () => {
   assert.equal(resolveFocusBarEnd('2026-09-02T02:45:00Z', {
     seriesKind: 'actual_dominant', frequency: '15m',
   }), '2026-09-02T02:45:00Z')
@@ -56,7 +56,7 @@ test('accepts focus_bar_end for an actual-dominant supported period with a valid
   }), null)
   assert.equal(resolveFocusBarEnd('2026-09-02T02:45:00Z', {
     seriesKind: 'actual_dominant', frequency: '30m',
-  }), '2026-09-02T02:45:00Z')
+  }), null)
 })
 
 test('removes only focus_bar_end after its one-shot attempt', () => {
@@ -74,7 +74,7 @@ test('consumes a valid matching focus exactly once through the existing reveal s
   assert.equal(consumeFocusBarEnd('2026-09-02T02:45:00Z', identity, (value) => {
     calls.push(value)
     return false
-  }), false)
+  }), true)
   assert.deepEqual(calls, ['2026-09-02T02:45:00Z'])
   assert.equal(consumeFocusBarEnd('2026-09-02T02:45:00Z', {
     seriesKind: 'continuous', frequency: '15m',

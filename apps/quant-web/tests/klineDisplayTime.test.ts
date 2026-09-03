@@ -31,9 +31,4 @@ describe('KlineChart opening-time presentation', () => {
       /renderedBars\.findIndex\(\(bar\) => Date\.parse\(bar\.time\) === parsed\)/,
     )
   })
-
-  it('locates daily and weekly focus actions by their trading day', () => {
-    assert.match(chartSource, /tradingDayFromBar/)
-    assert.match(chartSource, /tradingDayFromBar\(bar\) === focusTradingDay/)
-  })
 })

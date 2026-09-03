@@ -12,6 +12,9 @@ const props = defineProps<{
 
 const direction = computed(() => props.header.change === null ? 'neutral' : props.header.change > 0 ? 'up' : props.header.change < 0 ? 'down' : 'neutral')
 const statusLabel = computed(() => ({ fresh: '数据正常', stale: '数据可能过时', unavailable: '数据不可用' })[props.header.freshness])
+const phaseLabel = computed(() => ({ TRADING: '交易中', BREAK: '盘中休市', CLOSED: '已收盘', UNKNOWN: '状态未知' })[props.header.phase] ?? '状态未知')
+const seriesLabel = computed(() => ({ actual_dominant: '真实主力', continuous: '主连', contract: '指定合约' })[props.header.seriesKind])
+const displaySourceLabel = computed(() => ({ 实时观察: 'Live', 盘后观察: '收盘快照', Canonical: 'Historical' })[props.header.displaySource] ?? 'Historical')
 
 function number(value: number | null, digits = 2): string {
   return value === null ? '—' : value.toLocaleString('zh-CN', { maximumFractionDigits: digits, minimumFractionDigits: digits })
@@ -34,6 +37,13 @@ function integer(value: number | null): string {
         <MarketDetailIcon :name="header.freshness === 'fresh' ? 'data' : 'warning'" :size="16" />
         {{ statusLabel }}
       </span>
+    </div>
+
+    <div class="quote-header__statuses" aria-label="行情状态">
+      <span>{{ seriesLabel }}</span>
+      <span>{{ header.exchange || '交易所未知' }}</span>
+      <span>{{ phaseLabel }}</span>
+      <span>{{ displaySourceLabel }}</span>
     </div>
 
     <div class="quote-header__price" :class="`quote-header__price--${direction}`">
@@ -76,6 +86,8 @@ function integer(value: number | null): string {
 .quote-header__price--down span { color: var(--gy-down); }
 .quote-header__price--neutral span { color: var(--gy-text-muted); }
 .quote-header__asof { margin: var(--gy-space-2) 0 var(--gy-space-4); color: var(--gy-text-muted); font-size: var(--gy-font-size-sm); }
+.quote-header__statuses { display: flex; flex-wrap: wrap; gap: var(--gy-space-2); margin-top: var(--gy-space-3); }
+.quote-header__statuses span { padding: 2px var(--gy-space-2); border-radius: var(--gy-radius-pill); color: var(--gy-text-muted); background: var(--gy-detail-section-bg); font-size: var(--gy-font-size-xs); }
 .quote-header__facts { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--gy-space-2); margin: 0; }
 .quote-header__facts div { min-width: 0; padding: var(--gy-space-2) var(--gy-space-3); border-radius: var(--gy-radius-md); background: var(--gy-detail-section-bg); }
 .quote-header__facts dt { color: var(--gy-text-muted); font-size: var(--gy-font-size-xs); }

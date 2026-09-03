@@ -67,7 +67,7 @@ export function buildMarketDetailHeaderModel(input: MarketDetailHeaderInput): Ma
     phase: state?.phase ?? 'UNKNOWN',
     displaySource: displaySource(input.overlaySource),
     freshness,
-    extendedSections: marketDisclosure(input, latest!.time, freshness),
+    extendedSections: marketDisclosure(input, latest!, freshness, displayContract, product, state),
   }
 }
 
@@ -96,7 +96,7 @@ function unavailableHeader(
     phase: state?.phase ?? 'UNKNOWN',
     displaySource: displaySource(input.overlaySource),
     freshness: 'unavailable',
-    extendedSections: marketDisclosure(input, null, 'unavailable'),
+    extendedSections: marketDisclosure(input, null, 'unavailable', null, product, state),
   }
 }
 
@@ -158,22 +158,66 @@ function resolveDisplayContract(
 
 function marketDisclosure(
   input: MarketDetailHeaderInput,
-  updatedAt: string | null,
+  latest: BarData | null,
   freshness: MarketDetailHeaderModel['freshness'],
+  displayContract: string | null,
+  product: DominantContractItem | ProductResearchResponse | null,
+  state: MarketReadState | null,
 ): readonly MarketDetailDisclosureSection[] {
-  const rows = [
-    { label: '数据来源', value: displaySource(input.overlaySource), source: 'market' as const },
-    { label: '数据覆盖', value: input.canonicalCoverage ? `${input.canonicalCoverage.start} 至 ${input.canonicalCoverage.end}` : '不可用', source: 'market' as const },
-    { label: '更早历史', value: input.hasMoreBefore ? '可继续加载' : '已到当前加载边界', source: 'market' as const },
+  const research = matchingResearch(input.research, input.identity)
+  const tone = freshness === 'fresh' ? 'default' : freshness === 'stale' ? 'warning' : 'unavailable'
+  const unavailableSummary = freshness === 'unavailable' ? '关键行情身份不可证明' : freshness === 'stale' ? '正在展示上一份成功快照' : '当前行情事实'
+  return [
+    {
+      id: 'market-extension',
+      title: '行情扩展',
+      summary: unavailableSummary,
+      updatedAt: latest?.time ?? null,
+      tone,
+      rows: [
+        { label: '成交额', value: numberText(latest?.turnover), source: 'market' },
+        { label: '5日涨跌', value: '—', source: 'market' },
+        { label: '量比20', value: numberText(research?.volume_ratio20), source: 'market' },
+        { label: 'OI 1D', value: percentText(research?.oi_change_1d), source: 'market' },
+        { label: '20日位置', value: percentText(research?.position20), source: 'market' },
+        { label: '距20日高', value: percentText(research?.distance_to_20d_high), source: 'market' },
+        { label: '距20日低', value: percentText(research?.distance_to_20d_low), source: 'market' },
+        { label: 'ATR分位', value: percentText(research?.atr14_percentile252), source: 'market' },
+      ],
+    },
+    {
+      id: 'dominant-identity',
+      title: '主力身份',
+      summary: displayContract ?? '当前合约不可证明',
+      updatedAt: latest?.time ?? null,
+      tone,
+      rows: [
+        { label: '序列', value: seriesKindText(input.identity.seriesKind), source: 'market' },
+        { label: '当前主力', value: currentDominant(product, research, input.identity.contract), source: 'market' },
+        { label: '映射日', value: mappingDay(product, research), source: 'market' },
+        { label: '物理合约区间', value: displayContract ?? '不可证明', source: 'market' },
+        { label: '交易日', value: state?.trading_day ?? '—', source: 'market' },
+        { label: '交易所', value: product?.exchange || '—', source: 'market' },
+        { label: '板块', value: product?.sector || '—', source: 'market' },
+      ],
+    },
+    {
+      id: 'data-trust',
+      title: '数据可信',
+      summary: unavailableSummary,
+      updatedAt: latest?.time ?? null,
+      tone,
+      rows: [
+        { label: '数据覆盖', value: input.canonicalCoverage ? `${input.canonicalCoverage.start} 至 ${input.canonicalCoverage.end}` : '不可用', source: 'market' },
+        { label: '更早历史', value: input.hasMoreBefore ? '可继续加载' : '已到当前加载边界', source: 'market' },
+        { label: '展示来源', value: displaySource(input.overlaySource), source: 'market' },
+        { label: '市场阶段', value: phaseText(state?.phase), source: 'market' },
+        { label: '可接入Live', value: yesNo(state?.live_eligible), source: 'market' },
+        { label: 'Live可用', value: yesNo(state?.live_available), source: 'market' },
+        { label: '当前状态', value: freshness === 'fresh' ? '数据正常' : freshness === 'stale' ? '旧快照' : '不可用', source: 'market' },
+      ],
+    },
   ]
-  return [{
-    id: 'market-data',
-    title: '行情数据',
-    summary: freshness === 'unavailable' ? '行情数据不可用' : freshness === 'stale' ? '正在展示上一份成功快照' : '当前行情事实',
-    updatedAt,
-    tone: freshness === 'fresh' ? 'default' : freshness === 'stale' ? 'warning' : 'unavailable',
-    rows,
-  }]
 }
 
 function sortedBars(bars: readonly BarData[]): BarData[] {
@@ -197,4 +241,46 @@ function displaySource(source: MarketOverlaySource): string {
   if (source === 'realtime') return '实时观察'
   if (source === 'post_close') return '盘后观察'
   return 'Canonical'
+}
+
+function numberText(value: number | null | undefined): string {
+  return value === null || value === undefined ? '—' : value.toLocaleString('zh-CN', { maximumFractionDigits: 2 })
+}
+
+function percentText(value: number | null | undefined): string {
+  return value === null || value === undefined ? '—' : `${(value * 100).toFixed(2)}%`
+}
+
+function seriesKindText(seriesKind: MarketDetailIdentity['seriesKind']): string {
+  if (seriesKind === 'continuous') return '主连'
+  if (seriesKind === 'contract') return '指定合约'
+  return '真实主力'
+}
+
+function currentDominant(
+  product: DominantContractItem | ProductResearchResponse | null,
+  research: ProductResearchResponse | null,
+  contract: string | undefined,
+): string {
+  if (product && 'actual_contract' in product) return product.actual_contract
+  return contract ?? research?.current_dominant ?? '—'
+}
+
+function mappingDay(
+  product: DominantContractItem | ProductResearchResponse | null,
+  research: ProductResearchResponse | null,
+): string {
+  if (product && 'dominant_mapping_date' in product) return product.dominant_mapping_date
+  return research?.dominant_mapping_date ?? '—'
+}
+
+function phaseText(phase: MarketReadState['phase'] | undefined): string {
+  if (phase === 'TRADING') return '交易中'
+  if (phase === 'BREAK') return '盘中休市'
+  if (phase === 'CLOSED') return '已收盘'
+  return '状态未知'
+}
+
+function yesNo(value: boolean | undefined): string {
+  return value ? '是' : '否'
 }
