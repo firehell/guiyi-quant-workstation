@@ -219,6 +219,37 @@ def test_prepare_rebuilds_shadow_from_real_missing_minute_without_touching_activ
     ).read_bytes() == b"daily-fact-must-not-change"
 
 
+def test_prepare_failure_keeps_active_and_never_creates_publishable_manifest(
+    repair_context,
+    tmp_path: Path,
+) -> None:
+    session, root, _provider = repair_context
+    shadow = tmp_path / "shadow"
+    manifest = tmp_path / "manifest.json"
+
+    class IncompleteProvider:
+        def fetch_many(self, _requests):
+            return (BarBatch(()),)
+
+    service = SessionAnchorRepairService(
+        session,
+        canonical_root=root,
+        provider=IncompleteProvider(),
+    )
+    active_before = CanonicalMonthlyStore(root).read_month(
+        DatasetKey("continuous", "jm", "MAIN", "1m"), 2026, 9
+    )
+
+    with pytest.raises(SessionAnchorRepairError, match="SESSION_ANCHOR_PROVIDER_INVALID"):
+        service.prepare(shadow_root=shadow, manifest_path=manifest, apply=True)
+
+    assert CanonicalMonthlyStore(root).read_month(
+        DatasetKey("continuous", "jm", "MAIN", "1m"), 2026, 9
+    ) == active_before
+    assert shadow.is_dir()
+    assert not manifest.exists()
+
+
 def test_publish_requires_stopped_runtime_before_any_mutation(
     repair_context,
     tmp_path: Path,
