@@ -13,6 +13,11 @@ export interface AlertMarkerIdentity {
   frequency: MarketFrequency
 }
 
+export interface PersistentAlertMarkerOptions {
+  /** A workspace may narrow the existing read-only AlertEvent authority without changing global policy. */
+  resolveRuleCodes?: (identity: AlertMarkerIdentity) => readonly AlertRuleCode[]
+}
+
 interface AlertEventRequest {
   symbol: string
   ruleCode: AlertRuleCode
@@ -26,9 +31,11 @@ interface Dependencies {
   clearInterval?: (handle: unknown) => void
 }
 
-export function usePersistentAlertMarkers(dependencies: Dependencies) {
+export function usePersistentAlertMarkers(dependencies: Dependencies, options: PersistentAlertMarkerOptions = {}) {
   const markers = ref<KlineMarker[]>([])
-  const events = new Map<string, AlertEventListResponse['items'][number]>()
+  const eventMap = new Map<string, AlertEventListResponse['items'][number]>()
+  const events = ref<AlertEventListResponse['items']>([])
+  const unavailable = ref(false)
   const fetchEvents = dependencies.fetchEvents
   const scheduleInterval = dependencies.scheduleInterval
     ?? ((callback, delay) => setInterval(() => void callback(), delay))
@@ -49,8 +56,10 @@ export function usePersistentAlertMarkers(dependencies: Dependencies) {
     if (identityChanged || mutation === 'replace') {
       generation += 1
       stopTimer()
-      events.clear()
+      eventMap.clear()
+      events.value = []
       markers.value = []
+      unavailable.value = false
       activeIdentity = { ...identity }
       loadedStart = null
       loadedEnd = null
@@ -58,8 +67,10 @@ export function usePersistentAlertMarkers(dependencies: Dependencies) {
     if (!isPersistentAlertIdentity(identity.seriesKind, identity.frequency) || !bars.length) {
       generation += 1
       stopTimer()
-      events.clear()
+      eventMap.clear()
+      events.value = []
       markers.value = []
+      unavailable.value = false
       activeIdentity = { ...identity }
       loadedStart = null
       loadedEnd = null
@@ -109,7 +120,7 @@ export function usePersistentAlertMarkers(dependencies: Dependencies) {
     end: string,
     requestGeneration: number,
   ) {
-    const ruleCodes = markerRuleCodes(identity.seriesKind, identity.frequency)
+    const ruleCodes = options.resolveRuleCodes?.(identity) ?? markerRuleCodes(identity.seriesKind, identity.frequency)
     if (!ruleCodes.length) return
     const normalizedEnd = Date.parse(end) > Date.parse(start)
       ? end
@@ -130,12 +141,15 @@ export function usePersistentAlertMarkers(dependencies: Dependencies) {
             || event.symbol !== identity.symbol
             || event.frequency !== identity.frequency
           ) continue
-          events.set(eventKey(event), event)
+          eventMap.set(eventKey(event), event)
         }
       }
-      markers.value = alertEventsToMarkers([...events.values()])
+      events.value = [...eventMap.values()].sort((left, right) => Date.parse(left.detected_at) - Date.parse(right.detected_at))
+      markers.value = alertEventsToMarkers(events.value)
+      unavailable.value = false
     } catch {
       // Presentation refresh is optional; keep the last persistent marker snapshot.
+      unavailable.value = true
     }
   }
 
@@ -148,11 +162,13 @@ export function usePersistentAlertMarkers(dependencies: Dependencies) {
   function dispose() {
     generation += 1
     stopTimer()
-    events.clear()
+    eventMap.clear()
+    events.value = []
     markers.value = []
+    unavailable.value = false
   }
 
-  return { markers, sync, dispose }
+  return { markers, events, unavailable, sync, dispose }
 }
 
 function identityKey(identity: AlertMarkerIdentity | null): string {

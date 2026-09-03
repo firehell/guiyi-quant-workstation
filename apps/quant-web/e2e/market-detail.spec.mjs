@@ -325,11 +325,10 @@ test('invalid identity fails closed and only recovers after an explicit click', 
   expect(new URL(page.url()).searchParams.get('frequency')).toBe('15m')
 })
 
-test('Trend, HTDY, and SuBing stay explicitly unavailable and can return to legacy', async ({ page }) => {
+test('Trend and SuBing stay unavailable while HTDY mounts its observation-only workspace', async ({ page }, testInfo) => {
   await mockMarketDetail(page)
   for (const path of [
     '/market/chart?symbol=jm&view=trend',
-    '/market/chart?symbol=jm&view=htdy&series_kind=actual_dominant&frequency=15m',
     '/market/chart?symbol=jm&view=subing',
   ]) {
     await page.goto(path)
@@ -337,13 +336,24 @@ test('Trend, HTDY, and SuBing stay explicitly unavailable and can return to lega
     await expect(page.locator('[data-detail-ready="true"]')).toHaveCount(0)
   }
 
-  await page.getByRole('button', { name: '返回旧版详情' }).click()
+  await page.goto('/market/chart?symbol=jm&view=htdy&series_kind=actual_dominant&frequency=15m')
+  await expect(page.locator('[data-detail-ready="true"]')).toBeVisible()
+  await expect(page.locator('[data-detail-workspace="htdy"]')).toBeVisible()
+  await expect(page.getByText(/含未来函数的回画观察/)).toBeVisible()
+  await expect(page.getByText('首次识别 Event', { exact: true }).first()).toBeVisible()
+  await page.screenshot({ path: testInfo.outputPath('market-detail-htdy-1440x900.png'), fullPage: false })
+  await page.setViewportSize({ width: 390, height: 844 })
+  await expect(page.locator('[data-detail-workspace="htdy"]')).toBeVisible()
+  await page.screenshot({ path: testInfo.outputPath('market-detail-htdy-history-390.png'), fullPage: false })
+
+  await page.getByRole('button', { name: '更多', exact: true }).click()
+  await page.getByRole('menuitem', { name: '返回旧版详情' }).click()
   await expect(page.getByTestId('product-status-strip')).toBeVisible()
   await expect(page.locator('.route-error-fallback')).toHaveCount(0)
   expect(new URL(page.url()).searchParams.has('view')).toBe(false)
 })
 
-test('returning a 30m HTDY event identity to legacy preserves focus and overlay semantics', async ({ page }) => {
+test('HTDY consumes a resolved 30m focus once before returning to legacy', async ({ page }) => {
   await mockMarketDetail(page)
   const focus = '2026-09-03T02:30:00Z'
   await page.goto(`/market/chart?symbol=jm&view=htdy&series_kind=actual_dominant&frequency=30m&focus_bar_end=${encodeURIComponent(focus)}`)
@@ -357,12 +367,14 @@ test('returning a 30m HTDY event identity to legacy preserves focus and overlay 
     })
   })
 
-  await page.getByRole('button', { name: '返回旧版详情' }).click()
+  await expect.poll(() => new URL(page.url()).searchParams.has('focus_bar_end')).toBe(false)
+  await page.getByRole('button', { name: '更多', exact: true }).click()
+  await page.getByRole('menuitem', { name: '返回旧版详情' }).click()
   await expect(page.getByTestId('product-status-strip')).toBeVisible()
   const legacyUrl = new URL(page.url())
   expect(legacyUrl.searchParams.has('view')).toBe(false)
   expect(legacyUrl.searchParams.get('overlay')).toBe('htdy')
-  expect(await page.evaluate(() => window.__legacyNavigationQuery.focus_bar_end)).toBe(focus)
+  expect(await page.evaluate(() => window.__legacyNavigationQuery.focus_bar_end)).toBeUndefined()
 })
 
 test('returning a daily HTDY event only consumes focus after locating its trading day', async ({ page }) => {
@@ -370,7 +382,8 @@ test('returning a daily HTDY event only consumes focus after locating its tradin
   const focus = '2026-09-03T02:45:00Z'
   await page.goto(`/market/chart?symbol=jm&view=htdy&series_kind=actual_dominant&frequency=1d&focus_bar_end=${encodeURIComponent(focus)}`)
 
-  await page.getByRole('button', { name: '返回旧版详情' }).click()
+  await page.getByRole('button', { name: '更多', exact: true }).click()
+  await page.getByRole('menuitem', { name: '返回旧版详情' }).click()
   await expect(page.getByTestId('product-status-strip')).toBeVisible()
   await expect.poll(() => new URL(page.url()).searchParams.has('focus_bar_end')).toBe(false)
 })
