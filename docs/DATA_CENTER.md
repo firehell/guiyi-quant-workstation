@@ -182,9 +182,33 @@ Dataset/partition、预计缺失首分钟与稳定 scope hash，不调用 RQData
 只把完整 Canonical 复制到外部 shadow root，再用 RQData 真实缺失 1m 重建 `1m/5m/15m/30m/60m`；不得合成，
 且 D1/W1 hash 必须不变。manifest 必须位于 active/shadow root 之外。`publish --apply` 需要新的维护授权，
 只在五项 Runtime 均停止且 revision、Catalog、active/shadow 文件 hash 与 scope 全部未漂移时切换 root、更新
-coverage/row_count、执行精确 0045，再清理 publish 执行时由 operational phase authority 唯一解析的当前交易日旧锚点 Redis Bar。0045 成功后失败只能
-保持维护状态继续 forward recovery，不能恢复错误 session。修复继续使用唯一 Canonical V2，不创建并行
-data-version。
+coverage/row_count、执行精确 0045，再清理 publish 执行时由 operational phase authority 唯一解析的当前交易日旧锚点 Redis Live Bar。该 repair cleanup 只删除
+`live:bars:<trading-day>:*`，必须保留同日不可变 rank1 subscription snapshot；它不清理其他交易日，且不得把
+snapshot 改写为 Canonical 或合成的事实。0045 成功后失败只能保持维护状态继续 forward recovery，不能恢复错误
+session。修复继续使用唯一 Canonical V2，不创建并行 data-version。
+
+自然 after-market 是与 repair 分离的严格边界：Canonical 更新后必须用既有 immutable subscription snapshot 对
+formal rank1 做 strict reconciliation。snapshot 缺失、格式错误、不完整或 identity 不匹配均失败关闭，不能以 repair、
+重新查询、合成 snapshot 或其他回退替代；只有 reconciliation 完成后，才一次原子 full cleanup 删除该交易日全部
+Live Bars 与 subscription snapshot。repair-only cleanup 不改变这条自然 after-market 语义。
+
+### Market Runtime promotion preflight
+
+`run-local-service.sh market-runtime-preflight` 是只读、bounded-JSON 的 promotion preflight。它只读取既有
+operational universe、Calendar/Session phase authority、当前交易日 immutable Live subscription snapshot 与公开
+after-market status；不连接 RQData，不写 Catalog、Redis 或状态文件。
+
+只有以下四种窗口可通过：有效 snapshot 与 operational symbols/contract identities 精确对应的
+`snapshot_ready`；所有 operational 产品尚未到权威 Session 的真正最早 start 的 `before_first_session`；同一
+trading day 的 after-market 已完成且 products 精确保持 operational 顺序的 `after_market_complete`；以及没有
+当前 trading day、没有 active Session 的 clean `non_trading_interval`。任何 post-start 缺失 snapshot、无效或
+部分 snapshot、UNKNOWN/分歧 phase、缺失或歧义 Session authority、running/corrupt/unreadable after-market
+status，或不可能的 status chronology 都必须阻断；其稳定公开原因仅为
+`MARKET_RUNTIME_PROMOTION_LIVE_SNAPSHOT_REQUIRED`、`MARKET_RUNTIME_PROMOTION_LIVE_SNAPSHOT_INVALID` 或
+`MARKET_RUNTIME_PROMOTION_STATE_UNAVAILABLE`。
+
+这个 preflight 没有 override、repair、synthetic snapshot、retry、replay 或 fallback；它不把预检通过表述为
+release、Runtime ready、formal rank1 reconciliation 或生产验证。
 
 active universe 为 `data/universe/active_products.txt` 的 60 品种；退役精确名单为
 `data/universe/retired_products.txt`，与 active 互斥。

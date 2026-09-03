@@ -39,3 +39,23 @@ PUBLIC_BASE_URL=https://<your_domain> ./scripts/ops/network/public-healthcheck.s
 
 `--render-only` 可用于本地无副作用验证。任何 launchd 加载/重载、Runtime switch、腾讯云配置应用或
 Nginx reload 都是独立受控外部操作，必须在执行前取得与目标相符的一次性明确意图。
+
+### Market Runtime promotion preflight
+
+`install-local-services.sh --confirm-market-runtime` 只会执行一次
+`run-local-service.sh market-runtime-preflight`。该 preflight 是只读检查，发生在外部 activation marker 准备、
+runtime script 写入、已安装 LaunchAgent plist 替换以及任何 `launchctl` mutation 之前；仓库内 plist render
+不属于这些外部 activation mutation。若 preflight 阻断，安装器非零退出，且不触碰 marker、runtime directory、
+installed plist 或 `launchctl`。
+
+preflight 只读取 operational universe、权威 Calendar/Session phase、既有 immutable Live subscription snapshot 与
+公开 after-market status。允许的通过原因只有：完整且 identity 有效 snapshot 的 `snapshot_ready`；所有品种真正
+最早权威 Session start 前的 `before_first_session`；同日 after-market 已 passed、且 products 与 operational
+顺序完全一致的 `after_market_complete`；以及无 current trading day、无 active Session 的
+`non_trading_interval`。它不会把“下一段 session 尚未开始”误作 `before_first_session`。
+
+已开始后的缺失 snapshot、无效/部分 snapshot、未知或分歧的 phase/session authority，以及 running、corrupt、
+unreadable 或 chronology 不可能的 after-market state 一律阻断；公开 block reason 仅为
+`MARKET_RUNTIME_PROMOTION_LIVE_SNAPSHOT_REQUIRED`、`MARKET_RUNTIME_PROMOTION_LIVE_SNAPSHOT_INVALID`、
+`MARKET_RUNTIME_PROMOTION_STATE_UNAVAILABLE`。没有 override、repair、synthetic snapshot、retry、replay 或
+fallback；通过预检本身不构成 Runtime promotion、release、Runtime ready 或 production verification。
