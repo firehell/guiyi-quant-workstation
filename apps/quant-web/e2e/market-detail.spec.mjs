@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-import { detailBar, installDetailFakeWebSocket, mockMarketDetail, navigateClient } from './market-detail.helpers.mjs'
+import { detailBar, htdyEvent, installDetailFakeWebSocket, mockMarketDetail, navigateClient } from './market-detail.helpers.mjs'
 
 const freeJm = '/market/chart?symbol=jm&view=free&series_kind=actual_dominant&frequency=15m'
 
@@ -325,11 +325,10 @@ test('invalid identity fails closed and only recovers after an explicit click', 
   expect(new URL(page.url()).searchParams.get('frequency')).toBe('15m')
 })
 
-test('Trend, HTDY, and SuBing stay explicitly unavailable and can return to legacy', async ({ page }) => {
+test('Trend and SuBing stay unavailable while HTDY mounts its observation-only workspace', async ({ page }, testInfo) => {
   await mockMarketDetail(page)
   for (const path of [
     '/market/chart?symbol=jm&view=trend',
-    '/market/chart?symbol=jm&view=htdy&series_kind=actual_dominant&frequency=15m',
     '/market/chart?symbol=jm&view=subing',
   ]) {
     await page.goto(path)
@@ -337,13 +336,88 @@ test('Trend, HTDY, and SuBing stay explicitly unavailable and can return to lega
     await expect(page.locator('[data-detail-ready="true"]')).toHaveCount(0)
   }
 
-  await page.getByRole('button', { name: '返回旧版详情' }).click()
+  await page.goto('/market/chart?symbol=jm&view=htdy&series_kind=actual_dominant&frequency=15m')
+  await expect(page.locator('[data-detail-ready="true"]')).toBeVisible()
+  await expect(page.locator('[data-detail-workspace="htdy"]')).toBeVisible()
+  await expect(page.getByText(/含未来函数的回画观察/)).toBeVisible()
+  await expect(page.getByText('首次识别 Event', { exact: true }).first()).toBeVisible()
+  await page.screenshot({ path: testInfo.outputPath('market-detail-htdy-1440x900.png'), fullPage: false })
+  await page.setViewportSize({ width: 390, height: 844 })
+  await expect(page.locator('[data-detail-workspace="htdy"]')).toBeVisible()
+  await page.screenshot({ path: testInfo.outputPath('market-detail-htdy-history-390.png'), fullPage: false })
+
+  await page.getByRole('button', { name: '更多', exact: true }).click()
+  await page.getByRole('menuitem', { name: '返回旧版详情' }).click()
   await expect(page.getByTestId('product-status-strip')).toBeVisible()
   await expect(page.locator('.route-error-fallback')).toHaveCount(0)
   expect(new URL(page.url()).searchParams.has('view')).toBe(false)
 })
 
-test('returning a 30m HTDY event identity to legacy preserves focus and overlay semantics', async ({ page }) => {
+test('HTDY resolves immutable Event focus across every official frequency', async ({ page }) => {
+  const cases = [
+    ['1m', '2026-09-03T02:30:00.000Z', '2026-09-03'],
+    ['5m', '2026-09-03T02:30:00.000Z', '2026-09-03'],
+    ['15m', '2026-09-03T02:30:00.000Z', '2026-09-03'],
+    ['30m', '2026-09-03T02:30:00.000Z', '2026-09-03'],
+    ['60m', '2026-09-03T02:30:00.000Z', '2026-09-03'],
+    ['1d', '2026-07-02T02:45:00.000Z', '2026-07-02', '2026-07-02T02:46:00.000Z'],
+    ['1w', '2026-07-08T02:45:00.000Z', '2026-07-08', '2026-07-08T02:46:00.000Z'],
+  ]
+  let currentCase = null
+  const requests = await mockMarketDetail(page, {
+    barsPage: ({ url, symbol }) => {
+      const frequency = url.searchParams.get('frequency')
+      if (frequency === '1d' || frequency === '1w') {
+        const total = frequency === '1w' ? 10 : 60
+        return { bars: Array.from({ length: total }, (_, index) => {
+          const day = new Date(Date.UTC(2026, 6, 1 + index * (frequency === '1w' ? 7 : 1))).toISOString().slice(0, 10)
+          return { ...detailBar(symbol, index, 100 + index), bar_end: `${day}T07:00:00.000Z`, trading_day: day }
+        }) }
+      }
+      return { bars: Array.from({ length: 60 }, (_, index) => detailBar(symbol, index, 100 + index)) }
+    },
+    alertEvents: () => currentCase ? [htdyEvent('jm', currentCase[0], currentCase[1], currentCase[2], currentCase[3])] : [],
+  })
+  for (const [frequency, focus, tradingDay, detectedAt] of cases) {
+    currentCase = [frequency, focus, tradingDay, detectedAt]
+    await page.goto(`/market/chart?symbol=jm&view=htdy&series_kind=actual_dominant&frequency=${frequency}&focus_bar_end=${encodeURIComponent(focus)}`)
+    await expect(page.locator('[data-detail-ready="true"]')).toBeVisible()
+    const eventFact = page.locator('[data-detail-section="facts"] > div').filter({ hasText: '首次识别 Event' })
+    await expect(eventFact).toContainText('买入观察')
+    await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-alert-marker-count', '1')
+    await expect.poll(() => new URL(page.url()).searchParams.has('focus_bar_end')).toBe(false)
+  }
+  const eventRequests = requests.alertRequests.filter(({ url }) => url.pathname.endsWith('/events'))
+  expect(eventRequests.length).toBeGreaterThanOrEqual(7)
+  expect(requests.alertRequests.every(({ method }) => method !== 'PUT')).toBe(true)
+
+  const before = eventRequests.length
+  await page.goto('/market/chart?symbol=jm&view=htdy&series_kind=continuous&frequency=15m')
+  await expect(page.locator('[data-detail-ready="true"]')).toBeVisible()
+  await page.goto('/market/chart?symbol=jm&view=htdy&series_kind=contract&contract=JM2601&frequency=15m')
+  await expect(page.locator('[data-detail-ready="true"]')).toBeVisible()
+  expect(requests.alertRequests.filter(({ url }) => url.pathname.endsWith('/events'))).toHaveLength(before)
+})
+
+test('HTDY keeps last successful immutable Event evidence when a later Event refresh fails', async ({ page }) => {
+  let eventCalls = 0
+  await mockMarketDetail(page, {
+    alertEvents: () => (++eventCalls === 1 ? [htdyEvent('jm', '15m')] : 'error'),
+  })
+  await page.goto('/market/chart?symbol=jm&view=htdy&series_kind=actual_dominant&frequency=15m')
+  const facts = page.locator('[data-detail-section="facts"]')
+  const rawFact = facts.locator('div').filter({ has: page.getByText('当前重绘观察', { exact: true }) })
+  const eventFact = facts.locator('div').filter({ has: page.getByText('首次识别 Event', { exact: true }) })
+  await expect(rawFact).toContainText('暂无')
+  await expect(eventFact).toContainText('买入观察')
+  await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-alert-marker-count', '1')
+  await expect(page.getByRole('button', { name: '历史记录' })).toBeVisible()
+  await expect(page.getByText(/最后成功快照（已旧）/)).toBeVisible({ timeout: 35_000 })
+  await page.getByRole('button', { name: '历史记录' }).click()
+  await expect(page.getByText(/Bar 2026-09-03T02:45:00.000Z/)).toBeVisible()
+})
+
+test('HTDY consumes a resolved 30m focus once before returning to legacy', async ({ page }) => {
   await mockMarketDetail(page)
   const focus = '2026-09-03T02:30:00Z'
   await page.goto(`/market/chart?symbol=jm&view=htdy&series_kind=actual_dominant&frequency=30m&focus_bar_end=${encodeURIComponent(focus)}`)
@@ -357,12 +431,14 @@ test('returning a 30m HTDY event identity to legacy preserves focus and overlay 
     })
   })
 
-  await page.getByRole('button', { name: '返回旧版详情' }).click()
+  await expect.poll(() => new URL(page.url()).searchParams.has('focus_bar_end')).toBe(false)
+  await page.getByRole('button', { name: '更多', exact: true }).click()
+  await page.getByRole('menuitem', { name: '返回旧版详情' }).click()
   await expect(page.getByTestId('product-status-strip')).toBeVisible()
   const legacyUrl = new URL(page.url())
   expect(legacyUrl.searchParams.has('view')).toBe(false)
   expect(legacyUrl.searchParams.get('overlay')).toBe('htdy')
-  expect(await page.evaluate(() => window.__legacyNavigationQuery.focus_bar_end)).toBe(focus)
+  expect(await page.evaluate(() => window.__legacyNavigationQuery.focus_bar_end)).toBeUndefined()
 })
 
 test('returning a daily HTDY event only consumes focus after locating its trading day', async ({ page }) => {
@@ -370,7 +446,8 @@ test('returning a daily HTDY event only consumes focus after locating its tradin
   const focus = '2026-09-03T02:45:00Z'
   await page.goto(`/market/chart?symbol=jm&view=htdy&series_kind=actual_dominant&frequency=1d&focus_bar_end=${encodeURIComponent(focus)}`)
 
-  await page.getByRole('button', { name: '返回旧版详情' }).click()
+  await page.getByRole('button', { name: '更多', exact: true }).click()
+  await page.getByRole('menuitem', { name: '返回旧版详情' }).click()
   await expect(page.getByTestId('product-status-strip')).toBeVisible()
   await expect.poll(() => new URL(page.url()).searchParams.has('focus_bar_end')).toBe(false)
 })

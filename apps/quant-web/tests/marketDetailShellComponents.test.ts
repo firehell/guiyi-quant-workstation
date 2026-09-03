@@ -87,6 +87,8 @@ test('history uses one source and mobile drawer restores focus', () => {
   const drawer = parsedComponent('MarketDetailDrawer')
 
   assert.equal((tabs.source.match(/history:\s*readonly MarketDetailHistoryItem\[\]/g) ?? []).length, 1)
+  assert.doesNotMatch(tabs.source, /首次识别 \{\{ item\.occurredAt \}\}/)
+  assert.match(tabs.source, /item\.timeLabel \?\? item\.occurredAt/)
   assert.match(tabs.template, /v-if="history\.length > 0"/)
   assert.match(tabs.template, /<MarketDetailDrawer/)
   assert.match(drawer.source, /previousFocus/)

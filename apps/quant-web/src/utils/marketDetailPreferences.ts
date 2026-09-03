@@ -56,6 +56,13 @@ export function replaceFreeDetailPreferences(
   return { ...current, free: normalizeFlexible(free) }
 }
 
+export function replaceHtdyDetailPreferences(
+  current: MarketDetailPreferences,
+  htdy: Omit<FlexibleDetailPreferences, 'seriesKind'> & { seriesKind: SeriesKind },
+): MarketDetailPreferences {
+  return { ...current, htdy: normalizeFlexible(htdy) }
+}
+
 function normalizeCurrent(value: unknown): MarketDetailPreferences {
   if (!isRecord(value) || value.version !== 1) return defaultMarketDetailPreferences()
   return {

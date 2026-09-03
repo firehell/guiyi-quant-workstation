@@ -89,8 +89,8 @@ function buildHtdyDerivedData(bars: BarData[]): HtdyDerivedData {
     zd1: observation.points.flatMap((point) => htdyValuePoint(point.time, point.zd1)),
     zd2: observation.points.flatMap((point) => htdyValuePoint(point.time, point.zd2)),
     markers: observation.points.flatMap((point) => [
-      point.buyObservation ? observationMarker(point.time, '买观察', 'belowBar', 'arrowUp') : null,
-      point.sellObservation ? observationMarker(point.time, '卖观察', 'aboveBar', 'arrowDown') : null,
+      point.buyObservation ? observationMarker(point.time, '买观察', 'belowBar', 'arrowUp', 'up') : null,
+      point.sellObservation ? observationMarker(point.time, '卖观察', 'aboveBar', 'arrowDown', 'down') : null,
     ].filter((marker): marker is KlineMarker => marker !== null)),
   }
 }
@@ -104,13 +104,14 @@ function observationMarker(
   label: string,
   position: KlineMarker['position'],
   shape: KlineMarker['shape'],
+  tone: KlineMarker['tone'],
 ): KlineMarker {
   return {
     id: `htdy:${label}:${String(time)}`,
     time: String(time),
     label,
     tooltip: '火天大有原始观察；未来引用/重绘风险，仅供人工观察',
-    tone: 'htdy',
+    tone,
     position,
     shape,
   }

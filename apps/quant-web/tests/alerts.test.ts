@@ -88,8 +88,8 @@ describe('persistent Alert markers', () => {
 
   test('maps first-seen events to observation markers and only exposes them under HTDY', () => {
     const markers = alertEventsToMarkers([event(1, ['buy']), event(2, ['sell'])])
-    assert.deepEqual(markers.map((item) => item.label), ['买入观察', '卖出观察'])
-    assert.ok(markers.every((item) => item.tone === 'htdy'))
+    assert.deepEqual(markers.map((item) => item.label), ['买入观察 · 首次识别', '卖出观察 · 首次识别'])
+    assert.deepEqual(markers.map((item) => item.tone), ['up', 'down'])
     assert.deepEqual(alertMarkersForOverlay('none', markers), [])
     assert.deepEqual(alertMarkersForOverlay('htdy', markers), markers)
   })
@@ -166,6 +166,44 @@ describe('persistent Alert markers', () => {
     assert.equal(controller.markers.value.length, 1)
     controller.dispose()
     assert.equal(cleared, true)
+  })
+
+  test('HTDY workspace narrows read-only Event requests to HTDY and exposes immutable Event facts', async () => {
+    const requests: string[] = []
+    const controller = usePersistentAlertMarkers({
+      fetchEvents: async ({ ruleCode }) => {
+        requests.push(ruleCode)
+        return { items: [event(1, ['buy'])] }
+      },
+      scheduleInterval: () => 1,
+      clearInterval: () => undefined,
+    }, {
+      resolveRuleCodes: () => [ALERT_RULE_CODES.HTDY],
+    })
+    await controller.sync({ seriesKind: 'actual_dominant', symbol: 'jm', frequency: '15m' }, bars(), 'replace')
+    assert.deepEqual(requests, [ALERT_RULE_CODES.HTDY])
+    assert.equal(controller.events.value[0]?.rule_code, ALERT_RULE_CODES.HTDY)
+    assert.equal(controller.unavailable.value, false)
+    controller.dispose()
+  })
+
+  test('keeps last immutable Event snapshot while marking an Event refresh unavailable', async () => {
+    let reject = false
+    const controller = usePersistentAlertMarkers({
+      fetchEvents: async () => {
+        if (reject) throw new Error('offline')
+        return { items: [event(1, ['buy'])] }
+      },
+      scheduleInterval: () => 1,
+      clearInterval: () => undefined,
+    }, { resolveRuleCodes: () => [ALERT_RULE_CODES.HTDY] })
+    const identity = { seriesKind: 'actual_dominant' as const, symbol: 'jm', frequency: '15m' as const }
+    await controller.sync(identity, bars(), 'replace')
+    reject = true
+    await controller.sync(identity, [{ ...bars()[0]!, time: '2026-08-15T00:00:00Z' }, ...bars()], 'prepend')
+    assert.equal(controller.events.value.length, 1)
+    assert.equal(controller.unavailable.value, true)
+    controller.dispose()
   })
 })
 

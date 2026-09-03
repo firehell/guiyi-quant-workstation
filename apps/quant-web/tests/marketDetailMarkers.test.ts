@@ -21,3 +21,8 @@ test('B1 does not define marker policy for other workspaces', async () => {
   const { markersForDetailView } = await import('../src/utils/marketDetailMarkers.ts')
   assert.deepEqual(markersForDetailView('trend', allAlertMarkers), allAlertMarkers)
 })
+
+test('HTDY workspace admits only immutable HTDY Event markers', async () => {
+  const { markersForDetailView } = await import('../src/utils/marketDetailMarkers.ts')
+  assert.deepEqual(markersForDetailView('htdy', allAlertMarkers), [allAlertMarkers[0]])
+})
