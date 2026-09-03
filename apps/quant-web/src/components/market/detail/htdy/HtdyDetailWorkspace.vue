@@ -5,7 +5,7 @@ import MarketDetailFactStrip from '@/components/market/detail/MarketDetailFactSt
 import MarketDetailInsightDeck from '@/components/market/detail/MarketDetailInsightDeck.vue'
 import MarketDetailSectionTabs from '@/components/market/detail/MarketDetailSectionTabs.vue'
 import HtdyChartStage from './HtdyChartStage.vue'
-import { getAlertEvents, getAlertRuntimeStatus } from '@/api/alerts'
+import { getAlertEvents, getAlertRuntimeStatus, getProductAlerts } from '@/api/alerts'
 import { usePersistentAlertMarkers } from '@/composables/usePersistentAlertMarkers'
 import { useRangeDetectorOverlayWarmup } from '@/composables/useRangeDetectorOverlayWarmup'
 import type { MarketSeriesMutation } from '@/composables/useMarketSeries'
@@ -15,7 +15,7 @@ import type { FlexibleDetailPreferences } from '@/utils/marketDetailPreferences'
 import { visibleMainIndicatorsForOverlay } from '@/utils/mainIndicators'
 import { buildKlineDerivedData } from '@/utils/klineViewModel'
 import { buildHtdyDetailViewModel } from '@/utils/htdyDetailViewModel'
-import { ALERT_RULE_CODES, isHtdyAlertEvent } from '@/utils/alertRules'
+import { ALERT_RULE_CODES, findAlertRuleByCode, isHtdyAlertEvent } from '@/utils/alertRules'
 
 const props = defineProps<{
   identity: MarketDetailIdentity; header: MarketDetailHeaderModel; bars: BarData[]; mutation: MarketSeriesMutation
@@ -32,17 +32,28 @@ const rangeWarmup = useRangeDetectorOverlayWarmup({ bars: computed(() => props.b
 const rangeState = computed(() => !showRangeDetector.value ? 'disabled' : rangeWarmup.loading.value ? 'loading' : rangeWarmup.unavailableReason.value === null && rangeWarmup.anchorTime.value ? 'ready' : 'insufficient')
 const loader = usePersistentAlertMarkers({ fetchEvents: getAlertEvents }, { resolveRuleCodes: () => [ALERT_RULE_CODES.HTDY] })
 const runtime = ref<'healthy' | 'degraded' | 'unavailable'>('unavailable')
+const ruleScope = ref('HTDY Rule / Scope 暂不可用')
 const rawState = computed(() => {
   try {
     return { observation: buildKlineDerivedData(props.bars, ['htdy']).htdy?.markers.at(-1)?.label as '买观察' | '卖观察' | undefined, unavailable: false }
   } catch { return { observation: undefined, unavailable: true } }
 })
-const model = computed<DetailViewModel>(() => buildHtdyDetailViewModel({ identity: props.identity, header: props.header, rawObservation: rawState.value.observation ?? null, rawUnavailable: rawState.value.unavailable, events: loader.events.value.filter(isHtdyAlertEvent), alertUnavailable: loader.unavailable.value, runtime: runtime.value }))
+const model = computed<DetailViewModel>(() => buildHtdyDetailViewModel({ identity: props.identity, header: props.header, rawObservation: rawState.value.observation ?? null, rawUnavailable: rawState.value.unavailable, events: loader.events.value.filter(isHtdyAlertEvent), alertUnavailable: loader.unavailable.value, runtime: runtime.value, ruleScope: ruleScope.value }))
 const indicators = computed(() => visibleMainIndicatorsForOverlay('htdy', optionalEmaIndicators.value, showRangeDetector.value))
 
 async function refresh() {
   await loader.sync(props.identity, props.bars, props.mutation.kind)
-  try { runtime.value = (await getAlertRuntimeStatus()) === 'healthy' ? 'healthy' : 'degraded' } catch { runtime.value = 'unavailable' }
+  try {
+    const status = await getAlertRuntimeStatus()
+    runtime.value = status === 'ok' || status === 'healthy' ? 'healthy' : status === 'disabled' ? 'unavailable' : 'degraded'
+  } catch { runtime.value = 'unavailable' }
+  try {
+    const response = await getProductAlerts(props.identity.symbol)
+    const rule = findAlertRuleByCode(response.rules, ALERT_RULE_CODES.HTDY)
+    ruleScope.value = rule
+      ? `${rule.display_name} (${ALERT_RULE_CODES.HTDY}) · ${props.identity.symbol.toUpperCase()} ${props.identity.frequency} · ${rule.enabled_frequencies.includes(props.identity.frequency) ? '当前 Scope 已启用' : '当前 Scope 未启用'} · 仅只读展示`
+      : 'HTDY Rule / Scope 暂不可用'
+  } catch { ruleScope.value = 'HTDY Rule / Scope 暂不可用' }
 }
 function updatePreferences() { emit('updatePreferences', { seriesKind: props.identity.seriesKind === 'continuous' ? 'continuous' : 'actual_dominant', frequency: props.identity.frequency, optionalEmaIndicators: [...optionalEmaIndicators.value], showRangeDetector: showRangeDetector.value }) }
 function toggleEma(value: OptionalEmaIndicatorId) { optionalEmaIndicators.value = optionalEmaIndicators.value.includes(value) ? optionalEmaIndicators.value.filter((item) => item !== value) : [...optionalEmaIndicators.value, value] }

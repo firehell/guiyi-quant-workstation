@@ -101,6 +101,9 @@ export interface MarketDetailHistoryItem {
   label: string
   occurredAt: string
   source: MarketDetailSource
+  barEnd?: string
+  contract?: string
+  notificationAttemptedAt?: string | null
 }
 
 export interface DetailViewModel {

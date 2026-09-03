@@ -10,6 +10,7 @@ export interface HtdyDetailViewModelInput {
   events: readonly HtdyAlertEvent[]
   alertUnavailable: boolean
   runtime: 'healthy' | 'degraded' | 'unavailable'
+  ruleScope: string
 }
 
 export function buildHtdyDetailViewModel(input: HtdyDetailViewModelInput): DetailViewModel {
@@ -27,7 +28,7 @@ export function buildHtdyDetailViewModel(input: HtdyDetailViewModelInput): Detai
     identity: input.identity,
     asOf: input.header.asOf,
     semanticBanner: {
-      text: '火天大有为含未来函数的回画观察，仅供研究复核；不可用于严格回测或交易。当前观察可重绘，首次识别 Event 为独立持久事实。',
+      text: '火天大有为含未来函数的回画观察（固定 27-bar repaint scan zone），仅供研究复核；不可用于严格回测或交易。当前观察可重绘，首次识别 Event 为独立持久事实。',
       tone: 'warning',
     },
     facts: [
@@ -39,8 +40,9 @@ export function buildHtdyDetailViewModel(input: HtdyDetailViewModelInput): Detai
       {
         id: 'htdy-observation', title: '观察与 Event 口径', summary: '当前回画观察与持久首次识别 Event 分别展示，不能相互替代。', updatedAt: input.header.asOf, tone: 'warning',
         rows: [
-          { label: '当前观察', value: '由既有 HTDY 展示内核计算，允许回画，不创建 Event。', source: 'htdy_display' },
+          { label: '当前观察', value: '由既有 HTDY 展示内核计算，固定 27-bar repaint scan zone，允许回画，不创建 Event。', source: 'htdy_display' },
           { label: '首次识别 Event', value: persistentSupported ? '仅真实主力序列的 HTDY AlertEvent；按首次识别时间冻结。' : '当前序列没有持久首次识别 Event 权威。', source: 'alert_event' },
+          { label: 'Rule / Scope（只读）', value: input.ruleScope, source: 'alert_event' },
           { label: '预警状态', value: runtimeText(input.runtime), source: 'runtime' },
         ],
       },
@@ -48,9 +50,12 @@ export function buildHtdyDetailViewModel(input: HtdyDetailViewModelInput): Detai
     ],
     history: persistentSupported && !input.alertUnavailable ? newestEvents.map((event) => ({
       id: `htdy-event:${event.id}`,
-      label: `${alertEventResultLabel(event, event.result_codes)} · 首次识别 · ${event.contract}${event.notification_attempted_at ? ' · 已尝试通知' : ''}`,
+      label: `${alertEventResultLabel(event, event.result_codes)} · 首次识别`,
       occurredAt: event.detected_at,
       source: 'alert_event' as const,
+      barEnd: event.bar_end,
+      contract: event.contract,
+      notificationAttemptedAt: event.notification_attempted_at,
     })) : [],
     dataStatus,
   }

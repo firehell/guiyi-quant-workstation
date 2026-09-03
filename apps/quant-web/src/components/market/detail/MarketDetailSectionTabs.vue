@@ -65,7 +65,7 @@ onBeforeUnmount(() => media?.removeEventListener('change', syncMedia))
       <slot :active-id="activeId" />
       <ol v-if="!mobile && activeId === 'history' && history.length > 0" class="detail-section-tabs__history">
         <li v-for="item in history" :key="item.id">
-          <span>{{ item.label }}</span><time :datetime="item.occurredAt">{{ item.occurredAt }}</time>
+          <span>{{ item.label }}<small v-if="item.barEnd"> · Bar {{ item.barEnd }} · 合约 {{ item.contract ?? '—' }}{{ item.notificationAttemptedAt ? ' · 已尝试通知' : '' }}</small></span><time :datetime="item.occurredAt">首次识别 {{ item.occurredAt }}</time>
         </li>
       </ol>
     </div>
@@ -73,7 +73,7 @@ onBeforeUnmount(() => media?.removeEventListener('change', syncMedia))
     <MarketDetailDrawer :open="historyDrawerOpen" title="历史记录" @close="historyDrawerOpen = false">
       <ol class="detail-section-tabs__history">
         <li v-for="item in history" :key="item.id">
-          <span>{{ item.label }}</span><time :datetime="item.occurredAt">{{ item.occurredAt }}</time>
+          <span>{{ item.label }}<small v-if="item.barEnd"> · Bar {{ item.barEnd }} · 合约 {{ item.contract ?? '—' }}{{ item.notificationAttemptedAt ? ' · 已尝试通知' : '' }}</small></span><time :datetime="item.occurredAt">首次识别 {{ item.occurredAt }}</time>
         </li>
       </ol>
     </MarketDetailDrawer>
@@ -91,4 +91,5 @@ onBeforeUnmount(() => media?.removeEventListener('change', syncMedia))
 .detail-section-tabs__history { display: grid; gap: var(--gy-space-2); margin: 0; padding: 0; list-style: none; }
 .detail-section-tabs__history li { display: flex; justify-content: space-between; gap: var(--gy-space-3); padding: var(--gy-space-3); border-radius: var(--gy-radius-md); background: var(--gy-detail-section-bg); }
 .detail-section-tabs__history time { color: var(--gy-text-muted); font-size: var(--gy-font-size-sm); white-space: nowrap; }
+.detail-section-tabs__history small { color: var(--gy-text-muted); font-size: var(--gy-font-size-sm); }
 </style>

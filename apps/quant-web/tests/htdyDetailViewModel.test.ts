@@ -23,6 +23,7 @@ test('keeps current repainting observation and first-seen Event as separate fact
     events: [event('sell')],
     alertUnavailable: false,
     runtime: 'healthy',
+    ruleScope: '火天大有 (htdy_original_15m) · JM 15m · 当前 Scope 已启用 · 仅只读展示',
   })
   assert.match(model.semanticBanner.text, /未来函数/)
   assert.match(model.semanticBanner.text, /不可用于严格回测或交易/)
@@ -33,6 +34,9 @@ test('keeps current repainting observation and first-seen Event as separate fact
   ])
   assert.equal(model.history[0]?.source, 'alert_event')
   assert.match(model.history[0]?.label ?? '', /首次识别/)
+  assert.equal(model.history[0]?.barEnd, '2026-09-03T02:45:00Z')
+  assert.equal(model.history[0]?.contract, 'JM2601')
+  assert.match(model.semanticBanner.text, /27-bar repaint scan zone/)
 })
 
 test('keeps Event history unavailable explicit without fabricating a current observation', async () => {
@@ -45,6 +49,7 @@ test('keeps Event history unavailable explicit without fabricating a current obs
     events: [],
     alertUnavailable: false,
     runtime: 'degraded',
+    ruleScope: 'HTDY Rule / Scope 暂不可用',
   })
   assert.equal(model.facts[0].value, '当前观察不可用')
   assert.match(model.facts[1].value, /仅属于真实主力序列/)
