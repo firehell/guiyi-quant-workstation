@@ -49,6 +49,7 @@ const VOLUME_FACT_KEYS = [
   'right_leg_median', 'handle_median', 'handle_baseline_median',
   'handle_right_ratio', 'handle_baseline_ratio',
 ] as const
+const DECIMAL_PATTERN = /^([+-])?(?:(\d+)(?:\.(\d*))?|\.(\d+))(?:[eE]([+-]?\d+))?$/
 
 export function normalizeNewowTrendDetailResponse(
   payload: unknown,
@@ -246,6 +247,12 @@ function normalizeTrendBandPoint(payload: unknown, index: number): NewowTrendBan
     (transition === 'BUILD' && (stateBefore !== 'BLUE' || state !== 'YELLOW'))
     || (transition === 'CLEAR' && (stateBefore !== 'YELLOW' || state !== 'BLUE'))
   ) throw new Error(`${field}.transition contradicts its states`)
+  const expectedTransition = stateBefore === 'BLUE' && state === 'YELLOW'
+    ? 'BUILD'
+    : stateBefore === 'YELLOW' && state === 'BLUE'
+      ? 'CLEAR'
+      : null
+  if (transition !== expectedTransition) throw new Error(`${field}.transition is incomplete for its state change`)
   return {
     bar_end: instant(value.bar_end, `${field}.bar_end`),
     b_value: bValue,
@@ -359,9 +366,6 @@ function normalizeCupHandle(payload: unknown, index: number): NewowCupHandle {
   const confirmedAt = instant(value.confirmed_at, `${field}.confirmed_at`)
   const firstSeenAt = instant(value.first_seen_at, `${field}.first_seen_at`)
   const stateChangedAt = instant(value.state_changed_at, `${field}.state_changed_at`)
-  if (instantValue(firstSeenAt) > instantValue(confirmedAt) || instantValue(confirmedAt) > instantValue(stateChangedAt)) {
-    throw new Error(`${field} lifecycle timestamps are contradictory`)
-  }
   const readyFacts = handleExtreme !== null && pivotPrice !== null && pivotFrozenAt !== null
   if ((state === 'FORMING' && readyFacts) || (state !== 'FORMING' && !readyFacts)) {
     throw new Error(`${field} state contradicts its ready facts`)
@@ -372,15 +376,29 @@ function normalizeCupHandle(payload: unknown, index: number): NewowCupHandle {
   if (pivotFrozenAt !== null && pivotFrozenAt !== confirmedAt) {
     throw new Error(`${field}.pivot_frozen_at must equal confirmed_at`)
   }
-  if (instantValue(confirmedAt) < Math.max(
+  const anchorConfirmedAt = Math.max(
     instantValue(leftRim.confirmed_at),
     instantValue(bottom.confirmed_at),
     instantValue(rightRim.confirmed_at),
-    handleExtreme === null ? Number.NEGATIVE_INFINITY : instantValue(handleExtreme.confirmed_at),
-  )) throw new Error(`${field}.confirmed_at precedes a confirmed pivot`)
+  )
+  if (instantValue(firstSeenAt) < anchorConfirmedAt) throw new Error(`${field}.first_seen_at precedes an anchor confirmation`)
+  if (state === 'FORMING') {
+    if (
+      instantValue(confirmedAt) !== anchorConfirmedAt
+      || instantValue(firstSeenAt) < instantValue(confirmedAt)
+      || instantValue(stateChangedAt) !== instantValue(firstSeenAt)
+    ) throw new Error(`${field} FORMING lifecycle timestamps are contradictory`)
+  } else {
+    const readyConfirmedAt = Math.max(anchorConfirmedAt, instantValue(handleExtreme!.confirmed_at))
+    if (
+      instantValue(confirmedAt) < readyConfirmedAt
+      || instantValue(firstSeenAt) > instantValue(confirmedAt)
+      || instantValue(stateChangedAt) < instantValue(confirmedAt)
+      || (state === 'READY' && instantValue(stateChangedAt) !== instantValue(confirmedAt))
+    ) throw new Error(`${field} ready lifecycle timestamps are contradictory`)
+  }
 
-  const scoreKeys = state === 'FORMING' ? FORMING_SCORE_KEYS : COMPLETE_SCORE_KEYS
-  const scoreBreakdown = finiteMap(value.score_breakdown, `${field}.score_breakdown`, scoreKeys)
+  const scoreBreakdown = finiteMap(value.score_breakdown, `${field}.score_breakdown`, COMPLETE_SCORE_KEYS)
   const volumeFacts = finiteMap(
     value.volume_facts,
     `${field}.volume_facts`,
@@ -389,6 +407,9 @@ function normalizeCupHandle(payload: unknown, index: number): NewowCupHandle {
   const score = boundedNumber(value.score, `${field}.score`, 0, 100)
   const scoreTotal = Object.values(scoreBreakdown).reduce((total, item) => total + item, 0)
   if (Math.abs(score - scoreTotal) > 1e-9) throw new Error(`${field}.score disagrees with score_breakdown`)
+  if (state === 'FORMING' && (scoreBreakdown.handle_quality !== 0 || scoreBreakdown.volume_structure !== 0)) {
+    throw new Error(`${field} FORMING score_breakdown requires zero handle and volume scores`)
+  }
   const hardFailures = stringArray(value.hard_failures, `${field}.hard_failures`, false)
   if (hardFailures.length !== 0) throw new Error(`${field}.hard_failures must be empty for a public overlay`)
   requireExact(value.formula_version, CUP_FORMULA, `${field}.formula_version`)
@@ -586,12 +607,31 @@ function instantValue(value: string): number {
 }
 
 function positiveDecimal(value: unknown, field: string): number {
-  if (typeof value !== 'string' || !/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(value)) {
+  if (typeof value !== 'string' || !DECIMAL_PATTERN.test(value)) {
     throw new Error(`${field} must be a Decimal string`)
   }
   const normalized = Number(value)
   if (!Number.isFinite(normalized) || normalized <= 0) throw new Error(`${field} must be a finite positive Decimal string`)
+  if (canonicalDecimal(value) !== canonicalDecimal(String(normalized))) {
+    throw new Error(`${field} exceeds safe chart-number precision`)
+  }
   return normalized
+}
+
+function canonicalDecimal(value: string): string {
+  const match = DECIMAL_PATTERN.exec(value)
+  if (match === null) throw new Error('invalid Decimal string')
+  const negative = match[1] === '-'
+  const integerDigits = match[2] ?? ''
+  const fractionalDigits = match[2] === undefined ? (match[4] ?? '') : (match[3] ?? '')
+  let coefficient = `${integerDigits}${fractionalDigits}`.replace(/^0+/, '')
+  if (coefficient.length === 0) return '0e0'
+  let exponent = BigInt(match[5] ?? '0') - BigInt(fractionalDigits.length)
+  while (coefficient.endsWith('0')) {
+    coefficient = coefficient.slice(0, -1)
+    exponent += 1n
+  }
+  return `${negative ? '-' : ''}${coefficient}e${exponent}`
 }
 
 function nullableFinite(value: unknown, field: string): number | null {

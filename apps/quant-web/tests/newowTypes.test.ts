@@ -168,6 +168,10 @@ test('normalizes finite Decimal exponent strings without accepting JSON numbers 
   rejects((value) => { value.bars[0]!.open = 10 as unknown as string }, /Decimal string/)
 })
 
+test('fails closed instead of collapsing a more precise Decimal string into the same chart number', () => {
+  rejects((value) => { value.bars[0]!.open = '10.1000000000000001' }, /precision/)
+})
+
 test('fails closed on identity, exact-field, and completed-only violations', () => {
   rejects((value) => Object.assign(value, { unexpected: true }), /unexpected/)
   rejects((value) => Object.assign(value.meta, { unexpected: true }), /unexpected/)
@@ -206,6 +210,17 @@ test('fails closed when trend bands do not align exactly with bars and transitio
   rejects((value) => { value.trend_markers.shift() })
 })
 
+test('requires the exact transition and marker whenever an available trend state flips', () => {
+  rejects((value) => {
+    value.trend_band[0]!.transition = null
+    value.trend_markers.shift()
+  }, /transition/)
+  rejects((value) => {
+    value.trend_band[1]!.transition = null
+    value.trend_markers.splice(1, 1)
+  }, /transition/)
+})
+
 test('fails closed on marker family, global identity, visible reference, and JSON facts violations', () => {
   rejects((value) => { value.trend_markers[0]!.marker_type = 'NEWOW_ESCAPE_D1' })
   rejects((value) => { value.escape_markers[0]!.marker_type = 'BUILD' })
@@ -233,7 +248,7 @@ test('fails closed on invalid cup identity, chronology, state requirements, scor
   rejects((value) => { value.cup_handles[0]!.formula_version = 'other' })
 })
 
-test('accepts a FORMING cup only with its nullable pre-ready facts', () => {
+test('accepts the backend FORMING shape with five score keys and later first-seen time', () => {
   const raw = payload()
   const cup = raw.cup_handles[0]!
   cup.state = 'FORMING'
@@ -241,14 +256,27 @@ test('accepts a FORMING cup only with its nullable pre-ready facts', () => {
   cup.pivot_price = null
   cup.pivot_frozen_at = null
   cup.confirmed_at = cup.right_rim.confirmed_at
+  cup.first_seen_at = '2026-01-04T07:00:00Z'
   cup.state_changed_at = cup.first_seen_at
   cup.score = 60
-  cup.score_breakdown = { pretrend: 20, cup_geometry: 25, u_shape_purity: 15 }
+  cup.score_breakdown = {
+    pretrend: 15,
+    cup_geometry: 25,
+    u_shape_purity: 20,
+    handle_quality: 0,
+    volume_structure: 0,
+  }
   cup.volume_facts = {}
+  raw.cup_markers = []
 
   const value = normalizeNewowTrendDetailResponse(raw, query)
   assert.equal(value.cup_handles[0]!.state, 'FORMING')
   assert.equal(value.cup_handles[0]!.pivot_price, null)
+  assert.deepEqual(value.cup_handles[0]!.score_breakdown, cup.score_breakdown)
+
+  cup.score = 61
+  cup.score_breakdown.handle_quality = 1
+  assert.throws(() => normalizeNewowTrendDetailResponse(raw, query), /FORMING/)
 })
 
 test('fails closed on missing, extra, unordered, or contradictory rollover seams', () => {
