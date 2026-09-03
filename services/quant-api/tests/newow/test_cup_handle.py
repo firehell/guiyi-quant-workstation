@@ -122,6 +122,10 @@ def test_cup_evaluation_readiness_requires_eligible_geometry_not_only_prerank_at
     for index in range(130, 154):
         state = step_cup_handle(state, _bar(index, 100 + index)).state
     assert cup_evaluation_ready(state)
+    assert not cup_evaluation_ready(
+        replace(state, atr_state=replace(state.atr_state, atr=None))
+    )
+    assert not cup_evaluation_ready(replace(state, segment_id=None))
     assert not cup_evaluation_ready(object())  # type: ignore[arg-type]
 
 
