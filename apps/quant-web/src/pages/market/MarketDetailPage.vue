@@ -84,7 +84,12 @@ function selectIdentity(identity: MarketDetailIdentity) {
 }
 
 function selectContractCleared(identity: MarketDetailIdentity) {
-  void router.push({ path: '/market/chart', query: serializeMarketDetailIdentity(identity), state: { contractCleared: true } })
+  identityWarning.value = '已切换品种，指定合约已清除并回到真实主力。'
+  void router.push({
+    path: '/market/chart',
+    query: serializeMarketDetailIdentity(identity),
+    state: { contractCleared: true },
+  })
 }
 
 function updateFreePreferences(free: FlexibleDetailPreferences) {

@@ -475,6 +475,7 @@ defineExpose({
     data-testid="kline-shell"
     :data-alert-marker-count="alertMarkers.length"
     :data-research-marker-count="researchMarkers.length"
+    :data-rendered-marker-count="mergedDisplayMarkers().length"
     :data-rendered-research-marker-count="researchMarkers.length"
     :data-research-marker-ids="researchMarkers.map((marker) => marker.id).join(',')"
     :data-research-marker-times="researchMarkers.map((marker) => marker.time).join(',')"

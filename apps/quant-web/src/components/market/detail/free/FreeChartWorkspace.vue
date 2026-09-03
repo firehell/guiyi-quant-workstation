@@ -73,18 +73,6 @@ const rangeWarning = computed(() => rangeWarmup.unavailableReason.value === RANG
 const semanticText = computed(() => rangeWarning.value
   ? `${rangeWarning.value}；${model.value.semanticBanner.text}`
   : model.value.semanticBanner.text)
-const indicatorExplanation = computed(() => {
-  const emaLabels = optionalEmaIndicators.value.map((indicator) => ({
-    ema_10: 'EMA10', ema_21: 'EMA21', ema_60: 'EMA60',
-  })[indicator])
-  const enabled = [
-    ...(emaLabels.length ? [`已开启 ${emaLabels.join('、')}。`] : []),
-    ...(showRangeDetector.value ? ['Range 仅展示当前可复算的箱体事实。'] : []),
-    '成交量与 MACD 仅用于当前行情复核。',
-  ]
-  return enabled.join('')
-})
-
 function updatePreferences(identity: MarketDetailIdentity) {
   emit('updatePreferences', {
     seriesKind: identity.seriesKind === 'continuous' ? 'continuous' : 'actual_dominant',
@@ -198,7 +186,6 @@ function toggleDisclosure(id: string) {
       </dl>
       <p v-else>{{ researchError ? '市场背景暂不可用' : '暂无市场背景' }}</p>
     </section>
-    <section class="free-workspace__context"><h2>指标解读</h2><p>{{ indicatorExplanation }}</p></section>
     <section class="free-workspace__data">
       <h2>数据详情</h2>
       <MarketDetailDisclosure

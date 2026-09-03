@@ -23,19 +23,27 @@ test('Free mounts its generic workspace without the legacy sidebar or strategy m
   await expect(page.locator('.product-workspace__sidebar')).toHaveCount(0)
   await expect(shell.locator('[data-detail-workspace="free"]')).toBeVisible()
   await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-alert-marker-count', '0')
+  await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-research-marker-count', '0')
+  await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-rendered-marker-count', '0')
   await expect(page.getByText('火天大有（原始观察）', { exact: true })).toHaveCount(0)
+  await expect(page.getByText(/SuBing|牛哇|Newow/, { exact: false })).toHaveCount(0)
 
   const order = await shell.locator('[data-detail-section]').evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-detail-section')))
   expect(order.slice(0, 4)).toEqual(['topbar', 'quote', 'view-nav', 'workspace-slot'])
 })
 
-test('Free Range warm-up remains explicit and does not create a strategy marker', async ({ page }) => {
+test('Free Range warm-up has a 1280 by 800 baseline and does not create a strategy marker', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 })
   await mockMarketDetail(page)
   await page.goto(freeJm)
 
   await page.getByLabel('箱体识别（Range）').check()
   await expect(page.getByText(/箱体历史预载不足|箱体历史预载失败/)).toBeVisible()
   await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-alert-marker-count', '0')
+  await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-rendered-marker-count', '0')
+  await expect(page.locator('[data-detail-workspace="free"]')).toHaveScreenshot('market-detail-free-range-1280x800.png', {
+    animations: 'disabled', caret: 'hide', maxDiffPixels: 400,
+  })
 })
 
 test('Free identity controls keep the selected contract in the URL', async ({ page }) => {
@@ -51,6 +59,36 @@ test('Free identity controls keep the selected contract in the URL', async ({ pa
     && url.searchParams.get('series_kind') === 'contract'
     && url.searchParams.get('contract') === 'JM2605'
   ))).toBe(true)
+})
+
+test('Free reloads continuous, 60m, and daily identities without inventing a physical contract', async ({ page }) => {
+  const requests = await mockMarketDetail(page)
+  await page.goto(freeJm)
+  const controls = page.getByLabel('自由看盘控制')
+
+  await controls.getByRole('button', { name: '主连', exact: true }).click()
+  await expect.poll(() => new URL(page.url()).searchParams.get('series_kind')).toBe('continuous')
+  await expect(page.locator('.detail-topbar__contract')).toHaveText('JM')
+  await expect.poll(() => requests.some((url) => (
+    url.pathname.endsWith('/bars/page') && url.searchParams.get('series_kind') === 'continuous'
+  ))).toBe(true)
+
+  await controls.getByRole('button', { name: '60m', exact: true }).click()
+  await expect.poll(() => new URL(page.url()).searchParams.get('frequency')).toBe('60m')
+  await controls.getByRole('button', { name: '日K', exact: true }).click()
+  await expect.poll(() => new URL(page.url()).searchParams.get('frequency')).toBe('1d')
+  await expect.poll(() => requests.some((url) => (
+    url.pathname.endsWith('/bars/page') && url.searchParams.get('frequency') === '1d'
+  ))).toBe(true)
+})
+
+test('Free restores enabled EMA preferences after reload', async ({ page }) => {
+  await mockMarketDetail(page)
+  await page.goto(freeJm)
+
+  await page.getByLabel('EMA10').check()
+  await page.reload()
+  await expect(page.getByLabel('EMA10')).toBeChecked()
 })
 
 test('Free clears a contract when the product changes and keeps HTDY preferences untouched', async ({ page }) => {
@@ -220,6 +258,9 @@ test('390px shell keeps keyboard disclosure and does not invent history', async 
   await expect(disclosure).toHaveAttribute('aria-expanded', 'false')
   await expect(page.getByRole('button', { name: '历史记录' })).toHaveCount(0)
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  await expect(page.locator('[data-detail-workspace="free"]')).toHaveScreenshot('market-detail-free-390.png', {
+    animations: 'disabled', caret: 'hide', maxDiffPixels: 400,
+  })
 })
 
 test('mobile history drawer traps focus, closes with Escape, and restores its trigger', async ({ page }) => {
