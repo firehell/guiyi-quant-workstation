@@ -80,7 +80,7 @@ export function useMarketDetailController(
   bars: Readonly<Ref<BarData[]>>
   mutation: Readonly<Ref<MarketSeriesMutation>>
   hasMoreBefore: Readonly<Ref<boolean>>
-  research: Readonly<Ref<ProductResearchResponse | null>>
+  research: Ref<ProductResearchResponse | null>
   researchError: Readonly<Ref<boolean>>
   switchIdentity(identity: MarketDetailIdentity): Promise<void>
   loadMoreBefore(): Promise<void>
@@ -100,20 +100,19 @@ export function useMarketDetailController(
     error: null,
   })
   let currentDominants: DominantContractListResponse = { items: [] }
-  let currentResearch: ProductResearchResponse | null = null
+  const currentResearch = ref<ProductResearchResponse | null>(null)
   const researchError = ref(false)
   let headerGeneration = 0
   let disposed = false
   const publicBars = computed(() => series.bars.value)
   const publicMutation = computed(() => series.mutation.value)
-  const publicResearch = computed(() => currentResearch)
 
   function rebuildHeader(identity: MarketDetailIdentity): void {
     state.value.header = buildMarketDetailHeaderModel({
       identity,
       dominant: currentDominants.items.find((item) => item.product.toLowerCase() === identity.symbol.toLowerCase()) ?? null,
       bars: series.bars.value,
-      research: currentResearch,
+      research: currentResearch.value,
       marketState: series.marketState.value,
       overlaySource: series.overlaySource.value,
       canonicalCoverage: series.canonicalCoverage.value,
@@ -150,7 +149,7 @@ export function useMarketDetailController(
     }
     headerGeneration = 0
     currentDominants = { items: [] }
-    currentResearch = null
+    currentResearch.value = null
     researchError.value = false
     const metadataRequest = fetchDominants().then(
       (value) => ({ ok: true as const, value }),
@@ -183,7 +182,7 @@ export function useMarketDetailController(
       state.value.loading = false
       const research = await researchRequest
       if (disposed || state.value.generation !== generation) return
-      currentResearch = research
+      currentResearch.value = research
       researchError.value = research === null
       rebuildHeader(identity)
     } catch {
@@ -216,7 +215,7 @@ export function useMarketDetailController(
     bars: publicBars,
     mutation: publicMutation,
     hasMoreBefore: readonly(series.hasMoreBefore),
-    research: publicResearch,
+    research: currentResearch,
     researchError: readonly(researchError),
     switchIdentity,
     loadMoreBefore,

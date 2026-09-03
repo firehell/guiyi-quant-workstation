@@ -28,15 +28,15 @@ const props = defineProps<{
   preferences: FlexibleDetailPreferences
   htdyPreferences: FlexibleDetailPreferences
   hasMoreBefore: boolean
+  loadEarlier: () => Promise<void>
   identityWarning?: string | null
 }>()
-const emit = defineEmits<{ selectIdentity: [identity: MarketDetailIdentity], loadEarlier: [] }>()
+const emit = defineEmits<{ selectIdentity: [identity: MarketDetailIdentity], contractCleared: [identity: MarketDetailIdentity] }>()
 
 const optionalEmaIndicators = ref<OptionalEmaIndicatorId[]>([...props.preferences.optionalEmaIndicators])
 const showRangeDetector = ref(props.preferences.showRangeDetector)
 const contract = ref(props.identity.contract ?? '')
 const symbol = ref(props.identity.symbol)
-const identityWarning = ref<string | null>(null)
 const openDisclosureIds = ref<string[]>([])
 const sourceIdentity = computed(() => [props.identity.seriesKind, props.identity.symbol, props.identity.contract ?? '', props.identity.frequency].join(':'))
 const bars = computed(() => props.bars)
@@ -46,7 +46,7 @@ const rangeWarmup = useRangeDetectorOverlayWarmup({
   hasMoreBefore,
   enabled: showRangeDetector,
   identityKey: sourceIdentity,
-  loadMoreBefore: () => new Promise<void>((resolve) => { emit('loadEarlier'); resolve() }),
+  loadMoreBefore: () => props.loadEarlier(),
 })
 const rangeState = computed<'disabled' | 'loading' | 'ready' | 'insufficient'>(() => {
   if (!showRangeDetector.value) return 'disabled'
@@ -67,17 +67,16 @@ const indicators = computed(() => [
 const rangeWarning = computed(() => rangeWarmup.unavailableReason.value === RANGE_DETECTOR_WARMUP_LOAD_FAILED
   ? '箱体历史预载失败'
   : rangeWarmup.unavailableReason.value === RANGE_DETECTOR_WARMUP_INSUFFICIENT ? '箱体历史预载不足' : null)
-const identityHint = computed(() => props.identityWarning ?? identityWarning.value ?? (
-  props.identity.seriesKind === 'actual_dominant'
-    ? '切换品种时，指定合约会清除并回到真实主力。'
-    : null
-))
 
-watch([optionalEmaIndicators, showRangeDetector], () => {
+function saveFreePreferences(identity: MarketDetailIdentity) {
   saveMarketDetailPreferences({
     version: 1, lastView: 'free', htdy: props.htdyPreferences,
-    free: { seriesKind: props.identity.seriesKind === 'continuous' ? 'continuous' : 'actual_dominant', frequency: props.identity.frequency, optionalEmaIndicators: optionalEmaIndicators.value, showRangeDetector: showRangeDetector.value },
+    free: { seriesKind: identity.seriesKind === 'continuous' ? 'continuous' : 'actual_dominant', frequency: identity.frequency, optionalEmaIndicators: optionalEmaIndicators.value, showRangeDetector: showRangeDetector.value },
   })
+}
+
+watch([optionalEmaIndicators, showRangeDetector], () => {
+  saveFreePreferences(props.identity)
   if (!showRangeDetector.value) rangeWarmup.reset()
 }, { deep: true })
 
@@ -93,18 +92,20 @@ function switchIdentity(next: Partial<Pick<MarketDetailIdentity, 'symbol' | 'ser
   const selectedContract = (next.contract ?? contract.value).trim().toUpperCase()
   const symbolChanged = nextSymbol !== props.identity.symbol
   if (symbolChanged && seriesKind === 'contract') {
-    identityWarning.value = '已切换品种，指定合约已清除并回到真实主力。'
     contract.value = ''
-    emit('selectIdentity', { view: 'free', symbol: nextSymbol, seriesKind: 'actual_dominant', frequency: next.frequency ?? props.identity.frequency })
+    const identity = { view: 'free' as const, symbol: nextSymbol, seriesKind: 'actual_dominant' as const, frequency: next.frequency ?? props.identity.frequency }
+    saveFreePreferences(identity)
+    emit('contractCleared', identity)
     return
   }
-  identityWarning.value = null
   if (seriesKind === 'contract' && !selectedContract) return
-  emit('selectIdentity', {
+  const identity: MarketDetailIdentity = {
     view: 'free', symbol: nextSymbol, seriesKind,
     frequency: next.frequency ?? props.identity.frequency,
     ...(seriesKind === 'contract' ? { contract: selectedContract } : {}),
-  })
+  }
+  saveFreePreferences(identity)
+  emit('selectIdentity', identity)
 }
 
 function toggleEma(value: OptionalEmaIndicatorId) {
@@ -142,7 +143,7 @@ function toggleDisclosure(id: string) {
     </div>
 
     <MarketDetailFactStrip :facts="model.facts" />
-    <p v-if="identityHint" class="free-workspace__hint" role="status">{{ identityHint }}</p>
+    <p v-if="identityWarning" class="free-workspace__hint" role="status">{{ identityWarning }}</p>
     <p v-if="model.semanticBanner.tone === 'warning'" class="free-workspace__warning" role="status">{{ rangeWarning ?? model.semanticBanner.text }}</p>
     <FreeChartStage
       :bars="bars"
@@ -154,9 +155,18 @@ function toggleDisclosure(id: string) {
       :visible-main-indicators="indicators"
       :range-detector-source-identity="sourceIdentity"
       :range-detector-anchor-time="rangeState === 'ready' ? rangeWarmup.anchorTime.value : null"
-      @load-earlier="emit('loadEarlier')"
+      @load-earlier="loadEarlier"
     />
-    <section class="free-workspace__context"><h2>市场背景</h2><p v-if="research">{{ research.product_name }} · {{ research.daily_trend === 'up' ? '日线偏强' : research.daily_trend === 'down' ? '日线偏弱' : '日线暂无方向结论' }}</p><p v-else>{{ researchError ? '市场背景暂不可用' : '暂无市场背景' }}</p></section>
+    <section class="free-workspace__context">
+      <h2>市场背景</h2>
+      <dl v-if="research">
+        <div><dt>日线趋势</dt><dd>{{ research.daily_trend }}</dd></div><div><dt>周线趋势</dt><dd>{{ research.weekly_trend }}</dd></div>
+        <div><dt>20日位置</dt><dd>{{ research.position20 ?? '—' }}</dd></div><div><dt>量比20</dt><dd>{{ research.volume_ratio20 ?? '—' }}</dd></div>
+        <div><dt>OI 1D</dt><dd>{{ research.oi_change_1d ?? '—' }}</dd></div><div><dt>ATR分位</dt><dd>{{ research.atr14_percentile252 ?? '—' }}</dd></div>
+      </dl>
+      <p v-else>{{ researchError ? '市场背景暂不可用' : '暂无市场背景' }}</p>
+    </section>
+    <section class="free-workspace__context"><h2>指标解读</h2><p>EMA、成交量与 MACD 为通用图表事实；Range 只读回画展示，确认前不可用于策略判断。</p></section>
     <section class="free-workspace__data">
       <h2>数据详情</h2>
       <MarketDetailDisclosure
@@ -186,5 +196,9 @@ function toggleDisclosure(id: string) {
 .free-workspace__context, .free-workspace__data { padding: var(--gy-space-3); border: 1px solid var(--gy-border); border-radius: var(--gy-radius-md); background: var(--gy-bg-panel); }
 .free-workspace h2 { margin: 0 0 var(--gy-space-2); font-size: var(--gy-font-size-base); }
 .free-workspace__context p { margin: 0; color: var(--gy-text-secondary); }
+.free-workspace__context dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--gy-space-2); margin: 0; }
+.free-workspace__context dl div { display: flex; justify-content: space-between; gap: var(--gy-space-2); color: var(--gy-text-secondary); }
+.free-workspace__context dt { color: var(--gy-text-muted); }
+.free-workspace__context dd { margin: 0; }
 @media (max-width: 480px) { .free-workspace button { min-height: 44px; } }
 </style>

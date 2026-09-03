@@ -173,10 +173,15 @@ test('keeps route state explicit and delegates pagination and disposal to useMar
   })
 
   assert.equal(controller.state.value.route.kind, 'valid')
+  assert.equal(controller.research.value, null)
   await controller.switchIdentity(jmIdentity)
   assert.equal(controller.state.value.generation, 1)
   assert.equal(controller.state.value.header?.productName, '焦煤')
   assert.deepEqual(controller.bars.value, series.bars.value)
+  assert.equal(controller.research.value?.symbol, 'jm')
+  assert.equal(controller.researchError.value, false)
+  assert.equal(controller.research.value?.symbol, 'jm')
+  assert.equal(controller.researchError.value, false)
 
   await controller.loadMoreBefore()
   assert.equal(series.loadMoreCalls, 1)

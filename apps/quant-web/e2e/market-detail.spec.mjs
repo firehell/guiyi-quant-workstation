@@ -63,7 +63,7 @@ test('Free clears a contract when the product changes and keeps HTDY preferences
   await page.getByLabel('品种代码').press('Enter')
   await expect.poll(() => new URL(page.url()).searchParams.get('series_kind')).toBe('actual_dominant')
   expect(new URL(page.url()).searchParams.has('contract')).toBe(false)
-  await expect(page.getByText('切换品种时，指定合约会清除并回到真实主力。')).toBeVisible()
+  await expect(page.getByText('已切换品种，指定合约已清除并回到真实主力。')).toBeVisible()
   await page.getByLabel('箱体识别（Range）').check()
   const preferences = await page.evaluate(() => JSON.parse(localStorage.getItem('guiyi.market.detail.preferences.v1')))
   expect(preferences.htdy).toEqual({ seriesKind: 'continuous', frequency: '30m', optionalEmaIndicators: ['ema_60'], showRangeDetector: true })

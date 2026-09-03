@@ -74,7 +74,7 @@ onBeforeUnmount(() => document.removeEventListener('fullscreenchange', syncFulls
 <style scoped>
 .market-kline-stage { position: relative; min-width: 0; }
 .market-kline-stage__controls { position: absolute; z-index: 4; top: 10px; right: 10px; display: flex; gap: 8px; }
-.market-kline-stage__controls button { min-height: 32px; padding: 0 10px; border: 1px solid var(--gy-border); border-radius: var(--gy-radius-sm); color: var(--gy-text-primary); background: var(--gy-bg-panel); cursor: pointer; }
+.market-kline-stage__controls button { min-height: 44px; min-width: 44px; padding: 0 10px; border: 1px solid var(--gy-border); border-radius: var(--gy-radius-sm); color: var(--gy-text-primary); background: var(--gy-bg-panel); cursor: pointer; }
 .market-kline-stage--fullscreen { display: grid; height: 100vh; padding: 16px; background: var(--gy-bg-app); }
 .market-kline-stage--fullscreen :deep(.kline-shell) { height: 100%; }
 </style>

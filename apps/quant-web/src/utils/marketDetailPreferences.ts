@@ -1,4 +1,4 @@
-import type { MarketFrequency, OptionalEmaIndicatorId } from '../types/market.ts'
+import type { MarketFrequency, OptionalEmaIndicatorId, SeriesKind } from '../types/market.ts'
 import { MARKET_DETAIL_VIEWS, type FlexibleViewRestore, type MarketDetailView } from '../types/marketDetail.ts'
 import { normalizeOptionalEmaIndicators } from './mainIndicators.ts'
 
@@ -47,6 +47,13 @@ export function saveMarketDetailPreferences(
 ): void {
   if (!storage) return
   try { storage.setItem(MARKET_DETAIL_PREFERENCES_KEY, JSON.stringify(normalizeCurrent(value))) } catch { /* unavailable storage is non-blocking */ }
+}
+
+export function replaceFreeDetailPreferences(
+  current: MarketDetailPreferences,
+  free: Omit<FlexibleDetailPreferences, 'seriesKind'> & { seriesKind: SeriesKind },
+): MarketDetailPreferences {
+  return { ...current, free: normalizeFlexible(free) }
 }
 
 function normalizeCurrent(value: unknown): MarketDetailPreferences {

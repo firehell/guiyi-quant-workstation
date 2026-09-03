@@ -16,13 +16,17 @@ const route = useRoute()
 const router = useRouter()
 const preferences = loadMarketDetailPreferences()
 const moreOpen = ref(false)
-const identityWarning = ref<string | null>(null)
 const controller = useMarketDetailController({ routeQuery: () => ({ ...route.query }) })
 const routeResult = computed(() => parseMarketDetailRoute({ ...route.query }))
 const explicitIdentity = computed(() => routeResult.value.kind === 'valid' ? routeResult.value.identity : null)
 const isFreePreview = computed(() => explicitIdentity.value?.view === 'free')
 const shellReady = computed(() => isFreePreview.value && controller.state.value.header !== null && !controller.state.value.loading)
 const header = computed(() => controller.state.value.header)
+const identityWarning = ref(
+  typeof window !== 'undefined' && window.history.state?.contractCleared === true
+    ? '已切换品种，指定合约已清除并回到真实主力。'
+    : null,
+)
 const identityKey = computed(() => {
   const identity = explicitIdentity.value
   return identity
@@ -71,13 +75,11 @@ function recover() {
 }
 
 function selectIdentity(identity: MarketDetailIdentity) {
-  const previous = explicitIdentity.value
-  identityWarning.value = previous?.seriesKind === 'contract'
-    && previous.symbol !== identity.symbol
-    && identity.seriesKind === 'actual_dominant'
-    ? '已切换品种，指定合约已清除并回到真实主力。'
-    : null
   void router.push({ path: '/market/chart', query: serializeMarketDetailIdentity(identity) })
+}
+
+function selectContractCleared(identity: MarketDetailIdentity) {
+  void router.push({ path: '/market/chart', query: serializeMarketDetailIdentity(identity), state: { contractCleared: true } })
 }
 
 function goBack() {
@@ -152,9 +154,10 @@ onBeforeUnmount(controller.dispose)
             :preferences="preferences.free"
             :htdy-preferences="preferences.htdy"
             :has-more-before="controller.hasMoreBefore.value"
+            :load-earlier="controller.loadMoreBefore"
             :identity-warning="identityWarning"
             @select-identity="selectIdentity"
-            @load-earlier="controller.loadMoreBefore"
+            @contract-cleared="selectContractCleared"
           />
         </section>
       </template>
