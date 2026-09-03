@@ -1,17 +1,23 @@
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
 
+from app.db.base import Base
+from app.market_data.catalog import MarketCatalog
 from app.market_data.domain import (
     CanonicalBar,
+    DatasetKey,
     MarketSeriesPageResult,
     ResolvedContractSegment,
     SeriesPageQuery,
 )
+from app.market_data.market_data_service import MarketDataError, MarketDataService
 from app.market_data.market_read_service import (
     MarketObservationSnapshotError,
     MarketReadService,
@@ -19,6 +25,7 @@ from app.market_data.market_read_service import (
     MarketReadWindowError,
 )
 from app.market_data.market_phase import MarketPhase, ProductMarketPhase
+from app.market_data.storage import CanonicalMonthlyStore, PublishRequest
 
 
 DAY_1 = date(2026, 8, 30)
@@ -55,6 +62,81 @@ def _bar_with_close(bar_end: datetime, trading_day: date, close: str) -> Canonic
         turnover=Decimal("1000"),
         open_interest=Decimal("20"),
     )
+
+
+class _RecordingMarketDataService:
+    """Keeps the production historical reader real while freezing its cursor boundary."""
+
+    def __init__(self, delegate: MarketDataService) -> None:
+        self._delegate = delegate
+        self.requests: list[SeriesPageQuery] = []
+
+    def query_page(self, request: SeriesPageQuery) -> MarketSeriesPageResult:
+        self.requests.append(request)
+        return self._delegate.query_page(request)
+
+
+@dataclass(frozen=True, slots=True)
+class _ProductionContractReplayFixture:
+    service: MarketReadService
+    market_data: _RecordingMarketDataService
+    canonical: tuple[CanonicalBar, ...]
+    cutoff: CanonicalBar
+
+
+@pytest.fixture
+def production_contract_replay_fixture(tmp_path) -> _ProductionContractReplayFixture:
+    """Real Catalog/Parquet history ending before the following trading-day Live cutoff."""
+
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    canonical = (
+        _bar(HISTORICAL_END_1, DAY_1),
+        _bar(HISTORICAL_END_2, DAY_2),
+    )
+    cutoff = _bar(LIVE_END, DAY_2)
+    with Session(engine) as session:
+        catalog = MarketCatalog(session, tmp_path)
+        store = CanonicalMonthlyStore(tmp_path)
+        key = DatasetKey("contract", "rb", "RB2610", "15m")
+        partition = store.publish(
+            PublishRequest(
+                dataset=key,
+                year=DAY_1.year,
+                month=DAY_1.month,
+                bars=canonical,
+                expected_bar_ends=tuple(bar.bar_end for bar in canonical),
+            )
+        )
+        catalog.register_partition(partition)
+        session.commit()
+        historical = _RecordingMarketDataService(MarketDataService(catalog, store))
+
+        with pytest.raises(MarketDataError, match="DATASET_OR_PARTITION_MISSING"):
+            historical.query_page(
+                SeriesPageQuery(
+                    "contract",
+                    "rb",
+                    "15m",
+                    contract="RB2610",
+                    before=cutoff.bar_end + timedelta(microseconds=1),
+                    limit=2000,
+                )
+            )
+        historical.requests.clear()
+
+        yield _ProductionContractReplayFixture(
+            service=MarketReadService(
+                market_data=historical,
+                phase_resolver=_ForbiddenPhaseReader(),
+                operational_products=("rb",),
+                live_store=_ContractReplayLiveStore((cutoff,)),
+            ),
+            market_data=historical,
+            canonical=canonical,
+            cutoff=cutoff,
+        )
+    engine.dispose()
 
 
 class _MarketPageReader:
@@ -722,6 +804,41 @@ def _replay_service(
     )
 
 
+def test_current_contract_replay_bootstraps_latest_canonical_before_live_cutoff(
+    production_contract_replay_fixture: _ProductionContractReplayFixture,
+) -> None:
+    """Catches using a Live cutoff cursor to start strict Canonical physical history."""
+    fixture = production_contract_replay_fixture
+
+    replay = fixture.service.current_contract_replay_window(
+        _replay_window(fixture.cutoff.bar_end),
+        after=None,
+    )
+
+    assert replay.bars == (*fixture.canonical, fixture.cutoff)
+    assert fixture.market_data.requests[0].before is None
+
+
+def test_current_contract_replay_clips_future_tail_and_honors_after() -> None:
+    """Catches future Canonical bars or the inclusive cursor leaking into replay input."""
+    future_tail = _bar(LIVE_END + timedelta(minutes=15), DAY_2)
+    historical = (
+        _bar(HISTORICAL_END_1, DAY_1),
+        _bar(HISTORICAL_END_2, DAY_2),
+        future_tail,
+    )
+    service, reader = _replay_service(historical, (_bar(LIVE_END, DAY_2),))
+
+    replay = service.current_contract_replay_window(
+        _replay_window(),
+        after=HISTORICAL_END_1,
+    )
+
+    assert reader.requests[0].before is None
+    assert replay.bars == (_bar(HISTORICAL_END_2, DAY_2), _bar(LIVE_END, DAY_2))
+    assert all(HISTORICAL_END_1 < bar.bar_end <= LIVE_END for bar in replay.bars)
+
+
 def test_current_contract_replay_includes_predominant_same_contract_only() -> None:
     predom = _bar(HISTORICAL_END_1, DAY_1)
     canonical = _bar(HISTORICAL_END_2, DAY_2)
@@ -751,8 +868,8 @@ def test_current_contract_replay_pages_back_to_all_same_contract_history() -> No
 
     assert replay.bars == historical
     assert len(reader.requests) == 2
-    assert reader.requests[1].before is not None
-    assert reader.requests[1].before < reader.requests[0].before  # type: ignore[operator]
+    assert reader.requests[0].before is None
+    assert reader.requests[1].before == historical[2].bar_end
 
 
 def test_current_contract_replay_filters_after() -> None:
@@ -831,3 +948,36 @@ def test_current_contract_replay_fails_closed_for_missing_cutoff_and_stalled_cur
     stalled, _reader = _replay_service((_bar(HISTORICAL_END_2, DAY_2),), (), stalled=True)
     with pytest.raises(MarketReadWindowError, match="MARKET_READ_PAGINATION_STALLED"):
         stalled.current_contract_replay_window(_replay_window(), after=None)
+
+
+@pytest.mark.parametrize(
+    ("error", "expected_type", "expected"),
+    (
+        (
+            MarketDataError("DATASET_OR_PARTITION_MISSING"),
+            MarketReadWindowError,
+            "MARKET_READ_CONTRACT_HISTORY_UNAVAILABLE",
+        ),
+        (RuntimeError("unexpected"), RuntimeError, "unexpected"),
+    ),
+)
+def test_current_contract_replay_maps_only_market_data_history_errors(
+    error: Exception,
+    expected_type: type[Exception],
+    expected: str,
+) -> None:
+    """Catches leaking storage failure codes or swallowing unrelated programming errors."""
+
+    class FailingHistoryReader:
+        def query_page(self, request: SeriesPageQuery) -> MarketSeriesPageResult:
+            raise error
+
+    service = MarketReadService(
+        market_data=FailingHistoryReader(),
+        phase_resolver=_ForbiddenPhaseReader(),
+        operational_products=("rb",),
+        live_store=_ContractReplayLiveStore((_bar(LIVE_END, DAY_2),)),
+    )
+
+    with pytest.raises(expected_type, match=expected):
+        service.current_contract_replay_window(_replay_window(), after=None)
