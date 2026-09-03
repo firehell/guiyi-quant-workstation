@@ -9,33 +9,14 @@ from datetime import UTC, date, datetime
 import json
 from pathlib import Path
 import sys
-from typing import Protocol, TextIO, cast
-
-from sqlalchemy.orm import Session
-from sqlalchemy import select
-
-from app.core.env import PROJECT_ROOT
-from app.db.session import SessionLocal
-from app.market_data.after_market import public_after_market_status
-from app.market_data.domain import normalize_contract_for_symbol
-from app.market_data.live_market import RedisClient, RedisLiveStore
-from app.market_data.market_phase import MarketPhase, MarketPhaseResolver, ProductMarketPhase
-from app.market_data.operational_universe import load_operational_products
-from app.market_data.session_clock import (
-    SessionClockError,
-    resolved_session_windows_for_trading_day,
-)
-from app.models import Instrument, TradingCalendar
-from app.redis_connections import get_redis_connection
+from typing import Any, Protocol, TextIO, cast
 
 
 PROMOTION_LIVE_SNAPSHOT_REQUIRED = "MARKET_RUNTIME_PROMOTION_LIVE_SNAPSHOT_REQUIRED"
 PROMOTION_LIVE_SNAPSHOT_INVALID = "MARKET_RUNTIME_PROMOTION_LIVE_SNAPSHOT_INVALID"
 PROMOTION_STATE_UNAVAILABLE = "MARKET_RUNTIME_PROMOTION_STATE_UNAVAILABLE"
 _COMMAND = "runtime.market-promotion-preflight"
-_STATUS_PATH = PROJECT_ROOT / ".run" / "after-market-status.json"
 _INVALID = object()
-
 
 class _InvalidTradingDay:
     pass
@@ -45,11 +26,11 @@ _INVALID_TRADING_DAY = _InvalidTradingDay()
 
 
 class PhaseResolver(Protocol):
-    def resolve(self, symbol: str, now: datetime) -> ProductMarketPhase: ...
+    def resolve(self, symbol: str, now: datetime) -> Any: ...
 
 
 FirstSessionStartsLoader = Callable[
-    [Session, tuple[str, ...], date], Mapping[str, datetime]
+    [Any, tuple[str, ...], date], Mapping[str, datetime]
 ]
 
 
@@ -78,7 +59,7 @@ class PromotionDecision:
 def evaluate_market_runtime_promotion(
     *,
     products: tuple[str, ...],
-    phases: Mapping[str, ProductMarketPhase] | None,
+    phases: Mapping[str, Any] | None,
     now: datetime,
     snapshot: object,
     after_market_status: object,
@@ -96,7 +77,7 @@ def evaluate_market_runtime_promotion(
         return unavailable()
     ordered_phases = tuple(phases[product] for product in products)
     if any(
-        item.symbol != product or item.phase is MarketPhase.UNKNOWN
+        getattr(item, "symbol", None) != product or _phase_name(item) == "UNKNOWN"
         for product, item in zip(products, ordered_phases, strict=True)
     ):
         return unavailable()
@@ -106,9 +87,9 @@ def evaluate_market_runtime_promotion(
         return unavailable()
     if trading_day is None:
         if all(
-            item.phase is MarketPhase.CLOSED
-            and item.current_session is None
-            and item.trading_day is None
+            _phase_name(item) == "CLOSED"
+            and getattr(item, "current_session", None) is None
+            and getattr(item, "trading_day", None) is None
             for item in ordered_phases
         ):
             return _passed("non_trading_interval", None, len(products), snapshot_count)
@@ -118,7 +99,22 @@ def evaluate_market_runtime_promotion(
         return unavailable()
     assert first_session_starts is not None
 
+    status_decision = _after_market_status_decision(
+        after_market_status,
+        trading_day=trading_day,
+        products=products,
+        now=now,
+    )
+    if status_decision == "unavailable":
+        return _blocked(PROMOTION_STATE_UNAVAILABLE, trading_day, len(products), snapshot_count)
     if snapshot is not None:
+        if status_decision == "running":
+            return _blocked(
+                PROMOTION_STATE_UNAVAILABLE,
+                trading_day,
+                len(products),
+                snapshot_count,
+            )
         if not _valid_snapshot(snapshot, products):
             return _blocked(
                 PROMOTION_LIVE_SNAPSHOT_INVALID,
@@ -131,12 +127,6 @@ def evaluate_market_runtime_promotion(
     if _before_first_session(first_session_starts, now):
         return _passed("before_first_session", trading_day, len(products), 0)
 
-    status_decision = _after_market_status_decision(
-        after_market_status,
-        trading_day=trading_day,
-        products=products,
-        now=now,
-    )
     if status_decision == "passed":
         return _passed("after_market_complete", trading_day, len(products), 0)
     if status_decision == "unavailable":
@@ -146,16 +136,32 @@ def evaluate_market_runtime_promotion(
 
 def run_market_runtime_promotion_preflight(
     *,
-    session_factory: Callable[[], AbstractContextManager[Session]] = SessionLocal,
-    phase_resolver_factory: Callable[[Session], PhaseResolver] = MarketPhaseResolver,
-    live_store_factory: Callable[[], RedisLiveStore] | None = None,
-    products_loader: Callable[[], tuple[str, ...]] = load_operational_products,
+    session_factory: Callable[[], AbstractContextManager[Any]] | None = None,
+    phase_resolver_factory: Callable[[Any], PhaseResolver] | None = None,
+    live_store_factory: Callable[[], Any] | None = None,
+    products_loader: Callable[[], tuple[str, ...]] | None = None,
     first_session_starts_loader: FirstSessionStartsLoader | None = None,
-    status_path: Path = _STATUS_PATH,
+    status_path: Path | None = None,
     now: Callable[[], datetime] = lambda: datetime.now(UTC),
 ) -> PromotionDecision:
     """Read the existing runtime state and fail closed at every dependency edge."""
     try:
+        if session_factory is None:
+            from app.db.session import SessionLocal
+
+            session_factory = SessionLocal
+        if phase_resolver_factory is None:
+            from app.market_data.market_phase import MarketPhaseResolver
+
+            phase_resolver_factory = MarketPhaseResolver
+        if products_loader is None:
+            from app.market_data.operational_universe import load_operational_products
+
+            products_loader = load_operational_products
+        if status_path is None:
+            from app.core.env import PROJECT_ROOT
+
+            status_path = PROJECT_ROOT / ".run" / "after-market-status.json"
         products = products_loader()
         current_time = now()
         with session_factory() as session:
@@ -174,7 +180,7 @@ def run_market_runtime_promotion_preflight(
         store = (
             live_store_factory()
             if live_store_factory is not None
-            else RedisLiveStore(cast(RedisClient, get_redis_connection()))
+            else _default_live_store()
         )
         trading_day = _resolved_trading_day(tuple(phases[product] for product in products))
         snapshot: object = None
@@ -204,20 +210,26 @@ def main(stdout: TextIO = sys.stdout) -> int:
 
 
 def _resolved_trading_day(
-    phases: tuple[ProductMarketPhase, ...],
+    phases: tuple[Any, ...],
 ) -> date | _InvalidTradingDay | None:
     if not phases:
         return _INVALID_TRADING_DAY
     active = tuple(
         item
         for item in phases
-        if item.phase in {MarketPhase.TRADING, MarketPhase.BREAK}
+        if _phase_name(item) in {"TRADING", "BREAK"}
     )
     candidate = active if active else phases
-    days = {item.trading_day for item in candidate if item.trading_day is not None}
-    if active and (len(days) != 1 or any(item.trading_day is None for item in active)):
+    days = {
+        getattr(item, "trading_day", None)
+        for item in candidate
+        if getattr(item, "trading_day", None) is not None
+    }
+    if active and (
+        len(days) != 1 or any(getattr(item, "trading_day", None) is None for item in active)
+    ):
         return _INVALID_TRADING_DAY
-    if not active and days and any(item.trading_day is None for item in phases):
+    if not active and days and any(getattr(item, "trading_day", None) is None for item in phases):
         return _INVALID_TRADING_DAY
     if not active and len(days) > 1:
         return _INVALID_TRADING_DAY
@@ -225,6 +237,8 @@ def _resolved_trading_day(
 
 
 def _valid_snapshot(snapshot: object, products: tuple[str, ...]) -> bool:
+    from app.market_data.domain import normalize_contract_for_symbol
+
     if not isinstance(snapshot, Mapping):
         return False
     normalized: dict[str, str] = {}
@@ -267,11 +281,16 @@ def _after_market_status_decision(
 ) -> str:
     if value is None:
         return "missing"
-    public = public_after_market_status(value)
+    try:
+        from app.market_data.after_market import public_after_market_status
+
+        public = public_after_market_status(value)
+    except Exception:  # noqa: BLE001 - public status reader is a fail-closed edge
+        return "unavailable"
     if not public:
         return "unavailable"
     if public.get("current_run") is not None:
-        return "missing"
+        return "running"
     last_run = public.get("last_run")
     if not isinstance(last_run, Mapping):
         return "missing"
@@ -317,10 +336,17 @@ def _load_after_market_status(path: Path) -> object:
 
 
 def _first_session_starts_for_products(
-    session: Session,
+    session: Any,
     products: tuple[str, ...],
     trading_day: date,
 ) -> dict[str, datetime]:
+    from sqlalchemy import select
+
+    from app.market_data.session_clock import (
+        SessionClockError,
+        resolved_session_windows_for_trading_day,
+    )
+    from app.models import Instrument, TradingCalendar
     starts: dict[str, datetime] = {}
     for symbol in products:
         exchange = session.scalar(
@@ -357,6 +383,19 @@ def _first_session_starts_for_products(
             raise ValueError("PROMOTION_SESSION_AUTHORITY_UNAVAILABLE")
         starts[symbol] = min(item.window.start for item in eligible)
     return starts
+
+
+def _default_live_store() -> Any:
+    from app.market_data.live_market import RedisLiveStore
+    from app.redis_connections import get_redis_connection
+
+    return RedisLiveStore(cast(Any, get_redis_connection()))
+
+
+def _phase_name(item: Any) -> str | None:
+    phase = getattr(item, "phase", None)
+    value = getattr(phase, "value", phase)
+    return value if isinstance(value, str) else None
 
 
 def _passed(

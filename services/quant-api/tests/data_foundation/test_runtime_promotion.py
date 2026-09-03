@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
 from contextlib import nullcontext
+import json
+import os
 from pathlib import Path
+import subprocess
+import sys
 
 import pytest
 
@@ -158,6 +162,124 @@ def test_absent_snapshot_after_same_day_passed_after_market_allows_promotion() -
 
     assert decision.status == "passed"
     assert decision.reason == "after_market_complete"
+
+
+@pytest.mark.parametrize(
+    "status",
+    [
+        {
+            "schema_version": 2,
+            "current_run": {
+                "scheduled_date": DAY.isoformat(),
+                "started_at": "2026-09-03T14:05:00+08:00",
+                "products": list(PRODUCTS),
+            },
+        },
+        {"schema_version": 99},
+    ],
+)
+def test_valid_snapshot_cannot_bypass_running_or_corrupt_after_market_status(
+    status: dict[str, object],
+) -> None:
+    decision = evaluate_market_runtime_promotion(
+        products=PRODUCTS,
+        phases=_phases(MarketPhase.CLOSED),
+        now=NOW,
+        snapshot={"j": "J2601", "jm": "JM2601"},
+        after_market_status=status,
+        first_session_starts=_first_session_starts(),
+    )
+
+    assert decision.reason == PROMOTION_STATE_UNAVAILABLE
+
+
+def test_valid_snapshot_can_allow_when_only_historical_failed_status_remains() -> None:
+    failed = _passed_status()
+    failed["last_run"] = {
+        **failed["last_run"],
+        "status": "failed",
+        "error_code": "UPDATE_FAILED",
+    }
+
+    decision = evaluate_market_runtime_promotion(
+        products=PRODUCTS,
+        phases=_phases(MarketPhase.CLOSED),
+        now=NOW,
+        snapshot={"j": "J2601", "jm": "JM2601"},
+        after_market_status=failed,
+        first_session_starts=_first_session_starts(),
+    )
+
+    assert decision.reason == "snapshot_ready"
+
+
+def test_runner_observes_current_run_written_after_snapshot_read(tmp_path: Path) -> None:
+    class Resolver:
+        def resolve(self, symbol: str, _now: datetime) -> ProductMarketPhase:
+            return _phase(symbol, MarketPhase.CLOSED)
+
+    status_path = tmp_path / "after-market-status.json"
+
+    class Store:
+        def subscriptions(self, _trading_day: date) -> dict[str, str]:
+            status_path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 2,
+                        "current_run": {
+                            "scheduled_date": DAY.isoformat(),
+                            "started_at": "2026-09-03T14:05:00+08:00",
+                            "products": list(PRODUCTS),
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            return {"j": "J2601", "jm": "JM2601"}
+
+    decision = run_market_runtime_promotion_preflight(
+        session_factory=lambda: nullcontext(object()),
+        phase_resolver_factory=lambda _session: Resolver(),
+        live_store_factory=lambda: Store(),  # type: ignore[arg-type]
+        products_loader=lambda: PRODUCTS,
+        first_session_starts_loader=lambda _session, _products, _day: _first_session_starts(),
+        status_path=status_path,
+        now=lambda: NOW,
+    )
+
+    assert decision.reason == PROMOTION_STATE_UNAVAILABLE
+
+
+def test_preflight_module_contains_bootstrap_failure_in_one_bounded_json_line() -> None:
+    environment = {
+        **os.environ,
+        "PYTHONPATH": "services/quant-api:packages/quant-core",
+        "DATABASE_URL": "bootstrap-secret://invalid",
+    }
+    result = subprocess.run(
+        [sys.executable, "-m", "app.market_data.runtime_promotion"],
+        cwd=Path(__file__).resolve().parents[4],
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    lines = result.stdout.splitlines()
+    assert result.returncode == 1
+    assert len(lines) == 1
+    assert json.loads(lines[0]) == {
+        "schema_version": 1,
+        "command": "runtime.market-promotion-preflight",
+        "status": "blocked",
+        "reason": PROMOTION_STATE_UNAVAILABLE,
+        "trading_day": None,
+        "operational_count": 0,
+        "snapshot_count": 0,
+    }
+    assert result.stderr == ""
+    assert "bootstrap-secret" not in result.stdout + result.stderr
+    assert "Traceback" not in result.stdout + result.stderr
 
 
 def test_future_or_reversed_after_market_completion_blocks_state_unavailable() -> None:

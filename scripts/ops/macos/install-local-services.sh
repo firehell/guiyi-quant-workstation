@@ -234,6 +234,10 @@ discard_runtime_activation_marker_backup() {
   fi
 }
 
+if [[ "$MODE" == "--confirm-market-runtime" ]]; then
+  "$PROJECT_ROOT/scripts/ops/macos/run-local-service.sh" market-runtime-preflight
+fi
+
 prepare_runtime_activation_marker
 
 attempted_load_labels=()

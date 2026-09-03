@@ -2,12 +2,53 @@
 set -euo pipefail
 
 PROJECT_ROOT="${GUIYI_PROJECT_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)}"
-[[ -d "$PROJECT_ROOT" ]] || { printf '[run-local-service] project root unavailable: %s\n' "$PROJECT_ROOT" >&2; exit 78; }
 SERVICE="${1:-}"
+preflight_unavailable() {
+  printf '%s\n' '{"schema_version":1,"command":"runtime.market-promotion-preflight","status":"blocked","reason":"MARKET_RUNTIME_PROMOTION_STATE_UNAVAILABLE","trading_day":null,"operational_count":0,"snapshot_count":0}'
+}
+if [[ ! -d "$PROJECT_ROOT" ]]; then
+  if [[ "$SERVICE" == "market-runtime-preflight" ]]; then
+    preflight_unavailable
+    exit 1
+  fi
+  printf '[run-local-service] project root unavailable: %s\n' "$PROJECT_ROOT" >&2
+  exit 78
+fi
 RUNTIME_DIR="${GUIYI_RUNTIME_DIR:-$HOME/Library/Application Support/GuiyiQuant}"
 RUNTIME_ENV="${GUIYI_RUNTIME_ENV:-$RUNTIME_DIR/project.env}"
 PYTHON_BIN="$PROJECT_ROOT/services/quant-api/.venv/bin/python"
 LAUNCHER_ALERT_NOTIFICATION_CONFIG_PATH="${GUIYI_ALERT_NOTIFICATION_CONFIG_PATH:-}"
+
+if [[ "$SERVICE" == "market-runtime-preflight" ]]; then
+  if [[ ! -x "$PYTHON_BIN" ]]; then
+    preflight_unavailable
+    exit 1
+  fi
+  set -a
+  if [[ -f "$RUNTIME_ENV" ]]; then
+    if ! source "$RUNTIME_ENV" >/dev/null 2>&1; then
+      set +a
+      preflight_unavailable
+      exit 1
+    fi
+  elif [[ -f "$PROJECT_ROOT/.env" ]]; then
+    if ! source "$PROJECT_ROOT/.env" >/dev/null 2>&1; then
+      set +a
+      preflight_unavailable
+      exit 1
+    fi
+  fi
+  set +a
+  if [[ -z "${POSTGRES_PASSWORD:-}" ]]; then
+    preflight_unavailable
+    exit 1
+  fi
+  export REDIS_PASSWORD="${REDIS_PASSWORD:-$POSTGRES_PASSWORD}"
+  if [[ -z "${REDIS_URL:-}" || "$REDIS_URL" == "redis://127.0.0.1:6379/0" ]]; then
+    export REDIS_URL="redis://:${REDIS_PASSWORD}@127.0.0.1:6379/0"
+  fi
+  exec "$PYTHON_BIN" -m app.market_data.runtime_promotion
+fi
 
 if [[ -f "$RUNTIME_ENV" ]]; then
   set -a
@@ -44,10 +85,6 @@ case "$SERVICE" in
   after-market)
     [[ -x "$PYTHON_BIN" ]] || { printf '[run-local-service] runtime python unavailable: %s\n' "$PYTHON_BIN" >&2; exit 78; }
     exec "$PYTHON_BIN" -m app.runtime_entry after-market
-    ;;
-  market-runtime-preflight)
-    [[ -x "$PYTHON_BIN" ]] || { printf '[run-local-service] runtime python unavailable: %s\n' "$PYTHON_BIN" >&2; exit 78; }
-    exec "$PYTHON_BIN" -m app.market_data.runtime_promotion
     ;;
   web)
     [[ -f "$PROJECT_ROOT/apps/quant-web/dist/index.html" ]] || { printf '[run-local-service] frontend dist missing; run pnpm --dir apps/quant-web build\n' >&2; exit 2; }

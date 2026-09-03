@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
 import os
 import plistlib
 import shutil
@@ -78,10 +79,117 @@ def test_blocked_market_preflight_leaves_marker_plists_and_launchctl_untouched(
 
     result = _run_installer_result(repo, home, fake_bin, "--confirm-market-runtime")
 
-    assert result.returncode == 1
+    assert result.returncode == 1, result.stdout + result.stderr
     assert "MARKET_RUNTIME_PROMOTION_LIVE_SNAPSHOT_REQUIRED" in result.stdout
     assert not (repo / ".run/market-runtime-enabled").exists()
     assert not (home / "Library/LaunchAgents").exists()
+    assert not (home / "launchctl-calls.log").exists()
+
+
+def test_market_preflight_missing_runtime_python_has_bounded_json_contract(
+    tmp_path: Path,
+) -> None:
+    repo = _copy_launchd_fixture(tmp_path / "repo")
+    result = subprocess.run(
+        [str(repo / "scripts/ops/macos/run-local-service.sh"), "market-runtime-preflight"],
+        cwd=repo,
+        env={
+            **os.environ,
+            "HOME": str(tmp_path / "home"),
+            "GUIYI_PROJECT_ROOT": str(repo),
+            "GUIYI_RUNTIME_ENV": str(tmp_path / "missing.env"),
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert result.stderr == ""
+    assert json.loads(result.stdout) == {
+        "schema_version": 1,
+        "command": "runtime.market-promotion-preflight",
+        "status": "blocked",
+        "reason": "MARKET_RUNTIME_PROMOTION_STATE_UNAVAILABLE",
+        "trading_day": None,
+        "operational_count": 0,
+        "snapshot_count": 0,
+    }
+
+
+def test_market_preflight_loads_runtime_env_without_disclosing_it(tmp_path: Path) -> None:
+    repo = _copy_launchd_fixture(tmp_path / "repo")
+    home = tmp_path / "home"
+    runtime_env = tmp_path / "runtime.env"
+    runtime_env.write_text("POSTGRES_PASSWORD=test-only-secret\n", encoding="utf-8")
+    python = repo / "services/quant-api/.venv/bin/python"
+    python.parent.mkdir(parents=True)
+    python.write_text(
+        "#!/bin/sh\n"
+        '[ "$POSTGRES_PASSWORD" = "test-only-secret" ] || exit 91\n'
+        "printf '%s\\n' '{\"schema_version\":1,\"command\":\"runtime.market-promotion-preflight\",\"status\":\"passed\",\"reason\":\"non_trading_interval\",\"trading_day\":null,\"operational_count\":0,\"snapshot_count\":0}'\n",
+        encoding="utf-8",
+    )
+    python.chmod(0o700)
+
+    result = subprocess.run(
+        [str(repo / "scripts/ops/macos/run-local-service.sh"), "market-runtime-preflight"],
+        cwd=repo,
+        env={
+            **os.environ,
+            "HOME": str(home),
+            "GUIYI_PROJECT_ROOT": str(repo),
+            "GUIYI_RUNTIME_ENV": str(runtime_env),
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0
+    assert result.stderr == ""
+    assert json.loads(result.stdout)["status"] == "passed"
+    assert "test-only-secret" not in result.stdout + result.stderr
+
+
+def test_final_market_preflight_revalidation_blocks_before_activation_mutation(
+    tmp_path: Path,
+) -> None:
+    repo = _copy_launchd_fixture(tmp_path / "repo")
+    home = tmp_path / "home"
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    python = repo / "services/quant-api/.venv/bin/python"
+    python.parent.mkdir(parents=True)
+    python.write_text(
+        "#!/bin/sh\n"
+        'count_file="$(dirname "$0")/preflight-count"\n'
+        'count=0; [ -f "$count_file" ] && count="$(cat "$count_file")"\n'
+        'count=$((count + 1)); printf "%s" "$count" > "$count_file"\n'
+        'if [ "$count" -eq 1 ]; then\n'
+        "  printf '%s\\n' '{\"schema_version\":1,\"command\":\"runtime.market-promotion-preflight\",\"status\":\"passed\",\"reason\":\"snapshot_ready\",\"trading_day\":\"2026-09-03\",\"operational_count\":2,\"snapshot_count\":2}'\n"
+        "  exit 0\n"
+        "fi\n"
+        "printf '%s\\n' '{\"schema_version\":1,\"command\":\"runtime.market-promotion-preflight\",\"status\":\"blocked\",\"reason\":\"MARKET_RUNTIME_PROMOTION_STATE_UNAVAILABLE\",\"trading_day\":\"2026-09-03\",\"operational_count\":2,\"snapshot_count\":2}'\n"
+        "exit 1\n",
+        encoding="utf-8",
+    )
+    python.chmod(0o700)
+    launchctl = fake_bin / "launchctl"
+    launchctl.write_text(
+        "#!/bin/sh\n"
+        "printf '%s\\n' \"$*\" >> \"$HOME/launchctl-calls.log\"\n"
+        "exit 90\n",
+        encoding="utf-8",
+    )
+    launchctl.chmod(0o755)
+
+    result = _run_installer_result(repo, home, fake_bin, "--confirm-market-runtime")
+
+    assert result.returncode == 1
+    assert (python.parent / "preflight-count").read_text(encoding="utf-8") == "2", result.stdout + result.stderr
+    assert not (repo / ".run/market-runtime-enabled").exists()
+    assert not list((home / "Library/LaunchAgents").glob("*.plist"))
     assert not (home / "launchctl-calls.log").exists()
 
 
