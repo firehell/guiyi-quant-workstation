@@ -15,7 +15,6 @@ import {
   type SeriesMarker,
   type TickMarkType,
   type Time,
-  type WhitespaceData,
 } from 'lightweight-charts'
 
 import type { BarData } from '@/types/market'
@@ -57,8 +56,10 @@ const chartAdapter = inject(NEWOW_TREND_CHART_ADAPTER_KEY, {
 let chart: IChartApi | null = null
 let candles: ISeriesApi<'Candlestick'> | null = null
 let volume: ISeriesApi<'Histogram'> | null = null
-let bLine: ISeriesApi<'Line'> | null = null
-let cLine: ISeriesApi<'Line'> | null = null
+const bandLines = new Map<string, {
+  readonly b: ISeriesApi<'Line'>
+  readonly c: ISeriesApi<'Line'>
+}>()
 let markers: ISeriesMarkersPluginApi<Time> | null = null
 let observer: NewowTrendResizeObserver | null = null
 let disposeResources: (() => void) | null = null
@@ -97,12 +98,6 @@ onMounted(async () => {
     wickDownColor: theme.down,
   }, 0)
   candles.attachPrimitive(primitive)
-  bLine = chart.addSeries(LineSeries, {
-    color: '#F59E0B', lineWidth: 2, lastValueVisible: false, priceLineVisible: false,
-  }, 0)
-  cLine = chart.addSeries(LineSeries, {
-    color: '#2563EB', lineWidth: 2, lastValueVisible: false, priceLineVisible: false,
-  }, 0)
   volume = chart.addSeries(HistogramSeries, { priceFormat: { type: 'volume' } }, 1)
   chart.priceScale('right', 1).applyOptions({ scaleMargins: { top: 0.12, bottom: 0.05 } })
   markers = chartAdapter.createSeriesMarkers(candles)
@@ -124,8 +119,7 @@ onUnmounted(() => {
   markers = null
   candles = null
   volume = null
-  bLine = null
-  cLine = null
+  bandLines.clear()
   chart = null
 })
 
@@ -137,8 +131,6 @@ function renderProjection(value: NewowTrendChartProjection, resetViewport: boole
     || chart === null
     || candles === null
     || volume === null
-    || bLine === null
-    || cLine === null
   ) return
   const theme = resolveChartTheme(container.value)
   candles.setData(value.bars.map((bar) => ({
@@ -153,8 +145,7 @@ function renderProjection(value: NewowTrendChartProjection, resetViewport: boole
     value: bar.volume,
     color: bar.close >= bar.open ? theme.volumeUp : theme.volumeDown,
   })))
-  bLine.setData(bandLineValues(value, 'b'))
-  cLine.setData(bandLineValues(value, 'c'))
+  syncBandLines(value)
   primitive.setData(value, dayTime)
   primitive.setStyle({
     yellowFill: 'rgba(245, 158, 11, 0.16)',
@@ -173,22 +164,49 @@ function renderProjection(value: NewowTrendChartProjection, resetViewport: boole
   else chart.timeScale().setVisibleLogicalRange(range)
 }
 
+function syncBandLines(value: NewowTrendChartProjection): void {
+  if (chart === null) return
+  const segmentIds = new Set([
+    ...value.band.b.map((point) => point.segmentId),
+    ...value.band.c.map((point) => point.segmentId),
+  ])
+  for (const [segmentId, series] of bandLines) {
+    if (segmentIds.has(segmentId)) continue
+    chart.removeSeries(series.b)
+    chart.removeSeries(series.c)
+    bandLines.delete(segmentId)
+  }
+  for (const segmentId of segmentIds) {
+    let series = bandLines.get(segmentId)
+    if (series === undefined) {
+      series = {
+        b: chart.addSeries(LineSeries, {
+          color: '#F59E0B', lineWidth: 2, lastValueVisible: false, priceLineVisible: false,
+        }, 0),
+        c: chart.addSeries(LineSeries, {
+          color: '#2563EB', lineWidth: 2, lastValueVisible: false, priceLineVisible: false,
+        }, 0),
+      }
+      bandLines.set(segmentId, series)
+    }
+    series.b.setData(bandLineValues(value, 'b', segmentId))
+    series.c.setData(bandLineValues(value, 'c', segmentId))
+  }
+}
+
 function bandLineValues(
   value: NewowTrendChartProjection,
   key: 'b' | 'c',
-): Array<LineData<Time> | WhitespaceData<Time>> {
-  const byDay = new Map(value.band[key].map((point) => [point.tradingDay, point]))
-  return value.bars.map((bar) => {
-    const point = byDay.get(bar.tradingDay)
-    return point === undefined
-      ? { time: dayTime(bar.tradingDay) }
-      : {
-        time: dayTime(bar.tradingDay),
-        value: point.value,
-        color: point.state === 'YELLOW' ? '#F59E0B'
-          : point.state === 'BLUE' ? '#2563EB' : '#98A2B3',
-      }
-  })
+  segmentId: string,
+): Array<LineData<Time>> {
+  return value.band[key]
+    .filter((point) => point.segmentId === segmentId)
+    .map((point) => ({
+      time: dayTime(point.tradingDay),
+      value: point.value,
+      color: point.state === 'YELLOW' ? '#F59E0B'
+        : point.state === 'BLUE' ? '#2563EB' : '#98A2B3',
+    }))
 }
 
 function chartMarker(

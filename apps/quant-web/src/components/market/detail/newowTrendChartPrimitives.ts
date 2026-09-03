@@ -39,11 +39,13 @@ export interface NewowTrendChartBar {
 
 export interface NewowTrendBandLinePoint {
   readonly tradingDay: string
+  readonly segmentId: string
   readonly value: number
   readonly state: NewowTrendBandState
 }
 
 export interface NewowTrendBandArea {
+  readonly segmentId: string
   readonly fromTradingDay: string
   readonly throughTradingDay: string
   readonly fromB: number
@@ -169,8 +171,9 @@ export function buildNewowTrendChartProjection(
     physicalContract: bar.physical_contract,
     segmentId: bar.segment_id,
   }))
+  const barByBarEnd = new Map(bars.map((bar) => [bar.barEnd, bar]))
   const tradingDayByBarEnd = new Map(bars.map((bar) => [bar.barEnd, bar.tradingDay]))
-  const band = projectBand(input.data, tradingDayByBarEnd)
+  const band = projectBand(input.data, barByBarEnd)
   const markers = projectMarkers(input.data, tradingDayByBarEnd)
   const cups = projectCups(input.data.cup_handles, bars)
   const rolloverSeams = input.data.rollover_seams.map((seam): NewowRolloverProjection => ({
@@ -262,31 +265,38 @@ function genericFallbackProjection(genericBars: readonly BarData[]): NewowTrendC
 
 function projectBand(
   data: NewowTrendDetailResponse,
-  tradingDayByBarEnd: ReadonlyMap<string, string>,
+  barByBarEnd: ReadonlyMap<string, NewowTrendChartBar>,
 ): NewowTrendChartProjection['band'] {
   const b: NewowTrendBandLinePoint[] = []
   const c: NewowTrendBandLinePoint[] = []
   const areas: NewowTrendBandArea[] = []
   for (const point of data.trend_band) {
-    const tradingDay = tradingDayByBarEnd.get(point.bar_end)
-    if (tradingDay === undefined) continue
-    if (point.b_value !== null) b.push({ tradingDay, value: point.b_value, state: point.state })
-    if (point.c_value !== null) c.push({ tradingDay, value: point.c_value, state: point.state })
+    const bar = barByBarEnd.get(point.bar_end)
+    if (bar === undefined || bar.segmentId === null) continue
+    if (point.b_value !== null) {
+      b.push({ tradingDay: bar.tradingDay, segmentId: bar.segmentId, value: point.b_value, state: point.state })
+    }
+    if (point.c_value !== null) {
+      c.push({ tradingDay: bar.tradingDay, segmentId: bar.segmentId, value: point.c_value, state: point.state })
+    }
   }
   for (let index = 1; index < data.trend_band.length; index += 1) {
     const previous = data.trend_band[index - 1]!
     const current = data.trend_band[index]!
-    const fromTradingDay = tradingDayByBarEnd.get(previous.bar_end)
-    const throughTradingDay = tradingDayByBarEnd.get(current.bar_end)
+    const previousBar = barByBarEnd.get(previous.bar_end)
+    const currentBar = barByBarEnd.get(current.bar_end)
     if (
-      fromTradingDay === undefined || throughTradingDay === undefined
+      previousBar === undefined || currentBar === undefined
+      || previousBar.segmentId === null || currentBar.segmentId === null
+      || previousBar.segmentId !== currentBar.segmentId
       || previous.b_value === null || previous.c_value === null
       || current.b_value === null || current.c_value === null
       || current.state === 'UNAVAILABLE'
     ) continue
     areas.push({
-      fromTradingDay,
-      throughTradingDay,
+      segmentId: currentBar.segmentId,
+      fromTradingDay: previousBar.tradingDay,
+      throughTradingDay: currentBar.tradingDay,
       fromB: previous.b_value,
       fromC: previous.c_value,
       throughB: current.b_value,
@@ -336,7 +346,7 @@ function chartMarker(
       family,
       markerType: marker.marker_type,
       tradingDay,
-      label: marker.marker_type,
+      label: isBuild ? '建仓' : '清仓',
       position: isBuild ? 'belowBar' : 'aboveBar',
       shape: isBuild ? 'arrowUp' : 'arrowDown',
       colorRole: isBuild ? 'yellow' : 'blue',

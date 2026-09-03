@@ -33,7 +33,7 @@ test('projects API bars, non-null bands, three marker families, clipped cups, an
     ['2026-01-03', 10.8],
     ['2026-01-04', 11.8],
   ])
-  assert.deepEqual(projection.band.areas.map((area) => area.state), ['YELLOW'])
+  assert.deepEqual(projection.band.areas, [])
   assert.deepEqual(projection.markers.map((marker) => [marker.family, marker.markerType, marker.id]), [
     ['trend', 'BUILD', 'build'],
     ['escape', 'NEWOW_ESCAPE_D1', 'd1'],
@@ -57,7 +57,7 @@ test('projects API bars, non-null bands, three marker families, clipped cups, an
   assert.equal(hover?.trend.state, 'YELLOW')
   assert.equal(hover?.trend.b, 12.5)
   assert.equal(hover?.trend.c, 11.8)
-  assert.deepEqual(hover?.markerLabels, ['BUILD', 'D1', '杯柄就绪'])
+  assert.deepEqual(hover?.markerLabels, ['建仓', 'D1', '杯柄就绪'])
   assert.deepEqual(hover?.cupStates, [{ candidateId: 'cup-1', direction: 'BULLISH', state: 'READY' }])
   assert.equal(hover?.rolloverLabel, 'RB2605 → RB2610 · 主力切换')
   assert.equal(hover?.physicalContract, 'RB2610')
@@ -102,7 +102,7 @@ test('turns projected API facts into primitive commands without inventing clippe
     (price) => price * 10,
   )
 
-  assert.equal(commands.filter((command) => command.kind === 'band').length, 1)
+  assert.equal(commands.filter((command) => command.kind === 'band').length, 0)
   assert.deepEqual(
     commands.filter((command) => command.kind === 'cup-segment').map((command) => [command.fromX, command.toX]),
     [[10, 20]],
@@ -117,6 +117,65 @@ test('turns projected API facts into primitive commands without inventing clippe
     commands.filter((command) => command.kind === 'rollover').map((command) => [command.fromX, command.label]),
     [[30, 'RB2605 → RB2610 · 主力切换']],
   )
+})
+
+test('keeps trend bands inside their authoritative contract segments', () => {
+  const data = snapshot()
+  data.trend_band[0] = {
+    ...data.trend_band[0]!, c_value: 9.8, state: 'BLUE', state_before: 'BLUE',
+  }
+  const fourthBar = apiBar('2026-01-05', 14, 'RB2610', 'segment-2')
+  data.bars.push(fourthBar)
+  data.trend_band.push({
+    bar_end: fourthBar.bar_end,
+    b_value: 13.5,
+    c_value: 12.8,
+    state: 'YELLOW',
+    state_before: 'YELLOW',
+    transition: null,
+  })
+
+  const projection = buildNewowTrendChartProjection({ data, genericBars: [] })
+  const x = new Map([
+    ['2026-01-02', 10], ['2026-01-03', 20], ['2026-01-04', 30], ['2026-01-05', 40],
+  ])
+  const commands = newowTrendPrimitiveDrawCommands(
+    projection,
+    (day) => x.get(day) ?? null,
+    (price) => price * 10,
+  )
+
+  assert.deepEqual(
+    projection.band.b.map((point) => [point.tradingDay, point.segmentId]),
+    [
+      ['2026-01-02', 'segment-1'], ['2026-01-03', 'segment-1'],
+      ['2026-01-04', 'segment-2'], ['2026-01-05', 'segment-2'],
+    ],
+  )
+  assert.deepEqual(
+    commands.filter((command) => command.kind === 'band')
+      .map((command) => [command.points[0]![0], command.points[1]![0]]),
+    [[10, 20], [30, 40]],
+  )
+})
+
+test('renders trend transition labels in Chinese while retaining server marker types', () => {
+  const data = snapshot()
+  data.trend_markers = [
+    marker('clear', 'CLEAR', data.bars[1]!.bar_end, 12, 'CLEAR'),
+    marker('build', 'BUILD', data.bars[2]!.bar_end, 13, 'BUILD'),
+  ]
+
+  const projection = buildNewowTrendChartProjection({ data, genericBars: [] })
+
+  assert.deepEqual(
+    projection.markers.filter((item) => item.family === 'trend')
+      .map((item) => [item.markerType, item.label]),
+    [['CLEAR', '清仓'], ['BUILD', '建仓']],
+  )
+  assert.deepEqual(resolveNewowTrendCrosshairFacts(projection, '2026-01-04')?.markerLabels, [
+    '建仓', 'D1', '杯柄就绪',
+  ])
 })
 
 test('keeps same-day Cup markers in frozen lifecycle order despite adversarial ids', () => {

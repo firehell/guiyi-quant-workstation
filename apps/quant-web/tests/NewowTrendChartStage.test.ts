@@ -7,12 +7,14 @@ import test from 'node:test'
 import ts from 'typescript'
 import { compileScript, parse } from '@vue/compiler-sfc'
 import { createRenderer, defineComponent, h, nextTick, ref } from 'vue'
+import { LineSeries } from 'lightweight-charts'
 
 import {
   NEWOW_TREND_CHART_ADAPTER_KEY,
   type NewowTrendChartAdapter,
 } from '../src/components/market/detail/newowTrendChartPrimitives.ts'
 import type { BarData } from '../src/types/market.ts'
+import type { NewowTrendDetailResponse } from '../src/types/newow.ts'
 
 const componentUrl = new URL('../src/components/market/detail/NewowTrendChartStage.vue', import.meta.url)
 const sourceRoot = fileURLToPath(new URL('../src/', import.meta.url))
@@ -73,6 +75,51 @@ test('mounts one chart and ResizeObserver, reuses them on update, and disposes t
     create: 1, subscribe: 1, observe: 1,
     unsubscribe: 1, disconnect: 1, remove: 1,
   })
+})
+
+test('renders each physical segment through separate B and C line series', async () => {
+  const Stage = await loadComponent()
+  const lineData: Array<Array<{ time: unknown }>> = []
+  const fakeChart = {
+    panes: () => [{ setStretchFactor() {} }],
+    addPane: () => ({ setStretchFactor() {} }),
+    addSeries: (definition: unknown) => {
+      const data: Array<{ time: unknown }> = []
+      if (definition === LineSeries) lineData.push(data)
+      return {
+        setData(values: Array<{ time: unknown }>) { data.splice(0, data.length, ...values) },
+        attachPrimitive() {},
+      }
+    },
+    removeSeries() {},
+    priceScale: () => ({ applyOptions() {} }),
+    timeScale: () => ({
+      fitContent() {}, setVisibleLogicalRange() {}, timeToCoordinate: () => 1,
+    }),
+    subscribeCrosshairMove() {}, unsubscribeCrosshairMove() {}, resize() {}, remove() {},
+  }
+  const adapter: NewowTrendChartAdapter = {
+    createChart: () => fakeChart as never,
+    createSeriesMarkers: () => ({ setMarkers() {} }) as never,
+    createResizeObserver: () => ({ observe() {}, disconnect() {} }),
+  }
+  const Host = defineComponent({
+    setup: () => () => h(Stage, { data: twoSegmentTrendData(), genericBars: [] }),
+  })
+  const renderer = createRenderer(nodeOperations())
+  const app = renderer.createApp(Host)
+  app.provide(NEWOW_TREND_CHART_ADAPTER_KEY, adapter)
+
+  app.mount(element('root'))
+  await nextTick()
+
+  assert.deepEqual(lineData.map((data) => data.map((point) => chartDay(point.time))), [
+    ['2026-01-02', '2026-01-03'],
+    ['2026-01-02', '2026-01-03'],
+    ['2026-01-04', '2026-01-05'],
+    ['2026-01-04', '2026-01-05'],
+  ])
+  app.unmount()
 })
 
 async function loadComponent() {
@@ -150,5 +197,64 @@ function genericBar(day: string, close: number): BarData {
     time: `${day}T15:00:00+08:00`, trading_day: day,
     open: close - 1, high: close + 1, low: close - 2, close,
     volume: 100,
+  }
+}
+
+function chartDay(time: unknown): string {
+  const value = time as { year: number; month: number; day: number }
+  return `${value.year}-${String(value.month).padStart(2, '0')}-${String(value.day).padStart(2, '0')}`
+}
+
+function twoSegmentTrendData(): NewowTrendDetailResponse {
+  const bars: NewowTrendDetailResponse['bars'] = [
+    apiBar('2026-01-02', 11, 'RB2605', 'segment-1'),
+    apiBar('2026-01-03', 12, 'RB2605', 'segment-1'),
+    apiBar('2026-01-04', 13, 'RB2610', 'segment-2'),
+    apiBar('2026-01-05', 14, 'RB2610', 'segment-2'),
+  ]
+  return {
+    meta: {
+      strategy_code: 'newow_trend_v1', profile_id: 'newow_trend_d1_v1', frequency: '1d',
+      series_kind: 'actual_dominant', calculation_identity: 'calculation',
+      data_revision_identity: null, request_identity: 'request',
+    },
+    instrument: { product: 'rb', display_name: '螺纹钢', last_visible_physical_contract: 'RB2610' },
+    bars,
+    bar_policy: 'completed_only',
+    trend_band: bars.map((bar, index) => ({
+      bar_end: bar.bar_end,
+      b_value: 10.5 + index,
+      c_value: 9.8 + index,
+      state: index < 2 ? 'BLUE' : 'YELLOW',
+      state_before: index === 0 ? null : index < 2 ? 'BLUE' : 'YELLOW',
+      transition: null,
+    })),
+    trend_markers: [], escape_markers: [], cup_markers: [], cup_handles: [],
+    rollover_seams: [{
+      trading_day: '2026-01-04', previous_contract: 'RB2605', next_contract: 'RB2610',
+      previous_bar_end: bars[1]!.bar_end, next_bar_end: bars[2]!.bar_end,
+      previous_segment_id: 'segment-1', next_segment_id: 'segment-2',
+    }],
+    legend: { BUILD: 'trend build', CLEAR: 'trend clear', D1: 'escape D1', D2: 'escape D2', D3: 'escape D3' },
+    formula_descriptions: {
+      trend_band: 'newow_trend_band_cleanroom_v1',
+      escape: 'newow_escape_d123_v1',
+      cup_handle: 'newow_cup_handle_v1',
+    },
+    warnings: [],
+  }
+}
+
+function apiBar(
+  day: string,
+  close: number,
+  physicalContract: string,
+  segmentId: string,
+): NewowTrendDetailResponse['bars'][number] {
+  return {
+    bar_end: `${day}T07:00:00Z`, trading_day: day,
+    open: close - 1, high: close + 1, low: close - 2, close,
+    volume: close + 20, open_interest: close + 120,
+    physical_contract: physicalContract, segment_id: segmentId, source_identity: 'calculation',
   }
 }
