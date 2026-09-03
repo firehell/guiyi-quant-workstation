@@ -119,11 +119,12 @@ def _result() -> SimpleNamespace:
     )
     return SimpleNamespace(
         calculation_identity="calculation",
+        data_revision_identity=None,
         request_identity="request",
         instrument=SimpleNamespace(
             product="rb",
             display_name=None,
-            latest_physical_contract=None,
+            last_visible_physical_contract=None,
             frequency="1d",
             series_kind="actual_dominant",
             profile_id="newow_trend_d1_v1",
@@ -153,7 +154,7 @@ def _client(monkeypatch, result: object = None) -> TestClient:
     monkeypatch.setattr(
         market_newow,
         "NewowTrendDetailService",
-        lambda _market: SimpleNamespace(query=lambda _query: value),
+        lambda _market, **_kwargs: SimpleNamespace(query=lambda _query: value),
     )
     app.dependency_overrides[get_db] = lambda: object()
     return TestClient(app)
@@ -173,7 +174,8 @@ def test_get_newow_trend_detail_maps_safe_typed_facts(monkeypatch) -> None:
         "profile_id": "newow_trend_d1_v1",
         "frequency": "1d",
         "series_kind": "actual_dominant",
-        "calculation_identity": "calculation",
+            "calculation_identity": "calculation",
+            "data_revision_identity": None,
         "request_identity": "request",
     }
     assert body["bars"][0]["close"] == "10.50"
@@ -210,11 +212,63 @@ def test_newow_route_rejects_nonfixed_params_and_is_get_only(monkeypatch) -> Non
     app.dependency_overrides.clear()
 
 
+def test_newow_api_keeps_cup_marker_history_and_treats_range_limit_as_422(monkeypatch) -> None:
+    value = _result()
+    stamp = value.bars[0].bar_end
+    value.markers = value.markers + tuple(
+        SimpleNamespace(
+            marker_type=SimpleNamespace(value=kind),
+            marker_id=kind.lower(),
+            bar_end=stamp,
+            price=Decimal("10.50"),
+            label=kind,
+            color_token="newow-cup",
+            priority=1,
+            related_marker_ids=(),
+            trigger_facts={},
+            formula_version="cup",
+        )
+        for kind in (
+            "CUP_HANDLE_READY",
+            "CUP_HANDLE_BREAKOUT",
+            "CUP_HANDLE_WEAKENED",
+            "CUP_HANDLE_INVALIDATED",
+        )
+    )
+    with _client(monkeypatch, value) as client:
+        response = client.get(
+            "/api/v1/market/newow/trend-detail?product=rb&from=2026-01-05&through=2026-01-05"
+        )
+    app.dependency_overrides.clear()
+    assert [item["marker_type"] for item in response.json()["cup_markers"]] == [
+        "CUP_HANDLE_READY",
+        "CUP_HANDLE_BREAKOUT",
+        "CUP_HANDLE_WEAKENED",
+        "CUP_HANDLE_INVALIDATED",
+    ]
+
+    monkeypatch.setattr(
+        market_newow,
+        "NewowTrendDetailService",
+        lambda _market, **_kwargs: SimpleNamespace(
+            query=lambda _query: (_ for _ in ()).throw(
+                NewowTrendDetailError("NEWOW_RANGE_TOO_LARGE")
+            )
+        ),
+    )
+    app.dependency_overrides[get_db] = lambda: object()
+    response = TestClient(app).get(
+        "/api/v1/market/newow/trend-detail?product=rb&from=2026-01-05&through=2026-01-05"
+    )
+    app.dependency_overrides.clear()
+    assert response.status_code == 422
+
+
 def test_newow_public_error_never_leaks_core_reason(monkeypatch) -> None:
     monkeypatch.setattr(
         market_newow,
         "NewowTrendDetailService",
-        lambda _market: SimpleNamespace(
+        lambda _market, **_kwargs: SimpleNamespace(
             query=lambda _query: (_ for _ in ()).throw(
                 NewowTrendDetailError("NEWOW_DATA_IDENTITY_INVALID")
             )
@@ -240,7 +294,7 @@ def test_newow_invalid_product_and_range_are_public_422_codes(monkeypatch) -> No
     monkeypatch.setattr(
         market_newow,
         "NewowTrendDetailService",
-        lambda _market: SimpleNamespace(
+        lambda _market, **_kwargs: SimpleNamespace(
             query=lambda _query: (_ for _ in ()).throw(next(errors))
         ),
     )
