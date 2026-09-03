@@ -8,7 +8,7 @@
 
 | 项目 | 当前事实 |
 |---|---|
-| Release | `v1.9.13@9edbdfa7da11758876bea3e2a98781c6d4ace4d2` 是当前最新正式 release；`main` 与 annotated tag peeled commit 精确一致。session-anchor/v3/0045 修复尚未 release，目标 RC 为 `v1.9.14`。 |
+| Release | `v1.9.13@9edbdfa7da11758876bea3e2a98781c6d4ace4d2` 是当前最新正式 release；`main` 与 annotated tag peeled commit 精确一致。`release/v1.9.14` 已冻结候选 identity，包含 session-anchor/v3/0045 修复，但尚未合入 main、创建 tag 或发布 GitHub Release。 |
 | Runtime | 五项 launchd 均指向 clean、detached `/Volumes/扩展盘/guiyi-quant-runtime-v1.9.13-r1@9edbdfa7`；2026-09-03 只读 readback 为 API/Web/Live/Alert `running`，After-market 按调度 `not running`。该 exact tag 仍使用错误的一分钟 session 锚点，不能作为 G10 通过证据。 |
 | Database | 2026-09-03 只读 readback：production Alembic 为 `20260902_0044`；Rule 恰为 enabled HTDY `jm × 15m` 与 disabled、empty-scope `subing_ths_alert_15m_v1`；SuBing Event 为 0。0045 尚未执行。 |
 | Market Runtime Scope | `operational_products.txt` 的 60 个品种。 |
@@ -31,7 +31,7 @@ Alert transport 为 PushPlus；provider accepted 不等于微信送达。
 
 ## Pending Gate
 
-- 准备 `v1.9.14` RC；main merge、annotated tag 与 GitHub Release 需要新的发布授权。
+- `release/v1.9.14` RC identity 与验证完成后，main merge、annotated tag 与 GitHub Release 仍需要新的发布授权。
 - exact-tag `session-anchor-repair --phase prepare --apply` 会调用真实 RQData 并写 shadow Canonical，需要一次新的真实数据授权。
 - 停止五项 Runtime、publish shadow、reconcile Catalog、执行 production 0045 与清理最新交易日 Redis 是同一个维护 Gate，需要新的单次明确授权；0045 之后只能 forward recovery。
 - exact-tag v1.9.14 Runtime promotion 是独立 Gate。完成 identity/health/data readback 前不得重做 G10。

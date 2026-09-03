@@ -1,7 +1,7 @@
 {
   "name": "quant-web",
   "private": true,
-  "version": "1.9.12",
+  "version": "1.9.14",
   "type": "module",
   "scripts": {
     "dev": "vite",
