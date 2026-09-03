@@ -10,13 +10,13 @@ _GOLDEN_PATH = (
     Path(__file__).resolve().parents[3]
     / "tests"
     / "fixtures"
-    / "subing_ths_15m_v2_golden.json"
+    / "subing_ths_15m_v3_golden.json"
 )
 
 def test_subing_ths_kernel_freezes_formula_identity() -> None:
     kernel = SubingThs15mKernel()
 
-    assert kernel.formula_version == "subing_ths_15m_v2"
+    assert kernel.formula_version == "subing_ths_15m_v3"
     assert kernel.fast == 12
     assert kernel.slow == 26
     assert kernel.signal == 9

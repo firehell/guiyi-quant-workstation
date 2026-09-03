@@ -9,7 +9,7 @@ from .macd import initial_macd_state, step_macd
 from .models import EmaState, MacdState
 
 
-SUBING_THS_FORMULA_VERSION = "subing_ths_15m_v2"
+SUBING_THS_FORMULA_VERSION = "subing_ths_15m_v3"
 SubingThsResultCode = Literal["buy", "sell"]
 
 
@@ -36,7 +36,7 @@ class SubingThs15mResult:
 
 
 class SubingThs15mKernel:
-    """Pure, incremental authority for ``subing_ths_15m_v2`` candidates."""
+    """Pure, incremental authority for ``subing_ths_15m_v3`` candidates."""
 
     formula_version = SUBING_THS_FORMULA_VERSION
     fast = 12

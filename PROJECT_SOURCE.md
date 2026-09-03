@@ -1,6 +1,6 @@
 # 归一量化稳定产品面
 
-更新时间：2026-09-02
+更新时间：2026-09-03
 
 归一量化是本地、单用户的国内期货研究工作站。稳定闭环是可信行情、Market Web、通用指标、HTDY/苏冰研究观察、Alert 与人工判断；不做自动交易、实盘下单、账户/委托/持仓管理、SaaS、多用户权限或 AI 自动晋升。所有图表和通知都是研究观察，`auto_order=false`。
 
@@ -25,11 +25,11 @@ HTDY 是 observation-only/repainting 产品，能力覆盖七个正式周期 `1m
 
 持久 HTDY `AlertEvent` 是 forward-only first-seen 事实，只接受触发窗口的最新 completed Bar。repaint zone 中的历史 Bar 只供 Web retrospective 研究展示，不创建 Event 或通知。Event 创建后不可变，不因后续重绘消失、重现或方向变化而改写或重发。
 
-苏冰预警是新的 observation-only 产品，身份固定为 `subing_ths_alert_15m_v1`，公式身份固定为 `subing_ths_15m_v2`。它只消费 operational Scope 内的 completed actual_dominant 15m，并按 MACD(12,26,9) exact CROSS 与 `EMA(CLOSE, 21)` 判定多头/空头预警；EMA 使用 `sma_window` seed。warm-up 与递归状态只在同一物理主力合约内延续，换月重新构建。零轴、Range、量能/OI、ATR、EMA 斜率与多周期共振都不是 V1 Gate。
+苏冰预警是新的 observation-only 产品，身份固定为 `subing_ths_alert_15m_v1`，公式身份固定为 `subing_ths_15m_v3`。它只消费 operational Scope 内的 completed actual_dominant 15m，并按 MACD(12,26,9) exact CROSS 与 `EMA(CLOSE, 21)` 判定多头/空头预警；EMA 使用 `sma_window` seed。v3 不改变数学公式，只冻结 RQData 首分钟 session 锚点修正后的正式 Bar、时间与 Candidate。warm-up 与递归状态只在同一物理主力合约内延续，换月重新构建。零轴、Range、量能/OI、ATR、EMA 斜率与多周期共振都不是 V1 Gate。
 
 苏冰持久 Event 使用 `exact` identity：同一 Rule、symbol、frequency、bar_end 的事实完全一致才幂等，冲突 fail-closed。Web 和通知只消费 Event，不复制公式；Event-backed `S↑/S↓` 不拥有 Overlay 或订单语义。
 
-Alert 是独立 Application Domain。0043 删除旧策略 Rule/Event 与专用列，0044 只增加 disabled + empty-scope 的新 SuBing Rule。HTDY 使用 `first_seen`，SuBing 使用 `exact`；两者均先提交 Event，随后最多一次 transport，无 retry、queue、replay、backfill、fallback 或订单路径。provider accepted 不等于送达。通用 Scope 写入拒绝 disabled Rule；首次 SuBing Scope/enable 只走专用原子 seam，真实 apply 仍是外部 Gate。
+Alert 是独立 Application Domain。0043 删除旧策略 Rule/Event 与专用列，0044 只增加 disabled + empty-scope 的新 SuBing Rule，0045 只规范化 RQData session 排他起点。HTDY 使用 `first_seen`，SuBing 使用 `exact`；两者均先提交 Event，随后最多一次 transport，无 retry、queue、replay、backfill、fallback 或订单路径。provider accepted 不等于送达。通用 Scope 写入拒绝 disabled Rule；首次 SuBing Scope/enable 只走专用原子 seam，且要求精确 0045，真实 apply 仍是外部 Gate。
 
 ## 数据与稳定入口
 
@@ -40,6 +40,7 @@ RQData -> staging + hard validation -> Canonical Parquet
 ```
 
 - RQData 是唯一外部行情事实源，Canonical Parquet 是唯一 active Historical Bar 存储，PostgreSQL 不存 Bar。
+- RQData `1m` session 首根时间是首根 `bar_end`；adapter 必须先减一分钟，将其规范化为统一 `(start, end]` 的排他 start。Canonical 仍只有一个 V2 当前事实，不并行创建 data-version。
 - `active_products.txt` 定义研究能力；`operational_products.txt` 定义持续 Runtime 授权。即使内容相同也不合并。
 - 物理 Dataset 只有 `continuous` 与 `contract`；`actual_dominant` 只通过 `MainContractMap rank=1` 有效区间拼接。
 - `MarketDataService` 是 Historical consumer 的唯一入口；Redis Live 只承载当日 observation，不能提升为 Canonical。

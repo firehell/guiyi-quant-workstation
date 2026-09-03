@@ -3,7 +3,7 @@
 ## Purpose
 
 定义新的 `subing_ths_alert_15m_v1` 研究观察产品：只对 completed actual_dominant 15m 按
-`subing_ths_15m_v2` 公式创建 immutable AlertEvent、最多尝试一次通知，并由 Market Web 提供人工复核。
+`subing_ths_15m_v3` 公式创建 immutable AlertEvent、最多尝试一次通知，并由 Market Web 提供人工复核。
 它不恢复 `subing_strategy_v1`，不创建持仓或订单，且 `auto_order=false`。
 
 ## Requirements
@@ -11,7 +11,7 @@
 ### Requirement: Identity and input are exact
 
 Rule identity SHALL 为 `subing_ths_alert_15m_v1`，public name SHALL 为“苏冰预警”，kind SHALL 为
-`indicator_observation`，formula version SHALL 为 `subing_ths_15m_v2`。输入 MUST 仅为 operational Scope
+`indicator_observation`，formula version SHALL 为 `subing_ths_15m_v3`。输入 MUST 仅为 operational Scope
 内、由 `MainContractMap rank=1` 证明的 completed `actual_dominant` 15m Bar；preview、未完成 Bar、其它周期、
 continuous 或错误物理合约 MUST fail closed。
 
@@ -61,7 +61,8 @@ fail closed。API、notification formatter 与 Web MUST NOT 复制 Candidate 公
 
 Candidate Gate MUST NOT 使用零轴、MACD 柱强弱、Range Detector、成交量、OI、ATR、EMA21 斜率、
 Daily Watch、5m/30m/60m/D1 共振、评分、胜率或其它历史过滤。任何新增过滤 MUST 使用新的 formula
-version，不得静默修改 `subing_ths_15m_v2`。
+version，不得静默修改 `subing_ths_15m_v3`。v3 与 v2 的数学公式相同，但 v3 只接受 session 锚点修正后的
+正式 Bar、completed time 与 Candidate；不得把旧锚点结果标记为 v3。
 
 #### Scenario: An optional study disagrees with the exact formula
 
@@ -140,11 +141,23 @@ disabled Rule。
 - **WHEN** caller 经通用 API 尝试写 SuBing symbol × frequency Scope
 - **THEN** 返回公开 disabled-Rule error 且数据库保持 empty scope
 
+### Requirement: 0045 normalizes the RQData session anchor forward-only
+
+Forward-only `20260903_0045` SHALL 只在精确 0044、恰好两条 Rule、SuBing disabled + empty scope 且
+零 SuBing Event 的状态上，把既有 RQData 1m session 首根 `bar_end` 标签减一分钟，转为
+`SessionWindow(start, end]` 的排他 start。它 MUST 保留两条 Rule 与既有 HTDY Event，不修改、删除或回放
+任何 Event；downgrade MUST 拒绝。
+
+#### Scenario: 0045 normalizes real provider labels
+
+- **WHEN** RQData session start 为 `09:01/10:31/13:31/21:01`
+- **THEN** upgrade 后 start 精确为 `09:00/10:30/13:30/21:00`，session 不重叠且 Rule/Event facts 不变
+
 ### Requirement: First activation is one atomic dedicated operation
 
 专用 `guiyi runtime subing-ths-scope` seam SHALL 从 execution-time `operational_products.txt` 构造排序后的
 symbol × 15m Scope。无 `--apply` 时 MUST 零数据库 mutation 并返回 count/hash；`--apply` 时 MUST 只在精确
-0044、恰好两 Rule、HTDY snapshot 合法且 SuBing disabled + empty scope 的 preflight 后锁定两 Rule，在一次
+0045、恰好两 Rule、HTDY snapshot 合法且 SuBing disabled + empty scope 的 preflight 后锁定两 Rule，在一次
 transaction 同时写 full Scope 与 `enabled=true`，commit 后精确 readback。任何并发、持久化或 readback
 异常 MUST fail closed，不得留下部分 Scope。
 
@@ -160,7 +173,8 @@ transaction 同时写 full Scope 与 `enabled=true`，commit 后精确 readback�
 
 ### Requirement: Compatibility precedes production activation and every external Gate stays separate
 
-外部顺序 SHALL 为 `G10` 同花顺兼容性只读 evidence 先于 `G9` production Scope activation + Rule enable。
+外部顺序 SHALL 为 session-anchor repair、exact-tag Runtime readback、重新执行 `G10` 同花顺兼容性只读
+evidence，最后才是 `G9` production Scope activation + Rule enable。
 G10 至少核对两个品种、可获得时五个金叉与五个死叉的 direction、completed bar time、CROSS、Close/EMA21
 与主力合约；不发 PushPlus、不启用 Rule、不写 Scope。G9 及 production migration、release/main/tag、Runtime
 promotion、真实通知、provider acceptance 与微信实际送达均是彼此独立的 owner Gate；测试、dry-run、代码、

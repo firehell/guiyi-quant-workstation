@@ -1407,7 +1407,7 @@ def test_rqdata_metadata_uses_historical_trading_period_facts_not_current_hours(
                 "1m",
             )
             return pd.DataFrame(
-                {"trading_hours": ["09:00-15:00"]},
+                {"trading_hours": ["09:01-15:00"]},
                 index=pd.MultiIndex.from_tuples(
                     [("JM2509", date(2025, 1, 2))],
                     names=("order_book_id", "date"),
@@ -1440,6 +1440,69 @@ def test_rqdata_metadata_uses_historical_trading_period_facts_not_current_hours(
             "provider": "rqdata",
         },
     )
+
+
+def test_rqdata_historical_sessions_treat_period_starts_as_first_minute_labels() -> None:
+    """Catches the first provider minute being mistaken for an exclusive open."""
+    trading_day = date(2026, 9, 1)
+
+    rows = rqdata_adapter._historical_session_rows(
+        (
+            {
+                "order_book_id": "JM2701",
+                "date": trading_day,
+                "trading_hours": (
+                    "21:01-23:00,09:01-10:15,10:31-11:30,13:31-15:00"
+                ),
+            },
+        ),
+        [("jm", trading_day, "JM2701")],
+        {"jm": "DCE"},
+    )
+
+    assert [(row["start_time"], row["end_time"]) for row in rows] == [
+        (time(21), time(23)),
+        (time(9), time(10, 15)),
+        (time(10, 30), time(11, 30)),
+        (time(13, 30), time(15)),
+    ]
+    assert [row["crosses_midnight"] for row in rows] == [False, False, False, False]
+
+
+def test_rqdata_historical_sessions_reject_overlap_after_start_normalization() -> None:
+    """Catches normalization silently creating overlapping authoritative sessions."""
+    trading_day = date(2026, 9, 1)
+
+    with pytest.raises(InfrastructureError, match="RQDATA_TRADING_SESSIONS_INVALID"):
+        rqdata_adapter._historical_session_rows(
+            (
+                {
+                    "order_book_id": "JM2701",
+                    "date": trading_day,
+                    "trading_hours": "09:01-10:15,10:15-11:30",
+                },
+            ),
+            [("jm", trading_day, "JM2701")],
+            {"jm": "DCE"},
+        )
+
+
+def test_rqdata_historical_sessions_reject_unparsed_provider_text() -> None:
+    """Catches a valid-looking period prefix masking malformed provider text."""
+    trading_day = date(2026, 9, 1)
+
+    with pytest.raises(InfrastructureError, match="RQDATA_TRADING_SESSIONS_INVALID"):
+        rqdata_adapter._historical_session_rows(
+            (
+                {
+                    "order_book_id": "JM2701",
+                    "date": trading_day,
+                    "trading_hours": "09:01-10:15 unexpected",
+                },
+            ),
+            [("jm", trading_day, "JM2701")],
+            {"jm": "DCE"},
+        )
 
 
 def test_intraday_dataset_start_floors_to_rqdata_minute_history(tmp_path) -> None:

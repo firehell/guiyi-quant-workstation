@@ -18,7 +18,7 @@ from app.alerts.registry import HTDY_ALERT_RULE_CODE, SUBING_THS_ALERT_RULE_CODE
 from app.market_data.product_retirement import normalize_symbol
 
 
-_ALEMBIC_REVISION = "20260902_0044"
+_ALEMBIC_REVISION = "20260903_0045"
 _HTDY_RULE = HTDY_ALERT_RULE_CODE
 _SUBING_RULE = SUBING_THS_ALERT_RULE_CODE
 _HTDY_FREQUENCIES = frozenset({"1m", "5m", "15m", "30m", "60m", "1d", "1w"})
@@ -74,14 +74,14 @@ def activate_subing_ths_scope(
                 scope_sha256=scope_sha256,
                 enabled=False,
             )
-        _require_alembic_0044(session)
+        _require_alembic_0045(session)
         locked_rules = _rules(
             session,
             for_update=True,
             populate_existing=True,
             error_code="SUBING_SCOPE_ACTIVATION_PREFLIGHT_FAILED",
         )
-        _require_alembic_0044(session)
+        _require_alembic_0045(session)
         htdy, subing = _exact_rules(
             locked_rules,
             error_code="SUBING_SCOPE_ACTIVATION_PREFLIGHT_FAILED",
@@ -186,7 +186,7 @@ def _scope_sha256(scope: dict[str, list[str]]) -> str:
 
 
 def _preflight(session: Session) -> tuple[_RuleSnapshot, AlertRule]:
-    _require_alembic_0044(session)
+    _require_alembic_0045(session)
     htdy, subing = _exact_rules(
         _rules(
             session,
@@ -204,7 +204,7 @@ def _preflight(session: Session) -> tuple[_RuleSnapshot, AlertRule]:
     ), subing
 
 
-def _require_alembic_0044(session: Session) -> None:
+def _require_alembic_0045(session: Session) -> None:
     try:
         versions = tuple(session.execute(
             text("SELECT version_num FROM alembic_version")

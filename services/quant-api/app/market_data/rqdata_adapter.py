@@ -819,12 +819,10 @@ def _historical_session_rows(
         exchange = symbol_exchanges.get(symbol)
         if exchange is None:
             raise InfrastructureError("RQDATA_TRADING_SESSIONS_MISSING")
-        matches = tuple(_SESSION.finditer(values[(contract, trading_day)]))
-        if not matches:
-            raise InfrastructureError("RQDATA_TRADING_SESSIONS_MISSING")
-        for index, match in enumerate(matches, start=1):
-            start_time = time.fromisoformat(match.group("start"))
-            end_time = time.fromisoformat(match.group("end"))
+        normalized_periods = _normalized_historical_session_periods(
+            values[(contract, trading_day)]
+        )
+        for index, (start_time, end_time) in enumerate(normalized_periods, start=1):
             rows.append(
                 {
                     "exchange_code": exchange,
@@ -840,6 +838,51 @@ def _historical_session_rows(
                 }
             )
     return tuple(rows)
+
+
+def _normalized_historical_session_periods(
+    trading_hours: str,
+) -> tuple[tuple[time, time], ...]:
+    """Convert RQData first-minute labels into exclusive session boundaries."""
+    matches = tuple(_SESSION.finditer(trading_hours))
+    if not matches:
+        raise InfrastructureError("RQDATA_TRADING_SESSIONS_MISSING")
+    cursor = 0
+    for match in matches:
+        if trading_hours[cursor:match.start()].strip(" ,;"):
+            raise InfrastructureError("RQDATA_TRADING_SESSIONS_INVALID")
+        cursor = match.end()
+    if trading_hours[cursor:].strip(" ,;"):
+        raise InfrastructureError("RQDATA_TRADING_SESSIONS_INVALID")
+    periods = tuple(
+        (
+            _previous_minute(time.fromisoformat(match.group("start"))),
+            time.fromisoformat(match.group("end")),
+        )
+        for match in matches
+    )
+    has_night = any(start >= time(18) for start, _ in periods)
+    intervals: list[tuple[int, int]] = []
+    for start, end in periods:
+        start_minute = start.hour * 60 + start.minute
+        end_minute = end.hour * 60 + end.minute
+        if has_night and start < time(18):
+            start_minute += 24 * 60
+            end_minute += 24 * 60
+        elif end_minute <= start_minute:
+            end_minute += 24 * 60
+        if end_minute <= start_minute:
+            raise InfrastructureError("RQDATA_TRADING_SESSIONS_INVALID")
+        intervals.append((start_minute, end_minute))
+    ordered = sorted(intervals)
+    if any(previous[1] > current[0] for previous, current in zip(ordered, ordered[1:])):
+        raise InfrastructureError("RQDATA_TRADING_SESSIONS_INVALID")
+    return periods
+
+
+def _previous_minute(value: time) -> time:
+    anchor = datetime.combine(date(2000, 1, 2), value)
+    return (anchor - timedelta(minutes=1)).time()
 
 
 def _days(start: date, end: date):

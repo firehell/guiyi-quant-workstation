@@ -1,6 +1,6 @@
 # Canonical 数据基础
 
-更新时间：2026-08-24
+更新时间：2026-09-03
 
 ## 1. 唯一 active 数据语言
 
@@ -60,6 +60,12 @@ market_partitions
 `main_contract_map` 以 `(symbol, trade_date)` 唯一保存 rank1 当前事实。`market_datasets` 以四字段
 identity 唯一；`market_partitions` 以 `(dataset_id, year, month)` 唯一，保存 coverage、URI、row count
 和创建时间。未来回测所需参数应由新的回测合同设计，不阻塞 K 线底座。
+
+RQData 的 `1m` Session start 是该段首根 `bar_end` 标签，例如 `09:01/10:31/13:31/21:01`。
+adapter 在唯一 metadata 边界将其减一分钟后写入 DB，因此 active `TradingSession.start_time` 是统一
+`SessionWindow(start, end]` 的排他边界 `09:00/10:30/13:30/21:00`。Historical expected bars、四种日内
+聚合与 Live 首根分钟共用该 DB authority；任何层不得再次补偿。分钟不对齐、无效区间、重叠或不可解释
+跨午夜布局都 fail-closed。
 
 ## 4. 更新、刷新与自然续传
 
@@ -150,6 +156,9 @@ coverage 和 resolved contract segments。
 guiyi data update (--symbol X | --universe active) [--since DATE] [--through DATE] [--apply]
 guiyi data refresh --symbol X --since DATE --through DATE [--apply]
 guiyi data audit (--symbol X | --universe active) [--through DATE] [--progress]
+guiyi data session-anchor-repair --phase plan
+guiyi data session-anchor-repair --phase prepare --shadow-root PATH --manifest PATH --apply
+guiyi data session-anchor-repair --phase publish --shadow-root PATH --manifest PATH --apply
 ```
 
 无 `--apply` 的 update/refresh 仅计划，零 RQData、零 PostgreSQL 写入、零 Parquet 写入；audit
@@ -167,6 +176,15 @@ write/flush 失败，立即禁用后续进度输出，审计异常和最终 stdo
 时，update 在规划开始解析最新完整交易日，并将该值作为本轮固定水位；相同解析值的再次完整运行
 必须为 NOOP。真实 `--apply`、生产 schema migration 与正式数据删除/重建仍各自需要范围明确的
 单次意图。
+
+`session-anchor-repair` 是 0044→0045 的一次性 forward-only seam。`plan` 只读扫描全部日内
+Dataset/partition、预计缺失首分钟与稳定 scope hash，不调用 RQData。`prepare --apply` 需要独立真实数据授权，
+只把完整 Canonical 复制到外部 shadow root，再用 RQData 真实缺失 1m 重建 `1m/5m/15m/30m/60m`；不得合成，
+且 D1/W1 hash 必须不变。manifest 必须位于 active/shadow root 之外。`publish --apply` 需要新的维护授权，
+只在五项 Runtime 均停止且 revision、Catalog、active/shadow 文件 hash 与 scope 全部未漂移时切换 root、更新
+coverage/row_count、执行精确 0045，再清理 repair scope 最新交易日的旧锚点 Redis Bar。0045 成功后失败只能
+保持维护状态继续 forward recovery，不能恢复错误 session。修复继续使用唯一 Canonical V2，不创建并行
+data-version。
 
 active universe 为 `data/universe/active_products.txt` 的 60 品种；退役精确名单为
 `data/universe/retired_products.txt`，与 active 互斥。

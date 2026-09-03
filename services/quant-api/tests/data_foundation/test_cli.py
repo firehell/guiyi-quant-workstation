@@ -4,6 +4,8 @@ import io
 import inspect
 import json
 from datetime import date
+from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -154,7 +156,70 @@ def test_data_parser_exposes_only_active_user_commands() -> None:
         "refresh",
         "audit",
         "after-market",
+        "session-anchor-repair",
     }
+
+
+def test_session_anchor_repair_plan_is_readonly_and_uses_dedicated_service() -> None:
+    calls = []
+
+    class Repair:
+        def plan(self):
+            calls.append(("plan",))
+            return SimpleNamespace(
+                as_payload=lambda: {
+                    "schema_version": 1,
+                    "command": "data.session-anchor-repair",
+                    "phase": "plan",
+                    "status": "planned",
+                    "readonly": True,
+                }
+            )
+
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+    code = main(
+        ["data", "session-anchor-repair", "--phase", "plan"],
+        session_factory=lambda: _NullContext(),
+        session_anchor_repair_factory=lambda _session: Repair(),
+        stdout=stdout,
+        stderr=stderr,
+    )
+
+    assert code == 0
+    assert json.loads(stdout.getvalue()) == {
+        "schema_version": 1,
+        "command": "data.session-anchor-repair",
+        "phase": "plan",
+        "status": "planned",
+        "readonly": True,
+    }
+    assert stderr.getvalue() == ""
+    assert calls == [("plan",)]
+
+
+def test_session_anchor_repair_prepare_requires_explicit_paths_and_apply() -> None:
+    with pytest.raises(CliUsageError):
+        build_parser().parse_args(
+            ["data", "session-anchor-repair", "--phase", "prepare"]
+        )
+
+    parsed = build_parser().parse_args([
+        "data",
+        "session-anchor-repair",
+        "--phase",
+        "prepare",
+        "--shadow-root",
+        "/tmp/shadow",
+        "--manifest",
+        "/tmp/manifest.json",
+        "--apply",
+    ])
+
+    assert parsed.phase == "prepare"
+    assert Path(parsed.shadow_root) == Path("/tmp/shadow")
+    assert Path(parsed.manifest) == Path("/tmp/manifest.json")
+    assert parsed.apply is True
 
 
 def test_after_market_is_a_dedicated_apply_free_cli_entrypoint() -> None:
