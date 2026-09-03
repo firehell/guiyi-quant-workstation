@@ -516,7 +516,7 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
         if (isCurrentGeneration(requestGeneration, generation)) loadingBefore.value = false
         if (loadingBeforePromise === request) loadingBeforePromise = null
       }
-    })()
+    })
     loadingBeforePromise = request
     return request
   }
