@@ -869,6 +869,11 @@ def _normalized_historical_session_periods(
     has_night = any(start >= time(18) for start, _ in periods)
     intervals: list[tuple[int, int]] = []
     for start, end in periods:
+        # A provider label that normalizes exactly onto the close is not a
+        # 24-hour session.  Treat it as malformed instead of expanding one
+        # bad row into an entire trading day.
+        if start == end:
+            raise InfrastructureError("RQDATA_TRADING_SESSIONS_INVALID")
         start_minute = start.hour * 60 + start.minute
         end_minute = end.hour * 60 + end.minute
         if has_night and start < time(18):

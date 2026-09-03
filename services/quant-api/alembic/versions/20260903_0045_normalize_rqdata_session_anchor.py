@@ -151,6 +151,8 @@ def _non_overlapping(periods: list[tuple[time, time]]) -> bool:
     has_night = any(start >= time(18) for start, _ in periods)
     intervals: list[tuple[int, int]] = []
     for start, end in periods:
+        if start == end:
+            return False
         left = start.hour * 60 + start.minute
         right = end.hour * 60 + end.minute
         if has_night and start < time(18):

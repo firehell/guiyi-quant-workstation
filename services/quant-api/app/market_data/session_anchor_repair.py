@@ -17,6 +17,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.market_data.aggregation import SessionWindow, aggregate_from_1m
+from app.market_data.catalog import MaintenanceLease, MarketCatalog
 from app.market_data.domain import BarFrequency, CanonicalBar, DatasetKey
 from app.market_data.historical_data_manager import BarFetchRequest
 from app.market_data.session_clock import session_windows_for_trading_day
@@ -174,6 +175,7 @@ class SessionAnchorRepairService:
         migration_runner: Callable[[], None] | None = None,
         current_trading_day: Callable[[], date] | None = None,
         live_cleanup: Callable[[date], None] | None = None,
+        acquire_maintenance_lock: Callable[[], MaintenanceLease | None] | None = None,
     ) -> None:
         self.session = session
         self.canonical_root = canonical_root.resolve()
@@ -182,6 +184,10 @@ class SessionAnchorRepairService:
         self.migration_runner = migration_runner
         self.current_trading_day = current_trading_day
         self.live_cleanup = live_cleanup
+        self.acquire_maintenance_lock = (
+            acquire_maintenance_lock
+            or MarketCatalog(session, self.canonical_root).acquire_maintenance_lock
+        )
 
     def plan(self) -> SessionAnchorRepairPlan:
         self._require_revision("20260902_0044")
@@ -379,6 +385,39 @@ class SessionAnchorRepairService:
     ) -> SessionAnchorPublishResult:
         if not apply:
             raise SessionAnchorRepairError("SESSION_ANCHOR_APPLY_REQUIRED")
+        lease = self.acquire_maintenance_lock()
+        if lease is None:
+            raise SessionAnchorRepairError("SESSION_ANCHOR_MAINTENANCE_LOCKED")
+        try:
+            result = self._publish_locked(
+                shadow_root=shadow_root,
+                manifest_path=manifest_path,
+            )
+        except BaseException:
+            # Unlock failure must never hide the operational recovery code that
+            # explains the state of root/Catalog/0045 to the operator.
+            try:
+                lease.release()
+            except Exception:
+                pass
+            raise
+        try:
+            lease.release()
+        except Exception as exc:
+            # The publish itself crossed all boundaries successfully, but an
+            # unreleased/unknown maintenance lease still requires intervention.
+            raise SessionAnchorRepairError(
+                "SESSION_ANCHOR_FORWARD_RECOVERY_REQUIRED"
+            ) from exc
+        return result
+
+    def _publish_locked(
+        self,
+        *,
+        shadow_root: Path,
+        manifest_path: Path,
+    ) -> SessionAnchorPublishResult:
+        """Publish while holding the global historical-data maintenance lease."""
         if not self.runtime_stopped():
             raise SessionAnchorRepairError("RUNTIME_NOT_STOPPED")
         if (
@@ -439,13 +478,25 @@ class SessionAnchorRepairService:
             self._require_revision("20260903_0045")
         except Exception as exc:
             self.session.rollback()
-            revision = self._current_revision()
+            try:
+                revision = self._current_revision()
+            except Exception as revision_exc:
+                raise SessionAnchorRepairError(
+                    "SESSION_ANCHOR_FORWARD_RECOVERY_REQUIRED"
+                ) from revision_exc
             if swapped and revision == "20260902_0044":
-                if catalog_published:
-                    self._restore_catalog(entries)
-                    self.session.commit()
-                self.canonical_root.rename(shadow)
-                rollback.rename(self.canonical_root)
+                try:
+                    self._restore_pre0045_state(
+                        entries=entries,
+                        shadow=shadow,
+                        rollback=rollback,
+                        catalog_published=catalog_published,
+                    )
+                except Exception as recovery_exc:
+                    self.session.rollback()
+                    raise SessionAnchorRepairError(
+                        "SESSION_ANCHOR_FORWARD_RECOVERY_REQUIRED"
+                    ) from recovery_exc
             elif revision != "20260902_0044":
                 raise SessionAnchorRepairError(
                     "SESSION_ANCHOR_FORWARD_RECOVERY_REQUIRED"
@@ -465,6 +516,35 @@ class SessionAnchorRepairService:
             forward_only=True,
             rollback_root=rollback,
         )
+
+    def _restore_pre0045_state(
+        self,
+        *,
+        entries: list[object],
+        shadow: Path,
+        rollback: Path,
+        catalog_published: bool,
+    ) -> None:
+        """Restore the old root and Catalog before the forward-only boundary.
+
+        The filesystem steps are intentionally state-aware so an interrupted
+        compensation leaves an inspectable layout and a subsequent publish can
+        be retried after operator repair.
+        """
+        if rollback.exists():
+            if self.canonical_root.exists():
+                if shadow.exists():
+                    raise SessionAnchorRepairError(
+                        "SESSION_ANCHOR_RECOVERY_TARGET_EXISTS"
+                    )
+                self.canonical_root.rename(shadow)
+            if not self.canonical_root.exists():
+                rollback.rename(self.canonical_root)
+        elif not self.canonical_root.exists():
+            raise SessionAnchorRepairError("SESSION_ANCHOR_RECOVERY_ROOT_MISSING")
+        if catalog_published:
+            self._restore_catalog(entries)
+            self.session.commit()
 
     def _partitions(self) -> tuple[_Partition, ...]:
         rows = self.session.execute(

@@ -1505,6 +1505,23 @@ def test_rqdata_historical_sessions_reject_unparsed_provider_text() -> None:
         )
 
 
+def test_rqdata_historical_sessions_reject_zero_length_after_normalization() -> None:
+    trading_day = date(2026, 9, 1)
+
+    with pytest.raises(InfrastructureError, match="RQDATA_TRADING_SESSIONS_INVALID"):
+        rqdata_adapter._historical_session_rows(
+            (
+                {
+                    "order_book_id": "JM2701",
+                    "date": trading_day,
+                    "trading_hours": "09:01-09:00",
+                },
+            ),
+            [("jm", trading_day, "JM2701")],
+            {"jm": "DCE"},
+        )
+
+
 def test_rqdata_historical_sessions_reject_already_normalized_start() -> None:
     trading_day = date(2026, 9, 1)
 
