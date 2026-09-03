@@ -360,25 +360,26 @@ test('HTDY resolves immutable Event focus across every official frequency', asyn
     ['15m', '2026-09-03T02:30:00.000Z', '2026-09-03'],
     ['30m', '2026-09-03T02:30:00.000Z', '2026-09-03'],
     ['60m', '2026-09-03T02:30:00.000Z', '2026-09-03'],
-    ['1d', '2026-07-01T02:45:00.000Z', '2026-07-01'],
-    ['1w', '2026-07-01T02:45:00.000Z', '2026-07-01'],
+    ['1d', '2026-07-02T02:45:00.000Z', '2026-07-02', '2026-07-02T02:46:00.000Z'],
+    ['1w', '2026-07-08T02:45:00.000Z', '2026-07-08', '2026-07-08T02:46:00.000Z'],
   ]
   let currentCase = null
   const requests = await mockMarketDetail(page, {
     barsPage: ({ url, symbol }) => {
       const frequency = url.searchParams.get('frequency')
       if (frequency === '1d' || frequency === '1w') {
-        return { bars: Array.from({ length: 60 }, (_, index) => {
+        const total = frequency === '1w' ? 10 : 60
+        return { bars: Array.from({ length: total }, (_, index) => {
           const day = new Date(Date.UTC(2026, 6, 1 + index * (frequency === '1w' ? 7 : 1))).toISOString().slice(0, 10)
           return { ...detailBar(symbol, index, 100 + index), bar_end: `${day}T07:00:00.000Z`, trading_day: day }
         }) }
       }
       return { bars: Array.from({ length: 60 }, (_, index) => detailBar(symbol, index, 100 + index)) }
     },
-    alertEvents: () => currentCase ? [htdyEvent('jm', currentCase[0], currentCase[1], currentCase[2])] : [],
+    alertEvents: () => currentCase ? [htdyEvent('jm', currentCase[0], currentCase[1], currentCase[2], currentCase[3])] : [],
   })
-  for (const [frequency, focus, tradingDay] of cases) {
-    currentCase = [frequency, focus, tradingDay]
+  for (const [frequency, focus, tradingDay, detectedAt] of cases) {
+    currentCase = [frequency, focus, tradingDay, detectedAt]
     await page.goto(`/market/chart?symbol=jm&view=htdy&series_kind=actual_dominant&frequency=${frequency}&focus_bar_end=${encodeURIComponent(focus)}`)
     await expect(page.locator('[data-detail-ready="true"]')).toBeVisible()
     const eventFact = page.locator('[data-detail-section="facts"] > div').filter({ hasText: '首次识别 Event' })
