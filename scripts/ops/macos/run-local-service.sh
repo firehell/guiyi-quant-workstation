@@ -56,18 +56,15 @@ if [[ "$SERVICE" == "market-runtime-preflight" ]]; then
   fi
   if preflight_output="$(
     /bin/bash -euo pipefail -c '
-      runtime_env="$1"
-      python_bin="$2"
-      controlled_status_path="$3"
+      readonly runtime_env="$1"
+      readonly python_bin="$2"
+      readonly controlled_status_path="$3"
+      readonly GUIYI_AFTER_MARKET_STATUS_PATH="$controlled_status_path"
+      export GUIYI_AFTER_MARKET_STATUS_PATH
       if [[ -n "$runtime_env" ]]; then
         set -a
         source "$runtime_env" >/dev/null 2>&1
         set +a
-      fi
-      if [[ -n "$controlled_status_path" ]]; then
-        export GUIYI_AFTER_MARKET_STATUS_PATH="$controlled_status_path"
-      else
-        unset GUIYI_AFTER_MARKET_STATUS_PATH
       fi
       [[ -n "${POSTGRES_PASSWORD:-}" ]] || exit 64
       export REDIS_PASSWORD="${REDIS_PASSWORD:-$POSTGRES_PASSWORD}"

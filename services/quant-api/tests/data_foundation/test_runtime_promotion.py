@@ -626,6 +626,74 @@ def test_after_market_complete_requires_exact_ordered_products(products: list[st
     assert decision.reason == PROMOTION_STATE_UNAVAILABLE
 
 
+@pytest.mark.parametrize(
+    ("attempted_at", "phases", "snapshot"),
+    [
+        (
+            "2026-09-03T18:07:00+08:00",
+            _phases(MarketPhase.CLOSED),
+            {"j": "J2601", "jm": "JM2601"},
+        ),
+        (
+            "2026-09-03T13:07:00+08:00",
+            {
+                symbol: _phase(symbol, MarketPhase.CLOSED, trading_day=None)
+                for symbol in PRODUCTS
+            },
+            None,
+        ),
+    ],
+)
+def test_failure_notification_impossible_chronology_blocks_before_passes(
+    attempted_at: str,
+    phases: dict[str, ProductMarketPhase],
+    snapshot: object,
+) -> None:
+    status = _passed_status()
+    status["last_run"] = {
+        **status["last_run"],
+        "status": "failed",
+        "error_code": "UPDATE_FAILED",
+        "failure_notification": {
+            "attempted_at": attempted_at,
+            "state": "failed",
+            "error_type": "AFTER_MARKET_FAILURE_NOTIFICATION_FAILED",
+        },
+    }
+    decision = evaluate_market_runtime_promotion(
+        products=PRODUCTS,
+        phases=phases,
+        now=NOW,
+        snapshot=snapshot,
+        after_market_status=status,
+        first_session_starts=_first_session_starts() if snapshot is not None else None,
+    )
+    assert decision.reason == PROMOTION_STATE_UNAVAILABLE
+
+
+def test_sane_failure_notification_can_coexist_with_valid_snapshot() -> None:
+    status = _passed_status()
+    status["last_run"] = {
+        **status["last_run"],
+        "status": "failed",
+        "error_code": "UPDATE_FAILED",
+        "failure_notification": {
+            "attempted_at": "2026-09-03T14:08:00+08:00",
+            "state": "failed",
+            "error_type": "AFTER_MARKET_FAILURE_NOTIFICATION_FAILED",
+        },
+    }
+    decision = evaluate_market_runtime_promotion(
+        products=PRODUCTS,
+        phases=_phases(MarketPhase.CLOSED),
+        now=NOW,
+        snapshot={"j": "J2601", "jm": "JM2601"},
+        after_market_status=status,
+        first_session_starts=_first_session_starts(),
+    )
+    assert decision.reason == "snapshot_ready"
+
+
 def test_first_session_loader_uses_calendar_night_eligibility_and_fails_closed() -> None:
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)

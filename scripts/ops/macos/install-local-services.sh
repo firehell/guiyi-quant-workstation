@@ -50,15 +50,24 @@ installed_api_notification_paths_match() {
 
 market_runtime_status_path() {
   local plist="$AGENT_DIR/com.guiyi.quant-after-market.plist"
-  local configured_root="" loaded_root="" launch_output="" root
+  local configured_root="" loaded_root="" launch_output="" root domain_output=""
+  local label_absent=false
+  domain_output="$(launchctl print "gui/$UID" 2>&1)" || return 1
   if [[ -e "$plist" || -L "$plist" ]]; then
     [[ -f "$plist" && ! -L "$plist" ]] || return 1
     configured_root="$(plutil -extract EnvironmentVariables.GUIYI_PROJECT_ROOT raw -o - "$plist" 2>/dev/null)" || return 1
     is_safe_absolute_path "$configured_root" && [[ -d "$configured_root" && ! -L "$configured_root" ]] || return 1
   fi
-  if launch_output="$(launchctl print "gui/$UID/com.guiyi.quant-after-market" 2>/dev/null)"; then
+  if launch_output="$(launchctl print "gui/$UID/com.guiyi.quant-after-market" 2>&1)"; then
     loaded_root="$(printf '%s\n' "$launch_output" | sed -n 's/^[[:space:]]*GUIYI_PROJECT_ROOT => //p' | head -1)"
     is_safe_absolute_path "$loaded_root" && [[ -d "$loaded_root" && ! -L "$loaded_root" ]] || return 1
+  elif [[ "$launch_output" == *"Could not find service"* ]]; then
+    label_absent=true
+  else
+    return 1
+  fi
+  if [[ "$label_absent" == true && -n "$configured_root" ]]; then
+    return 1
   fi
   if [[ -n "$configured_root" && -n "$loaded_root" && "$configured_root" != "$loaded_root" ]]; then
     return 1

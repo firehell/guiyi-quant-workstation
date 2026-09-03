@@ -460,6 +460,7 @@ def _fake_runtime(root: Path) -> tuple[Path, Path]:
         '    exit 0\n'
         '  esac\n'
         'fi\n'
+        'if [ "${1:-}" = "print" ] && [ "${2:-}" = "gui/$UID" ]; then echo "domain = gui/$UID"; exit 0; fi\n'
         'if [ "${1:-}" = "print" ]; then\n'
         '  case "$*" in *com.guiyi.quant-alert*) [ -f "$alert_state" ] && exit 0 ;; esac\n'
         'fi\n'
@@ -469,7 +470,7 @@ def _fake_runtime(root: Path) -> tuple[Path, Path]:
         'if [ "${1:-}" = "enable" ] && [ "${GUIYI_FAKE_FAIL_AFTER_MARKET_ENABLE:-0}" = "1" ]; then\n'
         '  case "$*" in *com.guiyi.quant-after-market*) exit 8 ;; esac\n'
         'fi\n'
-        'case "${1:-}" in bootstrap|enable|kickstart) exit 0 ;; print|bootout) exit 1 ;; *) exit 2 ;; esac\n',
+        'case "${1:-}" in bootstrap|enable|kickstart) exit 0 ;; print) echo "Could not find service" >&2; exit 1 ;; bootout) exit 1 ;; *) exit 2 ;; esac\n',
         encoding="utf-8",
     )
     launchctl.chmod(0o755)

@@ -25,6 +25,10 @@ def test_install_modes_only_confirm_market_runtime_persists_activation_marker(tm
     fake_launchctl = fake_bin / "launchctl"
     fake_launchctl.write_text(
         "#!/bin/sh\n"
+        'if [ "${1:-}" = "print" ]; then\n'
+        '  [ "${2:-}" = "gui/$UID" ] && { echo "domain = gui/$UID"; exit 0; }\n'
+        '  echo "Could not find service" >&2; exit 1\n'
+        "fi\n"
         "case \"${1:-}\" in\n"
         "  bootstrap|enable|kickstart) exit 0 ;;\n"
         "  print|bootout) exit 1 ;;\n"
@@ -73,6 +77,10 @@ def test_blocked_market_preflight_leaves_marker_plists_and_launchctl_untouched(
     launchctl = fake_bin / "launchctl"
     launchctl.write_text(
         "#!/bin/sh\n"
+        'if [ "${1:-}" = "print" ]; then\n'
+        '  [ "${2:-}" = "gui/$UID" ] && { echo "domain = gui/$UID"; exit 0; }\n'
+        '  echo "Could not find service" >&2; exit 1\n'
+        "fi\n"
         "printf '%s\\n' \"$*\" >> \"$HOME/launchctl-calls.log\"\n"
         "exit 90\n",
         encoding="utf-8",
@@ -127,6 +135,7 @@ def test_market_preflight_reads_supervised_after_market_status_before_mutation(
     launchctl.write_text(
         "#!/bin/sh\n"
         'if [ "${1:-}" = "print" ]; then\n'
+        '  [ "${2:-}" = "gui/$UID" ] && { echo "domain = gui/$UID"; exit 0; }\n'
         '  case "${2##*/}" in com.guiyi.quant-after-market)\n'
         f'    echo "GUIYI_PROJECT_ROOT => {supervised}"; exit 0 ;; esac\n'
         "  exit 1\n"
@@ -157,6 +166,7 @@ def test_market_preflight_rejects_invalid_loaded_authority_without_mutation(
     launchctl.write_text(
         "#!/bin/sh\n"
         'if [ "${1:-}" = "print" ]; then\n'
+        '  [ "${2:-}" = "gui/$UID" ] && { echo "domain = gui/$UID"; exit 0; }\n'
         '  case "${2##*/}" in com.guiyi.quant-after-market)\n'
         f'    echo "GUIYI_PROJECT_ROOT => {loaded_root}"; exit 0 ;; esac\n'
         "  exit 1\n"
@@ -192,9 +202,51 @@ def test_market_preflight_rejects_loaded_and_installed_root_disagreement(tmp_pat
     launchctl.write_text(
         "#!/bin/sh\n"
         'if [ "${1:-}" = "print" ]; then\n'
+        '  [ "${2:-}" = "gui/$UID" ] && { echo "domain = gui/$UID"; exit 0; }\n'
         '  case "${2##*/}" in com.guiyi.quant-after-market)\n'
         f'    echo "GUIYI_PROJECT_ROOT => {supervised}"; exit 0 ;; esac\n'
         "  exit 1\n"
+        "fi\n"
+        'printf "%s\\n" "$*" >> "$HOME/mutation-calls.log"\n'
+        "exit 90\n",
+        encoding="utf-8",
+    )
+    launchctl.chmod(0o755)
+
+    result = _run_installer_result(candidate, home, fake_bin, "--confirm-market-runtime")
+
+    assert result.returncode == 1
+    assert "MARKET_RUNTIME_PROMOTION_STATE_UNAVAILABLE" in result.stdout
+    assert not (candidate / ".run/market-runtime-enabled").exists()
+    assert not (home / "mutation-calls.log").exists()
+
+
+@pytest.mark.parametrize("failure_scope", ["domain", "label"])
+def test_market_preflight_rejects_launchctl_authority_errors_without_mutation(
+    tmp_path: Path, failure_scope: str
+) -> None:
+    candidate = _copy_launchd_fixture(tmp_path / "candidate")
+    home = tmp_path / "home"
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    launchctl = fake_bin / "launchctl"
+    domain_case = (
+        'echo "permission denied" >&2; exit 77\n'
+        if failure_scope == "domain"
+        else 'echo "domain = gui/$UID"; exit 0\n'
+    )
+    label_case = (
+        'echo "permission denied" >&2; exit 77\n'
+        if failure_scope == "label"
+        else 'echo "Could not find service" >&2; exit 1\n'
+    )
+    launchctl.write_text(
+        "#!/bin/sh\n"
+        'if [ "${1:-}" = "print" ]; then\n'
+        '  if [ "${2:-}" = "gui/$UID" ]; then\n'
+        f"    {domain_case}"
+        "  fi\n"
+        f"  {label_case}"
         "fi\n"
         'printf "%s\\n" "$*" >> "$HOME/mutation-calls.log"\n'
         "exit 90\n",
@@ -274,6 +326,53 @@ def test_market_preflight_loads_runtime_env_without_disclosing_it(tmp_path: Path
     assert result.stderr == ""
     assert json.loads(result.stdout)["status"] == "passed"
     assert "test-only-secret" not in result.stdout + result.stderr
+
+
+def test_market_preflight_source_cannot_override_controlled_status_path_or_arguments(
+    tmp_path: Path,
+) -> None:
+    repo = _copy_launchd_fixture(tmp_path / "candidate")
+    supervised = tmp_path / "supervised"
+    (supervised / ".run").mkdir(parents=True)
+    status_path = supervised / ".run/after-market-status.json"
+    runtime_env = tmp_path / "runtime.env"
+    runtime_env.write_text(
+        "POSTGRES_PASSWORD=fixture\n"
+        f"controlled_status_path={repo}/.run/after-market-status.json\n"
+        f"GUIYI_AFTER_MARKET_STATUS_PATH={repo}/.run/after-market-status.json\n"
+        "set -- source-overrode-arguments\n",
+        encoding="utf-8",
+    )
+    python = repo / "services/quant-api/.venv/bin/python"
+    python.parent.mkdir(parents=True)
+    python.write_text(
+        "#!/bin/sh\n"
+        "touch \"$(dirname \"$0\")/python-was-run\"\n"
+        "exit 90\n",
+        encoding="utf-8",
+    )
+    python.chmod(0o700)
+
+    result = subprocess.run(
+        [str(repo / "scripts/ops/macos/run-local-service.sh"), "market-runtime-preflight"],
+        cwd=repo,
+        env={
+            **os.environ,
+            "HOME": str(tmp_path / "home"),
+            "GUIYI_PROJECT_ROOT": str(repo),
+            "GUIYI_RUNTIME_ENV": str(runtime_env),
+            "GUIYI_AFTER_MARKET_STATUS_PATH": str(status_path),
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert result.stderr == ""
+    assert json.loads(result.stdout)["reason"] == "MARKET_RUNTIME_PROMOTION_STATE_UNAVAILABLE"
+    assert not (python.parent / "python-was-run").exists()
+    assert str(repo) not in result.stdout + result.stderr
 
 
 @pytest.mark.parametrize(
@@ -402,6 +501,10 @@ def test_market_preflight_runs_once_before_any_activation_mutation(
     launchctl = fake_bin / "launchctl"
     launchctl.write_text(
         "#!/bin/sh\n"
+        'if [ "${1:-}" = "print" ]; then\n'
+        '  [ "${2:-}" = "gui/$UID" ] && { echo "domain = gui/$UID"; exit 0; }\n'
+        '  echo "Could not find service" >&2; exit 1\n'
+        "fi\n"
         "case \"${1:-}\" in\n"
         "  bootstrap|enable|kickstart) exit 0 ;;\n"
         "  print|bootout) exit 1 ;;\n"

@@ -313,6 +313,17 @@ def _after_market_status_decision(
         or finished_at > now.astimezone(UTC)
     ):
         return "unavailable"
+    failure_notification = last_run.get("failure_notification")
+    if failure_notification is not None:
+        if not isinstance(failure_notification, Mapping):
+            return "unavailable"
+        attempted_at = _timestamp(failure_notification.get("attempted_at"))
+        if (
+            attempted_at is None
+            or attempted_at < finished_at
+            or attempted_at > now.astimezone(UTC)
+        ):
+            return "unavailable"
     if last_run.get("status") != "passed":
         return "missing"
     if trading_day is None:
