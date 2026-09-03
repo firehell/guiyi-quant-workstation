@@ -40,6 +40,5 @@ export function consumeFocusBarEnd(
 ): boolean {
   const focusBarEnd = resolveFocusBarEnd(value, identity)
   if (focusBarEnd === null) return false
-  reveal(focusBarEnd)
-  return true
+  return reveal(focusBarEnd)
 }

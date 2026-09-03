@@ -74,7 +74,7 @@ test('consumes a valid matching focus exactly once through the existing reveal s
   assert.equal(consumeFocusBarEnd('2026-09-02T02:45:00Z', identity, (value) => {
     calls.push(value)
     return false
-  }), true)
+  }), false)
   assert.deepEqual(calls, ['2026-09-02T02:45:00Z'])
   assert.equal(consumeFocusBarEnd('2026-09-02T02:45:00Z', {
     seriesKind: 'continuous', frequency: '15m',

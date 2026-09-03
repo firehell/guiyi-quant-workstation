@@ -78,6 +78,16 @@ test('returning a 30m HTDY event identity to legacy preserves focus and overlay 
   expect(await page.evaluate(() => window.__legacyNavigationQuery.focus_bar_end)).toBe(focus)
 })
 
+test('returning a daily HTDY event only consumes focus after locating its trading day', async ({ page }) => {
+  await mockMarketDetail(page)
+  const focus = '2026-09-03T02:45:00Z'
+  await page.goto(`/market/chart?symbol=jm&view=htdy&series_kind=actual_dominant&frequency=1d&focus_bar_end=${encodeURIComponent(focus)}`)
+
+  await page.getByRole('button', { name: '返回旧版详情' }).click()
+  await expect(page.getByTestId('product-status-strip')).toBeVisible()
+  await expect.poll(() => new URL(page.url()).searchParams.has('focus_bar_end')).toBe(false)
+})
+
 test('returning a fixed view to legacy makes its parsed identity explicit', async ({ page }) => {
   await mockMarketDetail(page)
   for (const expected of [

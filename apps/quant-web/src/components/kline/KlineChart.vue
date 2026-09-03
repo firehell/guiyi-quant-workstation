@@ -29,6 +29,7 @@ import {
   formatChartAxisTimeInShanghai,
   formatChartTimeInShanghai,
   toKlineDisplayTimeForPeriod,
+  tradingDayFromBar,
 } from '@/utils/barTime'
 import { normalizeBarSeries } from '@/utils/barSeries'
 import { initialChartLogicalRange } from '@/utils/chartViewport'
@@ -266,10 +267,14 @@ function scrollToLatest(): void {
 }
 
 function revealTime(iso: string): boolean {
-  if (!chart || isDaily() || !props.bars.length) return false
+  if (!chart || !props.bars.length) return false
   const parsed = Date.parse(iso)
   if (!Number.isFinite(parsed)) return false
-  const index = renderedBars.findIndex((bar) => Date.parse(bar.time) === parsed)
+  const focusTradingDay = isDaily() ? tradingDayFromBar({ time: iso }) : null
+  if (isDaily() && !focusTradingDay) return false
+  const index = isDaily()
+    ? renderedBars.findIndex((bar) => tradingDayFromBar(bar) === focusTradingDay)
+    : renderedBars.findIndex((bar) => Date.parse(bar.time) === parsed)
   if (index < 0) return false
   if (followLatest) {
     followLatest = false
