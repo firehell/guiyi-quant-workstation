@@ -10,10 +10,26 @@
 系统 SHALL 公开 `update`、`refresh` 与 `audit`。`audit` SHALL 接受
 `(--symbol X | --universe active)` 的互斥选择器。无 `--apply` 的 update/refresh MUST 只计划，
 不得写 PostgreSQL/Parquet；audit MUST 只读。
+系统还 SHALL 公开一次性 `session-anchor-repair` 三阶段 seam：`plan` 只读输出精确 session、Dataset、
+分区、预计缺失首分钟与稳定 scope hash；`prepare --apply` 只在外部 shadow root 使用真实 RQData 重建完整
+Canonical；`publish --apply` 只在五项 Runtime 全部停止、manifest/基线/hash 未漂移时切换 root、reconcile
+Catalog、执行精确 0045 并清理 publish 执行时由 operational phase authority 唯一解析的当前交易日旧锚点 Live Bar。
 
 #### Scenario: 已退出动作
 - **WHEN** 用户调用任何已退出的维护操作
 - **THEN** CLI 不暴露该入口
+
+#### Scenario: session-anchor plan
+- **WHEN** operator 执行 `session-anchor-repair --phase plan`
+- **THEN** 不调用 RQData、不写 DB/Parquet/Redis，返回稳定 scope hash 与精确影响计数
+
+#### Scenario: publish 前基线漂移
+- **WHEN** active file、Catalog、revision、shadow hash、D1/W1 hash 或 Runtime stop proof 任一不匹配 manifest
+- **THEN** publish 在 root switch 与 0045 前 fail closed
+
+#### Scenario: 0045 后步骤失败
+- **WHEN** root/Catalog 已切换且 0045 已成功后 Redis cleanup 失败
+- **THEN** 系统保持维护状态并返回 forward recovery required，不恢复错误 session 或混用新旧锚点
 
 ### Requirement: 分类 audit finding
 audit SHALL 为每个请求品种独立检查并返回 `code`、`category`、dataset、year、month 的结构化 finding。

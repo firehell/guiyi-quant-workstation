@@ -159,7 +159,7 @@ class HtdyOriginalEvaluator:
 class SubingThs15mEvaluator:
     """Forward-only, same-physical-contract adapter around the S1 authority."""
 
-    formula_version = "subing_ths_15m_v2"
+    formula_version = "subing_ths_15m_v3"
 
     def __init__(self, *, kernel: SubingThs15mKernel | None = None) -> None:
         self._kernel = kernel or SubingThs15mKernel()

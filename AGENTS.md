@@ -47,13 +47,13 @@ subing_ths_alert_15m_v1 × exact × completed actual_dominant 15m × htdy_observ
 → shared one-shot pushplus-wechat-topic transport
 ```
 
-Migration `20260902_0043` forward-only 删除全部已退役策略 Event、Rule 与专用列，只保留 HTDY Rule/Event 事实；`20260902_0044` 只从该精确状态增加 disabled、empty-scope 的新 SuBing Rule，不启用或填充生产 Scope。不得建立 archive、兼容 reader、replay 或 downgrade。当前 release、production migration、Runtime 与 enable 状态只以 `STATUS.md` 为准；任何一次状态变化都不能替代下一项受控操作的明确授权。
+Migration `20260902_0043` forward-only 删除全部已退役策略 Event、Rule 与专用列，只保留 HTDY Rule/Event 事实；`20260902_0044` 只从该精确状态增加 disabled、empty-scope 的新 SuBing Rule，不启用或填充生产 Scope；`20260903_0045` 只把既有 RQData 1m session 首根标签规范化为 `(start, end]` 的排他边界。不得建立 archive、兼容 reader、replay 或 downgrade。当前 release、production migration、Runtime 与 enable 状态只以 `STATUS.md` 为准；任何一次状态变化都不能替代下一项受控操作的明确授权。
 
 - HTDY Scope 只能按 symbol × frequency。
-- SuBing 固定身份为 `subing_ths_alert_15m_v1` / `subing_ths_15m_v2`，只观察 completed `actual_dominant` 15m；公式为 MACD(12,26,9) CROSS + `EMA(CLOSE, 21)`，不得增加零轴、Range、量能/OI、ATR、斜率或多周期隐藏过滤。
+- SuBing 固定身份为 `subing_ths_alert_15m_v1` / `subing_ths_15m_v3`，只观察 completed `actual_dominant` 15m；公式为 MACD(12,26,9) CROSS + `EMA(CLOSE, 21)`，不得增加零轴、Range、量能/OI、ATR、斜率或多周期隐藏过滤。v3 不改变数学公式，只冻结修正 session 锚点后的正式输入 Bar、时间与 Candidate。
 - HTDY Event mode 为 forward-only `first_seen`；SuBing Event mode 为同一 Bar 事实一致才幂等的 `exact`。二者都必须 Event 先提交，再最多一次 transport；不得用其中一种去弱化另一种。
-- 通用 Scope API 必须拒绝 disabled Rule 的写入。SuBing 第一次启用只允许走专用原子 activation seam：dry-run 只读，apply 在精确 0044、两 Rule、SuBing disabled + empty scope 的 preflight 后锁定、一次提交并 readback；production apply 仍需单次明确授权。
-- 外部执行顺序必须先完成 `G10` 只读同花顺兼容性 evidence，再执行 `G9` production Scope activation + Rule enable；G10 不授权 PushPlus、Rule enable、Scope、Runtime 或其他 mutation。
+- 通用 Scope API 必须拒绝 disabled Rule 的写入。SuBing 第一次启用只允许走专用原子 activation seam：dry-run 只读，apply 在精确 0045、两 Rule、SuBing disabled + empty scope 的 preflight 后锁定、一次提交并 readback；production apply 仍需单次明确授权。
+- 外部执行顺序必须先完成 Canonical 锚点修复与 exact-tag Runtime readback，再重新完成 `G10` 只读同花顺兼容性 evidence，最后才可执行 `G9` production Scope activation + Rule enable；G10 不授权 PushPlus、Rule enable、Scope、Runtime 或其他 mutation。
 - HTDY 最多发起一次 Topic 请求，Topic 成员由 PushPlus 外部人工管理且不超过 owner + 三位朋友。系统不读取成员清单，不声明精确送达人数。
 - Git 外通知配置只含 message token 与 HTDY Topic code；parent 必须为当前用户所有的 `0700` 目录，file 必须为当前用户所有的 `0600` 普通文件。结构 health 不联网、不发送。
 - `alert_rules` 与 `alert_events` 是独立 Application Domain。两条 Rule 均为研究观察；Event 先提交，再最多调用一次 transport；无逐收件人状态、retry、queue、replay、backfill、fallback 或订单。

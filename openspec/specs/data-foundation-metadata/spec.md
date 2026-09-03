@@ -19,10 +19,17 @@ PostgreSQL MUST NOT 保存 Bar 行、合约参数、内容摘要、发布清单�
 MetadataSynchronizer SHALL 维护 60 品种、真实 contract identity、实际交易所 Calendar、
 product-specific Session 和 RQData `rule=2` 的 rank1 MainContractMap；Map 对 `(symbol,trade_date)`
 唯一，维护范围为 `effective_start→fixed through`。
+RQData 1m Session 的 provider start 是首根 `bar_end` 标签；MetadataSynchronizer SHALL 在 adapter 边界
+减一分钟后再写入 `trading_sessions`，使 DB 中 start 始终表示 `(start, end]` 的排他边界。分钟不对齐、
+无效区间、重叠 session 与不可解释跨午夜布局 MUST fail closed。
 
 #### Scenario: 主力修订
 - **WHEN** 同一 symbol/trade_date 的 rank1 合约被 RQData 修订
 - **THEN** 系统替换该唯一当前事实并使后续查询使用修订值
+
+#### Scenario: 规范化 Session 标签
+- **WHEN** RQData 返回 `09:01-10:15` 的 1m Session
+- **THEN** active metadata 保存 `09:00-10:15`，Historical expected bars 与 Live 首分钟都以同一边界解析
 
 ### Requirement: 最小月度 Catalog
 `market_datasets` SHALL 对四字段 DatasetKey 唯一；`market_partitions` SHALL 对

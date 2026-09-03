@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 from collections.abc import Callable, Sequence
 from contextlib import AbstractContextManager
+from pathlib import Path
 import sys
 from typing import Any, TextIO
 
@@ -39,6 +40,7 @@ from app.market_data.composition import (
     build_historical_data_manager,
     build_live_market_service,
 )
+from app.market_data.session_anchor_repair import SessionAnchorRepairService
 from app.market_data.after_market import build_after_market_updater
 from app.market_data.historical_data_manager import HistoricalDataManager
 from app.market_data.operational_universe import load_operational_products
@@ -54,6 +56,7 @@ AlertCanarySenderFactory = Callable[[], Any]
 AlertNotificationAcknowledger = Callable[[str], dict[str, object]]
 SubingScopeActivator = Callable[..., SubingScopeActivationResult]
 OperationalProductsLoader = Callable[[], tuple[str, ...]]
+SessionAnchorRepairFactory = Callable[[Any], SessionAnchorRepairService]
 
 def _execution_is_readonly(args: argparse.Namespace) -> bool:
     if args.domain == "runtime":
@@ -125,6 +128,7 @@ def main(
     ),
     subing_scope_activator: SubingScopeActivator = activate_subing_ths_scope,
     operational_products_loader: OperationalProductsLoader = load_operational_products,
+    session_anchor_repair_factory: SessionAnchorRepairFactory | None = None,
     runtime_health_builder=build_runtime_health,
     stdout: TextIO = sys.stdout,
     stderr: TextIO = sys.stderr,
@@ -151,6 +155,7 @@ def main(
                 manager_factory,
                 after_market_factory,
                 stderr,
+                session_anchor_repair_factory,
             )
         elif args.runtime_command == "status":
             # runtime status：只读聚合健康，与 HTTP /api/runtime/health 同源
@@ -233,6 +238,7 @@ def main(
             in {
                 "passed",
                 "planned",
+                "prepared",
                 "published",
                 "noop",
                 "ok",
@@ -252,6 +258,7 @@ def _run_data(
     manager_factory: ManagerFactory,
     after_market_factory: AfterMarketFactory,
     stderr: TextIO,
+    session_anchor_repair_factory: SessionAnchorRepairFactory | None = None,
 ) -> dict[str, object]:
     """在 DB 会话内执行 data 子命令并返回 as_payload 字典。"""
     if args.data_command == "after-market":
@@ -261,6 +268,27 @@ def _run_data(
             after_market_factory=after_market_factory,
             failure_notification=False,
         )
+    if args.data_command == "session-anchor-repair":
+        with session_factory() as session:
+            factory = session_anchor_repair_factory
+            if factory is None:
+                from app.market_data.composition import build_session_anchor_repair_service
+
+                factory = build_session_anchor_repair_service
+            repair = factory(session)
+            if args.phase == "plan":
+                return repair.plan().as_payload()
+            elif args.phase == "prepare":
+                return repair.prepare(
+                    shadow_root=Path(args.shadow_root),
+                    manifest_path=Path(args.manifest),
+                    apply=True,
+                ).as_payload()
+            return repair.publish(
+                shadow_root=Path(args.shadow_root),
+                manifest_path=Path(args.manifest),
+                apply=True,
+            ).as_payload()
     with session_factory() as session:
         manager = manager_factory(session)
         return run_data_command(args, manager, progress_stream=stderr).as_payload()
