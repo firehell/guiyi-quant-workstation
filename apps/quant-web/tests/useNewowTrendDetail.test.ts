@@ -104,11 +104,12 @@ test('aborts a replaced generation, clears prior data, and accepts only the late
   state.dispose()
 })
 
-test('publishes safe network, API, and payload errors with no stale snapshot', async () => {
+test('publishes safe API, response, and allowlisted service errors with no stale snapshot', async () => {
   const codes = [
-    'NEWOW_NETWORK_UNAVAILABLE',
     'NEWOW_API_UNAVAILABLE',
-    'NEWOW_PAYLOAD_INVALID',
+    'NEWOW_RESPONSE_INVALID',
+    'NEWOW_INVALID_RANGE',
+    'NEWOW_DATA_UNAVAILABLE',
   ] as const
   for (const code of codes) {
     const state = useNewowTrendDetail({

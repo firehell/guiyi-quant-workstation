@@ -7,10 +7,26 @@ export interface NewowTrendDetailRequest {
   through: string
 }
 
+const NEWOW_CLIENT_ERROR_CODES = [
+  'NEWOW_INVALID_PRODUCT',
+  'NEWOW_INVALID_RANGE',
+  'NEWOW_RANGE_TOO_LARGE',
+] as const
+
+const NEWOW_CONFLICT_ERROR_CODES = [
+  'NEWOW_DATA_IDENTITY_INVALID',
+  'NEWOW_DATA_UNAVAILABLE',
+  'NEWOW_DATA_OUT_OF_ORDER',
+] as const
+
+export type NewowTrendDetailPublicApiErrorCode =
+  | (typeof NEWOW_CLIENT_ERROR_CODES)[number]
+  | (typeof NEWOW_CONFLICT_ERROR_CODES)[number]
+
 export type NewowTrendDetailRequestErrorCode =
-  | 'NEWOW_NETWORK_UNAVAILABLE'
+  | NewowTrendDetailPublicApiErrorCode
   | 'NEWOW_API_UNAVAILABLE'
-  | 'NEWOW_PAYLOAD_INVALID'
+  | 'NEWOW_RESPONSE_INVALID'
 
 export class NewowTrendDetailRequestError extends Error {
   readonly code: NewowTrendDetailRequestErrorCode
@@ -63,10 +79,7 @@ export async function getNewowTrendDetail(
       signal: options.signal,
     })
   } catch (error) {
-    if (error instanceof NewowTrendDetailRequestError) throw error
-    throw new NewowTrendDetailRequestError(hasHttpResponse(error)
-      ? 'NEWOW_API_UNAVAILABLE'
-      : 'NEWOW_NETWORK_UNAVAILABLE')
+    throw new NewowTrendDetailRequestError(publicApiCode(error) ?? 'NEWOW_API_UNAVAILABLE')
   }
 
   try {
@@ -76,13 +89,30 @@ export async function getNewowTrendDetail(
       through: params.through,
     })
   } catch {
-    throw new NewowTrendDetailRequestError('NEWOW_PAYLOAD_INVALID')
+    throw new NewowTrendDetailRequestError('NEWOW_RESPONSE_INVALID')
   }
 }
 
-function hasHttpResponse(error: unknown): boolean {
-  return error !== null
-    && typeof error === 'object'
-    && 'response' in error
-    && (error as { response?: unknown }).response !== undefined
+function publicApiCode(error: unknown): NewowTrendDetailPublicApiErrorCode | null {
+  try {
+    if (!isRecord(error)) return null
+    const response = error.response
+    if (!isRecord(response) || (response.status !== 409 && response.status !== 422)) return null
+    const data = response.data
+    if (!isRecord(data)) return null
+    const detail = data.detail
+    if (!isRecord(detail) || typeof detail.code !== 'string') return null
+    const allowed = response.status === 422
+      ? NEWOW_CLIENT_ERROR_CODES
+      : NEWOW_CONFLICT_ERROR_CODES
+    return (allowed as readonly string[]).includes(detail.code)
+      ? detail.code as NewowTrendDetailPublicApiErrorCode
+      : null
+  } catch {
+    return null
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
 }

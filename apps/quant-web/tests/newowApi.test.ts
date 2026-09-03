@@ -41,16 +41,10 @@ test('uses the single Newow detail endpoint with its fixed read-only query and n
   assert.equal(Object.isFrozen(result), true)
 })
 
-test('maps transport, HTTP, and payload failures to bounded public codes without leaking details', async () => {
+test('maps every transport failure to API unavailable and every invalid response to response invalid', async () => {
   await assert.rejects(
     getNewowTrendDetail({ product: 'jm', from: FROM, through: THROUGH }, {
       request: async () => { throw new Error('/Users/private/database password leaked') },
-    }),
-    safeFailure('NEWOW_NETWORK_UNAVAILABLE'),
-  )
-  await assert.rejects(
-    getNewowTrendDetail({ product: 'jm', from: FROM, through: THROUGH }, {
-      request: async () => { throw { response: { status: 409, data: { detail: 'secret path' } } } },
     }),
     safeFailure('NEWOW_API_UNAVAILABLE'),
   )
@@ -58,8 +52,47 @@ test('maps transport, HTTP, and payload failures to bounded public codes without
     getNewowTrendDetail({ product: 'jm', from: FROM, through: THROUGH }, {
       request: async () => ({ unexpected: 'payload' }),
     }),
-    safeFailure('NEWOW_PAYLOAD_INVALID'),
+    safeFailure('NEWOW_RESPONSE_INVALID'),
   )
+})
+
+test('exposes only strict known detail.code values from 409 and 422 responses', async () => {
+  const cases = [
+    [422, 'NEWOW_INVALID_PRODUCT'],
+    [422, 'NEWOW_INVALID_RANGE'],
+    [422, 'NEWOW_RANGE_TOO_LARGE'],
+    [409, 'NEWOW_DATA_IDENTITY_INVALID'],
+    [409, 'NEWOW_DATA_UNAVAILABLE'],
+    [409, 'NEWOW_DATA_OUT_OF_ORDER'],
+  ] as const
+  for (const [status, code] of cases) {
+    await assert.rejects(
+      getNewowTrendDetail({ product: 'jm', from: FROM, through: THROUGH }, {
+        request: async () => { throw { response: { status, data: { detail: { code, hidden: '/secret' } } } } },
+      }),
+      safeFailure(code),
+    )
+  }
+})
+
+test('rejects unknown, misplaced, wrong-status, or hostile HTTP details as API unavailable', async () => {
+  const failures: unknown[] = [
+    { response: { status: 409, data: { detail: { code: 'NEWOW_INTERNAL_SECRET' } } } },
+    { response: { status: 409, data: { code: 'NEWOW_INVALID_RANGE' } } },
+    { response: { status: 409, data: { detail: { code: 'NEWOW_INVALID_RANGE' } } } },
+    { response: { status: 422, data: { detail: { code: 'NEWOW_DATA_UNAVAILABLE' } } } },
+    { response: { status: 500, data: { detail: { code: 'NEWOW_DATA_UNAVAILABLE' } } } },
+    { response: { status: 422, data: { detail: 'NEWOW_INVALID_RANGE' } } },
+    { response: { status: 422, get data() { throw new Error('secret getter') } } },
+  ]
+  for (const failure of failures) {
+    await assert.rejects(
+      getNewowTrendDetail({ product: 'jm', from: FROM, through: THROUGH }, {
+        request: async () => { throw failure },
+      }),
+      safeFailure('NEWOW_API_UNAVAILABLE'),
+    )
+  }
 })
 
 function safeFailure(code: string) {

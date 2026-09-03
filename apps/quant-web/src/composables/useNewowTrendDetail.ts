@@ -71,7 +71,7 @@ export function useNewowTrendDetail(options: UseNewowTrendDetailOptions) {
       data.value = null
       error.value = caught instanceof NewowTrendDetailRequestError
         ? caught.code
-        : 'NEWOW_NETWORK_UNAVAILABLE'
+        : 'NEWOW_API_UNAVAILABLE'
     } finally {
       if (isCurrent(requestGeneration, controller)) {
         activeRequest = null
