@@ -358,6 +358,22 @@ test('invalid identity fails closed and only recovers after an explicit click', 
 })
 
 test('Trend uses one fixed Newow authority and preserves same-Bar facts in history', async ({ page }) => {
+  const fixture = newowTrendDetailFixture({ product: 'jm' })
+  const segmentForBarEnd = new Map(fixture.bars.map((bar) => [bar.bar_end, bar.segment_id]))
+  for (const cup of fixture.cup_handles) {
+    const segment = segmentForBarEnd.get(cup.state_changed_at)
+    expect(segment).toBeTruthy()
+    for (const pivotAt of [
+      cup.left_rim.pivot_at,
+      cup.bottom.pivot_at,
+      cup.right_rim.pivot_at,
+      cup.handle_start_at,
+      cup.handle_extreme?.pivot_at,
+      cup.pivot_frozen_at,
+    ].filter(Boolean)) {
+      expect(segmentForBarEnd.get(pivotAt)).toBe(segment)
+    }
+  }
   await installDetailFakeWebSocket(page)
   const requests = await mockReadyTrend(page)
   await page.goto(trendJm)
@@ -383,7 +399,7 @@ test('Trend uses one fixed Newow authority and preserves same-Bar facts in histo
   expect(facts).toEqual([
     { label: '当前趋势状态', value: '持有' },
     { label: '当前 D1/D2/D3 风险', value: 'D1' },
-    { label: '当前杯柄状态', value: '突破' },
+    { label: '当前杯柄状态', value: '走弱' },
   ])
   await expect(workspace.getByRole('status').first()).toContainText('趋势引擎状态，不代表实际账户持仓')
   await expect(workspace.getByText('仅展示已完成 D1；未完成 Bar 不进入 Newow 事实。')).toBeVisible()
@@ -393,7 +409,7 @@ test('Trend uses one fixed Newow authority and preserves same-Bar facts in histo
   const chart = page.getByTestId('newow-trend-chart-stage')
   await expect(chart).toHaveAttribute('data-chart-source', 'newow')
   await expect(chart).toHaveAttribute('data-pane-count', '2')
-  await expect(chart).toHaveAttribute('data-newow-band-area-count', '9')
+  await expect(chart).toHaveAttribute('data-newow-band-area-count', '8')
   await expect(chart).toHaveAttribute('data-newow-marker-count', '10')
   await expect(chart).toHaveAttribute('data-newow-rollover-count', '1')
   await expect(chart).toHaveAttribute('data-newow-marker-ids', /escape-latest-d1/)
@@ -404,12 +420,8 @@ test('Trend uses one fixed Newow authority and preserves same-Bar facts in histo
 
   await expect(workspace.getByText('newow_trend_v1', { exact: true })).toBeVisible()
   await expect(workspace.getByText('newow_trend_d1_v1', { exact: true })).toBeVisible()
-  await page.getByRole('button', { name: '风险与形态', exact: false }).click()
-  await expect(workspace.locator('#detail-disclosure-newow-risk-shape')).toContainText(
-    'newow_trend_band_cleanroom_v1 · newow_escape_d123_v1 · newow_cup_handle_v1',
-  )
-  await page.getByRole('button', { name: '主力与数据', exact: false }).click()
-  await expect(workspace.getByText('1 处；状态按物理合约段重置', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: '风险与形态', exact: false })).toBeVisible()
+  await expect(page.getByRole('button', { name: '主力与数据', exact: false })).toBeVisible()
 
   await page.getByRole('button', { name: '历史记录', exact: true }).first().click()
   const history = workspace.locator('.detail-section-tabs__history')

@@ -111,24 +111,28 @@ export function newowTrendDetailFixture({ product = 'jm', from = trendDays[0], t
     trigger_facts: candidateId === undefined ? { fixture: true } : { candidate_id: candidateId },
     formula_version: formulaVersion,
   })
-  const pivot = (index, price) => ({
+  const pivot = (index, price, confirmedIndex = index) => ({
     pivot_at: bars[index].bar_end,
-    confirmed_at: bars[index].bar_end,
+    confirmed_at: bars[confirmedIndex].bar_end,
     price: price.toFixed(2),
   })
-  const readyCup = (candidateId, state, stateIndex) => ({
+  const readyCup = (candidateId, state, stateIndex) => {
+    const segmentStart = stateIndex >= 6 ? 6 : 0
+    const segmentEnd = segmentStart + 2
+    const confirmationIndex = Math.min(segmentEnd + 2, bars.length - 1)
+    return {
     candidate_id: candidateId,
     direction: candidateId === 'cup-e-invalidated' ? 'BEARISH' : 'BULLISH',
     state,
-    left_rim: pivot(0, 101),
-    bottom: pivot(1, 96),
-    right_rim: pivot(2, 104),
-    handle_start_at: bars[2].bar_end,
-    handle_extreme: pivot(3, 100),
+    left_rim: pivot(segmentStart, trendCloses[segmentStart] + 3),
+    bottom: pivot(segmentStart + 1, trendCloses[segmentStart + 1] - 4),
+    right_rim: pivot(segmentEnd, trendCloses[segmentEnd] + 2),
+    handle_start_at: bars[segmentEnd].bar_end,
+    handle_extreme: pivot(segmentEnd + 1, trendCloses[segmentEnd + 1] - 1, confirmationIndex),
     pivot_price: '104.50',
-    pivot_frozen_at: bars[4].bar_end,
-    confirmed_at: bars[4].bar_end,
-    first_seen_at: bars[4].bar_end,
+    pivot_frozen_at: bars[confirmationIndex].bar_end,
+    confirmed_at: bars[confirmationIndex].bar_end,
+    first_seen_at: bars[confirmationIndex].bar_end,
     state_changed_at: bars[stateIndex].bar_end,
     score: 88,
     score_breakdown: {
@@ -142,7 +146,8 @@ export function newowTrendDetailFixture({ product = 'jm', from = trendDays[0], t
       handle_right_ratio: 0.8181818182, handle_baseline_ratio: 0.8571428571,
     },
     formula_version: 'newow_cup_handle_v1',
-  })
+    }
+  }
 
   return {
     meta: {
@@ -188,12 +193,12 @@ export function newowTrendDetailFixture({ product = 'jm', from = trendDays[0], t
     cup_markers: [
       marker('cup-ready', 'CUP_HANDLE_READY', 4, 'newow_cup_handle_v1', 'cup-c-ready'),
       marker('cup-breakout', 'CUP_HANDLE_BREAKOUT', 5, 'newow_cup_handle_v1', 'cup-a-breakout'),
-      marker('cup-weakened', 'CUP_HANDLE_WEAKENED', 7, 'newow_cup_handle_v1', 'cup-d-weakened'),
-      marker('cup-invalidated', 'CUP_HANDLE_INVALIDATED', 8, 'newow_cup_handle_v1', 'cup-e-invalidated'),
+      marker('cup-weakened', 'CUP_HANDLE_WEAKENED', 9, 'newow_cup_handle_v1', 'cup-d-weakened'),
+      marker('cup-invalidated', 'CUP_HANDLE_INVALIDATED', 9, 'newow_cup_handle_v1', 'cup-e-invalidated'),
       marker('cup-expired', 'CUP_HANDLE_EXPIRED', 9, 'newow_cup_handle_v1', 'cup-f-expired'),
     ],
     cup_handles: [
-      readyCup('cup-a-breakout', 'BREAKOUT', 9),
+      readyCup('cup-a-breakout', 'BREAKOUT', 5),
       {
         candidate_id: 'cup-b-forming', direction: 'BULLISH', state: 'FORMING',
         left_rim: pivot(0, 101), bottom: pivot(1, 96), right_rim: pivot(2, 104),
@@ -205,9 +210,9 @@ export function newowTrendDetailFixture({ product = 'jm', from = trendDays[0], t
         hard_failures: [], diagnostics: ['fixture-forming'], volume_facts: {}, formula_version: 'newow_cup_handle_v1',
       },
       readyCup('cup-c-ready', 'READY', 4),
-      readyCup('cup-d-weakened', 'WEAKENED', 7),
-      readyCup('cup-e-invalidated', 'INVALIDATED', 8),
-      readyCup('cup-f-expired', 'EXPIRED', 8),
+      readyCup('cup-d-weakened', 'WEAKENED', 9),
+      readyCup('cup-e-invalidated', 'INVALIDATED', 9),
+      readyCup('cup-f-expired', 'EXPIRED', 9),
     ],
     rollover_seams: [{
       trading_day: bars[6].trading_day,
