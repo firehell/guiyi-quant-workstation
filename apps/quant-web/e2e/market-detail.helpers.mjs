@@ -39,15 +39,223 @@ export function detailBar(symbol, index, close = 100 + index) {
   }
 }
 
+const trendDays = [
+  '2026-08-21', '2026-08-24', '2026-08-25', '2026-08-26', '2026-08-27',
+  '2026-08-28', '2026-08-31', '2026-09-01', '2026-09-02', '2026-09-03',
+]
+const trendCloses = [98, 100, 102, 105, 103, 101, 104, 107, 109, 111]
+
+export function trendGenericBars(symbol = 'jm') {
+  const upper = symbol.toUpperCase()
+  return trendDays.map((tradingDay, index) => {
+    const close = trendCloses[index]
+    return {
+      bar_end: `${tradingDay}T07:00:00.000Z`,
+      trading_day: tradingDay,
+      open: close - 1,
+      high: close + 2,
+      low: close - 2,
+      close,
+      volume: 2_000 + index * 100,
+      turnover: 200_000 + index * 10_000,
+      open_interest: 3_000 + index * 50,
+      physical_contract: index < 6 ? `${upper}2601` : `${upper}2605`,
+    }
+  })
+}
+
+export function newowTrendDetailFixture({ product = 'jm', from = trendDays[0], through = trendDays.at(-1) } = {}) {
+  const upper = product.toUpperCase()
+  const calculationIdentity = [
+    'market_data_service:canonical_v2',
+    'main_contract_map:rank1:canonical_v1',
+    product,
+    'actual_dominant',
+    '1d',
+    'newow_trend_d1_v1',
+    'newow_trend_band_cleanroom_v1',
+    'newow_escape_d123_v1',
+    'newow_cup_handle_v1',
+  ].join('|')
+  const genericBars = trendGenericBars(product)
+  const segmentA = `${upper}2601:2026-08-21:2026-08-28`
+  const segmentB = `${upper}2605:2026-08-31:2026-09-03`
+  const bars = genericBars.map((bar, index) => ({
+    bar_end: bar.bar_end,
+    trading_day: bar.trading_day,
+    open: bar.open.toFixed(2),
+    high: bar.high.toFixed(2),
+    low: bar.low.toFixed(2),
+    close: bar.close.toFixed(2),
+    volume: bar.volume,
+    open_interest: bar.open_interest,
+    physical_contract: bar.physical_contract,
+    segment_id: index < 6 ? segmentA : segmentB,
+    source_identity: calculationIdentity,
+  }))
+  const marker = (markerId, markerType, index, formulaVersion, candidateId) => ({
+    marker_id: markerId,
+    marker_type: markerType,
+    bar_end: bars[index].bar_end,
+    price: bars[index].close,
+    label: ({
+      CUP_HANDLE_READY: '杯柄就绪',
+      CUP_HANDLE_BREAKOUT: '杯柄突破',
+      CUP_HANDLE_WEAKENED: '杯柄走弱',
+      CUP_HANDLE_INVALIDATED: '杯柄失效',
+      CUP_HANDLE_EXPIRED: '杯柄过期',
+    })[markerType] ?? markerType,
+    color_token: `newow-${markerType.toLowerCase()}`,
+    priority: markerType === 'NEWOW_ESCAPE_D1' ? 300 : markerType === 'NEWOW_ESCAPE_D2' ? 200 : 100,
+    related_marker_ids: [],
+    trigger_facts: candidateId === undefined ? { fixture: true } : { candidate_id: candidateId },
+    formula_version: formulaVersion,
+  })
+  const pivot = (index, price) => ({
+    pivot_at: bars[index].bar_end,
+    confirmed_at: bars[index].bar_end,
+    price: price.toFixed(2),
+  })
+  const readyCup = (candidateId, state, stateIndex) => ({
+    candidate_id: candidateId,
+    direction: candidateId === 'cup-e-invalidated' ? 'BEARISH' : 'BULLISH',
+    state,
+    left_rim: pivot(0, 101),
+    bottom: pivot(1, 96),
+    right_rim: pivot(2, 104),
+    handle_start_at: bars[2].bar_end,
+    handle_extreme: pivot(3, 100),
+    pivot_price: '104.50',
+    pivot_frozen_at: bars[4].bar_end,
+    confirmed_at: bars[4].bar_end,
+    first_seen_at: bars[4].bar_end,
+    state_changed_at: bars[stateIndex].bar_end,
+    score: 88,
+    score_breakdown: {
+      pretrend: 20, cup_geometry: 25, u_shape_purity: 15,
+      handle_quality: 15, volume_structure: 13,
+    },
+    hard_failures: [],
+    diagnostics: [`fixture-${state.toLowerCase()}`],
+    volume_facts: {
+      right_leg_median: 2200, handle_median: 1800, handle_baseline_median: 2100,
+      handle_right_ratio: 0.8181818182, handle_baseline_ratio: 0.8571428571,
+    },
+    formula_version: 'newow_cup_handle_v1',
+  })
+
+  return {
+    meta: {
+      strategy_code: 'newow_trend_v1',
+      profile_id: 'newow_trend_d1_v1',
+      frequency: '1d',
+      series_kind: 'actual_dominant',
+      calculation_identity: calculationIdentity,
+      data_revision_identity: 'fixture-revision-2026-09-03',
+      request_identity: `${calculationIdentity}:${from}:${through}`,
+    },
+    instrument: {
+      product,
+      display_name: product === 'jm' ? '焦煤' : '螺纹钢',
+      last_visible_physical_contract: `${upper}2605`,
+    },
+    bars,
+    bar_policy: 'completed_only',
+    trend_band: bars.map((bar, index) => {
+      const state = index === 2 || index === 3 || index >= 6 ? 'YELLOW' : 'BLUE'
+      const stateBefore = index === 0 ? null : (index === 2 || index === 6 ? 'BLUE' : index === 4 ? 'YELLOW' : state)
+      const transition = index === 2 || index === 6 ? 'BUILD' : index === 4 ? 'CLEAR' : null
+      return {
+        bar_end: bar.bar_end,
+        b_value: trendCloses[index] - 2.4,
+        c_value: trendCloses[index] - 1.1,
+        state,
+        state_before: stateBefore,
+        transition,
+      }
+    }),
+    trend_markers: [
+      marker('trend-build-a', 'BUILD', 2, 'newow_trend_band_cleanroom_v1'),
+      marker('trend-clear-a', 'CLEAR', 4, 'newow_trend_band_cleanroom_v1'),
+      marker('trend-build-b', 'BUILD', 6, 'newow_trend_band_cleanroom_v1'),
+    ],
+    escape_markers: [
+      marker('escape-old-d3', 'NEWOW_ESCAPE_D3', 3, 'newow_escape_d123_v1'),
+      marker('escape-latest-d1', 'NEWOW_ESCAPE_D1', 9, 'newow_escape_d123_v1'),
+      marker('escape-latest-d2', 'NEWOW_ESCAPE_D2', 9, 'newow_escape_d123_v1'),
+      marker('escape-latest-d3', 'NEWOW_ESCAPE_D3', 9, 'newow_escape_d123_v1'),
+    ],
+    cup_markers: [
+      marker('cup-ready', 'CUP_HANDLE_READY', 4, 'newow_cup_handle_v1', 'cup-c-ready'),
+      marker('cup-breakout', 'CUP_HANDLE_BREAKOUT', 5, 'newow_cup_handle_v1', 'cup-a-breakout'),
+      marker('cup-weakened', 'CUP_HANDLE_WEAKENED', 7, 'newow_cup_handle_v1', 'cup-d-weakened'),
+      marker('cup-invalidated', 'CUP_HANDLE_INVALIDATED', 8, 'newow_cup_handle_v1', 'cup-e-invalidated'),
+      marker('cup-expired', 'CUP_HANDLE_EXPIRED', 9, 'newow_cup_handle_v1', 'cup-f-expired'),
+    ],
+    cup_handles: [
+      readyCup('cup-a-breakout', 'BREAKOUT', 9),
+      {
+        candidate_id: 'cup-b-forming', direction: 'BULLISH', state: 'FORMING',
+        left_rim: pivot(0, 101), bottom: pivot(1, 96), right_rim: pivot(2, 104),
+        handle_start_at: bars[2].bar_end, handle_extreme: null,
+        pivot_price: null, pivot_frozen_at: null,
+        confirmed_at: bars[2].bar_end, first_seen_at: bars[3].bar_end,
+        state_changed_at: bars[3].bar_end, score: 60,
+        score_breakdown: { pretrend: 20, cup_geometry: 25, u_shape_purity: 15, handle_quality: 0, volume_structure: 0 },
+        hard_failures: [], diagnostics: ['fixture-forming'], volume_facts: {}, formula_version: 'newow_cup_handle_v1',
+      },
+      readyCup('cup-c-ready', 'READY', 4),
+      readyCup('cup-d-weakened', 'WEAKENED', 7),
+      readyCup('cup-e-invalidated', 'INVALIDATED', 8),
+      readyCup('cup-f-expired', 'EXPIRED', 8),
+    ],
+    rollover_seams: [{
+      trading_day: bars[6].trading_day,
+      previous_contract: `${upper}2601`,
+      next_contract: `${upper}2605`,
+      previous_bar_end: bars[5].bar_end,
+      next_bar_end: bars[6].bar_end,
+      previous_segment_id: segmentA,
+      next_segment_id: segmentB,
+    }],
+    legend: {
+      BUILD: 'trend build', CLEAR: 'trend clear', D1: 'escape D1', D2: 'escape D2', D3: 'escape D3',
+    },
+    formula_descriptions: {
+      trend_band: 'newow_trend_band_cleanroom_v1',
+      escape: 'newow_escape_d123_v1',
+      cup_handle: 'newow_cup_handle_v1',
+    },
+    warnings: [],
+  }
+}
+
 export async function mockMarketDetail(page, options = {}) {
   const requests = []
   const alertRequests = []
+  const runtimeRequests = []
+  const newowRequests = []
+  const newowCompletedProducts = []
   const delays = options.researchDelayMs || {}
   await page.route('**/api/v1/market/**', async (route) => {
     const url = new URL(route.request().url())
     requests.push(url)
     const symbol = url.searchParams.get('symbol') || options.defaultSymbol || 'jm'
     const upper = symbol.toUpperCase()
+
+    if (url.pathname.endsWith('/newow/trend-detail')) {
+      newowRequests.push(url)
+      const product = url.searchParams.get('product') || 'jm'
+      if (options.newowDelayMs?.[product]) {
+        await new Promise((resolve) => setTimeout(resolve, options.newowDelayMs[product]))
+      }
+      const response = typeof options.newowTrendDetail === 'function'
+        ? options.newowTrendDetail({ url, product, count: newowRequests.length })
+        : options.newowTrendDetail
+      newowCompletedProducts.push(product)
+      if (response === 'error' || response === undefined) return route.abort('failed')
+      return route.fulfill({ json: response })
+    }
 
     if (url.pathname.endsWith('/dominants')) {
       return route.fulfill({ json: { items: [
@@ -96,9 +304,9 @@ export async function mockMarketDetail(page, options = {}) {
         bars,
         canonical_coverage: { start: bars[0].bar_end, end: bars.at(-1).bar_end },
         page: customPage?.page ?? { has_more_before: false, next_before: null },
-        resolved_contract_segments: url.searchParams.get('series_kind') === 'actual_dominant'
+        resolved_contract_segments: customPage?.resolvedContractSegments ?? (url.searchParams.get('series_kind') === 'actual_dominant'
           ? [{ contract: `${upper}2601`, start_trading_day: bars[0].trading_day, end_trading_day: bars.at(-1).trading_day }]
-          : [],
+          : []),
       } })
     }
     return route.abort()
@@ -118,11 +326,17 @@ export async function mockMarketDetail(page, options = {}) {
     }
     return route.abort()
   })
-  await page.route('**/api/runtime/health', async (route) => route.fulfill({ json: {
-    status: 'ok', generated_at: '2026-09-03T03:00:00Z', readonly: true, would_start_services: false,
-    would_enqueue_jobs: false, would_send_notifications: false, components: { alert: { status: options.alertRuntimeStatus ?? 'ok' } },
-  } }))
+  await page.route('**/api/runtime/health', async (route) => {
+    runtimeRequests.push(new URL(route.request().url()))
+    return route.fulfill({ json: {
+      status: 'ok', generated_at: '2026-09-03T03:00:00Z', readonly: true, would_start_services: false,
+      would_enqueue_jobs: false, would_send_notifications: false, components: { alert: { status: options.alertRuntimeStatus ?? 'ok' } },
+    } })
+  })
   requests.alertRequests = alertRequests
+  requests.runtimeRequests = runtimeRequests
+  requests.newowRequests = newowRequests
+  requests.newowCompletedProducts = newowCompletedProducts
   return requests
 }
 
