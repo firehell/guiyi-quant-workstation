@@ -74,8 +74,16 @@ export function resolveViewSwitchIdentity(
   restore: MarketDetailViewRestore,
 ): MarketDetailIdentity {
   if (view === 'trend' || view === 'subing') return { view, symbol, ...FIXED_IDENTITIES[view] }
-  if (previous?.view === view && previous.seriesKind !== 'contract') {
-    return { view, symbol, seriesKind: previous.seriesKind, frequency: previous.frequency }
+  if (previous?.view === view && sameSymbol(previous.symbol, symbol)) {
+    if (previous.seriesKind !== 'contract' || previous.contract) {
+      return {
+        view,
+        symbol,
+        seriesKind: previous.seriesKind,
+        frequency: previous.frequency,
+        ...(previous.seriesKind === 'contract' ? { contract: previous.contract } : {}),
+      }
+    }
   }
   return { view, symbol, ...restore[view] }
 }
@@ -154,6 +162,10 @@ function parseFrequency(value: unknown): MarketFrequency | null {
 function normalizeSymbol(value: unknown): string | null {
   const candidate = scalar(value)?.trim().toLowerCase()
   return candidate && /^[a-z]+$/.test(candidate) ? candidate : null
+}
+
+function sameSymbol(left: string, right: string): boolean {
+  return left.trim().toLowerCase() === right.trim().toLowerCase()
 }
 
 function normalizeContract(value: string | undefined): string | null {

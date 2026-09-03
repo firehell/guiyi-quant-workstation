@@ -44,7 +44,7 @@ export function buildMarketDetailHeaderModel(input: MarketDetailHeaderInput): Ma
 
   if (unavailable) return unavailableHeader(input, product, state)
 
-  const displayContract = resolveDisplayContract(identity, latest!, dominant)
+  const displayContract = resolveDisplayContract(identity, latest!)
   const change = previous ? latest!.close - previous.close : null
   const pct = previous && previous.close !== 0 ? change! / previous.close * 100 : null
   return {
@@ -142,19 +142,18 @@ function hasIdentityMismatch(
     return !input.identity.contract
       || !!latest.physicalContract && !sameContract(latest.physicalContract, input.identity.contract)
   }
-  return !!dominant
-    && !!latest.physicalContract
-    && !sameContract(latest.physicalContract, dominant.actual_contract)
+  const physicalContract = normalizeContract(latest.physicalContract)
+  return !physicalContract
+    || !!dominant && !sameContract(physicalContract, dominant.actual_contract)
 }
 
 function resolveDisplayContract(
   identity: MarketDetailIdentity,
   latest: BarData,
-  dominant: DominantContractItem | null,
 ): string | null {
   if (identity.seriesKind === 'continuous') return null
   if (identity.seriesKind === 'contract') return identity.contract ?? null
-  return normalizeContract(latest.physicalContract) ?? normalizeContract(dominant?.actual_contract) ?? null
+  return normalizeContract(latest.physicalContract) ?? null
 }
 
 function marketDisclosure(

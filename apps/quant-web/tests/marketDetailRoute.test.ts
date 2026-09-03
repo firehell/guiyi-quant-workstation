@@ -93,6 +93,32 @@ test('switching views uses fixed identities and only restores flexible view stat
   })
 })
 
+test('reselecting a flexible view preserves its same-symbol contract identity', () => {
+  const restore = {
+    htdy: { seriesKind: 'continuous' as const, frequency: '60m' as const },
+    free: { seriesKind: 'actual_dominant' as const, frequency: '5m' as const },
+  }
+  for (const view of ['free', 'htdy'] as const) {
+    assert.deepEqual(resolveViewSwitchIdentity(view, 'jm', {
+      view, symbol: 'jm', seriesKind: 'contract', contract: 'JM2601', frequency: '15m',
+    }, restore), {
+      view, symbol: 'jm', seriesKind: 'contract', contract: 'JM2601', frequency: '15m',
+    })
+  }
+})
+
+test('switching a flexible contract view to another symbol uses safe restore without old contract', () => {
+  const restore = {
+    htdy: { seriesKind: 'continuous' as const, frequency: '60m' as const },
+    free: { seriesKind: 'actual_dominant' as const, frequency: '5m' as const },
+  }
+  assert.deepEqual(resolveViewSwitchIdentity('free', 'rb', {
+    view: 'free', symbol: 'jm', seriesKind: 'contract', contract: 'JM2601', frequency: '15m',
+  }, restore), {
+    view: 'free', symbol: 'rb', seriesKind: 'actual_dominant', frequency: '5m',
+  })
+})
+
 test('events enter their exact view and bar', () => {
   assert.deepEqual(marketDetailEventIdentity({
     id: 1, symbol: 'jm', contract: 'JM2601', trading_day: '2026-09-02', frequency: '30m',

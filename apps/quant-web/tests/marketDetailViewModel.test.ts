@@ -106,6 +106,23 @@ test('fails closed when metadata or bars disagree with the requested identity', 
   assert.equal(contractMismatch.close, null)
 })
 
+test('fails closed when the latest actual-dominant bar has no physical contract', async () => {
+  const { buildMarketDetailHeaderModel } = await import('../src/utils/marketDetailViewModel.ts')
+  const model = buildMarketDetailHeaderModel(input({
+    bars: [
+      bar('2026-09-02T02:30:00Z', 100),
+      { ...bar('2026-09-02T02:45:00Z', 110), physicalContract: undefined },
+    ],
+  }))
+
+  assert.equal(model.freshness, 'unavailable')
+  assert.equal(model.displayContract, null)
+  assert.deepEqual(
+    [model.open, model.high, model.low, model.close, model.change, model.pct],
+    [null, null, null, null, null, null],
+  )
+})
+
 test('keeps stale data distinct from unavailable data', async () => {
   const { buildMarketDetailHeaderModel } = await import('../src/utils/marketDetailViewModel.ts')
   const model = buildMarketDetailHeaderModel(input({ stale: true }))
