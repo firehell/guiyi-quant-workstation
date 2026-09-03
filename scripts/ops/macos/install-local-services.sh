@@ -48,6 +48,38 @@ installed_api_notification_paths_match() {
   [[ "$installed" == "$ALERT_NOTIFICATION_CONFIG_PATH" ]]
 }
 
+market_runtime_status_path() {
+  local plist="$AGENT_DIR/com.guiyi.quant-after-market.plist"
+  local configured_root="" loaded_root="" launch_output="" root domain_output=""
+  local label_absent=false
+  domain_output="$(launchctl print "gui/$UID" 2>&1)" || return 1
+  if [[ -e "$plist" || -L "$plist" ]]; then
+    [[ -f "$plist" && ! -L "$plist" ]] || return 1
+    configured_root="$(plutil -extract EnvironmentVariables.GUIYI_PROJECT_ROOT raw -o - "$plist" 2>/dev/null)" || return 1
+    is_safe_absolute_path "$configured_root" && [[ -d "$configured_root" && ! -L "$configured_root" ]] || return 1
+  fi
+  if launch_output="$(launchctl print "gui/$UID/com.guiyi.quant-after-market" 2>&1)"; then
+    loaded_root="$(printf '%s\n' "$launch_output" | sed -n 's/^[[:space:]]*GUIYI_PROJECT_ROOT => //p' | head -1)"
+    is_safe_absolute_path "$loaded_root" && [[ -d "$loaded_root" && ! -L "$loaded_root" ]] || return 1
+  elif [[ "$launch_output" == *"Could not find service"* ]]; then
+    label_absent=true
+  else
+    return 1
+  fi
+  if [[ "$label_absent" == true && -n "$configured_root" ]]; then
+    return 1
+  fi
+  if [[ -n "$configured_root" && -n "$loaded_root" && "$configured_root" != "$loaded_root" ]]; then
+    return 1
+  fi
+  root="${loaded_root:-$configured_root}"
+  if [[ -z "$root" ]]; then
+    root="$PROJECT_ROOT"
+  fi
+  is_safe_absolute_path "$root" && [[ -d "$root" && ! -L "$root" ]] || return 1
+  printf '%s/.run/after-market-status.json\n' "$root"
+}
+
 RUNTIME_COMMIT="$(git -C "$PROJECT_ROOT" rev-parse HEAD 2>/dev/null)"
 if [[ ! "$RUNTIME_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
   printf '[install-local-services] invalid runtime commit identity\n' >&2
@@ -97,6 +129,16 @@ if [[ "$MODE" == "--confirm-market-runtime" ]]; then
   load_labels=("${market_runtime_labels[@]}")
 elif [[ "$MODE" == "--confirm-alert-runtime" ]]; then
   load_labels=("${alert_runtime_labels[@]}")
+fi
+
+if [[ "$MODE" == "--confirm-market-runtime" ]]; then
+  if market_status_path="$(market_runtime_status_path)"; then
+    GUIYI_AFTER_MARKET_STATUS_PATH="$market_status_path" \
+      "$PROJECT_ROOT/scripts/ops/macos/run-local-service.sh" market-runtime-preflight
+  else
+    GUIYI_AFTER_MARKET_STATUS_PATH="invalid" \
+      "$PROJECT_ROOT/scripts/ops/macos/run-local-service.sh" market-runtime-preflight
+  fi
 fi
 
 if [[ "$PROJECT_ROOT" == /Volumes/* && "${GUIYI_ALLOW_EXTERNAL_VOLUME_LAUNCHD:-0}" != "1" ]]; then

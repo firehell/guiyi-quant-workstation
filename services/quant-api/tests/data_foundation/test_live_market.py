@@ -24,6 +24,7 @@ class FakeRedis:
         self.values: dict[str, str] = {}
         self.zsets: dict[str, dict[str, int]] = {}
         self.ttls: dict[str, int] = {}
+        self.delete_calls: list[tuple[str, ...]] = []
         self.published: list[tuple[str, str]] = []
         self.fail_zadd = 0
         self.fail_heartbeat_set = 0
@@ -74,6 +75,7 @@ class FakeRedis:
         return [key for key in (*self.values, *self.zsets) if fnmatch(key, match)]
 
     def delete(self, *keys: str) -> int:
+        self.delete_calls.append(keys)
         deleted = 0
         for key in keys:
             existed = key in self.values or key in self.zsets
@@ -235,8 +237,8 @@ def test_subscriptions_are_trading_day_isolated_and_expire() -> None:
     assert fake.ttls["live:subscription:2025-01-02"] == timedelta(days=3).total_seconds()
 
 
-def test_cleanup_removes_only_requested_trading_day() -> None:
-    """Catches cleanup deleting another day's transient observation state."""
+def test_full_cleanup_deletes_requested_day_in_one_atomic_redis_command() -> None:
+    """Catches after-market cleanup splitting Bars and snapshot across Redis commands."""
     fake = FakeRedis()
     store = _store(fake)
     first_day = date(2025, 1, 2)
@@ -248,10 +250,37 @@ def test_cleanup_removes_only_requested_trading_day() -> None:
 
     store.cleanup_trading_day(first_day)
 
-    assert store.bars_after(first_day, "RB", "1m", _bar(1).bar_end) == ()
+    assert store.bars_after(first_day, "RB", "1m", _bar(1).bar_end - timedelta(minutes=1)) == ()
     assert store.subscriptions(first_day) is None
     assert store.bars_after(next_day, "RB", "1m", _bar(1).bar_end - timedelta(minutes=1)) == (_bar(1),)
     assert store.subscriptions(next_day) == {"RB": ["1m"]}
+    assert fake.delete_calls == [
+        (
+            "live:bars:2025-01-02:RB:1m",
+            "live:subscription:2025-01-02",
+        )
+    ]
+
+
+def test_anchor_repair_cleanup_removes_only_bars_and_preserves_snapshot() -> None:
+    """Catches repair cleanup erasing its immutable after-market rank1 snapshot."""
+    fake = FakeRedis()
+    store = _store(fake)
+    first_day = date(2025, 1, 2)
+    next_day = date(2025, 1, 3)
+    first_snapshot = {"RB": "RB2505"}
+    next_snapshot = {"RB": "RB2509"}
+    store.put_bar(first_day, "RB", "1m", _bar(1), contract="RB2505")
+    store.set_subscriptions(first_day, first_snapshot)
+    store.put_bar(next_day, "RB", "1m", _bar(1), contract="RB2505")
+    store.set_subscriptions(next_day, next_snapshot)
+
+    store.cleanup_bars_for_trading_day(first_day)
+
+    assert store.bars_after(first_day, "RB", "1m", _bar(1).bar_end - timedelta(minutes=1)) == ()
+    assert store.subscriptions(first_day) == first_snapshot
+    assert store.bars_after(next_day, "RB", "1m", _bar(1).bar_end - timedelta(minutes=1)) == (_bar(1),)
+    assert store.subscriptions(next_day) == next_snapshot
 
 
 def test_public_pubsub_channel_contract_and_compact_payloads() -> None:
