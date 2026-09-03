@@ -90,9 +90,10 @@ def production_contract_replay_fixture(tmp_path) -> _ProductionContractReplayFix
 
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)
+    canonical_end = datetime(2026, 8, 30, 2, tzinfo=UTC)
     canonical = (
         _bar(HISTORICAL_END_1, DAY_1),
-        _bar(HISTORICAL_END_2, DAY_2),
+        _bar(canonical_end, DAY_1),
     )
     cutoff = _bar(LIVE_END, DAY_2)
     with Session(engine) as session:
@@ -816,6 +817,8 @@ def test_current_contract_replay_bootstraps_latest_canonical_before_live_cutoff(
     )
 
     assert replay.bars == (*fixture.canonical, fixture.cutoff)
+    assert fixture.canonical[-1].trading_day == DAY_1
+    assert fixture.cutoff.trading_day == DAY_2
     assert fixture.market_data.requests[0].before is None
 
 
