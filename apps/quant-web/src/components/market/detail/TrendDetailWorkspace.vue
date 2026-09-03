@@ -101,11 +101,6 @@ function buildDisclosureSections(
 
   const [trend, riskShape, marketData] = viewModel.disclosureSections
   const latestBar = data.bars.at(-1)
-  const formulaIdentity = [
-    data.formula_descriptions.trend_band,
-    data.formula_descriptions.escape,
-    data.formula_descriptions.cup_handle,
-  ].join(' · ')
   return [
     {
       ...trend!,
@@ -116,14 +111,7 @@ function buildDisclosureSections(
         { label: '计算身份', value: data.meta.calculation_identity, source: 'newow' },
       ],
     },
-    {
-      ...riskShape!,
-      rows: [
-        ...riskShape!.rows,
-        { label: '公式版本', value: formulaIdentity, source: 'newow' },
-        { label: 'Warm-up', value: warmupSummary(data.warnings), source: 'newow' },
-      ],
-    },
+    riskShape!,
     {
       ...marketData!,
       rows: [
@@ -132,13 +120,6 @@ function buildDisclosureSections(
         { label: '最新 Bar 来源身份', value: latestBar?.source_identity ?? '不可用', source: 'newow' },
         { label: '数据修订身份', value: data.meta.data_revision_identity ?? '未提供', source: 'newow' },
         { label: '请求身份', value: data.meta.request_identity, source: 'newow' },
-        {
-          label: '换月边界',
-          value: data.rollover_seams.length > 0
-            ? `${data.rollover_seams.length} 处；状态按物理合约段重置`
-            : '当前窗口未出现；状态仍按物理合约段计算',
-          source: 'newow',
-        },
       ],
     },
   ]
@@ -167,10 +148,6 @@ function buildNotices(data: NewowTrendDetailResponse | null, loading: boolean): 
     : '当前窗口未报告主力换月；状态仍按物理合约段独立计算。')
   values.push(...data.warnings.map(warningLabel))
   return values
-}
-
-function warmupSummary(warnings: readonly NewowWarning[]): string {
-  return warnings.length === 0 ? '当前 API 未报告不足' : warnings.map(warningLabel).join('；')
 }
 
 function warningLabel(warning: NewowWarning): string {
@@ -205,6 +182,7 @@ function warningLabel(warning: NewowWarning): string {
       :identity-key="disclosureIdentity"
       :sections="disclosureSections"
       :default-open="true"
+      default-open-all
     />
     <NewowTrendChartStage
       :data="loader.data.value"
