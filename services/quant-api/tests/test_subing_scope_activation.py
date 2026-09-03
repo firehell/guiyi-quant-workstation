@@ -8,6 +8,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
+from app.alerts import subing_scope_activation
 from app.alerts.models import AlertRule
 from app.alerts.subing_scope_activation import (
     SubingScopeActivationError,
@@ -166,6 +167,73 @@ def test_apply_rejects_nonexact_0044_state_before_mutation(session: Session) -> 
 
     assert _rule_snapshot(session, _SUBING_RULE) == subing_before
     assert commits == []
+
+
+def test_apply_rechecks_revision_after_locking_rules(
+    session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_rules = subing_scope_activation._rules
+
+    def change_revision_before_locked_read(*args, **kwargs):
+        if kwargs["for_update"]:
+            session.execute(text(
+                "UPDATE alembic_version SET version_num = '20260902_0043'"
+            ))
+        return original_rules(*args, **kwargs)
+
+    monkeypatch.setattr(subing_scope_activation, "_rules", change_revision_before_locked_read)
+
+    with pytest.raises(
+        SubingScopeActivationError,
+        match="^SUBING_SCOPE_ACTIVATION_PREFLIGHT_FAILED$",
+    ):
+        activate_subing_ths_scope(
+            session,
+            operational_products=("jm",),
+            apply=True,
+        )
+
+    assert session.scalar(text("SELECT version_num FROM alembic_version")) == (
+        "20260902_0044"
+    )
+    assert _rule_snapshot(session, _SUBING_RULE) == {
+        "enabled": False,
+        "scope_product_frequencies": {},
+    }
+
+
+@pytest.mark.parametrize(
+    "invalid_scope",
+    [
+        {"JM": ["15m"]},
+        {"jm": ["4h"]},
+        {"jm": []},
+        {"jm": ["15m", "15m"]},
+    ],
+)
+def test_preflight_rejects_invalid_htdy_frequency_scope(
+    session: Session,
+    invalid_scope: dict[str, list[str]],
+) -> None:
+    htdy = _rule(session, "htdy_original_15m")
+    htdy.scope_product_frequencies = invalid_scope
+    session.commit()
+
+    with pytest.raises(
+        SubingScopeActivationError,
+        match="^SUBING_SCOPE_ACTIVATION_PREFLIGHT_FAILED$",
+    ):
+        activate_subing_ths_scope(
+            session,
+            operational_products=("jm",),
+            apply=False,
+        )
+
+    assert _rule_snapshot(session, _SUBING_RULE) == {
+        "enabled": False,
+        "scope_product_frequencies": {},
+    }
 
 
 def test_apply_locked_reread_rejects_concurrent_first_activation(session: Session) -> None:
