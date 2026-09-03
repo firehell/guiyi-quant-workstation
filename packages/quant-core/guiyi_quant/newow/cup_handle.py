@@ -119,7 +119,12 @@ def cup_evaluation_ready(
             and state.atr_state.atr is not None
             and isfinite(state.atr_state.atr)
             and state.atr_state.atr > 0.0
+            and isinstance(state.eligible_bars, tuple)
             and len(state.eligible_bars) >= profile.cup_min_bars
+            and all(
+                _snapshot_observable_facts_are_valid(snapshot, state)
+                for snapshot in state.eligible_bars
+            )
         )
     except (AttributeError, TypeError, ValueError):
         return False

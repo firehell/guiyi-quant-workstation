@@ -126,6 +126,17 @@ def test_cup_evaluation_readiness_requires_eligible_geometry_not_only_prerank_at
         replace(state, atr_state=replace(state.atr_state, atr=None))
     )
     assert not cup_evaluation_ready(replace(state, segment_id=None))
+    foreign_snapshot = replace(
+        state.eligible_bars[-1],
+        bar=replace(
+            state.eligible_bars[-1].bar,
+            physical_contract="JM2701",
+            segment_id="jm:JM2701:2026-01-01",
+        ),
+    )
+    assert not cup_evaluation_ready(
+        replace(state, eligible_bars=(*state.eligible_bars[:-1], foreign_snapshot))
+    )
     assert not cup_evaluation_ready(object())  # type: ignore[arg-type]
 
 
