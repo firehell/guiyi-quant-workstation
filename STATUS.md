@@ -29,8 +29,10 @@ Alert transport 为 PushPlus；provider accepted 不等于微信送达。
 - 2026-08-31 只读 Runtime health 显示自然 after-market 本轮已以 `passed` 完成：开始 `18:05:07 +08:00`、结束 `20:10:21 +08:00`、`attempts=1 / error_code=null`、覆盖 operational 60；未手工启动、补跑或回填。
 - 2026-09-01 `13:46:05 +08:00`，JM 的 HTDY 15m 自然 first-seen buy Event 已持久化并触发一次 PushPlus transport；provider accepted 仅表示服务端受理，不等于微信送达。
 - 2026-09-02 开盘只读 Runtime health 显示 Live `60/60`、全部 `TRADING`，且 Live 与 Alert heartbeat 均为新鲜；Alert processing 为 `ok`，但 legacy SuBing `0/60 ready` 使整体 health 仍为 degraded。
+- 2026-09-03 自然 after-market 为 `failed`，`attempts=1`、`error_code=LIVE_DOMINANT_MISMATCH`；这是 strict rank1/Live snapshot reconciliation 未通过的自然失败，不能改写为 passed，也不能以手工、synthetic、replay 或 fallback 替代。
 
 ## Pending Gate
 
 - G9 之后仍须等待自然 completed 15m Event、immutable AlertEvent 与 one-shot PushPlus provider acceptance；不得用 synthetic、replay、backfill 或手工发送替代。
 - 最终 G12 仍须由用户人工确认微信实际收到同一自然 Event；provider accepted 不能替代实际送达确认。
+- Runtime snapshot promotion guard 为仓库 `CODE_COMPLETE / TEST_COMPLETE` 证据；尚未 release、Runtime promotion 或 production readback，不得标记 `RELEASED` 或 `RUNTIME_READY`。

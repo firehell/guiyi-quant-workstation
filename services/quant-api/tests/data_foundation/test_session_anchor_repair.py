@@ -54,6 +54,39 @@ def _minute_bars(window: SessionWindow, *, first_price: int) -> tuple[CanonicalB
     )
 
 
+def test_repair_composition_uses_bar_only_live_cleanup(
+    monkeypatch: pytest.MonkeyPatch,
+    repair_context,
+    tmp_path: Path,
+) -> None:
+    """Catches anchor repair wiring natural full cleanup into the repair path."""
+    from app.market_data import composition
+
+    session, _, _ = repair_context
+    calls: list[tuple[str, date]] = []
+
+    class FakeLiveStore:
+        def __init__(self, redis: object) -> None:
+            assert redis is sentinel
+
+        def cleanup_bars_for_trading_day(self, trading_day: date) -> None:
+            calls.append(("bars", trading_day))
+
+        def cleanup_trading_day(self, trading_day: date) -> None:
+            calls.append(("full", trading_day))
+
+    sentinel = object()
+    monkeypatch.setattr(composition, "canonical_root", lambda: tmp_path / "canonical")
+    monkeypatch.setattr(composition, "get_redis_connection", lambda: sentinel)
+    monkeypatch.setattr(composition, "RedisLiveStore", FakeLiveStore)
+
+    service = composition.build_session_anchor_repair_service(session)
+    assert service.live_cleanup is not None
+    service.live_cleanup(date(2026, 9, 2))
+
+    assert calls == [("bars", date(2026, 9, 2))]
+
+
 def test_corrected_session_windows_anchor_all_day_and_night_15m_buckets() -> None:
     morning_periods = _normalized_historical_session_periods(
         "09:01-10:15,10:31-11:30,13:31-15:00"
