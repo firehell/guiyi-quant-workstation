@@ -21,7 +21,9 @@ test('projects API bars, non-null bands, three marker families, clipped cups, an
 
   assert.equal(projection.source, 'newow')
   assert.equal(projection.paneCount, 2)
-  assert.deepEqual(projection.bars.map((bar) => bar.close), [11, 12, 13])
+  assert.deepEqual(projection.bars.map((bar) => [bar.close, bar.segmentId]), [
+    [11, 'segment-1'], [12, 'segment-1'], [13, 'segment-2'],
+  ])
   assert.deepEqual(projection.band.b.map((point) => [point.tradingDay, point.value]), [
     ['2026-01-02', 10.5],
     ['2026-01-03', 11.5],
@@ -38,10 +40,10 @@ test('projects API bars, non-null bands, three marker families, clipped cups, an
     ['cup', 'CUP_HANDLE_READY', 'cup-ready'],
   ])
   assert.deepEqual(projection.cups[0]!.points.map((point) => point.role), [
-    'bottom', 'right-rim', 'handle-extreme',
+    'bottom', 'right-rim',
   ])
   assert.deepEqual(projection.cups[0]!.pivotLine, {
-    fromTradingDay: '2026-01-03', throughTradingDay: '2026-01-04', price: 12.7,
+    fromTradingDay: '2026-01-03', throughTradingDay: '2026-01-03', price: 12.7,
   })
   assert.deepEqual(projection.rolloverSeams, [{
     tradingDay: '2026-01-04',
@@ -75,7 +77,7 @@ test('uses generic completed D1 only when Newow is unavailable and discards stra
   assert.deepEqual(projection.bars, [{
     barEnd: '2026-01-08T15:00:00+08:00', tradingDay: '2026-01-08',
     open: 87, high: 89, low: 86, close: 88, volume: 108, openInterest: 208,
-    physicalContract: null,
+    physicalContract: null, segmentId: null,
   }])
   assert.deepEqual(projection.band, { b: [], c: [], areas: [] })
   assert.deepEqual(projection.markers, [])
@@ -103,12 +105,42 @@ test('turns projected API facts into primitive commands without inventing clippe
   assert.equal(commands.filter((command) => command.kind === 'band').length, 1)
   assert.deepEqual(
     commands.filter((command) => command.kind === 'cup-segment').map((command) => [command.fromX, command.toX]),
-    [[10, 20], [20, 30]],
+    [[10, 20]],
   )
   assert.equal(commands.filter((command) => command.kind === 'cup-pivot').length, 1)
+  assert.equal(
+    commands.filter((command) => command.kind === 'cup-segment' || command.kind === 'cup-pivot')
+      .some((command) => command.fromX > 20 || command.toX > 20),
+    false,
+  )
   assert.deepEqual(
     commands.filter((command) => command.kind === 'rollover').map((command) => [command.fromX, command.label]),
     [[30, 'RB2605 → RB2610 · 主力切换']],
+  )
+})
+
+test('keeps same-day Cup markers in frozen lifecycle order despite adversarial ids', () => {
+  const data = snapshot()
+  const barEnd = data.bars[2]!.bar_end
+  data.cup_markers = [
+    marker('a-expired', 'CUP_HANDLE_EXPIRED', barEnd, 13, '过期'),
+    marker('b-invalidated', 'CUP_HANDLE_INVALIDATED', barEnd, 13, '失效'),
+    marker('c-weakened', 'CUP_HANDLE_WEAKENED', barEnd, 13, '走弱'),
+    marker('d-breakout', 'CUP_HANDLE_BREAKOUT', barEnd, 13, '突破'),
+    marker('z-ready', 'CUP_HANDLE_READY', barEnd, 13, '就绪'),
+  ]
+
+  const projection = buildNewowTrendChartProjection({ data, genericBars: [] })
+
+  assert.deepEqual(
+    projection.markers.filter((item) => item.family === 'cup').map((item) => item.markerType),
+    [
+      'CUP_HANDLE_READY',
+      'CUP_HANDLE_BREAKOUT',
+      'CUP_HANDLE_WEAKENED',
+      'CUP_HANDLE_INVALIDATED',
+      'CUP_HANDLE_EXPIRED',
+    ],
   )
 })
 

@@ -8,6 +8,7 @@ import type {
   SeriesType,
   Time,
 } from 'lightweight-charts'
+import type { InjectionKey } from 'vue'
 
 import type { BarData } from '../../../types/market.ts'
 import type {
@@ -33,6 +34,7 @@ export interface NewowTrendChartBar {
   readonly volume: number
   readonly openInterest: number | null
   readonly physicalContract: string | null
+  readonly segmentId: string | null
 }
 
 export interface NewowTrendBandLinePoint {
@@ -72,6 +74,7 @@ export interface NewowCupGeometryPoint {
 
 export interface NewowCupGeometry {
   readonly candidateId: string
+  readonly segmentId: string
   readonly direction: NewowCupDirection
   readonly state: NewowCupState
   readonly points: readonly NewowCupGeometryPoint[]
@@ -140,6 +143,13 @@ const FAMILY_PRIORITY: Readonly<Record<NewowTrendMarkerFamily, number>> = {
   escape: 1,
   cup: 2,
 }
+const CUP_MARKER_PRIORITY: Readonly<Record<string, number>> = {
+  CUP_HANDLE_READY: 0,
+  CUP_HANDLE_BREAKOUT: 1,
+  CUP_HANDLE_WEAKENED: 2,
+  CUP_HANDLE_INVALIDATED: 3,
+  CUP_HANDLE_EXPIRED: 4,
+}
 
 /** Maps already-normalized server facts to render-only data; it contains no Newow formulas. */
 export function buildNewowTrendChartProjection(
@@ -157,6 +167,7 @@ export function buildNewowTrendChartProjection(
     volume: bar.volume,
     openInterest: bar.open_interest,
     physicalContract: bar.physical_contract,
+    segmentId: bar.segment_id,
   }))
   const tradingDayByBarEnd = new Map(bars.map((bar) => [bar.barEnd, bar.tradingDay]))
   const band = projectBand(input.data, tradingDayByBarEnd)
@@ -225,6 +236,7 @@ function genericFallbackProjection(genericBars: readonly BarData[]): NewowTrendC
       volume: bar.volume,
       openInterest: finiteOrNull(bar.openInterest),
       physicalContract: typeof bar.physicalContract === 'string' ? bar.physicalContract : null,
+      segmentId: null,
     }]
   })
   return {
@@ -304,6 +316,7 @@ function projectMarkers(
   markers.sort((left, right) => (
     left.tradingDay.localeCompare(right.tradingDay)
     || FAMILY_PRIORITY[left.family] - FAMILY_PRIORITY[right.family]
+    || markerTypePriority(left) - markerTypePriority(right)
     || left.id.localeCompare(right.id)
   ))
   return markers
@@ -363,6 +376,13 @@ function projectCups(
   const lastDay = bars.at(-1)?.tradingDay
   if (firstDay === undefined || lastDay === undefined) return []
   return handles.flatMap((handle): NewowCupGeometry[] => {
+    const segmentId = cupOriginSegment(handle, bars)
+    if (segmentId === null) return []
+    const segmentBars = bars.filter((bar) => bar.segmentId === segmentId)
+    const segmentFirstDay = segmentBars[0]?.tradingDay
+    const segmentLastDay = segmentBars.at(-1)?.tradingDay
+    if (segmentFirstDay === undefined || segmentLastDay === undefined) return []
+    const segmentDays = new Set(segmentBars.map((bar) => bar.tradingDay))
     const points = [
       cupPoint('left-rim', handle.left_rim.pivot_at, handle.left_rim.price),
       cupPoint('bottom', handle.bottom.pivot_at, handle.bottom.price),
@@ -371,17 +391,44 @@ function projectCups(
         ? null
         : cupPoint('handle-extreme', handle.handle_extreme.pivot_at, handle.handle_extreme.price),
     ].filter((point): point is NewowCupGeometryPoint => (
-      point !== null && point.tradingDay >= firstDay && point.tradingDay <= lastDay
+      point !== null && segmentDays.has(point.tradingDay)
     )).sort((left, right) => left.tradingDay.localeCompare(right.tradingDay))
     const pivotStart = handle.pivot_frozen_at === null ? null : instantDay(handle.pivot_frozen_at)
     const pivotLine = handle.pivot_price !== null && pivotStart !== null
-      && pivotStart >= firstDay && pivotStart <= lastDay
-      ? { fromTradingDay: pivotStart, throughTradingDay: lastDay, price: handle.pivot_price }
+      && pivotStart <= segmentLastDay
+      ? {
+        fromTradingDay: pivotStart < segmentFirstDay ? segmentFirstDay : pivotStart,
+        throughTradingDay: segmentLastDay,
+        price: handle.pivot_price,
+      }
       : null
     return points.length > 0 || pivotLine !== null
-      ? [{ candidateId: handle.candidate_id, direction: handle.direction, state: handle.state, points, pivotLine }]
+      ? [{ candidateId: handle.candidate_id, segmentId, direction: handle.direction, state: handle.state, points, pivotLine }]
       : []
   })
+}
+
+function cupOriginSegment(
+  handle: NewowCupHandle,
+  bars: readonly NewowTrendChartBar[],
+): string | null {
+  const segmentByBarEnd = new Map(bars.map((bar) => [bar.barEnd, bar.segmentId]))
+  const timestamps = [
+    handle.left_rim.pivot_at,
+    handle.bottom.pivot_at,
+    handle.right_rim.pivot_at,
+    handle.handle_start_at,
+    handle.handle_extreme?.pivot_at,
+    handle.confirmed_at,
+    handle.first_seen_at,
+    handle.state_changed_at,
+    handle.pivot_frozen_at,
+  ].filter((value): value is string => value !== null && value !== undefined)
+  for (const timestamp of timestamps) {
+    const segmentId = segmentByBarEnd.get(timestamp)
+    if (segmentId !== null && segmentId !== undefined) return segmentId
+  }
+  return null
 }
 
 function cupPoint(role: NewowCupPointRole, instant: string, price: number): NewowCupGeometryPoint | null {
@@ -403,6 +450,12 @@ function groupMarkersByTradingDay(
 
 function dPriority(marker: NewowMarker): number {
   return D_PRIORITY[marker.marker_type] ?? Number.MAX_SAFE_INTEGER
+}
+
+function markerTypePriority(marker: NewowTrendChartMarker): number {
+  return marker.family === 'cup'
+    ? CUP_MARKER_PRIORITY[marker.markerType] ?? Number.MAX_SAFE_INTEGER
+    : 0
 }
 
 function genericTradingDay(bar: BarData): string | null {
@@ -708,6 +761,21 @@ export interface NewowTrendChartDisposerResources {
   readonly disconnectResizeObserver: () => void
   readonly removeChart: () => void
 }
+
+export interface NewowTrendResizeObserver {
+  observe(target: Element): void
+  disconnect(): void
+}
+
+export interface NewowTrendChartAdapter {
+  readonly createChart: typeof import('lightweight-charts').createChart
+  readonly createSeriesMarkers: typeof import('lightweight-charts').createSeriesMarkers
+  readonly createResizeObserver: (callback: ResizeObserverCallback) => NewowTrendResizeObserver
+}
+
+export const NEWOW_TREND_CHART_ADAPTER_KEY: InjectionKey<NewowTrendChartAdapter> = Symbol(
+  'newow-trend-chart-adapter',
+)
 
 /** Owns the stage's external resources and makes teardown idempotent. */
 export function createNewowTrendChartDisposer(

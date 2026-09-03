@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, inject, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import {
   CandlestickSeries,
   ColorType,
@@ -26,11 +26,13 @@ import { initialChartLogicalRange } from '@/utils/chartViewport'
 import {
   buildNewowTrendChartProjection,
   createNewowTrendChartDisposer,
+  NEWOW_TREND_CHART_ADAPTER_KEY,
   NewowTrendChartPrimitive,
   resolveNewowTrendCrosshairFacts,
   type NewowTrendChartMarker,
   type NewowTrendChartProjection,
   type NewowTrendHoverFacts,
+  type NewowTrendResizeObserver,
 } from '@/components/market/detail/newowTrendChartPrimitives'
 
 const props = withDefaults(defineProps<{
@@ -46,6 +48,11 @@ const projection = computed(() => buildNewowTrendChartProjection({
   genericBars: props.genericBars,
 }))
 const primitive = new NewowTrendChartPrimitive()
+const chartAdapter = inject(NEWOW_TREND_CHART_ADAPTER_KEY, {
+  createChart,
+  createSeriesMarkers,
+  createResizeObserver: (callback) => new ResizeObserver(callback),
+})
 
 let chart: IChartApi | null = null
 let candles: ISeriesApi<'Candlestick'> | null = null
@@ -53,14 +60,14 @@ let volume: ISeriesApi<'Histogram'> | null = null
 let bLine: ISeriesApi<'Line'> | null = null
 let cLine: ISeriesApi<'Line'> | null = null
 let markers: ISeriesMarkersPluginApi<Time> | null = null
-let observer: ResizeObserver | null = null
+let observer: NewowTrendResizeObserver | null = null
 let disposeResources: (() => void) | null = null
 
 onMounted(async () => {
   await nextTick()
   if (container.value === null) return
-  const theme = resolveChartTheme()
-  chart = createChart(container.value, {
+  const theme = resolveChartTheme(container.value)
+  chart = chartAdapter.createChart(container.value, {
     width: container.value.clientWidth,
     height: container.value.clientHeight,
     layout: { background: { type: ColorType.Solid, color: theme.background }, textColor: theme.text },
@@ -98,9 +105,9 @@ onMounted(async () => {
   }, 0)
   volume = chart.addSeries(HistogramSeries, { priceFormat: { type: 'volume' } }, 1)
   chart.priceScale('right', 1).applyOptions({ scaleMargins: { top: 0.12, bottom: 0.05 } })
-  markers = createSeriesMarkers(candles)
+  markers = chartAdapter.createSeriesMarkers(candles)
   chart.subscribeCrosshairMove(onCrosshairMove)
-  observer = new ResizeObserver(resize)
+  observer = chartAdapter.createResizeObserver(resize)
   observer.observe(container.value)
   disposeResources = createNewowTrendChartDisposer({
     unsubscribeCrosshair: () => chart?.unsubscribeCrosshairMove(onCrosshairMove),
@@ -125,8 +132,15 @@ onUnmounted(() => {
 watch(projection, (value) => renderProjection(value, false))
 
 function renderProjection(value: NewowTrendChartProjection, resetViewport: boolean): void {
-  if (chart === null || candles === null || volume === null || bLine === null || cLine === null) return
-  const theme = resolveChartTheme()
+  if (
+    container.value === null
+    || chart === null
+    || candles === null
+    || volume === null
+    || bLine === null
+    || cLine === null
+  ) return
+  const theme = resolveChartTheme(container.value)
   candles.setData(value.bars.map((bar) => ({
     time: dayTime(bar.tradingDay),
     open: bar.open,
