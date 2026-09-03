@@ -1,4 +1,4 @@
-import type { MarketFrequency, SeriesKind } from '@/types/market'
+import type { MarketFrequency, SeriesKind } from '../types/market.ts'
 
 export function seriesRefreshQuery(input: {
   symbol: string
