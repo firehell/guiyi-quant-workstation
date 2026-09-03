@@ -26,10 +26,13 @@ class JsonArgumentParser(argparse.ArgumentParser):
         result = super().parse_args(args, namespace)
         if getattr(result, "data_command", None) == "session-anchor-repair":
             phase = result.phase
-            has_paths = bool(result.shadow_root and result.manifest)
-            if phase == "plan" and (has_paths or result.apply):
+            has_any_path = bool(result.shadow_root or result.manifest)
+            has_all_paths = bool(result.shadow_root and result.manifest)
+            if phase == "plan" and (has_any_path or result.apply):
                 self.error("plan does not accept mutation arguments")
-            if phase in {"prepare", "publish"} and (not has_paths or not result.apply):
+            if phase in {"prepare", "publish"} and (
+                not has_all_paths or not result.apply
+            ):
                 self.error("prepare/publish require paths and --apply")
         return result
 

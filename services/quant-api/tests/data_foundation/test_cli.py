@@ -200,6 +200,16 @@ def test_session_anchor_repair_plan_is_readonly_and_uses_dedicated_service() -> 
 
 def test_session_anchor_repair_prepare_requires_explicit_paths_and_apply() -> None:
     with pytest.raises(CliUsageError):
+        build_parser().parse_args([
+            "data",
+            "session-anchor-repair",
+            "--phase",
+            "plan",
+            "--shadow-root",
+            "/tmp/shadow",
+        ])
+
+    with pytest.raises(CliUsageError):
         build_parser().parse_args(
             ["data", "session-anchor-repair", "--phase", "prepare"]
         )

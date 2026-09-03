@@ -157,6 +157,29 @@ def test_plan_reports_stable_scope_without_provider_or_file_writes(
     assert not shadow.exists()
 
 
+def test_plan_rejects_a_non_anchor_gap_instead_of_expanding_repair_scope(
+    repair_context,
+) -> None:
+    session, root, provider = repair_context
+    key = DatasetKey("continuous", "jm", "MAIN", "1m")
+    store = CanonicalMonthlyStore(root)
+    current = store.read_month(key, 2026, 9)
+    with_gap = tuple(bar for bar in current if bar.bar_end.minute != 10)
+    store.publish(PublishRequest(
+        key,
+        2026,
+        9,
+        with_gap,
+        tuple(bar.bar_end for bar in with_gap),
+    ))
+    service = SessionAnchorRepairService(session, canonical_root=root, provider=provider)
+
+    with pytest.raises(SessionAnchorRepairError, match="SESSION_ANCHOR_BASE_INVALID"):
+        service.plan()
+
+    assert provider.requests == []
+
+
 def test_prepare_rebuilds_shadow_from_real_missing_minute_without_touching_active(
     repair_context,
     tmp_path: Path,

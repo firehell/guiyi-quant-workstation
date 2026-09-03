@@ -177,10 +177,17 @@ class SessionAnchorRepairService:
             bars = store.read_month(item.key, item.year, item.month)
             days = tuple(sorted({bar.trading_day for bar in bars}))
             expected = self._minute_ends(item.key.symbol, days)
-            existing = {bar.bar_end for bar in bars}
-            if not existing <= set(expected):
+            baseline = self._provider_label_minute_ends(item.key.symbol, days)
+            existing = tuple(bar.bar_end for bar in bars)
+            missing_anchors = set(expected) - set(baseline)
+            if (
+                existing != baseline
+                or not _catalog_matches_bars(item, bars)
+                or not set(baseline) <= set(expected)
+                or not missing_anchors
+            ):
                 raise SessionAnchorRepairError("SESSION_ANCHOR_BASE_INVALID")
-            missing += len(set(expected) - existing)
+            missing += len(missing_anchors)
         session_count = int(self.session.scalar(
             select(text("count(*)"))
             .select_from(TradingSession)
@@ -247,11 +254,18 @@ class SessionAnchorRepairService:
                     for window in self._corrected_sessions(item.key.symbol, day)
                 )
                 expected = self._minute_ends(item.key.symbol, trading_days)
+                baseline = self._provider_label_minute_ends(
+                    item.key.symbol, trading_days
+                )
                 current_by_end = {bar.bar_end: bar for bar in current}
-                if len(current_by_end) != len(current) or not set(current_by_end) <= set(expected):
-                    raise SessionAnchorRepairError("SESSION_ANCHOR_BASE_INVALID")
-                missing = tuple(value for value in expected if value not in current_by_end)
-                if not missing:
+                missing = tuple(value for value in expected if value not in set(baseline))
+                if (
+                    tuple(current_by_end) != baseline
+                    or len(current_by_end) != len(current)
+                    or not _catalog_matches_bars(item, current)
+                    or not set(baseline) <= set(expected)
+                    or not missing
+                ):
                     raise SessionAnchorRepairError("SESSION_ANCHOR_BASE_INVALID")
                 batch = self.provider.fetch_many((BarFetchRequest(item.key, missing),))[0]
                 fetched = {bar.bar_end: bar for bar in batch.bars}
@@ -481,21 +495,43 @@ class SessionAnchorRepairService:
             )
         )
 
+    def _provider_label_minute_ends(
+        self,
+        symbol: str,
+        trading_days: tuple[date, ...],
+    ) -> tuple[datetime, ...]:
+        return tuple(
+            window.start + timedelta(minutes=offset)
+            for day in trading_days
+            for window in self._provider_label_sessions(symbol, day)
+            for offset in range(
+                1,
+                int((window.end - window.start).total_seconds() // 60) + 1,
+            )
+        )
+
     def _corrected_sessions(self, symbol: str, trading_day: date) -> tuple[SessionWindow, ...]:
+        windows = self._provider_label_sessions(symbol, trading_day)
+        return tuple(
+            SessionWindow(window.start - timedelta(minutes=1), window.end)
+            for window in windows
+        )
+
+    def _provider_label_sessions(
+        self,
+        symbol: str,
+        trading_day: date,
+    ) -> tuple[SessionWindow, ...]:
         exchange_code = self.session.scalar(
             select(Instrument.exchange_code).where(Instrument.symbol == symbol)
         )
         if exchange_code is None:
             raise SessionAnchorRepairError("SESSION_ANCHOR_BASE_INVALID")
-        windows = session_windows_for_trading_day(
+        return session_windows_for_trading_day(
             self.session,
             exchange=exchange_code,
             symbol=symbol,
             trading_day=trading_day,
-        )
-        return tuple(
-            SessionWindow(window.start - timedelta(minutes=1), window.end)
-            for window in windows
         )
 
     def _identity(self, item: _Partition) -> tuple[object, ...]:
@@ -676,6 +712,24 @@ def _scope_sha(partitions: tuple[_Partition, ...]) -> str:
     ]
     encoded = json.dumps(payload, separators=(",", ":"), ensure_ascii=True).encode()
     return hashlib.sha256(encoded).hexdigest()
+
+
+def _catalog_matches_bars(
+    item: _Partition,
+    bars: tuple[object, ...],
+) -> bool:
+    if not bars or len(bars) != item.row_count:
+        return False
+    first_end = getattr(bars[0], "bar_end", None)
+    last_end = getattr(bars[-1], "bar_end", None)
+    return (
+        isinstance(first_end, datetime)
+        and isinstance(last_end, datetime)
+        and isinstance(item.coverage_start, datetime)
+        and isinstance(item.coverage_end, datetime)
+        and _aware(first_end - timedelta(minutes=1)) == _aware(item.coverage_start)
+        and _aware(last_end) == _aware(item.coverage_end)
+    )
 
 
 def _latest_cleanup_days(values: set[date]) -> tuple[date, ...]:
