@@ -360,8 +360,8 @@ test('HTDY resolves immutable Event focus across every official frequency', asyn
     ['15m', '2026-09-03T02:30:00.000Z', '2026-09-03'],
     ['30m', '2026-09-03T02:30:00.000Z', '2026-09-03'],
     ['60m', '2026-09-03T02:30:00.000Z', '2026-09-03'],
-    ['1d', '2026-07-01T07:00:00.000Z', '2026-07-01'],
-    ['1w', '2026-07-01T07:00:00.000Z', '2026-07-01'],
+    ['1d', '2026-07-01T02:45:00.000Z', '2026-07-01'],
+    ['1w', '2026-07-01T02:45:00.000Z', '2026-07-01'],
   ]
   let currentCase = null
   const requests = await mockMarketDetail(page, {
@@ -369,7 +369,7 @@ test('HTDY resolves immutable Event focus across every official frequency', asyn
       const frequency = url.searchParams.get('frequency')
       if (frequency === '1d' || frequency === '1w') {
         return { bars: Array.from({ length: 60 }, (_, index) => {
-          const day = new Date(Date.UTC(2026, 6, 1 + index)).toISOString().slice(0, 10)
+          const day = new Date(Date.UTC(2026, 6, 1 + index * (frequency === '1w' ? 7 : 1))).toISOString().slice(0, 10)
           return { ...detailBar(symbol, index, 100 + index), bar_end: `${day}T07:00:00.000Z`, trading_day: day }
         }) }
       }
@@ -381,7 +381,8 @@ test('HTDY resolves immutable Event focus across every official frequency', asyn
     currentCase = [frequency, focus, tradingDay]
     await page.goto(`/market/chart?symbol=jm&view=htdy&series_kind=actual_dominant&frequency=${frequency}&focus_bar_end=${encodeURIComponent(focus)}`)
     await expect(page.locator('[data-detail-ready="true"]')).toBeVisible()
-    await expect(page.getByText('首次识别 Event', { exact: true }).first()).toBeVisible()
+    const eventFact = page.locator('[data-detail-section="facts"] > div').filter({ hasText: '首次识别 Event' })
+    await expect(eventFact).toContainText('买入观察')
     await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-alert-marker-count', '1')
     await expect.poll(() => new URL(page.url()).searchParams.has('focus_bar_end')).toBe(false)
   }
