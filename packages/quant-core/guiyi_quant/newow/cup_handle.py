@@ -102,6 +102,29 @@ class CupHandleStepResult:
     candidate_checks: int
 
 
+def cup_evaluation_ready(
+    state: CupHandleStateValue,
+    *,
+    profile: NewowTrendProfile = NEWOW_TREND_D1_V1,
+) -> bool:
+    """Whether the Cup kernel can evaluate a minimum eligible cup body."""
+    try:
+        return (
+            isinstance(state, CupHandleStateValue)
+            and isinstance(state.physical_contract, str)
+            and bool(state.physical_contract)
+            and isinstance(state.segment_id, str)
+            and bool(state.segment_id)
+            and state.eligible_started
+            and state.atr_state.atr is not None
+            and isfinite(state.atr_state.atr)
+            and state.atr_state.atr > 0.0
+            and len(state.eligible_bars) >= profile.cup_min_bars
+        )
+    except (AttributeError, TypeError, ValueError):
+        return False
+
+
 @dataclass(frozen=True, slots=True)
 class _BodyFacts:
     breakdown: Mapping[str, float]

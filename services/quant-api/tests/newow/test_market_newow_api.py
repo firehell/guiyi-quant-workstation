@@ -233,6 +233,7 @@ def test_newow_api_keeps_cup_marker_history_and_treats_range_limit_as_422(monkey
             "CUP_HANDLE_BREAKOUT",
             "CUP_HANDLE_WEAKENED",
             "CUP_HANDLE_INVALIDATED",
+            "CUP_HANDLE_EXPIRED",
         )
     )
     with _client(monkeypatch, value) as client:
@@ -245,6 +246,7 @@ def test_newow_api_keeps_cup_marker_history_and_treats_range_limit_as_422(monkey
         "CUP_HANDLE_BREAKOUT",
         "CUP_HANDLE_WEAKENED",
         "CUP_HANDLE_INVALIDATED",
+        "CUP_HANDLE_EXPIRED",
     ]
 
     monkeypatch.setattr(

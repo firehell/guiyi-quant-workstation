@@ -356,6 +356,56 @@ def test_detail_stops_after_actual_read_when_visible_actual_bars_exceed_1500() -
     assert market_data.page_requests == []
 
 
+def test_warmup_acceptance_c_prerank_atr_does_not_make_cup_geometry_ready() -> None:
+    days = tuple(_START + timedelta(days=index) for index in range(130))
+    physical = tuple(_bar(day, 100 + index) for index, day in enumerate(days))
+    segment = ResolvedContractSegment("RB2605", days[-1], days[-1])
+    service = NewowTrendDetailService(
+        _FakeMarketData(
+            actual=(physical[-1],),
+            segments=(segment,),
+            physical={"RB2605": physical},
+        )
+    )
+
+    result = service.query(NewowTrendDetailQuery("rb", days[-1], days[-1]))
+
+    assert result.warnings == ("NEWOW_CUP_WARMUP_INSUFFICIENT",)
+
+
+def _single_segment_result(*, count: int, eligible_start: int = 0):
+    days = tuple(_START + timedelta(days=index) for index in range(count))
+    physical = tuple(_bar(day, 100 + index) for index, day in enumerate(days))
+    segment = ResolvedContractSegment("RB2605", days[eligible_start], days[-1])
+    actual = physical[eligible_start:]
+    return NewowTrendDetailService(
+        _FakeMarketData(actual=actual, segments=(segment,), physical={"RB2605": physical})
+    ).query(NewowTrendDetailQuery("rb", days[eligible_start], days[-1]))
+
+
+def test_warmup_acceptance_a_all_kernels_unavailable() -> None:
+    assert set(_single_segment_result(count=5).warnings) == {
+        "NEWOW_TREND_WARMUP_INSUFFICIENT",
+        "NEWOW_D123_WARMUP_INSUFFICIENT",
+        "NEWOW_CUP_WARMUP_INSUFFICIENT",
+    }
+
+
+def test_warmup_acceptance_b_only_d123_is_unavailable_after_trend_and_cup_ready() -> None:
+    assert _single_segment_result(count=40).warnings == ("NEWOW_D123_WARMUP_INSUFFICIENT",)
+
+
+def test_warmup_acceptance_d_early_history_does_not_leave_current_warning() -> None:
+    assert _single_segment_result(count=130).warnings == ()
+
+
+def test_warmup_acceptance_e_no_signal_is_not_unavailable() -> None:
+    result = _single_segment_result(count=130)
+    assert result.warnings == ()
+    assert not result.markers
+    assert not result.cup_handles
+
+
 def test_detail_fails_closed_when_same_contract_prefix_exceeds_one_2000_bar_page() -> (
     None
 ):

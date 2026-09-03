@@ -6,6 +6,7 @@ from datetime import date, datetime, timedelta
 import re
 
 from guiyi_quant.newow.engine import NewowTrendD1Engine, NewowTrendD1EngineState
+from guiyi_quant.newow.cup_handle import cup_evaluation_ready
 from guiyi_quant.newow.models import (
     NewowCupHandleOverlay,
     NewowDailyBar,
@@ -396,7 +397,6 @@ def _warnings(
         and escape.previous_var4 is not None
     ):
         warnings.append("NEWOW_D123_WARMUP_INSUFFICIENT")
-    cup = state.cup_handle_state
-    if not (cup.eligible_started and cup.atr_state.atr is not None):
+    if not cup_evaluation_ready(state.cup_handle_state, profile=NEWOW_TREND_D1_V1):
         warnings.append("NEWOW_CUP_WARMUP_INSUFFICIENT")
     return tuple(warnings)
