@@ -137,6 +137,28 @@ test('projects all Newow marker families newest first with family order, histori
   }
 })
 
+test('keeps same-bar Cup markers in the frozen lifecycle order instead of marker-id order', () => {
+  const data = snapshot()
+  data.cup_markers = [
+    marker('a-expired', 'CUP_HANDLE_EXPIRED', data.bars[2]!.bar_end, 'newow_cup_handle_v1'),
+    marker('b-invalidated', 'CUP_HANDLE_INVALIDATED', data.bars[2]!.bar_end, 'newow_cup_handle_v1'),
+    marker('c-weakened', 'CUP_HANDLE_WEAKENED', data.bars[2]!.bar_end, 'newow_cup_handle_v1'),
+    marker('d-breakout', 'CUP_HANDLE_BREAKOUT', data.bars[2]!.bar_end, 'newow_cup_handle_v1'),
+    marker('z-ready', 'CUP_HANDLE_READY', data.bars[2]!.bar_end, 'newow_cup_handle_v1'),
+  ]
+
+  assert.deepEqual(
+    newowMarkerHistory(data).map((item) => item.markerType),
+    [
+      'CUP_HANDLE_READY',
+      'CUP_HANDLE_BREAKOUT',
+      'CUP_HANDLE_WEAKENED',
+      'CUP_HANDLE_INVALIDATED',
+      'CUP_HANDLE_EXPIRED',
+    ],
+  )
+})
+
 test('fails closed on a stale snapshot identity instead of projecting strategy facts', () => {
   const data = snapshot()
   data.instrument = { ...data.instrument, product: 'ag' }

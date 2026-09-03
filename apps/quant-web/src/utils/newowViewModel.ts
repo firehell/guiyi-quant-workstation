@@ -26,6 +26,17 @@ const D_PRIORITY: Readonly<Record<NewowEscapeMarkerType, number>> = {
   NEWOW_ESCAPE_D3: 2,
 }
 
+const SAME_FAMILY_MARKER_ORDER: Readonly<Record<string, number>> = {
+  NEWOW_ESCAPE_D1: 0,
+  NEWOW_ESCAPE_D2: 1,
+  NEWOW_ESCAPE_D3: 2,
+  CUP_HANDLE_READY: 0,
+  CUP_HANDLE_BREAKOUT: 1,
+  CUP_HANDLE_WEAKENED: 2,
+  CUP_HANDLE_INVALIDATED: 3,
+  CUP_HANDLE_EXPIRED: 4,
+}
+
 const CUP_STATE_LABEL: Readonly<Record<NewowCupState, string>> = {
   FORMING: '形成',
   READY: '就绪',
@@ -227,10 +238,7 @@ function snapshotForIdentity(
 }
 
 function markerTypeOrder(value: string | undefined): number {
-  if (value === 'NEWOW_ESCAPE_D1') return 0
-  if (value === 'NEWOW_ESCAPE_D2') return 1
-  if (value === 'NEWOW_ESCAPE_D3') return 2
-  return 0
+  return value === undefined ? 0 : SAME_FAMILY_MARKER_ORDER[value] ?? 0
 }
 
 function lexical(left: string, right: string): number {
