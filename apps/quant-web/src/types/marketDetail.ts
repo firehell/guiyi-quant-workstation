@@ -104,6 +104,8 @@ export interface MarketDetailHistoryItem {
   source: MarketDetailSource
   barEnd?: string
   contract?: string
+  markerType?: string
+  formulaVersion?: string
   notificationAttemptedAt?: string | null
 }
 
