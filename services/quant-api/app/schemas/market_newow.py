@@ -19,13 +19,14 @@ class NewowMetaOut(_Out):
     frequency: str
     series_kind: str
     calculation_identity: str
+    data_revision_identity: str | None
     request_identity: str
 
 
 class NewowInstrumentOut(_Out):
     product: str
     display_name: str | None
-    latest_physical_contract: str | None
+    last_visible_physical_contract: str | None
 
 
 class NewowBarOut(_Out):
@@ -110,6 +111,7 @@ class NewowTrendDetailResponse(_Out):
     trend_band: list[NewowTrendBandOut]
     trend_markers: list[NewowMarkerOut]
     escape_markers: list[NewowMarkerOut]
+    cup_markers: list[NewowMarkerOut]
     cup_handles: list[NewowCupHandleOut]
     rollover_seams: list[NewowRolloverSeamOut]
     legend: dict[str, str]
