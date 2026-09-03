@@ -16,6 +16,7 @@ from guiyi_quant.newow.cup_handle import (
     _body_facts,
     _pretrend_score,
     calculate_cup_handle_series,
+    cup_evaluation_ready,
     initial_cup_handle_state,
     step_cup_handle,
 )
@@ -107,6 +108,36 @@ def test_wilder_atr14_seed_and_recursive_update_are_exact() -> None:
     jumped = step_cup_handle(seeded[-1].state, _bar(14, 130))
 
     assert jumped.state.atr_state.atr == pytest.approx((13 * 2 + 18) / 14)
+
+
+def test_cup_evaluation_readiness_requires_eligible_geometry_not_only_prerank_atr() -> None:
+    state = initial_cup_handle_state()
+    assert not cup_evaluation_ready(state)
+    for index in range(129):
+        state = step_cup_handle(state, _bar(index, 100 + index, eligible=False)).state
+    assert not cup_evaluation_ready(state)
+
+    state = step_cup_handle(state, _bar(129, 229)).state
+    assert not cup_evaluation_ready(state)
+    for index in range(130, 154):
+        state = step_cup_handle(state, _bar(index, 100 + index)).state
+    assert cup_evaluation_ready(state)
+    assert not cup_evaluation_ready(
+        replace(state, atr_state=replace(state.atr_state, atr=None))
+    )
+    assert not cup_evaluation_ready(replace(state, segment_id=None))
+    foreign_snapshot = replace(
+        state.eligible_bars[-1],
+        bar=replace(
+            state.eligible_bars[-1].bar,
+            physical_contract="JM2701",
+            segment_id="jm:JM2701:2026-01-01",
+        ),
+    )
+    assert not cup_evaluation_ready(
+        replace(state, eligible_bars=(*state.eligible_bars[:-1], foreign_snapshot))
+    )
+    assert not cup_evaluation_ready(object())  # type: ignore[arg-type]
 
 
 def test_zero_wilder_seed_is_unavailable_without_invalidating_restored_state() -> None:
