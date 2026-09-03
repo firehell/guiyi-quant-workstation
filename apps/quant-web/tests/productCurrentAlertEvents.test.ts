@@ -10,7 +10,7 @@ import {
   alertEventRuleShortLabel,
 } from '../src/utils/alertRules.ts'
 
-const chartSource = readFileSync(new URL('../src/pages/market/chart.vue', import.meta.url), 'utf-8')
+const legacyChartSource = readFileSync(new URL('../src/pages/market/LegacyMarketChart.vue', import.meta.url), 'utf-8')
 const sidebarSource = readFileSync(new URL('../src/components/market/ProductCheckSidebar.vue', import.meta.url), 'utf-8')
 
 test('current events refresh only on an explicit call', async () => {
@@ -72,9 +72,9 @@ test('HTDY labels and combined direction remain observation-only', () => {
 })
 
 test('sidebar observation is derived from the latest HTDY marker', () => {
-  assert.match(chartSource, /selectedOverlay\.value !== 'htdy'/)
-  assert.match(chartSource, /buildKlineDerivedData\(bars\.value, \['htdy'\]\)/)
-  assert.match(chartSource, /htdy\?\.markers\.at\(-1\) \?\? null/)
+  assert.match(legacyChartSource, /selectedOverlay\.value !== 'htdy'/)
+  assert.match(legacyChartSource, /buildKlineDerivedData\(bars\.value, \['htdy'\]\)/)
+  assert.match(legacyChartSource, /htdy\?\.markers\.at\(-1\) \?\? null/)
   assert.match(sidebarSource, /htdyObservation: KlineMarker \| null/)
   assert.match(sidebarSource, /v-if="htdyObservation"/)
 })

@@ -7,6 +7,7 @@ import {
   type MarketDetailView,
   type MarketDetailViewRestore,
 } from '../types/marketDetail.ts'
+import { isHtdyAlertEvent } from './alertRules.ts'
 
 const SERIES_KINDS = new Set<SeriesKind>(['continuous', 'actual_dominant', 'contract'])
 const FREQUENCIES = new Set<MarketFrequency>(MARKET_FREQUENCIES)
@@ -80,7 +81,7 @@ export function resolveViewSwitchIdentity(
 }
 
 export function marketDetailEventIdentity(event: AlertEvent): MarketDetailIdentity {
-  if (event.rule_code === 'htdy_original_15m') {
+  if (isHtdyAlertEvent(event)) {
     return {
       view: 'htdy', symbol: event.symbol, seriesKind: 'actual_dominant',
       frequency: event.frequency, focusBarEnd: event.bar_end,
