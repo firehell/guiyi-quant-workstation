@@ -155,6 +155,7 @@ onBeforeUnmount(controller.dispose)
           :identity="routeResult.identity"
           :restore="{ htdy: preferences.htdy, free: preferences.free }"
           @select="selectIdentity"
+          @contract-cleared="selectContractCleared"
         />
         <section class="market-detail-page__workspace" data-detail-section="workspace-slot">
           <FreeChartWorkspace
@@ -170,8 +171,6 @@ onBeforeUnmount(controller.dispose)
             :has-more-before="controller.hasMoreBefore.value"
             :load-earlier="controller.loadMoreBefore"
             :identity-warning="identityWarning"
-            @select-identity="selectIdentity"
-            @contract-cleared="selectContractCleared"
             @update-preferences="updateFreePreferences"
           />
         </section>

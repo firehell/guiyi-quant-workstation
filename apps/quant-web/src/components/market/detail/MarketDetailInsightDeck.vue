@@ -4,12 +4,13 @@ import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { MarketDetailDisclosureSection } from '@/types/marketDetail'
 import MarketDetailDisclosure from './MarketDetailDisclosure.vue'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   identityKey: string
   sections: readonly MarketDetailDisclosureSection[]
-}>()
+  defaultOpen?: boolean
+}>(), { defaultOpen: true })
 
-const openIds = ref<string[]>(props.sections[0] ? [props.sections[0].id] : [])
+const openIds = ref<string[]>(props.defaultOpen && props.sections[0] ? [props.sections[0].id] : [])
 const mobile = ref(false)
 let media: MediaQueryList | null = null
 
@@ -27,7 +28,7 @@ function toggle(id: string) {
 }
 
 function reset() {
-  openIds.value = props.sections[0] ? [props.sections[0].id] : []
+  openIds.value = props.defaultOpen && props.sections[0] ? [props.sections[0].id] : []
 }
 
 watch(() => props.identityKey, reset)

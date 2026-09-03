@@ -91,8 +91,11 @@ test('free handles research errors and every Range state without fabricating a s
     assert.equal(model.view, 'free')
     assert.equal(model.history.length, 0)
     assert.equal('score' in model, false)
-    if (rangeState === 'loading') assert.match(model.semanticBanner.text, /箱体历史预载中/)
-    if (rangeState === 'insufficient') assert.match(model.semanticBanner.text, /箱体历史预载不足/)
+    if (rangeState !== 'disabled') {
+      assert.match(model.semanticBanner.text, /Range Detector 只读回画展示；确认前不可用于策略判断。/)
+    }
+    if (rangeState === 'loading') assert.match(model.semanticBanner.text, /箱体历史预载中；Range Detector/)
+    if (rangeState === 'insufficient') assert.match(model.semanticBanner.text, /箱体历史预载不足；Range Detector/)
     if (rangeState === 'disabled' || rangeState === 'ready') assert.match(model.semanticBanner.text, /不生成策略结论/)
   }
 })

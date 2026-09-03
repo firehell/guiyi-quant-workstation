@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import KlineChart from '@/components/kline/KlineChart.vue'
 import MarketDetailIcon from '@/components/market/detail/MarketDetailIcon.vue'
@@ -16,14 +16,46 @@ const props = withDefaults(defineProps<{
   visibleMainIndicators: MainIndicatorId[]
   rangeDetectorSourceIdentity: string
   rangeDetectorAnchorTime: string | null
+  identityKey: string
+  focusBarEnd?: string | null
   markers?: KlineMarker[]
 }>(), { markers: () => [] })
 
-const emit = defineEmits<{ loadEarlier: [] }>()
+const emit = defineEmits<{
+  loadEarlier: []
+  'focus-resolved': [focusBarEnd: string]
+}>()
 const chart = ref<InstanceType<typeof KlineChart> | null>(null)
 const root = ref<HTMLElement | null>(null)
 const followLatest = ref(true)
 const fullscreen = ref(false)
+let resolvedFocusKey: string | null = null
+
+function resolveFocus(): boolean {
+  if (!props.focusBarEnd) return false
+  const focusKey = `${props.identityKey}:${props.focusBarEnd}`
+  if (resolvedFocusKey === focusKey) return true
+  if (!chart.value?.revealTime(props.focusBarEnd)) return false
+  resolvedFocusKey = focusKey
+  followLatest.value = false
+  emit('focus-resolved', props.focusBarEnd)
+  return true
+}
+
+watch(() => props.identityKey, () => {
+  resolvedFocusKey = null
+  followLatest.value = true
+})
+
+watch(() => [props.identityKey, props.focusBarEnd], async () => {
+  await nextTick()
+  resolveFocus()
+}, { immediate: true })
+
+onMounted(async () => {
+  await nextTick()
+  requestAnimationFrame(() => resolveFocus())
+})
 
 watch(() => props.mutation, async (mutation) => {
   await nextTick()
@@ -34,6 +66,7 @@ watch(() => props.mutation, async (mutation) => {
     for (const bar of mutation.bars) chart.value.updateBar(bar)
     if (followLatest.value) chart.value.scrollToLatest()
   }
+  resolveFocus()
 }, { deep: true })
 
 async function toggleFullscreen() {

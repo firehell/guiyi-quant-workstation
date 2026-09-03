@@ -75,7 +75,16 @@ test('Free Range reaches its fixed ready boundary without strategy markers', asy
   await expect.poll(() => requests.filter((url) => url.pathname.endsWith('/bars/page')).length).toBeGreaterThanOrEqual(2)
   await expect(page.locator('[data-detail-workspace="free"]')).toHaveAttribute('data-range-detector-warmup', 'ready')
   await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-rendered-marker-count', '0')
+  await expect(page.getByRole('status')).toContainText('Range Detector 只读回画展示；确认前不可用于策略判断。')
   await expect(page.getByText('箱体历史预载不足')).toHaveCount(0)
+})
+
+test('Free shows the fixed Range read-only warning while history is insufficient', async ({ page }) => {
+  await mockMarketDetail(page)
+  await page.goto(freeJm)
+
+  await page.getByLabel('箱体识别（Range）').check()
+  await expect(page.getByRole('status')).toContainText('箱体历史预载不足；Range Detector 只读回画展示；确认前不可用于策略判断。')
 })
 
 test('Free pagination keeps an away-from-latest viewport while prepending history', async ({ page }) => {
@@ -123,6 +132,95 @@ test('Free exposes fullscreen enter, exit, and return-to-latest controls', async
   await expect(page.getByRole('button', { name: '全屏图表', exact: true })).toBeVisible()
 })
 
+test('shared K-line focus retries an unresolved target and clears it on identity replacement', async ({ page }) => {
+  await mockMarketDetail(page)
+  await page.goto(freeJm)
+  await page.evaluate(async () => {
+    const { createApp, h, ref } = await import('/node_modules/.vite/deps/vue.js')
+    const { default: MarketKlineStage } = await import('/src/components/market/detail/MarketKlineStage.vue')
+    const bars = [
+      { time: '2026-09-03T02:30:00Z', open: 100, high: 102, low: 99, close: 101, volume: 1000, openInterest: 2000 },
+      { time: '2026-09-03T02:45:00Z', open: 101, high: 103, low: 100, close: 102, volume: 1001, openInterest: 2001 },
+    ]
+    const focus = ref('2026-09-03T00:00:00Z')
+    const identity = ref('focus-a')
+    const resolved = []
+    const app = createApp({
+      setup() {
+        return () => h(MarketKlineStage, {
+          bars,
+          mutation: { kind: 'replace', bars },
+          loading: false,
+          error: null,
+          period: '15m',
+          seriesKind: 'actual_dominant',
+          visibleMainIndicators: [],
+          rangeDetectorSourceIdentity: 'focus-test',
+          rangeDetectorAnchorTime: null,
+          identityKey: identity.value,
+          focusBarEnd: focus.value,
+          onFocusResolved: (value) => resolved.push(value),
+        })
+      },
+    })
+    const host = document.createElement('div')
+    host.id = 'focus-stage-contract'
+    document.body.append(host)
+    app.mount(host)
+    window.__marketKlineFocusContract = { focus, identity, resolved, app }
+  })
+
+  await expect(page.locator('#focus-stage-contract').getByRole('button', { name: '回到最新', exact: true })).toHaveCount(0)
+  await page.evaluate(() => { window.__marketKlineFocusContract.focus.value = '2026-09-03T02:45:00Z' })
+  await expect(page.locator('#focus-stage-contract').getByRole('button', { name: '回到最新', exact: true })).toBeVisible()
+  await expect.poll(() => page.evaluate(() => window.__marketKlineFocusContract.resolved)).toEqual(['2026-09-03T02:45:00Z'])
+  await page.evaluate(() => {
+    window.__marketKlineFocusContract.identity.value = 'focus-b'
+    window.__marketKlineFocusContract.focus.value = null
+  })
+  await expect(page.locator('#focus-stage-contract').getByRole('button', { name: '回到最新', exact: true })).toHaveCount(0)
+})
+
+test('shared K-line focus also resolves an existing daily trading day', async ({ page }) => {
+  await mockMarketDetail(page)
+  await page.goto(freeJm)
+  await page.evaluate(async () => {
+    const { createApp, h } = await import('/node_modules/.vite/deps/vue.js')
+    const { default: MarketKlineStage } = await import('/src/components/market/detail/MarketKlineStage.vue')
+    const bars = [
+      { time: '2026-09-01T07:00:00Z', trading_day: '2026-09-01', open: 100, high: 102, low: 99, close: 101, volume: 1000, openInterest: 2000 },
+      { time: '2026-09-02T07:00:00Z', trading_day: '2026-09-02', open: 101, high: 103, low: 100, close: 102, volume: 1001, openInterest: 2001 },
+    ]
+    const resolved = []
+    const app = createApp({
+      setup() {
+        return () => h(MarketKlineStage, {
+          bars,
+          mutation: { kind: 'replace', bars },
+          loading: false,
+          error: null,
+          period: '1d',
+          seriesKind: 'actual_dominant',
+          visibleMainIndicators: [],
+          rangeDetectorSourceIdentity: 'focus-daily-test',
+          rangeDetectorAnchorTime: null,
+          identityKey: 'focus-daily',
+          focusBarEnd: '2026-09-02T07:00:00Z',
+          onFocusResolved: (value) => resolved.push(value),
+        })
+      },
+    })
+    const host = document.createElement('div')
+    host.id = 'focus-daily-stage-contract'
+    document.body.append(host)
+    app.mount(host)
+    window.__marketKlineDailyFocusContract = { resolved, app }
+  })
+
+  await expect(page.locator('#focus-daily-stage-contract').getByRole('button', { name: '回到最新', exact: true })).toBeVisible()
+  await expect.poll(() => page.evaluate(() => window.__marketKlineDailyFocusContract.resolved)).toEqual(['2026-09-02T07:00:00Z'])
+})
+
 test('Free identity controls keep the selected contract in the URL', async ({ page }) => {
   const requests = await mockMarketDetail(page)
   await page.goto(freeJm)
@@ -138,21 +236,33 @@ test('Free identity controls keep the selected contract in the URL', async ({ pa
   ))).toBe(true)
 })
 
+test('Free uses one shared series and frequency control surface while keeping a contract selector', async ({ page }) => {
+  await mockMarketDetail(page)
+  await page.goto(freeJm)
+
+  await expect(page.getByRole('button', { name: '真实主力', exact: true })).toHaveCount(1)
+  await expect(page.getByRole('button', { name: '15m', exact: true })).toHaveCount(1)
+  await expect(page.getByLabel('指定合约')).toHaveCount(1)
+  await expect(page.getByRole('button', { name: /市场背景/ })).toHaveAttribute('aria-expanded', 'false')
+  await expect(page.getByRole('button', { name: /数据详情/ })).toHaveAttribute('aria-expanded', 'false')
+})
+
 test('Free reloads continuous, 60m, and daily identities without inventing a physical contract', async ({ page }) => {
   const requests = await mockMarketDetail(page)
   await page.goto(freeJm)
-  const controls = page.getByLabel('自由看盘控制')
+  const seriesControls = page.getByRole('group', { name: '序列' })
+  const frequencyControls = page.getByRole('group', { name: '周期' })
 
-  await controls.getByRole('button', { name: '主连', exact: true }).click()
+  await seriesControls.getByRole('button', { name: '主连', exact: true }).click()
   await expect.poll(() => new URL(page.url()).searchParams.get('series_kind')).toBe('continuous')
   await expect(page.locator('.detail-topbar__contract')).toHaveText('JM')
   await expect.poll(() => requests.some((url) => (
     url.pathname.endsWith('/bars/page') && url.searchParams.get('series_kind') === 'continuous'
   ))).toBe(true)
 
-  await controls.getByRole('button', { name: '60m', exact: true }).click()
+  await frequencyControls.getByRole('button', { name: '60m', exact: true }).click()
   await expect.poll(() => new URL(page.url()).searchParams.get('frequency')).toBe('60m')
-  await controls.getByRole('button', { name: '日K', exact: true }).click()
+  await frequencyControls.getByRole('button', { name: '日K', exact: true }).click()
   await expect.poll(() => new URL(page.url()).searchParams.get('frequency')).toBe('1d')
   await expect.poll(() => requests.some((url) => (
     url.pathname.endsWith('/bars/page') && url.searchParams.get('frequency') === '1d'

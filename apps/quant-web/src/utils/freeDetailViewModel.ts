@@ -11,11 +11,14 @@ export function buildFreeDetailViewModel(input: {
   const dataStatus = input.header.freshness === 'fresh'
     ? 'ready'
     : input.header.freshness === 'stale' ? 'stale' : 'unavailable'
-  const rangeMessage = input.rangeState === 'loading'
-    ? '箱体历史预载中'
-    : input.rangeState === 'insufficient'
-      ? '箱体历史预载不足，暂不展示 Range'
-      : null
+  const rangeRisk = 'Range Detector 只读回画展示；确认前不可用于策略判断。'
+  const rangeMessage = input.rangeState === 'ready'
+    ? rangeRisk
+    : input.rangeState === 'loading'
+      ? `箱体历史预载中；${rangeRisk}`
+      : input.rangeState === 'insufficient'
+        ? `箱体历史预载不足；${rangeRisk}`
+        : null
   const semanticStatement = '自由看盘仅提供行情与通用指标复核，不生成策略结论。'
   return {
     view: 'free',

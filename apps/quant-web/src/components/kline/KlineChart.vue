@@ -266,10 +266,13 @@ function scrollToLatest(): void {
 }
 
 function revealTime(iso: string): boolean {
-  if (!chart || isDaily() || !props.bars.length) return false
+  if (!chart || !props.bars.length) return false
   const parsed = Date.parse(iso)
   if (!Number.isFinite(parsed)) return false
-  const index = renderedBars.findIndex((bar) => Date.parse(bar.time) === parsed)
+  const targetDay = iso.slice(0, 10)
+  const index = isDaily()
+    ? renderedBars.findIndex((bar) => (bar.trading_day ?? bar.time.slice(0, 10)) === targetDay)
+    : renderedBars.findIndex((bar) => Date.parse(bar.time) === parsed)
   if (index < 0) return false
   if (followLatest) {
     followLatest = false

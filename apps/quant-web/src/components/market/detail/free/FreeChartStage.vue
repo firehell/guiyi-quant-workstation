@@ -16,9 +16,14 @@ const props = withDefaults(defineProps<{
   visibleMainIndicators: MainIndicatorId[]
   rangeDetectorSourceIdentity: string
   rangeDetectorAnchorTime: string | null
+  identityKey: string
+  focusBarEnd?: string | null
   markers?: readonly KlineMarker[]
 }>(), { markers: () => [] })
-const emit = defineEmits<{ loadEarlier: [] }>()
+const emit = defineEmits<{
+  loadEarlier: []
+  'focus-resolved': [focusBarEnd: string]
+}>()
 const freeMarkers = computed(() => markersForDetailView('free', props.markers))
 </script>
 
@@ -33,7 +38,10 @@ const freeMarkers = computed(() => markersForDetailView('free', props.markers))
     :visible-main-indicators="visibleMainIndicators"
     :range-detector-source-identity="rangeDetectorSourceIdentity"
     :range-detector-anchor-time="rangeDetectorAnchorTime"
+    :identity-key="identityKey"
+    :focus-bar-end="focusBarEnd"
     :markers="freeMarkers"
     @load-earlier="emit('loadEarlier')"
+    @focus-resolved="emit('focus-resolved', $event)"
   />
 </template>
