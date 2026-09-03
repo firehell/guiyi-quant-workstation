@@ -453,18 +453,58 @@ function validateCupHandles(
   }
   const lastBarAt = bars.length === 0 ? null : instantValue(bars.at(-1)!.bar_end)
   if (lastBarAt === null && handles.length > 0) throw new Error('cup_handles require visible bars')
-  for (const handle of handles) {
-    if (lastBarAt !== null && instantValue(handle.state_changed_at) > lastBarAt) {
-      throw new Error('cup handle state_changed_at is after the visible window')
-    }
-  }
   const known = new Set(ids)
+  const markerSegments = new Map<string, Set<string>>()
+  const barByEnd = new Map(bars.map((bar) => [instantValue(bar.bar_end), bar]))
   for (const marker of markers) {
     const candidateId = marker.trigger_facts.candidate_id
     if (typeof candidateId !== 'string' || !known.has(candidateId)) {
       throw new Error('cup marker must reference a returned cup candidate')
     }
+    const bar = barByEnd.get(instantValue(marker.bar_end))
+    if (bar === undefined) throw new Error('cup marker must match a visible bar_end')
+    const segments = markerSegments.get(candidateId) ?? new Set<string>()
+    segments.add(bar.segment_id)
+    markerSegments.set(candidateId, segments)
   }
+  const firstBarAt = bars.length === 0 ? null : instantValue(bars[0]!.bar_end)
+  for (const handle of handles) {
+    if (lastBarAt !== null && instantValue(handle.state_changed_at) > lastBarAt) {
+      throw new Error('cup handle state_changed_at is after the visible window')
+    }
+    const segments = new Set(markerSegments.get(handle.candidate_id) ?? [])
+    for (const timestamp of cupTimestamps(handle)) {
+      const bar = barByEnd.get(instantValue(timestamp))
+      if (bar !== undefined) {
+        segments.add(bar.segment_id)
+      } else if (
+        firstBarAt !== null && lastBarAt !== null
+        && instantValue(timestamp) >= firstBarAt && instantValue(timestamp) <= lastBarAt
+      ) {
+        throw new Error('cup handle timestamp must match a visible bar_end')
+      }
+    }
+    if (segments.size !== 1) throw new Error('cup candidate facts must resolve to exactly one visible segment_id')
+  }
+}
+
+function cupTimestamps(handle: NewowCupHandle): string[] {
+  return [
+    handle.left_rim.pivot_at,
+    handle.left_rim.confirmed_at,
+    handle.bottom.pivot_at,
+    handle.bottom.confirmed_at,
+    handle.right_rim.pivot_at,
+    handle.right_rim.confirmed_at,
+    handle.handle_start_at,
+    ...(handle.handle_extreme === null
+      ? []
+      : [handle.handle_extreme.pivot_at, handle.handle_extreme.confirmed_at]),
+    ...(handle.pivot_frozen_at === null ? [] : [handle.pivot_frozen_at]),
+    handle.confirmed_at,
+    handle.first_seen_at,
+    handle.state_changed_at,
+  ]
 }
 
 function normalizeRolloverSeam(payload: unknown, index: number): NewowRolloverSeam {

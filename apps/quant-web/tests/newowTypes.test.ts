@@ -100,9 +100,9 @@ function payload() {
     cup_markers: [
       marker('cup-ready-1', 'CUP_HANDLE_READY', '2026-01-05T07:00:00Z', 'newow_cup_handle_v1', { candidate_id: 'cup-1' }),
       marker('cup-breakout-1', 'CUP_HANDLE_BREAKOUT', '2026-01-06T07:00:00+00:00', 'newow_cup_handle_v1', { candidate_id: 'cup-1' }),
-      marker('cup-weakened-1', 'CUP_HANDLE_WEAKENED', '2026-01-07T15:00:00+08:00', 'newow_cup_handle_v1', { candidate_id: 'cup-1' }),
-      marker('cup-invalidated-1', 'CUP_HANDLE_INVALIDATED', '2026-01-07T15:00:00+08:00', 'newow_cup_handle_v1', { candidate_id: 'cup-1' }),
-      marker('cup-expired-1', 'CUP_HANDLE_EXPIRED', '2026-01-07T15:00:00+08:00', 'newow_cup_handle_v1', { candidate_id: 'cup-1' }),
+      marker('cup-weakened-1', 'CUP_HANDLE_WEAKENED', '2026-01-06T07:00:00+00:00', 'newow_cup_handle_v1', { candidate_id: 'cup-1' }),
+      marker('cup-invalidated-1', 'CUP_HANDLE_INVALIDATED', '2026-01-06T07:00:00+00:00', 'newow_cup_handle_v1', { candidate_id: 'cup-1' }),
+      marker('cup-expired-1', 'CUP_HANDLE_EXPIRED', '2026-01-06T07:00:00+00:00', 'newow_cup_handle_v1', { candidate_id: 'cup-1' }),
     ],
     cup_handles: [{
       candidate_id: 'cup-1', direction: 'BULLISH', state: 'BREAKOUT',
@@ -257,6 +257,26 @@ test('fails closed on invalid cup identity, chronology, state requirements, scor
   rejects((value) => { value.cup_handles[0]!.formula_version = 'other' })
 })
 
+test('rejects Cup facts that are unmatched or cross a visible rollover segment', () => {
+  rejects((value) => {
+    value.cup_handles[0]!.right_rim.pivot_at = value.bars[1]!.bar_end
+    value.cup_handles[0]!.right_rim.confirmed_at = value.bars[1]!.bar_end
+    value.cup_handles[0]!.handle_start_at = value.bars[1]!.bar_end
+    value.cup_handles[0]!.handle_extreme!.pivot_at = value.bars[2]!.bar_end
+    value.cup_handles[0]!.handle_extreme!.confirmed_at = value.bars[2]!.bar_end
+    value.cup_handles[0]!.pivot_frozen_at = value.bars[2]!.bar_end
+    value.cup_handles[0]!.confirmed_at = value.bars[2]!.bar_end
+    value.cup_handles[0]!.first_seen_at = value.bars[1]!.bar_end
+    value.cup_handles[0]!.state_changed_at = value.bars[2]!.bar_end
+  }, /segment/)
+  rejects((value) => {
+    value.cup_markers[4]!.bar_end = value.bars[2]!.bar_end
+  }, /segment/)
+  rejects((value) => {
+    value.cup_handles[0]!.state_changed_at = '2026-01-06T08:00:00Z'
+  }, /bar_end/)
+})
+
 test('accepts the backend FORMING shape with five score keys and later first-seen time', () => {
   const raw = payload()
   const cup = raw.cup_handles[0]!
@@ -265,7 +285,7 @@ test('accepts the backend FORMING shape with five score keys and later first-see
   cup.pivot_price = null
   cup.pivot_frozen_at = null
   cup.confirmed_at = cup.right_rim.confirmed_at
-  cup.first_seen_at = '2026-01-04T07:00:00Z'
+  cup.first_seen_at = raw.bars[0]!.bar_end
   cup.state_changed_at = cup.first_seen_at
   cup.score = 60
   cup.score_breakdown = {
