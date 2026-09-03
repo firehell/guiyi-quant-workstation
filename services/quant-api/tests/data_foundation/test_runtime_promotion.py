@@ -445,6 +445,120 @@ def test_non_trading_interval_allows_well_formed_historical_failed_status() -> N
     assert decision.reason == "non_trading_interval"
 
 
+def test_non_trading_interval_rejects_reversed_passed_history() -> None:
+    status = _passed_status()
+    status["last_run"] = {
+        **status["last_run"],
+        "started_at": "2026-09-03T15:07:00+08:00",
+        "finished_at": "2026-09-03T14:07:00+08:00",
+    }
+
+    decision = evaluate_market_runtime_promotion(
+        products=PRODUCTS,
+        phases={
+            symbol: _phase(symbol, MarketPhase.CLOSED, trading_day=None)
+            for symbol in PRODUCTS
+        },
+        now=NOW,
+        snapshot=None,
+        after_market_status=status,
+        first_session_starts=None,
+    )
+
+    assert decision.reason == PROMOTION_STATE_UNAVAILABLE
+
+
+def test_snapshot_rejects_future_different_day_passed_history() -> None:
+    status = _passed_status()
+    status["last_run"] = {
+        **status["last_run"],
+        "trading_day": "2026-09-02",
+        "started_at": "2026-09-03T18:05:00+08:00",
+        "finished_at": "2026-09-03T18:07:00+08:00",
+    }
+
+    decision = evaluate_market_runtime_promotion(
+        products=PRODUCTS,
+        phases=_phases(MarketPhase.CLOSED),
+        now=NOW,
+        snapshot={"j": "J2601", "jm": "JM2601"},
+        after_market_status=status,
+        first_session_starts=_first_session_starts(),
+    )
+
+    assert decision.reason == PROMOTION_STATE_UNAVAILABLE
+
+
+@pytest.mark.parametrize(
+    ("started_at", "finished_at"),
+    [
+        ("2026-09-03T18:05:00+08:00", "2026-09-03T18:07:00+08:00"),
+        ("2026-09-03T15:07:00+08:00", "2026-09-03T14:07:00+08:00"),
+    ],
+)
+def test_failed_history_with_impossible_chronology_is_unavailable(
+    started_at: str, finished_at: str
+) -> None:
+    status = _passed_status()
+    status["last_run"] = {
+        **status["last_run"],
+        "status": "failed",
+        "error_code": "UPDATE_FAILED",
+        "started_at": started_at,
+        "finished_at": finished_at,
+    }
+
+    decision = evaluate_market_runtime_promotion(
+        products=PRODUCTS,
+        phases=_phases(MarketPhase.CLOSED),
+        now=NOW,
+        snapshot={"j": "J2601", "jm": "JM2601"},
+        after_market_status=status,
+        first_session_starts=_first_session_starts(),
+    )
+
+    assert decision.reason == PROMOTION_STATE_UNAVAILABLE
+
+
+def test_skipped_history_with_impossible_chronology_is_unavailable() -> None:
+    status = _passed_status()
+    status["last_run"] = {
+        **status["last_run"],
+        "status": "skipped",
+        "attempts": 0,
+        "error_code": "NON_TRADING_DAY",
+        "started_at": "2026-09-03T15:07:00+08:00",
+        "finished_at": "2026-09-03T14:07:00+08:00",
+    }
+
+    decision = evaluate_market_runtime_promotion(
+        products=PRODUCTS,
+        phases=_phases(MarketPhase.CLOSED),
+        now=NOW,
+        snapshot={"j": "J2601", "jm": "JM2601"},
+        after_market_status=status,
+        first_session_starts=_first_session_starts(),
+    )
+
+    assert decision.reason == PROMOTION_STATE_UNAVAILABLE
+
+
+def test_sane_different_day_history_does_not_block_valid_snapshot() -> None:
+    status = _passed_status()
+    status["last_run"] = {**status["last_run"], "trading_day": "2026-09-02"}
+
+    decision = evaluate_market_runtime_promotion(
+        products=PRODUCTS,
+        phases=_phases(MarketPhase.CLOSED),
+        now=NOW,
+        snapshot={"j": "J2601", "jm": "JM2601"},
+        after_market_status=status,
+        first_session_starts=_first_session_starts(),
+    )
+
+    assert decision.reason == "snapshot_ready"
+
+
 def test_day_end_to_night_gap_is_not_before_first_session() -> None:
     decision = evaluate_market_runtime_promotion(
         products=PRODUCTS,

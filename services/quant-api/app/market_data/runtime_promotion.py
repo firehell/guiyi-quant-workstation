@@ -291,12 +291,6 @@ def _after_market_status_decision(
     last_run = public.get("last_run")
     if not isinstance(last_run, Mapping):
         return "missing"
-    if last_run.get("status") != "passed":
-        return "missing"
-    if trading_day is None:
-        return "missing"
-    if last_run.get("trading_day") != trading_day.isoformat():
-        return "missing"
     started_at = _timestamp(last_run.get("started_at"))
     finished_at = _timestamp(last_run.get("finished_at"))
     if (
@@ -306,6 +300,12 @@ def _after_market_status_decision(
         or finished_at > now.astimezone(UTC)
     ):
         return "unavailable"
+    if last_run.get("status") != "passed":
+        return "missing"
+    if trading_day is None:
+        return "missing"
+    if last_run.get("trading_day") != trading_day.isoformat():
+        return "missing"
     run_products = last_run.get("products")
     if not isinstance(run_products, list) or tuple(run_products) != products:
         return "unavailable"
