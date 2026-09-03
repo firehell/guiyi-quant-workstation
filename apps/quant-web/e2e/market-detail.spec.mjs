@@ -56,10 +56,10 @@ test('Trend, HTDY, and SuBing stay explicitly unavailable and can return to lega
   expect(new URL(page.url()).searchParams.has('view')).toBe(false)
 })
 
-test('returning an event identity to legacy preserves focus and HTDY overlay semantics', async ({ page }) => {
+test('returning a 30m HTDY event identity to legacy preserves focus and overlay semantics', async ({ page }) => {
   await mockMarketDetail(page)
-  const focus = '2026-09-03T02:45:00Z'
-  await page.goto(`/market/chart?symbol=jm&view=htdy&series_kind=actual_dominant&frequency=15m&focus_bar_end=${encodeURIComponent(focus)}`)
+  const focus = '2026-09-03T02:30:00Z'
+  await page.goto(`/market/chart?symbol=jm&view=htdy&series_kind=actual_dominant&frequency=30m&focus_bar_end=${encodeURIComponent(focus)}`)
   await page.evaluate(async () => {
     const { router } = await import('/src/app/router.ts')
     window.__legacyNavigationQuery = null

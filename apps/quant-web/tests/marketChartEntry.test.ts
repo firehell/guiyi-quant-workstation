@@ -41,7 +41,7 @@ test('contract is serialized only for a concrete-contract series', () => {
   }).contract, undefined)
 })
 
-test('accepts focus_bar_end only for actual-dominant 15m with a valid timezone-aware instant', () => {
+test('accepts focus_bar_end for an actual-dominant supported period with a valid timezone-aware instant', () => {
   assert.equal(resolveFocusBarEnd('2026-09-02T02:45:00Z', {
     seriesKind: 'actual_dominant', frequency: '15m',
   }), '2026-09-02T02:45:00Z')
@@ -55,8 +55,8 @@ test('accepts focus_bar_end only for actual-dominant 15m with a valid timezone-a
     seriesKind: 'continuous', frequency: '15m',
   }), null)
   assert.equal(resolveFocusBarEnd('2026-09-02T02:45:00Z', {
-    seriesKind: 'actual_dominant', frequency: '5m',
-  }), null)
+    seriesKind: 'actual_dominant', frequency: '30m',
+  }), '2026-09-02T02:45:00Z')
 })
 
 test('removes only focus_bar_end after its one-shot attempt', () => {

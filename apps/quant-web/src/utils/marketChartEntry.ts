@@ -1,4 +1,4 @@
-import type { MarketFrequency, SeriesKind } from '@/types/market'
+import { MARKET_FREQUENCIES, type MarketFrequency, type SeriesKind } from '../types/market.ts'
 
 export function seriesRefreshQuery(input: {
   symbol: string
@@ -18,7 +18,7 @@ export function resolveFocusBarEnd(
   value: unknown,
   identity: { seriesKind: SeriesKind; frequency: MarketFrequency },
 ): string | null {
-  if (identity.seriesKind !== 'actual_dominant' || identity.frequency !== '15m') return null
+  if (identity.seriesKind !== 'actual_dominant' || !MARKET_FREQUENCIES.includes(identity.frequency)) return null
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T.*(?:Z|[+-]\d{2}:?\d{2})$/.test(value)) return null
   const day = value.slice(0, 10)
   const dayValue = new Date(`${day}T00:00:00Z`)
