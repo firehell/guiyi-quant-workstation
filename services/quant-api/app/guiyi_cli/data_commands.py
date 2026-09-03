@@ -29,7 +29,7 @@ from app.market_data.product_retirement import assert_not_retired
 
 def build_request(args: argparse.Namespace):
     """根据 data_command 分支构造对应的维护请求对象。"""
-    if args.data_command == "after-market":
+    if args.data_command in {"after-market", "session-anchor-repair"}:
         return None
     if args.data_command == "update":
         return UpdateRequest(

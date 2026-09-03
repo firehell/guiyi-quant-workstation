@@ -54,7 +54,7 @@ D1 / D2 / D3
 
 ### 1.3 与 SuBing、HTDY 和稳定 canonical 的关系
 
-- 新苏冰只认 `subing_ths_alert_15m_v1` / `subing_ths_15m_v2`，正式 Marker 只来自 `AlertEvent`。
+- 新苏冰只认 `subing_ths_alert_15m_v1` / `subing_ths_15m_v3`，正式 Marker 只来自 `AlertEvent`。v3 数学公式不变，只接受修正 session 锚点后的正式 Bar/时间。
 - 火天大有继续保留“原始观察可重绘、首次识别 Event 不可变”的双事实语义。
 - 通用 EMA、MACD、成交量和 Range Detector 只用于研究展示，不拥有交易、Alert 或持仓语义。
 - 当前 `PROJECT_SOURCE.md`、`STATUS.md` 和生产 Runtime 事实不因本设计自动改变。
@@ -830,7 +830,7 @@ SuBing Marker
 ```text
 view = subing
 rule_code = subing_ths_alert_15m_v1
-formula_version = subing_ths_15m_v2
+formula_version = subing_ths_15m_v3
 series_kind = actual_dominant
 frequency = 15m
 completed_only = true

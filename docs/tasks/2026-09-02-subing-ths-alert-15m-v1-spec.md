@@ -2,6 +2,8 @@
 
 状态：`SPEC_READY_FOR_USER_REVIEW`
 
+> 2026-09-03 session-anchor 修复后，本设计的 active 公式身份由 `subing_ths_15m_v3` 取代；数学公式不变，v3 冻结正确的输入 Bar/时间。本文件其余 v2 内容保留为历史设计记录。
+
 日期：2026-09-02
 
 Issue：#307
@@ -12,7 +14,7 @@ Issue：#307
 
 产品身份：`subing_ths_alert_15m_v1`
 
-公式身份：`subing_ths_15m_v2`
+公式身份：`subing_ths_15m_v2`（历史）
 
 ---
 

@@ -30,7 +30,7 @@ def session() -> Iterator[Session]:
     with Session(engine) as value:
         value.execute(text("CREATE TABLE alembic_version (version_num varchar(32) NOT NULL)"))
         value.execute(text(
-            "INSERT INTO alembic_version (version_num) VALUES ('20260902_0044')"
+            "INSERT INTO alembic_version (version_num) VALUES ('20260903_0045')"
         ))
         value.add_all([
             AlertRule(
@@ -148,8 +148,8 @@ def test_apply_publishes_full_scope_and_preserves_htdy_in_one_commit(
     assert len(commits) == 1
 
 
-def test_apply_rejects_nonexact_0044_state_before_mutation(session: Session) -> None:
-    session.execute(text("UPDATE alembic_version SET version_num = '20260902_0043'"))
+def test_apply_rejects_nonexact_0045_state_before_mutation(session: Session) -> None:
+    session.execute(text("UPDATE alembic_version SET version_num = '20260902_0044'"))
     session.commit()
     subing_before = _rule_snapshot(session, _SUBING_RULE)
     commits: list[object] = []
@@ -178,7 +178,7 @@ def test_apply_rechecks_revision_after_locking_rules(
     def change_revision_before_locked_read(*args, **kwargs):
         if kwargs["for_update"]:
             session.execute(text(
-                "UPDATE alembic_version SET version_num = '20260902_0043'"
+                "UPDATE alembic_version SET version_num = '20260902_0044'"
             ))
         return original_rules(*args, **kwargs)
 
@@ -195,7 +195,7 @@ def test_apply_rechecks_revision_after_locking_rules(
         )
 
     assert session.scalar(text("SELECT version_num FROM alembic_version")) == (
-        "20260902_0044"
+        "20260903_0045"
     )
     assert _rule_snapshot(session, _SUBING_RULE) == {
         "enabled": False,

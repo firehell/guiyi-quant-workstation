@@ -1,5 +1,5 @@
 {
-  "formula_version": "subing_ths_15m_v2",
+  "formula_version": "subing_ths_15m_v3",
   "parameters": {
     "fast": 12,
     "slow": 26,

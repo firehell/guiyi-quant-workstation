@@ -140,7 +140,7 @@ RETIRED_MODULE_ATTRIBUTES = {
     ),
 }
 ALERT_RULE_CODES = frozenset({"htdy_original_15m", "subing_ths_alert_15m_v1"})
-SUBING_THS_FORMULA_VERSION = "subing_ths_15m_v2"
+SUBING_THS_FORMULA_VERSION = "subing_ths_15m_v3"
 BACKEND_ALERT_RULE_LITERAL_EXPECTED = {
     "htdy_original_15m": {
         "services/quant-api/app/alerts/registry.py": 2,
@@ -433,6 +433,13 @@ def test_active_alert_canonical_matches_the_two_rule_code_contract() -> None:
     assert "enabled=False" in migration_source
     assert "scope_product_frequencies={}" in migration_source
 
+    session_migration_source = (
+        ROOT
+        / "services/quant-api/alembic/versions/20260903_0045_normalize_rqdata_session_anchor.py"
+    ).read_text(encoding="utf-8")
+    assert '"20260902_0044"' in session_migration_source
+    assert "RQDATA_SESSION_ANCHOR_DOWNGRADE_UNSUPPORTED" in session_migration_source
+
     service_source = (
         ROOT / "services/quant-api/app/alerts/service.py"
     ).read_text(encoding="utf-8")
@@ -450,6 +457,7 @@ def test_active_alert_canonical_matches_the_two_rule_code_contract() -> None:
     assert "with_for_update()" in activation_source
     assert "session.commit()" in activation_source
     assert "session.expire_all()" in activation_source
+    assert '20260903_0045' in activation_source
 
     runtime_source = (
         ROOT / "services/quant-api/app/alerts/runtime.py"

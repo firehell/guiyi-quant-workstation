@@ -1,5 +1,7 @@
 # 苏冰同花顺 15m 预警 V1 Implementation Plan
 
+> 历史计划：2026-09-03 session-anchor 修复已把唯一 active 公式身份升为 `subing_ths_15m_v3`；数学公式不变，v3 冻结正确的输入 Bar/时间。本文件中的 v2 路径与断言仅记录原 S1–S5 实施基线。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` or `superpowers:executing-plans` to execute this plan task-by-task. Every behavior change follows RED → GREEN → REFACTOR, and every completion claim requires fresh verification.
 
 **Goal:** 在不恢复任何旧苏冰策略域的前提下，实现 `subing_ths_alert_15m_v1`：对 operational universe 的 completed `actual_dominant + 15m` 按同花顺 MACD CROSS + EMA21 公式产生不可变 AlertEvent、one-shot PushPlus，并在 Market Web 显示最近预警和 `S↑/S↓` marker，最终由用户人工判断是否交易。
