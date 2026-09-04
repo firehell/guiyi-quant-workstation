@@ -33,7 +33,7 @@ export function buildSubingDetailViewModel(input: {
     disclosureSections: [
       { id: 'subing-latest', title: '最新已保存预警', summary: signal ?? (unavailable ? '预警数据不可用' : '当前窗口暂无已保存苏冰预警'), updatedAt: latest?.detected_at ?? null, tone: unavailable ? 'unavailable' : stale ? 'warning' : 'default', rows: latest ? [{ label: 'AlertEvent', value: `${signal} · ${latest.bar_end} · ${latest.contract}`, source: 'alert_event' }] : [] },
       { id: 'subing-formula', title: '触发口径', summary: 'subing_ths_15m_v3', updatedAt: null, tone: 'default', rows: [{ label: '固定展示身份', value: 'MACD(12,26,9) CROSS + EMA(CLOSE,21) · 仅供人工复核', source: 'generic_indicator' }] },
-      { id: 'subing-runtime', title: '运行与通知', summary: status, updatedAt: input.runtime?.rule_status.subing_ths_alert_15m_v1.last_success_at ?? null, tone: input.runtimeUnavailable ? 'unavailable' : 'default', rows: runtimeRows(input.runtime) },
+      { id: 'subing-runtime', title: '运行与通知', summary: status, updatedAt: input.runtime?.rule_status.subing_ths_alert_15m_v1.last_evaluated_bar_at ?? null, tone: input.runtimeUnavailable ? 'unavailable' : 'default', rows: runtimeRows(input.runtime) },
     ], history, dataStatus: unavailable ? 'unavailable' : stale ? 'stale' : 'ready',
   }
 }
@@ -41,10 +41,10 @@ export function buildSubingDetailViewModel(input: {
 function runtimeText(runtime: RuntimeAlertProjection | null, unavailable: boolean): string {
   if (unavailable || !runtime) return 'Runtime 不可用'
   const rule = runtime.rule_status.subing_ths_alert_15m_v1
-  if (rule.last_error_type === 'evaluation_warming_up') return '正在 warm-up'
-  if (rule.last_error_type === 'evaluation_input_invalid') return '输入身份不可用'
-  if (rule.last_error_type === 'evaluation_failed') return '评估失败'
-  return rule.last_completed_bar_at ? '最近已评估' : '尚无已评估 Bar'
+  if (rule.error_type === 'evaluation_warming_up') return '正在 warm-up'
+  if (rule.error_type === 'evaluation_input_invalid') return '输入身份不可用'
+  if (rule.error_type === 'evaluation_failed') return '评估失败'
+  return rule.last_evaluated_bar_at ? '最近已评估' : '尚无已评估 Bar'
 }
 
 function runtimeRows(runtime: RuntimeAlertProjection | null) {
@@ -52,10 +52,10 @@ function runtimeRows(runtime: RuntimeAlertProjection | null) {
   const rule = runtime.rule_status.subing_ths_alert_15m_v1
   return [
     { label: '全局状态', value: runtime.status, source: 'runtime' as const },
-    { label: 'Rule 已完成 Bar', value: rule.last_completed_bar_at ?? '—', source: 'runtime' as const },
-    { label: 'Rule 最近成功', value: rule.last_success_at ?? '—', source: 'runtime' as const },
+    { label: 'Rule 已评估 Bar', value: rule.last_evaluated_bar_at ?? '—', source: 'runtime' as const },
+    { label: 'Rule 最近 Event', value: rule.last_event_at ?? '—', source: 'runtime' as const },
     { label: 'Rule 最近失败', value: rule.last_failure_at ?? '—', source: 'runtime' as const },
-    { label: 'Rule 错误类型', value: rule.last_error_type ?? '—', source: 'runtime' as const },
+    { label: 'Rule 错误类型', value: rule.error_type ?? '—', source: 'runtime' as const },
     { label: '通知说明', value: '仅展示已保存 Event 与尝试时间；不表示外部送达。', source: 'runtime' as const },
   ]
 }

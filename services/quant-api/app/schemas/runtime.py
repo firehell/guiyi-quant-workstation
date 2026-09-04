@@ -83,6 +83,19 @@ class RuntimeAlertNotificationHealth(BaseModel):
     would_send: bool = False
 
 
+class RuntimeAlertRuleStatus(BaseModel):
+    """One fixed observation Rule's bounded, secret-safe v6 evaluation evidence."""
+
+    last_evaluated_bar_at: str | None = None
+    last_event_at: str | None = None
+    last_failure_at: str | None = None
+    error_type: Literal[
+        "evaluation_input_invalid",
+        "evaluation_warming_up",
+        "evaluation_failed",
+    ] | None = None
+
+
 class RuntimeAlertHealth(BaseModel):
     """Alert activation、notification transport 与短 TTL heartbeat 摘要。"""
 
@@ -105,6 +118,7 @@ class RuntimeAlertHealth(BaseModel):
     notification_acknowledged_at: str | None = None
     notification_error_type: str | None = None
     consecutive_notification_failures: int = 0
+    rule_status: dict[str, RuntimeAlertRuleStatus] = Field(default_factory=dict)
     error_type: str | None = None
 
 

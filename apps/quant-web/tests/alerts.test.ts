@@ -236,7 +236,33 @@ describe('persistent Alert markers', () => {
     assert.equal(controller.unavailable.value, true)
     controller.dispose()
   })
+
+  test('an older same-identity replacement cannot overwrite a newer Event snapshot', async () => {
+    const first = deferred<{ items: AlertEvent[] }>()
+    const second = deferred<{ items: AlertEvent[] }>()
+    let calls = 0
+    const controller = usePersistentAlertMarkers({
+      fetchEvents: async () => (++calls === 1 ? first.promise : second.promise),
+      scheduleInterval: () => 1,
+      clearInterval: () => undefined,
+    }, { resolveRuleCodes: () => [ALERT_RULE_CODES.SUBING_THS] })
+    const identity = { seriesKind: 'actual_dominant' as const, symbol: 'jm', frequency: '15m' as const }
+    const older = controller.sync(identity, bars(), 'replace')
+    const newer = controller.sync(identity, bars(), 'replace')
+    second.resolve({ items: [subingEvent(10, 'sell')] })
+    await newer
+    first.resolve({ items: [subingEvent(9, 'buy')] })
+    await older
+    assert.equal(controller.events.value[0]?.id, 10)
+    controller.dispose()
+  })
 })
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((done) => { resolve = done })
+  return { promise, resolve }
+}
 
 function rule(enabled: boolean) {
   return {

@@ -12,7 +12,7 @@ import { useSubingAlertFacts } from '@/composables/useSubingAlertFacts'
 import type { MarketSeriesMutation } from '@/composables/useMarketSeries'
 import type { BarData, KlineMarker } from '@/types/market'
 import type { MarketDetailHeaderModel, MarketDetailIdentity } from '@/types/marketDetail'
-import { ALERT_RULE_CODES, isSubingThsAlertEvent } from '@/utils/alertRules'
+import { ALERT_RULE_CODES, alertEventIdentityKey, isSubingThsAlertEvent } from '@/utils/alertRules'
 import { buildSubingDetailViewModel } from '@/utils/subingDetailViewModel'
 import SubingChartStage from './SubingChartStage.vue'
 
@@ -23,6 +23,7 @@ const props = defineProps<{
 const emit = defineEmits<{ 'history-availability': [available: boolean]; 'focus-resolved': [focusBarEnd: string] }>()
 const tabs = ref<InstanceType<typeof MarketDetailSectionTabs> | null>(null)
 const selectedEvent = ref<number | null>(null)
+const activeTab = ref<string | null>(null)
 const loader = usePersistentAlertMarkers({ fetchEvents: getAlertEvents }, { resolveRuleCodes: () => [ALERT_RULE_CODES.SUBING_THS] })
 const alertFacts = useSubingAlertFacts({ fetchRuntime: getRuntimeHealth, fetchProductAlerts: getProductAlerts })
 const identityKey = computed(() => [props.identity.seriesKind, props.identity.symbol, props.identity.contract ?? '', props.identity.frequency].join(':'))
@@ -37,7 +38,7 @@ async function refresh() {
   await Promise.all([loader.sync(identity, props.bars, props.mutation.kind), alertFacts.refresh({ symbol: identity.symbol, frequency: '15m' })])
 }
 function openHistory() { tabs.value?.openHistory() }
-function selectMarker(marker: KlineMarker) { const match = marker.id.match(/^alert:[^:]+:[^:]+:[^:]+:(.+)$/); if (match) selectedEvent.value = loader.events.value.find((event) => event.bar_end === match[1] && isSubingThsAlertEvent(event))?.id ?? null }
+function selectMarker(marker: KlineMarker) { selectedEvent.value = loader.events.value.find((event) => isSubingThsAlertEvent(event) && marker.id === `alert:${alertEventIdentityKey(event)}`)?.id ?? null }
 defineExpose({ openHistory })
 watch([() => props.identity, () => props.bars, () => props.mutation], () => { void refresh() }, { immediate: true, deep: true })
 watch(() => model.value.history.length, (value) => emit('history-availability', value > 0), { immediate: true })
@@ -50,7 +51,7 @@ onBeforeUnmount(() => { loader.dispose(); alertFacts.dispose() })
     <MarketDetailFactStrip :facts="model.facts" />
     <p v-if="identityWarning" class="subing-workspace__hint" role="status">{{ identityWarning }}</p>
     <SubingChartStage :bars="bars" :mutation="mutation" :loading="loading" :error="error" period="15m" :series-kind="identity.seriesKind" :identity-key="identityKey" :focus-bar-end="focusBarEnd ?? identity.focusBarEnd" :markers="loader.markers.value" :visible-main-indicators="['ema_21']" @load-earlier="loadEarlier" @focus-resolved="emit('focus-resolved', $event)" @marker-select="selectMarker" />
-    <MarketDetailSectionTabs ref="tabs" :tabs="[]" :active-id="null" :history="model.history" history-selectable @history-select="selectedEvent = Number($event.id.replace('subing-event:', ''))">
+    <MarketDetailSectionTabs ref="tabs" :tabs="[]" :active-id="activeTab" :history="model.history" history-selectable @select="activeTab = $event" @history-select="selectedEvent = Number($event.id.replace('subing-event:', ''))">
       <template #default><MarketDetailInsightDeck :identity-key="identityKey" :sections="model.disclosureSections" :default-open="true" /></template>
     </MarketDetailSectionTabs>
     <MarketDetailDrawer :open="selectedHistory !== null" title="苏冰预警详情" @close="selectedEvent = null">

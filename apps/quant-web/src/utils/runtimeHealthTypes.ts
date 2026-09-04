@@ -3,10 +3,10 @@ import { ALERT_RULE_CODES } from './alertRules.ts'
 export type RuntimeAlertRuleErrorType = null | 'evaluation_input_invalid' | 'evaluation_warming_up' | 'evaluation_failed'
 
 export interface RuntimeAlertRuleStatus {
-  last_completed_bar_at: string | null
-  last_success_at: string | null
+  last_evaluated_bar_at: string | null
+  last_event_at: string | null
   last_failure_at: string | null
-  last_error_type: RuntimeAlertRuleErrorType
+  error_type: RuntimeAlertRuleErrorType
 }
 
 export interface RuntimeAlertProjection {
@@ -16,7 +16,7 @@ export interface RuntimeAlertProjection {
 }
 
 const RULE_KEYS = [ALERT_RULE_CODES.HTDY, ALERT_RULE_CODES.SUBING_THS] as const
-const STATUS_KEYS = ['last_completed_bar_at', 'last_success_at', 'last_failure_at', 'last_error_type'] as const
+const STATUS_KEYS = ['last_evaluated_bar_at', 'last_event_at', 'last_failure_at', 'error_type'] as const
 const ERROR_TYPES = new Set<RuntimeAlertRuleErrorType>([null, 'evaluation_input_invalid', 'evaluation_warming_up', 'evaluation_failed'])
 
 /** Strictly projects Alert Runtime v6; a global heartbeat never substitutes a Rule evaluation. */
@@ -36,10 +36,10 @@ export function normalizeRuntimeAlertProjection(value: unknown): RuntimeAlertPro
 
 function normalizeRuleStatus(value: unknown): RuntimeAlertRuleStatus {
   if (!isRecord(value) || Object.keys(value).length !== STATUS_KEYS.length || STATUS_KEYS.some((key) => !(key in value))) throw new Error('runtime rule status is invalid')
-  for (const key of ['last_completed_bar_at', 'last_success_at', 'last_failure_at'] as const) {
+  for (const key of ['last_evaluated_bar_at', 'last_event_at', 'last_failure_at'] as const) {
     if (value[key] !== null && !isAwareIso(value[key])) throw new Error('runtime timestamp is invalid')
   }
-  if (!ERROR_TYPES.has(value.last_error_type as RuntimeAlertRuleErrorType)) throw new Error('runtime error type is invalid')
+  if (!ERROR_TYPES.has(value.error_type as RuntimeAlertRuleErrorType)) throw new Error('runtime error type is invalid')
   return value as unknown as RuntimeAlertRuleStatus
 }
 

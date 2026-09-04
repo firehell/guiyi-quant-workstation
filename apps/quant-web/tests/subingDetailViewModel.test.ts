@@ -7,7 +7,7 @@ const header = { displayContract: 'JM2601', asOf: '2026-09-04T01:00:00Z' }
 const event = { id: 7, rule_code: 'subing_ths_alert_15m_v1' as const, symbol: 'jm', contract: 'JM2601', trading_day: '2026-09-04', frequency: '15m' as const, bar_end: '2026-09-04T01:00:00Z', result_codes: ['buy'] as ['buy'], detected_at: '2026-09-04T01:00:01Z', notification_attempted_at: null }
 
 test('renders exactly three sourced SuBing facts and immutable Event history', () => {
-  const model = buildSubingDetailViewModel({ identity, header, events: [event], alertUnavailable: false, rule: 'Rule 已启用 · 当前 Scope 已启用', ruleUnavailable: false, runtime: { status: 'ok', enabled_rule_count: 2, rule_status: { htdy_original_15m: { last_completed_bar_at: null, last_success_at: null, last_failure_at: null, last_error_type: null }, subing_ths_alert_15m_v1: { last_completed_bar_at: event.bar_end, last_success_at: event.detected_at, last_failure_at: null, last_error_type: null } } }, runtimeUnavailable: false })
+  const model = buildSubingDetailViewModel({ identity, header, events: [event], alertUnavailable: false, rule: 'Rule 状态不可判定 · 当前 Scope 已启用', ruleUnavailable: false, runtime: { status: 'ok', enabled_rule_count: 2, rule_status: { htdy_original_15m: { last_evaluated_bar_at: null, last_event_at: null, last_failure_at: null, error_type: null }, subing_ths_alert_15m_v1: { last_evaluated_bar_at: event.bar_end, last_event_at: event.detected_at, last_failure_at: null, error_type: null } } }, runtimeUnavailable: false })
   assert.equal(model.facts.length, 3)
   assert.match(model.facts[0].value, /S↑ 多头预警/)
   assert.match(model.facts[1].value, /JM2601/)

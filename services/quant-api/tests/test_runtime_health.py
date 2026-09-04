@@ -116,8 +116,10 @@ def test_runtime_health_endpoint_exposes_market_runtime_components(
         "notification_acknowledged_at": None,
         "notification_error_type": None,
         "consecutive_notification_failures": 0,
+        "rule_status": empty_alert_runtime_status()["rule_status"],
         "error_type": None,
     }
+    assert payload["components"]["alert"]["rule_status"] == empty_alert_runtime_status()["rule_status"]
 
 
 def test_alert_health_activation_and_transport_fail_closed(

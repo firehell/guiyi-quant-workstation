@@ -45,7 +45,7 @@ function ruleScopeText(response: ProductAlertStateResponse, identity: SubingAler
   const current = findAlertRuleByCode(response.rules, ALERT_RULE_CODES.SUBING_THS)
   if (!current || !isSubingRule(current)) throw new Error('subing rule mismatch')
   if (current.enabled_frequencies.some((frequency) => frequency !== '15m') || (current.enabled_for_product !== current.enabled_frequencies.includes('15m'))) throw new Error('subing scope mismatch')
-  return `Rule ${current.enabled_for_product ? '已启用' : '已禁用'} · 当前 Scope ${current.enabled_for_product ? '已启用' : '未启用'} · ${identity.symbol.toUpperCase()} 15m · 仅只读展示`
+  return `Rule 状态不可判定 · 当前 Scope ${current.enabled_for_product ? '已启用' : '未启用'} · ${identity.symbol.toUpperCase()} 15m · 仅只读展示`
 }
 
 function isSubingRule(rule: ProductAlertRuleState): boolean {
