@@ -1,0 +1,157 @@
+{
+  "schema_version": "newow-ai-template-evidence-v1",
+  "source_relative_path": "sources/stock-detail-v3.2.82.html",
+  "source_sha256": "cd962170085dc2145fbaebf28a47ce6764b9f519e6032b54a896e37f0c9d0cf9",
+  "legacy_a_e": [
+    {
+      "template": "A",
+      "condition": "majorTrend=down and yellowCount=0",
+      "inputs": [
+        "month_band",
+        "week_band",
+        "day_band"
+      ],
+      "month_dependency": true
+    },
+    {
+      "template": "B",
+      "condition": "month=blue and week=blue and day=yellow and day_just_crossed",
+      "inputs": [
+        "month_band",
+        "week_band",
+        "day_band",
+        "day_just_crossed"
+      ],
+      "month_dependency": true
+    },
+    {
+      "template": "C",
+      "condition": "month=blue and week=blue and day=yellow",
+      "inputs": [
+        "month_band",
+        "week_band",
+        "day_band"
+      ],
+      "month_dependency": true
+    },
+    {
+      "template": "D",
+      "condition": "month=blue and week=yellow",
+      "inputs": [
+        "month_band",
+        "week_band"
+      ],
+      "month_dependency": true
+    },
+    {
+      "template": "E",
+      "condition": "month=yellow",
+      "inputs": [
+        "month_band"
+      ],
+      "month_dependency": true
+    }
+  ],
+  "current_week_day_matrix": [
+    {
+      "key": "buy-buy",
+      "name": "上涨启动",
+      "risk": "bullish",
+      "position": "70-100%"
+    },
+    {
+      "key": "buy-hold",
+      "name": "震荡上涨",
+      "risk": "bullish",
+      "position": "50-70%"
+    },
+    {
+      "key": "buy-sell",
+      "name": "趋势回调",
+      "risk": "cautious",
+      "position": "30-50%"
+    },
+    {
+      "key": "buy-wait",
+      "name": "筑底反弹",
+      "risk": "warning",
+      "position": "10-20%"
+    },
+    {
+      "key": "hold-buy",
+      "name": "上涨中继",
+      "risk": "bullish",
+      "position": "50-70%"
+    },
+    {
+      "key": "hold-hold",
+      "name": "上涨趋势",
+      "risk": "bullish",
+      "position": "50-70%"
+    },
+    {
+      "key": "hold-sell",
+      "name": "高位震荡",
+      "risk": "cautious",
+      "position": "30-50%"
+    },
+    {
+      "key": "hold-wait",
+      "name": "高位震荡",
+      "risk": "cautious",
+      "position": "30-50%"
+    },
+    {
+      "key": "sell-buy",
+      "name": "震荡反弹",
+      "risk": "warning",
+      "position": "10-20%"
+    },
+    {
+      "key": "sell-hold",
+      "name": "震荡反弹",
+      "risk": "warning",
+      "position": "10-20%"
+    },
+    {
+      "key": "sell-sell",
+      "name": "下跌趋势",
+      "risk": "bearish",
+      "position": "0%"
+    },
+    {
+      "key": "sell-wait",
+      "name": "震荡下跌",
+      "risk": "bearish",
+      "position": "0%"
+    },
+    {
+      "key": "wait-buy",
+      "name": "筑底反转",
+      "risk": "bearish",
+      "position": "0%"
+    },
+    {
+      "key": "wait-hold",
+      "name": "筑底反弹",
+      "risk": "warning",
+      "position": "10-20%"
+    },
+    {
+      "key": "wait-sell",
+      "name": "震荡下跌",
+      "risk": "bearish",
+      "position": "0%"
+    },
+    {
+      "key": "wait-wait",
+      "name": "震荡下跌",
+      "risk": "bearish",
+      "position": "0%"
+    }
+  ],
+  "core_migration": {
+    "legacy_a_e": "observed_only_month_out_of_scope",
+    "current_week_day_matrix": "input_branch_and_output_tokens_only"
+  }
+}
