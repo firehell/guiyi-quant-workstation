@@ -54,7 +54,18 @@
 - Task D fix round 1 RED→GREEN：active Market inventory 新 guard 首次以 `actual=[]` 对 7 个预期 owner 失败（`1 failed`）；递归 mounted-route helper 后 active inventory + retired route 定向为 `2 passed`。Newow main-rise/causal 定向为 `36 passed`。
 - Task D fix round 1 提交前验证：canonical/retirement `20 passed, 1 skipped`；Ruff `All checks passed!`；OpenSpec strict `8 passed, 0 failed`；secret scan `finding_count=0`；diff check clean；全部 exit 0。
 - Task D 四项结论：`retired surface = PASS`；`single authority = PASS`；`research boundary = PASS`；`merge regression = fixed in Task D fix round 1`。`LANE3_BLOCKER = NONE`。
-- 全量完成矩阵仍待后续 Task。
+- Task E 验证输入 HEAD：`0ed5538636fc55940f4487409284ccd7ea1b0d94`；验证于 `2026-09-05 01:20 CST` 前完成，未连接 RQData、production PostgreSQL/Redis，未写 Canonical/Scope，未发送通知，未切换 Runtime。
+- Task E clean/diff：初始 `git status --short` 与依赖同步后 `git status --short` 均无输出；`git diff --check` exit 0，0.01s。
+- Task E 锁定依赖：`uv sync --project services/quant-api --locked` exit 0，0.02s；`pnpm --dir apps/quant-web install --frozen-lockfile` exit 0，0.25s；无 tracked lock 漂移。
+- Task E Backend full：`PYTHONPATH=services/quant-api:packages/quant-core uv run --project services/quant-api pytest -q -m "not isolated_postgresql and not manual_acceptance" services/quant-api/tests` 为 `1633 passed, 3 skipped, 15 deselected`，exit 0，199.77s（wall 200.61s）。
+- Task E Newow collection/execution readback：对 `services/quant-api/tests/newow` 使用同一 marker 排除条件追加完整回归，`553 passed`，exit 0，191.79s（wall 192.12s）；该 fresh 输出明确证明 Newow tests 被收集和执行，未引用 Task D 旧结果代替。
+- Task E engineering full：`PYTHONPATH=services/quant-api:packages/quant-core uv run --project services/quant-api pytest -q tests/engineering` 为 `71 passed`，exit 0，56.09s（wall 56.36s）。为明确 readback 两个必要 owner，追加定向 `test_repository_hygiene.py + test_canonical_consistency.py`，`16 passed`，exit 0，2.80s（wall 3.27s）。
+- Task E Python static：Ruff `All checks passed!`，exit 0，0.05s；Mypy `Success: no issues found in 110 source files`，exit 0，6.53s。
+- Task E Web ownership/unit/build：Alert Rule ownership `passed`，exit 0，0.66s；Web unit `327 tests / 326 pass / 1 skipped / 0 failed`，exit 0，3.37s；`vue-tsc -b && vite build` 和 bundle-topology 成功，3057 modules transformed，exit 0，4.18s。
+- Task E Playwright E2E：`71 passed`，exit 0，1.3m（wall 76.09s）。日志中的 `NETWORK` / `HTTP_502` / `ECONNREFUSED` 来自显式的 unavailable/fail-closed 场景，对应测试全部通过。
+- Task E OpenSpec/security/Git：OpenSpec strict `8 passed, 0 failed`，exit 0，1.08s；secret scan `finding_count=0`，exit 0，1.47s；`git diff "$(git merge-base HEAD origin/develop)"...HEAD --check` exit 0；检查时 worktree clean。
+- Task E develop comparison：`git fetch origin develop` exit 0，4.97s；实施 baseline 与 fresh `origin/develop` 均为 `18a62382685b6deb92010968d4a5a920952fa206`，比较 exit 0，无 baseline drift，不需要重建 Task A inventory 或重跑受影响矩阵。
+- Task E 矩阵结论：必要项全部 exit 0，记录真实数量和时间；`isolated_postgresql` 与 `manual_acceptance` 按计划明确未运行，不以本地完整矩阵声明 production、release 或 Runtime 验收。
 
 ## Branch 清理
 
