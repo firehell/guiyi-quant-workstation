@@ -8,6 +8,7 @@ import pytest
 
 from guiyi_quant.newow import (
     AI_SIX_COMBO_PAGE_V3250,
+    AI_WEEK_DAY_16_MATRIX_PAGE_V1,
     DIAGNOSTIC_FACTS_CLEANROOM_V1,
     MAIN_FORCE_CONTROL_FORMULA_VERSION,
     OSCILLATION_FORMULA_VERSION,
@@ -209,7 +210,7 @@ def test_all_16_current_week_day_page_branches_are_tokens(
         if item.code.startswith("NEWOW_DIAG_AI_MATRIX_")
     )
     assert token.fact_keys == ("weekly_signal", "daily_signal")
-    assert token.formula_identities == (AI_SIX_COMBO_PAGE_V3250,)
+    assert token.formula_identities == (AI_WEEK_DAY_16_MATRIX_PAGE_V1,)
     assert token.code == f"NEWOW_DIAG_AI_MATRIX_{weekly.value.upper()}_{daily.value.upper()}"
 
 
@@ -245,6 +246,7 @@ def test_page_ai_ranking_discards_sparse_results_and_is_not_oos() -> None:
 
     assert isinstance(ranking, PageAiRanking)
     assert ranking.trustworthy_for_research is False
+    assert ranking.formula_version == AI_SIX_COMBO_PAGE_V3250
     assert len(ranking.ranked) == 5
     assert ranking.ranked[0].combination.strategy is PageAiStrategy.TREND
     assert ranking.ranked[0].combination.period is PageAiPeriod.DAY

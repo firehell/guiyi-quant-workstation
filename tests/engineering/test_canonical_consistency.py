@@ -393,8 +393,25 @@ def test_newow_v3282_golden_evidence_is_bounded_and_complete() -> None:
             encoding="utf-8"
         )
     )
-    assert set(screener) == {"schema_version", "observations"}
+    assert set(screener) == {
+        "schema_version",
+        "evidence_gate",
+        "cleanroom_candidate_identities",
+        "observations",
+    }
     assert screener["schema_version"] == "newow-v3.2.82-screener-observations-v1"
+    assert screener["evidence_gate"] == {
+        "status": "UNKNOWN",
+        "independent_snapshot_count": 1,
+        "required_independent_snapshot_count": 2,
+        "second_snapshot": "NOT_AVAILABLE_NO_HISTORICAL_AS_OF_CONTRACT",
+        "page_exact_identity_allowed": False,
+    }
+    assert screener["cleanroom_candidate_identities"] == [
+        "newow_trend_build_candidate_v1",
+        "newow_mainrise_build_candidate_v1",
+        "newow_cup_handle_candidate_v1",
+    ]
     observations = {item["strategy_id"]: item for item in screener["observations"]}
     assert set(observations) == {
         "trend_build",

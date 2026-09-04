@@ -21,6 +21,7 @@ from .subplots import MainForceStatus
 
 DIAGNOSTIC_RULES_CLEANROOM_V1 = "newow_diagnostic_rules_cleanroom_v1"
 AI_SIX_COMBO_PAGE_V3250 = "newow_ai_six_combo_page_v3_2_50"
+AI_WEEK_DAY_16_MATRIX_PAGE_V1 = "newow_ai_week_day_16_matrix_page_v1"
 
 
 class DiagnosticSeverity(StrEnum):
@@ -222,7 +223,7 @@ def diagnostic_tokens(facts: DiagnosticFacts) -> tuple[DiagnosticToken, ...]:
                 code,
                 DiagnosticSeverity.INFO,
                 ("weekly_signal", "daily_signal"),
-                (AI_SIX_COMBO_PAGE_V3250,),
+                (AI_WEEK_DAY_16_MATRIX_PAGE_V1,),
             )
         )
     if any(
