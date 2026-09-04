@@ -6,10 +6,12 @@ from datetime import date, time
 from pathlib import Path
 from uuid import uuid4
 
-from alembic.migration import MigrationContext
-from alembic.operations import Operations
+from alembic import command
+from alembic.config import Config
 import pytest
 from sqlalchemy import create_engine, text
+from sqlalchemy.engine import Engine
+from sqlalchemy.schema import CreateSchema, DropSchema
 
 from app.db.migration_test_guard import (
     MigrationTestDatabaseSafetyError,
@@ -22,9 +24,6 @@ QUANT_API_ROOT = Path(__file__).resolve().parents[2]
 MIGRATION_PATH = (
     QUANT_API_ROOT
     / "alembic/versions/20260903_0045_normalize_rqdata_session_anchor.py"
-)
-SUBING_MIGRATION_TEST_PATH = Path(__file__).with_name(
-    "test_subing_ths_alert_migration.py"
 )
 
 
@@ -131,7 +130,9 @@ def test_session_anchor_migration_rejects_zero_length_after_normalization() -> N
 
 
 @pytest.mark.isolated_postgresql
-def test_upgrade_normalizes_real_session_rows_and_preserves_alert_facts() -> None:
+def test_upgrade_normalizes_real_session_rows_and_preserves_alert_facts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     configured = os.getenv("GUIYI_ISOLATED_MIGRATION_DATABASE_URL", "").strip()
     if not configured:
         pytest.skip("GUIYI_ISOLATED_MIGRATION_DATABASE_URL is required")
@@ -142,20 +143,51 @@ def test_upgrade_normalizes_real_session_rows_and_preserves_alert_facts() -> Non
         )
     except MigrationTestDatabaseSafetyError as exc:
         pytest.fail(str(exc))
-    engine = create_engine(url, pool_pre_ping=True)
-    support = _load_external_module(SUBING_MIGRATION_TEST_PATH)
-    _, schema = support._prepared_0043_schema(engine)
+    base_engine = create_engine(url, pool_pre_ping=True)
+    schema = f"session_anchor_migration_{uuid4().hex}"
+    sentinel_table = f"session_anchor_sentinel_{uuid4().hex}"
+    with base_engine.begin() as connection:
+        connection.execute(CreateSchema(schema))
+        connection.exec_driver_sql(
+            f'CREATE TABLE public."{sentinel_table}" (id integer PRIMARY KEY)'
+        )
+    engine: Engine | None = None
     try:
-        support._run_loaded_upgrade(engine, schema, support._load_module(support.MIGRATION_PATH))
+        monkeypatch.setenv("PGOPTIONS", f"-c search_path={schema}")
+        engine = create_engine(
+            url,
+            pool_pre_ping=True,
+            connect_args={"options": f"-csearch_path={schema}"},
+        )
+        config = Config()
+        config.set_main_option("script_location", str(QUANT_API_ROOT / "alembic"))
+        config.set_main_option("sqlalchemy.url", url)
+        monkeypatch.setenv("DATABASE_URL", url)
+        command.upgrade(config, "20260902_0044")
         with engine.begin() as connection:
-            support._search_path(connection, schema)
             connection.execute(text(
-                "UPDATE alembic_version SET version_num = '20260902_0044'"
+                "INSERT INTO exchanges "
+                "(code, name, country, timezone, is_active, created_at, updated_at) "
+                "VALUES ('DCE', 'Dalian Commodity Exchange', 'CN', "
+                "'Asia/Shanghai', true, now(), now())"
             ))
-            connection.execute(text("DELETE FROM trading_sessions"))
-            identity = connection.execute(text(
-                "SELECT exchange_code, symbol FROM instruments ORDER BY symbol LIMIT 1"
-            )).mappings().one()
+            connection.execute(text(
+                "INSERT INTO instruments "
+                "(symbol, name, exchange_code, is_active, created_at, updated_at) "
+                "VALUES ('jm', 'Coking Coal', 'DCE', true, now(), now())"
+            ))
+            connection.execute(text(
+                "INSERT INTO alert_events "
+                "(rule_id, symbol, contract, trading_day, frequency, bar_end, "
+                "result_codes, detected_at, notification_attempted_at) "
+                "VALUES ((SELECT id FROM alert_rules "
+                "WHERE rule_code = 'htdy_original_15m'), 'jm', 'JM2701', "
+                "DATE '2026-09-01', '15m', "
+                "TIMESTAMPTZ '2026-09-01 02:30:00+00', "
+                "ARRAY['buy']::varchar[], "
+                "TIMESTAMPTZ '2026-09-01 02:30:01+00', "
+                "TIMESTAMPTZ '2026-09-01 02:30:02+00')"
+            ))
             for index, (label, end) in enumerate((
                 ("21:01", "23:00"),
                 ("09:01", "10:15"),
@@ -168,10 +200,10 @@ def test_upgrade_normalizes_real_session_rows_and_preserves_alert_facts() -> Non
                     "end_time, effective_from, effective_to, crosses_midnight, "
                     "is_active, provider, created_at) VALUES "
                     "(:exchange, :symbol, :name, CAST(:start AS time), CAST(:end AS time), "
-                    "DATE '2026-09-01', DATE '2026-09-01', false, true, 'rqdata', now())"
+                        "DATE '2026-09-01', DATE '2026-09-01', false, true, 'rqdata', now())"
                 ), {
-                    "exchange": identity["exchange_code"],
-                    "symbol": identity["symbol"],
+                    "exchange": "DCE",
+                    "symbol": "jm",
                     "name": f"session-{index}",
                     "start": label,
                     "end": end,
@@ -183,12 +215,13 @@ def test_upgrade_normalizes_real_session_rows_and_preserves_alert_facts() -> Non
             events_before = connection.execute(text(
                 "SELECT * FROM alert_events ORDER BY id"
             )).mappings().all()
+            assert len(events_before) == 1
 
-        migration = _load_migration()
+        command.upgrade(config, "20260903_0045")
         with engine.begin() as connection:
-            support._search_path(connection, schema)
-            migration.op = Operations(MigrationContext.configure(connection))
-            migration.upgrade()
+            assert connection.scalar(text(
+                "SELECT version_num FROM alembic_version"
+            )) == "20260903_0045"
             starts = tuple(connection.execute(text(
                 "SELECT start_time FROM trading_sessions ORDER BY start_time"
             )).scalars())
@@ -202,16 +235,17 @@ def test_upgrade_normalizes_real_session_rows_and_preserves_alert_facts() -> Non
             )).mappings().all()
             assert [dict(row) for row in rules_after] == [dict(row) for row in rules_before]
             assert [dict(row) for row in events_after] == [dict(row) for row in events_before]
+        with engine.connect() as connection:
+            assert connection.scalar(
+                text("SELECT to_regclass(:qualified_name)"),
+                {"qualified_name": f"public.{sentinel_table}"},
+            ) == f"public.{sentinel_table}"
     finally:
-        support._drop_schema(engine, schema)
-        engine.dispose()
-
-
-def _load_external_module(path: Path):
-    spec = importlib.util.spec_from_file_location(
-        f"session_anchor_support_{uuid4().hex}", path
-    )
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+        if engine is not None:
+            engine.dispose()
+        with base_engine.begin() as connection:
+            connection.execute(DropSchema(schema, cascade=True, if_exists=True))
+            connection.exec_driver_sql(
+                f'DROP TABLE IF EXISTS public."{sentinel_table}"'
+            )
+        base_engine.dispose()
