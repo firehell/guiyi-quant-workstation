@@ -1,7 +1,7 @@
 # Newow 页面一致性 Primitive 与可信研究回测
 
 日期：2026-09-04
-状态：`CODE_COMPLETE / TEST_COMPLETE / FUTURES_EVIDENCE_PENDING`
+状态：`CODE_COMPLETE / TEST_COMPLETE / FUTURES_VALIDATION_CONTRACT_COMPLETE / REAL_FUTURES_EVIDENCE_PENDING`
 基线：`develop@7e9d6c5a9b92a99169a9e6ccc69bb9045b0ceebb`
 分支：`feature/newow-trend-page-parity`
 
@@ -177,9 +177,21 @@ npm --prefix apps/quant-web run test:e2e -- --grep Trend
 
 - 只读 Canonical actual-dominant 期货金样本；
 - 1d/1w/60m session 与 physical-contract rollover 实证；
-- 真实 FeeMarginRule / multiplier / tick 快照绑定；
+- 外部带来源、日期与 hash 的 cost / multiplier / tick / limit 研究快照绑定；
 - 涨跌停与流动性可成交性；
 - OOS、Walk-forward 与参数稳定性；
 - release 与 Runtime promotion 人工批准。
 
 在这些 Gate 完成前，只能声明页面公式复算与研究内核测试完成，不能声明收益可信、策略候选晋升、已发布或 Runtime Ready。
+
+## 9. 期货验证合同进展
+
+后续 `codex/newow-futures-validation` 阶段已实现但尚未合入：
+
+- `MarketSeriesResult -> NewowResearchBar` 的严格 actual-dominant 逐周期适配；
+- 带来源和生效区间的合约成本、multiplier 与 tick 快照；
+- 逐拟成交 Bar 的涨跌停约束与零成交量拒绝；
+- 固定公式、空仓进入测试期的 anchored Walk-forward；
+- 明确区分 fixture 合同验证与真实期货收益证据。
+
+八表 Catalog 按 canonical 约束没有手续费表，因此不复活已退役的 `FeeMarginRule`。真实成本与涨跌停需要另行提供带日期、来源和 hash 的只读研究快照。完整边界和后续真实 evidence matrix 见 `docs/tasks/2026-09-04-newow-futures-validation.md`。
