@@ -32,7 +32,7 @@ export function buildSubingDetailViewModel(input: {
     ],
     disclosureSections: [
       { id: 'subing-latest', title: '最新已保存预警', summary: signal ?? (unavailable ? '预警数据不可用' : '当前窗口暂无已保存苏冰预警'), updatedAt: latest?.detected_at ?? null, tone: unavailable ? 'unavailable' : stale ? 'warning' : 'default', rows: latest ? [{ label: 'AlertEvent', value: `${signal} · ${latest.bar_end} · ${latest.contract}`, source: 'alert_event' }] : [] },
-      { id: 'subing-formula', title: '触发口径', summary: 'subing_ths_15m_v3', updatedAt: null, tone: 'default', rows: [{ label: '固定展示身份', value: 'MACD(12,26,9) CROSS + EMA(CLOSE,21) · 仅供人工复核', source: 'generic_indicator' }] },
+      { id: 'subing-formula', title: '触发口径', summary: 'subing_ths_15m_v3', updatedAt: null, tone: 'default', rows: [{ label: '固定展示身份', value: 'actual_dominant / 15m / completed_only · MACD(12,26,9) CROSS + EMA(CLOSE,21) · 仅供人工复核', source: 'generic_indicator' }] },
       { id: 'subing-runtime', title: '运行与通知', summary: status, updatedAt: input.runtime?.rule_status.subing_ths_alert_15m_v1.last_evaluated_bar_at ?? null, tone: input.runtimeUnavailable ? 'unavailable' : 'default', rows: runtimeRows(input.runtime) },
     ], history, dataStatus: unavailable ? 'unavailable' : stale ? 'stale' : 'ready',
   }

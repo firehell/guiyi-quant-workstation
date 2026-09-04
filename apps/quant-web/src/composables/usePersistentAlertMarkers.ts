@@ -169,6 +169,7 @@ export function usePersistentAlertMarkers(dependencies: Dependencies, options: P
       unavailable.value = false
     } catch {
       // Presentation refresh is optional; keep the last persistent marker snapshot.
+      if (requestGeneration !== generation || requestRevisionAtStart !== requestRevision || identityKey(identity) !== identityKey(activeIdentity)) return
       unavailable.value = true
     }
   }

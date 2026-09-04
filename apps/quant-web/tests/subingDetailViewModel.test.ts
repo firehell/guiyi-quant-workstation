@@ -13,6 +13,7 @@ test('renders exactly three sourced SuBing facts and immutable Event history', (
   assert.match(model.facts[1].value, /JM2601/)
   assert.equal(model.history[0]?.id, 'subing-event:7')
   assert.match(model.semanticBanner.text, /只来自 AlertEvent/)
+  assert.match(model.disclosureSections[1]?.rows[0]?.value ?? '', /actual_dominant \/ 15m \/ completed_only/)
 })
 
 test('does not turn no Event or an unavailable initial snapshot into a neutral signal', () => {

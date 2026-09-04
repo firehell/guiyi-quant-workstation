@@ -16,10 +16,17 @@ export function useSubingAlertFacts(dependencies: {
   const runtime = ref<RuntimeAlertProjection | null>(null)
   const runtimeUnavailable = ref(false)
   let generation = 0
+  let activeIdentityKey: string | null = null
 
   async function refresh(identity: SubingAlertFactsIdentity) {
     const requestGeneration = ++generation
     const snapshot = { symbol: identity.symbol.toLowerCase(), frequency: identity.frequency }
+    const nextIdentityKey = `${snapshot.symbol}:${snapshot.frequency}`
+    if (activeIdentityKey !== nextIdentityKey) {
+      activeIdentityKey = nextIdentityKey
+      rule.value = null
+      ruleUnavailable.value = true
+    }
     const [runtimeResult, rulesResult] = await Promise.allSettled([
       dependencies.fetchRuntime(), dependencies.fetchProductAlerts(snapshot.symbol),
     ])
@@ -36,7 +43,7 @@ export function useSubingAlertFacts(dependencies: {
     } else { rule.value = null; ruleUnavailable.value = true }
   }
 
-  function dispose() { generation += 1 }
+  function dispose() { generation += 1; activeIdentityKey = null }
   return { rule, ruleUnavailable, runtime, runtimeUnavailable, refresh, dispose }
 }
 
@@ -45,7 +52,8 @@ function ruleScopeText(response: ProductAlertStateResponse, identity: SubingAler
   const current = findAlertRuleByCode(response.rules, ALERT_RULE_CODES.SUBING_THS)
   if (!current || !isSubingRule(current)) throw new Error('subing rule mismatch')
   if (current.enabled_frequencies.some((frequency) => frequency !== '15m') || (current.enabled_for_product !== current.enabled_frequencies.includes('15m'))) throw new Error('subing scope mismatch')
-  return `Rule 状态不可判定 · 当前 Scope ${current.enabled_for_product ? '已启用' : '未启用'} · ${identity.symbol.toUpperCase()} 15m · 仅只读展示`
+  const enabledFrequencies = current.enabled_frequencies.length ? current.enabled_frequencies.join(', ') : '无'
+  return `Rule ${current.display_name} (${ALERT_RULE_CODES.SUBING_THS}) · 状态不可判定 · 当前 Scope ${current.enabled_for_product ? '已启用' : '未启用'} · enabled_frequencies=${enabledFrequencies} · ${identity.symbol.toUpperCase()} 15m · 仅只读展示`
 }
 
 function isSubingRule(rule: ProductAlertRuleState): boolean {

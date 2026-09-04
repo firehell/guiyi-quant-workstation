@@ -421,13 +421,16 @@ export async function mockMarketDetail(page, options = {}) {
   })
   await page.route('**/api/runtime/health', async (route) => {
     runtimeRequests.push(new URL(route.request().url()))
+    const subingRuleStatus = typeof options.subingRuntimeRuleStatus === 'function'
+      ? options.subingRuntimeRuleStatus({ count: runtimeRequests.length })
+      : options.subingRuntimeRuleStatus
     return route.fulfill({ json: {
       status: 'ok', generated_at: '2026-09-03T03:00:00Z', readonly: true, would_start_services: false,
       would_enqueue_jobs: false, would_send_notifications: false, components: { alert: {
         status: options.alertRuntimeStatus ?? 'ok', enabled_rule_count: 0,
         rule_status: {
-          htdy_original_15m: { last_completed_bar_at: null, last_success_at: null, last_failure_at: null, last_error_type: null },
-          subing_ths_alert_15m_v1: { last_completed_bar_at: null, last_success_at: null, last_failure_at: null, last_error_type: null },
+          htdy_original_15m: { last_evaluated_bar_at: null, last_event_at: null, last_failure_at: null, error_type: null },
+          subing_ths_alert_15m_v1: { last_evaluated_bar_at: null, last_event_at: null, last_failure_at: null, error_type: null, ...subingRuleStatus },
         },
       } },
     } })

@@ -249,19 +249,41 @@ describe('persistent Alert markers', () => {
     const identity = { seriesKind: 'actual_dominant' as const, symbol: 'jm', frequency: '15m' as const }
     const older = controller.sync(identity, bars(), 'replace')
     const newer = controller.sync(identity, bars(), 'replace')
-    second.resolve({ items: [subingEvent(10, 'sell')] })
+    second.resolve({ items: [subingEvent(8, 'sell')] })
     await newer
     first.resolve({ items: [subingEvent(9, 'buy')] })
     await older
-    assert.equal(controller.events.value[0]?.id, 10)
+    assert.equal(controller.events.value[0]?.id, 8)
+    controller.dispose()
+  })
+
+  test('an older same-identity failure cannot mark a newer Event snapshot stale', async () => {
+    const first = deferred<{ items: AlertEvent[] }>()
+    const second = deferred<{ items: AlertEvent[] }>()
+    let calls = 0
+    const controller = usePersistentAlertMarkers({
+      fetchEvents: async () => (++calls === 1 ? first.promise : second.promise),
+      scheduleInterval: () => 1,
+      clearInterval: () => undefined,
+    }, { resolveRuleCodes: () => [ALERT_RULE_CODES.SUBING_THS] })
+    const identity = { seriesKind: 'actual_dominant' as const, symbol: 'jm', frequency: '15m' as const }
+    const older = controller.sync(identity, bars(), 'replace')
+    const newer = controller.sync(identity, bars(), 'replace')
+    second.resolve({ items: [subingEvent(8, 'sell')] })
+    await newer
+    first.reject(new Error('late offline'))
+    await older
+    assert.equal(controller.events.value[0]?.id, 8)
+    assert.equal(controller.unavailable.value, false)
     controller.dispose()
   })
 })
 
 function deferred<T>() {
   let resolve!: (value: T) => void
-  const promise = new Promise<T>((done) => { resolve = done })
-  return { promise, resolve }
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((done, fail) => { resolve = done; reject = fail })
+  return { promise, resolve, reject }
 }
 
 function rule(enabled: boolean) {

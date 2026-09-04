@@ -527,10 +527,49 @@ test('Free, HTDY, and SuBing remain isolated workspaces with only SuBing Event f
   await expect(page.getByText(/正式 S↑ \/ S↓ 只来自 AlertEvent/)).toBeVisible()
   await expect(page.getByText(/S↑ 多头预警/).first()).toBeVisible()
   await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-alert-marker-count', '1')
+  await expect(page.locator('[data-detail-section="facts"] > div').filter({ hasText: '预警状态' })).toContainText('尚无已评估 Bar')
   await page.getByRole('button', { name: '历史记录', exact: true }).click()
   await expect(page.locator('[data-detail-workspace="subing"] .detail-section-tabs__history')).toContainText('Bar 2026-09-03T02:45:00.000Z')
   expect(requests.alertRequests.every(({ method }) => method === 'GET')).toBe(true)
   expect(requests.newowRequests).toEqual([])
+})
+
+test('SuBing projects Rule-specific runtime warm-up and failure states', async ({ page }) => {
+  let errorType = 'evaluation_warming_up'
+  await mockReadyTrend(page, {
+    alertRules: [subingRule()],
+    subingRuntimeRuleStatus: () => ({ error_type: errorType }),
+  })
+  await page.goto('/market/chart?symbol=jm&view=subing')
+  const statusFact = page.locator('[data-detail-section="facts"] > div').filter({ hasText: '预警状态' })
+  await expect(statusFact).toContainText('正在 warm-up')
+
+  errorType = 'evaluation_failed'
+  await page.reload()
+  await expect(page.locator('[data-detail-ready="true"]')).toBeVisible()
+  await expect(statusFact).toContainText('评估失败')
+})
+
+test('SuBing has stable desktop and narrow viewport visuals with selectable history', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 960 })
+  await mockReadyTrend(page, {
+    alertEvents: ({ url }) => url.searchParams.get('rule_code') === 'subing_ths_alert_15m_v1' ? [subingEvent('jm')] : [],
+    alertRules: [subingRule()],
+  })
+  await page.goto('/market/chart?symbol=jm&view=subing')
+  const workspace = page.locator('[data-detail-workspace="subing"]')
+  await expect(workspace).toBeVisible()
+  await expect(page).toHaveScreenshot('market-detail-subing-1440x960.png', {
+    animations: 'disabled', caret: 'hide', maxDiffPixels: 500,
+  })
+
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.getByRole('button', { name: '历史记录', exact: true }).click()
+  await expect(page.getByRole('dialog', { name: '历史记录' })).toContainText('Bar 2026-09-03T02:45:00.000Z')
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  await expect(page).toHaveScreenshot('market-detail-subing-390x844.png', {
+    animations: 'disabled', caret: 'hide', maxDiffPixels: 500,
+  })
 })
 
 test('Trend has stable desktop and narrow viewport visuals', async ({ page }) => {
