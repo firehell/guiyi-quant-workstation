@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import fields
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
+import hashlib
+import json
 
 import pytest
 from sqlalchemy import create_engine, select
@@ -15,6 +17,7 @@ from app.market_data.catalog import ContractFact, MarketCatalog
 from app.market_data.domain import BarFrequency, CanonicalBar, DatasetKey
 from app.market_data.coverage_source import DatabaseCoverageSource
 from app.market_data.errors import InfrastructureError
+from app.market_data import historical_data_manager as historical
 from app.market_data.session_clock import SHANGHAI
 from app.market_data.historical_data_manager import (
     AuditRequest,
@@ -31,6 +34,7 @@ from app.models import (
     Exchange,
     Instrument,
     MainContractMap,
+    MarketDataset,
     MarketPartition,
     TradingCalendar,
     TradingSession,
@@ -343,6 +347,21 @@ def _minute(minute: int) -> CanonicalBar:
     )
 
 
+def _minute_at(bar_end: datetime, close: int) -> CanonicalBar:
+    value = Decimal(close)
+    return CanonicalBar(
+        bar_end,
+        bar_end.date(),
+        value,
+        value,
+        value,
+        value,
+        1,
+        10,
+        20,
+    )
+
+
 def _manager(
     session: Session,
     tmp_path,
@@ -360,6 +379,66 @@ def _manager(
     )
 
 
+def _add_contract(
+    session: Session,
+    *,
+    symbol: str,
+    contract: str,
+    listed_date: date,
+    expired_date: date,
+) -> None:
+    if session.get(Instrument, symbol) is None:
+        session.add(
+            Instrument(
+                symbol=symbol,
+                name=symbol.upper(),
+                exchange_code="DCE",
+                is_active=True,
+            )
+        )
+    session.add(
+        Contract(
+            contract_code=contract,
+            instrument_symbol=symbol,
+            exchange_code="DCE",
+            listed_date=listed_date,
+            expired_date=expired_date,
+            provider="rqdata",
+        )
+    )
+    session.commit()
+
+
+def _single_day_contract_warmup_manager(session: Session, tmp_path):
+    listed = date(2025, 1, 2)
+    _add_contract(
+        session,
+        symbol="pf",
+        contract="PF2611",
+        listed_date=listed,
+        expired_date=date(2025, 2, 1),
+    )
+    frequencies = (
+        BarFrequency.D1,
+        BarFrequency.W1,
+        BarFrequency.M1,
+        BarFrequency.M5,
+        BarFrequency.M15,
+        BarFrequency.M30,
+        BarFrequency.H1,
+    )
+    ends = {
+        DatasetKey("contract", "pf", "PF2611", frequency).as_tuple(): (
+            datetime(2025, 1, 2, 7, index, tzinfo=UTC),
+        )
+        for index, frequency in enumerate(frequencies)
+    }
+    coverage = FakeCoverage(ends)
+    coverage.latest_day = listed
+    provider = FakeProvider({})
+    return _manager(session, tmp_path, coverage, provider), coverage, provider
+
+
 def test_target_contains_only_active_planning_fields() -> None:
     assert tuple(field.name for field in fields(_Target)) == (
         "key",
@@ -368,6 +447,625 @@ def test_target_contains_only_active_planning_fields() -> None:
         "expected",
         "missing",
         "existing",
+    )
+
+
+def test_contract_warmup_dry_run_has_exact_month_targets_stable_hash_and_no_writes(
+    session, tmp_path
+) -> None:
+    listed = date(2025, 1, 2)
+    expired = date(2025, 3, 1)
+    through = date(2025, 2, 3)
+    _add_contract(
+        session,
+        symbol="pf",
+        contract="PF2611",
+        listed_date=listed,
+        expired_date=expired,
+    )
+    frequencies = (
+        BarFrequency.D1,
+        BarFrequency.W1,
+        BarFrequency.M1,
+        BarFrequency.M5,
+        BarFrequency.M15,
+        BarFrequency.M30,
+        BarFrequency.H1,
+    )
+    ends = {
+        DatasetKey("contract", "pf", "PF2611", frequency).as_tuple(): (
+            datetime(2025, 1, 3, 7, frequency_index, tzinfo=UTC),
+            datetime(2025, 2, 3, 7, frequency_index, tzinfo=UTC),
+        )
+        for frequency_index, frequency in enumerate(frequencies)
+    }
+    ends.update(
+        {
+            DatasetKey("continuous", "pf", "MAIN", BarFrequency.D1).as_tuple(): (
+                datetime(2025, 1, 3, 7, tzinfo=UTC),
+            ),
+            DatasetKey("contract", "jm", "JM2509", BarFrequency.D1).as_tuple(): (
+                datetime(2025, 1, 3, 7, tzinfo=UTC),
+            ),
+        }
+    )
+    coverage = FakeCoverage(ends)
+    coverage.latest_day = through
+    provider = FakeProvider({})
+    manager = _manager(session, tmp_path, coverage, provider)
+    expected_targets = tuple(
+        {
+            "dataset": ("contract", "pf", "PF2611", frequency.value),
+            "year": month.year,
+            "month": month.month,
+            "expected_start": ends[
+                ("contract", "pf", "PF2611", frequency.value)
+            ][month_index].isoformat(),
+            "expected_end": ends[
+                ("contract", "pf", "PF2611", frequency.value)
+            ][month_index].isoformat(),
+            "expected_bar_count": 1,
+            "missing_start": ends[
+                ("contract", "pf", "PF2611", frequency.value)
+            ][month_index].isoformat(),
+            "missing_end": ends[
+                ("contract", "pf", "PF2611", frequency.value)
+            ][month_index].isoformat(),
+            "missing_bar_count": 1,
+        }
+        for frequency in frequencies
+        for month_index, month in enumerate((listed, through))
+    )
+    expected_identity = {
+        "schema_version": 1,
+        "command": "data.contract-warmup",
+        "symbol": "pf",
+        "contract": "PF2611",
+        "provider": "rqdata",
+        "listed_date": listed.isoformat(),
+        "expired_date": expired.isoformat(),
+        "requested_window": {
+            "start": listed.isoformat(),
+            "through": through.isoformat(),
+        },
+        "effective_window": {
+            "start": listed.isoformat(),
+            "through": through.isoformat(),
+        },
+        "targets": expected_targets,
+    }
+    expected_hash = hashlib.sha256(
+        json.dumps(
+            expected_identity,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    request = historical.ContractWarmupRequest(
+        symbol=" PF ",
+        contract=" pf2611 ",
+        through=through,
+    )
+
+    first = manager.contract_warmup(request)
+    second = manager.contract_warmup(request)
+
+    assert first == second
+    assert first.status == "planned"
+    assert first.readonly is True
+    assert first.plan.symbol == "pf"
+    assert first.plan.contract == "PF2611"
+    assert first.plan.provider == "rqdata"
+    assert first.plan.listed_date == listed
+    assert first.plan.expired_date == expired
+    assert first.plan.through == through
+    assert first.plan.target_windows == expected_targets
+    assert first.plan.direct_target_count == 6
+    assert first.plan.derived_target_count == 8
+    assert first.plan.expected_bar_count == 14
+    assert first.plan.provider_request_count == 6
+    assert first.plan.plan_sha256 == expected_hash
+    assert first.applied == first.blocked == first.failed == first.provider_requests == 0
+    assert provider.calls == []
+    assert not session.new and not session.dirty and not session.deleted
+    assert tuple(session.scalars(select(MarketPartition))) == ()
+    assert tuple(tmp_path.rglob("*.parquet")) == ()
+    assert {
+        target["dataset"] for target in first.plan.target_windows
+    } == {
+        ("contract", "pf", "PF2611", frequency.value)
+        for frequency in frequencies
+    }
+
+
+@pytest.mark.parametrize(
+    ("expected_hash", "reason_code"),
+    [
+        (None, "CONTRACT_WARMUP_PLAN_HASH_REQUIRED"),
+        ("0" * 63, "CONTRACT_WARMUP_PLAN_HASH_INVALID"),
+        ("A" * 64, "CONTRACT_WARMUP_PLAN_HASH_INVALID"),
+        ("g" * 64, "CONTRACT_WARMUP_PLAN_HASH_INVALID"),
+        (123, "CONTRACT_WARMUP_PLAN_HASH_INVALID"),
+    ],
+)
+def test_contract_warmup_apply_rejects_missing_or_invalid_hash_before_lock(
+    session,
+    tmp_path,
+    monkeypatch,
+    expected_hash,
+    reason_code,
+) -> None:
+    manager, _coverage, provider = _single_day_contract_warmup_manager(
+        session, tmp_path
+    )
+    lock_calls = []
+    monkeypatch.setattr(
+        manager.catalog,
+        "acquire_maintenance_lock",
+        lambda: lock_calls.append("lock"),
+    )
+
+    with pytest.raises(ValueError, match=f"^{reason_code}$"):
+        manager.contract_warmup(
+            historical.ContractWarmupRequest(
+                "pf",
+                "PF2611",
+                date(2025, 1, 2),
+                expected_hash,
+                True,
+            )
+        )
+
+    assert lock_calls == []
+    assert provider.calls == []
+    assert tuple(session.scalars(select(MarketPartition))) == ()
+    assert tuple(tmp_path.rglob("*.parquet")) == ()
+
+
+def test_contract_warmup_rejects_incomplete_requested_through_before_provider(
+    session, tmp_path
+) -> None:
+    manager, coverage, provider = _single_day_contract_warmup_manager(
+        session, tmp_path
+    )
+    coverage.latest_day = date(2025, 1, 1)
+
+    with pytest.raises(ValueError, match="^CONTRACT_WARMUP_THROUGH_INCOMPLETE$"):
+        manager.contract_warmup(
+            historical.ContractWarmupRequest(
+                "pf", "PF2611", date(2025, 1, 2)
+            )
+        )
+
+    assert provider.calls == []
+    assert tuple(session.scalars(select(MarketPartition))) == ()
+    assert tuple(tmp_path.rglob("*.parquet")) == ()
+
+
+def test_contract_warmup_rejects_empty_effective_lifecycle_window(
+    session, tmp_path
+) -> None:
+    manager, coverage, provider = _single_day_contract_warmup_manager(
+        session, tmp_path
+    )
+    coverage.latest_day = date(2025, 1, 3)
+
+    with pytest.raises(ValueError, match="^CONTRACT_ACTIVE_WINDOW_MISSING$"):
+        manager.contract_warmup(
+            historical.ContractWarmupRequest(
+                "pf", "PF2611", date(2025, 1, 1)
+            )
+        )
+
+    assert provider.calls == []
+    assert tuple(session.scalars(select(MarketPartition))) == ()
+
+
+def test_contract_warmup_apply_blocks_when_maintenance_lock_is_unavailable(
+    session, tmp_path, monkeypatch
+) -> None:
+    manager, _coverage, provider = _single_day_contract_warmup_manager(
+        session, tmp_path
+    )
+    dry_run = manager.contract_warmup(
+        historical.ContractWarmupRequest("pf", "PF2611", date(2025, 1, 2))
+    )
+    callbacks = []
+    monkeypatch.setattr(manager.catalog, "acquire_maintenance_lock", lambda: None)
+
+    result = manager.contract_warmup(
+        historical.ContractWarmupRequest(
+            "pf",
+            "PF2611",
+            date(2025, 1, 2),
+            dry_run.plan.plan_sha256,
+            True,
+        ),
+        before_apply=lambda: callbacks.append("callback"),
+    )
+
+    assert result.status == "blocked"
+    assert result.readonly is False
+    assert result.plan == dry_run.plan
+    assert result.applied == result.failed == result.provider_requests == 0
+    assert result.blocked == 1
+    assert result.failures == ({"reason_code": "maintenance_locked"},)
+    assert callbacks == []
+    assert provider.calls == []
+    assert tuple(session.scalars(select(MarketPartition))) == ()
+    assert tuple(tmp_path.rglob("*.parquet")) == ()
+
+
+def test_contract_warmup_apply_recomputes_plan_under_lock_before_callback(
+    session, tmp_path, monkeypatch
+) -> None:
+    manager, coverage, provider = _single_day_contract_warmup_manager(
+        session, tmp_path
+    )
+    dry_run = manager.contract_warmup(
+        historical.ContractWarmupRequest("pf", "PF2611", date(2025, 1, 2))
+    )
+    lease = _TrackingLease()
+    callbacks = []
+
+    def acquire():
+        daily = DatasetKey("contract", "pf", "PF2611", "1d")
+        coverage.ends[daily.as_tuple()] = ()
+        return lease
+
+    monkeypatch.setattr(manager.catalog, "acquire_maintenance_lock", acquire)
+
+    with pytest.raises(ValueError, match="^CONTRACT_WARMUP_PLAN_CHANGED$"):
+        manager.contract_warmup(
+            historical.ContractWarmupRequest(
+                "pf",
+                "PF2611",
+                date(2025, 1, 2),
+                dry_run.plan.plan_sha256,
+                True,
+            ),
+            before_apply=lambda: callbacks.append("callback"),
+        )
+
+    assert lease.released is True
+    assert callbacks == []
+    assert provider.calls == []
+    assert tuple(session.scalars(select(MarketPartition))) == ()
+    assert tuple(tmp_path.rglob("*.parquet")) == ()
+
+
+def test_contract_warmup_callback_failure_releases_lock_before_provider_or_publish(
+    session, tmp_path, monkeypatch
+) -> None:
+    manager, _coverage, provider = _single_day_contract_warmup_manager(
+        session, tmp_path
+    )
+    dry_run = manager.contract_warmup(
+        historical.ContractWarmupRequest("pf", "PF2611", date(2025, 1, 2))
+    )
+    lease = _TrackingLease()
+    monkeypatch.setattr(manager.catalog, "acquire_maintenance_lock", lambda: lease)
+
+    def fail_callback() -> None:
+        raise RuntimeError("projection invalidation failed")
+
+    with pytest.raises(RuntimeError, match="projection invalidation failed"):
+        manager.contract_warmup(
+            historical.ContractWarmupRequest(
+                "pf",
+                "PF2611",
+                date(2025, 1, 2),
+                dry_run.plan.plan_sha256,
+                True,
+            ),
+            before_apply=fail_callback,
+        )
+
+    assert lease.released is True
+    assert provider.calls == []
+    assert tuple(session.scalars(select(MarketPartition))) == ()
+    assert tuple(tmp_path.rglob("*.parquet")) == ()
+
+
+def test_contract_warmup_apply_publishes_only_exact_family_and_derives_from_1m(
+    session, tmp_path, monkeypatch
+) -> None:
+    through = date(2025, 1, 2)
+    _add_contract(
+        session,
+        symbol="pf",
+        contract="PF2611",
+        listed_date=through,
+        expired_date=date(2025, 2, 1),
+    )
+    minute_key = DatasetKey("contract", "pf", "PF2611", "1m")
+    minute_bars = tuple(
+        _minute_at(datetime(2025, 1, 2, 1, minute, tzinfo=UTC), 100 + minute)
+        for minute in range(1, 6)
+    )
+    daily_bar = _daily_on(through, 200, 5)
+    keys = {
+        frequency: DatasetKey("contract", "pf", "PF2611", frequency)
+        for frequency in (
+            BarFrequency.D1,
+            BarFrequency.W1,
+            BarFrequency.M1,
+            BarFrequency.M5,
+            BarFrequency.M15,
+            BarFrequency.M30,
+            BarFrequency.H1,
+        )
+    }
+    ends = {
+        keys[BarFrequency.D1].as_tuple(): (daily_bar.bar_end,),
+        keys[BarFrequency.W1].as_tuple(): (daily_bar.bar_end,),
+        minute_key.as_tuple(): tuple(bar.bar_end for bar in minute_bars),
+        **{
+            keys[frequency].as_tuple(): (minute_bars[-1].bar_end,)
+            for frequency in (
+                BarFrequency.M5,
+                BarFrequency.M15,
+                BarFrequency.M30,
+                BarFrequency.H1,
+            )
+        },
+    }
+    coverage = FakeCoverage(ends)
+    coverage.latest_day = through
+    provider = FakeProvider(
+        {
+            keys[BarFrequency.D1].as_tuple(): (daily_bar,),
+            keys[BarFrequency.W1].as_tuple(): (daily_bar,),
+            minute_key.as_tuple(): minute_bars,
+        }
+    )
+    manager = _manager(session, tmp_path, coverage, provider)
+    dry_run = manager.contract_warmup(
+        historical.ContractWarmupRequest("pf", "PF2611", through)
+    )
+    monkeypatch.setattr(
+        manager,
+        "_weekly_daily_companions",
+        lambda *_args, **_kwargs: pytest.fail(
+            "contract warm-up must not use rank1 weekly companions"
+        ),
+    )
+
+    result = manager.contract_warmup(
+        historical.ContractWarmupRequest(
+            "pf", "PF2611", through, dry_run.plan.plan_sha256, True
+        )
+    )
+
+    assert result.status == "passed"
+    assert result.readonly is False
+    assert result.plan == dry_run.plan
+    assert result.applied == 7
+    assert result.blocked == result.failed == 0
+    assert result.provider_requests == 3
+    assert provider.calls == [
+        (keys[BarFrequency.D1], (daily_bar.bar_end,)),
+        (keys[BarFrequency.W1], (daily_bar.bar_end,)),
+        (minute_key, tuple(bar.bar_end for bar in minute_bars)),
+    ]
+    assert tuple(session.scalars(select(MainContractMap))) == ()
+    datasets = tuple(session.scalars(select(MarketDataset)))
+    assert {
+        (
+            dataset.kind,
+            dataset.symbol,
+            dataset.series_or_contract,
+            dataset.frequency,
+        )
+        for dataset in datasets
+    } == {
+        ("contract", "pf", "PF2611", frequency.value)
+        for frequency in keys
+    }
+    for frequency, key in keys.items():
+        bars = manager.store.read_month(key, 2025, 1)
+        assert bars
+        if frequency in {
+            BarFrequency.M5,
+            BarFrequency.M15,
+            BarFrequency.M30,
+            BarFrequency.H1,
+        }:
+            assert tuple(bar.bar_end for bar in bars) == (minute_bars[-1].bar_end,)
+
+
+def test_contract_warmup_merges_existing_valid_bars_and_readback_matches_catalog(
+    session, tmp_path
+) -> None:
+    through = date(2025, 1, 2)
+    _add_contract(
+        session,
+        symbol="pf",
+        contract="PF2611",
+        listed_date=through,
+        expired_date=date(2025, 2, 1),
+    )
+    key = DatasetKey("contract", "pf", "PF2611", "1m")
+    bars = tuple(
+        _minute_at(datetime(2025, 1, 2, 1, minute, tzinfo=UTC), 100 + minute)
+        for minute in range(1, 6)
+    )
+    coverage = FakeCoverage({key.as_tuple(): tuple(bar.bar_end for bar in bars)})
+    coverage.latest_day = through
+    provider = FakeProvider({key.as_tuple(): bars[2:]})
+    manager = _manager(session, tmp_path, coverage, provider)
+    _publish_existing(manager, key, bars[:2])
+    dry_run = manager.contract_warmup(
+        historical.ContractWarmupRequest("pf", "PF2611", through)
+    )
+
+    result = manager.contract_warmup(
+        historical.ContractWarmupRequest(
+            "pf", "PF2611", through, dry_run.plan.plan_sha256, True
+        )
+    )
+
+    assert result.status == "passed"
+    assert result.applied == 1
+    assert result.provider_requests == 1
+    assert provider.calls == [(key, tuple(bar.bar_end for bar in bars[2:]))]
+    assert manager.store.read_month(key, 2025, 1) == bars
+    partition = manager.catalog.all_partitions(key)[0]
+    assert partition.coverage_start == bars[0].bar_end - timedelta(minutes=1)
+    assert partition.coverage_end == bars[-1].bar_end
+    assert partition.row_count == len(bars)
+
+    remaining = manager.contract_warmup(
+        historical.ContractWarmupRequest("pf", "PF2611", through)
+    )
+    assert remaining.status == "planned"
+    assert remaining.plan.target_windows == ()
+    assert remaining.plan.direct_target_count == 0
+    assert remaining.plan.derived_target_count == 0
+    assert remaining.plan.expected_bar_count == 0
+    assert remaining.plan.provider_request_count == 0
+
+
+def test_contract_warmup_provider_quota_is_partial_without_retry_and_resumes_gap(
+    session, tmp_path
+) -> None:
+    listed = date(2025, 1, 3)
+    through = date(2025, 2, 3)
+    _add_contract(
+        session,
+        symbol="pf",
+        contract="PF2611",
+        listed_date=listed,
+        expired_date=date(2025, 3, 1),
+    )
+    key = DatasetKey("contract", "pf", "PF2611", "1d")
+    january = _daily_on(listed, 100, 1)
+    february = _daily_on(through, 101, 2)
+    coverage = FakeCoverage({key.as_tuple(): (january.bar_end, february.bar_end)})
+    coverage.latest_day = through
+    provider = FakeProvider({key.as_tuple(): (january, february)})
+    provider.quota_after = 1
+    manager = _manager(session, tmp_path, coverage, provider)
+    dry_run = manager.contract_warmup(
+        historical.ContractWarmupRequest("pf", "PF2611", through)
+    )
+
+    result = manager.contract_warmup(
+        historical.ContractWarmupRequest(
+            "pf", "PF2611", through, dry_run.plan.plan_sha256, True
+        )
+    )
+
+    assert result.status == "partial"
+    assert result.applied == 1
+    assert result.failed == result.blocked == 0
+    assert result.provider_requests == 2
+    assert provider.calls == [
+        (key, (january.bar_end,)),
+        (key, (february.bar_end,)),
+    ]
+    assert manager.store.read_month(key, 2025, 1) == (january,)
+    assert [(item.year, item.month) for item in manager.catalog.all_partitions(key)] == [
+        (2025, 1)
+    ]
+
+    remaining = manager.contract_warmup(
+        historical.ContractWarmupRequest("pf", "PF2611", through)
+    )
+    assert [
+        (target["year"], target["month"], target["missing_bar_count"])
+        for target in remaining.plan.target_windows
+    ] == [(2025, 2, 1)]
+
+
+def test_contract_warmup_partition_failure_keeps_successful_month_and_reason_code(
+    session, tmp_path
+) -> None:
+    listed = date(2025, 1, 3)
+    through = date(2025, 2, 3)
+    _add_contract(
+        session,
+        symbol="pf",
+        contract="PF2611",
+        listed_date=listed,
+        expired_date=date(2025, 3, 1),
+    )
+    key = DatasetKey("contract", "pf", "PF2611", "1d")
+    january = _daily_on(listed, 100, 1)
+    february = _daily_on(through, 101, 2)
+    coverage = FakeCoverage({key.as_tuple(): (january.bar_end, february.bar_end)})
+    coverage.latest_day = through
+    provider = FakeProvider({key.as_tuple(): (february,)})
+    manager = _manager(session, tmp_path, coverage, provider)
+    dry_run = manager.contract_warmup(
+        historical.ContractWarmupRequest("pf", "PF2611", through)
+    )
+
+    result = manager.contract_warmup(
+        historical.ContractWarmupRequest(
+            "pf", "PF2611", through, dry_run.plan.plan_sha256, True
+        )
+    )
+
+    assert result.status == "failed"
+    assert result.applied == 1
+    assert result.failed == 1
+    assert result.blocked == 0
+    assert result.provider_requests == 2
+    assert result.failures == (
+        {
+            "dataset": key.as_tuple(),
+            "year": 2025,
+            "month": 1,
+            "reason_code": "TARGET_WINDOW_INCOMPLETE",
+        },
+    )
+    assert manager.store.read_month(key, 2025, 2) == (february,)
+    assert [(item.year, item.month) for item in manager.catalog.all_partitions(key)] == [
+        (2025, 2)
+    ]
+
+    remaining = manager.contract_warmup(
+        historical.ContractWarmupRequest("pf", "PF2611", through)
+    )
+    assert [
+        (target["year"], target["month"], target["missing_bar_count"])
+        for target in remaining.plan.target_windows
+    ] == [(2025, 1, 1)]
+
+
+def test_contract_warmup_contracts_expose_only_the_frozen_public_fields() -> None:
+    assert tuple(field.name for field in fields(historical.ContractWarmupRequest)) == (
+        "symbol",
+        "contract",
+        "through",
+        "expected_plan_sha256",
+        "apply",
+    )
+    assert tuple(field.name for field in fields(historical.ContractWarmupPlan)) == (
+        "symbol",
+        "contract",
+        "provider",
+        "listed_date",
+        "expired_date",
+        "through",
+        "target_windows",
+        "direct_target_count",
+        "derived_target_count",
+        "expected_bar_count",
+        "provider_request_count",
+        "plan_sha256",
+    )
+    assert tuple(field.name for field in fields(historical.ContractWarmupResult)) == (
+        "status",
+        "readonly",
+        "plan",
+        "applied",
+        "blocked",
+        "failed",
+        "provider_requests",
+        "failures",
     )
 
 

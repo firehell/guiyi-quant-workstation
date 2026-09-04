@@ -32,6 +32,8 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
+import hashlib
+import json
 from typing import Protocol
 
 from sqlalchemy.exc import SQLAlchemyError
@@ -172,6 +174,43 @@ class AuditRequest:
 
     products: tuple[str, ...]
     through: date | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ContractWarmupRequest:
+    symbol: str
+    contract: str
+    through: date
+    expected_plan_sha256: str | None = None
+    apply: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class ContractWarmupPlan:
+    symbol: str
+    contract: str
+    provider: str
+    listed_date: date
+    expired_date: date
+    through: date
+    target_windows: tuple[Mapping[str, object], ...]
+    direct_target_count: int
+    derived_target_count: int
+    expected_bar_count: int
+    provider_request_count: int
+    plan_sha256: str
+
+
+@dataclass(frozen=True, slots=True)
+class ContractWarmupResult:
+    status: str
+    readonly: bool
+    plan: ContractWarmupPlan
+    applied: int
+    blocked: int
+    failed: int
+    provider_requests: int
+    failures: tuple[Mapping[str, object], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -449,6 +488,200 @@ class HistoricalDataManager:
             )
         )
         return self._execute("refresh", targets, request.through, apply=request.apply)
+
+    def contract_warmup(
+        self,
+        request: ContractWarmupRequest,
+        *,
+        before_apply: Callable[[], None] | None = None,
+    ) -> ContractWarmupResult:
+        """规划或执行单一真实合约上市有效期内的七周期 warm-up。"""
+        plan, _targets = self._contract_warmup_plan(request)
+        if not request.apply:
+            return ContractWarmupResult(
+                status="planned",
+                readonly=True,
+                plan=plan,
+                applied=0,
+                blocked=0,
+                failed=0,
+                provider_requests=0,
+            )
+        expected_hash = request.expected_plan_sha256
+        if expected_hash is None:
+            raise ValueError("CONTRACT_WARMUP_PLAN_HASH_REQUIRED")
+        if not isinstance(expected_hash, str) or len(expected_hash) != 64 or any(
+            character not in "0123456789abcdef" for character in expected_hash
+        ):
+            raise ValueError("CONTRACT_WARMUP_PLAN_HASH_INVALID")
+        lease = self.catalog.acquire_maintenance_lock()
+        if lease is None:
+            return ContractWarmupResult(
+                status="blocked",
+                readonly=False,
+                plan=plan,
+                applied=0,
+                blocked=1,
+                failed=0,
+                provider_requests=0,
+                failures=({"reason_code": "maintenance_locked"},),
+            )
+        try:
+            locked_plan, locked_targets = self._contract_warmup_plan(request)
+            if locked_plan.plan_sha256 != expected_hash:
+                raise ValueError("CONTRACT_WARMUP_PLAN_CHANGED")
+            if before_apply is not None:
+                before_apply()
+            maintenance = self._execute_apply(
+                "contract_warmup",
+                tuple(
+                    target
+                    for target in locked_targets
+                    if target.key.frequency in PROVIDER_FETCH_FREQUENCIES
+                ),
+                tuple(
+                    target
+                    for target in locked_targets
+                    if target.key.frequency in INTRADAY_DERIVED_FREQUENCIES
+                ),
+                request.through,
+                weekly_daily_companions=False,
+            )
+            return ContractWarmupResult(
+                status=maintenance.status,
+                readonly=False,
+                plan=locked_plan,
+                applied=maintenance.applied,
+                blocked=maintenance.blocked,
+                failed=maintenance.failed,
+                provider_requests=maintenance.provider_requests,
+                failures=maintenance.failures,
+            )
+        finally:
+            lease.release()
+
+    def _contract_warmup_plan(
+        self,
+        request: ContractWarmupRequest,
+    ) -> tuple[ContractWarmupPlan, tuple[_Target, ...]]:
+        """只读构建 exact physical-contract 目标及稳定 plan identity。"""
+        symbol = request.symbol.strip().lower()
+        contract = request.contract.strip().upper()
+        assert_products_not_retired((symbol,))
+        fact = self.catalog.contract_fact(symbol, contract)
+        latest_complete = self.coverage.latest_complete_day((symbol,))
+        if request.through > latest_complete:
+            raise ValueError("CONTRACT_WARMUP_THROUGH_INCOMPLETE")
+        effective_through = min(
+            request.through,
+            fact.expired_date - timedelta(days=1),
+        )
+        if fact.listed_date > effective_through:
+            raise ValueError("CONTRACT_ACTIVE_WINDOW_MISSING")
+
+        targets: list[_Target] = []
+        for frequency in _FREQUENCY_ORDER:
+            key = DatasetKey(
+                DatasetKind.CONTRACT,
+                symbol,
+                contract,
+                frequency,
+            )
+            for year, month in _months(fact.listed_date, effective_through):
+                expected = tuple(
+                    item.astimezone(UTC)
+                    for item in self.coverage.contract_expected_bar_ends(
+                        key,
+                        fact,
+                        year,
+                        month,
+                        effective_through,
+                    )
+                )
+                if not expected:
+                    continue
+                existing, physical_reason = self._existing_partition(key, year, month)
+                if physical_reason is not None:
+                    targets.append(_Target(key, year, month, expected, expected, ()))
+                    continue
+                classification = self._classify_contract_partition(
+                    key,
+                    year,
+                    month,
+                    expected,
+                    existing,
+                    effective_through,
+                )
+                if classification.outside_lifecycle:
+                    targets.append(
+                        _Target(
+                            key,
+                            year,
+                            month,
+                            classification.expected,
+                            classification.expected,
+                            (),
+                        )
+                    )
+                elif classification.missing_mapped:
+                    targets.append(
+                        _Target(
+                            key,
+                            year,
+                            month,
+                            classification.expected,
+                            classification.missing_mapped,
+                            existing,
+                        )
+                    )
+
+        target_windows = tuple(_contract_warmup_target_payload(item) for item in targets)
+        plan_identity: Mapping[str, object] = {
+            "schema_version": 1,
+            "command": "data.contract-warmup",
+            "symbol": symbol,
+            "contract": contract,
+            "provider": fact.provider,
+            "listed_date": fact.listed_date.isoformat(),
+            "expired_date": fact.expired_date.isoformat(),
+            "requested_window": {
+                "start": fact.listed_date.isoformat(),
+                "through": request.through.isoformat(),
+            },
+            "effective_window": {
+                "start": fact.listed_date.isoformat(),
+                "through": effective_through.isoformat(),
+            },
+            "targets": target_windows,
+        }
+        plan_sha256 = hashlib.sha256(
+            json.dumps(
+                plan_identity,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+        direct_target_count = sum(
+            target.key.frequency in PROVIDER_FETCH_FREQUENCIES for target in targets
+        )
+        return (
+            ContractWarmupPlan(
+                symbol=symbol,
+                contract=contract,
+                provider=fact.provider,
+                listed_date=fact.listed_date,
+                expired_date=fact.expired_date,
+                through=request.through,
+                target_windows=target_windows,
+                direct_target_count=direct_target_count,
+                derived_target_count=len(targets) - direct_target_count,
+                expected_bar_count=sum(len(target.expected) for target in targets),
+                provider_request_count=direct_target_count,
+                plan_sha256=plan_sha256,
+            ),
+            tuple(targets),
+        )
 
     def audit(
         self,
@@ -889,6 +1122,7 @@ class HistoricalDataManager:
             fetched,
             intraday_derived,
             through,
+            weekly_daily_companions=True,
         )
 
     def _execute_streaming(
@@ -914,6 +1148,7 @@ class HistoricalDataManager:
                 frequencies=INTRADAY_DERIVED_FREQUENCIES,
             ),
             through,
+            weekly_daily_companions=True,
         )
 
     def _execute_apply(
@@ -922,6 +1157,8 @@ class HistoricalDataManager:
         fetched,
         intraday_derived,
         through: date | None,
+        *,
+        weekly_daily_companions: bool,
     ) -> MaintenanceResult:
         """apply 核心循环：先聚合已有 1m，再 fetch，最后扫剩余日内派生目标。"""
         remaining_derived = list(intraday_derived)
@@ -960,7 +1197,9 @@ class HistoricalDataManager:
             try:
                 fetch_targets = (
                     (*self._weekly_daily_companions(target, through), target)
-                    if target.key.frequency is BarFrequency.W1 and through is not None
+                    if weekly_daily_companions
+                    and target.key.frequency is BarFrequency.W1
+                    and through is not None
                     else (target,)
                 )
                 planned += len(fetch_targets)
@@ -1307,6 +1546,21 @@ def _target_payload(target: _Target) -> Mapping[str, object]:
         "month": target.month,
         "window_start": target.missing[0].isoformat(),
         "window_end": target.missing[-1].isoformat(),
+        "missing_bar_count": len(target.missing),
+    }
+
+
+def _contract_warmup_target_payload(target: _Target) -> Mapping[str, object]:
+    """稳定描述 warm-up 月目标的完整 expected 与实际 missing 边界。"""
+    return {
+        "dataset": target.key.as_tuple(),
+        "year": target.year,
+        "month": target.month,
+        "expected_start": target.expected[0].isoformat(),
+        "expected_end": target.expected[-1].isoformat(),
+        "expected_bar_count": len(target.expected),
+        "missing_start": target.missing[0].isoformat(),
+        "missing_end": target.missing[-1].isoformat(),
         "missing_bar_count": len(target.missing),
     }
 
