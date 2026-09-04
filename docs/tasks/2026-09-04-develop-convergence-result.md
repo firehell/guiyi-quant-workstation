@@ -28,7 +28,10 @@
 
 ## 变更记录
 
-- 尚未执行 mutation。
+- 删除 tracked `.playwright-cli/**`；Git 历史未重写。
+- `.gitignore` 已加入 `.playwright-cli/`。
+- Newow screenshot 保留，状态为 `DISTRIBUTION_APPROVED_BY_OWNER`。
+- 未恢复或分发原始页面响应、逐 Bar 输入或 RQData/Canonical 原文。
 
 ## 验证
 

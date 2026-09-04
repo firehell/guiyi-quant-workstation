@@ -69,7 +69,20 @@
 279aa0c3a88b6e6c5413387a57085dfe4c4d23a34befa751d95ced4c03be962f
 ```
 
-若仓库将设为公开，还应由仓库所有者确认第三方页面截图的公开分发权限。
+## Owner 截图分发决定
+
+2026-09-04，仓库 Owner 明确选择方案 A，批准
+`docs/research/newow-v3.2.82/screenshots/**` 中现有截图继续保留在当前公开 GitHub
+仓库：
+
+```text
+DISTRIBUTION_STATUS = DISTRIBUTION_APPROVED_BY_OWNER
+NEWOW_SCREENSHOT_POLICY = RETAIN
+```
+
+该状态只记录 Owner 的仓库分发选择，不构成法律意见，也不扩大对第三方内容的
+权利声明。它不覆盖牛哇完整 HTML、JavaScript、原始接口响应、股票/指数逐 Bar
+输入或 RQData/Canonical 原始事实；这些内容仍不得进入 GitHub-safe dossier。
 
 ## 目录结构
 
