@@ -279,7 +279,7 @@ Expected: FAIL with missing price_channel import。
 
 ~~~python
 TARGET_ABSORB_CHANNEL_PAGE_V1 = "newow_target_absorb_hhv_llv10_page_v1"
-TARGET_ABSORB_DISPLAY_PAGE_V1 = "newow_target_absorb_display_selection_page_v1"
+TARGET_ABSORB_DISPLAY_PAGE_V2 = "newow_target_absorb_display_selection_page_v2"
 
 class DisplayPeriod(StrEnum):
     DAY = "day"
@@ -326,7 +326,7 @@ class DisplayPriceSelection:
     absorb_period: DisplayPeriod | None
     target_branch_token: str
     absorb_branch_token: str
-    formula_version: str = TARGET_ABSORB_DISPLAY_PAGE_V1
+    formula_version: str = TARGET_ABSORB_DISPLAY_PAGE_V2
 ~~~
 
 - [ ] **Step 3: 实现完整窗口 HHV/LLV 与统一护栏**

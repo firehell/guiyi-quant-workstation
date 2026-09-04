@@ -16,7 +16,7 @@ const calculationIdentity = [
   'newow_main_force_control_page_v1',
   'newow_main_rise_ma35_ma45_page_v1',
   'newow_target_absorb_hhv_llv10_page_v1',
-  'newow_target_absorb_display_selection_page_v1',
+  'newow_target_absorb_display_selection_page_v2',
   'newow_hhv_llv_window_optimizer_page_v1',
   'newow_hhv_llv_window_optimizer_causal_v1',
   'newow_composite_decision_page_v3_2_82',
@@ -165,7 +165,7 @@ function basePayload() {
       display: {
         target: '13.00', absorb: '9.00', raw_target: '13.00', raw_absorb: '9.00',
         target_period: 'week', absorb_period: 'week', target_branch_token: 'weekly_target',
-        absorb_branch_token: 'weekly_absorb', formula_version: 'newow_target_absorb_display_selection_page_v1',
+        absorb_branch_token: 'weekly_absorb', formula_version: 'newow_target_absorb_display_selection_page_v2',
       },
     },
     page_window_comparison: [10, 20, 24, 30, 52].map((window, index) => ({
@@ -191,7 +191,7 @@ function basePayload() {
       oscillation_holding: true, main_force_status: '有庄控盘', main_rise_active: true,
       cup_state: 'BREAKOUT', weekly_signal: 'hold', daily_signal: 'buy',
       repainting_inputs_excluded: ['zigzag'],
-      formula_versions: ['newow_diagnostic_facts_cleanroom_v1', 'newow_target_absorb_display_selection_page_v1'],
+      formula_versions: ['newow_diagnostic_facts_cleanroom_v1', 'newow_target_absorb_display_selection_page_v2'],
     },
     diagnostic_tokens: [{
       code: 'TARGET_ABOVE_CLOSE', severity: 'info', fact_keys: ['target_price'],
@@ -206,7 +206,7 @@ function basePayload() {
       trend_band: 'newow_trend_band_page_v2', escape: 'newow_escape_d123_page_v2', cup_handle: 'newow_cup_handle_v1',
       oscillation: 'newow_oscillation_hhv_llv10_page_v1', main_force: 'newow_main_force_control_page_v1',
       main_rise: 'newow_main_rise_ma35_ma45_page_v1', price_channel: 'newow_target_absorb_hhv_llv10_page_v1',
-      display_selection: 'newow_target_absorb_display_selection_page_v1',
+      display_selection: 'newow_target_absorb_display_selection_page_v2',
       page_window_comparison: 'newow_hhv_llv_window_optimizer_page_v1',
       causal_window_identity: 'newow_hhv_llv_window_optimizer_causal_v1',
       composite_page: 'newow_composite_decision_page_v3_2_82',

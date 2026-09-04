@@ -13,7 +13,7 @@ from guiyi_quant.newow import (
     MAIN_FORCE_CONTROL_FORMULA_VERSION,
     MAIN_RISE_PAGE_V1,
     OSCILLATION_FORMULA_VERSION,
-    TARGET_ABSORB_DISPLAY_PAGE_V1,
+    TARGET_ABSORB_DISPLAY_PAGE_V2,
     DisplayPeriod,
     DisplayPriceSelection,
     DiagnosticInputs,
@@ -366,7 +366,7 @@ def test_walk_forward_result_cannot_be_hand_built_and_marked_trusted() -> None:
 
 def test_formula_lineage_contains_only_explicit_primitive_identities() -> None:
     facts = build_diagnostic_facts(_inputs())
-    assert TARGET_ABSORB_DISPLAY_PAGE_V1 in facts.formula_versions
+    assert TARGET_ABSORB_DISPLAY_PAGE_V2 in facts.formula_versions
     assert MAIN_FORCE_CONTROL_FORMULA_VERSION in facts.formula_versions
     assert OSCILLATION_FORMULA_VERSION in facts.formula_versions
     assert NEWOW_TREND_D1_PAGE_V2.trend_band_formula in facts.formula_versions

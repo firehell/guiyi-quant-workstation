@@ -279,7 +279,7 @@ def _result() -> SimpleNamespace:
                 "newow_main_force_control_page_v1",
                 "newow_main_rise_ma35_ma45_page_v1",
                 "newow_target_absorb_hhv_llv10_page_v1",
-                "newow_target_absorb_display_selection_page_v1",
+                "newow_target_absorb_display_selection_page_v2",
                 "newow_hhv_llv_window_optimizer_page_v1",
                 "newow_hhv_llv_window_optimizer_causal_v1",
                 "newow_composite_decision_page_v3_2_82",

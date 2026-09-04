@@ -249,7 +249,7 @@ function twoSegmentTrendData(): NewowTrendDetailResponse {
       },
       weekly: { frequency: '1w', points: [], owner_segment_ids: [], formula_version: 'newow_target_absorb_hhv_llv10_page_v1' },
       sixty_minute: { frequency: '60m', points: [], owner_segment_ids: [], formula_version: 'newow_target_absorb_hhv_llv10_page_v1' },
-      display: { target: 18, absorb: 11, raw_target: 18, raw_absorb: 11, target_period: 'day', absorb_period: 'day', target_branch_token: 'daily_target', absorb_branch_token: 'daily_absorb', formula_version: 'newow_target_absorb_display_selection_page_v1' },
+      display: { target: 18, absorb: 11, raw_target: 18, raw_absorb: 11, target_period: 'day', absorb_period: 'day', target_branch_token: 'daily_target', absorb_branch_token: 'daily_absorb', formula_version: 'newow_target_absorb_display_selection_page_v2' },
     },
     legend: { BUILD: 'trend build', CLEAR: 'trend clear', D1: 'escape D1', D2: 'escape D2', D3: 'escape D3' },
     formula_descriptions: {

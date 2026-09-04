@@ -399,7 +399,7 @@ function snapshot(): MutableSnapshot {
       trend_band: 'newow_trend_band_page_v2', escape: 'newow_escape_d123_page_v2', cup_handle: 'newow_cup_handle_v1',
       oscillation: 'newow_oscillation_hhv_llv10_page_v1', main_force: 'newow_main_force_control_page_v1',
       main_rise: 'newow_main_rise_ma35_ma45_page_v1', price_channel: 'newow_target_absorb_hhv_llv10_page_v1',
-      display_selection: 'newow_target_absorb_display_selection_page_v1', page_window_comparison: 'newow_hhv_llv_window_optimizer_page_v1',
+      display_selection: 'newow_target_absorb_display_selection_page_v2', page_window_comparison: 'newow_hhv_llv_window_optimizer_page_v1',
       causal_window_identity: 'newow_hhv_llv_window_optimizer_causal_v1', composite_page: 'newow_composite_decision_page_v3_2_82',
       composite_cleanroom: 'newow_composite_decision_cleanroom_v1', first_action: 'newow_first_action_principle_page_v3_2_63',
       diagnostic_facts: 'newow_diagnostic_facts_cleanroom_v1', diagnostic_rules: 'newow_diagnostic_rules_cleanroom_v1',
@@ -431,7 +431,7 @@ function expandedFacts(bars: NewowTrendDetailResponse['bars']) {
         target: 12, absorb: 9, raw_target: 12, raw_absorb: 9,
         target_period: 'week' as const, absorb_period: 'week' as const,
         target_branch_token: 'weekly_target', absorb_branch_token: 'weekly_absorb',
-        formula_version: 'newow_target_absorb_display_selection_page_v1' as const,
+        formula_version: 'newow_target_absorb_display_selection_page_v2' as const,
       },
     },
     page_window_comparison: [10, 20, 24, 30, 52].map(window => ({

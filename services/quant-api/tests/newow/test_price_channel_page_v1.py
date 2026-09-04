@@ -9,7 +9,7 @@ import pytest
 from guiyi_quant.newow.price_channel import (
     CHANNEL_OPTIMIZER_PAGE_V1,
     TARGET_ABSORB_CHANNEL_PAGE_V1,
-    TARGET_ABSORB_DISPLAY_PAGE_V1,
+    TARGET_ABSORB_DISPLAY_PAGE_V2,
     DisplayPeriod,
     MultiPeriodPriceFacts,
     PageSignalState,
@@ -207,7 +207,7 @@ def test_display_selection_matches_v3282_fixture(case: dict[str, object]) -> Non
 
     assert _page_value(result.target) == case["expected_target"]
     assert _page_value(result.absorb) == case["expected_absorption"]
-    assert result.formula_version == TARGET_ABSORB_DISPLAY_PAGE_V1
+    assert result.formula_version == TARGET_ABSORB_DISPLAY_PAGE_V2
     if case["case_id"] == "missing_period_fields_fallback":
         assert result.absorb is None
 
@@ -232,6 +232,33 @@ def test_display_selection_exposes_independent_periods_and_branch_tokens() -> No
     assert result.absorb_period is DisplayPeriod.DAY
     assert result.target_branch_token == "WEEKLY_BUY"
     assert result.absorb_branch_token == "WEEKLY_POSITIVE_DAILY_ABSORB"
+
+
+def test_week_view_uses_the_current_weekly_channel_before_signal_selection() -> None:
+    result = select_display_prices(
+        MultiPeriodPriceFacts(
+            target_daily=Decimal("100"),
+            target_weekly=Decimal("120"),
+            absorb_daily=Decimal("90"),
+            absorb_weekly=Decimal("70"),
+            signal_daily=PageSignalState.WAIT,
+            signal_weekly=PageSignalState.HOLD,
+            cross_weekly_buy=False,
+        ),
+        view_period=DisplayPeriod.WEEK,
+        current_price=Decimal("95"),
+        previous_close=Decimal("95"),
+    )
+
+    assert result.target == Decimal("120.00")
+    assert result.absorb == Decimal("70.00")
+    assert result.target_period is DisplayPeriod.WEEK
+    assert result.absorb_period is DisplayPeriod.WEEK
+    assert result.target_branch_token == "WEEK_VIEW_CHANNEL_OVERRIDE"
+    assert result.absorb_branch_token == "WEEK_VIEW_CHANNEL_OVERRIDE"
+    assert result.formula_version == (
+        "newow_target_absorb_display_selection_page_v2"
+    )
 
 
 @pytest.mark.parametrize(

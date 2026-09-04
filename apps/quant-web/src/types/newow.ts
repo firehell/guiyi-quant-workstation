@@ -157,7 +157,7 @@ export interface NewowFormulaDescriptions {
   readonly main_force: 'newow_main_force_control_page_v1'
   readonly main_rise: 'newow_main_rise_ma35_ma45_page_v1'
   readonly price_channel: 'newow_target_absorb_hhv_llv10_page_v1'
-  readonly display_selection: 'newow_target_absorb_display_selection_page_v1'
+  readonly display_selection: 'newow_target_absorb_display_selection_page_v2'
   readonly page_window_comparison: 'newow_hhv_llv_window_optimizer_page_v1'
   readonly causal_window_identity: 'newow_hhv_llv_window_optimizer_causal_v1'
   readonly composite_page: 'newow_composite_decision_page_v3_2_82'
@@ -192,7 +192,7 @@ export interface NewowDisplayPriceSelection {
   readonly absorb_period: NewowDisplayPeriod | null
   readonly target_branch_token: string
   readonly absorb_branch_token: string
-  readonly formula_version: 'newow_target_absorb_display_selection_page_v1'
+  readonly formula_version: 'newow_target_absorb_display_selection_page_v2'
 }
 
 export interface NewowPriceChannel {

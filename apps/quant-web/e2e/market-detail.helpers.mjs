@@ -142,7 +142,7 @@ export function newowTrendDetailFixture({ product = 'jm', from = trendDays[0], t
     'newow_main_force_control_page_v1',
     'newow_main_rise_ma35_ma45_page_v1',
     'newow_target_absorb_hhv_llv10_page_v1',
-    'newow_target_absorb_display_selection_page_v1',
+    'newow_target_absorb_display_selection_page_v2',
     'newow_hhv_llv_window_optimizer_page_v1',
     'newow_hhv_llv_window_optimizer_causal_v1',
     'newow_composite_decision_page_v3_2_82',
@@ -351,7 +351,7 @@ export function newowTrendDetailFixture({ product = 'jm', from = trendDays[0], t
       display: {
         target: '112.00', absorb: '96.00', raw_target: '112.00', raw_absorb: '96.00',
         target_period: 'week', absorb_period: 'week', target_branch_token: 'weekly_target',
-        absorb_branch_token: 'weekly_absorb', formula_version: 'newow_target_absorb_display_selection_page_v1',
+        absorb_branch_token: 'weekly_absorb', formula_version: 'newow_target_absorb_display_selection_page_v2',
       },
     },
     page_window_comparison: [10, 20, 24, 30, 52].map((window, index) => ({
@@ -411,7 +411,7 @@ export function newowTrendDetailFixture({ product = 'jm', from = trendDays[0], t
       main_force: 'newow_main_force_control_page_v1',
       main_rise: 'newow_main_rise_ma35_ma45_page_v1',
       price_channel: 'newow_target_absorb_hhv_llv10_page_v1',
-      display_selection: 'newow_target_absorb_display_selection_page_v1',
+      display_selection: 'newow_target_absorb_display_selection_page_v2',
       page_window_comparison: 'newow_hhv_llv_window_optimizer_page_v1',
       causal_window_identity: 'newow_hhv_llv_window_optimizer_causal_v1',
       composite_page: 'newow_composite_decision_page_v3_2_82',

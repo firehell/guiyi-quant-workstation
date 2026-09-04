@@ -272,7 +272,7 @@ function snapshot(): NewowTrendDetailResponse {
       display: {
         target: 14, absorb: 10, raw_target: 14, raw_absorb: 10,
         target_period: 'day', absorb_period: 'day', target_branch_token: 'daily_target',
-        absorb_branch_token: 'daily_absorb', formula_version: 'newow_target_absorb_display_selection_page_v1',
+        absorb_branch_token: 'daily_absorb', formula_version: 'newow_target_absorb_display_selection_page_v2',
       },
     },
     legend: { BUILD: 'trend build', CLEAR: 'trend clear', D1: 'escape D1', D2: 'escape D2', D3: 'escape D3' },

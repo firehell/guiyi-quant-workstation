@@ -24,8 +24,8 @@ from .research_backtest import (
 
 
 TARGET_ABSORB_CHANNEL_PAGE_V1 = "newow_target_absorb_hhv_llv10_page_v1"
-TARGET_ABSORB_DISPLAY_PAGE_V1 = (
-    "newow_target_absorb_display_selection_page_v1"
+TARGET_ABSORB_DISPLAY_PAGE_V2 = (
+    "newow_target_absorb_display_selection_page_v2"
 )
 CHANNEL_OPTIMIZER_PAGE_V1 = "newow_hhv_llv_window_optimizer_page_v1"
 
@@ -108,7 +108,7 @@ class DisplayPriceSelection:
     absorb_period: DisplayPeriod | None
     target_branch_token: str
     absorb_branch_token: str
-    formula_version: str = TARGET_ABSORB_DISPLAY_PAGE_V1
+    formula_version: str = TARGET_ABSORB_DISPLAY_PAGE_V2
 
 
 @dataclass(frozen=True, slots=True)
@@ -337,6 +337,15 @@ def select_display_prices(
     raw_absorb, absorb_period, absorb_branch = _select_absorb(
         facts, view_period=view_period
     )
+    if view_period is DisplayPeriod.WEEK:
+        if facts.target_weekly is not None:
+            raw_target = facts.target_weekly
+            target_period = DisplayPeriod.WEEK
+            target_branch = "WEEK_VIEW_CHANNEL_OVERRIDE"
+        if facts.absorb_weekly is not None:
+            raw_absorb = facts.absorb_weekly
+            absorb_period = DisplayPeriod.WEEK
+            absorb_branch = "WEEK_VIEW_CHANNEL_OVERRIDE"
     return DisplayPriceSelection(
         target=_guard_price(raw_target, previous_close),
         absorb=_guard_price(raw_absorb, previous_close),

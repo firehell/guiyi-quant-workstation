@@ -17,7 +17,7 @@ from .models import (
 )
 from .oscillation_channel import OSCILLATION_FORMULA_VERSION, OscillationState
 from .price_channel import (
-    TARGET_ABSORB_DISPLAY_PAGE_V1,
+    TARGET_ABSORB_DISPLAY_PAGE_V2,
     DisplayPriceSelection,
     PageSignalState,
 )
@@ -106,7 +106,7 @@ def _validate_inputs(inputs: DiagnosticInputs) -> None:
         raise ValueError("NEWOW_DIAGNOSTIC_INPUT_INVALID")
     if not isinstance(inputs.display_prices, DisplayPriceSelection):
         raise ValueError("NEWOW_DIAGNOSTIC_INPUT_INVALID")
-    if inputs.display_prices.formula_version != TARGET_ABSORB_DISPLAY_PAGE_V1:
+    if inputs.display_prices.formula_version != TARGET_ABSORB_DISPLAY_PAGE_V2:
         raise ValueError("NEWOW_FORMULA_IDENTITY_MISMATCH")
     if len(inputs.bars) != len(inputs.trend_points) or any(
         bar.bar_end != point.bar_end

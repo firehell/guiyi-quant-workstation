@@ -86,7 +86,7 @@ Current Niuwa public UI/static JS/read-only JSON
 
 ```text
 newow_target_absorb_hhv_llv10_page_v1
-newow_target_absorb_display_selection_page_v1
+newow_target_absorb_display_selection_page_v2
 newow_hhv_llv_window_optimizer_page_v1
 newow_hhv_llv_window_optimizer_causal_v1
 ```
