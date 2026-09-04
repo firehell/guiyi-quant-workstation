@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import hashlib
 import importlib
 import json
 import re
@@ -271,21 +272,18 @@ def test_newow_v3282_coverage_has_one_status_and_no_unknown_active_formula() -> 
     allowed_statuses = {
         "OBSERVED_EXACT",
         "REPRODUCED_EXACT",
-        "INFERRED_CANDIDATE",
+        "BEHAVIOR_INFERRED",
+        "CLEANROOM_IMPLEMENTED",
         "UNKNOWN",
-        "OUT_OF_SCOPE_PRIVATE",
+        "REJECTED",
     }
     assert data_rows
-    assert {row[2] for row in data_rows} >= {
-        "OBSERVED_EXACT",
-        "REPRODUCED_EXACT",
-        "OUT_OF_SCOPE_PRIVATE",
-    }
+    assert {row[2] for row in data_rows} == allowed_statuses
     assert all(len(row) == 8 and row[2] in allowed_statuses for row in data_rows)
     assert all(
         row[4] == "none"
         for row in data_rows
-        if row[2] in {"UNKNOWN", "OUT_OF_SCOPE_PRIVATE"}
+        if row[2] in {"UNKNOWN", "REJECTED"}
     )
 
 
@@ -315,6 +313,20 @@ def test_newow_v3282_golden_evidence_is_bounded_and_complete() -> None:
         for item in page_facts["symbols"]
     )
     assert sum(len(item["periods"]) for item in page_facts["symbols"]) == 27
+    points = [point for item in page_facts["symbols"] for point in item["periods"]]
+    assert all(
+        point["source_relative_path"].startswith("sources/page-cases/")
+        and re.fullmatch(r"[0-9a-f]{64}", point["source_response_sha256"])
+        for point in points
+    )
+    assert len({point["source_response_sha256"] for point in points}) == 27
+    for point in points:
+        assert len(point["ohlcv"]) == 10
+        hhv10 = max(bar["high"] for bar in point["ohlcv"])
+        llv10 = min(bar["low"] for bar in point["ohlcv"])
+        assert point["computed"] == {"hhv10": hhv10, "llv10": llv10}
+        assert point["page_output"]["target_price"] == f"{hhv10:.2f}"
+        assert point["page_output"]["absorption_price"] == f"{llv10:.2f}"
 
     display_cases = {
         item["case_id"]: item for item in page_facts["display_selection_cases"]
@@ -351,6 +363,18 @@ def test_newow_v3282_golden_evidence_is_bounded_and_complete() -> None:
         "warning-neutral",
         "neutral-neutral",
     }
+    assert all("synthetic_input" in item for item in page_facts["composite_cases"])
+    warning_cases = [
+        item
+        for item in page_facts["composite_cases"]
+        if item["branch_key"].startswith("warning-")
+    ]
+    assert all(
+        item["page_reachable"] is False
+        and item["classified_trend_bias"] == "bearish"
+        and item["unreachable_reason"] == "weekly_bearish_branch_precedes_warning"
+        for item in warning_cases
+    )
     assert len(page_facts["diagnostic_cases"]) == 27
 
     screener = json.loads(
@@ -389,6 +413,25 @@ def test_newow_v3282_golden_evidence_is_bounded_and_complete() -> None:
         and re.fullmatch(r"[0-9a-f]{64}", item["response_sha256"])
         for item in observations.values()
     )
+    for observation in observations.values():
+        canonical_rows = json.dumps(
+            observation["ordered_rows"],
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ).encode()
+        assert hashlib.sha256(canonical_rows).hexdigest() == observation["response_sha256"]
+        source_pages = observation["request"]["source_pages"]
+        assert source_pages
+        assert len(source_pages) == len(observation["request"]["pages"])
+        assert (
+            observation["request"]["evidence_manifest_sha256"]
+            == page_facts["evidence_manifest_sha256"]
+        )
+        assert all(
+            page["relative_path"].startswith("sources/screener/")
+            and re.fullmatch(r"[0-9a-f]{64}", page["response_sha256"])
+            for page in source_pages
+        )
 
 
 def test_retired_http_surfaces_return_404_and_are_not_mounted() -> None:
