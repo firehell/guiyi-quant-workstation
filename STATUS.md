@@ -14,7 +14,7 @@
 | Database 与 Canonical | 最近 production 只读 readback 为 Alembic `20260903_0045`；RQData session anchor repair 已发布并保留 D1/W1 原始事实。active Canonical 只读 readback 为 8,801 个 Dataset、42,575 个分区、44,629,532 行。 |
 | Market Runtime Scope | `operational_products.txt` 的 60 个品种。 |
 | Alert Scope | HTDY 为 `jm × 15m`；SuBing 为 execution-time operational 60 个品种 × 15m，Scope hash `ce1daca77aeb1abe134806b67aebd96b2c35db3ba82aa10af58f6e5a2e4f5fa2`。两条 Rule 均为 enabled；SuBing Event 为 0。 |
-| `v1.9.15` Release candidate | `codex/release-v1.9.15` 基于 `origin/develop@a6ea680ed8d9150e0b9920e71563a3de18f7dd1e` 准备候选，Release PR `#333` 已指向 `main`。本地 Standards/Spec 双轴自审无阻断，适用验证已通过；GitHub 未上报 CI checks，独立 Review 仍待完成。它尚未合入 `main`、创建 tag 或发布 GitHub Release，也未执行 PF 数据 apply、Runtime promotion 或自然验收。 |
+| `v1.9.15` Release candidate | `codex/release-v1.9.15` 基于 `origin/develop@a6ea680ed8d9150e0b9920e71563a3de18f7dd1e` 准备候选，Release PR `#333` 已指向 `main`。本地 Standards/Spec 双轴自审无阻断，适用验证已通过；GitHub 未上报 CI checks，exact RC 的独立 Review 仍待完成。Market Detail 仅包含已完成的 A–D staged workspaces；B3 Alert Scope Control 与 Slice E final cutover 明确延期，不属于本 Release 完成声明。它尚未合入 `main`、创建 tag 或发布 GitHub Release，也未执行 PF 数据 apply、Runtime promotion 或自然验收。 |
 
 Alert transport 为 PushPlus；provider accepted 不等于微信送达。
 

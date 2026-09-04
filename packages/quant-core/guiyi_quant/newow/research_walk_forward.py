@@ -13,6 +13,7 @@ from .research_backtest import (
     NewowStrategyReplaySegment,
     ResearchBacktestResult,
     ResearchStrategy,
+    _resolve_strict_cost_facts,
     build_strategy_intents_from_replay_segments,
     run_causal_long_only_backtest,
     validate_research_bars,
@@ -197,6 +198,14 @@ def run_fixed_formula_walk_forward(
                 and fold.train_since <= bar.trading_day <= fold.test_through
                 for bar in segment.bars
             )
+        )
+        _resolve_strict_cost_facts(
+            tuple(
+                bar
+                for segment in replay_segments
+                for bar in segment.bars
+            ),
+            cost_snapshots=cost_snapshots,
         )
         intents, versions = build_strategy_intents_from_replay_segments(
             replay_segments,

@@ -87,6 +87,27 @@ def _replay(
     return (NewowStrategyReplaySegment(bars),)
 
 
+def _physical_prefix_bars() -> tuple[
+    tuple[NewowResearchBar, ...],
+    tuple[NewowResearchBar, ...],
+]:
+    full = _bars((80, 100, 80, 100, 80, 80))
+    replay_bars = tuple(
+        replace(
+            bar,
+            observation_eligible=index >= 2,
+            source_identity=(
+                bar.source_identity
+                if index >= 2
+                else f"canonical-contract-prefix-{index}"
+            ),
+            series_kind="actual_dominant" if index >= 2 else "contract",
+        )
+        for index, bar in enumerate(full)
+    )
+    return full[2:], replay_bars
+
+
 def _oscillation_bars() -> tuple[NewowResearchBar, ...]:
     rows = [(100, 110, 90, 100)] * 10 + [
         (109, 110, 108, 109),
@@ -379,21 +400,7 @@ def test_walk_forward_counts_the_full_causal_prefix_before_test() -> None:
 
 
 def test_walk_forward_uses_noneligible_physical_prefix_for_strategy_state_only() -> None:
-    full = _bars((80, 100, 80, 100, 80, 80))
-    bars = full[2:]
-    replay_bars = tuple(
-        replace(
-            bar,
-            observation_eligible=index >= 2,
-            source_identity=(
-                bar.source_identity
-                if index >= 2
-                else f"canonical-contract-prefix-{index}"
-            ),
-            series_kind="actual_dominant" if index >= 2 else "contract",
-        )
-        for index, bar in enumerate(full)
-    )
+    bars, replay_bars = _physical_prefix_bars()
     fold = WalkForwardFold(
         name="physical-prefix",
         train_since=bars[0].trading_day,
@@ -422,6 +429,97 @@ def test_walk_forward_uses_noneligible_physical_prefix_for_strategy_state_only()
     )
     assert result.folds[0].physical_prefix_bar_count == 6
     assert result.folds[0].earliest_physical_prefix_trading_day == _START
+
+
+def test_walk_forward_requires_cost_snapshot_for_noneligible_physical_prefix() -> None:
+    bars, replay_bars = _physical_prefix_bars()
+    fold = WalkForwardFold(
+        name="physical-prefix-missing-cost",
+        train_since=bars[0].trading_day,
+        train_through=bars[0].trading_day,
+        test_since=bars[1].trading_day,
+        test_through=bars[-1].trading_day,
+    )
+    cost_snapshots = (
+        replace(_costs()[0], effective_from=bars[0].trading_day),
+    )
+
+    with pytest.raises(ValueError, match="NEWOW_BACKTEST_COST_SNAPSHOT_MISSING"):
+        run_fixed_formula_walk_forward(
+            bars,
+            (fold,),
+            strategy=ResearchStrategy.TREND,
+            strategy_replay_segments=(NewowStrategyReplaySegment(replay_bars),),
+            cost_snapshots=cost_snapshots,
+            execution_constraints=_constraints(bars),
+        )
+
+
+def test_walk_forward_validates_tick_for_noneligible_physical_prefix() -> None:
+    bars, replay_bars = _physical_prefix_bars()
+    replay_bars = (
+        replace(
+            replay_bars[0],
+            open=Decimal("80.5"),
+            high=Decimal("81.5"),
+            low=Decimal("79.5"),
+            close=Decimal("80.5"),
+        ),
+        *replay_bars[1:],
+    )
+    fold = WalkForwardFold(
+        name="physical-prefix-tick-mismatch",
+        train_since=bars[0].trading_day,
+        train_through=bars[0].trading_day,
+        test_since=bars[1].trading_day,
+        test_through=bars[-1].trading_day,
+    )
+
+    with pytest.raises(ValueError, match="NEWOW_BACKTEST_BAR_PRICE_TICK_MISMATCH"):
+        run_fixed_formula_walk_forward(
+            bars,
+            (fold,),
+            strategy=ResearchStrategy.TREND,
+            strategy_replay_segments=(NewowStrategyReplaySegment(replay_bars),),
+            cost_snapshots=_costs(),
+            execution_constraints=_constraints(bars),
+        )
+
+
+def test_walk_forward_does_not_validate_prefix_after_fold_test_window() -> None:
+    bars, replay_bars = _physical_prefix_bars()
+    future_prefix = replace(
+        replay_bars[-1],
+        trading_day=replay_bars[-1].trading_day + timedelta(days=1),
+        bar_end=replay_bars[-1].bar_end + timedelta(days=1),
+        open=Decimal("80.5"),
+        high=Decimal("81.5"),
+        low=Decimal("79.5"),
+        close=Decimal("80.5"),
+        observation_eligible=False,
+        source_identity="canonical-contract-future-prefix",
+        series_kind="contract",
+    )
+    fold = WalkForwardFold(
+        name="bounded-physical-prefix",
+        train_since=bars[0].trading_day,
+        train_through=bars[0].trading_day,
+        test_since=bars[1].trading_day,
+        test_through=bars[-1].trading_day,
+    )
+
+    result = run_fixed_formula_walk_forward(
+        bars,
+        (fold,),
+        strategy=ResearchStrategy.TREND,
+        strategy_replay_segments=(
+            NewowStrategyReplaySegment(replay_bars + (future_prefix,)),
+        ),
+        cost_snapshots=_costs(),
+        execution_constraints=_constraints(bars),
+    )
+
+    assert result.folds[0].physical_prefix_bar_count == len(replay_bars)
 
 
 def test_walk_forward_rejects_replay_eligible_bar_fact_mismatch() -> None:
