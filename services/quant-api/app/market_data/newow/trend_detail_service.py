@@ -129,7 +129,7 @@ class NewowTrendDetailService:
         final_state: NewowTrendD1EngineState | None = None
         all_seams: list[NewowRolloverSeam] = []
         previous: tuple[NewowDailyBar, ResolvedContractSegment] | None = None
-        for segment in loaded.segments:
+        for segment in loaded.authoritative_segments:
             rank_bars = tuple(
                 bar
                 for bar in actual

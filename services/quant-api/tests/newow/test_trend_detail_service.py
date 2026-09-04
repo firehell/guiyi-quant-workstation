@@ -75,8 +75,25 @@ class _FakeMarketData:
             for bar in self.actual
             if request.since <= bar.trading_day <= request.through
         )
+        resolved = tuple(
+            ResolvedContractSegment(
+                segment.contract,
+                min(bar.trading_day for bar in owned),
+                max(bar.trading_day for bar in owned),
+            )
+            for segment in self.segments
+            if (
+                owned := tuple(
+                    bar
+                    for bar in bars
+                    if segment.start_trading_day
+                    <= bar.trading_day
+                    <= segment.end_trading_day
+                )
+            )
+        )
         return MarketSeriesResult(
-            {}, bars, None, self.segments, (request.since, request.through)
+            {}, bars, None, resolved, (request.since, request.through)
         )
 
     def dominant_segment_for_day(
@@ -92,6 +109,19 @@ class _FakeMarketData:
             segment.contract,
             segment.start_trading_day,
             segment.end_trading_day,
+        )
+
+    def actual_dominant_segments(
+        self,
+        symbol: str,
+        since: date,
+        through: date,
+    ) -> tuple[ResolvedContractSegment, ...]:
+        return tuple(
+            segment
+            for segment in self.segments
+            if segment.end_trading_day >= since
+            and segment.start_trading_day <= through
         )
 
     def query_page(self, request: SeriesPageQuery) -> MarketSeriesPageResult:

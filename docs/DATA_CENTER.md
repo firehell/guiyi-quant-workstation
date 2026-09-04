@@ -139,6 +139,13 @@ coverage 缺失时 fail-closed。`actual_dominant` 按与 `(start, end]` 相交�
 夜盘 bar 的身份始终是其 `trading_day`，而不是发生时刻所在的前一自然日。响应只返回请求、bars、
 coverage 和 resolved contract segments。
 
+响应中的 `resolved contract segments` 只描述该周期实际返回 Bar 的 owner 子集，不是全窗口
+MainContractMap 的替代物。跨周期研究使用 `MarketDataService.actual_dominant_segments(symbol, since,
+through)` 读取与窗口相交、按 MainContractMap 已知完整边界展开的全局 rank1 分段，再逐 Bar 验证响应
+owner 与全局 owner 的 contract 一致。短主力段可能有 D1/60m Bar 而没有完整 W1 Bar，因此各周期 owner
+子集无需相等；不得使用 D1、周期并集或任一观察结果反推全局主力分段。完整分段边界只用于 lineage、
+segment identity 与换月状态隔离，不得根据未来 `end_trading_day` 提前产生信号。
+
 按 `since/through` 交易日表达窗口的研究消费者使用
 `ActualDominantTradingDayQuery` 或 `ContractTradingDayQuery`；`MarketDataService` 先要求目标自然日期区间内
 每一天都有权威 TradingCalendar 行，再从其中的 `is_trading_day=True` 行解析首末 TradingSession，最后进入

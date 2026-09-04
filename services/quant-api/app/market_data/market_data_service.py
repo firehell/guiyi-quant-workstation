@@ -247,23 +247,13 @@ class MarketDataService:
         through: date,
     ) -> tuple[datetime, datetime]:
         """Resolve inclusive trading-day bounds to the exact outer Session window."""
+        calendar_days = self._exact_calendar(symbol, since, through)
+        trading_days = tuple(
+            day for day, is_trading_day in calendar_days if is_trading_day
+        )
+        if not trading_days:
+            raise MarketDataError("TRADING_CALENDAR_MISSING")
         try:
-            calendar_days = self.catalog.calendar_days(
-                symbol,
-                since,
-                through,
-            )
-            expected_days = tuple(
-                since + timedelta(days=offset)
-                for offset in range((through - since).days + 1)
-            )
-            if tuple(day for day, _is_trading_day in calendar_days) != expected_days:
-                raise MarketDataError("TRADING_CALENDAR_MISSING")
-            trading_days = tuple(
-                day for day, is_trading_day in calendar_days if is_trading_day
-            )
-            if not trading_days:
-                raise MarketDataError("TRADING_CALENDAR_MISSING")
             exchange = self.catalog.exchange_for_symbol(symbol)
             first_windows = session_windows_for_trading_day(
                 self.catalog.session,
@@ -732,35 +722,100 @@ class MarketDataService:
         trading_day: date,
     ) -> DominantContractSegmentSummary:
         """返回包含指定交易日的连续 rank-1 区段并验证日历/映射连续性。"""
+        normalized_symbol = symbol.strip().lower()
         try:
-            assert_not_retired(symbol)
+            assert_not_retired(normalized_symbol)
         except ProductRetiredError as exc:
             raise MarketDataError("PRODUCT_RETIRED") from exc
+        segments = self._authoritative_rank1_segments(
+            normalized_symbol,
+            trading_day,
+            trading_day,
+            empty_code="DOMINANT_CONTEXT_MISSING",
+        )
+        if len(segments) != 1:
+            raise MarketDataError("MAIN_CONTRACT_MAP_CONFLICT")
+        segment = segments[0]
+        return DominantContractSegmentSummary(
+            symbol=normalized_symbol,
+            contract=segment.contract,
+            start_trading_day=segment.start_trading_day,
+            end_trading_day=segment.end_trading_day,
+        )
+
+    def actual_dominant_segments(
+        self,
+        symbol: str,
+        since: date,
+        through: date,
+    ) -> tuple[ResolvedContractSegment, ...]:
+        """Return full rank-1 segments intersecting a trading-day window."""
+        normalized_symbol = symbol.strip().lower()
+        try:
+            assert_not_retired(normalized_symbol)
+        except ProductRetiredError as exc:
+            raise MarketDataError("PRODUCT_RETIRED") from exc
+        if (
+            type(since) is not date
+            or type(through) is not date
+            or since > through
+        ):
+            raise MarketDataError("TRADING_CALENDAR_MISSING")
+        return self._authoritative_rank1_segments(
+            normalized_symbol,
+            since,
+            through,
+            empty_code="MAIN_CONTRACT_MAP_MISSING",
+        )
+
+    def _authoritative_rank1_segments(
+        self,
+        symbol: str,
+        since: date,
+        through: date,
+        *,
+        empty_code: str,
+    ) -> tuple[ResolvedContractSegment, ...]:
+        """Return full rank-1 segments intersecting an exact calendar window."""
         mappings = self.catalog.main_map_before(symbol, None)
         if not mappings:
-            raise MarketDataError("DOMINANT_CONTEXT_MISSING")
+            raise MarketDataError(empty_code)
+
+        requested_calendar = self._exact_calendar(symbol, since, through)
+        requested_trading_days = tuple(
+            day for day, is_trading_day in requested_calendar if is_trading_day
+        )
+        if not requested_trading_days:
+            raise MarketDataError("TRADING_CALENDAR_MISSING")
+
+        requested_day_set = set(requested_trading_days)
         target_indexes = tuple(
             index
             for index, mapping in enumerate(mappings)
-            if mapping.trade_date == trading_day
+            if mapping.trade_date in requested_day_set
         )
-        if not target_indexes:
+        target_days = tuple(mappings[index].trade_date for index in target_indexes)
+        if len(set(target_days)) != len(target_days):
+            raise MarketDataError("MAIN_CONTRACT_MAP_CONFLICT")
+        if set(target_days) != requested_day_set:
             raise MarketDataError("MAIN_CONTRACT_MAP_MISSING")
-        if len(target_indexes) != 1:
+        if any(
+            since <= mapping.trade_date <= through
+            and mapping.trade_date not in requested_day_set
+            for mapping in mappings
+        ):
             raise MarketDataError("MAIN_CONTRACT_MAP_CONFLICT")
 
-        target_index = target_indexes[0]
-        target = mappings[target_index]
-        start_index = target_index
+        start_index = target_indexes[0]
         while (
             start_index > 0
-            and mappings[start_index - 1].contract == target.contract
+            and mappings[start_index - 1].contract == mappings[start_index].contract
         ):
             start_index -= 1
-        end_index = target_index
+        end_index = target_indexes[-1]
         while (
             end_index + 1 < len(mappings)
-            and mappings[end_index + 1].contract == target.contract
+            and mappings[end_index + 1].contract == mappings[end_index].contract
         ):
             end_index += 1
 
@@ -774,86 +829,58 @@ class MarketDataService:
             if end_index + 1 < len(mappings)
             else mappings[end_index].trade_date
         )
-        try:
-            calendar = self.catalog.calendar_days(
-                target.symbol,
-                validation_start,
-                validation_end,
-            )
-        except CatalogError as exc:
-            raise MarketDataError(exc.code) from exc
-        expected_calendar_days = tuple(
-            validation_start + timedelta(days=offset)
-            for offset in range((validation_end - validation_start).days + 1)
+        validation_calendar = self._exact_calendar(
+            symbol,
+            validation_start,
+            validation_end,
         )
-        if tuple(day for day, _ in calendar) != expected_calendar_days:
-            raise MarketDataError("TRADING_CALENDAR_MISSING")
-
-        trading_days = tuple(day for day, is_trading_day in calendar if is_trading_day)
-        mapping_by_day = {
-            mapping.trade_date: mapping
+        validation_trading_days = tuple(
+            day for day, is_trading_day in validation_calendar if is_trading_day
+        )
+        contextual_mappings = tuple(
+            mapping
             for mapping in mappings
             if validation_start <= mapping.trade_date <= validation_end
-        }
-        if len(mapping_by_day) != len(
-            tuple(
-                mapping
-                for mapping in mappings
-                if validation_start <= mapping.trade_date <= validation_end
-            )
+        )
+        mapping_by_day = {mapping.trade_date: mapping for mapping in contextual_mappings}
+        if len(mapping_by_day) != len(contextual_mappings) or any(
+            mapping.symbol != symbol for mapping in contextual_mappings
         ):
             raise MarketDataError("MAIN_CONTRACT_MAP_CONFLICT")
-        if any(day not in mapping_by_day for day in trading_days):
+        if any(day not in mapping_by_day for day in validation_trading_days):
             raise MarketDataError("MAIN_CONTRACT_MAP_MISSING")
-        if any(day not in trading_days for day in mapping_by_day):
+        if any(day not in validation_trading_days for day in mapping_by_day):
             raise MarketDataError("MAIN_CONTRACT_MAP_CONFLICT")
 
         segment_mappings = mappings[start_index : end_index + 1]
         segment_days = tuple(
             day
-            for day in trading_days
+            for day in validation_trading_days
             if segment_mappings[0].trade_date
             <= day
             <= segment_mappings[-1].trade_date
         )
         if tuple(mapping.trade_date for mapping in segment_mappings) != segment_days:
             raise MarketDataError("MAIN_CONTRACT_MAP_MISSING")
-        return DominantContractSegmentSummary(
-            symbol=target.symbol,
-            contract=target.contract,
-            start_trading_day=segment_days[0],
-            end_trading_day=segment_days[-1],
-        )
+        return _segments(segment_mappings)
 
-    def actual_dominant_segments(
+    def _exact_calendar(
         self,
         symbol: str,
         since: date,
         through: date,
-    ) -> tuple[ResolvedContractSegment, ...]:
-        """Return ordered rank-1 segments for a trading-day window without reading bars."""
+    ) -> tuple[tuple[date, bool], ...]:
         try:
-            assert_not_retired(symbol)
-        except ProductRetiredError as exc:
-            raise MarketDataError("PRODUCT_RETIRED") from exc
-        if (
-            type(since) is not date
-            or type(through) is not date
-            or since > through
-        ):
-            raise MarketDataError("TRADING_CALENDAR_MISSING")
-        try:
-            trading_days = self.catalog.trading_days(symbol, since, through)
+            calendar = self.catalog.calendar_days(symbol, since, through)
         except CatalogError as exc:
             raise MarketDataError(exc.code) from exc
-        if not trading_days:
+        expected_days = tuple(
+            since + timedelta(days=offset)
+            for offset in range((through - since).days + 1)
+        )
+        if tuple(day for day, _ in calendar) != expected_days:
             raise MarketDataError("TRADING_CALENDAR_MISSING")
-        mappings = self.catalog.main_map(symbol, trading_days[0], trading_days[-1])
-        mapping_by_day = {row.trade_date: row for row in mappings}
-        if any(day not in mapping_by_day for day in trading_days):
-            raise MarketDataError("MAIN_CONTRACT_MAP_MISSING")
-        selected = tuple(mapping_by_day[day] for day in trading_days)
-        return _segments(selected)
+        return calendar
 
     def contract_bars_for_trading_day(
         self,

@@ -10,6 +10,13 @@
 
 **Spec:** `docs/tasks/2026-09-04-newow-page-parity-research-kernels.md`
 
+**2026-09-04 post-plan correction:** SC2302 production evidence showed that a short
+rank-1 segment can have D1/60m Bars but no complete W1 Bar. The completed Task 3
+wording about loader-restored segments is superseded by the current
+`market-series-query` specification: global authoritative segments come directly
+from `MarketDataService.actual_dominant_segments`, while each frequency response
+keeps only its observed owner subset and is validated Bar by Bar.
+
 ## Global Constraints
 
 - Historical input is completed `actual_dominant` only and must come through `MarketDataService`; no Parquet globbing, continuous fallback, self-selected dominant contract, or cross-frequency aggregation.

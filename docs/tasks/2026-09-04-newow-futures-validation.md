@@ -28,7 +28,7 @@
 
 ## 3. 数据入口
 
-`build_newow_research_bars()` 只接受完整 `MarketSeriesResult`，并要求显式传入 `ActualDominantResearchSegmentLoader.load(...).segments` 恢复出的完整权威段：
+`build_newow_research_bars()` 只接受完整 `MarketSeriesResult`，并要求显式传入 `ActualDominantResearchSegmentLoader.load(...).authoritative_segments` 返回的完整权威段：
 
 ```text
 series_kind = actual_dominant
@@ -51,6 +51,17 @@ authoritative_segments = non-empty, non-overlapping full owner facts
 - 标记为 historical completed / observation eligible。
 
 任何 identity、coverage、segment 或数值冲突统一返回 `NEWOW_FUTURES_SERIES_INVALID`。适配器不读取 Parquet 路径、不自行选择主力、不回退 continuous，也不从 D1 推断 W1 owner。
+
+### 3.1 SC2302 真实反例修正
+
+只读生产证据显示，`sc` 的 `SC2302` rank1 仅覆盖 2023-01-03～2023-01-04；第一根完整 W1 Bar
+结束于 2023-01-06，owner 已是 `SC2303`。因此 D1/60m owner 子集包含 `SC2302`，W1 owner 子集省略
+`SC2302` 是合法周期事实，不能用跨周期 segment tuple 完全相等作为身份 Gate。
+
+修正后的 loader 先从 `MarketDataService.actual_dominant_segments()` 获取全局 MainContractMap 完整分段，
+以首段真实起点读取每个周期一次 causal prefix，再逐 Bar 检查响应 owner 与全局 owner。某周期没有 Bar
+的全局分段可以不出现在该周期响应中；Calendar、MainContractMap、Partition、coverage 和物理可读性
+仍由 `MarketDataService` fail-closed，loader 不以“没有观察到 Bar”推断数据完整。
 
 ## 4. 成本与可成交性
 

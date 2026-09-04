@@ -15,6 +15,7 @@ from app.market_data.domain import (
     CanonicalBar,
     ContractTradingDayQuery,
     DatasetKey,
+    ResolvedContractSegment,
     SeriesQuery,
 )
 from app.market_data.market_data_service import MarketDataError, MarketDataService
@@ -179,6 +180,76 @@ def test_latest_dominant_segment_fails_closed_for_missing_map_after_known_contra
         ).latest_dominant_segment("jm")
 
 
+def test_actual_dominant_segments_returns_full_boundaries_for_intersecting_window(
+    session, tmp_path
+) -> None:
+    catalog = MarketCatalog(session, tmp_path)
+    trading_days = {2, 3, 6, 7, 8, 9, 10}
+    for day in range(1, 11):
+        session.add(
+            TradingCalendar(
+                exchange_code="DCE",
+                trade_date=date(2025, 1, day),
+                is_trading_day=day in trading_days,
+            )
+        )
+    catalog.upsert_main_contracts(
+        tuple(
+            (
+                "jm",
+                date(2025, 1, day),
+                "JM2505" if day <= 7 else "JM2509",
+            )
+            for day in sorted(trading_days)
+        )
+    )
+    session.commit()
+
+    segments = MarketDataService(
+        catalog, CanonicalMonthlyStore(tmp_path)
+    ).actual_dominant_segments(
+        "jm",
+        date(2025, 1, 3),
+        date(2025, 1, 8),
+    )
+
+    assert segments == (
+        ResolvedContractSegment(
+            "JM2505", date(2025, 1, 2), date(2025, 1, 7)
+        ),
+        ResolvedContractSegment(
+            "JM2509", date(2025, 1, 8), date(2025, 1, 10)
+        ),
+    )
+
+
+def test_actual_dominant_segments_fails_closed_for_missing_natural_calendar_day(
+    session, tmp_path
+) -> None:
+    catalog = MarketCatalog(session, tmp_path)
+    for day in (2, 4):
+        session.add(
+            TradingCalendar(
+                exchange_code="DCE",
+                trade_date=date(2025, 1, day),
+                is_trading_day=True,
+            )
+        )
+        catalog.upsert_main_contracts(
+            (("jm", date(2025, 1, day), "JM2505"),)
+        )
+    session.commit()
+
+    with pytest.raises(MarketDataError, match="^TRADING_CALENDAR_MISSING$"):
+        MarketDataService(
+            catalog, CanonicalMonthlyStore(tmp_path)
+        ).actual_dominant_segments(
+            "jm",
+            date(2025, 1, 2),
+            date(2025, 1, 4),
+        )
+
+
 def test_dominant_segment_for_day_returns_historical_containing_segment(
     session, tmp_path
 ) -> None:
@@ -212,6 +283,29 @@ def test_dominant_segment_for_day_returns_historical_containing_segment(
     assert historical.start_trading_day == date(2025, 1, 2)
     assert historical.end_trading_day == date(2025, 1, 3)
     assert latest.contract == "JM2509"
+
+
+def test_dominant_segment_for_day_preserves_normalized_symbol_identity(
+    session, tmp_path
+) -> None:
+    catalog = MarketCatalog(session, tmp_path)
+    session.add(
+        TradingCalendar(
+            exchange_code="DCE",
+            trade_date=date(2025, 1, 2),
+            is_trading_day=True,
+        )
+    )
+    catalog.upsert_main_contracts(
+        (("jm", date(2025, 1, 2), "JM2505"),)
+    )
+    session.commit()
+
+    segment = MarketDataService(
+        catalog, CanonicalMonthlyStore(tmp_path)
+    ).dominant_segment_for_day(" JM ", date(2025, 1, 2))
+
+    assert segment.symbol == "jm"
 
 
 def test_dominant_segment_for_day_fails_closed_for_calendar_gap(

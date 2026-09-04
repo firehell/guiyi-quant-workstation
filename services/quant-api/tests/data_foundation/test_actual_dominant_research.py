@@ -322,11 +322,7 @@ def test_stitched_loader_requires_source_day_summary_identity(
         )
 
 
-def test_loader_restores_true_segments_and_reads_full_causal_prefix() -> None:
-    clipped_segments = (
-        ResolvedContractSegment("JM2609", _DAY_TWO, _DAY_TWO),
-        ResolvedContractSegment("JM2701", _DAY_THREE, _DAY_THREE),
-    )
+def test_loader_reads_one_full_causal_prefix_from_authoritative_start() -> None:
     true_segments = (
         DominantContractSegmentSummary("jm", "JM2609", _DAY_ONE, _DAY_TWO),
         DominantContractSegmentSummary("jm", "JM2701", _DAY_THREE, _DAY_FOUR),
@@ -339,13 +335,6 @@ def test_loader_restores_true_segments_and_reads_full_causal_prefix() -> None:
         )
         for segment in true_segments
     )
-    probe = {
-        frequency: _result(
-            _bars(frequency, (_DAY_TWO, _DAY_THREE)),
-            clipped_segments,
-        )
-        for frequency in _FREQUENCIES
-    }
     full = {
         frequency: _result(
             _bars(frequency, (_DAY_ONE, _DAY_TWO, _DAY_THREE)),
@@ -354,8 +343,8 @@ def test_loader_restores_true_segments_and_reads_full_causal_prefix() -> None:
         for frequency in _FREQUENCIES
     }
     market_data = _WindowAwareMarketData(
-        probe=probe,
-        full=full,
+        probe=full,
+        full={},
         true_segments=true_segments,
     )
 
@@ -367,18 +356,12 @@ def test_loader_restores_true_segments_and_reads_full_causal_prefix() -> None:
     )
 
     assert loaded.results == full
-    assert loaded.segments == restored_segments
+    assert loaded.authoritative_segments == restored_segments
     assert market_data.queries == [
-        ActualDominantTradingDayQuery("jm", BarFrequency.M5, _DAY_TWO, _DAY_THREE),
-        ActualDominantTradingDayQuery("jm", BarFrequency.M15, _DAY_TWO, _DAY_THREE),
         ActualDominantTradingDayQuery("jm", BarFrequency.M5, _DAY_ONE, _DAY_THREE),
         ActualDominantTradingDayQuery("jm", BarFrequency.M15, _DAY_ONE, _DAY_THREE),
     ]
-    assert set(market_data.segment_requests) == {
-        ("jm", _DAY_ONE),
-        ("jm", _DAY_TWO),
-        ("jm", _DAY_THREE),
-    }
+    assert market_data.segment_requests == []
 
 
 def test_loader_rejects_empty_frequency_request_before_market_read() -> None:
@@ -404,6 +387,14 @@ def test_loader_rejects_empty_frequency_request_before_market_read() -> None:
 
 
 class _UnavailableMarketData:
+    def actual_dominant_segments(
+        self,
+        symbol: str,
+        since: date,
+        through: date,
+    ) -> tuple[ResolvedContractSegment, ...]:
+        return (ResolvedContractSegment("JM2609", since, through),)
+
     def query_actual_dominant_trading_days(
         self,
         request: ActualDominantTradingDayQuery,
@@ -453,19 +444,14 @@ def test_loader_supports_one_frequency_without_cross_frequency_assumption() -> N
         through=_DAY_TWO,
     )
 
-    assert loaded.segments == (segment,)
+    assert loaded.authoritative_segments == (segment,)
     assert tuple(loaded.results) == (BarFrequency.M15,)
     assert market_data.queries == [
-        ActualDominantTradingDayQuery(
-            "jm", BarFrequency.M15, _DAY_ONE, _DAY_TWO
-        ),
-        ActualDominantTradingDayQuery(
-            "jm", BarFrequency.M15, _DAY_ONE, _DAY_TWO
-        ),
+        ActualDominantTradingDayQuery("jm", BarFrequency.M15, _DAY_ONE, _DAY_TWO),
     ]
 
 
-def test_loader_fails_closed_when_frequency_segment_identities_differ() -> None:
+def test_loader_fails_closed_when_frequency_owner_conflicts_with_authority() -> None:
     true_segments = (
         DominantContractSegmentSummary("jm", "JM2609", _DAY_ONE, _DAY_TWO),
         DominantContractSegmentSummary("jm", "JM2701", _DAY_THREE, _DAY_FOUR),
@@ -477,8 +463,8 @@ def test_loader_fails_closed_when_frequency_segment_identities_differ() -> None:
                 (ResolvedContractSegment("JM2609", _DAY_TWO, _DAY_TWO),),
             ),
             BarFrequency.M15: _result(
-                _bars(BarFrequency.M15, (_DAY_THREE,)),
-                (ResolvedContractSegment("JM2701", _DAY_THREE, _DAY_THREE),),
+                _bars(BarFrequency.M15, (_DAY_TWO,)),
+                (ResolvedContractSegment("JM2701", _DAY_TWO, _DAY_TWO),),
             ),
         },
         full={},
@@ -487,7 +473,7 @@ def test_loader_fails_closed_when_frequency_segment_identities_differ() -> None:
 
     with pytest.raises(
         ActualDominantResearchSegmentIdentityError,
-        match="rank1 segment identity is missing or inconsistent",
+        match="rank1 segment identity conflicts with containing summary",
     ):
         ActualDominantResearchSegmentLoader(market_data).load(
             symbol="jm",
@@ -576,6 +562,37 @@ def test_loader_accepts_sc2302_absent_from_weekly_owner_subset() -> None:
     ]
 
 
+def test_loader_validates_sparse_weekly_owner_segments_bar_by_bar() -> None:
+    authoritative = (
+        DominantContractSegmentSummary("sc", "SC2302", _DAY_ONE, _DAY_ONE),
+        DominantContractSegmentSummary("sc", "SC2303", _DAY_TWO, _DAY_TWO),
+        DominantContractSegmentSummary("sc", "SC2302", _DAY_THREE, _DAY_THREE),
+    )
+    weekly = _result(
+        _bars(BarFrequency.W1, (_DAY_ONE, _DAY_THREE)),
+        (ResolvedContractSegment("SC2302", _DAY_ONE, _DAY_THREE),),
+    )
+    market_data = _WindowAwareMarketData(
+        probe={BarFrequency.W1: weekly},
+        full={},
+        true_segments=authoritative,
+    )
+
+    loaded = ActualDominantResearchSegmentLoader(market_data).load(
+        symbol="sc",
+        frequencies=(BarFrequency.W1,),
+        since=_DAY_ONE,
+        through=_DAY_THREE,
+    )
+
+    assert loaded.results[BarFrequency.W1] is weekly
+    assert tuple(segment.contract for segment in loaded.authoritative_segments) == (
+        "SC2302",
+        "SC2303",
+        "SC2302",
+    )
+
+
 @pytest.mark.parametrize(
     ("segments", "message"),
     (
@@ -608,7 +625,6 @@ def test_loader_fails_closed_for_segment_gap_or_overlap(
         full={},
         true_segments=(
             DominantContractSegmentSummary("jm", "JM2609", _DAY_ONE, _DAY_TWO),
-            DominantContractSegmentSummary("jm", "JM2701", _DAY_TWO, _DAY_TWO),
         ),
     )
 
@@ -717,36 +733,6 @@ def test_loader_rejects_reversed_raw_segment_order() -> None:
             frequencies=(BarFrequency.M5,),
             since=_DAY_ONE,
             through=_DAY_THREE,
-        )
-
-
-def test_loader_fails_closed_when_probe_and_full_identities_diverge() -> None:
-    true_segment = DominantContractSegmentSummary(
-        "jm", "JM2609", _DAY_ONE, _DAY_TWO
-    )
-    probe_segment = (ResolvedContractSegment("JM2609", _DAY_TWO, _DAY_TWO),)
-    full_segment = (ResolvedContractSegment("JM2701", _DAY_ONE, _DAY_TWO),)
-    market_data = _WindowAwareMarketData(
-        probe={
-            frequency: _result(_bars(frequency, (_DAY_TWO,)), probe_segment)
-            for frequency in _FREQUENCIES
-        },
-        full={
-            frequency: _result(
-                _bars(frequency, (_DAY_ONE, _DAY_TWO)),
-                full_segment,
-            )
-            for frequency in _FREQUENCIES
-        },
-        true_segments=(true_segment,),
-    )
-
-    with pytest.raises(ValueError, match="rank1 segment identity"):
-        ActualDominantResearchSegmentLoader(market_data).load(
-            symbol="jm",
-            frequencies=_FREQUENCIES,
-            since=_DAY_TWO,
-            through=_DAY_TWO,
         )
 
 
