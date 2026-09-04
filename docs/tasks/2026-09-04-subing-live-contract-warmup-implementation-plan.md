@@ -376,7 +376,8 @@ class ContractWarmupPlan:
     provider: str
     listed_date: date
     expired_date: date
-    through: date
+    requested_through: date
+    effective_through: date
     target_windows: tuple[Mapping[str, object], ...]
     direct_target_count: int
     derived_target_count: int
@@ -496,7 +497,7 @@ guiyi data contract-warmup \
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "command": "data.contract-warmup",
   "status": "planned",
   "readonly": true,
@@ -505,7 +506,14 @@ guiyi data contract-warmup \
   "provider": "rqdata",
   "listed_date": "2025-11-17",
   "expired_date": "2026-11-13",
-  "through": "2026-09-03",
+  "requested_window": {
+    "start": "2025-11-17",
+    "through": "2026-09-03"
+  },
+  "effective_window": {
+    "start": "2025-11-17",
+    "through": "2026-09-03"
+  },
   "direct_target_count": 0,
   "derived_target_count": 0,
   "expected_bar_count": 0,
@@ -574,7 +582,7 @@ git commit -m "feat(cli): expose exact contract warmup plan"
 
 - [ ] `subing-ths-alert` 写明：首次/换月 evaluator 只接受同 physical contract 的 Canonical lifecycle prefix + 当日 completed Live；第一页 latest bootstrap 不能放宽 MarketDataService；history 缺失 fail-closed。
 - [ ] `canonical-market-storage` 写明 contract partition 的双重包含不变量，并明确 continuous exact equality 不变。
-- [ ] `historical-data-maintenance` 写明 contract-warmup 的 identity/lifecycle、dry-run 零 provider/零 mutation、plan hash、maintenance lock、direct/derived lineage、partial/no-auto-retry 与独立外部 Gate。
+- [ ] `historical-data-maintenance` 写明 contract-warmup 的 identity/lifecycle、schema v2 的 requested/effective window（不得公开含义不明的单一 `through`）、dry-run 零 provider/零 mutation、plan hash、maintenance lock、direct/derived lineage、partial/no-auto-retry 与独立外部 Gate。
 - [ ] `PROJECT_SOURCE.md` 只更新稳定产品/数据边界；不写 release 完成态。
 - [ ] `docs/DATA_CENTER.md` 与 `docs/ARCHITECTURE.md` 只增加唯一维护入口与读取依赖，不复制完整执行记录。
 - [ ] `TESTING.md` 增加定向测试命令和明确警告：命令示例不授权真实 RQData/Canonical apply。
