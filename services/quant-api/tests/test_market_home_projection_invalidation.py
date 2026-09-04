@@ -9,6 +9,7 @@ import pytest
 from app.guiyi_cli import data_commands
 from app.market_data.historical_data_manager import (
     AuditRequest,
+    ContractWarmupRequest,
     RefreshRequest,
     UpdateRequest,
 )
@@ -49,6 +50,16 @@ class _Manager:
             raise RuntimeError("manager refresh failed")
         return "refreshed"
 
+    def contract_warmup(self, _request, *, before_apply=None):
+        self.before_apply_callbacks.append(before_apply)
+        if before_apply is not None:
+            before_apply()
+        self.projection_exists_at_action.append(self.projection_path.exists())
+        self.calls.append("contract-warmup")
+        if self.fail_after_invalidation:
+            raise RuntimeError("manager contract warmup failed")
+        return "contract-warmed"
+
     def audit(self, _request):
         self.projection_exists_at_action.append(self.projection_path.exists())
         self.calls.append("audit")
@@ -68,13 +79,24 @@ class _Manager:
             RefreshRequest("jm", date(2026, 9, 1), date(2026, 9, 2), apply=True),
             "refreshed",
         ),
+        (
+            "contract-warmup",
+            ContractWarmupRequest(
+                "pf",
+                "PF2611",
+                date(2026, 9, 3),
+                "a" * 64,
+                apply=True,
+            ),
+            "contract-warmed",
+        ),
     ],
 )
 def test_apply_data_command_invalidates_projection_before_manager_action(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     command: str,
-    data_request: UpdateRequest | RefreshRequest,
+    data_request: UpdateRequest | RefreshRequest | ContractWarmupRequest,
     expected: str,
 ) -> None:
     canonical_root = tmp_path / "canonical"
@@ -104,6 +126,11 @@ def test_apply_data_command_invalidates_projection_before_manager_action(
             RefreshRequest("jm", date(2026, 9, 1), date(2026, 9, 2), apply=False),
             "refreshed",
         ),
+        (
+            "contract-warmup",
+            ContractWarmupRequest("pf", "PF2611", date(2026, 9, 3)),
+            "contract-warmed",
+        ),
         ("audit", AuditRequest(("jm",), through=None), "audited"),
     ],
 )
@@ -111,7 +138,7 @@ def test_non_apply_data_commands_do_not_invalidate_projection(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     command: str,
-    data_request: AuditRequest | RefreshRequest | UpdateRequest,
+    data_request: AuditRequest | ContractWarmupRequest | RefreshRequest | UpdateRequest,
     expected: str,
 ) -> None:
     canonical_root = tmp_path / "canonical"

@@ -14,7 +14,11 @@ from app.guiyi_cli import data_commands
 from app.market_data import rqdata_adapter
 from app.guiyi_cli.output import exception_error_payload
 from app.market_data.after_market import AfterMarketResult
-from app.market_data.historical_data_manager import MaintenanceResult
+from app.market_data.historical_data_manager import (
+    ContractWarmupPlan,
+    ContractWarmupResult,
+    MaintenanceResult,
+)
 
 
 class FakeManager:
@@ -33,6 +37,39 @@ class FakeManager:
     def refresh(self, request):
         self.calls.append(("refresh", request))
         return MaintenanceResult("refresh", "planned", request.through, 1, 0, 0, 0, 0)
+
+    def contract_warmup(self, request, *, before_apply=None):
+        self.calls.append(("contract_warmup", request, before_apply))
+        return ContractWarmupResult(
+            status="planned",
+            readonly=True,
+            plan=ContractWarmupPlan(
+                symbol="pf",
+                contract="PF2611",
+                provider="rqdata",
+                listed_date=date(2025, 11, 17),
+                expired_date=date(2026, 11, 13),
+                through=date(2026, 9, 3),
+                target_windows=(
+                    {
+                        "dataset": ("contract", "pf", "PF2611", "1m"),
+                        "year": 2026,
+                        "month": 9,
+                        "expected_bar_count": 7,
+                        "missing_bar_count": 7,
+                    },
+                ),
+                direct_target_count=1,
+                derived_target_count=2,
+                expected_bar_count=7,
+                provider_request_count=1,
+                plan_sha256="a" * 64,
+            ),
+            applied=0,
+            blocked=0,
+            failed=0,
+            provider_requests=0,
+        )
 
 
 class ProgressFakeManager(FakeManager):
@@ -157,7 +194,184 @@ def test_data_parser_exposes_only_active_user_commands() -> None:
         "audit",
         "after-market",
         "session-anchor-repair",
+        "contract-warmup",
     }
+
+
+def test_contract_warmup_parser_requires_apply_hash_and_rejects_abbreviations() -> None:
+    parser = build_parser()
+    common = [
+        "data",
+        "contract-warmup",
+        "--symbol",
+        "pf",
+        "--contract",
+        "PF2611",
+        "--through",
+        "2026-09-03",
+    ]
+
+    parsed = parser.parse_args(common)
+
+    assert parsed.apply is False
+    assert parsed.expected_plan_sha256 is None
+    with pytest.raises(CliUsageError):
+        parser.parse_args([*common, "--expected-plan-sha256", "a" * 64])
+    with pytest.raises(CliUsageError):
+        parser.parse_args([*common, "--apply"])
+    with pytest.raises(CliUsageError):
+        parser.parse_args([*common, "--apply", "--expected-plan-sha256", "A" * 64])
+    with pytest.raises(CliUsageError):
+        parser.parse_args([
+            "data",
+            "contract-warmup",
+            "--sym",
+            "pf",
+            "--contract",
+            "PF2611",
+            "--through",
+            "2026-09-03",
+        ])
+    for required_flag in ("--symbol", "--contract", "--through"):
+        missing = common.copy()
+        index = missing.index(required_flag)
+        del missing[index : index + 2]
+        with pytest.raises(CliUsageError):
+            parser.parse_args(missing)
+
+
+def test_contract_warmup_dry_run_builds_active_request_and_fixed_public_payload() -> None:
+    manager = FakeManager()
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+
+    code = main(
+        [
+            "data",
+            "contract-warmup",
+            "--symbol",
+            " PF ",
+            "--contract",
+            " pf2611 ",
+            "--through",
+            "2026-09-03",
+        ],
+        manager_factory=lambda _session: manager,
+        session_factory=lambda: _NullContext(),
+        stdout=stdout,
+        stderr=stderr,
+    )
+
+    assert code == 0
+    assert json.loads(stdout.getvalue()) == {
+        "schema_version": 1,
+        "command": "data.contract-warmup",
+        "status": "planned",
+        "readonly": True,
+        "symbol": "pf",
+        "contract": "PF2611",
+        "provider": "rqdata",
+        "listed_date": "2025-11-17",
+        "expired_date": "2026-11-13",
+        "through": "2026-09-03",
+        "direct_target_count": 1,
+        "derived_target_count": 2,
+        "expected_bar_count": 7,
+        "provider_request_count": 1,
+        "plan_sha256": "a" * 64,
+        "applied": 0,
+        "blocked": 0,
+        "failed": 0,
+        "targets": [
+            {
+                "dataset": ["contract", "pf", "PF2611", "1m"],
+                "year": 2026,
+                "month": 9,
+                "expected_bar_count": 7,
+                "missing_bar_count": 7,
+            },
+        ],
+        "failures": [],
+    }
+    assert stderr.getvalue() == ""
+    assert manager.calls[0][0] == "contract_warmup"
+    request = manager.calls[0][1]
+    assert request.symbol == "pf"
+    assert request.contract == "PF2611"
+    assert request.through == date(2026, 9, 3)
+    assert request.expected_plan_sha256 is None
+    assert request.apply is False
+    assert manager.calls[0][2] is None
+    assert len(manager.calls) == 1
+
+
+def test_contract_warmup_rejects_symbols_outside_active_authority(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(data_commands, "load_active_products", lambda: ("jm",))
+    args = SimpleNamespace(
+        data_command="contract-warmup",
+        symbol="pf",
+        contract=" PF-2611 ",
+        through="2026-09-03",
+        expected_plan_sha256=None,
+        apply=False,
+    )
+
+    with pytest.raises(ValueError, match="CLI_SYMBOL_INACTIVE"):
+        data_commands.build_request(args)
+
+
+def test_contract_warmup_apply_failure_is_non_readonly_and_does_not_leak_details(
+    tmp_path: Path,
+) -> None:
+    class FailingManager(FakeManager):
+        def __init__(self) -> None:
+            super().__init__()
+            self.catalog = SimpleNamespace(canonical_root=tmp_path)
+
+        def contract_warmup(self, request, *, before_apply=None):
+            self.calls.append(("contract_warmup", request, before_apply))
+            assert before_apply is not None
+            before_apply()
+            error = RuntimeError("provider response /private/secret.sql Traceback")
+            error.code = "CONTRACT_WARMUP_PLAN_CHANGED"
+            raise error
+
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+    code = main(
+        [
+            "data",
+            "contract-warmup",
+            "--symbol",
+            "pf",
+            "--contract",
+            "PF2611",
+            "--through",
+            "2026-09-03",
+            "--apply",
+            "--expected-plan-sha256",
+            "a" * 64,
+        ],
+        manager_factory=lambda _session: FailingManager(),
+        session_factory=lambda: _NullContext(),
+        stdout=stdout,
+        stderr=stderr,
+    )
+
+    assert code == 1
+    assert stdout.getvalue() == ""
+    assert json.loads(stderr.getvalue()) == {
+        "schema_version": 1,
+        "command": "data.contract-warmup",
+        "status": "error",
+        "readonly": False,
+        "error": {"code": "CONTRACT_WARMUP_PLAN_CHANGED", "type": "RuntimeError"},
+    }
+    assert "provider response" not in stderr.getvalue()
+    assert "/private/secret.sql" not in stderr.getvalue()
+    assert "Traceback" not in stderr.getvalue()
 
 
 def test_session_anchor_repair_plan_is_readonly_and_uses_dedicated_service() -> None:
