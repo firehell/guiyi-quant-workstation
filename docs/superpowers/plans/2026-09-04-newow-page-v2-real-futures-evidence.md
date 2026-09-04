@@ -10,7 +10,7 @@
 
 **Spec:** `docs/tasks/2026-09-04-newow-page-parity-research-kernels.md`, `docs/tasks/2026-09-04-newow-futures-validation.md`, and this packet.
 
-**BASE_SHA:** `f96f1c9a40371276f66223e5fdedb2812de72ef3`
+**BASE_SHA:** `a6ea680ed8d9150e0b9920e71563a3de18f7dd1e`
 
 ## Global Constraints
 
@@ -220,9 +220,10 @@ Every recommendation waits for final Owner approval.
 
 **Files:** create `scripts/newow_page_v2_futures_evidence.py`; create `services/quant-api/tests/newow/test_page_v2_futures_evidence_runner.py`.
 
-- [ ] RED: reject base drift, non-read-only PostgreSQL transaction, dirty SQLAlchemy session, Canonical manifest drift, missing hashes, wrong products/frequencies/folds/formulas, empty/inconsistent physical-prefix segments, and any output path under Canonical.
-- [ ] GREEN: implement `discover`, `validate-inputs`, `execute`, and `verify-artifacts` modes. Serialize every replay segment as exact contract, segment ID, Bar count, eligible count, first trading day and last trading day; verify non-empty, unique segment IDs and aggregate counts. `discover` and `execute` require separate Owner authorizations because they read production PostgreSQL/Canonical. Other modes consume files only.
-- [ ] Add an automatic before/after proof: issue `SET TRANSACTION READ ONLY` then verify `SHOW transaction_read_only = on`; keep SQLAlchemy `session.new`, `session.dirty`, and `session.deleted` empty; always roll back and close. Hash only the exact Catalog-resolved Canonical files before and after, comparing path, size, mtime and SHA-256. Confirm Git status is unchanged except the approved report directory and reject any output path equal to or below the Canonical root.
+- [x] RED: reject base drift, non-read-only PostgreSQL transaction, dirty SQLAlchemy session, invalid SELECT-only role facts, wrong products/frequencies/rollover count, missing actual-dominant Bars, unmatched Owner run ID/output directory, and any output path under Canonical.
+- [x] GREEN: implement `discover` only in `scripts/newow_page_v2_futures_evidence.py` and `futures_evidence_discovery.py`. It freezes Catalog candidates before any strategy work, reads only the three frozen actual-dominant frequencies for selected candidates, and writes only `selection.json`, `coverage.csv`, `input_hashes.json`, and `zero_write_proof.json` below the explicit Owner run ID directory.
+- [x] Add an automatic before/after proof: issue `SET TRANSACTION READ ONLY` then verify `SHOW transaction_read_only = on`; keep SQLAlchemy `session.new`, `session.dirty`, and `session.deleted` empty; always roll back and close. Hash only exact Catalog-resolved Canonical files before and after, comparing path, size, mtime and SHA-256. Reject a dirty Git worktree before discovery and require the only post-run Git change to be the approved report directory.
+- [ ] `validate-inputs`, `execute`, and `verify-artifacts` remain excluded until Task 3 source authorities have been accepted. They are not part of the Owner-approved local-only runner implementation.
 
 ## Task 5: Authorized Discovery and Freeze
 
@@ -255,7 +256,7 @@ PYTHONPATH=services/quant-api:packages/quant-core MYPYPATH=services/quant-api:pa
 Authorized discovery command after Task 4 exists and the Owner grants the matching read:
 
 ```bash
-PYTHONPATH=services/quant-api:packages/quant-core /Volumes/扩展盘/guiyi-quant-workstation/services/quant-api/.venv/bin/python scripts/newow_page_v2_futures_evidence.py discover --base-sha f96f1c9a40371276f66223e5fdedb2812de72ef3 --frequencies 1d 1w 60m --minimum-rollovers 2 --output data/reports/newow_page_v2_real_futures_evidence/OWNER_APPROVED_RUN_ID
+PYTHONPATH=services/quant-api:packages/quant-core PYTHONDONTWRITEBYTECODE=1 /Volumes/扩展盘/guiyi-quant-workstation/services/quant-api/.venv/bin/python scripts/newow_page_v2_futures_evidence.py discover --base-sha a6ea680ed8d9150e0b9920e71563a3de18f7dd1e --owner-approved-run-id OWNER_APPROVED_RUN_ID --frequencies 1d 1w 60m --minimum-rollovers 2 --output data/reports/newow_page_v2_real_futures_evidence/OWNER_APPROVED_RUN_ID
 ```
 
 Real execution command after both subsequent Owner Gates:
@@ -264,7 +265,7 @@ Real execution command after both subsequent Owner Gates:
 PYTHONPATH=services/quant-api:packages/quant-core /Volumes/扩展盘/guiyi-quant-workstation/services/quant-api/.venv/bin/python scripts/newow_page_v2_futures_evidence.py execute --selection data/reports/newow_page_v2_real_futures_evidence/OWNER_APPROVED_RUN_ID/selection.json --folds data/reports/newow_page_v2_real_futures_evidence/OWNER_APPROVED_RUN_ID/folds.json --execution-facts OWNER_APPROVED_EXTERNAL_SNAPSHOT_PATH --output data/reports/newow_page_v2_real_futures_evidence/OWNER_APPROVED_RUN_ID
 ```
 
-`OWNER_APPROVED_RUN_ID` and `OWNER_APPROVED_EXTERNAL_SNAPSHOT_PATH` are `BLOCKING_UNKNOWN` until the named Owner Gates. The runner file is intentionally absent until Task 3 clears; invoking either command now must not be attempted.
+`OWNER_APPROVED_RUN_ID` and `OWNER_APPROVED_EXTERNAL_SNAPSHOT_PATH` are `BLOCKING_UNKNOWN` until the named Owner Gates. The discovery runner now exists but must not be invoked until the Owner supplies one explicit new run ID for one bounded production read. The execution command remains unavailable until Task 3 clears.
 
 ## Artifact Plan
 
