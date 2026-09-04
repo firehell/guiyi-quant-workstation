@@ -37,10 +37,10 @@ test('maps only the latest completed trend-band fact to the four engine-state la
 test('uses only latest-bar D markers with D1 priority while retaining every same-bar D fact in history', () => {
   const data = snapshot()
   data.escape_markers = [
-    marker('older-d1', 'NEWOW_ESCAPE_D1', data.bars[1]!.bar_end, 'newow_escape_d123_v1'),
-    marker('latest-d3', 'NEWOW_ESCAPE_D3', data.bars[2]!.bar_end, 'newow_escape_d123_v1'),
-    marker('latest-d2', 'NEWOW_ESCAPE_D2', data.bars[2]!.bar_end, 'newow_escape_d123_v1'),
-    marker('latest-d1', 'NEWOW_ESCAPE_D1', data.bars[2]!.bar_end, 'newow_escape_d123_v1'),
+    marker('older-d1', 'NEWOW_ESCAPE_D1', data.bars[1]!.bar_end, 'newow_escape_d123_page_v2'),
+    marker('latest-d3', 'NEWOW_ESCAPE_D3', data.bars[2]!.bar_end, 'newow_escape_d123_page_v2'),
+    marker('latest-d2', 'NEWOW_ESCAPE_D2', data.bars[2]!.bar_end, 'newow_escape_d123_page_v2'),
+    marker('latest-d1', 'NEWOW_ESCAPE_D1', data.bars[2]!.bar_end, 'newow_escape_d123_page_v2'),
   ]
 
   const model = buildNewowDetailViewModel({ identity, header: header(), data })
@@ -77,9 +77,9 @@ test('discloses exact trend, D, Cup, contract, rollover, and warning evidence fr
     ...data.trend_band[2]!, state: 'YELLOW', state_before: 'YELLOW', transition: null,
   }
   data.escape_markers = [
-    marker('older-d1', 'NEWOW_ESCAPE_D1', data.bars[1]!.bar_end, 'newow_escape_d123_v1'),
-    marker('current-d3', 'NEWOW_ESCAPE_D3', data.bars[2]!.bar_end, 'newow_escape_d123_v1'),
-    marker('current-d2', 'NEWOW_ESCAPE_D2', data.bars[2]!.bar_end, 'newow_escape_d123_v1'),
+    marker('older-d1', 'NEWOW_ESCAPE_D1', data.bars[1]!.bar_end, 'newow_escape_d123_page_v2'),
+    marker('current-d3', 'NEWOW_ESCAPE_D3', data.bars[2]!.bar_end, 'newow_escape_d123_page_v2'),
+    marker('current-d2', 'NEWOW_ESCAPE_D2', data.bars[2]!.bar_end, 'newow_escape_d123_page_v2'),
   ]
   data.cup_handles = [cup('cup-exact', 'BREAKOUT', '2026-01-07T07:00:00Z')]
   data.rollover_seams = [{
@@ -133,7 +133,7 @@ test('discloses exact trend, D, Cup, contract, rollover, and warning evidence fr
 test('fails each current family closed on its warmup warning and exposes no projected history without valid data', () => {
   const data = snapshot()
   data.escape_markers = [
-    marker('old-d1', 'NEWOW_ESCAPE_D1', data.bars[1]!.bar_end, 'newow_escape_d123_v1'),
+    marker('old-d1', 'NEWOW_ESCAPE_D1', data.bars[1]!.bar_end, 'newow_escape_d123_page_v2'),
   ]
   data.cup_handles = [cup('old-cup', 'BREAKOUT', data.bars[1]!.bar_end)]
   data.warnings = [
@@ -161,11 +161,11 @@ test('fails each current family closed on its warmup warning and exposes no proj
 test('projects all Newow marker families newest first with family order, historical contract, and display metadata', () => {
   const data = snapshot()
   data.trend_markers = [
-    marker('old-clear', 'CLEAR', data.bars[0]!.bar_end, 'newow_trend_band_cleanroom_v1'),
-    marker('latest-build', 'BUILD', data.bars[2]!.bar_end, 'newow_trend_band_cleanroom_v1'),
+    marker('old-clear', 'CLEAR', data.bars[0]!.bar_end, 'newow_trend_band_page_v2'),
+    marker('latest-build', 'BUILD', data.bars[2]!.bar_end, 'newow_trend_band_page_v2'),
   ]
   data.escape_markers = [
-    marker('latest-d2', 'NEWOW_ESCAPE_D2', data.bars[2]!.bar_end, 'newow_escape_d123_v1'),
+    marker('latest-d2', 'NEWOW_ESCAPE_D2', data.bars[2]!.bar_end, 'newow_escape_d123_page_v2'),
   ]
   data.cup_markers = [
     marker('middle-cup', 'CUP_HANDLE_READY', data.bars[1]!.bar_end, 'newow_cup_handle_v1'),
@@ -187,11 +187,11 @@ test('projects all Newow marker families newest first with family order, histori
   assert.deepEqual(
     history.map((item) => [item.markerType, item.formulaVersion]),
     [
-      ['BUILD', 'newow_trend_band_cleanroom_v1'],
-      ['NEWOW_ESCAPE_D2', 'newow_escape_d123_v1'],
+      ['BUILD', 'newow_trend_band_page_v2'],
+      ['NEWOW_ESCAPE_D2', 'newow_escape_d123_page_v2'],
       ['CUP_HANDLE_BREAKOUT', 'newow_cup_handle_v1'],
       ['CUP_HANDLE_READY', 'newow_cup_handle_v1'],
-      ['CLEAR', 'newow_trend_band_cleanroom_v1'],
+      ['CLEAR', 'newow_trend_band_page_v2'],
     ],
   )
   for (const item of history) {
@@ -260,7 +260,7 @@ function snapshot(): MutableSnapshot {
   ]
   return {
     meta: {
-      strategy_code: 'newow_trend_v1', profile_id: 'newow_trend_d1_v1', frequency: '1d',
+      strategy_code: 'newow_trend_v1', profile_id: 'newow_trend_d1_page_v2', frequency: '1d',
       series_kind: 'actual_dominant', calculation_identity: 'calculation',
       data_revision_identity: null, request_identity: 'request',
     },
@@ -274,8 +274,8 @@ function snapshot(): MutableSnapshot {
     trend_markers: [], escape_markers: [], cup_markers: [], cup_handles: [], rollover_seams: [],
     legend: { BUILD: 'trend build', CLEAR: 'trend clear', D1: 'escape D1', D2: 'escape D2', D3: 'escape D3' },
     formula_descriptions: {
-      trend_band: 'newow_trend_band_cleanroom_v1',
-      escape: 'newow_escape_d123_v1',
+      trend_band: 'newow_trend_band_page_v2',
+      escape: 'newow_escape_d123_page_v2',
       cup_handle: 'newow_cup_handle_v1',
     },
     warnings: [],

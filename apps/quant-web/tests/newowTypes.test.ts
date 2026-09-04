@@ -8,9 +8,9 @@ const calculationIdentity = [
   'rb',
   'actual_dominant',
   '1d',
-  'newow_trend_d1_v1',
-  'newow_trend_band_cleanroom_v1',
-  'newow_escape_d123_v1',
+  'newow_trend_d1_page_v2',
+  'newow_trend_band_page_v2',
+  'newow_escape_d123_page_v2',
   'newow_cup_handle_v1',
 ].join('|')
 
@@ -23,11 +23,16 @@ function marker(
   formulaVersion: string,
   triggerFacts: Record<string, unknown> = {},
 ) {
+  const price = formulaVersion === 'newow_trend_band_page_v2'
+    ? (barEnd.includes('05') ? '10.20' : '10.30')
+    : formulaVersion === 'newow_escape_d123_page_v2'
+      ? '11.30'
+      : (barEnd.includes('05') ? '10.50' : '11.00')
   return {
     marker_id: markerId,
     marker_type: markerType,
     bar_end: barEnd,
-    price: barEnd.includes('05') ? '10.50' : '11.00',
+    price,
     label: markerType,
     color_token: 'newow-test',
     priority: 100,
@@ -41,7 +46,7 @@ function payload() {
   return {
     meta: {
       strategy_code: 'newow_trend_v1',
-      profile_id: 'newow_trend_d1_v1',
+      profile_id: 'newow_trend_d1_page_v2',
       frequency: '1d',
       series_kind: 'actual_dominant',
       calculation_identity: calculationIdentity,
@@ -89,13 +94,13 @@ function payload() {
       },
     ],
     trend_markers: [
-      { ...marker('clear-1', 'CLEAR', '2026-01-05T07:00:00Z', 'newow_trend_band_cleanroom_v1'), related_marker_ids: ['prior-build'] },
-      marker('build-1', 'BUILD', '2026-01-06T07:00:00+00:00', 'newow_trend_band_cleanroom_v1'),
+      { ...marker('clear-1', 'CLEAR', '2026-01-05T07:00:00Z', 'newow_trend_band_page_v2'), related_marker_ids: ['prior-build'] },
+      marker('build-1', 'BUILD', '2026-01-06T07:00:00+00:00', 'newow_trend_band_page_v2'),
     ],
     escape_markers: [
-      marker('d1-1', 'NEWOW_ESCAPE_D1', '2026-01-06T07:00:00+00:00', 'newow_escape_d123_v1', { nested: [true, { ratio: 1.25 }], price: '11.00' }),
-      marker('d2-1', 'NEWOW_ESCAPE_D2', '2026-01-06T07:00:00+00:00', 'newow_escape_d123_v1'),
-      marker('d3-1', 'NEWOW_ESCAPE_D3', '2026-01-06T07:00:00+00:00', 'newow_escape_d123_v1'),
+      marker('d1-1', 'NEWOW_ESCAPE_D1', '2026-01-06T07:00:00+00:00', 'newow_escape_d123_page_v2', { nested: [true, { ratio: 1.25 }], price: '11.00' }),
+      marker('d2-1', 'NEWOW_ESCAPE_D2', '2026-01-06T07:00:00+00:00', 'newow_escape_d123_page_v2'),
+      marker('d3-1', 'NEWOW_ESCAPE_D3', '2026-01-06T07:00:00+00:00', 'newow_escape_d123_page_v2'),
     ],
     cup_markers: [
       marker('cup-ready-1', 'CUP_HANDLE_READY', '2026-01-05T07:00:00Z', 'newow_cup_handle_v1', { candidate_id: 'cup-1' }),
@@ -126,7 +131,7 @@ function payload() {
     }],
     legend: { BUILD: 'trend build', CLEAR: 'trend clear', D1: 'escape D1', D2: 'escape D2', D3: 'escape D3' },
     formula_descriptions: {
-      trend_band: 'newow_trend_band_cleanroom_v1', escape: 'newow_escape_d123_v1', cup_handle: 'newow_cup_handle_v1',
+      trend_band: 'newow_trend_band_page_v2', escape: 'newow_escape_d123_page_v2', cup_handle: 'newow_cup_handle_v1',
     },
     warnings: [],
   }
@@ -144,7 +149,7 @@ test('normalizes the exact Newow wire and returns a detached deep-readonly snaps
 
   assert.equal(value.bars[0]!.open, 10.1)
   assert.equal(value.bars[1]!.open_interest, null)
-  assert.equal(value.trend_markers[0]!.price, 10.5)
+  assert.equal(value.trend_markers[0]!.price, 10.2)
   assert.equal(value.cup_handles[0]!.pivot_price, 11.9)
   assert.equal(value.cup_handles[0]!.left_rim.price, 12)
   assert.deepEqual(value.escape_markers[0]!.trigger_facts, { nested: [true, { ratio: 1.25 }], price: '11.00' })
@@ -158,6 +163,16 @@ test('normalizes the exact Newow wire and returns a detached deep-readonly snaps
   assert.equal(value.bars[0]!.close, 10.5)
   assert.deepEqual(value.escape_markers[0]!.trigger_facts.nested, [true, { ratio: 1.25 }])
   assert.throws(() => (value.bars as unknown[]).push({}))
+})
+
+test('accepts the page-v2 identity and validates band/high marker prices', () => {
+  const raw = payload()
+
+  const value = normalizeNewowTrendDetailResponse(raw, query)
+
+  assert.equal(value.meta.profile_id, 'newow_trend_d1_page_v2')
+  assert.deepEqual(value.trend_markers.map((marker) => marker.price), [10.2, 10.3])
+  assert.deepEqual(value.escape_markers.map((marker) => marker.price), [11.3, 11.3, 11.3])
 })
 
 test('normalizes finite Decimal exponent strings without accepting JSON numbers as Decimal wire values', () => {

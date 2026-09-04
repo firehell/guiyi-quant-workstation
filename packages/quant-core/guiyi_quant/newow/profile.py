@@ -1,4 +1,4 @@
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, fields, replace
 from math import isfinite
 
 
@@ -123,8 +123,7 @@ class NewowTrendProfile:
                 <= self.cup_leg_ratio_hard_max
             )
             or self.cup_midline_crossings_soft_max < 0
-            or self.cup_midline_crossings_soft_max
-            > self.cup_midline_crossings_hard_max
+            or self.cup_midline_crossings_soft_max > self.cup_midline_crossings_hard_max
             or not 0 < self.cup_handle_depth_max_pct < 1
             or not 0 < self.cup_handle_retrace_max_ratio <= 1
             or not 0 < self.cup_handle_upper_half_ratio <= 1
@@ -197,4 +196,15 @@ NEWOW_TREND_D1_V1 = NewowTrendProfile(
     cup_ready_expiry_bars=20,
     cup_post_breakout_archive_bars=20,
     cup_recent_terminal_ids_limit=32,
+)
+
+
+NEWOW_TREND_D1_PAGE_V2 = replace(
+    NEWOW_TREND_D1_V1,
+    profile_id="newow_trend_d1_page_v2",
+    trend_band_formula="newow_trend_band_page_v2",
+    escape_formula="newow_escape_d123_page_v2",
+    trend_weight_period=7,
+    trend_signal_period=10,
+    var4_lookback=10,
 )

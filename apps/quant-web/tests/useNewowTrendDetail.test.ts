@@ -173,14 +173,14 @@ function normalizedEmpty(product: string, from: string, through: string): NewowT
     product,
     'actual_dominant',
     '1d',
-    'newow_trend_d1_v1',
-    'newow_trend_band_cleanroom_v1',
-    'newow_escape_d123_v1',
+    'newow_trend_d1_page_v2',
+    'newow_trend_band_page_v2',
+    'newow_escape_d123_page_v2',
     'newow_cup_handle_v1',
   ].join('|')
   return normalizeNewowTrendDetailResponse({
     meta: {
-      strategy_code: 'newow_trend_v1', profile_id: 'newow_trend_d1_v1', frequency: '1d',
+      strategy_code: 'newow_trend_v1', profile_id: 'newow_trend_d1_page_v2', frequency: '1d',
       series_kind: 'actual_dominant', calculation_identity: calculation, data_revision_identity: null,
       request_identity: `${calculation}:${from}:${through}`,
     },
@@ -190,7 +190,7 @@ function normalizedEmpty(product: string, from: string, through: string): NewowT
     trend_band: [], trend_markers: [], escape_markers: [], cup_markers: [], cup_handles: [], rollover_seams: [],
     legend: { BUILD: 'trend build', CLEAR: 'trend clear', D1: 'escape D1', D2: 'escape D2', D3: 'escape D3' },
     formula_descriptions: {
-      trend_band: 'newow_trend_band_cleanroom_v1', escape: 'newow_escape_d123_v1', cup_handle: 'newow_cup_handle_v1',
+      trend_band: 'newow_trend_band_page_v2', escape: 'newow_escape_d123_page_v2', cup_handle: 'newow_cup_handle_v1',
     },
     warnings: [
       'NEWOW_TREND_WARMUP_INSUFFICIENT',
