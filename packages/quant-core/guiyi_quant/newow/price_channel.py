@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from decimal import ROUND_HALF_UP, Decimal
 from enum import StrEnum
+from typing import Literal
 
 from .research_backtest import NewowResearchBar, validate_research_bars
 
@@ -15,6 +16,7 @@ TARGET_ABSORB_CHANNEL_PAGE_V1 = "newow_target_absorb_hhv_llv10_page_v1"
 TARGET_ABSORB_DISPLAY_PAGE_V1 = (
     "newow_target_absorb_display_selection_page_v1"
 )
+CHANNEL_OPTIMIZER_PAGE_V1 = "newow_hhv_llv_window_optimizer_page_v1"
 
 
 class DisplayPeriod(StrEnum):
@@ -96,6 +98,21 @@ class DisplayPriceSelection:
     target_branch_token: str
     absorb_branch_token: str
     formula_version: str = TARGET_ABSORB_DISPLAY_PAGE_V1
+
+
+@dataclass(frozen=True, slots=True)
+class PageChannelWindowResult:
+    window: int
+    cumulative_return_pct: Decimal
+    max_drawdown_pct: Decimal
+    trade_count: int
+    win_rate_pct: Decimal
+    score: Decimal
+    terminal_position_was_open: bool
+    force_closed_at_end: Literal[True] = True
+    execution_timing: Literal["same_bar_close"] = "same_bar_close"
+    trustworthy_for_research: Literal[False] = False
+    formula_version: str = CHANNEL_OPTIMIZER_PAGE_V1
 
 
 def _valid_window(window: object) -> bool:
@@ -309,4 +326,128 @@ def select_display_prices(
         absorb_period=absorb_period,
         target_branch_token=target_branch,
         absorb_branch_token=absorb_branch,
+    )
+
+
+def _page_window_result(
+    bars: tuple[NewowResearchBar, ...], window: int
+) -> PageChannelWindowResult:
+    channels = calculate_price_channel(bars, window=window)
+    holding = False
+    buy_price = Decimal("0")
+    cumulative = Decimal("0")
+    peak = Decimal("0")
+    max_drawdown = Decimal("0")
+    wins = 0
+    losses = 0
+
+    for bar, channel in zip(bars, channels, strict=True):
+        if not channel.available:
+            continue
+        if holding and channel.target is not None and bar.high >= channel.target:
+            trade_return = (bar.close - buy_price) / buy_price * Decimal("100")
+            cumulative += trade_return
+            if trade_return > 0:
+                wins += 1
+            else:
+                losses += 1
+            holding = False
+        if (
+            not holding
+            and channel.absorb is not None
+            and bar.low <= channel.absorb
+        ):
+            holding = True
+            buy_price = bar.close
+
+        current_equity = cumulative
+        if holding:
+            current_equity += (
+                (bar.close - buy_price) / buy_price * Decimal("100")
+            )
+        peak = max(peak, current_equity)
+        max_drawdown = max(max_drawdown, peak - current_equity)
+
+    terminal_position_was_open = holding
+    if holding:
+        trade_return = (
+            (bars[-1].close - buy_price) / buy_price * Decimal("100")
+        )
+        cumulative += trade_return
+        if trade_return > 0:
+            wins += 1
+        else:
+            losses += 1
+    trade_count = wins + losses
+    win_rate = (
+        Decimal("0")
+        if trade_count == 0
+        else Decimal(wins) / Decimal(trade_count) * Decimal("100")
+    )
+    return PageChannelWindowResult(
+        window=window,
+        cumulative_return_pct=cumulative,
+        max_drawdown_pct=max_drawdown,
+        trade_count=trade_count,
+        win_rate_pct=win_rate,
+        score=Decimal("0"),
+        terminal_position_was_open=terminal_position_was_open,
+    )
+
+
+def rank_page_channel_windows(
+    bars: Sequence[NewowResearchBar],
+    *,
+    windows: tuple[int, ...] = (10, 20, 24, 30, 52),
+) -> tuple[PageChannelWindowResult, ...]:
+    """Reproduce the page's same-bar, uncosted and force-close comparison."""
+
+    if (
+        not windows
+        or any(not _valid_window(window) for window in windows)
+        or len(set(windows)) != len(windows)
+    ):
+        raise ValueError("NEWOW_PRICE_CHANNEL_INVALID_WINDOW")
+    materialized = tuple(bars)
+    validate_research_bars(materialized)
+    series = {
+        (bar.physical_contract, bar.segment_id) for bar in materialized
+    }
+    if len(series) != 1:
+        raise ValueError("NEWOW_PRICE_CHANNEL_MIXED_SERIES")
+
+    unscored = tuple(
+        _page_window_result(materialized, window) for window in windows
+    )
+    maximum_return = max(item.cumulative_return_pct for item in unscored)
+    minimum_return = min(item.cumulative_return_pct for item in unscored)
+    minimum_drawdown = min(item.max_drawdown_pct for item in unscored)
+    return tuple(
+        sorted(
+            (
+                replace(
+                    item,
+                    score=(
+                        (
+                            item.cumulative_return_pct
+                            - min(Decimal("0"), maximum_return)
+                        )
+                        / max(
+                            Decimal("1"),
+                            maximum_return - minimum_return + Decimal("1"),
+                        )
+                        + minimum_drawdown
+                        / max(
+                            Decimal("1"),
+                            item.max_drawdown_pct
+                            if item.max_drawdown_pct != 0
+                            else Decimal("1"),
+                        )
+                    ),
+                )
+                for item in unscored
+            ),
+            key=lambda item: item.score,
+            reverse=True,
+        )
     )

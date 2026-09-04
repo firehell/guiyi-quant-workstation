@@ -124,14 +124,17 @@ from .research_walk_forward import (
     run_fixed_formula_walk_forward,
 )
 from .price_channel import (
+    CHANNEL_OPTIMIZER_PAGE_V1,
     TARGET_ABSORB_CHANNEL_PAGE_V1,
     TARGET_ABSORB_DISPLAY_PAGE_V1,
     DisplayPeriod,
     DisplayPriceSelection,
     MultiPeriodPriceFacts,
     PageSignalState,
+    PageChannelWindowResult,
     PriceChannelPoint,
     calculate_price_channel,
+    rank_page_channel_windows,
     select_display_prices,
 )
 
@@ -144,6 +147,7 @@ __all__ = [
     "UP_DOWN_ENERGY_FORMULA_VERSION",
     "ZHAOYAO_MIRROR_FORMULA_VERSION",
     "CAUSAL_BACKTEST_FORMULA_VERSION",
+    "CHANNEL_OPTIMIZER_PAGE_V1",
     "TARGET_ABSORB_CHANNEL_PAGE_V1",
     "TARGET_ABSORB_DISPLAY_PAGE_V1",
     "CAUSAL_SIGNAL_FORMULAS",
@@ -198,6 +202,7 @@ __all__ = [
     "NewowResearchBar",
     "MultiPeriodPriceFacts",
     "PageSignalState",
+    "PageChannelWindowResult",
     "PriceChannelPoint",
     "ResearchBacktestResult",
     "ResearchStrategy",
@@ -219,6 +224,7 @@ __all__ = [
     "ZhaoyaoMirrorResult",
     "calculate_trend_band",
     "calculate_price_channel",
+    "rank_page_channel_windows",
     "calculate_escape_series",
     "calculate_cup_handle_series",
     "calculate_newow_trend_frames",

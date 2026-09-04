@@ -5,7 +5,7 @@
 本表把页面观察、手册主张、归一实现和期货迁移证据分开。唯一状态集为 `OBSERVED_EXACT`、`REPRODUCED_EXACT`、`BEHAVIOR_INFERRED`、`CLEANROOM_IMPLEMENTED`、`UNKNOWN`、`REJECTED`。其中推断不能冒充页面公式；`UNKNOWN` 与 `REJECTED` 均没有实现入口。
 
 外部证据根：`newow-strategy-detail-research/v3.2.82-gap-closure`
-证据清单 SHA-256：`394aa02cbdf3e18b9dcb4d0969241a4800e0770497a8ff77ee044de456e61d83`
+证据清单 SHA-256：`8e1c25fb08a9c7da37fd8ce218cc1ecaa24582c745a9fb1943d8aef5f6c44c2c`
 
 | Feature | Current source/version | Evidence status | Formula identity | Implementation entry | Stock evidence | Futures evidence | Remaining gate |
 |---|---|---|---|---|---|---|---|
@@ -21,9 +21,9 @@
 | 主力控盘副图 | stock_detail.html v3.2.63 | REPRODUCED_EXACT | newow_main_force_control_page_v1 | packages/quant-core/guiyi_quant/newow/subplots.py | 9 标的数值与状态 exact | 研究 primitive 可复算 | Slice D 纳入诊断模板 |
 | 照妖镜副图 | stock_detail.html v3.2.63 | REPRODUCED_EXACT | newow_zhaoyao_mirror_repainting_page_v1 | packages/quant-core/guiyi_quant/newow/subplots.py | 9 标的逐值 exact | repainting，只允许研究解释 | Slice D 明示重绘边界 |
 | 涨跌动能副图 | stock_detail.html v3.2.63 | REPRODUCED_EXACT | newow_up_down_energy_page_v1 | packages/quant-core/guiyi_quant/newow/subplots.py | 9 标的逐值 exact | 研究 primitive 可复算 | Slice D 纳入诊断模板 |
-| 目标价与吸筹价原始通道 | strategy-calc.js v1.0.9, query v3.2.82 | REPRODUCED_EXACT | newow_target_absorb_hhv_llv10_page_v1 | none | v3.2.82 的 27/27 页面末值与 HHV10/LLV10 一致 | 尚未实现 | Slice B 建立新公式身份与期货测试 |
-| 目标价与吸筹价展示选择 | strategy-calc.js v1.0.9, query v3.2.82 | OBSERVED_EXACT | newow_target_absorb_display_selection_page_v1 | none | 日周状态、突破升级、fallback 与昨收 clamp 已冻结 | 尚未实现 | Slice B 枚举分支并逐值实现 |
-| 参数比较器页面口径 | stock_detail.html v3.2.63 | OBSERVED_EXACT | newow_channel_window_compare_page_v1 | none | 候选 10/20/24/30/52 与页面同 Bar 行为已冻结 | 禁止直接用于可信晋升 | Slice B 与 causal-research 身份隔离 |
+| 目标价与吸筹价原始通道 | strategy-calc.js v1.0.9, query v3.2.82 | CLEANROOM_IMPLEMENTED | newow_target_absorb_hhv_llv10_page_v1 | packages/quant-core/guiyi_quant/newow/price_channel.py::calculate_price_channel | v3.2.82 的 27/27 页面末值与 HHV10/LLV10 一致 | 单段 actual_dominant 输入可复算 | Slice B 因果比较器与期货验证 |
+| 目标价与吸筹价展示选择 | strategy-calc.js v1.0.9, query v3.2.82 | CLEANROOM_IMPLEMENTED | newow_target_absorb_display_selection_page_v1 | packages/quant-core/guiyi_quant/newow/price_channel.py::select_display_prices | 日周状态、突破升级、fallback、昨收 clamp 与分支 token 测试 | 不进入期货信号 | Slice B Review |
+| 参数比较器页面口径 | stock_detail.html v3.2.63 | CLEANROOM_IMPLEMENTED | newow_hhv_llv_window_optimizer_page_v1 | packages/quant-core/guiyi_quant/newow/price_channel.py::rank_page_channel_windows | 601 根页面响应离线 JS oracle，五窗口逐字段与排名 parity | `trustworthy_for_research=false`，禁止晋升 | Slice B 与 causal-research 身份隔离 |
 | 参数比较器因果研究口径 | 归一设计 v1 | BEHAVIOR_INFERRED | newow_channel_window_compare_causal_v1 | none | 页面偏差的 clean-room 修正设计，不宣称页面公式 | 需要 next-open、成本、rollover、prefix 合同 | Slice B TDD 实现并保留研究边界 |
 | 页面同 Bar 无成本比较器直接晋升可信策略 | stock_detail.html v3.2.63 | REJECTED | none | none | 页面执行时序和无成本口径已冻结 | 不迁移 | 因违反因果与成本边界而永久拒绝；只允许另建 causal-research 身份 |
 | 综合决策 13 格矩阵 | stock_detail.html v3.2.63 | OBSERVED_EXACT | newow_composite_decision_page_v1 | none | 13 branch keys 与 27 个非占位页面输出 | 尚未实现 | Slice C page-exact 与 corrected 分身份 |

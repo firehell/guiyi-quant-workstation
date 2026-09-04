@@ -7,12 +7,15 @@ from pathlib import Path
 import pytest
 
 from guiyi_quant.newow.price_channel import (
+    CHANNEL_OPTIMIZER_PAGE_V1,
     TARGET_ABSORB_CHANNEL_PAGE_V1,
     TARGET_ABSORB_DISPLAY_PAGE_V1,
     DisplayPeriod,
     MultiPeriodPriceFacts,
     PageSignalState,
+    PageChannelWindowResult,
     calculate_price_channel,
+    rank_page_channel_windows,
     select_display_prices,
 )
 from guiyi_quant.newow.research_backtest import NewowResearchBar
@@ -96,6 +99,42 @@ def _facts(case: dict[str, object]) -> MultiPeriodPriceFacts:
 def _fixture_cases() -> list[dict[str, object]]:
     data = json.loads(GOLDEN.read_text(encoding="utf-8"))
     return data["display_selection_cases"]
+
+
+def _optimizer_fixture() -> dict[str, object]:
+    data = json.loads(GOLDEN.read_text(encoding="utf-8"))
+    return data["channel_window_rankings"][0]
+
+
+def _optimizer_bars() -> tuple[NewowResearchBar, ...]:
+    rows = _optimizer_fixture()["bars"]
+    assert isinstance(rows, list)
+    result = []
+    for index, row in enumerate(rows):
+        assert isinstance(row, dict)
+        value_date = date.fromisoformat(row["date"])
+        result.append(
+            NewowResearchBar(
+                product="rb",
+                physical_contract="RB2701",
+                segment_id="rb-2701-page-oracle",
+                trading_day=value_date,
+                bar_end=datetime.combine(
+                    value_date, datetime.min.time(), tzinfo=UTC
+                ),
+                open=Decimal(str(row["open"])),
+                high=Decimal(str(row["high"])),
+                low=Decimal(str(row["low"])),
+                close=Decimal(str(row["close"])),
+                volume=int(row["volume"]),
+                open_interest=None,
+                source_identity=f"page-oracle-{index}",
+                observation_eligible=True,
+                completed=True,
+                frequency="1d",
+            )
+        )
+    return tuple(result)
 
 
 def _page_value(value: Decimal | None) -> str:
@@ -221,3 +260,84 @@ def test_display_selection_rejects_invalid_market_prices(
             current_price=current,
             previous_close=previous,
         )
+
+
+def test_page_optimizer_matches_frozen_javascript_oracle() -> None:
+    fixture = _optimizer_fixture()
+    expected = {
+        item["window"]: item for item in fixture["expected_by_window"]
+    }
+
+    ranked = rank_page_channel_windows(_optimizer_bars())
+
+    assert [item.window for item in ranked] == fixture["expected_ranked_windows"]
+    assert all(type(item) is PageChannelWindowResult for item in ranked)
+    for result in ranked:
+        oracle = expected[result.window]
+        display = oracle["page_display"]
+        assert format(result.cumulative_return_pct, ".2f") == display[
+            "cumulative_return_pct"
+        ]
+        assert format(result.max_drawdown_pct, ".2f") == display[
+            "max_drawdown_pct"
+        ]
+        assert format(result.win_rate_pct, ".1f") == display["win_rate_pct"]
+        assert result.trade_count == oracle["trade_count"]
+        assert abs(
+            result.cumulative_return_pct
+            - Decimal(str(oracle["cumulative_return_pct"]))
+        ) < Decimal("1e-12")
+        assert abs(
+            result.max_drawdown_pct
+            - Decimal(str(oracle["max_drawdown_pct"]))
+        ) < Decimal("1e-12")
+        assert abs(result.score - Decimal(str(oracle["score"]))) < Decimal(
+            "1e-12"
+        )
+        assert result.terminal_position_was_open is oracle["force_closed_at_end"]
+        assert result.force_closed_at_end is True
+        assert result.execution_timing == "same_bar_close"
+        assert result.trustworthy_for_research is False
+        assert result.formula_version == CHANNEL_OPTIMIZER_PAGE_V1
+
+
+def test_page_optimizer_clears_then_rebuilds_on_same_bar() -> None:
+    bars = tuple(_bar(index, value=Decimal(value)) for index, value in enumerate(
+        ("100", "101", "102", "103", "90", "110")
+    ))
+    bars = (
+        *bars[:-1],
+        NewowResearchBar(
+            **{
+                **bars[-1].as_kwargs(),
+                "high": Decimal("120"),
+                "low": Decimal("80"),
+            }
+        ),
+    )
+
+    result = rank_page_channel_windows(bars, windows=(5,))[0]
+
+    assert result.trade_count == 2
+    assert result.terminal_position_was_open is True
+    assert result.force_closed_at_end is True
+    assert result.trustworthy_for_research is False
+
+
+def test_page_optimizer_short_windows_are_stably_ranked_with_zero_trades() -> None:
+    results = rank_page_channel_windows(_bars(6), windows=(10, 20))
+
+    assert [item.window for item in results] == [10, 20]
+    assert all(item.cumulative_return_pct == 0 for item in results)
+    assert all(item.max_drawdown_pct == 0 for item in results)
+    assert all(item.trade_count == 0 for item in results)
+    assert all(item.win_rate_pct == 0 for item in results)
+
+
+@pytest.mark.parametrize(
+    "windows",
+    ((), (10, 10), (4,), (121,), (10.0,)),
+)
+def test_page_optimizer_rejects_invalid_window_sets(windows: tuple[object, ...]) -> None:
+    with pytest.raises(ValueError, match="NEWOW_PRICE_CHANNEL_INVALID_WINDOW"):
+        rank_page_channel_windows(_bars(20), windows=windows)  # type: ignore[arg-type]
