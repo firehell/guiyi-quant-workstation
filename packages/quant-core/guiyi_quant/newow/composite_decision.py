@@ -115,6 +115,10 @@ class MultiPeriodTrendState:
         if not all(
             isinstance(value, TrendSignal)
             for value in (self.weekly, self.daily, self.sixty_minute)
+        ) or self.sixty_minute not in (
+            TrendSignal.HOLD,
+            TrendSignal.WAIT,
+            TrendSignal.IDLE,
         ):
             raise ValueError("NEWOW_COMPOSITE_STATE_INVALID")
 

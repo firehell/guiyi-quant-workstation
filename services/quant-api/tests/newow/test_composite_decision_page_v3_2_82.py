@@ -147,6 +147,12 @@ def test_page_matrix_has_thirteen_keys_but_warning_keys_are_unreachable() -> Non
     )
 
 
+@pytest.mark.parametrize("sixty", [TrendSignal.BUY, TrendSignal.SELL])
+def test_sixty_minute_trend_domain_fails_closed(sixty: TrendSignal) -> None:
+    with pytest.raises(ValueError, match="NEWOW_COMPOSITE_STATE_INVALID"):
+        _trend(TrendSignal.HOLD, TrendSignal.HOLD, sixty)
+
+
 @pytest.mark.parametrize(
     ("decision_key", "action", "minimum", "maximum"),
     [
@@ -408,6 +414,63 @@ def test_volatility_true_range_includes_gap_and_caps_at_twenty() -> None:
     assert capped_volatility.sample_size == 20
 
 
+def test_volatility_true_range_includes_gap_down() -> None:
+    bars = list(_constant_tr_bars("1"))
+    bars[-1] = _bar(
+        5,
+        open_="90",
+        high="91",
+        low="88",
+        close="90",
+    )
+
+    volatility = calculate_composite_volatility(tuple(bars))
+
+    assert volatility is not None
+    assert volatility.value_pct == Decimal("3.6")
+    assert volatility.level is VolatilityLevel.MID
+
+
+def test_composite_is_invariant_to_an_unconsumed_future_tail() -> None:
+    bars = _constant_tr_bars("1", count=22)
+    changed_tail = (
+        *bars[:-1],
+        _bar(
+            21,
+            open_="200",
+            high="220",
+            low="180",
+            close="200",
+        ),
+    )
+    trend = _trend(TrendSignal.HOLD, TrendSignal.HOLD, TrendSignal.HOLD)
+    oscillation = _osc(
+        OscillationStatus.HOLDING,
+        OscillationStatus.HOLDING,
+        OscillationStatus.HOLDING,
+    )
+
+    original_prefixes = tuple(
+        calculate_composite_decision(
+            trend=trend,
+            oscillation=oscillation,
+            daily_bars=bars[:end],
+        )
+        for end in range(6, len(bars) + 1)
+    )
+    changed_prefixes = tuple(
+        calculate_composite_decision(
+            trend=trend,
+            oscillation=oscillation,
+            daily_bars=changed_tail[:end],
+        )
+        for end in range(6, len(changed_tail) + 1)
+    )
+
+    assert changed_prefixes[:-1] == original_prefixes[:-1]
+    assert changed_prefixes[-1] != original_prefixes[-1]
+
+
 def test_volatility_returns_none_when_fewer_than_five_true_ranges() -> None:
     assert calculate_composite_volatility(daily_bars()[:5]) is None
     with pytest.raises(
@@ -563,29 +626,108 @@ def test_first_action_preserves_rebound_warning_when_page_is_bearish() -> None:
     )
 
 
-def test_golden_fixture_preserves_six_individual_stock_composite_samples() -> None:
-    payload = json.loads(GOLDEN.read_text())
-    stocks = [item for item in payload["symbols"] if item["kind"] == "stock"]
-    expected = {
-        "601233.SH": ("减仓观望", "42分", "建议仓位 10%-30%", "5%"),
-        "600519.SH": ("持仓观望", "50分", "建议仓位 30%-50%", "1.8%"),
-        "600036.SH": ("持仓观望", "50分", "建议仓位 30%-50%", "1.4%"),
-        "002594.SZ": ("减仓观望", "31分", "建议仓位 30%-50%", "2%"),
-        "300750.SZ": ("建仓 / 加仓", "100分", "建议仓位 50%-100%", "2.6%"),
-        "000651.SZ": ("减仓观望", "28分", "建议仓位 10%-30%", "1.6%"),
-    }
-    assert {item["code"] for item in stocks} >= set(expected)
-    for stock in stocks:
-        daily = next(
-            period for period in stock["periods"] if period["period"] == "day"
+def test_first_action_overlapping_conditions_follow_page_priority() -> None:
+    oscillation = _osc(
+        OscillationStatus.CLEARED,
+        OscillationStatus.CLEARED,
+        OscillationStatus.CLEARED,
+    )
+
+    double_bearish = calculate_first_action_principle(
+        trend=WeeklyDailyTrendState(TrendSignal.WAIT, TrendSignal.WAIT),
+        oscillation=oscillation,
+    )
+    all_oscillation_cleared = calculate_first_action_principle(
+        trend=WeeklyDailyTrendState(TrendSignal.HOLD, TrendSignal.HOLD),
+        oscillation=oscillation,
+    )
+
+    assert double_bearish.rule_token == "weekly_daily_bearish_hard_flat"
+    assert (
+        all_oscillation_cleared.rule_token
+        == "sixty_minute_oscillation_cleared"
+    )
+
+
+def _stock_formula_bars(case: dict[str, object]) -> tuple[NewowResearchBar, ...]:
+    rows = case["daily_ohlcv"]
+    assert isinstance(rows, list)
+    result = []
+    for index, row in enumerate(rows):
+        assert isinstance(row, dict)
+        value_date = date.fromisoformat(row["time"])
+        result.append(
+            NewowResearchBar(
+                product="rb",
+                physical_contract="RB2701",
+                segment_id="rb-2701-stock-page-oracle",
+                trading_day=value_date,
+                bar_end=datetime.combine(
+                    value_date, datetime.min.time(), tzinfo=UTC
+                ),
+                open=Decimal(str(row["open"])),
+                high=Decimal(str(row["high"])),
+                low=Decimal(str(row["low"])),
+                close=Decimal(str(row["close"])),
+                volume=row["volume"],
+                open_interest=1000,
+                source_identity=f"stock-page-{case['code']}-{index}",
+                observation_eligible=True,
+                completed=True,
+            )
         )
+    return tuple(result)
+
+
+def test_six_individual_stock_inputs_reproduce_page_composite_outputs() -> None:
+    payload = json.loads(GOLDEN.read_text())
+    cases = payload["batch_signal_cases"]
+    action_by_label = {
+        "建仓 / 加仓": CompositeAction.BUILD_OR_ADD,
+        "持仓观望": CompositeAction.HOLD_AND_WAIT,
+        "减仓观望": CompositeAction.REDUCE_AND_WAIT,
+    }
+    position_by_label = {
+        "建议仓位 10%-30%": PositionRange(Decimal("0.1"), Decimal("0.3")),
+        "建议仓位 30%-50%": PositionRange(Decimal("0.3"), Decimal("0.5")),
+        "建议仓位 50%-100%": PositionRange(Decimal("0.5"), Decimal("1")),
+    }
+    assert len(cases) == 6
+    for case in cases:
+        batch = case["batch"]
+        oscillation = case["oscillation"]
+        expected = case["expected"]
+        result = calculate_composite_decision(
+            trend=_trend(
+                TrendSignal(batch["weekly"]),
+                TrendSignal(batch["daily"]),
+                TrendSignal(batch["sixty_minute"]),
+            ),
+            oscillation=_osc(
+                OscillationStatus(oscillation["weekly"]),
+                OscillationStatus(oscillation["daily"]),
+                OscillationStatus(oscillation["sixty_minute"]),
+            ),
+            daily_bars=_stock_formula_bars(case),
+        )
+
+        assert result.action_token is action_by_label[
+            expected["composite_decision"]
+        ]
+        assert result.certainty.total == int(
+            expected["composite_score"].removesuffix("分")
+        )
+        assert result.position_range == position_by_label[
+            expected["composite_position"]
+        ]
+        assert result.volatility.value_pct == Decimal(
+            expected["volatility"].removesuffix("%")
+        )
+        assert len(case["page_source_response_sha256"]) == 64
         assert (
-            daily["page_output"]["composite_decision"],
-            daily["page_output"]["composite_score"],
-            daily["page_output"]["composite_position"],
-            daily["page_output"]["volatility"],
-        ) == expected[stock["code"]]
-        assert len(daily["source_response_sha256"]) == 64
+            case["batch_snapshot_sha256"]
+            == "fde6c439cc343ee316a71df68919483a897dbe133da3a9e5832317eb2a8720aa"
+        )
 
 
 def test_golden_composite_witnesses_match_page_control_flow() -> None:
