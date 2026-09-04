@@ -2,7 +2,7 @@
 
 日期：2026-09-04
 
-状态：`WRITTEN_SPEC_APPROVED / IMPLEMENTATION_PLAN_READY`
+状态：`CODE_COMPLETE / FINAL_REVIEW_PENDING / REAL_WEEKLY_OOS_GATE_PENDING`
 
 分支：`codex/newow-v3-2-82-complete-replication`
 
@@ -302,3 +302,11 @@ Slice E 追加 Web unit、typecheck、build 和 bounded E2E。全任务完成后
 - page-parity、causal-research、repainting 和 observation-only 身份在类型与 UI 上不可混淆；
 - 股票 parity 和期货适配各自有证据，且没有把股票收益外推成期货结论；
 - 仓库、PR 与 `develop` 状态可审计；没有 production mutation、release、Runtime 或通知副作用。
+
+## 14. 2026-09-04 实施读回
+
+Slice A-E 已实现为独立 Quant Core、只读 typed API 和 Trend Workspace。股票/指数证据为 3 指数 + 6 股票 × week/day/60min 的 27 个精确页面点；目标/吸筹原始通道 27/27 matched，601 根页面响应的五窗口比较 oracle 可离线重算。
+
+真实期货数据链覆盖 rb/sc/m × 1d/1w/60m，9/9 series 通过。SC2302 在 D1/60m 有 owner Bar、在 W1 没有 owner Bar，已作为全局权威分段与周期 owner 子集的真实反例。27 个品种×周期×策略 OOS 单元中，18 个日线/60 分单元完成，9 个周线单元因 `NEWOW_WEEKLY_EXECUTION_LIMIT_CONTRACT_INSUFFICIENT` 失败关闭。
+
+因此，在最终双路 Review 与 develop 集成前，状态为 `CODE_COMPLETE / FINAL_REVIEW_PENDING`；即使 Review 清零并合入，整体仍只能标记 `CODE_COMPLETE_EXTERNAL_GATE_PENDING`，直到周 K 输入事实与 next-open 执行日 limit 事实分离的合同完成并重跑 9 个周线单元。私有服务端选股公式保持排除范围内 `UNKNOWN`。

@@ -367,7 +367,7 @@ export function newowTrendDetailFixture({ product = 'jm', from = trendDays[0], t
       position_range: { minimum: '0.70', maximum: '1.00' },
       certainty: { trend: 20, oscillation: 20, alignment: 20, direction: 20, total: 80 },
       volatility: { value_pct: '1.80', level: 'low', sample_size: 9 }, risk_tokens: [],
-      unreachable_decision_keys: ['neutral-bullish', 'neutral-bearish', 'neutral-warning'],
+      unreachable_decision_keys: ['warning-bullish', 'warning-bearish', 'warning-neutral'],
       formula_version: 'newow_composite_decision_page_v3_2_82',
     },
     composite_cleanroom: {
