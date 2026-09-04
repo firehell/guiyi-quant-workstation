@@ -75,6 +75,13 @@ def _formula_versions_for_strategy(
     )
 
 
+_INTENT_STRATEGY_BY_FORMULA = {
+    NEWOW_TREND_D1_PAGE_V2.trend_band_formula: ResearchStrategy.TREND,
+    OSCILLATION_FORMULA_VERSION: ResearchStrategy.OSCILLATION,
+    MAIN_RISE_PAGE_V1.band_formula: ResearchStrategy.MAIN_RISE,
+}
+
+
 class BacktestAction(StrEnum):
     BUILD = "BUILD"
     CLEAR = "CLEAR"
@@ -562,21 +569,51 @@ def run_causal_long_only_backtest(
     """Evaluate immutable completed-bar intents without same-bar execution."""
 
     validate_research_bars(bars)
+    if strategy is not None and not isinstance(strategy, ResearchStrategy):
+        raise ValueError("NEWOW_BACKTEST_STRATEGY_NOT_CAUSAL")
+
+    by_end = {bar.bar_end: bar for bar in bars}
+    intents_by_end: dict[datetime, list[BacktestIntent]] = {}
+    intent_strategies: set[ResearchStrategy] = set()
+    for intent in intents:
+        if (
+            not isinstance(intent.action, BacktestAction)
+            or intent.signal_bar_end not in by_end
+            or not intent.signal_formula_version
+        ):
+            raise ValueError("NEWOW_BACKTEST_INTENT_INVALID")
+        if intent.signal_formula_version not in CAUSAL_SIGNAL_FORMULAS:
+            raise ValueError("NEWOW_BACKTEST_SIGNAL_FORMULA_NOT_CAUSAL")
+        intent_strategies.add(
+            _INTENT_STRATEGY_BY_FORMULA[intent.signal_formula_version]
+        )
+        intents_by_end.setdefault(intent.signal_bar_end, []).append(intent)
+
+    if strategy is None:
+        if len(intent_strategies) > 1:
+            raise ValueError("NEWOW_BACKTEST_STRATEGY_FORMULA_MISMATCH")
+        if signal_formula_versions:
+            matching_strategies = tuple(
+                candidate
+                for candidate in ResearchStrategy
+                if signal_formula_versions
+                == _formula_versions_for_strategy(candidate)
+            )
+            if len(matching_strategies) != 1:
+                raise ValueError("NEWOW_BACKTEST_STRATEGY_FORMULA_MISMATCH")
+            strategy = matching_strategies[0]
+        elif intent_strategies:
+            strategy = next(iter(intent_strategies))
+            signal_formula_versions = _formula_versions_for_strategy(strategy)
+
     expected_formula_versions: tuple[str, ...] | None = None
     if strategy is not None:
-        if not isinstance(strategy, ResearchStrategy):
-            raise ValueError("NEWOW_BACKTEST_STRATEGY_NOT_CAUSAL")
         expected_formula_versions = _formula_versions_for_strategy(strategy)
-        if signal_formula_versions != expected_formula_versions:
+        if (
+            signal_formula_versions != expected_formula_versions
+            or any(candidate is not strategy for candidate in intent_strategies)
+        ):
             raise ValueError("NEWOW_BACKTEST_STRATEGY_FORMULA_MISMATCH")
-    elif (
-        len(set(signal_formula_versions)) != len(signal_formula_versions)
-        or any(
-            formula not in CAUSAL_SIGNAL_FORMULAS
-            for formula in signal_formula_versions
-        )
-    ):
-        raise ValueError("NEWOW_BACKTEST_STRATEGY_FORMULA_MISMATCH")
     if type(require_execution_facts) is not bool:
         raise ValueError("NEWOW_BACKTEST_EXECUTION_CONSTRAINT_INVALID")
     _validate_cost_snapshots(cost_snapshots)
@@ -594,27 +631,6 @@ def run_causal_long_only_backtest(
             )
             _validate_strict_bar_cost_facts(bar, resolved_costs[0])
             strict_costs_by_bar[bar.source_identity] = resolved_costs
-    by_end = {bar.bar_end: bar for bar in bars}
-    intents_by_end: dict[datetime, list[BacktestIntent]] = {}
-    for intent in intents:
-        if (
-            not isinstance(intent.action, BacktestAction)
-            or intent.signal_bar_end not in by_end
-            or not intent.signal_formula_version
-        ):
-            raise ValueError("NEWOW_BACKTEST_INTENT_INVALID")
-        if intent.signal_formula_version not in CAUSAL_SIGNAL_FORMULAS:
-            raise ValueError("NEWOW_BACKTEST_SIGNAL_FORMULA_NOT_CAUSAL")
-        if (
-            expected_formula_versions is not None
-            and intent.signal_formula_version not in expected_formula_versions
-        ) or (
-            signal_formula_versions
-            and intent.signal_formula_version not in signal_formula_versions
-        ):
-            raise ValueError("NEWOW_BACKTEST_STRATEGY_FORMULA_MISMATCH")
-        intents_by_end.setdefault(intent.signal_bar_end, []).append(intent)
-
     fills: list[BacktestFill] = []
     rejected_fills: list[RejectedFill] = []
     trades: list[BacktestTrade] = []

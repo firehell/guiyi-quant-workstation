@@ -10,7 +10,7 @@
 本阶段补齐的是“怎样可信验证”的研究合同，不是“策略已经在期货上有效”的结论：
 
 - 页面公式仍使用已冻结、已通过指数与个股逐字段复算的版本身份；
-- `strategy`、声明的 formula lineage 与每个 intent 必须属于同一冻结公式集合，禁止跨策略混搭；
+- `strategy`、声明的 formula lineage 与每个 intent 必须属于同一冻结公式集合；低层调用省略身份时只能从单一策略的 intents 或完整 lineage 唯一推导，禁止跨策略混搭；
 - Canonical actual-dominant 的 D1、W1、60m 必须分别由 `MarketDataService` 查询和解析；
 - 每个 Bar 只能使用响应中唯一覆盖其交易日的 physical-contract segment；
 - 下一根开盘只能尝试一次，涨停买、跌停卖或零成交量会产生明确拒绝记录；
@@ -138,12 +138,12 @@ train_since <= train_through < test_since <= test_through
 定向结果：
 
 ```text
-test_research_backtest.py       28 passed
+test_research_backtest.py       30 passed
 test_futures_validation.py      14 passed
 test_research_walk_forward.py    9 passed
 Ruff targeted                   passed
 Mypy canonical scope            passed (105 source files)
-完整 Newow 回归                 494 passed in 192.49s
+完整 Newow 回归                 496 passed in 195.40s
 ```
 
 ## 8. 真实期货证据矩阵

@@ -680,3 +680,44 @@ def test_low_level_executor_rejects_strategy_and_formula_lineage_mismatch() -> N
             strategy=ResearchStrategy.TREND,
             signal_formula_versions=(TREND_FORMULA,),
         )
+
+
+def test_low_level_executor_rejects_cross_strategy_intents_without_identity() -> None:
+    bars = tuple(
+        _bar(index, value=str(value))
+        for index, value in enumerate((100, 101, 102, 103))
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="NEWOW_BACKTEST_STRATEGY_FORMULA_MISMATCH",
+    ):
+        run_causal_long_only_backtest(
+            bars,
+            (
+                BacktestIntent(
+                    BacktestAction.BUILD,
+                    bars[0].bar_end,
+                    TREND_FORMULA,
+                ),
+                BacktestIntent(
+                    BacktestAction.CLEAR,
+                    bars[2].bar_end,
+                    OSCILLATION_FORMULA_VERSION,
+                ),
+            ),
+        )
+
+
+def test_low_level_executor_derives_the_only_strategy_identity() -> None:
+    bars = tuple(
+        _bar(index, value=str(value)) for index, value in enumerate((100, 101))
+    )
+
+    result = run_causal_long_only_backtest(
+        bars,
+        (BacktestIntent(BacktestAction.BUILD, bars[0].bar_end, TREND_FORMULA),),
+    )
+
+    assert result.strategy is ResearchStrategy.TREND
+    assert result.signal_formula_versions == (TREND_FORMULA,)

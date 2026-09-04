@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - Historical input is completed `actual_dominant` only and must come through `MarketDataService`; no Parquet globbing, continuous fallback, self-selected dominant contract, or cross-frequency aggregation.
-- Every Quant Core Bar and cost snapshot must carry a legal physical contract whose prefix matches its product; strategy, declared formula lineage, and intent formulas must be one frozen identity set.
+- Every Quant Core Bar and cost snapshot must carry a legal physical contract whose prefix matches its product; strategy, declared formula lineage, and intent formulas must be one frozen identity set. When the low-level executor receives no explicit strategy, it may only derive one from a unique intent strategy or one exact frozen lineage; mixed identities fail closed.
 - Indicator recursion and warm-up reset whenever `(physical_contract, segment_id)` changes.
 - A signal observed on one completed Bar may only attempt one fill at the next Bar open; an untradable next open is rejected and never silently retried.
 - Costs, multiplier, tick and price limits are Decimal facts with explicit source identity and effective bounds; missing, overlapping, inconsistent, or stale facts fail closed.
@@ -92,7 +92,7 @@ NEWOW_BACKTEST_EXECUTION_CONSTRAINT_CONFLICT
 NEWOW_BACKTEST_STRATEGY_FORMULA_MISMATCH
 ```
 
-Bars and snapshots must reject a physical contract from another product. Snapshots must match product + physical contract and cover the Bar trading day with a half-open `[effective_from, effective_to)` interval. Execution constraints must match the exact Bar `source_identity` and physical contract. When a strategy identity is present, its declared formula versions must equal the frozen strategy set and every intent must belong to that set.
+Bars and snapshots must reject a physical contract from another product. Snapshots must match product + physical contract and cover the Bar trading day with a half-open `[effective_from, effective_to)` interval. Execution constraints must match the exact Bar `source_identity` and physical contract. When a strategy identity is present, its declared formula versions must equal the frozen strategy set and every intent must belong to that set. When it is absent, the executor must derive exactly one strategy identity from the intents or an exact frozen lineage and reject mixed or ambiguous inputs.
 
 - [x] **Step 2: Run the new validation tests and verify RED**
 
