@@ -1,6 +1,6 @@
 # Canonical 数据基础
 
-更新时间：2026-09-03
+更新时间：2026-09-04
 
 ## 1. 唯一 active 数据语言
 
@@ -43,6 +43,10 @@ canonical/
 发布前必须完成 schema、主键单调唯一、OHLCV、交易日/session/frequency、coverage 和物理可读性
 校验。发布成功的月通过 Catalog 的 `coverage_start`、`coverage_end`、`row_count` 与可读
 `file_uri` 表示；没有旁路的内容摘要、发布清单或缺口状态。
+
+`contract` partition 必须包含全部 rank1 required Bar，同时其中每一条 Bar 都必须在该 Contract 的 active
+lifecycle、TradingCalendar 与 TradingSession 内。这个 superset 合同允许保留同物理合约、上市有效期内的真实
+warm-up prefix，但不改变 `actual_dominant` 的 rank1 owner；`continuous` 继续使用 exact expected equality。
 
 ## 3. 八表 Catalog
 
@@ -98,6 +102,11 @@ snapshot 生成 1d/1w。发布前先验证整组完整性，再按涉及的 1d �
 `refresh --symbol --since --through --apply` 强制重建窗口相交月中的 continuous 与所涉 rank1
 contract 的基础 provider `1m/1d` 和日线派生 `1w`，再由 1m 重建四个日内派生周期。它不接受 repair plan，
 也不产生额外进度或证据文件。
+
+`contract-warmup` 只维护一个已验证 identity 的 physical contract：窗口从 `listed_date` 到不晚于最近完整
+交易日的 `through`，直接获取该 contract 的 `1m/1d/1w`，并仅由同 contract `1m` 生成四个日内派生周期。dry-run
+只读输出稳定 plan hash；apply 必须在 maintenance lock 内重算并匹配该 hash，且不会写 continuous、其它 contract、
+MainContractMap、Redis Live、Rule、Scope、Event 或 notification。分区失败可明确部分成功，不能自动重试。
 
 ### 盘后 Runtime 状态合同
 
@@ -162,13 +171,14 @@ segment identity 与换月状态隔离，不得根据未来 `end_trading_day` �
 ```bash
 guiyi data update (--symbol X | --universe active) [--since DATE] [--through DATE] [--apply]
 guiyi data refresh --symbol X --since DATE --through DATE [--apply]
+guiyi data contract-warmup --symbol X --contract CONTRACT --through DATE [--expected-plan-sha256 HASH] [--apply]
 guiyi data audit (--symbol X | --universe active) [--through DATE] [--progress]
 guiyi data session-anchor-repair --phase plan
 guiyi data session-anchor-repair --phase prepare --shadow-root PATH --manifest PATH --apply
 guiyi data session-anchor-repair --phase publish --shadow-root PATH --manifest PATH --apply
 ```
 
-无 `--apply` 的 update/refresh 仅计划，零 RQData、零 PostgreSQL 写入、零 Parquet 写入；audit
+无 `--apply` 的 update/refresh/contract-warmup 仅计划，零 RQData、零 PostgreSQL 写入、零 Parquet 写入；audit
 始终只读。audit 对每个请求品种独立返回结构化 finding（`code`、`category`、dataset、year、month）：已知
 Session、Calendar 与产品窗口元数据缺口分别归为 `metadata_session`、`metadata_calendar`、
 `metadata_window`，但不会中断其余品种；主力映射、预期分区缺失与物理一致性问题分别归为
@@ -183,6 +193,10 @@ write/flush 失败，立即禁用后续进度输出，审计异常和最终 stdo
 时，update 在规划开始解析最新完整交易日，并将该值作为本轮固定水位；相同解析值的再次完整运行
 必须为 NOOP。真实 `--apply`、生产 schema migration 与正式数据删除/重建仍各自需要范围明确的
 单次意图。
+
+`contract-warmup --apply` 还必须提供 dry-run 输出的全小写 SHA-256 plan hash；锁内重算的 identity、
+lifecycle、Calendar/Session 或 target 漂移都会在第一次 provider 请求和写入前阻断。dry-run 或测试不构成
+真实 apply 授权，真实执行后如需重试亦须新的单次意图。
 
 `session-anchor-repair` 是 0044→0045 的一次性 forward-only seam。`plan` 只读扫描全部日内
 Dataset/partition、预计缺失首分钟与稳定 scope hash，不调用 RQData。`prepare --apply` 需要独立真实数据授权，

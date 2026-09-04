@@ -2,12 +2,12 @@
 
 ## Purpose
 
-定义 Recent Trusted Window 内的 update、refresh、audit、固定水位和 quota natural resume。
+定义 Recent Trusted Window 内的 update、refresh、audit、physical-contract warm-up、固定水位和 quota natural resume。
 
 ## Requirements
 
 ### Requirement: 公开维护面
-系统 SHALL 公开 `update`、`refresh` 与 `audit`。`audit` SHALL 接受
+系统 SHALL 公开 `update`、`refresh`、`audit` 与 `contract-warmup`。`audit` SHALL 接受
 `(--symbol X | --universe active)` 的互斥选择器。无 `--apply` 的 update/refresh MUST 只计划，
 不得写 PostgreSQL/Parquet；audit MUST 只读。
 系统还 SHALL 公开一次性 `session-anchor-repair` 三阶段 seam：`plan` 只读输出精确 session、Dataset、
@@ -30,6 +30,30 @@ Catalog、执行精确 0045 并清理 publish 执行时由 operational phase aut
 #### Scenario: 0045 后步骤失败
 - **WHEN** root/Catalog 已切换且 0045 已成功后 Redis cleanup 失败
 - **THEN** 系统保持维护状态并返回 forward recovery required，不恢复错误 session 或混用新旧锚点
+
+### Requirement: Exact physical-contract warm-up is a hash-locked maintenance seam
+`guiyi data contract-warmup --symbol SYMBOL --contract CONTRACT --through DATE` SHALL 只接受 active、
+non-retired symbol 与其 RQData Contract identity。窗口 MUST 为该 Contract 的
+`[listed_date, min(through, expired_date - 1 day)]`，且 `through` 不得晚于最近完整交易日。无 `--apply`
+时 MUST 只读 Catalog/Calendar/Session，零 RQData 请求、零 PostgreSQL/Parquet/Redis mutation，并返回稳定
+plan hash、direct/derived target 数、预计 Bar 数和 provider request 数。`--apply` MUST 要求相同的 lowercase
+SHA-256 `--expected-plan-sha256`，在 maintenance lock 内重算计划；identity、lifecycle、session 或 hash
+漂移时，必须在首次 provider 请求和写入前 fail closed。
+
+apply 只可为指定 physical contract 下载 `1m/1d/1w` 直接事实，并由质量通过的同 contract `1m` 派生
+`5m/15m/30m/60m`；不得写 continuous、其它 contract、MainContractMap、Rule、Scope、Runtime、Redis Live、
+Event 或通知。月分区仍依次经过 staging 与完整发布校验。部分成功 MUST 显式返回 `partial/failed`；不得
+自动 retry，任何真实 RQData/Canonical apply 仍需一次与 exact plan hash 对应的独立授权。
+
+#### Scenario: Warm-up dry-run is read-only
+
+- **WHEN** operator 未传 `--apply`
+- **THEN** 系统只输出 stable plan payload，不连接 RQData、不取得写锁且不改变任何数据或运行状态
+
+#### Scenario: Plan changes after operator approval
+
+- **WHEN** apply lock 后重新计算的 contract identity、window、target 或 hash 与 `--expected-plan-sha256` 不一致
+- **THEN** 系统在首次 provider request 和任何写入前拒绝执行
 
 ### Requirement: 分类 audit finding
 audit SHALL 为每个请求品种独立检查并返回 `code`、`category`、dataset、year、month 的结构化 finding。

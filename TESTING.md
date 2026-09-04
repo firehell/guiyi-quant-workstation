@@ -31,7 +31,7 @@ PYTHONPATH=services/quant-api:packages/quant-core \
   services/quant-api/tests/test_market_home_projection_api.py
 ```
 
-这组测试只使用临时目录/fake service，验证 projection identity、strict/atomic file、API projection-hit/miss、`data update/refresh --apply` 在 maintenance lease 内的失效、after-market 顺序、default-off projection activation marker 与 maintenance lease；不得以测试为理由执行真实 `guiyi data ... --apply` 或创建 marker。真实 projection-hit 性能 `<200ms` 属于后续明确授权的本地 Runtime read-only manual acceptance，不在普通 pytest 中用 timing sleep 伪造。
+这组测试只使用临时目录/fake service，验证 projection identity、strict/atomic file、API projection-hit/miss、`data update/refresh/contract-warmup --apply` 在 maintenance lease 内的失效、after-market 顺序、default-off projection activation marker 与 maintenance lease；不得以测试为理由执行真实 `guiyi data ... --apply` 或创建 marker。真实 projection-hit 性能 `<200ms` 属于后续明确授权的本地 Runtime read-only manual acceptance，不在普通 pytest 中用 timing sleep 伪造。
 
 EMA21 10K slope 与整体退役合同：
 
@@ -78,6 +78,22 @@ PYTHONPATH=services/quant-api:packages/quant-core \
 这些测试只使用 fake provider、临时 Parquet/SQLite 与可选 isolated PostgreSQL；不会调用真实 RQData、切换
 Canonical、写 production DB/Redis 或停止 Runtime。`prepare/publish --apply` 不是测试命令，分别需要新的单次
 真实数据/维护授权。
+
+Physical-contract warm-up、同合约 Canonical + Live replay、CLI plan hash 与 projection invalidation：
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+  uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/test_market_read_service.py \
+  services/quant-api/tests/data_foundation/test_catalog_and_service.py \
+  services/quant-api/tests/data_foundation/test_historical_data_manager.py \
+  services/quant-api/tests/data_foundation/test_cli.py \
+  services/quant-api/tests/test_market_home_projection_invalidation.py
+```
+
+该组测试仅使用 fake provider、临时 Catalog/Parquet 与临时路径。它不授权也不执行真实
+`guiyi data contract-warmup --apply`；即使 dry-run 得到 plan hash，真实 RQData/Canonical apply 仍需
+引用该 exact hash 的单次明确授权。
 
 Isolated PostgreSQL 测试只能指向专用、空白、可销毁的数据库；未设置变量时不得运行：
 

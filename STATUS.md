@@ -14,7 +14,7 @@
 | Database 与 Canonical | 最近 production 只读 readback 为 Alembic `20260903_0045`；RQData session anchor repair 已发布并保留 D1/W1 原始事实。active Canonical 只读 readback 为 8,801 个 Dataset、42,575 个分区、44,629,532 行。 |
 | Market Runtime Scope | `operational_products.txt` 的 60 个品种。 |
 | Alert Scope | HTDY 为 `jm × 15m`；SuBing 为 execution-time operational 60 个品种 × 15m，Scope hash `ce1daca77aeb1abe134806b67aebd96b2c35db3ba82aa10af58f6e5a2e4f5fa2`。两条 Rule 均为 enabled；SuBing Event 为 0。 |
-| Develop 中工作 | `develop` 上的 Newow futures validation、SuBing detail workspace 与 physical-contract warm-up 都是未发布的开发工作。warm-up task branch 仍需与最新 `develop` 收敛、完成实现/验证/独立 Review 后才可能形成 RC；代码存在不等于 release、数据 apply、Runtime promotion 或自然验收。 |
+| Develop 中工作 | `develop` 上的 Newow futures validation、SuBing detail workspace 与 physical-contract warm-up 都是未发布的开发工作。warm-up 已完成 source rebase 与 Task 1–5 提交，仍须完成 canonical 文档、全量验证与独立 Review 后才可能形成 RC；代码存在不等于 release、数据 apply、Runtime promotion 或自然验收。 |
 
 Alert transport 为 PushPlus；provider accepted 不等于微信送达。
 

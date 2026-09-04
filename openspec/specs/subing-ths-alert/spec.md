@@ -74,6 +74,10 @@ version，不得静默修改 `subing_ths_15m_v3`。v3 与 v2 的数学公式相�
 首次观察、重启、漏 Bar 或 rank1 rollover 后，evaluator SHALL 只通过 typed Market read seam 重建当前物理
 合约从上市有效期到 cutoff 的 15m prefix。递归 cursor MUST 以 symbol + physical contract 隔离；换月 MUST
 丢弃旧合约状态。中间 Bar 只推进状态，只有当前 trigger cutoff 可返回 Candidate，禁止历史 backfill。
+physical Canonical 的第一页 MUST 从 latest page bootstrap（`before=None`）开始，再严格裁剪为
+`after < bar_end <= cutoff`；这不得放宽 `MarketDataService` 的 identity、coverage 或物理可读性合同。缺少
+同合约 lifecycle prefix MUST 以 `MARKET_READ_CONTRACT_HISTORY_UNAVAILABLE` fail closed，不得以当日 Live、
+continuous 或前一合约替代。
 
 #### Scenario: Rank1 contract rolls
 
@@ -84,6 +88,16 @@ version，不得静默修改 `subing_ths_15m_v3`。v3 与 v2 的数学公式相�
 
 - **WHEN** replay prefix 中的早期 Bar 有 Candidate、当前 cutoff 没有
 - **THEN** evaluator 只推进 cursor，不为早期 Bar 创建 Event
+
+#### Scenario: Canonical stops at the prior completed day
+
+- **WHEN** cutoff 位于当日 completed Live，而同物理合约 Canonical 只覆盖至最近完整交易日
+- **THEN** latest-page bootstrap 读回历史前缀并与同合约 Live 严格合并；Canonical future tail 不进入 Kernel
+
+#### Scenario: Physical history is absent
+
+- **WHEN** 当前 rank1 physical contract 没有可证明的 lifecycle Canonical prefix
+- **THEN** evaluator 不创建 Event，且不以 Live-only 或跨合约 warm-up 降级
 
 ### Requirement: Event modes and identity remain distinct
 
