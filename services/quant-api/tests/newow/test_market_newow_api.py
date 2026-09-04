@@ -43,6 +43,51 @@ from app.market_data.newow.trend_detail_service import (
 from app.schemas.market_newow import NewowTrendDetailResponse
 
 
+def test_openapi_schema_closes_newow_enums_and_formula_identities() -> None:
+    definitions = NewowTrendDetailResponse.model_json_schema()["$defs"]
+
+    meta = definitions["NewowMetaOut"]["properties"]
+    assert meta["strategy_code"]["const"] == "newow_trend_v1"
+    assert meta["profile_id"]["const"] == "newow_trend_d1_page_v2"
+    assert meta["frequency"]["const"] == "1d"
+    assert meta["series_kind"]["const"] == "actual_dominant"
+
+    trend = definitions["NewowTrendBandOut"]["properties"]
+    assert trend["state"]["enum"] == ["UNAVAILABLE", "YELLOW", "BLUE"]
+    assert trend["transition"]["anyOf"][0]["enum"] == ["BUILD", "CLEAR"]
+
+    marker = definitions["NewowMarkerOut"]["properties"]
+    assert marker["marker_type"]["enum"] == [
+        "BUILD",
+        "CLEAR",
+        "NEWOW_ESCAPE_D1",
+        "NEWOW_ESCAPE_D2",
+        "NEWOW_ESCAPE_D3",
+        "CUP_HANDLE_READY",
+        "CUP_HANDLE_BREAKOUT",
+        "CUP_HANDLE_WEAKENED",
+        "CUP_HANDLE_INVALIDATED",
+        "CUP_HANDLE_EXPIRED",
+    ]
+    assert set(marker["formula_version"]["enum"]) == {
+        "newow_trend_band_page_v2",
+        "newow_escape_d123_page_v2",
+        "newow_cup_handle_v1",
+    }
+
+    cup = definitions["NewowCupHandleOut"]["properties"]
+    assert cup["direction"]["enum"] == ["BULLISH", "BEARISH"]
+    assert cup["state"]["enum"] == [
+        "FORMING",
+        "READY",
+        "BREAKOUT",
+        "WEAKENED",
+        "INVALIDATED",
+        "EXPIRED",
+    ]
+    assert cup["formula_version"]["const"] == "newow_cup_handle_v1"
+
+
 def _result() -> SimpleNamespace:
     stamp = datetime(2026, 1, 5, 7, tzinfo=UTC)
     bar = SimpleNamespace(
@@ -70,7 +115,7 @@ def _result() -> SimpleNamespace:
             priority=1,
             related_marker_ids=(),
             trigger_facts={},
-            formula_version="trend",
+            formula_version="newow_trend_band_page_v2",
         ),
         SimpleNamespace(
             marker_type=SimpleNamespace(value="NEWOW_ESCAPE_D1"),
@@ -82,7 +127,7 @@ def _result() -> SimpleNamespace:
             priority=2,
             related_marker_ids=(),
             trigger_facts={},
-            formula_version="escape",
+            formula_version="newow_escape_d123_page_v2",
         ),
         SimpleNamespace(
             marker_type=SimpleNamespace(value="NEWOW_ESCAPE_D2"),
@@ -94,7 +139,7 @@ def _result() -> SimpleNamespace:
             priority=2,
             related_marker_ids=(),
             trigger_facts={},
-            formula_version="escape",
+            formula_version="newow_escape_d123_page_v2",
         ),
         SimpleNamespace(
             marker_type=SimpleNamespace(value="NEWOW_ESCAPE_D3"),
@@ -106,7 +151,7 @@ def _result() -> SimpleNamespace:
             priority=2,
             related_marker_ids=(),
             trigger_facts={},
-            formula_version="escape",
+            formula_version="newow_escape_d123_page_v2",
         ),
     )
     frame = SimpleNamespace(
@@ -146,7 +191,7 @@ def _result() -> SimpleNamespace:
         hard_failures=(),
         diagnostics=("formed",),
         volume_facts={"ratio": 1.25},
-        formula_version="cup",
+        formula_version="newow_cup_handle_v1",
     )
     channel_point = PriceChannelPoint(
         stamp,
@@ -225,7 +270,7 @@ def _result() -> SimpleNamespace:
             last_visible_physical_contract=None,
             frequency="1d",
             series_kind="actual_dominant",
-            profile_id="newow_trend_d1_v1",
+            profile_id="newow_trend_d1_page_v2",
             formula_versions=(
                 "newow_trend_band_page_v2",
                 "newow_escape_d123_page_v2",
@@ -315,7 +360,7 @@ def test_get_newow_trend_detail_maps_safe_typed_facts(monkeypatch) -> None:
     body = response.json()
     assert body["meta"] == {
         "strategy_code": "newow_trend_v1",
-        "profile_id": "newow_trend_d1_v1",
+        "profile_id": "newow_trend_d1_page_v2",
         "frequency": "1d",
         "series_kind": "actual_dominant",
             "calculation_identity": "calculation",
@@ -416,7 +461,7 @@ def test_newow_api_keeps_cup_marker_history_and_treats_range_limit_as_422(monkey
             priority=1,
             related_marker_ids=(),
             trigger_facts={},
-            formula_version="cup",
+            formula_version="newow_cup_handle_v1",
         )
         for kind in (
             "CUP_HANDLE_READY",

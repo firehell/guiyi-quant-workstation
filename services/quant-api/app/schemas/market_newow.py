@@ -14,10 +14,10 @@ class _Out(BaseModel):
 
 
 class NewowMetaOut(_Out):
-    strategy_code: str
-    profile_id: str
-    frequency: str
-    series_kind: str
+    strategy_code: Literal["newow_trend_v1"]
+    profile_id: Literal["newow_trend_d1_page_v2"]
+    frequency: Literal["1d"]
+    series_kind: Literal["actual_dominant"]
     calculation_identity: str
     data_revision_identity: str | None
     request_identity: str
@@ -47,14 +47,25 @@ class NewowTrendBandOut(_Out):
     bar_end: datetime
     b_value: float | None
     c_value: float | None
-    state: str
-    state_before: str | None
-    transition: str | None
+    state: Literal["UNAVAILABLE", "YELLOW", "BLUE"]
+    state_before: Literal["YELLOW", "BLUE"] | None
+    transition: Literal["BUILD", "CLEAR"] | None
 
 
 class NewowMarkerOut(_Out):
     marker_id: str
-    marker_type: str
+    marker_type: Literal[
+        "BUILD",
+        "CLEAR",
+        "NEWOW_ESCAPE_D1",
+        "NEWOW_ESCAPE_D2",
+        "NEWOW_ESCAPE_D3",
+        "CUP_HANDLE_READY",
+        "CUP_HANDLE_BREAKOUT",
+        "CUP_HANDLE_WEAKENED",
+        "CUP_HANDLE_INVALIDATED",
+        "CUP_HANDLE_EXPIRED",
+    ]
     bar_end: datetime
     price: Decimal
     label: str
@@ -62,7 +73,11 @@ class NewowMarkerOut(_Out):
     priority: int
     related_marker_ids: tuple[str, ...]
     trigger_facts: dict[str, object]
-    formula_version: str
+    formula_version: Literal[
+        "newow_trend_band_page_v2",
+        "newow_escape_d123_page_v2",
+        "newow_cup_handle_v1",
+    ]
 
 
 class NewowCupPivotOut(_Out):
@@ -73,8 +88,10 @@ class NewowCupPivotOut(_Out):
 
 class NewowCupHandleOut(_Out):
     candidate_id: str
-    direction: str
-    state: str
+    direction: Literal["BULLISH", "BEARISH"]
+    state: Literal[
+        "FORMING", "READY", "BREAKOUT", "WEAKENED", "INVALIDATED", "EXPIRED"
+    ]
     left_rim: NewowCupPivotOut
     bottom: NewowCupPivotOut
     right_rim: NewowCupPivotOut
@@ -90,7 +107,7 @@ class NewowCupHandleOut(_Out):
     hard_failures: list[str]
     diagnostics: list[str]
     volume_facts: dict[str, float]
-    formula_version: str
+    formula_version: Literal["newow_cup_handle_v1"]
 
 
 class NewowRolloverSeamOut(_Out):
