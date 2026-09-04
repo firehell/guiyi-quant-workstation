@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
-from guiyi_quant.newow import NewowResearchBar
+from guiyi_quant.newow import NewowResearchBar, NewowStrategyReplaySegment
 
 from app.market_data.domain import (
     BarFrequency,
@@ -157,6 +157,168 @@ def build_newow_research_bars(
                 observation_eligible=True,
                 completed=True,
                 frequency=expected_frequency.value,
+                turnover=bar.turnover,
             )
         )
     return tuple(built)
+
+
+def _same_ohlcv(left: object, right: object) -> bool:
+    return all(
+        getattr(left, field) == getattr(right, field)
+        for field in (
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume",
+            "turnover",
+            "open_interest",
+        )
+    )
+
+
+def build_newow_strategy_replay_segments(
+    actual_bars: tuple[NewowResearchBar, ...],
+    *,
+    authoritative_segments: tuple[ResolvedContractSegment, ...],
+    physical_prefix_results: tuple[MarketSeriesResult, ...],
+    expected_product: str,
+    expected_frequency: BarFrequency,
+) -> tuple[NewowStrategyReplaySegment, ...]:
+    """Build Web-parity physical-prefix replays without making prefixes tradable."""
+
+    try:
+        if (
+            not actual_bars
+            or not authoritative_segments
+            or any(
+                not _valid_segment(segment, expected_product)
+                for segment in authoritative_segments
+            )
+            or any(
+                current.start_trading_day <= previous.end_trading_day
+                for previous, current in zip(
+                    authoritative_segments,
+                    authoritative_segments[1:],
+                    strict=False,
+                )
+            )
+            or any(bar.product != expected_product for bar in actual_bars)
+            or any(bar.frequency != expected_frequency.value for bar in actual_bars)
+            or any(not bar.observation_eligible for bar in actual_bars)
+        ):
+            raise NewowFuturesSeriesError
+        actual_by_segment: dict[str, tuple[NewowResearchBar, ...]] = {}
+        for segment in authoritative_segments:
+            segment_id = (
+                f"{expected_product}:{segment.contract}:"
+                f"{segment.start_trading_day.isoformat()}:"
+                f"{segment.end_trading_day.isoformat()}"
+            )
+            owned = tuple(bar for bar in actual_bars if bar.segment_id == segment_id)
+            if owned:
+                actual_by_segment[segment_id] = owned
+        if sum(len(owned) for owned in actual_by_segment.values()) != len(actual_bars):
+            raise NewowFuturesSeriesError
+
+        observed_segments = tuple(
+            segment
+            for segment in authoritative_segments
+            if any(
+                bar.segment_id
+                == (
+                    f"{expected_product}:{segment.contract}:"
+                    f"{segment.start_trading_day.isoformat()}:"
+                    f"{segment.end_trading_day.isoformat()}"
+                )
+                for bar in actual_bars
+            )
+        )
+        if len(observed_segments) != len(physical_prefix_results):
+            raise NewowFuturesSeriesError
+
+        result: list[NewowStrategyReplaySegment] = []
+        for segment, physical in zip(
+            observed_segments, physical_prefix_results, strict=True
+        ):
+            segment_id = (
+                f"{expected_product}:{segment.contract}:"
+                f"{segment.start_trading_day.isoformat()}:"
+                f"{segment.end_trading_day.isoformat()}"
+            )
+            owned = actual_by_segment[segment_id]
+            identity = physical.request_identity
+            window = physical.requested_trading_day_window
+            if (
+                identity.get("series_kind") != "contract"
+                or identity.get("symbol") != expected_product
+                or identity.get("contract") != segment.contract
+                or identity.get("frequency") != expected_frequency.value
+                or not physical.bars
+                or physical.coverage
+                != (physical.bars[0].bar_end, physical.bars[-1].bar_end)
+                or physical.resolved_contract_segments
+                or window is None
+                or window[0] > segment.start_trading_day
+                or window[1] != owned[-1].trading_day
+                or any(
+                    not window[0] <= bar.trading_day <= window[1]
+                    for bar in physical.bars
+                )
+            ):
+                raise NewowFuturesSeriesError
+            owned_by_key = {
+                (bar.trading_day, bar.bar_end): bar for bar in owned
+            }
+            replay_bars: list[NewowResearchBar] = []
+            matched: set[tuple[date, object]] = set()
+            previous_end = None
+            for bar in physical.bars:
+                if previous_end is not None and bar.bar_end <= previous_end:
+                    raise NewowFuturesSeriesError
+                previous_end = bar.bar_end
+                key = (bar.trading_day, bar.bar_end)
+                ranked = owned_by_key.get(key)
+                if ranked is not None:
+                    if not _same_ohlcv(bar, ranked):
+                        raise NewowFuturesSeriesError
+                    source_identity = ranked.source_identity
+                    matched.add(key)
+                else:
+                    if bar.trading_day >= segment.start_trading_day:
+                        raise NewowFuturesSeriesError
+                    source_identity = (
+                        f"canonical:contract:{expected_product}:"
+                        f"{expected_frequency.value}:{segment.contract}:"
+                        f"{bar.trading_day.isoformat()}:{bar.bar_end.isoformat()}"
+                    )
+                replay_bars.append(
+                    NewowResearchBar(
+                        product=expected_product,
+                        physical_contract=segment.contract,
+                        segment_id=segment_id,
+                        trading_day=bar.trading_day,
+                        bar_end=bar.bar_end,
+                        open=bar.open,
+                        high=bar.high,
+                        low=bar.low,
+                        close=bar.close,
+                        volume=_integral(bar.volume) or 0,
+                        open_interest=_integral(bar.open_interest),
+                        source_identity=source_identity,
+                        observation_eligible=ranked is not None,
+                        completed=True,
+                        series_kind=(
+                            "actual_dominant" if ranked is not None else "contract"
+                        ),
+                        frequency=expected_frequency.value,
+                        turnover=bar.turnover,
+                    )
+                )
+            if matched != set(owned_by_key):
+                raise NewowFuturesSeriesError
+            result.append(NewowStrategyReplaySegment(tuple(replay_bars)))
+        return tuple(result)
+    except (AttributeError, TypeError, ValueError):
+        raise NewowFuturesSeriesError from None

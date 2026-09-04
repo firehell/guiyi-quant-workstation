@@ -52,11 +52,9 @@ authoritative_segments = non-empty, non-overlapping full owner facts
 
 任何 identity、coverage、segment 或数值冲突统一返回 `NEWOW_FUTURES_SERIES_INVALID`。适配器不读取 Parquet 路径、不自行选择主力、不回退 continuous，也不从 D1 推断 W1 owner。
 
-### 3.1 SC2302 真实反例修正
+### 3.1 SC2302 既有只读反例修正
 
-只读生产证据显示，`sc` 的 `SC2302` rank1 仅覆盖 2023-01-03～2023-01-04；第一根完整 W1 Bar
-结束于 2023-01-06，owner 已是 `SC2303`。因此 D1/60m owner 子集包含 `SC2302`，W1 owner 子集省略
-`SC2302` 是合法周期事实，不能用跨周期 segment tuple 完全相等作为身份 Gate。
+`develop` 已接受的回归 `0a0b0f8fc` 与修复 `8c5a4c536` 编码了一个 SC2302 型反例：短 rank1 段可能有 D1/60m Bar，而首根完整 W1 Bar 已属于下一合约。因此某周期的 observed-owner 子集可以省略没有 completed Bar 的全局段，不能用跨周期 segment tuple 完全相等作为身份 Gate。该回归所依据的原始 production artifact 路径与 SHA-256 当前为 `BLOCKING_UNKNOWN`；其中具体日期和合约只能作为回归背景，不能计入本轮 real-futures evidence。
 
 修正后的 loader 先从 `MarketDataService.actual_dominant_segments()` 获取全局 MainContractMap 完整分段，
 以首段真实起点读取每个周期一次 causal prefix，再逐 Bar 检查响应 owner 与全局 owner。某周期没有 Bar
@@ -112,7 +110,7 @@ ZERO_VOLUME
 
 ## 5. 换月与 warm-up
 
-趋势、震荡和主升浪 primitive 已分别在 `(physical_contract, segment_id)` 变化时重置递归状态；本阶段没有增加第二套重置器。`build_strategy_intents()` 只是公开这一既有、segment-safe 的 causal seam，供 Walk-forward 重用。
+趋势、震荡和主升浪 primitive 已分别在 `(physical_contract, segment_id)` 变化时重置递归状态。真实 evidence 输入现在先通过 `MarketDataService.query_contract_trading_days(ContractTradingDayQuery(...))`，由 Catalog `contract_fact` 上市/到期生命周期夹取每个 observed segment 的完整物理合约 prefix；prefix Bar 推进公式状态但 `observation_eligible=false`，只有与 actual-dominant Bar 逐字段一致的 Bar 才能产生正式 intent。`build_strategy_intents_from_replay_segments()` 对每个 physical segment 从空状态重放，Walk-forward 另行使用 actual-dominant Bars 做 next-open execution。
 
 执行器仍保持：
 
@@ -133,7 +131,7 @@ train_since <= train_through < test_since <= test_through
 
 测试窗口不得重叠；完整输入在切 fold 前必须先通过单一 product、单一 frequency、严格时间顺序与 source identity 校验。每个 fold 的显式 `[train_since, train_through]` 和测试窗都必须至少包含一根 Bar；训练结束至测试开始之间的 gap Bar 只计入 causal warm-up，不能冒充训练样本。每个 fold：
 
-1. 读取 train 起点至 test 终点的同周期 causal prefix；
+1. 读取每个 observed segment 的同周期完整 physical-contract causal prefix，并严格匹配 actual-dominant execution Bars；
 2. 用训练历史和 test 前已知 Bar 推进固定公式状态；
 3. 丢弃 test 起点之前的所有意图，并清除震荡策略训练期的 holding 状态，以空仓进入测试；
 4. 只执行 signal Bar 落在测试窗口内的 intent；
@@ -149,12 +147,13 @@ train_since <= train_through < test_since <= test_through
 定向结果：
 
 ```text
-test_research_backtest.py       30 passed
-test_futures_validation.py      14 passed
-test_research_walk_forward.py    9 passed
+test_research_backtest.py       32 passed
+test_futures_validation.py      21 passed
+test_research_walk_forward.py   12 passed
+new evidence contract tests      7 passed
 Ruff targeted                   passed
-Mypy canonical scope            passed (105 source files)
-完整 Newow 回归                 496 passed in 195.40s
+Mypy canonical scope            passed (108 source files)
+完整 Newow 回归                 516 passed in 198.46s
 ```
 
 ## 8. 真实期货证据矩阵

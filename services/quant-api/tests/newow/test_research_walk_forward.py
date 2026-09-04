@@ -11,7 +11,9 @@ from guiyi_quant.newow import (
     BacktestCosts,
     BacktestExecutionConstraint,
     NewowResearchBar,
+    NewowStrategyReplaySegment,
     ResearchStrategy,
+    build_strategy_intents_from_replay_segments,
 )
 from guiyi_quant.newow.research_walk_forward import (
     WalkForwardFold,
@@ -79,6 +81,12 @@ def _constraints(
     )
 
 
+def _replay(
+    bars: tuple[NewowResearchBar, ...],
+) -> tuple[NewowStrategyReplaySegment, ...]:
+    return (NewowStrategyReplaySegment(bars),)
+
+
 def _oscillation_bars() -> tuple[NewowResearchBar, ...]:
     rows = [(100, 110, 90, 100)] * 10 + [
         (109, 110, 108, 109),
@@ -119,6 +127,7 @@ def test_walk_forward_uses_training_only_as_warmup_and_scores_test_intents() -> 
         bars,
         (fold,),
         strategy=ResearchStrategy.TREND,
+        strategy_replay_segments=_replay(bars),
         cost_snapshots=_costs(),
         execution_constraints=_constraints(bars),
     )
@@ -128,8 +137,13 @@ def test_walk_forward_uses_training_only_as_warmup_and_scores_test_intents() -> 
     assert result.closed_trade_count == 1
     assert len(result.folds) == 1
     evaluated = result.folds[0]
+    assert evaluated.train_bar_count == 2
+    assert evaluated.gap_bar_count == 0
     assert evaluated.warmup_bar_count == 2
     assert evaluated.test_bar_count == 3
+    assert evaluated.segment_count == 1
+    assert evaluated.physical_prefix_bar_count == 5
+    assert evaluated.earliest_physical_prefix_trading_day == _START
     trade = evaluated.backtest.trades[0]
     assert trade.entry.signal_bar_end == bars[2].bar_end
     assert trade.entry.fill_bar_end == bars[3].bar_end
@@ -152,6 +166,7 @@ def test_walk_forward_starts_flat_and_excludes_open_test_end_position() -> None:
             ),
         ),
         strategy=ResearchStrategy.TREND,
+        strategy_replay_segments=_replay(bars),
         cost_snapshots=_costs(),
         execution_constraints=_constraints(bars),
     )
@@ -177,11 +192,16 @@ def test_walk_forward_clears_training_position_state_before_oscillation_test() -
             ),
         ),
         strategy=ResearchStrategy.OSCILLATION,
+        strategy_replay_segments=_replay(bars),
         cost_snapshots=_costs(),
         execution_constraints=_constraints(bars),
     )
 
     backtest = result.folds[0].backtest
+    assert result.signal_formula_versions == (
+        "newow_oscillation_hhv_llv10_page_v1",
+        "newow_hhv_llv_channel_page_v1",
+    )
     assert backtest.fills == ()
     assert backtest.ignored_intent_count == 0
     assert backtest.cancelled_intent_count == 0
@@ -219,6 +239,7 @@ def test_walk_forward_rejects_invalid_or_overlapping_folds() -> None:
             bars,
             overlapping,
             strategy=ResearchStrategy.TREND,
+            strategy_replay_segments=_replay(bars),
             cost_snapshots=_costs(),
             execution_constraints=_constraints(bars),
         )
@@ -239,6 +260,7 @@ def test_walk_forward_rejects_windows_without_available_train_or_test_bars() -> 
             bars,
             (outside,),
             strategy=ResearchStrategy.TREND,
+            strategy_replay_segments=_replay(bars),
             cost_snapshots=_costs(),
             execution_constraints=_constraints(bars),
         )
@@ -260,6 +282,7 @@ def test_walk_forward_rejects_empty_explicit_train_window_even_with_gap_bars() -
             bars,
             (fold,),
             strategy=ResearchStrategy.TREND,
+            strategy_replay_segments=_replay(bars),
             cost_snapshots=_costs(),
             execution_constraints=_constraints(bars),
         )
@@ -301,6 +324,10 @@ def test_walk_forward_rejects_mixed_products_across_separate_folds() -> None:
             rb_bars + jm_bars,
             folds,
             strategy=ResearchStrategy.TREND,
+            strategy_replay_segments=(
+                NewowStrategyReplaySegment(rb_bars),
+                NewowStrategyReplaySegment(jm_bars),
+            ),
             cost_snapshots=_costs(),
             execution_constraints=_constraints(rb_bars + jm_bars),
         )
@@ -321,6 +348,7 @@ def test_walk_forward_rejects_a_fold_that_partly_exceeds_available_history() -> 
             bars,
             (partly_outside,),
             strategy=ResearchStrategy.TREND,
+            strategy_replay_segments=_replay(bars),
             cost_snapshots=_costs(),
             execution_constraints=_constraints(bars),
         )
@@ -340,8 +368,120 @@ def test_walk_forward_counts_the_full_causal_prefix_before_test() -> None:
             ),
         ),
         strategy=ResearchStrategy.TREND,
+        strategy_replay_segments=_replay(bars),
         cost_snapshots=_costs(),
         execution_constraints=_constraints(bars),
     )
 
     assert result.folds[0].warmup_bar_count == 3
+    assert result.folds[0].train_bar_count == 2
+    assert result.folds[0].gap_bar_count == 1
+
+
+def test_walk_forward_uses_noneligible_physical_prefix_for_strategy_state_only() -> None:
+    full = _bars((80, 100, 80, 100, 80, 80))
+    bars = full[2:]
+    replay_bars = tuple(
+        replace(
+            bar,
+            observation_eligible=index >= 2,
+            source_identity=(
+                bar.source_identity
+                if index >= 2
+                else f"canonical-contract-prefix-{index}"
+            ),
+            series_kind="actual_dominant" if index >= 2 else "contract",
+        )
+        for index, bar in enumerate(full)
+    )
+    fold = WalkForwardFold(
+        name="physical-prefix",
+        train_since=bars[0].trading_day,
+        train_through=bars[0].trading_day,
+        test_since=bars[1].trading_day,
+        test_through=bars[-1].trading_day,
+    )
+
+    result = run_fixed_formula_walk_forward(
+        bars,
+        (fold,),
+        strategy=ResearchStrategy.TREND,
+        strategy_replay_segments=(NewowStrategyReplaySegment(replay_bars),),
+        cost_snapshots=_costs(),
+        execution_constraints=_constraints(bars),
+    )
+
+    trade = result.folds[0].backtest.trades[0]
+    assert trade.entry.signal_bar_end == bars[1].bar_end
+    assert trade.entry.fill_bar_end == bars[2].bar_end
+    assert trade.exit.signal_bar_end == bars[2].bar_end
+    assert trade.exit.fill_bar_end == bars[3].bar_end
+    assert all(
+        fill.fill_bar_end in {bar.bar_end for bar in bars}
+        for fill in result.folds[0].backtest.fills
+    )
+    assert result.folds[0].physical_prefix_bar_count == 6
+    assert result.folds[0].earliest_physical_prefix_trading_day == _START
+
+
+def test_walk_forward_rejects_replay_eligible_bar_fact_mismatch() -> None:
+    bars = _bars((100, 80, 120, 80))
+    replay_bars = bars[:2] + (
+        replace(
+            bars[2],
+            open=Decimal("121"),
+            high=Decimal("122"),
+            close=Decimal("121"),
+        ),
+    ) + bars[3:]
+
+    with pytest.raises(ValueError, match="NEWOW_WALK_FORWARD_PLAN_INVALID"):
+        run_fixed_formula_walk_forward(
+            bars,
+            (
+                WalkForwardFold(
+                    "mismatch",
+                    bars[0].trading_day,
+                    bars[1].trading_day,
+                    bars[2].trading_day,
+                    bars[3].trading_day,
+                ),
+            ),
+            strategy=ResearchStrategy.TREND,
+            strategy_replay_segments=(NewowStrategyReplaySegment(replay_bars),),
+            cost_snapshots=_costs(),
+            execution_constraints=_constraints(bars),
+        )
+
+
+def test_oscillation_flattens_at_first_eligible_test_bar_not_hidden_prefix() -> None:
+    rows = [(100, 109, 90, 100)] * 12
+    bars = tuple(
+        NewowResearchBar(
+            product="rb",
+            physical_contract="RB2610",
+            segment_id="rb:RB2610:2026-01-01:2026-12-31",
+            trading_day=_START + timedelta(days=index),
+            bar_end=datetime(2026, 1, 1, tzinfo=UTC) + timedelta(days=index),
+            open=Decimal(open_value),
+            high=Decimal(high),
+            low=Decimal(low),
+            close=Decimal(close),
+            volume=100,
+            open_interest=1000,
+            source_identity=f"oscillation-prefix-{index}",
+            observation_eligible=index == 11,
+            completed=True,
+            series_kind="actual_dominant" if index == 11 else "contract",
+        )
+        for index, (open_value, high, low, close) in enumerate(rows)
+    )
+
+    intents, _ = build_strategy_intents_from_replay_segments(
+        (NewowStrategyReplaySegment(bars),),
+        ResearchStrategy.OSCILLATION,
+        flat_from=bars[10].trading_day,
+    )
+
+    assert len(intents) == 1
+    assert intents[0].signal_bar_end == bars[11].bar_end
