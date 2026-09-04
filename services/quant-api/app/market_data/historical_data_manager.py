@@ -37,7 +37,7 @@ from typing import Protocol
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.market_data.aggregation import AggregationError, aggregate_from_1m
-from app.market_data.catalog import MarketCatalog
+from app.market_data.catalog import ContractFact, MarketCatalog
 from app.market_data.domain import (
     INTRADAY_DERIVED_FREQUENCIES,
     PROVIDER_FETCH_FREQUENCIES,
@@ -80,6 +80,20 @@ class CoverageSource(Protocol):
         self,
         key: DatasetKey,
         trading_days: tuple[date, ...],
+    ) -> tuple[datetime, ...]: ...
+    def contract_trading_days(
+        self,
+        fact: ContractFact,
+        start: date,
+        end: date,
+    ) -> tuple[date, ...]: ...
+    def contract_expected_bar_ends(
+        self,
+        key: DatasetKey,
+        fact: ContractFact,
+        year: int,
+        month: int,
+        through: date,
     ) -> tuple[datetime, ...]: ...
     def sessions(
         self,
@@ -256,6 +270,15 @@ class _Target:
     expected: tuple[datetime, ...]
     missing: tuple[datetime, ...]
     existing: tuple[CanonicalBar, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class _ContractPartitionClassification:
+    """Mapped required 与 lifecycle-valid persisted 的单一分区分类结果。"""
+
+    expected: tuple[datetime, ...]
+    missing_mapped: tuple[datetime, ...]
+    outside_lifecycle: bool
 
 
 # 规划顺序：先日/周再 1m，使日内派生能在同族 1m 补齐后尽快触发。
@@ -480,6 +503,35 @@ class HistoricalDataManager:
                             )
                         )
                         continue
+                    if key.kind is DatasetKind.CONTRACT:
+                        classification = self._classify_contract_partition(
+                            key,
+                            year,
+                            month,
+                            expected,
+                            existing,
+                        )
+                        if classification.outside_lifecycle:
+                            findings.append(
+                                AuditFinding(
+                                    "CONTRACT_PARTITION_OUTSIDE_LIFECYCLE",
+                                    "partition",
+                                    key.as_tuple(),
+                                    year,
+                                    month,
+                                )
+                            )
+                        if classification.missing_mapped:
+                            findings.append(
+                                AuditFinding(
+                                    "EXPECTED_PARTITION_MISSING",
+                                    "partition",
+                                    key.as_tuple(),
+                                    year,
+                                    month,
+                                )
+                            )
+                        continue
                     if tuple(bar.bar_end for bar in existing) != expected:
                         findings.append(
                             AuditFinding(
@@ -561,6 +613,50 @@ class HistoricalDataManager:
                 latest_complete_by_symbol[key.symbol] = latest_complete
             existing_by_end = {bar.bar_end: bar for bar in existing}
             present = set(existing_by_end)
+            if key.kind is DatasetKind.CONTRACT:
+                classification = self._classify_contract_partition(
+                    key,
+                    year,
+                    month,
+                    expected,
+                    existing,
+                )
+                missing = tuple(
+                    item
+                    for item in classification.missing_mapped
+                    if since is None or item.date() >= since
+                )
+                if force:
+                    if classification.expected and (
+                        since is None or classification.expected[-1].date() >= since
+                    ):
+                        yield _Target(
+                            key,
+                            year,
+                            month,
+                            classification.expected,
+                            classification.expected,
+                            (),
+                        )
+                elif classification.outside_lifecycle:
+                    yield _Target(
+                        key,
+                        year,
+                        month,
+                        classification.expected,
+                        classification.expected,
+                        (),
+                    )
+                elif missing:
+                    yield _Target(
+                        key,
+                        year,
+                        month,
+                        classification.expected,
+                        missing,
+                        existing,
+                    )
+                continue
             missing = tuple(
                 item
                 for item in expected
@@ -581,6 +677,43 @@ class HistoricalDataManager:
                 # Canonical bar 当作异常并在重写时丢弃。
                 publish_expected = tuple(sorted(set(expected).union(present)))
                 yield _Target(key, year, month, publish_expected, missing, existing)
+
+    def _classify_contract_partition(
+        self,
+        key: DatasetKey,
+        year: int,
+        month: int,
+        required_mapped: tuple[datetime, ...],
+        existing: tuple[CanonicalBar, ...],
+    ) -> _ContractPartitionClassification:
+        """应用 mapped ⊆ persisted ⊆ lifecycle-valid 的唯一 contract 判定。"""
+        fact = self.catalog.contract_fact(key.symbol, key.series_or_contract)
+        lifecycle_valid = (
+            {
+                item.astimezone(UTC)
+                for item in self.coverage.contract_expected_bar_ends(
+                    key,
+                    fact,
+                    year,
+                    month,
+                    max(bar.trading_day for bar in existing),
+                )
+            }
+            if existing
+            else set()
+        )
+        required = {item.astimezone(UTC) for item in required_mapped}
+        persisted = tuple(bar.bar_end.astimezone(UTC) for bar in existing)
+        persisted_set = set(persisted)
+        valid_persisted = persisted_set.intersection(lifecycle_valid)
+        return _ContractPartitionClassification(
+            expected=tuple(sorted(required.union(valid_persisted))),
+            missing_mapped=tuple(sorted(required - persisted_set)),
+            outside_lifecycle=(
+                len(persisted) != len(persisted_set)
+                or not persisted_set.issubset(lifecycle_valid)
+            ),
+        )
 
     def _desired_months(
         self,

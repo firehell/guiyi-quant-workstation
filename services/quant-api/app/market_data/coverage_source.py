@@ -12,12 +12,14 @@ from sqlalchemy.orm import Session
 
 from app.core.env import PROJECT_ROOT
 from app.market_data.aggregation import SessionWindow
+from app.market_data.catalog import CatalogError, ContractFact, MarketCatalog
 from app.market_data.domain import (
     INTRADAY_FREQUENCIES,
     RQDATA_INTRADAY_HISTORY_START,
     BarFrequency,
     CanonicalBar,
     DatasetKey,
+    DatasetKind,
 )
 from app.market_data.errors import InfrastructureError
 from app.market_data.session_clock import (
@@ -342,6 +344,77 @@ class DatabaseCoverageSource:
                 result.append(bar_end)
         return tuple(result)
 
+    def contract_trading_days(
+        self,
+        fact: ContractFact,
+        start: date,
+        end: date,
+    ) -> tuple[date, ...]:
+        """返回具体合约生命周期内有完整 Calendar/Session 事实的交易日。"""
+        lower = max(start, fact.listed_date)
+        upper = min(end, fact.expired_date - timedelta(days=1))
+        if lower > upper:
+            return ()
+        rows = tuple(
+            self.session.execute(
+                select(TradingCalendar.trade_date, TradingCalendar.is_trading_day)
+                .where(
+                    TradingCalendar.exchange_code == fact.exchange,
+                    TradingCalendar.trade_date >= lower,
+                    TradingCalendar.trade_date <= upper,
+                    TradingCalendar.provider == "rqdata",
+                )
+                .order_by(TradingCalendar.trade_date)
+            ).tuples()
+        )
+        calendar_days = tuple(
+            lower + timedelta(days=offset)
+            for offset in range((upper - lower).days + 1)
+        )
+        if tuple(day for day, _is_trading in rows) != calendar_days:
+            raise InfrastructureError("HISTORICAL_SESSION_FACT_MISSING")
+        trading_days = tuple(day for day, is_trading in rows if is_trading)
+        for trading_day in trading_days:
+            session_fact = self.session.scalar(
+                select(TradingSession.id)
+                .where(
+                    TradingSession.exchange_code == fact.exchange,
+                    TradingSession.instrument_symbol == fact.symbol,
+                    TradingSession.provider == "rqdata",
+                    TradingSession.is_active.is_(True),
+                    TradingSession.effective_from == trading_day,
+                    TradingSession.effective_to == trading_day,
+                )
+                .limit(1)
+            )
+            if session_fact is None:
+                raise InfrastructureError("HISTORICAL_SESSION_FACT_MISSING")
+        return trading_days
+
+    def contract_expected_bar_ends(
+        self,
+        key: DatasetKey,
+        fact: ContractFact,
+        year: int,
+        month: int,
+        through: date,
+    ) -> tuple[datetime, ...]:
+        """按具体合约 lifecycle 展开单月正式 bar_end，不依赖 rank-1 映射。"""
+        if (
+            key.kind is not DatasetKind.CONTRACT
+            or key.symbol != fact.symbol
+            or key.series_or_contract != fact.contract
+        ):
+            raise InfrastructureError("CONTRACT_IDENTITY_MISMATCH")
+        lower = max(date(year, month, 1), fact.listed_date)
+        if key.frequency in INTRADAY_FREQUENCIES:
+            lower = max(lower, RQDATA_INTRADAY_HISTORY_START)
+        upper = min(_month_end(year, month), through)
+        if lower > upper:
+            return ()
+        days = self.contract_trading_days(fact, lower, upper)
+        return self.expected_bar_ends_for_trading_days(key, days)
+
     def sessions(
         self,
         key: DatasetKey,
@@ -362,6 +435,30 @@ class DatabaseCoverageSource:
 
     def valid_boundary(self, key: DatasetKey, bar: CanonicalBar) -> bool:
         """单 bar 是否落在 coverage 期望边界内（store 发布时的 boundary_validator）。"""
+        if key.kind is DatasetKind.CONTRACT:
+            try:
+                fact = MarketCatalog(self.session, PROJECT_ROOT).contract_fact(
+                    key.symbol,
+                    key.series_or_contract,
+                )
+            except CatalogError:
+                return False
+            if not (fact.listed_date <= bar.trading_day < fact.expired_date):
+                return False
+            try:
+                trading_days = self.contract_trading_days(
+                    fact,
+                    bar.trading_day,
+                    bar.trading_day,
+                )
+            except InfrastructureError:
+                return False
+            if trading_days != (bar.trading_day,):
+                return False
+            return bar.bar_end in self.expected_bar_ends_for_trading_days(
+                key,
+                trading_days,
+            )
         expected = self.expected_bar_ends(
             key,
             bar.trading_day.year,

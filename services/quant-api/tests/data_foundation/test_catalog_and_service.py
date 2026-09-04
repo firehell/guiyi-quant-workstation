@@ -9,7 +9,7 @@ from sqlalchemy import create_engine, select, update
 from sqlalchemy.orm import Session
 
 from app.db.base import Base
-from app.market_data.catalog import MarketCatalog
+from app.market_data.catalog import CatalogError, ContractFact, MarketCatalog
 from app.market_data.domain import (
     ActualDominantTradingDayQuery,
     CanonicalBar,
@@ -110,6 +110,85 @@ def test_catalog_registers_minimal_month_partition(session, tmp_path) -> None:
     assert row.file_path == partition.parquet_path
     assert row.row_count == 1
     assert not hasattr(row, "manifest_path")
+
+
+def test_catalog_contract_fact_normalizes_exact_identity(session, tmp_path) -> None:
+    session.add(
+        Contract(
+            contract_code="JM2509",
+            instrument_symbol="jm",
+            exchange_code="DCE",
+            listed_date=date(2025, 1, 2),
+            expired_date=date(2025, 9, 25),
+            provider="rqdata",
+        )
+    )
+    session.commit()
+    catalog = MarketCatalog(session, tmp_path)
+
+    expected = ContractFact(
+        symbol="jm",
+        contract="JM2509",
+        exchange="DCE",
+        provider="rqdata",
+        listed_date=date(2025, 1, 2),
+        expired_date=date(2025, 9, 25),
+    )
+    assert catalog.contract_fact("jm", "JM2509") == expected
+    assert catalog.contract_fact(" JM ", " jm2509 ") == expected
+
+
+def test_catalog_contract_fact_rejects_unknown_contract(session, tmp_path) -> None:
+    with pytest.raises(CatalogError, match="CONTRACT_NOT_FOUND"):
+        MarketCatalog(session, tmp_path).contract_fact("jm", "JM2509")
+
+
+@pytest.mark.parametrize(
+    ("symbol", "provider", "listed_date", "expired_date", "error_code"),
+    [
+        ("rb", "rqdata", date(2025, 1, 2), date(2025, 9, 25), "CONTRACT_SYMBOL_MISMATCH"),
+        ("jm", "other", date(2025, 1, 2), date(2025, 9, 25), "CONTRACT_PROVIDER_UNSUPPORTED"),
+        ("jm", "rqdata", None, date(2025, 9, 25), "CONTRACT_METADATA_MISSING"),
+        ("jm", "rqdata", date(2025, 1, 2), None, "CONTRACT_METADATA_MISSING"),
+        (
+            "jm",
+            "rqdata",
+            date(2025, 9, 25),
+            date(2025, 9, 25),
+            "CONTRACT_ACTIVE_WINDOW_MISSING",
+        ),
+        (
+            "jm",
+            "rqdata",
+            date(2025, 9, 26),
+            date(2025, 9, 25),
+            "CONTRACT_ACTIVE_WINDOW_MISSING",
+        ),
+    ],
+)
+def test_catalog_contract_fact_fails_closed_for_invalid_metadata(
+    session,
+    tmp_path,
+    symbol,
+    provider,
+    listed_date,
+    expired_date,
+    error_code,
+) -> None:
+    session.add(
+        Contract(
+            contract_code="JM2509",
+            instrument_symbol="jm",
+            exchange_code="DCE",
+            listed_date=listed_date,
+            expired_date=expired_date,
+            provider=provider,
+        )
+    )
+    session.commit()
+
+    with pytest.raises(CatalogError, match=error_code):
+        MarketCatalog(session, tmp_path).contract_fact(symbol, "jm2509")
 
 
 def test_latest_dominants_uses_repository_display_name_instead_of_provider_code(

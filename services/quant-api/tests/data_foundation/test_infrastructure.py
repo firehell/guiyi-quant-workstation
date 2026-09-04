@@ -9,6 +9,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from app.db.base import Base
+from app.market_data.catalog import ContractFact
 from app.market_data.domain import DatasetKey
 from app.market_data import rqdata_adapter
 from app.market_data.coverage_source import DatabaseCoverageSource
@@ -114,6 +115,18 @@ def _add_date_scoped_session_facts(session: Session, days: tuple[date, ...]) -> 
                 provider="rqdata",
             )
         )
+
+
+def _replace_with_date_scoped_sessions(
+    session: Session,
+    days: tuple[date, ...],
+) -> None:
+    for row in session.scalars(
+        select(TradingSession).where(TradingSession.instrument_symbol == "jm")
+    ):
+        session.delete(row)
+    _add_date_scoped_session_facts(session, days)
+    session.commit()
 
 
 def test_rqdata_client_requires_both_future_readiness_categories() -> None:
@@ -271,6 +284,156 @@ def test_database_coverage_uses_actual_exchange_sessions_and_complete_iso_week(t
     assert len(daily_ends) == 5
     assert weekly_ends == (daily_ends[-1],)
     assert coverage.valid_boundary(minute_key, _bar(minute_ends[0], date(2025, 1, 6)))
+    session.close()
+
+
+def test_contract_coverage_uses_lifecycle_calendar_without_rank1_map(tmp_path) -> None:
+    session, starts = _session(tmp_path)
+    contract = session.scalar(select(Contract).where(Contract.contract_code == "JM2509"))
+    assert contract is not None
+    contract.listed_date = date(2025, 1, 7)
+    contract.expired_date = date(2025, 1, 10)
+    nontrading = session.scalar(
+        select(TradingCalendar).where(
+            TradingCalendar.exchange_code == "DCE",
+            TradingCalendar.trade_date == date(2025, 1, 8),
+        )
+    )
+    assert nontrading is not None
+    nontrading.is_trading_day = False
+    days = tuple(date(2025, 1, day) for day in (7, 9))
+    _replace_with_date_scoped_sessions(session, days)
+    coverage = DatabaseCoverageSource(session, starts)
+    fact = ContractFact(
+        symbol="jm",
+        contract="JM2509",
+        exchange="DCE",
+        provider="rqdata",
+        listed_date=date(2025, 1, 7),
+        expired_date=date(2025, 1, 10),
+    )
+    key = DatasetKey("contract", "jm", "JM2509", "1d")
+
+    assert coverage.contract_trading_days(
+        fact,
+        date(2025, 1, 6),
+        date(2025, 1, 10),
+    ) == days
+    assert tuple(
+        value.astimezone(SHANGHAI).date()
+        for value in coverage.contract_expected_bar_ends(
+            key,
+            fact,
+            2025,
+            1,
+            date(2025, 1, 10),
+        )
+    ) == days
+    assert session.scalar(select(MainContractMap.id)) is None
+    session.close()
+
+
+@pytest.mark.parametrize("missing", ["calendar", "session"])
+def test_contract_coverage_requires_complete_historical_facts(tmp_path, missing) -> None:
+    session, starts = _session(tmp_path)
+    days = tuple(date(2025, 1, day) for day in (7, 8, 9))
+    _replace_with_date_scoped_sessions(
+        session,
+        tuple(day for day in days if missing != "session" or day.day != 8),
+    )
+    if missing == "calendar":
+        row = session.scalar(
+            select(TradingCalendar).where(
+                TradingCalendar.exchange_code == "DCE",
+                TradingCalendar.trade_date == date(2025, 1, 8),
+            )
+        )
+        assert row is not None
+        session.delete(row)
+        session.commit()
+    coverage = DatabaseCoverageSource(session, starts)
+    fact = ContractFact(
+        symbol="jm",
+        contract="JM2509",
+        exchange="DCE",
+        provider="rqdata",
+        listed_date=date(2025, 1, 7),
+        expired_date=date(2025, 1, 10),
+    )
+
+    with pytest.raises(InfrastructureError, match="HISTORICAL_SESSION_FACT_MISSING"):
+        coverage.contract_trading_days(fact, date(2025, 1, 7), date(2025, 1, 9))
+
+    session.close()
+
+
+def test_contract_expected_intraday_ends_respect_rqdata_history_floor(tmp_path) -> None:
+    session, starts = _session(tmp_path)
+    coverage = DatabaseCoverageSource(session, starts)
+    fact = ContractFact(
+        symbol="jm",
+        contract="JM2509",
+        exchange="DCE",
+        provider="rqdata",
+        listed_date=date(2009, 1, 1),
+        expired_date=date(2010, 1, 1),
+    )
+
+    assert coverage.contract_expected_bar_ends(
+        DatasetKey("contract", "jm", "JM2509", "15m"),
+        fact,
+        2009,
+        12,
+        date(2009, 12, 31),
+    ) == ()
+    session.close()
+
+
+def test_contract_valid_boundary_requires_exact_identity_lifecycle_and_session(
+    tmp_path,
+) -> None:
+    session, starts = _session(tmp_path)
+    contract = session.scalar(select(Contract).where(Contract.contract_code == "JM2509"))
+    assert contract is not None
+    contract.listed_date = date(2025, 1, 7)
+    contract.expired_date = date(2025, 1, 10)
+    days = tuple(date(2025, 1, day) for day in (7, 8, 9))
+    _replace_with_date_scoped_sessions(session, days)
+    coverage = DatabaseCoverageSource(session, starts)
+    key = DatasetKey("contract", "jm", "JM2509", "1d")
+    fact = ContractFact(
+        symbol="jm",
+        contract="JM2509",
+        exchange="DCE",
+        provider="rqdata",
+        listed_date=date(2025, 1, 7),
+        expired_date=date(2025, 1, 10),
+    )
+    valid_end = coverage.contract_expected_bar_ends(
+        key,
+        fact,
+        2025,
+        1,
+        date(2025, 1, 9),
+    )[1]
+
+    assert coverage.valid_boundary(key, _bar(valid_end, date(2025, 1, 8)))
+    assert not coverage.valid_boundary(
+        DatasetKey("contract", "jm", "JM2511", "1d"),
+        _bar(valid_end, date(2025, 1, 8)),
+    )
+    assert not coverage.valid_boundary(
+        key,
+        _bar(datetime(2025, 1, 6, 1, 5, tzinfo=UTC), date(2025, 1, 6)),
+    )
+    assert not coverage.valid_boundary(
+        key,
+        _bar(datetime(2025, 1, 10, 1, 5, tzinfo=UTC), date(2025, 1, 10)),
+    )
+    assert not coverage.valid_boundary(
+        key,
+        _bar(datetime(2025, 1, 8, 1, 4, tzinfo=UTC), date(2025, 1, 8)),
+    )
     session.close()
 
 
