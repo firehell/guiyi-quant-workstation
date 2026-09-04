@@ -14,7 +14,7 @@
 | Database 与 Canonical | 最近 production 只读 readback 为 Alembic `20260903_0045`；RQData session anchor repair 已发布并保留 D1/W1 原始事实。active Canonical 只读 readback 为 8,801 个 Dataset、42,575 个分区、44,629,532 行。 |
 | Market Runtime Scope | `operational_products.txt` 的 60 个品种。 |
 | Alert Scope | HTDY 为 `jm × 15m`；SuBing 为 execution-time operational 60 个品种 × 15m，Scope hash `ce1daca77aeb1abe134806b67aebd96b2c35db3ba82aa10af58f6e5a2e4f5fa2`。两条 Rule 均为 enabled；SuBing Event 为 0。 |
-| Develop 中工作 | `develop` 上的 Newow futures validation、SuBing detail workspace 与 physical-contract warm-up 都是未发布的开发工作。warm-up 已完成 source rebase、Task 1–7、fresh verification 与两轴独立 Review，状态为 `CODE_COMPLETE / TEST_COMPLETE / RELEASE_GATE_PENDING`；它尚未形成 release、数据 apply、Runtime promotion 或自然验收。 |
+| `v1.9.15` Release candidate | `codex/release-v1.9.15` 基于 `origin/develop@a6ea680ed8d9150e0b9920e71563a3de18f7dd1e` 准备精确候选，包含 Newow futures validation、Market Detail、SuBing physical-contract warm-up 与 Runtime promotion guard。它尚未合入 `main`、创建 tag 或发布 GitHub Release，也未执行 PF 数据 apply、Runtime promotion 或自然验收。 |
 
 Alert transport 为 PushPlus；provider accepted 不等于微信送达。
 
@@ -24,8 +24,8 @@ Alert transport 为 PushPlus；provider accepted 不等于微信送达。
 
 ## Pending Gate
 
-- 先完成当前 warm-up repair 的代码收敛、定向/模块验证和独立 Review；其中不授权真实 RQData/Canonical apply、release、Runtime promotion 或 Scope/通知变更。
-- 修复代码若形成 RC，release PR、`main` 合入、annotated tag 与 GitHub Release 仍各需新的明确授权。
+- 完成 `codex/release-v1.9.15` 的 release identity 验证、全量适用检查、两轴独立 Review 与 release PR；这些步骤不授权真实 RQData/Canonical apply、`main` 合入、tag、GitHub Release、Runtime promotion 或 Scope/通知变更。
+- exact RC 形成后，`main` 合入、annotated `v1.9.15` tag 与 GitHub Release 仍需一条引用 exact 40 字符 SHA 的新明确授权。
 - exact-tag 的 `PF2611` read-only plan、随后引用 exact plan hash 的真实 RQData/Canonical apply、以及 Runtime promotion 均是彼此独立的人工 Gate。
 - 仍须等待自然 completed SuBing 15m Event、immutable `AlertEvent` 与 one-shot PushPlus provider acceptance；不得用 synthetic、replay、backfill 或手工发送替代。
 - 最终 G12 仍须由用户人工确认微信实际收到同一自然 Event；provider accepted 不能替代实际送达确认。
