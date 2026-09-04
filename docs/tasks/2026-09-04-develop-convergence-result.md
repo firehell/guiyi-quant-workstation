@@ -22,11 +22,13 @@
 - Open PR / Issue：见本任务 PR 的 Task A evidence
 - Worktree：见本任务 PR 的 Task A evidence
 
-## Review candidate
+## 当前候选状态
 
-- Task G 候选输入 HEAD：`228f4d685c25f47915067e22aea1fce41fd618f0`。
-- Task A–F 已完成各自实现、自审、修复轮和独立 commit；当前只进入 Draft PR 候选准备，不提前声明最终收敛完成。
-- 最终 exact-head Standards Review、Spec Review、Review 后必要检查、最终 evidence commit 与 Owner“允许集成 develop”Gate 均未执行或未取得。
+- Task G 候选准备输入 HEAD：`228f4d685c25f47915067e22aea1fce41fd618f0`。
+- Task A–F 已完成各自实现、自审、修复轮和独立 commit；Task G 已创建 Draft PR `#335`，但尚未合入 `develop`。
+- Standards 与 Spec 两轴已在 exact `REVIEW_HEAD=47ca4636a5edd969915492f5ebf0fb186df876ac` 上 `APPROVED`，Review 后 Step 5 targeted checks 已通过。
+- Documentation-only finalization attempt `c0b5e48772b01f4e9961761e4b91233a3e1f6717` 的两轴 exact-head confirmation 均发现同一结果文档状态矛盾，结论均为 `P1=0 / P2=1 / P3=0 / NOT APPROVED`；该 attempt 已由当前修正文档 supersede，不能作为通过 Review 的 final candidate。
+- 当前修正将删除上述 stale assertion；新 exact head 需重新完成完整 Standards/Spec 双轴 Review。Owner“允许集成 develop”Gate 仍未取得。
 
 ## Task A–F 收口事实
 
@@ -261,8 +263,8 @@
 - `/Volumes/扩展盘/guiyi-quant-runtime-v1.9.14-r1` | detached `ca15456eaff988db4fe61c37657ca37302a7f977` | clean | detached Runtime worktree。
 - `/Volumes/扩展盘/guiyi-quant-workstation/.worktrees/develop-convergence` | `chore/develop-convergence@a300262cda5957e55fc8d235bf8024733da769e5` | clean | current task worktree，留待 Task G Owner Gate/集成 readback 后按后续授权处理。
 
-- final `git fetch --prune origin` exit 0，3.56s；`origin/develop` 仍为 baseline。最终远端 branch 只剩 `main`、`develop`、`codex/release-v1.9.15`，open PR 只有 #333。
-- 本任务未删除任何本地 worktree 或 local branch，未进入 Task G，未创建 PR，未合入 `develop`。
+- Task F final `git fetch --prune origin` exit 0，3.56s；当时 `origin/develop` 仍为 baseline，远端 branch 只剩 `main`、`develop`、`codex/release-v1.9.15`，open PR 只有 #333。
+- Task F 未删除任何本地 worktree 或 local branch，也未进入 Task G。Task G 随后创建 Draft PR `#335`；截至当前仍未 ready、未 merge、未合入 `develop`，且未清理 task worktree/branch。
 
 ## Review 与集成
 
@@ -296,6 +298,7 @@ git status --short
 ### Final evidence identity 与 Owner Gate
 
 - 本文档的最终 commit 不可能在自身 Git tree 中写入其自身 SHA；不得把 `REVIEW_HEAD` 虚假标作 final commit。
-- Exact `FINAL_HEAD` 必须由提交后 `git rev-parse HEAD`、远端 task ref 与 PR `#335 headRefOid` 的一致 readback 冻结，并由独立 reviewers 对 documentation-only final commit 作 exact-head confirmation；该身份记录在不改变 Git tree 的 PR metadata/执行报告中。
+- `c0b5e48772b01f4e9961761e4b91233a3e1f6717` 的 Standards 与 Spec exact-head confirmation 均为 `P1=0 / P2=1 / P3=0 / NOT APPROVED`，原因是本文档此前保留了已失效的 Task G/Review/PR 状态；该 SHA 不再是可批准的 final candidate。
+- 当前修正提交后的 exact candidate head 必须由 `git rev-parse HEAD`、远端 task ref 与 PR `#335 headRefOid` 的一致 readback 冻结，并在该 exact head 上重新完成完整 Standards/Spec 双轴 Review；身份与结论记录在不改变 Git tree 的 PR metadata/执行报告中。
 - Owner 尚未明确回复“允许集成 develop”；PR `#335` 必须保持 Draft。Owner Gate 前不得 ready、merge 或清理当前 task worktree/branch。
 - 独立未完成 Gate：PR `#333` current-head release Review；`main`/tag/GitHub Release 批准；PF2611 plan/apply；Runtime promotion；自然 SuBing Event；PushPlus provider acceptance；Owner 微信实际送达确认；Newow 后续产品化、参考交易、OOS、Shadow 与模拟账户。
