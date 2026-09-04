@@ -6,6 +6,7 @@ import MarketDetailQuoteHeader from '@/components/market/detail/MarketDetailQuot
 import MarketDetailTopBar from '@/components/market/detail/MarketDetailTopBar.vue'
 import MarketDetailUnavailable from '@/components/market/detail/MarketDetailUnavailable.vue'
 import MarketDetailViewNav from '@/components/market/detail/MarketDetailViewNav.vue'
+import TrendDetailWorkspace from '@/components/market/detail/TrendDetailWorkspace.vue'
 import FreeChartWorkspace from '@/components/market/detail/free/FreeChartWorkspace.vue'
 import HtdyDetailWorkspace from '@/components/market/detail/htdy/HtdyDetailWorkspace.vue'
 import { useMarketDetailController } from '@/composables/useMarketDetailController'
@@ -26,10 +27,12 @@ const moreOpen = ref(false)
 const controller = useMarketDetailController({ routeQuery: () => ({ ...route.query }) })
 const routeResult = computed(() => parseMarketDetailRoute({ ...route.query }))
 const explicitIdentity = computed(() => routeResult.value.kind === 'valid' ? routeResult.value.identity : null)
-const isWorkspacePreview = computed(() => explicitIdentity.value?.view === 'free' || explicitIdentity.value?.view === 'htdy')
+const isWorkspacePreview = computed(() => ['free', 'htdy', 'trend'].includes(explicitIdentity.value?.view ?? 'subing'))
 const shellReady = computed(() => isWorkspacePreview.value && controller.state.value.header !== null && !controller.state.value.loading)
 const htdyWorkspace = ref<InstanceType<typeof HtdyDetailWorkspace> | null>(null)
+const trendWorkspace = ref<InstanceType<typeof TrendDetailWorkspace> | null>(null)
 const hasHtdyHistory = ref(false)
+const hasTrendHistory = ref(false)
 const header = computed(() => controller.state.value.header)
 const identityWarning = ref(
   typeof window !== 'undefined' && window.history.state?.contractCleared === true
@@ -44,8 +47,10 @@ const identityKey = computed(() => {
 })
 async function activateRoute() {
   moreOpen.value = false
+  hasHtdyHistory.value = false
+  hasTrendHistory.value = false
   const result = routeResult.value
-  if (result.kind !== 'valid' || (result.identity.view !== 'free' && result.identity.view !== 'htdy')) return
+  if (result.kind !== 'valid' || !['free', 'htdy', 'trend'].includes(result.identity.view)) return
   await controller.switchIdentity(result.identity)
 }
 
@@ -113,6 +118,12 @@ function resolveFocus(focusBarEnd: string) {
   void router.replace({ path: '/market/chart', query: serializeMarketDetailIdentity(next) })
 }
 
+function openHistory() {
+  const view = explicitIdentity.value?.view
+  if (view === 'trend') trendWorkspace.value?.openHistory()
+  else if (view === 'htdy') htdyWorkspace.value?.openHistory()
+}
+
 function goBack() {
   void router.push('/market')
 }
@@ -134,10 +145,10 @@ onBeforeUnmount(controller.dispose)
       />
     </template>
 
-    <template v-else-if="routeResult.kind === 'valid' && routeResult.identity.view !== 'free' && routeResult.identity.view !== 'htdy'">
+    <template v-else-if="routeResult.kind === 'valid' && routeResult.identity.view === 'subing'">
       <MarketDetailUnavailable
         title="当前视角尚未接入统一详情页"
-        message="Slice A 仅开放自由看盘的 Shell 预览入口；该 Workspace 将在对应后续 Slice 中接入。"
+        message="新苏冰 Workspace 尚未接入统一详情页。"
         :can-return-legacy="true"
         @return-legacy="returnLegacy"
       />
@@ -148,11 +159,11 @@ onBeforeUnmount(controller.dispose)
         :product-name="header?.productName ?? routeResult.identity.symbol.toUpperCase()"
         :symbol="routeResult.identity.symbol"
         :display-contract="header?.displayContract ?? routeResult.identity.contract ?? null"
-        :actions="{ canOpenHistory: routeResult.identity.view === 'htdy' && hasHtdyHistory, canManageAlert: false }"
+        :actions="{ canOpenHistory: routeResult.identity.view === 'trend' ? hasTrendHistory : routeResult.identity.view === 'htdy' && hasHtdyHistory, canManageAlert: false }"
         @back="goBack"
         @select-symbol="returnLegacy"
         @open-more="moreOpen = !moreOpen"
-        @open-history="htdyWorkspace?.openHistory()"
+        @open-history="openHistory"
       />
       <div v-if="moreOpen" class="market-detail-page__more" role="menu" aria-label="更多操作">
         <button type="button" role="menuitem" @click="returnLegacy">返回旧版详情</button>
@@ -192,7 +203,7 @@ onBeforeUnmount(controller.dispose)
             @update-preferences="updateFreePreferences"
           />
           <HtdyDetailWorkspace
-            v-else
+            v-else-if="routeResult.identity.view === 'htdy'"
             ref="htdyWorkspace"
             :identity="routeResult.identity"
             :header="header"
@@ -207,6 +218,14 @@ onBeforeUnmount(controller.dispose)
             @update-preferences="updateHtdyPreferences"
             @history-availability="hasHtdyHistory = $event"
             @focus-resolved="resolveFocus"
+          />
+          <TrendDetailWorkspace
+            v-else-if="routeResult.identity.view === 'trend'"
+            ref="trendWorkspace"
+            :identity="routeResult.identity"
+            :header="header"
+            :bars="controller.bars.value"
+            @history-availability="hasTrendHistory = $event"
           />
         </section>
       </template>

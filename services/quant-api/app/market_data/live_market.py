@@ -162,8 +162,13 @@ class RedisLiveStore:
         raw = self._redis.get("live:heartbeat")
         return None if raw is None else _decode_mapping(raw)
 
+    def cleanup_bars_for_trading_day(self, trading_day: date) -> None:
+        keys = self._bar_keys_for_trading_day(trading_day)
+        if keys:
+            self._redis.delete(*keys)
+
     def cleanup_trading_day(self, trading_day: date) -> None:
-        keys = [_as_text(key) for key in self._redis.scan_iter(match=f"live:bars:{trading_day.isoformat()}:*")]
+        keys = self._bar_keys_for_trading_day(trading_day)
         keys.append(self._subscription_key(trading_day))
         self._redis.delete(*keys)
 
@@ -179,6 +184,14 @@ class RedisLiveStore:
     @staticmethod
     def _bars_key(trading_day: date, symbol: str, frequency: BarFrequency | str) -> str:
         return f"live:bars:{trading_day.isoformat()}:{symbol}:{BarFrequency(frequency).value}"
+
+    def _bar_keys_for_trading_day(self, trading_day: date) -> list[str]:
+        return [
+            _as_text(key)
+            for key in self._redis.scan_iter(
+                match=f"live:bars:{trading_day.isoformat()}:*"
+            )
+        ]
 
     @staticmethod
     def _subscription_key(trading_day: date) -> str:

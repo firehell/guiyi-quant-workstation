@@ -65,7 +65,16 @@ onBeforeUnmount(() => media?.removeEventListener('change', syncMedia))
       <slot :active-id="activeId" />
       <ol v-if="!mobile && activeId === 'history' && history.length > 0" class="detail-section-tabs__history">
         <li v-for="item in history" :key="item.id">
-          <span>{{ item.label }}<small v-if="item.barEnd"> · Bar {{ item.barEnd }} · 合约 {{ item.contract ?? '—' }}{{ item.notificationAttemptedAt ? ' · 已尝试通知' : '' }}</small></span><time :datetime="item.occurredAt">{{ item.timeLabel ?? item.occurredAt }}</time>
+          <span>
+            {{ item.label }}
+            <small v-if="item.barEnd">
+              · Bar {{ item.barEnd }} · 合约 {{ item.contract ?? '—' }}
+              <template v-if="item.markerType"> · 类型 {{ item.markerType }}</template>
+              <template v-if="item.formulaVersion"> · 公式 {{ item.formulaVersion }}</template>
+              {{ item.notificationAttemptedAt ? ' · 已尝试通知' : '' }}
+            </small>
+          </span>
+          <time :datetime="item.occurredAt">{{ item.timeLabel ?? item.occurredAt }}</time>
         </li>
       </ol>
     </div>
@@ -73,7 +82,16 @@ onBeforeUnmount(() => media?.removeEventListener('change', syncMedia))
     <MarketDetailDrawer :open="historyDrawerOpen" title="历史记录" @close="historyDrawerOpen = false">
       <ol class="detail-section-tabs__history">
         <li v-for="item in history" :key="item.id">
-          <span>{{ item.label }}<small v-if="item.barEnd"> · Bar {{ item.barEnd }} · 合约 {{ item.contract ?? '—' }}{{ item.notificationAttemptedAt ? ' · 已尝试通知' : '' }}</small></span><time :datetime="item.occurredAt">{{ item.timeLabel ?? item.occurredAt }}</time>
+          <span>
+            {{ item.label }}
+            <small v-if="item.barEnd">
+              · Bar {{ item.barEnd }} · 合约 {{ item.contract ?? '—' }}
+              <template v-if="item.markerType"> · 类型 {{ item.markerType }}</template>
+              <template v-if="item.formulaVersion"> · 公式 {{ item.formulaVersion }}</template>
+              {{ item.notificationAttemptedAt ? ' · 已尝试通知' : '' }}
+            </small>
+          </span>
+          <time :datetime="item.occurredAt">{{ item.timeLabel ?? item.occurredAt }}</time>
         </li>
       </ol>
     </MarketDetailDrawer>
