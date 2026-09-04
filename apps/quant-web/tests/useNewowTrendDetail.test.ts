@@ -6,6 +6,7 @@ import { NewowTrendDetailRequestError } from '../src/api/newow.ts'
 import { useNewowTrendDetail } from '../src/composables/useNewowTrendDetail.ts'
 import type { NewowTrendDetailResponse } from '../src/types/newow.ts'
 import { normalizeNewowTrendDetailResponse } from '../src/utils/newowTypes.ts'
+import { minimalNewowWire } from './helpers/newowWire.ts'
 import type { BarData } from '../src/types/market.ts'
 import type { MarketDetailIdentity } from '../src/types/marketDetail.ts'
 
@@ -167,37 +168,10 @@ function bar(tradingDay: string): BarData {
 }
 
 function normalizedEmpty(product: string, from: string, through: string): NewowTrendDetailResponse {
-  const calculation = [
-    'market_data_service:canonical_v2',
-    'main_contract_map:rank1:canonical_v1',
-    product,
-    'actual_dominant',
-    '1d',
-    'newow_trend_d1_page_v2',
-    'newow_trend_band_page_v2',
-    'newow_escape_d123_page_v2',
-    'newow_cup_handle_v1',
-  ].join('|')
-  return normalizeNewowTrendDetailResponse({
-    meta: {
-      strategy_code: 'newow_trend_v1', profile_id: 'newow_trend_d1_page_v2', frequency: '1d',
-      series_kind: 'actual_dominant', calculation_identity: calculation, data_revision_identity: null,
-      request_identity: `${calculation}:${from}:${through}`,
-    },
-    instrument: { product, display_name: null, last_visible_physical_contract: null },
-    bars: [],
-    bar_policy: 'completed_only',
-    trend_band: [], trend_markers: [], escape_markers: [], cup_markers: [], cup_handles: [], rollover_seams: [],
-    legend: { BUILD: 'trend build', CLEAR: 'trend clear', D1: 'escape D1', D2: 'escape D2', D3: 'escape D3' },
-    formula_descriptions: {
-      trend_band: 'newow_trend_band_page_v2', escape: 'newow_escape_d123_page_v2', cup_handle: 'newow_cup_handle_v1',
-    },
-    warnings: [
-      'NEWOW_TREND_WARMUP_INSUFFICIENT',
-      'NEWOW_D123_WARMUP_INSUFFICIENT',
-      'NEWOW_CUP_WARMUP_INSUFFICIENT',
-    ],
-  }, { symbol: product, from, through })
+  return normalizeNewowTrendDetailResponse(
+    minimalNewowWire(product, from, through),
+    { symbol: product, from, through },
+  )
 }
 
 async function flush(): Promise<void> {

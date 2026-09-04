@@ -204,7 +204,7 @@ def test_detail_loads_three_periods_and_same_contract_prefixes() -> None:
 
     result = service.query(
         NewowTrendDetailQuery(
-            "rb", _START + timedelta(days=3), _START + timedelta(days=7)
+            "rb", _START + timedelta(days=5), _START + timedelta(days=7)
         )
     )
 
@@ -216,7 +216,10 @@ def test_detail_loads_three_periods_and_same_contract_prefixes() -> None:
     assert "newow_trend_d1_page_v2" in result.calculation_identity
     assert "newow_trend_band_page_v2" in result.calculation_identity
     assert [bar.trading_day for bar in result.bars] == [
-        _START + timedelta(days=index) for index in range(3, 8)
+        _START + timedelta(days=index) for index in range(5, 8)
+    ]
+    assert [point.bar_end for point in result.price_channel.daily.points] == [
+        bar.bar_end for bar in result.bars
     ]
     assert all(frame.bar.observation_eligible for frame in result.frames)
     assert all(

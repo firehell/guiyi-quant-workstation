@@ -56,7 +56,7 @@ export function buildNewowDetailViewModel(input: NewowDetailViewModelInput): Det
     identity: input.identity,
     asOf: data?.bars.at(-1)?.bar_end ?? null,
     semanticBanner: {
-      text: '建仓、持有、清仓、空仓为趋势引擎状态，不代表实际账户持仓。',
+      text: '建仓、持有、清仓、空仓为趋势引擎状态，不代表实际账户持仓。牛哇页面复刻与 clean-room 研究结论分开显示；所有结果仅供研究观察。',
       tone: 'warning',
     },
     facts,
@@ -221,6 +221,98 @@ function disclosures(
       ],
     },
     {
+      id: 'newow-channel', title: '目标价与吸纳价',
+      summary: `${formatNumber(data.price_channel.display.target)} / ${formatNumber(data.price_channel.display.absorb)}`,
+      updatedAt: latestBar?.bar_end ?? null,
+      tone: data.price_channel.display.target === null ? 'unavailable' : 'default',
+      rows: [
+        { label: '页面目标价', value: formatNumber(data.price_channel.display.target), source: 'newow' },
+        { label: '页面吸纳价', value: formatNumber(data.price_channel.display.absorb), source: 'newow' },
+        { label: '目标周期', value: data.price_channel.display.target_period ?? '不可用', source: 'newow' },
+        { label: '吸纳周期', value: data.price_channel.display.absorb_period ?? '不可用', source: 'newow' },
+        { label: '目标分支', value: data.price_channel.display.target_branch_token, source: 'newow' },
+        { label: '吸纳分支', value: data.price_channel.display.absorb_branch_token, source: 'newow' },
+        { label: '日线 owner segments', value: jsonText(data.price_channel.daily.owner_segment_ids), source: 'newow' },
+        { label: '周线 owner segments', value: jsonText(data.price_channel.weekly.owner_segment_ids), source: 'newow' },
+        { label: '60m owner segments', value: jsonText(data.price_channel.sixty_minute.owner_segment_ids), source: 'newow' },
+      ],
+    },
+    {
+      id: 'newow-composite', title: '综合决策',
+      summary: data.composite_page?.action_token ?? '不可用',
+      updatedAt: data.diagnostic_facts.as_of,
+      tone: data.composite_page === null ? 'unavailable' : 'warning',
+      rows: [
+        { label: '页面复刻动作', value: data.composite_page?.action_token ?? '不可用', source: 'newow' },
+        { label: '页面复刻决策键', value: data.composite_page?.decision_key ?? '不可用', source: 'newow' },
+        { label: '页面仓位区间', value: formatRange(data.composite_page?.position_range), source: 'newow' },
+        { label: '页面确定性', value: data.composite_page ? String(data.composite_page.certainty.total) : '不可用', source: 'newow' },
+        { label: '页面回放可信研究', value: '否（同 Bar 收盘，仅用于页面复刻）', source: 'newow' },
+        { label: 'Clean-room 动作', value: data.composite_cleanroom?.action_token ?? '不可用', source: 'newow' },
+        { label: 'Clean-room 决策键', value: data.composite_cleanroom?.decision_key ?? '不可用', source: 'newow' },
+        { label: 'Clean-room 仓位区间', value: formatRange(data.composite_cleanroom?.position_range), source: 'newow' },
+        { label: '差异原因', value: data.composite_cleanroom?.page_difference_reason ?? '无', source: 'newow' },
+        { label: '页面不可达决策键', value: jsonText(data.composite_page?.unreachable_decision_keys ?? []), source: 'newow' },
+      ],
+    },
+    {
+      id: 'newow-first-action', title: '第一行动原则',
+      summary: `${data.first_action_principle.level} · ${data.first_action_principle.rule_token}`,
+      updatedAt: data.diagnostic_facts.as_of,
+      tone: data.first_action_principle.level === 'violate' ? 'warning' : 'default',
+      rows: [
+        { label: '级别', value: data.first_action_principle.level, source: 'newow' },
+        { label: '规则', value: data.first_action_principle.rule_token, source: 'newow' },
+        { label: '事实 tokens', value: jsonText(data.first_action_principle.fact_tokens), source: 'newow' },
+        { label: '与综合决策关系', value: '独立规则，不覆盖页面复刻或 clean-room 综合结论', source: 'newow' },
+      ],
+    },
+    {
+      id: 'newow-diagnostics', title: '诊断与解释',
+      summary: `${data.diagnostic_tokens.length} 条诊断`,
+      updatedAt: data.diagnostic_facts.as_of,
+      tone: data.diagnostic_tokens.some((token) => token.severity === 'risk') ? 'warning' : 'default',
+      rows: [
+        { label: '趋势状态/持续', value: `${data.diagnostic_facts.trend_state} / ${data.diagnostic_facts.trend_duration_bars}`, source: 'newow' },
+        { label: '周/日信号', value: `${data.diagnostic_facts.weekly_signal ?? '不可用'} / ${data.diagnostic_facts.daily_signal ?? '不可用'}`, source: 'newow' },
+        { label: '震荡持有', value: booleanText(data.diagnostic_facts.oscillation_holding), source: 'newow' },
+        { label: '主力控盘', value: data.diagnostic_facts.main_force_status ?? '不可用', source: 'newow' },
+        { label: '主升浪', value: booleanText(data.diagnostic_facts.main_rise_active), source: 'newow' },
+        { label: '杯柄状态', value: data.diagnostic_facts.cup_state ?? '不可用', source: 'newow' },
+        { label: 'EMA20/位置', value: `${formatNumber(data.diagnostic_facts.ema20)} / ${data.diagnostic_facts.close_vs_ema20}`, source: 'newow' },
+        { label: '诊断 tokens', value: jsonText(data.diagnostic_tokens), source: 'newow' },
+        { label: '排除重绘输入', value: jsonText(data.diagnostic_facts.repainting_inputs_excluded), source: 'newow' },
+      ],
+    },
+    {
+      id: 'newow-window-comparison', title: '参数比较',
+      summary: '10 / 20 / 24 / 30 / 52',
+      updatedAt: data.diagnostic_facts.as_of,
+      tone: 'warning',
+      rows: [
+        { label: '研究可信度', value: '不可用于可信研究（页面同 Bar 收盘口径）', source: 'newow' },
+        ...data.page_window_comparison.map(item => ({
+          label: `窗口 ${item.window}`,
+          value: `收益 ${item.cumulative_return_pct}% · 回撤 ${item.max_drawdown_pct}% · 交易 ${item.trade_count} · 胜率 ${item.win_rate_pct}% · 分数 ${item.score}`,
+          source: 'newow' as const,
+        })),
+      ],
+    },
+    {
+      id: 'newow-evidence', title: '公式与证据边界',
+      summary: '页面一致性 + clean-room + observation-only',
+      updatedAt: data.diagnostic_facts.as_of,
+      tone: 'warning',
+      rows: [
+        { label: '页面一致性复算', value: data.semantic_labels.page_parity ? '是' : '否', source: 'newow' },
+        { label: 'Clean-room 分离', value: data.semantic_labels.cleanroom_separated ? '是' : '否', source: 'newow' },
+        { label: '仅供研究观察', value: data.semantic_labels.observation_only ? '是' : '否', source: 'newow' },
+        { label: '因果研究结果', value: data.semantic_labels.causal_research_result ? '是' : '否', source: 'newow' },
+        { label: '使用重绘输入', value: data.semantic_labels.repainting_input_used ? '是' : '否', source: 'newow' },
+        { label: '公式身份', value: jsonText(data.formula_descriptions), source: 'newow' },
+      ],
+    },
+    {
       id: 'newow-data', title: '主力与数据', summary: latestBar?.physical_contract ?? '不可用',
       updatedAt: latestBar?.bar_end ?? null,
       tone: latestBar ? 'default' : 'unavailable',
@@ -235,6 +327,19 @@ function disclosures(
       ],
     },
   ]
+}
+
+function formatNumber(value: number | null): string {
+  return value === null ? '不可用' : String(value)
+}
+
+function formatRange(value: { minimum: number | null; maximum: number | null } | undefined): string {
+  return value === undefined || value.minimum === null || value.maximum === null
+    ? '不可用' : `${value.minimum}–${value.maximum}`
+}
+
+function booleanText(value: boolean | null): string {
+  return value === null ? '不可用' : value ? '是' : '否'
 }
 
 function latestTrendTransition(data: NewowTrendDetailResponse) {

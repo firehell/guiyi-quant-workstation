@@ -7,11 +7,23 @@ const calculationIdentity = [
   'main_contract_map:rank1:canonical_v1',
   'rb',
   'actual_dominant',
-  '1d',
+  '1d+1w+60m',
   'newow_trend_d1_page_v2',
   'newow_trend_band_page_v2',
   'newow_escape_d123_page_v2',
   'newow_cup_handle_v1',
+  'newow_oscillation_hhv_llv10_page_v1',
+  'newow_main_force_control_page_v1',
+  'newow_main_rise_ma35_ma45_page_v1',
+  'newow_target_absorb_hhv_llv10_page_v1',
+  'newow_target_absorb_display_selection_page_v1',
+  'newow_hhv_llv_window_optimizer_page_v1',
+  'newow_hhv_llv_window_optimizer_causal_v1',
+  'newow_composite_decision_page_v3_2_82',
+  'newow_composite_decision_cleanroom_v1',
+  'newow_first_action_principle_page_v3_2_63',
+  'newow_diagnostic_facts_cleanroom_v1',
+  'newow_diagnostic_rules_cleanroom_v1',
 ].join('|')
 
 const query = { symbol: 'rb', from: '2026-01-05', through: '2026-01-07' }
@@ -42,7 +54,7 @@ function marker(
   }
 }
 
-function payload() {
+function basePayload() {
   return {
     meta: {
       strategy_code: 'newow_trend_v1',
@@ -129,11 +141,127 @@ function payload() {
       previous_bar_end: '2026-01-06T07:00:00+00:00', next_bar_end: '2026-01-07T15:00:00+08:00',
       previous_segment_id: 'RB2605:2026-01-01:2026-01-06', next_segment_id: 'RB2610:2026-01-07:2026-05-31',
     }],
+    price_channel: {
+      daily: {
+        frequency: '1d',
+        points: [
+          channelPoint('2026-01-05T07:00:00Z', null, null, false),
+          channelPoint('2026-01-06T07:00:00+00:00', null, null, false),
+          channelPoint('2026-01-07T15:00:00+08:00', '12.00', '9.50', true),
+        ],
+        owner_segment_ids: ['RB2605:2026-01-01:2026-01-06', 'RB2610:2026-01-07:2026-05-31'],
+        formula_version: 'newow_target_absorb_hhv_llv10_page_v1',
+      },
+      weekly: {
+        frequency: '1w', points: [channelPoint('2026-01-02T07:00:00Z', '13.00', '9.00', true)],
+        owner_segment_ids: ['RB2605:2026-01-01:2026-01-06'],
+        formula_version: 'newow_target_absorb_hhv_llv10_page_v1',
+      },
+      sixty_minute: {
+        frequency: '60m', points: [channelPoint('2026-01-07T06:00:00Z', '11.80', '10.00', true)],
+        owner_segment_ids: ['RB2610:2026-01-07:2026-05-31'],
+        formula_version: 'newow_target_absorb_hhv_llv10_page_v1',
+      },
+      display: {
+        target: '13.00', absorb: '9.00', raw_target: '13.00', raw_absorb: '9.00',
+        target_period: 'week', absorb_period: 'week', target_branch_token: 'weekly_target',
+        absorb_branch_token: 'weekly_absorb', formula_version: 'newow_target_absorb_display_selection_page_v1',
+      },
+    },
+    page_window_comparison: [10, 20, 24, 30, 52].map((window, index) => ({
+      window, cumulative_return_pct: String(10 - index), max_drawdown_pct: String(-5 - index),
+      trade_count: 3 + index, win_rate_pct: '50', score: String(5 - index),
+      terminal_position_was_open: index === 0, force_closed_at_end: true,
+      execution_timing: 'same_bar_close', trustworthy_for_research: false,
+      formula_version: 'newow_hhv_llv_window_optimizer_page_v1',
+    })),
+    composite_page: composite('newow_composite_decision_page_v3_2_82'),
+    composite_cleanroom: {
+      ...composite('newow_composite_decision_cleanroom_v1'),
+      page_difference_reason: 'page uses same-bar close and is display parity only',
+    },
+    first_action_principle: {
+      level: 'ok', rule_token: 'first_action_ok', fact_tokens: ['weekly_hold', 'daily_buy'],
+      formula_version: 'newow_first_action_principle_page_v3_2_63',
+    },
+    diagnostic_facts: {
+      as_of: '2026-01-07T15:00:00+08:00', target_price: '13.00', absorb_price: '9.00',
+      target_distance_pct: '18.18', absorb_distance_pct: '-18.18', ema20: '10.50',
+      close_vs_ema20: 'above', trend_state: 'YELLOW', trend_duration_bars: 2,
+      oscillation_holding: true, main_force_status: '有庄控盘', main_rise_active: true,
+      cup_state: 'BREAKOUT', weekly_signal: 'hold', daily_signal: 'buy',
+      repainting_inputs_excluded: ['zigzag'],
+      formula_versions: ['newow_diagnostic_facts_cleanroom_v1', 'newow_target_absorb_display_selection_page_v1'],
+    },
+    diagnostic_tokens: [{
+      code: 'TARGET_ABOVE_CLOSE', severity: 'info', fact_keys: ['target_price'],
+      formula_identities: ['newow_diagnostic_rules_cleanroom_v1'],
+    }],
+    semantic_labels: {
+      page_parity: true, cleanroom_separated: true, observation_only: true,
+      causal_research_result: false, repainting_input_used: false,
+    },
     legend: { BUILD: 'trend build', CLEAR: 'trend clear', D1: 'escape D1', D2: 'escape D2', D3: 'escape D3' },
     formula_descriptions: {
       trend_band: 'newow_trend_band_page_v2', escape: 'newow_escape_d123_page_v2', cup_handle: 'newow_cup_handle_v1',
+      oscillation: 'newow_oscillation_hhv_llv10_page_v1', main_force: 'newow_main_force_control_page_v1',
+      main_rise: 'newow_main_rise_ma35_ma45_page_v1', price_channel: 'newow_target_absorb_hhv_llv10_page_v1',
+      display_selection: 'newow_target_absorb_display_selection_page_v1',
+      page_window_comparison: 'newow_hhv_llv_window_optimizer_page_v1',
+      causal_window_identity: 'newow_hhv_llv_window_optimizer_causal_v1',
+      composite_page: 'newow_composite_decision_page_v3_2_82',
+      composite_cleanroom: 'newow_composite_decision_cleanroom_v1',
+      first_action: 'newow_first_action_principle_page_v3_2_63',
+      diagnostic_facts: 'newow_diagnostic_facts_cleanroom_v1',
+      diagnostic_rules: 'newow_diagnostic_rules_cleanroom_v1',
     },
     warnings: [],
+  }
+}
+
+const payload = basePayload
+
+export function completeNewowPayload() {
+  const value = basePayload()
+  const extension = Array.from({ length: 18 }, (_, offset) => {
+    const day = `2026-01-${String(offset + 8).padStart(2, '0')}`
+    const close = 11 + (offset + 1) / 10
+    return {
+      bar_end: `${day}T07:00:00Z`, trading_day: day,
+      open: (close - 0.1).toFixed(2), high: (close + 0.3).toFixed(2),
+      low: (close - 0.3).toFixed(2), close: close.toFixed(2),
+      volume: 121 + offset, open_interest: 221 + offset, physical_contract: 'RB2610',
+      segment_id: 'RB2610:2026-01-07:2026-05-31', source_identity: calculationIdentity,
+    }
+  })
+  value.bars.push(...extension)
+  value.trend_band.push(...extension.map(bar => ({
+    bar_end: bar.bar_end, b_value: Number(bar.close) - 0.1, c_value: Number(bar.close) - 0.2,
+    state: 'YELLOW', state_before: 'YELLOW', transition: null,
+  })))
+  value.price_channel.daily.points.push(...extension.map(bar => channelPoint(
+    bar.bar_end, (Number(bar.high) + 0.5).toFixed(2), (Number(bar.low) - 0.5).toFixed(2), true,
+  )))
+  value.meta.request_identity = `${calculationIdentity}:2026-01-05:2026-01-25`
+  value.diagnostic_facts.as_of = extension.at(-1)!.bar_end
+  return value
+}
+
+function channelPoint(barEnd: string, target: string | null, absorb: string | null, available: boolean) {
+  return { bar_end: barEnd, target, absorb, window: 10, available, formula_version: 'newow_target_absorb_hhv_llv10_page_v1' }
+}
+
+function composite(formulaVersion: string) {
+  return {
+    trend_bias: 'bullish', oscillation_bias: 'bullish', direction_token: 'multiperiod_bullish',
+    decision_key: 'bullish-bullish', action_token: 'BUILD_OR_ADD',
+    position_range: { minimum: '0.70', maximum: '1.00' },
+    certainty: { trend: 20, oscillation: 20, alignment: 20, direction: 20, total: 80 },
+    volatility: { value_pct: '1.25', level: 'mid', sample_size: 20 }, risk_tokens: [],
+    ...(formulaVersion === 'newow_composite_decision_page_v3_2_82'
+      ? { unreachable_decision_keys: ['neutral-bullish', 'neutral-bearish', 'neutral-warning'] }
+      : {}),
+    formula_version: formulaVersion,
   }
 }
 
@@ -163,6 +291,16 @@ test('normalizes the exact Newow wire and returns a detached deep-readonly snaps
   assert.equal(value.bars[0]!.close, 10.5)
   assert.deepEqual(value.escape_markers[0]!.trigger_facts.nested, [true, { ratio: 1.25 }])
   assert.throws(() => (value.bars as unknown[]).push({}))
+})
+
+test('normalizes the complete 21-bar fixture used by the bounded detail contract', () => {
+  const value = normalizeNewowTrendDetailResponse(
+    completeNewowPayload(),
+    { symbol: 'rb', from: '2026-01-05', through: '2026-01-25' },
+  )
+  assert.equal(value.bars.length, 21)
+  assert.equal(value.price_channel.daily.points.length, 21)
+  assert.equal(value.diagnostic_facts.as_of, value.bars.at(-1)!.bar_end)
 })
 
 test('accepts the page-v2 identity and validates band/high marker prices', () => {
@@ -330,26 +468,32 @@ test('fails closed on missing, extra, unordered, or contradictory rollover seams
   rejects((value) => { value.rollover_seams[0]!.next_bar_end = value.rollover_seams[0]!.previous_bar_end })
 })
 
-test('accepts only unique known warnings and requires all warmup warnings for an empty result', () => {
+test('accepts only unique known warnings and binds the composite warning to unavailable composites', () => {
   rejects((value) => { value.warnings = ['UNKNOWN'] })
   rejects((value) => { value.warnings = ['NEWOW_CUP_WARMUP_INSUFFICIENT', 'NEWOW_CUP_WARMUP_INSUFFICIENT'] })
 
   const raw = payload()
-  raw.instrument.last_visible_physical_contract = null
-  raw.bars = []
-  raw.trend_band = []
-  raw.trend_markers = []
-  raw.escape_markers = []
-  raw.cup_markers = []
-  raw.cup_handles = []
-  raw.rollover_seams = []
-  raw.warnings = [
-    'NEWOW_TREND_WARMUP_INSUFFICIENT',
-    'NEWOW_D123_WARMUP_INSUFFICIENT',
-    'NEWOW_CUP_WARMUP_INSUFFICIENT',
-  ]
+  raw.composite_page = null as unknown as ReturnType<typeof composite>
+  raw.composite_cleanroom = null as unknown as ReturnType<typeof composite> & { page_difference_reason: string }
+  raw.warnings = ['NEWOW_COMPOSITE_DAILY_BARS_INSUFFICIENT']
 
   const value = normalizeNewowTrendDetailResponse(raw, query)
-  assert.equal(value.instrument.last_visible_physical_contract, null)
+  assert.equal(value.composite_page, null)
+  assert.equal(value.composite_cleanroom, null)
   assert.deepEqual(value.warnings, raw.warnings)
+})
+
+test('fails closed on multi-period channel, page-return trust, composite, diagnostic, and semantic drift', () => {
+  rejects((value) => { value.price_channel.daily.points.pop() }, /align exactly/)
+  rejects((value) => { value.price_channel.weekly.frequency = '1d' }, /frequency/)
+  rejects((value) => { value.price_channel.display.target = 'NaN' }, /Decimal/)
+  rejects((value) => { value.page_window_comparison[0]!.trustworthy_for_research = true }, /must be false/)
+  rejects((value) => { value.page_window_comparison.pop() }, /exact five/)
+  rejects((value) => { value.composite_page!.decision_key = 'bearish-bullish' }, /contradicts/)
+  rejects((value) => { value.composite_page!.position_range.minimum = '1.10' }, /position_range/)
+  rejects((value) => { value.composite_page!.unreachable_decision_keys.reverse() }, /frozen page matrix/)
+  rejects((value) => { value.diagnostic_facts.target_price = '12.00' }, /display facts/)
+  rejects((value) => { value.diagnostic_tokens[0]!.formula_identities = ['unknown'] }, /unknown lineage/)
+  rejects((value) => { value.semantic_labels.causal_research_result = true }, /trust boundary/)
+  rejects((value) => { delete value.semantic_labels.observation_only }, /missing/)
 })

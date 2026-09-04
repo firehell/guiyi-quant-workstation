@@ -340,9 +340,9 @@ class NewowTrendDetailService:
                 if query.since <= seam.trading_day <= query.through
             ),
             NewowPriceChannelFacts(
-                _channel_facts(daily),
-                _channel_facts(weekly),
-                _channel_facts(hourly),
+                _channel_facts(daily, query.since, query.through),
+                _channel_facts(weekly, query.since, query.through),
+                _channel_facts(hourly, query.since, query.through),
                 display,
             ),
             page_comparison,
@@ -780,11 +780,22 @@ def _oscillation_status(state: OscillationState) -> OscillationStatus:
     )
 
 
-def _channel_facts(replay: _FrequencyReplay) -> NewowFrequencyPriceChannel:
+def _channel_facts(
+    replay: _FrequencyReplay,
+    since: date,
+    through: date,
+) -> NewowFrequencyPriceChannel:
+    selected = tuple(
+        (bar, point)
+        for bar, point in zip(
+            replay.visible_bars, replay.channel_points, strict=True
+        )
+        if since <= bar.trading_day <= through
+    )
     return NewowFrequencyPriceChannel(
         replay.frequency.value,
-        replay.channel_points,
-        replay.owner_segment_ids,
+        tuple(point for _, point in selected),
+        tuple(dict.fromkeys(bar.segment_id for bar, _ in selected)),
     )
 
 

@@ -236,6 +236,26 @@ test('fails closed on a stale snapshot identity instead of projecting strategy f
   assert.equal(model.dataStatus, 'unavailable')
 })
 
+test('projects multi-period channels, page parity, clean-room decisions, and diagnostics without recalculation', () => {
+  const model = buildNewowDetailViewModel({ identity, header: header(), data: snapshot() })
+
+  assert.deepEqual(sectionValues(model, 'newow-channel'), {
+    页面目标价: '12', 页面吸纳价: '9', 目标周期: 'week', 吸纳周期: 'week',
+    目标分支: 'weekly_target', 吸纳分支: 'weekly_absorb',
+    '日线 owner segments': '["segment-1","segment-2"]',
+    '周线 owner segments': '["segment-2"]', '60m owner segments': '["segment-2"]',
+  })
+  const compositeRows = sectionValues(model, 'newow-composite')
+  assert.equal(compositeRows.页面复刻动作, 'BUILD_OR_ADD')
+  assert.equal(compositeRows['页面回放可信研究'], '否（同 Bar 收盘，仅用于页面复刻）')
+  assert.equal(compositeRows['Clean-room 动作'], 'BUILD_OR_ADD')
+  assert.equal(compositeRows.差异原因, 'causal timing')
+  const diagnostics = sectionValues(model, 'newow-diagnostics')
+  assert.equal(diagnostics.主力控盘, '有庄控盘')
+  assert.equal(diagnostics.主升浪, '是')
+  assert.equal(diagnostics['周/日信号'], 'hold / buy')
+})
+
 function header(): MarketDetailHeaderModel {
   return {
     symbol: 'rb', productName: '螺纹钢', exchange: 'SHFE', sector: '黑色',
@@ -272,13 +292,86 @@ function snapshot(): MutableSnapshot {
       state_before: 'YELLOW' as const, transition: null,
     })),
     trend_markers: [], escape_markers: [], cup_markers: [], cup_handles: [], rollover_seams: [],
+    ...expandedFacts(bars),
     legend: { BUILD: 'trend build', CLEAR: 'trend clear', D1: 'escape D1', D2: 'escape D2', D3: 'escape D3' },
     formula_descriptions: {
       trend_band: 'newow_trend_band_page_v2',
       escape: 'newow_escape_d123_page_v2',
       cup_handle: 'newow_cup_handle_v1',
+      oscillation: 'newow_oscillation_hhv_llv10_page_v1',
+      main_force: 'newow_main_force_control_page_v1',
+      main_rise: 'newow_main_rise_ma35_ma45_page_v1',
+      price_channel: 'newow_target_absorb_hhv_llv10_page_v1',
+      display_selection: 'newow_target_absorb_display_selection_page_v1',
+      page_window_comparison: 'newow_hhv_llv_window_optimizer_page_v1',
+      causal_window_identity: 'newow_hhv_llv_window_optimizer_causal_v1',
+      composite_page: 'newow_composite_decision_page_v3_2_82',
+      composite_cleanroom: 'newow_composite_decision_cleanroom_v1',
+      first_action: 'newow_first_action_principle_page_v3_2_63',
+      diagnostic_facts: 'newow_diagnostic_facts_cleanroom_v1',
+      diagnostic_rules: 'newow_diagnostic_rules_cleanroom_v1',
     },
     warnings: [],
+  }
+}
+
+function expandedFacts(bars: ReturnType<typeof bar>[]) {
+  const channel = {
+    frequency: '1d' as const,
+    points: bars.map(item => ({
+      bar_end: item.bar_end, target: 12, absorb: 9, window: 10 as const, available: true,
+      formula_version: 'newow_target_absorb_hhv_llv10_page_v1' as const,
+    })),
+    owner_segment_ids: ['segment-1', 'segment-2'],
+    formula_version: 'newow_target_absorb_hhv_llv10_page_v1' as const,
+  }
+  const common = {
+    trend_bias: 'bullish' as const, oscillation_bias: 'bullish' as const,
+    direction_token: 'multiperiod_bullish' as const, decision_key: 'bullish-bullish',
+    action_token: 'BUILD_OR_ADD' as const, position_range: { minimum: 0.7, maximum: 1 },
+    certainty: { trend: 20, oscillation: 20, alignment: 20, direction: 20, total: 80 },
+    volatility: { value_pct: 1.2, level: 'mid' as const, sample_size: 20 }, risk_tokens: [],
+  }
+  return {
+    price_channel: {
+      daily: channel,
+      weekly: { ...channel, frequency: '1w' as const, owner_segment_ids: ['segment-2'] },
+      sixty_minute: { ...channel, frequency: '60m' as const, owner_segment_ids: ['segment-2'] },
+      display: {
+        target: 12, absorb: 9, raw_target: 12, raw_absorb: 9,
+        target_period: 'week' as const, absorb_period: 'week' as const,
+        target_branch_token: 'weekly_target', absorb_branch_token: 'weekly_absorb',
+        formula_version: 'newow_target_absorb_display_selection_page_v1' as const,
+      },
+    },
+    page_window_comparison: [10, 20, 24, 30, 52].map(window => ({
+      window: window as 10 | 20 | 24 | 30 | 52, cumulative_return_pct: 1, max_drawdown_pct: -1,
+      trade_count: 1, win_rate_pct: 50, score: 1, terminal_position_was_open: false,
+      force_closed_at_end: true as const, execution_timing: 'same_bar_close' as const,
+      trustworthy_for_research: false as const, formula_version: 'newow_hhv_llv_window_optimizer_page_v1' as const,
+    })),
+    composite_page: {
+      ...common, unreachable_decision_keys: ['neutral-bullish', 'neutral-bearish', 'neutral-warning'],
+      formula_version: 'newow_composite_decision_page_v3_2_82' as const,
+    },
+    composite_cleanroom: {
+      ...common, page_difference_reason: 'causal timing',
+      formula_version: 'newow_composite_decision_cleanroom_v1' as const,
+    },
+    first_action_principle: {
+      level: 'ok' as const, rule_token: 'first_action_ok', fact_tokens: ['weekly_hold'],
+      formula_version: 'newow_first_action_principle_page_v3_2_63' as const,
+    },
+    diagnostic_facts: {
+      as_of: bars.at(-1)!.bar_end, target_price: 12, absorb_price: 9,
+      target_distance_pct: 9, absorb_distance_pct: -18, ema20: 10,
+      close_vs_ema20: 'above' as const, trend_state: 'YELLOW' as const, trend_duration_bars: 2,
+      oscillation_holding: true, main_force_status: '有庄控盘', main_rise_active: true,
+      cup_state: 'BREAKOUT' as const, weekly_signal: 'hold' as const, daily_signal: 'buy' as const,
+      repainting_inputs_excluded: ['zigzag'], formula_versions: ['newow_diagnostic_facts_cleanroom_v1'],
+    },
+    diagnostic_tokens: [{ code: 'TARGET_ABOVE_CLOSE', severity: 'info' as const, fact_keys: ['target_price'], formula_identities: ['newow_diagnostic_rules_cleanroom_v1'] }],
+    semantic_labels: { page_parity: true as const, cleanroom_separated: true as const, observation_only: true as const, causal_research_result: false as const, repainting_input_used: false as const },
   }
 }
 

@@ -15,6 +15,27 @@ export type NewowWarning =
   | 'NEWOW_TREND_WARMUP_INSUFFICIENT'
   | 'NEWOW_D123_WARMUP_INSUFFICIENT'
   | 'NEWOW_CUP_WARMUP_INSUFFICIENT'
+  | 'NEWOW_COMPOSITE_DAILY_BARS_INSUFFICIENT'
+
+export type NewowDisplayPeriod = 'day' | 'week' | 'best_available'
+export type NewowPageSignal = 'buy' | 'hold' | 'sell' | 'wait'
+export type NewowDiagnosticCupState = NewowCupState | 'NONE'
+export type NewowTrendBias = 'bullish' | 'bearish' | 'cautious' | 'warning' | 'neutral'
+export type NewowOscillationBias = 'bullish' | 'bearish' | 'neutral'
+export type NewowCompositeAction =
+  | 'BUILD_OR_ADD'
+  | 'HOLD_AND_WAIT'
+  | 'REDUCE_AND_WAIT'
+  | 'CLEAR'
+  | 'CAUTIOUS_HOLD'
+  | 'WAIT_FOR_SIGNAL'
+export type NewowDirectionToken =
+  | 'weekly_bearish_rebound'
+  | 'weekly_bearish'
+  | 'daily_pullback'
+  | 'sixty_minute_pullback'
+  | 'multiperiod_bullish'
+  | 'insufficient'
 
 export type NewowJsonValue =
   | null
@@ -132,6 +153,147 @@ export interface NewowFormulaDescriptions {
   readonly trend_band: 'newow_trend_band_page_v2'
   readonly escape: 'newow_escape_d123_page_v2'
   readonly cup_handle: 'newow_cup_handle_v1'
+  readonly oscillation: 'newow_oscillation_hhv_llv10_page_v1'
+  readonly main_force: 'newow_main_force_control_page_v1'
+  readonly main_rise: 'newow_main_rise_ma35_ma45_page_v1'
+  readonly price_channel: 'newow_target_absorb_hhv_llv10_page_v1'
+  readonly display_selection: 'newow_target_absorb_display_selection_page_v1'
+  readonly page_window_comparison: 'newow_hhv_llv_window_optimizer_page_v1'
+  readonly causal_window_identity: 'newow_hhv_llv_window_optimizer_causal_v1'
+  readonly composite_page: 'newow_composite_decision_page_v3_2_82'
+  readonly composite_cleanroom: 'newow_composite_decision_cleanroom_v1'
+  readonly first_action: 'newow_first_action_principle_page_v3_2_63'
+  readonly diagnostic_facts: 'newow_diagnostic_facts_cleanroom_v1'
+  readonly diagnostic_rules: 'newow_diagnostic_rules_cleanroom_v1'
+}
+
+export interface NewowPriceChannelPoint {
+  readonly bar_end: string
+  readonly target: number | null
+  readonly absorb: number | null
+  readonly window: 10
+  readonly available: boolean
+  readonly formula_version: 'newow_target_absorb_hhv_llv10_page_v1'
+}
+
+export interface NewowFrequencyPriceChannel {
+  readonly frequency: '1d' | '1w' | '60m'
+  readonly points: readonly NewowPriceChannelPoint[]
+  readonly owner_segment_ids: readonly string[]
+  readonly formula_version: 'newow_target_absorb_hhv_llv10_page_v1'
+}
+
+export interface NewowDisplayPriceSelection {
+  readonly target: number | null
+  readonly absorb: number | null
+  readonly raw_target: number | null
+  readonly raw_absorb: number | null
+  readonly target_period: NewowDisplayPeriod | null
+  readonly absorb_period: NewowDisplayPeriod | null
+  readonly target_branch_token: string
+  readonly absorb_branch_token: string
+  readonly formula_version: 'newow_target_absorb_display_selection_page_v1'
+}
+
+export interface NewowPriceChannel {
+  readonly daily: NewowFrequencyPriceChannel
+  readonly weekly: NewowFrequencyPriceChannel
+  readonly sixty_minute: NewowFrequencyPriceChannel
+  readonly display: NewowDisplayPriceSelection
+}
+
+export interface NewowPageWindowComparison {
+  readonly window: 10 | 20 | 24 | 30 | 52
+  readonly cumulative_return_pct: number
+  readonly max_drawdown_pct: number
+  readonly trade_count: number
+  readonly win_rate_pct: number
+  readonly score: number
+  readonly terminal_position_was_open: boolean
+  readonly force_closed_at_end: true
+  readonly execution_timing: 'same_bar_close'
+  readonly trustworthy_for_research: false
+  readonly formula_version: 'newow_hhv_llv_window_optimizer_page_v1'
+}
+
+export interface NewowPositionRange {
+  readonly minimum: number | null
+  readonly maximum: number | null
+}
+
+export interface NewowCertainty {
+  readonly trend: number
+  readonly oscillation: number
+  readonly alignment: number
+  readonly direction: number
+  readonly total: number
+}
+
+export interface NewowVolatility {
+  readonly value_pct: number
+  readonly level: 'low' | 'mid' | 'high'
+  readonly sample_size: number
+}
+
+export interface NewowCompositeDecision {
+  readonly trend_bias: NewowTrendBias
+  readonly oscillation_bias: NewowOscillationBias
+  readonly direction_token: NewowDirectionToken
+  readonly decision_key: string
+  readonly action_token: NewowCompositeAction
+  readonly position_range: NewowPositionRange
+  readonly certainty: NewowCertainty
+  readonly volatility: NewowVolatility
+  readonly risk_tokens: readonly string[]
+  readonly formula_version: 'newow_composite_decision_page_v3_2_82'
+  readonly unreachable_decision_keys: readonly string[]
+}
+
+export interface NewowCleanroomCompositeDecision extends Omit<NewowCompositeDecision, 'formula_version' | 'unreachable_decision_keys'> {
+  readonly page_difference_reason: string | null
+  readonly formula_version: 'newow_composite_decision_cleanroom_v1'
+}
+
+export interface NewowFirstActionPrinciple {
+  readonly level: 'violate' | 'warn' | 'ok'
+  readonly rule_token: string
+  readonly fact_tokens: readonly string[]
+  readonly formula_version: 'newow_first_action_principle_page_v3_2_63'
+}
+
+export interface NewowDiagnosticFacts {
+  readonly as_of: string
+  readonly target_price: number | null
+  readonly absorb_price: number | null
+  readonly target_distance_pct: number | null
+  readonly absorb_distance_pct: number | null
+  readonly ema20: number | null
+  readonly close_vs_ema20: 'above' | 'below' | 'equal' | 'unavailable'
+  readonly trend_state: NewowTrendBandState
+  readonly trend_duration_bars: number
+  readonly oscillation_holding: boolean | null
+  readonly main_force_status: string | null
+  readonly main_rise_active: boolean | null
+  readonly cup_state: NewowDiagnosticCupState | null
+  readonly weekly_signal: NewowPageSignal | null
+  readonly daily_signal: NewowPageSignal | null
+  readonly repainting_inputs_excluded: readonly string[]
+  readonly formula_versions: readonly string[]
+}
+
+export interface NewowDiagnosticToken {
+  readonly code: string
+  readonly severity: 'info' | 'warning' | 'risk'
+  readonly fact_keys: readonly string[]
+  readonly formula_identities: readonly string[]
+}
+
+export interface NewowSemanticLabels {
+  readonly page_parity: true
+  readonly cleanroom_separated: true
+  readonly observation_only: true
+  readonly causal_research_result: false
+  readonly repainting_input_used: false
 }
 
 export interface NewowTrendDetailResponse {
@@ -145,6 +307,14 @@ export interface NewowTrendDetailResponse {
   readonly cup_markers: readonly NewowMarker<NewowCupMarkerType>[]
   readonly cup_handles: readonly NewowCupHandle[]
   readonly rollover_seams: readonly NewowRolloverSeam[]
+  readonly price_channel: NewowPriceChannel
+  readonly page_window_comparison: readonly NewowPageWindowComparison[]
+  readonly composite_page: NewowCompositeDecision | null
+  readonly composite_cleanroom: NewowCleanroomCompositeDecision | null
+  readonly first_action_principle: NewowFirstActionPrinciple
+  readonly diagnostic_facts: NewowDiagnosticFacts
+  readonly diagnostic_tokens: readonly NewowDiagnosticToken[]
+  readonly semantic_labels: NewowSemanticLabels
   readonly legend: NewowLegend
   readonly formula_descriptions: NewowFormulaDescriptions
   readonly warnings: readonly NewowWarning[]

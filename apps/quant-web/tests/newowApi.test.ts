@@ -5,6 +5,7 @@ import {
   getNewowTrendDetail,
   NewowTrendDetailRequestError,
 } from '../src/api/newow.ts'
+import { minimalNewowWire } from './helpers/newowWire.ts'
 
 const FROM = '2026-08-14'
 const THROUGH = '2026-08-15'
@@ -18,7 +19,7 @@ test('uses the single Newow detail endpoint with its fixed read-only query and n
       signal: controller.signal,
       request: async (path, config) => {
         calls.push({ path, config })
-        return emptyWire('jm', FROM, THROUGH)
+        return minimalNewowWire('jm', FROM, THROUGH)
       },
     },
   )
@@ -102,52 +103,5 @@ function safeFailure(code: string) {
     assert.equal((error as Error).message, code)
     assert.doesNotMatch(String(error), /private|password|secret|database/i)
     return true
-  }
-}
-
-function emptyWire(product: string, from: string, through: string) {
-  const calculation = [
-    'market_data_service:canonical_v2',
-    'main_contract_map:rank1:canonical_v1',
-    product,
-    'actual_dominant',
-    '1d',
-    'newow_trend_d1_page_v2',
-    'newow_trend_band_page_v2',
-    'newow_escape_d123_page_v2',
-    'newow_cup_handle_v1',
-  ].join('|')
-  return {
-    meta: {
-      strategy_code: 'newow_trend_v1',
-      profile_id: 'newow_trend_d1_page_v2',
-      frequency: '1d',
-      series_kind: 'actual_dominant',
-      calculation_identity: calculation,
-      data_revision_identity: null,
-      request_identity: `${calculation}:${from}:${through}`,
-    },
-    instrument: { product, display_name: null, last_visible_physical_contract: null },
-    bars: [],
-    bar_policy: 'completed_only',
-    trend_band: [],
-    trend_markers: [],
-    escape_markers: [],
-    cup_markers: [],
-    cup_handles: [],
-    rollover_seams: [],
-    legend: {
-      BUILD: 'trend build', CLEAR: 'trend clear', D1: 'escape D1', D2: 'escape D2', D3: 'escape D3',
-    },
-    formula_descriptions: {
-      trend_band: 'newow_trend_band_page_v2',
-      escape: 'newow_escape_d123_page_v2',
-      cup_handle: 'newow_cup_handle_v1',
-    },
-    warnings: [
-      'NEWOW_TREND_WARMUP_INSUFFICIENT',
-      'NEWOW_D123_WARMUP_INSUFFICIENT',
-      'NEWOW_CUP_WARMUP_INSUFFICIENT',
-    ],
   }
 }
