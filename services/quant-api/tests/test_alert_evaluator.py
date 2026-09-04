@@ -14,7 +14,11 @@ import pytest
 from app.alerts import evaluators as evaluator_module
 from app.alerts.evaluators import AlertEvaluationError, SubingThs15mEvaluator
 from app.market_data.domain import CanonicalBar
-from app.market_data.market_read_service import CurrentContractReplayWindow, MarketReadWindow
+from app.market_data.market_read_service import (
+    CurrentContractReplayWindow,
+    MarketReadWindow,
+    MarketReadWindowError,
+)
 from guiyi_quant.indicators import compute_htdy_original
 
 
@@ -425,6 +429,137 @@ def test_subing_evaluator_replays_only_current_contract_and_uses_incremental_cur
     assert evaluator.evaluate_candidates(reader, window) == ()
     assert evaluator.evaluate_candidates(reader, next_window) == ()
     assert reader.afters == [None, window.cutoff]
+
+
+def test_subing_missing_physical_history_is_an_evaluation_failure() -> None:
+    class Reader:
+        def current_contract_replay_window(self, _window, *, after):
+            del after
+            raise MarketReadWindowError("MARKET_READ_CONTRACT_HISTORY_UNAVAILABLE")
+
+    decision = replace(
+        _window(32, contracts=("RB2610",) * 32),
+        symbol="rb",
+        contract="RB2610",
+    )
+
+    with pytest.raises(AlertEvaluationError, match="ALERT_EVALUATION_FAILED"):
+        SubingThs15mEvaluator().evaluate_candidates(Reader(), decision)
+
+
+def test_subing_repaired_rb2610_replay_advances_only_from_its_cursor() -> None:
+    class Kernel:
+        def initial_state(self):
+            return 0
+
+        def step(self, state, close, *, bar_end):
+            del close, bar_end
+            return state + 1, SimpleNamespace(
+                valid=True, ready=True, result_codes=("buy",)
+            )
+
+    replay_bars = tuple(_bar(index) for index in range(34))
+
+    class Reader:
+        def __init__(self) -> None:
+            self.afters: list[datetime | None] = []
+
+        def current_contract_replay_window(self, window, *, after):
+            self.afters.append(after)
+            bars = tuple(
+                bar
+                for bar in replay_bars
+                if bar.bar_end <= window.cutoff
+                and (after is None or bar.bar_end > after)
+            )
+            return CurrentContractReplayWindow(
+                symbol=window.symbol,
+                frequency=window.frequency,
+                trading_day=window.trading_day,
+                contract=window.contract,
+                cutoff=window.cutoff,
+                after=after,
+                bars=bars,
+            )
+
+    current = replace(
+        _window(33, contracts=("RB2610",) * 33),
+        symbol="rb",
+        contract="RB2610",
+    )
+    next_current = replace(
+        _window(34, contracts=("RB2610",) * 34),
+        symbol="rb",
+        contract="RB2610",
+    )
+    reader = Reader()
+    evaluator = SubingThs15mEvaluator(kernel=Kernel())
+
+    assert evaluator.evaluate_candidates(reader, current) == (
+        evaluator_module.AlertObservationCandidate(
+            bar_end=current.cutoff,
+            trading_day=current.trading_day,
+            contract="RB2610",
+            observation_types=("buy",),
+        ),
+    )
+    assert evaluator.evaluate_candidates(reader, current) == ()
+    assert evaluator.evaluate_candidates(reader, next_current) == (
+        evaluator_module.AlertObservationCandidate(
+            bar_end=next_current.cutoff,
+            trading_day=next_current.trading_day,
+            contract="RB2610",
+            observation_types=("buy",),
+        ),
+    )
+    assert reader.afters == [None, current.cutoff]
+
+
+def test_subing_contract_rollover_discards_the_old_physical_state() -> None:
+    class Kernel:
+        def initial_state(self):
+            return 0
+
+        def step(self, state, close, *, bar_end):
+            del close, bar_end
+            return state + 1, SimpleNamespace(
+                valid=True,
+                ready=True,
+                result_codes=("buy",) if state == 0 else (),
+            )
+
+    class Reader:
+        def __init__(self) -> None:
+            self.afters: list[datetime | None] = []
+
+        def current_contract_replay_window(self, window, *, after):
+            self.afters.append(after)
+            return CurrentContractReplayWindow(
+                symbol=window.symbol,
+                frequency=window.frequency,
+                trading_day=window.trading_day,
+                contract=window.contract,
+                cutoff=window.cutoff,
+                after=after,
+                bars=(window.bars[-1],),
+            )
+
+    old_contract = replace(
+        _window(32, contracts=("RB2605",) * 32),
+        symbol="rb",
+        contract="RB2605",
+    )
+    new_contract = replace(
+        _window(33, contracts=("RB2610",) * 33),
+        symbol="rb",
+        contract="RB2610",
+    )
+    reader = Reader()
+    evaluator = SubingThs15mEvaluator(kernel=Kernel())
+
+    assert evaluator.evaluate_candidates(reader, old_contract)[0].contract == "RB2605"
+    assert evaluator.evaluate_candidates(reader, new_contract)[0].contract == "RB2610"
+    assert reader.afters == [None, None]
 
 
 def test_subing_evaluator_rejects_non_15m_actual_dominant_input() -> None:
