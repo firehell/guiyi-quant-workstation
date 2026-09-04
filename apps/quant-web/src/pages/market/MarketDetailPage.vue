@@ -9,6 +9,7 @@ import MarketDetailViewNav from '@/components/market/detail/MarketDetailViewNav.
 import TrendDetailWorkspace from '@/components/market/detail/TrendDetailWorkspace.vue'
 import FreeChartWorkspace from '@/components/market/detail/free/FreeChartWorkspace.vue'
 import HtdyDetailWorkspace from '@/components/market/detail/htdy/HtdyDetailWorkspace.vue'
+import SubingDetailWorkspace from '@/components/market/detail/subing/SubingDetailWorkspace.vue'
 import { useMarketDetailController } from '@/composables/useMarketDetailController'
 import type { MarketDetailIdentity } from '@/types/marketDetail'
 import {
@@ -27,12 +28,14 @@ const moreOpen = ref(false)
 const controller = useMarketDetailController({ routeQuery: () => ({ ...route.query }) })
 const routeResult = computed(() => parseMarketDetailRoute({ ...route.query }))
 const explicitIdentity = computed(() => routeResult.value.kind === 'valid' ? routeResult.value.identity : null)
-const isWorkspacePreview = computed(() => ['free', 'htdy', 'trend'].includes(explicitIdentity.value?.view ?? 'subing'))
+const isWorkspacePreview = computed(() => ['free', 'htdy', 'trend', 'subing'].includes(explicitIdentity.value?.view ?? 'invalid'))
 const shellReady = computed(() => isWorkspacePreview.value && controller.state.value.header !== null && !controller.state.value.loading)
 const htdyWorkspace = ref<InstanceType<typeof HtdyDetailWorkspace> | null>(null)
 const trendWorkspace = ref<InstanceType<typeof TrendDetailWorkspace> | null>(null)
+const subingWorkspace = ref<InstanceType<typeof SubingDetailWorkspace> | null>(null)
 const hasHtdyHistory = ref(false)
 const hasTrendHistory = ref(false)
+const hasSubingHistory = ref(false)
 const header = computed(() => controller.state.value.header)
 const identityWarning = ref(
   typeof window !== 'undefined' && window.history.state?.contractCleared === true
@@ -49,8 +52,9 @@ async function activateRoute() {
   moreOpen.value = false
   hasHtdyHistory.value = false
   hasTrendHistory.value = false
+  hasSubingHistory.value = false
   const result = routeResult.value
-  if (result.kind !== 'valid' || !['free', 'htdy', 'trend'].includes(result.identity.view)) return
+  if (result.kind !== 'valid' || !['free', 'htdy', 'trend', 'subing'].includes(result.identity.view)) return
   await controller.switchIdentity(result.identity)
 }
 
@@ -113,7 +117,7 @@ function updateHtdyPreferences(htdy: FlexibleDetailPreferences) {
 
 function resolveFocus(focusBarEnd: string) {
   const identity = explicitIdentity.value
-  if (identity?.view !== 'htdy' || identity.focusBarEnd !== focusBarEnd) return
+  if ((identity?.view !== 'htdy' && identity?.view !== 'subing') || identity.focusBarEnd !== focusBarEnd) return
   const { focusBarEnd: _focus, ...next } = identity
   void router.replace({ path: '/market/chart', query: serializeMarketDetailIdentity(next) })
 }
@@ -122,6 +126,7 @@ function openHistory() {
   const view = explicitIdentity.value?.view
   if (view === 'trend') trendWorkspace.value?.openHistory()
   else if (view === 'htdy') htdyWorkspace.value?.openHistory()
+  else if (view === 'subing') subingWorkspace.value?.openHistory()
 }
 
 function goBack() {
@@ -145,21 +150,12 @@ onBeforeUnmount(controller.dispose)
       />
     </template>
 
-    <template v-else-if="routeResult.kind === 'valid' && routeResult.identity.view === 'subing'">
-      <MarketDetailUnavailable
-        title="当前视角尚未接入统一详情页"
-        message="新苏冰 Workspace 尚未接入统一详情页。"
-        :can-return-legacy="true"
-        @return-legacy="returnLegacy"
-      />
-    </template>
-
     <template v-else-if="routeResult.kind === 'valid'">
       <MarketDetailTopBar
         :product-name="header?.productName ?? routeResult.identity.symbol.toUpperCase()"
         :symbol="routeResult.identity.symbol"
         :display-contract="header?.displayContract ?? routeResult.identity.contract ?? null"
-        :actions="{ canOpenHistory: routeResult.identity.view === 'trend' ? hasTrendHistory : routeResult.identity.view === 'htdy' && hasHtdyHistory, canManageAlert: false }"
+        :actions="{ canOpenHistory: routeResult.identity.view === 'trend' ? hasTrendHistory : routeResult.identity.view === 'htdy' ? hasHtdyHistory : routeResult.identity.view === 'subing' ? hasSubingHistory : false, canManageAlert: false }"
         @back="goBack"
         @select-symbol="returnLegacy"
         @open-more="moreOpen = !moreOpen"
@@ -226,6 +222,22 @@ onBeforeUnmount(controller.dispose)
             :header="header"
             :bars="controller.bars.value"
             @history-availability="hasTrendHistory = $event"
+          />
+          <SubingDetailWorkspace
+            v-else-if="routeResult.identity.view === 'subing'"
+            ref="subingWorkspace"
+            :identity="routeResult.identity"
+            :focus-bar-end="routeResult.identity.focusBarEnd"
+            :header="header"
+            :bars="controller.bars.value"
+            :mutation="controller.mutation.value"
+            :loading="controller.state.value.loading"
+            :error="controller.state.value.error"
+            :has-more-before="controller.hasMoreBefore.value"
+            :load-earlier="controller.loadMoreBefore"
+            :identity-warning="identityWarning"
+            @history-availability="hasSubingHistory = $event"
+            @focus-resolved="resolveFocus"
           />
         </section>
       </template>

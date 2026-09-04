@@ -9,6 +9,8 @@ import {
   navigateClient,
   newowTrendDetailFixture,
   trendGenericBars,
+  subingEvent,
+  subingRule,
 } from './market-detail.helpers.mjs'
 
 const freeJm = '/market/chart?symbol=jm&view=free&series_kind=actual_dominant&frequency=15m'
@@ -504,8 +506,11 @@ test('a stale Trend response cannot overwrite a newer product identity', async (
   await expect(workspace.getByText('RB2605', { exact: true }).first()).toBeVisible()
 })
 
-test('Free and HTDY stay independent while SuBing remains explicitly unavailable', async ({ page }) => {
-  const requests = await mockReadyTrend(page)
+test('Free, HTDY, and SuBing remain isolated workspaces with only SuBing Event facts', async ({ page }) => {
+  const requests = await mockReadyTrend(page, {
+    alertEvents: ({ url }) => url.searchParams.get('rule_code') === 'subing_ths_alert_15m_v1' ? [subingEvent('jm')] : [],
+    alertRules: [subingRule()],
+  })
   await page.goto(freeJm)
   await expect(page.locator('[data-detail-workspace="free"]')).toBeVisible()
   await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-research-marker-count', '0')
@@ -517,10 +522,85 @@ test('Free and HTDY stay independent while SuBing remains explicitly unavailable
   await expect(page.getByText('首次识别 Event', { exact: true }).first()).toBeVisible()
 
   await page.goto('/market/chart?symbol=jm&view=subing')
-  await expect(page.getByRole('heading', { name: '当前视角尚未接入统一详情页' })).toBeVisible()
-  await expect(page.getByText('新苏冰 Workspace 尚未接入统一详情页。', { exact: true })).toBeVisible()
-  await expect(page.locator('[data-detail-ready="true"]')).toHaveCount(0)
+  await expect(page.locator('[data-detail-ready="true"]')).toBeVisible()
+  await expect(page.locator('[data-detail-workspace="subing"]')).toBeVisible()
+  await expect(page.getByText(/正式 S↑ \/ S↓ 只来自 AlertEvent/)).toBeVisible()
+  await expect(page.getByText(/S↑ 多头预警/).first()).toBeVisible()
+  await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-alert-marker-count', '1')
+  await expect(page.locator('[data-detail-section="facts"] > div').filter({ hasText: '预警状态' })).toContainText('尚无已评估 Bar')
+  await page.getByRole('button', { name: '历史记录', exact: true }).click()
+  await expect(page.locator('[data-detail-workspace="subing"] .detail-section-tabs__history')).toContainText('Bar 2026-09-03T02:45:00.000Z')
+  expect(requests.alertRequests.every(({ method }) => method === 'GET')).toBe(true)
   expect(requests.newowRequests).toEqual([])
+})
+
+test('SuBing projects Rule-specific runtime warm-up and failure states', async ({ page }) => {
+  let errorType = 'evaluation_warming_up'
+  await mockReadyTrend(page, {
+    alertRules: [subingRule()],
+    subingRuntimeRuleStatus: () => ({ error_type: errorType }),
+  })
+  await page.goto('/market/chart?symbol=jm&view=subing')
+  const statusFact = page.locator('[data-detail-section="facts"] > div').filter({ hasText: '预警状态' })
+  await expect(statusFact).toContainText('正在 warm-up')
+
+  errorType = 'evaluation_failed'
+  await page.reload()
+  await expect(page.locator('[data-detail-ready="true"]')).toBeVisible()
+  await expect(statusFact).toContainText('评估失败')
+})
+
+test('SuBing has stable desktop and narrow viewport visuals with selectable history', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await mockReadyTrend(page, {
+    barsPage: ({ url, symbol }) => url.searchParams.get('frequency') === '15m'
+      ? { bars: Array.from({ length: 40 }, (_, index) => detailBar(symbol, index, 100 + index)) }
+      : undefined,
+    alertEvents: ({ url }) => url.searchParams.get('rule_code') === 'subing_ths_alert_15m_v1' ? [subingEvent('jm')] : [],
+    alertRules: [subingRule()],
+  })
+  await page.goto('/market/chart?symbol=jm&view=subing')
+  const workspace = page.locator('[data-detail-workspace="subing"]')
+  await expect(workspace).toBeVisible()
+  const chart = page.getByTestId('kline-shell')
+  await chart.scrollIntoViewIfNeeded()
+  await expect(page).toHaveScreenshot('market-detail-subing-1440x900.png', {
+    animations: 'disabled', caret: 'hide', maxDiffPixels: 500,
+  })
+
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.getByRole('button', { name: '历史记录', exact: true }).click()
+  await expect(page.getByRole('dialog', { name: '历史记录' })).toContainText('Bar 2026-09-03T02:45:00.000Z')
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  await expect(page).toHaveScreenshot('market-detail-subing-390x844.png', {
+    animations: 'disabled', caret: 'hide', maxDiffPixels: 500,
+  })
+})
+
+test('SuBing marker click opens the matching immutable AlertEvent detail', async ({ page }) => {
+  await mockReadyTrend(page, {
+    alertEvents: ({ url }) => url.searchParams.get('rule_code') === 'subing_ths_alert_15m_v1' ? [subingEvent('jm')] : [],
+    alertRules: [subingRule()],
+  })
+  await page.goto('/market/chart?symbol=jm&view=subing')
+  const chart = page.getByTestId('kline-shell')
+  await chart.scrollIntoViewIfNeeded()
+  const bounds = await chart.boundingBox()
+  if (!bounds) throw new Error('SuBing chart is not visible')
+  await page.mouse.click(bounds.x + bounds.width * 0.714, bounds.y + bounds.height * 0.4)
+  await expect(page.getByRole('dialog', { name: '苏冰预警详情' })).toContainText('S↑ 多头预警 · 2026-09-03T02:45:00.000Z · JM2601')
+})
+
+test('SuBing consumes its exact AlertEvent focus once', async ({ page }) => {
+  await mockReadyTrend(page, {
+    alertEvents: ({ url }) => url.searchParams.get('rule_code') === 'subing_ths_alert_15m_v1' ? [subingEvent('jm')] : [],
+    alertRules: [subingRule()],
+  })
+  const focus = '2026-09-03T02:45:00.000Z'
+  await page.goto(`/market/chart?symbol=jm&view=subing&focus_bar_end=${encodeURIComponent(focus)}`)
+  await expect(page.locator('[data-detail-ready="true"]')).toBeVisible()
+  await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-alert-marker-count', '1')
+  await expect.poll(() => new URL(page.url()).searchParams.has('focus_bar_end')).toBe(false)
 })
 
 test('Trend has stable desktop and narrow viewport visuals', async ({ page }) => {
@@ -646,7 +726,7 @@ test('returning a fixed view to legacy makes its parsed identity explicit', asyn
   await mockMarketDetail(page)
   for (const expected of [
     { path: '/market/chart?symbol=jm&view=trend', frequency: '1d', mounted: true },
-    { path: '/market/chart?symbol=jm&view=subing', frequency: '15m', mounted: false },
+    { path: '/market/chart?symbol=jm&view=subing', frequency: '15m', mounted: true },
   ]) {
     await page.goto(expected.path)
     await page.evaluate(async () => {

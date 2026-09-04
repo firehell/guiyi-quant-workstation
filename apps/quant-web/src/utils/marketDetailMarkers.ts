@@ -9,5 +9,6 @@ export function markersForDetailView(
 ): KlineMarker[] {
   if (view === 'free' || view === 'trend') return []
   if (view === 'htdy') return markers.filter((marker) => marker.alertRuleCode === ALERT_RULE_CODES.HTDY)
-  return [...markers]
+  if (view === 'subing') return markers.filter((marker) => marker.alertRuleCode === ALERT_RULE_CODES.SUBING_THS)
+  return []
 }

@@ -26,3 +26,8 @@ test('HTDY workspace admits only immutable HTDY Event markers', async () => {
   const { markersForDetailView } = await import('../src/utils/marketDetailMarkers.ts')
   assert.deepEqual(markersForDetailView('htdy', allAlertMarkers), [allAlertMarkers[0]])
 })
+
+test('SuBing workspace admits only immutable SuBing Event markers', async () => {
+  const { markersForDetailView } = await import('../src/utils/marketDetailMarkers.ts')
+  assert.deepEqual(markersForDetailView('subing', allAlertMarkers), [allAlertMarkers[1]])
+})
