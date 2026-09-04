@@ -210,7 +210,48 @@
 
 ## Branch 清理
 
-- 尚未执行。
+- Task F 输入 `VALIDATED_HEAD`：`a300262cda5957e55fc8d235bf8024733da769e5`。fresh fetch 前后 `origin/develop` 均为批准 baseline `18a62382685b6deb92010968d4a5a920952fa206`，未触发 rebaseline stop condition。
+- Step 1 open PR readback 只有 #333：`codex/release-v1.9.15@2eb33e6d9f8195847b908e399539c5e12f5ff7b6 -> main`。Task F 时尚无 `chore/develop-convergence` implementation PR；按 Owner 后续交接，Draft implementation PR 在 Task G 创建，当前 task branch 仍为显式保护项。
+- 分类时已从 candidates 显式排除本仓库显示的 remote HEAD symref `origin`，以及 `origin/HEAD`、`origin/main`、`origin/develop`。
+- 16 个普通远端 branch 在删除前逐项通过：`ahead_by=0`、为 fresh `origin/develop` 祖先、ahead log 为空、无 open PR、无 worktree checkout、fresh fetched tip 与审计 tip 相同，且非 `main`/`develop`/active release/current task。全部以显式 branch name 逐项删除，没有 force、通配符、`xargs` 或 history rewrite。
+
+`DELETED`：
+
+- `codex/full-history-residual-repair-004b-closure@8814990e4aa947b71ba730aac1b0458b98306705`
+- `codex/newow-page-v2-coverage-discovery@d2dc53049700d10dab30ee710ca38f7bff21e891`
+- `docs/candidate-validation-v1-plan@9b1c8e5f4bb860fca1ae0dd981766ce5187d7a41`
+- `docs/develop-convergence-design@324d14afdfb6ff4e071df32b68b8b7cbc0e0b71e`
+- `docs/market-detail-v1-remaining-plan@6702bd861789adb2fc97c90ad37f3f88800f547a`
+- `docs/market-home-niuwah-implementation-plan@db5265badbd3899ff03bcc7b49e511687a3beb72`
+- `docs/n-structure-v1-plan@a00e10f6d3fc976cd6eff9d358225756c19c1ad5`
+- `docs/newow-layered-strategy-reconstruction-spec@985120f75293f087293adb128e68a73d82e46acc`
+- `docs/newow-slice-b-cup-engine-spec@e15d87a918eeb128efa790ef185cdfcf0bbed4d4`
+- `docs/newow-slice-b-plan-alignment@5653fc58009014c00da6f4c53a2cfcc38cc1da6f`
+- `docs/subing-ths-alert-15m-v1-implementation-plan@16a8e26bdaa7302ff0046ea5213cff0192b7333c`
+- `docs/subing-ths-alert-15m-v1-plan@f1b65b5e001bdb043999c52a803cbfe5b829852a`
+- `feature/jm-historical-catchup-foundation-s6-02@7f7e633e0abf01198f7159fea46fa252ba1fda55`
+- `feature/newow-trend-page-parity@4085f4dc7e07e29ed4a7981ab19dc9750e5fab0b`
+- `task/demo-20260715-003-github-native-v3-final-e2e@b269828830ce639df0758d6915c747834860e959`
+- `task/demo-wb-v3-001@75e25e4576f76ea2a43c9feedfd9e99d3eb635cd`
+
+`RETAINED`：无未合并/分叉的普通远端 branch。
+
+`PRESERVED`：
+
+- `main@10d19c3a2b266fb0aefb9abd320d96ff46d410aa`：core branch。
+- `develop@18a62382685b6deb92010968d4a5a920952fa206`：core branch 与 fresh remote baseline。
+- `codex/release-v1.9.15@2eb33e6d9f8195847b908e399539c5e12f5ff7b6`：active release 且为 open PR #333 head。
+- `chore/develop-convergence@a300262cda5957e55fc8d235bf8024733da769e5`：current task branch，Task F 时无 remote ref/current PR，仍硬保留。
+- `origin`：指向 `refs/remotes/origin/main` 的 remote HEAD symref，不是 branch candidate。
+
+`LOCAL_WORKTREE_RETAINED`：
+
+- `/Volumes/扩展盘/guiyi-quant-workstation` | `develop@15a557669e39895dc7f243d319f48fb2a695887c` | clean，相对 `origin/develop` ahead 1 | primary/user-owned develop worktree。
+- `/Volumes/扩展盘/guiyi-quant-runtime-v1.9.14-r1` | detached `ca15456eaff988db4fe61c37657ca37302a7f977` | clean | detached Runtime worktree。
+- `/Volumes/扩展盘/guiyi-quant-workstation/.worktrees/develop-convergence` | `chore/develop-convergence@a300262cda5957e55fc8d235bf8024733da769e5` | clean | current task worktree，留待 Task G Owner Gate/集成 readback 后按后续授权处理。
+
+- final `git fetch --prune origin` exit 0，3.56s；`origin/develop` 仍为 baseline。最终远端 branch 只剩 `main`、`develop`、`codex/release-v1.9.15`，open PR 只有 #333。
+- 本任务未删除任何本地 worktree 或 local branch，未进入 Task G，未创建 PR，未合入 `develop`。
 
 ## Review 与集成
 
