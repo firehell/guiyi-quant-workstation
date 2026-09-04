@@ -49,6 +49,7 @@ class _WindowAwareMarketData:
         self._query_counts = dict.fromkeys(probe.keys() | full.keys(), 0)
         self.queries: list[ActualDominantTradingDayQuery] = []
         self.segment_requests: list[tuple[str, date]] = []
+        self.authoritative_requests: list[tuple[str, date, date]] = []
 
     def query_actual_dominant_trading_days(
         self,
@@ -77,6 +78,7 @@ class _WindowAwareMarketData:
         since: date,
         through: date,
     ) -> tuple[ResolvedContractSegment, ...]:
+        self.authoritative_requests.append((symbol, since, through))
         return tuple(
             ResolvedContractSegment(
                 segment.contract,
@@ -384,6 +386,28 @@ def test_loader_rejects_empty_frequency_request_before_market_read() -> None:
 
     assert market_data.queries == []
     assert market_data.segment_requests == []
+
+
+def test_loader_rejects_duplicate_frequencies_before_any_market_read() -> None:
+    market_data = _WindowAwareMarketData(
+        probe={},
+        full={},
+        true_segments=(),
+    )
+
+    with pytest.raises(
+        ActualDominantResearchSegmentIdentityError,
+        match="rank1 frequency identity is duplicated",
+    ):
+        ActualDominantResearchSegmentLoader(market_data).load(
+            symbol="jm",
+            frequencies=(BarFrequency.M5, BarFrequency.M5),
+            since=_DAY_ONE,
+            through=_DAY_TWO,
+        )
+
+    assert market_data.authoritative_requests == []
+    assert market_data.queries == []
 
 
 class _UnavailableMarketData:

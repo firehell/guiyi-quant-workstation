@@ -153,6 +153,10 @@ class ActualDominantResearchSegmentLoader:
             raise ActualDominantResearchSegmentIdentityError(
                 "rank1 segment identity is missing or inconsistent"
             )
+        if len(set(requested_frequencies)) != len(requested_frequencies):
+            raise ActualDominantResearchSegmentIdentityError(
+                "rank1 frequency identity is duplicated"
+            )
 
         authoritative_segments = self._market_data.actual_dominant_segments(
             symbol,
