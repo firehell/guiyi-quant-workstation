@@ -13,7 +13,11 @@ from .models import (
     TrendBandState,
     TrendTransition,
 )
-from .profile import NEWOW_TREND_D1_V1, NewowTrendProfile
+from .profile import NEWOW_TREND_D1_PAGE_V2, NEWOW_TREND_D1_V1, NewowTrendProfile
+
+
+_CLEANROOM_V1 = NEWOW_TREND_D1_V1.trend_band_formula
+_PAGE_V2 = NEWOW_TREND_D1_PAGE_V2.trend_band_formula
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,6 +45,11 @@ def initial_trend_band_state() -> TrendBandStateValue:
 def _typical_price(bar: NewowDailyBar, profile: NewowTrendProfile) -> float | None:
     if not all(value.is_finite() for value in (bar.open, bar.high, bar.low, bar.close)):
         return None
+    if profile.trend_band_formula == _PAGE_V2:
+        value = (float(bar.close) + float(bar.high) + float(bar.low)) / 3.0
+        return value if isfinite(value) else None
+    if profile.trend_band_formula != _CLEANROOM_V1:
+        return None
     close_weight = profile.typical_price_close_weight
     denominator = close_weight + 3.0
     if not isfinite(close_weight) or not isfinite(denominator) or denominator == 0.0:
@@ -57,9 +66,16 @@ def _typical_price(bar: NewowDailyBar, profile: NewowTrendProfile) -> float | No
 def _valid_state(state: TrendBandStateValue, profile: NewowTrendProfile) -> bool:
     weighted_count = len(state.weighted_window)
     signal_count = len(state.signal_window)
+    if profile.trend_band_formula not in {_CLEANROOM_V1, _PAGE_V2}:
+        return False
     if profile.trend_weight_period <= 0 or profile.trend_signal_period <= 0:
         return False
-    if weighted_count > profile.trend_weight_period or signal_count > profile.trend_signal_period:
+    weighted_limit = (
+        profile.trend_signal_period
+        if profile.trend_band_formula == _PAGE_V2
+        else profile.trend_weight_period
+    )
+    if weighted_count > weighted_limit or signal_count > profile.trend_signal_period:
         return False
     if not all(
         isfinite(value) and value > 0.0
@@ -95,8 +111,29 @@ def _valid_state(state: TrendBandStateValue, profile: NewowTrendProfile) -> bool
     ):
         return False
 
+    if profile.trend_band_formula == _PAGE_V2:
+        if weighted_count == 0:
+            return (
+                signal_count == 0
+                and state.previous_state is None
+                and not has_build_close
+            )
+        if signal_count != 1 or state.previous_state not in (
+            TrendBandState.YELLOW,
+            TrendBandState.BLUE,
+        ):
+            return False
+        expected_state = (
+            TrendBandState.YELLOW
+            if state.signal_window[-1] >= sum(state.weighted_window) / weighted_count
+            else TrendBandState.BLUE
+        )
+        return state.previous_state is expected_state
+
     if weighted_count < profile.trend_weight_period:
-        return signal_count == 0 and state.previous_state is None and not has_build_close
+        return (
+            signal_count == 0 and state.previous_state is None and not has_build_close
+        )
     if signal_count == 0:
         return False
     expected_b = sum(
@@ -110,16 +147,24 @@ def _valid_state(state: TrendBandStateValue, profile: NewowTrendProfile) -> bool
         return False
     expected_state = (
         TrendBandState.YELLOW
-        if state.signal_window[-1] >= sum(state.signal_window) / profile.trend_signal_period
+        if state.signal_window[-1]
+        >= sum(state.signal_window) / profile.trend_signal_period
         else TrendBandState.BLUE
     )
     return state.previous_state is expected_state
 
 
-def _marker_id(bar: NewowDailyBar, marker_type: NewowMarkerType, profile: NewowTrendProfile) -> str:
+def _marker_id(
+    bar: NewowDailyBar, marker_type: NewowMarkerType, profile: NewowTrendProfile
+) -> str:
+    strategy_code = (
+        "newow_trend_page_v2"
+        if profile.trend_band_formula == _PAGE_V2
+        else "newow_trend_v1"
+    )
     value = "|".join(
         (
-            "newow_trend_v1",
+            strategy_code,
             profile.trend_band_formula,
             bar.physical_contract,
             marker_type.value,
@@ -136,6 +181,8 @@ def _marker(
     state: TrendBandStateValue,
     state_before: TrendBandState,
     state_after: TrendBandState,
+    signal_price: Decimal,
+    reference_basis: str,
     reference_change_pct: float | None = None,
 ) -> NewowMainMarker:
     marker_id = _marker_id(bar, marker_type, profile)
@@ -144,8 +191,10 @@ def _marker(
             marker_id=marker_id,
             marker_type=marker_type,
             bar_end=bar.bar_end,
-            price=bar.close,
-            label="建仓 / 建仓价:{}\n策略信号参考变化\n非真实成交\n未计手续费、滑点、涨跌停和换月".format(bar.close),
+            price=signal_price,
+            label="建仓 / 建仓价:{}\n策略信号参考变化\n非真实成交\n未计手续费、滑点、涨跌停和换月".format(
+                signal_price
+            ),
             color_token="newow-yellow",
             priority=100,
             related_marker_ids=(),
@@ -153,7 +202,8 @@ def _marker(
                 "state_before": state_before.value,
                 "state_after": state_after.value,
                 "signal_close": bar.close,
-                "reference_basis": "signal_close",
+                "marker_price": signal_price,
+                "reference_basis": reference_basis,
                 "reference_change_pct": None,
             },
             formula_version=profile.trend_band_formula,
@@ -162,13 +212,15 @@ def _marker(
         marker_id=marker_id,
         marker_type=marker_type,
         bar_end=bar.bar_end,
-        price=bar.close,
+        price=signal_price,
         label=(
             "清仓 / {}({:+.2f}%)\n策略信号参考变化\n非真实成交\n未计手续费、滑点、涨跌停和换月".format(
-                bar.close, reference_change_pct
+                signal_price, reference_change_pct
             )
             if reference_change_pct is not None
-            else "清仓 / {}\n策略信号参考变化\n非真实成交\n未计手续费、滑点、涨跌停和换月".format(bar.close)
+            else "清仓 / {}\n策略信号参考变化\n非真实成交\n未计手续费、滑点、涨跌停和换月".format(
+                signal_price
+            )
         ),
         color_token="newow-blue",
         priority=100,
@@ -179,7 +231,8 @@ def _marker(
             "state_before": state_before.value,
             "state_after": state_after.value,
             "signal_close": bar.close,
-            "reference_basis": "signal_close",
+            "marker_price": signal_price,
+            "reference_basis": reference_basis,
             "reference_change_pct": reference_change_pct,
         },
         formula_version=profile.trend_band_formula,
@@ -219,15 +272,21 @@ def _next_state(
     )
 
 
-def _clear_reference_change_pct(bar: NewowDailyBar, state: TrendBandStateValue) -> float | None:
+def _clear_reference_change_pct(
+    signal_price: Decimal, state: TrendBandStateValue
+) -> float | None:
     reference = state.last_build_close
-    if not isinstance(reference, Decimal) or not reference.is_finite() or reference.is_zero():
+    if (
+        not isinstance(reference, Decimal)
+        or not reference.is_finite()
+        or reference.is_zero()
+    ):
         return None
     reference_value = float(reference)
-    close_value = float(bar.close)
-    if not isfinite(reference_value) or not isfinite(close_value):
+    signal_value = float(signal_price)
+    if not isfinite(reference_value) or not isfinite(signal_value):
         return None
-    value = (close_value / reference_value - 1.0) * 100.0
+    value = (signal_value / reference_value - 1.0) * 100.0
     return value if isfinite(value) else None
 
 
@@ -249,7 +308,86 @@ def step_trend_band(
     if typical is None:
         return _unavailable_result(bar)
 
-    weighted_window = (state.weighted_window + (typical,))[-profile.trend_weight_period :]
+    weighted_limit = (
+        profile.trend_signal_period
+        if profile.trend_band_formula == _PAGE_V2
+        else profile.trend_weight_period
+    )
+    weighted_window = (state.weighted_window + (typical,))[-weighted_limit:]
+    if profile.trend_band_formula == _PAGE_V2:
+        a_value = sum(weighted_window[-profile.trend_weight_period :]) / min(
+            len(weighted_window), profile.trend_weight_period
+        )
+        b_value = sum(weighted_window) / len(weighted_window)
+        if not isfinite(a_value) or not isfinite(b_value):
+            return _unavailable_result(bar)
+        current_state = (
+            TrendBandState.YELLOW
+            if float(bar.close) >= b_value
+            else TrendBandState.BLUE
+        )
+        state_before = state.previous_state
+        transition = None
+        marker = None
+        signal_price = Decimal(str(b_value))
+        if (
+            bar.observation_eligible
+            and state_before is not None
+            and current_state is not state_before
+        ):
+            if current_state is TrendBandState.YELLOW:
+                transition = TrendTransition.BUILD
+                marker = _marker(
+                    bar,
+                    NewowMarkerType.BUILD,
+                    profile,
+                    state,
+                    state_before,
+                    TrendBandState.YELLOW,
+                    signal_price,
+                    "trend_slow_band",
+                )
+            elif state.last_build_marker_id is not None:
+                reference_change_pct = _clear_reference_change_pct(signal_price, state)
+                if reference_change_pct is None:
+                    return _unavailable_result(bar)
+                transition = TrendTransition.CLEAR
+                marker = _marker(
+                    bar,
+                    NewowMarkerType.CLEAR,
+                    profile,
+                    state,
+                    state_before,
+                    TrendBandState.BLUE,
+                    signal_price,
+                    "trend_slow_band",
+                    reference_change_pct,
+                )
+        next_build_close = state.last_build_close
+        next_build_marker_id = state.last_build_marker_id
+        if marker is not None and marker.marker_type is NewowMarkerType.BUILD:
+            next_build_close = signal_price
+            next_build_marker_id = marker.marker_id
+        return TrendBandStepResult(
+            state=_next_state(
+                bar,
+                weighted_window,
+                (float(bar.close),),
+                current_state,
+                next_build_close,
+                next_build_marker_id,
+            ),
+            point=NewowTrendBandPoint(
+                bar.bar_end,
+                a_value,
+                b_value,
+                current_state,
+                state_before,
+                transition,
+            ),
+            marker=marker,
+        )
+
     if len(weighted_window) < profile.trend_weight_period:
         return TrendBandStepResult(
             state=_next_state(
@@ -260,13 +398,19 @@ def step_trend_band(
                 state.last_build_close,
                 state.last_build_marker_id,
             ),
-            point=NewowTrendBandPoint(bar.bar_end, None, None, TrendBandState.UNAVAILABLE, state.previous_state),
+            point=NewowTrendBandPoint(
+                bar.bar_end,
+                None,
+                None,
+                TrendBandState.UNAVAILABLE,
+                state.previous_state,
+            ),
             marker=None,
         )
 
-    b_value = sum((index + 1) * value for index, value in enumerate(weighted_window)) / sum(
-        range(1, profile.trend_weight_period + 1)
-    )
+    b_value = sum(
+        (index + 1) * value for index, value in enumerate(weighted_window)
+    ) / sum(range(1, profile.trend_weight_period + 1))
     if not isfinite(b_value):
         return _unavailable_result(bar)
     signal_window = (state.signal_window + (b_value,))[-profile.trend_signal_period :]
@@ -280,7 +424,13 @@ def step_trend_band(
                 state.last_build_close,
                 state.last_build_marker_id,
             ),
-            point=NewowTrendBandPoint(bar.bar_end, b_value, None, TrendBandState.UNAVAILABLE, state.previous_state),
+            point=NewowTrendBandPoint(
+                bar.bar_end,
+                b_value,
+                None,
+                TrendBandState.UNAVAILABLE,
+                state.previous_state,
+            ),
             marker=None,
         )
 
@@ -291,14 +441,25 @@ def step_trend_band(
     state_before = state.previous_state
     transition = None
     marker = None
-    if bar.observation_eligible and state_before is not None and current_state is not state_before:
+    if (
+        bar.observation_eligible
+        and state_before is not None
+        and current_state is not state_before
+    ):
         if current_state is TrendBandState.YELLOW:
             transition = TrendTransition.BUILD
             marker = _marker(
-                bar, NewowMarkerType.BUILD, profile, state, state_before, TrendBandState.YELLOW
+                bar,
+                NewowMarkerType.BUILD,
+                profile,
+                state,
+                state_before,
+                TrendBandState.YELLOW,
+                bar.close,
+                "signal_close",
             )
         elif state.last_build_marker_id is not None:
-            reference_change_pct = _clear_reference_change_pct(bar, state)
+            reference_change_pct = _clear_reference_change_pct(bar.close, state)
             if reference_change_pct is None:
                 return _unavailable_result(bar)
             transition = TrendTransition.CLEAR
@@ -309,6 +470,8 @@ def step_trend_band(
                 state,
                 state_before,
                 TrendBandState.BLUE,
+                bar.close,
+                "signal_close",
                 reference_change_pct,
             )
     next_build_close = state.last_build_close
@@ -325,7 +488,9 @@ def step_trend_band(
             next_build_close,
             next_build_marker_id,
         ),
-        point=NewowTrendBandPoint(bar.bar_end, b_value, c_value, current_state, state_before, transition),
+        point=NewowTrendBandPoint(
+            bar.bar_end, b_value, c_value, current_state, state_before, transition
+        ),
         marker=marker,
     )
 
