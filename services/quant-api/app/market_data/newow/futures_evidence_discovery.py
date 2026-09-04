@@ -36,6 +36,7 @@ from app.market_data.newow.futures_evidence_plan import (
 FROZEN_FREQUENCIES = ("1d", "1w", "60m")
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 REQUIRED_READ_TABLES = (
+    "exchanges",
     "contracts",
     "instruments",
     "trading_calendars",

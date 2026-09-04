@@ -151,6 +151,7 @@ def test_select_only_privilege_gate_requires_exact_allowed_tables() -> None:
     allowed = {
         table: {"SELECT"}
         for table in (
+            "exchanges",
             "contracts",
             "instruments",
             "trading_calendars",
@@ -810,6 +811,7 @@ def test_dependency_runner_validates_read_only_session_before_catalog_discovery(
         table_privileges={
             table: {"SELECT"}
             for table in (
+                "exchanges",
                 "contracts",
                 "instruments",
                 "trading_calendars",
