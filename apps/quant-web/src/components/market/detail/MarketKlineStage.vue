@@ -24,6 +24,7 @@ const props = withDefaults(defineProps<{
 const emit = defineEmits<{
   loadEarlier: []
   'focus-resolved': [focusBarEnd: string]
+  'marker-select': [marker: KlineMarker]
 }>()
 const chart = ref<InstanceType<typeof KlineChart> | null>(null)
 const root = ref<HTMLElement | null>(null)
@@ -101,6 +102,7 @@ onBeforeUnmount(() => document.removeEventListener('fullscreenchange', syncFulls
       :alert-markers="markers"
       @need-more-before="emit('loadEarlier')"
       @follow-latest-change="followLatest = $event"
+      @marker-select="emit('marker-select', $event)"
     />
   </section>
 </template>

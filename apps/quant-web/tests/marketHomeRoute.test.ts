@@ -21,10 +21,8 @@ test('uses only actual-dominant chart route intents for products and immutable H
     rule_code: 'subing_ths_alert_15m_v1',
     bar_end: '2026-09-02T02:45:00Z',
   }), {
-    symbol: 'jm',
-    series_kind: 'actual_dominant',
-    frequency: '15m',
-    focus_bar_end: '2026-09-02T02:45:00Z',
+    view: 'subing', symbol: 'jm', series_kind: 'actual_dominant', contract: undefined,
+    frequency: '15m', focus_bar_end: '2026-09-02T02:45:00Z',
   })
 })
 

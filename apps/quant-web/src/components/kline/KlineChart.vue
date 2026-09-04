@@ -66,6 +66,7 @@ const emit = defineEmits<{
   'need-more-before': []
   'follow-latest-change': [followLatest: boolean]
   'crosshair-change': [context: HoverKlineContext | null]
+  'marker-select': [marker: KlineMarker]
 }>()
 
 const container = ref<HTMLElement>()
@@ -89,6 +90,7 @@ let followLatest = true
 const hoverContext = ref<HoverKlineContext | null>(null)
 const macdLabelTop = ref<number | null>(null)
 let derivedData = buildKlineDerivedData([], [])
+let renderedMarkerById = new Map<string, KlineMarker>()
 
 type EmaIndicatorId = 'ema_10' | 'ema_21' | 'ema_60'
 const EMA_INDICATORS: EmaIndicatorId[] = ['ema_10', 'ema_21', 'ema_60']
@@ -157,6 +159,7 @@ onMounted(async () => {
   chart.priceScale('right', 2).applyOptions({ scaleMargins: { top: 0.15, bottom: 0.1 } })
   chart.timeScale().subscribeVisibleLogicalRangeChange(onVisibleLogicalRangeChange)
   chart.subscribeCrosshairMove(onCrosshairMove)
+  chart.subscribeClick(onClick)
   observer = new ResizeObserver(() => resize())
   observer.observe(container.value)
   container.value.addEventListener('pointerup', syncMacdLabelTop)
@@ -166,6 +169,7 @@ onMounted(async () => {
 onUnmounted(() => {
   chart?.timeScale().unsubscribeVisibleLogicalRangeChange(onVisibleLogicalRangeChange)
   chart?.unsubscribeCrosshairMove(onCrosshairMove)
+  chart?.unsubscribeClick(onClick)
   observer?.disconnect()
   container.value?.removeEventListener('pointerup', syncMacdLabelTop)
   chart?.remove()
@@ -324,6 +328,13 @@ function onCrosshairMove(param: MouseEventParams<Time>) {
   emit('crosshair-change', nextContext)
 }
 
+function onClick(param: MouseEventParams<Time>) {
+  const hovered = param.hoveredInfo
+  if (hovered?.objectKind !== 'series-marker' || typeof hovered.objectId !== 'string') return
+  const marker = renderedMarkerById.get(hovered.objectId)
+  if (marker) emit('marker-select', marker)
+}
+
 function renderAllSeries(): void {
   if (!candles || !volume || !chart) return
   candles.setData(barValues(renderedBars))
@@ -371,7 +382,9 @@ function renderDerivedSeries(): void {
   htdyZk1?.setData(chartValues(derivedData.htdy?.zk1))
   htdyZd1?.setData(chartValues(derivedData.htdy?.zd1))
   htdyZd2?.setData(chartValues(derivedData.htdy?.zd2))
-  const renderedMarkers = chartMarkers(mergedDisplayMarkers())
+  const displayMarkers = mergedDisplayMarkers()
+  const renderedMarkers = chartMarkers(displayMarkers)
+  renderedMarkerById = new Map(displayMarkers.filter((marker) => renderedMarkers.some((rendered) => rendered.id === marker.id)).map((marker) => [marker.id, marker]))
   htdyMarkers?.setMarkers(renderedMarkers)
 }
 
