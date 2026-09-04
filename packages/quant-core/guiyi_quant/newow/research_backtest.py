@@ -524,6 +524,28 @@ def _validate_strict_bar_cost_facts(
         raise ValueError("NEWOW_BACKTEST_BAR_PRICE_TICK_MISMATCH")
 
 
+def _resolve_strict_cost_facts(
+    bars: tuple[NewowResearchBar, ...],
+    *,
+    costs: BacktestCosts = BacktestCosts(),
+    cost_snapshots: tuple[BacktestCostSnapshot, ...],
+) -> dict[str, tuple[BacktestCosts, str | None]]:
+    """Resolve and validate sourced cost facts for every causal input bar."""
+
+    _validate_cost_snapshots(cost_snapshots)
+    strict_costs_by_bar: dict[str, tuple[BacktestCosts, str | None]] = {}
+    for bar in bars:
+        resolved_costs = _resolve_costs(
+            bar,
+            default=costs,
+            snapshots=cost_snapshots,
+            required=True,
+        )
+        _validate_strict_bar_cost_facts(bar, resolved_costs[0])
+        strict_costs_by_bar[bar.source_identity] = resolved_costs
+    return strict_costs_by_bar
+
+
 def _validate_strict_execution_facts(
     costs: BacktestCosts,
     constraint: BacktestExecutionConstraint | None,
@@ -663,21 +685,18 @@ def run_causal_long_only_backtest(
             raise ValueError("NEWOW_BACKTEST_STRATEGY_FORMULA_MISMATCH")
     if type(require_execution_facts) is not bool:
         raise ValueError("NEWOW_BACKTEST_EXECUTION_CONSTRAINT_INVALID")
-    _validate_cost_snapshots(cost_snapshots)
     constraints_by_bar = _index_execution_constraints(execution_constraints)
     sourced_costs_required = require_execution_facts or bool(cost_snapshots)
     constraints_required = require_execution_facts or bool(execution_constraints)
     strict_costs_by_bar: dict[str, tuple[BacktestCosts, str | None]] = {}
     if require_execution_facts:
-        for bar in bars:
-            resolved_costs = _resolve_costs(
-                bar,
-                default=costs,
-                snapshots=cost_snapshots,
-                required=True,
-            )
-            _validate_strict_bar_cost_facts(bar, resolved_costs[0])
-            strict_costs_by_bar[bar.source_identity] = resolved_costs
+        strict_costs_by_bar = _resolve_strict_cost_facts(
+            bars,
+            costs=costs,
+            cost_snapshots=cost_snapshots,
+        )
+    else:
+        _validate_cost_snapshots(cost_snapshots)
     fills: list[BacktestFill] = []
     rejected_fills: list[RejectedFill] = []
     trades: list[BacktestTrade] = []

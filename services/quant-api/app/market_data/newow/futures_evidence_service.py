@@ -41,23 +41,31 @@ def build_newow_futures_evidence_inputs(
     *,
     expected_product: str,
     frequencies: tuple[BarFrequency, ...],
+    through: date,
 ) -> Mapping[BarFrequency, NewowFuturesEvidenceInput]:
-    """Read physical prefixes through MarketDataService and assemble validated inputs."""
+    """Assemble inputs without reading physical prefixes beyond one fold horizon."""
 
     if (
         not frequencies
         or len(set(frequencies)) != len(frequencies)
         or set(loaded.results) != set(frequencies)
+        or type(through) is not date
     ):
         raise NewowFuturesSeriesError
     assembled: dict[BarFrequency, NewowFuturesEvidenceInput] = {}
     for frequency in frequencies:
-        execution_bars = build_newow_research_bars(
-            loaded.results[frequency],
-            authoritative_segments=loaded.authoritative_segments,
-            expected_product=expected_product,
-            expected_frequency=frequency,
+        execution_bars = tuple(
+            bar
+            for bar in build_newow_research_bars(
+                loaded.results[frequency],
+                authoritative_segments=loaded.authoritative_segments,
+                expected_product=expected_product,
+                expected_frequency=frequency,
+            )
+            if bar.trading_day <= through
         )
+        if not execution_bars:
+            raise NewowFuturesSeriesError
         observed_segments = tuple(
             segment
             for segment in loaded.authoritative_segments

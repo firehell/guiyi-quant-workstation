@@ -90,7 +90,7 @@ def contract_warmup_payload(result: ContractWarmupResult) -> dict[str, object]:
     """将 Task 4 的 exact warm-up 公开结果映射为唯一 CLI schema。"""
     plan = result.plan
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "command": "data.contract-warmup",
         "status": result.status,
         "readonly": result.readonly,
@@ -99,7 +99,14 @@ def contract_warmup_payload(result: ContractWarmupResult) -> dict[str, object]:
         "provider": plan.provider,
         "listed_date": plan.listed_date.isoformat(),
         "expired_date": plan.expired_date.isoformat(),
-        "through": plan.through.isoformat(),
+        "requested_window": {
+            "start": plan.listed_date.isoformat(),
+            "through": plan.requested_through.isoformat(),
+        },
+        "effective_window": {
+            "start": plan.listed_date.isoformat(),
+            "through": plan.effective_through.isoformat(),
+        },
         "direct_target_count": plan.direct_target_count,
         "derived_target_count": plan.derived_target_count,
         "expected_bar_count": plan.expected_bar_count,

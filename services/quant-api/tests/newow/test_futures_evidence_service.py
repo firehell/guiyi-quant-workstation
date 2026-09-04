@@ -41,7 +41,11 @@ class _PrefixReader:
         self, request: ContractTradingDayQuery
     ) -> MarketSeriesResult:
         self.requests.append(request)
-        bars = self.pages[request.contract]
+        bars = tuple(
+            bar
+            for bar in self.pages[request.contract]
+            if request.since <= bar.trading_day <= request.through
+        )
         return MarketSeriesResult(
             {
                 "series_kind": "contract",
@@ -96,6 +100,7 @@ def test_loads_prefix_only_for_segments_observed_by_each_frequency() -> None:
         loaded,
         expected_product="rb",
         frequencies=(BarFrequency.W1,),
+        through=weekly_bar.trading_day,
     )
 
     assert tuple(result) == (BarFrequency.W1,)
@@ -107,3 +112,62 @@ def test_loads_prefix_only_for_segments_observed_by_each_frequency() -> None:
     assert reader.requests[0].contract == "RB2610"
     assert reader.requests[0].since == date.min
     assert reader.requests[0].through == weekly_bar.trading_day
+
+
+def test_bounds_physical_prefix_reads_to_the_current_fold_horizon() -> None:
+    first_day = date(2026, 1, 5)
+    current_bar = _bar(first_day, 100)
+    future_bar = _bar(first_day + timedelta(days=1), 101)
+    segments = (
+        ResolvedContractSegment(
+            "RB2610",
+            current_bar.trading_day,
+            future_bar.trading_day,
+        ),
+    )
+    loaded = ActualDominantResearchSeries(
+        MappingProxyType(
+            {
+                BarFrequency.D1: MarketSeriesResult(
+                    {
+                        "series_kind": "actual_dominant",
+                        "symbol": "rb",
+                        "contract": None,
+                        "frequency": "1d",
+                    },
+                    (current_bar, future_bar),
+                    (current_bar.bar_end, future_bar.bar_end),
+                    segments,
+                    (current_bar.trading_day, future_bar.trading_day),
+                )
+            }
+        ),
+        segments,
+    )
+    reader = _PrefixReader(
+        {
+            "RB2610": (
+                _bar(first_day - timedelta(days=1), 99),
+                current_bar,
+                future_bar,
+            )
+        }
+    )
+
+    result = build_newow_futures_evidence_inputs(
+        reader,
+        loaded,
+        expected_product="rb",
+        frequencies=(BarFrequency.D1,),
+        through=current_bar.trading_day,
+    )
+
+    assert reader.requests[0].through == current_bar.trading_day
+    assert tuple(
+        bar.trading_day for bar in result[BarFrequency.D1].execution_bars
+    ) == (current_bar.trading_day,)
+    assert max(
+        bar.trading_day
+        for segment in result[BarFrequency.D1].strategy_replay_segments
+        for bar in segment.bars
+    ) == current_bar.trading_day

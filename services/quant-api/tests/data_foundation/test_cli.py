@@ -49,7 +49,8 @@ class FakeManager:
                 provider="rqdata",
                 listed_date=date(2025, 11, 17),
                 expired_date=date(2026, 11, 13),
-                through=date(2026, 9, 3),
+                requested_through=date(2026, 9, 3),
+                effective_through=date(2026, 9, 3),
                 target_windows=(
                     {
                         "dataset": ("contract", "pf", "PF2611", "1m"),
@@ -264,7 +265,7 @@ def test_contract_warmup_dry_run_builds_active_request_and_fixed_public_payload(
 
     assert code == 0
     assert json.loads(stdout.getvalue()) == {
-        "schema_version": 1,
+        "schema_version": 2,
         "command": "data.contract-warmup",
         "status": "planned",
         "readonly": True,
@@ -273,7 +274,8 @@ def test_contract_warmup_dry_run_builds_active_request_and_fixed_public_payload(
         "provider": "rqdata",
         "listed_date": "2025-11-17",
         "expired_date": "2026-11-13",
-        "through": "2026-09-03",
+        "requested_window": {"start": "2025-11-17", "through": "2026-09-03"},
+        "effective_window": {"start": "2025-11-17", "through": "2026-09-03"},
         "direct_target_count": 1,
         "derived_target_count": 2,
         "expected_bar_count": 7,
@@ -320,6 +322,45 @@ def test_contract_warmup_rejects_symbols_outside_active_authority(
 
     with pytest.raises(ValueError, match="CLI_SYMBOL_INACTIVE"):
         data_commands.build_request(args)
+
+
+def test_contract_warmup_payload_exposes_requested_and_effective_windows() -> None:
+    result = ContractWarmupResult(
+        status="planned",
+        readonly=True,
+        plan=ContractWarmupPlan(
+            symbol="pf",
+            contract="PF2611",
+            provider="rqdata",
+            listed_date=date(2025, 11, 17),
+            expired_date=date(2026, 11, 13),
+            requested_through=date(2026, 12, 1),
+            effective_through=date(2026, 11, 12),
+            target_windows=(),
+            direct_target_count=0,
+            derived_target_count=0,
+            expected_bar_count=0,
+            provider_request_count=0,
+            plan_sha256="a" * 64,
+        ),
+        applied=0,
+        blocked=0,
+        failed=0,
+        provider_requests=0,
+    )
+
+    payload = data_commands.contract_warmup_payload(result)
+
+    assert payload["schema_version"] == 2
+    assert payload["requested_window"] == {
+        "start": "2025-11-17",
+        "through": "2026-12-01",
+    }
+    assert payload["effective_window"] == {
+        "start": "2025-11-17",
+        "through": "2026-11-12",
+    }
+    assert "through" not in payload
 
 
 def test_contract_warmup_apply_failure_is_non_readonly_and_does_not_leak_details(

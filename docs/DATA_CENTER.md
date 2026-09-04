@@ -103,11 +103,12 @@ snapshot 生成 1d/1w。发布前先验证整组完整性，再按涉及的 1d �
 contract 的基础 provider `1m/1d` 和日线派生 `1w`，再由 1m 重建四个日内派生周期。它不接受 repair plan，
 也不产生额外进度或证据文件。
 
-`contract-warmup` 只维护一个已验证 identity 的 physical contract：窗口从 `listed_date` 到不晚于最近完整
-交易日的 `through`，获取该 contract 的 `1m/1d` 基础事实；`1w` 只由同一交易所完整日行情聚合，四个日内
-派生周期只由同 contract `1m` 生成。dry-run 只读输出稳定 plan hash；apply 必须在 maintenance lock 内重算并
-匹配该 hash，且不会写 continuous、其它 contract、MainContractMap、Redis Live、Rule、Scope、Event 或 notification。
-分区失败可明确部分成功，不能自动重试。
+`contract-warmup` 只维护一个已验证 identity 的 physical contract：请求窗口从 `listed_date` 到不晚于最近完整
+交易日的 `requested_window.through`；计划的 `effective_window.through` 再按 `expired_date - 1 day` 截断，获取该
+contract 的 `1m/1d` 基础事实。CLI schema v2 必须同时公开两个窗口，不使用含义不明的单一 `through`；两者也进入
+plan hash identity。`1w` 只由同一交易所完整日行情聚合，四个日内派生周期只由同 contract `1m` 生成。dry-run
+只读输出稳定 plan hash；apply 必须在 maintenance lock 内重算并匹配该 hash，且不会写 continuous、其它 contract、
+MainContractMap、Redis Live、Rule、Scope、Event 或 notification。分区失败可明确部分成功，不能自动重试。
 
 ### 盘后 Runtime 状态合同
 

@@ -527,7 +527,7 @@ def test_contract_warmup_dry_run_has_exact_month_targets_stable_hash_and_no_writ
         for target in expected_targets
     )
     expected_identity = {
-        "schema_version": 1,
+        "schema_version": 2,
         "command": "data.contract-warmup",
         "symbol": "pf",
         "contract": "PF2611",
@@ -569,7 +569,8 @@ def test_contract_warmup_dry_run_has_exact_month_targets_stable_hash_and_no_writ
     assert first.plan.provider == "rqdata"
     assert first.plan.listed_date == listed
     assert first.plan.expired_date == expired
-    assert first.plan.through == through
+    assert first.plan.requested_through == through
+    assert first.plan.effective_through == through
     assert first.plan.target_windows == expected_targets
     assert first.plan.direct_target_count == 6
     assert first.plan.derived_target_count == 8
@@ -1309,7 +1310,8 @@ def test_contract_warmup_contracts_expose_only_the_frozen_public_fields() -> Non
         "provider",
         "listed_date",
         "expired_date",
-        "through",
+        "requested_through",
+        "effective_through",
         "target_windows",
         "direct_target_count",
         "derived_target_count",

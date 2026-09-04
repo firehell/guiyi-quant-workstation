@@ -193,7 +193,8 @@ class ContractWarmupPlan:
     provider: str
     listed_date: date
     expired_date: date
-    through: date
+    requested_through: date
+    effective_through: date
     target_windows: tuple[Mapping[str, object], ...]
     direct_target_count: int
     derived_target_count: int
@@ -645,7 +646,7 @@ class HistoricalDataManager:
         )
         target_windows = tuple(_contract_warmup_target_payload(item) for item in targets)
         plan_identity: Mapping[str, object] = {
-            "schema_version": 1,
+            "schema_version": 2,
             "command": "data.contract-warmup",
             "symbol": symbol,
             "contract": contract,
@@ -682,7 +683,8 @@ class HistoricalDataManager:
                 provider=fact.provider,
                 listed_date=fact.listed_date,
                 expired_date=fact.expired_date,
-                through=request.through,
+                requested_through=request.through,
+                effective_through=effective_through,
                 target_windows=target_windows,
                 direct_target_count=direct_target_count,
                 derived_target_count=len(targets) - direct_target_count,
