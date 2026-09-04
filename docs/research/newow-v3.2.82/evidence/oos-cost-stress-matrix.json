@@ -1,0 +1,2748 @@
+{
+  "blocked_cell_count": 9,
+  "cell_count": 27,
+  "cells": {
+    "m:1d:main_rise": {
+      "scenarios": {
+        "baseline": {
+          "closed_trade_count": 0,
+          "compounded_net_return_pct": "0",
+          "folds": [
+            {
+              "closed_trade_count": 0,
+              "closed_trade_max_drawdown_pct": "0",
+              "compounded_net_return_pct": "0",
+              "fill_count": 1,
+              "incomplete_position_count": 1,
+              "incomplete_reasons": {
+                "DOMINANT_ROLL_EXCLUDED": 1
+              },
+              "loss_count": 0,
+              "name": "fold-1",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 121,
+              "test_since": "2024-01-02",
+              "test_through": "2024-07-04",
+              "train_since": "2023-01-03",
+              "train_through": "2023-12-29",
+              "warmup_bar_count": 242,
+              "win_count": 0
+            },
+            {
+              "closed_trade_count": 0,
+              "closed_trade_max_drawdown_pct": "0",
+              "compounded_net_return_pct": "0",
+              "fill_count": 0,
+              "incomplete_position_count": 0,
+              "incomplete_reasons": {},
+              "loss_count": 0,
+              "name": "fold-2",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 121,
+              "test_since": "2024-07-05",
+              "test_through": "2024-12-31",
+              "train_since": "2023-01-03",
+              "train_through": "2024-07-04",
+              "warmup_bar_count": 363,
+              "win_count": 0
+            }
+          ]
+        },
+        "double_fee": {
+          "closed_trade_count": 0,
+          "compounded_net_return_pct": "0",
+          "folds": [
+            {
+              "closed_trade_count": 0,
+              "closed_trade_max_drawdown_pct": "0",
+              "compounded_net_return_pct": "0",
+              "fill_count": 1,
+              "incomplete_position_count": 1,
+              "incomplete_reasons": {
+                "DOMINANT_ROLL_EXCLUDED": 1
+              },
+              "loss_count": 0,
+              "name": "fold-1",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 121,
+              "test_since": "2024-01-02",
+              "test_through": "2024-07-04",
+              "train_since": "2023-01-03",
+              "train_through": "2023-12-29",
+              "warmup_bar_count": 242,
+              "win_count": 0
+            },
+            {
+              "closed_trade_count": 0,
+              "closed_trade_max_drawdown_pct": "0",
+              "compounded_net_return_pct": "0",
+              "fill_count": 0,
+              "incomplete_position_count": 0,
+              "incomplete_reasons": {},
+              "loss_count": 0,
+              "name": "fold-2",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 121,
+              "test_since": "2024-07-05",
+              "test_through": "2024-12-31",
+              "train_since": "2023-01-03",
+              "train_through": "2024-07-04",
+              "warmup_bar_count": 363,
+              "win_count": 0
+            }
+          ]
+        },
+        "double_slippage": {
+          "closed_trade_count": 0,
+          "compounded_net_return_pct": "0",
+          "folds": [
+            {
+              "closed_trade_count": 0,
+              "closed_trade_max_drawdown_pct": "0",
+              "compounded_net_return_pct": "0",
+              "fill_count": 1,
+              "incomplete_position_count": 1,
+              "incomplete_reasons": {
+                "DOMINANT_ROLL_EXCLUDED": 1
+              },
+              "loss_count": 0,
+              "name": "fold-1",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 121,
+              "test_since": "2024-01-02",
+              "test_through": "2024-07-04",
+              "train_since": "2023-01-03",
+              "train_through": "2023-12-29",
+              "warmup_bar_count": 242,
+              "win_count": 0
+            },
+            {
+              "closed_trade_count": 0,
+              "closed_trade_max_drawdown_pct": "0",
+              "compounded_net_return_pct": "0",
+              "fill_count": 0,
+              "incomplete_position_count": 0,
+              "incomplete_reasons": {},
+              "loss_count": 0,
+              "name": "fold-2",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 121,
+              "test_since": "2024-07-05",
+              "test_through": "2024-12-31",
+              "train_since": "2023-01-03",
+              "train_through": "2024-07-04",
+              "warmup_bar_count": 363,
+              "win_count": 0
+            }
+          ]
+        }
+      },
+      "status": "passed"
+    },
+    "m:1d:oscillation": {
+      "scenarios": {
+        "baseline": {
+          "closed_trade_count": 4,
+          "compounded_net_return_pct": "-10.10615328546577587314671315",
+          "folds": [
+            {
+              "closed_trade_count": 2,
+              "closed_trade_max_drawdown_pct": "9.743774115500948628259090010",
+              "compounded_net_return_pct": "-9.743774115500948628259090010",
+              "fill_count": 5,
+              "incomplete_position_count": 1,
+              "incomplete_reasons": {
+                "DOMINANT_ROLL_EXCLUDED": 1
+              },
+              "loss_count": 2,
+              "name": "fold-1",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 121,
+              "test_since": "2024-01-02",
+              "test_through": "2024-07-04",
+              "train_since": "2023-01-03",
+              "train_through": "2023-12-29",
+              "warmup_bar_count": 242,
+              "win_count": 0
+            },
+            {
+              "closed_trade_count": 2,
+              "closed_trade_max_drawdown_pct": "3.305396158789348876780768602",
+              "compounded_net_return_pct": "-0.4015004687084568492735308300",
+              "fill_count": 5,
+              "incomplete_position_count": 1,
+              "incomplete_reasons": {
+                "DOMINANT_ROLL_EXCLUDED": 1
+              },
+              "loss_count": 1,
+              "name": "fold-2",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 121,
+              "test_since": "2024-07-05",
+              "test_through": "2024-12-31",
+              "train_since": "2023-01-03",
+              "train_through": "2024-07-04",
+              "warmup_bar_count": 363,
+              "win_count": 1
+            }
+          ]
+        },
+        "double_fee": {
+          "closed_trade_count": 4,
+          "compounded_net_return_pct": "-10.14129707668781841826565418",
+          "folds": [
+            {
+              "closed_trade_count": 2,
+              "closed_trade_max_drawdown_pct": "9.760259889030082584393615330",
+              "compounded_net_return_pct": "-9.760259889030082584393615330",
+              "fill_count": 5,
+              "incomplete_position_count": 1,
+              "incomplete_reasons": {
+                "DOMINANT_ROLL_EXCLUDED": 1
+              },
+              "loss_count": 2,
+              "name": "fold-1",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 121,
+              "test_since": "2024-01-02",
+              "test_through": "2024-07-04",
+              "train_since": "2023-01-03",
+              "train_through": "2023-12-29",
+              "warmup_bar_count": 242,
+              "win_count": 0
+            },
+            {
+              "closed_trade_count": 2,
+              "closed_trade_max_drawdown_pct": "3.316077182058429569561597219",
+              "compounded_net_return_pct": "-0.4222498726050911704252095700",
+              "fill_count": 5,
+              "incomplete_position_count": 1,
+              "incomplete_reasons": {
+                "DOMINANT_ROLL_EXCLUDED": 1
+              },
+              "loss_count": 1,
+              "name": "fold-2",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 121,
+              "test_since": "2024-07-05",
+              "test_through": "2024-12-31",
+              "train_since": "2023-01-03",
+              "train_through": "2024-07-04",
+              "warmup_bar_count": 363,
+              "win_count": 1
+            }
+          ]
+        },
+        "double_slippage": {
+          "closed_trade_count": 4,
+          "compounded_net_return_pct": "-10.34018673462635164178239732",
+          "folds": [
+            {
+              "closed_trade_count": 2,
+              "closed_trade_max_drawdown_pct": "9.853623173581799791255859140",
+              "compounded_net_return_pct": "-9.853623173581799791255859140",
+              "fill_count": 5,
+              "incomplete_position_count": 1,
+              "incomplete_reasons": {
+                "DOMINANT_ROLL_EXCLUDED": 1
+              },
+              "loss_count": 2,
+              "name": "fold-1",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 121,
+              "test_since": "2024-01-02",
+              "test_through": "2024-07-04",
+              "train_since": "2023-01-03",
+              "train_through": "2023-12-29",
+              "warmup_bar_count": 242,
+              "win_count": 0
+            },
+            {
+              "closed_trade_count": 2,
+              "closed_trade_max_drawdown_pct": "3.376581075945931274089354540",
+              "compounded_net_return_pct": "-0.5397483273026676506385909700",
+              "fill_count": 5,
+              "incomplete_position_count": 1,
+              "incomplete_reasons": {
+                "DOMINANT_ROLL_EXCLUDED": 1
+              },
+              "loss_count": 1,
+              "name": "fold-2",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 121,
+              "test_since": "2024-07-05",
+              "test_through": "2024-12-31",
+              "train_since": "2023-01-03",
+              "train_through": "2024-07-04",
+              "warmup_bar_count": 363,
+              "win_count": 1
+            }
+          ]
+        }
+      },
+      "status": "passed"
+    },
+    "m:1d:trend": {
+      "scenarios": {
+        "baseline": {
+          "closed_trade_count": 18,
+          "compounded_net_return_pct": "-2.762474285331125720093669580",
+          "folds": [
+            {
+              "closed_trade_count": 8,
+              "closed_trade_max_drawdown_pct": "2.965426460261960321027493507",
+              "compounded_net_return_pct": "6.569616070111677792076789700",
+              "fill_count": 17,
+              "incomplete_position_count": 1,
+              "incomplete_reasons": {
+                "END_OF_SAMPLE_EXCLUDED": 1
+              },
+              "loss_count": 6,
+              "name": "fold-1",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 121,
+              "test_since": "2024-01-02",
+              "test_through": "2024-07-04",
+              "train_since": "2023-01-03",
+              "train_through": "2023-12-29",
+              "warmup_bar_count": 242,
+              "win_count": 2
+            },
+            {
+              "closed_trade_count": 10,
+              "closed_trade_max_drawdown_pct": "8.756802078843244263695199710",
+              "compounded_net_return_pct": "-8.756802078843244263695199710",
+              "fill_count": 22,
+              "incomplete_position_count": 2,
+              "incomplete_reasons": {
+                "DOMINANT_ROLL_EXCLUDED": 1,
+                "END_OF_SAMPLE_EXCLUDED": 1
+              },
+              "loss_count": 9,
+              "name": "fold-2",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 121,
+              "test_since": "2024-07-05",
+              "test_through": "2024-12-31",
+              "train_since": "2023-01-03",
+              "train_through": "2024-07-04",
+              "warmup_bar_count": 363,
+              "win_count": 1
+            }
+          ]
+        },
+        "double_fee": {
+          "closed_trade_count": 18,
+          "compounded_net_return_pct": "-2.933363034974956535117570810",
+          "folds": [
+            {
+              "closed_trade_count": 8,
+              "closed_trade_max_drawdown_pct": "2.983021873358034796334117400",
+              "compounded_net_return_pct": "6.489874493234063006643162000",
+              "fill_count": 17,
+              "incomplete_position_count": 1,
+              "incomplete_reasons": {
+                "END_OF_SAMPLE_EXCLUDED": 1
+              },
+              "loss_count": 6,
+              "name": "fold-1",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 121,
+              "test_since": "2024-01-02",
+              "test_through": "2024-07-04",
+              "train_since": "2023-01-03",
+              "train_through": "2023-12-29",
+              "warmup_bar_count": 242,
+              "win_count": 2
+            },
+            {
+              "closed_trade_count": 10,
+              "closed_trade_max_drawdown_pct": "8.848951670806724480063231730",
+              "compounded_net_return_pct": "-8.848951670806724480063231730",
+              "fill_count": 22,
+              "incomplete_position_count": 2,
+              "incomplete_reasons": {
+                "DOMINANT_ROLL_EXCLUDED": 1,
+                "END_OF_SAMPLE_EXCLUDED": 1
+              },
+              "loss_count": 9,
+              "name": "fold-2",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 121,
+              "test_since": "2024-07-05",
+              "test_through": "2024-12-31",
+              "train_since": "2023-01-03",
+              "train_through": "2024-07-04",
+              "warmup_bar_count": 363,
+              "win_count": 1
+            }
+          ]
+        },
+        "double_slippage": {
+          "closed_trade_count": 18,
+          "compounded_net_return_pct": "-3.896075645371220641726444360",
+          "folds": [
+            {
+              "closed_trade_count": 8,
+              "closed_trade_max_drawdown_pct": "3.082669194364412893089190258",
+              "compounded_net_return_pct": "6.039131810832609606401211300",
+              "fill_count": 17,
+              "incomplete_position_count": 1,
+              "incomplete_reasons": {
+                "END_OF_SAMPLE_EXCLUDED": 1
+              },
+              "loss_count": 6,
+              "name": "fold-1",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 121,
+              "test_since": "2024-01-02",
+              "test_through": "2024-07-04",
+              "train_since": "2023-01-03",
+              "train_through": "2023-12-29",
+              "warmup_bar_count": 242,
+              "win_count": 2
+            },
+            {
+              "closed_trade_count": 10,
+              "closed_trade_max_drawdown_pct": "9.369378347917482731739106260",
+              "compounded_net_return_pct": "-9.369378347917482731739106260",
+              "fill_count": 22,
+              "incomplete_position_count": 2,
+              "incomplete_reasons": {
+                "DOMINANT_ROLL_EXCLUDED": 1,
+                "END_OF_SAMPLE_EXCLUDED": 1
+              },
+              "loss_count": 9,
+              "name": "fold-2",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 121,
+              "test_since": "2024-07-05",
+              "test_through": "2024-12-31",
+              "train_since": "2023-01-03",
+              "train_through": "2024-07-04",
+              "warmup_bar_count": 363,
+              "win_count": 1
+            }
+          ]
+        }
+      },
+      "status": "passed"
+    },
+    "m:1w:main_rise": {
+      "detail": "one daily limit pair cannot simultaneously validate an aggregated weekly OHLC range and the first-day next-open lock condition",
+      "reason": "NEWOW_WEEKLY_EXECUTION_LIMIT_CONTRACT_INSUFFICIENT",
+      "status": "blocked"
+    },
+    "m:1w:oscillation": {
+      "detail": "one daily limit pair cannot simultaneously validate an aggregated weekly OHLC range and the first-day next-open lock condition",
+      "reason": "NEWOW_WEEKLY_EXECUTION_LIMIT_CONTRACT_INSUFFICIENT",
+      "status": "blocked"
+    },
+    "m:1w:trend": {
+      "detail": "one daily limit pair cannot simultaneously validate an aggregated weekly OHLC range and the first-day next-open lock condition",
+      "reason": "NEWOW_WEEKLY_EXECUTION_LIMIT_CONTRACT_INSUFFICIENT",
+      "status": "blocked"
+    },
+    "m:60m:main_rise": {
+      "scenarios": {
+        "baseline": {
+          "closed_trade_count": 19,
+          "compounded_net_return_pct": "1.112344413071771472974375400",
+          "folds": [
+            {
+              "closed_trade_count": 10,
+              "closed_trade_max_drawdown_pct": "5.206618383697942213538729800",
+              "compounded_net_return_pct": "3.525238736411095490291414300",
+              "fill_count": 21,
+              "incomplete_position_count": 1,
+              "incomplete_reasons": {
+                "END_OF_SAMPLE_EXCLUDED": 1
+              },
+              "loss_count": 6,
+              "name": "fold-1",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 837,
+              "test_since": "2024-01-02",
+              "test_through": "2024-07-04",
+              "train_since": "2023-01-03",
+              "train_through": "2023-12-29",
+              "warmup_bar_count": 1682,
+              "win_count": 4
+            },
+            {
+              "closed_trade_count": 9,
+              "closed_trade_max_drawdown_pct": "3.246232892855459359238250870",
+              "compounded_net_return_pct": "-2.330730508608505634101224430",
+              "fill_count": 20,
+              "incomplete_position_count": 2,
+              "incomplete_reasons": {
+                "DOMINANT_ROLL_EXCLUDED": 1,
+                "END_OF_SAMPLE_EXCLUDED": 1
+              },
+              "loss_count": 6,
+              "name": "fold-2",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 843,
+              "test_since": "2024-07-05",
+              "test_through": "2024-12-31",
+              "train_since": "2023-01-03",
+              "train_through": "2024-07-04",
+              "warmup_bar_count": 2519,
+              "win_count": 3
+            }
+          ]
+        },
+        "double_fee": {
+          "closed_trade_count": 19,
+          "compounded_net_return_pct": "0.927946879643524094667423800",
+          "folds": [
+            {
+              "closed_trade_count": 10,
+              "closed_trade_max_drawdown_pct": "5.235017915490668437961658220",
+              "compounded_net_return_pct": "3.429885632173412399545291900",
+              "fill_count": 21,
+              "incomplete_position_count": 1,
+              "incomplete_reasons": {
+                "END_OF_SAMPLE_EXCLUDED": 1
+              },
+              "loss_count": 6,
+              "name": "fold-1",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 837,
+              "test_since": "2024-01-02",
+              "test_through": "2024-07-04",
+              "train_since": "2023-01-03",
+              "train_through": "2023-12-29",
+              "warmup_bar_count": 1682,
+              "win_count": 4
+            },
+            {
+              "closed_trade_count": 9,
+              "closed_trade_max_drawdown_pct": "3.255507023222197781478804640",
+              "compounded_net_return_pct": "-2.418970819930620562493329700",
+              "fill_count": 20,
+              "incomplete_position_count": 2,
+              "incomplete_reasons": {
+                "DOMINANT_ROLL_EXCLUDED": 1,
+                "END_OF_SAMPLE_EXCLUDED": 1
+              },
+              "loss_count": 6,
+              "name": "fold-2",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 843,
+              "test_since": "2024-07-05",
+              "test_through": "2024-12-31",
+              "train_since": "2023-01-03",
+              "train_through": "2024-07-04",
+              "warmup_bar_count": 2519,
+              "win_count": 3
+            }
+          ]
+        },
+        "double_slippage": {
+          "closed_trade_count": 19,
+          "compounded_net_return_pct": "-0.1106384584610287728011566100",
+          "folds": [
+            {
+              "closed_trade_count": 10,
+              "closed_trade_max_drawdown_pct": "5.395788439405731950880666940",
+              "compounded_net_return_pct": "2.891208166116153747556821500",
+              "fill_count": 21,
+              "incomplete_position_count": 1,
+              "incomplete_reasons": {
+                "END_OF_SAMPLE_EXCLUDED": 1
+              },
+              "loss_count": 6,
+              "name": "fold-1",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 837,
+              "test_since": "2024-01-02",
+              "test_through": "2024-07-04",
+              "train_since": "2023-01-03",
+              "train_through": "2023-12-29",
+              "warmup_bar_count": 1682,
+              "win_count": 4
+            },
+            {
+              "closed_trade_count": 9,
+              "closed_trade_max_drawdown_pct": "3.524342314569181550793001759",
+              "compounded_net_return_pct": "-2.917495749229371275327704300",
+              "fill_count": 20,
+              "incomplete_position_count": 2,
+              "incomplete_reasons": {
+                "DOMINANT_ROLL_EXCLUDED": 1,
+                "END_OF_SAMPLE_EXCLUDED": 1
+              },
+              "loss_count": 6,
+              "name": "fold-2",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 843,
+              "test_since": "2024-07-05",
+              "test_through": "2024-12-31",
+              "train_since": "2023-01-03",
+              "train_through": "2024-07-04",
+              "warmup_bar_count": 2519,
+              "win_count": 3
+            }
+          ]
+        }
+      },
+      "status": "passed"
+    },
+    "m:60m:oscillation": {
+      "scenarios": {
+        "baseline": {
+          "closed_trade_count": 53,
+          "compounded_net_return_pct": "-8.289804256614094029193639590",
+          "folds": [
+            {
+              "closed_trade_count": 28,
+              "closed_trade_max_drawdown_pct": "6.343315502495981981098391002",
+              "compounded_net_return_pct": "0.345536283288745991431793800",
+              "fill_count": 57,
+              "incomplete_position_count": 1,
+              "incomplete_reasons": {
+                "END_OF_SAMPLE_EXCLUDED": 1
+              },
+              "loss_count": 12,
+              "name": "fold-1",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 837,
+              "test_since": "2024-01-02",
+              "test_through": "2024-07-04",
+              "train_since": "2023-01-03",
+              "train_through": "2023-12-29",
+              "warmup_bar_count": 1682,
+              "win_count": 16
+            },
+            {
+              "closed_trade_count": 25,
+              "closed_trade_max_drawdown_pct": "9.507773506904875278495972440",
+              "compounded_net_return_pct": "-8.605605052051472806616444590",
+              "fill_count": 52,
+              "incomplete_position_count": 2,
+              "incomplete_reasons": {
+                "DOMINANT_ROLL_EXCLUDED": 2
+              },
+              "loss_count": 10,
+              "name": "fold-2",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 843,
+              "test_since": "2024-07-05",
+              "test_through": "2024-12-31",
+              "train_since": "2023-01-03",
+              "train_through": "2024-07-04",
+              "warmup_bar_count": 2519,
+              "win_count": 15
+            }
+          ]
+        },
+        "double_fee": {
+          "closed_trade_count": 53,
+          "compounded_net_return_pct": "-8.757468450895045969557455630",
+          "folds": [
+            {
+              "closed_trade_count": 28,
+              "closed_trade_max_drawdown_pct": "6.407949953713021914531489943",
+              "compounded_net_return_pct": "0.088444161536757988499265200",
+              "fill_count": 57,
+              "incomplete_position_count": 1,
+              "incomplete_reasons": {
+                "END_OF_SAMPLE_EXCLUDED": 1
+              },
+              "loss_count": 12,
+              "name": "fold-1",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 837,
+              "test_since": "2024-01-02",
+              "test_through": "2024-07-04",
+              "train_since": "2023-01-03",
+              "train_through": "2023-12-29",
+              "warmup_bar_count": 1682,
+              "win_count": 16
+            },
+            {
+              "closed_trade_count": 25,
+              "closed_trade_max_drawdown_pct": "9.727907741582509730905573100",
+              "compounded_net_return_pct": "-8.838095832676777832647688340",
+              "fill_count": 52,
+              "incomplete_position_count": 2,
+              "incomplete_reasons": {
+                "DOMINANT_ROLL_EXCLUDED": 2
+              },
+              "loss_count": 10,
+              "name": "fold-2",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 843,
+              "test_since": "2024-07-05",
+              "test_through": "2024-12-31",
+              "train_since": "2023-01-03",
+              "train_through": "2024-07-04",
+              "warmup_bar_count": 2519,
+              "win_count": 15
+            }
+          ]
+        },
+        "double_slippage": {
+          "closed_trade_count": 53,
+          "compounded_net_return_pct": "-11.36287601596615991244841716",
+          "folds": [
+            {
+              "closed_trade_count": 28,
+              "closed_trade_max_drawdown_pct": "6.773370749170990815423580957",
+              "compounded_net_return_pct": "-1.356018851446312760547879180",
+              "fill_count": 57,
+              "incomplete_position_count": 1,
+              "incomplete_reasons": {
+                "END_OF_SAMPLE_EXCLUDED": 1
+              },
+              "loss_count": 13,
+              "name": "fold-1",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 837,
+              "test_since": "2024-01-02",
+              "test_through": "2024-07-04",
+              "train_since": "2023-01-03",
+              "train_through": "2023-12-29",
+              "warmup_bar_count": 1682,
+              "win_count": 15
+            },
+            {
+              "closed_trade_count": 25,
+              "closed_trade_max_drawdown_pct": "10.96525909879970453480797071",
+              "compounded_net_return_pct": "-10.14441737651478308659109475",
+              "fill_count": 52,
+              "incomplete_position_count": 2,
+              "incomplete_reasons": {
+                "DOMINANT_ROLL_EXCLUDED": 2
+              },
+              "loss_count": 10,
+              "name": "fold-2",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 843,
+              "test_since": "2024-07-05",
+              "test_through": "2024-12-31",
+              "train_since": "2023-01-03",
+              "train_through": "2024-07-04",
+              "warmup_bar_count": 2519,
+              "win_count": 15
+            }
+          ]
+        }
+      },
+      "status": "passed"
+    },
+    "m:60m:trend": {
+      "scenarios": {
+        "baseline": {
+          "closed_trade_count": 142,
+          "compounded_net_return_pct": "-19.40813187549974779515339760",
+          "folds": [
+            {
+              "closed_trade_count": 74,
+              "closed_trade_max_drawdown_pct": "10.22038569513366031670095528",
+              "compounded_net_return_pct": "-6.279981778032524014204279130",
+              "fill_count": 149,
+              "incomplete_position_count": 1,
+              "incomplete_reasons": {
+                "DOMINANT_ROLL_EXCLUDED": 1
+              },
+              "loss_count": 58,
+              "name": "fold-1",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 837,
+              "test_since": "2024-01-02",
+              "test_through": "2024-07-04",
+              "train_since": "2023-01-03",
+              "train_through": "2023-12-29",
+              "warmup_bar_count": 1682,
+              "win_count": 16
+            },
+            {
+              "closed_trade_count": 68,
+              "closed_trade_max_drawdown_pct": "17.31614462837816390745844038",
+              "compounded_net_return_pct": "-14.00783989005889343390216856",
+              "fill_count": 137,
+              "incomplete_position_count": 1,
+              "incomplete_reasons": {
+                "END_OF_SAMPLE_EXCLUDED": 1
+              },
+              "loss_count": 52,
+              "name": "fold-2",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 843,
+              "test_since": "2024-07-05",
+              "test_through": "2024-12-31",
+              "train_since": "2023-01-03",
+              "train_through": "2024-07-04",
+              "warmup_bar_count": 2519,
+              "win_count": 16
+            }
+          ]
+        },
+        "double_fee": {
+          "closed_trade_count": 142,
+          "compounded_net_return_pct": "-20.50071229150812918232418201",
+          "folds": [
+            {
+              "closed_trade_count": 74,
+              "closed_trade_max_drawdown_pct": "10.46908122233372480515129205",
+              "compounded_net_return_pct": "-6.910687344381725321903402590",
+              "fill_count": 149,
+              "incomplete_position_count": 1,
+              "incomplete_reasons": {
+                "DOMINANT_ROLL_EXCLUDED": 1
+              },
+              "loss_count": 58,
+              "name": "fold-1",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 837,
+              "test_since": "2024-01-02",
+              "test_through": "2024-07-04",
+              "train_since": "2023-01-03",
+              "train_through": "2023-12-29",
+              "warmup_bar_count": 1682,
+              "win_count": 16
+            },
+            {
+              "closed_trade_count": 68,
+              "closed_trade_max_drawdown_pct": "17.83330906042783930023943334",
+              "compounded_net_return_pct": "-14.59890997090330003446147475",
+              "fill_count": 137,
+              "incomplete_position_count": 1,
+              "incomplete_reasons": {
+                "END_OF_SAMPLE_EXCLUDED": 1
+              },
+              "loss_count": 52,
+              "name": "fold-2",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 843,
+              "test_since": "2024-07-05",
+              "test_through": "2024-12-31",
+              "train_since": "2023-01-03",
+              "train_through": "2024-07-04",
+              "warmup_bar_count": 2519,
+              "win_count": 16
+            }
+          ]
+        },
+        "double_slippage": {
+          "closed_trade_count": 142,
+          "compounded_net_return_pct": "-26.41804691629954651237995614",
+          "folds": [
+            {
+              "closed_trade_count": 74,
+              "closed_trade_max_drawdown_pct": "12.00772660192319157343229719",
+              "compounded_net_return_pct": "-10.40534734176957817415760684",
+              "fill_count": 149,
+              "incomplete_position_count": 1,
+              "incomplete_reasons": {
+                "DOMINANT_ROLL_EXCLUDED": 1
+              },
+              "loss_count": 58,
+              "name": "fold-1",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 837,
+              "test_since": "2024-01-02",
+              "test_through": "2024-07-04",
+              "train_since": "2023-01-03",
+              "train_through": "2023-12-29",
+              "warmup_bar_count": 1682,
+              "win_count": 16
+            },
+            {
+              "closed_trade_count": 68,
+              "closed_trade_max_drawdown_pct": "20.70339993392395246192806330",
+              "compounded_net_return_pct": "-17.87238311600172916954187464",
+              "fill_count": 137,
+              "incomplete_position_count": 1,
+              "incomplete_reasons": {
+                "END_OF_SAMPLE_EXCLUDED": 1
+              },
+              "loss_count": 54,
+              "name": "fold-2",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 843,
+              "test_since": "2024-07-05",
+              "test_through": "2024-12-31",
+              "train_since": "2023-01-03",
+              "train_through": "2024-07-04",
+              "warmup_bar_count": 2519,
+              "win_count": 14
+            }
+          ]
+        }
+      },
+      "status": "passed"
+    },
+    "rb:1d:main_rise": {
+      "scenarios": {
+        "baseline": {
+          "closed_trade_count": 0,
+          "compounded_net_return_pct": "0",
+          "folds": [
+            {
+              "closed_trade_count": 0,
+              "closed_trade_max_drawdown_pct": "0",
+              "compounded_net_return_pct": "0",
+              "fill_count": 0,
+              "incomplete_position_count": 0,
+              "incomplete_reasons": {},
+              "loss_count": 0,
+              "name": "fold-1",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 121,
+              "test_since": "2024-01-02",
+              "test_through": "2024-07-04",
+              "train_since": "2023-01-03",
+              "train_through": "2023-12-29",
+              "warmup_bar_count": 242,
+              "win_count": 0
+            },
+            {
+              "closed_trade_count": 0,
+              "closed_trade_max_drawdown_pct": "0",
+              "compounded_net_return_pct": "0",
+              "fill_count": 0,
+              "incomplete_position_count": 0,
+              "incomplete_reasons": {},
+              "loss_count": 0,
+              "name": "fold-2",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 121,
+              "test_since": "2024-07-05",
+              "test_through": "2024-12-31",
+              "train_since": "2023-01-03",
+              "train_through": "2024-07-04",
+              "warmup_bar_count": 363,
+              "win_count": 0
+            }
+          ]
+        },
+        "double_fee": {
+          "closed_trade_count": 0,
+          "compounded_net_return_pct": "0",
+          "folds": [
+            {
+              "closed_trade_count": 0,
+              "closed_trade_max_drawdown_pct": "0",
+              "compounded_net_return_pct": "0",
+              "fill_count": 0,
+              "incomplete_position_count": 0,
+              "incomplete_reasons": {},
+              "loss_count": 0,
+              "name": "fold-1",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 121,
+              "test_since": "2024-01-02",
+              "test_through": "2024-07-04",
+              "train_since": "2023-01-03",
+              "train_through": "2023-12-29",
+              "warmup_bar_count": 242,
+              "win_count": 0
+            },
+            {
+              "closed_trade_count": 0,
+              "closed_trade_max_drawdown_pct": "0",
+              "compounded_net_return_pct": "0",
+              "fill_count": 0,
+              "incomplete_position_count": 0,
+              "incomplete_reasons": {},
+              "loss_count": 0,
+              "name": "fold-2",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 121,
+              "test_since": "2024-07-05",
+              "test_through": "2024-12-31",
+              "train_since": "2023-01-03",
+              "train_through": "2024-07-04",
+              "warmup_bar_count": 363,
+              "win_count": 0
+            }
+          ]
+        },
+        "double_slippage": {
+          "closed_trade_count": 0,
+          "compounded_net_return_pct": "0",
+          "folds": [
+            {
+              "closed_trade_count": 0,
+              "closed_trade_max_drawdown_pct": "0",
+              "compounded_net_return_pct": "0",
+              "fill_count": 0,
+              "incomplete_position_count": 0,
+              "incomplete_reasons": {},
+              "loss_count": 0,
+              "name": "fold-1",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 121,
+              "test_since": "2024-01-02",
+              "test_through": "2024-07-04",
+              "train_since": "2023-01-03",
+              "train_through": "2023-12-29",
+              "warmup_bar_count": 242,
+              "win_count": 0
+            },
+            {
+              "closed_trade_count": 0,
+              "closed_trade_max_drawdown_pct": "0",
+              "compounded_net_return_pct": "0",
+              "fill_count": 0,
+              "incomplete_position_count": 0,
+              "incomplete_reasons": {},
+              "loss_count": 0,
+              "name": "fold-2",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 121,
+              "test_since": "2024-07-05",
+              "test_through": "2024-12-31",
+              "train_since": "2023-01-03",
+              "train_through": "2024-07-04",
+              "warmup_bar_count": 363,
+              "win_count": 0
+            }
+          ]
+        }
+      },
+      "status": "passed"
+    },
+    "rb:1d:oscillation": {
+      "scenarios": {
+        "baseline": {
+          "closed_trade_count": 5,
+          "compounded_net_return_pct": "-4.242039663055437374944132000",
+          "folds": [
+            {
+              "closed_trade_count": 2,
+              "closed_trade_max_drawdown_pct": "0.4462984852756259362777040600",
+              "compounded_net_return_pct": "1.437964805080669895440649900",
+              "fill_count": 6,
+              "incomplete_position_count": 2,
+              "incomplete_reasons": {
+                "DOMINANT_ROLL_EXCLUDED": 1,
+                "END_OF_SAMPLE_EXCLUDED": 1
+              },
+              "loss_count": 1,
+              "name": "fold-1",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 121,
+              "test_since": "2024-01-02",
+              "test_through": "2024-07-04",
+              "train_since": "2023-01-03",
+              "train_through": "2023-12-29",
+              "warmup_bar_count": 242,
+              "win_count": 1
+            },
+            {
+              "closed_trade_count": 3,
+              "closed_trade_max_drawdown_pct": "7.101463270672362313112670480",
+              "compounded_net_return_pct": "-5.599485832597871560795073850",
+              "fill_count": 7,
+              "incomplete_position_count": 1,
+              "incomplete_reasons": {
+                "END_OF_SAMPLE_EXCLUDED": 1
+              },
+              "loss_count": 2,
+              "name": "fold-2",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 121,
+              "test_since": "2024-07-05",
+              "test_through": "2024-12-31",
+              "train_since": "2023-01-03",
+              "train_through": "2024-07-04",
+              "warmup_bar_count": 363,
+              "win_count": 1
+            }
+          ]
+        },
+        "double_fee": {
+          "closed_trade_count": 5,
+          "compounded_net_return_pct": "-4.347319815262006330057929420",
+          "folds": [
+            {
+              "closed_trade_count": 2,
+              "closed_trade_max_drawdown_pct": "0.4662072351017631938874327000",
+              "compounded_net_return_pct": "1.397397732167549530537665300",
+              "fill_count": 6,
+              "incomplete_position_count": 2,
+              "incomplete_reasons": {
+                "DOMINANT_ROLL_EXCLUDED": 1,
+                "END_OF_SAMPLE_EXCLUDED": 1
+              },
+              "loss_count": 1,
+              "name": "fold-1",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 121,
+              "test_since": "2024-01-02",
+              "test_through": "2024-07-04",
+              "train_since": "2023-01-03",
+              "train_through": "2023-12-29",
+              "warmup_bar_count": 242,
+              "win_count": 1
+            },
+            {
+              "closed_trade_count": 3,
+              "closed_trade_max_drawdown_pct": "7.129332832805943089761967740",
+              "compounded_net_return_pct": "-5.665547317697176089361618270",
+              "fill_count": 7,
+              "incomplete_position_count": 1,
+              "incomplete_reasons": {
+                "END_OF_SAMPLE_EXCLUDED": 1
+              },
+              "loss_count": 2,
+              "name": "fold-2",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 121,
+              "test_since": "2024-07-05",
+              "test_through": "2024-12-31",
+              "train_since": "2023-01-03",
+              "train_through": "2024-07-04",
+              "warmup_bar_count": 363,
+              "win_count": 1
+            }
+          ]
+        },
+        "double_slippage": {
+          "closed_trade_count": 5,
+          "compounded_net_return_pct": "-4.512482507062604238261540080",
+          "folds": [
+            {
+              "closed_trade_count": 2,
+              "closed_trade_max_drawdown_pct": "0.4963320117336310501347056900",
+              "compounded_net_return_pct": "1.332101569305090732116216700",
+              "fill_count": 6,
+              "incomplete_position_count": 2,
+              "incomplete_reasons": {
+                "DOMINANT_ROLL_EXCLUDED": 1,
+                "END_OF_SAMPLE_EXCLUDED": 1
+              },
+              "loss_count": 1,
+              "name": "fold-1",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 121,
+              "test_since": "2024-01-02",
+              "test_through": "2024-07-04",
+              "train_since": "2023-01-03",
+              "train_through": "2023-12-29",
+              "warmup_bar_count": 242,
+              "win_count": 1
+            },
+            {
+              "closed_trade_count": 3,
+              "closed_trade_max_drawdown_pct": "7.156458577124893726766473620",
+              "compounded_net_return_pct": "-5.767751764597864751398620180",
+              "fill_count": 7,
+              "incomplete_position_count": 1,
+              "incomplete_reasons": {
+                "END_OF_SAMPLE_EXCLUDED": 1
+              },
+              "loss_count": 2,
+              "name": "fold-2",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 121,
+              "test_since": "2024-07-05",
+              "test_through": "2024-12-31",
+              "train_since": "2023-01-03",
+              "train_through": "2024-07-04",
+              "warmup_bar_count": 363,
+              "win_count": 1
+            }
+          ]
+        }
+      },
+      "status": "passed"
+    },
+    "rb:1d:trend": {
+      "scenarios": {
+        "baseline": {
+          "closed_trade_count": 17,
+          "compounded_net_return_pct": "-16.58711001663187374638456953",
+          "folds": [
+            {
+              "closed_trade_count": 8,
+              "closed_trade_max_drawdown_pct": "5.501471639670897583550335940",
+              "compounded_net_return_pct": "-4.677940974619338515707806870",
+              "fill_count": 17,
+              "incomplete_position_count": 1,
+              "incomplete_reasons": {
+                "END_OF_SAMPLE_EXCLUDED": 1
+              },
+              "loss_count": 6,
+              "name": "fold-1",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 121,
+              "test_since": "2024-01-02",
+              "test_through": "2024-07-04",
+              "train_since": "2023-01-03",
+              "train_through": "2023-12-29",
+              "warmup_bar_count": 242,
+              "win_count": 2
+            },
+            {
+              "closed_trade_count": 9,
+              "closed_trade_max_drawdown_pct": "12.49361287804491680036228245",
+              "compounded_net_return_pct": "-12.49361287804491680036228245",
+              "fill_count": 21,
+              "incomplete_position_count": 3,
+              "incomplete_reasons": {
+                "DOMINANT_ROLL_EXCLUDED": 2,
+                "END_OF_SAMPLE_EXCLUDED": 1
+              },
+              "loss_count": 8,
+              "name": "fold-2",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 121,
+              "test_since": "2024-07-05",
+              "test_through": "2024-12-31",
+              "train_since": "2023-01-03",
+              "train_through": "2024-07-04",
+              "warmup_bar_count": 363,
+              "win_count": 1
+            }
+          ]
+        },
+        "double_fee": {
+          "closed_trade_count": 17,
+          "compounded_net_return_pct": "-16.90347753163882730667513369",
+          "folds": [
+            {
+              "closed_trade_count": 8,
+              "closed_trade_max_drawdown_pct": "5.633677017102403643808943200",
+              "compounded_net_return_pct": "-4.830334325424567378051381710",
+              "fill_count": 17,
+              "incomplete_position_count": 1,
+              "incomplete_reasons": {
+                "END_OF_SAMPLE_EXCLUDED": 1
+              },
+              "loss_count": 6,
+              "name": "fold-1",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 121,
+              "test_since": "2024-01-02",
+              "test_through": "2024-07-04",
+              "train_since": "2023-01-03",
+              "train_through": "2023-12-29",
+              "warmup_bar_count": 242,
+              "win_count": 2
+            },
+            {
+              "closed_trade_count": 9,
+              "closed_trade_max_drawdown_pct": "12.68591532883738922172820295",
+              "compounded_net_return_pct": "-12.68591532883738922172820295",
+              "fill_count": 21,
+              "incomplete_position_count": 3,
+              "incomplete_reasons": {
+                "DOMINANT_ROLL_EXCLUDED": 2,
+                "END_OF_SAMPLE_EXCLUDED": 1
+              },
+              "loss_count": 8,
+              "name": "fold-2",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 121,
+              "test_since": "2024-07-05",
+              "test_through": "2024-12-31",
+              "train_since": "2023-01-03",
+              "train_through": "2024-07-04",
+              "warmup_bar_count": 363,
+              "win_count": 1
+            }
+          ]
+        },
+        "double_slippage": {
+          "closed_trade_count": 17,
+          "compounded_net_return_pct": "-17.39312918336687605809145476",
+          "folds": [
+            {
+              "closed_trade_count": 8,
+              "closed_trade_max_drawdown_pct": "5.855305227104848672173725710",
+              "compounded_net_return_pct": "-5.085936200367300345388258440",
+              "fill_count": 17,
+              "incomplete_position_count": 1,
+              "incomplete_reasons": {
+                "END_OF_SAMPLE_EXCLUDED": 1
+              },
+              "loss_count": 6,
+              "name": "fold-1",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 121,
+              "test_since": "2024-01-02",
+              "test_through": "2024-07-04",
+              "train_since": "2023-01-03",
+              "train_through": "2023-12-29",
+              "warmup_bar_count": 242,
+              "win_count": 2
+            },
+            {
+              "closed_trade_count": 9,
+              "closed_trade_max_drawdown_pct": "12.96666952221173605954445928",
+              "compounded_net_return_pct": "-12.96666952221173605954445928",
+              "fill_count": 21,
+              "incomplete_position_count": 3,
+              "incomplete_reasons": {
+                "DOMINANT_ROLL_EXCLUDED": 2,
+                "END_OF_SAMPLE_EXCLUDED": 1
+              },
+              "loss_count": 8,
+              "name": "fold-2",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 121,
+              "test_since": "2024-07-05",
+              "test_through": "2024-12-31",
+              "train_since": "2023-01-03",
+              "train_through": "2024-07-04",
+              "warmup_bar_count": 363,
+              "win_count": 1
+            }
+          ]
+        }
+      },
+      "status": "passed"
+    },
+    "rb:1w:main_rise": {
+      "detail": "one daily limit pair cannot simultaneously validate an aggregated weekly OHLC range and the first-day next-open lock condition",
+      "reason": "NEWOW_WEEKLY_EXECUTION_LIMIT_CONTRACT_INSUFFICIENT",
+      "status": "blocked"
+    },
+    "rb:1w:oscillation": {
+      "detail": "one daily limit pair cannot simultaneously validate an aggregated weekly OHLC range and the first-day next-open lock condition",
+      "reason": "NEWOW_WEEKLY_EXECUTION_LIMIT_CONTRACT_INSUFFICIENT",
+      "status": "blocked"
+    },
+    "rb:1w:trend": {
+      "detail": "one daily limit pair cannot simultaneously validate an aggregated weekly OHLC range and the first-day next-open lock condition",
+      "reason": "NEWOW_WEEKLY_EXECUTION_LIMIT_CONTRACT_INSUFFICIENT",
+      "status": "blocked"
+    },
+    "rb:60m:main_rise": {
+      "scenarios": {
+        "baseline": {
+          "closed_trade_count": 15,
+          "compounded_net_return_pct": "-2.540456533922343400695963510",
+          "folds": [
+            {
+              "closed_trade_count": 8,
+              "closed_trade_max_drawdown_pct": "7.256840454513487408038712750",
+              "compounded_net_return_pct": "-6.957611654645625762156742490",
+              "fill_count": 17,
+              "incomplete_position_count": 1,
+              "incomplete_reasons": {
+                "END_OF_SAMPLE_EXCLUDED": 1
+              },
+              "loss_count": 6,
+              "name": "fold-1",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 837,
+              "test_since": "2024-01-02",
+              "test_through": "2024-07-04",
+              "train_since": "2023-01-03",
+              "train_through": "2023-12-29",
+              "warmup_bar_count": 1682,
+              "win_count": 2
+            },
+            {
+              "closed_trade_count": 7,
+              "closed_trade_max_drawdown_pct": "4.183525721932106827062404280",
+              "compounded_net_return_pct": "4.747465321212201915141906800",
+              "fill_count": 17,
+              "incomplete_position_count": 3,
+              "incomplete_reasons": {
+                "DOMINANT_ROLL_EXCLUDED": 2,
+                "END_OF_SAMPLE_EXCLUDED": 1
+              },
+              "loss_count": 4,
+              "name": "fold-2",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 843,
+              "test_since": "2024-07-05",
+              "test_through": "2024-12-31",
+              "train_since": "2023-01-03",
+              "train_through": "2024-07-04",
+              "warmup_bar_count": 2519,
+              "win_count": 3
+            }
+          ]
+        },
+        "double_fee": {
+          "closed_trade_count": 15,
+          "compounded_net_return_pct": "-2.851828621958643578394865610",
+          "folds": [
+            {
+              "closed_trade_count": 8,
+              "closed_trade_max_drawdown_pct": "7.349537260094375097438247570",
+              "compounded_net_return_pct": "-7.106360448700678473053487140",
+              "fill_count": 17,
+              "incomplete_position_count": 1,
+              "incomplete_reasons": {
+                "END_OF_SAMPLE_EXCLUDED": 1
+              },
+              "loss_count": 6,
+              "name": "fold-1",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 837,
+              "test_since": "2024-01-02",
+              "test_through": "2024-07-04",
+              "train_since": "2023-01-03",
+              "train_through": "2023-12-29",
+              "warmup_bar_count": 1682,
+              "win_count": 2
+            },
+            {
+              "closed_trade_count": 7,
+              "closed_trade_max_drawdown_pct": "4.260148252725356444000017820",
+              "compounded_net_return_pct": "4.580003375142303728232511400",
+              "fill_count": 17,
+              "incomplete_position_count": 3,
+              "incomplete_reasons": {
+                "DOMINANT_ROLL_EXCLUDED": 2,
+                "END_OF_SAMPLE_EXCLUDED": 1
+              },
+              "loss_count": 4,
+              "name": "fold-2",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 843,
+              "test_since": "2024-07-05",
+              "test_through": "2024-12-31",
+              "train_since": "2023-01-03",
+              "train_through": "2024-07-04",
+              "warmup_bar_count": 2519,
+              "win_count": 3
+            }
+          ]
+        },
+        "double_slippage": {
+          "closed_trade_count": 15,
+          "compounded_net_return_pct": "-3.366316215210257761553723400",
+          "folds": [
+            {
+              "closed_trade_count": 8,
+              "closed_trade_max_drawdown_pct": "7.505511767492892384804056290",
+              "compounded_net_return_pct": "-7.358675972924195819037844840",
+              "fill_count": 17,
+              "incomplete_position_count": 1,
+              "incomplete_reasons": {
+                "END_OF_SAMPLE_EXCLUDED": 1
+              },
+              "loss_count": 6,
+              "name": "fold-1",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 837,
+              "test_since": "2024-01-02",
+              "test_through": "2024-07-04",
+              "train_since": "2023-01-03",
+              "train_through": "2023-12-29",
+              "warmup_bar_count": 1682,
+              "win_count": 2
+            },
+            {
+              "closed_trade_count": 7,
+              "closed_trade_max_drawdown_pct": "4.356006722367818229119062650",
+              "compounded_net_return_pct": "4.309480460951865893734386800",
+              "fill_count": 17,
+              "incomplete_position_count": 3,
+              "incomplete_reasons": {
+                "DOMINANT_ROLL_EXCLUDED": 2,
+                "END_OF_SAMPLE_EXCLUDED": 1
+              },
+              "loss_count": 4,
+              "name": "fold-2",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 843,
+              "test_since": "2024-07-05",
+              "test_through": "2024-12-31",
+              "train_since": "2023-01-03",
+              "train_through": "2024-07-04",
+              "warmup_bar_count": 2519,
+              "win_count": 3
+            }
+          ]
+        }
+      },
+      "status": "passed"
+    },
+    "rb:60m:oscillation": {
+      "scenarios": {
+        "baseline": {
+          "closed_trade_count": 58,
+          "compounded_net_return_pct": "-8.665360048327982805577343150",
+          "folds": [
+            {
+              "closed_trade_count": 29,
+              "closed_trade_max_drawdown_pct": "10.10201333216675732371872720",
+              "compounded_net_return_pct": "-7.757346319981256656697352440",
+              "fill_count": 58,
+              "incomplete_position_count": 0,
+              "incomplete_reasons": {},
+              "loss_count": 10,
+              "name": "fold-1",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 837,
+              "test_since": "2024-01-02",
+              "test_through": "2024-07-04",
+              "train_since": "2023-01-03",
+              "train_through": "2023-12-29",
+              "warmup_bar_count": 1682,
+              "win_count": 19
+            },
+            {
+              "closed_trade_count": 29,
+              "closed_trade_max_drawdown_pct": "6.067989226865596694133281920",
+              "compounded_net_return_pct": "-0.9843751151138192667754342200",
+              "fill_count": 60,
+              "incomplete_position_count": 2,
+              "incomplete_reasons": {
+                "DOMINANT_ROLL_EXCLUDED": 2
+              },
+              "loss_count": 10,
+              "name": "fold-2",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 843,
+              "test_since": "2024-07-05",
+              "test_through": "2024-12-31",
+              "train_since": "2023-01-03",
+              "train_through": "2024-07-04",
+              "warmup_bar_count": 2519,
+              "win_count": 19
+            }
+          ]
+        },
+        "double_fee": {
+          "closed_trade_count": 58,
+          "compounded_net_return_pct": "-9.836014078646295866031693080",
+          "folds": [
+            {
+              "closed_trade_count": 29,
+              "closed_trade_max_drawdown_pct": "10.31750980599091926490998511",
+              "compounded_net_return_pct": "-8.290805197565494994565506250",
+              "fill_count": 58,
+              "incomplete_position_count": 0,
+              "incomplete_reasons": {},
+              "loss_count": 11,
+              "name": "fold-1",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 837,
+              "test_since": "2024-01-02",
+              "test_through": "2024-07-04",
+              "train_since": "2023-01-03",
+              "train_through": "2023-12-29",
+              "warmup_bar_count": 1682,
+              "win_count": 18
+            },
+            {
+              "closed_trade_count": 29,
+              "closed_trade_max_drawdown_pct": "6.265043706166094062189280460",
+              "compounded_net_return_pct": "-1.684900717326744950514237350",
+              "fill_count": 60,
+              "incomplete_position_count": 2,
+              "incomplete_reasons": {
+                "DOMINANT_ROLL_EXCLUDED": 2
+              },
+              "loss_count": 10,
+              "name": "fold-2",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 843,
+              "test_since": "2024-07-05",
+              "test_through": "2024-12-31",
+              "train_since": "2023-01-03",
+              "train_through": "2024-07-04",
+              "warmup_bar_count": 2519,
+              "win_count": 19
+            }
+          ]
+        },
+        "double_slippage": {
+          "closed_trade_count": 58,
+          "compounded_net_return_pct": "-11.63858020549707553760224719",
+          "folds": [
+            {
+              "closed_trade_count": 29,
+              "closed_trade_max_drawdown_pct": "10.67282535619620382106116408",
+              "compounded_net_return_pct": "-9.189650410898063653350867300",
+              "fill_count": 58,
+              "incomplete_position_count": 0,
+              "incomplete_reasons": {},
+              "loss_count": 11,
+              "name": "fold-1",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 837,
+              "test_since": "2024-01-02",
+              "test_through": "2024-07-04",
+              "train_since": "2023-01-03",
+              "train_through": "2023-12-29",
+              "warmup_bar_count": 1682,
+              "win_count": 18
+            },
+            {
+              "closed_trade_count": 29,
+              "closed_trade_max_drawdown_pct": "6.455320763397013437289402970",
+              "compounded_net_return_pct": "-2.696751863284210524485216510",
+              "fill_count": 60,
+              "incomplete_position_count": 2,
+              "incomplete_reasons": {
+                "DOMINANT_ROLL_EXCLUDED": 2
+              },
+              "loss_count": 10,
+              "name": "fold-2",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 843,
+              "test_since": "2024-07-05",
+              "test_through": "2024-12-31",
+              "train_since": "2023-01-03",
+              "train_through": "2024-07-04",
+              "warmup_bar_count": 2519,
+              "win_count": 19
+            }
+          ]
+        }
+      },
+      "status": "passed"
+    },
+    "rb:60m:trend": {
+      "scenarios": {
+        "baseline": {
+          "closed_trade_count": 134,
+          "compounded_net_return_pct": "-8.446538957915837490443408510",
+          "folds": [
+            {
+              "closed_trade_count": 68,
+              "closed_trade_max_drawdown_pct": "7.431639881210561090975860227",
+              "compounded_net_return_pct": "-7.023700919789100675881980380",
+              "fill_count": 138,
+              "incomplete_position_count": 2,
+              "incomplete_reasons": {
+                "DOMINANT_ROLL_EXCLUDED": 1,
+                "END_OF_SAMPLE_EXCLUDED": 1
+              },
+              "loss_count": 52,
+              "name": "fold-1",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 837,
+              "test_since": "2024-01-02",
+              "test_through": "2024-07-04",
+              "train_since": "2023-01-03",
+              "train_through": "2023-12-29",
+              "warmup_bar_count": 1682,
+              "win_count": 16
+            },
+            {
+              "closed_trade_count": 66,
+              "closed_trade_max_drawdown_pct": "7.682592774231649281923625648",
+              "compounded_net_return_pct": "-1.530323375099336523200449550",
+              "fill_count": 132,
+              "incomplete_position_count": 0,
+              "incomplete_reasons": {},
+              "loss_count": 50,
+              "name": "fold-2",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 843,
+              "test_since": "2024-07-05",
+              "test_through": "2024-12-31",
+              "train_since": "2023-01-03",
+              "train_through": "2024-07-04",
+              "warmup_bar_count": 2519,
+              "win_count": 16
+            }
+          ]
+        },
+        "double_fee": {
+          "closed_trade_count": 134,
+          "compounded_net_return_pct": "-11.09902815996306712669462992",
+          "folds": [
+            {
+              "closed_trade_count": 68,
+              "closed_trade_max_drawdown_pct": "8.464978807212741636298931837",
+              "compounded_net_return_pct": "-8.279619015707450004677645680",
+              "fill_count": 138,
+              "incomplete_position_count": 2,
+              "incomplete_reasons": {
+                "DOMINANT_ROLL_EXCLUDED": 1,
+                "END_OF_SAMPLE_EXCLUDED": 1
+              },
+              "loss_count": 52,
+              "name": "fold-1",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 837,
+              "test_since": "2024-01-02",
+              "test_through": "2024-07-04",
+              "train_since": "2023-01-03",
+              "train_through": "2023-12-29",
+              "warmup_bar_count": 1682,
+              "win_count": 16
+            },
+            {
+              "closed_trade_count": 66,
+              "closed_trade_max_drawdown_pct": "8.161397355364499671102784074",
+              "compounded_net_return_pct": "-3.073917829384563097543649300",
+              "fill_count": 132,
+              "incomplete_position_count": 0,
+              "incomplete_reasons": {},
+              "loss_count": 51,
+              "name": "fold-2",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 843,
+              "test_since": "2024-07-05",
+              "test_through": "2024-12-31",
+              "train_since": "2023-01-03",
+              "train_through": "2024-07-04",
+              "warmup_bar_count": 2519,
+              "win_count": 15
+            }
+          ]
+        },
+        "double_slippage": {
+          "closed_trade_count": 134,
+          "compounded_net_return_pct": "-15.14824520835839890373592239",
+          "folds": [
+            {
+              "closed_trade_count": 68,
+              "closed_trade_max_drawdown_pct": "10.47823430079677888546228621",
+              "compounded_net_return_pct": "-10.35591246477452509501495241",
+              "fill_count": 138,
+              "incomplete_position_count": 2,
+              "incomplete_reasons": {
+                "DOMINANT_ROLL_EXCLUDED": 1,
+                "END_OF_SAMPLE_EXCLUDED": 1
+              },
+              "loss_count": 52,
+              "name": "fold-1",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 837,
+              "test_since": "2024-01-02",
+              "test_through": "2024-07-04",
+              "train_since": "2023-01-03",
+              "train_through": "2023-12-29",
+              "warmup_bar_count": 1682,
+              "win_count": 16
+            },
+            {
+              "closed_trade_count": 66,
+              "closed_trade_max_drawdown_pct": "8.603981376090233494331162372",
+              "compounded_net_return_pct": "-5.345955182711559987046732860",
+              "fill_count": 132,
+              "incomplete_position_count": 0,
+              "incomplete_reasons": {},
+              "loss_count": 53,
+              "name": "fold-2",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 843,
+              "test_since": "2024-07-05",
+              "test_through": "2024-12-31",
+              "train_since": "2023-01-03",
+              "train_through": "2024-07-04",
+              "warmup_bar_count": 2519,
+              "win_count": 13
+            }
+          ]
+        }
+      },
+      "status": "passed"
+    },
+    "sc:1d:main_rise": {
+      "scenarios": {
+        "baseline": {
+          "closed_trade_count": 0,
+          "compounded_net_return_pct": "0",
+          "folds": [
+            {
+              "closed_trade_count": 0,
+              "closed_trade_max_drawdown_pct": "0",
+              "compounded_net_return_pct": "0",
+              "fill_count": 0,
+              "incomplete_position_count": 0,
+              "incomplete_reasons": {},
+              "loss_count": 0,
+              "name": "fold-1",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 121,
+              "test_since": "2024-01-02",
+              "test_through": "2024-07-04",
+              "train_since": "2023-01-03",
+              "train_through": "2023-12-29",
+              "warmup_bar_count": 242,
+              "win_count": 0
+            },
+            {
+              "closed_trade_count": 0,
+              "closed_trade_max_drawdown_pct": "0",
+              "compounded_net_return_pct": "0",
+              "fill_count": 0,
+              "incomplete_position_count": 0,
+              "incomplete_reasons": {},
+              "loss_count": 0,
+              "name": "fold-2",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 121,
+              "test_since": "2024-07-05",
+              "test_through": "2024-12-31",
+              "train_since": "2023-01-03",
+              "train_through": "2024-07-04",
+              "warmup_bar_count": 363,
+              "win_count": 0
+            }
+          ]
+        },
+        "double_fee": {
+          "closed_trade_count": 0,
+          "compounded_net_return_pct": "0",
+          "folds": [
+            {
+              "closed_trade_count": 0,
+              "closed_trade_max_drawdown_pct": "0",
+              "compounded_net_return_pct": "0",
+              "fill_count": 0,
+              "incomplete_position_count": 0,
+              "incomplete_reasons": {},
+              "loss_count": 0,
+              "name": "fold-1",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 121,
+              "test_since": "2024-01-02",
+              "test_through": "2024-07-04",
+              "train_since": "2023-01-03",
+              "train_through": "2023-12-29",
+              "warmup_bar_count": 242,
+              "win_count": 0
+            },
+            {
+              "closed_trade_count": 0,
+              "closed_trade_max_drawdown_pct": "0",
+              "compounded_net_return_pct": "0",
+              "fill_count": 0,
+              "incomplete_position_count": 0,
+              "incomplete_reasons": {},
+              "loss_count": 0,
+              "name": "fold-2",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 121,
+              "test_since": "2024-07-05",
+              "test_through": "2024-12-31",
+              "train_since": "2023-01-03",
+              "train_through": "2024-07-04",
+              "warmup_bar_count": 363,
+              "win_count": 0
+            }
+          ]
+        },
+        "double_slippage": {
+          "closed_trade_count": 0,
+          "compounded_net_return_pct": "0",
+          "folds": [
+            {
+              "closed_trade_count": 0,
+              "closed_trade_max_drawdown_pct": "0",
+              "compounded_net_return_pct": "0",
+              "fill_count": 0,
+              "incomplete_position_count": 0,
+              "incomplete_reasons": {},
+              "loss_count": 0,
+              "name": "fold-1",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 121,
+              "test_since": "2024-01-02",
+              "test_through": "2024-07-04",
+              "train_since": "2023-01-03",
+              "train_through": "2023-12-29",
+              "warmup_bar_count": 242,
+              "win_count": 0
+            },
+            {
+              "closed_trade_count": 0,
+              "closed_trade_max_drawdown_pct": "0",
+              "compounded_net_return_pct": "0",
+              "fill_count": 0,
+              "incomplete_position_count": 0,
+              "incomplete_reasons": {},
+              "loss_count": 0,
+              "name": "fold-2",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 121,
+              "test_since": "2024-07-05",
+              "test_through": "2024-12-31",
+              "train_since": "2023-01-03",
+              "train_through": "2024-07-04",
+              "warmup_bar_count": 363,
+              "win_count": 0
+            }
+          ]
+        }
+      },
+      "status": "passed"
+    },
+    "sc:1d:oscillation": {
+      "scenarios": {
+        "baseline": {
+          "closed_trade_count": 2,
+          "compounded_net_return_pct": "9.108612912000076245403638500",
+          "folds": [
+            {
+              "closed_trade_count": 1,
+              "closed_trade_max_drawdown_pct": "0",
+              "compounded_net_return_pct": "6.225180173554934549198411500",
+              "fill_count": 5,
+              "incomplete_position_count": 3,
+              "incomplete_reasons": {
+                "DOMINANT_ROLL_EXCLUDED": 3
+              },
+              "loss_count": 0,
+              "name": "fold-1",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 121,
+              "test_since": "2024-01-02",
+              "test_through": "2024-07-04",
+              "train_since": "2023-01-03",
+              "train_through": "2023-12-29",
+              "warmup_bar_count": 242,
+              "win_count": 1
+            },
+            {
+              "closed_trade_count": 1,
+              "closed_trade_max_drawdown_pct": "0",
+              "compounded_net_return_pct": "2.714453139767872670220407500",
+              "fill_count": 6,
+              "incomplete_position_count": 4,
+              "incomplete_reasons": {
+                "DOMINANT_ROLL_EXCLUDED": 4
+              },
+              "loss_count": 0,
+              "name": "fold-2",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 121,
+              "test_since": "2024-07-05",
+              "test_through": "2024-12-31",
+              "train_since": "2023-01-03",
+              "train_through": "2024-07-04",
+              "warmup_bar_count": 363,
+              "win_count": 1
+            }
+          ]
+        },
+        "double_fee": {
+          "closed_trade_count": 2,
+          "compounded_net_return_pct": "9.092684472692233553014218100",
+          "folds": [
+            {
+              "closed_trade_count": 1,
+              "closed_trade_max_drawdown_pct": "0",
+              "compounded_net_return_pct": "6.217597529139243298893260300",
+              "fill_count": 5,
+              "incomplete_position_count": 3,
+              "incomplete_reasons": {
+                "DOMINANT_ROLL_EXCLUDED": 3
+              },
+              "loss_count": 0,
+              "name": "fold-1",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 121,
+              "test_since": "2024-01-02",
+              "test_through": "2024-07-04",
+              "train_since": "2023-01-03",
+              "train_through": "2023-12-29",
+              "warmup_bar_count": 242,
+              "win_count": 1
+            },
+            {
+              "closed_trade_count": 1,
+              "closed_trade_max_drawdown_pct": "0",
+              "compounded_net_return_pct": "2.706789656736730681990019700",
+              "fill_count": 6,
+              "incomplete_position_count": 4,
+              "incomplete_reasons": {
+                "DOMINANT_ROLL_EXCLUDED": 4
+              },
+              "loss_count": 0,
+              "name": "fold-2",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 121,
+              "test_since": "2024-07-05",
+              "test_through": "2024-12-31",
+              "train_since": "2023-01-03",
+              "train_through": "2024-07-04",
+              "warmup_bar_count": 363,
+              "win_count": 1
+            }
+          ]
+        },
+        "double_slippage": {
+          "closed_trade_count": 2,
+          "compounded_net_return_pct": "9.028994213657031388378469000",
+          "folds": [
+            {
+              "closed_trade_count": 1,
+              "closed_trade_max_drawdown_pct": "0",
+              "compounded_net_return_pct": "6.187272526745340244843939600",
+              "fill_count": 5,
+              "incomplete_position_count": 3,
+              "incomplete_reasons": {
+                "DOMINANT_ROLL_EXCLUDED": 3
+              },
+              "loss_count": 0,
+              "name": "fold-1",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 121,
+              "test_since": "2024-01-02",
+              "test_through": "2024-07-04",
+              "train_since": "2023-01-03",
+              "train_through": "2023-12-29",
+              "warmup_bar_count": 242,
+              "win_count": 1
+            },
+            {
+              "closed_trade_count": 1,
+              "closed_trade_max_drawdown_pct": "0",
+              "compounded_net_return_pct": "2.676141517992137889325672800",
+              "fill_count": 6,
+              "incomplete_position_count": 4,
+              "incomplete_reasons": {
+                "DOMINANT_ROLL_EXCLUDED": 4
+              },
+              "loss_count": 0,
+              "name": "fold-2",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 121,
+              "test_since": "2024-07-05",
+              "test_through": "2024-12-31",
+              "train_since": "2023-01-03",
+              "train_through": "2024-07-04",
+              "warmup_bar_count": 363,
+              "win_count": 1
+            }
+          ]
+        }
+      },
+      "status": "passed"
+    },
+    "sc:1d:trend": {
+      "scenarios": {
+        "baseline": {
+          "closed_trade_count": 17,
+          "compounded_net_return_pct": "-18.87160860307911376878468195",
+          "folds": [
+            {
+              "closed_trade_count": 9,
+              "closed_trade_max_drawdown_pct": "4.381242574680577660106161530",
+              "compounded_net_return_pct": "-3.878732339307638988407596390",
+              "fill_count": 22,
+              "incomplete_position_count": 4,
+              "incomplete_reasons": {
+                "DOMINANT_ROLL_EXCLUDED": 3,
+                "END_OF_SAMPLE_EXCLUDED": 1
+              },
+              "loss_count": 6,
+              "name": "fold-1",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 121,
+              "test_since": "2024-01-02",
+              "test_through": "2024-07-04",
+              "train_since": "2023-01-03",
+              "train_through": "2023-12-29",
+              "warmup_bar_count": 242,
+              "win_count": 3
+            },
+            {
+              "closed_trade_count": 8,
+              "closed_trade_max_drawdown_pct": "16.18330998746550174990256738",
+              "compounded_net_return_pct": "-15.59787612944958238331695592",
+              "fill_count": 19,
+              "incomplete_position_count": 3,
+              "incomplete_reasons": {
+                "DOMINANT_ROLL_EXCLUDED": 2,
+                "END_OF_SAMPLE_EXCLUDED": 1
+              },
+              "loss_count": 6,
+              "name": "fold-2",
+              "rejected_fill_count": 1,
+              "rejected_reasons": {
+                "BUY_AT_LIMIT_UP": 1
+              },
+              "test_bar_count": 121,
+              "test_since": "2024-07-05",
+              "test_through": "2024-12-31",
+              "train_since": "2023-01-03",
+              "train_through": "2024-07-04",
+              "warmup_bar_count": 363,
+              "win_count": 2
+            }
+          ]
+        },
+        "double_fee": {
+          "closed_trade_count": 17,
+          "compounded_net_return_pct": "-18.96807422574790124988024533",
+          "folds": [
+            {
+              "closed_trade_count": 9,
+              "closed_trade_max_drawdown_pct": "4.432619546673580079549435490",
+              "compounded_net_return_pct": "-3.936557765940899497701012350",
+              "fill_count": 22,
+              "incomplete_position_count": 4,
+              "incomplete_reasons": {
+                "DOMINANT_ROLL_EXCLUDED": 3,
+                "END_OF_SAMPLE_EXCLUDED": 1
+              },
+              "loss_count": 6,
+              "name": "fold-1",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 121,
+              "test_since": "2024-01-02",
+              "test_through": "2024-07-04",
+              "train_since": "2023-01-03",
+              "train_through": "2023-12-29",
+              "warmup_bar_count": 242,
+              "win_count": 3
+            },
+            {
+              "closed_trade_count": 8,
+              "closed_trade_max_drawdown_pct": "16.22637563004010078563114358",
+              "compounded_net_return_pct": "-15.64748889924496978091766854",
+              "fill_count": 19,
+              "incomplete_position_count": 3,
+              "incomplete_reasons": {
+                "DOMINANT_ROLL_EXCLUDED": 2,
+                "END_OF_SAMPLE_EXCLUDED": 1
+              },
+              "loss_count": 6,
+              "name": "fold-2",
+              "rejected_fill_count": 1,
+              "rejected_reasons": {
+                "BUY_AT_LIMIT_UP": 1
+              },
+              "test_bar_count": 121,
+              "test_since": "2024-07-05",
+              "test_through": "2024-12-31",
+              "train_since": "2023-01-03",
+              "train_through": "2024-07-04",
+              "warmup_bar_count": 363,
+              "win_count": 2
+            }
+          ]
+        },
+        "double_slippage": {
+          "closed_trade_count": 17,
+          "compounded_net_return_pct": "-19.35279150132835267735767012",
+          "folds": [
+            {
+              "closed_trade_count": 9,
+              "closed_trade_max_drawdown_pct": "4.637851634053653270786394380",
+              "compounded_net_return_pct": "-4.167511906127738856371330990",
+              "fill_count": 22,
+              "incomplete_position_count": 4,
+              "incomplete_reasons": {
+                "DOMINANT_ROLL_EXCLUDED": 3,
+                "END_OF_SAMPLE_EXCLUDED": 1
+              },
+              "loss_count": 6,
+              "name": "fold-1",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 121,
+              "test_since": "2024-01-02",
+              "test_through": "2024-07-04",
+              "train_since": "2023-01-03",
+              "train_through": "2023-12-29",
+              "warmup_bar_count": 242,
+              "win_count": 3
+            },
+            {
+              "closed_trade_count": 8,
+              "closed_trade_max_drawdown_pct": "16.39841743343998971322819788",
+              "compounded_net_return_pct": "-15.84564889969875863596340898",
+              "fill_count": 19,
+              "incomplete_position_count": 3,
+              "incomplete_reasons": {
+                "DOMINANT_ROLL_EXCLUDED": 2,
+                "END_OF_SAMPLE_EXCLUDED": 1
+              },
+              "loss_count": 6,
+              "name": "fold-2",
+              "rejected_fill_count": 1,
+              "rejected_reasons": {
+                "BUY_AT_LIMIT_UP": 1
+              },
+              "test_bar_count": 121,
+              "test_since": "2024-07-05",
+              "test_through": "2024-12-31",
+              "train_since": "2023-01-03",
+              "train_through": "2024-07-04",
+              "warmup_bar_count": 363,
+              "win_count": 2
+            }
+          ]
+        }
+      },
+      "status": "passed"
+    },
+    "sc:1w:main_rise": {
+      "detail": "one daily limit pair cannot simultaneously validate an aggregated weekly OHLC range and the first-day next-open lock condition",
+      "reason": "NEWOW_WEEKLY_EXECUTION_LIMIT_CONTRACT_INSUFFICIENT",
+      "status": "blocked"
+    },
+    "sc:1w:oscillation": {
+      "detail": "one daily limit pair cannot simultaneously validate an aggregated weekly OHLC range and the first-day next-open lock condition",
+      "reason": "NEWOW_WEEKLY_EXECUTION_LIMIT_CONTRACT_INSUFFICIENT",
+      "status": "blocked"
+    },
+    "sc:1w:trend": {
+      "detail": "one daily limit pair cannot simultaneously validate an aggregated weekly OHLC range and the first-day next-open lock condition",
+      "reason": "NEWOW_WEEKLY_EXECUTION_LIMIT_CONTRACT_INSUFFICIENT",
+      "status": "blocked"
+    },
+    "sc:60m:main_rise": {
+      "scenarios": {
+        "baseline": {
+          "closed_trade_count": 25,
+          "compounded_net_return_pct": "-13.58755603101900149341484423",
+          "folds": [
+            {
+              "closed_trade_count": 12,
+              "closed_trade_max_drawdown_pct": "3.728768999607307583104915049",
+              "compounded_net_return_pct": "8.146840261256267957907596900",
+              "fill_count": 29,
+              "incomplete_position_count": 5,
+              "incomplete_reasons": {
+                "DOMINANT_ROLL_EXCLUDED": 4,
+                "END_OF_SAMPLE_EXCLUDED": 1
+              },
+              "loss_count": 5,
+              "name": "fold-1",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 1301,
+              "test_since": "2024-01-02",
+              "test_through": "2024-07-04",
+              "train_since": "2023-01-03",
+              "train_through": "2023-12-29",
+              "warmup_bar_count": 2626,
+              "win_count": 7
+            },
+            {
+              "closed_trade_count": 13,
+              "closed_trade_max_drawdown_pct": "20.09711632792071720804555415",
+              "compounded_net_return_pct": "-20.09711632792071720804555415",
+              "fill_count": 28,
+              "incomplete_position_count": 2,
+              "incomplete_reasons": {
+                "DOMINANT_ROLL_EXCLUDED": 1,
+                "END_OF_SAMPLE_EXCLUDED": 1
+              },
+              "loss_count": 11,
+              "name": "fold-2",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 1319,
+              "test_since": "2024-07-05",
+              "test_through": "2024-12-31",
+              "train_since": "2023-01-03",
+              "train_through": "2024-07-04",
+              "warmup_bar_count": 3927,
+              "win_count": 2
+            }
+          ]
+        },
+        "double_fee": {
+          "closed_trade_count": 25,
+          "compounded_net_return_pct": "-13.73737176581758130781318936",
+          "folds": [
+            {
+              "closed_trade_count": 12,
+              "closed_trade_max_drawdown_pct": "3.742590886828229921653078449",
+              "compounded_net_return_pct": "8.061149056688937920240760600",
+              "fill_count": 29,
+              "incomplete_position_count": 5,
+              "incomplete_reasons": {
+                "DOMINANT_ROLL_EXCLUDED": 4,
+                "END_OF_SAMPLE_EXCLUDED": 1
+              },
+              "loss_count": 5,
+              "name": "fold-1",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 1301,
+              "test_since": "2024-01-02",
+              "test_through": "2024-07-04",
+              "train_since": "2023-01-03",
+              "train_through": "2023-12-29",
+              "warmup_bar_count": 2626,
+              "win_count": 7
+            },
+            {
+              "closed_trade_count": 13,
+              "closed_trade_max_drawdown_pct": "20.17239406835383850824917002",
+              "compounded_net_return_pct": "-20.17239406835383850824917002",
+              "fill_count": 28,
+              "incomplete_position_count": 2,
+              "incomplete_reasons": {
+                "DOMINANT_ROLL_EXCLUDED": 1,
+                "END_OF_SAMPLE_EXCLUDED": 1
+              },
+              "loss_count": 11,
+              "name": "fold-2",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 1319,
+              "test_since": "2024-07-05",
+              "test_through": "2024-12-31",
+              "train_since": "2023-01-03",
+              "train_through": "2024-07-04",
+              "warmup_bar_count": 3927,
+              "win_count": 2
+            }
+          ]
+        },
+        "double_slippage": {
+          "closed_trade_count": 25,
+          "compounded_net_return_pct": "-14.33404219788553888543661876",
+          "folds": [
+            {
+              "closed_trade_count": 12,
+              "closed_trade_max_drawdown_pct": "3.797858689019491001830999586",
+              "compounded_net_return_pct": "7.719062827511393582983043900",
+              "fill_count": 29,
+              "incomplete_position_count": 5,
+              "incomplete_reasons": {
+                "DOMINANT_ROLL_EXCLUDED": 4,
+                "END_OF_SAMPLE_EXCLUDED": 1
+              },
+              "loss_count": 5,
+              "name": "fold-1",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 1301,
+              "test_since": "2024-01-02",
+              "test_through": "2024-07-04",
+              "train_since": "2023-01-03",
+              "train_through": "2023-12-29",
+              "warmup_bar_count": 2626,
+              "win_count": 7
+            },
+            {
+              "closed_trade_count": 13,
+              "closed_trade_max_drawdown_pct": "20.47279696511115646088124395",
+              "compounded_net_return_pct": "-20.47279696511115646088124395",
+              "fill_count": 28,
+              "incomplete_position_count": 2,
+              "incomplete_reasons": {
+                "DOMINANT_ROLL_EXCLUDED": 1,
+                "END_OF_SAMPLE_EXCLUDED": 1
+              },
+              "loss_count": 11,
+              "name": "fold-2",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 1319,
+              "test_since": "2024-07-05",
+              "test_through": "2024-12-31",
+              "train_since": "2023-01-03",
+              "train_through": "2024-07-04",
+              "warmup_bar_count": 3927,
+              "win_count": 2
+            }
+          ]
+        }
+      },
+      "status": "passed"
+    },
+    "sc:60m:oscillation": {
+      "scenarios": {
+        "baseline": {
+          "closed_trade_count": 89,
+          "compounded_net_return_pct": "2.235873370288044285871674300",
+          "folds": [
+            {
+              "closed_trade_count": 49,
+              "closed_trade_max_drawdown_pct": "13.65442270144367056214785541",
+              "compounded_net_return_pct": "-2.416980684770026540190617770",
+              "fill_count": 98,
+              "incomplete_position_count": 0,
+              "incomplete_reasons": {},
+              "loss_count": 19,
+              "name": "fold-1",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 1301,
+              "test_since": "2024-01-02",
+              "test_through": "2024-07-04",
+              "train_since": "2023-01-03",
+              "train_through": "2023-12-29",
+              "warmup_bar_count": 2626,
+              "win_count": 30
+            },
+            {
+              "closed_trade_count": 40,
+              "closed_trade_max_drawdown_pct": "7.647637020256644838012291420",
+              "compounded_net_return_pct": "4.768098064303172013382490300",
+              "fill_count": 83,
+              "incomplete_position_count": 3,
+              "incomplete_reasons": {
+                "DOMINANT_ROLL_EXCLUDED": 3
+              },
+              "loss_count": 13,
+              "name": "fold-2",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 1319,
+              "test_since": "2024-07-05",
+              "test_through": "2024-12-31",
+              "train_since": "2023-01-03",
+              "train_through": "2024-07-04",
+              "warmup_bar_count": 3927,
+              "win_count": 27
+            }
+          ]
+        },
+        "double_fee": {
+          "closed_trade_count": 89,
+          "compounded_net_return_pct": "1.608544009992079363348773300",
+          "folds": [
+            {
+              "closed_trade_count": 49,
+              "closed_trade_max_drawdown_pct": "13.81533681315669870739464247",
+              "compounded_net_return_pct": "-2.731207565338975910828881950",
+              "fill_count": 98,
+              "incomplete_position_count": 0,
+              "incomplete_reasons": {},
+              "loss_count": 19,
+              "name": "fold-1",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 1301,
+              "test_since": "2024-01-02",
+              "test_through": "2024-07-04",
+              "train_since": "2023-01-03",
+              "train_through": "2023-12-29",
+              "warmup_bar_count": 2626,
+              "win_count": 30
+            },
+            {
+              "closed_trade_count": 40,
+              "closed_trade_max_drawdown_pct": "7.691103063427117332954749060",
+              "compounded_net_return_pct": "4.461607332327296870969959700",
+              "fill_count": 83,
+              "incomplete_position_count": 3,
+              "incomplete_reasons": {
+                "DOMINANT_ROLL_EXCLUDED": 3
+              },
+              "loss_count": 13,
+              "name": "fold-2",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 1319,
+              "test_since": "2024-07-05",
+              "test_through": "2024-12-31",
+              "train_since": "2023-01-03",
+              "train_through": "2024-07-04",
+              "warmup_bar_count": 3927,
+              "win_count": 27
+            }
+          ]
+        },
+        "double_slippage": {
+          "closed_trade_count": 89,
+          "compounded_net_return_pct": "-0.8625152637712483502865517600",
+          "folds": [
+            {
+              "closed_trade_count": 49,
+              "closed_trade_max_drawdown_pct": "14.45600031988294489041480788",
+              "compounded_net_return_pct": "-3.978029252280376729661161410",
+              "fill_count": 98,
+              "incomplete_position_count": 0,
+              "incomplete_reasons": {},
+              "loss_count": 19,
+              "name": "fold-1",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 1301,
+              "test_since": "2024-01-02",
+              "test_through": "2024-07-04",
+              "train_since": "2023-01-03",
+              "train_through": "2023-12-29",
+              "warmup_bar_count": 2626,
+              "win_count": 30
+            },
+            {
+              "closed_trade_count": 40,
+              "closed_trade_max_drawdown_pct": "7.917318816795395283435903930",
+              "compounded_net_return_pct": "3.244584509408350306642033200",
+              "fill_count": 83,
+              "incomplete_position_count": 3,
+              "incomplete_reasons": {
+                "DOMINANT_ROLL_EXCLUDED": 3
+              },
+              "loss_count": 14,
+              "name": "fold-2",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 1319,
+              "test_since": "2024-07-05",
+              "test_through": "2024-12-31",
+              "train_since": "2023-01-03",
+              "train_through": "2024-07-04",
+              "warmup_bar_count": 3927,
+              "win_count": 26
+            }
+          ]
+        }
+      },
+      "status": "passed"
+    },
+    "sc:60m:trend": {
+      "scenarios": {
+        "baseline": {
+          "closed_trade_count": 189,
+          "compounded_net_return_pct": "-20.64854266439404713970796672",
+          "folds": [
+            {
+              "closed_trade_count": 99,
+              "closed_trade_max_drawdown_pct": "11.61581166495284890583179807",
+              "compounded_net_return_pct": "-5.875414442704315006287487650",
+              "fill_count": 203,
+              "incomplete_position_count": 5,
+              "incomplete_reasons": {
+                "DOMINANT_ROLL_EXCLUDED": 5
+              },
+              "loss_count": 66,
+              "name": "fold-1",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 1301,
+              "test_since": "2024-01-02",
+              "test_through": "2024-07-04",
+              "train_since": "2023-01-03",
+              "train_through": "2023-12-29",
+              "warmup_bar_count": 2626,
+              "win_count": 33
+            },
+            {
+              "closed_trade_count": 90,
+              "closed_trade_max_drawdown_pct": "17.89380652560228416475697663",
+              "compounded_net_return_pct": "-15.69529165437547373665200198",
+              "fill_count": 182,
+              "incomplete_position_count": 2,
+              "incomplete_reasons": {
+                "DOMINANT_ROLL_EXCLUDED": 1,
+                "END_OF_SAMPLE_EXCLUDED": 1
+              },
+              "loss_count": 67,
+              "name": "fold-2",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 1319,
+              "test_since": "2024-07-05",
+              "test_through": "2024-12-31",
+              "train_since": "2023-01-03",
+              "train_through": "2024-07-04",
+              "warmup_bar_count": 3927,
+              "win_count": 23
+            }
+          ]
+        },
+        "double_fee": {
+          "closed_trade_count": 189,
+          "compounded_net_return_pct": "-21.68171376954747696223067744",
+          "folds": [
+            {
+              "closed_trade_count": 99,
+              "closed_trade_max_drawdown_pct": "12.13048143331940561710811572",
+              "compounded_net_return_pct": "-6.487020330289514981492614110",
+              "fill_count": 203,
+              "incomplete_position_count": 5,
+              "incomplete_reasons": {
+                "DOMINANT_ROLL_EXCLUDED": 5
+              },
+              "loss_count": 66,
+              "name": "fold-1",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 1301,
+              "test_since": "2024-01-02",
+              "test_through": "2024-07-04",
+              "train_since": "2023-01-03",
+              "train_through": "2023-12-29",
+              "warmup_bar_count": 2626,
+              "win_count": 33
+            },
+            {
+              "closed_trade_count": 90,
+              "closed_trade_max_drawdown_pct": "18.34852673110429359109320189",
+              "compounded_net_return_pct": "-16.24875337405127148170331463",
+              "fill_count": 182,
+              "incomplete_position_count": 2,
+              "incomplete_reasons": {
+                "DOMINANT_ROLL_EXCLUDED": 1,
+                "END_OF_SAMPLE_EXCLUDED": 1
+              },
+              "loss_count": 67,
+              "name": "fold-2",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 1319,
+              "test_since": "2024-07-05",
+              "test_through": "2024-12-31",
+              "train_since": "2023-01-03",
+              "train_through": "2024-07-04",
+              "warmup_bar_count": 3927,
+              "win_count": 23
+            }
+          ]
+        },
+        "double_slippage": {
+          "closed_trade_count": 189,
+          "compounded_net_return_pct": "-25.68161793834492892062095620",
+          "folds": [
+            {
+              "closed_trade_count": 99,
+              "closed_trade_max_drawdown_pct": "14.15936505892366113479893551",
+              "compounded_net_return_pct": "-8.893960282564282032732493020",
+              "fill_count": 203,
+              "incomplete_position_count": 5,
+              "incomplete_reasons": {
+                "DOMINANT_ROLL_EXCLUDED": 5
+              },
+              "loss_count": 68,
+              "name": "fold-1",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 1301,
+              "test_since": "2024-01-02",
+              "test_through": "2024-07-04",
+              "train_since": "2023-01-03",
+              "train_through": "2023-12-29",
+              "warmup_bar_count": 2626,
+              "win_count": 31
+            },
+            {
+              "closed_trade_count": 90,
+              "closed_trade_max_drawdown_pct": "20.14236378972161695900200277",
+              "compounded_net_return_pct": "-18.42650356425036626325584263",
+              "fill_count": 182,
+              "incomplete_position_count": 2,
+              "incomplete_reasons": {
+                "DOMINANT_ROLL_EXCLUDED": 1,
+                "END_OF_SAMPLE_EXCLUDED": 1
+              },
+              "loss_count": 68,
+              "name": "fold-2",
+              "rejected_fill_count": 0,
+              "rejected_reasons": {},
+              "test_bar_count": 1319,
+              "test_since": "2024-07-05",
+              "test_through": "2024-12-31",
+              "train_since": "2023-01-03",
+              "train_through": "2024-07-04",
+              "warmup_bar_count": 3927,
+              "win_count": 22
+            }
+          ]
+        }
+      },
+      "status": "passed"
+    }
+  },
+  "created_at": "2026-09-04T04:45:05.432601+00:00",
+  "formula_parameters_optimized": false,
+  "frozen_formula_versions_by_strategy": {
+    "main_rise": [
+      "newow_main_rise_ma35_ma45_page_v1",
+      "newow_main_rise_j_reduce_page_v1",
+      "newow_escape_d123_page_v2",
+      "newow_buy_d456_page_v1",
+      "newow_magic11_page_v1"
+    ],
+    "oscillation": [
+      "newow_oscillation_hhv_llv10_page_v1"
+    ],
+    "trend": [
+      "newow_trend_band_page_v2"
+    ]
+  },
+  "git_head": "f96f1c9a40371276f66223e5fdedb2812de72ef3",
+  "normalized_snapshot": {
+    "path": "/private/tmp/newow-oos-evidence-20260904/normalized-research-snapshot.json",
+    "sha256": "57039d12392c636b3bd762b8cf12686ea7ea388ef54929cfd32b8d090cbc10f0"
+  },
+  "passed_cell_count": 18,
+  "schema_version": 1
+}

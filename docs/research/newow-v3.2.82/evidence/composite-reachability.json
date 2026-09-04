@@ -1,0 +1,228 @@
+{
+  "schema_version": "newow-composite-reachability-v1",
+  "source_relative_path": "sources/stock-detail-v3.2.82.html",
+  "source_sha256": "cd962170085dc2145fbaebf28a47ce6764b9f519e6032b54a896e37f0c9d0cf9",
+  "witnesses": [
+    {
+      "branch_key": "bullish-bullish",
+      "synthetic_input": {
+        "weekly": "hold",
+        "daily": "hold",
+        "trend_60m": "holding",
+        "osc_weekly": "holding",
+        "osc_daily": "holding",
+        "osc_60m": "holding"
+      },
+      "classified_trend_bias": "bullish",
+      "classified_oscillation_bias": "bullish",
+      "generated_key": "bullish-bullish",
+      "selected_key": "bullish-bullish",
+      "page_reachable": true,
+      "unreachable_reason": null
+    },
+    {
+      "branch_key": "bullish-bearish",
+      "synthetic_input": {
+        "weekly": "hold",
+        "daily": "hold",
+        "trend_60m": "holding",
+        "osc_weekly": "cleared",
+        "osc_daily": "cleared",
+        "osc_60m": "cleared"
+      },
+      "classified_trend_bias": "bullish",
+      "classified_oscillation_bias": "bearish",
+      "generated_key": "bullish-bearish",
+      "selected_key": "bullish-bearish",
+      "page_reachable": true,
+      "unreachable_reason": null
+    },
+    {
+      "branch_key": "bullish-neutral",
+      "synthetic_input": {
+        "weekly": "hold",
+        "daily": "hold",
+        "trend_60m": "holding",
+        "osc_weekly": "idle",
+        "osc_daily": "idle",
+        "osc_60m": "idle"
+      },
+      "classified_trend_bias": "bullish",
+      "classified_oscillation_bias": "neutral",
+      "generated_key": "bullish-neutral",
+      "selected_key": "bullish-neutral",
+      "page_reachable": true,
+      "unreachable_reason": null
+    },
+    {
+      "branch_key": "bearish-bullish",
+      "synthetic_input": {
+        "weekly": "wait",
+        "daily": "wait",
+        "trend_60m": "cleared",
+        "osc_weekly": "holding",
+        "osc_daily": "holding",
+        "osc_60m": "holding"
+      },
+      "classified_trend_bias": "bearish",
+      "classified_oscillation_bias": "bullish",
+      "generated_key": "bearish-bullish",
+      "selected_key": "bearish-bullish",
+      "page_reachable": true,
+      "unreachable_reason": null
+    },
+    {
+      "branch_key": "bearish-bearish",
+      "synthetic_input": {
+        "weekly": "wait",
+        "daily": "wait",
+        "trend_60m": "cleared",
+        "osc_weekly": "cleared",
+        "osc_daily": "cleared",
+        "osc_60m": "cleared"
+      },
+      "classified_trend_bias": "bearish",
+      "classified_oscillation_bias": "bearish",
+      "generated_key": "bearish-bearish",
+      "selected_key": "bearish-bearish",
+      "page_reachable": true,
+      "unreachable_reason": null
+    },
+    {
+      "branch_key": "bearish-neutral",
+      "synthetic_input": {
+        "weekly": "wait",
+        "daily": "wait",
+        "trend_60m": "cleared",
+        "osc_weekly": "idle",
+        "osc_daily": "idle",
+        "osc_60m": "idle"
+      },
+      "classified_trend_bias": "bearish",
+      "classified_oscillation_bias": "neutral",
+      "generated_key": "bearish-neutral",
+      "selected_key": "bearish-neutral",
+      "page_reachable": true,
+      "unreachable_reason": null
+    },
+    {
+      "branch_key": "cautious-bullish",
+      "synthetic_input": {
+        "weekly": "hold",
+        "daily": "wait",
+        "trend_60m": "holding",
+        "osc_weekly": "holding",
+        "osc_daily": "holding",
+        "osc_60m": "holding"
+      },
+      "classified_trend_bias": "cautious",
+      "classified_oscillation_bias": "bullish",
+      "generated_key": "cautious-bullish",
+      "selected_key": "cautious-bullish",
+      "page_reachable": true,
+      "unreachable_reason": null
+    },
+    {
+      "branch_key": "cautious-bearish",
+      "synthetic_input": {
+        "weekly": "hold",
+        "daily": "wait",
+        "trend_60m": "holding",
+        "osc_weekly": "cleared",
+        "osc_daily": "cleared",
+        "osc_60m": "cleared"
+      },
+      "classified_trend_bias": "cautious",
+      "classified_oscillation_bias": "bearish",
+      "generated_key": "cautious-bearish",
+      "selected_key": "cautious-bearish",
+      "page_reachable": true,
+      "unreachable_reason": null
+    },
+    {
+      "branch_key": "cautious-neutral",
+      "synthetic_input": {
+        "weekly": "hold",
+        "daily": "wait",
+        "trend_60m": "holding",
+        "osc_weekly": "idle",
+        "osc_daily": "idle",
+        "osc_60m": "idle"
+      },
+      "classified_trend_bias": "cautious",
+      "classified_oscillation_bias": "neutral",
+      "generated_key": "cautious-neutral",
+      "selected_key": "cautious-neutral",
+      "page_reachable": true,
+      "unreachable_reason": null
+    },
+    {
+      "branch_key": "warning-bullish",
+      "synthetic_input": {
+        "weekly": "wait",
+        "daily": "hold",
+        "trend_60m": "holding",
+        "osc_weekly": "holding",
+        "osc_daily": "holding",
+        "osc_60m": "holding"
+      },
+      "classified_trend_bias": "bearish",
+      "classified_oscillation_bias": "bullish",
+      "generated_key": "bearish-bullish",
+      "selected_key": "bearish-bullish",
+      "page_reachable": false,
+      "unreachable_reason": "weekly_bearish_branch_precedes_warning"
+    },
+    {
+      "branch_key": "warning-bearish",
+      "synthetic_input": {
+        "weekly": "wait",
+        "daily": "hold",
+        "trend_60m": "holding",
+        "osc_weekly": "cleared",
+        "osc_daily": "cleared",
+        "osc_60m": "cleared"
+      },
+      "classified_trend_bias": "bearish",
+      "classified_oscillation_bias": "bearish",
+      "generated_key": "bearish-bearish",
+      "selected_key": "bearish-bearish",
+      "page_reachable": false,
+      "unreachable_reason": "weekly_bearish_branch_precedes_warning"
+    },
+    {
+      "branch_key": "warning-neutral",
+      "synthetic_input": {
+        "weekly": "wait",
+        "daily": "hold",
+        "trend_60m": "holding",
+        "osc_weekly": "idle",
+        "osc_daily": "idle",
+        "osc_60m": "idle"
+      },
+      "classified_trend_bias": "bearish",
+      "classified_oscillation_bias": "neutral",
+      "generated_key": "bearish-neutral",
+      "selected_key": "bearish-neutral",
+      "page_reachable": false,
+      "unreachable_reason": "weekly_bearish_branch_precedes_warning"
+    },
+    {
+      "branch_key": "neutral-neutral",
+      "synthetic_input": {
+        "weekly": null,
+        "daily": null,
+        "trend_60m": "idle",
+        "osc_weekly": "idle",
+        "osc_daily": "idle",
+        "osc_60m": "idle"
+      },
+      "classified_trend_bias": "neutral",
+      "classified_oscillation_bias": "neutral",
+      "generated_key": "neutral-neutral",
+      "selected_key": "neutral-neutral",
+      "page_reachable": true,
+      "unreachable_reason": null
+    }
+  ]
+}
