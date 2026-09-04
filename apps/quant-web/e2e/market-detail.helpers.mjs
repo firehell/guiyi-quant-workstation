@@ -423,7 +423,13 @@ export async function mockMarketDetail(page, options = {}) {
     runtimeRequests.push(new URL(route.request().url()))
     return route.fulfill({ json: {
       status: 'ok', generated_at: '2026-09-03T03:00:00Z', readonly: true, would_start_services: false,
-      would_enqueue_jobs: false, would_send_notifications: false, components: { alert: { status: options.alertRuntimeStatus ?? 'ok' } },
+      would_enqueue_jobs: false, would_send_notifications: false, components: { alert: {
+        status: options.alertRuntimeStatus ?? 'ok', enabled_rule_count: 0,
+        rule_status: {
+          htdy_original_15m: { last_completed_bar_at: null, last_success_at: null, last_failure_at: null, last_error_type: null },
+          subing_ths_alert_15m_v1: { last_completed_bar_at: null, last_success_at: null, last_failure_at: null, last_error_type: null },
+        },
+      } },
     } })
   })
   requests.alertRequests = alertRequests
@@ -442,6 +448,14 @@ export function htdyEvent(symbol, frequency, barEnd = '2026-09-03T02:45:00.000Z'
 
 function htdyRule() {
   return { rule_code: 'htdy_original_15m', display_name: '火天大有', kind: 'indicator_observation', input_frequencies: ['1m', '5m', '15m', '30m', '60m', '1d', '1w'], enabled_for_product: true, enabled_frequencies: ['15m'] }
+}
+
+export function subingRule(enabled = false) {
+  return { rule_code: 'subing_ths_alert_15m_v1', display_name: '苏冰预警', kind: 'indicator_observation', input_frequencies: ['15m'], enabled_for_product: enabled, enabled_frequencies: enabled ? ['15m'] : [] }
+}
+
+export function subingEvent(symbol, direction = 'buy') {
+  return { id: 9, rule_code: 'subing_ths_alert_15m_v1', symbol, contract: `${symbol.toUpperCase()}2601`, trading_day: '2026-09-03', frequency: '15m', bar_end: '2026-09-03T02:45:00.000Z', result_codes: [direction], detected_at: '2026-09-03T02:46:00.000Z', notification_attempted_at: null }
 }
 
 export async function installDetailFakeWebSocket(page) {

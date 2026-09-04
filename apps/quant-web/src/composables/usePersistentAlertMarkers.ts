@@ -53,7 +53,7 @@ export function usePersistentAlertMarkers(dependencies: Dependencies, options: P
     mutation: 'replace' | 'prepend' | 'live',
   ): Promise<void> {
     const identityChanged = identityKey(identity) !== identityKey(activeIdentity)
-    if (identityChanged || mutation === 'replace') {
+    if (identityChanged) {
       generation += 1
       stopTimer()
       eventMap.clear()
@@ -84,6 +84,12 @@ export function usePersistentAlertMarkers(dependencies: Dependencies, options: P
       loadedEnd = range.end
       await fetchRange(identity, range.start, range.end, requestGeneration)
       startTimer(requestGeneration)
+      return
+    }
+    if (mutation === 'replace') {
+      loadedStart = range.start
+      loadedEnd = range.end
+      await fetchRange(identity, range.start, range.end, requestGeneration, true)
       return
     }
     if (mutation === 'prepend' && Date.parse(range.start) < Date.parse(loadedStart)) {
@@ -119,6 +125,7 @@ export function usePersistentAlertMarkers(dependencies: Dependencies, options: P
     start: string,
     end: string,
     requestGeneration: number,
+    replaceSnapshot = false,
   ) {
     const ruleCodes = options.resolveRuleCodes?.(identity) ?? markerRuleCodes(identity.seriesKind, identity.frequency)
     if (!ruleCodes.length) return
@@ -133,6 +140,8 @@ export function usePersistentAlertMarkers(dependencies: Dependencies, options: P
         end: normalizedEnd,
       })))
       if (requestGeneration !== generation || identityKey(identity) !== identityKey(activeIdentity)) return
+      const nextEvents = new Map<string, AlertEventListResponse['items'][number]>()
+      let responseMismatch = false
       for (const [index, response] of responses.entries()) {
         const ruleCode = ruleCodes[index]
         for (const event of response.items) {
@@ -140,10 +149,16 @@ export function usePersistentAlertMarkers(dependencies: Dependencies, options: P
             !matchesAlertRuleCode(event, ruleCode)
             || event.symbol !== identity.symbol
             || event.frequency !== identity.frequency
-          ) continue
-          eventMap.set(eventKey(event), event)
+          ) {
+            responseMismatch = true
+            continue
+          }
+          nextEvents.set(eventKey(event), event)
         }
       }
+      if (responseMismatch) throw new Error('AlertEvent identity mismatch')
+      if (replaceSnapshot) eventMap.clear()
+      for (const [key, event] of nextEvents) eventMap.set(key, event)
       events.value = [...eventMap.values()].sort((left, right) => Date.parse(left.detected_at) - Date.parse(right.detected_at))
       markers.value = alertEventsToMarkers(events.value)
       unavailable.value = false

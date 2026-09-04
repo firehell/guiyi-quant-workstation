@@ -106,7 +106,7 @@ test('keeps mixed Rule Events in the single Focus Rail and deep-links SuBing wit
   expect(requests.filter((path) => path === '/api/alerts/current-events')).toHaveLength(1)
 
   await page.getByText('JM · 苏冰预警 · 空头预警 · 15m').click()
-  await expect(page).toHaveURL(/symbol=jm.*series_kind=actual_dominant.*frequency=15m.*focus_bar_end=2026-09-02T02:45:00Z/)
+  await expect(page).toHaveURL(/view=subing.*symbol=jm.*series_kind=actual_dominant.*frequency=15m.*focus_bar_end=2026-09-02T02:45:00Z/)
 })
 
 test('renders all five frozen table state icons at 28px', async ({ page }) => {

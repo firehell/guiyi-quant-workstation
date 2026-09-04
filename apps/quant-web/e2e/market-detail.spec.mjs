@@ -9,6 +9,8 @@ import {
   navigateClient,
   newowTrendDetailFixture,
   trendGenericBars,
+  subingEvent,
+  subingRule,
 } from './market-detail.helpers.mjs'
 
 const freeJm = '/market/chart?symbol=jm&view=free&series_kind=actual_dominant&frequency=15m'
@@ -504,8 +506,11 @@ test('a stale Trend response cannot overwrite a newer product identity', async (
   await expect(workspace.getByText('RB2605', { exact: true }).first()).toBeVisible()
 })
 
-test('Free and HTDY stay independent while SuBing remains explicitly unavailable', async ({ page }) => {
-  const requests = await mockReadyTrend(page)
+test('Free, HTDY, and SuBing remain isolated workspaces with only SuBing Event facts', async ({ page }) => {
+  const requests = await mockReadyTrend(page, {
+    alertEvents: ({ url }) => url.searchParams.get('rule_code') === 'subing_ths_alert_15m_v1' ? [subingEvent('jm')] : [],
+    alertRules: [subingRule()],
+  })
   await page.goto(freeJm)
   await expect(page.locator('[data-detail-workspace="free"]')).toBeVisible()
   await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-research-marker-count', '0')
@@ -517,9 +522,12 @@ test('Free and HTDY stay independent while SuBing remains explicitly unavailable
   await expect(page.getByText('首次识别 Event', { exact: true }).first()).toBeVisible()
 
   await page.goto('/market/chart?symbol=jm&view=subing')
-  await expect(page.getByRole('heading', { name: '当前视角尚未接入统一详情页' })).toBeVisible()
-  await expect(page.getByText('新苏冰 Workspace 尚未接入统一详情页。', { exact: true })).toBeVisible()
-  await expect(page.locator('[data-detail-ready="true"]')).toHaveCount(0)
+  await expect(page.locator('[data-detail-ready="true"]')).toBeVisible()
+  await expect(page.locator('[data-detail-workspace="subing"]')).toBeVisible()
+  await expect(page.getByText(/正式 S↑ \/ S↓ 只来自 AlertEvent/)).toBeVisible()
+  await expect(page.getByText(/S↑ 多头预警/).first()).toBeVisible()
+  await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-alert-marker-count', '1')
+  expect(requests.alertRequests.every(({ method }) => method === 'GET')).toBe(true)
   expect(requests.newowRequests).toEqual([])
 })
 
@@ -646,7 +654,7 @@ test('returning a fixed view to legacy makes its parsed identity explicit', asyn
   await mockMarketDetail(page)
   for (const expected of [
     { path: '/market/chart?symbol=jm&view=trend', frequency: '1d', mounted: true },
-    { path: '/market/chart?symbol=jm&view=subing', frequency: '15m', mounted: false },
+    { path: '/market/chart?symbol=jm&view=subing', frequency: '15m', mounted: true },
   ]) {
     await page.goto(expected.path)
     await page.evaluate(async () => {

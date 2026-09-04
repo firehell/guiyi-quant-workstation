@@ -152,7 +152,7 @@ describe('persistent Alert markers', () => {
     const controller = usePersistentAlertMarkers({
       fetchEvents: async ({ ruleCode }) => {
         requests.push(ruleCode)
-        return { items: [event(1, ['buy'])] }
+        return { items: [ruleCode === ALERT_RULE_CODES.HTDY ? event(1, ['buy']) : subingEvent(2, 'buy')] }
       },
       scheduleInterval: () => 1,
       clearInterval: () => { cleared = true },
@@ -163,7 +163,7 @@ describe('persistent Alert markers', () => {
       frequency: '15m',
     }, bars(), 'replace')
     assert.deepEqual(requests, [ALERT_RULE_CODES.HTDY, ALERT_RULE_CODES.SUBING_THS])
-    assert.equal(controller.markers.value.length, 1)
+    assert.equal(controller.markers.value.length, 2)
     controller.dispose()
     assert.equal(cleared, true)
   })
@@ -202,6 +202,37 @@ describe('persistent Alert markers', () => {
     reject = true
     await controller.sync(identity, [{ ...bars()[0]!, time: '2026-08-15T00:00:00Z' }, ...bars()], 'prepend')
     assert.equal(controller.events.value.length, 1)
+    assert.equal(controller.unavailable.value, true)
+    controller.dispose()
+  })
+
+  test('same-identity replacement retains the successful Event snapshot when refresh fails', async () => {
+    let reject = false
+    const controller = usePersistentAlertMarkers({
+      fetchEvents: async () => {
+        if (reject) throw new Error('offline')
+        return { items: [subingEvent(8, 'buy')] }
+      },
+      scheduleInterval: () => 1,
+      clearInterval: () => undefined,
+    }, { resolveRuleCodes: () => [ALERT_RULE_CODES.SUBING_THS] })
+    const identity = { seriesKind: 'actual_dominant' as const, symbol: 'jm', frequency: '15m' as const }
+    await controller.sync(identity, bars(), 'replace')
+    reject = true
+    await controller.sync(identity, bars(), 'replace')
+    assert.equal(controller.events.value[0]?.id, 8)
+    assert.equal(controller.unavailable.value, true)
+    controller.dispose()
+  })
+
+  test('an Event response with a mismatched requested identity fails closed', async () => {
+    const controller = usePersistentAlertMarkers({
+      fetchEvents: async () => ({ items: [{ ...subingEvent(9, 'buy'), symbol: 'rb' }] }),
+      scheduleInterval: () => 1,
+      clearInterval: () => undefined,
+    }, { resolveRuleCodes: () => [ALERT_RULE_CODES.SUBING_THS] })
+    await controller.sync({ seriesKind: 'actual_dominant', symbol: 'jm', frequency: '15m' }, bars(), 'replace')
+    assert.equal(controller.events.value.length, 0)
     assert.equal(controller.unavailable.value, true)
     controller.dispose()
   })
