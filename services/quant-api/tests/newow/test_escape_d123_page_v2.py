@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
+from hashlib import sha256
 
 import pytest
 
@@ -199,3 +200,36 @@ def test_page_v2_is_partial_window_causal_serializable_and_rollover_safe() -> No
     assert reset.markers == ()
     assert reset.state.closes == (2950.0,)
     assert reset.state.previous_var4 == 50.0
+
+
+def test_page_v2_marker_identity_is_stable_and_separate_from_v1_namespace() -> None:
+    bars = _golden_bars()
+    page_markers = tuple(
+        marker
+        for result in calculate_escape_series(
+            bars, profile=NEWOW_TREND_D1_PAGE_V2
+        )
+        for marker in result.markers
+    )
+
+    assert page_markers
+    assert len({marker.marker_id for marker in page_markers}) == len(page_markers)
+    first = page_markers[0]
+    first_bar = next(bar for bar in bars if bar.bar_end == first.bar_end)
+    expected = "|".join(
+        (
+            "newow_trend_page_v2",
+            "newow_escape_d123_page_v2",
+            first_bar.physical_contract,
+            first.marker_type.value,
+            first_bar.bar_end.isoformat(),
+        )
+    )
+    assert first.marker_id == sha256(expected.encode()).hexdigest()
+    assert page_markers == tuple(
+        marker
+        for result in calculate_escape_series(
+            bars, profile=NEWOW_TREND_D1_PAGE_V2
+        )
+        for marker in result.markers
+    )

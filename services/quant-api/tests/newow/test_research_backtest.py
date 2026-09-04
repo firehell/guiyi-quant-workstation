@@ -14,9 +14,11 @@ from guiyi_quant.newow.research_backtest import (
     evaluate_newow_timeframes,
     run_causal_long_only_backtest,
 )
+from guiyi_quant.newow.subplots import ZHAOYAO_MIRROR_FORMULA_VERSION
 
 
 UTC = timezone.utc
+TREND_FORMULA = "newow_trend_band_page_v2"
 
 
 def _bar(
@@ -68,8 +70,8 @@ def test_causal_executor_fills_only_at_next_bar_open_with_costs() -> None:
         for index, value in enumerate((100, 110, 120, 130))
     )
     intents = (
-        BacktestIntent(BacktestAction.BUILD, bars[0].bar_end, "fixture_v1"),
-        BacktestIntent(BacktestAction.CLEAR, bars[2].bar_end, "fixture_v1"),
+        BacktestIntent(BacktestAction.BUILD, bars[0].bar_end, TREND_FORMULA),
+        BacktestIntent(BacktestAction.CLEAR, bars[2].bar_end, TREND_FORMULA),
     )
     costs = BacktestCosts(
         commission_rate=Decimal("0.001"),
@@ -99,8 +101,8 @@ def test_futures_costs_apply_multiplier_fixed_fee_and_tick_slippage() -> None:
         _bar(index, value=str(value)) for index, value in enumerate((90, 100, 105, 110))
     )
     intents = (
-        BacktestIntent(BacktestAction.BUILD, bars[0].bar_end, "fixture_v1"),
-        BacktestIntent(BacktestAction.CLEAR, bars[2].bar_end, "fixture_v1"),
+        BacktestIntent(BacktestAction.BUILD, bars[0].bar_end, TREND_FORMULA),
+        BacktestIntent(BacktestAction.CLEAR, bars[2].bar_end, TREND_FORMULA),
     )
     costs = BacktestCosts(
         contract_multiplier=Decimal("10"),
@@ -129,8 +131,8 @@ def test_bps_slippage_is_rounded_against_the_futures_price_tick() -> None:
     result = run_causal_long_only_backtest(
         bars,
         (
-            BacktestIntent(BacktestAction.BUILD, bars[0].bar_end, "fixture_v1"),
-            BacktestIntent(BacktestAction.CLEAR, bars[2].bar_end, "fixture_v1"),
+            BacktestIntent(BacktestAction.BUILD, bars[0].bar_end, TREND_FORMULA),
+            BacktestIntent(BacktestAction.CLEAR, bars[2].bar_end, TREND_FORMULA),
         ),
         costs=BacktestCosts(
             slippage_bps=Decimal("5"),
@@ -148,14 +150,14 @@ def test_rollover_cancels_pending_intent_and_never_carries_position() -> None:
 
     pending = run_causal_long_only_backtest(
         old + (new,),
-        (BacktestIntent(BacktestAction.BUILD, old[-1].bar_end, "fixture_v1"),),
+        (BacktestIntent(BacktestAction.BUILD, old[-1].bar_end, TREND_FORMULA),),
     )
     assert pending.fills == ()
     assert pending.cancelled_intent_count == 1
 
     opened = run_causal_long_only_backtest(
         old + (new,),
-        (BacktestIntent(BacktestAction.BUILD, old[0].bar_end, "fixture_v1"),),
+        (BacktestIntent(BacktestAction.BUILD, old[0].bar_end, TREND_FORMULA),),
     )
     assert len(opened.fills) == 1
     assert len(opened.incomplete_positions) == 1
@@ -220,3 +222,15 @@ def test_repainting_mirror_is_rejected_from_formal_backtest() -> None:
     )
     with pytest.raises(ValueError, match="NEWOW_BACKTEST_STRATEGY_NOT_CAUSAL"):
         backtest_newow_strategy(bars, strategy="zhaoyao_mirror")  # type: ignore[arg-type]
+
+
+def test_low_level_executor_rejects_repainting_and_unknown_formula_intents() -> None:
+    bars = tuple(
+        _bar(index, value=str(value)) for index, value in enumerate((100, 101))
+    )
+    for formula in (ZHAOYAO_MIRROR_FORMULA_VERSION, "fixture_unregistered_v1"):
+        with pytest.raises(ValueError, match="NEWOW_BACKTEST_SIGNAL_FORMULA_NOT_CAUSAL"):
+            run_causal_long_only_backtest(
+                bars,
+                (BacktestIntent(BacktestAction.BUILD, bars[0].bar_end, formula),),
+            )

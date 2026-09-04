@@ -32,7 +32,7 @@ export interface NewowTrendQueryIdentity {
 
 export interface NewowMeta {
   readonly strategy_code: 'newow_trend_v1'
-  readonly profile_id: 'newow_trend_d1_v1'
+  readonly profile_id: 'newow_trend_d1_page_v2'
   readonly frequency: '1d'
   readonly series_kind: 'actual_dominant'
   readonly calculation_identity: string
@@ -129,8 +129,8 @@ export interface NewowLegend {
 }
 
 export interface NewowFormulaDescriptions {
-  readonly trend_band: 'newow_trend_band_cleanroom_v1'
-  readonly escape: 'newow_escape_d123_v1'
+  readonly trend_band: 'newow_trend_band_page_v2'
+  readonly escape: 'newow_escape_d123_page_v2'
   readonly cup_handle: 'newow_cup_handle_v1'
 }
 

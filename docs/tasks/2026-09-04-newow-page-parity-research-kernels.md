@@ -155,17 +155,23 @@ formal_signal_eligible = false
 uv run --project services/quant-api ruff check <本任务 Newow 源码与测试>
 PYTHONPATH=services/quant-api:packages/quant-core \
   uv run --project services/quant-api pytest -q services/quant-api/tests/newow
-  => 447 passed in 204.07s
+  => 453 passed in 194.89s
 PYTHONPATH=services/quant-api:packages/quant-core \
 MYPYPATH=services/quant-api:packages/quant-core \
   uv run --project services/quant-api mypy --explicit-package-bases \
   --ignore-missing-imports services/quant-api/app packages/quant-core/guiyi_quant
-  => Success: no issues found in 102 source files
+  => Success: no issues found in 103 source files
+npm --prefix apps/quant-web test
+  => 314 passed, 1 skipped
+npm --prefix apps/quant-web run build
+  => vue-tsc + Vite + bundle topology passed
+npm --prefix apps/quant-web run test:e2e -- --grep Trend
+  => 4 passed
 ```
 
 定向新增回测测试覆盖：next-open、bps 费率、合约乘数、每手固定费、tick 滑点、换月取消、未平仓排除、混频/乱序拒绝、60m 独立计算、跨周期无 fallback、重绘策略拒绝。
 
-上述结果为本任务提交前的 fresh output；后续 UI 集成将使用独立验证集。
+独立 Review 提出的底层重绘入口、跨合约段批量计算、Web v1/v2 合同断裂和 marker ID 命名空间共四项问题均已修复并增加回归测试。
 
 ## 8. 未完成 Gate
 
@@ -174,7 +180,6 @@ MYPYPATH=services/quant-api:packages/quant-core \
 - 真实 FeeMarginRule / multiplier / tick 快照绑定；
 - 涨跌停与流动性可成交性；
 - OOS、Walk-forward 与参数稳定性；
-- UI 接入与独立 Review；
 - release 与 Runtime promotion 人工批准。
 
 在这些 Gate 完成前，只能声明页面公式复算与研究内核测试完成，不能声明收益可信、策略候选晋升、已发布或 Runtime Ready。

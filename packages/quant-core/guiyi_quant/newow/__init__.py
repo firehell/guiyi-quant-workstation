@@ -96,6 +96,7 @@ from .subplots import (
 )
 from .research_backtest import (
     CAUSAL_BACKTEST_FORMULA_VERSION,
+    CAUSAL_SIGNAL_FORMULAS,
     FORMAL_FREQUENCIES,
     BacktestAction,
     BacktestCosts,
@@ -121,6 +122,7 @@ __all__ = [
     "UP_DOWN_ENERGY_FORMULA_VERSION",
     "ZHAOYAO_MIRROR_FORMULA_VERSION",
     "CAUSAL_BACKTEST_FORMULA_VERSION",
+    "CAUSAL_SIGNAL_FORMULAS",
     "FORMAL_FREQUENCIES",
     "NEWOW_TREND_D1_V1",
     "NEWOW_TREND_D1_PAGE_V2",

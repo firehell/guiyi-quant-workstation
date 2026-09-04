@@ -134,9 +134,9 @@ export function newowTrendDetailFixture({ product = 'jm', from = trendDays[0], t
     product,
     'actual_dominant',
     '1d',
-    'newow_trend_d1_v1',
-    'newow_trend_band_cleanroom_v1',
-    'newow_escape_d123_v1',
+    'newow_trend_d1_page_v2',
+    'newow_trend_band_page_v2',
+    'newow_escape_d123_page_v2',
     'newow_cup_handle_v1',
   ].join('|')
   const genericBars = trendGenericBars(product)
@@ -159,7 +159,11 @@ export function newowTrendDetailFixture({ product = 'jm', from = trendDays[0], t
     marker_id: markerId,
     marker_type: markerType,
     bar_end: bars[index].bar_end,
-    price: bars[index].close,
+    price: formulaVersion === 'newow_trend_band_page_v2'
+      ? (trendCloses[index] - 1.1).toFixed(2)
+      : formulaVersion === 'newow_escape_d123_page_v2'
+        ? bars[index].high
+        : bars[index].close,
     label: ({
       CUP_HANDLE_READY: '杯柄就绪',
       CUP_HANDLE_BREAKOUT: '杯柄突破',
@@ -236,7 +240,7 @@ export function newowTrendDetailFixture({ product = 'jm', from = trendDays[0], t
   return {
     meta: {
       strategy_code: 'newow_trend_v1',
-      profile_id: 'newow_trend_d1_v1',
+      profile_id: 'newow_trend_d1_page_v2',
       frequency: '1d',
       series_kind: 'actual_dominant',
       calculation_identity: calculationIdentity,
@@ -264,15 +268,15 @@ export function newowTrendDetailFixture({ product = 'jm', from = trendDays[0], t
       }
     }),
     trend_markers: [
-      marker('trend-build-a', 'BUILD', 2, 'newow_trend_band_cleanroom_v1'),
-      marker('trend-clear-a', 'CLEAR', 4, 'newow_trend_band_cleanroom_v1'),
-      marker('trend-build-b', 'BUILD', 6, 'newow_trend_band_cleanroom_v1'),
+      marker('trend-build-a', 'BUILD', 2, 'newow_trend_band_page_v2'),
+      marker('trend-clear-a', 'CLEAR', 4, 'newow_trend_band_page_v2'),
+      marker('trend-build-b', 'BUILD', 6, 'newow_trend_band_page_v2'),
     ],
     escape_markers: [
-      marker('escape-old-d3', 'NEWOW_ESCAPE_D3', 3, 'newow_escape_d123_v1'),
-      marker('escape-latest-d1', 'NEWOW_ESCAPE_D1', 9, 'newow_escape_d123_v1'),
-      marker('escape-latest-d2', 'NEWOW_ESCAPE_D2', 9, 'newow_escape_d123_v1'),
-      marker('escape-latest-d3', 'NEWOW_ESCAPE_D3', 9, 'newow_escape_d123_v1'),
+      marker('escape-old-d3', 'NEWOW_ESCAPE_D3', 3, 'newow_escape_d123_page_v2'),
+      marker('escape-latest-d1', 'NEWOW_ESCAPE_D1', 9, 'newow_escape_d123_page_v2'),
+      marker('escape-latest-d2', 'NEWOW_ESCAPE_D2', 9, 'newow_escape_d123_page_v2'),
+      marker('escape-latest-d3', 'NEWOW_ESCAPE_D3', 9, 'newow_escape_d123_page_v2'),
     ],
     cup_markers: [
       ...cupLifecycle('cup-c-ready'),
@@ -311,8 +315,8 @@ export function newowTrendDetailFixture({ product = 'jm', from = trendDays[0], t
       BUILD: 'trend build', CLEAR: 'trend clear', D1: 'escape D1', D2: 'escape D2', D3: 'escape D3',
     },
     formula_descriptions: {
-      trend_band: 'newow_trend_band_cleanroom_v1',
-      escape: 'newow_escape_d123_v1',
+      trend_band: 'newow_trend_band_page_v2',
+      escape: 'newow_escape_d123_page_v2',
       cup_handle: 'newow_cup_handle_v1',
     },
     warnings: [],

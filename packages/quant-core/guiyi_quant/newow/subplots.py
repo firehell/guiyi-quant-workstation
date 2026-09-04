@@ -92,9 +92,16 @@ def _rolling(values: list[float], period: int, index: int, *, highest: bool) -> 
     return max(window) if highest else min(window)
 
 
+def _require_single_segment(bars: tuple[NewowDailyBar, ...]) -> None:
+    identities = {(bar.physical_contract, bar.segment_id) for bar in bars}
+    if len(identities) > 1:
+        raise ValueError("NEWOW_SUBPLOT_MIXED_SEGMENT")
+
+
 def calculate_main_force_control(
     bars: tuple[NewowDailyBar, ...],
 ) -> MainForceControlResult | None:
+    _require_single_segment(bars)
     if len(bars) < 10:
         return None
     closes = [float(bar.close) for bar in bars]
@@ -133,6 +140,7 @@ def calculate_zhaoyao_mirror(
 ) -> ZhaoyaoMirrorResult | None:
     """Reproduce the page overlay, including its documented future repaint."""
 
+    _require_single_segment(bars)
     if len(bars) < 20:
         return None
     size = len(bars)
@@ -248,6 +256,7 @@ def calculate_zhaoyao_mirror(
 def calculate_up_down_energy(
     bars: tuple[NewowDailyBar, ...],
 ) -> UpDownEnergyResult | None:
+    _require_single_segment(bars)
     if len(bars) < 15:
         return None
     closes = [float(bar.close) for bar in bars]

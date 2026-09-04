@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 
 from guiyi_quant.newow.subplots import (
@@ -77,3 +79,21 @@ def test_page_minimum_history_contracts_are_explicit() -> None:
     assert calculate_main_force_control(bars[:9]) is None
     assert calculate_up_down_energy(bars[:14]) is None
     assert calculate_zhaoyao_mirror(bars[:19]) is None
+
+
+@pytest.mark.parametrize(
+    "calculator",
+    [calculate_main_force_control, calculate_zhaoyao_mirror, calculate_up_down_energy],
+)
+def test_batch_subplots_reject_cross_contract_segment_input(calculator) -> None:
+    bars = golden_bars()
+    mixed = bars[:-1] + (
+        replace(
+            bars[-1],
+            physical_contract="RB0001",
+            segment_id="rb:RB0001:research",
+        ),
+    )
+
+    with pytest.raises(ValueError, match="NEWOW_SUBPLOT_MIXED_SEGMENT"):
+        calculator(mixed)

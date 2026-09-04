@@ -17,9 +17,9 @@ import type {
 } from '../types/newow.ts'
 
 const STRATEGY_CODE = 'newow_trend_v1'
-const PROFILE_ID = 'newow_trend_d1_v1'
-const TREND_FORMULA = 'newow_trend_band_cleanroom_v1'
-const ESCAPE_FORMULA = 'newow_escape_d123_v1'
+const PROFILE_ID = 'newow_trend_d1_page_v2'
+const TREND_FORMULA = 'newow_trend_band_page_v2'
+const ESCAPE_FORMULA = 'newow_escape_d123_page_v2'
 const CUP_FORMULA = 'newow_cup_handle_v1'
 
 const TOP_LEVEL_KEYS = [
@@ -66,9 +66,31 @@ export function normalizeNewowTrendDetailResponse(
   }
   const trendBand = array(value.trend_band, 'trend_band').map(normalizeTrendBandPoint)
   validateTrendBand(trendBand, bars)
-  const trendMarkers = normalizeMarkers(value.trend_markers, 'trend_markers', TREND_MARKERS, TREND_FORMULA, bars)
-  const escapeMarkers = normalizeMarkers(value.escape_markers, 'escape_markers', ESCAPE_MARKERS, ESCAPE_FORMULA, bars)
-  const cupMarkers = normalizeMarkers(value.cup_markers, 'cup_markers', CUP_MARKERS, CUP_FORMULA, bars)
+  const trendMarkers = normalizeMarkers(
+    value.trend_markers,
+    'trend_markers',
+    TREND_MARKERS,
+    TREND_FORMULA,
+    bars,
+    'trend_slow_band',
+    trendBand,
+  )
+  const escapeMarkers = normalizeMarkers(
+    value.escape_markers,
+    'escape_markers',
+    ESCAPE_MARKERS,
+    ESCAPE_FORMULA,
+    bars,
+    'high',
+  )
+  const cupMarkers = normalizeMarkers(
+    value.cup_markers,
+    'cup_markers',
+    CUP_MARKERS,
+    CUP_FORMULA,
+    bars,
+    'close',
+  )
   validateGlobalMarkers([...trendMarkers, ...escapeMarkers, ...cupMarkers])
   validateTrendTransitions(trendBand, trendMarkers)
   const cupHandles = array(value.cup_handles, 'cup_handles').map(normalizeCupHandle)
@@ -275,6 +297,8 @@ function normalizeMarkers<T extends NewowMarkerType>(
   acceptedTypes: readonly T[],
   formulaVersion: string,
   bars: readonly NewowBar[],
+  priceBasis: 'close' | 'high' | 'trend_slow_band',
+  trendBand: readonly NewowTrendBandPoint[] = [],
 ): NewowMarker<T>[] {
   const barByEnd = new Map(bars.map((bar, index) => [bar.bar_end, { bar, index }]))
   let priorBarIndex = -1
@@ -291,7 +315,14 @@ function normalizeMarkers<T extends NewowMarkerType>(
     if (referenced.index < priorBarIndex) throw new Error(`${family} must be ordered by visible bar`)
     priorBarIndex = referenced.index
     const price = positiveDecimal(value.price, `${field}.price`)
-    if (price !== referenced.bar.close) throw new Error(`${field}.price must equal its visible bar close`)
+    const expectedPrice = priceBasis === 'high'
+      ? referenced.bar.high
+      : priceBasis === 'trend_slow_band'
+        ? trendBand[referenced.index]?.c_value
+        : referenced.bar.close
+    if (expectedPrice === null || expectedPrice === undefined || price !== expectedPrice) {
+      throw new Error(`${field}.price disagrees with ${priceBasis}`)
+    }
     requireExact(value.formula_version, formulaVersion, `${field}.formula_version`)
     const markerId = text(value.marker_id, `${field}.marker_id`)
     const relatedMarkerIds = stringArray(value.related_marker_ids, `${field}.related_marker_ids`, true)

@@ -33,6 +33,13 @@ from .trend_band import initial_trend_band_state, step_trend_band
 
 CAUSAL_BACKTEST_FORMULA_VERSION = "newow_causal_next_open_costed_v1"
 FORMAL_FREQUENCIES = ("1m", "5m", "15m", "30m", "60m", "1d", "1w")
+CAUSAL_SIGNAL_FORMULAS = frozenset(
+    {
+        NEWOW_TREND_D1_PAGE_V2.trend_band_formula,
+        OSCILLATION_FORMULA_VERSION,
+        MAIN_RISE_PAGE_V1.band_formula,
+    }
+)
 
 
 class ResearchStrategy(StrEnum):
@@ -318,6 +325,8 @@ def run_causal_long_only_backtest(
             or not intent.signal_formula_version
         ):
             raise ValueError("NEWOW_BACKTEST_INTENT_INVALID")
+        if intent.signal_formula_version not in CAUSAL_SIGNAL_FORMULAS:
+            raise ValueError("NEWOW_BACKTEST_SIGNAL_FORMULA_NOT_CAUSAL")
         intents_by_end.setdefault(intent.signal_bar_end, []).append(intent)
 
     fills: list[BacktestFill] = []

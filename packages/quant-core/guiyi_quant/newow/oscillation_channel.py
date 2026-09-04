@@ -94,6 +94,9 @@ def calculate_channel_series(
 ) -> tuple[ChannelPoint, ...]:
     if not _valid_period(period):
         raise ValueError("NEWOW_CHANNEL_PERIOD_INVALID")
+    identities = {(bar.physical_contract, bar.segment_id) for bar in bars}
+    if len(identities) > 1:
+        raise ValueError("NEWOW_CHANNEL_MIXED_SEGMENT")
     highs: tuple[Decimal, ...] = ()
     lows: tuple[Decimal, ...] = ()
     result: list[ChannelPoint] = []

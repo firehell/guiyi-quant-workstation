@@ -284,9 +284,14 @@ def _slope(values: tuple[float, ...], denominator: float) -> float | None:
 def _marker_id(
     bar: NewowDailyBar, kind: NewowMarkerType, profile: NewowTrendProfile
 ) -> str:
+    strategy_code = (
+        "newow_trend_page_v2"
+        if profile.escape_formula == "newow_escape_d123_page_v2"
+        else "newow_trend_v1"
+    )
     source = "|".join(
         (
-            "newow_trend_v1",
+            strategy_code,
             profile.escape_formula,
             bar.physical_contract,
             kind.value,

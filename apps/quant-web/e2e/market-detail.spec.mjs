@@ -406,7 +406,7 @@ test('Trend uses one fixed Newow authority and preserves same-Bar facts in histo
   await expect(page.getByText('火天大有（原始观察）', { exact: true })).toHaveCount(0)
 
   await expect(workspace.getByText('newow_trend_v1', { exact: true })).toBeVisible()
-  await expect(workspace.getByText('newow_trend_d1_v1', { exact: true })).toBeVisible()
+  await expect(workspace.getByText('newow_trend_d1_page_v2', { exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: '风险与形态', exact: false })).toBeVisible()
   await expect(page.getByRole('button', { name: '主力与数据', exact: false })).toBeVisible()
 

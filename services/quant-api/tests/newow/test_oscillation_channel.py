@@ -162,3 +162,17 @@ def test_restore_oscillation_rejects_malformed_payload_without_raising() -> None
 
     assert malformed == OscillationState()
     assert unknown == OscillationState()
+
+
+def test_batch_channel_rejects_cross_contract_segment_input() -> None:
+    bars = golden_bars()
+    mixed = bars[:10] + (
+        replace(
+            bars[10],
+            physical_contract="RB0001",
+            segment_id="rb:RB0001:research",
+        ),
+    )
+
+    with pytest.raises(ValueError, match="NEWOW_CHANNEL_MIXED_SEGMENT"):
+        calculate_channel_series(mixed, period=10)
