@@ -5,7 +5,7 @@
 本表把页面观察、手册主张、归一实现和期货迁移证据分开。唯一状态集为 `OBSERVED_EXACT`、`REPRODUCED_EXACT`、`BEHAVIOR_INFERRED`、`CLEANROOM_IMPLEMENTED`、`UNKNOWN`、`REJECTED`。其中推断不能冒充页面公式；`UNKNOWN` 与 `REJECTED` 均没有实现入口。
 
 外部证据根：`newow-strategy-detail-research/v3.2.82-gap-closure`
-证据清单 SHA-256：`0b663c351de77ae783c6adcbdc9a9ebe0528a5663a2a551bd45cd9089da8b01e`（133 文件，已离线 verify）
+证据清单 SHA-256：`2629bd1d6fae5e0e189c8d9f3e53936699bc3b241c43bbb5fd64d0ae4e55a1cc`（133 文件，manifest v2 已离线 verify）
 
 | Feature | Current source/version | Evidence status | Formula identity | Implementation entry | Stock evidence | Futures evidence | Remaining gate |
 |---|---|---|---|---|---|---|---|
