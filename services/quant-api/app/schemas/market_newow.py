@@ -8,6 +8,20 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
+NewowProfileId = Literal["newow_trend_d1_page_v2"]
+NewowFrequency = Literal["1d"]
+NewowSeriesKind = Literal["actual_dominant"]
+NewowTrendStateBefore = Literal["YELLOW", "BLUE"]
+NewowMarkerFormula = Literal[
+    "newow_trend_band_page_v2",
+    "newow_escape_d123_page_v2",
+    "newow_cup_handle_v1",
+]
+NewowCupState = Literal[
+    "FORMING", "READY", "BREAKOUT", "WEAKENED", "INVALIDATED", "EXPIRED"
+]
+NewowCupFormula = Literal["newow_cup_handle_v1"]
+
 
 class _Out(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -15,9 +29,9 @@ class _Out(BaseModel):
 
 class NewowMetaOut(_Out):
     strategy_code: Literal["newow_trend_v1"]
-    profile_id: Literal["newow_trend_d1_page_v2"]
-    frequency: Literal["1d"]
-    series_kind: Literal["actual_dominant"]
+    profile_id: NewowProfileId
+    frequency: NewowFrequency
+    series_kind: NewowSeriesKind
     calculation_identity: str
     data_revision_identity: str | None
     request_identity: str
@@ -48,7 +62,7 @@ class NewowTrendBandOut(_Out):
     b_value: float | None
     c_value: float | None
     state: Literal["UNAVAILABLE", "YELLOW", "BLUE"]
-    state_before: Literal["YELLOW", "BLUE"] | None
+    state_before: NewowTrendStateBefore | None
     transition: Literal["BUILD", "CLEAR"] | None
 
 
@@ -73,11 +87,7 @@ class NewowMarkerOut(_Out):
     priority: int
     related_marker_ids: tuple[str, ...]
     trigger_facts: dict[str, object]
-    formula_version: Literal[
-        "newow_trend_band_page_v2",
-        "newow_escape_d123_page_v2",
-        "newow_cup_handle_v1",
-    ]
+    formula_version: NewowMarkerFormula
 
 
 class NewowCupPivotOut(_Out):
@@ -89,9 +99,7 @@ class NewowCupPivotOut(_Out):
 class NewowCupHandleOut(_Out):
     candidate_id: str
     direction: Literal["BULLISH", "BEARISH"]
-    state: Literal[
-        "FORMING", "READY", "BREAKOUT", "WEAKENED", "INVALIDATED", "EXPIRED"
-    ]
+    state: NewowCupState
     left_rim: NewowCupPivotOut
     bottom: NewowCupPivotOut
     right_rim: NewowCupPivotOut
@@ -107,7 +115,7 @@ class NewowCupHandleOut(_Out):
     hard_failures: list[str]
     diagnostics: list[str]
     volume_facts: dict[str, float]
-    formula_version: Literal["newow_cup_handle_v1"]
+    formula_version: NewowCupFormula
 
 
 class NewowRolloverSeamOut(_Out):

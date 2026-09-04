@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import asdict
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from math import isfinite
-from typing import Literal
-from collections.abc import Mapping
+from typing import Literal, TypeVar
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from guiyi_quant.newow.models import CupPivot, NewowCupHandleOverlay, NewowMainMarker
@@ -24,23 +24,30 @@ from app.market_data.newow.trend_detail_service import (
 from app.market_data.product_taxonomy import ProductTaxonomyError, load_product_taxonomy
 from app.schemas.market_newow import (
     NewowBarOut,
+    NewowCupFormula,
     NewowCupHandleOut,
+    NewowCupState,
     NewowCupPivotOut,
     NewowCompositeCleanroomOut,
     NewowCompositePageOut,
     NewowDiagnosticFactsOut,
     NewowDiagnosticTokenOut,
     NewowFirstActionOut,
+    NewowFrequency,
     NewowFormulaDescriptionsOut,
+    NewowMarkerFormula,
     NewowPageWindowOut,
     NewowPriceChannelOut,
     NewowSemanticLabelsOut,
     NewowInstrumentOut,
     NewowMarkerOut,
     NewowMetaOut,
+    NewowProfileId,
     NewowRolloverSeamOut,
+    NewowSeriesKind,
     NewowTrendBandOut,
     NewowTrendDetailResponse,
+    NewowTrendStateBefore,
 )
 
 router = APIRouter(prefix="/api/v1/market/newow", tags=["market"])
@@ -49,6 +56,25 @@ _CLIENT_ERRORS = frozenset({"NEWOW_INVALID_PRODUCT", "NEWOW_INVALID_RANGE", "NEW
 _TREND_MARKERS = frozenset({"BUILD", "CLEAR"})
 _ESCAPE_MARKERS = frozenset({"NEWOW_ESCAPE_D1", "NEWOW_ESCAPE_D2", "NEWOW_ESCAPE_D3"})
 _CUP_MARKERS = frozenset({"CUP_HANDLE_READY", "CUP_HANDLE_BREAKOUT", "CUP_HANDLE_WEAKENED", "CUP_HANDLE_INVALIDATED", "CUP_HANDLE_EXPIRED"})
+_PROFILE_IDS: tuple[NewowProfileId, ...] = ("newow_trend_d1_page_v2",)
+_FREQUENCIES: tuple[NewowFrequency, ...] = ("1d",)
+_SERIES_KINDS: tuple[NewowSeriesKind, ...] = ("actual_dominant",)
+_TREND_STATES_BEFORE: tuple[NewowTrendStateBefore, ...] = ("YELLOW", "BLUE")
+_MARKER_FORMULAS: tuple[NewowMarkerFormula, ...] = (
+    "newow_trend_band_page_v2",
+    "newow_escape_d123_page_v2",
+    "newow_cup_handle_v1",
+)
+_CUP_STATES: tuple[NewowCupState, ...] = (
+    "FORMING",
+    "READY",
+    "BREAKOUT",
+    "WEAKENED",
+    "INVALIDATED",
+    "EXPIRED",
+)
+_CUP_FORMULAS: tuple[NewowCupFormula, ...] = ("newow_cup_handle_v1",)
+_LiteralValue = TypeVar("_LiteralValue", bound=str)
 
 
 @router.get("/trend-detail", response_model=NewowTrendDetailResponse)
@@ -87,9 +113,9 @@ def _response(result: NewowTrendDetailResult) -> NewowTrendDetailResponse:
     return NewowTrendDetailResponse(
         meta=NewowMetaOut(
             strategy_code="newow_trend_v1",
-            profile_id=result.instrument.profile_id,
-            frequency=result.instrument.frequency,
-            series_kind=result.instrument.series_kind,
+            profile_id=_canonical_literal(result.instrument.profile_id, _PROFILE_IDS),
+            frequency=_canonical_literal(result.instrument.frequency, _FREQUENCIES),
+            series_kind=_canonical_literal(result.instrument.series_kind, _SERIES_KINDS),
             calculation_identity=result.calculation_identity,
             data_revision_identity=result.data_revision_identity,
             request_identity=result.request_identity,
@@ -122,10 +148,11 @@ def _response(result: NewowTrendDetailResult) -> NewowTrendDetailResponse:
                 b_value=frame.trend_band.b_value,
                 c_value=frame.trend_band.c_value,
                 state=frame.trend_band.state.value,
-                state_before=(
+                state_before=_canonical_optional_literal(
                     frame.trend_band.state_before.value
                     if frame.trend_band.state_before is not None
-                    else None
+                    else None,
+                    _TREND_STATES_BEFORE,
                 ),
                 transition=(
                     frame.trend_band.transition.value
@@ -226,7 +253,7 @@ def _marker(marker: NewowMainMarker) -> NewowMarkerOut:
         priority=marker.priority,
         related_marker_ids=tuple(marker.related_marker_ids),
         trigger_facts=_safe_mapping(marker.trigger_facts),
-        formula_version=marker.formula_version,
+        formula_version=_canonical_literal(marker.formula_version, _MARKER_FORMULAS),
     )
 
 
@@ -242,7 +269,7 @@ def _cup_handle(value: NewowCupHandleOverlay) -> NewowCupHandleOut:
     return NewowCupHandleOut(
         candidate_id=value.candidate_id,
         direction=value.direction.value,
-        state=value.state.value,
+        state=_canonical_literal(value.state.value, _CUP_STATES),
         left_rim=_pivot(value.left_rim),
         bottom=_pivot(value.bottom),
         right_rim=_pivot(value.right_rim),
@@ -258,8 +285,27 @@ def _cup_handle(value: NewowCupHandleOverlay) -> NewowCupHandleOut:
         hard_failures=_safe_strings(value.hard_failures),
         diagnostics=_safe_strings(value.diagnostics),
         volume_facts=_safe_float_mapping(value.volume_facts),
-        formula_version=value.formula_version,
+        formula_version=_canonical_literal(value.formula_version, _CUP_FORMULAS),
     )
+
+
+def _canonical_literal(
+    value: str,
+    allowed: tuple[_LiteralValue, ...],
+) -> _LiteralValue:
+    for candidate in allowed:
+        if value == candidate:
+            return candidate
+    raise NewowTrendDetailError("NEWOW_DATA_IDENTITY_INVALID")
+
+
+def _canonical_optional_literal(
+    value: str | None,
+    allowed: tuple[_LiteralValue, ...],
+) -> _LiteralValue | None:
+    if value is None:
+        return None
+    return _canonical_literal(value, allowed)
 
 
 def _safe_mapping(values: Mapping[str, object]) -> dict[str, object]:
@@ -314,3 +360,6 @@ def _safe_strings(values: tuple[str, ...]) -> list[str]:
     if any(not isinstance(value, str) for value in values):
         raise NewowTrendDetailError("NEWOW_DATA_IDENTITY_INVALID")
     return list(values)
+    NewowFrequency,
+    NewowMarkerFormula,
+    NewowSeriesKind,

@@ -633,3 +633,40 @@ def test_newow_formula_identity_mismatch_is_fail_closed_409(monkeypatch) -> None
     assert response.status_code == 409
     assert response.json() == {"detail": {"code": "NEWOW_DATA_UNAVAILABLE"}}
     assert "wrong-formula" not in response.text
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    (
+        lambda result: setattr(result.instrument, "profile_id", "wrong-profile"),
+        lambda result: setattr(result.instrument, "frequency", "1w"),
+        lambda result: setattr(result.instrument, "series_kind", "continuous"),
+        lambda result: setattr(
+            result.frames[0].trend_band,
+            "state_before",
+            SimpleNamespace(value="UNAVAILABLE"),
+        ),
+        lambda result: setattr(result.markers[0], "formula_version", "wrong-formula"),
+        lambda result: setattr(
+            result.cup_handles[0], "state", SimpleNamespace(value="UNKNOWN")
+        ),
+        lambda result: setattr(
+            result.cup_handles[0], "formula_version", "wrong-formula"
+        ),
+    ),
+)
+def test_newow_serializer_rejects_noncanonical_literals_with_stable_code(
+    monkeypatch,
+    mutate,
+) -> None:
+    result = _result()
+    mutate(result)
+
+    with _client(monkeypatch, result) as client:
+        response = client.get(
+            "/api/v1/market/newow/trend-detail?product=rb&from=2026-01-05&through=2026-01-05"
+        )
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": {"code": "NEWOW_DATA_IDENTITY_INVALID"}}
