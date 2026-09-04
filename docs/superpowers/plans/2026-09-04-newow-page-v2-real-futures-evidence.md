@@ -10,7 +10,7 @@
 
 **Spec:** `docs/tasks/2026-09-04-newow-page-parity-research-kernels.md`, `docs/tasks/2026-09-04-newow-futures-validation.md`, and this packet.
 
-**BASE_SHA:** `a6ea680ed8d9150e0b9920e71563a3de18f7dd1e`
+**BASE_SHA:** `1d0c74b6685b4ed9df3ab0f61d869f4c4a163141`
 
 ## Global Constraints
 
@@ -256,7 +256,7 @@ PYTHONPATH=services/quant-api:packages/quant-core MYPYPATH=services/quant-api:pa
 Authorized discovery command after Task 4 exists and the Owner grants the matching read:
 
 ```bash
-PYTHONPATH=services/quant-api:packages/quant-core PYTHONDONTWRITEBYTECODE=1 /Volumes/扩展盘/guiyi-quant-workstation/services/quant-api/.venv/bin/python scripts/newow_page_v2_futures_evidence.py discover --base-sha a6ea680ed8d9150e0b9920e71563a3de18f7dd1e --owner-approved-run-id OWNER_APPROVED_RUN_ID --frequencies 1d 1w 60m --minimum-rollovers 2 --output data/reports/newow_page_v2_real_futures_evidence/OWNER_APPROVED_RUN_ID
+PYTHONPATH=services/quant-api:packages/quant-core PYTHONDONTWRITEBYTECODE=1 /Volumes/扩展盘/guiyi-quant-workstation/services/quant-api/.venv/bin/python scripts/newow_page_v2_futures_evidence.py discover --base-sha 1d0c74b6685b4ed9df3ab0f61d869f4c4a163141 --owner-approved-run-id OWNER_APPROVED_RUN_ID --frequencies 1d 1w 60m --minimum-rollovers 2 --output data/reports/newow_page_v2_real_futures_evidence/OWNER_APPROVED_RUN_ID
 ```
 
 Real execution command after both subsequent Owner Gates:
