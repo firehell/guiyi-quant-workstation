@@ -1,0 +1,73 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - generic [ref=e3] [cursor=pointer]: 返回
+    - generic [ref=e7] [cursor=pointer]:
+      - generic [ref=e8]: 日K | 1
+      - generic [ref=e9]: ▼
+    - generic [ref=e10]:
+      - generic "自选" [ref=e11] [cursor=pointer]
+      - generic "盯盘提醒" [ref=e14] [cursor=pointer]
+  - generic [ref=e18]:
+    - generic [ref=e19]:
+      - generic [ref=e20]: "601233"
+      - generic [ref=e21]: "--"
+    - generic [ref=e22]:
+      - generic [ref=e23]: "--"
+      - generic [ref=e24]: "--"
+    - generic [ref=e25]:
+      - generic [ref=e26]: 最高 --
+      - generic [ref=e27]: 最低 --
+      - generic [ref=e28]: 开盘 --
+    - generic [ref=e29]:
+      - generic [ref=e30]: 市值 --
+      - generic [ref=e31]: 成交量 --
+      - generic [ref=e32]: 换手 --
+      - generic [ref=e33]:
+        - generic [ref=e34]: 主力
+        - generic [ref=e35]: "--"
+  - generic [ref=e36]:
+    - button "震荡策略" [ref=e37] [cursor=pointer]
+    - button "趋势策略" [ref=e38] [cursor=pointer]
+    - button "主升浪" [ref=e39] [cursor=pointer]
+    - button "✨AI分析" [ref=e40] [cursor=pointer]
+    - generic [ref=e41]:
+      - generic [ref=e42] [cursor=pointer]
+      - generic [ref=e43] [cursor=pointer]: 通道
+  - generic [ref=e45] [cursor=pointer]:
+    - generic [ref=e46]: 综合决策
+    - generic [ref=e47]: "--"
+    - generic [ref=e48]: ▾
+  - generic [ref=e49]: "-- 周:-- 日:-- -- -- ▾"
+  - generic [ref=e56]:
+    - generic [ref=e57]:
+      - generic [ref=e58]:
+        - generic [ref=e59]: 目标价:--
+        - generic [ref=e60]: 吸筹价:--
+      - generic [ref=e61]:
+        - button "分时" [ref=e62] [cursor=pointer]
+        - button "日K" [ref=e63] [cursor=pointer]
+        - button "周K" [ref=e64] [cursor=pointer]
+        - button "月K" [ref=e65] [cursor=pointer]
+        - button "60分" [ref=e66] [cursor=pointer]
+    - generic [ref=e67]: 数据源加载中...
+  - generic [ref=e72]:
+    - generic [ref=e73] [cursor=pointer]: 主力照妖镜
+    - generic [ref=e74] [cursor=pointer]: 涨跌动能
+    - generic [ref=e75] [cursor=pointer]: 主力控盘
+  - generic [ref=e76]:
+    - generic [ref=e77]:
+      - generic [ref=e78]: 策略收益率走势
+      - generic [ref=e79] [cursor=pointer]: 收益分析 ›
+    - generic [ref=e80]: 向下滚动加载策略分析
+  - generic [ref=e84]:
+    - generic [ref=e85]:
+      - generic [ref=e86]: 回测操盘提醒
+      - generic [ref=e87]: 历史回测推演，仅供参考，不作为实时买卖提示
+    - generic [ref=e88]: 向下滚动加载回测提醒
+  - generic [ref=e92]:
+    - generic [ref=e93]:
+      - generic [ref=e94]:
+        - generic [ref=e95]: AI
+        - text: 基本面诊断 (CANSLIM)
+      - generic [ref=e96]: "--"
+    - generic [ref=e97]: 向下滚动加载基本面诊断
