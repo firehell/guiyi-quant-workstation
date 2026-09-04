@@ -29,7 +29,7 @@ fail-closed
 """
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 import hashlib
@@ -635,6 +635,11 @@ class HistoricalDataManager:
                         )
                     )
 
+        targets = self._with_contract_weekly_daily_context(
+            targets,
+            fact,
+            effective_through,
+        )
         target_windows = tuple(_contract_warmup_target_payload(item) for item in targets)
         plan_identity: Mapping[str, object] = {
             "schema_version": 1,
@@ -652,7 +657,9 @@ class HistoricalDataManager:
                 "start": fact.listed_date.isoformat(),
                 "through": effective_through.isoformat(),
             },
-            "targets": target_windows,
+            "targets": tuple(
+                _contract_warmup_hash_target_payload(target) for target in targets
+            ),
         }
         plan_sha256 = hashlib.sha256(
             json.dumps(
@@ -1186,7 +1193,22 @@ class HistoricalDataManager:
                 remaining_derived.remove(target)
                 planned += 1
                 applied += 1
-        for target in fetched:
+        fetched_targets = tuple(fetched)
+        fetch_groups: Iterable[tuple[_Target, ...]]
+        if weekly_daily_companions:
+            fetch_groups = (
+                (
+                    (*self._weekly_daily_companions(target, through), target)
+                    if target.key.frequency is BarFrequency.W1
+                    and through is not None
+                    else (target,)
+                )
+                for target in fetched_targets
+            )
+        else:
+            fetch_groups = _contract_warmup_fetch_groups(fetched_targets)
+        for fetch_targets in fetch_groups:
+            target = fetch_targets[-1]
             if (
                 target.key.frequency is BarFrequency.W1
                 and _family(target.key) in failed_families
@@ -1195,13 +1217,6 @@ class HistoricalDataManager:
                 blocked += 1
                 continue
             try:
-                fetch_targets = (
-                    (*self._weekly_daily_companions(target, through), target)
-                    if weekly_daily_companions
-                    and target.key.frequency is BarFrequency.W1
-                    and through is not None
-                    else (target,)
-                )
                 planned += len(fetch_targets)
                 provider_requests += len(fetch_targets)
                 batches = self.provider.fetch_many(tuple(
@@ -1280,8 +1295,10 @@ class HistoricalDataManager:
                 )
         if planned == 0:
             status = "noop"
+        elif failures or blocked:
+            status = "partial" if applied else "failed"
         else:
-            status = "failed" if failures or blocked else "passed"
+            status = "passed"
         return MaintenanceResult(
             action,
             status,
@@ -1292,6 +1309,86 @@ class HistoricalDataManager:
             len(failures),
             provider_requests,
             failures=tuple(failures),
+        )
+
+    def _with_contract_weekly_daily_context(
+        self,
+        targets: list[_Target],
+        fact: ContractFact,
+        through: date,
+    ) -> list[_Target]:
+        """将缺失周线需要的 exact-lifecycle 日线刷新并入 warm-up 计划。"""
+        refresh_by_partition: dict[
+            tuple[DatasetKey, int, int], set[datetime]
+        ] = {}
+        for weekly in tuple(targets):
+            if weekly.key.frequency is not BarFrequency.W1:
+                continue
+            daily_key = DatasetKey(
+                DatasetKind.CONTRACT,
+                weekly.key.symbol,
+                weekly.key.series_or_contract,
+                BarFrequency.D1,
+            )
+            for weekly_end in weekly.missing:
+                trading_day = weekly_end.astimezone(SHANGHAI).date()
+                monday = trading_day - timedelta(days=trading_day.isoweekday() - 1)
+                sunday = min(monday + timedelta(days=6), through)
+                trading_days = self.coverage.contract_trading_days(
+                    fact,
+                    monday,
+                    sunday,
+                )
+                for item in self.coverage.expected_bar_ends_for_trading_days(
+                    daily_key,
+                    trading_days,
+                ):
+                    bar_end = item.astimezone(UTC)
+                    local_day = bar_end.astimezone(SHANGHAI).date()
+                    refresh_by_partition.setdefault(
+                        (daily_key, local_day.year, local_day.month), set()
+                    ).add(bar_end)
+
+        by_partition = {
+            (target.key, target.year, target.month): target for target in targets
+        }
+        for (key, year, month), refresh in refresh_by_partition.items():
+            target = by_partition.get((key, year, month))
+            if target is None:
+                existing, physical_reason = self._existing_partition(key, year, month)
+                if physical_reason is not None:
+                    expected = tuple(sorted(refresh))
+                    target = _Target(key, year, month, expected, expected, ())
+                else:
+                    present = {bar.bar_end.astimezone(UTC) for bar in existing}
+                    target = _Target(
+                        key,
+                        year,
+                        month,
+                        tuple(sorted(present.union(refresh))),
+                        tuple(sorted(refresh)),
+                        existing,
+                    )
+            else:
+                target = _Target(
+                    key,
+                    year,
+                    month,
+                    tuple(sorted(set(target.expected).union(refresh))),
+                    tuple(sorted(set(target.missing).union(refresh))),
+                    target.existing,
+                )
+            by_partition[(key, year, month)] = target
+        frequency_order = {
+            frequency: index for index, frequency in enumerate(_FREQUENCY_ORDER)
+        }
+        return sorted(
+            by_partition.values(),
+            key=lambda target: (
+                frequency_order[target.key.frequency],
+                target.year,
+                target.month,
+            ),
         )
 
     def _weekly_daily_companions(
@@ -1563,6 +1660,72 @@ def _contract_warmup_target_payload(target: _Target) -> Mapping[str, object]:
         "missing_end": target.missing[-1].isoformat(),
         "missing_bar_count": len(target.missing),
     }
+
+
+def _contract_warmup_hash_target_payload(target: _Target) -> Mapping[str, object]:
+    """Plan identity additionally locks every sorted expected/missing timestamp."""
+    return {
+        **_contract_warmup_target_payload(target),
+        "expected_bar_ends": tuple(
+            item.isoformat() for item in sorted(target.expected)
+        ),
+        "missing_bar_ends": tuple(
+            item.isoformat() for item in sorted(target.missing)
+        ),
+    }
+
+
+def _contract_warmup_fetch_groups(
+    targets: tuple[_Target, ...],
+) -> tuple[tuple[_Target, ...], ...]:
+    """Batch only D1/W1 targets connected by an affected ISO week."""
+    parent = list(range(len(targets)))
+
+    def find(index: int) -> int:
+        while parent[index] != index:
+            parent[index] = parent[parent[index]]
+            index = parent[index]
+        return index
+
+    def union(left: int, right: int) -> None:
+        left_root = find(left)
+        right_root = find(right)
+        if left_root != right_root:
+            parent[right_root] = left_root
+
+    daily = tuple(
+        index
+        for index, target in enumerate(targets)
+        if target.key.frequency is BarFrequency.D1
+    )
+    weekly = tuple(
+        index
+        for index, target in enumerate(targets)
+        if target.key.frequency is BarFrequency.W1
+    )
+    weeks = {
+        index: {
+            value.astimezone(SHANGHAI).date().isocalendar()[:2]
+            for value in targets[index].missing
+        }
+        for index in (*daily, *weekly)
+    }
+    for daily_index in daily:
+        for weekly_index in weekly:
+            if (
+                _family(targets[daily_index].key)
+                == _family(targets[weekly_index].key)
+                and weeks[daily_index].intersection(weeks[weekly_index])
+            ):
+                union(daily_index, weekly_index)
+
+    grouped: dict[int, list[tuple[int, _Target]]] = {}
+    for index, target in enumerate(targets):
+        grouped.setdefault(find(index), []).append((index, target))
+    return tuple(
+        tuple(target for _index, target in sorted(group))
+        for group in sorted(grouped.values(), key=lambda group: min(group)[0])
+    )
 
 
 def _is_global_failure(exc: Exception) -> bool:
