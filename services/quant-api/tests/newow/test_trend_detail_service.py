@@ -1,10 +1,16 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 import pytest
 
+from guiyi_quant.newow import (
+    COMPOSITE_DECISION_CLEANROOM_V1,
+    COMPOSITE_DECISION_PAGE_V3282,
+    TARGET_ABSORB_CHANNEL_PAGE_V1,
+)
 from guiyi_quant.newow.models import TrendBandState
 
 from app.market_data.domain import (
@@ -56,9 +62,12 @@ class _FakeMarketData:
     def __init__(
         self,
         *,
-        actual: tuple[CanonicalBar, ...],
+        actual: tuple[CanonicalBar, ...]
+        | dict[BarFrequency, tuple[CanonicalBar, ...]],
         segments: tuple[ResolvedContractSegment, ...],
-        physical: dict[str, tuple[CanonicalBar, ...]],
+        physical: dict[
+            str | tuple[BarFrequency, str], tuple[CanonicalBar, ...]
+        ],
     ) -> None:
         self.actual = actual
         self.segments = segments
@@ -70,9 +79,14 @@ class _FakeMarketData:
         self, request: ActualDominantTradingDayQuery
     ) -> MarketSeriesResult:
         self.actual_requests.append(request)
+        source = (
+            self.actual[request.frequency]
+            if isinstance(self.actual, dict)
+            else self.actual
+        )
         bars = tuple(
             bar
-            for bar in self.actual
+            for bar in source
             if request.since <= bar.trading_day <= request.through
         )
         resolved = tuple(
@@ -128,9 +142,12 @@ class _FakeMarketData:
         self.page_requests.append(request)
         assert request.series_kind is SeriesKind.CONTRACT
         assert request.contract is not None
+        source = self.physical.get((request.frequency, request.contract))
+        if source is None:
+            source = self.physical[request.contract]
         values = tuple(
             bar
-            for bar in self.physical[request.contract]
+            for bar in source
             if request.before is None or bar.bar_end < request.before
         )
         page = values[-request.limit :]
@@ -138,7 +155,7 @@ class _FakeMarketData:
             {
                 "series_kind": "contract",
                 "contract": request.contract,
-                "frequency": "1d",
+                "frequency": request.frequency.value,
             },
             page,
             (page[0].bar_end, page[-1].bar_end) if page else None,
@@ -171,14 +188,18 @@ def _service(
         second = ResolvedContractSegment("RB2610", days[5], days[7])
         segments = (first, second)
         actual += tuple(_bar(day, 200 + index) for index, day in enumerate(days[5:], 5))
-        physical["RB2610"] = tuple(
+        prehistory = tuple(
+            _bar(_START - timedelta(days=3 - index), 190 + index)
+            for index in range(3)
+        )
+        physical["RB2610"] = prehistory + tuple(
             _bar(day, 200 + index) for index, day in enumerate(days[5:], 5)
         )
     market_data = _FakeMarketData(actual=actual, segments=segments, physical=physical)
     return NewowTrendDetailService(market_data), market_data
 
 
-def test_detail_uses_only_d1_actual_dominant_and_same_contract_prefix() -> None:
+def test_detail_loads_three_periods_and_same_contract_prefixes() -> None:
     service, market_data = _service()
 
     result = service.query(
@@ -202,8 +223,12 @@ def test_detail_uses_only_d1_actual_dominant_and_same_contract_prefix() -> None:
         frame.trend_band.state in {TrendBandState.YELLOW, TrendBandState.BLUE}
         for frame in result.frames
     )
-    assert market_data.actual_requests[0].frequency is BarFrequency.D1
-    assert market_data.page_requests == [
+    assert [item.frequency for item in market_data.actual_requests] == [
+        BarFrequency.D1,
+        BarFrequency.W1,
+        BarFrequency.H1,
+    ]
+    assert [item for item in market_data.page_requests if item.frequency is BarFrequency.D1] == [
         SeriesPageQuery(
             SeriesKind.CONTRACT,
             "rb",
@@ -213,6 +238,87 @@ def test_detail_uses_only_d1_actual_dominant_and_same_contract_prefix() -> None:
             "RB2605",
         )
     ]
+
+
+def test_detail_preserves_sc2302_weekly_owner_subset() -> None:
+    start = date(2023, 1, 3)
+    days = tuple(start + timedelta(days=index) for index in range(10))
+    first = ResolvedContractSegment("SC2302", days[0], days[1])
+    second = ResolvedContractSegment("SC2303", days[2], date(2023, 1, 31))
+    d1 = tuple(_bar(day, 500 + index) for index, day in enumerate(days))
+    h1 = tuple(
+        replace(
+            _bar(day, 600 + day_index),
+            bar_end=_bar(day, 600 + day_index).bar_end + timedelta(hours=hour),
+        )
+        for day_index, day in enumerate(days)
+        for hour in (0, 1)
+    )
+    w1 = (_bar(date(2023, 1, 6), 700),)
+    actual = {
+        BarFrequency.D1: d1,
+        BarFrequency.W1: w1,
+        BarFrequency.H1: h1,
+    }
+    physical = {
+        (BarFrequency.D1, "SC2302"): d1[:2],
+        (BarFrequency.D1, "SC2303"): d1[2:],
+        (BarFrequency.W1, "SC2303"): w1,
+        (BarFrequency.H1, "SC2302"): tuple(
+            bar for bar in h1 if bar.trading_day <= days[1]
+        ),
+        (BarFrequency.H1, "SC2303"): tuple(
+            bar for bar in h1 if bar.trading_day >= days[2]
+        ),
+    }
+    service = NewowTrendDetailService(
+        _FakeMarketData(actual=actual, segments=(first, second), physical=physical)
+    )
+
+    result = service.query(
+        NewowTrendDetailQuery("sc", start, date(2023, 1, 31))
+    )
+
+    assert result.price_channel.daily.formula_version == TARGET_ABSORB_CHANNEL_PAGE_V1
+    assert result.composite_page.formula_version == COMPOSITE_DECISION_PAGE_V3282
+    assert (
+        result.composite_cleanroom.formula_version
+        == COMPOSITE_DECISION_CLEANROOM_V1
+    )
+    assert result.semantic_labels.page_parity is True
+    assert result.semantic_labels.observation_only is True
+    assert all(
+        "SC2302" not in segment_id
+        for segment_id in result.price_channel.weekly.owner_segment_ids
+    )
+    assert any(
+        "SC2302" in segment_id
+        for segment_id in result.price_channel.daily.owner_segment_ids
+    )
+    assert len(result.price_channel.sixty_minute.points) == len(h1)
+
+
+@pytest.mark.parametrize("missing", (BarFrequency.W1, BarFrequency.H1))
+def test_detail_fails_closed_when_a_required_frequency_is_missing(
+    missing: BarFrequency,
+) -> None:
+    service, market_data = _service()
+    assert not isinstance(market_data.actual, dict)
+    source = market_data.actual
+    market_data.actual = {
+        BarFrequency.D1: source,
+        BarFrequency.W1: () if missing is BarFrequency.W1 else source,
+        BarFrequency.H1: () if missing is BarFrequency.H1 else source,
+    }
+
+    with pytest.raises(NewowTrendDetailError, match="NEWOW_DATA_IDENTITY_INVALID"):
+        service.query(
+            NewowTrendDetailQuery(
+                "rb", _START + timedelta(days=3), _START + timedelta(days=7)
+            )
+        )
+
+    assert market_data.page_requests == []
 
 
 def test_detail_builds_explicit_seam_and_resets_at_physical_rollover() -> None:
@@ -425,12 +531,14 @@ def test_warmup_acceptance_a_page_d123_needs_three_bars_for_peak_turn() -> None:
     assert set(_single_segment_result(count=2).warnings) == {
         "NEWOW_D123_WARMUP_INSUFFICIENT",
         "NEWOW_CUP_WARMUP_INSUFFICIENT",
+        "NEWOW_COMPOSITE_DAILY_BARS_INSUFFICIENT",
     }
 
 
 def test_warmup_acceptance_b_page_primitives_are_ready_before_cup() -> None:
     assert _single_segment_result(count=5).warnings == (
         "NEWOW_CUP_WARMUP_INSUFFICIENT",
+        "NEWOW_COMPOSITE_DAILY_BARS_INSUFFICIENT",
     )
 
 
@@ -467,7 +575,7 @@ def test_detail_fails_closed_when_same_contract_prefix_exceeds_one_2000_bar_page
         )
 
     assert len(market_data.page_requests) == 1
-    assert market_data.page_requests[0].limit == 2000
+    assert all(item.limit == 2000 for item in market_data.page_requests)
 
 
 def test_detail_is_stateless_and_calculation_identity_never_binds_request_dates() -> (
@@ -490,4 +598,4 @@ def test_detail_is_stateless_and_calculation_identity_never_binds_request_dates(
     assert first.request_identity != second.request_identity
     assert all(bar.source_identity == first.calculation_identity for bar in first.bars)
     assert tuple(service.__dict__) == ("_market_data", "_taxonomy")
-    assert len(market_data.page_requests) == 2
+    assert len(market_data.page_requests) == 6

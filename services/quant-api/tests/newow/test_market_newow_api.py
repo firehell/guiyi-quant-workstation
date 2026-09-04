@@ -5,11 +5,42 @@ from decimal import Decimal
 from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
+from guiyi_quant.newow import (
+    CleanroomCompositeDecision,
+    CompositeAction,
+    CompositeDecision,
+    CompositeVolatility,
+    CertaintyBreakdown,
+    DiagnosticFacts,
+    DiagnosticSeverity,
+    DiagnosticToken,
+    DirectionToken,
+    DisplayPeriod,
+    DisplayPriceSelection,
+    FirstActionPrinciple,
+    OscillationBias,
+    PageChannelWindowResult,
+    PageSignalState,
+    PositionRange,
+    PrincipleLevel,
+    PriceChannelPoint,
+    TrendBandState,
+    TrendBias,
+    VolatilityLevel,
+)
+from pydantic import ValidationError
+import pytest
 
 from app.api import market_newow
 from app.db.session import get_db
 from app.main import app
 from app.market_data.newow.trend_detail_service import NewowTrendDetailError
+from app.market_data.newow.trend_detail_service import (
+    NewowFrequencyPriceChannel,
+    NewowPriceChannelFacts,
+    NewowSemanticLabels,
+)
+from app.schemas.market_newow import NewowTrendDetailResponse
 
 
 def _result() -> SimpleNamespace:
@@ -117,6 +148,73 @@ def _result() -> SimpleNamespace:
         volume_facts={"ratio": 1.25},
         formula_version="cup",
     )
+    channel_point = PriceChannelPoint(
+        stamp,
+        Decimal("11.20"),
+        Decimal("9.90"),
+        10,
+        True,
+    )
+    price_channel = NewowPriceChannelFacts(
+        NewowFrequencyPriceChannel("1d", (channel_point,), ("segment-d",)),
+        NewowFrequencyPriceChannel("1w", (channel_point,), ("segment-w",)),
+        NewowFrequencyPriceChannel("60m", (channel_point,), ("segment-h",)),
+        DisplayPriceSelection(
+            Decimal("11.20"),
+            Decimal("9.90"),
+            Decimal("11.20"),
+            Decimal("9.90"),
+            DisplayPeriod.DAY,
+            DisplayPeriod.DAY,
+            "DAILY_POSITIVE",
+            "DAILY_POSITIVE",
+        ),
+    )
+    volatility = CompositeVolatility(Decimal("2.5"), VolatilityLevel.MID, 20)
+    certainty = CertaintyBreakdown(30, 30, 20, 20, 100)
+    position = PositionRange(Decimal("0.5"), Decimal("1"))
+    composite_page = CompositeDecision(
+        TrendBias.BULLISH,
+        OscillationBias.BULLISH,
+        DirectionToken.MULTIPERIOD_BULLISH,
+        "bullish-bullish",
+        CompositeAction.BUILD_OR_ADD,
+        position,
+        certainty,
+        volatility,
+        (),
+    )
+    composite_cleanroom = CleanroomCompositeDecision(
+        TrendBias.BULLISH,
+        OscillationBias.BULLISH,
+        DirectionToken.MULTIPERIOD_BULLISH,
+        "bullish-bullish",
+        CompositeAction.BUILD_OR_ADD,
+        position,
+        certainty,
+        volatility,
+        (),
+        None,
+    )
+    diagnostics = DiagnosticFacts(
+        stamp,
+        Decimal("11.20"),
+        Decimal("9.90"),
+        Decimal("6.6667"),
+        Decimal("-5.7143"),
+        Decimal("10.20"),
+        "above",
+        TrendBandState.YELLOW,
+        4,
+        True,
+        None,
+        True,
+        None,
+        PageSignalState.HOLD,
+        PageSignalState.BUY,
+        ("newow_zhaoyao_mirror_repainting_page_v1",),
+        ("newow_diagnostic_facts_cleanroom_v1",),
+    )
     return SimpleNamespace(
         calculation_identity="calculation",
         data_revision_identity=None,
@@ -128,7 +226,23 @@ def _result() -> SimpleNamespace:
             frequency="1d",
             series_kind="actual_dominant",
             profile_id="newow_trend_d1_v1",
-            formula_versions=("trend", "escape", "cup"),
+            formula_versions=(
+                "newow_trend_band_page_v2",
+                "newow_escape_d123_page_v2",
+                "newow_cup_handle_v1",
+                "newow_oscillation_hhv_llv10_page_v1",
+                "newow_main_force_control_page_v1",
+                "newow_main_rise_ma35_ma45_page_v1",
+                "newow_target_absorb_hhv_llv10_page_v1",
+                "newow_target_absorb_display_selection_page_v1",
+                "newow_hhv_llv_window_optimizer_page_v1",
+                "newow_hhv_llv_window_optimizer_causal_v1",
+                "newow_composite_decision_page_v3_2_82",
+                "newow_composite_decision_cleanroom_v1",
+                "newow_first_action_principle_page_v3_2_63",
+                "newow_diagnostic_facts_cleanroom_v1",
+                "newow_diagnostic_rules_cleanroom_v1",
+            ),
         ),
         bars=(bar,),
         frames=(frame,),
@@ -145,6 +259,36 @@ def _result() -> SimpleNamespace:
                 next_segment_id="b",
             ),
         ),
+        price_channel=price_channel,
+        page_window_comparison=tuple(
+            PageChannelWindowResult(
+                window,
+                Decimal("1"),
+                Decimal("0.5"),
+                3,
+                Decimal("50"),
+                Decimal("0.5"),
+                False,
+            )
+            for window in (10, 20, 24, 30, 52)
+        ),
+        composite_page=composite_page,
+        composite_cleanroom=composite_cleanroom,
+        first_action_principle=FirstActionPrinciple(
+            PrincipleLevel.OK,
+            "normal_observation",
+            (),
+        ),
+        diagnostic_facts=diagnostics,
+        diagnostic_tokens=(
+            DiagnosticToken(
+                "NEWOW_DIAG_TREND_YELLOW",
+                DiagnosticSeverity.INFO,
+                ("trend_state",),
+                ("newow_diagnostic_rules_cleanroom_v1",),
+            ),
+        ),
+        semantic_labels=NewowSemanticLabels(),
         warnings=("NEWOW_TREND_WARMUP_INSUFFICIENT",),
     )
 
@@ -191,6 +335,52 @@ def test_get_newow_trend_detail_maps_safe_typed_facts(monkeypatch) -> None:
     assert body["cup_handles"][0]["diagnostics"] == ["formed"]
     assert body["cup_handles"][0]["volume_facts"] == {"ratio": 1.25}
     assert body["bar_policy"] == "completed_only"
+    assert body["price_channel"]["daily"]["frequency"] == "1d"
+    assert body["price_channel"]["daily"]["points"][0]["target"] == "11.20"
+    assert [item["window"] for item in body["page_window_comparison"]] == [
+        10,
+        20,
+        24,
+        30,
+        52,
+    ]
+    assert all(
+        item["trustworthy_for_research"] is False
+        for item in body["page_window_comparison"]
+    )
+    assert body["composite_page"]["formula_version"] == (
+        "newow_composite_decision_page_v3_2_82"
+    )
+    assert body["composite_cleanroom"]["formula_version"] == (
+        "newow_composite_decision_cleanroom_v1"
+    )
+    assert body["semantic_labels"] == {
+        "page_parity": True,
+        "cleanroom_separated": True,
+        "observation_only": True,
+        "causal_research_result": False,
+        "repainting_input_used": False,
+    }
+    assert set(body["formula_descriptions"]) == {
+        "trend_band",
+        "escape",
+        "cup_handle",
+        "oscillation",
+        "main_force",
+        "main_rise",
+        "price_channel",
+        "display_selection",
+        "page_window_comparison",
+        "causal_window_identity",
+        "composite_page",
+        "composite_cleanroom",
+        "first_action",
+        "diagnostic_facts",
+        "diagnostic_rules",
+    }
+    body["unexpected"] = True
+    with pytest.raises(ValidationError):
+        NewowTrendDetailResponse.model_validate(body)
 
 
 def test_newow_route_rejects_nonfixed_params_and_is_get_only(monkeypatch) -> None:
@@ -358,3 +548,43 @@ def test_newow_rejects_unsafe_marker_facts_without_repr_or_path_leak(
     assert response.status_code == 409
     assert response.json() == {"detail": {"code": "NEWOW_DATA_IDENTITY_INVALID"}}
     assert "/private/secret" not in response.text
+
+
+def test_newow_unsupported_composite_state_is_public_409(monkeypatch) -> None:
+    monkeypatch.setattr(
+        market_newow,
+        "NewowTrendDetailService",
+        lambda _market, **_kwargs: SimpleNamespace(
+            query=lambda _query: (_ for _ in ()).throw(
+                NewowTrendDetailError("NEWOW_COMPOSITE_STATE_UNSUPPORTED")
+            )
+        ),
+    )
+    app.dependency_overrides[get_db] = lambda: object()
+    response = TestClient(app).get(
+        "/api/v1/market/newow/trend-detail?product=rb&from=2026-01-05&through=2026-01-05"
+    )
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 409
+    assert response.json() == {
+        "detail": {"code": "NEWOW_COMPOSITE_STATE_UNSUPPORTED"}
+    }
+
+
+def test_newow_formula_identity_mismatch_is_fail_closed_409(monkeypatch) -> None:
+    result = _result()
+    result.instrument.formula_versions = (
+        "wrong-formula",
+        *result.instrument.formula_versions[1:],
+    )
+
+    with _client(monkeypatch, result) as client:
+        response = client.get(
+            "/api/v1/market/newow/trend-detail?product=rb&from=2026-01-05&through=2026-01-05"
+        )
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": {"code": "NEWOW_DATA_UNAVAILABLE"}}
+    assert "wrong-formula" not in response.text

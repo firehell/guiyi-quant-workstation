@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import asdict
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from math import isfinite
@@ -25,6 +26,15 @@ from app.schemas.market_newow import (
     NewowBarOut,
     NewowCupHandleOut,
     NewowCupPivotOut,
+    NewowCompositeCleanroomOut,
+    NewowCompositePageOut,
+    NewowDiagnosticFactsOut,
+    NewowDiagnosticTokenOut,
+    NewowFirstActionOut,
+    NewowFormulaDescriptionsOut,
+    NewowPageWindowOut,
+    NewowPriceChannelOut,
+    NewowSemanticLabelsOut,
     NewowInstrumentOut,
     NewowMarkerOut,
     NewowMetaOut,
@@ -65,9 +75,11 @@ def newow_trend_detail(
         raise HTTPException(status_code=409, detail={"code": "NEWOW_DATA_UNAVAILABLE"}) from exc
     except ValueError as exc:
         code = str(exc)
+        status_code = 422
         if code not in _CLIENT_ERRORS:
             code = "NEWOW_DATA_UNAVAILABLE"
-        raise HTTPException(status_code=422, detail={"code": code}) from exc
+            status_code = 409
+        raise HTTPException(status_code=status_code, detail={"code": code}) from exc
 
 
 def _response(result: NewowTrendDetailResult) -> NewowTrendDetailResponse:
@@ -141,6 +153,38 @@ def _response(result: NewowTrendDetailResult) -> NewowTrendDetailResponse:
             )
             for item in result.rollover_seams
         ],
+        price_channel=NewowPriceChannelOut.model_validate(
+            asdict(result.price_channel)
+        ),
+        page_window_comparison=[
+            NewowPageWindowOut.model_validate(asdict(item))
+            for item in result.page_window_comparison
+        ],
+        composite_page=(
+            NewowCompositePageOut.model_validate(asdict(result.composite_page))
+            if result.composite_page is not None
+            else None
+        ),
+        composite_cleanroom=(
+            NewowCompositeCleanroomOut.model_validate(
+                asdict(result.composite_cleanroom)
+            )
+            if result.composite_cleanroom is not None
+            else None
+        ),
+        first_action_principle=NewowFirstActionOut.model_validate(
+            asdict(result.first_action_principle)
+        ),
+        diagnostic_facts=NewowDiagnosticFactsOut.model_validate(
+            asdict(result.diagnostic_facts)
+        ),
+        diagnostic_tokens=[
+            NewowDiagnosticTokenOut.model_validate(asdict(item))
+            for item in result.diagnostic_tokens
+        ],
+        semantic_labels=NewowSemanticLabelsOut.model_validate(
+            asdict(result.semantic_labels)
+        ),
         legend={
             "BUILD": "trend build",
             "CLEAR": "trend clear",
@@ -148,11 +192,25 @@ def _response(result: NewowTrendDetailResult) -> NewowTrendDetailResponse:
             "D2": "escape D2",
             "D3": "escape D3",
         },
-        formula_descriptions={
-            "trend_band": result.instrument.formula_versions[0],
-            "escape": result.instrument.formula_versions[1],
-            "cup_handle": result.instrument.formula_versions[2],
-        },
+        formula_descriptions=NewowFormulaDescriptionsOut.model_validate(
+            {
+                "trend_band": result.instrument.formula_versions[0],
+                "escape": result.instrument.formula_versions[1],
+                "cup_handle": result.instrument.formula_versions[2],
+                "oscillation": result.instrument.formula_versions[3],
+                "main_force": result.instrument.formula_versions[4],
+                "main_rise": result.instrument.formula_versions[5],
+                "price_channel": result.instrument.formula_versions[6],
+                "display_selection": result.instrument.formula_versions[7],
+                "page_window_comparison": result.instrument.formula_versions[8],
+                "causal_window_identity": result.instrument.formula_versions[9],
+                "composite_page": result.instrument.formula_versions[10],
+                "composite_cleanroom": result.instrument.formula_versions[11],
+                "first_action": result.instrument.formula_versions[12],
+                "diagnostic_facts": result.instrument.formula_versions[13],
+                "diagnostic_rules": result.instrument.formula_versions[14],
+            }
+        ),
         warnings=list(result.warnings),
     )
 
