@@ -64,8 +64,149 @@
 - Task E Web ownership/unit/build：Alert Rule ownership `passed`，exit 0，0.66s；Web unit `327 tests / 326 pass / 1 skipped / 0 failed`，exit 0，3.37s；`vue-tsc -b && vite build` 和 bundle-topology 成功，3057 modules transformed，exit 0，4.18s。
 - Task E Playwright E2E：`71 passed`，exit 0，1.3m（wall 76.09s）。日志中的 `NETWORK` / `HTTP_502` / `ECONNREFUSED` 来自显式的 unavailable/fail-closed 场景，对应测试全部通过。
 - Task E OpenSpec/security/Git：OpenSpec strict `8 passed, 0 failed`，exit 0，1.08s；secret scan `finding_count=0`，exit 0，1.47s；`git diff "$(git merge-base HEAD origin/develop)"...HEAD --check` exit 0；检查时 worktree clean。
-- Task E develop comparison：`git fetch origin develop` exit 0，4.97s；实施 baseline 与 fresh `origin/develop` 均为 `18a62382685b6deb92010968d4a5a920952fa206`，比较 exit 0，无 baseline drift，不需要重建 Task A inventory 或重跑受影响矩阵。
+- Task E develop comparison：批准的实施 baseline 是 fresh clean `origin/develop@18a62382685b6deb92010968d4a5a920952fa206`，不是本地 `develop`。Task E 完成矩阵后的 `git fetch origin develop` exit 0，4.97s，fresh `origin/develop` 仍为 baseline；因此仅按批准计划不需要 rebaseline 或重跑受影响矩阵。2026-09-05 Task E review fix 的 fresh fetch 后，本地 `develop@15a557669e39895dc7f243d319f48fb2a695887c` 比 `origin/develop` ahead 1，是主 worktree 中的另一并发用户提交，不属于 implementation baseline；本任务未合并、修改或覆盖它，也不声明未来集成冲突已消失。
 - Task E 矩阵结论：必要项全部 exit 0，记录真实数量和时间；`isolated_postgresql` 与 `manual_acceptance` 按计划明确未运行，不以本地完整矩阵声明 production、release 或 Runtime 验收。
+
+### Task E 可持久命令证据
+
+以下命令均在 `chore/develop-convergence` 的隔离 worktree 中执行。完整耗时矩阵的代码输入 HEAD 是 `0ed5538636fc55940f4487409284ccd7ea1b0d94`；当时 fresh `origin/develop` 与批准 baseline 都是 `18a62382685b6deb92010968d4a5a920952fa206`。
+
+1. 初始 clean/diff 和锁定依赖：
+
+   ```bash
+   git status --short
+   /usr/bin/time -p git diff --check
+   /usr/bin/time -p uv sync --project services/quant-api --locked
+   /usr/bin/time -p pnpm --dir apps/quant-web install --frozen-lockfile
+   git status --short
+   ```
+
+   五条命令均 exit 0；两次 status 无输出，diff 0.01s，`uv sync` 0.02s，`pnpm install` 0.25s，无 tracked lock 漂移。
+
+2. Backend full：
+
+   ```bash
+   PYTHONPATH=services/quant-api:packages/quant-core \
+     /usr/bin/time -p uv run --project services/quant-api pytest -q \
+     -m "not isolated_postgresql and not manual_acceptance" \
+     services/quant-api/tests
+   ```
+
+   Exit 0；`1633 passed, 3 skipped, 15 deselected`，pytest 199.77s，wall 200.61s。
+
+3. Newow fresh collection/execution readback：
+
+   ```bash
+   PYTHONPATH=services/quant-api:packages/quant-core \
+     /usr/bin/time -p uv run --project services/quant-api pytest -q \
+     -m "not isolated_postgresql and not manual_acceptance" \
+     services/quant-api/tests/newow
+   ```
+
+   Exit 0；`553 passed`，pytest 191.79s，wall 192.12s。这是 Task E fresh 完整 Newow 目录回归，不是 Task D 旧数量的复用。
+
+4. Engineering full 与显式 repository/canonical readback：
+
+   ```bash
+   PYTHONPATH=services/quant-api:packages/quant-core \
+     /usr/bin/time -p uv run --project services/quant-api pytest -q \
+     tests/engineering
+
+   PYTHONPATH=services/quant-api:packages/quant-core \
+     /usr/bin/time -p uv run --project services/quant-api pytest -q \
+     tests/engineering/test_repository_hygiene.py \
+     tests/engineering/test_canonical_consistency.py
+   ```
+
+   两条命令均 exit 0；full `71 passed`，pytest 56.09s，wall 56.36s；显式 readback `16 passed`，pytest 2.80s，wall 3.27s。
+
+5. Python static：
+
+   ```bash
+   /usr/bin/time -p uv run --project services/quant-api python -m ruff check \
+     services/quant-api/app services/quant-api/tests \
+     packages/quant-core/guiyi_quant tests/engineering
+
+   PYTHONPATH=services/quant-api:packages/quant-core \
+   MYPYPATH=services/quant-api:packages/quant-core \
+     /usr/bin/time -p uv run --project services/quant-api mypy \
+     --explicit-package-bases \
+     --ignore-missing-imports \
+     services/quant-api/app packages/quant-core/guiyi_quant
+   ```
+
+   两条命令均 exit 0；Ruff `All checks passed!`，0.05s；Mypy `Success: no issues found in 110 source files`，6.53s。
+
+6. Web ownership/unit/build/E2E：
+
+   ```bash
+   /usr/bin/time -p pnpm --dir apps/quant-web run check:alert-rules
+   /usr/bin/time -p pnpm --dir apps/quant-web test
+   /usr/bin/time -p pnpm --dir apps/quant-web build
+   /usr/bin/time -p pnpm --dir apps/quant-web test:e2e
+   ```
+
+   四条命令均 exit 0；ownership passed，0.66s；unit `327 tests / 326 pass / 1 skipped / 0 failed`，3.37s；`vue-tsc -b` + Vite + bundle topology passed，3057 modules，4.18s；Playwright `71 passed`，1.3m（wall 76.09s）。E2E 的 `NETWORK` / `HTTP_502` / `ECONNREFUSED` 是 unavailable/fail-closed 负路径场景的预期日志，不是 suite failure。
+
+7. OpenSpec、secret 和提交前 Git checks：
+
+   ```bash
+   /usr/bin/time -p openspec validate --specs --strict --no-interactive
+   mkdir -p /tmp/guiyi-develop-convergence
+   /usr/bin/time -p python3 scripts/engineering/secret_scan.py --json \
+     > /tmp/guiyi-develop-convergence/secret-scan-final.json
+   python3 -m json.tool /tmp/guiyi-develop-convergence/secret-scan-final.json
+   git merge-base HEAD origin/develop
+   git diff "$(git merge-base HEAD origin/develop)"...HEAD --check
+   git status --short
+   ```
+
+   全部 exit 0；OpenSpec `8 passed, 0 failed`，1.08s；secret scan `finding_count=0`，1.47s；merge-base 为 baseline，branch diff clean，status 无输出。
+
+8. Fresh remote-baseline comparison：
+
+   ```bash
+   /usr/bin/time -p git fetch origin develop
+   ORIGINAL_BASELINE="$(sed -n 's/^实施 baseline：`\([0-9a-f]\{40\}\)`.*/\1/p' \
+     docs/tasks/2026-09-04-develop-convergence-result.md)"
+   CURRENT_DEVELOP="$(git rev-parse origin/develop)"
+   printf 'original=%s\ncurrent=%s\n' "${ORIGINAL_BASELINE}" "${CURRENT_DEVELOP}"
+   test "${ORIGINAL_BASELINE}" = "${CURRENT_DEVELOP}"
+   ```
+
+   Fetch 和比较都 exit 0，fetch 4.97s；`original=current=18a62382685b6deb92010968d4a5a920952fa206`。因此仅对 `origin/develop` 基线按批准计划判定无需 rebaseline。
+
+9. 结果文档修改后 checks：
+
+   ```bash
+   /usr/bin/time -p git diff --check
+   /usr/bin/time -p openspec validate --specs --strict --no-interactive
+   /usr/bin/time -p python3 scripts/engineering/secret_scan.py --json \
+     > /tmp/guiyi-develop-convergence/secret-scan-final.json
+   python3 -m json.tool /tmp/guiyi-develop-convergence/secret-scan-final.json
+   git diff "$(git merge-base HEAD origin/develop)"...HEAD --check
+   git status --short
+   ```
+
+   全部 exit 0；working-tree diff 1.09s；OpenSpec `8 passed, 0 failed`，0.97s；secret scan `finding_count=0`，1.40s；最后 status 仅有预期的结果文档修改。
+
+10. Validation evidence commit 和 readback：
+
+    ```bash
+    git add docs/tasks/2026-09-04-develop-convergence-result.md
+    git status --short
+    git diff --cached --name-only
+    /usr/bin/time -p git diff --cached --check
+    /usr/bin/time -p git commit -m "docs: record develop convergence validation"
+    VALIDATED_HEAD="$(git rev-parse HEAD)"
+    printf '%s\n' "${VALIDATED_HEAD}"
+    git status --short
+    git show --stat --oneline --decorate --no-renames HEAD
+    ```
+
+    全部 exit 0；staged path 只有本文档，cached diff clean 0.01s；validation evidence commit 为 `f074fec1b32632b87ea5df695404317f8bd0c90a`，commit 1.10s，提交后 status 无输出。
+
+`f074fec1b32632b87ea5df695404317f8bd0c90a` 是完整矩阵的 validation evidence commit，但 Git commit SHA 不可能自引用地写入生成它自身的 tree：任何写入该 SHA 的 amend 都会生成新 SHA。Task E review fix 只修改本文档，因 `origin/develop` 未前移而不重跑耗时矩阵，只重跑文档受影响 checks。Task F 不得硬编码消费 `f074fec1b...`，必须在开始时 fresh 执行 `git rev-parse HEAD` 并消费当时的 exact current head。
 
 ## Branch 清理
 
