@@ -173,6 +173,7 @@ from .diagnostic_facts import (
     DIAGNOSTIC_FACTS_CLEANROOM_V1,
     DiagnosticFacts,
     DiagnosticInputs,
+    DiagnosticPrimitiveIdentity,
     build_diagnostic_facts,
 )
 from .diagnostic_rules import (
@@ -297,6 +298,7 @@ __all__ = [
     "DirectionToken",
     "DiagnosticFacts",
     "DiagnosticInputs",
+    "DiagnosticPrimitiveIdentity",
     "DiagnosticSeverity",
     "DiagnosticToken",
     "CausalChannelWindowResult",

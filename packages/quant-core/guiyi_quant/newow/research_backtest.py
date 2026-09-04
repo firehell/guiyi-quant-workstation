@@ -62,7 +62,7 @@ def _contract_matches_product(product: str, contract: str) -> bool:
     )
 
 
-def _formula_versions_for_strategy(
+def formula_versions_for_strategy(
     strategy: ResearchStrategy,
 ) -> tuple[str, ...]:
     if strategy is ResearchStrategy.TREND:
@@ -603,18 +603,18 @@ def run_causal_long_only_backtest(
                 candidate
                 for candidate in ResearchStrategy
                 if signal_formula_versions
-                == _formula_versions_for_strategy(candidate)
+                == formula_versions_for_strategy(candidate)
             )
             if len(matching_strategies) != 1:
                 raise ValueError("NEWOW_BACKTEST_STRATEGY_FORMULA_MISMATCH")
             strategy = matching_strategies[0]
         elif intent_strategies:
             strategy = next(iter(intent_strategies))
-            signal_formula_versions = _formula_versions_for_strategy(strategy)
+            signal_formula_versions = formula_versions_for_strategy(strategy)
 
     expected_formula_versions: tuple[str, ...] | None = None
     if strategy is not None:
-        expected_formula_versions = _formula_versions_for_strategy(strategy)
+        expected_formula_versions = formula_versions_for_strategy(strategy)
         if (
             signal_formula_versions != expected_formula_versions
             or any(candidate is not strategy for candidate in intent_strategies)
@@ -800,7 +800,7 @@ def build_strategy_intents(
                         action, bar.bar_end, trend_result.marker.formula_version
                     )
                 )
-        return tuple(intents), _formula_versions_for_strategy(strategy)
+        return tuple(intents), formula_versions_for_strategy(strategy)
 
     if strategy is ResearchStrategy.OSCILLATION:
         oscillation_state = OscillationState()
@@ -824,7 +824,7 @@ def build_strategy_intents(
                 intents.append(
                     BacktestIntent(action, bar.bar_end, signal.formula_version)
                 )
-        return tuple(intents), _formula_versions_for_strategy(strategy)
+        return tuple(intents), formula_versions_for_strategy(strategy)
 
     if strategy is ResearchStrategy.PRICE_CHANNEL:
         # The generic dispatcher has no explicit window.  Fail closed instead
@@ -847,7 +847,7 @@ def build_strategy_intents(
                     action, bar.bar_end, main_rise_result.band_signal.formula_version
                 )
             )
-    return tuple(intents), _formula_versions_for_strategy(strategy)
+    return tuple(intents), formula_versions_for_strategy(strategy)
 
 
 def backtest_newow_strategy(

@@ -19,6 +19,7 @@ from guiyi_quant.newow.screener_observation import (
     CupCandidateFacts,
     LegacyFilterId,
     LegacyHomepageStockFacts,
+    PageExactScreenerRule,
     ScreenerProbeObservation,
     ScreenerRowFacts,
     ScreenerStrategyId,
@@ -142,6 +143,15 @@ def test_page_exact_factory_rejects_one_snapshot_or_non_unique_rule() -> None:
     )
     with pytest.raises(ValueError, match="NEWOW_SCREENER_EVIDENCE_INSUFFICIENT"):
         infer_page_exact_screener_rule(observations)
+
+
+def test_page_exact_public_constructor_cannot_bypass_evidence_gate() -> None:
+    with pytest.raises(ValueError, match="NEWOW_SCREENER_EVIDENCE_INSUFFICIENT"):
+        PageExactScreenerRule(
+            strategy_id=ScreenerStrategyId.TREND_BUILD,
+            rule_id="guessed-rule",
+            evidence_response_sha256=(),
+        )
 
 
 def test_page_exact_factory_requires_distinct_dates_hashes_and_asset_version() -> None:

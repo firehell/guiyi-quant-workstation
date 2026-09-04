@@ -267,7 +267,7 @@ def _browser_round4(value: float) -> Decimal:
 
 
 def rank_page_ai_combinations(
-    combinations: tuple[PageAiCombination, ...], *, require_six: bool = True
+    combinations: tuple[PageAiCombination, ...],
 ) -> PageAiRanking:
     if not combinations:
         raise ValueError("NEWOW_PAGE_AI_COMBINATIONS_EMPTY")
@@ -275,9 +275,7 @@ def rank_page_ai_combinations(
         (period, strategy) for period in PageAiPeriod for strategy in PageAiStrategy
     }
     actual_keys = {(item.period, item.strategy) for item in combinations}
-    if len(actual_keys) != len(combinations) or (
-        require_six and actual_keys != expected_keys
-    ):
+    if len(actual_keys) != len(combinations) or actual_keys != expected_keys:
         raise ValueError("NEWOW_PAGE_AI_COMBINATION_SET_INVALID")
     if any(item.formula_version != _expected_formula(item.strategy) for item in combinations):
         raise ValueError("NEWOW_FORMULA_IDENTITY_MISMATCH")
@@ -345,6 +343,7 @@ def assess_oos_candidate(
         raise ValueError("NEWOW_PAGE_OPTIMIZER_UNTRUSTED_RESULT")
     if not isinstance(result, WalkForwardValidationResult):
         raise ValueError("NEWOW_OOS_RESULT_INVALID")
+    result.validate_for_assessment()
     return OosCandidateAssessment(
         strategy=result.strategy,
         signal_formula_versions=result.signal_formula_versions,

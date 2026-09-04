@@ -23,6 +23,7 @@ from .price_channel import (
 )
 from .profile import NEWOW_TREND_D1_PAGE_V2
 from .subplots import (
+    MAIN_FORCE_CONTROL_FORMULA_VERSION,
     ZHAOYAO_MIRROR_FORMULA_VERSION,
     MainForceControlResult,
     MainForceStatus,
@@ -34,6 +35,31 @@ _PCT_QUANTUM = Decimal("0.0001")
 
 
 @dataclass(frozen=True, slots=True)
+class DiagnosticPrimitiveIdentity:
+    """Owner, observation time, and formula identity for one primitive output."""
+
+    as_of: datetime
+    physical_contract: str
+    segment_id: str
+    formula_version: str
+
+    def __post_init__(self) -> None:
+        if (
+            not isinstance(self.as_of, datetime)
+            or self.as_of.tzinfo is None
+            or self.as_of.utcoffset() is None
+            or not isinstance(self.physical_contract, str)
+            or not self.physical_contract
+            or self.physical_contract != self.physical_contract.upper()
+            or not isinstance(self.segment_id, str)
+            or not self.segment_id
+            or not isinstance(self.formula_version, str)
+            or not self.formula_version
+        ):
+            raise ValueError("NEWOW_DIAGNOSTIC_PRIMITIVE_IDENTITY_INVALID")
+
+
+@dataclass(frozen=True, slots=True)
 class DiagnosticInputs:
     """Explicit primitive outputs accepted by the diagnostic fact builder."""
 
@@ -42,9 +68,13 @@ class DiagnosticInputs:
     trend_points: tuple[NewowTrendBandPoint, ...]
     trend_formula_version: str
     oscillation_state: OscillationState | None
+    oscillation_identity: DiagnosticPrimitiveIdentity | None
     main_force: MainForceControlResult | None
+    main_force_identity: DiagnosticPrimitiveIdentity | None
     main_rise_state: MainRiseState | None
+    main_rise_identity: DiagnosticPrimitiveIdentity | None
     cup_overlay: NewowCupHandleOverlay | None
+    cup_identity: DiagnosticPrimitiveIdentity | None
     weekly_signal: PageSignalState | None
     daily_signal: PageSignalState | None
     repainting_inputs: tuple[object, ...] = ()
@@ -113,6 +143,64 @@ def _validate_inputs(inputs: DiagnosticInputs) -> None:
         for value in (inputs.weekly_signal, inputs.daily_signal)
     ):
         raise ValueError("NEWOW_DIAGNOSTIC_INPUT_INVALID")
+
+    latest = inputs.bars[-1]
+    primitive_contracts = (
+        (
+            inputs.oscillation_state,
+            inputs.oscillation_identity,
+            OSCILLATION_FORMULA_VERSION,
+        ),
+        (
+            inputs.main_force,
+            inputs.main_force_identity,
+            MAIN_FORCE_CONTROL_FORMULA_VERSION,
+        ),
+        (
+            inputs.main_rise_state,
+            inputs.main_rise_identity,
+            MAIN_RISE_PAGE_V1.band_formula,
+        ),
+        (
+            inputs.cup_overlay,
+            inputs.cup_identity,
+            NEWOW_TREND_D1_PAGE_V2.cup_handle_formula,
+        ),
+    )
+    for primitive, identity, expected_formula in primitive_contracts:
+        if (primitive is None) != (identity is None):
+            raise ValueError("NEWOW_DIAGNOSTIC_PRIMITIVE_IDENTITY_INVALID")
+        if primitive is None:
+            continue
+        if (
+            not isinstance(identity, DiagnosticPrimitiveIdentity)
+            or identity.as_of != latest.bar_end
+            or identity.physical_contract != latest.physical_contract
+            or identity.segment_id != latest.segment_id
+            or identity.formula_version != expected_formula
+        ):
+            raise ValueError("NEWOW_DIAGNOSTIC_PRIMITIVE_IDENTITY_INVALID")
+
+    if inputs.oscillation_state is not None and not _same_tail_segment(
+        inputs.oscillation_state.physical_contract,
+        inputs.oscillation_state.segment_id,
+        latest,
+    ):
+        raise ValueError("NEWOW_DIAGNOSTIC_PRIMITIVE_IDENTITY_INVALID")
+    if inputs.main_force is not None and (
+        inputs.main_force.formula_version != MAIN_FORCE_CONTROL_FORMULA_VERSION
+    ):
+        raise ValueError("NEWOW_DIAGNOSTIC_PRIMITIVE_IDENTITY_INVALID")
+    if inputs.main_rise_state is not None and not _same_tail_segment(
+        inputs.main_rise_state.physical_contract,
+        inputs.main_rise_state.segment_id,
+        latest,
+    ):
+        raise ValueError("NEWOW_DIAGNOSTIC_PRIMITIVE_IDENTITY_INVALID")
+    if inputs.cup_overlay is not None and (
+        inputs.cup_overlay.formula_version != NEWOW_TREND_D1_PAGE_V2.cup_handle_formula
+    ):
+        raise ValueError("NEWOW_DIAGNOSTIC_PRIMITIVE_IDENTITY_INVALID")
 
 
 def _ema_strict_before(bars: tuple[NewowDailyBar, ...]) -> Decimal | None:
@@ -192,19 +280,11 @@ def build_diagnostic_facts(inputs: DiagnosticInputs) -> DiagnosticFacts:
         close_vs_ema20 = "equal"
 
     oscillation_holding = None
-    if inputs.oscillation_state is not None and _same_tail_segment(
-        inputs.oscillation_state.physical_contract,
-        inputs.oscillation_state.segment_id,
-        latest,
-    ):
+    if inputs.oscillation_state is not None:
         oscillation_holding = inputs.oscillation_state.holding
 
     main_rise_active = None
-    if inputs.main_rise_state is not None and _same_tail_segment(
-        inputs.main_rise_state.physical_contract,
-        inputs.main_rise_state.segment_id,
-        latest,
-    ):
+    if inputs.main_rise_state is not None:
         main_rise_active = inputs.main_rise_state.band_state is TrendBandState.YELLOW
 
     versions = [

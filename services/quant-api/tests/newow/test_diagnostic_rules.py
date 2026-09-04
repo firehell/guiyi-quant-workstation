@@ -11,11 +11,13 @@ from guiyi_quant.newow import (
     AI_WEEK_DAY_16_MATRIX_PAGE_V1,
     DIAGNOSTIC_FACTS_CLEANROOM_V1,
     MAIN_FORCE_CONTROL_FORMULA_VERSION,
+    MAIN_RISE_PAGE_V1,
     OSCILLATION_FORMULA_VERSION,
     TARGET_ABSORB_DISPLAY_PAGE_V1,
     DisplayPeriod,
     DisplayPriceSelection,
     DiagnosticInputs,
+    DiagnosticPrimitiveIdentity,
     MainForceControlResult,
     MainForceStatus,
     MainRiseState,
@@ -101,17 +103,36 @@ def _inputs(*, split_at: int | None = None) -> DiagnosticInputs:
             physical_contract=bars[-1].physical_contract,
             segment_id=bars[-1].segment_id,
         ),
+        oscillation_identity=DiagnosticPrimitiveIdentity(
+            as_of=bars[-1].bar_end,
+            physical_contract=bars[-1].physical_contract,
+            segment_id=bars[-1].segment_id,
+            formula_version=OSCILLATION_FORMULA_VERSION,
+        ),
         main_force=MainForceControlResult(
             kongpan=(1.0,),
             status=(MainForceStatus.CONTROLLED,),
             current_status=MainForceStatus.CONTROLLED,
+        ),
+        main_force_identity=DiagnosticPrimitiveIdentity(
+            as_of=bars[-1].bar_end,
+            physical_contract=bars[-1].physical_contract,
+            segment_id=bars[-1].segment_id,
+            formula_version=MAIN_FORCE_CONTROL_FORMULA_VERSION,
         ),
         main_rise_state=MainRiseState(
             band_state=TrendBandState.YELLOW,
             physical_contract=bars[-1].physical_contract,
             segment_id=bars[-1].segment_id,
         ),
+        main_rise_identity=DiagnosticPrimitiveIdentity(
+            as_of=bars[-1].bar_end,
+            physical_contract=bars[-1].physical_contract,
+            segment_id=bars[-1].segment_id,
+            formula_version=MAIN_RISE_PAGE_V1.band_formula,
+        ),
         cup_overlay=None,
+        cup_identity=None,
         weekly_signal=PageSignalState.HOLD,
         daily_signal=PageSignalState.BUY,
     )
@@ -162,8 +183,11 @@ def test_diagnostic_missing_facts_stay_unavailable() -> None:
             trend_points=inputs.trend_points[-1:],
             display_prices=replace(inputs.display_prices, target=None, absorb=None),
             oscillation_state=None,
+            oscillation_identity=None,
             main_force=None,
+            main_force_identity=None,
             main_rise_state=None,
+            main_rise_identity=None,
             weekly_signal=None,
             daily_signal=None,
         )
@@ -192,6 +216,36 @@ def test_repainting_subplot_is_rejected_from_formal_diagnostic_input() -> None:
     )
     with pytest.raises(ValueError, match="NEWOW_DIAGNOSTIC_REPAINTING_INPUT"):
         build_diagnostic_facts(replace(_inputs(), repainting_inputs=(repainting,)))
+
+
+@pytest.mark.parametrize(
+    ("identity_field", "replacement"),
+    (
+        (
+            "main_force_identity",
+            {"formula_version": "newow_zhaoyao_mirror_repainting_page_v1"},
+        ),
+        ("main_force_identity", {"segment_id": "old-owner"}),
+        (
+            "main_force_identity",
+            {"as_of": datetime(2026, 1, 2, tzinfo=UTC)},
+        ),
+    ),
+)
+def test_diagnostic_primitive_identity_rejects_wrong_formula_owner_or_asof(
+    identity_field: str, replacement: dict[str, object]
+) -> None:
+    inputs = _inputs()
+    identity = getattr(inputs, identity_field)
+    with pytest.raises(ValueError, match="NEWOW_DIAGNOSTIC_PRIMITIVE_IDENTITY_INVALID"):
+        build_diagnostic_facts(
+            replace(inputs, **{identity_field: replace(identity, **replacement)})
+        )
+
+
+def test_diagnostic_primitive_requires_matching_identity() -> None:
+    with pytest.raises(ValueError, match="NEWOW_DIAGNOSTIC_PRIMITIVE_IDENTITY_INVALID"):
+        build_diagnostic_facts(replace(_inputs(), main_force_identity=None))
 
 
 @pytest.mark.parametrize(
@@ -267,17 +321,27 @@ def test_page_ai_ranking_discards_sparse_results_and_is_not_oos() -> None:
 
 
 def test_page_ai_ranking_tie_breaks_by_trade_count_then_input_order() -> None:
-    base = _six_combinations()[0]
-    combinations = (
-        replace(base, period=PageAiPeriod.WEEK, trade_count=5),
-        replace(base, period=PageAiPeriod.DAY, trade_count=8),
-        replace(base, period=PageAiPeriod.SIXTY_MINUTE, trade_count=8),
+    combinations = tuple(
+        replace(
+            item,
+            cumulative_return_pct=Decimal("10"),
+            max_drawdown_pct=Decimal("5"),
+            accuracy_pct=Decimal("60"),
+            trade_count=(
+                5
+                if index == 0
+                else 8
+                if index in {1, 2}
+                else 4
+            ),
+        )
+        for index, item in enumerate(_six_combinations())
     )
-    ranking = rank_page_ai_combinations(combinations, require_six=False)
-    assert [item.combination.period for item in ranking.ranked] == [
-        PageAiPeriod.DAY,
-        PageAiPeriod.SIXTY_MINUTE,
-        PageAiPeriod.WEEK,
+    ranking = rank_page_ai_combinations(combinations)
+    assert [item.input_order for item in ranking.ranked[:3]] == [
+        1,
+        2,
+        0,
     ]
 
 
@@ -289,18 +353,15 @@ def test_page_ai_formula_identity_mismatch_fails_closed() -> None:
         )
 
 
-def test_walk_forward_result_has_a_distinct_trusted_assessment_type() -> None:
-    result = WalkForwardValidationResult(
-        strategy=ResearchStrategy.TREND,
-        signal_formula_versions=(NEWOW_TREND_D1_PAGE_V2.trend_band_formula,),
-        folds=(),
-        closed_trade_count=7,
-        compounded_net_return_pct=Decimal("8.25"),
-    )
-    assessment = assess_oos_candidate(result)
-    assert assessment.trustworthy_for_research is True
-    assert assessment.compounded_net_return_pct == Decimal("8.25")
-    assert not isinstance(assessment, PageAiRanking)
+def test_walk_forward_result_cannot_be_hand_built_and_marked_trusted() -> None:
+    with pytest.raises(ValueError, match="NEWOW_OOS_RESULT_INVALID"):
+        WalkForwardValidationResult(
+            strategy=ResearchStrategy.TREND,
+            signal_formula_versions=(NEWOW_TREND_D1_PAGE_V2.trend_band_formula,),
+            folds=(),
+            closed_trade_count=7,
+            compounded_net_return_pct=Decimal("8.25"),
+        )
 
 
 def test_formula_lineage_contains_only_explicit_primitive_identities() -> None:

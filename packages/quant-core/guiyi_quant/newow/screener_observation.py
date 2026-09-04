@@ -154,12 +154,42 @@ class ScreenerObservationComparison:
     page_asset_changed: bool
 
 
-@dataclass(frozen=True, slots=True)
+_PAGE_EXACT_FACTORY_TOKEN = object()
+
+
+@dataclass(frozen=True, slots=True, init=False)
 class PageExactScreenerRule:
     strategy_id: ScreenerStrategyId
     rule_id: str
     evidence_response_sha256: tuple[str, ...]
     page_parity: Literal[True] = True
+
+    def __init__(
+        self,
+        strategy_id: ScreenerStrategyId,
+        rule_id: str,
+        evidence_response_sha256: tuple[str, ...],
+        *,
+        _factory_token: object | None = None,
+    ) -> None:
+        if (
+            _factory_token is not _PAGE_EXACT_FACTORY_TOKEN
+            or not isinstance(strategy_id, ScreenerStrategyId)
+            or not isinstance(rule_id, str)
+            or not rule_id
+            or not isinstance(evidence_response_sha256, tuple)
+            or len(evidence_response_sha256) < 2
+            or len(set(evidence_response_sha256)) != len(evidence_response_sha256)
+            or any(
+                not isinstance(value, str) or not _HASH.fullmatch(value)
+                for value in evidence_response_sha256
+            )
+        ):
+            raise ValueError("NEWOW_SCREENER_EVIDENCE_INSUFFICIENT")
+        object.__setattr__(self, "strategy_id", strategy_id)
+        object.__setattr__(self, "rule_id", rule_id)
+        object.__setattr__(self, "evidence_response_sha256", evidence_response_sha256)
+        object.__setattr__(self, "page_parity", True)
 
 
 def _common_fields(observation: ScreenerProbeObservation) -> set[str]:
@@ -241,6 +271,7 @@ def infer_page_exact_screener_rule(
         evidence_response_sha256=tuple(
             item.response_sha256 for item in observations
         ),
+        _factory_token=_PAGE_EXACT_FACTORY_TOKEN,
     )
 
 

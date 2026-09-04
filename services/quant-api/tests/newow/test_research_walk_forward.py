@@ -12,6 +12,7 @@ from guiyi_quant.newow import (
     BacktestExecutionConstraint,
     NewowResearchBar,
     ResearchStrategy,
+    assess_oos_candidate,
 )
 from guiyi_quant.newow.research_walk_forward import (
     WalkForwardFold,
@@ -136,6 +137,32 @@ def test_walk_forward_uses_training_only_as_warmup_and_scores_test_intents() -> 
     assert trade.exit.signal_bar_end == bars[3].bar_end
     assert trade.exit.fill_bar_end == bars[4].bar_end
     assert all(fill.signal_bar_end >= bars[2].bar_end for fill in evaluated.backtest.fills)
+    assessment = assess_oos_candidate(result)
+    assert assessment.trustworthy_for_research is True
+    assert assessment.closed_trade_count == result.closed_trade_count
+
+
+def test_walk_forward_assessment_revalidates_aggregate_before_trusting() -> None:
+    bars = _bars((100, 80, 120, 80, 90))
+    result = run_fixed_formula_walk_forward(
+        bars,
+        (
+            WalkForwardFold(
+                name="fold-1",
+                train_since=_START,
+                train_through=_START + timedelta(days=1),
+                test_since=_START + timedelta(days=2),
+                test_through=_START + timedelta(days=4),
+            ),
+        ),
+        strategy=ResearchStrategy.TREND,
+        cost_snapshots=_costs(),
+        execution_constraints=_constraints(bars),
+    )
+    object.__setattr__(result, "closed_trade_count", -1)
+
+    with pytest.raises(ValueError, match="NEWOW_OOS_RESULT_INVALID"):
+        assess_oos_candidate(result)
 
 
 def test_walk_forward_starts_flat_and_excludes_open_test_end_position() -> None:
