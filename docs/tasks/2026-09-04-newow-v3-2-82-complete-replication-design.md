@@ -2,7 +2,7 @@
 
 日期：2026-09-04
 
-状态：`CODE_COMPLETE / FINAL_REVIEW_PENDING / REAL_WEEKLY_OOS_GATE_PENDING`
+状态：`PARTIAL / REAL_OOS_REPLAY_BUNDLE_PENDING / REAL_WEEKLY_OOS_GATE_PENDING / FINAL_REVIEW_BLOCKED`
 
 分支：`codex/newow-v3-2-82-complete-replication`
 
@@ -305,8 +305,8 @@ Slice E 追加 Web unit、typecheck、build 和 bounded E2E。全任务完成后
 
 ## 14. 2026-09-04 实施读回
 
-Slice A-E 已实现为独立 Quant Core、只读 typed API 和 Trend Workspace。股票/指数证据为 3 指数 + 6 股票 × week/day/60min 的 27 个精确页面点；目标/吸筹原始通道 27/27 matched，601 根页面响应的五窗口比较 oracle 可离线重算。
+Slice A-E 已实现为独立 Quant Core、只读 typed API 和 Trend Workspace。股票/指数证据为 3 指数 + 6 股票 × week/day/60min 的 27 个精确页面点；通道、展示选择、五窗口排名与统计、综合决策、确定度、波动率和第一行动共 16 个可比子项全部 27/27 matched。真实页面反例还证明周线视图必须优先当前周线 HHV/LLV，已以 `newow_target_absorb_display_selection_page_v2` 修复。AI 自然语言和 diagnostic token 没有稳定的页面机器合同，仍分别为 `unavailable` 和 clean-room。
 
-真实期货数据链覆盖 rb/sc/m × 1d/1w/60m，9/9 series 通过。SC2302 在 D1/60m 有 owner Bar、在 W1 没有 owner Bar，已作为全局权威分段与周期 owner 子集的真实反例。27 个品种×周期×策略 OOS 单元中，18 个日线/60 分单元完成，9 个周线单元因 `NEWOW_WEEKLY_EXECUTION_LIMIT_CONTRACT_INSUFFICIENT` 失败关闭。
+真实期货数据链覆盖 rb/sc/m × 1d/1w/60m，9/9 series 通过。SC2302 在 D1/60m 有 owner Bar、在 W1 没有 owner Bar，已作为全局权威分段与周期 owner 子集的真实反例。27 个品种×周期×策略 OOS 单元中，18 个日线/60 分单元有运行结果，9 个周线单元因 `NEWOW_WEEKLY_EXECUTION_LIMIT_CONTRACT_INSUFFICIENT` 失败关闭。但现有外部包缺完整 Canonical OHLC Bar 和无数据库重放脚本，所以 18 个结果不得标记为可独立复算。
 
-因此，在最终双路 Review 与 develop 集成前，状态为 `CODE_COMPLETE / FINAL_REVIEW_PENDING`；即使 Review 清零并合入，整体仍只能标记 `CODE_COMPLETE_EXTERNAL_GATE_PENDING`，直到周 K 输入事实与 next-open 执行日 limit 事实分离的合同完成并重跑 9 个周线单元。私有服务端选股公式保持排除范围内 `UNKNOWN`。
+因此当前状态为 `PARTIAL / FINAL_REVIEW_BLOCKED`。下一个严格串行 Gate 是新授权一次只读 Catalog/MainContractMap/Canonical 快照，冻结 9 条完整输入并用无数据库脚本重放 18 个已有结果的单元。通过后才能继续周 K next-open 执行日 limit 合同和 9 个周线单元，然后再执行双路最终 Review。私有服务端选股公式保持排除范围内 `UNKNOWN`。

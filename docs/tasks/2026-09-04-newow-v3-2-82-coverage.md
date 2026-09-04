@@ -1,11 +1,11 @@
 # 牛哇 v3.2.82 功能覆盖与复刻状态
 
-状态：`CODE_COMPLETE / REAL_WEEKLY_OOS_GATE_PENDING / FINAL_REVIEW_PENDING`
+状态：`PARTIAL / REAL_OOS_REPLAY_BUNDLE_PENDING / REAL_WEEKLY_OOS_GATE_PENDING / FINAL_REVIEW_BLOCKED`
 
 本表把页面观察、手册主张、归一实现和期货迁移证据分开。唯一状态集为 `OBSERVED_EXACT`、`REPRODUCED_EXACT`、`BEHAVIOR_INFERRED`、`CLEANROOM_IMPLEMENTED`、`UNKNOWN`、`REJECTED`。其中推断不能冒充页面公式；`UNKNOWN` 与 `REJECTED` 均没有实现入口。
 
 外部证据根：`newow-strategy-detail-research/v3.2.82-gap-closure`
-证据清单 SHA-256：`cf02e7489d322a5937c251feb6f8598f754b6131f991a7be340188bd7f5a4bc4`（129 文件，已离线 verify）
+证据清单 SHA-256：`0b663c351de77ae783c6adcbdc9a9ebe0528a5663a2a551bd45cd9089da8b01e`（133 文件，已离线 verify）
 
 | Feature | Current source/version | Evidence status | Formula identity | Implementation entry | Stock evidence | Futures evidence | Remaining gate |
 |---|---|---|---|---|---|---|---|
@@ -22,8 +22,8 @@
 | 照妖镜副图 | stock_detail.html v3.2.63 | REPRODUCED_EXACT | newow_zhaoyao_mirror_repainting_page_v1 | packages/quant-core/guiyi_quant/newow/subplots.py | 9 标的逐值 exact | repainting，只允许研究解释 | diagnostic formal input 显式拒绝 |
 | 涨跌动能副图 | stock_detail.html v3.2.63 | REPRODUCED_EXACT | newow_up_down_energy_page_v1 | packages/quant-core/guiyi_quant/newow/subplots.py | 9 标的逐值 exact | 研究 primitive 可复算 | 公式 Gate 已关闭 |
 | 目标价与吸筹价原始通道 | strategy-calc.js v1.0.9, query v3.2.82 | CLEANROOM_IMPLEMENTED | newow_target_absorb_hhv_llv10_page_v1 | packages/quant-core/guiyi_quant/newow/price_channel.py::calculate_price_channel | v3.2.82 的 27/27 页面末值与 HHV10/LLV10 一致 | actual_dominant 1d/1w/60m 各 owner segment 可复算 | 公式 Gate 已关闭 |
-| 目标价与吸筹价展示选择 | strategy-calc.js v1.0.9, query v3.2.82 | CLEANROOM_IMPLEMENTED | newow_target_absorb_display_selection_page_v2 | packages/quant-core/guiyi_quant/newow/price_channel.py::select_display_prices | 日周状态、突破升级、fallback、昨收 clamp 与分支 token 测试 | 不进入期货信号 | 已在 API/Web 只读展示 |
-| 参数比较器页面口径 | stock_detail.html v3.2.63 | CLEANROOM_IMPLEMENTED | newow_hhv_llv_window_optimizer_page_v1 | packages/quant-core/guiyi_quant/newow/price_channel.py::rank_page_channel_windows | 601 根页面响应离线 JS oracle，五窗口逐字段与排名 parity | `trustworthy_for_research=false`，禁止晋升 | 身份隔离 Gate 已关闭 |
+| 目标价与吸筹价展示选择 | strategy-calc.js v1.0.9, query v3.2.82 | REPRODUCED_EXACT | newow_target_absorb_display_selection_page_v2 | packages/quant-core/guiyi_quant/newow/price_channel.py::select_display_prices | 27/27 页面点的目标、吸筹、周期标签全部 matched；周线视图 override 反例已回归 | 不进入期货信号 | 已在 API/Web 只读展示 |
+| 参数比较器页面口径 | stock_detail.html v3.2.63 | REPRODUCED_EXACT | newow_hhv_llv_window_optimizer_page_v1 | packages/quant-core/guiyi_quant/newow/price_channel.py::rank_page_channel_windows | 27 份页面响应分别重放五窗口；排名、收益、回撤、交易数、胜率和期末仓位 27/27 matched | `trustworthy_for_research=false`，禁止晋升 | 身份隔离 Gate 已关闭 |
 | 参数比较器因果研究口径 | 归一设计 v1 | CLEANROOM_IMPLEMENTED | newow_hhv_llv_window_optimizer_causal_v1 | packages/quant-core/guiyi_quant/newow/price_channel.py::rank_causal_channel_windows | 页面偏差的 clean-room 修正，不宣称页面公式 | completed-Bar、next-open、显式手续费/tick/涨跌停、rollover 与 prefix 合同测试 | 1w execution-limit 合同 Gate |
 | 页面同 Bar 无成本比较器直接晋升可信策略 | stock_detail.html v3.2.63 | REJECTED | none | none | 页面执行时序和无成本口径已冻结 | 不迁移 | 因违反因果与成本边界而永久拒绝；只允许另建 causal-research 身份 |
 | 综合决策 13 格矩阵 | stock_detail.html v3.2.63 | REPRODUCED_EXACT | newow_composite_decision_page_v3_2_82 | packages/quant-core/guiyi_quant/newow/composite_decision.py::calculate_composite_decision | 13 个 source witness 执行页面控制流；10 个 key 可达、3 个 warning key 不可达；6 只个股页面输出逐字段冻结 | completed D1 actual_dominant 组合事实可复算 | 公式 Gate 已关闭 |
@@ -46,7 +46,7 @@
 | 归一主升浪建仓 candidate | 归一 clean-room v1 | CLEANROOM_IMPLEMENTED | newow_mainrise_build_candidate_v1 | packages/quant-core/guiyi_quant/newow/screener_observation.py::evaluate_mainrise_build_candidate | 同段主升浪持有且最新 BUILD 晚于 CLEAR | 只处理传入 facts，page_parity=false | 服务端 page-exact 仍 UNKNOWN |
 | 归一杯柄 candidate | 归一 clean-room v1 | CLEANROOM_IMPLEMENTED | newow_cup_handle_candidate_v1 | packages/quant-core/guiyi_quant/newow/screener_observation.py::evaluate_cup_handle_candidate | READY/BREAKOUT 且无 hard failure | 只处理传入 facts，page_parity=false | 服务端 page-exact 仍 UNKNOWN |
 | 真实 actual-dominant 数据链 | Catalog/MainContractMap/Canonical 2026-09-04 只读快照 | REPRODUCED_EXACT | newow_futures_actual_dominant_validation_v1 | services/quant-api/app/market_data/newow/futures_validation.py；trend_detail_service.py | 不使用股票收益外推 | rb/sc/m × 1d/1w/60m 为 9/9 series passed；rb/m 各 6 次换月，sc 24 次 | SC2302 W1 owner 子集反例已关闭 |
-| 真实 OOS 与成本压力 | RQData historical commission/tick/limit snapshot 2026-09-04 | BEHAVIOR_INFERRED | newow_fixed_formula_walk_forward_v1 | packages/quant-core/guiyi_quant/newow/research_walk_forward.py | 不适用 | 27 单元中 18 个 1d/60m passed，9 个 1w 因 `NEWOW_WEEKLY_EXECUTION_LIMIT_CONTRACT_INSUFFICIENT` blocked | 只待周 K 输入与 next-open 执行日 limit 分离合同；禁止晋升收益结论 |
+| 真实 OOS 与成本压力 | RQData historical commission/tick/limit snapshot 2026-09-04 | BEHAVIOR_INFERRED | newow_fixed_formula_walk_forward_v1 | packages/quant-core/guiyi_quant/newow/research_walk_forward.py | 不适用 | 18 个 1d/60m 单元有运行结果，9 个 1w 因 `NEWOW_WEEKLY_EXECUTION_LIMIT_CONTRACT_INSUFFICIENT` blocked；当前包缺 Canonical Bar 与无数据库重放脚本 | 先完成 18 单元独立重放，再修周 K next-open 执行日 limit 合同；禁止晋升收益结论 |
 | 账户、自选、盯盘、订阅与分享 | 需用户私有状态 | UNKNOWN | none | none | 未采集且不触发 | 不适用 | 永久边界，除非用户另行明确授权 |
 | 基本面、CANSLIM 与大师选股 | screener.html public UI only | UNKNOWN | none | none | 仅有页面阈值描述，无权威数据源合同 | 不扩建 A 股基本面平台 | 保留文档研究，不实现 |
 
