@@ -86,7 +86,7 @@ const DECISION_KEYS = [
   'cautious-bullish', 'cautious-bearish', 'cautious-neutral',
   'warning-bullish', 'warning-bearish', 'warning-neutral', 'neutral-neutral',
 ] as const
-const UNREACHABLE_DECISION_KEYS = ['neutral-bullish', 'neutral-bearish', 'neutral-warning'] as const
+const UNREACHABLE_DECISION_KEYS = ['warning-bullish', 'warning-bearish', 'warning-neutral'] as const
 const PAGE_WINDOWS = [10, 20, 24, 30, 52] as const
 const FORMING_SCORE_KEYS = ['pretrend', 'cup_geometry', 'u_shape_purity'] as const
 const COMPLETE_SCORE_KEYS = [...FORMING_SCORE_KEYS, 'handle_quality', 'volume_structure'] as const
@@ -795,7 +795,13 @@ function normalizeComposite(
     direction: nonNegativeInteger(certaintyValue.direction, `${field}.certainty.direction`),
     total: nonNegativeInteger(certaintyValue.total, `${field}.certainty.total`),
   }
-  if (certainty.total !== certainty.trend + certainty.oscillation + certainty.alignment + certainty.direction) {
+  const certaintySum = certainty.trend + certainty.oscillation + certainty.alignment + certainty.direction
+  const expectedCertaintyTotal = certainty.alignment === 0
+    ? Math.min(certaintySum, 60)
+    : certainty.alignment === 10
+      ? Math.min(certaintySum, 85)
+      : certaintySum
+  if (certainty.total !== expectedCertaintyTotal) {
     throw new Error(`${field}.certainty.total contradicts its components`)
   }
   const volatilityValue = exactRecord(value.volatility, `${field}.volatility`, ['value_pct', 'level', 'sample_size'])

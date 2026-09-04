@@ -440,7 +440,7 @@ function expandedFacts(bars: NewowTrendDetailResponse['bars']) {
       force_closed_at_end: true as const, execution_timing: 'same_bar_close' as const,
       trustworthy_for_research: false as const, formula_version: 'newow_hhv_llv_window_optimizer_page_v1' as const,
     })),
-    composite_page: { ...common, unreachable_decision_keys: ['neutral-bullish', 'neutral-bearish', 'neutral-warning'], formula_version: 'newow_composite_decision_page_v3_2_82' as const },
+    composite_page: { ...common, unreachable_decision_keys: ['warning-bullish', 'warning-bearish', 'warning-neutral'], formula_version: 'newow_composite_decision_page_v3_2_82' as const },
     composite_cleanroom: { ...common, page_difference_reason: 'causal timing', formula_version: 'newow_composite_decision_cleanroom_v1' as const },
     first_action_principle: { level: 'ok' as const, rule_token: 'first_action_ok', fact_tokens: ['weekly_hold'], formula_version: 'newow_first_action_principle_page_v3_2_63' as const },
     diagnostic_facts: {

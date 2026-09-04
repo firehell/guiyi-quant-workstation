@@ -351,7 +351,7 @@ function expandedFacts(bars: ReturnType<typeof bar>[]) {
       trustworthy_for_research: false as const, formula_version: 'newow_hhv_llv_window_optimizer_page_v1' as const,
     })),
     composite_page: {
-      ...common, unreachable_decision_keys: ['neutral-bullish', 'neutral-bearish', 'neutral-warning'],
+      ...common, unreachable_decision_keys: ['warning-bullish', 'warning-bearish', 'warning-neutral'],
       formula_version: 'newow_composite_decision_page_v3_2_82' as const,
     },
     composite_cleanroom: {

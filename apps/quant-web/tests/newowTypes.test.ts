@@ -259,7 +259,7 @@ function composite(formulaVersion: string) {
     certainty: { trend: 20, oscillation: 20, alignment: 20, direction: 20, total: 80 },
     volatility: { value_pct: '1.25', level: 'mid', sample_size: 20 }, risk_tokens: [],
     ...(formulaVersion === 'newow_composite_decision_page_v3_2_82'
-      ? { unreachable_decision_keys: ['neutral-bullish', 'neutral-bearish', 'neutral-warning'] }
+      ? { unreachable_decision_keys: ['warning-bullish', 'warning-bearish', 'warning-neutral'] }
       : {}),
     formula_version: formulaVersion,
   }
@@ -496,4 +496,24 @@ test('fails closed on multi-period channel, page-return trust, composite, diagno
   rejects((value) => { value.diagnostic_tokens[0]!.formula_identities = ['unknown'] }, /unknown lineage/)
   rejects((value) => { value.semantic_labels.causal_research_result = true }, /trust boundary/)
   rejects((value) => { delete value.semantic_labels.observation_only }, /missing/)
+})
+
+test('accepts the frozen 60 and 85 point certainty caps', () => {
+  const conflict = payload()
+  conflict.composite_page!.certainty = {
+    trend: 30, oscillation: 18, alignment: 0, direction: 20, total: 60,
+  }
+  assert.equal(
+    normalizeNewowTrendDetailResponse(conflict, query).composite_page!.certainty.total,
+    60,
+  )
+
+  const neutral = payload()
+  neutral.composite_cleanroom!.certainty = {
+    trend: 30, oscillation: 30, alignment: 10, direction: 20, total: 85,
+  }
+  assert.equal(
+    normalizeNewowTrendDetailResponse(neutral, query).composite_cleanroom!.certainty.total,
+    85,
+  )
 })
