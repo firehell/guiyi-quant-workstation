@@ -5,6 +5,7 @@ from itertools import product
 from pathlib import Path
 
 import pytest
+import guiyi_quant.newow.composite_decision as composite_module
 
 from guiyi_quant.newow.composite_decision import (
     COMPOSITE_DECISION_CLEANROOM_V1,
@@ -260,6 +261,95 @@ def test_certainty_matches_page_components_caps_and_direction_tokens() -> None:
     assert conflict.certainty.total == 50
 
 
+def test_certainty_applies_reachable_sixty_point_conflict_cap() -> None:
+    result = calculate_composite_decision(
+        trend=_trend(TrendSignal.HOLD, TrendSignal.HOLD, TrendSignal.HOLD),
+        oscillation=_osc(
+            OscillationStatus.HOLDING,
+            OscillationStatus.CLEARED,
+            OscillationStatus.HOLDING,
+        ),
+        daily_bars=daily_bars(),
+    )
+
+    assert result.certainty.trend == 30
+    assert result.certainty.oscillation == 18
+    assert result.certainty.alignment == 0
+    assert result.certainty.direction == 20
+    assert result.certainty.total == 60
+
+
+def test_certainty_formula_preserves_eighty_five_point_neutral_cap() -> None:
+    # This deliberately isolates the score formula: the current page classifier
+    # cannot naturally combine all-positive components with a neutral bias.
+    result = composite_module._certainty(
+        _trend(TrendSignal.HOLD, TrendSignal.HOLD, TrendSignal.HOLD),
+        _osc(
+            OscillationStatus.HOLDING,
+            OscillationStatus.HOLDING,
+            OscillationStatus.HOLDING,
+        ),
+        TrendBias.NEUTRAL,
+        composite_module.OscillationBias.BULLISH,
+        DirectionToken.MULTIPERIOD_BULLISH,
+    )
+
+    assert result == composite_module.CertaintyBreakdown(30, 30, 10, 20, 85)
+
+
+@pytest.mark.parametrize(
+    ("trend", "direction", "score"),
+    [
+        (
+            _trend(TrendSignal.WAIT, TrendSignal.WAIT),
+            DirectionToken.WEEKLY_BEARISH,
+            3,
+        ),
+        (
+            _trend(TrendSignal.WAIT, TrendSignal.HOLD),
+            DirectionToken.WEEKLY_BEARISH_REBOUND,
+            5,
+        ),
+        (
+            _trend(TrendSignal.HOLD, TrendSignal.WAIT),
+            DirectionToken.DAILY_PULLBACK,
+            10,
+        ),
+        (
+            _trend(
+                TrendSignal.HOLD,
+                TrendSignal.HOLD,
+                TrendSignal.WAIT,
+            ),
+            DirectionToken.SIXTY_MINUTE_PULLBACK,
+            10,
+        ),
+        (
+            _trend(
+                TrendSignal.HOLD,
+                TrendSignal.HOLD,
+                TrendSignal.HOLD,
+            ),
+            DirectionToken.MULTIPERIOD_BULLISH,
+            20,
+        ),
+    ],
+)
+def test_direction_certainty_points_match_page_branches(
+    trend: MultiPeriodTrendState,
+    direction: DirectionToken,
+    score: int,
+) -> None:
+    result = calculate_composite_decision(
+        trend=trend,
+        oscillation=_osc(),
+        daily_bars=daily_bars(),
+    )
+
+    assert result.direction_token is direction
+    assert result.certainty.direction == score
+
+
 def _constant_tr_bars(
     value: str, *, count: int = 6
 ) -> tuple[NewowResearchBar, ...]:
@@ -476,21 +566,25 @@ def test_first_action_preserves_rebound_warning_when_page_is_bearish() -> None:
 def test_golden_fixture_preserves_six_individual_stock_composite_samples() -> None:
     payload = json.loads(GOLDEN.read_text())
     stocks = [item for item in payload["symbols"] if item["kind"] == "stock"]
-
-    assert {item["code"] for item in stocks} >= {
-        "601233.SH",
-        "600519.SH",
-        "600036.SH",
-        "002594.SZ",
-        "300750.SZ",
-        "000651.SZ",
+    expected = {
+        "601233.SH": ("减仓观望", "42分", "建议仓位 10%-30%", "5%"),
+        "600519.SH": ("持仓观望", "50分", "建议仓位 30%-50%", "1.8%"),
+        "600036.SH": ("持仓观望", "50分", "建议仓位 30%-50%", "1.4%"),
+        "002594.SZ": ("减仓观望", "31分", "建议仓位 30%-50%", "2%"),
+        "300750.SZ": ("建仓 / 加仓", "100分", "建议仓位 50%-100%", "2.6%"),
+        "000651.SZ": ("减仓观望", "28分", "建议仓位 10%-30%", "1.6%"),
     }
+    assert {item["code"] for item in stocks} >= set(expected)
     for stock in stocks:
         daily = next(
             period for period in stock["periods"] if period["period"] == "day"
         )
-        assert daily["page_output"]["composite_decision"]
-        assert daily["page_output"]["composite_score"].endswith("分")
+        assert (
+            daily["page_output"]["composite_decision"],
+            daily["page_output"]["composite_score"],
+            daily["page_output"]["composite_position"],
+            daily["page_output"]["volatility"],
+        ) == expected[stock["code"]]
         assert len(daily["source_response_sha256"]) == 64
 
 

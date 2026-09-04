@@ -1,6 +1,6 @@
 # 牛哇 v3.2.82 功能覆盖与复刻状态
 
-状态：`SLICE_A_EVIDENCE_FROZEN`
+状态：`SLICE_C_IMPLEMENTED_REVIEW_PENDING`
 
 本表把页面观察、手册主张、归一实现和期货迁移证据分开。唯一状态集为 `OBSERVED_EXACT`、`REPRODUCED_EXACT`、`BEHAVIOR_INFERRED`、`CLEANROOM_IMPLEMENTED`、`UNKNOWN`、`REJECTED`。其中推断不能冒充页面公式；`UNKNOWN` 与 `REJECTED` 均没有实现入口。
 
@@ -26,10 +26,11 @@
 | 参数比较器页面口径 | stock_detail.html v3.2.63 | CLEANROOM_IMPLEMENTED | newow_hhv_llv_window_optimizer_page_v1 | packages/quant-core/guiyi_quant/newow/price_channel.py::rank_page_channel_windows | 601 根页面响应离线 JS oracle，五窗口逐字段与排名 parity | `trustworthy_for_research=false`，禁止晋升 | Slice B 与 causal-research 身份隔离 |
 | 参数比较器因果研究口径 | 归一设计 v1 | CLEANROOM_IMPLEMENTED | newow_hhv_llv_window_optimizer_causal_v1 | packages/quant-core/guiyi_quant/newow/price_channel.py::rank_causal_channel_windows | 页面偏差的 clean-room 修正，不宣称页面公式 | completed-Bar、next-open、显式手续费/tick/涨跌停、rollover 与 prefix 合同测试 | Slice B 双路独立 Review |
 | 页面同 Bar 无成本比较器直接晋升可信策略 | stock_detail.html v3.2.63 | REJECTED | none | none | 页面执行时序和无成本口径已冻结 | 不迁移 | 因违反因果与成本边界而永久拒绝；只允许另建 causal-research 身份 |
-| 综合决策 13 格矩阵 | stock_detail.html v3.2.63 | OBSERVED_EXACT | newow_composite_decision_page_v1 | none | 13 branch keys 与 27 个非占位页面输出 | 尚未实现 | Slice C page-exact 与 corrected 分身份 |
-| 确定性评分与仓位矩阵 | stock_detail.html v3.2.63 | OBSERVED_EXACT | newow_composite_certainty_page_v1 | none | 27 个页面分数、决策与仓位文本 | 尚未实现 | Slice C 枚举全状态空间 |
-| 日线波动率解释 | stock_detail.html v3.2.63 | OBSERVED_EXACT | newow_daily_atr20_volatility_page_v1 | none | 27 个页面波动率输出 | 尚未实现 | Slice C ATR 边界与缺失数据测试 |
-| 第一行动原则 | stock_detail.html v3.2.63 | OBSERVED_EXACT | newow_first_action_principle_page_v1 | none | 页面控制流和 27 个真实输出 | 尚未实现 | Slice C 验证周空日多风险分支 |
+| 综合决策 13 格矩阵 | stock_detail.html v3.2.63 | REPRODUCED_EXACT | newow_composite_decision_page_v3_2_82 | packages/quant-core/guiyi_quant/newow/composite_decision.py::calculate_composite_decision | 13 个 source witness 执行页面控制流；10 个 key 可达、3 个 warning key 不可达；6 只个股页面输出逐字段冻结 | completed D1 actual_dominant 组合事实可复算 | Slice C 双路 Review |
+| 综合决策不可达 warning 修正 | 归一 clean-room v1 | CLEANROOM_IMPLEMENTED | newow_composite_decision_cleanroom_v1 | packages/quant-core/guiyi_quant/newow/composite_decision.py::calculate_cleanroom_composite_decision | 只重分类周空日多，保留 page_difference_reason | 独立类型与身份，不覆盖页面事实 | Slice C 双路 Review |
+| 确定性评分与仓位矩阵 | stock_detail.html v3.2.63 | REPRODUCED_EXACT | newow_composite_decision_page_v3_2_82 | packages/quant-core/guiyi_quant/newow/composite_decision.py::calculate_composite_decision | 13 格 action token 与 Decimal 仓位区间；3/5/10/20 方向分与 60/85 封顶测试 | 只作研究观察映射 | Slice C 双路 Review |
+| 日线波动率解释 | stock_detail.html v3.2.63 | REPRODUCED_EXACT | newow_composite_decision_page_v3_2_82 | packages/quant-core/guiyi_quant/newow/composite_decision.py::calculate_composite_volatility | gap TR、最近 20 个 TR、half-up 及 1.95/2.0/3.95/4.0 边界 | completed D1 同 owner segment 失败关闭 | Slice C 双路 Review |
+| 第一行动原则 | stock_detail.html v3.2.63 | REPRODUCED_EXACT | newow_first_action_principle_page_v3_2_63 | packages/quant-core/guiyi_quant/newow/composite_decision.py::calculate_first_action_principle | 页面优先级与 6 个股真实输出；只输出自有 token，不复制建议文案 | 研究观察解释，非订单 | Slice C 双路 Review |
 | AI 六组合矩阵 | stock_detail.html v3.2.63 | OBSERVED_EXACT | newow_ai_week_day_16_matrix_page_v1 | none | 当前 16 周日组合源码事实 | 尚未实现 | Slice D token 化实现，不复制长文案 |
 | AI 诊股 A-E 旧模板 | stock_detail.html v3.2.63 | OBSERVED_EXACT | legacy_ai_template_a_e_page_v1 | none | 含月线条件，只作历史页面事实 | 不带入 1w/1d/60m Core | Slice D 只保留来源映射 |
 | AI 诊断当前输出 | stock_detail.html v3.2.63 | OBSERVED_EXACT | newow_diagnostic_tokens_page_v1 | none | 27/27 非占位诊断，保留输入与输出 token | 尚未实现 | Slice D 做确定性模板而非自由文本复制 |
