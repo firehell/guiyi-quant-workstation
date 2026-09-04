@@ -1045,6 +1045,54 @@ def test_contract_trading_day_query_requires_expiry_metadata(session, tmp_path) 
         )
 
 
+def test_contract_trading_day_query_preserves_missing_contract_error(
+    session, tmp_path
+) -> None:
+    with pytest.raises(MarketDataError, match="^CONTRACT_METADATA_MISSING$"):
+        MarketDataService(
+            MarketCatalog(session, tmp_path),
+            CanonicalMonthlyStore(tmp_path),
+        ).query_contract_trading_days(
+            ContractTradingDayQuery(
+                "jm",
+                "JM2509",
+                "1d",
+                date(2025, 1, 6),
+                date(2025, 1, 6),
+            )
+        )
+
+
+def test_contract_trading_day_query_rejects_non_rqdata_contract(
+    session, tmp_path
+) -> None:
+    session.add(
+        Contract(
+            contract_code="JM2509",
+            instrument_symbol="jm",
+            exchange_code="DCE",
+            listed_date=date(2025, 1, 6),
+            expired_date=date(2025, 9, 25),
+            provider="other",
+        )
+    )
+    session.commit()
+
+    with pytest.raises(MarketDataError, match="^CONTRACT_PROVIDER_UNSUPPORTED$"):
+        MarketDataService(
+            MarketCatalog(session, tmp_path),
+            CanonicalMonthlyStore(tmp_path),
+        ).query_contract_trading_days(
+            ContractTradingDayQuery(
+                "jm",
+                "JM2509",
+                "1d",
+                date(2025, 1, 6),
+                date(2025, 1, 6),
+            )
+        )
+
+
 def test_contract_trading_day_query_clamps_to_exclusive_expiry_ceiling(
     session,
     tmp_path,

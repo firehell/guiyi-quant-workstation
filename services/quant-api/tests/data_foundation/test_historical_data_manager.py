@@ -581,6 +581,44 @@ def test_contract_update_preserves_valid_later_bar_at_fixed_through(
     assert manager.store.read_month(key, 2025, 1) == (mapped, later)
 
 
+def test_contract_update_since_uses_trading_day_for_night_mapped_gap(
+    session, tmp_path
+) -> None:
+    key = DatasetKey("contract", "jm", "JM2509", "1m")
+    trading_day = date(2025, 1, 2)
+    night_end = datetime(2025, 1, 1, 13, 1, tzinfo=UTC)
+
+    class NightCoverage(FakeCoverage):
+        def expected_bar_ends_for_trading_days(self, requested_key, trading_days):
+            if requested_key == key:
+                return (night_end,) if trading_day in trading_days else ()
+            return super().expected_bar_ends_for_trading_days(
+                requested_key,
+                trading_days,
+            )
+
+    coverage = NightCoverage({key.as_tuple(): (night_end,)})
+    manager = _manager(session, tmp_path, coverage, FakeProvider({}))
+    manager.catalog.upsert_main_contracts((("jm", trading_day, "JM2509"),))
+    session.commit()
+
+    result = manager.update(
+        UpdateRequest(("jm",), trading_day, trading_day, False)
+    )
+
+    assert result.status == "planned"
+    assert result.target_windows == (
+        {
+            "dataset": key.as_tuple(),
+            "year": 2025,
+            "month": 1,
+            "window_start": night_end.isoformat(),
+            "window_end": night_end.isoformat(),
+            "missing_bar_count": 1,
+        },
+    )
+
+
 @pytest.mark.parametrize("invalid_kind", ["off_session", "pre_listed", "expired"])
 def test_contract_update_rebuilds_partition_with_lifecycle_invalid_extra(
     session,
@@ -641,6 +679,111 @@ def test_contract_refresh_refetches_mapped_and_valid_warmup_timestamps(
     assert result.status == "passed"
     assert provider.calls == [(key, (old_warmup.bar_end, mapped.bar_end))]
     assert manager.store.read_month(key, 2025, 1) == (refreshed_warmup, mapped)
+
+
+def test_contract_refresh_refetches_pure_warmup_month_without_rank1_day(
+    session, tmp_path
+) -> None:
+    key = DatasetKey("contract", "jm", "JM2509", "1d")
+    warmup_day = date(2025, 1, 31)
+    mapped_day = date(2025, 2, 3)
+    old_warmup = _daily_on(warmup_day, 100, 1)
+    refreshed_warmup = _daily_on(warmup_day, 200, 2)
+    mapped = _daily_on(mapped_day, 201, 3)
+    coverage = FakeCoverage(
+        {key.as_tuple(): (old_warmup.bar_end, mapped.bar_end)}
+    )
+    provider = FakeProvider({key.as_tuple(): (refreshed_warmup, mapped)})
+    manager = _manager(session, tmp_path, coverage, provider)
+    manager.catalog.upsert_main_contracts((("jm", mapped_day, "JM2509"),))
+    session.commit()
+    _publish_existing(manager, key, (old_warmup,))
+    _publish_existing(manager, key, (mapped,))
+
+    result = manager.refresh(
+        RefreshRequest("jm", date(2025, 1, 1), mapped_day, True)
+    )
+
+    assert result.status == "passed"
+    assert provider.calls == [
+        (key, (old_warmup.bar_end,)),
+        (key, (mapped.bar_end,)),
+    ]
+    assert manager.store.read_month(key, 2025, 1) == (refreshed_warmup,)
+
+
+def test_contract_audit_checks_invalid_extra_in_pure_warmup_month(
+    session, tmp_path
+) -> None:
+    key = DatasetKey("contract", "jm", "JM2509", "1d")
+    valid_warmup = _daily_on(date(2025, 1, 30), 100, 1)
+    invalid_extra = _daily_on(date(2025, 1, 31), 999, 1)
+    mapped = _daily_on(date(2025, 2, 3), 201, 3)
+    coverage = FakeCoverage(
+        {key.as_tuple(): (valid_warmup.bar_end, mapped.bar_end)}
+    )
+    manager = _manager(session, tmp_path, coverage, FakeProvider({}))
+    manager.catalog.upsert_main_contracts((("jm", mapped.trading_day, "JM2509"),))
+    session.commit()
+    _publish_existing(manager, key, (valid_warmup, invalid_extra))
+    _publish_existing(manager, key, (mapped,))
+
+    result = manager.audit(AuditRequest(("jm",), through=mapped.trading_day))
+
+    assert [
+        (finding.code, finding.dataset, finding.year, finding.month)
+        for finding in result.findings
+    ] == [
+        (
+            "CONTRACT_PARTITION_OUTSIDE_LIFECYCLE",
+            key.as_tuple(),
+            2025,
+            1,
+        )
+    ]
+
+
+def test_contract_refresh_preserves_but_does_not_refetch_after_through_bar(
+    session, tmp_path
+) -> None:
+    key = DatasetKey("contract", "jm", "JM2509", "1d")
+    old_warmup = _daily(1, 100)
+    old_mapped = _daily(2, 101)
+    later = _daily(3, 102)
+    refreshed_warmup = _daily(1, 200)
+    refreshed_mapped = _daily(2, 201)
+    coverage = FakeCoverage(
+        {
+            key.as_tuple(): (
+                old_warmup.bar_end,
+                old_mapped.bar_end,
+                later.bar_end,
+            )
+        }
+    )
+    provider = FakeProvider(
+        {key.as_tuple(): (refreshed_warmup, refreshed_mapped)}
+    )
+    manager = _manager(session, tmp_path, coverage, provider)
+    manager.catalog.upsert_main_contracts(
+        (("jm", old_mapped.trading_day, "JM2509"),)
+    )
+    session.commit()
+    _publish_existing(manager, key, (old_warmup, old_mapped, later))
+
+    result = manager.refresh(
+        RefreshRequest("jm", old_warmup.trading_day, old_mapped.trading_day, True)
+    )
+
+    assert result.status == "passed"
+    assert provider.calls == [
+        (key, (old_warmup.bar_end, old_mapped.bar_end)),
+    ]
+    assert manager.store.read_month(key, 2025, 1) == (
+        refreshed_warmup,
+        refreshed_mapped,
+        later,
+    )
 
 
 def test_incomplete_weekly_batch_does_not_publish_companion_daily_refresh(

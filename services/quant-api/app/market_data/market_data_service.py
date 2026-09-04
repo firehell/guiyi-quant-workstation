@@ -51,7 +51,7 @@ from app.market_data.session_clock import (
     session_windows_for_trading_day,
 )
 from app.market_data.storage import CanonicalMonthlyStore, StorageError
-from app.models import Contract, Instrument, MainContractMap
+from app.models import Instrument, MainContractMap
 
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
@@ -204,20 +204,22 @@ class MarketDataService:
         request: ContractTradingDayQuery,
     ) -> MarketSeriesResult:
         """按合约有效期内的精确交易日读取单一物理合约。"""
-        contract = self.catalog.session.scalar(
-            select(Contract).where(
-                Contract.contract_code == request.contract,
-                Contract.instrument_symbol == request.symbol,
+        try:
+            fact = self.catalog.contract_fact(request.symbol, request.contract)
+        except CatalogError as exc:
+            code = (
+                "CONTRACT_METADATA_MISSING"
+                if exc.code
+                in {
+                    "CONTRACT_NOT_FOUND",
+                    "CONTRACT_SYMBOL_MISMATCH",
+                    "CONTRACT_METADATA_MISSING",
+                }
+                else exc.code
             )
-        )
-        if (
-            contract is None
-            or contract.listed_date is None
-            or contract.expired_date is None
-        ):
-            raise MarketDataError("CONTRACT_METADATA_MISSING")
-        since = max(request.since, contract.listed_date)
-        through = min(request.through, contract.expired_date - timedelta(days=1))
+            raise MarketDataError(code) from exc
+        since = max(request.since, fact.listed_date)
+        through = min(request.through, fact.expired_date - timedelta(days=1))
         if since > through:
             raise MarketDataError("CONTRACT_ACTIVE_WINDOW_MISSING")
         start, end = self._trading_day_window(

@@ -812,6 +812,36 @@ def test_rqdata_weekly_adapter_aggregates_exchange_daily_facts(tmp_path) -> None
     session.close()
 
 
+@pytest.mark.parametrize(
+    ("provider", "expired_date", "error_code"),
+    [
+        ("rqdata", None, "CONTRACT_METADATA_MISSING"),
+        ("other", date(2025, 1, 11), "CONTRACT_PROVIDER_UNSUPPORTED"),
+    ],
+)
+def test_rqdata_weekly_contract_uses_catalog_lifecycle_errors(
+    tmp_path,
+    provider,
+    expired_date,
+    error_code,
+) -> None:
+    session, _starts = _session(tmp_path)
+    contract = session.scalar(select(Contract).where(Contract.contract_code == "JM2509"))
+    assert contract is not None
+    contract.provider = provider
+    contract.expired_date = expired_date
+    session.commit()
+    client = ExchangeDailyClient({"JM2509": pd.DataFrame()})
+    adapter = RQDataMarketAdapter(session=session, client=client)
+    expected = datetime(2025, 1, 10, 1, 5, tzinfo=UTC)
+
+    with pytest.raises(InfrastructureError, match=f"^{error_code}$"):
+        _fetch(adapter, DatasetKey("contract", "jm", "JM2509", "1w"), (expected,))
+
+    assert client.calls == []
+    session.close()
+
+
 def test_rqdata_daily_and_weekly_batch_reuses_one_exchange_daily_snapshot(
     tmp_path,
 ) -> None:

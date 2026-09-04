@@ -277,6 +277,7 @@ class _ContractPartitionClassification:
     """Mapped required 与 lifecycle-valid persisted 的单一分区分类结果。"""
 
     expected: tuple[datetime, ...]
+    refresh_expected: tuple[datetime, ...]
     missing_mapped: tuple[datetime, ...]
     outside_lifecycle: bool
 
@@ -488,8 +489,10 @@ class HistoricalDataManager:
                             first.month,
                         )
                     )
-                for key, year, month, expected in self._desired_months((symbol,), through):
-                    if not expected:
+                for key, year, month, expected, _mapped_days in self._desired_months(
+                    (symbol,), through
+                ):
+                    if not expected and key.kind is not DatasetKind.CONTRACT:
                         continue
                     existing, physical_reason = self._existing_partition(key, year, month)
                     if physical_reason is not None:
@@ -510,6 +513,7 @@ class HistoricalDataManager:
                             month,
                             expected,
                             existing,
+                            through,
                         )
                         if classification.outside_lifecycle:
                             findings.append(
@@ -595,22 +599,20 @@ class HistoricalDataManager:
     ):
         """遍历应处理的月分区；force 时 missing=整段 expected（refresh 重写语义）。"""
         latest_complete_by_symbol: dict[str, date] = {}
-        for key, year, month, expected in self._desired_months(
+        for key, year, month, expected, mapped_days in self._desired_months(
             products,
             through,
             frequencies=frequencies,
         ):
-            if not expected:
+            if not expected and key.kind is not DatasetKind.CONTRACT:
                 continue
             existing, physical_reason = self._existing_partition(key, year, month)
             if physical_reason is not None:
+                if not expected:
+                    continue
                 # 分区元数据损坏：按整月 expected 重拉，避免在残缺文件上增量合并。
                 yield _Target(key, year, month, expected, expected, ())
                 continue
-            latest_complete = latest_complete_by_symbol.get(key.symbol)
-            if latest_complete is None:
-                latest_complete = self.coverage.latest_complete_day((key.symbol,))
-                latest_complete_by_symbol[key.symbol] = latest_complete
             existing_by_end = {bar.bar_end: bar for bar in existing}
             present = set(existing_by_end)
             if key.kind is DatasetKind.CONTRACT:
@@ -620,23 +622,43 @@ class HistoricalDataManager:
                     month,
                     expected,
                     existing,
+                    through,
                 )
-                missing = tuple(
-                    item
-                    for item in classification.missing_mapped
-                    if since is None or item.date() >= since
-                )
+                eligible_mapped = classification.missing_mapped
+                if since is not None:
+                    required_since = {
+                        item.astimezone(UTC)
+                        for item in self.coverage.expected_bar_ends_for_trading_days(
+                            key,
+                            tuple(day for day in mapped_days if day >= since),
+                        )
+                    }
+                    eligible_mapped = tuple(
+                        item
+                        for item in classification.missing_mapped
+                        if item in required_since
+                    )
+                missing = eligible_mapped
                 if force:
-                    if classification.expected and (
-                        since is None or classification.expected[-1].date() >= since
+                    if classification.refresh_expected and (
+                        since is None
+                        or (year, month) >= (since.year, since.month)
                     ):
+                        refresh_set = set(classification.refresh_expected)
+                        publish_set = set(classification.expected)
+                        retained = tuple(
+                            bar
+                            for bar in existing
+                            if bar.bar_end.astimezone(UTC) in publish_set
+                            and bar.bar_end.astimezone(UTC) not in refresh_set
+                        )
                         yield _Target(
                             key,
                             year,
                             month,
                             classification.expected,
-                            classification.expected,
-                            (),
+                            classification.refresh_expected,
+                            retained,
                         )
                 elif classification.outside_lifecycle:
                     yield _Target(
@@ -657,6 +679,10 @@ class HistoricalDataManager:
                         existing,
                     )
                 continue
+            latest_complete = latest_complete_by_symbol.get(key.symbol)
+            if latest_complete is None:
+                latest_complete = self.coverage.latest_complete_day((key.symbol,))
+                latest_complete_by_symbol[key.symbol] = latest_complete
             missing = tuple(
                 item
                 for item in expected
@@ -685,6 +711,7 @@ class HistoricalDataManager:
         month: int,
         required_mapped: tuple[datetime, ...],
         existing: tuple[CanonicalBar, ...],
+        through: date,
     ) -> _ContractPartitionClassification:
         """应用 mapped ⊆ persisted ⊆ lifecycle-valid 的唯一 contract 判定。"""
         fact = self.catalog.contract_fact(key.symbol, key.series_or_contract)
@@ -706,8 +733,15 @@ class HistoricalDataManager:
         persisted = tuple(bar.bar_end.astimezone(UTC) for bar in existing)
         persisted_set = set(persisted)
         valid_persisted = persisted_set.intersection(lifecycle_valid)
+        refresh_persisted = {
+            bar.bar_end.astimezone(UTC)
+            for bar in existing
+            if bar.trading_day <= through
+            and bar.bar_end.astimezone(UTC) in lifecycle_valid
+        }
         return _ContractPartitionClassification(
             expected=tuple(sorted(required.union(valid_persisted))),
+            refresh_expected=tuple(sorted(required.union(refresh_persisted))),
             missing_mapped=tuple(sorted(required - persisted_set)),
             outside_lifecycle=(
                 len(persisted) != len(persisted_set)
@@ -748,34 +782,76 @@ class HistoricalDataManager:
                                 key, year, month, start, through
                             )
                         ),
+                        (),
                     )
-            # contract 序列按主力映射日分组：只在映射到的交易日生成该合约的 expected。
+            # contract 序列的 required 仍仅来自主力映射日；已存在的 Catalog
+            # 分区也必须参与 lifecycle 分类，以覆盖没有 rank1 日的纯 warm-up 月。
             mapping = self.catalog.main_map(symbol, product_start, through)
             days_by_contract_month: dict[tuple[str, int, int], list[date]] = {}
             for fact in mapping:
                 days_by_contract_month.setdefault(
                     (fact.contract, fact.trade_date.year, fact.trade_date.month), []
                 ).append(fact.trade_date)
-            for (contract, year, month), mapped_days in days_by_contract_month.items():
-                for frequency in selected_frequencies:
-                    key = DatasetKey(DatasetKind.CONTRACT, symbol, contract, frequency)
-                    dataset_start = (
-                        self.coverage.dataset_start(key)
-                        if hasattr(self.coverage, "dataset_start")
-                        else product_start
-                    )
-                    expected = self.coverage.expected_bar_ends_for_trading_days(
-                        key,
-                        tuple(day for day in mapped_days if day >= dataset_start),
-                    )
-                    if not expected:
-                        continue
-                    yield (
-                        key,
-                        year,
-                        month,
-                        tuple(item.astimezone(UTC) for item in expected),
-                    )
+            desired_contract_partitions: dict[
+                tuple[str, int, int, BarFrequency], tuple[date, ...]
+            ] = {
+                (contract, year, month, frequency): tuple(mapped_days)
+                for (contract, year, month), mapped_days in days_by_contract_month.items()
+                for frequency in selected_frequencies
+            }
+            through_month = (through.year, through.month)
+            for frequency in selected_frequencies:
+                for partition in self.catalog.contract_partitions_before(
+                    symbol,
+                    frequency,
+                    None,
+                ):
+                    if (partition.year, partition.month) <= through_month:
+                        identity = (
+                            partition.dataset.series_or_contract,
+                            partition.year,
+                            partition.month,
+                            frequency,
+                        )
+                        desired_contract_partitions.setdefault(identity, ())
+            frequency_index = {
+                frequency: index
+                for index, frequency in enumerate(selected_frequencies)
+            }
+            for (
+                contract,
+                year,
+                month,
+                frequency,
+            ), mapped_days in sorted(
+                desired_contract_partitions.items(),
+                key=lambda item: (
+                    item[0][1],
+                    item[0][2],
+                    item[0][0],
+                    frequency_index[item[0][3]],
+                ),
+            ):
+                key = DatasetKey(DatasetKind.CONTRACT, symbol, contract, frequency)
+                dataset_start = (
+                    self.coverage.dataset_start(key)
+                    if hasattr(self.coverage, "dataset_start")
+                    else product_start
+                )
+                active_mapped_days = tuple(
+                    day for day in mapped_days if day >= dataset_start
+                )
+                expected = self.coverage.expected_bar_ends_for_trading_days(
+                    key,
+                    active_mapped_days,
+                )
+                yield (
+                    key,
+                    year,
+                    month,
+                    tuple(item.astimezone(UTC) for item in expected),
+                    active_mapped_days,
+                )
 
     def _execute(
         self,
