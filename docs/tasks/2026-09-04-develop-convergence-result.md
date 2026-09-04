@@ -1,7 +1,7 @@
 # `develop` 收敛实施结果
 
 日期：2026-09-04
-状态：`REVIEW_PENDING`
+状态：`DEVELOP_CONVERGED_CANDIDATE`
 实施 baseline：`18a62382685b6deb92010968d4a5a920952fa206`
 任务分支：`chore/develop-convergence`
 设计：`docs/tasks/2026-09-04-develop-convergence-design.md`
@@ -266,8 +266,36 @@
 
 ## Review 与集成
 
-- 当前状态：`REVIEW_PENDING`。
-- 尚未在本候选的 exact `REVIEW_HEAD` 上执行最终 Standards Review 与 Spec Review；P1/P2 结论仍为空，不得复用 Task A–F 的局部 review 代替。
-- 尚未执行 Review 后最终必要检查，也未写入最终 evidence commit。
-- 尚未取得 Owner 明确的“允许集成 develop”；Draft PR 不构成该授权，不得 ready、merge 或清理当前 task worktree/branch。
+- 固定 Review base：`18a62382685b6deb92010968d4a5a920952fa206`。
+- 固定 `REVIEW_HEAD`：`47ca4636a5edd969915492f5ebf0fb186df876ac`。
+- Standards reviewer：`/root/final_standards`；结论 `APPROVED`，`P1=0 / P2=0 / P3=0`。审查确认 branch 删除 evidence、35 个 raw capture 删除、29 个批准 screenshot 保留、无 history rewrite/main/release/Runtime/production mutation，并确认完整验证矩阵对代码树仍适用；未发现 documented-standard breach 或有意义的 Fowler smell。
+- Spec reviewer：`/root/final_spec`；结论 `APPROVED`，`P1=0 / P2=0 / P3=0`。审查确认截图方案 A、`.playwright-cli` 删除与 ignore、canonical/task/research 唯一分类、Issue `#286/#259/#307`、PR `#333` stale metadata、退休面、研究边界、branch 清理和完成声明均符合 design/plan；未发现缺失、范围外行为或伪实现。
+- 两轴结论只批准 exact `REVIEW_HEAD`，不授权 PR ready/merge、`develop` 集成、main/tag/release、Runtime 或 production 操作。
+
+### Review 后 Step 5 fresh targeted checks
+
+在 exact `REVIEW_HEAD` 上于 2026-09-05 执行：
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+  uv run --project services/quant-api pytest -q \
+  tests/engineering/test_repository_hygiene.py \
+  tests/engineering/test_canonical_consistency.py
+python3 scripts/engineering/secret_scan.py --json
+openspec validate --specs --strict --no-interactive
+git diff "$(git merge-base HEAD origin/develop)"...HEAD --check
+git status --short
+```
+
+- Engineering targeted：exit 0，`16 passed in 2.71s`（wall 3.17s）。
+- Secret scan：exit 0，`finding_count=0`，status `passed`（wall 1.46s）。
+- OpenSpec strict：exit 0，`8 passed, 0 failed`（wall 1.07s）。
+- Three-dot diff check：exit 0，merge-base 为 `18a62382685b6deb92010968d4a5a920952fa206`，无输出（wall 0.04s）。
+- `git status --short`：exit 0，无输出。
+
+### Final evidence identity 与 Owner Gate
+
+- 本文档的最终 commit 不可能在自身 Git tree 中写入其自身 SHA；不得把 `REVIEW_HEAD` 虚假标作 final commit。
+- Exact `FINAL_HEAD` 必须由提交后 `git rev-parse HEAD`、远端 task ref 与 PR `#335 headRefOid` 的一致 readback 冻结，并由独立 reviewers 对 documentation-only final commit 作 exact-head confirmation；该身份记录在不改变 Git tree 的 PR metadata/执行报告中。
+- Owner 尚未明确回复“允许集成 develop”；PR `#335` 必须保持 Draft。Owner Gate 前不得 ready、merge 或清理当前 task worktree/branch。
 - 独立未完成 Gate：PR `#333` current-head release Review；`main`/tag/GitHub Release 批准；PF2611 plan/apply；Runtime promotion；自然 SuBing Event；PushPlus provider acceptance；Owner 微信实际送达确认；Newow 后续产品化、参考交易、OOS、Shadow 与模拟账户。
