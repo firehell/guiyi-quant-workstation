@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 from datetime import UTC, date, datetime
+import json
 import os
 from pathlib import Path
 import subprocess
 import sys
-import json
 from types import SimpleNamespace
 
 import pytest
@@ -13,12 +13,16 @@ import pytest
 from app.market_data.newow.futures_evidence_discovery import (
     DiscoveryRequest,
     ReadOnlyDiscoveryError,
+    assert_manifest_covers_actual_reads,
+    catalog_paths_for_candidates,
     canonical_file_manifest,
     build_discovery_result,
     discover_coverage_candidates,
     validate_candidate_market_data,
+    validate_canonical_read_window,
     read_only_session,
     run_discovery_with_dependencies,
+    only_approved_report_paths,
     write_discovery_artifacts,
     validate_discovery_request,
     validate_select_only_privileges,
@@ -162,6 +166,10 @@ def test_select_only_privilege_gate_requires_exact_allowed_tables() -> None:
     with pytest.raises(ReadOnlyDiscoveryError, match="READ_ONLY_ROLE_INVALID"):
         validate_select_only_privileges(allowed)
 
+    allowed["contracts"] = {"SELECT", "TRUNCATE"}
+    with pytest.raises(ReadOnlyDiscoveryError, match="READ_ONLY_ROLE_INVALID"):
+        validate_select_only_privileges(allowed)
+
 
 def test_canonical_manifest_hashes_only_catalog_resolved_files(tmp_path: Path) -> None:
     canonical_root = tmp_path / "canonical"
@@ -176,6 +184,30 @@ def test_canonical_manifest_hashes_only_catalog_resolved_files(tmp_path: Path) -
 
     with pytest.raises(ReadOnlyDiscoveryError, match="CANONICAL_PATH_INVALID"):
         canonical_file_manifest((tmp_path / "outside.parquet",), canonical_root=canonical_root)
+
+
+def test_canonical_manifest_rejects_catalog_path_that_is_a_symlink(tmp_path: Path) -> None:
+    canonical_root = tmp_path / "canonical"
+    canonical_root.mkdir()
+    outside = tmp_path / "outside.parquet"
+    outside.write_bytes(b"outside")
+    linked = canonical_root / "linked.parquet"
+    linked.symlink_to(outside)
+
+    with pytest.raises(ReadOnlyDiscoveryError, match="CANONICAL_PATH_INVALID"):
+        canonical_file_manifest((linked,), canonical_root=canonical_root)
+
+
+def test_canonical_manifest_rejects_an_internal_symlink(tmp_path: Path) -> None:
+    canonical_root = tmp_path / "canonical"
+    canonical_root.mkdir()
+    target = canonical_root / "target.parquet"
+    target.write_bytes(b"canonical")
+    linked = canonical_root / "linked.parquet"
+    linked.symlink_to(target)
+
+    with pytest.raises(ReadOnlyDiscoveryError, match="CANONICAL_PATH_INVALID"):
+        canonical_file_manifest((linked,), canonical_root=canonical_root)
 
 
 class _Catalog:
@@ -209,6 +241,13 @@ def _map(product: str) -> tuple[object, ...]:
 def _partition() -> object:
     return SimpleNamespace(
         coverage_start=datetime(2024, 1, 1, tzinfo=UTC),
+        coverage_end=datetime(2024, 6, 1, tzinfo=UTC),
+    )
+
+
+def _late_utc_partition() -> object:
+    return SimpleNamespace(
+        coverage_start=datetime(2024, 1, 1, 16, tzinfo=UTC),
         coverage_end=datetime(2024, 6, 1, tzinfo=UTC),
     )
 
@@ -262,6 +301,62 @@ def test_excludes_a_product_when_one_mapped_contract_frequency_is_missing() -> N
     assert candidates == ()
 
 
+def test_excludes_utc_previous_day_coverage_for_the_prior_shanghai_trading_day() -> None:
+    maps = {"j": _map("j")}
+    partitions = {
+        ("j", row.contract, frequency): (_late_utc_partition(),)
+        for row in maps["j"]
+        for frequency in ("1d", "1w", "60m")
+    }
+    maps["j"] = (
+        SimpleNamespace(symbol="j", trade_date=date(2024, 1, 1), contract="J2401"),
+        *maps["j"][1:],
+    )
+
+    candidates = discover_coverage_candidates(
+        _Catalog(maps, partitions),
+        operational_products=("j",),
+        taxonomy={"j": SimpleNamespace(sector="black")},
+    )
+
+    assert candidates == ()
+
+
+def test_uses_longest_complete_coverage_run_instead_of_requiring_all_history() -> None:
+    maps = {
+        "j": (
+            SimpleNamespace(symbol="j", trade_date=date(2024, 1, 2), contract="J2401"),
+            SimpleNamespace(symbol="j", trade_date=date(2024, 3, 1), contract="J2405"),
+            SimpleNamespace(symbol="j", trade_date=date(2024, 5, 2), contract="J2409"),
+            SimpleNamespace(symbol="j", trade_date=date(2024, 7, 1), contract="J2411"),
+        )
+    }
+    partitions = {
+        (
+            "j",
+            row.contract,
+            frequency,
+        ): (
+            SimpleNamespace(
+                coverage_start=datetime(2024, 1, 1, tzinfo=UTC),
+                coverage_end=datetime(2024, 8, 1, tzinfo=UTC),
+            ),
+        )
+        for row in maps["j"][1:]
+        for frequency in ("1d", "1w", "60m")
+    }
+
+    candidates = discover_coverage_candidates(
+        _Catalog(maps, partitions),
+        operational_products=("j",),
+        taxonomy={"j": SimpleNamespace(sector="black")},
+    )
+
+    assert candidates[0].common_since == date(2024, 3, 1)
+    assert candidates[0].common_through == date(2024, 7, 1)
+    assert candidates[0].rollover_count == 2
+
+
 def test_runner_help_is_available_without_opening_a_database_session() -> None:
     root = Path(__file__).resolve().parents[4]
     result = subprocess.run(
@@ -282,23 +377,68 @@ def test_runner_help_is_available_without_opening_a_database_session() -> None:
 
 
 class _MarketData:
-    def __init__(self, *, missing_frequency: str | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        missing_frequency: str | None = None,
+        wrong_identity: bool = False,
+    ) -> None:
         self.missing_frequency = missing_frequency
+        self.wrong_identity = wrong_identity
         self.requests: list[object] = []
+        self.segments = (
+            SimpleNamespace(
+                contract="J2401",
+                start_trading_day=date(2024, 1, 2),
+                end_trading_day=date(2024, 2, 29),
+            ),
+            SimpleNamespace(
+                contract="J2405",
+                start_trading_day=date(2024, 3, 1),
+                end_trading_day=date(2024, 5, 1),
+            ),
+            SimpleNamespace(
+                contract="J2409",
+                start_trading_day=date(2024, 5, 2),
+                end_trading_day=date(2024, 5, 2),
+            ),
+        )
 
     def actual_dominant_segments(
         self, _product: str, _since: date, _through: date
     ) -> tuple[object, ...]:
-        return (
-            SimpleNamespace(contract="J2401"),
-            SimpleNamespace(contract="J2405"),
-            SimpleNamespace(contract="J2409"),
-        )
+        return self.segments
 
     def query_actual_dominant_trading_days(self, request: object) -> object:
         self.requests.append(request)
-        bars = () if request.frequency.value == self.missing_frequency else (object(),)
-        return SimpleNamespace(bars=bars)
+        bars = (
+            ()
+            if request.frequency.value == self.missing_frequency
+            else (
+                SimpleNamespace(
+                    trading_day=date(2024, 1, 2),
+                    bar_end=datetime(2024, 1, 2, tzinfo=UTC),
+                ),
+                SimpleNamespace(
+                    trading_day=date(2024, 5, 2),
+                    bar_end=datetime(2024, 5, 2, tzinfo=UTC),
+                ),
+            )
+        )
+        return SimpleNamespace(
+            request_identity={
+                "series_kind": "continuous" if self.wrong_identity else "actual_dominant",
+                "symbol": request.symbol,
+                "contract": None,
+                "frequency": request.frequency.value,
+                "start": "2024-01-01T00:00:00+00:00",
+                "end": "2024-06-01T00:00:00+00:00",
+            },
+            bars=bars,
+            coverage=(bars[0].bar_end, bars[-1].bar_end) if bars else None,
+            resolved_contract_segments=self.segments,
+            requested_trading_day_window=(request.since, request.through),
+        )
 
 
 def test_candidate_validation_reads_each_frozen_frequency_and_uses_authoritative_rolls() -> None:
@@ -329,6 +469,168 @@ def test_candidate_validation_rejects_missing_actual_dominant_bars() -> None:
 
     with pytest.raises(ReadOnlyDiscoveryError, match="ACTUAL_DOMINANT_COVERAGE_INVALID"):
         validate_candidate_market_data(_MarketData(missing_frequency="1w"), candidate)
+
+
+def test_candidate_validation_rejects_wrong_actual_dominant_identity() -> None:
+    candidate = SimpleNamespace(
+        product="j",
+        common_since=date(2024, 1, 2),
+        common_through=date(2024, 5, 2),
+        rollover_count=2,
+    )
+
+    with pytest.raises(ReadOnlyDiscoveryError, match="ACTUAL_DOMINANT_COVERAGE_INVALID"):
+        validate_candidate_market_data(_MarketData(wrong_identity=True), candidate)
+
+
+def test_candidate_validation_accepts_clipped_weekly_segment_subset() -> None:
+    candidate = SimpleNamespace(
+        product="j",
+        common_since=date(2024, 1, 2),
+        common_through=date(2024, 5, 2),
+        rollover_count=2,
+    )
+
+    class _ClippedWeeklyMarketData(_MarketData):
+        def query_actual_dominant_trading_days(self, request: object) -> object:
+            result = super().query_actual_dominant_trading_days(request)
+            if request.frequency.value != "1w":
+                return result
+            weekly_bar = SimpleNamespace(
+                trading_day=date(2024, 5, 2),
+                bar_end=datetime(2024, 5, 2, tzinfo=UTC),
+            )
+            return SimpleNamespace(
+                request_identity=result.request_identity,
+                bars=(weekly_bar,),
+                coverage=(weekly_bar.bar_end, weekly_bar.bar_end),
+                resolved_contract_segments=(
+                    SimpleNamespace(
+                        contract="J2409",
+                        start_trading_day=date(2024, 5, 2),
+                        end_trading_day=date(2024, 5, 2),
+                    ),
+                ),
+                requested_trading_day_window=result.requested_trading_day_window,
+            )
+
+    validate_candidate_market_data(_ClippedWeeklyMarketData(), candidate)
+
+
+def test_candidate_validation_rejects_daily_omitted_middle_segment() -> None:
+    candidate = SimpleNamespace(
+        product="j",
+        common_since=date(2024, 1, 2),
+        common_through=date(2024, 5, 2),
+        rollover_count=2,
+    )
+
+    class _OmittedDailyMarketData(_MarketData):
+        def query_actual_dominant_trading_days(self, request: object) -> object:
+            result = super().query_actual_dominant_trading_days(request)
+            if request.frequency.value != "1d":
+                return result
+            return SimpleNamespace(
+                request_identity=result.request_identity,
+                bars=result.bars,
+                coverage=result.coverage,
+                resolved_contract_segments=(self.segments[0], self.segments[2]),
+                requested_trading_day_window=result.requested_trading_day_window,
+            )
+
+    with pytest.raises(ReadOnlyDiscoveryError, match="ACTUAL_DOMINANT_COVERAGE_INVALID"):
+        validate_candidate_market_data(_OmittedDailyMarketData(), candidate)
+
+
+def test_failed_read_still_hashes_after_and_fails_closed_on_canonical_drift(
+    tmp_path: Path,
+) -> None:
+    canonical_root = tmp_path / "canonical"
+    partition_path = canonical_root / "partition.parquet"
+    partition_path.parent.mkdir(parents=True)
+    partition_path.write_bytes(b"before")
+    partition = SimpleNamespace(file_path=partition_path)
+    candidate = SimpleNamespace(
+        product="j",
+        common_since=date(2024, 1, 2),
+        common_through=date(2024, 5, 2),
+        rollover_count=2,
+    )
+
+    class _MutatingFailureStore:
+        def read_catalog_partition(self, _partition: object) -> object:
+            partition_path.write_bytes(b"after")
+            raise RuntimeError("simulated read failure")
+
+    class _ReadFailureMarketData(_MarketData):
+        def __init__(self) -> None:
+            super().__init__()
+            self.store = _MutatingFailureStore()
+
+        def query_actual_dominant_trading_days(self, request: object) -> object:
+            self.store.read_catalog_partition(partition)
+            raise AssertionError("unreachable")
+
+    with pytest.raises(ReadOnlyDiscoveryError, match="CANONICAL_MANIFEST_DRIFT"):
+        validate_canonical_read_window(
+            _ReadFailureMarketData(),
+            (candidate,),
+            paths=(partition_path,),
+            canonical_root=canonical_root,
+        )
+
+
+def test_manifest_scope_includes_all_catalog_partitions_for_mapped_contracts(
+    tmp_path: Path,
+) -> None:
+    maps = {"j": _map("j")}
+    partitions = {
+        ("j", row.contract, frequency): (
+            SimpleNamespace(
+                coverage_start=datetime(2024, 1, 1, tzinfo=UTC),
+                coverage_end=datetime(2024, 6, 1, tzinfo=UTC),
+                file_path=tmp_path / f"{row.contract}-{frequency}-warmup.parquet",
+            ),
+            SimpleNamespace(
+                coverage_start=datetime(2024, 1, 1, tzinfo=UTC),
+                coverage_end=datetime(2024, 6, 1, tzinfo=UTC),
+                file_path=tmp_path / f"{row.contract}-{frequency}-owner.parquet",
+            ),
+        )
+        for row in maps["j"]
+        for frequency in ("1d", "1w", "60m")
+    }
+    candidate = SimpleNamespace(
+        product="j",
+        common_since=date(2024, 1, 2),
+        common_through=date(2024, 5, 2),
+    )
+
+    paths = catalog_paths_for_candidates(_Catalog(maps, partitions), (candidate,))
+
+    assert len(paths) == 18
+    assert any(path.name.endswith("warmup.parquet") for path in paths)
+
+
+def test_manifest_scope_rejects_an_actual_read_outside_the_prehashed_scope(
+    tmp_path: Path,
+) -> None:
+    prehashed = tmp_path / "prehashed.parquet"
+    omitted = tmp_path / "omitted-prefix.parquet"
+
+    with pytest.raises(ReadOnlyDiscoveryError, match="CANONICAL_MANIFEST_SCOPE_INVALID"):
+        assert_manifest_covers_actual_reads((prehashed,), {prehashed, omitted})
+
+
+def test_only_approved_report_paths_rejects_sibling_run_directory() -> None:
+    assert only_approved_report_paths(
+        ("?? data/reports/newow/run-001/",),
+        "data/reports/newow/run-001",
+    )
+    assert not only_approved_report_paths(
+        ("?? data/reports/newow/run-001-extra/",),
+        "data/reports/newow/run-001",
+    )
 
 
 def test_discovery_result_selects_frozen_sector_candidates_before_any_strategy_work() -> None:

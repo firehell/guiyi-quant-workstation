@@ -13,6 +13,7 @@ from pathlib import Path
 import re
 import subprocess
 from typing import Any, Protocol, TypeVar
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import text
 from sqlalchemy.sql.base import Executable
@@ -28,6 +29,7 @@ from app.market_data.newow.futures_evidence_plan import select_futures_evidence_
 
 
 FROZEN_FREQUENCIES = ("1d", "1w", "60m")
+SHANGHAI = ZoneInfo("Asia/Shanghai")
 REQUIRED_READ_TABLES = (
     "contracts",
     "instruments",
@@ -110,6 +112,21 @@ class _MarketDataForCoverage(Protocol):
     ) -> Any: ...
 
 
+class _RecordingCanonicalStore:
+    """Record exactly which Catalog-resolved partitions MarketDataService reads."""
+
+    def __init__(self, delegate: Any) -> None:
+        self._delegate = delegate
+        self.read_paths: set[Path] = set()
+
+    def read_catalog_partition(self, partition: object) -> Any:
+        file_path = getattr(partition, "file_path", None)
+        if not isinstance(file_path, Path):
+            raise ReadOnlyDiscoveryError("CANONICAL_PATH_INVALID")
+        self.read_paths.add(file_path)
+        return self._delegate.read_catalog_partition(partition)
+
+
 def validate_discovery_request(
     request: DiscoveryRequest,
     *,
@@ -187,6 +204,8 @@ def canonical_file_manifest(
     root = canonical_root.resolve()
     digests: list[CanonicalFileDigest] = []
     for file_path in file_paths:
+        if file_path.is_symlink():
+            raise ReadOnlyDiscoveryError("CANONICAL_PATH_INVALID")
         resolved = file_path.resolve()
         if not _is_relative_to(resolved, root) or not resolved.is_file():
             raise ReadOnlyDiscoveryError("CANONICAL_PATH_INVALID")
@@ -216,10 +235,10 @@ def discover_coverage_candidates(
 ) -> tuple[FuturesEvidenceCandidate, ...]:
     """Derive fail-closed candidates from exact mapped contract partitions only.
 
-    A candidate exists only where every mapped physical contract is covered by
-    every frozen frequency.  This function intentionally inspects Catalog
-    metadata only; a later owner-authorized runner validates the selected
-    ranges through ``MarketDataService``.
+    A candidate exists only for the longest contiguous rank-1 mapping run where
+    every mapped physical contract is covered by every frozen frequency.  This
+    function intentionally inspects Catalog metadata only; the runner validates
+    the selected ranges through ``MarketDataService`` before writing artifacts.
     """
 
     candidates: list[FuturesEvidenceCandidate] = []
@@ -227,12 +246,17 @@ def discover_coverage_candidates(
         rows = tuple(catalog.main_map_before(product, None))
         if not rows or product not in taxonomy:
             continue
-        eligible_rows = tuple(
-            row
-            for row in rows
-            if _row_has_frozen_coverage(catalog, product=product, row=row)
+        eligible_runs = _complete_coverage_runs(catalog, product=product, rows=rows)
+        if not eligible_runs:
+            continue
+        eligible_rows = max(
+            eligible_runs,
+            key=lambda run: (
+                (_row_trading_day(run[-1]) - _row_trading_day(run[0])).days,
+                -_row_trading_day(run[0]).toordinal(),
+            ),
         )
-        if len(eligible_rows) != len(rows):
+        if _rollover_count(eligible_rows) < 2:
             continue
         first = eligible_rows[0]
         last = eligible_rows[-1]
@@ -282,8 +306,103 @@ def validate_candidate_market_data(
                 through,
             )
         )
-        if not getattr(result, "bars", ()):
+        bars = getattr(result, "bars", ())
+        identity = getattr(result, "request_identity", None)
+        if (
+            not isinstance(identity, Mapping)
+            or set(identity) != {
+                "series_kind",
+                "symbol",
+                "contract",
+                "frequency",
+                "start",
+                "end",
+            }
+            or identity["series_kind"] != "actual_dominant"
+            or identity["symbol"] != product
+            or identity["contract"] is not None
+            or identity["frequency"] != frequency_value
+            or not isinstance(identity["start"], str)
+            or not isinstance(identity["end"], str)
+            or not bars
+            or getattr(result, "coverage", None)
+            != (getattr(bars[0], "bar_end", None), getattr(bars[-1], "bar_end", None))
+            or getattr(result, "requested_trading_day_window", None) != (since, through)
+            or not _result_segments_match_authority(
+                result_segments=tuple(getattr(result, "resolved_contract_segments", ())),
+                authoritative_segments=tuple(segments),
+                bars=tuple(bars),
+                allow_frequency_subset=frequency_value == "1w",
+            )
+        ):
             raise ReadOnlyDiscoveryError("ACTUAL_DOMINANT_COVERAGE_INVALID")
+
+
+def _result_segments_match_authority(
+    *,
+    result_segments: tuple[object, ...],
+    authoritative_segments: tuple[object, ...],
+    bars: tuple[object, ...],
+    allow_frequency_subset: bool,
+) -> bool:
+    """Validate physical owners; only W1 may omit incomplete-week segments."""
+
+    normalized_result = tuple(_segment_interval(segment) for segment in result_segments)
+    normalized_authoritative = tuple(
+        _segment_interval(segment) for segment in authoritative_segments
+    )
+    if (
+        not normalized_result
+        or not normalized_authoritative
+        or any(item is None for item in (*normalized_result, *normalized_authoritative))
+    ):
+        return False
+    result_intervals = tuple(item for item in normalized_result if item is not None)
+    authoritative_intervals = tuple(
+        item for item in normalized_authoritative if item is not None
+    )
+    if not allow_frequency_subset and result_intervals != authoritative_intervals:
+        return False
+    for contract, start, end in result_intervals:
+        owners = tuple(
+            interval
+            for interval in authoritative_intervals
+            if interval[0] == contract and interval[1] <= start and end <= interval[2]
+        )
+        if len(owners) != 1:
+            return False
+    for bar in bars:
+        trading_day = getattr(bar, "trading_day", None)
+        if type(trading_day) is not date:
+            return False
+        result_owners = tuple(
+            interval
+            for interval in result_intervals
+            if interval[1] <= trading_day <= interval[2]
+        )
+        authoritative_owners = tuple(
+            interval
+            for interval in authoritative_intervals
+            if interval[1] <= trading_day <= interval[2]
+        )
+        if (
+            len(result_owners) != 1
+            or len(authoritative_owners) != 1
+            or result_owners[0][0] != authoritative_owners[0][0]
+        ):
+            return False
+    return True
+
+
+def _segment_interval(segment: object) -> tuple[str, date, date] | None:
+    contract = getattr(segment, "contract", None)
+    start = getattr(segment, "start_trading_day", None)
+    end = getattr(segment, "end_trading_day", None)
+    if not isinstance(contract, str) or type(start) is not date or type(end) is not date:
+        return None
+    if not contract or start > end:
+        return None
+    return contract, start, end
 
 
 def build_discovery_result(
@@ -399,10 +518,41 @@ def write_discovery_artifacts(
         output_dir / "zero_write_proof.json",
         {
             "canonical_manifest_unchanged": True,
+            "canonical_manifest_covers_actual_reads": True,
             "database_transaction": "READ ONLY",
             "orm_session_clean": True,
         },
     )
+
+
+def validate_canonical_read_window(
+    market_data: Any,
+    candidates: Sequence[FuturesEvidenceCandidate],
+    *,
+    paths: Sequence[Path],
+    canonical_root: Path,
+) -> tuple[CanonicalFileDigest, ...]:
+    """Hash every bounded read target both before and after success or failure."""
+
+    before_manifest = canonical_file_manifest(paths, canonical_root=canonical_root)
+    original_store = market_data.store
+    recording_store = _RecordingCanonicalStore(original_store)
+    read_error: BaseException | None = None
+    market_data.store = recording_store
+    try:
+        for candidate in candidates:
+            validate_candidate_market_data(market_data, candidate)
+    except BaseException as exc:
+        read_error = exc
+    finally:
+        market_data.store = original_store
+        after_manifest = canonical_file_manifest(paths, canonical_root=canonical_root)
+    if before_manifest != after_manifest:
+        raise ReadOnlyDiscoveryError("CANONICAL_MANIFEST_DRIFT")
+    assert_manifest_covers_actual_reads(paths, recording_store.read_paths)
+    if read_error is not None:
+        raise read_error
+    return before_manifest
 
 
 def _candidate_record(candidate: FuturesEvidenceCandidate) -> dict[str, str | int]:
@@ -465,13 +615,13 @@ def run_discovery(
             taxonomy=load_product_taxonomy(),
         )
         selected = _select_candidates(candidates)
-        paths = _catalog_paths_for_candidates(market_data.catalog, selected)
-        before_manifest = canonical_file_manifest(paths, canonical_root=canonical)
-        for candidate in selected:
-            validate_candidate_market_data(market_data, candidate)
-        after_manifest = canonical_file_manifest(paths, canonical_root=canonical)
-        if before_manifest != after_manifest:
-            raise ReadOnlyDiscoveryError("CANONICAL_MANIFEST_DRIFT")
+        paths = catalog_paths_for_candidates(market_data.catalog, selected)
+        before_manifest = validate_canonical_read_window(
+            market_data,
+            selected,
+            paths=paths,
+            canonical_root=canonical,
+        )
         result = CoverageDiscoveryResult(candidates=candidates, selected=selected)
 
     if _git_status(project_root):
@@ -489,10 +639,13 @@ def _read_table_privileges(session: _ReadOnlySession) -> dict[str, set[str]]:
     rows = session.execute(
         text(
             "SELECT tables.table_name, "
-            "has_table_privilege(current_user, tables.table_name, 'SELECT') AS can_select, "
-            "has_table_privilege(current_user, tables.table_name, 'INSERT') AS can_insert, "
-            "has_table_privilege(current_user, tables.table_name, 'UPDATE') AS can_update, "
-            "has_table_privilege(current_user, tables.table_name, 'DELETE') AS can_delete "
+            "has_table_privilege(current_user, format('%I.%I', tables.table_schema, tables.table_name), 'SELECT') AS can_select, "
+            "has_table_privilege(current_user, format('%I.%I', tables.table_schema, tables.table_name), 'INSERT') AS can_insert, "
+            "has_table_privilege(current_user, format('%I.%I', tables.table_schema, tables.table_name), 'UPDATE') AS can_update, "
+            "has_table_privilege(current_user, format('%I.%I', tables.table_schema, tables.table_name), 'DELETE') AS can_delete, "
+            "has_table_privilege(current_user, format('%I.%I', tables.table_schema, tables.table_name), 'TRUNCATE') AS can_truncate, "
+            "has_table_privilege(current_user, format('%I.%I', tables.table_schema, tables.table_name), 'REFERENCES') AS can_references, "
+            "has_table_privilege(current_user, format('%I.%I', tables.table_schema, tables.table_name), 'TRIGGER') AS can_trigger "
             "FROM information_schema.tables AS tables "
             "WHERE tables.table_schema = current_schema() "
             "AND tables.table_type = 'BASE TABLE' "
@@ -509,6 +662,9 @@ def _read_table_privileges(session: _ReadOnlySession) -> dict[str, set[str]]:
                 ("INSERT", row["can_insert"]),
                 ("UPDATE", row["can_update"]),
                 ("DELETE", row["can_delete"]),
+                ("TRUNCATE", row["can_truncate"]),
+                ("REFERENCES", row["can_references"]),
+                ("TRIGGER", row["can_trigger"]),
             )
             if permitted
         }
@@ -517,7 +673,7 @@ def _read_table_privileges(session: _ReadOnlySession) -> dict[str, set[str]]:
     return privileges
 
 
-def _catalog_paths_for_candidates(
+def catalog_paths_for_candidates(
     catalog: _CatalogForCoverage,
     candidates: Sequence[FuturesEvidenceCandidate],
 ) -> tuple[Path, ...]:
@@ -538,11 +694,10 @@ def _catalog_paths_for_candidates(
                     frequency=BarFrequency(frequency_value),
                 )
                 for partition in catalog.all_partitions(key):
-                    if _partition_covers_day(partition, trading_day):
-                        file_path = getattr(partition, "file_path", None)
-                        if not isinstance(file_path, Path):
-                            raise ReadOnlyDiscoveryError("CANONICAL_PATH_INVALID")
-                        paths.add(file_path)
+                    file_path = getattr(partition, "file_path", None)
+                    if not isinstance(file_path, Path):
+                        raise ReadOnlyDiscoveryError("CANONICAL_PATH_INVALID")
+                    paths.add(file_path)
     if not paths:
         raise ReadOnlyDiscoveryError("CANONICAL_PATH_INVALID")
     return tuple(sorted(paths))
@@ -578,8 +733,31 @@ def _git_status(project_root: Path) -> tuple[str, ...]:
 def _assert_only_report_changed(project_root: Path, output_dir: Path) -> None:
     relative_output = output_dir.resolve().relative_to(project_root.resolve()).as_posix()
     changed = _git_status(project_root)
-    if not changed or any(relative_output not in line for line in changed):
+    if not only_approved_report_paths(changed, relative_output):
         raise ReadOnlyDiscoveryError("GIT_WORKTREE_DIRTY")
+
+
+def only_approved_report_paths(changed: Sequence[str], relative_output: str) -> bool:
+    """Accept only untracked files below one exact approved report directory."""
+
+    prefix = f"{relative_output.rstrip('/')}/"
+    def is_approved(line: str) -> bool:
+        if not line.startswith("?? "):
+            return False
+        path = line[3:].rstrip("/")
+        return path == relative_output or path.startswith(prefix)
+
+    return bool(changed) and all(is_approved(line) for line in changed)
+
+
+def assert_manifest_covers_actual_reads(
+    manifest_paths: Sequence[Path],
+    actual_read_paths: Collection[Path],
+) -> None:
+    """Ensure the before/after manifest covers each partition read by the service."""
+
+    if not set(actual_read_paths) <= set(manifest_paths):
+        raise ReadOnlyDiscoveryError("CANONICAL_MANIFEST_SCOPE_INVALID")
 
 
 def _row_has_frozen_coverage(
@@ -606,12 +784,34 @@ def _row_has_frozen_coverage(
     return True
 
 
+def _complete_coverage_runs(
+    catalog: _CatalogForCoverage,
+    *,
+    product: str,
+    rows: Sequence[object],
+) -> tuple[tuple[object, ...], ...]:
+    """Return contiguous mapping runs whose owners all have frozen coverage."""
+
+    runs: list[tuple[object, ...]] = []
+    current: list[object] = []
+    for row in rows:
+        if _row_has_frozen_coverage(catalog, product=product, row=row):
+            current.append(row)
+            continue
+        if current:
+            runs.append(tuple(current))
+            current = []
+    if current:
+        runs.append(tuple(current))
+    return tuple(runs)
+
+
 def _partition_covers_day(partition: object, trading_day: date) -> bool:
     start = getattr(partition, "coverage_start", None)
     end = getattr(partition, "coverage_end", None)
     if not isinstance(start, datetime) or not isinstance(end, datetime):
         return False
-    return start.date() <= trading_day <= end.date()
+    return start.astimezone(SHANGHAI).date() <= trading_day <= end.astimezone(SHANGHAI).date()
 
 
 def _row_trading_day(row: object) -> date:
