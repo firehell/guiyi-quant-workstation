@@ -609,7 +609,7 @@ test('SuBing consumes its exact AlertEvent focus once', async ({ page }) => {
   await expect.poll(() => new URL(page.url()).searchParams.has('focus_bar_end')).toBe(false)
 })
 
-test('Trend has stable desktop and narrow viewport visuals', async ({ page }) => {
+test('Trend has a stable desktop visual', async ({ page }) => {
   await page.setViewportSize({ width: 1920, height: 1080 })
   await mockReadyTrend(page)
   await page.goto(trendJm)
@@ -619,9 +619,14 @@ test('Trend has stable desktop and narrow viewport visuals', async ({ page }) =>
   await expect(page).toHaveScreenshot('market-detail-trend-1920x1080.png', {
     animations: 'disabled', caret: 'hide', maxDiffPixels: 500,
   })
+})
 
+test('Trend has a stable narrow viewport visual', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
-  await expect(page.locator('[data-detail-workspace="trend"]')).toBeVisible()
+  await mockReadyTrend(page)
+  await page.goto(trendJm)
+  await expect(page.locator('[data-detail-workspace="trend"]')).toHaveAttribute('data-newow-state', 'ready')
+  const chart = page.getByTestId('newow-trend-chart-stage')
   await chart.scrollIntoViewIfNeeded()
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
   await expect(page).toHaveScreenshot('market-detail-trend-390x844.png', {

@@ -39,6 +39,7 @@ NewowDiagnosticTokenFormula = Literal[
     "newow_main_force_control_page_v1",
     "newow_main_rise_ma35_ma45_page_v1",
     "newow_cup_handle_v1",
+    "newow_ai_week_day_16_matrix_page_v1",
 ]
 NewowRepaintingFormula = Literal["newow_zhaoyao_mirror_repainting_page_v1"]
 

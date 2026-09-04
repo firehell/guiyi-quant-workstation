@@ -27,6 +27,7 @@ from guiyi_quant.newow import (
     TrendBandState,
     TrendBias,
     VolatilityLevel,
+    diagnostic_tokens,
 )
 from pydantic import ValidationError
 import pytest
@@ -100,13 +101,29 @@ def test_openapi_schema_closes_newow_enums_and_formula_identities() -> None:
         "newow_main_force_control_page_v1",
         "newow_main_rise_ma35_ma45_page_v1",
         "newow_cup_handle_v1",
+        "newow_ai_week_day_16_matrix_page_v1",
     }
     assert set(diagnostic_facts["formula_versions"]["items"]["enum"]) == (
         diagnostic_formulas
-    ) - {"newow_diagnostic_rules_cleanroom_v1"}
+    ) - {
+        "newow_diagnostic_rules_cleanroom_v1",
+        "newow_ai_week_day_16_matrix_page_v1",
+    }
     diagnostic_token = definitions["NewowDiagnosticTokenOut"]["properties"]
     assert set(diagnostic_token["formula_identities"]["items"]["enum"]) == (
         diagnostic_formulas
+    )
+
+
+def test_newow_response_serializes_real_core_diagnostic_token_lineage() -> None:
+    result = _result()
+    result.diagnostic_tokens = diagnostic_tokens(result.diagnostic_facts)
+
+    response = market_newow._response(result)
+
+    assert any(
+        item.formula_identities == ["newow_ai_week_day_16_matrix_page_v1"]
+        for item in response.diagnostic_tokens
     )
 
 

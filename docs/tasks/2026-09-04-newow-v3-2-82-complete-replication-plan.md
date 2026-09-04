@@ -126,19 +126,31 @@ oscillation_build
 
 - [ ] **Step 4: 生成并回读 manifest**
 
-Manifest builder 以 Path(__file__).resolve().parents[1] 为唯一 root，排除 evidence-manifest.json、__pycache__ 和 pyc；按 relative_path 排序，以 1 MiB chunk 读取原始 bytes，写入临时文件后 os.replace 原子发布。--verify 重新计算所有 byte_count/hash，任何缺失、额外文件或不匹配都返回非零。Manifest 结构固定为：
+Manifest builder 以 Path(__file__).resolve().parents[1] 为唯一 root，排除 evidence-manifest.json、__pycache__ 和 pyc；按 relative_path 排序，以 1 MiB chunk 读取原始 bytes，写入临时文件后 os.replace 原子发布。--verify 重新计算所有 byte_count/hash，任何缺失、额外文件或不匹配都返回非零。Manifest v2 必须逐文件区分原站采集物与本地派生产物：原站采集物记录真实 `captured_at`，派生产物使用 `captured_at: null`，不得把报告、脚本或分析结果冒充原站采集。结构固定为：
 
 ~~~json
 {
-  "schema_version": "newow-evidence-manifest-v1",
-  "captured_at": "2026-09-04T13:15:00+08:00",
+  "schema_version": "newow-evidence-manifest-v2",
+  "source_registry_captured_at": "2026-09-04T13:57:43+08:00",
   "product_version": "v3.2.82",
   "files": [
     {
       "relative_path": "sources/index-v3.2.82.html",
       "source_url": "http://118.24.52.32/index.html",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T13:57:43+08:00",
       "byte_count": 1242189,
       "sha256": "23e4d02d65828bfacf86867891c121a967a58d9ada7618dbc9a7e4265ad23713"
+    },
+    {
+      "relative_path": "analysis/core-page-parity-results.json",
+      "source_url": "derived://newow-v3.2.82-gap-closure",
+      "provenance_kind": "derived",
+      "product_version": "v3.2.82",
+      "captured_at": null,
+      "byte_count": 2932,
+      "sha256": "163337b4b425241189ae348814610c29b3ff3b24a3c4b03a95da10864efbab3e"
     }
   ]
 }
