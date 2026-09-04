@@ -551,15 +551,20 @@ test('SuBing projects Rule-specific runtime warm-up and failure states', async (
 })
 
 test('SuBing has stable desktop and narrow viewport visuals with selectable history', async ({ page }) => {
-  await page.setViewportSize({ width: 1440, height: 960 })
+  await page.setViewportSize({ width: 1440, height: 900 })
   await mockReadyTrend(page, {
+    barsPage: ({ url, symbol }) => url.searchParams.get('frequency') === '15m'
+      ? { bars: Array.from({ length: 40 }, (_, index) => detailBar(symbol, index, 100 + index)) }
+      : undefined,
     alertEvents: ({ url }) => url.searchParams.get('rule_code') === 'subing_ths_alert_15m_v1' ? [subingEvent('jm')] : [],
     alertRules: [subingRule()],
   })
   await page.goto('/market/chart?symbol=jm&view=subing')
   const workspace = page.locator('[data-detail-workspace="subing"]')
   await expect(workspace).toBeVisible()
-  await expect(page).toHaveScreenshot('market-detail-subing-1440x960.png', {
+  const chart = page.getByTestId('kline-shell')
+  await chart.scrollIntoViewIfNeeded()
+  await expect(page).toHaveScreenshot('market-detail-subing-1440x900.png', {
     animations: 'disabled', caret: 'hide', maxDiffPixels: 500,
   })
 
@@ -570,6 +575,32 @@ test('SuBing has stable desktop and narrow viewport visuals with selectable hist
   await expect(page).toHaveScreenshot('market-detail-subing-390x844.png', {
     animations: 'disabled', caret: 'hide', maxDiffPixels: 500,
   })
+})
+
+test('SuBing marker click opens the matching immutable AlertEvent detail', async ({ page }) => {
+  await mockReadyTrend(page, {
+    alertEvents: ({ url }) => url.searchParams.get('rule_code') === 'subing_ths_alert_15m_v1' ? [subingEvent('jm')] : [],
+    alertRules: [subingRule()],
+  })
+  await page.goto('/market/chart?symbol=jm&view=subing')
+  const chart = page.getByTestId('kline-shell')
+  await chart.scrollIntoViewIfNeeded()
+  const bounds = await chart.boundingBox()
+  if (!bounds) throw new Error('SuBing chart is not visible')
+  await page.mouse.click(bounds.x + bounds.width * 0.714, bounds.y + bounds.height * 0.4)
+  await expect(page.getByRole('dialog', { name: '苏冰预警详情' })).toContainText('S↑ 多头预警 · 2026-09-03T02:45:00.000Z · JM2601')
+})
+
+test('SuBing consumes its exact AlertEvent focus once', async ({ page }) => {
+  await mockReadyTrend(page, {
+    alertEvents: ({ url }) => url.searchParams.get('rule_code') === 'subing_ths_alert_15m_v1' ? [subingEvent('jm')] : [],
+    alertRules: [subingRule()],
+  })
+  const focus = '2026-09-03T02:45:00.000Z'
+  await page.goto(`/market/chart?symbol=jm&view=subing&focus_bar_end=${encodeURIComponent(focus)}`)
+  await expect(page.locator('[data-detail-ready="true"]')).toBeVisible()
+  await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-alert-marker-count', '1')
+  await expect.poll(() => new URL(page.url()).searchParams.has('focus_bar_end')).toBe(false)
 })
 
 test('Trend has stable desktop and narrow viewport visuals', async ({ page }) => {
