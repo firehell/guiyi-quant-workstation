@@ -8,15 +8,17 @@ const props = withDefaults(defineProps<{
   identityKey: string
   sections: readonly MarketDetailDisclosureSection[]
   defaultOpen?: boolean
-}>(), { defaultOpen: true })
+  defaultOpenAll?: boolean
+}>(), { defaultOpen: true, defaultOpenAll: false })
 
-const openIds = ref<string[]>(props.defaultOpen && props.sections[0] ? [props.sections[0].id] : [])
+const openIds = ref<string[]>(defaultOpenIds())
 const mobile = ref(false)
 let media: MediaQueryList | null = null
 
 function syncMedia(event: MediaQueryListEvent | MediaQueryList) {
   mobile.value = event.matches
   if (mobile.value && openIds.value.length > 1) openIds.value = openIds.value.slice(0, 1)
+  else if (!mobile.value && props.defaultOpenAll) reset()
 }
 
 function toggle(id: string) {
@@ -28,7 +30,14 @@ function toggle(id: string) {
 }
 
 function reset() {
-  openIds.value = props.defaultOpen && props.sections[0] ? [props.sections[0].id] : []
+  openIds.value = defaultOpenIds()
+  if (mobile.value && openIds.value.length > 1) openIds.value = openIds.value.slice(0, 1)
+}
+
+function defaultOpenIds(): string[] {
+  if (!props.defaultOpen) return []
+  if (props.defaultOpenAll) return props.sections.map((section) => section.id)
+  return props.sections[0] ? [props.sections[0].id] : []
 }
 
 watch(() => props.identityKey, reset)

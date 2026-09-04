@@ -17,9 +17,9 @@ test('free never exposes strategy markers', async () => {
   assert.deepEqual(markersForDetailView('free', allAlertMarkers), [])
 })
 
-test('B1 does not define marker policy for other workspaces', async () => {
+test('Trend rejects generic Alert markers and receives Newow markers through its dedicated projection', async () => {
   const { markersForDetailView } = await import('../src/utils/marketDetailMarkers.ts')
-  assert.deepEqual(markersForDetailView('trend', allAlertMarkers), allAlertMarkers)
+  assert.deepEqual(markersForDetailView('trend', allAlertMarkers), [])
 })
 
 test('HTDY workspace admits only immutable HTDY Event markers', async () => {
