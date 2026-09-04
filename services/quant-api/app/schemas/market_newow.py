@@ -21,6 +21,26 @@ NewowCupState = Literal[
     "FORMING", "READY", "BREAKOUT", "WEAKENED", "INVALIDATED", "EXPIRED"
 ]
 NewowCupFormula = Literal["newow_cup_handle_v1"]
+NewowDiagnosticFactsFormula = Literal[
+    "newow_diagnostic_facts_cleanroom_v1",
+    "newow_target_absorb_display_selection_page_v2",
+    "newow_trend_band_page_v2",
+    "newow_oscillation_hhv_llv10_page_v1",
+    "newow_main_force_control_page_v1",
+    "newow_main_rise_ma35_ma45_page_v1",
+    "newow_cup_handle_v1",
+]
+NewowDiagnosticTokenFormula = Literal[
+    "newow_diagnostic_rules_cleanroom_v1",
+    "newow_diagnostic_facts_cleanroom_v1",
+    "newow_target_absorb_display_selection_page_v2",
+    "newow_trend_band_page_v2",
+    "newow_oscillation_hhv_llv10_page_v1",
+    "newow_main_force_control_page_v1",
+    "newow_main_rise_ma35_ma45_page_v1",
+    "newow_cup_handle_v1",
+]
+NewowRepaintingFormula = Literal["newow_zhaoyao_mirror_repainting_page_v1"]
 
 
 class _Out(BaseModel):
@@ -307,15 +327,15 @@ class NewowDiagnosticFactsOut(_Out):
     ] | None
     weekly_signal: Literal["buy", "hold", "sell", "wait"] | None
     daily_signal: Literal["buy", "hold", "sell", "wait"] | None
-    repainting_inputs_excluded: list[str]
-    formula_versions: list[str]
+    repainting_inputs_excluded: list[NewowRepaintingFormula]
+    formula_versions: list[NewowDiagnosticFactsFormula]
 
 
 class NewowDiagnosticTokenOut(_Out):
     code: str
     severity: Literal["info", "warning", "risk"]
     fact_keys: list[str]
-    formula_identities: list[str]
+    formula_identities: list[NewowDiagnosticTokenFormula]
 
 
 class NewowSemanticLabelsOut(_Out):

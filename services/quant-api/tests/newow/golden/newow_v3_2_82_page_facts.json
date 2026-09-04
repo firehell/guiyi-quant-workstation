@@ -1,6 +1,6 @@
 {
   "schema_version": "newow-v3.2.82-page-facts-v1",
-  "evidence_manifest_sha256": "2629bd1d6fae5e0e189c8d9f3e53936699bc3b241c43bbb5fd64d0ae4e55a1cc",
+  "evidence_manifest_sha256": "279aa0c3a88b6e6c5413387a57085dfe4c4d23a34befa751d95ced4c03be962f",
   "batch_signal_cases": [
     {
       "code": "601233.SH",

@@ -360,6 +360,3 @@ def _safe_strings(values: tuple[str, ...]) -> list[str]:
     if any(not isinstance(value, str) for value in values):
         raise NewowTrendDetailError("NEWOW_DATA_IDENTITY_INVALID")
     return list(values)
-    NewowFrequency,
-    NewowMarkerFormula,
-    NewowSeriesKind,
