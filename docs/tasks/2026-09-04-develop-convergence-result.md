@@ -1,7 +1,7 @@
 # `develop` 收敛实施结果
 
 日期：2026-09-04
-状态：`IN_PROGRESS`
+状态：`REVIEW_PENDING`
 实施 baseline：`18a62382685b6deb92010968d4a5a920952fa206`
 任务分支：`chore/develop-convergence`
 设计：`docs/tasks/2026-09-04-develop-convergence-design.md`
@@ -22,9 +22,20 @@
 - Open PR / Issue：见本任务 PR 的 Task A evidence
 - Worktree：见本任务 PR 的 Task A evidence
 
-## 初始 blocker
+## Review candidate
 
-- 尚待 Task B–G 验证。
+- Task G 候选输入 HEAD：`228f4d685c25f47915067e22aea1fce41fd618f0`。
+- Task A–F 已完成各自实现、自审、修复轮和独立 commit；当前只进入 Draft PR 候选准备，不提前声明最终收敛完成。
+- 最终 exact-head Standards Review、Spec Review、Review 后必要检查、最终 evidence commit 与 Owner“允许集成 develop”Gate 均未执行或未取得。
+
+## Task A–F 收口事实
+
+- Task A 在 `18a62382685b6deb92010968d4a5a920952fa206` 建立 clean baseline 和仓库/GitHub inventory；18 行 remote topology 均为 `ahead=0`，其中 `origin` 已确认为 remote HEAD symref 而非 branch。Task A commit：`66368dcf4f445eb1db9eb46eaf1e8127f5f215db`。
+- Task B 删除 35 个 tracked `.playwright-cli/**` raw capture（568,084 行），加入 ignore 与 repository guard；29 个批准保留的 Newow screenshot 逐路径和 SHA-256 绑定，未修改或删除。Task B commits：`01f38c112811b4343ab9855a2f1e5fbb1d204a82`、`ee98d1fe30ee7ad5b27e149f3a9b4958810e7e4a`。
+- Task C 删除 3 个无 active inbound reference 的 `docs/superpowers/**` 非 canonical 文档，修正 Issue `#286/#259/#307` 与 PR `#333` stale metadata，并将 Newow futures 当前任务合同同步为 `IMPLEMENTED / EVIDENCE_PARTIAL`。Task C commits：`27a0de41aaa7d22ac70033825ca0c4aa33087bac`、`cb463095bfa40232edaada23f730c7acf954bdc2`。
+- Task D 完成退休面、唯一 authority、页面一致性/因果研究隔离审计；FastAPI 0.138 mounted-route guard 以 RED→GREEN 修复，业务 router、策略公式和可信研究口径未改。Task D commits：`20327f345a252f3f854646d98eed9a52050f6a56`、`0ed5538636fc55940f4487409284ccd7ea1b0d94`。
+- Task E 在输入 `0ed5538636fc55940f4487409284ccd7ea1b0d94` 上完成批准的 full validation matrix，记录 backend、Newow、engineering、static、Web、E2E、OpenSpec、secret 与 Git checks 的实际输出；`isolated_postgresql` 和 `manual_acceptance` 按计划未运行。本地 `develop@15a557669e39895dc7f243d319f48fb2a695887c` 的并发用户 commit 未被吸收或覆盖。Task E commits：`f074fec1b32632b87ea5df695404317f8bd0c90a`、`a300262cda5957e55fc8d235bf8024733da769e5`。
+- Task F 对 16 个普通远端 branch 逐项完成 fresh tip、`ahead_by=0`、ancestor、open PR、worktree 和保护身份预检后显式删除；保留 `main`、`develop`、active release `codex/release-v1.9.15`、当前 task branch、三个本地 worktree及 remote HEAD symref。Task F commit：`228f4d685c25f47915067e22aea1fce41fd618f0`。
 
 ## 变更记录
 
@@ -255,4 +266,8 @@
 
 ## Review 与集成
 
-- 尚未执行。
+- 当前状态：`REVIEW_PENDING`。
+- 尚未在本候选的 exact `REVIEW_HEAD` 上执行最终 Standards Review 与 Spec Review；P1/P2 结论仍为空，不得复用 Task A–F 的局部 review 代替。
+- 尚未执行 Review 后最终必要检查，也未写入最终 evidence commit。
+- 尚未取得 Owner 明确的“允许集成 develop”；Draft PR 不构成该授权，不得 ready、merge 或清理当前 task worktree/branch。
+- 独立未完成 Gate：PR `#333` current-head release Review；`main`/tag/GitHub Release 批准；PF2611 plan/apply；Runtime promotion；自然 SuBing Event；PushPlus provider acceptance；Owner 微信实际送达确认；Newow 后续产品化、参考交易、OOS、Shadow 与模拟账户。
