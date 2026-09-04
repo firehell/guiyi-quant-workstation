@@ -1,10 +1,10 @@
 # SuBing Live Contract Warm-up Repair Implementation Plan
 
-状态：`IMPLEMENTATION_PLAN_APPROVED / SOURCE_IMPLEMENTATION_NOT_STARTED`
+状态：`IMPLEMENTATION_IN_PROGRESS / TASKS_1_TO_4_COMMITTED / TASK_5_DIRTY / TASKS_6_TO_7_PENDING`
 
 日期：2026-09-04
 
-事实基线：`develop@d1a8bb8e993896616e47e11e6f7cb02f7dd9e8d7`
+事实基线：计划编写时为 `develop@d1a8bb8e993896616e47e11e6f7cb02f7dd9e8d7`；截至 2026-09-04，实施 branch 落后当前 `develop`，必须先保留其未提交 Task 5 修改并完成收敛，不能把旧基线当作可直接合入的 RC。
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
