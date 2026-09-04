@@ -14,7 +14,7 @@
 | Database 与 Canonical | 最近 production 只读 readback 为 Alembic `20260903_0045`；RQData session anchor repair 已发布并保留 D1/W1 原始事实。active Canonical 只读 readback 为 8,801 个 Dataset、42,575 个分区、44,629,532 行。 |
 | Market Runtime Scope | `operational_products.txt` 的 60 个品种。 |
 | Alert Scope | HTDY 为 `jm × 15m`；SuBing 为 execution-time operational 60 个品种 × 15m，Scope hash `ce1daca77aeb1abe134806b67aebd96b2c35db3ba82aa10af58f6e5a2e4f5fa2`。两条 Rule 均为 enabled；SuBing Event 为 0。 |
-| `v1.9.15` Release candidate | `codex/release-v1.9.15` 基于 `origin/develop@a6ea680ed8d9150e0b9920e71563a3de18f7dd1e` 准备候选，Release PR `#333` 已指向 `main`。本地 Standards/Spec 双轴自审无阻断，适用验证已通过；GitHub 未上报 CI checks，exact RC 的独立 Review 仍待完成。Market Detail 仅包含已完成的 A–D staged workspaces；B3 Alert Scope Control 与 Slice E final cutover 明确延期，不属于本 Release 完成声明。它尚未合入 `main`、创建 tag 或发布 GitHub Release，也未执行 PF 数据 apply、Runtime promotion 或自然验收。 |
+| `v1.9.15` Release candidate | `codex/release-v1.9.15` 基于 `origin/develop@a6ea680ed8d9150e0b9920e71563a3de18f7dd1e` 准备候选，Release PR `#333` 已指向 `main`。适用验证已通过，独立 Standards/Spec Review 均为零阻断；exact RC 身份、命令证据与当前 GitHub checks 以 PR `#333` 的最新记录为准。Market Detail 仅包含已完成的 A–D staged workspaces；B3 Alert Scope Control 与 Slice E final cutover 明确延期，不属于本 Release 完成声明。它尚未合入 `main`、创建 tag 或发布 GitHub Release，也未执行 PF 数据 apply、Runtime promotion 或自然验收。 |
 
 Alert transport 为 PushPlus；provider accepted 不等于微信送达。
 
@@ -24,7 +24,7 @@ Alert transport 为 PushPlus；provider accepted 不等于微信送达。
 
 ## Pending Gate
 
-- Release PR `#333` 已创建；release identity、全量适用检查与本地 Standards/Spec 双轴自审已通过。GitHub 当前没有上报 CI checks，仍须完成两轴独立 Review；这些步骤不授权真实 RQData/Canonical apply、`main` 合入、tag、GitHub Release、Runtime promotion 或 Scope/通知变更。
+- Release PR `#333` 已创建；release identity、全量适用检查与 Standards/Spec 双轴独立 Review 已通过，GitHub 当前没有上报 CI checks。这些证据不授权真实 RQData/Canonical apply、`main` 合入、tag、GitHub Release、Runtime promotion 或 Scope/通知变更。
 - exact RC 形成后，`main` 合入、annotated `v1.9.15` tag 与 GitHub Release 仍需一条引用 exact 40 字符 SHA 的新明确授权。
 - exact-tag 的 `PF2611` read-only plan、随后引用 exact plan hash 的真实 RQData/Canonical apply、以及 Runtime promotion 均是彼此独立的人工 Gate。
 - 仍须等待自然 completed SuBing 15m Event、immutable `AlertEvent` 与 one-shot PushPlus provider acceptance；不得用 synthetic、replay、backfill 或手工发送替代。
