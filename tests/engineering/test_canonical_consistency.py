@@ -248,6 +248,149 @@ def test_public_entrypoints_are_exact() -> None:
     assert set(domain_action.choices) == {"data", "runtime"}
 
 
+def test_newow_v3282_coverage_has_one_status_and_no_unknown_active_formula() -> None:
+    coverage_path = ROOT / "docs/tasks/2026-09-04-newow-v3-2-82-coverage.md"
+    assert coverage_path.is_file(), "Newow v3.2.82 coverage canonical is missing"
+
+    rows = [
+        [cell.strip() for cell in line.strip().strip("|").split("|")]
+        for line in coverage_path.read_text(encoding="utf-8").splitlines()
+        if line.startswith("|") and "---" not in line
+    ]
+    assert rows[0] == [
+        "Feature",
+        "Current source/version",
+        "Evidence status",
+        "Formula identity",
+        "Implementation entry",
+        "Stock evidence",
+        "Futures evidence",
+        "Remaining gate",
+    ]
+    data_rows = rows[1:]
+    allowed_statuses = {
+        "OBSERVED_EXACT",
+        "REPRODUCED_EXACT",
+        "INFERRED_CANDIDATE",
+        "UNKNOWN",
+        "OUT_OF_SCOPE_PRIVATE",
+    }
+    assert data_rows
+    assert {row[2] for row in data_rows} >= {
+        "OBSERVED_EXACT",
+        "REPRODUCED_EXACT",
+        "OUT_OF_SCOPE_PRIVATE",
+    }
+    assert all(len(row) == 8 and row[2] in allowed_statuses for row in data_rows)
+    assert all(
+        row[4] == "none"
+        for row in data_rows
+        if row[2] in {"UNKNOWN", "OUT_OF_SCOPE_PRIVATE"}
+    )
+
+
+def test_newow_v3282_golden_evidence_is_bounded_and_complete() -> None:
+    golden_root = ROOT / "services/quant-api/tests/newow/golden"
+    page_facts = json.loads(
+        (golden_root / "newow_v3_2_82_page_facts.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert page_facts["schema_version"] == "newow-v3.2.82-page-facts-v1"
+    assert re.fullmatch(r"[0-9a-f]{64}", page_facts["evidence_manifest_sha256"])
+    assert {item["code"] for item in page_facts["symbols"]} == {
+        "000001.SH",
+        "399001.SZ",
+        "399006.SZ",
+        "601233.SH",
+        "600519.SH",
+        "600036.SH",
+        "002594.SZ",
+        "300750.SZ",
+        "000651.SZ",
+    }
+    assert all(
+        {point["period"] for point in item["periods"]}
+        == {"week", "day", "60min"}
+        for item in page_facts["symbols"]
+    )
+    assert sum(len(item["periods"]) for item in page_facts["symbols"]) == 27
+
+    display_cases = {
+        item["case_id"]: item for item in page_facts["display_selection_cases"]
+    }
+    assert {
+        "daily_buy_below_target",
+        "daily_target_breakout_upgrade",
+        "weekly_buy_daily_wait",
+        "weekly_cross_buy_daily_wait",
+        "both_hold_day_view",
+        "both_hold_best_available",
+        "both_wait_day_view",
+        "missing_period_fields_fallback",
+        "previous_close_low_guard",
+        "previous_close_high_guard",
+    } <= display_cases.keys()
+    assert all(
+        "expected_target" in item and "expected_absorption" in item
+        for item in display_cases.values()
+    )
+    assert len(page_facts["channel_window_rankings"]) >= 1
+    assert {item["branch_key"] for item in page_facts["composite_cases"]} == {
+        "bullish-bullish",
+        "bullish-bearish",
+        "bullish-neutral",
+        "bearish-bullish",
+        "bearish-bearish",
+        "bearish-neutral",
+        "cautious-bullish",
+        "cautious-bearish",
+        "cautious-neutral",
+        "warning-bullish",
+        "warning-bearish",
+        "warning-neutral",
+        "neutral-neutral",
+    }
+    assert len(page_facts["diagnostic_cases"]) == 27
+
+    screener = json.loads(
+        (golden_root / "newow_v3_2_82_screener_observations.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert set(screener) == {"schema_version", "observations"}
+    assert screener["schema_version"] == "newow-v3.2.82-screener-observations-v1"
+    observations = {item["strategy_id"]: item for item in screener["observations"]}
+    assert set(observations) == {
+        "trend_build",
+        "mainrise_build",
+        "cup_handle",
+        "daily_buy",
+        "weekly_buy",
+        "oscillation_build",
+    }
+    assert {key: len(value["ordered_rows"]) for key, value in observations.items()} == {
+        "trend_build": 40,
+        "mainrise_build": 3,
+        "cup_handle": 27,
+        "daily_buy": 21,
+        "weekly_buy": 21,
+        "oscillation_build": 1,
+    }
+    assert all(
+        set(item)
+        == {
+            "strategy_id",
+            "captured_at",
+            "request",
+            "response_sha256",
+            "ordered_rows",
+        }
+        and re.fullmatch(r"[0-9a-f]{64}", item["response_sha256"])
+        for item in observations.values()
+    )
+
+
 def test_retired_http_surfaces_return_404_and_are_not_mounted() -> None:
     main_module = importlib.import_module("app.main")
     route_paths = {

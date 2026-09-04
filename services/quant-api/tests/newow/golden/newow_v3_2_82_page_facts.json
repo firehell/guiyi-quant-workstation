@@ -1,0 +1,1346 @@
+{
+  "schema_version": "newow-v3.2.82-page-facts-v1",
+  "evidence_manifest_sha256": "f0b4fec68c90a6b2f9fed73e731d6508f49cfe7a0e6de9fa994c977c46b395dc",
+  "symbols": [
+    {
+      "code": "000001.SH",
+      "name": "上证指数",
+      "kind": "index",
+      "periods": [
+        {
+          "period": "week",
+          "ohlcv": [
+            {
+              "date": "2026-09-04",
+              "open": 3926.53,
+              "high": 3995.18,
+              "low": 3926.5,
+              "close": 3944.98,
+              "volume": 2576645867
+            }
+          ],
+          "page_output": {
+            "target_price": "4143.31",
+            "absorption_price": "3741.11",
+            "composite_decision": "持仓观望",
+            "composite_score": "60分",
+            "composite_position": "建议仓位 30%-50%",
+            "composite_direction": "从60分钟开始上涨（多周期共振向上），顺势建仓",
+            "volatility": "1%",
+            "volatility_tag": "低",
+            "trend_final_state": "yellow",
+            "mainrise_final_state": "yellow"
+          },
+          "source_relative_path": "analysis/multi-period-page-facts.json",
+          "source_response_sha256": "2dc79a126cea64b3f4966ad22cb7d1d9b81e0f26b2986e52591b19f9618b38dc"
+        },
+        {
+          "period": "day",
+          "ohlcv": [
+            {
+              "date": "2026-09-04",
+              "open": 3955.55,
+              "high": 3980.2,
+              "low": 3942.93,
+              "close": 3945.2000000000003,
+              "volume": 421331136
+            }
+          ],
+          "page_output": {
+            "target_price": "3995.18",
+            "absorption_price": "3850.86",
+            "composite_decision": "持仓观望",
+            "composite_score": "60分",
+            "composite_position": "建议仓位 30%-50%",
+            "composite_direction": "从60分钟开始上涨（多周期共振向上），顺势建仓",
+            "volatility": "1.1%",
+            "volatility_tag": "低",
+            "trend_final_state": "yellow",
+            "mainrise_final_state": "blue"
+          },
+          "source_relative_path": "analysis/multi-period-page-facts.json",
+          "source_response_sha256": "2dc79a126cea64b3f4966ad22cb7d1d9b81e0f26b2986e52591b19f9618b38dc"
+        },
+        {
+          "period": "60min",
+          "ohlcv": [
+            {
+              "date": "2026-09-04 15:00:00",
+              "open": 3944.864,
+              "high": 3945.71,
+              "low": 3943.169,
+              "close": 3945.71,
+              "volume": 153772900
+            }
+          ],
+          "page_output": {
+            "target_price": "3980.20",
+            "absorption_price": "3930.45",
+            "composite_decision": "持仓观望",
+            "composite_score": "60分",
+            "composite_position": "建议仓位 30%-50%",
+            "composite_direction": "从60分钟开始上涨（多周期共振向上），顺势建仓",
+            "volatility": "1%",
+            "volatility_tag": "低",
+            "trend_final_state": "blue",
+            "mainrise_final_state": "yellow"
+          },
+          "source_relative_path": "analysis/multi-period-page-facts.json",
+          "source_response_sha256": "2dc79a126cea64b3f4966ad22cb7d1d9b81e0f26b2986e52591b19f9618b38dc"
+        }
+      ]
+    },
+    {
+      "code": "399001.SZ",
+      "name": "深证成指",
+      "kind": "index",
+      "periods": [
+        {
+          "period": "week",
+          "ohlcv": [
+            {
+              "date": "2026-09-04",
+              "open": 13725.65,
+              "high": 13798.36,
+              "low": 13580.22,
+              "close": 13593.34,
+              "volume": 537130048
+            }
+          ],
+          "page_output": {
+            "target_price": "15749.36",
+            "absorption_price": "13068.56",
+            "composite_decision": "减仓观望",
+            "composite_score": "33分",
+            "composite_position": "建议仓位 30%-50%",
+            "composite_direction": "从周线开始下跌（大级别空头确立），必须空仓等待反转",
+            "volatility": "2.1%",
+            "volatility_tag": "中",
+            "trend_final_state": "blue",
+            "mainrise_final_state": "yellow"
+          },
+          "source_relative_path": "analysis/multi-period-page-facts.json",
+          "source_response_sha256": "2dc79a126cea64b3f4966ad22cb7d1d9b81e0f26b2986e52591b19f9618b38dc"
+        },
+        {
+          "period": "day",
+          "ohlcv": [
+            {
+              "date": "2026-09-04",
+              "open": 13725.65,
+              "high": 13798.36,
+              "low": 13580.22,
+              "close": 13593.910000000002,
+              "volume": 537198720
+            }
+          ],
+          "page_output": {
+            "target_price": "14148.68",
+            "absorption_price": "13531.53",
+            "composite_decision": "减仓观望",
+            "composite_score": "33分",
+            "composite_position": "建议仓位 30%-50%",
+            "composite_direction": "从周线开始下跌（大级别空头确立），必须空仓等待反转",
+            "volatility": "2.1%",
+            "volatility_tag": "中",
+            "trend_final_state": "blue",
+            "mainrise_final_state": "blue"
+          },
+          "source_relative_path": "analysis/multi-period-page-facts.json",
+          "source_response_sha256": "2dc79a126cea64b3f4966ad22cb7d1d9b81e0f26b2986e52591b19f9618b38dc"
+        },
+        {
+          "period": "60min",
+          "ohlcv": [
+            {
+              "date": "2026-09-04 15:00:00",
+              "open": 13589.873,
+              "high": 13595.18,
+              "low": 13580.218,
+              "close": 13595.18,
+              "volume": 113454483
+            }
+          ],
+          "page_output": {
+            "target_price": "13798.36",
+            "absorption_price": "13531.53",
+            "composite_decision": "减仓观望",
+            "composite_score": "33分",
+            "composite_position": "建议仓位 30%-50%",
+            "composite_direction": "从周线开始下跌（大级别空头确立），必须空仓等待反转",
+            "volatility": "2.1%",
+            "volatility_tag": "中",
+            "trend_final_state": "blue",
+            "mainrise_final_state": "blue"
+          },
+          "source_relative_path": "analysis/multi-period-page-facts.json",
+          "source_response_sha256": "2dc79a126cea64b3f4966ad22cb7d1d9b81e0f26b2986e52591b19f9618b38dc"
+        }
+      ]
+    },
+    {
+      "code": "399006.SZ",
+      "name": "创业板指",
+      "kind": "index",
+      "periods": [
+        {
+          "period": "week",
+          "ohlcv": [
+            {
+              "date": "2026-09-04",
+              "open": 3367.04,
+              "high": 3442.48,
+              "low": 3285.06,
+              "close": 3308.7799999999997,
+              "volume": 867596295
+            }
+          ],
+          "page_output": {
+            "target_price": "4361.83",
+            "absorption_price": "3158.14",
+            "composite_decision": "减仓观望",
+            "composite_score": "33分",
+            "composite_position": "建议仓位 30%-50%",
+            "composite_direction": "从周线开始下跌（大级别空头确立），必须空仓等待反转",
+            "volatility": "2.8%",
+            "volatility_tag": "中",
+            "trend_final_state": "blue",
+            "mainrise_final_state": "yellow"
+          },
+          "source_relative_path": "analysis/multi-period-page-facts.json",
+          "source_response_sha256": "2dc79a126cea64b3f4966ad22cb7d1d9b81e0f26b2986e52591b19f9618b38dc"
+        },
+        {
+          "period": "day",
+          "ohlcv": [
+            {
+              "date": "2026-09-04",
+              "open": 3344.62,
+              "high": 3370.47,
+              "low": 3303.11,
+              "close": 3308.58,
+              "volume": 158698160
+            }
+          ],
+          "page_output": {
+            "target_price": "3551.51",
+            "absorption_price": "3285.06",
+            "composite_decision": "减仓观望",
+            "composite_score": "33分",
+            "composite_position": "建议仓位 30%-50%",
+            "composite_direction": "从周线开始下跌（大级别空头确立），必须空仓等待反转",
+            "volatility": "2.9%",
+            "volatility_tag": "中",
+            "trend_final_state": "blue",
+            "mainrise_final_state": "blue"
+          },
+          "source_relative_path": "analysis/multi-period-page-facts.json",
+          "source_response_sha256": "2dc79a126cea64b3f4966ad22cb7d1d9b81e0f26b2986e52591b19f9618b38dc"
+        },
+        {
+          "period": "60min",
+          "ohlcv": [
+            {
+              "date": "2026-09-04 15:00:00",
+              "open": 3306.162,
+              "high": 3308.82,
+              "low": 3303.639,
+              "close": 3308.82,
+              "volume": 96321406
+            }
+          ],
+          "page_output": {
+            "target_price": "3370.47",
+            "absorption_price": "3285.06",
+            "composite_decision": "减仓观望",
+            "composite_score": "33分",
+            "composite_position": "建议仓位 30%-50%",
+            "composite_direction": "从周线开始下跌（大级别空头确立），必须空仓等待反转",
+            "volatility": "2.8%",
+            "volatility_tag": "中",
+            "trend_final_state": "blue",
+            "mainrise_final_state": "blue"
+          },
+          "source_relative_path": "analysis/multi-period-page-facts.json",
+          "source_response_sha256": "2dc79a126cea64b3f4966ad22cb7d1d9b81e0f26b2986e52591b19f9618b38dc"
+        }
+      ]
+    },
+    {
+      "code": "601233.SH",
+      "name": "桐昆股份",
+      "kind": "stock",
+      "periods": [
+        {
+          "period": "week",
+          "ohlcv": [
+            {
+              "date": "2026-09-04",
+              "open": 26.39,
+              "high": 26.75,
+              "low": 26.02,
+              "close": 26.080000000000002,
+              "volume": 371406
+            }
+          ],
+          "page_output": {
+            "target_price": "28.10",
+            "absorption_price": "19.08",
+            "composite_decision": "减仓观望",
+            "composite_score": "42分",
+            "composite_position": "建议仓位 10%-30%",
+            "composite_direction": "60分钟回踩（小级别调整，日/周线向上），看大做小等 60min 吸筹",
+            "volatility": "4.9%",
+            "volatility_tag": "高",
+            "trend_final_state": "yellow",
+            "mainrise_final_state": "yellow"
+          },
+          "source_relative_path": "analysis/multi-period-page-facts.json",
+          "source_response_sha256": "2dc79a126cea64b3f4966ad22cb7d1d9b81e0f26b2986e52591b19f9618b38dc"
+        },
+        {
+          "period": "day",
+          "ohlcv": [
+            {
+              "date": "2026-09-04",
+              "open": 26.39,
+              "high": 26.75,
+              "low": 26.02,
+              "close": 26.080000000000002,
+              "volume": 371445
+            }
+          ],
+          "page_output": {
+            "target_price": "28.10",
+            "absorption_price": "22.68",
+            "composite_decision": "减仓观望",
+            "composite_score": "42分",
+            "composite_position": "建议仓位 10%-30%",
+            "composite_direction": "60分钟回踩（小级别调整，日/周线向上），看大做小等 60min 吸筹",
+            "volatility": "4.9%",
+            "volatility_tag": "高",
+            "trend_final_state": "yellow",
+            "mainrise_final_state": "yellow"
+          },
+          "source_relative_path": "analysis/multi-period-page-facts.json",
+          "source_response_sha256": "2dc79a126cea64b3f4966ad22cb7d1d9b81e0f26b2986e52591b19f9618b38dc"
+        },
+        {
+          "period": "60min",
+          "ohlcv": [
+            {
+              "date": "2026-09-04 15:00:00",
+              "open": 26.07,
+              "high": 26.080000000000002,
+              "low": 26.02,
+              "close": 26.080000000000002,
+              "volume": 522800
+            }
+          ],
+          "page_output": {
+            "target_price": "26.84",
+            "absorption_price": "26.01",
+            "composite_decision": "减仓观望",
+            "composite_score": "42分",
+            "composite_position": "建议仓位 10%-30%",
+            "composite_direction": "60分钟回踩（小级别调整，日/周线向上），看大做小等 60min 吸筹",
+            "volatility": "4.9%",
+            "volatility_tag": "高",
+            "trend_final_state": "blue",
+            "mainrise_final_state": "yellow"
+          },
+          "source_relative_path": "analysis/multi-period-page-facts.json",
+          "source_response_sha256": "2dc79a126cea64b3f4966ad22cb7d1d9b81e0f26b2986e52591b19f9618b38dc"
+        }
+      ]
+    },
+    {
+      "code": "600519.SH",
+      "name": "贵州茅台",
+      "kind": "stock",
+      "periods": [
+        {
+          "period": "week",
+          "ohlcv": [
+            {
+              "date": "2026-09-04",
+              "open": 1295.88,
+              "high": 1338.86,
+              "low": 1295.6,
+              "close": 1329.0800000000002,
+              "volume": 36952
+            }
+          ],
+          "page_output": {
+            "target_price": "1363.35",
+            "absorption_price": "1170.28",
+            "composite_decision": "持仓观望",
+            "composite_score": "50分",
+            "composite_position": "建议仓位 30%-50%",
+            "composite_direction": "从60分钟开始上涨（多周期共振向上），顺势建仓",
+            "volatility": "1.8%",
+            "volatility_tag": "低",
+            "trend_final_state": "yellow",
+            "mainrise_final_state": "blue"
+          },
+          "source_relative_path": "analysis/multi-period-page-facts.json",
+          "source_response_sha256": "2dc79a126cea64b3f4966ad22cb7d1d9b81e0f26b2986e52591b19f9618b38dc"
+        },
+        {
+          "period": "day",
+          "ohlcv": [
+            {
+              "date": "2026-09-04",
+              "open": 1295.88,
+              "high": 1338.86,
+              "low": 1295.6,
+              "close": 1329,
+              "volume": 36953
+            }
+          ],
+          "page_output": {
+            "target_price": "1338.86",
+            "absorption_price": "1270.33",
+            "composite_decision": "持仓观望",
+            "composite_score": "50分",
+            "composite_position": "建议仓位 30%-50%",
+            "composite_direction": "从60分钟开始上涨（多周期共振向上），顺势建仓",
+            "volatility": "1.8%",
+            "volatility_tag": "低",
+            "trend_final_state": "yellow",
+            "mainrise_final_state": "yellow"
+          },
+          "source_relative_path": "analysis/multi-period-page-facts.json",
+          "source_response_sha256": "2dc79a126cea64b3f4966ad22cb7d1d9b81e0f26b2986e52591b19f9618b38dc"
+        },
+        {
+          "period": "60min",
+          "ohlcv": [
+            {
+              "date": "2026-09-04 15:00:00",
+              "open": 1329.08,
+              "high": 1330,
+              "low": 1328.63,
+              "close": 1328.8100000000002,
+              "volume": 15020
+            }
+          ],
+          "page_output": {
+            "target_price": "1338.86",
+            "absorption_price": "1293.02",
+            "composite_decision": "持仓观望",
+            "composite_score": "50分",
+            "composite_position": "建议仓位 30%-50%",
+            "composite_direction": "从60分钟开始上涨（多周期共振向上），顺势建仓",
+            "volatility": "1.8%",
+            "volatility_tag": "低",
+            "trend_final_state": "yellow",
+            "mainrise_final_state": "yellow"
+          },
+          "source_relative_path": "analysis/multi-period-page-facts.json",
+          "source_response_sha256": "2dc79a126cea64b3f4966ad22cb7d1d9b81e0f26b2986e52591b19f9618b38dc"
+        }
+      ]
+    },
+    {
+      "code": "600036.SH",
+      "name": "招商银行",
+      "kind": "stock",
+      "periods": [
+        {
+          "period": "week",
+          "ohlcv": [
+            {
+              "date": "2026-09-04",
+              "open": 41.05,
+              "high": 41.78,
+              "low": 40.95,
+              "close": 41.69,
+              "volume": 665723
+            }
+          ],
+          "page_output": {
+            "target_price": "41.78",
+            "absorption_price": "35.52",
+            "composite_decision": "持仓观望",
+            "composite_score": "50分",
+            "composite_position": "建议仓位 30%-50%",
+            "composite_direction": "从60分钟开始上涨（多周期共振向上），顺势建仓",
+            "volatility": "--",
+            "volatility_tag": "--",
+            "trend_final_state": "yellow",
+            "mainrise_final_state": "blue"
+          },
+          "source_relative_path": "analysis/multi-period-page-facts.json",
+          "source_response_sha256": "2dc79a126cea64b3f4966ad22cb7d1d9b81e0f26b2986e52591b19f9618b38dc"
+        },
+        {
+          "period": "day",
+          "ohlcv": [
+            {
+              "date": "2026-09-04",
+              "open": 41.05,
+              "high": 41.78,
+              "low": 40.95,
+              "close": 41.7,
+              "volume": 665770
+            }
+          ],
+          "page_output": {
+            "target_price": "41.78",
+            "absorption_price": "38.77",
+            "composite_decision": "持仓观望",
+            "composite_score": "50分",
+            "composite_position": "建议仓位 30%-50%",
+            "composite_direction": "从60分钟开始上涨（多周期共振向上），顺势建仓",
+            "volatility": "1.4%",
+            "volatility_tag": "低",
+            "trend_final_state": "yellow",
+            "mainrise_final_state": "yellow"
+          },
+          "source_relative_path": "analysis/multi-period-page-facts.json",
+          "source_response_sha256": "2dc79a126cea64b3f4966ad22cb7d1d9b81e0f26b2986e52591b19f9618b38dc"
+        },
+        {
+          "period": "60min",
+          "ohlcv": [
+            {
+              "date": "2026-09-04 15:00:00",
+              "open": 41.68,
+              "high": 41.71,
+              "low": 41.67,
+              "close": 41.68,
+              "volume": 549000
+            }
+          ],
+          "page_output": {
+            "target_price": "41.78",
+            "absorption_price": "40.52",
+            "composite_decision": "持仓观望",
+            "composite_score": "50分",
+            "composite_position": "建议仓位 30%-50%",
+            "composite_direction": "从60分钟开始上涨（多周期共振向上），顺势建仓",
+            "volatility": "1.4%",
+            "volatility_tag": "低",
+            "trend_final_state": "yellow",
+            "mainrise_final_state": "yellow"
+          },
+          "source_relative_path": "analysis/multi-period-page-facts.json",
+          "source_response_sha256": "2dc79a126cea64b3f4966ad22cb7d1d9b81e0f26b2986e52591b19f9618b38dc"
+        }
+      ]
+    },
+    {
+      "code": "002594.SZ",
+      "name": "比亚迪",
+      "kind": "stock",
+      "periods": [
+        {
+          "period": "week",
+          "ohlcv": [
+            {
+              "date": "2026-09-04",
+              "open": 87.38,
+              "high": 88.55,
+              "low": 87.26,
+              "close": 87.84,
+              "volume": 155380
+            }
+          ],
+          "page_output": {
+            "target_price": "96.59",
+            "absorption_price": "84.52",
+            "composite_decision": "减仓观望",
+            "composite_score": "31分",
+            "composite_position": "建议仓位 30%-50%",
+            "composite_direction": "从周线开始下跌，当前为周线下跌中的反弹（背离），勿追涨",
+            "volatility": "1.9%",
+            "volatility_tag": "低",
+            "trend_final_state": "blue",
+            "mainrise_final_state": "blue"
+          },
+          "source_relative_path": "analysis/multi-period-page-facts.json",
+          "source_response_sha256": "2dc79a126cea64b3f4966ad22cb7d1d9b81e0f26b2986e52591b19f9618b38dc"
+        },
+        {
+          "period": "day",
+          "ohlcv": [
+            {
+              "date": "2026-09-04",
+              "open": 87.38,
+              "high": 88.55,
+              "low": 87.26,
+              "close": 87.85000000000001,
+              "volume": 155399
+            }
+          ],
+          "page_output": {
+            "target_price": "93.23",
+            "absorption_price": "86.60",
+            "composite_decision": "减仓观望",
+            "composite_score": "31分",
+            "composite_position": "建议仓位 30%-50%",
+            "composite_direction": "从周线开始下跌，当前为周线下跌中的反弹（背离），勿追涨",
+            "volatility": "2%",
+            "volatility_tag": "中",
+            "trend_final_state": "blue",
+            "mainrise_final_state": "yellow"
+          },
+          "source_relative_path": "analysis/multi-period-page-facts.json",
+          "source_response_sha256": "2dc79a126cea64b3f4966ad22cb7d1d9b81e0f26b2986e52591b19f9618b38dc"
+        },
+        {
+          "period": "60min",
+          "ohlcv": [
+            {
+              "date": "2026-09-04 15:00:00",
+              "open": 87.87,
+              "high": 87.88,
+              "low": 87.82,
+              "close": 87.85000000000001,
+              "volume": 105600
+            }
+          ],
+          "page_output": {
+            "target_price": "88.55",
+            "absorption_price": "86.76",
+            "composite_decision": "减仓观望",
+            "composite_score": "31分",
+            "composite_position": "建议仓位 30%-50%",
+            "composite_direction": "从周线开始下跌，当前为周线下跌中的反弹（背离），勿追涨",
+            "volatility": "1.9%",
+            "volatility_tag": "低",
+            "trend_final_state": "yellow",
+            "mainrise_final_state": "blue"
+          },
+          "source_relative_path": "analysis/multi-period-page-facts.json",
+          "source_response_sha256": "2dc79a126cea64b3f4966ad22cb7d1d9b81e0f26b2986e52591b19f9618b38dc"
+        }
+      ]
+    },
+    {
+      "code": "300750.SZ",
+      "name": "宁德时代",
+      "kind": "stock",
+      "periods": [
+        {
+          "period": "week",
+          "ohlcv": [
+            {
+              "date": "2026-09-04",
+              "open": 351.4,
+              "high": 354.66,
+              "low": 349.56,
+              "close": 352.99,
+              "volume": 176419
+            }
+          ],
+          "page_output": {
+            "target_price": "408.60",
+            "absorption_price": "344.76",
+            "composite_decision": "建仓 / 加仓",
+            "composite_score": "100分",
+            "composite_position": "建议仓位 50%-100%",
+            "composite_direction": "从60分钟开始上涨（多周期共振向上），顺势建仓",
+            "volatility": "2.5%",
+            "volatility_tag": "中",
+            "trend_final_state": "blue",
+            "mainrise_final_state": "yellow"
+          },
+          "source_relative_path": "analysis/multi-period-page-facts.json",
+          "source_response_sha256": "2dc79a126cea64b3f4966ad22cb7d1d9b81e0f26b2986e52591b19f9618b38dc"
+        },
+        {
+          "period": "day",
+          "ohlcv": [
+            {
+              "date": "2026-09-04",
+              "open": 351.4,
+              "high": 354.66,
+              "low": 349.56,
+              "close": 353,
+              "volume": 176446
+            }
+          ],
+          "page_output": {
+            "target_price": "394.40",
+            "absorption_price": "347.55",
+            "composite_decision": "建仓 / 加仓",
+            "composite_score": "100分",
+            "composite_position": "建议仓位 50%-100%",
+            "composite_direction": "从60分钟开始上涨（多周期共振向上），顺势建仓",
+            "volatility": "2.5%",
+            "volatility_tag": "中",
+            "trend_final_state": "blue",
+            "mainrise_final_state": "yellow"
+          },
+          "source_relative_path": "analysis/multi-period-page-facts.json",
+          "source_response_sha256": "2dc79a126cea64b3f4966ad22cb7d1d9b81e0f26b2986e52591b19f9618b38dc"
+        },
+        {
+          "period": "60min",
+          "ohlcv": [
+            {
+              "date": "2026-09-04 15:00:00",
+              "open": 352.85,
+              "high": 353.2,
+              "low": 352.7,
+              "close": 353.01,
+              "volume": 143600
+            }
+          ],
+          "page_output": {
+            "target_price": "354.80",
+            "absorption_price": "347.55",
+            "composite_decision": "建仓 / 加仓",
+            "composite_score": "100分",
+            "composite_position": "建议仓位 50%-100%",
+            "composite_direction": "从60分钟开始上涨（多周期共振向上），顺势建仓",
+            "volatility": "--",
+            "volatility_tag": "--",
+            "trend_final_state": "yellow",
+            "mainrise_final_state": "blue"
+          },
+          "source_relative_path": "analysis/multi-period-page-facts.json",
+          "source_response_sha256": "2dc79a126cea64b3f4966ad22cb7d1d9b81e0f26b2986e52591b19f9618b38dc"
+        }
+      ]
+    },
+    {
+      "code": "000651.SZ",
+      "name": "格力电器",
+      "kind": "stock",
+      "periods": [
+        {
+          "period": "week",
+          "ohlcv": [
+            {
+              "date": "2026-09-04",
+              "open": 38.8,
+              "high": 39.15,
+              "low": 38.6,
+              "close": 39.07,
+              "volume": 255169
+            }
+          ],
+          "page_output": {
+            "target_price": "40.48",
+            "absorption_price": "35.75",
+            "composite_decision": "减仓观望",
+            "composite_score": "28分",
+            "composite_position": "建议仓位 10%-30%",
+            "composite_direction": "从日线开始下跌（周线未破位，日线回调），等待日线吸筹回踩",
+            "volatility": "1.6%",
+            "volatility_tag": "低",
+            "trend_final_state": "yellow",
+            "mainrise_final_state": "blue"
+          },
+          "source_relative_path": "analysis/multi-period-page-facts.json",
+          "source_response_sha256": "2dc79a126cea64b3f4966ad22cb7d1d9b81e0f26b2986e52591b19f9618b38dc"
+        },
+        {
+          "period": "day",
+          "ohlcv": [
+            {
+              "date": "2026-09-04",
+              "open": 38.8,
+              "high": 39.15,
+              "low": 38.6,
+              "close": 39.06,
+              "volume": 255193
+            }
+          ],
+          "page_output": {
+            "target_price": "39.98",
+            "absorption_price": "38.28",
+            "composite_decision": "减仓观望",
+            "composite_score": "28分",
+            "composite_position": "建议仓位 10%-30%",
+            "composite_direction": "从日线开始下跌（周线未破位，日线回调），等待日线吸筹回踩",
+            "volatility": "1.6%",
+            "volatility_tag": "低",
+            "trend_final_state": "blue",
+            "mainrise_final_state": "yellow"
+          },
+          "source_relative_path": "analysis/multi-period-page-facts.json",
+          "source_response_sha256": "2dc79a126cea64b3f4966ad22cb7d1d9b81e0f26b2986e52591b19f9618b38dc"
+        },
+        {
+          "period": "60min",
+          "ohlcv": [
+            {
+              "date": "2026-09-04 15:00:00",
+              "open": 39.06,
+              "high": 39.1,
+              "low": 39.05,
+              "close": 39.06,
+              "volume": 289900
+            }
+          ],
+          "page_output": {
+            "target_price": "39.15",
+            "absorption_price": "38.39",
+            "composite_decision": "减仓观望",
+            "composite_score": "28分",
+            "composite_position": "建议仓位 10%-30%",
+            "composite_direction": "从日线开始下跌（周线未破位，日线回调），等待日线吸筹回踩",
+            "volatility": "1.6%",
+            "volatility_tag": "低",
+            "trend_final_state": "yellow",
+            "mainrise_final_state": "blue"
+          },
+          "source_relative_path": "analysis/multi-period-page-facts.json",
+          "source_response_sha256": "2dc79a126cea64b3f4966ad22cb7d1d9b81e0f26b2986e52591b19f9618b38dc"
+        }
+      ]
+    }
+  ],
+  "display_selection_cases": [
+    {
+      "case_id": "daily_buy_below_target",
+      "view_period": "day",
+      "daily_signal": "buy",
+      "weekly_signal": "wait",
+      "current_price": "9.00",
+      "previous_close": "9.00",
+      "target_daily": "10.00",
+      "target_weekly": "12.00",
+      "absorption_daily": "8.00",
+      "absorption_weekly": "7.00",
+      "expected_target": "10.00",
+      "expected_absorption": "8.00",
+      "expected_source": "daily"
+    },
+    {
+      "case_id": "daily_target_breakout_upgrade",
+      "view_period": "day",
+      "daily_signal": "buy",
+      "weekly_signal": "hold",
+      "current_price": "10.01",
+      "previous_close": "9.50",
+      "target_daily": "10.00",
+      "target_weekly": "12.00",
+      "absorption_daily": "8.00",
+      "absorption_weekly": "7.00",
+      "expected_target": "12.00",
+      "expected_absorption": "8.00",
+      "expected_source": "weekly"
+    },
+    {
+      "case_id": "weekly_buy_daily_wait",
+      "view_period": "day",
+      "daily_signal": "wait",
+      "weekly_signal": "buy",
+      "current_price": "9.00",
+      "previous_close": "9.00",
+      "target_daily": "10.00",
+      "target_weekly": "12.00",
+      "absorption_daily": "8.00",
+      "absorption_weekly": "7.00",
+      "expected_target": "12.00",
+      "expected_absorption": "8.00",
+      "expected_source": "weekly"
+    },
+    {
+      "case_id": "weekly_cross_buy_daily_wait",
+      "view_period": "best_available",
+      "daily_signal": "wait",
+      "weekly_signal": "wait",
+      "cross_weekly": "buy",
+      "current_price": "9.00",
+      "previous_close": "9.00",
+      "target_daily": "10.00",
+      "target_weekly": "12.00",
+      "absorption_daily": "8.00",
+      "absorption_weekly": "7.00",
+      "expected_target": "12.00",
+      "expected_absorption": "7.00",
+      "expected_source": "weekly_cross"
+    },
+    {
+      "case_id": "both_hold_day_view",
+      "view_period": "day",
+      "daily_signal": "hold",
+      "weekly_signal": "hold",
+      "current_price": "9.00",
+      "previous_close": "9.00",
+      "target_daily": "10.00",
+      "target_weekly": "12.00",
+      "absorption_daily": "8.00",
+      "absorption_weekly": "7.00",
+      "expected_target": "10.00",
+      "expected_absorption": "8.00",
+      "expected_source": "daily"
+    },
+    {
+      "case_id": "both_hold_best_available",
+      "view_period": "best_available",
+      "daily_signal": "hold",
+      "weekly_signal": "hold",
+      "current_price": "9.00",
+      "previous_close": "9.00",
+      "target_daily": "10.00",
+      "target_weekly": "12.00",
+      "absorption_daily": "8.00",
+      "absorption_weekly": "7.00",
+      "expected_target": "12.00",
+      "expected_absorption": "8.00",
+      "expected_source": "weekly"
+    },
+    {
+      "case_id": "both_wait_day_view",
+      "view_period": "day",
+      "daily_signal": "wait",
+      "weekly_signal": "wait",
+      "current_price": "9.00",
+      "previous_close": "9.00",
+      "target_daily": "10.00",
+      "target_weekly": "12.00",
+      "absorption_daily": "8.00",
+      "absorption_weekly": "7.00",
+      "expected_target": "10.00",
+      "expected_absorption": "8.00",
+      "expected_source": "daily"
+    },
+    {
+      "case_id": "missing_period_fields_fallback",
+      "view_period": "best_available",
+      "daily_signal": null,
+      "weekly_signal": null,
+      "current_price": "9.00",
+      "previous_close": null,
+      "target_daily": null,
+      "target_weekly": null,
+      "absorption_daily": null,
+      "absorption_weekly": null,
+      "fallback_target": "11.00",
+      "expected_target": "11.00",
+      "expected_absorption": "0.00",
+      "expected_source": "fallback"
+    },
+    {
+      "case_id": "previous_close_low_guard",
+      "view_period": "day",
+      "daily_signal": "buy",
+      "weekly_signal": "wait",
+      "current_price": "9.00",
+      "previous_close": "10.00",
+      "target_daily": "1.00",
+      "target_weekly": null,
+      "absorption_daily": "8.00",
+      "absorption_weekly": "7.00",
+      "expected_target": "5.00",
+      "expected_absorption": "8.00",
+      "expected_source": "daily_guarded"
+    },
+    {
+      "case_id": "previous_close_high_guard",
+      "view_period": "day",
+      "daily_signal": "buy",
+      "weekly_signal": "wait",
+      "current_price": "9.00",
+      "previous_close": "10.00",
+      "target_daily": "30.00",
+      "target_weekly": null,
+      "absorption_daily": "8.00",
+      "absorption_weekly": "7.00",
+      "expected_target": "20.00",
+      "expected_absorption": "8.00",
+      "expected_source": "daily_guarded"
+    }
+  ],
+  "channel_window_rankings": [
+    {
+      "candidate_windows": [
+        10,
+        20,
+        24,
+        30,
+        52
+      ],
+      "page_execution": "same_bar_close",
+      "research_execution": "next_bar_open",
+      "source_relative_path": "sources/stock-detail-v3.2.82.html",
+      "source_response_sha256": "cd962170085dc2145fbaebf28a47ce6764b9f519e6032b54a896e37f0c9d0cf9"
+    }
+  ],
+  "composite_cases": [
+    {
+      "branch_key": "bullish-bullish",
+      "action_token": "BUILD_OR_ADD",
+      "position_token": "50-100",
+      "page_reachable": true
+    },
+    {
+      "branch_key": "bullish-bearish",
+      "action_token": "HOLD_AND_WAIT",
+      "position_token": "30-50",
+      "page_reachable": true
+    },
+    {
+      "branch_key": "bullish-neutral",
+      "action_token": "BUILD_OR_ADD",
+      "position_token": "50-100",
+      "page_reachable": true
+    },
+    {
+      "branch_key": "bearish-bullish",
+      "action_token": "REDUCE_AND_WAIT",
+      "position_token": "30-50",
+      "page_reachable": true
+    },
+    {
+      "branch_key": "bearish-bearish",
+      "action_token": "CLEAR",
+      "position_token": "0",
+      "page_reachable": true
+    },
+    {
+      "branch_key": "bearish-neutral",
+      "action_token": "CLEAR",
+      "position_token": "0",
+      "page_reachable": true
+    },
+    {
+      "branch_key": "cautious-bullish",
+      "action_token": "CAUTIOUS_HOLD",
+      "position_token": "30-50",
+      "page_reachable": true
+    },
+    {
+      "branch_key": "cautious-bearish",
+      "action_token": "REDUCE_AND_WAIT",
+      "position_token": "10-30",
+      "page_reachable": true
+    },
+    {
+      "branch_key": "cautious-neutral",
+      "action_token": "CAUTIOUS_HOLD",
+      "position_token": "10-30",
+      "page_reachable": true
+    },
+    {
+      "branch_key": "warning-bullish",
+      "action_token": "REDUCE_AND_WAIT",
+      "position_token": "10-30",
+      "page_reachable": false
+    },
+    {
+      "branch_key": "warning-bearish",
+      "action_token": "REDUCE_AND_WAIT",
+      "position_token": "10-30",
+      "page_reachable": false
+    },
+    {
+      "branch_key": "warning-neutral",
+      "action_token": "REDUCE_AND_WAIT",
+      "position_token": "10-30",
+      "page_reachable": false
+    },
+    {
+      "branch_key": "neutral-neutral",
+      "action_token": "WAIT_FOR_SIGNAL",
+      "position_token": "UNSPECIFIED",
+      "page_reachable": true
+    }
+  ],
+  "diagnostic_cases": [
+    {
+      "code": "000001.SH",
+      "period": "week",
+      "composite_decision": "持仓观望",
+      "composite_score": "60分",
+      "risk_label": "积极做多",
+      "position": "仓位 50%-70%",
+      "ai_output_sha256": "cfcd6e55693848827913316f09f89641addf9a1d890669b11d4ef8b6790ec18e",
+      "source_relative_path": "analysis/multi-period-page-facts.json",
+      "source_response_sha256": "2dc79a126cea64b3f4966ad22cb7d1d9b81e0f26b2986e52591b19f9618b38dc"
+    },
+    {
+      "code": "000001.SH",
+      "period": "day",
+      "composite_decision": "持仓观望",
+      "composite_score": "60分",
+      "risk_label": "积极做多",
+      "position": "仓位 50%-70%",
+      "ai_output_sha256": "76a30786a1c6fd192d03fe010e543cc60cc0ef09588ffad968421f4698668036",
+      "source_relative_path": "analysis/multi-period-page-facts.json",
+      "source_response_sha256": "2dc79a126cea64b3f4966ad22cb7d1d9b81e0f26b2986e52591b19f9618b38dc"
+    },
+    {
+      "code": "000001.SH",
+      "period": "60min",
+      "composite_decision": "持仓观望",
+      "composite_score": "60分",
+      "risk_label": "积极做多",
+      "position": "仓位 50%-70%",
+      "ai_output_sha256": "cfcd6e55693848827913316f09f89641addf9a1d890669b11d4ef8b6790ec18e",
+      "source_relative_path": "analysis/multi-period-page-facts.json",
+      "source_response_sha256": "2dc79a126cea64b3f4966ad22cb7d1d9b81e0f26b2986e52591b19f9618b38dc"
+    },
+    {
+      "code": "399001.SZ",
+      "period": "week",
+      "composite_decision": "减仓观望",
+      "composite_score": "33分",
+      "risk_label": "空仓防御",
+      "position": "仓位 0%",
+      "ai_output_sha256": "17cbb018b61e817fb579827ce12909fe3e8d5e123059ed39f2ba1b7608579d9c",
+      "source_relative_path": "analysis/multi-period-page-facts.json",
+      "source_response_sha256": "2dc79a126cea64b3f4966ad22cb7d1d9b81e0f26b2986e52591b19f9618b38dc"
+    },
+    {
+      "code": "399001.SZ",
+      "period": "day",
+      "composite_decision": "减仓观望",
+      "composite_score": "33分",
+      "risk_label": "空仓防御",
+      "position": "仓位 0%",
+      "ai_output_sha256": "17cbb018b61e817fb579827ce12909fe3e8d5e123059ed39f2ba1b7608579d9c",
+      "source_relative_path": "analysis/multi-period-page-facts.json",
+      "source_response_sha256": "2dc79a126cea64b3f4966ad22cb7d1d9b81e0f26b2986e52591b19f9618b38dc"
+    },
+    {
+      "code": "399001.SZ",
+      "period": "60min",
+      "composite_decision": "减仓观望",
+      "composite_score": "33分",
+      "risk_label": "空仓防御",
+      "position": "仓位 0%",
+      "ai_output_sha256": "17cbb018b61e817fb579827ce12909fe3e8d5e123059ed39f2ba1b7608579d9c",
+      "source_relative_path": "analysis/multi-period-page-facts.json",
+      "source_response_sha256": "2dc79a126cea64b3f4966ad22cb7d1d9b81e0f26b2986e52591b19f9618b38dc"
+    },
+    {
+      "code": "399006.SZ",
+      "period": "week",
+      "composite_decision": "减仓观望",
+      "composite_score": "33分",
+      "risk_label": "空仓防御",
+      "position": "仓位 0%",
+      "ai_output_sha256": "023a37ab2e9a74d08e51cdb6e6f563137e86ef198d8a5bdbdfc561e9fdda426e",
+      "source_relative_path": "analysis/multi-period-page-facts.json",
+      "source_response_sha256": "2dc79a126cea64b3f4966ad22cb7d1d9b81e0f26b2986e52591b19f9618b38dc"
+    },
+    {
+      "code": "399006.SZ",
+      "period": "day",
+      "composite_decision": "减仓观望",
+      "composite_score": "33分",
+      "risk_label": "空仓防御",
+      "position": "仓位 0%",
+      "ai_output_sha256": "023a37ab2e9a74d08e51cdb6e6f563137e86ef198d8a5bdbdfc561e9fdda426e",
+      "source_relative_path": "analysis/multi-period-page-facts.json",
+      "source_response_sha256": "2dc79a126cea64b3f4966ad22cb7d1d9b81e0f26b2986e52591b19f9618b38dc"
+    },
+    {
+      "code": "399006.SZ",
+      "period": "60min",
+      "composite_decision": "减仓观望",
+      "composite_score": "33分",
+      "risk_label": "空仓防御",
+      "position": "仓位 0%",
+      "ai_output_sha256": "023a37ab2e9a74d08e51cdb6e6f563137e86ef198d8a5bdbdfc561e9fdda426e",
+      "source_relative_path": "analysis/multi-period-page-facts.json",
+      "source_response_sha256": "2dc79a126cea64b3f4966ad22cb7d1d9b81e0f26b2986e52591b19f9618b38dc"
+    },
+    {
+      "code": "601233.SH",
+      "period": "week",
+      "composite_decision": "减仓观望",
+      "composite_score": "42分",
+      "risk_label": "积极做多",
+      "position": "仓位 50%-70%",
+      "ai_output_sha256": "74d5508faabb409b4fbb89ec225d6c0f2c4f1311bb3e8615ffd530b43d45ff7a",
+      "source_relative_path": "analysis/multi-period-page-facts.json",
+      "source_response_sha256": "2dc79a126cea64b3f4966ad22cb7d1d9b81e0f26b2986e52591b19f9618b38dc"
+    },
+    {
+      "code": "601233.SH",
+      "period": "day",
+      "composite_decision": "减仓观望",
+      "composite_score": "42分",
+      "risk_label": "积极做多",
+      "position": "仓位 50%-70%",
+      "ai_output_sha256": "74d5508faabb409b4fbb89ec225d6c0f2c4f1311bb3e8615ffd530b43d45ff7a",
+      "source_relative_path": "analysis/multi-period-page-facts.json",
+      "source_response_sha256": "2dc79a126cea64b3f4966ad22cb7d1d9b81e0f26b2986e52591b19f9618b38dc"
+    },
+    {
+      "code": "601233.SH",
+      "period": "60min",
+      "composite_decision": "减仓观望",
+      "composite_score": "42分",
+      "risk_label": "积极做多",
+      "position": "仓位 50%-70%",
+      "ai_output_sha256": "74d5508faabb409b4fbb89ec225d6c0f2c4f1311bb3e8615ffd530b43d45ff7a",
+      "source_relative_path": "analysis/multi-period-page-facts.json",
+      "source_response_sha256": "2dc79a126cea64b3f4966ad22cb7d1d9b81e0f26b2986e52591b19f9618b38dc"
+    },
+    {
+      "code": "600519.SH",
+      "period": "week",
+      "composite_decision": "持仓观望",
+      "composite_score": "50分",
+      "risk_label": "积极做多",
+      "position": "仓位 50%-70%",
+      "ai_output_sha256": "aafc01a82150d0302ff6a8255fe6763ee828b4e73c73737ffe27d6eb83c6bdf0",
+      "source_relative_path": "analysis/multi-period-page-facts.json",
+      "source_response_sha256": "2dc79a126cea64b3f4966ad22cb7d1d9b81e0f26b2986e52591b19f9618b38dc"
+    },
+    {
+      "code": "600519.SH",
+      "period": "day",
+      "composite_decision": "持仓观望",
+      "composite_score": "50分",
+      "risk_label": "积极做多",
+      "position": "仓位 50%-70%",
+      "ai_output_sha256": "2d4432635bd1aca01e847d53dd7e47ff3cc53f9d021ca2852574508e6497f75d",
+      "source_relative_path": "analysis/multi-period-page-facts.json",
+      "source_response_sha256": "2dc79a126cea64b3f4966ad22cb7d1d9b81e0f26b2986e52591b19f9618b38dc"
+    },
+    {
+      "code": "600519.SH",
+      "period": "60min",
+      "composite_decision": "持仓观望",
+      "composite_score": "50分",
+      "risk_label": "积极做多",
+      "position": "仓位 50%-70%",
+      "ai_output_sha256": "aafc01a82150d0302ff6a8255fe6763ee828b4e73c73737ffe27d6eb83c6bdf0",
+      "source_relative_path": "analysis/multi-period-page-facts.json",
+      "source_response_sha256": "2dc79a126cea64b3f4966ad22cb7d1d9b81e0f26b2986e52591b19f9618b38dc"
+    },
+    {
+      "code": "600036.SH",
+      "period": "week",
+      "composite_decision": "持仓观望",
+      "composite_score": "50分",
+      "risk_label": "积极做多",
+      "position": "仓位 50%-70%",
+      "ai_output_sha256": "bc5fe31d9a8b45fb5ea876862ed0b19b39e969275fec96621e2cab7073963e6a",
+      "source_relative_path": "analysis/multi-period-page-facts.json",
+      "source_response_sha256": "2dc79a126cea64b3f4966ad22cb7d1d9b81e0f26b2986e52591b19f9618b38dc"
+    },
+    {
+      "code": "600036.SH",
+      "period": "day",
+      "composite_decision": "持仓观望",
+      "composite_score": "50分",
+      "risk_label": "积极做多",
+      "position": "仓位 50%-70%",
+      "ai_output_sha256": "bc5fe31d9a8b45fb5ea876862ed0b19b39e969275fec96621e2cab7073963e6a",
+      "source_relative_path": "analysis/multi-period-page-facts.json",
+      "source_response_sha256": "2dc79a126cea64b3f4966ad22cb7d1d9b81e0f26b2986e52591b19f9618b38dc"
+    },
+    {
+      "code": "600036.SH",
+      "period": "60min",
+      "composite_decision": "持仓观望",
+      "composite_score": "50分",
+      "risk_label": "积极做多",
+      "position": "仓位 50%-70%",
+      "ai_output_sha256": "bc5fe31d9a8b45fb5ea876862ed0b19b39e969275fec96621e2cab7073963e6a",
+      "source_relative_path": "analysis/multi-period-page-facts.json",
+      "source_response_sha256": "2dc79a126cea64b3f4966ad22cb7d1d9b81e0f26b2986e52591b19f9618b38dc"
+    },
+    {
+      "code": "002594.SZ",
+      "period": "week",
+      "composite_decision": "减仓观望",
+      "composite_score": "31分",
+      "risk_label": "空仓防御",
+      "position": "仓位 0%",
+      "ai_output_sha256": "0b27494389723b4ae3897cc327115b204ff866dddee65832821dd8769fb864c0",
+      "source_relative_path": "analysis/multi-period-page-facts.json",
+      "source_response_sha256": "2dc79a126cea64b3f4966ad22cb7d1d9b81e0f26b2986e52591b19f9618b38dc"
+    },
+    {
+      "code": "002594.SZ",
+      "period": "day",
+      "composite_decision": "减仓观望",
+      "composite_score": "31分",
+      "risk_label": "空仓防御",
+      "position": "仓位 0%",
+      "ai_output_sha256": "0b27494389723b4ae3897cc327115b204ff866dddee65832821dd8769fb864c0",
+      "source_relative_path": "analysis/multi-period-page-facts.json",
+      "source_response_sha256": "2dc79a126cea64b3f4966ad22cb7d1d9b81e0f26b2986e52591b19f9618b38dc"
+    },
+    {
+      "code": "002594.SZ",
+      "period": "60min",
+      "composite_decision": "减仓观望",
+      "composite_score": "31分",
+      "risk_label": "空仓防御",
+      "position": "仓位 0%",
+      "ai_output_sha256": "0b27494389723b4ae3897cc327115b204ff866dddee65832821dd8769fb864c0",
+      "source_relative_path": "analysis/multi-period-page-facts.json",
+      "source_response_sha256": "2dc79a126cea64b3f4966ad22cb7d1d9b81e0f26b2986e52591b19f9618b38dc"
+    },
+    {
+      "code": "300750.SZ",
+      "period": "week",
+      "composite_decision": "建仓 / 加仓",
+      "composite_score": "100分",
+      "risk_label": "积极做多",
+      "position": "仓位 50%-70%",
+      "ai_output_sha256": "a55bd132fc094cd88165b5b4f724fb12155fcda8d533d97e69be0110deeb38e7",
+      "source_relative_path": "analysis/multi-period-page-facts.json",
+      "source_response_sha256": "2dc79a126cea64b3f4966ad22cb7d1d9b81e0f26b2986e52591b19f9618b38dc"
+    },
+    {
+      "code": "300750.SZ",
+      "period": "day",
+      "composite_decision": "建仓 / 加仓",
+      "composite_score": "100分",
+      "risk_label": "积极做多",
+      "position": "仓位 50%-70%",
+      "ai_output_sha256": "febae52d920d7421490a85084d3bf15c55de405e12bde0fdef8d548f6ce00a57",
+      "source_relative_path": "analysis/multi-period-page-facts.json",
+      "source_response_sha256": "2dc79a126cea64b3f4966ad22cb7d1d9b81e0f26b2986e52591b19f9618b38dc"
+    },
+    {
+      "code": "300750.SZ",
+      "period": "60min",
+      "composite_decision": "建仓 / 加仓",
+      "composite_score": "100分",
+      "risk_label": "积极做多",
+      "position": "仓位 50%-70%",
+      "ai_output_sha256": "a55bd132fc094cd88165b5b4f724fb12155fcda8d533d97e69be0110deeb38e7",
+      "source_relative_path": "analysis/multi-period-page-facts.json",
+      "source_response_sha256": "2dc79a126cea64b3f4966ad22cb7d1d9b81e0f26b2986e52591b19f9618b38dc"
+    },
+    {
+      "code": "000651.SZ",
+      "period": "week",
+      "composite_decision": "减仓观望",
+      "composite_score": "28分",
+      "risk_label": "谨慎持仓",
+      "position": "仓位 30%-50%",
+      "ai_output_sha256": "9fc030e016a9dbac1c69315d31eacd8e535f9f6de44f17f4c6b7492f2beda3c7",
+      "source_relative_path": "analysis/multi-period-page-facts.json",
+      "source_response_sha256": "2dc79a126cea64b3f4966ad22cb7d1d9b81e0f26b2986e52591b19f9618b38dc"
+    },
+    {
+      "code": "000651.SZ",
+      "period": "day",
+      "composite_decision": "减仓观望",
+      "composite_score": "28分",
+      "risk_label": "谨慎持仓",
+      "position": "仓位 30%-50%",
+      "ai_output_sha256": "9fc030e016a9dbac1c69315d31eacd8e535f9f6de44f17f4c6b7492f2beda3c7",
+      "source_relative_path": "analysis/multi-period-page-facts.json",
+      "source_response_sha256": "2dc79a126cea64b3f4966ad22cb7d1d9b81e0f26b2986e52591b19f9618b38dc"
+    },
+    {
+      "code": "000651.SZ",
+      "period": "60min",
+      "composite_decision": "减仓观望",
+      "composite_score": "28分",
+      "risk_label": "谨慎持仓",
+      "position": "仓位 30%-50%",
+      "ai_output_sha256": "9fc030e016a9dbac1c69315d31eacd8e535f9f6de44f17f4c6b7492f2beda3c7",
+      "source_relative_path": "analysis/multi-period-page-facts.json",
+      "source_response_sha256": "2dc79a126cea64b3f4966ad22cb7d1d9b81e0f26b2986e52591b19f9618b38dc"
+    }
+  ]
+}
