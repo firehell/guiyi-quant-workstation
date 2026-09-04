@@ -4,7 +4,7 @@
 
 **Goal:** 将全分支内容已进入后的 `develop` 收敛为唯一、可验证、可继续开发的集成基线，同时清除原始浏览器采集污染、陈旧文档与元数据，并安全清理无独有提交的普通残留 branch。
 
-**Architecture:** 采用前向、证据驱动的仓库治理流程。先在最新 clean `develop` 上冻结 exact baseline 和只读 inventory，再按“分发安全 → 文档与元数据 → 退役面与 authority → 全量验证 → branch 清理 → exact-head Review”的单向顺序推进；任何不满足删除、语义或验证前提的对象都 fail-closed，不通过猜测或历史重写处理。
+**Architecture:** 采用前向、证据驱动的仓库治理流程。先在最新 clean `develop` 上冻结 exact baseline 和只读 inventory，再按“分发安全 → 文档与元数据 → 退役面与 authority → 全量验证 → branch 清理 → exact-head Review”的单向顺序推进。任何不满足删除、语义或验证前提的对象都 fail-closed，不通过猜测、选择性 cherry-pick 或历史重写处理。
 
 **Tech Stack:** Git、Git worktree、GitHub CLI/API、Python 3、pytest、Ruff、Mypy、Node.js、pnpm、Playwright、OpenSpec。
 
@@ -19,12 +19,13 @@
 - `NEWOW_SCREENSHOT_POLICY=RETAIN`，必须保留 `docs/research/newow-v3.2.82/screenshots/**`。
 - `DISTRIBUTION_STATUS=DISTRIBUTION_APPROVED_BY_OWNER`，只覆盖现有 Newow screenshot，不覆盖原始 HTML、JavaScript、接口响应、逐 Bar 股票数据或 RQData/Canonical 原文。
 - `.playwright-cli/**` 必须在确认无 active consumer 后从当前 Git tree 删除，并由 `.gitignore` 阻止再次进入。
+- 只清理当前 Git tree，不重写已经公开的 Git 历史。若发现真实凭据或需要历史删除，停止并建立独立安全事件。
 - 不修改 Newow、HTDY、SuBing、Range Detector 的策略或指标公式；不改变成交时序、OOS 口径或可信研究定义。
 - 不恢复已退役 Strategy、Backtest、Execution Review、Attention、Trend Focus、Main Force Mirror、N Structure、旧 SuBing Watch 或兼容 reader。
 - 不修改 `main`，不合入 PR #333，不创建 tag 或 GitHub Release，不执行 Runtime promotion、真实 RQData/Canonical/production DB/Redis/Scope 写入，不发送真实通知。
-- 不修改 GitHub branch protection、ruleset 或 required checks，不进行 rebase shared history、force push 或 history rewrite。
+- 不修改 GitHub branch protection、ruleset 或 required checks，不进行 shared-history rebase、force push 或 history rewrite。
 - PR #333 的 `codex/release-v1.9.15` branch 在 Release 流程结束前必须保留；本任务只修正 stale metadata。
-- 任何普通 branch 只有在 `ahead_by=0`、非 diverged、无 open PR、未被本地 worktree checkout、远端 tip 未前移时才能删除。
+- 普通 branch 只有在 `ahead_by=0`、非 diverged、无 open PR、未被本地 worktree checkout、远端 tip 未前移时才能删除。
 - 任何策略、数据、migration、Runtime 或可信口径冲突均停止本计划对应 Slice，并拆为独立 Lane 3 任务。
 - 每个任务结束后提交一个可独立审查的 commit；不得全量暂存无关文件。
 - 完成状态只能是 `DEVELOP_CONVERGED`，不能声明 `RELEASED`、`RUNTIME_READY`、`NEWOW_PRODUCT_COMPLETE` 或 `PAPER_ACCOUNT_READY`。
@@ -45,7 +46,7 @@
 - `STATUS.md`：只修正 PR #333 current head、旧 Review 适用 SHA 和 stale 状态；不改变 Release/Runtime 真实结论。
 - `TESTING.md`：增加 repository-hygiene 定向验证命令。
 - `docs/tasks/*`：仅在 inventory 证明存在双重 active authority 时修正状态或删除被替代文件。
-- `tests/engineering/test_canonical_consistency.py`：仅在现有测试缺少已批准退役/版本 identity guard 时做最小补强；优先把新仓库清洁规则放入独立 `test_repository_hygiene.py`。
+- `tests/engineering/test_canonical_consistency.py`：仅在现有测试缺少已批准退役/版本 identity guard 时做最小补强；新仓库清洁规则优先进入独立 `test_repository_hygiene.py`。
 
 ### 删除候选
 
@@ -53,7 +54,7 @@
 - `docs/superpowers/specs/2026-08-31-newow-layered-strategy-reconstruction-design.md`。
 - `docs/superpowers/plans/2026-09-04-newow-futures-validation.md`。
 - `docs/superpowers/plans/2026-09-04-newow-page-v2-real-futures-evidence.md`。
-- inventory 证明已经被当前 active contract 取代且无 inbound consumer 的其他重复 task doc。
+- inventory 证明已被当前 active contract 取代且无 inbound consumer 的其他重复 task doc。
 
 ### GitHub 元数据
 
@@ -139,7 +140,7 @@ sed -n '1,260p' PROJECT_SOURCE.md
 sed -n '1,260p' DECISIONS.md
 sed -n '1,320p' docs/ARCHITECTURE.md
 sed -n '1,320p' TESTING.md
-sed -n '1,420p' docs/tasks/2026-09-04-develop-convergence-design.md
+sed -n '1,520p' docs/tasks/2026-09-04-develop-convergence-design.md
 ```
 
 Expected: 所有文件可读；不存在未解决的事实源冲突。若发现策略、数据、Runtime 或 Release 语义冲突，记录为 blocker 并停止 mutation。
@@ -302,7 +303,7 @@ EOF
 git diff -- docs/tasks/2026-09-04-develop-convergence-result.md
 ```
 
-Expected: 文档写入真实 40 字符 baseline，无 `TBD`、`TODO` 或伪造通过数量。
+Expected: 文档写入真实 40 字符 baseline，无未决占位符或伪造通过数量。
 
 - [ ] **Step 8: 提交只读 inventory 结果骨架**
 
@@ -348,7 +349,7 @@ git grep -n -E \
      ':!docs/tasks/2026-09-04-develop-convergence-implementation-plan.md' || true
 ```
 
-Expected: 不得出现源码、测试、构建脚本或 active canonical consumer。若存在 consumer，先停止删除并将其迁移方案追加到设计/计划 Review，不在本步骤猜测替代输入。
+Expected: 不得出现源码、测试、构建脚本或 active canonical consumer。若存在 consumer，先停止删除并将迁移方案追加到设计/计划 Review，不在本步骤猜测替代输入。
 
 - [ ] **Step 2: 运行删除前 secret/distribution scan**
 
@@ -426,12 +427,14 @@ PYTHONPATH=services/quant-api:packages/quant-core \
 
 Expected: FAIL；至少因为 `.playwright-cli/**` 仍被跟踪、`.gitignore` 尚未忽略 probe 或 dossier 尚无 `DISTRIBUTION_APPROVED_BY_OWNER`。
 
-- [ ] **Step 5: 删除 tracked capture 并加入 ignore**
+- [ ] **Step 5: 删除 tracked capture 并幂等加入 ignore**
 
 Run:
 
 ```bash
-printf '\n# local browser capture artifacts\n.playwright-cli/\n' >> .gitignore
+grep -qxF '.playwright-cli/' .gitignore \
+  || printf '\n# local browser capture artifacts\n.playwright-cli/\n' >> .gitignore
+
 git rm -r -- .playwright-cli
 
 git ls-files '.playwright-cli/**'
@@ -451,7 +454,7 @@ git check-ignore 指向 .gitignore 中的 .playwright-cli/ 规则
 
 Replace README 中“若仓库将设为公开，还应由仓库所有者确认第三方页面截图的公开分发权限”一段为：
 
-```markdown
+````markdown
 ## Owner 截图分发决定
 
 2026-09-04，仓库 Owner 明确选择方案 A，批准
@@ -466,7 +469,7 @@ NEWOW_SCREENSHOT_POLICY = RETAIN
 该状态只记录 Owner 的仓库分发选择，不构成法律意见，也不扩大对第三方内容的
 权利声明。它不覆盖牛哇完整 HTML、JavaScript、原始接口响应、股票/指数逐 Bar
 输入或 RQData/Canonical 原始事实；这些内容仍不得进入 GitHub-safe dossier。
-```
+````
 
 - [ ] **Step 7: 运行 guard，确认通过**
 
@@ -485,15 +488,15 @@ Expected: PASS。
 Run:
 
 ```bash
-git ls-files \
-  | grep -E '(^|/)(browser-page-|browser-signals-|multi-period-browser|oscillation-browser|subplots-browser)' \
-  && exit 1 || true
+if git ls-files \
+  | grep -E '(^|/)(browser-page-|browser-signals-|multi-period-browser|oscillation-browser|subplots-browser)'; then
+  exit 1
+fi
 
-git ls-files 'docs/research/newow-v3.2.82/screenshots/**' \
-  | wc -l
+test "$(git ls-files 'docs/research/newow-v3.2.82/screenshots/**' | wc -l | tr -d ' ')" -gt 0
 ```
 
-Expected: 第一条无输出；第二条大于 0。
+Expected: 无禁止文件输出；现有截图数量大于 0。
 
 - [ ] **Step 9: 更新结果文档并提交**
 
@@ -513,12 +516,11 @@ git add .gitignore \
   docs/research/newow-v3.2.82/README.md \
   docs/tasks/2026-09-04-develop-convergence-result.md \
   tests/engineering/test_repository_hygiene.py
-git add -u .playwright-cli
 git diff --cached --check
 git commit -m "chore: remove tracked browser capture artifacts"
 ```
 
-Expected: commit 只包含本 Task 文件。
+Expected: commit 只包含本 Task 文件和 `git rm` 已暂存的 `.playwright-cli/**` 删除。
 
 ---
 
@@ -701,7 +703,7 @@ PYTHONPATH=services/quant-api:packages/quant-core \
 
 Create `/tmp/guiyi-develop-convergence/issue-307.md`:
 
-```markdown
+````markdown
 ## 当前目标
 
 ```text
@@ -754,7 +756,7 @@ v3 的数学公式仍为 MACD(12,26,9) exact CROSS + `EMA(CLOSE, 21)`；v3 只�
 8. Owner 确认微信实际收到同一自然 Event。
 
 synthetic、replay、backfill、手工发送、provider accepted 或代码测试均不能替代自然 Event 与实际送达确认。本 Issue 不授权订单、账户、自动交易、生产数据写入、Runtime 切换或真实通知。
-```
+````
 
 Run:
 
@@ -904,12 +906,11 @@ Run:
 git add STATUS.md TESTING.md \
   tests/engineering/test_repository_hygiene.py \
   docs/tasks/2026-09-04-develop-convergence-result.md
-git add -u docs/superpowers
 git diff --cached --check
 git commit -m "docs: converge repository authorities and metadata"
 ```
 
-Expected: commit 不包含策略公式、业务功能、Release 或 Runtime mutation。
+Expected: commit 还包含 `git rm` 已暂存的三个 `docs/superpowers/*` 删除，但不包含策略公式、业务功能、Release 或 Runtime mutation。
 
 ---
 
@@ -923,7 +924,7 @@ Expected: commit 不包含策略公式、业务功能、Release 或 Runtime muta
 
 **Interfaces:**
 - Consumes: Task B/C 已清理的 Git tree 和现有 executable canonical tests。
-- Produces: 一份可审查的 authority/retired-surface结论；无未经计划的业务改动。
+- Produces: 可审查的 authority/retired-surface 结论；无未经计划的业务改动。
 
 - [ ] **Step 1: 运行 canonical consistency 和退休面定向测试**
 
@@ -986,7 +987,7 @@ git grep -n -E \
 cat /tmp/guiyi-develop-convergence/authority-scan.txt
 ```
 
-Review every hit against active canonical. Expected: 无 Historical consumer 绕过 `MarketDataService`、无 actual_dominant 自判主力/跨频 fallback、无旧 active surface。研究文档、测试中的负面断言和删除迁移 lineage 可以存在，但不得是 active consumer。
+Review every hit against active canonical. Expected: 无 Historical consumer 绕过 `MarketDataService`、无 actual_dominant 自判主力/跨频 fallback、无旧 active surface。研究文档、测试中的负面断言和删除 migration lineage 可以存在，但不得是 active consumer。
 
 - [ ] **Step 4: 审计 repainting、page-parity 和 causal-research 隔离**
 
@@ -1058,7 +1059,7 @@ Expected: 若无普通回归，commit 只更新结果文档；若有普通回归
 - Consumes: Task B–D 的最终 Git tree。
 - Produces: full validation evidence、`VALIDATED_HEAD` 和进入 branch cleanup 的授权条件。
 
-- [ ] **Step 1: 确认 worktree clean except result update**
+- [ ] **Step 1: 确认 worktree clean**
 
 Run:
 
@@ -1176,7 +1177,7 @@ Expected: 两个 SHA 相同。若 `develop` 前移，先 merge latest `origin/de
 
 - [ ] **Step 9: 写入真实验证结果并提交**
 
-将每条命令、exit code、真实测试数量和时间写入结果文档；不得写“应该通过”或复用旧 PR 结果。
+将每条命令、exit code、真实测试数量和时间写入结果文档；不得写推测性通过结论或复用旧 PR 结果。
 
 Run:
 
@@ -1192,15 +1193,15 @@ Expected: `VALIDATED_HEAD` 为 40 字符 SHA。该 SHA 进入 Task F；后续任
 
 ---
 
-### Task F: 安全清理普通残留 branch 和无用 worktree
+### Task F: 安全清理普通残留 branch；本地 worktree 默认保留并记录
 
 **Files:**
 - Modify: `docs/tasks/2026-09-04-develop-convergence-result.md`
-- Git refs: 仅删除通过全部 preflight 的普通残留 branch。
+- Git refs: 仅删除通过全部 preflight 的普通远端残留 branch。
 
 **Interfaces:**
 - Consumes: Task E 通过的 `VALIDATED_HEAD`、Task A branch inventory 和当前 PR/worktree readback。
-- Produces: 只剩 `main`、`develop`、active release、当前 task/review 以及有明确保留理由的 branch。
+- Produces: 只剩 `main`、`develop`、active release、当前 task/review 以及有明确保留理由的 branch；不误删用户本地 worktree。
 
 - [ ] **Step 1: 重新生成 branch、PR 和 worktree readback**
 
@@ -1223,76 +1224,148 @@ python3 -m json.tool /tmp/guiyi-develop-convergence/open-prs-before-delete.json
 
 Expected: PR #333 仍使用 `codex/release-v1.9.15`；当前 implementation PR 使用 `chore/develop-convergence`。二者都不能删除。
 
-- [ ] **Step 2: 生成删除候选，不使用宽泛通配删除**
-
-Create `/tmp/guiyi-develop-convergence/branch-delete-candidates.txt` from the current remote list, excluding exactly:
-
-```text
-main
-develop
-codex/release-v1.9.15
-chore/develop-convergence
-任何当前 open PR head
-任何当前 worktree branch
-```
+- [ ] **Step 2: 生成删除分类文件**
 
 Run:
 
 ```bash
-git for-each-ref \
-  --format='%(refname:short)' \
-  refs/remotes/origin \
-  | sed 's#^origin/##' \
-  | grep -v '^HEAD$' \
-  | sort > /tmp/guiyi-develop-convergence/all-remote-branches.txt
+python3 - <<'PY'
+from __future__ import annotations
 
-cat /tmp/guiyi-develop-convergence/all-remote-branches.txt
+import json
+import subprocess
+from pathlib import Path
+
+root = Path('.')
+tmp = Path('/tmp/guiyi-develop-convergence')
+prs = json.loads((tmp / 'open-prs-before-delete.json').read_text())
+open_pr_heads = {str(pr['headRefName']) for pr in prs}
+
+worktree_lines = (tmp / 'worktrees-before-delete.txt').read_text().splitlines()
+worktree_branches = {
+    line.removeprefix('branch refs/heads/')
+    for line in worktree_lines
+    if line.startswith('branch refs/heads/')
+}
+
+preserve = {
+    'main',
+    'develop',
+    'codex/release-v1.9.15',
+    'chore/develop-convergence',
+} | open_pr_heads | worktree_branches
+
+refs = subprocess.run(
+    ['git', 'for-each-ref', '--format=%(refname:short)', 'refs/remotes/origin'],
+    cwd=root,
+    check=True,
+    capture_output=True,
+    text=True,
+).stdout.splitlines()
+
+approved: list[str] = []
+retained: list[str] = []
+for ref in sorted(refs):
+    if ref in {'origin/HEAD', 'origin/main', 'origin/develop'}:
+        continue
+    branch = ref.removeprefix('origin/')
+    if branch in preserve:
+        retained.append(f'{branch}|PRESERVED')
+        continue
+    ahead = int(subprocess.run(
+        ['git', 'rev-list', '--count', f'origin/develop..{ref}'],
+        cwd=root,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip())
+    ancestor = subprocess.run(
+        ['git', 'merge-base', '--is-ancestor', ref, 'origin/develop'],
+        cwd=root,
+        check=False,
+    ).returncode == 0
+    if ahead == 0 and ancestor:
+        approved.append(branch)
+    else:
+        retained.append(f'{branch}|UNMERGED_OR_DIVERGED')
+
+(tmp / 'approved-remote-branch-deletes.txt').write_text(
+    ''.join(f'{branch}\n' for branch in approved),
+    encoding='utf-8',
+)
+(tmp / 'retained-remote-branches.txt').write_text(
+    ''.join(f'{row}\n' for row in retained),
+    encoding='utf-8',
+)
+PY
+
+cat /tmp/guiyi-develop-convergence/approved-remote-branch-deletes.txt
+cat /tmp/guiyi-develop-convergence/retained-remote-branches.txt
 ```
 
-Expected: 候选逐行显式列出；不得使用 `git branch | xargs git push --delete` 之类宽泛命令。
+Expected: 文件逐行显式列出 approved 与 retained branch。人工检查 approved 文件中绝不包含 `main`、`develop`、`codex/release-v1.9.15`、`chore/develop-convergence` 或任一 open PR/worktree branch。
 
-- [ ] **Step 3: 对每个候选执行五项 preflight**
+- [ ] **Step 3: 对 approved 文件中的每个 branch 重做删除前 preflight**
 
-For each candidate `${branch}`:
+Run:
 
 ```bash
-remote_ref="origin/${branch}"
-initial_tip="$(git rev-parse "${remote_ref}")"
+: > /tmp/guiyi-develop-convergence/deleted-remote-branches.txt
 
-git merge-base --is-ancestor "${remote_ref}" origin/develop
+while IFS= read -r branch; do
+  test -n "${branch}"
+  remote_ref="origin/${branch}"
+  initial_tip="$(git rev-parse "${remote_ref}")"
 
-test -z "$(git log --oneline origin/develop.."${remote_ref}")"
+  git merge-base --is-ancestor "${remote_ref}" origin/develop
+  test -z "$(git log --oneline origin/develop.."${remote_ref}")"
 
-! grep -Fq "refs/heads/${branch}" \
-  /tmp/guiyi-develop-convergence/worktrees-before-delete.txt
+  if grep -Fq "branch refs/heads/${branch}" \
+    /tmp/guiyi-develop-convergence/worktrees-before-delete.txt; then
+    printf 'worktree uses %s\n' "${branch}" >&2
+    exit 1
+  fi
 
-! python3 - "${branch}" <<'PY'
+  python3 - "${branch}" <<'PY'
 import json
 import sys
 from pathlib import Path
+
 branch = sys.argv[1]
-prs = json.loads(Path('/tmp/guiyi-develop-convergence/open-prs-before-delete.json').read_text())
-raise SystemExit(0 if any(pr['headRefName'] == branch for pr in prs) else 1)
+prs = json.loads(
+    Path('/tmp/guiyi-develop-convergence/open-prs-before-delete.json').read_text()
+)
+raise SystemExit(1 if any(pr['headRefName'] == branch for pr in prs) else 0)
 PY
 
-git fetch origin "refs/heads/${branch}:refs/remotes/origin/${branch}"
-current_tip="$(git rev-parse "${remote_ref}")"
-test "${initial_tip}" = "${current_tip}"
+  git fetch origin "refs/heads/${branch}:refs/remotes/origin/${branch}"
+  current_tip="$(git rev-parse "${remote_ref}")"
+  test "${initial_tip}" = "${current_tip}"
+
+done < /tmp/guiyi-develop-convergence/approved-remote-branch-deletes.txt
 ```
 
-Expected: 五项均成功。任一项失败时把 branch 记录为 `RETAINED_<REASON>`，不得删除或 force。
+Expected: 所有 preflight exit 0。任一失败时不删除任何尚未处理的 branch，更新分类文件并重新 Review。
 
-- [ ] **Step 4: 逐个删除通过 preflight 的远端 branch**
+- [ ] **Step 4: 从已审查的 approved 文件逐个删除远端 branch**
 
-Run one explicit command per approved branch:
+Run:
 
 ```bash
-git push origin --delete <exact-branch-name>
+while IFS= read -r branch; do
+  test -n "${branch}"
+  tip="$(git rev-parse "origin/${branch}")"
+  git push origin --delete "${branch}"
+  printf '%s|%s\n' "${branch}" "${tip}" \
+    >> /tmp/guiyi-develop-convergence/deleted-remote-branches.txt
+done < /tmp/guiyi-develop-convergence/approved-remote-branch-deletes.txt
+
+cat /tmp/guiyi-develop-convergence/deleted-remote-branches.txt
 ```
 
-Expected: GitHub 返回该 exact branch 已删除。不得把 `main`、`develop`、`codex/release-v1.9.15`、`chore/develop-convergence` 或 open PR head 放入命令。
+Expected: 只删除 approved 文件中的 branch。不得通过通配符、宽泛 `xargs` 或 force 删除。
 
-- [ ] **Step 5: 清理已经合入且未被使用的本地 branch/worktree**
+- [ ] **Step 5: 本地旧 worktree 只读分类，不自动批量删除**
 
 Run:
 
@@ -1300,14 +1373,7 @@ Run:
 git worktree list --porcelain
 ```
 
-仅对已不再使用、clean、已合入的旧 task worktree执行：
-
-```bash
-git worktree remove <exact-worktree-path>
-git branch -d <exact-local-branch>
-```
-
-Expected: 每次删除前 `git status --short` clean；不得 `-D`。
+Expected: 将除当前 `develop-convergence` worktree 外的每个本地 worktree 路径、branch、dirty 状态和保留原因写入结果文档。由于本地 worktree 可能承载用户未提交状态，本任务默认不批量删除；当前 task worktree 只在 Task G 集成 readback 后清理。
 
 - [ ] **Step 6: 重新列出远端 branch 并记录结果**
 
@@ -1327,6 +1393,7 @@ git for-each-ref \
 DELETED: branch + final tip
 RETAINED: branch + exact reason
 PRESERVED: main / develop / release / current task
+LOCAL_WORKTREE_RETAINED: path + branch + reason
 ```
 
 - [ ] **Step 7: 提交 branch 清理结果**
@@ -1339,7 +1406,7 @@ git diff --cached --check
 git commit -m "docs: record residual branch cleanup"
 ```
 
-Expected: 该 commit 只记录真实 readback；branch 删除本身由 GitHub ref history体现。
+Expected: commit 只记录真实 readback；branch 删除本身由 GitHub ref history 体现。
 
 ---
 
@@ -1361,7 +1428,7 @@ Set:
 状态 = REVIEW_PENDING
 ```
 
-Write all known facts, unresolved retained branches and validation outputs. Do not write `DEVELOP_CONVERGED` yet.
+写入所有已知事实、保留 branch/worktree、验证输出和未完成 Gate，不写 `DEVELOP_CONVERGED`。
 
 Run:
 
@@ -1395,7 +1462,7 @@ Expected: Draft PR 指向 `develop`，head 为 exact `REVIEW_HEAD`。
 
 - [ ] **Step 3: 运行 Standards Review**
 
-Reviewer must inspect the exact `REVIEW_HEAD` and report:
+Reviewer 必须在 exact `REVIEW_HEAD` 上检查并报告：
 
 ```text
 P1 count
@@ -1410,14 +1477,14 @@ Expected: P1=0，P2=0。否则修复后生成新 SHA，并重跑受影响验证�
 
 - [ ] **Step 4: 运行 Spec Review**
 
-Reviewer must compare the same exact `REVIEW_HEAD` against:
+Reviewer 必须在同一 exact `REVIEW_HEAD` 上对照：
 
 ```text
 docs/tasks/2026-09-04-develop-convergence-design.md
 docs/tasks/2026-09-04-develop-convergence-implementation-plan.md
 ```
 
-Review must cover:
+覆盖：
 
 ```text
 截图方案 A 已执行
@@ -1434,7 +1501,7 @@ Expected: P1=0，P2=0。
 
 - [ ] **Step 5: 在 Review 后重跑最终必要检查**
 
-Run on the exact final task head:
+Run:
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
@@ -1463,7 +1530,7 @@ branch cleanup = actual deleted/retained list
 status = DEVELOP_CONVERGED_CANDIDATE
 ```
 
-Commit and repeat the targeted final checks because this documentation commit changes the head:
+Commit and repeat the targeted final checks because the documentation commit changes the head:
 
 ```bash
 git add docs/tasks/2026-09-04-develop-convergence-result.md
@@ -1480,11 +1547,11 @@ openspec validate --specs --strict --no-interactive
 git diff "$(git merge-base HEAD origin/develop)"...HEAD --check
 ```
 
-Expected: 全部 exit 0。独立 reviewers 必须确认文档-only final commit 未改变其结论，或在 `FINAL_HEAD` 上重新签署简短 exact-head confirmation。
+Expected: 全部 exit 0。独立 reviewers 必须确认文档-only final commit 未改变结论，或在 `FINAL_HEAD` 上重新签署简短 exact-head confirmation。
 
 - [ ] **Step 7: 请求 Owner 审查并取得“允许集成 develop”**
 
-Present:
+提交以下事实：
 
 ```text
 FINAL_HEAD
@@ -1492,25 +1559,35 @@ FINAL_HEAD
 测试结果
 Standards/Spec Review
 删除的文件和 branch
-保留 branch 及理由
+保留 branch/worktree 及理由
 Issue/PR 元数据改变
 未触及 main/Release/Runtime/生产写入的证明
 ```
 
 Expected: Owner 明确回复“允许集成 develop”。未取得该 Gate 不合并。
 
-- [ ] **Step 8: 合入 `develop`**
+- [ ] **Step 8: 解析 implementation PR number 并合入 `develop`**
 
 After the explicit Gate:
 
 ```bash
-gh pr ready <implementation-pr-number> \
-gh pr merge <implementation-pr-number> \
+IMPLEMENTATION_PR="$(gh pr list \
+  --repo firehell/guiyi-quant-workstation \
+  --state open \
+  --base develop \
+  --head chore/develop-convergence \
+  --json number \
+  --jq 'if length == 1 then .[0].number else empty end')"
+
+test -n "${IMPLEMENTATION_PR}"
+gh pr ready "${IMPLEMENTATION_PR}" \
+  --repo firehell/guiyi-quant-workstation
+gh pr merge "${IMPLEMENTATION_PR}" \
   --repo firehell/guiyi-quant-workstation \
   --merge
 ```
 
-Expected: PR merged into `develop`。不得修改 `main` 或 PR #333。
+Expected: 唯一匹配 PR merged into `develop`。不得修改 `main` 或 PR #333。
 
 - [ ] **Step 9: readback 集成结果并清理当前 task worktree/branch**
 
@@ -1529,7 +1606,7 @@ git branch -d chore/develop-convergence
 git push origin --delete chore/develop-convergence
 ```
 
-Expected: `FINAL_HEAD` 是新 `origin/develop` 的祖先；task worktree cleanly removed；branch 普通删除成功；`main`、`codex/release-v1.9.15` 和 Runtime 未变化。
+Expected: `FINAL_HEAD` 是新 `origin/develop` 的祖先；task worktree cleanly removed；task branch 普通删除成功；`main`、`codex/release-v1.9.15` 和 Runtime 未变化。
 
 - [ ] **Step 10: 最终结论**
 
@@ -1565,12 +1642,14 @@ Newow 后续产品化、参考交易、OOS、Shadow 和模拟账户
 - Issue #286/#259/#307 与 PR #333：Task C。
 - 退役面、双重 authority、page-parity/repainting/causal 隔离：Task D。
 - Backend/Web/OpenSpec/secret/diff 全量验证：Task E。
-- branch/worktree 安全清理：Task F。
+- branch 安全清理与本地 worktree 保守处理：Task F。
 - exact-head Standards/Spec Review、Owner Gate 和 develop 集成：Task G。
 
-### Placeholder scan
+### Ambiguity and placeholder scan
 
-本计划不使用 `TBD`、`TODO`、未定义函数或“写适当测试”等开放指令。动态 SHA、PR number 和 branch 列表均通过明确命令读取；任何 readback 不符都有固定停止条件。
+- 无未决占位符；动态 SHA、PR number、branch 和 worktree 列表均由明确命令读取。
+- 任何 readback 与计划固定身份不一致时均有停止条件，不会把旧模板应用到新 head。
+- Markdown 中含嵌套代码块的示例使用四反引号外层，避免文档结构断裂。
 
 ### Type and command consistency
 
@@ -1578,3 +1657,4 @@ Newow 后续产品化、参考交易、OOS、Shadow 和模拟账户
 - baseline、validated head、review head 和 final head 均为 40 字符 Git SHA，不能互相替代。
 - `codex/release-v1.9.15` 始终保留；普通 branch 清理不处理 active Release branch。
 - `DISTRIBUTION_APPROVED_BY_OWNER` 只用于现有 Newow screenshots；`.playwright-cli/**` 始终删除。
+- 本地旧 worktree 默认保留并记录，只有当前任务 worktree 在集成 readback 后清理。
