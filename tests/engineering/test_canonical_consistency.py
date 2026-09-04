@@ -285,6 +285,12 @@ def test_newow_v3282_coverage_has_one_status_and_no_unknown_active_formula() -> 
         for row in data_rows
         if row[2] in {"UNKNOWN", "REJECTED"}
     )
+    rows_by_feature = {row[0]: row for row in data_rows}
+    assert rows_by_feature["账户、自选、盯盘、订阅与分享"][2] == "UNKNOWN"
+    assert rows_by_feature["基本面、CANSLIM 与大师选股"][2] == "UNKNOWN"
+    rejected = rows_by_feature["页面同 Bar 无成本比较器直接晋升可信策略"]
+    assert rejected[2] == "REJECTED"
+    assert rejected[3:5] == ["none", "none"]
 
 
 def test_newow_v3282_golden_evidence_is_bounded_and_complete() -> None:

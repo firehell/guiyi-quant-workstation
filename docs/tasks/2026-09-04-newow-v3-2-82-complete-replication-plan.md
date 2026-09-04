@@ -109,7 +109,7 @@ Expected: 首页仍自报 v3.2.82。任一 hash 与 2026-09-04 13:15 CST 基线�
 
 AI 诊股证据同时冻结旧模板 A-E 的选择条件和当前 v3.2.49 周×日 16 组合矩阵。旧 A-E 依赖月线的部分只记录 OBSERVED_EXACT，不带入归一正式 1w/1d/60m Core；当前 16 组合拆成输入事实、branch key 和输出 token，不复制原站 HTML 文案。
 
-网络监听只保留 host 为 118.24.52.32 的 GET/只读 POST；若 header/body 出现 authorization、cookie、token、password 或用户标识，丢弃响应并标记 OUT_OF_SCOPE_PRIVATE。禁止触发关注、盯盘、订阅、分享或写操作。
+网络监听默认只保留 host 为 `118.24.52.32` 的 GET/只读 POST。Slice A 运行时发现详情页自身会匿名调用 `www.v8848.cn/api/kline`；经 2026-09-04 只读证据边界复核，允许额外冻结且仅冻结该页面自产生的 `GET /api/kline` 响应，固定标的为本 Step 的 9 个代码、周期为 week/day/60min，不允许扩展到该 host 的其他路径或主动业务请求。两类 host 的请求若 header/body 出现 authorization、cookie、token、password 或用户标识，均丢弃响应并标记 `UNKNOWN`；禁止触发关注、盯盘、订阅、分享或写操作。
 
 - [ ] **Step 3: 冻结六类筛选行为**
 

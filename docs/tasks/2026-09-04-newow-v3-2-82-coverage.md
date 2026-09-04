@@ -25,6 +25,7 @@
 | 目标价与吸筹价展示选择 | strategy-calc.js v1.0.9, query v3.2.82 | OBSERVED_EXACT | newow_target_absorb_display_selection_page_v1 | none | 日周状态、突破升级、fallback 与昨收 clamp 已冻结 | 尚未实现 | Slice B 枚举分支并逐值实现 |
 | 参数比较器页面口径 | stock_detail.html v3.2.63 | OBSERVED_EXACT | newow_channel_window_compare_page_v1 | none | 候选 10/20/24/30/52 与页面同 Bar 行为已冻结 | 禁止直接用于可信晋升 | Slice B 与 causal-research 身份隔离 |
 | 参数比较器因果研究口径 | 归一设计 v1 | BEHAVIOR_INFERRED | newow_channel_window_compare_causal_v1 | none | 页面偏差的 clean-room 修正设计，不宣称页面公式 | 需要 next-open、成本、rollover、prefix 合同 | Slice B TDD 实现并保留研究边界 |
+| 页面同 Bar 无成本比较器直接晋升可信策略 | stock_detail.html v3.2.63 | REJECTED | none | none | 页面执行时序和无成本口径已冻结 | 不迁移 | 因违反因果与成本边界而永久拒绝；只允许另建 causal-research 身份 |
 | 综合决策 13 格矩阵 | stock_detail.html v3.2.63 | OBSERVED_EXACT | newow_composite_decision_page_v1 | none | 13 branch keys 与 27 个非占位页面输出 | 尚未实现 | Slice C page-exact 与 corrected 分身份 |
 | 确定性评分与仓位矩阵 | stock_detail.html v3.2.63 | OBSERVED_EXACT | newow_composite_certainty_page_v1 | none | 27 个页面分数、决策与仓位文本 | 尚未实现 | Slice C 枚举全状态空间 |
 | 日线波动率解释 | stock_detail.html v3.2.63 | OBSERVED_EXACT | newow_daily_atr20_volatility_page_v1 | none | 27 个页面波动率输出 | 尚未实现 | Slice C ATR 边界与缺失数据测试 |
@@ -38,8 +39,8 @@
 | 技术选股 daily_buy | screener.html v3.2.82, server response 2026-09-04 | UNKNOWN | server-private daily_buy behavior | none | 完整 2 页 21 行时点观察 | 不迁移 | Slice D 第二截面与趋势状态反推 |
 | 技术选股 weekly_buy | screener.html v3.2.82, server response 2026-09-04 | UNKNOWN | server-private weekly_buy behavior | none | 完整 2 页 21 行时点观察 | 不迁移 | Slice D 第二截面与趋势状态反推 |
 | 技术选股 oscillation_build | screener.html v3.2.82, server response 2026-09-04 | UNKNOWN | server-private oscillation_build behavior | none | 完整 1 页 1 行且信号字段缺失 | 不迁移 | Slice D 第二截面与震荡状态反推 |
-| 账户、自选、盯盘、订阅与分享 | 需用户私有状态 | REJECTED | none | none | 未采集且不触发 | 不适用 | 永久边界，除非用户另行明确授权 |
-| 基本面、CANSLIM 与大师选股 | screener.html public UI only | REJECTED | none | none | 仅有页面阈值描述，无权威数据源合同 | 不扩建 A 股基本面平台 | 保留文档研究，不实现 |
+| 账户、自选、盯盘、订阅与分享 | 需用户私有状态 | UNKNOWN | none | none | 未采集且不触发 | 不适用 | 永久边界，除非用户另行明确授权 |
+| 基本面、CANSLIM 与大师选股 | screener.html public UI only | UNKNOWN | none | none | 仅有页面阈值描述，无权威数据源合同 | 不扩建 A 股基本面平台 | 保留文档研究，不实现 |
 
 ## 采集与结论边界
 
