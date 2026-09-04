@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test'
 
 import {
+  assertNewowCupFixtureLifecycle,
   detailBar,
   htdyEvent,
   installDetailFakeWebSocket,
@@ -43,8 +44,8 @@ async function mockReadyTrend(page, options = {}) {
       return {
         bars,
         resolvedContractSegments: [
-          { contract: `${upper}2601`, start_trading_day: bars[0].trading_day, end_trading_day: bars[5].trading_day },
-          { contract: `${upper}2605`, start_trading_day: bars[6].trading_day, end_trading_day: bars.at(-1).trading_day },
+          { contract: `${upper}2601`, start_trading_day: bars[0].trading_day, end_trading_day: bars[3].trading_day },
+          { contract: `${upper}2605`, start_trading_day: bars[4].trading_day, end_trading_day: bars.at(-1).trading_day },
         ],
       }
     },
@@ -359,21 +360,7 @@ test('invalid identity fails closed and only recovers after an explicit click', 
 
 test('Trend uses one fixed Newow authority and preserves same-Bar facts in history', async ({ page }) => {
   const fixture = newowTrendDetailFixture({ product: 'jm' })
-  const segmentForBarEnd = new Map(fixture.bars.map((bar) => [bar.bar_end, bar.segment_id]))
-  for (const cup of fixture.cup_handles) {
-    const segment = segmentForBarEnd.get(cup.state_changed_at)
-    expect(segment).toBeTruthy()
-    for (const pivotAt of [
-      cup.left_rim.pivot_at,
-      cup.bottom.pivot_at,
-      cup.right_rim.pivot_at,
-      cup.handle_start_at,
-      cup.handle_extreme?.pivot_at,
-      cup.pivot_frozen_at,
-    ].filter(Boolean)) {
-      expect(segmentForBarEnd.get(pivotAt)).toBe(segment)
-    }
-  }
+  expect(() => assertNewowCupFixtureLifecycle(fixture)).not.toThrow()
   await installDetailFakeWebSocket(page)
   const requests = await mockReadyTrend(page)
   await page.goto(trendJm)
@@ -410,7 +397,7 @@ test('Trend uses one fixed Newow authority and preserves same-Bar facts in histo
   await expect(chart).toHaveAttribute('data-chart-source', 'newow')
   await expect(chart).toHaveAttribute('data-pane-count', '2')
   await expect(chart).toHaveAttribute('data-newow-band-area-count', '8')
-  await expect(chart).toHaveAttribute('data-newow-marker-count', '10')
+  await expect(chart).toHaveAttribute('data-newow-marker-count', '17')
   await expect(chart).toHaveAttribute('data-newow-rollover-count', '1')
   await expect(chart).toHaveAttribute('data-newow-marker-ids', /escape-latest-d1/)
   await expect(chart).not.toHaveAttribute('data-newow-marker-ids', /escape-latest-d2|escape-latest-d3/)

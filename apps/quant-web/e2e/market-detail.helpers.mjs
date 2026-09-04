@@ -59,9 +59,71 @@ export function trendGenericBars(symbol = 'jm') {
       volume: 2_000 + index * 100,
       turnover: 200_000 + index * 10_000,
       open_interest: 3_000 + index * 50,
-      physical_contract: index < 6 ? `${upper}2601` : `${upper}2605`,
+      physical_contract: index < 4 ? `${upper}2601` : `${upper}2605`,
     }
   })
+}
+
+export function assertNewowCupFixtureLifecycle(fixture) {
+  const barIndex = new Map(fixture.bars.map((bar, index) => [bar.bar_end, index]))
+  const segmentFor = (barEnd) => fixture.bars[barIndex.get(barEnd)]?.segment_id
+  const cups = new Map()
+
+  for (const cup of fixture.cup_handles) {
+    if (cups.has(cup.candidate_id)) throw new Error(`duplicate Cup candidate ${cup.candidate_id}`)
+    cups.set(cup.candidate_id, cup)
+  }
+
+  const markersByCandidate = new Map([...cups.keys()].map((candidateId) => [candidateId, []]))
+  for (const marker of fixture.cup_markers) {
+    const candidateId = marker.trigger_facts?.candidate_id
+    if (!markersByCandidate.has(candidateId)) throw new Error(`orphan Cup marker ${marker.marker_id}`)
+    markersByCandidate.get(candidateId).push(marker)
+  }
+
+  const expectedLifecycle = {
+    FORMING: [],
+    READY: ['CUP_HANDLE_READY'],
+    BREAKOUT: ['CUP_HANDLE_READY', 'CUP_HANDLE_BREAKOUT'],
+    WEAKENED: ['CUP_HANDLE_READY', 'CUP_HANDLE_BREAKOUT', 'CUP_HANDLE_WEAKENED'],
+    INVALIDATED: ['CUP_HANDLE_READY', 'CUP_HANDLE_BREAKOUT', 'CUP_HANDLE_INVALIDATED'],
+    EXPIRED: ['CUP_HANDLE_READY', 'CUP_HANDLE_BREAKOUT', 'CUP_HANDLE_EXPIRED'],
+  }
+
+  for (const [candidateId, cup] of cups) {
+    const markers = markersByCandidate.get(candidateId)
+    const actualTypes = markers.map((marker) => marker.marker_type)
+    const expectedTypes = expectedLifecycle[cup.state]
+    if (JSON.stringify(actualTypes) !== JSON.stringify(expectedTypes)) {
+      throw new Error(`invalid Cup lifecycle ${candidateId}: ${actualTypes.join(' -> ')}`)
+    }
+
+    const milestoneIndexes = markers.map((marker) => barIndex.get(marker.bar_end))
+    if (milestoneIndexes.some((index) => index === undefined)
+      || milestoneIndexes.some((index, markerIndex) => markerIndex > 0 && index <= milestoneIndexes[markerIndex - 1])) {
+      throw new Error(`non-increasing Cup lifecycle ${candidateId}`)
+    }
+    if (markers.some((marker, markerIndex) => (
+      JSON.stringify(marker.related_marker_ids) !== JSON.stringify(markers.slice(0, markerIndex).map((item) => item.marker_id))
+    ))) throw new Error(`invalid Cup milestone lineage ${candidateId}`)
+    if (markers.length > 0 && markers.at(-1).bar_end !== cup.state_changed_at) {
+      throw new Error(`Cup state timestamp does not match lifecycle ${candidateId}`)
+    }
+
+    const segment = segmentFor(cup.state_changed_at)
+    const evidenceTimes = [
+      cup.left_rim.pivot_at,
+      cup.bottom.pivot_at,
+      cup.right_rim.pivot_at,
+      cup.handle_start_at,
+      cup.handle_extreme?.pivot_at,
+      cup.pivot_frozen_at,
+      ...markers.map((marker) => marker.bar_end),
+    ].filter(Boolean)
+    if (!segment || evidenceTimes.some((barEnd) => segmentFor(barEnd) !== segment)) {
+      throw new Error(`cross-segment Cup evidence ${candidateId}`)
+    }
+  }
 }
 
 export function newowTrendDetailFixture({ product = 'jm', from = trendDays[0], through = trendDays.at(-1) } = {}) {
@@ -78,8 +140,8 @@ export function newowTrendDetailFixture({ product = 'jm', from = trendDays[0], t
     'newow_cup_handle_v1',
   ].join('|')
   const genericBars = trendGenericBars(product)
-  const segmentA = `${upper}2601:2026-08-21:2026-08-28`
-  const segmentB = `${upper}2605:2026-08-31:2026-09-03`
+  const segmentA = `${upper}2601:2026-08-21:2026-08-26`
+  const segmentB = `${upper}2605:2026-08-27:2026-09-03`
   const bars = genericBars.map((bar, index) => ({
     bar_end: bar.bar_end,
     trading_day: bar.trading_day,
@@ -90,10 +152,10 @@ export function newowTrendDetailFixture({ product = 'jm', from = trendDays[0], t
     volume: bar.volume,
     open_interest: bar.open_interest,
     physical_contract: bar.physical_contract,
-    segment_id: index < 6 ? segmentA : segmentB,
+    segment_id: index < 4 ? segmentA : segmentB,
     source_identity: calculationIdentity,
   }))
-  const marker = (markerId, markerType, index, formulaVersion, candidateId) => ({
+  const marker = (markerId, markerType, index, formulaVersion, candidateId, relatedMarkerIds = []) => ({
     marker_id: markerId,
     marker_type: markerType,
     bar_end: bars[index].bar_end,
@@ -107,7 +169,7 @@ export function newowTrendDetailFixture({ product = 'jm', from = trendDays[0], t
     })[markerType] ?? markerType,
     color_token: `newow-${markerType.toLowerCase()}`,
     priority: markerType === 'NEWOW_ESCAPE_D1' ? 300 : markerType === 'NEWOW_ESCAPE_D2' ? 200 : 100,
-    related_marker_ids: [],
+    related_marker_ids: relatedMarkerIds,
     trigger_facts: candidateId === undefined ? { fixture: true } : { candidate_id: candidateId },
     formula_version: formulaVersion,
   })
@@ -116,23 +178,19 @@ export function newowTrendDetailFixture({ product = 'jm', from = trendDays[0], t
     confirmed_at: bars[confirmedIndex].bar_end,
     price: price.toFixed(2),
   })
-  const readyCup = (candidateId, state, stateIndex) => {
-    const segmentStart = stateIndex >= 6 ? 6 : 0
-    const segmentEnd = segmentStart + 2
-    const confirmationIndex = Math.min(segmentEnd + 2, bars.length - 1)
-    return {
+  const readyCup = (candidateId, state, stateIndex) => ({
     candidate_id: candidateId,
     direction: candidateId === 'cup-e-invalidated' ? 'BEARISH' : 'BULLISH',
     state,
-    left_rim: pivot(segmentStart, trendCloses[segmentStart] + 3),
-    bottom: pivot(segmentStart + 1, trendCloses[segmentStart + 1] - 4),
-    right_rim: pivot(segmentEnd, trendCloses[segmentEnd] + 2),
-    handle_start_at: bars[segmentEnd].bar_end,
-    handle_extreme: pivot(segmentEnd + 1, trendCloses[segmentEnd + 1] - 1, confirmationIndex),
+    left_rim: pivot(4, trendCloses[4] + 3),
+    bottom: pivot(5, trendCloses[5] - 4),
+    right_rim: pivot(6, trendCloses[6] + 2),
+    handle_start_at: bars[6].bar_end,
+    handle_extreme: pivot(7, trendCloses[7] - 1),
     pivot_price: '104.50',
-    pivot_frozen_at: bars[confirmationIndex].bar_end,
-    confirmed_at: bars[confirmationIndex].bar_end,
-    first_seen_at: bars[confirmationIndex].bar_end,
+    pivot_frozen_at: bars[7].bar_end,
+    confirmed_at: bars[7].bar_end,
+    first_seen_at: bars[7].bar_end,
     state_changed_at: bars[stateIndex].bar_end,
     score: 88,
     score_breakdown: {
@@ -146,7 +204,33 @@ export function newowTrendDetailFixture({ product = 'jm', from = trendDays[0], t
       handle_right_ratio: 0.8181818182, handle_baseline_ratio: 0.8571428571,
     },
     formula_version: 'newow_cup_handle_v1',
-    }
+  })
+  const cupLifecycle = (candidateId, terminalType) => {
+    const readyId = `${candidateId}-ready`
+    const breakoutId = `${candidateId}-breakout`
+    const ready = marker(readyId, 'CUP_HANDLE_READY', 7, 'newow_cup_handle_v1', candidateId)
+    if (!terminalType) return [ready]
+    const breakout = marker(
+      breakoutId,
+      'CUP_HANDLE_BREAKOUT',
+      8,
+      'newow_cup_handle_v1',
+      candidateId,
+      [readyId],
+    )
+    if (terminalType === 'CUP_HANDLE_BREAKOUT') return [ready, breakout]
+    return [
+      ready,
+      breakout,
+      marker(
+        `${candidateId}-${terminalType.toLowerCase()}`,
+        terminalType,
+        9,
+        'newow_cup_handle_v1',
+        candidateId,
+        [readyId, breakoutId],
+      ),
+    ]
   }
 
   return {
@@ -191,35 +275,35 @@ export function newowTrendDetailFixture({ product = 'jm', from = trendDays[0], t
       marker('escape-latest-d3', 'NEWOW_ESCAPE_D3', 9, 'newow_escape_d123_v1'),
     ],
     cup_markers: [
-      marker('cup-ready', 'CUP_HANDLE_READY', 4, 'newow_cup_handle_v1', 'cup-c-ready'),
-      marker('cup-breakout', 'CUP_HANDLE_BREAKOUT', 5, 'newow_cup_handle_v1', 'cup-a-breakout'),
-      marker('cup-weakened', 'CUP_HANDLE_WEAKENED', 9, 'newow_cup_handle_v1', 'cup-d-weakened'),
-      marker('cup-invalidated', 'CUP_HANDLE_INVALIDATED', 9, 'newow_cup_handle_v1', 'cup-e-invalidated'),
-      marker('cup-expired', 'CUP_HANDLE_EXPIRED', 9, 'newow_cup_handle_v1', 'cup-f-expired'),
-    ],
+      ...cupLifecycle('cup-c-ready'),
+      ...cupLifecycle('cup-a-breakout', 'CUP_HANDLE_BREAKOUT'),
+      ...cupLifecycle('cup-d-weakened', 'CUP_HANDLE_WEAKENED'),
+      ...cupLifecycle('cup-e-invalidated', 'CUP_HANDLE_INVALIDATED'),
+      ...cupLifecycle('cup-f-expired', 'CUP_HANDLE_EXPIRED'),
+    ].sort((left, right) => left.bar_end.localeCompare(right.bar_end)),
     cup_handles: [
-      readyCup('cup-a-breakout', 'BREAKOUT', 5),
+      readyCup('cup-a-breakout', 'BREAKOUT', 8),
       {
         candidate_id: 'cup-b-forming', direction: 'BULLISH', state: 'FORMING',
-        left_rim: pivot(0, 101), bottom: pivot(1, 96), right_rim: pivot(2, 104),
-        handle_start_at: bars[2].bar_end, handle_extreme: null,
+        left_rim: pivot(4, 106), bottom: pivot(5, 97), right_rim: pivot(6, 106),
+        handle_start_at: bars[6].bar_end, handle_extreme: null,
         pivot_price: null, pivot_frozen_at: null,
-        confirmed_at: bars[2].bar_end, first_seen_at: bars[3].bar_end,
-        state_changed_at: bars[3].bar_end, score: 60,
+        confirmed_at: bars[6].bar_end, first_seen_at: bars[7].bar_end,
+        state_changed_at: bars[7].bar_end, score: 60,
         score_breakdown: { pretrend: 20, cup_geometry: 25, u_shape_purity: 15, handle_quality: 0, volume_structure: 0 },
         hard_failures: [], diagnostics: ['fixture-forming'], volume_facts: {}, formula_version: 'newow_cup_handle_v1',
       },
-      readyCup('cup-c-ready', 'READY', 4),
+      readyCup('cup-c-ready', 'READY', 7),
       readyCup('cup-d-weakened', 'WEAKENED', 9),
       readyCup('cup-e-invalidated', 'INVALIDATED', 9),
       readyCup('cup-f-expired', 'EXPIRED', 9),
     ],
     rollover_seams: [{
-      trading_day: bars[6].trading_day,
+      trading_day: bars[4].trading_day,
       previous_contract: `${upper}2601`,
       next_contract: `${upper}2605`,
-      previous_bar_end: bars[5].bar_end,
-      next_bar_end: bars[6].bar_end,
+      previous_bar_end: bars[3].bar_end,
+      next_bar_end: bars[4].bar_end,
       previous_segment_id: segmentA,
       next_segment_id: segmentB,
     }],
