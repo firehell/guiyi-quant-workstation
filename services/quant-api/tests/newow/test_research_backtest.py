@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
@@ -182,6 +183,36 @@ def test_futures_costs_apply_multiplier_fixed_fee_and_tick_slippage() -> None:
     assert trade.net_pnl_per_contract == Decimal("76")
     assert trade.gross_return_pct == Decimal("7.920792079207920792079207921")
     assert trade.net_return_pct == Decimal("7.509881422924901185770750988")
+
+
+def test_summary_keeps_breakeven_trades_out_of_losses() -> None:
+    bars = tuple(_bar(index, value="100") for index in range(4))
+    intents = (
+        BacktestIntent(BacktestAction.BUILD, bars[0].bar_end, TREND_FORMULA),
+        BacktestIntent(BacktestAction.CLEAR, bars[2].bar_end, TREND_FORMULA),
+    )
+
+    summary = run_causal_long_only_backtest(bars, intents).summary
+
+    assert summary.closed_trade_count == 1
+    assert summary.win_count == 0
+    assert summary.loss_count == 0
+    assert summary.breakeven_count == 1
+
+
+def test_executor_rejects_contract_prefix_as_execution_bar() -> None:
+    bars = (
+        replace(
+            _bar(0, value="100", eligible=False),
+            series_kind="contract",
+        ),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="NEWOW_BACKTEST_EXECUTION_SERIES_NOT_ACTUAL_DOMINANT",
+    ):
+        run_causal_long_only_backtest(bars, ())
 
 
 def test_cost_snapshot_and_execution_constraint_validation_is_fail_closed() -> None:

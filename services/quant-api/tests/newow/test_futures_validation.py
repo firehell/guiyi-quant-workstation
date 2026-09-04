@@ -9,11 +9,13 @@ from app.market_data.domain import (
     BarFrequency,
     CanonicalBar,
     MarketSeriesResult,
+    MarketSeriesPageResult,
     ResolvedContractSegment,
 )
 from app.market_data.newow.futures_validation import (
     NewowFuturesSeriesError,
     build_newow_research_bars,
+    build_newow_strategy_replay_segments,
 )
 
 
@@ -26,6 +28,7 @@ def _bar(
     trading_day: date | None = None,
     volume: str = "100",
     open_interest: str | None = "1000",
+    turnover: str = "10000",
 ) -> CanonicalBar:
     value = Decimal(100 + offset)
     return CanonicalBar(
@@ -36,7 +39,7 @@ def _bar(
         low=value - Decimal("1"),
         close=value,
         volume=Decimal(volume),
-        turnover=Decimal("10000"),
+        turnover=Decimal(turnover),
         open_interest=None if open_interest is None else Decimal(open_interest),
     )
 
@@ -74,6 +77,181 @@ def _result(
     )
 
 
+def _physical_page(
+    contract: str,
+    bars: tuple[CanonicalBar, ...],
+    *,
+    has_more_before: bool = False,
+    before: str | None = None,
+) -> MarketSeriesPageResult:
+    resolved_before = before or (bars[-1].bar_end + timedelta(microseconds=1)).isoformat()
+    return MarketSeriesPageResult(
+        request_identity={
+            "series_kind": "contract",
+            "symbol": "rb",
+            "contract": contract,
+            "frequency": "1d",
+            "before": resolved_before,
+            "limit": 2000,
+        },
+        bars=bars,
+        canonical_coverage=(bars[0].bar_end, bars[-1].bar_end),
+        has_more_before=has_more_before,
+        next_before=bars[0].bar_end if has_more_before else None,
+        resolved_contract_segments=(),
+    )
+
+
+def test_builds_physical_prefix_replay_and_keeps_only_rank1_bars_eligible() -> None:
+    segment = ResolvedContractSegment(
+        "RB2610",
+        _START + timedelta(days=2),
+        _START + timedelta(days=3),
+    )
+    actual = _result(
+        BarFrequency.D1,
+        bars=(_bar(2), _bar(3)),
+        segments=(segment,),
+    )
+    actual_bars = build_newow_research_bars(
+        actual,
+        authoritative_segments=(segment,),
+        expected_product="rb",
+        expected_frequency=BarFrequency.D1,
+    )
+
+    replay = build_newow_strategy_replay_segments(
+        actual_bars,
+        authoritative_segments=(segment,),
+        physical_prefix_pages=(
+            _physical_page("RB2610", (_bar(0), _bar(1), _bar(2), _bar(3))),
+        ),
+        expected_product="rb",
+        expected_frequency=BarFrequency.D1,
+    )
+
+    assert len(replay) == 1
+    assert tuple(bar.observation_eligible for bar in replay[0].bars) == (
+        False,
+        False,
+        True,
+        True,
+    )
+    assert replay[0].bars[2].source_identity == actual_bars[0].source_identity
+    assert replay[0].bars[0].source_identity.startswith(
+        "canonical:contract:rb:1d:RB2610:"
+    )
+
+
+@pytest.mark.parametrize(
+    "mode",
+    ("truncated", "mismatch", "turnover_mismatch", "wrong_contract", "wrong_before"),
+)
+def test_rejects_untrusted_physical_prefix_replay(mode: str) -> None:
+    segment = ResolvedContractSegment(
+        "RB2610",
+        _START + timedelta(days=2),
+        _START + timedelta(days=3),
+    )
+    actual = _result(
+        BarFrequency.D1,
+        bars=(_bar(2), _bar(3)),
+        segments=(segment,),
+    )
+    actual_bars = build_newow_research_bars(
+        actual,
+        authoritative_segments=(segment,),
+        expected_product="rb",
+        expected_frequency=BarFrequency.D1,
+    )
+    physical = (_bar(0), _bar(1), _bar(2), _bar(3))
+    contract = "RB2610"
+    has_more = mode == "truncated"
+    if mode == "mismatch":
+        physical = physical[:2] + (_bar(2, volume="101"), physical[3])
+    if mode == "turnover_mismatch":
+        physical = physical[:2] + (_bar(2, turnover="10001"), physical[3])
+    if mode == "wrong_contract":
+        contract = "RB2701"
+    before = None if mode != "wrong_before" else "2026-01-15T00:00:00+00:00"
+
+    with pytest.raises(NewowFuturesSeriesError):
+        build_newow_strategy_replay_segments(
+            actual_bars,
+            authoritative_segments=(segment,),
+            physical_prefix_pages=(
+                _physical_page(
+                    contract,
+                    physical,
+                    has_more_before=has_more,
+                    before=before,
+                ),
+            ),
+            expected_product="rb",
+            expected_frequency=BarFrequency.D1,
+        )
+
+
+def test_rejects_physical_bar_hidden_inside_rank1_segment_gap() -> None:
+    segment = ResolvedContractSegment(
+        "RB2610",
+        _START + timedelta(days=2),
+        _START + timedelta(days=3),
+    )
+    actual = _result(
+        BarFrequency.D1,
+        bars=(_bar(3),),
+        segments=(
+            ResolvedContractSegment(
+                "RB2610",
+                _START + timedelta(days=3),
+                _START + timedelta(days=3),
+            ),
+        ),
+    )
+    actual_bars = build_newow_research_bars(
+        actual,
+        authoritative_segments=(segment,),
+        expected_product="rb",
+        expected_frequency=BarFrequency.D1,
+    )
+
+    with pytest.raises(NewowFuturesSeriesError):
+        build_newow_strategy_replay_segments(
+            actual_bars,
+            authoritative_segments=(segment,),
+            physical_prefix_pages=(
+                _physical_page("RB2610", (_bar(0), _bar(1), _bar(2), _bar(3))),
+            ),
+            expected_product="rb",
+            expected_frequency=BarFrequency.D1,
+        )
+
+
+def test_physical_warmup_bars_keep_contract_source_kind() -> None:
+    segment = ResolvedContractSegment("RB2610", _START + timedelta(days=1), _START + timedelta(days=1))
+    actual = _result(
+        BarFrequency.D1,
+        bars=(_bar(1),),
+        segments=(segment,),
+    )
+    actual_bars = build_newow_research_bars(
+        actual,
+        authoritative_segments=(segment,),
+        expected_product="rb",
+        expected_frequency=BarFrequency.D1,
+    )
+
+    replay = build_newow_strategy_replay_segments(
+        actual_bars,
+        authoritative_segments=(segment,),
+        physical_prefix_pages=(_physical_page("RB2610", (_bar(0), _bar(1))),),
+        expected_product="rb",
+        expected_frequency=BarFrequency.D1,
+    )
+
+    assert replay[0].bars[0].series_kind == "contract"
+    assert replay[0].bars[1].series_kind == "actual_dominant"
 @pytest.mark.parametrize(
     "frequency",
     (BarFrequency.D1, BarFrequency.W1, BarFrequency.H1),

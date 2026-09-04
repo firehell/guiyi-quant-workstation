@@ -10,9 +10,10 @@ from .research_backtest import (
     BacktestCostSnapshot,
     BacktestExecutionConstraint,
     NewowResearchBar,
+    NewowStrategyReplaySegment,
     ResearchBacktestResult,
     ResearchStrategy,
-    build_strategy_intents,
+    build_strategy_intents_from_replay_segments,
     run_causal_long_only_backtest,
     validate_research_bars,
 )
@@ -49,9 +50,25 @@ class WalkForwardFold:
 @dataclass(frozen=True, slots=True)
 class WalkForwardFoldResult:
     fold: WalkForwardFold
+    train_bar_count: int
+    gap_bar_count: int
     warmup_bar_count: int
     test_bar_count: int
+    segment_count: int
+    physical_prefix_bar_count: int
+    earliest_physical_prefix_trading_day: date
+    replay_segments: tuple[WalkForwardReplaySegmentResult, ...]
     backtest: ResearchBacktestResult
+
+
+@dataclass(frozen=True, slots=True)
+class WalkForwardReplaySegmentResult:
+    physical_contract: str
+    segment_id: str
+    bar_count: int
+    eligible_bar_count: int
+    earliest_trading_day: date
+    latest_trading_day: date
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,6 +101,7 @@ def run_fixed_formula_walk_forward(
     folds: tuple[WalkForwardFold, ...],
     *,
     strategy: ResearchStrategy,
+    strategy_replay_segments: tuple[NewowStrategyReplaySegment, ...],
     cost_snapshots: tuple[BacktestCostSnapshot, ...],
     execution_constraints: tuple[BacktestExecutionConstraint, ...],
 ) -> WalkForwardValidationResult:
@@ -98,6 +116,34 @@ def run_fixed_formula_walk_forward(
         validate_research_bars(bars)
     except ValueError:
         raise ValueError(_PLAN_ERROR) from None
+    if not strategy_replay_segments:
+        raise ValueError(_PLAN_ERROR)
+    execution_bar_ends = {bar.bar_end for bar in bars}
+    eligible_replay_ends = {
+        bar.bar_end
+        for segment in strategy_replay_segments
+        for bar in segment.bars
+        if bar.observation_eligible
+    }
+    eligible_replay_bars = tuple(
+        bar
+        for segment in strategy_replay_segments
+        for bar in segment.bars
+        if bar.observation_eligible
+    )
+    if (
+        eligible_replay_ends != execution_bar_ends
+        or len(eligible_replay_bars) != len(bars)
+    ):
+        raise ValueError(_PLAN_ERROR)
+    execution_by_end = {bar.bar_end: bar for bar in bars}
+    if any(
+        bar.as_kwargs() != execution_by_end[bar.bar_end].as_kwargs()
+        for segment in strategy_replay_segments
+        for bar in segment.bars
+        if bar.observation_eligible
+    ):
+        raise ValueError(_PLAN_ERROR)
     available_since = min(bar.trading_day for bar in bars)
     available_through = max(bar.trading_day for bar in bars)
     if any(
@@ -133,8 +179,27 @@ def run_fixed_formula_walk_forward(
             for bar in bars
             if fold.train_since <= bar.trading_day <= fold.test_through
         )
-        intents, versions = build_strategy_intents(
-            fold_bars,
+        replay_segments = tuple(
+            NewowStrategyReplaySegment(
+                tuple(
+                    bar
+                    for bar in segment.bars
+                    if bar.trading_day <= fold.test_through
+                    and (
+                        not bar.observation_eligible
+                        or bar.trading_day >= fold.train_since
+                    )
+                )
+            )
+            for segment in strategy_replay_segments
+            if any(
+                bar.observation_eligible
+                and fold.train_since <= bar.trading_day <= fold.test_through
+                for bar in segment.bars
+            )
+        )
+        intents, versions = build_strategy_intents_from_replay_segments(
+            replay_segments,
             strategy,
             flat_from=fold.test_since,
         )
@@ -162,8 +227,37 @@ def run_fixed_formula_walk_forward(
         evaluated.append(
             WalkForwardFoldResult(
                 fold=fold,
+                train_bar_count=len(training),
+                gap_bar_count=len(warmup) - len(training),
                 warmup_bar_count=len(warmup),
                 test_bar_count=len(test),
+                segment_count=len(
+                    {
+                        (bar.physical_contract, bar.segment_id)
+                        for bar in test
+                    }
+                ),
+                physical_prefix_bar_count=sum(
+                    len(segment.bars) for segment in replay_segments
+                ),
+                earliest_physical_prefix_trading_day=min(
+                    bar.trading_day
+                    for segment in replay_segments
+                    for bar in segment.bars
+                ),
+                replay_segments=tuple(
+                    WalkForwardReplaySegmentResult(
+                        physical_contract=segment.bars[0].physical_contract,
+                        segment_id=segment.bars[0].segment_id,
+                        bar_count=len(segment.bars),
+                        eligible_bar_count=sum(
+                            bar.observation_eligible for bar in segment.bars
+                        ),
+                        earliest_trading_day=segment.bars[0].trading_day,
+                        latest_trading_day=segment.bars[-1].trading_day,
+                    )
+                    for segment in replay_segments
+                ),
                 backtest=backtest,
             )
         )

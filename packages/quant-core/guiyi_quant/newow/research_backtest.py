@@ -23,6 +23,7 @@ from .main_rise import (
 )
 from .models import NewowDailyBar, NewowMarkerType
 from .oscillation_channel import (
+    CHANNEL_FORMULA_VERSION,
     OSCILLATION_FORMULA_VERSION,
     OscillationAction,
     OscillationState,
@@ -65,7 +66,7 @@ def _formula_versions_for_strategy(
     if strategy is ResearchStrategy.TREND:
         return (NEWOW_TREND_D1_PAGE_V2.trend_band_formula,)
     if strategy is ResearchStrategy.OSCILLATION:
-        return (OSCILLATION_FORMULA_VERSION,)
+        return (OSCILLATION_FORMULA_VERSION, CHANNEL_FORMULA_VERSION)
     return (
         MAIN_RISE_PAGE_V1.band_formula,
         MAIN_RISE_PAGE_V1.j_reduce_formula,
@@ -89,7 +90,7 @@ class BacktestAction(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class NewowResearchBar:
-    """Completed actual-dominant bar supplied by the canonical application seam."""
+    """Completed execution Bar or same-contract formula warm-up Bar."""
 
     product: str
     physical_contract: str
@@ -107,11 +108,14 @@ class NewowResearchBar:
     completed: bool
     series_kind: str = "actual_dominant"
     frequency: str = "1d"
+    turnover: Decimal | None = None
 
     def __post_init__(self) -> None:
         if not self.completed:
             raise ValueError("NEWOW_RESEARCH_BAR_NOT_COMPLETED")
-        if self.series_kind != "actual_dominant":
+        if self.series_kind not in {"actual_dominant", "contract"} or (
+            self.observation_eligible and self.series_kind != "actual_dominant"
+        ):
             raise ValueError("NEWOW_RESEARCH_BAR_INVALID_SERIES_KIND")
         if self.frequency not in FORMAL_FREQUENCIES:
             raise ValueError("NEWOW_RESEARCH_BAR_INVALID_FREQUENCY")
@@ -138,6 +142,12 @@ class NewowResearchBar:
             self.open_interest is not None and self.open_interest < 0
         ):
             raise ValueError("NEWOW_RESEARCH_BAR_NEGATIVE_VOLUME_OR_OI")
+        if self.turnover is not None and (
+            not isinstance(self.turnover, Decimal)
+            or not self.turnover.is_finite()
+            or self.turnover < 0
+        ):
+            raise ValueError("NEWOW_RESEARCH_BAR_INVALID_TURNOVER")
 
     def as_kwargs(self) -> dict[str, object]:
         return {
@@ -157,7 +167,36 @@ class NewowResearchBar:
             "completed": self.completed,
             "series_kind": self.series_kind,
             "frequency": self.frequency,
+            "turnover": self.turnover,
         }
+
+
+@dataclass(frozen=True, slots=True)
+class NewowStrategyReplaySegment:
+    """One physical-contract prefix replay with rank-1 output eligibility."""
+
+    bars: tuple[NewowResearchBar, ...]
+
+    def __post_init__(self) -> None:
+        try:
+            validate_research_bars(self.bars)
+        except ValueError:
+            raise ValueError("NEWOW_STRATEGY_REPLAY_SEGMENT_INVALID") from None
+        first = self.bars[0]
+        if (
+            any(
+                (bar.physical_contract, bar.segment_id)
+                != (first.physical_contract, first.segment_id)
+                for bar in self.bars
+            )
+            or not any(bar.observation_eligible for bar in self.bars)
+            or any(
+                (bar.series_kind == "actual_dominant")
+                != bar.observation_eligible
+                for bar in self.bars
+            )
+        ):
+            raise ValueError("NEWOW_STRATEGY_REPLAY_SEGMENT_INVALID")
 
 
 @dataclass(frozen=True, slots=True)
@@ -308,6 +347,7 @@ class BacktestSummary:
     closed_trade_count: int
     win_count: int
     loss_count: int
+    breakeven_count: int
     compounded_net_return_pct: Decimal
     closed_trade_max_drawdown_pct: Decimal
 
@@ -538,6 +578,8 @@ def _summary(trades: tuple[BacktestTrade, ...]) -> BacktestSummary:
     peak = equity
     max_drawdown = Decimal("0")
     wins = 0
+    losses = 0
+    breakevens = 0
     for trade in trades:
         equity *= Decimal("1") + trade.net_return_pct / Decimal("100")
         peak = max(peak, equity)
@@ -546,10 +588,13 @@ def _summary(trades: tuple[BacktestTrade, ...]) -> BacktestSummary:
         )
         max_drawdown = max(max_drawdown, drawdown)
         wins += int(trade.net_pnl_per_contract > 0)
+        losses += int(trade.net_pnl_per_contract < 0)
+        breakevens += int(trade.net_pnl_per_contract == 0)
     return BacktestSummary(
         len(trades),
         wins,
-        len(trades) - wins,
+        losses,
+        breakevens,
         (equity - Decimal("1")) * Decimal("100"),
         max_drawdown,
     )
@@ -569,6 +614,8 @@ def run_causal_long_only_backtest(
     """Evaluate immutable completed-bar intents without same-bar execution."""
 
     validate_research_bars(bars)
+    if any(bar.series_kind != "actual_dominant" for bar in bars):
+        raise ValueError("NEWOW_BACKTEST_EXECUTION_SERIES_NOT_ACTUAL_DOMINANT")
     if strategy is not None and not isinstance(strategy, ResearchStrategy):
         raise ValueError("NEWOW_BACKTEST_STRATEGY_NOT_CAUSAL")
 
@@ -802,7 +849,7 @@ def build_strategy_intents(
         for bar in bars:
             if not flattened:
                 assert flat_from is not None
-                if bar.trading_day >= flat_from:
+                if bar.trading_day >= flat_from and bar.observation_eligible:
                     oscillation_state = replace(oscillation_state, holding=False)
                     flattened = True
             oscillation_result = step_oscillation(
@@ -836,6 +883,47 @@ def build_strategy_intents(
                 )
             )
     return tuple(intents), _formula_versions_for_strategy(strategy)
+
+
+def build_strategy_intents_from_replay_segments(
+    segments: tuple[NewowStrategyReplaySegment, ...],
+    strategy: ResearchStrategy,
+    *,
+    flat_from: date | None = None,
+) -> tuple[tuple[BacktestIntent, ...], tuple[str, ...]]:
+    """Replay each physical contract from fresh state, then merge eligible intents."""
+
+    if not segments:
+        raise ValueError("NEWOW_STRATEGY_REPLAY_SEGMENTS_EMPTY")
+    intents: list[BacktestIntent] = []
+    versions: tuple[str, ...] | None = None
+    seen_signal_bars: set[datetime] = set()
+    for segment in segments:
+        if not isinstance(segment, NewowStrategyReplaySegment):
+            raise ValueError("NEWOW_STRATEGY_REPLAY_SEGMENT_INVALID")
+        segment_intents, segment_versions = build_strategy_intents(
+            segment.bars,
+            strategy,
+            flat_from=flat_from,
+        )
+        if versions is None:
+            versions = segment_versions
+        elif versions != segment_versions:
+            raise ValueError("NEWOW_STRATEGY_REPLAY_FORMULA_MISMATCH")
+        eligible_ends = {
+            bar.bar_end for bar in segment.bars if bar.observation_eligible
+        }
+        for intent in segment_intents:
+            if (
+                intent.signal_bar_end not in eligible_ends
+                or intent.signal_bar_end in seen_signal_bars
+            ):
+                raise ValueError("NEWOW_STRATEGY_REPLAY_IDENTITY_CONFLICT")
+            seen_signal_bars.add(intent.signal_bar_end)
+            intents.append(intent)
+    assert versions is not None
+    intents.sort(key=lambda item: item.signal_bar_end)
+    return tuple(intents), versions
 
 
 def backtest_newow_strategy(
