@@ -33,12 +33,14 @@ from .trend_band import initial_trend_band_state, step_trend_band
 
 
 CAUSAL_BACKTEST_FORMULA_VERSION = "newow_causal_next_open_costed_v1"
+CHANNEL_OPTIMIZER_CAUSAL_V1 = "newow_hhv_llv_window_optimizer_causal_v1"
 FORMAL_FREQUENCIES = ("1m", "5m", "15m", "30m", "60m", "1d", "1w")
 CAUSAL_SIGNAL_FORMULAS = frozenset(
     {
         NEWOW_TREND_D1_PAGE_V2.trend_band_formula,
         OSCILLATION_FORMULA_VERSION,
         MAIN_RISE_PAGE_V1.band_formula,
+        CHANNEL_OPTIMIZER_CAUSAL_V1,
     }
 )
 _PHYSICAL_CONTRACT = re.compile(r"([A-Z]+)[0-9]{3,4}\Z")
@@ -48,6 +50,7 @@ class ResearchStrategy(StrEnum):
     TREND = "trend"
     OSCILLATION = "oscillation"
     MAIN_RISE = "main_rise"
+    PRICE_CHANNEL = "price_channel"
 
 
 def _contract_matches_product(product: str, contract: str) -> bool:
@@ -66,6 +69,8 @@ def _formula_versions_for_strategy(
         return (NEWOW_TREND_D1_PAGE_V2.trend_band_formula,)
     if strategy is ResearchStrategy.OSCILLATION:
         return (OSCILLATION_FORMULA_VERSION,)
+    if strategy is ResearchStrategy.PRICE_CHANNEL:
+        return (CHANNEL_OPTIMIZER_CAUSAL_V1,)
     return (
         MAIN_RISE_PAGE_V1.band_formula,
         MAIN_RISE_PAGE_V1.j_reduce_formula,
@@ -79,6 +84,7 @@ _INTENT_STRATEGY_BY_FORMULA = {
     NEWOW_TREND_D1_PAGE_V2.trend_band_formula: ResearchStrategy.TREND,
     OSCILLATION_FORMULA_VERSION: ResearchStrategy.OSCILLATION,
     MAIN_RISE_PAGE_V1.band_formula: ResearchStrategy.MAIN_RISE,
+    CHANNEL_OPTIMIZER_CAUSAL_V1: ResearchStrategy.PRICE_CHANNEL,
 }
 
 
@@ -819,6 +825,12 @@ def build_strategy_intents(
                     BacktestIntent(action, bar.bar_end, signal.formula_version)
                 )
         return tuple(intents), _formula_versions_for_strategy(strategy)
+
+    if strategy is ResearchStrategy.PRICE_CHANNEL:
+        # The generic dispatcher has no explicit window.  Fail closed instead
+        # of silently selecting one; price_channel.rank_causal_channel_windows
+        # is the only supported entry and reuses this module's executor.
+        raise ValueError("NEWOW_PRICE_CHANNEL_INVALID_WINDOW")
 
     main_rise_state = initial_main_rise_state()
     for bar in bars:

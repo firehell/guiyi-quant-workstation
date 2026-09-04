@@ -9,7 +9,18 @@ from decimal import ROUND_HALF_UP, Decimal
 from enum import StrEnum
 from typing import Literal
 
-from .research_backtest import NewowResearchBar, validate_research_bars
+from .research_backtest import (
+    CHANNEL_OPTIMIZER_CAUSAL_V1,
+    BacktestAction,
+    BacktestCostSnapshot,
+    BacktestExecutionConstraint,
+    BacktestIntent,
+    NewowResearchBar,
+    ResearchBacktestResult,
+    ResearchStrategy,
+    run_causal_long_only_backtest,
+    validate_research_bars,
+)
 
 
 TARGET_ABSORB_CHANNEL_PAGE_V1 = "newow_target_absorb_hhv_llv10_page_v1"
@@ -113,6 +124,15 @@ class PageChannelWindowResult:
     execution_timing: Literal["same_bar_close"] = "same_bar_close"
     trustworthy_for_research: Literal[False] = False
     formula_version: str = CHANNEL_OPTIMIZER_PAGE_V1
+
+
+@dataclass(frozen=True, slots=True)
+class CausalChannelWindowResult:
+    window: int
+    backtest: ResearchBacktestResult
+    force_closed_at_end: Literal[False] = False
+    trustworthy_for_research: Literal[True] = True
+    formula_version: str = CHANNEL_OPTIMIZER_CAUSAL_V1
 
 
 def _valid_window(window: object) -> bool:
@@ -449,5 +469,110 @@ def rank_page_channel_windows(
             ),
             key=lambda item: item.score,
             reverse=True,
+        )
+    )
+
+
+def _contiguous_segments(
+    bars: tuple[NewowResearchBar, ...],
+) -> tuple[tuple[NewowResearchBar, ...], ...]:
+    segments: list[tuple[NewowResearchBar, ...]] = []
+    current: list[NewowResearchBar] = []
+    identity: tuple[str, str] | None = None
+    for bar in bars:
+        incoming = (bar.physical_contract, bar.segment_id)
+        if identity is not None and incoming != identity:
+            segments.append(tuple(current))
+            current = []
+        current.append(bar)
+        identity = incoming
+    if current:
+        segments.append(tuple(current))
+    return tuple(segments)
+
+
+def _causal_channel_intents(
+    bars: tuple[NewowResearchBar, ...], window: int
+) -> tuple[BacktestIntent, ...]:
+    intents: list[BacktestIntent] = []
+    for segment in _contiguous_segments(bars):
+        channels = calculate_price_channel(segment, window=window)
+        holding = False
+        for bar, channel in zip(segment, channels, strict=True):
+            if not channel.available:
+                continue
+            if (
+                holding
+                and channel.target is not None
+                and bar.high >= channel.target
+            ):
+                if bar.observation_eligible:
+                    intents.append(
+                        BacktestIntent(
+                            BacktestAction.CLEAR,
+                            bar.bar_end,
+                            CHANNEL_OPTIMIZER_CAUSAL_V1,
+                        )
+                    )
+                holding = False
+            if (
+                not holding
+                and channel.absorb is not None
+                and bar.low <= channel.absorb
+            ):
+                if bar.observation_eligible:
+                    intents.append(
+                        BacktestIntent(
+                            BacktestAction.BUILD,
+                            bar.bar_end,
+                            CHANNEL_OPTIMIZER_CAUSAL_V1,
+                        )
+                    )
+                holding = True
+    return tuple(intents)
+
+
+def rank_causal_channel_windows(
+    bars: Sequence[NewowResearchBar],
+    *,
+    windows: tuple[int, ...],
+    cost_snapshots: tuple[BacktestCostSnapshot, ...],
+    execution_constraints: tuple[BacktestExecutionConstraint, ...],
+    require_execution_facts: bool,
+) -> tuple[CausalChannelWindowResult, ...]:
+    """Evaluate channel intents through the shared next-open futures executor."""
+
+    if (
+        not windows
+        or any(not _valid_window(window) for window in windows)
+        or len(set(windows)) != len(windows)
+    ):
+        raise ValueError("NEWOW_PRICE_CHANNEL_INVALID_WINDOW")
+    materialized = tuple(bars)
+    validate_research_bars(materialized)
+    results = tuple(
+        CausalChannelWindowResult(
+            window=window,
+            backtest=run_causal_long_only_backtest(
+                materialized,
+                _causal_channel_intents(materialized, window),
+                cost_snapshots=cost_snapshots,
+                execution_constraints=execution_constraints,
+                require_execution_facts=require_execution_facts,
+                strategy=ResearchStrategy.PRICE_CHANNEL,
+                signal_formula_versions=(CHANNEL_OPTIMIZER_CAUSAL_V1,),
+            ),
+        )
+        for window in windows
+    )
+    order = {window: index for index, window in enumerate(windows)}
+    return tuple(
+        sorted(
+            results,
+            key=lambda item: (
+                -item.backtest.summary.compounded_net_return_pct,
+                item.backtest.summary.closed_trade_max_drawdown_pct,
+                order[item.window],
+            ),
         )
     )

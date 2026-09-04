@@ -24,7 +24,7 @@
 | 目标价与吸筹价原始通道 | strategy-calc.js v1.0.9, query v3.2.82 | CLEANROOM_IMPLEMENTED | newow_target_absorb_hhv_llv10_page_v1 | packages/quant-core/guiyi_quant/newow/price_channel.py::calculate_price_channel | v3.2.82 的 27/27 页面末值与 HHV10/LLV10 一致 | 单段 actual_dominant 输入可复算 | Slice B 因果比较器与期货验证 |
 | 目标价与吸筹价展示选择 | strategy-calc.js v1.0.9, query v3.2.82 | CLEANROOM_IMPLEMENTED | newow_target_absorb_display_selection_page_v1 | packages/quant-core/guiyi_quant/newow/price_channel.py::select_display_prices | 日周状态、突破升级、fallback、昨收 clamp 与分支 token 测试 | 不进入期货信号 | Slice B Review |
 | 参数比较器页面口径 | stock_detail.html v3.2.63 | CLEANROOM_IMPLEMENTED | newow_hhv_llv_window_optimizer_page_v1 | packages/quant-core/guiyi_quant/newow/price_channel.py::rank_page_channel_windows | 601 根页面响应离线 JS oracle，五窗口逐字段与排名 parity | `trustworthy_for_research=false`，禁止晋升 | Slice B 与 causal-research 身份隔离 |
-| 参数比较器因果研究口径 | 归一设计 v1 | BEHAVIOR_INFERRED | newow_channel_window_compare_causal_v1 | none | 页面偏差的 clean-room 修正设计，不宣称页面公式 | 需要 next-open、成本、rollover、prefix 合同 | Slice B TDD 实现并保留研究边界 |
+| 参数比较器因果研究口径 | 归一设计 v1 | CLEANROOM_IMPLEMENTED | newow_hhv_llv_window_optimizer_causal_v1 | packages/quant-core/guiyi_quant/newow/price_channel.py::rank_causal_channel_windows | 页面偏差的 clean-room 修正，不宣称页面公式 | completed-Bar、next-open、显式手续费/tick/涨跌停、rollover 与 prefix 合同测试 | Slice B 双路独立 Review |
 | 页面同 Bar 无成本比较器直接晋升可信策略 | stock_detail.html v3.2.63 | REJECTED | none | none | 页面执行时序和无成本口径已冻结 | 不迁移 | 因违反因果与成本边界而永久拒绝；只允许另建 causal-research 身份 |
 | 综合决策 13 格矩阵 | stock_detail.html v3.2.63 | OBSERVED_EXACT | newow_composite_decision_page_v1 | none | 13 branch keys 与 27 个非占位页面输出 | 尚未实现 | Slice C page-exact 与 corrected 分身份 |
 | 确定性评分与仓位矩阵 | stock_detail.html v3.2.63 | OBSERVED_EXACT | newow_composite_certainty_page_v1 | none | 27 个页面分数、决策与仓位文本 | 尚未实现 | Slice C 枚举全状态空间 |
@@ -33,6 +33,7 @@
 | AI 六组合矩阵 | stock_detail.html v3.2.63 | OBSERVED_EXACT | newow_ai_week_day_16_matrix_page_v1 | none | 当前 16 周日组合源码事实 | 尚未实现 | Slice D token 化实现，不复制长文案 |
 | AI 诊股 A-E 旧模板 | stock_detail.html v3.2.63 | OBSERVED_EXACT | legacy_ai_template_a_e_page_v1 | none | 含月线条件，只作历史页面事实 | 不带入 1w/1d/60m Core | Slice D 只保留来源映射 |
 | AI 诊断当前输出 | stock_detail.html v3.2.63 | OBSERVED_EXACT | newow_diagnostic_tokens_page_v1 | none | 27/27 非占位诊断，保留输入与输出 token | 尚未实现 | Slice D 做确定性模板而非自由文本复制 |
+| 技术选股名称与返回阶段关系 | screener.html v3.2.82 black-box responses | BEHAVIOR_INFERRED | server-private phase semantics | none | `daily_buy` 等返回行可为 hold，推断名称不只表示当根事件 | 不迁移 | Slice D 以第二截面和 primitive 交集验证，不实现成确定公式 |
 | 技术选股 trend_build | screener.html v3.2.82, server response 2026-09-04 | UNKNOWN | server-private trend_build behavior | none | 完整 2 页 40 行时点观察 | 不迁移 | Slice D 第二截面与 primitive 交集反推 |
 | 技术选股 mainrise_build | screener.html v3.2.82, server response 2026-09-04 | UNKNOWN | server-private mainrise_build behavior | none | 完整 1 页 3 行时点观察 | 不迁移 | Slice D 第二截面与主升浪 primitive 反推 |
 | 技术选股 cup_handle | screener.html v3.2.82, server response 2026-09-04 | UNKNOWN | server-private cup_handle behavior | none | 完整 2 页 27 行时点观察 | 不迁移 | Slice D 不把旧首页过滤器冒充新公式 |
