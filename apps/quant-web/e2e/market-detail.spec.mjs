@@ -410,6 +410,12 @@ test('Trend uses one fixed Newow authority and preserves same-Bar facts in histo
   await expect(workspace.getByText('newow_trend_v1', { exact: true })).toBeVisible()
   await expect(workspace.getByText('newow_trend_d1_page_v2', { exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: '风险与形态', exact: false })).toBeVisible()
+  await expect(page.getByRole('button', { name: '目标价与吸纳价', exact: false })).toBeVisible()
+  await expect(page.getByRole('button', { name: '综合决策', exact: false })).toBeVisible()
+  await expect(page.getByText('页面一致性复算', { exact: true })).toBeVisible()
+  await expect(page.getByText('仅供研究观察', { exact: true })).toBeVisible()
+  await expect(page.getByText('不可用于可信研究（页面同 Bar 收盘口径）', { exact: true })).toBeVisible()
+  await expect(workspace).not.toContainText('交易指令')
   await expect(page.getByRole('button', { name: '主力与数据', exact: false })).toBeVisible()
 
   await page.getByRole('button', { name: '历史记录', exact: true }).first().click()

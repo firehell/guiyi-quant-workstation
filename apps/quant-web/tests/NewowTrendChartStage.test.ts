@@ -77,7 +77,7 @@ test('mounts one chart and ResizeObserver, reuses them on update, and disposes t
   })
 })
 
-test('renders each physical segment through separate B and C line series', async () => {
+test('renders each physical segment through separate B, C, target, and absorb line series', async () => {
   const Stage = await loadComponent()
   const lineData: Array<Array<{ time: unknown }>> = []
   const fakeChart = {
@@ -114,6 +114,10 @@ test('renders each physical segment through separate B and C line series', async
   await nextTick()
 
   assert.deepEqual(lineData.map((data) => data.map((point) => chartDay(point.time))), [
+    ['2026-01-02', '2026-01-03'],
+    ['2026-01-02', '2026-01-03'],
+    ['2026-01-04', '2026-01-05'],
+    ['2026-01-04', '2026-01-05'],
     ['2026-01-02', '2026-01-03'],
     ['2026-01-02', '2026-01-03'],
     ['2026-01-04', '2026-01-05'],
@@ -235,6 +239,18 @@ function twoSegmentTrendData(): NewowTrendDetailResponse {
       previous_bar_end: bars[1]!.bar_end, next_bar_end: bars[2]!.bar_end,
       previous_segment_id: 'segment-1', next_segment_id: 'segment-2',
     }],
+    price_channel: {
+      daily: {
+        frequency: '1d', points: bars.map((bar, index) => ({
+          bar_end: bar.bar_end, target: 15 + index, absorb: 8 + index,
+          window: 10, available: true, formula_version: 'newow_target_absorb_hhv_llv10_page_v1',
+        })), owner_segment_ids: ['segment-1', 'segment-2'],
+        formula_version: 'newow_target_absorb_hhv_llv10_page_v1',
+      },
+      weekly: { frequency: '1w', points: [], owner_segment_ids: [], formula_version: 'newow_target_absorb_hhv_llv10_page_v1' },
+      sixty_minute: { frequency: '60m', points: [], owner_segment_ids: [], formula_version: 'newow_target_absorb_hhv_llv10_page_v1' },
+      display: { target: 18, absorb: 11, raw_target: 18, raw_absorb: 11, target_period: 'day', absorb_period: 'day', target_branch_token: 'daily_target', absorb_branch_token: 'daily_absorb', formula_version: 'newow_target_absorb_display_selection_page_v1' },
+    },
     legend: { BUILD: 'trend build', CLEAR: 'trend clear', D1: 'escape D1', D2: 'escape D2', D3: 'escape D3' },
     formula_descriptions: {
       trend_band: 'newow_trend_band_page_v2',

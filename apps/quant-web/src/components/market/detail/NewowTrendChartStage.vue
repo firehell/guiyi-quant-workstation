@@ -60,6 +60,10 @@ const bandLines = new Map<string, {
   readonly b: ISeriesApi<'Line'>
   readonly c: ISeriesApi<'Line'>
 }>()
+const channelLines = new Map<string, {
+  readonly target: ISeriesApi<'Line'>
+  readonly absorb: ISeriesApi<'Line'>
+}>()
 let markers: ISeriesMarkersPluginApi<Time> | null = null
 let observer: NewowTrendResizeObserver | null = null
 let disposeResources: (() => void) | null = null
@@ -120,6 +124,7 @@ onUnmounted(() => {
   candles = null
   volume = null
   bandLines.clear()
+  channelLines.clear()
   chart = null
 })
 
@@ -146,6 +151,7 @@ function renderProjection(value: NewowTrendChartProjection, resetViewport: boole
     color: bar.close >= bar.open ? theme.volumeUp : theme.volumeDown,
   })))
   syncBandLines(value)
+  syncChannelLines(value)
   primitive.setData(value, dayTime)
   primitive.setStyle({
     yellowFill: 'rgba(245, 158, 11, 0.16)',
@@ -162,6 +168,42 @@ function renderProjection(value: NewowTrendChartProjection, resetViewport: boole
   const range = initialChartLogicalRange(value.bars.length)
   if (range === null) chart.timeScale().fitContent()
   else chart.timeScale().setVisibleLogicalRange(range)
+}
+
+function syncChannelLines(value: NewowTrendChartProjection): void {
+  if (chart === null) return
+  const segmentIds = new Set([
+    ...value.channel.target.map(point => point.segmentId),
+    ...value.channel.absorb.map(point => point.segmentId),
+  ])
+  for (const [segmentId, series] of channelLines) {
+    if (segmentIds.has(segmentId)) continue
+    chart.removeSeries(series.target)
+    chart.removeSeries(series.absorb)
+    channelLines.delete(segmentId)
+  }
+  for (const segmentId of segmentIds) {
+    let series = channelLines.get(segmentId)
+    if (series === undefined) {
+      series = {
+        target: chart.addSeries(LineSeries, { color: '#DC2626', lineWidth: 1, lineStyle: 2, lastValueVisible: false, priceLineVisible: false }, 0),
+        absorb: chart.addSeries(LineSeries, { color: '#16A34A', lineWidth: 1, lineStyle: 2, lastValueVisible: false, priceLineVisible: false }, 0),
+      }
+      channelLines.set(segmentId, series)
+    }
+    series.target.setData(channelLineValues(value, 'target', segmentId))
+    series.absorb.setData(channelLineValues(value, 'absorb', segmentId))
+  }
+}
+
+function channelLineValues(
+  value: NewowTrendChartProjection,
+  key: 'target' | 'absorb',
+  segmentId: string,
+): Array<LineData<Time>> {
+  return value.channel[key]
+    .filter(point => point.segmentId === segmentId)
+    .map(point => ({ time: dayTime(point.tradingDay), value: point.value }))
 }
 
 function syncBandLines(value: NewowTrendChartProjection): void {
@@ -281,6 +323,10 @@ function formatValue(value: number | null): string {
         <span>B {{ formatValue(hoverFacts.trend.b) }}</span>
         <span>C {{ formatValue(hoverFacts.trend.c) }}</span>
       </template>
+      <template v-if="hoverFacts.channel">
+        <span>目标 {{ formatValue(hoverFacts.channel.target) }}</span>
+        <span>吸纳 {{ formatValue(hoverFacts.channel.absorb) }}</span>
+      </template>
       <span v-for="(label, index) in hoverFacts.markerLabels" :key="`${index}:${label}`">{{ label }}</span>
       <span v-for="cup in hoverFacts.cupStates" :key="cup.candidateId">
         杯柄 {{ cup.direction }} / {{ cup.state }}
@@ -290,6 +336,8 @@ function formatValue(value: number | null): string {
     <div class="newow-trend-chart-stage__legend" aria-label="Newow 趋势图例">
       <span><i class="newow-trend-chart-stage__swatch newow-trend-chart-stage__swatch--yellow" />黄带</span>
       <span><i class="newow-trend-chart-stage__swatch newow-trend-chart-stage__swatch--blue" />蓝带</span>
+      <span>红虚线：目标价</span>
+      <span>绿虚线：吸纳价</span>
       <span>下方子图：成交量</span>
     </div>
     <div v-if="loading && data === null" class="newow-trend-chart-stage__status">正在读取 Newow 趋势数据…</div>

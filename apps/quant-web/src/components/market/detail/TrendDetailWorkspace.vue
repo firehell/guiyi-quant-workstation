@@ -99,7 +99,15 @@ function buildDisclosureSections(
     ]
   }
 
-  const [trend, riskShape, marketData] = viewModel.disclosureSections
+  const trend = viewModel.disclosureSections.find(section => section.id === 'newow-trend')!
+  const riskShape = viewModel.disclosureSections.find(section => section.id === 'newow-risk-shape')!
+  const channel = viewModel.disclosureSections.find(section => section.id === 'newow-channel')!
+  const composite = viewModel.disclosureSections.find(section => section.id === 'newow-composite')!
+  const firstAction = viewModel.disclosureSections.find(section => section.id === 'newow-first-action')!
+  const diagnostics = viewModel.disclosureSections.find(section => section.id === 'newow-diagnostics')!
+  const windowComparison = viewModel.disclosureSections.find(section => section.id === 'newow-window-comparison')!
+  const evidence = viewModel.disclosureSections.find(section => section.id === 'newow-evidence')!
+  const marketData = viewModel.disclosureSections.find(section => section.id === 'newow-data')!
   const latestBar = data.bars.at(-1)
   return [
     {
@@ -112,6 +120,12 @@ function buildDisclosureSections(
       ],
     },
     riskShape!,
+    channel,
+    composite,
+    firstAction,
+    diagnostics,
+    windowComparison,
+    evidence,
     {
       ...marketData!,
       rows: [
@@ -153,7 +167,8 @@ function buildNotices(data: NewowTrendDetailResponse | null, loading: boolean): 
 function warningLabel(warning: NewowWarning): string {
   if (warning === 'NEWOW_TREND_WARMUP_INSUFFICIENT') return '趋势带 warm-up 不足，当前趋势不可用'
   if (warning === 'NEWOW_D123_WARMUP_INSUFFICIENT') return 'D1/D2/D3 warm-up 不足，当前风险不可用'
-  return '杯柄 warm-up 不足，当前形态不可用'
+  if (warning === 'NEWOW_CUP_WARMUP_INSUFFICIENT') return '杯柄 warm-up 不足，当前形态不可用'
+  return '综合决策日线样本不足，页面复刻与 clean-room 综合结论均不可用'
 }
 </script>
 

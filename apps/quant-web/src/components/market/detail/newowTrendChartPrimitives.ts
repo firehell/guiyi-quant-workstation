@@ -44,6 +44,12 @@ export interface NewowTrendBandLinePoint {
   readonly state: NewowTrendBandState
 }
 
+export interface NewowPriceChannelLinePoint {
+  readonly tradingDay: string
+  readonly segmentId: string
+  readonly value: number
+}
+
 export interface NewowTrendBandArea {
   readonly segmentId: string
   readonly fromTradingDay: string
@@ -104,6 +110,7 @@ export interface NewowTrendHoverFacts {
     readonly c: number | null
     readonly transition: 'BUILD' | 'CLEAR' | null
   } | null
+  readonly channel: { readonly target: number | null; readonly absorb: number | null } | null
   readonly markerLabels: readonly string[]
   readonly cupStates: readonly {
     readonly candidateId: string
@@ -121,6 +128,10 @@ export interface NewowTrendChartProjection {
     readonly b: readonly NewowTrendBandLinePoint[]
     readonly c: readonly NewowTrendBandLinePoint[]
     readonly areas: readonly NewowTrendBandArea[]
+  }
+  readonly channel: {
+    readonly target: readonly NewowPriceChannelLinePoint[]
+    readonly absorb: readonly NewowPriceChannelLinePoint[]
   }
   readonly markers: readonly NewowTrendChartMarker[]
   readonly cups: readonly NewowCupGeometry[]
@@ -174,6 +185,7 @@ export function buildNewowTrendChartProjection(
   const barByBarEnd = new Map(bars.map((bar) => [bar.barEnd, bar]))
   const tradingDayByBarEnd = new Map(bars.map((bar) => [bar.barEnd, bar.tradingDay]))
   const band = projectBand(input.data, barByBarEnd)
+  const channel = projectChannel(input.data, barByBarEnd)
   const markers = projectMarkers(input.data, tradingDayByBarEnd)
   const cups = projectCups(input.data.cup_handles, bars)
   const rolloverSeams = input.data.rollover_seams.map((seam): NewowRolloverProjection => ({
@@ -183,6 +195,7 @@ export function buildNewowTrendChartProjection(
     label: `${seam.previous_contract} → ${seam.next_contract} · 主力切换`,
   }))
   const trendByBarEnd = new Map(input.data.trend_band.map((point) => [point.bar_end, point]))
+  const channelByBarEnd = new Map(input.data.price_channel.daily.points.map((point) => [point.bar_end, point]))
   const markersByDay = groupMarkersByTradingDay(markers)
   const cupStatesByDay = new Map<string, NewowTrendHoverFacts['cupStates']>()
   for (const cup of input.data.cup_handles) {
@@ -206,6 +219,10 @@ export function buildNewowTrendChartProjection(
         c: trend.c_value,
         transition: trend.transition,
       },
+      channel: channelByBarEnd.has(bar.barEnd) ? {
+        target: channelByBarEnd.get(bar.barEnd)!.target,
+        absorb: channelByBarEnd.get(bar.barEnd)!.absorb,
+      } : null,
       markerLabels: markersByDay.get(bar.tradingDay)?.map((marker) => marker.label) ?? [],
       cupStates: cupStatesByDay.get(bar.tradingDay) ?? [],
       rolloverLabel: rolloverByDay.get(bar.tradingDay) ?? null,
@@ -217,6 +234,7 @@ export function buildNewowTrendChartProjection(
     paneCount: 2,
     bars,
     band,
+    channel,
     markers,
     cups,
     rolloverSeams,
@@ -247,6 +265,7 @@ function genericFallbackProjection(genericBars: readonly BarData[]): NewowTrendC
     paneCount: 2,
     bars,
     band: { b: [], c: [], areas: [] },
+    channel: { target: [], absorb: [] },
     markers: [],
     cups: [],
     rolloverSeams: [],
@@ -256,11 +275,27 @@ function genericFallbackProjection(genericBars: readonly BarData[]): NewowTrendC
       bar,
       physicalContract: bar.physicalContract,
       trend: null,
+      channel: null,
       markerLabels: [],
       cupStates: [],
       rolloverLabel: null,
     })),
   }
+}
+
+function projectChannel(
+  data: NewowTrendDetailResponse,
+  barByBarEnd: ReadonlyMap<string, NewowTrendChartBar>,
+): NewowTrendChartProjection['channel'] {
+  const target: NewowPriceChannelLinePoint[] = []
+  const absorb: NewowPriceChannelLinePoint[] = []
+  for (const point of data.price_channel.daily.points) {
+    const bar = barByBarEnd.get(point.bar_end)
+    if (bar?.segmentId === null || bar === undefined) continue
+    if (point.target !== null) target.push({ tradingDay: bar.tradingDay, segmentId: bar.segmentId, value: point.target })
+    if (point.absorb !== null) absorb.push({ tradingDay: bar.tradingDay, segmentId: bar.segmentId, value: point.absorb })
+  }
+  return { target, absorb }
 }
 
 function projectBand(

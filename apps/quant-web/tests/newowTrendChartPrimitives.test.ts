@@ -34,6 +34,16 @@ test('projects API bars, non-null bands, three marker families, clipped cups, an
     ['2026-01-04', 11.8],
   ])
   assert.deepEqual(projection.band.areas, [])
+  assert.deepEqual(projection.channel, {
+    target: [
+      { tradingDay: '2026-01-03', segmentId: 'segment-1', value: 13 },
+      { tradingDay: '2026-01-04', segmentId: 'segment-2', value: 14 },
+    ],
+    absorb: [
+      { tradingDay: '2026-01-03', segmentId: 'segment-1', value: 9 },
+      { tradingDay: '2026-01-04', segmentId: 'segment-2', value: 10 },
+    ],
+  })
   assert.deepEqual(projection.markers.map((marker) => [marker.family, marker.markerType, marker.id]), [
     ['trend', 'BUILD', 'build'],
     ['escape', 'NEWOW_ESCAPE_D1', 'd1'],
@@ -61,6 +71,7 @@ test('projects API bars, non-null bands, three marker families, clipped cups, an
   assert.deepEqual(hover?.cupStates, [{ candidateId: 'cup-1', direction: 'BULLISH', state: 'READY' }])
   assert.equal(hover?.rolloverLabel, 'RB2605 → RB2610 · 主力切换')
   assert.equal(hover?.physicalContract, 'RB2610')
+  assert.deepEqual(hover?.channel, { target: 14, absorb: 10 })
 })
 
 test('uses generic completed D1 only when Newow is unavailable and discards strategy-looking extras', () => {
@@ -80,6 +91,7 @@ test('uses generic completed D1 only when Newow is unavailable and discards stra
     physicalContract: null, segmentId: null,
   }])
   assert.deepEqual(projection.band, { b: [], c: [], areas: [] })
+  assert.deepEqual(projection.channel, { target: [], absorb: [] })
   assert.deepEqual(projection.markers, [])
   assert.deepEqual(projection.cups, [])
   assert.deepEqual(projection.rolloverSeams, [])
@@ -244,11 +256,38 @@ function snapshot(): NewowTrendDetailResponse {
       previous_bar_end: bars[1]!.bar_end, next_bar_end: bars[2]!.bar_end,
       previous_segment_id: 'segment-1', next_segment_id: 'segment-2',
     }],
+    price_channel: {
+      daily: {
+        frequency: '1d',
+        points: [
+          channelPoint(bars[0]!.bar_end, null, null),
+          channelPoint(bars[1]!.bar_end, 13, 9),
+          channelPoint(bars[2]!.bar_end, 14, 10),
+        ],
+        owner_segment_ids: ['segment-1', 'segment-2'],
+        formula_version: 'newow_target_absorb_hhv_llv10_page_v1',
+      },
+      weekly: { frequency: '1w', points: [], owner_segment_ids: [], formula_version: 'newow_target_absorb_hhv_llv10_page_v1' },
+      sixty_minute: { frequency: '60m', points: [], owner_segment_ids: [], formula_version: 'newow_target_absorb_hhv_llv10_page_v1' },
+      display: {
+        target: 14, absorb: 10, raw_target: 14, raw_absorb: 10,
+        target_period: 'day', absorb_period: 'day', target_branch_token: 'daily_target',
+        absorb_branch_token: 'daily_absorb', formula_version: 'newow_target_absorb_display_selection_page_v1',
+      },
+    },
     legend: { BUILD: 'trend build', CLEAR: 'trend clear', D1: 'escape D1', D2: 'escape D2', D3: 'escape D3' },
     formula_descriptions: {
       trend_band: 'newow_trend_band_page_v2', escape: 'newow_escape_d123_page_v2', cup_handle: 'newow_cup_handle_v1',
     },
     warnings: [],
+  }
+}
+
+function channelPoint(barEnd: string, target: number | null, absorb: number | null) {
+  return {
+    bar_end: barEnd, target, absorb, window: 10 as const,
+    available: target !== null && absorb !== null,
+    formula_version: 'newow_target_absorb_hhv_llv10_page_v1' as const,
   }
 }
 
