@@ -251,7 +251,12 @@ def test_public_entrypoints_are_exact() -> None:
 
 def test_newow_v3282_coverage_has_one_status_and_no_unknown_active_formula() -> None:
     coverage_path = ROOT / "docs/tasks/2026-09-04-newow-v3-2-82-coverage.md"
+    plan_path = ROOT / (
+        "docs/tasks/2026-09-04-newow-v3-2-82-complete-replication-plan.md"
+    )
     assert coverage_path.is_file(), "Newow v3.2.82 coverage canonical is missing"
+    assert "OUT_OF_SCOPE_PRIVATE" not in plan_path.read_text(encoding="utf-8")
+    assert "INFERRED_CANDIDATE" not in plan_path.read_text(encoding="utf-8")
 
     rows = [
         [cell.strip() for cell in line.strip().strip("|").split("|")]

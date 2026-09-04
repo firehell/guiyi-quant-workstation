@@ -21,7 +21,7 @@
 - 重绘结果必须带 repainting=true 且 formal_signal_eligible=false；正式信号和研究回测必须拒绝它。
 - 页面公式、clean-room 修正版和既有 Newow 公式不得共用 calculation identity 或可互换返回类型。
 - 所有价格、仓位、成本、收益和费用使用 Decimal；Web 边界显式、安全地序列化。
-- 公开采集只允许匿名 GET/只读 POST，不带 Cookie、Token 或账户数据；发现认证字段立即停止该请求并在 coverage 中标记 UNKNOWN / OUT_OF_SCOPE_PRIVATE。
+- 公开采集只允许匿名 GET/只读 POST，不带 Cookie、Token 或账户数据；发现认证字段立即停止该请求并在 coverage 中标记 `UNKNOWN`。
 - auto_order=false；禁止新增订单、账户、持仓管理、Alert、Scope、通知、scheduler、migration、Runtime enable 或生产写入。
 - 不修改 PROJECT_SOURCE.md 稳定产品面；不执行 main 合入、tag、release 或 Runtime promotion。
 - 每个 Slice 必须完成 RED、GREEN、定向回归、Ruff、Mypy、证据 hash readback、Standards Review、Spec Review 和 P1/P2 清零，才能进入下一 Slice。
@@ -171,7 +171,8 @@ def test_newow_v3282_coverage_has_one_status_and_no_unknown_active_formula() -> 
     text = Path("docs/tasks/2026-09-04-newow-v3-2-82-coverage.md").read_text()
     assert "OBSERVED_EXACT" in text
     assert "REPRODUCED_EXACT" in text
-    assert "OUT_OF_SCOPE_PRIVATE" in text
+    assert "UNKNOWN" in text
+    assert "REJECTED" in text
     assert "UNKNOWN | active" not in text
 ~~~
 
@@ -1180,7 +1181,7 @@ git commit -m "feat(web): present newow strategy evidence"
 
 - [ ] **Step 3: 完成报告与 coverage**
 
-report.md 分为 Observed UI facts、Manual claims、Repository facts、Implementation hypotheses、Parity results、Futures migration results、Rejected/Unknown、Risks。公开可访问面须为 REPRODUCED_EXACT、CLEANROOM_IMPLEMENTED 或有证据的 REJECTED；私有服务端可保持 UNKNOWN / OUT_OF_SCOPE_PRIVATE，但必须解释边界。
+report.md 分为 Observed UI facts、Manual claims、Repository facts、Implementation hypotheses、Parity results、Futures migration results、Rejected/Unknown、Risks。公开可访问面须为 REPRODUCED_EXACT、CLEANROOM_IMPLEMENTED 或有证据的 REJECTED；私有服务端可保持 UNKNOWN，但必须解释边界。
 
 - [ ] **Step 4: 完整验证矩阵**
 
