@@ -178,6 +178,10 @@ def test_local_browser_capture_directory_is_not_tracked_and_is_ignored() -> None
     assert ignored.returncode == 0
 
 
+def test_noncanonical_superpowers_documents_are_not_tracked() -> None:
+    assert _tracked_paths("docs/superpowers/**") == ()
+
+
 def test_newow_screenshot_distribution_owner_decision_is_explicit() -> None:
     readme = (NEWOW_DOSSIER / "README.md").read_text(encoding="utf-8")
     _assert_owner_distribution_contract(readme)
