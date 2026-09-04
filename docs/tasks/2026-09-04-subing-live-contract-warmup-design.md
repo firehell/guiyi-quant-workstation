@@ -80,8 +80,8 @@ guiyi data contract-warmup \
 
 ### 数据写入
 
-- RQData direct 频度仍为既有 `1m/1d/1w`，`5m/15m/30m/60m` 只从通过校验的同一物理合约 1m
-  聚合。
+- 基础 provider 频度仍为既有 `1m/1d`；`1w` 只由同一交易所完整日行情在 adapter 边界聚合，
+  `5m/15m/30m/60m` 只从通过校验的同一物理合约 1m 聚合。
 - 目标只包含命令指定的一个 physical contract family。不会刷新 continuous、其他品种、其他合约或
   MainContractMap。
 - 每个月分区继续使用既有 staging、schema/session/duplicate/OHLCV/coverage、row-count 与物理可读性

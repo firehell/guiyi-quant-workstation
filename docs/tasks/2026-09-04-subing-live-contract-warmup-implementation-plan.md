@@ -419,14 +419,14 @@ json.dumps(
   - `through` 晚于 `latest_complete_day((symbol,))` → `CONTRACT_WARMUP_THROUGH_INCOMPLETE`；
   - effective window 空 → `CONTRACT_ACTIVE_WINDOW_MISSING`。
 - [ ] 写数据路径 RED：
-  - direct 只取 `1m/1d/1w`；
+  - 基础 provider 只取 `1m/1d`；`1w` 只由完整同源日行情在 adapter 边界聚合；
   - `5m/15m/30m/60m` 只从同 contract、同月、已校验 1m 聚合；
   - D1/W1 不因 rank1 map 缩短；
   - existing valid bars 与 fetched missing 合并后再经 `store.publish()`；
   - strict readback 与 Catalog coverage/row_count 一致；
   - provider quota 结束为 `partial`，不自动重试；
   - 某 family/month 失败记录稳定 reason code，已成功的独立月分区保持可读，下次 dry-run 只规划剩余缺口。
-- [ ] 复用 `_Target`、`_execute_apply()`、`_publish_fetched()`、`_publish_derived()`、`_commit_partition()`；为避免 contract W1 走 rank1-only daily companion，给 apply core 增加显式 `weekly_daily_companions: bool`：普通 update/refresh 为 `True`，warm-up 为 `False`，因为 exact lifecycle D1 已作为同一计划中的 direct target。
+- [ ] 复用 `_Target`、`_execute_apply()`、`_publish_fetched()`、`_publish_derived()`、`_commit_partition()`；为避免 contract W1 走 rank1-only daily companion，给 apply core 增加显式 `weekly_daily_companions: bool`：普通 update/refresh 为 `True`，warm-up 为 `False`，因为 exact lifecycle D1 已作为同一计划中的同源日线 context。
 - [ ] `HistoricalDataManager.contract_warmup()` 顺序固定：
 
 ```text

@@ -40,8 +40,9 @@ plan hash、direct/derived target 数、预计 Bar 数和 provider request 数�
 SHA-256 `--expected-plan-sha256`，在 maintenance lock 内重算计划；identity、lifecycle、session 或 hash
 漂移时，必须在首次 provider 请求和写入前 fail closed。
 
-apply 只可为指定 physical contract 下载 `1m/1d/1w` 直接事实，并由质量通过的同 contract `1m` 派生
-`5m/15m/30m/60m`；不得写 continuous、其它 contract、MainContractMap、Rule、Scope、Runtime、Redis Live、
+apply 只可为指定 physical contract 获取 `1m/1d` 基础事实；`1w` MUST 由同一交易所完整日行情在 adapter
+边界聚合，`5m/15m/30m/60m` 只由质量通过的同 contract `1m` 派生；不得写 continuous、其它 contract、
+MainContractMap、Rule、Scope、Runtime、Redis Live、
 Event 或通知。月分区仍依次经过 staging 与完整发布校验。部分成功 MUST 显式返回 `partial/failed`；不得
 自动 retry，任何真实 RQData/Canonical apply 仍需一次与 exact plan hash 对应的独立授权。
 

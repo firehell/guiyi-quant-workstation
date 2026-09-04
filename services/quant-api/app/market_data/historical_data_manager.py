@@ -51,6 +51,7 @@ from app.market_data.domain import (
     SeriesQuery,
 )
 from app.market_data.product_retirement import assert_products_not_retired
+from app.market_data.operational_universe import load_active_products
 from app.market_data.session_clock import SHANGHAI
 from app.market_data.market_data_service import MarketDataError, MarketDataService
 from app.market_data.storage import (
@@ -568,6 +569,8 @@ class HistoricalDataManager:
         symbol = request.symbol.strip().lower()
         contract = request.contract.strip().upper()
         assert_products_not_retired((symbol,))
+        if symbol not in load_active_products():
+            raise ValueError("CONTRACT_WARMUP_SYMBOL_INACTIVE")
         fact = self.catalog.contract_fact(symbol, contract)
         latest_complete = self.coverage.latest_complete_day((symbol,))
         if request.through > latest_complete:

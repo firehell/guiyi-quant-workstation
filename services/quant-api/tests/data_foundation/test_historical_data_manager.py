@@ -589,6 +589,28 @@ def test_contract_warmup_dry_run_has_exact_month_targets_stable_hash_and_no_writ
     }
 
 
+def test_contract_warmup_rejects_non_active_symbol_before_planning(
+    session, tmp_path, monkeypatch
+) -> None:
+    manager, _coverage, provider = _single_day_contract_warmup_manager(
+        session, tmp_path
+    )
+    monkeypatch.setattr(
+        historical,
+        "load_active_products",
+        lambda: ("jm",),
+        raising=False,
+    )
+
+    with pytest.raises(ValueError, match="^CONTRACT_WARMUP_SYMBOL_INACTIVE$"):
+        manager.contract_warmup(
+            historical.ContractWarmupRequest("pf", "PF2611", date(2025, 1, 2))
+        )
+
+    assert provider.calls == []
+    assert tuple(session.scalars(select(MarketPartition))) == ()
+
+
 @pytest.mark.parametrize(
     ("expected_hash", "reason_code"),
     [
