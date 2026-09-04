@@ -1216,6 +1216,7 @@ class HistoricalDataManager:
                 planned += 1
                 blocked += 1
                 continue
+            failure_target = target
             try:
                 planned += len(fetch_targets)
                 provider_requests += len(fetch_targets)
@@ -1227,11 +1228,13 @@ class HistoricalDataManager:
                     raise StorageError("PROVIDER_BATCH_COUNT_MISMATCH")
                 paired = tuple(zip(fetch_targets, batches, strict=True))
                 for fetch_target, batch in paired:
+                    failure_target = fetch_target
                     self._merged_fetched_bars(
                         fetch_target,
                         (batch,),
                     )
                 for fetch_target, batch in paired:
+                    failure_target = fetch_target
                     self._publish_fetched(fetch_target, (batch,))
                     applied += 1
                 # 日内派生触发点：同族同月 1m 发布成功后立即聚合 5m/15m/30m/60m。
@@ -1244,6 +1247,7 @@ class HistoricalDataManager:
                         and item.month == target.month
                     ]
                     for item in ready:
+                        failure_target = item
                         remaining_derived.remove(item)
                         planned += 1
                         self._publish_derived(item)
@@ -1265,8 +1269,8 @@ class HistoricalDataManager:
                     )
                 if _is_global_failure(exc):
                     raise
-                failed_families.add(_family(target.key))
-                failures.append(_failure(target, exc))
+                failed_families.add(_family(failure_target.key))
+                failures.append(_failure(failure_target, exc))
                 self.catalog.session.rollback()
             if planned == 1 or planned % 100 == 0:
                 print(
@@ -1296,7 +1300,11 @@ class HistoricalDataManager:
         if planned == 0:
             status = "noop"
         elif failures or blocked:
-            status = "partial" if applied else "failed"
+            status = (
+                "partial"
+                if action == "contract_warmup" and applied
+                else "failed"
+            )
         else:
             status = "passed"
         return MaintenanceResult(

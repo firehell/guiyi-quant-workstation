@@ -994,6 +994,60 @@ def test_contract_warmup_batches_exact_lifecycle_daily_with_weekly_snapshot(
     assert tuple(session.scalars(select(MainContractMap))) == ()
 
 
+def test_contract_warmup_group_attributes_daily_merge_failure_to_daily_target(
+    session, tmp_path
+) -> None:
+    listed = date(2025, 1, 6)
+    through = date(2025, 1, 10)
+    _add_contract(
+        session,
+        symbol="pf",
+        contract="PF2611",
+        listed_date=listed,
+        expired_date=date(2025, 2, 1),
+    )
+    daily = DatasetKey("contract", "pf", "PF2611", "1d")
+    weekly = DatasetKey("contract", "pf", "PF2611", "1w")
+    daily_bars = tuple(_daily(day, 100 + day) for day in range(6, 11))
+    weekly_bar = _daily(10, 110)
+    coverage = FakeCoverage(
+        {
+            daily.as_tuple(): tuple(bar.bar_end for bar in daily_bars),
+            weekly.as_tuple(): (weekly_bar.bar_end,),
+        }
+    )
+    coverage.latest_day = through
+    provider = FakeProvider({weekly.as_tuple(): (weekly_bar,)})
+    manager = _manager(session, tmp_path, coverage, provider)
+    dry_run = manager.contract_warmup(
+        historical.ContractWarmupRequest("pf", "PF2611", through)
+    )
+
+    result = manager.contract_warmup(
+        historical.ContractWarmupRequest(
+            "pf", "PF2611", through, dry_run.plan.plan_sha256, True
+        )
+    )
+
+    assert result.status == "failed"
+    assert result.applied == 0
+    assert result.failures == (
+        {
+            "dataset": daily.as_tuple(),
+            "year": 2025,
+            "month": 1,
+            "reason_code": "TARGET_WINDOW_INCOMPLETE",
+        },
+    )
+    assert tuple(session.scalars(select(MarketPartition))) == ()
+    remaining = manager.contract_warmup(
+        historical.ContractWarmupRequest("pf", "PF2611", through)
+    )
+    assert tuple(
+        target["dataset"] for target in remaining.plan.target_windows
+    ) == (daily.as_tuple(), weekly.as_tuple())
+
+
 def test_contract_warmup_merges_existing_valid_bars_and_readback_matches_catalog(
     session, tmp_path
 ) -> None:
@@ -1186,6 +1240,37 @@ def test_contract_warmup_partition_failure_with_zero_success_is_failed(
     assert result.failed == result.provider_requests == 1
     assert provider.calls == [(key, (expected.bar_end,))]
     assert tuple(session.scalars(select(MarketPartition))) == ()
+
+
+@pytest.mark.parametrize("ordinary_action", ["update", "refresh"])
+def test_ordinary_non_quota_failure_remains_failed_when_another_month_succeeds(
+    session, tmp_path, ordinary_action
+) -> None:
+    january_day = date(2025, 1, 3)
+    february_day = date(2025, 2, 3)
+    key = DatasetKey("continuous", "jm", "MAIN", "1d")
+    january = _daily_on(january_day, 100, 1)
+    february = _daily_on(february_day, 101, 2)
+    coverage = FakeCoverage({key.as_tuple(): (january.bar_end, february.bar_end)})
+    provider = FakeProvider({key.as_tuple(): (february,)})
+    manager = _manager(session, tmp_path, coverage, provider)
+
+    if ordinary_action == "update":
+        result = manager.update(
+            UpdateRequest(("jm",), january_day, february_day, True)
+        )
+    else:
+        result = manager.refresh(
+            RefreshRequest("jm", january_day, february_day, True)
+        )
+
+    assert result.status == "failed"
+    assert result.applied == result.failed == 1
+    assert result.stop_reason is None
+    assert manager.store.read_month(key, 2025, 2) == (february,)
+    assert [(item.year, item.month) for item in manager.catalog.all_partitions(key)] == [
+        (2025, 2)
+    ]
 
 
 def test_contract_warmup_contracts_expose_only_the_frozen_public_fields() -> None:
