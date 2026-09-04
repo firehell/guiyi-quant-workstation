@@ -18,6 +18,8 @@
 
 ## 阅读入口
 
+- [归一量化｜牛哇策略复刻手册（Markdown 源稿）](REPLICATION_MANUAL.md)
+- [归一量化｜牛哇策略复刻手册（A4 PDF）](../../../output/pdf/newow-v3.2.82-futures-replication-manual.pdf)
 - [完整策略与指标报告](REPORT.md)
 - [页面一致性结果](evidence/core-page-parity-results.json)
 - [综合决策可达性](evidence/composite-reachability.json)
@@ -77,6 +79,7 @@
 newow-v3.2.82/
 ├── README.md
 ├── REPORT.md
+├── REPLICATION_MANUAL.md
 ├── screenshots/
 │   ├── 27 个标的/周期页面截图
 │   └── context/
