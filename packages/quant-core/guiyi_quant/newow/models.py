@@ -84,14 +84,18 @@ class _FrozenMapping(Mapping[str, object]):
 
 def _freeze_value(value: object) -> object:
     if isinstance(value, Mapping):
-        return _FrozenMapping({str(key): _freeze_value(item) for key, item in value.items()})
+        return _FrozenMapping(
+            {str(key): _freeze_value(item) for key, item in value.items()}
+        )
     if isinstance(value, (list, tuple)):
         return tuple(_freeze_value(item) for item in value)
     return value
 
 
 def _freeze_mapping(values: Mapping[str, object]) -> Mapping[str, object]:
-    return _FrozenMapping({str(key): _freeze_value(value) for key, value in values.items()})
+    return _FrozenMapping(
+        {str(key): _freeze_value(value) for key, value in values.items()}
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -128,7 +132,10 @@ class NewowDailyBar:
             raise ValueError("NEWOW_BAR_INVALID_FREQUENCY")
         if not self.product or self.product != self.product.lower():
             raise ValueError("NEWOW_BAR_INVALID_PRODUCT")
-        if not self.physical_contract or self.physical_contract != self.physical_contract.upper():
+        if (
+            not self.physical_contract
+            or self.physical_contract != self.physical_contract.upper()
+        ):
             raise ValueError("NEWOW_BAR_INVALID_PHYSICAL_CONTRACT")
         if not self.segment_id or not self.source_identity:
             raise ValueError("NEWOW_BAR_EMPTY_IDENTITY")
@@ -140,9 +147,15 @@ class NewowDailyBar:
             raise ValueError("NEWOW_BAR_INVALID_OHLC")
         if any(value <= 0 for value in self._prices):
             raise ValueError("NEWOW_BAR_NONPOSITIVE_PRICE")
-        if self.low > self.high or not self.low <= self.open <= self.high or not self.low <= self.close <= self.high:
+        if (
+            self.low > self.high
+            or not self.low <= self.open <= self.high
+            or not self.low <= self.close <= self.high
+        ):
             raise ValueError("NEWOW_BAR_INVALID_OHLC")
-        if self.volume < 0 or (self.open_interest is not None and self.open_interest < 0):
+        if self.volume < 0 or (
+            self.open_interest is not None and self.open_interest < 0
+        ):
             raise ValueError("NEWOW_BAR_NEGATIVE_VOLUME_OR_OI")
 
     @property
@@ -241,7 +254,9 @@ class NewowCupHandleOverlay:
     formula_version: str = ""
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "score_breakdown", _freeze_mapping(self.score_breakdown))
+        object.__setattr__(
+            self, "score_breakdown", _freeze_mapping(self.score_breakdown)
+        )
         object.__setattr__(self, "hard_failures", tuple(self.hard_failures))
         object.__setattr__(self, "diagnostics", tuple(self.diagnostics))
         object.__setattr__(self, "volume_facts", _freeze_mapping(self.volume_facts))
@@ -283,7 +298,11 @@ class NewowCupHandleOverlay:
             CupHandleState.WEAKENED,
             CupHandleState.INVALIDATED,
             CupHandleState.EXPIRED,
-        } and (self.handle_extreme is None or self.pivot_price is None or self.pivot_frozen_at is None):
+        } and (
+            self.handle_extreme is None
+            or self.pivot_price is None
+            or self.pivot_frozen_at is None
+        ):
             raise ValueError("NEWOW_CUP_OVERLAY_INVALID")
         if self.pivot_price is not None and (
             not self.pivot_price.is_finite() or self.pivot_price <= 0

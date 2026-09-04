@@ -488,8 +488,7 @@ def _ready_witness_is_valid(
         )
         or not isinstance(witness.volume_facts, tuple)
         or not all(
-            isinstance(item, tuple) and len(item) == 2
-            for item in witness.volume_facts
+            isinstance(item, tuple) and len(item) == 2 for item in witness.volume_facts
         )
         or tuple(key for key, _ in witness.score_breakdown) != _SCORE_KEYS
         or tuple(key for key, _ in witness.volume_facts) != _VOLUME_FACT_KEYS
@@ -542,7 +541,9 @@ def _ready_witness_is_valid(
 def _retained_window(
     by_index: Mapping[int, CupBarSnapshot], start: int, end: int
 ) -> tuple[CupBarSnapshot, ...] | None:
-    snapshots = tuple(by_index[index] for index in range(start, end + 1) if index in by_index)
+    snapshots = tuple(
+        by_index[index] for index in range(start, end + 1) if index in by_index
+    )
     if len(snapshots) != end - start + 1:
         return None
     return snapshots
@@ -577,9 +578,8 @@ def _tracker_is_coherent(
     tracker = state.pivot_tracker
     pivots = state.confirmed_pivots
     bars = state.eligible_bars
-    if (
-        isinstance(tracker.eligible_index, bool)
-        or not isinstance(tracker.eligible_index, int)
+    if isinstance(tracker.eligible_index, bool) or not isinstance(
+        tracker.eligible_index, int
     ):
         return False
     if state.eligible_started != (tracker.eligible_index >= 0):
@@ -599,9 +599,7 @@ def _tracker_is_coherent(
         if not pivots or tracker.last_pivot != pivots[-1]:
             return False
         expected_leg = (
-            "UP_LEG"
-            if tracker.last_pivot.kind == CupPivotKind.LOW
-            else "DOWN_LEG"
+            "UP_LEG" if tracker.last_pivot.kind == CupPivotKind.LOW else "DOWN_LEG"
         )
         if tracker.leg != expected_leg:
             return False
@@ -618,8 +616,7 @@ def _tracker_is_coherent(
         if (
             tracker.extreme_low is not None
             and tracker.extreme_low.eligible_index in by_index
-            and tracker.extreme_low
-            != min(bars, key=lambda snapshot: snapshot.bar.low)
+            and tracker.extreme_low != min(bars, key=lambda snapshot: snapshot.bar.low)
         ):
             return False
     elif tracker.extreme_high is None or tracker.extreme_low is None:
@@ -650,24 +647,18 @@ def _tracker_is_coherent(
 
     if tracker.last_pivot is not None:
         directional_extreme = (
-            tracker.extreme_high
-            if tracker.leg == "UP_LEG"
-            else tracker.extreme_low
+            tracker.extreme_high if tracker.leg == "UP_LEG" else tracker.extreme_low
         )
         assert directional_extreme is not None
         if (
             directional_extreme.eligible_index < tracker.last_pivot.confirmed_index
             or (
-                directional_extreme.eligible_index
-                == tracker.last_pivot.confirmed_index
-                and directional_extreme.bar.bar_end
-                != tracker.last_pivot.confirmed_at
+                directional_extreme.eligible_index == tracker.last_pivot.confirmed_index
+                and directional_extreme.bar.bar_end != tracker.last_pivot.confirmed_at
             )
             or (
-                directional_extreme.eligible_index
-                > tracker.last_pivot.confirmed_index
-                and directional_extreme.bar.bar_end
-                <= tracker.last_pivot.confirmed_at
+                directional_extreme.eligible_index > tracker.last_pivot.confirmed_index
+                and directional_extreme.bar.bar_end <= tracker.last_pivot.confirmed_at
             )
         ):
             return False
@@ -719,9 +710,7 @@ def _atr_state_is_valid(state: object, period: int) -> bool:
         return False
     if state.count == 0:
         return (
-            state.tr_total == 0.0
-            and state.atr is None
-            and state.previous_close is None
+            state.tr_total == 0.0 and state.atr is None and state.previous_close is None
         )
     if state.previous_close is None:
         return False
@@ -1120,20 +1109,17 @@ def _active_candidate_is_coherent(
 
 
 def _state_is_valid(state: CupHandleStateValue, profile: NewowTrendProfile) -> bool:
-    if not _atr_state_is_valid(state.atr_state, profile.cup_atr_period) or not isinstance(
-        state.pivot_tracker, CupPivotTrackerState
-    ):
+    if not _atr_state_is_valid(
+        state.atr_state, profile.cup_atr_period
+    ) or not isinstance(state.pivot_tracker, CupPivotTrackerState):
         return False
     if (state.physical_contract is None) != (state.segment_id is None):
         return False
-    if (
-        state.physical_contract is not None
-        and (
-            not isinstance(state.physical_contract, str)
-            or not state.physical_contract
-            or not isinstance(state.segment_id, str)
-            or not state.segment_id
-        )
+    if state.physical_contract is not None and (
+        not isinstance(state.physical_contract, str)
+        or not state.physical_contract
+        or not isinstance(state.segment_id, str)
+        or not state.segment_id
     ):
         return False
     if not isinstance(state.eligible_started, bool):
@@ -1149,11 +1135,15 @@ def _state_is_valid(state: CupHandleStateValue, profile: NewowTrendProfile) -> b
         or len(state.confirmed_pivots) > profile.cup_max_confirmed_pivots
         or not isinstance(state.emitted_milestones, tuple)
         or len(state.emitted_milestones) > 3
-        or not all(isinstance(marker_id, str) and marker_id for marker_id in state.emitted_milestones)
+        or not all(
+            isinstance(marker_id, str) and marker_id
+            for marker_id in state.emitted_milestones
+        )
         or not isinstance(state.emitted_milestone_facts, tuple)
         or len(state.emitted_milestone_facts) > 3
         or not isinstance(state.recent_terminal_candidate_ids, tuple)
-        or len(state.recent_terminal_candidate_ids) > profile.cup_recent_terminal_ids_limit
+        or len(state.recent_terminal_candidate_ids)
+        > profile.cup_recent_terminal_ids_limit
         or len(set(state.recent_terminal_candidate_ids))
         != len(state.recent_terminal_candidate_ids)
         or not all(
@@ -1183,11 +1173,9 @@ def _state_is_valid(state: CupHandleStateValue, profile: NewowTrendProfile) -> b
             or (
                 previous_snapshot is not None
                 and (
-                    snapshot.eligible_index
-                    != previous_snapshot.eligible_index + 1
+                    snapshot.eligible_index != previous_snapshot.eligible_index + 1
                     or snapshot.bar.bar_end <= previous_snapshot.bar.bar_end
-                    or snapshot.bar.trading_day
-                    <= previous_snapshot.bar.trading_day
+                    or snapshot.bar.trading_day <= previous_snapshot.bar.trading_day
                 )
             )
             or snapshot.eligible_index > state.pivot_tracker.eligible_index
@@ -1195,8 +1183,10 @@ def _state_is_valid(state: CupHandleStateValue, profile: NewowTrendProfile) -> b
             return False
         previous_snapshot = snapshot
         by_index[snapshot.eligible_index] = snapshot
-    if state.eligible_bars and state.atr_state.atr is not None and (
-        state.atr_state.previous_close != state.eligible_bars[-1].bar.close
+    if (
+        state.eligible_bars
+        and state.atr_state.atr is not None
+        and (state.atr_state.previous_close != state.eligible_bars[-1].bar.close)
     ):
         return False
     previous_pivot: CupPivot | None = None
@@ -1340,9 +1330,7 @@ def _next_atr(state: WilderAtrState, bar: NewowDailyBar, period: int) -> WilderA
             abs(bar.high - previous_close)
             if previous_close is not None
             else Decimal(0),
-            abs(bar.low - previous_close)
-            if previous_close is not None
-            else Decimal(0),
+            abs(bar.low - previous_close) if previous_close is not None else Decimal(0),
         )
     except ArithmeticError:
         return WilderAtrState(period, 0.0, None, bar.close)
@@ -1369,7 +1357,9 @@ def _next_atr(state: WilderAtrState, bar: NewowDailyBar, period: int) -> WilderA
     return WilderAtrState(count, 0.0, atr, bar.close)
 
 
-def _pivot(kind: CupPivotKind, snapshot: CupBarSnapshot, confirmed: CupBarSnapshot) -> CupPivot:
+def _pivot(
+    kind: CupPivotKind, snapshot: CupBarSnapshot, confirmed: CupBarSnapshot
+) -> CupPivot:
     return CupPivot(
         kind=kind,
         price=snapshot.bar.high if kind == CupPivotKind.HIGH else snapshot.bar.low,
@@ -1445,10 +1435,9 @@ def _track_pivot(
         assert high is not None
         leg_start = tracker.last_pivot.pivot_index if tracker.last_pivot else 0
         leg_bars = high.eligible_index - leg_start
-        reversed_enough = (
-            Fraction(high.bar.high) - Fraction(snapshot.bar.close)
-            >= _rational_parameter(reversal) * Fraction(Decimal(str(high.atr)))
-        )
+        reversed_enough = Fraction(high.bar.high) - Fraction(
+            snapshot.bar.close
+        ) >= _rational_parameter(reversal) * Fraction(Decimal(str(high.atr)))
         if leg_bars >= min_leg and reversed_enough:
             confirmed = _pivot(CupPivotKind.HIGH, high, snapshot)
             return CupPivotTrackerState(
@@ -1461,10 +1450,9 @@ def _track_pivot(
     assert tracker.leg == "DOWN_LEG" and low is not None
     leg_start = tracker.last_pivot.pivot_index if tracker.last_pivot else 0
     leg_bars = low.eligible_index - leg_start
-    reversed_enough = (
-        Fraction(snapshot.bar.close) - Fraction(low.bar.low)
-        >= _rational_parameter(reversal) * Fraction(Decimal(str(low.atr)))
-    )
+    reversed_enough = Fraction(snapshot.bar.close) - Fraction(
+        low.bar.low
+    ) >= _rational_parameter(reversal) * Fraction(Decimal(str(low.atr)))
     if leg_bars >= min_leg and reversed_enough:
         confirmed = _pivot(CupPivotKind.LOW, low, snapshot)
         return CupPivotTrackerState(
@@ -1479,9 +1467,7 @@ def _normal(direction: CupHandleDirection, value: Decimal) -> Decimal:
     return value if direction == CupHandleDirection.BULLISH else -value
 
 
-def _normal_fraction(
-    direction: CupHandleDirection, value: Decimal
-) -> Fraction:
+def _normal_fraction(direction: CupHandleDirection, value: Decimal) -> Fraction:
     normalized = Fraction(value)
     return normalized if direction == CupHandleDirection.BULLISH else -normalized
 
@@ -1510,8 +1496,7 @@ def _ols_slope(values: list[Fraction]) -> Fraction:
     mean_x = Fraction(count - 1, 2)
     mean_y = sum(values, Fraction()) / count
     numerator = sum(
-        (index - mean_x) * (value - mean_y)
-        for index, value in enumerate(values)
+        (index - mean_x) * (value - mean_y) for index, value in enumerate(values)
     )
     denominator = sum((index - mean_x) ** 2 for index in range(count))
     return numerator / denominator if denominator else Fraction()
@@ -1525,7 +1510,9 @@ def _pretrend_score(
 ) -> float | None:
     sign = 1 if direction == CupHandleDirection.BULLISH else -1
     valid: list[tuple[Fraction, Fraction, int, Fraction, Fraction]] = []
-    for window in range(profile.cup_pretrend_min_bars, profile.cup_pretrend_max_bars + 1):
+    for window in range(
+        profile.cup_pretrend_min_bars, profile.cup_pretrend_max_bars + 1
+    ):
         start_index = left.pivot_index - window
         indexes = range(start_index, left.pivot_index + 1)
         snapshots = [by_index[index] for index in indexes if index in by_index]
@@ -1538,18 +1525,12 @@ def _pretrend_score(
         move_atr = _decimal_over_fraction(move, atr_median)
         if move_atr is None:
             continue
-        slope = _ols_slope(
-            [sign * Fraction(item.bar.close) for item in snapshots]
-        )
+        slope = _ols_slope([sign * Fraction(item.bar.close) for item in snapshots])
         return_strength = return_pct / _rational_parameter(
             profile.cup_pretrend_min_return
         )
-        atr_strength = move_atr / _rational_parameter(
-            profile.cup_pretrend_min_move_atr
-        )
-        if slope > 0 and (
-            return_strength >= 1 or atr_strength >= 1
-        ):
+        atr_strength = move_atr / _rational_parameter(profile.cup_pretrend_min_move_atr)
+        if slope > 0 and (return_strength >= 1 or atr_strength >= 1):
             valid.append(
                 (
                     max(return_strength, atr_strength),
@@ -1669,9 +1650,9 @@ def _body_facts(
     if rim_gap_atr > _rational_parameter(profile.cup_rim_gap_max_atr):
         diagnostics.append("RIM_GAP_ATR_EXCEEDED")
 
-    zone_top = bottom_price + _rational_parameter(
-        profile.cup_bottom_zone_ratio
-    ) * cup_depth
+    zone_top = (
+        bottom_price + _rational_parameter(profile.cup_bottom_zone_ratio) * cup_depth
+    )
     bottom_span = _bottom_span(
         direction,
         bottom,
@@ -1687,9 +1668,11 @@ def _body_facts(
     leg_ratio = Fraction(left_leg, right_leg) if right_leg else None
     if leg_ratio is None:
         diagnostics.append("LEG_RATIO_EXTREME")
-    elif not _rational_parameter(
-        profile.cup_leg_ratio_hard_min
-    ) <= leg_ratio <= _rational_parameter(profile.cup_leg_ratio_hard_max):
+    elif (
+        not _rational_parameter(profile.cup_leg_ratio_hard_min)
+        <= leg_ratio
+        <= _rational_parameter(profile.cup_leg_ratio_hard_max)
+    ):
         diagnostics.append("LEG_RATIO_EXTREME")
     crossings = _midline_crossings(
         direction,
@@ -1701,9 +1684,7 @@ def _body_facts(
     if crossings > profile.cup_midline_crossings_hard_max:
         diagnostics.append("MIDLINE_CROSSINGS_EXCEEDED")
     hard_diagnostics = [
-        diagnostic
-        for diagnostic in diagnostics
-        if diagnostic != "V_BOTTOM_SINGLE_BAR"
+        diagnostic for diagnostic in diagnostics if diagnostic != "V_BOTTOM_SINGLE_BAR"
     ]
     if hard_diagnostics:
         return None, _unique(diagnostics)
@@ -1718,8 +1699,7 @@ def _body_facts(
     depth_atr_score = 5.0 if cup_depth_atr >= Fraction(4) else 3.0
     rim_score = (
         7.0
-        if rim_gap_pct <= Fraction(25, 1000)
-        and rim_gap_atr <= Fraction(3, 4)
+        if rim_gap_pct <= Fraction(25, 1000) and rim_gap_atr <= Fraction(3, 4)
         else 5.0
     )
     geometry = duration_score + depth_pct_score + depth_atr_score + rim_score
@@ -1735,13 +1715,23 @@ def _body_facts(
     assert leg_ratio is not None
     if Fraction(75, 100) <= leg_ratio <= Fraction(133, 100):
         leg_score = 6.0
-    elif _rational_parameter(
-        profile.cup_leg_ratio_soft_min
-    ) <= leg_ratio <= _rational_parameter(profile.cup_leg_ratio_soft_max):
+    elif (
+        _rational_parameter(profile.cup_leg_ratio_soft_min)
+        <= leg_ratio
+        <= _rational_parameter(profile.cup_leg_ratio_soft_max)
+    ):
         leg_score = 4.0
     else:
         leg_score = 2.0
-    crossing_score = 6.0 if crossings <= 1 else 4.0 if crossings == 2 else 2.0 if crossings == 3 else 0.0
+    crossing_score = (
+        6.0
+        if crossings <= 1
+        else 4.0
+        if crossings == 2
+        else 2.0
+        if crossings == 3
+        else 0.0
+    )
     u_shape = span_score + leg_score + crossing_score
     breakdown = {
         "pretrend": pretrend,
@@ -1792,7 +1782,10 @@ def _body_candidates(
                     continue
                 bottom = min(
                     bottoms,
-                    key=lambda pivot: (_normal(direction, pivot.price), pivot.pivot_index),
+                    key=lambda pivot: (
+                        _normal(direction, pivot.price),
+                        pivot.pivot_index,
+                    ),
                 )
                 candidate_id = _candidate_id(
                     direction, left, bottom, right, bar, profile.cup_handle_formula
@@ -1821,7 +1814,9 @@ def _body_candidates(
                     handle_extreme=None,
                     pivot_price=None,
                     pivot_frozen_at=None,
-                    confirmed_at=max(left.confirmed_at, bottom.confirmed_at, right.confirmed_at),
+                    confirmed_at=max(
+                        left.confirmed_at, bottom.confirmed_at, right.confirmed_at
+                    ),
                     first_seen_at=first_seen,
                     state_changed_at=state_changed,
                     score=sum(facts.breakdown.values()),
@@ -1911,9 +1906,12 @@ def _ready_handle_facts(
     depth_pct = handle_depth / abs(right_price)
     if depth_pct > _rational_parameter(profile.cup_handle_depth_max_pct):
         return None, "HANDLE_DEPTH_EXCEEDED"
-    if cup_depth <= 0 or handle_price < bottom_price + _rational_parameter(
-        profile.cup_handle_upper_half_ratio
-    ) * cup_depth:
+    if (
+        cup_depth <= 0
+        or handle_price
+        < bottom_price
+        + _rational_parameter(profile.cup_handle_upper_half_ratio) * cup_depth
+    ):
         return None, "HANDLE_BELOW_CUP_MID"
     if right_leg <= 0 or _decimal_ratio_exceeds(
         handle_depth,
@@ -1980,17 +1978,14 @@ def _ready_volume_facts(
     display = _float_volume_facts(right_volume, handle_volume, baseline_volume)
     if display is None:
         return None, "HANDLE_VOLUME_UNAVAILABLE"
-    if (
-        _decimal_ratio_exceeds(
-            handle_volume,
-            right_volume,
-            profile.cup_handle_right_volume_max_ratio,
-        )
-        or _decimal_ratio_exceeds(
-            handle_volume,
-            baseline_volume,
-            profile.cup_handle_baseline_volume_max_ratio,
-        )
+    if _decimal_ratio_exceeds(
+        handle_volume,
+        right_volume,
+        profile.cup_handle_right_volume_max_ratio,
+    ) or _decimal_ratio_exceeds(
+        handle_volume,
+        baseline_volume,
+        profile.cup_handle_baseline_volume_max_ratio,
     ):
         return None, "HANDLE_VOLUME_NOT_CONTRACTING"
     return (
@@ -2024,7 +2019,8 @@ def _ready_candidate(
     all_handles = [
         pivot
         for pivot in pivots
-        if pivot.kind == reverse_kind and pivot.pivot_index > forming.right_rim.pivot_index
+        if pivot.kind == reverse_kind
+        and pivot.pivot_index > forming.right_rim.pivot_index
     ]
     handles = [
         pivot
@@ -2198,8 +2194,7 @@ def _breakout_facts(
     ) * Fraction(Decimal(str(previous.atr)))
     crossed = (
         _normal_fraction(active.direction, current.bar.close) > current_threshold
-        and _normal_fraction(active.direction, previous.bar.close)
-        <= previous_threshold
+        and _normal_fraction(active.direction, previous.bar.close) <= previous_threshold
     )
     if not crossed:
         return None, False
@@ -2226,27 +2221,19 @@ def _breakout_facts(
         if len(handle_window) == expected_handle_bars
         else None
     )
-    if (
-        baseline is None
-        or baseline <= 0
-        or handle_volume is None
-        or handle_volume <= 0
-    ):
+    if baseline is None or baseline <= 0 or handle_volume is None or handle_volume <= 0:
         return None, True
     current_volume = Fraction(current.bar.volume)
     volume20_ratio = current_volume / baseline
     handle_ratio = current_volume / handle_volume
-    if (
-        _decimal_ratio_below(
-            current_volume,
-            baseline,
-            profile.cup_breakout_volume20_min_ratio,
-        )
-        or _decimal_ratio_below(
-            current_volume,
-            handle_volume,
-            profile.cup_breakout_handle_volume_min_ratio,
-        )
+    if _decimal_ratio_below(
+        current_volume,
+        baseline,
+        profile.cup_breakout_volume20_min_ratio,
+    ) or _decimal_ratio_below(
+        current_volume,
+        handle_volume,
+        profile.cup_breakout_handle_volume_min_ratio,
     ):
         return None, True
     baseline_fact = _safe_finite_float(baseline)
@@ -2286,7 +2273,8 @@ def step_cup_handle(
             initial_cup_handle_state(), None, (), ("NEWOW_CUP_STATE_INVALID",), 0
         )
     rollover = state.physical_contract is not None and (
-        state.physical_contract != bar.physical_contract or state.segment_id != bar.segment_id
+        state.physical_contract != bar.physical_contract
+        or state.segment_id != bar.segment_id
     )
     if rollover:
         state = initial_cup_handle_state()
@@ -2333,11 +2321,7 @@ def step_cup_handle(
 
     eligible_index = tracker.eligible_index + 1
     eligible_started = True
-    if (
-        atr_state.atr is None
-        or not isfinite(atr_state.atr)
-        or atr_state.atr <= 0
-    ):
+    if atr_state.atr is None or not isfinite(atr_state.atr) or atr_state.atr <= 0:
         tracker = _with_tracker_index(tracker, eligible_index)
         next_state = CupHandleStateValue(
             atr_state,
@@ -2369,8 +2353,8 @@ def step_cup_handle(
     checks = 0
     result_overlay = active
     if active is None or active.state == CupHandleState.FORMING:
-        body_candidates, candidate_diagnostics, checks, limit_exceeded = _body_candidates(
-            pivots, bars, bar, profile, terminals, active
+        body_candidates, candidate_diagnostics, checks, limit_exceeded = (
+            _body_candidates(pivots, bars, bar, profile, terminals, active)
         )
         diagnostics.extend(candidate_diagnostics)
         if not limit_exceeded:
@@ -2385,9 +2369,7 @@ def step_cup_handle(
                 candidate = ready or forming
                 evaluated.append(candidate)
                 if ready is not None:
-                    breakout_facts, _ = _breakout_facts(
-                        ready, bars, snapshot, profile
-                    )
+                    breakout_facts, _ = _breakout_facts(ready, bars, snapshot, profile)
                     if breakout_facts is not None:
                         breakout_candidate_ids.add(ready.candidate_id)
             active = _primary_candidate(evaluated, breakout_candidate_ids)
@@ -2397,10 +2379,7 @@ def step_cup_handle(
                     active.bottom,
                     active.right_rim,
                     active.handle_extreme,
-                    {
-                        retained.eligible_index: retained
-                        for retained in bars
-                    },
+                    {retained.eligible_index: retained for retained in bars},
                 )
                 assert exact_medians is not None
                 exact_volume, _ = _ready_volume_facts(*exact_medians, profile)
@@ -2460,7 +2439,10 @@ def step_cup_handle(
             emitted = ()
             milestone_facts = ()
             ready_witness = None
-        elif active.state == CupHandleState.BREAKOUT and normalized_close < normalized_pivot:
+        elif (
+            active.state == CupHandleState.BREAKOUT
+            and normalized_close < normalized_pivot
+        ):
             active = replace(
                 active,
                 state=CupHandleState.WEAKENED,
@@ -2475,9 +2457,7 @@ def step_cup_handle(
             )
             markers.append(marker)
             emitted += (marker.marker_id,)
-            milestone_facts += (
-                _milestone_fact(marker, snapshot, active.candidate_id),
-            )
+            milestone_facts += (_milestone_fact(marker, snapshot, active.candidate_id),)
             result_overlay = active
         elif active.state == CupHandleState.READY:
             breakout_facts, crossed = _breakout_facts(active, bars, snapshot, profile)
@@ -2505,11 +2485,7 @@ def step_cup_handle(
                 diagnostics.append("BREAKOUT_VOLUME_UNCONFIRMED")
             if breakout_facts is None:
                 ready_snapshot = next(
-                    (
-                        item
-                        for item in bars
-                        if item.bar.bar_end == active.confirmed_at
-                    ),
+                    (item for item in bars if item.bar.bar_end == active.confirmed_at),
                     None,
                 )
                 if (
@@ -2541,11 +2517,7 @@ def step_cup_handle(
                     ready_witness = None
         elif active.state == CupHandleState.BREAKOUT:
             breakout_snapshot = next(
-                (
-                    item
-                    for item in bars
-                    if item.bar.bar_end == active.state_changed_at
-                ),
+                (item for item in bars if item.bar.bar_end == active.state_changed_at),
                 None,
             )
             if (
