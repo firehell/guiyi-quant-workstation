@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date
 from decimal import Decimal
 
 from guiyi_quant.newow import NewowResearchBar, NewowStrategyReplaySegment
@@ -10,7 +10,6 @@ from guiyi_quant.newow import NewowResearchBar, NewowStrategyReplaySegment
 from app.market_data.domain import (
     BarFrequency,
     MarketSeriesResult,
-    MarketSeriesPageResult,
     ResolvedContractSegment,
     normalize_contract_for_symbol,
 )
@@ -183,7 +182,7 @@ def build_newow_strategy_replay_segments(
     actual_bars: tuple[NewowResearchBar, ...],
     *,
     authoritative_segments: tuple[ResolvedContractSegment, ...],
-    physical_prefix_pages: tuple[MarketSeriesPageResult, ...],
+    physical_prefix_results: tuple[MarketSeriesResult, ...],
     expected_product: str,
     expected_frequency: BarFrequency,
 ) -> tuple[NewowStrategyReplaySegment, ...]:
@@ -236,12 +235,12 @@ def build_newow_strategy_replay_segments(
                 for bar in actual_bars
             )
         )
-        if len(observed_segments) != len(physical_prefix_pages):
+        if len(observed_segments) != len(physical_prefix_results):
             raise NewowFuturesSeriesError
 
         result: list[NewowStrategyReplaySegment] = []
-        for segment, page in zip(
-            observed_segments, physical_prefix_pages, strict=True
+        for segment, physical in zip(
+            observed_segments, physical_prefix_results, strict=True
         ):
             segment_id = (
                 f"{expected_product}:{segment.contract}:"
@@ -249,20 +248,24 @@ def build_newow_strategy_replay_segments(
                 f"{segment.end_trading_day.isoformat()}"
             )
             owned = actual_by_segment[segment_id]
-            identity = page.request_identity
+            identity = physical.request_identity
+            window = physical.requested_trading_day_window
             if (
                 identity.get("series_kind") != "contract"
                 or identity.get("symbol") != expected_product
                 or identity.get("contract") != segment.contract
                 or identity.get("frequency") != expected_frequency.value
-                or identity.get("before")
-                != (owned[-1].bar_end + timedelta(microseconds=1)).isoformat()
-                or identity.get("limit") != 2000
-                or page.has_more_before
-                or not page.bars
-                or page.canonical_coverage
-                != (page.bars[0].bar_end, page.bars[-1].bar_end)
-                or page.resolved_contract_segments
+                or not physical.bars
+                or physical.coverage
+                != (physical.bars[0].bar_end, physical.bars[-1].bar_end)
+                or physical.resolved_contract_segments
+                or window is None
+                or window[0] > segment.start_trading_day
+                or window[1] != owned[-1].trading_day
+                or any(
+                    not window[0] <= bar.trading_day <= window[1]
+                    for bar in physical.bars
+                )
             ):
                 raise NewowFuturesSeriesError
             owned_by_key = {
@@ -271,7 +274,7 @@ def build_newow_strategy_replay_segments(
             replay_bars: list[NewowResearchBar] = []
             matched: set[tuple[date, object]] = set()
             previous_end = None
-            for bar in page.bars:
+            for bar in physical.bars:
                 if previous_end is not None and bar.bar_end <= previous_end:
                     raise NewowFuturesSeriesError
                 previous_end = bar.bar_end

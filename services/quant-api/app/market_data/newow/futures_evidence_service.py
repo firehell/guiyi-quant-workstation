@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import date
 from types import MappingProxyType
 from typing import Mapping, Protocol
 
@@ -12,9 +12,8 @@ from guiyi_quant.newow import NewowResearchBar, NewowStrategyReplaySegment
 from app.market_data.actual_dominant_research import ActualDominantResearchSeries
 from app.market_data.domain import (
     BarFrequency,
-    MarketSeriesPageResult,
-    SeriesKind,
-    SeriesPageQuery,
+    ContractTradingDayQuery,
+    MarketSeriesResult,
 )
 
 from .futures_validation import (
@@ -25,7 +24,9 @@ from .futures_validation import (
 
 
 class PhysicalPrefixReader(Protocol):
-    def query_page(self, request: SeriesPageQuery) -> MarketSeriesPageResult: ...
+    def query_contract_trading_days(
+        self, request: ContractTradingDayQuery
+    ) -> MarketSeriesResult: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,23 +69,21 @@ def build_newow_futures_evidence_inputs(
                 for bar in execution_bars
             )
         )
-        pages = tuple(
-            market_data.query_page(
-                SeriesPageQuery(
-                    SeriesKind.CONTRACT,
+        physical_results = tuple(
+            market_data.query_contract_trading_days(
+                ContractTradingDayQuery(
                     expected_product,
+                    segment.contract,
                     frequency,
+                    date.min,
                     max(
-                        bar.bar_end
+                        bar.trading_day
                         for bar in execution_bars
                         if bar.physical_contract == segment.contract
                         and segment.start_trading_day
                         <= bar.trading_day
                         <= segment.end_trading_day
-                    )
-                    + timedelta(microseconds=1),
-                    2000,
-                    segment.contract,
+                    ),
                 )
             )
             for segment in observed_segments
@@ -94,7 +93,7 @@ def build_newow_futures_evidence_inputs(
             build_newow_strategy_replay_segments(
                 execution_bars,
                 authoritative_segments=loaded.authoritative_segments,
-                physical_prefix_pages=pages,
+                physical_prefix_results=physical_results,
                 expected_product=expected_product,
                 expected_frequency=frequency,
             ),

@@ -110,7 +110,7 @@ ZERO_VOLUME
 
 ## 5. 换月与 warm-up
 
-趋势、震荡和主升浪 primitive 已分别在 `(physical_contract, segment_id)` 变化时重置递归状态。真实 evidence 输入现在先通过 `MarketDataService.query_page(SeriesKind.CONTRACT, ...)` 读取每个 observed segment 的完整物理合约 prefix；prefix Bar 推进公式状态但 `observation_eligible=false`，只有与 actual-dominant Bar 逐字段一致的 Bar 才能产生正式 intent。`build_strategy_intents_from_replay_segments()` 对每个 physical segment 从空状态重放，Walk-forward 另行使用 actual-dominant Bars 做 next-open execution。
+趋势、震荡和主升浪 primitive 已分别在 `(physical_contract, segment_id)` 变化时重置递归状态。真实 evidence 输入现在先通过 `MarketDataService.query_contract_trading_days(ContractTradingDayQuery(...))`，由 Catalog `contract_fact` 上市/到期生命周期夹取每个 observed segment 的完整物理合约 prefix；prefix Bar 推进公式状态但 `observation_eligible=false`，只有与 actual-dominant Bar 逐字段一致的 Bar 才能产生正式 intent。`build_strategy_intents_from_replay_segments()` 对每个 physical segment 从空状态重放，Walk-forward 另行使用 actual-dominant Bars 做 next-open execution。
 
 执行器仍保持：
 
@@ -148,7 +148,7 @@ train_since <= train_through < test_since <= test_through
 
 ```text
 test_research_backtest.py       32 passed
-test_futures_validation.py      22 passed
+test_futures_validation.py      21 passed
 test_research_walk_forward.py   12 passed
 new evidence contract tests      7 passed
 Ruff targeted                   passed

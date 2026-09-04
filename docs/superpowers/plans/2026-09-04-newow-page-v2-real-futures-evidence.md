@@ -10,7 +10,7 @@
 
 **Spec:** `docs/tasks/2026-09-04-newow-page-parity-research-kernels.md`, `docs/tasks/2026-09-04-newow-futures-validation.md`, and this packet.
 
-**BASE_SHA:** `e4802e11fa876ffb5879d6efe89a96538e49b6ec`
+**BASE_SHA:** `f96f1c9a40371276f66223e5fdedb2812de72ef3`
 
 ## Global Constraints
 
@@ -30,7 +30,7 @@
 |---|---|---|---|
 | Actual-dominant adapter | `services/quant-api/app/market_data/newow/futures_validation.py::build_newow_research_bars` | `test_futures_validation.py` | Requires exact actual-dominant identity, independent frequency, unique observed and authoritative owner, completed Bars, physical contract and stable segment identity. |
 | Physical prefix replay | same file, `build_newow_strategy_replay_segments` | `test_futures_validation.py`, `test_research_walk_forward.py` | Full same-contract prefix warms formula state; only rank-1-matched Bars are eligible; OHLCV/OI mismatches and truncated prefix pages fail closed. |
-| Read seam assembly | `futures_evidence_service.py::build_newow_futures_evidence_inputs` | `test_futures_evidence_service.py` | Uses `MarketDataService.query_page(SeriesKind.CONTRACT, ...)`; a frequency may omit a rank-1 segment with no completed Bar, as in SC2302 W1. |
+| Read seam assembly | `futures_evidence_service.py::build_newow_futures_evidence_inputs` | `test_futures_evidence_service.py` | Uses `MarketDataService.query_contract_trading_days(ContractTradingDayQuery(...))`; Catalog contract lifecycle clamps the complete prefix. A frequency may omit a rank-1 segment with no completed Bar, as in the SC2302-shaped regression. |
 | Strategy intents | `research_backtest.py::build_strategy_intents_from_replay_segments` | `test_research_walk_forward.py` | Fresh state per physical segment; eligible intents only; frozen formula lineage. |
 | Causal executor | `research_backtest.py::run_causal_long_only_backtest` | `test_research_backtest.py` | Completed-Bar signal, one next-open attempt, no silent retry. |
 | Costs | `BacktestCostSnapshot` | `test_research_backtest.py` | Product, contract, half-open effective dates, captured timestamp, source identity and Decimal costs; missing/overlap fails. |
@@ -68,11 +68,11 @@ The executable pure rule is `futures_evidence_plan.py::select_futures_evidence_p
 | Dataset coverage | `MarketCatalog.main_map_before(product, None)` → exact contract `DatasetKey` → `MarketCatalog.all_partitions(key)` | `main_contract_map`, `market_datasets`, `market_partitions`, Canonical file metadata | production PostgreSQL plus workstation Canonical read-only | below 10,000 map rows/product and hundreds of partition rows/selected scope | PostgreSQL transaction must be `READ ONLY`; no ORM add/flush/commit; Canonical tree manifest equal |
 | Rank-1 ownership | `MarketDataService.actual_dominant_segments` | `main_contract_map`, `trading_calendars`, `instruments` | production PostgreSQL read-only | below 10,000 daily facts per product | same transaction guard; SQLAlchemy dirty/new/deleted sets empty |
 | Actual Bars | `ActualDominantResearchSegmentLoader.load` | prior resources, `trading_sessions`, plus Canonical contract partitions | production PostgreSQL plus workstation Canonical read-only | bounded by selected coverage | only `MarketDataService` read methods are called inside an enforced read-only transaction; file manifest equal |
-| Physical prefix | `MarketDataService.query_page(SeriesKind.CONTRACT, ..., limit=2000)` | Catalog plus Canonical contract partitions | production PostgreSQL plus workstation Canonical read-only | at most 2,000 Bars per observed segment | `has_more_before=False`; enforced read-only transaction; no mutation method is called |
+| Physical prefix | `MarketDataService.query_contract_trading_days(ContractTradingDayQuery(product, contract, frequency, date.min, last_owner_day))` | `contracts`, Calendar/Session, Catalog and Canonical contract partitions | production PostgreSQL plus workstation Canonical read-only | full listed-contract prefix through the last owner day | `contract_fact` validates provider and lifecycle; enforced read-only transaction; no mutation method is called |
 
 Production read required: **yes**. It is not authorized by this packet. No production resource is needed for fixture tests, code review, schema review, or snapshot-file validation.
 
-Exact production tables are `instruments`, `trading_calendars`, `trading_sessions`, `main_contract_map`, `market_datasets`, and `market_partitions`. The authorized runner must use a database role proven to have SELECT-only privileges on exactly these tables in addition to transaction-level `READ ONLY`; availability of that role is `BLOCKING_UNKNOWN`.
+Exact production tables are `contracts`, `instruments`, `trading_calendars`, `trading_sessions`, `main_contract_map`, `market_datasets`, and `market_partitions`. The authorized runner must use a database role proven to have SELECT-only privileges on exactly these tables in addition to transaction-level `READ ONLY`; availability of that role is `BLOCKING_UNKNOWN`.
 
 `main_contract_map` currently has no pre-open publication/availability timestamp. Therefore the claim “rank-1 owner was knowable before the tested session opened” is `BLOCKING_UNKNOWN`. A trusted upstream dated mapping snapshot or an accepted as-known semantic is required; current `created_at/updated_at` ingestion timestamps cannot be silently substituted.
 
@@ -195,7 +195,7 @@ Every recommendation waits for final Owner approval.
 **Files:** `research_backtest.py`, `research_walk_forward.py`, `futures_validation.py`, `futures_evidence_service.py`, their exports and tests.
 
 - [x] RED: add prefix eligibility, truncation, mismatch, SC2302-style missing-frequency-segment, and replay/execution equality tests.
-- [x] GREEN: add `NewowStrategyReplaySegment`, replay-safe intent construction, validated application adapter, and `MarketDataService.query_page` assembly.
+- [x] GREEN: add `NewowStrategyReplaySegment`, replay-safe intent construction, validated application adapter, and lifecycle-bounded `MarketDataService.query_contract_trading_days` assembly.
 - [x] Verify targeted tests without real data.
 
 ## Task 2: Reviewer Metrics and Deterministic Planning
@@ -255,7 +255,7 @@ PYTHONPATH=services/quant-api:packages/quant-core MYPYPATH=services/quant-api:pa
 Authorized discovery command after Task 4 exists and the Owner grants the matching read:
 
 ```bash
-PYTHONPATH=services/quant-api:packages/quant-core /Volumes/扩展盘/guiyi-quant-workstation/services/quant-api/.venv/bin/python scripts/newow_page_v2_futures_evidence.py discover --base-sha e4802e11fa876ffb5879d6efe89a96538e49b6ec --frequencies 1d 1w 60m --minimum-rollovers 2 --output data/reports/newow_page_v2_real_futures_evidence/OWNER_APPROVED_RUN_ID
+PYTHONPATH=services/quant-api:packages/quant-core /Volumes/扩展盘/guiyi-quant-workstation/services/quant-api/.venv/bin/python scripts/newow_page_v2_futures_evidence.py discover --base-sha f96f1c9a40371276f66223e5fdedb2812de72ef3 --frequencies 1d 1w 60m --minimum-rollovers 2 --output data/reports/newow_page_v2_real_futures_evidence/OWNER_APPROVED_RUN_ID
 ```
 
 Real execution command after both subsequent Owner Gates:

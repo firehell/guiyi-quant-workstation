@@ -8,10 +8,9 @@ from app.market_data.actual_dominant_research import ActualDominantResearchSerie
 from app.market_data.domain import (
     BarFrequency,
     CanonicalBar,
-    MarketSeriesPageResult,
     MarketSeriesResult,
     ResolvedContractSegment,
-    SeriesPageQuery,
+    ContractTradingDayQuery,
 )
 from app.market_data.newow.futures_evidence_service import (
     build_newow_futures_evidence_inputs,
@@ -36,25 +35,26 @@ def _bar(day: date, value: int) -> CanonicalBar:
 class _PrefixReader:
     def __init__(self, pages: dict[str, tuple[CanonicalBar, ...]]) -> None:
         self.pages = pages
-        self.requests: list[SeriesPageQuery] = []
+        self.requests: list[ContractTradingDayQuery] = []
 
-    def query_page(self, request: SeriesPageQuery) -> MarketSeriesPageResult:
+    def query_contract_trading_days(
+        self, request: ContractTradingDayQuery
+    ) -> MarketSeriesResult:
         self.requests.append(request)
-        bars = self.pages[request.contract or ""]
-        return MarketSeriesPageResult(
+        bars = self.pages[request.contract]
+        return MarketSeriesResult(
             {
                 "series_kind": "contract",
                 "symbol": request.symbol,
                 "contract": request.contract,
                 "frequency": request.frequency.value,
-                "before": request.before.isoformat() if request.before else None,
-                "limit": request.limit,
+                "start": "2025-01-01T00:00:00+00:00",
+                "end": "2026-01-16T00:00:00+00:00",
             },
             bars,
             (bars[0].bar_end, bars[-1].bar_end),
-            False,
-            None,
             (),
+            (bars[0].trading_day, request.through),
         )
 
 
@@ -105,5 +105,5 @@ def test_loads_prefix_only_for_segments_observed_by_each_frequency() -> None:
     )
     assert len(evidence.strategy_replay_segments) == 1
     assert reader.requests[0].contract == "RB2610"
-    assert reader.requests[0].limit == 2000
-    assert reader.requests[0].before == weekly_bar.bar_end + timedelta(microseconds=1)
+    assert reader.requests[0].since == date.min
+    assert reader.requests[0].through == weekly_bar.trading_day
