@@ -46,7 +46,7 @@ class _WindowAwareMarketData:
         self._probe = probe
         self._full = full
         self._true_segments = true_segments
-        self._query_counts = dict.fromkeys(_FREQUENCIES, 0)
+        self._query_counts = dict.fromkeys(probe.keys() | full.keys(), 0)
         self.queries: list[ActualDominantTradingDayQuery] = []
         self.segment_requests: list[tuple[str, date]] = []
 
@@ -69,6 +69,24 @@ class _WindowAwareMarketData:
             segment
             for segment in self._true_segments
             if segment.start_trading_day <= trading_day <= segment.end_trading_day
+        )
+
+    def actual_dominant_segments(
+        self,
+        symbol: str,
+        since: date,
+        through: date,
+    ) -> tuple[ResolvedContractSegment, ...]:
+        return tuple(
+            ResolvedContractSegment(
+                segment.contract,
+                segment.start_trading_day,
+                segment.end_trading_day,
+            )
+            for segment in self._true_segments
+            if segment.symbol == symbol
+            and segment.end_trading_day >= since
+            and segment.start_trading_day <= through
         )
 
 
@@ -477,6 +495,85 @@ def test_loader_fails_closed_when_frequency_segment_identities_differ() -> None:
             since=_DAY_TWO,
             through=_DAY_THREE,
         )
+
+
+def test_loader_accepts_sc2302_absent_from_weekly_owner_subset() -> None:
+    sc2302_start = date(2023, 1, 3)
+    sc2302_end = date(2023, 1, 4)
+    sc2303_start = date(2023, 1, 5)
+    first_complete_week = date(2023, 1, 6)
+    sc2303_end = date(2023, 1, 31)
+    authoritative = (
+        DominantContractSegmentSummary(
+            "sc", "SC2302", sc2302_start, sc2302_end
+        ),
+        DominantContractSegmentSummary(
+            "sc", "SC2303", sc2303_start, sc2303_end
+        ),
+    )
+    expected_segments = tuple(
+        ResolvedContractSegment(
+            segment.contract,
+            segment.start_trading_day,
+            segment.end_trading_day,
+        )
+        for segment in authoritative
+    )
+    results = {
+        BarFrequency.D1: _result(
+            _bars(
+                BarFrequency.D1,
+                (sc2302_start, sc2302_end, sc2303_start, first_complete_week),
+            ),
+            (
+                ResolvedContractSegment("SC2302", sc2302_start, sc2302_end),
+                ResolvedContractSegment(
+                    "SC2303", sc2303_start, first_complete_week
+                ),
+            ),
+        ),
+        BarFrequency.W1: _result(
+            _bars(BarFrequency.W1, (first_complete_week,)),
+            (
+                ResolvedContractSegment(
+                    "SC2303", first_complete_week, first_complete_week
+                ),
+            ),
+        ),
+        BarFrequency.H1: _result(
+            _bars(
+                BarFrequency.H1,
+                (sc2302_start, sc2302_end, sc2303_start, first_complete_week),
+            ),
+            (
+                ResolvedContractSegment("SC2302", sc2302_start, sc2302_end),
+                ResolvedContractSegment(
+                    "SC2303", sc2303_start, first_complete_week
+                ),
+            ),
+        ),
+    }
+    market_data = _WindowAwareMarketData(
+        probe=results,
+        full={},
+        true_segments=authoritative,
+    )
+
+    loaded = ActualDominantResearchSegmentLoader(market_data).load(
+        symbol="sc",
+        frequencies=(BarFrequency.D1, BarFrequency.W1, BarFrequency.H1),
+        since=sc2302_start,
+        through=first_complete_week,
+    )
+
+    assert loaded.results == results
+    assert loaded.authoritative_segments == expected_segments
+    assert market_data.queries == [
+        ActualDominantTradingDayQuery(
+            "sc", frequency, sc2302_start, first_complete_week
+        )
+        for frequency in (BarFrequency.D1, BarFrequency.W1, BarFrequency.H1)
+    ]
 
 
 @pytest.mark.parametrize(
