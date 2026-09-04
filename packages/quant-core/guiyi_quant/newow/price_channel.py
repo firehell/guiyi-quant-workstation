@@ -542,6 +542,8 @@ def rank_causal_channel_windows(
 ) -> tuple[CausalChannelWindowResult, ...]:
     """Evaluate channel intents through the shared next-open futures executor."""
 
+    if require_execution_facts is not True:
+        raise ValueError("NEWOW_BACKTEST_EXECUTION_CONSTRAINT_INVALID")
     if (
         not windows
         or any(not _valid_window(window) for window in windows)

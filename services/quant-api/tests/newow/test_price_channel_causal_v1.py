@@ -147,6 +147,20 @@ def test_causal_optimizer_signals_on_completed_bar_and_fills_next_open() -> None
     assert result.trustworthy_for_research is True
 
 
+def test_causal_optimizer_rejects_disabled_execution_fact_gate() -> None:
+    with pytest.raises(
+        ValueError,
+        match="NEWOW_BACKTEST_EXECUTION_CONSTRAINT_INVALID",
+    ):
+        rank_causal_channel_windows(
+            _bars(),
+            windows=(10,),
+            cost_snapshots=(),
+            execution_constraints=(),
+            require_execution_facts=False,
+        )
+
+
 def test_page_and_causal_results_have_disjoint_identities_and_types() -> None:
     bars = _bars()
 
