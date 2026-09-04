@@ -6,7 +6,7 @@ from collections.abc import Callable, Collection, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 import csv
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from hashlib import sha256
 import json
 from pathlib import Path
@@ -18,14 +18,19 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import text
 from sqlalchemy.sql.base import Executable
 
+from guiyi_quant.newow import WalkForwardFold
+
 from app.market_data.domain import (
     ActualDominantTradingDayQuery,
     BarFrequency,
     DatasetKey,
     DatasetKind,
 )
-from app.market_data.newow.futures_evidence_plan import FuturesEvidenceCandidate
-from app.market_data.newow.futures_evidence_plan import select_futures_evidence_products
+from app.market_data.newow.futures_evidence_plan import (
+    FuturesEvidenceCandidate,
+    build_natural_year_folds,
+    select_futures_evidence_products,
+)
 
 
 FROZEN_FREQUENCIES = ("1d", "1w", "60m")
@@ -70,12 +75,23 @@ class CanonicalFileDigest:
 class CoverageDiscoveryResult:
     candidates: tuple[FuturesEvidenceCandidate, ...]
     selected: tuple[FuturesEvidenceCandidate, ...]
+    common_since: date
+    common_through: date
+    complete_years: tuple[int, ...]
+    folds: tuple[WalkForwardFold, ...]
 
 
 class _CatalogForCoverage(Protocol):
     def main_map_before(self, symbol: str, before: datetime | None) -> Sequence[object]: ...
 
     def all_partitions(self, key: DatasetKey) -> Sequence[object]: ...
+
+    def calendar_days(
+        self,
+        symbol: str,
+        start: date,
+        end: date,
+    ) -> Sequence[tuple[date, bool]]: ...
 
 
 class _ReadOnlySession(Protocol):
@@ -422,7 +438,141 @@ def build_discovery_result(
     selected = _select_candidates(candidates)
     for candidate in selected:
         validate_candidate_market_data(market_data, candidate)
-    return CoverageDiscoveryResult(candidates=candidates, selected=selected)
+    return _freeze_discovery_result(catalog, candidates=candidates, selected=selected)
+
+
+def _freeze_discovery_result(
+    catalog: _CatalogForCoverage,
+    *,
+    candidates: tuple[FuturesEvidenceCandidate, ...],
+    selected: tuple[FuturesEvidenceCandidate, ...],
+) -> CoverageDiscoveryResult:
+    common_since, common_through, products = _selected_common_coverage(selected)
+    complete_years = _calendar_proven_complete_years(
+        catalog,
+        products,
+        common_since=common_since,
+        common_through=common_through,
+    )
+    try:
+        folds = build_natural_year_folds(
+            common_since,
+            common_through,
+            complete_years=complete_years,
+        )
+    except ValueError as exc:
+        raise ReadOnlyDiscoveryError("NEWOW_EVIDENCE_FOLD_COVERAGE_BLOCKED") from exc
+    return CoverageDiscoveryResult(
+        candidates=candidates,
+        selected=selected,
+        common_since=common_since,
+        common_through=common_through,
+        complete_years=complete_years,
+        folds=folds,
+    )
+
+
+def calendar_proven_natural_year_folds(
+    catalog: _CatalogForCoverage,
+    selected: Sequence[object],
+) -> tuple[object, ...]:
+    """Freeze folds only where every selected exchange has a complete calendar year.
+
+    The candidate coverage interval is a market-data fact.  Calendar rows add
+    the independent proof that an apparent Jan-1/Dec-31 window did not skip a
+    holiday, an exchange-calendar partition, or an entire trading day.
+    """
+
+    common_since, common_through, products = _selected_common_coverage(selected)
+    complete_years = _calendar_proven_complete_years(
+        catalog,
+        products,
+        common_since=common_since,
+        common_through=common_through,
+    )
+    try:
+        return build_natural_year_folds(
+            common_since,
+            common_through,
+            complete_years=complete_years,
+        )
+    except ValueError as exc:
+        raise ReadOnlyDiscoveryError("NEWOW_EVIDENCE_FOLD_COVERAGE_BLOCKED") from exc
+
+
+def _selected_common_coverage(
+    selected: Sequence[object],
+) -> tuple[date, date, tuple[str, ...]]:
+    candidates = tuple(selected)
+    if not candidates:
+        raise ReadOnlyDiscoveryError("NEWOW_EVIDENCE_FOLD_COVERAGE_BLOCKED")
+    products: list[str] = []
+    since_values: list[date] = []
+    through_values: list[date] = []
+    for candidate in candidates:
+        product = getattr(candidate, "product", None)
+        since = getattr(candidate, "common_since", None)
+        through = getattr(candidate, "common_through", None)
+        if (
+            not isinstance(product, str)
+            or not product
+            or type(since) is not date
+            or type(through) is not date
+            or since > through
+        ):
+            raise ReadOnlyDiscoveryError("NEWOW_EVIDENCE_FOLD_COVERAGE_BLOCKED")
+        products.append(product)
+        since_values.append(since)
+        through_values.append(through)
+
+    common_since = max(since_values)
+    common_through = min(through_values)
+    if common_since > common_through:
+        raise ReadOnlyDiscoveryError("NEWOW_EVIDENCE_FOLD_COVERAGE_BLOCKED")
+    return common_since, common_through, tuple(products)
+
+
+def _calendar_proven_complete_years(
+    catalog: _CatalogForCoverage,
+    products: Sequence[str],
+    *,
+    common_since: date,
+    common_through: date,
+) -> tuple[int, ...]:
+    complete_years: list[int] = []
+    for year in range(common_since.year, common_through.year + 1):
+        year_start = date(year, 1, 1)
+        year_end = date(year, 12, 31)
+        if year_start < common_since or year_end > common_through:
+            continue
+        if all(
+            _calendar_year_is_complete(catalog, product, year_start, year_end)
+            for product in products
+        ):
+            complete_years.append(year)
+    return tuple(complete_years)
+
+
+def _calendar_year_is_complete(
+    catalog: _CatalogForCoverage,
+    product: str,
+    start: date,
+    end: date,
+) -> bool:
+    rows = tuple(catalog.calendar_days(product, start, end))
+    expected_days = tuple(
+        start + timedelta(days=offset)
+        for offset in range((end - start).days + 1)
+    )
+    if len(rows) != len(expected_days):
+        return False
+    return all(
+        isinstance(row, tuple)
+        and len(row) == 2
+        and row[0] == expected
+        and type(row[1]) is bool
+        for row, expected in zip(rows, expected_days, strict=True)
+    )
 
 
 def run_discovery_with_dependencies(
@@ -478,6 +628,24 @@ def write_discovery_artifacts(
         {
             "selected_products": [candidate.product for candidate in result.selected],
             "selected": [_candidate_record(candidate) for candidate in result.selected],
+        },
+    )
+    _write_json(
+        output_dir / "folds.json",
+        {
+            "common_since": result.common_since.isoformat(),
+            "common_through": result.common_through.isoformat(),
+            "complete_years": list(result.complete_years),
+            "folds": [
+                {
+                    "name": fold.name,
+                    "train_since": fold.train_since.isoformat(),
+                    "train_through": fold.train_through.isoformat(),
+                    "test_since": fold.test_since.isoformat(),
+                    "test_through": fold.test_through.isoformat(),
+                }
+                for fold in result.folds
+            ],
         },
     )
     with (output_dir / "coverage.csv").open("w", encoding="utf-8", newline="") as handle:
@@ -622,7 +790,11 @@ def run_discovery(
             paths=paths,
             canonical_root=canonical,
         )
-        result = CoverageDiscoveryResult(candidates=candidates, selected=selected)
+        result = _freeze_discovery_result(
+            market_data.catalog,
+            candidates=candidates,
+            selected=selected,
+        )
 
     if _git_status(project_root):
         raise ReadOnlyDiscoveryError("GIT_WORKTREE_DIRTY")

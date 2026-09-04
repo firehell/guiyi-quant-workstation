@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 import json
 import os
 from pathlib import Path
@@ -26,6 +26,7 @@ from app.market_data.newow.futures_evidence_discovery import (
     write_discovery_artifacts,
     validate_discovery_request,
     validate_select_only_privileges,
+    calendar_proven_natural_year_folds,
 )
 
 
@@ -226,6 +227,17 @@ class _Catalog:
             (),
         )
 
+    def calendar_days(
+        self,
+        _product: str,
+        start: date,
+        end: date,
+    ) -> tuple[tuple[date, bool], ...]:
+        return tuple(
+            (start + timedelta(days=offset), True)
+            for offset in range((end - start).days + 1)
+        )
+
 
 def _map(product: str) -> tuple[object, ...]:
     return tuple(
@@ -242,6 +254,26 @@ def _partition() -> object:
     return SimpleNamespace(
         coverage_start=datetime(2024, 1, 1, tzinfo=UTC),
         coverage_end=datetime(2024, 6, 1, tzinfo=UTC),
+    )
+
+
+def _long_partition() -> object:
+    return SimpleNamespace(
+        coverage_start=datetime(2020, 1, 1, tzinfo=UTC),
+        coverage_end=datetime(2025, 1, 1, tzinfo=UTC),
+    )
+
+
+def _long_map(product: str) -> tuple[object, ...]:
+    return tuple(
+        SimpleNamespace(symbol=product, trade_date=day, contract=contract)
+        for day, contract in (
+            (date(2020, 1, 2), f"{product.upper()}2005"),
+            (date(2021, 5, 4), f"{product.upper()}2109"),
+            (date(2022, 9, 1), f"{product.upper()}2301"),
+            (date(2023, 12, 1), f"{product.upper()}2405"),
+            (date(2024, 12, 31), f"{product.upper()}2501"),
+        )
     )
 
 
@@ -281,6 +313,70 @@ def test_discovers_only_mapped_contracts_with_all_frozen_frequencies() -> None:
         (key.symbol, key.series_or_contract, key.frequency.value)
         for key in catalog.requested_keys
     } == set(partitions)
+
+
+def test_calendar_proven_folds_require_complete_years_for_every_selected_product() -> None:
+    selected = (
+        SimpleNamespace(product="j", common_since=date(2020, 6, 1), common_through=date(2024, 8, 31)),
+        SimpleNamespace(product="ma", common_since=date(2020, 7, 1), common_through=date(2024, 7, 31)),
+        SimpleNamespace(product="a", common_since=date(2020, 8, 1), common_through=date(2024, 6, 30)),
+    )
+    catalog = _Catalog({}, {})
+
+    folds = calendar_proven_natural_year_folds(catalog, selected)
+
+    assert tuple(fold.name for fold in folds) == ("test-2022", "test-2023")
+    assert folds[0].train_since == date(2020, 8, 1)
+
+
+def test_calendar_proven_folds_fail_when_any_exchange_calendar_has_a_gap() -> None:
+    selected = (
+        SimpleNamespace(product="j", common_since=date(2020, 1, 1), common_through=date(2023, 12, 31)),
+        SimpleNamespace(product="ma", common_since=date(2020, 1, 1), common_through=date(2023, 12, 31)),
+        SimpleNamespace(product="a", common_since=date(2020, 1, 1), common_through=date(2023, 12, 31)),
+    )
+
+    class _GappedCalendarCatalog(_Catalog):
+        def calendar_days(
+            self,
+            product: str,
+            start: date,
+            end: date,
+        ) -> tuple[tuple[date, bool], ...]:
+            values = list(super().calendar_days(product, start, end))
+            if product == "ma":
+                values.pop(10)
+            return tuple(values)
+
+    with pytest.raises(ReadOnlyDiscoveryError, match="NEWOW_EVIDENCE_FOLD_COVERAGE_BLOCKED"):
+        calendar_proven_natural_year_folds(_GappedCalendarCatalog({}, {}), selected)
+
+
+def test_discovery_result_freezes_common_calendar_proven_folds() -> None:
+    products = ("j", "ma", "a")
+    maps = {product: _long_map(product) for product in products}
+    partitions = {
+        (product, row.contract, frequency): (_long_partition(),)
+        for product in products
+        for row in maps[product]
+        for frequency in ("1d", "1w", "60m")
+    }
+
+    result = build_discovery_result(
+        _Catalog(maps, partitions),
+        _long_market_data(),
+        operational_products=products,
+        taxonomy={
+            "j": SimpleNamespace(sector="black"),
+            "ma": SimpleNamespace(sector="chemical"),
+            "a": SimpleNamespace(sector="agriculture"),
+        },
+    )
+
+    assert result.common_since == date(2020, 1, 2)
+    assert result.common_through == date(2024, 12, 31)
+    assert result.complete_years == (2021, 2022, 2023, 2024)
+    assert tuple(fold.name for fold in result.folds) == ("test-2022", "test-2023", "test-2024")
 
 
 def test_excludes_a_product_when_one_mapped_contract_frequency_is_missing() -> None:
@@ -439,6 +535,42 @@ class _MarketData:
             resolved_contract_segments=self.segments,
             requested_trading_day_window=(request.since, request.through),
         )
+
+
+def _long_market_data() -> _MarketData:
+    class _LongMarketData(_MarketData):
+        def __init__(self) -> None:
+            super().__init__()
+            self.segments = (
+                SimpleNamespace(contract="J2005", start_trading_day=date(2020, 1, 2), end_trading_day=date(2021, 5, 3)),
+                SimpleNamespace(contract="J2109", start_trading_day=date(2021, 5, 4), end_trading_day=date(2022, 8, 31)),
+                SimpleNamespace(contract="J2301", start_trading_day=date(2022, 9, 1), end_trading_day=date(2023, 11, 30)),
+                SimpleNamespace(contract="J2405", start_trading_day=date(2023, 12, 1), end_trading_day=date(2024, 12, 30)),
+                SimpleNamespace(contract="J2501", start_trading_day=date(2024, 12, 31), end_trading_day=date(2024, 12, 31)),
+            )
+
+        def query_actual_dominant_trading_days(self, request: object) -> object:
+            self.requests.append(request)
+            bars = (
+                SimpleNamespace(trading_day=date(2020, 1, 2), bar_end=datetime(2020, 1, 2, tzinfo=UTC)),
+                SimpleNamespace(trading_day=date(2024, 12, 31), bar_end=datetime(2024, 12, 31, tzinfo=UTC)),
+            )
+            return SimpleNamespace(
+                request_identity={
+                    "series_kind": "actual_dominant",
+                    "symbol": request.symbol,
+                    "contract": None,
+                    "frequency": request.frequency.value,
+                    "start": "2020-01-01T00:00:00+00:00",
+                    "end": "2025-01-01T00:00:00+00:00",
+                },
+                bars=bars,
+                coverage=(bars[0].bar_end, bars[-1].bar_end),
+                resolved_contract_segments=self.segments,
+                requested_trading_day_window=(request.since, request.through),
+            )
+
+    return _LongMarketData()
 
 
 def test_candidate_validation_reads_each_frozen_frequency_and_uses_authoritative_rolls() -> None:
@@ -635,16 +767,16 @@ def test_only_approved_report_paths_rejects_sibling_run_directory() -> None:
 
 def test_discovery_result_selects_frozen_sector_candidates_before_any_strategy_work() -> None:
     products = ("j", "ma", "a")
-    maps = {product: _map(product) for product in products}
+    maps = {product: _long_map(product) for product in products}
     partitions = {
-        (product, row.contract, frequency): (_partition(),)
+        (product, row.contract, frequency): (_long_partition(),)
         for product in products
         for row in maps[product]
         for frequency in ("1d", "1w", "60m")
     }
     result = build_discovery_result(
         _Catalog(maps, partitions),
-        _MarketData(),
+        _long_market_data(),
         operational_products=products,
         taxonomy={
             "j": SimpleNamespace(sector="black"),
@@ -661,9 +793,9 @@ def test_dependency_runner_validates_read_only_session_before_catalog_discovery(
     tmp_path: Path,
 ) -> None:
     products = ("j", "ma", "a")
-    maps = {product: _map(product) for product in products}
+    maps = {product: _long_map(product) for product in products}
     partitions = {
-        (product, row.contract, frequency): (_partition(),)
+        (product, row.contract, frequency): (_long_partition(),)
         for product in products
         for row in maps[product]
         for frequency in ("1d", "1w", "60m")
@@ -688,7 +820,7 @@ def test_dependency_runner_validates_read_only_session_before_catalog_discovery(
             )
         },
         catalog_factory=lambda _session: _Catalog(maps, partitions),
-        market_data_factory=lambda catalog: _MarketData(),
+        market_data_factory=lambda catalog: _long_market_data(),
         operational_products=products,
         taxonomy={
             "j": SimpleNamespace(sector="black"),
@@ -705,16 +837,16 @@ def test_dependency_runner_validates_read_only_session_before_catalog_discovery(
 
 def test_discovery_artifacts_are_limited_to_the_approved_run_directory(tmp_path: Path) -> None:
     products = ("j", "ma", "a")
-    maps = {product: _map(product) for product in products}
+    maps = {product: _long_map(product) for product in products}
     partitions = {
-        (product, row.contract, frequency): (_partition(),)
+        (product, row.contract, frequency): (_long_partition(),)
         for product in products
         for row in maps[product]
         for frequency in ("1d", "1w", "60m")
     }
     result = build_discovery_result(
         _Catalog(maps, partitions),
-        _MarketData(),
+        _long_market_data(),
         operational_products=products,
         taxonomy={
             "j": SimpleNamespace(sector="black"),
@@ -728,9 +860,12 @@ def test_discovery_artifacts_are_limited_to_the_approved_run_directory(tmp_path:
 
     assert {path.name for path in output.iterdir()} == {
         "selection.json",
+        "folds.json",
         "coverage.csv",
         "input_hashes.json",
         "zero_write_proof.json",
     }
     selection = json.loads((output / "selection.json").read_text(encoding="utf-8"))
     assert selection["selected_products"] == ["j", "ma", "a"]
+    folds = json.loads((output / "folds.json").read_text(encoding="utf-8"))
+    assert folds["complete_years"] == [2021, 2022, 2023, 2024]
