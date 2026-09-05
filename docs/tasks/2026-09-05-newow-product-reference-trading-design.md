@@ -1,10 +1,11 @@
 # Newow 策略与指标产品化 + 乐观参考交易 Design Spec
 
 日期：2026-09-05
-状态：`DESIGN_DRAFT / OWNER_CONFIRMED_SCOPE / FULL_DESIGN_REVIEW_PENDING / IMPLEMENTATION_NOT_STARTED`
+状态：`OWNER_APPROVED_FOR_IMPLEMENTATION`
+审批前状态：`DESIGN_DRAFT / OWNER_CONFIRMED_SCOPE / FULL_DESIGN_REVIEW_PENDING / IMPLEMENTATION_NOT_STARTED`
 规划基线：`develop@4f4754ed6df67a1d828e35b82fe2269d7f020469`
 文档分支：`docs/newow-product-reference-trading-v1`
-文档性质：第三阶段产品与领域设计提案；不是已接受的 active OpenSpec，不授权实现、集成、发布或生产操作。
+文档性质：第三阶段产品与领域设计；Owner 已批准按对应 Implementation Plan 进入实现。它仍不是已接受的 active OpenSpec，也不授权集成、发布或生产操作；正文中的草案/待审阅文字保留为审批前历史记录，不覆盖本元数据。
 
 ## 1. 目标与已确认决定
 
