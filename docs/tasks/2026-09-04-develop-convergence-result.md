@@ -1,7 +1,7 @@
 # `develop` 收敛实施结果
 
 日期：2026-09-04
-状态：`CODE_COMPLETE_BASE_DRIFT_RECONCILIATION_REVIEW_PENDING`
+状态：`CODE_COMPLETE_EXTERNAL_GATE_PENDING`
 Original implementation baseline：`18a62382685b6deb92010968d4a5a920952fa206`
 Post-review integration base：`15a557669e39895dc7f243d319f48fb2a695887c`
 任务分支：`chore/develop-convergence`
@@ -27,7 +27,7 @@ Post-review integration base：`15a557669e39895dc7f243d319f48fb2a695887c`
 
 - 原 convergence candidate `162ff92891f0187f7990e362cf30025e54debe79` 曾在原 integration base `18a62382685b6deb92010968d4a5a920952fa206` 上完成双轴 Review。
 - 此前被明确保留、不吸收的用户并发提交 `15a557669e39895dc7f243d319f48fb2a695887c` 随后进入 `origin/develop`，使 PR `#335` 产生 `behind_by=1`、`mergeable_state=dirty`；这是正常并发变化，不是原审计错误。
-- 当前分支已通过非重写 merge 吸收新的 integration base，并保留双方内容；新的 exact head 尚需重新完成 Standards/Spec 双轴 Review。
+- 当前分支已通过非重写 merge 吸收新的 integration base，并保留双方内容；修正后候选 `6aae27cdd27a227092606578fa6aefb56bdd2781` 已完成 Standards/Spec 双轴 Review，均为 `P1=0 / P2=0 / P3=0 / APPROVED`。本结果文档的最终状态提交还必须作为新 exact head 重做同样的双轴 Review。
 - PR `#335` 继续保持 Draft、unmerged；Owner“允许集成 develop”Gate 尚未取得。
 
 ## Task A–F 收口事实
@@ -299,7 +299,7 @@ git status --short
 
 - 本文档的最终 commit 不可能在自身 Git tree 中写入其自身 SHA；不得把 `REVIEW_HEAD` 虚假标作 final commit。
 - `c0b5e48772b01f4e9961761e4b91233a3e1f6717` 的 Standards 与 Spec exact-head confirmation 均为 `P1=0 / P2=1 / P3=0 / NOT APPROVED`，原因是本文档此前保留了已失效的 Task G/Review/PR 状态；该 SHA 不再是可批准的 final candidate。
-- 当前修正提交后的 exact candidate head 必须由 `git rev-parse HEAD`、远端 task ref 与 PR `#335 headRefOid` 的一致 readback 冻结，并在该 exact head 上重新完成完整 Standards/Spec 双轴 Review；身份与结论记录在不改变 Git tree 的 PR metadata/执行报告中。
+- 最终 exact candidate head 必须由 `git rev-parse HEAD`、远端 task ref 与 PR `#335 headRefOid` 的一致 readback 冻结，并在该 exact head 上完成完整 Standards/Spec 双轴 Review；因为提交不能在自身 tree 中声明自身 SHA，最终身份与结论记录在不改变 Git tree 的 PR metadata/执行报告中。
 - Owner 尚未明确回复“允许集成 develop”；PR `#335` 必须保持 Draft。Owner Gate 前不得 ready、merge 或清理当前 task worktree/branch。
 - 独立未完成 Gate：PR `#333` current-head release Review；`main`/tag/GitHub Release 批准；PF2611 plan/apply；Runtime promotion；自然 SuBing Event；PushPlus provider acceptance；Owner 微信实际送达确认；Newow 后续产品化、参考交易、OOS、Shadow 与模拟账户。
 
@@ -316,4 +316,4 @@ git status --short
 - Repository/canonical guards：`18 passed`；其中新增手册 approval-scope guard 在修复前以缺少 `DISTRIBUTION_STATUS` 正确 RED，文案修复后 GREEN。字体锁定 guard 在修复前以缺少唯一 path/hash 绑定正确 RED，只接受精确字体后 GREEN。Ruff 对变更测试与构建脚本为 `All checks passed!`。
 - OpenSpec strict：`8 passed, 0 failed`；secret scan：`finding_count=0`；staged diff check clean。
 - Merge commit `a1d2a3c7ad3d568785afec9cba77528bff4492f8` 的首轮 exact-head Standards Review 为 `P1=0 / P2=1 / P3=0 / NOT APPROVED`，发现构建器未锁定唯一字体；Spec Review 为 `P1=0 / P2=0 / P3=1 / NOT APPROVED`，发现 conflict inventory 将 develop-only 文件错记为 auto-merge。两项均已在后续 candidate 修正，`a1d2a3c` 不是 final candidate。
-- 新 exact candidate、commit 后 fresh validation、PR mergeability 与双轴 Review将在后续 readback中冻结；Owner Gate 前不得 ready、merge 或清理 task branch/worktree。
+- 修正后候选 `6aae27cdd27a227092606578fa6aefb56bdd2781` 的 Standards Review 与 Spec Review 均为 `P1=0 / P2=0 / P3=0 / APPROVED`；本文档最终提交产生的新 exact head 仍须 fresh validation、PR mergeability readback 与双轴 exact-head Review，并将结果写入不改变 Git tree 的 PR metadata/执行报告。Owner Gate 前不得 ready、merge 或清理 task branch/worktree。
