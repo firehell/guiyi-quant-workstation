@@ -148,6 +148,22 @@ class MarketDataService:
             raise MarketDataError("TRADING_SESSION_MISSING")
         return windows
 
+    def trading_days_overlapping_window(
+        self,
+        *,
+        symbol: str,
+        start: datetime,
+        end: datetime,
+    ) -> tuple[date, ...]:
+        """Resolve as-of Calendar/Session overlap without leaking Catalog errors."""
+        try:
+            assert_not_retired(symbol)
+            return self.catalog.trading_days_overlapping_window(symbol, start, end)
+        except ProductRetiredError as exc:
+            raise MarketDataError("PRODUCT_RETIRED") from exc
+        except CatalogError as exc:
+            raise MarketDataError(exc.code) from exc
+
     def query_actual_dominant_trading_days(
         self,
         request: ActualDominantTradingDayQuery,
@@ -339,10 +355,36 @@ class MarketDataService:
             (),
         )
 
+    def query_page_inclusive(self, request: SeriesPageQuery) -> MarketSeriesPageResult:
+        """Return one physical page including its exact completed-bar endpoint.
+
+        This narrow seam is for a replay prefix whose first cursor is an
+        observed completed Bar, not an artificial timestamp beyond Catalog
+        coverage. Later pages continue through the ordinary exclusive cursor.
+        """
+        try:
+            assert_not_retired(request.symbol)
+        except ProductRetiredError as exc:
+            raise MarketDataError("PRODUCT_RETIRED") from exc
+        if request.series_kind is SeriesKind.ACTUAL_DOMINANT:
+            raise MarketDataError("INCLUSIVE_PAGE_PHYSICAL_REQUIRED")
+        assert request.physical_key is not None
+        return self._page_result(
+            request,
+            self._physical_page_bars(
+                request.physical_key,
+                request,
+                inclusive_before=True,
+            ),
+            (),
+        )
+
     def _physical_page_bars(
         self,
         key: DatasetKey,
         request: SeriesPageQuery,
+        *,
+        inclusive_before: bool = False,
     ) -> list[CanonicalBar]:
         partitions = self.catalog.partitions_before(key, request.before)
         if not partitions:
@@ -375,7 +417,10 @@ class MarketDataService:
                 )
             values = self._partition_bars(partition)
             for bar in reversed(values):
-                if request.before is not None and bar.bar_end >= request.before:
+                if request.before is not None and (
+                    bar.bar_end > request.before
+                    or (not inclusive_before and bar.bar_end == request.before)
+                ):
                     continue
                 if previous_end is not None and bar.bar_end >= previous_end:
                     raise MarketDataError("BAR_IDENTITY_CONFLICT")

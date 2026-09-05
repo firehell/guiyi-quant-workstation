@@ -108,7 +108,10 @@ class _AsOfSegmentLoader(ActualDominantResearchSegmentLoader):
         bounded = replace(request, through=min(request.through, self._through))
         result = super()._query_actual_dominant_trading_days(bounded)
         self._check_cancelled()
-        if any(
+        if result.requested_trading_day_window != (
+            bounded.since,
+            bounded.through,
+        ) or any(
             result.request_identity.get(key) != value
             for key, value in {
                 "series_kind": "actual_dominant",
@@ -196,13 +199,14 @@ class NewowProductReader:
                 session_cache[day] = value
             return session_cache[day]
 
-        # This existing Catalog seam resolves night sessions to their trading
-        # day. No date-plus-one, guessed market hours or local map resolver.
+        # MDS resolves the authoritative Calendar/Session overlap, including
+        # night-session trading-day identity. No local Catalog access or date
+        # arithmetic is allowed at this reader boundary.
         start = datetime.combine(
             min(lower, cutoff.astimezone(_SHANGHAI).date()), time.min, _SHANGHAI
         )
-        days = self._market_data.catalog.trading_days_overlapping_window(
-            query.product, start, cutoff + _MICROSECOND
+        days = self._market_data.trading_days_overlapping_window(
+            symbol=query.product, start=start, end=cutoff + _MICROSECOND
         )
         if not days or any(
             current <= previous for previous, current in zip(days, days[1:])
@@ -239,6 +243,9 @@ class NewowProductReader:
             frequencies=tuple(BarFrequency(frequency) for frequency in frequencies),
             since=lower,
             through=days[-1],
+            allow_empty_frequencies=(
+                (BarFrequency.W1,) if ProductFrequency.WEEKLY in frequencies else ()
+            ),
         )
         owners = tuple(
             replace(segment, end_trading_day=min(segment.end_trading_day, days[-1]))
@@ -382,8 +389,9 @@ class NewowProductReader:
     def _read_prefix(
         self, product: str, contract: str, frequency: ProductFrequency, cutoff: datetime
     ) -> tuple[CanonicalBar, ...]:
-        before = cutoff + _MICROSECOND
+        before = cutoff
         pages: list[tuple[CanonicalBar, ...]] = []
+        inclusive = True
         while True:
             self._check_cancelled()
             request = SeriesPageQuery(
@@ -394,13 +402,18 @@ class NewowProductReader:
                 _PAGE_SIZE,
                 contract,
             )
-            page = self._market_data.query_page(request)
+            page = (
+                self._market_data.query_page_inclusive(request)
+                if inclusive
+                else self._market_data.query_page(request)
+            )
             self._check_cancelled()
             if (
                 type(page.has_more_before) is not bool
                 or not page.bars
                 or len(page.bars) > _PAGE_SIZE
-                or page.bars[-1].bar_end >= before
+                or page.bars[-1].bar_end > before
+                or (not inclusive and page.bars[-1].bar_end == before)
                 or page.next_before
                 != (page.bars[0].bar_end if page.has_more_before else None)
                 or any(
@@ -421,6 +434,7 @@ class NewowProductReader:
             if not page.has_more_before:
                 break
             before = page.bars[0].bar_end
+            inclusive = False
         bars = tuple(bar for page in reversed(pages) for bar in page)
         _validate_order(bars)
         return bars

@@ -273,6 +273,7 @@ class _PagedMarketData:
         self.actual = {}
         self.physical = {}
         self.physical_page_requests = []
+        self.inclusive_page_requests = []
         self.physical_page_sizes = []
         self.actual_requests = []
         self.owner_requests = []
@@ -411,13 +412,23 @@ class _PagedMarketData:
 
     def query_page(self, request: SeriesPageQuery):
         self.physical_page_requests.append(request)
+        return self._physical_page(request, inclusive_before=False)
+
+    def query_page_inclusive(self, request: SeriesPageQuery):
+        self.inclusive_page_requests.append(request)
+        self.physical_page_requests.append(request)
+        return self._physical_page(request, inclusive_before=True)
+
+    def _physical_page(self, request: SeriesPageQuery, *, inclusive_before: bool):
         self._fail("physical")
         assert request.series_kind is SeriesKind.CONTRACT
         assert request.contract is not None
         values = tuple(
             bar
             for bar in self.physical[(request.contract, request.frequency)]
-            if request.before is None or bar.bar_end < request.before
+            if request.before is None
+            or bar.bar_end < request.before
+            or (inclusive_before and bar.bar_end == request.before)
         )
         limit = min(request.limit, self.page_size)
         page = values[-limit:]

@@ -198,6 +198,35 @@ def test_query_page_rejects_cursor_beyond_newest_catalog_coverage(session, tmp_p
         )
 
 
+def test_inclusive_page_reads_newest_coverage_but_keeps_real_overshoot_rejection(
+    session, tmp_path
+) -> None:
+    catalog, service, store = _service(session, tmp_path)
+    key = DatasetKey("contract", "jm", "JM2505", "1d")
+    latest = _bar(2, 100)
+    _publish(catalog, store, key, (latest,))
+    session.commit()
+
+    with pytest.raises(MarketDataError, match="DATASET_OR_PARTITION_MISSING"):
+        service.query_page(
+            SeriesPageQuery(
+                "contract",
+                "jm",
+                "1d",
+                latest.bar_end + timedelta(microseconds=1),
+                1,
+                "JM2505",
+            )
+        )
+
+    result = service.query_page_inclusive(
+        SeriesPageQuery("contract", "jm", "1d", latest.bar_end, 1, "JM2505")
+    )
+
+    assert result.bars == (latest,)
+    assert result.request_identity["before"] == latest.bar_end.isoformat()
+
+
 def test_query_page_rejects_adjacent_partition_coverage_gap(session, tmp_path) -> None:
     catalog, service, store = _service(session, tmp_path)
     key = DatasetKey("continuous", "jm", "MAIN", "1d")

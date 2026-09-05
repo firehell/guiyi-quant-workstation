@@ -30,7 +30,7 @@ def test_reader_consumes_all_prefix_pages(product_cases):
     assert len(result.replay_bars) == 4001
     assert fake.physical_page_sizes == [2000, 2000, 1]
     assert [r.before for r in fake.physical_page_requests] == [
-        physical[4000].bar_end + timedelta(microseconds=1),
+        physical[4000].bar_end,
         physical[2001].bar_end,
         physical[1].bar_end,
     ]
@@ -133,6 +133,21 @@ def test_weekly_empty_middle_owner_keeps_both_authoritative_boundaries(product_c
     assert all(b.source_identity for b in result.boundaries)
 
 
+def test_weekly_all_zero_owner_window_keeps_authoritative_boundaries(product_cases):
+    reader, query, fake = _weekly_reader(product_cases)
+    fake.actual = {BarFrequency.W1: ()}
+
+    result = reader.load(query, fake.as_of)
+
+    assert [owner.contract for owner in result.owners] == ["RB2605", "RB2609", "RB2610"]
+    assert [boundary.new_contract for boundary in result.boundaries] == [
+        "RB2609",
+        "RB2610",
+    ]
+    assert result.replay_bars == ()
+    assert fake.physical_page_requests == []
+
+
 @pytest.mark.parametrize(
     "cutoff, contracts",
     [
@@ -202,8 +217,19 @@ def test_as_of_filters_intraday_suffix_before_physical_replay(product_cases):
     cutoff = datetime(2023, 1, 2, 3, tzinfo=UTC)
     result = reader.load(replace(query, as_of=cutoff), fake.as_of)
     assert [bar.bar.bar_end.hour for bar in result.replay_bars] == [2, 3]
-    assert fake.physical_page_requests[0].before == cutoff + timedelta(microseconds=1)
+    assert fake.physical_page_requests[0].before == cutoff
     assert result.as_of == cutoff
+
+
+def test_prefix_at_newest_completed_bar_uses_mds_inclusive_page(product_cases):
+    reader, query, fake = product_cases.paged_reader(prefix_bars=4)
+    cutoff = fake.physical[("RB2605", BarFrequency.H1)][-1].bar_end
+
+    result = reader.load(replace(query, as_of=cutoff), fake.as_of)
+
+    assert len(result.replay_bars) == 4
+    assert [request.before for request in fake.inclusive_page_requests] == [cutoff]
+    assert fake.physical_page_requests[0].before == cutoff
 
 
 def test_default_performance_window_resolves_coverage_not_viewport(product_cases):
@@ -460,6 +486,28 @@ def test_actual_response_cannot_substitute_another_read_identity(
     )
     with pytest.raises(NewowProductReadError, match="NEWOW_DATA_IDENTITY_INVALID"):
         reader.load(query, fake.as_of)
+    assert fake.physical_page_requests == []
+
+
+@pytest.mark.parametrize(
+    "window",
+    [
+        (date(2023, 1, 3), date(2023, 1, 4)),
+        (date(2023, 1, 2), date(2023, 1, 4)),
+    ],
+)
+def test_actual_response_cannot_substitute_or_truncate_requested_trading_day_window(
+    product_cases, window
+):
+    """A response for a different bounded day window cannot seed this read."""
+    reader, query, fake = product_cases.paged_reader(prefix_bars=3)
+    fake.actual_transform = lambda request, result: replace(
+        result, requested_trading_day_window=window
+    )
+
+    with pytest.raises(NewowProductReadError, match="NEWOW_DATA_IDENTITY_INVALID"):
+        reader.load(query, fake.as_of)
+
     assert fake.physical_page_requests == []
 
 
