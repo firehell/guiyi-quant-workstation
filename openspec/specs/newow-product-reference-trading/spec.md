@@ -20,6 +20,30 @@ MUST 保持固定 `actual_dominant + 1d + trend` 兼容语义，并允许薄适�
 现役 Runtime 隔离；`auto_order=false` 不变。代码、测试或文档通过不能改变 SuBing 自然验收、
 release、Runtime、通知送达或交易 Gate。
 
+产品实现 MUST 服从下列完整能力矩阵；“三策略 × 三周期完整”不表示每个辅助能力可机械复制到全部组合。
+每个实际输出 MUST 携带适用的 formula/rule identity、输入周期、`bar_end`、请求 `as_of`、warming 与
+repaint/evidence 状态。表中的 `ACTIVE_CODE_VERIFIED` 只表示 BASE 保留源码和测试入口，不表示本阶段已经
+完成产品包装；`RESEARCH_EVIDENCE_ONLY` 必须先恢复并核对冻结原件再实现；`EVIDENCE_REQUIRED` 必须阻塞
+对应子功能验收。若证据没有证明某能力的 repaint 属性，响应 MUST 标为 unavailable，而不是默认非重绘。
+
+| 能力 | 适用策略与周期 | formula identity | evidence status | warming / repaint / as-of 边界 |
+|---|---|---|---|---|
+| 趋势主状态 | `trend × 1w/1d/60m` | `newow_trend_band_page_v2` | `ACTIVE_CODE_VERIFIED` | completed 本周期、同物理区段 warm-up；BUILD/HOLD/CLEAR/FLAT 不跨合约继承 |
+| 震荡主状态 | `oscillation × 1w/1d/60m` | `newow_oscillation_hhv_llv10_page_v1` + `newow_hhv_llv_channel_page_v1` | `ACTIVE_CODE_VERIFIED` | completed 本周期、同物理区段 warm-up；HHV/LLV10 与同 Bar `CLEAR → BUILD` |
+| 主升浪主状态 | `main_rise × 1w/1d/60m` | `newow_main_rise_ma35_ma45_page_v1` | `ACTIVE_CODE_VERIFIED` | completed 本周期、同物理区段 warm-up；MA35/MA45 主动作不由 Hint 改写 |
+| S 跑 / D1–D3 | `trend/main_rise × 1w/1d/60m`，Hint only | `newow_escape_d123_page_v2` | `ACTIVE_CODE_VERIFIED` | 必须报告公式所需 warming 与已验证 repaint 属性；只使用当时 completed 输入，不改变 BUILD/CLEAR |
+| D4–D6 | `main_rise × 1w/1d/60m`，Hint only | `newow_buy_d456_page_v1` | `ACTIVE_CODE_VERIFIED` | 同物理区段、当时 completed 输入；Low×0.99 仅为显示锚点，不产生加仓 |
+| J 风险 | `main_rise × 1w/1d/60m`，Hint only | `newow_main_rise_j_reduce_page_v1` | `ACTIVE_CODE_VERIFIED` | 同物理区段、当时 completed 输入；不推导减仓比例 |
+| 4/7/11 | `main_rise × 1w/1d/60m`，结构 Hint | `newow_magic11_page_v1` | `ACTIVE_CODE_VERIFIED` | 按物理区段重置；不得产生独立 Action |
+| 主力控盘副图 | 三策略 × `1w/1d/60m`，共享解释层 | `newow_main_force_control_page_v1` | `ACTIVE_CODE_VERIFIED` | 必须报告公式 warming 与已验证 repaint 属性；“主力”不证明真实持仓或席位 |
+| 主力照妖镜副图 | 三策略 × `1w/1d/60m`，retrospective only | `newow_zhaoyao_mirror_repainting_page_v1` | `ACTIVE_CODE_VERIFIED` | `repainting=true / formal_signal_eligible=false`；不进入 Hint、Action、ReferenceTrade、收益或历史 as-of 事实 |
+| 涨跌动能副图 | 三策略 × `1w/1d/60m`，共享解释层 | `newow_up_down_energy_page_v1` | `ACTIVE_CODE_VERIFIED` | 短区段 warming/unavailable；不得跨合约借值，且必须报告已验证 repaint 属性 |
+| 杯柄 | `trend × 1d`；`1w/60m = NOT_APPLICABLE` | `newow_cup_handle_v1`，`page_parity=false` | `ACTIVE_CODE_VERIFIED`（clean-room） | 只显示 confirmed D1 witness；`pivot_at` 不是首次可知时间 |
+| 目标/吸筹显示选择 | 三策略共享 `1w/1d/60m` context | `newow_target_absorb_display_selection_page_v2` | `RESEARCH_EVIDENCE_ONLY` | 实现前必须核对日/周选择、周线覆盖、昨收、clamp 与 warm-up；输出来源周期、来源 `bar_end` 与 `as_of`，只读展示不等于交易目标或真实吸筹 |
+| 综合解释（13 格、方向/确定性、ATR20/Close、第一行动、周日 16 组合） | 三策略共享多周期 context | `newow_composite_decision_page_v3_2_82` 及待冻结子身份 | `RESEARCH_EVIDENCE_ONLY` | 每项输入使用各自 completed `bar_end` 与 `as_of`；不产生第十条策略或改变主动作 |
+| 五窗口页面比较器 | `oscillation × 1w/1d/60m`，独立 comparator | `newow_hhv_llv_window_optimizer_page_v1` | `RESEARCH_EVIDENCE_ONLY` | 独立页面 as-of/样本假设；期末理论平仓不进入 ReferenceTrade |
+| 页面诊断 token / 六组合评分映射 | 三策略共享解释层候选 | `UNFROZEN` | `EVIDENCE_REQUIRED` | 缺稳定机器合同时 unavailable；不得以“无信号”、0 分或通用知识填补 |
+
 #### Scenario: SuBing has not produced a natural Event
 
 - **GIVEN** SuBing Task 11–13 尚待自然市场证据
@@ -63,9 +87,11 @@ warm-up Bar 不得产生有效主力区段内的 BUILD；新主力起点已经�
 “无信号”。
 
 Action MUST 带稳定 identity、策略及公式、周期、品种、物理合约、区段、Bar 时间、同 Bar 顺序、
-动作类型和语义参考价。配对必须使用关联 identity 或策略 adapter 的确定状态机；Web 不得模糊搜索最近
-BUILD。同身份不同内容、乱序、跨策略/周期/合约/区段关联 MUST fail-closed。震荡同 Bar 顺序固定为
-CLEAR 后 BUILD；无法证明相对顺序的同 Bar Hint 只能作为 Bar 级提示。
+动作类型和语义参考价。内核提供 `related_marker_ids` 时 MUST 优先精确验证并使用该关联；只有内核没有
+关联 ID 时，策略 adapter 才可在同一策略、周期、物理合约和有效 segment 内运行确定状态机。Web 不得
+模糊搜索最近 BUILD。完全相同的 identity/content MUST 幂等去重为一项；相同 identity 但 content 不同，
+或出现乱序、跨策略/周期/合约/区段关联时 MUST fail-closed。震荡同 Bar 顺序固定为 CLEAR 后 BUILD；
+无法证明相对顺序的同 Bar Hint 只能作为 Bar 级提示。
 
 #### Scenario: A reduction hint occurs during an open reference trade
 
@@ -150,8 +176,9 @@ ROLLOVER_INTERRUPTED 与期初已有记录 MUST 分列。零笔 CLOSED 时胜率
 ### Requirement: Explain without changing main actions
 
 综合解释 SHALL 输出输入事实、来源周期与时间、规则 ID、方向、参考仓位区间、确定性拆分、波动率、第一行动
-和稳定 token；它 MUST 不产生第十条综合策略，也不得反向改变 BUILD/CLEAR。13 格不可达 warning 分支与周日
-16 组合保持其解释 identity；第一版不调用外部 LLM。
+和稳定 token；它 MUST 不产生第十条综合策略，也不得反向改变 BUILD/CLEAR。13 格 MUST 保留源页面已经确认的
+原控制流及其不可达 warning 分支，周日 16 组合保持其解释 identity；任何行为修正 MUST 使用新的 clean-room
+formula/rule identity 并经过独立审阅，不得覆盖或静默改写现有 page identity。第一版不调用外部 LLM。
 
 证据状态 MUST 与功能结果分离为 `ACTIVE_CODE_VERIFIED / RESEARCH_EVIDENCE_ONLY / EVIDENCE_REQUIRED /
 OUT_OF_SCOPE`。缺原始证据的阈值、评分、排序或诊断映射 MUST 标为 `EVIDENCE_REQUIRED` 并阻塞该功能的
