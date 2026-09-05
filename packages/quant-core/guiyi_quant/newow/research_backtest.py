@@ -916,7 +916,7 @@ def build_strategy_intents_from_replay_segments(
         raise ValueError("NEWOW_STRATEGY_REPLAY_SEGMENTS_EMPTY")
     intents: list[BacktestIntent] = []
     versions: tuple[str, ...] | None = None
-    seen_signal_bars: set[datetime] = set()
+    seen_observation_bars: set[datetime] = set()
     for segment in segments:
         if not isinstance(segment, NewowStrategyReplaySegment):
             raise ValueError("NEWOW_STRATEGY_REPLAY_SEGMENT_INVALID")
@@ -932,13 +932,15 @@ def build_strategy_intents_from_replay_segments(
         eligible_ends = {
             bar.bar_end for bar in segment.bars if bar.observation_eligible
         }
+        if eligible_ends & seen_observation_bars:
+            raise ValueError("NEWOW_STRATEGY_REPLAY_IDENTITY_CONFLICT")
+        seen_observation_bars.update(eligible_ends)
+        seen_actions: set[tuple[datetime, BacktestAction]] = set()
         for intent in segment_intents:
-            if (
-                intent.signal_bar_end not in eligible_ends
-                or intent.signal_bar_end in seen_signal_bars
-            ):
+            identity = (intent.signal_bar_end, intent.action)
+            if intent.signal_bar_end not in eligible_ends or identity in seen_actions:
                 raise ValueError("NEWOW_STRATEGY_REPLAY_IDENTITY_CONFLICT")
-            seen_signal_bars.add(intent.signal_bar_end)
+            seen_actions.add(identity)
             intents.append(intent)
     assert versions is not None
     intents.sort(key=lambda item: item.signal_bar_end)
