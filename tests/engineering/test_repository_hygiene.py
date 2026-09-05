@@ -11,6 +11,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 NEWOW_DOSSIER = ROOT / "docs/research/newow-v3.2.82"
 NEWOW_REPLICATION_MANUAL = NEWOW_DOSSIER / "REPLICATION_MANUAL.md"
+NEWOW_REPLICATION_BUILDER = ROOT / "scripts/docs/build_newow_replication_manual.py"
 DISTRIBUTION_STATUS_LINE = "DISTRIBUTION_STATUS = DISTRIBUTION_APPROVED_BY_OWNER"
 SCREENSHOT_POLICY_LINE = "NEWOW_SCREENSHOT_POLICY = RETAIN"
 
@@ -218,3 +219,18 @@ def test_newow_replication_manual_uses_the_approved_screenshot_scope() -> None:
     assert "原始 HTML、JavaScript、接口响应、逐 Bar 股票数据" in manual
     assert "RQData / Canonical 原始材料" in manual
     assert "仍应由仓库所有者确认授权" not in manual
+
+
+def test_newow_replication_builder_uses_one_fail_closed_cjk_font() -> None:
+    builder = NEWOW_REPLICATION_BUILDER.read_text(encoding="utf-8")
+
+    assert 'FONT_PATH = Path("/System/Library/Fonts/STHeiti Medium.ttc")' in builder
+    assert (
+        'FONT_SHA256 = "f8fa4a63e2cf500e98e64d4c73260daaba049306cf85dec9e3729bc285b7d645"'
+        in builder
+    )
+    assert "hashlib.sha256(FONT_PATH.read_bytes()).hexdigest()" in builder
+    assert "if actual_sha256 != FONT_SHA256:" in builder
+    assert 'TTFont("ManualCN", str(FONT_PATH))' in builder
+    assert "candidates" not in builder
+    assert '"Helvetica"' not in builder

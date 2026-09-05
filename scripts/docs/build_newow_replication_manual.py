@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import re
 from pathlib import Path
 
@@ -36,21 +37,20 @@ PAPER = HexColor("#F7F7FB")
 GRID = HexColor("#D8DAE5")
 
 
+FONT_PATH = Path("/System/Library/Fonts/STHeiti Medium.ttc")
+FONT_SHA256 = "f8fa4a63e2cf500e98e64d4c73260daaba049306cf85dec9e3729bc285b7d645"
+
+
 def register_fonts() -> tuple[str, str]:
-    candidates = [
-        Path("/System/Library/Fonts/STHeiti Medium.ttc"),
-        Path("/System/Library/Fonts/Hiragino Sans GB.ttc"),
-        Path("/System/Library/Fonts/Supplemental/Arial Unicode.ttf"),
-    ]
-    for path in candidates:
-        if not path.exists():
-            continue
-        try:
-            pdfmetrics.registerFont(TTFont("ManualCN", str(path)))
-            return "ManualCN", "ManualCN"
-        except Exception:
-            continue
-    return "Helvetica", "Helvetica-Bold"
+    if not FONT_PATH.is_file():
+        raise RuntimeError(f"required locked font is missing: {FONT_PATH}")
+    actual_sha256 = hashlib.sha256(FONT_PATH.read_bytes()).hexdigest()
+    if actual_sha256 != FONT_SHA256:
+        raise RuntimeError(
+            f"locked font hash mismatch: expected {FONT_SHA256}, got {actual_sha256}"
+        )
+    pdfmetrics.registerFont(TTFont("ManualCN", str(FONT_PATH)))
+    return "ManualCN", "ManualCN"
 
 
 FONT, FONT_BOLD = register_fonts()
