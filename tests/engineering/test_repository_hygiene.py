@@ -10,6 +10,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 NEWOW_DOSSIER = ROOT / "docs/research/newow-v3.2.82"
+NEWOW_REPLICATION_MANUAL = NEWOW_DOSSIER / "REPLICATION_MANUAL.md"
 DISTRIBUTION_STATUS_LINE = "DISTRIBUTION_STATUS = DISTRIBUTION_APPROVED_BY_OWNER"
 SCREENSHOT_POLICY_LINE = "NEWOW_SCREENSHOT_POLICY = RETAIN"
 
@@ -205,3 +206,15 @@ def test_newow_screenshot_distribution_owner_decision_is_explicit() -> None:
         manifest_sha256_by_path,
         actual_sha256_by_path,
     )
+
+
+def test_newow_replication_manual_uses_the_approved_screenshot_scope() -> None:
+    manual = NEWOW_REPLICATION_MANUAL.read_text(encoding="utf-8")
+    lines = set(manual.splitlines())
+
+    assert DISTRIBUTION_STATUS_LINE in lines
+    assert SCREENSHOT_POLICY_LINE in lines
+    assert "docs/research/newow-v3.2.82/screenshots/**" in manual
+    assert "原始 HTML、JavaScript、接口响应、逐 Bar 股票数据" in manual
+    assert "RQData / Canonical 原始材料" in manual
+    assert "仍应由仓库所有者确认授权" not in manual

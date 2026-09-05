@@ -1,8 +1,9 @@
 # `develop` 收敛实施结果
 
 日期：2026-09-04
-状态：`DEVELOP_CONVERGED_CANDIDATE`
-实施 baseline：`18a62382685b6deb92010968d4a5a920952fa206`
+状态：`CODE_COMPLETE_BASE_DRIFT_RECONCILIATION_REVIEW_PENDING`
+Original implementation baseline：`18a62382685b6deb92010968d4a5a920952fa206`
+Post-review integration base：`15a557669e39895dc7f243d319f48fb2a695887c`
 任务分支：`chore/develop-convergence`
 设计：`docs/tasks/2026-09-04-develop-convergence-design.md`
 计划：`docs/tasks/2026-09-04-develop-convergence-implementation-plan.md`
@@ -24,11 +25,10 @@
 
 ## 当前候选状态
 
-- Task G 候选准备输入 HEAD：`228f4d685c25f47915067e22aea1fce41fd618f0`。
-- Task A–F 已完成各自实现、自审、修复轮和独立 commit；Task G 已创建 Draft PR `#335`，但尚未合入 `develop`。
-- Standards 与 Spec 两轴已在 exact `REVIEW_HEAD=47ca4636a5edd969915492f5ebf0fb186df876ac` 上 `APPROVED`，Review 后 Step 5 targeted checks 已通过。
-- Documentation-only finalization attempt `c0b5e48772b01f4e9961761e4b91233a3e1f6717` 的两轴 exact-head confirmation 均发现同一结果文档状态矛盾，结论均为 `P1=0 / P2=1 / P3=0 / NOT APPROVED`；该 attempt 已由当前修正文档 supersede，不能作为通过 Review 的 final candidate。
-- 当前修正将删除上述 stale assertion；新 exact head 需重新完成完整 Standards/Spec 双轴 Review。Owner“允许集成 develop”Gate 仍未取得。
+- 原 convergence candidate `162ff92891f0187f7990e362cf30025e54debe79` 曾在原 integration base `18a62382685b6deb92010968d4a5a920952fa206` 上完成双轴 Review。
+- 此前被明确保留、不吸收的用户并发提交 `15a557669e39895dc7f243d319f48fb2a695887c` 随后进入 `origin/develop`，使 PR `#335` 产生 `behind_by=1`、`mergeable_state=dirty`；这是正常并发变化，不是原审计错误。
+- 当前分支已通过非重写 merge 吸收新的 integration base，并保留双方内容；新的 exact head 尚需重新完成 Standards/Spec 双轴 Review。
+- PR `#335` 继续保持 Draft、unmerged；Owner“允许集成 develop”Gate 尚未取得。
 
 ## Task A–F 收口事实
 
@@ -36,7 +36,7 @@
 - Task B 删除 35 个 tracked `.playwright-cli/**` raw capture（568,084 行），加入 ignore 与 repository guard；29 个批准保留的 Newow screenshot 逐路径和 SHA-256 绑定，未修改或删除。Task B commits：`01f38c112811b4343ab9855a2f1e5fbb1d204a82`、`ee98d1fe30ee7ad5b27e149f3a9b4958810e7e4a`。
 - Task C 删除 3 个无 active inbound reference 的 `docs/superpowers/**` 非 canonical 文档，修正 Issue `#286/#259/#307` 与 PR `#333` stale metadata，并将 Newow futures 当前任务合同同步为 `IMPLEMENTED / EVIDENCE_PARTIAL`。Task C commits：`27a0de41aaa7d22ac70033825ca0c4aa33087bac`、`cb463095bfa40232edaada23f730c7acf954bdc2`。
 - Task D 完成退休面、唯一 authority、页面一致性/因果研究隔离审计；FastAPI 0.138 mounted-route guard 以 RED→GREEN 修复，业务 router、策略公式和可信研究口径未改。Task D commits：`20327f345a252f3f854646d98eed9a52050f6a56`、`0ed5538636fc55940f4487409284ccd7ea1b0d94`。
-- Task E 在输入 `0ed5538636fc55940f4487409284ccd7ea1b0d94` 上完成批准的 full validation matrix，记录 backend、Newow、engineering、static、Web、E2E、OpenSpec、secret 与 Git checks 的实际输出；`isolated_postgresql` 和 `manual_acceptance` 按计划未运行。本地 `develop@15a557669e39895dc7f243d319f48fb2a695887c` 的并发用户 commit 未被吸收或覆盖。Task E commits：`f074fec1b32632b87ea5df695404317f8bd0c90a`、`a300262cda5957e55fc8d235bf8024733da769e5`。
+- Task E 在输入 `0ed5538636fc55940f4487409284ccd7ea1b0d94` 上完成批准的 full validation matrix，记录 backend、Newow、engineering、static、Web、E2E、OpenSpec、secret 与 Git checks 的实际输出；`isolated_postgresql` 和 `manual_acceptance` 按计划未运行。当时本地 `develop@15a557669e39895dc7f243d319f48fb2a695887c` 尚未进入 `origin/develop`，因此按原计划被保留且未吸收；其后远端前移已由本轮 reconciliation 处理。Task E commits：`f074fec1b32632b87ea5df695404317f8bd0c90a`、`a300262cda5957e55fc8d235bf8024733da769e5`。
 - Task F 对 16 个普通远端 branch 逐项完成 fresh tip、`ahead_by=0`、ancestor、open PR、worktree 和保护身份预检后显式删除；保留 `main`、`develop`、active release `codex/release-v1.9.15`、当前 task branch、三个本地 worktree及 remote HEAD symref。Task F commit：`228f4d685c25f47915067e22aea1fce41fd618f0`。
 
 ## 变更记录
@@ -302,3 +302,17 @@ git status --short
 - 当前修正提交后的 exact candidate head 必须由 `git rev-parse HEAD`、远端 task ref 与 PR `#335 headRefOid` 的一致 readback 冻结，并在该 exact head 上重新完成完整 Standards/Spec 双轴 Review；身份与结论记录在不改变 Git tree 的 PR metadata/执行报告中。
 - Owner 尚未明确回复“允许集成 develop”；PR `#335` 必须保持 Draft。Owner Gate 前不得 ready、merge 或清理当前 task worktree/branch。
 - 独立未完成 Gate：PR `#333` current-head release Review；`main`/tag/GitHub Release 批准；PF2611 plan/apply；Runtime promotion；自然 SuBing Event；PushPlus provider acceptance；Owner 微信实际送达确认；Newow 后续产品化、参考交易、OOS、Shadow 与模拟账户。
+
+## Post-review integration base drift reconciliation
+
+- Fresh reconciliation input：`origin/develop=15a557669e39895dc7f243d319f48fb2a695887c`，`origin/chore/develop-convergence=162ff92891f0187f7990e362cf30025e54debe79`，merge base 为 original implementation baseline `18a62382685b6deb92010968d4a5a920952fa206`。
+- 合并方式：`git merge --no-ff origin/develop`；未 rebase、未 force push、未改写原 13 个 convergence commits。
+- Conflict inventory：`TESTING.md=MANUAL-MERGE`；`docs/research/newow-v3.2.82/README.md=AUTO-MERGE`；`.gitattributes`、`REPLICATION_MANUAL.md`、PDF、构建脚本和 `tools/docs` 锁文件均为 `AUTO-MERGE`；其余 convergence 文件为 `NO-OVERLAP`。
+- `TESTING.md` 同时保留 repository-hygiene 命令/非授权边界与锁定的 replication manual rebuild 命令；README 同时保留手册入口/目录项和 Owner screenshot approval。
+- `15a557669e39895dc7f243d319f48fb2a695887c` 引入的 `.gitattributes`、`TESTING.md`、README、`REPLICATION_MANUAL.md`、PDF、构建脚本、`tools/docs/pyproject.toml` 与 `tools/docs/uv.lock` 均保留。
+- 手册的截图分发语义已收敛为 `DISTRIBUTION_APPROVED_BY_OWNER / RETAIN`，仅覆盖 29 张冻结 screenshot inventory；不覆盖原始 HTML、JavaScript、接口响应、逐 Bar 股票数据、RQData / Canonical 原始材料、原始第三方 PDF或其他未获批准材料。
+- 合并后的 staged diff 未触及 `services/`、`apps/`、`packages/` 或 `openspec/specs/`，因此按批准的 drift-reconciliation 计划只运行 targeted matrix，不复用旧输出也不扩大到无关产品套件。
+- `uv sync --project tools/docs --locked` exit 0；锁定环境 resolved 4 / checked 3。手册 canonical rebuild 命令 exit 0，生成 45 页 A4 PDF；连续两次重建 SHA-256 均为 `3c6881db880fdb87a11763882214a5390ecbe371d60936de99ce2bc8f5fb21d5`，证明生成结果确定。PDF 全 45 页 contact-sheet 与末页原尺寸 visual QA 未见裁切、重叠、乱码或失效图片；bundled `pypdf` readback 为 45 页，并检出两条 Owner 决定 identity 与“29 张冻结截图已经取得 Owner”文案。系统缺少可选 `pdftotext`，该命令返回 `command not found` 后改用 bundled `pypdf`，不影响 canonical rebuild 结果。
+- Repository/canonical guards：`17 passed`；其中新增手册 approval-scope guard 在修复前以缺少 `DISTRIBUTION_STATUS` 正确 RED，文案修复后 GREEN。Ruff 对变更测试文件为 `All checks passed!`。
+- OpenSpec strict：`8 passed, 0 failed`；secret scan：`finding_count=0`；staged diff check clean。
+- 新 exact candidate、commit 后 fresh validation、PR mergeability 与双轴 Review将在后续 readback中冻结；Owner Gate 前不得 ready、merge 或清理 task branch/worktree。

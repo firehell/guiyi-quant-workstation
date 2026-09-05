@@ -1,0 +1,11 @@
+[project]
+name = "guiyi-docs-tooling"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+  "pillow==12.3.0",
+  "reportlab==4.4.9",
+]
+
+[tool.uv]
+package = false

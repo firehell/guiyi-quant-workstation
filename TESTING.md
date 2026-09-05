@@ -186,4 +186,13 @@ git diff --check
 
 上述 repository-hygiene 命令只检查 Git tree、canonical identity 和安全边界，不授权 branch 删除、Issue/PR 修改、Release、Runtime 或生产写入。
 
+Newow 复刻手册使用独立、锁定的文档工具环境重建：
+
+```bash
+uv sync --project tools/docs --locked
+uv run --project tools/docs python scripts/docs/build_newow_replication_manual.py \
+  --source docs/research/newow-v3.2.82/REPLICATION_MANUAL.md \
+  --output output/pdf/newow-v3.2.82-futures-replication-manual.pdf
+```
+
 Runtime health、data audit 与 alert status 是只读入口，不能推导 Runtime promotion、自然 evidence 或外部操作授权。`guiyi runtime acknowledge-alert-notification --failure-at <exact ISO timestamp>` 是受控 Redis 写入，普通验证只运行对应 pytest，不执行该命令。
