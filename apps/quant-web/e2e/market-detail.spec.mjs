@@ -670,6 +670,28 @@ test('SuBing consumes its exact AlertEvent focus once', async ({ page }) => {
   await expect.poll(() => new URL(page.url()).searchParams.has('focus_bar_end')).toBe(false)
 })
 
+test('SuBing focus remains visible after viewport readiness settles', async ({ page }) => {
+  await mockReadyTrend(page, {
+    barsPage: ({ url, symbol }) => url.searchParams.get('frequency') === '15m'
+      ? { bars: Array.from({ length: 600 }, (_, index) => detailBar(symbol, index, 100 + index)) }
+      : undefined,
+    alertEvents: ({ url }) => url.searchParams.get('rule_code') === 'subing_ths_alert_15m_v1' ? [subingEvent('jm')] : [],
+    alertRules: [subingRule()],
+  })
+  const focus = '2026-09-03T02:45:00.000Z'
+  await page.goto(`/market/chart?symbol=jm&view=subing&focus_bar_end=${encodeURIComponent(focus)}`)
+  await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-chart-viewport-ready', 'true')
+  await expect.poll(() => new URL(page.url()).searchParams.has('focus_bar_end')).toBe(false)
+  const range = await page.getByTestId('kline-shell').evaluate((element) => {
+    const instance = element.__vueParentComponent
+    return instance?.setupState?.chart?.timeScale().getVisibleLogicalRange() ?? null
+  })
+  expect(range).not.toBeNull()
+  expect(range.from).toBeLessThanOrEqual(1)
+  expect(range.to).toBeGreaterThanOrEqual(1)
+  expect(range.to - range.from).toBeLessThan(100)
+})
+
 test('Trend has stable desktop and narrow viewport visuals', async ({ page }) => {
   await page.setViewportSize({ width: 1920, height: 1080 })
   await mockReadyTrend(page)

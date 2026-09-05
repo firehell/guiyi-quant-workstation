@@ -325,10 +325,12 @@ function revealTime(iso: string): boolean {
     followLatest = false
     emit('follow-latest-change', false)
   }
-  chart.timeScale().setVisibleLogicalRange({
+  const targetRange = {
     from: Math.max(0, index - 48),
     to: Math.min(props.bars.length - 1, index + 8),
-  })
+  }
+  chart.timeScale().setVisibleLogicalRange(targetRange)
+  beginViewportStabilityCheck(targetRange)
   return true
 }
 

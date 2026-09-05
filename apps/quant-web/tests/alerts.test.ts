@@ -277,6 +277,96 @@ describe('persistent Alert markers', () => {
     assert.equal(controller.unavailable.value, false)
     controller.dispose()
   })
+
+  test('a live bar update cannot cancel the initial persistent Event window', async () => {
+    const initial = deferred<{ items: AlertEvent[] }>()
+    let calls = 0
+    const controller = usePersistentAlertMarkers({
+      fetchEvents: async () => {
+        calls += 1
+        return initial.promise
+      },
+      scheduleInterval: () => 1,
+      clearInterval: () => undefined,
+    }, { resolveRuleCodes: () => [ALERT_RULE_CODES.SUBING_THS] })
+    const identity = { seriesKind: 'actual_dominant' as const, symbol: 'jm', frequency: '15m' as const }
+    const pending = controller.sync(identity, bars(), 'replace')
+
+    await controller.sync(identity, [...bars(), { ...bars()[1]!, time: '2026-08-15T03:00:00Z' }], 'live')
+    initial.resolve({ items: [subingEvent(1, 'buy')] })
+    await pending
+
+    assert.equal(calls, 1)
+    assert.deepEqual(controller.events.value.map((item) => item.id), [1])
+    assert.equal(controller.unavailable.value, false)
+    controller.dispose()
+  })
+
+  test('a live bar update cannot cancel an in-flight prepended Event window', async () => {
+    const prepended = deferred<{ items: AlertEvent[] }>()
+    let calls = 0
+    const controller = usePersistentAlertMarkers({
+      fetchEvents: async () => {
+        calls += 1
+        if (calls === 1) return { items: [subingEvent(1, 'buy')] }
+        return prepended.promise
+      },
+      scheduleInterval: () => 1,
+      clearInterval: () => undefined,
+    }, { resolveRuleCodes: () => [ALERT_RULE_CODES.SUBING_THS] })
+    const identity = { seriesKind: 'actual_dominant' as const, symbol: 'jm', frequency: '15m' as const }
+    await controller.sync(identity, bars(), 'replace')
+    const prepend = controller.sync(
+      identity,
+      [{ ...bars()[0]!, time: '2026-08-15T00:00:00Z' }, ...bars()],
+      'prepend',
+    )
+
+    await controller.sync(identity, [...bars(), { ...bars()[1]!, time: '2026-08-15T03:00:00Z' }], 'live')
+    prepended.resolve({ items: [subingEvent(0, 'sell')] })
+    await prepend
+
+    assert.equal(calls, 2)
+    assert.deepEqual(controller.events.value.map((item) => item.id), [0, 1])
+    assert.equal(controller.unavailable.value, false)
+    controller.dispose()
+  })
+
+  test('a recent refresh merges without canceling an in-flight prepended Event window', async () => {
+    const prepended = deferred<{ items: AlertEvent[] }>()
+    let refresh: (() => void | Promise<void>) | undefined
+    let calls = 0
+    const controller = usePersistentAlertMarkers({
+      fetchEvents: async () => {
+        calls += 1
+        if (calls === 1) return { items: [subingEvent(1, 'buy')] }
+        if (calls === 2) return prepended.promise
+        return { items: [subingEvent(2, 'sell')] }
+      },
+      scheduleInterval: (callback) => {
+        refresh = callback
+        return 1
+      },
+      clearInterval: () => undefined,
+    }, { resolveRuleCodes: () => [ALERT_RULE_CODES.SUBING_THS] })
+    const identity = { seriesKind: 'actual_dominant' as const, symbol: 'jm', frequency: '15m' as const }
+    await controller.sync(identity, bars(), 'replace')
+    const prepend = controller.sync(
+      identity,
+      [{ ...bars()[0]!, time: '2026-08-15T00:00:00Z' }, ...bars()],
+      'prepend',
+    )
+
+    assert.ok(refresh)
+    await refresh()
+    prepended.resolve({ items: [subingEvent(0, 'sell')] })
+    await prepend
+
+    assert.equal(calls, 3)
+    assert.deepEqual(controller.events.value.map((item) => item.id), [0, 1, 2])
+    assert.equal(controller.unavailable.value, false)
+    controller.dispose()
+  })
 })
 
 function deferred<T>() {

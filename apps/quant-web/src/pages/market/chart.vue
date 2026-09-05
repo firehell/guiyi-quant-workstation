@@ -10,6 +10,6 @@ const hasExplicitView = computed(() => route.query.view !== undefined)
 </script>
 
 <template>
-  <MarketDetailPage v-if="hasExplicitView" :key="route.fullPath" />
+  <MarketDetailPage v-if="hasExplicitView" />
   <LegacyMarketChart v-else />
 </template>
