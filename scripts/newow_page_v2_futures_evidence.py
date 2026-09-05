@@ -5,10 +5,17 @@ from __future__ import annotations
 
 import argparse
 from collections.abc import Sequence
+from typing import NoReturn
+
+
+class _PublicArgumentParser(argparse.ArgumentParser):
+    def error(self, message: str) -> NoReturn:
+        # argparse's default error includes untrusted argument values.
+        raise ValueError("NEWOW_FUTURES_EVIDENCE_ARGUMENT_INVALID")
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
+    parser = _PublicArgumentParser(
         description="Run the bounded read-only Newow futures coverage discovery."
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -40,4 +47,10 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    try:
+        exit_code = main()
+    except Exception:
+        # Includes import/bootstrap and database failures: exception text is private.
+        print('{"error_code":"NEWOW_FUTURES_EVIDENCE_UNAVAILABLE"}')
+        exit_code = 1
+    raise SystemExit(exit_code)
