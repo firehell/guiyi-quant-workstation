@@ -68,6 +68,11 @@ def _price(value: Decimal) -> None:
         raise ValueError("NEWOW_PRODUCT_INVALID_PRICE")
 
 
+def _metric(value: Decimal) -> None:
+    if not isinstance(value, Decimal) or not value.is_finite():
+        raise ValueError("NEWOW_PRODUCT_INVALID_METRIC")
+
+
 def _day(value: date) -> None:
     if type(value) is not date:
         raise ValueError("NEWOW_PRODUCT_INVALID_TRADING_DAY")
@@ -125,6 +130,21 @@ class ProductBar:
     def __post_init__(self) -> None:
         if not isinstance(self.bar, NewowDailyBar) or self.bar.completed is not True:
             raise ValueError("NEWOW_PRODUCT_INVALID_BAR")
+        _day(self.bar.trading_day)
+        if type(self.bar.observation_eligible) is not bool:
+            raise ValueError("NEWOW_PRODUCT_INVALID_OBSERVATION_ELIGIBILITY")
+        for value in (
+            self.bar.product,
+            self.bar.physical_contract,
+            self.bar.segment_id,
+            self.bar.source_identity,
+        ):
+            _text(value)
+        if type(self.bar.volume) is not int or (
+            self.bar.open_interest is not None
+            and type(self.bar.open_interest) is not int
+        ):
+            raise ValueError("NEWOW_PRODUCT_INVALID_VOLUME_OR_OI")
         if self.series_kind != "actual_dominant":
             raise ValueError("NEWOW_PRODUCT_INVALID_SERIES")
         object.__setattr__(self, "frequency", ProductFrequency(self.frequency))
@@ -326,7 +346,7 @@ class StrategyFrame:
         for key, value in values:
             _text(key)
             if value is not None:
-                _price(value)
+                _metric(value)
         if len({key for key, _ in values}) != len(values):
             raise ValueError("NEWOW_PRODUCT_DUPLICATE_MAIN_VALUE")
         object.__setattr__(self, "main_values", values)

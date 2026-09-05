@@ -17,6 +17,7 @@ from guiyi_quant.newow.product_identity import (
     build_segment_id,
     build_signal_id,
 )
+from guiyi_quant.newow.oscillation_channel import calculate_channel_series
 
 
 @pytest.mark.parametrize("strategy", ["trend", "oscillation", "main_rise"])
@@ -77,6 +78,115 @@ def test_product_bar_rejects_frequency_and_series(product_cases):
         with pytest.raises(ValueError):
             replace(bar, **changes)
     assert isinstance(bar, ProductBar)
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"trading_day": ["2026-01-05"]},
+        {"trading_day": "2026-01-05"},
+        {"trading_day": datetime(2026, 1, 5, tzinfo=UTC)},
+        {"trading_day": None},
+        {"observation_eligible": "false"},
+        {"observation_eligible": [False]},
+        {"observation_eligible": 1},
+        {"observation_eligible": 0},
+        {"observation_eligible": None},
+        {"segment_id": ["owned:segment"]},
+        {"segment_id": 1},
+        {"segment_id": " "},
+        {"source_identity": ["owned:source"]},
+        {"source_identity": 1},
+        {"source_identity": " "},
+        {"product": " "},
+        {"physical_contract": " "},
+        {"completed": "true"},
+        {"completed": 1},
+        {"volume": True},
+        {"volume": 1.5},
+        {"volume": float("nan")},
+        {"open_interest": False},
+        {"open_interest": 1.5},
+    ],
+)
+def test_product_bar_rejects_malformed_fields_accepted_by_legacy(
+    product_cases, changes
+):
+    wrapper = product_cases.closed().bars[0]
+    # The legacy constructor actually accepts these; the product seam must reject
+    # them before retaining mutable provenance or interpreting truthy eligibility.
+    legacy = replace(wrapper.bar, **changes)
+    with pytest.raises(ValueError):
+        ProductBar(legacy, wrapper.frequency)
+
+
+def test_truthy_non_boolean_cannot_authorize_frame_action(product_cases):
+    frame = product_cases.closed().replay.frames[0]
+    legacy = replace(frame.bar.bar, observation_eligible="false")
+    assert frame.actions[0].trade_eligibility == "ELIGIBLE"
+    with pytest.raises(ValueError):
+        replace(frame, bar=ProductBar(legacy, frame.bar.frequency))
+
+
+def test_product_bar_retains_only_valid_immutable_payload(product_cases):
+    legacy = product_cases.closed().bars[0].bar
+    bar = ProductBar(legacy, "1d")
+    assert bar.bar == legacy and bar.bar is not legacy
+    changed = replace(
+        legacy, source_identity="owned:changed", observation_eligible=False
+    )
+    assert bar.bar.source_identity == "owned:0"
+    assert bar.bar.observation_eligible is True
+    assert ProductBar(changed, "1d").bar.observation_eligible is False
+    with pytest.raises(FrozenInstanceError):
+        bar.bar.source_identity = "owned:mutated"
+
+
+@pytest.mark.parametrize(
+    "high,low,close,metric",
+    [
+        ("100", "100", "100", "width"),
+        ("110", "90", "90", "close_position"),
+    ],
+)
+def test_frame_preserves_real_channel_zero_metric(
+    product_cases, high, low, close, metric
+):
+    frame = product_cases.closed(strategy="oscillation").replay.frames[0]
+    legacy = replace(
+        frame.bar.bar, high=Decimal(high), low=Decimal(low), close=Decimal(close)
+    )
+    channel = calculate_channel_series((legacy,), period=10)[0]
+    assert getattr(channel, metric) == Decimal("0")
+    projected = replace(
+        frame,
+        bar=ProductBar(legacy, "1d"),
+        main_values=(
+            ("upper", channel.upper),
+            ("lower", channel.lower),
+            ("width", channel.width),
+            ("close_position", channel.close_position),
+        ),
+    )
+    assert dict(projected.main_values)[metric] == Decimal("0")
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        0,
+        0.0,
+        "0",
+        Decimal("NaN"),
+        Decimal("sNaN"),
+        Decimal("Infinity"),
+        Decimal("-Infinity"),
+    ],
+)
+def test_frame_rejects_non_decimal_or_nonfinite_metric(product_cases, value):
+    frame = product_cases.closed().replay.frames[0]
+    with pytest.raises(ValueError):
+        replace(frame, main_values=(("width", value),))
 
 
 @pytest.mark.parametrize("field", ["reference_price", "anchor_price"])
