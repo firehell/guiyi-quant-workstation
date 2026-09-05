@@ -47,6 +47,9 @@ export function usePersistentAlertMarkers(dependencies: Dependencies, options: P
   let activeIdentity: AlertMarkerIdentity | null = null
   let loadedStart: string | null = null
   let loadedEnd: string | null = null
+  let visibleStart: string | null = null
+  let visibleEnd: string | null = null
+  let initialLoadPending = false
 
   async function sync(
     identity: AlertMarkerIdentity,
@@ -65,6 +68,9 @@ export function usePersistentAlertMarkers(dependencies: Dependencies, options: P
       activeIdentity = { ...identity }
       loadedStart = null
       loadedEnd = null
+      visibleStart = null
+      visibleEnd = null
+      initialLoadPending = false
     }
     if (!isPersistentAlertIdentity(identity.seriesKind, identity.frequency) || !bars.length) {
       generation += 1
@@ -77,31 +83,65 @@ export function usePersistentAlertMarkers(dependencies: Dependencies, options: P
       activeIdentity = { ...identity }
       loadedStart = null
       loadedEnd = null
+      visibleStart = null
+      visibleEnd = null
+      initialLoadPending = false
       return
     }
 
     const range = barRange(bars)
+    visibleStart = range.start
+    visibleEnd = range.end
     const requestGeneration = generation
-    const requestRevisionAtStart = ++requestRevision
+    if (mutation === 'live' && initialLoadPending) return
     if (loadedStart === null || loadedEnd === null) {
-      loadedStart = range.start
-      loadedEnd = range.end
-      await fetchRange(identity, range.start, range.end, requestGeneration, requestRevisionAtStart)
-      startTimer(requestGeneration)
+      const requestRevisionAtStart = ++requestRevision
+      initialLoadPending = true
+      const accepted = await fetchRange(
+        identity,
+        range.start,
+        range.end,
+        requestGeneration,
+        requestRevisionAtStart,
+        true,
+      )
+      if (requestRevisionAtStart === requestRevision) initialLoadPending = false
+      if (accepted) {
+        loadedStart = range.start
+        loadedEnd = range.end
+        startTimer(requestGeneration)
+      }
       return
     }
     if (mutation === 'replace') {
-      loadedStart = range.start
-      loadedEnd = range.end
-      await fetchRange(identity, range.start, range.end, requestGeneration, requestRevisionAtStart, true)
+      const requestRevisionAtStart = ++requestRevision
+      const accepted = await fetchRange(
+        identity,
+        range.start,
+        range.end,
+        requestGeneration,
+        requestRevisionAtStart,
+        true,
+      )
+      if (accepted) {
+        loadedStart = range.start
+        loadedEnd = range.end
+      }
       return
     }
     if (mutation === 'prepend' && Date.parse(range.start) < Date.parse(loadedStart)) {
       const previousStart = loadedStart
-      loadedStart = range.start
-      await fetchRange(identity, range.start, previousStart, requestGeneration, requestRevisionAtStart)
+      const accepted = await fetchRange(
+        identity,
+        range.start,
+        previousStart,
+        requestGeneration,
+        requestRevision,
+      )
+      if (accepted && (loadedStart === null || Date.parse(range.start) < Date.parse(loadedStart))) {
+        loadedStart = range.start
+      }
     }
-    if (Date.parse(range.end) > Date.parse(loadedEnd)) loadedEnd = range.end
   }
 
   function startTimer(requestGeneration: number) {
@@ -115,13 +155,23 @@ export function usePersistentAlertMarkers(dependencies: Dependencies, options: P
       || !activeIdentity
       || loadedStart === null
       || loadedEnd === null
+      || visibleStart === null
+      || visibleEnd === null
       || !isPersistentAlertIdentity(activeIdentity.seriesKind, activeIdentity.frequency)
     ) return
     const recentStart = new Date(Math.max(
       Date.parse(loadedStart),
-      Date.parse(loadedEnd) - RECENT_WINDOW_MS,
+      Date.parse(visibleEnd) - RECENT_WINDOW_MS,
     )).toISOString()
-    await fetchRange(activeIdentity, recentStart, loadedEnd, requestGeneration, ++requestRevision)
+    const refreshEnd = visibleEnd
+    const accepted = await fetchRange(
+      activeIdentity,
+      recentStart,
+      refreshEnd,
+      requestGeneration,
+      requestRevision,
+    )
+    if (accepted && Date.parse(refreshEnd) > Date.parse(loadedEnd)) loadedEnd = refreshEnd
   }
 
   async function fetchRange(
@@ -131,9 +181,9 @@ export function usePersistentAlertMarkers(dependencies: Dependencies, options: P
     requestGeneration: number,
     requestRevisionAtStart: number,
     replaceSnapshot = false,
-  ) {
+  ): Promise<boolean> {
     const ruleCodes = options.resolveRuleCodes?.(identity) ?? markerRuleCodes(identity.seriesKind, identity.frequency)
-    if (!ruleCodes.length) return
+    if (!ruleCodes.length) return false
     const normalizedEnd = Date.parse(end) > Date.parse(start)
       ? end
       : new Date(Date.parse(start) + 1).toISOString()
@@ -144,7 +194,7 @@ export function usePersistentAlertMarkers(dependencies: Dependencies, options: P
         start,
         end: normalizedEnd,
       })))
-      if (requestGeneration !== generation || requestRevisionAtStart !== requestRevision || identityKey(identity) !== identityKey(activeIdentity)) return
+      if (requestGeneration !== generation || requestRevisionAtStart !== requestRevision || identityKey(identity) !== identityKey(activeIdentity)) return false
       const nextEvents = new Map<string, AlertEventListResponse['items'][number]>()
       let responseMismatch = false
       for (const [index, response] of responses.entries()) {
@@ -167,10 +217,12 @@ export function usePersistentAlertMarkers(dependencies: Dependencies, options: P
       events.value = [...eventMap.values()].sort((left, right) => Date.parse(left.detected_at) - Date.parse(right.detected_at))
       markers.value = alertEventsToMarkers(events.value)
       unavailable.value = false
+      return true
     } catch {
       // Presentation refresh is optional; keep the last persistent marker snapshot.
-      if (requestGeneration !== generation || requestRevisionAtStart !== requestRevision || identityKey(identity) !== identityKey(activeIdentity)) return
+      if (requestGeneration !== generation || requestRevisionAtStart !== requestRevision || identityKey(identity) !== identityKey(activeIdentity)) return false
       unavailable.value = true
+      return false
     }
   }
 
@@ -188,6 +240,11 @@ export function usePersistentAlertMarkers(dependencies: Dependencies, options: P
     events.value = []
     markers.value = []
     unavailable.value = false
+    loadedStart = null
+    loadedEnd = null
+    visibleStart = null
+    visibleEnd = null
+    initialLoadPending = false
   }
 
   return { markers, events, unavailable, sync, dispose }
