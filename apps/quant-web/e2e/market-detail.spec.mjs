@@ -97,6 +97,7 @@ test('Free Range warm-up has a 1280 by 800 baseline and does not create a strate
   await expect(page.getByText(/箱体历史预载不足|箱体历史预载失败/)).toBeVisible()
   await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-alert-marker-count', '0')
   await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-rendered-marker-count', '0')
+  await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-chart-viewport-ready', 'true')
   await expect(page.locator('[data-detail-workspace="free"]')).toHaveScreenshot('market-detail-free-range-1280x800.png', {
     animations: 'disabled', caret: 'hide', maxDiffPixels: 400,
   })
