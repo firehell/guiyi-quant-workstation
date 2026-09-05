@@ -176,11 +176,15 @@ pnpm --dir apps/quant-web exec playwright test -c playwright.config.mjs e2e/mark
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
-  uv run --project services/quant-api pytest -q tests/engineering/test_canonical_consistency.py
+  uv run --project services/quant-api pytest -q \
+  tests/engineering/test_repository_hygiene.py \
+  tests/engineering/test_canonical_consistency.py
 openspec validate --specs --strict --no-interactive
 python3 scripts/engineering/secret_scan.py --json
 git diff --check
 ```
+
+上述 repository-hygiene 命令只检查 Git tree、canonical identity 和安全边界，不授权 branch 删除、Issue/PR 修改、Release、Runtime 或生产写入。
 
 Newow 复刻手册使用独立、锁定的文档工具环境重建：
 

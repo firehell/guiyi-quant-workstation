@@ -702,4 +702,13 @@ OOS：18 passed，9 weekly blocked；不支持盈利或策略晋升结论。
 
 仓库入口：`REPORT.md`、`evidence/core-page-parity-results.json`、`evidence/composite-reachability.json`、`evidence/ai-template-evidence.json`、`evidence/futures-validation-summary.json`、`evidence/oos-cost-stress-matrix.json`。
 
-GitHub 包不包含牛哇完整 HTML/JS/原始响应、股票逐 Bar 输入、RQData/Canonical 原始快照或原 PDF。第三方截图若公开分发，仍应由仓库所有者确认授权。
+GitHub 包不包含牛哇完整 HTML/JS/原始响应、股票逐 Bar 输入、RQData/Canonical 原始快照或原 PDF。
+
+29 张冻结截图已经取得 Owner 的保留/分发决定：
+
+```text
+DISTRIBUTION_STATUS = DISTRIBUTION_APPROVED_BY_OWNER
+NEWOW_SCREENSHOT_POLICY = RETAIN
+```
+
+该决定仅覆盖 `docs/research/newow-v3.2.82/screenshots/**` 的冻结 inventory；不构成法律意见，也不扩大对第三方内容的权利声明。它不覆盖原始 HTML、JavaScript、接口响应、逐 Bar 股票数据、RQData / Canonical 原始材料、原始第三方 PDF或其他未获批准材料。

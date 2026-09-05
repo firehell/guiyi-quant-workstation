@@ -1,7 +1,7 @@
 # Newow 期货可信验证合同
 
 日期：2026-09-04
-状态：`CODE_COMPLETE / TEST_COMPLETE / REAL_FUTURES_EVIDENCE_PENDING`
+状态：`IMPLEMENTED / EVIDENCE_PARTIAL`
 基线：`develop@18db2d57055f8fb609e36328a89274b7bf415048`
 分支：`codex/newow-futures-validation`
 
@@ -156,28 +156,35 @@ Mypy canonical scope            passed (108 source files)
 完整 Newow 回归                 516 passed in 198.46s
 ```
 
-## 8. 真实期货证据矩阵
+当前 dossier 还记录了 2026-09-04 已完成的只读真实期货证据：`rb/sc/m × 1d/1w/60m`
+9/9 条 actual-dominant series 通过数据与 owner 合同验证；27 个固定公式 OOS 单元中，18 个 D1/60m
+单元 passed，9 个 W1 单元 fail-closed。详细边界以
+`docs/research/newow-v3.2.82/REPORT.md`、
+`docs/research/newow-v3.2.82/evidence/futures-validation-summary.json` 和
+`docs/research/newow-v3.2.82/evidence/oos-cost-stress-matrix.json` 为准。
 
-后续一次受控、只读的真实证据运行至少覆盖：
+## 8. 真实期货证据矩阵（部分完成）
 
-- 三个经济属性不同的活跃品种，例如黑色、能化、农产品各一个；
-- `1d`、`1w`、`60m` 三个独立周期；
-- 每品种至少两个已发生主力换月，历史不足时必须明确标记不足，不能缩小标准后宣称通过；
-- 每个周期的 Bar 数、segment 数、合约分布、warm-up 长度和缺失事实；
-- 每条 cost/limit snapshot 的来源、采集时间、生效区间与 SHA-256；
-- next-open fill、rejected fill、roll/end incomplete position 和 closed trade 数；
-- 每个 OOS fold 的收益、回撤、胜负与交易数；
-- 基准成本、加倍手续费、加倍滑点三种压力场景；
-- 参数身份必须保持冻结，不以 OOS 结果反向改参数。
+已有 dossier 证据覆盖：
+
+- `rb`（黑色）、`sc`（能化）、`m`（农产品）三个经济属性不同的品种；
+- `1d`、`1w`、`60m` 三个独立周期，共 9/9 series passed；
+- `rb` 和 `m` 各 7 个权威分段/6 次换月，`sc` 为 25 个权威分段/24 次换月；
+- 27 个 OOS 单元中，18 个日线/60 分单元 passed，且每个都记录 baseline、双手续费和双滑点三种场景；
+- 9 个周线单元 blocked，公开原因为 `NEWOW_WEEKLY_EXECUTION_LIMIT_CONTRACT_INSUFFICIENT`；周 K OHLC 与下一执行交易日 limit 的身份不能由周首或周末单日事实替代，不得删除校验或借用日线结果补齐；
+- 公式参数在运行中保持冻结，没有用 OOS 结果反向调参。
+
+这些证据只能支持“部分真实期货运行结果存在”。GitHub-safe dossier 没有分发完整 Canonical Bar
+输入，也没有无数据库重放脚本，所以当前冻结包仍不能让独立第三方复算 18 个 passed
+单元。已完成单元同时存在正负结果，不支持“策略盈利”、“候选可晋升”、“已发布”或 `Runtime Ready`
+结论。
 
 ## 9. 未完成 Gate
 
-- 只读 production Catalog/MainContractMap 查询授权；
-- 真实 D1/W1/60m actual-dominant Bar 与至少两次 rollover 证据；
-- 可信的历史 multiplier、tick、手续费和涨跌停快照来源；
-- 三品种固定公式 OOS/Walk-forward 与成本压力结果；
-- 独立 Review；
+- 经独立 Owner Gate 授权后，为 18 个 passed 单元补齐本地完整冻结包所需的 Canonical Bar 输入和无数据库重放脚本，并完成独立复算；GitHub-safe dossier 仍不分发 RQData/Canonical 原文；
+- 为 W1 建立可信的“下一执行交易日” limit 身份与事实，重新运行当前 9 个 blocked 单元；
+- 对完整重放包、周线 Gate 与最终证据进行独立 Review；
 - 用户人工决定候选淘汰、继续观察或另开新版本；
 - release、main、Runtime promotion 仍是后续独立人工 Gate。
 
-因此当前不能声明收益可信、策略候选、已发布或 Runtime Ready。
+因此当前只能声明 `IMPLEMENTED / EVIDENCE_PARTIAL`，不能声明收益可信、策略候选、已发布或 Runtime Ready。
