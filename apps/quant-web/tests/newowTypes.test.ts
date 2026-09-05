@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { normalizeNewowTrendDetailResponse } from '../src/utils/newowTypes.ts'
+import { buildNewowDetailViewModel } from '../src/utils/newowViewModel.ts'
 
 const calculationIdentity = [
   'market_data_service:canonical_v2',
@@ -163,6 +164,25 @@ test('normalizes the exact Newow wire and returns a detached deep-readonly snaps
   assert.equal(value.bars[0]!.close, 10.5)
   assert.deepEqual(value.escape_markers[0]!.trigger_facts.nested, [true, { ratio: 1.25 }])
   assert.throws(() => (value.bars as unknown[]).push({}))
+})
+
+test('normalized rollover retains historical Cup but never projects it as current', () => {
+  const data = normalizeNewowTrendDetailResponse(payload(), query)
+  const model = buildNewowDetailViewModel({
+    identity: { view: 'trend', symbol: 'rb', seriesKind: 'actual_dominant', frequency: '1d' },
+    data,
+    header: {
+      symbol: 'rb', productName: '螺纹钢', exchange: 'SHFE', sector: '黑色',
+      seriesKind: 'actual_dominant', displayContract: 'RB2610', asOf: '2026-01-07T07:00:00Z',
+      open: 10, high: 12, low: 9, close: 11, change: 1, pct: 10, volume: 100,
+      turnover: null, openInterest: 200, phase: 'CLOSED', displaySource: 'Canonical',
+      freshness: 'fresh', extendedSections: [],
+    },
+  })
+  const rows = model.disclosureSections.flatMap((section) => section.rows)
+  assert.equal(rows.find((row) => row.label === '杯柄当前状态')?.value, '无')
+  assert.equal(data.cup_handles.length, 1)
+  assert.ok(model.history.some((item) => item.id === 'newow-marker:cup-breakout-1' && item.contract === 'RB2605'))
 })
 
 test('accepts the page-v2 identity and validates band/high marker prices', () => {

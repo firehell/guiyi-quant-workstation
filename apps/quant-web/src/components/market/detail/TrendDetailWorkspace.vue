@@ -6,7 +6,8 @@ import MarketDetailInsightDeck from '@/components/market/detail/MarketDetailInsi
 import MarketDetailSectionTabs from '@/components/market/detail/MarketDetailSectionTabs.vue'
 import NewowTrendChartStage from '@/components/market/detail/NewowTrendChartStage.vue'
 import { useNewowTrendDetail } from '@/composables/useNewowTrendDetail'
-import type { BarData } from '@/types/market'
+import type { MarketSeriesMutation } from '@/composables/useMarketSeries'
+import type { BarData, ProductResearchResponse } from '@/types/market'
 import type { DetailViewModel, MarketDetailDisclosureSection, MarketDetailHeaderModel, MarketDetailIdentity } from '@/types/marketDetail'
 import type { NewowTrendDetailResponse, NewowWarning } from '@/types/newow'
 import { buildNewowDetailViewModel } from '@/utils/newowViewModel'
@@ -15,14 +16,24 @@ const props = defineProps<{
   identity: MarketDetailIdentity
   header: MarketDetailHeaderModel
   bars: readonly BarData[]
+  research?: ProductResearchResponse | null
+  mutation?: MarketSeriesMutation
+  loading?: boolean
+  hasMoreBefore?: boolean
+  loadEarlier?: () => Promise<void>
 }>()
 
 const emit = defineEmits<{
   'history-availability': [available: boolean]
+  'focus-resolved': [barEnd: string]
 }>()
 
 const tabs = ref<InstanceType<typeof MarketDetailSectionTabs> | null>(null)
+const stage = ref<InstanceType<typeof NewowTrendChartStage> | null>(null)
 const activeTab = ref<string | null>(null)
+const selectedMarkerId = ref<string | null>(null)
+const selectedHistory = computed(() => model.value.history.find((item) => item.id === selectedMarkerId.value) ?? null)
+const chartIdentity = computed(() => [props.identity.view, props.identity.symbol, props.identity.seriesKind, props.identity.frequency].join(':'))
 const identity = computed(() => props.identity)
 const bars = computed(() => props.bars)
 const loader = useNewowTrendDetail({ identity, bars })
@@ -30,6 +41,7 @@ const model = computed(() => buildNewowDetailViewModel({
   identity: props.identity,
   header: props.header,
   data: loader.data.value as unknown as NewowTrendDetailResponse | null,
+  weeklyContext: props.research,
 }))
 const disclosureIdentity = computed(() => [
   props.identity.view,
@@ -54,12 +66,26 @@ function openHistory() {
   tabs.value?.openHistory()
 }
 
+function selectMarker(markerId: string) {
+  const item = model.value.history.find((entry) => entry.id === `newow-marker:${markerId}`)
+  if (!item?.barEnd) return
+  selectedMarkerId.value = item.id
+  activeTab.value = 'history'
+  stage.value?.revealTime(item.barEnd)
+}
+
+function selectHistory(item: DetailViewModel['history'][number]) {
+  if (!model.value.history.some((entry) => entry.id === item.id) || !item.barEnd) return
+  selectedMarkerId.value = item.id
+  stage.value?.revealTime(item.barEnd)
+}
+
 defineExpose({ openHistory })
 
 watch(() => model.value.history.length, (value) => {
   emit('history-availability', value > 0)
 }, { immediate: true })
-watch(() => props.identity, () => { activeTab.value = null }, { deep: true })
+watch(chartIdentity, () => { activeTab.value = null; selectedMarkerId.value = null })
 onBeforeUnmount(loader.dispose)
 
 function buildDisclosureSections(
@@ -176,7 +202,9 @@ function warningLabel(warning: NewowWarning): string {
       data-newow-state="unavailable"
       role="status"
     >
-      趋势策略数据不可用；当前页面不会从基础 K 线推断 Newow 状态。
+      {{ loader.error.value === 'NEWOW_DATA_IDENTITY_INVALID'
+        ? 'NEWOW_DATA_IDENTITY_INVALID：行情窗口或逐 Bar 身份冲突；已隐藏全部 Newow 图层。'
+        : '趋势策略数据不可用；当前页面不会从基础 K 线推断 Newow 状态。' }}
     </p>
     <MarketDetailInsightDeck
       :identity-key="disclosureIdentity"
@@ -185,17 +213,30 @@ function warningLabel(warning: NewowWarning): string {
       default-open-all
     />
     <NewowTrendChartStage
+      ref="stage"
       :data="loader.data.value"
       :generic-bars="bars"
-      :loading="loader.loading.value"
+      :mutation="mutation"
+      :identity-key="chartIdentity"
+      :focus-bar-end="identity.focusBarEnd"
+      :has-more-before="hasMoreBefore"
+      :loading="loading || loader.loading.value"
+      @load-earlier="loadEarlier?.()"
+      @focus-resolved="emit('focus-resolved', $event)"
+      @marker-select="selectMarker"
     />
     <MarketDetailSectionTabs
       ref="tabs"
       :tabs="[]"
       :active-id="activeTab"
       :history="model.history"
+      history-selectable
       @select="activeTab = $event"
+      @history-select="selectHistory"
     />
+    <p v-if="selectedHistory" role="status" data-testid="newow-selected-marker">
+      {{ selectedHistory.label }} · {{ selectedHistory.barEnd }} · {{ selectedHistory.contract }} · {{ selectedHistory.formulaVersion }}
+    </p>
   </section>
 </template>
 

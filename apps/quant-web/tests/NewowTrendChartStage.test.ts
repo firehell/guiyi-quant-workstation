@@ -19,6 +19,112 @@ import type { NewowTrendDetailResponse } from '../src/types/newow.ts'
 const componentUrl = new URL('../src/components/market/detail/NewowTrendChartStage.vue', import.meta.url)
 const sourceRoot = fileURLToPath(new URL('../src/', import.meta.url))
 
+test('connects paging, stable reveal, marker selection, follow latest, fullscreen and identity reset', async () => {
+  const Stage = await loadComponent()
+  let range = { from: 0, to: 1 }
+  let rangeListener: ((value: typeof range) => void) | undefined
+  let clickListener: ((value: { hoveredInfo: { objectKind: string; objectId: string } }) => void) | undefined
+  let scrolls = 0
+  let loads = 0
+  const selected: string[] = []
+  const focused: string[] = []
+  const scale = {
+    fitContent() {}, setVisibleLogicalRange(value: typeof range) { range = value },
+    getVisibleLogicalRange: () => range, timeToCoordinate: () => 1,
+    scrollToRealTime() { scrolls += 1 },
+    subscribeVisibleLogicalRangeChange(callback: typeof rangeListener) { rangeListener = callback },
+    unsubscribeVisibleLogicalRangeChange() { rangeListener = undefined },
+  }
+  const fakeChart = {
+    panes: () => [{ setStretchFactor() {} }], addPane: () => ({ setStretchFactor() {} }),
+    addSeries: () => ({ setData() {}, attachPrimitive() {} }), removeSeries() {},
+    priceScale: () => ({ applyOptions() {} }), timeScale: () => scale,
+    subscribeCrosshairMove() {}, unsubscribeCrosshairMove() {}, resize() {}, remove() {},
+    subscribeClick(callback: typeof clickListener) { clickListener = callback },
+    unsubscribeClick() { clickListener = undefined },
+  }
+  const data = ref<NewowTrendDetailResponse | null>(twoSegmentTrendData())
+  data.value!.trend_markers = [{ marker_id: 'build-stable', marker_type: 'BUILD',
+    bar_end: data.value!.bars[2]!.bar_end, price: 13, label: '建仓',
+    formula_version: 'newow_trend_band_page_v2', facts: {} }]
+  const identity = ref('rb:actual_dominant:1d')
+  const focus = ref<string | null>(null)
+  const bars = ref(data.value!.bars.map((bar) => genericBar(bar.trading_day, bar.close)))
+  const stage = ref<{ revealTime: (time: string) => boolean } | null>(null)
+  const Host = defineComponent({ setup: () => () => h(Stage, {
+    ref: stage, data: data.value, genericBars: bars.value, identityKey: identity.value,
+    focusBarEnd: focus.value, hasMoreBefore: true, loading: false,
+    onLoadEarlier() { loads += 1 }, 'onMarker-select': (id: string) => selected.push(id),
+    'onFocus-resolved': (time: string) => focused.push(time),
+  }) })
+  const app = createRenderer(nodeOperations()).createApp(Host)
+  app.provide(NEWOW_TREND_CHART_ADAPTER_KEY, {
+    createChart: () => fakeChart as never, createSeriesMarkers: () => ({ setMarkers() {} }) as never,
+    createResizeObserver: () => ({ observe() {}, disconnect() {} }),
+  })
+  const root = element('root')
+  app.mount(root)
+  await nextTick()
+  assert.equal(typeof rangeListener, 'function', 'range paging must be connected')
+  rangeListener!(range)
+  assert.equal(loads, 0, 'programmatic initial range must not drain the history')
+  rangeListener!({ from: 30, to: 31 })
+  rangeListener!({ from: -2, to: 1 })
+  assert.equal(loads, 1)
+  assert.equal(stage.value!.revealTime('2026-01-03T07:00:00Z'), true)
+  assert.equal(stage.value!.revealTime('2020-01-03T07:00:00Z'), false)
+  clickListener!({ hoveredInfo: { objectKind: 'series-marker', objectId: 'build-stable' } })
+  clickListener!({ hoveredInfo: { objectKind: 'series-marker', objectId: 'unknown' } })
+  clickListener!({ hoveredInfo: { objectKind: 'primitive', objectId: 'build-stable' } })
+  assert.deepEqual(selected, ['build-stable'])
+  focus.value = '2026-01-04T07:00:00Z'
+  await nextTick()
+  assert.deepEqual(focused, [focus.value])
+  range = { from: 1, to: 2 }
+  data.value = null
+  bars.value = [genericBar('2026-01-01', 10), ...bars.value]
+  await nextTick()
+  assert.deepEqual(range, { from: 2, to: 3 }, 'prepend preserves the same physical viewport')
+  let latest = findNode(root, (node) => node.type === 'button' && node.text === '回到最新')
+  assert.ok(latest)
+  ;(latest.props.onClick as () => void)()
+  assert.equal(scrolls, 1)
+  await nextTick()
+  assert.equal(findNode(root, (node) => node.type === 'button' && node.text === '回到最新'), undefined)
+  rangeListener!({ from: 0, to: 1 })
+  identity.value = 'ag:actual_dominant:1d'
+  focus.value = null
+  bars.value = [genericBar('2026-01-06', 20)]
+  await nextTick()
+  assert.deepEqual(range, { from: 0, to: 0 })
+  assert.equal(findNode(root, (node) => node.type === 'button' && node.text === '回到最新'), undefined)
+  const chartRoot = findNode(root, (node) => node.props['data-testid'] === 'newow-trend-chart-stage')!
+  let requested = 0
+  Object.assign(chartRoot, { requestFullscreen: async () => { requested += 1 } })
+  const previous = Object.getOwnPropertyDescriptor(globalThis, 'document')
+  Object.defineProperty(globalThis, 'document', { configurable: true, value: { fullscreenElement: null } })
+  try {
+    const fullscreen = findNode(root, (node) => node.props['aria-label'] === '全屏图表')!
+    await (fullscreen.props.onClick as () => Promise<void>)()
+    assert.equal(requested, 1)
+  } finally {
+    if (previous) Object.defineProperty(globalThis, 'document', previous)
+    else Reflect.deleteProperty(globalThis, 'document')
+  }
+  app.unmount()
+  assert.equal(rangeListener, undefined)
+  assert.equal(clickListener, undefined)
+})
+
+function findNode(node: TestNode, matches: (node: TestNode) => boolean): TestNode | undefined {
+  if (matches(node)) return node
+  for (const child of node.children) {
+    const result = findNode(child, matches)
+    if (result) return result
+  }
+  return undefined
+}
+
 test('mounts one chart and ResizeObserver, reuses them on update, and disposes them once', async () => {
   const Stage = await loadComponent()
   const calls = {
@@ -33,8 +139,11 @@ test('mounts one chart and ResizeObserver, reuses them on update, and disposes t
     priceScale: () => ({ applyOptions() {} }),
     timeScale: () => ({
       fitContent() {}, setVisibleLogicalRange() {}, timeToCoordinate: () => 1,
+      getVisibleLogicalRange: () => null,
+      subscribeVisibleLogicalRangeChange() {}, unsubscribeVisibleLogicalRangeChange() {},
     }),
     subscribeCrosshairMove: () => { calls.subscribe += 1 },
+    subscribeClick() {}, unsubscribeClick() {},
     unsubscribeCrosshairMove: () => { calls.unsubscribe += 1 },
     resize() {},
     remove: () => { calls.remove += 1 },
@@ -95,8 +204,11 @@ test('renders each physical segment through separate B and C line series', async
     priceScale: () => ({ applyOptions() {} }),
     timeScale: () => ({
       fitContent() {}, setVisibleLogicalRange() {}, timeToCoordinate: () => 1,
+      getVisibleLogicalRange: () => null,
+      subscribeVisibleLogicalRangeChange() {}, unsubscribeVisibleLogicalRangeChange() {},
     }),
     subscribeCrosshairMove() {}, unsubscribeCrosshairMove() {}, resize() {}, remove() {},
+    subscribeClick() {}, unsubscribeClick() {},
   }
   const adapter: NewowTrendChartAdapter = {
     createChart: () => fakeChart as never,

@@ -117,7 +117,7 @@ function updateHtdyPreferences(htdy: FlexibleDetailPreferences) {
 
 function resolveFocus(focusBarEnd: string) {
   const identity = explicitIdentity.value
-  if ((identity?.view !== 'htdy' && identity?.view !== 'subing') || identity.focusBarEnd !== focusBarEnd) return
+  if ((identity?.view !== 'htdy' && identity?.view !== 'subing' && identity?.view !== 'trend') || identity.focusBarEnd !== focusBarEnd) return
   const { focusBarEnd: _focus, ...next } = identity
   void router.replace({ path: '/market/chart', query: serializeMarketDetailIdentity(next) })
 }
@@ -221,7 +221,13 @@ onBeforeUnmount(controller.dispose)
             :identity="routeResult.identity"
             :header="header"
             :bars="controller.bars.value"
+            :research="controller.research.value"
             @history-availability="hasTrendHistory = $event"
+            :mutation="controller.mutation.value"
+            :loading="controller.state.value.loading"
+            :has-more-before="controller.hasMoreBefore.value"
+            :load-earlier="controller.loadMoreBefore"
+            @focus-resolved="resolveFocus"
           />
           <SubingDetailWorkspace
             v-else-if="routeResult.identity.view === 'subing'"

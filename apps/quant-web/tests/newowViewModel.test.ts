@@ -14,6 +14,22 @@ const identity: MarketDetailIdentity = {
   view: 'trend', symbol: 'rb', seriesKind: 'actual_dominant', frequency: '1d',
 }
 
+test('first screen uses completed generic W1 as context without changing D1 strategy facts', () => {
+  const data = snapshot()
+  for (const weekly of ['up', 'down'] as const) {
+    const model = buildNewowDetailViewModel({ identity, header: header(), data,
+      weeklyContext: { symbol: 'rb', series_kind: 'actual_dominant', contract: null,
+        as_of: '2026-01-07T02:45:00Z', weekly_trend: weekly } })
+    assert.deepEqual(model.facts.map((fact) => fact.label), ['周线背景', '日线趋势', '当前风险'])
+    assert.equal(model.facts[0].value, weekly === 'up' ? '上行' : '下行')
+    assert.equal(model.facts[0].source, 'market')
+    assert.equal(model.facts[1].value, '持有')
+    assert.equal(model.facts[2].value, '暂无 D1/D2/D3')
+  }
+  const missing = buildNewowDetailViewModel({ identity, header: header(), data })
+  assert.equal(missing.facts[0].value, '不可用')
+})
+
 test('maps only the latest completed trend-band fact to the four engine-state labels', () => {
   const cases: Array<{
     latest: Pick<NewowTrendBandPoint, 'state' | 'transition'>
@@ -30,7 +46,7 @@ test('maps only the latest completed trend-band fact to the four engine-state la
     const data = snapshot()
     data.trend_band[2] = { ...data.trend_band[2]!, ...item.latest }
     const model = buildNewowDetailViewModel({ identity, header: header(), data })
-    assert.equal(model.facts[0].value, item.expected)
+    assert.equal(model.facts[1].value, item.expected)
   }
 })
 
@@ -45,7 +61,7 @@ test('uses only latest-bar D markers with D1 priority while retaining every same
 
   const model = buildNewowDetailViewModel({ identity, header: header(), data })
 
-  assert.equal(model.facts[1].value, 'D1')
+  assert.equal(model.facts[2].value, 'D1')
   assert.deepEqual(
     model.history.filter((item) => item.barEnd === data.bars[2]!.bar_end).map((item) => item.markerType),
     ['NEWOW_ESCAPE_D1', 'NEWOW_ESCAPE_D2', 'NEWOW_ESCAPE_D3'],
@@ -62,7 +78,7 @@ test('selects current cup by newest state change and then ascending candidate id
 
   const model = buildNewowDetailViewModel({ identity, header: header(), data })
 
-  assert.equal(model.facts[2].value, '就绪')
+  assert.equal(sectionValues(model, 'newow-risk-shape')['杯柄当前状态'], 'READY · 就绪')
 })
 
 test('discloses exact trend, D, Cup, contract, rollover, and warning evidence from the normalized snapshot', () => {

@@ -71,7 +71,7 @@ test('fails Newow closed while retaining only the generic completed-D1 chart fal
   assert.match(template, /data-newow-state="unavailable"/)
   assert.match(template, /:data="loader\.data\.value"/)
   assert.match(template, /:generic-bars="bars"/)
-  assert.doesNotMatch(template, /overlay|load-earlier|focus-bar-end/i)
+  assert.doesNotMatch(template, /overlay/i)
 })
 
 test('distinguishes the one-shot Newow loading state from an unavailable result', () => {
@@ -178,9 +178,9 @@ test('renders exact warm-up warning identities and their fail-closed presentatio
   assert.match(visible, /趋势带 warm-up 不足，当前趋势不可用/)
   assert.match(visible, /D1\/D2\/D3 warm-up 不足，当前风险不可用/)
   assert.match(visible, /杯柄 warm-up 不足，当前形态不可用/)
-  assert.match(visible, /当前趋势状态:不可用/)
-  assert.match(visible, /当前 D1\/D2\/D3 风险:不可用/)
-  assert.match(visible, /当前杯柄状态:不可用/)
+  assert.match(visible, /周线背景:不可用/)
+  assert.match(visible, /日线趋势:不可用/)
+  assert.match(visible, /当前风险:不可用/)
   app.unmount()
 })
 
