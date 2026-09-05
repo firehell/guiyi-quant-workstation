@@ -14,7 +14,7 @@
 | Database 与 Canonical | 最近 production 只读 readback 为 Alembic `20260903_0045`；RQData session anchor repair 已发布并保留 D1/W1 原始事实。active Canonical 只读 readback 为 8,801 个 Dataset、42,575 个分区、44,629,532 行。 |
 | Market Runtime Scope | `operational_products.txt` 的 60 个品种。 |
 | Alert Scope | HTDY 为 `jm × 15m`；SuBing 为 execution-time operational 60 个品种 × 15m，Scope hash `ce1daca77aeb1abe134806b67aebd96b2c35db3ba82aa10af58f6e5a2e4f5fa2`。两条 Rule 均为 enabled；SuBing Event 为 0。 |
-| `v1.9.15` Release candidate | PR `#333` 仍指向 `main`，head branch 为 `codex/release-v1.9.15`，当前 GitHub head 为 `2eb33e6d9f8195847b908e399539c5e12f5ff7b6`。PR body 中原 `a9a9ed02c2b172af36795722326dde001e95b7ab` 的全量验证和双轴 Review 只适用于该旧 SHA；current head 因后续 warm-up plan schema 修改处于 `RELEASE_REVIEW_STALE`，必须重新验证和 Review。该 PR 尚未合入 `main`、创建 tag、发布 GitHub Release，也未执行 PF 数据 apply、Runtime promotion 或自然验收。当前全量 `develop` 不属于该 RC。 |
+| `v1.9.15` Release candidate | Owner 已决定下一候选必须全量采用 Gate A 开始时 execution-time latest clean `develop` 的完整 tracked tree。PR `#333` 现有旧 head/旧验证仍为 stale，直到 release branch 被安全 fast-forward 到冻结的 full-develop snapshot，并对新的 exact head 完成 fresh 全量验证与 Standards/Spec 双轴 Review。此状态不授权 `main`、tag、GitHub Release、RQData/Canonical apply、Runtime promotion 或真实通知。 |
 
 Alert transport 为 PushPlus；provider accepted 不等于微信送达。
 
