@@ -367,6 +367,158 @@ describe('persistent Alert markers', () => {
     assert.equal(controller.unavailable.value, false)
     controller.dispose()
   })
+
+  for (const completionOrder of ['prepend-first', 'replace-first'] as const) {
+    test(`a full replacement preserves a prepended window when ${completionOrder} completes`, async () => {
+      const replacement = deferred<{ items: AlertEvent[] }>()
+      const prepended = deferred<{ items: AlertEvent[] }>()
+      let calls = 0
+      const controller = usePersistentAlertMarkers({
+        fetchEvents: async () => {
+          calls += 1
+          if (calls === 1) return { items: [subingEvent(1, 'buy')] }
+          if (calls === 2) return replacement.promise
+          if (calls === 3) return prepended.promise
+          return { items: [] }
+        },
+        scheduleInterval: () => 1,
+        clearInterval: () => undefined,
+      }, { resolveRuleCodes: () => [ALERT_RULE_CODES.SUBING_THS] })
+      const identity = { seriesKind: 'actual_dominant' as const, symbol: 'jm', frequency: '15m' as const }
+      const earlierBars = [{ ...bars()[0]!, time: '2026-08-10T01:00:00Z' }, ...bars()]
+      const earlierEvent = {
+        ...subingEvent(0, 'sell'),
+        trading_day: '2026-08-10',
+        bar_end: '2026-08-10T01:00:00Z',
+        detected_at: '2026-08-10T01:00:01Z',
+      }
+      await controller.sync(identity, bars(), 'replace')
+      const pendingReplacement = controller.sync(identity, bars(), 'replace')
+      const pendingPrepend = controller.sync(identity, earlierBars, 'prepend')
+
+      if (completionOrder === 'prepend-first') {
+        prepended.resolve({ items: [earlierEvent] })
+        await pendingPrepend
+        replacement.resolve({ items: [subingEvent(1, 'buy')] })
+        await pendingReplacement
+      } else {
+        replacement.resolve({ items: [subingEvent(1, 'buy')] })
+        await pendingReplacement
+        prepended.resolve({ items: [earlierEvent] })
+        await pendingPrepend
+      }
+
+      assert.deepEqual(controller.events.value.map((item) => item.id), [0, 1])
+      assert.equal(controller.unavailable.value, false)
+      await controller.sync(identity, earlierBars, 'prepend')
+      assert.equal(calls, 3)
+      controller.dispose()
+    })
+  }
+
+  for (const completionOrder of ['recent-first', 'replace-first'] as const) {
+    test(`a full replacement preserves a recent refresh when ${completionOrder} completes`, async () => {
+      const replacement = deferred<{ items: AlertEvent[] }>()
+      const recent = deferred<{ items: AlertEvent[] }>()
+      let refresh: (() => void | Promise<void>) | undefined
+      let calls = 0
+      const controller = usePersistentAlertMarkers({
+        fetchEvents: async () => {
+          calls += 1
+          if (calls === 1) return { items: [subingEvent(1, 'buy')] }
+          if (calls === 2) return replacement.promise
+          return recent.promise
+        },
+        scheduleInterval: (callback) => {
+          refresh = callback
+          return 1
+        },
+        clearInterval: () => undefined,
+      }, { resolveRuleCodes: () => [ALERT_RULE_CODES.SUBING_THS] })
+      const identity = { seriesKind: 'actual_dominant' as const, symbol: 'jm', frequency: '15m' as const }
+      await controller.sync(identity, bars(), 'replace')
+      const pendingReplacement = controller.sync(identity, bars(), 'replace')
+      assert.ok(refresh)
+      const pendingRecent = refresh()
+
+      if (completionOrder === 'recent-first') {
+        recent.resolve({ items: [subingEvent(2, 'sell')] })
+        await pendingRecent
+        replacement.resolve({ items: [subingEvent(1, 'buy')] })
+        await pendingReplacement
+      } else {
+        replacement.resolve({ items: [subingEvent(1, 'buy')] })
+        await pendingReplacement
+        recent.resolve({ items: [subingEvent(2, 'sell')] })
+        await pendingRecent
+      }
+
+      assert.deepEqual(controller.events.value.map((item) => item.id), [1, 2])
+      assert.equal(controller.unavailable.value, false)
+      controller.dispose()
+    })
+  }
+
+  test('a stale full replacement failure cannot override an accepted prepended window', async () => {
+    const replacement = deferred<{ items: AlertEvent[] }>()
+    let calls = 0
+    const controller = usePersistentAlertMarkers({
+      fetchEvents: async () => {
+        calls += 1
+        if (calls === 1) return { items: [subingEvent(1, 'buy')] }
+        if (calls === 2) return replacement.promise
+        return { items: [{
+          ...subingEvent(0, 'sell'),
+          trading_day: '2026-08-10',
+          bar_end: '2026-08-10T01:00:00Z',
+          detected_at: '2026-08-10T01:00:01Z',
+        }] }
+      },
+      scheduleInterval: () => 1,
+      clearInterval: () => undefined,
+    }, { resolveRuleCodes: () => [ALERT_RULE_CODES.SUBING_THS] })
+    const identity = { seriesKind: 'actual_dominant' as const, symbol: 'jm', frequency: '15m' as const }
+    const earlierBars = [{ ...bars()[0]!, time: '2026-08-10T01:00:00Z' }, ...bars()]
+    await controller.sync(identity, bars(), 'replace')
+    const pendingReplacement = controller.sync(identity, bars(), 'replace')
+    await controller.sync(identity, earlierBars, 'prepend')
+    replacement.reject(new Error('late offline'))
+    await pendingReplacement
+
+    await controller.sync(identity, earlierBars, 'prepend')
+    assert.equal(calls, 3)
+    assert.deepEqual(controller.events.value.map((item) => item.id), [0, 1])
+    assert.equal(controller.unavailable.value, false)
+    controller.dispose()
+  })
+
+  test('a stale full replacement success cannot hide a newer prepended-window failure', async () => {
+    const replacement = deferred<{ items: AlertEvent[] }>()
+    let calls = 0
+    const controller = usePersistentAlertMarkers({
+      fetchEvents: async () => {
+        calls += 1
+        if (calls === 1) return { items: [subingEvent(1, 'buy')] }
+        if (calls === 2) return replacement.promise
+        throw new Error('history offline')
+      },
+      scheduleInterval: () => 1,
+      clearInterval: () => undefined,
+    }, { resolveRuleCodes: () => [ALERT_RULE_CODES.SUBING_THS] })
+    const identity = { seriesKind: 'actual_dominant' as const, symbol: 'jm', frequency: '15m' as const }
+    const earlierBars = [{ ...bars()[0]!, time: '2026-08-10T01:00:00Z' }, ...bars()]
+    await controller.sync(identity, bars(), 'replace')
+    const pendingReplacement = controller.sync(identity, bars(), 'replace')
+    await controller.sync(identity, earlierBars, 'prepend')
+    assert.equal(controller.unavailable.value, true)
+    replacement.resolve({ items: [subingEvent(1, 'buy')] })
+    await pendingReplacement
+
+    assert.equal(calls, 3)
+    assert.deepEqual(controller.events.value.map((item) => item.id), [1])
+    assert.equal(controller.unavailable.value, true)
+    controller.dispose()
+  })
 })
 
 function deferred<T>() {
